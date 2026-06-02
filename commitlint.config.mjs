@@ -26,6 +26,7 @@ export default {
     'type-case': [0, 'never'],     // type 大小写不强制
     'subject-empty': [2, 'never'], // subject 不能为空
     'subject-full-stop': [0, 'never'], // subject 末尾不强制句号
+    'subject-case': [0, 'never'],  // subject 允许中文（项目规范要求中文）
     'header-max-length': [1, 'always', 100], // 限制 header 长度
   },
 };
