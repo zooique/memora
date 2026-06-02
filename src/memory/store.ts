@@ -8,6 +8,7 @@ import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Memory, MemoryTypeValue } from './types.js';
+import { parseFrontmatter, serializeFrontmatter as serializeFm } from './frontmatter.js';
 
 /**
  * 文件存储类
@@ -39,7 +40,15 @@ export class FileStore {
     const filePath = this.getFilePath(memory.type, memory.name);
     await mkdir(dirname(filePath), { recursive: true });
 
-    const frontmatter = this.serializeFrontmatter(memory);
+    const frontmatter = serializeFm({
+      id: memory.id,
+      type: memory.type,
+      permanence: memory.permanence,
+      tags: memory.tags.join(', '),
+      weight: String(memory.weight),
+      createdAt: memory.createdAt,
+      updatedAt: memory.updatedAt,
+    });
     const content = `---\n${frontmatter}\n---\n\n${memory.content}`;
     await writeFile(filePath, content, 'utf-8');
   }
@@ -87,11 +96,10 @@ export class FileStore {
     filePath: string,
     mtime: Date,
   ): Memory {
-    // 简化的 frontmatter 解析（阶段一）
-    // 阶段二可用 gray-matter 库
-    const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-    if (!match || !match[1] || !match[2]) {
-      // 无 frontmatter，使用默认值
+    const { frontmatter: meta, body } = parseFrontmatter(raw);
+
+    // 无 frontmatter 时，使用默认值
+    if (Object.keys(meta).length === 0) {
       return {
         id: `${type}:${name}`,
         type,
@@ -106,13 +114,6 @@ export class FileStore {
       };
     }
 
-    const [, fmBlock, body] = match;
-    const meta: Record<string, string> = {};
-    for (const line of fmBlock.split('\n')) {
-      const [k, v] = line.split(':').map((s) => s.trim());
-      if (k && v) meta[k] = v;
-    }
-
     return {
       id: `${type}:${name}`,
       type,
@@ -125,20 +126,5 @@ export class FileStore {
       updatedAt: meta['updatedAt'] ?? mtime.toISOString(),
       filePath,
     };
-  }
-
-  /**
-   * 序列化 frontmatter
-   */
-  private serializeFrontmatter(memory: Memory): string {
-    return [
-      `id: ${memory.id}`,
-      `type: ${memory.type}`,
-      `permanence: ${memory.permanence}`,
-      `tags: ${memory.tags.join(', ')}`,
-      `weight: ${memory.weight}`,
-      `createdAt: ${memory.createdAt}`,
-      `updatedAt: ${memory.updatedAt}`,
-    ].join('\n');
   }
 }

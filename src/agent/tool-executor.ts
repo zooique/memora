@@ -79,8 +79,8 @@ export class ToolExecutor {
       ? relativePath
       : resolve(this.projectPath, relativePath);
 
-    // 安全校验
-    this.security.assertPathAllowed(absolutePath);
+    // 安全校验 + 审计日志（M-105）
+    this.security.assertPathAllowed(absolutePath, 'read_file');
 
     const content = await readFile(absolutePath, 'utf-8');
     return content;

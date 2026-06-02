@@ -11,6 +11,7 @@ import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { TopicFile, TopicMessage } from './types.js';
+import { parseFrontmatter, serializeFrontmatter as serializeFm } from './frontmatter.js';
 
 /**
  * 话题存储类
@@ -98,32 +99,17 @@ export class TopicStore {
    * 解析话题文件
    */
   private parseTopicFile(date: string, topic: string, raw: string): TopicFile {
-    const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    const { frontmatter: meta, body } = parseFrontmatter(raw);
 
-    // 默认值（无 frontmatter）
-    if (!match || !match[1] || !match[2]) {
-      return {
-        date,
-        topic,
-        messages: [],
-        keywords: [],
-      };
+    // 无 frontmatter 时使用默认空文件
+    if (Object.keys(meta).length === 0) {
+      return { date, topic, messages: [], keywords: [] };
     }
-
-    const [, fmBlock, body] = match;
-    const meta: Record<string, string> = {};
-    for (const line of fmBlock.split('\n')) {
-      const [k, v] = line.split(':').map((s) => s.trim());
-      if (k && v) meta[k] = v;
-    }
-
-    // 解析消息列表
-    const messages = this.parseMessages(body);
 
     return {
       date: meta['date'] ?? date,
       topic: meta['topic'] ?? topic,
-      messages,
+      messages: this.parseMessages(body),
       summary: meta['summary'],
       keywords: meta['keywords']?.split(',').map((s) => s.trim()) ?? [],
     };
@@ -161,12 +147,12 @@ export class TopicStore {
    * 序列化 frontmatter
    */
   private serializeFrontmatter(topic: TopicFile): string {
-    const lines = [`date: ${topic.date}`, `topic: ${topic.topic}`];
-    if (topic.summary) lines.push(`summary: ${topic.summary}`);
-    if (topic.keywords.length > 0) {
-      lines.push(`keywords: ${topic.keywords.join(', ')}`);
-    }
-    return lines.join('\n');
+    return serializeFm({
+      date: topic.date,
+      topic: topic.topic,
+      ...(topic.summary ? { summary: topic.summary } : {}),
+      ...(topic.keywords.length > 0 ? { keywords: topic.keywords.join(', ') } : {}),
+    });
   }
 
   /**

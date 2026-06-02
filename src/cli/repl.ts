@@ -4,9 +4,10 @@
  * 阶段一：readline 基础实现
  * 阶段二：升级到 ink 富交互
  *
+ * 分层（T-101 修复）：本模块只调 agent 层的 MessageHistory，不直接调 memory 层的 TopicStore
  * 话题持久化（M-002）：
- *   - 用户输入 → 追加 user 消息到当前话题文件
- *   - Agent 回复 → 追加 assistant 消息到当前话题文件
+ *   - 用户输入 → MessageHistory.appendUser() → TopicStore
+ *   - Agent 回复 → MessageHistory.appendAssistant() → TopicStore
  *   - 切换话题：/topic <name>
  *   - 列出话题：/topics
  */
@@ -17,10 +18,11 @@ import type { Config } from '../config/loader.js';
 import { createLlmProvider } from '../llm/factory.js';
 import { AgentLoop } from '../agent/loop.js';
 import { ToolExecutor, BUILTIN_TOOLS } from '../agent/tool-executor.js';
+import { MessageHistory } from '../agent/message-history.js';
 import { FileStore } from '../memory/store.js';
 import { MemoryIndex } from '../memory/index.js';
 import { MemoryLoader } from '../memory/loader.js';
-import { TopicStore, todayDate, nowTimestamp } from '../memory/topic-store.js';
+import { TopicStore } from '../memory/topic-store.js';
 import { SecurityGuard } from '../security/path-guard.js';
 import { logger } from '../logging/logger.js';
 
@@ -56,14 +58,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     logger.warn({ errors: loadResult.errors }, '部分记忆文件加载失败');
   }
 
-  // 初始化话题存储
+  // 初始化话题存储 + 消息历史（cli 调 history，不直接调 topicStore）
   const topicStore = new TopicStore(memoraDir);
+  const history = new MessageHistory(topicStore);
 
   // 初始化 LLM
   const provider = createLlmProvider(config);
 
   // 初始化安全
-  const security = new SecurityGuard(projectPath, memoraDir, config.allowedPaths);
+  const security = new SecurityGuard(
+    projectPath,
+    memoraDir,
+    config.allowedPaths,
+    config.security.confirmWrites,
+    config.security.permission,
+  );
 
   // 初始化工具
   const toolExec = new ToolExecutor(projectPath, security);
@@ -77,11 +86,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     toolExecutor,
   });
 
-  // 当前话题（默认 = 今天的日期）
-  const currentDate = todayDate();
-  let currentTopic = 'main';
-  const currentTopicName = (): string => `${currentDate}-${currentTopic}`;
-
   // 显示欢迎
   console.log('\n🌲 Memora Agent v0.1.0');
   console.log(`📁 项目：${projectPath}`);
@@ -91,7 +95,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   if (loadResult.skipped > 0) {
     console.log(`⚠️  跳过：${loadResult.skipped} 条（详见日志）`);
   }
-  console.log(`💬 当前话题：${currentTopicName()}`);
+  console.log(`💬 当前话题：${history.currentTopicName}`);
   console.log('输入 /exit 退出，/help 查看帮助\n');
 
   // REPL 循环
@@ -149,17 +153,17 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     if (input === '/topic' || input.startsWith('/topic ')) {
       const newName = input.slice('/topic'.length).trim();
       if (!newName) {
-        console.log(`当前话题：${currentTopicName()}`);
+        console.log(`当前话题：${history.currentTopicName}`);
       } else {
-        currentTopic = newName;
-        console.log(`✅ 已切换话题：${currentTopicName()}`);
+        const newFullName = history.switchTopic(newName);
+        console.log(`✅ 已切换话题：${newFullName}`);
       }
       rl.prompt();
       continue;
     }
 
     if (input === '/topics') {
-      const topics = await topicStore.list();
+      const topics = await history.listAllTopics();
       if (topics.length === 0) {
         console.log('（暂无话题）');
       } else {
@@ -172,18 +176,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // 用户输入 → 追加到话题文件
-    const userMessage = {
-      role: 'user' as const,
-      content: input,
-      timestamp: nowTimestamp(),
-    };
-    try {
-      await topicStore.append(currentDate, currentTopic, userMessage);
-    } catch (err) {
-      logger.error({ err, topic: currentTopicName() }, '追加 user 消息到话题文件失败');
-      // 不阻塞对话
-    }
+    // 用户输入 → 通过 MessageHistory 追加到话题文件
+    await history.appendUser(input);
 
     // 用户输入 → Agent Loop
     let assistantContent = '';
@@ -199,19 +193,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       console.error('\n❌ 出错了：', (err as Error).message, '\n');
     }
 
-    // Agent 回复 → 追加到话题文件
-    if (assistantContent.trim()) {
-      const assistantMessage = {
-        role: 'assistant' as const,
-        content: assistantContent,
-        timestamp: nowTimestamp(),
-      };
-      try {
-        await topicStore.append(currentDate, currentTopic, assistantMessage);
-      } catch (err) {
-        logger.error({ err, topic: currentTopicName() }, '追加 assistant 消息到话题文件失败');
-      }
-    }
+    // Agent 回复 → 通过 MessageHistory 追加到话题文件
+    await history.appendAssistant(assistantContent);
 
     rl.prompt();
   }
