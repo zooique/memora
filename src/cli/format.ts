@@ -56,23 +56,25 @@ export function formatToolEnd(name: string, ok: boolean): string {
 export function formatWelcome(opts: {
   version: string;
   projectPath: string;
+  projectName: string;
   modelName: string;
   dbPath: string;
   loadedCount: number;
   bootstrapCount: number;
   skippedCount: number;
+  globalRulesCount: number;
   currentTopic: string;
 }): string {
   const lines = [
     '',
     pc.bold(pc.cyan(`🌲 Memora Agent v${opts.version}`)),
     pc.dim(HORIZONTAL.repeat(60)),
-    `${pc.dim('📁 项目：')}      ${opts.projectPath}`,
+    `${pc.dim('📁 项目：')}      ${opts.projectName} ${pc.dim(`(${opts.projectPath})`)}`,
     `${pc.dim('🤖 模型：')}      ${opts.modelName}`,
     `${pc.dim('💾 数据库：')}    ${opts.dbPath}`,
     `${pc.dim('📚 加载记忆：')}  ${opts.loadedCount} 条（必召 ${pc.cyan(String(opts.bootstrapCount))} 条）${
       opts.skippedCount > 0 ? pc.yellow(` ⚠️ 跳过 ${opts.skippedCount} 条`) : ''
-    }`,
+    }${opts.globalRulesCount > 0 ? pc.dim(` · 全局规则 ${opts.globalRulesCount} 条`) : ''}`,
     `${pc.dim('💬 当前话题：')}  ${pc.cyan(opts.currentTopic)}`,
     pc.dim(HORIZONTAL.repeat(60)),
     `${pc.gray('输入 ')}${pc.bold('/exit')}${pc.gray(' 退出，')}${pc.bold('/help')}${pc.gray(' 查看帮助')}`,
@@ -90,6 +92,8 @@ export function formatHelp(): string {
     ['/help', '显示帮助'],
     ['/tools', '列出可用工具'],
     ['/memories', '列出已加载记忆'],
+    ['/project [name]', '切换项目（不填则显示列表）'],
+    ['/domain [name]', '切换领域（不填则显示列表）'],
     ['/topic <name>', '切换话题（不填则显示当前）'],
     ['/topics', '列出所有话题文件'],
   ];

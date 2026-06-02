@@ -21,7 +21,7 @@ import { createLlmProvider } from '../llm/factory.js';
 import { AgentLoop } from '../agent/loop.js';
 import { ToolExecutor, BUILTIN_TOOLS } from '../agent/tool-executor.js';
 import { MessageHistory } from '../agent/message-history.js';
-import { DomainManager } from '../memory/domain-manager.js';
+import { ProjectManager } from '../memory/project-manager.js';
 import { toFriendlyError } from '../utils/errors.js';
 import type { TopicMessage } from '../memory/types.js';
 import type { LlmProvider, Message } from '../llm/provider.js';
@@ -38,6 +38,7 @@ import {
   formatToolStart,
   formatToolEnd,
 } from './format.js';
+import pc from 'picocolors';
 
 export interface ReplOptions {
   projectPath: string;
@@ -47,9 +48,22 @@ export interface ReplOptions {
 export async function startRepl(opts: ReplOptions): Promise<void> {
   const { projectPath, config } = opts;
 
-  // M-208：使用 DomainManager 管理领域切换
-  const domainManager = new DomainManager(projectPath, config);
-  let ctx = await domainManager.initDefault();
+  // M-207：使用 ProjectManager 管理多项目并发
+  const projectManager = new ProjectManager(config);
+  let pctx = await projectManager.initProject(projectPath);
+
+  // M-208：领域管理器（从项目上下文中获取）
+  let domainManager = pctx.domainManager;
+  let ctx = {
+    domainName: 'default',
+    memoraDir: pctx.memoraDir,
+    fileStore: pctx.fileStore,
+    index: pctx.index,
+    topicStore: pctx.topicStore,
+    security: pctx.security,
+    bootstrapMemories: pctx.bootstrapMemories,
+    loadResult: pctx.loadResult,
+  };
 
   if (ctx.loadResult.errors.length > 0) {
     logger.warn({ errors: ctx.loadResult.errors }, '部分记忆文件加载失败');
@@ -58,25 +72,28 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // 初始化 LLM（先于 history，因为 summarizer 需要 provider 引用）
   const provider = createLlmProvider(config);
 
-  // 根据领域上下文创建可切换的组件
+  // 根据项目上下文创建可切换的组件
+  let currentProjectPath = projectPath;
   let history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
-  let toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
+  let toolExec = new ToolExecutor(currentProjectPath, ctx.security, ctx.index);
   let loop = new AgentLoop({
     provider,
     bootstrapMemories: ctx.bootstrapMemories,
     toolExecutor: wrapToolExecutor(toolExec),
   });
 
-  // 显示欢迎（M-205 美化版）
+  // 显示欢迎（M-205 美化版 + M-207 项目名）
   console.log(
     formatWelcome({
       version: '0.1.0',
       projectPath,
+      projectName: pctx.projectName,
       modelName: provider.name,
       dbPath: join(ctx.memoraDir, 'memora.db'),
       loadedCount: ctx.loadResult.loaded,
       bootstrapCount: ctx.bootstrapMemories.length,
       skippedCount: ctx.loadResult.skipped,
+      globalRulesCount: pctx.globalMemories.length,
       currentTopic: history.currentTopicName,
     }),
   );
@@ -121,6 +138,67 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
+    // M-207：项目切换命令
+    if (input === '/project' || input.startsWith('/project ')) {
+      const arg = input.slice('/project'.length).trim();
+      if (!arg) {
+        // 无参数：显示当前项目和已注册项目列表
+        const projects = projectManager.listProjects();
+        console.log(`当前项目：${pctx.projectName}（${currentProjectPath}）`);
+        if (projects.length > 0) {
+          console.log('已注册项目：');
+          for (const p of projects) {
+            const marker = p.path === currentProjectPath ? ' ←' : '';
+            console.log(`  ${pc.cyan(p.name)} ${pc.dim(p.path)}${marker}`);
+          }
+        } else {
+          console.log(pc.dim('（暂无已注册项目）'));
+        }
+      } else {
+        // 切换项目：arg 可以是项目名称或路径
+        const projects = projectManager.listProjects();
+        const target = projects.find((p) => p.name === arg || p.path === arg);
+        if (!target) {
+          console.log(formatError(`未找到项目：${arg}`, '使用 /project 查看已注册项目'));
+        } else if (target.path === currentProjectPath) {
+          console.log(formatSuccess(`已在项目 ${target.name} 中`));
+        } else {
+          try {
+            pctx = await projectManager.initProject(target.path, target.name);
+            domainManager = pctx.domainManager;
+            ctx = {
+              domainName: 'default',
+              memoraDir: pctx.memoraDir,
+              fileStore: pctx.fileStore,
+              index: pctx.index,
+              topicStore: pctx.topicStore,
+              security: pctx.security,
+              bootstrapMemories: pctx.bootstrapMemories,
+              loadResult: pctx.loadResult,
+            };
+            currentProjectPath = target.path;
+            history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
+            toolExec = new ToolExecutor(currentProjectPath, ctx.security, ctx.index);
+            loop = new AgentLoop({
+              provider,
+              bootstrapMemories: ctx.bootstrapMemories,
+              toolExecutor: wrapToolExecutor(toolExec),
+            });
+            console.log(
+              formatSuccess(
+                `已切换到项目：${pctx.projectName}（${ctx.bootstrapMemories.length} 条记忆）`,
+              ),
+            );
+          } catch (err) {
+            const friendly = toFriendlyError(err);
+            console.error(formatError(friendly.title, friendly.detail));
+          }
+        }
+      }
+      rl.prompt();
+      continue;
+    }
+
     // M-208：领域切换命令
     if (input === '/domain' || input.startsWith('/domain ')) {
       const arg = input.slice('/domain'.length).trim();
@@ -136,7 +214,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           ctx = await domainManager.switchDomain(arg);
           // 重建所有依赖领域上下文的组件
           history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
-          toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
+          toolExec = new ToolExecutor(currentProjectPath, ctx.security, ctx.index);
           loop = new AgentLoop({
             provider,
             bootstrapMemories: ctx.bootstrapMemories,
@@ -200,7 +278,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     rl.prompt();
   }
 
-  await ctx.index.close().catch((err) => logger.error({ err }, '关闭数据库失败'));
+  // M-207：通过 ProjectManager 关闭项目（释放锁文件 + 关闭数据库）
+  await projectManager.closeProject();
   rl.close();
 }
 

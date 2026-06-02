@@ -62,6 +62,7 @@ date: 2026-06-02
 - [x] init 命令（init.test.ts · 4 用例）
 - [x] 权限模型（permissions.test.ts · 4 用例）
 - [x] LLM 工厂（factory.test.ts · 8 用例）
+- [x] 项目管理器（project-manager.test.ts · 11 用例）
 
 ## 5. 测试反模式
 

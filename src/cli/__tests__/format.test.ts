@@ -81,19 +81,22 @@ describe('M-205 · CLI 格式化工具', () => {
   });
 
   describe('formatWelcome', () => {
-    it('应包含版本/项目路径/模型/数据库/记忆统计/当前话题', () => {
+    it('应包含版本/项目名/项目路径/模型/数据库/记忆统计/当前话题', () => {
       const result = formatWelcome({
         version: '0.1.0',
         projectPath: '/test/project',
+        projectName: 'project',
         modelName: 'mimo',
         dbPath: '/tmp/memora.db',
         loadedCount: 7,
         bootstrapCount: 3,
         skippedCount: 0,
+        globalRulesCount: 0,
         currentTopic: 'default',
       });
       expect(result).toContain('Memora Agent');
       expect(result).toContain('0.1.0');
+      expect(result).toContain('project');
       expect(result).toContain('/test/project');
       expect(result).toContain('mimo');
       expect(result).toContain('/tmp/memora.db');
@@ -105,11 +108,13 @@ describe('M-205 · CLI 格式化工具', () => {
       const result = formatWelcome({
         version: '0.1.0',
         projectPath: '/p',
+        projectName: 'p',
         modelName: 'm',
         dbPath: '/d',
         loadedCount: 5,
         bootstrapCount: 3,
         skippedCount: 2,
+        globalRulesCount: 0,
         currentTopic: 't',
       });
       expect(result).toContain('跳过');
@@ -121,24 +126,45 @@ describe('M-205 · CLI 格式化工具', () => {
       const result = formatWelcome({
         version: '0.1.0',
         projectPath: '/p',
+        projectName: 'p',
         modelName: 'm',
         dbPath: '/d',
         loadedCount: 7,
         bootstrapCount: 3,
         skippedCount: 0,
+        globalRulesCount: 0,
         currentTopic: 't',
       });
       expect(result).not.toContain('跳过');
     });
+
+    it('有全局规则时应显示数量', () => {
+      const result = formatWelcome({
+        version: '0.1.0',
+        projectPath: '/p',
+        projectName: 'p',
+        modelName: 'm',
+        dbPath: '/d',
+        loadedCount: 7,
+        bootstrapCount: 3,
+        skippedCount: 0,
+        globalRulesCount: 2,
+        currentTopic: 't',
+      });
+      expect(result).toContain('全局规则');
+      expect(result).toContain('2 条');
+    });
   });
 
   describe('formatHelp', () => {
-    it('应包含 6 个命令（/exit /help /tools /memories /topic /topics）', () => {
+    it('应包含 8 个命令（/exit /help /tools /memories /project /domain /topic /topics）', () => {
       const result = formatHelp();
       expect(result).toContain('/exit');
       expect(result).toContain('/help');
       expect(result).toContain('/tools');
       expect(result).toContain('/memories');
+      expect(result).toContain('/project');
+      expect(result).toContain('/domain');
       expect(result).toContain('/topic');
       expect(result).toContain('/topics');
     });

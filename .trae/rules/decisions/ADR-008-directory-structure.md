@@ -37,7 +37,7 @@ src/
 ├── cli/                    # CLI 解析与交互
 │   ├── commands/           # 子命令
 │   │   └── init.ts         # 初始化命令
-│   └── repl.ts             # REPL 主循环（含 /domain 命令）
+│   └── repl.ts             # REPL 主循环（含 /project + /domain 命令）
 ├── agent/                  # Agent Loop
 │   ├── loop.ts
 │   ├── tool-executor.ts
@@ -49,6 +49,7 @@ src/
 │   ├── recall.ts           # 混合召回（关键词 + 向量）
 │   ├── vector-store.ts     # 向量存储（M-206）
 │   ├── domain-manager.ts   # 领域管理器（M-208）
+│   ├── project-manager.ts  # 项目管理器（M-207）
 │   ├── loader.ts           # 记忆加载器
 │   └── topic-store.ts      # 话题存储
 ├── llm/                    # LLM 适配层
@@ -76,6 +77,18 @@ src/
 - 每个领域有独立的 SQLite + 向量索引 + 安全守卫
 - embedding.ts 放在 llm/ 下（属于 LLM 适配层，调用 /embeddings API）
 - vector-store.ts 放在 memory/ 下（属于记忆引擎的向量索引层）
+
+### v0.3（2026-06-02）· M-207 多项目并发
+
+**变更**：新增 project-manager.ts；repl.ts 新增 /project 命令
+
+**设计演进**：
+
+- 多项目并发从"每个项目独立进程"演进为"ProjectManager 管理项目切换"
+- 每个项目有独立的 .memora/ 目录（项目根目录下），与 config.dataDir（用户级默认）分离
+- 锁文件机制（.memora/.lock）防止同项目并发写入
+- 全局规则目录（~/.memora/global/rules/）跨项目共享只读规则
+- 项目注册表（~/.memora/projects.json）记录已注册项目
 
 ## 反例（按类型分层的问题）
 

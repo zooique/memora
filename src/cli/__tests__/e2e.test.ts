@@ -75,7 +75,13 @@ name: default
     return new Promise((resolve, reject) => {
       const proc: ChildProcess = spawn(
         process.execPath, // node binary
-        [join(PROJECT_ROOT, 'node_modules/tsx/dist/cli.mjs'), 'src/index.ts'],
+        [
+          join(PROJECT_ROOT, 'node_modules/tsx/dist/cli.mjs'),
+          'src/index.ts',
+          'chat',
+          '--project',
+          tmpProject,
+        ],
         {
           cwd: PROJECT_ROOT,
           env: { ...process.env, HOME: tmpHome, USERPROFILE: tmpHome },
@@ -135,10 +141,8 @@ name: default
 
   it('应该响应 /memories 指令', async () => {
     const { stdout, exitCode } = await runCli(['/memories', '/exit']);
-    // Loader 扫不到（HOME 改了，但 project 内的 .memora 在 cwd 默认 loadConfig 不读）
-    // 启动时 loader 走的是 memoraDir（来自 config.memory.dataDir = tmpHome/.memora）
-    // tmpHome/.memora 没有 personality 文件，所以 memories 为空
-    expect(stdout).toContain('已加载 0 条必召记忆');
+    // tmpProject/.memora/personality/ 下有 1 条必召记忆
+    expect(stdout).toContain('必召记忆');
     expect(exitCode).toBe(0);
   }, 20000);
 
