@@ -81,7 +81,14 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
 
     if (!response.ok) {
+      // 消费并释放 body（Node 24 + Windows + undici 必须在 throw 前 cancel stream，
+      // 否则 fetch 内部 keep-alive socket 残留，process.exit 时触发 libuv assertion）
       const errorText = await response.text().catch(() => '<无法读取响应体>');
+      try {
+        await response.body?.cancel();
+      } catch {
+        // 忽略 cancel 失败
+      }
       const status = response.status;
 
       // 401/403 = 鉴权
@@ -125,7 +132,17 @@ export class OpenAICompatibleProvider extends LlmProvider {
       ]);
     }
 
-    yield* this.parseSseStream(response.body);
+    try {
+      yield* this.parseSseStream(response.body);
+    } catch (err) {
+      // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
+      try {
+        await response.body?.cancel();
+      } catch {
+        // 忽略
+      }
+      throw err;
+    }
   }
 
   /**
