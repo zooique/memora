@@ -39,6 +39,26 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
   });
 
+  it('应该拒绝 .aws 目录', () => {
+    const filePath = join(projectPath, '.aws', 'credentials');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 System32 路径', () => {
+    const filePath = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 etc/passwd 路径', () => {
+    const filePath = '/etc/passwd';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .env.local 文件', () => {
+    const filePath = join(projectPath, '.env.local');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
   it('应该拒绝项目外的路径', () => {
     const filePath = join(tmpdir(), 'other-project', 'secret.txt');
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/白名单/);

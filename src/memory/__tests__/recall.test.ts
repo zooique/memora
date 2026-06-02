@@ -1,10 +1,11 @@
 /**
  * 记忆召回管线测试
- * 覆盖 bootstrap 基础召回 + recall 增量召回
+ * 覆盖 bootstrap 基础召回 + recall 增量召回 + M-206 向量语义搜索
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RecallPipeline } from '../recall.js';
 import type { MemoryIndex } from '../index.js';
+import type { VectorStore } from '../vector-store.js';
 import type { Memory } from '../types.js';
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
@@ -135,5 +136,70 @@ describe('RecallPipeline · recall 增量召回', () => {
 
     expect(result).toHaveLength(5); // 默认 topK=5
     expect(mockIndex.search).toHaveBeenCalledWith('查询', 15); // 5 * 3
+  });
+});
+
+describe('RecallPipeline · M-206 向量语义搜索', () => {
+  let mockIndex: MemoryIndex;
+  let mockVectorStore: VectorStore;
+  let pipeline: RecallPipeline;
+
+  beforeEach(() => {
+    mockIndex = {
+      getByPermanence: vi.fn(),
+      search: vi.fn(),
+      getById: vi.fn(),
+    } as unknown as MemoryIndex;
+
+    mockVectorStore = {
+      search: vi.fn(),
+    } as unknown as VectorStore;
+
+    pipeline = new RecallPipeline(mockIndex, mockVectorStore);
+  });
+
+  it('启用向量搜索时应合并关键词和向量结果', async () => {
+    // 关键词结果
+    const keywordResults = [
+      makeMemory({ id: 'kw1', weight: 0.9 }),
+      makeMemory({ id: 'kw2', weight: 0.5 }),
+    ];
+    vi.mocked(mockIndex.search).mockResolvedValue(keywordResults);
+
+    // 向量结果（无新增 ID）
+    vi.mocked(mockVectorStore.search).mockResolvedValue([{ id: 'kw1', similarity: 0.85 }]);
+
+    const result = await pipeline.recall('测试', { useVector: true });
+
+    expect(result).toHaveLength(2);
+    expect(mockVectorStore.search).toHaveBeenCalledWith('测试', 10, 0.3);
+  });
+
+  it('向量搜索命中新 ID 时应从索引加载', async () => {
+    const keywordResults = [makeMemory({ id: 'kw1', weight: 0.9 })];
+    vi.mocked(mockIndex.search).mockResolvedValue(keywordResults);
+
+    // 向量结果包含新 ID
+    vi.mocked(mockVectorStore.search).mockResolvedValue([{ id: 'vec1', similarity: 0.9 }]);
+
+    // 从索引加载新 ID
+    vi.mocked(mockIndex.getById).mockResolvedValue(
+      makeMemory({ id: 'vec1', weight: 0.7, content: '向量找到的' }),
+    );
+
+    const result = await pipeline.recall('测试', { useVector: true, topK: 5 });
+
+    expect(result.length).toBeGreaterThanOrEqual(1);
+    expect(mockIndex.getById).toHaveBeenCalledWith('vec1');
+  });
+
+  it('未启用向量搜索时不调用 vectorStore', async () => {
+    const keywordResults = [makeMemory({ id: 'kw1', weight: 0.9 })];
+    vi.mocked(mockIndex.search).mockResolvedValue(keywordResults);
+
+    await pipeline.recall('测试', { useVector: false });
+
+    // vectorStore.search 不应被调用
+    expect(mockVectorStore.search).not.toHaveBeenCalled();
   });
 });

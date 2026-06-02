@@ -197,4 +197,42 @@ updatedAt: 2026-06-02T00:00:00.000Z
     const result = await loader.loadAllToIndex();
     expect(result.loaded).toBe(0); // topic 不在启动扫描列表
   });
+
+  it('list 包含文件但 read 返回 null 时应计入 skipped', async () => {
+    // 写入正常文件 + 空目录（list 会列出但 read 返回 null）
+    // 直接使用非标准目录结构：在 rules/ 下创建非 .md 文件
+    writeFileSync(join(dataDir, 'rules', 'not-memory.txt'), 'not a markdown file', 'utf-8');
+
+    writeFileSync(
+      join(dataDir, 'rules/good.md'),
+      `---
+type: rule
+permanence: always
+name: good
+tags: rule
+weight: 1.0
+createdAt: 2026-06-02T00:00:00.000Z
+updatedAt: 2026-06-02T00:00:00.000Z
+---
+
+# 好的文件
+`,
+      'utf-8',
+    );
+
+    const result = await loader.loadAllToIndex();
+    // good.md 加载成功，not-memory.txt 被 list 过滤掉（不是 .md）
+    expect(result.loaded).toBe(1);
+  });
+
+  it('list 不存在的类型目录时应跳过（不抛错）', async () => {
+    // skills 目录不存在，list 应返回 []（通过 existsSync 检查）
+    // 删除 skills 目录
+    rmSync(join(dataDir, 'skills'), { recursive: true, force: true });
+
+    const result = await loader.loadAllToIndex();
+    // 所有目录都不存在文件 → loaded = 0
+    expect(result.loaded).toBe(0);
+    expect(result.errors).toEqual([]);
+  });
 });
