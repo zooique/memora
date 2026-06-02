@@ -187,6 +187,16 @@ export class MemoryIndex {
   }
 
   /**
+   * 按 ID 获取单条记忆
+   * M-206：向量搜索命中但关键词搜索未命中时，需要按 ID 加载
+   */
+  async getById(id: string): Promise<Memory | null> {
+    await this.ready();
+    const rows = await allAsync<DbRow>(this.db, `SELECT * FROM memories WHERE id = ?`, [id]);
+    return rows[0] ? this.toMemory(rows[0]) : null;
+  }
+
+  /**
    * 按类型获取记忆
    */
   async getByType(type: MemoryTypeValue): Promise<Memory[]> {

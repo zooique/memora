@@ -31,6 +31,7 @@ describe('RecallPipeline · bootstrap 基础召回', () => {
     mockIndex = {
       getByPermanence: vi.fn(),
       search: vi.fn(),
+      getById: vi.fn(),
     } as unknown as MemoryIndex;
     pipeline = new RecallPipeline(mockIndex);
   });
@@ -81,6 +82,7 @@ describe('RecallPipeline · recall 增量召回', () => {
     mockIndex = {
       getByPermanence: vi.fn(),
       search: vi.fn(),
+      getById: vi.fn(),
     } as unknown as MemoryIndex;
     pipeline = new RecallPipeline(mockIndex);
   });
