@@ -1,0 +1,70 @@
+{
+  "name": "memora",
+  "version": "0.1.0",
+  "description": "通用 Agent 架构 — 本地、私有、领域无关，万物皆记忆",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "memora": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write \"**/*.{ts,md,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,md,json}\"",
+    "typecheck": "tsc --noEmit",
+    "prepare": "lefthook install || true"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "agent",
+    "memory",
+    "llm",
+    "ai",
+    "cli",
+    "local-first"
+  ],
+  "author": "Memora Contributors",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^12.1.0",
+    "cosmiconfig": "^9.0.0",
+    "picocolors": "^1.1.0",
+    "pino": "^9.4.0",
+    "sqlite3": "^6.0.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.0.2",
+    "@commitlint/config-conventional": "^21.0.2",
+    "@types/node": "^22.7.0",
+    "@types/sqlite3": "^3.1.11",
+    "@typescript-eslint/eslint-plugin": "^8.8.0",
+    "@typescript-eslint/parser": "^8.8.0",
+    "eslint": "^9.12.0",
+    "lefthook": "^1.7.0",
+    "msw": "^2.4.0",
+    "pino-pretty": "^11.2.0",
+    "prettier": "^3.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
+}

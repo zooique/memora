@@ -1,0 +1,41 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+build/
+coverage/
+
+# 日志
+*.log
+logs/
+.pino*
+
+# 环境变量与密钥
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# 用户特定数据
+.memora-data/
+data/local/
+
+# 测试覆盖率
+.nyc_output/
+
+# OS
+desktop.ini
+$RECYCLE.BIN/
+
+# TypeScript
+*.tsbuildinfo

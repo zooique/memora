@@ -1,0 +1,25 @@
+# Lefthook 配置：git hooks
+# 提交前自动运行 lint + typecheck + test
+# 详见 ADR-007
+
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{ts,tsx}"
+      run: npx eslint {staged_files}
+    format:
+      glob: "*.{ts,tsx,md,json}"
+      run: npx prettier --check {staged_files}
+    typecheck:
+      run: npx tsc --noEmit
+
+commit-msg:
+  commands:
+    commitlint:
+      run: npx --no-install commitlint --edit
+
+pre-push:
+  commands:
+    test:
+      run: npm test
