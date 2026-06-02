@@ -11,6 +11,12 @@
     "dist",
     "README.md"
   ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
