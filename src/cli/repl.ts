@@ -15,18 +15,13 @@
  *   - 列出话题：/topics
  */
 import { createInterface, type Interface as RLInterface } from 'node:readline';
-import { resolve, join } from 'node:path';
-import { homedir } from 'node:os';
+import { join } from 'node:path';
 import type { Config } from '../config/loader.js';
 import { createLlmProvider } from '../llm/factory.js';
 import { AgentLoop } from '../agent/loop.js';
 import { ToolExecutor, BUILTIN_TOOLS } from '../agent/tool-executor.js';
 import { MessageHistory } from '../agent/message-history.js';
-import { FileStore } from '../memory/store.js';
-import { MemoryIndex } from '../memory/index.js';
-import { MemoryLoader } from '../memory/loader.js';
-import { TopicStore } from '../memory/topic-store.js';
-import { SecurityGuard } from '../security/path-guard.js';
+import { DomainManager } from '../memory/domain-manager.js';
 import { toFriendlyError } from '../utils/errors.js';
 import type { TopicMessage } from '../memory/types.js';
 import type { LlmProvider, Message } from '../llm/provider.js';
@@ -52,69 +47,24 @@ export interface ReplOptions {
 export async function startRepl(opts: ReplOptions): Promise<void> {
   const { projectPath, config } = opts;
 
-  // 解析数据目录（~ 展开为用户目录）
-  const memoraDir = resolve(config.memory.dataDir.replace(/^~/, homedir()));
+  // M-208：使用 DomainManager 管理领域切换
+  const domainManager = new DomainManager(projectPath, config);
+  let ctx = await domainManager.initDefault();
 
-  // 初始化文件存储 + SQLite 索引
-  const fileStore = new FileStore(memoraDir);
-  const dbPath = join(memoraDir, 'memora.db');
-  const index = new MemoryIndex(dbPath);
-
-  // 启动时加载：扫描文件 → 写入索引 → 读 always+domain
-  const loader = new MemoryLoader(fileStore, index);
-  const { memories: bootstrapMemories, loadResult } = await loader.bootstrap();
-  logger.info(
-    {
-      loaded: loadResult.loaded,
-      skipped: loadResult.skipped,
-      bootstrapCount: bootstrapMemories.length,
-    },
-    '启动加载完成',
-  );
-
-  if (loadResult.errors.length > 0) {
-    logger.warn({ errors: loadResult.errors }, '部分记忆文件加载失败');
+  if (ctx.loadResult.errors.length > 0) {
+    logger.warn({ errors: ctx.loadResult.errors }, '部分记忆文件加载失败');
   }
-
-  // 初始化话题存储
-  const topicStore = new TopicStore(memoraDir);
 
   // 初始化 LLM（先于 history，因为 summarizer 需要 provider 引用）
   const provider = createLlmProvider(config);
 
-  // 初始化消息历史（M-203-改：注入话题摘要生成器，事件驱动归档）
-  const history = new MessageHistory(topicStore, createTopicSummarizer(provider));
-
-  // 初始化安全
-  const security = new SecurityGuard(
-    projectPath,
-    memoraDir,
-    config.allowedPaths,
-    config.security.confirmWrites,
-    config.security.permission,
-  );
-
-  // 初始化工具（M-204：注入 MemoryIndex 让 search_memories 工具可用）
-  const toolExec = new ToolExecutor(projectPath, security, index);
-  // M-205：包装 toolExecutor 显示工具调用可视化
-  const toolExecutor = async (name: string, args: string): Promise<string> => {
-    process.stderr.write(formatToolStart(name) + '\n');
-    try {
-      const result = await toolExec.execute(name, args);
-      process.stderr.write(formatToolResult(name, result) + '\n');
-      process.stderr.write(formatToolEnd(name, true));
-      return result;
-    } catch (err) {
-      process.stderr.write(formatToolEnd(name, false));
-      throw err;
-    }
-  };
-
-  // 初始化 Agent Loop
-  const loop = new AgentLoop({
+  // 根据领域上下文创建可切换的组件
+  let history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
+  let toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
+  let loop = new AgentLoop({
     provider,
-    bootstrapMemories,
-    toolExecutor,
+    bootstrapMemories: ctx.bootstrapMemories,
+    toolExecutor: wrapToolExecutor(toolExec),
   });
 
   // 显示欢迎（M-205 美化版）
@@ -123,10 +73,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       version: '0.1.0',
       projectPath,
       modelName: provider.name,
-      dbPath,
-      loadedCount: loadResult.loaded,
-      bootstrapCount: bootstrapMemories.length,
-      skippedCount: loadResult.skipped,
+      dbPath: join(ctx.memoraDir, 'memora.db'),
+      loadedCount: ctx.loadResult.loaded,
+      bootstrapCount: ctx.bootstrapMemories.length,
+      skippedCount: ctx.loadResult.skipped,
       currentTopic: history.currentTopicName,
     }),
   );
@@ -166,7 +116,42 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
 
     if (input === '/memories') {
-      console.log(formatMemoriesList(bootstrapMemories));
+      console.log(formatMemoriesList(ctx.bootstrapMemories));
+      rl.prompt();
+      continue;
+    }
+
+    // M-208：领域切换命令
+    if (input === '/domain' || input.startsWith('/domain ')) {
+      const arg = input.slice('/domain'.length).trim();
+      if (!arg) {
+        // 无参数：显示当前领域和可用领域列表
+        const domains = domainManager.listDomains();
+        console.log(`当前领域：${ctx.domainName}`);
+        console.log(`可用领域：${domains.join(', ') || '仅默认'}`);
+      } else if (arg === ctx.domainName) {
+        console.log(formatSuccess(`已在领域 ${arg} 中`));
+      } else {
+        try {
+          ctx = await domainManager.switchDomain(arg);
+          // 重建所有依赖领域上下文的组件
+          history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
+          toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
+          loop = new AgentLoop({
+            provider,
+            bootstrapMemories: ctx.bootstrapMemories,
+            toolExecutor: wrapToolExecutor(toolExec),
+          });
+          console.log(
+            formatSuccess(
+              `已切换到领域：${ctx.domainName}（${ctx.bootstrapMemories.length} 条记忆）`,
+            ),
+          );
+        } catch (err) {
+          const friendly = toFriendlyError(err);
+          console.error(formatError(friendly.title, friendly.detail));
+        }
+      }
       rl.prompt();
       continue;
     }
@@ -215,8 +200,26 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     rl.prompt();
   }
 
-  await index.close().catch((err) => logger.error({ err }, '关闭数据库失败'));
+  await ctx.index.close().catch((err) => logger.error({ err }, '关闭数据库失败'));
   rl.close();
+}
+
+/**
+ * 包装 ToolExecutor，添加 M-205 工具调用可视化
+ */
+function wrapToolExecutor(toolExec: ToolExecutor) {
+  return async (name: string, args: string): Promise<string> => {
+    process.stderr.write(formatToolStart(name) + '\n');
+    try {
+      const result = await toolExec.execute(name, args);
+      process.stderr.write(formatToolResult(name, result) + '\n');
+      process.stderr.write(formatToolEnd(name, true));
+      return result;
+    } catch (err) {
+      process.stderr.write(formatToolEnd(name, false));
+      throw err;
+    }
+  };
 }
 
 /**
