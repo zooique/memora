@@ -27,17 +27,17 @@ date: 2026-06-02
 - **业务内聚**：agent 相关的所有代码在 `agent/` 下，无需跨目录跳转
 - **新人友好**：看一个模块就知道"Agent 怎么工作"——所有相关代码在一起
 - **可替换性**：未来 `memory/` 整个模块替换（如换 LanceDB）不影响其他模块
-- **符合 Memora 的"领域可插拔"哲学**：领域切换只改 `skills/` 和
-  `personality/`，核心代码不动
+- **符合 Memora 的"领域可插拔"哲学**：领域切换通过 DomainManager 切换 .memora/ 目录，核心代码不动
 
-## 目录结构（阶段一）
+## 目录结构（阶段三）
 
 ```
 src/
 ├── index.ts                # CLI 入口
 ├── cli/                    # CLI 解析与交互
 │   ├── commands/           # 子命令
-│   └── repl.ts             # REPL 主循环
+│   │   └── init.ts         # 初始化命令
+│   └── repl.ts             # REPL 主循环（含 /domain 命令）
 ├── agent/                  # Agent Loop
 │   ├── loop.ts
 │   ├── tool-executor.ts
@@ -46,20 +46,36 @@ src/
 │   ├── types.ts
 │   ├── store.ts            # 文件存储
 │   ├── index.ts            # SQLite 索引
-│   ├── recall.ts
-│   └── assemble.ts
+│   ├── recall.ts           # 混合召回（关键词 + 向量）
+│   ├── vector-store.ts     # 向量存储（M-206）
+│   ├── domain-manager.ts   # 领域管理器（M-208）
+│   ├── loader.ts           # 记忆加载器
+│   └── topic-store.ts      # 话题存储
 ├── llm/                    # LLM 适配层
 │   ├── provider.ts         # 抽象接口
 │   ├── openai-compatible.ts
-│   └── providers/          # 各家实现
+│   ├── embedding.ts        # Embedding Provider（M-206）
+│   └── factory.ts          # 工厂函数
 ├── security/               # 安全策略
 │   ├── permissions.ts
-│   ├── path-guard.ts
-│   └── tool-guard.ts
+│   └── path-guard.ts
 ├── config/                 # 配置加载
 ├── utils/                  # 工具函数
 └── logging/                # 日志
 ```
+
+## 年轮修订
+
+### v0.2（2026-06-02）· 阶段三目录结构更新
+
+**变更**：新增 3 个文件（embedding.ts / vector-store.ts / domain-manager.ts）
+
+**设计演进**：
+
+- 领域切换从"只改 skills/ 和 personality/"演进为"DomainManager 切换 .memora/ 目录"
+- 每个领域有独立的 SQLite + 向量索引 + 安全守卫
+- embedding.ts 放在 llm/ 下（属于 LLM 适配层，调用 /embeddings API）
+- vector-store.ts 放在 memory/ 下（属于记忆引擎的向量索引层）
 
 ## 反例（按类型分层的问题）
 

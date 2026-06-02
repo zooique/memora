@@ -33,7 +33,7 @@ sqlite-vec。
 | 数据库           | **sqlite3**（mapbox/node-sqlite3，async 回调 API）           |
 | 索引表设计       | 单一 `memories` 表 + `memory_type` 字段区分                  |
 | 文件与数据库分工 | 文件承载本体，数据库承载索引（冷热分离）                     |
-| 阶段三向量检索   | 待定（可能改用纯 JS 实现或转回 better-sqlite3 + sqlite-vec） |
+| 阶段三向量检索   | ✅ 已决策：纯 JS 余弦相似度 + JSON 持久化（见年轮修订 v0.2） |
 
 ## 理由
 
@@ -63,6 +63,27 @@ sqlite-vec。
 | 文件级向量缓存                   | 自建索引；性能可控但开发成本高               |
 
 **结论**：阶段三再做决策，本 ADR 不预先确定。
+
+## 年轮修订
+
+### v0.2（2026-06-02）· 阶段三向量检索决策
+
+**变更**：阶段三向量检索采用"纯 JS 余弦相似度 + JSON 持久化"方案
+
+**决策依据**：
+
+- sqlite-vec 仍需 C++ 编译（Windows 环境问题未解决）
+- LanceDB 违反"本地化"哲学（独立进程）
+- 纯 JS 余弦相似度在 5k 条记录内 < 10ms，满足单用户本地场景
+- 向量持久化用 JSON 文件（`vectors.json`），冷启动时加载
+
+**新增文件**：
+
+- `src/llm/embedding.ts` — Embedding Provider（调用 /embeddings API + 缓存）
+- `src/memory/vector-store.ts` — 向量存储（内存 Map + JSON 持久化 + topK 搜索）
+- `src/memory/recall.ts` — 混合搜索（关键词 ∪ 向量，权重 × 相似度排序）
+
+**0 新 npm 依赖**：余弦相似度用纯 JS 实现，不引入 vectorious 等第三方库
 
 ## 替代方案（已排除）
 
