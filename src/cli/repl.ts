@@ -24,6 +24,7 @@ import { MemoryIndex } from '../memory/index.js';
 import { MemoryLoader } from '../memory/loader.js';
 import { TopicStore } from '../memory/topic-store.js';
 import { SecurityGuard } from '../security/path-guard.js';
+import { toFriendlyError } from '../utils/errors.js';
 import { logger } from '../logging/logger.js';
 
 export interface ReplOptions {
@@ -189,8 +190,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
       process.stdout.write('\n\n');
     } catch (err) {
-      logger.error({ err }, 'Agent Loop 异常');
-      console.error('\n❌ 出错了：', (err as Error).message, '\n');
+      // M-103：所有错误统一包装为友好错误
+      const friendly = toFriendlyError(err);
+      friendly.log();
+      console.error(`\n${friendly.format()}\n`);
     }
 
     // Agent 回复 → 通过 MessageHistory 追加到话题文件

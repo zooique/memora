@@ -88,6 +88,37 @@ export async function loadConfig(configPath?: string): Promise<Config> {
 }
 
 /**
+ * 找到实际加载的配置文件路径
+ * 按优先级查找，文件不存在返回 null
+ */
+export async function findConfigPath(configPath?: string): Promise<string | null> {
+  // 1. 显式指定
+  if (configPath) {
+    return configPath;
+  }
+
+  // 2. 项目级
+  const projectPath = resolve(process.cwd(), '.memora/config.json');
+  try {
+    const { stat } = await import('node:fs/promises');
+    await stat(projectPath);
+    return projectPath;
+  } catch {
+    // 不存在
+  }
+
+  // 3. 用户级
+  const userPath = resolve(homedir(), '.memora/config.json');
+  try {
+    const { stat } = await import('node:fs/promises');
+    await stat(userPath);
+    return userPath;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 读取并解析 JSON 文件
  */
 async function readJsonFile(path: string): Promise<unknown> {

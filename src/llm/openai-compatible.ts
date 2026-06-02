@@ -7,6 +7,7 @@
 import { LlmProvider } from './provider.js';
 import type { Message, ChatOptions } from './provider.js';
 import type { LlmChunk } from './types.js';
+import { llmError, networkError, configError } from '../utils/errors.js';
 
 export interface OpenAICompatibleConfig {
   baseUrl: string;
@@ -43,22 +44,85 @@ export class OpenAICompatibleProvider extends LlmProvider {
     if (opts.tools) body['tools'] = opts.tools;
     if (opts.maxTokens) body['max_tokens'] = opts.maxTokens;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify(body),
-    });
+    // 校验 API Key（M-103：缺失时给友好提示，不暴露 undefined 报错）
+    if (!this.config.apiKey) {
+      throw configError(
+        'API Key 未配置',
+        `provider: ${this.name}，baseUrl: ${this.config.baseUrl}`,
+        [
+          '检查 ~/.memora/config.json 的 llm.apiKey 字段',
+          '确认已设置环境变量 MEMORA_LLM_API_KEY',
+          '查看文档：config.example.md',
+        ],
+      );
+    }
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.config.apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw networkError(
+        'LLM 服务连接失败',
+        `无法访问 ${this.config.baseUrl}：${(err as Error).message}`,
+        [
+          '检查网络连接（是否能访问 baseUrl）',
+          '确认 baseUrl 配置正确',
+          '如使用 VPN/代理，检查代理设置',
+        ],
+        err as Error,
+      );
+    }
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`LLM API error ${response.status}: ${errorText}`);
+      const errorText = await response.text().catch(() => '<无法读取响应体>');
+      const status = response.status;
+
+      // 401/403 = 鉴权
+      if (status === 401 || status === 403) {
+        throw configError('LLM API Key 无效', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+          '检查 API Key 是否正确（注意 ${MEMORA_LLM_API_KEY} 占位符是否已展开）',
+          '确认 Key 未过期',
+          '如使用 DeepSeek/豆包，确认 Key 来自对应平台',
+        ]);
+      }
+
+      // 429 = 限流
+      if (status === 429) {
+        throw llmError('LLM 服务限流', `HTTP 429：${errorText.slice(0, 200)}`, [
+          '稍后重试',
+          '如频繁触发考虑升级套餐或换用其他 provider',
+        ]);
+      }
+
+      // 4xx = 客户端错误
+      if (status >= 400 && status < 500) {
+        throw llmError('LLM 请求格式错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+          '检查消息内容是否含特殊字符',
+          '确认 model 名称正确',
+          '如使用 tools，确认 tool schema 有效',
+        ]);
+      }
+
+      // 5xx = 服务端错误
+      throw llmError('LLM 服务端错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+        '稍后重试',
+        '如持续失败，访问厂商状态页确认服务状态',
+        '可在 config.json 切换 provider 兜底',
+      ]);
     }
 
     if (!response.body) {
-      throw new Error('LLM API 返回空 body');
+      throw llmError('LLM API 返回空 body', `${this.config.baseUrl} 返回了 200 但无 body`, [
+        '重试一次',
+        '如持续出现，联系厂商',
+      ]);
     }
 
     yield* this.parseSseStream(response.body);

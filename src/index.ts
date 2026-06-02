@@ -8,8 +8,9 @@
 import { Command } from 'commander';
 import { startRepl } from './cli/repl.js';
 import { initCommand } from './cli/commands/init.js';
+import { configCommand } from './cli/commands/config.js';
 import { loadConfig } from './config/loader.js';
-import { logger } from './logging/logger.js';
+import { toFriendlyError } from './utils/errors.js';
 
 const program = new Command();
 
@@ -25,7 +26,9 @@ program
       const config = await loadConfig(opts.config);
       await startRepl({ projectPath: opts.project, config });
     } catch (err) {
-      logger.error({ err }, '启动 REPL 失败');
+      const friendly = toFriendlyError(err);
+      friendly.log();
+      console.error(`\n${friendly.format()}\n`);
       process.exit(1);
     }
   });
@@ -36,18 +39,38 @@ program
   .option('-p, --project <path>', '指定项目目录', process.cwd())
   .action(initCommand);
 
+program
+  .command('config <action> [key]')
+  .description('配置管理：show / get <key> / path / edit')
+  .option('-c, --config <path>', '指定配置文件路径')
+  .action(async (action, key, opts) => {
+    try {
+      // 把 key 也传给内部 handler（统一参数形式）
+      await configCommand(action, key ? [key] : [], opts);
+    } catch (err) {
+      const friendly = toFriendlyError(err);
+      friendly.log();
+      console.error(`\n${friendly.format()}\n`);
+      process.exit(1);
+    }
+  });
+
 // 默认行为：直接进入 chat
 program.action(async () => {
   try {
     const config = await loadConfig();
     await startRepl({ projectPath: process.cwd(), config });
   } catch (err) {
-    logger.error({ err }, '启动失败');
+    const friendly = toFriendlyError(err);
+    friendly.log();
+    console.error(`\n${friendly.format()}\n`);
     process.exit(1);
   }
 });
 
 program.parseAsync(process.argv).catch((err) => {
-  logger.error({ err }, '未捕获的错误');
+  const friendly = toFriendlyError(err);
+  friendly.log();
+  console.error(`\n${friendly.format()}\n`);
   process.exit(1);
 });

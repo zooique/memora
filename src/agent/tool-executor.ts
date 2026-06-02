@@ -8,6 +8,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve, isAbsolute } from 'node:path';
 import type { SecurityGuard } from '../security/path-guard.js';
+import { toolError } from '../utils/errors.js';
 import { logger } from '../logging/logger.js';
 
 export type ToolResult = string;
@@ -54,7 +55,17 @@ export class ToolExecutor {
    * @returns 工具结果的字符串描述
    */
   async execute(name: string, argsJson: string): Promise<ToolResult> {
-    const args = JSON.parse(argsJson) as Record<string, unknown>;
+    let args: Record<string, unknown>;
+    try {
+      args = JSON.parse(argsJson) as Record<string, unknown>;
+    } catch (err) {
+      throw toolError(
+        '工具参数解析失败',
+        `args JSON 无效：${(err as Error).message}`,
+        ['检查 LLM 输出的工具调用格式', '确认 args 是合法 JSON'],
+        err as Error,
+      );
+    }
 
     logger.info({ tool: name, args }, '执行工具');
 
@@ -62,7 +73,10 @@ export class ToolExecutor {
       case 'read_file':
         return this.readFile(args['path'] as string);
       default:
-        throw new Error(`未知工具: ${name}`);
+        throw toolError('未知工具', `agent 调用了未注册的工具：${name}`, [
+          `已注册工具：${BUILTIN_TOOLS.map((t) => t.name).join(', ')}`,
+          '检查 personality.md 是否限制了工具集',
+        ]);
     }
   }
 
@@ -71,7 +85,10 @@ export class ToolExecutor {
    */
   private async readFile(relativePath: string): Promise<ToolResult> {
     if (!relativePath) {
-      throw new Error('path 参数必填');
+      throw toolError('read_file 工具调用缺少 path 参数', 'LLM 未传 path', [
+        '检查 personality.md 是否明确了 read_file 用法',
+        '检查 LLM 输出',
+      ]);
     }
 
     // 解析为绝对路径
@@ -80,9 +97,30 @@ export class ToolExecutor {
       : resolve(this.projectPath, relativePath);
 
     // 安全校验 + 审计日志（M-105）
-    this.security.assertPathAllowed(absolutePath, 'read_file');
+    // assertPathAllowed 已经抛 MemoraError，类型分类为 tool——直接 catch 后包装
+    try {
+      this.security.assertPathAllowed(absolutePath, 'read_file');
+    } catch (err) {
+      throw toolError(
+        '路径不在白名单内',
+        (err as Error).message,
+        [
+          '确认路径在白名单内（项目目录/数据目录/显式 allowedPaths）',
+          '查看审计日志：~/.memora/logs/memora.log',
+        ],
+        err as Error,
+      );
+    }
 
-    const content = await readFile(absolutePath, 'utf-8');
-    return content;
+    try {
+      return await readFile(absolutePath, 'utf-8');
+    } catch (err) {
+      throw toolError(
+        '文件读取失败',
+        `${absolutePath}：${(err as Error).message}`,
+        ['确认文件存在', '确认当前进程有读取权限'],
+        err as Error,
+      );
+    }
   }
 }
