@@ -30,6 +30,13 @@ Thumbs.db
 .memora-data/
 data/local/
 
+# SQLite 数据库（运行时产物，不入库）
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+.smoke-test/
+
 # 测试覆盖率
 .nyc_output/
 
