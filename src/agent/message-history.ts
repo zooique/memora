@@ -20,10 +20,11 @@ import { logger } from '../logging/logger.js';
 
 /**
  * 话题摘要生成器
- * 接收话题消息列表，返回 2-3 句中文摘要
+ * 接收话题消息列表，返回精炼后的核心记忆
+ * 返回 null 表示对话价值过低，跳过归档（记忆归档原则 v0.2 · 三步判断）
  * 由 cli 层注入（持有 LLM provider 引用）
  */
-export type TopicSummarizer = (messages: TopicMessage[]) => Promise<string>;
+export type TopicSummarizer = (messages: TopicMessage[]) => Promise<string | null>;
 
 /**
  * 消息历史类
@@ -131,6 +132,11 @@ export class MessageHistory {
 
     try {
       const summary = await this.summarizer(topicFile.messages);
+      // summarizer 返回 null 表示价值过低，跳过归档
+      if (summary === null) {
+        logger.debug({ topic: `${date}-${topic}` }, '话题价值过低，跳过归档');
+        return;
+      }
       await this.topicStore.appendSummary(date, topic, summary);
       logger.info(
         { topic: `${date}-${topic}`, messageCount: topicFile.messages.length },

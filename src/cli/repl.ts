@@ -313,27 +313,51 @@ function wrapToolExecutor(toolExec: ToolExecutor) {
  */
 export function createTopicSummarizer(
   provider: LlmProvider,
-): (messages: TopicMessage[]) => Promise<string> {
-  return async (messages: TopicMessage[]): Promise<string> => {
-    // 只取 user 消息（对话本质是回应 user 的），截断到 500 字以免 prompt 过长
-    const userContent = messages
-      .filter((m) => m.role === 'user')
-      .map((m) => m.content)
+): (messages: TopicMessage[]) => Promise<string | null> {
+  return async (messages: TopicMessage[]): Promise<string | null> => {
+    // 收集完整对话（user + assistant），截断到 800 字以免 prompt 过长
+    const conversation = messages
+      .map((m) => `[${m.role}]: ${m.content}`)
       .join('\n')
-      .slice(0, 500);
+      .slice(0, 800);
 
     const promptMessages: Message[] = [
       {
         role: 'system',
-        content: '你是对话摘要助手。请用 2-3 句中文总结以下对话的核心内容，不要评价，只陈述事实。',
+        content: `你是记忆价值评估助手。分析以下对话，判断是否值得归档。
+
+【第一步：判断价值】用户提问是否具有以下特征？
+- 信息不对称：用户透露了大模型不知道的信息（项目配置、技术栈偏好、业务约束）
+- 决策持久性：用户做出会影响未来交互的决策（架构选型、策略调整）
+- 用户独特性：用户遇到的是其专属场景，而非人人都会问的通用问题
+
+如果对话属于低价值——通用问答、简单代码请求、闲聊寒暄、纯技术咨询且无用户独有上下文——请只回复 SKIP。
+
+【第二步：精炼核心】提取用户提问/观点中最有价值的信息。
+【第三步：收敛回答】提取 Agent 回答中与核心相关的关键要点。
+
+输出格式：
+- 如果 SKIP → 只输出 SKIP（大小写均可）
+- 如果归档 → 用 1-2 句中文输出：提取的核心内容`,
       },
-      { role: 'user', content: userContent },
+      { role: 'user', content: conversation },
     ];
 
-    let summary = '';
+    let result = '';
     for await (const chunk of provider.chat(promptMessages, { maxTokens: 100 })) {
-      if (chunk.content) summary += chunk.content;
+      if (chunk.content) result += chunk.content;
     }
-    return summary.trim();
+    const trimmed = result.trim();
+
+    // LLM 返回 SKIP 或空白 → 低价值，不归档
+    if (
+      trimmed.toUpperCase() === 'SKIP' ||
+      trimmed.toUpperCase().startsWith('SKIP') ||
+      trimmed.length === 0
+    ) {
+      return null;
+    }
+
+    return trimmed;
   };
 }

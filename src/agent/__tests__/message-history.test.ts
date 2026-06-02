@@ -1,11 +1,12 @@
 /**
- * 消息历史单元测试（M-203-改：事件驱动归档）
+ * 消息历史单元测试（M-203-改：事件驱动归档 + 记忆归档原则 v0.2）
  *
  * 覆盖：
  *   - switchTopic 调用 summarizer（fire-and-forget）
  *   - 消息数 < 2 时跳过总结
  *   - 未注入 summarizer 时跳过
  *   - 已有摘要时幂等跳过
+ *   - summarizer 返回 null（低价值对话）→ 跳过归档
  *   - summarizer 抛出时优雅降级
  *   - appendSummary 幂等（topic-store 层）
  */
@@ -145,6 +146,43 @@ hi there
       expect(() => history2.switchTopic('new-topic')).not.toThrow();
       await new Promise((r) => setTimeout(r, 100));
       expect(mockSummarizer).toHaveBeenCalledTimes(1);
+    });
+
+    it('summarizer 返回 null 时应跳过归档（不写入 summary）', async () => {
+      const history = new MessageHistory(topicStore, undefined, initialDate, initialTopic);
+      // 模拟低价值对话：通用问答
+      await history.appendUser('什么是递归函数');
+      await history.appendAssistant('递归函数是一个调用自身的函数...');
+      await new Promise((r) => setTimeout(r, 50));
+
+      const mockSummarizer = vi.fn().mockResolvedValue(null); // 低价值 → SKIP
+      const history3 = new MessageHistory(topicStore, mockSummarizer, initialDate, initialTopic);
+      history3.switchTopic('new-topic');
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(mockSummarizer).toHaveBeenCalledTimes(1);
+      // 话题文件不应包含 summary（因为被跳过了）
+      const topicFile = await topicStore.read(initialDate, initialTopic);
+      expect(topicFile).not.toBeNull();
+      expect(topicFile!.summary).toBeUndefined();
+    });
+
+    it('summarizer 返回高价值内容时应正常归档', async () => {
+      const history = new MessageHistory(topicStore, undefined, initialDate, initialTopic);
+      await history.appendUser('我的项目用 better-sqlite3，不要用 mysql');
+      await history.appendAssistant('明白了，我会确保所有代码都使用 better-sqlite3');
+      await new Promise((r) => setTimeout(r, 50));
+
+      const mockSummarizer = vi.fn().mockResolvedValue('用户项目使用 better-sqlite3 作为数据库');
+      const history4 = new MessageHistory(topicStore, mockSummarizer, initialDate, initialTopic);
+      history4.switchTopic('new-topic');
+      await new Promise((r) => setTimeout(r, 100));
+
+      expect(mockSummarizer).toHaveBeenCalledTimes(1);
+      // 话题文件应包含 summary
+      const topicFile = await topicStore.read(initialDate, initialTopic);
+      expect(topicFile).not.toBeNull();
+      expect(topicFile!.summary).toBe('用户项目使用 better-sqlite3 作为数据库');
     });
   });
 
