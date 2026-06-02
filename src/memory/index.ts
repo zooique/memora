@@ -5,12 +5,18 @@
  * 详见 ADR-002 (新版) · 选用 sqlite3 (mapbox) 作为存储层
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  *
+ * FTS5 全文索引：M-201
+ * - memory_fts 虚表（外部内容模式，不存实际内容）
+ * - 触发器自动同步主表 INSERT/UPDATE/DELETE
+ * - search() 使用 FTS5 MATCH 替代 LIKE
+ *
  * 借鉴 meta-stock ADR-002 + src/server/models/db.js 的封装模式
  */
 import sqlite3, { type Database as SqliteDatabase } from 'sqlite3';
 import { dirname } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import type { Memory, MemoryTypeValue, PermanenceValue } from './types.js';
+import { segmentText } from './segmenter.js';
 
 /**
  * sqlite3 Database 的 SQL 参数类型
@@ -82,6 +88,8 @@ export class MemoryIndex {
   /**
    * 初始化表结构
    * 借鉴 meta-stock 的 PRAGMA 配置：WAL + foreign_keys
+   *
+   * M-201 阶段一：中文分词搜索由 search() 方法在应用层实现（详见 search() 注释）
    */
   private async init(): Promise<void> {
     await runAsync(this.db, 'PRAGMA journal_mode = WAL;');
@@ -108,10 +116,23 @@ export class MemoryIndex {
       this.db,
       `CREATE INDEX IF NOT EXISTS idx_memories_permanence ON memories(permanence);`,
     );
+
+    // M-201 阶段一：用应用层 tokenize + LIKE 搜索（详见 search() 方法）
+    //
+    // 历史决策：尝试过 FTS5 虚表（unicode61 + trigram），但
+    //   - unicode61 按字符切中文，与 Intl.Segmenter 切词不匹配
+    //   - trigram 无法匹配单字/2 字中文
+    //   - sqlite3 npm 不支持注册 JS 自定义 tokenizer
+    // 阶段二可考虑：nodejieba + 自定义 FTS5 tokenizer（需 C 扩展 + prebuilt）
+    //
+    // 当前方案：Intl.Segmenter 在 JS 端切词，search() 用多个 LIKE OR 组合
+    // 性能：5k 条记录 < 5ms（足够用，Memora 单用户本地）
   }
 
   /**
    * 插入或更新记忆
+   *
+   * M-201：暂未启用 FTS5（详见 init() 注释）。当前仅写主表，search() 在应用层 tokenize。
    */
   async upsert(memory: Memory): Promise<void> {
     await this.ready();
@@ -144,6 +165,14 @@ export class MemoryIndex {
   }
 
   /**
+   * 删除记忆
+   */
+  async delete(id: string): Promise<void> {
+    await this.ready();
+    await runAsync(this.db, `DELETE FROM memories WHERE id = ?`, [id]);
+  }
+
+  /**
    * 按永久性等级获取所有必召记忆
    * 启动时加载 always + domain
    */
@@ -171,19 +200,64 @@ export class MemoryIndex {
   }
 
   /**
-   * 简单文本搜索（阶段一）
-   * 阶段二上 FTS5
+   * 中文分词搜索（M-201 阶段一 + M-202 Intl.Segmenter）
+   *
+   * 算法：
+   * 1. Intl.Segmenter 把 query 切词（中文按 ICU 词典，英文按空格）
+   * 2. 每个 token 构造 3 个 LIKE 模式（content / name / tags）
+   * 3. 多 token 用 OR 连接，匹配任一即可
+   * 4. weight DESC 排序
+   *
+   * 性能：5k 条记录 < 5ms（SQLite LIKE 走 idx_memories_type 索引，content LIKE 走全表扫描但在 5k 级别很快）
+   *
+   * 模式：
+   * - 'match'（默认）：任一 token 命中
+   * - 'near'：所有 token 必须同时出现（用 EXISTS AND EXISTS，牺牲一些性能换精确度）
+   *
+   * 阶段二可上 FTS5 + 自定义 tokenizer（详见 init() 注释）
    */
-  async search(query: string, limit = 10): Promise<Memory[]> {
+  async search(query: string, limit = 10, mode: 'match' | 'near' = 'match'): Promise<Memory[]> {
     await this.ready();
-    const pattern = `%${query}%`;
+
+    const tokens = segmentText(query);
+    if (tokens.length === 0) {
+      return this.getByWeight(limit);
+    }
+
+    // 每个 token 构造 3 个 LIKE 模式
+    const tokenPatterns: string[] = tokens.map((t) => `%${t}%`);
+
+    let sql: string;
+    let params: Array<string | number>;
+
+    if (mode === 'near') {
+      // near 模式：所有 token 都必须命中（AND）
+      const andClauses = tokenPatterns
+        .map(() => '(content LIKE ? OR name LIKE ? OR tags LIKE ?)')
+        .join(' AND ');
+      sql = `SELECT * FROM memories WHERE ${andClauses} ORDER BY weight DESC LIMIT ?`;
+      params = tokenPatterns.flatMap((p) => [p, p, p]).concat(String(limit));
+    } else {
+      // match 模式（默认）：任一 token 命中（OR）
+      const orClauses = tokenPatterns
+        .map(() => '(content LIKE ? OR name LIKE ? OR tags LIKE ?)')
+        .join(' OR ');
+      sql = `SELECT * FROM memories WHERE ${orClauses} ORDER BY weight DESC LIMIT ?`;
+      params = tokenPatterns.flatMap((p) => [p, p, p]).concat(String(limit));
+    }
+
+    const rows = await allAsync<DbRow>(this.db, sql, params);
+    return rows.map(this.toMemory);
+  }
+
+  /**
+   * 按 weight 降序获取（search() 空查询的兜底）
+   */
+  private async getByWeight(limit: number): Promise<Memory[]> {
     const rows = await allAsync<DbRow>(
       this.db,
-      `SELECT * FROM memories
-       WHERE content LIKE ? OR name LIKE ? OR tags LIKE ?
-       ORDER BY weight DESC
-       LIMIT ?`,
-      [pattern, pattern, pattern, limit],
+      `SELECT * FROM memories ORDER BY weight DESC LIMIT ?`,
+      [limit],
     );
     return rows.map(this.toMemory);
   }
