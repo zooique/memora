@@ -102,13 +102,13 @@ name: default
         resolve({ stdout, exitCode: code });
       });
 
-      // 串行喂入命令（每条间留 200ms 让 REPL 处理）
+      // 串行喂入命令（每条间留 800ms 让 REPL 处理 M-204/M-205 后的额外渲染开销）
       let i = 0;
       const feed = () => {
         if (i < commands.length) {
           proc.stdin?.write(`${commands[i]}\n`);
           i++;
-          setTimeout(feed, 200);
+          setTimeout(feed, 800);
         } else {
           // 等待 CLI 自然退出
         }
@@ -144,7 +144,9 @@ name: default
 
   it('应该响应 /tools 指令', async () => {
     const { stdout, exitCode } = await runCli(['/tools', '/exit']);
-    expect(stdout).toContain('可用工具：');
+    expect(stdout).toContain('可用工具');
+    expect(stdout).toContain('read_file');
+    expect(stdout).toContain('write_file');
     expect(exitCode).toBe(0);
   }, 20000);
 

@@ -47,8 +47,8 @@ describe('M-001 · 配置 + 记忆链路集成测试', () => {
     const loader = new MemoryLoader(fileStore, index);
     const { memories: bootstrap, loadResult } = await loader.bootstrap();
 
-    // 4 条全加载，3 条必召（personality + rule + skill）
-    expect(loadResult.loaded).toBe(4);
+    // 7 条全加载（M-204 之前是 4 条，加了 3 个 tool 后是 7 条），3 条必召（personality + rule + skill）
+    expect(loadResult.loaded).toBe(7);
     expect(bootstrap.length).toBe(3);
 
     // 验证必召记忆中包含核心人格

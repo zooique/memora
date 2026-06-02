@@ -1,0 +1,346 @@
+/**
+ * 工具执行器单元测试（M-204）
+ *
+ * 覆盖：
+ *   - read_file：成功 / 路径越界 / 黑名单
+ *   - write_file：成功（owner+confirmWrites=false 自动批准）/ 父目录自动创建 / 路径越界 / 黑名单
+ *   - list_dir：默认项目根 / 递归 / 深度限制 / 忽略 node_modules / 黑名单
+ *   - search_memories：match 模式 / near 模式 / 空查询 / 注入限制
+ */
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { ToolExecutor, BUILTIN_TOOLS } from '../tool-executor.js';
+import { SecurityGuard } from '../../security/path-guard.js';
+import { MemoryIndex } from '../../memory/index.js';
+import { MemoraError } from '../../utils/errors.js';
+
+describe('M-204 · 工具执行器（4 个工具）', () => {
+  let tmpProject: string;
+  let tmpData: string;
+  let index: MemoryIndex;
+  let security: SecurityGuard;
+  let executor: ToolExecutor;
+
+  beforeAll(async () => {
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-tool-proj-'));
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-tool-data-'));
+
+    // 创建项目结构
+    mkdirSync(join(tmpProject, 'src'), { recursive: true });
+    mkdirSync(join(tmpProject, 'node_modules'), { recursive: true });
+    mkdirSync(join(tmpProject, '.git'), { recursive: true });
+    writeFileSync(join(tmpProject, 'src/index.ts'), 'export const x = 1;\n', 'utf-8');
+    writeFileSync(join(tmpProject, 'src/utils.ts'), 'export const y = 2;\n', 'utf-8');
+    writeFileSync(join(tmpProject, 'README.md'), '# Test Project\n', 'utf-8');
+    writeFileSync(join(tmpProject, 'node_modules/should-be-ignored.ts'), 'ignore me\n', 'utf-8');
+    writeFileSync(join(tmpProject, '.git/config'), 'ignore me too\n', 'utf-8');
+
+    // SecurityGuard：owner + confirmWrites=false（自动批准）
+    security = new SecurityGuard(tmpProject, tmpData, [], false, 'owner');
+
+    // MemoryIndex（真实 sqlite3，临时 db）
+    index = new MemoryIndex(join(tmpData, 'memora.db'));
+    await index.ready();
+
+    // 插入一些测试记忆
+    await index.upsert({
+      id: 'mem-1',
+      type: 'rule',
+      permanence: 'always',
+      name: 'core-rule',
+      content: 'Memora 万物皆记忆，记忆统一为类型 + 永久性',
+      tags: ['memora', '哲学'],
+      weight: 0.9,
+      createdAt: '2026-06-01T00:00:00Z',
+      updatedAt: '2026-06-01T00:00:00Z',
+    });
+    await index.upsert({
+      id: 'mem-2',
+      type: 'skill',
+      permanence: 'domain',
+      name: 'typescript-skill',
+      content: 'TypeScript strict 模式下禁止 any 隐式转换',
+      tags: ['typescript'],
+      weight: 0.7,
+      createdAt: '2026-06-01T00:00:00Z',
+      updatedAt: '2026-06-01T00:00:00Z',
+    });
+
+    executor = new ToolExecutor(tmpProject, security, index);
+  });
+
+  afterAll(async () => {
+    await index.close();
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  describe('BUILTIN_TOOLS 注册表', () => {
+    it('应注册 4 个工具', () => {
+      const names = BUILTIN_TOOLS.map((t) => t.name);
+      expect(names).toEqual(['read_file', 'write_file', 'list_dir', 'search_memories']);
+    });
+
+    it('每个工具应有 name + description + parameters（含 required 数组）', () => {
+      for (const tool of BUILTIN_TOOLS) {
+        expect(tool.name).toBeTruthy();
+        expect(tool.description).toBeTruthy();
+        expect(tool.parameters.type).toBe('object');
+        expect(Array.isArray(tool.parameters.required)).toBe(true);
+      }
+    });
+  });
+
+  describe('read_file', () => {
+    it('应能读取项目内文件', async () => {
+      const result = await executor.execute('read_file', JSON.stringify({ path: 'src/index.ts' }));
+      expect(result).toBe('export const x = 1;\n');
+    });
+
+    it('相对项目根的路径不在白名单时应抛 MemoraError（tool 类）', async () => {
+      try {
+        await executor.execute('read_file', JSON.stringify({ path: '../outside.txt' }));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).category).toBe('tool');
+      }
+    });
+
+    it('黑名单路径（.ssh）应抛 MemoraError', async () => {
+      try {
+        await executor.execute('read_file', JSON.stringify({ path: '.ssh/id_rsa' }));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).detail).toMatch(/黑名单/);
+      }
+    });
+
+    it('缺少 path 参数应抛 MemoraError', async () => {
+      try {
+        await executor.execute('read_file', JSON.stringify({}));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('缺少 path');
+      }
+    });
+  });
+
+  describe('write_file（M-204 新工具）', () => {
+    const testFile = 'src/new-file.ts';
+
+    it('应能写入新文件（owner + confirmWrites=false 自动批准）', async () => {
+      const content = 'export const newFile = true;\n';
+      const result = await executor.execute(
+        'write_file',
+        JSON.stringify({ path: testFile, content }),
+      );
+      expect(result).toContain('已写入');
+      expect(result).toContain(`${content.length} 字符`);
+      expect(readFileSync(join(tmpProject, testFile), 'utf-8')).toBe(content);
+    });
+
+    it('应自动创建不存在的父目录', async () => {
+      const deepPath = 'src/deep/nested/file.ts';
+      const content = 'export const deep = true;\n';
+      await executor.execute('write_file', JSON.stringify({ path: deepPath, content }));
+      expect(readFileSync(join(tmpProject, deepPath), 'utf-8')).toBe(content);
+    });
+
+    it('应能覆盖已有文件', async () => {
+      const content = 'export const overwritten = true;\n';
+      await executor.execute('write_file', JSON.stringify({ path: testFile, content }));
+      expect(readFileSync(join(tmpProject, testFile), 'utf-8')).toBe(content);
+    });
+
+    it('黑名单路径应抛 MemoraError', async () => {
+      try {
+        await executor.execute(
+          'write_file',
+          JSON.stringify({ path: '.env', content: 'SECRET=leaked' }),
+        );
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).detail).toMatch(/黑名单/);
+      }
+    });
+
+    it('路径越界应抛 MemoraError', async () => {
+      try {
+        await executor.execute(
+          'write_file',
+          JSON.stringify({ path: '../escape.txt', content: 'x' }),
+        );
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).message).toMatch(/不在白名单/);
+      }
+    });
+
+    it('缺少 content 参数应抛 MemoraError', async () => {
+      try {
+        await executor.execute('write_file', JSON.stringify({ path: testFile }));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('content');
+      }
+    });
+  });
+
+  describe('list_dir（M-204 新工具）', () => {
+    it('默认应列出项目根的非忽略条目', async () => {
+      const result = await executor.execute('list_dir', JSON.stringify({}));
+      expect(result).toContain('src/');
+      expect(result).toContain('README.md');
+      // 应忽略 node_modules / .git
+      expect(result).not.toContain('node_modules');
+      expect(result).not.toContain('.git');
+    });
+
+    it('递归模式应展开子目录', async () => {
+      const result = await executor.execute(
+        'list_dir',
+        JSON.stringify({ recursive: 'true', maxDepth: '2' }),
+      );
+      expect(result).toContain('src/');
+      expect(result).toContain('index.ts');
+    });
+
+    it('maxDepth=1 应不递归子目录文件', async () => {
+      const result = await executor.execute(
+        'list_dir',
+        JSON.stringify({ recursive: 'true', maxDepth: '1' }),
+      );
+      expect(result).toContain('src/');
+      expect(result).not.toContain('index.ts');
+    });
+
+    it('maxDepth=10 应被限制为 3', async () => {
+      // maxDepth 强校验：> 3 时降为 3
+      const result = await executor.execute(
+        'list_dir',
+        JSON.stringify({ recursive: 'true', maxDepth: '10' }),
+      );
+      // 项目结构只有 2 层，maxDepth=3 也能完整列出
+      expect(result).toContain('src/');
+    });
+
+    it('路径不存在应抛 MemoraError', async () => {
+      try {
+        await executor.execute('list_dir', JSON.stringify({ path: 'non-existent' }));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('不存在');
+      }
+    });
+
+    it('文件路径（不是目录）应抛 MemoraError', async () => {
+      try {
+        await executor.execute('list_dir', JSON.stringify({ path: 'README.md' }));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('不是目录');
+      }
+    });
+
+    it('黑名单路径应抛 MemoraError', async () => {
+      try {
+        await executor.execute('list_dir', JSON.stringify({ path: '.ssh' }));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).detail).toMatch(/黑名单/);
+      }
+    });
+  });
+
+  describe('search_memories（M-204 新工具）', () => {
+    it('match 模式：单 token 应能匹配', async () => {
+      const result = await executor.execute('search_memories', JSON.stringify({ query: 'Memora' }));
+      expect(result).toContain('core-rule');
+      expect(result).toContain('match');
+    });
+
+    it('match 模式：多 token 用 OR（任一命中即可）', async () => {
+      const result = await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'Memora TypeScript' }),
+      );
+      expect(result).toContain('找到');
+      // match 模式两个 token 至少有一个命中
+      expect(result.length).toBeGreaterThan(20);
+    });
+
+    it('near 模式：所有 token 必须同时出现', async () => {
+      const result = await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'Memora 万物', mode: 'near' }),
+      );
+      expect(result).toContain('找到');
+    });
+
+    it('空查询应返回兜底（按 weight 排序）', async () => {
+      // Intl.Segmenter 切出空 tokens → 走 getByWeight
+      const result = await executor.execute('search_memories', JSON.stringify({ query: '，。' }));
+      expect(result).toContain('core-rule');
+    });
+
+    it('limit 限制返回数量', async () => {
+      const result = await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'memora', limit: '1' }),
+      );
+      expect(result).toContain('找到 1 条');
+    });
+
+    it('limit 超过 50 应被限制为 50', async () => {
+      // 仅 2 条记忆，验证参数限制逻辑（不会实际返回 50 条）
+      const result = await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'memora', limit: '1000' }),
+      );
+      expect(result).toContain('找到');
+    });
+
+    it('缺少 query 参数应抛 MemoraError', async () => {
+      try {
+        await executor.execute('search_memories', JSON.stringify({}));
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('query');
+      }
+    });
+  });
+
+  describe('错误处理', () => {
+    it('未知工具应抛 MemoraError', async () => {
+      try {
+        await executor.execute('nonexistent_tool', '{}');
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('未知工具');
+      }
+    });
+
+    it('args JSON 无效应抛 MemoraError', async () => {
+      try {
+        await executor.execute('read_file', '{ not json');
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('解析失败');
+      }
+    });
+  });
+});

@@ -86,6 +86,24 @@ export class TopicStore {
   }
 
   /**
+   * 追加话题摘要到 frontmatter
+   * M-203-改：事件驱动归档，话题切换时调用
+   * 不存在则静默跳过
+   */
+  async appendSummary(date: string, topic: string, summary: string): Promise<void> {
+    const filePath = this.getFilePath(date, topic);
+    if (!existsSync(filePath)) return;
+
+    const content = await readFile(filePath, 'utf-8');
+    const existing = this.parseTopicFile(date, topic, content);
+
+    if (existing.summary) return; // 已有摘要，幂等跳过
+
+    const updated: TopicFile = { ...existing, summary };
+    await this.write(updated);
+  }
+
+  /**
    * 列出所有话题文件
    */
   async list(): Promise<string[]> {

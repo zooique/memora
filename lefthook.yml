@@ -6,10 +6,10 @@ pre-commit:
   parallel: true
   commands:
     lint:
-      glob: "*.{ts,tsx}"
+      glob: '*.{ts,tsx}'
       run: npx eslint {staged_files}
     format:
-      glob: "*.{ts,tsx,md,json}"
+      glob: '*.{ts,tsx,md,json}'
       run: npx prettier --check {staged_files}
     typecheck:
       run: npx tsc --noEmit

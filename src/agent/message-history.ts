@@ -6,9 +6,9 @@
  *   - 封装"Agent 回复 → 话题文件"的追加操作
  *   - 维护当前话题上下文（date + topic）
  *
- * 阶段二扩展：
- *   - 支持回顾历史消息（按话题 / 按时间）
- *   - 支持上下文窗口滑动
+ * 阶段二（M-203-改）：
+ *   - 话题切换时自动生成旧话题摘要（事件驱动归档）
+ *   - 0 新依赖，通过回调函数注入 LLM 能力
  *
  * 详见 agent上下文组装协议.md §6 话题文件
  * 详见 T-101 修复：cli 越权调 memory 的下沉
@@ -17,6 +17,13 @@ import type { TopicStore } from '../memory/topic-store.js';
 import { todayDate, nowTimestamp } from '../memory/topic-store.js';
 import type { TopicMessage } from '../memory/types.js';
 import { logger } from '../logging/logger.js';
+
+/**
+ * 话题摘要生成器
+ * 接收话题消息列表，返回 2-3 句中文摘要
+ * 由 cli 层注入（持有 LLM provider 引用）
+ */
+export type TopicSummarizer = (messages: TopicMessage[]) => Promise<string>;
 
 /**
  * 消息历史类
@@ -28,6 +35,7 @@ export class MessageHistory {
 
   constructor(
     private readonly topicStore: TopicStore,
+    private readonly summarizer?: TopicSummarizer,
     initialDate?: string,
     initialTopic = 'main',
   ) {
@@ -51,9 +59,12 @@ export class MessageHistory {
 
   /**
    * 切换话题
+   * M-203-改：切换前自动为旧话题生成摘要（fire-and-forget，不阻塞切换）
    * @returns 新话题的全名
    */
   switchTopic(newTopic: string): string {
+    // 触发旧话题摘要（异步 fire-and-forget，不阻塞切换）
+    this.summarizeAndArchive();
     this.currentTopic = newTopic;
     return this.currentTopicName;
   }
@@ -90,6 +101,41 @@ export class MessageHistory {
    */
   async listAllTopics(): Promise<string[]> {
     return this.topicStore.list();
+  }
+
+  /**
+   * 为当前话题生成摘要并归档
+   * M-203-改：事件驱动，话题切换时触发
+   *
+   * 跳过条件：
+   *   - 未注入 summarizer（无 LLM 能力）
+   *   - 话题文件不存在（从未写入）
+   *   - 消息数 < 2（单向话题，无对话价值）
+   *   - 已有摘要（幂等）
+   */
+  private async summarizeAndArchive(): Promise<void> {
+    if (!this.summarizer) return;
+
+    const topicFile = await this.topicStore.read(this.currentDate, this.currentTopic);
+    if (!topicFile) return;
+
+    // 消息数 < 2 跳过（单向话题无总结价值，用户可能只敲了 1 句就切了）
+    if (topicFile.messages.length < 2) return;
+
+    // 已有摘要则幂等跳过
+    if (topicFile.summary) return;
+
+    try {
+      const summary = await this.summarizer(topicFile.messages);
+      await this.topicStore.appendSummary(this.currentDate, this.currentTopic, summary);
+      logger.info(
+        { topic: this.currentTopicName, messageCount: topicFile.messages.length },
+        '话题归档完成',
+      );
+    } catch (err) {
+      // 归档失败不阻塞对话（与 safeAppend 策略一致）
+      logger.warn({ err, topic: this.currentTopicName }, '话题归档失败');
+    }
   }
 
   /**
