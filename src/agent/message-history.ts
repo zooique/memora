@@ -116,7 +116,11 @@ export class MessageHistory {
   private async summarizeAndArchive(): Promise<void> {
     if (!this.summarizer) return;
 
-    const topicFile = await this.topicStore.read(this.currentDate, this.currentTopic);
+    // 闭包捕获当前话题，防止 await 后 this.currentTopic 被 switchTopic 覆盖
+    const date = this.currentDate;
+    const topic = this.currentTopic;
+
+    const topicFile = await this.topicStore.read(date, topic);
     if (!topicFile) return;
 
     // 消息数 < 2 跳过（单向话题无总结价值，用户可能只敲了 1 句就切了）
@@ -127,14 +131,14 @@ export class MessageHistory {
 
     try {
       const summary = await this.summarizer(topicFile.messages);
-      await this.topicStore.appendSummary(this.currentDate, this.currentTopic, summary);
+      await this.topicStore.appendSummary(date, topic, summary);
       logger.info(
-        { topic: this.currentTopicName, messageCount: topicFile.messages.length },
+        { topic: `${date}-${topic}`, messageCount: topicFile.messages.length },
         '话题归档完成',
       );
     } catch (err) {
       // 归档失败不阻塞对话（与 safeAppend 策略一致）
-      logger.warn({ err, topic: this.currentTopicName }, '话题归档失败');
+      logger.warn({ err, topic: `${date}-${topic}` }, '话题归档失败');
     }
   }
 
