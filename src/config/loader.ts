@@ -15,11 +15,14 @@ import { homedir } from 'node:os';
 import { z } from 'zod';
 
 // 配置 schema（运行时校验）
+// provider 允许任意字符串：预设（mock/deepseek/doubao/openai）开箱即用，
+// 自定义 provider（如 mimo、自部署模型）只要显式配 baseUrl + model 即可
+// 详见 ADR-003
 const ConfigSchema = z.object({
   llm: z.object({
-    provider: z.enum(['deepseek', 'doubao', 'openai', 'mock']).default('mock'),
+    provider: z.string().default('mock'),
     model: z.string().default('deepseek-chat'),
-    baseUrl: z.string().url().optional(),
+    baseUrl: z.string().optional(),
     apiKey: z.string().optional(),
     temperature: z.number().min(0).max(2).default(0.7),
   }),

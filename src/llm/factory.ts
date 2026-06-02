@@ -27,21 +27,33 @@ export function createLlmProvider(config: Config): LlmProvider {
   }
 
   // 国产模型均走 OpenAI 兼容协议
+  // presets：仅提供"开箱即用"的默认值；未列出的 provider 只要给了 baseUrl/model 也可工作
   const presets: Record<string, { baseUrl: string; defaultModel: string }> = {
     deepseek: { baseUrl: 'https://api.deepseek.com/v1', defaultModel: 'deepseek-chat' },
     doubao: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', defaultModel: 'doubao-pro-32k' },
     openai: { baseUrl: 'https://api.openai.com/v1', defaultModel: 'gpt-4o-mini' },
   };
 
+  // 决定 baseUrl/model：preset > 用户显式
   const preset = presets[provider];
-  if (!preset) {
-    throw new Error(`未知的 LLM provider: ${provider}`);
+  const resolvedBaseUrl = (baseUrl ?? preset?.baseUrl)?.replace(/\/chat\/completions\/?$/, '');
+  const resolvedModel = model ?? preset?.defaultModel;
+
+  if (!resolvedBaseUrl) {
+    throw new Error(
+      `未知的 LLM provider: "${provider}"，且未配置 baseUrl。可选：${Object.keys(presets).join(', ')} 或自定义 baseUrl。`,
+    );
+  }
+  if (!resolvedModel) {
+    throw new Error(`未知的 LLM provider: "${provider}"，且未配置 model。`);
   }
 
+  logger.info({ provider, baseUrl: resolvedBaseUrl, model: resolvedModel }, '创建 LLM Provider');
+
   return new OpenAICompatibleProvider(provider, {
-    baseUrl: baseUrl ?? preset.baseUrl,
+    baseUrl: resolvedBaseUrl,
     apiKey,
-    defaultModel: model ?? preset.defaultModel,
+    defaultModel: resolvedModel,
   });
 }
 
