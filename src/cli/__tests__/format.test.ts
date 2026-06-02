@@ -157,12 +157,13 @@ describe('M-205 · CLI 格式化工具', () => {
   });
 
   describe('formatHelp', () => {
-    it('应包含 8 个命令（/exit /help /tools /memories /project /domain /topic /topics）', () => {
+    it('应包含 9 个命令（/exit /help /tools /memories /search /project /domain /topic /topics）', () => {
       const result = formatHelp();
       expect(result).toContain('/exit');
       expect(result).toContain('/help');
       expect(result).toContain('/tools');
       expect(result).toContain('/memories');
+      expect(result).toContain('/search');
       expect(result).toContain('/project');
       expect(result).toContain('/domain');
       expect(result).toContain('/topic');

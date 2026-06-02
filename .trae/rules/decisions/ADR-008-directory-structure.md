@@ -37,7 +37,7 @@ src/
 ├── cli/                    # CLI 解析与交互
 │   ├── commands/           # 子命令
 │   │   └── init.ts         # 初始化命令
-│   └── repl.ts             # REPL 主循环（含 /project + /domain 命令）
+│   └── repl.ts             # REPL 主循环（含 /project + /domain + /search 命令 + rebuildAgentComponents）
 ├── agent/                  # Agent Loop
 │   ├── loop.ts
 │   ├── tool-executor.ts

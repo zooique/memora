@@ -92,6 +92,7 @@ export function formatHelp(): string {
     ['/help', '显示帮助'],
     ['/tools', '列出可用工具'],
     ['/memories', '列出已加载记忆'],
+    ['/search <query>', '搜索记忆'],
     ['/project [name]', '切换项目（不填则显示列表）'],
     ['/domain [name]', '切换领域（不填则显示列表）'],
     ['/topic <name>', '切换话题（不填则显示当前）'],

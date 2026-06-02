@@ -25,6 +25,10 @@ import { ProjectManager } from '../memory/project-manager.js';
 import { toFriendlyError } from '../utils/errors.js';
 import type { TopicMessage } from '../memory/types.js';
 import type { LlmProvider, Message } from '../llm/provider.js';
+import type { MemoryIndex } from '../memory/index.js';
+import type { TopicStore } from '../memory/topic-store.js';
+import type { SecurityGuard } from '../security/path-guard.js';
+import type { Memory } from '../memory/types.js';
 import { logger } from '../logging/logger.js';
 import {
   formatWelcome,
@@ -52,8 +56,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   const projectManager = new ProjectManager(config);
   let pctx = await projectManager.initProject(projectPath);
 
-  // M-208：领域管理器（从项目上下文中获取）
-  let domainManager = pctx.domainManager;
   let ctx = {
     domainName: 'default',
     memoraDir: pctx.memoraDir,
@@ -74,13 +76,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   // 根据项目上下文创建可切换的组件
   let currentProjectPath = projectPath;
-  let history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
-  let toolExec = new ToolExecutor(currentProjectPath, ctx.security, ctx.index);
-  let loop = new AgentLoop({
-    provider,
-    bootstrapMemories: ctx.bootstrapMemories,
-    toolExecutor: wrapToolExecutor(toolExec),
-  });
+  let { history, loop } = rebuildAgentComponents(provider, currentProjectPath, ctx);
 
   // 显示欢迎（M-205 美化版 + M-207 项目名）
   console.log(
@@ -138,6 +134,35 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
+    if (input.startsWith('/search ')) {
+      const query = input.slice('/search'.length).trim();
+      if (!query) {
+        console.log(pc.dim('用法：/search <关键词>'));
+      } else {
+        try {
+          const results = await ctx.index.search(query, 10);
+          if (results.length === 0) {
+            console.log(pc.dim(`未找到与 "${query}" 相关的记忆`));
+          } else {
+            console.log(pc.dim('─'.repeat(60)));
+            console.log(pc.cyan(`🔍 "${query}" 搜索结果（${results.length} 条）：`));
+            for (const m of results) {
+              console.log(`  ${pc.yellow(m.name)} ${pc.dim(String(m.weight))} ${pc.dim(m.type)}`);
+              // 截断长内容
+              const preview = m.content.length > 120 ? m.content.slice(0, 120) + '...' : m.content;
+              console.log(`    ${pc.dim(preview)}`);
+            }
+            console.log(pc.dim('─'.repeat(60)));
+          }
+        } catch (err) {
+          const friendly = toFriendlyError(err);
+          console.error(formatError(friendly.title, friendly.detail));
+        }
+      }
+      rl.prompt();
+      continue;
+    }
+
     // M-207：项目切换命令
     if (input === '/project' || input.startsWith('/project ')) {
       const arg = input.slice('/project'.length).trim();
@@ -165,7 +190,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         } else {
           try {
             pctx = await projectManager.initProject(target.path, target.name);
-            domainManager = pctx.domainManager;
             ctx = {
               domainName: 'default',
               memoraDir: pctx.memoraDir,
@@ -177,13 +201,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
               loadResult: pctx.loadResult,
             };
             currentProjectPath = target.path;
-            history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
-            toolExec = new ToolExecutor(currentProjectPath, ctx.security, ctx.index);
-            loop = new AgentLoop({
-              provider,
-              bootstrapMemories: ctx.bootstrapMemories,
-              toolExecutor: wrapToolExecutor(toolExec),
-            });
+            ({ history, loop } = rebuildAgentComponents(provider, currentProjectPath, ctx));
             console.log(
               formatSuccess(
                 `已切换到项目：${pctx.projectName}（${ctx.bootstrapMemories.length} 条记忆）`,
@@ -204,22 +222,16 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       const arg = input.slice('/domain'.length).trim();
       if (!arg) {
         // 无参数：显示当前领域和可用领域列表
-        const domains = domainManager.listDomains();
+        const domains = pctx.domainManager.listDomains();
         console.log(`当前领域：${ctx.domainName}`);
         console.log(`可用领域：${domains.join(', ') || '仅默认'}`);
       } else if (arg === ctx.domainName) {
         console.log(formatSuccess(`已在领域 ${arg} 中`));
       } else {
         try {
-          ctx = await domainManager.switchDomain(arg);
+          ctx = await pctx.domainManager.switchDomain(arg);
           // 重建所有依赖领域上下文的组件
-          history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
-          toolExec = new ToolExecutor(currentProjectPath, ctx.security, ctx.index);
-          loop = new AgentLoop({
-            provider,
-            bootstrapMemories: ctx.bootstrapMemories,
-            toolExecutor: wrapToolExecutor(toolExec),
-          });
+          ({ history, loop } = rebuildAgentComponents(provider, currentProjectPath, ctx));
           console.log(
             formatSuccess(
               `已切换到领域：${ctx.domainName}（${ctx.bootstrapMemories.length} 条记忆）`,
@@ -302,10 +314,43 @@ function wrapToolExecutor(toolExec: ToolExecutor) {
 }
 
 /**
- * 创建话题摘要生成器（M-203-改）
+ * 重建 Agent 组件（M-209 剪枝：消除 3 处重复）
+ *
+ * 在项目切换、领域切换时，需要重建所有依赖 ctx 的组件：
+ * MessageHistory、ToolExecutor、AgentLoop
+ *
+ * @param provider LLM 提供者
+ * @param projectPath 当前项目路径
+ * @param ctx 领域上下文
+ */
+function rebuildAgentComponents(
+  provider: LlmProvider,
+  projectPath: string,
+  ctx: {
+    topicStore: TopicStore;
+    security: SecurityGuard;
+    index: MemoryIndex;
+    bootstrapMemories: Memory[];
+  },
+): { history: MessageHistory; loop: AgentLoop } {
+  const history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
+  const toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
+  const loop = new AgentLoop({
+    provider,
+    bootstrapMemories: ctx.bootstrapMemories,
+    toolExecutor: wrapToolExecutor(toolExec),
+  });
+  return { history, loop };
+}
+
+/**
+ * 创建话题摘要生成器（M-203-改 · M-209 记忆归档原则 v0.2）
  *
  * 设计：回调模式，避免在 MessageHistory 中硬依赖 LlmProvider
- * 策略：收集 user 消息的前 500 字，让 LLM 用 2-3 句中文总结
+ * 策略：
+ *   - 收集完整对话（user + assistant），截断到 800 字
+ *   - 三步判断：价值评估 → 核心精炼 → 答案收敛
+ *   - 低价值对话返回 null（跳过归档）
  * 失败不抛出（fire-and-forget 模式，log 即可）
  *
  * @param provider LLM 提供者
