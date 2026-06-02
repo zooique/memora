@@ -7,6 +7,7 @@ import type { Config } from '../config/loader.js';
 import { LlmProvider } from './provider.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
 import { logger } from '../logging/logger.js';
+import { configError } from '../utils/errors.js';
 
 /**
  * 创建 LLM Provider
@@ -18,12 +19,6 @@ export function createLlmProvider(config: Config): LlmProvider {
   if (provider === 'mock') {
     logger.warn('使用 Mock LLM Provider（仅用于测试）');
     return new MockProvider();
-  }
-
-  if (!apiKey) {
-    throw new Error(
-      `LLM provider "${provider}" 需要 API Key。请设置环境变量 MEMORA_LLM_API_KEY 或在配置文件中配置 llm.apiKey`,
-    );
   }
 
   // 国产模型均走 OpenAI 兼容协议
@@ -40,12 +35,29 @@ export function createLlmProvider(config: Config): LlmProvider {
   const resolvedModel = model ?? preset?.defaultModel;
 
   if (!resolvedBaseUrl) {
-    throw new Error(
-      `未知的 LLM provider: "${provider}"，且未配置 baseUrl。可选：${Object.keys(presets).join(', ')} 或自定义 baseUrl。`,
+    throw configError(
+      '未知的 LLM provider',
+      `provider "${provider}" 未在预设中，且未配置 baseUrl`,
+      [
+        '在配置文件中显式设置 llm.baseUrl 和 llm.model',
+        `或使用预设 provider：${Object.keys(presets).join(', ')}`,
+        '详见 ADR-003 扩展点说明',
+      ],
     );
   }
   if (!resolvedModel) {
-    throw new Error(`未知的 LLM provider: "${provider}"，且未配置 model。`);
+    throw configError('未知的 LLM provider', `provider "${provider}" 未在预设中，且未配置 model`, [
+      `在配置文件中显式设置 llm.model，或使用预设 provider：${Object.keys(presets).join(', ')}`,
+    ]);
+  }
+
+  // apiKey 缺失尽早报错（比等 chat() 失败更友好）
+  if (!apiKey) {
+    throw configError('LLM API Key 未配置', `provider "${provider}" 缺少 apiKey`, [
+      '设置环境变量 MEMORA_LLM_API_KEY',
+      '或在配置文件中配置 llm.apiKey（支持 ${ENV_VAR} 占位符）',
+      '详见 config.example.md',
+    ]);
   }
 
   logger.info({ provider, baseUrl: resolvedBaseUrl, model: resolvedModel }, '创建 LLM Provider');

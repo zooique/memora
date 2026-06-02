@@ -7,10 +7,11 @@
  * 跑法：
  *   pnpm test:run src/llm/__tests__/smoke-mimo.test.ts
  */
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
+import { describe, expect, it, afterAll } from 'vitest';
 import { resolve } from 'node:path';
-import { readFile, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { loadConfig } from '../../config/loader.js';
 import { createLlmProvider } from '../factory.js';
 import { FileStore } from '../../memory/store.js';
@@ -19,24 +20,24 @@ import { MemoryLoader } from '../../memory/loader.js';
 
 // 用项目自带的示例记忆目录（含 personality + rule + skill 3 条必召）
 const MEMORY_DIR = resolve('f:/zooique/memora/examples/memories');
-const DB_PATH = resolve('f:/zooique/memora/.smoke-test/memora.db');
+
+// 用系统临时目录避免硬编码绝对路径（CI 跨平台、并行安全）
+const TMP_DIR = mkdtempSync(join(tmpdir(), 'memora-smoke-'));
+const DB_PATH = join(TMP_DIR, 'memora.db');
 
 describe('M-001 · 配置 + 记忆链路集成测试', () => {
-  beforeAll(async () => {
-    if (existsSync(DB_PATH)) {
-      await rm(DB_PATH, { force: true });
-    }
-  });
-
-  afterAll(async () => {
-    if (existsSync(DB_PATH)) {
-      // sqlite3 可能仍持有句柄，延迟删除
-      await new Promise((r) => setTimeout(r, 100));
-      try {
-        await rm(DB_PATH, { force: true });
-      } catch {
-        // Windows EBUSY 常见，忽略
-      }
+  afterAll(() => {
+    try {
+      rmSync(TMP_DIR, { recursive: true, force: true });
+    } catch {
+      // Windows EBUSY 常见，延迟 + 重试一次
+      setTimeout(() => {
+        try {
+          rmSync(TMP_DIR, { recursive: true, force: true });
+        } catch {
+          // 忽略
+        }
+      }, 200);
     }
   });
 
@@ -70,7 +71,7 @@ describe('M-001 · 配置 + 记忆链路集成测试', () => {
       return; // CI 环境下文件可能不存在
     }
 
-    const raw = await readFile(configPath, 'utf-8');
+    const raw = readFileSync(configPath, 'utf-8');
     expect(raw).toContain('${MEMORA_LLM_API_KEY}'); // 占位符必须存在
 
     // 加载后应被展开（若没设环境变量，apiKey 为空字符串）

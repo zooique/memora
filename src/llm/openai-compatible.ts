@@ -81,8 +81,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
 
     if (!response.ok) {
-      // 消费并释放 body（Node 24 + Windows + undici 必须在 throw 前 cancel stream，
-      // 否则 fetch 内部 keep-alive socket 残留，process.exit 时触发 libuv assertion）
+      // 消费并释放 body（undici keep-alive 行为：error path 不会自动 cancel stream，
+      // 必须显式 cancel，否则 process.exit 时会触发 libuv async handle closing assertion）
       const errorText = await response.text().catch(() => '<无法读取响应体>');
       try {
         await response.body?.cancel();

@@ -18,18 +18,24 @@
  *   - 触发 Git 钩子
  */
 
-// Node 24 + Windows + undici 在 fetch 401 后会触发 libuv async handle closing assertion
-// 我们已经在业务层 catch 并打印友好错误，但 undici 内部的 stream 资源有时仍会触发崩溃
-// 用 uncaughtException 兜底：业务错误已处理，崩溃可接受
+// Node 24 + undici 已知 bug：fetch 401/403 后 keep-alive stream 残留，process.exit 时
+// 触发 libuv "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)" assertion。
+// 业务层 catch + provider.cancel() 已能覆盖大多数情况，但偶尔仍会泄漏到 uncaughtException。
+// 这里用错误名 + 错误码双重检测 libuv 断言（比 stack 字符串更稳定），吞掉这一类崩溃。
 process.on('uncaughtException', (err) => {
-  if (
+  const isLibuvAssertion =
+    err.name === 'AssertionError' || (err as NodeJS.ErrnoException).code === 'ERR_ASSERTION';
+  const isAsyncClosing =
     String(err.message).includes('UV_HANDLE_CLOSING') ||
-    String(err.stack ?? '').includes('async.c')
-  ) {
-    process.stderr.write('\n⚠️  Node fetch 内部 stream 清理异常（已忽略，业务错误已在上面处理）\n');
+    String(err.stack ?? '').includes('async.c');
+
+  if (isLibuvAssertion && isAsyncClosing) {
+    process.stderr.write(
+      '\n⚠️  Node fetch 内部 stream 清理异常（已知 undici bug，业务错误已处理）\n',
+    );
     process.exit(1);
   }
-  // 未知异常：正常抛出
+  // 未知异常：透传
   process.stderr.write(`💥 未捕获异常：${err.stack ?? err.message}\n`);
   process.exit(1);
 });
@@ -42,6 +48,7 @@ import { FileStore } from '../src/memory/store.js';
 import { MemoryIndex } from '../src/memory/index.js';
 import { MemoryLoader } from '../src/memory/loader.js';
 import { logger } from '../src/logging/logger.js';
+import { toFriendlyError } from '../src/utils/errors.js';
 
 async function main(): Promise<void> {
   // 1. 配置加载
@@ -107,7 +114,10 @@ async function main(): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('\n\n❌ LLM 调用失败：', (err as Error).message);
+    // 用 toFriendlyError 把 MemoraError 渲染成"❌ 标题 + 原因 + 建议"格式
+    // 其它原始错误则降级为普通 Error
+    const friendly = toFriendlyError(err);
+    console.error(`\n\n${friendly.format()}`);
     process.exit(1);
   }
   const elapsed = Date.now() - startTime;
