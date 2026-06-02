@@ -72,6 +72,22 @@ describe('MemoraError · M-103 错误信息友好化', () => {
     expect(toolError('a', 'b', []).category).toBe('tool');
   });
 
+  it('format 无 detail 时应省略原因行', () => {
+    const err = toolError('路径越界', undefined, ['改用白名单路径']);
+    const formatted = err.format();
+    expect(formatted).toContain('❌ 路径越界');
+    expect(formatted).not.toContain('原因');
+    expect(formatted).toContain('建议：');
+  });
+
+  it('format 无 suggestions 时应省略建议行', () => {
+    const err = toolError('路径越界', '/etc/passwd', []);
+    const formatted = err.format();
+    expect(formatted).toContain('❌ 路径越界');
+    expect(formatted).toContain('原因：/etc/passwd');
+    expect(formatted).not.toContain('建议');
+  });
+
   it('错误应该保留原始 cause 用于调试', () => {
     const cause = new Error('ECONNREFUSED');
     const err = networkError('LLM 不可达', '无法连接', ['检查网络'], cause);

@@ -197,6 +197,21 @@ describe('ProjectManager · 项目注册表', () => {
     expect(projects).toHaveLength(1);
     expect(projects[0]!.name).toBe('project-b');
   });
+
+  it('注册表 JSON 损坏时应降级为空列表', async () => {
+    const config = makeConfig(join(tmpHome, '.memora'));
+    // 写入损坏的 JSON
+    writeFileSync(join(tmpHome, '.memora', 'projects.json'), 'not valid{{{', 'utf-8');
+
+    const pm = new ProjectManager(config);
+    const projects = pm.listProjects();
+    // 应降级为返回空列表
+    expect(projects).toHaveLength(0);
+
+    // 注册后应能正常工作
+    pm.registerProject('/path/to/project-a', 'project-a');
+    expect(pm.listProjects()).toHaveLength(1);
+  });
 });
 
 describe('ProjectManager · 项目切换', () => {

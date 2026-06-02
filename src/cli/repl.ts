@@ -344,13 +344,14 @@ function rebuildAgentComponents(
 }
 
 /**
- * 创建话题摘要生成器（M-203-改 · M-209 记忆归档原则 v0.2）
+ * 创建话题摘要生成器（M-203-改 · M-209 记忆归档原则 v0.3）
  *
  * 设计：回调模式，避免在 MessageHistory 中硬依赖 LlmProvider
  * 策略：
  *   - 收集完整对话（user + assistant），截断到 800 字
- *   - 三步判断：价值评估 → 核心精炼 → 答案收敛
+ *   - 结构化提取：LLM 输出 JSON {约束/偏好/决策} → 格式化为可读文本
  *   - 低价值对话返回 null（跳过归档）
+ *   - JSON 解析失败时降级为原始文本
  * 失败不抛出（fire-and-forget 模式，log 即可）
  *
  * @param provider LLM 提供者
@@ -369,27 +370,24 @@ export function createTopicSummarizer(
     const promptMessages: Message[] = [
       {
         role: 'system',
-        content: `你是记忆价值评估助手。分析以下对话，判断是否值得归档。
+        content: `你是记忆价值评估与结构化提取助手。分析以下对话，提取用户独有的信息。
 
-【第一步：判断价值】用户提问是否具有以下特征？
-- 信息不对称：用户透露了大模型不知道的信息（项目配置、技术栈偏好、业务约束）
-- 决策持久性：用户做出会影响未来交互的决策（架构选型、策略调整）
-- 用户独特性：用户遇到的是其专属场景，而非人人都会问的通用问题
+判断标准（记忆归档原则 v0.3 · 结构化）：
+- 约束：用户透露的技术栈、环境限制、项目配置（大模型不知道的信息）
+- 偏好：用户的代码风格偏好、工作流偏好、审美偏好、命名习惯
+- 决策：用户做出的会影响未来交互的架构选型、策略决定
 
-如果对话属于低价值——通用问答、简单代码请求、闲聊寒暄、纯技术咨询且无用户独有上下文——请只回复 SKIP。
-
-【第二步：精炼核心】提取用户提问/观点中最有价值的信息。
-【第三步：收敛回答】提取 Agent 回答中与核心相关的关键要点。
-
-输出格式：
-- 如果 SKIP → 只输出 SKIP（大小写均可）
-- 如果归档 → 用 1-2 句中文输出：提取的核心内容`,
+输出格式（严格 JSON，不含 markdown 代码块标记）：
+- 对话全是通用问答/闲聊，无任何独有信息 → 只输出 SKIP
+- 否则输出：{"约束":["..."], "偏好":["..."], "决策":["..."]}
+- 空数组的字段可省略
+- 每条 10-20 字，只提取用户独有的信息，不包含 LLM 已知的通用知识`,
       },
       { role: 'user', content: conversation },
     ];
 
     let result = '';
-    for await (const chunk of provider.chat(promptMessages, { maxTokens: 100 })) {
+    for await (const chunk of provider.chat(promptMessages, { maxTokens: 150 })) {
       if (chunk.content) result += chunk.content;
     }
     const trimmed = result.trim();
@@ -401,6 +399,18 @@ export function createTopicSummarizer(
       trimmed.length === 0
     ) {
       return null;
+    }
+
+    // v0.3：尝试解析结构化 JSON，格式化为可读文本存储
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, string[]>;
+      const parts: string[] = [];
+      if (parsed['约束']?.length) parts.push('约束：' + parsed['约束'].join('；'));
+      if (parsed['偏好']?.length) parts.push('偏好：' + parsed['偏好'].join('；'));
+      if (parsed['决策']?.length) parts.push('决策：' + parsed['决策'].join('；'));
+      if (parts.length > 0) return parts.join(' | ');
+    } catch {
+      // JSON 解析失败，降级使用原始文本
     }
 
     return trimmed;

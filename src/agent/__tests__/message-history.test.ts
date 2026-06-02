@@ -1,5 +1,5 @@
 /**
- * 消息历史单元测试（M-203-改：事件驱动归档 + 记忆归档原则 v0.2）
+ * 消息历史单元测试（M-203-改：事件驱动归档 + 记忆归档原则 v0.3）
  *
  * 覆盖：
  *   - switchTopic 调用 summarizer（fire-and-forget）
@@ -7,6 +7,7 @@
  *   - 未注入 summarizer 时跳过
  *   - 已有摘要时幂等跳过
  *   - summarizer 返回 null（低价值对话）→ 跳过归档
+ *   - summarizer 返回结构化文本 → 正常归档
  *   - summarizer 抛出时优雅降级
  *   - appendSummary 幂等（topic-store 层）
  */
@@ -158,7 +159,8 @@ hi there
       const mockSummarizer = vi.fn().mockResolvedValue(null); // 低价值 → SKIP
       const history3 = new MessageHistory(topicStore, mockSummarizer, initialDate, initialTopic);
       history3.switchTopic('new-topic');
-      await new Promise((r) => setTimeout(r, 100));
+      // fire-and-forget: 等待 summarizeAndArchive 完成（Windows + coverage 下文件 I/O 较慢）
+      await new Promise((r) => setTimeout(r, 200));
 
       expect(mockSummarizer).toHaveBeenCalledTimes(1);
       // 话题文件不应包含 summary（因为被跳过了）
@@ -171,15 +173,15 @@ hi there
       const history = new MessageHistory(topicStore, undefined, initialDate, initialTopic);
       await history.appendUser('我的项目用 better-sqlite3，不要用 mysql');
       await history.appendAssistant('明白了，我会确保所有代码都使用 better-sqlite3');
-      await new Promise((r) => setTimeout(r, 50));
 
       const mockSummarizer = vi.fn().mockResolvedValue('用户项目使用 better-sqlite3 作为数据库');
       const history4 = new MessageHistory(topicStore, mockSummarizer, initialDate, initialTopic);
       history4.switchTopic('new-topic');
-      await new Promise((r) => setTimeout(r, 100));
+      // fire-and-forget: 等待 summarizeAndArchive 完成（mock 立即 resolve，但仍需等文件写入）
+      await new Promise((r) => setTimeout(r, 200));
 
       expect(mockSummarizer).toHaveBeenCalledTimes(1);
-      // 话题文件应包含 summary
+      // 话题文件应包含 summary（fire-and-forget 条件下需确认完整链路）
       const topicFile = await topicStore.read(initialDate, initialTopic);
       expect(topicFile).not.toBeNull();
       expect(topicFile!.summary).toBe('用户项目使用 better-sqlite3 作为数据库');
