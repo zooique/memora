@@ -1,10 +1,10 @@
-/**
+﻿/**
  * 话题存储
  *
  * 话题文件结构：<日期>-<话题名>.md
  * 内容：frontmatter + 消息列表（按时间顺序）
  *
- * 详见 agent上下文组装协议.md §6 话题文件
+ * 详见 02-上下文组装-v4.0.md §6 话题文件
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  */
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';

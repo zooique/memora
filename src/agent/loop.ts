@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Agent Loop — Agent 的核心执行引擎
  *
  * 模型自主决定何时推理、何时调用工具，循环直到输出纯文本
- * 详见 agent设计.md §2.1 运行闭环
+ * 详见 01-主架构-v4.0.md §2.1 运行闭环
  *
- * 上下文组装公式（agent上下文组装协议.md §1）：
+ * 上下文组装公式（02-上下文组装-v4.0.md §1）：
  *   上下文 = 用户主动输入 + Agent 记忆召回结果 + Agent Loop 工作记忆
  * 其中"Agent 记忆召回结果"由 TopicMount 提供，通过 processUserInput 的
  * topicMemories 参数注入。

@@ -1,4 +1,4 @@
----
+﻿---
 alwaysApply: false
 description: Agent 门面类（宿主项目接入入口）
 ---
@@ -7,7 +7,7 @@ description: Agent 门面类（宿主项目接入入口）
 
 > **状态**：✅ 已采纳
 > **日期**：2026-06-03（年轮审判补写，原始实现日期 2026-06-02）
-> **来源**：[agent设计.md §2](../../docs/基础设计文档/agent设计.md) +
+> **来源**：[01-主架构-v4.0.md §2](../../docs/基础设计文档/01-主架构-v4.0.md) +
 > [backend_layers_rules.md](../../.trae/rules/backend_layers_rules.md)
 
 ## 背景

@@ -1,7 +1,7 @@
 /**
  * Agent 门面类 — Memora 宿主项目接入入口
  *
- * 设计文档（agent设计.md §9）要求宿主项目通过 `import { Agent } from '@memora/core'`
+ * 设计文档（01-主架构-v4.0.md §9）要求宿主项目通过 `import { Agent } from '@memora/core'`
  * 一行代码接入。本类把当前 repl.ts 中埋藏的组装逻辑提取到正确的架构层，
  * 使 AgentLoop / MemoryIndex / DomainManager / ToolExecutor / SecurityGuard
  * 这些已有组件可以被 CLI 以外的宿主项目直接使用。
@@ -89,7 +89,7 @@ export interface AgentBuildCtx {
 /**
  * 4 层记忆的统一快照类型
  *
- * 详见 docs/基础设计文档/记忆系统全景图.md §二
+ * 详见 docs/基础设计文档/00-记忆归档原则-v1.0.md §2.1 四层记忆模型
  */
 export interface MemorySnapshot {
   /** 第 1 层：工作记忆（messages 数组） */
@@ -299,7 +299,7 @@ export class Agent {
 
     // 实时信号检测：用户表达"自我介绍/偏好/决策/记住"等强信号
     // → 立即触发归档（fire-and-forget，不阻塞下一轮对话）
-    // 详见 docs/基础设计文档/记忆归档原则.md
+    // 详见 docs/基础设计文档/00-记忆归档原则-v1.0.md
     if (detectMemorableSignal(input)) {
       // 记录到 pendingArchives，让 Agent.close() 也能 await
       const p = this.history.archiveCurrentTopic('signal').catch((err) => {
@@ -565,9 +565,12 @@ export class Agent {
   /**
    * 统一查看 4 层记忆快照
    *
-   * 把 [记忆系统全景图.md §二](../../docs/基础设计文档/记忆系统全景图.md) 描述的
-   * 4 层记忆结构（工作记忆 / Bootstrap / 话题归档 / 话题挂载）
-   * 用一个同步快照暴露给调用方（CLI、demo UI、测试、调试）。
+   * 把 [00-记忆归档原则-v1.0.md §2.1 四层记忆模型](../../docs/基础设计文档/00-记忆归档原则-v1.0.md)
+   * 描述的"作品 / 角色 / 心得 / 助手记忆"工程化为可观测的运行时结构。
+   *
+   * 当前实现：inspect() 返回的 4 层（工作记忆 / Bootstrap / 话题归档 / 话题挂载）
+   * 是该哲学在工程上的当前映射——后续将随新四层（作品 / 角色 / 心得 / 助手记忆）
+   * 在源码侧的落地逐步对齐。
    *
    * 设计原则：
    * - **纯只读**——不动任何组件状态

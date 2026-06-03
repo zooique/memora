@@ -94,7 +94,7 @@ app.post('/api/chat', async (req: Request, res: Response) => {
 
 // ─── API：4 层记忆快照 ──────────────────────────────────
 // 调用 agent.inspect() + listAllTopics() 组合返回 4 层记忆的完整视图
-// 详见 src/agent/agent.ts §inspect() 与 [记忆系统全景图.md §二]
+// 详见 src/agent/agent.ts §inspect() 与 [00-记忆归档原则-v1.0.md §2.1 四层记忆模型]
 app.get('/api/inspect', async (_req: Request, res: Response) => {
   try {
     if (!agentInstance) {

@@ -1,12 +1,12 @@
-/**
+﻿/**
  * 记忆召回管线
  *
  * 启动时：基础召回（always + domain 记忆，100% 确定性）
  * Loop 中：增量召回（topic + on-demand 记忆，按相关度）
  * M-206：混合召回（关键词 + 向量语义，取并集去重）
  *
- * 详见 agent上下文组装协议.md §1-4
- * 详见 记忆归档原则.md · 信息不对称原则
+ * 详见 02-上下文组装-v4.0.md §1-4
+ * 详见 00-记忆归档原则-v1.0.md · 信息不对称原则
  */
 import type { Memory, MemoryTypeValue } from './types.js';
 import type { MemoryIndex } from './index.js';

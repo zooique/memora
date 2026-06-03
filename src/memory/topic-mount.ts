@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 话题记忆挂载器 — TopicMount
  *
  * 实现"应无所住，而生其心"的专注模式：
@@ -14,7 +14,7 @@
  * 生命周期：
  *   mount(focus) → 检测话题 → 召回/缓存 → 注入 AgentLoop → unmount(sleep)
  *
- * 详见 agent上下文组装协议.md §3.5 话题漂移检测
+ * 详见 02-上下文组装-v4.0.md §3.5 话题漂移检测
  */
 import type { Memory } from './types.js';
 import type { RecallPipeline } from './recall.js';

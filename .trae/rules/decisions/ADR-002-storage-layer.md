@@ -1,4 +1,4 @@
----
+﻿---
 alwaysApply: false
 description: 选用 sqlite3 (mapbox) 作为存储层（统一索引表）
 ---
@@ -10,7 +10,7 @@ description: 选用 sqlite3 (mapbox) 作为存储层（统一索引表）
 > Node 24 下需要 Visual Studio 编译；用户验证 `sqlite3` (mapbox) 可行
 > **播种批次**：Memora 模式 A v1
 > **来源**：[项目决策表.md §二](../../docs/项目决策表.md) +
-> [agent设计.md §4.3](../../docs/基础设计文档/agent设计.md)
+> [01-主架构-v4.0.md §4.3](../../docs/基础设计文档/01-主架构-v4.0.md)
 
 ## 背景
 

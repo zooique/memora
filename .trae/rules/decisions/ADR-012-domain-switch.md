@@ -1,4 +1,4 @@
----
+﻿---
 alwaysApply: false
 description: 领域切换（DomainManager + /domain 命令）
 ---
@@ -7,7 +7,7 @@ description: 领域切换（DomainManager + /domain 命令）
 
 > **状态**：✅ 已采纳
 > **日期**：2026-06-03（年轮审判补写，原始实现日期 2026-06-02）
-> **来源**：[agent设计.md §4.4](../../docs/基础设计文档/agent设计.md) +
+> **来源**：[01-主架构-v4.0.md §4.4](../../docs/基础设计文档/01-主架构-v4.0.md) +
 > M-208 任务
 
 ## 背景

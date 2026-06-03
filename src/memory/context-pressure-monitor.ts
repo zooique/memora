@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 上下文压力监控器 — ContextPressureMonitor
  *
  * 哲学：「应无所住」——不囤积上下文。
@@ -10,7 +10,7 @@
  * 卸载后状态：原记忆仍存在 SQLite 索引中，只是从 messages 移除
  *   （TopicMount 会在下一轮重新召回需要的）—— 这是「不生不灭」
  *
- * 设计文档：docs/基础设计文档/沉思笔记-记忆衰减与炼化.md §设计一
+ * 设计文档：docs/基础设计文档/05-沉思-记忆衰减与炼化.md §设计一
  */
 import type { Memory } from './types.js';
 import { logger } from '@/logging/logger.js';

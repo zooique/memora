@@ -1,8 +1,8 @@
-/**
+﻿/**
  * 权限模型
  *
  * 两级权限：owner / guest
- * 详见 安全权限设计 v0.1.md §2 + ADR-006
+ * 详见 03-安全权限-v0.2.md §2 + ADR-006
  */
 import { logger } from '@/logging/logger.js';
 

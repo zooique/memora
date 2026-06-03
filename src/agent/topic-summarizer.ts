@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 话题摘要生成器 — 事件驱动的话题归档
  *
  * 设计（M-203-改 · M-209 记忆归档原则 v0.3）：
@@ -11,7 +11,7 @@
  *   - Agent 门面类需要此能力来组装 MessageHistory
  *   - CLI 层通过 agent 层导入，不形成架构倒挂
  *
- * 详见 agent上下文组装协议.md §6 · 记忆归档原则.md
+ * 详见 02-上下文组装-v4.0.md §6 · 00-记忆归档原则-v1.0.md
  */
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { TopicMessage } from '@/memory/types.js';

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SQLite 索引
  *
  * 单一 memories 表 + memory_type 字段区分 5 种记忆
@@ -217,7 +217,7 @@ export class MemoryIndex {
    * 把 weight 重置为 1.0（满格），updated_at 更新为现在，
    * 衰减时钟重新开始。
    *
-   * 设计文档：docs/基础设计文档/沉思笔记-记忆衰减与炼化.md §设计二
+   * 设计文档：docs/基础设计文档/05-沉思-记忆衰减与炼化.md §设计二
    *
    * @param ids 被命中的记忆 ID 列表
    */
@@ -243,7 +243,7 @@ export class MemoryIndex {
    *
    * 衰减公式：newWeight = max(MIN_WEIGHT, weight × exp(-daysSinceUpdate / halfLife))
    *
-   * 设计文档：docs/基础设计文档/沉思笔记-记忆衰减与炼化.md §设计二
+   * 设计文档：docs/基础设计文档/05-沉思-记忆衰减与炼化.md §设计二
    *
    * @param halfLifeDays 不同永久性等级的半衰期（天数）
    * @returns 各永久性等级衰减的记忆数量

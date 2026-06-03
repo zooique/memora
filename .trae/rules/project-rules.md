@@ -1,4 +1,4 @@
----
+﻿---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
 version: v0.1
@@ -15,10 +15,12 @@ date: 2026-06-02
 ## 1. 不可违反的硬约束
 
 1. **设计文档优先**：所有架构决策必须与
-   [agent设计.md](../../docs/基础设计文档/agent设计.md) /
-   [agent上下文组装协议.md](../../docs/基础设计文档/agent上下文组装协议.md) /
-   [安全权限设计 v0.1.md](../../docs/基础设计文档/安全权限设计%20v0.1.md) /
-   [测试策略.md](../../docs/基础设计文档/测试策略.md) 一致
+   [01-主架构-v4.0.md](../../docs/基础设计文档/01-主架构-v4.0.md) /
+   [02-上下文组装-v4.0.md](../../docs/基础设计文档/02-上下文组装-v4.0.md) /
+   [03-安全权限-v0.2.md](../../docs/基础设计文档/安全权限设计%20v0.2.md) /
+   [04-测试策略-v0.2.md](../../docs/基础设计文档/04-测试策略-v0.2.md) /
+   [00-记忆归档原则-v1.0.md](../../docs/基础设计文档/00-记忆归档原则-v1.0.md)
+   一致
 2. **ADR 优先于个人偏好**：技术栈变更必须先更新 ADR（`.trae/rules/decisions/`）
 3. **跨文档引用规范**：详见
    [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
@@ -68,7 +70,7 @@ src/
 ```
 feat: 新增记忆召回管线
 fix: 修复路径白名单越界
-docs: 更新 agent设计.md v3.6
+docs: 更新 01-主架构-v4.0.md v3.6
 test: 补充 Agent Loop E2E
 refactor: 重构 LLM Provider 抽象
 chore: 升级 dependencies

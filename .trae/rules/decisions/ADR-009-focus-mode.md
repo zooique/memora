@@ -1,4 +1,4 @@
----
+﻿---
 alwaysApply: false
 description: 专注模式（应无所住而生其心）与记忆衰减机制
 ---
@@ -8,7 +8,7 @@ description: 专注模式（应无所住而生其心）与记忆衰减机制
 > **状态**：✅ 已采纳
 > **日期**：2026-06-03（年轮审判补写，原始实现日期 2026-06-02）
 > **来源**：[architecture_philosophy_rules.md §9](../../.trae/rules/architecture_philosophy_rules.md) +
-> [agent设计.md §3.2](../../docs/基础设计文档/agent设计.md)
+> [01-主架构-v4.0.md §3.2](../../docs/基础设计文档/01-主架构-v4.0.md)
 
 ## 背景
 

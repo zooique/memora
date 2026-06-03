@@ -1,11 +1,11 @@
-/**
+﻿/**
  * Memora — 通用 Agent 架构
  *
  * 统一入口：
  * - CLI 模式（直接运行 memora）：解析命令参数，启动 REPL
  * - 库模式（import from '@memora/core'）：导出 Agent / Config 等供宿主项目接入
  *
- * 设计哲学：万物皆记忆（详见 docs/基础设计文档/agent设计.md §1.2）
+ * 设计哲学：万物皆记忆（详见 docs/基础设计文档/01-主架构-v4.0.md §1.2）
  * 决策追溯：详见 .trae/rules/decisions/ 下的 8 个 ADR
  */
 import { Command } from 'commander';

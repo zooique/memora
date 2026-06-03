@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 向量存储 — 纯 JS 实现，内存 + JSON 持久化
  *
  * M-206：语义检索的向量索引层
@@ -12,7 +12,7 @@
  * - 向量维度由 embedding 模型决定，存储层不关心
  *
  * 详见 ADR-002 · 阶段三向量检索备选方案
- * 详见 记忆归档原则.md · 信息不对称原则
+ * 详见 00-记忆归档原则-v1.0.md · 信息不对称原则
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
