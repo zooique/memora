@@ -75,3 +75,18 @@ export interface TopicFile {
   summary?: string; // 冥想后炼化出的话题报告
   keywords: string[]; // 用于 FTS5 检索
 }
+
+/**
+ * Embedding 服务接口 — memory/ 层对 embedding 能力的抽象
+ *
+ * 分层修复（年轮审判 R-03）：memory/ 不应直接依赖 llm/ 层。
+ * 此接口定义 VectorStore 需要的 embedding 能力，
+ * 具体实现（EmbeddingProvider）由 llm/ 层提供，通过依赖注入传入。
+ * TypeScript 结构化类型系统保证 EmbeddingProvider 自动满足此接口。
+ */
+export interface EmbeddingService {
+  /** 嵌入单条文本，返回向量 */
+  embed(text: string): Promise<number[]>;
+  /** 批量嵌入多条文本 */
+  batchEmbed(texts: string[]): Promise<Array<{ text: string; vector: number[] }>>;
+}

@@ -18,7 +18,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
-import { EmbeddingProvider } from '@/llm/embedding.js';
+import type { EmbeddingService } from './types.js';
 
 /**
  * 向量条目：ID + 向量
@@ -45,6 +45,8 @@ interface VectorStoreFile {
  *
  * 纯 JS 实现，内存中维护向量索引，定期持久化到 JSON 文件
  * 适用于单用户本地场景（5k 条记录以内）
+ *
+ * 分层修复（年轮审判 R-03）：依赖 EmbeddingService 接口而非 llm/ 层的具体实现
  */
 export class VectorStore {
   /** 内存中的向量索引 */
@@ -58,7 +60,7 @@ export class VectorStore {
 
   constructor(
     private readonly storePath: string,
-    private readonly embeddingProvider: EmbeddingProvider,
+    private readonly embeddingProvider: EmbeddingService,
   ) {}
 
   /**
@@ -156,7 +158,7 @@ export class VectorStore {
 
     const scored: Array<{ id: string; similarity: number }> = [];
     for (const [id, vector] of this.entries) {
-      const similarity = EmbeddingProvider.cosineSimilarity(queryVector, vector);
+      const similarity = cosineSimilarity(queryVector, vector);
       if (similarity >= minSimilarity) {
         scored.push({ id, similarity });
       }
@@ -173,4 +175,25 @@ export class VectorStore {
   get size(): number {
     return this.entries.size;
   }
+}
+
+/**
+ * 计算两个向量的余弦相似度
+ *
+ * 从 EmbeddingProvider.cosineSimilarity 迁移到本地实现
+ * 原因：memory/ 层不应依赖 llm/ 层（年轮审判 R-03 分层修复）
+ * 纯数学函数，无外部依赖
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
+  }
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  return denominator === 0 ? 0 : dotProduct / denominator;
 }

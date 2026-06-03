@@ -17,7 +17,7 @@
  */
 import { logger } from '@/logging/logger.js';
 
-export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'unknown';
+export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
 
 export interface FriendlyErrorOptions {
   /** 用户能看懂的简短标题（中文） */
@@ -130,6 +130,18 @@ export function toolError(
   cause?: Error,
 ): MemoraError {
   return new MemoraError({ title, detail, suggestions, category: 'tool', cause });
+}
+
+/**
+ * 工厂：安全错误（路径越界、黑名单命中、权限不足等）
+ */
+export function securityError(
+  title: string,
+  detail: string | undefined,
+  suggestions: string[],
+  cause?: Error,
+): MemoraError {
+  return new MemoraError({ title, detail, suggestions, category: 'security', cause });
 }
 
 /**

@@ -2,39 +2,32 @@
  * 向量存储测试
  * 覆盖 upsert / search / delete / 持久化 / 批量操作
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { VectorStore } from '@/memory/vector-store.js';
-import { EmbeddingProvider } from '@/llm/embedding.js';
+import type { EmbeddingService } from '@/memory/types.js';
 
 /**
- * 创建模拟的 EmbeddingProvider
+ * 创建模拟的 EmbeddingService
  * 不调用真实 API，直接返回固定向量
+ * 年轮审判 R-03 修复：测试依赖 memory/ 层的接口而非 llm/ 层的具体实现
  */
-function mockEmbeddingProvider(): EmbeddingProvider {
-  const provider = new EmbeddingProvider({
-    baseUrl: 'http://localhost:9999',
-    apiKey: 'test-key',
-    model: 'test-model',
-  });
-
-  // 拦截 embed 和 batchEmbed，返回基于文本 hash 的伪向量
-  vi.spyOn(provider, 'embed').mockImplementation(async (text: string) => {
+function mockEmbeddingService(): EmbeddingService {
+  return {
     // 简单伪向量：基于文本首字符的 Unicode 码点
-    const base = text.charCodeAt(0) / 65536;
-    return [base, 1 - base, 0.5];
-  });
-
-  vi.spyOn(provider, 'batchEmbed').mockImplementation(async (texts: string[]) => {
-    return texts.map((text) => ({
-      text,
-      vector: [text.charCodeAt(0) / 65536, 1 - text.charCodeAt(0) / 65536, 0.5],
-    }));
-  });
-
-  return provider;
+    embed: async (text: string) => {
+      const base = text.charCodeAt(0) / 65536;
+      return [base, 1 - base, 0.5];
+    },
+    batchEmbed: async (texts: string[]) => {
+      return texts.map((text) => ({
+        text,
+        vector: [text.charCodeAt(0) / 65536, 1 - text.charCodeAt(0) / 65536, 0.5],
+      }));
+    },
+  };
 }
 
 describe('VectorStore · upsert + search', () => {
@@ -43,7 +36,7 @@ describe('VectorStore · upsert + search', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
-    const provider = mockEmbeddingProvider();
+    const provider = mockEmbeddingService();
     store = new VectorStore(join(tmpDir, 'vectors.json'), provider);
   });
 
@@ -99,7 +92,7 @@ describe('VectorStore · batchUpsert', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
-    const provider = mockEmbeddingProvider();
+    const provider = mockEmbeddingService();
     store = new VectorStore(join(tmpDir, 'vectors.json'), provider);
   });
 
@@ -132,7 +125,7 @@ describe('VectorStore · 持久化', () => {
   });
 
   it('save 后应该写入 JSON 文件', async () => {
-    const provider = mockEmbeddingProvider();
+    const provider = mockEmbeddingService();
     const store = new VectorStore(storePath, provider);
 
     await store.upsert('mem:1', '文本A');
@@ -146,13 +139,13 @@ describe('VectorStore · 持久化', () => {
   });
 
   it('load 后应该恢复向量索引', async () => {
-    const provider1 = mockEmbeddingProvider();
+    const provider1 = mockEmbeddingService();
     const store1 = new VectorStore(storePath, provider1);
     await store1.upsert('mem:1', '文本A');
     await store1.save();
 
     // 新实例加载
-    const provider2 = mockEmbeddingProvider();
+    const provider2 = mockEmbeddingService();
     const store2 = new VectorStore(storePath, provider2);
     await store2.load();
 
@@ -160,7 +153,7 @@ describe('VectorStore · 持久化', () => {
   });
 
   it('无变更时 save 不应写文件', async () => {
-    const provider = mockEmbeddingProvider();
+    const provider = mockEmbeddingService();
     const store = new VectorStore(storePath, provider);
 
     await store.save();

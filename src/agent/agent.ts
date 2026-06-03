@@ -29,6 +29,7 @@ import { ProjectManager } from '@/memory/project-manager.js';
 import { createTopicSummarizer } from './topic-summarizer.js';
 import { RecallPipeline } from '@/memory/recall.js';
 import { TopicMount } from '@/memory/topic-mount.js';
+import { configError } from '@/utils/errors.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
@@ -250,7 +251,9 @@ export class Agent {
    */
   async *chat(input: string): AsyncGenerator<string, void, unknown> {
     if (!this._initialized || !this.history || !this.loop || !this.topicMount) {
-      throw new Error('Agent 未初始化，请先调用 init()');
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 chat() 前调用 await agent.init()',
+      ]);
     }
 
     // 专注模式：检测话题 → 召回话题记忆（"生其心"）
@@ -299,7 +302,9 @@ export class Agent {
    */
   switchTopic(newTopic: string): string {
     if (!this._initialized || !this.history) {
-      throw new Error('Agent 未初始化，请先调用 init()');
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 switchTopic() 前调用 await agent.init()',
+      ]);
     }
     // 卸载旧话题的记忆挂载，让新话题重新"生其心"
     this.topicMount?.unmount();
@@ -314,7 +319,9 @@ export class Agent {
    */
   async listAllTopics(): Promise<string[]> {
     if (!this._initialized || !this.history) {
-      throw new Error('Agent 未初始化，请先调用 init()');
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 listAllTopics() 前调用 await agent.init()',
+      ]);
     }
     return this.history.listAllTopics();
   }
@@ -335,7 +342,9 @@ export class Agent {
    */
   inspect(): MemorySnapshot {
     if (!this._initialized) {
-      throw new Error('Agent 未初始化，请先调用 init()');
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 inspect() 前调用 await agent.init()',
+      ]);
     }
 
     // 第 1 层：工作记忆（AgentLoop 的 messages 数组，详见 loop.ts §messages）

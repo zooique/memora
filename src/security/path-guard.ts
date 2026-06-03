@@ -10,6 +10,7 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { logger } from '@/logging/logger.js';
+import { securityError } from '@/utils/errors.js';
 
 const BLOCKED_PATTERNS = [
   /(^|[\\/])\.ssh([\\/]|$)/i,
@@ -96,7 +97,11 @@ export class SecurityGuard {
           reason: `命中黑名单规则 (${pattern})`,
           timestamp: new Date().toISOString(),
         });
-        throw new Error(`禁止访问：路径命中黑名单规则 (${pattern})`);
+        throw securityError(
+          '禁止访问：路径命中黑名单',
+          `路径 ${resolved} 命中黑名单规则 (${pattern})`,
+          ['检查路径是否正确', '如需访问该路径，请联系管理员添加白名单'],
+        );
       }
     }
 
@@ -143,7 +148,10 @@ export class SecurityGuard {
       reason: '路径越界，不在白名单内',
       timestamp: new Date().toISOString(),
     });
-    throw new Error(`路径越界：${resolved} 不在白名单内`);
+    throw securityError('路径越界', `${resolved} 不在白名单内`, [
+      '检查路径是否在项目目录内',
+      '在配置文件中添加该路径到 allowedPaths',
+    ]);
   }
 
   /**

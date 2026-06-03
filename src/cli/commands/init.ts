@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { logger } from '@/logging/logger.js';
 import { FileStore } from '@/memory/store.js';
 import { MemoryType, type Memory, type MemoryTypeValue } from '@/memory/types.js';
+import { configError } from '@/utils/errors.js';
 import { getTemplate, getTemplateIds, type DomainTemplate } from './templates/domain-templates.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -137,7 +138,10 @@ async function generateAgentConfig(projectPath: string, domainId: string): Promi
   const template = getTemplate(domainId);
   if (!template) {
     const available = getTemplateIds().join(', ');
-    throw new Error(`未知领域 "${domainId}"，可用: ${available}`);
+    throw configError(`未知领域 "${domainId}"`, `可用领域: ${available}`, [
+      '使用 memora init --domain <name> 指定领域',
+      '不指定 --domain 则只生成 .memora/ 骨架',
+    ]);
   }
 
   const configDir = join(projectPath, 'agent-config');

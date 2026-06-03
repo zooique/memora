@@ -61,7 +61,7 @@ describe('SecurityGuard · 路径白名单', () => {
 
   it('应该拒绝项目外的路径', () => {
     const filePath = join(tmpdir(), 'other-project', 'secret.txt');
-    expect(() => guard.assertPathAllowed(filePath)).toThrow(/白名单/);
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
   });
 
   it('应该支持用户显式声明的额外允许路径', () => {
