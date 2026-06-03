@@ -45,8 +45,10 @@ date: 2026-06-02
 src/
 ├── index.ts        # CLI 入口（不改）
 ├── cli/            # CLI 解析与交互
-├── agent/          # Agent Loop + 工具执行
+├── agent/          # Agent Loop + 工具执行 + 对话快照 + 作品投影
 ├── memory/         # 记忆引擎（5 类统一）
+├── persona/        # 人格管理（角色配置，记忆管道最高优先级）
+├── skill/          # 技能管理（两层目录，记忆管道最高优先级）
 ├── llm/            # LLM 适配层
 ├── security/       # 安全策略
 ├── config/         # 配置加载

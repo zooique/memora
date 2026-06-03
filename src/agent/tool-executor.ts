@@ -11,6 +11,7 @@ import type { SecurityGuard } from '@/security/path-guard.js';
 import { toolError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import type { MemoryIndex } from '@/memory/index.js';
+import type { WorkProjectionManager } from './workProjection.js';
 
 export type ToolResult = string;
 
@@ -95,6 +96,8 @@ export class ToolExecutor {
     private readonly projectPath: string,
     private readonly security: SecurityGuard,
     private readonly memoryIndex: MemoryIndex,
+    /** v4.0：作品投影管理器（可选，读取文件时自动生成投影） */
+    private readonly workProjection?: WorkProjectionManager,
   ) {}
 
   /**
@@ -156,7 +159,14 @@ export class ToolExecutor {
     this.guardPathOrThrow(absolutePath, 'read_file');
 
     try {
-      return await readFile(absolutePath, 'utf-8');
+      const content = await readFile(absolutePath, 'utf-8');
+      // v4.0：读取文件时自动触发生成/更新作品投影（fire-and-forget，不阻塞读取）
+      if (this.workProjection) {
+        this.workProjection.ensureProjection(absolutePath, content, relativePath).catch(() => {
+          /* 投影生成失败不影响文件读取 */
+        });
+      }
+      return content;
     } catch (err) {
       throw toolError(
         '文件读取失败',

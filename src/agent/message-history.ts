@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 消息历史：Agent 对话过程中的消息持久化
  *
  * 阶段一职责：
@@ -19,7 +19,7 @@
  */
 import type { TopicStore } from '@/memory/topic-store.js';
 import { todayDate, nowTimestamp } from '@/memory/topic-store.js';
-import type { Memory, TopicMessage } from '@/memory/types.js';
+import type { Memory, TopicMessage, TopicFile } from '@/memory/types.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
 import { logger } from '@/logging/logger.js';
@@ -67,6 +67,16 @@ export class MessageHistory {
    */
   get currentTopicName(): string {
     return `${this.currentDate}-${this.currentTopic}`;
+  }
+
+  /** 获取当前日期 YYYY-MM-DD（只读，供 agent 层使用） */
+  get currentDateValue(): string {
+    return this.currentDate;
+  }
+
+  /** 获取当前话题名（只读，供 agent 层使用） */
+  get currentTopicValue(): string {
+    return this.currentTopic;
   }
 
   /**
@@ -478,5 +488,40 @@ export class MessageHistory {
         '追加消息到话题文件失败',
       );
     }
+  }
+
+  /**
+   * 获取当前话题文件（缓存值，避免重复读文件）
+   */
+  private async getCurrentTopicFile(): Promise<TopicFile | null> {
+    return this.topicStore.read(this.currentDate, this.currentTopic);
+  }
+
+  /**
+   * v4.0：获取当前话题的完整消息列表（对话快照提取用）
+   *
+   * DialogueSnapshotExtractor 切话题时需要读取旧话题的 user 发言
+   * 来提取 3-5 句种子。
+   *
+   * @returns 当前话题的所有消息
+   */
+  async getCurrentTopicMessages(): Promise<TopicMessage[]> {
+    const tf = await this.getCurrentTopicFile();
+    return tf?.messages ?? [];
+  }
+
+  /**
+   * v4.0：写入种子快照到当前话题的 frontmatter
+   *
+   * 切话题后 DialogueSnapshotExtractor 提取的快照写入旧话题文件
+   * 的 frontmatter seed_snapshots 字段。
+   *
+   * @param snapshots 种子句列表
+   */
+  async setCurrentTopicSeedSnapshots(snapshots: string[]): Promise<void> {
+    if (snapshots.length === 0) return;
+    // 种子写入旧话题的文件（当前话题在这之前已切换）
+    // 这里 currentDate/currentTopic 仍指向旧话题
+    await this.topicStore.appendSeedSnapshots(this.currentDate, this.currentTopic, snapshots);
   }
 }

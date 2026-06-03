@@ -82,6 +82,7 @@ export class FileStore {
       tool: 'tools',
       topic: 'topics',
       archive: 'archive',
+      'work-projection': 'work-projection',
     };
     return map[type];
   }

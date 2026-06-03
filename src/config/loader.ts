@@ -36,6 +36,8 @@ const ConfigSchema = z.object({
   }),
   // 允许的路径白名单（绝对路径）
   allowedPaths: z.array(z.string()).default([]),
+  // v4.0：默认角色名（对应 personas/*.md）
+  persona: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -55,6 +57,7 @@ const DEFAULT_CONFIG: Config = {
     confirmWrites: false,
   },
   allowedPaths: [],
+  persona: undefined,
 };
 
 /**

@@ -29,6 +29,11 @@ import { ProjectManager, type ProjectContext } from '@/memory/project-manager.js
 import { createTopicSummarizer } from './topic-summarizer.js';
 import { RecallPipeline } from '@/memory/recall.js';
 import { TopicMount } from '@/memory/topic-mount.js';
+import { PersonaManager } from '@/persona/personaManager.js';
+import { UserProfile } from '@/memory/userProfile.js';
+import { DialogueSnapshotExtractor } from './dialogueSnapshot.js';
+import { WorkProjectionManager } from './workProjection.js';
+import { SkillManager } from '@/skill/skillManager.js';
 import { configError } from '@/utils/errors.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory, TopicMessage } from '@/memory/types.js';
@@ -174,6 +179,15 @@ export class Agent {
   private loop: AgentLoop | null = null;
   private topicMount: TopicMount | null = null; // 话题记忆挂载器（专注模式）
 
+  // v4.0 新模块（init 后填充）
+  private personaManager: PersonaManager | null = null;
+  private userProfile: UserProfile | null = null;
+  private dialogueSnapshot: DialogueSnapshotExtractor | null = null;
+  private workProjection: WorkProjectionManager | null = null;
+  private skillManager: SkillManager | null = null;
+  /** v4.0：当前激活的技能名（上一轮匹配，本轮注入） */
+  private activeSkill: string | null = null;
+
   // 上下文（init 后填充）
   private _ctx: AgentContext | null = null;
   private _initialized = false;
@@ -227,27 +241,8 @@ export class Agent {
     // 创建 LLM Provider
     this.provider = createLlmProvider(this.config);
 
-    // 构造话题总结器（逻辑与 repl.ts 中的 createTopicSummarizer 一致）
-    const summarizer = createTopicSummarizer(this.provider);
-
-    // 组装消息历史（注入 MemoryIndex 让 archiveCurrentTopic 同步写 SQLite）
-    this.history = new MessageHistory(pctx.topicStore, summarizer, undefined, 'main', pctx.index);
-
-    // 组装工具执行器（不含 CLI 可视化包装）
-    const toolExec = new ToolExecutor(this.projectPath, pctx.security, pctx.index);
-
-    // 组装 Agent Loop
-    this.loop = new AgentLoop({
-      provider: this.provider,
-      bootstrapMemories: pctx.bootstrapMemories,
-      // 直接用 ToolExecutor.execute，不加 CLI 包装
-      toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
-    });
-
-    // 创建话题记忆挂载器（专注模式：应无所住，而生其心）
-    // 阶段一不使用向量检索（VectorStore 为 undefined），纯关键词召回
-    const recallPipeline = new RecallPipeline(pctx.index);
-    this.topicMount = new TopicMount(recallPipeline);
+    // 组装所有运行时组件（v4.0：包括 persona/skill/userProfile/workProjection/dialogueSnapshot）
+    await this._assembleComponents(pctx);
 
     // 保存完整项目上下文（保留 domainManager / globalMemories / projectName 等所有字段）
     this._pctx = pctx;
@@ -257,7 +252,7 @@ export class Agent {
     // 启动时 Lazy 扫描：兜底历史话题归档
     // 解决"用户在 main 话题聊 50 轮不切换 → 永远没归档过"的问题
     // fire-and-forget，单 topic 3s 超时（符合 architecture_philosophy §7 P3）
-    this.history.archiveMissingTopics(3000).catch((err) => {
+    this.history!.archiveMissingTopics(3000).catch((err) => {
       // 已经在 MessageHistory 内部 log.warn，这里防止 unhandled rejection
       void err;
     });
@@ -284,6 +279,16 @@ export class Agent {
     // 专注模式：检测话题 → 召回话题记忆（"生其心"）
     const topicMemories = await this.topicMount.focus(input);
 
+    // v4.0：注入上一轮匹配的技能 prompt（本轮可用）
+    if (this.activeSkill && this.skillManager && this.loop) {
+      const skillPrompt = this.skillManager.buildSystemPrompt(this.activeSkill);
+      if (skillPrompt) {
+        this.loop.injectSystemMessage(skillPrompt);
+        logger.debug({ skill: this.activeSkill }, '技能 prompt 已注入');
+      }
+      this.activeSkill = null; // 本轮已注入，清空等待下一轮重新匹配
+    }
+
     // 用户消息写入历史
     await this.history.appendUser(input);
 
@@ -296,6 +301,24 @@ export class Agent {
 
     // Agent 回复写入历史
     await this.history.appendAssistant(assistantContent);
+
+    // v4.0：用户画像实时归档（每轮结束后扫描用户输入中的身份/偏好/专长事实）
+    // 高置信度直接归档，低置信度标记待确认
+    if (this.userProfile) {
+      const turnIndex = `turn-${Date.now()}`;
+      this.userProfile.archive(input, turnIndex).catch((err) => {
+        logger.warn({ err }, '用户画像实时归档失败');
+      });
+    }
+
+    // v4.0：技能关键词匹配（匹配到则下一轮注入 system prompt）
+    if (this.skillManager) {
+      const match = this.skillManager.match(input);
+      if (match) {
+        this.activeSkill = match.skill.name;
+        logger.debug({ skill: match.skill.name, score: match.score }, '技能匹配，下一轮注入');
+      }
+    }
 
     // 实时信号检测：用户表达"自我介绍/偏好/决策/记住"等强信号
     // → 立即触发归档（fire-and-forget，不阻塞下一轮对话）
@@ -338,12 +361,30 @@ export class Agent {
    * @param newTopic - 新话题名称
    * @returns 新话题的全名（格式：日期-话题名）
    */
-  switchTopic(newTopic: string): string {
+  async switchTopic(newTopic: string): Promise<string> {
     if (!this._initialized || !this.history) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 switchTopic() 前调用 await agent.init()',
       ]);
     }
+
+    // v4.0：切话题前提取对话快照（3-5 句种子）
+    if (this.dialogueSnapshot) {
+      const oldMessages = await this.history.getCurrentTopicMessages();
+      this.dialogueSnapshot
+        .extract(oldMessages)
+        .then((snapshots) => {
+          if (snapshots.length > 0) {
+            this.history!.setCurrentTopicSeedSnapshots(snapshots).catch(() => {
+              /* 写入失败忽略 */
+            });
+          }
+        })
+        .catch(() => {
+          /* 快照提取失败不阻塞切话题 */
+        });
+    }
+
     // 卸载旧话题的记忆挂载，让新话题重新"生其心"
     this.topicMount?.unmount();
     return this.history.switchTopic(newTopic);
@@ -411,7 +452,7 @@ export class Agent {
     // 重建内部组件（复用 provider）
     this._pctx = newPctx;
     this._ctx = newPctx;
-    this._rebuildComponentsWithCurrentCtx();
+    await this._rebuildComponentsWithCurrentCtx();
 
     return newPctx;
   }
@@ -457,34 +498,92 @@ export class Agent {
     };
     this._ctx = this._pctx;
     this._currentDomain = name;
-    this._rebuildComponentsWithCurrentCtx();
+    await this._rebuildComponentsWithCurrentCtx();
 
     return this._pctx;
+  }
+
+  /**
+   * 组装所有运行时组件（v4.0 统一入口）
+   *
+   * 从 init() 中抽取，让 init() 和 _rebuildComponentsWithCurrentCtx()
+   * 共享同一套组件组装逻辑，确保切换项目/领域后不会丢失 v4.0 模块。
+   *
+   * 组装内容：
+   *   - history（MessageHistory + MemoryIndex）
+   *   - toolExec（ToolExecutor + WorkProjectionManager）
+   *   - personaManager（角色 prompt 前缀）
+   *   - userProfile（启动时从 SQLite 加载）
+   *   - skillManager（首次创建后复用，技能配置不随项目切换变化）
+   *   - dialogueSnapshot（对话快照提取器）
+   *   - loop（AgentLoop + systemPromptPrefix）
+   *   - topicMount（话题记忆挂载器）
+   */
+  private async _assembleComponents(pctx: ProjectContext): Promise<void> {
+    if (!this.provider) return;
+
+    // 构造话题总结器
+    const summarizer = createTopicSummarizer(this.provider);
+
+    // 消息历史（注入 MemoryIndex 让 archiveCurrentTopic 同步写 SQLite）
+    this.history = new MessageHistory(pctx.topicStore, summarizer, undefined, 'main', pctx.index);
+
+    // v4.0：作品投影管理器（注入 MemoryIndex + LlmProvider）
+    this.workProjection = new WorkProjectionManager(pctx.index, this.provider);
+
+    // 工具执行器（v4.0：注入 workProjection，读取文件时自动生成投影）
+    const toolExec = new ToolExecutor(
+      this.projectPath,
+      pctx.security,
+      pctx.index,
+      this.workProjection,
+    );
+
+    // v4.0：角色管理器（personas/*.md）
+    this.personaManager = new PersonaManager(this.configDir);
+    const personaPrompt = this.personaManager.load(this.config?.persona);
+
+    // v4.0：用户画像管理器 + 从 SQLite 加载
+    this.userProfile = new UserProfile(pctx.index);
+    await this.userProfile.load();
+
+    // v4.0：技能管理器（首次创建后复用，两层目录扫描不随项目/领域变化）
+    if (!this.skillManager) {
+      this.skillManager = new SkillManager(this.configDir);
+      this.skillManager.load();
+    }
+
+    // v4.0：对话快照提取器
+    this.dialogueSnapshot = new DialogueSnapshotExtractor(this.provider);
+
+    // v4.0：构建系统 prompt 前缀（角色 + 用户画像）
+    const systemPrefixParts = [personaPrompt];
+    const profilePrompt = this.userProfile.buildSystemPrompt();
+    if (profilePrompt) systemPrefixParts.push(profilePrompt);
+    const systemPromptPrefix =
+      systemPrefixParts.filter(Boolean).join('\n\n') +
+      (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
+
+    // Agent Loop（v4.0：注入系统 prompt 前缀）
+    this.loop = new AgentLoop({
+      provider: this.provider,
+      bootstrapMemories: pctx.bootstrapMemories,
+      toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
+      systemPromptPrefix,
+    });
+
+    // 话题记忆挂载器（专注模式：应无所住，而生其心）
+    const recallPipeline = new RecallPipeline(pctx.index);
+    this.topicMount = new TopicMount(recallPipeline);
   }
 
   /**
    * 用当前 _pctx 重建 history / loop / topicMount
    * 在 switchProject / switchDomain / init 中复用
    */
-  private _rebuildComponentsWithCurrentCtx(): void {
+  private async _rebuildComponentsWithCurrentCtx(): Promise<void> {
     if (!this._pctx || !this.provider) return;
-    const summarizer = createTopicSummarizer(this.provider);
-    // 注入 MemoryIndex 让 archiveCurrentTopic 同步写 SQLite
-    this.history = new MessageHistory(
-      this._pctx.topicStore,
-      summarizer,
-      undefined,
-      'main',
-      this._pctx.index,
-    );
-    const toolExec = new ToolExecutor(this.projectPath, this._pctx.security, this._pctx.index);
-    this.loop = new AgentLoop({
-      provider: this.provider,
-      bootstrapMemories: this._pctx.bootstrapMemories,
-      toolExecutor: (n: string, args: string) => toolExec.execute(n, args),
-    });
-    const recallPipeline = new RecallPipeline(this._pctx.index);
-    this.topicMount = new TopicMount(recallPipeline);
+    await this._assembleComponents(this._pctx);
   }
 
   /**
@@ -509,8 +608,8 @@ export class Agent {
    * 公开为公共方法供宿主项目触发——CLI 在 /project、/domain 命令后调用。
    * 内部实现复用 _rebuildComponentsWithCurrentCtx()。
    */
-  rebuildComponents(): void {
-    this._rebuildComponentsWithCurrentCtx();
+  async rebuildComponents(): Promise<void> {
+    await this._rebuildComponentsWithCurrentCtx();
   }
 
   /**
@@ -803,8 +902,9 @@ export class Agent {
     if (!this.history || !this._pctx) return;
 
     const index = this._pctx.index;
-    const date = this.history['currentDate'] as string;
-    const topic = this.history['currentTopic'] as string;
+    // 通过 MessageHistory 的只读访问器获取（不破坏封装）
+    const date = this.history.currentDateValue;
+    const topic = this.history.currentTopicValue;
     const id = `topic-${date}-${topic}`;
 
     // 检查是否已在索引中

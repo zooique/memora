@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 话题存储
  *
  * 话题文件结构：<日期>-<话题名>.md
@@ -8,10 +8,11 @@
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  */
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { TopicFile, TopicMessage } from './types.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from './frontmatter.js';
+import { logger } from '@/logging/logger.js';
 
 /**
  * 话题存储类
@@ -130,6 +131,8 @@ export class TopicStore {
       messages: this.parseMessages(body),
       summary: meta['summary'],
       keywords: meta['keywords']?.split(',').map((s) => s.trim()) ?? [],
+      // v4.0：解析 seed_snapshots（YAML 数组或逗号分隔字符串）
+      seedSnapshots: this.parseSeedSnapshots(meta['seed_snapshots']),
     };
   }
 
@@ -165,12 +168,50 @@ export class TopicStore {
    * 序列化 frontmatter
    */
   private serializeFrontmatter(topic: TopicFile): string {
+    // v4.0：对话快照种子序列化为 YAML 数组格式（逗号分隔字符串）
+    const seedStr = topic.seedSnapshots?.length ? topic.seedSnapshots.join('; ') : undefined;
     return serializeFm({
       date: topic.date,
       topic: topic.topic,
       ...(topic.summary ? { summary: topic.summary } : {}),
       ...(topic.keywords.length > 0 ? { keywords: topic.keywords.join(', ') } : {}),
+      ...(seedStr ? { seed_snapshots: seedStr } : {}),
     });
+  }
+
+  /**
+   * 解析 seed_snapshots（支持 YAML 数组和逗号分隔字符串两种格式）
+   */
+  private parseSeedSnapshots(raw: unknown): string[] | undefined {
+    if (!raw) return undefined;
+    if (Array.isArray(raw)) return raw.map(String).filter((s) => s.length > 0);
+    if (typeof raw === 'string')
+      return raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+    return undefined;
+  }
+
+  /**
+   * v4.0：追加对话快照种子到话题 frontmatter
+   *
+   * @param date 日期
+   * @param topic 话题名
+   * @param snapshots 种子句列表
+   */
+  async appendSeedSnapshots(date: string, topic: string, snapshots: string[]): Promise<void> {
+    const filePath = this.getFilePath(date, topic);
+    if (!existsSync(filePath)) return;
+
+    const content = await readFile(filePath, 'utf-8');
+    const existing = this.parseTopicFile(date, topic, content);
+
+    if (existing.seedSnapshots?.length) return; // 已有种子，幂等跳过
+
+    const updated: TopicFile = { ...existing, seedSnapshots: snapshots };
+    await this.write(updated);
+    logger.info({ topic, count: snapshots.length }, '对话快照种子已写入');
   }
 
   /**
@@ -197,6 +238,3 @@ export function todayDate(now: Date = new Date()): string {
 export function nowTimestamp(now: Date = new Date()): string {
   return now.toISOString();
 }
-
-// 避免未使用警告
-void writeFileSync;

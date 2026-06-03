@@ -37,6 +37,7 @@ const TYPE_TO_DIR: Record<MemoryTypeValue, string> = {
   tool: 'tools',
   topic: 'topics',
   archive: 'archive',
+  'work-projection': 'work-projection',
 };
 
 // ─── 辅助函数 ─────────────────────────────────────────

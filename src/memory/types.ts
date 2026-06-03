@@ -14,6 +14,7 @@ export const MemoryType = {
   TOOL: 'tool', // 工具定义（tools/*.json）
   TOPIC: 'topic', // 话题（topics/*.md）
   ARCHIVE: 'archive', // 归档（archive/*.md）
+  WORK_PROJECTION: 'work-projection', // 作品投影（助手对用户文件的记忆）
 } as const;
 
 export type MemoryTypeValue = (typeof MemoryType)[keyof typeof MemoryType];
@@ -38,6 +39,7 @@ export const MemorySchema = z.object({
     MemoryType.TOOL,
     MemoryType.TOPIC,
     MemoryType.ARCHIVE,
+    MemoryType.WORK_PROJECTION,
   ]),
   permanence: z.enum([
     Permanence.ALWAYS,
@@ -74,6 +76,8 @@ export interface TopicFile {
   messages: TopicMessage[];
   summary?: string; // 冥想后炼化出的话题报告
   keywords: string[]; // 用于 FTS5 检索
+  /** v4.0：对话快照种子（切话题时提取的 3-5 句用户原文） */
+  seedSnapshots?: string[];
 }
 
 /**

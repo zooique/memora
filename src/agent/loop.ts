@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent Loop — Agent 的核心执行引擎
  *
  * 模型自主决定何时推理、何时调用工具，循环直到输出纯文本
@@ -18,6 +18,8 @@ export interface AgentLoopOptions {
   bootstrapMemories: Memory[]; // 永驻 + 领域记忆
   toolExecutor: (name: string, args: string) => Promise<string>;
   maxIterations?: number;
+  /** v4.0：系统 prompt 前缀（角色 + 用户画像 + 技能），注入到 bootstrap 记忆之前 */
+  systemPromptPrefix?: string;
 }
 
 export class AgentLoop {
@@ -27,10 +29,11 @@ export class AgentLoop {
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
 
-    // 初始化 system prompt（基于永驻记忆）
+    // 初始化 system prompt（基于永驻记忆，v4.0 加前缀）
+    const prefix = opts.systemPromptPrefix ?? '';
     this.messages.push({
       role: 'system',
-      content: this.buildSystemPrompt(opts.bootstrapMemories),
+      content: prefix + this.buildSystemPrompt(opts.bootstrapMemories),
     });
   }
 
@@ -124,6 +127,18 @@ export class AgentLoop {
       .join('\n');
 
     return ['[系统召回的相关记忆]', memoryBlock, '', '[用户输入]', userInput].join('\n');
+  }
+
+  /**
+   * 注入系统消息到消息数组（技能注入、角色切换等场景）
+   *
+   * 用于在对话进行中动态注入上下文——如技能匹配后，
+   * 下一轮将技能 prompt 注入为 system 消息。
+   *
+   * @param content 系统消息内容
+   */
+  injectSystemMessage(content: string): void {
+    this.messages.push({ role: 'system', content });
   }
 
   /**
