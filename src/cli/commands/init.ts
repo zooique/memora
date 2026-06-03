@@ -11,7 +11,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { logger } from '@/logging/logger.js';
 import { FileStore } from '@/memory/store.js';
-import { MemoryType, type Memory, type MemoryTypeValue } from '@/memory/types.js';
+import { MemoryType, TYPE_TO_DIR_MAP } from '@/memory/types.js';
+import type { MemoryTypeValue, Memory } from '@/memory/types.js';
 import { configError } from '@/utils/errors.js';
 import { getTemplate, getTemplateIds, type DomainTemplate } from './templates/domain-templates.js';
 
@@ -25,20 +26,6 @@ const CONFIG_EXAMPLE_PATH = join(PROJECT_ROOT, 'config.example.json');
  * 需要预创建的子目录（不存放记忆文件，但需要存在）
  */
 const EXTRA_DIRS: string[] = ['topics', 'archive', 'logs'];
-
-/**
- * 类型到子目录的映射
- * 必须与 FileStore.typeToDir() 保持一致
- */
-const TYPE_TO_DIR: Record<MemoryTypeValue, string> = {
-  personality: 'personality',
-  rule: 'rules',
-  skill: 'skills',
-  tool: 'tools',
-  topic: 'topics',
-  archive: 'archive',
-  'work-projection': 'work-projection',
-};
 
 // ─── 辅助函数 ─────────────────────────────────────────
 
@@ -73,7 +60,7 @@ async function generateDefaultMemora(projectPath: string): Promise<void> {
 
   // 1. 创建记忆子目录
   for (const type of Object.values(MemoryType) as MemoryTypeValue[]) {
-    await mkdir(join(memoraDir, TYPE_TO_DIR[type]), { recursive: true });
+    await mkdir(join(memoraDir, TYPE_TO_DIR_MAP[type]), { recursive: true });
   }
   for (const dir of EXTRA_DIRS) {
     await mkdir(join(memoraDir, dir), { recursive: true });

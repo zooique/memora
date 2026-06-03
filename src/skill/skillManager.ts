@@ -180,7 +180,10 @@ export class SkillManager {
 
   /**
    * 扫描两层目录，合并技能列表
-   * 项目级技能覆盖 Agent 级同名技能
+   *
+   * D-103 决策：项目级技能**完全替换** Agent 级同名技能（不合并 keywords）。
+   * 理由：如果项目需要不同的关键词触发逻辑，应由项目完全控制。
+   * 合并会导致难以调试的意外触发。
    */
   private scanSkills(): SkillEntry[] {
     const map = new Map<string, SkillEntry>();

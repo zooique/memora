@@ -8,6 +8,7 @@ import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Memory, MemoryTypeValue } from './types.js';
+import { TYPE_TO_DIR_MAP } from './types.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from './frontmatter.js';
 
 /**
@@ -72,19 +73,10 @@ export class FileStore {
   }
 
   /**
-   * 类型到目录的映射
+   * 类型到目录的映射（复用 types.ts 集中定义）
    */
   private typeToDir(type: MemoryTypeValue): string {
-    const map: Record<MemoryTypeValue, string> = {
-      personality: 'personality',
-      rule: 'rules',
-      skill: 'skills',
-      tool: 'tools',
-      topic: 'topics',
-      archive: 'archive',
-      'work-projection': 'work-projection',
-    };
-    return map[type];
+    return TYPE_TO_DIR_MAP[type];
   }
 
   /**

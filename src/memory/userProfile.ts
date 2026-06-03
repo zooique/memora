@@ -293,11 +293,19 @@ export class UserProfile {
   /**
    * 写入单条事实到 SQLite
    *
+   * 冲突解决策略（D-107）：
+   *   同分类（identity/preference/expertise/habit/history）的新事实
+   *   会替换旧事实。因为用户画像是"当前状态"而非"历史记录"。
+   *   例："我叫张三" → 后续说"我叫李四" → 只保留"李四"，张三被移除。
+   *
    * @returns 成功写入的条目，或 null（写入失败）
    */
   private async upsertFact(fact: ExtractedFact): Promise<UserProfileEntry | null> {
     // 构造稳定 ID（同分类同值同来源天然幂等）
     const id = `user-profile-${fact.category}-${this.slugify(fact.value)}`;
+
+    // D-107：同分类冲突解决 — 删除旧条目（相同子分类 + 不同值 = 用户更新了信息）
+    await this.removeConflictingEntries(fact);
 
     const entry: UserProfileEntry = {
       id,
@@ -330,6 +338,45 @@ export class UserProfile {
     } catch (err) {
       logger.warn({ err, id, category: fact.category }, '用户画像归档失败');
       return null;
+    }
+  }
+
+  /**
+   * D-107：删除同分类的旧条目（用户更新了信息）
+   *
+   * 当用户说"我叫李四"替换之前的"我叫张三"时，移除旧的 identity 条目。
+   * 策略：同分类（category）下，新值替换旧值。判断标准是旧条目的 value 前缀。
+   *
+   * @param fact 当前提取到的新事实
+   */
+  private async removeConflictingEntries(fact: ExtractedFact): Promise<void> {
+    try {
+      const existing = await this.index.getByType(MemoryType.PERSONALITY);
+      // 提取新事实的核心模式（如 "姓名: 李四" → 前缀 "姓名"）
+      const newPrefix = fact.value.split(':')[0]!.trim();
+
+      for (const m of existing) {
+        const tags = m.tags ?? [];
+        if (!tags.includes('user-profile')) continue;
+
+        const catTag = tags.find((t) => t.startsWith('category:'));
+        const category = catTag?.replace('category:', '');
+
+        // 同分类 + 不同值 → 冲突，删除旧条目
+        if (category === fact.category && m.content !== fact.value) {
+          const oldPrefix = m.content.split(':')[0]!.trim();
+          // 核心模式相同（如 "姓名" vs "姓名"）→ 确认冲突
+          if (oldPrefix === newPrefix) {
+            await this.index.delete(m.id);
+            logger.info(
+              { oldId: m.id, oldValue: m.content, newValue: fact.value },
+              '用户画像冲突已解决',
+            );
+          }
+        }
+      }
+    } catch {
+      // 冲突解决失败不阻塞写入
     }
   }
 
