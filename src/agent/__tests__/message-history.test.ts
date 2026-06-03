@@ -233,3 +233,295 @@ hello
     });
   });
 });
+
+// ─── 2026-06-03 · 自动归档到 SQLite 索引 + Lazy 扫描 ────────────
+
+import { MemoryIndex } from '@/memory/index.js';
+import { MemoryType, Permanence } from '@/memory/types.js';
+
+describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案）', () => {
+  let tmpDir: string;
+  let topicStore: TopicStore;
+  let index: MemoryIndex;
+  const initialDate = '2026-06-03';
+  const initialTopic = 'auto-archive';
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-autoarchive-'));
+    mkdirSync(join(tmpDir, 'topics'), { recursive: true });
+    topicStore = new TopicStore(tmpDir);
+    index = new MemoryIndex(join(tmpDir, 'test.db'));
+  });
+
+  afterEach(async () => {
+    await index.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('archiveCurrentTopic', () => {
+    it('写入索引：归档后应在 SQLite 出现 type=topic 记录', async () => {
+      const history = new MessageHistory(
+        topicStore,
+        async () => '用户偏好简洁代码风格',
+        initialDate,
+        initialTopic,
+        index,
+      );
+      await history.appendUser('我喜欢简洁的代码风格');
+      await history.appendAssistant('好的，我记住了');
+
+      await history.archiveCurrentTopic('signal');
+
+      const topicMemories = await index.getByType('topic');
+      expect(topicMemories).toHaveLength(1);
+      expect(topicMemories[0]?.id).toBe(`topic-${initialDate}-${initialTopic}`);
+      expect(topicMemories[0]?.permanence).toBe(Permanence.TOPIC);
+      expect(topicMemories[0]?.type).toBe(MemoryType.TOPIC);
+      expect(topicMemories[0]?.content).toBe('用户偏好简洁代码风格');
+      expect(topicMemories[0]?.weight).toBe(0.7);
+    });
+
+    it('幂等：同一 topic 多次归档只产生一条记录（upsert）', async () => {
+      const mockSummarizer = vi.fn().mockResolvedValue('摘要 v1');
+      const history = new MessageHistory(
+        topicStore,
+        mockSummarizer,
+        initialDate,
+        initialTopic,
+        index,
+      );
+      await history.appendUser('hello');
+      await history.appendAssistant('hi');
+
+      await history.archiveCurrentTopic('signal');
+      await history.archiveCurrentTopic('signal');
+
+      // 同一 topic-2026-06-03-auto-archive ID，多次 upsert 只产生 1 条
+      const topicMemories = await index.getByType('topic');
+      expect(topicMemories).toHaveLength(1);
+    });
+
+    it('switch 触发的归档也应写入索引', async () => {
+      // 写入用户消息
+      const history = new MessageHistory(
+        topicStore,
+        async () => 'switch 触发的归档',
+        initialDate,
+        initialTopic,
+        index,
+      );
+      await history.appendUser('msg');
+      await history.appendAssistant('reply');
+
+      // 切话题时 summarizeAndArchive 被 fire-and-forget 调用
+      history.switchTopic('new-topic');
+      // 等待异步归档完成
+      await history.awaitPendingArchives(2000);
+
+      const topicMemories = await index.getByType('topic');
+      expect(topicMemories).toHaveLength(1);
+      expect(topicMemories[0]?.id).toBe(`topic-${initialDate}-${initialTopic}`);
+    });
+
+    it('未注入 index 时不报错（向后兼容）', async () => {
+      // 不传 index 构造 → 只写 topic-*.md
+      const history = new MessageHistory(
+        topicStore,
+        async () => 'no index',
+        initialDate,
+        initialTopic,
+      );
+      await history.appendUser('msg');
+      await history.appendAssistant('reply');
+
+      // 不抛错
+      await expect(history.archiveCurrentTopic('signal')).resolves.toBeUndefined();
+
+      // 话题文件应有 summary
+      const tf = await topicStore.read(initialDate, initialTopic);
+      expect(tf?.summary).toBe('no index');
+    });
+
+    it('summarizer 返回 null 时不写入索引', async () => {
+      const history = new MessageHistory(
+        topicStore,
+        async () => null,
+        initialDate,
+        initialTopic,
+        index,
+      );
+      await history.appendUser('msg');
+      await history.appendAssistant('reply');
+
+      await history.archiveCurrentTopic('signal');
+
+      const topicMemories = await index.getByType('topic');
+      expect(topicMemories).toHaveLength(0);
+    });
+
+    it('消息数 < 2 时跳过（不写索引）', async () => {
+      const history = new MessageHistory(
+        topicStore,
+        async () => '不应被调用',
+        initialDate,
+        initialTopic,
+        index,
+      );
+      // 只发 1 条 user
+      await history.appendUser('only one msg');
+      await history.archiveCurrentTopic('signal');
+
+      const topicMemories = await index.getByType('topic');
+      expect(topicMemories).toHaveLength(0);
+    });
+
+    it('signal 原因可覆盖已有摘要（强信号优先）', async () => {
+      // 预写带 summary 的 topic 文件
+      const mockSummarizer = vi
+        .fn()
+        .mockResolvedValueOnce('首次归档摘要')
+        .mockResolvedValueOnce('signal 重新归档摘要');
+      const history = new MessageHistory(
+        topicStore,
+        mockSummarizer,
+        initialDate,
+        initialTopic,
+        index,
+      );
+      await history.appendUser('msg');
+      await history.appendAssistant('reply');
+
+      await history.archiveCurrentTopic('switch');
+      const after1 = await index.getByType('topic');
+      expect(after1[0]?.content).toBe('首次归档摘要');
+
+      await history.archiveCurrentTopic('signal');
+      const after2 = await index.getByType('topic');
+      expect(after2[0]?.content).toBe('signal 重新归档摘要');
+    });
+  });
+
+  describe('archiveMissingTopics · 启动 Lazy 扫描', () => {
+    it('未注入 index 时直接返回 0（不报错）', async () => {
+      const history = new MessageHistory(
+        topicStore,
+        async () => 'summary',
+        initialDate,
+        initialTopic,
+      );
+      const count = await history.archiveMissingTopics();
+      expect(count).toBe(0);
+    });
+
+    it('未注入 summarizer 时直接返回 0（不报错）', async () => {
+      const history = new MessageHistory(topicStore, undefined, initialDate, initialTopic, index);
+      const count = await history.archiveMissingTopics();
+      expect(count).toBe(0);
+    });
+
+    it('topics 目录为空时返回 0', async () => {
+      const history = new MessageHistory(
+        topicStore,
+        async () => 'summary',
+        initialDate,
+        initialTopic,
+        index,
+      );
+      const count = await history.archiveMissingTopics();
+      expect(count).toBe(0);
+    });
+
+    it('发现未归档的 topic 文件 → 后台补归档', async () => {
+      // 直接往 topics/ 目录写一个历史文件
+      writeFileSync(
+        topicStore.getFilePath('2026-06-01', 'old-topic'),
+        `---
+date: 2026-06-01
+topic: old-topic
+---
+
+# old-topic (2026-06-01)
+
+## [user] 2026-06-01T10:00:00.000Z
+
+我以前聊过 TypeScript 的泛型
+
+## [assistant] 2026-06-01T10:00:05.000Z
+
+好的，泛型是...
+`,
+        'utf-8',
+      );
+
+      const mockSummarizer = vi.fn().mockResolvedValue('历史摘要：聊过 TypeScript 泛型');
+      const history = new MessageHistory(
+        topicStore,
+        mockSummarizer,
+        initialDate,
+        initialTopic,
+        index,
+      );
+
+      const count = await history.archiveMissingTopics(500);
+      expect(count).toBe(1);
+
+      // 等待异步补归档完成（500ms timeout + summarizer 调用 + 写索引）
+      await new Promise((r) => setTimeout(r, 800));
+
+      const topicMemories = await index.getByType('topic');
+      expect(topicMemories).toHaveLength(1);
+      expect(topicMemories[0]?.id).toBe('topic-2026-06-01-old-topic');
+      expect(topicMemories[0]?.content).toBe('历史摘要：聊过 TypeScript 泛型');
+      expect(mockSummarizer).toHaveBeenCalledTimes(1);
+    });
+
+    it('已归档的 topic 不重复归档', async () => {
+      // 写一个历史文件 + 提前把它放进索引（模拟之前已归档）
+      writeFileSync(
+        topicStore.getFilePath('2026-06-02', 'already-done'),
+        `---
+date: 2026-06-02
+topic: already-done
+summary: 之前的摘要
+---
+
+## [user] 2026-06-02T10:00:00.000Z
+
+msg
+## [assistant] 2026-06-02T10:00:05.000Z
+
+reply
+`,
+        'utf-8',
+      );
+      // 预写入索引
+      await index.upsert({
+        id: 'topic-2026-06-02-already-done',
+        type: 'topic',
+        permanence: 'topic',
+        name: '已归档',
+        content: '之前的摘要',
+        tags: [],
+        weight: 0.7,
+        createdAt: '2026-06-02T10:00:00.000Z',
+        updatedAt: '2026-06-02T10:00:00.000Z',
+      });
+
+      const mockSummarizer = vi.fn();
+      const history = new MessageHistory(
+        topicStore,
+        mockSummarizer,
+        initialDate,
+        initialTopic,
+        index,
+      );
+
+      const count = await history.archiveMissingTopics(500);
+      expect(count).toBe(0);
+
+      // 等异步
+      await new Promise((r) => setTimeout(r, 200));
+      expect(mockSummarizer).not.toHaveBeenCalled();
+    });
+  });
+});

@@ -33,6 +33,17 @@ async function getAgent(config: ReturnType<typeof loadDemoConfig>): Promise<Agen
     configDir: CONFIG_DIR,
     projectPath: PROJECT_PATH,
   });
+
+  // 启动时自动恢复最近的话题对话
+  try {
+    const restoredCount = await agentInstance.restoreMostRecentTopic('main');
+    if (restoredCount > 0) {
+      console.log(`已恢复 ${restoredCount} 条历史对话消息`);
+    }
+  } catch (err) {
+    console.warn('恢复历史对话失败:', err);
+  }
+
   return agentInstance;
 }
 
@@ -66,15 +77,8 @@ app.post('/api/chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    if (!config.hasRealLlm) {
-      // Mock 模式
-      const mockResponse = `[Mock 模式] 收到：「${message}」— 真实模式下，墨羽会基于 personality + rules + skills 上下文生成回复。\n\n请在配置表单中填入 mimo API Key 以启用真实对话。`;
-      res.write(`data: ${JSON.stringify({ content: mockResponse })}\n\n`);
-      res.write('data: [DONE]\n\n');
-      res.end();
-      return;
-    }
-
+    // 注意：mock 模式也走完整 Agent（topic-*.md 持久化 + signal 检测 + lazy 扫描）
+    // 只是底层 LLM provider 是 mock，回复内容是回显
     const agent = await getAgent(config);
     for await (const chunk of agent.chat(message)) {
       res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
@@ -101,6 +105,18 @@ app.get('/api/inspect', async (_req: Request, res: Response) => {
     const snapshot: MemorySnapshot = agentInstance.inspect();
     // 异步补全：归档文件清单（IO 操作）
     const topicFiles = await agentInstance.listAllTopics();
+    // 实时归档计数：SQLite 里 type='topic' 的记忆数
+    // 这是 signal 触发 / lazy 扫描 / 切话题三类归档的累计效果
+    let autoArchivedCount = 0;
+    try {
+      const ctx = agentInstance.getBuildCtx?.();
+      if (ctx) {
+        const topicMemories = await ctx.index.getByType('topic');
+        autoArchivedCount = topicMemories.length;
+      }
+    } catch {
+      // 索引读取失败不影响其他字段
+    }
     res.json({
       ready: true,
       // 同步层：直接透传
@@ -112,10 +128,34 @@ app.get('/api/inspect', async (_req: Request, res: Response) => {
         ...snapshot.archive,
         topicFilesCount: topicFiles.length,
         topicFiles,
+        autoArchivedCount, // 自动归档到 SQLite 的条数（信号触发 + lazy + 切话题）
       },
       // 时间戳：便于前端判断快照新鲜度
       timestamp: new Date().toISOString(),
     });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  }
+});
+
+// ─── API：获取对话历史（页面刷新恢复用）──────────────────
+// 返回 AgentLoop 内部 messages 数组，前端据此重新渲染聊天气泡
+// 注意：仅覆盖"页面刷新"场景；服务重启后此数组仅含 system prompt
+app.get('/api/messages', (_req: Request, res: Response) => {
+  try {
+    if (!agentInstance) {
+      res.json({ messages: [] });
+      return;
+    }
+    // 过滤掉 system 提示（前端不需要渲染内部 system prompt）
+    const all = agentInstance.getMessages();
+    const visible = all
+      .filter((m) => m.role !== 'system')
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+    res.json({ messages: visible });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
@@ -147,7 +187,20 @@ app.get('/api/memories', (_req: Request, res: Response) => {
 });
 
 const PORT = process.env.PORT ?? 3000;
-app.listen(PORT, () => {
+
+// 服务器启动时立即初始化 agent（而不是惰性初始化）
+async function initializeAgentOnStartup() {
+  try {
+    const initialConfig = loadDemoConfig();
+    console.log('正在初始化 Agent...');
+    await getAgent(initialConfig);
+    console.log('Agent 初始化完成');
+  } catch (err) {
+    console.warn('Agent 预初始化失败（但服务仍会启动）:', err);
+  }
+}
+
+app.listen(PORT, async () => {
   const initialConfig = loadDemoConfig();
   console.log(`\n\x1b[36m\x1b[1m╔══════════════════════════════════════════╗`);
   console.log(`║   Memora · 小说创作 Demo（Web UI 形态）   ║`);
@@ -156,4 +209,7 @@ app.listen(PORT, () => {
   console.log(
     `\x1b[2m模式：${initialConfig.hasRealLlm ? '\x1b[32m真实 LLM' : '\x1b[33mMock（请在页面填写 API Key）'}\x1b[0m\n`,
   );
+
+  // 启动时初始化 agent
+  await initializeAgentOnStartup();
 });

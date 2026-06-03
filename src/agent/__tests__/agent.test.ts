@@ -197,5 +197,122 @@ describe('Agent · inspect() · 4 层记忆快照', () => {
       // preview 长度 ≤ 80，但 contentLength 反映真实长度
       expect(item.contentPreview.length).toBeLessThanOrEqual(80);
     }
+  }, 30000); // 显式 30s（mock 慢 + 并行测试时 timer 拥塞）
+});
+
+// ─── 2026-06-03 · Signal 实时触发归档 + Lazy 启动扫描 ────────────
+
+import { MemoryType, Permanence } from '@/memory/types.js';
+import { readdirSync } from 'node:fs';
+import { join as pathJoin } from 'node:path';
+
+describe('Agent · 实时归档（Signal 触发 + Lazy 扫描）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(pathJoin(tmpdir(), 'memora-agent-signal-data-'));
+    tmpProject = mkdtempSync(pathJoin(tmpdir(), 'memora-agent-signal-proj-'));
+    tmpConfig = mkdtempSync(pathJoin(tmpdir(), 'memora-agent-signal-cfg-'));
+    seedProject(tmpProject, tmpConfig);
   });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  function makeAgent(): Agent {
+    const config = makeConfig(tmpData);
+    return new Agent({
+      config,
+      configDir: tmpConfig,
+      projectPath: tmpProject,
+    });
+  }
+
+  it('用户输入强信号 → agent.chat 后应在 SQLite 索引出现 topic 记录', async () => {
+    agent = makeAgent();
+    await agent.init();
+
+    // 强信号："我喜欢简洁的代码"
+    await agent.chatSync('我喜欢简洁的代码风格');
+    // 显式等待归档完成（信号触发 + lazy 都覆盖）
+    await agent.waitForArchives(5000);
+
+    // 验证：topic-*.md 应已写入
+    const topicDir = pathJoin(tmpProject, '.memora', 'topics');
+    const files = readdirSync(topicDir);
+    expect(files.some((f) => f.endsWith('.md'))).toBe(true);
+
+    // 验证：SQLite 索引应有 topic 类型记忆
+    const ctx = agent.getBuildCtx();
+    expect(ctx).not.toBeNull();
+    const topicMemories = await ctx!.index.getByType('topic');
+    expect(topicMemories.length).toBeGreaterThanOrEqual(1);
+    const m = topicMemories[0];
+    expect(m).toBeDefined();
+    expect(m!.type).toBe(MemoryType.TOPIC);
+    expect(m!.permanence).toBe(Permanence.TOPIC);
+  });
+
+  it('弱信号（问候/询问）不触发实时归档', async () => {
+    agent = makeAgent();
+    await agent.init();
+
+    // 弱信号
+    await agent.chatSync('你好');
+    await agent.waitForArchives(500);
+
+    const ctx = agent.getBuildCtx();
+    const topicMemories = await ctx!.index.getByType('topic');
+    // 0 条（问候不值得归档）
+    expect(topicMemories).toHaveLength(0);
+  });
+
+  it('init() 触发 lazy 扫描：历史 topic 文件被补归档到 SQLite', async () => {
+    // 预写一个历史 topic 文件
+    const memoraDir = pathJoin(tmpProject, '.memora');
+    mkdirSync(pathJoin(memoraDir, 'topics'), { recursive: true });
+    const historicalFile = pathJoin(memoraDir, 'topics', '2026-06-01-historical.md');
+    writeFileSync(
+      historicalFile,
+      `---
+date: 2026-06-01
+topic: historical
+---
+
+# historical (2026-06-01)
+
+## [user] 2026-06-01T10:00:00.000Z
+
+记得我喜欢 TypeScript
+
+## [assistant] 2026-06-01T10:00:05.000Z
+
+好的，记住了
+`,
+      'utf-8',
+    );
+
+    agent = makeAgent();
+    await agent.init();
+
+    // 等待 lazy 扫描完成（mock provider 慢，每字符 5ms；多 topic 累积更长）
+    await agent.waitForArchives(10000);
+
+    const ctx = agent.getBuildCtx();
+    const topicMemories = await ctx!.index.getByType('topic');
+    // historical 主题应已被补归档
+    const historical = topicMemories.find((m) => m.id === 'topic-2026-06-01-historical');
+    expect(historical).toBeDefined();
+    expect(historical!.content.length).toBeGreaterThan(0);
+  }, 30000); // 显式 30s 超时（mock + lazy 扫描需要时间）
 });

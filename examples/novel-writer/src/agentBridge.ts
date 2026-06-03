@@ -21,14 +21,23 @@ export async function createNovelAgent(config: {
   projectPath: string; // .memora/ 所在目录
 }) {
   // Memora 完整配置（llm + memory + security 子配置）
+  // 注意：llmApiKey 为空时切到 'mock' provider，让 demo 在没配 Key 时也能跑
+  // （mock 模式仍走完整 Agent 链路 → topic-*.md 持久化 + signal 检测 + lazy 扫描都生效）
+  const hasRealLlm = !!config.llmApiKey;
   const memoraConfig: Config = {
-    llm: {
-      provider: 'openai-compatible',
-      apiKey: config.llmApiKey,
-      baseUrl: config.llmBaseUrl,
-      model: config.llmModel,
-      temperature: 0.7, // 小说创作建议略高温度，激发创造性
-    },
+    llm: hasRealLlm
+      ? {
+          provider: 'openai-compatible',
+          apiKey: config.llmApiKey,
+          baseUrl: config.llmBaseUrl,
+          model: config.llmModel,
+          temperature: 0.7, // 小说创作建议略高温度，激发创造性
+        }
+      : {
+          provider: 'mock',
+          model: 'mock-novel-writer',
+          temperature: 0.7,
+        },
     memory: {
       dataDir: '.memora',
       maxContextTokens: 8000,

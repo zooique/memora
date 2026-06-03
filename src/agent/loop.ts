@@ -132,4 +132,26 @@ export class AgentLoop {
   getMessages(): readonly Message[] {
     return this.messages;
   }
+
+  /**
+   * 恢复历史消息（用于重启后恢复对话）
+   * 会跳过 system 消息，只恢复 user/assistant/tool 消息
+   *
+   * @param historyMessages - 要恢复的历史消息列表
+   */
+  restoreHistory(historyMessages: readonly Message[]): void {
+    // 过滤掉 system 消息（我们已经有初始化的 system prompt 了）
+    const nonSystemMessages = historyMessages.filter((m) => m.role !== 'system');
+
+    if (nonSystemMessages.length === 0) {
+      logger.debug('没有需要恢复的历史消息');
+      return;
+    }
+
+    // 保持第一条消息是 system prompt
+    const systemPrompt = this.messages[0]!;
+    this.messages = [systemPrompt, ...nonSystemMessages];
+
+    logger.info({ messageCount: nonSystemMessages.length }, '恢复历史对话消息');
+  }
 }

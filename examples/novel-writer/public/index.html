@@ -812,8 +812,43 @@
         }
       }
 
+      /**
+       * 页面加载时恢复历史消息
+       *
+       * 从 /api/messages 拉取 AgentLoop 内部的对话记录，
+       * 重新渲染为聊天气泡。覆盖"页面刷新"场景：
+       * - 服务端 agent 还在内存中 → 完整恢复
+       * - 服务重启后 → 仅恢复 system prompt（用户看到空对话，符合预期）
+       */
+      async function restoreMessages() {
+        try {
+          const res = await fetch('/api/messages');
+          const data = await res.json();
+          if (data.messages && data.messages.length > 0) {
+            // 清掉默认的欢迎消息
+            document.getElementById('messages').innerHTML = '';
+            // 逐条渲染历史消息
+            for (const m of data.messages) {
+              if (m.role === 'user' || m.role === 'assistant') {
+                appendMessage(m.role, m.content);
+              } else if (m.role === 'tool') {
+                // tool 消息用 system 样式显示（不占主对话流）
+                appendMessage(
+                  'system',
+                  `[工具结果] ${m.content.slice(0, 200)}${m.content.length > 200 ? '…' : ''}`,
+                );
+              }
+            }
+          }
+        } catch {
+          // 恢复失败不影响正常使用，静默忽略
+        }
+      }
+
       // ─── 启动 ────────────────────────────────
       updateStatus();
+      // 页面加载时恢复历史消息（解决刷新后对话消失的问题）
+      restoreMessages();
     </script>
   </body>
 </html>

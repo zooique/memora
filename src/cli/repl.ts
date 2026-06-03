@@ -7,7 +7,8 @@
  *   - box-drawing 字符包裹工具结果
  *   - 工具调用开始/结束标记
  *
- * 分层（T-101 修复）：本模块只调 agent 层的 MessageHistory，不直接调 memory 层的 TopicStore
+ * 分层修复（T-201）：本模块不直接调用 memory/ 层。
+ * 所有 memory 操作（项目、领域、记忆索引）都通过 Agent 门面类中转。
  * 话题持久化（M-002）：
  *   - 用户输入 → MessageHistory.appendUser() → TopicStore
  *   - Agent 回复 → MessageHistory.appendAssistant() → TopicStore
@@ -21,15 +22,11 @@ import { createLlmProvider } from '@/llm/factory.js';
 import { AgentLoop } from '@/agent/loop.js';
 import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
 import { MessageHistory } from '@/agent/message-history.js';
-import { ProjectManager } from '@/memory/project-manager.js';
 import { toFriendlyError } from '@/utils/errors.js';
 import type { LlmProvider } from '@/llm/provider.js';
-import type { MemoryIndex } from '@/memory/index.js';
-import type { TopicStore } from '@/memory/topic-store.js';
-import type { SecurityGuard } from '@/security/path-guard.js';
-import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { createTopicSummarizer } from '@/agent/topic-summarizer.js';
+import { Agent, type AgentBuildCtx } from '@/agent/agent.js';
 import {
   formatWelcome,
   formatHelp,
@@ -52,31 +49,23 @@ export interface ReplOptions {
 export async function startRepl(opts: ReplOptions): Promise<void> {
   const { projectPath, config } = opts;
 
-  // M-207：使用 ProjectManager 管理多项目并发
-  const projectManager = new ProjectManager(config);
-  let pctx = await projectManager.initProject(projectPath);
+  // T-201 修复：通过 Agent 门面类封装所有 memory/ 层访问
+  const agent = new Agent({ projectPath, config });
 
-  let ctx = {
-    domainName: 'default',
-    memoraDir: pctx.memoraDir,
-    fileStore: pctx.fileStore,
-    index: pctx.index,
-    topicStore: pctx.topicStore,
-    security: pctx.security,
-    bootstrapMemories: pctx.bootstrapMemories,
-    loadResult: pctx.loadResult,
-  };
+  // 初始化 Agent（内部走 ProjectManager.initProject）
+  const pctx = await agent.init();
 
-  if (ctx.loadResult.errors.length > 0) {
-    logger.warn({ errors: ctx.loadResult.errors }, '部分记忆文件加载失败');
+  let history: MessageHistory;
+  let loop: AgentLoop;
+
+  // 加载统计
+  if (pctx.loadResult.errors.length > 0) {
+    logger.warn({ errors: pctx.loadResult.errors }, '部分记忆文件加载失败');
   }
 
-  // 初始化 LLM（先于 history，因为 summarizer 需要 provider 引用）
+  // 初始化 LLM
   const provider = createLlmProvider(config);
-
-  // 根据项目上下文创建可切换的组件
-  let currentProjectPath = projectPath;
-  let { history, loop } = rebuildAgentComponents(provider, currentProjectPath, ctx);
+  ({ history, loop } = rebuildAgentComponents(provider, projectPath, pctx));
 
   // 显示欢迎（M-205 美化版 + M-207 项目名）
   console.log(
@@ -85,10 +74,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       projectPath,
       projectName: pctx.projectName,
       modelName: provider.name,
-      dbPath: join(ctx.memoraDir, 'memora.db'),
-      loadedCount: ctx.loadResult.loaded,
-      bootstrapCount: ctx.bootstrapMemories.length,
-      skippedCount: ctx.loadResult.skipped,
+      dbPath: join(pctx.memoraDir, 'memora.db'),
+      loadedCount: pctx.loadResult.loaded,
+      bootstrapCount: pctx.bootstrapMemories.length,
+      skippedCount: pctx.loadResult.skipped,
       globalRulesCount: pctx.globalMemories.length,
       currentTopic: history.currentTopicName,
     }),
@@ -129,7 +118,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
 
     if (input === '/memories') {
-      console.log(formatMemoriesList(ctx.bootstrapMemories));
+      console.log(formatMemoriesList(pctx.bootstrapMemories));
       rl.prompt();
       continue;
     }
@@ -140,7 +129,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         console.log(pc.dim('用法：/search <关键词>'));
       } else {
         try {
-          const results = await ctx.index.search(query, 10);
+          // T-201 修复：通过 Agent 门面类搜索记忆
+          const results = await agent.searchMemories(query, 10);
           if (results.length === 0) {
             console.log(pc.dim(`未找到与 "${query}" 相关的记忆`));
           } else {
@@ -148,9 +138,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             console.log(pc.cyan(`🔍 "${query}" 搜索结果（${results.length} 条）：`));
             for (const m of results) {
               console.log(`  ${pc.yellow(m.name)} ${pc.dim(String(m.weight))} ${pc.dim(m.type)}`);
-              // 截断长内容
-              const preview = m.content.length > 120 ? m.content.slice(0, 120) + '...' : m.content;
-              console.log(`    ${pc.dim(preview)}`);
+              console.log(`    ${pc.dim(m.contentPreview)}`);
             }
             console.log(pc.dim('─'.repeat(60)));
           }
@@ -163,78 +151,67 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // M-207：项目切换命令
+    // M-207：项目切换命令（T-201 修复：通过 Agent 门面类）
     if (input === '/project' || input.startsWith('/project ')) {
       const arg = input.slice('/project'.length).trim();
       if (!arg) {
         // 无参数：显示当前项目和已注册项目列表
-        const projects = projectManager.listProjects();
-        console.log(`当前项目：${pctx.projectName}（${currentProjectPath}）`);
-        if (projects.length > 0) {
-          console.log('已注册项目：');
-          for (const p of projects) {
-            const marker = p.path === currentProjectPath ? ' ←' : '';
-            console.log(`  ${pc.cyan(p.name)} ${pc.dim(p.path)}${marker}`);
+        try {
+          const projects = agent.listProjects();
+          console.log(`当前项目：${pctx.projectName}（${projectPath}）`);
+          if (projects.length > 0) {
+            console.log('已注册项目：');
+            for (const p of projects) {
+              const marker = p.path === projectPath ? ' ←' : '';
+              console.log(`  ${pc.cyan(p.name)} ${pc.dim(p.path)}${marker}`);
+            }
+          } else {
+            console.log(pc.dim('（暂无已注册项目）'));
           }
-        } else {
-          console.log(pc.dim('（暂无已注册项目）'));
+        } catch (err) {
+          const friendly = toFriendlyError(err);
+          console.error(formatError(friendly.title, friendly.detail));
         }
       } else {
-        // 切换项目：arg 可以是项目名称或路径
-        const projects = projectManager.listProjects();
-        const target = projects.find((p) => p.name === arg || p.path === arg);
-        if (!target) {
-          console.log(formatError(`未找到项目：${arg}`, '使用 /project 查看已注册项目'));
-        } else if (target.path === currentProjectPath) {
-          console.log(formatSuccess(`已在项目 ${target.name} 中`));
-        } else {
-          try {
-            pctx = await projectManager.initProject(target.path, target.name);
-            ctx = {
-              domainName: 'default',
-              memoraDir: pctx.memoraDir,
-              fileStore: pctx.fileStore,
-              index: pctx.index,
-              topicStore: pctx.topicStore,
-              security: pctx.security,
-              bootstrapMemories: pctx.bootstrapMemories,
-              loadResult: pctx.loadResult,
-            };
-            currentProjectPath = target.path;
-            ({ history, loop } = rebuildAgentComponents(provider, currentProjectPath, ctx));
-            console.log(
-              formatSuccess(
-                `已切换到项目：${pctx.projectName}（${ctx.bootstrapMemories.length} 条记忆）`,
-              ),
-            );
-          } catch (err) {
-            const friendly = toFriendlyError(err);
-            console.error(formatError(friendly.title, friendly.detail));
-          }
+        try {
+          const newCtx = await agent.switchProject(arg);
+          // 重建 history / loop（provider 复用）
+          ({ history, loop } = rebuildAgentComponents(provider, newCtx.memoraDir, newCtx));
+          console.log(
+            formatSuccess(
+              `已切换到项目：${newCtx.projectName}（${newCtx.bootstrapMemories.length} 条记忆）`,
+            ),
+          );
+        } catch (err) {
+          const friendly = toFriendlyError(err);
+          console.error(formatError(friendly.title, friendly.detail));
         }
       }
       rl.prompt();
       continue;
     }
 
-    // M-208：领域切换命令
+    // M-208：领域切换命令（T-201 修复：通过 Agent 门面类）
     if (input === '/domain' || input.startsWith('/domain ')) {
       const arg = input.slice('/domain'.length).trim();
       if (!arg) {
-        // 无参数：显示当前领域和可用领域列表
-        const domains = pctx.domainManager.listDomains();
-        console.log(`当前领域：${ctx.domainName}`);
-        console.log(`可用领域：${domains.join(', ') || '仅默认'}`);
-      } else if (arg === ctx.domainName) {
+        try {
+          const domains = agent.listDomains();
+          console.log(`当前领域：${agent.currentDomainName}`);
+          console.log(`可用领域：${domains.join(', ') || '仅默认'}`);
+        } catch (err) {
+          const friendly = toFriendlyError(err);
+          console.error(formatError(friendly.title, friendly.detail));
+        }
+      } else if (arg === agent.currentDomainName) {
         console.log(formatSuccess(`已在领域 ${arg} 中`));
       } else {
         try {
-          ctx = await pctx.domainManager.switchDomain(arg);
-          // 重建所有依赖领域上下文的组件
-          ({ history, loop } = rebuildAgentComponents(provider, currentProjectPath, ctx));
+          const newCtx = await agent.switchDomain(arg);
+          ({ history, loop } = rebuildAgentComponents(provider, newCtx.memoraDir, newCtx));
           console.log(
             formatSuccess(
-              `已切换到领域：${ctx.domainName}（${ctx.bootstrapMemories.length} 条记忆）`,
+              `已切换到领域：${agent.currentDomainName}（${newCtx.bootstrapMemories.length} 条记忆）`,
             ),
           );
         } catch (err) {
@@ -290,8 +267,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     rl.prompt();
   }
 
-  // M-207：通过 ProjectManager 关闭项目（释放锁文件 + 关闭数据库）
-  await projectManager.closeProject();
+  // 关闭 Agent（内部关闭数据库 + 释放锁文件）
+  await agent.close();
   rl.close();
 }
 
@@ -314,24 +291,19 @@ function wrapToolExecutor(toolExec: ToolExecutor) {
 }
 
 /**
- * 重建 Agent 组件（M-209 剪枝：消除 3 处重复）
+ * 重建 Agent 组件
  *
  * 在项目切换、领域切换时，需要重建所有依赖 ctx 的组件：
  * MessageHistory、ToolExecutor、AgentLoop
  *
  * @param provider LLM 提供者
  * @param projectPath 当前项目路径
- * @param ctx 领域上下文
+ * @param ctx 领域上下文（来自 Agent 门面类的 pctx）
  */
 function rebuildAgentComponents(
   provider: LlmProvider,
   projectPath: string,
-  ctx: {
-    topicStore: TopicStore;
-    security: SecurityGuard;
-    index: MemoryIndex;
-    bootstrapMemories: Memory[];
-  },
+  ctx: AgentBuildCtx,
 ): { history: MessageHistory; loop: AgentLoop } {
   const history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
   const toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
