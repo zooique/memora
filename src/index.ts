@@ -53,7 +53,17 @@ if (isDirectRun) {
     .command('init')
     .description('初始化项目（生成 personality.md / rules/ / .memora/）')
     .option('-p, --project <path>', '指定项目目录', process.cwd())
-    .action(initCommand);
+    .option('-d, --domain <name>', '领域模板 code|novel（可选，不指定则只生成 .memora/ 骨架）')
+    .action(async (opts) => {
+      try {
+        await initCommand(opts);
+      } catch (err) {
+        const friendly = toFriendlyError(err);
+        friendly.log();
+        console.error(`\n${friendly.format()}\n`);
+        process.exit(1);
+      }
+    });
 
   program
     .command('config <action> [key]')

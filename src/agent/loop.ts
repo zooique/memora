@@ -4,9 +4,9 @@
  * 模型自主决定何时推理、何时调用工具，循环直到输出纯文本
  * 详见 agent设计.md §2.1 运行闭环
  */
-import type { LlmProvider, Message } from '../llm/provider.js';
-import type { Memory } from '../memory/types.js';
-import { logger } from '../logging/logger.js';
+import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { Memory } from '@/memory/types.js';
+import { logger } from '@/logging/logger.js';
 
 export interface AgentLoopOptions {
   provider: LlmProvider;

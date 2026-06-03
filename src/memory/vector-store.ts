@@ -17,8 +17,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { logger } from '../logging/logger.js';
-import { EmbeddingProvider } from '../llm/embedding.js';
+import { logger } from '@/logging/logger.js';
+import { EmbeddingProvider } from '@/llm/embedding.js';
 
 /**
  * 向量条目：ID + 向量

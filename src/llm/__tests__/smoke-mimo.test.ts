@@ -12,11 +12,11 @@ import { resolve } from 'node:path';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig } from '../../config/loader.js';
-import { createLlmProvider } from '../factory.js';
-import { FileStore } from '../../memory/store.js';
-import { MemoryIndex } from '../../memory/index.js';
-import { MemoryLoader } from '../../memory/loader.js';
+import { loadConfig } from '@/config/loader.js';
+import { createLlmProvider } from '@/llm/factory.js';
+import { FileStore } from '@/memory/store.js';
+import { MemoryIndex } from '@/memory/index.js';
+import { MemoryLoader } from '@/memory/loader.js';
 
 // 用项目自带的示例记忆目录（含 personality + rule + skill 3 条必召）
 const MEMORY_DIR = resolve('f:/zooique/memora/examples/memories');

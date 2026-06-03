@@ -7,7 +7,7 @@ import {
   shouldConfirmWrite,
   auditPermissionDenied,
   type PermissionPolicy,
-} from '../permissions.js';
+} from '@/security/permissions.js';
 
 describe('shouldConfirmWrite · 写入二次确认判断', () => {
   it('confirmWrites 为 true 时应该返回 true', () => {

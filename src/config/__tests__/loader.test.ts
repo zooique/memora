@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { loadConfig, findConfigPath } from '../loader.js';
+import { loadConfig, findConfigPath } from '@/config/loader.js';
 
 describe('config/loader · loadConfig', () => {
   let tmpHome: string;

@@ -13,8 +13,8 @@
  *
  * 详见 ADR-003 · LLM 适配层使用 OpenAI Chat Completions 兼容协议
  */
-import { logger } from '../logging/logger.js';
-import { networkError, configError } from '../utils/errors.js';
+import { logger } from '@/logging/logger.js';
+import { networkError, configError } from '@/utils/errors.js';
 
 /**
  * Embedding 配置（与 OpenAICompatibleConfig 共用 baseUrl/apiKey）

@@ -6,9 +6,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { DomainManager } from '../domain-manager.js';
-import type { DomainContext } from '../domain-manager.js';
-import type { Config } from '../../config/loader.js';
+import { DomainManager } from '@/memory/domain-manager.js';
+import type { DomainContext } from '@/memory/domain-manager.js';
+import type { Config } from '@/config/loader.js';
 
 function makeConfig(dataDir = '~/.memora'): Config {
   return {

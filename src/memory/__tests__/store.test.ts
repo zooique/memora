@@ -12,8 +12,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { FileStore } from '../store.js';
-import { MemoryType } from '../types.js';
+import { FileStore } from '@/memory/store.js';
+import { MemoryType } from '@/memory/types.js';
 
 describe('FileStore · 文件级记忆存储', () => {
   let dataDir: string;

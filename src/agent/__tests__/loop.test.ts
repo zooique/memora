@@ -3,9 +3,9 @@
  * 覆盖 processUserInput 流式输出 + 工具调用循环 + 最大迭代限制
  */
 import { describe, it, expect, vi } from 'vitest';
-import { AgentLoop } from '../loop.js';
-import type { LlmProvider, Message } from '../../llm/provider.js';
-import type { Memory } from '../../memory/types.js';
+import { AgentLoop } from '@/agent/loop.js';
+import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { Memory } from '@/memory/types.js';
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {

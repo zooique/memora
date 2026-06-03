@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { TopicStore, todayDate, nowTimestamp } from '../topic-store.js';
+import { TopicStore, todayDate, nowTimestamp } from '@/memory/topic-store.js';
 
 describe('TopicStore · 话题文件持久化', () => {
   let dataDir: string;

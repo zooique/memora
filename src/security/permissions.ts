@@ -4,7 +4,7 @@
  * 两级权限：owner / guest
  * 详见 安全权限设计 v0.1.md §2 + ADR-006
  */
-import { logger } from '../logging/logger.js';
+import { logger } from '@/logging/logger.js';
 
 export type Permission = 'owner' | 'guest';
 

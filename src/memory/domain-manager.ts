@@ -17,14 +17,14 @@
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { FileStore } from '../memory/store.js';
-import { MemoryIndex } from '../memory/index.js';
-import { MemoryLoader } from '../memory/loader.js';
-import { TopicStore } from '../memory/topic-store.js';
-import { SecurityGuard } from '../security/path-guard.js';
-import { logger } from '../logging/logger.js';
-import type { Memory } from '../memory/types.js';
-import type { Config } from '../config/loader.js';
+import { FileStore } from '@/memory/store.js';
+import { MemoryIndex } from '@/memory/index.js';
+import { MemoryLoader } from '@/memory/loader.js';
+import { TopicStore } from '@/memory/topic-store.js';
+import { SecurityGuard } from '@/security/path-guard.js';
+import { logger } from '@/logging/logger.js';
+import type { Memory } from '@/memory/types.js';
+import type { Config } from '@/config/loader.js';
 
 /**
  * 领域上下文：切换领域后产出的一组新组件

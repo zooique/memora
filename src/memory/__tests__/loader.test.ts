@@ -3,10 +3,10 @@
  * 验证文件 → 索引同步、frontmatter 解析、启动加载流程
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { FileStore } from '../store.js';
-import { MemoryIndex } from '../index.js';
-import { MemoryLoader } from '../loader.js';
-import { MemoryType } from '../types.js';
+import { FileStore } from '@/memory/store.js';
+import { MemoryIndex } from '@/memory/index.js';
+import { MemoryLoader } from '@/memory/loader.js';
+import { MemoryType } from '@/memory/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

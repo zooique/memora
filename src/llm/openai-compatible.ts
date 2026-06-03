@@ -7,7 +7,7 @@
 import { LlmProvider } from './provider.js';
 import type { Message, ChatOptions } from './provider.js';
 import type { LlmChunk } from './types.js';
-import { llmError, networkError, configError } from '../utils/errors.js';
+import { llmError, networkError, configError } from '@/utils/errors.js';
 
 export interface OpenAICompatibleConfig {
   baseUrl: string;

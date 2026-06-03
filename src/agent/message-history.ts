@@ -13,10 +13,10 @@
  * 详见 agent上下文组装协议.md §6 话题文件
  * 详见 T-101 修复：cli 越权调 memory 的下沉
  */
-import type { TopicStore } from '../memory/topic-store.js';
-import { todayDate, nowTimestamp } from '../memory/topic-store.js';
-import type { TopicMessage } from '../memory/types.js';
-import { logger } from '../logging/logger.js';
+import type { TopicStore } from '@/memory/topic-store.js';
+import { todayDate, nowTimestamp } from '@/memory/topic-store.js';
+import type { TopicMessage } from '@/memory/types.js';
+import { logger } from '@/logging/logger.js';
 
 /**
  * 话题摘要生成器

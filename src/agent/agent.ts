@@ -15,18 +15,18 @@
  * 使用方式（高级）：
  *   const agent = new Agent({ config: myConfig, configDir: './agent-config', projectPath: './my-project' });
  */
-import { loadConfig, type Config } from '../config/loader.js';
-import { createLlmProvider } from '../llm/factory.js';
+import { loadConfig, type Config } from '@/config/loader.js';
+import { createLlmProvider } from '@/llm/factory.js';
 import { AgentLoop } from './loop.js';
 import { ToolExecutor } from './tool-executor.js';
 import { MessageHistory } from './message-history.js';
-import { ProjectManager } from '../memory/project-manager.js';
+import { ProjectManager } from '@/memory/project-manager.js';
 import { createTopicSummarizer } from './topic-summarizer.js';
-import type { LlmProvider } from '../llm/provider.js';
-import type { Memory } from '../memory/types.js';
-import type { MemoryIndex } from '../memory/index.js';
-import type { TopicStore } from '../memory/topic-store.js';
-import type { SecurityGuard } from '../security/path-guard.js';
+import type { LlmProvider } from '@/llm/provider.js';
+import type { Memory } from '@/memory/types.js';
+import type { MemoryIndex } from '@/memory/index.js';
+import type { TopicStore } from '@/memory/topic-store.js';
+import type { SecurityGuard } from '@/security/path-guard.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 

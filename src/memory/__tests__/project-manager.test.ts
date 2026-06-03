@@ -6,8 +6,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ProjectManager } from '../project-manager.js';
-import type { Config } from '../../config/loader.js';
+import { ProjectManager } from '@/memory/project-manager.js';
+import type { Config } from '@/config/loader.js';
 
 function makeConfig(dataDir?: string): Config {
   return {

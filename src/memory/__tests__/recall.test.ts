@@ -3,10 +3,10 @@
  * 覆盖 bootstrap 基础召回 + recall 增量召回 + M-206 向量语义搜索
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RecallPipeline } from '../recall.js';
-import type { MemoryIndex } from '../index.js';
-import type { VectorStore } from '../vector-store.js';
-import type { Memory } from '../types.js';
+import { RecallPipeline } from '@/memory/recall.js';
+import type { MemoryIndex } from '@/memory/index.js';
+import type { VectorStore } from '@/memory/vector-store.js';
+import type { Memory } from '@/memory/types.js';
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {

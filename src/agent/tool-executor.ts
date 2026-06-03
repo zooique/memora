@@ -7,10 +7,10 @@
  */
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
-import type { SecurityGuard } from '../security/path-guard.js';
-import { toolError } from '../utils/errors.js';
-import { logger } from '../logging/logger.js';
-import type { MemoryIndex } from '../memory/index.js';
+import type { SecurityGuard } from '@/security/path-guard.js';
+import { toolError } from '@/utils/errors.js';
+import { logger } from '@/logging/logger.js';
+import type { MemoryIndex } from '@/memory/index.js';
 
 export type ToolResult = string;
 

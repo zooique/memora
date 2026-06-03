@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { configCommand } from '../commands/config.js';
+import { configCommand } from '@/cli/commands/config.js';
 
 describe('config 命令 · M-104', () => {
   let tmpHome: string;

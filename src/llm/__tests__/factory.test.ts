@@ -3,8 +3,8 @@
  * 覆盖 Mock Provider / 预设表 / 错误场景
  */
 import { describe, it, expect } from 'vitest';
-import { createLlmProvider } from '../factory.js';
-import type { Config } from '../../config/loader.js';
+import { createLlmProvider } from '@/llm/factory.js';
+import type { Config } from '@/config/loader.js';
 
 function makeConfig(overrides: Partial<Config['llm']> = {}): Config {
   return {

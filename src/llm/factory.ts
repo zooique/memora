@@ -3,11 +3,11 @@
  * 根据配置选择具体的 LLM 实现
  * 详见 ADR-003
  */
-import type { Config } from '../config/loader.js';
+import type { Config } from '@/config/loader.js';
 import { LlmProvider } from './provider.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
-import { logger } from '../logging/logger.js';
-import { configError } from '../utils/errors.js';
+import { logger } from '@/logging/logger.js';
+import { configError } from '@/utils/errors.js';
 
 /**
  * 创建 LLM Provider

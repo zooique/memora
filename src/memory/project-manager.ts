@@ -36,10 +36,10 @@ import { MemoryIndex } from './index.js';
 import { MemoryLoader } from './loader.js';
 import { TopicStore } from './topic-store.js';
 import { DomainManager } from './domain-manager.js';
-import { SecurityGuard } from '../security/path-guard.js';
-import { logger } from '../logging/logger.js';
+import { SecurityGuard } from '@/security/path-guard.js';
+import { logger } from '@/logging/logger.js';
 import type { Memory } from './types.js';
-import type { Config } from '../config/loader.js';
+import type { Config } from '@/config/loader.js';
 
 /**
  * 项目上下文：打开一个项目后产出的一组组件

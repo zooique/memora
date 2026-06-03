@@ -3,7 +3,7 @@
  * 覆盖缓存 / 批量嵌入 / 余弦相似度 / 错误处理
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { EmbeddingProvider } from '../embedding.js';
+import { EmbeddingProvider } from '@/llm/embedding.js';
 
 /**
  * 创建模拟 fetch 的辅助函数

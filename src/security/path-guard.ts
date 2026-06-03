@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { logger } from '../logging/logger.js';
+import { logger } from '@/logging/logger.js';
 
 const BLOCKED_PATTERNS = [
   /(^|[\\/])\.ssh([\\/]|$)/i,

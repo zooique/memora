@@ -11,10 +11,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ToolExecutor, BUILTIN_TOOLS } from '../tool-executor.js';
-import { SecurityGuard } from '../../security/path-guard.js';
-import { MemoryIndex } from '../../memory/index.js';
-import { MemoraError } from '../../utils/errors.js';
+import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
+import { SecurityGuard } from '@/security/path-guard.js';
+import { MemoryIndex } from '@/memory/index.js';
+import { MemoraError } from '@/utils/errors.js';
 
 describe('M-204 · 工具执行器（4 个工具）', () => {
   let tmpProject: string;

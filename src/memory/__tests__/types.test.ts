@@ -3,7 +3,7 @@
  * 验证类型 schema 的有效性
  */
 import { describe, expect, it } from 'vitest';
-import { MemorySchema, MemoryType, Permanence } from '../types.js';
+import { MemorySchema, MemoryType, Permanence } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
   it('应该暴露 6 种记忆类型', () => {

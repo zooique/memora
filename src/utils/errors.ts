@@ -15,7 +15,7 @@
  *   2. 详情（原文）—— 排查用
  *   3. 建议（下一步）—— 怎么修复
  */
-import { logger } from '../logging/logger.js';
+import { logger } from '@/logging/logger.js';
 
 export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'unknown';
 

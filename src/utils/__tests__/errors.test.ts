@@ -10,7 +10,7 @@ import {
   llmError,
   toolError,
   toFriendlyError,
-} from '../errors.js';
+} from '@/utils/errors.js';
 
 describe('MemoraError · M-103 错误信息友好化', () => {
   it('应该构造带标题/详情/建议的错误', () => {

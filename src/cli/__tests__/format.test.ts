@@ -22,7 +22,7 @@ import {
   formatSuccess,
   formatError,
   formatWarning,
-} from '../format.js';
+} from '@/cli/format.js';
 
 describe('M-205 · CLI 格式化工具', () => {
   describe('formatToolResult', () => {

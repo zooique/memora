@@ -5,6 +5,10 @@
     "moduleResolution": "NodeNext",
     "lib": ["ES2022"],
     "outDir": "./dist",
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./*"]
+    },
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,

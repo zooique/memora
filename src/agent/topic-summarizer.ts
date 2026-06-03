@@ -13,8 +13,8 @@
  *
  * 详见 agent上下文组装协议.md §6 · 记忆归档原则.md
  */
-import type { LlmProvider, Message } from '../llm/provider.js';
-import type { TopicMessage } from '../memory/types.js';
+import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { TopicMessage } from '@/memory/types.js';
 
 /**
  * 话题摘要生成器回调类型

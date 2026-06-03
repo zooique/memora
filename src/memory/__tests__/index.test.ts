@@ -4,8 +4,8 @@
  * 适配 sqlite3 (mapbox) 异步 API
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { MemoryIndex } from '../index.js';
-import { MemoryType, Permanence } from '../types.js';
+import { MemoryIndex } from '@/memory/index.js';
+import { MemoryType, Permanence } from '@/memory/types.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync, rmSync } from 'node:fs';

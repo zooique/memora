@@ -16,20 +16,20 @@
  */
 import { createInterface, type Interface as RLInterface } from 'node:readline';
 import { join } from 'node:path';
-import type { Config } from '../config/loader.js';
-import { createLlmProvider } from '../llm/factory.js';
-import { AgentLoop } from '../agent/loop.js';
-import { ToolExecutor, BUILTIN_TOOLS } from '../agent/tool-executor.js';
-import { MessageHistory } from '../agent/message-history.js';
-import { ProjectManager } from '../memory/project-manager.js';
-import { toFriendlyError } from '../utils/errors.js';
-import type { LlmProvider } from '../llm/provider.js';
-import type { MemoryIndex } from '../memory/index.js';
-import type { TopicStore } from '../memory/topic-store.js';
-import type { SecurityGuard } from '../security/path-guard.js';
-import type { Memory } from '../memory/types.js';
-import { logger } from '../logging/logger.js';
-import { createTopicSummarizer } from '../agent/topic-summarizer.js';
+import type { Config } from '@/config/loader.js';
+import { createLlmProvider } from '@/llm/factory.js';
+import { AgentLoop } from '@/agent/loop.js';
+import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
+import { MessageHistory } from '@/agent/message-history.js';
+import { ProjectManager } from '@/memory/project-manager.js';
+import { toFriendlyError } from '@/utils/errors.js';
+import type { LlmProvider } from '@/llm/provider.js';
+import type { MemoryIndex } from '@/memory/index.js';
+import type { TopicStore } from '@/memory/topic-store.js';
+import type { SecurityGuard } from '@/security/path-guard.js';
+import type { Memory } from '@/memory/types.js';
+import { logger } from '@/logging/logger.js';
+import { createTopicSummarizer } from '@/agent/topic-summarizer.js';
 import {
   formatWelcome,
   formatHelp,
@@ -345,4 +345,4 @@ function rebuildAgentComponents(
 
 // createTopicSummarizer 已迁移到 agent 层（src/agent/topic-summarizer.ts）
 // 此处保留 re-export 以兼容旧引用路径
-export { createTopicSummarizer } from '../agent/topic-summarizer.js';
+export { createTopicSummarizer } from '@/agent/topic-summarizer.js';

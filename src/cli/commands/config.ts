@@ -10,8 +10,8 @@
  * 详见 M-104
  */
 import { spawn } from 'node:child_process';
-import { loadConfig, findConfigPath } from '../../config/loader.js';
-import { configError } from '../../utils/errors.js';
+import { loadConfig, findConfigPath } from '@/config/loader.js';
+import { configError } from '@/utils/errors.js';
 
 export interface ConfigCommandOptions {
   config?: string;

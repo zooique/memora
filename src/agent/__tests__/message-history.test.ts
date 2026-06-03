@@ -15,9 +15,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { MessageHistory } from '../message-history.js';
-import { TopicStore } from '../../memory/topic-store.js';
-import type { TopicMessage } from '../../memory/types.js';
+import { MessageHistory } from '@/agent/message-history.js';
+import { TopicStore } from '@/memory/topic-store.js';
+import type { TopicMessage } from '@/memory/types.js';
 
 describe('M-203-改 · 事件驱动归档', () => {
   let tmpDir: string;
