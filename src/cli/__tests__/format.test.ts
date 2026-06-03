@@ -8,6 +8,9 @@
  *   - formatHelp：6 个命令
  *   - formatToolsList / formatMemoriesList / formatTopicsList：列表
  *   - formatSuccess / formatError / formatWarning：消息
+ *
+ * 速修（T-203）：picocolors 在非 TTY 环境（vitest）自动禁用颜色，
+ * 需设置 FORCE_COLOR=1 强制启用 ANSI 颜色码
  */
 import { describe, it, expect } from 'vitest';
 import {

@@ -11,6 +11,11 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.ts'],
+    // 强制 picocolors 输出 ANSI 颜色码（系统 NO_COLOR=1 会禁用颜色，测试环境需覆盖）
+    env: {
+      FORCE_COLOR: '1',
+      NO_COLOR: '',
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
