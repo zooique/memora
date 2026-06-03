@@ -126,8 +126,16 @@ export class ProjectManager {
    * 2. 加载项目记忆
    * 3. 加载全局规则
    * 4. 返回项目上下文
+   *
+   * @param projectPath 项目根目录
+   * @param projectName 项目名称（可选，默认取目录名）
+   * @param configDir 配置目录（personality/rules/skills/tools），默认使用 memoraDir
    */
-  async initProject(projectPath: string, projectName?: string): Promise<ProjectContext> {
+  async initProject(
+    projectPath: string,
+    projectName?: string,
+    configDir?: string,
+  ): Promise<ProjectContext> {
     // 如果已有打开的项目，先关闭
     if (this.currentProjectPath) {
       await this.closeProject();
@@ -149,8 +157,10 @@ export class ProjectManager {
     const index = new MemoryIndex(dbPath);
     this.currentIndex = index;
 
-    // 加载记忆
-    const loader = new MemoryLoader(fileStore, index);
+    // 加载记忆：如果提供了 configDir，使用独立的 FileStore 读取配置
+    // 实现配置目录（agent-config/）与运行时数据目录（.memora/）分离
+    const configFileStore = configDir ? new FileStore(configDir) : fileStore;
+    const loader = new MemoryLoader(configFileStore, index);
     const { memories: bootstrapMemories, loadResult } = await loader.bootstrap();
 
     // 加载全局规则

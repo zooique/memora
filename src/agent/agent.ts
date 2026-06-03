@@ -6,19 +6,22 @@
  * 使 AgentLoop / MemoryIndex / DomainManager / ToolExecutor / SecurityGuard
  * 这些已有组件可以被 CLI 以外的宿主项目直接使用。
  *
- * 使用方式：
- *   const agent = new Agent({ config, projectPath });
+ * 使用方式（最简）：
+ *   const agent = new Agent({ projectPath: './my-project' });
  *   await agent.init();
  *   for await (const chunk of agent.chat('你好')) { process.stdout.write(chunk); }
  *   await agent.close();
+ *
+ * 使用方式（高级）：
+ *   const agent = new Agent({ config: myConfig, configDir: './agent-config', projectPath: './my-project' });
  */
-import type { Config } from '../config/loader.js';
+import { loadConfig, type Config } from '../config/loader.js';
 import { createLlmProvider } from '../llm/factory.js';
 import { AgentLoop } from './loop.js';
 import { ToolExecutor } from './tool-executor.js';
 import { MessageHistory } from './message-history.js';
 import { ProjectManager } from '../memory/project-manager.js';
-import { createTopicSummarizer } from '../cli/repl.js';
+import { createTopicSummarizer } from './topic-summarizer.js';
 import type { LlmProvider } from '../llm/provider.js';
 import type { Memory } from '../memory/types.js';
 import type { MemoryIndex } from '../memory/index.js';
@@ -29,10 +32,25 @@ import type { SecurityGuard } from '../security/path-guard.js';
 
 /** Agent 构造选项 */
 export interface AgentOptions {
-  /** Memora 配置对象（由 loadConfig() 产生） */
-  config: Config;
+  /**
+   * Memora 配置对象（由 loadConfig() 产生），可选
+   * 不传时 Agent 内部自动加载默认配置
+   * 高级用户可传入自定义 Config 以获得完整控制
+   */
+  config?: Config;
+  /**
+   * 配置文件路径，可选
+   * 与 config 二选一：两者都提供时，config 优先
+   */
+  configPath?: string;
   /** 宿主项目根目录的绝对路径 */
   projectPath: string;
+  /**
+   * 配置目录路径（personality.md / rules/ / skills/ / tools/），可选
+   * 默认使用 projectPath + '.memora/'（与运行时数据同目录）
+   * 建议设为 './agent-config/' 以分离配置与运行时数据
+   */
+  configDir?: string;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */
@@ -53,11 +71,13 @@ export interface AgentContext {
 
 export class Agent {
   // 构造参数
-  private config: Config;
+  private config: Config | null = null; // init 时延迟加载
+  private configPath: string | undefined;
   private projectPath: string;
+  private configDir: string | undefined; // 配置目录（personality/rules/skills/tools）
 
-  // 运行时组件
-  private projectManager: ProjectManager;
+  // 运行时组件（init 后填充）
+  private projectManager: ProjectManager | null = null;
   private provider: LlmProvider | null = null;
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
@@ -67,9 +87,13 @@ export class Agent {
   private _initialized = false;
 
   constructor(opts: AgentOptions) {
-    this.config = opts.config;
+    // config 和 configPath 二选一，config 优先
+    if (opts.config) {
+      this.config = opts.config;
+    }
+    this.configPath = opts.configPath;
     this.projectPath = opts.projectPath;
-    this.projectManager = new ProjectManager(this.config);
+    this.configDir = opts.configDir;
   }
 
   // ─── 生命周期 ─────────────────────────────────────────
@@ -83,8 +107,17 @@ export class Agent {
    * @returns AgentContext — 宿主项目可据此访问内部组件
    */
   async init(): Promise<AgentContext> {
+    // 确保 config 已加载（构造时未提供则自动加载）
+    if (!this.config) {
+      this.config = await loadConfig(this.configPath);
+    }
+
+    // 创建 ProjectManager（延迟到 init 以确保 config 正确）
+    this.projectManager = new ProjectManager(this.config);
+
     // 初始化项目上下文（加载 .memora/ 下的记忆索引）
-    const pctx = await this.projectManager.initProject(this.projectPath);
+    // 传递 configDir 以分离配置目录与运行时数据目录
+    const pctx = await this.projectManager.initProject(this.projectPath, undefined, this.configDir);
 
     // 创建 LLM Provider
     this.provider = createLlmProvider(this.config);
@@ -148,14 +181,63 @@ export class Agent {
   }
 
   /**
+   * 发送用户消息，非流式返回完整回复
+   *
+   * 便捷方法：内部调用 chat() 流式方法，收集所有 chunk 后一次性返回。
+   * 适用于不需要流式输出的场景（如测试、批处理、API 响应）。
+   *
+   * @param input - 用户输入的文本
+   * @returns 完整的 Agent 回复文本
+   */
+  async chatSync(input: string): Promise<string> {
+    let result = '';
+    for await (const chunk of this.chat(input)) {
+      result += chunk;
+    }
+    return result;
+  }
+
+  /**
+   * 切换当前话题
+   *
+   * 切换前自动为旧话题生成摘要归档（fire-and-forget，不阻塞切换）。
+   * 对应 CLI 的 /topic <name> 命令。
+   *
+   * @param newTopic - 新话题名称
+   * @returns 新话题的全名（格式：日期-话题名）
+   */
+  switchTopic(newTopic: string): string {
+    if (!this._initialized || !this.history) {
+      throw new Error('Agent 未初始化，请先调用 init()');
+    }
+    return this.history.switchTopic(newTopic);
+  }
+
+  /**
+   * 列出所有话题文件
+   * 对应 CLI 的 /topics 命令
+   *
+   * @returns 话题文件名列表
+   */
+  async listAllTopics(): Promise<string[]> {
+    if (!this._initialized || !this.history) {
+      throw new Error('Agent 未初始化，请先调用 init()');
+    }
+    return this.history.listAllTopics();
+  }
+
+  /**
    * 关闭 Agent，释放 SQLite 连接等资源
    */
   async close(): Promise<void> {
-    await this.projectManager.closeProject();
+    if (this.projectManager) {
+      await this.projectManager.closeProject();
+    }
     this._initialized = false;
     this.provider = null;
     this.history = null;
     this.loop = null;
+    this.projectManager = null;
     this._ctx = null;
   }
 
