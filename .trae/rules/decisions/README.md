@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：8
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：13
 
 ---
 
@@ -21,21 +21,26 @@ description: Memora 关键决策年轮
 | [ADR-006](./ADR-006-security-model.md)      | 安全采用两级权限 + 工具白名单 + 路径白名单                | ✅ 已接受 | 安全   |
 | [ADR-007](./ADR-007-testing-strategy.md)    | 测试使用 Vitest + MSW（Mock LLM）                         | ✅ 已接受 | 质量   |
 | [ADR-008](./ADR-008-directory-structure.md) | 目录结构按"职责分层"而非"按类型分层"                      | ✅ 已接受 | 工程   |
+| [ADR-009](./ADR-009-focus-mode.md)          | 专注模式与记忆衰减                                        | ✅ 已接受 | 架构   |
+| [ADR-010](./ADR-010-agent-facade.md)        | Agent 门面类（宿主项目接入入口）                          | ✅ 已接受 | 架构   |
+| [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
+| [ADR-012](./ADR-012-domain-switch.md)       | 领域切换（DomainManager + /domain 命令）                  | ✅ 已接受 | 架构   |
+| [ADR-013](./ADR-013-archive-pipeline.md)    | 记忆归档三步价值过滤（judge → distill → converge）        | ✅ 已接受 | 架构   |
 
 ---
 
 ## 类别分布
 
-| 类别   | 数量 | ADR 列表 |
-| ------ | ---- | -------- |
-| 运行时 | 1    | ADR-001  |
-| 数据层 | 1    | ADR-002  |
-| 集成层 | 1    | ADR-003  |
-| 架构   | 1    | ADR-004  |
-| 形态   | 1    | ADR-005  |
-| 安全   | 1    | ADR-006  |
-| 质量   | 1    | ADR-007  |
-| 工程   | 1    | ADR-008  |
+| 类别   | 数量 | ADR 列表             |
+| ------ | ---- | -------------------- |
+| 运行时 | 1    | ADR-001              |
+| 数据层 | 1    | ADR-002              |
+| 集成层 | 1    | ADR-003              |
+| 架构   | 5    | ADR-004, ADR-009~013 |
+| 形态   | 1    | ADR-005              |
+| 安全   | 1    | ADR-006              |
+| 质量   | 1    | ADR-007              |
+| 工程   | 1    | ADR-008              |
 
 ---
 
