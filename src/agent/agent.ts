@@ -74,6 +74,80 @@ export interface AgentContext {
   security: SecurityGuard;
 }
 
+// ─── 4 层记忆快照类型（inspect() 返回值）──────────────────
+
+/**
+ * 4 层记忆的统一快照类型
+ *
+ * 详见 docs/基础设计文档/记忆系统全景图.md §二
+ */
+export interface MemorySnapshot {
+  /** 第 1 层：工作记忆（messages 数组） */
+  working: WorkingMemorySnapshot;
+  /** 第 2 层：Bootstrap 记忆（永驻 + 领域） */
+  bootstrap: BootstrapSnapshot;
+  /** 第 3 层：话题归档文件（topic-*.md） */
+  archive: ArchiveSnapshot;
+  /** 第 4 层：话题挂载（TopicMount 缓存） */
+  mounted: MountedSnapshot;
+}
+
+/** 第 1 层：工作记忆快照 */
+export interface WorkingMemorySnapshot {
+  total: number;
+  preview: Array<{
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    contentPreview: string;
+    contentLength: number;
+  }>;
+}
+
+/** 第 2 层：Bootstrap 记忆快照 */
+export interface BootstrapSnapshot {
+  total: number;
+  items: Array<{
+    id: string;
+    type: string;
+    permanence: string;
+    name: string;
+    contentPreview: string;
+    weight: number;
+  }>;
+}
+
+/** 第 3 层：话题归档快照（仅元信息，文件列表调 listAllTopics()） */
+export interface ArchiveSnapshot {
+  topicFilesCount: number;
+  currentTopic: string;
+  hint: string;
+}
+
+/** 第 4 层：话题挂载快照 */
+export interface MountedSnapshot {
+  total: number;
+  isMounted: boolean;
+  items: Array<{
+    id: string;
+    name: string;
+    weight: number;
+    contentPreview: string;
+  }>;
+}
+
+/**
+ * 快照预览配置
+ *
+ * 不引入新类，只用 class holder 装常量——避免污染 Agent 类。
+ */
+class MemoryInspector {
+  /** 工作记忆预览条数（最近 N 条） */
+  static readonly WORKING_PREVIEW = 5;
+  /** 话题挂载预览条数（最近 N 条） */
+  static readonly MOUNTED_PREVIEW = 5;
+  /** 内容预览字符数 */
+  static readonly CONTENT_PREVIEW_LEN = 80;
+}
+
 // ─── Agent 门面类 ───────────────────────────────────────
 
 export class Agent {
@@ -243,6 +317,86 @@ export class Agent {
       throw new Error('Agent 未初始化，请先调用 init()');
     }
     return this.history.listAllTopics();
+  }
+
+  /**
+   * 统一查看 4 层记忆快照
+   *
+   * 把 [记忆系统全景图.md §二](../../docs/基础设计文档/记忆系统全景图.md) 描述的
+   * 4 层记忆结构（工作记忆 / Bootstrap / 话题归档 / 话题挂载）
+   * 用一个同步快照暴露给调用方（CLI、demo UI、测试、调试）。
+   *
+   * 设计原则：
+   * - **纯只读**——不动任何组件状态
+   * - **同步返回**——避免 4 层数据不一致（不调 LLM、不调 SQLite）
+   * - **轻量**——每层只返回前 N 条 + 总数
+   *
+   * @returns 4 层记忆快照
+   */
+  inspect(): MemorySnapshot {
+    if (!this._initialized) {
+      throw new Error('Agent 未初始化，请先调用 init()');
+    }
+
+    // 第 1 层：工作记忆（AgentLoop 的 messages 数组，详见 loop.ts §messages）
+    // - 包含 system 提示、user 消息、assistant 消息、tool 工具结果
+    // - 这是 LLM 当下决策的全部上下文
+    const workingFull = this.loop?.getMessages() ?? [];
+    const workingTotal = workingFull.length;
+    const working = workingFull.slice(-MemoryInspector.WORKING_PREVIEW);
+
+    // 第 2 层：Bootstrap 记忆（永驻 + 领域）
+    const bootstrap: readonly Memory[] = this._ctx?.bootstrapMemories ?? [];
+
+    // 第 3 层：话题归档文件计数（通过 history 的 listAllTopics 暴露）
+    // 注意：listAllTopics 是异步的，但 inspect 是同步的。
+    // 这里只取"已加载的缓存"——真实文件数用 listAllTopics() 异步获取。
+    const archiveTotal = 0; // 同步快照中文件数 = 0，hint 引导调 listAllTopics()
+
+    // 第 4 层：话题挂载（TopicMount 缓存）
+    const mountedFull = this.topicMount?.mounted ?? [];
+    const mountedTotal = mountedFull.length;
+    const mounted = mountedFull.slice(-MemoryInspector.MOUNTED_PREVIEW);
+
+    return {
+      working: {
+        total: workingTotal,
+        preview: working.map(
+          (m: { role: 'system' | 'user' | 'assistant' | 'tool'; content: string }) => ({
+            role: m.role,
+            contentPreview: m.content.slice(0, MemoryInspector.CONTENT_PREVIEW_LEN),
+            contentLength: m.content.length,
+          }),
+        ),
+      },
+      bootstrap: {
+        total: bootstrap.length,
+        items: bootstrap.map((m: Memory) => ({
+          id: m.id,
+          type: m.type,
+          permanence: m.permanence,
+          name: m.name,
+          contentPreview: m.content.slice(0, MemoryInspector.CONTENT_PREVIEW_LEN),
+          weight: m.weight,
+        })),
+      },
+      archive: {
+        topicFilesCount: archiveTotal,
+        currentTopic: this.history?.topic ?? '(none)',
+        // 真实归档文件列表需调 listAllTopics()，本方法不阻塞
+        hint: '调 listAllTopics() 获取文件清单',
+      },
+      mounted: {
+        total: mountedTotal,
+        isMounted: this.topicMount?.isMounted ?? false,
+        items: mounted.map((m: Memory) => ({
+          id: m.id,
+          name: m.name,
+          weight: m.weight,
+          contentPreview: m.content.slice(0, MemoryInspector.CONTENT_PREVIEW_LEN),
+        })),
+      },
+    };
   }
 
   /**

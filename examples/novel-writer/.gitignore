@@ -1,0 +1,10 @@
+# 运行时数据
+.novel-data/
+config.local.json
+
+# Node
+node_modules/
+dist/
+
+# 日志
+*.log

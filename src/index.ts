@@ -19,7 +19,15 @@ import { toFriendlyError } from './utils/errors.js';
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from './agent/agent.js';
-export type { AgentOptions, AgentContext } from './agent/agent.js';
+export type {
+  AgentOptions,
+  AgentContext,
+  MemorySnapshot,
+  WorkingMemorySnapshot,
+  BootstrapSnapshot,
+  ArchiveSnapshot,
+  MountedSnapshot,
+} from './agent/agent.js';
 export { loadConfig } from './config/loader.js';
 export type { Config } from './config/loader.js';
 
