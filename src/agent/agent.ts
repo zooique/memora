@@ -14,6 +14,11 @@
  *
  * 使用方式（高级）：
  *   const agent = new Agent({ config: myConfig, configDir: './agent-config', projectPath: './my-project' });
+ *
+ * 专注模式（应无所住，而生其心）：
+ *   Agent 启动时只加载 always + domain 记忆（无所住），
+ *   用户一开口，TopicMount 自动召回话题记忆注入上下文（生其心）。
+ *   同话题内缓存召回结果，鼓励深度专注。
  */
 import { loadConfig, type Config } from '@/config/loader.js';
 import { createLlmProvider } from '@/llm/factory.js';
@@ -22,6 +27,8 @@ import { ToolExecutor } from './tool-executor.js';
 import { MessageHistory } from './message-history.js';
 import { ProjectManager } from '@/memory/project-manager.js';
 import { createTopicSummarizer } from './topic-summarizer.js';
+import { RecallPipeline } from '@/memory/recall.js';
+import { TopicMount } from '@/memory/topic-mount.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
@@ -81,6 +88,7 @@ export class Agent {
   private provider: LlmProvider | null = null;
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
+  private topicMount: TopicMount | null = null; // 话题记忆挂载器（专注模式）
 
   // 上下文（init 后填充）
   private _ctx: AgentContext | null = null;
@@ -139,6 +147,11 @@ export class Agent {
       toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
     });
 
+    // 创建话题记忆挂载器（专注模式：应无所住，而生其心）
+    // 阶段一不使用向量检索（VectorStore 为 undefined），纯关键词召回
+    const recallPipeline = new RecallPipeline(pctx.index);
+    this.topicMount = new TopicMount(recallPipeline);
+
     // 保存上下文
     this._ctx = {
       memoraDir: pctx.memoraDir,
@@ -162,16 +175,19 @@ export class Agent {
    * @returns AsyncGenerator，逐段产出 Agent 回复文本
    */
   async *chat(input: string): AsyncGenerator<string, void, unknown> {
-    if (!this._initialized || !this.history || !this.loop) {
+    if (!this._initialized || !this.history || !this.loop || !this.topicMount) {
       throw new Error('Agent 未初始化，请先调用 init()');
     }
+
+    // 专注模式：检测话题 → 召回话题记忆（"生其心"）
+    const topicMemories = await this.topicMount.focus(input);
 
     // 用户消息写入历史
     await this.history.appendUser(input);
 
-    // Agent Loop 流式处理
+    // Agent Loop 流式处理（注入话题记忆召回结果）
     let assistantContent = '';
-    for await (const chunk of this.loop.processUserInput(input)) {
+    for await (const chunk of this.loop.processUserInput(input, topicMemories)) {
       yield chunk;
       assistantContent += chunk;
     }
@@ -201,6 +217,7 @@ export class Agent {
    * 切换当前话题
    *
    * 切换前自动为旧话题生成摘要归档（fire-and-forget，不阻塞切换）。
+   * 同时卸载话题记忆挂载器，让新话题的"生其心"从空灵中重新浮现。
    * 对应 CLI 的 /topic <name> 命令。
    *
    * @param newTopic - 新话题名称
@@ -210,6 +227,8 @@ export class Agent {
     if (!this._initialized || !this.history) {
       throw new Error('Agent 未初始化，请先调用 init()');
     }
+    // 卸载旧话题的记忆挂载，让新话题重新"生其心"
+    this.topicMount?.unmount();
     return this.history.switchTopic(newTopic);
   }
 
@@ -230,6 +249,10 @@ export class Agent {
    * 关闭 Agent，释放 SQLite 连接等资源
    */
   async close(): Promise<void> {
+    // 卸载话题记忆挂载器（sleep：回到"无所住"的清净状态）
+    this.topicMount?.unmount();
+    this.topicMount = null;
+
     if (this.projectManager) {
       await this.projectManager.closeProject();
     }

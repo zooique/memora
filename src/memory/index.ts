@@ -15,6 +15,7 @@
 import sqlite3, { type Database as SqliteDatabase } from 'sqlite3';
 import { dirname } from 'node:path';
 import { mkdirSync } from 'node:fs';
+import { logger } from '@/logging/logger.js';
 import type { Memory, MemoryTypeValue, PermanenceValue } from './types.js';
 import { segmentText } from './segmenter.js';
 
@@ -210,6 +211,103 @@ export class MemoryIndex {
   }
 
   /**
+   * 触摸记忆：被搜索命中时调用
+   *
+   * 哲学：「而生其心」——被当下需要时重新"活过来"。
+   * 把 weight 重置为 1.0（满格），updated_at 更新为现在，
+   * 衰减时钟重新开始。
+   *
+   * 设计文档：docs/基础设计文档/沉思笔记-记忆衰减与炼化.md §设计二
+   *
+   * @param ids 被命中的记忆 ID 列表
+   */
+  async touch(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await this.ready();
+    const now = new Date().toISOString();
+    // 用 IN (?, ?, ...) 一次更新多条
+    const placeholders = ids.map(() => '?').join(',');
+    await runAsync(
+      this.db,
+      `UPDATE memories SET weight = 1.0, updated_at = ? WHERE id IN (${placeholders})`,
+      [now, ...ids],
+    );
+  }
+
+  /**
+   * 应用记忆权重自然衰减
+   *
+   * 哲学：「应无所住」——不用的记忆自然淡出。
+   * weight 不降到 0（保留最小值 MIN_WEIGHT），
+   * always 永久性的记忆永不衰减（与设计文档 §2 永久性分级一致）。
+   *
+   * 衰减公式：newWeight = max(MIN_WEIGHT, weight × exp(-daysSinceUpdate / halfLife))
+   *
+   * 设计文档：docs/基础设计文档/沉思笔记-记忆衰减与炼化.md §设计二
+   *
+   * @param halfLifeDays 不同永久性等级的半衰期（天数）
+   * @returns 各永久性等级衰减的记忆数量
+   */
+  async applyDecay(
+    halfLifeDays: Record<PermanenceValue, number>,
+  ): Promise<Record<PermanenceValue, number>> {
+    await this.ready();
+    const result: Record<PermanenceValue, number> = {
+      always: 0,
+      domain: 0,
+      topic: 0,
+      'on-demand': 0,
+    };
+
+    // 最小权重（永不降到 0，避免 bootstrap 时 loaded 记忆消失）
+    const MIN_WEIGHT = 0.05;
+
+    // 遍历每种永久性等级
+    for (const permanence of Object.keys(halfLifeDays) as PermanenceValue[]) {
+      const halfLife = halfLifeDays[permanence];
+
+      // always 永久性的记忆不衰减（人格/核心规则永久有效）
+      if (halfLife === Infinity || halfLife === 0) {
+        result[permanence] = 0;
+        continue;
+      }
+
+      // 计算每条记忆的当前 age（天）和新 weight
+      // 用 SQL 直接计算，避免把全表加载到 JS
+      // exp(-age/halfLife) 在 SQLite 中用数学公式
+      const rows = await allAsync<{ id: string; weight: number; updated_at: string }>(
+        this.db,
+        `SELECT id, weight, updated_at FROM memories WHERE permanence = ? AND weight > ?`,
+        [permanence, MIN_WEIGHT],
+      );
+
+      let decayedCount = 0;
+      const now = Date.now();
+
+      for (const row of rows) {
+        const ageMs = now - new Date(row.updated_at).getTime();
+        const ageDays = ageMs / (24 * 60 * 60 * 1000);
+        // 指数衰减：weight × 0.5^(ageDays / halfLife)
+        const decayFactor = Math.pow(0.5, ageDays / halfLife);
+        const newWeight = Math.max(MIN_WEIGHT, row.weight * decayFactor);
+
+        // 只有当 weight 真正变化时才更新（避免无意义的写入）
+        if (Math.abs(newWeight - row.weight) > 0.001) {
+          await runAsync(this.db, `UPDATE memories SET weight = ? WHERE id = ?`, [
+            newWeight,
+            row.id,
+          ]);
+          decayedCount++;
+        }
+      }
+
+      result[permanence] = decayedCount;
+    }
+
+    return result;
+  }
+
+  /**
    * 中文分词搜索（M-201 阶段一 + M-202 Intl.Segmenter）
    *
    * 算法：
@@ -257,7 +355,19 @@ export class MemoryIndex {
     }
 
     const rows = await allAsync<DbRow>(this.db, sql, params);
-    return rows.map(this.toMemory);
+    const memories = rows.map(this.toMemory);
+
+    // 设计 2：被搜索命中的记忆 weight 重置为 1.0（而生其心 —— 重新"活过来"）
+    // fire-and-forget：触觉重置不应阻塞搜索返回
+    if (memories.length > 0) {
+      const ids = memories.map((m) => m.id);
+      this.touch(ids).catch((err) => {
+        // 重置失败静默降级：不影响当前搜索结果
+        logger.warn({ err, count: ids.length }, '记忆 touch 失败（衰减时钟未重置）');
+      });
+    }
+
+    return memories;
   }
 
   /**
