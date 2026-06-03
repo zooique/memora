@@ -10,6 +10,34 @@
  */
 import pc from 'picocolors';
 
+/**
+ * 工具调用执行记录
+ *
+ * 用于 A-102 对话后结果摘要。每轮对话结束后收集所有工具调用记录，
+ * 汇总为一行或多行摘要展示给用户。
+ */
+export interface ToolCallRecord {
+  /** 工具名称（如 "write_file"） */
+  toolName: string;
+  /** 执行状态：ok 或 failed */
+  status: 'ok' | 'failed';
+  /** 摘要信息（单行，预先格式化） */
+  summary: string;
+  /** 错误信息（仅 status=failed 时有值） */
+  error?: string;
+}
+
+/** 最大显示行数 */
+const MAX_SUMMARY_LINES = 3;
+
+/** 工具名缩写映射 */
+const TOOL_ABBR: Record<string, string> = {
+  read_file: 'rf',
+  write_file: 'wf',
+  list_dir: 'ld',
+  search_memories: 'sm',
+};
+
 const HORIZONTAL = '─';
 const BOX_HORIZONTAL = '─';
 const BOX_VERTICAL = '│';
@@ -171,4 +199,42 @@ export function formatError(title: string, detail?: string): string {
  */
 export function formatWarning(msg: string): string {
   return pc.yellow(`⚠️  ${msg}`);
+}
+
+/**
+ * 格式化工具调用记录摘要（A-102）
+ *
+ * 限制最多显示 MAX_SUMMARY_LINES 行。超过部分折叠为 "...and N more"。
+ * 成功工具用灰色缩写 + 摘要；失败工具用红色标记。
+ *
+ * @param records 本轮对话中的所有工具调用记录
+ * @returns 多行 ANSI 彩色字符串（空数组返回空字符串）
+ */
+export function formatActionSummary(records: ToolCallRecord[]): string {
+  if (records.length === 0) return '';
+
+  const lines = ['', pc.dim('─'.repeat(50)), pc.bold('📋 本轮摘要'), ''];
+
+  const visibleCount = Math.min(records.length, MAX_SUMMARY_LINES);
+  for (let i = 0; i < visibleCount; i++) {
+    const r = records[i]!;
+    const abbr = TOOL_ABBR[r.toolName] ?? r.toolName.slice(0, 4);
+    if (r.status === 'failed') {
+      lines.push(`  ${pc.red(abbr)} ${pc.red(r.summary)}`);
+      if (r.error) {
+        lines.push(`    ${pc.red(pc.dim(r.error.slice(0, 80)))}`);
+      }
+    } else {
+      lines.push(`  ${pc.dim(abbr)} ${pc.dim(r.summary)}`);
+    }
+  }
+
+  // 折叠多余记录
+  if (records.length > MAX_SUMMARY_LINES) {
+    const remaining = records.length - MAX_SUMMARY_LINES;
+    lines.push(`  ${pc.dim(`...and ${remaining} more`)}`);
+  }
+
+  lines.push(pc.dim('─'.repeat(50)));
+  return lines.join('\n');
 }

@@ -111,3 +111,39 @@ export interface EmbeddingService {
   /** 批量嵌入多条文本 */
   batchEmbed(texts: string[]): Promise<Array<{ text: string; vector: number[] }>>;
 }
+
+/**
+ * 话题摘要生成器函数签名
+ *
+ * 接受话题消息列表，返回结构化摘要文本。
+ * 返回 null 表示价值过低，无需归档。
+ * 此类型定义在 memory/ 层以避免 agent/ → memory/ 的反向依赖。
+ * agent/message-history.ts 从本文件引用此类型。
+ */
+export type TopicSummarizer = (messages: TopicMessage[]) => Promise<string | null>;
+
+/**
+ * 归档元数据（记忆减法方案 v1.0 · 封存不删除）
+ *
+ * 当话题原文从临时记忆中卸载时，TopicStore 将其移到 archive/ 目录，
+ * 并附带此元数据。支持"未炼化"标记（LLM 归档失败时），
+ * 下次启动时 archive-manager 扫描并重新尝试归档。
+ */
+export interface ArchiveMetadata {
+  /** 原始话题文件名 */
+  originalFileName: string;
+  /** 原始话题日期 YYYY-MM-DD */
+  date: string;
+  /** 原始话题名 */
+  topic: string;
+  /** 封存时间戳 */
+  archivedAt: string;
+  /** 是否已炼化（LLM 归档成功） */
+  refined: boolean;
+  /** 炼化失败次数（用于重试策略） */
+  refineAttempts: number;
+  /** 炼化失败原因（最后一次） */
+  lastRefineError?: string;
+  /** 消息轮次数 */
+  messageCount: number;
+}

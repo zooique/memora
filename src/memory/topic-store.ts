@@ -7,10 +7,10 @@
  * 详见 02-上下文组装-v4.0.md §6 话题文件
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  */
-import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import type { TopicFile, TopicMessage } from './types.js';
+import { join, dirname, basename } from 'node:path';
+import type { TopicFile, TopicMessage, ArchiveMetadata } from './types.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from './frontmatter.js';
 import { logger } from '@/logging/logger.js';
 
@@ -112,6 +112,68 @@ export class TopicStore {
     if (!existsSync(dir)) return [];
     const files = await readdir(dir);
     return files.filter((f) => f.endsWith('.md'));
+  }
+
+  /**
+   * 将话题原文移到 archive/ 目录（封存不删除 · 记忆减法方案 v1.0）
+   *
+   * 策略：
+   *   - 把 topic-*.md 从 topics/ 移动到 archive/ 目录
+   *   - 同时写入 archive-metadata.json 记录元数据
+   *   - 原文保留在 archive/ 中，未来可通过 archive-manager 扫描恢复
+   *   - 话题文件从 topics/ 移除后，TopicStore.list() 不再列出
+   *
+   * @param date - 话题日期 YYYY-MM-DD
+   * @param topic - 话题名
+   * @param refined - 是否已炼化（LLM 归档成功）
+   * @returns 封存后的文件路径，话题不存在返回 null
+   */
+  async moveToArchive(date: string, topic: string, refined: boolean): Promise<string | null> {
+    const srcPath = this.getFilePath(date, topic);
+    if (!existsSync(srcPath)) {
+      logger.debug({ date, topic }, '话题文件不存在，无法封存');
+      return null;
+    }
+
+    // 目标路径：archive/<文件名>
+    const archiveDir = join(this.dataDir, 'archive');
+    await mkdir(archiveDir, { recursive: true });
+    const fileName = basename(srcPath);
+    const destPath = join(archiveDir, fileName);
+
+    // 读取话题文件，获取消息数
+    const topicFile = await this.read(date, topic);
+    const messageCount = topicFile?.messages.length ?? 0;
+
+    // 移动文件
+    await rename(srcPath, destPath);
+
+    // 写入元数据 JSON
+    const metadata: ArchiveMetadata = {
+      originalFileName: fileName,
+      date,
+      topic,
+      archivedAt: new Date().toISOString(),
+      refined,
+      refineAttempts: 0,
+      messageCount,
+    };
+    const metadataPath = join(archiveDir, `${date}-${topic}.meta.json`);
+    await writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
+
+    logger.info({ date, topic, refined, messageCount, destPath }, '话题已封存到 archive/');
+
+    return destPath;
+  }
+
+  /**
+   * 解析话题文件原始内容（公开方法）
+   *
+   * 供 ArchiveManager 等外部调用者使用——当文件已从 topics/ 移到 archive/ 后，
+   * read() 无法访问，但解析逻辑仍应复用 TopicStore 的实现。
+   */
+  parseContent(date: string, topic: string, raw: string): TopicFile {
+    return this.parseTopicFile(date, topic, raw);
   }
 
   /**

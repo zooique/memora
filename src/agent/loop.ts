@@ -163,8 +163,12 @@ export class AgentLoop {
       return;
     }
 
-    // 保持第一条消息是 system prompt
-    const systemPrompt = this.messages[0]!;
+    // 保持第一条消息是 system prompt（构造函数保证 messages[0] 存在）
+    const systemPrompt = this.messages[0];
+    if (!systemPrompt) {
+      logger.warn('restoreHistory: 没有 system prompt，跳过恢复');
+      return;
+    }
     this.messages = [systemPrompt, ...nonSystemMessages];
 
     logger.info({ messageCount: nonSystemMessages.length }, '恢复历史对话消息');

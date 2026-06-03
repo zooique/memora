@@ -5,7 +5,8 @@
  * 阶段二（M-204）：扩展为 4 个工具（read_file / write_file / list_dir / search_memories）
  * 详见 ADR-006 · 安全采用两级权限 + 工具白名单 + 路径白名单
  */
-import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/path-guard.js';
 import { toolError } from '@/utils/errors.js';
@@ -14,6 +15,28 @@ import type { MemoryIndex } from '@/memory/index.js';
 import type { WorkProjectionManager } from './workProjection.js';
 
 export type ToolResult = string;
+
+/**
+ * 写入扩展接口
+ *
+ * 用于在 writeFile 之前注入自定义逻辑（如 diff 展示 + 用户确认）。
+ * 当 onBeforeWrite 被提供时，它将替代 SecurityGuard.requestWriteConfirmation 的安全确认流程。
+ * 详见 方案-行动侧打磨-v1.0.md §二
+ */
+export interface WriteExtensions {
+  /**
+   * 写入前回调
+   * @param path 相对路径
+   * @param beforeContent 文件旧内容（null 表示新文件）
+   * @param afterContent 要写入的新内容
+   * @returns true 继续写入，false 拒绝写入
+   */
+  onBeforeWrite?: (
+    path: string,
+    beforeContent: string | null,
+    afterContent: string,
+  ) => Promise<boolean>;
+}
 
 export interface ToolDefinition {
   name: string;
@@ -102,9 +125,12 @@ export class ToolExecutor {
 
   /**
    * 执行工具调用
+   * @param name 工具名称
+   * @param argsJson 参数 JSON 字符串
+   * @param extensions 写入扩展（可选，用于 diff 确认等）
    * @returns 工具结果的字符串描述
    */
-  async execute(name: string, argsJson: string): Promise<ToolResult> {
+  async execute(name: string, argsJson: string, extensions?: WriteExtensions): Promise<ToolResult> {
     let args: Record<string, unknown>;
     try {
       args = JSON.parse(argsJson) as Record<string, unknown>;
@@ -123,7 +149,7 @@ export class ToolExecutor {
       case 'read_file':
         return this.readFile(args['path'] as string);
       case 'write_file':
-        return this.writeFile(args['path'] as string, args['content'] as string);
+        return this.writeFile(args['path'] as string, args['content'] as string, extensions);
       case 'list_dir':
         return this.listDir(
           (args['path'] as string) ?? '.',
@@ -178,16 +204,22 @@ export class ToolExecutor {
   }
 
   /**
-   * 写入文件（路径白名单 + 写入二次确认）
+   * 写入文件（路径白名单 + 写入二次确认 / diff 确认）
    *
    * 安全策略：
    *   - 路径必须在白名单内
-   *   - guest 模式：强制要求用户 y/N 确认
-   *   - owner + confirmWrites=true：要求 y/N 确认
-   *   - owner + confirmWrites=false：自动批准
+   *   - 如果提供了 WriteExtensions.onBeforeWrite：使用 diff 确认（替代安全确认）
+   *   - 否则回退到 SecurityGuard.requestWriteConfirmation：
+   *     - guest 模式：强制要求用户 y/N 确认
+   *     - owner + confirmWrites=true：要求 y/N 确认
+   *     - owner + confirmWrites=false：自动批准
    *   - 自动创建父目录（在白名单内）
    */
-  private async writeFile(relativePath: string, content: string): Promise<ToolResult> {
+  private async writeFile(
+    relativePath: string,
+    content: string,
+    extensions?: WriteExtensions,
+  ): Promise<ToolResult> {
     if (!relativePath) {
       throw toolError('write_file 工具调用缺少 path 参数', 'LLM 未传 path', [
         '检查 personality.md 是否明确了 write_file 用法',
@@ -202,17 +234,37 @@ export class ToolExecutor {
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'write_file');
 
-    // 写入二次确认
-    const description = `写入 ${content.length} 字符到 ${basename(absolutePath)}`;
-    const confirmed = await this.security.requestWriteConfirmation(
-      absolutePath,
-      'write_file',
-      description,
-    );
-    if (!confirmed) {
-      throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
-        '如需写入，请重新发起请求并确认',
-      ]);
+    // 读取文件旧内容（如果存在）
+    let beforeContent: string | null = null;
+    try {
+      await access(absolutePath, constants.F_OK);
+      beforeContent = await readFile(absolutePath, 'utf-8');
+    } catch {
+      // 文件不存在 → 新文件，beforeContent 保持 null
+    }
+
+    // 写入确认：优先使用 WriteExtensions.onBeforeWrite（diff 确认），
+    // 否则回退到 SecurityGuard.requestWriteConfirmation（安全确认）
+    if (extensions?.onBeforeWrite) {
+      const ok = await extensions.onBeforeWrite(relativePath, beforeContent, content);
+      if (!ok) {
+        throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
+          '如需写入，请重新发起请求并确认',
+        ]);
+      }
+    } else {
+      // 回退到原有安全确认流程
+      const description = `写入 ${content.length} 字符到 ${basename(absolutePath)}`;
+      const confirmed = await this.security.requestWriteConfirmation(
+        absolutePath,
+        'write_file',
+        description,
+      );
+      if (!confirmed) {
+        throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
+          '如需写入，请重新发起请求并确认',
+        ]);
+      }
     }
 
     // 自动创建父目录（mkdir recursive）
@@ -221,7 +273,13 @@ export class ToolExecutor {
 
     try {
       await writeFile(absolutePath, content, 'utf-8');
-      return `✅ 已写入：${absolutePath}（${content.length} 字符）`;
+      // 返回结果包含 beforeContent 信息，供 A-102 摘要使用
+      const lines = content.split('\n').length;
+      const oldLines = beforeContent !== null ? beforeContent.split('\n').length : 0;
+      return (
+        `✅ 已写入：${absolutePath}（${content.length} 字符，${lines} 行）` +
+        (beforeContent !== null ? ` [旧文件: ${oldLines} 行]` : ' [新文件]')
+      );
     } catch (err) {
       throw toolError(
         '文件写入失败',

@@ -196,6 +196,21 @@ export class Agent {
   // 当前领域名（switchDomain 后更新），独立于 _pctx 避免类型提升麻烦
   private _currentDomain: string = 'default';
 
+  /**
+   * 对话轮次计数器（记忆减法方案 v1.0 · 排雷修正 L5）
+   *
+   * 每轮 chat() 递增。达到 archiveCheckRounds 后触发话题归档检查，
+   * 使用 TopicMount 的 Jaccard 相似度判断话题是否漂移。
+   * 切换话题时重置。
+   */
+  private roundCount = 0;
+
+  /**
+   * 归档检查轮次阈值（记忆减法方案 v1.0）
+   * N 轮后启动话题归档检查（话题级检查，非逐轮归档）
+   */
+  private readonly archiveCheckRounds = 3;
+
   constructor(opts: AgentOptions) {
     // config 和 configPath 二选一，config 优先
     if (opts.config) {
@@ -332,6 +347,23 @@ export class Agent {
       });
       this.history.registerPendingArchive(p);
     }
+
+    // 记忆减法方案 v1.0 · 排雷修正 L5：N 轮后话题归档检查
+    // 归档粒度改为"话题级检查归档"——每 archiveCheckRounds 轮检查一次，
+    // 超长话题（>30 轮）中途也触发中间归档。
+    // archiveCurrentTopic 内部有幂等保护（已有摘要则跳过），安全重复触发。
+    // 翠幕天罗 P2-2 修复：周期性归档使用 'switch' 原因而非 'signal'
+    // 'signal' 会绕过幂等检查强制重新调用 LLM，只应在 detectMemorableSignal 命中时使用
+    this.roundCount++;
+    if (this.roundCount >= this.archiveCheckRounds) {
+      logger.debug({ roundCount: this.roundCount }, '触发话题归档检查（记忆减法 · 窗口计数）');
+      const p = this.history.archiveCurrentTopic('switch').catch((err) => {
+        void err;
+      });
+      this.history.registerPendingArchive(p);
+      // 归档后重置轮次计数（从归档点重新计数）
+      this.roundCount = 0;
+    }
   }
 
   /**
@@ -387,6 +419,8 @@ export class Agent {
 
     // 卸载旧话题的记忆挂载，让新话题重新"生其心"
     this.topicMount?.unmount();
+    // 重置轮次计数（新话题从 0 开始）
+    this.roundCount = 0;
     return this.history.switchTopic(newTopic);
   }
 

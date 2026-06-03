@@ -19,18 +19,10 @@
  */
 import type { TopicStore } from '@/memory/topic-store.js';
 import { todayDate, nowTimestamp } from '@/memory/topic-store.js';
-import type { Memory, TopicMessage, TopicFile } from '@/memory/types.js';
+import type { Memory, TopicMessage, TopicSummarizer, TopicFile } from '@/memory/types.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
 import { logger } from '@/logging/logger.js';
-
-/**
- * 话题摘要生成器
- * 接收话题消息列表，返回精炼后的核心记忆
- * 返回 null 表示对话价值过低，跳过归档（记忆归档原则 v0.2 · 三步判断）
- * 由 cli 层注入（持有 LLM provider 引用）
- */
-export type TopicSummarizer = (messages: TopicMessage[]) => Promise<string | null>;
 
 /**
  * 消息历史类
@@ -57,6 +49,14 @@ export class MessageHistory {
      * 不注入则只写 topic-*.md（保持向后兼容）。
      */
     private readonly index?: MemoryIndex,
+    /**
+     * 临时记忆最小窗口轮次（记忆减法方案 v1.0 · 排雷修正 L2）
+     *
+     * 上下文压缩时，最少保留的对话轮次。即使上下文利用率 ≥ 85%，
+     * 也不压缩到少于此轮次，保证基本上下文连贯性。
+     * 默认 3 轮，不可在运行时突破。
+     */
+    private readonly minWindowRounds = 3,
   ) {
     this.currentDate = initialDate ?? todayDate();
     this.currentTopic = initialTopic;
@@ -84,6 +84,14 @@ export class MessageHistory {
    */
   get topic(): string {
     return this.currentTopic;
+  }
+
+  /**
+   * 获取最小窗口轮次（记忆减法方案 v1.0）
+   * 上下文压缩时的下限保护
+   */
+  get minWindowRoundsValue(): number {
+    return this.minWindowRounds;
   }
 
   /**

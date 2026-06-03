@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 话题摘要生成器 — 事件驱动的话题归档
  *
  * 设计（M-203-改 · M-209 记忆归档原则 v0.3）：
@@ -56,9 +56,10 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
 
 输出格式（严格 JSON，不含 markdown 代码块标记）：
 - 对话全是通用问答/闲聊，无任何独有信息 → 只输出 SKIP
-- 否则输出：{"约束":["..."], "偏好":["..."], "决策":["..."]}
+- 否则输出：{"约束":["..."], "偏好":["..."], "决策":["..."], "快照":["..."]}
 - 空数组的字段可省略
-- 每条 10-20 字，只提取用户独有的信息，不包含 LLM 已知的通用知识`,
+- 每条约束/偏好/决策 10-20 字，只提取用户独有的信息，不包含 LLM 已知的通用知识
+- 快照：提取 5-8 句用户原文中信息量最高的句子，逐句截取（≤30 字/句），用于后续话题召回`,
       },
       { role: 'user', content: conversation },
     ];
@@ -85,6 +86,7 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
       if (parsed['约束']?.length) parts.push('约束：' + parsed['约束'].join('；'));
       if (parsed['偏好']?.length) parts.push('偏好：' + parsed['偏好'].join('；'));
       if (parsed['决策']?.length) parts.push('决策：' + parsed['决策'].join('；'));
+      if (parsed['快照']?.length) parts.push('快照：' + parsed['快照'].join('；'));
       if (parts.length > 0) return parts.join(' | ');
     } catch {
       // JSON 解析失败，降级使用原始文本

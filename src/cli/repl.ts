@@ -20,7 +20,7 @@ import { join } from 'node:path';
 import type { Config } from '@/config/loader.js';
 import { createLlmProvider } from '@/llm/factory.js';
 import { AgentLoop } from '@/agent/loop.js';
-import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
+import { ToolExecutor, BUILTIN_TOOLS, type WriteExtensions } from '@/agent/tool-executor.js';
 import { MessageHistory } from '@/agent/message-history.js';
 import { toFriendlyError } from '@/utils/errors.js';
 import type { LlmProvider } from '@/llm/provider.js';
@@ -38,7 +38,11 @@ import {
   formatToolResult,
   formatToolStart,
   formatToolEnd,
+  formatActionSummary,
+  type ToolCallRecord,
 } from './format.js';
+import { MarkdownRenderer } from './markdown-renderer.js';
+import { accumulateWrite, promptBatchWrites, type WriteAccumulator } from './diff-renderer.js';
 import pc from 'picocolors';
 
 export interface ReplOptions {
@@ -65,7 +69,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 
   // 初始化 LLM
   const provider = createLlmProvider(config);
-  ({ history, loop } = rebuildAgentComponents(provider, projectPath, pctx));
+
+  // 本轮工具调用记录（A-102），wrapToolExecutor 闭包捕获此数组引用
+  const toolCallRecordsForTurn: ToolCallRecord[] = [];
+
+  ({ history, loop } = rebuildAgentComponents(provider, projectPath, pctx, toolCallRecordsForTurn));
 
   // 显示欢迎（M-205 美化版 + M-207 项目名）
   console.log(
@@ -176,7 +184,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         try {
           const newCtx = await agent.switchProject(arg);
           // 重建 history / loop（provider 复用）
-          ({ history, loop } = rebuildAgentComponents(provider, newCtx.memoraDir, newCtx));
+          ({ history, loop } = rebuildAgentComponents(
+            provider,
+            newCtx.memoraDir,
+            newCtx,
+            toolCallRecordsForTurn,
+          ));
           console.log(
             formatSuccess(
               `已切换到项目：${newCtx.projectName}（${newCtx.bootstrapMemories.length} 条记忆）`,
@@ -208,7 +221,12 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       } else {
         try {
           const newCtx = await agent.switchDomain(arg);
-          ({ history, loop } = rebuildAgentComponents(provider, newCtx.memoraDir, newCtx));
+          ({ history, loop } = rebuildAgentComponents(
+            provider,
+            newCtx.memoraDir,
+            newCtx,
+            toolCallRecordsForTurn,
+          ));
           console.log(
             formatSuccess(
               `已切换到领域：${agent.currentDomainName}（${newCtx.bootstrapMemories.length} 条记忆）`,
@@ -246,19 +264,31 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     await history.appendUser(input);
 
     // 用户输入 → Agent Loop
+
+    // 重置本轮工具调用记录（A-102），wrapToolExecutor 闭包捕获的是数组引用
+    toolCallRecordsForTurn.length = 0;
+
     let assistantContent = '';
     try {
       process.stdout.write('\n');
+      // 流式 Markdown 渲染（A-103）
+      const md = new MarkdownRenderer();
       for await (const chunk of loop.processUserInput(input)) {
-        process.stdout.write(chunk);
+        process.stdout.write(md.feed(chunk));
         assistantContent += chunk;
       }
-      process.stdout.write('\n\n');
+      process.stdout.write(md.flush());
+      process.stdout.write('\n');
     } catch (err) {
       // M-103：所有错误统一包装为友好错误
       const friendly = toFriendlyError(err);
       friendly.log();
       console.error(formatError(friendly.title, friendly.detail));
+    }
+
+    // A-102：对后结果摘要
+    if (toolCallRecordsForTurn.length > 0) {
+      process.stdout.write(formatActionSummary(toolCallRecordsForTurn) + '\n');
     }
 
     // Agent 回复 → 通过 MessageHistory 追加到话题文件
@@ -273,21 +303,117 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
 }
 
 /**
- * 包装 ToolExecutor，添加 M-205 工具调用可视化
+ * 包装 ToolExecutor，添加 M-205 工具调用可视化 + A-101 diff 确认 + A-102 记录
  */
-function wrapToolExecutor(toolExec: ToolExecutor) {
+function wrapToolExecutor(toolExec: ToolExecutor, toolCallRecords: ToolCallRecord[]) {
   return async (name: string, args: string): Promise<string> => {
     process.stderr.write(formatToolStart(name) + '\n');
+
+    // 为 write_file 创建 diff 确认扩展（A-101）
+    let extensions: WriteExtensions | undefined;
+    if (name === 'write_file') {
+      extensions = {
+        onBeforeWrite: async (path, oldContent, newContent) => {
+          const accumulators: WriteAccumulator[] = [];
+          accumulateWrite(path, oldContent, newContent, accumulators);
+          const ok = await promptBatchWrites(accumulators);
+
+          // 记录摘要信息（A-102）
+          const acc = accumulators[0]!;
+          if (acc.diffResult.isBinary) {
+            toolCallRecords.push({
+              toolName: name,
+              status: ok ? 'ok' : 'failed',
+              summary: `${path}  ⚠二进制`,
+              error: ok ? undefined : '用户拒绝写入',
+            });
+          } else if (acc.diffResult.isNewFile) {
+            toolCallRecords.push({
+              toolName: name,
+              status: ok ? 'ok' : 'failed',
+              summary: `${path}  新建 ${acc.diffResult.additions} 行`,
+              error: ok ? undefined : '用户拒绝写入',
+            });
+          } else {
+            toolCallRecords.push({
+              toolName: name,
+              status: ok ? 'ok' : 'failed',
+              summary: `${path}  +${acc.diffResult.additions} −${acc.diffResult.removals}`,
+              error: ok ? undefined : '用户拒绝写入',
+            });
+          }
+          return ok;
+        },
+      };
+    }
+
     try {
-      const result = await toolExec.execute(name, args);
+      const result = await toolExec.execute(name, args, extensions);
       process.stderr.write(formatToolResult(name, result) + '\n');
       process.stderr.write(formatToolEnd(name, true));
+
+      // 记录非 write_file 工具的结果（A-102）
+      // write_file 已在 onBeforeWrite 回调中记录
+      if (name !== 'write_file') {
+        toolCallRecords.push({
+          toolName: name,
+          status: 'ok',
+          summary: makeToolSummary(name, args, result),
+        });
+      }
+
       return result;
     } catch (err) {
       process.stderr.write(formatToolEnd(name, false));
+
+      // 记录失败的工具调用（A-102）
+      if (name !== 'write_file') {
+        toolCallRecords.push({
+          toolName: name,
+          status: 'failed',
+          summary: makeToolSummary(name, args, ''),
+          error: (err as Error).message.slice(0, 80),
+        });
+      }
+
       throw err;
     }
   };
+}
+
+/**
+ * 生成工具调用的简短摘要（A-102 辅助）
+ *
+ * 从工具名称、参数和结果中提取关键信息，
+ * 生成单行摘要（配合 ToolCallRecord.summary 使用）。
+ */
+function makeToolSummary(name: string, argsJson: string, result: string): string {
+  let args: Record<string, unknown> = {};
+  try {
+    args = JSON.parse(argsJson) as Record<string, unknown>;
+  } catch {
+    // 解析失败则用空对象
+  }
+
+  switch (name) {
+    case 'read_file': {
+      const path = String(args['path'] ?? '?');
+      const lines = result.split('\n').length;
+      return `${path}  ${lines} 行`;
+    }
+    case 'list_dir': {
+      const path = String(args['path'] ?? '.');
+      const entries = result.split('\n').filter((l) => l.trim()).length;
+      return `${path}  ${entries} 项`;
+    }
+    case 'search_memories': {
+      const query = String(args['query'] ?? '?');
+      const count = (result.match(/找到 (\d+) 条/) ?? [])[1] ?? '0';
+      return `"${query}"  ${count} 条`;
+    }
+    default:
+      return name;
+  }
 }
 
 /**
@@ -299,18 +425,20 @@ function wrapToolExecutor(toolExec: ToolExecutor) {
  * @param provider LLM 提供者
  * @param projectPath 当前项目路径
  * @param ctx 领域上下文（来自 Agent 门面类的 pctx）
+ * @param toolCallRecords A-102 工具调用记录数组（闭包引用，原地修改）
  */
 function rebuildAgentComponents(
   provider: LlmProvider,
   projectPath: string,
   ctx: AgentBuildCtx,
+  toolCallRecords: ToolCallRecord[],
 ): { history: MessageHistory; loop: AgentLoop } {
   const history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
   const toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
   const loop = new AgentLoop({
     provider,
     bootstrapMemories: ctx.bootstrapMemories,
-    toolExecutor: wrapToolExecutor(toolExec),
+    toolExecutor: wrapToolExecutor(toolExec, toolCallRecords),
   });
   return { history, loop };
 }
