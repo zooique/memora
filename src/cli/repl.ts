@@ -40,6 +40,8 @@ import {
   formatToolEnd,
   formatActionSummary,
   formatStatPanel,
+  formatMountedPanel,
+  formatWarning,
   type ToolCallRecord,
 } from './format.js';
 import { MarkdownRenderer } from './markdown-renderer.js';
@@ -165,6 +167,43 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       try {
         const stats = await agent.getStats();
         console.log(formatStatPanel(stats));
+      } catch (err) {
+        const friendly = toFriendlyError(err);
+        console.error(formatError(friendly.title, friendly.detail));
+      }
+      rl.prompt();
+      continue;
+    }
+
+    // 新枝破土 N-102：查看当前挂载记忆
+    if (input === '/mounted') {
+      try {
+        const memories = agent.getMountedMemories();
+        console.log(formatMountedPanel(memories));
+      } catch (err) {
+        const friendly = toFriendlyError(err);
+        console.error(formatError(friendly.title, friendly.detail));
+      }
+      rl.prompt();
+      continue;
+    }
+
+    // 新枝破土 N-103：踢出指定记忆
+    if (input.startsWith('/unmount')) {
+      const name = input.slice('/unmount'.length).trim();
+      if (!name) {
+        console.log(pc.yellow('用法: /unmount <记忆名称>'));
+        console.log(pc.dim('  输入 /mounted 查看当前挂载的记忆'));
+        rl.prompt();
+        continue;
+      }
+      try {
+        const result = agent.unmountMemory(name);
+        if (result.removed) {
+          console.log(formatSuccess(`已踢出: ${result.name}`));
+        } else {
+          console.log(formatWarning(result.reason ?? '踢出失败'));
+        }
       } catch (err) {
         const friendly = toFriendlyError(err);
         console.error(formatError(friendly.title, friendly.detail));

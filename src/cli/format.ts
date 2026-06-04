@@ -122,6 +122,8 @@ export function formatHelp(): string {
     ['/memories', '列出已加载记忆'],
     ['/search <query>', '搜索记忆'],
     ['/stat', '记忆库统计面板'],
+    ['/mounted', '查看挂载记忆'],
+    ['/unmount <name>', '踢出指定记忆'],
     ['/project [name]', '切换项目（不填则显示列表）'],
     ['/domain [name]', '切换领域（不填则显示列表）'],
     ['/topic <name>', '切换话题（不填则显示当前）'],
@@ -315,6 +317,64 @@ export function formatStatPanel(stats: {
 
   lines.push('');
   lines.push(pc.dim('═'.repeat(55)));
+
+  return lines.join('\n');
+}
+
+// ─── 新枝破土 N-102：挂载记忆查看面板 ──────────────────────
+
+/**
+ * 渲染挂载记忆查看面板（新枝破土 N-102）
+ *
+ * 以表格形式展示当前话题挂载的记忆：
+ * 名称、类型、权重、内容预览、是否被踢出。
+ *
+ * @param memories Agent.getMountedMemories() 的返回结果
+ * @returns 多行 ANSI 彩色字符串
+ */
+export function formatMountedPanel(
+  memories: Array<{
+    id: string;
+    name: string;
+    type: string;
+    weight: number;
+    contentPreview: string;
+    suppressed: boolean;
+    createdAt: string;
+  }>,
+): string {
+  const lines: string[] = ['', pc.bold(pc.cyan('📌 挂载记忆')), pc.dim('═'.repeat(70)), ''];
+
+  if (memories.length === 0) {
+    lines.push(pc.dim('  (当前话题无挂载记忆)'));
+    lines.push('');
+    lines.push(pc.dim('═'.repeat(70)));
+    return lines.join('\n');
+  }
+
+  // 表头
+  lines.push(
+    `  ${pc.bold('名称'.padEnd(24, ' '))} ${pc.bold('类型'.padEnd(8, ' '))} ${pc.bold('权重'.padEnd(6, ' '))} ${pc.bold('预览')}`,
+  );
+  lines.push(pc.dim(`  ${'─'.repeat(24)} ${'─'.repeat(8)} ${'─'.repeat(6)} ${'─'.repeat(30)}`));
+
+  // 行
+  for (const m of memories) {
+    const typeLabel = TYPE_LABELS[m.type] ?? m.type;
+    const typeColor = TYPE_COLORS[m.type] ?? pc.white;
+    const weightStr = m.weight.toFixed(2);
+    const preview =
+      m.contentPreview.length > 30 ? m.contentPreview.slice(0, 30) + '…' : m.contentPreview;
+    const suppressed = m.suppressed ? pc.dim(pc.yellow(' [已踢出]')) : '';
+
+    lines.push(
+      `  ${pc.bold(m.name.padEnd(24, ' ').slice(0, 24))} ${typeColor(typeLabel.padEnd(8, ' '))} ${pc.bold(weightStr.padEnd(6, ' '))} ${pc.dim(preview)}${suppressed}`,
+    );
+  }
+
+  lines.push('');
+  lines.push(pc.dim(`  ${memories.length} 条记忆挂载中`));
+  lines.push(pc.dim('═'.repeat(70)));
 
   return lines.join('\n');
 }

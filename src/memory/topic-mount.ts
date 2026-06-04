@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 话题记忆挂载器 — TopicMount
  *
  * 实现"应无所住，而生其心"的专注模式：
@@ -43,6 +43,9 @@ export class TopicMount {
 
   // 当前挂载的记忆（按时间排序）
   private _mounted: Memory[] = [];
+
+  // 被用户踢出的记忆 ID 集合（本话题内抑制，切换话题时清除）
+  private suppressedIds: Set<string> = new Set();
 
   // 召回管线（注入）
   private readonly recall: RecallPipeline;
@@ -115,6 +118,39 @@ export class TopicMount {
   unmount(): void {
     this.currentKeywords = new Set();
     this._mounted = [];
+    this.suppressedIds.clear();
+  }
+
+  /**
+   * 踢出指定记忆（新枝破土 N-103）
+   *
+   * 将记忆 ID 加入抑制集合，立即从当前挂载中移除。
+   * 后续 remount() 会自动过滤被抑制的记忆。
+   * 抑制仅在本话题会话内有效，话题切换或 unmount 后清除。
+   *
+   * @param id - 记忆 ID
+   * @returns 是否成功踢出（ID 不存在于挂载中则返回 false）
+   */
+  suppress(id: string): boolean {
+    const found = this._mounted.some((m) => m.id === id);
+    if (!found) return false;
+    this.suppressedIds.add(id);
+    this._mounted = this._mounted.filter((m) => m.id !== id);
+    return true;
+  }
+
+  /**
+   * 检查记忆是否已被踢出（新枝破土 N-103）
+   */
+  isSuppressed(id: string): boolean {
+    return this.suppressedIds.has(id);
+  }
+
+  /**
+   * 获取已被踢出的记忆 ID 数量（供调试/i18n）
+   */
+  get suppressedCount(): number {
+    return this.suppressedIds.size;
   }
 
   // ─── 内部方法 ───────────────────────────────────────────
@@ -159,10 +195,13 @@ export class TopicMount {
     // 按创建时间排序（旧 → 新，模拟人类回忆的时间顺序）
     results.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
+    // 过滤被踢出的记忆（新枝破土 N-103）
+    const filtered = results.filter((m) => !this.suppressedIds.has(m.id));
+
     // 更新缓存
     this.currentKeywords = keywords;
-    this._mounted = results;
+    this._mounted = filtered;
 
-    return results;
+    return filtered;
   }
 }

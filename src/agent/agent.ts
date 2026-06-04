@@ -91,6 +91,28 @@ export interface AgentStats {
 }
 
 /**
+ * 挂载记忆条目（新枝破土 N-102）
+ *
+ * 提供给 CLI /mounted 命令渲染挂载面板。
+ */
+export interface AgentMountedMemory {
+  /** 记忆 ID */
+  id: string;
+  /** 记忆名称 */
+  name: string;
+  /** 永久性级别 */
+  type: string;
+  /** 权重 */
+  weight: number;
+  /** 内容预览（前 60 字符） */
+  contentPreview: string;
+  /** 是否已被踢出 */
+  suppressed: boolean;
+  /** 创建时间 */
+  createdAt: string;
+}
+
+/**
  * Agent 内部组件快照（供宿主项目重建 history/loop 等 CLI 可见对象）
  *
  * 把 memory/security 层的具体类型收拢到 agent 层封装，
@@ -745,6 +767,66 @@ export class Agent {
     const total = Object.values(byType).reduce((a, b) => a + b, 0);
 
     return { byType, topicCount, total };
+  }
+
+  /**
+   * 获取当前挂载记忆列表（新枝破土 N-102）
+   *
+   * 返回 TopicMount 中当前活跃的记忆，供 CLI /mounted 渲染面板。
+   * 每个条目包含名称、类型、权重、预览，以及是否被踢出。
+   *
+   * @returns 记忆条目数组（空数组表示无挂载或未初始化）
+   */
+  getMountedMemories(): AgentMountedMemory[] {
+    if (!this._initialized || !this._ctx || !this.topicMount) {
+      return [];
+    }
+    const memories = this.topicMount.mounted;
+    return memories.map((m) => ({
+      id: m.id,
+      name: m.name,
+      type: m.type,
+      weight: m.weight,
+      contentPreview: m.content.slice(0, 60) + (m.content.length > 60 ? '…' : ''),
+      suppressed: this.topicMount!.isSuppressed(m.id),
+      createdAt: m.createdAt,
+    }));
+  }
+
+  /**
+   * 踢出指定记忆（新枝破土 N-103）
+   *
+   * 从当前话题挂载中移除指定名称的记忆，并加入抑制集合。
+   * 后续话题漂移重新挂载时也会自动过滤该记忆。
+   * 抑制仅在本话题会话内有效。
+   *
+   * @param name - 记忆名称（模糊前缀匹配）
+   * @returns 踢出结果：{ removed: true, name, id } 或 { removed: false, reason }
+   */
+  unmountMemory(name: string): { removed: boolean; name?: string; id?: string; reason?: string } {
+    if (!this._initialized || !this._ctx || !this.topicMount) {
+      return { removed: false, reason: 'Agent 未初始化，请先 /init' };
+    }
+    const lower = name.toLowerCase();
+    const memories = this.topicMount.mounted;
+
+    // 前缀模糊匹配
+    let match = memories.find((m) => m.name.toLowerCase() === lower);
+    if (!match) {
+      match = memories.find((m) => m.name.toLowerCase().includes(lower));
+    }
+
+    if (!match) {
+      return {
+        removed: false,
+        reason: `未找到匹配的记忆: "${name}"。当前挂载 ${memories.length} 条，输入 /mounted 查看`,
+      };
+    }
+
+    const ok = this.topicMount.suppress(match.id);
+    return ok
+      ? { removed: true, name: match.name, id: match.id }
+      : { removed: false, reason: `踢出失败: "${match.name}" 可能已被抑制` };
   }
 
   /**

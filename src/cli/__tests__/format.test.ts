@@ -26,6 +26,7 @@ import {
   formatError,
   formatWarning,
   formatStatPanel,
+  formatMountedPanel,
 } from '@/cli/format.js';
 
 describe('M-205 · CLI 格式化工具', () => {
@@ -161,7 +162,7 @@ describe('M-205 · CLI 格式化工具', () => {
   });
 
   describe('formatHelp', () => {
-    it('应包含 10 个命令（/exit /help /tools /memories /search /stat /project /domain /topic /topics）', () => {
+    it('应包含 12 个命令（/exit /help /tools /memories /search /stat /mounted /unmount /project /domain /topic /topics）', () => {
       const result = formatHelp();
       expect(result).toContain('/exit');
       expect(result).toContain('/help');
@@ -169,6 +170,8 @@ describe('M-205 · CLI 格式化工具', () => {
       expect(result).toContain('/memories');
       expect(result).toContain('/search');
       expect(result).toContain('/stat');
+      expect(result).toContain('/mounted');
+      expect(result).toContain('/unmount');
       expect(result).toContain('/project');
       expect(result).toContain('/domain');
       expect(result).toContain('/topic');
@@ -293,6 +296,33 @@ describe('M-205 · CLI 格式化工具', () => {
       expect(result).toContain('7');
       // 核心率（always + domain = 8/22 ≈ 36%）
       expect(result).toContain('%');
+    });
+  });
+
+  describe('formatMountedPanel (N-102)', () => {
+    it('空列表时应提示无挂载记忆', () => {
+      const result = formatMountedPanel([]);
+      expect(result).toContain('挂载记忆');
+      expect(result).toContain('无挂载记忆');
+    });
+
+    it('应有表头和记忆行', () => {
+      const result = formatMountedPanel([
+        {
+          id: '1',
+          name: 'test-memory',
+          type: 'topic',
+          weight: 0.75,
+          contentPreview: '这是一条测试记忆',
+          suppressed: false,
+          createdAt: '2026-06-04',
+        },
+      ]);
+      expect(result).toContain('挂载记忆');
+      expect(result).toContain('test-memory');
+      expect(result).toContain('话题');
+      expect(result).toContain('0.75');
+      expect(result).toContain('1 条记忆挂载中');
     });
   });
 });
