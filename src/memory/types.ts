@@ -113,14 +113,31 @@ export interface EmbeddingService {
 }
 
 /**
- * 话题摘要生成器函数签名
- *
- * 接受话题消息列表，返回结构化摘要文本。
+ * 话题摘要结构化输出（排雷修正：层级下沉，供 agent 层和 memory 层共享）
+ * 原 Topicsummarizer 返回 string | null，快照字段在格式化后被丢弃
+ * 现返回结构化对象，snapshots 替代 DialogueSnapshotExtractor
+ */
+export interface TopicSummarizerResult {
+  /** 技术栈、环境限制、项目配置等约束 */
+  constraints: string[];
+  /** 代码风格、工作流、审美、命名习惯等偏好 */
+  preferences: string[];
+  /** 架构选型、策略决定等决策 */
+  decisions: string[];
+  /** 5-8 句用户原文快照（替代 DialogueSnapshotExtractor） */
+  snapshots: string[];
+  /** 格式化文本（写 SQLite 索引 + frontmatter summary） */
+  summary: string;
+}
+
+/**
+ * 话题摘要生成器回调类型
+ * 接受话题消息列表，返回结构化摘要结果。
  * 返回 null 表示价值过低，无需归档。
  * 此类型定义在 memory/ 层以避免 agent/ → memory/ 的反向依赖。
  * agent/message-history.ts 从本文件引用此类型。
  */
-export type TopicSummarizer = (messages: TopicMessage[]) => Promise<string | null>;
+export type TopicSummarizer = (messages: TopicMessage[]) => Promise<TopicSummarizerResult | null>;
 
 /**
  * 归档元数据（记忆减法方案 v1.0 · 封存不删除）

@@ -31,12 +31,11 @@ import { RecallPipeline } from '@/memory/recall.js';
 import { TopicMount } from '@/memory/topic-mount.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
-import { DialogueSnapshotExtractor } from './dialogueSnapshot.js';
 import { WorkProjectionManager } from './workProjection.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { configError } from '@/utils/errors.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { Memory, TopicMessage } from '@/memory/types.js';
+import type { Memory, TopicMessage, TopicSummarizerResult } from '@/memory/types.js';
 import { MemoryType, Permanence, type PermanenceValue } from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
 import type { TopicStore } from '@/memory/topic-store.js';
@@ -218,7 +217,6 @@ export class Agent {
   // v4.0 新模块（init 后填充）
   private personaManager: PersonaManager | null = null;
   private userProfile: UserProfile | null = null;
-  private dialogueSnapshot: DialogueSnapshotExtractor | null = null;
   private workProjection: WorkProjectionManager | null = null;
   private skillManager: SkillManager | null = null;
   /** v4.0：当前激活的技能名（上一轮匹配，本轮注入） */
@@ -242,10 +240,22 @@ export class Agent {
   private roundCount = 0;
 
   /**
+   * 当前话题总轮次计数器（排雷新增：炼化管线减法 方向 A）
+   *
+   * 从话题建立开始累计，不随周期性归档重置。
+   * 用于超长话题中途归档触发（>= 30 轮后每 10 轮 1 次）。
+   * 切换话题时与 roundCount 同步重置。
+   */
+  private totalTopicRounds = 0;
+
+  /**
    * 归档检查轮次阈值（记忆减法方案 v1.0）
    * N 轮后启动话题归档检查（话题级检查，非逐轮归档）
    */
   private readonly archiveCheckRounds = 3;
+
+  /** 中途归档间隔轮次（排雷新增） */
+  private static readonly MIDWAY_ARCHIVE_INTERVAL = 30;
 
   constructor(opts: AgentOptions) {
     // config 和 configPath 二选一，config 优先
@@ -292,7 +302,7 @@ export class Agent {
     // 创建 LLM Provider
     this.provider = createLlmProvider(this.config);
 
-    // 组装所有运行时组件（v4.0：包括 persona/skill/userProfile/workProjection/dialogueSnapshot）
+    // 组装所有运行时组件（v4.0：包括 persona/skill/userProfile/workProjection）
     await this._assembleComponents(pctx);
 
     // 保存完整项目上下文（保留 domainManager / globalMemories / projectName 等所有字段）
@@ -376,11 +386,9 @@ export class Agent {
     // 详见 docs/基础设计文档/00-记忆归档原则-v1.0.md
     if (detectMemorableSignal(input)) {
       // 记录到 pendingArchives，让 Agent.close() 也能 await
-      const p = this.history.archiveCurrentTopic('signal').catch((err) => {
-        // 归档失败已经在 MessageHistory 内部 log.warn，这里静默
-        // （防止 unhandled rejection）
-        void err;
-      });
+      const p = this.history
+        .archiveCurrentTopic('signal')
+        .catch((_err): TopicSummarizerResult | null => null);
       this.history.registerPendingArchive(p);
     }
 
@@ -391,14 +399,29 @@ export class Agent {
     // 翠幕天罗 P2-2 修复：周期性归档使用 'switch' 原因而非 'signal'
     // 'signal' 会绕过幂等检查强制重新调用 LLM，只应在 detectMemorableSignal 命中时使用
     this.roundCount++;
+    this.totalTopicRounds++; // 不随周期性归档重置，用于中途归档触发
     if (this.roundCount >= this.archiveCheckRounds) {
       logger.debug({ roundCount: this.roundCount }, '触发话题归档检查（记忆减法 · 窗口计数）');
-      const p = this.history.archiveCurrentTopic('switch').catch((err) => {
-        void err;
-      });
+      const p = this.history
+        .archiveCurrentTopic('switch')
+        .catch((_err): TopicSummarizerResult | null => null);
       this.history.registerPendingArchive(p);
       // 归档后重置轮次计数（从归档点重新计数）
       this.roundCount = 0;
+    }
+
+    // 排雷新增 P0-L1：超长话题中途归档（方向 A）
+    // 修正：>= 30（非 > 30），首次触发在 30 轮
+    if (
+      this.totalTopicRounds >= Agent.MIDWAY_ARCHIVE_INTERVAL &&
+      this.totalTopicRounds % 10 === 0
+    ) {
+      logger.debug({ totalRounds: this.totalTopicRounds }, '触发中途归档（炼化管线减法 · 方向 A）');
+      const p = this.history
+        .archiveCurrentTopic('midway')
+        .catch((_err): TopicSummarizerResult | null => null);
+      this.history.registerPendingArchive(p);
+      // 不重置 roundCount（totalTopicRounds 继续累积，roundCount 继续自己的周期）
     }
   }
 
@@ -422,7 +445,8 @@ export class Agent {
   /**
    * 切换当前话题
    *
-   * 切换前自动为旧话题生成摘要归档（fire-and-forget，不阻塞切换）。
+   * 切换前为旧话题生成摘要归档（await 而非 fire-and-forget，排雷 P1-L4 时序修正）。
+   * 从归档结果中提取 snapshots 写入 seed_snapshots（替代已删除的 DialogueSnapshotExtractor）。
    * 同时卸载话题记忆挂载器，让新话题的"生其心"从空灵中重新浮现。
    * 对应 CLI 的 /topic <name> 命令。
    *
@@ -436,27 +460,23 @@ export class Agent {
       ]);
     }
 
-    // v4.0：切话题前提取对话快照（3-5 句种子）
-    if (this.dialogueSnapshot) {
-      const oldMessages = await this.history.getCurrentTopicMessages();
-      this.dialogueSnapshot
-        .extract(oldMessages)
-        .then((snapshots) => {
-          if (snapshots.length > 0) {
-            this.history!.setCurrentTopicSeedSnapshots(snapshots).catch(() => {
-              /* 写入失败忽略 */
-            });
-          }
-        })
-        .catch(() => {
-          /* 快照提取失败不阻塞切话题 */
-        });
+    // 排雷修正 P1-L4：先等待旧话题归档，从结果取 snapshots
+    // 顺序化流程：归档(await) → 写 seed_snapshots → unmount → switchTopic
+    const result = await this.history.archiveCurrentTopic('switch');
+
+    // 从归档结果中提取快照，写入旧话题的 seed_snapshots
+    // 此时 this.currentTopic 仍为旧值（尚未切换），不会有 P1-L4 时序 bug
+    if (result && result.snapshots.length > 0) {
+      await this.history.setCurrentTopicSeedSnapshots(result.snapshots).catch(() => {
+        /* 写入失败忽略，不阻塞切话题 */
+      });
     }
 
     // 卸载旧话题的记忆挂载，让新话题重新"生其心"
     this.topicMount?.unmount();
     // 重置轮次计数（新话题从 0 开始）
     this.roundCount = 0;
+    this.totalTopicRounds = 0;
     return this.history.switchTopic(newTopic);
   }
 
@@ -623,8 +643,8 @@ export class Agent {
       this.skillManager.load();
     }
 
-    // v4.0：对话快照提取器
-    this.dialogueSnapshot = new DialogueSnapshotExtractor(this.provider);
+    // 排雷修正：对话快照已合并到 topic-summarizer 输出中
+    // DialogueSnapshotExtractor 已删除，snapshots 从 archiveCurrentTopic('switch') R 中获取
 
     // v4.0：构建系统 prompt 前缀（角色 + 用户画像）
     const systemPrefixParts = [personaPrompt];

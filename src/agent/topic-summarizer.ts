@@ -14,14 +14,15 @@
  * 详见 02-上下文组装-v4.0.md §6 · 00-记忆归档原则-v1.0.md
  */
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { TopicMessage } from '@/memory/types.js';
+import type { TopicMessage, TopicSummarizerResult } from '@/memory/types.js';
 
 /**
  * 话题摘要生成器回调类型
- * 接收话题消息列表，返回精炼后的核心记忆
+ * 接收话题消息列表，返回结构化摘要结果
  * 返回 null 表示对话价值过低，跳过归档
+ * 类型定义下沉至 memory/types.ts（TopicSummarizerResult + TopicSummarizer）
  */
-export type TopicSummarizerFn = (messages: TopicMessage[]) => Promise<string | null>;
+export type TopicSummarizerFn = (messages: TopicMessage[]) => Promise<TopicSummarizerResult | null>;
 
 /**
  * 创建话题摘要生成器
@@ -37,7 +38,7 @@ export type TopicSummarizerFn = (messages: TopicMessage[]) => Promise<string | n
  * @returns TopicSummarizerFn 回调函数
  */
 export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn {
-  return async (messages: TopicMessage[]): Promise<string | null> => {
+  return async (messages: TopicMessage[]): Promise<TopicSummarizerResult | null> => {
     // 收集完整对话（user + assistant），截断到 800 字以免 prompt 过长
     const conversation = messages
       .map((m) => `[${m.role}]: ${m.content}`)
@@ -65,7 +66,8 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
     ];
 
     let result = '';
-    for await (const chunk of provider.chat(promptMessages, { maxTokens: 150 })) {
+    // maxTokens 从 150 提至 250，确保快照字段不被截断（150 可能截断 5-8 句快照）
+    for await (const chunk of provider.chat(promptMessages, { maxTokens: 250 })) {
       if (chunk.content) result += chunk.content;
     }
     const trimmed = result.trim();
@@ -79,19 +81,39 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
       return null;
     }
 
-    // v0.3：尝试解析结构化 JSON，格式化为可读文本存储
+    // 解析结构化 JSON，不再丢弃快照字段
     try {
       const parsed = JSON.parse(trimmed) as Record<string, string[]>;
+      const constraints = parsed['约束'] ?? [];
+      const preferences = parsed['偏好'] ?? [];
+      const decisions = parsed['决策'] ?? [];
+      const snapshots = parsed['快照'] ?? [];
       const parts: string[] = [];
-      if (parsed['约束']?.length) parts.push('约束：' + parsed['约束'].join('；'));
-      if (parsed['偏好']?.length) parts.push('偏好：' + parsed['偏好'].join('；'));
-      if (parsed['决策']?.length) parts.push('决策：' + parsed['决策'].join('；'));
-      if (parsed['快照']?.length) parts.push('快照：' + parsed['快照'].join('；'));
-      if (parts.length > 0) return parts.join(' | ');
+      if (constraints.length) parts.push('约束：' + constraints.join('；'));
+      if (preferences.length) parts.push('偏好：' + preferences.join('；'));
+      if (decisions.length) parts.push('决策：' + decisions.join('；'));
+      if (snapshots.length) parts.push('快照：' + snapshots.join('；'));
+      if (parts.length > 0) {
+        return {
+          constraints,
+          preferences,
+          decisions,
+          snapshots, // 不再丢弃！替代 DialogueSnapshotExtractor
+          summary: parts.join(' | '),
+        };
+      }
+      return null; // 解析后无任何有价值字段
     } catch {
-      // JSON 解析失败，降级使用原始文本
+      // JSON 解析失败，降级为原始文本（无结构化字段）
     }
 
-    return trimmed;
+    // 降级：解析失败时返回原始文本作为 summary，快照为空
+    return {
+      constraints: [],
+      preferences: [],
+      decisions: [],
+      snapshots: [],
+      summary: trimmed,
+    };
   };
 }

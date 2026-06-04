@@ -133,8 +133,8 @@ export class ArchiveManager {
           continue;
         }
 
-        const summary = await summarizer(topicFile.messages);
-        if (summary === null) {
+        const result = await summarizer(topicFile.messages);
+        if (result === null) {
           logger.debug({ date: metadata.date, topic: metadata.topic }, '重新炼化价值过低，跳过');
           // 标记为 refined=true（不再重试）
           await this.updateMetadataRefined(metaPath, metadata, true);
@@ -143,7 +143,8 @@ export class ArchiveManager {
         }
 
         // 写入话题 frontmatter（通过 TopicStore）
-        await this.topicStore.appendSummary(metadata.date, metadata.topic, summary);
+        // 排雷修正：summarizer 现在返回 TopicSummarizerResult，取 .summary 写入
+        await this.topicStore.appendSummary(metadata.date, metadata.topic, result.summary);
 
         // 标记为已炼化
         await this.updateMetadataRefined(metaPath, metadata, true);

@@ -17,7 +17,20 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { MessageHistory } from '@/agent/message-history.js';
 import { TopicStore } from '@/memory/topic-store.js';
-import type { TopicMessage } from '@/memory/types.js';
+import type { TopicMessage, TopicSummarizerResult } from '@/memory/types.js';
+
+/**
+ * 辅助：构造一个 mock 的 TopicSummarizerResult（排雷修正：结构化返回值替代 string）
+ */
+function makeResult(summary: string, snapshots: string[] = []): TopicSummarizerResult {
+  return {
+    constraints: [],
+    preferences: [],
+    decisions: [],
+    snapshots,
+    summary,
+  };
+}
 
 describe('M-203-改 · 事件驱动归档', () => {
   let tmpDir: string;
@@ -57,7 +70,7 @@ describe('M-203-改 · 事件驱动归档', () => {
       await new Promise((r) => setTimeout(r, 50));
 
       // 用新实例 + mock summarizer
-      const mockSummarizer = vi.fn().mockResolvedValue('用户请求了递归函数实现');
+      const mockSummarizer = vi.fn().mockResolvedValue(makeResult('用户请求了递归函数实现'));
       const history2 = new MessageHistory(topicStore, mockSummarizer, initialDate, initialTopic);
       history2.switchTopic('new-topic');
 
@@ -174,7 +187,9 @@ hi there
       await history.appendUser('我的项目用 better-sqlite3，不要用 mysql');
       await history.appendAssistant('明白了，我会确保所有代码都使用 better-sqlite3');
 
-      const mockSummarizer = vi.fn().mockResolvedValue('用户项目使用 better-sqlite3 作为数据库');
+      const mockSummarizer = vi
+        .fn()
+        .mockResolvedValue(makeResult('用户项目使用 better-sqlite3 作为数据库'));
       const history4 = new MessageHistory(topicStore, mockSummarizer, initialDate, initialTopic);
       history4.switchTopic('new-topic');
       // fire-and-forget: 等待 summarizeAndArchive 完成（mock 立即 resolve，但仍需等文件写入）
@@ -262,7 +277,7 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
     it('写入索引：归档后应在 SQLite 出现 type=topic 记录', async () => {
       const history = new MessageHistory(
         topicStore,
-        async () => '用户偏好简洁代码风格',
+        async () => makeResult('用户偏好简洁代码风格'),
         initialDate,
         initialTopic,
         index,
@@ -282,7 +297,7 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
     });
 
     it('幂等：同一 topic 多次归档只产生一条记录（upsert）', async () => {
-      const mockSummarizer = vi.fn().mockResolvedValue('摘要 v1');
+      const mockSummarizer = vi.fn().mockResolvedValue(makeResult('摘要 v1'));
       const history = new MessageHistory(
         topicStore,
         mockSummarizer,
@@ -305,7 +320,7 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
       // 写入用户消息
       const history = new MessageHistory(
         topicStore,
-        async () => 'switch 触发的归档',
+        async () => makeResult('switch 触发的归档'),
         initialDate,
         initialTopic,
         index,
@@ -327,15 +342,16 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
       // 不传 index 构造 → 只写 topic-*.md
       const history = new MessageHistory(
         topicStore,
-        async () => 'no index',
+        async () => makeResult('no index'),
         initialDate,
         initialTopic,
       );
       await history.appendUser('msg');
       await history.appendAssistant('reply');
 
-      // 不抛错
-      await expect(history.archiveCurrentTopic('signal')).resolves.toBeUndefined();
+      // 排雷修正：archiveCurrentTopic 现在返回 TopicSummarizerResult | null
+      // 未注入 index 时仍然正确执行
+      await expect(history.archiveCurrentTopic('signal')).resolves.not.toBeNull();
 
       // 话题文件应有 summary
       const tf = await topicStore.read(initialDate, initialTopic);
@@ -362,7 +378,7 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
     it('消息数 < 2 时跳过（不写索引）', async () => {
       const history = new MessageHistory(
         topicStore,
-        async () => '不应被调用',
+        async () => makeResult('不应被调用'),
         initialDate,
         initialTopic,
         index,
@@ -379,8 +395,8 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
       // 预写带 summary 的 topic 文件
       const mockSummarizer = vi
         .fn()
-        .mockResolvedValueOnce('首次归档摘要')
-        .mockResolvedValueOnce('signal 重新归档摘要');
+        .mockResolvedValueOnce(makeResult('首次归档摘要'))
+        .mockResolvedValueOnce(makeResult('signal 重新归档摘要'));
       const history = new MessageHistory(
         topicStore,
         mockSummarizer,
@@ -405,7 +421,7 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
     it('未注入 index 时直接返回 0（不报错）', async () => {
       const history = new MessageHistory(
         topicStore,
-        async () => 'summary',
+        async () => makeResult('summary'),
         initialDate,
         initialTopic,
       );
@@ -422,7 +438,7 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
     it('topics 目录为空时返回 0', async () => {
       const history = new MessageHistory(
         topicStore,
-        async () => 'summary',
+        async () => makeResult('summary'),
         initialDate,
         initialTopic,
         index,
@@ -453,7 +469,9 @@ topic: old-topic
         'utf-8',
       );
 
-      const mockSummarizer = vi.fn().mockResolvedValue('历史摘要：聊过 TypeScript 泛型');
+      const mockSummarizer = vi
+        .fn()
+        .mockResolvedValue(makeResult('历史摘要：聊过 TypeScript 泛型'));
       const history = new MessageHistory(
         topicStore,
         mockSummarizer,

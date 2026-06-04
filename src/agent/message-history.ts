@@ -19,7 +19,13 @@
  */
 import type { TopicStore } from '@/memory/topic-store.js';
 import { todayDate, nowTimestamp } from '@/memory/topic-store.js';
-import type { Memory, TopicMessage, TopicSummarizer, TopicFile } from '@/memory/types.js';
+import type {
+  Memory,
+  TopicMessage,
+  TopicSummarizer,
+  TopicFile,
+  TopicSummarizerResult,
+} from '@/memory/types.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
 import { logger } from '@/logging/logger.js';
@@ -32,10 +38,10 @@ export class MessageHistory {
   private currentDate: string;
   private currentTopic: string;
   /**
-   * 挂起的归档 Promise（fire-and-forget 也会被记录）
-   * Agent.close() 时 await 这个，避免 SQLITE_MISUSE
+   * 挂起的归档企划集合，Agent.close() 等待它们完成
+   * 容纳 Promise<void>（fire-and-forget 内部）或 Promise<TopicSummarizerResult | null>（外部注册）
    */
-  private pendingArchives: Set<Promise<void>> = new Set();
+  private pendingArchives: Set<Promise<unknown>> = new Set();
 
   constructor(
     private readonly topicStore: TopicStore,
@@ -243,10 +249,13 @@ export class MessageHistory {
   /**
    * 公开方法：为当前话题生成摘要，并同步写入 SQLite 索引
    *
-   * 三种调用场景：
-   * - 'switch'  : 话题切换时（旧话题的最终归档）
-   * - 'signal'  : 检测到强信号（实时关键信息）→ 立即归档
-   * - 'lazy'    : 启动时补归档（兜底历史话题）
+   * 四种调用场景：
+   * - 'switch'  : 话题切换时（旧话题的最终归档），已有摘要则幂等跳过
+   * - 'signal'  : 检测到强信号（实时关键信息）→ 强制重新归档
+   * - 'lazy'    : 启动时补归档（兜底历史话题），已有摘要跳过
+   * - 'midway'  : 超长话题中途归档（排雷新增），已有摘要时仍重新调用（追加覆盖）
+   *
+   * 返回值：TopicSummarizerResult | null（供 Agent.switchTopic() 取 snapshots）
    *
    * 写入位置：
    *   1. topic-*.md frontmatter `summary` 字段（已存在）
@@ -256,40 +265,42 @@ export class MessageHistory {
    * 失败策略：fire-and-forget + log.warn，不阻塞对话
    * （详见 architecture_philosophy_rules.md §7 降级优先）
    */
-  async archiveCurrentTopic(reason: 'switch' | 'signal' | 'lazy' = 'switch'): Promise<void> {
-    if (!this.summarizer) return;
+  async archiveCurrentTopic(
+    reason: 'switch' | 'signal' | 'lazy' | 'midway' = 'switch',
+  ): Promise<TopicSummarizerResult | null> {
+    if (!this.summarizer) return null;
 
     // 闭包捕获当前话题，防止 await 后 this.currentTopic 被 switchTopic 覆盖
     const date = this.currentDate;
     const topic = this.currentTopic;
 
     const topicFile = await this.topicStore.read(date, topic);
-    if (!topicFile) return;
+    if (!topicFile) return null;
 
     // 消息数 < 2 跳过（单向话题无总结价值，用户可能只敲了 1 句就切了）
-    if (topicFile.messages.length < 2) return;
+    if (topicFile.messages.length < 2) return null;
 
-    // 已有摘要则幂等跳过（避免 LLM 重复调用）
+    // 已有摘要时的行为取决于 reason：
+    //   switch/lazy → 幂等跳过（避免 LLM 重复调用）
+    //   signal/midway → 强制重新归档（覆盖旧摘要）
     if (topicFile.summary) {
-      // 但如果是 signal 触发的，强信号可能晚于初次归档才出现
-      // → 重新触发一次 LLM（覆盖摘要）
-      if (reason !== 'signal') return;
+      if (reason !== 'signal' && reason !== 'midway') return null;
     }
 
     try {
-      const summary = await this.summarizer(topicFile.messages);
+      const result = await this.summarizer(topicFile.messages);
       // summarizer 返回 null 表示价值过低，跳过归档
-      if (summary === null) {
+      if (result === null) {
         logger.debug({ topic: `${date}-${topic}`, reason }, '话题价值过低，跳过归档');
-        return;
+        return null;
       }
 
-      // 1. 写 topic-*.md frontmatter（已有路径）
-      await this.topicStore.appendSummary(date, topic, summary);
+      // 1. 写 topic-*.md frontmatter（使用 result.summary 格式化文本）
+      await this.topicStore.appendSummary(date, topic, result.summary);
 
       // 2. 同步写入 SQLite 索引（让 TopicMount 能跨会话召回）
       if (this.index) {
-        await this.writeTopicMemory(date, topic, summary, topicFile.messages.length);
+        await this.writeTopicMemory(date, topic, result.summary, topicFile.messages.length);
       }
 
       logger.info(
@@ -297,13 +308,17 @@ export class MessageHistory {
           topic: `${date}-${topic}`,
           reason,
           messageCount: topicFile.messages.length,
+          hasSnapshots: result.snapshots.length > 0,
           hasIndex: !!this.index,
         },
         '话题归档完成',
       );
+
+      return result; // 返回结构化结果，供调用方取 snapshots
     } catch (err) {
       // 归档失败不阻塞对话（与 safeAppend 策略一致）
       logger.warn({ err, topic: `${date}-${topic}`, reason }, '话题归档失败');
+      return null;
     }
   }
 
@@ -353,13 +368,13 @@ export class MessageHistory {
           try {
             const tf = await this.topicStore.read(date, topic);
             if (!tf) return;
-            const summary = await this.summarizer!(tf.messages);
-            if (summary === null) {
+            const result = await this.summarizer!(tf.messages);
+            if (result === null) {
               logger.debug({ topic: `${date}-${topic}` }, 'lazy 补归档价值过低，跳过');
               return;
             }
-            await this.topicStore.appendSummary(date, topic, summary);
-            await this.writeTopicMemory(date, topic, summary, tf.messages.length);
+            await this.topicStore.appendSummary(date, topic, result.summary);
+            await this.writeTopicMemory(date, topic, result.summary, tf.messages.length);
             logger.info(
               { topic: `${date}-${topic}`, messageCount: tf.messages.length },
               'lazy 补归档完成',
@@ -387,10 +402,9 @@ export class MessageHistory {
    * 供 Agent.chat() 触发 signal 归档时使用
    */
   registerPendingArchive(p: Promise<unknown>): void {
-    const promise = p as Promise<void>;
-    this.pendingArchives.add(promise);
-    promise.finally(() => {
-      this.pendingArchives.delete(promise);
+    this.pendingArchives.add(p);
+    p.finally(() => {
+      this.pendingArchives.delete(p);
     });
   }
 
@@ -506,10 +520,10 @@ export class MessageHistory {
   }
 
   /**
-   * v4.0：获取当前话题的完整消息列表（对话快照提取用）
+   * v4.0：获取当前话题的完整消息列表（话题归档用）
    *
-   * DialogueSnapshotExtractor 切话题时需要读取旧话题的 user 发言
-   * 来提取 3-5 句种子。
+   * Agent.switchTopic() 切话题时读取旧话题的完整对话
+   * 供 archiveCurrentTopic() 生成摘要 + 快照。
    *
    * @returns 当前话题的所有消息
    */
@@ -521,15 +535,14 @@ export class MessageHistory {
   /**
    * v4.0：写入种子快照到当前话题的 frontmatter
    *
-   * 切话题后 DialogueSnapshotExtractor 提取的快照写入旧话题文件
-   * 的 frontmatter seed_snapshots 字段。
+   * Agent.switchTopic() 从 archiveCurrentTopic('switch') 结果中提取 snapshots
+   * 写入旧话题文件的 frontmatter seed_snapshots 字段（替代已删除的 DialogueSnapshotExtractor）。
    *
    * @param snapshots 种子句列表
    */
   async setCurrentTopicSeedSnapshots(snapshots: string[]): Promise<void> {
     if (snapshots.length === 0) return;
-    // 种子写入旧话题的文件（当前话题在这之前已切换）
-    // 这里 currentDate/currentTopic 仍指向旧话题
+    // 此时 currentDate/currentTopic 仍指向旧话题（Agent.switchTopic 在写入后才调 history.switchTopic）
     await this.topicStore.appendSeedSnapshots(this.currentDate, this.currentTopic, snapshots);
   }
 }
