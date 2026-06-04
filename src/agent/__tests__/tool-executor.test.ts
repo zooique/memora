@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
 import { SecurityGuard } from '@/security/path-guard.js';
 import { MemoryIndex } from '@/memory/index.js';
-import { MemoraError } from '@/utils/errors.js';
+import { MemoraError, toolError } from '@/utils/errors.js';
 
 describe('M-204 · 工具执行器（4 个工具）', () => {
   let tmpProject: string;
@@ -340,6 +340,118 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
       } catch (err) {
         expect(err).toBeInstanceOf(MemoraError);
         expect((err as MemoraError).title).toContain('解析失败');
+      }
+    });
+  });
+
+  describe('R-501 · 自定义工具注册', () => {
+    /** 测试用自定义工具定义 */
+    const customDef = {
+      name: 'echo_tool',
+      description: '回显输入参数',
+      parameters: {
+        type: 'object' as const,
+        properties: {
+          message: { type: 'string', description: '要回显的消息' },
+        },
+        required: ['message'],
+      },
+    };
+
+    it('registerTool 应成功注册自定义工具', () => {
+      executor.registerTool(customDef, async (args) => `Echo: ${args['message']}`);
+      // 不抛错即成功
+    });
+
+    it('getToolDefinitions 应包含内置 + 自定义工具', () => {
+      const defs = executor.getToolDefinitions();
+      const names = defs.map((t) => t.name);
+      // 内置 4 个 + 自定义 1 个
+      expect(names).toContain('read_file');
+      expect(names).toContain('echo_tool');
+      expect(defs.length).toBe(BUILTIN_TOOLS.length + 1);
+    });
+
+    it('execute 应路由到自定义工具 handler', async () => {
+      const result = await executor.execute('echo_tool', JSON.stringify({ message: 'hello' }));
+      expect(result).toBe('Echo: hello');
+    });
+
+    it('注册同名内置工具应抛错', () => {
+      const builtinClone = {
+        name: 'read_file',
+        description: '试图覆盖内置工具',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      expect(() => executor.registerTool(builtinClone, async () => '')).toThrow(/不能覆盖内置工具/);
+    });
+
+    it('重复注册同名自定义工具应抛错', () => {
+      expect(() => executor.registerTool(customDef, async () => '')).toThrow(/工具已注册/);
+    });
+
+    it('未知工具错误信息应包含自定义工具名', async () => {
+      try {
+        await executor.execute('truly_unknown', '{}');
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        // suggestions 数组应列出所有已注册工具（含自定义）
+        const suggestions = (err as MemoraError).suggestions ?? [];
+        const allSuggestions = suggestions.join(' ');
+        expect(allSuggestions).toContain('echo_tool');
+      }
+    });
+
+    it('自定义 handler 抛异常应包装为 MemoraError', async () => {
+      // 注册一个会抛错的工具
+      const failDef = {
+        name: 'fail_tool',
+        description: '测试异常包装',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      executor.registerTool(failDef, async () => {
+        throw new Error('handler 内部错误');
+      });
+      try {
+        await executor.execute('fail_tool', '{}');
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        expect((err as MemoraError).title).toContain('自定义工具执行失败');
+        expect((err as MemoraError).detail).toContain('fail_tool');
+      }
+    });
+
+    it('自定义 handler 抛 MemoraError 应原样透传', async () => {
+      // 注册一个抛 MemoraError 的工具
+      const memErrDef = {
+        name: 'memerr_tool',
+        description: '测试 MemoraError 透传',
+        parameters: {
+          type: 'object' as const,
+          properties: {},
+          required: [],
+        },
+      };
+      executor.registerTool(memErrDef, async () => {
+        throw toolError('业务错误', 'handler 抛出的 MemoraError', []);
+      });
+      try {
+        await executor.execute('memerr_tool', '{}');
+        throw new Error('应该抛错');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MemoraError);
+        // 应保留原始 title，不被包装为"自定义工具执行失败"
+        expect((err as MemoraError).title).toBe('业务错误');
       }
     });
   });

@@ -23,7 +23,7 @@ async function main() {
         // 方式 1: 直接填入（不推荐提交到 git）
         // apiKey: 'sk-xxxxxxxxxxxxxxxx',
         // 方式 2: 从环境变量读取（推荐）
-        provider: 'deepseek',      // 'deepseek' | 'doubao' | 'openai' | 'mock'
+        provider: 'deepseek', // 'deepseek' | 'doubao' | 'openai' | 'mock'
         model: 'deepseek-chat',
         apiKey: process.env.LLM_API_KEY || 'YOUR_API_KEY_HERE',
       },

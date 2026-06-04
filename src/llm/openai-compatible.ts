@@ -6,7 +6,7 @@
  */
 import { LlmProvider } from './provider.js';
 import type { Message, ChatOptions } from './provider.js';
-import type { LlmChunk } from './types.js';
+import type { LlmChunk, ToolCall } from './types.js';
 import { llmError, networkError, configError } from '@/utils/errors.js';
 
 export interface OpenAICompatibleConfig {
@@ -167,11 +167,20 @@ export class OpenAICompatibleProvider extends LlmProvider {
   /**
    * 解析 SSE 流
    * OpenAI 协议：data: {...}\n\n
+   *
+   * 支持解析 tool_calls delta（流式工具调用）：
+   * OpenAI 协议中 tool_calls 以 delta 形式分片传输，
+   * 需要跨 chunk 累积 function.name 和 function.arguments，
+   * 在 finish_reason='tool_calls' 或流结束时输出完整的 toolCalls。
    */
   private async *parseSseStream(body: ReadableStream<Uint8Array>): AsyncIterable<LlmChunk> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+
+    // 流式 tool_calls 累积器：按 index 分片累积 name + arguments
+    // OpenAI 协议：同一个 tool_call 的 name/arguments 可能跨多个 delta 分片到达
+    const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 
     try {
       while (true) {
@@ -186,12 +195,26 @@ export class OpenAICompatibleProvider extends LlmProvider {
           const trimmed = line.trim();
           if (!trimmed.startsWith('data:')) continue;
           const data = trimmed.slice(5).trim();
-          if (data === '[DONE]') return;
+          if (data === '[DONE]') {
+            // 流结束：输出累积的 tool_calls（如果有）
+            if (toolCallAccumulators.size > 0) {
+              yield this.buildToolCallsChunk(toolCallAccumulators);
+            }
+            return;
+          }
 
           try {
             const json = JSON.parse(data) as {
               choices?: Array<{
-                delta?: { content?: string; tool_calls?: unknown };
+                delta?: {
+                  content?: string;
+                  tool_calls?: Array<{
+                    index?: number;
+                    id?: string;
+                    type?: string;
+                    function?: { name?: string; arguments?: string };
+                  }>;
+                };
                 finish_reason?: string;
               }>;
             };
@@ -201,6 +224,25 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
             const chunk: LlmChunk = {};
             if (choice.delta?.content) chunk.content = choice.delta.content;
+
+            // 累积 tool_calls delta
+            if (choice.delta?.tool_calls) {
+              for (const tc of choice.delta.tool_calls) {
+                const idx = tc.index ?? 0;
+                const acc = toolCallAccumulators.get(idx) ?? { id: '', name: '', arguments: '' };
+                if (tc.id) acc.id = tc.id;
+                if (tc.function?.name) acc.name += tc.function.name;
+                if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+                toolCallAccumulators.set(idx, acc);
+              }
+            }
+
+            // finish_reason='tool_calls' 时输出完整的 toolCalls
+            if (choice.finish_reason === 'tool_calls') {
+              chunk.toolCalls = this.buildToolCallsFromAccumulators(toolCallAccumulators);
+              toolCallAccumulators.clear();
+            }
+
             if (choice.finish_reason) {
               chunk.finishReason = choice.finish_reason as LlmChunk['finishReason'];
             }
@@ -213,5 +255,34 @@ export class OpenAICompatibleProvider extends LlmProvider {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  /**
+   * 从累积器构建完整的 toolCalls 数组（用于 finish_reason='tool_calls' 场景）
+   */
+  private buildToolCallsFromAccumulators(
+    accs: Map<number, { id: string; name: string; arguments: string }>,
+  ): ToolCall[] {
+    const calls: ToolCall[] = [];
+    for (const [idx, acc] of accs) {
+      calls.push({
+        id: acc.id || `call_${idx}`,
+        type: 'function',
+        function: { name: acc.name, arguments: acc.arguments },
+      });
+    }
+    return calls;
+  }
+
+  /**
+   * 从累积器构建 LlmChunk（用于流结束时的兜底输出）
+   */
+  private buildToolCallsChunk(
+    accs: Map<number, { id: string; name: string; arguments: string }>,
+  ): LlmChunk {
+    return {
+      toolCalls: this.buildToolCallsFromAccumulators(accs),
+      finishReason: 'tool_calls',
+    };
   }
 }

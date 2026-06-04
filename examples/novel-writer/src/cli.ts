@@ -99,9 +99,11 @@ async function main(): Promise<void> {
         `${c.yellow}[Mock] 收到「${trimmed}」— 真实模式下，Agent 会基于 personality + rules + skills 上下文生成回复。${c.reset}\n`,
       );
     } else {
-      // 真实 LLM 流式输出
+      // 真实 LLM 流式输出（过滤 text 事件，忽略工具调用事件）
       for await (const chunk of agent.chat(trimmed)) {
-        process.stdout.write(chunk);
+        if (chunk.type === 'text') {
+          process.stdout.write(chunk.content);
+        }
       }
       console.log('\n');
     }

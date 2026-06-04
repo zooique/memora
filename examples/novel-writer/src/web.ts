@@ -23,9 +23,34 @@ const PUBLIC_DIR = resolve(__dirname, '..', 'public');
 
 // 单例 agent（演示用，生产环境应该每次请求一个会话）
 let agentInstance: Agent | null = null;
+// 记录当前 agent 实例使用的 LLM 配置，用于判断是否需要重建
+let agentLlmConfig: { apiKey: string; baseUrl: string; model: string } | null = null;
 
+/**
+ * 获取或创建 Agent 实例
+ *
+ * 关键逻辑：当客户端传了新的 API Key 时，需要重建 Agent（从 Mock 切到真实 LLM）
+ * 当客户端没传 API Key 时，使用 Mock 模式（不走 Agent 链路，避免回显污染）
+ */
 async function getAgent(config: ReturnType<typeof loadDemoConfig>): Promise<Agent> {
-  if (agentInstance) return agentInstance;
+  // 判断是否需要重建 Agent（配置变化或首次创建）
+  const configChanged =
+    agentLlmConfig?.apiKey !== config.llm.apiKey ||
+    agentLlmConfig?.baseUrl !== config.llm.baseUrl ||
+    agentLlmConfig?.model !== config.llm.model;
+
+  if (agentInstance && !configChanged) return agentInstance;
+
+  // 关闭旧 Agent（如果有）
+  if (agentInstance) {
+    try {
+      await agentInstance.close();
+    } catch {
+      // 关闭失败忽略
+    }
+    agentInstance = null;
+  }
+
   agentInstance = await createNovelAgent({
     llmApiKey: config.llm.apiKey,
     llmBaseUrl: config.llm.baseUrl,
@@ -33,8 +58,11 @@ async function getAgent(config: ReturnType<typeof loadDemoConfig>): Promise<Agen
     configDir: CONFIG_DIR,
     projectPath: PROJECT_PATH,
   });
+  agentLlmConfig = { ...config.llm };
 
-  // 启动时自动恢复最近的话题对话
+  // 始终恢复最近的话题对话（topic-*.md 是对话历史的唯一来源）
+  // Mock 模式的写入污染已在 /api/chat 路由中通过短路逻辑解决，
+  // 这里只读不写，安全恢复。
   try {
     const restoredCount = await agentInstance.restoreMostRecentTopic('main');
     if (restoredCount > 0) {
@@ -77,11 +105,22 @@ app.post('/api/chat', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
 
   try {
-    // 注意：mock 模式也走完整 Agent（topic-*.md 持久化 + signal 检测 + lazy 扫描）
-    // 只是底层 LLM provider 是 mock，回复内容是回显
+    // Mock 模式：直接生成 mock 响应（不走 Agent → 避免 mock 回显污染 topic-*.md 历史）
+    if (!config.hasRealLlm) {
+      const mockReply = `Mock 响应：${message.trim().slice(0, 200)}`;
+      for (const char of mockReply) {
+        res.write(`data: ${JSON.stringify({ content: char })}\n\n`);
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
+
+    // 真实 LLM：走完整 Agent 链路，透传结构化事件给前端
     const agent = await getAgent(config);
     for await (const chunk of agent.chat(message)) {
-      res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
     }
     res.write('data: [DONE]\n\n');
     res.end();
@@ -153,13 +192,34 @@ app.get('/api/messages', (_req: Request, res: Response) => {
       .filter((m) => m.role !== 'system')
       .map((m) => ({
         role: m.role,
-        content: m.content,
+        content: stripInternalFormat(m.content),
       }));
     res.json({ messages: visible });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
 });
+
+/**
+ * 剥离 Agent 内部上下文格式，只保留用户可见内容
+ *
+ * loop.ts 的 wrapWithTopicContext() 会在 user 消息前添加：
+ *   [系统召回的相关记忆]
+ *   - [date] name: content...
+ *   [用户输入]
+ *   实际用户输入
+ *
+ * 这些是给 LLM 看的内部格式，不应展示给用户。
+ * 此函数提取 [用户输入] 之后的部分作为用户原始输入。
+ */
+function stripInternalFormat(content: string): string {
+  // 匹配 [系统召回的相关记忆]...[用户输入]\n 实际输入
+  const userInputMatch = content.match(/\[用户输入\]\n([\s\S]*)/);
+  if (userInputMatch) {
+    return userInputMatch[1]!.trim();
+  }
+  return content;
+}
 
 // ─── API：保留旧的 /api/memories 兼容端点（仅 mounted） ─────
 // 新 UI 优先用 /api/inspect，老客户端暂不删
@@ -183,6 +243,65 @@ app.get('/api/memories', (_req: Request, res: Response) => {
     });
   } catch (err) {
     res.status(500).json({ error: String(err) });
+  }
+});
+
+// ─── API：章节列表（R-508）──────────────────────────────
+// 读取 chapters/ 目录下的 .md 文件列表
+// 供前端章节管理面板使用
+app.get('/api/chapters', async (_req: Request, res: Response) => {
+  try {
+    if (!agentInstance) {
+      res.json({ chapters: [] });
+      return;
+    }
+    // 委托 list_dir 列出 chapters 目录
+    const result = await agentInstance.executeTool(
+      'list_dir',
+      JSON.stringify({ path: 'chapters' }),
+    );
+    // 解析 list_dir 输出，提取 .md 文件名
+    const lines = result.split('\n');
+    const chapters = lines
+      .filter((l) => l.includes('.md'))
+      .map((l) => {
+        // 格式：📄 第1章-起源.md
+        const match = l.match(/📄\s+(.+)/);
+        return match ? match[1].trim() : l.trim();
+      });
+    res.json({ chapters });
+  } catch {
+    // chapters 目录可能不存在
+    res.json({ chapters: [] });
+  }
+});
+
+// ─── API：角色列表（R-508）──────────────────────────────
+// 读取 characters/ 目录下的 .md 文件列表
+// 供前端角色卡片面板使用
+app.get('/api/characters', async (_req: Request, res: Response) => {
+  try {
+    if (!agentInstance) {
+      res.json({ characters: [] });
+      return;
+    }
+    // 委托 list_dir 列出 characters 目录
+    const result = await agentInstance.executeTool(
+      'list_dir',
+      JSON.stringify({ path: 'characters' }),
+    );
+    // 解析 list_dir 输出，提取 .md 文件名
+    const lines = result.split('\n');
+    const characters = lines
+      .filter((l) => l.includes('.md'))
+      .map((l) => {
+        const match = l.match(/📄\s+(.+)/);
+        return match ? match[1].trim() : l.trim();
+      });
+    res.json({ characters });
+  } catch {
+    // characters 目录可能不存在
+    res.json({ characters: [] });
   }
 });
 

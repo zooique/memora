@@ -23,7 +23,8 @@
 import { loadConfig, type Config } from '@/config/loader.js';
 import { createLlmProvider } from '@/llm/factory.js';
 import { AgentLoop } from './loop.js';
-import { ToolExecutor } from './tool-executor.js';
+import type { AgentChunk } from './types.js';
+import { ToolExecutor, type ToolDefinition, type ToolHandler } from './tool-executor.js';
 import { MessageHistory } from './message-history.js';
 import { ProjectManager, type ProjectContext } from '@/memory/project-manager.js';
 import { createTopicSummarizer } from './topic-summarizer.js';
@@ -213,6 +214,7 @@ export class Agent {
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
   private topicMount: TopicMount | null = null; // 话题记忆挂载器（专注模式）
+  private toolExec: ToolExecutor | null = null; // 工具执行器（注册自定义工具用）
 
   // v4.0 新模块（init 后填充）
   private personaManager: PersonaManager | null = null;
@@ -328,9 +330,9 @@ export class Agent {
    * 内部自动维护 MessageHistory（appendUser → loop → appendAssistant）。
    *
    * @param input - 用户输入的文本
-   * @returns AsyncGenerator，逐段产出 Agent 回复文本
+   * @returns AsyncGenerator，逐段产出 Agent 回复事件（结构化：text/tool_start/tool_result/recall/done）
    */
-  async *chat(input: string): AsyncGenerator<string, void, unknown> {
+  async *chat(input: string): AsyncGenerator<AgentChunk, void, unknown> {
     if (!this._initialized || !this.history || !this.loop || !this.topicMount) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 chat() 前调用 await agent.init()',
@@ -356,8 +358,10 @@ export class Agent {
     // Agent Loop 流式处理（注入话题记忆召回结果）
     let assistantContent = '';
     for await (const chunk of this.loop.processUserInput(input, topicMemories)) {
-      yield chunk;
-      assistantContent += chunk;
+      yield chunk; // 透传结构化事件给上层
+      if (chunk.type === 'text') {
+        assistantContent += chunk.content;
+      }
     }
 
     // Agent 回复写入历史
@@ -437,7 +441,9 @@ export class Agent {
   async chatSync(input: string): Promise<string> {
     let result = '';
     for await (const chunk of this.chat(input)) {
-      result += chunk;
+      if (chunk.type === 'text') {
+        result += chunk.content;
+      }
     }
     return result;
   }
@@ -628,6 +634,8 @@ export class Agent {
       pctx.index,
       this.workProjection,
     );
+    // 保存引用，供 registerTool / executeTool 使用
+    this.toolExec = toolExec;
 
     // v4.0：角色管理器（personas/*.md）
     this.personaManager = new PersonaManager(this.configDir);
@@ -654,12 +662,13 @@ export class Agent {
       systemPrefixParts.filter(Boolean).join('\n\n') +
       (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
 
-    // Agent Loop（v4.0：注入系统 prompt 前缀）
+    // Agent Loop（v4.0：注入系统 prompt 前缀 + 工具定义）
     this.loop = new AgentLoop({
       provider: this.provider,
       bootstrapMemories: pctx.bootstrapMemories,
       toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
       systemPromptPrefix,
+      toolDefinitions: toolExec.getToolDefinitions(),
     });
 
     // 话题记忆挂载器（专注模式：应无所住，而生其心）
@@ -959,6 +968,66 @@ export class Agent {
     this.projectManager = null;
     this._ctx = null;
     this._pctx = null;
+  }
+
+  // ─── 工具注册 API ─────────────────────────────────────
+
+  /**
+   * 注册自定义工具
+   *
+   * 宿主项目通过此方法注册领域专属工具（如小说创作的 create_chapter）。
+   * 注册后工具会出现在 LLM 的 tools 列表中，可被 tool_call 调用。
+   * handler 中可通过 agent.executeTool() 委托内置工具（复用安全层）。
+   *
+   * 必须在 init() 之后调用（否则 ToolExecutor 尚未创建）。
+   *
+   * @param definition 工具定义（名称、描述、参数 schema）
+   * @param handler 工具执行处理器
+   * @throws Agent 未初始化或工具名冲突时抛错
+   */
+  registerTool(definition: ToolDefinition, handler: ToolHandler): void {
+    if (!this._initialized || !this.toolExec) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 registerTool() 前调用 await agent.init()',
+      ]);
+    }
+    this.toolExec.registerTool(definition, handler);
+    // 刷新 AgentLoop 的 system prompt，让 LLM 看到新注册的工具描述
+    if (this.loop) {
+      this.loop.refreshToolDefinitions(this.toolExec.getToolDefinitions());
+    }
+  }
+
+  /**
+   * 获取所有工具定义（内置 + 自定义）
+   *
+   * 用于宿主项目了解当前可用工具列表，
+   * 或构建 LLM 请求时获取 tools 参数。
+   */
+  getToolDefinitions(): ToolDefinition[] {
+    if (!this.toolExec) return [];
+    return this.toolExec.getToolDefinitions();
+  }
+
+  /**
+   * 执行工具调用（委托给 ToolExecutor）
+   *
+   * 宿主项目的自定义工具 handler 可通过此方法委托内置工具，
+   * 复用安全层（路径白名单、写入确认等）。
+   * 例如小说工具 create_chapter 的 handler 可调用：
+   *   agent.executeTool('write_file', JSON.stringify({ path, content }))
+   *
+   * @param name 工具名称
+   * @param argsJson 参数 JSON 字符串
+   * @returns 工具执行结果字符串
+   */
+  async executeTool(name: string, argsJson: string): Promise<string> {
+    if (!this._initialized || !this.toolExec) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 executeTool() 前调用 await agent.init()',
+      ]);
+    }
+    return this.toolExec.execute(name, argsJson);
   }
 
   // ─── 只读访问器 ───────────────────────────────────────

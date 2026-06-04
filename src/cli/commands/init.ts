@@ -233,7 +233,9 @@ async function main() {
     try {
       process.stdout.write('\\n');
       for await (const chunk of agent.chat(input)) {
-        process.stdout.write(chunk);
+        if (chunk.type === 'text') {
+          process.stdout.write(chunk.content);
+        }
       }
       process.stdout.write('\\n\\n> ');
     } catch (err) {

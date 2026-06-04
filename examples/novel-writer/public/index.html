@@ -201,6 +201,102 @@
         color: var(--error);
         border: 1px solid #fecaca;
       }
+      /* ─── 思考中反馈 ──────────────────────── */
+      .thinking-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-dim);
+        font-size: 13px;
+        padding: 4px 0;
+      }
+      .thinking-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--text-dim);
+        animation: think-bounce 1.4s infinite ease-in-out both;
+      }
+      .thinking-dot:nth-child(1) {
+        animation-delay: -0.32s;
+      }
+      .thinking-dot:nth-child(2) {
+        animation-delay: -0.16s;
+      }
+      @keyframes think-bounce {
+        0%,
+        80%,
+        100% {
+          transform: scale(0);
+          opacity: 0.3;
+        }
+        40% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      /* ─── 操作步骤面板（可折叠）────────────── */
+      .action-steps {
+        margin-top: 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg);
+        overflow: hidden;
+      }
+      .action-steps-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 12px;
+        color: var(--text-dim);
+        user-select: none;
+      }
+      .action-steps-head:hover {
+        background: var(--agent-bubble);
+      }
+      .action-steps-head .arrow {
+        transition: transform 0.2s;
+        font-size: 10px;
+      }
+      .action-steps.collapsed .arrow {
+        transform: rotate(-90deg);
+      }
+      .action-steps.collapsed .action-step {
+        display: none;
+      }
+      .action-step {
+        padding: 6px 12px 6px 28px;
+        font-size: 12px;
+        color: var(--text);
+        border-top: 1px solid var(--border);
+        position: relative;
+      }
+      .action-step::before {
+        content: '';
+        position: absolute;
+        left: 12px;
+        top: 12px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+      }
+      .action-step.writing::before {
+        background: var(--l2);
+      }
+      .action-step.tool::before {
+        background: var(--l4);
+      }
+      .action-step.recall::before {
+        background: var(--l3);
+      }
+      .action-step.done::before {
+        background: var(--success);
+      }
+      .action-step.done {
+        color: var(--success);
+      }
 
       /* ─── 输入区 ──────────────────────────── */
       #input-bar {
@@ -422,6 +518,127 @@
         color: var(--text-dim);
         font-size: 12px;
       }
+
+      /* ─── 章节管理面板 ──────────────────────── */
+      .novel-panel {
+        border-top: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        max-height: 40%;
+        overflow: hidden;
+      }
+      .novel-panel-head {
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: var(--bg-elev);
+        cursor: pointer;
+        user-select: none;
+      }
+      .novel-panel-head h3 {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .novel-panel-head .badge {
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: var(--bg);
+        color: var(--text-dim);
+        font-family: ui-monospace, monospace;
+      }
+      .novel-panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 12px;
+        font-size: 12px;
+      }
+      .novel-item {
+        padding: 6px 8px;
+        border-radius: 4px;
+        margin-bottom: 4px;
+        cursor: default;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .novel-item:hover {
+        background: var(--bg);
+      }
+      .novel-item .icon {
+        font-size: 14px;
+      }
+      .novel-item .label {
+        flex: 1;
+        word-break: break-all;
+      }
+      .novel-empty {
+        color: var(--text-dim);
+        font-style: italic;
+        text-align: center;
+        padding: 16px 0;
+        font-size: 11px;
+      }
+
+      /* ─── 步骤折叠（工具调用反馈） ─── */
+      .steps-container {
+        margin: 8px 0;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+        font-size: 12px;
+      }
+      .step-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        user-select: none;
+        transition: background 0.15s;
+      }
+      .step-item:last-child {
+        border-bottom: none;
+      }
+      .step-item:hover {
+        background: var(--bg-card);
+      }
+      .step-icon {
+        flex-shrink: 0;
+        width: 18px;
+        text-align: center;
+      }
+      .step-label {
+        color: var(--text-dim);
+      }
+      .step-name {
+        font-weight: 500;
+        color: var(--accent);
+      }
+      .step-ok {
+        color: #4ade80;
+      }
+      .step-err {
+        color: #f87171;
+      }
+      .step-summary {
+        display: none;
+        padding: 4px 10px 8px 36px;
+        color: var(--text-dim);
+        font-size: 11px;
+        background: var(--bg-card);
+        border-bottom: 1px solid var(--border);
+      }
+      .step-item.open + .step-summary {
+        display: block;
+      }
+      .step-item.open {
+        background: var(--bg-card);
+      }
     </style>
   </head>
   <body>
@@ -483,7 +700,7 @@
         </div>
       </div>
 
-      <!-- 右侧：4 层记忆面板 -->
+      <!-- 右侧：4 层记忆面板 + 小说面板 -->
       <div id="mem-col" class="hidden">
         <div class="mem-head">
           <h2>4 层记忆快照</h2>
@@ -491,6 +708,28 @@
         </div>
         <div class="mem-body" id="mem-body">
           <div class="mem-hint">Agent 未启动——发条消息后会自动刷新</div>
+        </div>
+
+        <!-- 章节管理面板 -->
+        <div class="novel-panel" id="chapters-panel">
+          <div class="novel-panel-head" onclick="refreshChapters()">
+            <h3>📖 章节</h3>
+            <span class="badge" id="chapters-count">0</span>
+          </div>
+          <div class="novel-panel-body" id="chapters-body">
+            <div class="novel-empty">暂无章节——让墨羽帮你创建</div>
+          </div>
+        </div>
+
+        <!-- 角色卡片面板 -->
+        <div class="novel-panel" id="characters-panel">
+          <div class="novel-panel-head" onclick="refreshCharacters()">
+            <h3>🎭 角色</h3>
+            <span class="badge" id="characters-count">0</span>
+          </div>
+          <div class="novel-panel-body" id="characters-body">
+            <div class="novel-empty">暂无角色——让墨羽帮你设定</div>
+          </div>
         </div>
       </div>
     </div>
@@ -740,6 +979,15 @@
       }
 
       // ─── 发送消息 ────────────────────────────
+      /**
+       * 发送用户消息到后端，流式接收回复
+       *
+       * 反馈设计（不碰核心库，纯前端）：
+       * 1. 思考阶段：显示跳动的三点动画 + "思考中..."
+       * 2. 输出阶段：收到第一个内容字符后切换到正常文本流
+       * 3. 操作追踪：正则匹配 LLM 回复中的工具调用模式，记录到操作步骤
+       * 4. 完成后：在消息下方追加可折叠的「操作步骤」面板
+       */
       async function sendMessage() {
         const input = document.getElementById('input');
         const text = input.value.trim();
@@ -750,8 +998,31 @@
         sendBtn.disabled = true;
         input.value = '';
 
+        // 用户消息气泡
         appendMessage('user', text);
-        const agentBubble = appendMessage('agent', '');
+
+        // Agent 消息容器（含思考指示器）
+        const msgContainer = document.createElement('div');
+        msgContainer.className = 'message agent';
+        msgContainer.style.position = 'relative';
+
+        // 思考中指示器（粉色文字，白色背景）
+        const thinkingEl = document.createElement('div');
+        thinkingEl.className = 'thinking-indicator';
+        thinkingEl.innerHTML =
+          '<span style="color:#db2777;margin-right:2px;">思考中</span>' +
+          '<span class="thinking-dot"></span>' +
+          '<span class="thinking-dot"></span>' +
+          '<span class="thinking-dot"></span>';
+        msgContainer.appendChild(thinkingEl);
+
+        document.getElementById('messages').appendChild(msgContainer);
+        scrollToBottom();
+
+        // 操作步骤收集器
+        const actionSteps = [];
+        let firstContent = true;
+        let outputText = '';
 
         try {
           const res = await fetch('/api/chat', {
@@ -781,12 +1052,69 @@
               const data = line.slice(6);
               if (data === '[DONE]') continue;
               try {
-                const parsed = JSON.parse(data);
-                if (parsed.error) {
-                  agentBubble.textContent = '错误：' + parsed.error;
-                  agentBubble.className = 'message error';
-                } else if (parsed.content) {
-                  agentBubble.textContent += parsed.content;
+                const chunk = JSON.parse(data);
+
+                // ─── 按 AgentChunk.type 分支处理 ───
+                if (chunk.error) {
+                  // 错误事件
+                  removeThinking(msgContainer, thinkingEl);
+                  msgContainer.textContent = '错误：' + chunk.error;
+                  msgContainer.className = 'message error';
+                } else if (chunk.type === 'recall') {
+                  // 记忆召回事件：更新思考指示器
+                  thinkingEl.querySelector('span').textContent = `召回 ${chunk.count} 条记忆`;
+                  actionSteps.push({
+                    key: `recall:${actionSteps.length}`,
+                    type: 'recall',
+                    label: `召回了 ${chunk.count} 条相关记忆`,
+                  });
+                } else if (chunk.type === 'text') {
+                  // 文本输出事件：流式追加到气泡
+                  outputText += chunk.content;
+                  if (firstContent) {
+                    firstContent = false;
+                    removeThinking(msgContainer, thinkingEl);
+                  }
+                  const lastChild = msgContainer.lastChild;
+                  if (
+                    lastChild &&
+                    lastChild !== thinkingEl &&
+                    lastChild.nodeType === Node.TEXT_NODE
+                  ) {
+                    lastChild.textContent += chunk.content;
+                  } else {
+                    msgContainer.appendChild(document.createTextNode(chunk.content));
+                  }
+                } else if (chunk.type === 'tool_start') {
+                  // 工具开始执行：更新思考指示器 + 记录步骤
+                  if (firstContent) {
+                    thinkingEl.querySelector('span').textContent = `正在执行 ${chunk.name}...`;
+                  }
+                  actionSteps.push({
+                    key: `tool:${actionSteps.length}`,
+                    type: 'tool',
+                    label: `调用工具：${chunk.name}`,
+                  });
+                } else if (chunk.type === 'tool_result') {
+                  // 工具执行完成：记录步骤
+                  const status = chunk.ok ? '成功' : '失败';
+                  actionSteps.push({
+                    key: `result:${actionSteps.length}`,
+                    type: chunk.ok ? 'writing' : 'tool',
+                    label: `${chunk.name} ${status}${chunk.summary ? '：' + chunk.summary.slice(0, 60) : ''}`,
+                  });
+                } else if (chunk.type === 'done') {
+                  // 本轮结束
+                  if (firstContent) {
+                    // 没有收到任何文本内容（可能 LLM 超时）
+                    removeThinking(msgContainer, thinkingEl);
+                    msgContainer.textContent = '（未收到回复）';
+                  }
+                  actionSteps.push({
+                    key: 'done',
+                    type: 'done',
+                    label: '回复完成',
+                  });
                 }
               } catch {
                 /* 忽略解析失败 */
@@ -794,15 +1122,52 @@
             }
             scrollToBottom();
           }
-          // 消息发完后立即刷新一次记忆面板
-          if (memPanelOpen) refreshMemoryPanel();
+
+          // 完成后追加操作步骤面板
+          appendActionSteps(msgContainer, actionSteps);
+
+          // 刷新记忆面板 + 小说面板
+          if (memPanelOpen) {
+            refreshMemoryPanel();
+            refreshChapters();
+            refreshCharacters();
+          }
         } catch (err) {
-          agentBubble.textContent = '请求失败：' + err.message;
-          agentBubble.className = 'message error';
+          removeThinking(msgContainer, thinkingEl);
+          msgContainer.textContent = '请求失败：' + err.message;
+          msgContainer.className = 'message error';
         } finally {
           sendBtn.disabled = false;
           input.focus();
         }
+      }
+
+      /** 移除思考指示器 */
+      function removeThinking(container, thinkingEl) {
+        if (thinkingEl.parentNode === container) {
+          container.removeChild(thinkingEl);
+        }
+      }
+
+      /**
+       * 在消息气泡下方追加可折叠的操作步骤面板
+       */
+      function appendActionSteps(container, steps) {
+        if (steps.length === 0) return;
+        const panel = document.createElement('div');
+        panel.className = 'action-steps collapsed';
+        panel.innerHTML =
+          `<div class="action-steps-head" onclick="toggleActionSteps(this)">
+            <span>操作步骤（${steps.length} 步）</span>
+            <span class="arrow">&#9660;</span>
+          </div>` +
+          steps.map((s) => `<div class="action-step ${s.type}">${s.label}</div>`).join('');
+        container.appendChild(panel);
+      }
+
+      /** 切换操作步骤面板的折叠状态 */
+      function toggleActionSteps(head) {
+        head.parentElement.classList.toggle('collapsed');
       }
 
       function handleKey(e) {
@@ -845,10 +1210,56 @@
         }
       }
 
-      // ─── 启动 ────────────────────────────────
+      // ─── 启动 ───────────────────────────────
       updateStatus();
       // 页面加载时恢复历史消息（解决刷新后对话消失的问题）
       restoreMessages();
+
+      // ─── 章节管理面板（R-509）────────────────────
+      async function refreshChapters() {
+        try {
+          const res = await fetch('/api/chapters');
+          const data = await res.json();
+          const body = document.getElementById('chapters-body');
+          const badge = document.getElementById('chapters-count');
+          badge.textContent = String(data.chapters.length);
+          if (data.chapters.length === 0) {
+            body.innerHTML = '<div class="novel-empty">暂无章节——让墨羽帮你创建</div>';
+          } else {
+            body.innerHTML = data.chapters
+              .map(
+                (name) =>
+                  `<div class="novel-item"><span class="icon">📄</span><span class="label">${escapeHtml(name)}</span></div>`,
+              )
+              .join('');
+          }
+        } catch {
+          // 静默失败
+        }
+      }
+
+      // ─── 角色卡片面板（R-509）────────────────────
+      async function refreshCharacters() {
+        try {
+          const res = await fetch('/api/characters');
+          const data = await res.json();
+          const body = document.getElementById('characters-body');
+          const badge = document.getElementById('characters-count');
+          badge.textContent = String(data.characters.length);
+          if (data.characters.length === 0) {
+            body.innerHTML = '<div class="novel-empty">暂无角色——让墨羽帮你设定</div>';
+          } else {
+            body.innerHTML = data.characters
+              .map(
+                (name) =>
+                  `<div class="novel-item"><span class="icon">🎭</span><span class="label">${escapeHtml(name.replace('.md', ''))}</span></div>`,
+              )
+              .join('');
+          }
+        } catch {
+          // 静默失败
+        }
+      }
     </script>
   </body>
 </html>

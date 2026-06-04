@@ -9,8 +9,10 @@
  * 其中"Agent 记忆召回结果"由 TopicMount 提供，通过 processUserInput 的
  * topicMemories 参数注入。
  */
-import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
+import type { ToolDefinition } from './tool-executor.js';
+import type { AgentChunk } from './types.js';
 import { logger } from '@/logging/logger.js';
 
 export interface AgentLoopOptions {
@@ -20,6 +22,8 @@ export interface AgentLoopOptions {
   maxIterations?: number;
   /** v4.0：系统 prompt 前缀（角色 + 用户画像 + 技能），注入到 bootstrap 记忆之前 */
   systemPromptPrefix?: string;
+  /** v4.0：工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
+  toolDefinitions?: ToolDefinition[];
 }
 
 export class AgentLoop {
@@ -47,11 +51,16 @@ export class AgentLoop {
   async *processUserInput(
     userInput: string,
     topicMemories?: readonly Memory[],
-  ): AsyncGenerator<string, void, unknown> {
+  ): AsyncGenerator<AgentChunk, void, unknown> {
     // 注入话题记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
     const enhancedInput = topicMemories?.length
       ? this.wrapWithTopicContext(userInput, topicMemories)
       : userInput;
+
+    // 有话题记忆召回时，通知上层（用于 UI 展示"召回 X 条记忆"）
+    if (topicMemories?.length) {
+      yield { type: 'recall', count: topicMemories.length };
+    }
 
     this.messages.push({ role: 'user', content: enhancedInput });
 
@@ -64,10 +73,11 @@ export class AgentLoop {
       let toolCalls: Message['toolCalls'] = undefined;
 
       // 调用 LLM
-      for await (const chunk of this.opts.provider.chat(this.messages)) {
+      const chatOpts = this.buildChatOptions();
+      for await (const chunk of this.opts.provider.chat(this.messages, chatOpts)) {
         if (chunk.content) {
           fullContent += chunk.content;
-          yield chunk.content; // 流式输出给用户
+          yield { type: 'text', content: chunk.content }; // 结构化流式输出
         }
         if (chunk.toolCalls) {
           toolCalls = (toolCalls ?? []).concat(chunk.toolCalls as never);
@@ -84,12 +94,19 @@ export class AgentLoop {
 
         // 执行工具
         for (const tc of toolCalls) {
+          yield { type: 'tool_start', name: tc.function.name, args: tc.function.arguments };
           const result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
           this.messages.push({
             role: 'tool',
             content: result,
             toolCallId: tc.id,
           });
+          yield {
+            type: 'tool_result',
+            name: tc.function.name,
+            ok: !result.startsWith('错误'),
+            summary: result.slice(0, 100),
+          };
         }
         // 继续循环：把工具结果回填给 LLM
         continue;
@@ -99,19 +116,39 @@ export class AgentLoop {
       if (fullContent) {
         this.messages.push({ role: 'assistant', content: fullContent });
       }
+      yield { type: 'done' };
       return;
     }
 
     logger.warn({ iterations: iteration }, '达到最大迭代次数');
-    yield '\n\n[已达到最大迭代次数]';
+    yield { type: 'text', content: '\n\n[已达到最大迭代次数]' };
+    yield { type: 'done' };
   }
 
   /**
-   * 构建 system prompt（注入人格 + 规则 + 领域）
+   * 构建 system prompt（注入人格 + 规则 + 领域 + 工具描述）
    */
   private buildSystemPrompt(memories: Memory[]): string {
     const sections = memories.map((m) => `## ${m.name}\n\n${m.content}`).join('\n\n---\n\n');
-    return `# Memora Agent\n\n${sections}\n\n---\n\n你是 Memora Agent。基于以上人格、规则和领域知识，回应用户的问题。`;
+    let prompt = `# Memora Agent\n\n${sections}\n\n---\n\n你是 Memora Agent。基于以上人格、规则和领域知识，回应用户的问题。`;
+
+    // 追加工具描述（让 LLM 知道可用工具及其参数）
+    const tools = this.opts.toolDefinitions;
+    if (tools && tools.length > 0) {
+      const toolDescs = tools
+        .map((t) => {
+          const params = Object.entries(t.parameters.properties)
+            .map(([name, schema]) => `    - ${name} (${schema.type}): ${schema.description}`)
+            .join('\n');
+          const required =
+            t.parameters.required.length > 0 ? `（必填：${t.parameters.required.join(', ')}）` : '';
+          return `  - ${t.name}${required}: ${t.description}\n${params}`;
+        })
+        .join('\n');
+      prompt += `\n\n## 可用工具\n\n你可以通过 tool_call 调用以下工具：\n${toolDescs}`;
+    }
+
+    return prompt;
   }
 
   /**
@@ -139,6 +176,52 @@ export class AgentLoop {
    */
   injectSystemMessage(content: string): void {
     this.messages.push({ role: 'system', content });
+  }
+
+  /**
+   * 构建 LLM 调用选项（包含工具定义）
+   *
+   * 将 toolDefinitions 转换为 OpenAI Function Calling 格式，
+   * 让 LLM 能通过标准协议发起 tool_call，而非文本模拟。
+   */
+  private buildChatOptions(): ChatOptions {
+    const tools = this.opts.toolDefinitions;
+    if (!tools || tools.length === 0) return {};
+
+    return {
+      tools: tools.map((t) => ({
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters as Record<string, unknown>,
+        },
+      })),
+    };
+  }
+
+  /**
+   * 刷新工具定义（registerTool 后调用）
+   *
+   * 当宿主项目通过 agent.registerTool() 注册新工具后，
+   * 需要更新 system prompt 中的工具描述，让 LLM 能看到新工具。
+   * 重建 messages[0] 的 system prompt 内容。
+   *
+   * @param toolDefinitions 最新的工具定义列表（内置 + 自定义）
+   */
+  refreshToolDefinitions(toolDefinitions: ToolDefinition[]): void {
+    // 注意：修改 opts.toolDefinitions 是有意为之的副作用——
+    // 后续 buildSystemPrompt() 需要读取最新的工具列表
+    this.opts.toolDefinitions = toolDefinitions;
+    // 重建 messages[0] 的 system prompt
+    const sysMsg = this.messages[0];
+    if (sysMsg && sysMsg.role === 'system') {
+      const prefix = this.opts.systemPromptPrefix ?? '';
+      this.messages[0] = {
+        role: 'system',
+        content: prefix + this.buildSystemPrompt(this.opts.bootstrapMemories),
+      };
+    }
   }
 
   /**

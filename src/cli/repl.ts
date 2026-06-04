@@ -327,8 +327,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       // 流式 Markdown 渲染（A-103）
       const md = new MarkdownRenderer();
       for await (const chunk of loop.processUserInput(input)) {
-        process.stdout.write(md.feed(chunk));
-        assistantContent += chunk;
+        if (chunk.type === 'text') {
+          process.stdout.write(md.feed(chunk.content));
+          assistantContent += chunk.content;
+        }
       }
       process.stdout.write(md.flush());
       process.stdout.write('\n');

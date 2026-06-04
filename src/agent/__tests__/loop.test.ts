@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
+import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 
@@ -115,12 +116,16 @@ describe('AgentLoop · processUserInput 纯文本流式输出', () => {
       toolExecutor: vi.fn(),
     });
 
-    const chunks: string[] = [];
+    const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('hello')) {
       chunks.push(chunk);
     }
 
-    expect(chunks).toEqual(['你好', '！', '我是 Memora']);
+    // 过滤 text 事件，验证内容
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toEqual(['你好', '！', '我是 Memora']);
+    // 最后一个是 done 事件
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
   });
 
   it('应该把 user 消息和 assistant 回复都加入消息历史', async () => {
@@ -170,12 +175,21 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
       toolExecutor,
     });
 
-    const chunks: string[] = [];
+    const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('读取文件')) {
       chunks.push(chunk);
     }
 
-    expect(chunks).toEqual(['我来查一下', '找到了文件内容']);
+    // 过滤 text 事件，验证内容（不包含 tool_start/tool_result/tool_done）
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toEqual(['我来查一下', '找到了文件内容']);
+    // 验证 tool_start 和 tool_result 事件
+    const toolStarts = chunks.filter((c) => c.type === 'tool_start');
+    expect(toolStarts).toHaveLength(1);
+    expect(toolStarts[0]!.name).toBe('read_file');
+    const toolResults = chunks.filter((c) => c.type === 'tool_result');
+    expect(toolResults).toHaveLength(1);
+    expect(toolResults[0]!.ok).toBe(true);
     expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
 
     const messages = loop.getMessages();
@@ -236,12 +250,15 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
       maxIterations: 3,
     });
 
-    const chunks: string[] = [];
+    const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('触发循环')) {
       chunks.push(chunk);
     }
 
-    // 最后一个 chunk 是"已达到最大迭代次数"
-    expect(chunks[chunks.length - 1]).toContain('已达到最大迭代次数');
+    // 最后一个 text chunk 是"已达到最大迭代次数"
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts[texts.length - 1]).toContain('已达到最大迭代次数');
+    // 最后一个是 done 事件
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
   });
 });

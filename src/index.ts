@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Memora — 通用 Agent 架构
  *
  * 统一入口：
@@ -19,6 +19,7 @@ import { toFriendlyError } from './utils/errors.js';
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from './agent/agent.js';
+export type { AgentChunk } from './agent/types.js';
 export type {
   AgentOptions,
   AgentContext,
@@ -28,6 +29,7 @@ export type {
   ArchiveSnapshot,
   MountedSnapshot,
 } from './agent/agent.js';
+export type { ToolDefinition, ToolHandler } from './agent/tool-executor.js';
 export { loadConfig } from './config/loader.js';
 export type { Config } from './config/loader.js';
 

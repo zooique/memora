@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promi
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/path-guard.js';
-import { toolError } from '@/utils/errors.js';
+import { toolError, MemoraError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import type { MemoryIndex } from '@/memory/index.js';
 import type { WorkProjectionManager } from './workProjection.js';
@@ -46,6 +46,28 @@ export interface ToolDefinition {
     properties: Record<string, { type: string; description: string }>;
     required: string[];
   };
+}
+
+/**
+ * 自定义工具的处理器类型
+ *
+ * 宿主项目通过 agent.registerTool() 注册领域工具时，
+ * 需提供此签名的 handler 函数。
+ * handler 接收解析后的参数对象，返回字符串结果。
+ */
+export type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
+
+/**
+ * 自定义工具注册条目
+ *
+ * 将工具定义与处理器绑定在一起，
+ * 存入 ToolExecutor 的 customTools Map 中。
+ */
+export interface CustomToolEntry {
+  /** 工具定义（名称、描述、参数 schema） */
+  definition: ToolDefinition;
+  /** 工具执行处理器 */
+  handler: ToolHandler;
 }
 
 /**
@@ -115,6 +137,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
  * 工具执行器
  */
 export class ToolExecutor {
+  /** 自定义工具注册表（宿主项目通过 registerTool 注册领域工具） */
+  private readonly customTools = new Map<string, CustomToolEntry>();
+
   constructor(
     private readonly projectPath: string,
     private readonly security: SecurityGuard,
@@ -122,6 +147,41 @@ export class ToolExecutor {
     /** v4.0：作品投影管理器（可选，读取文件时自动生成投影） */
     private readonly workProjection?: WorkProjectionManager,
   ) {}
+
+  /**
+   * 注册自定义工具
+   *
+   * 宿主项目调用此方法注册领域专属工具（如小说创作的 create_chapter）。
+   * 工具名不能与内置工具重复，也不能重复注册。
+   * 注册后工具会出现在 getToolDefinitions() 列表中，
+   * LLM 可通过 tool_call 调用，execute() 会路由到 handler。
+   *
+   * @param definition 工具定义（名称、描述、参数 schema）
+   * @param handler 工具执行处理器
+   * @throws 工具名与内置工具冲突或已注册时抛错
+   */
+  registerTool(definition: ToolDefinition, handler: ToolHandler): void {
+    // 不允许覆盖内置工具
+    if (BUILTIN_TOOLS.some((t) => t.name === definition.name)) {
+      throw new Error(`不能覆盖内置工具：${definition.name}`);
+    }
+    // 不允许重复注册
+    if (this.customTools.has(definition.name)) {
+      throw new Error(`工具已注册：${definition.name}`);
+    }
+    this.customTools.set(definition.name, { definition, handler });
+    logger.info({ tool: definition.name }, '自定义工具已注册');
+  }
+
+  /**
+   * 获取所有工具定义（内置 + 自定义）
+   *
+   * 用于构建 LLM 请求的 tools 参数，
+   * 以及 AgentLoop 的 system prompt 工具描述。
+   */
+  getToolDefinitions(): ToolDefinition[] {
+    return [...BUILTIN_TOOLS, ...[...this.customTools.values()].map((e) => e.definition)];
+  }
 
   /**
    * 执行工具调用
@@ -162,11 +222,30 @@ export class ToolExecutor {
           (args['limit'] as string) ?? '10',
           (args['mode'] as string) ?? 'match',
         );
-      default:
+      default: {
+        // 自定义工具 fallback：查找 customTools Map
+        const custom = this.customTools.get(name);
+        if (custom) {
+          try {
+            return await custom.handler(args);
+          } catch (err) {
+            // 统一包装为 MemoraError，保持错误处理一致性
+            if (err instanceof MemoraError) throw err;
+            throw toolError(
+              '自定义工具执行失败',
+              `${name}: ${(err as Error).message}`,
+              ['检查工具参数是否正确', '检查工具 handler 实现是否有 bug'],
+              err as Error,
+            );
+          }
+        }
         throw toolError('未知工具', `agent 调用了未注册的工具：${name}`, [
-          `已注册工具：${BUILTIN_TOOLS.map((t) => t.name).join(', ')}`,
+          `已注册工具：${this.getToolDefinitions()
+            .map((t) => t.name)
+            .join(', ')}`,
           '检查 personality.md 是否限制了工具集',
         ]);
+      }
     }
   }
 
