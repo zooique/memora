@@ -421,9 +421,81 @@ const snap = agent.inspect();
 | `agent.switchPersona(name)`              | 手动切换到指定身份                                  |
 | `agent.setPersonaMode('auto'\|'manual')` | 设置身份切换模式                                    |
 | `agent.inspect()`                        | 返回 Agent 当前状态快照（规则数、身份列表等）       |
+| `agent.onConfigSuggestion(handler)`      | 注册配置建议回调（模式 3）                          |
+| `agent.confirmConfigSuggestion(suggest)` | 确认建议并写入配置文件（模式 3）                    |
 | `agent.close()`                          | 安全关闭（释放锁 + 关闭 Agent 级数据库）            |
 
-## 九、关键约束
+## 九、多 Provider 路由（设计阶段）
+
+> **状态**：📋 设计阶段，未实现。等 2+ 个宿主项目有实际需求时再落地。
+
+### 9.1 问题
+
+Agent 内部有多个 LLM 消费者，质量/成本需求不同：
+
+| 消费者                | 用途         | 质量要求 | 成本敏感 |
+| --------------------- | ------------ | -------- | -------- |
+| AgentLoop             | 用户对话     | 高       | 低       |
+| TopicSummarizer       | 话题归档摘要 | 中       | 高       |
+| UserProfile           | 用户画像提取 | 中       | 高       |
+| WorkProjectionManager | 作品投影生成 | 中       | 高       |
+| AutoConfigRefiner     | 配置建议反思 | 中       | 高       |
+
+目前所有消费者共用一个 Provider，无法按用途路由。
+
+### 9.2 设计：前台/后台双通道
+
+```
+前台 API（chat 通道）           后台 API（background 通道）
+┌─────────────────┐            ┌─────────────────┐
+│ AgentLoop.chat  │            │ TopicSummarizer  │
+│ 质量要求：高     │            │ UserProfile      │
+│ 模型：GPT-4o    │            │ WorkProjection   │
+│ 延迟：低        │            │ AutoConfigRefiner│
+│ 成本：高        │            │ 质量要求：中      │
+└─────────────────┘            │ 模型：DeepSeek    │
+                               │ 延迟：不限        │
+                               │ 成本：低          │
+                               └─────────────────┘
+```
+
+### 9.3 配置格式
+
+```typescript
+const agent = new Agent({
+  config: {
+    llm: {
+      // 前台：用户对话（必填）
+      chat: { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-...' },
+      // 后台：归档/投影/画像（可选，不配则复用 chat）
+      background: {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+        apiKey: 'sk-...',
+      },
+    },
+  },
+});
+```
+
+**向后兼容**：不配 `background` 时，所有消费者复用 `chat`——零破坏性。
+
+### 9.4 内核/宿主边界
+
+| 层级 | 职责               | 说明                                            |
+| ---- | ------------------ | ----------------------------------------------- |
+| 内核 | LlmRouter 路由机制 | 根据 consumer 类型选择 chat/background Provider |
+| 内核 | Provider 注册接口  | 支持注册多个 Provider 实例                      |
+| 宿主 | 配置哪些 API       | 决定用哪个 Provider、什么密钥                   |
+| 宿主 | 不感知路由细节     | 宿主不知道"归档需要调 LLM"                      |
+
+### 9.5 实现预留
+
+- `src/llm/provider.ts` 的 `LlmProvider` 抽象类已支持多实例
+- `ChatOptions` 已有 `model` 字段，可扩展 `channel?: 'chat' | 'background'`
+- 配置层 `src/config/` 的 `LlmConfig` 类型预留 `chat` + `background` 双通道
+
+## 十、关键约束
 
 1. **configDir** 指向 Agent 级配置目录（`identities/` + `rules/` +
    `skills/`），所有子项目共享

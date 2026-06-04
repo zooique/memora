@@ -33,6 +33,17 @@ export interface ChatOptions {
   }>;
   // 强制不使用流式
   stream?: boolean;
+  /**
+   * LLM 通道选择（多 Provider 路由预留）
+   *
+   * - 'chat'：前台通道，用于用户对话（高质量、低延迟）
+   * - 'background'：后台通道，用于归档/投影/画像（中等质量、低成本）
+   *
+   * 不指定时使用默认 chat 通道。
+   * 多 Provider 路由功能处于设计阶段，当前所有消费者共用同一 Provider。
+   * 详见接入指南 §九
+   */
+  channel?: 'chat' | 'background';
 }
 
 export interface Chunk {

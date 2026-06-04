@@ -30,6 +30,12 @@ Thumbs.db
 .memora-data/
 data/local/
 
+# Memora 运行时目录（宿主项目使用时生成，开发项目不应包含）
+.memora/
+
+# 运行时配置（含本地路径和 API 端点，不入库）
+config/smoke-*.json
+
 # SQLite 数据库（运行时产物，不入库）
 *.db
 *.db-journal
@@ -49,3 +55,4 @@ $RECYCLE.BIN/
 
 # 示例项目数据
 examples/novel-writer/.memora/*
+.memora/projects.json

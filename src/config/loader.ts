@@ -25,6 +25,22 @@ const ConfigSchema = z.object({
     baseUrl: z.string().optional(),
     apiKey: z.string().optional(),
     temperature: z.number().min(0).max(2).default(0.7),
+    /**
+     * 后台通道配置（多 Provider 路由预留）
+     *
+     * 不配时所有消费者复用前台（llm）配置——零破坏性，完全向后兼容。
+     * 配置后，归档/投影/画像等后台操作使用此通道，降低成本。
+     * 详见接入指南 §九
+     */
+    background: z
+      .object({
+        provider: z.string(),
+        model: z.string(),
+        baseUrl: z.string().optional(),
+        apiKey: z.string().optional(),
+        temperature: z.number().min(0).max(2).default(0.5),
+      })
+      .optional(),
   }),
   memory: z.object({
     dataDir: z.string().default('~/.memora'),
