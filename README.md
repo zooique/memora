@@ -1,4 +1,4 @@
-﻿# Memora 🌲
+# Memora 🌲
 
 > 通用 Agent 架构 — 本地、私有、领域无关，万物皆记忆
 
@@ -89,12 +89,24 @@ npx tsx src/index.ts chat
 | `/help`            | 显示帮助                          |
 | `/tools`           | 列出可用工具                      |
 | `/memories`        | 列出已加载记忆                    |
+| `/mounted`         | 查看当前挂载记忆                  |
+| `/unmount <name>`  | 踢出指定记忆                      |
 | `/search <关键词>` | 搜索记忆（关键词匹配）            |
+| `/stat`            | 记忆库统计面板                    |
 | `/project [name]`  | 切换/列出项目（M-207 多项目并发） |
 | `/domain [name]`   | 切换/列出领域（M-208 领域切换）   |
 | `/topic [name]`    | 切换/查看话题                     |
 | `/topics`          | 列出所有话题文件                  |
 | `/exit`, `/quit`   | 退出                              |
+
+## 示例
+
+| 示例                                     | 定位              | 形态      | 启动          |
+| ---------------------------------------- | ----------------- | --------- | ------------- |
+| [novel-writer](./examples/novel-writer/) | 🎨 WebUI 参考实现 | CLI + Web | `npm run web` |
+| [code-tool](./examples/code-tool/)       | ⚙️ 工程场景示例   | CLI       | `npm run cli` |
+
+5 行接入核心库：[agentBridge.ts](./examples/novel-writer/src/agentBridge.ts)
 
 ## 技术栈
 
