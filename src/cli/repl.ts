@@ -39,6 +39,7 @@ import {
   formatToolStart,
   formatToolEnd,
   formatActionSummary,
+  formatStatPanel,
   type ToolCallRecord,
 } from './format.js';
 import { MarkdownRenderer } from './markdown-renderer.js';
@@ -154,6 +155,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           const friendly = toFriendlyError(err);
           console.error(formatError(friendly.title, friendly.detail));
         }
+      }
+      rl.prompt();
+      continue;
+    }
+
+    // 新枝破土 N-101：记忆库统计面板
+    if (input === '/stat') {
+      try {
+        const stats = await agent.getStats();
+        console.log(formatStatPanel(stats));
+      } catch (err) {
+        const friendly = toFriendlyError(err);
+        console.error(formatError(friendly.title, friendly.detail));
       }
       rl.prompt();
       continue;

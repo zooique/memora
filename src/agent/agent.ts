@@ -37,7 +37,7 @@ import { SkillManager } from '@/skill/skillManager.js';
 import { configError } from '@/utils/errors.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory, TopicMessage } from '@/memory/types.js';
-import { MemoryType, Permanence } from '@/memory/types.js';
+import { MemoryType, Permanence, type PermanenceValue } from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
 import type { TopicStore } from '@/memory/topic-store.js';
 import type { SecurityGuard } from '@/security/path-guard.js';
@@ -74,6 +74,20 @@ export interface AgentSearchHit {
   type: string;
   weight: number;
   contentPreview: string;
+}
+
+/**
+ * 记忆库统计数据（新枝破土 N-101）
+ *
+ * 提供给 CLI /stat 命令渲染统计面板。
+ */
+export interface AgentStats {
+  /** 按类型分组的记忆数量 */
+  byType: Record<string, number>;
+  /** 话题文件总数 */
+  topicCount: number;
+  /** 记忆总数 */
+  total: number;
 }
 
 /**
@@ -693,6 +707,44 @@ export class Agent {
       // 截断长内容到 120 字符（与 repl.ts 旧实现一致）
       contentPreview: m.content.length > 120 ? m.content.slice(0, 120) + '...' : m.content,
     }));
+  }
+
+  /**
+   * 新枝破土 N-101：记忆库统计
+   *
+   * 返回记忆类型分布、话题数量、数据库大小等关键指标，
+   * 供 CLI /stat 命令渲染统计面板。
+   *
+   * @returns 记忆库统计数据
+   */
+  async getStats(): Promise<AgentStats> {
+    if (!this._initialized || !this._ctx) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 getStats() 前调用 await agent.init()',
+      ]);
+    }
+
+    // 按永久性级别统计记忆数量
+    const perms: PermanenceValue[] = [
+      Permanence.ALWAYS,
+      Permanence.DOMAIN,
+      Permanence.TOPIC,
+      Permanence.ON_DEMAND,
+    ];
+    const byType: Record<string, number> = {};
+    for (const p of perms) {
+      const memories = await this._ctx.index.getByPermanence(p);
+      byType[p] = memories.length;
+    }
+
+    // 话题文件数量
+    const topicFiles = await this._ctx.topicStore.list();
+    const topicCount = topicFiles.length;
+
+    // 总记忆数
+    const total = Object.values(byType).reduce((a, b) => a + b, 0);
+
+    return { byType, topicCount, total };
   }
 
   /**

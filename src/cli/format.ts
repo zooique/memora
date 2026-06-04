@@ -121,6 +121,7 @@ export function formatHelp(): string {
     ['/tools', '列出可用工具'],
     ['/memories', '列出已加载记忆'],
     ['/search <query>', '搜索记忆'],
+    ['/stat', '记忆库统计面板'],
     ['/project [name]', '切换项目（不填则显示列表）'],
     ['/domain [name]', '切换领域（不填则显示列表）'],
     ['/topic <name>', '切换话题（不填则显示当前）'],
@@ -236,5 +237,84 @@ export function formatActionSummary(records: ToolCallRecord[]): string {
   }
 
   lines.push(pc.dim('─'.repeat(50)));
+  return lines.join('\n');
+}
+
+// ─── 新枝破土 N-101：记忆库统计面板 ──────────────────────────
+
+/** 记忆类型显示名称映射 */
+const TYPE_LABELS: Record<string, string> = {
+  always: '永驻',
+  domain: '领域',
+  topic: '话题',
+  'on-demand': '按需',
+};
+
+/** 记忆类型颜色映射 */
+const TYPE_COLORS: Record<string, (s: string) => string> = {
+  always: pc.magenta,
+  domain: pc.cyan,
+  topic: pc.green,
+  'on-demand': pc.yellow,
+};
+
+/** 条形图最大宽度（字符数） */
+const BAR_MAX_WIDTH = 20;
+
+/** 条形图填充字符 */
+const BAR_FILL = '█';
+const BAR_EMPTY = '░';
+
+/**
+ * 渲染记忆库统计面板（新枝破土 N-101）
+ *
+ * 展示记忆类型分布、话题数量、总记忆数，
+ * 使用 ANSI 条形图和颜色编码提供一目了然的概览。
+ *
+ * @param stats Agent.getStats() 的返回结果
+ * @returns 多行 ANSI 彩色字符串
+ */
+export function formatStatPanel(stats: {
+  byType: Record<string, number>;
+  topicCount: number;
+  total: number;
+}): string {
+  const { byType, topicCount, total } = stats;
+  const maxCount = Math.max(1, ...Object.values(byType));
+
+  const lines: string[] = ['', pc.bold(pc.cyan('📊 记忆库统计')), pc.dim('═'.repeat(55)), ''];
+
+  // 按类型分布条形图
+  for (const [type, count] of Object.entries(byType)) {
+    const label = TYPE_LABELS[type] ?? type;
+    const color = TYPE_COLORS[type] ?? pc.white;
+    const barLen = Math.round((count / maxCount) * BAR_MAX_WIDTH) || (count > 0 ? 1 : 0);
+    const bar = BAR_FILL.repeat(barLen) + pc.dim(BAR_EMPTY.repeat(BAR_MAX_WIDTH - barLen));
+    const countStr = String(count).padStart(4, ' ');
+    lines.push(
+      `  ${color(label.padEnd(6, ' '))} ${pc.dim('│')} ${color(bar)} ${pc.bold(countStr)}`,
+    );
+  }
+
+  lines.push('');
+
+  // 汇总行
+  lines.push(
+    `  ${pc.bold('总计')}   ${pc.dim('│')} ${pc.bold(String(total).padStart(4, ' '))} 条记忆`,
+  );
+  lines.push(
+    `  ${pc.bold('话题')}   ${pc.dim('│')} ${pc.bold(String(topicCount).padStart(4, ' '))} 个文件`,
+  );
+
+  // 使用率（非临时记忆 = always + domain 在总量中的占比）
+  const persistent = (byType['always'] ?? 0) + (byType['domain'] ?? 0);
+  const usageRate = total > 0 ? Math.round((persistent / total) * 100) : 0;
+  lines.push(
+    `  ${pc.bold('核心率')} ${pc.dim('│')} ${pc.bold(String(usageRate).padStart(4, ' '))}% (always + domain)`,
+  );
+
+  lines.push('');
+  lines.push(pc.dim('═'.repeat(55)));
+
   return lines.join('\n');
 }

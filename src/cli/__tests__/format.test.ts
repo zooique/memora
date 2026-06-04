@@ -25,6 +25,7 @@ import {
   formatSuccess,
   formatError,
   formatWarning,
+  formatStatPanel,
 } from '@/cli/format.js';
 
 describe('M-205 · CLI 格式化工具', () => {
@@ -160,13 +161,14 @@ describe('M-205 · CLI 格式化工具', () => {
   });
 
   describe('formatHelp', () => {
-    it('应包含 9 个命令（/exit /help /tools /memories /search /project /domain /topic /topics）', () => {
+    it('应包含 10 个命令（/exit /help /tools /memories /search /stat /project /domain /topic /topics）', () => {
       const result = formatHelp();
       expect(result).toContain('/exit');
       expect(result).toContain('/help');
       expect(result).toContain('/tools');
       expect(result).toContain('/memories');
       expect(result).toContain('/search');
+      expect(result).toContain('/stat');
       expect(result).toContain('/project');
       expect(result).toContain('/domain');
       expect(result).toContain('/topic');
@@ -258,6 +260,39 @@ describe('M-205 · CLI 格式化工具', () => {
       expect(result).toContain('⚠️');
       expect(result).toContain('部分文件加载失败');
       expect(result).toContain('\x1b[33m');
+    });
+  });
+
+  describe('formatStatPanel (N-101)', () => {
+    it('空统计时应显示各类型为 0 的总计', () => {
+      const stats = {
+        byType: { always: 0, domain: 0, topic: 0, 'on-demand': 0 },
+        topicCount: 0,
+        total: 0,
+      };
+      const result = formatStatPanel(stats);
+      expect(result).toContain('记忆库统计');
+      expect(result).toContain('总计');
+      expect(result).toContain('0');
+    });
+
+    it('应有各类型分布行', () => {
+      const stats = {
+        byType: { always: 3, domain: 5, topic: 12, 'on-demand': 2 },
+        topicCount: 7,
+        total: 22,
+      };
+      const result = formatStatPanel(stats);
+      // 每个类型标签应出现
+      expect(result).toContain('永驻');
+      expect(result).toContain('领域');
+      expect(result).toContain('话题');
+      expect(result).toContain('按需');
+      // 汇总信息
+      expect(result).toContain('22');
+      expect(result).toContain('7');
+      // 核心率（always + domain = 8/22 ≈ 36%）
+      expect(result).toContain('%');
     });
   });
 });
