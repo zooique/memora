@@ -18,7 +18,7 @@ import { FileStore } from '@/memory/store.js';
 import { MemoryIndex } from '@/memory/index.js';
 import { MemoryLoader } from '@/memory/loader.js';
 
-// 用项目自带的示例记忆目录（含 personality + rule + skill 3 条必召）
+// 用项目自带的示例记忆目录（含 identities + rule + skill 3 条必召）
 const MEMORY_DIR = resolve('f:/zooique/memora/examples/memories');
 
 // 用系统临时目录避免硬编码绝对路径（CI 跨平台、并行安全）
@@ -47,15 +47,13 @@ describe('M-001 · 配置 + 记忆链路集成测试', () => {
     const loader = new MemoryLoader(fileStore, index);
     const { memories: bootstrap, loadResult } = await loader.bootstrap();
 
-    // 7 条全加载（M-204 之前是 4 条，加了 3 个 tool 后是 7 条），3 条必召（personality + rule + skill）
+    // 7 条全加载（identities + rule + skill + 4 tools），2 条必召（rule + skill，personality 由 PersonaManager 单独注入）
     expect(loadResult.loaded).toBe(7);
-    expect(bootstrap.length).toBe(3);
+    expect(bootstrap.length).toBe(2);
 
-    // 验证必召记忆中包含核心人格
+    // bootstrap 不应包含 personality（PersonaManager 单独管理身份）
     const personality = bootstrap.find((m) => m.type === 'personality');
-    expect(personality).toBeDefined();
-    expect(personality?.content).toContain('Memora');
-    expect(personality?.content).toContain('万物皆记忆');
+    expect(personality).toBeUndefined();
 
     // 验证必召记忆包含安全规则
     const rule = bootstrap.find((m) => m.type === 'rule');

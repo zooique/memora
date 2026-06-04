@@ -30,6 +30,8 @@ export type {
   MountedSnapshot,
 } from './agent/agent.js';
 export type { ToolDefinition, ToolHandler } from './agent/tool-executor.js';
+export type { PersonaMode } from './persona/personaManager.js';
+export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/agent.js';
 export { loadConfig } from './config/loader.js';
 export type { Config } from './config/loader.js';
 
@@ -61,9 +63,10 @@ if (isDirectRun) {
 
   program
     .command('init')
-    .description('初始化项目（生成 personality.md / rules/ / .memora/）')
+    .description('初始化项目（生成 identities/ / rules/ / .memora/）')
     .option('-p, --project <path>', '指定项目目录', process.cwd())
     .option('-d, --domain <name>', '领域模板 code|novel（可选，不指定则只生成 .memora/ 骨架）')
+    .option('-u, --user', '用户模式：交互式生成 ~/.memora/agent-config/（模式 2）')
     .action(async (opts) => {
       try {
         await initCommand(opts);

@@ -80,7 +80,7 @@ name: partial
     });
 
     it('有完整 frontmatter 时应正确解析', async () => {
-      const dir = join(dataDir, 'personality');
+      const dir = join(dataDir, 'identities');
       mkdirSync(dir, { recursive: true });
       writeFileSync(
         join(dir, 'default.md'),

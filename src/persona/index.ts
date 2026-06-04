@@ -5,4 +5,4 @@
  * 职责：加载 personas/*.md，解析 frontmatter，组装 system prompt 前缀
  */
 export { PersonaManager } from './personaManager.js';
-export type { Persona, PersonaTool } from './personaManager.js';
+export type { Persona, PersonaMode } from './personaManager.js';

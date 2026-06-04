@@ -23,20 +23,24 @@ date: 2026-06-03
 
 **Persona 和 Skill 的定位**：
 
-- Persona（人格）和 Skill（技能）不是"普通记忆"——不进入 SQLite 索引
-- 它们是**记忆管道顶端的最高优先级过滤器**，类似人的"本能反射"和"长期训练形成的思维模式"
-- 它们通过独立的 Manager 类管理（PersonaManager /
-  SkillManager），但在上下文组装时作为最高优先级注入
-- 类比人类：你不"记住"自己的性格，但性格决定你如何看待和回应一切。技能同理——你不"回忆"怎么骑自行车，但技能始终在线
+- Skill（技能）不是"普通记忆"——不进入 SQLite 索引。它是**记忆管道顶端的最高优先级过滤器**，类似人的"长期训练形成的思维模式"。通过独立的 SkillManager 管理，在上下文组装时作为最高优先级注入
+- Persona（身份）遵循"万物皆记忆"原则——存入 SQLite 作为
+  `type: personality, permanence: always`
+  的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 personality 类型，由 PersonaManager 单独管理身份注入（systemPromptPrefix）。身份可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
+- 类比人类：性格是你 identity 的一部分，可以被"选择"（在不同场合以不同身份应对），而技能是"能力"，始终在线
 
 **在代码中的体现**：
 
-- **PersonaManager**：加载 `personas/*.md`，解析 frontmatter，注入 system
-  prompt 最顶层
-- **SkillManager**：两层目录扫描 + 关键词匹配，匹配到后注入下一轮 system prompt
+- **PersonaManager**：扫描
+  `identities/*.md`，加载为 personality 类型记忆（permanence:
+  always），存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。身份通过 systemPromptPrefix 注入，不进 bootstrap
+- **SkillManager**：两层目录扫描 + 关键词匹配，匹配到后注入下一轮 system
+  prompt。**不进 SQLite**
 - 记忆管道层（规则、话题归档、心得）通过 `MemoryIndex` 的统一召回管线检索
-- `MemoryType` 枚举的 `personality` / `skill`
-  类型用于 MemoryIndex 中配置型记忆（rules、全局规则），而非 persona/skill 文件本身
+- `MemoryType` 枚举的 `personality` 类型用于身份记忆，`skill`
+  类型用于 MemoryIndex 中配置型记忆（全局规则等），而非 skill 文件本身
+- `bootstrap()`
+  对 personality 类型做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活身份
 
 **禁止**：
 
@@ -114,13 +118,13 @@ domain），其余在 Agent Loop 中按需检索。
 
 **降级层级**：
 
-| 优先级 | 操作             | 失败策略             | 代码证据                                |
-| ------ | ---------------- | -------------------- | --------------------------------------- |
-| P0     | 对话响应         | 不可降级             | Agent Loop 核心路径无 try/catch         |
-| P1     | 消息持久化       | 记日志，不抛异常     | `safeAppend()` 只 log                   |
-| P2     | 话题归档         | 跳过本次，不阻塞     | `summarizeAndArchive()` fire-and-forget |
-| P3     | 启动补执归档     | 跳过，Agent 正常启动 | `bootstrapArchive()` 3s 超时兜底        |
-| P4     | 关闭旧领域数据库 | warn，继续切换到新域 | `switchDomain()` catch-only-warn        |
+| 优先级 | 操作               | 失败策略             | 代码证据                                |
+| ------ | ------------------ | -------------------- | --------------------------------------- |
+| P0     | 对话响应           | 不可降级             | Agent Loop 核心路径无 try/catch         |
+| P1     | 消息持久化         | 记日志，不抛异常     | `safeAppend()` 只 log                   |
+| P2     | 话题归档           | 跳过本次，不阻塞     | `summarizeAndArchive()` fire-and-forget |
+| P3     | 启动补执归档       | 跳过，Agent 正常启动 | `bootstrapArchive()` 3s 超时兜底        |
+| P4     | 项目切换（释放锁） | warn，继续切换       | `switchProject()` catch-only-warn       |
 
 **禁止**：
 
@@ -169,3 +173,28 @@ domain），其余在 Agent Loop 中按需检索。
 - 显式命令（如 `switchTopic()`）享有最高优先级，绕过阈值检测
 - 切换后自动 `unmount()`，让新话题的"生其心"从空灵中重新浮现
 - 这是"专注"原则的补充而非冲突——专注是默认，切换是例外
+
+## 10. 单 Agent 模型（配置文件是真理源）
+
+**原则**：Memora 被宿主接入后，就是该程序的唯一 Agent。memora.db 和 TopicStore 是 Agent 级共享资源，不随子项目切换重建。
+
+**配置文件是真理源，SQLite 是运行时索引**：
+
+- `agent-config/`
+  下的配置文件（identities/rules/skills）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
+- 项目级 `.memora/` 只放 rules/ 和 skills/，不放 memora.db
+- `addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
+- AutoConfigRefiner（计划中）写入配置文件（持久化，重启后依然生效）
+
+**在代码中的体现**：
+
+- `ProjectManager.ensureAgentResources()`：确保 memora.db 只创建一次（Agent 级）
+- `ProjectManager.initProject()`：两层加载（项目级 → Agent 级），不重建数据库
+- `ProjectManager.shutdown()`：关闭 Agent 级数据库（仅在 Agent 整体关闭时调用）
+- `ProjectManager.closeProject()`：只释放项目锁，不关数据库
+
+**禁止**：
+
+- ❌ 每个子项目创建独立的 memora.db——记忆是 Agent 级的
+- ❌ 项目切换时关闭/重建数据库——记忆跨项目持久化
+- ❌ 将配置直接写入 SQLite 作为持久化存储——配置文件才是真理源

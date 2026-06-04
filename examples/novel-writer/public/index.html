@@ -300,11 +300,34 @@
 
       /* ─── 输入区 ──────────────────────────── */
       #input-bar {
-        padding: 16px 24px;
+        padding: 12px 16px;
         border-top: 1px solid var(--border);
-        background: var(--bg-elev);
         display: flex;
         gap: 8px;
+        align-items: flex-end;
+        background: var(--bg);
+        flex-wrap: wrap;
+      }
+
+      /* 身份选择器（P-609） */
+      #persona-bar {
+        width: 100%;
+        display: flex;
+        align-items: center;
+      }
+      #persona-select {
+        flex: 1;
+        padding: 4px 8px;
+        background: var(--bg-elev);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 12px;
+        cursor: pointer;
+        outline: none;
+      }
+      #persona-select:hover {
+        border-color: var(--accent);
       }
       #input {
         flex: 1;
@@ -690,6 +713,12 @@
         </div>
 
         <div id="input-bar">
+          <!-- 身份选择器（P-609） -->
+          <div id="persona-bar">
+            <select id="persona-select" onchange="onPersonaSelect()">
+              <option value="auto">🤖 自动匹配</option>
+            </select>
+          </div>
           <textarea
             id="input"
             rows="1"
@@ -1214,6 +1243,8 @@
       updateStatus();
       // 页面加载时恢复历史消息（解决刷新后对话消失的问题）
       restoreMessages();
+      // 加载身份列表（P-609）
+      loadPersonas();
 
       // ─── 章节管理面板（R-509）────────────────────
       async function refreshChapters() {
@@ -1259,6 +1290,69 @@
         } catch {
           // 静默失败
         }
+      }
+
+      // ─── 身份选择器（P-609）────────────────────
+      async function loadPersonas() {
+        try {
+          const res = await fetch('/api/personas');
+          const data = await res.json();
+          const select = document.getElementById('persona-select');
+          select.innerHTML = '<option value="auto">🤖 自动匹配</option>';
+          for (const p of data.personas) {
+            const opt = document.createElement('option');
+            opt.value = p.name;
+            opt.textContent = `🎭 ${p.name}`;
+            if (p.description) opt.title = p.description;
+            select.appendChild(opt);
+          }
+          // 设置当前模式
+          if (data.mode === 'manual') {
+            // manual 模式下高亮对应选项
+            select.value = data.active === 'auto' ? 'auto' : data.active;
+          } else {
+            select.value = 'auto';
+          }
+        } catch {
+          // 静默失败
+        }
+      }
+
+      async function onPersonaSelect() {
+        const select = document.getElementById('persona-select');
+        const value = select.value;
+        try {
+          if (value === 'auto') {
+            await fetch('/api/personas/mode', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode: 'auto' }),
+            });
+          } else {
+            await fetch('/api/personas/mode', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ mode: 'manual', persona: value }),
+            });
+          }
+          // 身份切换后插入系统通知
+          const notif =
+            value === 'auto'
+              ? '身份切换为「自动匹配」——系统会根据你的话题自动选择角色'
+              : `身份切换为「${value}」——已固定此角色`;
+          addSystemMessage(notif);
+        } catch {
+          // 静默失败
+        }
+      }
+
+      function addSystemMessage(text) {
+        const container = document.getElementById('messages');
+        const div = document.createElement('div');
+        div.className = 'message system';
+        div.textContent = text;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
       }
     </script>
   </body>

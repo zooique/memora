@@ -214,6 +214,26 @@ export class AgentLoop {
     // 后续 buildSystemPrompt() 需要读取最新的工具列表
     this.opts.toolDefinitions = toolDefinitions;
     // 重建 messages[0] 的 system prompt
+    this.rebuildSystemMessage();
+  }
+
+  /**
+   * 刷新身份 prompt（P-603 · L6 修正）
+   *
+   * 当身份切换时，更新系统 prompt 前缀的身份部分。
+   * 保留 bootstrapMemories 和 toolDefinitions 不变，只替换 prefix。
+   *
+   * @param newPrefix 新的系统 prompt 前缀（包含新身份 + 用户画像）
+   */
+  refreshPersonaPrefix(newPrefix: string): void {
+    this.opts.systemPromptPrefix = newPrefix;
+    this.rebuildSystemMessage();
+  }
+
+  /**
+   * 重建 messages[0] 的 system prompt
+   */
+  private rebuildSystemMessage(): void {
     const sysMsg = this.messages[0];
     if (sysMsg && sysMsg.role === 'system') {
       const prefix = this.opts.systemPromptPrefix ?? '';

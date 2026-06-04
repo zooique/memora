@@ -47,9 +47,8 @@ describe('ProjectManager · initProject', () => {
     expect(ctx.security).toBeDefined();
     expect(ctx.bootstrapMemories).toBeDefined();
     expect(ctx.loadResult).toBeDefined();
-    expect(ctx.domainManager).toBeDefined();
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 
   it('应该自动创建 .memora 目录', async () => {
@@ -59,7 +58,7 @@ describe('ProjectManager · initProject', () => {
 
     expect(existsSync(ctx.memoraDir)).toBe(true);
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 
   it('应该创建锁文件', async () => {
@@ -74,14 +73,14 @@ describe('ProjectManager · initProject', () => {
     const lockContent = JSON.parse(readFileSync(lockPath, 'utf-8'));
     expect(lockContent.pid).toBe(process.pid);
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 
   it('关闭项目后应删除锁文件', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager(config);
     await pm.initProject(tmpDir);
-    await pm.closeProject();
+    await pm.shutdown();
 
     const lockPath = join(tmpDir, '.memora', '.lock');
     expect(existsSync(lockPath)).toBe(false);
@@ -97,7 +96,7 @@ describe('ProjectManager · initProject', () => {
     expect(found).toBeDefined();
     expect(found?.name).toBe('test-project');
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 });
 
@@ -123,7 +122,7 @@ describe('ProjectManager · 全局规则', () => {
 
     expect(ctx.globalMemories).toHaveLength(0);
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 
   it('应该加载全局规则文件', async () => {
@@ -144,7 +143,7 @@ describe('ProjectManager · 全局规则', () => {
     // 全局规则应合并到 bootstrapMemories
     expect(ctx.bootstrapMemories.length).toBeGreaterThanOrEqual(ctx.globalMemories.length);
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 });
 
@@ -250,7 +249,7 @@ describe('ProjectManager · 项目切换', () => {
     // 新项目的锁文件应存在
     expect(existsSync(join(tmpDir2, '.memora', '.lock'))).toBe(true);
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 });
 
@@ -286,7 +285,7 @@ describe('ProjectManager · 锁文件安全', () => {
     const lockContent = JSON.parse(readFileSync(join(memoraDir, '.lock'), 'utf-8'));
     expect(lockContent.pid).toBe(process.pid);
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 
   it('损坏的锁文件应被清理', async () => {
@@ -303,6 +302,6 @@ describe('ProjectManager · 锁文件安全', () => {
     // 应该能正常启动
     expect(ctx.projectPath).toBe(tmpDir);
 
-    await pm.closeProject();
+    await pm.shutdown();
   });
 });

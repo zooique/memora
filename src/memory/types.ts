@@ -22,10 +22,11 @@ export type MemoryTypeValue = (typeof MemoryType)[keyof typeof MemoryType];
 /**
  * 类型到目录的映射（供 FileStore 和 init.ts 共用）
  *
- * 集中定义避免多处复制粘贴。值代表目录名（如 rules/、personality/）。
+ * 集中定义避免多处复制粘贴。值代表目录名（如 rules/、identities/）。
+ * personality 类型映射到 identities/ 目录（与接入指南对齐）。
  */
 export const TYPE_TO_DIR_MAP: Record<MemoryTypeValue, string> = {
-  personality: 'personality',
+  personality: 'identities',
   rule: 'rules',
   skill: 'skills',
   tool: 'tools',

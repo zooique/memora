@@ -20,7 +20,7 @@ describe('MemoryLoader · 文件 → 索引同步', () => {
   beforeEach(() => {
     dataDir = mkdtempSync(join(tmpdir(), 'memora-loader-'));
     // 创建记忆目录结构
-    mkdirSync(join(dataDir, 'personality'), { recursive: true });
+    mkdirSync(join(dataDir, 'identities'), { recursive: true });
     mkdirSync(join(dataDir, 'rules'), { recursive: true });
     mkdirSync(join(dataDir, 'skills'), { recursive: true });
     mkdirSync(join(dataDir, 'topics'), { recursive: true });
@@ -38,7 +38,7 @@ describe('MemoryLoader · 文件 → 索引同步', () => {
   it('应该扫描所有配置类记忆（personality/rules/skills）', async () => {
     // 写入测试文件
     writeFileSync(
-      join(dataDir, 'personality/default.md'),
+      join(dataDir, 'identities/default.md'),
       `---
 type: personality
 permanence: always
@@ -111,10 +111,10 @@ updatedAt: 2026-06-02T00:00:00.000Z
     expect(result.loaded).toBeGreaterThanOrEqual(1);
   });
 
-  it('bootstrap 应该返回 always + domain 必召记忆', async () => {
-    // 写入 always 类记忆
+  it('bootstrap 应该返回 non-personality always + domain 必召记忆（personality 由 PersonaManager 单独处理）', async () => {
+    // 写入 always 类记忆（personality 类型——会被 bootstrap 跳过）
     writeFileSync(
-      join(dataDir, 'personality/default.md'),
+      join(dataDir, 'identities/default.md'),
       `---
 type: personality
 permanence: always
@@ -124,7 +124,6 @@ weight: 1.0
 createdAt: 2026-06-02T00:00:00.000Z
 updatedAt: 2026-06-02T00:00:00.000Z
 ---
-
 # 人格
 诚实。
 `,
@@ -167,11 +166,11 @@ updatedAt: 2026-06-02T00:00:00.000Z
     );
 
     const { memories, loadResult } = await loader.bootstrap();
-    expect(loadResult.loaded).toBe(2); // personality + rules（topics 不在启动扫描列表）
-    expect(memories).toHaveLength(2);
-    // always 应在前面（按 weight 降序）
+    expect(loadResult.loaded).toBe(2); // personality + rules（加载到索引，bootstrap 跳过 personality）
+    // bootstrap 跳过 personality 类型（PersonaManager 单独管理身份注入）
+    expect(memories).toHaveLength(1);
     const types = memories.map((m) => m.type);
-    expect(types).toContain(MemoryType.PERSONALITY);
+    expect(types).not.toContain(MemoryType.PERSONALITY);
     expect(types).toContain(MemoryType.RULE);
   });
 

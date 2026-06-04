@@ -34,12 +34,12 @@ describe('CLI E2E', () => {
     // 临时项目目录
     tmpProject = mkdtempSync(join(tmpdir(), 'memora-e2e-proj-'));
     mkdirSync(join(tmpProject, '.memora'), { recursive: true });
-    mkdirSync(join(tmpProject, '.memora/personality'), { recursive: true });
+    mkdirSync(join(tmpProject, '.memora/identities'), { recursive: true });
     mkdirSync(join(tmpProject, '.memora/rules'), { recursive: true });
 
     // 写一个 personality 文件让 loader 至少能扫到
     writeFileSync(
-      join(tmpProject, '.memora/personality/default.md'),
+      join(tmpProject, '.memora/identities/default.md'),
       `---
 type: personality
 permanence: always
@@ -141,7 +141,7 @@ name: default
 
   it('应该响应 /memories 指令', async () => {
     const { stdout, exitCode } = await runCli(['/memories', '/exit']);
-    // tmpProject/.memora/personality/ 下有 1 条必召记忆
+    // tmpProject/.memora/identities/ 下有 1 条必召记忆
     expect(stdout).toContain('必召记忆');
     expect(exitCode).toBe(0);
   }, 20000);

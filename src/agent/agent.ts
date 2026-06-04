@@ -3,7 +3,7 @@
  *
  * 设计文档（01-主架构-v4.0.md §9）要求宿主项目通过 `import { Agent } from '@memora/core'`
  * 一行代码接入。本类把当前 repl.ts 中埋藏的组装逻辑提取到正确的架构层，
- * 使 AgentLoop / MemoryIndex / DomainManager / ToolExecutor / SecurityGuard
+ * 使 AgentLoop / MemoryIndex / ToolExecutor / SecurityGuard
  * 这些已有组件可以被 CLI 以外的宿主项目直接使用。
  *
  * 使用方式（最简）：
@@ -34,10 +34,16 @@ import { PersonaManager } from '@/persona/personaManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
 import { WorkProjectionManager } from './workProjection.js';
 import { SkillManager } from '@/skill/skillManager.js';
+import { FileStore } from '@/memory/store.js';
 import { configError } from '@/utils/errors.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory, TopicMessage, TopicSummarizerResult } from '@/memory/types.js';
-import { MemoryType, Permanence, type PermanenceValue } from '@/memory/types.js';
+import {
+  MemoryType,
+  Permanence,
+  type PermanenceValue,
+  type MemoryTypeValue,
+} from '@/memory/types.js';
 import type { MemoryIndex } from '@/memory/index.js';
 import type { TopicStore } from '@/memory/topic-store.js';
 import type { SecurityGuard } from '@/security/path-guard.js';
@@ -57,6 +63,33 @@ export interface AgentOptions {
   /** 配置目录（可选，分离配置与运行时数据） */
   configDir?: string;
 }
+
+/**
+ * 配置建议（模式 3 · Agent 智能总结）
+ *
+ * AutoConfigRefiner 从对话中提取的配置建议，通过 onConfigSuggestion 回调通知宿主。
+ * 宿主决定展示方式（桌宠气泡 / CLI 打印 / WebUI 弹窗），
+ * 用户确认后调用 confirmConfigSuggestion() 写入配置文件。
+ *
+ * 与 addRule() 的区别：
+ * - addRule() 写入 SQLite（运行时注入，会话级）
+ * - confirmConfigSuggestion() 写入配置文件（持久化，重启后依然生效）
+ */
+export interface ConfigSuggestion {
+  /** 建议类型 */
+  type: 'rule' | 'identity' | 'skill';
+  /** 建议名称（如"代码风格"、"TypeScript 偏好"） */
+  name: string;
+  /** 建议内容（Markdown 格式） */
+  content: string;
+  /** 置信度 0-1，低于阈值时宿主可选择性忽略 */
+  confidence: number;
+  /** 建议来源（如对话摘要、用户画像分析） */
+  source?: string;
+}
+
+/** 配置建议回调函数类型 */
+export type ConfigSuggestionHandler = (suggestion: ConfigSuggestion) => void;
 
 /** Agent 初始化后暴露的运行时上下文 */
 export type AgentContext = ProjectContext;
@@ -206,7 +239,7 @@ export class Agent {
   private config: Config | null = null; // init 时延迟加载
   private configPath: string | undefined;
   private projectPath: string;
-  private configDir: string | undefined; // 配置目录（personality/rules/skills/tools）
+  private configDir: string | undefined; // 配置目录（identities/rules/skills/tools）
 
   // 运行时组件（init 后填充）
   private projectManager: ProjectManager | null = null;
@@ -227,10 +260,8 @@ export class Agent {
   // 上下文（init 后填充）
   private _ctx: AgentContext | null = null;
   private _initialized = false;
-  // 项目上下文（init / switchProject 后更新），持有 domainManager 等引用
+  // 项目上下文（init / switchProject 后更新）
   private _pctx: ProjectContext | null = null;
-  // 当前领域名（switchDomain 后更新），独立于 _pctx 避免类型提升麻烦
-  private _currentDomain: string = 'default';
 
   /**
    * 对话轮次计数器（记忆减法方案 v1.0 · 排雷修正 L5）
@@ -258,6 +289,14 @@ export class Agent {
 
   /** 中途归档间隔轮次（排雷新增） */
   private static readonly MIDWAY_ARCHIVE_INTERVAL = 30;
+
+  /**
+   * 配置建议回调（模式 3 · Agent 智能总结）
+   *
+   * 宿主通过 onConfigSuggestion() 注册，AutoConfigRefiner 触发时调用。
+   * 目前仅提供接口，AutoConfigRefiner 实现属于设计阶段。
+   */
+  private _configSuggestionHandler: ConfigSuggestionHandler | null = null;
 
   constructor(opts: AgentOptions) {
     // config 和 configPath 二选一，config 优先
@@ -307,7 +346,7 @@ export class Agent {
     // 组装所有运行时组件（v4.0：包括 persona/skill/userProfile/workProjection）
     await this._assembleComponents(pctx);
 
-    // 保存完整项目上下文（保留 domainManager / globalMemories / projectName 等所有字段）
+    // 保存完整项目上下文（保留 globalMemories / projectName 等所有字段）
     this._pctx = pctx;
     this._ctx = pctx;
     this._initialized = true;
@@ -374,6 +413,24 @@ export class Agent {
       this.userProfile.archive(input, turnIndex).catch((err) => {
         logger.warn({ err }, '用户画像实时归档失败');
       });
+    }
+
+    // v1.1：身份自动匹配（P-602 · L4 修正：阈值 ≥0.5 + 独立于技能匹配）
+    if (this.personaManager) {
+      const matchedPersona = this.personaManager.autoMatch(input);
+      if (matchedPersona) {
+        this.personaManager.switchPersona(matchedPersona);
+        if (this.loop) {
+          // 重建完整前缀（身份 prompt + 用户画像）
+          const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
+          const personaPrompt = this.personaManager.buildSystemPrompt();
+          const newPrefix =
+            [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
+            ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
+          this.loop.refreshPersonaPrefix(newPrefix);
+        }
+        logger.info({ persona: matchedPersona }, '身份自动切换');
+      }
     }
 
     // v4.0：技能关键词匹配（匹配到则下一轮注入 system prompt）
@@ -554,52 +611,6 @@ export class Agent {
   }
 
   /**
-   * 切换到指定领域
-   *
-   * 加载领域专属的 rules/skills/tools → 重建 history/loop
-   * 对应 CLI 的 /domain <name> 命令
-   *
-   * @param name - 领域名称
-   * @returns 新领域的完整上下文
-   */
-  async switchDomain(name: string): Promise<AgentContext> {
-    if (!this._initialized || !this._pctx || !this.provider) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 switchDomain() 前调用 await agent.init()',
-      ]);
-    }
-
-    // 校验领域存在
-    const available = this._pctx.domainManager.listDomains();
-    if (!available.includes(name)) {
-      throw configError('领域不存在', `找不到领域：${name}`, [
-        `可用领域：${available.join(', ') || '仅默认'}`,
-      ]);
-    }
-
-    // 切换领域（DomainManager 内部已关闭旧 SQLite + 加载新领域）
-    const dctx = await this._pctx.domainManager.switchDomain(name);
-
-    // 把 DomainContext 字段合并到 ProjectContext
-    // （保留 projectPath / projectName / globalMemories / domainManager 不变）
-    this._pctx = {
-      ...this._pctx,
-      memoraDir: dctx.memoraDir,
-      fileStore: dctx.fileStore,
-      index: dctx.index,
-      topicStore: dctx.topicStore,
-      security: dctx.security,
-      bootstrapMemories: dctx.bootstrapMemories,
-      loadResult: dctx.loadResult,
-    };
-    this._ctx = this._pctx;
-    this._currentDomain = name;
-    await this._rebuildComponentsWithCurrentCtx();
-
-    return this._pctx;
-  }
-
-  /**
    * 组装所有运行时组件（v4.0 统一入口）
    *
    * 从 init() 中抽取，让 init() 和 _rebuildComponentsWithCurrentCtx()
@@ -637,9 +648,9 @@ export class Agent {
     // 保存引用，供 registerTool / executeTool 使用
     this.toolExec = toolExec;
 
-    // v4.0：角色管理器（personas/*.md）
-    this.personaManager = new PersonaManager(this.configDir);
-    const personaPrompt = this.personaManager.load(this.config?.persona);
+    // v4.0：角色管理器（v1.1：identities/ 目录 + SQLite 存储 + 关键词匹配）
+    this.personaManager = new PersonaManager(this.configDir, undefined, pctx.index);
+    const personaPrompt = await this.personaManager.load(this.config?.persona);
 
     // v4.0：用户画像管理器 + 从 SQLite 加载
     this.userProfile = new UserProfile(pctx.index);
@@ -678,7 +689,7 @@ export class Agent {
 
   /**
    * 用当前 _pctx 重建 history / loop / topicMount
-   * 在 switchProject / switchDomain / init 中复用
+   * 在 switchProject / init 中复用
    */
   private async _rebuildComponentsWithCurrentCtx(): Promise<void> {
     if (!this._pctx || !this.provider) return;
@@ -702,36 +713,13 @@ export class Agent {
   }
 
   /**
-   * 重建 history / loop / topicMount（项目/领域切换后调用）
+   * 重建 history / loop / topicMount（项目切换后调用）
    *
-   * 公开为公共方法供宿主项目触发——CLI 在 /project、/domain 命令后调用。
+   * 公开为公共方法供宿主项目触发——CLI 在 /project 命令后调用。
    * 内部实现复用 _rebuildComponentsWithCurrentCtx()。
    */
   async rebuildComponents(): Promise<void> {
     await this._rebuildComponentsWithCurrentCtx();
-  }
-
-  /**
-   * 列出可用领域
-   *
-   * 对应 CLI 的 /domain 命令（无参数时显示领域列表）
-   */
-  listDomains(): string[] {
-    if (!this._initialized || !this._pctx) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 listDomains() 前调用 await agent.init()',
-      ]);
-    }
-    return this._pctx.domainManager.listDomains();
-  }
-
-  /**
-   * 当前领域名（init 后默认 'default'，switchDomain 后更新）
-   *
-   * 对应 CLI 的 /domain 命令（无参数时显示当前领域）
-   */
-  get currentDomainName(): string {
-    return this._currentDomain;
   }
 
   /**
@@ -959,7 +947,7 @@ export class Agent {
     }
 
     if (this.projectManager) {
-      await this.projectManager.closeProject();
+      await this.projectManager.shutdown();
     }
     this._initialized = false;
     this.provider = null;
@@ -1030,6 +1018,174 @@ export class Agent {
     return this.toolExec.execute(name, argsJson);
   }
 
+  // ─── 配置建议 API（模式 3 · Agent 智能总结）────────────
+
+  /**
+   * 注册配置建议回调（模式 3）
+   *
+   * 宿主项目通过此方法注册回调，当 AutoConfigRefiner 从对话中
+   * 提取到配置建议时，通过此回调通知宿主。
+   * 宿主决定展示方式（桌宠气泡 / CLI 打印 / WebUI 弹窗）。
+   *
+   * 目前仅提供接口，AutoConfigRefiner 实现属于设计阶段。
+   * 宿主可提前注册回调，后续 AutoConfigRefiner 上线后自动生效。
+   *
+   * @param handler 配置建议回调函数
+   */
+  onConfigSuggestion(handler: ConfigSuggestionHandler): void {
+    this._configSuggestionHandler = handler;
+  }
+
+  /**
+   * 获取当前注册的配置建议回调
+   *
+   * 供 AutoConfigRefiner（设计阶段）调用，检查是否有宿主注册了回调。
+   * 外部代码一般不需要直接访问此属性。
+   */
+  get configSuggestionCallback(): ConfigSuggestionHandler | null {
+    return this._configSuggestionHandler;
+  }
+
+  /**
+   * 确认配置建议并写入配置文件（模式 3）
+   *
+   * 用户确认配置建议后，宿主调用此方法将建议持久化到 agent-config/ 目录。
+   * 写入的是配置文件（真理源），下次启动时 MemoryLoader 自动扫描加载到 SQLite。
+   *
+   * 与 addRule() 的关键区别：
+   * - addRule() → 写入 SQLite（运行时注入，会话级，重启后需重新注入）
+   * - confirmConfigSuggestion() → 写入配置文件（持久化，重启后自动加载）
+   *
+   * @param suggestion 用户确认的配置建议
+   * @throws Agent 未初始化或 configDir 未设置时抛错
+   */
+  async confirmConfigSuggestion(suggestion: ConfigSuggestion): Promise<void> {
+    if (!this._initialized) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 confirmConfigSuggestion() 前调用 await agent.init()',
+      ]);
+    }
+    if (!this.configDir) {
+      throw configError('configDir 未设置', '模式 3 需要指定 configDir 才能写入配置文件', [
+        '在 Agent 构造时传入 configDir 参数',
+        '例如：new Agent({ configDir: "~/.memora/agent-config", ... })',
+      ]);
+    }
+
+    // 根据建议类型映射到 MemoryType
+    const typeMap: Record<ConfigSuggestion['type'], MemoryTypeValue> = {
+      rule: MemoryType.RULE,
+      identity: MemoryType.PERSONALITY,
+      skill: MemoryType.SKILL,
+    };
+    const memoryType = typeMap[suggestion.type];
+
+    // 构造记忆对象并写入配置文件（真理源）
+    // 不写入 SQLite——遵守"配置文件是真理源"约束（接入指南 §九 第 7/10 条）
+    // 下次启动时 MemoryLoader 自动扫描配置文件 → 加载到 SQLite
+    const fileStore = new FileStore(this.configDir);
+    const memory: Memory = {
+      id: `${memoryType}:${suggestion.name}`,
+      type: memoryType,
+      permanence: suggestion.type === 'rule' ? 'always' : 'domain',
+      name: suggestion.name,
+      content: suggestion.content,
+      tags: [suggestion.type, 'auto-refined', `confidence:${suggestion.confidence.toFixed(2)}`],
+      weight: suggestion.confidence,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      filePath: '',
+    };
+    await fileStore.write(memory);
+
+    // 如果是规则，立即注入到 AgentLoop（当前会话生效，重启后由配置文件自动加载）
+    if (suggestion.type === 'rule' && this.loop) {
+      const rulePrompt = `【项目规则】${suggestion.name}\n${suggestion.content}`;
+      this.loop.injectSystemMessage(rulePrompt);
+    }
+
+    logger.info(
+      { type: suggestion.type, name: suggestion.name, confidence: suggestion.confidence },
+      '配置建议已确认并写入配置文件',
+    );
+  }
+
+  // ─── 身份管理 API（P-605 · v1.1）────────────────────
+
+  /**
+   * 手动切换身份
+   *
+   * 切换到指定角色名，自动更新 system prompt 前缀。
+   * 需确保模式为 'manual'（或调用后自动切换为 manual 模式）。
+   *
+   * @param name 角色名
+   */
+  switchPersona(name: string): void {
+    if (!this._initialized || !this.personaManager) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 switchPersona() 前调用 await agent.init()',
+      ]);
+    }
+    this.personaManager.switchPersona(name);
+    this.personaManager.setMode('manual');
+    if (this.loop && this.userProfile) {
+      const profilePrompt = this.userProfile.buildSystemPrompt();
+      const personaPrompt = this.personaManager.buildSystemPrompt();
+      const newPrefix =
+        [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
+        ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
+      this.loop.refreshPersonaPrefix(newPrefix);
+    }
+    logger.info({ persona: name }, '身份手动切换');
+  }
+
+  /**
+   * 获取可用角色列表
+   */
+  listPersonas(): Array<{ name: string; description?: string; keywords: string[] }> {
+    if (!this._initialized || !this.personaManager) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 listPersonas() 前调用 await agent.init()',
+      ]);
+    }
+    return this.personaManager.list.map((p) => ({
+      name: p.name,
+      description: p.description,
+      keywords: p.keywords,
+    }));
+  }
+
+  /**
+   * 设置身份激活模式
+   *
+   * @param mode 'auto'（自动匹配）| 'manual'（手动固定）
+   */
+  setPersonaMode(mode: 'auto' | 'manual'): void {
+    if (!this._initialized || !this.personaManager) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 setPersonaMode() 前调用 await agent.init()',
+      ]);
+    }
+    this.personaManager.setMode(mode);
+    // 切回自动模式时立即执行一次自动匹配
+    if (mode === 'auto' && this.loop && this.userProfile) {
+      const profilePrompt = this.userProfile.buildSystemPrompt();
+      const personaPrompt = this.personaManager.buildSystemPrompt();
+      const newPrefix =
+        [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
+        ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
+      this.loop.refreshPersonaPrefix(newPrefix);
+    }
+  }
+
+  /**
+   * 获取当前激活模式
+   */
+  getPersonaMode(): 'auto' | 'manual' {
+    if (!this._initialized || !this.personaManager) return 'auto';
+    return this.personaManager.currentMode;
+  }
+
   // ─── 只读访问器 ───────────────────────────────────────
 
   /** 是否已初始化 */
@@ -1040,6 +1196,42 @@ export class Agent {
   /** 初始化后的运行时上下文（init 前为 null） */
   get context(): AgentContext | null {
     return this._ctx;
+  }
+
+  /**
+   * 新增项目规则记忆（Q-701 · v1.1）
+   *
+   * 宿主项目可通过此 API 在运行时动态注入规则记忆。
+   * 规则写入 SQLite 索引后，重启时由 bootstrap 自动召回。
+   * 如果 AgentLoop 已启动，当前轮次以 system 消息注入。
+   *
+   * @param memory 规则记忆（必须 type='rule'，permanence ∈ {always, domain}）
+   */
+  async addRule(memory: Memory): Promise<void> {
+    if (!this._initialized || !this._pctx) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 addRule() 前调用 await agent.init()',
+      ]);
+    }
+    if (memory.type !== MemoryType.RULE) {
+      throw configError('无效记忆类型', `addRule 只接受 type='rule'，收到 '${memory.type}'`, [
+        '使用 MemoryType.RULE',
+      ]);
+    }
+    if (memory.permanence !== 'always' && memory.permanence !== 'domain') {
+      throw configError('无效永久性', `addRule 只接受 always/domain，收到 '${memory.permanence}'`, [
+        '规则记忆的 permanence 应为 always 或 domain',
+      ]);
+    }
+
+    await this._pctx.index.upsert(memory);
+
+    if (this.loop) {
+      const rulePrompt = `【项目规则】${memory.name}\n${memory.content}`;
+      this.loop.injectSystemMessage(rulePrompt);
+    }
+
+    logger.info({ name: memory.name, permanence: memory.permanence }, '项目规则已注入');
   }
 
   /**

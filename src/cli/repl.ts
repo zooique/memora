@@ -16,7 +16,6 @@
  *   - 列出话题：/topics
  */
 import { createInterface, type Interface as RLInterface } from 'node:readline';
-import { join } from 'node:path';
 import type { Config } from '@/config/loader.js';
 import { createLlmProvider } from '@/llm/factory.js';
 import { AgentLoop } from '@/agent/loop.js';
@@ -85,7 +84,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       projectPath,
       projectName: pctx.projectName,
       modelName: provider.name,
-      dbPath: join(pctx.memoraDir, 'memora.db'),
+      dbPath: pctx.dbPath,
       loadedCount: pctx.loadResult.loaded,
       bootstrapCount: pctx.bootstrapMemories.length,
       skippedCount: pctx.loadResult.skipped,
@@ -246,43 +245,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
           console.log(
             formatSuccess(
               `已切换到项目：${newCtx.projectName}（${newCtx.bootstrapMemories.length} 条记忆）`,
-            ),
-          );
-        } catch (err) {
-          const friendly = toFriendlyError(err);
-          console.error(formatError(friendly.title, friendly.detail));
-        }
-      }
-      rl.prompt();
-      continue;
-    }
-
-    // M-208：领域切换命令（T-201 修复：通过 Agent 门面类）
-    if (input === '/domain' || input.startsWith('/domain ')) {
-      const arg = input.slice('/domain'.length).trim();
-      if (!arg) {
-        try {
-          const domains = agent.listDomains();
-          console.log(`当前领域：${agent.currentDomainName}`);
-          console.log(`可用领域：${domains.join(', ') || '仅默认'}`);
-        } catch (err) {
-          const friendly = toFriendlyError(err);
-          console.error(formatError(friendly.title, friendly.detail));
-        }
-      } else if (arg === agent.currentDomainName) {
-        console.log(formatSuccess(`已在领域 ${arg} 中`));
-      } else {
-        try {
-          const newCtx = await agent.switchDomain(arg);
-          ({ history, loop } = rebuildAgentComponents(
-            provider,
-            newCtx.memoraDir,
-            newCtx,
-            toolCallRecordsForTurn,
-          ));
-          console.log(
-            formatSuccess(
-              `已切换到领域：${agent.currentDomainName}（${newCtx.bootstrapMemories.length} 条记忆）`,
             ),
           );
         } catch (err) {

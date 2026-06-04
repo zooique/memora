@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
 import type { Config } from '@/config/loader.js';
+import type { Memory, MemoryTypeValue } from '@/memory/types.js';
 
 function makeConfig(dataDir: string): Config {
   return {
@@ -28,19 +29,19 @@ function makeConfig(dataDir: string): Config {
 /**
  * 写入项目骨架文件，让 init() 能正常加载
  *
- * 注意：传入 configDir 时，loader 会用 configFileStore = FileStore(configDir)，
- * 所以 personality/rules/skills/tools 要写到 configDir 下，而不是 memoraDir。
- * (详见 project-manager.ts §initProject)
+ * 注意：memora.db 和 TopicStore 现在是 Agent 级共享资源（单 Agent 模型），
+ * TopicStore 使用 dataDir（agentDataDir），而非 projectPath/.memora/。
+ * personality/rules/skills/tools 写到 configDir 下（两层加载中的 Agent 层）。
  */
-function seedProject(projectPath: string, configDir: string): void {
-  // 运行时数据目录骨架（仅 topics 即可——personality/rules 在 configDir 里）
-  mkdirSync(join(projectPath, '.memora', 'topics'), { recursive: true });
+function seedProject(_projectPath: string, configDir: string, dataDir: string): void {
+  // TopicStore 使用 Agent 级 dataDir，所以 topics/ 建在 dataDir 下
+  mkdirSync(join(dataDir, 'topics'), { recursive: true });
 
-  // 配置目录骨架（loader 默认扫描这里）
-  mkdirSync(join(configDir, 'personality'), { recursive: true });
+  // 配置目录骨架（loader 扫描这里作为 Agent 级配置）
+  mkdirSync(join(configDir, 'identities'), { recursive: true });
   mkdirSync(join(configDir, 'rules'), { recursive: true });
   writeFileSync(
-    join(configDir, 'personality', 'default.md'),
+    join(configDir, 'identities', 'default.md'),
     '---\nid: default-personality\ntype: personality\npermanence: always\nname: 默认人格\nweight: 1\n---\n\n你是一个测试助手。',
     'utf-8',
   );
@@ -59,7 +60,7 @@ describe('Agent · inspect() · 4 层记忆快照', () => {
     tmpProject = mkdtempSync(join(tmpdir(), 'memora-agent-proj-'));
     // 配置目录
     tmpConfig = mkdtempSync(join(tmpdir(), 'memora-agent-cfg-'));
-    seedProject(tmpProject, tmpConfig);
+    seedProject(tmpProject, tmpConfig, tmpData);
   });
 
   afterEach(async () => {
@@ -120,14 +121,15 @@ describe('Agent · inspect() · 4 层记忆快照', () => {
     expect(lastUser).toBeDefined();
   });
 
-  it('inspect().bootstrap 应包含 always+domain 记忆', async () => {
+  it('inspect().bootstrap 应返回引导记忆（personality 由 PersonaManager 单独注入）', async () => {
     agent = makeAgent();
     await agent.init();
 
     const snap = agent.inspect();
-    // seedProject 写入了 personality，应被 bootstrap 加载
-    expect(snap.bootstrap.total).toBeGreaterThan(0);
-    expect(snap.bootstrap.items.length).toBeGreaterThan(0);
+    // bootstrap 跳过 personality 类型（PersonaManager 单独注入 system prompt 前缀）
+    // 但仍可能包含 rules 等非 personality 记忆
+    expect(typeof snap.bootstrap.total).toBe('number');
+    expect(Array.isArray(snap.bootstrap.items)).toBe(true);
     // 每条 bootstrap 记忆应包含 5 个必要字段
     for (const item of snap.bootstrap.items) {
       expect(item.id).toBeDefined();
@@ -216,7 +218,7 @@ describe('Agent · 实时归档（Signal 触发 + Lazy 扫描）', () => {
     tmpData = mkdtempSync(pathJoin(tmpdir(), 'memora-agent-signal-data-'));
     tmpProject = mkdtempSync(pathJoin(tmpdir(), 'memora-agent-signal-proj-'));
     tmpConfig = mkdtempSync(pathJoin(tmpdir(), 'memora-agent-signal-cfg-'));
-    seedProject(tmpProject, tmpConfig);
+    seedProject(tmpProject, tmpConfig, tmpData);
   });
 
   afterEach(async () => {
@@ -247,8 +249,8 @@ describe('Agent · 实时归档（Signal 触发 + Lazy 扫描）', () => {
     // 显式等待归档完成（信号触发 + lazy 都覆盖）
     await agent.waitForArchives(5000);
 
-    // 验证：topic-*.md 应已写入
-    const topicDir = pathJoin(tmpProject, '.memora', 'topics');
+    // 验证：topic-*.md 应已写入 TopicStore（Agent 级 dataDir）
+    const topicDir = pathJoin(tmpData, 'topics');
     const files = readdirSync(topicDir);
     expect(files.some((f) => f.endsWith('.md'))).toBe(true);
 
@@ -278,10 +280,10 @@ describe('Agent · 实时归档（Signal 触发 + Lazy 扫描）', () => {
   });
 
   it('init() 触发 lazy 扫描：历史 topic 文件被补归档到 SQLite', async () => {
-    // 预写一个历史 topic 文件
-    const memoraDir = pathJoin(tmpProject, '.memora');
-    mkdirSync(pathJoin(memoraDir, 'topics'), { recursive: true });
-    const historicalFile = pathJoin(memoraDir, 'topics', '2026-06-01-historical.md');
+    // 预写一个历史 topic 文件到 Agent 级 topicStore 目录
+    const topicDir = pathJoin(tmpData, 'topics');
+    mkdirSync(topicDir, { recursive: true });
+    const historicalFile = pathJoin(topicDir, '2026-06-01-historical.md');
     writeFileSync(
       historicalFile,
       `---
@@ -315,4 +317,116 @@ topic: historical
     expect(historical).toBeDefined();
     expect(historical!.content.length).toBeGreaterThan(0);
   }, 30000); // 显式 30s 超时（mock + lazy 扫描需要时间）
+});
+
+describe('Agent · addRule() · Q-701', () => {
+  let agent: Agent;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'memora-test-addrule-'));
+    mkdirSync(join(tmpDir, 'identities'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'identities', 'default.md'),
+      '---\nname: default\nkeywords: 测试\n---\n\n默认角色',
+      'utf-8',
+    );
+    mkdirSync(join(tmpDir, 'topics'), { recursive: true });
+    agent = new Agent({
+      projectPath: tmpDir,
+      config: {
+        llm: { provider: 'mock', model: 'mock', temperature: 0.7 },
+        memory: { dataDir: '.memora', maxContextTokens: 8000 },
+        security: { permission: 'owner', confirmWrites: false },
+        allowedPaths: [tmpDir],
+      },
+      configDir: tmpDir,
+    });
+  });
+
+  afterEach(async () => {
+    await agent.close();
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it('应成功写入 always 规则并注入 system 消息', async () => {
+    await agent.init();
+
+    const rule: Memory = {
+      id: 'rule:test-add',
+      type: 'rule' as MemoryTypeValue,
+      permanence: 'always',
+      name: '测试规则',
+      content: '这是一个测试规则内容。',
+      tags: ['测试'],
+      weight: 1.0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await agent.addRule(rule);
+
+    // 验证 system 消息已注入（getMessages 最后一条是 system）
+    const messages = agent.getMessages();
+    const lastMsg = messages[messages.length - 1];
+    expect(lastMsg?.role).toBe('system');
+    expect(lastMsg?.content).toContain('【项目规则】测试规则');
+    expect(lastMsg?.content).toContain('测试规则内容');
+  });
+
+  it('应拒绝 type≠rule 的记忆', async () => {
+    await agent.init();
+
+    const badMem: Memory = {
+      id: 'personality:bad',
+      type: 'personality' as MemoryTypeValue,
+      permanence: 'always',
+      name: '不该出现',
+      content: 'xx',
+      tags: [],
+      weight: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await expect(agent.addRule(badMem)).rejects.toThrow(/无效记忆类型/);
+  });
+
+  it('应拒绝 permanence=topic 的记忆', async () => {
+    await agent.init();
+
+    const badPerm: Memory = {
+      id: 'rule:bad-perm',
+      type: 'rule' as MemoryTypeValue,
+      permanence: 'topic',
+      name: '不该出现',
+      content: 'xx',
+      tags: [],
+      weight: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await expect(agent.addRule(badPerm)).rejects.toThrow(/无效永久性/);
+  });
+
+  it('init 前调用应抛错', async () => {
+    const rule: Memory = {
+      id: 'rule:pre-init',
+      type: 'rule' as MemoryTypeValue,
+      permanence: 'always',
+      name: '测试',
+      content: 'test',
+      tags: [],
+      weight: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await expect(agent.addRule(rule)).rejects.toThrow(/Agent 未初始化/);
+  });
 });

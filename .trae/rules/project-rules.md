@@ -1,4 +1,4 @@
-﻿---
+---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
 version: v0.1
@@ -10,7 +10,7 @@ date: 2026-06-02
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/rules/decisions/` 下 8 个 ADR
+> **决策追溯**：`.trae/rules/decisions/` 下 13 个 ADR
 
 ## 1. 不可违反的硬约束
 
@@ -26,6 +26,10 @@ date: 2026-06-02
    [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
 4. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
    `memory_type + permanence` 区分
+5. **单 Agent 模型**：memora.db 和 TopicStore 是 Agent 级共享资源，不随子项目切换重建；项目级
+   `.memora/` 只放 rules/ 和 skills/
+6. **配置文件是真理源**：`agent-config/`
+   下的配置文件由 MemoryLoader 启动时扫描加载到 SQLite；SQLite 是运行时索引，不是持久化配置存储
 
 ## 2. 技术栈清单
 
@@ -46,8 +50,8 @@ src/
 ├── index.ts        # CLI 入口（不改）
 ├── cli/            # CLI 解析与交互
 ├── agent/          # Agent Loop + 工具执行 + 对话快照 + 作品投影
-├── memory/         # 记忆引擎（5 类统一）
-├── persona/        # 人格管理（角色配置，记忆管道最高优先级）
+├── memory/         # 记忆引擎（5 类统一 + 项目管理器）
+├── persona/        # 身份管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（两层目录，记忆管道最高优先级）
 ├── llm/            # LLM 适配层
 ├── security/       # 安全策略
@@ -87,4 +91,10 @@ chore: 升级 dependencies
 - ✅ SQLite 索引 CRUD 单元测试通过
 - ✅ 路径白名单 6 个测试用例通过
 - ✅ LLM Provider Mock 集成测试通过
-- ⏳ CLI 启动后能对话（需真实 LLM API Key）
+- ✅ Agent 设定减法（3 模块：设定 + 身份 + 技能）
+- ✅ 单 Agent 模型（memora.db + TopicStore Agent 级共享）
+- ✅ 两层规则加载（项目级 → Agent 级）
+- ✅ 身份自动匹配 + 手动切换
+- ✅ 项目 rules/skills 接口（addRule + registerTool）
+- ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
+- ✅ CLI 启动后能对话（需真实 LLM API Key）

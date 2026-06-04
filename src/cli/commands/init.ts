@@ -5,10 +5,13 @@
  * T-102 修复：使用 FileStore 抽象写入记忆（不再直接调 mkdir/writeFile）
  * T-104 修复：读取项目根 config.example.json 拷贝到 .memora/config.json
  * T-xxx 增强：memora init --domain <name> 一键生成领域配置 + agentBridge.js
+ * 模式 2 增强：memora init --user 交互式生成用户级 agent-config/
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createInterface } from 'node:readline';
+import { homedir } from 'node:os';
 import { logger } from '@/logging/logger.js';
 import { FileStore } from '@/memory/store.js';
 import { MemoryType, TYPE_TO_DIR_MAP } from '@/memory/types.js';
@@ -119,6 +122,176 @@ async function copyConfigExample(memoraDir: string): Promise<void> {
 }
 
 /**
+ * 交互式问答：向用户提出一个问题，返回用户的输入
+ *
+ * @param question - 提示文本
+ * @param defaultAnswer - 默认值（用户直接回车时使用）
+ * @returns 用户输入或默认值
+ */
+async function promptUser(question: string, defaultAnswer?: string): Promise<string> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise<string>((resolve) => {
+    const suffix = defaultAnswer ? ` (${defaultAnswer})` : '';
+    rl.question(`${question}${suffix}: `, (answer) => {
+      rl.close();
+      const trimmed = answer.trim();
+      // 用户直接回车则使用默认值
+      resolve(trimmed || defaultAnswer || '');
+    });
+  });
+}
+
+/**
+ * 根据用途生成对应的规则内容
+ *
+ * @param purpose - 用户选择的主要用途
+ * @returns 规则 Markdown 内容
+ */
+function buildPurposeRules(purpose: string): string {
+  const purposeMap: Record<string, string> = {
+    编程: `# 编程规则
+
+- **代码优先**：回答编程问题时优先给出可运行的代码示例
+- **类型安全**：优先使用 TypeScript strict 模式，避免 any 类型
+- **最佳实践**：遵循当前语言/框架的社区最佳实践
+- **解释清晰**：代码注释说明"为什么"而非"是什么"`,
+    写作: `# 写作规则
+
+- **文风一致**：保持全文风格统一，不随意切换语气
+- **结构清晰**：长文使用标题层级，短文保持段落分明
+- **细节真实**：虚构内容也要符合内在逻辑，避免自相矛盾
+- **尊重设定**：遵守已有的世界观和角色设定`,
+    日常对话: `# 对话规则
+
+- **自然交流**：像朋友一样对话，不机械回答
+- **简洁明了**：避免冗长，直击要点
+- **主动建议**：发现用户可能有未表达的需求时，主动提出
+- **尊重隐私**：不主动询问敏感信息`,
+  };
+
+  // 精确匹配优先，否则回退到通用规则
+  return (
+    purposeMap[purpose] ??
+    `# 通用规则
+
+- **诚实优先**：不知道就说不知道，不要编造
+- **隐私保护**：不要向外部泄露用户的个人信息和文件内容
+- **工具安全**：调用工具前确认路径在白名单内
+- **可追溯**：所有写操作记录到日志`
+  );
+}
+
+/**
+ * 根据性格生成对应的身份描述
+ *
+ * @param name - Agent 名称
+ * @param personality - 性格选择
+ * @returns 身份 Markdown 内容
+ */
+function buildIdentityContent(name: string, personality: string): string {
+  const personalityMap: Record<string, string> = {
+    严谨: `你是${name}，一个严谨、精确的 AI 助手。
+- 回答前先验证事实，不确定时明确标注
+- 使用精确的术语，避免模糊表述
+- 逻辑链条完整，不跳步`,
+    幽默: `你是${name}，一个幽默、风趣的 AI 助手。
+- 在准确回答的基础上，适当加入轻松的表达
+- 用类比和比喻让复杂概念更易懂
+- 幽默不等于不认真，关键问题依然严谨`,
+    简洁: `你是${name}，一个简洁、高效的 AI 助手。
+- 回答直击要点，不废话
+- 能用一句话说清的不用一段话
+- 列表优先于长段落`,
+  };
+
+  return (
+    personalityMap[personality] ??
+    `你是${name}，一个友好、注重事实的 AI 助手。
+- 优先基于事实回答
+- 不确定时明确说明
+- 简洁清晰，避免冗余`
+  );
+}
+
+/**
+ * 模式 2：交互式生成用户级 agent-config/
+ *
+ * 在用户目录（~/.memora/agent-config/）下生成 identities/ + rules/，
+ * 用户可随时手动编辑这些文件来自定义 Agent。
+ *
+ * 流程：3 个交互问题 → 生成配置文件 → 输出路径提示
+ */
+async function generateUserConfig(): Promise<void> {
+  console.log('\n🧠 Memora 用户配置向导');
+  console.log('将为你生成专属的 Agent 配置，存放在 ~/.memora/agent-config/\n');
+
+  // 1. 交互式问答
+  const agentName = await promptUser('你的 Agent 叫什么名字？', 'Memora');
+  const purpose = await promptUser('它主要帮你做什么？', '日常对话');
+  const personality = await promptUser('你希望它有什么性格？', '简洁');
+
+  // 2. 确定目标目录：~/.memora/agent-config/
+  const memoraHome = resolve(homedir(), '.memora');
+  const configDir = join(memoraHome, 'agent-config');
+
+  // 3. 创建目录结构
+  await mkdir(join(configDir, 'identities'), { recursive: true });
+  await mkdir(join(configDir, 'rules'), { recursive: true });
+  await mkdir(join(configDir, 'skills'), { recursive: true });
+
+  // 4. 使用 FileStore 写入身份文件
+  const fileStore = new FileStore(configDir);
+
+  // 写身份（identities/ 目录）
+  const identityContent = buildIdentityContent(agentName, personality);
+  const identityMemory = makeDefaultMemory('personality', agentName, identityContent);
+  await fileStore.write(identityMemory);
+
+  // 写规则（rules/ 目录）
+  const purposeRules = buildPurposeRules(purpose);
+  const purposeRuleMemory = makeDefaultMemory('rule', `${purpose}规则`, purposeRules, 'always');
+  await fileStore.write(purposeRuleMemory);
+
+  // 写核心安全规则（所有模式必备）
+  const coreRule = makeDefaultMemory(
+    'rule',
+    'core',
+    `# 核心规则
+
+- **诚实优先**：不知道就说不知道，不要编造
+- **隐私保护**：不要向外部泄露用户的个人信息和文件内容
+- **工具安全**：调用工具前确认路径在白名单内
+- **可追溯**：所有写操作记录到日志`,
+  );
+  await fileStore.write(coreRule);
+
+  // 5. 输出结果
+  console.log(`\n✅ 用户配置生成完成！`);
+  console.log(`\n配置目录：${configDir}`);
+  console.log(`\n生成的文件：`);
+  console.log(`  identities/${agentName}.md     ← 身份设定（${personality}风格）`);
+  console.log(`  rules/${purpose}规则.md         ← ${purpose}相关规则`);
+  console.log(`  rules/core.md                  ← 核心安全规则`);
+  console.log(`  skills/                        ← 技能目录（可按需添加）`);
+  console.log(`\n下一步：`);
+  console.log(`  1. 编辑 ${configDir}/identities/${agentName}.md 微调身份`);
+  console.log(`  2. 编辑 ${configDir}/rules/ 添加更多规则`);
+  console.log(`  3. 使用以下代码启动 Agent：`);
+  console.log(`
+  import { Agent } from 'memora';
+  const agent = new Agent({
+    configDir: '${configDir.replace(/\\/g, '/')}',
+    projectPath: process.cwd(),
+    config: { llm: { ... }, memory: { dataDir: '~/.memora' } },
+  });
+  await agent.init();`);
+}
+
+/**
  * 生成 agent-config/ 目录（领域模板模式）
  * 使用 FileStore 写入记忆文件，保持与运行时一致的 frontmatter 格式
  */
@@ -133,15 +306,15 @@ async function generateAgentConfig(projectPath: string, domainId: string): Promi
   }
 
   const configDir = join(projectPath, 'agent-config');
-  // 创建子目录
-  await mkdir(join(configDir, 'personality'), { recursive: true });
+  // 创建子目录（FileStore.write 会自动创建，这里预创建确保目录结构可见）
+  await mkdir(join(configDir, 'identities'), { recursive: true });
   await mkdir(join(configDir, 'rules'), { recursive: true });
   await mkdir(join(configDir, 'skills'), { recursive: true });
   await mkdir(join(configDir, 'tools'), { recursive: true });
 
   const fileStore = new FileStore(configDir);
 
-  // 写人格
+  // 写身份（personality 类型 → identities/ 目录，由 TYPE_TO_DIR_MAP 映射）
   const personalityMemory = makeDefaultMemory('personality', template.id, template.personality);
   await fileStore.write(personalityMemory);
 
@@ -264,20 +437,27 @@ export interface InitOptions {
   project?: string;
   /** 领域模板 ID（code / novel / ...） */
   domain?: string;
+  /** 用户模式：在用户目录下生成交互式配置（模式 2） */
+  user?: boolean;
 }
 
 /**
  * 执行 init 命令
  *
- * 两种模式：
- *   1. 无 --domain：生成 .memora/ 运行时骨架（默认行为，保持兼容）
- *   2. --domain <name>：生成 agent-config/ + agentBridge.js + .memora/ 全套
+ * 三种模式：
+ *   1. 无参数：生成 .memora/ 运行时骨架（默认行为，保持兼容）
+ *   2. --domain <name>：生成 agent-config/ + agentBridge.js + .memora/ 全套（模式 1）
+ *   3. --user：交互式生成用户级 agent-config/（模式 2）
  */
 export async function initCommand(options: InitOptions): Promise<void> {
   const projectPath = options.project ?? process.cwd();
   const memoraDir = join(projectPath, '.memora');
 
-  if (options.domain) {
+  if (options.user) {
+    // ── 模式 2：用户自定义 ──────────────────────
+    logger.info('使用用户自定义模式初始化');
+    await generateUserConfig();
+  } else if (options.domain) {
     // ── 领域模板模式 ──────────────────────────────
     logger.info({ projectPath, domain: options.domain }, '使用领域模板初始化');
 
@@ -298,7 +478,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(`\n✅ ${template.name}项目初始化完成：${projectPath}`);
     console.log(`\n生成的目录结构：`);
     console.log(`  agent-config/`);
-    console.log(`    personality/${template.id}.md    ← 人格设定（${template.name}）`);
+    console.log(`    identities/${template.id}.md    ← 身份设定（${template.name}）`);
     if (template.rules.length)
       console.log(`    rules/                         ← ${template.rules.length} 条规则`);
     if (template.skills.length)
@@ -310,7 +490,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(`  .memora/                         ← 运行时目录`);
     console.log(`\n下一步：`);
     console.log(`  1. 编辑 src/agentBridge.js 填入 LLM API Key`);
-    console.log(`  2. 编辑 agent-config/personality/${template.id}.md 微调人格`);
+    console.log(`  2. 编辑 agent-config/identities/${template.id}.md 微调身份`);
     console.log(`  3. 运行 node src/agentBridge.js 开始对话`);
   } else {
     // ── 默认模式（保持兼容） ──────────────────────
@@ -324,7 +504,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(`✅ Memora 项目初始化完成：${projectPath}`);
     console.log(`\n下一步：`);
     console.log(`  1. 编辑 .memora/config.json 配置你的 LLM`);
-    console.log(`  2. 编辑 .memora/personality/default.md 自定义人格`);
+    console.log(`  2. 编辑 .memora/identities/default.md 自定义身份`);
     console.log(`  3. 运行 \`memora\` 开始对话`);
   }
 }

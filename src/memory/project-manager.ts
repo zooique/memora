@@ -1,16 +1,19 @@
-﻿/**
+/**
  * 项目管理器 — M-207 多项目并发
  *
  * 核心职责：
  *   - 管理项目注册表（~/.memora/projects.json）
  *   - 锁文件机制（.memora/.lock）防止同项目并发写入导致数据损坏
+ *   - Agent 级资源管理（memora.db + TopicStore 全局共享，不随项目切换重建）
+ *   - 两层记忆加载：Agent 级（configDir）→ 项目级（projectPath/.memora/）
  *   - 全局规则加载（~/.memora/global/rules/）跨项目共享只读规则
- *   - 项目切换（关闭旧项目 → 打开新项目）
+ *   - 项目切换（只更新 projectPath + security + 重新加载项目 rules/skills）
  *
- * 设计原则（01-主架构-v4.0.md §9.9）：
- *   - 每个项目有独立的 SQLite 数据库文件，不存在锁竞争
- *   - 跨会话记忆共享的锁是项目级别的，不会误锁其他项目
- *   - 全局规则目录只读加载，无并发写入
+ * 设计原则（单 Agent 模型）：
+ *   - memora.db 只有一个（Agent 级），所有项目共享同一记忆数据库
+ *   - TopicStore 只有一个（Agent 级），对话历史跨项目持久化
+ *   - 项目切换不重建数据库，只更新安全守卫 + 重新扫描项目规则
+ *   - 项目级 .memora/ 仅存放 rules/ 和 skills/（无 memora.db、无 topics/）
  *
  * 锁文件策略：
  *   - 打开项目时创建 .lock 文件（含 PID + 时间戳 + 主机名）
@@ -34,11 +37,11 @@ import {
 import { FileStore } from './store.js';
 import { MemoryIndex } from './index.js';
 import { MemoryLoader } from './loader.js';
+import type { LoadResult } from './loader.js';
 import { TopicStore } from './topic-store.js';
-import { DomainManager } from './domain-manager.js';
 import { SecurityGuard } from '@/security/path-guard.js';
 import { logger } from '@/logging/logger.js';
-import type { Memory } from './types.js';
+import { MemoryType, type Memory } from './types.js';
 import type { Config } from '@/config/loader.js';
 
 /**
@@ -52,6 +55,8 @@ export interface ProjectContext {
   projectName: string;
   /** .memora/ 目录的绝对路径 */
   memoraDir: string;
+  /** Agent 级 memora.db 路径（全局共享，非项目级） */
+  dbPath: string;
   /** 文件存储 */
   fileStore: FileStore;
   /** SQLite 索引 */
@@ -63,11 +68,9 @@ export interface ProjectContext {
   /** 启动时加载的必召记忆（含全局规则） */
   bootstrapMemories: Memory[];
   /** 加载结果 */
-  loadResult: { loaded: number; skipped: number; errors: Array<{ file: string; error: string }> };
+  loadResult: LoadResult;
   /** 全局规则记忆（从 ~/.memora/global/rules/ 加载） */
   globalMemories: Memory[];
-  /** 领域管理器（用于后续 /domain 切换） */
-  domainManager: DomainManager;
 }
 
 /**
@@ -107,72 +110,108 @@ export class ProjectManager {
   private readonly registryPath: string;
   /** 全局规则目录 */
   private readonly globalRulesDir: string;
+  /** Agent 级数据目录（memora.db + topics/ 的父目录） */
+  private readonly agentDataDir: string;
+  /** Agent 级 SQLite 索引（全局共享，不随项目切换重建） */
+  private agentIndex: MemoryIndex | null = null;
+  /** Agent 级话题存储（全局共享，不随项目切换重建） */
+  private agentTopicStore: TopicStore | null = null;
   /** 当前打开的项目路径 */
   private currentProjectPath: string | null = null;
   /** 当前持有的锁文件路径 */
   private currentLockPath: string | null = null;
-  /** 当前项目的 SQLite 索引引用（用于关闭） */
-  private currentIndex: MemoryIndex | null = null;
 
   constructor(private readonly config: Config) {
     const memoraHome = resolve(config.memory.dataDir.replace(/^~/, homedir()));
+    this.agentDataDir = memoraHome;
     this.registryPath = join(memoraHome, 'projects.json');
     this.globalRulesDir = join(memoraHome, 'global', 'rules');
   }
 
   /**
+   * 确保 Agent 级资源已初始化（memora.db + TopicStore）
+   * 这些资源在整个 Agent 生命周期内共享，不随项目切换重建
+   */
+  private async ensureAgentResources(): Promise<{ index: MemoryIndex; topicStore: TopicStore }> {
+    if (!this.agentIndex) {
+      mkdirSync(this.agentDataDir, { recursive: true });
+      const dbPath = join(this.agentDataDir, 'memora.db');
+      this.agentIndex = new MemoryIndex(dbPath);
+      this.agentTopicStore = new TopicStore(this.agentDataDir);
+    }
+    // agentTopicStore 与 agentIndex 同步设置，此处不可能为 null
+    return { index: this.agentIndex, topicStore: this.agentTopicStore! };
+  }
+
+  /**
    * 初始化指定项目
-   * 1. 获取锁文件
-   * 2. 加载项目记忆
-   * 3. 加载全局规则
-   * 4. 返回项目上下文
+   *
+   * 两层记忆加载：
+   *   1) 项目级：扫描 projectPath/.memora/rules/ + skills/
+   *   2) Agent 级：扫描 configDir 下的所有配置（rules/skills/identities/tools）
+   *   3) 全局规则：合并 ~/.memora/global/rules/
+   *
+   * memora.db 和 TopicStore 是 Agent 级共享资源，不随项目切换重建。
    *
    * @param projectPath 项目根目录
    * @param projectName 项目名称（可选，默认取目录名）
-   * @param configDir 配置目录（personality/rules/skills/tools），默认使用 memoraDir
+   * @param configDir Agent 级配置目录（identities/rules/skills/tools）
    */
   async initProject(
     projectPath: string,
     projectName?: string,
     configDir?: string,
   ): Promise<ProjectContext> {
-    // 如果已有打开的项目，先关闭
+    // 如果已有打开的项目，先关闭（释放旧项目锁，但不关 Agent 级 DB）
     if (this.currentProjectPath) {
       await this.closeProject();
     }
 
     const memoraDir = this.resolveMemoraDir(projectPath);
 
-    // 获取锁文件
+    // 获取锁文件（项目级锁，防止同项目并发）
     this.acquireLock(memoraDir);
     this.currentProjectPath = projectPath;
     this.currentLockPath = join(memoraDir, '.lock');
 
-    // 确保目录存在
+    // 确保项目 .memora/ 目录存在
     mkdirSync(memoraDir, { recursive: true });
 
-    // 初始化组件
-    const fileStore = new FileStore(memoraDir);
-    const dbPath = join(memoraDir, 'memora.db');
-    const index = new MemoryIndex(dbPath);
-    this.currentIndex = index;
+    // Agent 级共享资源（memora.db 只有一个，TopicStore 只有一个）
+    const { index, topicStore } = await this.ensureAgentResources();
 
-    // 加载记忆：如果提供了 configDir，使用独立的 FileStore 读取配置
-    // 实现配置目录（agent-config/）与运行时数据目录（.memora/）分离
-    const configFileStore = configDir ? new FileStore(configDir) : fileStore;
-    const loader = new MemoryLoader(configFileStore, index);
-    const { memories: bootstrapMemories, loadResult } = await loader.bootstrap();
+    // 合并加载结果（两层扫描汇总）
+    const loadResult: LoadResult = { loaded: 0, skipped: 0, errors: [] };
 
-    // 加载全局规则
+    // 1) 项目级 FileStore：扫描 projectPath/.memora/ 下的 rules/ + skills/
+    const projectFileStore = new FileStore(memoraDir);
+    const projectLoader = new MemoryLoader(projectFileStore, index);
+    const projectResult = await projectLoader.loadAllToIndex();
+    loadResult.loaded += projectResult.loaded;
+    loadResult.skipped += projectResult.skipped;
+    loadResult.errors.push(...projectResult.errors);
+
+    // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/identities/tools）
+    if (configDir) {
+      const configFileStore = new FileStore(configDir);
+      const configLoader = new MemoryLoader(configFileStore, index);
+      const configResult = await configLoader.loadAllToIndex();
+      loadResult.loaded += configResult.loaded;
+      loadResult.skipped += configResult.skipped;
+      loadResult.errors.push(...configResult.errors);
+    }
+
+    // bootstrap 过滤：取 always + domain 必召记忆（排除 personality 类型）
+    const always = await index.getByPermanence('always');
+    const nonPersonality = always.filter((m) => m.type !== MemoryType.PERSONALITY);
+    const domain = await index.getByPermanence('domain');
+    const bootstrapMemories = [...nonPersonality, ...domain].filter(Boolean) as Memory[];
+
+    // 3) 全局规则（~/.memora/global/rules/）
     const globalMemories = this.loadGlobalRules();
-
-    // 合并全局规则到必召记忆（全局规则追加到末尾，权重略低）
     const allBootstrap = [...bootstrapMemories, ...globalMemories];
 
-    // 话题存储
-    const topicStore = new TopicStore(memoraDir);
-
-    // 安全守卫
+    // 安全守卫（随项目切换更新）
     const security = new SecurityGuard(
       projectPath,
       memoraDir,
@@ -180,9 +219,6 @@ export class ProjectManager {
       this.config.security.confirmWrites,
       this.config.security.permission,
     );
-
-    // 领域管理器
-    const domainManager = new DomainManager(projectPath, this.config);
 
     // 注册到项目表
     const name = projectName || this.inferProjectName(projectPath);
@@ -204,31 +240,41 @@ export class ProjectManager {
       projectPath,
       projectName: name,
       memoraDir,
-      fileStore,
+      dbPath: join(this.agentDataDir, 'memora.db'),
+      fileStore: projectFileStore,
       index,
       topicStore,
       security,
       bootstrapMemories: allBootstrap,
       loadResult,
       globalMemories,
-      domainManager,
     };
   }
 
   /**
    * 关闭当前项目
-   * 1. 关闭 SQLite 连接
-   * 2. 释放锁文件
+   * 释放锁文件，但不关闭 Agent 级数据库（memora.db 是共享的）
    */
   async closeProject(): Promise<void> {
-    if (this.currentIndex) {
-      await this.currentIndex.close().catch((err) => logger.warn({ err }, '关闭项目数据库失败'));
-      this.currentIndex = null;
-    }
-
+    // Agent 级 index/topicStore 不关闭——它们是共享的，在整个 Agent 生命周期内持久存在
     this.releaseLock();
     this.currentProjectPath = null;
     this.currentLockPath = null;
+  }
+
+  /**
+   * 完全关闭：释放项目锁 + 关闭 Agent 级数据库
+   * 应在 Agent 整体关闭时调用（而非项目切换时）
+   */
+  async shutdown(): Promise<void> {
+    if (this.currentProjectPath) {
+      await this.closeProject();
+    }
+    if (this.agentIndex) {
+      await this.agentIndex.close().catch((err) => logger.warn({ err }, '关闭 Agent 数据库失败'));
+      this.agentIndex = null;
+      this.agentTopicStore = null;
+    }
   }
 
   /**

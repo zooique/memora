@@ -305,6 +305,45 @@ app.get('/api/characters', async (_req: Request, res: Response) => {
   }
 });
 
+// ─── API：角色列表（P-609）──────────────────────────────
+app.get('/api/personas', (_req: Request, res: Response) => {
+  try {
+    if (!agentInstance) {
+      res.json({ personas: [], active: 'default', mode: 'auto' });
+      return;
+    }
+    const personas = agentInstance.listPersonas();
+    res.json({
+      personas,
+      active: personas.length > 0 ? 'auto' : 'default',
+      mode: agentInstance.getPersonaMode(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ─── API：切换角色模式（P-609）──────────────────────────
+app.post('/api/personas/mode', express.json(), (req: Request, res: Response) => {
+  try {
+    if (!agentInstance) {
+      res.status(503).json({ error: 'Agent 未就绪' });
+      return;
+    }
+    const { mode } = req.body as { mode?: string };
+    if (mode === 'auto' || mode === 'manual') {
+      agentInstance.setPersonaMode(mode);
+    }
+    const { persona } = req.body as { persona?: string };
+    if (persona) {
+      agentInstance.switchPersona(persona);
+    }
+    res.json({ mode: agentInstance.getPersonaMode() });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 const PORT = process.env.PORT ?? 3000;
 
 // 服务器启动时立即初始化 agent（而不是惰性初始化）
