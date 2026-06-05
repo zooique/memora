@@ -4,7 +4,7 @@
  * 详见 M-202：Intl.Segmenter 中文分词
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText, tokenFrequency } from '@/memory/segmenter.js';
+import { segmentText } from '@/memory/segmenter.js';
 
 describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
@@ -47,20 +47,6 @@ describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
       expect(tokens).toContain('Node.js');
       expect(tokens).toContain('24');
       expect(tokens).toContain('LTS');
-    });
-  });
-
-  describe('tokenFrequency', () => {
-    it('应能统计 token 出现次数', () => {
-      const freq = tokenFrequency('万物 万物 皆 记忆');
-      expect(freq.get('万物')).toBe(2);
-      expect(freq.get('皆')).toBe(1);
-      expect(freq.get('记忆')).toBe(1);
-    });
-
-    it('空文本应返回空 Map', () => {
-      const freq = tokenFrequency('');
-      expect(freq.size).toBe(0);
     });
   });
 });

@@ -24,14 +24,30 @@ export interface AgentLoopOptions {
   systemPromptPrefix?: string;
   /** v4.0：工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
+  /**
+   * 上下文窗口 token 上限（默认 8000）
+   *
+   * 桌面精灵等长运行场景下，messages 数组随对话轮次无限增长会爆 LLM 上下文窗口。
+   * 当估算 token 数超过此阈值时，保留 system prompt + 最近 N 条消息，
+   * 裁剪中间段，确保 LLM 请求不因上下文溢出而失败。
+   *
+   * 保守默认值 8000 token 对多数模型安全（DeepSeek 128K / GPT-4o 128K / 豆包 8K），
+   * 宿主可通过 AgentLoopOptions 覆盖。
+   */
+  maxContextTokens?: number;
 }
 
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
+  /** 上下文窗口 token 上限（默认 8000，约 32K 中文字符） */
+  private readonly maxContextTokens: number;
+  /** 字符到 token 的粗略换算比（中英文混合平均 ~2.5 chars/token，保守取 3） */
+  private static readonly CHARS_PER_TOKEN = 3;
 
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
+    this.maxContextTokens = opts.maxContextTokens ?? 8000;
 
     // 初始化 system prompt（基于永驻记忆，v4.0 加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
@@ -72,9 +88,10 @@ export class AgentLoop {
       let fullContent = '';
       let toolCalls: Message['toolCalls'] = undefined;
 
-      // 调用 LLM
+      // 调用 LLM（先截断确保不爆上下文窗口）
       const chatOpts = this.buildChatOptions();
-      for await (const chunk of this.opts.provider.chat(this.messages, chatOpts)) {
+      const safeMessages = this.truncateMessages(this.messages);
+      for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
         if (chunk.content) {
           fullContent += chunk.content;
           yield { type: 'text', content: chunk.content }; // 结构化流式输出
@@ -164,6 +181,110 @@ export class AgentLoop {
       .join('\n');
 
     return ['[系统召回的相关记忆]', memoryBlock, '', '[用户输入]', userInput].join('\n');
+  }
+
+  /**
+   * 估算消息数组的 token 数量
+   *
+   * 使用字符数 / CHARS_PER_TOKEN 的粗略估算（非精确 tokenizer）。
+   * 对于中英文混合文本，保守取 3 chars/token（实际 ~2-2.5），
+   * 确保估算值 ≥ 实际值，不会误判"安全"导致 API 报错。
+   *
+   * @param messages 消息数组
+   * @returns 估算的 token 数量
+   */
+  private estimateTokens(messages: readonly Message[]): number {
+    let totalChars = 0;
+    for (const m of messages) {
+      // 消息本身的内容字符数
+      totalChars += m.content.length;
+      // toolCalls 的 JSON 序列化字符数
+      if (m.toolCalls) {
+        totalChars += JSON.stringify(m.toolCalls).length;
+      }
+    }
+    return Math.ceil(totalChars / AgentLoop.CHARS_PER_TOKEN);
+  }
+
+  /**
+   * 截断消息数组以适配上下文窗口
+   *
+   * 策略：保留下方、裁中间。
+   * - messages[0]（system prompt）始终保留（这是 Agent 的"灵魂"）
+   * - 从尾部向前取最近的消息对（user + assistant + tool），直到估算 token 接近上限
+   * - 头部被裁剪的消息替换为一条摘要占位消息
+   *
+   * 如果 system prompt 本身就超过 maxContextTokens，不做截断（让 LLM API 报错，
+   * 开发者需要缩减 bootstrapMemories 或 toolDefinitions）。
+   *
+   * @param messages 完整消息数组
+   * @returns 截断后的消息数组（可能是原数组引用，无修改时）
+   */
+  private truncateMessages(messages: readonly Message[]): readonly Message[] {
+    const estimated = this.estimateTokens(messages);
+    if (estimated <= this.maxContextTokens || messages.length <= 3) {
+      return messages; // 未超阈值，无需截断
+    }
+
+    // system prompt 单独保留
+    const systemMsg = messages[0];
+    if (!systemMsg || systemMsg.role !== 'system') {
+      return messages; // 异常：没有 system prompt，不截断
+    }
+
+    const systemTokens = this.estimateTokens([systemMsg]);
+    if (systemTokens >= this.maxContextTokens) {
+      // system prompt 本身就超了——这是配置问题，不应该截断
+      logger.warn(
+        { systemTokens, maxContextTokens: this.maxContextTokens },
+        'system prompt 已超过上下文窗口上限，请缩减 bootstrapMemories 或 toolDefinitions',
+      );
+      return messages;
+    }
+
+    // 剩余可用 token 数（留 10% 缓冲给 LLM 响应）
+    const availableTokens = Math.floor(this.maxContextTokens * 0.9) - systemTokens;
+
+    // 从尾部向前收集消息（最近的最重要）
+    const tail: Message[] = [];
+    let tailTokens = 0;
+    for (let i = messages.length - 1; i >= 1; i--) {
+      const msg = messages[i]!; // 边界已由 messages.length 保证，i >= 1 且 i < messages.length
+      const msgTokens = this.estimateTokens([msg]);
+      if (tailTokens + msgTokens > availableTokens) {
+        break; // 再加这条就超了
+      }
+      tail.unshift(msg); // 保持顺序：从尾部取，但插入时保持时间顺序
+      tailTokens += msgTokens;
+    }
+
+    // 计算被裁剪的消息数
+    const skipped = messages.length - 1 - tail.length; // -1 是 system prompt
+    if (skipped <= 0) {
+      return messages; // 全部保留
+    }
+
+    // 构造一条占位消息，让 LLM 知道有历史被裁剪了
+    const placeholder: Message = {
+      role: 'system',
+      content: `[上下文窗口管理] 为保持对话流畅，已自动裁剪 ${skipped} 条较早的历史消息。当前保留最近 ${tail.length} 条消息 + 完整系统提示。如需回顾早期内容，可向用户询问。`,
+    };
+
+    const truncated = [systemMsg, placeholder, ...tail];
+    const newEstimated = this.estimateTokens(truncated);
+
+    logger.info(
+      {
+        originalCount: messages.length,
+        truncatedCount: truncated.length,
+        skipped,
+        originalTokens: estimated,
+        newTokens: newEstimated,
+      },
+      '上下文窗口截断完成',
+    );
+
+    return truncated;
   }
 
   /**

@@ -32,16 +32,3 @@ export function segmentText(text: string): string[] {
   }
   return tokens;
 }
-
-/**
- * 统计各 token 在文本中的出现次数（用于 TF 评分）
- * @param text 原文
- * @returns Map<token, count>
- */
-export function tokenFrequency(text: string): Map<string, number> {
-  const freq = new Map<string, number>();
-  for (const token of segmentText(text)) {
-    freq.set(token, (freq.get(token) ?? 0) + 1);
-  }
-  return freq;
-}

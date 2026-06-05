@@ -430,3 +430,137 @@ describe('Agent · addRule() · Q-701', () => {
     await expect(agent.addRule(rule)).rejects.toThrow(/Agent 未初始化/);
   });
 });
+
+// ─── 归档模式（ArchiveMode）测试 ────────────────────────────────
+
+describe('Agent · 归档模式（ArchiveMode）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-archive-mode-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-archive-mode-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-archive-mode-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  function makeAgent(archiveMode?: 'full' | 'insights-only' | 'manual'): Agent {
+    const config = makeConfig(tmpData);
+    return new Agent({
+      config,
+      configDir: tmpConfig,
+      projectPath: tmpProject,
+      archiveMode,
+    });
+  }
+
+  it('默认 archiveMode 为 full', async () => {
+    agent = makeAgent();
+    await agent.init();
+    expect(agent.getArchiveMode()).toBe('full');
+  });
+
+  it('构造时指定 archiveMode=insights-only 应生效', async () => {
+    agent = makeAgent('insights-only');
+    await agent.init();
+    expect(agent.getArchiveMode()).toBe('insights-only');
+  });
+
+  it('setArchiveMode() 可运行时切换', async () => {
+    agent = makeAgent();
+    await agent.init();
+    expect(agent.getArchiveMode()).toBe('full');
+
+    agent.setArchiveMode('insights-only');
+    expect(agent.getArchiveMode()).toBe('insights-only');
+
+    agent.setArchiveMode('manual');
+    expect(agent.getArchiveMode()).toBe('manual');
+  });
+
+  it('insights-only 模式下强信号不触发话题归档', async () => {
+    agent = makeAgent('insights-only');
+    await agent.init();
+
+    // 强信号输入
+    await agent.chatSync('我喜欢简洁的代码风格');
+    await agent.waitForArchives(3000);
+
+    // 话题归档不应触发（insights-only 跳过信号/周期/中途归档）
+    const ctx = agent.getBuildCtx();
+    const topicMemories = await ctx!.index.getByType('topic');
+    expect(topicMemories).toHaveLength(0);
+  });
+
+  it('insights-only 模式下用户画像仍自动归档', async () => {
+    agent = makeAgent('insights-only');
+    await agent.init();
+
+    // 用户画像强信号
+    await agent.chatSync('我叫张三');
+    await agent.waitForArchives(3000);
+
+    // 用户画像应已归档（permanence=always，不受 archiveMode 影响）
+    const ctx = agent.getBuildCtx();
+    const personalityMemories = await ctx!.index.getByType('personality');
+    const profile = personalityMemories.find((m) => m.content.includes('张三'));
+    expect(profile).toBeDefined();
+  });
+
+  it('archiveApprovedContent() 手动归档定稿内容', async () => {
+    agent = makeAgent('insights-only');
+    await agent.init();
+
+    // 草稿阶段：多轮对话不归档
+    await agent.chatSync('帮我写一段开头');
+    await agent.chatSync('再改一下情绪');
+    await agent.waitForArchives(3000);
+
+    // 话题归档仍为空
+    const ctx = agent.getBuildCtx();
+    const beforeArchive = await ctx!.index.getByType('topic');
+    expect(beforeArchive).toHaveLength(0);
+
+    // 审核通过，手动归档
+    await agent.archiveApprovedContent('主角深夜回到老宅，发现书房的灯亮着...');
+    await agent.waitForArchives(5000);
+
+    // 话题归档应有记录
+    const afterArchive = await ctx!.index.getByType('topic');
+    expect(afterArchive.length).toBeGreaterThanOrEqual(1);
+  }, 30000);
+
+  it('manual 模式下所有自动归档都跳过', async () => {
+    agent = makeAgent('manual');
+    await agent.init();
+
+    // 强信号 + 多轮对话
+    await agent.chatSync('我喜欢TypeScript');
+    await agent.chatSync('再聊聊');
+    await agent.chatSync('第三轮了');
+    await agent.waitForArchives(3000);
+
+    // 话题归档应为空
+    const ctx = agent.getBuildCtx();
+    const topicMemories = await ctx!.index.getByType('topic');
+    expect(topicMemories).toHaveLength(0);
+  });
+
+  it('archiveApprovedContent() 在未初始化时抛错', async () => {
+    agent = makeAgent('insights-only');
+    // 不调 init
+    await expect(agent.archiveApprovedContent('test')).rejects.toThrow(/Agent 未初始化/);
+  });
+});

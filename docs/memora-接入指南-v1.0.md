@@ -174,6 +174,7 @@ import { Agent } from 'memora';
 const agent = new Agent({
   projectPath: '/path/to/novel-project', // 当前管理的子项目
   configDir: '/path/to/host/agent-config', // Agent 级配置目录
+  archiveMode: 'full', // 归档模式：'full'（默认）| 'insights-only' | 'manual'
   config: {
     llm: {
       provider: 'openai-compatible',
@@ -445,7 +446,58 @@ type AgentChunk =
 **注意**：chunk 字段是 `content` / `count` / `name`，不是文档示例中常见的
 `delta` / `text`。宿主程序应严格按此类型解构。
 
-### 8.3 规则与技能
+### 8.3 归档模式
+
+| 方法                                     | 说明                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `agent.setArchiveMode(mode)`             | 运行时切换归档模式：`'full'` / `'insights-only'` / `'manual'`。                                               |
+| `agent.getArchiveMode()`                 | 获取当前归档模式。                                                                                            |
+| `agent.archiveApprovedContent(content?)` | 手动归档已审核通过的内容（`insights-only` / `manual` 模式下的入口）。可选传入定稿摘要，会先追加到历史再归档。 |
+
+**三种归档模式**：
+
+| 模式            | 信号检测归档 | 周期性归档 | 中途归档 | 用户画像归档 | 适用场景                       |
+| --------------- | ------------ | ---------- | -------- | ------------ | ------------------------------ |
+| `full`（默认）  | ✅ 自动      | ✅ 自动    | ✅ 自动  | ✅ 自动      | 日常对话、闲聊                 |
+| `insights-only` | ❌ 跳过      | ❌ 跳过    | ❌ 跳过  | ✅ 自动      | 小说写作、代码审查等审核工作流 |
+| `manual`        | ❌ 跳过      | ❌ 跳过    | ❌ 跳过  | ✅ 自动      | 宿主完全控制归档时机           |
+
+> **关键**：用户画像归档（`UserProfile`）不受 `archiveMode`
+> 影响，始终自动执行。因为用户洞察（"我叫张三"、"我喜欢 TypeScript"）与生成内容（草稿/扩写）性质不同，前者是确定事实，后者是待审核的中间产物。
+
+**泊文体系小说写作示例**：
+
+```typescript
+// 1. 进入草稿模式
+agent.setArchiveMode('insights-only');
+
+// 2. 多轮迭代（废稿不会进入记忆）
+await agent.chatSync('扩写：主角深夜回到老宅，发现书房的灯亮着');
+await agent.chatSync('不对，情绪再压抑一些');
+await agent.chatSync('这里改成主角先听到钢琴声再推门');
+
+// 3. 审核通过 → 手动归档定稿
+await agent.archiveApprovedContent('主角深夜回到老宅，发现书房的灯亮着...');
+
+// 4. 切换到下一章
+await agent.switchTopic('chapter-2');
+
+// 5. 恢复自动归档（可选）
+agent.setArchiveMode('full');
+```
+
+也可在构造时指定：
+
+```typescript
+const agent = new Agent({
+  projectPath: '/path/to/novel',
+  configDir: '/path/to/agent-config',
+  archiveMode: 'insights-only', // 构造时指定
+  config: { ... },
+});
+```
+
+### 8.4 规则与技能
 
 | 方法                                              | 说明                                                                                   |
 | ------------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -454,7 +506,7 @@ type AgentChunk =
 | `agent.addSkill(memory)`                          | 注入技能（type=skill, permanence=domain）。注册到内存 + 写入 SQLite + 重建关键词索引。 |
 | `agent.addSimpleSkill(name, content, keywords?)`  | 便捷方法（v0.5+）。keywords 数组用于 AgentLoop 触发匹配。                              |
 
-### 8.4 工具
+### 8.5 工具
 
 | 方法                                      | 说明                                                                                                                     |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -466,7 +518,7 @@ type AgentChunk =
 Schema 格式。`ToolExecutor`
 在执行前会自动按 schema 校验 args 并 coerce 类型（string→number 等）。
 
-### 8.5 角色
+### 8.6 角色
 
 | 方法                         | 说明                                                           |
 | ---------------------------- | -------------------------------------------------------------- |
@@ -474,7 +526,7 @@ Schema 格式。`ToolExecutor`
 | `agent.switchPersona(name)`  | 手动切换到指定角色（`personaMode` 设为 'manual'）。            |
 | `agent.setPersonaMode(mode)` | 设置角色切换模式：'auto'（关键词触发）/ 'manual'（手动锁定）。 |
 
-### 8.6 Provider 管理
+### 8.7 Provider 管理
 
 | 方法                              | 说明                                                                                                     |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -487,7 +539,7 @@ Schema 格式。`ToolExecutor`
 > 配置文件中已配置的 Provider 在 `init()` 时自动加载；运行时 `addProvider()`
 > 是**额外**的，不影响配置文件的真理源地位。
 
-### 8.7 记忆查询
+### 8.8 记忆查询
 
 | 方法                                  | 说明                                                                         |
 | ------------------------------------- | ---------------------------------------------------------------------------- |
@@ -497,14 +549,14 @@ Schema 格式。`ToolExecutor`
 | `agent.switchProject(name)`           | 切换到其他子项目（Agent 级记忆不丢）。                                       |
 | `agent.switchTopic(name)`             | 切换当前话题（旧话题会自动归档）。                                           |
 
-### 8.8 自我进化（部分实现）
+### 8.9 自我进化（部分实现）
 
 | 方法                                        | 状态                           | 说明                                                                                                                         |
 | ------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | `agent.onConfigSuggestion(handler)`         | **接口已实现**，触发器设计阶段 | 注册配置建议回调。`AutoConfigRefiner`（自动反思）目前未实现，handler 仅在手动调用 `confirmConfigSuggestion()` 时被模拟触发。 |
 | `agent.confirmConfigSuggestion(suggestion)` | ✅ 已实现                      | 写入配置文件（`agent-config/rules/`、`personas/`、`skills/`），下次启动自动加载。                                            |
 
-### 8.9 写入二次确认
+### 8.10 写入二次确认
 
 | 方法                                         | 说明                                                                                                                                                       |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -522,11 +574,53 @@ interface WriteConfirmationInfo {
 }
 ```
 
-### 8.10 异步归档等待
+### 8.11 异步归档等待
 
 | 方法                                | 说明                                                                                                           |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `agent.waitForArchives(timeoutMs?)` | 等待所有 in-flight 归档任务完成（默认 5 秒超时）。`close()` 内部已自动调用此方法，宿主程序一般不需要直接使用。 |
+
+### 8.12 上下文窗口管理
+
+| 配置项                          | 说明                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `AgentOptions.maxContextTokens` | 上下文窗口 token 上限（默认 8000，约 32K 中文字符）。超过此阈值时自动裁剪中间段消息，保留 system prompt + 最近 N 条消息。 |
+
+**桌面精灵等长运行场景必备**：Agent 持续运行数天，`messages`
+数组无限增长会爆 LLM 上下文窗口。此配置自动截断，确保 LLM 请求不因上下文溢出而失败。
+
+```typescript
+const agent = new Agent({
+  projectPath: '/path/to/project',
+  configDir: '/path/to/agent-config',
+  maxContextTokens: 16000, // 覆盖默认值，适配大上下文窗口模型
+  config: { ... },
+});
+```
+
+**截断策略**：
+
+- message[0]（system prompt）始终保留
+- 从尾部向前取最近消息，直到 token 估算接近上限（留 10% 缓冲）
+- 被裁剪的消息替换为一条占位提示，告知 LLM 有历史被裁剪
+
+### 8.13 交互时间戳
+
+| 访问器                    | 类型           | 说明                                                             |
+| ------------------------- | -------------- | ---------------------------------------------------------------- |
+| `agent.lastInteractionAt` | `Date \| null` | 最近一次 `chat()` 调用的时间戳。`null` 表示尚未调用过 `chat()`。 |
+
+**桌面精灵典型用法**：
+
+```typescript
+// 判断用户离线时长，决定是否主动问候
+const now = Date.now();
+const lastInteraction = agent.lastInteractionAt;
+if (lastInteraction && now - lastInteraction.getTime() > 30 * 60 * 1000) {
+  // 超过 30 分钟，主动问候
+  await agent.chatSync('【系统】用户已离线 30 分钟，请主动问候');
+}
+```
 
 ---
 

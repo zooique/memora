@@ -54,6 +54,18 @@ import { logger } from '@/logging/logger.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 
+/**
+ * 归档模式（控制 chat() 中自动归档的行为）
+ *
+ * - 'full'（默认）：所有内容自动归档（信号检测 + 周期性 + 中途），适合日常对话
+ * - 'insights-only'：只自动归档用户洞察（userProfile），话题归档需宿主手动触发，
+ *   适合"审核-通过"工作流（如小说写作：草稿不归档，定稿才归档）
+ * - 'manual'：完全不自动归档，宿主完全控制归档时机
+ *
+ * 详见 docs/memora-接入指南-v1.0.md §8.3 归档模式
+ */
+export type ArchiveMode = 'full' | 'insights-only' | 'manual';
+
 /** Agent 构造选项 */
 export interface AgentOptions {
   /** 项目路径（必须） */
@@ -64,6 +76,8 @@ export interface AgentOptions {
   configPath?: string;
   /** 配置目录（可选，分离配置与运行时数据） */
   configDir?: string;
+  /** 归档模式（默认 'full'）：控制 chat() 中自动归档的行为 */
+  archiveMode?: ArchiveMode;
 }
 
 /**
@@ -306,6 +320,12 @@ export class Agent {
   private _configSuggestionHandler: ConfigSuggestionHandler | null = null;
   /** P3-9 修复：chat() 并发锁，防止同时发起多个对话导致消息序列混乱 */
   private _chatBusy = false;
+  /** 归档模式：控制 chat() 中自动归档的行为（默认 'full'） */
+  private _archiveMode: ArchiveMode = 'full';
+  /** 桌面精灵缺口：最近一次 chat() 调用的时间戳（供宿主判断用户离线时长） */
+  private _lastInteractionAt: Date | null = null;
+  /** 桌面精灵缺口：缓存的已归档话题文件数（inspect() 同步读取，init/close 时刷新） */
+  private _cachedTopicCount = 0;
 
   constructor(opts: AgentOptions) {
     // config 和 configPath 二选一，config 优先
@@ -315,6 +335,10 @@ export class Agent {
     this.configPath = opts.configPath;
     this.projectPath = opts.projectPath;
     this.configDir = opts.configDir;
+    // 归档模式（默认 'full'，向后兼容）
+    if (opts.archiveMode) {
+      this._archiveMode = opts.archiveMode;
+    }
   }
 
   // ─── 生命周期 ─────────────────────────────────────────
@@ -380,6 +404,11 @@ export class Agent {
       void err;
     });
 
+    // 缓存话题文件数，供 inspect() 同步读取
+    this._refreshTopicCount().catch(() => {
+      /* 异步刷新失败忽略，inspect() 将回退显示 0 */
+    });
+
     return pctx;
   }
 
@@ -408,6 +437,9 @@ export class Agent {
     }
     this._chatBusy = true;
     try {
+      // 记录最后交互时间（桌面精灵用于判断用户离线时长、主动问候时机）
+      this._lastInteractionAt = new Date();
+
       // 专注模式：检测话题 → 召回话题记忆（"生其心"）
       yield { type: 'thinking', phase: 'recalling' };
       const topicMemories = await this.topicMount.focus(input);
@@ -480,7 +512,8 @@ export class Agent {
       // 实时信号检测：用户表达"自我介绍/偏好/决策/记住"等强信号
       // → 立即触发归档（fire-and-forget，不阻塞下一轮对话）
       // 详见 docs/基础设计文档/00-记忆归档原则-v1.0.md
-      if (detectMemorableSignal(input)) {
+      // archiveMode 控制：full → 自动归档；insights-only/manual → 跳过（宿主手动控制）
+      if (this._archiveMode === 'full' && detectMemorableSignal(input)) {
         // 记录到 pendingArchives，让 Agent.close() 也能 await
         const p = this.history
           .archiveCurrentTopic('signal')
@@ -494,9 +527,10 @@ export class Agent {
       // archiveCurrentTopic 内部有幂等保护（已有摘要则跳过），安全重复触发。
       // 翠幕天罗 P2-2 修复：周期性归档使用 'switch' 原因而非 'signal'
       // 'signal' 会绕过幂等检查强制重新调用 LLM，只应在 detectMemorableSignal 命中时使用
+      // archiveMode 控制：full → 自动归档；insights-only/manual → 跳过
       this.roundCount++;
       this.totalTopicRounds++; // 不随周期性归档重置，用于中途归档触发
-      if (this.roundCount >= this.archiveCheckRounds) {
+      if (this._archiveMode === 'full' && this.roundCount >= this.archiveCheckRounds) {
         logger.debug({ roundCount: this.roundCount }, '触发话题归档检查（记忆减法 · 窗口计数）');
         const p = this.history
           .archiveCurrentTopic('switch')
@@ -508,7 +542,9 @@ export class Agent {
 
       // 排雷新增 P0-L1：超长话题中途归档（方向 A）
       // 修正：>= 30（非 > 30），首次触发在 30 轮
+      // archiveMode 控制：full → 自动归档；insights-only/manual → 跳过
       if (
+        this._archiveMode === 'full' &&
         this.totalTopicRounds >= Agent.MIDWAY_ARCHIVE_INTERVAL &&
         this.totalTopicRounds % 10 === 0
       ) {
@@ -555,6 +591,10 @@ export class Agent {
    * 同时卸载话题记忆挂载器，让新话题的"生其心"从空灵中重新浮现。
    * 对应 CLI 的 /topic <name> 命令。
    *
+   * 归档模式控制：
+   * - 'full' → 自动归档旧话题
+   * - 'insights-only' / 'manual' → 不自动归档，宿主必须先调用 archiveApprovedContent()
+   *
    * @param newTopic - 新话题名称
    * @returns 新话题的全名（格式：日期-话题名）
    */
@@ -565,16 +605,20 @@ export class Agent {
       ]);
     }
 
-    // 排雷修正 P1-L4：先等待旧话题归档，从结果取 snapshots
-    // 顺序化流程：归档(await) → 写 seed_snapshots → unmount → switchTopic
-    const result = await this.history.archiveCurrentTopic('switch');
+    // 归档模式控制：只有 full 模式自动归档旧话题
+    // insights-only / manual 模式下，宿主必须先手动归档定稿内容
+    if (this._archiveMode === 'full') {
+      // 排雷修正 P1-L4：先等待旧话题归档，从结果取 snapshots
+      // 顺序化流程：归档(await) → 写 seed_snapshots → unmount → switchTopic
+      const result = await this.history.archiveCurrentTopic('switch');
 
-    // 从归档结果中提取快照，写入旧话题的 seed_snapshots
-    // 此时 this.currentTopic 仍为旧值（尚未切换），不会有 P1-L4 时序 bug
-    if (result && result.snapshots.length > 0) {
-      await this.history.setCurrentTopicSeedSnapshots(result.snapshots).catch(() => {
-        /* 写入失败忽略，不阻塞切话题 */
-      });
+      // 从归档结果中提取快照，写入旧话题的 seed_snapshots
+      // 此时 this.currentTopic 仍为旧值（尚未切换），不会有 P1-L4 时序 bug
+      if (result && result.snapshots.length > 0) {
+        await this.history.setCurrentTopicSeedSnapshots(result.snapshots).catch(() => {
+          /* 写入失败忽略，不阻塞切话题 */
+        });
+      }
     }
 
     // 卸载旧话题的记忆挂载，让新话题重新"生其心"
@@ -1101,10 +1145,8 @@ export class Agent {
     // 第 2 层：Bootstrap 记忆（永驻 + 领域）
     const bootstrap: readonly Memory[] = this._ctx?.bootstrapMemories ?? [];
 
-    // 第 3 层：话题归档文件计数（通过 history 的 listAllTopics 暴露）
-    // 注意：listAllTopics 是异步的，但 inspect 是同步的。
-    // 这里只取"已加载的缓存"——真实文件数用 listAllTopics() 异步获取。
-    const archiveTotal = 0; // 同步快照中文件数 = 0，hint 引导调 listAllTopics()
+    // 第 3 层：话题归档文件计数（启动时缓存，同步读取，无需再调 listAllTopics()）
+    const archiveTotal = this._cachedTopicCount;
 
     // 第 4 层：话题挂载（TopicMount 缓存）
     const mountedFull = this.topicMount?.mounted ?? [];
@@ -1651,6 +1693,85 @@ export class Agent {
     return this.history.awaitPendingArchives(timeoutMs);
   }
 
+  // ─── 归档模式 API ─────────────────────────────────────
+
+  /**
+   * 设置归档模式
+   *
+   * 可在运行时动态切换，例如：
+   * - 进入草稿模式时设为 'insights-only'
+   * - 审核通过后切回 'full'
+   *
+   * @param mode 归档模式
+   */
+  setArchiveMode(mode: ArchiveMode): void {
+    this._archiveMode = mode;
+    logger.info({ archiveMode: mode }, '归档模式已切换');
+  }
+
+  /**
+   * 获取当前归档模式
+   */
+  getArchiveMode(): ArchiveMode {
+    return this._archiveMode;
+  }
+
+  /**
+   * 最近一次 chat() 调用时间（只读访问器）
+   *
+   * 桌面精灵等长时间运行的宿主程序可通过此访问器判断：
+   * - 用户离线了多久（new Date() - agent.lastInteractionAt）
+   * - 是否应该主动发起问候（如超过 30 分钟未交互）
+   *
+   * 返回 null 表示尚未调用过 chat()。
+   */
+  get lastInteractionAt(): Date | null {
+    return this._lastInteractionAt;
+  }
+
+  /**
+   * 归档已审核通过的内容（insights-only / manual 模式下的手动归档入口）
+   *
+   * 典型场景：小说写作中，草稿阶段 archiveMode='insights-only'，
+   * 审核通过后调用此方法将定稿内容归档到记忆系统。
+   *
+   * 工作流：
+   *   1. setArchiveMode('insights-only')  — 进入草稿模式
+   *   2. chat() 多轮迭代                    — 用户洞察自动归档，内容不归档
+   *   3. archiveApprovedContent()           — 审核通过，归档定稿内容
+   *   4. switchTopic('下一章')              — 切换到下一章
+   *
+   * 内部调用 history.archiveCurrentTopic('signal')，
+   * 'signal' 模式会强制重新归档（覆盖之前的摘要，如果有的话）。
+   *
+   * @param content 可选，定稿内容摘要（如果提供，会先追加到历史再归档）
+   * @returns 归档结果，null 表示归档失败或无可归档内容
+   */
+  async archiveApprovedContent(content?: string): Promise<TopicSummarizerResult | null> {
+    if (!this._initialized || !this.history) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 archiveApprovedContent() 前调用 await agent.init()',
+      ]);
+    }
+
+    // 如果宿主提供了定稿内容，先追加到历史（作为本轮的"最终版本"）
+    if (content && content.trim()) {
+      await this.history.appendAssistant(`【定稿】\n${content}`);
+    }
+
+    // 使用 'signal' 原因强制归档（确保覆盖之前的摘要）
+    const result = await this.history.archiveCurrentTopic('signal');
+
+    if (result) {
+      logger.info(
+        { topic: this.history.currentTopicName, hasSnapshots: result.snapshots.length > 0 },
+        '定稿内容已归档',
+      );
+    }
+
+    return result;
+  }
+
   /**
    * 恢复最近的话题对话
    * 用于启动时自动恢复上次对话
@@ -1764,5 +1885,22 @@ export class Agent {
 
     await index.upsert(memory);
     logger.info({ date, topic, messageCount: topicMessages.length }, '话题已写入索引');
+  }
+
+  /**
+   * 刷新缓存的归档话题文件数（异步，供 inspect() 同步读取）
+   *
+   * 在 init() 和 close() 时调用，确保 inspect() 返回的 archive.topicFilesCount
+   * 是接近实时的数值。调用失败不抛异常，不影响核心流程。
+   */
+  private async _refreshTopicCount(): Promise<void> {
+    try {
+      if (this.history) {
+        const topics = await this.history.listAllTopics();
+        this._cachedTopicCount = topics.length;
+      }
+    } catch {
+      // 静默失败，inspect() 将回退显示上次缓存的值
+    }
   }
 }

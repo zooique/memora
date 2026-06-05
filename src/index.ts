@@ -28,6 +28,7 @@ export type {
   BootstrapSnapshot,
   ArchiveSnapshot,
   MountedSnapshot,
+  ArchiveMode,
 } from './agent/agent.js';
 export type { ToolDefinition, ToolHandler } from './agent/tool-executor.js';
 export type { PersonaMode } from './persona/personaManager.js';
