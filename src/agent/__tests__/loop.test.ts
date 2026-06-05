@@ -262,3 +262,47 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   });
 });
+
+describe('AgentLoop · processUserInput recall 事件', () => {
+  it('传入 topicMemories 时应该 yield recall 事件', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 模拟 2 条话题记忆召回
+    const topicMemories = [
+      makeMemory({ id: 'topic:1', name: '话题记忆1', content: '之前讨论过' }),
+      makeMemory({ id: 'topic:2', name: '话题记忆2', content: '另一个记忆' }),
+    ];
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('你好', topicMemories)) {
+      chunks.push(chunk);
+    }
+
+    // 应该有 recall 事件，count = 2
+    const recalls = chunks.filter((c) => c.type === 'recall');
+    expect(recalls).toHaveLength(1);
+    if (recalls[0]!.type === 'recall') {
+      expect(recalls[0]!.count).toBe(2);
+    }
+  });
+
+  it('不传 topicMemories 时不应 yield recall 事件', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '回复' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('你好')) {
+      chunks.push(chunk);
+    }
+
+    const recalls = chunks.filter((c) => c.type === 'recall');
+    expect(recalls).toHaveLength(0);
+  });
+});

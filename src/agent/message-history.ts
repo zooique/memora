@@ -299,8 +299,16 @@ export class MessageHistory {
       await this.topicStore.appendSummary(date, topic, result.summary);
 
       // 2. 同步写入 SQLite 索引（让 TopicMount 能跨会话召回）
+      // v1.2 新枝破土：snapshots 也写入 SQLite（与 summary 共用同一条索引记录）
+      // FTS5 搜索 content 字段时，summary + snapshots 同时被匹配
       if (this.index) {
-        await this.writeTopicMemory(date, topic, result.summary, topicFile.messages.length);
+        await this.writeTopicMemory(
+          date,
+          topic,
+          result.summary,
+          topicFile.messages.length,
+          result.snapshots,
+        );
       }
 
       logger.info(
@@ -374,7 +382,13 @@ export class MessageHistory {
               return;
             }
             await this.topicStore.appendSummary(date, topic, result.summary);
-            await this.writeTopicMemory(date, topic, result.summary, tf.messages.length);
+            await this.writeTopicMemory(
+              date,
+              topic,
+              result.summary,
+              tf.messages.length,
+              result.snapshots,
+            );
             logger.info(
               { topic: `${date}-${topic}`, messageCount: tf.messages.length },
               'lazy 补归档完成',
@@ -453,22 +467,45 @@ export class MessageHistory {
    * 永久性：topic（按需召回，符合 MemoryType 6 类 / Permanence 4 等级）
    * 权重：0.7（话题摘要比 bootstrap 的 always=1.0 略低，符合"派生记忆"定位）
    */
+  /**
+   * 写入话题记忆到 SQLite 索引
+   *
+   * v1.2 新枝破土：snapshots 也写入 SQLite（与 summary 共用同一条索引记录）。
+   * content 字段格式：summary + "\n\n---\n对话快照：\n" + snapshots.join("\n")
+   * FTS5 搜索 content 时，summary 和 snapshots 同时被匹配，
+   * TopicMount 搜索"绍兴"时能命中 snapshot 中的"我老家在浙江绍兴"。
+   *
+   * @param date 话题日期
+   * @param topic 话题名
+   * @param summary 话题摘要文本
+   * @param messageCount 消息数
+   * @param snapshots 对话快照（3-5 句用户原话），可选
+   */
   private async writeTopicMemory(
     date: string,
     topic: string,
     summary: string,
     messageCount: number,
+    snapshots: string[] = [],
   ): Promise<void> {
     if (!this.index) return;
     const now = new Date().toISOString();
     const id = this.buildTopicMemoryId(date, topic);
+
+    // v1.2：将 snapshots 拼接到 content，让 FTS5 能搜索快照内容
+    // 设计文档 00-记忆归档原则 §6.5："快照进入 SQLite 索引（与话题摘要共用同一条索引记录）"
+    let content = summary;
+    if (snapshots.length > 0) {
+      content = `${summary}\n\n---\n对话快照：\n${snapshots.join('\n')}`;
+    }
+
     const memory: Memory = {
       id,
       type: MemoryType.TOPIC,
       permanence: Permanence.TOPIC,
       name: `${date} ${topic}`,
-      content: summary,
-      tags: ['auto-archive', `messages:${messageCount}`],
+      content,
+      tags: ['auto-archive', `messages:${messageCount}`, `snapshots:${snapshots.length}`],
       weight: 0.7,
       createdAt: now,
       updatedAt: now,

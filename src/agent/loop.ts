@@ -218,6 +218,19 @@ export class AgentLoop {
   }
 
   /**
+   * v1.2：运行时切换 LLM Provider
+   *
+   * 用于多 Provider 路由场景：用户切换 API 时，
+   * Agent 调用此方法更新 AgentLoop 的 provider 引用。
+   * 后续 chat() 调用使用新 Provider。
+   *
+   * @param provider 新的 LlmProvider 实例
+   */
+  setProvider(provider: LlmProvider): void {
+    this.opts.provider = provider;
+  }
+
+  /**
    * 刷新身份 prompt（P-603 · L6 修正）
    *
    * 当身份切换时，更新系统 prompt 前缀的身份部分。

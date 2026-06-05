@@ -55,8 +55,12 @@ export interface LlmProvider {
 
 - 所有 LLM 调用走 `LlmProvider` 接口
 - 模型切换 = 换 provider 实现，业务代码零改动
-- API Key 必须从环境变量 `MEMORA_LLM_API_KEY` 读取
-- 配置文件示例：
+- API Key 从环境变量读取（支持 `${ENV_VAR}` 占位符展开）
+- v1.2：支持多 Provider 映射表 + 运行时切换
+
+### 配置格式
+
+**旧格式**（单 Provider，向后兼容）：
 
 ```json
 {
@@ -67,6 +71,53 @@ export interface LlmProvider {
     "baseUrl": "https://api.deepseek.com/v1"
   }
 }
+```
+
+**新格式**（多 Provider，v1.2）：
+
+```json
+{
+  "llm": {
+    "providers": {
+      "deepseek": {
+        "provider": "deepseek",
+        "model": "deepseek-chat",
+        "apiKey": "${DEEPSEEK_API_KEY}"
+      },
+      "openai": {
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "apiKey": "${OPENAI_API_KEY}"
+      }
+    },
+    "active": "deepseek"
+  }
+}
+```
+
+### 多 Provider 管理 API
+
+| 方法                              | 说明                           |
+| --------------------------------- | ------------------------------ |
+| `agent.listProviders()`           | 列出所有已注册 Provider 别名   |
+| `agent.getActiveProviderName()`   | 获取当前激活的 Provider 名     |
+| `agent.switchProvider(name)`      | 切换 Provider（即时生效）      |
+| `agent.addProvider(name, config)` | 运行时动态添加（不写配置文件） |
+| `agent.currentProvider`           | 只读访问当前 Provider 实例     |
+
+### CLI 命令
+
+```bash
+memora config-llm list          # 列出 Provider
+memora config-llm add <name>    # 交互式添加（写入配置文件）
+memora config-llm use <name>    # 切换激活 Provider（写入配置文件）
+```
+
+### REPL 命令
+
+```
+/provider          # 列出 Provider
+/provider <name>   # 切换 Provider
 ```
 
 ## 何时回顾

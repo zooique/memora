@@ -79,6 +79,34 @@ export function formatToolEnd(name: string, ok: boolean): string {
 }
 
 /**
+ * thinking 事件的阶段 → 中文标签映射
+ */
+const THINKING_PHASE_LABELS: Record<string, string> = {
+  recalling: '正在召回记忆',
+  processing: '正在准备上下文',
+  archiving: '正在归档',
+};
+
+/**
+ * 格式化 thinking 事件（Agent 正在思考/处理的进度提示）
+ *
+ * 用淡色输出，不干扰主对话流，让用户知道 Agent 当前在做什么。
+ */
+export function formatThinking(phase: string): string {
+  const label = THINKING_PHASE_LABELS[phase] ?? phase;
+  return pc.dim(pc.italic(`⏳ ${label}...`));
+}
+
+/**
+ * 格式化 recall 事件（话题记忆召回结果通知）
+ *
+ * 告知用户 Agent 召回了多少条相关记忆，增强透明度。
+ */
+export function formatRecall(count: number): string {
+  return pc.dim(`📎 召回 ${count} 条相关记忆`);
+}
+
+/**
  * 欢迎横幅（M-205 美化版）
  */
 export function formatWelcome(opts: {
@@ -92,6 +120,8 @@ export function formatWelcome(opts: {
   skippedCount: number;
   globalRulesCount: number;
   currentTopic: string;
+  /** 当前激活的身份名称 */
+  activePersona?: string;
 }): string {
   const lines = [
     '',
@@ -104,6 +134,7 @@ export function formatWelcome(opts: {
       opts.skippedCount > 0 ? pc.yellow(` ⚠️ 跳过 ${opts.skippedCount} 条`) : ''
     }${opts.globalRulesCount > 0 ? pc.dim(` · 全局规则 ${opts.globalRulesCount} 条`) : ''}`,
     `${pc.dim('💬 当前话题：')}  ${pc.cyan(opts.currentTopic)}`,
+    `${pc.dim('🎭 当前身份：')}  ${pc.cyan(opts.activePersona ?? '无')}`,
     pc.dim(HORIZONTAL.repeat(60)),
     `${pc.gray('输入 ')}${pc.bold('/exit')}${pc.gray(' 退出，')}${pc.bold('/help')}${pc.gray(' 查看帮助')}`,
     '',
@@ -125,13 +156,14 @@ export function formatHelp(): string {
     ['/mounted', '查看挂载记忆'],
     ['/unmount <name>', '踢出指定记忆'],
     ['/project [name]', '切换项目（不填则显示列表）'],
-    ['/domain [name]', '切换领域（不填则显示列表）'],
+    ['/persona [name]', '查看/切换身份（auto/manual/名称）'],
     ['/topic <name>', '切换话题（不填则显示当前）'],
     ['/topics', '列出所有话题文件'],
+    ['/provider [name]', '切换 LLM Provider（不填则显示列表）'],
   ];
   const lines = [
     pc.bold(pc.blue('命令：')),
-    ...cmds.map(([name, desc]) => `  ${pc.cyan(name.padEnd(20))} ${pc.dim(desc)}`),
+    ...cmds.map(([name, desc]) => `  ${pc.cyan(name.padEnd(22))} ${pc.dim(desc)}`),
   ];
   return lines.join('\n');
 }

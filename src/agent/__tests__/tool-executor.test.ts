@@ -125,7 +125,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
         throw new Error('应该抛错');
       } catch (err) {
         expect(err).toBeInstanceOf(MemoraError);
-        expect((err as MemoraError).title).toContain('缺少 path');
+        // validateAndCoerceArgs 的 title 是 '工具参数缺失'，detail 包含具体参数名
+        expect((err as MemoraError).detail).toContain('path');
       }
     });
   });
@@ -189,7 +190,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
         throw new Error('应该抛错');
       } catch (err) {
         expect(err).toBeInstanceOf(MemoraError);
-        expect((err as MemoraError).title).toContain('content');
+        // validateAndCoerceArgs 的 title 是 '工具参数缺失'，detail 包含具体参数名
+        expect((err as MemoraError).detail).toContain('content');
       }
     });
   });
@@ -317,7 +319,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
         throw new Error('应该抛错');
       } catch (err) {
         expect(err).toBeInstanceOf(MemoraError);
-        expect((err as MemoraError).title).toContain('query');
+        // validateAndCoerceArgs 的 title 是 '工具参数缺失'，detail 包含具体参数名
+        expect((err as MemoraError).detail).toContain('query');
       }
     });
   });

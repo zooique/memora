@@ -21,7 +21,7 @@
  *   同话题内缓存召回结果，鼓励深度专注。
  */
 import { loadConfig, type Config } from '@/config/loader.js';
-import { createLlmProvider } from '@/llm/factory.js';
+import { createLlmProvider, createProviderFromConfig, type ProviderConfig } from '@/llm/factory.js';
 import { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
 import { ToolExecutor, type ToolDefinition, type ToolHandler } from './tool-executor.js';
@@ -243,7 +243,12 @@ export class Agent {
 
   // 运行时组件（init 后填充）
   private projectManager: ProjectManager | null = null;
-  private provider: LlmProvider | null = null;
+  /** v1.2：多 Provider 映射表（key 为别名，如 "deepseek"、"openai"） */
+  private providers: Map<string, LlmProvider> = new Map();
+  /** v1.2：当前激活的 Provider 别名 */
+  private activeProviderName: string | null = null;
+  /** v1.2：后台通道 Provider 缓存（避免每次调用 getBackgroundProvider 重建实例） */
+  private _backgroundProvider: LlmProvider | null = null;
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
   private topicMount: TopicMount | null = null; // 话题记忆挂载器（专注模式）
@@ -340,8 +345,8 @@ export class Agent {
     // 传递 configDir 以分离配置目录与运行时数据目录
     const pctx = await this.projectManager.initProject(this.projectPath, undefined, this.configDir);
 
-    // 创建 LLM Provider
-    this.provider = createLlmProvider(this.config);
+    // v1.2：创建多 Provider 映射表
+    this._initProviders();
 
     // 组装所有运行时组件（v4.0：包括 persona/skill/userProfile/workProjection）
     await this._assembleComponents(pctx);
@@ -352,10 +357,7 @@ export class Agent {
     this._initialized = true;
 
     // 启动时 Lazy 扫描：兜底历史话题归档
-    // 解决"用户在 main 话题聊 50 轮不切换 → 永远没归档过"的问题
-    // fire-and-forget，单 topic 3s 超时（符合 architecture_philosophy §7 P3）
     this.history!.archiveMissingTopics(3000).catch((err) => {
-      // 已经在 MessageHistory 内部 log.warn，这里防止 unhandled rejection
       void err;
     });
 
@@ -369,7 +371,7 @@ export class Agent {
    * 内部自动维护 MessageHistory（appendUser → loop → appendAssistant）。
    *
    * @param input - 用户输入的文本
-   * @returns AsyncGenerator，逐段产出 Agent 回复事件（结构化：text/tool_start/tool_result/recall/done）
+   * @returns AsyncGenerator，逐段产出 Agent 回复事件（结构化：thinking/recall/text/tool_start/tool_result/done）
    */
   async *chat(input: string): AsyncGenerator<AgentChunk, void, unknown> {
     if (!this._initialized || !this.history || !this.loop || !this.topicMount) {
@@ -379,9 +381,11 @@ export class Agent {
     }
 
     // 专注模式：检测话题 → 召回话题记忆（"生其心"）
+    yield { type: 'thinking', phase: 'recalling' };
     const topicMemories = await this.topicMount.focus(input);
 
     // v4.0：注入上一轮匹配的技能 prompt（本轮可用）
+    yield { type: 'thinking', phase: 'processing' };
     if (this.activeSkill && this.skillManager && this.loop) {
       const skillPrompt = this.skillManager.buildSystemPrompt(this.activeSkill);
       if (skillPrompt) {
@@ -405,6 +409,9 @@ export class Agent {
 
     // Agent 回复写入历史
     await this.history.appendAssistant(assistantContent);
+
+    // 后处理阶段：归档 + 身份匹配 + 技能匹配
+    yield { type: 'thinking', phase: 'archiving' };
 
     // v4.0：用户画像实时归档（每轮结束后扫描用户输入中的身份/偏好/专长事实）
     // 高置信度直接归档，低置信度标记待确认
@@ -584,7 +591,7 @@ export class Agent {
    * @returns 新项目的完整上下文
    */
   async switchProject(nameOrPath: string): Promise<AgentContext> {
-    if (!this._initialized || !this.projectManager || !this.provider) {
+    if (!this._initialized || !this.projectManager || this.providers.size === 0) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 switchProject() 前调用 await agent.init()',
       ]);
@@ -627,16 +634,20 @@ export class Agent {
    *   - topicMount（话题记忆挂载器）
    */
   private async _assembleComponents(pctx: ProjectContext): Promise<void> {
-    if (!this.provider) return;
+    const activeProvider = this.activeProvider;
+    if (!activeProvider) return;
 
-    // 构造话题总结器
-    const summarizer = createTopicSummarizer(this.provider);
+    // 构造话题总结器（使用后台通道或当前激活的 Provider）
+    const summarizer = createTopicSummarizer(this.getBackgroundProvider() ?? activeProvider);
 
     // 消息历史（注入 MemoryIndex 让 archiveCurrentTopic 同步写 SQLite）
     this.history = new MessageHistory(pctx.topicStore, summarizer, undefined, 'main', pctx.index);
 
     // v4.0：作品投影管理器（注入 MemoryIndex + LlmProvider）
-    this.workProjection = new WorkProjectionManager(pctx.index, this.provider);
+    this.workProjection = new WorkProjectionManager(
+      pctx.index,
+      this.getBackgroundProvider() ?? activeProvider,
+    );
 
     // 工具执行器（v4.0：注入 workProjection，读取文件时自动生成投影）
     const toolExec = new ToolExecutor(
@@ -675,7 +686,7 @@ export class Agent {
 
     // Agent Loop（v4.0：注入系统 prompt 前缀 + 工具定义）
     this.loop = new AgentLoop({
-      provider: this.provider,
+      provider: activeProvider,
       bootstrapMemories: pctx.bootstrapMemories,
       toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
       systemPromptPrefix,
@@ -692,8 +703,170 @@ export class Agent {
    * 在 switchProject / init 中复用
    */
   private async _rebuildComponentsWithCurrentCtx(): Promise<void> {
-    if (!this._pctx || !this.provider) return;
+    if (!this._pctx || !this.providers) return;
     await this._assembleComponents(this._pctx);
+  }
+
+  // ─── v1.2：多 Provider 管理 ────────────────────────────
+
+  /**
+   * 初始化 Provider 映射表
+   *
+   * 从配置中读取 providers 映射表（新格式）或创建单 Provider（旧格式）。
+   * 创建失败时记录错误但不中断启动——后续 chat() 调用会报错。
+   */
+  private _initProviders(): void {
+    if (!this.config) return;
+    const { llm } = this.config;
+
+    // 新格式：多 Provider 映射表
+    if (llm.providers && Object.keys(llm.providers).length > 0) {
+      for (const [name, providerConfig] of Object.entries(llm.providers)) {
+        try {
+          const provider = createProviderFromConfig(name, providerConfig);
+          this.providers.set(name, provider);
+        } catch (err) {
+          logger.warn({ err, name }, `Provider "${name}" 创建失败，已跳过`);
+        }
+      }
+
+      // 设置激活的 Provider
+      const active = llm.active ?? this.providers.keys().next().value ?? null;
+      if (active && this.providers.has(active)) {
+        this.activeProviderName = active;
+        logger.info({ active, total: this.providers.size }, '多 Provider 已就绪');
+      } else {
+        logger.warn({ active, available: [...this.providers.keys()] }, 'active Provider 无效');
+      }
+      return;
+    }
+
+    // 旧格式：单 Provider（向后兼容）
+    try {
+      const provider = createLlmProvider(this.config);
+      this.providers.set('default', provider);
+      this.activeProviderName = 'default';
+    } catch (err) {
+      logger.warn({ err }, '默认 Provider 创建失败');
+    }
+  }
+
+  /**
+   * 当前激活的 LlmProvider 实例
+   */
+  private get activeProvider(): LlmProvider | null {
+    if (!this.activeProviderName) return null;
+    return this.providers.get(this.activeProviderName) ?? null;
+  }
+
+  /**
+   * 获取后台通道 Provider（用于归档/投影等后台操作）
+   *
+   * 如果配置了 llm.background，使用后台 Provider；
+   * 否则回退到当前激活的 Provider（零破坏性，完全向后兼容）。
+   * 结果缓存，避免每次调用重建实例。
+   */
+  private getBackgroundProvider(): LlmProvider | null {
+    if (!this.config) return null;
+    const bg = this.config.llm.background;
+    if (!bg) return null;
+
+    // 缓存后台 Provider 实例
+    if (!this._backgroundProvider) {
+      try {
+        this._backgroundProvider = createProviderFromConfig('background', bg);
+      } catch {
+        return null;
+      }
+    }
+    return this._backgroundProvider;
+  }
+
+  /**
+   * 列出所有已注册的 Provider 别名
+   *
+   * @returns Provider 别名数组，当前激活的排第一
+   */
+  listProviders(): string[] {
+    const names = [...this.providers.keys()];
+    if (this.activeProviderName && names.includes(this.activeProviderName)) {
+      // 把激活的移到第一位
+      const idx = names.indexOf(this.activeProviderName);
+      names.splice(idx, 1);
+      names.unshift(this.activeProviderName);
+    }
+    return names;
+  }
+
+  /**
+   * 获取当前激活的 Provider 名称
+   */
+  getActiveProviderName(): string | null {
+    return this.activeProviderName;
+  }
+
+  /**
+   * 切换当前激活的 Provider
+   *
+   * 切换后更新 AgentLoop 的 provider 引用，后续 chat() 调用使用新 Provider。
+   *
+   * @param name - Provider 别名
+   * @throws 如果 Provider 不存在
+   */
+  switchProvider(name: string): void {
+    if (!this.providers.has(name)) {
+      const available = [...this.providers.keys()].join(', ');
+      throw configError('Provider 不存在', `"${name}" 不在已注册的 Provider 列表中`, [
+        `可用的 Provider：${available || '(无)'}`,
+        '使用 listProviders() 查看可用 Provider',
+        '使用 `memora config llm add` 添加新 Provider',
+      ]);
+    }
+
+    this.activeProviderName = name;
+    const provider = this.providers.get(name)!;
+
+    // 更新 AgentLoop 的 provider 引用
+    if (this.loop) {
+      this.loop.setProvider(provider);
+    }
+
+    logger.info({ provider: name }, '已切换 Provider');
+  }
+
+  /**
+   * 添加新的 Provider（运行时动态添加，不写入配置文件）
+   *
+   * 用于宿主项目在运行时动态注册新 Provider。
+   * 如需持久化到配置文件，请使用 `memora config llm add` CLI 命令。
+   *
+   * 注意：配置文件是真理源（project-rules §1.6）。
+   * 运行时添加的 Provider 在 Agent 重启后不会保留，
+   * 除非通过 CLI 命令写入配置文件。
+   *
+   * @param name - Provider 别名
+   * @param config - Provider 配置
+   */
+  addProvider(name: string, config: ProviderConfig): void {
+    if (this.providers.has(name)) {
+      throw configError('Provider 已存在', `"${name}" 已注册，请使用其他名称`, [
+        '使用 switchProvider() 切换到已有 Provider',
+        '使用 listProviders() 查看可用 Provider',
+      ]);
+    }
+
+    const provider = createProviderFromConfig(name, config);
+    this.providers.set(name, provider);
+
+    // 如果这是第一个 Provider，自动激活
+    if (!this.activeProviderName) {
+      this.activeProviderName = name;
+      if (this.loop) {
+        this.loop.setProvider(provider);
+      }
+    }
+
+    logger.info({ name, type: config.provider }, '已添加 Provider');
   }
 
   /**
@@ -940,8 +1113,6 @@ export class Agent {
     this.topicMount = null;
 
     // 等待所有 fire-and-forget 归档完成（signal / lazy / switch）
-    // 防止 SQLITE_MISUSE：归档还在写时 db 已被 close
-    // 5s 超时（兜底，正常情况 < 1s 完成）
     if (this.history) {
       await this.history.awaitPendingArchives(5000);
     }
@@ -950,7 +1121,9 @@ export class Agent {
       await this.projectManager.shutdown();
     }
     this._initialized = false;
-    this.provider = null;
+    // v1.2：清理 Provider 映射表
+    this.providers.clear();
+    this.activeProviderName = null;
     this.history = null;
     this.loop = null;
     this.projectManager = null;
@@ -1186,6 +1359,14 @@ export class Agent {
     return this.personaManager.currentMode;
   }
 
+  /**
+   * 获取当前激活的身份名称
+   */
+  getActivePersonaName(): string {
+    if (!this._initialized || !this.personaManager) return '';
+    return this.personaManager.activeName;
+  }
+
   // ─── 只读访问器 ───────────────────────────────────────
 
   /** 是否已初始化 */
@@ -1196,6 +1377,37 @@ export class Agent {
   /** 初始化后的运行时上下文（init 前为 null） */
   get context(): AgentContext | null {
     return this._ctx;
+  }
+
+  /**
+   * 获取内部 AgentLoop 引用（只读）
+   *
+   * 供 REPL 等宿主项目获取 Agent 内部的 loop 实例，
+   * 避免宿主自行创建 loop 导致内外不同步。
+   * 切换 Provider/项目后，Agent 内部 loop 自动更新。
+   */
+  get agentLoop(): AgentLoop | null {
+    return this.loop;
+  }
+
+  /**
+   * 获取内部 MessageHistory 引用（只读）
+   *
+   * 供 REPL 等宿主项目获取 Agent 内部的 history 实例，
+   * 避免宿主自行创建 history 导致内外不同步。
+   */
+  get agentHistory(): MessageHistory | null {
+    return this.history;
+  }
+
+  /**
+   * v1.2：当前激活的 LlmProvider 实例（只读）
+   *
+   * 供宿主项目（如 REPL）在需要创建依赖 Provider 的组件时使用。
+   * 不暴露 providers Map 本身——切换/添加/列出都通过专用 API。
+   */
+  get currentProvider(): LlmProvider | null {
+    return this.activeProvider;
   }
 
   /**

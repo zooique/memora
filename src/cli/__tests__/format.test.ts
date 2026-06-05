@@ -17,6 +17,8 @@ import {
   formatToolResult,
   formatToolStart,
   formatToolEnd,
+  formatThinking,
+  formatRecall,
   formatWelcome,
   formatHelp,
   formatToolsList,
@@ -85,6 +87,39 @@ describe('M-205 · CLI 格式化工具', () => {
     });
   });
 
+  describe('formatThinking', () => {
+    it('应包含阶段标签和进度图标', () => {
+      const result = formatThinking('recalling');
+      expect(result).toContain('正在召回记忆');
+      expect(result).toContain('⏳');
+    });
+
+    it('应使用淡色（dim）输出', () => {
+      const result = formatThinking('processing');
+      // picocolors dim 输出 \x1b[2m
+      expect(result).toContain('\x1b[2m');
+    });
+
+    it('未知 phase 应直接显示 phase 值', () => {
+      const result = formatThinking('custom_phase');
+      expect(result).toContain('custom_phase');
+    });
+  });
+
+  describe('formatRecall', () => {
+    it('应包含召回数量和图标', () => {
+      const result = formatRecall(3);
+      expect(result).toContain('3');
+      expect(result).toContain('📎');
+      expect(result).toContain('召回');
+    });
+
+    it('应使用淡色（dim）输出', () => {
+      const result = formatRecall(1);
+      expect(result).toContain('\x1b[2m');
+    });
+  });
+
   describe('formatWelcome', () => {
     it('应包含版本/项目名/项目路径/模型/数据库/记忆统计/当前话题', () => {
       const result = formatWelcome({
@@ -98,8 +133,10 @@ describe('M-205 · CLI 格式化工具', () => {
         skippedCount: 0,
         globalRulesCount: 0,
         currentTopic: 'default',
+        activePersona: '默认人格',
       });
       expect(result).toContain('Memora Agent');
+      expect(result).toContain('默认人格');
       expect(result).toContain('0.1.0');
       expect(result).toContain('project');
       expect(result).toContain('/test/project');
@@ -121,6 +158,7 @@ describe('M-205 · CLI 格式化工具', () => {
         skippedCount: 2,
         globalRulesCount: 0,
         currentTopic: 't',
+        activePersona: 'test',
       });
       expect(result).toContain('跳过');
       expect(result).toContain('2');
@@ -139,6 +177,7 @@ describe('M-205 · CLI 格式化工具', () => {
         skippedCount: 0,
         globalRulesCount: 0,
         currentTopic: 't',
+        activePersona: 'test',
       });
       expect(result).not.toContain('跳过');
     });
@@ -155,6 +194,7 @@ describe('M-205 · CLI 格式化工具', () => {
         skippedCount: 0,
         globalRulesCount: 2,
         currentTopic: 't',
+        activePersona: 'test',
       });
       expect(result).toContain('全局规则');
       expect(result).toContain('2 条');
@@ -173,7 +213,7 @@ describe('M-205 · CLI 格式化工具', () => {
       expect(result).toContain('/mounted');
       expect(result).toContain('/unmount');
       expect(result).toContain('/project');
-      expect(result).toContain('/domain');
+      expect(result).toContain('/persona');
       expect(result).toContain('/topic');
       expect(result).toContain('/topics');
     });

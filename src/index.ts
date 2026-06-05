@@ -13,13 +13,13 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { startRepl } from './cli/repl.js';
 import { initCommand } from './cli/commands/init.js';
-import { configCommand } from './cli/commands/config.js';
+import { configCommand, configLlmCommand } from './cli/commands/config.js';
 import { loadConfig } from './config/loader.js';
 import { toFriendlyError } from './utils/errors.js';
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from './agent/agent.js';
-export type { AgentChunk } from './agent/types.js';
+export type { AgentChunk, ThinkingPhase } from './agent/types.js';
 export type {
   AgentOptions,
   AgentContext,
@@ -85,6 +85,22 @@ if (isDirectRun) {
     .action(async (action, key, opts) => {
       try {
         await configCommand(action, key ? [key] : [], opts);
+      } catch (err) {
+        const friendly = toFriendlyError(err);
+        friendly.log();
+        console.error(`\n${friendly.format()}\n`);
+        process.exit(1);
+      }
+    });
+
+  // v1.2：多 Provider 管理
+  program
+    .command('config-llm <action> [name]')
+    .description('LLM Provider 管理：list / add <name> / use <name>')
+    .option('-c, --config <path>', '指定配置文件路径')
+    .action(async (action, name, opts) => {
+      try {
+        await configLlmCommand(action, name ? [name] : [], opts);
       } catch (err) {
         const friendly = toFriendlyError(err);
         friendly.log();

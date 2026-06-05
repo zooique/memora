@@ -93,12 +93,21 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'write_file',
     description:
-      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。',
+      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。支持三种写入模式：overwrite（默认，全量覆盖）、append（追加到末尾）、insert（在指定行号前插入）。',
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '相对项目根目录的文件路径' },
-        content: { type: 'string', description: '要写入的完整文件内容' },
+        content: { type: 'string', description: '要写入的内容' },
+        mode: {
+          type: 'string',
+          description:
+            '写入模式："overwrite"（默认，全量覆盖）、"append"（追加到末尾）、"insert"（在 insert_line 行号前插入）',
+        },
+        insert_line: {
+          type: 'string',
+          description: 'insert 模式下插入位置的行号（从 1 开始），省略则插入到文件末尾',
+        },
       },
       required: ['path', 'content'],
     },
@@ -185,6 +194,12 @@ export class ToolExecutor {
 
   /**
    * 执行工具调用
+   *
+   * v1.2 新枝破土：新增参数类型校验。
+   * LLM 返回的 tool_call 参数可能类型不匹配（如 number 代替 string），
+   * 校验器会根据 ToolDefinition.parameters 自动修正常见类型错误，
+   * 避免后续 `as string` 强转导致的运行时错误。
+   *
    * @param name 工具名称
    * @param argsJson 参数 JSON 字符串
    * @param extensions 写入扩展（可选，用于 diff 确认等）
@@ -203,13 +218,27 @@ export class ToolExecutor {
       );
     }
 
+    // v1.2 新枝破土：参数类型校验 + 自动修正
+    // LLM 经常返回 number 代替 string（如 maxDepth: 2 而非 "2"），
+    // 校验器根据 ToolDefinition 自动转换，避免后续 as string 出错
+    const definition = this.getToolDefinitions().find((t) => t.name === name);
+    if (definition) {
+      args = this.validateAndCoerceArgs(name, args, definition);
+    }
+
     logger.info({ tool: name, args }, '执行工具');
 
     switch (name) {
       case 'read_file':
         return this.readFile(args['path'] as string);
       case 'write_file':
-        return this.writeFile(args['path'] as string, args['content'] as string, extensions);
+        return this.writeFile(
+          args['path'] as string,
+          args['content'] as string,
+          extensions,
+          (args['mode'] as string) ?? 'overwrite',
+          args['insert_line'] as string | undefined,
+        );
       case 'list_dir':
         return this.listDir(
           (args['path'] as string) ?? '.',
@@ -285,6 +314,11 @@ export class ToolExecutor {
   /**
    * 写入文件（路径白名单 + 写入二次确认 / diff 确认）
    *
+   * 支持三种写入模式：
+   *   - overwrite（默认）：全量覆盖文件内容
+   *   - append：追加内容到文件末尾
+   *   - insert：在指定行号前插入内容
+   *
    * 安全策略：
    *   - 路径必须在白名单内
    *   - 如果提供了 WriteExtensions.onBeforeWrite：使用 diff 确认（替代安全确认）
@@ -293,11 +327,19 @@ export class ToolExecutor {
    *     - owner + confirmWrites=true：要求 y/N 确认
    *     - owner + confirmWrites=false：自动批准
    *   - 自动创建父目录（在白名单内）
+   *
+   * @param relativePath 相对项目根目录的文件路径
+   * @param content 要写入的内容
+   * @param extensions 写入扩展（可选，用于 diff 确认等）
+   * @param mode 写入模式："overwrite" | "append" | "insert"，默认 "overwrite"
+   * @param insertLine insert 模式下的目标行号（从 1 开始），省略则插入到末尾
    */
   private async writeFile(
     relativePath: string,
     content: string,
     extensions?: WriteExtensions,
+    mode: string = 'overwrite',
+    insertLine?: string,
   ): Promise<ToolResult> {
     if (!relativePath) {
       throw toolError('write_file 工具调用缺少 path 参数', 'LLM 未传 path', [
@@ -307,6 +349,23 @@ export class ToolExecutor {
     if (typeof content !== 'string') {
       throw toolError('write_file 工具调用缺少 content 参数', 'LLM 未传 content', [
         '确认 content 是字符串',
+      ]);
+    }
+
+    // 校验 mode 参数合法性
+    const validModes = ['overwrite', 'append', 'insert'];
+    if (!validModes.includes(mode)) {
+      throw toolError(
+        'write_file 参数错误',
+        `mode 必须是 ${validModes.join('/')} 之一，收到：${mode}`,
+        ['检查 LLM 输出的 mode 参数'],
+      );
+    }
+
+    // insert 模式必须提供 insert_line
+    if (mode === 'insert' && !insertLine) {
+      throw toolError('write_file 参数错误', 'insert 模式必须提供 insert_line 参数', [
+        'insert_line 指定插入位置的行号（从 1 开始）',
       ]);
     }
 
@@ -322,10 +381,13 @@ export class ToolExecutor {
       // 文件不存在 → 新文件，beforeContent 保持 null
     }
 
+    // 根据 mode 计算最终写入内容
+    const finalContent = this.computeWriteContent(mode, content, beforeContent, insertLine);
+
     // 写入确认：优先使用 WriteExtensions.onBeforeWrite（diff 确认），
     // 否则回退到 SecurityGuard.requestWriteConfirmation（安全确认）
     if (extensions?.onBeforeWrite) {
-      const ok = await extensions.onBeforeWrite(relativePath, beforeContent, content);
+      const ok = await extensions.onBeforeWrite(relativePath, beforeContent, finalContent);
       if (!ok) {
         throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
           '如需写入，请重新发起请求并确认',
@@ -333,7 +395,7 @@ export class ToolExecutor {
       }
     } else {
       // 回退到原有安全确认流程
-      const description = `写入 ${content.length} 字符到 ${basename(absolutePath)}`;
+      const description = `写入 ${finalContent.length} 字符到 ${basename(absolutePath)}（模式：${mode}）`;
       const confirmed = await this.security.requestWriteConfirmation(
         absolutePath,
         'write_file',
@@ -351,12 +413,14 @@ export class ToolExecutor {
     await mkdir(parentDir, { recursive: true });
 
     try {
-      await writeFile(absolutePath, content, 'utf-8');
-      // 返回结果包含 beforeContent 信息，供 A-102 摘要使用
-      const lines = content.split('\n').length;
+      await writeFile(absolutePath, finalContent, 'utf-8');
+      // 返回结果包含写入模式、行数变化等信息
+      const newLines = finalContent.split('\n').length;
       const oldLines = beforeContent !== null ? beforeContent.split('\n').length : 0;
+      const modeLabel =
+        mode === 'overwrite' ? '覆盖' : mode === 'append' ? '追加' : `插入到第${insertLine}行`;
       return (
-        `✅ 已写入：${absolutePath}（${content.length} 字符，${lines} 行）` +
+        `✅ 已写入（${modeLabel}）：${absolutePath}（${finalContent.length} 字符，${newLines} 行）` +
         (beforeContent !== null ? ` [旧文件: ${oldLines} 行]` : ' [新文件]')
       );
     } catch (err) {
@@ -366,6 +430,59 @@ export class ToolExecutor {
         ['确认父目录可写', '确认磁盘空间充足'],
         err as Error,
       );
+    }
+  }
+
+  /**
+   * 根据写入模式计算最终文件内容
+   *
+   * @param mode 写入模式
+   * @param content LLM 提供的写入内容
+   * @param beforeContent 文件旧内容（null 表示新文件）
+   * @param insertLine insert 模式下的行号
+   * @returns 最终要写入文件的完整内容
+   */
+  private computeWriteContent(
+    mode: string,
+    content: string,
+    beforeContent: string | null,
+    insertLine: string | undefined,
+  ): string {
+    switch (mode) {
+      case 'overwrite':
+        // 全量覆盖：直接使用 content
+        return content;
+
+      case 'append':
+        // 追加模式：旧内容 + 新内容
+        if (beforeContent === null) {
+          // 新文件等同于 overwrite
+          return content;
+        }
+        return beforeContent + content;
+
+      case 'insert': {
+        // 插入模式：在指定行号前插入
+        if (beforeContent === null) {
+          // 新文件等同于 overwrite
+          return content;
+        }
+        const lineNum = Number.parseInt(insertLine ?? '1', 10);
+        if (Number.isNaN(lineNum) || lineNum < 1) {
+          throw toolError('write_file 参数错误', `insert_line 必须是正整数，收到：${insertLine}`, [
+            'insert_line 从 1 开始计数',
+          ]);
+        }
+        const lines = beforeContent.split('\n');
+        // 行号超出范围时追加到末尾
+        const insertIdx = Math.min(lineNum - 1, lines.length);
+        lines.splice(insertIdx, 0, content);
+        return lines.join('\n');
+      }
+
+      default:
+        // 理论上不会到达（writeFile 已校验 mode），防御性兜底
+        return content;
     }
   }
 
@@ -512,6 +629,94 @@ export class ToolExecutor {
       return `${i + 1}. [${m.type}:${m.name}] (weight=${m.weight})\n   ${preview.replace(/\n/g, ' ')}`;
     });
     return `搜索 "${query}"（${mode} 模式）找到 ${results.length} 条：\n${lines.join('\n')}`;
+  }
+
+  /**
+   * 参数类型校验 + 自动修正
+   *
+   * v1.2 新枝破土：LLM 返回的 tool_call 参数经常类型不匹配：
+   *   - number → string（如 maxDepth: 2 而非 "2"）
+   *   - boolean → string（如 recursive: true 而非 "true"）
+   *   - 缺少必填参数
+   *
+   * 校验策略：
+   *   1. 自动修正：number/boolean → string（最常见的 LLM 错误）
+   *   2. 缺少必填参数：抛出 toolError
+   *   3. 未知参数：忽略（LLM 可能返回额外参数）
+   *
+   * @param toolName 工具名称（用于错误信息）
+   * @param args LLM 返回的原始参数
+   * @param definition 工具定义（含参数 schema）
+   * @returns 校验/修正后的参数
+   */
+  private validateAndCoerceArgs(
+    toolName: string,
+    args: Record<string, unknown>,
+    definition: ToolDefinition,
+  ): Record<string, unknown> {
+    const props = definition.parameters.properties;
+    const required = definition.parameters.required;
+    const result = { ...args };
+
+    // 检查必填参数
+    for (const req of required) {
+      if (result[req] === undefined || result[req] === null) {
+        throw toolError('工具参数缺失', `${toolName}: 缺少必填参数 "${req}"`, [
+          `参数 "${req}" 类型应为 ${props[req]?.type ?? 'unknown'}`,
+        ]);
+      }
+    }
+
+    // 类型修正：根据 schema 中的 type 字段自动转换
+    for (const [key, schema] of Object.entries(props)) {
+      const value = result[key];
+      if (value === undefined || value === null) continue; // 可选参数未传，跳过
+
+      const expectedType = schema.type;
+      const actualType = typeof value;
+
+      // string 类型修正：number / boolean → string
+      if (expectedType === 'string' && actualType !== 'string') {
+        result[key] = String(value);
+        logger.debug(
+          { tool: toolName, param: key, from: actualType, to: 'string' },
+          '参数类型自动修正',
+        );
+      }
+      // number 类型修正：string → number
+      else if (expectedType === 'number' && actualType === 'string') {
+        const num = Number(value);
+        if (!Number.isNaN(num)) {
+          result[key] = num;
+          logger.debug(
+            { tool: toolName, param: key, from: 'string', to: 'number' },
+            '参数类型自动修正',
+          );
+        }
+      }
+      // boolean 类型修正：string → boolean
+      else if (expectedType === 'boolean' && actualType === 'string') {
+        if (value === 'true' || value === '1') {
+          result[key] = true;
+        } else if (value === 'false' || value === '0') {
+          result[key] = false;
+        }
+        logger.debug(
+          { tool: toolName, param: key, from: 'string', to: 'boolean' },
+          '参数类型自动修正',
+        );
+      }
+      // array 类型修正：单值 → 数组
+      else if (expectedType === 'array' && !Array.isArray(value)) {
+        result[key] = [value];
+        logger.debug(
+          { tool: toolName, param: key, from: actualType, to: 'array' },
+          '参数类型自动修正',
+        );
+      }
+    }
+
+    return result;
   }
 
   /**

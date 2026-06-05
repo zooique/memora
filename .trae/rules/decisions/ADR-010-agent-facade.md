@@ -1,4 +1,4 @@
-﻿---
+---
 alwaysApply: false
 description: Agent 门面类（宿主项目接入入口）
 ---
@@ -25,8 +25,12 @@ Loop、记忆引擎、LLM 适配层，但入口不同。需要一个统一的门
 采用 **Agent 门面类** 模式：
 
 1. `Agent` 类作为唯一对外入口，封装所有子系统初始化和生命周期管理
-2. 对外暴露 5 个核心方法：`init()` / `chat()` / `switchTopic()` /
-   `listAllTopics()` / `inspect()`
+2. 对外暴露核心方法（v1.2 扩展）：
+   - **基础**：`init()` / `chat()` / `switchTopic()` / `listAllTopics()` /
+     `inspect()`
+   - **多 Provider**：`listProviders()` / `getActiveProviderName()` /
+     `switchProvider()` / `addProvider()`
+   - **只读访问器**：`currentProvider` / `agentLoop` / `agentHistory`
 3. CLI 的 `repl.ts` 通过 `Agent` 类调用，不直接操作 memory/llm 子系统
 4. 库模式用户直接实例化 `Agent`，无需了解内部实现
 
@@ -49,4 +53,7 @@ Loop、记忆引擎、LLM 适配层，但入口不同。需要一个统一的门
 **负面**：
 
 - Agent 类可能成为"上帝类"（需持续关注职责膨胀）
-- 当前 `repl.ts` 仍直接 import memory/ 层（T-201 待办），门面类 API 尚未完全覆盖
+- ~~当前 `repl.ts` 仍直接 import
+  memory/ 层（T-201 待办），门面类 API 尚未完全覆盖~~
+  ✅ 已修复（翠幕天罗 v1.2：REPL 不再自行创建 providers Map / AgentLoop /
+  MessageHistory）

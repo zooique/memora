@@ -98,3 +98,4 @@ chore: 升级 dependencies
 - ✅ 项目 rules/skills 接口（addRule + registerTool）
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ CLI 启动后能对话（需真实 LLM API Key）
+- ✅ 多 Provider 管理（providers 映射表 + 运行时切换 + CLI/REPL 命令）

@@ -17,20 +17,17 @@
  */
 import { createInterface, type Interface as RLInterface } from 'node:readline';
 import type { Config } from '@/config/loader.js';
-import { createLlmProvider } from '@/llm/factory.js';
-import { AgentLoop } from '@/agent/loop.js';
-import { ToolExecutor, BUILTIN_TOOLS, type WriteExtensions } from '@/agent/tool-executor.js';
-import { MessageHistory } from '@/agent/message-history.js';
+import { BUILTIN_TOOLS } from '@/agent/tool-executor.js';
 import { toFriendlyError } from '@/utils/errors.js';
-import type { LlmProvider } from '@/llm/provider.js';
 import { logger } from '@/logging/logger.js';
-import { createTopicSummarizer } from '@/agent/topic-summarizer.js';
-import { Agent, type AgentBuildCtx } from '@/agent/agent.js';
+import { Agent } from '@/agent/agent.js';
 import {
   formatWelcome,
   formatHelp,
   formatToolsList,
   formatMemoriesList,
+  formatRecall,
+  formatThinking,
   formatTopicsList,
   formatSuccess,
   formatError,
@@ -44,7 +41,6 @@ import {
   type ToolCallRecord,
 } from './format.js';
 import { MarkdownRenderer } from './markdown-renderer.js';
-import { accumulateWrite, promptBatchWrites, type WriteAccumulator } from './diff-renderer.js';
 import pc from 'picocolors';
 
 export interface ReplOptions {
@@ -58,38 +54,44 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // T-201 修复：通过 Agent 门面类封装所有 memory/ 层访问
   const agent = new Agent({ projectPath, config });
 
-  // 初始化 Agent（内部走 ProjectManager.initProject）
+  // 初始化 Agent（内部走 ProjectManager.initProject + _initProviders）
   const pctx = await agent.init();
-
-  let history: MessageHistory;
-  let loop: AgentLoop;
 
   // 加载统计
   if (pctx.loadResult.errors.length > 0) {
     logger.warn({ errors: pctx.loadResult.errors }, '部分记忆文件加载失败');
   }
 
-  // 初始化 LLM
-  const provider = createLlmProvider(config);
+  // v1.2：Provider 管理已收归 Agent 门面类（新枝破土 · P2 分层修复）
+  // REPL 不再自行创建 providers Map，所有 Provider 操作通过 Agent API：
+  //   - agent.listProviders()：列出已注册 Provider
+  //   - agent.getActiveProviderName()：获取当前激活的 Provider 名
+  //   - agent.switchProvider(name)：切换 Provider
+  //
+  // 翠幕天罗 P2 修复：REPL 不再自行创建 MessageHistory / AgentLoop，
+  // 直接使用 Agent 内部的 loop 和 history，避免切换项目后内外不同步。
 
-  // 本轮工具调用记录（A-102），wrapToolExecutor 闭包捕获此数组引用
+  // 本轮工具调用记录（A-102），从 AgentLoop 的 tool_start/tool_result 事件收集
   const toolCallRecordsForTurn: ToolCallRecord[] = [];
 
-  ({ history, loop } = rebuildAgentComponents(provider, projectPath, pctx, toolCallRecordsForTurn));
+  // 从 Agent 获取内部组件引用（不再自行创建）
+  let history = agent.agentHistory!;
+  let loop = agent.agentLoop!;
 
-  // 显示欢迎（M-205 美化版 + M-207 项目名）
+  // 显示欢迎（M-205 美化版 + M-207 项目名 + v1.2 Provider 信息）
   console.log(
     formatWelcome({
       version: '0.1.0',
       projectPath,
       projectName: pctx.projectName,
-      modelName: provider.name,
+      modelName: agent.getActiveProviderName() ?? 'unknown',
       dbPath: pctx.dbPath,
       loadedCount: pctx.loadResult.loaded,
       bootstrapCount: pctx.bootstrapMemories.length,
       skippedCount: pctx.loadResult.skipped,
       globalRulesCount: pctx.globalMemories.length,
       currentTopic: history.currentTopicName,
+      activePersona: agent.getActivePersonaName(),
     }),
   );
 
@@ -235,13 +237,9 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       } else {
         try {
           const newCtx = await agent.switchProject(arg);
-          // 重建 history / loop（provider 复用）
-          ({ history, loop } = rebuildAgentComponents(
-            provider,
-            newCtx.memoraDir,
-            newCtx,
-            toolCallRecordsForTurn,
-          ));
+          // 切换后重新获取 Agent 内部的 loop/history 引用
+          history = agent.agentHistory!;
+          loop = agent.agentLoop!;
           console.log(
             formatSuccess(
               `已切换到项目：${newCtx.projectName}（${newCtx.bootstrapMemories.length} 条记忆）`,
@@ -275,23 +273,123 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
+    // v1.2：Provider 切换命令（通过 Agent 门面类，P2 分层修复）
+    if (input === '/provider' || input.startsWith('/provider ')) {
+      const name = input.slice('/provider'.length).trim();
+      if (!name) {
+        // 列出所有 Provider（通过 Agent API）
+        const providerNames = agent.listProviders();
+        const activeName = agent.getActiveProviderName();
+        console.log(pc.cyan('已注册的 LLM Provider：'));
+        console.log(pc.dim('─'.repeat(40)));
+        for (const pName of providerNames) {
+          const marker = pName === activeName ? ' *' : '  ';
+          console.log(`${marker} ${pName}`);
+        }
+        console.log(pc.dim('─'.repeat(40)));
+        console.log('* 当前激活的 Provider');
+        console.log(pc.dim('切换：/provider <name>'));
+        rl.prompt();
+        continue;
+      }
+
+      try {
+        // 通过 Agent 门面类切换 Provider
+        agent.switchProvider(name);
+        console.log(formatSuccess(`已切换到 Provider：「${name}」`));
+      } catch (err) {
+        const friendly = toFriendlyError(err);
+        console.error(formatError(friendly.title, friendly.detail));
+      }
+      rl.prompt();
+      continue;
+    }
+
+    // v1.1：身份查看/切换命令（P-6xx 身份系统）
+    if (input === '/persona' || input.startsWith('/persona ')) {
+      const name = input.slice('/persona'.length).trim();
+      if (!name) {
+        // 列出所有身份 + 当前激活状态
+        const personas = agent.listPersonas();
+        const activeName = agent.getActivePersonaName();
+        const mode = agent.getPersonaMode();
+        console.log(pc.cyan('可用身份：'));
+        console.log(pc.dim('─'.repeat(40)));
+        for (const p of personas) {
+          const marker = p.name === activeName ? ' *' : '  ';
+          const desc = p.description ? pc.dim(` — ${p.description}`) : '';
+          console.log(`${marker} ${pc.bold(p.name)}${desc}`);
+        }
+        console.log(pc.dim('─'.repeat(40)));
+        console.log(
+          `* 当前身份：${pc.green(activeName || '无')}（模式：${mode === 'auto' ? '自动匹配' : '手动固定'}）`,
+        );
+        console.log(pc.dim('切换：/persona <name>  |  模式：/persona auto | /persona manual'));
+      } else if (name === 'auto') {
+        agent.setPersonaMode('auto');
+        console.log(formatSuccess('已切换为自动匹配模式'));
+      } else if (name === 'manual') {
+        agent.setPersonaMode('manual');
+        console.log(formatSuccess('已切换为手动固定模式'));
+      } else {
+        try {
+          agent.switchPersona(name);
+          console.log(formatSuccess(`已切换到身份：「${name}」`));
+        } catch (err) {
+          const friendly = toFriendlyError(err);
+          console.error(formatError(friendly.title, friendly.detail));
+        }
+      }
+      rl.prompt();
+      continue;
+    }
+
     // 用户输入 → 通过 MessageHistory 追加到话题文件
     await history.appendUser(input);
 
     // 用户输入 → Agent Loop
 
-    // 重置本轮工具调用记录（A-102），wrapToolExecutor 闭包捕获的是数组引用
+    // 重置本轮工具调用记录（A-102）
     toolCallRecordsForTurn.length = 0;
 
     let assistantContent = '';
     try {
       process.stdout.write('\n');
-      // 流式 Markdown 渲染（A-103）
+      // 流式 Markdown 渲染（A-103）+ 工具调用可视化（从 AgentLoop 事件收集）
       const md = new MarkdownRenderer();
       for await (const chunk of loop.processUserInput(input)) {
         if (chunk.type === 'text') {
           process.stdout.write(md.feed(chunk.content));
           assistantContent += chunk.content;
+        } else if (chunk.type === 'thinking') {
+          // 思考/进度提示：淡色输出，让用户知道 Agent 当前在做什么
+          process.stderr.write(formatThinking(chunk.phase) + '\n');
+        } else if (chunk.type === 'recall') {
+          // 记忆召回通知：告知用户 Agent 召回了多少条相关记忆
+          process.stderr.write(formatRecall(chunk.count) + '\n');
+        } else if (chunk.type === 'tool_start') {
+          // A-102：记录工具调用开始
+          process.stderr.write(formatToolStart(chunk.name) + '\n');
+          toolCallRecordsForTurn.push({
+            toolName: chunk.name,
+            status: 'ok',
+            summary: (chunk.args ?? '').slice(0, 80),
+          });
+        } else if (chunk.type === 'tool_result') {
+          // A-102：更新工具调用结果
+          const summaryText = chunk.summary ?? '';
+          process.stderr.write(formatToolResult(chunk.name, summaryText) + '\n');
+          process.stderr.write(formatToolEnd(chunk.name, chunk.ok));
+          const record = toolCallRecordsForTurn.find(
+            (r) => r.toolName === chunk.name && r.status === 'ok' && !r.error,
+          );
+          if (record) {
+            record.summary = `${chunk.name}: ${summaryText.slice(0, 60)}`;
+            if (!chunk.ok) {
+              record.status = 'failed';
+              record.error = summaryText.slice(0, 80);
+            }
+          }
         }
       }
       process.stdout.write(md.flush());
@@ -317,147 +415,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // 关闭 Agent（内部关闭数据库 + 释放锁文件）
   await agent.close();
   rl.close();
-}
-
-/**
- * 包装 ToolExecutor，添加 M-205 工具调用可视化 + A-101 diff 确认 + A-102 记录
- */
-function wrapToolExecutor(toolExec: ToolExecutor, toolCallRecords: ToolCallRecord[]) {
-  return async (name: string, args: string): Promise<string> => {
-    process.stderr.write(formatToolStart(name) + '\n');
-
-    // 为 write_file 创建 diff 确认扩展（A-101）
-    let extensions: WriteExtensions | undefined;
-    if (name === 'write_file') {
-      extensions = {
-        onBeforeWrite: async (path, oldContent, newContent) => {
-          const accumulators: WriteAccumulator[] = [];
-          accumulateWrite(path, oldContent, newContent, accumulators);
-          const ok = await promptBatchWrites(accumulators);
-
-          // 记录摘要信息（A-102）
-          const acc = accumulators[0]!;
-          if (acc.diffResult.isBinary) {
-            toolCallRecords.push({
-              toolName: name,
-              status: ok ? 'ok' : 'failed',
-              summary: `${path}  ⚠二进制`,
-              error: ok ? undefined : '用户拒绝写入',
-            });
-          } else if (acc.diffResult.isNewFile) {
-            toolCallRecords.push({
-              toolName: name,
-              status: ok ? 'ok' : 'failed',
-              summary: `${path}  新建 ${acc.diffResult.additions} 行`,
-              error: ok ? undefined : '用户拒绝写入',
-            });
-          } else {
-            toolCallRecords.push({
-              toolName: name,
-              status: ok ? 'ok' : 'failed',
-              summary: `${path}  +${acc.diffResult.additions} −${acc.diffResult.removals}`,
-              error: ok ? undefined : '用户拒绝写入',
-            });
-          }
-          return ok;
-        },
-      };
-    }
-
-    try {
-      const result = await toolExec.execute(name, args, extensions);
-      process.stderr.write(formatToolResult(name, result) + '\n');
-      process.stderr.write(formatToolEnd(name, true));
-
-      // 记录非 write_file 工具的结果（A-102）
-      // write_file 已在 onBeforeWrite 回调中记录
-      if (name !== 'write_file') {
-        toolCallRecords.push({
-          toolName: name,
-          status: 'ok',
-          summary: makeToolSummary(name, args, result),
-        });
-      }
-
-      return result;
-    } catch (err) {
-      process.stderr.write(formatToolEnd(name, false));
-
-      // 记录失败的工具调用（A-102）
-      if (name !== 'write_file') {
-        toolCallRecords.push({
-          toolName: name,
-          status: 'failed',
-          summary: makeToolSummary(name, args, ''),
-          error: (err as Error).message.slice(0, 80),
-        });
-      }
-
-      throw err;
-    }
-  };
-}
-
-/**
- * 生成工具调用的简短摘要（A-102 辅助）
- *
- * 从工具名称、参数和结果中提取关键信息，
- * 生成单行摘要（配合 ToolCallRecord.summary 使用）。
- */
-function makeToolSummary(name: string, argsJson: string, result: string): string {
-  let args: Record<string, unknown> = {};
-  try {
-    args = JSON.parse(argsJson) as Record<string, unknown>;
-  } catch {
-    // 解析失败则用空对象
-  }
-
-  switch (name) {
-    case 'read_file': {
-      const path = String(args['path'] ?? '?');
-      const lines = result.split('\n').length;
-      return `${path}  ${lines} 行`;
-    }
-    case 'list_dir': {
-      const path = String(args['path'] ?? '.');
-      const entries = result.split('\n').filter((l) => l.trim()).length;
-      return `${path}  ${entries} 项`;
-    }
-    case 'search_memories': {
-      const query = String(args['query'] ?? '?');
-      const count = (result.match(/找到 (\d+) 条/) ?? [])[1] ?? '0';
-      return `"${query}"  ${count} 条`;
-    }
-    default:
-      return name;
-  }
-}
-
-/**
- * 重建 Agent 组件
- *
- * 在项目切换、领域切换时，需要重建所有依赖 ctx 的组件：
- * MessageHistory、ToolExecutor、AgentLoop
- *
- * @param provider LLM 提供者
- * @param projectPath 当前项目路径
- * @param ctx 领域上下文（来自 Agent 门面类的 pctx）
- * @param toolCallRecords A-102 工具调用记录数组（闭包引用，原地修改）
- */
-function rebuildAgentComponents(
-  provider: LlmProvider,
-  projectPath: string,
-  ctx: AgentBuildCtx,
-  toolCallRecords: ToolCallRecord[],
-): { history: MessageHistory; loop: AgentLoop } {
-  const history = new MessageHistory(ctx.topicStore, createTopicSummarizer(provider));
-  const toolExec = new ToolExecutor(projectPath, ctx.security, ctx.index);
-  const loop = new AgentLoop({
-    provider,
-    bootstrapMemories: ctx.bootstrapMemories,
-    toolExecutor: wrapToolExecutor(toolExec, toolCallRecords),
-  });
-  return { history, loop };
 }
 
 // createTopicSummarizer 已迁移到 agent 层（src/agent/topic-summarizer.ts）
