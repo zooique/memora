@@ -231,12 +231,12 @@ export class AgentLoop {
   }
 
   /**
-   * 刷新身份 prompt（P-603 · L6 修正）
+   * 刷新角色 prompt（P-603 · L6 修正）
    *
-   * 当身份切换时，更新系统 prompt 前缀的身份部分。
+   * 当角色切换时，更新系统 prompt 前缀的角色部分。
    * 保留 bootstrapMemories 和 toolDefinitions 不变，只替换 prefix。
    *
-   * @param newPrefix 新的系统 prompt 前缀（包含新身份 + 用户画像）
+   * @param newPrefix 新的系统 prompt 前缀（包含新角色 + 用户画像）
    */
   refreshPersonaPrefix(newPrefix: string): void {
     this.opts.systemPromptPrefix = newPrefix;

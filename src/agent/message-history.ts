@@ -274,21 +274,53 @@ export class MessageHistory {
     const date = this.currentDate;
     const topic = this.currentTopic;
 
+    // A5 修复：同 (date, topic, reason) 正在归档时复用 in-flight Promise，
+    // 防止并发归档同一话题（场景：用户切话题时 close() 和信号检测同时触发）
+    const inflightKey = `${date}|${topic}|${reason}`;
+    const inflight = this._archiveInflight.get(inflightKey);
+    if (inflight) {
+      return inflight;
+    }
+
+    const promise = this._doArchiveCurrentTopic(date, topic, reason);
+    this._archiveInflight.set(inflightKey, promise);
+    try {
+      return await promise;
+    } finally {
+      this._archiveInflight.delete(inflightKey);
+    }
+  }
+
+  /** A5 修复：归档 in-flight Promise 缓存 */
+  private readonly _archiveInflight: Map<string, Promise<TopicSummarizerResult | null>> = new Map();
+
+  /**
+   * 实际归档逻辑（A5 修复后从 archiveCurrentTopic 拆出）
+   */
+  private async _doArchiveCurrentTopic(
+    date: string,
+    topic: string,
+    reason: 'switch' | 'signal' | 'lazy' | 'midway',
+  ): Promise<TopicSummarizerResult | null> {
+    if (!this.summarizer) return null;
+    const summarizer = this.summarizer;
     const topicFile = await this.topicStore.read(date, topic);
     if (!topicFile) return null;
+    // TS strict 模式：消除 possibly undefined（已有早退守卫）
+    const tf = topicFile;
 
     // 消息数 < 2 跳过（单向话题无总结价值，用户可能只敲了 1 句就切了）
-    if (topicFile.messages.length < 2) return null;
+    if (tf.messages.length < 2) return null;
 
     // 已有摘要时的行为取决于 reason：
     //   switch/lazy → 幂等跳过（避免 LLM 重复调用）
     //   signal/midway → 强制重新归档（覆盖旧摘要）
-    if (topicFile.summary) {
+    if (tf.summary) {
       if (reason !== 'signal' && reason !== 'midway') return null;
     }
 
     try {
-      const result = await this.summarizer(topicFile.messages);
+      const result = await summarizer(tf.messages);
       // summarizer 返回 null 表示价值过低，跳过归档
       if (result === null) {
         logger.debug({ topic: `${date}-${topic}`, reason }, '话题价值过低，跳过归档');

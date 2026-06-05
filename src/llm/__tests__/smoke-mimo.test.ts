@@ -18,7 +18,7 @@ import { FileStore } from '@/memory/store.js';
 import { MemoryIndex } from '@/memory/index.js';
 import { MemoryLoader } from '@/memory/loader.js';
 
-// 用项目自带的示例记忆目录（含 identities + rule + skill 3 条必召）
+// 用项目自带的示例记忆目录（含 personas + rule + skill 3 条必召）
 const MEMORY_DIR = resolve('f:/zooique/memora/examples/memories');
 
 // 用系统临时目录避免硬编码绝对路径（CI 跨平台、并行安全）
@@ -47,11 +47,11 @@ describe('M-001 · 配置 + 记忆链路集成测试', () => {
     const loader = new MemoryLoader(fileStore, index);
     const { memories: bootstrap, loadResult } = await loader.bootstrap();
 
-    // 7 条全加载（identities + rule + skill + 4 tools），2 条必召（rule + skill，personality 由 PersonaManager 单独注入）
+    // 7 条全加载（personas + rule + skill + 4 tools），2 条必召（rule + skill，personality 由 PersonaManager 单独注入）
     expect(loadResult.loaded).toBe(7);
     expect(bootstrap.length).toBe(2);
 
-    // bootstrap 不应包含 personality（PersonaManager 单独管理身份）
+    // bootstrap 不应包含 personality（PersonaManager 单独管理角色）
     const personality = bootstrap.find((m) => m.type === 'personality');
     expect(personality).toBeUndefined();
 

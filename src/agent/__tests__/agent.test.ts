@@ -38,10 +38,10 @@ function seedProject(_projectPath: string, configDir: string, dataDir: string): 
   mkdirSync(join(dataDir, 'topics'), { recursive: true });
 
   // 配置目录骨架（loader 扫描这里作为 Agent 级配置）
-  mkdirSync(join(configDir, 'identities'), { recursive: true });
+  mkdirSync(join(configDir, 'personas'), { recursive: true });
   mkdirSync(join(configDir, 'rules'), { recursive: true });
   writeFileSync(
-    join(configDir, 'identities', 'default.md'),
+    join(configDir, 'personas', 'default.md'),
     '---\nid: default-personality\ntype: personality\npermanence: always\nname: 默认人格\nweight: 1\n---\n\n你是一个测试助手。',
     'utf-8',
   );
@@ -325,9 +325,9 @@ describe('Agent · addRule() · Q-701', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-test-addrule-'));
-    mkdirSync(join(tmpDir, 'identities'), { recursive: true });
+    mkdirSync(join(tmpDir, 'personas'), { recursive: true });
     writeFileSync(
-      join(tmpDir, 'identities', 'default.md'),
+      join(tmpDir, 'personas', 'default.md'),
       '---\nname: default\nkeywords: 测试\n---\n\n默认角色',
       'utf-8',
     );

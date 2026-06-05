@@ -77,14 +77,14 @@ export class MemoryLoader {
    * 2. 从索引读 always + domain 必召记忆
    *
    * 注：personality 类型记忆由 PersonaManager 单独处理，
-   * bootstrap 中自动跳过 personality（避免与 systemPromptPrefix 中的身份 prompt 重复）。
+   * bootstrap 中自动跳过 personality（避免与 systemPromptPrefix 中的角色 prompt 重复）。
    *
    * @returns 启动时必召的所有记忆（用于初始化 Agent Loop 的 system prompt）
    */
   async bootstrap(): Promise<{ memories: Memory[]; loadResult: LoadResult }> {
     const loadResult = await this.loadAllToIndex();
     const always = await this.index.getByPermanence('always');
-    // 跳过 personality 类型——PersonaManager 单独管理身份注入
+    // 跳过 personality 类型——PersonaManager 单独管理角色注入
     const nonPersonality = always.filter((m) => m.type !== MemoryType.PERSONALITY);
     const domain = await this.index.getByPermanence('domain');
     const memories = [...nonPersonality, ...domain].filter(Boolean) as Memory[];

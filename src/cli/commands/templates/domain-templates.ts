@@ -18,7 +18,7 @@ export interface DomainTemplate {
   name: string;
   /** 模板简短描述 */
   description: string;
-  /** agent-config/identities/ 下的身份内容 */
+  /** agent-config/personas/ 下的角色内容 */
   personality: string;
   /** 规则记忆列表（写入 agent-config/rules/） */
   rules: TemplateMemory[];

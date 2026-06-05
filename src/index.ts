@@ -34,6 +34,11 @@ export type { PersonaMode } from './persona/personaManager.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/agent.js';
 export { loadConfig } from './config/loader.js';
 export type { Config } from './config/loader.js';
+// P1-3 修复：导出宿主程序调用 addRule() 所需的类型
+export { MemoryType, Permanence } from './memory/types.js';
+export type { Memory, MemoryTypeValue, PermanenceValue } from './memory/types.js';
+// C1 修复：导出宿主程序调用 addSkill() 所需的 SkillEntry 类型
+export type { SkillEntry } from './skill/skillManager.js';
 
 // ─── CLI 入口：仅在直接运行时执行（非 import 时） ─────────
 // 判断依据：当前模块路径 === Node.js 执行入口（process.argv[1]）
@@ -63,7 +68,7 @@ if (isDirectRun) {
 
   program
     .command('init')
-    .description('初始化项目（生成 identities/ / rules/ / .memora/）')
+    .description('初始化项目（生成 personas/ / rules/ / .memora/）')
     .option('-p, --project <path>', '指定项目目录', process.cwd())
     .option('-d, --domain <name>', '领域模板 code|novel（可选，不指定则只生成 .memora/ 骨架）')
     .option('-u, --user', '用户模式：交互式生成 ~/.memora/agent-config/（模式 2）')

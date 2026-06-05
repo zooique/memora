@@ -58,6 +58,12 @@ export class WorkProjectionManager {
   ) {}
 
   /**
+   * A4 修复：in-flight Promise 缓存，防止同文件并发读取时重复调用 LLM
+   * key: sourcePath（同一文件路径只会有一个未完成的生成 Promise）
+   */
+  private readonly _inflight: Map<string, Promise<WorkProjectionEntry | null>> = new Map();
+
+  /**
    * 检查并更新作品投影
    *
    * 核心逻辑：
@@ -67,12 +73,39 @@ export class WorkProjectionManager {
    *   4. 有投影但 hash 不同 → 文件已修改 → 重新生成
    *   5. 有投影且 hash 相同 → 跳过
    *
+   * A4 修复：同文件并发调用时复用同一 in-flight Promise，避免重复 LLM 调用。
+   *
    * @param filePath 作品文件路径
    * @param content 文件内容
    * @param fileName 文件名（用于生成标题）
    * @returns 投影条目，跳过生成返回已有投影
    */
   async ensureProjection(
+    filePath: string,
+    content: string,
+    fileName?: string,
+  ): Promise<WorkProjectionEntry | null> {
+    // A4 修复：先检查是否已有同文件路径的 in-flight Promise
+    const inflight = this._inflight.get(filePath);
+    if (inflight) {
+      return inflight;
+    }
+
+    // A4 修复：创建新 Promise 时立刻占位，后续调用会共享
+    const promise = this._doEnsureProjection(filePath, content, fileName);
+    this._inflight.set(filePath, promise);
+    try {
+      return await promise;
+    } finally {
+      // 不论成功失败都清理占位（让下一次调用重新走流程）
+      this._inflight.delete(filePath);
+    }
+  }
+
+  /**
+   * 实际生成投影的核心逻辑（A4 修复后从 ensureProjection 拆出）
+   */
+  private async _doEnsureProjection(
     filePath: string,
     content: string,
     fileName?: string,

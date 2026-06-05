@@ -6,7 +6,7 @@
 
 ## 一、核心理念
 
-**万物皆是记忆**。身份、规则、技能、工具定义、对话历史——全部统一为「记忆」，通过
+**万物皆是记忆**。角色、规则、技能、工具定义、对话历史——全部统一为「记忆」，通过
 `类型 + 永久性` 两个维度区分。
 
 **单 Agent 模型**。Memora 被宿主接入后，就是该程序的唯一 Agent。所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
@@ -18,16 +18,16 @@ SQLite）是所有模式共有的基础能力。
 ## 二、Agent 的三个模块
 
 ```
-Agent = 设定 + 身份 + 技能
+Agent = 设定 + 角色 + 技能
 ```
 
-| 模块     | 目录          | 是什么           | 例子                         |
-| -------- | ------------- | ---------------- | ---------------------------- |
-| **设定** | `rules/`      | Agent 的行为规范 | 写作规范、安全基线、代码风格 |
-| **身份** | `identities/` | 当前扮演的角色   | 作家、编辑、程序员、翻译     |
-| **技能** | `skills/`     | 可调用的能力模块 | 章节创作、魔法体系、代码审查 |
+| 模块     | 目录        | 是什么           | 例子                         |
+| -------- | ----------- | ---------------- | ---------------------------- |
+| **设定** | `rules/`    | Agent 的行为规范 | 写作规范、安全基线、代码风格 |
+| **角色** | `personas/` | 当前扮演的角色   | 作家、编辑、程序员、翻译     |
+| **技能** | `skills/`   | 可调用的能力模块 | 章节创作、魔法体系、代码审查 |
 
-身份由话题关键词自动触发（也可手动锁定），技能始终可用。身份通过
+角色由话题关键词自动触发（也可手动锁定），技能始终可用。角色通过
 `systemPromptPrefix` 注入到系统提示词中，不进入 bootstrap 记忆加载。
 
 ## 三、目录结构
@@ -35,7 +35,7 @@ Agent = 设定 + 身份 + 技能
 ```
 宿主程序/
 ├── agent-config/              ← Agent 级配置（唯一）
-│   ├── identities/            ← 身份配置（.md 文件）
+│   ├── personas/            ← 角色配置（.md 文件）
 │   ├── rules/                 ← Agent 级规则（所有子项目共享）
 │   └── skills/                ← Agent 级技能（所有子项目共享）
 │
@@ -67,7 +67,7 @@ Agent = 设定 + 身份 + 技能
 ```
 程序目录/
 ├── agent-config/          ← 随程序发布，用户无需关心
-│   ├── identities/
+│   ├── personas/
 │   ├── rules/
 │   └── skills/
 └── .memora/               ← 运行时自动生成
@@ -90,7 +90,7 @@ const agent = new Agent({
 用户目录/
 └── ~/.memora/
     ├── agent-config/      ← 用户手动创建/编辑
-    │   ├── identities/
+    │   ├── personas/
     │   │   └── 我的程序员.md
     │   ├── rules/
     │   │   └── 代码风格.md
@@ -113,7 +113,7 @@ memora init
 # > 你的 Agent 叫什么名字？
 # > 它主要帮你做什么？（编程 / 写作 / 日常对话）
 # > 你希望它有什么性格？（严谨 / 幽默 / 简洁）
-# → 自动生成 identities/ + rules/
+# → 自动生成 personas/ + rules/
 ```
 
 ### 模式 3：Agent 智能总结（配置权限交给 Agent）
@@ -122,7 +122,7 @@ Agent 从日常对话中自动提取用户偏好，生成配置建议，用户�
 
 ```
 用户对话 → 定期触发 LLM 反思 → 生成配置建议 → 用户确认
-    → 写入配置文件（agent-config/rules/、identities/、skills/）
+    → 写入配置文件（agent-config/rules/、personas/、skills/）
     → 下次启动时 MemoryLoader 扫描 → 加载到 SQLite
 ```
 
@@ -143,11 +143,11 @@ Agent 建议：
 
 与现有机制的关系：
 
-| 机制                            | 产出                                | 存储位置                 | 触发方式           |
-| ------------------------------- | ----------------------------------- | ------------------------ | ------------------ |
-| **UserProfile**（已实现）       | 用户画像                            | SQLite                   | 实时归档，自动确认 |
-| **AutoConfigRefiner**（计划中） | 配置文件（rules/identities/skills） | `agent-config/` 文件系统 | 定期反思，用户确认 |
-| `addRule()`（已实现）           | 规则记忆                            | SQLite（运行时注入）     | 宿主程序主动调用   |
+| 机制                            | 产出                              | 存储位置                 | 触发方式           |
+| ------------------------------- | --------------------------------- | ------------------------ | ------------------ |
+| **UserProfile**（已实现）       | 用户画像                          | SQLite                   | 实时归档，自动确认 |
+| **AutoConfigRefiner**（计划中） | 配置文件（rules/personas/skills） | `agent-config/` 文件系统 | 定期反思，用户确认 |
+| `addRule()`（已实现）           | 规则记忆                          | SQLite（运行时注入）     | 宿主程序主动调用   |
 
 关键区别：`addRule()`
 写入 SQLite（会话级），AutoConfigRefiner 写入配置文件（持久化，重启后依然生效）。
@@ -311,19 +311,22 @@ agent.registerTool(
 
 工具实现完全是宿主的自由，Memora 只负责：工具定义 → LLM 调用 → 投影自动生成。
 
-## 七、自我进化机制（设计阶段）
+## 七、自我进化机制
 
 > 对应「模式 3 ·
 > Agent 智能总结」——Agent 从白纸开始，通过对话自动进化到与用户契合的形态。
+>
+> **实现状态**：配置建议 API（`onConfigSuggestion` /
+> `confirmConfigSuggestion`）已实现并导出；自动反思触发器（`AutoConfigRefiner`）仍在设计阶段。
 
 ### 核心原则：内核管"魂"，宿主管"体"
 
-自我进化的本质是**配置文件的自动积累**。Agent 从对话中提取规则、身份 traits，写入
+自我进化的本质是**配置文件的自动积累**。Agent 从对话中提取规则、角色 traits，写入
 `agent-config/` 下的配置文件。
 
 ```
 对话 → AutoConfigRefiner 定期反思 → 生成配置建议
-    → 用户确认 → 写入配置文件（agent-config/rules/、identities/、skills/）
+    → 用户确认 → 写入配置文件（agent-config/rules/、personas/、skills/）
     → 下次启动时 MemoryLoader 扫描 → 加载到 SQLite
     → inspect() 暴露当前状态 → 宿主读取 → 决定呈现方式
 ```
@@ -332,7 +335,7 @@ agent.registerTool(
 
 | 职责         | 说明                                                            |
 | ------------ | --------------------------------------------------------------- |
-| **定期反思** | 每 N 轮对话，调用 LLM 分析对话内容，提取可用的规则和身份 traits |
+| **定期反思** | 每 N 轮对话，调用 LLM 分析对话内容，提取可用的规则和角色 traits |
 | **生成建议** | 形成结构化建议（类型 + 名称 + 内容 + 置信度）                   |
 | **回调通知** | 通过 `onConfigSuggestion` 回调通知宿主，由宿主决定如何展示      |
 
@@ -340,7 +343,7 @@ agent.registerTool(
 // 内核暴露的回调接口（计划中）
 agent.onConfigSuggestion((suggestion) => {
   // suggestion = {
-  //   type: 'rule' | 'identity' | 'skill',
+  //   type: 'rule' | 'persona' | 'skill',
   //   name: '代码风格',
   //   content: '优先使用 TypeScript strict 模式，禁止 any 类型',
   //   confidence: 0.85,
@@ -373,7 +376,7 @@ const snap = agent.inspect();
 ┌────────────── 内核（魂）──────────────┐
 │  对话 → AutoConfigRefiner              │
 │       → 规则：「用户喜欢简洁代码」      │
-│       → 身份 trait：「性格：严谨」      │
+│       → 角色 trait：「性格：严谨」      │
 │       → 写入配置文件（agent-config/）   │
 │       → 启动时 MemoryLoader 加载到 SQLite│
 │                                        │
@@ -399,7 +402,7 @@ const snap = agent.inspect();
 | 层级     | 内容                                                                     |
 | -------- | ------------------------------------------------------------------------ |
 | 进化触发 | 每次 `chat()` 后检查 `inspect().bootstrap.total`，跨越阈值时触发进化动画 |
-| 形态映射 | 规则数量 + 身份 traits → 宠物外观的映射表                                |
+| 形态映射 | 规则数量 + 角色 traits → 宠物外观的映射表                                |
 | 视觉渲染 | SVG/像素画 + 动画帧 + 粒子特效                                           |
 | 桌面挂件 | 系统托盘、窗口置顶、拖拽交互                                             |
 | 建议展示 | 收到 `onConfigSuggestion` 回调时，弹出气泡让用户确认                     |
@@ -408,68 +411,198 @@ const snap = agent.inspect();
 
 ## 八、API 速查
 
-| 方法                                     | 说明                                                |
-| ---------------------------------------- | --------------------------------------------------- |
-| `agent.init()`                           | 初始化（创建 DB、加载配置、连接 LLM）               |
-| `agent.chat(input)`                      | 流式对话，返回 AsyncGenerator                       |
-| `agent.chatSync(input)`                  | 同步对话，返回完整回复字符串                        |
-| `agent.addRule(memory)`                  | 动态注入规则（type=rule, permanence=always/domain） |
-| `agent.registerTool(def, handler)`       | 注册自定义工具                                      |
-| `agent.switchProject(name)`              | 切换到其他子项目                                    |
-| `agent.listProjects()`                   | 列出已注册的子项目                                  |
-| `agent.listPersonas()`                   | 列出可用身份                                        |
-| `agent.switchPersona(name)`              | 手动切换到指定身份                                  |
-| `agent.setPersonaMode('auto'\|'manual')` | 设置身份切换模式                                    |
-| `agent.inspect()`                        | 返回 Agent 当前状态快照（规则数、身份列表等）       |
-| `agent.onConfigSuggestion(handler)`      | 注册配置建议回调（模式 3）                          |
-| `agent.confirmConfigSuggestion(suggest)` | 确认建议并写入配置文件（模式 3）                    |
-| `agent.close()`                          | 安全关闭（释放锁 + 关闭 Agent 级数据库）            |
+> 完整定义见 `src/index.ts` 导出。所有方法在未调用 `init()` 时调用会抛
+> `configError`。
 
-## 九、多 Provider 路由（设计阶段）
+### 8.1 生命周期
 
-> **状态**：📋 设计阶段，未实现。等 2+ 个宿主项目有实际需求时再落地。
+| 方法              | 说明                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| `agent.init()`    | 初始化（创建 DB、加载配置、连接 LLM）。可重复调用，会先 `await close()` 清理旧资源。          |
+| `agent.close()`   | 安全关闭（释放锁 + 关闭 Agent 级数据库）。切换项目不需要 `close()`，仅 Agent 整体退出时调用。 |
+| `agent.inspect()` | 返回 Agent 当前状态快照（4 层：working / bootstrap / archive / mounted）。未初始化时抛错。    |
 
-### 9.1 问题
+### 8.2 对话
 
-Agent 内部有多个 LLM 消费者，质量/成本需求不同：
+| 方法                    | 说明                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| `agent.chat(input)`     | 流式对话，返回 `AsyncGenerator<AgentChunk>`。**已加并发锁**，同一时间只能有一个 chat() 在跑。 |
+| `agent.chatSync(input)` | 同步对话，内部收集 `chat()` 所有 `text` chunk 后一次性返回。                                  |
+| `agent.getMessages()`   | 获取工作记忆的完整消息列表（只读）。未初始化时抛错（**不要**误以为空数组=全新对话）。         |
 
-| 消费者                | 用途         | 质量要求 | 成本敏感 |
-| --------------------- | ------------ | -------- | -------- |
-| AgentLoop             | 用户对话     | 高       | 低       |
-| TopicSummarizer       | 话题归档摘要 | 中       | 高       |
-| UserProfile           | 用户画像提取 | 中       | 高       |
-| WorkProjectionManager | 作品投影生成 | 中       | 高       |
-| AutoConfigRefiner     | 配置建议反思 | 中       | 高       |
+#### 流式 chunk 类型（`AgentChunk`）
 
-目前所有消费者共用一个 Provider，无法按用途路由。
-
-### 9.2 设计：前台/后台双通道
-
-```
-前台 API（chat 通道）           后台 API（background 通道）
-┌─────────────────┐            ┌─────────────────┐
-│ AgentLoop.chat  │            │ TopicSummarizer  │
-│ 质量要求：高     │            │ UserProfile      │
-│ 模型：GPT-4o    │            │ WorkProjection   │
-│ 延迟：低        │            │ AutoConfigRefiner│
-│ 成本：高        │            │ 质量要求：中      │
-└─────────────────┘            │ 模型：DeepSeek    │
-                               │ 延迟：不限        │
-                               │ 成本：低          │
-                               └─────────────────┘
+```typescript
+type AgentChunk =
+  | { type: 'recall'; count: number } // 记忆召回通知
+  | { type: 'thinking'; phase: ThinkingPhase } // 进度反馈（recalling / processing / archiving）
+  | { type: 'text'; content: string } // 文本片段
+  | { type: 'tool_start'; name: string; args?: string } // 工具调用开始
+  | { type: 'tool_result'; name: string; ok: boolean; summary?: string } // 工具调用结果
+  | { type: 'done' }; // 结束标记
 ```
 
-### 9.3 配置格式
+**注意**：chunk 字段是 `content` / `count` / `name`，不是文档示例中常见的
+`delta` / `text`。宿主程序应严格按此类型解构。
+
+### 8.3 规则与技能
+
+| 方法                                              | 说明                                                                                   |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `agent.addRule(memory)`                           | 注入规则（type=rule, permanence=always/domain）。写入 SQLite + 注入 system prompt。    |
+| `agent.addSimpleRule(name, content, permanence?)` | 便捷方法，自动填充 id/tags/weight（v0.5+）。                                           |
+| `agent.addSkill(memory)`                          | 注入技能（type=skill, permanence=domain）。注册到内存 + 写入 SQLite + 重建关键词索引。 |
+| `agent.addSimpleSkill(name, content, keywords?)`  | 便捷方法（v0.5+）。keywords 数组用于 AgentLoop 触发匹配。                              |
+
+### 8.4 工具
+
+| 方法                                      | 说明                                                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `agent.registerTool(definition, handler)` | 注册自定义工具。`definition.name` 必须符合标识符规范（`/^[a-zA-Z_][a-zA-Z0-9_]*$/`），否则抛错。重复注册同名工具会覆盖。 |
+| `agent.executeTool(name, args)`           | 主动执行已注册的工具（一般不直接调用，AgentLoop 会自动触发）。                                                           |
+| `agent.getToolDefinitions()`              | 获取所有已注册工具的 OpenAI 兼容 schema（供宿主程序自己接入 LLM 时使用）。                                               |
+
+工具的 `parameters` 字段应符合 OpenAI Function Calling 的 JSON
+Schema 格式。`ToolExecutor`
+在执行前会自动按 schema 校验 args 并 coerce 类型（string→number 等）。
+
+### 8.5 角色
+
+| 方法                         | 说明                                                           |
+| ---------------------------- | -------------------------------------------------------------- |
+| `agent.listPersonas()`       | 列出可用角色（来自 `configDir/personas/`）。                   |
+| `agent.switchPersona(name)`  | 手动切换到指定角色（`personaMode` 设为 'manual'）。            |
+| `agent.setPersonaMode(mode)` | 设置角色切换模式：'auto'（关键词触发）/ 'manual'（手动锁定）。 |
+
+### 8.6 Provider 管理
+
+| 方法                              | 说明                                                                                                     |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `agent.addProvider(name, config)` | 运行时动态添加 Provider（不写入配置文件，重启后失效）。**不暴露完整 API Key**（只显示前 3 位 + `***`）。 |
+| `agent.switchProvider(name)`      | 切换当前激活的 Provider。name 不存在时抛错。                                                             |
+| `agent.listProviders()`           | 列出所有已注册 Provider 的别名。                                                                         |
+| `agent.getActiveProviderName()`   | 获取当前激活的 Provider 名（无则返回 null）。                                                            |
+| `agent.currentProvider` (getter)  | 只读访问当前 Provider 实例（未初始化时返回 null）。                                                      |
+
+> 配置文件中已配置的 Provider 在 `init()` 时自动加载；运行时 `addProvider()`
+> 是**额外**的，不影响配置文件的真理源地位。
+
+### 8.7 记忆查询
+
+| 方法                                  | 说明                                                                         |
+| ------------------------------------- | ---------------------------------------------------------------------------- |
+| `agent.searchMemories(query, limit?)` | 关键词搜索记忆（底层走 SQLite FTS5）。`query` 必须非空，`limit` 必须正整数。 |
+| `agent.listAllTopics()`               | 列出所有话题文件名。                                                         |
+| `agent.listProjects()`                | 列出已注册的子项目。                                                         |
+| `agent.switchProject(name)`           | 切换到其他子项目（Agent 级记忆不丢）。                                       |
+| `agent.switchTopic(name)`             | 切换当前话题（旧话题会自动归档）。                                           |
+
+### 8.8 自我进化（部分实现）
+
+| 方法                                        | 状态                           | 说明                                                                                                                         |
+| ------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `agent.onConfigSuggestion(handler)`         | **接口已实现**，触发器设计阶段 | 注册配置建议回调。`AutoConfigRefiner`（自动反思）目前未实现，handler 仅在手动调用 `confirmConfigSuggestion()` 时被模拟触发。 |
+| `agent.confirmConfigSuggestion(suggestion)` | ✅ 已实现                      | 写入配置文件（`agent-config/rules/`、`personas/`、`skills/`），下次启动自动加载。                                            |
+
+### 8.9 写入二次确认
+
+| 方法                                         | 说明                                                                                                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `securityGuard.onWriteConfirmation(handler)` | 注册自定义写入确认回调（**宿主程序接入关键 API**）。`requestWriteConfirmation()` 走自定义 UI，未注册时回退到 readline+stdin。回调抛错按 fail-closed 处理。 |
+
+`WriteConfirmationInfo` 类型：
+
+```typescript
+interface WriteConfirmationInfo {
+  targetPath: string; // 目标文件绝对路径
+  tool: string; // 工具名（如 'write_file'）
+  description?: string; // 人类可读描述
+  permission: 'owner' | 'guest';
+  needsConfirm: boolean; // owner + confirmWrites=false 时为 false
+}
+```
+
+### 8.10 异步归档等待
+
+| 方法                                | 说明                                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `agent.waitForArchives(timeoutMs?)` | 等待所有 in-flight 归档任务完成（默认 5 秒超时）。`close()` 内部已自动调用此方法，宿主程序一般不需要直接使用。 |
+
+---
+
+> **API 设计原则**：所有公开方法在错误状态下会抛 `configError` / `llmError`
+> 等友好错误（带可操作的 `suggestions[]`），宿主程序可在最外层 `try/catch`
+> 统一处理。**不会**静默返回 null 或空数组（除文档明确说明的 getter 外）。
+
+## 九、Provider 管理
+
+> 文档 9.x 节按"已实现 / 设计阶段"明确区分。详细 API 见 §8.6。
+
+### 9.1 已实现：多 Provider 注册与切换
+
+Agent 支持运行时管理多个 LLM
+Provider，每个 Provider 有独立别名（`name`），可随时切换。
+
+```typescript
+// 1. 配置文件里配置多个（init 时自动加载）
+// agent-config/llm.json:
+// {
+//   "providers": {
+//     "openai": { "provider": "openai-compatible", "apiKey": "sk-...", "model": "gpt-4o" },
+//     "deepseek": { "provider": "openai-compatible", "apiKey": "sk-...", "model": "deepseek-chat" }
+//   },
+//   "active": "openai"
+// }
+
+// 2. 运行时动态添加（不写入配置文件，重启后失效）
+agent.addProvider('kimi', {
+  provider: 'openai-compatible',
+  baseUrl: 'https://api.moonshot.cn/v1',
+  apiKey: process.env.KIMI_API_KEY!,
+  model: 'moonshot-v1-128k',
+});
+
+// 3. 切换
+agent.switchProvider('deepseek');
+
+// 4. 查询
+agent.listProviders(); // ['openai', 'deepseek', 'kimi']
+agent.getActiveProviderName(); // 'deepseek'
+agent.currentProvider; // LlmProvider 实例
+```
+
+**API Key 保护**：`addProvider()` 不暴露完整 API Key（只显示前 3 位 +
+`***`），宿主程序打印日志时可放心调用。
+
+### 9.2 设计阶段：前台/后台双通道路由
+
+> **状态**：📋 设计阶段。`LlmProvider` 已支持多实例，但消费者（`TopicSummarizer`
+> / `UserProfile` / `WorkProjection` / `AutoConfigRefiner`）目前仍复用 chat
+> Provider。
+
+**目标**：不同消费者按质量/成本需求路由到不同 Provider。
+
+| 消费者                | 质量要求 | 成本敏感 | 期望通道     |
+| --------------------- | -------- | -------- | ------------ |
+| AgentLoop（用户对话） | 高       | 低       | chat（默认） |
+| TopicSummarizer       | 中       | 高       | background   |
+| UserProfile           | 中       | 高       | background   |
+| WorkProjection        | 中       | 高       | background   |
+| AutoConfigRefiner     | 中       | 高       | background   |
+
+**预留配置格式**（设计阶段，尚未实现）：
 
 ```typescript
 const agent = new Agent({
   config: {
     llm: {
-      // 前台：用户对话（必填）
-      chat: { provider: 'openai', model: 'gpt-4o', apiKey: 'sk-...' },
-      // 后台：归档/投影/画像（可选，不配则复用 chat）
+      chat: {
+        provider: 'openai-compatible',
+        model: 'gpt-4o',
+        apiKey: 'sk-...',
+      },
       background: {
-        provider: 'deepseek',
+        provider: 'openai-compatible',
         model: 'deepseek-chat',
         apiKey: 'sk-...',
       },
@@ -478,31 +611,16 @@ const agent = new Agent({
 });
 ```
 
-**向后兼容**：不配 `background` 时，所有消费者复用 `chat`——零破坏性。
-
-### 9.4 内核/宿主边界
-
-| 层级 | 职责               | 说明                                            |
-| ---- | ------------------ | ----------------------------------------------- |
-| 内核 | LlmRouter 路由机制 | 根据 consumer 类型选择 chat/background Provider |
-| 内核 | Provider 注册接口  | 支持注册多个 Provider 实例                      |
-| 宿主 | 配置哪些 API       | 决定用哪个 Provider、什么密钥                   |
-| 宿主 | 不感知路由细节     | 宿主不知道"归档需要调 LLM"                      |
-
-### 9.5 实现预留
-
-- `src/llm/provider.ts` 的 `LlmProvider` 抽象类已支持多实例
-- `ChatOptions` 已有 `model` 字段，可扩展 `channel?: 'chat' | 'background'`
-- 配置层 `src/config/` 的 `LlmConfig` 类型预留 `chat` + `background` 双通道
+不配 `background` 时，所有消费者复用 `chat`——零破坏性。
 
 ## 十、关键约束
 
-1. **configDir** 指向 Agent 级配置目录（`identities/` + `rules/` +
+1. **configDir** 指向 Agent 级配置目录（`personas/` + `rules/` +
    `skills/`），所有子项目共享
 2. **项目级 `.memora/`** 只放 `rules/` 和 `skills/`，不放 `memora.db`
-3. **身份由关键词自动触发**，用户说「帮我写小说」→ 自动切换到「作家」角色
+3. **角色由关键词自动触发**，用户说「帮我写小说」→ 自动切换到「作家」角色
 4. **对话历史跨子项目持久化**，切换子项目不会丢失之前聊过的内容
-5. `registerTool()` 和 `addRule()` 必须在 `init()` 之后调用
+5. `registerTool()` 和 `addRule()` / `addSkill()` 必须在 `init()` 之后调用
 6. **作品原始内容不进 SQLite**，Agent 通过工具按需读取，只存轻量投影
 7. **配置文件是真理源**，`agent-config/`
    下的配置由 MemoryLoader 启动时扫描加载到 SQLite；`addRule()`

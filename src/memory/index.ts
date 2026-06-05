@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SQLite 索引
  *
  * 单一 memories 表 + memory_type 字段区分 5 种记忆
@@ -17,6 +17,7 @@ import { dirname } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { logger } from '@/logging/logger.js';
 import type { Memory, MemoryTypeValue, PermanenceValue } from './types.js';
+import { isValidMemoryType, isValidPermanence, MemoryType, Permanence } from './types.js';
 import { segmentText } from './segmenter.js';
 
 /**
@@ -136,6 +137,18 @@ export class MemoryIndex {
    * M-201：暂未启用 FTS5（详见 init() 注释）。当前仅写主表，search() 在应用层 tokenize。
    */
   async upsert(memory: Memory): Promise<void> {
+    // A3 修复：防御性校验 type 字段，防止非法值静默写入 SQLite
+    if (!isValidMemoryType(memory.type)) {
+      throw new Error(
+        `非法的 memory.type："${memory.type}"，合法值：${Object.values(MemoryType).join(', ')}`,
+      );
+    }
+    // A3 修复：防御性校验 permanence 字段
+    if (!isValidPermanence(memory.permanence)) {
+      throw new Error(
+        `非法的 memory.permanence："${memory.permanence}"，合法值：${Object.values(Permanence).join(', ')}`,
+      );
+    }
     await this.ready();
     await runAsync(
       this.db,

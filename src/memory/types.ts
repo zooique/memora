@@ -20,13 +20,28 @@ export const MemoryType = {
 export type MemoryTypeValue = (typeof MemoryType)[keyof typeof MemoryType];
 
 /**
+ * A3 修复：校验字符串是否为合法的 MemoryType
+ * 用于宿主程序传入 type 字段时的防御性检查，防止非法值静默写入 SQLite。
+ */
+export function isValidMemoryType(value: string): value is MemoryTypeValue {
+  return Object.values(MemoryType).includes(value as MemoryTypeValue);
+}
+
+/**
+ * 校验字符串是否为合法的 Permanence
+ */
+export function isValidPermanence(value: string): value is PermanenceValue {
+  return Object.values(Permanence).includes(value as PermanenceValue);
+}
+
+/**
  * 类型到目录的映射（供 FileStore 和 init.ts 共用）
  *
- * 集中定义避免多处复制粘贴。值代表目录名（如 rules/、identities/）。
- * personality 类型映射到 identities/ 目录（与接入指南对齐）。
+ * 集中定义避免多处复制粘贴。值代表目录名（如 rules/、personas/）。
+ * personality 类型映射到 personas/ 目录（与代码 Persona 术语一致，区别于用户身份信息）。
  */
 export const TYPE_TO_DIR_MAP: Record<MemoryTypeValue, string> = {
-  personality: 'identities',
+  personality: 'personas',
   rule: 'rules',
   skill: 'skills',
   tool: 'tools',

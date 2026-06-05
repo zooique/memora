@@ -29,7 +29,7 @@ describe('init 命令 · 项目初始化', () => {
 
     const memoraDir = join(projectPath, '.memora');
     expect(existsSync(memoraDir)).toBe(true);
-    expect(existsSync(join(memoraDir, 'identities'))).toBe(true);
+    expect(existsSync(join(memoraDir, 'personas'))).toBe(true);
     expect(existsSync(join(memoraDir, 'rules'))).toBe(true);
     expect(existsSync(join(memoraDir, 'skills'))).toBe(true);
     expect(existsSync(join(memoraDir, 'tools'))).toBe(true);
@@ -41,7 +41,7 @@ describe('init 命令 · 项目初始化', () => {
   it('应该写入默认人格记忆（通过 FileStore）', async () => {
     await initCommand({ project: projectPath });
 
-    const personalityPath = join(projectPath, '.memora', 'identities', 'default.md');
+    const personalityPath = join(projectPath, '.memora', 'personas', 'default.md');
     expect(existsSync(personalityPath)).toBe(true);
     const content = readFileSync(personalityPath, 'utf-8');
     expect(content).toContain('默认人格');
@@ -78,16 +78,16 @@ describe('init 命令 · 项目初始化', () => {
 
     const configDir = join(projectPath, 'agent-config');
     expect(existsSync(configDir)).toBe(true);
-    expect(existsSync(join(configDir, 'identities'))).toBe(true);
+    expect(existsSync(join(configDir, 'personas'))).toBe(true);
     expect(existsSync(join(configDir, 'rules'))).toBe(true);
     expect(existsSync(join(configDir, 'skills'))).toBe(true);
     expect(existsSync(join(configDir, 'tools'))).toBe(true);
   });
 
-  it('--domain code 应该生成包含 Memora 人格的 identities/code.md', async () => {
+  it('--domain code 应该生成包含 Memora 人格的 personas/code.md', async () => {
     await initCommand({ project: projectPath, domain: 'code' });
 
-    const personalityPath = join(projectPath, 'agent-config', 'identities', 'code.md');
+    const personalityPath = join(projectPath, 'agent-config', 'personas', 'code.md');
     expect(existsSync(personalityPath)).toBe(true);
     const content = readFileSync(personalityPath, 'utf-8');
     expect(content).toContain('Memora');
@@ -126,7 +126,7 @@ describe('init 命令 · 项目初始化', () => {
   it('--domain novel 应该生成包含"墨羽"人格的配置', async () => {
     await initCommand({ project: projectPath, domain: 'novel' });
 
-    const personalityPath = join(projectPath, 'agent-config', 'identities', 'novel.md');
+    const personalityPath = join(projectPath, 'agent-config', 'personas', 'novel.md');
     expect(existsSync(personalityPath)).toBe(true);
     const content = readFileSync(personalityPath, 'utf-8');
     expect(content).toContain('墨羽');

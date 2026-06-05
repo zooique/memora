@@ -120,7 +120,7 @@ export function formatWelcome(opts: {
   skippedCount: number;
   globalRulesCount: number;
   currentTopic: string;
-  /** 当前激活的身份名称 */
+  /** 当前激活的角色名称 */
   activePersona?: string;
 }): string {
   const lines = [
@@ -134,7 +134,7 @@ export function formatWelcome(opts: {
       opts.skippedCount > 0 ? pc.yellow(` ⚠️ 跳过 ${opts.skippedCount} 条`) : ''
     }${opts.globalRulesCount > 0 ? pc.dim(` · 全局规则 ${opts.globalRulesCount} 条`) : ''}`,
     `${pc.dim('💬 当前话题：')}  ${pc.cyan(opts.currentTopic)}`,
-    `${pc.dim('🎭 当前身份：')}  ${pc.cyan(opts.activePersona ?? '无')}`,
+    `${pc.dim('🎭 当前角色：')}  ${pc.cyan(opts.activePersona ?? '无')}`,
     pc.dim(HORIZONTAL.repeat(60)),
     `${pc.gray('输入 ')}${pc.bold('/exit')}${pc.gray(' 退出，')}${pc.bold('/help')}${pc.gray(' 查看帮助')}`,
     '',
@@ -156,7 +156,7 @@ export function formatHelp(): string {
     ['/mounted', '查看挂载记忆'],
     ['/unmount <name>', '踢出指定记忆'],
     ['/project [name]', '切换项目（不填则显示列表）'],
-    ['/persona [name]', '查看/切换身份（auto/manual/名称）'],
+    ['/persona [name]', '查看/切换角色（auto/manual/名称）'],
     ['/topic <name>', '切换话题（不填则显示当前）'],
     ['/topics', '列出所有话题文件'],
     ['/provider [name]', '切换 LLM Provider（不填则显示列表）'],

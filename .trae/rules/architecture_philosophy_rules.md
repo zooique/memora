@@ -24,23 +24,23 @@ date: 2026-06-03
 **Persona 和 Skill 的定位**：
 
 - Skill（技能）不是"普通记忆"——不进入 SQLite 索引。它是**记忆管道顶端的最高优先级过滤器**，类似人的"长期训练形成的思维模式"。通过独立的 SkillManager 管理，在上下文组装时作为最高优先级注入
-- Persona（身份）遵循"万物皆记忆"原则——存入 SQLite 作为
+- Persona（角色）遵循"万物皆记忆"原则——存入 SQLite 作为
   `type: personality, permanence: always`
-  的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 personality 类型，由 PersonaManager 单独管理身份注入（systemPromptPrefix）。身份可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
-- 类比人类：性格是你 identity 的一部分，可以被"选择"（在不同场合以不同身份应对），而技能是"能力"，始终在线
+  的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 personality 类型，由 PersonaManager 单独管理角色注入（systemPromptPrefix）。角色可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
+- 类比人类：性格是你 persona 的一部分，可以被"选择"（在不同场合以不同角色应对），而技能是"能力"，始终在线
 
 **在代码中的体现**：
 
 - **PersonaManager**：扫描
-  `identities/*.md`，加载为 personality 类型记忆（permanence:
-  always），存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。身份通过 systemPromptPrefix 注入，不进 bootstrap
+  `personas/*.md`，加载为 personality 类型记忆（permanence:
+  always），存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。角色通过 systemPromptPrefix 注入，不进 bootstrap
 - **SkillManager**：两层目录扫描 + 关键词匹配，匹配到后注入下一轮 system
   prompt。**不进 SQLite**
 - 记忆管道层（规则、话题归档、心得）通过 `MemoryIndex` 的统一召回管线检索
-- `MemoryType` 枚举的 `personality` 类型用于身份记忆，`skill`
+- `MemoryType` 枚举的 `personality` 类型用于角色记忆，`skill`
   类型用于 MemoryIndex 中配置型记忆（全局规则等），而非 skill 文件本身
 - `bootstrap()`
-  对 personality 类型做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活身份
+  对 personality 类型做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活角色
 
 **禁止**：
 
@@ -181,7 +181,7 @@ domain），其余在 Agent Loop 中按需检索。
 **配置文件是真理源，SQLite 是运行时索引**：
 
 - `agent-config/`
-  下的配置文件（identities/rules/skills）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
+  下的配置文件（personas/rules/skills）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
 - 项目级 `.memora/` 只放 rules/ 和 skills/，不放 memora.db
 - `addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
 - AutoConfigRefiner（计划中）写入配置文件（持久化，重启后依然生效）

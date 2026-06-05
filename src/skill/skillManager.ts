@@ -160,6 +160,25 @@ export class SkillManager {
   }
 
   /**
+   * 注册运行时注入的技能（C1 修复）
+   *
+   * 供 Agent.addSkill() 调用：宿主程序可在 init() 之后动态注入技能。
+   * 重复注册同名技能会被拒绝（与文件加载的技能冲突时也按"先到先得"判断）。
+   *
+   * @param skill 技能条目
+   * @throws 技能名已存在时抛错
+   */
+  register(skill: SkillEntry): void {
+    if (this.skills.some((s) => s.name === skill.name)) {
+      throw new Error(`技能 "${skill.name}" 已存在，不能重复注册`);
+    }
+    this.skills.push(skill);
+    // 重建关键词索引（增量构建较复杂，全量重建简单可靠）
+    this.buildKeywordIndex();
+    logger.info({ name: skill.name, keywords: skill.keywords.length }, '技能已注册（运行时注入）');
+  }
+
+  /**
    * 构建 system prompt 中的技能段
    *
    * 格式：

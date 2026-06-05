@@ -9,11 +9,10 @@
  *
  * 分层修复（T-201）：本模块不直接调用 memory/ 层。
  * 所有 memory 操作（项目、领域、记忆索引）都通过 Agent 门面类中转。
- * 话题持久化（M-002）：
- *   - 用户输入 → MessageHistory.appendUser() → TopicStore
- *   - Agent 回复 → MessageHistory.appendAssistant() → TopicStore
- *   - 切换话题：/topic <name>
- *   - 列出话题：/topics
+ *
+ * 盲点修复（P0-1/P0-2）：REPL 对话流和话题切换必须走 Agent 主流程
+ * （agent.chat() / agent.switchTopic()），不再直接调用 loop/history，
+ * 确保 v4.0 后处理（角色匹配/技能匹配/信号检测/轮次归档/用户画像）生效。
  */
 import { createInterface, type Interface as RLInterface } from 'node:readline';
 import type { Config } from '@/config/loader.js';
@@ -71,12 +70,11 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   // 翠幕天罗 P2 修复：REPL 不再自行创建 MessageHistory / AgentLoop，
   // 直接使用 Agent 内部的 loop 和 history，避免切换项目后内外不同步。
 
-  // 本轮工具调用记录（A-102），从 AgentLoop 的 tool_start/tool_result 事件收集
+  // 本轮工具调用记录（A-102），从 agent.chat() 的 tool_start/tool_result 事件收集
   const toolCallRecordsForTurn: ToolCallRecord[] = [];
 
-  // 从 Agent 获取内部组件引用（不再自行创建）
+  // 从 Agent 获取内部 history 引用（仅用于 /topic 无参数时显示当前话题名）
   let history = agent.agentHistory!;
-  let loop = agent.agentLoop!;
 
   // 显示欢迎（M-205 美化版 + M-207 项目名 + v1.2 Provider 信息）
   console.log(
@@ -237,9 +235,8 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       } else {
         try {
           const newCtx = await agent.switchProject(arg);
-          // 切换后重新获取 Agent 内部的 loop/history 引用
+          // 切换后重新获取 Agent 内部的 history 引用
           history = agent.agentHistory!;
-          loop = agent.agentLoop!;
           console.log(
             formatSuccess(
               `已切换到项目：${newCtx.projectName}（${newCtx.bootstrapMemories.length} 条记忆）`,
@@ -259,7 +256,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (!newName) {
         console.log(`当前话题：${history.currentTopicName}`);
       } else {
-        const newFullName = history.switchTopic(newName);
+        // P0-2 修复：走 agent.switchTopic()，确保旧话题归档 + 记忆卸载 + 轮次重置
+        const newFullName = await agent.switchTopic(newName);
+        // 切换后更新 history 引用（agent 内部已重建）
+        history = agent.agentHistory!;
         console.log(formatSuccess(`已切换话题：${newFullName}`));
       }
       rl.prompt();
@@ -267,7 +267,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     }
 
     if (input === '/topics') {
-      const topics = await history.listAllTopics();
+      const topics = await agent.listAllTopics();
       console.log(formatTopicsList(topics));
       rl.prompt();
       continue;
@@ -305,15 +305,15 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // v1.1：身份查看/切换命令（P-6xx 身份系统）
+    // v1.1：角色查看/切换命令（P-6xx 角色系统）
     if (input === '/persona' || input.startsWith('/persona ')) {
       const name = input.slice('/persona'.length).trim();
       if (!name) {
-        // 列出所有身份 + 当前激活状态
+        // 列出所有角色 + 当前激活状态
         const personas = agent.listPersonas();
         const activeName = agent.getActivePersonaName();
         const mode = agent.getPersonaMode();
-        console.log(pc.cyan('可用身份：'));
+        console.log(pc.cyan('可用角色：'));
         console.log(pc.dim('─'.repeat(40)));
         for (const p of personas) {
           const marker = p.name === activeName ? ' *' : '  ';
@@ -322,7 +322,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         }
         console.log(pc.dim('─'.repeat(40)));
         console.log(
-          `* 当前身份：${pc.green(activeName || '无')}（模式：${mode === 'auto' ? '自动匹配' : '手动固定'}）`,
+          `* 当前角色：${pc.green(activeName || '无')}（模式：${mode === 'auto' ? '自动匹配' : '手动固定'}）`,
         );
         console.log(pc.dim('切换：/persona <name>  |  模式：/persona auto | /persona manual'));
       } else if (name === 'auto') {
@@ -334,7 +334,7 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       } else {
         try {
           agent.switchPersona(name);
-          console.log(formatSuccess(`已切换到身份：「${name}」`));
+          console.log(formatSuccess(`已切换到角色：「${name}」`));
         } catch (err) {
           const friendly = toFriendlyError(err);
           console.error(formatError(friendly.title, friendly.detail));
@@ -344,23 +344,20 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // 用户输入 → 通过 MessageHistory 追加到话题文件
-    await history.appendUser(input);
-
-    // 用户输入 → Agent Loop
+    // P0-1 修复：走 agent.chat() 主流程，确保 v4.0 后处理全部生效
+    // （角色匹配/技能匹配/信号检测/轮次归档/用户画像/话题召回）
+    // agent.chat() 内部已处理 appendUser + appendAssistant，REPL 不再手动追加
 
     // 重置本轮工具调用记录（A-102）
     toolCallRecordsForTurn.length = 0;
 
-    let assistantContent = '';
     try {
       process.stdout.write('\n');
-      // 流式 Markdown 渲染（A-103）+ 工具调用可视化（从 AgentLoop 事件收集）
+      // 流式 Markdown 渲染（A-103）+ 工具调用可视化（从 agent.chat() 事件收集）
       const md = new MarkdownRenderer();
-      for await (const chunk of loop.processUserInput(input)) {
+      for await (const chunk of agent.chat(input)) {
         if (chunk.type === 'text') {
           process.stdout.write(md.feed(chunk.content));
-          assistantContent += chunk.content;
         } else if (chunk.type === 'thinking') {
           // 思考/进度提示：淡色输出，让用户知道 Agent 当前在做什么
           process.stderr.write(formatThinking(chunk.phase) + '\n');
@@ -401,13 +398,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       console.error(formatError(friendly.title, friendly.detail));
     }
 
-    // A-102：对后结果摘要
+    // A-102：工具结果摘要
     if (toolCallRecordsForTurn.length > 0) {
       process.stdout.write(formatActionSummary(toolCallRecordsForTurn) + '\n');
     }
-
-    // Agent 回复 → 通过 MessageHistory 追加到话题文件
-    await history.appendAssistant(assistantContent);
 
     rl.prompt();
   }
@@ -416,7 +410,3 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
   await agent.close();
   rl.close();
 }
-
-// createTopicSummarizer 已迁移到 agent 层（src/agent/topic-summarizer.ts）
-// 此处保留 re-export 以兼容旧引用路径
-export { createTopicSummarizer } from '@/agent/topic-summarizer.js';

@@ -36,7 +36,7 @@ date: 2026-06-02
 | 类别   | 选型                                         | 决策                                                  |
 | ------ | -------------------------------------------- | ----------------------------------------------------- |
 | 运行时 | Node.js ≥ 20 LTS + TypeScript 5 strict + ESM | [ADR-001](./decisions/ADR-001-runtime-stack.md)       |
-| 数据层 | better-sqlite3 + sqlite-vec                  | [ADR-002](./decisions/ADR-002-storage-layer.md)       |
+| 数据层 | sqlite3 (mapbox)                             | [ADR-002](./decisions/ADR-002-storage-layer.md)       |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](./decisions/ADR-003-llm-adapter.md)         |
 | 形态   | CLI 优先（阶段一）                           | [ADR-005](./decisions/ADR-005-cli-first.md)           |
 | 安全   | 两级权限 + 路径白名单                        | [ADR-006](./decisions/ADR-006-security-model.md)      |
@@ -51,7 +51,7 @@ src/
 ├── cli/            # CLI 解析与交互
 ├── agent/          # Agent Loop + 工具执行 + 对话快照 + 作品投影
 ├── memory/         # 记忆引擎（5 类统一 + 项目管理器）
-├── persona/        # 身份管理（角色配置，记忆管道最高优先级）
+├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（两层目录，记忆管道最高优先级）
 ├── llm/            # LLM 适配层
 ├── security/       # 安全策略
@@ -91,10 +91,10 @@ chore: 升级 dependencies
 - ✅ SQLite 索引 CRUD 单元测试通过
 - ✅ 路径白名单 6 个测试用例通过
 - ✅ LLM Provider Mock 集成测试通过
-- ✅ Agent 设定减法（3 模块：设定 + 身份 + 技能）
+- ✅ Agent 设定减法（3 模块：设定 + 角色 + 技能）
 - ✅ 单 Agent 模型（memora.db + TopicStore Agent 级共享）
 - ✅ 两层规则加载（项目级 → Agent 级）
-- ✅ 身份自动匹配 + 手动切换
+- ✅ 角色自动匹配 + 手动切换
 - ✅ 项目 rules/skills 接口（addRule + registerTool）
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ CLI 启动后能对话（需真实 LLM API Key）

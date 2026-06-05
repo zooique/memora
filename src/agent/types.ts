@@ -10,7 +10,7 @@
  * thinking 事件的 phase 取值：
  * - 'recalling'：正在召回话题记忆（topicMount.focus）
  * - 'processing'：正在写入历史/注入技能 prompt
- * - 'archiving'：正在归档用户画像/匹配身份/匹配技能
+ * - 'archiving'：正在归档用户画像/匹配角色/匹配技能
  */
 
 /** thinking 事件的阶段标识 */

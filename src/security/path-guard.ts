@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 路径白名单 + 审计日志
  *
  * 4 类允许 + 6 类禁止
@@ -15,7 +15,9 @@ import { securityError } from '@/utils/errors.js';
 const BLOCKED_PATTERNS = [
   /(^|[\\/])\.ssh([\\/]|$)/i,
   /(^|[\\/])\.aws([\\/]|$)/i,
-  /(^|[\\/])\.env(\.|$)/i,
+  // A6 修复：原 `(^|[\\/])\.env(\.|$)` 会误匹配 `.env.example`、`.envrc`、`.env.local.template` 等合法文件。
+  // 现仅拦截纯 `.env`、`.env.<name>`（name 不含 .）。
+  /(^|[\\/])\.env$|(^|[\\/])\.env\.[^\\/.]+$/i,
   /[\\/]system32([\\/]|$)/i,
   /[\\/]Windows[\\/]System/i,
   /[\\/]etc[\\/]passwd/i,
@@ -45,11 +47,42 @@ export interface AuditEvent {
  */
 export type AuditListener = (event: AuditEvent) => void;
 
+/**
+ * 写入确认请求（A1 修复）
+ *
+ * 宿主程序在非交互式环境（WebUI/桌宠/无终端服务）需要自定义确认 UI。
+ * 注入此回调后，SecurityGuard.requestWriteConfirmation() 会调用它而不是直接读 stdin。
+ *
+ * 返回 true 确认写入，false 拒绝写入。
+ * 抛错视为拒绝（fail-closed，安全优先）。
+ */
+export type WriteConfirmationRequest = (info: WriteConfirmationInfo) => Promise<boolean>;
+
+/** 写入确认请求的载荷 */
+export interface WriteConfirmationInfo {
+  /** 目标文件绝对路径 */
+  targetPath: string;
+  /** 工具名（如 write_file） */
+  tool: string;
+  /** 人类可读的描述（"写入 100 字符到 foo.md"） */
+  description?: string;
+  /** 权限模式（owner / guest） */
+  permission: Permission;
+  /** 是否需要确认（owner + confirmWrites=false 时为 false，宿主可跳过弹窗） */
+  needsConfirm: boolean;
+}
+
 export class SecurityGuard {
   private readonly listeners: AuditListener[] = [];
   /** 审计事件缓冲（最近 N 条，供调试与回溯） */
   private readonly auditBuffer: AuditEvent[] = [];
   private readonly bufferLimit = 100;
+  /**
+   * A1 修复：注入式写入确认回调。
+   * 宿主注册后，requestWriteConfirmation() 走自定义 UI；
+   * 不注册时回退到终端 readline（CLI 场景）。
+   */
+  private _confirmationHandler: WriteConfirmationRequest | null = null;
 
   constructor(
     private readonly projectPath: string,
@@ -60,6 +93,23 @@ export class SecurityGuard {
     /** 权限模式 */
     public readonly permission: Permission = 'owner',
   ) {}
+
+  /**
+   * A1 修复：注册自定义写入确认回调（宿主程序接入）
+   *
+   * 适用于 WebUI/桌宠/无终端服务。注册后，requestWriteConfirmation()
+   * 不再直接读 stdin，而是回调此函数让宿主决定如何提示用户。
+   *
+   * 取消注册：传入 null。
+   *
+   * @example
+   *   securityGuard.onWriteConfirmation(async (info) => {
+   *     return await showConfirmDialog(info.targetPath, info.description);
+   *   });
+   */
+  onWriteConfirmation(handler: WriteConfirmationRequest | null): void {
+    this._confirmationHandler = handler;
+  }
 
   /**
    * 订阅审计事件
@@ -162,6 +212,9 @@ export class SecurityGuard {
    *   - owner + confirmWrites=true：要求确认
    *   - owner + confirmWrites=false：自动批准
    *
+   * A1 修复：优先走 _confirmationHandler 注入式回调（宿主程序），
+   * 未注册时回退到 readline + stdin（CLI 场景）。
+   *
    * @returns true 确认通过；false 用户拒绝
    */
   async requestWriteConfirmation(
@@ -182,7 +235,42 @@ export class SecurityGuard {
       return true;
     }
 
-    // 交互式确认
+    const info: WriteConfirmationInfo = {
+      targetPath,
+      tool,
+      description,
+      permission: this.permission,
+      needsConfirm: needConfirm,
+    };
+
+    // A1 修复：优先走注入式回调（宿主程序场景）
+    if (this._confirmationHandler) {
+      try {
+        const ok = await this._confirmationHandler(info);
+        this.emitAudit({
+          type: ok ? 'write-confirm' : 'write-decline',
+          path: targetPath,
+          tool,
+          decision: ok ? 'confirmed' : 'declined',
+          timestamp: new Date().toISOString(),
+        });
+        return ok;
+      } catch (err) {
+        // 抛错视为拒绝（fail-closed 安全优先）
+        logger.warn({ err, targetPath }, '写入确认回调异常，视为拒绝');
+        this.emitAudit({
+          type: 'write-decline',
+          path: targetPath,
+          tool,
+          decision: 'declined',
+          reason: `回调异常：${(err as Error).message}`,
+          timestamp: new Date().toISOString(),
+        });
+        return false;
+      }
+    }
+
+    // 回退：CLI 场景直接走终端 readline
     const rl = createInterface({ input: stdin, output: stdout });
     try {
       const lines = [

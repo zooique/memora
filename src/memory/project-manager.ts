@@ -148,14 +148,14 @@ export class ProjectManager {
    *
    * 两层记忆加载：
    *   1) 项目级：扫描 projectPath/.memora/rules/ + skills/
-   *   2) Agent 级：扫描 configDir 下的所有配置（rules/skills/identities/tools）
+   *   2) Agent 级：扫描 configDir 下的所有配置（rules/skills/personas/tools）
    *   3) 全局规则：合并 ~/.memora/global/rules/
    *
    * memora.db 和 TopicStore 是 Agent 级共享资源，不随项目切换重建。
    *
    * @param projectPath 项目根目录
    * @param projectName 项目名称（可选，默认取目录名）
-   * @param configDir Agent 级配置目录（identities/rules/skills/tools）
+   * @param configDir Agent 级配置目录（personas/rules/skills/tools）
    */
   async initProject(
     projectPath: string,
@@ -191,7 +191,7 @@ export class ProjectManager {
     loadResult.skipped += projectResult.skipped;
     loadResult.errors.push(...projectResult.errors);
 
-    // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/identities/tools）
+    // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/personas/tools）
     if (configDir) {
       const configFileStore = new FileStore(configDir);
       const configLoader = new MemoryLoader(configFileStore, index);

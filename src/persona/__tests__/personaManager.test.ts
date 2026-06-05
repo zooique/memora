@@ -11,8 +11,8 @@
  *   - 模式切换（setMode / currentMode）
  *   - activeName getter
  *
- * 注意：PersonaManager v1.1 扫描 <configDir>/identities/*.md，
- * 测试中目录名必须为 identities。
+ * 注意：PersonaManager v1.1 扫描 <configDir>/personas/*.md，
+ * 测试中目录名必须为 personas。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { PersonaManager } from '../personaManager.js';
@@ -31,16 +31,13 @@ const createPersonaFile = (dir: string, filename: string, content: string): void
 
 describe('PersonaManager (v1.1)', () => {
   let testDir: string;
-  /** 项目级角色目录：<testDir>/identities/ */
-  let identitiesDir: string;
-  /** 不存在的全局目录，防止扫描真实 ~/.memora/global/identities/ */
-  let fakeGlobalDir: string;
+  /** 项目级角色目录：<testDir>/personas/ */
+  let personasDir: string;
 
   beforeEach(() => {
     testDir = join(tmpdir(), `memora-test-persona-${Date.now()}`);
-    identitiesDir = join(testDir, 'identities');
-    mkdirSync(identitiesDir, { recursive: true });
-    fakeGlobalDir = join(testDir, 'fake-global-identities');
+    personasDir = join(testDir, 'personas');
+    mkdirSync(personasDir, { recursive: true });
   });
 
   afterEach(() => {
@@ -53,7 +50,7 @@ describe('PersonaManager (v1.1)', () => {
   describe('load', () => {
     it('应该异步加载单个角色文件并返回 system prompt', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'default.md',
         `---
 name: 默认助手
@@ -66,7 +63,7 @@ keywords: 通用, 助手
 你是一个通用AI助手，擅长回答各种问题。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       const result = await personaManager.load();
 
@@ -76,7 +73,7 @@ keywords: 通用, 助手
 
     it('应该加载指定角色（by name）', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'default.md',
         `---
 name: 默认助手
@@ -88,7 +85,7 @@ keywords: 通用
       );
 
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'coder.md',
         `---
 name: 程序员助手
@@ -99,7 +96,7 @@ keywords: 编程, 代码, 架构
 你是一个专业编程助手，擅长代码审查和架构设计。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       const result = await personaManager.load('coder');
 
@@ -109,7 +106,7 @@ keywords: 编程, 代码, 架构
     });
 
     it('应该在角色文件不存在时降级到默认角色', async () => {
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       const result = await personaManager.load('nonexistent');
 
@@ -117,9 +114,9 @@ keywords: 编程, 代码, 架构
       expect(result).toContain('通用 AI 助手');
     });
 
-    it('应该在 identities 目录不存在时降级到默认角色', async () => {
+    it('应该在 personas 目录不存在时降级到默认角色', async () => {
       const nonExistentDir = join(testDir, 'nonexistent');
-      const personaManager = new PersonaManager(nonExistentDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(nonExistentDir);
 
       const result = await personaManager.load();
 
@@ -129,7 +126,7 @@ keywords: 编程, 代码, 架构
 
     it('加载后 activeName 应返回当前角色名', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'helper.md',
         `---
 name: 小助手
@@ -138,14 +135,14 @@ keywords: 帮助
 我是你的小助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load();
 
       expect(personaManager.activeName).toBe('小助手');
     });
 
     it('未加载任何角色时 activeName 应返回 "default"', () => {
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       expect(personaManager.activeName).toBe('default');
     });
@@ -157,7 +154,7 @@ keywords: 帮助
   describe('角色列表', () => {
     it('应该通过 list getter 列出所有可用角色', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'persona1.md',
         `---
 name: 角色1
@@ -167,7 +164,7 @@ keywords: k1
       );
 
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'persona2.md',
         `---
 name: 角色2
@@ -176,7 +173,7 @@ keywords: k2
 内容2`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load();
 
       const personas = personaManager.list;
@@ -187,7 +184,7 @@ keywords: k2
     });
 
     it('应该在目录为空时返回空列表（降级到默认角色）', async () => {
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load();
 
       const personas = personaManager.list;
@@ -203,7 +200,7 @@ keywords: k2
   describe('buildSystemPrompt', () => {
     it('应该包含【当前角色】标记', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'helper.md',
         `---
 name: 小助手
@@ -213,7 +210,7 @@ keywords: 帮助
 我是你的小助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load();
 
       const prompt = personaManager.buildSystemPrompt();
@@ -225,7 +222,7 @@ keywords: 帮助
     });
 
     it('未激活角色时 buildSystemPrompt 应返回空字符串', () => {
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       const prompt = personaManager.buildSystemPrompt();
 
@@ -234,7 +231,7 @@ keywords: 帮助
 
     it('buildSystemPrompt(name) 应按名称构建指定角色的 prompt', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'a.md',
         `---
 name: 角色A
@@ -243,7 +240,7 @@ keywords: a
 AAA`,
       );
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'b.md',
         `---
 name: 角色B
@@ -252,7 +249,7 @@ keywords: b
 BBB`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('角色A');
 
       const promptB = personaManager.buildSystemPrompt('角色B');
@@ -269,7 +266,7 @@ BBB`,
   describe('角色切换', () => {
     it('应该支持运行时切换角色', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'default.md',
         `---
 name: 默认助手
@@ -279,7 +276,7 @@ keywords: 通用
       );
 
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'coder.md',
         `---
 name: 程序员助手
@@ -288,7 +285,7 @@ keywords: 编程, 代码
 你是一个专业编程助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
       const result = personaManager.switchPersona('程序员助手');
@@ -299,7 +296,7 @@ keywords: 编程, 代码
 
     it('应该在切换到不存在的角色时保持当前角色', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'default.md',
         `---
 name: 默认助手
@@ -308,7 +305,7 @@ keywords: 通用
 你是一个通用AI助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
       const result = personaManager.switchPersona('nonexistent');
@@ -319,7 +316,7 @@ keywords: 通用
 
     it('切换到相同角色应直接返回当前 prompt', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'default.md',
         `---
 name: 默认助手
@@ -328,7 +325,7 @@ keywords: 通用
 你是一个通用AI助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
       const result = personaManager.switchPersona('默认助手');
@@ -343,7 +340,7 @@ keywords: 通用
   describe('autoMatch', () => {
     it('应该根据输入关键词自动匹配角色', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'default.md',
         `---
 name: 默认助手
@@ -352,7 +349,7 @@ keywords: 通用
 通用助手。`,
       );
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'coder.md',
         `---
 name: 程序员助手
@@ -361,7 +358,7 @@ keywords: 编程, 代码, TypeScript
 专业编程助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
       // 用户输入包含编程关键词
@@ -372,7 +369,7 @@ keywords: 编程, 代码, TypeScript
 
     it('无匹配时应返回 null', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'default.md',
         `---
 name: 默认助手
@@ -381,7 +378,7 @@ keywords: 通用
 通用助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
       // 关键词命中率太低
@@ -392,7 +389,7 @@ keywords: 通用
 
     it('manual 模式下应始终返回 null', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'coder.md',
         `---
 name: 程序员助手
@@ -401,7 +398,7 @@ keywords: 编程, 代码
 专业编程助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('程序员助手');
       personaManager.setMode('manual');
 
@@ -412,7 +409,7 @@ keywords: 编程, 代码
 
     it('匹配的角色与当前角色相同时应返回 null', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'coder.md',
         `---
 name: 程序员助手
@@ -421,7 +418,7 @@ keywords: 编程, 代码
 专业编程助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('程序员助手');
 
       const matched = personaManager.autoMatch('帮我写代码');
@@ -431,7 +428,7 @@ keywords: 编程, 代码
 
     it('关键词命中 < 0.5 时应返回 null', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'coder.md',
         `---
 name: 程序员助手
@@ -440,7 +437,7 @@ keywords: 编程, 代码, 架构, 设计
 专业编程助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
       // 4 个关键词中只命中 1 个 → score = 0.25 < 0.5
@@ -458,13 +455,13 @@ keywords: 编程, 代码, 架构, 设计
   // ════════════════════════════════════════════════════════
   describe('模式切换', () => {
     it('默认模式应为 auto', () => {
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       expect(personaManager.currentMode).toBe('auto');
     });
 
     it('setMode 应切换模式', () => {
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       personaManager.setMode('manual');
       expect(personaManager.currentMode).toBe('manual');
@@ -479,14 +476,14 @@ keywords: 编程, 代码, 架构, 设计
   // ════════════════════════════════════════════════════════
   describe('active getter', () => {
     it('未加载时 active 应为 null', () => {
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       expect(personaManager.active).toBeNull();
     });
 
     it('加载后 active 应返回当前激活的 Persona', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'helper.md',
         `---
 name: 小助手
@@ -495,14 +492,13 @@ keywords: 帮助
 我是小助手。`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
       await personaManager.load();
 
       const active = personaManager.active;
 
       expect(active).not.toBeNull();
       expect(active!.name).toBe('小助手');
-      expect(active!.layer).toBe('project');
       expect(active!.id).toBeTruthy();
     });
   });
@@ -513,7 +509,7 @@ keywords: 帮助
   describe('错误处理', () => {
     it('应该跳过格式错误的文件，加载有效文件', async () => {
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'invalid.md',
         `---
 name: [unclosed
@@ -522,7 +518,7 @@ name: [unclosed
       );
 
       createPersonaFile(
-        identitiesDir,
+        personasDir,
         'valid.md',
         `---
 name: 有效角色
@@ -531,7 +527,7 @@ keywords: 有效
 有效内容`,
       );
 
-      const personaManager = new PersonaManager(testDir, fakeGlobalDir);
+      const personaManager = new PersonaManager(testDir);
 
       // load 不会因为 invalid 文件而崩溃
       const result = await personaManager.load();

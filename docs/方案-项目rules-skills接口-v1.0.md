@@ -12,7 +12,7 @@
 AgentOptions.configDir = './agent-config'
   ├── agent-config/rules/      → MemoryLoader 启动扫描 → SQLite（type: rule）
   ├── agent-config/skills/     → SkillManager 两层扫描 → 不进 SQLite
-  └── agent-config/identities/ → PersonaManager 扫描 → SQLite（type: personality）
+  └── agent-config/personas/ → PersonaManager 扫描 → SQLite（type: personality）
 ```
 
 `~/.memora/global/rules/` 和 `~/.memora/global/skills/`
@@ -54,11 +54,11 @@ addRule(memory: Memory): Promise<void>
 
 ## 3. 不做的事
 
-| 方向            | 原因                                               |
-| --------------- | -------------------------------------------------- |
-| `addSkill()`    | 技能不进 SQLite，是"怎么做"的配置。文件扫描已完备  |
-| `addIdentity()` | `PersonaManager.load()` + `switchPersona()` 已覆盖 |
-| 删除文件接口    | 文件接口是"万物皆记忆"的基础——记忆本体在文件中     |
+| 方向           | 原因                                               |
+| -------------- | -------------------------------------------------- |
+| `addSkill()`   | 技能不进 SQLite，是"怎么做"的配置。文件扫描已完备  |
+| `addPersona()` | `PersonaManager.load()` + `switchPersona()` 已覆盖 |
+| 删除文件接口   | 文件接口是"万物皆记忆"的基础——记忆本体在文件中     |
 
 ## 4. 实施任务
 
