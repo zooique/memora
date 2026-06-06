@@ -1,19 +1,55 @@
-# Memora · 接入指南 v1.0
+# Memora · 接入指南 v2.0
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
+>
+> **v2.0 重大变更**：Agent 不再接收 `Config` 对象，改为接收 `LlmProvider`
+> 实例。宿主自行管理 API Key / baseUrl / model 配置，Agent 只关心"用什么 LLM"。
 
 ---
 
 ## 一、核心理念
 
-**万物皆是记忆**。角色、规则、技能、工具定义、对话历史——全部统一为「记忆」，通过
-`类型 + 永久性` 两个维度区分。
+**Memora 是一个无法独立运行的智能大脑内核。**
+它只有接口，没有"形态"——CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-**单 Agent 模型**。Memora 被宿主接入后，就是该程序的唯一 Agent。所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
+**万物皆是记忆。**
+角色、规则、技能、工具定义、对话历史——全部统一为「记忆」，通过 `类型 + 永久性`
+两个维度区分。
+
+**单 Agent 模型。**
+Memora 被宿主接入后，就是该程序的唯一 Agent。所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
 
 **配置文件是真理源，SQLite 是运行时索引。** `agent-config/`
 下的配置文件由 MemoryLoader 在启动时扫描，加载到 SQLite 中。记忆自动归档（UserProfile、话题摘要、对话快照 →
 SQLite）是所有模式共有的基础能力。
+
+**内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API
+Key、不写用户配置文件。所有 UI 和配置管理都是宿主的职责。
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  宿主程序（任意：CLI / 桌面精灵 / 小说生成器 / WebUI）      │
+│                                                            │
+│  ┌─────────────────┐    ┌──────────────────┐               │
+│  │ LLM Provider 实例 │◄───│ API Key / baseUrl │  ← 宿主职责  │
+│  └────────┬────────┘    └──────────────────┘               │
+│           │ 注入                                            │
+│           ▼                                                 │
+│  ┌──────────────────────────────────────────┐               │
+│  │  Memora 内核（Agent）                    │               │
+│  │                                          │               │
+│  │  - chat(input) → 流式响应                │               │
+│  │  - 记忆搜索 / 归档 / 挂载                │               │
+│  │  - 角色匹配 / 技能匹配 / 信号检测         │               │
+│  │  - 工具注册 / 工具执行                   │               │
+│  │                                          │               │
+│  │  ⚠️ 不包含：                            │               │
+│  │  - 任何 UI（console/HTML/Electron）       │               │
+│  │  - 任何 LLM 配置加载逻辑                │               │
+│  │  - 任何"用户配置"模板生成                │               │
+│  └──────────────────────────────────────────┘               │
+└────────────────────────────────────────────────────────────┘
+```
 
 ## 二、Agent 的三个模块
 
@@ -75,88 +111,53 @@ Agent = 设定 + 角色 + 技能
 ```
 
 ```typescript
-const agent = new Agent({
-  configDir: '/path/to/host/agent-config',  // 程序内置
-  projectPath: '/path/to/project',
-  config: { llm: { ... }, memory: { ... } },
+import { Agent, createLlmProvider } from 'memora';
+
+// 宿主自行创建 Provider（API Key 由宿主管理，不经过 Agent）
+const provider = createLlmProvider({
+  provider: 'openai-compatible',
+  apiKey: process.env.LLM_API_KEY!,
+  baseUrl: 'https://api.deepseek.com/v1',
+  model: 'deepseek-chat',
 });
+
+const agent = new Agent({
+  projectPath: '/path/to/project',
+  provider, // 注入 Provider 实例
+  configDir: '/path/to/host/agent-config', // 程序内置
+});
+await agent.init();
 ```
 
 ### 模式 2：用户自定义（配置权限交给用户）
 
 配置存放在用户目录下，用户首次使用时通过交互式 CLI 创建自己的 Agent。
 
-```
-用户目录/
-└── ~/.memora/
-    ├── agent-config/      ← 用户手动创建/编辑
-    │   ├── personas/
-    │   │   └── 我的程序员.md
-    │   ├── rules/
-    │   │   └── 代码风格.md
-    │   └── skills/
-    └── memora.db           ← 运行时自动生成
-```
-
 ```typescript
+import { Agent, createLlmProvider, loadConfig } from 'memora';
+
+// 宿主从配置文件加载 LLM 配置（宿主自行决定怎么存 API Key）
+const config = await loadConfig(); // 读取 memora.json
+const provider = createLlmProvider(config.llm);
+
 const agent = new Agent({
-  configDir: '~/.memora/agent-config',  // 用户目录
   projectPath: process.cwd(),
-  config: { llm: { ... }, memory: { dataDir: '~/.memora' } },
+  provider,
+  configDir: '~/.memora/agent-config', // 用户目录
+  dataDir: config.memory.dataDir,
 });
-```
-
-需要新增的 CLI 命令：
-
-```bash
-memora init
-# > 你的 Agent 叫什么名字？
-# > 它主要帮你做什么？（编程 / 写作 / 日常对话）
-# > 你希望它有什么性格？（严谨 / 幽默 / 简洁）
-# → 自动生成 personas/ + rules/
+await agent.init();
 ```
 
 ### 模式 3：Agent 智能总结（配置权限交给 Agent）
 
-Agent 从日常对话中自动提取用户偏好，生成配置建议，用户确认后写入配置文件。下次启动时 MemoryLoader 自动扫描加载到 SQLite。
+Agent 从日常对话中自动提取用户偏好，生成配置建议，用户确认后写入配置文件。
 
 ```
 用户对话 → 定期触发 LLM 反思 → 生成配置建议 → 用户确认
     → 写入配置文件（agent-config/rules/、personas/、skills/）
     → 下次启动时 MemoryLoader 扫描 → 加载到 SQLite
 ```
-
-```
-示例：
-
-用户：「写代码时我喜欢用 TypeScript，不喜欢 any」
-  ↓ 多轮对话后，Agent 自动触发反思
-Agent 建议：
-  「我发现你偏好 TypeScript 严格模式，要我添加这条规则吗？」
-  ┌──────────────────────────────────────────┐
-  │ 规则名称：TypeScript 偏好                 │
-  │ 内容：优先使用 TypeScript strict 模式，   │
-  │       禁止 any 类型，使用泛型替代         │
-  │ [确认]  [忽略]  [编辑]                   │
-  └──────────────────────────────────────────┘
-```
-
-与现有机制的关系：
-
-| 机制                            | 产出                              | 存储位置                 | 触发方式           |
-| ------------------------------- | --------------------------------- | ------------------------ | ------------------ |
-| **UserProfile**（已实现）       | 用户画像                          | SQLite                   | 实时归档，自动确认 |
-| **AutoConfigRefiner**（计划中） | 配置文件（rules/personas/skills） | `agent-config/` 文件系统 | 定期反思，用户确认 |
-| `addRule()`（已实现）           | 规则记忆                          | SQLite（运行时注入）     | 宿主程序主动调用   |
-
-关键区别：`addRule()`
-写入 SQLite（会话级），AutoConfigRefiner 写入配置文件（持久化，重启后依然生效）。
-
-模式 3 的关键约束：
-
-- **必须用户确认**，不能静默写入（配置影响行为，比画像更敏感）
-- **冲突检测**，已有规则与新建议相矛盾时，提示用户
-- **降噪机制**，避免频繁推送低质量建议
 
 ## 五、最小接入步骤
 
@@ -166,32 +167,41 @@ Agent 建议：
 npm install memora
 ```
 
-### 2. 创建 Agent
+### 2. 创建 Provider + Agent
 
 ```typescript
-import { Agent } from 'memora';
+import { Agent, createLlmProvider } from 'memora';
 
+// ─── 宿主职责：创建 LLM Provider ──────────────────────
+// Agent 不关心 API Key / baseUrl / model，宿主自行管理
+const provider = createLlmProvider({
+  provider: 'openai-compatible',
+  apiKey: process.env.LLM_API_KEY!,
+  baseUrl: 'https://api.deepseek.com/v1',
+  model: 'deepseek-chat',
+});
+
+// 可选：后台 Provider（归档/投影等后台操作，不配时复用前台）
+const backgroundProvider = createLlmProvider({
+  provider: 'openai-compatible',
+  apiKey: process.env.LLM_API_KEY!,
+  baseUrl: 'https://api.deepseek.com/v1',
+  model: 'deepseek-chat', // 可用更便宜的模型
+});
+
+// ─── 创建 Agent（只传 Provider 实例，不传 Config）──────
 const agent = new Agent({
-  projectPath: '/path/to/novel-project', // 当前管理的子项目
-  configDir: '/path/to/host/agent-config', // Agent 级配置目录
-  archiveMode: 'full', // 归档模式：'full'（默认）| 'insights-only' | 'manual'
-  config: {
-    llm: {
-      provider: 'openai-compatible',
-      apiKey: process.env.LLM_API_KEY,
-      baseUrl: 'https://api.openai.com/v1',
-      model: 'gpt-4o',
-    },
-    memory: {
-      dataDir: '.memora', // 运行时数据目录（memora.db 在这里）
-      maxContextTokens: 8000,
-    },
-    security: {
-      permission: 'owner',
-      confirmWrites: false,
-    },
-    allowedPaths: ['.'],
-  },
+  projectPath: '/path/to/novel-project',
+  provider, // 前台 Provider（必须）
+  backgroundProvider, // 后台 Provider（可选）
+  configDir: '/path/to/agent-config',
+  archiveMode: 'insights-only', // 归档模式
+  dataDir: '.memora', // 运行时数据目录
+  maxContextTokens: 120000, // 上下文窗口上限
+  persona: '作家', // 默认角色
+  permission: 'owner', // 安全权限
+  allowedPaths: ['.'], // 路径白名单
+  confirmWrites: false, // 写入确认
 });
 
 await agent.init();
@@ -200,12 +210,25 @@ await agent.init();
 ### 3. 对话
 
 ```typescript
-// 流式对话
+// 流式对话（生产推荐）
 for await (const chunk of agent.chat('帮我写一段玄幻小说开头')) {
-  process.stdout.write(chunk.delta);
+  switch (chunk.type) {
+    case 'text':
+      ui.appendText(chunk.content);
+      break;
+    case 'thinking':
+      ui.showThinking(chunk.phase);
+      break;
+    case 'tool_start':
+      ui.showToolStart(chunk.name);
+      break;
+    case 'tool_result':
+      ui.showToolResult(chunk.ok);
+      break;
+  }
 }
 
-// 同步对话
+// 同步对话（测试用）
 const reply = await agent.chatSync('你好');
 ```
 
@@ -242,6 +265,8 @@ await agent.addRule({
   content: '这是一个东方玄幻世界，修真等级分为炼气、筑基、金丹……',
   tags: ['世界观'],
   weight: 1.0,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
 });
 ```
 
@@ -256,11 +281,9 @@ console.log(`已切换到：${ctx.projectName}`);
 ### 7. 关闭
 
 ```typescript
-await agent.close(); // 释放项目锁 + 关闭 Agent 级数据库（shutdown）
+await agent.waitForArchives(10000); // 等待后台归档完成
+await agent.close(); // 释放项目锁 + 关闭数据库
 ```
-
-> 注：`close()` 内部调用
-> `ProjectManager.shutdown()`，同时释放项目锁和关闭 Agent 级 memora.db。项目切换时不会关闭数据库，只有 Agent 整体退出时才调用此方法。
 
 ## 六、作品内容加载
 
@@ -312,110 +335,92 @@ agent.registerTool(
 
 工具实现完全是宿主的自由，Memora 只负责：工具定义 → LLM 调用 → 投影自动生成。
 
-## 七、自我进化机制
+## 七、写入确认与 Diff 对比
 
-> 对应「模式 3 ·
-> Agent 智能总结」——Agent 从白纸开始，通过对话自动进化到与用户契合的形态。
->
-> **实现状态**：配置建议 API（`onConfigSuggestion` /
-> `confirmConfigSuggestion`）已实现并导出；自动反思触发器（`AutoConfigRefiner`）仍在设计阶段。
+**核心场景**：小说生成器中，LLM 修改第 3 章内容时，宿主需要展示 diff 让用户确认。
 
-### 核心原则：内核管"魂"，宿主管"体"
-
-自我进化的本质是**配置文件的自动积累**。Agent 从对话中提取规则、角色 traits，写入
-`agent-config/` 下的配置文件。
-
-```
-对话 → AutoConfigRefiner 定期反思 → 生成配置建议
-    → 用户确认 → 写入配置文件（agent-config/rules/、personas/、skills/）
-    → 下次启动时 MemoryLoader 扫描 → 加载到 SQLite
-    → inspect() 暴露当前状态 → 宿主读取 → 决定呈现方式
-```
-
-### 内核提供：AutoConfigRefiner
-
-| 职责         | 说明                                                            |
-| ------------ | --------------------------------------------------------------- |
-| **定期反思** | 每 N 轮对话，调用 LLM 分析对话内容，提取可用的规则和角色 traits |
-| **生成建议** | 形成结构化建议（类型 + 名称 + 内容 + 置信度）                   |
-| **回调通知** | 通过 `onConfigSuggestion` 回调通知宿主，由宿主决定如何展示      |
+### 7.1 WriteExtensions 机制
 
 ```typescript
-// 内核暴露的回调接口（计划中）
-agent.onConfigSuggestion((suggestion) => {
-  // suggestion = {
-  //   type: 'rule' | 'persona' | 'skill',
-  //   name: '代码风格',
-  //   content: '优先使用 TypeScript strict 模式，禁止 any 类型',
-  //   confidence: 0.85,
-  // }
-  // 宿主决定怎么展示：桌宠弹气泡 / CLI 打印 / WebUI 弹窗
+import type { WriteExtensions } from 'memora';
+
+// 宿主注入 onBeforeWrite 回调
+agent.setWriteExtensions({
+  async onBeforeWrite(path, beforeContent, afterContent) {
+    // beforeContent = null 表示新文件
+    // afterContent = 要写入的新内容
+
+    if (beforeContent === null) {
+      // 新文件，直接确认
+      return true;
+    }
+
+    // 宿主渲染 diff 对比面板，用户确认后返回 true
+    const confirmed = await ui.showDiffConfirm(
+      path,
+      beforeContent,
+      afterContent,
+    );
+    return confirmed;
+  },
 });
-
-// 用户确认后，AutoConfigRefiner 写入配置文件
-// 例如 agent-config/rules/代码风格.md
-// 下次启动时 MemoryLoader 自动扫描加载到 SQLite
 ```
 
-> 注：`addRule()`
-> 是独立的运行时注入接口（宿主主动调用，写入 SQLite，会话级），与 AutoConfigRefiner（写入配置文件，持久化）是不同的机制。
+### 7.2 内置工具
 
-### 内核提供：inspect() 读端口
+| 工具名            | 用途               | 参数                                                                  |
+| ----------------- | ------------------ | --------------------------------------------------------------------- |
+| `read_file`       | 读取项目内文件内容 | `path`（相对路径）                                                    |
+| `write_file`      | 写入/创建文件      | `path`, `content`, `mode?`（overwrite/append/insert）, `insert_line?` |
+| `list_dir`        | 列出目录内容       | `path?`, `recursive?`, `maxDepth?`                                    |
+| `search_memories` | 在记忆索引中搜索   | `query`, `limit?`, `mode?`（match/near）                              |
 
-Agent 当前状态通过 `inspect()` 完全暴露，宿主可随时查询：
-
-```typescript
-const snap = agent.inspect();
-// snap.bootstrap.total   → 已积累的规则数量
-// snap.bootstrap.items   → 具体规则列表
-// 宿主据此判断进化阶段：规则数 > 10 → 阶段 2，依此类推
-```
-
-### 契合案例：桌宠养成助手
-
-```
-┌────────────── 内核（魂）──────────────┐
-│  对话 → AutoConfigRefiner              │
-│       → 规则：「用户喜欢简洁代码」      │
-│       → 角色 trait：「性格：严谨」      │
-│       → 写入配置文件（agent-config/）   │
-│       → 启动时 MemoryLoader 加载到 SQLite│
-│                                        │
-│  inspect() 返回：                      │
-│    rules: 12 条, personas: 3 个        │
-│    traits: ["严谨", "高效", "幽默"]     │
-└────────────────┬───────────────────────┘
-                 │ 宿主轮询 inspect()
-                 ▼
-┌────────────── 桌宠宿主（体）──────────┐
-│  形态映射引擎：                        │
-│    规则 < 5  → 蛋（阶段 0）            │
-│    规则 5-10 → 幼崽（阶段 1）          │
-│    规则 > 10 + "严谨" → 猫头鹰（阶段 2）│
-│                                        │
-│  渲染：SVG + 进化动画 + 粒子特效       │
-│  互动：点击、拖拽、闲置动效            │
-└────────────────────────────────────────┘
-```
-
-桌宠宿主需要实现的：
-
-| 层级     | 内容                                                                     |
-| -------- | ------------------------------------------------------------------------ |
-| 进化触发 | 每次 `chat()` 后检查 `inspect().bootstrap.total`，跨越阈值时触发进化动画 |
-| 形态映射 | 规则数量 + 角色 traits → 宠物外观的映射表                                |
-| 视觉渲染 | SVG/像素画 + 动画帧 + 粒子特效                                           |
-| 桌面挂件 | 系统托盘、窗口置顶、拖拽交互                                             |
-| 建议展示 | 收到 `onConfigSuggestion` 回调时，弹出气泡让用户确认                     |
-
-内核不管 Agent 长什么样，只管它正在变成什么。
+当 LLM 调用 `write_file` 时，`onBeforeWrite`
+回调会被触发，宿主可以展示 diff 面板。
 
 ## 八、API 速查
 
-> 完整定义见 `src/index.ts` 导出。所有方法在未调用 `init()` 时调用会抛
-> `configError`。
+> 完整定义见
+> [memora-api-reference-v1.0.md](./memora-api-reference-v1.0.md)。所有方法在未调用
+> `init()` 时调用会抛 `configError`。
 
-### 8.1 生命周期
+### 8.1 构造选项 `AgentOptions`
+
+```typescript
+interface AgentOptions {
+  /** 项目路径（必须）— 宿主工程的根目录 */
+  projectPath: string;
+
+  /** 前台 LLM Provider（必须）— 宿主负责创建 */
+  provider: LlmProvider;
+
+  /** 后台 LLM Provider（可选）— 归档/投影等后台操作，不配时复用前台 */
+  backgroundProvider?: LlmProvider;
+
+  /** 归档模式（默认 'full'）：控制 chat() 中自动归档行为 */
+  archiveMode?: 'full' | 'insights-only' | 'manual';
+
+  /** 记忆数据目录（默认 ~/.memora）— 存放 memora.db + topics/ */
+  dataDir?: string;
+
+  /** 最大上下文 token 数（默认 120000）— 超出会自动截断 */
+  maxContextTokens?: number;
+
+  /** 默认角色名（persona 文件名，不含 .md 后缀） */
+  persona?: string;
+
+  /** 安全权限（默认 'owner'）— 'guest' 受更多限制 */
+  permission?: 'owner' | 'guest';
+
+  /** 允许读写的路径白名单（默认 [] = 全部允许） */
+  allowedPaths?: string[];
+
+  /** 写入操作前是否需要确认回调（默认 false） */
+  confirmWrites?: boolean;
+}
+```
+
+### 8.2 生命周期
 
 | 方法              | 说明                                                                                          |
 | ----------------- | --------------------------------------------------------------------------------------------- |
@@ -423,13 +428,13 @@ const snap = agent.inspect();
 | `agent.close()`   | 安全关闭（释放锁 + 关闭 Agent 级数据库）。切换项目不需要 `close()`，仅 Agent 整体退出时调用。 |
 | `agent.inspect()` | 返回 Agent 当前状态快照（4 层：working / bootstrap / archive / mounted）。未初始化时抛错。    |
 
-### 8.2 对话
+### 8.3 对话
 
 | 方法                    | 说明                                                                                          |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | `agent.chat(input)`     | 流式对话，返回 `AsyncGenerator<AgentChunk>`。**已加并发锁**，同一时间只能有一个 chat() 在跑。 |
 | `agent.chatSync(input)` | 同步对话，内部收集 `chat()` 所有 `text` chunk 后一次性返回。                                  |
-| `agent.getMessages()`   | 获取工作记忆的完整消息列表（只读）。未初始化时抛错（**不要**误以为空数组=全新对话）。         |
+| `agent.getMessages()`   | 获取工作记忆的完整消息列表（只读）。未初始化时抛错。                                          |
 
 #### 流式 chunk 类型（`AgentChunk`）
 
@@ -443,10 +448,10 @@ type AgentChunk =
   | { type: 'done' }; // 结束标记
 ```
 
-**注意**：chunk 字段是 `content` / `count` / `name`，不是文档示例中常见的
-`delta` / `text`。宿主程序应严格按此类型解构。
+**注意**：chunk 字段是 `content` / `count` / `name`，不是 `delta` /
+`text`。宿主程序应严格按此类型解构。
 
-### 8.3 归档模式
+### 8.4 归档模式
 
 | 方法                                     | 说明                                                                                                          |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
@@ -462,8 +467,7 @@ type AgentChunk =
 | `insights-only` | ❌ 跳过      | ❌ 跳过    | ❌ 跳过  | ✅ 自动      | 小说写作、代码审查等审核工作流 |
 | `manual`        | ❌ 跳过      | ❌ 跳过    | ❌ 跳过  | ✅ 自动      | 宿主完全控制归档时机           |
 
-> **关键**：用户画像归档（`UserProfile`）不受 `archiveMode`
-> 影响，始终自动执行。因为用户洞察（"我叫张三"、"我喜欢 TypeScript"）与生成内容（草稿/扩写）性质不同，前者是确定事实，后者是待审核的中间产物。
+> **关键**：用户画像归档（`UserProfile`）不受 `archiveMode` 影响，始终自动执行。
 
 **泊文体系小说写作示例**：
 
@@ -481,98 +485,66 @@ await agent.archiveApprovedContent('主角深夜回到老宅，发现书房的�
 
 // 4. 切换到下一章
 await agent.switchTopic('chapter-2');
-
-// 5. 恢复自动归档（可选）
-agent.setArchiveMode('full');
 ```
 
-也可在构造时指定：
+### 8.5 规则与技能
 
-```typescript
-const agent = new Agent({
-  projectPath: '/path/to/novel',
-  configDir: '/path/to/agent-config',
-  archiveMode: 'insights-only', // 构造时指定
-  config: { ... },
-});
-```
+| 方法                                             | 说明                                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `agent.addRule(memory)`                          | 注入规则（type=rule, permanence=always/domain）。写入 SQLite + 注入 system prompt。    |
+| `agent.addSimpleRule(name, content, keywords?)`  | 便捷方法，自动填充 id/tags/weight。                                                    |
+| `agent.addSkill(memory)`                         | 注入技能（type=skill, permanence=domain）。注册到内存 + 写入 SQLite + 重建关键词索引。 |
+| `agent.addSimpleSkill(name, content, keywords?)` | 便捷方法。keywords 数组用于 AgentLoop 触发匹配。                                       |
 
-### 8.4 规则与技能
-
-| 方法                                              | 说明                                                                                   |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `agent.addRule(memory)`                           | 注入规则（type=rule, permanence=always/domain）。写入 SQLite + 注入 system prompt。    |
-| `agent.addSimpleRule(name, content, permanence?)` | 便捷方法，自动填充 id/tags/weight（v0.5+）。                                           |
-| `agent.addSkill(memory)`                          | 注入技能（type=skill, permanence=domain）。注册到内存 + 写入 SQLite + 重建关键词索引。 |
-| `agent.addSimpleSkill(name, content, keywords?)`  | 便捷方法（v0.5+）。keywords 数组用于 AgentLoop 触发匹配。                              |
-
-### 8.5 工具
+### 8.6 工具
 
 | 方法                                      | 说明                                                                                                                     |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | `agent.registerTool(definition, handler)` | 注册自定义工具。`definition.name` 必须符合标识符规范（`/^[a-zA-Z_][a-zA-Z0-9_]*$/`），否则抛错。重复注册同名工具会覆盖。 |
 | `agent.executeTool(name, args)`           | 主动执行已注册的工具（一般不直接调用，AgentLoop 会自动触发）。                                                           |
-| `agent.getToolDefinitions()`              | 获取所有已注册工具的 OpenAI 兼容 schema（供宿主程序自己接入 LLM 时使用）。                                               |
+| `agent.getToolDefinitions()`              | 获取所有已注册工具的 OpenAI 兼容 schema。                                                                                |
+| `agent.setWriteExtensions(ext)`           | 注入写入扩展回调（diff 对比确认），传 `null` 移除。                                                                      |
 
-工具的 `parameters` 字段应符合 OpenAI Function Calling 的 JSON
-Schema 格式。`ToolExecutor`
-在执行前会自动按 schema 校验 args 并 coerce 类型（string→number 等）。
+### 8.7 角色
 
-### 8.6 角色
+| 方法                           | 说明                                                           |
+| ------------------------------ | -------------------------------------------------------------- |
+| `agent.listPersonas()`         | 列出可用角色（来自 `configDir/personas/`）。                   |
+| `agent.switchPersona(name)`    | 手动切换到指定角色（`personaMode` 设为 'manual'）。            |
+| `agent.setPersonaMode(mode)`   | 设置角色切换模式：'auto'（关键词触发）/ 'manual'（手动锁定）。 |
+| `agent.getPersonaMode()`       | 读取当前角色匹配模式。                                         |
+| `agent.getActivePersonaName()` | 读取当前激活的角色名。                                         |
 
-| 方法                         | 说明                                                           |
-| ---------------------------- | -------------------------------------------------------------- |
-| `agent.listPersonas()`       | 列出可用角色（来自 `configDir/personas/`）。                   |
-| `agent.switchPersona(name)`  | 手动切换到指定角色（`personaMode` 设为 'manual'）。            |
-| `agent.setPersonaMode(mode)` | 设置角色切换模式：'auto'（关键词触发）/ 'manual'（手动锁定）。 |
+### 8.8 Provider 管理
 
-### 8.7 Provider 管理
+| 方法                                    | 说明                                                     |
+| --------------------------------------- | -------------------------------------------------------- |
+| `agent.setProvider(provider)`           | 运行时切换前台 Provider（同步更新 AgentLoop 内部引用）。 |
+| `agent.setBackgroundProvider(provider)` | 运行时切换后台 Provider（传 `null` 表示复用前台）。      |
+| `agent.provider` (getter)               | 读取当前前台 Provider 实例。                             |
 
-| 方法                              | 说明                                                                                                     |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `agent.addProvider(name, config)` | 运行时动态添加 Provider（不写入配置文件，重启后失效）。**不暴露完整 API Key**（只显示前 3 位 + `***`）。 |
-| `agent.switchProvider(name)`      | 切换当前激活的 Provider。name 不存在时抛错。                                                             |
-| `agent.listProviders()`           | 列出所有已注册 Provider 的别名。                                                                         |
-| `agent.getActiveProviderName()`   | 获取当前激活的 Provider 名（无则返回 null）。                                                            |
-| `agent.currentProvider` (getter)  | 只读访问当前 Provider 实例（未初始化时返回 null）。                                                      |
+> **重要**：Agent 不再管理 Provider 映射表、活跃 Provider 名。宿主自行管理这些。宿主切换 Provider 时，先创建新实例，再调用
+> `agent.setProvider(newProvider)`。
 
-> 配置文件中已配置的 Provider 在 `init()` 时自动加载；运行时 `addProvider()`
-> 是**额外**的，不影响配置文件的真理源地位。
-
-### 8.8 记忆查询
+### 8.9 记忆查询
 
 | 方法                                  | 说明                                                                         |
 | ------------------------------------- | ---------------------------------------------------------------------------- |
 | `agent.searchMemories(query, limit?)` | 关键词搜索记忆（底层走 SQLite FTS5）。`query` 必须非空，`limit` 必须正整数。 |
+| `agent.getMountedMemories()`          | 当前话题挂载的所有记忆。                                                     |
+| `agent.unmountMemory(name)`           | 踢出指定挂载记忆（会话级抑制）。                                             |
+| `agent.getStats()`                    | 记忆库统计（按 type 分组、总数、话题文件数）。                               |
 | `agent.listAllTopics()`               | 列出所有话题文件名。                                                         |
 | `agent.listProjects()`                | 列出已注册的子项目。                                                         |
 | `agent.switchProject(name)`           | 切换到其他子项目（Agent 级记忆不丢）。                                       |
 | `agent.switchTopic(name)`             | 切换当前话题（旧话题会自动归档）。                                           |
 
-### 8.9 自我进化（部分实现）
+### 8.10 配置建议（模式 3）
 
-| 方法                                        | 状态                           | 说明                                                                                                                         |
-| ------------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `agent.onConfigSuggestion(handler)`         | **接口已实现**，触发器设计阶段 | 注册配置建议回调。`AutoConfigRefiner`（自动反思）目前未实现，handler 仅在手动调用 `confirmConfigSuggestion()` 时被模拟触发。 |
-| `agent.confirmConfigSuggestion(suggestion)` | ✅ 已实现                      | 写入配置文件（`agent-config/rules/`、`personas/`、`skills/`），下次启动自动加载。                                            |
-
-### 8.10 写入二次确认
-
-| 方法                                         | 说明                                                                                                                                                       |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `securityGuard.onWriteConfirmation(handler)` | 注册自定义写入确认回调（**宿主程序接入关键 API**）。`requestWriteConfirmation()` 走自定义 UI，未注册时回退到 readline+stdin。回调抛错按 fail-closed 处理。 |
-
-`WriteConfirmationInfo` 类型：
-
-```typescript
-interface WriteConfirmationInfo {
-  targetPath: string; // 目标文件绝对路径
-  tool: string; // 工具名（如 'write_file'）
-  description?: string; // 人类可读描述
-  permission: 'owner' | 'guest';
-  needsConfirm: boolean; // owner + confirmWrites=false 时为 false
-}
-```
+| 方法                                        | 说明                                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `agent.onConfigSuggestion(handler)`         | 注册配置建议回调。`AutoConfigRefiner`（自动反思）目前未实现，handler 仅在手动调用时被模拟触发。 |
+| `agent.confirmConfigSuggestion(suggestion)` | 写入配置文件（`agent-config/rules/`、`personas/`、`skills/`），下次启动自动加载。               |
 
 ### 8.11 异步归档等待
 
@@ -582,21 +554,12 @@ interface WriteConfirmationInfo {
 
 ### 8.12 上下文窗口管理
 
-| 配置项                          | 说明                                                                                                                      |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `AgentOptions.maxContextTokens` | 上下文窗口 token 上限（默认 8000，约 32K 中文字符）。超过此阈值时自动裁剪中间段消息，保留 system prompt + 最近 N 条消息。 |
+| 配置项                          | 说明                                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `AgentOptions.maxContextTokens` | 上下文窗口 token 上限（默认 120000）。超过此阈值时自动裁剪中间段消息，保留 system prompt + 最近 N 条消息。 |
 
 **桌面精灵等长运行场景必备**：Agent 持续运行数天，`messages`
 数组无限增长会爆 LLM 上下文窗口。此配置自动截断，确保 LLM 请求不因上下文溢出而失败。
-
-```typescript
-const agent = new Agent({
-  projectPath: '/path/to/project',
-  configDir: '/path/to/agent-config',
-  maxContextTokens: 16000, // 覆盖默认值，适配大上下文窗口模型
-  config: { ... },
-});
-```
 
 **截断策略**：
 
@@ -613,7 +576,6 @@ const agent = new Agent({
 **桌面精灵典型用法**：
 
 ```typescript
-// 判断用户离线时长，决定是否主动问候
 const now = Date.now();
 const lastInteraction = agent.lastInteractionAt;
 if (lastInteraction && now - lastInteraction.getTime() > 30 * 60 * 1000) {
@@ -622,107 +584,246 @@ if (lastInteraction && now - lastInteraction.getTime() > 30 * 60 * 1000) {
 }
 ```
 
+### 8.14 只读访问器
+
+| 访问器               | 类型              | 说明                                |
+| -------------------- | ----------------- | ----------------------------------- |
+| `agent.initialized`  | `boolean`         | Agent 是否已初始化。                |
+| `agent.context`      | `object?`         | 当前项目上下文（未初始化为 null）。 |
+| `agent.agentLoop`    | `AgentLoop?`      | 内部 AgentLoop 引用（只读）。       |
+| `agent.agentHistory` | `MessageHistory?` | 内部消息历史引用（只读）。          |
+
 ---
 
 > **API 设计原则**：所有公开方法在错误状态下会抛 `configError` / `llmError`
 > 等友好错误（带可操作的 `suggestions[]`），宿主程序可在最外层 `try/catch`
 > 统一处理。**不会**静默返回 null 或空数组（除文档明确说明的 getter 外）。
 
-## 九、Provider 管理
+## 九、宿主工具函数
 
-> 文档 9.x 节按"已实现 / 设计阶段"明确区分。详细 API 见 §8.6。
-
-### 9.1 已实现：多 Provider 注册与切换
-
-Agent 支持运行时管理多个 LLM
-Provider，每个 Provider 有独立别名（`name`），可随时切换。
+Memora 导出一些工具函数，供宿主创建 Provider 和加载配置：
 
 ```typescript
-// 1. 配置文件里配置多个（init 时自动加载）
-// agent-config/llm.json:
-// {
-//   "providers": {
-//     "openai": { "provider": "openai-compatible", "apiKey": "sk-...", "model": "gpt-4o" },
-//     "deepseek": { "provider": "openai-compatible", "apiKey": "sk-...", "model": "deepseek-chat" }
-//   },
-//   "active": "openai"
-// }
-
-// 2. 运行时动态添加（不写入配置文件，重启后失效）
-agent.addProvider('kimi', {
-  provider: 'openai-compatible',
-  baseUrl: 'https://api.moonshot.cn/v1',
-  apiKey: process.env.KIMI_API_KEY!,
-  model: 'moonshot-v1-128k',
-});
-
-// 3. 切换
-agent.switchProvider('deepseek');
-
-// 4. 查询
-agent.listProviders(); // ['openai', 'deepseek', 'kimi']
-agent.getActiveProviderName(); // 'deepseek'
-agent.currentProvider; // LlmProvider 实例
+import {
+  createLlmProvider,
+  createProviderFromConfig,
+  loadConfig,
+} from 'memora';
+import type { ProviderConfig, Config } from 'memora';
 ```
 
-**API Key 保护**：`addProvider()` 不暴露完整 API Key（只显示前 3 位 +
-`***`），宿主程序打印日志时可放心调用。
+| 函数                                     | 用途                            |
+| ---------------------------------------- | ------------------------------- |
+| `createLlmProvider(config)`              | 从扁平配置创建 LlmProvider 实例 |
+| `createProviderFromConfig(name, config)` | 从命名配置创建 LlmProvider 实例 |
+| `loadConfig(path?)`                      | 加载 memora.json 配置文件       |
 
-### 9.2 设计阶段：前台/后台双通道路由
+**注意**：这些是**宿主工具函数**，不是 Agent 内核的一部分。宿主也可以完全不用这些函数，自己实现
+`LlmProvider` 接口。
 
-> **状态**：📋 设计阶段。`LlmProvider` 已支持多实例，但消费者（`TopicSummarizer`
-> / `UserProfile` / `WorkProjection` / `AutoConfigRefiner`）目前仍复用 chat
-> Provider。
+## 十、小说生成器完整接入示例
 
-**目标**：不同消费者按质量/成本需求路由到不同 Provider。
-
-| 消费者                | 质量要求 | 成本敏感 | 期望通道     |
-| --------------------- | -------- | -------- | ------------ |
-| AgentLoop（用户对话） | 高       | 低       | chat（默认） |
-| TopicSummarizer       | 中       | 高       | background   |
-| UserProfile           | 中       | 高       | background   |
-| WorkProjection        | 中       | 高       | background   |
-| AutoConfigRefiner     | 中       | 高       | background   |
-
-**预留配置格式**（设计阶段，尚未实现）：
+> 以小说生成器为首个宿主场景，展示完整接入流程。
 
 ```typescript
-const agent = new Agent({
-  config: {
-    llm: {
-      chat: {
-        provider: 'openai-compatible',
-        model: 'gpt-4o',
-        apiKey: 'sk-...',
+import { Agent, createLlmProvider, MemoryType, Permanence } from 'memora';
+import type { AgentChunk, WriteExtensions } from 'memora';
+
+class NovelWriterHost {
+  private agent!: Agent;
+
+  async start() {
+    // ─── 1. 创建 Provider（宿主管 API Key）─────────────────
+    const provider = createLlmProvider({
+      provider: 'openai-compatible',
+      apiKey: process.env.LLM_API_KEY!,
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat',
+    });
+
+    const backgroundProvider = createLlmProvider({
+      provider: 'openai-compatible',
+      apiKey: process.env.LLM_API_KEY!,
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-chat', // 后台归档可用更便宜的模型
+    });
+
+    // ─── 2. 创建 Agent ─────────────────────────────────────
+    this.agent = new Agent({
+      projectPath: '/path/to/novel-project',
+      provider,
+      backgroundProvider,
+      configDir: '/path/to/novel-writer/agent-config',
+      archiveMode: 'insights-only', // 草稿/定稿工作流
+      maxContextTokens: 120000,
+      persona: '作家',
+      permission: 'owner',
+      allowedPaths: ['/path/to/novel-project'],
+    });
+
+    await this.agent.init();
+
+    // ─── 3. 注入 diff 对比确认回调 ──────────────────────────
+    this.agent.setWriteExtensions({
+      async onBeforeWrite(path, beforeContent, afterContent) {
+        if (beforeContent === null) return true; // 新文件直接确认
+        // 宿主渲染 diff 面板，用户确认后返回 true
+        return await ui.showDiffConfirm(path, beforeContent, afterContent);
       },
-      background: {
-        provider: 'openai-compatible',
-        model: 'deepseek-chat',
-        apiKey: 'sk-...',
+    });
+
+    // ─── 4. 注册领域工具 ────────────────────────────────────
+    this.agent.registerTool(
+      {
+        name: 'read_chapter',
+        description: '读取指定章节的完整内容',
+        parameters: {
+          type: 'object',
+          properties: {
+            chapterNumber: { type: 'number', description: '章节编号' },
+          },
+          required: ['chapterNumber'],
+        },
       },
-    },
-  },
-});
+      async (args) => {
+        return await this.novelService.readChapter(args.chapterNumber);
+      },
+    );
+
+    this.agent.registerTool(
+      {
+        name: 'list_characters',
+        description: '列出所有角色设定',
+        parameters: { type: 'object', properties: {} },
+      },
+      async () => {
+        return await this.novelService.listCharacters();
+      },
+    );
+  }
+
+  // ─── 对话 ─────────────────────────────────────────────
+  async chat(userInput: string): Promise<void> {
+    for await (const chunk of this.agent.chat(userInput)) {
+      switch (chunk.type) {
+        case 'text':
+          this.ui.appendText(chunk.content);
+          break;
+        case 'thinking':
+          this.ui.showThinking(chunk.phase);
+          break;
+        case 'tool_start':
+          this.ui.showToolStart(chunk.name);
+          break;
+        case 'tool_result':
+          this.ui.showToolResult(chunk.ok, chunk.summary);
+          break;
+      }
+    }
+  }
+
+  // ─── 泊文体系：草稿→定稿工作流 ─────────────────────────
+  async draftAndApprove(prompt: string): Promise<void> {
+    // 草稿模式（insights-only 已在构造时设定）
+    await this.chat(prompt);
+
+    // 用户审核通过后，手动归档定稿
+    const approvedContent = this.ui.getApprovedContent();
+    await this.agent.archiveApprovedContent(approvedContent);
+  }
+
+  // ─── 角色管理 ─────────────────────────────────────────
+  listPersonas() {
+    return this.agent.listPersonas();
+  }
+  switchPersona(name: string) {
+    this.agent.switchPersona(name);
+  }
+  getActivePersona() {
+    return this.agent.getActivePersonaName();
+  }
+
+  // ─── 记忆管理 ─────────────────────────────────────────
+  getMountedMemories() {
+    return this.agent.getMountedMemories();
+  }
+  unmountMemory(name: string) {
+    return this.agent.unmountMemory(name);
+  }
+  searchMemories(query: string) {
+    return this.agent.searchMemories(query);
+  }
+
+  // ─── Provider 切换（用户在设置里改 API Key）──────────
+  switchProvider(config: any) {
+    const newProvider = createLlmProvider(config);
+    this.agent.setProvider(newProvider);
+  }
+
+  // ─── 优雅关闭 ─────────────────────────────────────────
+  async stop() {
+    await this.agent.waitForArchives(10000);
+    await this.agent.close();
+  }
+}
 ```
 
-不配 `background` 时，所有消费者复用 `chat`——零破坏性。
+## 十一、关键约束
 
-## 十、关键约束
-
-1. **configDir** 指向 Agent 级配置目录（`personas/` + `rules/` +
+1. **`provider` 是必填项** — Agent 无法独立运行，必须由宿主注入 LLM Provider
+2. **configDir** 指向 Agent 级配置目录（`personas/` + `rules/` +
    `skills/`），所有子项目共享
-2. **项目级 `.memora/`** 只放 `rules/` 和 `skills/`，不放 `memora.db`
-3. **角色由关键词自动触发**，用户说「帮我写小说」→ 自动切换到「作家」角色
-4. **对话历史跨子项目持久化**，切换子项目不会丢失之前聊过的内容
-5. `registerTool()` 和 `addRule()` / `addSkill()` 必须在 `init()` 之后调用
-6. **作品原始内容不进 SQLite**，Agent 通过工具按需读取，只存轻量投影
-7. **配置文件是真理源**，`agent-config/`
+3. **项目级 `.memora/`** 只放 `rules/` 和 `skills/`，不放 `memora.db`
+4. **角色由关键词自动触发**，用户说「帮我写小说」→ 自动切换到「作家」角色
+5. **对话历史跨子项目持久化**，切换子项目不会丢失之前聊过的内容
+6. `registerTool()` 和 `addRule()` / `addSkill()` 必须在 `init()` 之后调用
+7. **作品原始内容不进 SQLite**，Agent 通过工具按需读取，只存轻量投影
+8. **配置文件是真理源**，`agent-config/`
    下的配置由 MemoryLoader 启动时扫描加载到 SQLite；`addRule()`
    是运行时注入，不经配置文件
-8. **禁止**为每个子项目创建独立的 memora.db——记忆是 Agent 级的
-9. **禁止**项目切换时关闭/重建数据库——记忆跨项目持久化
-10. **禁止**将配置直接写入 SQLite 作为持久化存储——配置文件才是真理源
+9. **禁止**为每个子项目创建独立的 memora.db——记忆是 Agent 级的
+10. **禁止**项目切换时关闭/重建数据库——记忆跨项目持久化
+11. **禁止**将配置直接写入 SQLite 作为持久化存储——配置文件才是真理源
+12. **宿主在 `close()` 前调用 `waitForArchives()`** 保证后台归档完成
+
+## 十二、类型导出速查
+
+```typescript
+// Agent 与流式事件
+export { Agent } from 'memora';
+export type {
+  AgentOptions,
+  AgentChunk,
+  ThinkingPhase,
+  ArchiveMode,
+} from 'memora';
+
+// 工具
+export type { ToolDefinition, ToolHandler, WriteExtensions } from 'memora';
+
+// 配置建议
+export type { ConfigSuggestion, ConfigSuggestionHandler } from 'memora';
+
+// 记忆
+export { MemoryType, Permanence } from 'memora';
+export type { Memory, MemoryTypeValue, PermanenceValue } from 'memora';
+
+// 角色
+export type { PersonaMode } from 'memora';
+
+// 技能
+export type { SkillEntry } from 'memora';
+
+// LLM 宿主用
+export { createLlmProvider, createProviderFromConfig } from 'memora';
+export type { ProviderConfig, LlmProvider } from 'memora';
+
+// 配置文件加载
+export { loadConfig } from 'memora';
+export type { Config } from 'memora';
+```
 
 ---
 
-> 更多细节参见 `docs/基础设计文档/01-主架构-v4.0.md`
+> 更多细节参见
+> [memora-api-reference-v1.0.md](./memora-api-reference-v1.0.md)（完整 API 参考）、[记忆系统设计介绍-v1.0.md](./记忆系统设计介绍-v1.0.md)（概念级介绍）

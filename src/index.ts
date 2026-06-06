@@ -30,10 +30,12 @@ export type {
   MountedSnapshot,
   ArchiveMode,
 } from './agent/agent.js';
-export type { ToolDefinition, ToolHandler } from './agent/tool-executor.js';
+export type { ToolDefinition, ToolHandler, WriteExtensions } from './agent/tool-executor.js';
 export type { PersonaMode } from './persona/personaManager.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/agent.js';
 export { loadConfig } from './config/loader.js';
+export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
+export type { ProviderConfig } from './llm/factory.js';
 export type { Config } from './config/loader.js';
 // P1-3 修复：导出宿主程序调用 addRule() 所需的类型
 export { MemoryType, Permanence } from './memory/types.js';

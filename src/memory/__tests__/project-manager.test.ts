@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 项目管理器测试
  * 覆盖 initProject / closeProject / listProjects / registerProject / 锁文件 / 全局规则
  */
@@ -35,7 +35,7 @@ describe('ProjectManager · initProject', () => {
 
   it('应该初始化项目并返回上下文', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     const ctx = await pm.initProject(tmpDir);
 
     expect(ctx.projectPath).toBe(tmpDir);
@@ -53,7 +53,7 @@ describe('ProjectManager · initProject', () => {
 
   it('应该自动创建 .memora 目录', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     const ctx = await pm.initProject(tmpDir);
 
     expect(existsSync(ctx.memoraDir)).toBe(true);
@@ -63,7 +63,7 @@ describe('ProjectManager · initProject', () => {
 
   it('应该创建锁文件', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     await pm.initProject(tmpDir);
 
     const lockPath = join(tmpDir, '.memora', '.lock');
@@ -78,7 +78,7 @@ describe('ProjectManager · initProject', () => {
 
   it('关闭项目后应删除锁文件', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     await pm.initProject(tmpDir);
     await pm.shutdown();
 
@@ -88,7 +88,7 @@ describe('ProjectManager · initProject', () => {
 
   it('应该注册项目到注册表', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     await pm.initProject(tmpDir, 'test-project');
 
     const projects = pm.listProjects();
@@ -117,7 +117,7 @@ describe('ProjectManager · 全局规则', () => {
 
   it('无全局规则目录时应返回空数组', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     const ctx = await pm.initProject(tmpDir);
 
     expect(ctx.globalMemories).toHaveLength(0);
@@ -133,7 +133,7 @@ describe('ProjectManager · 全局规则', () => {
     writeFileSync(join(globalRulesDir, 'coding-style.md'), '编码风格规则', 'utf-8');
 
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     const ctx = await pm.initProject(tmpDir);
 
     expect(ctx.globalMemories).toHaveLength(2);
@@ -161,7 +161,7 @@ describe('ProjectManager · 项目注册表', () => {
 
   it('应该读写项目注册表', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
 
     pm.registerProject('/path/to/project-a', 'project-a');
     pm.registerProject('/path/to/project-b', 'project-b');
@@ -174,7 +174,7 @@ describe('ProjectManager · 项目注册表', () => {
 
   it('注册相同路径应更新而非重复', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
 
     pm.registerProject('/path/to/project-a', 'project-a');
     pm.registerProject('/path/to/project-a', 'project-a-renamed');
@@ -186,7 +186,7 @@ describe('ProjectManager · 项目注册表', () => {
 
   it('应该从注册表移除项目', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
 
     pm.registerProject('/path/to/project-a', 'project-a');
     pm.registerProject('/path/to/project-b', 'project-b');
@@ -202,7 +202,7 @@ describe('ProjectManager · 项目注册表', () => {
     // 写入损坏的 JSON
     writeFileSync(join(tmpHome, '.memora', 'projects.json'), 'not valid{{{', 'utf-8');
 
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     const projects = pm.listProjects();
     // 应降级为返回空列表
     expect(projects).toHaveLength(0);
@@ -233,7 +233,7 @@ describe('ProjectManager · 项目切换', () => {
 
   it('应该能切换到不同项目', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
 
     const ctx1 = await pm.initProject(tmpDir1, 'project-1');
     expect(ctx1.projectPath).toBe(tmpDir1);
@@ -277,7 +277,7 @@ describe('ProjectManager · 锁文件安全', () => {
     writeFileSync(join(memoraDir, '.lock'), JSON.stringify(fakeLock), 'utf-8');
 
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     // initProject 应该能清理残留锁并正常启动
     await pm.initProject(tmpDir);
 
@@ -296,7 +296,7 @@ describe('ProjectManager · 锁文件安全', () => {
     writeFileSync(join(memoraDir, '.lock'), 'not valid json{{{', 'utf-8');
 
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config);
+    const pm = new ProjectManager(config.memory.dataDir);
     const ctx = await pm.initProject(tmpDir);
 
     // 应该能正常启动

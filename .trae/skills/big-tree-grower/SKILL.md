@@ -59,24 +59,24 @@ description:
 
 **手动模式** — 你说做什么，AI 做一步：
 
-| #   | 场景              | 核心触发词                                                               | 详见                                       |
-| --- | ----------------- | ------------------------------------------------------------------------ | ------------------------------------------ |
-| 1   | 新想法→方案       | `方案更新` `方案落地` `方案更新 path/to/doc.md`                          | [manual](references/manual-modes-guide.md) |
-| 2   | 出了bug           | `速修` `快速修复` `修复bug`                                              | [manual](references/manual-modes-guide.md) |
-| 3   | 规则不对齐        | `规则对齐` `交叉检查`                                                    | [manual](references/manual-modes-guide.md) |
-| 4   | 卡住了            | `模块重思` `聚焦模块`                                                    | [manual](references/manual-modes-guide.md) |
-| 5   | 写完了自查        | `提交前审查` `有没有问题` `代码审查` `审查代码`                          | [manual](references/manual-modes-guide.md) |
-| 6   | 测试覆盖          | `补测试` `测试覆盖` `补充测试`                                           | [manual](references/manual-modes-guide.md) |
-| 7   | 跑通回归          | `测试回归`                                                               | [manual](references/manual-modes-guide.md) |
-| 8   | 改数据库          | `数据库迁移` `加字段` `改表`                                             | [manual](references/manual-modes-guide.md) |
-| 9   | 项目体检          | `检查大树健康` `健康度诊断` `项目体检`                                   | [manual](references/manual-modes-guide.md) |
-| 10  | 代码太肥          | `剪枝` `清理代码` `删除死代码` `去重`                                    | [manual](references/manual-modes-guide.md) |
-| 11  | 前端审美          | `体验评审` `前端体验评估` `交互质量检查`                                 | [manual](references/manual-modes-guide.md) |
-| 12  | 安全审查          | `安全审计`                                                               | [manual](references/manual-modes-guide.md) |
-| 13  | 依赖过时          | `依赖检查` `依赖审计` `npm audit`                                        | [manual](references/manual-modes-guide.md) |
-| 14  | 要发版了          | `发布版本` `打版本` `release`                                            | [manual](references/manual-modes-guide.md) |
-| 15  | 需求评审/自动迭代 | `问诊` `需求评审` `问诊：自动迭代` `问诊：智能路由` `问诊 方案更新：XXX` | [manual](references/manual-modes-guide.md) |
-| 16  | 方案有漏          | `排雷` `沙盘推演` `方案排雷`                                             | [manual](references/manual-modes-guide.md) |
+| #   | 场景                       | 核心触发词                                                                                | 详见                                       |
+| --- | -------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------ |
+| 1   | 新想法→方案                | `方案更新` `方案落地` `方案更新 path/to/doc.md`                                           | [manual](references/manual-modes-guide.md) |
+| 2   | 出了bug                    | `速修` `快速修复` `修复bug`                                                               | [manual](references/manual-modes-guide.md) |
+| 3   | 规则不对齐                 | `规则对齐` `交叉检查`                                                                     | [manual](references/manual-modes-guide.md) |
+| 4   | 卡住了                     | `模块重思` `聚焦模块`                                                                     | [manual](references/manual-modes-guide.md) |
+| 5   | 写完了自查                 | `提交前审查` `有没有问题` `代码审查` `审查代码`                                           | [manual](references/manual-modes-guide.md) |
+| 6   | 测试覆盖                   | `补测试` `测试覆盖` `补充测试`                                                            | [manual](references/manual-modes-guide.md) |
+| 7   | 跑通回归                   | `测试回归`                                                                                | [manual](references/manual-modes-guide.md) |
+| 8   | 改数据库                   | `数据库迁移` `加字段` `改表`                                                              | [manual](references/manual-modes-guide.md) |
+| 9   | 项目体检                   | `检查大树健康` `健康度诊断` `项目体检`                                                    | [manual](references/manual-modes-guide.md) |
+| 10  | 代码太肥                   | `剪枝` `清理代码` `删除死代码` `去重`                                                     | [manual](references/manual-modes-guide.md) |
+| 11  | 前端审美                   | `体验评审` `前端体验评估` `交互质量检查`                                                  | [manual](references/manual-modes-guide.md) |
+| 12  | 安全审查                   | `安全审计`                                                                                | [manual](references/manual-modes-guide.md) |
+| 13  | 依赖过时                   | `依赖检查` `依赖审计` `npm audit`                                                         | [manual](references/manual-modes-guide.md) |
+| 14  | 要发版了                   | `发布版本` `打版本` `release`                                                             | [manual](references/manual-modes-guide.md) |
+| 15  | 需求评审/自动迭代/炼化归元 | `问诊` `需求评审` `问诊：自动迭代` `问诊：智能路由` `问诊：炼化归元` `问诊 方案更新：XXX` | [manual](references/manual-modes-guide.md) |
+| 16  | 方案有漏                   | `排雷` `沙盘推演` `方案排雷`                                                              | [manual](references/manual-modes-guide.md) |
 
 ## 核心执行骨架
 

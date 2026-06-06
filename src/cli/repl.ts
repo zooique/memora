@@ -13,6 +13,9 @@
  * 盲点修复（P0-1/P0-2）：REPL 对话流和话题切换必须走 Agent 主流程
  * （agent.chat() / agent.switchTopic()），不再直接调用 loop/history，
  * 确保 v4.0 后处理（角色匹配/技能匹配/信号检测/轮次归档/用户画像）生效。
+ *
+ * 架构重构（v2.0）：CLI 层作为宿主程序，自行管理 LLM Provider 的创建和切换。
+ * Memora 内核 Agent 只接收 LlmProvider 实例，不关心 API Key / baseUrl 等配置。
  */
 import { createInterface, type Interface as RLInterface } from 'node:readline';
 import type { Config } from '@/config/loader.js';
@@ -20,6 +23,8 @@ import { BUILTIN_TOOLS } from '@/agent/tool-executor.js';
 import { toFriendlyError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { Agent } from '@/agent/agent.js';
+import { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
+import type { LlmProvider } from '@/llm/provider.js';
 import {
   formatWelcome,
   formatHelp,
@@ -50,10 +55,60 @@ export interface ReplOptions {
 export async function startRepl(opts: ReplOptions): Promise<void> {
   const { projectPath, config } = opts;
 
-  // T-201 修复：通过 Agent 门面类封装所有 memory/ 层访问
-  const agent = new Agent({ projectPath, config });
+  // ─── 宿主层：创建 Provider 实例 ──────────────────────────
+  // CLI 作为宿主，从 config 创建 LlmProvider 实例，再传给 Agent 内核。
+  // Agent 内核不关心 API Key / baseUrl 等配置细节。
 
-  // 初始化 Agent（内部走 ProjectManager.initProject + _initProviders）
+  // 存储所有 Provider 实例（供运行时切换使用）
+  const providerMap = new Map<string, LlmProvider>();
+  let activeProviderName: string;
+
+  // 多 Provider 格式：llm.providers 映射表 + llm.active
+  const providerConfigs = (config.llm as Record<string, unknown>).providers as
+    | Record<string, { provider: string; model: string; baseUrl?: string; apiKey?: string }>
+    | undefined;
+  if (providerConfigs && Object.keys(providerConfigs).length > 0) {
+    for (const [name, pc] of Object.entries(providerConfigs)) {
+      providerMap.set(name, createProviderFromConfig(name, pc));
+    }
+    activeProviderName =
+      ((config.llm as Record<string, unknown>).active as string | undefined) ??
+      Object.keys(providerConfigs)[0]!;
+  } else {
+    // 旧格式：单 Provider 扁平字段
+    const provider = createLlmProvider(config);
+    activeProviderName = config.llm.provider;
+    providerMap.set(activeProviderName, provider);
+  }
+
+  // 前台 Provider（必须）
+  const provider = providerMap.get(activeProviderName);
+  if (!provider) {
+    throw new Error(`Provider "${activeProviderName}" 未在 providers 映射表中找到`);
+  }
+
+  // 后台 Provider（可选，用于归档/投影等后台操作）
+  const bgConfig = (config.llm as Record<string, unknown>).background as
+    | { provider: string; model: string; baseUrl?: string; apiKey?: string }
+    | undefined;
+  const backgroundProvider = bgConfig
+    ? createProviderFromConfig((bgConfig.provider ?? 'background') as string, bgConfig)
+    : undefined;
+
+  // ─── 创建 Agent（只传 Provider 实例和独立字段，不传 Config）──────────
+  const agent = new Agent({
+    projectPath,
+    provider,
+    backgroundProvider,
+    dataDir: config.memory.dataDir,
+    maxContextTokens: config.memory.maxContextTokens,
+    persona: (config as Record<string, unknown>).persona as string | undefined,
+    permission: config.security.permission,
+    allowedPaths: config.allowedPaths,
+    confirmWrites: config.security.confirmWrites,
+  });
+
+  // 初始化 Agent（内部走 ProjectManager.initProject）
   const pctx = await agent.init();
 
   // 加载统计
@@ -61,28 +116,19 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
     logger.warn({ errors: pctx.loadResult.errors }, '部分记忆文件加载失败');
   }
 
-  // v1.2：Provider 管理已收归 Agent 门面类（新枝破土 · P2 分层修复）
-  // REPL 不再自行创建 providers Map，所有 Provider 操作通过 Agent API：
-  //   - agent.listProviders()：列出已注册 Provider
-  //   - agent.getActiveProviderName()：获取当前激活的 Provider 名
-  //   - agent.switchProvider(name)：切换 Provider
-  //
-  // 翠幕天罗 P2 修复：REPL 不再自行创建 MessageHistory / AgentLoop，
-  // 直接使用 Agent 内部的 loop 和 history，避免切换项目后内外不同步。
-
   // 本轮工具调用记录（A-102），从 agent.chat() 的 tool_start/tool_result 事件收集
   const toolCallRecordsForTurn: ToolCallRecord[] = [];
 
   // 从 Agent 获取内部 history 引用（仅用于 /topic 无参数时显示当前话题名）
   let history = agent.agentHistory!;
 
-  // 显示欢迎（M-205 美化版 + M-207 项目名 + v1.2 Provider 信息）
+  // 显示欢迎
   console.log(
     formatWelcome({
       version: '0.1.0',
       projectPath,
       projectName: pctx.projectName,
-      modelName: agent.getActiveProviderName() ?? 'unknown',
+      modelName: activeProviderName,
       dbPath: pctx.dbPath,
       loadedCount: pctx.loadResult.loaded,
       bootstrapCount: pctx.bootstrapMemories.length,
@@ -139,7 +185,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
         console.log(pc.dim('用法：/search <关键词>'));
       } else {
         try {
-          // T-201 修复：通过 Agent 门面类搜索记忆
           const results = await agent.searchMemories(query, 10);
           if (results.length === 0) {
             console.log(pc.dim(`未找到与 "${query}" 相关的记忆`));
@@ -211,11 +256,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // M-207：项目切换命令（T-201 修复：通过 Agent 门面类）
+    // M-207：项目切换命令
     if (input === '/project' || input.startsWith('/project ')) {
       const arg = input.slice('/project'.length).trim();
       if (!arg) {
-        // 无参数：显示当前项目和已注册项目列表
         try {
           const projects = agent.listProjects();
           console.log(`当前项目：${pctx.projectName}（${projectPath}）`);
@@ -256,7 +300,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       if (!newName) {
         console.log(`当前话题：${history.currentTopicName}`);
       } else {
-        // P0-2 修复：走 agent.switchTopic()，确保旧话题归档 + 记忆卸载 + 轮次重置
         const newFullName = await agent.switchTopic(newName);
         // 切换后更新 history 引用（agent 内部已重建）
         history = agent.agentHistory!;
@@ -273,17 +316,14 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // v1.2：Provider 切换命令（通过 Agent 门面类，P2 分层修复）
+    // v2.0：Provider 切换命令（CLI 宿主层自行管理 Provider）
     if (input === '/provider' || input.startsWith('/provider ')) {
       const name = input.slice('/provider'.length).trim();
       if (!name) {
-        // 列出所有 Provider（通过 Agent API）
-        const providerNames = agent.listProviders();
-        const activeName = agent.getActiveProviderName();
         console.log(pc.cyan('已注册的 LLM Provider：'));
         console.log(pc.dim('─'.repeat(40)));
-        for (const pName of providerNames) {
-          const marker = pName === activeName ? ' *' : '  ';
+        for (const pName of providerMap.keys()) {
+          const marker = pName === activeProviderName ? ' *' : '  ';
           console.log(`${marker} ${pName}`);
         }
         console.log(pc.dim('─'.repeat(40)));
@@ -294,8 +334,13 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       }
 
       try {
-        // 通过 Agent 门面类切换 Provider
-        agent.switchProvider(name);
+        const newProvider = providerMap.get(name);
+        if (!newProvider) {
+          throw new Error(`Provider "${name}" 未找到，可用：${[...providerMap.keys()].join(', ')}`);
+        }
+        // 通过 Agent 的 setProvider 方法切换（同步更新 AgentLoop 内部引用）
+        agent.setProvider(newProvider);
+        activeProviderName = name;
         console.log(formatSuccess(`已切换到 Provider：「${name}」`));
       } catch (err) {
         const friendly = toFriendlyError(err);
@@ -305,11 +350,10 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // v1.1：角色查看/切换命令（P-6xx 角色系统）
+    // v1.1：角色查看/切换命令
     if (input === '/persona' || input.startsWith('/persona ')) {
       const name = input.slice('/persona'.length).trim();
       if (!name) {
-        // 列出所有角色 + 当前激活状态
         const personas = agent.listPersonas();
         const activeName = agent.getActivePersonaName();
         const mode = agent.getPersonaMode();
@@ -344,28 +388,21 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       continue;
     }
 
-    // P0-1 修复：走 agent.chat() 主流程，确保 v4.0 后处理全部生效
-    // （角色匹配/技能匹配/信号检测/轮次归档/用户画像/话题召回）
-    // agent.chat() 内部已处理 appendUser + appendAssistant，REPL 不再手动追加
-
     // 重置本轮工具调用记录（A-102）
     toolCallRecordsForTurn.length = 0;
 
     try {
       process.stdout.write('\n');
-      // 流式 Markdown 渲染（A-103）+ 工具调用可视化（从 agent.chat() 事件收集）
+      // 流式 Markdown 渲染（A-103）+ 工具调用可视化
       const md = new MarkdownRenderer();
       for await (const chunk of agent.chat(input)) {
         if (chunk.type === 'text') {
           process.stdout.write(md.feed(chunk.content));
         } else if (chunk.type === 'thinking') {
-          // 思考/进度提示：淡色输出，让用户知道 Agent 当前在做什么
           process.stderr.write(formatThinking(chunk.phase) + '\n');
         } else if (chunk.type === 'recall') {
-          // 记忆召回通知：告知用户 Agent 召回了多少条相关记忆
           process.stderr.write(formatRecall(chunk.count) + '\n');
         } else if (chunk.type === 'tool_start') {
-          // A-102：记录工具调用开始
           process.stderr.write(formatToolStart(chunk.name) + '\n');
           toolCallRecordsForTurn.push({
             toolName: chunk.name,
@@ -373,7 +410,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
             summary: (chunk.args ?? '').slice(0, 80),
           });
         } else if (chunk.type === 'tool_result') {
-          // A-102：更新工具调用结果
           const summaryText = chunk.summary ?? '';
           process.stderr.write(formatToolResult(chunk.name, summaryText) + '\n');
           process.stderr.write(formatToolEnd(chunk.name, chunk.ok));
@@ -392,7 +428,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       process.stdout.write(md.flush());
       process.stdout.write('\n');
     } catch (err) {
-      // M-103：所有错误统一包装为友好错误
       const friendly = toFriendlyError(err);
       friendly.log();
       console.error(formatError(friendly.title, friendly.detail));

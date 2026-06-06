@@ -42,7 +42,6 @@ import { TopicStore } from './topic-store.js';
 import { SecurityGuard } from '@/security/path-guard.js';
 import { logger } from '@/logging/logger.js';
 import { MemoryType, type Memory } from './types.js';
-import type { Config } from '@/config/loader.js';
 
 /**
  * 项目上下文：打开一个项目后产出的一组组件
@@ -112,6 +111,12 @@ export class ProjectManager {
   private readonly globalRulesDir: string;
   /** Agent 级数据目录（memora.db + topics/ 的父目录） */
   private readonly agentDataDir: string;
+  /** 允许的路径白名单 */
+  private readonly allowedPaths: string[];
+  /** 写入确认 */
+  private readonly confirmWrites: boolean;
+  /** 安全权限 */
+  private readonly permission: 'owner' | 'guest';
   /** Agent 级 SQLite 索引（全局共享，不随项目切换重建） */
   private agentIndex: MemoryIndex | null = null;
   /** Agent 级话题存储（全局共享，不随项目切换重建） */
@@ -121,11 +126,19 @@ export class ProjectManager {
   /** 当前持有的锁文件路径 */
   private currentLockPath: string | null = null;
 
-  constructor(private readonly config: Config) {
-    const memoraHome = resolve(config.memory.dataDir.replace(/^~/, homedir()));
+  constructor(
+    dataDir: string,
+    allowedPaths: string[] = [],
+    confirmWrites: boolean = false,
+    permission: 'owner' | 'guest' = 'owner',
+  ) {
+    const memoraHome = resolve(dataDir.replace(/^~/, homedir()));
     this.agentDataDir = memoraHome;
     this.registryPath = join(memoraHome, 'projects.json');
     this.globalRulesDir = join(memoraHome, 'global', 'rules');
+    this.allowedPaths = allowedPaths;
+    this.confirmWrites = confirmWrites;
+    this.permission = permission;
   }
 
   /**
@@ -215,9 +228,9 @@ export class ProjectManager {
     const security = new SecurityGuard(
       projectPath,
       memoraDir,
-      this.config.allowedPaths,
-      this.config.security.confirmWrites,
-      this.config.security.permission,
+      this.allowedPaths,
+      this.confirmWrites,
+      this.permission,
     );
 
     // 注册到项目表

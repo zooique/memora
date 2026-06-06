@@ -15,18 +15,21 @@
  *   await agent.close();
  *
  * 使用方式（高级）：
- *   const agent = new Agent({ config: myConfig, configDir: './agent-config', projectPath: './my-project' });
+ *   const agent = new Agent({ projectPath: './my-project', provider: myProvider, configDir: './agent-config' });
  *
  * 专注模式（应无所住，而生其心）：
  *   Agent 启动时只加载 always + domain 记忆（无所住），
  *   用户一开口，TopicMount 自动召回话题记忆注入上下文（生其心）。
  *   同话题内缓存召回结果，鼓励深度专注。
  */
-import { loadConfig, type Config } from '@/config/loader.js';
-import { createLlmProvider, createProviderFromConfig, type ProviderConfig } from '@/llm/factory.js';
 import { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
-import { ToolExecutor, type ToolDefinition, type ToolHandler } from './tool-executor.js';
+import {
+  ToolExecutor,
+  type ToolDefinition,
+  type ToolHandler,
+  type WriteExtensions,
+} from './tool-executor.js';
 import { MessageHistory } from './message-history.js';
 import { ProjectManager, type ProjectContext } from '@/memory/project-manager.js';
 import { createTopicSummarizer } from './topic-summarizer.js';
@@ -70,14 +73,26 @@ export type ArchiveMode = 'full' | 'insights-only' | 'manual';
 export interface AgentOptions {
   /** 项目路径（必须） */
   projectPath: string;
-  /** 配置对象（可选，优先于 configPath） */
-  config?: Config;
-  /** 配置文件路径（可选，与 config 二选一） */
-  configPath?: string;
-  /** 配置目录（可选，分离配置与运行时数据） */
+  /** 前台 LLM Provider（必须，宿主负责创建） */
+  provider: LlmProvider;
+  /** 后台 LLM Provider（可选，用于归档/投影等后台操作，不配时复用前台） */
+  backgroundProvider?: LlmProvider;
+  /** 配置目录（personas/rules/skills） */
   configDir?: string;
   /** 归档模式（默认 'full'）：控制 chat() 中自动归档的行为 */
   archiveMode?: ArchiveMode;
+  /** 记忆数据目录（默认 ~/.memora） */
+  dataDir?: string;
+  /** 最大上下文 token 数（默认 120000） */
+  maxContextTokens?: number;
+  /** 默认角色名 */
+  persona?: string;
+  /** 安全权限 */
+  permission?: 'owner' | 'guest';
+  /** 允许的路径白名单 */
+  allowedPaths?: string[];
+  /** 写入确认 */
+  confirmWrites?: boolean;
 }
 
 /**
@@ -252,19 +267,19 @@ class MemoryInspector {
 
 export class Agent {
   // 构造参数
-  private config: Config | null = null; // init 时延迟加载
-  private configPath: string | undefined;
+  private _provider: LlmProvider; // 前台 LLM Provider（构造时存储）
+  private _backgroundProvider: LlmProvider | null; // 后台 LLM Provider（可选）
+  private _dataDir: string; // 记忆数据目录（默认 ~/.memora）
+  private _maxContextTokens: number; // 最大上下文 token 数（默认 120000）
+  private _personaName: string | undefined; // 默认角色名
+  private _permission: 'owner' | 'guest'; // 安全权限
+  private _allowedPaths: string[]; // 允许的路径白名单
+  private _confirmWrites: boolean; // 写入确认
   private projectPath: string;
   private configDir: string | undefined; // 配置目录（personas/rules/skills/tools）
 
   // 运行时组件（init 后填充）
   private projectManager: ProjectManager | null = null;
-  /** v1.2：多 Provider 映射表（key 为别名，如 "deepseek"、"openai"） */
-  private providers: Map<string, LlmProvider> = new Map();
-  /** v1.2：当前激活的 Provider 别名 */
-  private activeProviderName: string | null = null;
-  /** v1.2：后台通道 Provider 缓存（避免每次调用 getBackgroundProvider 重建实例） */
-  private _backgroundProvider: LlmProvider | null = null;
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
   private topicMount: TopicMount | null = null; // 话题记忆挂载器（专注模式）
@@ -326,15 +341,20 @@ export class Agent {
   private _lastInteractionAt: Date | null = null;
   /** 桌面精灵缺口：缓存的已归档话题文件数（inspect() 同步读取，init/close 时刷新） */
   private _cachedTopicCount = 0;
+  /** 写入扩展回调（宿主注入 diff 对比确认逻辑，小说生成器场景必需） */
+  private _writeExtensions: WriteExtensions | null = null;
 
   constructor(opts: AgentOptions) {
-    // config 和 configPath 二选一，config 优先
-    if (opts.config) {
-      this.config = opts.config;
-    }
-    this.configPath = opts.configPath;
     this.projectPath = opts.projectPath;
+    this._provider = opts.provider;
+    this._backgroundProvider = opts.backgroundProvider ?? null;
     this.configDir = opts.configDir;
+    this._dataDir = opts.dataDir ?? '~/.memora';
+    this._maxContextTokens = opts.maxContextTokens ?? 120000;
+    this._personaName = opts.persona;
+    this._permission = opts.permission ?? 'owner';
+    this._allowedPaths = opts.allowedPaths ?? [];
+    this._confirmWrites = opts.confirmWrites ?? false;
     // 归档模式（默认 'full'，向后兼容）
     if (opts.archiveMode) {
       this._archiveMode = opts.archiveMode;
@@ -344,15 +364,15 @@ export class Agent {
   // ─── 生命周期 ─────────────────────────────────────────
 
   /**
-   * 初始化 Agent：创建 LLM Provider、加载索引、组装内部组件
+   * 初始化 Agent：加载索引、组装内部组件
    *
    * 对应 repl.ts 中 rebuildAgentComponents() 的逻辑，
    * 但去掉了 CLI 特有的可视化包装。
    *
-   * @param configOverride - 可选，运行时覆盖构造器 config（用于热重载/多项目切换）
+   * @param projectPathOverride - 可选，运行时覆盖构造器 projectPath（用于项目切换）
    * @returns ProjectContext — 完整项目上下文，宿主项目可据此访问内部组件
    */
-  async init(projectPathOverride?: string, configOverride?: Config): Promise<ProjectContext> {
+  async init(projectPathOverride?: string): Promise<ProjectContext> {
     // P2-6 修复：重复调用 init() 时先清理旧资源，防止泄漏
     if (this._initialized) {
       await this.close();
@@ -362,24 +382,18 @@ export class Agent {
     if (projectPathOverride) {
       this.projectPath = projectPathOverride;
     }
-    if (configOverride) {
-      this.config = configOverride;
-    }
 
-    // 确保 config 已加载（构造时未提供则自动加载）
-    if (!this.config) {
-      this.config = await loadConfig(this.configPath);
-    }
-
-    // 创建 ProjectManager（延迟到 init 以确保 config 正确）
-    this.projectManager = new ProjectManager(this.config);
+    // 创建 ProjectManager（只传 dataDir，不依赖 Config 类型）
+    this.projectManager = new ProjectManager(
+      this._dataDir,
+      this._allowedPaths,
+      this._confirmWrites,
+      this._permission,
+    );
 
     // 初始化项目上下文（加载 .memora/ 下的记忆索引）
     // 传递 configDir 以分离配置目录与运行时数据目录
     const pctx = await this.projectManager.initProject(this.projectPath, undefined, this.configDir);
-
-    // v1.2：创建多 Provider 映射表
-    this._initProviders();
 
     // 组装所有运行时组件（v4.0：包括 persona/skill/userProfile/workProjection）
     await this._assembleComponents(pctx);
@@ -391,9 +405,9 @@ export class Agent {
     // P2-8 修复：关键组件缺失时报错，而非静默成功后 chat() 崩溃
     if (!this.loop || !this.history) {
       throw configError('Agent 初始化失败', 'LLM Provider 不可用或创建失败', [
-        '检查配置文件中的 llm.provider / llm.providers 设置',
+        '检查传入的 provider 参数是否有效',
         '确认 API Key 已配置（环境变量或配置文件）',
-        '使用 memora config-llm list 查看已注册 Provider',
+        '使用 setProvider() 运行时切换 Provider',
       ]);
     }
 
@@ -670,7 +684,7 @@ export class Agent {
    * @returns 新项目的完整上下文
    */
   async switchProject(nameOrPath: string): Promise<AgentContext> {
-    if (!this._initialized || !this.projectManager || this.providers.size === 0) {
+    if (!this._initialized || !this.projectManager || !this._provider) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 switchProject() 前调用 await agent.init()',
       ]);
@@ -713,11 +727,11 @@ export class Agent {
    *   - topicMount（话题记忆挂载器）
    */
   private async _assembleComponents(pctx: ProjectContext): Promise<void> {
-    const activeProvider = this.activeProvider;
+    const activeProvider = this._provider;
     if (!activeProvider) return;
 
     // 构造话题总结器（使用后台通道或当前激活的 Provider）
-    const summarizer = createTopicSummarizer(this.getBackgroundProvider() ?? activeProvider);
+    const summarizer = createTopicSummarizer(this._backgroundProvider ?? activeProvider);
 
     // 消息历史（注入 MemoryIndex 让 archiveCurrentTopic 同步写 SQLite）
     this.history = new MessageHistory(pctx.topicStore, summarizer, undefined, 'main', pctx.index);
@@ -725,7 +739,7 @@ export class Agent {
     // v4.0：作品投影管理器（注入 MemoryIndex + LlmProvider）
     this.workProjection = new WorkProjectionManager(
       pctx.index,
-      this.getBackgroundProvider() ?? activeProvider,
+      this._backgroundProvider ?? activeProvider,
     );
 
     // 工具执行器（v4.0：注入 workProjection，读取文件时自动生成投影）
@@ -740,7 +754,7 @@ export class Agent {
 
     // v4.0：角色管理器（v1.2：personas/ 目录 + SQLite 存储 + 关键词匹配）
     this.personaManager = new PersonaManager(this.configDir, pctx.index);
-    const personaPrompt = await this.personaManager.load(this.config?.persona);
+    const personaPrompt = await this.personaManager.load(this._personaName);
 
     // v4.0：用户画像管理器 + 从 SQLite 加载
     this.userProfile = new UserProfile(pctx.index);
@@ -763,13 +777,15 @@ export class Agent {
       systemPrefixParts.filter(Boolean).join('\n\n') +
       (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
 
-    // Agent Loop（v4.0：注入系统 prompt 前缀 + 工具定义）
+    // Agent Loop（v4.0：注入系统 prompt 前缀 + 工具定义 + 上下文窗口上限）
     this.loop = new AgentLoop({
       provider: activeProvider,
       bootstrapMemories: pctx.bootstrapMemories,
-      toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
+      toolExecutor: (name: string, args: string) =>
+        toolExec.execute(name, args, this._writeExtensions ?? undefined),
       systemPromptPrefix,
       toolDefinitions: toolExec.getToolDefinitions(),
+      maxContextTokens: this._maxContextTokens,
     });
 
     // 话题记忆挂载器（专注模式：应无所住，而生其心）
@@ -782,170 +798,61 @@ export class Agent {
    * 在 switchProject / init 中复用
    */
   private async _rebuildComponentsWithCurrentCtx(): Promise<void> {
-    if (!this._pctx || !this.providers) return;
+    if (!this._pctx) return;
     await this._assembleComponents(this._pctx);
   }
 
-  // ─── v1.2：多 Provider 管理 ────────────────────────────
+  // ─── Provider 管理 ────────────────────────────────────
 
   /**
-   * 初始化 Provider 映射表
+   * 运行时切换前台 LLM Provider
    *
-   * 从配置中读取 providers 映射表（新格式）或创建单 Provider（旧格式）。
-   * 创建失败时记录错误但不中断启动——后续 chat() 调用会报错。
-   */
-  private _initProviders(): void {
-    if (!this.config) return;
-    const { llm } = this.config;
-
-    // 新格式：多 Provider 映射表
-    if (llm.providers && Object.keys(llm.providers).length > 0) {
-      for (const [name, providerConfig] of Object.entries(llm.providers)) {
-        try {
-          const provider = createProviderFromConfig(name, providerConfig);
-          this.providers.set(name, provider);
-        } catch (err) {
-          logger.warn({ err, name }, `Provider "${name}" 创建失败，已跳过`);
-        }
-      }
-
-      // 设置激活的 Provider
-      const active = llm.active ?? this.providers.keys().next().value ?? null;
-      if (active && this.providers.has(active)) {
-        this.activeProviderName = active;
-        logger.info({ active, total: this.providers.size }, '多 Provider 已就绪');
-      } else {
-        logger.warn({ active, available: [...this.providers.keys()] }, 'active Provider 无效');
-      }
-      return;
-    }
-
-    // 旧格式：单 Provider（向后兼容）
-    try {
-      const provider = createLlmProvider(this.config);
-      this.providers.set('default', provider);
-      this.activeProviderName = 'default';
-    } catch (err) {
-      logger.warn({ err }, '默认 Provider 创建失败');
-    }
-  }
-
-  /**
-   * 当前激活的 LlmProvider 实例
-   */
-  private get activeProvider(): LlmProvider | null {
-    if (!this.activeProviderName) return null;
-    return this.providers.get(this.activeProviderName) ?? null;
-  }
-
-  /**
-   * 获取后台通道 Provider（用于归档/投影等后台操作）
+   * 更新 Agent 内部的 Provider 引用，同时更新 AgentLoop 的 provider。
+   * 供宿主在运行时动态切换 LLM 后端。
    *
-   * 如果配置了 llm.background，使用后台 Provider；
-   * 否则回退到当前激活的 Provider（零破坏性，完全向后兼容）。
-   * 结果缓存，避免每次调用重建实例。
+   * @param provider - 新的 LlmProvider 实例
    */
-  private getBackgroundProvider(): LlmProvider | null {
-    if (!this.config) return null;
-    const bg = this.config.llm.background;
-    if (!bg) return null;
-
-    // 缓存后台 Provider 实例
-    if (!this._backgroundProvider) {
-      try {
-        this._backgroundProvider = createProviderFromConfig('background', bg);
-      } catch {
-        return null;
-      }
-    }
-    return this._backgroundProvider;
-  }
-
-  /**
-   * 列出所有已注册的 Provider 别名
-   *
-   * @returns Provider 别名数组，当前激活的排第一
-   */
-  listProviders(): string[] {
-    const names = [...this.providers.keys()];
-    if (this.activeProviderName && names.includes(this.activeProviderName)) {
-      // 把激活的移到第一位
-      const idx = names.indexOf(this.activeProviderName);
-      names.splice(idx, 1);
-      names.unshift(this.activeProviderName);
-    }
-    return names;
-  }
-
-  /**
-   * 获取当前激活的 Provider 名称
-   */
-  getActiveProviderName(): string | null {
-    return this.activeProviderName;
-  }
-
-  /**
-   * 切换当前激活的 Provider
-   *
-   * 切换后更新 AgentLoop 的 provider 引用，后续 chat() 调用使用新 Provider。
-   *
-   * @param name - Provider 别名
-   * @throws 如果 Provider 不存在
-   */
-  switchProvider(name: string): void {
-    if (!this.providers.has(name)) {
-      const available = [...this.providers.keys()].join(', ');
-      throw configError('Provider 不存在', `"${name}" 不在已注册的 Provider 列表中`, [
-        `可用的 Provider：${available || '(无)'}`,
-        '使用 listProviders() 查看可用 Provider',
-        '使用 `memora config llm add` 添加新 Provider',
-      ]);
-    }
-
-    this.activeProviderName = name;
-    const provider = this.providers.get(name)!;
-
-    // 更新 AgentLoop 的 provider 引用
+  setProvider(provider: LlmProvider): void {
+    this._provider = provider;
     if (this.loop) {
       this.loop.setProvider(provider);
     }
-
-    logger.info({ provider: name }, '已切换 Provider');
+    logger.info('Provider 已切换');
   }
 
   /**
-   * 添加新的 Provider（运行时动态添加，不写入配置文件）
+   * 运行时切换后台 LLM Provider
    *
-   * 用于宿主项目在运行时动态注册新 Provider。
-   * 如需持久化到配置文件，请使用 `memora config llm add` CLI 命令。
+   * 后台 Provider 用于归档、投影等不需要用户等待的操作。
+   * 不配时复用前台 Provider。
    *
-   * 注意：配置文件是真理源（project-rules §1.6）。
-   * 运行时添加的 Provider 在 Agent 重启后不会保留，
-   * 除非通过 CLI 命令写入配置文件。
-   *
-   * @param name - Provider 别名
-   * @param config - Provider 配置
+   * @param provider - 新的后台 LlmProvider 实例，null 表示复用前台
    */
-  addProvider(name: string, config: ProviderConfig): void {
-    if (this.providers.has(name)) {
-      throw configError('Provider 已存在', `"${name}" 已注册，请使用其他名称`, [
-        '使用 switchProvider() 切换到已有 Provider',
-        '使用 listProviders() 查看可用 Provider',
-      ]);
-    }
+  setBackgroundProvider(provider: LlmProvider | null): void {
+    this._backgroundProvider = provider;
+    logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
+  }
 
-    const provider = createProviderFromConfig(name, config);
-    this.providers.set(name, provider);
-
-    // 如果这是第一个 Provider，自动激活
-    if (!this.activeProviderName) {
-      this.activeProviderName = name;
-      if (this.loop) {
-        this.loop.setProvider(provider);
-      }
-    }
-
-    logger.info({ name, type: config.provider }, '已添加 Provider');
+  /**
+   * 设置写入扩展回调（小说生成器场景必需）
+   *
+   * 宿主通过此方法注入 onBeforeWrite 回调，在 write_file 执行前
+   * 收到旧内容和新内容，渲染 diff 对比面板让用户确认。
+   *
+   * 使用示例（小说生成器）：
+   *   agent.setWriteExtensions({
+   *     async onBeforeWrite(path, before, after) {
+   *       // 宿主渲染 diff 面板
+   *       const confirmed = await ui.showDiffConfirm(path, before, after);
+   *       return confirmed;
+   *     }
+   *   });
+   *
+   * @param ext - WriteExtensions 对象，null 表示移除回调
+   */
+  setWriteExtensions(ext: WriteExtensions | null): void {
+    this._writeExtensions = ext;
+    logger.info({ hasExtensions: !!ext }, '写入扩展已设置');
   }
 
   /**
@@ -1211,9 +1118,6 @@ export class Agent {
       await this.projectManager.shutdown();
     }
     this._initialized = false;
-    // v1.2：清理 Provider 映射表
-    this.providers.clear();
-    this.activeProviderName = null;
     // P2-7 修复：清理后台 Provider 缓存，防止 close() 后再 init() 复用失效实例
     this._backgroundProvider = null;
     // A7 修复：清理并发锁，防止 chat() 因异常未走 finally 时新 init 后被永久锁定
@@ -1282,7 +1186,7 @@ export class Agent {
         '在 executeTool() 前调用 await agent.init()',
       ]);
     }
-    return this.toolExec.execute(name, argsJson);
+    return this.toolExec.execute(name, argsJson, this._writeExtensions ?? undefined);
   }
 
   // ─── 配置建议 API（模式 3 · Agent 智能总结）────────────
@@ -1495,13 +1399,12 @@ export class Agent {
   }
 
   /**
-   * v1.2：当前激活的 LlmProvider 实例（只读）
+   * 当前激活的 LlmProvider 实例（只读）
    *
-   * 供宿主项目（如 REPL）在需要创建依赖 Provider 的组件时使用。
-   * 不暴露 providers Map 本身——切换/添加/列出都通过专用 API。
+   * 供宿主项目在需要创建依赖 Provider 的组件时使用。
    */
-  get currentProvider(): LlmProvider | null {
-    return this.activeProvider;
+  get provider(): LlmProvider {
+    return this._provider;
   }
 
   /**
