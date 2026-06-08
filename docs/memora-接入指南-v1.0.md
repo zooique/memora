@@ -66,25 +66,59 @@ Agent = 设定 + 角色 + 技能
 角色由话题关键词自动触发（也可手动锁定），技能始终可用。角色通过
 `systemPromptPrefix` 注入到系统提示词中，不进入 bootstrap 记忆加载。
 
-## 三、目录结构
+## 三、三重数据存续路径
+
+Memora 的数据分为三条路径，宿主任意配置每条路径的位置。
 
 ```
-宿主程序/
-├── agent-config/              ← Agent 级配置（唯一）
-│   ├── personas/            ← 角色配置（.md 文件）
-│   ├── rules/                 ← Agent 级规则（所有子项目共享）
-│   └── skills/                ← Agent 级技能（所有子项目共享）
-│
-└── .memora/                   ← Agent 级运行时数据（自动生成，勿手动编辑）
-    └── memora.db              ← 唯一记忆数据库
-
-被管理的子项目/
-└── .memora/                   ← 只放项目级 rules 和 skills
-    ├── rules/                 ← 该项目独有的规则
-    └── skills/                ← 该项目独有的技能
+                        ┌─ 内核不需要关心"放哪" ─┐
+                        │                          │
+    AgentOptions.configDir ──→ 系统级配置（可嵌入宿主代码）
+    │  personas/    角色定义
+    │  rules/       Agent 级规则
+    │  skills/      Agent 级技能
+    │
+    AgentOptions.dataDir ──→ 用户级数据（存储到用户本地）
+    │  memora.db    SQLite 记忆索引
+    │  topics/      话题文件（人可读的完整对话记录）
+    │                  ├── frontmatter: LLM 摘要 + 记忆种子
+    │                  └── body: 每条 user/assistant 原文
+    │
+    projectPath/.memora/ ──→ 项目级配置（跟作品走）
+       rules/        该项目独有的规则
+       skills/       该项目独有的技能
 ```
 
-规则加载顺序：**项目级 → Agent 级**。同名规则后加载者覆盖前者。
+### 3.1 路径设计哲学
+
+Memora 作为内核，**只暴露 `configDir` 和 `dataDir`
+两个参数**。具体放哪，宿主自己定：
+
+| 宿主类型          | configDir                                       | dataDir                                                 | 效果                       |
+| ----------------- | ----------------------------------------------- | ------------------------------------------------------- | -------------------------- |
+| Electron 桌面精灵 | `path.join(__dirname, 'agent-config')` 嵌入程序 | `path.join(app.getPath('userData'), 'memora')` 用户本地 | 配置随程序升级、数据随用户 |
+| 小说生成器        | `null`（不需要 personas）                       | `path.join(projectPath, '.memora-data')` 跟作品走       | 每部小说自己有记忆         |
+| CLI 工具          | `~/.memora/agent-config` 用户目录               | `~/.memora` 用户目录                                    | 全部放用户目录             |
+
+### 3.2 项目级配置（隐式第三条路径）
+
+除了 `configDir`（Agent 级）和
+`dataDir`（用户级），还存在第三条路径：**`<projectPath>/.memora/`**。
+
+这是项目级的 rules 和 skills，随作品一起版本控制。规则加载顺序为：**项目级 →
+Agent 级 → 全局规则**。同名规则后加载者覆盖前者。
+
+### 3.3 数据与人可读性
+
+所有对话记录以 Markdown 格式存储在 `dataDir/topics/` 下：
+
+```
+dataDir/topics/2026-06-06-chapter-1.md
+  ├── frontmatter: date, topic, summary, keywords, seed_snapshots  → 机器索引
+  └── body: 每条 user/assistant 原文                                → 人直接读
+```
+
+用户用任意文本编辑器打开就能回顾完整对话历史，不需要专用工具。
 
 ## 四、三种接入模式
 

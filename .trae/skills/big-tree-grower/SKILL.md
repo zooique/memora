@@ -70,7 +70,7 @@ description:
 | 7   | 跑通回归                   | `测试回归`                                                                                | [manual](references/manual-modes-guide.md) |
 | 8   | 改数据库                   | `数据库迁移` `加字段` `改表`                                                              | [manual](references/manual-modes-guide.md) |
 | 9   | 项目体检                   | `检查大树健康` `健康度诊断` `项目体检`                                                    | [manual](references/manual-modes-guide.md) |
-| 10  | 代码太肥                   | `剪枝` `清理代码` `删除死代码` `去重`                                                     | [manual](references/manual-modes-guide.md) |
+| 10  | 代码太肥                   | `剪枝` `清理代码` `删除死代码` `去重` `剪枝：去痕`                                        | [manual](references/manual-modes-guide.md) |
 | 11  | 前端审美                   | `体验评审` `前端体验评估` `交互质量检查`                                                  | [manual](references/manual-modes-guide.md) |
 | 12  | 安全审查                   | `安全审计`                                                                                | [manual](references/manual-modes-guide.md) |
 | 13  | 依赖过时                   | `依赖检查` `依赖审计` `npm audit`                                                         | [manual](references/manual-modes-guide.md) |
@@ -166,6 +166,7 @@ description:
 - 禁止种木成林外任何模式改产出结构
 - 禁止健康度诊断后不归档
 - 禁止剪枝删 ADR 记录
+- 禁止在产出中保留修改痕迹（"不是XX而是XX"句式、Bug原因/修复思路类注释、变更说明类注释）
 
 - 禁止种木成林外任何模式改数据库 schema
 - 禁止补测试不读现有测试文件

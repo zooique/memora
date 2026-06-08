@@ -302,7 +302,8 @@ export class ProjectManager {
    */
   registerProject(projectPath: string, name: string): void {
     const registry = this.readRegistry();
-    const existing = registry.findIndex((e) => e.path === projectPath);
+    // Windows 文件系统不区分大小写，路径大小写不同视为同一项目
+    const existing = registry.findIndex((e) => e.path.toLowerCase() === projectPath.toLowerCase());
 
     const entry: ProjectEntry = {
       path: projectPath,
@@ -324,7 +325,8 @@ export class ProjectManager {
    */
   unregisterProject(projectPath: string): void {
     const registry = this.readRegistry();
-    const filtered = registry.filter((e) => e.path !== projectPath);
+    // Windows 文件系统不区分大小写，大小写不同视为同一项目
+    const filtered = registry.filter((e) => e.path.toLowerCase() !== projectPath.toLowerCase());
     this.writeRegistry(filtered);
   }
 

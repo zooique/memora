@@ -22,6 +22,7 @@
  *   用户一开口，TopicMount 自动召回话题记忆注入上下文（生其心）。
  *   同话题内缓存召回结果，鼓励深度专注。
  */
+import { basename } from 'node:path';
 import { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
 import {
@@ -691,16 +692,21 @@ export class Agent {
     }
 
     const projects = this.projectManager.listProjects();
-    const target = projects.find((p) => p.name === nameOrPath || p.path === nameOrPath);
+    // Windows 文件系统不区分大小写，大小写不同视为同一路径（F: vs f:）
+    // 先尝试精确匹配，找不到再尝试大小写不敏感匹配
+    let target = projects.find((p) => p.name === nameOrPath || p.path === nameOrPath);
     if (!target) {
-      throw configError('项目不存在', `找不到项目：${nameOrPath}`, [
-        '使用 listProjects() 查看已注册项目',
-        '使用 /project 命令查看列表',
-      ]);
+      const nameOrPathLower = nameOrPath.toLowerCase();
+      target = projects.find(
+        (p) => p.name.toLowerCase() === nameOrPathLower || p.path.toLowerCase() === nameOrPathLower,
+      );
     }
+    // 注册表未命中时自动注册新路径，initProject 内部会写入注册表，后续再切换可走轻量路径
+    const projectPath = target ? target.path : nameOrPath;
+    const projectName = target ? target.name : basename(nameOrPath);
 
     // 重新初始化项目（ProjectManager.initProject 内部会先 closeProject）
-    const newPctx = await this.projectManager.initProject(target.path, target.name, this.configDir);
+    const newPctx = await this.projectManager.initProject(projectPath, projectName, this.configDir);
 
     // 重建内部组件（复用 provider）
     this._pctx = newPctx;
