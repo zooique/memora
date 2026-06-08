@@ -436,7 +436,14 @@ export class Agent {
    * @param input - 用户输入的文本
    * @returns AsyncGenerator，逐段产出 Agent 回复事件（结构化：thinking/recall/text/tool_start/tool_result/done）
    */
-  async *chat(input: string): AsyncGenerator<AgentChunk, void, unknown> {
+  /**
+   * 流式对话（核心 API）
+   *
+   * @param input 用户输入文本
+   * @param signal 可选的 AbortSignal，用于取消正在进行的对话（V-105）
+   *   泊文等宿主 UI 传入 AbortController.signal，用户点击"取消"时触发 abort
+   */
+  async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     if (!this._initialized || !this.history || !this.loop || !this.topicMount) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 chat() 前调用 await agent.init()',
@@ -459,6 +466,12 @@ export class Agent {
       yield { type: 'thinking', phase: 'recalling' };
       const topicMemories = await this.topicMount.focus(input);
 
+      // V-105：召回后检查取消
+      if (signal?.aborted) {
+        yield { type: 'aborted', reason: '用户取消了对话' };
+        return;
+      }
+
       // v4.0：注入上一轮匹配的技能 prompt（本轮可用）
       yield { type: 'thinking', phase: 'processing' };
       if (this.activeSkill && this.skillManager && this.loop) {
@@ -473,13 +486,21 @@ export class Agent {
       // 用户消息写入历史
       await this.history.appendUser(input);
 
-      // Agent Loop 流式处理（注入话题记忆召回结果）
+      // Agent Loop 流式处理（注入话题记忆召回结果 + 中断信号）
       let assistantContent = '';
-      for await (const chunk of this.loop.processUserInput(input, topicMemories)) {
+      let wasAborted = false;
+      for await (const chunk of this.loop.processUserInput(input, topicMemories, signal)) {
         yield chunk; // 透传结构化事件给上层
         if (chunk.type === 'text') {
           assistantContent += chunk.content;
+        } else if (chunk.type === 'aborted') {
+          wasAborted = true;
         }
+      }
+
+      // 中断时不写历史（对话未完成，不应污染历史记录）
+      if (wasAborted) {
+        return;
       }
 
       // Agent 回复写入历史
@@ -586,11 +607,12 @@ export class Agent {
    * 适用于不需要流式输出的场景（如测试、批处理、API 响应）。
    *
    * @param input - 用户输入的文本
+   * @param signal - 可选的 AbortSignal（V-105）
    * @returns 完整的 Agent 回复文本
    */
-  async chatSync(input: string): Promise<string> {
+  async chatSync(input: string, signal?: AbortSignal): Promise<string> {
     let result = '';
-    for await (const chunk of this.chat(input)) {
+    for await (const chunk of this.chat(input, signal)) {
       if (chunk.type === 'text') {
         result += chunk.content;
       }
@@ -1411,6 +1433,18 @@ export class Agent {
    */
   get provider(): LlmProvider {
     return this._provider;
+  }
+
+  /**
+   * Agent 是否正在处理对话（V-106 · 泊文 UI 刚需）
+   *
+   * 泊文等宿主 UI 用此属性：
+   * - 禁用输入框（防止并发 chat()）
+   * - 显示加载动画（"思考中..."）
+   * - 控制取消按钮可见性
+   */
+  get isBusy(): boolean {
+    return this._chatBusy;
   }
 
   /**

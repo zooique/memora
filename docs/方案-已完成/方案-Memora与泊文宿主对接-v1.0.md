@@ -18,12 +18,12 @@ export { createLlmProvider } from '../../../memora/dist/llm/factory.js';
 
 **风险**：
 
-| 问题                           | 影响                                                                                                          |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------- |
-| 路径写死                       | 换目录就崩，团队成员路径不同就崩                                                                              |
-| 依赖 `dist/`                   | 必须先手动 `npm run build`，忘记编译就跑旧代码                                                                |
-| 打包不进 asar                  | Electron Builder 不跟随相对路径，打包后运行时找不到模块                                                       |
-| `createLlmProvider` 签名不匹配 | 该函数接收 `Config` 类型（含 `llm` 嵌套），泊文应使用 `createProviderFromConfig`（接收扁平 `ProviderConfig`） |
+| 问题                               | 影响                                                                                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 路径写死                           | 换目录就崩，团队成员路径不同就崩                                                                                                    |
+| 依赖 `dist/`                       | 必须先手动 `npm run build`，忘记编译就跑旧代码                                                                                      |
+| 打包不进 asar                      | Electron Builder 不跟随相对路径，打包后运行时找不到模块                                                                             |
+| ~~`createLlmProvider` 签名不匹配~~ | ~~该函数接收 `Config` 类型（含 `llm` 嵌套），泊文应使用 `createLlmProvider`（接收扁平 `ProviderConfig`）~~ 已修正：当前代码写法正确 |
 
 ### 1.2 API 版本
 
@@ -31,7 +31,7 @@ export { createLlmProvider } from '../../../memora/dist/llm/factory.js';
 `createProvider()` 的调用方式有误：
 
 ```javascript
-// 当前（错误）：createLlmProvider 期望 Config 类型，泊文传了 { llm: { ... } }
+// 当前（正确）：createLlmProvider 接收包含 llm 字段的 Config 对象
 return createLlmProvider({
   llm: {
     provider: providerName,
@@ -42,17 +42,7 @@ return createLlmProvider({
 });
 ```
 
-应改为 `createProviderFromConfig`（接收扁平配置）：
-
-```javascript
-// 正确：createProviderFromConfig 接收扁平 ProviderConfig
-return createProviderFromConfig(providerName, {
-  provider: providerName,
-  model: model.model,
-  baseUrl: model.baseUrl,
-  apiKey: model.apiKey,
-});
-```
+当前代码已经是正确的写法，无须修改。
 
 ---
 
@@ -69,7 +59,7 @@ return createProviderFromConfig(providerName, {
               │
 ┌─ bowen-reader（宿主）──────────────────────────────┐
 │  Electron 应用                                      │
-│  import { Agent, createProviderFromConfig } from    │
+│  import { Agent, createLlmProvider } from    │
 │    'memora'                                         │
 │  唯一耦合点：src/main/memora.js                     │
 └────────────────────────────────────────────────────┘
@@ -137,18 +127,18 @@ export { Agent } from '../../../memora/dist/index.js';
 export { createLlmProvider } from '../../../memora/dist/llm/factory.js';
 
 // 改后：标准包名（npm link 后 node_modules/memora 指向本地源码）
-export { Agent, createProviderFromConfig } from 'memora';
+export { Agent, createLlmProvider } from 'memora';
 ```
 
-**注意**：不再导出 `createLlmProvider`，改为导出 `createProviderFromConfig`。
+### 步骤 4：确认 `memoraService.js` 的 `createProvider()`
 
-### 步骤 4：修改 `src/main/memoraService.js` 的 `createProvider()`
+当前代码已经是正确的写法，无须修改：
 
 ```javascript
-// 改前：使用 createLlmProvider（需要 Config 嵌套格式）
 import { Agent, createLlmProvider } from './memora.js';
 
 function createProvider(model) {
+  const providerName = model.provider || 'openai-compatible';
   return createLlmProvider({
     llm: {
       provider: providerName,
@@ -156,23 +146,6 @@ function createProvider(model) {
       baseUrl: model.baseUrl,
       apiKey: model.apiKey,
     },
-  });
-}
-
-// 改后：使用 createProviderFromConfig（扁平格式，更直接）
-import { Agent, createProviderFromConfig } from './memora.js';
-
-function createProvider(model) {
-  const providerName = model.provider || 'openai-compatible';
-  const hasKey = !!model.apiKey;
-  logger.info(
-    `createProvider：name=${model.name}, provider=${providerName}, model=${model.model}, hasApiKey=${hasKey}, baseUrl=${model.baseUrl}`,
-  );
-  return createProviderFromConfig(providerName, {
-    provider: providerName,
-    model: model.model,
-    baseUrl: model.baseUrl,
-    apiKey: model.apiKey,
   });
 }
 ```
@@ -294,13 +267,13 @@ npx electron-rebuild
 
 ## 六、两个函数的选择指南
 
-| 函数                                     | 签名                                | 适用场景                                 |
-| ---------------------------------------- | ----------------------------------- | ---------------------------------------- |
-| `createLlmProvider(config)`              | 接收 `Config` 类型（含 `llm` 嵌套） | 从 `memora.json` 配置文件加载后调用      |
-| `createProviderFromConfig(name, config)` | 接收 `name` + 扁平 `ProviderConfig` | 宿主自行组装配置后调用（**泊文用这个**） |
+| 函数                        | 签名                                | 适用场景                                 |
+| --------------------------- | ----------------------------------- | ---------------------------------------- |
+| `createLlmProvider(config)` | 接收 `Config` 类型（含 `llm` 嵌套） | 从 `memora.json` 配置文件加载后调用      |
+| `createLlmProvider(config)` | 接收包含 `llm` 字段的 `Config` 对象 | 宿主自行组装配置后调用（**泊文用这个**） |
 
 泊文场景：用户在设置面板填写 apiKey/baseUrl/model → 宿主直接组装扁平配置 → 调用
-`createProviderFromConfig`。不需要经过 `memora.json`。
+`createLlmProvider`。不需要经过 `memora.json`。
 
 ---
 
@@ -309,7 +282,7 @@ npx electron-rebuild
 | 现象                                | 原因                           | 解决                                                              |
 | ----------------------------------- | ------------------------------ | ----------------------------------------------------------------- |
 | `Cannot find module 'memora'`       | npm link 未生效                | `cd memora && npm link` 然后 `cd bowen-reader && npm link memora` |
-| `Mock 响应`                         | Provider 创建失败，回退到 mock | 检查 apiKey 是否传入，检查 `createProviderFromConfig` 参数格式    |
+| `Mock 响应`                         | Provider 创建失败，回退到 mock | 检查 apiKey 是否传入，检查 `createLlmProvider` 参数格式           |
 | `config is not a valid AgentOption` | 使用了 v1.0 的 `config` 参数   | 改用 `provider` 参数（v2.0 API）                                  |
 | 打包后运行报 `Cannot find module`   | 符号链接未被 asar 跟随         | 发布前 `npm unlink && npm install memora`                         |
 | `sqlite3.node` 加载失败             | 原生模块未为 Electron 重编译   | `npx electron-rebuild`                                            |
@@ -323,7 +296,7 @@ npx electron-rebuild
 
 - [ ] `npm link memora` 成功，`node_modules/memora` 指向本地源码
 - [ ] `import { Agent } from 'memora'` 不报错
-- [ ] `createProviderFromConfig()` 正确创建 Provider
+- [ ] `createLlmProvider()` 正确创建 Provider
 - [ ] `new Agent({ provider })` 初始化成功
 - [ ] `agent.chat()` 返回真实 LLM 响应（非 Mock）
 - [ ] `agent.switchProject()` 切换项目上下文正常

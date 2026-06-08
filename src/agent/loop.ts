@@ -63,10 +63,13 @@ export class AgentLoop {
    * @param userInput - 用户原始输入
    * @param topicMemories - 话题记忆挂载结果（TopicMount.focus() 产出），
    *   可选。传入时自动注入到上下文，实现"Agent 记忆召回结果"层
+   * @param signal - 可选的 AbortSignal，用于取消正在进行的对话（V-105）
+   *   泊文等宿主 UI 传入 AbortController.signal，用户点击"取消"时触发 abort
    */
   async *processUserInput(
     userInput: string,
     topicMemories?: readonly Memory[],
+    signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 注入话题记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
     const enhancedInput = topicMemories?.length
@@ -85,6 +88,12 @@ export class AgentLoop {
       iteration++;
       logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
 
+      // V-105：每次迭代前检查是否已被取消
+      if (signal?.aborted) {
+        yield { type: 'aborted', reason: '用户取消了对话' };
+        return;
+      }
+
       let fullContent = '';
       let toolCalls: Message['toolCalls'] = undefined;
 
@@ -92,6 +101,11 @@ export class AgentLoop {
       const chatOpts = this.buildChatOptions();
       const safeMessages = this.truncateMessages(this.messages);
       for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
+        // V-105：LLM 流式输出期间检查取消
+        if (signal?.aborted) {
+          yield { type: 'aborted', reason: '用户取消了对话' };
+          return;
+        }
         if (chunk.content) {
           fullContent += chunk.content;
           yield { type: 'text', content: chunk.content }; // 结构化流式输出
@@ -111,6 +125,11 @@ export class AgentLoop {
 
         // 执行工具
         for (const tc of toolCalls) {
+          // V-105：工具执行前检查取消
+          if (signal?.aborted) {
+            yield { type: 'aborted', reason: '用户取消了对话' };
+            return;
+          }
           yield { type: 'tool_start', name: tc.function.name, args: tc.function.arguments };
           const result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
           this.messages.push({

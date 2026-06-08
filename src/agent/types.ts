@@ -22,4 +22,5 @@ export type AgentChunk =
   | { type: 'text'; content: string }
   | { type: 'tool_start'; name: string; args?: string }
   | { type: 'tool_result'; name: string; ok: boolean; summary?: string }
+  | { type: 'aborted'; reason: string }
   | { type: 'done' };
