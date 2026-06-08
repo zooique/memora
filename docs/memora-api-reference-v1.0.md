@@ -267,7 +267,55 @@ async chatSync(input: string): Promise<string>
 | `list_dir`        | 列出目录内容       | `path?`, `recursive?`, `maxDepth?`                                    |
 | `search_memories` | 在记忆索引中搜索   | `query`, `limit?`, `mode?`（match/near）                              |
 
-### 7.2 写入确认与 Diff 对比（WriteExtensions）
+### 7.3 扩展工具：宿主供能（Agent 无网络，宿主供网）
+
+**核心原则**：Agent 本身不持有任何网络能力，不依赖外部服务。所有"超纲"能力——联网搜索、网页抓取、第三方 API 调用——均由宿主在
+`init()` 后通过 `registerTool()`
+注册。Agent 只决定"调用哪个工具"，工具的实际执行发生在宿主进程内，不受 Agent 安全层的路径白名单约束。
+
+**工具 handler 的执行原理**：
+
+```typescript
+// Agent 看到的是一个"名叫 web_search 的工具"，参数是 { query, limit }
+// Agent 不知道、也不需要知道 handler 里有没有网络请求
+agent.registerTool(
+  {
+    name: 'web_search',
+    description: '搜索互联网，返回结构化结果',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '搜索关键词' },
+        limit: { type: 'number', description: '最大返回条数', default: 5 },
+      },
+      required: ['query'],
+    },
+  },
+  async (args) => {
+    // Node.js 18+ 原生 fetch，无需额外依赖
+    const res = await fetch(
+      `https://api.example.com/search?q=${encodeURIComponent(args.query)}&limit=${args.limit ?? 5}`,
+    );
+    const data = await res.json();
+    return JSON.stringify(data.results ?? []);
+  },
+);
+```
+
+**搜索与抓取是两类工具**：
+
+| 工具         | 职责                            | 典型场景                       |
+| ------------ | ------------------------------- | ------------------------------ |
+| `web_search` | 搜索引擎查关键词，返回 URL 列表 | "帮我查一下这篇论文的引用情况" |
+| `web_fetch`  | 指定 URL 抓正文，返回原文       | "把这篇文章的摘要读给我听"     |
+
+两者可以独立注册，也可以组合使用（先搜到相关页面，再抓正文内容）。Provider 任意选择——腾讯元宝、DuckDuckGo、本地 Ollama、任意 HTTP
+API——Agent 零感知。
+
+**搜索结果的记忆归属**：联网结果默认不进 SQLite，是上下文燃料、用完即焚。如需归档，由宿主显式调用
+`archiveApprovedContent()` 或 signal-detector 触发，Agent 不会主动写入。
+
+### 7.4 写入确认与 Diff 对比（WriteExtensions）
 
 **核心机制**：`write_file` 工具支持 `WriteExtensions.onBeforeWrite`
 回调，用于**局部修改的 diff 对比确认**。

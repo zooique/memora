@@ -627,6 +627,120 @@ if (lastInteraction && now - lastInteraction.getTime() > 30 * 60 * 1000) {
 | `agent.agentLoop`    | `AgentLoop?`      | 内部 AgentLoop 引用（只读）。       |
 | `agent.agentHistory` | `MessageHistory?` | 内部消息历史引用（只读）。          |
 
+### 8.15 扩展工具：宿主供能
+
+> **核心理念**：Agent 本身无网络能力，不依赖任何外部服务。所有"超纲"能力——联网搜索、音视频处理、数据库读写、第三方 API——统统由宿主通过
+> `registerTool()` 提供。Agent 只负责"决定调用哪个工具"，不负责"工具怎么执行"。
+
+#### 8.15.1 工具 handler 的执行位置
+
+工具 handler 跑在宿主的 Node.js 进程里，**不受 Agent 安全层的路径白名单约束**。网络请求的安全由宿主自行控制——在 handler 里做域名过滤、频率限制、内容校验，都是宿主说了算。
+
+```typescript
+// Agent 完全不知道这个 handler 里有网络请求
+agent.registerTool(
+  {
+    name: 'web_search',
+    description: '搜索互联网内容，返回结构化结果',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '搜索关键词' },
+        limit: { type: 'number', description: '最大返回条数', default: 5 },
+      },
+      required: ['query'],
+    },
+  },
+  async (args) => {
+    // Node.js 18+ 原生 fetch，无需额外依赖
+    const response = await fetch(
+      `https://api.example.com/search?q=${encodeURIComponent(args.query)}&limit=${args.limit ?? 5}`,
+    );
+    const data = await response.json();
+    // 返回给 LLM 的格式由宿主决定，建议包含标题 + 摘要 + URL
+    return JSON.stringify(data.results ?? []);
+  },
+);
+
+// 配套的网页抓取工具（读，不是搜）
+agent.registerTool(
+  {
+    name: 'web_fetch',
+    description: '抓取指定 URL 的网页正文内容',
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: '目标网址' },
+        maxChars: {
+          type: 'number',
+          description: '最大抓取字符数',
+          default: 3000,
+        },
+      },
+      required: ['url'],
+    },
+  },
+  async (args) => {
+    const response = await fetch(args.url);
+    const text = await response.text();
+    return text.slice(0, args.maxChars ?? 3000);
+  },
+);
+```
+
+#### 8.15.2 搜索与抓取的区别
+
+| 工具         | 做什么                          | 典型场景                       |
+| ------------ | ------------------------------- | ------------------------------ |
+| `web_search` | 搜索引擎查关键词，返回 URL 列表 | "帮我查一下这篇论文的引用情况" |
+| `web_fetch`  | 指定 URL 抓正文，返回原始文本   | "把这篇文章的摘要读给我听"     |
+
+两者可以分别注册，也可以组合——先搜到相关页面，再抓正文内容。
+
+#### 8.15.3 接入多个搜索 Provider
+
+宿主的 handler 实现完全自主，不绑死任何搜索服务商。下面是几种常见选择：
+
+```typescript
+// 方案一：接腾讯元宝（腾讯系）
+async (args) => {
+  const res = await fetch('https://api.yundi.com/search', {
+    headers: { Authorization: `Bearer ${process.env.YUNDI_API_KEY}` },
+    body: JSON.stringify({ query: args.query }),
+  });
+  return res.json();
+};
+
+// 方案二：接 DuckDuckGo（无 API Key）
+async (args) => {
+  const res = await fetch(
+    `https://api.duckduckgo.com/?q=${encodeURIComponent(args.query)}&format=json`,
+  );
+  return res.json();
+};
+
+// 方案三：接本地 Ollama（完全私有，不出网）
+async (args) => {
+  const res = await fetch('http://localhost:11434/api/generate', {
+    method: 'POST',
+    body: JSON.stringify({
+      model: 'search-reranker',
+      prompt: `根据关键词检索相关内容：${args.query}`,
+    }),
+  });
+  return res.json();
+};
+```
+
+**Agent 零感知**——它只看到自己注册了一个叫 `web_search` 的工具，参数是 `query`
+和 `limit`。换哪个 Provider，Agent 不知道，也不需要知道。
+
+#### 8.15.4 搜索结果的记忆归属
+
+联网搜索返回的内容默认**不进 Memora 记忆库**——它是上下文燃料，用于回答当前问题，用完即焚。如果用户希望"记住这次查到的信息"，由宿主决定何时调用
+`agent.archiveApprovedContent()`
+或 signal-detector 触发归档，Agent 本身不会主动把搜索结果写入 SQLite。
+
 ---
 
 > **API 设计原则**：所有公开方法在错误状态下会抛 `configError` / `llmError`
