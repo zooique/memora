@@ -284,7 +284,11 @@ export class ProjectManager {
       await this.closeProject();
     }
     if (this.agentIndex) {
-      await this.agentIndex.close().catch((err) => logger.warn({ err }, '关闭 Agent 数据库失败'));
+      try {
+        this.agentIndex.close();
+      } catch (err) {
+        logger.warn({ err }, '关闭 Agent 数据库失败');
+      }
       this.agentIndex = null;
       this.agentTopicStore = null;
     }

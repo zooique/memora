@@ -113,13 +113,14 @@ export interface AgentOptions {
 
 ## 3. 对话 API（最核心）
 
-### 3.1 `chat(input)` — 流式对话
+### 3.1 `chat(input, signal?)` — 流式对话
 
 ```typescript
-async *chat(input: string): AsyncGenerator<AgentChunk, void, unknown>
+async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown>
 ```
 
-**唯一**的对话入口。**流式**返回 `AgentChunk` 事件：
+**唯一**的对话入口。**流式**返回 `AgentChunk` 事件。可选传入 `signal`（来自
+`AbortController.signal`），允许宿主取消正在进行的对话。
 
 ```typescript
 type AgentChunk =
@@ -128,16 +129,19 @@ type AgentChunk =
   | { type: 'text'; content: string } // LLM 文本片段
   | { type: 'tool_start'; name: string; args?: string }
   | { type: 'tool_result'; name: string; ok: boolean; summary?: string }
+  | { type: 'aborted'; reason: string } // 对话被取消
   | { type: 'done' }; // 结束标记
 ```
 
-**使用示例**（宿主最简接入）：
+**使用示例**（宿主最简接入，含取消支持）：
 
 ```typescript
 const agent = new Agent({ projectPath, provider });
 await agent.init();
 
-for await (const chunk of agent.chat('你好')) {
+const controller = new AbortController();
+
+for await (const chunk of agent.chat('你好', controller.signal)) {
   switch (chunk.type) {
     case 'text':
       ui.appendText(chunk.content);
@@ -151,16 +155,22 @@ for await (const chunk of agent.chat('你好')) {
     case 'tool_result':
       ui.showToolResult(chunk.ok);
       break;
+    case 'aborted':
+      ui.showCancelled(chunk.reason);
+      break;
   }
 }
+
+// 用户在 UI 点击"取消"按钮
+cancelButton.onclick = () => controller.abort();
 
 await agent.close();
 ```
 
-### 3.2 `chatSync(input)` — 同步版（测试用）
+### 3.2 `chatSync(input, signal?)` — 同步版（测试用）
 
 ```typescript
-async chatSync(input: string): Promise<string>
+async chatSync(input: string, signal?: AbortSignal): Promise<string>
 ```
 
 收集所有 `text` 事件拼接成完整字符串返回。**仅供测试用**，生产宿主应使用
@@ -515,7 +525,7 @@ export type { Config } from 'memora';
 
 ## 13. 完整 API 一览
 
-按 API 分组（合计 **38 个公开方法 + 1 个公开属性 + 12 个导出类型**）：
+按 API 分组（合计 **39 个公开方法 + 1 个公开属性 + 12 个导出类型**）：
 
 ### 13.1 生命周期（3）
 
@@ -525,8 +535,8 @@ export type { Config } from 'memora';
 
 ### 13.2 对话（2）
 
-- `chat(input)` ← 唯一对话入口
-- `chatSync(input)` ← 测试用
+- `chat(input, signal?)` ← 唯一对话入口
+- `chatSync(input, signal?)` ← 测试用
 
 ### 13.3 记忆读（6）
 
@@ -579,13 +589,14 @@ export type { Config } from 'memora';
 - `onConfigSuggestion(handler)`
 - `confirmConfigSuggestion(suggestion)`
 
-### 13.10 只读访问器（4）
+### 13.10 只读访问器（5）
 
 - `initialized` (getter)
 - `context` (getter)
 - `agentLoop` (getter)
 - `agentHistory` (getter)
 - `lastInteractionAt` (getter)
+- `isBusy` (getter) ← 泊文 UI 刚需：禁用输入框 + 加载动画
 
 ### 13.11 导出类型（12）
 

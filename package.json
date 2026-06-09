@@ -45,18 +45,18 @@
   "author": "Memora Contributors",
   "license": "MIT",
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "commander": "^12.1.0",
     "cosmiconfig": "^9.0.0",
     "picocolors": "^1.1.0",
     "pino": "^9.4.0",
-    "sqlite3": "^6.0.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^21.0.2",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.7.0",
-    "@types/sqlite3": "^3.1.11",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
     "@vitest/coverage-v8": "^4.1.8",

@@ -2,7 +2,7 @@
  * 记忆文件存储
  *
  * 冷热分离中的"热"：文件承载记忆本体
- * 详见 ADR-002 · 选用 better-sqlite3 + sqlite-vec 作为存储层
+ * 详见 ADR-002 · 选用 better-sqlite3 作为存储层
  */
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';

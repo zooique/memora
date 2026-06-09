@@ -464,11 +464,11 @@ interface AgentOptions {
 
 ### 8.3 对话
 
-| 方法                    | 说明                                                                                          |
-| ----------------------- | --------------------------------------------------------------------------------------------- |
-| `agent.chat(input)`     | 流式对话，返回 `AsyncGenerator<AgentChunk>`。**已加并发锁**，同一时间只能有一个 chat() 在跑。 |
-| `agent.chatSync(input)` | 同步对话，内部收集 `chat()` 所有 `text` chunk 后一次性返回。                                  |
-| `agent.getMessages()`   | 获取工作记忆的完整消息列表（只读）。未初始化时抛错。                                          |
+| 方法                             | 说明                                                                                                                           |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `agent.chat(input, signal?)`     | 流式对话，返回 `AsyncGenerator<AgentChunk>`。可选传入 `AbortSignal` 支持取消。**已加并发锁**，同一时间只能有一个 chat() 在跑。 |
+| `agent.chatSync(input, signal?)` | 同步对话，内部收集 `chat()` 所有 `text` chunk 后一次性返回。可选传入 `AbortSignal` 支持取消。                                  |
+| `agent.getMessages()`            | 获取工作记忆的完整消息列表（只读）。未初始化时抛错。                                                                           |
 
 #### 流式 chunk 类型（`AgentChunk`）
 
@@ -479,6 +479,7 @@ type AgentChunk =
   | { type: 'text'; content: string } // 文本片段
   | { type: 'tool_start'; name: string; args?: string } // 工具调用开始
   | { type: 'tool_result'; name: string; ok: boolean; summary?: string } // 工具调用结果
+  | { type: 'aborted'; reason: string } // 对话被取消（宿主传入的 AbortSignal 触发）
   | { type: 'done' }; // 结束标记
 ```
 
@@ -620,12 +621,13 @@ if (lastInteraction && now - lastInteraction.getTime() > 30 * 60 * 1000) {
 
 ### 8.14 只读访问器
 
-| 访问器               | 类型              | 说明                                |
-| -------------------- | ----------------- | ----------------------------------- |
-| `agent.initialized`  | `boolean`         | Agent 是否已初始化。                |
-| `agent.context`      | `object?`         | 当前项目上下文（未初始化为 null）。 |
-| `agent.agentLoop`    | `AgentLoop?`      | 内部 AgentLoop 引用（只读）。       |
-| `agent.agentHistory` | `MessageHistory?` | 内部消息历史引用（只读）。          |
+| 访问器               | 类型              | 说明                                                                  |
+| -------------------- | ----------------- | --------------------------------------------------------------------- |
+| `agent.initialized`  | `boolean`         | Agent 是否已初始化。                                                  |
+| `agent.context`      | `object?`         | 当前项目上下文（未初始化为 null）。                                   |
+| `agent.agentLoop`    | `AgentLoop?`      | 内部 AgentLoop 引用（只读）。                                         |
+| `agent.agentHistory` | `MessageHistory?` | 内部消息历史引用（只读）。                                            |
+| `agent.isBusy`       | `boolean`         | Agent 是否正在处理对话。泊文等宿主 UI 用来禁用输入框 + 显示加载动画。 |
 
 ### 8.15 扩展工具：宿主供能
 
@@ -852,7 +854,17 @@ class NovelWriterHost {
 
   // ─── 对话 ─────────────────────────────────────────────
   async chat(userInput: string): Promise<void> {
-    for await (const chunk of this.agent.chat(userInput)) {
+    // 创建 AbortController，绑定到 UI 取消按钮
+    this._currentController = new AbortController();
+    cancelBtn.onclick = () => this._currentController.abort();
+
+    // 禁用输入框（isBusy 为 true 时）
+    inputBox.disabled = agent.isBusy;
+
+    for await (const chunk of this.agent.chat(
+      userInput,
+      this._currentController.signal,
+    )) {
       switch (chunk.type) {
         case 'text':
           this.ui.appendText(chunk.content);
@@ -866,8 +878,15 @@ class NovelWriterHost {
         case 'tool_result':
           this.ui.showToolResult(chunk.ok, chunk.summary);
           break;
+        case 'aborted':
+          this.ui.showCancelled(chunk.reason);
+          break;
       }
     }
+
+    // 对话结束，恢复输入框
+    inputBox.disabled = false;
+    cancelBtn.hidden = true;
   }
 
   // ─── 泊文体系：草稿→定稿工作流 ─────────────────────────

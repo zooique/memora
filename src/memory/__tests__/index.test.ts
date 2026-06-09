@@ -1,7 +1,7 @@
 /**
  * 单元测试：SQLite 记忆索引
  * 验证索引的 CRUD 与查询逻辑
- * 适配 sqlite3 (mapbox) 异步 API
+ * 适配 better-sqlite3 同步 API
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { MemoryIndex } from '@/memory/index.js';
@@ -243,8 +243,9 @@ describe('MemoryIndex · touch/applyDecay（设计 2：而生其心 + 应无所�
   });
 
   // ─── 2) touch()：空 ID 列表静默跳过 ───────────────────
-  it('touch()：空 ID 列表静默跳过，不抛错', async () => {
-    await expect(index.touch([])).resolves.toBeUndefined();
+  it('touch()：空 ID 列表静默跳过，不抛错', () => {
+    // better-sqlite3 同步 API，直接调用不抛错
+    expect(() => index.touch([])).not.toThrow();
   });
 
   // ─── 3) touch()：批量更新多条 ─────────────────────────

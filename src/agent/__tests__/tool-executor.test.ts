@@ -40,7 +40,7 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     // SecurityGuard：owner + confirmWrites=false（自动批准）
     security = new SecurityGuard(tmpProject, tmpData, [], false, 'owner');
 
-    // MemoryIndex（真实 sqlite3，临时 db）
+    // MemoryIndex（better-sqlite3 临时 db）
     index = new MemoryIndex(join(tmpData, 'memora.db'));
     await index.ready();
 
