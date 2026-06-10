@@ -51,10 +51,11 @@ import {
   type MemoryTypeValue,
 } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { ILogger } from '@/logging/logger-interface.js';
+import { logger, setLogger } from '@/logging/logger.js';
 import type { TopicStore } from '@/memory/topic-store.js';
 import type { SecurityGuard } from '@/security/path-guard.js';
 import { detectMemorableSignal } from './signal-detector.js';
-import { logger } from '@/logging/logger.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 
@@ -96,6 +97,8 @@ export interface AgentOptions {
   confirmWrites?: boolean;
   /** 外部注入的存储实例（可选，不传则内部创建 SqliteStorage） */
   storage?: IMemoryStorage;
+  /** 外部注入的日志实现（可选，不传则使用默认 PinoLogger） */
+  logger?: ILogger;
 }
 
 /**
@@ -363,6 +366,10 @@ export class Agent {
     this._confirmWrites = opts.confirmWrites ?? false;
     // 外部注入的存储实例（可选，不传则内部创建 SqliteStorage）
     this._storage = opts.storage;
+    // 外部注入的日志实现（可选，不传则使用默认 PinoLogger）
+    if (opts.logger) {
+      setLogger(opts.logger);
+    }
     // 归档模式（默认 'full'，向后兼容）
     if (opts.archiveMode) {
       this._archiveMode = opts.archiveMode;

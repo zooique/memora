@@ -39,6 +39,7 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 | 内存实现         | **InMemoryStorage implements IMemoryStorage**（测试用）      |
 | 依赖管理         | better-sqlite3 移到 peerDependencies + optionalDependencies  |
 | 注入方式         | Agent 构造函数可选参数 `storage?: IMemoryStorage`            |
+| 日志抽象         | `ILogger` 接口 + 全局单例 `setLogger()`（2026-06-10 补充）  |
 | CLI 独立运行     | 内部自建 SqliteStorage（仍需 better-sqlite3）                |
 
 ## 三层架构
@@ -97,13 +98,44 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 ## 影响
 
 - `src/memory/storage-interface.ts`：新增 IMemoryStorage 接口
+- `src/logging/logger-interface.ts`：新增 ILogger 接口（2026-06-10 补充）
+- `src/logging/logger.ts`：全局单例 + `setLogger()` 可替换（2026-06-10 补充）
 - `src/memory/index.ts`：MemoryIndex → SqliteStorage implements IMemoryStorage
 - `src/memory/in-memory-storage.ts`：新增 InMemoryStorage
 - `src/memory/project-manager.ts`：构造函数新增 `storage?: IMemoryStorage` 参数
-- `src/agent/agent.ts`：AgentOptions 新增 `storage?: IMemoryStorage`
-- `src/index.ts`：导出 IMemoryStorage + SqliteStorage + InMemoryStorage
+- `src/agent/agent.ts`：AgentOptions 新增 `storage?: IMemoryStorage` + `logger?: ILogger`
+- `src/index.ts`：导出 IMemoryStorage + SqliteStorage + InMemoryStorage + ILogger + setLogger
 - 所有消费者：`MemoryIndex` 类型 → `IMemoryStorage`，`new MemoryIndex` → `new SqliteStorage`
 - 453 测试全量通过，0 编译错误
+
+## 宿主接入示例
+
+```typescript
+import { Agent } from 'memora';
+import type { IMemoryStorage, ILogger } from 'memora';
+
+// 泊文宿主持有 better-sqlite3
+const storage: IMemoryStorage = new BowenSqliteStorage(db);
+
+// 可选：注入自定义 logger（不传则使用默认 PinoLogger）
+const myLogger: ILogger = {
+  info: (obj, msg) => console.log('[info]', msg, obj),
+  warn: (obj, msg) => console.warn('[warn]', msg, obj),
+  error: (obj, msg) => console.error('[error]', msg, obj),
+  debug: (obj, msg) => console.debug('[debug]', msg, obj),
+};
+
+const agent = new Agent({
+  projectPath: '/path/to/novel',
+  provider: myProvider,
+  storage,      // 注入存储
+  logger: myLogger,  // 注入日志（可选）
+});
+
+// 也可在构造前全局替换日志
+import { setLogger } from 'memora';
+setLogger(myLogger);
+```
 
 ## 何时回顾
 

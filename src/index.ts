@@ -44,6 +44,9 @@ export type { Memory, MemoryTypeValue, PermanenceValue } from './memory/types.js
 export type { IMemoryStorage } from './memory/storage-interface.js';
 export { SqliteStorage } from './memory/index.js';
 export { InMemoryStorage } from './memory/in-memory-storage.js';
+// 日志抽象：宿主项目可注入自定义 ILogger 实现
+export type { ILogger } from './logging/logger-interface.js';
+export { setLogger } from './logging/logger.js';
 // C1 修复：导出宿主程序调用 addSkill() 所需的 SkillEntry 类型
 export type { SkillEntry } from './skill/skillManager.js';
 
