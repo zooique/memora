@@ -144,6 +144,8 @@ export interface TopicSummarizerResult {
   snapshots: string[];
   /** 格式化文本（写 SQLite 索引 + frontmatter summary） */
   summary: string;
+  /** 话题标题（5-8 字，归档时自动命名用。空字符串表示 LLM 未给出） */
+  title: string;
 }
 
 /**

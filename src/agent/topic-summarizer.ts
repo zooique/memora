@@ -25,6 +25,16 @@ import type { TopicMessage, TopicSummarizerResult } from '@/memory/types.js';
 export type TopicSummarizerFn = (messages: TopicMessage[]) => Promise<TopicSummarizerResult | null>;
 
 /**
+ * 安全地将 JSON 字段值转为字符串数组
+ * LLM 可能在字符串和数组之间波动，统一处理
+ */
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v));
+  if (typeof value === 'string') return [value];
+  return [];
+}
+
+/**
  * 创建话题摘要生成器
  *
  * 策略：
@@ -57,8 +67,9 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
 
 输出格式（严格 JSON，不含 markdown 代码块标记）：
 - 对话全是通用问答/闲聊，无任何独有信息 → 只输出 SKIP
-- 否则输出：{"约束":["..."], "偏好":["..."], "决策":["..."], "快照":["..."]}
+- 否则输出：{"标题":"...", "约束":["..."], "偏好":["..."], "决策":["..."], "快照":["..."]}
 - 空数组的字段可省略
+- 标题：5-8 个字，概括这段对话的核心话题（如"角色设定讨论""伏笔梳理""Git工作流配置"）
 - 每条约束/偏好/决策 10-20 字，只提取用户独有的信息，不包含 LLM 已知的通用知识
 - 快照：提取 5-8 句用户原文中信息量最高的句子，逐句截取（≤30 字/句），用于后续话题召回`,
       },
@@ -83,11 +94,20 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
 
     // 解析结构化 JSON，不再丢弃快照字段
     try {
-      const parsed = JSON.parse(trimmed) as Record<string, string[]>;
-      const constraints = parsed['约束'] ?? [];
-      const preferences = parsed['偏好'] ?? [];
-      const decisions = parsed['决策'] ?? [];
-      const snapshots = parsed['快照'] ?? [];
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      // 标题：可能是字符串也可能是数组（LLM 不稳定），统一处理
+      const rawTitle = parsed['标题'];
+      const title =
+        typeof rawTitle === 'string'
+          ? rawTitle.slice(0, 20)
+          : Array.isArray(rawTitle) && rawTitle.length > 0
+            ? String(rawTitle[0]).slice(0, 20)
+            : '';
+      // 约束/偏好/决策/快照 仍然是字符串数组
+      const constraints = asStringArray(parsed['约束']);
+      const preferences = asStringArray(parsed['偏好']);
+      const decisions = asStringArray(parsed['决策']);
+      const snapshots = asStringArray(parsed['快照']);
       const parts: string[] = [];
       if (constraints.length) parts.push('约束：' + constraints.join('；'));
       if (preferences.length) parts.push('偏好：' + preferences.join('；'));
@@ -100,6 +120,7 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
           decisions,
           snapshots, // 不再丢弃！替代 DialogueSnapshotExtractor
           summary: parts.join(' | '),
+          title,
         };
       }
       return null; // 解析后无任何有价值字段
@@ -114,6 +135,7 @@ export function createTopicSummarizer(provider: LlmProvider): TopicSummarizerFn 
       decisions: [],
       snapshots: [],
       summary: trimmed,
+      title: '',
     };
   };
 }

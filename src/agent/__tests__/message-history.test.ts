@@ -29,6 +29,7 @@ function makeResult(summary: string, snapshots: string[] = []): TopicSummarizerR
     decisions: [],
     snapshots,
     summary,
+    title: '',
   };
 }
 

@@ -51,9 +51,43 @@ export class TopicStore {
 
     const frontmatter = this.serializeFrontmatter(topic);
     const body = topic.messages.map((m) => this.formatMessage(m)).join('\n\n');
-    const content = `---\n${frontmatter}\n---\n\n# ${topic.topic} (${topic.date})\n\n${body}\n`;
+    const content = `---\n${frontmatter}\n---\n\n# ${topic.date} (${topic.topic})\n\n${body}\n`;
 
     await writeFile(filePath, content, 'utf-8');
+  }
+
+  /**
+   * 重命名话题文件
+   *
+   * 用于归档时 LLM 自动生成话题标题后，将 `2026-06-11-main.md`
+   * 重命名为 `2026-06-11-角色设定讨论.md`。
+   *
+   * 不覆盖目标：如果目标文件已存在，在原文件名后追加数字后缀。
+   *
+   * @param date 日期 YYYY-MM-DD
+   * @param oldTopic 旧话题名
+   * @param newTopic 新话题名（已 slugify 处理）
+   * @returns 实际使用的新话题名（可能与 newTopic 不同，因为去重逻辑）
+   */
+  async renameTopic(date: string, oldTopic: string, newTopic: string): Promise<string> {
+    const srcPath = this.getFilePath(date, oldTopic);
+    if (!existsSync(srcPath)) return oldTopic;
+
+    const destDir = dirname(srcPath);
+    let destName = newTopic;
+    let destPath = join(destDir, `${date}-${destName}.md`);
+
+    // 目标文件已存在 → 追加数字后缀去重
+    let counter = 1;
+    while (existsSync(destPath)) {
+      destName = `${newTopic}-${counter}`;
+      destPath = join(destDir, `${date}-${destName}.md`);
+      counter++;
+    }
+
+    await rename(srcPath, destPath);
+    logger.debug({ from: `${date}-${oldTopic}`, to: `${date}-${destName}` }, '话题文件已重命名');
+    return destName;
   }
 
   /**

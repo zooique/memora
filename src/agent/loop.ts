@@ -13,6 +13,7 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from './tool-executor.js';
 import type { AgentChunk } from './types.js';
+import { MemoraError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 
 export interface AgentLoopOptions {
@@ -131,7 +132,23 @@ export class AgentLoop {
             return;
           }
           yield { type: 'tool_start', name: tc.function.name, args: tc.function.arguments };
-          const result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
+
+          // 工具执行可能因文件不存在、路径越界等原因失败
+          // 捕获异常并转为错误结果字符串，回传给 LLM 让其自行调整策略
+          // 避免错误直接传播到 agent.chat() 导致整个对话中断
+          let result: string;
+          try {
+            result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
+          } catch (err) {
+            if (err instanceof MemoraError) {
+              result = `错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
+              logger.warn({ tool: tc.function.name, title: err.title, detail: err.detail }, '工具执行失败，错误已回传给 LLM');
+            } else {
+              result = `错误：工具执行异常 — ${(err as Error).message}`;
+              logger.error({ tool: tc.function.name, err }, '工具执行异常');
+            }
+          }
+
           this.messages.push({
             role: 'tool',
             content: result,

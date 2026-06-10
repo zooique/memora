@@ -34,6 +34,28 @@ import { logger } from '@/logging/logger.js';
  * 消息历史类
  * cli 只调本类，不直接操作 TopicStore
  */
+/**
+ * 将话题标题转为合法的文件名片段
+ *
+ * 规则：
+ * - 非法字符替换为连字符
+ * - 连续连字符合并为一个
+ * - 去除首尾连字符
+ * - 全空白/结果为空时返回空字符串
+ *
+ * @param title - LLM 生成的话题标题（5-8 字中文）
+ * @returns 合法的文件名片段（如"角色设定讨论"），失败返回空字符串
+ */
+function slugifyTopicTitle(title: string): string {
+  // 去首尾空白，替换非法文件名字符为连字符
+  const slugged = title
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slugged;
+}
+
 export class MessageHistory {
   private currentDate: string;
   private currentTopic: string;
@@ -329,13 +351,29 @@ export class MessageHistory {
       // 1. 写 topic-*.md frontmatter（使用 result.summary 格式化文本）
       await this.topicStore.appendSummary(date, topic, result.summary);
 
+      // 1.5 自动重命名：如果话题名是默认值 "main" 且 LLM 生成了标题
+      //     将 2026-06-11-main.md → 2026-06-11-角色设定讨论.md
+      let effectiveTopic = topic; // 重命名后的话题名（用于 SQLite 写入）
+      if (topic === 'main' && result.title) {
+        const slugged = slugifyTopicTitle(result.title);
+        if (slugged) {
+          effectiveTopic = await this.topicStore.renameTopic(date, topic, slugged);
+          logger.info({ from: `${date}-${topic}`, to: `${date}-${effectiveTopic}` }, '话题已自动命名');
+        }
+      }
+
       // 2. 同步写入 SQLite 索引（让 TopicMount 能跨会话召回）
       // v1.2 新枝破土：snapshots 也写入 SQLite（与 summary 共用同一条索引记录）
       // FTS5 搜索 content 字段时，summary + snapshots 同时被匹配
       if (this.index) {
+        // 如果发生了重命名，先删旧条目再写新条目
+        if (effectiveTopic !== topic) {
+          const oldId = this.buildTopicMemoryId(date, topic);
+          await this.index.delete(oldId);
+        }
         await this.writeTopicMemory(
           date,
-          topic,
+          effectiveTopic,
           result.summary,
           topicFile.messages.length,
           result.snapshots,
@@ -344,7 +382,7 @@ export class MessageHistory {
 
       logger.info(
         {
-          topic: `${date}-${topic}`,
+          topic: `${date}-${effectiveTopic}`,
           reason,
           messageCount: topicFile.messages.length,
           hasSnapshots: result.snapshots.length > 0,
