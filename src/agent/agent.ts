@@ -235,6 +235,8 @@ export interface BootstrapSnapshot {
 export interface ArchiveSnapshot {
   topicFilesCount: number;
   currentTopic: string;
+  /** 当前话题全名（含日期前缀，与 topics/*.md 文件名一致），用于渲染端精确高亮 */
+  currentTopicName: string;
   hint: string;
 }
 
@@ -682,6 +684,25 @@ export class Agent {
   }
 
   /**
+   * 加载指定话题的历史消息
+   * 对应话题文件 topics/<date>-<topic>.md
+   * 加载后 Memora 状态（currentDate/currentTopic）同步切换到该话题
+   * 用于"切回历史话题"——把旧对话拉回工作台
+   *
+   * @param date - 话题日期 YYYY-MM-DD
+   * @param topic - 话题名（不含日期和扩展名）
+   * @returns 消息列表
+   */
+  async loadTopicMessages(date: string, topic: string): Promise<TopicMessage[]> {
+    if (!this._initialized || !this.history) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 loadTopicMessages() 前调用 await agent.init()',
+      ]);
+    }
+    return this.history.loadTopicMessages(date, topic);
+  }
+
+  /**
    * 列出已注册项目
    *
    * 对应 CLI 的 /project 命令（无参数时显示项目列表）
@@ -1113,6 +1134,9 @@ export class Agent {
       archive: {
         topicFilesCount: archiveTotal,
         currentTopic: this.history?.topic ?? '(none)',
+        // 当前话题全名（含日期前缀，与 topics/*.md 文件名一致）
+        // 用于渲染端精确高亮"当前话题"——裸名 "main" 在多文件场景下不唯一
+        currentTopicName: this.history?.currentTopicName ?? '(none)',
         // 真实归档文件列表需调 listAllTopics()，本方法不阻塞
         hint: '调 listAllTopics() 获取文件清单',
       },

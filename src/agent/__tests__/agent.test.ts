@@ -159,12 +159,15 @@ describe('Agent · inspect() · 4 层记忆快照', () => {
     }
   });
 
-  it('inspect().archive 应包含 currentTopic 与 hint', async () => {
+  it('inspect().archive 应包含 currentTopic 与 currentTopicName 与 hint', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     const snap = agent.inspect();
     expect(snap.archive.currentTopic).toBeDefined();
+    // currentTopicName 含日期前缀（如 "2026-06-09-main"），用于精确匹配话题文件
+    expect(snap.archive.currentTopicName).toBeDefined();
+    expect(snap.archive.currentTopicName).toContain(snap.archive.currentTopic);
     expect(snap.archive.hint).toContain('listAllTopics');
     expect(typeof snap.archive.topicFilesCount).toBe('number');
   });
