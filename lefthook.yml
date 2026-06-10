@@ -23,8 +23,6 @@ commit-msg:
 pre-push:
   parallel: false
   commands:
-    ensure-node-abi:
-      run: cd ../.. && npm rebuild better-sqlite3
     test:
       run: npm test
 

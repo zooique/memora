@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
 import { SecurityGuard } from '@/security/path-guard.js';
-import { SqliteStorage } from '@/memory/index.js';
+import { InMemoryStorage } from '@/memory/in-memory-storage.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoraError, toolError } from '@/utils/errors.js';
 
@@ -41,8 +41,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     // SecurityGuard：owner + confirmWrites=false（自动批准）
     security = new SecurityGuard(tmpProject, tmpData, [], false, 'owner');
 
-    // SqliteStorage（better-sqlite3 临时 db，构造即就绪）
-    index = new SqliteStorage(join(tmpData, 'memora.db'));
+    // InMemoryStorage（纯内存实现，无需 better-sqlite3）
+    index = new InMemoryStorage();
 
     // 插入一些测试记忆
     await index.upsert({

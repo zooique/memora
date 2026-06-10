@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { FileStore } from '@/memory/store.js';
-import { SqliteStorage } from '@/memory/index.js';
+import { InMemoryStorage } from '@/memory/in-memory-storage.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoryLoader } from '@/memory/loader.js';
 import { MemoryType } from '@/memory/types.js';
@@ -27,7 +27,7 @@ describe('MemoryLoader · 文件 → 索引同步', () => {
     mkdirSync(join(dataDir, 'topics'), { recursive: true });
 
     fileStore = new FileStore(dataDir);
-    index = new SqliteStorage(join(dataDir, 'test.db'));
+    index = new InMemoryStorage();
     loader = new MemoryLoader(fileStore, index);
   });
 

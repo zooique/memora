@@ -252,7 +252,7 @@ hello
 
 // ─── 2026-06-03 · 自动归档到 SQLite 索引 + Lazy 扫描 ────────────
 
-import { SqliteStorage } from '@/memory/index.js';
+import { InMemoryStorage } from '@/memory/in-memory-storage.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
 
@@ -267,7 +267,7 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-autoarchive-'));
     mkdirSync(join(tmpDir, 'topics'), { recursive: true });
     topicStore = new TopicStore(tmpDir);
-    index = new SqliteStorage(join(tmpDir, 'test.db'));
+    index = new InMemoryStorage();
   });
 
   afterEach(async () => {

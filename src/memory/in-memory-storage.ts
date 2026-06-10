@@ -143,6 +143,14 @@ export class InMemoryStorage implements IMemoryStorage {
     // 简单空格分词（不使用 Intl.Segmenter）
     const tokens = query.trim().split(/\s+/).filter(Boolean);
 
+    // 若分词后无有效 token（纯标点/符号查询），降级为按 weight 返回
+    // 与 SqliteStorage 的 Intl.Segmenter 行为对齐：标点不会产生有效 token
+    if (tokens.every((t) => !/[\w\u4e00-\u9fff]/.test(t))) {
+      return Array.from(this.memories.values())
+        .sort((a, b) => b.weight - a.weight)
+        .slice(0, limit);
+    }
+
     const results = Array.from(this.memories.values()).filter((m) => {
       const text = `${m.content} ${m.name} ${m.tags.join(' ')}`.toLowerCase();
 
