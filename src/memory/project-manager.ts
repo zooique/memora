@@ -35,7 +35,8 @@ import {
   readdirSync,
 } from 'node:fs';
 import { FileStore } from './store.js';
-import { MemoryIndex } from './index.js';
+import { SqliteStorage } from './index.js';
+import type { IMemoryStorage } from './storage-interface.js';
 import { MemoryLoader } from './loader.js';
 import type { LoadResult } from './loader.js';
 import { TopicStore } from './topic-store.js';
@@ -58,8 +59,8 @@ export interface ProjectContext {
   dbPath: string;
   /** 文件存储 */
   fileStore: FileStore;
-  /** SQLite 索引 */
-  index: MemoryIndex;
+  /** SQLite 索引（通过 IMemoryStorage 接口访问） */
+  index: IMemoryStorage;
   /** 话题存储 */
   topicStore: TopicStore;
   /** 安全守卫 */
@@ -117,20 +118,23 @@ export class ProjectManager {
   private readonly confirmWrites: boolean;
   /** 安全权限 */
   private readonly permission: 'owner' | 'guest';
-  /** Agent 级 SQLite 索引（全局共享，不随项目切换重建） */
-  private agentIndex: MemoryIndex | null = null;
+  /** Agent 级存储实例（全局共享，不随项目切换重建） */
+  private agentIndex: IMemoryStorage | null = null;
   /** Agent 级话题存储（全局共享，不随项目切换重建） */
   private agentTopicStore: TopicStore | null = null;
   /** 当前打开的项目路径 */
   private currentProjectPath: string | null = null;
   /** 当前持有的锁文件路径 */
   private currentLockPath: string | null = null;
+  /** 外部注入的存储实例（可选，不传则内部创建 SqliteStorage） */
+  private externalStorage: IMemoryStorage | null;
 
   constructor(
     dataDir: string,
     allowedPaths: string[] = [],
     confirmWrites: boolean = false,
     permission: 'owner' | 'guest' = 'owner',
+    storage?: IMemoryStorage,
   ) {
     const memoraHome = resolve(dataDir.replace(/^~/, homedir()));
     this.agentDataDir = memoraHome;
@@ -139,17 +143,30 @@ export class ProjectManager {
     this.allowedPaths = allowedPaths;
     this.confirmWrites = confirmWrites;
     this.permission = permission;
+    // 保存外部注入的存储实例（宿主项目注入时使用）
+    this.externalStorage = storage ?? null;
   }
 
   /**
-   * 确保 Agent 级资源已初始化（memora.db + TopicStore）
+   * 确保 Agent 级资源已初始化（存储实例 + TopicStore）
    * 这些资源在整个 Agent 生命周期内共享，不随项目切换重建
+   *
+   * 如果构造时注入了外部存储实例，直接使用；
+   * 否则内部创建 SqliteStorage（CLI 独立运行场景）。
    */
-  private async ensureAgentResources(): Promise<{ index: MemoryIndex; topicStore: TopicStore }> {
+  private async ensureAgentResources(): Promise<{ index: IMemoryStorage; topicStore: TopicStore }> {
     if (!this.agentIndex) {
       mkdirSync(this.agentDataDir, { recursive: true });
-      const dbPath = join(this.agentDataDir, 'memora.db');
-      this.agentIndex = new MemoryIndex(dbPath);
+
+      // 优先使用外部注入的存储实例
+      if (this.externalStorage) {
+        this.agentIndex = this.externalStorage;
+      } else {
+        // CLI 独立运行：内部创建 SqliteStorage
+        const dbPath = join(this.agentDataDir, 'memora.db');
+        this.agentIndex = new SqliteStorage(dbPath);
+      }
+
       this.agentTopicStore = new TopicStore(this.agentDataDir);
     }
     // agentTopicStore 与 agentIndex 同步设置，此处不可能为 null
@@ -285,7 +302,7 @@ export class ProjectManager {
     }
     if (this.agentIndex) {
       try {
-        this.agentIndex.close();
+        this.agentIndex.close?.();
       } catch (err) {
         logger.warn({ err }, '关闭 Agent 数据库失败');
       }

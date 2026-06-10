@@ -50,7 +50,7 @@ import {
   type PermanenceValue,
   type MemoryTypeValue,
 } from '@/memory/types.js';
-import type { MemoryIndex } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { TopicStore } from '@/memory/topic-store.js';
 import type { SecurityGuard } from '@/security/path-guard.js';
 import { detectMemorableSignal } from './signal-detector.js';
@@ -94,6 +94,8 @@ export interface AgentOptions {
   allowedPaths?: string[];
   /** 写入确认 */
   confirmWrites?: boolean;
+  /** 外部注入的存储实例（可选，不传则内部创建 SqliteStorage） */
+  storage?: IMemoryStorage;
 }
 
 /**
@@ -186,7 +188,7 @@ export interface AgentMountedMemory {
 export interface AgentBuildCtx {
   topicStore: TopicStore;
   security: SecurityGuard;
-  index: MemoryIndex;
+  index: IMemoryStorage;
   bootstrapMemories: Memory[];
 }
 
@@ -278,6 +280,7 @@ export class Agent {
   private _permission: 'owner' | 'guest'; // 安全权限
   private _allowedPaths: string[]; // 允许的路径白名单
   private _confirmWrites: boolean; // 写入确认
+  private _storage: IMemoryStorage | undefined; // 外部注入的存储实例（可选）
   private projectPath: string;
   private configDir: string | undefined; // 配置目录（personas/rules/skills/tools）
 
@@ -358,6 +361,8 @@ export class Agent {
     this._permission = opts.permission ?? 'owner';
     this._allowedPaths = opts.allowedPaths ?? [];
     this._confirmWrites = opts.confirmWrites ?? false;
+    // 外部注入的存储实例（可选，不传则内部创建 SqliteStorage）
+    this._storage = opts.storage;
     // 归档模式（默认 'full'，向后兼容）
     if (opts.archiveMode) {
       this._archiveMode = opts.archiveMode;
@@ -387,11 +392,13 @@ export class Agent {
     }
 
     // 创建 ProjectManager（只传 dataDir，不依赖 Config 类型）
+    // 如果宿主注入了 storage，传递给 ProjectManager（否则内部创建 SqliteStorage）
     this.projectManager = new ProjectManager(
       this._dataDir,
       this._allowedPaths,
       this._confirmWrites,
       this._permission,
+      this._storage,
     );
 
     // 初始化项目上下文（加载 .memora/ 下的记忆索引）

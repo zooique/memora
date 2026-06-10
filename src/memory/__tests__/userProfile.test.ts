@@ -13,14 +13,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { UserProfile } from '../userProfile.js';
-import type { MemoryIndex } from '../index.js';
+import type { IMemoryStorage } from '../storage-interface.js';
 import type { Memory } from '../types.js';
 import { MemoryType, Permanence } from '../types.js';
 
 /**
  * 创建 Mock MemoryIndex（包含 upsert 方法）
  */
-const createMockIndex = (): MemoryIndex => {
+const createMockIndex = (): IMemoryStorage => {
   const store = new Map<string, Memory>();
   return {
     add: vi.fn(async (memory: Memory) => {
@@ -41,11 +41,11 @@ const createMockIndex = (): MemoryIndex => {
       store.delete(id);
     }),
     close: vi.fn(),
-  } as unknown as MemoryIndex;
+  } as unknown as IMemoryStorage;
 };
 
 describe('UserProfile', () => {
-  let mockIndex: MemoryIndex;
+  let mockIndex: IMemoryStorage;
   let userProfile: UserProfile;
 
   beforeEach(() => {

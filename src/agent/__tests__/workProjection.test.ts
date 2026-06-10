@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WorkProjectionManager } from '../workProjection.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { MemoryIndex } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { Memory } from '@/memory/types.js';
 
 /**
@@ -32,7 +32,7 @@ const createMockProvider = (response: string): LlmProvider =>
 /**
  * 创建 Mock MemoryIndex（内存存储）
  */
-const createMockIndex = (): MemoryIndex => {
+const createMockIndex = (): IMemoryStorage => {
   const store = new Map<string, Memory>();
   return {
     add: vi.fn(async (memory: Memory) => {
@@ -53,11 +53,11 @@ const createMockIndex = (): MemoryIndex => {
       store.delete(id);
     }),
     close: vi.fn(),
-  } as unknown as MemoryIndex;
+  } as unknown as IMemoryStorage;
 };
 
 describe('WorkProjectionManager', () => {
-  let mockIndex: MemoryIndex;
+  let mockIndex: IMemoryStorage;
 
   beforeEach(() => {
     mockIndex = createMockIndex();

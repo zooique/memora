@@ -14,7 +14,7 @@
  *   - 确认机制防止正则误归档污染画像
  *   - identity / preference / expertise 实时归档，habit / history 每天归档时提炼
  */
-import type { MemoryIndex } from './index.js';
+import type { IMemoryStorage } from './storage-interface.js';
 import type { Memory } from './types.js';
 import { MemoryType, Permanence } from './types.js';
 import { logger } from '@/logging/logger.js';
@@ -58,7 +58,7 @@ export class UserProfile {
   /** 内存缓存：启动时从 SQLite 全量加载 */
   private cache: Map<string, UserProfileEntry> = new Map();
 
-  constructor(private readonly index: MemoryIndex) {}
+  constructor(private readonly index: IMemoryStorage) {}
 
   /**
    * 启动时从 SQLite 加载所有已确认的画像条目

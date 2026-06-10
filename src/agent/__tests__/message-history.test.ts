@@ -251,13 +251,14 @@ hello
 
 // ─── 2026-06-03 · 自动归档到 SQLite 索引 + Lazy 扫描 ────────────
 
-import { MemoryIndex } from '@/memory/index.js';
+import { SqliteStorage } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
 
 describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案）', () => {
   let tmpDir: string;
   let topicStore: TopicStore;
-  let index: MemoryIndex;
+  let index: IMemoryStorage;
   const initialDate = '2026-06-03';
   const initialTopic = 'auto-archive';
 
@@ -265,11 +266,11 @@ describe('MessageHistory · 自动归档到 SQLite 索引（Lazy + Signal 方案
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-autoarchive-'));
     mkdirSync(join(tmpDir, 'topics'), { recursive: true });
     topicStore = new TopicStore(tmpDir);
-    index = new MemoryIndex(join(tmpDir, 'test.db'));
+    index = new SqliteStorage(join(tmpDir, 'test.db'));
   });
 
   afterEach(async () => {
-    await index.close();
+    await index.close?.();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 

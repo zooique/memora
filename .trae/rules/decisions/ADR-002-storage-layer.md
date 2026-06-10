@@ -1,28 +1,31 @@
 ---
 alwaysApply: false
-description: 选用 better-sqlite3 作为存储层（统一索引表）
+description: 存储层抽象：IMemoryStorage 接口 + better-sqlite3 可插拔实现
 ---
 
-# ADR-002 · 选用 better-sqlite3 作为存储层（统一索引表）
+# ADR-002 · 存储层抽象：IMemoryStorage 接口 + 可插拔实现
 
-> **状态**：✅ 已实施 **日期**：2026-06-05 **版本**：v0.3
-> **变更原因**：用户验证 better-sqlite3 在 Windows + Node
-> 24 下编译通过；better-sqlite3 是 Node.js 社区公认最快的 SQLite 驱动
+> **状态**：✅ 已实施 **日期**：2026-06-10 **版本**：v0.4
+> **变更原因**：Memora 彻底独立——内核不依赖任何具体数据库，
+> 宿主项目注入 IMemoryStorage 实现即可
 > **播种批次**：Memora 模式 A v1
 > **来源**：[项目决策表.md §二](../../docs/项目决策表.md) +
 > [01-主架构-v4.0.md §4.3](../../docs/基础设计文档/01-主架构-v4.0.md)
 
 ## 背景
 
-5 种记忆类型（永驻 / 领域 / 话题 / 能力 / 归档）需要统一的检索能力。设计哲学"万物皆记忆"要求它们共享同一套索引机制。
+Memora 需要彻底独立于具体数据库实现。宿主项目（如泊文 Electron）持有
+better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora Agent 内核
+为纯业务逻辑模块，不依赖、不初始化数据库，仅接收宿主注入的存储接口完成记忆读写。
 
 ### 版本历史
 
-| 版本 | 日期       | 选型                        | 原因                                            |
-| ---- | ---------- | --------------------------- | ----------------------------------------------- |
-| v0.1 | 初始设计   | better-sqlite3 + sqlite-vec | 理想方案                                        |
-| v0.2 | 2026-06-02 | sqlite3 (mapbox)            | better-sqlite3 在 Win + Node 24 下编译失败      |
-| v0.3 | 2026-06-05 | **better-sqlite3**          | 用户验证编译通过（Node v24.12.0 + Python 3.14） |
+| 版本 | 日期       | 选型                                     | 原因                                            |
+| ---- | ---------- | ---------------------------------------- | ----------------------------------------------- |
+| v0.1 | 初始设计   | better-sqlite3 + sqlite-vec              | 理想方案                                        |
+| v0.2 | 2026-06-02 | sqlite3 (mapbox)                         | better-sqlite3 在 Win + Node 24 下编译失败      |
+| v0.3 | 2026-06-05 | better-sqlite3                           | 用户验证编译通过（Node v24.12.0 + Python 3.14） |
+| v0.4 | 2026-06-10 | **IMemoryStorage 接口 + 可插拔实现**     | Memora 彻底独立，内核零数据库依赖               |
 
 > 详见 [原 ADR-002 v0.1](./ADR-002-storage-layer-original.md) 和
 > [ADR-002 v0.2 记录](./ADR-002-storage-layer.md)（已废弃）。
@@ -31,57 +34,82 @@ description: 选用 better-sqlite3 作为存储层（统一索引表）
 
 | 项               | 选择                                                         |
 | ---------------- | ------------------------------------------------------------ |
-| 数据库           | **better-sqlite3**                                           |
-| 索引表设计       | 单一 `memories` 表 + `memory_type` 字段区分                  |
-| 文件与数据库分工 | 文件承载本体，数据库承载索引（冷热分离）                     |
-| 阶段三向量检索   | ✅ 已决策：纯 JS 余弦相似度 + JSON 持久化（见年轮修订 v0.2） |
+| 存储接口         | **IMemoryStorage**（纯 TS 接口，零依赖）                     |
+| SQLite 实现      | **SqliteStorage implements IMemoryStorage**（better-sqlite3） |
+| 内存实现         | **InMemoryStorage implements IMemoryStorage**（测试用）      |
+| 依赖管理         | better-sqlite3 移到 peerDependencies + optionalDependencies  |
+| 注入方式         | Agent 构造函数可选参数 `storage?: IMemoryStorage`            |
+| CLI 独立运行     | 内部自建 SqliteStorage（仍需 better-sqlite3）                |
+
+## 三层架构
+
+```
+┌─────────────────────────────────────────────────┐
+│  Electron 壳层（提供 Node 原生模块执行环境）       │
+├─────────────────────────────────────────────────┤
+│  泊文宿主（持有 better-sqlite3，实现 IMemoryStorage）│
+├─────────────────────────────────────────────────┤
+│  Memora 内核（纯业务逻辑，仅依赖 IMemoryStorage）  │
+└─────────────────────────────────────────────────┘
+```
 
 ## 理由
 
-- **better-sqlite3**：同步 API（代码更简洁，删除 ~40 行 Promise 包装）；预编译语句缓存（重复查询零开销）；Node.js 社区公认最快的 SQLite 驱动
-- **单一索引表**：符合"万物皆记忆"哲学；5 类记忆共享检索逻辑；扩展性好
-- **冷热分离**：文件可读可编辑（备份/迁移零成本）；数据库只存索引和结构化数据
+- **内核零数据库依赖**：Memora 的 `agent/` + `memory/` + `persona/` + `skill/` 不 import better-sqlite3
+- **宿主全权持有数据库**：泊文 Electron 主进程管理 better-sqlite3 生命周期，Memora 不感知
+- **测试零 IO**：InMemoryStorage 让单元测试不需要文件系统、不需要 native 模块
+- **向后兼容**：Agent 构造函数的 `storage` 参数可选，不传则内部创建 SqliteStorage
+- **CLI 独立运行**：CLI 模式下 Memora 自行创建 SqliteStorage，不需要外部注入
 
-## better-sqlite3 vs sqlite3 (mapbox) 对比
+## IMemoryStorage 接口方法
 
-| 维度       | better-sqlite3            | sqlite3 (mapbox)      |
-| ---------- | ------------------------- | --------------------- |
-| API 风格   | **同步**（无回调）        | 异步（回调/Promise）  |
-| 性能       | **极高**（预编译缓存）    | 高（异步开销）        |
-| 代码简洁度 | `db.prepare().all()`      | `await runAsync(...)` |
-| 安装难度   | 需 VS Build Tools         | prebuilt 二进制       |
-| 自定义函数 | ✅ 支持（FTS5 tokenizer） | 部分支持              |
-| 阶段三向量 | 纯 JS（同 v0.2）          | 纯 JS（同 v0.2）      |
+| 方法 | 说明 |
+|------|------|
+| `upsert(memory)` | 插入或更新记忆 |
+| `delete(id)` | 删除记忆 |
+| `getByPermanence(p)` | 按永久性等级获取 |
+| `getById(id)` | 按 ID 获取单条 |
+| `getByType(t)` | 按类型获取 |
+| `touch(ids)` | 触摸记忆（weight 重置） |
+| `applyDecay(halfLife)` | 应用权重衰减 |
+| `search(query, limit, mode)` | 中文分词搜索 |
+| `close?()` | 关闭连接（可选） |
+
+## package.json 变更
+
+```json
+{
+  "dependencies": {
+    // better-sqlite3 已移除
+  },
+  "peerDependencies": {
+    "better-sqlite3": ">=11.0.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": { "optional": true }
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.10.0"
+  }
+}
+```
 
 ## 影响
 
-- `src/memory/index.ts` 重写：sqlite3 async API → better-sqlite3 sync API（删除
-  `runAsync`/`allAsync`/`closeAsync` 包装函数）
-- `src/memory/project-manager.ts`：`close()` → 移除
-  `.catch()`（同步，try-catch 包裹）
-- `package.json`：`sqlite3` + `@types/sqlite3` → `better-sqlite3` +
-  `@types/better-sqlite3`
-- `MemoryIndex.read()` 兼容保留（空方法），旧调用方无需修改
+- `src/memory/storage-interface.ts`：新增 IMemoryStorage 接口
+- `src/memory/index.ts`：MemoryIndex → SqliteStorage implements IMemoryStorage
+- `src/memory/in-memory-storage.ts`：新增 InMemoryStorage
+- `src/memory/project-manager.ts`：构造函数新增 `storage?: IMemoryStorage` 参数
+- `src/agent/agent.ts`：AgentOptions 新增 `storage?: IMemoryStorage`
+- `src/index.ts`：导出 IMemoryStorage + SqliteStorage + InMemoryStorage
+- 所有消费者：`MemoryIndex` 类型 → `IMemoryStorage`，`new MemoryIndex` → `new SqliteStorage`
 - 453 测试全量通过，0 编译错误
-
-## 代码 API 变化
-
-### 旧版（sqlite3 / mapbox）
-
-```typescript
-const row = await allAsync(db, 'SELECT * FROM memories WHERE id = ?', [id]);
-```
-
-### 新版（better-sqlite3）
-
-```typescript
-const row = db.prepare('SELECT * FROM memories WHERE id = ?').all(id);
-```
 
 ## 何时回顾
 
-- 阶段三启用语义检索时（向量检索方案不变）
-- 当 Node.js 内置 sqlite 稳定时
+- 阶段四启用 Web 形态时（可能需要异步存储接口 IAsyncMemoryStorage）
+- 当 Node.js 内置 sqlite 稳定时（可提供 NodeSqliteStorage 实现）
+- 当宿主项目需要 IndexedDB / LevelDB 等非 SQLite 存储时
 
 ## 相关历史
 
@@ -89,3 +117,5 @@ const row = db.prepare('SELECT * FROM memories WHERE id = ?').all(id);
   — 初始方案
 - [ADR-002 v0.2 · sqlite3 (mapbox)](./ADR-002-storage-layer.md)
   — 已废弃（2026-06-02 ~ 2026-06-05）
+- ADR-002 v0.3 · better-sqlite3
+  — 已废弃（2026-06-05 ~ 2026-06-10）

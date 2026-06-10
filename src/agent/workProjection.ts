@@ -22,7 +22,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { MemoryIndex } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { Memory } from '@/memory/types.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
@@ -53,7 +53,7 @@ export interface WorkProjectionEntry {
  */
 export class WorkProjectionManager {
   constructor(
-    private readonly index: MemoryIndex,
+    private readonly index: IMemoryStorage,
     private readonly provider: LlmProvider,
   ) {}
 

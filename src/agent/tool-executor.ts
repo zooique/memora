@@ -11,7 +11,7 @@ import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:pat
 import type { SecurityGuard } from '@/security/path-guard.js';
 import { toolError, MemoraError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
-import type { MemoryIndex } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { WorkProjectionManager } from './workProjection.js';
 
 type ToolResult = string;
@@ -152,7 +152,7 @@ export class ToolExecutor {
   constructor(
     private readonly projectPath: string,
     private readonly security: SecurityGuard,
-    private readonly memoryIndex: MemoryIndex,
+    private readonly memoryIndex: IMemoryStorage,
     /** v4.0：作品投影管理器（可选，读取文件时自动生成投影） */
     private readonly workProjection?: WorkProjectionManager,
   ) {}

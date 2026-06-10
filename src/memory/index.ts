@@ -1,8 +1,8 @@
 /**
- * SQLite 索引
+ * SQLite 存储实现 — IMemoryStorage 的 better-sqlite3 具体实现
  *
  * 单一 memories 表 + memory_type 字段区分 5 种记忆
- * 详见 ADR-002（新版）· 选用 better-sqlite3 作为存储层
+ * 详见 ADR-002（v0.3）· 存储层抽象：IMemoryStorage 接口 + 可插拔实现
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  *
  * better-sqlite3 优势（vs mapbox/sqlite3）：
@@ -14,6 +14,10 @@
  * - 03-安全权限-v0.2.md（MemoraError 错误处理模式）
  * - 00-记忆归档原则-v1.0.md（记忆权重体系）
  * - 05-沉思-记忆衰减与炼化.md（衰减模型）
+ *
+ * 注意：此类仅用于 CLI 独立运行和测试环境。
+ * 宿主项目（如泊文 Electron）应自行实现 IMemoryStorage 接口，
+ * 持有自己的 better-sqlite3 实例，注入 Agent。
  */
 import Database, { type Database as SqliteDatabase } from 'better-sqlite3';
 import { dirname } from 'node:path';
@@ -22,6 +26,7 @@ import { logger } from '@/logging/logger.js';
 import type { Memory, MemoryTypeValue, PermanenceValue } from './types.js';
 import { isValidMemoryType, isValidPermanence, MemoryType, Permanence } from './types.js';
 import { segmentText } from './segmenter.js';
+import type { IMemoryStorage } from './storage-interface.js';
 
 /**
  * 行数据接口（SQLite 磁盘格式）
@@ -39,7 +44,14 @@ interface DbRow {
   file_path: string | null;
 }
 
-export class MemoryIndex {
+/**
+ * SQLite 存储实现
+ *
+ * 实现 IMemoryStorage 接口，使用 better-sqlite3 作为底层存储。
+ * 仅在 CLI 独立运行和测试环境中使用。
+ * 宿主项目应自行实现 IMemoryStorage 接口并注入 Agent。
+ */
+export class SqliteStorage implements IMemoryStorage {
   /** better-sqlite3 数据库实例（同步，构造即就绪） */
   private db: SqliteDatabase;
 
@@ -66,16 +78,6 @@ export class MemoryIndex {
     `);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_type ON memories(type);`);
     this.db.exec(`CREATE INDEX IF NOT EXISTS idx_memories_permanence ON memories(permanence);`);
-  }
-
-  /**
-   * 等待初始化完成
-   *
-   * better-sqlite3 构造即就绪（同步），此方法为兼容旧调用方保留。
-   * 调用方无需 await 可直接使用 MemoryIndex 实例。
-   */
-  async ready(): Promise<void> {
-    // better-sqlite3 构造即就绪，无需等待
   }
 
   /**
@@ -311,7 +313,7 @@ export class MemoryIndex {
   }
 
   /**
-   * 关闭数据库
+   * 关闭数据库连接
    */
   close(): void {
     this.db.close();
@@ -333,3 +335,12 @@ export class MemoryIndex {
     filePath: row.file_path ?? undefined,
   });
 }
+
+/**
+ * 向后兼容别名
+ *
+ * 旧代码中 `import { MemoryIndex } from '@/memory/index.js'` 仍可使用。
+ * 过渡期结束后（所有调用方迁移到 IMemoryStorage），删除此别名。
+ * @deprecated 请使用 SqliteStorage 或 IMemoryStorage
+ */
+export const MemoryIndex = SqliteStorage;

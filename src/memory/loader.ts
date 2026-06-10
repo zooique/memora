@@ -8,7 +8,7 @@
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  */
 import type { FileStore } from './store.js';
-import type { MemoryIndex } from './index.js';
+import type { IMemoryStorage } from './storage-interface.js';
 import { MemoryType, type Memory, type MemoryTypeValue } from './types.js';
 
 /**
@@ -35,7 +35,7 @@ export interface LoadResult {
 export class MemoryLoader {
   constructor(
     private readonly fileStore: FileStore,
-    private readonly index: MemoryIndex,
+    private readonly index: IMemoryStorage,
   ) {}
 
   /**

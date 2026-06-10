@@ -14,7 +14,7 @@ description: Memora 关键决策年轮
 | ID                                          | 标题                                                      | 状态      | 类别   |
 | ------------------------------------------- | --------------------------------------------------------- | --------- | ------ |
 | [ADR-001](./ADR-001-runtime-stack.md)       | 选用 Node.js 20 LTS + TypeScript 5 + ESM 作为运行时栈     | ✅ 已接受 | 运行时 |
-| [ADR-002](./ADR-002-storage-layer.md)       | 选用 better-sqlite3 + sqlite-vec 作为存储层（统一索引表） | ✅ 已接受 | 数据层 |
+| [ADR-002](./ADR-002-storage-layer.md)       | 存储层抽象：IMemoryStorage 接口 + 可插拔实现 | ✅ 已接受 | 数据层 |
 | [ADR-003](./ADR-003-llm-adapter.md)         | LLM 适配层使用 OpenAI Chat Completions 兼容协议           | ✅ 已接受 | 集成层 |
 | [ADR-004](./ADR-004-memory-unification.md)  | 记忆统一为"类型 + 永久性标记"模型                         | ✅ 已接受 | 架构   |
 | [ADR-005](./ADR-005-cli-first.md)           | CLI 优先于 Web 形态（阶段一交付）                         | ✅ 已接受 | 形态   |

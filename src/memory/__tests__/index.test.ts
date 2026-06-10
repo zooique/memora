@@ -4,7 +4,8 @@
  * 适配 better-sqlite3 同步 API
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { MemoryIndex } from '@/memory/index.js';
+import { SqliteStorage } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -12,15 +13,15 @@ import { mkdtempSync, rmSync } from 'node:fs';
 
 describe('MemoryIndex · SQLite 索引', () => {
   let tmpDir: string;
-  let index: MemoryIndex;
+  let index: IMemoryStorage;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-index-'));
-    index = new MemoryIndex(join(tmpDir, 'test.db'));
+    index = new SqliteStorage(join(tmpDir, 'test.db'));
   });
 
   afterEach(async () => {
-    await index.close();
+    await index.close?.();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -204,15 +205,15 @@ describe('MemoryIndex · SQLite 索引', () => {
 
 describe('MemoryIndex · touch/applyDecay（设计 2：而生其心 + 应无所住）', () => {
   let tmpDir: string;
-  let index: MemoryIndex;
+  let index: IMemoryStorage;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-decay-'));
-    index = new MemoryIndex(join(tmpDir, 'decay.db'));
+    index = new SqliteStorage(join(tmpDir, 'decay.db'));
   });
 
   afterEach(async () => {
-    await index.close();
+    await index.close?.();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 

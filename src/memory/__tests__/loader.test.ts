@@ -4,7 +4,8 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { FileStore } from '@/memory/store.js';
-import { MemoryIndex } from '@/memory/index.js';
+import { SqliteStorage } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoryLoader } from '@/memory/loader.js';
 import { MemoryType } from '@/memory/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -14,7 +15,7 @@ import { join } from 'node:path';
 describe('MemoryLoader · 文件 → 索引同步', () => {
   let dataDir: string;
   let fileStore: FileStore;
-  let index: MemoryIndex;
+  let index: IMemoryStorage;
   let loader: MemoryLoader;
 
   beforeEach(() => {
@@ -26,12 +27,12 @@ describe('MemoryLoader · 文件 → 索引同步', () => {
     mkdirSync(join(dataDir, 'topics'), { recursive: true });
 
     fileStore = new FileStore(dataDir);
-    index = new MemoryIndex(join(dataDir, 'test.db'));
+    index = new SqliteStorage(join(dataDir, 'test.db'));
     loader = new MemoryLoader(fileStore, index);
   });
 
   afterEach(async () => {
-    await index.close();
+    await index.close?.();
     rmSync(dataDir, { recursive: true, force: true });
   });
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆召回管线
  *
  * 启动时：基础召回（always + domain 记忆，100% 确定性）
@@ -9,7 +9,7 @@
  * 详见 00-记忆归档原则-v1.0.md · 信息不对称原则
  */
 import type { Memory, MemoryTypeValue } from './types.js';
-import type { MemoryIndex } from './index.js';
+import type { IMemoryStorage } from './storage-interface.js';
 import type { VectorStore } from './vector-store.js';
 
 export interface RecallOptions {
@@ -22,7 +22,7 @@ export interface RecallOptions {
 
 export class RecallPipeline {
   constructor(
-    private readonly index: MemoryIndex,
+    private readonly index: IMemoryStorage,
     private readonly vectorStore?: VectorStore,
   ) {}
 

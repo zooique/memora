@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RecallPipeline } from '@/memory/recall.js';
-import type { MemoryIndex } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { VectorStore } from '@/memory/vector-store.js';
 import type { Memory } from '@/memory/types.js';
 
@@ -25,7 +25,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
 }
 
 describe('RecallPipeline · bootstrap 基础召回', () => {
-  let mockIndex: MemoryIndex;
+  let mockIndex: IMemoryStorage;
   let pipeline: RecallPipeline;
 
   beforeEach(() => {
@@ -33,7 +33,7 @@ describe('RecallPipeline · bootstrap 基础召回', () => {
       getByPermanence: vi.fn(),
       search: vi.fn(),
       getById: vi.fn(),
-    } as unknown as MemoryIndex;
+    } as unknown as IMemoryStorage;
     pipeline = new RecallPipeline(mockIndex);
   });
 
@@ -76,7 +76,7 @@ describe('RecallPipeline · bootstrap 基础召回', () => {
 });
 
 describe('RecallPipeline · recall 增量召回', () => {
-  let mockIndex: MemoryIndex;
+  let mockIndex: IMemoryStorage;
   let pipeline: RecallPipeline;
 
   beforeEach(() => {
@@ -84,7 +84,7 @@ describe('RecallPipeline · recall 增量召回', () => {
       getByPermanence: vi.fn(),
       search: vi.fn(),
       getById: vi.fn(),
-    } as unknown as MemoryIndex;
+    } as unknown as IMemoryStorage;
     pipeline = new RecallPipeline(mockIndex);
   });
 
@@ -140,7 +140,7 @@ describe('RecallPipeline · recall 增量召回', () => {
 });
 
 describe('RecallPipeline · M-206 向量语义搜索', () => {
-  let mockIndex: MemoryIndex;
+  let mockIndex: IMemoryStorage;
   let mockVectorStore: VectorStore;
   let pipeline: RecallPipeline;
 
@@ -149,7 +149,7 @@ describe('RecallPipeline · M-206 向量语义搜索', () => {
       getByPermanence: vi.fn(),
       search: vi.fn(),
       getById: vi.fn(),
-    } as unknown as MemoryIndex;
+    } as unknown as IMemoryStorage;
 
     mockVectorStore = {
       search: vi.fn(),

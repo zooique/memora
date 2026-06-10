@@ -40,6 +40,10 @@ export type { Config } from './config/loader.js';
 // P1-3 修复：导出宿主程序调用 addRule() 所需的类型
 export { MemoryType, Permanence } from './memory/types.js';
 export type { Memory, MemoryTypeValue, PermanenceValue } from './memory/types.js';
+// 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
+export type { IMemoryStorage } from './memory/storage-interface.js';
+export { SqliteStorage } from './memory/index.js';
+export { InMemoryStorage } from './memory/in-memory-storage.js';
 // C1 修复：导出宿主程序调用 addSkill() 所需的 SkillEntry 类型
 export type { SkillEntry } from './skill/skillManager.js';
 

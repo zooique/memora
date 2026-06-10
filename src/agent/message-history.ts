@@ -27,7 +27,7 @@ import type {
   TopicSummarizerResult,
 } from '@/memory/types.js';
 import { MemoryType, Permanence } from '@/memory/types.js';
-import type { MemoryIndex } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { logger } from '@/logging/logger.js';
 
 /**
@@ -54,7 +54,7 @@ export class MessageHistory {
      * 让 TopicMount.focus() 能跨会话召回。
      * 不注入则只写 topic-*.md（保持向后兼容）。
      */
-    private readonly index?: MemoryIndex,
+    private readonly index?: IMemoryStorage,
     /**
      * 临时记忆最小窗口轮次（记忆减法方案 v1.0 · 排雷修正 L2）
      *

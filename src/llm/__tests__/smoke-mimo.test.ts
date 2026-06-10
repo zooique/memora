@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { loadConfig } from '@/config/loader.js';
 import { createLlmProvider } from '@/llm/factory.js';
 import { FileStore } from '@/memory/store.js';
-import { MemoryIndex } from '@/memory/index.js';
+import { SqliteStorage } from '@/memory/index.js';
 import { MemoryLoader } from '@/memory/loader.js';
 
 // 用项目自带的示例记忆目录（含 personas + rule + skill 3 条必召）
@@ -43,7 +43,7 @@ describe('M-001 · 配置 + 记忆链路集成测试', () => {
 
   it('必召记忆被正确加载到 system prompt', async () => {
     const fileStore = new FileStore(MEMORY_DIR);
-    const index = new MemoryIndex(DB_PATH);
+    const index = new SqliteStorage(DB_PATH);
     const loader = new MemoryLoader(fileStore, index);
     const { memories: bootstrap, loadResult } = await loader.bootstrap();
 

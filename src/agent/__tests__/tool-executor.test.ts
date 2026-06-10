@@ -13,13 +13,14 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
 import { SecurityGuard } from '@/security/path-guard.js';
-import { MemoryIndex } from '@/memory/index.js';
+import { SqliteStorage } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoraError, toolError } from '@/utils/errors.js';
 
 describe('M-204 · 工具执行器（4 个工具）', () => {
   let tmpProject: string;
   let tmpData: string;
-  let index: MemoryIndex;
+  let index: IMemoryStorage;
   let security: SecurityGuard;
   let executor: ToolExecutor;
 
@@ -40,9 +41,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     // SecurityGuard：owner + confirmWrites=false（自动批准）
     security = new SecurityGuard(tmpProject, tmpData, [], false, 'owner');
 
-    // MemoryIndex（better-sqlite3 临时 db）
-    index = new MemoryIndex(join(tmpData, 'memora.db'));
-    await index.ready();
+    // SqliteStorage（better-sqlite3 临时 db，构造即就绪）
+    index = new SqliteStorage(join(tmpData, 'memora.db'));
 
     // 插入一些测试记忆
     await index.upsert({
@@ -72,7 +72,7 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
   });
 
   afterAll(async () => {
-    await index.close();
+    await index.close?.();
     rmSync(tmpProject, { recursive: true, force: true });
     rmSync(tmpData, { recursive: true, force: true });
   });

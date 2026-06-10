@@ -22,7 +22,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
 import { MemoryType } from '@/memory/types.js';
-import type { MemoryIndex } from '@/memory/index.js';
+import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 
@@ -77,7 +77,7 @@ export class PersonaManager {
    */
   constructor(
     private readonly configDir?: string,
-    private readonly index?: MemoryIndex,
+    private readonly index?: IMemoryStorage,
   ) {}
 
   /**
