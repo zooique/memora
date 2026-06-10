@@ -32,9 +32,9 @@
     "prepare": "lefthook install || true"
   },
   "engines": {
-    "node": ">=20.0.0 <23.0.0"
+    "node": ">=22.0.0"
   },
-  "engines_comment": "锁定 Node 20/22 LTS：better-sqlite3@12.10.0 的 prebuild 不覆盖 Node 23+（NODE_MODULE_VERSION 不匹配）。Node 24 需 npm rebuild better-sqlite3。详见 ADR-001。",
+  "engines_comment": "Node 22+ LTS。better-sqlite3@12.10.0 已移除 Node 20 prebuild（EOL）。宿主 Electron 41 内置 Node 24，系统 Node 须保持同大版本。详见 ADR-001。",
   "keywords": [
     "agent",
     "memory",

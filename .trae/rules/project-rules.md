@@ -34,7 +34,7 @@ date: 2026-06-02
 
 | 类别   | 选型                                         | 决策                                                  |
 | ------ | -------------------------------------------- | ----------------------------------------------------- |
-| 运行时 | Node.js ≥ 20 LTS + TypeScript 5 strict + ESM | [ADR-001](./decisions/ADR-001-runtime-stack.md)       |
+| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](./decisions/ADR-001-runtime-stack.md)       |
 | 数据层 | better-sqlite3                               | [ADR-002](./decisions/ADR-002-storage-layer.md)       |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](./decisions/ADR-003-llm-adapter.md)         |
 | 形态   | CLI 优先（阶段一）                           | [ADR-005](./decisions/ADR-005-cli-first.md)           |
