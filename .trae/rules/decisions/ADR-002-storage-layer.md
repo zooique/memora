@@ -5,9 +5,9 @@ description: 存储层抽象：IMemoryStorage 接口 + better-sqlite3 可插拔�
 
 # ADR-002 · 存储层抽象：IMemoryStorage 接口 + 可插拔实现
 
-> **状态**：✅ 已实施 **日期**：2026-06-10 **版本**：v0.4
-> **变更原因**：Memora 彻底独立——内核不依赖任何具体数据库，
-> 宿主项目注入 IMemoryStorage 实现即可
+> **状态**：✅ 已实施 **日期**：2026-06-10 **版本**：v0.5
+> **变更原因**：Memora 彻底独立——内核零第三方依赖（better-sqlite3 + pino 均为可选 peerDependency），
+> 宿主项目注入存储 + 日志实现即可
 > **播种批次**：Memora 模式 A v1
 > **来源**：[项目决策表.md §二](../../docs/项目决策表.md) +
 > [01-主架构-v4.0.md §4.3](../../docs/基础设计文档/01-主架构-v4.0.md)
@@ -26,6 +26,7 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 | v0.2 | 2026-06-02 | sqlite3 (mapbox)                         | better-sqlite3 在 Win + Node 24 下编译失败      |
 | v0.3 | 2026-06-05 | better-sqlite3                           | 用户验证编译通过（Node v24.12.0 + Python 3.14） |
 | v0.4 | 2026-06-10 | **IMemoryStorage 接口 + 可插拔实现**     | Memora 彻底独立，内核零数据库依赖               |
+| v0.5 | 2026-06-10 | **pino 改为可选 + cosmiconfig 移除**     | 内核零第三方依赖，pino 动态导入 + console 回退  |
 
 > 详见 [原 ADR-002 v0.1](./ADR-002-storage-layer-original.md) 和
 > [ADR-002 v0.2 记录](./ADR-002-storage-layer.md)（已废弃）。
@@ -58,6 +59,8 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 
 - **内核零数据库依赖**：Memora 的 `agent/` + `memory/` + `persona/` + `skill/` 不 import better-sqlite3
 - **宿主全权持有数据库**：泊文 Electron 主进程管理 better-sqlite3 生命周期，Memora 不感知
+- **宿主可注入日志**：pino 为可选 peerDependency，宿主可注入自定义 ILogger 实现
+- **零依赖降级**：pino 不可用时自动降级到 console fallback，内核正常运行
 - **测试零 IO**：InMemoryStorage 让单元测试不需要文件系统、不需要 native 模块
 - **向后兼容**：Agent 构造函数的 `storage` 参数可选，不传则内部创建 SqliteStorage
 - **CLI 独立运行**：CLI 模式下 Memora 自行创建 SqliteStorage，不需要外部注入
@@ -81,16 +84,22 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 ```json
 {
   "dependencies": {
-    // better-sqlite3 已移除
+    // better-sqlite3 + pino 已移除，cosmiconfig 已移除（死依赖）
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.0",
+    "zod": "^3.25.76"
   },
   "peerDependencies": {
-    "better-sqlite3": ">=11.0.0"
+    "better-sqlite3": ">=11.0.0",
+    "pino": ">=9.0.0"
   },
   "peerDependenciesMeta": {
-    "better-sqlite3": { "optional": true }
+    "better-sqlite3": { "optional": true },
+    "pino": { "optional": true }
   },
   "optionalDependencies": {
-    "better-sqlite3": "^12.10.0"
+    "better-sqlite3": "^12.10.0",
+    "pino": "^9.4.0"
   }
 }
 ```
@@ -107,6 +116,7 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 - `src/index.ts`：导出 IMemoryStorage + SqliteStorage + InMemoryStorage + ILogger + setLogger
 - 所有消费者：`MemoryIndex` 类型 → `IMemoryStorage`，`new MemoryIndex` → `new SqliteStorage`
 - 453 测试全量通过，0 编译错误
+- cosmiconfig 从 dependencies 移除（死依赖，源码 0 处导入）
 
 ## 宿主接入示例
 
@@ -117,7 +127,7 @@ import type { IMemoryStorage, ILogger } from 'memora';
 // 泊文宿主持有 better-sqlite3
 const storage: IMemoryStorage = new BowenSqliteStorage(db);
 
-// 可选：注入自定义 logger（不传则使用默认 PinoLogger）
+// 可选：注入自定义 logger（不传则使用 pino 或 console fallback）
 const myLogger: ILogger = {
   info: (obj, msg) => console.log('[info]', msg, obj),
   warn: (obj, msg) => console.warn('[warn]', msg, obj),

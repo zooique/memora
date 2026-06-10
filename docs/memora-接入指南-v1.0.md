@@ -205,6 +205,7 @@ npm install memora
 
 ```typescript
 import { Agent, createLlmProvider } from 'memora';
+import type { IMemoryStorage, ILogger } from 'memora';
 
 // ─── 宿主职责：创建 LLM Provider ──────────────────────
 // Agent 不关心 API Key / baseUrl / model，宿主自行管理
@@ -223,6 +224,15 @@ const backgroundProvider = createLlmProvider({
   model: 'deepseek-chat', // 可用更便宜的模型
 });
 
+// ─── 宿主职责：注入存储层（可选）──────────────────────
+// 宿主自行管理 better-sqlite3 实例，注入给 Agent 使用。
+// 不传则 Agent 内部自动创建 SqliteStorage（CLI 独立运行场景）。
+const storage: IMemoryStorage = new SqliteStorage('/path/to/memora.db');
+
+// ─── 宿主职责：注入日志实现（可选）────────────────────
+// 不传则 Agent 使用 pino（需安装）或 console fallback（零依赖）。
+const logger: ILogger = myCustomLogger;
+
 // ─── 创建 Agent（只传 Provider 实例，不传 Config）──────
 const agent = new Agent({
   projectPath: '/path/to/novel-project',
@@ -236,6 +246,8 @@ const agent = new Agent({
   permission: 'owner', // 安全权限
   allowedPaths: ['.'], // 路径白名单
   confirmWrites: false, // 写入确认
+  storage, // 存储层注入（可选）
+  logger, // 日志注入（可选）
 });
 
 await agent.init();
@@ -431,6 +443,9 @@ interface AgentOptions {
   /** 后台 LLM Provider（可选）— 归档/投影等后台操作，不配时复用前台 */
   backgroundProvider?: LlmProvider;
 
+  /** 配置目录（可选）— personas/rules/skills 所在目录 */
+  configDir?: string;
+
   /** 归档模式（默认 'full'）：控制 chat() 中自动归档行为 */
   archiveMode?: 'full' | 'insights-only' | 'manual';
 
@@ -451,6 +466,12 @@ interface AgentOptions {
 
   /** 写入操作前是否需要确认回调（默认 false） */
   confirmWrites?: boolean;
+
+  /** 外部注入的存储实例（可选）— 宿主可注入自定义 IMemoryStorage */
+  storage?: IMemoryStorage;
+
+  /** 外部注入的日志实现（可选）— 宿主可注入自定义 ILogger */
+  logger?: ILogger;
 }
 ```
 
@@ -751,25 +772,33 @@ async (args) => {
 
 ## 九、宿主工具函数
 
-Memora 导出一些工具函数，供宿主创建 Provider 和加载配置：
+Memora 导出一些工具函数和类型，供宿主创建 Provider、注入存储和日志：
 
 ```typescript
 import {
   createLlmProvider,
   createProviderFromConfig,
   loadConfig,
+  SqliteStorage,
+  InMemoryStorage,
+  setLogger,
 } from 'memora';
-import type { ProviderConfig, Config } from 'memora';
+import type { ProviderConfig, Config, IMemoryStorage, ILogger } from 'memora';
 ```
 
-| 函数                                     | 用途                            |
-| ---------------------------------------- | ------------------------------- |
-| `createLlmProvider(config)`              | 从扁平配置创建 LlmProvider 实例 |
-| `createProviderFromConfig(name, config)` | 从命名配置创建 LlmProvider 实例 |
-| `loadConfig(path?)`                      | 加载 memora.json 配置文件       |
+| 函数/类型                                  | 用途                                          |
+| ------------------------------------------ | --------------------------------------------- |
+| `createLlmProvider(config)`               | 从扁平配置创建 LlmProvider 实例              |
+| `createProviderFromConfig(name, config)`  | 从命名配置创建 LlmProvider 实例              |
+| `loadConfig(path?)`                       | 加载 memora.json 配置文件                     |
+| `SqliteStorage`                           | IMemoryStorage 的 SQLite 实现（CLI/独立运行） |
+| `InMemoryStorage`                         | IMemoryStorage 的纯内存实现（测试用）         |
+| `setLogger(logger)`                       | 替换全局日志实现（宿主注入入口）              |
+| `IMemoryStorage` (type)                   | 存储层接口（宿主可自行实现）                  |
+| `ILogger` (type)                          | 日志层接口（宿主可自行实现）                  |
 
 **注意**：这些是**宿主工具函数**，不是 Agent 内核的一部分。宿主也可以完全不用这些函数，自己实现
-`LlmProvider` 接口。
+`LlmProvider` / `IMemoryStorage` / `ILogger` 接口。
 
 ## 十、小说生成器完整接入示例
 
@@ -962,6 +991,12 @@ export type {
   AgentOptions,
   AgentChunk,
   ThinkingPhase,
+  AgentContext,
+  MemorySnapshot,
+  WorkingMemorySnapshot,
+  BootstrapSnapshot,
+  ArchiveSnapshot,
+  MountedSnapshot,
   ArchiveMode,
 } from 'memora';
 
@@ -974,6 +1009,14 @@ export type { ConfigSuggestion, ConfigSuggestionHandler } from 'memora';
 // 记忆
 export { MemoryType, Permanence } from 'memora';
 export type { Memory, MemoryTypeValue, PermanenceValue } from 'memora';
+
+// 存储层抽象（宿主注入）
+export type { IMemoryStorage } from 'memora';
+export { SqliteStorage, InMemoryStorage } from 'memora';
+
+// 日志抽象（宿主注入）
+export type { ILogger } from 'memora';
+export { setLogger } from 'memora';
 
 // 角色
 export type { PersonaMode } from 'memora';

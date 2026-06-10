@@ -21,7 +21,7 @@ description: LLM 适配层使用 OpenAI Chat Completions 兼容协议
 | 流式响应     | SSE（Server-Sent Events）                   |
 | 适配器接口   | `LlmProvider` 抽象类 + 多实现               |
 | 首期实现     | DeepSeek（兼容好 + 价格低）+ 豆包（中文强） |
-| API Key 管理 | 环境变量 + cosmiconfig 二级回退             |
+| API Key 管理 | 环境变量 + 配置
 
 ## 理由
 

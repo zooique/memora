@@ -47,21 +47,24 @@
   "license": "MIT",
   "dependencies": {
     "commander": "^12.1.0",
-    "cosmiconfig": "^9.0.0",
     "picocolors": "^1.1.0",
-    "pino": "^9.4.0",
     "zod": "^3.25.76"
   },
   "peerDependencies": {
-    "better-sqlite3": ">=11.0.0"
+    "better-sqlite3": ">=11.0.0",
+    "pino": ">=9.0.0"
   },
   "peerDependenciesMeta": {
     "better-sqlite3": {
       "optional": true
+    },
+    "pino": {
+      "optional": true
     }
   },
   "optionalDependencies": {
-    "better-sqlite3": "^12.10.0"
+    "better-sqlite3": "^12.10.0",
+    "pino": "^9.4.0"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.0.2",

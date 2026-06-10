@@ -39,7 +39,7 @@
 
 **设计原则**：
 
-- **零依赖**（除 Node.js 内置模块 + 必要的 LLM SDK）
+- **最小运行时依赖**（核心层仅依赖 `zod` 做 schema 校验；`better-sqlite3` 和 `pino` 为可选 peerDependency，宿主可注入替代实现）
 - **零控制台输出**（核心库不调用 `console.*`，仅 `src/cli/` 和 `src/index.ts`
   CLI 入口使用）
 - **零写用户文件**（`personas/rules/skills/tools`
@@ -64,6 +64,9 @@ export interface AgentOptions {
   /** 后台 LLM Provider（可选）— 归档/投影等后台操作，不配时复用前台 */
   backgroundProvider?: LlmProvider;
 
+  /** 配置目录（可选）— personas/rules/skills 所在目录 */
+  configDir?: string;
+
   /** 归档模式（默认 'full'）：控制 chat() 中自动归档行为 */
   archiveMode?: 'full' | 'insights-only' | 'manual';
 
@@ -84,6 +87,12 @@ export interface AgentOptions {
 
   /** 写入操作前是否需要确认回调（默认 false） */
   confirmWrites?: boolean;
+
+  /** 外部注入的存储实例（可选）— 宿主可注入自定义 IMemoryStorage */
+  storage?: IMemoryStorage;
+
+  /** 外部注入的日志实现（可选）— 宿主可注入自定义 ILogger */
+  logger?: ILogger;
 }
 ```
 
@@ -405,20 +414,20 @@ export interface WriteExtensions {
 | 3   | 把宿主的 agent 配置文件夹对接                  | `new Agent({ configDir })` → init() 自动加载 personas/rules/skills | ✅ 已有                    |
 | 4   | 大模型能读取本地项目的文件级别内容             | 内置工具 `read_file` + `list_dir`                                  | ✅ 已有                    |
 | 5   | 大模型能把返回的数据写入到具体文件中           | 内置工具 `write_file`（overwrite/append/insert）                   | ✅ 已有                    |
-| 6   | 支持局部修改内容的对比确认                     | `WriteExtensions.onBeforeWrite` 回调                               | ⚠️ **未暴露到 Agent 门面** |
+| 6   | 支持局部修改内容的对比确认                     | `WriteExtensions.onBeforeWrite` 回调                               | ✅ 已有（`setWriteExtensions()` 已导出） |
 | 7   | 能查看当前所有的角色                           | `listPersonas()`                                                   | ✅ 已有                    |
 | 8   | 能手动切换指定角色                             | `switchPersona(name)`                                              | ✅ 已有                    |
 | 9   | 能实时查看当前回答问题的角色                   | `getActivePersonaName()`                                           | ✅ 已有                    |
 | 10  | 能查看当前的记忆挂载情况，手动剔除不想要的记忆 | `getMountedMemories()` + `unmountMemory(name)`                     | ✅ 已有                    |
 
-**结论**：10 项需求中 9 项已有 API，1 项（#6 局部修改对比确认）需要补。
+**结论**：10 项需求全部已有 API。
 
-### P0 · 必须补（小说生成器跑通需要）
+### P0 · 已全部实现
 
-| API                               | 用途                                                                             | 当前替代方案                                      |
-| --------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `setWriteExtensions(ext)`         | 暴露 `WriteExtensions.onBeforeWrite` 到 Agent 门面，宿主可注入 diff 对比确认回调 | 无（当前 WriteExtensions 只在 ToolExecutor 内部） |
-| `setBackgroundProvider(provider)` | 运行时切换后台 Provider                                                          | 当前只能在构造时定                                |
+| API | 状态 | 说明 |
+|-----|------|------|
+| `setWriteExtensions(ext)` | ✅ 已导出 | `src/index.ts` 已 export，宿主可注入 diff 对比回调 |
+| `setBackgroundProvider(provider)` | ✅ 已有 | `AgentOptions.backgroundProvider` 构造时传入 |
 
 ### P1 · 增强功能
 
@@ -499,6 +508,14 @@ export type { ConfigSuggestion, ConfigSuggestionHandler } from 'memora';
 // 记忆
 export { MemoryType, Permanence } from 'memora';
 export type { Memory, MemoryTypeValue, PermanenceValue } from 'memora';
+
+// 存储层抽象（宿主注入）
+export type { IMemoryStorage } from 'memora';
+export { SqliteStorage, InMemoryStorage } from 'memora';
+
+// 日志抽象（宿主注入）
+export type { ILogger } from 'memora';
+export { setLogger } from 'memora';
 
 // 角色
 export type { PersonaMode } from 'memora';
