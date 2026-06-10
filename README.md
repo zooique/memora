@@ -2,7 +2,7 @@
 
 > 通用 Agent 架构 — 本地、私有、领域无关，万物皆记忆
 
-[![Node.js](https://img.shields.io/badge/Node.js-≥20-green)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/Node.js-20%7C22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -175,12 +175,14 @@ memora/
 
 ```bash
 npm run dev          # 启动开发模式（watch）
-npm test             # 运行测试（23 files / 217 tests）
+npm test             # 运行测试（35 files / 453 tests）
 npm run test:cov     # 运行测试 + 覆盖率
 npm run typecheck    # TypeScript 类型检查
 npm run lint         # ESLint 检查
 npm run format       # Prettier 格式化
 ```
+
+> 提交前 lefthook 会自动跑 `lint` + `typecheck` + `test`（pre-push 钩子），三者全过才能 push。
 
 ## 阶段交付物
 

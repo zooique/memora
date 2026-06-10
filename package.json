@@ -32,8 +32,9 @@
     "prepare": "lefthook install || true"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0 <23.0.0"
   },
+  "engines_comment": "锁定 Node 20/22 LTS：better-sqlite3@12.10.0 的 prebuild 不覆盖 Node 23+（NODE_MODULE_VERSION 不匹配）。Node 24 需 npm rebuild better-sqlite3。详见 ADR-001。",
   "keywords": [
     "agent",
     "memory",
