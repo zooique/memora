@@ -1,17 +1,15 @@
 /**
- * 技能管理器 — 两层目录扫描 + 关键词匹配
+ * 技能管理器 — 单层目录扫描 + 关键词匹配
  *
  * 职责：
- *   - 启动时扫描两层 skill 目录（Agent 级 + 项目级）
+ *   - 启动时扫描 configDir/skills/ 目录
  *   - 通过关键词匹配选择技能（初期阶段一/二）
- *   - 项目级技能覆盖 Agent 级同名技能
  *   - 技能文件不进入 SQLite 记忆索引——它是"配置"，不是"记忆"
  *   - 后期触发条件（≥15个技能 / 关键词命中率 <80%）→ 切换为 LLM 自主选择
  *
  * 设计原则（01-主架构-v4.0.md §5.2.1）：
  *   - 技能是"怎么做事"的配置，不是"记住了什么"的记忆
- *   - 两层目录：Agent 级（~/.memora/global/skills/）+ 项目级（<configDir>/skills/）
- *   - project-level 覆盖 agent-level（同名技能以项目级为准）
+ *   - 单层目录：<configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）
  *   - 管理组件独立于 SQLite 记忆索引
  *
  * 触发词说明：
@@ -20,7 +18,6 @@
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
-import { homedir } from 'node:os';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
 import { logger } from '@/logging/logger.js';
 
@@ -66,11 +63,9 @@ export class SkillManager {
 
   /**
    * @param configDir 配置目录（技能文件在 <configDir>/skills/ 下）
-   * @param globalDir 全局技能目录（可选，默认 ~/.memora/global/skills/）
    */
   constructor(
     private readonly configDir?: string,
-    private readonly globalDir: string = resolve(homedir(), '.memora', 'global', 'skills'),
   ) {}
 
   /**
@@ -198,22 +193,17 @@ export class SkillManager {
   // ── 私有方法 ──────────────────────────────────────
 
   /**
-   * 扫描两层目录，合并技能列表
+   * 扫描 configDir/skills/ 目录
    *
-   * D-103 决策：项目级技能**完全替换** Agent 级同名技能（不合并 keywords）。
-   * 理由：如果项目需要不同的关键词触发逻辑，应由项目完全控制。
-   * 合并会导致难以调试的意外触发。
+   * 宿主负责将全局+项目级技能汇总到 configDir，
+   * 内核只扫描一个目录，不做路径假设。
    */
   private scanSkills(): SkillEntry[] {
     const map = new Map<string, SkillEntry>();
 
-    // 1. Agent 级技能（先加载，后加载的项目级会覆盖）
-    this.scanDir(this.globalDir, 'agent', map);
-
-    // 2. 项目级技能（同名覆盖 Agent 级）
     if (this.configDir) {
-      const projectSkillsDir = resolve(this.configDir, 'skills');
-      this.scanDir(projectSkillsDir, 'project', map);
+      const skillsDir = resolve(this.configDir, 'skills');
+      this.scanDir(skillsDir, 'project', map);
     }
 
     return Array.from(map.values());

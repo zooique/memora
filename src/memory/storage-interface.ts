@@ -28,7 +28,7 @@ export interface IMemoryStorage {
   /**
    * 插入或更新记忆
    *
-   * type 和 permanence 字段必须通过校验（见 MemoryIndex 的防御性校验逻辑）
+   * type 和 permanence 字段必须通过校验（见 SqliteStorage 的防御性校验逻辑）
    */
   upsert(memory: Memory): void;
 

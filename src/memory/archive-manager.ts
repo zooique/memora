@@ -120,7 +120,6 @@ export class ArchiveManager {
 
       // 重新尝试归档
       try {
-        // 翠幕天罗 P1-2 修复：直接从 archive/ 目录读取封存的话题文件
         // TopicStore.read() 只能读 topics/ 目录，封存后文件已移走
         const topicFile = await this.readArchivedTopic(metadata);
         if (!topicFile) {

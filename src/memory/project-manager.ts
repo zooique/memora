@@ -5,8 +5,7 @@
  *   - 管理项目注册表（~/.memora/projects.json）
  *   - 锁文件机制（.memora/.lock）防止同项目并发写入导致数据损坏
  *   - Agent 级资源管理（memora.db + TopicStore 全局共享，不随项目切换重建）
- *   - 两层记忆加载：Agent 级（configDir）→ 项目级（projectPath/.memora/）
- *   - 全局规则加载（~/.memora/global/rules/）跨项目共享只读规则
+ *   - 两层记忆加载：项目级（projectPath/.memora/）→ Agent 级（configDir）
  *   - 项目切换（只更新 projectPath + security + 重新加载项目 rules/skills）
  *
  * 设计原则（单 Agent 模型）：
@@ -32,7 +31,6 @@ import {
   readFileSync,
   writeFileSync,
   unlinkSync,
-  readdirSync,
 } from 'node:fs';
 import { FileStore } from './store.js';
 import { SqliteStorage } from './index.js';
@@ -65,12 +63,10 @@ export interface ProjectContext {
   topicStore: TopicStore;
   /** 安全守卫 */
   security: SecurityGuard;
-  /** 启动时加载的必召记忆（含全局规则） */
+  /** 启动时加载的必召记忆 */
   bootstrapMemories: Memory[];
   /** 加载结果 */
   loadResult: LoadResult;
-  /** 全局规则记忆（从 ~/.memora/global/rules/ 加载） */
-  globalMemories: Memory[];
 }
 
 /**
@@ -101,15 +97,13 @@ export interface ProjectEntry {
  * 项目管理器
  *
  * 管理多项目的生命周期：
- * 1. 初始化当前项目（加锁 + 加载 + 全局规则合并）
+ * 1. 初始化当前项目（加锁 + 加载两层配置）
  * 2. /project <name> 切换到新项目（解锁旧项目 + 加锁新项目）
  * 3. 退出时清理锁文件
  */
 export class ProjectManager {
   /** 项目注册表路径 */
   private readonly registryPath: string;
-  /** 全局规则目录 */
-  private readonly globalRulesDir: string;
   /** Agent 级数据目录（memora.db + topics/ 的父目录） */
   private readonly agentDataDir: string;
   /** 允许的路径白名单 */
@@ -139,7 +133,6 @@ export class ProjectManager {
     const memoraHome = resolve(dataDir.replace(/^~/, homedir()));
     this.agentDataDir = memoraHome;
     this.registryPath = join(memoraHome, 'projects.json');
-    this.globalRulesDir = join(memoraHome, 'global', 'rules');
     this.allowedPaths = allowedPaths;
     this.confirmWrites = confirmWrites;
     this.permission = permission;
@@ -179,7 +172,8 @@ export class ProjectManager {
    * 两层记忆加载：
    *   1) 项目级：扫描 projectPath/.memora/rules/ + skills/
    *   2) Agent 级：扫描 configDir 下的所有配置（rules/skills/personas/tools）
-   *   3) 全局规则：合并 ~/.memora/global/rules/
+   *
+   * 全局规则不再由内核硬编码路径，宿主可通过 configDir 统一管理。
    *
    * memora.db 和 TopicStore 是 Agent 级共享资源，不随项目切换重建。
    *
@@ -237,10 +231,6 @@ export class ProjectManager {
     const domain = await index.getByPermanence('domain');
     const bootstrapMemories = [...nonPersonality, ...domain].filter(Boolean) as Memory[];
 
-    // 3) 全局规则（~/.memora/global/rules/）
-    const globalMemories = this.loadGlobalRules();
-    const allBootstrap = [...bootstrapMemories, ...globalMemories];
-
     // 安全守卫（随项目切换更新）
     const security = new SecurityGuard(
       projectPath,
@@ -260,8 +250,7 @@ export class ProjectManager {
         projectName: name,
         memoraDir,
         loaded: loadResult.loaded,
-        bootstrapCount: allBootstrap.length,
-        globalRulesCount: globalMemories.length,
+        bootstrapCount: bootstrapMemories.length,
       },
       '项目初始化完成',
     );
@@ -275,9 +264,8 @@ export class ProjectManager {
       index,
       topicStore,
       security,
-      bootstrapMemories: allBootstrap,
+      bootstrapMemories,
       loadResult,
-      globalMemories,
     };
   }
 
@@ -433,53 +421,6 @@ export class ProjectManager {
     } catch {
       return false;
     }
-  }
-
-  /**
-   * 加载全局规则
-   * 从 ~/.memora/global/rules/ 读取所有 .md 文件
-   * 全局规则是只读的，permanence = 'always'，weight = 0.9（略低于项目级规则）
-   */
-  private loadGlobalRules(): Memory[] {
-    if (!existsSync(this.globalRulesDir)) {
-      return [];
-    }
-
-    const memories: Memory[] = [];
-    try {
-      const files = readdirSync(this.globalRulesDir).filter((f) => f.endsWith('.md'));
-
-      for (const file of files) {
-        try {
-          const filePath = join(this.globalRulesDir, file);
-          const content = readFileSync(filePath, 'utf-8');
-          const name = file.replace(/\.md$/, '');
-
-          memories.push({
-            id: `global:rule:${name}`,
-            type: 'rule',
-            permanence: 'always',
-            name: `global:${name}`,
-            content: content.trim(),
-            tags: ['global'],
-            weight: 0.9,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            filePath,
-          });
-        } catch (err) {
-          logger.warn({ file, err }, '加载全局规则文件失败');
-        }
-      }
-    } catch {
-      // 目录不可读，返回空
-    }
-
-    if (memories.length > 0) {
-      logger.info({ count: memories.length }, '加载全局规则');
-    }
-
-    return memories;
   }
 
   /**

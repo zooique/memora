@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: 单 Agent 模型（Agent 级 DB + 两层规则加载 + 项目切换不重建）
+description: 单 Agent 模型（Agent 级 DB + 三层架构 + 项目切换不重建）
 ---
 
 # ADR-011 · 单 Agent 模型
@@ -18,20 +18,19 @@ v1 设计为每个子项目创建独立的 memora.db，切换项目时关闭旧 
 
 ## 决策
 
-采用 **单 Agent 模型 + 两层规则加载**：
+采用 **单 Agent 模型 + 三层架构**：
 
-1. **Agent 级共享资源**：memora.db 和 TopicStore 只有一个，不随子项目切换重建
-2. **两层规则加载**：项目级 `.memora/rules/` → Agent 级
-   `agent-config/rules/`，同名规则后加载者覆盖
-3. **项目切换**：只更新 SecurityGuard + 重新扫描项目 rules/skills，不重建数据库
-4. **配置文件是真理源**：`agent-config/`
-   下的配置由 MemoryLoader 启动时扫描加载到 SQLite
+1. **Agent 级配置（configDir）**：personas/rules/skills/tools，纯配置
+2. **用户记忆（dataDir）**：memora.db + TopicStore + projects.json，纯数据，不随子项目切换重建
+3. **项目级配置（projectPath/.memora/）**：项目专属 rules/skills，随项目版本控制
+4. **项目切换**：只更新 SecurityGuard + 重新扫描项目 rules/skills，不重建数据库
+5. **配置文件是真理源**：configDir 下的配置由 MemoryLoader 启动时扫描加载到 SQLite
 
 ## 关键实现
 
 | 组件                 | 文件                            | 职责                                   |
 | -------------------- | ------------------------------- | -------------------------------------- |
-| ProjectManager       | `src/memory/project-manager.ts` | Agent 级资源管理 + 两层加载 + 项目切换 |
+| ProjectManager       | `src/memory/project-manager.ts` | 三层架构管理 + 项目切换 |
 | ensureAgentResources | 同上                            | 确保 memora.db 只创建一次              |
 | shutdown             | 同上                            | 关闭 Agent 级 DB（仅在 Agent 关闭时）  |
 | closeProject         | 同上                            | 释放项目锁，不关 DB                    |
@@ -42,7 +41,7 @@ v1 设计为每个子项目创建独立的 memora.db，切换项目时关闭旧 
 
 - 切换子项目不丢失记忆（对话历史、用户画像跨项目持久化）
 - 配置文件可人工编辑、版本控制，SQLite 只是运行时索引
-- 两层规则加载灵活：Agent 级通用规则 + 项目级特定规则
+- 三层职责清晰：configDir（配置）→ dataDir（数据）→ projectPath/.memora/（项目配置）
 
 **负面**：
 

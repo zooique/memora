@@ -243,7 +243,6 @@ export class SecurityGuard {
       needsConfirm: needConfirm,
     };
 
-    // A1 修复：优先走注入式回调（宿主程序场景）
     if (this._confirmationHandler) {
       try {
         const ok = await this._confirmationHandler(info);

@@ -26,9 +26,8 @@ date: 2026-06-02
    [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
 4. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
    `memory_type + permanence` 区分
-5. **单 Agent 模型**：memora.db 和 TopicStore 是 Agent 级共享资源，不随子项目切换重建；项目级
-   `.memora/` 只放 rules/ 和 skills/
-6. **配置文件是真理源**：`agent-config/`
+5. **单 Agent 模型 + 三层架构**：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）；memora.db 和 TopicStore 是 Agent 级共享资源，不随子项目切换重建
+6. **配置文件是真理源**：configDir
    下的配置文件由 MemoryLoader 启动时扫描加载到 SQLite；SQLite 是运行时索引，不是持久化配置存储
 
 ## 2. 技术栈清单
@@ -52,7 +51,7 @@ src/
 ├── agent/          # Agent Loop + 工具执行 + 对话快照 + 作品投影
 ├── memory/         # 记忆引擎（5 类统一 + 项目管理器）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
-├── skill/          # 技能管理（两层目录，记忆管道最高优先级）
+├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
 ├── llm/            # LLM 适配层
 ├── security/       # 安全策略
 ├── config/         # 配置加载
@@ -93,7 +92,7 @@ chore: 升级 dependencies
 - ✅ LLM Provider Mock 集成测试通过
 - ✅ Agent 设定减法（3 模块：设定 + 角色 + 技能）
 - ✅ 单 Agent 模型（memora.db + TopicStore Agent 级共享）
-- ✅ 两层规则加载（项目级 → Agent 级）
+- ✅ 三层架构（Agent 级配置 → 用户记忆 → 项目级配置）
 - ✅ 角色自动匹配 + 手动切换
 - ✅ 项目 rules/skills 接口（addRule + registerTool）
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）

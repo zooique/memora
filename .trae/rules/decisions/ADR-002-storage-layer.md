@@ -5,9 +5,9 @@ description: 存储层抽象：IMemoryStorage 接口 + better-sqlite3 可插拔�
 
 # ADR-002 · 存储层抽象：IMemoryStorage 接口 + 可插拔实现
 
-> **状态**：✅ 已实施 **日期**：2026-06-10 **版本**：v0.5
-> **变更原因**：Memora 彻底独立——内核零第三方依赖（better-sqlite3 + pino 均为可选 peerDependency），
-> 宿主项目注入存储 + 日志实现即可
+> **状态**：✅ 已实施 **日期**：2026-06-10 **版本**：v0.6
+> **变更原因**：Memora 彻底独立——内核零第三方依赖 + 零硬编码路径，
+> 宿主项目注入存储 + 日志实现，全局配置由宿主管理
 > **播种批次**：Memora 模式 A v1
 > **来源**：[项目决策表.md §二](../../docs/项目决策表.md) +
 > [01-主架构-v4.0.md §4.3](../../docs/基础设计文档/01-主架构-v4.0.md)
@@ -27,6 +27,7 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 | v0.3 | 2026-06-05 | better-sqlite3                           | 用户验证编译通过（Node v24.12.0 + Python 3.14） |
 | v0.4 | 2026-06-10 | **IMemoryStorage 接口 + 可插拔实现**     | Memora 彻底独立，内核零数据库依赖               |
 | v0.5 | 2026-06-10 | **pino 改为可选 + cosmiconfig 移除**     | 内核零第三方依赖，pino 动态导入 + console 回退  |
+| v0.6 | 2026-06-10 | **移除全局路径硬编码**                   | 内核零硬编码路径，全局配置由宿主通过 configDir 管理 |
 
 > 详见 [原 ADR-002 v0.1](./ADR-002-storage-layer-original.md) 和
 > [ADR-002 v0.2 记录](./ADR-002-storage-layer.md)（已废弃）。
@@ -117,6 +118,9 @@ better-sqlite3 数据库实例，封装统一存储接口对外暴露；Memora A
 - 所有消费者：`MemoryIndex` 类型 → `IMemoryStorage`，`new MemoryIndex` → `new SqliteStorage`
 - 453 测试全量通过，0 编译错误
 - cosmiconfig 从 dependencies 移除（死依赖，源码 0 处导入）
+- `~/.memora/global/rules/` 硬编码路径从 ProjectManager 移除
+- `~/.memora/global/skills/` 硬编码路径从 SkillManager 移除
+- 全局规则/技能由宿主通过 configDir 统一管理
 
 ## 宿主接入示例
 

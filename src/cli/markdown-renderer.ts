@@ -189,7 +189,6 @@ export class MarkdownRenderer {
    * 触发条件：currentLine 为空（刚完成换行或刚开始）
    */
   private feedNormalLineStart(ch: string): string {
-    // 翠幕天罗 P3-2 修复：行内代码缓冲非空时委托给 handleInlineCode
     // 避免行首 ` 的后继字符被当作普通文本渲染
     if (this.inlineCodeBuffer.length > 0) {
       return this.handleInlineCode(ch);
@@ -458,7 +457,6 @@ export class MarkdownRenderer {
 
         // 反引号数 = fenceLength → 匹配成功，退出代码块
         if (this.fenceCandidate.length === this.fenceLength) {
-          // 翠幕天罗 P4-1 修复：保存 closing fence 内容后再清空
           const closingFence = this.fenceCandidate;
           this.state = 'NORMAL';
           this.codeLineStart = true;

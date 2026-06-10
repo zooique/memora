@@ -106,7 +106,7 @@ Memora 作为内核，**只暴露 `configDir` 和 `dataDir`
 `dataDir`（用户级），还存在第三条路径：**`<projectPath>/.memora/`**。
 
 这是项目级的 rules 和 skills，随作品一起版本控制。规则加载顺序为：**项目级 →
-Agent 级 → 全局规则**。同名规则后加载者覆盖前者。
+Agent 级（configDir）**。同名规则后加载者覆盖前者。
 
 ### 3.3 数据与人可读性
 

@@ -131,7 +131,6 @@ describe('M-205 · CLI 格式化工具', () => {
         loadedCount: 7,
         bootstrapCount: 3,
         skippedCount: 0,
-        globalRulesCount: 0,
         currentTopic: 'default',
         activePersona: '默认人格',
       });
@@ -156,7 +155,6 @@ describe('M-205 · CLI 格式化工具', () => {
         loadedCount: 5,
         bootstrapCount: 3,
         skippedCount: 2,
-        globalRulesCount: 0,
         currentTopic: 't',
         activePersona: 'test',
       });
@@ -175,29 +173,10 @@ describe('M-205 · CLI 格式化工具', () => {
         loadedCount: 7,
         bootstrapCount: 3,
         skippedCount: 0,
-        globalRulesCount: 0,
         currentTopic: 't',
         activePersona: 'test',
       });
       expect(result).not.toContain('跳过');
-    });
-
-    it('有全局规则时应显示数量', () => {
-      const result = formatWelcome({
-        version: '0.1.0',
-        projectPath: '/p',
-        projectName: 'p',
-        modelName: 'm',
-        dbPath: '/d',
-        loadedCount: 7,
-        bootstrapCount: 3,
-        skippedCount: 0,
-        globalRulesCount: 2,
-        currentTopic: 't',
-        activePersona: 'test',
-      });
-      expect(result).toContain('全局规则');
-      expect(result).toContain('2 条');
     });
   });
 

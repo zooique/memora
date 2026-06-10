@@ -85,10 +85,9 @@ src/
 **设计演进**：
 
 - 多项目并发从"每个项目独立进程"演进为"ProjectManager 管理项目切换"
-- 每个项目有独立的 .memora/ 目录（项目根目录下），与 config.dataDir（用户级默认）分离
+- 三层架构：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）
 - 锁文件机制（.memora/.lock）防止同项目并发写入
-- 全局规则目录（~/.memora/global/rules/）跨项目共享只读规则
-- 项目注册表（~/.memora/projects.json）记录已注册项目
+- 项目注册表（dataDir/projects.json）记录已注册项目
 
 ## 反例（按类型分层的问题）
 

@@ -170,7 +170,6 @@ export class ToolExecutor {
    * @throws 工具名与内置工具冲突或已注册时抛错
    */
   registerTool(definition: ToolDefinition, handler: ToolHandler): void {
-    // P3-10 修复：校验工具名非空且符合标识符规范
     if (!definition.name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(definition.name)) {
       throw new Error(
         `工具名无效："${definition.name}"，必须以字母/下划线开头，只含字母/数字/下划线`,

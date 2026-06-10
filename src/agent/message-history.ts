@@ -259,7 +259,7 @@ export class MessageHistory {
    *
    * 写入位置：
    *   1. topic-*.md frontmatter `summary` 字段（已存在）
-   *   2. MemoryIndex SQLite（`type: 'topic'`, `permanence: 'topic'`）
+   *   2. SqliteStorage（`type: 'topic'`, `permanence: 'topic'`）
    *      → TopicMount.focus() 跨会话召回的入口
    *
    * 失败策略：fire-and-forget + log.warn，不阻塞对话
@@ -274,8 +274,7 @@ export class MessageHistory {
     const date = this.currentDate;
     const topic = this.currentTopic;
 
-    // A5 修复：同 (date, topic, reason) 正在归档时复用 in-flight Promise，
-    // 防止并发归档同一话题（场景：用户切话题时 close() 和信号检测同时触发）
+    // 同 (date, topic, reason) 正在归档时复用 in-flight Promise，防止并发归档同一话题
     const inflightKey = `${date}|${topic}|${reason}`;
     const inflight = this._archiveInflight.get(inflightKey);
     if (inflight) {

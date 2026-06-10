@@ -37,7 +37,6 @@ export { loadConfig } from './config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
 export type { ProviderConfig } from './llm/factory.js';
 export type { Config } from './config/loader.js';
-// P1-3 修复：导出宿主程序调用 addRule() 所需的类型
 export { MemoryType, Permanence } from './memory/types.js';
 export type { Memory, MemoryTypeValue, PermanenceValue } from './memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
@@ -47,7 +46,6 @@ export { InMemoryStorage } from './memory/in-memory-storage.js';
 // 日志抽象：宿主项目可注入自定义 ILogger 实现
 export type { ILogger } from './logging/logger-interface.js';
 export { setLogger } from './logging/logger.js';
-// C1 修复：导出宿主程序调用 addSkill() 所需的 SkillEntry 类型
 export type { SkillEntry } from './skill/skillManager.js';
 
 // ─── CLI 入口：仅在直接运行时执行（非 import 时） ─────────

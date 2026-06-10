@@ -133,7 +133,6 @@ export async function startRepl(opts: ReplOptions): Promise<void> {
       loadedCount: pctx.loadResult.loaded,
       bootstrapCount: pctx.bootstrapMemories.length,
       skippedCount: pctx.loadResult.skipped,
-      globalRulesCount: pctx.globalMemories.length,
       currentTopic: history.currentTopicName,
       activePersona: agent.getActivePersonaName(),
     }),

@@ -335,12 +335,3 @@ export class SqliteStorage implements IMemoryStorage {
     filePath: row.file_path ?? undefined,
   });
 }
-
-/**
- * 向后兼容别名
- *
- * 旧代码中 `import { MemoryIndex } from '@/memory/index.js'` 仍可使用。
- * 过渡期结束后（所有调用方迁移到 IMemoryStorage），删除此别名。
- * @deprecated 请使用 SqliteStorage 或 IMemoryStorage
- */
-export const MemoryIndex = SqliteStorage;

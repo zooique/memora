@@ -3,7 +3,7 @@
  *
  * 设计文档（01-主架构-v4.0.md §9）要求宿主项目通过 `import { Agent } from '@memora/core'`
  * 一行代码接入。本类把当前 repl.ts 中埋藏的组装逻辑提取到正确的架构层，
- * 使 AgentLoop / MemoryIndex / ToolExecutor / SecurityGuard
+ * 使 AgentLoop / SqliteStorage / ToolExecutor / SecurityGuard
  * 这些已有组件可以被 CLI 以外的宿主项目直接使用。
  *
  * 使用方式（最简）：
@@ -388,7 +388,6 @@ export class Agent {
    * @returns ProjectContext — 完整项目上下文，宿主项目可据此访问内部组件
    */
   async init(projectPathOverride?: string): Promise<ProjectContext> {
-    // P2-6 修复：重复调用 init() 时先清理旧资源，防止泄漏
     if (this._initialized) {
       await this.close();
     }
@@ -415,11 +414,10 @@ export class Agent {
     // 组装所有运行时组件（v4.0：包括 persona/skill/userProfile/workProjection）
     await this._assembleComponents(pctx);
 
-    // 保存完整项目上下文（保留 globalMemories / projectName 等所有字段）
+    // 保存完整项目上下文（保留 projectName 等所有字段）
     this._pctx = pctx;
     this._ctx = pctx;
 
-    // P2-8 修复：关键组件缺失时报错，而非静默成功后 chat() 崩溃
     if (!this.loop || !this.history) {
       throw configError('Agent 初始化失败', 'LLM Provider 不可用或创建失败', [
         '检查传入的 provider 参数是否有效',
@@ -466,7 +464,6 @@ export class Agent {
       ]);
     }
 
-    // P3-9 修复：并发保护，防止同时发起多个 chat() 导致消息序列混乱
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再发起新对话', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽（收到 done 事件）',
@@ -577,7 +574,6 @@ export class Agent {
       // 归档粒度改为"话题级检查归档"——每 archiveCheckRounds 轮检查一次，
       // 超长话题（>30 轮）中途也触发中间归档。
       // archiveCurrentTopic 内部有幂等保护（已有摘要则跳过），安全重复触发。
-      // 翠幕天罗 P2-2 修复：周期性归档使用 'switch' 原因而非 'signal'
       // 'signal' 会绕过幂等检查强制重新调用 LLM，只应在 detectMemorableSignal 命中时使用
       // archiveMode 控制：full → 自动归档；insights-only/manual → 跳过
       this.roundCount++;
@@ -611,7 +607,6 @@ export class Agent {
         // 不重置 roundCount（totalTopicRounds 继续累积，roundCount 继续自己的周期）
       }
     } finally {
-      // P3-9 修复：无论 chat() 正常结束还是异常，都释放并发锁
       this._chatBusy = false;
     }
   }
@@ -666,7 +661,6 @@ export class Agent {
       const result = await this.history.archiveCurrentTopic('switch');
 
       // 从归档结果中提取快照，写入旧话题的 seed_snapshots
-      // 此时 this.currentTopic 仍为旧值（尚未切换），不会有 P1-L4 时序 bug
       if (result && result.snapshots.length > 0) {
         await this.history.setCurrentTopicSeedSnapshots(result.snapshots).catch(() => {
           /* 写入失败忽略，不阻塞切话题 */
@@ -796,10 +790,10 @@ export class Agent {
     // 构造话题总结器（使用后台通道或当前激活的 Provider）
     const summarizer = createTopicSummarizer(this._backgroundProvider ?? activeProvider);
 
-    // 消息历史（注入 MemoryIndex 让 archiveCurrentTopic 同步写 SQLite）
+    // 消息历史（注入 SqliteStorage 让 archiveCurrentTopic 同步写 SQLite）
     this.history = new MessageHistory(pctx.topicStore, summarizer, undefined, 'main', pctx.index);
 
-    // v4.0：作品投影管理器（注入 MemoryIndex + LlmProvider）
+    // v4.0：作品投影管理器（注入 SqliteStorage + LlmProvider）
     this.workProjection = new WorkProjectionManager(
       pctx.index,
       this._backgroundProvider ?? activeProvider,
@@ -960,8 +954,7 @@ export class Agent {
         '在 searchMemories() 前调用 await agent.init()',
       ]);
     }
-    // C4 修复：query 必须非空。空 query 会让 MemoryIndex.search() 退化为"返回所有"，
-    // 对宿主程序是静默误导（以为是"无匹配"，实际是"全量"）。
+    // 空 query 会让 search() 退化为"返回所有"，对宿主程序是静默误导
     if (!query || query.trim() === '') {
       throw configError('搜索关键词为空', 'searchMemories() 需要非空 query', [
         '传入非空字符串关键词',
@@ -1184,9 +1177,7 @@ export class Agent {
       await this.projectManager.shutdown();
     }
     this._initialized = false;
-    // P2-7 修复：清理后台 Provider 缓存，防止 close() 后再 init() 复用失效实例
     this._backgroundProvider = null;
-    // A7 修复：清理并发锁，防止 chat() 因异常未走 finally 时新 init 后被永久锁定
     this._chatBusy = false;
     this.history = null;
     this.loop = null;

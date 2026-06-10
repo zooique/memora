@@ -34,11 +34,11 @@ date: 2026-06-03
 - **PersonaManager**：扫描
   `personas/*.md`，加载为 personality 类型记忆（permanence:
   always），存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。角色通过 systemPromptPrefix 注入，不进 bootstrap
-- **SkillManager**：两层目录扫描 + 关键词匹配，匹配到后注入下一轮 system
+- **SkillManager**：扫描 configDir/skills/ 目录 + 关键词匹配，匹配到后注入下一轮 system
   prompt。**不进 SQLite**
 - 记忆管道层（规则、话题归档、心得）通过 `MemoryIndex` 的统一召回管线检索
 - `MemoryType` 枚举的 `personality` 类型用于角色记忆，`skill`
-  类型用于 MemoryIndex 中配置型记忆（全局规则等），而非 skill 文件本身
+  类型用于 MemoryIndex 中配置型记忆（Agent 级规则等），而非 skill 文件本身
 - `bootstrap()`
   对 personality 类型做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活角色
 
@@ -180,16 +180,17 @@ domain），其余在 Agent Loop 中按需检索。
 
 **配置文件是真理源，SQLite 是运行时索引**：
 
-- `agent-config/`
-  下的配置文件（personas/rules/skills）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
-- 项目级 `.memora/` 只放 rules/ 和 skills/，不放 memora.db
+- configDir
+  下的配置文件（personas/rules/skills/tools）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
+- 项目级 projectPath/.memora/ 只放 rules/ 和 skills/，不放 memora.db
+- 用户记忆（dataDir）存放 memora.db + topics/，纯数据，不含配置
 - `addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
 - AutoConfigRefiner（计划中）写入配置文件（持久化，重启后依然生效）
 
 **在代码中的体现**：
 
 - `ProjectManager.ensureAgentResources()`：确保 memora.db 只创建一次（Agent 级）
-- `ProjectManager.initProject()`：两层加载（项目级 → Agent 级），不重建数据库
+- `ProjectManager.initProject()`：三层加载（项目级 → Agent 级配置），不重建数据库
 - `ProjectManager.shutdown()`：关闭 Agent 级数据库（仅在 Agent 整体关闭时调用）
 - `ProjectManager.closeProject()`：只释放项目锁，不关数据库
 

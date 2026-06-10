@@ -1,6 +1,6 @@
-﻿/**
+/**
  * 项目管理器测试
- * 覆盖 initProject / closeProject / listProjects / registerProject / 锁文件 / 全局规则
+ * 覆盖 initProject / closeProject / listProjects / registerProject / 锁文件
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -95,53 +95,6 @@ describe('ProjectManager · initProject', () => {
     const found = projects.find((p) => p.path === tmpDir);
     expect(found).toBeDefined();
     expect(found?.name).toBe('test-project');
-
-    await pm.shutdown();
-  });
-});
-
-describe('ProjectManager · 全局规则', () => {
-  let tmpDir: string;
-  let tmpHome: string;
-
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'memora-pm-global-'));
-    tmpHome = mkdtempSync(join(tmpdir(), 'memora-pm-home-'));
-    mkdirSync(join(tmpHome, '.memora'), { recursive: true });
-  });
-
-  afterEach(async () => {
-    rmSync(tmpDir, { recursive: true, force: true });
-    rmSync(tmpHome, { recursive: true, force: true });
-  });
-
-  it('无全局规则目录时应返回空数组', async () => {
-    const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config.memory.dataDir);
-    const ctx = await pm.initProject(tmpDir);
-
-    expect(ctx.globalMemories).toHaveLength(0);
-
-    await pm.shutdown();
-  });
-
-  it('应该加载全局规则文件', async () => {
-    // 创建全局规则目录和文件
-    const globalRulesDir = join(tmpHome, '.memora', 'global', 'rules');
-    mkdirSync(globalRulesDir, { recursive: true });
-    writeFileSync(join(globalRulesDir, 'security-baseline.md'), '安全基线规则', 'utf-8');
-    writeFileSync(join(globalRulesDir, 'coding-style.md'), '编码风格规则', 'utf-8');
-
-    const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager(config.memory.dataDir);
-    const ctx = await pm.initProject(tmpDir);
-
-    expect(ctx.globalMemories).toHaveLength(2);
-    expect(ctx.globalMemories[0]!.type).toBe('rule');
-    expect(ctx.globalMemories[0]!.permanence).toBe('always');
-    expect(ctx.globalMemories[0]!.tags).toContain('global');
-    // 全局规则应合并到 bootstrapMemories
-    expect(ctx.bootstrapMemories.length).toBeGreaterThanOrEqual(ctx.globalMemories.length);
 
     await pm.shutdown();
   });

@@ -118,7 +118,6 @@ export function formatWelcome(opts: {
   loadedCount: number;
   bootstrapCount: number;
   skippedCount: number;
-  globalRulesCount: number;
   currentTopic: string;
   /** 当前激活的角色名称 */
   activePersona?: string;
@@ -132,7 +131,7 @@ export function formatWelcome(opts: {
     `${pc.dim('💾 数据库：')}    ${opts.dbPath}`,
     `${pc.dim('📚 加载记忆：')}  ${opts.loadedCount} 条（必召 ${pc.cyan(String(opts.bootstrapCount))} 条）${
       opts.skippedCount > 0 ? pc.yellow(` ⚠️ 跳过 ${opts.skippedCount} 条`) : ''
-    }${opts.globalRulesCount > 0 ? pc.dim(` · 全局规则 ${opts.globalRulesCount} 条`) : ''}`,
+    }`,
     `${pc.dim('💬 当前话题：')}  ${pc.cyan(opts.currentTopic)}`,
     `${pc.dim('🎭 当前角色：')}  ${pc.cyan(opts.activePersona ?? '无')}`,
     pc.dim(HORIZONTAL.repeat(60)),
