@@ -1,8 +1,11 @@
 /**
  * 记忆类型定义
  *
- * 5 种记忆类型 + 4 个永久性等级
+ * 6 种记忆类型 + 4 个永久性等级
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
+ *
+ * 减法决策（2026-06-11）：移除 archive 类型
+ * 话题归档走文件系统（topics/ → archive/），不经过 SQLite 索引
  */
 import { z } from 'zod';
 
@@ -13,7 +16,6 @@ export const MemoryType = {
   SKILL: 'skill', // 技能（skills/*.md）
   TOOL: 'tool', // 工具定义（tools/*.json）
   TOPIC: 'topic', // 话题（topics/*.md）
-  ARCHIVE: 'archive', // 归档（archive/*.md）
   WORK_PROJECTION: 'work-projection', // 作品投影（助手对用户文件的记忆）
 } as const;
 
@@ -46,7 +48,6 @@ export const TYPE_TO_DIR_MAP: Record<MemoryTypeValue, string> = {
   skill: 'skills',
   tool: 'tools',
   topic: 'topics',
-  archive: 'archive',
   'work-projection': 'work-projection',
 };
 
@@ -71,7 +72,6 @@ export const MemorySchema = z.object({
     MemoryType.SKILL,
     MemoryType.TOOL,
     MemoryType.TOPIC,
-    MemoryType.ARCHIVE,
     MemoryType.WORK_PROJECTION,
   ]),
   permanence: z.enum([

@@ -129,10 +129,13 @@ export class ProjectManager {
     confirmWrites: boolean = false,
     permission: 'owner' | 'guest' = 'owner',
     storage?: IMemoryStorage,
+    registryDir?: string,
   ) {
     const memoraHome = resolve(dataDir.replace(/^~/, homedir()));
     this.agentDataDir = memoraHome;
-    this.registryPath = join(memoraHome, 'projects.json');
+    // 注册表目录：优先使用宿主指定的用户级路径，避免每项目重复存储
+    const registryHome = registryDir ? resolve(registryDir.replace(/^~/, homedir())) : memoraHome;
+    this.registryPath = join(registryHome, 'projects.json');
     this.allowedPaths = allowedPaths;
     this.confirmWrites = confirmWrites;
     this.permission = permission;

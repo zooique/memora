@@ -85,6 +85,8 @@ export interface AgentOptions {
   archiveMode?: ArchiveMode;
   /** 记忆数据目录（默认 ~/.memora） */
   dataDir?: string;
+  /** 项目注册表目录（默认与 dataDir 相同）。设为用户级路径可避免每项目重复存储 */
+  registryDir?: string;
   /** 最大上下文 token 数（默认 120000） */
   maxContextTokens?: number;
   /** 默认角色名 */
@@ -278,6 +280,7 @@ export class Agent {
   private _provider: LlmProvider; // 前台 LLM Provider（构造时存储）
   private _backgroundProvider: LlmProvider | null; // 后台 LLM Provider（可选）
   private _dataDir: string; // 记忆数据目录（默认 ~/.memora）
+  private _registryDir: string | undefined; // 项目注册表目录（用户级，避免每项目重复存储）
   private _maxContextTokens: number; // 最大上下文 token 数（默认 120000）
   private _personaName: string | undefined; // 默认角色名
   private _permission: 'owner' | 'guest'; // 安全权限
@@ -359,6 +362,7 @@ export class Agent {
     this._backgroundProvider = opts.backgroundProvider ?? null;
     this.configDir = opts.configDir;
     this._dataDir = opts.dataDir ?? '~/.memora';
+    this._registryDir = opts.registryDir;
     this._maxContextTokens = opts.maxContextTokens ?? 120000;
     this._personaName = opts.persona;
     this._permission = opts.permission ?? 'owner';
@@ -405,6 +409,7 @@ export class Agent {
       this._confirmWrites,
       this._permission,
       this._storage,
+      this._registryDir,
     );
 
     // 初始化项目上下文（加载 .memora/ 下的记忆索引）

@@ -6,14 +6,14 @@ import { describe, expect, it } from 'vitest';
 import { MemorySchema, MemoryType, Permanence } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
-  it('应该暴露 7 种记忆类型', () => {
-    expect(Object.keys(MemoryType)).toHaveLength(7);
+  it('应该暴露 6 种记忆类型', () => {
+    expect(Object.keys(MemoryType)).toHaveLength(6);
     expect(MemoryType.PERSONALITY).toBe('personality');
     expect(MemoryType.RULE).toBe('rule');
     expect(MemoryType.SKILL).toBe('skill');
     expect(MemoryType.TOOL).toBe('tool');
     expect(MemoryType.TOPIC).toBe('topic');
-    expect(MemoryType.ARCHIVE).toBe('archive');
+    expect(MemoryType.WORK_PROJECTION).toBe('work-projection');
   });
 
   it('应该暴露 4 个永久性等级', () => {
