@@ -15,18 +15,16 @@ import type { Memory } from '@/memory/types.js';
 function makeMemory(
   id: string,
   content: string,
-  updatedAt: string = new Date().toISOString(),
+  accessed_at: string = new Date().toISOString(),
 ): Memory {
   return {
     id,
-    type: 'topic',
-    permanence: 'topic',
-    name: id,
     content,
-    tags: [],
-    weight: 0.5,
-    createdAt: updatedAt,
-    updatedAt,
+    source: 'topic',
+    name: id,
+    created_at: accessed_at,
+    accessed_at,
+    score: 0.5,
   };
 }
 

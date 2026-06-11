@@ -13,18 +13,22 @@
  *
  * 设计原则：
  *   - 作品 = 用户的产出物（小说、代码），不归 Agent 管
- *   - 作品投影 = Agent 记住"作品的形象"，属于助手记忆（permanence = domain）
+ *   - 作品投影 = Agent 记住"作品的形象"，source = 'work-projection'
  *   - 文件变化由用户负责
  *
  * 分层说明：
  *   本模块位于 agent/ 层（非 memory/ 层），因为它依赖 LlmProvider 做内容生成。
  *   memory/ 层只做存储和召回，不做 LLM 调用（EmbeddingService 接口注入除外）。
+ *
+ * 重构变更（2026-06-11）：
+ *   - 适配基元驱动记忆模型：type → source，移除 permanence/tags/filePath
+ *   - hash / structure / decisions 编码到 content（Markdown HTML 注释）
  */
 import { createHash } from 'node:crypto';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { Memory } from '@/memory/types.js';
-import { MemoryType, Permanence } from '@/memory/types.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 
 /** 作品投影的持久化结构 */
@@ -138,7 +142,7 @@ export class WorkProjectionManager {
         updatedAt: new Date().toISOString(),
       };
 
-      // 写入 SQLite（用专用 WORK_PROJECTION 类型，语义独立于 ARCHIVE）
+      // 写入存储（source = 'work-projection'，语义独立）
       await this.index.upsert(this.toMemory(entry, hash));
       logger.info(
         { file: filePath, hash, summaryLen: projection.summary.length },
@@ -166,10 +170,10 @@ export class WorkProjectionManager {
   }
 
   /**
-   * 加载所有作品投影（领域记忆加载用）
+   * 加载所有作品投影（按 source 标签召回）
    */
   async loadAll(): Promise<WorkProjectionEntry[]> {
-    const memories = await this.index.getByType(MemoryType.WORK_PROJECTION);
+    const memories = await this.index.getBySource(SOURCE_LABELS.WORK_PROJECTION);
     return memories.map((m: Memory) => this.fromMemory(m));
   }
 
@@ -244,56 +248,103 @@ export class WorkProjectionManager {
   }
 
   /**
-   * 从 Memory tags 中解析 hash
+   * 从 Memory content 的 HTML 注释中解析 hash
+   *
+   * content 格式：<!-- wp:hash:<hash> -->\n<!-- wp:structure:... -->\n<!-- wp:decisions:... -->\n<summary>
    */
   private parseHash(memory: Memory): string | null {
-    const hashTag = (memory.tags ?? []).find((t) => t.startsWith('hash:'));
-    return hashTag ? hashTag.replace('hash:', '') : null;
+    const match = memory.content.match(/<!--\s*wp:hash:(\S+)\s*-->/);
+    return match?.[1] ?? null;
   }
 
   /**
-   * 将 WorkProjectionEntry 转为 Memory（用于写入 SQLite）
+   * 将 WorkProjectionEntry 转为 Memory（用于写入存储）
    *
-   * 使用专用 WORK_PROJECTION 类型（非 ARCHIVE），语义独立。
+   * 元数据（hash / structure / keyDecisions）编码为 content 中的 HTML 注释，
+   * summary 保持为可见内容。source = 'work-projection'。
    */
   private toMemory(entry: WorkProjectionEntry, hash: string): Memory {
     const now = new Date().toISOString();
+    const fileName = entry.sourcePath.split(/[/\\]/).pop();
     return {
       id: entry.id,
-      type: MemoryType.WORK_PROJECTION,
-      permanence: Permanence.DOMAIN,
-      name: `作品投影: ${entry.sourcePath.split(/[/\\]/).pop()}`,
-      content: entry.summary,
-      tags: [
-        'work-projection',
-        `hash:${hash}`,
-        ...entry.structure.map((s) => `structure:${s}`),
-        ...entry.keyDecisions.map((d) => `decision:${d}`),
-      ],
-      weight: 0.8,
-      createdAt: now,
-      updatedAt: entry.updatedAt || now,
-      filePath: entry.sourcePath,
+      content: this.encodeContent(hash, entry.structure, entry.keyDecisions, entry.summary),
+      source: SOURCE_LABELS.WORK_PROJECTION,
+      name: `作品投影: ${fileName}`,
+      created_at: now,
+      accessed_at: entry.updatedAt || now,
+      score: 0.8,
     };
   }
 
   /**
    * 从 Memory 恢复 WorkProjectionEntry
+   *
+   * 从 content 的 HTML 注释中解码 hash / structure / keyDecisions
    */
   private fromMemory(m: Memory): WorkProjectionEntry {
-    const tags = m.tags ?? [];
+    const { hash, structure, keyDecisions, summary } = this.decodeContent(m.content);
     return {
       id: m.id,
-      sourcePath: m.filePath ?? '',
-      fileHash: tags.find((t) => t.startsWith('hash:'))?.replace('hash:', '') ?? '',
-      summary: m.content,
-      structure: tags
-        .filter((t) => t.startsWith('structure:'))
-        .map((t) => t.replace('structure:', '')),
-      keyDecisions: tags
-        .filter((t) => t.startsWith('decision:'))
-        .map((t) => t.replace('decision:', '')),
-      updatedAt: m.updatedAt,
+      sourcePath: '',
+      fileHash: hash ?? '',
+      summary,
+      structure,
+      keyDecisions,
+      updatedAt: m.accessed_at,
+    };
+  }
+
+  /**
+   * 将投影元数据编码为 content（Markdown HTML 注释 + summary）
+   *
+   * 格式：
+   *   <!-- wp:hash:<hash> -->
+   *   <!-- wp:structure:<item1>|<item2>|... -->
+   *   <!-- wp:decisions:<item1>|<item2>|... -->
+   *   <summary>
+   */
+  private encodeContent(
+    hash: string,
+    structure: string[],
+    keyDecisions: string[],
+    summary: string,
+  ): string {
+    const parts: string[] = [];
+    parts.push(`<!-- wp:hash:${hash} -->`);
+    if (structure.length > 0) {
+      parts.push(`<!-- wp:structure:${structure.join('|')} -->`);
+    }
+    if (keyDecisions.length > 0) {
+      parts.push(`<!-- wp:decisions:${keyDecisions.join('|')} -->`);
+    }
+    parts.push(summary);
+    return parts.join('\n');
+  }
+
+  /**
+   * 从 content 中解码投影元数据
+   *
+   * 解析 encodeContent 生成的 HTML 注释格式
+   */
+  private decodeContent(content: string): {
+    hash: string | null;
+    structure: string[];
+    keyDecisions: string[];
+    summary: string;
+  } {
+    const hashMatch = content.match(/<!--\s*wp:hash:(\S+)\s*-->/);
+    const structureMatch = content.match(/<!--\s*wp:structure:(.+?)\s*-->/);
+    const decisionsMatch = content.match(/<!--\s*wp:decisions:(.+?)\s*-->/);
+
+    // summary = 移除所有 <!-- wp:... --> 注释后的剩余内容
+    const summary = content.replace(/<!--\s*wp:\S+\s*-->\n?/g, '').trim();
+
+    return {
+      hash: hashMatch?.[1] ?? null,
+      structure: structureMatch?.[1]?.split('|') ?? [],
+      keyDecisions: decisionsMatch?.[1]?.split('|') ?? [],
+      summary,
     };
   }
 

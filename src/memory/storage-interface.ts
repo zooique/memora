@@ -13,8 +13,13 @@
  *
  * 方法签名保持同步语义（与 better-sqlite3 一致），
  * 调用方已有的 `await` 调用仍然安全（await 同步值 = 立即返回）。
+ *
+ * 重构变更（2026-06-11）：
+ *   - 移除 getByPermanence() / getByType() / applyDecay() / touch()
+ *   - 新增 getBySource()：按来源标签获取记忆
+ *   - 简化 search()：移除 mode 参数，仅保留关键词搜索
  */
-import type { Memory, MemoryTypeValue, PermanenceValue } from './types.js';
+import type { Memory } from './types.js';
 
 /**
  * 记忆存储接口
@@ -27,7 +32,7 @@ export interface IMemoryStorage {
   /**
    * 插入或更新记忆
    *
-   * type 和 permanence 字段必须通过校验（见 InMemoryStorage 实现中的防御性校验逻辑）
+   * source 字段为开放字符串，无校验限制
    */
   upsert(memory: Memory): void;
 
@@ -37,49 +42,32 @@ export interface IMemoryStorage {
   delete(id: string): void;
 
   /**
-   * 按永久性等级获取记忆
-   * 启动时加载 always + domain 必召记忆
-   */
-  getByPermanence(permanence: PermanenceValue): Memory[];
-
-  /**
    * 按 ID 获取单条记忆
-   * 向量搜索命中但关键词搜索未命中时，需要按 ID 加载
    */
   getById(id: string): Memory | null;
 
   /**
-   * 按类型获取记忆
+   * 按来源标签获取记忆
+   *
+   * @param source - 来源标签（如 'persona'、'rule'、'insight'）
+   * @returns 该来源的所有记忆
    */
-  getByType(type: MemoryTypeValue): Memory[];
+  getBySource(source: string): Memory[];
 
   /**
-   * 触摸记忆：被搜索命中时调用
+   * 关键词搜索记忆
    *
-   * 哲学：「而生其心」——被当下需要时重新"活过来"。
-   * weight 重置为 1.0，updated_at 更新为现在，衰减时钟重新开始。
+   * 搜索逻辑：
+   * 1. 从 query 中提取关键词（Intl.Segmenter 分词 + 停用词过滤）
+   * 2. 用 LIKE 关键词匹配 content 和 name 字段
+   * 3. 按 score 降序排列
+   * 4. 返回 top N 结果
+   *
+   * @param query - 搜索查询文本
+   * @param limit - 返回数量上限（默认 10）
+   * @returns 匹配的记忆列表
    */
-  touch(ids: string[]): void;
-
-  /**
-   * 应用记忆权重自然衰减
-   *
-   * 哲学：「应无所住」——不用的记忆自然淡出。
-   * 衰减公式：newWeight = max(MIN_WEIGHT, weight × 0.5^(ageDays / halfLife))
-   *
-   * @param halfLifeDays 不同永久性等级的半衰期（天数）
-   * @returns 各永久性等级衰减的记忆数量
-   */
-  applyDecay(halfLifeDays: Record<PermanenceValue, number>): Record<PermanenceValue, number>;
-
-  /**
-   * 中文分词搜索
-   *
-   * @param query 搜索关键词
-   * @param limit 返回数量上限（默认 10）
-   * @param mode 'match' = OR 连接（任一 token 命中），'near' = AND 连接（所有 token 必须命中）
-   */
-  search(query: string, limit?: number, mode?: 'match' | 'near'): Memory[];
+  search(query: string, limit?: number): Memory[];
 
   /**
    * 关闭存储连接（可选）

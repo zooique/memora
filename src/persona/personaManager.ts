@@ -4,13 +4,13 @@
  * 职责：
  *   - 从 configDir/personas/*.md 加载角色文件
  *   - 解析 frontmatter（name / keywords / description）
- *   - 写入 SQLite 索引（type: personality, permanence: always）
+ *   - 写入 SQLite 索引（source: persona, score: 1.0）
  *   - 将激活角色注入到 system prompt 顶部
  *   - 支持运行时切换角色 + 关键词自动匹配
  *
  * 设计原则（architecture_philosophy_rules.md §1 · v1.2 更新）：
- *   - Persona 遵循"万物皆记忆"——存入 SQLite 作为 personality 类型记忆
- *   - 召回管线做特殊处理：bootstrap 只取当前激活角色的 1 条 personality
+ *   - Persona 遵循"万物皆记忆"——存入 SQLite 作为 persona 来源记忆
+ *   - 召回管线做特殊处理：bootstrap 只取当前激活角色的 1 条 persona 记忆
  *   - 角色可被话题关键词动态匹配自动切换，也可手动指定
  *
  * 目录约定（v1.2 刮骨疗毒）：
@@ -21,8 +21,8 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
-import { MemoryType } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 
@@ -73,7 +73,7 @@ export class PersonaManager {
 
   /**
    * @param configDir 配置目录（角色文件在 <configDir>/personas/ 下）
-   * @param index SQLite 索引（用于写入 personality 记忆）
+   * @param index SQLite 索引（用于写入 persona 记忆）
    */
   constructor(
     private readonly configDir?: string,
@@ -309,7 +309,7 @@ export class PersonaManager {
         const { frontmatter: fm, body } = parseFrontmatter(raw);
 
         const name = fm['name'] ?? file.replace(/\.md$/, '');
-        const id = fm['id'] ?? `personality:${name}`;
+        const id = fm['id'] ?? `persona:${name}`;
         list.push({
           name,
           id,
@@ -349,14 +349,12 @@ export class PersonaManager {
     const now = new Date().toISOString();
     const memory: Memory = {
       id: persona.id,
-      type: MemoryType.PERSONALITY,
-      permanence: 'always',
-      name: persona.name,
       content: persona.content,
-      tags: ['角色', ...persona.keywords],
-      weight: 1.0,
-      createdAt: now,
-      updatedAt: now,
+      source: SOURCE_LABELS.PERSONA,
+      name: persona.name,
+      created_at: now,
+      accessed_at: now,
+      score: 1.0,
     };
     await this.index.upsert(memory);
   }
@@ -379,7 +377,7 @@ export class PersonaManager {
   private createDefaultPersona(): Persona {
     return {
       name: 'default',
-      id: 'personality:default',
+      id: 'persona:default',
       description: '默认通用助手',
       keywords: [],
       content: '你是一个通用 AI 助手，以专业、友好的态度回应用户。',

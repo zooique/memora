@@ -30,37 +30,31 @@ const createMockProvider = (response: string): LlmProvider =>
   }) as unknown as LlmProvider;
 
 /**
- * 创建 Mock MemoryIndex（内存存储）
+ * 创建 Mock IMemoryStorage（内存存储）
  */
-const createMockIndex = (): IMemoryStorage => {
+const createMockStorage = (): IMemoryStorage => {
   const store = new Map<string, Memory>();
   return {
-    add: vi.fn(async (memory: Memory) => {
+    upsert: vi.fn((memory: Memory) => {
       store.set(memory.id, memory);
     }),
-    upsert: vi.fn(async (memory: Memory) => {
-      store.set(memory.id, memory);
-    }),
-    update: vi.fn(async (memory: Memory) => {
-      store.set(memory.id, memory);
-    }),
-    getById: vi.fn(async (id: string) => store.get(id)),
-    search: vi.fn(async () => []),
-    getByType: vi.fn(async (type: string) =>
-      Array.from(store.values()).filter((m) => m.type === type),
-    ),
-    delete: vi.fn(async (id: string) => {
+    delete: vi.fn((id: string) => {
       store.delete(id);
     }),
+    getById: vi.fn((id: string) => store.get(id) ?? null),
+    getBySource: vi.fn((source: string) =>
+      Array.from(store.values()).filter((m) => m.source === source),
+    ),
+    search: vi.fn(() => []),
     close: vi.fn(),
   } as unknown as IMemoryStorage;
 };
 
 describe('WorkProjectionManager', () => {
-  let mockIndex: IMemoryStorage;
+  let mockStorage: IMemoryStorage;
 
   beforeEach(() => {
-    mockIndex = createMockIndex();
+    mockStorage = createMockStorage();
   });
 
   describe('ensureProjection', () => {
@@ -73,7 +67,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
 
       // When
       const result = await manager.ensureProjection(
@@ -98,7 +92,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
       const content = '# 第一章\n\n内容...';
 
       // 首次生成
@@ -138,7 +132,7 @@ describe('WorkProjectionManager', () => {
           yield { content: '', done: true };
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
 
       // 首次生成
       await manager.ensureProjection('/project/novel/chapter-001.md', '# 旧版本', 'chapter-001.md');
@@ -164,7 +158,7 @@ describe('WorkProjectionManager', () => {
           throw new Error('LLM 调用失败');
         }),
       } as unknown as LlmProvider;
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
 
       // When
       const result = await manager.ensureProjection(
@@ -188,7 +182,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
       await manager.ensureProjection('/project/novel/chapter-001.md', '内容', 'chapter-001.md');
 
       // When
@@ -202,7 +196,7 @@ describe('WorkProjectionManager', () => {
     it('应该在无投影时返回 null', async () => {
       // Given
       const provider = createMockProvider('');
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
 
       // When
       const result = await manager.getProjection('/project/novel/nonexistent.md');
@@ -222,7 +216,7 @@ describe('WorkProjectionManager', () => {
       });
 
       const provider = createMockProvider(mockResponse);
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
       await manager.ensureProjection('/project/novel/chapter-001.md', '内容1', 'chapter-001.md');
       await manager.ensureProjection('/project/novel/chapter-002.md', '内容2', 'chapter-002.md');
 
@@ -236,7 +230,7 @@ describe('WorkProjectionManager', () => {
     it('应该在无投影时返回空数组', async () => {
       // Given
       const provider = createMockProvider('');
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
 
       // When
       const all = await manager.loadAll();
@@ -250,7 +244,7 @@ describe('WorkProjectionManager', () => {
     it('应该在 JSON 解析失败时降级', async () => {
       // Given - LLM 返回非法 JSON
       const provider = createMockProvider('这不是一个合法的 JSON');
-      const manager = new WorkProjectionManager(mockIndex, provider);
+      const manager = new WorkProjectionManager(mockStorage, provider);
 
       // When
       const result = await manager.ensureProjection(

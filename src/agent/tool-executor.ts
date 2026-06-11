@@ -606,7 +606,7 @@ export class ToolExecutor {
   private async searchMemories(
     query: string,
     limitStr: string,
-    modeStr: string,
+    _modeStr: string,
   ): Promise<ToolResult> {
     if (!query) {
       throw toolError('search_memories 工具调用缺少 query 参数', 'LLM 未传 query', [
@@ -622,18 +622,16 @@ export class ToolExecutor {
       limit = 50;
     }
 
-    const mode: 'match' | 'near' = modeStr === 'near' ? 'near' : 'match';
-
-    const results = await this.memoryIndex.search(query, limit, mode);
+    const results = this.memoryIndex.search(query, limit);
     if (results.length === 0) {
       return `（未找到匹配 "${query}" 的记忆）`;
     }
 
     const lines = results.map((m, i) => {
       const preview = m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
-      return `${i + 1}. [${m.type}:${m.name}] (weight=${m.weight})\n   ${preview.replace(/\n/g, ' ')}`;
+      return `${i + 1}. [${m.source}:${m.name}] (score=${m.score})\n   ${preview.replace(/\n/g, ' ')}`;
     });
-    return `搜索 "${query}"（${mode} 模式）找到 ${results.length} 条：\n${lines.join('\n')}`;
+    return `搜索 "${query}" 找到 ${results.length} 条：\n${lines.join('\n')}`;
   }
 
   /**

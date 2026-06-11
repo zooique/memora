@@ -5,18 +5,22 @@
  *   - 每轮对话结束后扫描是否产生新画像条目
  *   - 5 个子分类：identity / preference / expertise / habit / history
  *   - 实时归档（用户前脚说"我叫张三"→ 后脚就写入 SQLite）
- *   - 启动时从 SQLite 全量加载（permanence: always）
+ *   - 启动时从 SQLite 全量加载（source = 'profile'）
  *   - confidence 机制：高置信度（≥0.8）直接归档，低置信度首次召回时确认
  *
+ * 重构变更（2026-06-11）：
+ *   - 移除 MemoryType / Permanence 枚举 → 使用 SOURCE_LABELS.PROFILE
+ *   - 移除 Memory.tags → 分类信息编码在 name 字段中
+ *   - confirmed 状态：仅已确认条目写入存储，待确认条目仅存内存缓存
+ *
  * 设计原则（01-主架构-v4.0.md §3.5）：
- *   - 用户画像属于助手记忆，permanence = always，每轮必召回
+ *   - 用户画像属于助手记忆，source = 'profile'，每轮必召回
  *   - 实时归档解决"重启进程短期身份丢失"的核心 bug
  *   - 确认机制防止正则误归档污染画像
  *   - identity / preference / expertise 实时归档，habit / history 每天归档时提炼
  */
 import type { IMemoryStorage } from './storage-interface.js';
-import type { Memory } from './types.js';
-import { MemoryType, Permanence } from './types.js';
+import { SOURCE_LABELS, type Memory } from './types.js';
 import { logger } from '@/logging/logger.js';
 
 /** 用户画像子分类 */
@@ -24,7 +28,7 @@ export type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' 
 
 /** 用户画像条目 */
 export interface UserProfileEntry {
-  /** 画像唯一 ID */
+  /** 画像唯一 ID（格式：profile:user-profile-{category}-{slug}） */
   id: string;
   /** 子分类 */
   category: ProfileCategory;
@@ -36,9 +40,7 @@ export interface UserProfileEntry {
   weight: number;
   /** 是否已确认（false 表示首次召回时需用户确认） */
   confirmed: boolean;
-  /** 永久性（固定 always） */
-  permanence: typeof Permanence.ALWAYS;
-  /** 最后更新时间 */
+  /** 最后更新时间（ISO 8601） */
   updatedAt: string;
 }
 
@@ -63,24 +65,26 @@ export class UserProfile {
   /**
    * 启动时从 SQLite 加载所有已确认的画像条目
    *
-   * 未确认（confirmed = false）的条目跳过——它们在首次召回时由 Agent 向用户确认。
-   * 对应 [01-主架构-v4.0.md §6.2] 的阶段一强制召回流程。
+   * 存储中只保存已确认的条目（confirmed = true），
+   * 待确认条目仅存内存缓存，不写入存储。
+   *
+   * name 字段格式：`${category}: ${value}`（如 "identity: 姓名: 张三"）
    */
   async load(): Promise<UserProfileEntry[]> {
-    const memories = await this.index.getByType('personality');
+    const memories = await this.index.getBySource(SOURCE_LABELS.PROFILE);
     const entries: UserProfileEntry[] = [];
 
     for (const m of memories) {
-      const meta = this.parseMetadata(m);
+      // 从 name 字段解析 category（格式：${category}: ${value}）
+      const { category, value } = this.parseNameField(m.name);
       const entry: UserProfileEntry = {
         id: m.id,
-        category: meta.category ?? 'identity',
-        value: m.content,
-        source: meta.source ?? '',
-        weight: m.weight,
-        confirmed: meta.confirmed ?? true, // 旧数据无 confirmed 字段，默认 true
-        permanence: Permanence.ALWAYS,
-        updatedAt: m.updatedAt,
+        category: category ?? 'identity',
+        value: value ?? m.content,
+        source: '',
+        weight: m.score,
+        confirmed: true, // 存储中只保存已确认条目
+        updatedAt: m.accessed_at,
       };
       this.cache.set(entry.id, entry);
       entries.push(entry);
@@ -168,6 +172,8 @@ export class UserProfile {
   /**
    * 确认待确认条目（用户在对话中确认了）
    *
+   * 确认后写入存储（此前仅存内存缓存）
+   *
    * @param id 条目 ID
    */
   async confirm(id: string): Promise<void> {
@@ -175,7 +181,7 @@ export class UserProfile {
     if (!entry) return;
 
     entry.confirmed = true;
-    // 更新 SQLite
+    // 确认后写入存储（此前仅存内存缓存）
     const memory = this.toMemory(entry);
     await this.index.upsert(memory);
     logger.info({ id, category: entry.category, value: entry.value }, '用户画像条目已确认');
@@ -301,8 +307,8 @@ export class UserProfile {
    * @returns 成功写入的条目，或 null（写入失败）
    */
   private async upsertFact(fact: ExtractedFact): Promise<UserProfileEntry | null> {
-    // 构造稳定 ID（同分类同值同来源天然幂等）
-    const id = `user-profile-${fact.category}-${this.slugify(fact.value)}`;
+    // 构造稳定 ID（profile: 前缀 + 分类 + slug）
+    const id = `profile:user-profile-${fact.category}-${this.slugify(fact.value)}`;
 
     // D-107：同分类冲突解决 — 删除旧条目（相同子分类 + 不同值 = 用户更新了信息）
     await this.removeConflictingEntries(fact);
@@ -314,13 +320,15 @@ export class UserProfile {
       source: fact.sourceTurn,
       weight: 1.0,
       confirmed: fact.confidence >= 0.8, // 高置信度直接确认
-      permanence: Permanence.ALWAYS,
       updatedAt: new Date().toISOString(),
     };
 
     try {
-      const memory = this.toMemory(entry);
-      await this.index.upsert(memory);
+      // 仅已确认条目写入存储（待确认条目仅存内存缓存）
+      if (entry.confirmed) {
+        const memory = this.toMemory(entry);
+        await this.index.upsert(memory);
+      }
       this.cache.set(id, entry);
 
       if (entry.confirmed) {
@@ -347,20 +355,19 @@ export class UserProfile {
    * 当用户说"我叫李四"替换之前的"我叫张三"时，移除旧的 identity 条目。
    * 策略：同分类（category）下，新值替换旧值。判断标准是旧条目的 value 前缀。
    *
+   * 新模型中从 name 字段解析 category（格式：${category}: ${value}）
+   *
    * @param fact 当前提取到的新事实
    */
   private async removeConflictingEntries(fact: ExtractedFact): Promise<void> {
     try {
-      const existing = await this.index.getByType(MemoryType.PERSONALITY);
+      const existing = await this.index.getBySource(SOURCE_LABELS.PROFILE);
       // 提取新事实的核心模式（如 "姓名: 李四" → 前缀 "姓名"）
       const newPrefix = fact.value.split(':')[0]!.trim();
 
       for (const m of existing) {
-        const tags = m.tags ?? [];
-        if (!tags.includes('user-profile')) continue;
-
-        const catTag = tags.find((t) => t.startsWith('category:'));
-        const category = catTag?.replace('category:', '');
+        // 从 name 字段解析 category（格式：${category}: ${value}）
+        const { category } = this.parseNameField(m.name);
 
         // 同分类 + 不同值 → 冲突，删除旧条目
         if (category === fact.category && m.content !== fact.value) {
@@ -383,61 +390,46 @@ export class UserProfile {
   /**
    * 将 UserProfileEntry 转为 Memory（用于写入 SQLite）
    *
-   * tags 使用前缀编码格式传递结构化元数据：
-   *   - 'user-profile' — 标记为画像条目
-   *   - 'category:<category>' — 子分类
-   *   - 'status:<confirmed|pending>' — 确认状态
+   * 分类信息编码在 name 字段中：${category}: ${value}
+   * 确认状态：仅已确认条目调用此方法（待确认条目不写入存储）
    */
   private toMemory(entry: UserProfileEntry): Memory {
     const now = new Date().toISOString();
     return {
       id: entry.id,
-      // 使用 MemoryType.PERSONALITY 作为 user-profile 的实际类型（统一索引表）
-      type: MemoryType.PERSONALITY,
-      permanence: Permanence.ALWAYS,
-      name: `${entry.category}: ${entry.value}`,
       content: entry.value,
-      tags: [
-        'user-profile',
-        `category:${entry.category}`,
-        `status:${entry.confirmed ? 'confirmed' : 'pending'}`,
-      ],
-      weight: entry.weight,
-      createdAt: now,
-      updatedAt: entry.updatedAt || now,
+      source: SOURCE_LABELS.PROFILE,
+      name: `${entry.category}: ${entry.value}`,
+      created_at: now,
+      accessed_at: entry.updatedAt || now,
+      score: entry.weight,
     };
   }
 
   /**
-   * 从 Memory.tags 中解析结构化字段
+   * 从 name 字段解析分类和值
    *
-   * tags 前缀格式（非位置依赖）：
-   *   - 'category:identity' → category = 'identity'
-   *   - 'status:confirmed' → confirmed = true
-   *   - 'status:pending' → confirmed = false
-   *   无 'user-profile' 标签 → 非画像条目
+   * name 字段格式：${category}: ${value}
+   * 例如："identity: 姓名: 张三" → { category: 'identity', value: '姓名: 张三' }
+   *
+   * @param name - Memory 的 name 字段
+   * @returns 解析出的 category 和 value
    */
-  private parseMetadata(m: Memory): {
+  private parseNameField(name: string): {
     category?: ProfileCategory;
-    source?: string;
-    confirmed?: boolean;
+    value?: string;
   } {
-    const tags = m.tags ?? [];
+    const idx = name.indexOf(':');
+    if (idx < 0) return {};
 
-    // 检查是否为画像条目
-    if (!tags.includes('user-profile')) {
-      return {};
-    }
+    const category = name.slice(0, idx).trim() as ProfileCategory;
+    const value = name.slice(idx + 1).trim();
 
-    // 从 tag 值中按前缀解析
-    const categoryTag = tags.find((t) => t.startsWith('category:'));
-    const category = categoryTag?.replace('category:', '') as ProfileCategory | undefined;
+    // 校验 category 是否为合法的 ProfileCategory
+    const validCategories: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
+    if (!validCategories.includes(category)) return {};
 
-    const statusTag = tags.find((t) => t.startsWith('status:'));
-    const confirmed =
-      statusTag === 'status:confirmed' ? true : statusTag === 'status:pending' ? false : undefined;
-
-    return { category, confirmed };
+    return { category, value: value || undefined };
   }
 
   /**

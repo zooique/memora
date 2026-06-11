@@ -47,25 +47,21 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     // 插入一些测试记忆
     await index.upsert({
       id: 'mem-1',
-      type: 'rule',
-      permanence: 'always',
-      name: 'core-rule',
       content: 'Memora 万物皆记忆，记忆统一为类型 + 永久性',
-      tags: ['memora', '哲学'],
-      weight: 0.9,
-      createdAt: '2026-06-01T00:00:00Z',
-      updatedAt: '2026-06-01T00:00:00Z',
+      source: 'rule',
+      name: 'core-rule',
+      created_at: '2026-06-01T00:00:00Z',
+      accessed_at: '2026-06-01T00:00:00Z',
+      score: 0.9,
     });
     await index.upsert({
       id: 'mem-2',
-      type: 'skill',
-      permanence: 'domain',
-      name: 'typescript-skill',
       content: 'TypeScript strict 模式下禁止 any 隐式转换',
-      tags: ['typescript'],
-      weight: 0.7,
-      createdAt: '2026-06-01T00:00:00Z',
-      updatedAt: '2026-06-01T00:00:00Z',
+      source: 'skill',
+      name: 'typescript-skill',
+      created_at: '2026-06-01T00:00:00Z',
+      accessed_at: '2026-06-01T00:00:00Z',
+      score: 0.7,
     });
 
     executor = new ToolExecutor(tmpProject, security, index);
@@ -269,7 +265,7 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     it('match 模式：单 token 应能匹配', async () => {
       const result = await executor.execute('search_memories', JSON.stringify({ query: 'Memora' }));
       expect(result).toContain('core-rule');
-      expect(result).toContain('match');
+      expect(result).toContain('找到');
     });
 
     it('match 模式：多 token 用 OR（任一命中即可）', async () => {

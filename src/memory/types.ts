@@ -1,184 +1,109 @@
 /**
- * 记忆类型定义
+ * 记忆类型定义 — 基元驱动模型
  *
- * 6 种记忆类型 + 4 个永久性等级
- * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
+ * 设计哲学：万物皆是记忆，用 source 开放字符串替代封闭枚举
+ * 详见 docs/记忆系统重构方案_排雷炼化版.md §2
  *
- * 减法决策（2026-06-11）：移除 archive 类型
- * 话题归档走文件系统（topics/ → archive/），不经过 SQLite 索引
+ * 重构变更（2026-06-11）：
+ * - 移除 MemoryType 枚举 → source 开放字符串
+ * - 移除 Permanence 枚举 → 召回策略由查询时决定
+ * - 移除 TopicMount/ArchiveManager 相关类型
+ * - 简化 Memory 接口：7 个核心字段
  */
 import { z } from 'zod';
 
-// 记忆类型枚举
-export const MemoryType = {
-  PERSONALITY: 'personality', // 人格（personality.md）
-  RULE: 'rule', // 规则（rules/*.md）
-  SKILL: 'skill', // 技能（skills/*.md）
-  TOOL: 'tool', // 工具定义（tools/*.json）
-  TOPIC: 'topic', // 话题（topics/*.md）
-  WORK_PROJECTION: 'work-projection', // 作品投影（助手对用户文件的记忆）
-} as const;
-
-export type MemoryTypeValue = (typeof MemoryType)[keyof typeof MemoryType];
+// ─── 基元定义 ─────────────────────────────────────────────
 
 /**
- * A3 修复：校验字符串是否为合法的 MemoryType
- * 用于宿主程序传入 type 字段时的防御性检查，防止非法值静默写入 SQLite。
- */
-export function isValidMemoryType(value: string): value is MemoryTypeValue {
-  return Object.values(MemoryType).includes(value as MemoryTypeValue);
-}
-
-/**
- * 校验字符串是否为合法的 Permanence
- */
-export function isValidPermanence(value: string): value is PermanenceValue {
-  return Object.values(Permanence).includes(value as PermanenceValue);
-}
-
-/**
- * 类型到目录的映射（供 FileStore 和 init.ts 共用）
+ * 记忆基元 schema
  *
- * 集中定义避免多处复制粘贴。值代表目录名（如 rules/、personas/）。
- * personality 类型映射到 personas/ 目录（与代码 Persona 术语一致，区别于用户身份信息）。
+ * 7 个核心字段，无封闭枚举，无额外元数据
  */
-export const TYPE_TO_DIR_MAP: Record<MemoryTypeValue, string> = {
-  personality: 'personas',
-  rule: 'rules',
-  skill: 'skills',
-  tool: 'tools',
-  topic: 'topics',
-  'work-projection': 'work-projection',
-};
-
-/**
- * 永久性等级
- */
-export const Permanence = {
-  ALWAYS: 'always', // 100% 必召（如人格、安全规则）
-  DOMAIN: 'domain', // 领域相关（启动时加载）
-  TOPIC: 'topic', // 话题相关（按需召回）
-  ON_DEMAND: 'on-demand', // 显式调用（如工具定义）
-} as const;
-
-export type PermanenceValue = (typeof Permanence)[keyof typeof Permanence];
-
-// 记忆基础 schema
 export const MemorySchema = z.object({
+  /** 唯一标识（source:name，如 'rule:core'、'insight:1718083200000'） */
   id: z.string(),
-  type: z.enum([
-    MemoryType.PERSONALITY,
-    MemoryType.RULE,
-    MemoryType.SKILL,
-    MemoryType.TOOL,
-    MemoryType.TOPIC,
-    MemoryType.WORK_PROJECTION,
-  ]),
-  permanence: z.enum([
-    Permanence.ALWAYS,
-    Permanence.DOMAIN,
-    Permanence.TOPIC,
-    Permanence.ON_DEMAND,
-  ]),
-  name: z.string(),
+  /** 记忆内容（Markdown 文本） */
   content: z.string(),
-  // 元数据
-  tags: z.array(z.string()).default([]),
-  weight: z.number().min(0).max(1).default(0.5),
-  // 时间戳
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-  // 文件路径（如果有）
-  filePath: z.string().optional(),
+  /** 来源标签（开放字符串，非枚举） */
+  source: z.string(),
+  /** 可读名称（文件名或摘要标题） */
+  name: z.string(),
+  /** 创建时间（ISO 8601） */
+  created_at: z.string().datetime(),
+  /** 最后访问时间（每次召回时刷新） */
+  accessed_at: z.string().datetime(),
+  /** 权重（0-1，召回时用于排序） */
+  score: z.number().min(0).max(1).default(0.5),
 });
 
 export type Memory = z.infer<typeof MemorySchema>;
 
-// 话题文件单条消息结构
-export const TopicMessageSchema = z.object({
-  role: z.enum(['user', 'assistant', 'system', 'tool']),
-  content: z.string(),
-  timestamp: z.string(), // ISO 8601
-});
-export type TopicMessage = z.infer<typeof TopicMessageSchema>;
-
-// 话题文件特殊结构（在 topic 类型记忆的基础上）
-export interface TopicFile {
-  date: string; // YYYY-MM-DD
-  topic: string; // 话题名
-  messages: TopicMessage[];
-  summary?: string; // 冥想后炼化出的话题报告
-  keywords: string[]; // 用于 FTS5 检索
-  /** v4.0：对话快照种子（切话题时提取的 3-5 句用户原文） */
-  seedSnapshots?: string[];
-}
+// ─── source 标签约定（非枚举，仅为泊文当前使用的约定） ──────
 
 /**
- * Embedding 服务接口 — memory/ 层对 embedding 能力的抽象
+ * 泊文当前使用的 source 标签约定
  *
- * 分层修复（年轮审判 R-03）：memory/ 不应直接依赖 llm/ 层。
- * 此接口定义 VectorStore 需要的 embedding 能力，
- * 具体实现（EmbeddingProvider）由 llm/ 层提供，通过依赖注入传入。
- * TypeScript 结构化类型系统保证 EmbeddingProvider 自动满足此接口。
+ * 注意：source 是开放字符串，新增来源无需改代码
+ * 只需在存储时指定 source 字符串即可
  */
-export interface EmbeddingService {
-  /** 嵌入单条文本，返回向量 */
-  embed(text: string): Promise<number[]>;
-  /** 批量嵌入多条文本 */
-  batchEmbed(texts: string[]): Promise<Array<{ text: string; vector: number[] }>>;
-}
+export const SOURCE_LABELS = {
+  /** 角色人格（agent-config/personas/*.md） */
+  PERSONA: 'persona',
+  /** 创作规则（agent-config/rules/*.md + .memora/rules/*.md） */
+  RULE: 'rule',
+  /** 技能定义（agent-config/skills/*.md） */
+  SKILL: 'skill',
+  /** 对话洞察（每轮问答结束后 LLM 提取） */
+  INSIGHT: 'insight',
+  /** 用户画像（每轮问答中 LLM 实时提取） */
+  PROFILE: 'profile',
+  /** 作品投影（Agent 读取用户作品时生成的概要） */
+  WORK_PROJECTION: 'work-projection',
+} as const;
+
+// ─── 分词相关 ─────────────────────────────────────────────
 
 /**
- * 话题摘要结构化输出（排雷修正：层级下沉，供 agent 层和 memory 层共享）
- * 原 Topicsummarizer 返回 string | null，快照字段在格式化后被丢弃
- * 现返回结构化对象，snapshots 替代 DialogueSnapshotExtractor
+ * 中文停用词集合
+ * 用于关键词提取时过滤无意义词汇
  */
-export interface TopicSummarizerResult {
-  /** 技术栈、环境限制、项目配置等约束 */
-  constraints: string[];
-  /** 代码风格、工作流、审美、命名习惯等偏好 */
-  preferences: string[];
-  /** 架构选型、策略决定等决策 */
-  decisions: string[];
-  /** 5-8 句用户原文快照（替代 DialogueSnapshotExtractor） */
-  snapshots: string[];
-  /** 格式化文本（写 SQLite 索引 + frontmatter summary） */
-  summary: string;
-  /** 话题标题（5-8 字，归档时自动命名用。空字符串表示 LLM 未给出） */
-  title: string;
-}
+export const STOPWORDS = new Set([
+  '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都',
+  '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会',
+  '着', '没有', '看', '好', '自己', '这', '那', '什么', '怎么', '可以',
+  '这个', '那个', '他们', '我们', '因为', '所以', '但是', '如果', '虽然',
+  '能', '把', '被', '让', '给', '对', '从', '为', '比', '与', '或',
+  '吗', '呢', '吧', '啊', '哦', '嗯', '呀', '哈',
+]);
+
+// ─── 工具函数 ─────────────────────────────────────────────
 
 /**
- * 话题摘要生成器回调类型
- * 接受话题消息列表，返回结构化摘要结果。
- * 返回 null 表示价值过低，无需归档。
- * 此类型定义在 memory/ 层以避免 agent/ → memory/ 的反向依赖。
- * agent/message-history.ts 从本文件引用此类型。
- */
-export type TopicSummarizer = (messages: TopicMessage[]) => Promise<TopicSummarizerResult | null>;
-
-/**
- * 归档元数据（记忆减法方案 v1.0 · 封存不删除）
+ * 从文件路径自动推断 source（目录映射 + frontmatter 覆盖）
  *
- * 当话题原文从临时记忆中卸载时，TopicStore 将其移到 archive/ 目录，
- * 并附带此元数据。支持"未炼化"标记（LLM 归档失败时），
- * 下次启动时 archive-manager 扫描并重新尝试归档。
+ * @param filePath - 文件路径
+ * @param frontmatterSource - frontmatter 中显式声明的 source（可选）
+ * @returns source 字符串
  */
-export interface ArchiveMetadata {
-  /** 原始话题文件名 */
-  originalFileName: string;
-  /** 原始话题日期 YYYY-MM-DD */
-  date: string;
-  /** 原始话题名 */
-  topic: string;
-  /** 封存时间戳 */
-  archivedAt: string;
-  /** 是否已炼化（LLM 归档成功） */
-  refined: boolean;
-  /** 炼化失败次数（用于重试策略） */
-  refineAttempts: number;
-  /** 炼化失败原因（最后一次） */
-  lastRefineError?: string;
-  /** 消息轮次数 */
-  messageCount: number;
+export function inferSource(filePath: string, frontmatterSource?: string): string {
+  // 优先：frontmatter 中显式声明的 source
+  if (frontmatterSource) return frontmatterSource;
+
+  // 回退：目录路径映射
+  if (filePath.includes('personas/')) return SOURCE_LABELS.PERSONA;
+  if (filePath.includes('/rules/')) return SOURCE_LABELS.RULE;
+  if (filePath.includes('/skills/')) return SOURCE_LABELS.SKILL;
+
+  // 默认
+  return 'unknown';
+}
+
+/**
+ * 转义 LIKE 通配符，防止注入
+ *
+ * @param str - 原始字符串
+ * @returns 转义后的字符串
+ */
+export function escapeLike(str: string): string {
+  return str.replace(/[%_]/g, '\\$&');
 }

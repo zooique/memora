@@ -1,20 +1,25 @@
 /**
  * 向量存储测试
  * 覆盖 upsert / search / delete / 持久化 / 批量操作
+ *
+ * TODO: EmbeddingService 接口已从 types.ts 移除（基元驱动重构），
+ *       VectorStore 需要适配新的接口定义。
+ *       当前测试保留结构，待 EmbeddingService 重新定义后恢复。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { VectorStore } from '@/memory/vector-store.js';
-import type { EmbeddingService } from '@/memory/types.js';
 
 /**
  * 创建模拟的 EmbeddingService
  * 不调用真实 API，直接返回固定向量
- * 年轮审判 R-03 修复：测试依赖 memory/ 层的接口而非 llm/ 层的具体实现
+ *
+ * TODO: EmbeddingService 接口已从 types.ts 移除，
+ *       需要等待接口重新定义后更新此 mock。
  */
-function mockEmbeddingService(): EmbeddingService {
+function mockEmbeddingService() {
   return {
     // 简单伪向量：基于文本首字符的 Unicode 码点
     embed: async (text: string) => {
@@ -37,7 +42,7 @@ describe('VectorStore · upsert + search', () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
     const provider = mockEmbeddingService();
-    store = new VectorStore(join(tmpDir, 'vectors.json'), provider);
+    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as any);
   });
 
   afterEach(() => {
@@ -93,7 +98,7 @@ describe('VectorStore · batchUpsert', () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
     const provider = mockEmbeddingService();
-    store = new VectorStore(join(tmpDir, 'vectors.json'), provider);
+    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as any);
   });
 
   afterEach(() => {
@@ -126,7 +131,7 @@ describe('VectorStore · 持久化', () => {
 
   it('save 后应该写入 JSON 文件', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider);
+    const store = new VectorStore(storePath, provider as any);
 
     await store.upsert('mem:1', '文本A');
     await store.save();
@@ -140,13 +145,13 @@ describe('VectorStore · 持久化', () => {
 
   it('load 后应该恢复向量索引', async () => {
     const provider1 = mockEmbeddingService();
-    const store1 = new VectorStore(storePath, provider1);
+    const store1 = new VectorStore(storePath, provider1 as any);
     await store1.upsert('mem:1', '文本A');
     await store1.save();
 
     // 新实例加载
     const provider2 = mockEmbeddingService();
-    const store2 = new VectorStore(storePath, provider2);
+    const store2 = new VectorStore(storePath, provider2 as any);
     await store2.load();
 
     expect(store2.size).toBe(1);
@@ -154,7 +159,7 @@ describe('VectorStore · 持久化', () => {
 
   it('无变更时 save 不应写文件', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider);
+    const store = new VectorStore(storePath, provider as any);
 
     await store.save();
 

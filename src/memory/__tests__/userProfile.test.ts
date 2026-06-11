@@ -2,9 +2,7 @@
  * UserProfile 单元测试
  *
  * 测试范围：
- *   - 实时归档 upsert（身份、偏好、专业、习惯、历史）
- *   - 5 个子分类的字段校验
- *   - weight 更新
+ *   - 实时归档 upsert（身份、偏好、专业）
  *   - 置信度确认机制
  *   - system prompt 组装
  *
@@ -15,46 +13,40 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { UserProfile } from '../userProfile.js';
 import type { IMemoryStorage } from '../storage-interface.js';
 import type { Memory } from '../types.js';
-import { MemoryType, Permanence } from '../types.js';
+import { SOURCE_LABELS } from '../types.js';
 
 /**
- * 创建 Mock MemoryIndex（包含 upsert 方法）
+ * 创建 Mock IMemoryStorage
  */
-const createMockIndex = (): IMemoryStorage => {
+const createMockStorage = (): IMemoryStorage => {
   const store = new Map<string, Memory>();
   return {
-    add: vi.fn(async (memory: Memory) => {
-      store.set(memory.id, memory);
-    }),
     upsert: vi.fn(async (memory: Memory) => {
       store.set(memory.id, memory);
     }),
-    update: vi.fn(async (memory: Memory) => {
-      store.set(memory.id, memory);
-    }),
-    getById: vi.fn(async (id: string) => store.get(id)),
-    search: vi.fn(async () => []),
-    getByType: vi.fn(async (type: string) =>
-      Array.from(store.values()).filter((m) => m.type === type),
-    ),
     delete: vi.fn(async (id: string) => {
       store.delete(id);
     }),
+    getById: vi.fn(async (id: string) => store.get(id) ?? null),
+    getBySource: vi.fn(async (source: string) =>
+      Array.from(store.values()).filter((m) => m.source === source),
+    ),
+    search: vi.fn(async () => []),
     close: vi.fn(),
   } as unknown as IMemoryStorage;
 };
 
 describe('UserProfile', () => {
-  let mockIndex: IMemoryStorage;
+  let mockStorage: IMemoryStorage;
   let userProfile: UserProfile;
 
   beforeEach(() => {
-    mockIndex = createMockIndex();
-    userProfile = new UserProfile(mockIndex);
+    mockStorage = createMockStorage();
+    userProfile = new UserProfile(mockStorage);
   });
 
   describe('archive - 身份信息', () => {
-    it('应该归档身份信息到 SQLite', async () => {
+    it('应该归档身份信息到存储', async () => {
       // Given
       await userProfile.load();
 
@@ -62,12 +54,10 @@ describe('UserProfile', () => {
       await userProfile.archive('我叫张三', 'turn-1');
 
       // Then
-      expect(mockIndex.upsert).toHaveBeenCalled();
-      const addedMemory = (mockIndex.upsert as ReturnType<typeof vi.fn>).mock
+      expect(mockStorage.upsert).toHaveBeenCalled();
+      const addedMemory = (mockStorage.upsert as ReturnType<typeof vi.fn>).mock
         .calls[0]![0] as Memory;
-      expect(addedMemory.type).toBe(MemoryType.PERSONALITY);
-      expect(addedMemory.permanence).toBe(Permanence.ALWAYS);
-      expect(addedMemory.tags).toContain('user-profile');
+      expect(addedMemory.source).toBe(SOURCE_LABELS.PROFILE);
     });
 
     it('应该使用 upsert 语义（幂等写入）', async () => {
@@ -79,7 +69,7 @@ describe('UserProfile', () => {
       await userProfile.archive('我叫张三', 'turn-2');
 
       // Then - upsert 被调用两次（幂等）
-      expect(mockIndex.upsert).toHaveBeenCalledTimes(2);
+      expect(mockStorage.upsert).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -92,10 +82,10 @@ describe('UserProfile', () => {
       await userProfile.archive('我喜欢用TypeScript', 'turn-1');
 
       // Then
-      expect(mockIndex.upsert).toHaveBeenCalled();
-      const addedMemory = (mockIndex.upsert as ReturnType<typeof vi.fn>).mock
+      expect(mockStorage.upsert).toHaveBeenCalled();
+      const addedMemory = (mockStorage.upsert as ReturnType<typeof vi.fn>).mock
         .calls[0]![0] as Memory;
-      expect(addedMemory.tags).toContain('user-profile');
+      expect(addedMemory.source).toBe(SOURCE_LABELS.PROFILE);
     });
   });
 
@@ -108,34 +98,32 @@ describe('UserProfile', () => {
       await userProfile.archive('我好像叫张三', 'turn-1');
 
       // Then - 不匹配正则 → 无事实提取 → upsert 不被调用
-      expect(mockIndex.upsert).not.toHaveBeenCalled();
+      expect(mockStorage.upsert).not.toHaveBeenCalled();
     });
   });
 
   describe('load', () => {
-    it('应该从 SQLite 加载已有画像', async () => {
-      // Given
+    it('应该从存储加载已有画像', async () => {
+      // Given - 预置一条已确认的画像记忆
       const existingMemory: Memory = {
-        id: 'user-profile-identity-张三',
-        type: MemoryType.PERSONALITY,
-        permanence: Permanence.ALWAYS,
-        name: 'identity: 张三',
-        content: '张三',
-        tags: ['user-profile', 'category:identity', 'status:confirmed'],
-        weight: 0.9,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        id: 'profile:user-profile-identity-姓名-张三',
+        content: '姓名: 张三',
+        source: SOURCE_LABELS.PROFILE,
+        name: 'identity: 姓名: 张三',
+        created_at: new Date().toISOString(),
+        accessed_at: new Date().toISOString(),
+        score: 0.9,
       };
 
-      (mockIndex.getByType as ReturnType<typeof vi.fn>).mockResolvedValue([existingMemory]);
+      (mockStorage.getBySource as ReturnType<typeof vi.fn>).mockResolvedValue([existingMemory]);
 
       // When
-      await userProfile.load();
+      const entries = await userProfile.load();
 
       // Then
-      const confirmed = userProfile.getConfirmed();
-      expect(confirmed).toHaveLength(1);
-      expect(confirmed[0]!.value).toBe('张三');
+      expect(entries).toHaveLength(1);
+      expect(entries[0]!.value).toBe('姓名: 张三');
+      expect(entries[0]!.confirmed).toBe(true);
     });
   });
 
@@ -171,13 +159,27 @@ describe('UserProfile', () => {
       // Given
       await userProfile.load();
 
-      // When - 明确表达
+      // When - 明确表达（高置信度 ≥ 0.8）
       await userProfile.archive('我叫张三', 'turn-1');
 
       // Then - 高置信度的应该在 getConfirmed 中
       const confirmed = userProfile.getConfirmed();
       expect(confirmed.length).toBeGreaterThan(0);
       expect(confirmed[0]!.confirmed).toBe(true);
+    });
+
+    it('应该为低置信度条目标记为待确认', async () => {
+      // Given
+      await userProfile.load();
+
+      // When - 较低置信度表达
+      await userProfile.archive('我熟悉React', 'turn-1');
+
+      // Then - 低置信度（0.75）应标记为待确认
+      const confirmed = userProfile.getConfirmed();
+      // 低置信度条目不写入存储，仅存内存缓存
+      // getConfirmed 返回已确认条目，低置信度条目不应出现
+      expect(confirmed).toHaveLength(0);
     });
   });
 });

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 上下文压力监控器 — ContextPressureMonitor
  *
  * 哲学：「应无所住」——不囤积上下文。
@@ -184,8 +184,8 @@ export class ContextPressureMonitor {
    * 用 7 天半衰期（一周不碰的话题衰减一半）
    */
   private recencyScore(m: Memory, now: number): number {
-    const lastUpdate = new Date(m.updatedAt).getTime();
-    const ageDays = (now - lastUpdate) / (24 * 60 * 60 * 1000);
+    const lastAccess = new Date(m.accessed_at).getTime();
+    const ageDays = (now - lastAccess) / (24 * 60 * 60 * 1000);
     return Math.exp(-ageDays / 7); // 7 天半衰期
   }
 }

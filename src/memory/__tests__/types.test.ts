@@ -1,74 +1,109 @@
 /**
  * 单元测试：记忆类型定义
- * 验证类型 schema 的有效性
+ * 验证基元驱动模型的 schema 有效性
  */
 import { describe, expect, it } from 'vitest';
-import { MemorySchema, MemoryType, Permanence } from '@/memory/types.js';
+import { MemorySchema, SOURCE_LABELS, inferSource, escapeLike, STOPWORDS } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
-  it('应该暴露 6 种记忆类型', () => {
-    expect(Object.keys(MemoryType)).toHaveLength(6);
-    expect(MemoryType.PERSONALITY).toBe('personality');
-    expect(MemoryType.RULE).toBe('rule');
-    expect(MemoryType.SKILL).toBe('skill');
-    expect(MemoryType.TOOL).toBe('tool');
-    expect(MemoryType.TOPIC).toBe('topic');
-    expect(MemoryType.WORK_PROJECTION).toBe('work-projection');
-  });
-
-  it('应该暴露 4 个永久性等级', () => {
-    expect(Object.keys(Permanence)).toHaveLength(4);
-    expect(Permanence.ALWAYS).toBe('always');
-    expect(Permanence.DOMAIN).toBe('domain');
-    expect(Permanence.TOPIC).toBe('topic');
-    expect(Permanence.ON_DEMAND).toBe('on-demand');
+  it('应该暴露 6 种 source 标签约定', () => {
+    // source 是开放字符串，SOURCE_LABELS 仅为当前约定
+    expect(Object.keys(SOURCE_LABELS)).toHaveLength(6);
+    expect(SOURCE_LABELS.PERSONA).toBe('persona');
+    expect(SOURCE_LABELS.RULE).toBe('rule');
+    expect(SOURCE_LABELS.SKILL).toBe('skill');
+    expect(SOURCE_LABELS.INSIGHT).toBe('insight');
+    expect(SOURCE_LABELS.PROFILE).toBe('profile');
+    expect(SOURCE_LABELS.WORK_PROJECTION).toBe('work-projection');
   });
 
   it('应该通过 schema 校验一个有效记忆', () => {
+    // 构造符合新 Memory 接口的测试数据
     const memory = {
       id: 'rule:core',
-      type: MemoryType.RULE,
-      permanence: Permanence.ALWAYS,
-      name: 'core',
       content: '核心规则内容',
-      tags: ['rule', 'core'],
-      weight: 1.0,
-      createdAt: '2026-06-02T00:00:00.000Z',
-      updatedAt: '2026-06-02T00:00:00.000Z',
+      source: 'rule',
+      name: 'core',
+      created_at: '2026-06-02T00:00:00.000Z',
+      accessed_at: '2026-06-02T00:00:00.000Z',
+      score: 0.8,
     };
 
     const parsed = MemorySchema.parse(memory);
     expect(parsed.id).toBe('rule:core');
-    expect(parsed.tags).toEqual(['rule', 'core']);
+    expect(parsed.source).toBe('rule');
+    expect(parsed.score).toBe(0.8);
   });
 
-  it('应该拒绝无效的 type', () => {
+  it('应该拒绝无效的 score 范围', () => {
+    // score 必须在 0-1 之间
     const invalid = {
-      id: 'x',
-      type: 'invalid',
-      permanence: 'always',
-      name: 'x',
-      content: 'x',
-      tags: [],
-      weight: 0.5,
-      createdAt: '2026-06-02T00:00:00.000Z',
-      updatedAt: '2026-06-02T00:00:00.000Z',
+      id: 'x:test',
+      content: '测试内容',
+      source: 'rule',
+      name: 'test',
+      created_at: '2026-06-02T00:00:00.000Z',
+      accessed_at: '2026-06-02T00:00:00.000Z',
+      score: 1.5,  // 超出范围
     };
     expect(() => MemorySchema.parse(invalid)).toThrow();
   });
 
-  it('应该拒绝无效的 permanence', () => {
-    const invalid = {
-      id: 'x',
-      type: 'rule',
-      permanence: 'invalid',
-      name: 'x',
-      content: 'x',
-      tags: [],
-      weight: 0.5,
-      createdAt: '2026-06-02T00:00:00.000Z',
-      updatedAt: '2026-06-02T00:00:00.000Z',
+  it('应该接受有效的 source 字符串（开放字符串，非枚举）', () => {
+    // source 是开放字符串，任何非空字符串都应有效
+    const customSource = {
+      id: 'custom:test',
+      content: '测试内容',
+      source: 'custom-source',  // 自定义 source
+      name: 'test',
+      created_at: '2026-06-02T00:00:00.000Z',
+      accessed_at: '2026-06-02T00:00:00.000Z',
+      score: 0.5,
     };
-    expect(() => MemorySchema.parse(invalid)).toThrow();
+    expect(() => MemorySchema.parse(customSource)).not.toThrow();
+  });
+});
+
+describe('inferSource 工具函数', () => {
+  it('应该优先使用 frontmatter 中声明的 source', () => {
+    expect(inferSource('/path/to/file.md', 'custom')).toBe('custom');
+  });
+
+  it('应该从 personas/ 路径推断为 persona', () => {
+    expect(inferSource('/config/personas/bowen.md')).toBe('persona');
+  });
+
+  it('应该从 /rules/ 路径推断为 rule', () => {
+    expect(inferSource('/config/rules/core.md')).toBe('rule');
+  });
+
+  it('应该从 /skills/ 路径推断为 skill', () => {
+    expect(inferSource('/config/skills/writing.md')).toBe('skill');
+  });
+
+  it('应该对未知路径返回 unknown', () => {
+    expect(inferSource('/other/path/file.md')).toBe('unknown');
+  });
+});
+
+describe('escapeLike 工具函数', () => {
+  it('应该转义 % 和 _ 通配符', () => {
+    expect(escapeLike('100%')).toBe('100\\%');
+    expect(escapeLike('test_value')).toBe('test\\_value');
+    expect(escapeLike('normal text')).toBe('normal text');
+  });
+});
+
+describe('STOPWORDS 停用词集合', () => {
+  it('应该包含常用中文停用词', () => {
+    expect(STOPWORDS.has('的')).toBe(true);
+    expect(STOPWORDS.has('了')).toBe(true);
+    expect(STOPWORDS.has('是')).toBe(true);
+    expect(STOPWORDS.has('在')).toBe(true);
+  });
+
+  it('应该不包含有意义的词', () => {
+    expect(STOPWORDS.has('记忆')).toBe(false);
+    expect(STOPWORDS.has('规则')).toBe(false);
   });
 });

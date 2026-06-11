@@ -43,7 +43,7 @@ describe('ProjectManager · initProject', () => {
     expect(ctx.memoraDir).toBe(join(tmpDir, '.memora'));
     expect(ctx.fileStore).toBeDefined();
     expect(ctx.index).toBeDefined();
-    expect(ctx.topicStore).toBeDefined();
+    // TopicStore 已移除（基元驱动模型）
     expect(ctx.security).toBeDefined();
     expect(ctx.bootstrapMemories).toBeDefined();
     expect(ctx.loadResult).toBeDefined();

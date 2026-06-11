@@ -14,7 +14,28 @@
  * 详见 02-上下文组装-v4.0.md §6 · 00-记忆归档原则-v1.0.md
  */
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { TopicMessage, TopicSummarizerResult } from '@/memory/types.js';
+
+// ─── 本地类型（原 memory/types.ts 导出，重构后内联） ──────
+
+/**
+ * 话题消息（用于摘要生成器）
+ */
+interface TopicMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/**
+ * 话题摘要生成结果
+ */
+interface TopicSummarizerResult {
+  summary: string;
+  title: string;
+  constraints: string[];
+  preferences: string[];
+  decisions: string[];
+  snapshots: string[];
+}
 
 /**
  * 话题摘要生成器回调类型

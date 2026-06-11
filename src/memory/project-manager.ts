@@ -4,15 +4,19 @@
  * 核心职责：
  *   - 管理项目注册表（~/.memora/projects.json）
  *   - 锁文件机制（.memora/.lock）防止同项目并发写入导致数据损坏
- *   - Agent 级资源管理（memora.db + TopicStore 全局共享，不随项目切换重建）
+ *   - Agent 级资源管理（memora.db 全局共享，不随项目切换重建）
  *   - 两层记忆加载：项目级（projectPath/.memora/）→ Agent 级（configDir）
  *   - 项目切换（只更新 projectPath + security + 重新加载项目 rules/skills）
  *
  * 设计原则（单 Agent 模型）：
  *   - memora.db 只有一个（Agent 级），所有项目共享同一记忆数据库
- *   - TopicStore 只有一个（Agent 级），对话历史跨项目持久化
  *   - 项目切换不重建数据库，只更新安全守卫 + 重新扫描项目规则
- *   - 项目级 .memora/ 仅存放 rules/ 和 skills/（无 memora.db、无 topics/）
+ *   - 项目级 .memora/ 仅存放 rules/ 和 skills/（无 memora.db）
+ *
+ * 重构变更（2026-06-11）：
+ *   - 移除 TopicStore 引用 → 对话历史管理由宿主项目负责
+ *   - 移除 MemoryType 枚举 → 使用 SOURCE_LABELS 开放字符串
+ *   - bootstrap 逻辑改用 getBySource 替代 getByPermanence
  *
  * 锁文件策略：
  *   - 打开项目时创建 .lock 文件（含 PID + 时间戳 + 主机名）
@@ -37,10 +41,10 @@ import { InMemoryStorage } from './in-memory-storage.js';
 import type { IMemoryStorage } from './storage-interface.js';
 import { MemoryLoader } from './loader.js';
 import type { LoadResult } from './loader.js';
-import { TopicStore } from './topic-store.js';
+// TODO: TopicStore 已从内核移除，对话历史管理迁移至宿主项目
 import { SecurityGuard } from '@/security/path-guard.js';
 import { logger } from '@/logging/logger.js';
-import { MemoryType, type Memory } from './types.js';
+import { SOURCE_LABELS, type Memory } from './types.js';
 
 /**
  * 项目上下文：打开一个项目后产出的一组组件
@@ -59,8 +63,7 @@ export interface ProjectContext {
   fileStore: FileStore;
   /** SQLite 索引（通过 IMemoryStorage 接口访问） */
   index: IMemoryStorage;
-  /** 话题存储 */
-  topicStore: TopicStore;
+  // TODO: TopicStore 已从内核移除，对话历史管理迁移至宿主项目
   /** 安全守卫 */
   security: SecurityGuard;
   /** 启动时加载的必召记忆 */
@@ -114,8 +117,7 @@ export class ProjectManager {
   private readonly permission: 'owner' | 'guest';
   /** Agent 级存储实例（全局共享，不随项目切换重建） */
   private agentIndex: IMemoryStorage | null = null;
-  /** Agent 级话题存储（全局共享，不随项目切换重建） */
-  private agentTopicStore: TopicStore | null = null;
+  // TODO: agentTopicStore 已移除，对话历史管理迁移至宿主项目
   /** 当前打开的项目路径 */
   private currentProjectPath: string | null = null;
   /** 当前持有的锁文件路径 */
@@ -144,13 +146,15 @@ export class ProjectManager {
   }
 
   /**
-   * 确保 Agent 级资源已初始化（存储实例 + TopicStore）
-   * 这些资源在整个 Agent 生命周期内共享，不随项目切换重建
+   * 确保 Agent 级资源已初始化（存储实例）
+   * 存储实例在整个 Agent 生命周期内共享，不随项目切换重建
    *
    * 如果构造时注入了外部存储实例，直接使用；
    * 否则内部创建 InMemoryStorage（非持久化兜底，仅开发/测试用）。
+   *
+   * TODO: TopicStore 已从内核移除，对话历史管理迁移至宿主项目
    */
-  private async ensureAgentResources(): Promise<{ index: IMemoryStorage; topicStore: TopicStore }> {
+  private async ensureAgentResources(): Promise<{ index: IMemoryStorage }> {
     if (!this.agentIndex) {
       mkdirSync(this.agentDataDir, { recursive: true });
 
@@ -163,11 +167,8 @@ export class ProjectManager {
         logger.warn('未注入持久化存储实现，Agent 将使用 InMemoryStorage（数据重启后丢失）');
         this.agentIndex = new InMemoryStorage();
       }
-
-      this.agentTopicStore = new TopicStore(this.agentDataDir);
     }
-    // agentTopicStore 与 agentIndex 同步设置，此处不可能为 null
-    return { index: this.agentIndex, topicStore: this.agentTopicStore! };
+    return { index: this.agentIndex };
   }
 
   /**
@@ -205,8 +206,8 @@ export class ProjectManager {
     // 确保项目 .memora/ 目录存在
     mkdirSync(memoraDir, { recursive: true });
 
-    // Agent 级共享资源（memora.db 只有一个，TopicStore 只有一个）
-    const { index, topicStore } = await this.ensureAgentResources();
+    // Agent 级共享资源（memora.db 只有一个）
+    const { index } = await this.ensureAgentResources();
 
     // 合并加载结果（两层扫描汇总）
     const loadResult: LoadResult = { loaded: 0, skipped: 0, errors: [] };
@@ -229,11 +230,10 @@ export class ProjectManager {
       loadResult.errors.push(...configResult.errors);
     }
 
-    // bootstrap 过滤：取 always + domain 必召记忆（排除 personality 类型）
-    const always = await index.getByPermanence('always');
-    const nonPersonality = always.filter((m) => m.type !== MemoryType.PERSONALITY);
-    const domain = await index.getByPermanence('domain');
-    const bootstrapMemories = [...nonPersonality, ...domain].filter(Boolean) as Memory[];
+    // bootstrap 过滤：按 source 获取 rule + skill 必召记忆（跳过 persona，由 PersonaManager 管理）
+    const rules = await index.getBySource(SOURCE_LABELS.RULE);
+    const skills = await index.getBySource(SOURCE_LABELS.SKILL);
+    const bootstrapMemories = [...rules, ...skills];
 
     // 安全守卫（随项目切换更新）
     const security = new SecurityGuard(
@@ -266,7 +266,6 @@ export class ProjectManager {
       dbPath: join(this.agentDataDir, 'memora.db'),
       fileStore: projectFileStore,
       index,
-      topicStore,
       security,
       bootstrapMemories,
       loadResult,
@@ -299,7 +298,6 @@ export class ProjectManager {
         logger.warn({ err }, '关闭 Agent 数据库失败');
       }
       this.agentIndex = null;
-      this.agentTopicStore = null;
     }
   }
 

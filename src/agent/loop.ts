@@ -213,7 +213,7 @@ export class AgentLoop {
    */
   private wrapWithTopicContext(userInput: string, memories: readonly Memory[]): string {
     const memoryBlock = memories
-      .map((m) => `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, 200)}`)
+      .map((m) => `- [${m.created_at.slice(0, 10)}] ${m.name}: ${m.content.slice(0, 200)}`)
       .join('\n');
 
     return ['[系统召回的相关记忆]', memoryBlock, '', '[用户输入]', userInput].join('\n');
@@ -419,6 +419,31 @@ export class AgentLoop {
    */
   getMessages(): readonly Message[] {
     return this.messages;
+  }
+
+  /**
+   * 获取最近 N 轮对话（Layer 5: 最近对话注入）
+   *
+   * 从 messages 数组中提取最近 N 轮 user + assistant 消息，
+   * 用于注入 system prompt，让 LLM 在用户输入无信息量时仍能看到上下文。
+   *
+   * @param rounds - 要获取的轮次数（默认 3）
+   * @returns 最近 N 轮的 user + assistant 消息数组
+   */
+  getRecentHistory(rounds = 3): Array<{ role: 'user' | 'assistant'; content: string }> {
+    // 过滤出 user + assistant 消息（排除 system 和 tool）
+    const conversationMessages = this.messages.filter(
+      (m): m is { role: 'user' | 'assistant'; content: string } =>
+        m.role === 'user' || m.role === 'assistant',
+    );
+
+    // 取最后 N 轮（每轮 = 1 user + 1 assistant，共 2 条消息）
+    const recentMessages = conversationMessages.slice(-rounds * 2);
+
+    return recentMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
   }
 
   /**

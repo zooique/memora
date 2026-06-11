@@ -1,82 +1,84 @@
 /**
  * 消息历史：Agent 对话过程中的消息持久化
  *
- * 阶段一职责：
+ * 基元驱动重构（2026-06-11）：
+ *   - TopicStore 已移除，消息持久化逻辑待新方案重建
+ *   - 保留公共方法签名以维持 API 兼容
+ *   - 标记 TODO 的方法体等待基元驱动存储方案落地后重写
+ *
+ * 原阶段一职责：
  *   - 封装"用户输入 → 话题文件"的追加操作
  *   - 封装"Agent 回复 → 话题文件"的追加操作
  *   - 维护当前话题上下文（date + topic）
  *
- * 阶段二（M-203-改）：
+ * 原阶段二（M-203-改）：
  *   - 话题切换时自动生成旧话题摘要（事件驱动归档）
- *   - 0 新依赖，通过回调函数注入 LLM 能力
- *
- * 新增功能（2026-06-03）：
- *   - 支持从话题文件恢复历史对话
- *   - 支持启动时加载最近话题
  *
  * 详见 02-上下文组装-v4.0.md §6 话题文件
- * 详见 T-101 修复：cli 越权调 memory 的下沉
  */
-import type { TopicStore } from '@/memory/topic-store.js';
-import { todayDate, nowTimestamp } from '@/memory/topic-store.js';
-import type {
-  Memory,
-  TopicMessage,
-  TopicSummarizer,
-  TopicFile,
-  TopicSummarizerResult,
-} from '@/memory/types.js';
-import { MemoryType, Permanence } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { logger } from '@/logging/logger.js';
 
+// ─── 内联工具函数（原 topic-store.ts 导出，topic-store 删除后内联） ──
+
 /**
- * 消息历史类
- * cli 只调本类，不直接操作 TopicStore
+ * 获取当前日期字符串 YYYY-MM-DD
+ * 原 topic-store.ts todayDate()
  */
-/**
- * 将话题标题转为合法的文件名片段
- *
- * 规则：
- * - 非法字符替换为连字符
- * - 连续连字符合并为一个
- * - 去除首尾连字符
- * - 全空白/结果为空时返回空字符串
- *
- * @param title - LLM 生成的话题标题（5-8 字中文）
- * @returns 合法的文件名片段（如"角色设定讨论"），失败返回空字符串
- */
-function slugifyTopicTitle(title: string): string {
-  // 去首尾空白，替换非法文件名字符为连字符
-  const slugged = title
-    .trim()
-    .replace(/[\\/:*?"<>|]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return slugged;
+function todayDate(): string {
+  return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * 获取当前时间戳 ISO 8601
+ * 原 topic-store.ts nowTimestamp()
+ */
+function nowTimestamp(): string {
+  return new Date().toISOString();
+}
+
+/**
+ * 旧 TopicMessage 类型（原 TopicStore 使用的消息格式）
+ *
+ * TopicStore 删除后保留此类型，供 loadTopicMessages() 返回值兼容。
+ * 后续基元驱动方案落地后，消息格式可能调整。
+ */
+export interface LegacyTopicMessage {
+  /** 消息角色 */
+  role: 'user' | 'assistant' | 'system';
+  /** 消息内容 */
+  content: string;
+  /** 时间戳（ISO 8601） */
+  timestamp: string;
+}
+
+/**
+ * 消息历史类
+ *
+ * TopicStore 已删除（基元驱动重构），
+ * 大部分方法保留签名但方法体标记 TODO，
+ * 等待新存储方案落地后重写。
+ */
 export class MessageHistory {
+  /** 当前日期 YYYY-MM-DD */
   private currentDate: string;
+  /** 当前话题标识（不含日期前缀） */
   private currentTopic: string;
+
   /**
    * 挂起的归档企划集合，Agent.close() 等待它们完成
-   * 容纳 Promise<void>（fire-and-forget 内部）或 Promise<TopicSummarizerResult | null>（外部注册）
+   * 容纳 Promise<void>（fire-and-forget 内部）
    */
   private pendingArchives: Set<Promise<unknown>> = new Set();
 
   constructor(
-    private readonly topicStore: TopicStore,
-    private readonly summarizer?: TopicSummarizer,
-    initialDate?: string,
-    initialTopic = 'main',
     /**
      * 内存索引（可选）
      * 注入后，archiveCurrentTopic() 会把摘要同步写入 SQLite，
-     * 让 TopicMount.focus() 能跨会话召回。
-     * 不注入则只写 topic-*.md（保持向后兼容）。
+     * 让召回层能跨会话召回。
+     * 不注入则跳过索引写入（保持向后兼容）。
      */
-    private readonly index?: IMemoryStorage,
+    private readonly _index?: IMemoryStorage,
     /**
      * 临时记忆最小窗口轮次（记忆减法方案 v1.0 · 排雷修正 L2）
      *
@@ -85,13 +87,17 @@ export class MessageHistory {
      * 默认 3 轮，不可在运行时突破。
      */
     private readonly minWindowRounds = 3,
+    initialDate?: string,
+    initialTopic = 'main',
   ) {
     this.currentDate = initialDate ?? todayDate();
     this.currentTopic = initialTopic;
+    // TODO: _index 保留供未来话题记忆写入逻辑使用
+    void this._index;
   }
 
   /**
-   * 获取当前话题名
+   * 获取当前话题名（日期-话题组合名）
    */
   get currentTopicName(): string {
     return `${this.currentDate}-${this.currentTopic}`;
@@ -108,7 +114,7 @@ export class MessageHistory {
   }
 
   /**
-   * 获取当前话题
+   * 获取当前话题标识
    */
   get topic(): string {
     return this.currentTopic;
@@ -125,11 +131,13 @@ export class MessageHistory {
   /**
    * 切换话题
    * M-203-改：切换前自动为旧话题生成摘要（fire-and-forget，不阻塞切换）
+   * @param newTopic - 新话题标识
    * @returns 新话题的全名
    */
   switchTopic(newTopic: string): string {
-    // 触发旧话题摘要（异步 fire-and-forget，不阻塞切换）
-    this.summarizeAndArchive();
+    // TODO: TopicStore 已删除，旧话题归档逻辑待重建
+    // 原逻辑：this.summarizeAndArchive() → 触发旧话题摘要
+    logger.debug({ newTopic }, 'switchTopic: TopicStore 已移除，归档逻辑待重建');
     this.currentTopic = newTopic;
     return this.currentTopicName;
   }
@@ -137,62 +145,66 @@ export class MessageHistory {
   /**
    * 追加 user 消息到当前话题
    * 失败不抛出（消息持久化失败不应阻塞对话）
+   *
+   * TODO: TopicStore 已删除，消息追加待新存储方案重建
    */
   async appendUser(content: string): Promise<void> {
-    const message: TopicMessage = {
+    const message: LegacyTopicMessage = {
       role: 'user',
       content,
       timestamp: nowTimestamp(),
     };
-    await this.safeAppend(message);
+    // TODO: TopicStore 已移除，原逻辑写入 topic-*.md 文件
+    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendUser: TopicStore 已移除，消息未持久化');
   }
 
   /**
    * 追加 assistant 消息到当前话题
    * 失败不抛出
+   *
+   * TODO: TopicStore 已删除，消息追加待新存储方案重建
    */
   async appendAssistant(content: string): Promise<void> {
     if (!content.trim()) return;
-    const message: TopicMessage = {
+    const message: LegacyTopicMessage = {
       role: 'assistant',
       content,
       timestamp: nowTimestamp(),
     };
-    await this.safeAppend(message);
+    // TODO: TopicStore 已移除，原逻辑写入 topic-*.md 文件
+    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendAssistant: TopicStore 已移除，消息未持久化');
   }
 
   /**
    * 列出所有话题文件
+   *
+   * TODO: TopicStore 已删除，返回空数组。待新方案重建后实现。
    */
   async listAllTopics(): Promise<string[]> {
-    return this.topicStore.list();
+    // TODO: TopicStore 已移除，原逻辑 this.topicStore.list()
+    logger.debug('listAllTopics: TopicStore 已移除，返回空数组');
+    return [];
   }
 
   /**
    * 从话题文件恢复历史消息
    * 用于重启后恢复之前的对话
    *
+   * TODO: TopicStore 已删除，待新方案重建。
+   *
    * @param date - 话题日期 YYYY-MM-DD
    * @param topic - 话题名
-   * @returns 话题中的消息列表，话题不存在返回空数组
+   * @returns 话题中的消息列表，TopicStore 删除后始终返回空数组
    */
-  async loadTopicMessages(date: string, topic: string): Promise<TopicMessage[]> {
-    logger.info({ date, topic }, '尝试加载话题文件');
-    const topicFile = await this.topicStore.read(date, topic);
-    if (!topicFile) {
-      logger.debug({ date, topic }, '话题文件不存在，无法恢复');
-      return [];
-    }
+  async loadTopicMessages(date: string, topic: string): Promise<LegacyTopicMessage[]> {
+    logger.info({ date, topic }, 'loadTopicMessages: TopicStore 已移除，返回空数组');
 
-    logger.info({ messageCount: topicFile.messages.length, date, topic }, '话题文件加载成功');
-
-    // 更新当前话题为加载的话题
+    // 更新当前话题为请求的话题（保持状态一致）
     this.currentDate = date;
     this.currentTopic = topic;
 
-    logger.info({ date, topic, messageCount: topicFile.messages.length }, '从话题文件恢复历史对话');
-
-    return topicFile.messages;
+    // TODO: TopicStore 已移除，原逻辑 this.topicStore.read(date, topic)
+    return [];
   }
 
   /**
@@ -200,295 +212,55 @@ export class MessageHistory {
    * 用于启动时自动恢复上次对话
    * 策略：先找今天的话题，没有则找最近日期的话题
    *
-   * @param preferredTopic - 优先加载的话题名（默认 'main'）
-   * @returns 话题消息列表，没有找到返回空数组
-   */
-  async loadMostRecentTopic(preferredTopic = 'main'): Promise<TopicMessage[]> {
-    const allTopics = await this.topicStore.list();
-    logger.info({ allTopics }, '找到的话题文件列表');
-
-    if (allTopics.length === 0) {
-      logger.debug('没有找到任何话题文件');
-      return [];
-    }
-
-    // 解析所有话题文件名为 { date, topic, fileName }
-    const parsedTopics = allTopics
-      .map((fileName) => {
-        const parsed = this.parseTopicFileName(fileName);
-        return parsed ? { ...parsed, fileName } : null;
-      })
-      .filter((x): x is { date: string; topic: string; fileName: string } => x !== null);
-
-    logger.info({ parsedTopics }, '解析后的话题列表');
-
-    if (parsedTopics.length === 0) {
-      logger.debug('无法解析任何话题文件名');
-      return [];
-    }
-
-    // 策略 1：优先找今天 + 首选话题
-    const today = todayDate();
-    const todayPreferred = parsedTopics.find((t) => t.date === today && t.topic === preferredTopic);
-    if (todayPreferred) {
-      logger.info({ date: today, topic: preferredTopic }, '找到今天的首选话题');
-      return this.loadTopicMessages(todayPreferred.date, todayPreferred.topic);
-    }
-
-    // 策略 2：找今天的任意话题
-    const todayAny = parsedTopics.find((t) => t.date === today);
-    if (todayAny) {
-      logger.info({ date: today, topic: todayAny.topic }, '找到今天的话题');
-      return this.loadTopicMessages(todayAny.date, todayAny.topic);
-    }
-
-    // 策略 3：找最近日期的话题（按日期降序排序）
-    parsedTopics.sort((a, b) => b.date.localeCompare(a.date));
-    const mostRecent = parsedTopics[0]!;
-    logger.info({ date: mostRecent.date, topic: mostRecent.topic }, '找到最近的话题');
-    return this.loadTopicMessages(mostRecent.date, mostRecent.topic);
-  }
-
-  /**
-   * 为当前话题生成摘要并归档
-   * M-203-改：事件驱动，话题切换时触发
-   * 2026-06-03 改：抽离为 archiveCurrentTopic() 公开方法，支持写入 SQLite 索引
+   * TODO: TopicStore 已删除，待新方案重建。
    *
-   * 跳过条件：
-   *   - 未注入 summarizer（无 LLM 能力）
-   *   - 话题文件不存在（从未写入）
-   *   - 消息数 < 2（单向话题，无对话价值）
-   *   - 已有摘要（幂等）
+   * @param preferredTopic - 优先加载的话题名（默认 'main'）
+   * @returns 话题消息列表，TopicStore 删除后始终返回空数组
    */
-  private async summarizeAndArchive(): Promise<void> {
-    // fire-and-forget：记录到 pendingArchives，让 Agent.close() 能 await
-    const p = this.archiveCurrentTopic('switch').finally(() => {
-      this.pendingArchives.delete(p);
-    });
-    this.pendingArchives.add(p);
+  async loadMostRecentTopic(preferredTopic = 'main'): Promise<LegacyTopicMessage[]> {
+    // TopicStore 已移除，原逻辑依赖 this.topicStore.list() + this.parseTopicFileName()
+    logger.debug({ preferredTopic }, 'loadMostRecentTopic: TopicStore 已移除，返回空数组');
+    return [];
   }
 
+  // summarizeAndArchive() 已删除（TopicStore/TopicSummarizer 已移除，归档逻辑由 extractInsight() 替代）
+
   /**
-   * 公开方法：为当前话题生成摘要，并同步写入 SQLite 索引
+   * 公开方法：为当前话题生成摘要，并同步写入索引
    *
    * 四种调用场景：
    * - 'switch'  : 话题切换时（旧话题的最终归档），已有摘要则幂等跳过
    * - 'signal'  : 检测到强信号（实时关键信息）→ 强制重新归档
    * - 'lazy'    : 启动时补归档（兜底历史话题），已有摘要跳过
-   * - 'midway'  : 超长话题中途归档（排雷新增），已有摘要时仍重新调用（追加覆盖）
+   * - 'midway'  : 超长话题中途归档，已有摘要时仍重新调用（追加覆盖）
    *
-   * 返回值：TopicSummarizerResult | null（供 Agent.switchTopic() 取 snapshots）
+   * TopicStore 和 TopicSummarizer 均已删除，归档逻辑由 Agent.extractInsight() 替代。
+   * 此方法保留兼容性，返回 null。
    *
-   * 写入位置：
-   *   1. topic-*.md frontmatter `summary` 字段（已存在）
-   *   2. IMemoryStorage（`type: 'topic'`, `permanence: 'topic'`）
-   *      → TopicMount.focus() 跨会话召回的入口
-   *
-   * 失败策略：fire-and-forget + log.warn，不阻塞对话
-   * （详见 architecture_philosophy_rules.md §7 降级优先）
+   * @param reason - 归档触发原因
+   * @returns null（TopicStore 删除后无法生成归档结果）
    */
   async archiveCurrentTopic(
     reason: 'switch' | 'signal' | 'lazy' | 'midway' = 'switch',
-  ): Promise<TopicSummarizerResult | null> {
-    if (!this.summarizer) return null;
-
-    // 闭包捕获当前话题，防止 await 后 this.currentTopic 被 switchTopic 覆盖
-    const date = this.currentDate;
-    const topic = this.currentTopic;
-
-    // 同 (date, topic, reason) 正在归档时复用 in-flight Promise，防止并发归档同一话题
-    const inflightKey = `${date}|${topic}|${reason}`;
-    const inflight = this._archiveInflight.get(inflightKey);
-    if (inflight) {
-      return inflight;
-    }
-
-    const promise = this._doArchiveCurrentTopic(date, topic, reason);
-    this._archiveInflight.set(inflightKey, promise);
-    try {
-      return await promise;
-    } finally {
-      this._archiveInflight.delete(inflightKey);
-    }
-  }
-
-  /** A5 修复：归档 in-flight Promise 缓存 */
-  private readonly _archiveInflight: Map<string, Promise<TopicSummarizerResult | null>> = new Map();
-
-  /**
-   * 实际归档逻辑（A5 修复后从 archiveCurrentTopic 拆出）
-   */
-  private async _doArchiveCurrentTopic(
-    date: string,
-    topic: string,
-    reason: 'switch' | 'signal' | 'lazy' | 'midway',
-  ): Promise<TopicSummarizerResult | null> {
-    if (!this.summarizer) return null;
-    const summarizer = this.summarizer;
-    const topicFile = await this.topicStore.read(date, topic);
-    if (!topicFile) return null;
-    // TS strict 模式：消除 possibly undefined（已有早退守卫）
-    const tf = topicFile;
-
-    // 消息数 < 2 跳过（单向话题无总结价值，用户可能只敲了 1 句就切了）
-    if (tf.messages.length < 2) return null;
-
-    // 已有摘要时的行为取决于 reason：
-    //   switch/lazy → 幂等跳过（避免 LLM 重复调用）
-    //   signal/midway → 强制重新归档（覆盖旧摘要）
-    if (tf.summary) {
-      if (reason !== 'signal' && reason !== 'midway') return null;
-    }
-
-    try {
-      const result = await summarizer(tf.messages);
-      // summarizer 返回 null 表示价值过低，跳过归档
-      if (result === null) {
-        logger.debug({ topic: `${date}-${topic}`, reason }, '话题价值过低，跳过归档');
-        return null;
-      }
-
-      // 1. 写 topic-*.md frontmatter（使用 result.summary 格式化文本）
-      await this.topicStore.appendSummary(date, topic, result.summary);
-
-      // 1.5 自动重命名：如果话题名是默认值 "main" 且 LLM 生成了标题
-      //     将 2026-06-11-main.md → 2026-06-11-角色设定讨论.md
-      let effectiveTopic = topic; // 重命名后的话题名（用于 SQLite 写入）
-      if (topic === 'main' && result.title) {
-        const slugged = slugifyTopicTitle(result.title);
-        if (slugged) {
-          effectiveTopic = await this.topicStore.renameTopic(date, topic, slugged);
-          logger.info({ from: `${date}-${topic}`, to: `${date}-${effectiveTopic}` }, '话题已自动命名');
-        }
-      }
-
-      // 2. 同步写入 SQLite 索引（让 TopicMount 能跨会话召回）
-      // v1.2 新枝破土：snapshots 也写入 SQLite（与 summary 共用同一条索引记录）
-      // FTS5 搜索 content 字段时，summary + snapshots 同时被匹配
-      if (this.index) {
-        // 如果发生了重命名，先删旧条目再写新条目
-        if (effectiveTopic !== topic) {
-          const oldId = this.buildTopicMemoryId(date, topic);
-          await this.index.delete(oldId);
-        }
-        await this.writeTopicMemory(
-          date,
-          effectiveTopic,
-          result.summary,
-          topicFile.messages.length,
-          result.snapshots,
-        );
-      }
-
-      logger.info(
-        {
-          topic: `${date}-${effectiveTopic}`,
-          reason,
-          messageCount: topicFile.messages.length,
-          hasSnapshots: result.snapshots.length > 0,
-          hasIndex: !!this.index,
-        },
-        '话题归档完成',
-      );
-
-      return result; // 返回结构化结果，供调用方取 snapshots
-    } catch (err) {
-      // 归档失败不阻塞对话（与 safeAppend 策略一致）
-      logger.warn({ err, topic: `${date}-${topic}`, reason }, '话题归档失败');
-      return null;
-    }
+  ): Promise<null> {
+    // TopicStore 和 TopicSummarizer 均已移除，归档逻辑由 Agent.extractInsight() 替代
+    logger.debug({ reason, topic: this.currentTopicName }, 'archiveCurrentTopic: TopicStore 已移除，跳过归档');
+    return null;
   }
 
   /**
-   * 启动时补归档：扫描所有 topic-*.md，找出"还没在 SQLite 索引里"的，
-   * 后台异步调用 summarizer 补齐。
+   * 启动时补归档：扫描所有 topic-*.md，找出"还没在索引里"的，
+   * 后台异步补齐。
    *
-   * 解决"用户在 main 话题聊 50 轮不切换 → 永远不归档"的漏归档问题。
-   *
-   * 调用时机：Agent.init() 末尾，fire-and-forget，不阻塞初始化
-   * 3 秒超时（每个 topic 独立超时，符合 architecture_philosophy_rules.md §7 P3）
+   * TopicStore 已删除，此方法保留兼容性，返回 0。
    *
    * @param timeoutMs 单个 topic 补归档超时（默认 3000ms）
-   * @returns 实际需要补归档的 topic 数（同步返回，异步执行）
+   * @returns 0（TopicStore 删除后无法扫描话题文件）
    */
-  async archiveMissingTopics(timeoutMs = 3000): Promise<number> {
-    if (!this.summarizer || !this.index) return 0;
-
-    // 列出所有 topic 文件
-    const topicFiles = await this.topicStore.list();
-    if (topicFiles.length === 0) return 0;
-
-    // 解析文件名 → { date, topic }
-    const parsed = topicFiles
-      .map((name) => this.parseTopicFileName(name))
-      .filter((x): x is { date: string; topic: string } => x !== null);
-
-    // 过滤掉"已经在索引里"的
-    const missing: { date: string; topic: string }[] = [];
-    for (const { date, topic } of parsed) {
-      const id = this.buildTopicMemoryId(date, topic);
-      const existing = await this.index.getById(id);
-      // 已存在说明已归档过；summary 也已写 → 跳过
-      if (existing && existing.content) continue;
-      // 读取 topic 文件检查消息数（< 2 无价值）
-      const tf = await this.topicStore.read(date, topic);
-      if (!tf || tf.messages.length < 2) continue;
-      missing.push({ date, topic });
-    }
-
-    if (missing.length === 0) return 0;
-
-    // 异步 fire-and-forget 补归档（每个 topic 独立超时）
-    const work = (async () => {
-      for (const { date, topic } of missing) {
-        const inner = (async () => {
-          try {
-            const tf = await this.topicStore.read(date, topic);
-            if (!tf) return;
-            const result = await this.summarizer!(tf.messages);
-            if (result === null) {
-              logger.debug({ topic: `${date}-${topic}` }, 'lazy 补归档价值过低，跳过');
-              return;
-            }
-            await this.topicStore.appendSummary(date, topic, result.summary);
-
-            // 自动重命名：话题名为默认值 "main" 且 LLM 生成了标题
-            let effectiveTopic = topic;
-            if (topic === 'main' && result.title) {
-              const slugged = slugifyTopicTitle(result.title);
-              if (slugged) {
-                effectiveTopic = await this.topicStore.renameTopic(date, topic, slugged);
-                logger.info({ from: `${date}-${topic}`, to: `${date}-${effectiveTopic}` }, 'lazy 补归档：话题已自动命名');
-              }
-            }
-
-            await this.writeTopicMemory(
-              date,
-              effectiveTopic,
-              result.summary,
-              tf.messages.length,
-              result.snapshots,
-            );
-            logger.info(
-              { topic: `${date}-${effectiveTopic}`, messageCount: tf.messages.length },
-              'lazy 补归档完成',
-            );
-          } catch (err) {
-            logger.warn({ err, topic: `${date}-${topic}` }, 'lazy 补归档失败');
-          }
-        })();
-        // 单 topic 独立超时（不互相阻塞）
-        const timeout = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
-        await Promise.race([inner, timeout]);
-      }
-    })();
-    // 记录到 pendingArchives，让 Agent.close() 能 await
-    this.pendingArchives.add(work);
-    work.finally(() => {
-      this.pendingArchives.delete(work);
-    });
-
-    return missing.length;
+  async archiveMissingTopics(_timeoutMs = 3000): Promise<number> {
+    // TopicStore 已移除，原逻辑依赖 this.topicStore.list() + this.topicStore.read()
+    logger.debug('archiveMissingTopics: TopicStore 已移除，跳过补归档');
+    return 0;
   }
 
   /**
@@ -520,7 +292,6 @@ export class MessageHistory {
 
       if (current.length === 0) {
         // 没有挂起任务，但需要让其他微任务有机会加入新的
-        // （比如 init() 后的 archiveMissingTopics 还在异步启动）
         await new Promise<void>((resolve) => setTimeout(resolve, 50));
         continue;
       }
@@ -540,126 +311,34 @@ export class MessageHistory {
     return this.pendingArchives.size === 0;
   }
 
-  /**
-   * 把 topic 摘要写入 SQLite 索引
-   *
-   * ID 规则：`topic-${date}-${topic}` → 同一 topic 多次归档天然幂等（upsert）
-   * 永久性：topic（按需召回，符合 MemoryType 6 类 / Permanence 4 等级）
-   * 权重：0.7（话题摘要比 bootstrap 的 always=1.0 略低，符合"派生记忆"定位）
-   */
-  /**
-   * 写入话题记忆到 SQLite 索引
-   *
-   * v1.2 新枝破土：snapshots 也写入 SQLite（与 summary 共用同一条索引记录）。
-   * content 字段格式：summary + "\n\n---\n对话快照：\n" + snapshots.join("\n")
-   * FTS5 搜索 content 时，summary 和 snapshots 同时被匹配，
-   * TopicMount 搜索"绍兴"时能命中 snapshot 中的"我老家在浙江绍兴"。
-   *
-   * @param date 话题日期
-   * @param topic 话题名
-   * @param summary 话题摘要文本
-   * @param messageCount 消息数
-   * @param snapshots 对话快照（3-5 句用户原话），可选
-   */
-  private async writeTopicMemory(
-    date: string,
-    topic: string,
-    summary: string,
-    messageCount: number,
-    snapshots: string[] = [],
-  ): Promise<void> {
-    if (!this.index) return;
-    const now = new Date().toISOString();
-    const id = this.buildTopicMemoryId(date, topic);
-
-    // v1.2：将 snapshots 拼接到 content，让 FTS5 能搜索快照内容
-    // 设计文档 00-记忆归档原则 §6.5："快照进入 SQLite 索引（与话题摘要共用同一条索引记录）"
-    let content = summary;
-    if (snapshots.length > 0) {
-      content = `${summary}\n\n---\n对话快照：\n${snapshots.join('\n')}`;
-    }
-
-    const memory: Memory = {
-      id,
-      type: MemoryType.TOPIC,
-      permanence: Permanence.TOPIC,
-      name: `${date} ${topic}`,
-      content,
-      tags: ['auto-archive', `messages:${messageCount}`, `snapshots:${snapshots.length}`],
-      weight: 0.7,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await this.index.upsert(memory);
-  }
-
-  /**
-   * 构造 topic memory 的稳定 ID
-   * 同一 date+topic 多次 upsert 天然幂等
-   */
-  private buildTopicMemoryId(date: string, topic: string): string {
-    return `topic-${date}-${topic}`;
-  }
-
-  /**
-   * 解析 topic 文件名 → { date, topic }
-   * 格式：`YYYY-MM-DD-<topic>.md`
-   * 解析失败返回 null（防御性）
-   */
-  private parseTopicFileName(fileName: string): { date: string; topic: string } | null {
-    // 去掉 .md 后缀
-    const base = fileName.replace(/\.md$/, '');
-    // 必须以 YYYY-MM-DD- 开头
-    const m = base.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
-    if (!m) return null;
-    return { date: m[1]!, topic: m[2]! };
-  }
-
-  /**
-   * 安全追加：失败仅记录日志，不抛出
-   */
-  private async safeAppend(message: TopicMessage): Promise<void> {
-    try {
-      await this.topicStore.append(this.currentDate, this.currentTopic, message);
-    } catch (err) {
-      logger.error(
-        { err, topic: this.currentTopicName, role: message.role },
-        '追加消息到话题文件失败',
-      );
-    }
-  }
-
-  /**
-   * 获取当前话题文件（缓存值，避免重复读文件）
-   */
-  private async getCurrentTopicFile(): Promise<TopicFile | null> {
-    return this.topicStore.read(this.currentDate, this.currentTopic);
-  }
+  // writeTopicMemory() / buildTopicMemoryId() / parseTopicFileName() 已删除
+  // TopicStore 已移除，话题记忆写入逻辑由 Agent.extractInsight() 替代
 
   /**
    * v4.0：获取当前话题的完整消息列表（话题归档用）
    *
-   * Agent.switchTopic() 切话题时读取旧话题的完整对话
-   * 供 archiveCurrentTopic() 生成摘要 + 快照。
+   * TopicStore 已删除，返回空数组。
    *
-   * @returns 当前话题的所有消息
+   * @returns 当前话题的所有消息（TopicStore 删除后返回空）
    */
-  async getCurrentTopicMessages(): Promise<TopicMessage[]> {
-    const tf = await this.getCurrentTopicFile();
-    return tf?.messages ?? [];
+  async getCurrentTopicMessages(): Promise<LegacyTopicMessage[]> {
+    // TopicStore 已移除，原逻辑 this.topicStore.read()
+    return [];
   }
 
   /**
    * v4.0：写入种子快照到当前话题的 frontmatter
    *
-   * Agent.switchTopic() 从 archiveCurrentTopic('switch') 结果中提取 snapshots
-   * 写入旧话题文件的 frontmatter seed_snapshots 字段（替代已删除的 DialogueSnapshotExtractor）。
+   * TopicStore 已删除，快照未持久化。
    *
    * @param snapshots 种子句列表
    */
   async setCurrentTopicSeedSnapshots(snapshots: string[]): Promise<void> {
     if (snapshots.length === 0) return;
-    // 此时 currentDate/currentTopic 仍指向旧话题（Agent.switchTopic 在写入后才调 history.switchTopic）
-    await this.topicStore.appendSeedSnapshots(this.currentDate, this.currentTopic, snapshots);
+    // TopicStore 已移除，原逻辑 this.topicStore.appendSeedSnapshots()
+    logger.debug(
+      { topic: this.currentTopicName, snapshotCount: snapshots.length },
+      'setCurrentTopicSeedSnapshots: TopicStore 已移除，快照未持久化',
+    );
   }
 }

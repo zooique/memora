@@ -7,7 +7,7 @@ import { FileStore } from '@/memory/store.js';
 import { InMemoryStorage } from '@/memory/in-memory-storage.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import { MemoryLoader } from '@/memory/loader.js';
-import { MemoryType } from '@/memory/types.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,7 +24,6 @@ describe('MemoryLoader · 文件 → 索引同步', () => {
     mkdirSync(join(dataDir, 'personas'), { recursive: true });
     mkdirSync(join(dataDir, 'rules'), { recursive: true });
     mkdirSync(join(dataDir, 'skills'), { recursive: true });
-    mkdirSync(join(dataDir, 'topics'), { recursive: true });
 
     fileStore = new FileStore(dataDir);
     index = new InMemoryStorage();
@@ -36,18 +35,16 @@ describe('MemoryLoader · 文件 → 索引同步', () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
-  it('应该扫描所有配置类记忆（personality/rules/skills）', async () => {
-    // 写入测试文件
+  it('应该扫描所有配置类记忆（persona/rule/skill）', async () => {
+    // 写入测试文件 - 使用新的 frontmatter 格式
     writeFileSync(
       join(dataDir, 'personas/default.md'),
       `---
-type: personality
-permanence: always
+source: persona
 name: default
-tags: personality
-weight: 1.0
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
+score: 1.0
+created_at: 2026-06-02T00:00:00.000Z
+accessed_at: 2026-06-02T00:00:00.000Z
 ---
 
 # 默认人格
@@ -58,13 +55,11 @@ updatedAt: 2026-06-02T00:00:00.000Z
     writeFileSync(
       join(dataDir, 'rules/core.md'),
       `---
-type: rule
-permanence: always
+source: rule
 name: core
-tags: rule
-weight: 1.0
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
+score: 1.0
+created_at: 2026-06-02T00:00:00.000Z
+accessed_at: 2026-06-02T00:00:00.000Z
 ---
 
 # 核心规则
@@ -91,13 +86,11 @@ updatedAt: 2026-06-02T00:00:00.000Z
     writeFileSync(
       join(dataDir, 'rules/good.md'),
       `---
-type: rule
-permanence: always
+source: rule
 name: good
-tags: rule
-weight: 1.0
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
+score: 1.0
+created_at: 2026-06-02T00:00:00.000Z
+accessed_at: 2026-06-02T00:00:00.000Z
 ---
 
 # 好的文件
@@ -112,35 +105,31 @@ updatedAt: 2026-06-02T00:00:00.000Z
     expect(result.loaded).toBeGreaterThanOrEqual(1);
   });
 
-  it('bootstrap 应该返回 non-personality always + domain 必召记忆（personality 由 PersonaManager 单独处理）', async () => {
-    // 写入 always 类记忆（personality 类型——会被 bootstrap 跳过）
+  it('bootstrap 应该返回 rule + skill 记忆（跳过 persona，由 PersonaManager 单独处理）', async () => {
+    // 写入 persona 记忆（bootstrap 会跳过）
     writeFileSync(
       join(dataDir, 'personas/default.md'),
       `---
-type: personality
-permanence: always
+source: persona
 name: default
-tags: personality
-weight: 1.0
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
+score: 1.0
+created_at: 2026-06-02T00:00:00.000Z
+accessed_at: 2026-06-02T00:00:00.000Z
 ---
 # 人格
 诚实。
 `,
       'utf-8',
     );
-    // 写入 domain 类记忆
+    // 写入 rule 记忆
     writeFileSync(
       join(dataDir, 'rules/coding-style.md'),
       `---
-type: rule
-permanence: domain
+source: rule
 name: coding-style
-tags: rule
-weight: 0.8
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
+score: 0.8
+created_at: 2026-06-02T00:00:00.000Z
+accessed_at: 2026-06-02T00:00:00.000Z
 ---
 
 # 编码规范
@@ -148,54 +137,31 @@ updatedAt: 2026-06-02T00:00:00.000Z
 `,
       'utf-8',
     );
-    // 写入 topic 类记忆（不应该被 bootstrap）
+    // 写入 skill 记忆
     writeFileSync(
-      join(dataDir, 'topics/2026-06-02.md'),
+      join(dataDir, 'skills/writing.md'),
       `---
-type: topic
-permanence: topic
-name: 2026-06-02
-tags: topic
-weight: 0.5
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
+source: skill
+name: writing
+score: 0.7
+created_at: 2026-06-02T00:00:00.000Z
+accessed_at: 2026-06-02T00:00:00.000Z
 ---
 
-# 话题
+# 写作技能
+- 清晰表达
 `,
       'utf-8',
     );
 
     const { memories, loadResult } = await loader.bootstrap();
-    expect(loadResult.loaded).toBe(2); // personality + rules（加载到索引，bootstrap 跳过 personality）
-    // bootstrap 跳过 personality 类型（PersonaManager 单独管理角色注入）
-    expect(memories).toHaveLength(1);
-    const types = memories.map((m) => m.type);
-    expect(types).not.toContain(MemoryType.PERSONALITY);
-    expect(types).toContain(MemoryType.RULE);
-  });
-
-  it('应该不扫描 topics 和 archive 目录', async () => {
-    // 写入 topic 记忆（不应被启动加载）
-    writeFileSync(
-      join(dataDir, 'topics/2026-06-02.md'),
-      `---
-type: topic
-permanence: topic
-name: 2026-06-02
-tags: topic
-weight: 0.5
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
----
-
-# 话题
-`,
-      'utf-8',
-    );
-
-    const result = await loader.loadAllToIndex();
-    expect(result.loaded).toBe(0); // topic 不在启动扫描列表
+    expect(loadResult.loaded).toBe(3); // persona + rule + skill 都加载到索引
+    // bootstrap 只返回 rule 和 skill（跳过 persona，由 PersonaManager 单独管理）
+    expect(memories).toHaveLength(2);
+    const sources = memories.map((m) => m.source);
+    expect(sources).not.toContain(SOURCE_LABELS.PERSONA);
+    expect(sources).toContain(SOURCE_LABELS.RULE);
+    expect(sources).toContain(SOURCE_LABELS.SKILL);
   });
 
   it('list 包含文件但 read 返回 null 时应计入 skipped', async () => {
@@ -206,13 +172,11 @@ updatedAt: 2026-06-02T00:00:00.000Z
     writeFileSync(
       join(dataDir, 'rules/good.md'),
       `---
-type: rule
-permanence: always
+source: rule
 name: good
-tags: rule
-weight: 1.0
-createdAt: 2026-06-02T00:00:00.000Z
-updatedAt: 2026-06-02T00:00:00.000Z
+score: 1.0
+created_at: 2026-06-02T00:00:00.000Z
+accessed_at: 2026-06-02T00:00:00.000Z
 ---
 
 # 好的文件

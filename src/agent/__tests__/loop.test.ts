@@ -8,18 +8,18 @@ import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 
+/**
+ * 创建测试用 Memory 对象
+ */
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:1',
-    type: 'personality',
-    permanence: 'always',
-    name: 'test-personality',
     content: '你是一个测试助手',
-    tags: ['test'],
-    weight: 1.0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-    filePath: '/test/personality.md',
+    source: 'persona',
+    name: 'test-personality',
+    created_at: '2026-01-01T00:00:00.000Z',
+    accessed_at: '2026-01-01T00:00:00.000Z',
+    score: 1.0,
     ...overrides,
   };
 }

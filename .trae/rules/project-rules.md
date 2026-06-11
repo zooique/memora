@@ -25,8 +25,8 @@ date: 2026-06-11
 3. **跨文档引用规范**：详见
    [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
 4. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
-   `memory_type + permanence` 区分
-5. **单 Agent 模型 + 三层架构**：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）；memora.db 和 TopicStore 是 Agent 级共享资源，不随子项目切换重建
+   `source` 开放字符串区分（详见 [ADR-004](./decisions/ADR-004-memory-unification.md)）
+5. **单 Agent 模型 + 三层架构**：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）；memora.db 是 Agent 级共享资源，不随子项目切换重建
 6. **配置文件是真理源**：configDir
    下的配置文件由 MemoryLoader 启动时扫描加载到 SQLite；SQLite 是运行时索引，不是持久化配置存储
 7. **零依赖内核**：memora 是纯逻辑库，不依赖任何 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 仅允许纯 JS 工具库
@@ -49,7 +49,7 @@ date: 2026-06-11
 src/
 ├── index.ts        # 库导出入口（纯类型 + 接口导出，无 CLI）
 ├── agent/          # Agent Loop + 工具执行 + 对话快照 + 作品投影
-├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 管理器）
+├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
 ├── llm/            # LLM 适配层
@@ -88,16 +88,16 @@ chore: 升级 dependencies
 ## 6. 阶段一交付物
 
 - ✅ 项目骨架可编译、可运行
-- ✅ 5 种记忆类型 schema 校验通过
+- ✅ 基元驱动记忆模型（source 开放字符串，7 核心字段）
 - ✅ IMemoryStorage 接口 + InMemoryStorage 实现（测试用）
 - ✅ 路径白名单 6 个测试用例通过
 - ✅ LLM Provider Mock 集成测试通过
 - ✅ Agent 设定减法（3 模块：设定 + 角色 + 技能）
-- ✅ 单 Agent 模型（memora.db + TopicStore Agent 级共享）
+- ✅ 单 Agent 模型（memora.db Agent 级共享）
 - ✅ 三层架构（Agent 级配置 → 用户记忆 → 项目级配置）
 - ✅ 角色自动匹配 + 手动切换
 - ✅ 项目 rules/skills 接口（addRule + registerTool）
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
-- ✅ 测试 449 全量通过（InMemoryStorage，零 IO）
+- ✅ 测试 310 全量通过（InMemoryStorage，零 IO）

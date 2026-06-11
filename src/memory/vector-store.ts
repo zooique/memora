@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 向量存储 — 纯 JS 实现，内存 + JSON 持久化
  *
  * M-206：语义检索的向量索引层
@@ -18,7 +18,15 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
-import type { EmbeddingService } from './types.js';
+
+/**
+ * 嵌入服务接口（原 memory/types.ts 导出，重构后内联）
+ * 向量存储依赖此接口生成文本嵌入向量
+ */
+export interface EmbeddingService {
+  embed(text: string): Promise<number[]>;
+  batchEmbed(texts: string[]): Promise<Array<{ id: string; vector: number[] }>>;
+}
 
 /**
  * 向量条目：ID + 向量

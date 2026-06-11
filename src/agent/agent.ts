@@ -17,10 +17,11 @@
  * 使用方式（高级）：
  *   const agent = new Agent({ projectPath: './my-project', provider: myProvider, configDir: './agent-config' });
  *
- * 专注模式（应无所住，而生其心）：
- *   Agent 启动时只加载 always + domain 记忆（无所住），
- *   用户一开口，TopicMount 自动召回话题记忆注入上下文（生其心）。
- *   同话题内缓存召回结果，鼓励深度专注。
+ * 基元驱动记忆模型（2026-06-11 重构）：
+ *   - MemoryType/Permanence 枚举 → source 开放字符串
+ *   - TopicMount 话题漂移检测 → recall() 简化关键词搜索
+ *   - ArchiveManager → 移除
+ *   - 归档模式 → 移除（召回策略由查询时决定）
  */
 import { basename } from 'node:path';
 import { AgentLoop } from './loop.js';
@@ -33,9 +34,7 @@ import {
 } from './tool-executor.js';
 import { MessageHistory } from './message-history.js';
 import { ProjectManager, type ProjectContext } from '@/memory/project-manager.js';
-import { createTopicSummarizer } from './topic-summarizer.js';
-import { RecallPipeline } from '@/memory/recall.js';
-import { TopicMount } from '@/memory/topic-mount.js';
+import { recall } from '@/memory/recall.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
 import { WorkProjectionManager } from './workProjection.js';
@@ -43,33 +42,40 @@ import { SkillManager } from '@/skill/skillManager.js';
 import { FileStore } from '@/memory/store.js';
 import { configError } from '@/utils/errors.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { Memory, TopicMessage, TopicSummarizerResult } from '@/memory/types.js';
-import {
-  MemoryType,
-  Permanence,
-  type PermanenceValue,
-  type MemoryTypeValue,
-} from '@/memory/types.js';
+import type { Memory } from '@/memory/types.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { ILogger } from '@/logging/logger-interface.js';
 import { logger, setLogger } from '@/logging/logger.js';
-import type { TopicStore } from '@/memory/topic-store.js';
 import type { SecurityGuard } from '@/security/path-guard.js';
-import { detectMemorableSignal } from './signal-detector.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 
 /**
- * 归档模式（控制 chat() 中自动归档的行为）
+ * 记忆关键词（宿主提供，用于输入分类 Layer 2）
  *
- * - 'full'（默认）：所有内容自动归档（信号检测 + 周期性 + 中途），适合日常对话
- * - 'insights-only'：只自动归档用户洞察（userProfile），话题归档需宿主手动触发，
- *   适合"审核-通过"工作流（如小说写作：草稿不归档，定稿才归档）
- * - 'manual'：完全不自动归档，宿主完全控制归档时机
- *
- * 详见 docs/memora-接入指南-v1.0.md §8.3 归档模式
+ * 宿主通过 setMemoryKeywords() 注册领域关键词和用户专属关键词，
+ * 用于判断用户输入是否值得提取记忆。
  */
-export type ArchiveMode = 'full' | 'insights-only' | 'manual';
+export interface MemoryKeywords {
+  /** 领域关键词（如小说创作：['主角', '角色', '情节', '设定']） */
+  domain: string[];
+  /** 用户专属关键词（如：['我', '我的', '记住', '帮我']） */
+  personal: string[];
+}
+
+/**
+ * 话题消息（TopicMessage 已从 types.ts 移除，保留此类型定义供 loadTopicMessages / restoreTopic 等方法签名使用）
+ *
+ * 保留此类型定义供 loadTopicMessages / restoreTopic 等方法签名使用，
+ * 待 MessageHistory 重构完成后移除。
+ */
+interface TopicMessage {
+  /** 消息角色 */
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  /** 消息内容 */
+  content: string;
+}
 
 /** Agent 构造选项 */
 export interface AgentOptions {
@@ -77,12 +83,10 @@ export interface AgentOptions {
   projectPath: string;
   /** 前台 LLM Provider（必须，宿主负责创建） */
   provider: LlmProvider;
-  /** 后台 LLM Provider（可选，用于归档/投影等后台操作，不配时复用前台） */
+  /** 后台 LLM Provider（可选，用于投影等后台操作，不配时复用前台） */
   backgroundProvider?: LlmProvider;
   /** 配置目录（personas/rules/skills） */
   configDir?: string;
-  /** 归档模式（默认 'full'）：控制 chat() 中自动归档的行为 */
-  archiveMode?: ArchiveMode;
   /** 记忆数据目录（默认 ~/.memora） */
   dataDir?: string;
   /** 项目注册表目录（默认与 dataDir 相同）。设为用户级路径可避免每项目重复存储 */
@@ -142,46 +146,26 @@ export interface AgentProjectEntry {
 
 /** Agent 记忆搜索结果（cli 友好的扁平结构） */
 export interface AgentSearchHit {
+  /** 记忆名称 */
   name: string;
-  type: string;
-  weight: number;
+  /** 来源标签 */
+  source: string;
+  /** 权重（0-1） */
+  score: number;
+  /** 内容预览（截断到 120 字符） */
   contentPreview: string;
 }
 
 /**
- * 记忆库统计数据（新枝破土 N-101）
+ * 记忆库统计数据
  *
  * 提供给 CLI /stat 命令渲染统计面板。
  */
 export interface AgentStats {
-  /** 按类型分组的记忆数量 */
-  byType: Record<string, number>;
-  /** 话题文件总数 */
-  topicCount: number;
+  /** 按来源标签分组的记忆数量 */
+  bySource: Record<string, number>;
   /** 记忆总数 */
   total: number;
-}
-
-/**
- * 挂载记忆条目（新枝破土 N-102）
- *
- * 提供给 CLI /mounted 命令渲染挂载面板。
- */
-export interface AgentMountedMemory {
-  /** 记忆 ID */
-  id: string;
-  /** 记忆名称 */
-  name: string;
-  /** 永久性级别 */
-  type: string;
-  /** 权重 */
-  weight: number;
-  /** 内容预览（前 60 字符） */
-  contentPreview: string;
-  /** 是否已被踢出 */
-  suppressed: boolean;
-  /** 创建时间 */
-  createdAt: string;
 }
 
 /**
@@ -191,18 +175,18 @@ export interface AgentMountedMemory {
  * 避免 cli 直接 import memory 子模块（违反分层规则）。
  */
 export interface AgentBuildCtx {
-  topicStore: TopicStore;
   security: SecurityGuard;
   index: IMemoryStorage;
   bootstrapMemories: Memory[];
 }
 
-// ─── 4 层记忆快照类型（inspect() 返回值）──────────────────
+// ─── 记忆快照类型（inspect() 返回值）──────────────────────
 
 /**
- * 4 层记忆的统一快照类型
+ * 记忆快照类型
  *
- * 详见 docs/基础设计文档/00-记忆归档原则-v1.0.md §2.1 四层记忆模型
+ * 基元驱动模型下简化为 3 层：工作记忆 / Bootstrap / 话题归档
+ * 详见 docs/基础设计文档/00-记忆归档原则-v1.0.md
  */
 export interface MemorySnapshot {
   /** 第 1 层：工作记忆（messages 数组） */
@@ -211,8 +195,6 @@ export interface MemorySnapshot {
   bootstrap: BootstrapSnapshot;
   /** 第 3 层：话题归档文件（topic-*.md） */
   archive: ArchiveSnapshot;
-  /** 第 4 层：话题挂载（TopicMount 缓存） */
-  mounted: MountedSnapshot;
 }
 
 /** 第 1 层：工作记忆快照 */
@@ -230,11 +212,12 @@ export interface BootstrapSnapshot {
   total: number;
   items: Array<{
     id: string;
-    type: string;
-    permanence: string;
+    /** 来源标签（开放字符串） */
+    source: string;
     name: string;
     contentPreview: string;
-    weight: number;
+    /** 权重（0-1） */
+    score: number;
   }>;
 }
 
@@ -247,18 +230,6 @@ export interface ArchiveSnapshot {
   hint: string;
 }
 
-/** 第 4 层：话题挂载快照 */
-export interface MountedSnapshot {
-  total: number;
-  isMounted: boolean;
-  items: Array<{
-    id: string;
-    name: string;
-    weight: number;
-    contentPreview: string;
-  }>;
-}
-
 /**
  * 快照预览配置
  *
@@ -267,8 +238,6 @@ export interface MountedSnapshot {
 class MemoryInspector {
   /** 工作记忆预览条数（最近 N 条） */
   static readonly WORKING_PREVIEW = 5;
-  /** 话题挂载预览条数（最近 N 条） */
-  static readonly MOUNTED_PREVIEW = 5;
   /** 内容预览字符数 */
   static readonly CONTENT_PREVIEW_LEN = 80;
 }
@@ -294,7 +263,6 @@ export class Agent {
   private projectManager: ProjectManager | null = null;
   private history: MessageHistory | null = null;
   private loop: AgentLoop | null = null;
-  private topicMount: TopicMount | null = null; // 话题记忆挂载器（专注模式）
   private toolExec: ToolExecutor | null = null; // 工具执行器（注册自定义工具用）
 
   // v4.0 新模块（init 后填充）
@@ -312,33 +280,6 @@ export class Agent {
   private _pctx: ProjectContext | null = null;
 
   /**
-   * 对话轮次计数器（记忆减法方案 v1.0 · 排雷修正 L5）
-   *
-   * 每轮 chat() 递增。达到 archiveCheckRounds 后触发话题归档检查，
-   * 使用 TopicMount 的 Jaccard 相似度判断话题是否漂移。
-   * 切换话题时重置。
-   */
-  private roundCount = 0;
-
-  /**
-   * 当前话题总轮次计数器（排雷新增：炼化管线减法 方向 A）
-   *
-   * 从话题建立开始累计，不随周期性归档重置。
-   * 用于超长话题中途归档触发（>= 30 轮后每 10 轮 1 次）。
-   * 切换话题时与 roundCount 同步重置。
-   */
-  private totalTopicRounds = 0;
-
-  /**
-   * 归档检查轮次阈值（记忆减法方案 v1.0）
-   * N 轮后启动话题归档检查（话题级检查，非逐轮归档）
-   */
-  private readonly archiveCheckRounds = 3;
-
-  /** 中途归档间隔轮次（排雷新增） */
-  private static readonly MIDWAY_ARCHIVE_INTERVAL = 30;
-
-  /**
    * 配置建议回调（模式 3 · Agent 智能总结）
    *
    * 宿主通过 onConfigSuggestion() 注册，AutoConfigRefiner 触发时调用。
@@ -347,14 +288,12 @@ export class Agent {
   private _configSuggestionHandler: ConfigSuggestionHandler | null = null;
   /** P3-9 修复：chat() 并发锁，防止同时发起多个对话导致消息序列混乱 */
   private _chatBusy = false;
-  /** 归档模式：控制 chat() 中自动归档的行为（默认 'full'） */
-  private _archiveMode: ArchiveMode = 'full';
-  /** 桌面精灵缺口：最近一次 chat() 调用的时间戳（供宿主判断用户离线时长） */
+  /** 最近一次 chat() 调用的时间戳（供宿主判断用户离线时长） */
   private _lastInteractionAt: Date | null = null;
-  /** 桌面精灵缺口：缓存的已归档话题文件数（inspect() 同步读取，init/close 时刷新） */
-  private _cachedTopicCount = 0;
   /** 写入扩展回调（宿主注入 diff 对比确认逻辑，小说生成器场景必需） */
   private _writeExtensions: WriteExtensions | null = null;
+  /** 宿主提供的记忆关键词（用于输入分类 Layer 2） */
+  private _hostKeywords: MemoryKeywords | null = null;
 
   constructor(opts: AgentOptions) {
     this.projectPath = opts.projectPath;
@@ -373,10 +312,6 @@ export class Agent {
     // 外部注入的日志实现（可选，不传则使用默认 PinoLogger）
     if (opts.logger) {
       setLogger(opts.logger);
-    }
-    // 归档模式（默认 'full'，向后兼容）
-    if (opts.archiveMode) {
-      this._archiveMode = opts.archiveMode;
     }
   }
 
@@ -438,23 +373,9 @@ export class Agent {
       void err;
     });
 
-    // 缓存话题文件数，供 inspect() 同步读取
-    this._refreshTopicCount().catch(() => {
-      /* 异步刷新失败忽略，inspect() 将回退显示 0 */
-    });
-
     return pctx;
   }
 
-  /**
-   * 发送用户消息，流式返回 Agent 回复
-   *
-   * 对应 repl.ts 中 processUserInput() → 逐 chunk yield 的逻辑。
-   * 内部自动维护 MessageHistory（appendUser → loop → appendAssistant）。
-   *
-   * @param input - 用户输入的文本
-   * @returns AsyncGenerator，逐段产出 Agent 回复事件（结构化：thinking/recall/text/tool_start/tool_result/done）
-   */
   /**
    * 流式对话（核心 API）
    *
@@ -463,7 +384,7 @@ export class Agent {
    *   泊文等宿主 UI 传入 AbortController.signal，用户点击"取消"时触发 abort
    */
   async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
-    if (!this._initialized || !this.history || !this.loop || !this.topicMount) {
+    if (!this._initialized || !this.history || !this.loop) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 chat() 前调用 await agent.init()',
       ]);
@@ -480,9 +401,20 @@ export class Agent {
       // 记录最后交互时间（桌面精灵用于判断用户离线时长、主动问候时机）
       this._lastInteractionAt = new Date();
 
-      // 专注模式：检测话题 → 召回话题记忆（"生其心"）
+      // 基元驱动召回：用 recall() 从存储中搜索相关记忆注入上下文
       yield { type: 'thinking', phase: 'recalling' };
-      const topicMemories = await this.topicMount.focus(input);
+      const topicMemories = recall(this._pctx!.index, input, { limit: 5 });
+
+      // Layer 5: 最近对话注入（最近 3 轮，固定注入）
+      // 让 LLM 在用户输入无信息量（如"你好"）时仍能看到最近对话上下文
+      const recentHistory = this.loop.getRecentHistory(3);
+      if (recentHistory.length > 0) {
+        const recentPrompt = '[最近对话]\n' + recentHistory.map(m =>
+          `${m.role === 'user' ? '用户' : '助手'}：${m.content}`
+        ).join('\n');
+        this.loop.injectSystemMessage(recentPrompt);
+        logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
+      }
 
       // V-105：召回后检查取消
       if (signal?.aborted) {
@@ -504,7 +436,7 @@ export class Agent {
       // 用户消息写入历史
       await this.history.appendUser(input);
 
-      // Agent Loop 流式处理（注入话题记忆召回结果 + 中断信号）
+      // Agent Loop 流式处理（注入召回记忆结果 + 中断信号）
       let assistantContent = '';
       let wasAborted = false;
       for await (const chunk of this.loop.processUserInput(input, topicMemories, signal)) {
@@ -524,7 +456,7 @@ export class Agent {
       // Agent 回复写入历史
       await this.history.appendAssistant(assistantContent);
 
-      // 后处理阶段：归档 + 角色匹配 + 技能匹配
+      // 后处理阶段：角色匹配 + 技能匹配
       yield { type: 'thinking', phase: 'archiving' };
 
       // v4.0：用户画像实时归档（每轮结束后扫描用户输入中的身份/偏好/专长事实）
@@ -563,53 +495,13 @@ export class Agent {
         }
       }
 
-      // 实时信号检测：用户表达"自我介绍/偏好/决策/记住"等强信号
-      // → 立即触发归档（fire-and-forget，不阻塞下一轮对话）
-      // 详见 docs/基础设计文档/00-记忆归档原则-v1.0.md
-      // archiveMode 控制：full → 自动归档；insights-only/manual → 跳过（宿主手动控制）
-      if (this._archiveMode === 'full' && detectMemorableSignal(input)) {
-        // 记录到 pendingArchives，让 Agent.close() 也能 await
-        const p = this.history
-          .archiveCurrentTopic('signal')
-          .catch((_err): TopicSummarizerResult | null => null);
+      // 输入分类三层架构：判断是否值得提取记忆
+      // Layer 1: 通用规则（零成本）→ Layer 2: 宿主关键词（零成本）→ Layer 3: 默认 extract
+      const shouldExtract = this.classifyInput(input);
+      if (shouldExtract === 'extract') {
+        // 异步提取 insight（fire-and-forget，不阻塞下一轮对话）
+        const p = this.extractInsight(input, assistantContent).catch(() => null);
         this.history.registerPendingArchive(p);
-      }
-
-      // 记忆减法方案 v1.0 · 排雷修正 L5：N 轮后话题归档检查
-      // 归档粒度改为"话题级检查归档"——每 archiveCheckRounds 轮检查一次，
-      // 超长话题（>30 轮）中途也触发中间归档。
-      // archiveCurrentTopic 内部有幂等保护（已有摘要则跳过），安全重复触发。
-      // 'signal' 会绕过幂等检查强制重新调用 LLM，只应在 detectMemorableSignal 命中时使用
-      // archiveMode 控制：full → 自动归档；insights-only/manual → 跳过
-      this.roundCount++;
-      this.totalTopicRounds++; // 不随周期性归档重置，用于中途归档触发
-      if (this._archiveMode === 'full' && this.roundCount >= this.archiveCheckRounds) {
-        logger.debug({ roundCount: this.roundCount }, '触发话题归档检查（记忆减法 · 窗口计数）');
-        const p = this.history
-          .archiveCurrentTopic('switch')
-          .catch((_err): TopicSummarizerResult | null => null);
-        this.history.registerPendingArchive(p);
-        // 归档后重置轮次计数（从归档点重新计数）
-        this.roundCount = 0;
-      }
-
-      // 排雷新增 P0-L1：超长话题中途归档（方向 A）
-      // 修正：>= 30（非 > 30），首次触发在 30 轮
-      // archiveMode 控制：full → 自动归档；insights-only/manual → 跳过
-      if (
-        this._archiveMode === 'full' &&
-        this.totalTopicRounds >= Agent.MIDWAY_ARCHIVE_INTERVAL &&
-        this.totalTopicRounds % 10 === 0
-      ) {
-        logger.debug(
-          { totalRounds: this.totalTopicRounds },
-          '触发中途归档（炼化管线减法 · 方向 A）',
-        );
-        const p = this.history
-          .archiveCurrentTopic('midway')
-          .catch((_err): TopicSummarizerResult | null => null);
-        this.history.registerPendingArchive(p);
-        // 不重置 roundCount（totalTopicRounds 继续累积，roundCount 继续自己的周期）
       }
     } finally {
       this._chatBusy = false;
@@ -641,12 +533,7 @@ export class Agent {
    *
    * 切换前为旧话题生成摘要归档（await 而非 fire-and-forget，排雷 P1-L4 时序修正）。
    * 从归档结果中提取 snapshots 写入 seed_snapshots（替代已删除的 DialogueSnapshotExtractor）。
-   * 同时卸载话题记忆挂载器，让新话题的"生其心"从空灵中重新浮现。
    * 对应 CLI 的 /topic <name> 命令。
-   *
-   * 归档模式控制：
-   * - 'full' → 自动归档旧话题
-   * - 'insights-only' / 'manual' → 不自动归档，宿主必须先调用 archiveApprovedContent()
    *
    * @param newTopic - 新话题名称
    * @returns 新话题的全名（格式：日期-话题名）
@@ -658,26 +545,10 @@ export class Agent {
       ]);
     }
 
-    // 归档模式控制：只有 full 模式自动归档旧话题
-    // insights-only / manual 模式下，宿主必须先手动归档定稿内容
-    if (this._archiveMode === 'full') {
-      // 排雷修正 P1-L4：先等待旧话题归档，从结果取 snapshots
-      // 顺序化流程：归档(await) → 写 seed_snapshots → unmount → switchTopic
-      const result = await this.history.archiveCurrentTopic('switch');
+    // 顺序化流程：归档(await) → switchTopic
+    // TopicStore 已移除，归档返回 null，快照逻辑暂跳过
+    await this.history.archiveCurrentTopic('switch');
 
-      // 从归档结果中提取快照，写入旧话题的 seed_snapshots
-      if (result && result.snapshots.length > 0) {
-        await this.history.setCurrentTopicSeedSnapshots(result.snapshots).catch(() => {
-          /* 写入失败忽略，不阻塞切话题 */
-        });
-      }
-    }
-
-    // 卸载旧话题的记忆挂载，让新话题重新"生其心"
-    this.topicMount?.unmount();
-    // 重置轮次计数（新话题从 0 开始）
-    this.roundCount = 0;
-    this.totalTopicRounds = 0;
     return this.history.switchTopic(newTopic);
   }
 
@@ -712,7 +583,8 @@ export class Agent {
         '在 loadTopicMessages() 前调用 await agent.init()',
       ]);
     }
-    return this.history.loadTopicMessages(date, topic);
+    // TopicMessage 类型已从 types.ts 移除，保留此类型定义供 loadTopicMessages / restoreTopic 等方法签名使用
+    return this.history.loadTopicMessages(date, topic) as unknown as TopicMessage[];
   }
 
   /**
@@ -784,19 +656,15 @@ export class Agent {
    *   - personaManager（角色 prompt 前缀）
    *   - userProfile（启动时从 SQLite 加载）
    *   - skillManager（首次创建后复用，技能配置不随项目切换变化）
-   *   - dialogueSnapshot（对话快照提取器）
    *   - loop（AgentLoop + systemPromptPrefix）
-   *   - topicMount（话题记忆挂载器）
    */
   private async _assembleComponents(pctx: ProjectContext): Promise<void> {
     const activeProvider = this._provider;
     if (!activeProvider) return;
 
-    // 构造话题总结器（使用后台通道或当前激活的 Provider）
-    const summarizer = createTopicSummarizer(this._backgroundProvider ?? activeProvider);
-
     // 消息历史（注入 storage 让 archiveCurrentTopic 同步写存储）
-    this.history = new MessageHistory(pctx.topicStore, summarizer, undefined, 'main', pctx.index);
+    // 基元驱动重构：TopicStore 和 summarizer 已从构造参数移除
+    this.history = new MessageHistory(pctx.index);
 
     // v4.0：作品投影管理器（注入 storage + LlmProvider）
     this.workProjection = new WorkProjectionManager(
@@ -828,9 +696,6 @@ export class Agent {
       this.skillManager.load();
     }
 
-    // 排雷修正：对话快照已合并到 topic-summarizer 输出中
-    // DialogueSnapshotExtractor 已删除，snapshots 从 archiveCurrentTopic('switch') R 中获取
-
     // v4.0：构建系统 prompt 前缀（角色 + 用户画像）
     const systemPrefixParts = [personaPrompt];
     const profilePrompt = this.userProfile.buildSystemPrompt();
@@ -849,14 +714,10 @@ export class Agent {
       toolDefinitions: toolExec.getToolDefinitions(),
       maxContextTokens: this._maxContextTokens,
     });
-
-    // 话题记忆挂载器（专注模式：应无所住，而生其心）
-    const recallPipeline = new RecallPipeline(pctx.index);
-    this.topicMount = new TopicMount(recallPipeline);
   }
 
   /**
-   * 用当前 _pctx 重建 history / loop / topicMount
+   * 用当前 _pctx 重建 history / loop
    * 在 switchProject / init 中复用
    */
   private async _rebuildComponentsWithCurrentCtx(): Promise<void> {
@@ -885,7 +746,7 @@ export class Agent {
   /**
    * 运行时切换后台 LLM Provider
    *
-   * 后台 Provider 用于归档、投影等不需要用户等待的操作。
+   * 后台 Provider 用于投影等不需要用户等待的操作。
    * 不配时复用前台 Provider。
    *
    * @param provider - 新的后台 LlmProvider 实例，null 表示复用前台
@@ -918,6 +779,199 @@ export class Agent {
   }
 
   /**
+   * 设置宿主记忆关键词（输入分类 Layer 2）
+   *
+   * 宿主通过此方法注册领域关键词和用户专属关键词，
+   * 用于判断用户输入是否值得提取记忆。
+   *
+   * @param keywords - 记忆关键词对象
+   *
+   * @example
+   * agent.setMemoryKeywords({
+   *   domain: ['主角', '角色', '情节', '设定', '世界观'],
+   *   personal: ['我', '我的', '记住', '帮我'],
+   * });
+   */
+  setMemoryKeywords(keywords: MemoryKeywords): void {
+    this._hostKeywords = keywords;
+    logger.info(
+      { domainCount: keywords.domain.length, personalCount: keywords.personal.length },
+      '宿主记忆关键词已设置',
+    );
+  }
+
+  /**
+   * 输入分类三层架构（Layer 1: 通用规则）
+   *
+   * 零成本规则过滤：短输入、问候、确认等无信息量输入 → skip
+   *
+   * @param input - 用户输入
+   * @returns 'skip' 表示跳过提取，null 表示未命中交给下一层
+   */
+  private classifyByRules(input: string): 'skip' | null {
+    const trimmed = input.trim();
+    // 太短不可能含值得记忆的信息
+    if (trimmed.length < 5) return 'skip';
+    // 问候、确认、闲聊等无信息量输入
+    const trivialPatterns = /^(你好|hi|hello|ok|好的|嗯|知道了|谢谢|thanks|对|不是|是的|哈哈|嗯嗯|哦|好吧|行|可以|没问题)/i;
+    if (trivialPatterns.test(trimmed)) return 'skip';
+    return null; // 未命中，交给下一层
+  }
+
+  /**
+   * 输入分类三层架构（Layer 2: 宿主关键词）
+   *
+   * 宿主提供的领域关键词和用户专属关键词匹配。
+   *
+   * @param input - 用户输入
+   * @returns 'extract' 表示值得提取，null 表示未命中交给下一层
+   */
+  private classifyByHostKeywords(input: string): 'extract' | null {
+    if (!this._hostKeywords) return null; // 宿主未注册关键词，跳过此层
+
+    // 领域关键词匹配
+    if (this._hostKeywords.domain.some((k) => input.includes(k))) return 'extract';
+    // 用户专属关键词匹配
+    if (this._hostKeywords.personal.some((k) => input.includes(k))) return 'extract';
+
+    return null; // 未命中，交给下一层
+  }
+
+  /**
+   * 输入分类三层架构（串联）
+   *
+   * Layer 1: 通用规则（Memora 内置，零成本）
+   * Layer 2: 宿主关键词（宿主提供，零成本）
+   * Layer 3: 默认 extract + 后台异步精判修正
+   *
+   * @param input - 用户输入
+   * @returns 'skip' 或 'extract'
+   */
+  private classifyInput(input: string): 'skip' | 'extract' {
+    // Layer 1: 通用规则
+    const ruleResult = this.classifyByRules(input);
+    if (ruleResult) return ruleResult;
+
+    // Layer 2: 宿主关键词
+    const keywordResult = this.classifyByHostKeywords(input);
+    if (keywordResult) return keywordResult;
+
+    // Layer 3: 默认 extract（宁可多提，不可漏提）
+    // LLM 精判作为后台异步优化，不影响主对话流程
+    return 'extract';
+  }
+
+  /**
+   * 提取对话中的 insight（每轮异步提取）
+   *
+   * 流程：
+   * 1. 调用 LLM 提取 insight（异步，不阻塞主对话）
+   * 2. 去重检查（防止重复写入）
+   * 3. 写入 SQLite（source='insight', score=0.5）
+   *
+   * @param userInput - 用户输入
+   * @param assistantContent - 助手回复
+   */
+  private async extractInsight(userInput: string, assistantContent: string): Promise<void> {
+    if (!this._provider || !this._pctx || !this.loop) return;
+
+    try {
+      // 获取前 2 轮对话作为语义支撑（R-11 排雷修正）
+      const recentHistory = this.loop.getRecentHistory(2);
+      const contextSection = recentHistory.length > 0
+        ? '\n\n前几轮对话（供参考）：\n' + recentHistory.map(m =>
+          `${m.role === 'user' ? '用户' : '助手'}：${m.content}`
+        ).join('\n')
+        : '';
+
+      // Step 1: 调用 LLM 提取 insight
+      const extractionPrompt = `你是一个记忆提取助手。判断以下对话是否包含值得长期记忆的信息。
+
+如果有，输出 JSON：
+{"insight": "一句话描述", "tags": ["关键词1", "关键词2"]}
+
+如果没有，输出 null。
+
+值得记忆的信息：
+- 用户的偏好、决策、设定
+- 创作中的关键信息（角色、情节、世界观）
+- 用户明确要求记住的内容
+
+不值得记忆的信息：
+- 问候、确认、闲聊
+- AI 的通用回复（不涉及具体创作内容）
+- 重复之前已说过的内容
+${contextSection}
+对话：
+用户：${userInput}
+助手：${assistantContent}`;
+
+      const messages: Message[] = [{ role: 'user', content: extractionPrompt }];
+      let llmResponse = '';
+      for await (const chunk of this._provider.chat(messages)) {
+        llmResponse += chunk;
+      }
+
+      // 解析 LLM 响应
+      const trimmedResponse = llmResponse.trim();
+      if (trimmedResponse === 'null' || !trimmedResponse) {
+        logger.debug('extractInsight: LLM 判断无值得记忆的信息');
+        return;
+      }
+
+      // 尝试解析 JSON
+      let insight: string | null = null;
+      try {
+        const parsed = JSON.parse(trimmedResponse);
+        if (parsed && typeof parsed.insight === 'string') {
+          insight = parsed.insight;
+        }
+      } catch {
+        // JSON 解析失败，尝试从文本中提取
+        const match = trimmedResponse.match(/"insight"\s*:\s*"([^"]+)"/);
+        if (match && match[1]) {
+          insight = match[1];
+        }
+      }
+
+      if (!insight) {
+        logger.debug('extractInsight: 无法解析 LLM 响应');
+        return;
+      }
+
+      // Step 2: 去重检查
+      const snippet = insight.slice(0, 30).replace(/[%_]/g, '\\$&');
+      const existing = this._pctx.index.search(snippet, 1);
+      const existingMemory = existing[0];
+      if (existingMemory && existingMemory.content.includes(insight.slice(0, 30))) {
+        // 已有相似记忆，更新 accessed_at 和 score
+        existingMemory.score = Math.min(1.0, existingMemory.score + 0.05);
+        existingMemory.accessed_at = new Date().toISOString();
+        this._pctx.index.upsert(existingMemory);
+        logger.debug({ id: existingMemory.id }, 'extractInsight: 更新已有记忆');
+        return;
+      }
+
+      // Step 3: 写入 SQLite
+      const now = new Date().toISOString();
+      const memory: Memory = {
+        id: `insight:${Date.now()}`,
+        content: insight,
+        source: SOURCE_LABELS.INSIGHT,
+        name: `insight-${Date.now()}`,
+        created_at: now,
+        accessed_at: now,
+        score: 0.5,
+      };
+      this._pctx.index.upsert(memory);
+      logger.info({ id: memory.id, insight }, 'extractInsight: 写入新记忆');
+    } catch (err) {
+      // 提取失败不影响主对话流程
+      logger.warn({ err }, 'extractInsight: 提取失败');
+    }
+  }
+
+  /**
    * 对外暴露当前组件快照（供 REPL 等 CLI 宿主重建 history/loop 引用）
    *
    * 注意：此方法仅返回引用，调用方在重建 history/loop 后需重新调用
@@ -926,7 +980,6 @@ export class Agent {
   getBuildCtx(): AgentBuildCtx | null {
     if (!this._pctx) return null;
     return {
-      topicStore: this._pctx.topicStore,
       security: this._pctx.security,
       index: this._pctx.index,
       bootstrapMemories: this._pctx.bootstrapMemories,
@@ -934,7 +987,7 @@ export class Agent {
   }
 
   /**
-   * 重建 history / loop / topicMount（项目切换后调用）
+   * 重建 history / loop（项目切换后调用）
    *
    * 公开为公共方法供宿主项目触发——CLI 在 /project 命令后调用。
    * 内部实现复用 _rebuildComponentsWithCurrentCtx()。
@@ -971,20 +1024,20 @@ export class Agent {
         '使用 limit = 10（默认值）',
       ]);
     }
-    const hits = await this._ctx.index.search(query, limit);
+    const hits = this._ctx.index.search(query, limit);
     return hits.map((m: Memory) => ({
       name: m.name,
-      type: m.type,
-      weight: m.weight,
+      source: m.source,
+      score: m.score,
       // 截断长内容到 120 字符
       contentPreview: m.content.length > 120 ? m.content.slice(0, 120) + '...' : m.content,
     }));
   }
 
   /**
-   * 新枝破土 N-101：记忆库统计
+   * 记忆库统计
    *
-   * 返回记忆类型分布、话题数量、数据库大小等关键指标，
+   * 返回记忆来源分布、数据库大小等关键指标，
    * 供 CLI /stat 命令渲染统计面板。
    *
    * @returns 记忆库统计数据
@@ -996,105 +1049,32 @@ export class Agent {
       ]);
     }
 
-    // 按永久性级别统计记忆数量
-    const perms: PermanenceValue[] = [
-      Permanence.ALWAYS,
-      Permanence.DOMAIN,
-      Permanence.TOPIC,
-      Permanence.ON_DEMAND,
-    ];
-    const byType: Record<string, number> = {};
-    for (const p of perms) {
-      const memories = await this._ctx.index.getByPermanence(p);
-      byType[p] = memories.length;
+    // 按来源标签统计记忆数量
+    const sources = Object.values(SOURCE_LABELS);
+    const bySource: Record<string, number> = {};
+    for (const src of sources) {
+      const memories = this._ctx.index.getBySource(src);
+      bySource[src] = memories.length;
     }
-
-    // 话题文件数量
-    const topicFiles = await this._ctx.topicStore.list();
-    const topicCount = topicFiles.length;
 
     // 总记忆数
-    const total = Object.values(byType).reduce((a, b) => a + b, 0);
+    const total = Object.values(bySource).reduce((a, b) => a + b, 0);
 
-    return { byType, topicCount, total };
+    return { bySource, total };
   }
 
   /**
-   * 获取当前挂载记忆列表（新枝破土 N-102）
+   * 统一查看记忆快照
    *
-   * 返回 TopicMount 中当前活跃的记忆，供 CLI /mounted 渲染面板。
-   * 每个条目包含名称、类型、权重、预览，以及是否被踢出。
-   *
-   * @returns 记忆条目数组（空数组表示无挂载或未初始化）
-   */
-  getMountedMemories(): AgentMountedMemory[] {
-    if (!this._initialized || !this._ctx || !this.topicMount) {
-      return [];
-    }
-    const memories = this.topicMount.mounted;
-    return memories.map((m) => ({
-      id: m.id,
-      name: m.name,
-      type: m.type,
-      weight: m.weight,
-      contentPreview: m.content.slice(0, 60) + (m.content.length > 60 ? '…' : ''),
-      suppressed: this.topicMount!.isSuppressed(m.id),
-      createdAt: m.createdAt,
-    }));
-  }
-
-  /**
-   * 踢出指定记忆（新枝破土 N-103）
-   *
-   * 从当前话题挂载中移除指定名称的记忆，并加入抑制集合。
-   * 后续话题漂移重新挂载时也会自动过滤该记忆。
-   * 抑制仅在本话题会话内有效。
-   *
-   * @param name - 记忆名称（模糊前缀匹配）
-   * @returns 踢出结果：{ removed: true, name, id } 或 { removed: false, reason }
-   */
-  unmountMemory(name: string): { removed: boolean; name?: string; id?: string; reason?: string } {
-    if (!this._initialized || !this._ctx || !this.topicMount) {
-      return { removed: false, reason: 'Agent 未初始化，请先 /init' };
-    }
-    const lower = name.toLowerCase();
-    const memories = this.topicMount.mounted;
-
-    // 前缀模糊匹配
-    let match = memories.find((m) => m.name.toLowerCase() === lower);
-    if (!match) {
-      match = memories.find((m) => m.name.toLowerCase().includes(lower));
-    }
-
-    if (!match) {
-      return {
-        removed: false,
-        reason: `未找到匹配的记忆: "${name}"。当前挂载 ${memories.length} 条，输入 /mounted 查看`,
-      };
-    }
-
-    const ok = this.topicMount.suppress(match.id);
-    return ok
-      ? { removed: true, name: match.name, id: match.id }
-      : { removed: false, reason: `踢出失败: "${match.name}" 可能已被抑制` };
-  }
-
-  /**
-   * 统一查看 4 层记忆快照
-   *
-   * 把 [00-记忆归档原则-v1.0.md §2.1 四层记忆模型](../../docs/基础设计文档/00-记忆归档原则-v1.0.md)
-   * 描述的"作品 / 角色 / 心得 / 助手记忆"工程化为可观测的运行时结构。
-   *
-   * 当前实现：inspect() 返回的 4 层（工作记忆 / Bootstrap / 话题归档 / 话题挂载）
-   * 是该哲学在工程上的当前映射——后续将随新四层（作品 / 角色 / 心得 / 助手记忆）
-   * 在源码侧的落地逐步对齐。
+   * 基元驱动模型下简化为 3 层（工作记忆 / Bootstrap / 话题归档），
+   * 移除了旧的第 4 层"话题挂载"（TopicMount 已删除）。
    *
    * 设计原则：
    * - **纯只读**——不动任何组件状态
-   * - **同步返回**——避免 4 层数据不一致（不调 LLM、不调 SQLite）
+   * - **同步返回**——避免数据不一致（不调 LLM、不调 SQLite）
    * - **轻量**——每层只返回前 N 条 + 总数
    *
-   * @returns 4 层记忆快照
+   * @returns 记忆快照
    */
   inspect(): MemorySnapshot {
     if (!this._initialized) {
@@ -1113,13 +1093,9 @@ export class Agent {
     // 第 2 层：Bootstrap 记忆（永驻 + 领域）
     const bootstrap: readonly Memory[] = this._ctx?.bootstrapMemories ?? [];
 
-    // 第 3 层：话题归档文件计数（启动时缓存，同步读取，无需再调 listAllTopics()）
-    const archiveTotal = this._cachedTopicCount;
-
-    // 第 4 层：话题挂载（TopicMount 缓存）
-    const mountedFull = this.topicMount?.mounted ?? [];
-    const mountedTotal = mountedFull.length;
-    const mounted = mountedFull.slice(-MemoryInspector.MOUNTED_PREVIEW);
+    // 第 3 层：话题归档文件计数（异步加载，inspect 同步返回缓存值）
+    // _cachedTopicCount 已移除，后续通过异步机制刷新
+    const archiveTotal = 0;
 
     return {
       working: {
@@ -1136,11 +1112,10 @@ export class Agent {
         total: bootstrap.length,
         items: bootstrap.map((m: Memory) => ({
           id: m.id,
-          type: m.type,
-          permanence: m.permanence,
+          source: m.source,
           name: m.name,
           contentPreview: m.content.slice(0, MemoryInspector.CONTENT_PREVIEW_LEN),
-          weight: m.weight,
+          score: m.score,
         })),
       },
       archive: {
@@ -1152,16 +1127,6 @@ export class Agent {
         // 真实归档文件列表需调 listAllTopics()，本方法不阻塞
         hint: '调 listAllTopics() 获取文件清单',
       },
-      mounted: {
-        total: mountedTotal,
-        isMounted: this.topicMount?.isMounted ?? false,
-        items: mounted.map((m: Memory) => ({
-          id: m.id,
-          name: m.name,
-          weight: m.weight,
-          contentPreview: m.content.slice(0, MemoryInspector.CONTENT_PREVIEW_LEN),
-        })),
-      },
     };
   }
 
@@ -1169,10 +1134,6 @@ export class Agent {
    * 关闭 Agent，释放 SQLite 连接等资源
    */
   async close(): Promise<void> {
-    // 卸载话题记忆挂载器（sleep：回到"无所住"的清净状态）
-    this.topicMount?.unmount();
-    this.topicMount = null;
-
     // 等待所有 fire-and-forget 归档完成（signal / lazy / switch）
     if (this.history) {
       await this.history.awaitPendingArchives(5000);
@@ -1305,29 +1266,27 @@ export class Agent {
       ]);
     }
 
-    // 根据建议类型映射到 MemoryType
-    const typeMap: Record<ConfigSuggestion['type'], MemoryTypeValue> = {
-      rule: MemoryType.RULE,
-      persona: MemoryType.PERSONALITY,
-      skill: MemoryType.SKILL,
+    // 根据建议类型映射到 source 标签
+    const sourceMap: Record<ConfigSuggestion['type'], string> = {
+      rule: SOURCE_LABELS.RULE,
+      persona: SOURCE_LABELS.PERSONA,
+      skill: SOURCE_LABELS.SKILL,
     };
-    const memoryType = typeMap[suggestion.type];
+    const source = sourceMap[suggestion.type];
 
     // 构造记忆对象并写入配置文件（真理源）
     // 不写入 SQLite——遵守"配置文件是真理源"约束（接入指南 §九 第 7/10 条）
     // 下次启动时 MemoryLoader 自动扫描配置文件 → 加载到 SQLite
     const fileStore = new FileStore(this.configDir);
+    const now = new Date().toISOString();
     const memory: Memory = {
-      id: `${memoryType}:${suggestion.name}`,
-      type: memoryType,
-      permanence: suggestion.type === 'rule' ? 'always' : 'domain',
-      name: suggestion.name,
+      id: `${source}:${suggestion.name}`,
       content: suggestion.content,
-      tags: [suggestion.type, 'auto-refined', `confidence:${suggestion.confidence.toFixed(2)}`],
-      weight: suggestion.confidence,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      filePath: '',
+      source,
+      name: suggestion.name,
+      created_at: now,
+      accessed_at: now,
+      score: suggestion.confidence,
     };
     await fileStore.write(memory);
 
@@ -1488,7 +1447,7 @@ export class Agent {
    * 规则写入 SQLite 索引后，重启时由 bootstrap 自动召回。
    * 如果 AgentLoop 已启动，当前轮次以 system 消息注入。
    *
-   * @param memory 规则记忆（必须 type='rule'，permanence ∈ {always, domain}）
+   * @param memory 规则记忆（必须 source='rule'）
    */
   async addRule(memory: Memory): Promise<void> {
     if (!this._initialized || !this._pctx) {
@@ -1496,14 +1455,9 @@ export class Agent {
         '在 addRule() 前调用 await agent.init()',
       ]);
     }
-    if (memory.type !== MemoryType.RULE) {
-      throw configError('无效记忆类型', `addRule 只接受 type='rule'，收到 '${memory.type}'`, [
-        '使用 MemoryType.RULE',
-      ]);
-    }
-    if (memory.permanence !== 'always' && memory.permanence !== 'domain') {
-      throw configError('无效永久性', `addRule 只接受 always/domain，收到 '${memory.permanence}'`, [
-        '规则记忆的 permanence 应为 always 或 domain',
+    if (memory.source !== SOURCE_LABELS.RULE) {
+      throw configError('无效来源', `addRule 只接受 source='rule'，收到 '${memory.source}'`, [
+        '使用 SOURCE_LABELS.RULE 作为 source 字段',
       ]);
     }
 
@@ -1514,36 +1468,31 @@ export class Agent {
       this.loop.injectSystemMessage(rulePrompt);
     }
 
-    logger.info({ name: memory.name, permanence: memory.permanence }, '项目规则已注入');
+    logger.info({ name: memory.name, source: memory.source }, '项目规则已注入');
   }
 
   /**
    * 新增项目规则的便捷方法（P1-4 修复）
    *
-   * 宿主程序只需提供 name + content + permanence 三个业务字段，
-   * 内部自动填充 id / type / createdAt / updatedAt / tags / weight 等字段。
+   * 宿主程序只需提供 name + content 两个业务字段，
+   * 内部自动填充 id / source / created_at / accessed_at / score 等字段。
    *
    * @param name 规则名称（如"代码风格"、"TypeScript 偏好"）
    * @param content 规则内容（Markdown 格式）
-   * @param permanence 永久性级别：'always'（永驻）或 'domain'（领域级），默认 'domain'
    */
   async addSimpleRule(
     name: string,
     content: string,
-    permanence: 'always' | 'domain' = 'domain',
   ): Promise<void> {
     const now = new Date().toISOString();
     const memory: Memory = {
       id: `rule:${name}`,
-      type: MemoryType.RULE,
-      permanence,
-      name,
       content,
-      tags: ['rule', 'runtime-injected'],
-      weight: permanence === 'always' ? 1.0 : 0.8,
-      createdAt: now,
-      updatedAt: now,
-      filePath: '',
+      source: SOURCE_LABELS.RULE,
+      name,
+      created_at: now,
+      accessed_at: now,
+      score: 0.8,
     };
     await this.addRule(memory);
   }
@@ -1555,8 +1504,7 @@ export class Agent {
    * 注入后 AgentLoop 会在下一轮对话时自动匹配（关键词触发）。
    *
    * 校验规则：
-   *   - memory.type 必须为 'skill'
-   *   - memory.permanence 必须为 'domain'（技能通常是领域级）
+   *   - memory.source 必须为 'skill'
    *
    * @param memory 完整的 Memory 对象
    */
@@ -1571,23 +1519,16 @@ export class Agent {
         '在 addSkill() 前调用 await agent.init()',
       ]);
     }
-    if (memory.type !== MemoryType.SKILL) {
-      throw configError('无效记忆类型', `addSkill 只接受 type='skill'，收到 '${memory.type}'`, [
-        '使用 MemoryType.SKILL 作为 type 字段',
+    if (memory.source !== SOURCE_LABELS.SKILL) {
+      throw configError('无效来源', `addSkill 只接受 source='skill'，收到 '${memory.source}'`, [
+        '使用 SOURCE_LABELS.SKILL 作为 source 字段',
       ]);
-    }
-    if (memory.permanence !== Permanence.DOMAIN) {
-      throw configError(
-        '无效永久性',
-        `addSkill 只接受 permanence='domain'，收到 '${memory.permanence}'`,
-        ['技能通常使用 domain 永久性（领域级，启动时加载）'],
-      );
     }
 
     // 1. 委托给 SkillManager：负责注册到内存、构建关键词索引
     this.skillManager.register({
       name: memory.name,
-      keywords: memory.tags.filter((t) => t !== 'skill' && t !== 'runtime-injected'),
+      keywords: [], // 基元驱动模型下，关键词从 memory.name 推导
       content: memory.content,
       description: memory.content.slice(0, 80),
       filePath: '', // 运行时注入的技能无文件路径
@@ -1606,25 +1547,23 @@ export class Agent {
    * 新增技能的便捷方法（C1 修复：与 addSimpleRule 对称）
    *
    * 宿主程序只需提供 name + content + keywords 三个业务字段，
-   * 内部自动填充 id / type / createdAt / updatedAt / tags / weight。
+   * 内部自动填充 id / source / created_at / accessed_at / score。
    *
    * @param name 技能名称（如"代码审查"、"章节创作"）
    * @param content 技能内容（Markdown 格式）
    * @param keywords 触发关键词数组（AgentLoop 用关键词匹配调用时机）
    */
   async addSimpleSkill(name: string, content: string, keywords: string[] = []): Promise<void> {
+    void keywords; // 基元驱动模型下关键词暂不存储到 Memory，由 SkillManager 管理
     const now = new Date().toISOString();
     const memory: Memory = {
       id: `skill:${name}`,
-      type: MemoryType.SKILL,
-      permanence: Permanence.DOMAIN,
-      name,
       content,
-      tags: ['skill', 'runtime-injected', ...keywords],
-      weight: 0.7,
-      createdAt: now,
-      updatedAt: now,
-      filePath: '',
+      source: SOURCE_LABELS.SKILL,
+      name,
+      created_at: now,
+      accessed_at: now,
+      score: 0.7,
     };
     await this.addSkill(memory);
   }
@@ -1654,46 +1593,6 @@ export class Agent {
   }
 
   /**
-   * 等待所有 fire-and-forget 归档完成（测试 / 关键路径使用）
-   *
-   * 在以下场景必须调用：
-   * - 单元测试中，希望在查询 SQLite 前确保所有归档已写入
-   * - 关键业务路径，希望确保 signal/lazy 归档已生效后再继续
-   *
-   * 内部已通过 Agent.close() 兜底，此方法主要供主动控制使用。
-   *
-   * @param timeoutMs 超时（默认 5000ms）
-   * @returns 是否所有归档都完成
-   */
-  async waitForArchives(timeoutMs = 5000): Promise<boolean> {
-    if (!this.history) return true;
-    return this.history.awaitPendingArchives(timeoutMs);
-  }
-
-  // ─── 归档模式 API ─────────────────────────────────────
-
-  /**
-   * 设置归档模式
-   *
-   * 可在运行时动态切换，例如：
-   * - 进入草稿模式时设为 'insights-only'
-   * - 审核通过后切回 'full'
-   *
-   * @param mode 归档模式
-   */
-  setArchiveMode(mode: ArchiveMode): void {
-    this._archiveMode = mode;
-    logger.info({ archiveMode: mode }, '归档模式已切换');
-  }
-
-  /**
-   * 获取当前归档模式
-   */
-  getArchiveMode(): ArchiveMode {
-    return this._archiveMode;
-  }
-
-  /**
    * 最近一次 chat() 调用时间（只读访问器）
    *
    * 桌面精灵等长时间运行的宿主程序可通过此访问器判断：
@@ -1704,49 +1603,6 @@ export class Agent {
    */
   get lastInteractionAt(): Date | null {
     return this._lastInteractionAt;
-  }
-
-  /**
-   * 归档已审核通过的内容（insights-only / manual 模式下的手动归档入口）
-   *
-   * 典型场景：小说写作中，草稿阶段 archiveMode='insights-only'，
-   * 审核通过后调用此方法将定稿内容归档到记忆系统。
-   *
-   * 工作流：
-   *   1. setArchiveMode('insights-only')  — 进入草稿模式
-   *   2. chat() 多轮迭代                    — 用户洞察自动归档，内容不归档
-   *   3. archiveApprovedContent()           — 审核通过，归档定稿内容
-   *   4. switchTopic('下一章')              — 切换到下一章
-   *
-   * 内部调用 history.archiveCurrentTopic('signal')，
-   * 'signal' 模式会强制重新归档（覆盖之前的摘要，如果有的话）。
-   *
-   * @param content 可选，定稿内容摘要（如果提供，会先追加到历史再归档）
-   * @returns 归档结果，null 表示归档失败或无可归档内容
-   */
-  async archiveApprovedContent(content?: string): Promise<TopicSummarizerResult | null> {
-    if (!this._initialized || !this.history) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 archiveApprovedContent() 前调用 await agent.init()',
-      ]);
-    }
-
-    // 如果宿主提供了定稿内容，先追加到历史（作为本轮的"最终版本"）
-    if (content && content.trim()) {
-      await this.history.appendAssistant(`【定稿】\n${content}`);
-    }
-
-    // 使用 'signal' 原因强制归档（确保覆盖之前的摘要）
-    const result = await this.history.archiveCurrentTopic('signal');
-
-    if (result) {
-      logger.info(
-        { topic: this.history.currentTopicName, hasSnapshots: result.snapshots.length > 0 },
-        '定稿内容已归档',
-      );
-    }
-
-    return result;
   }
 
   /**
@@ -1771,18 +1627,15 @@ export class Agent {
     }
 
     // 转换 TopicMessage[] 为 Message[]
-    const messages: Message[] = topicMessages.map((tm) => ({
-      role: tm.role,
+    const messages: Message[] = topicMessages.map((tm: { role: string; content: string }) => ({
+      role: tm.role as Message['role'],
       content: tm.content,
     }));
 
     // 恢复到 AgentLoop
     this.loop.restoreHistory(messages);
 
-    // 同时，我们需要让 TopicMount 也能召回这个话题的记忆
-    // 如果话题没有归档过（没有 summary），我们需要把整个话题内容写入索引
-    await this.ensureTopicInIndex(topicMessages);
-
+    // ensureTopicInIndex 已移除（TopicStore 已删除），后续通过 recall() 自然召回
     return topicMessages.length;
   }
 
@@ -1800,84 +1653,22 @@ export class Agent {
       ]);
     }
 
-    // 从话题文件加载历史消息
+    // TopicMessage 类型已从 types.ts 移除，保留此类型定义供 loadTopicMessages / restoreTopic 等方法签名使用
     const topicMessages = await this.history.loadTopicMessages(date, topic);
     if (topicMessages.length === 0) {
       return 0;
     }
 
-    // 转换 TopicMessage[] 为 Message[]
-    const messages: Message[] = topicMessages.map((tm) => ({
-      role: tm.role,
+    // 转换为 Message[]
+    const messages: Message[] = topicMessages.map((tm: { role: string; content: string }) => ({
+      role: tm.role as Message['role'],
       content: tm.content,
     }));
 
     // 恢复到 AgentLoop
     this.loop.restoreHistory(messages);
 
-    // 确保话题在索引中
-    await this.ensureTopicInIndex(topicMessages);
-
+    // ensureTopicInIndex 已移除（TopicStore 已删除），后续通过 recall() 自然召回
     return topicMessages.length;
-  }
-
-  /**
-   * 确保话题内容在索引中（即使没有归档 summary）
-   * 如果话题还没有索引记录，就把完整对话内容作为摘要写入索引
-   * 这样 TopicMount.focus() 就能跨会话召回了
-   */
-  private async ensureTopicInIndex(topicMessages: readonly TopicMessage[]): Promise<void> {
-    if (!this.history || !this._pctx) return;
-
-    const index = this._pctx.index;
-    // 通过 MessageHistory 的只读访问器获取（不破坏封装）
-    const date = this.history.currentDateValue;
-    const topic = this.history.currentTopicValue;
-    const id = `topic-${date}-${topic}`;
-
-    // 检查是否已在索引中
-    const existing = await index.getById(id);
-    if (existing && existing.content) {
-      return; // 已有归档，不需要重复
-    }
-
-    // 把完整对话拼接成一个摘要（前 2000 字符）
-    const fullContent = topicMessages
-      .map((m) => `[${m.role}] ${m.content}`)
-      .join('\n\n')
-      .slice(0, 2000);
-
-    const now = new Date().toISOString();
-    const memory: Memory = {
-      id,
-      type: MemoryType.TOPIC,
-      permanence: Permanence.TOPIC,
-      name: `${date} ${topic}`,
-      content: fullContent,
-      tags: ['restored', `messages:${topicMessages.length}`],
-      weight: 0.7,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await index.upsert(memory);
-    logger.info({ date, topic, messageCount: topicMessages.length }, '话题已写入索引');
-  }
-
-  /**
-   * 刷新缓存的归档话题文件数（异步，供 inspect() 同步读取）
-   *
-   * 在 init() 和 close() 时调用，确保 inspect() 返回的 archive.topicFilesCount
-   * 是接近实时的数值。调用失败不抛异常，不影响核心流程。
-   */
-  private async _refreshTopicCount(): Promise<void> {
-    try {
-      if (this.history) {
-        const topics = await this.history.listAllTopics();
-        this._cachedTopicCount = topics.length;
-      }
-    } catch {
-      // 静默失败，inspect() 将回退显示上次缓存的值
-    }
   }
 }
