@@ -17,7 +17,7 @@ description: Memora 关键决策年轮
 | [ADR-002](./ADR-002-storage-layer.md)       | 存储层抽象：IMemoryStorage 接口 + 可插拔实现 | ✅ 已接受 | 数据层 |
 | [ADR-003](./ADR-003-llm-adapter.md)         | LLM 适配层使用 OpenAI Chat Completions 兼容协议           | ✅ 已接受 | 集成层 |
 | [ADR-004](./ADR-004-memory-unification.md)  | 记忆统一为"类型 + 永久性标记"模型                         | ✅ 已接受 | 架构   |
-| [ADR-005](./ADR-005-cli-first.md)           | CLI 优先于 Web 形态（阶段一交付）                         | ✅ 已接受 | 形态   |
+| [ADR-005](./ADR-005-cli-first.md)           | CLI 优先于 Web 形态（阶段一交付）                         | 🔄 已迁移 | 形态   |
 | [ADR-006](./ADR-006-security-model.md)      | 安全采用两级权限 + 工具白名单 + 路径白名单                | ✅ 已接受 | 安全   |
 | [ADR-007](./ADR-007-testing-strategy.md)    | 测试使用 Vitest + MSW（Mock LLM）                         | ✅ 已接受 | 质量   |
 | [ADR-008](./ADR-008-directory-structure.md) | 目录结构按"职责分层"而非"按类型分层"                      | ✅ 已接受 | 工程   |

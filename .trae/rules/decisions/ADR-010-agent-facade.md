@@ -12,13 +12,12 @@ description: Agent 门面类（宿主项目接入入口）
 
 ## 背景
 
-Memora 需要同时支持两种使用形态：
+Memora 需要支持宿主项目接入：
 
-1. **CLI 模式**：用户通过终端交互
-2. **库模式**：宿主项目通过 API 调用
+1. **库模式**：宿主项目通过 API 调用
+2. ~~**CLI 模式**：用户通过终端交互~~（CLI 已移出至宿主项目）
 
-两种模式共享相同的 Agent
-Loop、记忆引擎、LLM 适配层，但入口不同。需要一个统一的门面类封装所有子系统，对外暴露简洁的 API。
+宿主项目集成 Agent 后，通过门面类 API 驱动对话循环、记忆检索等所有功能。
 
 ## 决策
 
@@ -31,7 +30,7 @@ Loop、记忆引擎、LLM 适配层，但入口不同。需要一个统一的门
    - **多 Provider**：`listProviders()` / `getActiveProviderName()` /
      `switchProvider()` / `addProvider()`
    - **只读访问器**：`currentProvider` / `agentLoop` / `agentHistory`
-3. CLI 的 `repl.ts` 通过 `Agent` 类调用，不直接操作 memory/llm 子系统
+3. ~~CLI 的 `repl.ts` 通过 `Agent` 类调用~~（CLI 已移出至宿主项目）
 4. 库模式用户直接实例化 `Agent`，无需了解内部实现
 
 ## 关键实现
@@ -46,7 +45,7 @@ Loop、记忆引擎、LLM 适配层，但入口不同。需要一个统一的门
 
 **正面**：
 
-- CLI 和库模式共享同一入口，减少重复代码
+- ~~CLI 和库模式共享同一入口，减少重复代码~~（CLI 已移出，仅库模式）
 - 子系统变更只影响 Agent 内部，不影响调用方
 - 便于未来添加 Web/API 入口
 
@@ -57,3 +56,4 @@ Loop、记忆引擎、LLM 适配层，但入口不同。需要一个统一的门
   memory/ 层（T-201 待办），门面类 API 尚未完全覆盖~~
   ✅ 已修复（翠幕天罗 v1.2：REPL 不再自行创建 providers Map / AgentLoop /
   MessageHistory）
+  ✅ 已迁移（2026-06-11：CLI + repl.ts 移出至宿主项目，门面类仅服务库模式）

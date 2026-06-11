@@ -10,8 +10,7 @@ description: 选用 Node.js 22 LTS + TypeScript 5 + ESM 作为运行时栈
 
 ## 背景
 
-Memora 是本地 CLI 工具，需要：LLM
-API 流式调用、SQLite 高效同步访问、跨平台支持、单进程轻量部署。
+Memora 是纯逻辑库，需要：LLM API 流式调用、跨平台支持。
 
 ## 决策
 
@@ -46,16 +45,20 @@ API 流式调用、SQLite 高效同步访问、跨平台支持、单进程轻量
 - CI 需要 Node.js 22+ 环境
 - `package.json` 的 `engines` 字段设为 `>=22.0.0`（跟随 Node LTS，不卡上限）
 
-## 补充说明：Node 版本与 better-sqlite3 / Electron ABI 对齐（2026-06-10 更新）
+## 补充说明：Node 版本与 native 依赖（2026-06-11 更新）
 
-### 版本矩阵
+> **2026-06-11**：better-sqlite3 已完全从 memora 内核移出。
+> ABI 对齐问题由宿主项目（泊文）管理，详见 [ADR-002 v0.7](./ADR-002-storage-layer.md)。
+> memora 内核零 native 依赖，`npm test` 和 `git push` 不再涉及任何编译步骤。
+
+### 版本矩阵（历史参考）
 
 | 组件                  | 版本           | NODE_MODULE_VERSION | 说明                        |
 | --------------------- | -------------- | ------------------- | --------------------------- |
-| Memora 引擎约束       | `>=22.0.0`     | —                   | 跟随 Node LTS（22/24/…）    |
-| 系统 Node.js（开发）  | 24.x LTS       | 137                 | 须与 Electron 内置 Node 同大版本 |
-| Electron（宿主泊文）  | 41.7.x         | 137（内置 Node 24.15.0）| Chromium 146 + Node 24      |
-| better-sqlite3        | ^12.10.0       | —                   | v12.10.0 起移除 Node 20 prebuild；Electron 41 兼容自 v12.7.1 起 |
+| Memora 引擎约束       | `>=22.0.0`     | —                   | 纯 JS，无 native 依赖       |
+| 系统 Node.js（开发）  | 24.x LTS       | 137                 | 仅用于运行 TypeScript 编译  |
+| Electron（宿主泊文）  | 41.7.x         | 145                 | 宿主管理 better-sqlite3 ABI |
+| better-sqlite3        | ^12.10.0       | —                   | 由宿主 project 管理         |
 
 ### 三方 ABI 统一原则
 
@@ -77,10 +80,12 @@ npm run rebuild      ← electron-rebuild 重编译为 Electron ABI
 2. **Node 24 已是 LTS**（2025-10 起），是 Electron 41 的内置版本
 3. 宿主 Electron 决定系统 Node 版本（须同大版本），Memora 不应卡死上限
 
-### 降级/修复方案
+### 降级/修复方案（已移出至宿主）
 
-- 推荐：用 nvm 保持系统 Node 与 Electron 内置 Node 同大版本（`nvm install 24 && nvm use 24`）
-- 应急：如系统 Node 版本不匹配，执行 `npm rebuild better-sqlite3`（CLI 场景）或 `npm run rebuild`（Electron 场景）
+> 以下内容仅适用于宿主项目（泊文）。memora 内核无需任何 rebuild。
+
+- 推荐：用 nvm 保持系统 Node 与 Electron 内置 Node 同大版本
+- 应急：`npm run rebuild`（Electron 场景，由宿主 `package.json` 管理）
 
 ## 何时回顾
 

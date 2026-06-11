@@ -33,7 +33,7 @@ import {
   unlinkSync,
 } from 'node:fs';
 import { FileStore } from './store.js';
-import { SqliteStorage } from './index.js';
+import { InMemoryStorage } from './in-memory-storage.js';
 import type { IMemoryStorage } from './storage-interface.js';
 import { MemoryLoader } from './loader.js';
 import type { LoadResult } from './loader.js';
@@ -120,7 +120,7 @@ export class ProjectManager {
   private currentProjectPath: string | null = null;
   /** 当前持有的锁文件路径 */
   private currentLockPath: string | null = null;
-  /** 外部注入的存储实例（可选，不传则内部创建 SqliteStorage） */
+  /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
 
   constructor(
@@ -145,7 +145,7 @@ export class ProjectManager {
    * 这些资源在整个 Agent 生命周期内共享，不随项目切换重建
    *
    * 如果构造时注入了外部存储实例，直接使用；
-   * 否则内部创建 SqliteStorage（CLI 独立运行场景）。
+   * 否则内部创建 InMemoryStorage（非持久化兜底，仅开发/测试用）。
    */
   private async ensureAgentResources(): Promise<{ index: IMemoryStorage; topicStore: TopicStore }> {
     if (!this.agentIndex) {
@@ -155,9 +155,10 @@ export class ProjectManager {
       if (this.externalStorage) {
         this.agentIndex = this.externalStorage;
       } else {
-        // CLI 独立运行：内部创建 SqliteStorage
-        const dbPath = join(this.agentDataDir, 'memora.db');
-        this.agentIndex = new SqliteStorage(dbPath);
+        // 兜底：InMemoryStorage（非持久化，不依赖 native 模块）
+        // 生产环境应由宿主注入持久化实现（如 SqliteStorage）
+        logger.warn('未注入持久化存储实现，Agent 将使用 InMemoryStorage（数据重启后丢失）');
+        this.agentIndex = new InMemoryStorage();
       }
 
       this.agentTopicStore = new TopicStore(this.agentDataDir);

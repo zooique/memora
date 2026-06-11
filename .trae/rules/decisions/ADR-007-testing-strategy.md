@@ -1,4 +1,4 @@
-﻿---
+---
 alwaysApply: false
 description: 测试策略 Vitest + MSW（Mock LLM）
 ---
@@ -57,7 +57,7 @@ export const server = setupServer(...handlers);
   - 单元测试：LLM 适配器（请求构造/SSE 解析）
   - 单元测试：安全模块（白名单校验）
   - 集成测试：Agent Loop 一轮对话
-  - E2E 测试：CLI 启动 + 退出
+  - ~~E2E 测试：CLI 启动 + 退出~~（CLI 已移出至宿主项目）
 
 ## 年轮修订
 
@@ -67,7 +67,7 @@ export const server = setupServer(...handlers);
 
 **原因**：
 
-- `repl.ts`（257 行 CLI 入口）由 e2e.test.ts 覆盖 5 个场景，不应拉低单元测试覆盖率
+- ~~`repl.ts`（257 行 CLI 入口）~~（CLI 已移出至宿主项目，不再拉低覆盖率）
 - `loop.ts`/`factory.ts`
   的条件分支（如 maxIterations 边界、未知 provider 分支）较难在单元测试中完全覆盖
 - 函数覆盖率提升到 85%：核心逻辑函数的覆盖比行覆盖更重要

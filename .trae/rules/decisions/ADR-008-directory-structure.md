@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 目录结构按"职责分层"而非"按类型分层"
-version: v0.1
-date: 2026-06-02
+version: v0.4
+date: 2026-06-11
 ---
 
 # ADR-008 · 目录结构按"职责分层"而非"按类型分层"
@@ -29,41 +29,26 @@ date: 2026-06-02
 - **可替换性**：未来 `memory/` 整个模块替换（如换 LanceDB）不影响其他模块
 - **符合 Memora 的"领域可插拔"哲学**：领域切换通过 DomainManager 切换 .memora/ 目录，核心代码不动
 
-## 目录结构（阶段三）
+## 目录结构（当前）
 
 ```
 src/
-├── index.ts                # CLI 入口
-├── cli/                    # CLI 解析与交互
-│   ├── commands/           # 子命令
-│   │   └── init.ts         # 初始化命令
-│   └── repl.ts             # REPL 主循环（含 /project + /domain + /search 命令 + rebuildAgentComponents）
-├── agent/                  # Agent Loop
-│   ├── loop.ts
-│   ├── tool-executor.ts
-│   └── message-history.ts
-├── memory/                 # 记忆引擎
-│   ├── types.ts
-│   ├── store.ts            # 文件存储
-│   ├── index.ts            # SQLite 索引
-│   ├── recall.ts           # 混合召回（关键词 + 向量）
-│   ├── vector-store.ts     # 向量存储（M-206）
-│   ├── domain-manager.ts   # 领域管理器（M-208）
-│   ├── project-manager.ts  # 项目管理器（M-207）
-│   ├── loader.ts           # 记忆加载器
-│   └── topic-store.ts      # 话题存储
+├── index.ts                # 库导出入口（纯类型 + 接口导出）
+├── agent/                  # Agent Loop + 工具执行 + 对话快照 + 作品投影
+├── memory/                 # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 管理器）
+├── persona/                # 角色管理
+├── skill/                  # 技能管理
 ├── llm/                    # LLM 适配层
-│   ├── provider.ts         # 抽象接口
-│   ├── openai-compatible.ts
-│   ├── embedding.ts        # Embedding Provider（M-206）
-│   └── factory.ts          # 工厂函数
 ├── security/               # 安全策略
-│   ├── permissions.ts
-│   └── path-guard.ts
 ├── config/                 # 配置加载
-├── utils/                  # 工具函数
-└── logging/                # 日志
+├── logging/                # 日志（ILogger + console fallback）
+└── utils/                  # 工具函数
 ```
+
+> **已移出至宿主项目**：
+> - `cli/` → 泊文 `hosts/memora-cli/`
+> - `SqliteStorage`（原 `memory/index.ts`） → 泊文 `hosts/memora-utils/sqlite-storage.ts`
+> - `commander`、`picocolors` → 泊文 dependencies
 
 ## 年轮修订
 
@@ -105,10 +90,20 @@ src/
 - `src/` 下不允许有 `utils.ts` 这种根级文件（必须放 `utils/` 目录）
 - 模块内部可再分文件：`agent/loop.ts` / `agent/tool-executor.ts`
 - 跨模块共享的类型放 `src/types/`（极少使用）
-- 阶段一专注核心 6 个模块：`cli` / `agent` / `memory` / `llm` / `security` /
-  `config`
+- 阶段一专注核心模块：`agent` / `memory` / `persona` / `skill` / `llm` / `security` / `config` / `logging` / `utils`
 
 ## 何时回顾
 
 - 当 `agent/` 目录超过 20 个文件需要再细分
 - 当出现跨多个模块的横切关注点（如 logging）
+
+### v0.4（2026-06-11）· 零依赖内核目录更新
+
+**变更**：移除 `cli/`、`memory/index.ts`（SqliteStorage），更新 `src/index.ts` 定位
+
+**设计演进**：
+- memora 内核定位为零 native 依赖纯逻辑库
+- CLI 移出至宿主项目（泊文 `hosts/memora-cli/`）
+- SqliteStorage 移出至宿主项目（泊文 `hosts/memora-utils/sqlite-storage.ts`）
+- `src/index.ts` 从 CLI 入口转变为库导出入口
+- 目录结构简化为 9 个纯逻辑模块
