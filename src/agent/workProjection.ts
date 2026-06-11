@@ -48,7 +48,7 @@ export interface WorkProjectionEntry {
 /**
  * 作品投影管理器
  *
- * 分层：agent/ 层 — 调用 LLM 生成投影内容，通过 SqliteStorage 写入 SQLite。
+ * 分层：agent/ 层 — 调用 LLM 生成投影内容，通过 IMemoryStorage 写入存储。
  * 属于"作品 → 记忆投影"的桥梁组件，不属于 memory/ 的纯存储/召回职责。
  */
 export class WorkProjectionManager {

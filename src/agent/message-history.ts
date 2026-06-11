@@ -281,7 +281,7 @@ export class MessageHistory {
    *
    * 写入位置：
    *   1. topic-*.md frontmatter `summary` 字段（已存在）
-   *   2. SqliteStorage（`type: 'topic'`, `permanence: 'topic'`）
+   *   2. IMemoryStorage（`type: 'topic'`, `permanence: 'topic'`）
    *      → TopicMount.focus() 跨会话召回的入口
    *
    * 失败策略：fire-and-forget + log.warn，不阻塞对话

@@ -5,12 +5,11 @@
  *   - Memora 内核（agent/ + memory/ + persona/ + skill/）不依赖任何具体数据库
  *   - 宿主项目（如泊文 Electron 主进程）持有 better-sqlite3 实例，实现此接口后注入 Agent
  *   - 测试环境可使用 InMemoryStorage（零依赖、零 IO）
- *   - CLI 独立运行时，内部自行创建 SqliteStorage（仍需 better-sqlite3）
+ *   - 不注入时 Agent 内部使用 InMemoryStorage 作为 fallback（数据重启后丢失）
  *
- * 分层约束（ADR-002 v0.3）：
- *   Electron 壳层 → 提供 Node 原生模块执行环境
+ * 分层约束（ADR-002 v0.7）：
  *   泊文宿主     → 持有 better-sqlite3，实现 IMemoryStorage，注入 Agent
- *   Memora 内核  → 纯业务逻辑，仅依赖此接口
+ *   Memora 内核  → 纯业务逻辑，仅依赖此接口（零 native 依赖）
  *
  * 方法签名保持同步语义（与 better-sqlite3 一致），
  * 调用方已有的 `await` 调用仍然安全（await 同步值 = 立即返回）。
@@ -28,7 +27,7 @@ export interface IMemoryStorage {
   /**
    * 插入或更新记忆
    *
-   * type 和 permanence 字段必须通过校验（见 SqliteStorage 的防御性校验逻辑）
+   * type 和 permanence 字段必须通过校验（见 InMemoryStorage 实现中的防御性校验逻辑）
    */
   upsert(memory: Memory): void;
 
@@ -86,7 +85,7 @@ export interface IMemoryStorage {
    * 关闭存储连接（可选）
    *
    * 宿主注入的实现可能不需要关闭（如共享数据库连接），
-   * 所以此方法是可选的。CLI 自建的 SqliteStorage 需要关闭。
+   * 所以此方法是可选的。
    */
   close?(): void;
 }

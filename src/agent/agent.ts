@@ -3,7 +3,7 @@
  *
  * 设计文档（01-主架构-v4.0.md §9）要求宿主项目通过 `import { Agent } from '@memora/core'`
  * 一行代码接入。本类把当前 repl.ts 中埋藏的组装逻辑提取到正确的架构层，
- * 使 AgentLoop / SqliteStorage / ToolExecutor / SecurityGuard
+ * 使 AgentLoop / IMemoryStorage / ToolExecutor / SecurityGuard
  * 这些已有组件可以被 CLI 以外的宿主项目直接使用。
  *
  * 使用方式（最简）：
@@ -95,7 +95,7 @@ export interface AgentOptions {
   allowedPaths?: string[];
   /** 写入确认 */
   confirmWrites?: boolean;
-  /** 外部注入的存储实例（可选，不传则内部创建 SqliteStorage） */
+  /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
   /** 外部注入的日志实现（可选，不传则使用默认 PinoLogger） */
   logger?: ILogger;
@@ -364,7 +364,7 @@ export class Agent {
     this._permission = opts.permission ?? 'owner';
     this._allowedPaths = opts.allowedPaths ?? [];
     this._confirmWrites = opts.confirmWrites ?? false;
-    // 外部注入的存储实例（可选，不传则内部创建 SqliteStorage）
+    // 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage）
     this._storage = opts.storage;
     // 外部注入的日志实现（可选，不传则使用默认 PinoLogger）
     if (opts.logger) {
@@ -398,7 +398,7 @@ export class Agent {
     }
 
     // 创建 ProjectManager（只传 dataDir，不依赖 Config 类型）
-    // 如果宿主注入了 storage，传递给 ProjectManager（否则内部创建 SqliteStorage）
+    // 如果宿主注入了 storage，传递给 ProjectManager（否则内部创建 InMemoryStorage）
     this.projectManager = new ProjectManager(
       this._dataDir,
       this._allowedPaths,
@@ -790,10 +790,10 @@ export class Agent {
     // 构造话题总结器（使用后台通道或当前激活的 Provider）
     const summarizer = createTopicSummarizer(this._backgroundProvider ?? activeProvider);
 
-    // 消息历史（注入 SqliteStorage 让 archiveCurrentTopic 同步写 SQLite）
+    // 消息历史（注入 storage 让 archiveCurrentTopic 同步写存储）
     this.history = new MessageHistory(pctx.topicStore, summarizer, undefined, 'main', pctx.index);
 
-    // v4.0：作品投影管理器（注入 SqliteStorage + LlmProvider）
+    // v4.0：作品投影管理器（注入 storage + LlmProvider）
     this.workProjection = new WorkProjectionManager(
       pctx.index,
       this._backgroundProvider ?? activeProvider,
@@ -971,7 +971,7 @@ export class Agent {
       name: m.name,
       type: m.type,
       weight: m.weight,
-      // 截断长内容到 120 字符（与 repl.ts 旧实现一致）
+      // 截断长内容到 120 字符
       contentPreview: m.content.length > 120 ? m.content.slice(0, 120) + '...' : m.content,
     }));
   }

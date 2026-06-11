@@ -39,11 +39,9 @@
 
 **设计原则**：
 
-- **最小运行时依赖**（核心层仅依赖 `zod` 做 schema 校验；`better-sqlite3` 和 `pino` 为可选 peerDependency，宿主可注入替代实现）
-- **零控制台输出**（核心库不调用 `console.*`，仅 `src/cli/` 和 `src/index.ts`
-  CLI 入口使用）
-- **零写用户文件**（`personas/rules/skills/tools`
-  真理源是宿主管理的配置文件，agent 不直接写）
+- **零 native 依赖**（核心层仅依赖 `zod` 做 schema 校验；持久化由宿主通过 `IMemoryStorage` 接口注入）
+- **零控制台输出**（核心库不调用 `console.*`，所有 I/O 由宿主管理）
+- **零写用户文件**（`personas/rules/skills/tools` 真理源是宿主管理的配置文件，Agent 不直接写）
 
 ---
 
@@ -455,10 +453,10 @@ export interface WriteExtensions {
 
 | 检查项                                             | 结论                                                     |
 | -------------------------------------------------- | -------------------------------------------------------- |
-| 核心库 `console.*` 调用                            | **0 处**（仅 `src/cli/` 和 `src/index.ts` CLI 入口使用） |
+| 核心库 `console.*` 调用                            | **0 处**                                                 |
 | 核心库 `process.stdin/stdout`                      | **0 处**                                                 |
-| 核心库 `readline/picocolors/chalk`                 | **0 处**                                                 |
-| 核心库写 `personas/*.md`                           | **0 处**（配置文件是真理源，由宿主/CLI 管理）            |
+| 核心库 `readline/picocolors/chalk/commander`       | **0 处**（CLI 已移出至宿主项目）                         |
+| 核心库写 `personas/*.md`                           | **0 处**（配置文件是真理源，由宿主管理）                 |
 | 核心库写 `rules/*.md`                              | **0 处**                                                 |
 | 核心库写 `skills/*.md`                             | **0 处**                                                 |
 | 核心库 `readFileSync/writeFileSync` 写宿主业务文件 | **0 处**                                                 |
@@ -475,15 +473,14 @@ Agent 内部维护的 `projects.json`（项目注册表）和 `.lock`（项目�
 
 | 检查项                           | 结论                                                       |
 | -------------------------------- | ---------------------------------------------------------- |
-| Agent 引用 `Config` 类型         | **0 处**（仅 `repl.ts`/`index.ts`/`config.ts` CLI 层引用） |
+| Agent 引用 `Config` 类型         | **0 处**（仅宿主层 / CLI 层引用）                          |
 | Agent 引用 `loadConfig()`        | **0 处**                                                   |
 | Agent 引用 `createLlmProvider()` | **0 处**                                                   |
-| Agent 知道 `apiKey`              | **0 处**（宿主传入 `LlmProvider` 实例，agent 不解析）      |
+| Agent 知道 `apiKey`              | **0 处**（宿主传入 `LlmProvider` 实例，Agent 不解析）      |
 
 ### ✅ 核心库零"用户配置向导"
 
-`src/cli/commands/init.ts` 的"memora
-init"命令是 CLI 层的引导工具，**不属于核心库**：
+`init` 命令是 CLI 层的引导工具，**不属于核心库**（CLI 已移出至宿主项目 `hosts/memora-cli/`）：
 
 - 宿主可以跳过这个（直接创建 `agent-config/personas/*.md`）
 - 宿主也可以自己写一个等效的"配置向导"
@@ -511,11 +508,14 @@ export type { Memory, MemoryTypeValue, PermanenceValue } from 'memora';
 
 // 存储层抽象（宿主注入）
 export type { IMemoryStorage } from 'memora';
-export { SqliteStorage, InMemoryStorage } from 'memora';
+export { InMemoryStorage } from 'memora';
 
 // 日志抽象（宿主注入）
 export type { ILogger } from 'memora';
-export { setLogger } from 'memora';
+export { setLogger, logger } from 'memora';
+
+// 分词工具（宿主 SqliteStorage 实现依赖）
+export { segmentText } from 'memora';
 
 // 角色
 export type { PersonaMode } from 'memora';
@@ -534,9 +534,10 @@ export type { Config } from 'memora';
 
 **注意**：
 
+- `SqliteStorage` 已移出到宿主项目（如泊文 `hosts/memora-utils/`），不再从 memora 导出。宿主需自行管理 better-sqlite3 实例并实现 `IMemoryStorage` 接口。
 - `createLlmProvider` / `loadConfig` / `Config`
   是给**宿主**用的，不是给 Agent 用的
-- 宿主自己管理这些；agent 不依赖它们
+- 宿主自己管理这些；Agent 不依赖它们
 
 ---
 
@@ -615,17 +616,19 @@ export type { Config } from 'memora';
 - `lastInteractionAt` (getter)
 - `isBusy` (getter) ← 泊文 UI 刚需：禁用输入框 + 加载动画
 
-### 13.11 导出类型（12）
+### 13.11 导出类型与函数（17 项）
 
 - `AgentChunk`, `ThinkingPhase`
-- `ToolDefinition`, `ToolHandler`
+- `ToolDefinition`, `ToolHandler`, `WriteExtensions`
 - `ConfigSuggestion`, `ConfigSuggestionHandler`
 - `Memory`, `MemoryTypeValue`, `PermanenceValue`
 - `PersonaMode`
 - `SkillEntry`
-- `ProviderConfig`
-- `LlmProvider`
+- `ProviderConfig`, `LlmProvider`
 - `Config`
+- `IMemoryStorage`, `InMemoryStorage`
+- `ILogger`, `setLogger`, `logger`
+- `segmentText`
 
 ---
 

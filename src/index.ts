@@ -27,6 +27,7 @@ export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/agent.js
 export { loadConfig } from './config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
 export type { ProviderConfig } from './llm/factory.js';
+export type { LlmProvider } from './llm/provider.js';
 export type { Config } from './config/loader.js';
 export { MemoryType, Permanence } from './memory/types.js';
 export type { Memory, MemoryTypeValue, PermanenceValue } from './memory/types.js';
