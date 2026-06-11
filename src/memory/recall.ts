@@ -4,31 +4,11 @@
  * 设计哲学：每次用户发消息，从所有记忆中搜索最相关的几条注入上下文
  * 不需要话题概念，不需要漂移检测，不需要管理器
  *
- * 重构变更（2026-06-11）：
- * - 移除 RecallPipeline 类 → 简单 search() 函数
- * - 移除向量搜索逻辑（M-206 功能暂时移除，后续可选增强）
- * - 移除 bootstrap() 方法（启动时加载逻辑移至 Agent 层）
- * - 移除 RecallOptions 接口中的 types/minWeight/useVector 参数
- *
  * 详见 docs/记忆系统重构方案_排雷炼化版.md §4
  */
 import type { Memory } from './types.js';
 import type { IMemoryStorage } from './storage-interface.js';
-
-// ─── 关键词提取 ───────────────────────────────────────────
-
-/**
- * 中文停用词集合
- * 用于关键词提取时过滤无意义词汇
- */
-const STOPWORDS = new Set([
-  '的', '了', '是', '在', '我', '有', '和', '就', '不', '人', '都',
-  '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会',
-  '着', '没有', '看', '好', '自己', '这', '那', '什么', '怎么', '可以',
-  '这个', '那个', '他们', '我们', '因为', '所以', '但是', '如果', '虽然',
-  '能', '把', '被', '让', '给', '对', '从', '为', '比', '与', '或',
-  '吗', '呢', '吧', '啊', '哦', '嗯', '呀', '哈',
-]);
+import { STOPWORDS } from './types.js';
 
 /**
  * 从文本中提取关键词
@@ -155,7 +135,12 @@ export function decayScores(memories: Memory[], now?: Date): void {
   const currentTime = now?.getTime() ?? Date.now();
 
   for (const m of memories) {
-    const daysSinceAccess = (currentTime - new Date(m.accessed_at).getTime()) / ONE_DAY;
+    // 增加日期有效性验证，跳过无效日期
+    const accessedAt = new Date(m.accessed_at);
+    if (isNaN(accessedAt.getTime())) {
+      continue; // 跳过无效日期的记忆
+    }
+    const daysSinceAccess = (currentTime - accessedAt.getTime()) / ONE_DAY;
     if (daysSinceAccess > 7) {
       m.score = Math.max(0.1, m.score - 0.02 * Math.floor(daysSinceAccess / 7));
     }

@@ -24,6 +24,7 @@
  *   - 归档模式 → 移除（召回策略由查询时决定）
  */
 import { basename } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
 import {
@@ -45,9 +46,15 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { ISessionStore } from '@/memory/session-store.js';
 import type { ILogger } from '@/logging/logger-interface.js';
 import { logger, setLogger } from '@/logging/logger.js';
 import type { SecurityGuard } from '@/security/path-guard.js';
+
+// ─── 常量定义 ───────────────────────────────────────────
+
+/** extractInsight 默认 score 值 */
+const DEFAULT_INSIGHT_SCORE = 0.5;
 
 // ─── 类型定义 ───────────────────────────────────────────
 
@@ -103,6 +110,8 @@ export interface AgentOptions {
   confirmWrites?: boolean;
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
+  /** 外部注入的会话存储（可选，不传则仅在内存中保存） */
+  sessionStore?: ISessionStore;
   /** 外部注入的日志实现（可选，不传则使用默认 PinoLogger） */
   logger?: ILogger;
 }
@@ -256,6 +265,7 @@ export class Agent {
   private _allowedPaths: string[]; // 允许的路径白名单
   private _confirmWrites: boolean; // 写入确认
   private _storage: IMemoryStorage | undefined; // 外部注入的存储实例（可选）
+  private _sessionStore: ISessionStore | undefined; // 外部注入的会话存储（可选）
   private projectPath: string;
   private configDir: string | undefined; // 配置目录（personas/rules/skills/tools）
 
@@ -309,6 +319,8 @@ export class Agent {
     this._confirmWrites = opts.confirmWrites ?? false;
     // 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage）
     this._storage = opts.storage;
+    // 外部注入的会话存储（可选，不传则仅在内存中保存）
+    this._sessionStore = opts.sessionStore;
     // 外部注入的日志实现（可选，不传则使用默认 PinoLogger）
     if (opts.logger) {
       setLogger(opts.logger);
@@ -662,9 +674,9 @@ export class Agent {
     const activeProvider = this._provider;
     if (!activeProvider) return;
 
-    // 消息历史（注入 storage 让 archiveCurrentTopic 同步写存储）
+    // 消息历史（注入 storage + sessionStore）
     // 基元驱动重构：TopicStore 和 summarizer 已从构造参数移除
-    this.history = new MessageHistory(pctx.index);
+    this.history = new MessageHistory(pctx.index, this._sessionStore);
 
     // v4.0：作品投影管理器（注入 storage + LlmProvider）
     this.workProjection = new WorkProjectionManager(
@@ -919,18 +931,31 @@ ${contextSection}
         return;
       }
 
-      // 尝试解析 JSON
+      // 尝试解析 JSON（多级回退策略）
       let insight: string | null = null;
       try {
         const parsed = JSON.parse(trimmedResponse);
-        if (parsed && typeof parsed.insight === 'string') {
-          insight = parsed.insight;
+        if (parsed && typeof parsed.insight === 'string' && parsed.insight.trim()) {
+          insight = parsed.insight.trim();
         }
       } catch {
-        // JSON 解析失败，尝试从文本中提取
-        const match = trimmedResponse.match(/"insight"\s*:\s*"([^"]+)"/);
-        if (match && match[1]) {
-          insight = match[1];
+        // JSON 解析失败，尝试修复常见错误后重新解析
+        const fixedJson = trimmedResponse
+          .replace(/'/g, '"') // 单引号转双引号
+          .replace(/,\s*}/g, '}') // 移除尾逗号
+          .replace(/,\s*]/g, ']');
+
+        try {
+          const parsed = JSON.parse(fixedJson);
+          if (parsed && typeof parsed.insight === 'string' && parsed.insight.trim()) {
+            insight = parsed.insight.trim();
+          }
+        } catch {
+          // 二次解析失败，回退到正则提取
+          const match = trimmedResponse.match(/"insight"\s*:\s*"([^"]+)"/);
+          if (match && match[1]) {
+            insight = match[1];
+          }
         }
       }
 
@@ -939,11 +964,20 @@ ${contextSection}
         return;
       }
 
-      // Step 2: 去重检查
-      const snippet = insight.slice(0, 30).replace(/[%_]/g, '\\$&');
-      const existing = this._pctx.index.search(snippet, 1);
-      const existingMemory = existing[0];
-      if (existingMemory && existingMemory.content.includes(insight.slice(0, 30))) {
+      // Step 2: 去重检查（使用 Jaccard 相似度）
+      const snippet = insight.slice(0, 50).replace(/[%_]/g, '\\$&');
+      const existing = this._pctx.index.search(snippet, 3);
+      const existingMemory = existing.find((m) => {
+        // 计算 Jaccard 相似度（词级）
+        const setA = new Set(insight.split(/\s+/));
+        const setB = new Set(m.content.split(/\s+/));
+        const intersection = new Set([...setA].filter((x) => setB.has(x)));
+        const union = new Set([...setA, ...setB]);
+        const similarity = union.size > 0 ? intersection.size / union.size : 0;
+        return similarity > 0.7; // 阈值 70%
+      });
+
+      if (existingMemory) {
         // 已有相似记忆，更新 accessed_at 和 score
         existingMemory.score = Math.min(1.0, existingMemory.score + 0.05);
         existingMemory.accessed_at = new Date().toISOString();
@@ -954,14 +988,15 @@ ${contextSection}
 
       // Step 3: 写入 SQLite
       const now = new Date().toISOString();
+      const insightId = randomUUID(); // 使用 UUID 避免高并发冲突
       const memory: Memory = {
-        id: `insight:${Date.now()}`,
+        id: `insight:${insightId}`,
         content: insight,
         source: SOURCE_LABELS.INSIGHT,
-        name: `insight-${Date.now()}`,
+        name: `insight-${insightId.slice(0, 8)}`,
         created_at: now,
         accessed_at: now,
-        score: 0.5,
+        score: DEFAULT_INSIGHT_SCORE,
       };
       this._pctx.index.upsert(memory);
       logger.info({ id: memory.id, insight }, 'extractInsight: 写入新记忆');

@@ -17,6 +17,7 @@
  * 详见 02-上下文组装-v4.0.md §6 话题文件
  */
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { ISessionStore, SessionMessage } from '@/memory/session-store.js';
 import { logger } from '@/logging/logger.js';
 
 // ─── 内联工具函数（原 topic-store.ts 导出，topic-store 删除后内联） ──
@@ -80,6 +81,12 @@ export class MessageHistory {
      */
     private readonly _index?: IMemoryStorage,
     /**
+     * 会话存储（可选）
+     * 注入后，消息会持久化到宿主提供的存储实现。
+     * 不注入则仅在内存中保存（AgentLoop.messages[]）。
+     */
+    private readonly _sessionStore?: ISessionStore,
+    /**
      * 临时记忆最小窗口轮次（记忆减法方案 v1.0 · 排雷修正 L2）
      *
      * 上下文压缩时，最少保留的对话轮次。即使上下文利用率 ≥ 85%，
@@ -92,7 +99,7 @@ export class MessageHistory {
   ) {
     this.currentDate = initialDate ?? todayDate();
     this.currentTopic = initialTopic;
-    // TODO: _index 保留供未来话题记忆写入逻辑使用
+    // _index 保留供未来话题记忆写入逻辑使用
     void this._index;
   }
 
@@ -145,66 +152,80 @@ export class MessageHistory {
   /**
    * 追加 user 消息到当前话题
    * 失败不抛出（消息持久化失败不应阻塞对话）
-   *
-   * TODO: TopicStore 已删除，消息追加待新存储方案重建
    */
   async appendUser(content: string): Promise<void> {
-    const message: LegacyTopicMessage = {
+    const message: SessionMessage = {
       role: 'user',
       content,
       timestamp: nowTimestamp(),
     };
-    // TODO: TopicStore 已移除，原逻辑写入 topic-*.md 文件
-    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendUser: TopicStore 已移除，消息未持久化');
+    // 使用 ISessionStore 持久化（如果已注入）
+    if (this._sessionStore) {
+      try {
+        this._sessionStore.appendMessage(this.currentDate, this.currentTopic, message);
+      } catch (err) {
+        logger.warn({ err, topic: this.currentTopicName }, 'appendUser: 会话持久化失败');
+      }
+    }
+    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendUser');
   }
 
   /**
    * 追加 assistant 消息到当前话题
    * 失败不抛出
-   *
-   * TODO: TopicStore 已删除，消息追加待新存储方案重建
    */
   async appendAssistant(content: string): Promise<void> {
     if (!content.trim()) return;
-    const message: LegacyTopicMessage = {
+    const message: SessionMessage = {
       role: 'assistant',
       content,
       timestamp: nowTimestamp(),
     };
-    // TODO: TopicStore 已移除，原逻辑写入 topic-*.md 文件
-    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendAssistant: TopicStore 已移除，消息未持久化');
+    // 使用 ISessionStore 持久化（如果已注入）
+    if (this._sessionStore) {
+      try {
+        this._sessionStore.appendMessage(this.currentDate, this.currentTopic, message);
+      } catch (err) {
+        logger.warn({ err, topic: this.currentTopicName }, 'appendAssistant: 会话持久化失败');
+      }
+    }
+    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendAssistant');
   }
 
   /**
-   * 列出所有话题文件
+   * 列出所有会话主题
    *
-   * TODO: TopicStore 已删除，返回空数组。待新方案重建后实现。
+   * @returns 主题标识列表（格式：YYYY-MM-DD-topic），未注入 ISessionStore 则返回空
    */
   async listAllTopics(): Promise<string[]> {
-    // TODO: TopicStore 已移除，原逻辑 this.topicStore.list()
-    logger.debug('listAllTopics: TopicStore 已移除，返回空数组');
-    return [];
+    if (!this._sessionStore) {
+      logger.debug('listAllTopics: ISessionStore 未注入，返回空数组');
+      return [];
+    }
+    return this._sessionStore.listTopics();
   }
 
   /**
-   * 从话题文件恢复历史消息
+   * 从会话存储恢复历史消息
    * 用于重启后恢复之前的对话
    *
-   * TODO: TopicStore 已删除，待新方案重建。
-   *
-   * @param date - 话题日期 YYYY-MM-DD
-   * @param topic - 话题名
-   * @returns 话题中的消息列表，TopicStore 删除后始终返回空数组
+   * @param date - 会话日期 YYYY-MM-DD
+   * @param topic - 会话主题标识
+   * @returns 会话中的消息列表，未注入 ISessionStore 则返回空数组
    */
   async loadTopicMessages(date: string, topic: string): Promise<LegacyTopicMessage[]> {
-    logger.info({ date, topic }, 'loadTopicMessages: TopicStore 已移除，返回空数组');
-
     // 更新当前话题为请求的话题（保持状态一致）
     this.currentDate = date;
     this.currentTopic = topic;
 
-    // TODO: TopicStore 已移除，原逻辑 this.topicStore.read(date, topic)
-    return [];
+    if (!this._sessionStore) {
+      logger.debug({ date, topic }, 'loadTopicMessages: ISessionStore 未注入，返回空数组');
+      return [];
+    }
+
+    const messages = this._sessionStore.loadMessages(date, topic);
+    logger.info({ date, topic, count: messages.length }, 'loadTopicMessages');
+    return messages;
   }
 
   /**

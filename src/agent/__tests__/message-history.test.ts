@@ -40,7 +40,7 @@ describe('MessageHistory · 基本操作', () => {
   });
 
   it('构造函数应接受自定义初始日期和话题', () => {
-    const history = new MessageHistory(mockStorage, 3, '2026-06-01', 'custom-topic');
+    const history = new MessageHistory(mockStorage, undefined, 3, '2026-06-01', 'custom-topic');
     expect(history.topic).toBe('custom-topic');
     expect(history.currentTopicName).toBe('2026-06-01-custom-topic');
   });

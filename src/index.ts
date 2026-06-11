@@ -39,6 +39,8 @@ export type { Memory } from './memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from './memory/storage-interface.js';
 export { InMemoryStorage } from './memory/in-memory-storage.js';
+// 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
+export type { ISessionStore, SessionMessage } from './memory/session-store.js';
 // 召回函数：简化关键词搜索
 export { recall, extractKeywords } from './memory/recall.js';
 export type { RecallOptions } from './memory/recall.js';
