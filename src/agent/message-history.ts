@@ -451,15 +451,26 @@ export class MessageHistory {
               return;
             }
             await this.topicStore.appendSummary(date, topic, result.summary);
+
+            // 自动重命名：话题名为默认值 "main" 且 LLM 生成了标题
+            let effectiveTopic = topic;
+            if (topic === 'main' && result.title) {
+              const slugged = slugifyTopicTitle(result.title);
+              if (slugged) {
+                effectiveTopic = await this.topicStore.renameTopic(date, topic, slugged);
+                logger.info({ from: `${date}-${topic}`, to: `${date}-${effectiveTopic}` }, 'lazy 补归档：话题已自动命名');
+              }
+            }
+
             await this.writeTopicMemory(
               date,
-              topic,
+              effectiveTopic,
               result.summary,
               tf.messages.length,
               result.snapshots,
             );
             logger.info(
-              { topic: `${date}-${topic}`, messageCount: tf.messages.length },
+              { topic: `${date}-${effectiveTopic}`, messageCount: tf.messages.length },
               'lazy 补归档完成',
             );
           } catch (err) {

@@ -15,6 +15,18 @@ import { parseFrontmatter, serializeFrontmatter as serializeFm } from './frontma
 import { logger } from '@/logging/logger.js';
 
 /**
+ * 文件名安全化：替换非法字符为连字符
+ * Windows 文件名不允许 / \ : * ? " < > |
+ * 话题名可能来自用户输入（如 "会话 6/11 11:00"），需要清理
+ */
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/**
  * 话题存储类
  * 负责所有话题文件的 CRUD
  */
@@ -23,11 +35,12 @@ export class TopicStore {
 
   /**
    * 获取话题文件路径
+   * 对 topic 名做文件名安全化，防止 / : 等字符被当作路径分隔符
    * @param date YYYY-MM-DD
    * @param topic 话题名（不含扩展名）
    */
   getFilePath(date: string, topic: string): string {
-    return join(this.dataDir, 'topics', `${date}-${topic}.md`);
+    return join(this.dataDir, 'topics', `${date}-${sanitizeFileName(topic)}.md`);
   }
 
   /**
