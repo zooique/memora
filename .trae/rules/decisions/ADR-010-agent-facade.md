@@ -23,22 +23,28 @@ Memora 需要支持宿主项目接入：
 采用 **Agent 门面类** 模式：
 
 1. `Agent` 类作为唯一对外入口，封装所有子系统初始化和生命周期管理
-2. 对外暴露核心方法（v1.2 扩展）：
-   - **基础**：`init()` / `chat()` / `switchTopic()` / `listAllTopics()` /
-     `inspect()`
-   - **多 Provider**：`listProviders()` / `getActiveProviderName()` /
-     `switchProvider()` / `addProvider()`
-   - **只读访问器**：`currentProvider` / `agentLoop` / `agentHistory`
+2. 对外暴露核心方法（v4.0 Manager 委托模式）：
+   - **生命周期**：`init()` / `close()`
+   - **对话**：`chat()` / `chatSync()` / `switchTopic()`
+   - **项目**：`listProjects()` / `switchProject()` / `rebuildComponents()`
+   - **话题恢复**：`restoreMostRecentTopic()` / `restoreTopic()` / `loadTopicMessages()`
+   - **Provider**：`setProvider()` / `setBackgroundProvider()`
+   - **调试**：`getBuildCtx()`
+   - **只读访问器**：`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory`
+   - **Manager 访问器**：`persona` / `tools` / `skills` / `config` / `insight` / `memory`
 3. ~~CLI 的 `repl.ts` 通过 `Agent` 类调用~~（CLI 已移出至宿主项目）
 4. 库模式用户直接实例化 `Agent`，无需了解内部实现
 
 ## 关键实现
 
-| 组件         | 文件                         | 职责                      |
-| ------------ | ---------------------------- | ------------------------- |
-| Agent        | `src/agent/agent.ts`         | 门面类，统一入口          |
-| AgentLoop    | `src/agent/loop.ts`          | 对话循环（被 Agent 调用） |
-| ToolExecutor | `src/agent/toolExecutor.ts` | 工具执行（被 Agent 注入） |
+| 组件              | 文件                              | 职责                           |
+| ----------------- | --------------------------------- | ------------------------------ |
+| Agent             | `src/agent/agent.ts`              | 门面类，编排层，统一入口       |
+| AgentLoop         | `src/agent/loop.ts`               | 对话循环（被 Agent 调用）      |
+| ToolExecutor      | `src/agent/toolExecutor.ts`       | 工具执行（通过 `agent.tools`） |
+| InsightExtractor  | `src/agent/insightExtractor.ts`   | 输入分类 + 记忆提取            |
+| ConfigManager     | `src/agent/configManager.ts`      | 规则/技能注入 + 配置建议       |
+| MemoryInspector   | `src/agent/memoryInspector.ts`    | 记忆快照 + 搜索 + 统计         |
 
 ## 后果
 

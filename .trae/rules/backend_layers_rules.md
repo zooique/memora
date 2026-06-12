@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
-version: v0.2
-date: 2026-06-04
+version: v0.3
+date: 2026-06-12
 ---
 
 # 后端分层规范
@@ -21,13 +21,13 @@ date: 2026-06-04
 | 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回                                                | —                                     | ✅ 已有       |
 | 安全           | ✅ 提供路径白名单 + 写入确认 + 权限模型                                 | —                                     | ✅ 已有       |
 | 通用文件 I/O   | ✅ 提供 4 个内置工具                                                    | —                                     | ✅ 已有       |
-| 工具注册机制   | ✅ 提供 `registerTool()` + `executeTool()`                              | ✅ 注册具体领域工具                   | ✅ 已有       |
+| 工具注册机制   | ✅ 提供 `tools.registerTool()` + `tools.execute()`                       | ✅ 注册具体领域工具                   | ✅ 已有       |
 | 领域工具实现   | —                                                                       | ✅ 实现 handler，委托内置工具         | ✅ 已有       |
 | 人格/规则/技能 | ✅ 提供 Manager + 加载机制                                              | ✅ 编写 `.md` 配置文件                | ✅ 已有       |
 | UI 界面        | —                                                                       | ✅ 自行实现（CLI / Web / TUI）        | ✅ 已有       |
 | Diff 确认写入  | ✅ 提供 Differ + DiffRenderer                                           | ✅ 决定何时展示 diff                  | ✅ 已有       |
 | Markdown 渲染  | ✅ 提供 MarkdownRenderer                                                | ✅ 决定是否启用                       | ✅ 已有       |
-| 自我进化机制   | ✅ 提供 onConfigSuggestion + confirmConfigSuggestion + inspect() 读端口 | ✅ 决定进化呈现方式（桌宠/徽章/面板） | 🔧 接口已实现 |
+| 自我进化机制   | ✅ 提供 `config.onSuggestion()` + `config.confirm()` + `memory.snapshot()` / `memory.search()` | ✅ 决定进化呈现方式（桌宠/徽章/面板） | ✅ 已有       |
 
 **判断标准**：新功能应该放在哪里？
 
@@ -55,7 +55,7 @@ date: 2026-06-04
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`      | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
-| `agent/`    | Agent Loop、消息历史、工具执行、对话快照、作品投影 | 直接调 LLM HTTP（通过 provider 接口）           |
+| `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector）+ 对话快照 + 作品投影 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回                                             | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装           | 操作记忆索引（通过 PersonaManager 写入 SQLite） |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入              | 操作记忆索引                                    |
@@ -67,9 +67,11 @@ date: 2026-06-04
 ## 依赖方向
 
 ```
-cli/        →  agent/  →  llm/         （用户输入路径）
-            →  memory/  →  （agent/ 调 memory）
-            →  security/                （跨切）
+agent/      →  llm/         （对话调用 Provider）
+            →  memory/      （记忆存储 + 召回）
+            →  persona/     （角色管理，通过 PersonaManager）
+            →  skill/       （技能管理，通过 SkillManager）
+            →  security/    （路径校验，跨切）
 config/     →  （被所有层调）
 logging/    →  （被所有层调）
 ```
@@ -86,10 +88,18 @@ logging/    →  （被所有层调）
 
 ```
 agent/
-├── loop.ts             # 主循环
-├── toolExecutor.ts    # 工具执行
-├── messageHistory.ts  # 消息持久化（阶段二）
-└── __tests__/          # 单元测试（与 src/ 平级时放 tests/）
+├── agent.ts              # Agent 门面类（对外入口，编排层）
+├── loop.ts               # AgentLoop 主循环
+├── toolExecutor.ts       # 工具执行器（registerTool + execute）
+├── messageHistory.ts     # 消息持久化 + 话题归档
+├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
+├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
+├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计）
+├── workProjection.ts     # 作品投影管理器
+├── signalDetector.ts     # 信号检测器
+├── topicSummarizer.ts    # 话题摘要器
+├── types.ts              # Agent 类型定义
+└── __tests__/            # 单元测试
 ```
 
 ## 新增模块流程

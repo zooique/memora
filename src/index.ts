@@ -20,13 +20,21 @@ export type { AgentChunk, ThinkingPhase } from './agent/types.js';
 export type {
   AgentOptions,
   AgentContext,
-  MemorySnapshot,
-  WorkingMemorySnapshot,
-  BootstrapSnapshot,
+  AgentBuildCtx,
 } from './agent/agent.js';
 export type { ToolDefinition, ToolHandler, WriteExtensions } from './agent/toolExecutor.js';
 export type { PersonaMode } from './persona/personaManager.js';
-export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/agent.js';
+// v4.0 拆分：类型从专职模块导出
+export type { MemoryKeywords } from './agent/insightExtractor.js';
+export type {
+  MemorySnapshot,
+  WorkingMemorySnapshot,
+  BootstrapSnapshot,
+  ArchiveSnapshot,
+  AgentSearchHit,
+  AgentStats,
+} from './agent/memoryInspector.js';
+export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/configManager.js';
 export { loadConfig } from './config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
 export type { ProviderConfig } from './llm/factory.js';

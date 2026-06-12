@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 测试规范（三层金字塔 + Mock LLM 策略）
-version: v0.1
-date: 2026-06-02
+version: v0.2
+date: 2026-06-12
 ---
 
 # 测试规范
@@ -31,7 +31,7 @@ date: 2026-06-02
 - ✅ 测试中 `LlmProvider` 注入 `MockProvider`
 - ✅ 准备多种 fixture 场景：纯文本响应 / 工具调用 / 流式中断
 
-详见 [tests/fixtures/llm-mock.ts](../../tests/fixtures/llm-mock.ts)
+详见 `src/llm/__tests__/` 下的 Mock Provider 实现
 
 ## 3. 覆盖率目标
 
@@ -44,24 +44,43 @@ date: 2026-06-02
 
 **不计入覆盖率**：
 
-- `src/index.ts`（CLI 入口，纯装配）
+- `src/index.ts`（库导出入口，纯重导出）
 - `src/**/*.d.ts`（类型声明）
 - `src/**/*.test.ts`（测试自身）
 
-## 4. 阶段一必须包含的测试
+## 4. 当前测试文件清单（26 文件 · 321 用例）
 
-- [x] 记忆类型 schema 校验（types.test.ts）
-- [x] 路径白名单 6 个用例（pathGuard.test.ts）
-- [x] SQLite 索引 CRUD（index.test.ts）
-- [x] LLM Provider Mock 流式响应（openaiCompatible.test.ts）
-- [x] Agent Loop 单元测试（loop.test.ts · 10 用例）
-- [x] Agent Loop 一轮对话（e2e.test.ts · 5 场景）
-- [x] CLI 启动 + 退出（e2e.test.ts · 5 场景）
-- [x] 记忆召回管线（recall.test.ts · 7 用例）
-- [x] init 命令（init.test.ts · 4 用例）
-- [x] 权限模型（permissions.test.ts · 4 用例）
-- [x] LLM 工厂（factory.test.ts · 8 用例）
-- [x] 项目管理器（projectManager.test.ts · 11 用例）
+**agent/**：
+- [x] Agent 门面类（agent.test.ts）
+- [x] Agent Loop 主循环（loop.test.ts）
+- [x] 消息历史（messageHistory.test.ts）
+- [x] 信号检测器（signalDetector.test.ts）
+- [x] 工具执行器（toolExecutor.test.ts）
+- [x] 作品投影（workProjection.test.ts）
+
+**memory/**：
+- [x] 上下文压力监控（contextPressureMonitor.test.ts）
+- [x] Frontmatter 解析（frontmatter.test.ts）
+- [x] 记忆加载器（loader.test.ts）
+- [x] 项目管理器（projectManager.test.ts）
+- [x] 记忆召回（recall.test.ts）
+- [x] 文本分词（segmenter.test.ts）
+- [x] 会话存储（sessionStore.test.ts）
+- [x] 文件存储（store.test.ts）
+- [x] 记忆类型（types.test.ts）
+- [x] 用户画像（userProfile.test.ts）
+- [x] 向量存储（vectorStore.test.ts）
+
+**其他模块**：
+- [x] 角色管理（personaManager.test.ts）
+- [x] 技能管理（skillManager.test.ts）
+- [x] 路径白名单（pathGuard.test.ts）
+- [x] 权限模型（permissions.test.ts）
+- [x] 配置加载（loader.test.ts）
+- [x] LLM 嵌入（embedding.test.ts）
+- [x] LLM 工厂（factory.test.ts）
+- [x] LLM Provider Mock（openaiCompatible.test.ts）
+- [x] 错误工具函数（errors.test.ts）
 
 ## 5. 测试反模式
 

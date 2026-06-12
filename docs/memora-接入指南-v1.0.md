@@ -1,10 +1,10 @@
-# Memora · 接入指南 v2.0
+# Memora · 接入指南 v3.0
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v2.0（最后更新：2026-06-12）
+> **版本**：v3.0（最后更新：2026-06-12）
 >
-> **v2.0 重大变更**：Agent 不再接收 `Config` 对象，改为接收 `LlmProvider` 实例。宿主自行管理 API Key / baseUrl / model 配置，Agent 只关心"用什么 LLM"。
+> **v3.0 重大变更**：Agent God Object 拆分。记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference-v1.0.md)。
 
 ---
 
@@ -32,6 +32,8 @@
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
+**Manager 委托模式（v3.0）。** Agent 面类只做编排，领域操作委托给 6 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory`。
+
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  宿主程序                                                   │
@@ -43,9 +45,7 @@
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
-│  │  - 记忆搜索 / 归档 / 挂载                │               │
-│  │  - 角色匹配 / 技能匹配                   │               │
-│  │  - 工具注册 / 工具执行                   │               │
+│  │  - 6 个 Manager getter（委托模式）        │               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
@@ -105,7 +105,7 @@ const backgroundProvider = createLlmProvider({
 // 可选：注入存储层（不传则使用 InMemoryStorage）
 const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db');
 
-// 可选：注入日志实现（不传则使用 pino 或 console fallback）
+// 可选：注入日志实现（不传则使用默认 pino logger）
 const logger: ILogger = myCustomLogger;
 
 // 创建 Agent
@@ -147,8 +147,10 @@ const reply = await agent.chatSync('你好');
 
 ### 4. 注册领域工具
 
+> v3.0：工具注册走 `agent.tools.xxx()`。
+
 ```typescript
-agent.registerTool(
+agent.tools.registerTool(
   {
     name: 'create_chapter',
     description: '创建一个新章节',
@@ -165,16 +167,76 @@ agent.registerTool(
 );
 ```
 
-### 5. 注入项目规则
+### 5. 注入写入扩展 + 记忆关键词
+
+> v3.0：写入扩展和关键词走 `agent.insight.xxx()`。
 
 ```typescript
-await agent.addSimpleRule(
+// 写入前 diff 确认回调
+agent.insight.setWriteExtensions({
+  onBeforeWrite: async (path, before, after) => {
+    showDiff(path, before, after);
+    return await userConfirm(`确认写入 ${path}？`);
+  },
+});
+
+// 记忆关键词（领域 + 用户专属）
+agent.insight.setKeywords({
+  domain: ['主角', '角色', '情节', '设定'],
+  personal: ['我', '我的', '记住', '帮我'],
+});
+```
+
+### 6. 注入项目规则
+
+> v3.0：规则注入走 `agent.config.xxx()`。
+
+```typescript
+await agent.config.addSimpleRule(
   '世界观规则',
   '这是一个东方玄幻世界，修真等级分为炼气、筑基、金丹……',
 );
 ```
 
-### 6. 切换项目
+### 7. 查询记忆
+
+> v3.0：记忆查询走 `agent.memory.xxx()`。
+
+```typescript
+// 3 层记忆快照
+const snap = agent.memory.snapshot();
+console.log('工作记忆:', snap.working.total, '条');
+console.log('引导记忆:', snap.bootstrap.total, '条');
+
+// 关键词搜索
+const hits = agent.memory.search('世界观');
+hits.forEach(h => console.log(`${h.source}:${h.name} (${h.score})`));
+
+// 记忆库统计
+const stats = agent.memory.stats();
+console.log('记忆总数:', stats.total);
+```
+
+### 8. 管理角色
+
+> v3.0：角色管理走 `agent.persona.xxx`。
+
+```typescript
+// 列出所有角色
+const names = agent.persona.list.map(p => p.name);
+
+// 手动切换
+agent.persona.switchPersona('作家');
+
+// 锁定手动模式（禁止自动匹配）
+agent.persona.setMode('manual');
+
+// 查询当前状态
+console.log(agent.persona.activeName);   // '作家'
+console.log(agent.persona.currentMode);  // 'manual'
+```
+
+### 9. 切换项目
 
 ```typescript
 const ctx = await agent.switchProject('another-novel');
@@ -183,7 +245,7 @@ await agent.rebuildComponents();
 console.log(`已切换到：${ctx.projectName}`);
 ```
 
-### 7. 关闭
+### 10. 关闭
 
 ```typescript
 await agent.close(); // 释放项目锁 + 关闭数据库
@@ -251,14 +313,17 @@ const agent = new Agent({
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
 
-### 生命周期
+### Agent 生命周期与状态
 
-| 方法 | 说明 |
+| 成员 | 说明 |
 |------|------|
-| `agent.init()` | 初始化（创建 DB、加载配置、连接 LLM），返回 `AgentContext` |
+| `agent.init()` | 初始化（创建存储、加载配置、组装组件），返回 `AgentContext` |
 | `agent.close()` | 安全关闭（释放锁 + 关闭数据库） |
-| `agent.inspect()` | 返回 Agent 当前状态快照（4 层） |
-| `agent.lastInteractionAt` | 只读属性，`Date | null`，记录最近一次对话时间 |
+| `agent.initialized` | 只读 getter，`boolean` |
+| `agent.isBusy` | 只读 getter，`boolean`（是否正在对话中） |
+| `agent.lastInteractionAt` | 只读 getter，`Date \| null`，最近一次对话时间 |
+| `agent.context` | 只读 getter，`AgentContext \| null`，当前项目上下文 |
+| `agent.getBuildCtx()` | 调试用：暴露 `security` / `index` / `bootstrapMemories` |
 
 ### 对话
 
@@ -266,49 +331,6 @@ const agent = new Agent({
 |------|------|
 | `agent.chat(input, signal?)` | 流式对话，返回 `AsyncGenerator<AgentChunk>` |
 | `agent.chatSync(input, signal?)` | 同步对话（测试用） |
-| `agent.getMessages()` | 获取工作记忆的完整消息列表 |
-
-### 记忆查询
-
-| 方法 | 说明 |
-|------|------|
-| `agent.searchMemories(query, limit?)` | 关键词搜索记忆 |
-| `agent.getStats()` | 记忆库统计 |
-
-### 规则与技能
-
-| 方法 | 说明 |
-|------|------|
-| `agent.addRule(memory)` | 注入规则（传入完整 Memory 对象） |
-| `agent.addSimpleRule(name, content)` | 便捷方法（无 keywords 参数） |
-| `agent.addSkill(memory)` | 注入技能（传入完整 Memory 对象） |
-| `agent.addSimpleSkill(name, content)` | 便捷方法（无 keywords 参数） |
-
-### 工具
-
-| 方法 | 说明 |
-|------|------|
-| `agent.registerTool(definition, handler)` | 注册自定义工具 |
-| `agent.getToolDefinitions()` | 获取所有工具定义 |
-| `agent.executeTool(name, args)` | 执行工具调用 |
-| `agent.setWriteExtensions(ext)` | 注入写入扩展回调（diff 对比） |
-| `agent.setMemoryKeywords(keywords)` | 设置记忆关键词（domain / personal 两类） |
-
-### 角色
-
-| 方法 | 说明 |
-|------|------|
-| `agent.listPersonas()` | 列出可用角色 |
-| `agent.switchPersona(name)` | 手动切换角色 |
-| `agent.setPersonaMode(mode)` | 设置角色切换模式 |
-| `agent.getActivePersonaName()` | 读取当前激活的角色名 |
-
-### Provider 管理
-
-| 方法 | 说明 |
-|------|------|
-| `agent.setProvider(provider)` | 运行时切换前台 Provider |
-| `agent.setBackgroundProvider(provider)` | 运行时切换后台 Provider |
 
 ### 项目 / 话题
 
@@ -316,12 +338,30 @@ const agent = new Agent({
 |------|------|
 | `agent.listProjects()` | 列出已注册的子项目 |
 | `agent.switchProject(name)` | 切换到其他子项目 |
-| `agent.rebuildComponents()` | **项目切换后必须调用**：重建 history / loop，使新项目会话生效 |
-| `agent.listAllTopics()` | 列出所有话题文件名 |
-| `agent.switchTopic(name)` | 切换当前话题 |
+| `agent.rebuildComponents()` | **项目切换后必须调用** |
+| `agent.switchTopic(name)` | 切换当前话题（自动归档旧话题） |
 | `agent.loadTopicMessages(date, topic)` | 加载指定日期/话题的消息 |
 | `agent.restoreTopic(date, topic)` | 恢复指定日期/话题 |
 | `agent.restoreMostRecentTopic()` | 启动时恢复最近一次话题 |
+| `agent.agentHistory.listAllTopics()` | 列出所有话题文件名 |
+
+### Manager 速查表
+
+| 路径 | Manager | 主要成员 |
+|------|---------|---------|
+| `agent.memory.xxx()` | MemoryInspector | `snapshot()` / `search(q, n)` / `stats()` |
+| `agent.config.xxx()` | ConfigManager | `addRule(m)` / `addSimpleRule(n, c)` / `addSkill(m)` / `addSimpleSkill(n, c, k?)` / `onSuggestion(h)` / `confirm(s)` |
+| `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` |
+| `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
+| `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
+| `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(s)` / `.buildSystemPrompt()` |
+
+### Provider 管理
+
+| 方法 | 说明 |
+|------|------|
+| `agent.setProvider(provider)` | 运行时切换前台 Provider |
+| `agent.setBackgroundProvider(provider)` | 运行时切换后台 Provider |
 
 ---
 
@@ -339,6 +379,8 @@ import {
   recall,
   extractKeywords,
   SOURCE_LABELS,
+  inferSource,
+  escapeLike,
 } from 'memora';
 import type {
   ProviderConfig,
@@ -349,6 +391,22 @@ import type {
   SessionMessage,
   Memory,
   LlmProvider,
+  AgentChunk,
+  AgentOptions,
+  AgentContext,
+  AgentBuildCtx,
+  ToolDefinition,
+  ToolHandler,
+  WriteExtensions,
+  MemoryKeywords,
+  MemorySnapshot,
+  AgentSearchHit,
+  AgentStats,
+  ConfigSuggestion,
+  ConfigSuggestionHandler,
+  PersonaMode,
+  SkillEntry,
+  RecallOptions,
 } from 'memora';
 ```
 
@@ -364,6 +422,8 @@ import type {
 | `recall(index, query, options?)` | 简化关键词搜索 |
 | `extractKeywords(text)` | 提取关键词 |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION） |
+| `inferSource(content)` | 从内容推断 source 标签 |
+| `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 
 **注意**：`SqliteStorage` 已移出到宿主项目，不再从 memora 导出。宿主需自行实现 `IMemoryStorage` 接口。
 
@@ -376,7 +436,7 @@ import type {
 3. **项目级 `.memora/`** 只放 `rules/` 和 `skills/`
 4. **角色由关键词自动触发**
 5. **对话历史跨子项目持久化**
-6. `registerTool()` 和 `addRule()` / `addSkill()` 必须在 `init()` 之后调用
+6. **Manager 访问器在 `init()` 前返回 `null`** — 所有 `agent.config.xxx()` / `agent.memory.xxx()` 等调用必须在 `init()` 之后
 7. **作品原始内容不进 SQLite**，Agent 通过工具按需读取
 8. **配置文件是真理源**，`agent-config/` 下的配置由 MemoryLoader 启动时扫描加载
 9. **禁止**为每个子项目创建独立的 memora.db

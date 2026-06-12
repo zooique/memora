@@ -3,8 +3,8 @@ alwaysApply: false
 description:
   架构哲学原则（9
   条：万物皆记忆、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式）
-version: v0.3
-date: 2026-06-03
+version: v0.4
+date: 2026-06-12
 ---
 
 # 架构哲学原则
@@ -24,23 +24,17 @@ date: 2026-06-03
 **Persona 和 Skill 的定位**：
 
 - Skill（技能）不是"普通记忆"——不进入 SQLite 索引。它是**记忆管道顶端的最高优先级过滤器**，类似人的"长期训练形成的思维模式"。通过独立的 SkillManager 管理，在上下文组装时作为最高优先级注入
-- Persona（角色）遵循"万物皆记忆"原则——存入 SQLite 作为
-  `type: personality, permanence: always`
-  的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 personality 类型，由 PersonaManager 单独管理角色注入（systemPromptPrefix）。角色可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
+- Persona（角色）遵循"万物皆记忆"原则——存入 SQLite 作为 `source: persona` 的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 persona 来源，由 PersonaManager 单独管理角色注入（systemPromptPrefix）。角色可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
 - 类比人类：性格是你 persona 的一部分，可以被"选择"（在不同场合以不同角色应对），而技能是"能力"，始终在线
 
 **在代码中的体现**：
 
-- **PersonaManager**：扫描
-  `personas/*.md`，加载为 personality 类型记忆（permanence:
-  always），存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。角色通过 systemPromptPrefix 注入，不进 bootstrap
+- **PersonaManager**：扫描 `personas/*.md`，加载为 `source: persona` 记忆，存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。角色通过 systemPromptPrefix 注入，不进 bootstrap
 - **SkillManager**：扫描 configDir/skills/ 目录 + 关键词匹配，匹配到后注入下一轮 system
   prompt。**不进 SQLite**
-- 记忆管道层（规则、话题归档、心得）通过 `MemoryIndex` 的统一召回管线检索
-- `MemoryType` 枚举的 `personality` 类型用于角色记忆，`skill`
-  类型用于 MemoryIndex 中配置型记忆（Agent 级规则等），而非 skill 文件本身
-- `bootstrap()`
-  对 personality 类型做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活角色
+- 记忆管道层（规则、话题归档、心得）通过 `recall()` 的统一召回管线检索
+- `source` 开放字符串区分来源：`persona` 用于角色记忆，`rule` 用于规则，`skill` 用于技能，`insight` 用于对话提取
+- `bootstrap` 阶段对 `source: persona` 做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活角色
 
 **禁止**：
 
@@ -54,12 +48,13 @@ date: 2026-06-03
 
 **原则**：不是所有记忆都要 100% 召回；按永久性等级决定确定性。
 
-| 永久性      | 召回策略                | 示例               |
+| source 标签 | 召回策略                | 示例               |
 | ----------- | ----------------------- | ------------------ |
-| `always`    | 100% 启动加载           | 人格、安全规则     |
-| `domain`    | 100% 启动加载（按领域） | 编程规范、领域知识 |
-| `topic`     | 按相关度增量召回        | 历史对话           |
-| `on-demand` | 显式调用                | 工具定义、能力技能 |
+| `persona`   | 100% 启动加载（角色）   | 人格               |
+| `rule`      | 100% 启动加载（规则）   | 安全规则、编码规范 |
+| `skill`     | 100% 启动加载（技能）   | 领域知识、能力技能 |
+| `insight`   | 按相关度增量召回        | 对话提取的洞察     |
+| `archive`   | 按相关度增量召回        | 历史对话摘要       |
 
 ## 3. 冷热分离（File vs DB）
 
@@ -100,9 +95,8 @@ domain），其余在 Agent Loop 中按需检索。
 
 **在代码中的体现**：
 
-- `MemoryLoader.bootstrap()` 只加载 `always` + `domain` 两条永久性等级
-- `topic` / `on-demand` 级记忆不进启动加载，由模型在 Loop 中主动调用
-  `search_memories` 召回
+- `bootstrap` 只加载 `persona` + `rule` + `skill` 三类来源标签
+- `insight` / `archive` 级记忆不进启动加载，由 `recall()` 在 Loop 中按需召回
 - 单次增量召回 Token 预算不超过上下文窗口的 10%
 - 归档时走记忆归档三原则过滤，拒绝低价值重复信息
 
@@ -184,8 +178,8 @@ domain），其余在 Agent Loop 中按需检索。
   下的配置文件（personas/rules/skills/tools）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
 - 项目级 projectPath/.memora/ 只放 rules/ 和 skills/，不放 memora.db
 - 用户记忆（dataDir）存放 memora.db + topics/，纯数据，不含配置
-- `addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
-- AutoConfigRefiner（计划中）写入配置文件（持久化，重启后依然生效）
+- `config.addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
+- `config.confirm()` 写入配置文件（持久化，重启后依然生效）
 
 **在代码中的体现**：
 

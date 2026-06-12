@@ -1,8 +1,8 @@
 ---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
-version: v0.3
-date: 2026-06-11
+version: v0.4
+date: 2026-06-12
 ---
 
 # Memora · 项目总则
@@ -41,7 +41,7 @@ date: 2026-06-11
 ```
 src/
 ├── index.ts        # 库导出入口（纯类型 + 接口导出，无 CLI）
-├── agent/          # Agent Loop + 工具执行 + 对话快照 + 作品投影
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector）+ 对话快照 + 作品投影
 ├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
@@ -89,8 +89,8 @@ chore: 升级 dependencies
 - ✅ 单 Agent 模型（memora.db Agent 级共享）
 - ✅ 三层架构（Agent 级配置 → 用户记忆 → 项目级配置）
 - ✅ 角色自动匹配 + 手动切换
-- ✅ 项目 rules/skills 接口（addRule + registerTool）
+- ✅ 项目 rules/skills 接口（config.addRule + tools.registerTool）
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
-- ✅ 测试 310 全量通过（InMemoryStorage，零 IO）
+- ✅ 测试 321 全量通过（InMemoryStorage，零 IO）

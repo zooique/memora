@@ -82,10 +82,10 @@ function makeAgent(
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：inspect() · 3 层记忆快照
+// 测试：memory.snapshot() · 3 层记忆快照
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · inspect() · 3 层记忆快照', () => {
+describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -112,7 +112,7 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const snap = agent.inspect();
+    const snap = agent.memory!.snapshot();
 
     expect(snap).toHaveProperty('working');
     expect(snap).toHaveProperty('bootstrap');
@@ -123,7 +123,7 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const initial = agent.inspect();
+    const initial = agent.memory!.snapshot();
     expect(initial.working.total).toBe(1); // 仅 system
     const firstPreview = initial.working.preview[0];
     expect(firstPreview).toBeDefined();
@@ -131,7 +131,7 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
 
     await agent.chatSync('你好');
 
-    const afterChat = agent.inspect();
+    const afterChat = agent.memory!.snapshot();
     expect(afterChat.working.total).toBeGreaterThan(initial.working.total);
     const lastUser = [...afterChat.working.preview].reverse().find((m) => m.role === 'user');
     expect(lastUser).toBeDefined();
@@ -141,7 +141,7 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const snap = agent.inspect();
+    const snap = agent.memory!.snapshot();
     expect(typeof snap.bootstrap.total).toBe('number');
     expect(Array.isArray(snap.bootstrap.items)).toBe(true);
     for (const item of snap.bootstrap.items) {
@@ -156,7 +156,7 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const snap = agent.inspect();
+    const snap = agent.memory!.snapshot();
     expect(snap.archive.currentTopic).toBeDefined();
     // currentTopicName 含日期前缀（如 "2026-06-09-main"），用于精确匹配话题文件
     expect(snap.archive.currentTopicName).toBeDefined();
@@ -165,9 +165,9 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
     expect(typeof snap.archive.topicFilesCount).toBe('number');
   });
 
-  it('inspect() 在未 init 时应抛错', () => {
+  it('未 init 时 memory 应为 null', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    expect(() => agent!.inspect()).toThrow(/未初始化/);
+    expect(agent.memory).toBeNull();
   });
 
   it('preview 字段应截断到 CONTENT_PREVIEW_LEN=80 字符', async () => {
@@ -177,7 +177,7 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
     const longContent = 'A'.repeat(500);
     await agent.chatSync(longContent);
 
-    const snap = agent.inspect();
+    const snap = agent.memory!.snapshot();
     for (const item of snap.working.preview) {
       expect(item.contentPreview.length).toBeLessThanOrEqual(80);
     }
@@ -185,10 +185,10 @@ describe('Agent · inspect() · 3 层记忆快照', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：addRule() · Q-701
+// 测试：config.addRule() · Q-701
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · addRule() · Q-701', () => {
+describe('Agent · config.addRule() · Q-701', () => {
   let agent: Agent;
   let tmpDir: string;
 
@@ -233,9 +233,9 @@ describe('Agent · addRule() · Q-701', () => {
       score: 1.0,
     };
 
-    await agent.addRule(rule);
+    await agent.config!.addRule(rule);
 
-    const messages = agent.getMessages();
+    const messages = agent.agentLoop!.getMessages();
     const lastMsg = messages[messages.length - 1];
     expect(lastMsg?.role).toBe('system');
     expect(lastMsg?.content).toContain('【项目规则】测试规则');
@@ -256,30 +256,19 @@ describe('Agent · addRule() · Q-701', () => {
       score: 1,
     };
 
-    await expect(agent.addRule(badMem)).rejects.toThrow(/无效来源/);
+    await expect(agent.config!.addRule(badMem)).rejects.toThrow(/无效来源/);
   });
 
-  it('init 前调用应抛错', async () => {
-    const now = new Date().toISOString();
-    const rule: Memory = {
-      id: 'rule:pre-init',
-      content: 'test',
-      source: SOURCE_LABELS.RULE,
-      name: '测试',
-      createdAt: now,
-      accessedAt: now,
-      score: 1,
-    };
-
-    await expect(agent.addRule(rule)).rejects.toThrow(/Agent 未初始化/);
+  it('init 前 config 应为 null', () => {
+    expect(agent.config).toBeNull();
   });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：getMessages()
+// 测试：agentLoop.getMessages()
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · getMessages()', () => {
+describe('Agent · agentLoop.getMessages()', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -306,7 +295,7 @@ describe('Agent · getMessages()', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const messages = agent.getMessages();
+    const messages = agent.agentLoop!.getMessages();
     expect(messages.length).toBeGreaterThanOrEqual(1);
     expect(messages[0]!.role).toBe('system');
   });
@@ -315,15 +304,15 @@ describe('Agent · getMessages()', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const before = agent.getMessages().length;
+    const before = agent.agentLoop!.getMessages().length;
     await agent.chatSync('你好');
-    const after = agent.getMessages().length;
+    const after = agent.agentLoop!.getMessages().length;
 
     expect(after).toBeGreaterThan(before);
   });
 
-  it('未初始化时应抛错', () => {
+  it('未初始化时 agentLoop 应为 null', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    expect(() => agent!.getMessages()).toThrow(/未初始化/);
+    expect(agent.agentLoop).toBeNull();
   });
 });
