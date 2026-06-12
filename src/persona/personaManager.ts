@@ -15,7 +15,6 @@
  *
  * 目录约定（v1.2 刮骨疗毒）：
  *   - 单层角色：只有宿主程序级 <configDir>/personas/*.md
- *   - 不再有全局级角色（~/.memora/global/ 已废弃）
  *   - 目录名 personas/ 与代码 Persona 术语一致，区别于用户身份信息
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';

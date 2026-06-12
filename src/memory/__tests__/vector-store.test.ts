@@ -1,10 +1,6 @@
 /**
  * 向量存储测试
  * 覆盖 upsert / search / delete / 持久化 / 批量操作
- *
- * TODO: EmbeddingService 接口已从 types.ts 移除（基元驱动重构），
- *       VectorStore 需要适配新的接口定义。
- *       当前测试保留结构，待 EmbeddingService 重新定义后恢复。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
@@ -15,9 +11,6 @@ import { VectorStore } from '@/memory/vector-store.js';
 /**
  * 创建模拟的 EmbeddingService
  * 不调用真实 API，直接返回固定向量
- *
- * TODO: EmbeddingService 接口已从 types.ts 移除，
- *       需要等待接口重新定义后更新此 mock。
  */
 function mockEmbeddingService() {
   return {

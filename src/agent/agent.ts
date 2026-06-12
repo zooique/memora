@@ -543,8 +543,7 @@ export class Agent {
   /**
    * 切换当前话题
    *
-   * 切换前为旧话题生成摘要归档（await 而非 fire-and-forget，排雷 P1-L4 时序修正）。
-   * 从归档结果中提取 snapshots 写入 seed_snapshots（替代已删除的 DialogueSnapshotExtractor）。
+   * 切换前为旧话题生成摘要归档。
    * 对应 CLI 的 /topic <name> 命令。
    *
    * @param newTopic - 新话题名称
@@ -557,8 +556,6 @@ export class Agent {
       ]);
     }
 
-    // 顺序化流程：归档(await) → switchTopic
-    // TopicStore 已移除，归档返回 null，快照逻辑暂跳过
     await this.history.archiveCurrentTopic('switch');
 
     return this.history.switchTopic(newTopic);
@@ -675,7 +672,6 @@ export class Agent {
     if (!activeProvider) return;
 
     // 消息历史（注入 storage + sessionStore）
-    // 基元驱动重构：TopicStore 和 summarizer 已从构造参数移除
     this.history = new MessageHistory(pctx.index, this._sessionStore);
 
     // v4.0：作品投影管理器（注入 storage + LlmProvider）
@@ -1101,8 +1097,7 @@ ${contextSection}
   /**
    * 统一查看记忆快照
    *
-   * 基元驱动模型下简化为 3 层（工作记忆 / Bootstrap / 话题归档），
-   * 移除了旧的第 4 层"话题挂载"（TopicMount 已删除）。
+   * 简化为 3 层（工作记忆 / Bootstrap / 话题归档）。
    *
    * 设计原则：
    * - **纯只读**——不动任何组件状态
@@ -1129,7 +1124,6 @@ ${contextSection}
     const bootstrap: readonly Memory[] = this._ctx?.bootstrapMemories ?? [];
 
     // 第 3 层：话题归档文件计数（异步加载，inspect 同步返回缓存值）
-    // _cachedTopicCount 已移除，后续通过异步机制刷新
     const archiveTotal = 0;
 
     return {
@@ -1670,7 +1664,6 @@ ${contextSection}
     // 恢复到 AgentLoop
     this.loop.restoreHistory(messages);
 
-    // ensureTopicInIndex 已移除（TopicStore 已删除），后续通过 recall() 自然召回
     return topicMessages.length;
   }
 
@@ -1703,7 +1696,6 @@ ${contextSection}
     // 恢复到 AgentLoop
     this.loop.restoreHistory(messages);
 
-    // ensureTopicInIndex 已移除（TopicStore 已删除），后续通过 recall() 自然召回
     return topicMessages.length;
   }
 }

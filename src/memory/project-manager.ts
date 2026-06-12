@@ -13,11 +13,6 @@
  *   - 项目切换不重建数据库，只更新安全守卫 + 重新扫描项目规则
  *   - 项目级 .memora/ 仅存放 rules/ 和 skills/（无 memora.db）
  *
- * 重构变更（2026-06-11）：
- *   - 移除 TopicStore 引用 → 对话历史管理由宿主项目负责
- *   - 移除 MemoryType 枚举 → 使用 SOURCE_LABELS 开放字符串
- *   - bootstrap 逻辑改用 getBySource 替代 getByPermanence
- *
  * 锁文件策略：
  *   - 打开项目时创建 .lock 文件（含 PID + 时间戳 + 主机名）
  *   - 关闭/切换项目时删除 .lock 文件
@@ -41,7 +36,6 @@ import { InMemoryStorage } from './in-memory-storage.js';
 import type { IMemoryStorage } from './storage-interface.js';
 import { MemoryLoader } from './loader.js';
 import type { LoadResult } from './loader.js';
-// TODO: TopicStore 已从内核移除，对话历史管理迁移至宿主项目
 import { SecurityGuard } from '@/security/path-guard.js';
 import { logger } from '@/logging/logger.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
@@ -63,7 +57,6 @@ export interface ProjectContext {
   fileStore: FileStore;
   /** SQLite 索引（通过 IMemoryStorage 接口访问） */
   index: IMemoryStorage;
-  // TODO: TopicStore 已从内核移除，对话历史管理迁移至宿主项目
   /** 安全守卫 */
   security: SecurityGuard;
   /** 启动时加载的必召记忆 */
@@ -117,7 +110,6 @@ export class ProjectManager {
   private readonly permission: 'owner' | 'guest';
   /** Agent 级存储实例（全局共享，不随项目切换重建） */
   private agentIndex: IMemoryStorage | null = null;
-  // TODO: agentTopicStore 已移除，对话历史管理迁移至宿主项目
   /** 当前打开的项目路径 */
   private currentProjectPath: string | null = null;
   /** 当前持有的锁文件路径 */
@@ -151,8 +143,6 @@ export class ProjectManager {
    *
    * 如果构造时注入了外部存储实例，直接使用；
    * 否则内部创建 InMemoryStorage（非持久化兜底，仅开发/测试用）。
-   *
-   * TODO: TopicStore 已从内核移除，对话历史管理迁移至宿主项目
    */
   private async ensureAgentResources(): Promise<{ index: IMemoryStorage }> {
     if (!this.agentIndex) {
@@ -180,7 +170,7 @@ export class ProjectManager {
    *
    * 全局规则不再由内核硬编码路径，宿主可通过 configDir 统一管理。
    *
-   * memora.db 和 TopicStore 是 Agent 级共享资源，不随项目切换重建。
+   * memora.db 是 Agent 级共享资源，不随项目切换重建。
    *
    * @param projectPath 项目根目录
    * @param projectName 项目名称（可选，默认取目录名）

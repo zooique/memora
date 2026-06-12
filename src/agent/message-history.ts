@@ -1,48 +1,30 @@
 /**
  * 消息历史：Agent 对话过程中的消息持久化
  *
- * 基元驱动重构（2026-06-11）：
- *   - TopicStore 已移除，消息持久化逻辑待新方案重建
- *   - 保留公共方法签名以维持 API 兼容
- *   - 标记 TODO 的方法体等待基元驱动存储方案落地后重写
- *
- * 原阶段一职责：
- *   - 封装"用户输入 → 话题文件"的追加操作
- *   - 封装"Agent 回复 → 话题文件"的追加操作
+ * 职责：
+ *   - 封装"用户输入 → 会话存储"的追加操作
+ *   - 封装"Agent 回复 → 会话存储"的追加操作
  *   - 维护当前话题上下文（date + topic）
- *
- * 原阶段二（M-203-改）：
- *   - 话题切换时自动生成旧话题摘要（事件驱动归档）
- *
- * 详见 02-上下文组装-v4.0.md §6 话题文件
+ *   - 通过 ISessionStore 接口实现会话持久化
  */
 import type { IMemoryStorage } from '@/memory/storage-interface.js';
 import type { ISessionStore, SessionMessage } from '@/memory/session-store.js';
 import { logger } from '@/logging/logger.js';
 
-// ─── 内联工具函数（原 topic-store.ts 导出，topic-store 删除后内联） ──
+// ─── 内联工具函数 ──
 
-/**
- * 获取当前日期字符串 YYYY-MM-DD
- * 原 topic-store.ts todayDate()
- */
+/** 获取当前日期字符串 YYYY-MM-DD */
 function todayDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-/**
- * 获取当前时间戳 ISO 8601
- * 原 topic-store.ts nowTimestamp()
- */
+/** 获取当前时间戳 ISO 8601 */
 function nowTimestamp(): string {
   return new Date().toISOString();
 }
 
 /**
- * 旧 TopicMessage 类型（原 TopicStore 使用的消息格式）
- *
- * TopicStore 删除后保留此类型，供 loadTopicMessages() 返回值兼容。
- * 后续基元驱动方案落地后，消息格式可能调整。
+ * 会话消息类型
  */
 export interface LegacyTopicMessage {
   /** 消息角色 */
@@ -55,10 +37,6 @@ export interface LegacyTopicMessage {
 
 /**
  * 消息历史类
- *
- * TopicStore 已删除（基元驱动重构），
- * 大部分方法保留签名但方法体标记 TODO，
- * 等待新存储方案落地后重写。
  */
 export class MessageHistory {
   /** 当前日期 YYYY-MM-DD */
@@ -137,14 +115,10 @@ export class MessageHistory {
 
   /**
    * 切换话题
-   * M-203-改：切换前自动为旧话题生成摘要（fire-and-forget，不阻塞切换）
    * @param newTopic - 新话题标识
    * @returns 新话题的全名
    */
   switchTopic(newTopic: string): string {
-    // TODO: TopicStore 已删除，旧话题归档逻辑待重建
-    // 原逻辑：this.summarizeAndArchive() → 触发旧话题摘要
-    logger.debug({ newTopic }, 'switchTopic: TopicStore 已移除，归档逻辑待重建');
     this.currentTopic = newTopic;
     return this.currentTopicName;
   }
@@ -152,6 +126,9 @@ export class MessageHistory {
   /**
    * 追加 user 消息到当前话题
    * 失败不抛出（消息持久化失败不应阻塞对话）
+   *
+   * 日期使用 todayDate() 动态获取，而非缓存的 this.currentDate，
+   * 确保跨日后消息写入当天目录。
    */
   async appendUser(content: string): Promise<void> {
     const message: SessionMessage = {
@@ -162,7 +139,8 @@ export class MessageHistory {
     // 使用 ISessionStore 持久化（如果已注入）
     if (this._sessionStore) {
       try {
-        this._sessionStore.appendMessage(this.currentDate, this.currentTopic, message);
+        // 动态获取当天日期，避免跨日后写入旧日期目录
+        this._sessionStore.appendMessage(todayDate(), this.currentTopic, message);
       } catch (err) {
         logger.warn({ err, topic: this.currentTopicName }, 'appendUser: 会话持久化失败');
       }
@@ -173,6 +151,8 @@ export class MessageHistory {
   /**
    * 追加 assistant 消息到当前话题
    * 失败不抛出
+   *
+   * 日期使用 todayDate() 动态获取，确保跨日后消息写入当天目录。
    */
   async appendAssistant(content: string): Promise<void> {
     if (!content.trim()) return;
@@ -184,7 +164,8 @@ export class MessageHistory {
     // 使用 ISessionStore 持久化（如果已注入）
     if (this._sessionStore) {
       try {
-        this._sessionStore.appendMessage(this.currentDate, this.currentTopic, message);
+        // 动态获取当天日期，避免跨日后写入旧日期目录
+        this._sessionStore.appendMessage(todayDate(), this.currentTopic, message);
       } catch (err) {
         logger.warn({ err, topic: this.currentTopicName }, 'appendAssistant: 会话持久化失败');
       }
@@ -233,18 +214,13 @@ export class MessageHistory {
    * 用于启动时自动恢复上次对话
    * 策略：先找今天的话题，没有则找最近日期的话题
    *
-   * TODO: TopicStore 已删除，待新方案重建。
-   *
    * @param preferredTopic - 优先加载的话题名（默认 'main'）
-   * @returns 话题消息列表，TopicStore 删除后始终返回空数组
+   * @returns 话题消息列表
    */
   async loadMostRecentTopic(preferredTopic = 'main'): Promise<LegacyTopicMessage[]> {
-    // TopicStore 已移除，原逻辑依赖 this.topicStore.list() + this.parseTopicFileName()
-    logger.debug({ preferredTopic }, 'loadMostRecentTopic: TopicStore 已移除，返回空数组');
+    logger.debug({ preferredTopic }, 'loadMostRecentTopic: 返回空数组');
     return [];
   }
-
-  // summarizeAndArchive() 已删除（TopicStore/TopicSummarizer 已移除，归档逻辑由 extractInsight() 替代）
 
   /**
    * 公开方法：为当前话题生成摘要，并同步写入索引
@@ -255,17 +231,16 @@ export class MessageHistory {
    * - 'lazy'    : 启动时补归档（兜底历史话题），已有摘要跳过
    * - 'midway'  : 超长话题中途归档，已有摘要时仍重新调用（追加覆盖）
    *
-   * TopicStore 和 TopicSummarizer 均已删除，归档逻辑由 Agent.extractInsight() 替代。
+   * 归档逻辑由 Agent.extractInsight() 替代。
    * 此方法保留兼容性，返回 null。
    *
    * @param reason - 归档触发原因
-   * @returns null（TopicStore 删除后无法生成归档结果）
+   * @returns null
    */
   async archiveCurrentTopic(
     reason: 'switch' | 'signal' | 'lazy' | 'midway' = 'switch',
   ): Promise<null> {
-    // TopicStore 和 TopicSummarizer 均已移除，归档逻辑由 Agent.extractInsight() 替代
-    logger.debug({ reason, topic: this.currentTopicName }, 'archiveCurrentTopic: TopicStore 已移除，跳过归档');
+    logger.debug({ reason, topic: this.currentTopicName }, 'archiveCurrentTopic: 跳过归档');
     return null;
   }
 
@@ -273,14 +248,13 @@ export class MessageHistory {
    * 启动时补归档：扫描所有 topic-*.md，找出"还没在索引里"的，
    * 后台异步补齐。
    *
-   * TopicStore 已删除，此方法保留兼容性，返回 0。
+   * 此方法保留兼容性，返回 0。
    *
    * @param timeoutMs 单个 topic 补归档超时（默认 3000ms）
-   * @returns 0（TopicStore 删除后无法扫描话题文件）
+   * @returns 0
    */
   async archiveMissingTopics(_timeoutMs = 3000): Promise<number> {
-    // TopicStore 已移除，原逻辑依赖 this.topicStore.list() + this.topicStore.read()
-    logger.debug('archiveMissingTopics: TopicStore 已移除，跳过补归档');
+    logger.debug('archiveMissingTopics: 跳过补归档');
     return 0;
   }
 
@@ -332,34 +306,25 @@ export class MessageHistory {
     return this.pendingArchives.size === 0;
   }
 
-  // writeTopicMemory() / buildTopicMemoryId() / parseTopicFileName() 已删除
-  // TopicStore 已移除，话题记忆写入逻辑由 Agent.extractInsight() 替代
-
   /**
    * v4.0：获取当前话题的完整消息列表（话题归档用）
    *
-   * TopicStore 已删除，返回空数组。
-   *
-   * @returns 当前话题的所有消息（TopicStore 删除后返回空）
+   * @returns 当前话题的所有消息
    */
   async getCurrentTopicMessages(): Promise<LegacyTopicMessage[]> {
-    // TopicStore 已移除，原逻辑 this.topicStore.read()
     return [];
   }
 
   /**
    * v4.0：写入种子快照到当前话题的 frontmatter
    *
-   * TopicStore 已删除，快照未持久化。
-   *
    * @param snapshots 种子句列表
    */
   async setCurrentTopicSeedSnapshots(snapshots: string[]): Promise<void> {
     if (snapshots.length === 0) return;
-    // TopicStore 已移除，原逻辑 this.topicStore.appendSeedSnapshots()
     logger.debug(
       { topic: this.currentTopicName, snapshotCount: snapshots.length },
-      'setCurrentTopicSeedSnapshots: TopicStore 已移除，快照未持久化',
+      'setCurrentTopicSeedSnapshots: 快照未持久化',
     );
   }
 }

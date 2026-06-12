@@ -1,4 +1,4 @@
-﻿---
+---
 alwaysApply: false
 description: 安全规范（最小权限、显式允许、审计可追溯）
 version: v0.1
@@ -7,8 +7,7 @@ date: 2026-06-02
 
 # 安全规范
 
-> 详见 [03-安全权限-v0.2.md](../../docs/基础设计文档/03-安全权限-v0.2.md) +
-> [ADR-006 · 安全模型](./decisions/ADR-006-security-model.md)
+> 详见 [ADR-006 · 安全模型](./decisions/ADR-006-security-model.md)
 
 ## 1. 三条底层原则
 

@@ -14,22 +14,15 @@ date: 2026-06-11
 
 ## 1. 不可违反的硬约束
 
-1. **设计文档优先**：所有架构决策必须与
-   [01-主架构-v4.0.md](../../docs/基础设计文档/01-主架构-v4.0.md) /
-   [02-上下文组装-v4.0.md](../../docs/基础设计文档/02-上下文组装-v4.0.md) /
-   [03-安全权限-v0.2.md](../../docs/基础设计文档/安全权限设计%20v0.2.md) /
-   [04-测试策略-v0.2.md](../../docs/基础设计文档/04-测试策略-v0.2.md) /
-   [00-记忆归档原则-v1.0.md](../../docs/基础设计文档/00-记忆归档原则-v1.0.md)
-   一致
-2. **ADR 优先于个人偏好**：技术栈变更必须先更新 ADR（`.trae/rules/decisions/`）
-3. **跨文档引用规范**：详见
+1. **ADR 优先于个人偏好**：技术栈变更必须先更新 ADR（`.trae/rules/decisions/`）
+2. **跨文档引用规范**：详见
    [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
-4. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
+3. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
    `source` 开放字符串区分（详见 [ADR-004](./decisions/ADR-004-memory-unification.md)）
-5. **单 Agent 模型 + 三层架构**：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）；memora.db 是 Agent 级共享资源，不随子项目切换重建
-6. **配置文件是真理源**：configDir
+4. **单 Agent 模型 + 三层架构**：Agent 级配置（configDir）→ 用户记忆（dataDir）→ 项目级配置（projectPath/.memora/）；memora.db 是 Agent 级共享资源，不随子项目切换重建
+5. **配置文件是真理源**：configDir
    下的配置文件由 MemoryLoader 启动时扫描加载到 SQLite；SQLite 是运行时索引，不是持久化配置存储
-7. **零依赖内核**：memora 是纯逻辑库，不依赖任何 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 仅允许纯 JS 工具库
+6. **零依赖内核**：memora 是纯逻辑库，不依赖任何 native 模块（包括 better-sqlite3）；所有持久化、CLI、native 能力由宿主项目注入。memora 的 `dependencies` 仅允许纯 JS 工具库
 
 ## 2. 技术栈清单
 

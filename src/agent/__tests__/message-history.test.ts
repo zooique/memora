@@ -1,11 +1,11 @@
 /**
- * 消息历史单元测试（基元驱动重构后）
+ * 消息历史单元测试
  *
  * 覆盖：
  *   - switchTopic 切换话题
  *   - appendUser / appendAssistant 消息追加
- *   - listAllTopics 返回空数组（TopicStore 已删除）
- *   - archiveCurrentTopic 待重建
+ *   - listAllTopics 返回空数组
+ *   - archiveCurrentTopic 返回 null
  *   - registerPendingArchive / awaitPendingArchives
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -70,7 +70,7 @@ describe('MessageHistory · 基本操作', () => {
 });
 
 describe('MessageHistory · listAllTopics', () => {
-  it('TopicStore 已删除，应返回空数组', async () => {
+  it('应返回空数组', async () => {
     const history = new MessageHistory(createMockStorage());
     const topics = await history.listAllTopics();
     expect(topics).toEqual([]);
@@ -78,7 +78,7 @@ describe('MessageHistory · listAllTopics', () => {
 });
 
 describe('MessageHistory · loadTopicMessages', () => {
-  it('TopicStore 已删除，应返回空数组并更新当前话题', async () => {
+  it('应返回空数组并更新当前话题', async () => {
     const history = new MessageHistory(createMockStorage());
     const messages = await history.loadTopicMessages('2026-06-01', 'old-topic');
     expect(messages).toEqual([]);
@@ -88,7 +88,7 @@ describe('MessageHistory · loadTopicMessages', () => {
 });
 
 describe('MessageHistory · loadMostRecentTopic', () => {
-  it('TopicStore 已删除，应返回空数组', async () => {
+  it('应返回空数组', async () => {
     const history = new MessageHistory(createMockStorage());
     const messages = await history.loadMostRecentTopic('main');
     expect(messages).toEqual([]);
@@ -96,7 +96,7 @@ describe('MessageHistory · loadMostRecentTopic', () => {
 });
 
 describe('MessageHistory · archiveCurrentTopic', () => {
-  it('TopicStore 已删除，应返回 null', async () => {
+  it('应返回 null', async () => {
     const history = new MessageHistory(createMockStorage());
     const result = await history.archiveCurrentTopic('signal');
     expect(result).toBeNull();
@@ -112,7 +112,7 @@ describe('MessageHistory · archiveCurrentTopic', () => {
 });
 
 describe('MessageHistory · archiveMissingTopics', () => {
-  it('TopicStore 已删除，应返回 0', async () => {
+  it('应返回 0', async () => {
     const history = new MessageHistory(createMockStorage());
     const count = await history.archiveMissingTopics(500);
     expect(count).toBe(0);
@@ -162,7 +162,7 @@ describe('MessageHistory · pendingArchives', () => {
 });
 
 describe('MessageHistory · getCurrentTopicMessages', () => {
-  it('TopicStore 已删除，应返回空数组', async () => {
+  it('应返回空数组', async () => {
     const history = new MessageHistory(createMockStorage());
     const messages = await history.getCurrentTopicMessages();
     expect(messages).toEqual([]);
