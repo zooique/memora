@@ -3,14 +3,16 @@
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
+>
+> **版本**：v2.0（最后更新：2026-06-12）
 
 ---
 
-## 1. 设计哲学：Memora = 大脑，宿主 = 身体
+## 一、设计哲学
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│  宿主程序（任意：CLI / 桌面精灵 / 小说生成器 / WebUI）      │
+│  宿主程序（CLI / 桌面精灵 / 小说生成器 / WebUI）           │
 │  ┌─────────────────┐    ┌──────────────────┐               │
 │  │ LLM Provider 实例 │◄───│ API Key / baseUrl │  ← 宿主职责  │
 │  └────────┬────────┘    └──────────────────┘               │
@@ -31,44 +33,56 @@
 - **零 native 依赖**（核心层仅依赖 `zod`；持久化由宿主通过 `IMemoryStorage` 接口注入）
 - **零控制台输出**（核心库不调用 `console.*`）
 - **零写用户文件**（配置文件是真理源，Agent 只读）
+- **零 LLM 配置加载**（Agent 不知道 `apiKey`，宿主传入 `LlmProvider` 实例）
 
 ---
 
-## 2. 构造与生命周期
+## 二、构造与生命周期
 
 ### 2.1 构造选项 `AgentOptions`
 
-```typescript
-import { Agent } from 'memora';
-
-export interface AgentOptions {
-  projectPath: string;          // 项目路径（必须）
-  provider: LlmProvider;        // 前台 LLM Provider（必须）
-  backgroundProvider?: LlmProvider; // 后台 Provider（可选，投影等后台操作）
-  configDir?: string;           // 配置目录（personas/rules/skills）
-  dataDir?: string;             // 记忆数据目录（默认 ~/.memora）
-  registryDir?: string;         // 项目注册表目录（默认与 dataDir 相同）
-  maxContextTokens?: number;    // 上下文窗口上限（默认 120000）
-  persona?: string;             // 默认角色名
-  permission?: 'owner' | 'guest'; // 安全权限
-  allowedPaths?: string[];      // 路径白名单
-  confirmWrites?: boolean;      // 写入确认
-  storage?: IMemoryStorage;     // 存储层注入
-  sessionStore?: ISessionStore; // 会话存储注入
-  logger?: ILogger;             // 日志注入
-}
-```
+| 字段 | 类型 | 必须 | 说明 |
+|------|------|------|------|
+| `projectPath` | `string` | ✅ | 项目路径（必须） |
+| `provider` | `LlmProvider` | ✅ | 前台 LLM Provider（必须） |
+| `backgroundProvider` | `LlmProvider` | ❌ | 后台 Provider（投影等后台操作） |
+| `configDir` | `string` | ❌ | 配置目录（personas/rules/skills） |
+| `dataDir` | `string` | ❌ | 记忆数据目录（默认 ~/.memora） |
+| `registryDir` | `string` | ❌ | 项目注册表目录（默认与 dataDir 相同） |
+| `maxContextTokens` | `number` | ❌ | 上下文窗口上限（默认 120000） |
+| `persona` | `string` | ❌ | 默认角色名 |
+| `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
+| `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
+| `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
+| `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
+| `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
+| `logger` | `ILogger` | ❌ | 日志注入 |
 
 ### 2.2 生命周期方法
 
 | 方法 | 用途 |
 |------|------|
 | `new Agent(opts)` | 构造函数（无副作用，不连接 LLM） |
-| `agent.init(projectPathOverride?)` → `Promise<ProjectContext>` | 初始化：建立 SQLite、加载配置、连接 LLM |
-| `agent.close()` | 关闭：释放数据库连接、释放项目锁 |
-| `agent.inspect()` | 同步返回 4 层记忆快照（working / bootstrap / archive / mounted） |
+| `init(projectPathOverride?)` → `Promise<ProjectContext>` | 初始化：建立 SQLite、加载配置、连接 LLM |
+| `close()` | 关闭：释放数据库连接、释放项目锁 |
+| `inspect()` | 同步返回 4 层记忆快照 |
+| `lastInteractionAt` | 只读属性（`Date | null`），记录最近一次 `chat()` 调用时间 |
 
-**状态机**：
+**`ProjectContext` 字段（`init()` 返回值）：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `projectPath` | `string` | 项目根目录的绝对路径 |
+| `projectName` | `string` | 项目名称（从注册表读取，或取目录名） |
+| `memoraDir` | `string` | `.memora/` 目录的绝对路径 |
+| `dbPath` | `string` | memora.db 路径 |
+| `fileStore` | `FileStore` | 文件存储 |
+| `index` | `IMemoryStorage` | SQLite 索引（记忆检索接口） |
+| `security` | `SecurityGuard` | 安全守卫 |
+| `bootstrapMemories` | `Memory[]` | 启动时加载的必召记忆 |
+| `loadResult` | `LoadResult` | 加载结果（成功数 / 失败数） |
+
+**状态机：**
 ```
 [构造] --init()--> [已初始化] --chat()/其他方法...--> [已初始化]
                               --close()--> [已关闭]
@@ -78,38 +92,40 @@ export interface AgentOptions {
 
 ---
 
-## 3. 对话 API（最核心）
+## 三、对话 API
 
-### 3.1 `chat(input, signal?)` — 流式对话
+### 3.1 `chat(input, signal?)` — 流式对话（唯一入口）
 
 ```typescript
 async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown>
 ```
 
-**唯一**的对话入口。流式返回 `AgentChunk` 事件。可选传入 `signal` 支持取消。
+流式返回 `AgentChunk` 事件，可选传入 `signal` 支持取消。
 
 ```typescript
 type AgentChunk =
   | { type: 'thinking'; phase: ThinkingPhase } // 推理阶段
-  | { type: 'recall'; count: number }          // 话题记忆挂载
-  | { type: 'text'; content: string }          // LLM 文本片段
+  | { type: 'recall'; count: number }           // 话题记忆挂载
+  | { type: 'text'; content: string }           // LLM 文本片段
   | { type: 'tool_start'; name: string; args?: string }
   | { type: 'tool_result'; name: string; ok: boolean; summary?: string }
-  | { type: 'aborted'; reason: string }        // 对话被取消
-  | { type: 'done' };                          // 结束标记
+  | { type: 'aborted'; reason: string }         // 对话被取消
+  | { type: 'done' };                           // 结束标记
 ```
 
-### 3.2 `chatSync(input, signal?)` — 同步版（测试用）
+`ThinkingPhase` 取值：`'recalling' | 'processing' | 'archiving'`
+
+### 3.2 `chatSync(input, signal?)` — 同步版（仅供测试用）
 
 ```typescript
 async chatSync(input: string, signal?: AbortSignal): Promise<string>
 ```
 
-收集所有 `text` 事件拼接成完整字符串返回。**仅供测试用**。
+收集所有 `text` 事件拼接成完整字符串返回。
 
 ---
 
-## 4. 记忆 API
+## 四、记忆 API
 
 ### 4.1 读记忆
 
@@ -120,23 +136,69 @@ async chatSync(input: string, signal?: AbortSignal): Promise<string>
 | `getMessages()` | 当前 AgentLoop 的全部消息 | `readonly Message[]` |
 | `getStats()` | 记忆库统计 | `AgentStats` |
 
+**`AgentSearchHit`：**
+
+```typescript
+interface AgentSearchHit {
+  name: string;          // 记忆名称
+  source: string;        // 来源标签
+  score: number;         // 权重（0-1）
+  contentPreview: string; // 内容预览（截断到 120 字符）
+}
+```
+
+**`AgentStats`：**
+
+```typescript
+interface AgentStats {
+  bySource: Record<string, number>; // 按来源标签分组的记忆数量
+  total: number;                    // 记忆总数
+}
+```
+
 ### 4.2 写记忆（运行时 / 会话级）
 
 | 方法 | 用途 | 写到哪里 |
 |------|------|----------|
 | `addRule(memory)` | 添加规则 | SQLite 索引 |
-| `addSimpleRule(name, content, keywords=[])` | 同上，简化版 | SQLite 索引 |
+| `addSimpleRule(name, content)` | 同上，简化版（无 keywords 参数） | SQLite 索引 |
 | `addSkill(memory)` | 添加技能 | SQLite 索引 |
-| `addSimpleSkill(name, content, keywords=[])` | 同上，简化版 | SQLite 索引 |
+| `addSimpleSkill(name, content)` | 同上，简化版（无 keywords 参数） | SQLite 索引 |
+
+**Memory 模型（基元驱动，7 个字段）：**
+
+```typescript
+interface Memory {
+  id: string;         // 唯一标识（source:name 格式，如 'rule:core'）
+  content: string;    // 记忆内容（Markdown 文本）
+  source: string;     // 来源标签（开放字符串，非枚举）
+  name: string;       // 可读名称
+  createdAt: string;  // 创建时间（ISO 8601）
+  accessedAt: string; // 最后访问时间（每次召回时刷新）
+  score: number;      // 权重（0-1，召回时用于排序）
+}
+```
+
+**常用 source 标签（`SOURCE_LABELS` 常量）：**
+
+| 常量 | 值 | 用途 |
+|------|----|------|
+| `SOURCE_LABELS.PERSONA` | `'persona'` | 角色人格 |
+| `SOURCE_LABELS.RULE` | `'rule'` | 创作规则 |
+| `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义 |
+| `SOURCE_LABELS.INSIGHT` | `'insight'` | 对话洞察 |
+| `SOURCE_LABELS.PROFILE` | `'profile'` | 用户画像 |
+| `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
 
 ---
 
-## 5. 项目 / 话题管理
+## 五、项目 / 话题管理
 
 | 方法 | 用途 |
 |------|------|
 | `listProjects()` | 列出所有已注册项目 |
 | `switchProject(nameOrPath)` | 切换到指定项目（保留 Agent 级记忆） |
+| `rebuildComponents()` | **项目切换后必须调用**：重建 history / loop，使新项目会话生效 |
 | `listAllTopics()` | 列出当前项目下所有话题 |
 | `switchTopic(newName)` | 切换到指定话题 |
 | `loadTopicMessages(date, topic)` | 加载指定日期/话题的消息 |
@@ -145,19 +207,30 @@ async chatSync(input: string, signal?: AbortSignal): Promise<string>
 
 ---
 
-## 6. 角色管理（Persona）
+## 六、角色管理（Persona）
 
 | 方法 | 用途 |
 |------|------|
 | `listPersonas()` | 列出所有可用角色 |
 | `switchPersona(name)` | 切换到指定角色（手动模式） |
-| `setPersonaMode(mode)` | 设置匹配模式（'auto' / 'manual'） |
+| `setPersonaMode(mode)` | 设置匹配模式（`'auto'` / `'manual'`） |
 | `getPersonaMode()` | 读取当前匹配模式 |
 | `getActivePersonaName()` | 读取当前激活的角色名 |
 
 ---
 
-## 7. 工具注册 API（扩展点）
+## 七、工具注册 API
+
+### 7.1 内置工具（4 个）
+
+| 工具名 | 用途 | 参数 |
+|--------|------|------|
+| `read_file` | 读取项目内文件内容 | `path` |
+| `write_file` | 写入/创建文件（支持 overwrite/append/insert 三种模式） | `path`, `content`, `mode?`, `insert_line?` |
+| `list_dir` | 列出目录内容（递归深度 ≤ 3） | `path?`, `recursive?`, `maxDepth?` |
+| `search_memories` | 在记忆索引中搜索（支持 match/near 两种模式） | `query`, `limit?`, `mode?` |
+
+### 7.2 自定义工具（宿主扩展）
 
 | 方法 | 用途 |
 |------|------|
@@ -165,23 +238,21 @@ async chatSync(input: string, signal?: AbortSignal): Promise<string>
 | `getToolDefinitions()` | 获取所有工具定义（内置 + 自定义） |
 | `executeTool(name, argsJson)` | 执行工具调用 |
 | `setWriteExtensions(ext)` | 注入写入扩展回调（diff 对比确认） |
-| `setMemoryKeywords(keywords)` | 设置记忆关键词 |
-
-### 7.1 内置工具（4 个）
-
-| 工具名 | 用途 | 参数 |
-|--------|------|------|
-| `read_file` | 读取项目内文件内容 | `path` |
-| `write_file` | 写入/创建文件 | `path`, `content`, `mode?`, `insert_line?` |
-| `list_dir` | 列出目录内容 | `path?`, `recursive?`, `maxDepth?` |
-| `search_memories` | 在记忆索引中搜索 | `query`, `limit?`, `mode?` |
-
-### 7.2 扩展工具：宿主供能
-
-Agent 本身无网络能力，所有"超纲"能力由宿主通过 `registerTool()` 提供。工具 handler 跑在宿主进程里，不受 Agent 安全层约束。
+| `setMemoryKeywords(keywords)` | 设置记忆关键词（domain / personal 两类） |
 
 ```typescript
-// 网络搜索工具示例
+// 工具定义
+interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: 'object';
+    properties: Record<string, any>;
+    required?: string[];
+  };
+}
+
+// 宿主注册领域工具示例
 agent.registerTool(
   {
     name: 'web_search',
@@ -204,7 +275,7 @@ agent.registerTool(
 
 ---
 
-## 8. Provider 管理
+## 八、Provider 管理
 
 | 方法 | 用途 |
 |------|------|
@@ -215,7 +286,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ---
 
-## 9. 配置建议 API
+## 九、配置建议 API
 
 | 方法 | 用途 |
 |------|------|
@@ -228,12 +299,13 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ---
 
-## 10. 完整 API 一览
+## 十、完整 API 一览
 
-按 API 分组（合计 **30 个公开方法**）：
+按 API 分组（合计 **36 个公开方法 + 1 个属性**）：
 
-### 生命周期（3）
-- `new Agent(opts)` / `init()` / `close()`
+### 生命周期（4）
+- `new Agent(opts)` / `init()` / `close()` / `inspect()`
+- `lastInteractionAt` — 只读属性（`Date | null`），记录最近一次 `chat()` 调用时间。长时间运行的宿主可据此判断用户离线时长，决定是否主动问候
 
 ### 对话（2）
 - `chat(input, signal?)` / `chatSync(input, signal?)`
@@ -244,8 +316,8 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 ### 记忆写（4）
 - `addRule()` / `addSimpleRule()` / `addSkill()` / `addSimpleSkill()`
 
-### 项目 / 话题（7）
-- `listProjects()` / `switchProject()` / `listAllTopics()` / `switchTopic()` / `loadTopicMessages()` / `restoreMostRecentTopic()` / `restoreTopic()`
+### 项目 / 话题（8）
+- `listProjects()` / `switchProject()` / `rebuildComponents()` / `listAllTopics()` / `switchTopic()` / `loadTopicMessages()` / `restoreMostRecentTopic()` / `restoreTopic()`
 
 ### 角色（5）
 - `listPersonas()` / `switchPersona()` / `setPersonaMode()` / `getPersonaMode()` / `getActivePersonaName()`
@@ -259,14 +331,25 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 ### 配置建议（2）
 - `onConfigSuggestion()` / `confirmConfigSuggestion()`
 
+### 内部调试（1）
+- `getBuildCtx()` — 暴露内部 `ProjectContext` 核心组件（`security` / `index` / `bootstrapMemories`），供宿主调试或高级集成使用。正常接入**不需要**调用此方法。
+
 ---
 
-## 11. 类型导出
+## 十一、类型导出
 
 ```typescript
 // Agent 与流式事件
 export { Agent } from 'memora';
-export type { AgentChunk, ThinkingPhase, AgentOptions, ProjectContext, MemorySnapshot } from 'memora';
+export type {
+  AgentChunk,
+  ThinkingPhase,
+  AgentOptions,
+  AgentContext,           // = ProjectContext 的别名
+  MemorySnapshot,
+  WorkingMemorySnapshot,
+  BootstrapSnapshot,
+} from 'memora';
 
 // 工具
 export type { ToolDefinition, ToolHandler, WriteExtensions } from 'memora';
@@ -306,7 +389,7 @@ export { segmentText, SOURCE_LABELS, inferSource, escapeLike } from 'memora';
 
 ---
 
-## 12. 安全与约束
+## 十二、安全与约束
 
 ### 核心库零越界
 
@@ -316,10 +399,6 @@ export { segmentText, SOURCE_LABELS, inferSource, escapeLike } from 'memora';
 | 核心库 `process.stdin/stdout` | 0 处 |
 | 核心库写配置文件 | 0 处 |
 | 核心库 `readFileSync/writeFileSync` 写宿主业务文件 | 0 处 |
-
-### 核心库零 LLM 配置加载
-
-Agent 不知道 `apiKey`，宿主传入 `LlmProvider` 实例。
 
 ### 内部数据写入（不越界）
 

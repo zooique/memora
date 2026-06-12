@@ -2,7 +2,21 @@
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
+> **版本**：v2.0（最后更新：2026-06-12）
+>
 > **v2.0 重大变更**：Agent 不再接收 `Config` 对象，改为接收 `LlmProvider` 实例。宿主自行管理 API Key / baseUrl / model 配置，Agent 只关心"用什么 LLM"。
+
+---
+
+## 目录
+
+- [一、核心理念](#一核心理念)
+- [二、三重数据存续路径](#二三重数据存续路径)
+- [三、最小接入步骤](#三最小接入步骤)
+- [四、会话持久化](#四会话持久化)
+- [五、API 速查](#五api-速查)
+- [六、宿主工具函数](#六宿主工具函数)
+- [七、关键约束](#七关键约束)
 
 ---
 
@@ -37,6 +51,8 @@
 └────────────────────────────────────────────────────────────┘
 ```
 
+---
+
 ## 二、三重数据存续路径
 
 | 路径 | 用途 | 示例 |
@@ -45,7 +61,7 @@
 | `AgentOptions.dataDir` | 记忆数据（memora.db + topics/） | 跟作品走 |
 | `projectPath/.memora/` | 项目级配置（rules/skills） | 跟作品走 |
 
-**小说生成器推荐布局**：
+**小说生成器推荐布局：**
 ```
 小说项目/
 ├── .memora/           ← 项目级配置（rules + skills）
@@ -53,6 +69,8 @@
     ├── memora.db
     └── topics/
 ```
+
+---
 
 ## 三、最小接入步骤
 
@@ -150,23 +168,18 @@ agent.registerTool(
 ### 5. 注入项目规则
 
 ```typescript
-await agent.addRule({
-  id: 'rule:worldbuilding',
-  type: 'rule',
-  permanence: 'always',
-  name: '世界观规则',
-  content: '这是一个东方玄幻世界，修真等级分为炼气、筑基、金丹……',
-  tags: ['世界观'],
-  weight: 1.0,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
+await agent.addSimpleRule(
+  '世界观规则',
+  '这是一个东方玄幻世界，修真等级分为炼气、筑基、金丹……',
+);
 ```
 
 ### 6. 切换项目
 
 ```typescript
 const ctx = await agent.switchProject('another-novel');
+// 项目切换后必须调用 rebuildComponents()
+await agent.rebuildComponents();
 console.log(`已切换到：${ctx.projectName}`);
 ```
 
@@ -175,6 +188,8 @@ console.log(`已切换到：${ctx.projectName}`);
 ```typescript
 await agent.close(); // 释放项目锁 + 关闭数据库
 ```
+
+---
 
 ## 四、会话持久化（ISessionStore）
 
@@ -205,10 +220,13 @@ const agent = new Agent({
 });
 ```
 
-**会话持久化特性**：
+**会话持久化特性：**
 - 日期使用 `todayDate()` 动态获取，确保跨日后消息写入当天目录
 - `appendUser()` / `appendAssistant()` 自动调用 `appendMessage()`
 - `loadTopicMessages()` 自动调用 `loadMessages()`
+- `SessionMessage.role` 支持 `'user' | 'assistant' | 'system'`，宿主直接调用 `appendMessage()` 时可传入任意角色
+
+---
 
 ## 五、API 速查
 
@@ -237,9 +255,10 @@ const agent = new Agent({
 
 | 方法 | 说明 |
 |------|------|
-| `agent.init()` | 初始化（创建 DB、加载配置、连接 LLM） |
+| `agent.init()` | 初始化（创建 DB、加载配置、连接 LLM），返回 `AgentContext` |
 | `agent.close()` | 安全关闭（释放锁 + 关闭数据库） |
 | `agent.inspect()` | 返回 Agent 当前状态快照（4 层） |
+| `agent.lastInteractionAt` | 只读属性，`Date | null`，记录最近一次对话时间 |
 
 ### 对话
 
@@ -260,10 +279,10 @@ const agent = new Agent({
 
 | 方法 | 说明 |
 |------|------|
-| `agent.addRule(memory)` | 注入规则 |
-| `agent.addSimpleRule(name, content, keywords?)` | 便捷方法 |
-| `agent.addSkill(memory)` | 注入技能 |
-| `agent.addSimpleSkill(name, content, keywords?)` | 便捷方法 |
+| `agent.addRule(memory)` | 注入规则（传入完整 Memory 对象） |
+| `agent.addSimpleRule(name, content)` | 便捷方法（无 keywords 参数） |
+| `agent.addSkill(memory)` | 注入技能（传入完整 Memory 对象） |
+| `agent.addSimpleSkill(name, content)` | 便捷方法（无 keywords 参数） |
 
 ### 工具
 
@@ -273,6 +292,7 @@ const agent = new Agent({
 | `agent.getToolDefinitions()` | 获取所有工具定义 |
 | `agent.executeTool(name, args)` | 执行工具调用 |
 | `agent.setWriteExtensions(ext)` | 注入写入扩展回调（diff 对比） |
+| `agent.setMemoryKeywords(keywords)` | 设置记忆关键词（domain / personal 两类） |
 
 ### 角色
 
@@ -296,11 +316,14 @@ const agent = new Agent({
 |------|------|
 | `agent.listProjects()` | 列出已注册的子项目 |
 | `agent.switchProject(name)` | 切换到其他子项目 |
+| `agent.rebuildComponents()` | **项目切换后必须调用**：重建 history / loop，使新项目会话生效 |
 | `agent.listAllTopics()` | 列出所有话题文件名 |
 | `agent.switchTopic(name)` | 切换当前话题 |
 | `agent.loadTopicMessages(date, topic)` | 加载指定日期/话题的消息 |
 | `agent.restoreTopic(date, topic)` | 恢复指定日期/话题 |
 | `agent.restoreMostRecentTopic()` | 启动时恢复最近一次话题 |
+
+---
 
 ## 六、宿主工具函数
 
@@ -315,6 +338,7 @@ import {
   segmentText,
   recall,
   extractKeywords,
+  SOURCE_LABELS,
 } from 'memora';
 import type {
   ProviderConfig,
@@ -323,6 +347,8 @@ import type {
   ILogger,
   ISessionStore,
   SessionMessage,
+  Memory,
+  LlmProvider,
 } from 'memora';
 ```
 
@@ -337,8 +363,11 @@ import type {
 | `segmentText(text)` | 中文分词工具 |
 | `recall(index, query, options?)` | 简化关键词搜索 |
 | `extractKeywords(text)` | 提取关键词 |
+| `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION） |
 
 **注意**：`SqliteStorage` 已移出到宿主项目，不再从 memora 导出。宿主需自行实现 `IMemoryStorage` 接口。
+
+---
 
 ## 七、关键约束
 
@@ -353,6 +382,7 @@ import type {
 9. **禁止**为每个子项目创建独立的 memora.db
 10. **禁止**项目切换时关闭/重建数据库
 11. **禁止**将配置直接写入 SQLite 作为持久化存储
+12. **项目切换后必须调用** `rebuildComponents()` 才能使新项目会话生效
 
 ---
 

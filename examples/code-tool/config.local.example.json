@@ -1,7 +1,0 @@
-{
-  "llm": {
-    "apiKey": "",
-    "baseUrl": "https://api.xiaomimimo.com/v1",
-    "model": "mimo-v2.5-pro"
-  }
-}

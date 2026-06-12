@@ -53,6 +53,5 @@ $RECYCLE.BIN/
 # TypeScript
 *.tsbuildinfo
 
-# 示例项目数据
-examples/novel-writer/.memora/*
+# 项目级运行时数据
 .memora/projects.json
