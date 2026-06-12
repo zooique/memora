@@ -20,6 +20,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
+import { tokenizeKeywords } from '@/memory/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
@@ -359,15 +360,10 @@ export class PersonaManager {
   }
 
   /**
-   * 简单分词（中英文混合，复用 SkillManager 逻辑）
+   * 分词（复用 segmenter 共享函数）
    */
   private tokenize(input: string): string[] {
-    const tokens: string[] = [];
-    const chineseSegments = input.match(/[\u4e00-\u9fff]{2,}/g) ?? [];
-    tokens.push(...chineseSegments);
-    const englishSegments = input.match(/[a-zA-Z0-9]+/g) ?? [];
-    tokens.push(...englishSegments);
-    return tokens;
+    return tokenizeKeywords(input);
   }
 
   /**

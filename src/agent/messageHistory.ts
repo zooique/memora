@@ -214,11 +214,17 @@ export class MessageHistory {
    * 用于启动时自动恢复上次对话
    * 策略：先找今天的话题，没有则找最近日期的话题
    *
+   * TODO(v4.1): 基元驱动重构后话题归档逻辑尚未迁移。
+   * 当前返回空数组，宿主应通过 ISessionStore 自行实现话题恢复。
+   *
    * @param preferredTopic - 优先加载的话题名（默认 'main'）
    * @returns 话题消息列表
    */
   async loadMostRecentTopic(preferredTopic = 'main'): Promise<LegacyTopicMessage[]> {
-    logger.debug({ preferredTopic }, 'loadMostRecentTopic: 返回空数组');
+    logger.debug(
+      { preferredTopic },
+      'loadMostRecentTopic: 话题归档逻辑未迁移（基元驱动重构），返回空数组。宿主应通过 ISessionStore 自行恢复。',
+    );
     return [];
   }
 
@@ -231,8 +237,8 @@ export class MessageHistory {
    * - 'lazy'    : 启动时补归档（兜底历史话题），已有摘要跳过
    * - 'midway'  : 超长话题中途归档，已有摘要时仍重新调用（追加覆盖）
    *
-   * 归档逻辑由 Agent.extractInsight() 替代。
-   * 此方法保留兼容性，返回 null。
+   * TODO(v4.1): 基元驱动重构后，话题归档由 InsightExtractor.extract() 替代。
+   * 此方法保留 API 兼容性，内部为空操作。
    *
    * @param reason - 归档触发原因
    * @returns null
@@ -240,21 +246,25 @@ export class MessageHistory {
   async archiveCurrentTopic(
     reason: 'switch' | 'signal' | 'lazy' | 'midway' = 'switch',
   ): Promise<null> {
-    logger.debug({ reason, topic: this.currentTopicName }, 'archiveCurrentTopic: 跳过归档');
+    logger.debug(
+      { reason, topic: this.currentTopicName },
+      'archiveCurrentTopic: 归档逻辑已迁移至 InsightExtractor，此方法为空操作。',
+    );
     return null;
   }
 
   /**
-   * 启动时补归档：扫描所有 topic-*.md，找出"还没在索引里"的，
+   * 启动时补归档：扫描所有 topic-*.md，找出“还没在索引里”的，
    * 后台异步补齐。
    *
-   * 此方法保留兼容性，返回 0。
+   * TODO(v4.1): 基元驱动重构后，话题文件格式已变更，补归档逻辑需要重写。
+   * 此方法保留 API 兼容性，返回 0。
    *
    * @param timeoutMs 单个 topic 补归档超时（默认 3000ms）
    * @returns 0
    */
   async archiveMissingTopics(_timeoutMs = 3000): Promise<number> {
-    logger.debug('archiveMissingTopics: 跳过补归档');
+    logger.debug('archiveMissingTopics: 补归档逻辑未迁移（基元驱动重构），返回 0。');
     return 0;
   }
 
@@ -309,9 +319,12 @@ export class MessageHistory {
   /**
    * v4.0：获取当前话题的完整消息列表（话题归档用）
    *
+   * TODO(v4.1): 从 ISessionStore 加载当前话题消息。当前返回空数组。
+   *
    * @returns 当前话题的所有消息
    */
   async getCurrentTopicMessages(): Promise<LegacyTopicMessage[]> {
+    logger.debug('getCurrentTopicMessages: 未实现，返回空数组。');
     return [];
   }
 

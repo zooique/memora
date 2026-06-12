@@ -70,6 +70,22 @@ export interface IMemoryStorage {
   search(query: string, limit?: number): Memory[];
 
   /**
+   * 统计记忆总数
+   *
+   * 比 search('', largeLimit).length 更高效，避免全量加载数据。
+   * 宿主实现应使用 COUNT(*) 等数据库原生计数。
+   */
+  count(): number;
+
+  /**
+   * 按来源标签统计记忆数量
+   *
+   * 比 getBySource(source).length 更高效，避免全量加载对象。
+   * 宿主实现应使用 COUNT(*) WHERE source = ? 等数据库原生计数。
+   */
+  countBySource(source: string): number;
+
+  /**
    * 关闭存储连接（可选）
    *
    * 宿主注入的实现可能不需要关闭（如共享数据库连接），

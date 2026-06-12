@@ -19,6 +19,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
+import { tokenizeKeywords } from '@/memory/segmenter.js';
 import { logger } from '@/logging/logger.js';
 
 /**
@@ -304,23 +305,9 @@ export class SkillManager {
   }
 
   /**
-   * 简单分词（中英文混合）
-   *
-   * 中文不做分词（基于子串匹配），英文和标点按空格/标点分割。
-   * @returns 分词后的 token 列表
+   * 分词（复用 segmenter 共享函数）
    */
   private tokenize(input: string): string[] {
-    // 英文/数字/标点按非中文字符分割；中文保留为整体 tokens
-    const tokens: string[] = [];
-
-    // 提取中文连续段（2 字以上的中文 token）
-    const chineseSegments = input.match(/[\u4e00-\u9fff]{2,}/g) ?? [];
-    tokens.push(...chineseSegments);
-
-    // 提取英文词
-    const englishSegments = input.match(/[a-zA-Z0-9]+/g) ?? [];
-    tokens.push(...englishSegments);
-
-    return tokens;
+    return tokenizeKeywords(input);
   }
 }

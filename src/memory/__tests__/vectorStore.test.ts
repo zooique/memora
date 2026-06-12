@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { VectorStore } from '@/memory/vectorStore.js';
+import { VectorStore, type EmbeddingService } from '@/memory/vectorStore.js';
 
 /**
  * 创建模拟的 EmbeddingService
@@ -21,7 +21,7 @@ function mockEmbeddingService() {
     },
     batchEmbed: async (texts: string[]) => {
       return texts.map((text) => ({
-        text,
+        id: text,
         vector: [text.charCodeAt(0) / 65536, 1 - text.charCodeAt(0) / 65536, 0.5],
       }));
     },
@@ -35,7 +35,7 @@ describe('VectorStore · upsert + search', () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
     const provider = mockEmbeddingService();
-    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as any);
+    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as unknown as EmbeddingService);
   });
 
   afterEach(() => {
@@ -91,7 +91,7 @@ describe('VectorStore · batchUpsert', () => {
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
     const provider = mockEmbeddingService();
-    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as any);
+    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as unknown as EmbeddingService);
   });
 
   afterEach(() => {
@@ -124,7 +124,7 @@ describe('VectorStore · 持久化', () => {
 
   it('save 后应该写入 JSON 文件', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as any);
+    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.upsert('mem:1', '文本A');
     await store.save();
@@ -138,13 +138,13 @@ describe('VectorStore · 持久化', () => {
 
   it('load 后应该恢复向量索引', async () => {
     const provider1 = mockEmbeddingService();
-    const store1 = new VectorStore(storePath, provider1 as any);
+    const store1 = new VectorStore(storePath, provider1 as unknown as EmbeddingService);
     await store1.upsert('mem:1', '文本A');
     await store1.save();
 
     // 新实例加载
     const provider2 = mockEmbeddingService();
-    const store2 = new VectorStore(storePath, provider2 as any);
+    const store2 = new VectorStore(storePath, provider2 as unknown as EmbeddingService);
     await store2.load();
 
     expect(store2.size).toBe(1);
@@ -152,7 +152,7 @@ describe('VectorStore · 持久化', () => {
 
   it('无变更时 save 不应写文件', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as any);
+    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.save();
 

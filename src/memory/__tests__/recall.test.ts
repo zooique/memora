@@ -63,6 +63,8 @@ describe('recall · 记忆召回', () => {
       getById: vi.fn(),
       getBySource: vi.fn(),
       search: vi.fn(),
+      count: vi.fn(() => 0),
+      countBySource: vi.fn(() => 0),
       close: vi.fn(),
     } as unknown as IMemoryStorage;
   });
@@ -139,5 +141,22 @@ describe('recall · 记忆召回', () => {
     expect(memories).toEqual([]);
     // 无关键词时不应调用 search
     expect(mockStorage.search).not.toHaveBeenCalled();
+  });
+
+  it('召回时应将 boost 后的 score 写回存储（upsert）', async () => {
+    const original = makeMemory({ id: 'skill:1', source: 'skill', score: 0.5 });
+    vi.mocked(mockStorage.search).mockReturnValue([original]);
+
+    const memories = await recall(mockStorage, '测试');
+
+    // upsert 应被调用，写回 boost 后的 memory
+    expect(mockStorage.upsert).toHaveBeenCalledTimes(1);
+    const upserted = vi.mocked(mockStorage.upsert).mock.calls[0]![0] as Memory;
+    expect(upserted.id).toBe('skill:1');
+    expect(upserted.score).toBeGreaterThanOrEqual(0.5);
+
+    // 返回的对象不应是原始对象（不污染调用方）
+    expect(memories[0]).not.toBe(original);
+    expect(memories[0]!.id).toBe(original.id);
   });
 });

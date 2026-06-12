@@ -128,11 +128,15 @@ export async function recall(
   });
 
   // ── 召回时提升 score ──
+  // 在副本上操作避免污染调用方持有的对象，boost 后写回存储
   const now = new Date().toISOString();
-  const result = sorted.slice(0, limit).map(({ memory }) => {
-    boostScore(memory, now);
-    return memory;
-  });
+  const result: Memory[] = [];
+  for (const { memory } of sorted.slice(0, limit)) {
+    const copy = { ...memory };
+    boostScore(copy, now);
+    storage.upsert(copy); // 写回存储，持久化 score 提升
+    result.push(copy);
+  }
 
   return result;
 }

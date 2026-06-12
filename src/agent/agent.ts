@@ -31,7 +31,7 @@ import { basename } from 'node:path';
 import { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
 import { ToolExecutor } from './toolExecutor.js';
-import { MessageHistory } from './messageHistory.js';
+import { MessageHistory, type LegacyTopicMessage } from './messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { recall, decayScores } from '@/memory/recall.js';
 import { PersonaManager } from '@/persona/personaManager.js';
@@ -54,14 +54,6 @@ import { logger, setLogger } from '@/logging/logger.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
-
-/**
- * 话题消息（保留供 loadTopicMessages / restoreTopic 等方法签名使用）
- */
-interface TopicMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
-}
 
 /** Agent 构造选项 */
 export interface AgentOptions {
@@ -638,13 +630,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 对外暴露的 loadTopicMessages 委托
    * 加载指定话题的历史消息，加载后 Memora 状态同步切换到该话题
    */
-  async loadTopicMessages(date: string, topic: string): Promise<TopicMessage[]> {
+  async loadTopicMessages(date: string, topic: string): Promise<LegacyTopicMessage[]> {
     if (!this._initialized || !this.history) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 loadTopicMessages() 前调用 await agent.init()',
       ]);
     }
-    return this.history.loadTopicMessages(date, topic) as unknown as TopicMessage[];
+    return this.history.loadTopicMessages(date, topic);
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────

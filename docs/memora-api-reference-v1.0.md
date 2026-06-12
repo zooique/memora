@@ -277,6 +277,27 @@ interface Memory {
 | `SOURCE_LABELS.PROFILE` | `'profile'` | 用户画像 |
 | `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
 
+> source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。
+
+### 5.2 `IMemoryStorage` 接口
+
+宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。
+
+```typescript
+interface IMemoryStorage {
+  upsert(memory: Memory): void;
+  delete(id: string): void;
+  getById(id: string): Memory | null;
+  getBySource(source: string): Memory[];
+  search(query: string, limit?: number): Memory[];
+  count(): number;                    // 记忆总数（数据库原生计数）
+  countBySource(source: string): number; // 按来源标签计数
+  close?(): void;
+}
+```
+
+> 宿主实现应使用 `COUNT(*)` 等数据库原生计数，避免全量加载数据。
+
 ---
 
 ## 六、项目 / 话题管理
@@ -289,7 +310,7 @@ interface Memory {
 | `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆） |
 | `rebuildComponents()` → `Promise<void>` | **项目切换后必须调用**：重建 history / loop |
 | `switchTopic(newName)` → `Promise<string>` | 切换到指定话题（自动归档旧话题） |
-| `loadTopicMessages(date, topic)` → `Promise<TopicMessage[]>` | 加载指定日期/话题的消息 |
+| `loadTopicMessages(date, topic)` → `Promise<LegacyTopicMessage[]>` | 加载指定日期/话题的消息（含时间戳） |
 | `restoreMostRecentTopic(preferredTopic='main')` → `Promise<number>` | 启动时恢复最近一次话题 |
 | `restoreTopic(date, topic)` → `Promise<number>` | 恢复指定日期/话题 |
 
@@ -567,6 +588,9 @@ export type { RecallOptions } from 'memora';
 // 角色
 export type { PersonaMode } from 'memora';
 
+// 消息历史
+export type { LegacyTopicMessage } from 'memora';
+
 // 技能
 export type { SkillEntry } from 'memora';
 
@@ -579,7 +603,7 @@ export { loadConfig } from 'memora';
 export type { Config } from 'memora';
 
 // 工具函数
-export { segmentText, SOURCE_LABELS, inferSource, escapeLike } from 'memora';
+export { segmentText, tokenizeKeywords, SOURCE_LABELS, inferSource, escapeLike, validateSource } from 'memora';
 ```
 
 ---

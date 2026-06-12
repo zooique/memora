@@ -22,6 +22,8 @@ const createMockStorage = (): IMemoryStorage => {
     getById: vi.fn(),
     getBySource: vi.fn(async () => []),
     search: vi.fn(async () => []),
+    count: vi.fn(() => 0),
+    countBySource: vi.fn(() => 0),
     close: vi.fn(),
   } as unknown as IMemoryStorage;
 };

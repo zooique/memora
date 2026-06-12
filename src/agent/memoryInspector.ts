@@ -120,16 +120,14 @@ export class MemoryInspector {
     const working = workingFull.slice(-WORKING_PREVIEW);
 
     // 第 2 层：Bootstrap 记忆（永驻 + 领域）
-    // bootstrapMemories 通过 AgentLoop 间接获取或从 index 查询
-    const allBootstrap = this.index.search('', 50);
-    const bootstrap = allBootstrap.filter((m) =>
-      m.source === SOURCE_LABELS.RULE ||
-      m.source === SOURCE_LABELS.PERSONA ||
-      m.source === SOURCE_LABELS.SKILL
-    );
+    // 直接按 source 查询，避免 search('', 50) 全量扫描
+    const rules = this.index.getBySource(SOURCE_LABELS.RULE);
+    const personas = this.index.getBySource(SOURCE_LABELS.PERSONA);
+    const skills = this.index.getBySource(SOURCE_LABELS.SKILL);
+    const bootstrap = [...rules, ...personas, ...skills];
 
-    // 第 3 层：话题归档文件计数（异步加载，snapshot 同步返回缓存值）
-    const archiveTotal = 0;
+    // 第 3 层：话题归档文件计数
+    const archiveTotal = this.index.countBySource(SOURCE_LABELS.INSIGHT);
 
     return {
       working: {
@@ -200,14 +198,27 @@ export class MemoryInspector {
    * 自动发现所有 source 标签（包括宿主自定义的），不依赖硬编码列表。
    */
   stats(): AgentStats {
-    // 通过空查询获取所有记忆，按 source 分组统计
-    const allMemories = this.index.search('', 10000);
+    const total = this.index.count();
+
+    // 已知 source 标签 + 通过 getBySource 发现的自定义标签
+    const knownSources = Object.values(SOURCE_LABELS);
     const bySource: Record<string, number> = {};
-    for (const m of allMemories) {
-      bySource[m.source] = (bySource[m.source] ?? 0) + 1;
+
+    for (const source of knownSources) {
+      const c = this.index.countBySource(source);
+      if (c > 0) bySource[source] = c;
     }
 
-    const total = allMemories.length;
+    // 补充：通过空查询发现不在已知列表中的自定义 source
+    // （宿主可能注册了自定义 source 标签）
+    if (total > Object.values(bySource).reduce((a, b) => a + b, 0)) {
+      const allMemories = this.index.search('', Math.min(total, 1000));
+      for (const m of allMemories) {
+        if (!(m.source in bySource)) {
+          bySource[m.source] = (bySource[m.source] ?? 0) + 1;
+        }
+      }
+    }
 
     return { bySource, total };
   }

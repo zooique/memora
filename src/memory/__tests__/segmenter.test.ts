@@ -4,7 +4,7 @@
  * 详见 M-202：Intl.Segmenter 中文分词
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText } from '@/memory/segmenter.js';
+import { segmentText, tokenizeKeywords } from '@/memory/segmenter.js';
 
 describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
@@ -48,5 +48,37 @@ describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
       expect(tokens).toContain('24');
       expect(tokens).toContain('LTS');
     });
+  });
+});
+
+describe('tokenizeKeywords · 关键词分词', () => {
+  it('应提取中文连续段（≥2字）', () => {
+    const tokens = tokenizeKeywords('我想学习编程技巧');
+    expect(tokens).toContain('我想学习编程技巧');
+  });
+
+  it('应提取英文词', () => {
+    const tokens = tokenizeKeywords('learn TypeScript');
+    expect(tokens).toContain('learn');
+    expect(tokens).toContain('TypeScript');
+  });
+
+  it('应处理中英混合', () => {
+    const tokens = tokenizeKeywords('学习 TypeScript 编程');
+    expect(tokens).toContain('学习');
+    expect(tokens).toContain('TypeScript');
+    expect(tokens).toContain('编程');
+  });
+
+  it('应过滤空字符串', () => {
+    expect(tokenizeKeywords('')).toEqual([]);
+    expect(tokenizeKeywords('   ')).toEqual([]);
+  });
+
+  it('应过滤单字中文（<2字的连续段）', () => {
+    const tokens = tokenizeKeywords('a b c');
+    expect(tokens).toContain('a');
+    expect(tokens).toContain('b');
+    expect(tokens).toContain('c');
   });
 });

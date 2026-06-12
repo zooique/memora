@@ -44,7 +44,7 @@ export type { Config } from './config/loader.js';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from './utils/eventEmitter.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
-export { SOURCE_LABELS, inferSource, escapeLike } from './memory/types.js';
+export { SOURCE_LABELS, inferSource, escapeLike, validateSource } from './memory/types.js';
 export type { Memory } from './memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from './memory/storageInterface.js';
@@ -54,6 +54,8 @@ export { VectorStore } from './memory/vectorStore.js';
 export type { EmbeddingService } from './memory/vectorStore.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from './memory/sessionStore.js';
+// 消息历史类型：loadTopicMessages() 返回值
+export type { LegacyTopicMessage } from './agent/messageHistory.js';
 // 召回函数：简化关键词搜索
 export { recall, extractKeywords, decayScores } from './memory/recall.js';
 export type { RecallOptions } from './memory/recall.js';
@@ -64,5 +66,5 @@ export { setLogger, logger } from './logging/logger.js';
 
 // ─── 工具导出 ────────────────────────────────────────────
 // 分词工具：宿主项目（如 SqliteStorage）依赖
-export { segmentText } from './memory/segmenter.js';
+export { segmentText, tokenizeKeywords } from './memory/segmenter.js';
 export type { SkillEntry } from './skill/skillManager.js';

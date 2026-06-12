@@ -3,7 +3,7 @@
  * 验证基元驱动模型的 schema 有效性
  */
 import { describe, expect, it } from 'vitest';
-import { MemorySchema, SOURCE_LABELS, inferSource, escapeLike, STOPWORDS } from '@/memory/types.js';
+import { MemorySchema, SOURCE_LABELS, inferSource, escapeLike, STOPWORDS, validateSource } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
   it('应该暴露 6 种 source 标签约定', () => {
@@ -105,5 +105,46 @@ describe('STOPWORDS 停用词集合', () => {
   it('应该不包含有意义的词', () => {
     expect(STOPWORDS.has('记忆')).toBe(false);
     expect(STOPWORDS.has('规则')).toBe(false);
+  });
+});
+
+describe('validateSource 校验函数', () => {
+  it('已知 source 应返回 valid: true 且无警告', () => {
+    expect(validateSource('rule')).toEqual({ valid: true });
+    expect(validateSource('persona')).toEqual({ valid: true });
+    expect(validateSource('skill')).toEqual({ valid: true });
+    expect(validateSource('insight')).toEqual({ valid: true });
+    expect(validateSource('profile')).toEqual({ valid: true });
+    expect(validateSource('work-projection')).toEqual({ valid: true });
+  });
+
+  it('自定义 source（非已知标签）应返回 valid: true 且无警告', () => {
+    expect(validateSource('custom-source')).toEqual({ valid: true });
+    expect(validateSource('my-plugin')).toEqual({ valid: true });
+  });
+
+  it('应检测接近已知标签的拼写错误', () => {
+    const result = validateSource('rul'); // 接近 'rule'
+    expect(result.valid).toBe(true);
+    expect(result.warning).toContain('rule');
+    expect(result.warning).toContain('拼写错误');
+  });
+
+  it('空字符串应返回 valid: false', () => {
+    const result = validateSource('');
+    expect(result.valid).toBe(false);
+    expect(result.warning).toBeDefined();
+  });
+
+  it('首尾空格应返回 valid: false', () => {
+    const result = validateSource(' rule ');
+    expect(result.valid).toBe(false);
+    expect(result.warning).toContain('空格');
+  });
+
+  it('短距离差异不误报（差异 > 2 的不警告）', () => {
+    const result = validateSource('completely-different');
+    expect(result.valid).toBe(true);
+    expect(result.warning).toBeUndefined();
   });
 });

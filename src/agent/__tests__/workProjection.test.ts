@@ -46,6 +46,10 @@ const createMockStorage = (): IMemoryStorage => {
       Array.from(store.values()).filter((m) => m.source === source),
     ),
     search: vi.fn(() => []),
+    count: vi.fn(() => store.size),
+    countBySource: vi.fn((source: string) =>
+      Array.from(store.values()).filter((m) => m.source === source).length,
+    ),
     close: vi.fn(),
   } as unknown as IMemoryStorage;
 };

@@ -406,6 +406,8 @@ import {
   SOURCE_LABELS,
   inferSource,
   escapeLike,
+  validateSource,
+  tokenizeKeywords,
 } from 'memora';
 import type {
   ProviderConfig,
@@ -436,6 +438,7 @@ import type {
   AgentEventMap,
   AgentEventName,
   AgentEventHandler,
+  LegacyTopicMessage,
 } from 'memora';
 ```
 
@@ -455,8 +458,12 @@ import type {
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION） |
 | `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
+| `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
+| `tokenizeKeywords(text)` | 中英文混合分词（中文字 ≥2 连字 + 英文单词），供宿主 FTS5 使用 |
 
 **注意**：`SqliteStorage` 已移出到宿主项目，不再从 memora 导出。宿主需自行实现 `IMemoryStorage` 接口。
+
+`IMemoryStorage` 接口要求实现 `count()` 和 `countBySource(source)` 方法，用于高效统计记忆数量（避免全量加载数据）。详见 [API 参考手册](./memora-api-reference-v1.0.md#52-imemorystorage-接口)。
 
 ---
 

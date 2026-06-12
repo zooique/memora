@@ -107,3 +107,76 @@ export function inferSource(filePath: string, frontmatterSource?: string): strin
 export function escapeLike(str: string): string {
   return str.replace(/[%_]/g, '\\$&');
 }
+
+// ─── Source 校验 ────────────────────────────────────────────
+
+/**
+ * 已知 source 标签集合（用于运行时校验）
+ *
+ * 从 SOURCE_LABELS 常量自动派生，保持同步。
+ * 不是枚举——只用于 typo 检测，不阻止写入。
+ */
+const KNOWN_SOURCES: Set<string> = new Set(Object.values(SOURCE_LABELS));
+
+/**
+ * 校验 source 字段是否为已知标签
+ *
+ * 返回校验结果，包含警告信息（如有）。
+ * 不抛错——source 是开放字符串，未知 source 应被允许（宿主可能自定义）。
+ * 只对常见 typo 发出警告。
+ *
+ * @param source - 待校验的 source 字符串
+ * @returns 校验结果
+ */
+export function validateSource(source: string): {
+  valid: boolean;
+  warning?: string;
+} {
+  if (!source || typeof source !== 'string') {
+    return { valid: false, warning: `source 不能为空或非字符串，收到：${String(source)}` };
+  }
+
+  if (source.trim() !== source) {
+    return { valid: false, warning: `source 包含首尾空格："${source}"` };
+  }
+
+  // 检查与已知标签的相似度（简单 Levenshtein 距离 ≤ 2）
+  if (!KNOWN_SOURCES.has(source)) {
+    const closeMatch = [...KNOWN_SOURCES].find(
+      (known) => levenshtein(source, known) <= 2 && source !== known,
+    );
+    if (closeMatch) {
+      return {
+        valid: true,
+        warning: `source "${source}" 可能是 "${closeMatch}" 的拼写错误（已知标签：${[...KNOWN_SOURCES].join(', ')}）`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
+ * 简单 Levenshtein 距离计算（仅用于短字符串，不做优化）
+ */
+function levenshtein(a: string, b: string): number {
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+
+  const matrix: number[][] = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0]![j] = j;
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      const cost = b[i - 1] === a[j - 1] ? 0 : 1;
+      matrix[i]![j] = Math.min(
+        matrix[i - 1]![j]! + 1,
+        matrix[i]![j - 1]! + 1,
+        matrix[i - 1]![j - 1]! + cost,
+      );
+    }
+  }
+
+  return matrix[b.length]![a.length]!;
+}

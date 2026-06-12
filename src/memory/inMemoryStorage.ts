@@ -13,9 +13,16 @@
  * - 移除 getByPermanence() / getByType() / touch() / applyDecay()
  * - 新增 getBySource()：按来源标签获取记忆
  * - 简化 search()：移除 mode 参数，移除 touch 逻辑
+ *
+ * 接口同步（2026-06-12）：
+ * - 新增 count()：记忆总数统计
+ * - 新增 countBySource(source)：按来源标签统计
+ * - upsert() 增加 validateSource() 调用，对疑似 typo 发出警告
  */
 import type { IMemoryStorage } from './storageInterface.js';
 import type { Memory } from './types.js';
+import { validateSource } from './types.js';
+import { logger } from '@/logging/logger.js';
 
 /**
  * 内存存储实现
@@ -29,8 +36,14 @@ export class InMemoryStorage implements IMemoryStorage {
 
   /**
    * 插入或更新记忆
+   *
+   * 自动校验 source 字段，对疑似 typo 发出警告日志。
    */
   upsert(memory: Memory): void {
+    const result = validateSource(memory.source);
+    if (result.warning) {
+      logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');
+    }
     this.memories.set(memory.id, { ...memory });
   }
 
@@ -98,6 +111,24 @@ export class InMemoryStorage implements IMemoryStorage {
     results.sort((a, b) => b.score - a.score);
 
     return results.slice(0, limit);
+  }
+
+  /**
+   * 统计记忆总数
+   */
+  count(): number {
+    return this.memories.size;
+  }
+
+  /**
+   * 按来源标签统计记忆数量
+   */
+  countBySource(source: string): number {
+    let count = 0;
+    for (const m of this.memories.values()) {
+      if (m.source === source) count++;
+    }
+    return count;
   }
 
   /**
