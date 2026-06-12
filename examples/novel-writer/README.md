@@ -26,7 +26,7 @@
 import { Agent } from 'memora';
 
 const agent = new Agent({
-  config: { llm: { provider: 'openai-compatible', apiKey, baseUrl, model } },
+  config: { llm: { provider: 'openaiCompatible', apiKey, baseUrl, model } },
   configDir: './agent-config', // 宿主的人格/规则/技能
   projectPath: './.novel-data', // .memora/ 所在
 });

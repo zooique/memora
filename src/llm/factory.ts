@@ -7,7 +7,7 @@
  */
 import type { Config } from '@/config/loader.js';
 import { LlmProvider } from './provider.js';
-import { OpenAICompatibleProvider } from './openai-compatible.js';
+import { OpenAICompatibleProvider } from './openaiCompatible.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 

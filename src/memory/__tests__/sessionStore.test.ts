@@ -9,9 +9,9 @@
  *   - 未注入 sessionStore 时的降级行为
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MessageHistory } from '@/agent/message-history.js';
-import type { ISessionStore, SessionMessage } from '@/memory/session-store.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import { MessageHistory } from '@/agent/messageHistory.js';
+import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 
 /**
  * 创建 Mock IMemoryStorage

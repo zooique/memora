@@ -28,7 +28,7 @@
 import { Agent } from 'memora';
 
 const agent = new Agent({
-  config: { llm: { provider: 'openai-compatible', apiKey, baseUrl, model } },
+  config: { llm: { provider: 'openaiCompatible', apiKey, baseUrl, model } },
   configDir: './agent-config',
   projectPath: './.code-data',
 });

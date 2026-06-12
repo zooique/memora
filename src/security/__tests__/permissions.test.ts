@@ -20,7 +20,7 @@ describe('shouldConfirmWrite · 写入二次确认判断', () => {
     expect(shouldConfirmWrite(policy)).toBe(false);
   });
 
-  it('guest 模式 + confirmWrites=false 时也应该返回 false（策略层不做额外判断，path-guard 负责）', () => {
+  it('guest 模式 + confirmWrites=false 时也应该返回 false（策略层不做额外判断，pathGuard 负责）', () => {
     const policy: PermissionPolicy = { mode: 'guest', confirmWrites: false };
     expect(shouldConfirmWrite(policy)).toBe(false);
   });

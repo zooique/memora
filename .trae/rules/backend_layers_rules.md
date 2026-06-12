@@ -87,8 +87,8 @@ logging/    →  （被所有层调）
 ```
 agent/
 ├── loop.ts             # 主循环
-├── tool-executor.ts    # 工具执行
-├── message-history.ts  # 消息持久化（阶段二）
+├── toolExecutor.ts    # 工具执行
+├── messageHistory.ts  # 消息持久化（阶段二）
 └── __tests__/          # 单元测试（与 src/ 平级时放 tests/）
 ```
 

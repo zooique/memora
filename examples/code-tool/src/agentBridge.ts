@@ -22,7 +22,7 @@ export async function createCodeAgent(config: {
   const memoraConfig: Config = {
     llm: hasRealLlm
       ? {
-          provider: 'openai-compatible',
+          provider: 'openaiCompatible',
           apiKey: config.llmApiKey,
           baseUrl: config.llmBaseUrl,
           model: config.llmModel,

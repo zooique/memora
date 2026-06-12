@@ -59,7 +59,7 @@ src/
 | 类型      | 规则                                 |
 | --------- | ------------------------------------ |
 | 文件夹    | 连字符（`cli-commands/`）            |
-| TS 文件   | 小驼峰（`openai-compatible.ts`）     |
+| TS 文件   | 小驼峰（`openaiCompatible.ts`）     |
 | 类        | 大驼峰（`OpenAICompatibleProvider`） |
 | 变量/函数 | 小驼峰（`loadConfig`）               |
 | 常量      | 全大写下划线（`BLOCKED_PATTERNS`）   |

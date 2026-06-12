@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WorkProjectionManager } from '../workProjection.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 
 /**

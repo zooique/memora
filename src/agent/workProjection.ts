@@ -26,7 +26,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';

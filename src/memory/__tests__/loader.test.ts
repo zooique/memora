@@ -4,8 +4,8 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { FileStore } from '@/memory/store.js';
-import { InMemoryStorage } from '@/memory/in-memory-storage.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { MemoryLoader } from '@/memory/loader.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';

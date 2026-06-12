@@ -37,7 +37,7 @@ import { Agent, createLlmProvider } from 'memora';
 
 // 宿主职责：创建 LLM Provider
 const provider = createLlmProvider({
-  provider: 'openai-compatible',
+  provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
   baseUrl: 'https://api.deepseek.com/v1',
   model: 'deepseek-chat',

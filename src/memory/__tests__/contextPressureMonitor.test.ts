@@ -8,7 +8,7 @@
  *   3) token 估算的边界
  */
 import { describe, expect, it } from 'vitest';
-import { ContextPressureMonitor } from '@/memory/context-pressure-monitor.js';
+import { ContextPressureMonitor } from '@/memory/contextPressureMonitor.js';
 import type { Memory } from '@/memory/types.js';
 
 // ─── 工具：构造一条测试用记忆 ──────────────────────────

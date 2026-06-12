@@ -14,7 +14,7 @@
  * - 新增 getBySource()：按来源标签获取记忆
  * - 简化 search()：移除 mode 参数，移除 touch 逻辑
  */
-import type { IMemoryStorage } from './storage-interface.js';
+import type { IMemoryStorage } from './storageInterface.js';
 import type { Memory } from './types.js';
 
 /**

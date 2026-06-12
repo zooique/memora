@@ -11,7 +11,7 @@
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
-import type { ToolDefinition } from './tool-executor.js';
+import type { ToolDefinition } from './toolExecutor.js';
 import type { AgentChunk } from './types.js';
 import { MemoraError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';

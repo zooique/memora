@@ -7,7 +7,7 @@
  * 详见 docs/记忆系统重构方案_排雷炼化版.md §4
  */
 import type { Memory } from './types.js';
-import type { IMemoryStorage } from './storage-interface.js';
+import type { IMemoryStorage } from './storageInterface.js';
 import { STOPWORDS } from './types.js';
 
 /**

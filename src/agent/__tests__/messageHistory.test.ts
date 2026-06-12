@@ -9,8 +9,8 @@
  *   - registerPendingArchive / awaitPendingArchives
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MessageHistory } from '@/agent/message-history.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import { MessageHistory } from '@/agent/messageHistory.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 
 /**
  * 创建 Mock IMemoryStorage

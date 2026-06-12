@@ -32,9 +32,9 @@ import {
   type ToolDefinition,
   type ToolHandler,
   type WriteExtensions,
-} from './tool-executor.js';
-import { MessageHistory } from './message-history.js';
-import { ProjectManager, type ProjectContext } from '@/memory/project-manager.js';
+} from './toolExecutor.js';
+import { MessageHistory } from './messageHistory.js';
+import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { recall } from '@/memory/recall.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
@@ -45,11 +45,11 @@ import { configError } from '@/utils/errors.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
-import type { ISessionStore } from '@/memory/session-store.js';
-import type { ILogger } from '@/logging/logger-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { ILogger } from '@/logging/loggerInterface.js';
 import { logger, setLogger } from '@/logging/logger.js';
-import type { SecurityGuard } from '@/security/path-guard.js';
+import type { SecurityGuard } from '@/security/pathGuard.js';
 
 // ─── 常量定义 ───────────────────────────────────────────
 

@@ -32,7 +32,7 @@ Memora 的核心矛盾是"无状态推理 ←→ 连续演化任务"。LLM 本�
 | 组件                   | 文件                                     | 职责                      |
 | ---------------------- | ---------------------------------------- | ------------------------- |
 | TopicMount             | `src/memory/topic-mount.ts`              | 话题检测 + 记忆挂载/卸载  |
-| ContextPressureMonitor | `src/memory/context-pressure-monitor.ts` | token 预算监控 + 衰减计算 |
+| ContextPressureMonitor | `src/memory/contextPressureMonitor.ts` | token 预算监控 + 衰减计算 |
 
 ## 后果
 

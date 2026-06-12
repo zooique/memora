@@ -30,7 +30,7 @@ v1 设计为每个子项目创建独立的 memora.db，切换项目时关闭旧 
 
 | 组件                 | 文件                            | 职责                                   |
 | -------------------- | ------------------------------- | -------------------------------------- |
-| ProjectManager       | `src/memory/project-manager.ts` | 三层架构管理 + 项目切换 |
+| ProjectManager       | `src/memory/projectManager.ts` | 三层架构管理 + 项目切换 |
 | ensureAgentResources | 同上                            | 确保 memora.db 只创建一次              |
 | shutdown             | 同上                            | 关闭 Agent 级 DB（仅在 Agent 关闭时）  |
 | closeProject         | 同上                            | 释放项目锁，不关 DB                    |

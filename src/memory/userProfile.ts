@@ -19,7 +19,7 @@
  *   - 确认机制防止正则误归档污染画像
  *   - identity / preference / expertise 实时归档，habit / history 每天归档时提炼
  */
-import type { IMemoryStorage } from './storage-interface.js';
+import type { IMemoryStorage } from './storageInterface.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 import { logger } from '@/logging/logger.js';
 

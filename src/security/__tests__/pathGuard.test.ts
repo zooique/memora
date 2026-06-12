@@ -3,7 +3,7 @@
  * 验证安全模块的拒绝/允许逻辑
  */
 import { describe, expect, it, beforeEach } from 'vitest';
-import { SecurityGuard } from '@/security/path-guard.js';
+import { SecurityGuard } from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
