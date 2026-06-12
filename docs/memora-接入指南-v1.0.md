@@ -245,8 +245,8 @@ console.log('记忆总数:', stats.total);
 // 列出所有角色
 const names = agent.persona.list.map(p => p.name);
 
-// 手动切换
-agent.persona.switchPersona('作家');
+// 手动切换（返回新角色的 system prompt，可用于 UI 展示）
+const personaPrompt = agent.persona.switchPersona('作家');
 
 // 锁定手动模式（禁止自动匹配）
 agent.persona.setMode('manual');
@@ -259,9 +259,8 @@ console.log(agent.persona.currentMode);  // 'manual'
 ### 9. 切换项目
 
 ```typescript
+// switchProject() 自动 rebuild，无需手动调用 rebuildComponents()
 const ctx = await agent.switchProject('another-novel');
-// 项目切换后必须调用 rebuildComponents()
-await agent.rebuildComponents();
 console.log(`已切换到：${ctx.projectName}`);
 ```
 
@@ -480,7 +479,7 @@ import type {
 9. **禁止**为每个子项目创建独立的 memora.db
 10. **禁止**项目切换时关闭/重建数据库
 11. **禁止**将配置直接写入 SQLite 作为持久化存储
-12. **项目切换后必须调用** `rebuildComponents()` 才能使新项目会话生效
+12. **项目切换** `switchProject()` 已自动 rebuild，通常无需手动调用 `rebuildComponents()`
 
 ---
 

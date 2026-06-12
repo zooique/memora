@@ -307,8 +307,8 @@ interface IMemoryStorage {
 | 方法 | 用途 |
 |------|------|
 | `listProjects()` → `AgentProjectEntry[]` | 列出所有已注册项目 |
-| `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆） |
-| `rebuildComponents()` → `Promise<void>` | **项目切换后必须调用**：重建 history / loop |
+| `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆，自动 rebuild） |
+| `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
 | `switchTopic(newName)` → `Promise<string>` | 切换到指定话题（自动归档旧话题） |
 | `loadTopicMessages(date, topic)` → `Promise<LegacyTopicMessage[]>` | 加载指定日期/话题的消息（含时间戳） |
 | `restoreMostRecentTopic(preferredTopic='main')` → `Promise<number>` | 启动时恢复最近一次话题 |
@@ -331,7 +331,7 @@ const topics = await agent.agentHistory?.listAllTopics();
 | `persona.activeName` | `string`（getter） | 当前激活的角色名 |
 | `persona.currentMode` | `PersonaMode`（getter） | 当前匹配模式（`'auto'` / `'manual'`） |
 | `persona.active` | `Persona \| null`（getter） | 当前激活的完整角色对象 |
-| `persona.switchPersona(name)` | 方法 → `string` | 手动切换到指定角色 |
+| `persona.switchPersona(name)` | 方法 → `string` | 手动切换到指定角色（返回新角色的 system prompt） |
 | `persona.setMode(mode)` | 方法 | 设置匹配模式（`'auto'` / `'manual'`） |
 
 ```typescript
@@ -406,6 +406,7 @@ agent.tools.registerTool(
 | `insight.setWriteExtensions(ext)` | 注入写入扩展回调（diff 对比确认） |
 | `insight.setKeywords(keywords)` | 设置记忆关键词（domain / personal 两类） |
 | `insight.classify(input)` → `'skip' \| 'extract'` | 输入分类（判断是否需要提取记忆） |
+| `insight.extract(userInput, assistantContent)` | 异步提取对话 insight（fire-and-forget） |
 
 ```typescript
 // 写入扩展回调
@@ -530,7 +531,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.tools` | `.registerTool()` / `.getToolDefinitions()` / `.execute()` |
 | `agent.skills` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.config` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onSuggestion()` / `.confirm()` |
-| `agent.insight` | `.classify()` / `.extract()` / `.setKeywords()` / `.setWriteExtensions()` |
+| `agent.insight` | `.classify(input)` / `.extract(userInput, assistantContent)` / `.setKeywords(keywords)` / `.setWriteExtensions(ext)` |
 | `agent.memory` | `.snapshot()` / `.search()` / `.stats()` |
 
 ---

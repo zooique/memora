@@ -25,10 +25,14 @@ description: 记忆归档三步价值过滤（judge → distill → converge）
 
 ## 关键实现
 
-| 组件            | 文件                            | 职责         |
-| --------------- | ------------------------------- | ------------ |
-| TopicSummarizer | `src/agent/topicSummarizer.ts` | 三步过滤管线 |
-| TopicStore      | `src/memory/topic-store.ts`     | 话题文件读写 |
+| 组件             | 文件                             | 职责                                   |
+| ---------------- | -------------------------------- | -------------------------------------- |
+| TopicSummarizer  | `src/agent/topicSummarizer.ts`  | 三步过滤管线                           |
+| InsightExtractor | `src/agent/insightExtractor.ts` | 每轮对话后提取 insight（source='insight'） |
+
+> **注意**：v2.0 基元驱动重构后，TopicStore 已移除。
+> 归档记忆以 `source: insight` 存入统一索引，不再使用独立的 topic-*.md 文件。
+> 详见 [ADR-004](./ADR-004-memory-unification.md) §删除的模块。
 
 ## 后果
 

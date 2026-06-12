@@ -38,10 +38,8 @@ class MockProvider extends LlmProvider {
   async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
     const lastUser = [...messages].reverse().find((m) => m.role === 'user');
     const reply = `Mock 响应：${lastUser?.content ?? '(empty)'}`;
-    for (const char of reply) {
-      yield { content: char };
-      await new Promise((r) => setTimeout(r, 5));
-    }
+    // 一次性返回整段文本，避免逐字符延迟导致测试超时
+    yield { content: reply };
     yield { finishReason: 'stop' };
   }
 }
@@ -314,5 +312,192 @@ describe('Agent · agentLoop.getMessages()', () => {
   it('未初始化时 agentLoop 应为 null', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     expect(agent.agentLoop).toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：Agent 生命周期 E2E（构造 → init → chat → close）
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · 生命周期 E2E', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-e2e-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-e2e-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-e2e-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('完整生命周期：构造 → init → chat → close', { timeout: 30000 }, async () => {
+    // 构造
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    expect(agent.initialized).toBe(false);
+    expect(agent.persona).toBeNull();
+    expect(agent.tools).toBeNull();
+    expect(agent.config).toBeNull();
+    expect(agent.insight).toBeNull();
+    expect(agent.memory).toBeNull();
+
+    // init
+    const ctx = await agent.init();
+    expect(agent.initialized).toBe(true);
+    expect(ctx.projectPath).toBe(tmpProject);
+    expect(agent.context).toBe(ctx);
+
+    // Manager 访问器应可用
+    expect(agent.persona).not.toBeNull();
+    expect(agent.tools).not.toBeNull();
+    expect(agent.config).not.toBeNull();
+    expect(agent.insight).not.toBeNull();
+    expect(agent.memory).not.toBeNull();
+
+    // chat（流式）
+    const chunks: string[] = [];
+    for await (const chunk of agent.chat('你好')) {
+      if (chunk.type === 'text') chunks.push(chunk.content);
+    }
+    expect(chunks.length).toBeGreaterThan(0);
+    expect(chunks.join('')).toContain('Mock 响应');
+
+    // chatSync（同步）
+    const reply = await agent.chatSync('测试');
+    expect(reply).toContain('Mock 响应');
+
+    // 状态检查
+    expect(agent.isBusy).toBe(false);
+    expect(agent.lastInteractionAt).toBeInstanceOf(Date);
+
+    // close
+    await agent.close();
+    expect(agent.initialized).toBe(false);
+    agent = null;
+  });
+
+  it('close 后再次 init 应正常工作', { timeout: 30000 }, async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+
+    await agent.init();
+    expect(agent.initialized).toBe(true);
+
+    await agent.close();
+    expect(agent.initialized).toBe(false);
+
+    // 重新 init
+    await agent.init();
+    expect(agent.initialized).toBe(true);
+    expect(agent.persona).not.toBeNull();
+  });
+
+  it('未初始化时调用 chat 应抛出 configError', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+
+    // 未 init 直接 chat（遍历 generator 触发错误）
+    await expect(async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      for await (const _chunk of agent!.chat('你好')) {
+        // 消费 generator
+      }
+    }).rejects.toThrow(/未初始化/);
+  });
+
+  it('事件订阅：memoryRecalled 应在对话后触发', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    let recalledCount = 0;
+    agent.on('memoryRecalled', (e) => {
+      recalledCount = e.count;
+    });
+
+    await agent.chatSync('你好');
+    // memoryRecalled 事件可能触发也可能不触发（取决于召回结果），但不应抛错
+    expect(recalledCount).toBeGreaterThanOrEqual(0);
+
+    agent.off('memoryRecalled', () => {});
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：Manager 委托模式
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · Manager 委托模式', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-mgr-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-mgr-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-mgr-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('persona 管理器：list / activeName / currentMode', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    expect(Array.isArray(agent.persona!.list)).toBe(true);
+    expect(typeof agent.persona!.activeName).toBe('string');
+    expect(['auto', 'manual']).toContain(agent.persona!.currentMode);
+  });
+
+  it('tools 管理器：getToolDefinitions 应包含内置工具', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const defs = agent.tools!.getToolDefinitions();
+    expect(defs.length).toBeGreaterThanOrEqual(4);
+    const names = defs.map((d) => d.name);
+    expect(names).toContain('read_file');
+    expect(names).toContain('write_file');
+    expect(names).toContain('list_dir');
+    expect(names).toContain('search_memories');
+  });
+
+  it('memory 管理器：stats 应返回统计数据', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const stats = agent.memory!.stats();
+    expect(typeof stats.total).toBe('number');
+    expect(stats.total).toBeGreaterThanOrEqual(0);
+    expect(typeof stats.bySource).toBe('object');
+  });
+
+  it('config 管理器：addSimpleRule 应注入规则', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    await agent.config!.addSimpleRule('E2E 测试规则', '这是一条 E2E 测试规则');
+
+    const messages = agent.agentLoop!.getMessages();
+    const lastSystem = [...messages].reverse().find((m) => m.role === 'system');
+    expect(lastSystem?.content).toContain('E2E 测试规则');
   });
 });

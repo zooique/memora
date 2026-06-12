@@ -424,6 +424,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 切换到指定项目
+   *
+   * 切换后自动 rebuildComponents()，无需手动调用。
+   * Agent 级记忆（memora.db）保留，项目级配置（.memora/）重新加载。
    */
   async switchProject(nameOrPath: string): Promise<AgentContext> {
     if (!this._initialized || !this.projectManager || !this._provider) {
@@ -571,6 +574,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     };
   }
 
+  /**
+   * 重建内部组件（history / loop / managers）
+   *
+   * 通常不需要手动调用——switchProject() 已自动执行 rebuild。
+   * 仅在宿主项目需要强制刷新组件时使用（如热更新配置后）。
+   */
   async rebuildComponents(): Promise<void> {
     await this._rebuildComponentsWithCurrentCtx();
   }
