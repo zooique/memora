@@ -83,8 +83,8 @@ npm install memora
 ### 2. 创建 Provider + Agent
 
 ```typescript
-import { Agent, createLlmProvider } from 'memora';
-import type { IMemoryStorage, ILogger } from 'memora';
+import { Agent, createLlmProvider, VectorStore } from 'memora';
+import type { IMemoryStorage, ILogger, EmbeddingService } from 'memora';
 
 // 宿主职责：创建 LLM Provider（Agent 不关心 API Key）
 const provider = createLlmProvider({
@@ -108,6 +108,10 @@ const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db');
 // 可选：注入日志实现（不传则使用默认 pino logger）
 const logger: ILogger = myCustomLogger;
 
+// 可选：向量存储（提供后启用语义搜索召回）
+const embeddingService: EmbeddingService = myEmbeddingService;
+const vectorStore = new VectorStore('/path/to/vectors.json', embeddingService);
+
 // 创建 Agent
 const agent = new Agent({
   projectPath: '/path/to/novel-project',
@@ -121,6 +125,7 @@ const agent = new Agent({
   allowedPaths: ['.'],
   confirmWrites: false,
   storage,               // 存储层注入（可选）
+  vectorStore,           // 向量存储（可选，启用语义搜索）
   logger,                // 日志注入（可选）
 });
 
@@ -143,6 +148,21 @@ for await (const chunk of agent.chat('帮我写一段玄幻小说开头')) {
 
 // 同步对话（测试用）
 const reply = await agent.chatSync('你好');
+```
+
+### 3.5 事件订阅（可选）
+
+Agent 向宿主广播对话外事件（记忆变更、角色切换、衰减完成等）。
+
+```typescript
+import type { AgentEventMap } from 'memora';
+
+agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
+agent.on('personaSwitched', (e) => console.log(`角色: ${e.from} → ${e.to}`));
+agent.on('decayCompleted', (e) => console.log(`衰减 ${e.decayedCount} 条记忆`));
+agent.on('memoryRecalled', (e) => console.log(`想起 ${e.count} 条记忆`));
+
+// close() 自动移除所有监听器
 ```
 
 ### 4. 注册领域工具
@@ -310,6 +330,8 @@ const agent = new Agent({
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入 |
+| `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索） |
+| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule']`） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
 
@@ -355,6 +377,7 @@ const agent = new Agent({
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(s)` / `.buildSystemPrompt()` |
+| `agent.on()` / `agent.off()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` |
 
 ### Provider 管理
 
@@ -373,11 +396,13 @@ import {
   createProviderFromConfig,
   loadConfig,
   InMemoryStorage,
+  VectorStore,
   setLogger,
   logger,
   segmentText,
   recall,
   extractKeywords,
+  decayScores,
   SOURCE_LABELS,
   inferSource,
   escapeLike,
@@ -407,6 +432,10 @@ import type {
   PersonaMode,
   SkillEntry,
   RecallOptions,
+  EmbeddingService,
+  AgentEventMap,
+  AgentEventName,
+  AgentEventHandler,
 } from 'memora';
 ```
 
@@ -416,11 +445,13 @@ import type {
 | `createProviderFromConfig(name, config)` | 从命名配置创建 LlmProvider 实例 |
 | `loadConfig(path?)` | 加载 memora.json 配置文件 |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
+| `VectorStore` | 向量存储类（宿主注入 EmbeddingService 后创建，启用语义搜索） |
 | `setLogger(logger)` | 替换全局日志实现 |
 | `logger` | 全局日志实例 |
 | `segmentText(text)` | 中文分词工具 |
-| `recall(index, query, options?)` | 简化关键词搜索 |
+| `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
+| `decayScores(memories, now?)` | 记忆衰减（>7天未访问 score 降 0.02/周，下限 0.1） |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION） |
 | `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |

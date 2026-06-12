@@ -8,6 +8,7 @@
  */
 import type { Memory } from './types.js';
 import type { IMemoryStorage } from './storageInterface.js';
+import type { VectorStore } from './vectorStore.js';
 import { STOPWORDS } from './types.js';
 
 /**
@@ -55,55 +56,85 @@ export interface RecallOptions {
   limit?: number;
   /** 排除的 source 标签（默认排除 persona 和 rule） */
   excludeSources?: string[];
+  /** 向量存储（可选，提供时启用语义搜索） */
+  vectorStore?: VectorStore;
+  /** 语义搜索相似度阈值（默认 0.3） */
+  minSimilarity?: number;
 }
 
 /**
  * 从记忆存储中搜索相关记忆
  *
- * 流程：
- * 1. 提取查询关键词
- * 2. 构建 SQL 查询（LIKE 关键词匹配）
- * 3. 排除已单独注入的记忆（persona、rule）
- * 4. 按 score 降序排列
- * 5. 返回 top N 结果
+ * 双通道召回策略：
+ * 1. 语义搜索（VectorStore 可用时）：向量余弦相似度
+ * 2. 关键词搜索（兜底）：LIKE 匹配
+ * 3. 两路结果合并去重，按 score + similarity 综合排序
+ * 4. 排除已单独注入的记忆（persona、rule）
+ * 5. 返回 top N
  *
  * @param storage - 记忆存储实例
  * @param query - 搜索查询文本
  * @param options - 召回选项
  * @returns 匹配的记忆列表
  */
-export function recall(
+export async function recall(
   storage: IMemoryStorage,
   query: string,
   options: RecallOptions = {},
-): Memory[] {
-  const { limit = 5, excludeSources = ['persona', 'rule'] } = options;
+): Promise<Memory[]> {
+  const {
+    limit = 5,
+    excludeSources = ['persona', 'rule'],
+    vectorStore,
+    minSimilarity = 0.3,
+  } = options;
 
-  // 提取关键词
+  const merged = new Map<string, { memory: Memory; vectorScore: number }>();
+
+  // ── 通道 1：语义搜索（VectorStore 可用时） ──
+  if (vectorStore && vectorStore.size > 0) {
+    try {
+      const vectorResults = await vectorStore.search(query, limit * 2, minSimilarity);
+      for (const vr of vectorResults) {
+        const memory = storage.getById(vr.id);
+        if (memory && !excludeSources.includes(memory.source)) {
+          merged.set(memory.id, { memory, vectorScore: vr.similarity });
+        }
+      }
+    } catch {
+      // 语义搜索失败（网络问题、embedding 服务不可用），静默降级到关键词
+    }
+  }
+
+  // ── 通道 2：关键词搜索 ──
   const keywords = extractKeywords(query);
-
-  // 无关键词时返回空（或可选：返回最近访问的记忆）
-  if (keywords.length === 0) {
-    return [];
+  if (keywords.length > 0) {
+    const keywordResults = storage.search(query, limit * 2);
+    for (const m of keywordResults) {
+      if (!excludeSources.includes(m.source) && !merged.has(m.id)) {
+        merged.set(m.id, { memory: m, vectorScore: 0 });
+      }
+    }
   }
 
-  // 从存储中搜索
-  const results = storage.search(query, limit * 2); // 多取一些，后续过滤
+  // ── 无任何结果 ──
+  if (merged.size === 0) return [];
 
-  // 排除已单独注入的 source
-  const filtered = results.filter(m => !excludeSources.includes(m.source));
+  // ── 综合排序：vectorScore（语义相关度）+ memory.score（权重） ──
+  const sorted = [...merged.values()].sort((a, b) => {
+    const scoreA = a.vectorScore * 0.6 + a.memory.score * 0.4;
+    const scoreB = b.vectorScore * 0.6 + b.memory.score * 0.4;
+    return scoreB - scoreA;
+  });
 
-  // 按 score 降序排列（search 内部已排序，这里再次确保）
-  filtered.sort((a, b) => b.score - a.score);
-
-  // 召回时提升被召回记忆的 score（boostScore）
+  // ── 召回时提升 score ──
   const now = new Date().toISOString();
-  for (const memory of filtered) {
+  const result = sorted.slice(0, limit).map(({ memory }) => {
     boostScore(memory, now);
-  }
+    return memory;
+  });
 
-  // 返回 top N
-  return filtered.slice(0, limit);
+  return result;
 }
 
 // ─── Score 衰减机制 ─────────────────────────────────────

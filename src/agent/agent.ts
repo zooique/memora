@@ -33,7 +33,7 @@ import type { AgentChunk } from './types.js';
 import { ToolExecutor } from './toolExecutor.js';
 import { MessageHistory } from './messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
-import { recall } from '@/memory/recall.js';
+import { recall, decayScores } from '@/memory/recall.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
 import { WorkProjectionManager } from './workProjection.js';
@@ -42,11 +42,14 @@ import { InsightExtractor } from './insightExtractor.js';
 import { ConfigManager } from './configManager.js';
 import { MemoryInspector } from './memoryInspector.js';
 import { configError } from '@/utils/errors.js';
+import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { ILogger } from '@/logging/loggerInterface.js';
+import type { VectorStore } from '@/memory/vectorStore.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger, setLogger } from '@/logging/logger.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 
@@ -84,6 +87,10 @@ export interface AgentOptions {
   allowedPaths?: string[];
   /** 写入确认 */
   confirmWrites?: boolean;
+  /** 向量存储（可选，提供时启用语义搜索召回） */
+  vectorStore?: VectorStore;
+  /** 召回时排除的 source 标签（默认 ['persona', 'rule']，这些已由 bootstrap 注入） */
+  recallExcludeSources?: string[];
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
   /** 外部注入的会话存储（可选，不传则仅在内存中保存） */
@@ -113,7 +120,7 @@ export interface AgentBuildCtx {
 
 // ─── Agent 门面类 ───────────────────────────────────────
 
-export class Agent {
+export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 构造参数
   private _provider: LlmProvider;
   private _backgroundProvider: LlmProvider | null;
@@ -124,6 +131,8 @@ export class Agent {
   private _permission: 'owner' | 'guest';
   private _allowedPaths: string[];
   private _confirmWrites: boolean;
+  private _vectorStore: VectorStore | undefined;
+  private _recallExcludeSources: string[];
   private _storage: IMemoryStorage | undefined;
   private _sessionStore: ISessionStore | undefined;
   private projectPath: string;
@@ -156,10 +165,19 @@ export class Agent {
 
   /** chat() 并发锁 */
   private _chatBusy = false;
+  /** 聊天锁超时计时器（防止 LLM 卡死时锁永久持有） */
+  private _chatLockTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 聊天锁超时时间（5 分钟） */
+  private static readonly CHAT_LOCK_TIMEOUT_MS = 300_000;
+  /** 记忆衰减定时器 */
+  private _decayTimer: ReturnType<typeof setInterval> | null = null;
+  /** 记忆衰减间隔（1 小时） */
+  private static readonly DECAY_INTERVAL_MS = 3_600_000;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
 
   constructor(opts: AgentOptions) {
+    super();
     this.projectPath = opts.projectPath;
     this._provider = opts.provider;
     this._backgroundProvider = opts.backgroundProvider ?? null;
@@ -171,6 +189,8 @@ export class Agent {
     this._permission = opts.permission ?? 'owner';
     this._allowedPaths = opts.allowedPaths ?? [];
     this._confirmWrites = opts.confirmWrites ?? false;
+    this._vectorStore = opts.vectorStore;
+    this._recallExcludeSources = opts.recallExcludeSources ?? ['persona', 'rule'];
     this._storage = opts.storage;
     this._sessionStore = opts.sessionStore;
     if (opts.logger) {
@@ -220,8 +240,14 @@ export class Agent {
 
     // 启动时 Lazy 扫描：兜底历史话题归档
     this.history.archiveMissingTopics(3000).catch((err) => {
-      void err;
+      logger.warn({ err }, '启动时历史话题归档失败');
     });
+
+    // 启动时记忆衰减（insight/archive 来源）
+    this._runMemoryDecay();
+
+    // 定期记忆衰减（每小时）
+    this._decayTimer = setInterval(() => this._runMemoryDecay(), Agent.DECAY_INTERVAL_MS);
 
     return pctx;
   }
@@ -243,12 +269,25 @@ export class Agent {
       ]);
     }
     this._chatBusy = true;
+    // 超时保护：LLM 卡死时自动释放锁，防止永久锁定
+    this._chatLockTimer = setTimeout(() => {
+      logger.warn('chat() 锁超时（5 分钟），强制释放');
+      this._chatBusy = false;
+      this._chatLockTimer = null;
+    }, Agent.CHAT_LOCK_TIMEOUT_MS);
     try {
       this._lastInteractionAt = new Date();
 
-      // 基元驱动召回
+      // 基元驱动召回（双通道：语义 + 关键词）
       yield { type: 'thinking', phase: 'recalling' };
-      const topicMemories = recall(this._pctx!.index, input, { limit: 5 });
+      const topicMemories = await recall(this._pctx!.index, input, {
+        limit: 5,
+        vectorStore: this._vectorStore,
+        excludeSources: this._recallExcludeSources,
+      });
+      if (topicMemories.length > 0) {
+        this.emit('memoryRecalled', { count: topicMemories.length, query: input });
+      }
 
       // Layer 5: 最近对话注入
       const recentHistory = this.loop.getRecentHistory(3);
@@ -310,7 +349,9 @@ export class Agent {
       if (this.personaManager) {
         const matchedPersona = this.personaManager.autoMatch(input);
         if (matchedPersona) {
+          const prevName = this.personaManager.activeName;
           this.personaManager.switchPersona(matchedPersona);
+          this.emit('personaSwitched', { from: prevName, to: matchedPersona });
           if (this.loop) {
             const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
             const personaPrompt = this.personaManager.buildSystemPrompt();
@@ -342,6 +383,10 @@ export class Agent {
       }
     } finally {
       this._chatBusy = false;
+      if (this._chatLockTimer) {
+        clearTimeout(this._chatLockTimer);
+        this._chatLockTimer = null;
+      }
     }
   }
 
@@ -602,12 +647,49 @@ export class Agent {
     return this.history.loadTopicMessages(date, topic) as unknown as TopicMessage[];
   }
 
+  // ─── 记忆生命周期 ───────────────────────────────────────
+
+  /**
+   * 对 insight/archive 记忆执行 score 衰减
+   *
+   * 长期未访问的记忆 score 逐渐降低，体现"自然遗忘"
+   * 不影响 persona/rule/skill（这些是配置型记忆，不应衰减）
+   */
+  private _runMemoryDecay(): void {
+    if (!this._pctx) return;
+    const now = new Date();
+    const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
+    let decayedCount = 0;
+    for (const source of sources) {
+      const memories = this._pctx.index.getBySource(source);
+      if (memories.length === 0) continue;
+      decayScores(memories, now);
+      for (const m of memories) {
+        this._pctx.index.upsert(m);
+      }
+      decayedCount += memories.length;
+    }
+    logger.debug({ decayedCount }, '记忆衰减完成');
+    this.emit('decayCompleted', { decayedCount: decayedCount });
+  }
+
   // ─── 关闭 ─────────────────────────────────────────────
 
   /**
    * 关闭 Agent，释放 SQLite 连接等资源
    */
   async close(): Promise<void> {
+    // 清理定时器
+    if (this._decayTimer) {
+      clearInterval(this._decayTimer);
+      this._decayTimer = null;
+    }
+    if (this._chatLockTimer) {
+      clearTimeout(this._chatLockTimer);
+      this._chatLockTimer = null;
+    }
+    this.removeAllListeners();
+
     if (this.history) {
       await this.history.awaitPendingArchives(5000);
     }

@@ -67,20 +67,20 @@ describe('recall · 记忆召回', () => {
     } as unknown as IMemoryStorage;
   });
 
-  it('应该基于查询搜索并返回结果', () => {
+  it('应该基于查询搜索并返回结果', async () => {
     const results = [
       makeMemory({ id: 'skill:1', source: 'skill', score: 0.9 }),
       makeMemory({ id: 'insight:1', source: 'insight', score: 0.7 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
-    const memories = recall(mockStorage, '测试查询');
+    const memories = await recall(mockStorage, '测试查询');
 
     expect(memories).toHaveLength(2);
     expect(mockStorage.search).toHaveBeenCalledWith('测试查询', 10); // limit * 2
   });
 
-  it('应该排除默认的 persona 和 rule source', () => {
+  it('应该排除默认的 persona 和 rule source', async () => {
     const results = [
       makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
       makeMemory({ id: 'rule:1', source: 'rule', score: 0.8 }),
@@ -88,38 +88,38 @@ describe('recall · 记忆召回', () => {
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
-    const memories = recall(mockStorage, '测试');
+    const memories = await recall(mockStorage, '测试');
 
     // persona 和 rule 被排除
     expect(memories).toHaveLength(1);
     expect(memories[0]!.source).toBe('skill');
   });
 
-  it('应该支持自定义 excludeSources', () => {
+  it('应该支持自定义 excludeSources', async () => {
     const results = [
       makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
       makeMemory({ id: 'skill:1', source: 'skill', score: 0.8 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
-    const memories = recall(mockStorage, '测试', { excludeSources: [] });
+    const memories = await recall(mockStorage, '测试', { excludeSources: [] });
 
     // 不排除任何 source
     expect(memories).toHaveLength(2);
   });
 
-  it('应该限制返回数量', () => {
+  it('应该限制返回数量', async () => {
     const results = Array.from({ length: 10 }, (_, i) =>
       makeMemory({ id: `skill:${i}`, source: 'skill', score: 0.5 + i * 0.05 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
-    const memories = recall(mockStorage, '测试', { limit: 3 });
+    const memories = await recall(mockStorage, '测试', { limit: 3 });
 
     expect(memories).toHaveLength(3);
   });
 
-  it('应该按 score 降序排列', () => {
+  it('应该按 score 降序排列', async () => {
     const results = [
       makeMemory({ id: 'skill:1', source: 'skill', score: 0.5 }),
       makeMemory({ id: 'skill:2', source: 'skill', score: 0.9 }),
@@ -127,14 +127,14 @@ describe('recall · 记忆召回', () => {
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
-    const memories = recall(mockStorage, '测试');
+    const memories = await recall(mockStorage, '测试');
 
     expect(memories[0]!.score).toBeGreaterThanOrEqual(memories[1]!.score);
     expect(memories[1]!.score).toBeGreaterThanOrEqual(memories[2]!.score);
   });
 
-  it('无关键词时应返回空数组', () => {
-    const memories = recall(mockStorage, '！@#￥%');
+  it('无关键词时应返回空数组', async () => {
+    const memories = await recall(mockStorage, '！@#￥%');
 
     expect(memories).toEqual([]);
     // 无关键词时不应调用 search

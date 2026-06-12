@@ -197,18 +197,17 @@ export class MemoryInspector {
    * 记忆库统计
    *
    * 返回记忆来源分布、数据库大小等关键指标。
+   * 自动发现所有 source 标签（包括宿主自定义的），不依赖硬编码列表。
    */
   stats(): AgentStats {
-    // 按来源标签统计记忆数量
-    const sources = Object.values(SOURCE_LABELS);
+    // 通过空查询获取所有记忆，按 source 分组统计
+    const allMemories = this.index.search('', 10000);
     const bySource: Record<string, number> = {};
-    for (const src of sources) {
-      const memories = this.index.getBySource(src);
-      bySource[src] = memories.length;
+    for (const m of allMemories) {
+      bySource[m.source] = (bySource[m.source] ?? 0) + 1;
     }
 
-    // 总记忆数
-    const total = Object.values(bySource).reduce((a, b) => a + b, 0);
+    const total = allMemories.length;
 
     return { bySource, total };
   }

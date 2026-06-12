@@ -3,7 +3,7 @@ alwaysApply: false
 description:
   架构哲学原则（9
   条：万物皆记忆、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式）
-version: v0.4
+version: v0.6
 date: 2026-06-12
 ---
 
@@ -23,15 +23,20 @@ date: 2026-06-12
 
 **Persona 和 Skill 的定位**：
 
-- Skill（技能）不是"普通记忆"——不进入 SQLite 索引。它是**记忆管道顶端的最高优先级过滤器**，类似人的"长期训练形成的思维模式"。通过独立的 SkillManager 管理，在上下文组装时作为最高优先级注入
-- Persona（角色）遵循"万物皆记忆"原则——存入 SQLite 作为 `source: persona` 的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 persona 来源，由 PersonaManager 单独管理角色注入（systemPromptPrefix）。角色可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
-- 类比人类：性格是你 persona 的一部分，可以被"选择"（在不同场合以不同角色应对），而技能是"能力"，始终在线
+- **Skill（技能）**是“配置型记忆”——**不进入 SQLite 索引**，由 SkillManager 在内存中独立管理。类似人的“长期训练形成的思维模式”，通过关键词匹配触发，在上下文组装时作为最高优先级注入
+  - 双路径设计：
+    - 路径一（文件加载）：`SkillManager.load()` 启动时扫描 `configDir/skills/*.md` → 内存
+    - 路径二（运行时注入）：`config.addSkill()` → `SkillManager.register()` → 内存（session-only，重启后丢失）
+    - 路径三（持久化新增）：`config.confirm({type:'skill',...})` → 写配置文件 → 下次启动自动加载
+  - **为什么 Skill 不走“万物皆记忆”SQLite 路径**：技能是高频触发的思维模式，不是“被想起”的记忆；SkillManager 只从文件加载，SQLite 写入是无效副作用
+- **Persona（角色）**遵循“万物皆记忆”原则——存入 SQLite 作为 `source: persona` 的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 persona 来源，由 PersonaManager 单独管理角色注入（systemPromptPrefix）。角色可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
+- 类比人类：性格是你 persona 的一部分，可以被“选择”（在不同场合以不同角色应对），而技能是“能力”，始终在线
 
 **在代码中的体现**：
 
 - **PersonaManager**：扫描 `personas/*.md`，加载为 `source: persona` 记忆，存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。角色通过 systemPromptPrefix 注入，不进 bootstrap
 - **SkillManager**：扫描 configDir/skills/ 目录 + 关键词匹配，匹配到后注入下一轮 system
-  prompt。**不进 SQLite**
+  prompt。**不进 SQLite**。运行时注入的技能（`addSkill()`）仅在当前会话有效，持久化需走 `config.confirm()`
 - 记忆管道层（规则、话题归档、心得）通过 `recall()` 的统一召回管线检索
 - `source` 开放字符串区分来源：`persona` 用于角色记忆，`rule` 用于规则，`skill` 用于技能，`insight` 用于对话提取
 - `bootstrap` 阶段对 `source: persona` 做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活角色
@@ -96,7 +101,8 @@ domain），其余在 Agent Loop 中按需检索。
 **在代码中的体现**：
 
 - `bootstrap` 只加载 `persona` + `rule` + `skill` 三类来源标签
-- `insight` / `archive` 级记忆不进启动加载，由 `recall()` 在 Loop 中按需召回
+- `insight` / `archive` 级记忆不进启动加载，由 `recall()` 在 Loop 中按需召回（async，双通道：语义搜索 + 关键词搜索，结果合并去重）
+- 向量搜索失败时静默降级到关键词——保护专注态不被网络抖动打断
 - 单次增量召回 Token 预算不超过上下文窗口的 10%
 - 归档时走记忆归档三原则过滤，拒绝低价值重复信息
 
@@ -128,7 +134,13 @@ domain），其余在 Agent Loop 中按需检索。
 
 ## 8. 自然遗忘优于完美记忆
 
-**原则**：接受"部分遗忘"是工程现实。剪枝、归档、权重衰减是核心机制，不是补丁。
+**原则**：接受“部分遗忘”是工程现实。剪枝、归档、权重衰减是核心机制，不是补丁。
+
+**在代码中的体现**：
+
+- `decayScores()` 每小时自动衰减 insight/profile/work-projection 的 score
+- 衰减公式：`score × (1 - decayRate)`，超过 `maxAgeDays` 的记忆 score 降至 0
+- `init()` 时首次衰减 + 每小时定时衰减（`setInterval`）
 
 **禁止**：
 
@@ -142,18 +154,17 @@ domain），其余在 Agent Loop 中按需检索。
 
 **佛家映射**：
 
-- "应无所住"：Agent 启动时只加载 `always` + `domain`
+- "应无所住"：Agent 启动时只加载 `persona` + `rule` + `skill`
   记忆（无所挂碍，清净空灵），不预载任何话题
-- "而生其心"：用户一开口，话题记忆按语义自然浮现，而非等待LLM 主动检索
+- "而生其心"：用户一开口，记忆按语义/关键词自然浮现（`recall()` 双通道召回）
 - 专注：同话题内缓存召回结果，让用户有更长的"沉浸窗口"
 
 **在代码中的体现**：
 
-- `src/memory/topic-mount.ts`：TopicMount 挂载器实现"启动空灵 + 接触生心"
-- 话题相似度阈值较保守：FOCUS_THRESHOLD=0.35 /
-  DRIFT_THRESHOLD=0.25（高于设计文档 §3.5 默认值 0.3/0.2），降低误切率
-- 疑似漂移时不立即重召，而是**后台异步预取**——保护专注状态
-- 明确漂移时**同步重召**——自然切换，不抗拒
+- `recall()` 双通道召回：语义搜索（VectorStore，可选）+ 关键词搜索，结果合并去重
+- `excludeSources` 默认排除 `persona` + `rule`（已由 bootstrap 注入，避免重复）
+- 向量搜索失败时静默降级到关键词——保护专注态不被网络抖动打断
+- 记忆衰减机制：`decayScores()` 每小时自动衰减 insight/profile/work-projection
 
 **禁止**：
 
@@ -164,13 +175,13 @@ domain），其余在 Agent Loop 中按需检索。
 
 **用户显式切换的支持**：
 
-- 显式命令（如 `switchTopic()`）享有最高优先级，绕过阈值检测
-- 切换后自动 `unmount()`，让新话题的"生其心"从空灵中重新浮现
+- 显式命令（如 `switchTopic()`）享有最高优先级，直接切换话题
+- 切换后重新组装上下文，让新话题的"生其心"从空灵中浮现
 - 这是"专注"原则的补充而非冲突——专注是默认，切换是例外
 
 ## 10. 单 Agent 模型（配置文件是真理源）
 
-**原则**：Memora 被宿主接入后，就是该程序的唯一 Agent。memora.db 和 TopicStore 是 Agent 级共享资源，不随子项目切换重建。
+**原则**：Memora 被宿主接入后，就是该程序的唯一 Agent。memora.db 是 Agent 级共享资源，不随子项目切换重建。
 
 **配置文件是真理源，SQLite 是运行时索引**：
 

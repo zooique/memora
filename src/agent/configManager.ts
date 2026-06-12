@@ -3,7 +3,7 @@
  *
  * 从 Agent 拆分出来，负责：
  *   - addRule / addSimpleRule：运行时规则注入（SQLite + System Prompt）
- *   - addSkill / addSimpleSkill：运行时技能注入（SkillManager + SQLite）
+ *   - addSkill / addSimpleSkill：运行时技能注入（仅 SkillManager，session-only）
  *   - onConfigSuggestion / confirmConfigSuggestion：模式 3 配置建议回调 + 持久化
  *
  * 设计原则：
@@ -54,7 +54,7 @@ export class ConfigManager {
   private _suggestionHandler: ConfigSuggestionHandler | null = null;
 
   /**
-   * @param index - 记忆存储（规则/技能写入 SQLite）
+   * @param index - 记忆存储（规则写入 SQLite）
    * @param skillManager - 技能管理器（运行时注入技能）
    * @param injectSystemMessage - 注入 system 消息的回调（来自 AgentLoop）
    * @param configDir - 配置目录（模式 3 写入配置文件时使用）
@@ -183,10 +183,18 @@ export class ConfigManager {
   // ─── 技能注入 ─────────────────────────────────────────
 
   /**
-   * 新增技能记忆（C1 修复：与 addRule 对称的公共方法）
+   * 运行时动态注入技能（session-only）
    *
-   * 宿主程序可通过此方法在运行时动态注入技能，
-   * 注入后 AgentLoop 会在下一轮对话时自动匹配（关键词触发）。
+   * 技能在 Skill 的设计中属于"配置型记忆"——
+   * 由 SkillManager 在内存中管理，通过关键词匹配触发，
+   * 不进入 SQLite 索引（与 rule/persona 的"万物皆记忆"路径不同）。
+   *
+   * 路径一（文件加载）：SkillManager.load() 扫描 configDir/skills/*.md → 内存
+   * 路径二（运行时注入）：addSkill() → SkillManager.register() → 内存
+   * 路径三（持久化新增）：config.confirm({type:'skill',...}) → 写配置文件 → 下次 load() 自动加载
+   *
+   * 注意：运行时注入的技能仅在当前会话内生效，重启后需重新注入。
+   * 如需跨会话持久化，宿主应调用 config.confirm() 写入配置文件。
    */
   async addSkill(memory: Memory): Promise<void> {
     if (memory.source !== SOURCE_LABELS.SKILL) {
@@ -195,27 +203,27 @@ export class ConfigManager {
       ]);
     }
 
-    // 1. 委托给 SkillManager：负责注册到内存、构建关键词索引
+    // Skill 不写 SQLite——SkillManager 在内存中管理技能，
+    // SQLite 写入的数据不会被 SkillManager.load() 读回（它只扫描文件），
+    // 因此写入 SQLite 是无效副作用。
     this.skillManager.register({
       name: memory.name,
-      keywords: [], // 基元驱动模型下，关键词从 memory.name 推导
+      keywords: [],
       content: memory.content,
       description: memory.content.slice(0, 80),
-      filePath: '', // 运行时注入的技能无文件路径
-      layer: 'agent', // 运行时注入归 agent 层
+      filePath: '',
+      layer: 'agent',
     });
 
-    // 2. 写入 SQLite 索引（持久化、跨会话可见）
-    await this.index.upsert(memory);
-
-    logger.info({ name: memory.name }, '技能已注入');
+    logger.info({ name: memory.name }, '技能已注入（session-only）');
   }
 
   /**
-   * 新增技能的便捷方法（C1 修复：与 addSimpleRule 对称）
+   * 运行时注入技能的便捷方法（session-only）
    *
-   * 宿主程序只需提供 name + content + keywords 三个业务字段，
+   * 宿主程序只需提供 name + content 两个业务字段，
    * 内部自动填充 id / source / createdAt / accessedAt / score。
+   * 注入后仅在当前会话生效，持久化需调用 config.confirm()。
    */
   async addSimpleSkill(name: string, content: string, keywords: string[] = []): Promise<void> {
     void keywords; // 基元驱动模型下关键词暂不存储到 Memory，由 SkillManager 管理

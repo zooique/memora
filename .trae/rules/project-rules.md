@@ -1,7 +1,7 @@
 ---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
-version: v0.4
+version: v0.5
 date: 2026-06-12
 ---
 
@@ -49,7 +49,7 @@ src/
 ├── security/       # 安全策略
 ├── config/         # 配置加载
 ├── logging/        # 日志（ILogger 接口 + console fallback）
-└── utils/          # 工具函数
+└── utils/          # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 
 > **已移出**：`SqliteStorage`（→ 宿主项目）、`cli/`（→ 宿主项目）、`commander`（→ 宿主项目）、`better-sqlite3`（→ 宿主项目）
@@ -94,3 +94,8 @@ chore: 升级 dependencies
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
 - ✅ 测试 321 全量通过（InMemoryStorage，零 IO）
+- ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，4 事件类型）
+- ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
+- ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）
+- ✅ LLM 调用韧性（AgentLoop 指数退避重试，流式输出前可重试）
+- ✅ chat() 并发锁超时保护（5 分钟自动释放）

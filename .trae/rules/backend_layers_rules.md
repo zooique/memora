@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
-version: v0.3
+version: v0.5
 date: 2026-06-12
 ---
 
@@ -56,9 +56,9 @@ date: 2026-06-12
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`      | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
 | `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector）+ 对话快照 + 作品投影 | 直接调 LLM HTTP（通过 provider 接口）           |
-| `memory/`   | 记忆存储、索引、召回                                             | 调 LLM（通过 EmbeddingService 接口注入除外）    |
+| `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装           | 操作记忆索引（通过 PersonaManager 写入 SQLite） |
-| `skill/`    | 技能文件扫描、关键词匹配、prompt 注入              | 操作记忆索引                                    |
+| `skill/`    | 技能文件扫描、关键词匹配、prompt 注入（内存管理，不写 SQLite） | 操作记忆索引（Skill 是配置型记忆，不走 SQLite 路径） |
 | `llm/`      | LLM 适配、协议解析、流式处理                       | 读写文件                                        |
 | `security/` | 权限、路径白名单、Prompt 注入防御                  | 业务逻辑                                        |
 | `config/`   | 配置加载、环境变量展开                             | 业务逻辑                                        |
@@ -100,6 +100,9 @@ agent/
 ├── topicSummarizer.ts    # 话题摘要器
 ├── types.ts              # Agent 类型定义
 └── __tests__/            # 单元测试
+
+utils/
+└── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 4 事件）
 ```
 
 ## 新增模块流程

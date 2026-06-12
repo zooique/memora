@@ -40,6 +40,8 @@ export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
 export type { ProviderConfig } from './llm/factory.js';
 export type { LlmProvider } from './llm/provider.js';
 export type { Config } from './config/loader.js';
+// 事件系统
+export type { AgentEventMap, AgentEventName, AgentEventHandler } from './utils/eventEmitter.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS, inferSource, escapeLike } from './memory/types.js';
@@ -47,10 +49,13 @@ export type { Memory } from './memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from './memory/storageInterface.js';
 export { InMemoryStorage } from './memory/inMemoryStorage.js';
+// 向量存储：宿主注入 EmbeddingService 后创建 VectorStore，传入 AgentOptions 启用语义搜索
+export { VectorStore } from './memory/vectorStore.js';
+export type { EmbeddingService } from './memory/vectorStore.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from './memory/sessionStore.js';
 // 召回函数：简化关键词搜索
-export { recall, extractKeywords } from './memory/recall.js';
+export { recall, extractKeywords, decayScores } from './memory/recall.js';
 export type { RecallOptions } from './memory/recall.js';
 
 // ─── 日志抽象 ────────────────────────────────────────────

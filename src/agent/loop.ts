@@ -45,6 +45,10 @@ export class AgentLoop {
   private readonly maxContextTokens: number;
   /** 字符到 token 的粗略换算比（中英文混合平均 ~2.5 chars/token，保守取 3） */
   private static readonly CHARS_PER_TOKEN = 3;
+  /** LLM 调用最大重试次数（仅在流式输出前失败时重试） */
+  private static readonly MAX_LLM_RETRIES = 2;
+  /** 重试基础延迟（指数退避：1s, 2s） */
+  private static readonly RETRY_BASE_DELAY_MS = 1000;
 
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
@@ -98,21 +102,49 @@ export class AgentLoop {
       let fullContent = '';
       let toolCalls: Message['toolCalls'] = undefined;
 
-      // 调用 LLM（先截断确保不爆上下文窗口）
+      // 调用 LLM（带重试 + 截断保护）
       const chatOpts = this.buildChatOptions();
       const safeMessages = this.truncateMessages(this.messages);
-      for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
-        // V-105：LLM 流式输出期间检查取消
-        if (signal?.aborted) {
-          yield { type: 'aborted', reason: '用户取消了对话' };
-          return;
+      let streamStarted = false;
+      let lastError: Error | null = null;
+
+      for (let attempt = 0; attempt <= AgentLoop.MAX_LLM_RETRIES; attempt++) {
+        if (attempt > 0) {
+          // 仅在流式输出前失败时重试（streamStarted = false）
+          const delay = AgentLoop.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+          logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
+          await new Promise(r => setTimeout(r, delay));
+          fullContent = '';
+          toolCalls = undefined;
         }
-        if (chunk.content) {
-          fullContent += chunk.content;
-          yield { type: 'text', content: chunk.content }; // 结构化流式输出
-        }
-        if (chunk.toolCalls) {
-          toolCalls = (toolCalls ?? []).concat(chunk.toolCalls as never);
+
+        try {
+          for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
+            streamStarted = true;
+            if (signal?.aborted) {
+              yield { type: 'aborted', reason: '用户取消了对话' };
+              return;
+            }
+            if (chunk.content) {
+              fullContent += chunk.content;
+              yield { type: 'text', content: chunk.content };
+            }
+            if (chunk.toolCalls) {
+              toolCalls = (toolCalls ?? []).concat(chunk.toolCalls as never);
+            }
+          }
+          break; // 成功，退出重试循环
+        } catch (err) {
+          lastError = err as Error;
+          if (streamStarted) {
+            // 流式已开始输出，不能重试（用户已看到部分结果），向上抛出
+            throw err;
+          }
+          if (attempt >= AgentLoop.MAX_LLM_RETRIES) {
+            // 重试次数耗尽
+            throw err;
+          }
+          // 继续重试
         }
       }
 

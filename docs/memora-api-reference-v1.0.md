@@ -66,6 +66,8 @@
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
+| `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索召回） |
+| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule']`，已由 bootstrap 注入） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
 
@@ -120,6 +122,30 @@ v3.0 起，Agent 通过 6 个 getter 暴露专职 Manager。详见后续章节�
 | `security` | `SecurityGuard` | 安全守卫 |
 | `bootstrapMemories` | `Memory[]` | 启动时加载的必召记忆 |
 | `loadResult` | `LoadResult` | 加载结果（成功数 / 失败数） |
+
+### 2.7 事件订阅（`agent.on()` / `agent.off()`）
+
+Agent 继承 `TypedEventEmitter<AgentEventMap>`，向宿主项目广播对话外事件。
+
+```typescript
+agent.on<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[K]) => void): void
+agent.off<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[K]) => void): void
+```
+
+| 事件名 | 载荷 | 触发时机 |
+|--------|------|----------|
+| `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（insight 提取、rule 注入等） |
+| `personaSwitched` | `{ from: string \| null, to }` | 角色被切换（自动匹配或手动指定） |
+| `decayCompleted` | `{ decayedCount }` | 记忆衰减完成（init 首次 + 每小时定时） |
+| `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
+
+```typescript
+// 使用示例
+agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
+agent.on('decayCompleted', (e) => console.log(`衰减 ${e.decayedCount} 条记忆`));
+```
+
+> `close()` 自动移除所有事件监听器。
 
 **状态机**：
 ```
@@ -401,16 +427,24 @@ await agent.config.addSimpleRule(
 
 | 方法 | 用途 | 写到哪里 |
 |------|------|----------|
-| `config.addSkill(memory)` | 添加技能（需 `source='skill'`） | SkillManager + SQLite |
-| `config.addSimpleSkill(name, content, keywords?)` | 同上，简化版 | SkillManager + SQLite |
+| `config.addSkill(memory)` | 添加技能（需 `source='skill'`，session-only） | SkillManager |
+| `config.addSimpleSkill(name, content, keywords?)` | 同上，简化版（session-only） | SkillManager |
 
 ```typescript
-// 注入技能
+// 注入技能（session-only，重启后丢失）
 await agent.config.addSimpleSkill(
   '大纲生成',
-  '当用户说"生成大纲"时，按三幕结构生成章节大纲……',
+  '当用户说“生成大纲”时，按三幕结构生成章节大纲……',
   ['大纲', '结构', '章节'],  // 可选：触发关键词
 );
+
+// 如需跨会话持久化，写入配置文件
+await agent.config.confirm({
+  type: 'skill',
+  name: '大纲生成',
+  content: '当用户说“生成大纲”时……',
+  confidence: 0.9,
+});
 ```
 
 ### 9.3 配置建议（模式 3）
@@ -422,7 +456,8 @@ await agent.config.addSimpleSkill(
 
 **双写机制**：
 - `config.addRule()` → 写 SQLite（会话级，临时）
-- `config.confirm()` → 写配置文件（真理源，重启后自动加载）
+- `config.addSkill()` → 只写 SkillManager（session-only，不写 SQLite）
+- `config.confirm()` → 写配置文件（真理源，重启后自动加载，适用于 rule/persona/skill 三种类型）
 
 ---
 
@@ -447,12 +482,13 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ## 十二、完整 API 一览
 
-### Agent 面类直接方法（14 个）
+### Agent 面类直接方法（17 个）
 
 | 分组 | 方法 |
 |------|------|
 | 生命周期 | `init()` / `close()` |
 | 对话 | `chat()` / `chatSync()` |
+| 事件 | `on()` / `off()` |
 | 项目/话题 | `listProjects()` / `switchProject()` / `rebuildComponents()` / `switchTopic()` / `loadTopicMessages()` / `restoreMostRecentTopic()` / `restoreTopic()` |
 | Provider | `setProvider()` / `setBackgroundProvider()` |
 | 调试 | `getBuildCtx()` |
@@ -514,13 +550,18 @@ export type { MemoryKeywords } from 'memora';
 export type { Memory } from 'memora';
 export type { IMemoryStorage, ISessionStore, SessionMessage } from 'memora';
 export { InMemoryStorage } from 'memora';
+// 向量存储
+export { VectorStore } from 'memora';
+export type { EmbeddingService } from 'memora';
+// 事件系统
+export type { AgentEventMap, AgentEventName, AgentEventHandler } from 'memora';
 
 // 日志
 export type { ILogger } from 'memora';
 export { setLogger, logger } from 'memora';
 
 // 召回
-export { recall, extractKeywords } from 'memora';
+export { recall, extractKeywords, decayScores } from 'memora';
 export type { RecallOptions } from 'memora';
 
 // 角色
