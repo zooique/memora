@@ -184,7 +184,7 @@ export class ContextPressureMonitor {
    * 用 7 天半衰期（一周不碰的话题衰减一半）
    */
   private recencyScore(m: Memory, now: number): number {
-    const lastAccess = new Date(m.accessed_at).getTime();
+    const lastAccess = new Date(m.accessedAt).getTime();
     const ageDays = (now - lastAccess) / (24 * 60 * 60 * 1000);
     return Math.exp(-ageDays / 7); // 7 天半衰期
   }

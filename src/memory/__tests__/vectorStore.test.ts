@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { VectorStore } from '@/memory/vector-store.js';
+import { VectorStore } from '@/memory/vectorStore.js';
 
 /**
  * 创建模拟的 EmbeddingService

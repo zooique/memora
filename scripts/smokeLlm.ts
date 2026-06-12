@@ -3,7 +3,7 @@
  *
  * 用法：
  *   $env:MEMORA_LLM_API_KEY = "sk-xxx"
- *   npx tsx scripts/smoke-llm.ts
+ *   npx tsx scripts/smokeLlm.ts
  *
  * 验证项（M-001）：
  *   1. 配置加载 + 环境变量展开

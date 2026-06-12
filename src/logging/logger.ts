@@ -17,7 +17,7 @@
  *   import { setLogger } from '@/logging/logger.js';
  *   setLogger(myCustomLogger);
  */
-import type { ILogger } from './logger-interface.js';
+import type { ILogger } from './loggerInterface.js';
 
 /** 日志级别（从环境变量读取，默认 info） */
 const level = process.env['MEMORA_LOG_LEVEL'] ?? 'info';

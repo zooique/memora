@@ -11,7 +11,7 @@
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
-import type { ToolDefinition } from './tool-executor.js';
+import type { ToolDefinition } from './toolExecutor.js';
 import type { AgentChunk } from './types.js';
 import { MemoraError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
@@ -213,7 +213,7 @@ export class AgentLoop {
    */
   private wrapWithTopicContext(userInput: string, memories: readonly Memory[]): string {
     const memoryBlock = memories
-      .map((m) => `- [${m.created_at.slice(0, 10)}] ${m.name}: ${m.content.slice(0, 200)}`)
+      .map((m) => `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, 200)}`)
       .join('\n');
 
     return ['[系统召回的相关记忆]', memoryBlock, '', '[用户输入]', userInput].join('\n');

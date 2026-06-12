@@ -29,9 +29,9 @@ export const MemorySchema = z.object({
   /** 可读名称（文件名或摘要标题） */
   name: z.string(),
   /** 创建时间（ISO 8601） */
-  created_at: z.string().datetime(),
+  createdAt: z.string().datetime(),
   /** 最后访问时间（每次召回时刷新） */
-  accessed_at: z.string().datetime(),
+  accessedAt: z.string().datetime(),
   /** 权重（0-1，召回时用于排序） */
   score: z.number().min(0).max(1).default(0.5),
 });

@@ -20,7 +20,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
@@ -351,8 +351,8 @@ export class PersonaManager {
       content: persona.content,
       source: SOURCE_LABELS.PERSONA,
       name: persona.name,
-      created_at: now,
-      accessed_at: now,
+      createdAt: now,
+      accessedAt: now,
       score: 1.0,
     };
     await this.index.upsert(memory);

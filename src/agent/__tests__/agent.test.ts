@@ -228,8 +228,8 @@ describe('Agent · addRule() · Q-701', () => {
       content: '这是一个测试规则内容。',
       source: SOURCE_LABELS.RULE,
       name: '测试规则',
-      created_at: now,
-      accessed_at: now,
+      createdAt: now,
+      accessedAt: now,
       score: 1.0,
     };
 
@@ -251,8 +251,8 @@ describe('Agent · addRule() · Q-701', () => {
       content: 'xx',
       source: SOURCE_LABELS.PERSONA,
       name: '不该出现',
-      created_at: now,
-      accessed_at: now,
+      createdAt: now,
+      accessedAt: now,
       score: 1,
     };
 
@@ -266,8 +266,8 @@ describe('Agent · addRule() · Q-701', () => {
       content: 'test',
       source: SOURCE_LABELS.RULE,
       name: '测试',
-      created_at: now,
-      accessed_at: now,
+      createdAt: now,
+      accessedAt: now,
       score: 1,
     };
 

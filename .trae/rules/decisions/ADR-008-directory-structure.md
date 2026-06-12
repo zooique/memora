@@ -54,18 +54,18 @@ src/
 
 ### v0.2（2026-06-02）· 阶段三目录结构更新
 
-**变更**：新增 3 个文件（embedding.ts / vector-store.ts / domain-manager.ts）
+**变更**：新增 3 个文件（embedding.ts / vectorStore.ts / domain-manager.ts）
 
 **设计演进**：
 
 - 领域切换从"只改 skills/ 和 personality/"演进为"DomainManager 切换 .memora/ 目录"
 - 每个领域有独立的 SQLite + 向量索引 + 安全守卫
 - embedding.ts 放在 llm/ 下（属于 LLM 适配层，调用 /embeddings API）
-- vector-store.ts 放在 memory/ 下（属于记忆引擎的向量索引层）
+- vectorStore.ts 放在 memory/ 下（属于记忆引擎的向量索引层）
 
 ### v0.3（2026-06-02）· M-207 多项目并发
 
-**变更**：新增 project-manager.ts；repl.ts 新增 /project 命令
+**变更**：新增 projectManager.ts；repl.ts 新增 /project 命令
 
 **设计演进**：
 
@@ -88,7 +88,7 @@ src/
 ## 影响
 
 - `src/` 下不允许有 `utils.ts` 这种根级文件（必须放 `utils/` 目录）
-- 模块内部可再分文件：`agent/loop.ts` / `agent/tool-executor.ts`
+- 模块内部可再分文件：`agent/loop.ts` / `agent/toolExecutor.ts`
 - 跨模块共享的类型放 `src/types/`（极少使用）
 - 阶段一专注核心模块：`agent` / `memory` / `persona` / `skill` / `llm` / `security` / `config` / `logging` / `utils`
 

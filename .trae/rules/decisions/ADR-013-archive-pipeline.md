@@ -27,7 +27,7 @@ description: 记忆归档三步价值过滤（judge → distill → converge）
 
 | 组件            | 文件                            | 职责         |
 | --------------- | ------------------------------- | ------------ |
-| TopicSummarizer | `src/agent/topic-summarizer.ts` | 三步过滤管线 |
+| TopicSummarizer | `src/agent/topicSummarizer.ts` | 三步过滤管线 |
 | TopicStore      | `src/memory/topic-store.ts`     | 话题文件读写 |
 
 ## 后果

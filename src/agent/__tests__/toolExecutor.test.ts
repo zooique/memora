@@ -11,10 +11,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/tool-executor.js';
-import { SecurityGuard } from '@/security/path-guard.js';
-import { InMemoryStorage } from '@/memory/in-memory-storage.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
+import { SecurityGuard } from '@/security/pathGuard.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { MemoraError, toolError } from '@/utils/errors.js';
 
 describe('M-204 · 工具执行器（4 个工具）', () => {
@@ -50,8 +50,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
       content: 'Memora 万物皆记忆，记忆统一为类型 + 永久性',
       source: 'rule',
       name: 'core-rule',
-      created_at: '2026-06-01T00:00:00Z',
-      accessed_at: '2026-06-01T00:00:00Z',
+      createdAt: '2026-06-01T00:00:00Z',
+      accessedAt: '2026-06-01T00:00:00Z',
       score: 0.9,
     });
     await index.upsert({
@@ -59,8 +59,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
       content: 'TypeScript strict 模式下禁止 any 隐式转换',
       source: 'skill',
       name: 'typescript-skill',
-      created_at: '2026-06-01T00:00:00Z',
-      accessed_at: '2026-06-01T00:00:00Z',
+      createdAt: '2026-06-01T00:00:00Z',
+      accessedAt: '2026-06-01T00:00:00Z',
       score: 0.7,
     });
 

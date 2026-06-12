@@ -24,7 +24,7 @@ export type {
   WorkingMemorySnapshot,
   BootstrapSnapshot,
 } from './agent/agent.js';
-export type { ToolDefinition, ToolHandler, WriteExtensions } from './agent/tool-executor.js';
+export type { ToolDefinition, ToolHandler, WriteExtensions } from './agent/toolExecutor.js';
 export type { PersonaMode } from './persona/personaManager.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/agent.js';
 export { loadConfig } from './config/loader.js';
@@ -37,16 +37,16 @@ export type { Config } from './config/loader.js';
 export { SOURCE_LABELS, inferSource, escapeLike } from './memory/types.js';
 export type { Memory } from './memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
-export type { IMemoryStorage } from './memory/storage-interface.js';
-export { InMemoryStorage } from './memory/in-memory-storage.js';
+export type { IMemoryStorage } from './memory/storageInterface.js';
+export { InMemoryStorage } from './memory/inMemoryStorage.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
-export type { ISessionStore, SessionMessage } from './memory/session-store.js';
+export type { ISessionStore, SessionMessage } from './memory/sessionStore.js';
 // 召回函数：简化关键词搜索
 export { recall, extractKeywords } from './memory/recall.js';
 export type { RecallOptions } from './memory/recall.js';
 
 // ─── 日志抽象 ────────────────────────────────────────────
-export type { ILogger } from './logging/logger-interface.js';
+export type { ILogger } from './logging/loggerInterface.js';
 export { setLogger, logger } from './logging/logger.js';
 
 // ─── 工具导出 ────────────────────────────────────────────

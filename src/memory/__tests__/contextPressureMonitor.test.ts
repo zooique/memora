@@ -8,22 +8,22 @@
  *   3) token 估算的边界
  */
 import { describe, expect, it } from 'vitest';
-import { ContextPressureMonitor } from '@/memory/context-pressure-monitor.js';
+import { ContextPressureMonitor } from '@/memory/contextPressureMonitor.js';
 import type { Memory } from '@/memory/types.js';
 
 // ─── 工具：构造一条测试用记忆 ──────────────────────────
 function makeMemory(
   id: string,
   content: string,
-  accessed_at: string = new Date().toISOString(),
+  accessedAt: string = new Date().toISOString(),
 ): Memory {
   return {
     id,
     content,
     source: 'topic',
     name: id,
-    created_at: accessed_at,
-    accessed_at,
+    createdAt: accessedAt,
+    accessedAt,
     score: 0.5,
   };
 }

@@ -4,8 +4,8 @@
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { FileStore } from '@/memory/store.js';
-import { InMemoryStorage } from '@/memory/in-memory-storage.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { MemoryLoader } from '@/memory/loader.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -43,8 +43,8 @@ describe('MemoryLoader · 文件 → 索引同步', () => {
 source: persona
 name: default
 score: 1.0
-created_at: 2026-06-02T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-02T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 
 # 默认人格
@@ -58,8 +58,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
 source: rule
 name: core
 score: 1.0
-created_at: 2026-06-02T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-02T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 
 # 核心规则
@@ -89,8 +89,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
 source: rule
 name: good
 score: 1.0
-created_at: 2026-06-02T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-02T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 
 # 好的文件
@@ -113,8 +113,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
 source: persona
 name: default
 score: 1.0
-created_at: 2026-06-02T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-02T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 # 人格
 诚实。
@@ -128,8 +128,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
 source: rule
 name: coding-style
 score: 0.8
-created_at: 2026-06-02T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-02T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 
 # 编码规范
@@ -144,8 +144,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
 source: skill
 name: writing
 score: 0.7
-created_at: 2026-06-02T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-02T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 
 # 写作技能
@@ -175,8 +175,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
 source: rule
 name: good
 score: 1.0
-created_at: 2026-06-02T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-02T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 
 # 好的文件

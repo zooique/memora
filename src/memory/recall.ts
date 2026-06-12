@@ -7,7 +7,7 @@
  * 详见 docs/记忆系统重构方案_排雷炼化版.md §4
  */
 import type { Memory } from './types.js';
-import type { IMemoryStorage } from './storage-interface.js';
+import type { IMemoryStorage } from './storageInterface.js';
 import { STOPWORDS } from './types.js';
 
 /**
@@ -118,7 +118,7 @@ export function recall(
  */
 export function boostScore(memory: Memory, now?: string): void {
   memory.score = Math.min(1.0, memory.score + 0.05);
-  memory.accessed_at = now ?? new Date().toISOString();
+  memory.accessedAt = now ?? new Date().toISOString();
 }
 
 /**
@@ -136,7 +136,7 @@ export function decayScores(memories: Memory[], now?: Date): void {
 
   for (const m of memories) {
     // 增加日期有效性验证，跳过无效日期
-    const accessedAt = new Date(m.accessed_at);
+    const accessedAt = new Date(m.accessedAt);
     if (isNaN(accessedAt.getTime())) {
       continue; // 跳过无效日期的记忆
     }

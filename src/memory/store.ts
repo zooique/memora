@@ -63,8 +63,8 @@ export class FileStore {
       id: memory.id,
       source: memory.source,
       score: String(memory.score),
-      created_at: memory.created_at,
-      accessed_at: memory.accessed_at,
+      createdAt: memory.createdAt,
+      accessedAt: memory.accessedAt,
     });
     const content = `---\n${frontmatter}\n---\n\n${memory.content}`;
     await writeFile(filePath, content, 'utf-8');
@@ -129,8 +129,8 @@ export class FileStore {
         content: raw,
         source: resolvedSource,
         name,
-        created_at: now,
-        accessed_at: now,
+        createdAt: now,
+        accessedAt: now,
         score: 0.5,
       };
     }
@@ -141,8 +141,8 @@ export class FileStore {
       content: body.trim(),
       source: resolvedSource,
       name,
-      created_at: meta['created_at'] ?? now,
-      accessed_at: meta['accessed_at'] ?? now,
+      createdAt: meta['createdAt'] ?? now,
+      accessedAt: meta['accessedAt'] ?? now,
       score: Number(meta['score'] ?? '0.5'),
     };
   }

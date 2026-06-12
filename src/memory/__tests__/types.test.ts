@@ -24,8 +24,8 @@ describe('记忆类型定义', () => {
       content: '核心规则内容',
       source: 'rule',
       name: 'core',
-      created_at: '2026-06-02T00:00:00.000Z',
-      accessed_at: '2026-06-02T00:00:00.000Z',
+      createdAt: '2026-06-02T00:00:00.000Z',
+      accessedAt: '2026-06-02T00:00:00.000Z',
       score: 0.8,
     };
 
@@ -42,8 +42,8 @@ describe('记忆类型定义', () => {
       content: '测试内容',
       source: 'rule',
       name: 'test',
-      created_at: '2026-06-02T00:00:00.000Z',
-      accessed_at: '2026-06-02T00:00:00.000Z',
+      createdAt: '2026-06-02T00:00:00.000Z',
+      accessedAt: '2026-06-02T00:00:00.000Z',
       score: 1.5,  // 超出范围
     };
     expect(() => MemorySchema.parse(invalid)).toThrow();
@@ -56,8 +56,8 @@ describe('记忆类型定义', () => {
       content: '测试内容',
       source: 'custom-source',  // 自定义 source
       name: 'test',
-      created_at: '2026-06-02T00:00:00.000Z',
-      accessed_at: '2026-06-02T00:00:00.000Z',
+      createdAt: '2026-06-02T00:00:00.000Z',
+      accessedAt: '2026-06-02T00:00:00.000Z',
       score: 0.5,
     };
     expect(() => MemorySchema.parse(customSource)).not.toThrow();

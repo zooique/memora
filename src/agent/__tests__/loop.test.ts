@@ -17,8 +17,8 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
     content: '你是一个测试助手',
     source: 'persona',
     name: 'test-personality',
-    created_at: '2026-01-01T00:00:00.000Z',
-    accessed_at: '2026-01-01T00:00:00.000Z',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    accessedAt: '2026-01-01T00:00:00.000Z',
     score: 1.0,
     ...overrides,
   };

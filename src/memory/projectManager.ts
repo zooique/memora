@@ -32,11 +32,11 @@ import {
   unlinkSync,
 } from 'node:fs';
 import { FileStore } from './store.js';
-import { InMemoryStorage } from './in-memory-storage.js';
-import type { IMemoryStorage } from './storage-interface.js';
+import { InMemoryStorage } from './inMemoryStorage.js';
+import type { IMemoryStorage } from './storageInterface.js';
 import { MemoryLoader } from './loader.js';
 import type { LoadResult } from './loader.js';
-import { SecurityGuard } from '@/security/path-guard.js';
+import { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 

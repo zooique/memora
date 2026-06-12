@@ -38,7 +38,7 @@ Memora 需要支持宿主项目接入：
 | ------------ | ---------------------------- | ------------------------- |
 | Agent        | `src/agent/agent.ts`         | 门面类，统一入口          |
 | AgentLoop    | `src/agent/loop.ts`          | 对话循环（被 Agent 调用） |
-| ToolExecutor | `src/agent/tool-executor.ts` | 工具执行（被 Agent 注入） |
+| ToolExecutor | `src/agent/toolExecutor.ts` | 工具执行（被 Agent 注入） |
 
 ## 后果
 

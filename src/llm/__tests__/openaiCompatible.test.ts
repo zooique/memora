@@ -5,7 +5,7 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { OpenAICompatibleProvider } from '@/llm/openai-compatible.js';
+import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
 
 let server: ReturnType<typeof setupServer>;
 

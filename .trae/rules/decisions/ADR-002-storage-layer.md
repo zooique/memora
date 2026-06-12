@@ -112,11 +112,11 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 
 ## 影响
 
-- `src/memory/storage-interface.ts`：IMemoryStorage 接口定义
-- `src/logging/logger-interface.ts`：ILogger 接口
+- `src/memory/storageInterface.ts`：IMemoryStorage 接口定义
+- `src/logging/loggerInterface.ts`：ILogger 接口
 - `src/logging/logger.ts`：全局单例 + `setLogger()` 可替换
-- `src/memory/in-memory-storage.ts`：InMemoryStorage（测试用 + fallback）
-- `src/memory/project-manager.ts`：`storage` fallback 改为 InMemoryStorage
+- `src/memory/inMemoryStorage.ts`：InMemoryStorage（测试用 + fallback）
+- `src/memory/projectManager.ts`：`storage` fallback 改为 InMemoryStorage
 - `src/agent/agent.ts`：AgentOptions `storage` fallback 改为 InMemoryStorage
 - `src/index.ts`：移除 SqliteStorage 导出 + CLI 入口
 - **已删除**：`src/memory/index.ts`（SqliteStorage → 宿主项目）

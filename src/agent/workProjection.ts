@@ -26,7 +26,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
@@ -271,8 +271,8 @@ export class WorkProjectionManager {
       content: this.encodeContent(hash, entry.structure, entry.keyDecisions, entry.summary),
       source: SOURCE_LABELS.WORK_PROJECTION,
       name: `作品投影: ${fileName}`,
-      created_at: now,
-      accessed_at: entry.updatedAt || now,
+      createdAt: now,
+      accessedAt: entry.updatedAt || now,
       score: 0.8,
     };
   }
@@ -291,7 +291,7 @@ export class WorkProjectionManager {
       summary,
       structure,
       keyDecisions,
-      updatedAt: m.accessed_at,
+      updatedAt: m.accessedAt,
     };
   }
 

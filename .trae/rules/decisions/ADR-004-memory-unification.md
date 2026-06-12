@@ -29,7 +29,7 @@ v1.0 模型使用 `memory_type`（6 种枚举）× `permanence`（4 级枚举）
 | `permanence` 枚举（4 级） | 移除 | 召回策略由查询时决定 |
 | `tags` JSON 数组 | 移除 | source 标签足够 |
 | `weight` 0-1 | `score` 0-1 | 改名 |
-| `updatedAt` ISO 8601 | `accessed_at` ISO 8601 | 语义更精确 |
+| `updatedAt` ISO 8601 | `accessedAt` ISO 8601 | 语义更精确 |
 | `filePath` 文件路径 | 移除 | id 中已包含来源 |
 | Memory 接口 9 字段 | Memory 接口 7 字段 | 精简 |
 
@@ -41,8 +41,8 @@ interface Memory {
   content: string;      // 记忆内容（Markdown）
   source: string;       // 来源标签（开放字符串，非枚举）
   name: string;         // 可读名称
-  created_at: string;   // 创建时间（ISO 8601）
-  accessed_at: string;  // 最后访问时间（每次召回时刷新）
+  createdAt: string;   // 创建时间（ISO 8601）
+  accessedAt: string;  // 最后访问时间（每次召回时刷新）
   score: number;        // 权重（0-1，召回时用于排序）
 }
 ```

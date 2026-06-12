@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { UserProfile } from '../userProfile.js';
-import type { IMemoryStorage } from '../storage-interface.js';
+import type { IMemoryStorage } from '../storageInterface.js';
 import type { Memory } from '../types.js';
 import { SOURCE_LABELS } from '../types.js';
 
@@ -110,8 +110,8 @@ describe('UserProfile', () => {
         content: '姓名: 张三',
         source: SOURCE_LABELS.PROFILE,
         name: 'identity: 姓名: 张三',
-        created_at: new Date().toISOString(),
-        accessed_at: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
         score: 0.9,
       };
 

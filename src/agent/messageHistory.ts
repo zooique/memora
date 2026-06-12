@@ -7,8 +7,8 @@
  *   - 维护当前话题上下文（date + topic）
  *   - 通过 ISessionStore 接口实现会话持久化
  */
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
-import type { ISessionStore, SessionMessage } from '@/memory/session-store.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { logger } from '@/logging/logger.js';
 
 // ─── 内联工具函数 ──

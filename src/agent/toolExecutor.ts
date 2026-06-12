@@ -8,10 +8,10 @@
 import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
-import type { SecurityGuard } from '@/security/path-guard.js';
+import type { SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, MemoraError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from './workProjection.js';
 
 type ToolResult = string;

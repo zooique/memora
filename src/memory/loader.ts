@@ -13,7 +13,7 @@
  * - 空壳模板（仅含标题和占位说明）跳过加载，节省 token
  */
 import type { FileStore } from './store.js';
-import type { IMemoryStorage } from './storage-interface.js';
+import type { IMemoryStorage } from './storageInterface.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 
 /**

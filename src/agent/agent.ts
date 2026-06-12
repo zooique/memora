@@ -32,9 +32,9 @@ import {
   type ToolDefinition,
   type ToolHandler,
   type WriteExtensions,
-} from './tool-executor.js';
-import { MessageHistory } from './message-history.js';
-import { ProjectManager, type ProjectContext } from '@/memory/project-manager.js';
+} from './toolExecutor.js';
+import { MessageHistory } from './messageHistory.js';
+import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { recall } from '@/memory/recall.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
@@ -45,11 +45,11 @@ import { configError } from '@/utils/errors.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
-import type { ISessionStore } from '@/memory/session-store.js';
-import type { ILogger } from '@/logging/logger-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { ILogger } from '@/logging/loggerInterface.js';
 import { logger, setLogger } from '@/logging/logger.js';
-import type { SecurityGuard } from '@/security/path-guard.js';
+import type { SecurityGuard } from '@/security/pathGuard.js';
 
 // ─── 常量定义 ───────────────────────────────────────────
 
@@ -974,9 +974,9 @@ ${contextSection}
       });
 
       if (existingMemory) {
-        // 已有相似记忆，更新 accessed_at 和 score
+        // 已有相似记忆，更新 accessedAt 和 score
         existingMemory.score = Math.min(1.0, existingMemory.score + 0.05);
-        existingMemory.accessed_at = new Date().toISOString();
+        existingMemory.accessedAt = new Date().toISOString();
         this._pctx.index.upsert(existingMemory);
         logger.debug({ id: existingMemory.id }, 'extractInsight: 更新已有记忆');
         return;
@@ -990,8 +990,8 @@ ${contextSection}
         content: insight,
         source: SOURCE_LABELS.INSIGHT,
         name: `insight-${insightId.slice(0, 8)}`,
-        created_at: now,
-        accessed_at: now,
+        createdAt: now,
+        accessedAt: now,
         score: DEFAULT_INSIGHT_SCORE,
       };
       this._pctx.index.upsert(memory);
@@ -1313,8 +1313,8 @@ ${contextSection}
       content: suggestion.content,
       source,
       name: suggestion.name,
-      created_at: now,
-      accessed_at: now,
+      createdAt: now,
+      accessedAt: now,
       score: suggestion.confidence,
     };
     await fileStore.write(memory);
@@ -1504,7 +1504,7 @@ ${contextSection}
    * 新增项目规则的便捷方法（P1-4 修复）
    *
    * 宿主程序只需提供 name + content 两个业务字段，
-   * 内部自动填充 id / source / created_at / accessed_at / score 等字段。
+   * 内部自动填充 id / source / createdAt / accessedAt / score 等字段。
    *
    * @param name 规则名称（如"代码风格"、"TypeScript 偏好"）
    * @param content 规则内容（Markdown 格式）
@@ -1519,8 +1519,8 @@ ${contextSection}
       content,
       source: SOURCE_LABELS.RULE,
       name,
-      created_at: now,
-      accessed_at: now,
+      createdAt: now,
+      accessedAt: now,
       score: 0.8,
     };
     await this.addRule(memory);
@@ -1576,7 +1576,7 @@ ${contextSection}
    * 新增技能的便捷方法（C1 修复：与 addSimpleRule 对称）
    *
    * 宿主程序只需提供 name + content + keywords 三个业务字段，
-   * 内部自动填充 id / source / created_at / accessed_at / score。
+   * 内部自动填充 id / source / createdAt / accessedAt / score。
    *
    * @param name 技能名称（如"代码审查"、"章节创作"）
    * @param content 技能内容（Markdown 格式）
@@ -1590,8 +1590,8 @@ ${contextSection}
       content,
       source: SOURCE_LABELS.SKILL,
       name,
-      created_at: now,
-      accessed_at: now,
+      createdAt: now,
+      accessedAt: now,
       score: 0.7,
     };
     await this.addSkill(memory);

@@ -51,9 +51,9 @@ date: 2026-06-02
 ## 4. 阶段一必须包含的测试
 
 - [x] 记忆类型 schema 校验（types.test.ts）
-- [x] 路径白名单 6 个用例（path-guard.test.ts）
+- [x] 路径白名单 6 个用例（pathGuard.test.ts）
 - [x] SQLite 索引 CRUD（index.test.ts）
-- [x] LLM Provider Mock 流式响应（openai-compatible.test.ts）
+- [x] LLM Provider Mock 流式响应（openaiCompatible.test.ts）
 - [x] Agent Loop 单元测试（loop.test.ts · 10 用例）
 - [x] Agent Loop 一轮对话（e2e.test.ts · 5 场景）
 - [x] CLI 启动 + 退出（e2e.test.ts · 5 场景）
@@ -61,7 +61,7 @@ date: 2026-06-02
 - [x] init 命令（init.test.ts · 4 用例）
 - [x] 权限模型（permissions.test.ts · 4 用例）
 - [x] LLM 工厂（factory.test.ts · 8 用例）
-- [x] 项目管理器（project-manager.test.ts · 11 用例）
+- [x] 项目管理器（projectManager.test.ts · 11 用例）
 
 ## 5. 测试反模式
 

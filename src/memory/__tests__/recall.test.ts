@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { recall, extractKeywords } from '@/memory/recall.js';
-import type { IMemoryStorage } from '@/memory/storage-interface.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 
 /**
@@ -16,8 +16,8 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
     content: '测试内容',
     source: 'skill',
     name: 'test-memory',
-    created_at: '2026-01-01T00:00:00.000Z',
-    accessed_at: '2026-01-01T00:00:00.000Z',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    accessedAt: '2026-01-01T00:00:00.000Z',
     score: 0.8,
     ...overrides,
   };

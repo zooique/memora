@@ -70,7 +70,7 @@ import type { IMemoryStorage, ILogger } from 'memora';
 
 // 宿主职责：创建 LLM Provider（Agent 不关心 API Key）
 const provider = createLlmProvider({
-  provider: 'openai-compatible',
+  provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
   baseUrl: 'https://api.deepseek.com/v1',
   model: 'deepseek-chat',
@@ -78,7 +78,7 @@ const provider = createLlmProvider({
 
 // 可选：后台 Provider（投影等后台操作）
 const backgroundProvider = createLlmProvider({
-  provider: 'openai-compatible',
+  provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
   baseUrl: 'https://api.deepseek.com/v1',
   model: 'deepseek-chat', // 可用更便宜的模型

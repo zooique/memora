@@ -68,10 +68,10 @@ name: partial
       expect(result).not.toBeNull();
       // 缺少 score → 默认 0.5
       expect(result!.score).toBe(0.5);
-      // 缺少 created_at → 使用文件 mtime
-      expect(result!.created_at).toBeDefined();
-      // 缺少 accessed_at → 使用文件 mtime
-      expect(result!.accessed_at).toBeDefined();
+      // 缺少 createdAt → 使用文件 mtime
+      expect(result!.createdAt).toBeDefined();
+      // 缺少 accessedAt → 使用文件 mtime
+      expect(result!.accessedAt).toBeDefined();
     });
 
     it('有完整 frontmatter 时应正确解析', async () => {
@@ -84,8 +84,8 @@ id: persona:default
 source: persona
 name: default
 score: 1.0
-created_at: 2026-06-01T00:00:00.000Z
-accessed_at: 2026-06-02T00:00:00.000Z
+createdAt: 2026-06-01T00:00:00.000Z
+accessedAt: 2026-06-02T00:00:00.000Z
 ---
 
 # 默认人格
@@ -109,8 +109,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
         content: '# 测试规则\n- 规则内容',
         source: 'rule',
         name: 'test-rule',
-        created_at: '2026-06-01T00:00:00.000Z',
-        accessed_at: '2026-06-02T00:00:00.000Z',
+        createdAt: '2026-06-01T00:00:00.000Z',
+        accessedAt: '2026-06-02T00:00:00.000Z',
         score: 0.8,
       };
 
@@ -131,8 +131,8 @@ accessed_at: 2026-06-02T00:00:00.000Z
         content: '深路径工具',
         source: 'custom',
         name: 'deep-tool',
-        created_at: '2026-06-02T00:00:00.000Z',
-        accessed_at: '2026-06-02T00:00:00.000Z',
+        createdAt: '2026-06-02T00:00:00.000Z',
+        accessedAt: '2026-06-02T00:00:00.000Z',
         score: 0.5,
       };
 

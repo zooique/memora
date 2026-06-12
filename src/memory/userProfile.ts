@@ -19,7 +19,7 @@
  *   - 确认机制防止正则误归档污染画像
  *   - identity / preference / expertise 实时归档，habit / history 每天归档时提炼
  */
-import type { IMemoryStorage } from './storage-interface.js';
+import type { IMemoryStorage } from './storageInterface.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 import { logger } from '@/logging/logger.js';
 
@@ -84,7 +84,7 @@ export class UserProfile {
         source: '',
         weight: m.score,
         confirmed: true, // 存储中只保存已确认条目
-        updatedAt: m.accessed_at,
+        updatedAt: m.accessedAt,
       };
       this.cache.set(entry.id, entry);
       entries.push(entry);
@@ -400,8 +400,8 @@ export class UserProfile {
       content: entry.value,
       source: SOURCE_LABELS.PROFILE,
       name: `${entry.category}: ${entry.value}`,
-      created_at: now,
-      accessed_at: entry.updatedAt || now,
+      createdAt: now,
+      accessedAt: entry.updatedAt || now,
       score: entry.weight,
     };
   }

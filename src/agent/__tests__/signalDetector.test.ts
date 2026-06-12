@@ -8,7 +8,7 @@
  * - 信号名提取
  */
 import { describe, it, expect } from 'vitest';
-import { detectMemorableSignal, extractSignalName } from '@/agent/signal-detector.js';
+import { detectMemorableSignal, extractSignalName } from '@/agent/signalDetector.js';
 
 describe('SignalDetector · detectMemorableSignal', () => {
   describe('应命中（强信号）', () => {

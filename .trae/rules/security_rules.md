@@ -35,7 +35,7 @@ date: 2026-06-02
 - ❌ `/etc/passwd`
 - ❌ `~/.gnupg/`
 
-详见 [src/security/path-guard.ts](../../src/security/path-guard.ts)
+详见 [src/security/pathGuard.ts](../../src/security/pathGuard.ts)
 
 ## 3. API Key 存储
 
