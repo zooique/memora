@@ -14,7 +14,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:1',
     content: '测试内容',
-    source: 'skill',
+    source: 'insight',
     name: 'test-memory',
     createdAt: '2026-01-01T00:00:00.000Z',
     accessedAt: '2026-01-01T00:00:00.000Z',
@@ -71,8 +71,8 @@ describe('recall · 记忆召回', () => {
 
   it('应该基于查询搜索并返回结果', async () => {
     const results = [
-      makeMemory({ id: 'skill:1', source: 'skill', score: 0.9 }),
-      makeMemory({ id: 'insight:1', source: 'insight', score: 0.7 }),
+      makeMemory({ id: 'insight:1', source: 'insight', score: 0.9 }),
+      makeMemory({ id: 'profile:1', source: 'profile', score: 0.7 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -111,7 +111,7 @@ describe('recall · 记忆召回', () => {
 
   it('应该限制返回数量', async () => {
     const results = Array.from({ length: 10 }, (_, i) =>
-      makeMemory({ id: `skill:${i}`, source: 'skill', score: 0.5 + i * 0.05 }),
+      makeMemory({ id: `insight:${i}`, source: 'insight', score: 0.5 + i * 0.05 }),
     );
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -122,9 +122,9 @@ describe('recall · 记忆召回', () => {
 
   it('应该按 score 降序排列', async () => {
     const results = [
-      makeMemory({ id: 'skill:1', source: 'skill', score: 0.5 }),
-      makeMemory({ id: 'skill:2', source: 'skill', score: 0.9 }),
-      makeMemory({ id: 'skill:3', source: 'skill', score: 0.7 }),
+      makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 }),
+      makeMemory({ id: 'insight:2', source: 'insight', score: 0.9 }),
+      makeMemory({ id: 'insight:3', source: 'insight', score: 0.7 }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -143,7 +143,7 @@ describe('recall · 记忆召回', () => {
   });
 
   it('召回时应将 boost 后的 score 写回存储（upsert）', async () => {
-    const original = makeMemory({ id: 'skill:1', source: 'skill', score: 0.5 });
+    const original = makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 });
     vi.mocked(mockStorage.search).mockReturnValue([original]);
 
     const memories = await recall(mockStorage, '测试');
@@ -151,7 +151,7 @@ describe('recall · 记忆召回', () => {
     // upsert 应被调用，写回 boost 后的 memory
     expect(mockStorage.upsert).toHaveBeenCalledTimes(1);
     const upserted = vi.mocked(mockStorage.upsert).mock.calls[0]![0] as Memory;
-    expect(upserted.id).toBe('skill:1');
+    expect(upserted.id).toBe('insight:1');
     expect(upserted.score).toBeGreaterThanOrEqual(0.5);
 
     // 返回的对象不应是原始对象（不污染调用方）
