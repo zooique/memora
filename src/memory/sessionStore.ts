@@ -52,6 +52,27 @@ export interface ISessionStore {
    * @returns 会话标识列表（格式：YYYY-MM-DD-session）
    */
   listSessions(): string[];
+
+  /**
+   * 复制会话：将源会话的全部消息复制到目标会话
+   *
+   * 实现要求：
+   * - 原子操作：要么全部复制成功，要么不产生副作用
+   * - 保留时间戳：消息的 timestamp 不修改
+   * - 幂等：若目标会话已存在，覆盖（而非追加）
+   * - 若源会话不存在，静默返回（不抛出）
+   *
+   * @param sourceDate - 源会话日期
+   * @param sourceSession - 源会话标识
+   * @param targetDate - 目标会话日期
+   * @param targetSession - 目标会话标识
+   */
+  copySession?(
+    sourceDate: string,
+    sourceSession: string,
+    targetDate: string,
+    targetSession: string,
+  ): void;
 }
 
 /**

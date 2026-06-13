@@ -10,6 +10,7 @@
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { logger } from '@/logging/logger.js';
+import { configError } from '@/utils/errors.js';
 
 // ─── 内联工具函数 ──
 
@@ -33,6 +34,18 @@ export interface SessionRecord {
   content: string;
   /** 时间戳（ISO 8601） */
   timestamp: string;
+}
+
+/**
+ * 分叉结果
+ */
+export interface ForkResult {
+  /** 新会话标识（不含日期前缀，如 "main-b1"） */
+  newSession: string;
+  /** 会话日期 */
+  date: string;
+  /** 从源会话复制的消息列表 */
+  messages: SessionRecord[];
 }
 
 /**
@@ -121,6 +134,109 @@ export class MessageHistory {
   switchSession(newSession: string): string {
     this.currentSession = newSession;
     return this.currentSessionName;
+  }
+
+  /**
+   * 自动生成分支名
+   *
+   * 算法：扫描已存在会话，找到以 sourceSession-b 为前缀的最大序号，+1
+   *
+   * @param sourceSession - 源会话标识
+   * @returns 自动生成的分支名（如 "main-b1"）
+   */
+  private _autoBranchName(sourceSession: string): string {
+    const allSessions = this._sessionStore!.listSessions();
+    const prefix = `${sourceSession}-b`;
+
+    // 提取匹配前缀的序号
+    const existingNumbers: number[] = [];
+    for (const fullSession of allSessions) {
+      // fullSession 格式：YYYY-MM-DD-session
+      const parts = fullSession.split('-');
+      if (parts.length >= 4) {
+        const sessionPart = parts.slice(3).join('-');
+        if (sessionPart.startsWith(prefix)) {
+          const numStr = sessionPart.slice(prefix.length);
+          const num = parseInt(numStr, 10);
+          if (!isNaN(num)) {
+            existingNumbers.push(num);
+          }
+        }
+      }
+    }
+
+    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
+    return `${prefix}${nextNumber}`;
+  }
+
+  /**
+   * 分叉当前会话
+   *
+   * 流程：
+   * 1. 从 sessionStore 加载当前会话全部消息
+   * 2. 生成唯一新会话名
+   * 3. 通过 sessionStore.copySession() 复制到新会话
+   * 4. switchSession() 切换当前会话标识到新会话
+   *
+   * @param targetSession - 自定义目标会话名（可选，不传则自动生成）
+   * @returns 分叉结果
+   * @throws 若 sessionStore 未注入、copySession 未实现或当前会话无消息
+   */
+  forkSession(targetSession?: string): ForkResult {
+    if (!this._sessionStore) {
+      throw configError('无法分叉会话', 'ISessionStore 未注入', [
+        '在创建 Agent 时注入 sessionStore 参数',
+      ]);
+    }
+
+    if (!this._sessionStore.copySession) {
+      throw configError('无法分叉会话', 'ISessionStore.copySession 未实现', [
+        '升级宿主项目的 ISessionStore 实现，添加 copySession() 方法',
+      ]);
+    }
+
+    const sourceDate = this.currentDate;
+    const sourceSession = this.currentSession;
+
+    // 加载源会话消息
+    const messages = this._sessionStore.loadMessages(sourceDate, sourceSession);
+    if (messages.length === 0) {
+      throw configError('无法分叉会话', '当前会话无消息', [
+        '先进行一些对话后再尝试分叉',
+      ]);
+    }
+
+    // 生成目标会话名
+    let newSession: string;
+    if (targetSession) {
+      // 检查目标会话在当天是否已存在
+      const targetFullName = `${todayDate()}-${targetSession}`;
+      const existingSessions = this._sessionStore.listSessions();
+      if (existingSessions.includes(targetFullName)) {
+        throw configError('无法分叉会话', `当天会话 "${targetSession}" 已存在`, [
+          '使用不同的名称，或不传参数自动生成',
+        ]);
+      }
+      newSession = targetSession;
+    } else {
+      newSession = this._autoBranchName(sourceSession);
+    }
+
+    // 计算目标日期
+    const targetDate = todayDate();
+
+    // 原子复制消息
+    this._sessionStore.copySession(sourceDate, sourceSession, targetDate, newSession);
+
+    // 切换当前会话到新分支
+    this.switchSession(newSession);
+
+    logger.info(
+      { from: sourceSession, to: newSession, messageCount: messages.length },
+      '会话分叉完成',
+    );
+
+    return { newSession, date: targetDate, messages };
   }
 
   /**

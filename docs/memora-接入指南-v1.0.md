@@ -152,7 +152,7 @@ const reply = await agent.chatSync('你好');
 
 ### 3.5 事件订阅（可选）
 
-Agent 向宿主广播对话外事件（记忆变更、角色切换、衰减完成等）。
+Agent 向宿主广播对话外事件（记忆变更、角色切换、衰减完成、会话分叉等）。
 
 ```typescript
 import type { AgentEventMap } from 'memora';
@@ -161,6 +161,7 @@ agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
 agent.on('personaSwitched', (e) => console.log(`角色: ${e.from} → ${e.to}`));
 agent.on('decayCompleted', (e) => console.log(`衰减 ${e.decayedCount} 条记忆`));
 agent.on('memoryRecalled', (e) => console.log(`想起 ${e.count} 条记忆`));
+agent.on('sessionForked', (e) => console.log(`分叉: ${e.from} → ${e.to}，${e.messageCount} 条消息`));
 
 // close() 自动移除所有监听器
 ```
@@ -309,6 +310,50 @@ const agent = new Agent({
 
 ---
 
+## 四.5、会话分叉（Fork Session）
+
+Memora 支持会话分叉功能，允许用户从当前对话创建独立分支，继承完整消息历史后各自独立发展。
+
+**使用场景**：
+- 用户在对话中建立了丰富的上下文后，可以分叉到多个并行任务
+- 每个分支继承已建立的共识，避免从零开始
+- 分支完全独立，互不干扰
+
+```typescript
+// 自动生成分支名（main-b1, main-b2, ...）
+const result = await agent.forkSession();
+console.log(`已分叉到: ${result.newSession}，复制了 ${result.messageCount} 条消息`);
+
+// 自定义分支名
+const result = await agent.forkSession('experiment');
+```
+
+**命名规则**：
+- 自动生成：`{原始会话名}-b{序号}`（如 `main-b1`、`main-b2`）
+- 支持分叉的分叉：`main-b1-b1`
+- 自定义名称：直接传入目标名称
+
+**记忆处理策略**：
+- 已有记忆：全局共享（记忆是全局知识库，不属于单个会话）
+- 分叉后的 Insight：各自独立（不同分支探索不同方向）
+- 用户画像：全局共享（UserProfile 是全局的）
+
+**事件监听**：
+```typescript
+agent.on('sessionForked', (event) => {
+  console.log(`从 ${event.from} 分叉到 ${event.to}`);
+  console.log(`复制了 ${event.messageCount} 条消息`);
+});
+```
+
+**边界情况**：
+- 当前会话无消息时抛出错误
+- `ISessionStore` 未注入时抛出错误
+- 对话正在进行中（`chatBusy`）时抛出错误
+- 自定义名称已存在时抛出错误
+
+---
+
 ## 五、API 速查
 
 > 完整定义见 [memora-api-reference-v1.0.md](./memora-api-reference-v1.0.md)。
@@ -361,6 +406,7 @@ const agent = new Agent({
 | `agent.switchProject(name)` | 切换到其他子项目 |
 | `agent.rebuildComponents()` | **项目切换后必须调用** |
 | `agent.switchSession(name)` | 切换当前会话（自动归档旧会话） |
+| `agent.forkSession(name?)` | 分叉当前会话（复制完整消息历史到新分支） |
 | `agent.loadSessionMessages(date, session)` | 加载指定日期/会话的消息 |
 | `agent.restoreSession(date, session)` | 恢复指定日期/会话 |
 | `agent.restoreMostRecentSession()` | 启动时恢复最近一次会话 |
@@ -376,7 +422,7 @@ const agent = new Agent({
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(s)` / `.buildSystemPrompt()` |
-| `agent.on()` / `agent.off()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` |
+| `agent.on()` / `agent.off()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` |
 
 ### Provider 管理
 
@@ -438,6 +484,7 @@ import type {
   AgentEventName,
   AgentEventHandler,
   SessionRecord,
+  ForkResult,
 } from 'memora';
 ```
 

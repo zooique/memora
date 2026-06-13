@@ -34,6 +34,7 @@ const createMockSessionStore = (): ISessionStore => ({
   appendMessage: vi.fn(),
   loadMessages: vi.fn().mockReturnValue([]),
   listSessions: vi.fn().mockReturnValue([]),
+  copySession: vi.fn(),
 });
 
 describe('ISessionStore 契约 · appendMessage', () => {
@@ -177,5 +178,112 @@ describe('ISessionStore 契约 · listSessions', () => {
     const result = await historyWithoutStore.listAllSessions();
 
     expect(result).toEqual([]);
+  });
+});
+
+describe('ISessionStore 契约 · copySession', () => {
+  let mockStorage: IMemoryStorage;
+  let mockSessionStore: ISessionStore;
+  let history: MessageHistory;
+
+  beforeEach(() => {
+    mockStorage = createMockStorage();
+    mockSessionStore = createMockSessionStore();
+    history = new MessageHistory(mockStorage, mockSessionStore);
+  });
+
+  it('forkSession 应调用 sessionStore.copySession', async () => {
+    const mockMessages: SessionMessage[] = [
+      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
+      { role: 'assistant', content: '你好！', timestamp: '2026-01-01T00:00:01.000Z' },
+    ];
+    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
+    vi.mocked(mockSessionStore.listSessions).mockReturnValue([]);
+
+    await history.forkSession();
+
+    expect(mockSessionStore.copySession).toHaveBeenCalledTimes(1);
+    expect(mockSessionStore.copySession).toHaveBeenCalledWith(
+      expect.any(String), // sourceDate
+      'main', // sourceSession
+      expect.any(String), // targetDate
+      'main-b1', // targetSession
+    );
+  });
+
+  it('forkSession 应正确递增分支序号', async () => {
+    const mockMessages: SessionMessage[] = [
+      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
+    ];
+    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
+    vi.mocked(mockSessionStore.listSessions).mockReturnValue([
+      '2026-01-01-main-b1',
+      '2026-01-01-main-b2',
+    ]);
+
+    await history.forkSession();
+
+    expect(mockSessionStore.copySession).toHaveBeenCalledWith(
+      expect.any(String),
+      'main',
+      expect.any(String),
+      'main-b3',
+    );
+  });
+
+  it('forkSession 应支持自定义目标会话名', async () => {
+    const mockMessages: SessionMessage[] = [
+      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
+    ];
+    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
+    vi.mocked(mockSessionStore.listSessions).mockReturnValue([]);
+
+    await history.forkSession('experiment');
+
+    expect(mockSessionStore.copySession).toHaveBeenCalledWith(
+      expect.any(String),
+      'main',
+      expect.any(String),
+      'experiment',
+    );
+  });
+
+  it('forkSession 应切换到新会话', () => {
+    const mockMessages: SessionMessage[] = [
+      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
+    ];
+    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
+    vi.mocked(mockSessionStore.listSessions).mockReturnValue([]);
+
+    const result = history.forkSession();
+
+    expect(history.session).toBe('main-b1');
+    expect(result.newSession).toBe('main-b1');
+  });
+
+  it('forkSession 当前会话无消息时应抛出错误', () => {
+    vi.mocked(mockSessionStore.loadMessages).mockReturnValue([]);
+
+    expect(() => history.forkSession()).toThrow('无法分叉会话');
+  });
+
+  it('forkSession sessionStore 未注入时应抛出错误', () => {
+    const historyWithoutStore = new MessageHistory(mockStorage);
+
+    expect(() => historyWithoutStore.forkSession()).toThrow('无法分叉会话');
+  });
+
+  it('forkSession 自定义名称已存在时应抛出错误', () => {
+    const mockMessages: SessionMessage[] = [
+      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
+    ];
+    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
+    // 使用今天的日期，这样才会匹配
+    const today = new Date().toISOString().slice(0, 10);
+    vi.mocked(mockSessionStore.listSessions).mockReturnValue([
+      `${today}-experiment`,
+    ]);
+
+    expect(() => history.forkSession('experiment')).toThrow('无法分叉会话');
   });
 });

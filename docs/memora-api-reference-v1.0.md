@@ -138,6 +138,7 @@ agent.off<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[K
 | `personaSwitched` | `{ from: string \| null, to }` | 角色被切换（自动匹配或手动指定） |
 | `decayCompleted` | `{ decayedCount }` | 记忆衰减完成（init 首次 + 每小时定时） |
 | `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
+| `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
 
 ```typescript
 // 使用示例
@@ -298,6 +299,25 @@ interface IMemoryStorage {
 
 > 宿主实现应使用 `COUNT(*)` 等数据库原生计数，避免全量加载数据。
 
+### 5.3 `ISessionStore` 接口
+
+宿主实现此接口提供会话消息的持久化能力。
+
+```typescript
+interface ISessionStore {
+  appendMessage(date: string, session: string, message: SessionMessage): void;
+  loadMessages(date: string, session: string): SessionMessage[];
+  listSessions(): string[];
+  copySession(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string): void;
+}
+```
+
+**`copySession` 实现要求**：
+- 原子操作：要么全部复制成功，要么不产生副作用
+- 保留时间戳：消息的 timestamp 不修改
+- 幂等：若目标会话已存在，覆盖（而非追加）
+- 若源会话不存在，静默返回（不抛出）
+
 ---
 
 ## 六、项目 / 会话管理
@@ -310,6 +330,7 @@ interface IMemoryStorage {
 | `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆，自动 rebuild） |
 | `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
 | `switchSession(newName)` → `Promise<string>` | 切换到指定会话（自动归档旧会话） |
+| `forkSession(targetSession?)` → `Promise<ForkResult>` | 分叉当前会话（复制完整消息历史到新分支） |
 | `loadSessionMessages(date, session)` → `Promise<SessionRecord[]>` | 加载指定日期/会话的消息（含时间戳） |
 | `restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
 | `restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
@@ -317,6 +338,24 @@ interface IMemoryStorage {
 ```typescript
 // listAllSessions 通过 agentHistory 访问
 const sessions = await agent.agentHistory?.listAllSessions();
+
+// 会话分叉示例
+const forkResult = await agent.forkSession();
+console.log(`分叉到 ${forkResult.newSession}，复制了 ${forkResult.messageCount} 条消息`);
+
+// 自定义分支名
+const customFork = await agent.forkSession('experiment');
+```
+
+### `ForkResult` 类型
+
+```typescript
+interface ForkResult {
+  /** 新会话完整标识（如 "2026-06-13-main-b1"） */
+  newSession: string;
+  /** 复制的消息数量 */
+  messageCount: number;
+}
 ```
 
 ---
@@ -504,14 +543,14 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ## 十二、完整 API 一览
 
-### Agent 面类直接方法（17 个）
+### Agent 面类直接方法（18 个）
 
 | 分组 | 方法 |
 |------|------|
 | 生命周期 | `init()` / `close()` |
 | 对话 | `chat()` / `chatSync()` |
 | 事件 | `on()` / `off()` |
-| 项目/会话 | `listProjects()` / `switchProject()` / `rebuildComponents()` / `switchSession()` / `loadSessionMessages()` / `restoreMostRecentSession()` / `restoreSession()` |
+| 项目/会话 | `listProjects()` / `switchProject()` / `rebuildComponents()` / `switchSession()` / `forkSession()` / `loadSessionMessages()` / `restoreMostRecentSession()` / `restoreSession()` |
 | Provider | `setProvider()` / `setBackgroundProvider()` |
 | 调试 | `getBuildCtx()` |
 
@@ -590,7 +629,7 @@ export type { RecallOptions } from 'memora';
 export type { PersonaMode } from 'memora';
 
 // 消息历史
-export type { SessionRecord } from 'memora';
+export type { SessionRecord, ForkResult } from 'memora';
 
 // 技能
 export type { SkillEntry } from 'memora';

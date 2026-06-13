@@ -102,7 +102,7 @@ agent/
 └── __tests__/            # 单元测试
 
 utils/
-└── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 4 事件）
+└── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 5 事件）
 ```
 
 ## 新增模块流程

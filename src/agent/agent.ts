@@ -411,6 +411,56 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 分叉当前会话：复制完整消息历史到新分支，切换到新分支继续对话
+   *
+   * 分叉后：
+   * - 原会话完整保留，可随时通过 switchSession() 切回
+   * - 新分支拥有独立的消息历史，后续对话互不干扰
+   * - 记忆索引（IMemoryStorage）全局共享，不受分叉影响
+   *
+   * @param targetSession - 自定义新分支名（可选，不传则自动生成）
+   * @returns { newSession, messageCount }
+   */
+  forkSession(targetSession?: string): { newSession: string; messageCount: number } {
+    if (!this._initialized || !this.history || !this.loop) {
+      throw configError('Agent 未初始化', '请先调用 init()', [
+        '在 forkSession() 前调用 await agent.init()',
+      ]);
+    }
+
+    if (this._chatBusy) {
+      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再分叉', [
+        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
+      ]);
+    }
+
+    // 记录源会话名（用于事件）
+    const sourceSessionName = this.history.currentSessionName;
+
+    // 委托 MessageHistory 完成分叉
+    const result = this.history.forkSession(targetSession);
+
+    // 将消息恢复到 AgentLoop 的工作记忆
+    const messages: Message[] = result.messages.map((m) => ({
+      role: m.role as Message['role'],
+      content: m.content,
+    }));
+    this.loop.restoreHistory(messages);
+
+    // 发射事件（供 UI 响应）
+    this.emit('sessionForked', {
+      from: sourceSessionName,
+      to: `${result.date}-${result.newSession}`,
+      messageCount: result.messages.length,
+    });
+
+    return {
+      newSession: `${result.date}-${result.newSession}`,
+      messageCount: result.messages.length,
+    };
+  }
+
+  /**
    * 列出已注册项目
    */
   listProjects(): AgentProjectEntry[] {

@@ -19,6 +19,8 @@ export interface AgentEventMap {
   decayCompleted: { decayedCount: number };
   /** 记忆被召回（用于宿主 UI 展示"想起 X 条记忆"） */
   memoryRecalled: { count: number; query: string };
+  /** 会话被分叉 */
+  sessionForked: { from: string; to: string; messageCount: number };
 }
 
 /** 事件名联合类型 */

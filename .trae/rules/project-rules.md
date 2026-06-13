@@ -94,7 +94,7 @@ chore: 升级 dependencies
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
 - ✅ 测试 321 全量通过（InMemoryStorage，零 IO）
-- ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，4 事件类型）
+- ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，5 事件类型）
 - ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
 - ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）
 - ✅ LLM 调用韧性（AgentLoop 指数退避重试，流式输出前可重试）
