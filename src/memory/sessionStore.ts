@@ -16,9 +16,9 @@
  * @example
  * // 宿主实现（文件存储）
  * class FileSessionStore implements ISessionStore {
- *   appendMessage(date, topic, message) { ... }
- *   loadMessages(date, topic) { ... }
- *   listTopics() { ... }
+ *   appendMessage(date, session, message) { ... }
+ *   loadMessages(date, session) { ... }
+ *   listSessions() { ... }
  * }
  *
  * // 注入到 Agent
@@ -32,26 +32,26 @@ export interface ISessionStore {
    * 追加消息到指定会话
    *
    * @param date - 会话日期 YYYY-MM-DD
-   * @param topic - 会话主题标识
+   * @param session - 会话标识
    * @param message - 消息对象
    */
-  appendMessage(date: string, topic: string, message: SessionMessage): void;
+  appendMessage(date: string, session: string, message: SessionMessage): void;
 
   /**
    * 加载指定会话的消息列表
    *
    * @param date - 会话日期 YYYY-MM-DD
-   * @param topic - 会话主题标识
+   * @param session - 会话标识
    * @returns 消息列表，不存在则返回空数组
    */
-  loadMessages(date: string, topic: string): SessionMessage[];
+  loadMessages(date: string, session: string): SessionMessage[];
 
   /**
-   * 列出所有会话主题
+   * 列出所有会话标识
    *
-   * @returns 主题标识列表（格式：YYYY-MM-DD-topic）
+   * @returns 会话标识列表（格式：YYYY-MM-DD-session）
    */
-  listTopics(): string[];
+  listSessions(): string[];
 }
 
 /**

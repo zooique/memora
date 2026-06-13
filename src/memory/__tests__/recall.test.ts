@@ -82,7 +82,7 @@ describe('recall · 记忆召回', () => {
     expect(mockStorage.search).toHaveBeenCalledWith('测试查询', 10); // limit * 2
   });
 
-  it('应该排除默认的 persona 和 rule source', async () => {
+  it('应该排除默认的 persona、rule 和 skill source', async () => {
     const results = [
       makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
       makeMemory({ id: 'rule:1', source: 'rule', score: 0.8 }),
@@ -92,9 +92,8 @@ describe('recall · 记忆召回', () => {
 
     const memories = await recall(mockStorage, '测试');
 
-    // persona 和 rule 被排除
-    expect(memories).toHaveLength(1);
-    expect(memories[0]!.source).toBe('skill');
+    // persona、rule 和 skill 全部被排除
+    expect(memories).toHaveLength(0);
   });
 
   it('应该支持自定义 excludeSources', async () => {

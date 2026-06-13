@@ -4,8 +4,8 @@
  * 验证 MessageHistory 正确使用 ISessionStore 接口
  * 覆盖：
  *   - appendMessage 调用（appendUser/appendAssistant）
- *   - loadMessages 调用（loadTopicMessages）
- *   - listTopics 调用（listAllTopics）
+ *   - loadMessages 调用（loadSessionMessages）
+ *   - listSessions 调用（listAllSessions）
  *   - 未注入 sessionStore 时的降级行为
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -33,7 +33,7 @@ const createMockStorage = (): IMemoryStorage => ({
 const createMockSessionStore = (): ISessionStore => ({
   appendMessage: vi.fn(),
   loadMessages: vi.fn().mockReturnValue([]),
-  listTopics: vi.fn().mockReturnValue([]),
+  listSessions: vi.fn().mockReturnValue([]),
 });
 
 describe('ISessionStore 契约 · appendMessage', () => {
@@ -53,7 +53,7 @@ describe('ISessionStore 契约 · appendMessage', () => {
     expect(mockSessionStore.appendMessage).toHaveBeenCalledTimes(1);
     expect(mockSessionStore.appendMessage).toHaveBeenCalledWith(
       expect.any(String), // date (YYYY-MM-DD)
-      'main', // topic
+      'main', // session
       expect.objectContaining({
         role: 'user',
         content: '测试消息',
@@ -89,14 +89,14 @@ describe('ISessionStore 契约 · appendMessage', () => {
     expect(mockSessionStore.appendMessage).not.toHaveBeenCalled();
   });
 
-  it('切换话题后应使用新话题名', async () => {
-    history.switchTopic('new-topic');
-    await history.appendUser('新话题消息');
+  it('切换会话后应使用新会话名', async () => {
+    history.switchSession('new-session');
+    await history.appendUser('新会话消息');
 
     expect(mockSessionStore.appendMessage).toHaveBeenCalledWith(
       expect.any(String),
-      'new-topic',
-      expect.objectContaining({ role: 'user', content: '新话题消息' }),
+      'new-session',
+      expect.objectContaining({ role: 'user', content: '新会话消息' }),
     );
   });
 
@@ -121,36 +121,36 @@ describe('ISessionStore 契约 · loadMessages', () => {
     history = new MessageHistory(mockStorage, mockSessionStore);
   });
 
-  it('loadTopicMessages 应调用 sessionStore.loadMessages', async () => {
+  it('loadSessionMessages 应调用 sessionStore.loadMessages', async () => {
     const mockMessages: SessionMessage[] = [
       { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
       { role: 'assistant', content: '你好！', timestamp: '2026-01-01T00:00:01.000Z' },
     ];
     vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
 
-    const result = await history.loadTopicMessages('2026-01-01', 'test-topic');
+    const result = await history.loadSessionMessages('2026-01-01', 'test-session');
 
-    expect(mockSessionStore.loadMessages).toHaveBeenCalledWith('2026-01-01', 'test-topic');
+    expect(mockSessionStore.loadMessages).toHaveBeenCalledWith('2026-01-01', 'test-session');
     expect(result).toEqual(mockMessages);
   });
 
-  it('loadTopicMessages 应更新当前话题', async () => {
-    await history.loadTopicMessages('2026-01-01', 'old-topic');
+  it('loadSessionMessages 应更新当前会话', async () => {
+    await history.loadSessionMessages('2026-01-01', 'old-session');
 
-    expect(history.topic).toBe('old-topic');
+    expect(history.session).toBe('old-session');
     expect(history.currentDateValue).toBe('2026-01-01');
   });
 
   it('sessionStore 未注入时应返回空数组', async () => {
     const historyWithoutStore = new MessageHistory(mockStorage);
 
-    const result = await historyWithoutStore.loadTopicMessages('2026-01-01', 'test-topic');
+    const result = await historyWithoutStore.loadSessionMessages('2026-01-01', 'test-session');
 
     expect(result).toEqual([]);
   });
 });
 
-describe('ISessionStore 契约 · listTopics', () => {
+describe('ISessionStore 契约 · listSessions', () => {
   let mockStorage: IMemoryStorage;
   let mockSessionStore: ISessionStore;
   let history: MessageHistory;
@@ -161,20 +161,20 @@ describe('ISessionStore 契约 · listTopics', () => {
     history = new MessageHistory(mockStorage, mockSessionStore);
   });
 
-  it('listAllTopics 应调用 sessionStore.listTopics', async () => {
-    const mockTopics = ['2026-01-01-main', '2026-01-02-work'];
-    vi.mocked(mockSessionStore.listTopics).mockReturnValue(mockTopics);
+  it('listAllSessions 应调用 sessionStore.listSessions', async () => {
+    const mockSessions = ['2026-01-01-main', '2026-01-02-work'];
+    vi.mocked(mockSessionStore.listSessions).mockReturnValue(mockSessions);
 
-    const result = await history.listAllTopics();
+    const result = await history.listAllSessions();
 
-    expect(mockSessionStore.listTopics).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(mockTopics);
+    expect(mockSessionStore.listSessions).toHaveBeenCalledTimes(1);
+    expect(result).toEqual(mockSessions);
   });
 
   it('sessionStore 未注入时应返回空数组', async () => {
     const historyWithoutStore = new MessageHistory(mockStorage);
 
-    const result = await historyWithoutStore.listAllTopics();
+    const result = await historyWithoutStore.listAllSessions();
 
     expect(result).toEqual([]);
   });

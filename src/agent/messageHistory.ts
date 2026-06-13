@@ -4,7 +4,7 @@
  * 职责：
  *   - 封装"用户输入 → 会话存储"的追加操作
  *   - 封装"Agent 回复 → 会话存储"的追加操作
- *   - 维护当前话题上下文（date + topic）
+ *   - 维护当前会话上下文（date + session）
  *   - 通过 ISessionStore 接口实现会话持久化
  */
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -26,7 +26,7 @@ function nowTimestamp(): string {
 /**
  * 会话消息类型
  */
-export interface LegacyTopicMessage {
+export interface SessionRecord {
   /** 消息角色 */
   role: 'user' | 'assistant' | 'system';
   /** 消息内容 */
@@ -41,8 +41,8 @@ export interface LegacyTopicMessage {
 export class MessageHistory {
   /** 当前日期 YYYY-MM-DD */
   private currentDate: string;
-  /** 当前话题标识（不含日期前缀） */
-  private currentTopic: string;
+  /** 当前会话标识（不含日期前缀） */
+  private currentSession: string;
 
   /**
    * 挂起的归档企划集合，Agent.close() 等待它们完成
@@ -53,7 +53,7 @@ export class MessageHistory {
   constructor(
     /**
      * 内存索引（可选）
-     * 注入后，archiveCurrentTopic() 会把摘要同步写入 SQLite，
+     * 注入后，archiveCurrentSession() 会把摘要同步写入 SQLite，
      * 让召回层能跨会话召回。
      * 不注入则跳过索引写入（保持向后兼容）。
      */
@@ -73,19 +73,19 @@ export class MessageHistory {
      */
     private readonly minWindowRounds = 3,
     initialDate?: string,
-    initialTopic = 'main',
+    initialSession = 'main',
   ) {
     this.currentDate = initialDate ?? todayDate();
-    this.currentTopic = initialTopic;
-    // _index 保留供未来话题记忆写入逻辑使用
+    this.currentSession = initialSession;
+    // _index 保留供未来会话记忆写入逻辑使用
     void this._index;
   }
 
   /**
-   * 获取当前话题名（日期-话题组合名）
+   * 获取当前会话名（日期-会话组合名）
    */
-  get currentTopicName(): string {
-    return `${this.currentDate}-${this.currentTopic}`;
+  get currentSessionName(): string {
+    return `${this.currentDate}-${this.currentSession}`;
   }
 
   /** 获取当前日期 YYYY-MM-DD（只读，供 agent 层使用） */
@@ -93,16 +93,16 @@ export class MessageHistory {
     return this.currentDate;
   }
 
-  /** 获取当前话题名（只读，供 agent 层使用） */
-  get currentTopicValue(): string {
-    return this.currentTopic;
+  /** 获取当前会话标识（只读，供 agent 层使用） */
+  get currentSessionValue(): string {
+    return this.currentSession;
   }
 
   /**
-   * 获取当前话题标识
+   * 获取当前会话标识
    */
-  get topic(): string {
-    return this.currentTopic;
+  get session(): string {
+    return this.currentSession;
   }
 
   /**
@@ -114,17 +114,17 @@ export class MessageHistory {
   }
 
   /**
-   * 切换话题
-   * @param newTopic - 新话题标识
-   * @returns 新话题的全名
+   * 切换会话
+   * @param newSession - 新会话标识
+   * @returns 新会话的全名
    */
-  switchTopic(newTopic: string): string {
-    this.currentTopic = newTopic;
-    return this.currentTopicName;
+  switchSession(newSession: string): string {
+    this.currentSession = newSession;
+    return this.currentSessionName;
   }
 
   /**
-   * 追加 user 消息到当前话题
+   * 追加 user 消息到当前会话
    * 失败不抛出（消息持久化失败不应阻塞对话）
    *
    * 日期使用 todayDate() 动态获取，而非缓存的 this.currentDate，
@@ -140,16 +140,16 @@ export class MessageHistory {
     if (this._sessionStore) {
       try {
         // 动态获取当天日期，避免跨日后写入旧日期目录
-        this._sessionStore.appendMessage(todayDate(), this.currentTopic, message);
+        this._sessionStore.appendMessage(todayDate(), this.currentSession, message);
       } catch (err) {
-        logger.warn({ err, topic: this.currentTopicName }, 'appendUser: 会话持久化失败');
+        logger.warn({ err, session: this.currentSessionName }, 'appendUser: 会话持久化失败');
       }
     }
-    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendUser');
+    logger.debug({ role: message.role, session: this.currentSessionName }, 'appendUser');
   }
 
   /**
-   * 追加 assistant 消息到当前话题
+   * 追加 assistant 消息到当前会话
    * 失败不抛出
    *
    * 日期使用 todayDate() 动态获取，确保跨日后消息写入当天目录。
@@ -165,25 +165,25 @@ export class MessageHistory {
     if (this._sessionStore) {
       try {
         // 动态获取当天日期，避免跨日后写入旧日期目录
-        this._sessionStore.appendMessage(todayDate(), this.currentTopic, message);
+        this._sessionStore.appendMessage(todayDate(), this.currentSession, message);
       } catch (err) {
-        logger.warn({ err, topic: this.currentTopicName }, 'appendAssistant: 会话持久化失败');
+        logger.warn({ err, session: this.currentSessionName }, 'appendAssistant: 会话持久化失败');
       }
     }
-    logger.debug({ role: message.role, topic: this.currentTopicName }, 'appendAssistant');
+    logger.debug({ role: message.role, session: this.currentSessionName }, 'appendAssistant');
   }
 
   /**
-   * 列出所有会话主题
+   * 列出所有会话标识
    *
-   * @returns 主题标识列表（格式：YYYY-MM-DD-topic），未注入 ISessionStore 则返回空
+   * @returns 会话标识列表（格式：YYYY-MM-DD-session），未注入 ISessionStore 则返回空
    */
-  async listAllTopics(): Promise<string[]> {
+  async listAllSessions(): Promise<string[]> {
     if (!this._sessionStore) {
-      logger.debug('listAllTopics: ISessionStore 未注入，返回空数组');
+      logger.debug('listAllSessions: ISessionStore 未注入，返回空数组');
       return [];
     }
-    return this._sessionStore.listTopics();
+    return this._sessionStore.listSessions();
   }
 
   /**
@@ -191,80 +191,80 @@ export class MessageHistory {
    * 用于重启后恢复之前的对话
    *
    * @param date - 会话日期 YYYY-MM-DD
-   * @param topic - 会话主题标识
+   * @param session - 会话标识
    * @returns 会话中的消息列表，未注入 ISessionStore 则返回空数组
    */
-  async loadTopicMessages(date: string, topic: string): Promise<LegacyTopicMessage[]> {
-    // 更新当前话题为请求的话题（保持状态一致）
+  async loadSessionMessages(date: string, session: string): Promise<SessionRecord[]> {
+    // 更新当前会话为请求的会话（保持状态一致）
     this.currentDate = date;
-    this.currentTopic = topic;
+    this.currentSession = session;
 
     if (!this._sessionStore) {
-      logger.debug({ date, topic }, 'loadTopicMessages: ISessionStore 未注入，返回空数组');
+      logger.debug({ date, session }, 'loadSessionMessages: ISessionStore 未注入，返回空数组');
       return [];
     }
 
-    const messages = this._sessionStore.loadMessages(date, topic);
-    logger.info({ date, topic, count: messages.length }, 'loadTopicMessages');
+    const messages = this._sessionStore.loadMessages(date, session);
+    logger.info({ date, session, count: messages.length }, 'loadSessionMessages');
     return messages;
   }
 
   /**
-   * 加载最近的话题
+   * 加载最近的会话
    * 用于启动时自动恢复上次对话
-   * 策略：先找今天的话题，没有则找最近日期的话题
+   * 策略：先找今天的会话，没有则找最近日期的会话
    *
-   * TODO(v4.1): 基元驱动重构后话题归档逻辑尚未迁移。
-   * 当前返回空数组，宿主应通过 ISessionStore 自行实现话题恢复。
+   * TODO(v4.1): 基元驱动重构后会话归档逻辑尚未迁移。
+   * 当前返回空数组，宿主应通过 ISessionStore 自行实现会话恢复。
    *
-   * @param preferredTopic - 优先加载的话题名（默认 'main'）
-   * @returns 话题消息列表
+   * @param preferredSession - 优先加载的会话名（默认 'main'）
+   * @returns 会话消息列表
    */
-  async loadMostRecentTopic(preferredTopic = 'main'): Promise<LegacyTopicMessage[]> {
+  async loadMostRecentSession(preferredSession = 'main'): Promise<SessionRecord[]> {
     logger.debug(
-      { preferredTopic },
-      'loadMostRecentTopic: 话题归档逻辑未迁移（基元驱动重构），返回空数组。宿主应通过 ISessionStore 自行恢复。',
+      { preferredSession },
+      'loadMostRecentSession: 会话归档逻辑未迁移（基元驱动重构），返回空数组。宿主应通过 ISessionStore 自行恢复。',
     );
     return [];
   }
 
   /**
-   * 公开方法：为当前话题生成摘要，并同步写入索引
+   * 公开方法：为当前会话生成摘要，并同步写入索引
    *
    * 四种调用场景：
-   * - 'switch'  : 话题切换时（旧话题的最终归档），已有摘要则幂等跳过
+   * - 'switch'  : 会话切换时（旧会话的最终归档），已有摘要则幂等跳过
    * - 'signal'  : 检测到强信号（实时关键信息）→ 强制重新归档
-   * - 'lazy'    : 启动时补归档（兜底历史话题），已有摘要跳过
-   * - 'midway'  : 超长话题中途归档，已有摘要时仍重新调用（追加覆盖）
+   * - 'lazy'    : 启动时补归档（兜底历史会话），已有摘要跳过
+   * - 'midway'  : 超长会话中途归档，已有摘要时仍重新调用（追加覆盖）
    *
-   * TODO(v4.1): 基元驱动重构后，话题归档由 InsightExtractor.extract() 替代。
+   * TODO(v4.1): 基元驱动重构后，会话归档由 InsightExtractor.extract() 替代。
    * 此方法保留 API 兼容性，内部为空操作。
    *
    * @param reason - 归档触发原因
    * @returns null
    */
-  async archiveCurrentTopic(
+  async archiveCurrentSession(
     reason: 'switch' | 'signal' | 'lazy' | 'midway' = 'switch',
   ): Promise<null> {
     logger.debug(
-      { reason, topic: this.currentTopicName },
-      'archiveCurrentTopic: 归档逻辑已迁移至 InsightExtractor，此方法为空操作。',
+      { reason, session: this.currentSessionName },
+      'archiveCurrentSession: 归档逻辑已迁移至 InsightExtractor，此方法为空操作。',
     );
     return null;
   }
 
   /**
-   * 启动时补归档：扫描所有 topic-*.md，找出“还没在索引里”的，
+   * 启动时补归档：扫描所有 session-*.md，找出"还没在索引里"的，
    * 后台异步补齐。
    *
-   * TODO(v4.1): 基元驱动重构后，话题文件格式已变更，补归档逻辑需要重写。
+   * TODO(v4.1): 基元驱动重构后，会话文件格式已变更，补归档逻辑需要重写。
    * 此方法保留 API 兼容性，返回 0。
    *
-   * @param timeoutMs 单个 topic 补归档超时（默认 3000ms）
+   * @param timeoutMs 单个 session 补归档超时（默认 3000ms）
    * @returns 0
    */
-  async archiveMissingTopics(_timeoutMs = 3000): Promise<number> {
-    logger.debug('archiveMissingTopics: 补归档逻辑未迁移（基元驱动重构），返回 0。');
+  async archiveMissingSessions(_timeoutMs = 3000): Promise<number> {
+    logger.debug('archiveMissingSessions: 补归档逻辑未迁移（基元驱动重构），返回 0。');
     return 0;
   }
 
@@ -283,7 +283,7 @@ export class MessageHistory {
    * 等待所有挂起的归档完成（Agent.close() 时调用）
    * 防止 fire-and-forget 还在写 SQLite 时 db 已被 close
    *
-   * 重要：会捕获**等待期间新加入**的归档（解决 init() → archiveMissingTopics() 的 race）
+   * 重要：会捕获**等待期间新加入**的归档（解决 init() → archiveMissingSessions() 的 race）
    * 实现：用 50ms 间隔轮询检查新加入的 promise，直到所有归档完成或超时
    *
    * @param timeoutMs 单次等待超时（默认 5000ms）
@@ -317,27 +317,27 @@ export class MessageHistory {
   }
 
   /**
-   * v4.0：获取当前话题的完整消息列表（话题归档用）
+   * v4.0：获取当前会话的完整消息列表（会话归档用）
    *
-   * TODO(v4.1): 从 ISessionStore 加载当前话题消息。当前返回空数组。
+   * TODO(v4.1): 从 ISessionStore 加载当前会话消息。当前返回空数组。
    *
-   * @returns 当前话题的所有消息
+   * @returns 当前会话的所有消息
    */
-  async getCurrentTopicMessages(): Promise<LegacyTopicMessage[]> {
-    logger.debug('getCurrentTopicMessages: 未实现，返回空数组。');
+  async getCurrentSessionMessages(): Promise<SessionRecord[]> {
+    logger.debug('getCurrentSessionMessages: 未实现，返回空数组。');
     return [];
   }
 
   /**
-   * v4.0：写入种子快照到当前话题的 frontmatter
+   * v4.0：写入种子快照到当前会话的 frontmatter
    *
    * @param snapshots 种子句列表
    */
-  async setCurrentTopicSeedSnapshots(snapshots: string[]): Promise<void> {
+  async setCurrentSessionSeedSnapshots(snapshots: string[]): Promise<void> {
     if (snapshots.length === 0) return;
     logger.debug(
-      { topic: this.currentTopicName, snapshotCount: snapshots.length },
-      'setCurrentTopicSeedSnapshots: 快照未持久化',
+      { session: this.currentSessionName, snapshotCount: snapshots.length },
+      'setCurrentSessionSeedSnapshots: 快照未持久化',
     );
   }
 }

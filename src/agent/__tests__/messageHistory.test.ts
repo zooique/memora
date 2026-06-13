@@ -2,10 +2,10 @@
  * 消息历史单元测试
  *
  * 覆盖：
- *   - switchTopic 切换话题
+ *   - switchSession 切换会话
  *   - appendUser / appendAssistant 消息追加
- *   - listAllTopics 返回空数组
- *   - archiveCurrentTopic 返回 null
+ *   - listAllSessions 返回空数组
+ *   - archiveCurrentSession 返回 null
  *   - registerPendingArchive / awaitPendingArchives
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -35,23 +35,23 @@ describe('MessageHistory · 基本操作', () => {
     mockStorage = createMockStorage();
   });
 
-  it('构造函数应初始化默认日期和话题', () => {
+  it('构造函数应初始化默认日期和会话', () => {
     const history = new MessageHistory(mockStorage);
-    expect(history.topic).toBe('main');
-    expect(history.currentTopicName).toContain('main');
+    expect(history.session).toBe('main');
+    expect(history.currentSessionName).toContain('main');
   });
 
-  it('构造函数应接受自定义初始日期和话题', () => {
-    const history = new MessageHistory(mockStorage, undefined, 3, '2026-06-01', 'custom-topic');
-    expect(history.topic).toBe('custom-topic');
-    expect(history.currentTopicName).toBe('2026-06-01-custom-topic');
+  it('构造函数应接受自定义初始日期和会话', () => {
+    const history = new MessageHistory(mockStorage, undefined, 3, '2026-06-01', 'custom-session');
+    expect(history.session).toBe('custom-session');
+    expect(history.currentSessionName).toBe('2026-06-01-custom-session');
   });
 
-  it('switchTopic 应更新当前话题', () => {
+  it('switchSession 应更新当前会话', () => {
     const history = new MessageHistory(mockStorage);
-    const newName = history.switchTopic('new-topic');
-    expect(history.topic).toBe('new-topic');
-    expect(newName).toContain('new-topic');
+    const newName = history.switchSession('new-session');
+    expect(history.session).toBe('new-session');
+    expect(newName).toContain('new-session');
   });
 
   it('appendUser 不应抛错', async () => {
@@ -71,52 +71,52 @@ describe('MessageHistory · 基本操作', () => {
   });
 });
 
-describe('MessageHistory · listAllTopics', () => {
+describe('MessageHistory · listAllSessions', () => {
   it('应返回空数组', async () => {
     const history = new MessageHistory(createMockStorage());
-    const topics = await history.listAllTopics();
-    expect(topics).toEqual([]);
+    const sessions = await history.listAllSessions();
+    expect(sessions).toEqual([]);
   });
 });
 
-describe('MessageHistory · loadTopicMessages', () => {
-  it('应返回空数组并更新当前话题', async () => {
+describe('MessageHistory · loadSessionMessages', () => {
+  it('应返回空数组并更新当前会话', async () => {
     const history = new MessageHistory(createMockStorage());
-    const messages = await history.loadTopicMessages('2026-06-01', 'old-topic');
+    const messages = await history.loadSessionMessages('2026-06-01', 'old-session');
     expect(messages).toEqual([]);
-    // 应更新当前话题为请求的话题
-    expect(history.topic).toBe('old-topic');
+    // 应更新当前会话为请求的会话
+    expect(history.session).toBe('old-session');
   });
 });
 
-describe('MessageHistory · loadMostRecentTopic', () => {
+describe('MessageHistory · loadMostRecentSession', () => {
   it('应返回空数组', async () => {
     const history = new MessageHistory(createMockStorage());
-    const messages = await history.loadMostRecentTopic('main');
+    const messages = await history.loadMostRecentSession('main');
     expect(messages).toEqual([]);
   });
 });
 
-describe('MessageHistory · archiveCurrentTopic', () => {
+describe('MessageHistory · archiveCurrentSession', () => {
   it('应返回 null', async () => {
     const history = new MessageHistory(createMockStorage());
-    const result = await history.archiveCurrentTopic('signal');
+    const result = await history.archiveCurrentSession('signal');
     expect(result).toBeNull();
   });
 
   it('不同 reason 都应返回 null', async () => {
     const history = new MessageHistory(createMockStorage());
-    expect(await history.archiveCurrentTopic('switch')).toBeNull();
-    expect(await history.archiveCurrentTopic('signal')).toBeNull();
-    expect(await history.archiveCurrentTopic('lazy')).toBeNull();
-    expect(await history.archiveCurrentTopic('midway')).toBeNull();
+    expect(await history.archiveCurrentSession('switch')).toBeNull();
+    expect(await history.archiveCurrentSession('signal')).toBeNull();
+    expect(await history.archiveCurrentSession('lazy')).toBeNull();
+    expect(await history.archiveCurrentSession('midway')).toBeNull();
   });
 });
 
-describe('MessageHistory · archiveMissingTopics', () => {
+describe('MessageHistory · archiveMissingSessions', () => {
   it('应返回 0', async () => {
     const history = new MessageHistory(createMockStorage());
-    const count = await history.archiveMissingTopics(500);
+    const count = await history.archiveMissingSessions(500);
     expect(count).toBe(0);
   });
 });
@@ -163,22 +163,22 @@ describe('MessageHistory · pendingArchives', () => {
   });
 });
 
-describe('MessageHistory · getCurrentTopicMessages', () => {
+describe('MessageHistory · getCurrentSessionMessages', () => {
   it('应返回空数组', async () => {
     const history = new MessageHistory(createMockStorage());
-    const messages = await history.getCurrentTopicMessages();
+    const messages = await history.getCurrentSessionMessages();
     expect(messages).toEqual([]);
   });
 });
 
-describe('MessageHistory · setCurrentTopicSeedSnapshots', () => {
+describe('MessageHistory · setCurrentSessionSeedSnapshots', () => {
   it('空快照应跳过', async () => {
     const history = new MessageHistory(createMockStorage());
-    await expect(history.setCurrentTopicSeedSnapshots([])).resolves.toBeUndefined();
+    await expect(history.setCurrentSessionSeedSnapshots([])).resolves.toBeUndefined();
   });
 
   it('非空快照不应抛错', async () => {
     const history = new MessageHistory(createMockStorage());
-    await expect(history.setCurrentTopicSeedSnapshots(['快照1', '快照2'])).resolves.toBeUndefined();
+    await expect(history.setCurrentSessionSeedSnapshots(['快照1', '快照2'])).resolves.toBeUndefined();
   });
 });

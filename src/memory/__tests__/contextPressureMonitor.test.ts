@@ -20,7 +20,7 @@ function makeMemory(
   return {
     id,
     content,
-    source: 'topic',
+    source: 'insight',
     name: id,
     createdAt: accessedAt,
     accessedAt,

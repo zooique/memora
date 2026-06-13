@@ -58,7 +58,7 @@
 | 路径 | 用途 | 示例 |
 |------|------|------|
 | `AgentOptions.configDir` | Agent 级配置（personas/rules/skills） | 嵌入宿主程序 |
-| `AgentOptions.dataDir` | 记忆数据（memora.db + topics/） | 跟作品走 |
+| `AgentOptions.dataDir` | 记忆数据（memora.db + sessions/） | 跟作品走 |
 | `projectPath/.memora/` | 项目级配置（rules/skills） | 跟作品走 |
 
 **小说生成器推荐布局：**
@@ -67,7 +67,7 @@
 ├── .memora/           ← 项目级配置（rules + skills）
 └── .memora-data/      ← 项目级记忆（dataDir 指向此处）
     ├── memora.db
-    └── topics/
+    └── sessions/
 ```
 
 ---
@@ -281,15 +281,15 @@ import type { ISessionStore, SessionMessage } from 'memora';
 
 // 宿主实现接口
 class FileSessionStore implements ISessionStore {
-  appendMessage(date: string, topic: string, message: SessionMessage): void {
+  appendMessage(date: string, session: string, message: SessionMessage): void {
     // 写入文件或数据库
   }
-  loadMessages(date: string, topic: string): SessionMessage[] {
+  loadMessages(date: string, session: string): SessionMessage[] {
     // 从文件或数据库读取
     return [];
   }
-  listTopics(): string[] {
-    // 返回所有话题列表
+  listSessions(): string[] {
+    // 返回所有会话列表
     return [];
   }
 }
@@ -304,7 +304,7 @@ const agent = new Agent({
 **会话持久化特性：**
 - 日期使用 `todayDate()` 动态获取，确保跨日后消息写入当天目录
 - `appendUser()` / `appendAssistant()` 自动调用 `appendMessage()`
-- `loadTopicMessages()` 自动调用 `loadMessages()`
+- `loadSessionMessages()` 自动调用 `loadMessages()`
 - `SessionMessage.role` 支持 `'user' | 'assistant' | 'system'`，宿主直接调用 `appendMessage()` 时可传入任意角色
 
 ---
@@ -330,7 +330,7 @@ const agent = new Agent({
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入 |
 | `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索） |
-| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule']`） |
+| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
 
@@ -353,18 +353,18 @@ const agent = new Agent({
 | `agent.chat(input, signal?)` | 流式对话，返回 `AsyncGenerator<AgentChunk>` |
 | `agent.chatSync(input, signal?)` | 同步对话（测试用） |
 
-### 项目 / 话题
+### 项目 / 会话
 
 | 方法 | 说明 |
 |------|------|
 | `agent.listProjects()` | 列出已注册的子项目 |
 | `agent.switchProject(name)` | 切换到其他子项目 |
 | `agent.rebuildComponents()` | **项目切换后必须调用** |
-| `agent.switchTopic(name)` | 切换当前话题（自动归档旧话题） |
-| `agent.loadTopicMessages(date, topic)` | 加载指定日期/话题的消息 |
-| `agent.restoreTopic(date, topic)` | 恢复指定日期/话题 |
-| `agent.restoreMostRecentTopic()` | 启动时恢复最近一次话题 |
-| `agent.agentHistory.listAllTopics()` | 列出所有话题文件名 |
+| `agent.switchSession(name)` | 切换当前会话（自动归档旧会话） |
+| `agent.loadSessionMessages(date, session)` | 加载指定日期/会话的消息 |
+| `agent.restoreSession(date, session)` | 恢复指定日期/会话 |
+| `agent.restoreMostRecentSession()` | 启动时恢复最近一次会话 |
+| `agent.agentHistory.listAllSessions()` | 列出所有会话文件名 |
 
 ### Manager 速查表
 
@@ -437,7 +437,7 @@ import type {
   AgentEventMap,
   AgentEventName,
   AgentEventHandler,
-  LegacyTopicMessage,
+  SessionRecord,
 } from 'memora';
 ```
 

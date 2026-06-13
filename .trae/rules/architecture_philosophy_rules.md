@@ -188,7 +188,7 @@ domain），其余在 Agent Loop 中按需检索。
 - configDir
   下的配置文件（personas/rules/skills/tools）由 MemoryLoader 在启动时扫描，加载到 SQLite 中
 - 项目级 projectPath/.memora/ 只放 rules/ 和 skills/，不放 memora.db
-- 用户记忆（dataDir）存放 memora.db + topics/，纯数据，不含配置
+- 用户记忆（dataDir）存放 memora.db + sessions/，纯数据，不含配置
 - `config.addRule()` 是运行时注入（写入 SQLite，会话级），不经配置文件
 - `config.confirm()` 写入配置文件（持久化，重启后依然生效）
 

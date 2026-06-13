@@ -84,7 +84,7 @@ export async function recall(
 ): Promise<Memory[]> {
   const {
     limit = 5,
-    excludeSources = ['persona', 'rule'],
+    excludeSources = ['persona', 'rule', 'skill'],
     vectorStore,
     minSimilarity = 0.3,
   } = options;

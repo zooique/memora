@@ -30,7 +30,7 @@ export interface MemorySnapshot {
   working: WorkingMemorySnapshot;
   /** 第 2 层：Bootstrap 记忆（永驻 + 领域） */
   bootstrap: BootstrapSnapshot;
-  /** 第 3 层：话题归档文件（topic-*.md） */
+  /** 第 3 层：归档洞察（insight 记忆） */
   archive: ArchiveSnapshot;
 }
 
@@ -58,12 +58,13 @@ export interface BootstrapSnapshot {
   }>;
 }
 
-/** 第 3 层：话题归档快照（仅元信息，文件列表调 listAllTopics()） */
+/** 第 3 层：归档记忆快照（insight + profile + work-projection） */
 export interface ArchiveSnapshot {
-  topicFilesCount: number;
-  currentTopic: string;
-  /** 当前话题全名（含日期前缀，与 topics/*.md 文件名一致） */
-  currentTopicName: string;
+  /** 归档记忆总数（insight + profile + work-projection） */
+  archiveCount: number;
+  currentSession: string;
+  /** 当前会话全名（含日期前缀，与 sessions/*.md 文件名一致） */
+  currentSessionName: string;
   hint: string;
 }
 
@@ -93,7 +94,7 @@ export class MemoryInspector {
   /**
    * @param index - 记忆存储（用于搜索 + 统计）
    * @param loop - AgentLoop（用于获取工作记忆）
-   * @param history - MessageHistory（用于获取当前话题信息）
+   * @param history - MessageHistory（用于获取当前会话信息）
    */
   constructor(
     private readonly index: IMemoryStorage,
@@ -106,7 +107,7 @@ export class MemoryInspector {
   /**
    * 统一查看记忆快照（3 层）
    *
-   * 简化为 3 层（工作记忆 / Bootstrap / 话题归档）。
+   * 简化为 3 层（工作记忆 / Bootstrap / 归档记忆）。
    *
    * 设计原则：
    * - **纯只读**——不动任何组件状态
@@ -126,8 +127,11 @@ export class MemoryInspector {
     const skills = this.index.getBySource(SOURCE_LABELS.SKILL);
     const bootstrap = [...rules, ...personas, ...skills];
 
-    // 第 3 层：话题归档文件计数
-    const archiveTotal = this.index.countBySource(SOURCE_LABELS.INSIGHT);
+    // 第 3 层：归档记忆计数（insight + profile + work-projection）
+    const archiveTotal =
+      this.index.countBySource(SOURCE_LABELS.INSIGHT) +
+      this.index.countBySource(SOURCE_LABELS.PROFILE) +
+      this.index.countBySource(SOURCE_LABELS.WORK_PROJECTION);
 
     return {
       working: {
@@ -151,10 +155,10 @@ export class MemoryInspector {
         })),
       },
       archive: {
-        topicFilesCount: archiveTotal,
-        currentTopic: this.history.topic ?? '(none)',
-        currentTopicName: this.history.currentTopicName ?? '(none)',
-        hint: '调 listAllTopics() 获取文件清单',
+        archiveCount: archiveTotal,
+        currentSession: this.history.session ?? '(none)',
+        currentSessionName: this.history.currentSessionName ?? '(none)',
+        hint: '调 listAllSessions() 获取文件清单',
       },
     };
   }

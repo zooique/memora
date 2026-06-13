@@ -150,17 +150,17 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
     }
   });
 
-  it('inspect().archive 应包含 currentTopic 与 currentTopicName 与 hint', async () => {
+  it('inspect().archive 应包含 currentSession 与 currentSessionName 与 hint', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     const snap = agent.memory!.snapshot();
-    expect(snap.archive.currentTopic).toBeDefined();
-    // currentTopicName 含日期前缀（如 "2026-06-09-main"），用于精确匹配话题文件
-    expect(snap.archive.currentTopicName).toBeDefined();
-    expect(snap.archive.currentTopicName).toContain(snap.archive.currentTopic);
-    expect(snap.archive.hint).toContain('listAllTopics');
-    expect(typeof snap.archive.topicFilesCount).toBe('number');
+    expect(snap.archive.currentSession).toBeDefined();
+    // currentSessionName 含日期前缀（如 "2026-06-09-main"），用于精确匹配会话文件
+    expect(snap.archive.currentSessionName).toBeDefined();
+    expect(snap.archive.currentSessionName).toContain(snap.archive.currentSession);
+    expect(snap.archive.hint).toContain('listAllSessions');
+    expect(typeof snap.archive.archiveCount).toBe('number');
   });
 
   it('未 init 时 memory 应为 null', () => {

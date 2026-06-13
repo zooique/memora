@@ -91,13 +91,13 @@ agent/
 ├── agent.ts              # Agent 门面类（对外入口，编排层）
 ├── loop.ts               # AgentLoop 主循环
 ├── toolExecutor.ts       # 工具执行器（registerTool + execute）
-├── messageHistory.ts     # 消息持久化 + 话题归档
+├── messageHistory.ts     # 消息持久化 + 会话归档
 ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
 ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
 ├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计）
 ├── workProjection.ts     # 作品投影管理器
 ├── signalDetector.ts     # 信号检测器
-├── topicSummarizer.ts    # 话题摘要器
+├── topicSummarizer.ts    # 话题摘要器（已废弃，保留兼容）
 ├── types.ts              # Agent 类型定义
 └── __tests__/            # 单元测试
 

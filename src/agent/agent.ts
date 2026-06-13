@@ -18,7 +18,7 @@
  *
  * 基元驱动记忆模型（2026-06-11 重构）：
  *   - MemoryType/Permanence 枚举 → source 开放字符串
- *   - TopicMount 话题漂移检测 → recall() 简化关键词搜索
+ *   - 会话漂移检测 → recall() 简化关键词搜索
  *   - ArchiveManager → 移除
  *
  * 2026-06-12 God Object 拆分：
@@ -31,7 +31,7 @@ import { basename } from 'node:path';
 import { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
 import { ToolExecutor } from './toolExecutor.js';
-import { MessageHistory, type LegacyTopicMessage } from './messageHistory.js';
+import { MessageHistory, type SessionRecord } from './messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { recall, decayScores } from '@/memory/recall.js';
 import { PersonaManager } from '@/persona/personaManager.js';
@@ -182,7 +182,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._allowedPaths = opts.allowedPaths ?? [];
     this._confirmWrites = opts.confirmWrites ?? false;
     this._vectorStore = opts.vectorStore;
-    this._recallExcludeSources = opts.recallExcludeSources ?? ['persona', 'rule'];
+    this._recallExcludeSources = opts.recallExcludeSources ?? ['persona', 'rule', 'skill'];
     this._storage = opts.storage;
     this._sessionStore = opts.sessionStore;
     if (opts.logger) {
@@ -230,9 +230,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     this._initialized = true;
 
-    // 启动时 Lazy 扫描：兜底历史话题归档
-    this.history.archiveMissingTopics(3000).catch((err) => {
-      logger.warn({ err }, '启动时历史话题归档失败');
+    // 启动时 Lazy 扫描：兜底历史会话归档
+    this.history.archiveMissingSessions(3000).catch((err: unknown) => {
+      logger.warn({ err }, '启动时历史会话归档失败');
     });
 
     // 启动时记忆衰减（insight/archive 来源）
@@ -272,13 +272,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 基元驱动召回（双通道：语义 + 关键词）
       yield { type: 'thinking', phase: 'recalling' };
-      const topicMemories = await recall(this._pctx!.index, input, {
+      const recalledMemories = await recall(this._pctx!.index, input, {
         limit: 5,
         vectorStore: this._vectorStore,
         excludeSources: this._recallExcludeSources,
       });
-      if (topicMemories.length > 0) {
-        this.emit('memoryRecalled', { count: topicMemories.length, query: input });
+      if (recalledMemories.length > 0) {
+        this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
       }
 
       // Layer 5: 最近对话注入
@@ -311,7 +311,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       let assistantContent = '';
       let wasAborted = false;
-      for await (const chunk of this.loop.processUserInput(input, topicMemories, signal)) {
+      for await (const chunk of this.loop.processUserInput(input, recalledMemories, signal)) {
         yield chunk;
         if (chunk.type === 'text') {
           assistantContent += chunk.content;
@@ -396,18 +396,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 切换当前话题（切换前为旧话题生成摘要归档）
+   * 切换当前会话（切换前为旧会话生成摘要归档）
    */
-  async switchTopic(newTopic: string): Promise<string> {
+  async switchSession(newSession: string): Promise<string> {
     if (!this._initialized || !this.history) {
       throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 switchTopic() 前调用 await agent.init()',
+        '在 switchSession() 前调用 await agent.init()',
       ]);
     }
 
-    await this.history.archiveCurrentTopic('switch');
+    await this.history.archiveCurrentSession('switch');
 
-    return this.history.switchTopic(newTopic);
+    return this.history.switchSession(newSession);
   }
 
   /**
@@ -585,67 +585,67 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 恢复最近的话题对话
+   * 恢复最近的会话对话
    */
-  async restoreMostRecentTopic(preferredTopic = 'main'): Promise<number> {
+  async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
     if (!this._initialized || !this.history || !this.loop) {
       throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 restoreMostRecentTopic() 前调用 await agent.init()',
+        '在 restoreMostRecentSession() 前调用 await agent.init()',
       ]);
     }
 
-    const topicMessages = await this.history.loadMostRecentTopic(preferredTopic);
-    if (topicMessages.length === 0) {
-      logger.debug('没有找到可恢复的历史话题');
+    const sessionMessages = await this.history.loadMostRecentSession(preferredSession);
+    if (sessionMessages.length === 0) {
+      logger.debug('没有找到可恢复的历史会话');
       return 0;
     }
 
-    const messages: Message[] = topicMessages.map((tm: { role: string; content: string }) => ({
+    const messages: Message[] = sessionMessages.map((tm: { role: string; content: string }) => ({
       role: tm.role as Message['role'],
       content: tm.content,
     }));
 
     this.loop.restoreHistory(messages);
 
-    return topicMessages.length;
+    return sessionMessages.length;
   }
 
   /**
-   * 恢复指定话题的对话
+   * 恢复指定会话的对话
    */
-  async restoreTopic(date: string, topic: string): Promise<number> {
+  async restoreSession(date: string, session: string): Promise<number> {
     if (!this._initialized || !this.history || !this.loop) {
       throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 restoreTopic() 前调用 await agent.init()',
+        '在 restoreSession() 前调用 await agent.init()',
       ]);
     }
 
-    const topicMessages = await this.history.loadTopicMessages(date, topic);
-    if (topicMessages.length === 0) {
+    const sessionMessages = await this.history.loadSessionMessages(date, session);
+    if (sessionMessages.length === 0) {
       return 0;
     }
 
-    const messages: Message[] = topicMessages.map((tm: { role: string; content: string }) => ({
+    const messages: Message[] = sessionMessages.map((tm: { role: string; content: string }) => ({
       role: tm.role as Message['role'],
       content: tm.content,
     }));
 
     this.loop.restoreHistory(messages);
 
-    return topicMessages.length;
+    return sessionMessages.length;
   }
 
   /**
-   * 对外暴露的 loadTopicMessages 委托
-   * 加载指定话题的历史消息，加载后 Memora 状态同步切换到该话题
+   * 对外暴露的 loadSessionMessages 委托
+   * 加载指定会话的历史消息，加载后 Memora 状态同步切换到该会话
    */
-  async loadTopicMessages(date: string, topic: string): Promise<LegacyTopicMessage[]> {
+  async loadSessionMessages(date: string, session: string): Promise<SessionRecord[]> {
     if (!this._initialized || !this.history) {
       throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 loadTopicMessages() 前调用 await agent.init()',
+        '在 loadSessionMessages() 前调用 await agent.init()',
       ]);
     }
-    return this.history.loadTopicMessages(date, topic);
+    return this.history.loadSessionMessages(date, session);
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────

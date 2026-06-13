@@ -6,8 +6,8 @@
  *
  * 上下文组装公式（02-上下文组装-v4.0.md §1）：
  *   上下文 = 用户主动输入 + Agent 记忆召回结果 + Agent Loop 工作记忆
- * 其中"Agent 记忆召回结果"由 TopicMount 提供，通过 processUserInput 的
- * topicMemories 参数注入。
+ * 其中"Agent 记忆召回结果"由 Agent 层通过 processUserInput 的
+ * recalledMemories 参数注入。
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
@@ -66,24 +66,24 @@ export class AgentLoop {
    * 处理一轮用户输入
    *
    * @param userInput - 用户原始输入
-   * @param topicMemories - 话题记忆挂载结果（TopicMount.focus() 产出），
+   * @param recalledMemories - 记忆召回结果（Agent.memory.search() 产出），
    *   可选。传入时自动注入到上下文，实现"Agent 记忆召回结果"层
    * @param signal - 可选的 AbortSignal，用于取消正在进行的对话（V-105）
    *   泊文等宿主 UI 传入 AbortController.signal，用户点击"取消"时触发 abort
    */
   async *processUserInput(
     userInput: string,
-    topicMemories?: readonly Memory[],
+    recalledMemories?: readonly Memory[],
     signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 注入话题记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
-    const enhancedInput = topicMemories?.length
-      ? this.wrapWithTopicContext(userInput, topicMemories)
+    // 注入记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
+    const enhancedInput = recalledMemories?.length
+      ? this.wrapWithRecalledContext(userInput, recalledMemories)
       : userInput;
 
-    // 有话题记忆召回时，通知上层（用于 UI 展示"召回 X 条记忆"）
-    if (topicMemories?.length) {
-      yield { type: 'recall', count: topicMemories.length };
+    // 有记忆召回时，通知上层（用于 UI 展示"召回 X 条记忆"）
+    if (recalledMemories?.length) {
+      yield { type: 'recall', count: recalledMemories.length };
     }
 
     this.messages.push({ role: 'user', content: enhancedInput });
@@ -237,13 +237,13 @@ export class AgentLoop {
   }
 
   /**
-   * 将话题记忆召回结果包裹到用户输入中
+   * 将记忆召回结果包裹到用户输入中
    *
    * 格式：先呈现系统召回的相关记忆（按时间顺序），再呈现用户原始输入。
-   * 与"应无所住而生其心"的专注模式一致：agent 看到的是与当前话题最相关的记忆，
+   * 与"应无所住而生其心"的专注模式一致：agent 看到的是与当前会话最相关的记忆，
    * 而非全量历史 —— 减少杂念，保持专注。
    */
-  private wrapWithTopicContext(userInput: string, memories: readonly Memory[]): string {
+  private wrapWithRecalledContext(userInput: string, memories: readonly Memory[]): string {
     const memoryBlock = memories
       .map((m) => `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, 200)}`)
       .join('\n');

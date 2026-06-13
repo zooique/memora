@@ -264,21 +264,21 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
 });
 
 describe('AgentLoop · processUserInput recall 事件', () => {
-  it('传入 topicMemories 时应该 yield recall 事件', async () => {
+  it('传入 recalledMemories 时应该 yield recall 事件', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
 
-    // 模拟 2 条话题记忆召回
-    const topicMemories = [
-      makeMemory({ id: 'topic:1', name: '话题记忆1', content: '之前讨论过' }),
-      makeMemory({ id: 'topic:2', name: '话题记忆2', content: '另一个记忆' }),
+    // 模拟 2 条记忆召回
+    const recalledMemories = [
+      makeMemory({ id: 'mem:1', name: '记忆1', content: '之前讨论过' }),
+      makeMemory({ id: 'mem:2', name: '记忆2', content: '另一个记忆' }),
     ];
 
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('你好', topicMemories)) {
+    for await (const chunk of loop.processUserInput('你好', recalledMemories)) {
       chunks.push(chunk);
     }
 
@@ -290,7 +290,7 @@ describe('AgentLoop · processUserInput recall 事件', () => {
     }
   });
 
-  it('不传 topicMemories 时不应 yield recall 事件', async () => {
+  it('不传 recalledMemories 时不应 yield recall 事件', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
       bootstrapMemories: [],

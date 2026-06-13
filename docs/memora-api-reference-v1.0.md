@@ -67,7 +67,7 @@
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
 | `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索召回） |
-| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule']`，已由 bootstrap 注入） |
+| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，引导记忆不被召回） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
 
@@ -107,7 +107,7 @@ v3.0 起，Agent 通过 6 个 getter 暴露专职 Manager。详见后续章节�
 | 访问器 | 类型 | 说明 |
 |--------|------|------|
 | `agent.agentLoop` | `AgentLoop \| null` | Agent 循环体（`getMessages()` / `getRecentHistory()`） |
-| `agent.agentHistory` | `MessageHistory \| null` | 消息历史（`listAllTopics()` 等） |
+| `agent.agentHistory` | `MessageHistory \| null` | 消息历史（`listAllSessions()` 等） |
 
 ### 2.6 `ProjectContext` 字段（`init()` 返回值）
 
@@ -206,7 +206,7 @@ agent.memory.snapshot(): MemorySnapshot
 |----|-----|------|
 | 第 1 层 | `snapshot.working` | `WorkingMemorySnapshot` — 当前 AgentLoop 消息（最近 5 条预览 + 总数） |
 | 第 2 层 | `snapshot.bootstrap` | `BootstrapSnapshot` — 规则 / 角色 / 技能记忆（名称 + 来源 + 权重） |
-| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 话题归档文件计数 + 当前话题信息 |
+| 第 3 层 | `snapshot.archive` | `ArchiveSnapshot` — 归档记忆计数（insight + profile + work-projection）+ 当前会话信息 |
 
 ```typescript
 interface MemorySnapshot {
@@ -300,7 +300,7 @@ interface IMemoryStorage {
 
 ---
 
-## 六、项目 / 话题管理
+## 六、项目 / 会话管理
 
 以下方法直接挂在 Agent 上：
 
@@ -309,14 +309,14 @@ interface IMemoryStorage {
 | `listProjects()` → `AgentProjectEntry[]` | 列出所有已注册项目 |
 | `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆，自动 rebuild） |
 | `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
-| `switchTopic(newName)` → `Promise<string>` | 切换到指定话题（自动归档旧话题） |
-| `loadTopicMessages(date, topic)` → `Promise<LegacyTopicMessage[]>` | 加载指定日期/话题的消息（含时间戳） |
-| `restoreMostRecentTopic(preferredTopic='main')` → `Promise<number>` | 启动时恢复最近一次话题 |
-| `restoreTopic(date, topic)` → `Promise<number>` | 恢复指定日期/话题 |
+| `switchSession(newName)` → `Promise<string>` | 切换到指定会话（自动归档旧会话） |
+| `loadSessionMessages(date, session)` → `Promise<SessionRecord[]>` | 加载指定日期/会话的消息（含时间戳） |
+| `restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
+| `restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
 
 ```typescript
-// listAllTopics 通过 agentHistory 访问
-const topics = await agent.agentHistory?.listAllTopics();
+// listAllSessions 通过 agentHistory 访问
+const sessions = await agent.agentHistory?.listAllSessions();
 ```
 
 ---
@@ -511,7 +511,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 生命周期 | `init()` / `close()` |
 | 对话 | `chat()` / `chatSync()` |
 | 事件 | `on()` / `off()` |
-| 项目/话题 | `listProjects()` / `switchProject()` / `rebuildComponents()` / `switchTopic()` / `loadTopicMessages()` / `restoreMostRecentTopic()` / `restoreTopic()` |
+| 项目/会话 | `listProjects()` / `switchProject()` / `rebuildComponents()` / `switchSession()` / `loadSessionMessages()` / `restoreMostRecentSession()` / `restoreSession()` |
 | Provider | `setProvider()` / `setBackgroundProvider()` |
 | 调试 | `getBuildCtx()` |
 
@@ -590,7 +590,7 @@ export type { RecallOptions } from 'memora';
 export type { PersonaMode } from 'memora';
 
 // 消息历史
-export type { LegacyTopicMessage } from 'memora';
+export type { SessionRecord } from 'memora';
 
 // 技能
 export type { SkillEntry } from 'memora';
