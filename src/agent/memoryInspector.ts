@@ -66,6 +66,12 @@ export interface ArchiveSnapshot {
   /** 当前会话全名（含日期前缀，与 sessions/*.md 文件名一致） */
   currentSessionName: string;
   hint: string;
+  /** 归档记忆来源分布 */
+  stats: {
+    insight: number;
+    profile: number;
+    'work-projection': number;
+  };
 }
 
 /** Agent 记忆搜索结果（cli 友好的扁平结构） */
@@ -128,10 +134,10 @@ export class MemoryInspector {
     const bootstrap = [...rules, ...personas, ...skills];
 
     // 第 3 层：归档记忆计数（insight + profile + work-projection）
-    const archiveTotal =
-      this.index.countBySource(SOURCE_LABELS.INSIGHT) +
-      this.index.countBySource(SOURCE_LABELS.PROFILE) +
-      this.index.countBySource(SOURCE_LABELS.WORK_PROJECTION);
+    const insightCount = this.index.countBySource(SOURCE_LABELS.INSIGHT);
+    const profileCount = this.index.countBySource(SOURCE_LABELS.PROFILE);
+    const workProjectionCount = this.index.countBySource(SOURCE_LABELS.WORK_PROJECTION);
+    const archiveTotal = insightCount + profileCount + workProjectionCount;
 
     return {
       working: {
@@ -159,6 +165,11 @@ export class MemoryInspector {
         currentSession: this.history.session ?? '(none)',
         currentSessionName: this.history.currentSessionName ?? '(none)',
         hint: '调 listAllSessions() 获取文件清单',
+        stats: {
+          insight: insightCount,
+          profile: profileCount,
+          'work-projection': workProjectionCount,
+        },
       },
     };
   }
