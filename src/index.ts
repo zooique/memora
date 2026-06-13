@@ -55,7 +55,7 @@ export type { EmbeddingService } from './memory/vectorStore.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from './memory/sessionStore.js';
 // 消息历史类型：loadSessionMessages() 返回值
-export type { SessionRecord } from './agent/messageHistory.js';
+export type { SessionRecord, ForkResult } from './agent/messageHistory.js';
 // 召回函数：简化关键词搜索
 export { recall, extractKeywords, decayScores } from './memory/recall.js';
 export type { RecallOptions } from './memory/recall.js';
