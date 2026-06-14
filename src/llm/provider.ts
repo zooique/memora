@@ -46,11 +46,6 @@ export interface ChatOptions {
   channel?: 'chat' | 'background';
 }
 
-export interface Chunk {
-  content: string;
-  done: boolean;
-}
-
 /**
  * LLM Provider 抽象类
  * 实现类需实现 chat() 流式方法

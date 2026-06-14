@@ -153,7 +153,7 @@ ${contextSection}
       const messages: Message[] = [{ role: 'user', content: extractionPrompt }];
       let llmResponse = '';
       for await (const chunk of this.provider.chat(messages)) {
-        llmResponse += chunk;
+        if (chunk.content) llmResponse += chunk.content;
       }
 
       // 解析 LLM 响应

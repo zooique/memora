@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 工具执行器
  *
  * 阶段一：1 个工具（read_file）
@@ -560,7 +560,8 @@ export class ToolExecutor {
     let names: string[];
     try {
       names = await readdir(current);
-    } catch {
+    } catch (err) {
+      logger.debug({ err, dir: current }, 'readdir 失败，跳过');
       return;
     }
 

@@ -18,6 +18,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
+import { cosineSimilarity } from '@/utils/math.js';
 
 /**
  * 嵌入服务接口（原 memory/types.ts 导出，重构后内联）
@@ -183,25 +184,4 @@ export class VectorStore {
   get size(): number {
     return this.entries.size;
   }
-}
-
-/**
- * 计算两个向量的余弦相似度
- *
- * 从 EmbeddingProvider.cosineSimilarity 迁移到本地实现
- * 原因：memory/ 层不应依赖 llm/ 层（年轮审判 R-03 分层修复）
- * 纯数学函数，无外部依赖
- */
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0;
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i]! * b[i]!;
-    normA += a[i]! * a[i]!;
-    normB += b[i]! * b[i]!;
-  }
-  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-  return denominator === 0 ? 0 : dotProduct / denominator;
 }

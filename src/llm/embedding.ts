@@ -71,11 +71,11 @@ export class EmbeddingProvider {
     // 过滤已缓存的
     const uncached: string[] = [];
     const uncachedIndices: number[] = [];
-    const results: (EmbeddingResult | null)[] = texts.map((text) => {
+    const results: (EmbeddingResult | null)[] = texts.map((text, i) => {
       const cached = this.cache.get(text);
       if (cached) return { text, vector: cached };
       uncached.push(text);
-      uncachedIndices.push(texts.indexOf(text));
+      uncachedIndices.push(i);
       return null;
     });
 
@@ -142,24 +142,6 @@ export class EmbeddingProvider {
     }
 
     return results.filter((r): r is EmbeddingResult => r !== null);
-  }
-
-  /**
-   * 计算两个向量的余弦相似度
-   * 纯 JS 实现，5k 条记录内性能足够
-   */
-  static cosineSimilarity(a: number[], b: number[]): number {
-    if (a.length !== b.length) return 0;
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i]! * b[i]!;
-      normA += a[i]! * a[i]!;
-      normB += b[i]! * b[i]!;
-    }
-    const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-    return denominator === 0 ? 0 : dotProduct / denominator;
   }
 
   /**

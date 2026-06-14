@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent Loop — Agent 的核心执行引擎
  *
  * 模型自主决定何时推理、何时调用工具，循环直到输出纯文本
@@ -130,7 +130,7 @@ export class AgentLoop {
               yield { type: 'text', content: chunk.content };
             }
             if (chunk.toolCalls) {
-              toolCalls = (toolCalls ?? []).concat(chunk.toolCalls as never);
+              toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
             }
           }
           break; // 成功，退出重试循环

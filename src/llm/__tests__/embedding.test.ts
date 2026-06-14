@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EmbeddingProvider } from '@/llm/embedding.js';
+import { cosineSimilarity } from '@/utils/math.js';
 
 /**
  * 创建模拟 fetch 的辅助函数
@@ -18,40 +19,40 @@ function mockFetchSuccess(vectors: number[][]) {
   vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(mockResponse as Response);
 }
 
-describe('EmbeddingProvider · cosineSimilarity', () => {
+describe('cosineSimilarity · utils/math.ts', () => {
   it('相同向量应该返回 1.0', () => {
     const v = [1, 0, 0];
-    expect(EmbeddingProvider.cosineSimilarity(v, v)).toBeCloseTo(1.0);
+    expect(cosineSimilarity(v, v)).toBeCloseTo(1.0);
   });
 
   it('正交向量应该返回 0', () => {
     const a = [1, 0, 0];
     const b = [0, 1, 0];
-    expect(EmbeddingProvider.cosineSimilarity(a, b)).toBeCloseTo(0);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(0);
   });
 
   it('相反向量应该返回 -1', () => {
     const a = [1, 0, 0];
     const b = [-1, 0, 0];
-    expect(EmbeddingProvider.cosineSimilarity(a, b)).toBeCloseTo(-1);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(-1);
   });
 
   it('不同维度应该返回 0', () => {
     const a = [1, 0];
     const b = [1, 0, 0];
-    expect(EmbeddingProvider.cosineSimilarity(a, b)).toBe(0);
+    expect(cosineSimilarity(a, b)).toBe(0);
   });
 
   it('零向量应该返回 0', () => {
     const a = [0, 0, 0];
     const b = [1, 0, 0];
-    expect(EmbeddingProvider.cosineSimilarity(a, b)).toBe(0);
+    expect(cosineSimilarity(a, b)).toBe(0);
   });
 
   it('45 度角应该返回约 0.707', () => {
     const a = [1, 0];
     const b = [1, 1];
-    expect(EmbeddingProvider.cosineSimilarity(a, b)).toBeCloseTo(Math.SQRT1_2, 5);
+    expect(cosineSimilarity(a, b)).toBeCloseTo(Math.SQRT1_2, 5);
   });
 });
 

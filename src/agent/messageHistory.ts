@@ -25,18 +25,6 @@ function nowTimestamp(): string {
 }
 
 /**
- * 会话消息类型
- */
-export interface SessionRecord {
-  /** 消息角色 */
-  role: 'user' | 'assistant' | 'system';
-  /** 消息内容 */
-  content: string;
-  /** 时间戳（ISO 8601） */
-  timestamp: string;
-}
-
-/**
  * 分叉结果
  */
 export interface ForkResult {
@@ -45,7 +33,7 @@ export interface ForkResult {
   /** 会话日期 */
   date: string;
   /** 从源会话复制的消息列表 */
-  messages: SessionRecord[];
+  messages: SessionMessage[];
 }
 
 /**
@@ -145,7 +133,8 @@ export class MessageHistory {
    * @returns 自动生成的分支名（如 "main-b1"）
    */
   private _autoBranchName(sourceSession: string): string {
-    const allSessions = this._sessionStore!.listSessions();
+    if (!this._sessionStore) return `${sourceSession}-b1`;
+    const allSessions = this._sessionStore.listSessions();
     const prefix = `${sourceSession}-b`;
 
     // 提取匹配前缀的序号
@@ -310,7 +299,7 @@ export class MessageHistory {
    * @param session - 会话标识
    * @returns 会话中的消息列表，未注入 ISessionStore 则返回空数组
    */
-  async loadSessionMessages(date: string, session: string): Promise<SessionRecord[]> {
+  async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
     // 更新当前会话为请求的会话（保持状态一致）
     this.currentDate = date;
     this.currentSession = session;
@@ -336,10 +325,10 @@ export class MessageHistory {
    * @param preferredSession - 优先加载的会话名（默认 'main'）
    * @returns 会话消息列表
    */
-  async loadMostRecentSession(preferredSession = 'main'): Promise<SessionRecord[]> {
-    logger.debug(
+  async loadMostRecentSession(preferredSession = 'main'): Promise<SessionMessage[]> {
+    logger.warn(
       { preferredSession },
-      'loadMostRecentSession: 会话归档逻辑未迁移（基元驱动重构），返回空数组。宿主应通过 ISessionStore 自行恢复。',
+      '[WARN] loadMostRecentSession: 会话归档逻辑未迁移（warn）（基元驱动重构），返回空数组。宿主应通过 ISessionStore 自行恢复。',
     );
     return [];
   }
@@ -362,9 +351,9 @@ export class MessageHistory {
   async archiveCurrentSession(
     reason: 'switch' | 'signal' | 'lazy' | 'midway' = 'switch',
   ): Promise<null> {
-    logger.debug(
+    logger.warn(
       { reason, session: this.currentSessionName },
-      'archiveCurrentSession: 归档逻辑已迁移至 InsightExtractor，此方法为空操作。',
+      '[WARN] archiveCurrentSession: 归档逻辑已迁移至 InsightExtractor，此方法为空操作。',
     );
     return null;
   }
@@ -380,7 +369,7 @@ export class MessageHistory {
    * @returns 0
    */
   async archiveMissingSessions(_timeoutMs = 3000): Promise<number> {
-    logger.debug('archiveMissingSessions: 补归档逻辑未迁移（基元驱动重构），返回 0。');
+    logger.warn('[WARN] archiveMissingSessions: 补归档逻辑未迁移（基元驱动重构），返回 0。');
     return 0;
   }
 
@@ -439,8 +428,8 @@ export class MessageHistory {
    *
    * @returns 当前会话的所有消息
    */
-  async getCurrentSessionMessages(): Promise<SessionRecord[]> {
-    logger.debug('getCurrentSessionMessages: 未实现，返回空数组。');
+  async getCurrentSessionMessages(): Promise<SessionMessage[]> {
+    logger.warn('[WARN] getCurrentSessionMessages: 未实现，返回空数组。');
     return [];
   }
 
@@ -451,9 +440,9 @@ export class MessageHistory {
    */
   async setCurrentSessionSeedSnapshots(snapshots: string[]): Promise<void> {
     if (snapshots.length === 0) return;
-    logger.debug(
+    logger.warn(
       { session: this.currentSessionName, snapshotCount: snapshots.length },
-      'setCurrentSessionSeedSnapshots: 快照未持久化',
+      '[WARN] setCurrentSessionSeedSnapshots: 快照未持久化',
     );
   }
 }

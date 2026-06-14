@@ -3,10 +3,10 @@
  *
  * 详见 ADR-003 · LLM 适配层使用 OpenAI Chat Completions 兼容协议
  */
-import type { LlmProvider, Message, ChatOptions, Chunk } from './provider.js';
+import type { LlmProvider, Message, ChatOptions } from './provider.js';
 
 // 重导出，方便使用
-export type { LlmProvider, Message, ChatOptions, Chunk };
+export type { LlmProvider, Message, ChatOptions };
 
 /**
  * 消息角色

@@ -31,7 +31,8 @@ import { basename } from 'node:path';
 import { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
 import { ToolExecutor } from './toolExecutor.js';
-import { MessageHistory, type SessionRecord } from './messageHistory.js';
+import { MessageHistory } from './messageHistory.js';
+import type { SessionMessage } from '@/memory/sessionStore.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { recall, decayScores } from '@/memory/recall.js';
 import { PersonaManager } from '@/persona/personaManager.js';
@@ -689,7 +690,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 对外暴露的 loadSessionMessages 委托
    * 加载指定会话的历史消息，加载后 Memora 状态同步切换到该会话
    */
-  async loadSessionMessages(date: string, session: string): Promise<SessionRecord[]> {
+  async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
     if (!this._initialized || !this.history) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         '在 loadSessionMessages() 前调用 await agent.init()',
@@ -708,20 +709,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private _runMemoryDecay(): void {
     if (!this._pctx) return;
-    const now = new Date();
-    const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
-    let decayedCount = 0;
-    for (const source of sources) {
-      const memories = this._pctx.index.getBySource(source);
-      if (memories.length === 0) continue;
-      decayScores(memories, now);
-      for (const m of memories) {
-        this._pctx.index.upsert(m);
+    try {
+      const now = new Date();
+      const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
+      let decayedCount = 0;
+      for (const source of sources) {
+        const memories = this._pctx.index.getBySource(source);
+        if (memories.length === 0) continue;
+        decayScores(memories, now);
+        for (const m of memories) {
+          this._pctx.index.upsert(m);
+        }
+        decayedCount += memories.length;
       }
-      decayedCount += memories.length;
+      logger.debug({ decayedCount }, '记忆衰减完成');
+      this.emit('decayCompleted', { decayedCount: decayedCount });
+    } catch (err) {
+      logger.warn({ err }, '记忆衰减异常，跳过本轮');
     }
-    logger.debug({ decayedCount }, '记忆衰减完成');
-    this.emit('decayCompleted', { decayedCount: decayedCount });
   }
 
   // ─── 关闭 ─────────────────────────────────────────────

@@ -9,6 +9,7 @@
 import type { Memory } from './types.js';
 import type { IMemoryStorage } from './storageInterface.js';
 import type { VectorStore } from './vectorStore.js';
+import { logger } from '../logging/logger.js';
 import { STOPWORDS } from './types.js';
 
 /**
@@ -101,9 +102,9 @@ export async function recall(
           merged.set(memory.id, { memory, vectorScore: vr.similarity });
         }
       }
-    } catch {
-      // 语义搜索失败（网络问题、embedding 服务不可用），静默降级到关键词
-    }
+    } catch (err) {
+          logger.debug({ err }, '语义搜索失败，降级到关键词');
+        }
   }
 
   // ── 通道 2：关键词搜索 ──
