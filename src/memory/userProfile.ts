@@ -22,6 +22,7 @@
 import type { IMemoryStorage } from './storageInterface.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 import { logger } from '@/logging/logger.js';
+import { slugify } from '@/utils/strings.js';
 
 /** 用户画像子分类 */
 export type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' | 'history';
@@ -308,7 +309,7 @@ export class UserProfile {
    */
   private async upsertFact(fact: ExtractedFact): Promise<UserProfileEntry | null> {
     // 构造稳定 ID（profile: 前缀 + 分类 + slug）
-    const id = `profile:user-profile-${fact.category}-${this.slugify(fact.value)}`;
+    const id = `profile:user-profile-${fact.category}-${slugify(fact.value)}`;
 
     // D-107：同分类冲突解决 — 删除旧条目（相同子分类 + 不同值 = 用户更新了信息）
     await this.removeConflictingEntries(fact);
@@ -430,16 +431,6 @@ export class UserProfile {
     if (!validCategories.includes(category)) return {};
 
     return { category, value: value || undefined };
-  }
-
-  /**
-   * 生成 URL 安全的标识符
-   */
-  private slugify(value: string): string {
-    return value
-      .replace(/[:\s]+/g, '-')
-      .replace(/[^a-zA-Z0-9\u4e00-\u9fff\-_]/g, '')
-      .slice(0, 40);
   }
 
   /**

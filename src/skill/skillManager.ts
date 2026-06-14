@@ -59,9 +59,6 @@ export class SkillManager {
   /** 技能列表缓存（启动时扫描一次） */
   private skills: SkillEntry[] = [];
 
-  /** 关键词索引（keyword → 技能名列表） */
-  private keywordIndex: Map<string, string[]> = new Map();
-
   /**
    * @param configDir 配置目录（技能文件在 <configDir>/skills/ 下）
    */
@@ -70,13 +67,12 @@ export class SkillManager {
   ) {}
 
   /**
-   * 启动时加载：扫描两层目录 + 构建关键词索引
+   * 启动时加载：扫描技能目录
    *
    * @returns 加载的技能数量
    */
   load(): number {
     this.skills = this.scanSkills();
-    this.buildKeywordIndex();
     logger.info(
       { count: this.skills.length, names: this.skills.map((s) => s.name) },
       '技能加载完成',
@@ -169,8 +165,6 @@ export class SkillManager {
       throw new Error(`技能 "${skill.name}" 已存在，不能重复注册`);
     }
     this.skills.push(skill);
-    // 重建关键词索引（增量构建较复杂，全量重建简单可靠）
-    this.buildKeywordIndex();
     logger.info({ name: skill.name, keywords: skill.keywords.length }, '技能已注册（运行时注入）');
   }
 
@@ -284,22 +278,6 @@ export class SkillManager {
         map.set(name, skill); // 同名覆盖（项目级覆盖全局级）
       } catch (err) {
         logger.warn({ file, err }, '解析技能文件失败');
-      }
-    }
-  }
-
-  /**
-   * 构建关键词 → 技能名的反向索引
-   *
-   * 每个关键词可能对应多个技能，匹配时按 TF 计分。
-   */
-  private buildKeywordIndex(): void {
-    this.keywordIndex.clear();
-    for (const skill of this.skills) {
-      for (const kw of skill.keywords) {
-        const list = this.keywordIndex.get(kw) ?? [];
-        list.push(skill.name);
-        this.keywordIndex.set(kw, list);
       }
     }
   }

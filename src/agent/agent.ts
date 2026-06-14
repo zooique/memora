@@ -249,11 +249,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 流式对话（核心 API）
    */
   async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
-    if (!this._initialized || !this.history || !this.loop) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 chat() 前调用 await agent.init()',
-      ]);
-    }
+    this.assertInitialized('chat');
 
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再发起新对话', [
@@ -283,12 +279,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
 
       // Layer 5: 最近对话注入
-      const recentHistory = this.loop.getRecentHistory(3);
+      const recentHistory = this.loop!.getRecentHistory(3);
       if (recentHistory.length > 0) {
         const recentPrompt = '[最近对话]\n' + recentHistory.map(m =>
           `${m.role === 'user' ? '用户' : '助手'}：${m.content}`
         ).join('\n');
-        this.loop.injectSystemMessage(recentPrompt);
+        this.loop!.injectSystemMessage(recentPrompt);
         logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
       }
 
@@ -308,11 +304,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         this.activeSkill = null;
       }
 
-      await this.history.appendUser(input);
+      await this.history!.appendUser(input);
 
       let assistantContent = '';
       let wasAborted = false;
-      for await (const chunk of this.loop.processUserInput(input, recalledMemories, signal)) {
+      for await (const chunk of this.loop!.processUserInput(input, recalledMemories, signal)) {
         yield chunk;
         if (chunk.type === 'text') {
           assistantContent += chunk.content;
@@ -325,7 +321,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      await this.history.appendAssistant(assistantContent);
+      await this.history!.appendAssistant(assistantContent);
 
       // 后处理阶段
       yield { type: 'thinking', phase: 'archiving' };
@@ -371,7 +367,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         const shouldExtract = this.insightExtractor.classify(input);
         if (shouldExtract === 'extract') {
           const p = this.insightExtractor.extract(input, assistantContent).catch(() => null);
-          this.history.registerPendingArchive(p);
+          this.history!.registerPendingArchive(p);
         }
       }
     } finally {
@@ -400,15 +396,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 切换当前会话（切换前为旧会话生成摘要归档）
    */
   async switchSession(newSession: string): Promise<string> {
-    if (!this._initialized || !this.history) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 switchSession() 前调用 await agent.init()',
-      ]);
-    }
+    this.assertInitialized('switchSession', ['history']);
 
-    await this.history.archiveCurrentSession('switch');
+    await this.history!.archiveCurrentSession('switch');
 
-    return this.history.switchSession(newSession);
+    return this.history!.switchSession(newSession);
   }
 
   /**
@@ -423,11 +415,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @returns { newSession, messageCount }
    */
   forkSession(targetSession?: string): { newSession: string; messageCount: number } {
-    if (!this._initialized || !this.history || !this.loop) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 forkSession() 前调用 await agent.init()',
-      ]);
-    }
+    this.assertInitialized('forkSession');
 
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再分叉', [
@@ -436,17 +424,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     // 记录源会话名（用于事件）
-    const sourceSessionName = this.history.currentSessionName;
+    const sourceSessionName = this.history!.currentSessionName;
 
     // 委托 MessageHistory 完成分叉
-    const result = this.history.forkSession(targetSession);
+    const result = this.history!.forkSession(targetSession);
 
     // 将消息恢复到 AgentLoop 的工作记忆
     const messages: Message[] = result.messages.map((m) => ({
       role: m.role as Message['role'],
       content: m.content,
     }));
-    this.loop.restoreHistory(messages);
+    this.loop!.restoreHistory(messages);
 
     // 发射事件（供 UI 响应）
     this.emit('sessionForked', {
@@ -465,12 +453,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 列出已注册项目
    */
   listProjects(): AgentProjectEntry[] {
-    if (!this._initialized || !this.projectManager) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 listProjects() 前调用 await agent.init()',
-      ]);
-    }
-    return this.projectManager.listProjects();
+    this.assertInitialized('listProjects', ['projectManager']);
+    return this.projectManager!.listProjects();
   }
 
   /**
@@ -480,13 +464,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * Agent 级记忆（memora.db）保留，项目级配置（.memora/）重新加载。
    */
   async switchProject(nameOrPath: string): Promise<AgentContext> {
-    if (!this._initialized || !this.projectManager || !this._provider) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 switchProject() 前调用 await agent.init()',
-      ]);
-    }
+    this.assertInitialized('switchProject', ['projectManager', 'provider']);
 
-    const projects = this.projectManager.listProjects();
+    const projects = this.projectManager!.listProjects();
     let target = projects.find((p) => p.name === nameOrPath || p.path === nameOrPath);
     if (!target) {
       const nameOrPathLower = nameOrPath.toLowerCase();
@@ -497,7 +477,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const projectPath = target ? target.path : nameOrPath;
     const projectName = target ? target.name : basename(nameOrPath);
 
-    const newPctx = await this.projectManager.initProject(projectPath, projectName, this.configDir);
+    const newPctx = await this.projectManager!.initProject(projectPath, projectName, this.configDir);
 
     this._pctx = newPctx;
     this._ctx = newPctx;
@@ -639,13 +619,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 恢复最近的会话对话
    */
   async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
-    if (!this._initialized || !this.history || !this.loop) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 restoreMostRecentSession() 前调用 await agent.init()',
-      ]);
-    }
+    this.assertInitialized('restoreMostRecentSession');
 
-    const sessionMessages = await this.history.loadMostRecentSession(preferredSession);
+    const sessionMessages = await this.history!.loadMostRecentSession(preferredSession);
     if (sessionMessages.length === 0) {
       logger.debug('没有找到可恢复的历史会话');
       return 0;
@@ -656,7 +632,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       content: tm.content,
     }));
 
-    this.loop.restoreHistory(messages);
+    this.loop!.restoreHistory(messages);
 
     return sessionMessages.length;
   }
@@ -665,13 +641,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 恢复指定会话的对话
    */
   async restoreSession(date: string, session: string): Promise<number> {
-    if (!this._initialized || !this.history || !this.loop) {
-      throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 restoreSession() 前调用 await agent.init()',
-      ]);
-    }
+    this.assertInitialized('restoreSession');
 
-    const sessionMessages = await this.history.loadSessionMessages(date, session);
+    const sessionMessages = await this.history!.loadSessionMessages(date, session);
     if (sessionMessages.length === 0) {
       return 0;
     }
@@ -681,7 +653,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       content: tm.content,
     }));
 
-    this.loop.restoreHistory(messages);
+    this.loop!.restoreHistory(messages);
 
     return sessionMessages.length;
   }
@@ -691,12 +663,49 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 加载指定会话的历史消息，加载后 Memora 状态同步切换到该会话
    */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
-    if (!this._initialized || !this.history) {
+    this.assertInitialized('loadSessionMessages', ['history']);
+    return this.history!.loadSessionMessages(date, session);
+  }
+
+  // ─── 守卫方法 ───────────────────────────────────────────
+
+  /**
+   * 断言 Agent 已初始化，且指定组件可用
+   *
+   * @param methodName 调用方法名（用于错误消息）
+   * @param requires 需要检查的组件列表
+   */
+  private assertInitialized(
+    methodName: string,
+    requires: Array<'history' | 'loop' | 'projectManager' | 'provider'> = ['history', 'loop'],
+  ): void {
+    if (!this._initialized) {
       throw configError('Agent 未初始化', '请先调用 init()', [
-        '在 loadSessionMessages() 前调用 await agent.init()',
+        `在 ${methodName}() 前调用 await agent.init()`,
       ]);
     }
-    return this.history.loadSessionMessages(date, session);
+    for (const dep of requires) {
+      if (dep === 'history' && !this.history) {
+        throw configError('Agent 未初始化', 'history 组件不可用', [
+          `在 ${methodName}() 前调用 await agent.init()`,
+        ]);
+      }
+      if (dep === 'loop' && !this.loop) {
+        throw configError('Agent 未初始化', 'loop 组件不可用', [
+          `在 ${methodName}() 前调用 await agent.init()`,
+        ]);
+      }
+      if (dep === 'projectManager' && !this.projectManager) {
+        throw configError('Agent 未初始化', 'projectManager 组件不可用', [
+          `在 ${methodName}() 前调用 await agent.init()`,
+        ]);
+      }
+      if (dep === 'provider' && !this._provider) {
+        throw configError('Agent 未初始化', 'provider 组件不可用', [
+          `在 ${methodName}() 前调用 await agent.init()`,
+        ]);
+      }
+    }
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────

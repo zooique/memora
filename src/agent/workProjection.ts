@@ -30,6 +30,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
+import { slugify } from '@/utils/strings.js';
 
 /** 作品投影的持久化结构 */
 export interface WorkProjectionEntry {
@@ -116,7 +117,7 @@ export class WorkProjectionManager {
     const name = fileName ?? filePath.split(/[/\\]/).pop() ?? 'unknown';
 
     // 查询已有投影
-    const existingId = `work-proj-${this.slugify(name)}`;
+    const existingId = `work-proj-${slugify(name)}`;
     const existing = await this.index.getById(existingId);
 
     if (existing) {
@@ -133,7 +134,7 @@ export class WorkProjectionManager {
     try {
       const projection = await this.generate(name, content);
       const entry: WorkProjectionEntry = {
-        id: `work-proj-${this.slugify(name)}`,
+        id: `work-proj-${slugify(name)}`,
         sourcePath: filePath,
         fileHash: hash,
         summary: projection.summary,
@@ -164,7 +165,7 @@ export class WorkProjectionManager {
    */
   async getProjection(filePath: string): Promise<WorkProjectionEntry | null> {
     const name = filePath.split(/[/\\]/).pop() ?? 'unknown';
-    const id = `work-proj-${this.slugify(name)}`;
+    const id = `work-proj-${slugify(name)}`;
     const existing = await this.index.getById(id);
     return existing ? this.fromMemory(existing) : null;
   }
@@ -348,13 +349,4 @@ export class WorkProjectionManager {
     };
   }
 
-  /**
-   * 生成 URL 安全的标识符
-   */
-  private slugify(value: string): string {
-    return value
-      .replace(/[:\s]+/g, '-')
-      .replace(/[^a-zA-Z0-9\u4e00-\u9fff\-_]/g, '')
-      .slice(0, 40);
-  }
 }
