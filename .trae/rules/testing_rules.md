@@ -48,18 +48,16 @@ date: 2026-06-12
 - `src/**/*.d.ts`（类型声明）
 - `src/**/*.test.ts`（测试自身）
 
-## 4. 当前测试文件清单（26 文件 · 321 用例）
+## 4. 当前测试文件清单（23 文件 · 324 用例）
 
 **agent/**：
 - [x] Agent 门面类（agent.test.ts）
 - [x] Agent Loop 主循环（loop.test.ts）
 - [x] 消息历史（messageHistory.test.ts）
-- [x] 信号检测器（signalDetector.test.ts）
 - [x] 工具执行器（toolExecutor.test.ts）
 - [x] 作品投影（workProjection.test.ts）
 
 **memory/**：
-- [x] 上下文压力监控（contextPressureMonitor.test.ts）
 - [x] Frontmatter 解析（frontmatter.test.ts）
 - [x] 记忆加载器（loader.test.ts）
 - [x] 项目管理器（projectManager.test.ts）
@@ -75,7 +73,6 @@ date: 2026-06-12
 - [x] 角色管理（personaManager.test.ts）
 - [x] 技能管理（skillManager.test.ts）
 - [x] 路径白名单（pathGuard.test.ts）
-- [x] 权限模型（permissions.test.ts）
 - [x] 配置加载（loader.test.ts）
 - [x] LLM 嵌入（embedding.test.ts）
 - [x] LLM 工厂（factory.test.ts）

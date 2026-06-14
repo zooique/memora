@@ -19,7 +19,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
-import { tokenizeKeywords } from '@/memory/segmenter.js';
+import { scoreByKeywords } from '@/memory/segmenter.js';
 import { logger } from '@/logging/logger.js';
 
 /**
@@ -103,25 +103,13 @@ export class SkillManager {
       }
     }
 
-    // 2. 关键词匹配（TF 计分）
     const matches: SkillMatch[] = [];
-    // 分词：中英文分别提取
-    const tokens = this.tokenize(userInput);
 
     for (const skill of this.skills) {
       if (skill.keywords.length === 0) continue;
 
-      let hitCount = 0;
-      for (const kw of skill.keywords) {
-        // 支持部分匹配（子串搜索）
-        if (tokens.some((t) => t.includes(kw)) || userInput.includes(kw)) {
-          hitCount++;
-        }
-      }
-
-      if (hitCount > 0) {
-        // 得分 = 命中关键词数 / 技能关键词总数（归一化）
-        const score = hitCount / Math.max(skill.keywords.length, 1);
+      const score = scoreByKeywords(userInput, skill.keywords);
+      if (score > 0) {
         matches.push({ skill, score });
       }
     }
@@ -282,10 +270,4 @@ export class SkillManager {
     }
   }
 
-  /**
-   * 分词（复用 segmenter 共享函数）
-   */
-  private tokenize(input: string): string[] {
-    return tokenizeKeywords(input);
-  }
 }

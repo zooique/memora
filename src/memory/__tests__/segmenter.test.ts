@@ -4,7 +4,7 @@
  * 详见 M-202：Intl.Segmenter 中文分词
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText, tokenizeKeywords } from '@/memory/segmenter.js';
+import { segmentText, tokenizeKeywords, scoreByKeywords } from '@/memory/segmenter.js';
 
 describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
@@ -80,5 +80,35 @@ describe('tokenizeKeywords · 关键词分词', () => {
     expect(tokens).toContain('a');
     expect(tokens).toContain('b');
     expect(tokens).toContain('c');
+  });
+});
+
+describe('scoreByKeywords · 关键词匹配评分', () => {
+  it('空关键词列表应返回 0', () => {
+    expect(scoreByKeywords('任何输入', [])).toBe(0);
+  });
+
+  it('完全命中应返回 1', () => {
+    expect(scoreByKeywords('我想写玄幻小说', ['玄幻', '小说'])).toBe(1);
+  });
+
+  it('部分命中应返回正确比例', () => {
+    expect(scoreByKeywords('我想写玄幻小说', ['玄幻', '科幻', '小说'])).toBeCloseTo(2 / 3, 5);
+  });
+
+  it('无命中应返回 0', () => {
+    expect(scoreByKeywords('今天天气不错', ['玄幻', '小说'])).toBe(0);
+  });
+
+  it('大小写不敏感', () => {
+    expect(scoreByKeywords('use TypeScript API', ['api', 'typescript'])).toBe(1);
+  });
+
+  it('中文子串匹配', () => {
+    expect(scoreByKeywords('我想学习编程技巧', ['编程'])).toBe(1);
+  });
+
+  it('英文关键词中文输入不命中', () => {
+    expect(scoreByKeywords('我想写小说', ['API', 'TypeScript'])).toBe(0);
   });
 });

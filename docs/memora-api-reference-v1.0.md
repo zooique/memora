@@ -350,11 +350,14 @@ const customFork = await agent.forkSession('experiment');
 ### `ForkResult` 类型
 
 ```typescript
-interface ForkResult {
-  /** 新会话完整标识（如 "2026-06-13-main-b1"） */
+// Agent.forkSession() 返回值
+{ newSession: string; messageCount: number }
+
+// MessageHistory.forkSession() 内部类型（从 memora 导出）
+export interface ForkResult {
+  date: string;
   newSession: string;
-  /** 复制的消息数量 */
-  messageCount: number;
+  messages: SessionMessage[];
 }
 ```
 

@@ -131,10 +131,8 @@ src/
 │   ├── insightExtractor.ts # Insight 提取器
 │   ├── configManager.ts  # 配置管理器
 │   ├── memoryInspector.ts # 记忆查看器
-│   ├── messageHistory.ts # 消息历史管理
+│   ├── messageHistory.ts # 消息历史管理（含会话分叉）
 │   ├── workProjection.ts # 作品投影管理器
-│   ├── signalDetector.ts # 信号检测器
-│   ├── topicSummarizer.ts # 话题摘要器
 │   └── types.ts          # Agent 类型定义
 ├── memory/               # 记忆引擎
 │   ├── types.ts          # Memory 类型 + source 标签
@@ -148,7 +146,6 @@ src/
 │   ├── frontmatter.ts    # Frontmatter 解析
 │   ├── sessionStore.ts   # 会话存储抽象
 │   ├── userProfile.ts    # 用户画像
-│   ├── contextPressureMonitor.ts # 上下文压力监控
 │   └── store.ts          # FileStore
 ├── llm/                  # LLM 适配层
 │   ├── provider.ts       # LlmProvider 抽象类
@@ -161,8 +158,7 @@ src/
 ├── skill/                # 技能管理
 │   └── skillManager.ts   # SkillManager
 ├── security/             # 安全策略
-│   ├── pathGuard.ts      # 路径白名单 + 审计日志
-│   └── permissions.ts    # 权限管理
+│   └── pathGuard.ts      # 路径白名单 + 审计日志 + 写入确认
 ├── config/               # 配置加载
 │   └── loader.ts         # 配置加载器
 ├── logging/              # 日志抽象
@@ -171,7 +167,8 @@ src/
 └── utils/                # 工具函数
     ├── errors.ts         # 错误类型
     ├── eventEmitter.ts   # 事件系统
-    └── math.ts           # 数学工具
+    ├── math.ts           # 数学工具
+    └── strings.ts        # 字符串工具（slugify）
 ```
 
 ---

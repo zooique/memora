@@ -147,4 +147,16 @@ describe('validateSource 校验函数', () => {
     expect(result.valid).toBe(true);
     expect(result.warning).toBeUndefined();
   });
+
+  it('路径遍历序列应返回 valid: false', () => {
+    const result = validateSource('skill::../etc/passwd');
+    expect(result.valid).toBe(false);
+    expect(result.warning).toContain('路径遍历');
+  });
+
+  it('null 字节应返回 valid: false', () => {
+    const result = validateSource('insight\x00malicious');
+    expect(result.valid).toBe(false);
+    expect(result.warning).toContain('null 字节');
+  });
 });

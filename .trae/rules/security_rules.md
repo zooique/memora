@@ -26,14 +26,15 @@ date: 2026-06-02
 - ✅ 用户显式白名单（`config.allowedPaths`）
 - ✅ stdout/stderr（不需要路径）
 
-**6 类禁止**（黑名单优先）：
+**7 类禁止**（黑名单优先，正则匹配大小写不敏感）：
 
-- ❌ `~/.ssh/`
-- ❌ `~/.aws/`
-- ❌ `.env` 文件
-- ❌ `C:\Windows\System32\`
-- ❌ `/etc/passwd`
-- ❌ `~/.gnupg/`
+- ❌ `~/.ssh/` — SSH 密钥
+- ❌ `~/.aws/` — AWS 凭证
+- ❌ `~/.gnupg/` — GPG 私钥
+- ❌ `.env` / `.env.<name>` — 环境变量（不拦截 `.env.example` 等）
+- ❌ `*/System32/*` — Windows 系统目录
+- ❌ `*/Windows/System*` — Windows 系统目录（比 System32 更宽泛）
+- ❌ `/etc/passwd` — Unix 密码文件
 
 详见 [src/security/pathGuard.ts](../../src/security/pathGuard.ts)
 

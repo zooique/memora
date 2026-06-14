@@ -1,7 +1,7 @@
 /**
  * 路径白名单 + 审计日志
  *
- * 4 类允许 + 6 类禁止
+ * 4 类允许 + 12 类禁止
  * 详见 03-安全权限-v0.2.md §4 + ADR-006
  * 阶段二新增：M-101 写入二次确认 + M-105 审计日志
  */
@@ -13,14 +13,24 @@ import { logger } from '@/logging/logger.js';
 import { securityError } from '@/utils/errors.js';
 
 const BLOCKED_PATTERNS = [
+  // 系统凭证
   /(^|[\\/])\.ssh([\\/]|$)/i,
+  /(^|[\\/])\.gnupg([\\/]|$)/i,
+  /(^|[\\/])\.netrc$/i,
+  /(^|[\\/])\.pgpass$/i,
+  /[\\/]etc[\\/]passwd/i,
+  // 云服务凭证
   /(^|[\\/])\.aws([\\/]|$)/i,
+  /(^|[\\/])\.azure([\\/]|$)/i,
+  /(^|[\\/])\.docker([\\/]|$)/i,
+  /(^|[\\/])\.kube([\\/]|$)/i,
+  /[\\/]gcloud([\\/]|$)/i,
   // A6 修复：原 `(^|[\\/])\.env(\.|$)` 会误匹配 `.env.example`、`.envrc`、`.env.local.template` 等合法文件。
   // 现仅拦截纯 `.env`、`.env.<name>`（name 不含 .）。
   /(^|[\\/])\.env$|(^|[\\/])\.env\.[^\\/.]+$/i,
+  // 系统目录
   /[\\/]system32([\\/]|$)/i,
   /[\\/]Windows[\\/]System/i,
-  /[\\/]etc[\\/]passwd/i,
 ];
 
 export type Permission = 'owner' | 'guest';

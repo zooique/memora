@@ -21,6 +21,29 @@ import type { ILogger } from './loggerInterface.js';
 
 /** 日志级别（从环境变量读取，默认 info） */
 const level = process.env['MEMORA_LOG_LEVEL'] ?? 'info';
+
+/** 敏感键模式（匹配时值被替换为 [REDACTED]） */
+const SENSITIVE_KEY_PATTERN = /api[_-]?key|token|password|secret|authorization|credential/i;
+
+/**
+ * 对象脱敏：深拷贝对象并将敏感键的值替换为 [REDACTED]
+ *
+ * 仅用于 console fallback logger 的 JSON.stringify 路径，
+ * 防止 API Key 等敏感数据泄漏到 stderr。
+ */
+function redactSensitiveKeys(obj: Record<string, unknown>): Record<string, unknown> {
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (SENSITIVE_KEY_PATTERN.test(key)) {
+      redacted[key] = '[REDACTED]';
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      redacted[key] = redactSensitiveKeys(value as Record<string, unknown>);
+    } else {
+      redacted[key] = value;
+    }
+  }
+  return redacted;
+}
 /** 是否生产环境 */
 const isProd = process.env['NODE_ENV'] === 'production';
 /** 是否启用文件日志 */
@@ -54,7 +77,7 @@ function createConsoleLogger(): ILogger {
       if (!shouldLog('info')) return;
       const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
       if (typeof objOrMsg === 'object') {
-        console.error(`[INFO] ${text}`, JSON.stringify(objOrMsg));
+        console.error(`[INFO] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
       } else {
         console.error(`[INFO] ${text}`);
       }
@@ -63,7 +86,7 @@ function createConsoleLogger(): ILogger {
       if (!shouldLog('warn')) return;
       const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
       if (typeof objOrMsg === 'object') {
-        console.error(`[WARN] ${text}`, JSON.stringify(objOrMsg));
+        console.error(`[WARN] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
       } else {
         console.error(`[WARN] ${text}`);
       }
@@ -72,7 +95,7 @@ function createConsoleLogger(): ILogger {
       if (!shouldLog('error')) return;
       const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
       if (typeof objOrMsg === 'object') {
-        console.error(`[ERROR] ${text}`, JSON.stringify(objOrMsg));
+        console.error(`[ERROR] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
       } else {
         console.error(`[ERROR] ${text}`);
       }
@@ -81,7 +104,7 @@ function createConsoleLogger(): ILogger {
       if (!shouldLog('debug')) return;
       const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
       if (typeof objOrMsg === 'object') {
-        console.error(`[DEBUG] ${text}`, JSON.stringify(objOrMsg));
+        console.error(`[DEBUG] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
       } else {
         console.error(`[DEBUG] ${text}`);
       }

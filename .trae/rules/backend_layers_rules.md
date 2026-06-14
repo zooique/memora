@@ -57,10 +57,10 @@ date: 2026-06-12
 | `cli/`      | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
 | `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector）+ 对话快照 + 作品投影 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
-| `persona/`  | 角色管理、关键词匹配、system prompt 组装           | 操作记忆索引（通过 PersonaManager 写入 SQLite） |
-| `skill/`    | 技能文件扫描、关键词匹配、prompt 注入（内存管理，不写 SQLite） | 操作记忆索引（Skill 是配置型记忆，不走 SQLite 路径） |
+| `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
+| `skill/`    | 技能文件扫描、关键词匹配、prompt 注入（内存管理，不写 SQLite） | 直接调 LLM、操作记忆索引                        |
 | `llm/`      | LLM 适配、协议解析、流式处理                       | 读写文件                                        |
-| `security/` | 权限、路径白名单、Prompt 注入防御                  | 业务逻辑                                        |
+| `security/` | 路径白名单、写入确认、Prompt 注入防御              | 业务逻辑                                        |
 | `config/`   | 配置加载、环境变量展开                             | 业务逻辑                                        |
 | `logging/`  | 日志输出                                           | 业务逻辑                                        |
 
@@ -72,6 +72,9 @@ agent/      →  llm/         （对话调用 Provider）
             →  persona/     （角色管理，通过 PersonaManager）
             →  skill/       （技能管理，通过 SkillManager）
             →  security/    （路径校验，跨切）
+memory/     →  security/    （项目管理器路径校验）
+persona/    →  memory/      （frontmatter 解析 + segmenter 分词 + SQLite 写入 + 类型定义）
+skill/      →  memory/      （frontmatter 解析 + segmenter 分词）
 config/     →  （被所有层调）
 logging/    →  （被所有层调）
 ```
@@ -81,6 +84,7 @@ logging/    →  （被所有层调）
 - ❌ `llm/` 反向依赖 `agent/`
 - ❌ `memory/` 反向依赖 `cli/`
 - ❌ `security/` 被 `cli/` 绕过（所有写操作必须经 security 校验）
+- ❌ `memory/` 依赖 `persona/` 或 `skill/`（依赖方向不可逆）
 
 ## 模块内文件命名
 
@@ -96,13 +100,14 @@ agent/
 ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
 ├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计）
 ├── workProjection.ts     # 作品投影管理器
-├── signalDetector.ts     # 信号检测器
-├── topicSummarizer.ts    # 话题摘要器（已废弃，保留兼容）
 ├── types.ts              # Agent 类型定义
 └── __tests__/            # 单元测试
 
 utils/
-└── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 5 事件）
+├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 5 事件）
+├── errors.ts             # 错误类型（MemoraError / AgentNotInitializedError / ConfigError / LlmError / LlmResponseError / FileOperationError / SecurityError / AbortError）
+├── math.ts               # 数学工具（sigmoid / cosineSimilarity / clamp）
+└── strings.ts            # 字符串工具（slugify）
 ```
 
 ## 新增模块流程

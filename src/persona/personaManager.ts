@@ -20,7 +20,7 @@
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { parseFrontmatter } from '@/memory/frontmatter.js';
-import { tokenizeKeywords } from '@/memory/segmenter.js';
+import { scoreByKeywords } from '@/memory/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
@@ -174,35 +174,23 @@ export class PersonaManager {
     if (this.personaList.length === 0) return null;
 
     const matches: Array<{ name: string; score: number }> = [];
-    const tokens = this.tokenize(userInput.toLowerCase());
 
     for (const persona of this.personaList) {
       if (persona.keywords.length === 0) continue;
 
-      let hitCount = 0;
-      for (const kw of persona.keywords) {
-        const kwLower = kw.toLowerCase();
-        if (tokens.some((t) => t.includes(kwLower)) || userInput.includes(kwLower)) {
-          hitCount++;
-        }
-      }
-
-      if (hitCount > 0) {
-        const score = hitCount / Math.max(persona.keywords.length, 1);
+      const score = scoreByKeywords(userInput, persona.keywords);
+      if (score > 0) {
         matches.push({ name: persona.name, score });
       }
     }
 
     if (matches.length === 0) return null;
 
-    // 得分从高到低排序
     matches.sort((a, b) => b.score - a.score);
     const best = matches[0]!;
 
-    // 阈值检查（L4 修正：≥ 0.5）
     if (best.score < 0.5) return null;
 
-    // 与当前角色相同则不需要切换
     if (this.activePersona?.name === best.name) return null;
 
     return best.name;
@@ -357,13 +345,6 @@ export class PersonaManager {
       score: 1.0,
     };
     await this.index.upsert(memory);
-  }
-
-  /**
-   * 分词（复用 segmenter 共享函数）
-   */
-  private tokenize(input: string): string[] {
-    return tokenizeKeywords(input);
   }
 
   /**

@@ -17,6 +17,15 @@ logs/
 .env.*.local
 *.key
 *.pem
+*.p12
+*.pfx
+*.p8
+.credentials
+.netrc
+.pgpass
+credentials.json
+token.json
+service-account*.json
 
 # 编辑器
 .vscode/

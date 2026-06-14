@@ -82,7 +82,7 @@ export interface AgentOptions {
   confirmWrites?: boolean;
   /** 向量存储（可选，提供时启用语义搜索召回） */
   vectorStore?: VectorStore;
-  /** 召回时排除的 source 标签（默认 ['persona', 'rule']，这些已由 bootstrap 注入） */
+  /** 召回时排除的 source 标签（默认 ['persona', 'rule', 'skill']，这些已由 bootstrap 注入） */
   recallExcludeSources?: string[];
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
@@ -162,6 +162,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private _chatLockTimer: ReturnType<typeof setTimeout> | null = null;
   /** 聊天锁超时时间（5 分钟） */
   private static readonly CHAT_LOCK_TIMEOUT_MS = 300_000;
+  /** chat() 输入最大字符数（128KB） */
+  private static readonly CHAT_INPUT_MAX_LENGTH = 128 * 1024;
   /** 记忆衰减定时器 */
   private _decayTimer: ReturnType<typeof setInterval> | null = null;
   /** 记忆衰减间隔（1 小时） */
@@ -250,6 +252,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     this.assertInitialized('chat');
+
+    if (input.length > Agent.CHAT_INPUT_MAX_LENGTH) {
+      throw configError('输入过长', `输入超过最大长度限制（${Agent.CHAT_INPUT_MAX_LENGTH / 1024}KB）`, [
+        '缩短输入内容',
+        '分多次对话发送',
+      ]);
+    }
 
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再发起新对话', [
@@ -430,11 +439,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const result = this.history!.forkSession(targetSession);
 
     // 将消息恢复到 AgentLoop 的工作记忆
-    const messages: Message[] = result.messages.map((m) => ({
-      role: m.role as Message['role'],
-      content: m.content,
-    }));
-    this.loop!.restoreHistory(messages);
+    this.applySessionToLoop(result.messages);
 
     // 发射事件（供 UI 响应）
     this.emit('sessionForked', {
@@ -627,12 +632,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       return 0;
     }
 
-    const messages: Message[] = sessionMessages.map((tm: { role: string; content: string }) => ({
-      role: tm.role as Message['role'],
-      content: tm.content,
-    }));
-
-    this.loop!.restoreHistory(messages);
+    this.applySessionToLoop(sessionMessages);
 
     return sessionMessages.length;
   }
@@ -648,12 +648,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       return 0;
     }
 
-    const messages: Message[] = sessionMessages.map((tm: { role: string; content: string }) => ({
-      role: tm.role as Message['role'],
-      content: tm.content,
-    }));
-
-    this.loop!.restoreHistory(messages);
+    this.applySessionToLoop(sessionMessages);
 
     return sessionMessages.length;
   }
@@ -669,8 +664,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── 守卫方法 ───────────────────────────────────────────
 
+  private applySessionToLoop(sessionMessages: ReadonlyArray<{ role: string; content: string }>): void {
+    const messages: Message[] = sessionMessages.map((tm) => ({
+      role: tm.role as Message['role'],
+      content: tm.content,
+    }));
+    this.loop!.restoreHistory(messages);
+  }
+
   /**
-   * 断言 Agent 已初始化，且指定组件可用
+   * 检查 Agent 是否已初始化
    *
    * @param methodName 调用方法名（用于错误消息）
    * @param requires 需要检查的组件列表

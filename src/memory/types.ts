@@ -140,6 +140,14 @@ export function validateSource(source: string): {
     return { valid: false, warning: `source 包含首尾空格："${source}"` };
   }
 
+  if (source.includes('..')) {
+    return { valid: false, warning: `source 不能包含路径遍历序列："${source}"` };
+  }
+
+  if (source.includes('\0')) {
+    return { valid: false, warning: `source 不能包含 null 字节` };
+  }
+
   // 检查与已知标签的相似度（简单 Levenshtein 距离 ≤ 2）
   if (!KNOWN_SOURCES.has(source)) {
     const closeMatch = [...KNOWN_SOURCES].find(

@@ -44,6 +44,41 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
   });
 
+  it('应该拒绝 .gnupg 目录', () => {
+    const filePath = join(projectPath, '.gnupg', 'private-keys-v1.d');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .docker 目录', () => {
+    const filePath = join(projectPath, '.docker', 'config.json');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .kube 目录', () => {
+    const filePath = join(projectPath, '.kube', 'config');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .azure 目录', () => {
+    const filePath = join(projectPath, '.azure', 'accessTokens.json');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .netrc 文件', () => {
+    const filePath = join(projectPath, '.netrc');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .pgpass 文件', () => {
+    const filePath = join(projectPath, '.pgpass');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 gcloud 配置目录', () => {
+    const filePath = join(projectPath, '.config', 'gcloud', 'credentials.db');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
   it('应该拒绝 System32 路径', () => {
     const filePath = 'C:\\Windows\\System32\\drivers\\etc\\hosts';
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 工具执行器
  *
  * 阶段一：1 个工具（read_file）
@@ -231,7 +231,10 @@ export class ToolExecutor {
       args = this.validateAndCoerceArgs(name, args, definition);
     }
 
-    logger.info({ tool: name, args }, '执行工具');
+    const safeArgs = Object.fromEntries(
+      Object.entries(args).map(([k, v]) => [k, typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}...` : v]),
+    );
+    logger.info({ tool: name, args: safeArgs }, '执行工具');
 
     switch (name) {
       case 'read_file':

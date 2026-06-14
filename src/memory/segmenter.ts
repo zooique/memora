@@ -35,6 +35,33 @@ export function tokenizeKeywords(input: string): string[] {
 }
 
 /**
+ * 关键词匹配评分（Persona/Skill 共享逻辑）
+ *
+ * 匹配策略：先分词，再对每个关键词做子串搜索（tokens + 原文双保险）。
+ * 大小写不敏感，中英文混合友好。
+ *
+ * @param userInput - 用户输入文本
+ * @param keywordList - 待匹配的关键词数组
+ * @returns 匹配得分 (0~1)，0 表示无命中
+ */
+export function scoreByKeywords(userInput: string, keywordList: string[]): number {
+  if (keywordList.length === 0) return 0;
+
+  const normalizedInput = userInput.toLowerCase();
+  const tokens = tokenizeKeywords(normalizedInput);
+
+  let hitCount = 0;
+  for (const kw of keywordList) {
+    const kwLower = kw.toLowerCase();
+    if (tokens.some((t) => t.includes(kwLower)) || normalizedInput.includes(kwLower)) {
+      hitCount++;
+    }
+  }
+
+  return hitCount / keywordList.length;
+}
+
+/**
  * 单行分词（用于 LLM 输出的精确切分）
  * @param text 原文
  * @returns 分词数组（去标点、去空白、保留中英文 + 数字）

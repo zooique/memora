@@ -404,7 +404,7 @@ agent.on('sessionForked', (event) => {
 |------|------|
 | `agent.listProjects()` | 列出已注册的子项目 |
 | `agent.switchProject(name)` | 切换到其他子项目 |
-| `agent.rebuildComponents()` | **项目切换后必须调用** |
+| `agent.rebuildComponents()` | 通常不需要手动调用（`switchProject` 已自动执行），仅在强制刷新配置时使用 |
 | `agent.switchSession(name)` | 切换当前会话（自动归档旧会话） |
 | `agent.forkSession(name?)` | 分叉当前会话（复制完整消息历史到新分支） |
 | `agent.loadSessionMessages(date, session)` | 加载指定日期/会话的消息 |
