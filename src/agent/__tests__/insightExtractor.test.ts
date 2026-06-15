@@ -52,7 +52,8 @@ describe('InsightExtractor · classify() 三层输入分类', () => {
   beforeEach(() => {
     storage = new InMemoryStorage();
     provider = new MockProvider();
-    extractor = new InsightExtractor(provider, storage, () => []);
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
   });
 
   // Layer 1: 通用规则
@@ -126,7 +127,8 @@ describe('InsightExtractor · extract() insight 提取', () => {
   beforeEach(() => {
     storage = new InMemoryStorage();
     provider = new MockProvider();
-    extractor = new InsightExtractor(provider, storage, () => []);
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
   });
 
   it('应将 LLM 提取的 insight 写入存储', async () => {
@@ -186,7 +188,8 @@ describe('InsightExtractor · extract() insight 提取', () => {
         throw new Error('LLM 连接失败');
       }
     })();
-    const errorExtractor = new InsightExtractor(errorProvider, storage, () => []);
+    const errorExtractor = new InsightExtractor(errorProvider, storage);
+    errorExtractor.bindGetRecentHistory(() => []);
 
     // 不应抛错
     await expect(errorExtractor.extract('测试', '回复')).resolves.toBeUndefined();
@@ -197,7 +200,8 @@ describe('InsightExtractor · extract() insight 提取', () => {
       { role: 'user' as const, content: '之前的问题' },
       { role: 'assistant' as const, content: '之前的回答' },
     ];
-    const historyExtractor = new InsightExtractor(provider, storage, () => history);
+    const historyExtractor = new InsightExtractor(provider, storage);
+    historyExtractor.bindGetRecentHistory(() => history);
 
     provider.setResponse('{"insight": "用户关注历史", "tags": ["历史"]}');
 
@@ -220,7 +224,8 @@ describe('InsightExtractor · Jaccard 去重', () => {
   beforeEach(() => {
     storage = new InMemoryStorage();
     provider = new MockProvider();
-    extractor = new InsightExtractor(provider, storage, () => []);
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
   });
 
   it('相似 insight 应更新已有记忆而非创建重复', async () => {
@@ -318,7 +323,8 @@ describe('InsightExtractor · 输入截断', () => {
       }
     })();
 
-    const captureExtractor = new InsightExtractor(captureProvider, storage, () => []);
+    const captureExtractor = new InsightExtractor(captureProvider, storage);
+    captureExtractor.bindGetRecentHistory(() => []);
     await captureExtractor.extract(longInput, '短回复');
 
     // prompt 中应包含截断后的输入（500 字符 + "…"）
@@ -340,7 +346,8 @@ describe('InsightExtractor · 输入截断', () => {
       }
     })();
 
-    const captureExtractor = new InsightExtractor(captureProvider, storage, () => []);
+    const captureExtractor = new InsightExtractor(captureProvider, storage);
+    captureExtractor.bindGetRecentHistory(() => []);
     await captureExtractor.extract('短输入', longAssistant);
 
     const assistantSection = capturedPrompt.split('助手：')[1]?.split('\n')[0] ?? '';
@@ -364,7 +371,8 @@ describe('InsightExtractor · 输入截断', () => {
       }
     })();
 
-    const captureExtractor = new InsightExtractor(captureProvider, storage, () => longHistory);
+    const captureExtractor = new InsightExtractor(captureProvider, storage);
+    captureExtractor.bindGetRecentHistory(() => longHistory);
     await captureExtractor.extract('短输入', '短回复');
 
     // 历史消息部分应包含截断标记
@@ -384,7 +392,8 @@ describe('InsightExtractor · 宿主关键词匹配', () => {
   beforeEach(() => {
     storage = new InMemoryStorage();
     provider = new MockProvider();
-    extractor = new InsightExtractor(provider, storage, () => []);
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
   });
 
   it('领域关键词匹配应返回 extract', () => {
@@ -449,7 +458,8 @@ describe('InsightExtractor · 默认提取行为', () => {
   beforeEach(() => {
     storage = new InMemoryStorage();
     provider = new MockProvider();
-    extractor = new InsightExtractor(provider, storage, () => []);
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
   });
 
   it('新 insight 的 id 应以 insight: 前缀开头', async () => {

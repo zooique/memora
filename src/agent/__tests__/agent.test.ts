@@ -27,6 +27,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
+import type { ISessionStore } from '@/memory/sessionStore.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Mock LLM Provider（模拟 LLM 响应，不依赖真实 API）
@@ -705,7 +706,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
   let agent: Agent | null = null;
 
   /** Mock ISessionStore，支持 forkSession 所需的 copySession */
-  function createMockSessionStore() {
+  function createMockSessionStore(): ISessionStore {
     const store = new Map<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>();
 
     return {
@@ -754,7 +755,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
@@ -776,7 +777,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
@@ -811,18 +812,20 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
     // 先产生消息
     await agent.chatSync('你好');
 
-    // 模拟 chat 忙碌
+    // 模拟 chat 忙碌（直接设置内部状态以测试并发锁行为）
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (agent as any)._chatBusy = true;
 
     expect(() => agent!.forkSession()).toThrow(/对话繁忙/);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (agent as any)._chatBusy = false;
   });
 });
@@ -838,7 +841,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   let agent: Agent | null = null;
 
   /** Mock ISessionStore，用于测试 restoreMostRecentSession */
-  function createMockSessionStore(sessions: string[], messagesBySession: Record<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>) {
+  function createMockSessionStore(sessions: string[], messagesBySession: Record<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>): ISessionStore {
     return {
       appendMessage() {},
       loadMessages(date: string, session: string) {
@@ -884,7 +887,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
@@ -910,7 +913,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
@@ -935,7 +938,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
@@ -956,7 +959,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
@@ -978,7 +981,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
       dataDir: tmpData,
       permission: 'owner',
       allowedPaths: [tmpData],
-      sessionStore: sessionStore as any,
+      sessionStore,
     });
     await agent.init();
 
@@ -1123,8 +1126,8 @@ describe('Agent · chat 输入过长时抛错', () => {
       for await (const {} of agent.chat(exactMax)) {
         break; // 只需验证不抛长度错误即可，不必消费完
       }
-    } catch (e: any) {
-      if (e?.message?.includes('输入过长')) {
+    } catch (e: unknown) {
+      if (e instanceof Error && e.message.includes('输入过长')) {
         threwTooLong = true;
       }
     }

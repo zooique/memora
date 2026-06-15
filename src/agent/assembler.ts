@@ -124,13 +124,8 @@ export async function assembleComponents(
     (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
 
   // InsightExtractor 的 writeExtensions 在运行时由 Agent.chat() 设置
-  // getRecentHistory 通过闭包延迟引用 loop（解决循环依赖）
-  let loopRef: AgentLoop | null = null;
-  const insightExtractor = new InsightExtractor(
-    provider,
-    pctx.index,
-    (rounds: number) => loopRef?.getRecentHistory(rounds) ?? [],
-  );
+  // getRecentHistory 在 AgentLoop 创建后通过 bindGetRecentHistory 注入（消除 loopRef 闭包）
+  const insightExtractor = new InsightExtractor(provider, pctx.index);
 
   const loop = new AgentLoop({
     provider,
@@ -147,7 +142,7 @@ export async function assembleComponents(
     tracer,
     guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
   });
-  loopRef = loop;
+  insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));
 
   // ── Phase 4: 依赖 Loop 的组件 ──
 

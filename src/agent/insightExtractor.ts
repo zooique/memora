@@ -60,13 +60,26 @@ export class InsightExtractor {
   /**
    * @param provider - LLM Provider（用于 insight 提取）
    * @param index - 记忆存储（用于去重搜索 + 写入）
-   * @param getRecentHistory - 获取最近 N 轮对话历史的回调（来自 AgentLoop）
    */
   constructor(
     private readonly provider: LlmProvider,
     private readonly index: IMemoryStorage,
-    private readonly getRecentHistory: (rounds: number) => Array<{ role: 'user' | 'assistant'; content: string }>,
-  ) {}
+  ) {
+    // bindGetRecentHistory 必须在 extract() 调用前执行
+    this._getRecentHistory = () => [];
+  }
+
+  /** 获取最近 N 轮对话历史的回调（由 AgentLoop 通过 bindGetRecentHistory 注入） */
+  private _getRecentHistory: (rounds: number) => Array<{ role: 'user' | 'assistant'; content: string }>;
+
+  /**
+   * 绑定历史回调（由 assembler 在 AgentLoop 创建后调用，解决构造时序循环依赖）
+   */
+  bindGetRecentHistory(
+    fn: (rounds: number) => Array<{ role: 'user' | 'assistant'; content: string }>,
+  ): void {
+    this._getRecentHistory = fn;
+  }
 
   // ─── 配置 ─────────────────────────────────────────────
 
@@ -132,7 +145,7 @@ export class InsightExtractor {
         ? assistantContent.slice(0, INSIGHT_ASSISTANT_CONTENT_LIMIT) + '…'
         : assistantContent;
 
-      const recentHistory = this.getRecentHistory(2);
+      const recentHistory = this._getRecentHistory(2);
       const contextSection = recentHistory.length > 0
         ? '\n\n前几轮对话（供参考）：\n' + recentHistory.map(m => {
             const safeContent = m.content.length > INSIGHT_HISTORY_MSG_LIMIT

@@ -70,7 +70,6 @@ class NoopSpan implements ISpan {
 class NoopTracer implements ITracer {
   startSpan(_name: string, _attributes?: Record<string, SpanAttributeValue>): ISpan {
     // 共享同一个 NoopSpan 实例，避免分配开销
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     return NOOP_SPAN;
   }
 }
