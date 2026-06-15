@@ -21,14 +21,14 @@ description: 记忆归档三步价值过滤（judge → distill → converge）
 2. **Distill（蒸馏）**：对高/中价值片段提取关键信息，去除冗余
 3. **Converge（收敛）**：将蒸馏结果与已有话题摘要合并，避免重复
 
-过滤后的记忆以 `topic-*.md` 文件持久化，索引写入 SQLite。
+过滤后的记忆以 `source: insight` 存入统一索引，不再使用独立的 topic-*.md 文件。
 
 ## 关键实现
 
 | 组件             | 文件                             | 职责                                   |
 | ---------------- | -------------------------------- | -------------------------------------- |
-| TopicSummarizer  | `src/agent/topicSummarizer.ts`  | 三步过滤管线                           |
 | InsightExtractor | `src/agent/insightExtractor.ts` | 每轮对话后提取 insight（source='insight'） |
+| WorkProjection   | `src/agent/workProjection.ts`   | 作品投影管理器（source='work-projection'） |
 
 > **注意**：v2.0 基元驱动重构后，TopicStore 已移除。
 > 归档记忆以 `source: insight` 存入统一索引，不再使用独立的 topic-*.md 文件。

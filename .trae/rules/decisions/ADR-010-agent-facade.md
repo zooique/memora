@@ -25,9 +25,9 @@ Memora 需要支持宿主项目接入：
 1. `Agent` 类作为唯一对外入口，封装所有子系统初始化和生命周期管理
 2. 对外暴露核心方法（v4.0 Manager 委托模式）：
    - **生命周期**：`init()` / `close()`
-   - **对话**：`chat()` / `chatSync()` / `switchTopic()`
+   - **对话**：`chat()` / `chatSync()` / `switchSession()` / `forkSession()`
    - **项目**：`listProjects()` / `switchProject()` / `rebuildComponents()`
-   - **话题恢复**：`restoreMostRecentTopic()` / `restoreTopic()` / `loadTopicMessages()`
+   - **会话恢复**：`restoreMostRecentSession()` / `restoreSession()` / `loadSessionMessages()`
    - **Provider**：`setProvider()` / `setBackgroundProvider()`
    - **调试**：`getBuildCtx()`
    - **只读访问器**：`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory`
@@ -45,6 +45,8 @@ Memora 需要支持宿主项目接入：
 | InsightExtractor  | `src/agent/insightExtractor.ts`   | 输入分类 + 记忆提取            |
 | ConfigManager     | `src/agent/configManager.ts`      | 规则/技能注入 + 配置建议       |
 | MemoryInspector   | `src/agent/memoryInspector.ts`    | 记忆快照 + 搜索 + 统计         |
+| WorkProjection    | `src/agent/workProjection.ts`     | 作品投影管理器                 |
+| UserFactExtractor | `src/agent/userFactExtractor.ts`  | 用户事实提取器                 |
 
 ## 后果
 

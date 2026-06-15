@@ -57,6 +57,7 @@ interface Memory {
 | `insight` | 对话洞察 | 每轮问答结束后 LLM 提取 |
 | `profile` | 用户画像 | 每轮问答中 LLM 实时提取 |
 | `work-projection` | 作品投影 | Agent 读取用户作品时生成的概要 |
+| `guardrail` | 内容护栏 | configDir/rules/guardrails/ 下的规则文件 |
 
 **新增来源无需改代码**——只需在存储时指定 source 字符串即可。
 

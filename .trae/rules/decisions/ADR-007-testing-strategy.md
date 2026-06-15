@@ -73,6 +73,6 @@ export const server = setupServer(...handlers);
 
 ## 何时回顾
 
-- 当 MSW 与 Node 20+ fetch 出现兼容问题
+- 当 MSW 与 Node 22+ fetch 出现兼容问题
 - 当需要更精细的 LLM 行为模拟（如思考链）
 - 当测试覆盖率不再反映真实质量

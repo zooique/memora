@@ -85,6 +85,15 @@ describe('inferSource 工具函数', () => {
   it('应该对未知路径返回 unknown', () => {
     expect(inferSource('/other/path/file.md')).toBe('unknown');
   });
+
+  it('不应误匹配包含 personas 的非标准路径', () => {
+    expect(inferSource('/config/other-personas/file.md')).toBe('unknown');
+  });
+
+  it('应支持 Windows 反斜杠路径', () => {
+    expect(inferSource('C:\\config\\personas\\bowen.md')).toBe('persona');
+    expect(inferSource('C:\\config\\rules\\core.md')).toBe('rule');
+  });
 });
 
 describe('escapeLike 工具函数', () => {

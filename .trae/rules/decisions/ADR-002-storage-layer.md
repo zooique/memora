@@ -31,8 +31,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 | v0.6 | 2026-06-10 | **移除全局路径硬编码**                   | 内核零硬编码路径，全局配置由宿主通过 configDir 管理 |
 | v0.7 | 2026-06-11 | **SqliteStorage 移出内核 + CLI 移出**    | 零 native 依赖，测试全量 InMemoryStorage         |
 
-> 详见 [原 ADR-002 v0.1](./ADR-002-storage-layer-original.md) 和
-> [ADR-002 v0.2 记录](./ADR-002-storage-layer.md)（已废弃）。
+> 详见 [原 ADR-002 v0.1](./ADR-002-storage-layer-original.md)（v0.2 记录已合并到本文版本历史）。
 
 ## 决策
 
@@ -80,12 +79,11 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 |------|------|
 | `upsert(memory)` | 插入或更新记忆 |
 | `delete(id)` | 删除记忆 |
-| `getByPermanence(p)` | 按永久性等级获取 |
 | `getById(id)` | 按 ID 获取单条 |
-| `getByType(t)` | 按类型获取 |
-| `touch(ids)` | 触摸记忆（weight 重置） |
-| `applyDecay(halfLife)` | 应用权重衰减 |
-| `search(query, limit, mode)` | 中文分词搜索 |
+| `getBySource(source)` | 按来源标签获取 |
+| `search(query, limit?)` | 关键词搜索记忆 |
+| `count()` | 统计记忆总数 |
+| `countBySource(source)` | 按来源标签统计数量 |
 | `close?()` | 关闭连接（可选） |
 
 ## package.json 变更
@@ -93,8 +91,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 ```json
 {
   "dependencies": {
-    // commander 移除（CLI 移出），better-sqlite3 + pino 完全移除
-    "picocolors": "^1.1.0",
+    // commander 移除（CLI 移出），better-sqlite3 + pino + picocolors 完全移除
     "zod": "^3.25.76"
   },
   "peerDependencies": {
@@ -167,8 +164,8 @@ setLogger(myLogger);
 
 - [ADR-002 v0.1 · better-sqlite3 + sqlite-vec](./ADR-002-storage-layer-original.md)
   — 初始方案
-- [ADR-002 v0.2 · sqlite3 (mapbox)](./ADR-002-storage-layer.md)
-  — 已废弃（2026-06-02 ~ 2026-06-05）
+- [ADR-002 v0.2 · sqlite3 (mapbox)](./ADR-002-storage-layer-original.md)
+  — 已废弃（2026-06-02 ~ 2026-06-05），记录见 original 文件
 - ADR-002 v0.3 · better-sqlite3
   — 已废弃（2026-06-05 ~ 2026-06-10）
 - ADR-002 v0.4 ~ v0.6 · IMemoryStorage 逐步独立

@@ -17,7 +17,7 @@ description: LLM 适配层使用 OpenAI Chat Completions 兼容协议
 | 项           | 选择                                        |
 | ------------ | ------------------------------------------- |
 | 接口协议     | OpenAI Chat Completions 兼容                |
-| HTTP 客户端  | Node.js 20+ 原生 fetch                      |
+| HTTP 客户端  | Node.js 22+ 原生 fetch                      |
 | 流式响应     | SSE（Server-Sent Events）                   |
 | 适配器接口   | `LlmProvider` 抽象类 + 多实现               |
 | 首期实现     | DeepSeek（兼容好 + 价格低）+ 豆包（中文强） |

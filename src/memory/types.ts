@@ -85,10 +85,10 @@ export function inferSource(filePath: string, frontmatterSource?: string): strin
   // 优先：frontmatter 中显式声明的 source
   if (frontmatterSource) return frontmatterSource;
 
-  // 回退：目录路径映射
-  if (filePath.includes('personas/')) return SOURCE_LABELS.PERSONA;
-  if (filePath.includes('/rules/')) return SOURCE_LABELS.RULE;
-  if (filePath.includes('/skills/')) return SOURCE_LABELS.SKILL;
+  // 回退：目录路径映射（使用路径分隔符匹配，避免 'other-personas/' 误匹配）
+  if (/[\\/]personas[\\/]/.test(filePath)) return SOURCE_LABELS.PERSONA;
+  if (/[\\/]rules[\\/]/.test(filePath)) return SOURCE_LABELS.RULE;
+  if (/[\\/]skills[\\/]/.test(filePath)) return SOURCE_LABELS.SKILL;
 
   // 默认
   return 'unknown';

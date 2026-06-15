@@ -634,3 +634,636 @@ describe('Agent · postProcess() · 对话后处理', () => {
     expect(reply2).toContain('Mock 响应');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：switchProject() · 切换到已注册项目
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · switchProject() · 切换到已注册项目', () => {
+  let tmpProjectA: string;
+  let tmpProjectB: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-switch-data-'));
+    tmpProjectA = mkdtempSync(join(tmpdir(), 'memora-switch-projA-'));
+    tmpProjectB = mkdtempSync(join(tmpdir(), 'memora-switch-projB-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-switch-cfg-'));
+    seedProject(tmpProjectA, tmpConfig, tmpData);
+    seedProject(tmpProjectB, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProjectA, { recursive: true, force: true });
+    rmSync(tmpProjectB, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('切换到已注册项目应返回新 ProjectContext', async () => {
+    agent = makeAgent(tmpProjectA, tmpConfig, tmpData);
+    await agent.init();
+
+    // 项目 B 通过路径切换
+    const newCtx = await agent.switchProject(tmpProjectB);
+    expect(newCtx.projectPath).toBe(tmpProjectB);
+    expect(agent.context).toBe(newCtx);
+  });
+
+  it('切换项目后 agentLoop 应可用', async () => {
+    agent = makeAgent(tmpProjectA, tmpConfig, tmpData);
+    await agent.init();
+
+    await agent.switchProject(tmpProjectB);
+
+    expect(agent.agentLoop).not.toBeNull();
+    const messages = agent.agentLoop!.getMessages();
+    expect(messages.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('未初始化时调用 switchProject 应抛出 configError', async () => {
+    agent = makeAgent(tmpProjectA, tmpConfig, tmpData);
+
+    await expect(agent.switchProject(tmpProjectB)).rejects.toThrow(/未初始化/);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：forkSession() · 分叉当前会话
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · forkSession() · 分叉当前会话', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  /** Mock ISessionStore，支持 forkSession 所需的 copySession */
+  function createMockSessionStore() {
+    const store = new Map<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>();
+
+    return {
+      appendMessage(date: string, session: string, message: { role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }) {
+        const key = `${date}-${session}`;
+        const list = store.get(key) ?? [];
+        list.push(message);
+        store.set(key, list);
+      },
+      loadMessages(date: string, session: string) {
+        return store.get(`${date}-${session}`) ?? [];
+      },
+      listSessions() {
+        return Array.from(store.keys());
+      },
+      copySession(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string) {
+        const source = store.get(`${sourceDate}-${sourceSession}`) ?? [];
+        store.set(`${targetDate}-${targetSession}`, [...source]);
+      },
+    };
+  }
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-fork-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-fork-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-fork-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('分叉会话应返回 newSession 和 messageCount', async () => {
+    const sessionStore = createMockSessionStore();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    // 先对话产生消息
+    await agent.chatSync('你好');
+
+    const result = agent.forkSession();
+    expect(result.newSession).toBeDefined();
+    expect(typeof result.newSession).toBe('string');
+    expect(result.messageCount).toBeGreaterThan(0);
+  });
+
+  it('分叉会话应发射 sessionForked 事件', async () => {
+    const sessionStore = createMockSessionStore();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    await agent.chatSync('你好');
+
+    let forkedFrom: string | null = null;
+    let forkedTo: string | null = null;
+    agent.on('sessionForked', (e) => {
+      forkedFrom = e.from;
+      forkedTo = e.to;
+    });
+
+    agent.forkSession();
+
+    expect(forkedFrom).not.toBeNull();
+    expect(forkedTo).not.toBeNull();
+
+    agent.off('sessionForked', () => {});
+  });
+
+  it('未初始化时调用 forkSession 应抛出 configError', () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    expect(() => agent!.forkSession()).toThrow(/未初始化/);
+  });
+
+  it('chat 忙碌时调用 forkSession 应抛出 configError', async () => {
+    const sessionStore = createMockSessionStore();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    // 先产生消息
+    await agent.chatSync('你好');
+
+    // 模拟 chat 忙碌
+    (agent as any)._chatBusy = true;
+
+    expect(() => agent!.forkSession()).toThrow(/对话繁忙/);
+
+    (agent as any)._chatBusy = false;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：restoreMostRecentSession() · 恢复最近会话
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  /** Mock ISessionStore，用于测试 restoreMostRecentSession */
+  function createMockSessionStore(sessions: string[], messagesBySession: Record<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>) {
+    return {
+      appendMessage() {},
+      loadMessages(date: string, session: string) {
+        return messagesBySession[`${date}-${session}`] ?? [];
+      },
+      listSessions() {
+        return sessions;
+      },
+    };
+  }
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-restore-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-restore-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-restore-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('未注入 ISessionStore 时应返回 0', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const count = await agent.restoreMostRecentSession();
+    expect(count).toBe(0);
+  });
+
+  it('sessionStore 无会话时应返回 0', async () => {
+    const sessionStore = createMockSessionStore([], {});
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    const count = await agent.restoreMostRecentSession();
+    expect(count).toBe(0);
+  });
+
+  it('有会话时应恢复消息并返回消息数', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const sessionKey = `${today}-main`;
+    const messages = [
+      { role: 'user' as const, content: '你好', timestamp: new Date().toISOString() },
+      { role: 'assistant' as const, content: '你好！', timestamp: new Date().toISOString() },
+    ];
+    const sessionStore = createMockSessionStore(
+      [sessionKey],
+      { [sessionKey]: messages },
+    );
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    const count = await agent.restoreMostRecentSession('main');
+    expect(count).toBe(2);
+  });
+
+  it('preferredSession 不匹配时取最后一个会话', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const sessionKey = `${today}-other`;
+    const messages = [
+      { role: 'user' as const, content: '旧消息', timestamp: new Date().toISOString() },
+    ];
+    const sessionStore = createMockSessionStore(
+      [sessionKey],
+      { [sessionKey]: messages },
+    );
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    // preferredSession='main' 不匹配，fallback 到最后一个
+    const count = await agent.restoreMostRecentSession('main');
+    expect(count).toBe(1);
+  });
+
+  it('会话标识格式不匹配时应返回 0', async () => {
+    const sessionStore = createMockSessionStore(
+      ['invalid-format'],
+      {},
+    );
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    const count = await agent.restoreMostRecentSession();
+    expect(count).toBe(0);
+  });
+
+  it('会话消息为空时应返回 0', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const sessionKey = `${today}-main`;
+    const sessionStore = createMockSessionStore(
+      [sessionKey],
+      { [sessionKey]: [] },
+    );
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore: sessionStore as any,
+    });
+    await agent.init();
+
+    const count = await agent.restoreMostRecentSession('main');
+    expect(count).toBe(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：setProvider() / setBackgroundProvider() · 切换 Provider
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-provider-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-provider-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-provider-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('setProvider 应切换前台 Provider', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 使用 CustomProvider 验证切换
+    class AnotherProvider extends LlmProvider {
+      readonly name = 'another';
+      async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+        yield { content: 'Another 响应' };
+        yield { finishReason: 'stop' };
+      }
+    }
+
+    agent.setProvider(new AnotherProvider());
+    expect(agent.provider.name).toBe('another');
+  });
+
+  it('setProvider 后对话应使用新 Provider', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 自定义 Provider，返回特定内容
+    class CustomProvider extends LlmProvider {
+      readonly name = 'custom';
+      async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+        yield { content: 'Custom 响应' };
+        yield { finishReason: 'stop' };
+      }
+    }
+
+    agent.setProvider(new CustomProvider());
+
+    const reply = await agent.chatSync('测试');
+    expect(reply).toContain('Custom 响应');
+  });
+
+  it('setBackgroundProvider 应设置后台 Provider', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const bgProvider = new MockProvider();
+    // 调用不抛错即验证方法存在且可执行
+    expect(() => agent!.setBackgroundProvider(bgProvider)).not.toThrow();
+  });
+
+  it('setBackgroundProvider(null) 应清除后台 Provider', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    agent.setBackgroundProvider(new MockProvider());
+    // 清除不抛错
+    expect(() => agent!.setBackgroundProvider(null)).not.toThrow();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：chat 输入过长时抛错
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · chat 输入过长时抛错', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-toolong-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-toolong-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-toolong-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('输入超过 128KB 时应抛出 configError', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 128KB + 1 字符
+    const tooLong = 'A'.repeat(128 * 1024 + 1);
+
+    await expect(async () => {
+      for await (const {} of agent!.chat(tooLong)) {
+        // 消费 generator
+      }
+    }).rejects.toThrow(/输入过长/);
+  });
+
+  it('输入恰好 128KB 时不应抛错', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 恰好 128KB
+    const exactMax = 'A'.repeat(128 * 1024);
+
+    // 不应抛出"输入过长"错误（可能因其他原因失败，但不应是输入长度）
+    let threwTooLong = false;
+    try {
+      for await (const {} of agent.chat(exactMax)) {
+        break; // 只需验证不抛长度错误即可，不必消费完
+      }
+    } catch (e: any) {
+      if (e?.message?.includes('输入过长')) {
+        threwTooLong = true;
+      }
+    }
+    expect(threwTooLong).toBe(false);
+  }, 30000);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：chat 并发锁 · 上一轮未完成时再次调用抛错
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · chat 并发锁 · 上一轮未完成时再次调用抛错', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  /** 慢速 MockProvider：延迟后才返回，用于模拟未完成的 chat */
+  class SlowProvider extends LlmProvider {
+    readonly name = 'slow';
+    async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+      yield { content: '慢' };
+      // 模拟延迟
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      yield { content: '响应' };
+      yield { finishReason: 'stop' };
+    }
+  }
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-lock-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-lock-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-lock-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('上一轮 chat 未完成时再次调用应抛出 configError', async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new SlowProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 启动第一轮 chat（不 await 完成）
+    const gen = agent.chat('第一轮');
+
+    // 消费第一个 chunk 确保 chat 已进入 busy 状态
+    const firstChunk = await gen.next();
+    expect(firstChunk.done).toBe(false);
+
+    // 此时 isBusy 应为 true
+    expect(agent.isBusy).toBe(true);
+
+    // 第二次调用应抛错
+    await expect(async () => {
+      for await (const {} of agent!.chat('第二轮')) {
+        // 消费 generator
+      }
+    }).rejects.toThrow(/对话繁忙/);
+
+    // 消费完第一轮，释放锁
+    for await (const {} of gen) {
+      // drain
+    }
+    expect(agent.isBusy).toBe(false);
+  }, 30000);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：rebuildComponents() · 手动重建组件
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · rebuildComponents() · 手动重建组件', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-rebuild-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-rebuild-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-rebuild-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('rebuildComponents 后 agentLoop 应可用', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    await agent.rebuildComponents();
+
+    expect(agent.agentLoop).not.toBeNull();
+    expect(agent.agentHistory).not.toBeNull();
+  });
+
+  it('rebuildComponents 后对话应正常', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    await agent.rebuildComponents();
+
+    const reply = await agent.chatSync('重建后测试');
+    expect(reply).toContain('Mock 响应');
+  }, 30000);
+
+  it('rebuildComponents 后 Manager 应可用', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    await agent.rebuildComponents();
+
+    expect(agent.persona).not.toBeNull();
+    expect(agent.tools).not.toBeNull();
+    expect(agent.config).not.toBeNull();
+    expect(agent.insight).not.toBeNull();
+    expect(agent.memory).not.toBeNull();
+  });
+});

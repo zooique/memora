@@ -20,19 +20,20 @@ Memora 的核心矛盾是"无状态推理 ←→ 连续演化任务"。LLM 本�
 
 ## 决策
 
-采用 **TopicMount + ContextPressureMonitor** 双机制实现专注模式：
+采用 **recall() + decayScores() + truncateMessages()** 三机制实现专注模式：
 
-1. **TopicMount（话题挂载）**：启动时只加载 `always` + `domain`
-   记忆；用户首条消息触发话题检测，自动召回匹配的话题记忆
-2. **记忆衰减（weight 指数衰减）**：未被命中的记忆 weight 按衰减因子递减；被命中时 weight 重置为 1.0；衰减不影响永久性标记，只影响召回优先级
-3. **上下文压力监控**：当工作记忆接近 token 预算时，优先驱逐低 weight 记忆
+1. **recall()（按需召回）**：启动时只加载 `persona` + `rule` + `skill`
+   记忆（bootstrap）；用户首条消息触发关键词提取，自动召回匹配的记忆
+2. **记忆衰减（score 指数衰减）**：未被命中的记忆 score 按衰减因子递减；被命中时 score 重置为 1.0；衰减不影响永久性标记，只影响召回优先级
+3. **上下文截断（truncateMessages）**：当工作记忆接近 token 预算时，优先驱逐低 score 记忆
 
 ## 关键实现
 
 | 组件                   | 文件                                     | 职责                      |
 | ---------------------- | ---------------------------------------- | ------------------------- |
-| TopicMount             | `src/memory/topic-mount.ts`              | 话题检测 + 记忆挂载/卸载  |
-| ContextPressureMonitor | `src/memory/contextPressureMonitor.ts` | token 预算监控 + 衰减计算 |
+| recall()               | `src/memory/recall.ts`                   | 关键词提取 + 双通道召回   |
+| decayScores()          | `src/memory/recall.ts`                   | score 指数衰减 + 定时触发 |
+| truncateMessages()     | `src/agent/loop.ts`                      | token 预算截断 + 低 score 优先驱逐 |
 
 ## 后果
 
@@ -44,5 +45,5 @@ Memora 的核心矛盾是"无状态推理 ←→ 连续演化任务"。LLM 本�
 
 **负面**：
 
-- 首条消息有额外延迟（话题检测 + 召回）
+- 首条消息有额外延迟（关键词提取 + 召回）
 - 衰减参数需要调优（衰减因子、衰减间隔）

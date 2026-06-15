@@ -27,7 +27,7 @@ date: 2026-06-11
 - **业务内聚**：agent 相关的所有代码在 `agent/` 下，无需跨目录跳转
 - **新人友好**：看一个模块就知道"Agent 怎么工作"——所有相关代码在一起
 - **可替换性**：未来 `memory/` 整个模块替换（如换 LanceDB）不影响其他模块
-- **符合 Memora 的"领域可插拔"哲学**：领域切换通过 DomainManager 切换 .memora/ 目录，核心代码不动
+- **符合 Memora 的"领域可插拔"哲学**：领域切换通过角色自动匹配（PersonaManager）切换，核心代码不动
 
 ## 目录结构（当前）
 
@@ -54,11 +54,11 @@ src/
 
 ### v0.2（2026-06-02）· 阶段三目录结构更新
 
-**变更**：新增 3 个文件（embedding.ts / vectorStore.ts / domain-manager.ts）
+**变更**：新增 2 个文件（embedding.ts / vectorStore.ts）
 
 **设计演进**：
 
-- 领域切换从"只改 skills/ 和 personality/"演进为"DomainManager 切换 .memora/ 目录"
+- 领域切换从"只改 skills/ 和 personality/"演进为"角色自动匹配（PersonaManager）"
 - 每个领域有独立的 SQLite + 向量索引 + 安全守卫
 - embedding.ts 放在 llm/ 下（属于 LLM 适配层，调用 /embeddings API）
 - vectorStore.ts 放在 memory/ 下（属于记忆引擎的向量索引层）

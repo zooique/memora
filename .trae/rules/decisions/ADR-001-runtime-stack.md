@@ -25,7 +25,7 @@ Memora 是纯逻辑库，需要：LLM API 流式调用、跨平台支持。
 
 - **Node.js 22 LTS**：原生 fetch / SSE 流式响应 / Test Runner；npm 生态最成熟；better-sqlite3 原生 prebuild 支持
 - **TypeScript 5 strict**：记忆体系分层需要强类型保护；IDE 智能提示
-- **ESM**：顶层 await 可用；与 TS 5 配置一致；Node 20 原生支持
+- **ESM**：顶层 await 可用；与 TS 5 配置一致；Node 22 原生支持
 - **npm**：跨平台一致；零额外安装；与 Node 同源
 
 ## 替代方案

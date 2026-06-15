@@ -6,7 +6,7 @@
 >
 > **版本**：v3.1（最后更新：2026-06-15）
 >
-> **v3.1 变更**：新增 ITracer/ISpan 可观测性接口、ToolErrorCode 错误码、Guardrails 护栏、Reflection 反思机制。详见 [Agent Harness 增强方案](./agent-harness-增强方案-v1.0.md)。
+> **v3.1 变更**：新增 ITracer/ISpan 可观测性接口、ToolErrorCode 错误码、Guardrails 护栏、Reflection 反思机制。
 >
 > **v3.0 重大变更**：Agent God Object 拆分。记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
 
@@ -71,7 +71,7 @@
 | `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索召回） |
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，引导记忆不被召回） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
-| `logger` | `ILogger` | ❌ | 日志注入 |
+| `logger` | `ILogger` | ❌ | ⚠️ @deprecated 日志注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 
 ### 2.2 生命周期方法
@@ -80,7 +80,7 @@
 |------|------|
 | `new Agent(opts)` | 构造函数（无副作用，不连接 LLM） |
 | `init(projectPathOverride?)` → `Promise<ProjectContext>` | 初始化：建立存储、加载配置、组装组件 |
-| `close()` | 关闭：释放项目锁、关闭数据库 |
+| `close()` → `Promise<void>` | 关闭：释放项目锁、关闭数据库 |
 
 ### 2.3 Agent 只读访问器
 
@@ -126,13 +126,14 @@ v3.0 起，Agent 通过 6 个 getter 暴露专职 Manager。详见后续章节�
 | `bootstrapMemories` | `Memory[]` | 启动时加载的必召记忆 |
 | `loadResult` | `LoadResult` | 加载结果（成功数 / 失败数） |
 
-### 2.7 事件订阅（`agent.on()` / `agent.off()`）
+### 2.7 事件订阅（`agent.on()` / `agent.off()` / `agent.once()`）
 
 Agent 继承 `TypedEventEmitter<AgentEventMap>`，向宿主项目广播对话外事件。
 
 ```typescript
 agent.on<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[K]) => void): void
 agent.off<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[K]) => void): void
+agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[K]) => void): void
 ```
 
 | 事件名 | 载荷 | 触发时机 |
@@ -142,6 +143,7 @@ agent.off<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[K
 | `decayCompleted` | `{ decayedCount }` | 记忆衰减完成（init 首次 + 每小时定时） |
 | `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
 | `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
+| `insightExtracted` | `{ source: string; insight: string }` | 洞察被提取 |
 
 ```typescript
 // 使用示例
@@ -312,7 +314,7 @@ interface ISessionStore {
   appendMessage(date: string, session: string, message: SessionMessage): void;
   loadMessages(date: string, session: string): SessionMessage[];
   listSessions(): string[];
-  copySession(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string): void;
+  copySession?(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string): void;
 }
 ```
 
@@ -334,8 +336,8 @@ interface ISessionStore {
 | `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆，自动 rebuild） |
 | `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
 | `switchSession(newName)` → `Promise<string>` | 切换到指定会话（自动归档旧会话） |
-| `forkSession(targetSession?)` → `Promise<ForkResult>` | 分叉当前会话（复制完整消息历史到新分支） |
-| `loadSessionMessages(date, session)` → `Promise<SessionRecord[]>` | 加载指定日期/会话的消息（含时间戳） |
+| `forkSession(targetSession?)` → `{ newSession: string; messageCount: number }` | 分叉当前会话（复制完整消息历史到新分支） |
+| `loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
 | `restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
 | `restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
 
@@ -731,7 +733,7 @@ export type { ITracer, ISpan } from 'memora';
 export { noopTracer, TRACE_SPANS } from 'memora';
 
 // 错误码
-export { ToolErrorCode, isRetryableErrorCode } from 'memora';
+export { ToolErrorCode, isRetryableErrorCode, MemoraError } from 'memora';
 export type { ToolErrorCodeValue } from 'memora';
 
 // 日志
@@ -746,10 +748,10 @@ export type { RecallOptions } from 'memora';
 export type { PersonaMode } from 'memora';
 
 // 消息历史
-export type { SessionRecord, ForkResult } from 'memora';
+export type { ForkResult } from 'memora';
 
 // 技能
-export type { SkillEntry } from 'memora';
+export type { SkillEntry, SkillMatch } from 'memora';
 
 // LLM
 export { createLlmProvider, createProviderFromConfig } from 'memora';

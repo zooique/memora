@@ -4,7 +4,7 @@
 >
 > **版本**：v3.1（最后更新：2026-06-15）
 >
-> **v3.1 变更**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。详见 [Agent Harness 增强方案](./agent-harness-增强方案-v1.0.md)。
+> **v3.1 变更**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。
 >
 > **v3.0 重大变更**：Agent God Object 拆分。记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference-v1.0.md)。
 
@@ -328,11 +328,11 @@ Memora 支持会话分叉功能，允许用户从当前对话创建独立分支�
 
 ```typescript
 // 自动生成分支名（main-b1, main-b2, ...）
-const result = await agent.forkSession();
+const result = agent.forkSession();
 console.log(`已分叉到: ${result.newSession}，复制了 ${result.messageCount} 条消息`);
 
 // 自定义分支名
-const result = await agent.forkSession('experiment');
+const result2 = agent.forkSession('experiment');
 ```
 
 **命名规则**：
@@ -430,7 +430,7 @@ agent.on('sessionForked', (event) => {
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
-| `agent.on()` / `agent.off()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` |
+| `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `insightExtracted` |
 
 ### Provider 管理
 
@@ -496,7 +496,6 @@ import type {
   AgentEventMap,
   AgentEventName,
   AgentEventHandler,
-  SessionRecord,
   ForkResult,
   ITracer,
   ISpan,

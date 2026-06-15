@@ -1,0 +1,266 @@
+/**
+ * ConfigManager 单元测试
+ *
+ * 覆盖方法：
+ * - addRule：正常添加规则 + 拒绝非 rule source
+ * - addSimpleRule：验证自动填充字段
+ * - addSkill：正常添加技能 + 拒绝非 skill source
+ * - addSimpleSkill：验证自动填充字段
+ * - onSuggestion / suggestionCallback：注册和获取回调
+ * - confirm：验证 writeConfigFile 未设置时抛错
+ */
+import { describe, it, expect, beforeEach } from 'vitest';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import { SkillManager } from '@/skill/skillManager.js';
+import { ConfigManager } from '@/agent/configManager.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
+import type { Memory } from '@/memory/types.js';
+import type { ConfigSuggestion } from '@/agent/configManager.js';
+
+describe('ConfigManager', () => {
+  let storage: InMemoryStorage;
+  let skillManager: SkillManager;
+  let systemMessages: string[];
+  let manager: ConfigManager;
+
+  beforeEach(() => {
+    storage = new InMemoryStorage();
+    skillManager = new SkillManager();
+    systemMessages = [];
+    manager = new ConfigManager(
+      storage,
+      skillManager,
+      (msg) => { systemMessages.push(msg); },
+    );
+  });
+
+  // ─── addRule ─────────────────────────────────────────
+
+  describe('addRule', () => {
+    it('应成功添加 rule 记忆并注入 system 消息', async () => {
+      const now = new Date().toISOString();
+      const rule: Memory = {
+        id: 'rule:test',
+        content: '测试规则内容',
+        source: SOURCE_LABELS.RULE,
+        name: '测试规则',
+        createdAt: now,
+        accessedAt: now,
+        score: 1.0,
+      };
+
+      await manager.addRule(rule);
+
+      // 写入存储
+      const stored = storage.getById('rule:test');
+      expect(stored).not.toBeNull();
+      expect(stored!.content).toBe('测试规则内容');
+
+      // 注入 system 消息
+      expect(systemMessages).toHaveLength(1);
+      expect(systemMessages[0]).toContain('【项目规则】测试规则');
+      expect(systemMessages[0]).toContain('测试规则内容');
+    });
+
+    it('应拒绝 source 不为 rule 的记忆', async () => {
+      const now = new Date().toISOString();
+      const badMem: Memory = {
+        id: 'persona:bad',
+        content: 'xx',
+        source: SOURCE_LABELS.PERSONA,
+        name: '不该出现',
+        createdAt: now,
+        accessedAt: now,
+        score: 1,
+      };
+
+      await expect(manager.addRule(badMem)).rejects.toThrow(/无效来源/);
+    });
+  });
+
+  // ─── addSimpleRule ───────────────────────────────────
+
+  describe('addSimpleRule', () => {
+    it('应自动填充 id / source / score 等字段', async () => {
+      await manager.addSimpleRule('简洁规则', '规则正文');
+
+      const stored = storage.getById('rule:简洁规则');
+      expect(stored).not.toBeNull();
+      expect(stored!.source).toBe(SOURCE_LABELS.RULE);
+      expect(stored!.name).toBe('简洁规则');
+      expect(stored!.content).toBe('规则正文');
+      expect(stored!.score).toBe(0.8);
+      expect(stored!.createdAt).toBeDefined();
+      expect(stored!.accessedAt).toBeDefined();
+    });
+
+    it('应注入 system 消息', async () => {
+      await manager.addSimpleRule('简洁规则', '规则正文');
+
+      expect(systemMessages).toHaveLength(1);
+      expect(systemMessages[0]).toContain('【项目规则】简洁规则');
+    });
+  });
+
+  // ─── addSkill ────────────────────────────────────────
+
+  describe('addSkill', () => {
+    it('应成功添加 skill 记忆并注册到 SkillManager', async () => {
+      const now = new Date().toISOString();
+      const skill: Memory = {
+        id: 'skill:test',
+        content: '测试技能内容',
+        source: SOURCE_LABELS.SKILL,
+        name: '测试技能',
+        createdAt: now,
+        accessedAt: now,
+        score: 0.7,
+      };
+
+      await manager.addSkill(skill);
+
+      // 写入存储
+      const stored = storage.getById('skill:test');
+      expect(stored).not.toBeNull();
+      expect(stored!.content).toBe('测试技能内容');
+
+      // 注册到 SkillManager
+      const entry = skillManager.get('测试技能');
+      expect(entry).not.toBeNull();
+      expect(entry!.name).toBe('测试技能');
+      expect(entry!.content).toBe('测试技能内容');
+    });
+
+    it('应拒绝 source 不为 skill 的记忆', async () => {
+      const now = new Date().toISOString();
+      const badMem: Memory = {
+        id: 'rule:bad',
+        content: 'xx',
+        source: SOURCE_LABELS.RULE,
+        name: '不该出现',
+        createdAt: now,
+        accessedAt: now,
+        score: 1,
+      };
+
+      await expect(manager.addSkill(badMem)).rejects.toThrow(/无效来源/);
+    });
+  });
+
+  // ─── addSimpleSkill ──────────────────────────────────
+
+  describe('addSimpleSkill', () => {
+    it('应自动填充 id / source / score 等字段', async () => {
+      await manager.addSimpleSkill('简洁技能', '技能正文');
+
+      const stored = storage.getById('skill:简洁技能');
+      expect(stored).not.toBeNull();
+      expect(stored!.source).toBe(SOURCE_LABELS.SKILL);
+      expect(stored!.name).toBe('简洁技能');
+      expect(stored!.content).toBe('技能正文');
+      expect(stored!.score).toBe(0.7);
+      expect(stored!.createdAt).toBeDefined();
+      expect(stored!.accessedAt).toBeDefined();
+    });
+
+    it('应注册到 SkillManager', async () => {
+      await manager.addSimpleSkill('简洁技能', '技能正文');
+
+      const entry = skillManager.get('简洁技能');
+      expect(entry).not.toBeNull();
+      expect(entry!.name).toBe('简洁技能');
+    });
+  });
+
+  // ─── onSuggestion / suggestionCallback ───────────────
+
+  describe('onSuggestion / suggestionCallback', () => {
+    it('应注册并获取回调', () => {
+      expect(manager.suggestionCallback).toBeNull();
+
+      const handler = (_s: ConfigSuggestion) => {};
+      manager.onSuggestion(handler);
+
+      expect(manager.suggestionCallback).toBe(handler);
+    });
+
+    it('多次注册应覆盖前一次', () => {
+      const handler1 = (_s: ConfigSuggestion) => {};
+      const handler2 = (_s: ConfigSuggestion) => {};
+
+      manager.onSuggestion(handler1);
+      expect(manager.suggestionCallback).toBe(handler1);
+
+      manager.onSuggestion(handler2);
+      expect(manager.suggestionCallback).toBe(handler2);
+    });
+  });
+
+  // ─── confirm ─────────────────────────────────────────
+
+  describe('confirm', () => {
+    it('writeConfigFile 未设置时应抛错', async () => {
+      const suggestion: ConfigSuggestion = {
+        type: 'rule',
+        name: '测试建议',
+        content: '建议内容',
+        confidence: 0.9,
+      };
+
+      await expect(manager.confirm(suggestion)).rejects.toThrow(/writeConfigFile 未设置/);
+    });
+
+    it('writeConfigFile 已设置时应调用写入回调', async () => {
+      const written: Memory[] = [];
+      const managerWithWrite = new ConfigManager(
+        storage,
+        skillManager,
+        (msg) => { systemMessages.push(msg); },
+        async (memory) => { written.push(memory); },
+      );
+
+      const suggestion: ConfigSuggestion = {
+        type: 'rule',
+        name: '持久化规则',
+        content: '规则内容',
+        confidence: 0.85,
+      };
+
+      await managerWithWrite.confirm(suggestion);
+
+      // 写入回调被调用
+      expect(written).toHaveLength(1);
+      expect(written[0]!.source).toBe(SOURCE_LABELS.RULE);
+      expect(written[0]!.name).toBe('持久化规则');
+      expect(written[0]!.score).toBe(0.85);
+
+      // rule 类型应同时注入 system 消息
+      expect(systemMessages).toHaveLength(1);
+      expect(systemMessages[0]).toContain('【项目规则】持久化规则');
+    });
+
+    it('persona 类型 confirm 不应注入 system 消息', async () => {
+      const written: Memory[] = [];
+      const managerWithWrite = new ConfigManager(
+        storage,
+        skillManager,
+        (msg) => { systemMessages.push(msg); },
+        async (memory) => { written.push(memory); },
+      );
+
+      const suggestion: ConfigSuggestion = {
+        type: 'persona',
+        name: '新角色',
+        content: '角色描述',
+        confidence: 0.9,
+      };
+
+      await managerWithWrite.confirm(suggestion);
+
+      expect(written).toHaveLength(1);
+      expect(written[0]!.source).toBe(SOURCE_LABELS.PERSONA);
+      // persona 类型不注入 system 消息
+      expect(systemMessages).toHaveLength(0);
+    });
+  });
+});

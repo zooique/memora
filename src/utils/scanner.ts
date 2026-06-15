@@ -7,8 +7,7 @@
  * 使用异步 I/O（与 FileStore / ToolExecutor 保持一致）。
  */
 
-import { readFile, readdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { readFile, readdir, access } from 'node:fs/promises';
 import { resolve, join, basename } from 'node:path';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { logger } from '@/logging/logger.js';
@@ -40,7 +39,9 @@ export interface ScannedMarkdownEntry {
  * @returns 解析后的条目列表
  */
 export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry[]> {
-  if (!existsSync(dir)) {
+  try {
+    await access(dir);
+  } catch {
     logger.debug({ dir }, '扫描目录不存在，跳过');
     return [];
   }

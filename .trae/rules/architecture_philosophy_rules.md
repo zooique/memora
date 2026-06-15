@@ -121,9 +121,9 @@ domain），其余在 Agent Loop 中按需检索。
 | 优先级 | 操作               | 失败策略             | 代码证据                                |
 | ------ | ------------------ | -------------------- | --------------------------------------- |
 | P0     | 对话响应           | 不可降级             | Agent Loop 核心路径无 try/catch         |
-| P1     | 消息持久化         | 记日志，不抛异常     | `safeAppend()` 只 log                   |
-| P2     | 话题归档           | 跳过本次，不阻塞     | `summarizeAndArchive()` fire-and-forget |
-| P3     | 启动补执归档       | 跳过，Agent 正常启动 | `bootstrapArchive()` 3s 超时兜底        |
+| P1     | 消息持久化         | 记日志，不抛异常     | `appendMessage()` catch-only-log        |
+| P2     | 话题归档           | 跳过本次，不阻塞     | `extractInsight()` fire-and-forget |
+| P3     | 启动补执归档       | 跳过，Agent 正常启动 | `awaitPendingArchives()` 5s 超时兜底    |
 | P4     | 项目切换（释放锁） | warn，继续切换       | `switchProject()` catch-only-warn       |
 
 **禁止**：
@@ -162,7 +162,7 @@ domain），其余在 Agent Loop 中按需检索。
 **在代码中的体现**：
 
 - `recall()` 双通道召回：语义搜索（VectorStore，可选）+ 关键词搜索，结果合并去重
-- `excludeSources` 默认排除 `persona` + `rule`（已由 bootstrap 注入，避免重复）
+- `excludeSources` 默认排除 `persona` + `rule` + `skill`（已由 bootstrap 注入，避免重复）
 - 向量搜索失败时静默降级到关键词——保护专注态不被网络抖动打断
 - 记忆衰减机制：`decayScores()` 每小时自动衰减 insight/profile/work-projection
 
@@ -175,7 +175,7 @@ domain），其余在 Agent Loop 中按需检索。
 
 **用户显式切换的支持**：
 
-- 显式命令（如 `switchTopic()`）享有最高优先级，直接切换话题
+- 显式命令（如 `switchSession()`）享有最高优先级，直接切换会话
 - 切换后重新组装上下文，让新话题的"生其心"从空灵中浮现
 - 这是"专注"原则的补充而非冲突——专注是默认，切换是例外
 

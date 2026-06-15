@@ -54,7 +54,7 @@ date: 2026-06-12
 
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
-| `cli/`      | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
+| `cli/`（宿主） | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
 | `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector）+ 对话快照 + 作品投影 + 用户事实提取 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
@@ -86,8 +86,8 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 **禁止**：
 
 - ❌ `llm/` 反向依赖 `agent/`
-- ❌ `memory/` 反向依赖 `cli/`
-- ❌ `security/` 被 `cli/` 绕过（所有写操作必须经 security 校验）
+- ❌ `memory/` 反向依赖宿主 `cli/`
+- ❌ `security/` 被宿主 `cli/` 绕过（所有写操作必须经 security 校验）
 - ❌ `memory/` 依赖 `persona/` 或 `skill/`（依赖方向不可逆）
 
 ## 模块内文件命名
@@ -100,6 +100,7 @@ agent/
 ├── assembler.ts          # 组件组装器（Agent init 时组装各 Manager）
 ├── loop.ts               # AgentLoop 主循环
 ├── toolExecutor.ts       # 工具执行器（registerTool + execute）
+├── builtinTools.ts       # 内置工具定义（BUILTIN_TOOLS）
 ├── messageHistory.ts     # 消息持久化 + 会话归档
 ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
 ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）

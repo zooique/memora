@@ -21,7 +21,7 @@ v1 设计为每个子项目创建独立的 memora.db，切换项目时关闭旧 
 采用 **单 Agent 模型 + 三层架构**：
 
 1. **Agent 级配置（configDir）**：personas/rules/skills/tools，纯配置
-2. **用户记忆（dataDir）**：memora.db + TopicStore + projects.json，纯数据，不随子项目切换重建
+2. **用户记忆（dataDir）**：memora.db + ProjectManager + projects.json，纯数据，不随子项目切换重建
 3. **项目级配置（projectPath/.memora/）**：项目专属 rules/skills，随项目版本控制
 4. **项目切换**：只更新 SecurityGuard + 重新扫描项目 rules/skills，不重建数据库
 5. **配置文件是真理源**：configDir 下的配置由 MemoryLoader 启动时扫描加载到 SQLite
