@@ -7,16 +7,6 @@
  * - 沙箱/演示环境
  *
  * 注意：此实现不持久化，进程退出后数据丢失。
- *
- * 重构变更（2026-06-11）：
- * - 移除 getByPermanence() / getByType() / touch() / applyDecay()
- * - 新增 getBySource()：按来源标签获取记忆
- * - 简化 search()：移除 mode 参数，移除 touch 逻辑
- *
- * 接口同步（2026-06-12）：
- * - 新增 count()：记忆总数统计
- * - 新增 countBySource(source)：按来源标签统计
- * - upsert() 增加 validateSource() 调用，对疑似 typo 发出警告
  */
 import type { IMemoryStorage } from './storageInterface.js';
 import type { Memory } from './types.js';

@@ -3,10 +3,6 @@
  *
  * 冷热分离中的"热"：文件承载记忆本体
  * 详见 ADR-002 · IMemoryStorage 接口与宿主注入模式
- *
- * 重构变更（2026-06-11）：
- * - 移除 MemoryTypeValue / TYPE_TO_DIR_MAP → source 开放字符串 + 目录映射
- * - 移除 Memory.tags / permanence / filePath → 简化为 7 字段 Memory
  */
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';

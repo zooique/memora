@@ -91,7 +91,7 @@ export class VectorStore {
       logger.info({ count: this.entries.size, dimension: this.dimension }, '向量索引加载完成');
     } catch {
       // 文件不存在或格式错误，从空开始
-      logger.info('向量索引文件不存在，从空开始');
+      logger.info({ path: this.storePath }, '向量索引文件不存在，从空开始');
     }
   }
 

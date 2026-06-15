@@ -13,11 +13,6 @@
  *
  * 方法签名保持同步语义（与 better-sqlite3 一致），
  * 调用方已有的 `await` 调用仍然安全（await 同步值 = 立即返回）。
- *
- * 重构变更（2026-06-11）：
- *   - 移除 getByPermanence() / getByType() / applyDecay() / touch()
- *   - 新增 getBySource()：按来源标签获取记忆
- *   - 简化 search()：移除 mode 参数，仅保留关键词搜索
  */
 import type { Memory } from './types.js';
 

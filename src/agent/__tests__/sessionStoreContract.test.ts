@@ -1,7 +1,10 @@
 /**
- * ISessionStore 契约测试
+ * ISessionStore 契约测试（集成测试）
  *
- * 验证 MessageHistory 正确使用 ISessionStore 接口
+ * 验证 MessageHistory（agent/）正确使用 ISessionStore（memory/）接口。
+ * 此文件位于 agent/__tests__/ 因为测试主体是 MessageHistory，
+ * 依赖方向为 agent/ → memory/，符合分层规范。
+ *
  * 覆盖：
  *   - appendMessage 调用（appendUser/appendAssistant）
  *   - loadMessages 调用（loadSessionMessages）
@@ -9,7 +12,7 @@
  *   - 未注入 sessionStore 时的降级行为
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MessageHistory } from '@/agent/messageHistory.js';
+import { MessageHistory } from '../messageHistory.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 

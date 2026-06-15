@@ -6,11 +6,12 @@
  *   - 置信度确认机制
  *   - system prompt 组装
  *
- * 注意：extractUserFacts() 在 agent/ 层，此处通过 archiveFacts() 间接测试归档逻辑。
+ * 注意：extractUserFacts() 在 agent/ 层，此处直接构造 ExtractedFact[]
+ *       避免反向依赖 agent/（memory/ 不可依赖 agent/）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { UserProfile } from '../userProfile.js';
-import { extractUserFacts } from '@/agent/userFactExtractor.js';
+import type { ExtractedFact } from '../userProfile.js';
 import type { IMemoryStorage } from '../storageInterface.js';
 import type { Memory } from '../types.js';
 import { SOURCE_LABELS } from '../types.js';
@@ -55,7 +56,9 @@ describe('UserProfile', () => {
       await userProfile.load();
 
       // When
-      const facts = extractUserFacts('我叫张三', 'turn-1');
+      const facts: ExtractedFact[] = [
+        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+      ];
       await userProfile.archiveFacts(facts);
 
       // Then
@@ -68,11 +71,15 @@ describe('UserProfile', () => {
     it('应该使用 upsert 语义（幂等写入）', async () => {
       // Given
       await userProfile.load();
-      const facts1 = extractUserFacts('我叫张三', 'turn-1');
+      const facts1: ExtractedFact[] = [
+        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+      ];
       await userProfile.archiveFacts(facts1);
 
       // When - 再次归档相同信息
-      const facts2 = extractUserFacts('我叫张三', 'turn-2');
+      const facts2: ExtractedFact[] = [
+        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-2', confidence: 0.95 },
+      ];
       await userProfile.archiveFacts(facts2);
 
       // Then - upsert 被调用两次（幂等）
@@ -85,8 +92,10 @@ describe('UserProfile', () => {
       // Given
       await userProfile.load();
 
-      // When - 正则要求动词后跟 用|写|做|的
-      const facts = extractUserFacts('我喜欢用TypeScript', 'turn-1');
+      // When - 偏好声明（高置信度 ≥ 0.8）
+      const facts: ExtractedFact[] = [
+        { category: 'preference', value: '偏好: TypeScript', sourceTurn: 'turn-1', confidence: 0.85 },
+      ];
       await userProfile.archiveFacts(facts);
 
       // Then
@@ -102,11 +111,11 @@ describe('UserProfile', () => {
       // Given
       await userProfile.load();
 
-      // When - "好像"插入导致正则不匹配
-      const facts = extractUserFacts('我好像叫张三', 'turn-1');
+      // When - 空事实列表（模拟提取器未匹配任何模式）
+      const facts: ExtractedFact[] = [];
       await userProfile.archiveFacts(facts);
 
-      // Then - 不匹配正则 → 无事实提取 → upsert 不被调用
+      // Then - 无事实 → upsert 不被调用
       expect(mockStorage.upsert).not.toHaveBeenCalled();
     });
   });
@@ -140,7 +149,9 @@ describe('UserProfile', () => {
     it('应该构建用户画像的 system prompt', async () => {
       // Given
       await userProfile.load();
-      const facts = extractUserFacts('我叫张三', 'turn-1');
+      const facts: ExtractedFact[] = [
+        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+      ];
       await userProfile.archiveFacts(facts);
 
       // When
@@ -169,8 +180,10 @@ describe('UserProfile', () => {
       // Given
       await userProfile.load();
 
-      // When - 明确表达（高置信度 ≥ 0.8）
-      const facts = extractUserFacts('我叫张三', 'turn-1');
+      // When - 高置信度（≥ 0.8）
+      const facts: ExtractedFact[] = [
+        { category: 'identity', value: '姓名: 张三', sourceTurn: 'turn-1', confidence: 0.95 },
+      ];
       await userProfile.archiveFacts(facts);
 
       // Then - 高置信度的应该在 getConfirmed 中
@@ -183,14 +196,15 @@ describe('UserProfile', () => {
       // Given
       await userProfile.load();
 
-      // When - 较低置信度表达
-      const facts = extractUserFacts('我熟悉React', 'turn-1');
+      // When - 低置信度（< 0.8）
+      const facts: ExtractedFact[] = [
+        { category: 'expertise', value: '专长: React', sourceTurn: 'turn-1', confidence: 0.75 },
+      ];
       await userProfile.archiveFacts(facts);
 
-      // Then - 低置信度（0.75）应标记为待确认
-      const confirmed = userProfile.getConfirmed();
-      // 低置信度条目不写入存储，仅存内存缓存
+      // Then - 低置信度条目不写入存储，仅存内存缓存
       // getConfirmed 返回已确认条目，低置信度条目不应出现
+      const confirmed = userProfile.getConfirmed();
       expect(confirmed).toHaveLength(0);
     });
   });

@@ -16,11 +16,6 @@
  * 使用方式（高级）：
  *   const agent = new Agent({ projectPath: './my-project', provider: myProvider, configDir: './agent-config' });
  *
- * 基元驱动记忆模型（2026-06-11 重构）：
- *   - MemoryType/Permanence 枚举 → source 开放字符串
- *   - 会话漂移检测 → recall() 简化关键词搜索
- *   - ArchiveManager → 移除
- *
  * 2026-06-12 God Object 拆分：
  *   - Insight 提取 → InsightExtractor
  *   - 配置管理 → ConfigManager
@@ -142,12 +137,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private loop: AgentLoop | null = null;
   private toolExec: ToolExecutor | null = null;
 
-  // v4.0 新模块
+  // 新模块
   private personaManager: PersonaManager | null = null;
   private userProfile: UserProfile | null = null;
   private skillManager: SkillManager | null = null;
 
-  // v4.0 拆分出的专职 Manager
+  // 拆分出的专职 Manager
   private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
@@ -269,7 +264,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._chatBusy = true;
     // 超时保护：LLM 卡死时自动释放锁，防止永久锁定
     this.chatLockTimer = setTimeout(() => {
-      logger.warn('chat() 锁超时（5 分钟），强制释放');
+      logger.warn({ timeoutMs: Agent.CHAT_LOCK_TIMEOUT_MS }, 'chat() 锁超时，强制释放');
       this._chatBusy = false;
       this.chatLockTimer = null;
     }, Agent.CHAT_LOCK_TIMEOUT_MS);
@@ -302,7 +297,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      // v4.0：注入上一轮匹配的技能 prompt
+      // 注入上一轮匹配的技能 prompt
       yield { type: 'thinking', phase: 'processing' };
       if (this.activeSkill && this.skillManager && this.loop) {
         const skillPrompt = this.skillManager.buildSystemPrompt(this.activeSkill);
@@ -334,57 +329,63 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 后处理阶段
       yield { type: 'thinking', phase: 'archiving' };
-
-      // v4.0：用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
-      if (this.userProfile) {
-        const turnIndex = `turn-${Date.now()}`;
-        const facts = extractUserFacts(input, turnIndex);
-        this.userProfile.archiveFacts(facts).catch((err) => {
-          logger.warn({ err }, '用户画像实时归档失败');
-        });
-      }
-
-      // v1.1：角色自动匹配
-      if (this.personaManager) {
-        const matchedPersona = this.personaManager.autoMatch(input);
-        if (matchedPersona) {
-          const prevName = this.personaManager.activeName;
-          this.personaManager.switchPersona(matchedPersona);
-          this.emit('personaSwitched', { from: prevName, to: matchedPersona });
-          if (this.loop) {
-            const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
-            const personaPrompt = this.personaManager.buildSystemPrompt();
-            const newPrefix =
-              [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
-              ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
-            this.loop.refreshPersonaPrefix(newPrefix);
-          }
-          logger.info({ persona: matchedPersona }, '角色自动切换');
-        }
-      }
-
-      // v4.0：技能关键词匹配
-      if (this.skillManager) {
-        const match = this.skillManager.match(input);
-        if (match) {
-          this.activeSkill = match.skill.name;
-          logger.debug({ skill: match.skill.name, score: match.score }, '技能匹配，下一轮注入');
-        }
-      }
-
-      // 输入分类 → Insight 提取（委托给 InsightExtractor）
-      if (this.insightExtractor) {
-        const shouldExtract = this.insightExtractor.classify(input);
-        if (shouldExtract === 'extract') {
-          const p = this.insightExtractor.extract(input, assistantContent).catch(() => null);
-          this.history!.registerPendingArchive(p);
-        }
-      }
+      await this.postProcess(input, assistantContent);
     } finally {
       this._chatBusy = false;
       if (this.chatLockTimer) {
         clearTimeout(this.chatLockTimer);
         this.chatLockTimer = null;
+      }
+    }
+  }
+
+  /**
+   * 对话后处理：用户画像归档、角色匹配、技能匹配、Insight 提取
+   */
+  private async postProcess(input: string, assistantContent: string): Promise<void> {
+    // 用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
+    if (this.userProfile) {
+      const turnIndex = `turn-${Date.now()}`;
+      const facts = extractUserFacts(input, turnIndex);
+      this.userProfile.archiveFacts(facts).catch((err) => {
+        logger.warn({ err }, '用户画像实时归档失败');
+      });
+    }
+
+    // 角色自动匹配
+    if (this.personaManager) {
+      const matchedPersona = this.personaManager.autoMatch(input);
+      if (matchedPersona) {
+        const prevName = this.personaManager.activeName;
+        this.personaManager.switchPersona(matchedPersona);
+        this.emit('personaSwitched', { from: prevName, to: matchedPersona });
+        if (this.loop) {
+          const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
+          const personaPrompt = this.personaManager.buildSystemPrompt();
+          const newPrefix =
+            [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
+            ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
+          this.loop.refreshPersonaPrefix(newPrefix);
+        }
+        logger.info({ persona: matchedPersona }, '角色自动切换');
+      }
+    }
+
+    // 技能关键词匹配
+    if (this.skillManager) {
+      const match = this.skillManager.match(input);
+      if (match) {
+        this.activeSkill = match.skill.name;
+        logger.debug({ skill: match.skill.name, score: match.score }, '技能匹配，下一轮注入');
+      }
+    }
+
+    // 输入分类 → Insight 提取（委托给 InsightExtractor）
+    if (this.insightExtractor) {
+      const shouldExtract = this.insightExtractor.classify(input);
+      if (shouldExtract === 'extract') {
+        const p = this.insightExtractor.extract(input, assistantContent).catch(() => null);
+        this.history!.registerPendingArchive(p);
       }
     }
   }
@@ -534,7 +535,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.loop) {
       this.loop.setProvider(provider);
     }
-    logger.info('Provider 已切换');
+    logger.info({ provider: this._provider.name }, 'Provider 已切换');
   }
 
   setBackgroundProvider(provider: LlmProvider | null): void {
@@ -573,14 +574,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('restoreMostRecentSession');
 
     if (!this.sessionStore) {
-      logger.debug('未注入 ISessionStore，无法恢复会话');
+      logger.debug({ hasSessionStore: false }, '未注入 ISessionStore，无法恢复会话');
       return 0;
     }
 
     // 从 sessionStore 列出所有会话，找到最近的
     const sessions = this.sessionStore.listSessions();
     if (sessions.length === 0) {
-      logger.debug('没有找到可恢复的历史会话');
+      logger.debug({ sessionCount: 0 }, '没有找到可恢复的历史会话');
       return 0;
     }
 
@@ -599,7 +600,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const [, date, session] = match;
     const sessionMessages = this.sessionStore.loadMessages(date!, session!);
     if (sessionMessages.length === 0) {
-      logger.debug('没有找到可恢复的历史会话');
+      logger.debug({ messageCount: 0 }, '没有找到可恢复的历史会话');
       return 0;
     }
 

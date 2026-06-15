@@ -25,8 +25,7 @@ const BLOCKED_PATTERNS = [
   /(^|[\\/])\.docker([\\/]|$)/i,
   /(^|[\\/])\.kube([\\/]|$)/i,
   /[\\/]gcloud([\\/]|$)/i,
-  // A6 修复：原 `(^|[\\/])\.env(\.|$)` 会误匹配 `.env.example`、`.envrc`、`.env.local.template` 等合法文件。
-  // 现仅拦截纯 `.env`、`.env.<name>`（name 不含 .）。
+  // 仅拦截纯 `.env`、`.env.<name>`（name 不含 .）。
   /(^|[\\/])\.env$|(^|[\\/])\.env\.[^\\/.]+$/i,
   // 系统目录
   /[\\/]system32([\\/]|$)/i,
@@ -58,7 +57,7 @@ export interface AuditEvent {
 export type AuditListener = (event: AuditEvent) => void;
 
 /**
- * 写入确认请求（A1 修复）
+ * 写入确认请求
  *
  * 宿主程序在非交互式环境（WebUI/桌宠/无终端服务）需要自定义确认 UI。
  * 注入此回调后，SecurityGuard.requestWriteConfirmation() 会调用它而不是直接读 stdin。
@@ -88,7 +87,7 @@ export class SecurityGuard {
   private readonly auditBuffer: AuditEvent[] = [];
   private readonly bufferLimit = 100;
   /**
-   * A1 修复：注入式写入确认回调。
+   * 注入式写入确认回调。
    * 宿主注册后，requestWriteConfirmation() 走自定义 UI；
    * 不注册时回退到终端 readline（CLI 场景）。
    */
@@ -105,7 +104,7 @@ export class SecurityGuard {
   ) {}
 
   /**
-   * A1 修复：注册自定义写入确认回调（宿主程序接入）
+   * 注册自定义写入确认回调（宿主程序接入）
    *
    * 适用于 WebUI/桌宠/无终端服务。注册后，requestWriteConfirmation()
    * 不再直接读 stdin，而是回调此函数让宿主决定如何提示用户。
@@ -222,7 +221,7 @@ export class SecurityGuard {
    *   - owner + confirmWrites=true：要求确认
    *   - owner + confirmWrites=false：自动批准
    *
-   * A1 修复：优先走 confirmationHandler 注入式回调（宿主程序），
+   * 优先走 confirmationHandler 注入式回调（宿主程序），
    * 未注册时回退到 readline + stdin（CLI 场景）。
    *
    * @returns true 确认通过；false 用户拒绝

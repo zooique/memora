@@ -23,7 +23,7 @@ export interface AgentLoopOptions {
   bootstrapMemories: Memory[]; // 永驻 + 领域记忆
   toolExecutor: (name: string, args: string) => Promise<string>;
   maxIterations?: number;
-  /** v4.0：系统 prompt 前缀（角色 + 用户画像 + 技能），注入到 bootstrap 记忆之前 */
+  /** 系统 prompt 前缀（角色 + 用户画像 + 技能），注入到 bootstrap 记忆之前 */
   systemPromptPrefix?: string;
   /** v4.0：工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
@@ -83,7 +83,7 @@ export class AgentLoop {
     this.guardrailRules = opts.guardrailRules ?? [];
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
 
-    // 初始化 system prompt（基于永驻记忆，v4.0 加前缀）
+    // 初始化 system prompt（基于永驻记忆，加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
     this.messages.push({
       role: 'system',
@@ -152,14 +152,14 @@ export class AgentLoop {
         return;
       }
 
-      let fullContent = '';
-      let toolCalls: Message['toolCalls'] = undefined;
-
       // 调用 LLM（带重试 + 截断保护）
       const chatOpts = this.buildChatOptions();
       const safeMessages = this.truncateMessages(this.messages);
+      let fullContent = '';
+      let toolCalls: Message['toolCalls'] = undefined;
       let streamStarted = false;
       let lastError: Error | null = null;
+      let aborted = false;
 
       // LLM 调用 Span（涵盖重试循环）
       const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {
@@ -182,10 +182,8 @@ export class AgentLoop {
           for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
             streamStarted = true;
             if (signal?.aborted) {
-              llmSpan.end();
-              responseSpan.end();
-              yield { type: 'aborted', reason: '用户取消了对话' };
-              return;
+              aborted = true;
+              break;
             }
             if (chunk.content) {
               fullContent += chunk.content;
@@ -215,6 +213,14 @@ export class AgentLoop {
           // 继续重试
         }
       }
+
+      if (aborted) {
+        llmSpan.end();
+        responseSpan.end();
+        yield { type: 'aborted', reason: '用户取消了对话' };
+        return;
+      }
+
       // LLM 调用成功，结束 span
       llmSpan.end();
 
@@ -244,7 +250,7 @@ export class AgentLoop {
           // 工具执行可能因文件不存在、路径越界等原因失败
           // 捕获异常并转为结构化错误结果字符串，回传给 LLM 让其自行调整策略
           // 避免错误直接传播到 agent.chat() 导致整个对话中断
-          // v5.0：错误结果包含 [ERR:TOOL:code] 前缀，供 Reflection 逻辑解析
+          // 错误结果包含 [ERR:TOOL:code] 前缀，供 Reflection 逻辑解析
           let result: string;
           try {
             result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
@@ -556,7 +562,7 @@ export class AgentLoop {
   }
 
   /**
-   * v1.2：运行时切换 LLM Provider
+   * 运行时切换 LLM Provider
    *
    * 用于多 Provider 路由场景：用户切换 API 时，
    * Agent 调用此方法更新 AgentLoop 的 provider 引用。
@@ -569,7 +575,7 @@ export class AgentLoop {
   }
 
   /**
-   * 刷新角色 prompt（P-603 · L6 修正）
+   * 刷新角色 prompt
    *
    * 当角色切换时，更新系统 prompt 前缀的角色部分。
    * 保留 bootstrapMemories 和 toolDefinitions 不变，只替换 prefix。
@@ -638,14 +644,14 @@ export class AgentLoop {
     const nonSystemMessages = historyMessages.filter((m) => m.role !== 'system');
 
     if (nonSystemMessages.length === 0) {
-      logger.debug('没有需要恢复的历史消息');
+      logger.debug({ messageCount: 0 }, '没有需要恢复的历史消息');
       return;
     }
 
     // 保持第一条消息是 system prompt（构造函数保证 messages[0] 存在）
     const systemPrompt = this.messages[0];
     if (!systemPrompt) {
-      logger.warn('restoreHistory: 没有 system prompt，跳过恢复');
+      logger.warn({ hasSystemPrompt: false }, 'restoreHistory: 没有 system prompt，跳过恢复');
       return;
     }
     this.messages = [systemPrompt, ...nonSystemMessages];

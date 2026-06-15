@@ -81,48 +81,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
 
     if (!response.ok) {
-      // 消费并释放 body（undici keep-alive 行为：error path 不会自动 cancel stream，
-      // 必须显式 cancel，否则 process.exit 时会触发 libuv async handle closing assertion）
-      const errorText = await response.text().catch(() => '<无法读取响应体>');
-      try {
-        await response.body?.cancel();
-      } catch {
-        // 忽略 cancel 失败
-      }
-      const status = response.status;
-
-      // 401/403 = 鉴权
-      if (status === 401 || status === 403) {
-        throw configError('LLM API Key 无效', `HTTP ${status}：${errorText.slice(0, 200)}`, [
-          '检查 API Key 是否正确（注意 ${MEMORA_LLM_API_KEY} 占位符是否已展开）',
-          '确认 Key 未过期',
-          '如使用 DeepSeek/豆包，确认 Key 来自对应平台',
-        ]);
-      }
-
-      // 429 = 限流
-      if (status === 429) {
-        throw llmError('LLM 服务限流', `HTTP 429：${errorText.slice(0, 200)}`, [
-          '稍后重试',
-          '如频繁触发考虑升级套餐或换用其他 provider',
-        ]);
-      }
-
-      // 4xx = 客户端错误
-      if (status >= 400 && status < 500) {
-        throw llmError('LLM 请求格式错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
-          '检查消息内容是否含特殊字符',
-          '确认 model 名称正确',
-          '如使用 tools，确认 tool schema 有效',
-        ]);
-      }
-
-      // 5xx = 服务端错误
-      throw llmError('LLM 服务端错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
-        '稍后重试',
-        '如持续失败，访问厂商状态页确认服务状态',
-        '可在 config.json 切换 provider 兜底',
-      ]);
+      await this.handleResponseError(response);
     }
 
     if (!response.body) {
@@ -143,6 +102,50 @@ export class OpenAICompatibleProvider extends LlmProvider {
       }
       throw err;
     }
+  }
+
+  /**
+   * 处理 HTTP 错误响应
+   *
+   * 消费并释放 body，根据状态码抛出相应的错误类型。
+   */
+  private async handleResponseError(response: Response): Promise<never> {
+    const errorText = await response.text().catch(() => '<无法读取响应体>');
+    try {
+      await response.body?.cancel();
+    } catch {
+      // 忽略 cancel 失败
+    }
+    const status = response.status;
+
+    if (status === 401 || status === 403) {
+      throw configError('LLM API Key 无效', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+        '检查 API Key 是否正确（注意 ${MEMORA_LLM_API_KEY} 占位符是否已展开）',
+        '确认 Key 未过期',
+        '如使用 DeepSeek/豆包，确认 Key 来自对应平台',
+      ]);
+    }
+
+    if (status === 429) {
+      throw llmError('LLM 服务限流', `HTTP 429：${errorText.slice(0, 200)}`, [
+        '稍后重试',
+        '如频繁触发考虑升级套餐或换用其他 provider',
+      ]);
+    }
+
+    if (status >= 400 && status < 500) {
+      throw llmError('LLM 请求格式错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+        '检查消息内容是否含特殊字符',
+        '确认 model 名称正确',
+        '如使用 tools，确认 tool schema 有效',
+      ]);
+    }
+
+    throw llmError('LLM 服务端错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+      '稍后重试',
+      '如持续失败，访问厂商状态页确认服务状态',
+      '可在 config.json 切换 provider 兜底',
+    ]);
   }
 
   /**

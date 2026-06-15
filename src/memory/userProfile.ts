@@ -8,11 +8,6 @@
  *   - 启动时从 SQLite 全量加载（source = 'profile'）
  *   - confidence 机制：高置信度（≥0.8）直接归档，低置信度首次召回时确认
  *
- * 重构变更（2026-06-11）：
- *   - 移除 MemoryType / Permanence 枚举 → 使用 SOURCE_LABELS.PROFILE
- *   - 移除 Memory.tags → 分类信息编码在 name 字段中
- *   - confirmed 状态：仅已确认条目写入存储，待确认条目仅存内存缓存
- *
  * 设计原则（01-主架构-v4.0.md §3.5）：
  *   - 用户画像属于助手记忆，source = 'profile'，每轮必召回
  *   - 实时归档解决"重启进程短期身份丢失"的核心 bug
@@ -204,7 +199,7 @@ export class UserProfile {
   /**
    * 写入单条事实到 SQLite
    *
-   * 冲突解决策略（D-107）：
+   * 冲突解决策略：
    *   同分类（identity/preference/expertise/habit/history）的新事实
    *   会替换旧事实。因为用户画像是"当前状态"而非"历史记录"。
    *   例："我叫张三" → 后续说"我叫李四" → 只保留"李四"，张三被移除。
@@ -215,7 +210,7 @@ export class UserProfile {
     // 构造稳定 ID（profile: 前缀 + 分类 + slug）
     const id = `profile:user-profile-${fact.category}-${slugify(fact.value)}`;
 
-    // D-107：同分类冲突解决 — 删除旧条目（相同子分类 + 不同值 = 用户更新了信息）
+    // 同分类冲突解决 — 删除旧条目（相同子分类 + 不同值 = 用户更新了信息）
     await this.removeConflictingEntries(fact);
 
     const entry: UserProfileEntry = {
@@ -255,7 +250,7 @@ export class UserProfile {
   }
 
   /**
-   * D-107：删除同分类的旧条目（用户更新了信息）
+   * 删除同分类的旧条目（用户更新了信息）
    *
    * 当用户说"我叫李四"替换之前的"我叫张三"时，移除旧的 identity 条目。
    * 策略：同分类（category）下，新值替换旧值。判断标准是旧条目的 value 前缀。

@@ -2,8 +2,6 @@
  * LLM Provider 工厂
  * 根据配置选择具体的 LLM 实现
  * 详见 ADR-003
- *
- * v1.2：新增 createProviderFromConfig()，支持多 Provider 管理
  */
 import type { Config } from '@/config/loader.js';
 import { LlmProvider } from './provider.js';
@@ -45,7 +43,7 @@ export function createProviderFromConfig(
   const { provider, apiKey, baseUrl, model } = providerConfig;
 
   if (provider === 'mock') {
-    logger.warn('使用 Mock LLM Provider（仅用于测试）');
+    logger.warn({ provider: 'mock' }, '使用 Mock LLM Provider（仅用于测试）');
     return new MockProvider();
   }
 
@@ -105,7 +103,7 @@ export function createProviderFromConfig(
 export function createLlmProvider(config: Config): LlmProvider {
   const { llm } = config;
 
-  // v1.2：优先使用新的多 Provider 格式
+  // 优先使用新的多 Provider 格式
   if (llm.providers && Object.keys(llm.providers).length > 0) {
     const active = llm.active ?? Object.keys(llm.providers)[0]!;
     const providerConfig = llm.providers[active];

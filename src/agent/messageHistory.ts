@@ -285,7 +285,7 @@ export class MessageHistory {
    */
   async listAllSessions(): Promise<string[]> {
     if (!this.sessionStore) {
-      logger.debug('listAllSessions: ISessionStore 未注入，返回空数组');
+      logger.debug({ hasSessionStore: false }, 'listAllSessions: ISessionStore 未注入，返回空数组');
       return [];
     }
     return this.sessionStore.listSessions();

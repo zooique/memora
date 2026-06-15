@@ -174,7 +174,7 @@ ${contextSection}
       // 解析 LLM 响应
       const trimmedResponse = llmResponse.trim();
       if (trimmedResponse === 'null' || !trimmedResponse) {
-        logger.debug('extractInsight: LLM 判断无值得记忆的信息');
+        logger.debug({ reason: 'llm_skip' }, 'extractInsight: LLM 判断无值得记忆的信息');
         return;
       }
 
@@ -184,7 +184,7 @@ ${contextSection}
         : null;
 
       if (!insight) {
-        logger.debug('extractInsight: 无法解析 LLM 响应');
+        logger.debug({ reason: 'parse_fail' }, 'extractInsight: 无法解析 LLM 响应');
         return;
       }
 

@@ -197,26 +197,4 @@ export function securityError(
   return new MemoraError({ title, detail, suggestions, category: 'security', cause });
 }
 
-/**
- * 把任意 Error 转成 MemoraError
- * 已经是 MemoraError 的原样返回
- * 未知 Error 包成 unknown 类
- */
-export function toFriendlyError(err: unknown): MemoraError {
-  if (err instanceof MemoraError) return err;
-  if (err instanceof Error) {
-    return new MemoraError({
-      title: '未预期错误',
-      detail: err.message,
-      suggestions: ['查看日志文件 ~/.memora/logs/memora.log 获取详情', '如反复出现请提交 issue'],
-      category: 'unknown',
-      cause: err,
-    });
-  }
-  return new MemoraError({
-    title: '未预期错误',
-    detail: String(err),
-    suggestions: ['查看日志文件 ~/.memora/logs/memora.log 获取详情'],
-    category: 'unknown',
-  });
-}
+

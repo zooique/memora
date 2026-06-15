@@ -80,7 +80,7 @@ skill/      →  memory/      （SQLite 写入 + 类型定义）
             →  utils/       （frontmatter 解析 + segmenter 分词 + scanner 扫描）
 config/     →  （被所有层调）
 logging/    →  （被所有层调）
-utils/      →  （被所有层调，无外部依赖）
+utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 ```
 
 **禁止**：

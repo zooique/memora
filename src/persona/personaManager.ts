@@ -1,5 +1,5 @@
 /**
- * 角色管理器 — 加载、切换、注入角色人格（v1.2：personas/ 目录 + SQLite 存储）
+ * 角色管理器 — 加载、切换、注入角色人格（personas/ 目录 + SQLite 存储）
  *
  * 职责：
  *   - 从 configDir/personas/*.md 加载角色文件
@@ -8,12 +8,12 @@
  *   - 将激活角色注入到 system prompt 顶部
  *   - 支持运行时切换角色 + 关键词自动匹配
  *
- * 设计原则（architecture_philosophy_rules.md §1 · v1.2 更新）：
+ * 设计原则（architecture_philosophy_rules.md §1）：
  *   - Persona 遵循"万物皆记忆"——存入 SQLite 作为 persona 来源记忆
  *   - 召回管线做特殊处理：bootstrap 只取当前激活角色的 1 条 persona 记忆
  *   - 角色可被话题关键词动态匹配自动切换，也可手动指定
  *
- * 目录约定（v1.2 刮骨疗毒）：
+ * 目录约定：
  *   - 单层角色：只有宿主程序级 <configDir>/personas/*.md
  *   - 目录名 personas/ 与代码 Persona 术语一致，区别于用户身份信息
  */
@@ -26,7 +26,7 @@ import type { Persona, PersonaMode } from './types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
 
 /**
- * 角色管理器（v1.2：personas/ + SQLite + 关键词匹配）
+ * 角色管理器（personas/ + SQLite + 关键词匹配）
  */
 export class PersonaManager {
   /** 当前激活的角色 */
@@ -35,7 +35,7 @@ export class PersonaManager {
   private personaList: Persona[] = [];
   /** 激活模式 */
   private mode: PersonaMode = 'auto';
-  /** 角色切换时间戳列表（用于时间窗口缓冲 · L5 修正） */
+  /** 角色切换时间戳列表（用于时间窗口缓冲） */
   private switchTimestamps: number[] = [];
   /** 缓冲区开关（60s 内 3 次切换后锁定） */
   private switchLocked = false;
@@ -68,7 +68,7 @@ export class PersonaManager {
     this.personaList = await this.scanPersonas();
 
     if (this.personaList.length === 0) {
-      logger.warn('未找到任何角色文件，将使用默认角色');
+      logger.warn({ personaCount: 0 }, '未找到任何角色文件，将使用默认角色');
       this.activePersona = this.createDefaultPersona();
       await this.writePersonaToIndex(this.activePersona);
       return this.buildSystemPrompt();
@@ -79,7 +79,7 @@ export class PersonaManager {
       '角色文件加载完成',
     );
 
-    // 写入 SQLite 索引（L1 修正：persona 遵循万物皆记忆）
+    // 写入 SQLite 索引（persona 遵循万物皆记忆）
     await this.writeAllToIndex();
 
     // 激活指定角色
@@ -107,7 +107,7 @@ export class PersonaManager {
   }
 
   /**
-   * 切换角色（v1.1：带时间窗口缓冲 · L5 修正）
+   * 切换角色（带时间窗口缓冲）
    *
    * @param name 角色名
    * @returns 新角色的 system prompt 段，角色不存在返回当前 prompt
@@ -135,7 +135,7 @@ export class PersonaManager {
   }
 
   /**
-   * 根据用户输入自动匹配最合适的角色（v1.1 · L4 修正）
+   * 根据用户输入自动匹配最合适的角色
    *
    * 匹配条件：
    *   - 当前模式为 'auto'（非手动锁定）
@@ -185,7 +185,7 @@ export class PersonaManager {
     if (mode === 'auto' && this.switchLocked) {
       this.switchLocked = false;
       this.switchTimestamps = [];
-      logger.info('角色切换锁定已解除（模式切回自动）');
+      logger.info({ mode: this.mode }, '角色切换锁定已解除（模式切回自动）');
     }
   }
 
@@ -222,7 +222,7 @@ export class PersonaManager {
   // ── 私有方法 ──────────────────────────────────────
 
   /**
-   * 记录一次角色切换（时间窗口缓冲 · L5 修正）
+   * 记录一次角色切换（时间窗口缓冲）
    */
   private recordSwitch(): void {
     const now = Date.now();
@@ -240,7 +240,7 @@ export class PersonaManager {
       this.unlockTimer = setTimeout(() => {
         this.switchLocked = false;
         this.switchTimestamps = [];
-        logger.info('角色切换锁定已自动解除');
+        logger.info({ mode: this.mode }, '角色切换锁定已自动解除');
       }, PersonaManager.AUTO_UNLOCK_MS);
     }
   }
@@ -272,7 +272,7 @@ export class PersonaManager {
   }
 
   /**
-   * 将所有角色写入 SQLite 索引（L1 修正）
+   * 将所有角色写入 SQLite 索引
    */
   private async writeAllToIndex(): Promise<void> {
     if (!this.index) return;

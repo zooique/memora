@@ -5,12 +5,6 @@
  *       启动时：扫描文件 → 写入索引 → 按 source 召回必召记忆
  *
  * 这是"万物皆记忆"哲学的代码体现——所有记忆共享同一条加载管线
- *
- * 重构变更（2026-06-11）：
- * - 移除 MemoryType 枚举 → 使用 SOURCE_LABELS 开放字符串
- * - 移除 getByPermanence → 使用 getBySource
- * - tools 不再作为记忆加载（由 registerTool() 注册为 tool_call，避免 system prompt 重复注入）
- * - 空壳模板（仅含标题和占位说明）跳过加载，节省 token
  */
 import type { FileStore } from './store.js';
 import type { IMemoryStorage } from './storageInterface.js';

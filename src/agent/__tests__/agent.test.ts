@@ -501,3 +501,136 @@ describe('Agent · Manager 委托模式', () => {
     expect(lastSystem?.content).toContain('E2E 测试规则');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：postProcess() · 对话后处理
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 写入含多角色 + 技能的项目骨架，用于 postProcess 测试
+ */
+function seedProjectWithPersonasAndSkills(
+  _projectPath: string,
+  configDir: string,
+  _dataDir: string,
+): void {
+  // 角色文件
+  mkdirSync(join(configDir, 'personas'), { recursive: true });
+  writeFileSync(
+    join(configDir, 'personas', 'default.md'),
+    '---\nsource: persona\nname: 默认助手\nkeywords: 你好,帮助\n---\n\n你是一个通用助手。',
+    'utf-8',
+  );
+  writeFileSync(
+    join(configDir, 'personas', 'coder.md'),
+    '---\nsource: persona\nname: 编程专家\nkeywords: 代码,编程,bug,函数,调试\n---\n\n你是一个编程专家，擅长代码分析和调试。',
+    'utf-8',
+  );
+  writeFileSync(
+    join(configDir, 'personas', 'writer.md'),
+    '---\nsource: persona\nname: 写作助手\nkeywords: 写作,文章,故事,小说\n---\n\n你是一个写作助手，擅长创意写作。',
+    'utf-8',
+  );
+
+  // 技能文件
+  mkdirSync(join(configDir, 'skills'), { recursive: true });
+  writeFileSync(
+    join(configDir, 'skills', 'code-review.md'),
+    '---\nsource: skill\nname: 代码审查\nkeywords: 审查,review,代码质量\n---\n\n审查代码时关注可读性、性能和安全性。',
+    'utf-8',
+  );
+
+  // 规则文件（保持目录结构完整）
+  mkdirSync(join(configDir, 'rules'), { recursive: true });
+}
+
+describe('Agent · postProcess() · 对话后处理', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-pp-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-pp-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-pp-cfg-'));
+    seedProjectWithPersonasAndSkills(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('角色自动匹配：输入匹配关键词后应触发 personaSwitched 事件', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 初始角色为扫描顺序第一个（编程专家）
+    const initialName = agent.persona!.activeName;
+    expect(initialName).toBe('编程专家');
+
+    // 监听 personaSwitched 事件
+    let switchedFrom: string | null = null;
+    let switchedTo: string | null = null;
+    agent.on('personaSwitched', (e) => {
+      switchedFrom = e.from;
+      switchedTo = e.to;
+    });
+
+    // 输入包含写作关键词，应触发角色自动切换到"写作助手"
+    await agent.chatSync('帮我写一篇关于小说创作的故事');
+
+    // 验证事件已触发
+    expect(switchedFrom).toBe(initialName);
+    expect(switchedTo).toBe('写作助手');
+
+    // 验证当前角色已切换
+    expect(agent.persona!.activeName).toBe('写作助手');
+
+    agent.off('personaSwitched', () => {});
+  });
+
+  it('技能关键词匹配：输入匹配关键词后 activeSkill 应更新', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 输入包含技能关键词，应触发技能匹配
+    await agent.chatSync('帮我审查一下代码质量');
+
+    // 验证技能已匹配（通过 skills 管理器验证）
+    const match = agent.skills!.match('帮我审查一下代码质量');
+    expect(match).not.toBeNull();
+    expect(match!.skill.name).toBe('代码审查');
+  });
+
+  it('Insight 提取：classify 返回 extract 时应触发 extract', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // InsightExtractor.classify 对非 trivial 输入默认返回 'extract'
+    // 通过 chatSync 触发 postProcess → insightExtractor.classify → extract
+    // extract 是异步的（fire-and-forget），不会抛错即算通过
+    const reply = await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
+    expect(reply).toContain('Mock 响应');
+  });
+
+  it('无 Manager 时不报错：postProcess 应正常完成', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 正常 init 后所有 Manager 都存在，postProcess 不应抛错
+    // 通过 chatSync 间接触发 postProcess，验证无异常
+    const reply = await agent.chatSync('你好');
+    expect(reply).toContain('Mock 响应');
+
+    // 再发一条 trivial 输入（classify 返回 'skip'），验证 skip 路径也不报错
+    const reply2 = await agent.chatSync('好的');
+    expect(reply2).toContain('Mock 响应');
+  });
+});

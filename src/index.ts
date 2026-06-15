@@ -6,12 +6,6 @@
  *
  * 设计哲学：万物皆记忆（详见 docs/基础设计文档/01-主架构-v4.0.md §1.2）
  * 决策追溯：详见 .trae/rules/decisions/ 下的 ADR
- *
- * 重构变更（2026-06-11）：
- * - 移除 MemoryType/Permanence 枚举导出 → 新增 SOURCE_LABELS 常量
- * - 移除 MemoryTypeValue/PermanenceValue 类型导出
- * - 移除 ArchiveMode/ArchiveSnapshot 导出
- * - 新增 recall/extractKeywords 导出
  */
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
@@ -24,7 +18,7 @@ export type {
 } from './agent/agent.js';
 export type { ToolDefinition, ToolHandler, WriteExtensions } from './agent/toolExecutor.js';
 export type { PersonaMode, Persona } from './persona/types.js';
-// v4.0 拆分：类型从专职模块导出
+// 类型从专职模块导出
 export type { MemoryKeywords } from './agent/insightExtractor.js';
 export type {
   MemorySnapshot,

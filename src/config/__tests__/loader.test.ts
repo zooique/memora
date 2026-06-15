@@ -1,14 +1,14 @@
 /**
  * 配置加载器单元测试
  *
- * 覆盖 loadConfig / findConfigPath / expandEnvVars / mergeWithDefaults
- * 未覆盖分支：findConfigPath 项目级/用户级、expandEnvVars 空值分支、默认配置降级
+ * 覆盖 loadConfig / expandEnvVars / mergeWithDefaults
+ * 未覆盖分支：expandEnvVars 空值分支、默认配置降级
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { loadConfig, findConfigPath } from '@/config/loader.js';
+import { loadConfig } from '@/config/loader.js';
 
 describe('config/loader · loadConfig', () => {
   let tmpHome: string;
@@ -93,32 +93,6 @@ describe('config/loader · loadConfig', () => {
     delete process.env.NONEXISTENT_ENV_VAR_12345;
     const config = await loadConfig(configPath);
     expect(config.llm.apiKey).toBe('');
-  });
-});
-
-describe('config/loader · findConfigPath', () => {
-  let tmpHome: string;
-
-  beforeEach(() => {
-    tmpHome = mkdtempSync(join(tmpdir(), 'memora-findcfg-'));
-  });
-
-  afterEach(() => {
-    rmSync(tmpHome, { recursive: true, force: true });
-  });
-
-  it('显式指定路径时应直接返回该路径', async () => {
-    const configPath = join(tmpHome, 'my-config.json');
-    writeFileSync(configPath, '{}', 'utf-8');
-    const result = await findConfigPath(configPath);
-    expect(result).toBe(configPath);
-  });
-
-  it('无配置文件且无显式路径时应返回 null', async () => {
-    // 使用临时目录中不存在的路径，确保项目级和用户级都不存在
-    const result = await findConfigPath(join(tmpHome, 'nonexistent.json'));
-    // 显式指定路径会直接返回，不会检查是否存在
-    expect(result).toBe(join(tmpHome, 'nonexistent.json'));
   });
 });
 

@@ -154,7 +154,7 @@ export class ProjectManager {
       } else {
         // 兜底：InMemoryStorage（非持久化，不依赖 native 模块）
         // 生产环境应由宿主注入持久化实现（如 SqliteStorage）
-        logger.warn('未注入持久化存储实现，Agent 将使用 InMemoryStorage（数据重启后丢失）');
+        logger.warn({ hasStorage: false }, '未注入持久化存储实现，Agent 将使用 InMemoryStorage（数据重启后丢失）');
         this.agentIndex = new InMemoryStorage();
       }
     }

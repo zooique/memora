@@ -175,4 +175,72 @@ describe('OpenAICompatibleProvider · 错误处理', () => {
       }
     }).rejects.toThrow('LLM 服务连接失败');
   });
+
+  it('403 应该抛出 API Key 无效错误', async () => {
+    server.use(
+      http.post('*/chat/completions', () => {
+        return HttpResponse.json({ error: 'forbidden' }, { status: 403 });
+      }),
+    );
+
+    const provider = makeProvider();
+    await expect(async () => {
+      for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
+        void chunk;
+      }
+    }).rejects.toThrow('API Key 无效');
+  });
+
+  it('404 应该抛出请求格式错误', async () => {
+    server.use(
+      http.post('*/chat/completions', () => {
+        return HttpResponse.json({ error: 'not found' }, { status: 404 });
+      }),
+    );
+
+    const provider = makeProvider();
+    await expect(async () => {
+      for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
+        void chunk;
+      }
+    }).rejects.toThrow('请求格式错误');
+  });
+
+  it('502 应该抛出服务端错误', async () => {
+    server.use(
+      http.post('*/chat/completions', () => {
+        return HttpResponse.json({ error: 'bad gateway' }, { status: 502 });
+      }),
+    );
+
+    const provider = makeProvider();
+    await expect(async () => {
+      for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
+        void chunk;
+      }
+    }).rejects.toThrow('服务端错误');
+  });
+
+  it('错误消息应包含响应体内容', async () => {
+    const errorBody = 'detailed error info from server';
+    server.use(
+      http.post('*/chat/completions', () => {
+        return new HttpResponse(errorBody, { status: 500 });
+      }),
+    );
+
+    const provider = makeProvider();
+    try {
+      for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
+        void chunk;
+      }
+      expect.unreachable('应该抛出错误');
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toContain('服务端错误');
+      // detail 应包含响应体内容（errorText.slice(0, 200)）
+      const memoraErr = err as { detail?: string };
+      expect(memoraErr.detail).toContain(errorBody);
+    }
+  });
 });

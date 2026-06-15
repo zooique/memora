@@ -21,6 +21,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
+import { configError } from '@/utils/errors.js';
 import type { SkillEntry, SkillMatch } from './types.js';
 import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
 
@@ -118,7 +119,7 @@ export class SkillManager {
   }
 
   /**
-   * 注册运行时注入的技能（C1 修复）
+   * 注册运行时注入的技能
    *
    * 供 Agent.addSkill() 调用：宿主程序可在 init() 之后动态注入技能。
    * 重复注册同名技能会被拒绝（与文件加载的技能冲突时也按"先到先得"判断）。
@@ -128,7 +129,11 @@ export class SkillManager {
    */
   register(skill: SkillEntry): void {
     if (this.skills.some((s) => s.name === skill.name)) {
-      throw new Error(`技能 "${skill.name}" 已存在，不能重复注册`);
+      throw configError(
+        `技能 "${skill.name}" 已存在，不能重复注册`,
+        undefined,
+        ['请使用不同的技能名称'],
+      );
     }
     this.skills.push(skill);
     logger.info({ name: skill.name, keywords: skill.keywords.length }, '技能已注册（运行时注入）');

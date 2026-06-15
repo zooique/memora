@@ -40,7 +40,7 @@ const ConfigSchema = z.object({
     apiKey: z.string().optional(),
     temperature: z.number().min(0).max(2).default(0.7),
     /**
-     * 多 Provider 映射表（v1.2）
+     * 多 Provider 映射表
      *
      * key 为 Provider 别名（如 "deepseek"、"openai"），value 为 Provider 配置。
      * 配置后，旧扁平字段（provider/model/baseUrl/apiKey）被忽略。
@@ -48,7 +48,7 @@ const ConfigSchema = z.object({
      */
     providers: z.record(z.string(), ProviderConfigSchema).optional(),
     /**
-     * 当前激活的 Provider 别名（v1.2）
+     * 当前激活的 Provider 别名
      *
      * 必须与 providers 中的某个 key 一致。
      * 不配置时默认使用 providers 的第一个 key。
@@ -81,7 +81,7 @@ const ConfigSchema = z.object({
   }),
   // 允许的路径白名单（绝对路径）
   allowedPaths: z.array(z.string()).default([]),
-  // v4.0：默认角色名（对应 personas/*.md）
+  // 默认角色名（对应 personas/*.md）
   persona: z.string().optional(),
 });
 
@@ -139,37 +139,6 @@ export async function loadConfig(configPath?: string): Promise<Config> {
 }
 
 /**
- * 找到实际加载的配置文件路径
- * 按优先级查找，文件不存在返回 null
- */
-export async function findConfigPath(configPath?: string): Promise<string | null> {
-  // 1. 显式指定
-  if (configPath) {
-    return configPath;
-  }
-
-  // 2. 项目级
-  const projectPath = resolve(process.cwd(), '.memora/config.json');
-  try {
-    const { stat } = await import('node:fs/promises');
-    await stat(projectPath);
-    return projectPath;
-  } catch {
-    // 不存在
-  }
-
-  // 3. 用户级
-  const userPath = resolve(homedir(), '.memora/config.json');
-  try {
-    const { stat } = await import('node:fs/promises');
-    await stat(userPath);
-    return userPath;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * 读取并解析 JSON 文件
  */
 async function readJsonFile(path: string): Promise<unknown> {
@@ -192,7 +161,7 @@ function mergeWithDefaults(userConfig: unknown): Config {
  * 配置文件可写 "apiKey": "${MEMORA_LLM_API_KEY}"
  * 实际读取时展开为环境变量值
  *
- * v1.2：同时展开 providers 映射表中每个 Provider 的 apiKey/baseUrl
+ * 同时展开 providers 映射表中每个 Provider 的 apiKey/baseUrl
  */
 function expandEnvVars(config: Config): Config {
   const expand = (val: string | undefined): string | undefined => {

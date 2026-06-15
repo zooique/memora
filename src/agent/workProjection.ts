@@ -19,10 +19,6 @@
  * 分层说明：
  *   本模块位于 agent/ 层（非 memory/ 层），因为它依赖 LlmProvider 做内容生成。
  *   memory/ 层只做存储和召回，不做 LLM 调用（EmbeddingService 接口注入除外）。
- *
- * 重构变更（2026-06-11）：
- *   - 适配基元驱动记忆模型：type → source，移除 permanence/tags/filePath
- *   - hash / structure / decisions 编码到 content（Markdown HTML 注释）
  */
 import { createHash } from 'node:crypto';
 import type { LlmProvider, Message } from '@/llm/provider.js';
@@ -64,7 +60,7 @@ export class WorkProjectionManager {
   ) {}
 
   /**
-   * A4 修复：in-flight Promise 缓存，防止同文件并发读取时重复调用 LLM
+   * in-flight Promise 缓存，防止同文件并发读取时重复调用 LLM
    * key: sourcePath（同一文件路径只会有一个未完成的生成 Promise）
    */
   private readonly inflight: Map<string, Promise<WorkProjectionEntry | null>> = new Map();
@@ -79,7 +75,7 @@ export class WorkProjectionManager {
    *   4. 有投影但 hash 不同 → 文件已修改 → 重新生成
    *   5. 有投影且 hash 相同 → 跳过
    *
-   * A4 修复：同文件并发调用时复用同一 in-flight Promise，避免重复 LLM 调用。
+   * 同文件并发调用时复用同一 in-flight Promise，避免重复 LLM 调用。
    *
    * @param filePath 作品文件路径
    * @param content 文件内容
@@ -107,7 +103,7 @@ export class WorkProjectionManager {
   }
 
   /**
-   * 实际生成投影的核心逻辑（A4 修复后从 ensureProjection 拆出）
+   * 实际生成投影的核心逻辑
    */
   private async doEnsureProjection(
     filePath: string,

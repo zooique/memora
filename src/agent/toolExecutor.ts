@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promi
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/pathGuard.js';
-import { toolError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
+import { toolError, configError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from './workProjection.js';
@@ -153,7 +153,7 @@ export class ToolExecutor {
     private readonly projectPath: string,
     private readonly security: SecurityGuard,
     private readonly memoryIndex: IMemoryStorage,
-    /** v4.0：作品投影管理器（可选，读取文件时自动生成投影） */
+    /** 作品投影管理器（可选，读取文件时自动生成投影） */
     private readonly workProjection?: WorkProjectionManager,
   ) {}
 
@@ -171,17 +171,27 @@ export class ToolExecutor {
    */
   registerTool(definition: ToolDefinition, handler: ToolHandler): void {
     if (!definition.name || !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(definition.name)) {
-      throw new Error(
-        `工具名无效："${definition.name}"，必须以字母/下划线开头，只含字母/数字/下划线`,
+      throw configError(
+        `工具名无效："${definition.name}"`,
+        '必须以字母/下划线开头，只含字母/数字/下划线',
+        ['请检查工具名称是否符合命名规范'],
       );
     }
     // 不允许覆盖内置工具
     if (BUILTIN_TOOLS.some((t) => t.name === definition.name)) {
-      throw new Error(`不能覆盖内置工具：${definition.name}`);
+      throw configError(
+        `不能覆盖内置工具：${definition.name}`,
+        undefined,
+        ['请使用不同的工具名称'],
+      );
     }
     // 不允许重复注册
     if (this.customTools.has(definition.name)) {
-      throw new Error(`工具已注册：${definition.name}`);
+      throw configError(
+        `工具已注册：${definition.name}`,
+        undefined,
+        ['请使用不同的工具名称，或先注销已有工具'],
+      );
     }
     this.customTools.set(definition.name, { definition, handler });
     logger.info({ tool: definition.name }, '自定义工具已注册');
@@ -200,7 +210,7 @@ export class ToolExecutor {
   /**
    * 执行工具调用
    *
-   * v1.2 新枝破土：新增参数类型校验。
+   * 新增参数类型校验。
    * LLM 返回的 tool_call 参数可能类型不匹配（如 number 代替 string），
    * 校验器会根据 ToolDefinition.parameters 自动修正常见类型错误，
    * 避免后续 `as string` 强转导致的运行时错误。
@@ -224,7 +234,7 @@ export class ToolExecutor {
       );
     }
 
-    // v1.2 新枝破土：参数类型校验 + 自动修正
+    // 参数类型校验 + 自动修正
     // LLM 经常返回 number 代替 string（如 maxDepth: 2 而非 "2"），
     // 校验器根据 ToolDefinition 自动转换，避免后续 as string 出错
     const definition = this.getToolDefinitions().find((t) => t.name === name);
@@ -304,7 +314,7 @@ export class ToolExecutor {
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
-      // v4.0：读取文件时自动触发生成/更新作品投影（fire-and-forget，不阻塞读取）
+      // 读取文件时自动触发生成/更新作品投影（fire-and-forget，不阻塞读取）
       if (this.workProjection) {
         this.workProjection.ensureProjection(absolutePath, content, relativePath).catch(() => {
           /* 投影生成失败不影响文件读取 */
@@ -648,7 +658,7 @@ export class ToolExecutor {
   /**
    * 参数类型校验 + 自动修正
    *
-   * v1.2 新枝破土：LLM 返回的 tool_call 参数经常类型不匹配：
+   * LLM 返回的 tool_call 参数经常类型不匹配：
    *   - number → string（如 maxDepth: 2 而非 "2"）
    *   - boolean → string（如 recursive: true 而非 "true"）
    *   - 缺少必填参数

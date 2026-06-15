@@ -3,12 +3,6 @@
  *
  * 设计哲学：万物皆是记忆，用 source 开放字符串替代封闭枚举
  * 详见 docs/记忆系统重构方案_排雷炼化版.md §2
- *
- * 重构变更（2026-06-11）：
- * - 移除 MemoryType 枚举 → source 开放字符串
- * - 移除 Permanence 枚举 → 召回策略由查询时决定
- * - 移除 TopicMount/ArchiveManager 相关类型
- * - 简化 Memory 接口：7 个核心字段
  */
 import { z } from 'zod';
 
