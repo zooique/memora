@@ -9,9 +9,9 @@
 import type { Memory } from './types.js';
 import type { IMemoryStorage } from './storageInterface.js';
 import type { VectorStore } from './vectorStore.js';
-import { logger } from '../logging/logger.js';
-import { STOPWORDS } from './types.js';
-import { segmentText } from '../utils/segmenter.js';
+import { logger } from '@/logging/logger.js';
+import { STOPWORDS, SOURCE_LABELS } from './types.js';
+import { segmentText } from '@/utils/segmenter.js';
 
 /**
  * 从文本中提取关键词（用于记忆召回）
@@ -72,7 +72,7 @@ export async function recall(
 ): Promise<Memory[]> {
   const {
     limit = 5,
-    excludeSources = ['persona', 'rule', 'skill'],
+    excludeSources = [SOURCE_LABELS.PERSONA, SOURCE_LABELS.RULE, SOURCE_LABELS.SKILL],
     vectorStore,
     minSimilarity = 0.3,
   } = options;

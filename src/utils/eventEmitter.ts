@@ -21,6 +21,8 @@ export interface AgentEventMap {
   memoryRecalled: { count: number; query: string };
   /** 会话被分叉 */
   sessionForked: { from: string; to: string; messageCount: number };
+  /** 洞察被提取 */
+  insightExtracted: { source: string; insight: string };
 }
 
 /** 事件名联合类型 */
@@ -59,6 +61,22 @@ export class TypedEventEmitter<EventMap extends object> {
    */
   off<K extends keyof EventMap & string>(event: K, handler: (event: EventMap[K]) => void): void {
     this.listeners.get(event)?.delete(handler as (event: unknown) => void);
+  }
+
+  /**
+   * 订阅事件（仅触发一次，触发后自动移除）
+   * @param event - 事件名
+   * @param handler - 事件处理器
+   */
+  once<K extends keyof EventMap & string>(
+    event: K,
+    handler: (event: EventMap[K]) => void,
+  ): void {
+    const wrapper = ((data: EventMap[K]) => {
+      this.off(event, wrapper as (event: EventMap[K]) => void);
+      handler(data);
+    }) as (event: EventMap[K]) => void;
+    this.on(event, wrapper);
   }
 
   /**

@@ -58,6 +58,13 @@ export interface AgentLoopOptions {
   maxReflectionRetries?: number;
 }
 
+/** callLlmWithRetry 的返回结果 */
+interface LlmCallResult {
+  fullContent: string;
+  toolCalls: Message['toolCalls'];
+  aborted: boolean;
+}
+
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
@@ -155,136 +162,35 @@ export class AgentLoop {
       // 调用 LLM（带重试 + 截断保护）
       const chatOpts = this.buildChatOptions();
       const safeMessages = this.truncateMessages(this.messages);
-      let fullContent = '';
-      let toolCalls: Message['toolCalls'] = undefined;
-      let streamStarted = false;
-      let lastError: Error | null = null;
-      let aborted = false;
 
-      // LLM 调用 Span（涵盖重试循环）
-      const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {
-        model: this.opts.provider.name,
-        messageCount: safeMessages.length,
-        iteration,
-      });
-
-      for (let attempt = 0; attempt <= AgentLoop.MAX_LLM_RETRIES; attempt++) {
-        if (attempt > 0) {
-          // 仅在流式输出前失败时重试（streamStarted = false）
-          const delay = AgentLoop.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-          logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
-          await new Promise(r => setTimeout(r, delay));
-          fullContent = '';
-          toolCalls = undefined;
-        }
-
-        try {
-          for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
-            streamStarted = true;
-            if (signal?.aborted) {
-              aborted = true;
-              break;
-            }
-            if (chunk.content) {
-              fullContent += chunk.content;
-              yield { type: 'text', content: chunk.content };
-            }
-            if (chunk.toolCalls) {
-              toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
-            }
-          }
-          break; // 成功，退出重试循环
-        } catch (err) {
-          lastError = err as Error;
-          if (streamStarted) {
-            // 流式已开始输出，不能重试（用户已看到部分结果），向上抛出
-            llmSpan.recordException(err as Error);
-            llmSpan.end();
-            responseSpan.end();
-            throw err;
-          }
-          if (attempt >= AgentLoop.MAX_LLM_RETRIES) {
-            // 重试次数耗尽
-            llmSpan.recordException(err as Error);
-            llmSpan.end();
-            responseSpan.end();
-            throw err;
-          }
-          // 继续重试
-        }
+      let llmResult: LlmCallResult;
+      try {
+        llmResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
+      } catch (err) {
+        responseSpan.end();
+        throw err;
       }
 
-      if (aborted) {
-        llmSpan.end();
+      if (llmResult.aborted) {
         responseSpan.end();
         yield { type: 'aborted', reason: '用户取消了对话' };
         return;
       }
 
-      // LLM 调用成功，结束 span
-      llmSpan.end();
-
       // 工具调用分支
-      if (toolCalls && toolCalls.length > 0) {
-        this.messages.push({
-          role: 'assistant',
-          content: fullContent,
-          toolCalls,
-        });
-
-        // 执行工具
-        for (const tc of toolCalls) {
-          // V-105：工具执行前检查取消
-          if (signal?.aborted) {
-            responseSpan.end();
-            yield { type: 'aborted', reason: '用户取消了对话' };
-            return;
-          }
-          yield { type: 'tool_start', name: tc.function.name, args: tc.function.arguments };
-
-          // 工具执行 Span
-          const toolSpan = this.tracer.startSpan(TRACE_SPANS.TOOL_EXEC, {
-            toolName: tc.function.name,
-          });
-
-          // 工具执行可能因文件不存在、路径越界等原因失败
-          // 捕获异常并转为结构化错误结果字符串，回传给 LLM 让其自行调整策略
-          // 避免错误直接传播到 agent.chat() 导致整个对话中断
-          // 错误结果包含 [ERR:TOOL:code] 前缀，供 Reflection 逻辑解析
-          let result: string;
-          try {
-            result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
-          } catch (err) {
-            toolSpan.recordException(err as Error);
-            if (err instanceof MemoraError) {
-              const code = err.errorCode ?? 'UNKNOWN';
-              result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
-              logger.warn({ tool: tc.function.name, errorCode: code, title: err.title }, '工具执行失败，错误已回传给 LLM');
-            } else {
-              result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${(err as Error).message}`;
-              logger.error({ tool: tc.function.name, err }, '工具执行异常');
-            }
-          }
-          toolSpan.end();
-
-          this.messages.push({
-            role: 'tool',
-            content: result,
-            toolCallId: tc.id,
-          });
-          yield {
-            type: 'tool_result',
-            name: tc.function.name,
-            ok: !result.startsWith('[ERR'),
-            summary: result.slice(0, 100),
-          };
+      if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
+        const execResult = yield* this.executeToolCalls(llmResult.toolCalls, llmResult.fullContent, signal);
+        if (execResult.aborted) {
+          responseSpan.end();
+          yield { type: 'aborted', reason: '用户取消了对话' };
+          return;
         }
 
         // Reflection（反思/自修正）：检查是否有可重试的错误
         // 如果工具结果中有 retryable 错误，在 LLM 上下文中追加反思提示
         // 帮助 LLM 聚焦于修正而非放弃
         const hasRetryableError = this.messages
-          .slice(-toolCalls.length) // 只看本轮工具结果
+          .slice(-llmResult.toolCalls.length) // 只看本轮工具结果
           .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
         if (hasRetryableError) {
           const reflectionHint = this.messages.filter(
@@ -303,12 +209,12 @@ export class AgentLoop {
       }
 
       // 纯文本结束
-      if (fullContent) {
-        this.messages.push({ role: 'assistant', content: fullContent });
+      if (llmResult.fullContent) {
+        this.messages.push({ role: 'assistant', content: llmResult.fullContent });
       }
 
       // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
-      const outputGuardResult = this.runOutputGuardrails(fullContent);
+      const outputGuardResult = this.runOutputGuardrails(llmResult.fullContent);
       if (outputGuardResult.blocked) {
         responseSpan.end();
         yield { type: 'text', content: outputGuardResult.message ?? '输出被护栏规则阻止' };
@@ -328,6 +234,165 @@ export class AgentLoop {
     responseSpan.end();
     yield { type: 'text', content: '\n\n[已达到最大迭代次数]' };
     yield { type: 'done' };
+  }
+
+  /**
+   * 调用 LLM（带指数退避重试）
+   *
+   * 仅在流式输出前失败时重试（streamStarted = false），
+   * 流式已开始则直接向上抛出（用户已看到部分结果）。
+   *
+   * @param safeMessages - 截断后的消息数组
+   * @param chatOpts - LLM 调用选项
+   * @param signal - 可选的 AbortSignal
+   * @param iteration - 当前迭代次数（用于 tracing）
+   * @yields AgentChunk 文本片段
+   * @returns LLM 调用结果（fullContent + toolCalls + aborted 状态）
+   */
+  private async *callLlmWithRetry(
+    safeMessages: readonly Message[],
+    chatOpts: ChatOptions,
+    signal: AbortSignal | undefined,
+    iteration: number,
+  ): AsyncGenerator<AgentChunk, LlmCallResult, unknown> {
+    let fullContent = '';
+    let toolCalls: Message['toolCalls'] = undefined;
+    let streamStarted = false;
+    let lastError: Error | null = null;
+    let aborted = false;
+
+    // LLM 调用 Span（涵盖重试循环）
+    const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {
+      model: this.opts.provider.name,
+      messageCount: safeMessages.length,
+      iteration,
+    });
+
+    for (let attempt = 0; attempt <= AgentLoop.MAX_LLM_RETRIES; attempt++) {
+      if (attempt > 0) {
+        // 仅在流式输出前失败时重试（streamStarted = false）
+        const delay = AgentLoop.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
+        await new Promise(r => setTimeout(r, delay));
+        fullContent = '';
+        toolCalls = undefined;
+      }
+
+      try {
+        for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
+          streamStarted = true;
+          if (signal?.aborted) {
+            aborted = true;
+            break;
+          }
+          if (chunk.content) {
+            fullContent += chunk.content;
+            yield { type: 'text', content: chunk.content };
+          }
+          if (chunk.toolCalls) {
+            toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
+          }
+        }
+        break; // 成功，退出重试循环
+      } catch (err) {
+        lastError = err as Error;
+        if (streamStarted) {
+          // 流式已开始输出，不能重试（用户已看到部分结果），向上抛出
+          llmSpan.recordException(err as Error);
+          llmSpan.end();
+          throw err;
+        }
+        if (attempt >= AgentLoop.MAX_LLM_RETRIES) {
+          // 重试次数耗尽
+          llmSpan.recordException(err as Error);
+          llmSpan.end();
+          throw err;
+        }
+        // 继续重试
+      }
+    }
+
+    if (aborted) {
+      llmSpan.end();
+      return { fullContent, toolCalls, aborted: true };
+    }
+
+    // LLM 调用成功，结束 span
+    llmSpan.end();
+    return { fullContent, toolCalls, aborted: false };
+  }
+
+  /**
+   * 执行工具调用列表
+   *
+   * 遍历 LLM 返回的 toolCalls，逐个执行并收集结果。
+   * 工具执行异常会被捕获并转为结构化错误字符串回传给 LLM，
+   * 而非直接中断对话。
+   *
+   * @param toolCalls - LLM 返回的工具调用列表
+   * @param fullContent - LLM 返回的文本内容
+   * @param signal - 可选的 AbortSignal
+   * @yields AgentChunk 工具开始/结果片段
+   * @returns 执行结果（aborted 状态）
+   */
+  private async *executeToolCalls(
+    toolCalls: NonNullable<Message['toolCalls']>,
+    fullContent: string,
+    signal: AbortSignal | undefined,
+  ): AsyncGenerator<AgentChunk, { aborted: boolean }, unknown> {
+    this.messages.push({
+      role: 'assistant',
+      content: fullContent,
+      toolCalls,
+    });
+
+    // 执行工具
+    for (const tc of toolCalls) {
+      // V-105：工具执行前检查取消
+      if (signal?.aborted) {
+        return { aborted: true };
+      }
+      yield { type: 'tool_start', name: tc.function.name, args: tc.function.arguments };
+
+      // 工具执行 Span
+      const toolSpan = this.tracer.startSpan(TRACE_SPANS.TOOL_EXEC, {
+        toolName: tc.function.name,
+      });
+
+      // 工具执行可能因文件不存在、路径越界等原因失败
+      // 捕获异常并转为结构化错误结果字符串，回传给 LLM 让其自行调整策略
+      // 避免错误直接传播到 agent.chat() 导致整个对话中断
+      // 错误结果包含 [ERR:TOOL:code] 前缀，供 Reflection 逻辑解析
+      let result: string;
+      try {
+        result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
+      } catch (err) {
+        toolSpan.recordException(err as Error);
+        if (err instanceof MemoraError) {
+          const code = err.errorCode ?? 'UNKNOWN';
+          result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
+          logger.warn({ tool: tc.function.name, errorCode: code, title: err.title }, '工具执行失败，错误已回传给 LLM');
+        } else {
+          result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${(err as Error).message}`;
+          logger.error({ tool: tc.function.name, err }, '工具执行异常');
+        }
+      }
+      toolSpan.end();
+
+      this.messages.push({
+        role: 'tool',
+        content: result,
+        toolCallId: tc.id,
+      });
+      yield {
+        type: 'tool_result',
+        name: tc.function.name,
+        ok: !result.startsWith('[ERR'),
+        summary: result.slice(0, 100),
+      };
+    }
+
+    return { aborted: false };
   }
 
   /**

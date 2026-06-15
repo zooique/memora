@@ -11,7 +11,7 @@
 import type { IMemoryStorage } from './storageInterface.js';
 import type { Memory } from './types.js';
 import { validateSource } from './types.js';
-import { segmentText } from '../utils/segmenter.js';
+import { segmentText } from '@/utils/segmenter.js';
 import { logger } from '@/logging/logger.js';
 
 /**

@@ -19,5 +19,7 @@ export function slugify(value: string): string {
   return value
     .replace(/[:\s]+/g, '-')
     .replace(/[^a-zA-Z0-9\u4e00-\u9fff\-_]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '')
     .slice(0, 40);
 }

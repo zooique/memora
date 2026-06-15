@@ -47,7 +47,7 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { ILogger } from '@/logging/loggerInterface.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import { logger, setLogger } from '@/logging/logger.js';
+import { logger } from '@/logging/logger.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import type { ITracer } from './tracer.js';
 
@@ -85,7 +85,12 @@ export interface AgentOptions {
   storage?: IMemoryStorage;
   /** 外部注入的会话存储（可选，不传则仅在内存中保存） */
   sessionStore?: ISessionStore;
-  /** 外部注入的日志实现（可选，不传则使用默认 PinoLogger） */
+  /**
+   * 外部注入的日志实现（可选，不传则使用默认 console fallback）。
+   * 如需自定义日志，请在创建 Agent 前调用 `setLogger()` 全局设置，
+   * 而非通过此字段传入——避免多 Agent 实例互相覆盖全局 logger。
+   * @deprecated 请使用 `import { setLogger } from '@memora/core'` 在创建 Agent 前全局设置
+   */
   logger?: ILogger;
   /** 可观测性 Tracer（可选，不传则使用 NoopTracer 静默丢弃所有 span） */
   tracer?: ITracer;
@@ -110,26 +115,33 @@ export interface AgentBuildCtx {
   bootstrapMemories: Memory[];
 }
 
+/** Agent 内部配置（构造参数分组） */
+interface AgentConfig {
+  dataDir: string;
+  registryDir: string | undefined;
+  maxContextTokens: number;
+  personaName: string | undefined;
+  permission: 'owner' | 'guest';
+  allowedPaths: string[];
+  confirmWrites: boolean;
+  vectorStore: VectorStore | undefined;
+  recallExcludeSources: string[];
+  storage: IMemoryStorage | undefined;
+  sessionStore: ISessionStore | undefined;
+  projectPath: string;
+  configDir: string | undefined;
+  tracer: ITracer | undefined;
+}
+
 // ─── Agent 门面类 ───────────────────────────────────────
 
 export class Agent extends TypedEventEmitter<AgentEventMap> {
-  // 构造参数
-  private _provider: LlmProvider;
-  private backgroundProvider: LlmProvider | null;
-  private dataDir: string;
-  private registryDir: string | undefined;
-  private maxContextTokens: number;
-  private personaName: string | undefined;
-  private permission: 'owner' | 'guest';
-  private allowedPaths: string[];
-  private confirmWrites: boolean;
-  private vectorStore: VectorStore | undefined;
-  private recallExcludeSources: string[];
-  private storage: IMemoryStorage | undefined;
-  private sessionStore: ISessionStore | undefined;
-  private projectPath: string;
-  private configDir: string | undefined;
-  private tracer: ITracer | undefined;
+  // 构造参数分组
+  #config: AgentConfig;
+  /** 前台 Provider（独立字段，因 setProvider() 可变） */
+  #provider: LlmProvider;
+  /** 后台 Provider（独立字段，因 setBackgroundProvider() 可变） */
+  #backgroundProvider: LlmProvider | null;
 
   // 运行时组件（init 后填充）
   private projectManager: ProjectManager | null = null;
@@ -172,25 +184,26 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   constructor(opts: AgentOptions) {
     super();
-    this.projectPath = opts.projectPath;
-    this._provider = opts.provider;
-    this.backgroundProvider = opts.backgroundProvider ?? null;
-    this.configDir = opts.configDir;
-    this.dataDir = opts.dataDir ?? '~/.memora';
-    this.registryDir = opts.registryDir;
-    this.maxContextTokens = opts.maxContextTokens ?? 120000;
-    this.personaName = opts.persona;
-    this.permission = opts.permission ?? 'owner';
-    this.allowedPaths = opts.allowedPaths ?? [];
-    this.confirmWrites = opts.confirmWrites ?? false;
-    this.vectorStore = opts.vectorStore;
-    this.recallExcludeSources = opts.recallExcludeSources ?? ['persona', 'rule', 'skill'];
-    this.storage = opts.storage;
-    this.sessionStore = opts.sessionStore;
-    this.tracer = opts.tracer;
-    if (opts.logger) {
-      setLogger(opts.logger);
-    }
+    this.#config = {
+      projectPath: opts.projectPath,
+      dataDir: opts.dataDir ?? '~/.memora',
+      registryDir: opts.registryDir,
+      maxContextTokens: opts.maxContextTokens ?? 120000,
+      personaName: opts.persona,
+      permission: opts.permission ?? 'owner',
+      allowedPaths: opts.allowedPaths ?? [],
+      confirmWrites: opts.confirmWrites ?? false,
+      vectorStore: opts.vectorStore,
+      recallExcludeSources: opts.recallExcludeSources ?? ['persona', 'rule', 'skill'],
+      storage: opts.storage,
+      sessionStore: opts.sessionStore,
+      configDir: opts.configDir,
+      tracer: opts.tracer,
+    };
+    this.#provider = opts.provider;
+    this.#backgroundProvider = opts.backgroundProvider ?? null;
+    // CR-01: 不再在构造函数中调用 setLogger()——避免多 Agent 实例互相覆盖全局 logger。
+    // 用户如需自定义 logger，应在创建 Agent 前自行调用 setLogger()。
   }
 
   // ─── 生命周期 ─────────────────────────────────────────
@@ -204,19 +217,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     if (projectPathOverride) {
-      this.projectPath = projectPathOverride;
+      this.#config.projectPath = projectPathOverride;
     }
 
-    this.projectManager = new ProjectManager(
-      this.dataDir,
-      this.allowedPaths,
-      this.confirmWrites,
-      this.permission,
-      this.storage,
-      this.registryDir,
-    );
+    this.projectManager = new ProjectManager({
+      dataDir: this.#config.dataDir,
+      allowedPaths: this.#config.allowedPaths,
+      confirmWrites: this.#config.confirmWrites,
+      permission: this.#config.permission,
+      storage: this.#config.storage,
+      registryDir: this.#config.registryDir,
+    });
 
-    const pctx = await this.projectManager.initProject(this.projectPath, undefined, this.configDir);
+    const pctx = await this.projectManager.initProject(this.#config.projectPath, undefined, this.#config.configDir);
 
     await this.assembleComponents(pctx);
 
@@ -284,11 +297,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'processing' };
       this.injectActiveSkill();
 
-      await this.history!.appendUser(input);
+      await this.requireNonNull(this.history, 'history').appendUser(input);
 
       let assistantContent = '';
       let wasAborted = false;
-      for await (const chunk of this.loop!.processUserInput(input, recalledMemories, signal)) {
+      for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(input, recalledMemories, signal)) {
         yield chunk;
         if (chunk.type === 'text') {
           assistantContent += chunk.content;
@@ -301,7 +314,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      await this.history!.appendAssistant(assistantContent);
+      await this.requireNonNull(this.history, 'history').appendAssistant(assistantContent);
 
       // 后处理阶段
       yield { type: 'thinking', phase: 'archiving' };
@@ -326,22 +339,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @returns 召回的记忆列表
    */
   private async recallAndInject(input: string): Promise<Memory[]> {
-    const recalledMemories = await recall(this.pctx!.index, input, {
+    const recalledMemories = await recall(this.requireNonNull(this.pctx, 'projectContext').index, input, {
       limit: 5,
-      vectorStore: this.vectorStore,
-      excludeSources: this.recallExcludeSources,
+      vectorStore: this.#config.vectorStore,
+      excludeSources: this.#config.recallExcludeSources,
     });
     if (recalledMemories.length > 0) {
       this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
     }
 
     // Layer 5: 最近对话注入
-    const recentHistory = this.loop!.getRecentHistory(3);
+    const loop = this.requireNonNull(this.loop, 'loop');
+    const recentHistory = loop.getRecentHistory(3);
     if (recentHistory.length > 0) {
       const recentPrompt = '[最近对话]\n' + recentHistory.map(m =>
         `${m.role === 'user' ? '用户' : '助手'}：${m.content}`
       ).join('\n');
-      this.loop!.injectSystemMessage(recentPrompt);
+      loop.injectSystemMessage(recentPrompt);
       logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
     }
 
@@ -408,7 +422,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const shouldExtract = this.insightExtractor.classify(input);
       if (shouldExtract === 'extract') {
         const p = this.insightExtractor.extract(input, assistantContent).catch(() => null);
-        this.history!.registerPendingArchive(p);
+        this.requireNonNull(this.history, 'history').registerPendingArchive(p);
       }
     }
   }
@@ -432,7 +446,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async switchSession(newSession: string): Promise<string> {
     this.assertInitialized('switchSession', ['history']);
 
-    return this.history!.switchSession(newSession);
+    return this.requireNonNull(this.history, 'history').switchSession(newSession);
   }
 
   /**
@@ -455,11 +469,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
 
+    const history = this.requireNonNull(this.history, 'history');
+
     // 记录源会话名（用于事件）
-    const sourceSessionName = this.history!.currentSessionName;
+    const sourceSessionName = history.currentSessionName;
 
     // 委托 MessageHistory 完成分叉
-    const result = this.history!.forkSession(targetSession);
+    const result = history.forkSession(targetSession);
 
     // 将消息恢复到 AgentLoop 的工作记忆
     this.applySessionToLoop(result.messages);
@@ -482,7 +498,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   listProjects(): AgentProjectEntry[] {
     this.assertInitialized('listProjects', ['projectManager']);
-    return this.projectManager!.listProjects();
+    return this.requireNonNull(this.projectManager, 'projectManager').listProjects();
   }
 
   /**
@@ -494,7 +510,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async switchProject(nameOrPath: string): Promise<AgentContext> {
     this.assertInitialized('switchProject', ['projectManager', 'provider']);
 
-    const projects = this.projectManager!.listProjects();
+    const pm = this.requireNonNull(this.projectManager, 'projectManager');
+    const projects = pm.listProjects();
     let target = projects.find((p) => p.name === nameOrPath || p.path === nameOrPath);
     if (!target) {
       const nameOrPathLower = nameOrPath.toLowerCase();
@@ -505,7 +522,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const projectPath = target ? target.path : nameOrPath;
     const projectName = target ? target.name : basename(nameOrPath);
 
-    const newPctx = await this.projectManager!.initProject(projectPath, projectName, this.configDir);
+    const newPctx = await pm.initProject(projectPath, projectName, this.#config.configDir);
 
     this.pctx = newPctx;
     this.ctx = newPctx;
@@ -522,13 +539,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private async assembleComponents(pctx: ProjectContext): Promise<void> {
     const result = await assembleComponents(pctx, {
       provider: this.provider,
-      backgroundProvider: this.backgroundProvider,
-      projectPath: this.projectPath,
-      configDir: this.configDir,
-      personaName: this.personaName,
-      maxContextTokens: this.maxContextTokens,
-      sessionStore: this.sessionStore,
-      tracer: this.tracer,
+      backgroundProvider: this.#backgroundProvider,
+      projectPath: this.#config.projectPath,
+      configDir: this.#config.configDir,
+      personaName: this.#config.personaName,
+      maxContextTokens: this.#config.maxContextTokens,
+      sessionStore: this.#config.sessionStore,
+      tracer: this.#config.tracer,
       existingSkillManager: this.skillManager,
     });
 
@@ -554,15 +571,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── Provider 管理 ────────────────────────────────────
 
   setProvider(provider: LlmProvider): void {
-    this._provider = provider;
+    this.#provider = provider;
     if (this.loop) {
       this.loop.setProvider(provider);
     }
-    logger.info({ provider: this._provider.name }, 'Provider 已切换');
+    logger.info({ provider: this.#provider.name }, 'Provider 已切换');
   }
 
   setBackgroundProvider(provider: LlmProvider | null): void {
-    this.backgroundProvider = provider;
+    this.#backgroundProvider = provider;
     logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
   }
 
@@ -596,13 +613,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
     this.assertInitialized('restoreMostRecentSession');
 
-    if (!this.sessionStore) {
+    if (!this.#config.sessionStore) {
       logger.debug({ hasSessionStore: false }, '未注入 ISessionStore，无法恢复会话');
       return 0;
     }
 
     // 从 sessionStore 列出所有会话，找到最近的
-    const sessions = this.sessionStore.listSessions();
+    const sessions = this.#config.sessionStore.listSessions();
     if (sessions.length === 0) {
       logger.debug({ sessionCount: 0 }, '没有找到可恢复的历史会话');
       return 0;
@@ -614,14 +631,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ?? sessions[sessions.length - 1];
 
     // 解析 "YYYY-MM-DD-session" 格式
-    const match = preferred!.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
+    const match = this.requireNonNull(preferred, 'preferredSession').match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
     if (!match) {
       logger.debug({ session: preferred }, '会话标识格式不匹配');
       return 0;
     }
 
     const [, date, session] = match;
-    const sessionMessages = this.sessionStore.loadMessages(date!, session!);
+    const sessionMessages = this.#config.sessionStore.loadMessages(this.requireNonNull(date, 'date'), this.requireNonNull(session, 'session'));
     if (sessionMessages.length === 0) {
       logger.debug({ messageCount: 0 }, '没有找到可恢复的历史会话');
       return 0;
@@ -638,7 +655,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async restoreSession(date: string, session: string): Promise<number> {
     this.assertInitialized('restoreSession');
 
-    const sessionMessages = await this.history!.loadSessionMessages(date, session);
+    const sessionMessages = await this.requireNonNull(this.history, 'history').loadSessionMessages(date, session);
     if (sessionMessages.length === 0) {
       return 0;
     }
@@ -654,7 +671,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
     this.assertInitialized('loadSessionMessages', ['history']);
-    return this.history!.loadSessionMessages(date, session);
+    return this.requireNonNull(this.history, 'history').loadSessionMessages(date, session);
   }
 
   // ─── 守卫方法 ───────────────────────────────────────────
@@ -664,7 +681,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       role: tm.role as Message['role'],
       content: tm.content,
     }));
-    this.loop!.restoreHistory(messages);
+    this.requireNonNull(this.loop, 'loop').restoreHistory(messages);
   }
 
   /**
@@ -695,6 +712,22 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         ]);
       }
     }
+  }
+
+  /**
+   * 非空断言守卫——将静默的 `!` 断言替换为抛出清晰错误的运行时检查
+   *
+   * @param value 可能为 null/undefined 的值
+   * @param name 组件名称（用于错误消息）
+   * @throws MemoraError 如果 value 为 null/undefined
+   */
+  private requireNonNull<T>(value: T | null | undefined, name: string): T {
+    if (value === null || value === undefined) {
+      throw configError('Agent 未初始化', `${name} 组件不可用`, [
+        '请先调用 await agent.init()',
+      ]);
+    }
+    return value;
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────
@@ -752,7 +785,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       await this.projectManager.shutdown();
     }
     this._initialized = false;
-    this.backgroundProvider = null;
+    this.#backgroundProvider = null;
     this._chatBusy = false;
     this.history = null;
     this.loop = null;
@@ -783,7 +816,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   get provider(): LlmProvider {
-    return this._provider;
+    return this.#provider;
   }
 
   get isBusy(): boolean {

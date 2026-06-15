@@ -29,8 +29,8 @@ import {
   mkdirSync,
   readFileSync,
   writeFileSync,
-  unlinkSync,
 } from 'node:fs';
+import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { FileStore } from './store.js';
 import { InMemoryStorage } from './inMemoryStorage.js';
 import type { IMemoryStorage } from './storageInterface.js';
@@ -90,6 +90,24 @@ export interface ProjectEntry {
 }
 
 /**
+ * ProjectManager 构造选项
+ */
+export interface ProjectManagerOptions {
+  /** Agent 级数据目录（memora.db + topics/ 的父目录） */
+  dataDir: string;
+  /** 允许的路径白名单 */
+  allowedPaths?: string[];
+  /** 写入确认 */
+  confirmWrites?: boolean;
+  /** 安全权限 */
+  permission?: 'owner' | 'guest';
+  /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
+  storage?: IMemoryStorage;
+  /** 注册表目录（可选，默认与 dataDir 相同） */
+  registryDir?: string;
+}
+
+/**
  * 项目管理器
  *
  * 管理多项目的生命周期：
@@ -117,14 +135,8 @@ export class ProjectManager {
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
 
-  constructor(
-    dataDir: string,
-    allowedPaths: string[] = [],
-    confirmWrites: boolean = false,
-    permission: 'owner' | 'guest' = 'owner',
-    storage?: IMemoryStorage,
-    registryDir?: string,
-  ) {
+  constructor(options: ProjectManagerOptions) {
+    const { dataDir, allowedPaths = [], confirmWrites = false, permission = 'owner', storage, registryDir } = options;
     const memoraHome = resolve(dataDir.replace(/^~/, homedir()));
     this.agentDataDir = memoraHome;
     // 注册表目录：优先使用宿主指定的用户级路径，避免每项目重复存储
@@ -146,7 +158,7 @@ export class ProjectManager {
    */
   private async ensureAgentResources(): Promise<{ index: IMemoryStorage }> {
     if (!this.agentIndex) {
-      mkdirSync(this.agentDataDir, { recursive: true });
+      await mkdir(this.agentDataDir, { recursive: true });
 
       // 优先使用外部注入的存储实例
       if (this.externalStorage) {
@@ -189,12 +201,12 @@ export class ProjectManager {
     const memoraDir = this.resolveMemoraDir(projectPath);
 
     // 获取锁文件（项目级锁，防止同项目并发）
-    this.acquireLock(memoraDir);
+    await this.acquireLock(memoraDir);
     this.currentProjectPath = projectPath;
     this.currentLockPath = join(memoraDir, '.lock');
 
     // 确保项目 .memora/ 目录存在
-    mkdirSync(memoraDir, { recursive: true });
+    await mkdir(memoraDir, { recursive: true });
 
     // Agent 级共享资源（memora.db 只有一个）
     const { index } = await this.ensureAgentResources();
@@ -268,7 +280,7 @@ export class ProjectManager {
    */
   async closeProject(): Promise<void> {
     // Agent 级 index/topicStore 不关闭——它们是共享的，在整个 Agent 生命周期内持久存在
-    this.releaseLock();
+    await this.releaseLock();
     this.currentProjectPath = null;
     this.currentLockPath = null;
   }
@@ -343,29 +355,28 @@ export class ProjectManager {
    * 如果锁文件存在且进程存活，发出警告但不阻止
    * 如果锁文件存在但进程已死，清理残留锁
    */
-  private acquireLock(memoraDir: string): void {
+  private async acquireLock(memoraDir: string): Promise<void> {
     const lockPath = join(memoraDir, '.lock');
 
-    if (existsSync(lockPath)) {
-      try {
-        const raw = readFileSync(lockPath, 'utf-8');
-        const info = JSON.parse(raw) as LockInfo;
+    try {
+      // 尝试读取锁文件（存在时）
+      const raw = await readFile(lockPath, 'utf-8');
+      const info = JSON.parse(raw) as LockInfo;
 
-        // 检查进程是否存活
-        if (this.isProcessAlive(info.pid)) {
-          logger.warn(
-            { pid: info.pid, acquiredAt: info.acquiredAt, hostname: info.hostname },
-            '项目已被其他进程打开（锁文件存在），继续操作可能导致数据冲突',
-          );
-        } else {
-          // 残留锁，清理
-          logger.info({ pid: info.pid }, '清理残留锁文件（进程已退出）');
-          this.safeUnlink(lockPath);
-        }
-      } catch {
-        // 锁文件损坏，清理
-        this.safeUnlink(lockPath);
+      // 检查进程是否存活
+      if (this.isProcessAlive(info.pid)) {
+        logger.warn(
+          { pid: info.pid, acquiredAt: info.acquiredAt, hostname: info.hostname },
+          '项目已被其他进程打开（锁文件存在），继续操作可能导致数据冲突',
+        );
+      } else {
+        // 残留锁，清理
+        logger.info({ pid: info.pid }, '清理残留锁文件（进程已退出）');
+        await this.safeUnlink(lockPath);
       }
+    } catch {
+      // 锁文件不存在或损坏，清理
+      await this.safeUnlink(lockPath);
     }
 
     // 写入新锁
@@ -375,25 +386,25 @@ export class ProjectManager {
       hostname: hostname(),
     };
 
-    mkdirSync(memoraDir, { recursive: true });
-    writeFileSync(lockPath, JSON.stringify(lockInfo, null, 2), 'utf-8');
+    await mkdir(memoraDir, { recursive: true });
+    await writeFile(lockPath, JSON.stringify(lockInfo, null, 2), 'utf-8');
   }
 
   /**
    * 释放锁文件
    */
-  private releaseLock(): void {
+  private async releaseLock(): Promise<void> {
     if (this.currentLockPath) {
-      this.safeUnlink(this.currentLockPath);
+      await this.safeUnlink(this.currentLockPath);
     }
   }
 
   /**
    * 安全删除文件（忽略不存在的错误）
    */
-  private safeUnlink(filePath: string): void {
+  private async safeUnlink(filePath: string): Promise<void> {
     try {
-      unlinkSync(filePath);
+      await unlink(filePath);
     } catch {
       // 文件不存在或无法删除，忽略
     }

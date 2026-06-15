@@ -14,8 +14,7 @@
  * 详见 ADR-002 · 阶段三向量检索备选方案
  * 详见 00-记忆归档原则-v1.0.md · 信息不对称原则
  */
-import { readFile, writeFile } from 'node:fs/promises';
-import { mkdirSync } from 'node:fs';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { cosineSimilarity } from '@/utils/math.js';
@@ -107,7 +106,7 @@ export class VectorStore {
       entries: Array.from(this.entries.entries()).map(([id, vector]) => ({ id, vector })),
     };
 
-    mkdirSync(dirname(this.storePath), { recursive: true });
+    await mkdir(dirname(this.storePath), { recursive: true });
     await writeFile(this.storePath, JSON.stringify(data), 'utf-8');
     this.dirty = false;
     logger.info({ count: this.entries.size }, '向量索引持久化完成');
