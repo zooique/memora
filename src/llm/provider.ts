@@ -31,6 +31,21 @@ export interface ChatOptions {
       parameters: Record<string, unknown>; // JSON Schema
     };
   }>;
+  /**
+   * 结构化输出约束（OpenAI response_format 兼容协议）
+   *
+   * 当 Provider 支持 structured output 且工具定义标记 strict 时，
+   * AgentLoop 自动生成 json_schema 约束，强制 LLM 输出合法 tool_call。
+   * 不支持的 Provider 静默跳过，fallback 到纯文本 tool_call 模式。
+   */
+  response_format?: {
+    type: 'json_schema';
+    json_schema: {
+      name: string;
+      strict: boolean;
+      schema: Record<string, unknown>;
+    };
+  };
   // 强制不使用流式
   stream?: boolean;
   /**
@@ -52,6 +67,14 @@ export interface ChatOptions {
  */
 export abstract class LlmProvider {
   abstract readonly name: string;
+
+  /**
+   * 是否支持结构化输出（response_format json_schema）
+   *
+   * 默认 false，子类可覆盖。AgentLoop 在构建工具调用时检查此标记，
+   * 不支持时自动降级为纯文本 tool_call 模式。
+   */
+  readonly supportsStructuredOutput: boolean = false;
 
   /**
    * 流式对话

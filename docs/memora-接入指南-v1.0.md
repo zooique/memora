@@ -1,8 +1,10 @@
-# Memora · 接入指南 v3.0
+# Memora · 接入指南 v3.1
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v3.0（最后更新：2026-06-12）
+> **版本**：v3.1（最后更新：2026-06-15）
+>
+> **v3.1 变更**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。详见 [Agent Harness 增强方案](./agent-harness-增强方案-v1.0.md)。
 >
 > **v3.0 重大变更**：Agent God Object 拆分。记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference-v1.0.md)。
 
@@ -16,7 +18,11 @@
 - [四、会话持久化](#四会话持久化)
 - [五、API 速查](#五api-速查)
 - [六、宿主工具函数](#六宿主工具函数)
-- [七、关键约束](#七关键约束)
+- [七、可观测性接入（ITracer）](#七可观测性接入itracer)
+- [八、内容护栏（Guardrails）](#八内容护栏guardrails)
+- [九、评估体系（Eval）](#九评估体系eval)
+- [十、多步骤编排](#十多步骤编排)
+- [十一、关键约束](#十一关键约束)
 
 ---
 
@@ -127,6 +133,7 @@ const agent = new Agent({
   storage,               // 存储层注入（可选）
   vectorStore,           // 向量存储（可选，启用语义搜索）
   logger,                // 日志注入（可选）
+  tracer: myOtelTracer,  // 可观测性 Tracer（可选，不传则静默丢弃所有 span）
 });
 
 await agent.init();
@@ -378,6 +385,7 @@ agent.on('sessionForked', (event) => {
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
+| `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 
 ### Agent 生命周期与状态
 
@@ -453,6 +461,10 @@ import {
   escapeLike,
   validateSource,
   tokenizeKeywords,
+  noopTracer,
+  TRACE_SPANS,
+  ToolErrorCode,
+  isRetryableErrorCode,
 } from 'memora';
 import type {
   ProviderConfig,
@@ -485,6 +497,9 @@ import type {
   AgentEventHandler,
   SessionRecord,
   ForkResult,
+  ITracer,
+  ISpan,
+  ToolErrorCodeValue,
 } from 'memora';
 ```
 
@@ -501,11 +516,15 @@ import type {
 | `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
 | `decayScores(memories, now?)` | 记忆衰减（>7天未访问 score 降 0.02/周，下限 0.1） |
-| `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION） |
+| `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION / GUARDRAIL） |
 | `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `tokenizeKeywords(text)` | 中英文混合分词（中文字 ≥2 连字 + 英文单词），供宿主 FTS5 使用 |
+| `noopTracer` | ITracer 的空实现（静默丢弃所有 span，零开销） |
+| `TRACE_SPANS` | AgentLoop 预定义 Span 名称常量（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE） |
+| `ToolErrorCode` | 工具错误码枚举（10 种，含 PATH_NOT_ALLOWED / FILE_NOT_FOUND 等） |
+| `isRetryableErrorCode(code)` | 判断错误码是否可重试（5 种 retryable） |
 
 **注意**：`SqliteStorage` 已移出到宿主项目，不再从 memora 导出。宿主需自行实现 `IMemoryStorage` 接口。
 
@@ -513,11 +532,186 @@ import type {
 
 ---
 
-## 七、关键约束
+## 七、可观测性接入（ITracer）
+
+Memora 内置了轻量的 Span/Trace 抽象，宿主可注入 OpenTelemetry 等实现来观测 AgentLoop 行为。
+
+### 接口定义
+
+```typescript
+interface ITracer {
+  startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan;
+}
+
+interface ISpan {
+  setAttribute(key: string, value: string | number | boolean): void;
+  end(): void;
+  recordException(error: Error): void;
+}
+```
+
+### AgentLoop 预定义 Span
+
+| Span 名称 | 常量 | 触发时机 | 关键属性 |
+|-----------|------|---------|---------|
+| `recall.recall` | `TRACE_SPANS.RECALL` | 记忆召回阶段 | `recallCount` |
+| `llm.call` | `TRACE_SPANS.LLM_CALL` | LLM API 调用 | `model`, `messageCount`, `iteration` |
+| `tool.execute` | `TRACE_SPANS.TOOL_EXEC` | 工具执行 | `toolName` |
+| `response.generate` | `TRACE_SPANS.RESPONSE` | 整轮响应 | `inputLength` |
+
+### 宿主接入示例（OpenTelemetry）
+
+```typescript
+import { trace } from '@opentelemetry/api';
+import type { ITracer, ISpan } from 'memora';
+
+// 宿主实现 ITracer 接口（桥接 OpenTelemetry）
+class OtelTracer implements ITracer {
+  private tracer = trace.getTracer('memora-agent');
+
+  startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {
+    const otelSpan = this.tracer.startSpan(name, { attributes });
+    return {
+      setAttribute: (key, value) => otelSpan.setAttribute(key, value),
+      end: () => otelSpan.end(),
+      recordException: (error) => otelSpan.recordException(error),
+    };
+  }
+}
+
+// 注入到 Agent
+const agent = new Agent({
+  // ...其他配置
+  tracer: new OtelTracer(),
+});
+```
+
+> **不注入时**：默认使用 `noopTracer`（静默丢弃所有 span，零运行时开销）。
+
+---
+
+## 八、内容护栏（Guardrails）
+
+Memora 支持基于正则的内容护栏，在对话输入和 LLM 输出阶段分别检查，防止恶意输入和敏感信息泄露。
+
+### 护栏规则格式
+
+护栏规则以 `source: "guardrail"` 记忆形式存储，放在 `configDir/rules/guardrails/` 目录下：
+
+```markdown
+---
+name: 禁止执行代码
+source: guardrail
+---
+
+pattern: /执行|运行|eval|exec/
+action: block
+```
+
+- `pattern`：正则表达式（可选加 `/` 定界符）
+- `action`：`block`（阻断对话）或 `warn`（仅警告）
+
+### 护栏行为
+
+| 阶段 | 命中 block | 命中 warn | 规则异常 |
+|------|-----------|----------|---------|
+| 输入 | 阻断对话，返回阻止消息 | 追加警告文本，继续对话 | 降级放行 + 记日志 |
+| 输出 | 阻断输出，返回阻止消息 | 追加警告文本，继续输出 | 降级放行 + 记日志 |
+
+> **降级优先**：护栏自身异常（如正则编译失败）永远不阻断用户对话。
+
+### 工具错误反思（Reflection）
+
+当工具执行失败时，错误结果包含 `[ERR:TOOL:code]` 前缀。如果错误码标记为 retryable（如 `FILE_NOT_FOUND`、`ARGUMENT_ERROR`），AgentLoop 会自动注入 `[REFLECTION_HINT]` 系统消息，引导 LLM 修正参数后重试。
+
+```typescript
+import { ToolErrorCode, isRetryableErrorCode } from 'memora';
+
+// 判断错误码是否可重试
+isRetryableErrorCode(ToolErrorCode.FILE_NOT_FOUND);  // true
+isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED); // false
+```
+
+Reflection 默认最多重试 2 次（`maxReflectionRetries`），防止无限循环。
+
+---
+
+## 九、评估体系（Eval）
+
+Memora 提供了 Mock Eval 框架，用于 Agent 行为回归测试（不发起真实 LLM 调用）。
+
+### 类型定义
+
+```typescript
+import type { EvalScenario, EvalExpectation, EvalResult } from 'memora';
+// 注意：Eval 类型在 tests/eval/evalTypes.ts 中定义，
+// 宿主项目可直接复制或 import 该文件
+```
+
+### 评估场景示例
+
+```typescript
+const scenario: EvalScenario = {
+  name: '只读查询不应调用 write_file',
+  description: '用户只查询信息时，Agent 不应写入文件',
+  input: '帮我看看第一章写了什么',
+  expect: {
+    toolsCalled: ['read_file'],       // 期望调用 read_file
+    toolsNotCalled: ['write_file'],   // 不应调用 write_file
+  },
+};
+```
+
+### 评估工具函数
+
+```typescript
+import { collectAgentChunks, evaluateResult } from './tests/eval/evalTypes.js';
+
+// 从 AgentChunk 流中收集行为数据
+const collected = await collectAgentChunks(agent.chat('帮我看看第一章'));
+
+// 比对期望
+const result = evaluateResult(scenario.name, collected, scenario.expect);
+console.log(result.passed ? '✅ 通过' : `❌ 失败: ${result.failures.join('; ')}`);
+```
+
+### 两种评估层次
+
+| 层次 | 工具 | LLM 调用 | 用途 |
+|------|------|---------|------|
+| Mock Eval | `collectAgentChunks` + `evaluateResult` | 不调用（MSW Mock） | 行为回归（工具调用、护栏、召回） |
+| 真实 LLM Eval | 宿主自建 | 真实调用 | 回复质量、指令遵循度 |
+
+> Mock Eval 在 CI 中运行，真实 LLM Eval 由宿主项目手动触发。
+
+---
+
+## 十、多步骤编排
+
+Memora 是单 Agent 模型（ADR-011），不内置多 Agent 编排。宿主项目可通过多次调用 `agent.chat()` 实现复杂工作流：
+
+```typescript
+// 示例：分析项目 → 生成大纲 → 逐章写作
+const analysis = await agent.chatSync('分析这个项目的风格和主题');
+const outline = await agent.chatSync('基于分析结果，生成章节大纲');
+for (const chapter of chapters) {
+  const content = await agent.chatSync(`根据大纲，写第${chapter.num}章：${chapter.title}`);
+  // 写入文件...
+}
+```
+
+**编排要点**：
+- 每次 `chat()` 共享同一个 AgentLoop 上下文（记忆、角色、技能）
+- 宿主负责流程控制（条件分支、并行、错误处理）
+- 如需隔离上下文，使用 `agent.switchSession()` 或 `agent.forkSession()`
+
+---
+
+## 十一、关键约束
 
 1. **`provider` 是必填项** — Agent 无法独立运行
 2. **configDir** 指向 Agent 级配置目录，所有子项目共享
-3. **项目级 `.memora/`** 只放 `rules/` 和 `skills/`
+3. **项目级 `.memora/`** 只放 `rules/`、`skills/` 和 `guardrails/`
 4. **角色由关键词自动触发**
 5. **对话历史跨子项目持久化**
 6. **Manager 访问器在 `init()` 前返回 `null`** — 所有 `agent.config.xxx()` / `agent.memory.xxx()` 等调用必须在 `init()` 之后
@@ -527,6 +721,8 @@ import type {
 10. **禁止**项目切换时关闭/重建数据库
 11. **禁止**将配置直接写入 SQLite 作为持久化存储
 12. **项目切换** `switchProject()` 已自动 rebuild，通常无需手动调用 `rebuildComponents()`
+13. **护栏规则**以 `source: "guardrail"` 记忆形式存储，不创建独立子系统
+14. **Tracer 未注入时**自动降级为 NoopTracer，零运行时开销
 
 ---
 

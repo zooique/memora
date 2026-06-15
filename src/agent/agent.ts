@@ -53,6 +53,7 @@ import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger, setLogger } from '@/logging/logger.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
+import type { ITracer } from './tracer.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 
@@ -90,6 +91,8 @@ export interface AgentOptions {
   sessionStore?: ISessionStore;
   /** 外部注入的日志实现（可选，不传则使用默认 PinoLogger） */
   logger?: ILogger;
+  /** 可观测性 Tracer（可选，不传则使用 NoopTracer 静默丢弃所有 span） */
+  tracer?: ITracer;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */
@@ -130,6 +133,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private sessionStore: ISessionStore | undefined;
   private projectPath: string;
   private configDir: string | undefined;
+  private tracer: ITracer | undefined;
 
   // 运行时组件（init 后填充）
   private projectManager: ProjectManager | null = null;
@@ -188,6 +192,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.recallExcludeSources = opts.recallExcludeSources ?? ['persona', 'rule', 'skill'];
     this.storage = opts.storage;
     this.sessionStore = opts.sessionStore;
+    this.tracer = opts.tracer;
     if (opts.logger) {
       setLogger(opts.logger);
     }
@@ -561,6 +566,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       systemPromptPrefix,
       toolDefinitions: toolExec.getToolDefinitions(),
       maxContextTokens: this.maxContextTokens,
+      tracer: this.tracer,
+      // 护栏规则：从记忆索引中筛选 source:guardrail 的记忆
+      guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
     });
 
     // v4.0 拆分：记忆查看器（依赖已创建的 loop + history）

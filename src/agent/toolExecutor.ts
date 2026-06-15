@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promi
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/pathGuard.js';
-import { toolError, MemoraError } from '@/utils/errors.js';
+import { toolError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from './workProjection.js';
@@ -220,6 +220,7 @@ export class ToolExecutor {
         `args JSON 无效：${(err as Error).message}`,
         ['检查 LLM 输出的工具调用格式', '确认 args 是合法 JSON'],
         err as Error,
+        ToolErrorCode.ARGUMENT_ERROR,
       );
     }
 
@@ -273,6 +274,7 @@ export class ToolExecutor {
               `${name}: ${(err as Error).message}`,
               ['检查工具参数是否正确', '检查工具 handler 实现是否有 bug'],
               err as Error,
+              ToolErrorCode.CUSTOM_TOOL_FAILED,
             );
           }
         }
@@ -281,7 +283,7 @@ export class ToolExecutor {
             .map((t) => t.name)
             .join(', ')}`,
           '检查 personality.md 是否限制了工具集',
-        ]);
+        ], undefined, ToolErrorCode.UNKNOWN_TOOL);
       }
     }
   }
@@ -294,7 +296,7 @@ export class ToolExecutor {
       throw toolError('read_file 工具调用缺少 path 参数', 'LLM 未传 path', [
         '检查 personality.md 是否明确了 read_file 用法',
         '检查 LLM 输出',
-      ]);
+      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
     }
 
     const absolutePath = this.resolveSafePath(relativePath);
@@ -315,6 +317,7 @@ export class ToolExecutor {
         `${absolutePath}：${(err as Error).message}`,
         ['确认文件存在', '确认当前进程有读取权限'],
         err as Error,
+        ToolErrorCode.FILE_NOT_FOUND,
       );
     }
   }
@@ -352,12 +355,12 @@ export class ToolExecutor {
     if (!relativePath) {
       throw toolError('write_file 工具调用缺少 path 参数', 'LLM 未传 path', [
         '检查 personality.md 是否明确了 write_file 用法',
-      ]);
+      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
     }
     if (typeof content !== 'string') {
       throw toolError('write_file 工具调用缺少 content 参数', 'LLM 未传 content', [
         '确认 content 是字符串',
-      ]);
+      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
     }
 
     // 校验 mode 参数合法性
@@ -367,6 +370,8 @@ export class ToolExecutor {
         'write_file 参数错误',
         `mode 必须是 ${validModes.join('/')} 之一，收到：${mode}`,
         ['检查 LLM 输出的 mode 参数'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
       );
     }
 
@@ -374,7 +379,7 @@ export class ToolExecutor {
     if (mode === 'insert' && !insertLine) {
       throw toolError('write_file 参数错误', 'insert 模式必须提供 insert_line 参数', [
         'insert_line 指定插入位置的行号（从 1 开始）',
-      ]);
+      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
     }
 
     const absolutePath = this.resolveSafePath(relativePath);
@@ -399,7 +404,7 @@ export class ToolExecutor {
       if (!ok) {
         throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
           '如需写入，请重新发起请求并确认',
-        ]);
+        ], undefined, ToolErrorCode.WRITE_REJECTED);
       }
     } else {
       // 回退到原有安全确认流程
@@ -412,7 +417,7 @@ export class ToolExecutor {
       if (!confirmed) {
         throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
           '如需写入，请重新发起请求并确认',
-        ]);
+        ], undefined, ToolErrorCode.WRITE_REJECTED);
       }
     }
 
@@ -437,6 +442,7 @@ export class ToolExecutor {
         `${absolutePath}：${(err as Error).message}`,
         ['确认父目录可写', '确认磁盘空间充足'],
         err as Error,
+        ToolErrorCode.PERMISSION_DENIED,
       );
     }
   }
@@ -479,7 +485,7 @@ export class ToolExecutor {
         if (Number.isNaN(lineNum) || lineNum < 1) {
           throw toolError('write_file 参数错误', `insert_line 必须是正整数，收到：${insertLine}`, [
             'insert_line 从 1 开始计数',
-          ]);
+          ], undefined, ToolErrorCode.ARGUMENT_ERROR);
         }
         const lines = beforeContent.split('\n');
         // 行号超出范围时追加到末尾
@@ -524,7 +530,7 @@ export class ToolExecutor {
       if (!stats.isDirectory()) {
         throw toolError('list_dir 路径不是目录', `${absolutePath} 是文件，不是目录`, [
           'path 参数必须指向目录',
-        ]);
+        ], undefined, ToolErrorCode.DIR_NOT_FOUND);
       }
     } catch (err) {
       if ((err as { code?: string }).code === 'ENOENT') {
@@ -533,6 +539,7 @@ export class ToolExecutor {
           `${absolutePath}：目录不存在`,
           ['确认路径存在', '使用 list_dir(".") 列出项目根'],
           err as Error,
+          ToolErrorCode.DIR_NOT_FOUND,
         );
       }
       throw err;
@@ -615,7 +622,7 @@ export class ToolExecutor {
     if (!query) {
       throw toolError('search_memories 工具调用缺少 query 参数', 'LLM 未传 query', [
         'query 不能为空',
-      ]);
+      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
     }
 
     let limit = Number.parseInt(limitStr, 10);
@@ -670,7 +677,7 @@ export class ToolExecutor {
       if (result[req] === undefined || result[req] === null) {
         throw toolError('工具参数缺失', `${toolName}: 缺少必填参数 "${req}"`, [
           `参数 "${req}" 类型应为 ${props[req]?.type ?? 'unknown'}`,
-        ]);
+        ], undefined, ToolErrorCode.ARGUMENT_ERROR);
       }
     }
 

@@ -53,3 +53,45 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 - 当发现白名单机制过于严苛影响开发效率
 - 当需要多用户/多租户场景（违反"单用户本地"定位）
 - 当发现新的攻击向量
+
+## 补充说明（2026-06-15 · 阶段 B 增强）
+
+### 内容护栏（Guardrails）
+
+在原有路径白名单 + 写入确认的基础上，新增**内容级护栏**：
+
+| 维度 | 设计 |
+|------|------|
+| 护栏类型 | 输入护栏（用户输入注入前）+ 输出护栏（LLM 响应返回前） |
+| 规则存储 | 以 `source: "guardrail"` 记忆形式存储，融入"万物皆记忆"模型 |
+| 规则格式 | 每条规则包含 `pattern`（正则表达式）和 `action`（`block` / `warn`） |
+| 规则来源 | `configDir/rules/guardrails/` 下的 `.md` 文件，启动时由 MemoryLoader 扫描加载 |
+| 降级策略 | 护栏自身异常（正则编译失败等）降级为"放行 + 记日志"，永远不阻断用户对话 |
+
+**输入/输出护栏共享同一规则集**，AgentLoop 在对话输入和输出阶段分别调用 `runInputGuardrails()` / `runOutputGuardrails()`。
+
+### 工具错误反思（Reflection）
+
+新增 `ToolErrorCode` 枚举和反思机制：
+
+| 维度 | 设计 |
+|------|------|
+| 错误码 | 10 种错误码（PATH_NOT_ALLOWED / FILE_NOT_FOUND / ARGUMENT_ERROR 等） |
+| 可重试标记 | 5 种错误码标记为 retryable（FILE_NOT_FOUND / ARGUMENT_ERROR / TOOL_TIMEOUT / DIR_NOT_FOUND / CUSTOM_TOOL_FAILED） |
+| 反思机制 | 工具失败时，AgentLoop 检查错误码是否为 retryable，若是则在 LLM 上下文中追加 `[REFLECTION_HINT]` 系统消息 |
+| 反思上限 | `maxReflectionRetries` 默认 2 次，防止无限重试循环 |
+
+### 更新后的阶段划分
+
+| 阶段 | 安全内容 |
+|------|---------|
+| 阶段一 | 路径白名单 + 写入二次确认（owner 模式默认关闭） |
+| 阶段二 | 工具调用白名单（5 个工具） |
+| 阶段三 | 内容护栏（Guardrails）+ 工具错误反思（Reflection） |
+| 阶段四 | Prompt 注入检测 + 完整审计日志 |
+
+### 设计哲学
+
+- **护栏不阻断对话**：护栏自身异常时降级放行，这是降级优先原则的直接要求
+- **万物皆记忆**：护栏规则以 `source: "guardrail"` 融入记忆统一模型，不创建独立子系统
+- **反思是增强而非替代**：LLM 原本就能看到错误消息并自行修正，Reflection 只是在可重试场景下给 LLM 一个明确的"请重试"信号

@@ -6,15 +6,16 @@ import { describe, expect, it } from 'vitest';
 import { MemorySchema, SOURCE_LABELS, inferSource, escapeLike, STOPWORDS, validateSource } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
-  it('应该暴露 6 种 source 标签约定', () => {
+  it('应该暴露 7 种 source 标签约定', () => {
     // source 是开放字符串，SOURCE_LABELS 仅为当前约定
-    expect(Object.keys(SOURCE_LABELS)).toHaveLength(6);
+    expect(Object.keys(SOURCE_LABELS)).toHaveLength(7);
     expect(SOURCE_LABELS.PERSONA).toBe('persona');
     expect(SOURCE_LABELS.RULE).toBe('rule');
     expect(SOURCE_LABELS.SKILL).toBe('skill');
     expect(SOURCE_LABELS.INSIGHT).toBe('insight');
     expect(SOURCE_LABELS.PROFILE).toBe('profile');
     expect(SOURCE_LABELS.WORK_PROJECTION).toBe('work-projection');
+    expect(SOURCE_LABELS.GUARDRAIL).toBe('guardrail');
   });
 
   it('应该通过 schema 校验一个有效记忆', () => {

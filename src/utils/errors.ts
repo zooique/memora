@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 统一错误类型
  *
  * 把"系统 Error + 英文 stack trace"包装成"分类清晰 + 中文友好 + 有下一步建议"的错误
@@ -19,6 +19,53 @@ import { logger } from '@/logging/logger.js';
 
 export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
 
+/**
+ * 工具错误码 — 用于 AgentLoop 的 Reflection（反思/自修正）逻辑
+ *
+ * 每个错误码关联一个 retryable 标记：
+ *   - retryable：LLM 可以调整参数后重试（如文件路径错误、参数类型错误）
+ *   - non-retryable：重试无意义（如权限拒绝、用户拒绝写入）
+ */
+export const ToolErrorCode = {
+  /** 路径不在白名单内（不可重试） */
+  PATH_NOT_ALLOWED: 'PATH_NOT_ALLOWED',
+  /** 文件不存在（可重试 — LLM 可能用错了路径） */
+  FILE_NOT_FOUND: 'FILE_NOT_FOUND',
+  /** 权限不足（不可重试） */
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  /** 工具参数错误（可重试 — LLM 可以修正参数格式） */
+  ARGUMENT_ERROR: 'ARGUMENT_ERROR',
+  /** 工具执行超时（可重试） */
+  TOOL_TIMEOUT: 'TOOL_TIMEOUT',
+  /** 用户拒绝写入（不可重试） */
+  WRITE_REJECTED: 'WRITE_REJECTED',
+  /** 目录不存在（可重试 — LLM 可能用错了路径） */
+  DIR_NOT_FOUND: 'DIR_NOT_FOUND',
+  /** 未知工具（不可重试 — 工具未注册） */
+  UNKNOWN_TOOL: 'UNKNOWN_TOOL',
+  /** 自定义工具执行失败（可重试） */
+  CUSTOM_TOOL_FAILED: 'CUSTOM_TOOL_FAILED',
+  /** 通用错误（不可重试） */
+  UNKNOWN: 'UNKNOWN',
+} as const;
+
+export type ToolErrorCodeValue = (typeof ToolErrorCode)[keyof typeof ToolErrorCode];
+
+/**
+ * 判断错误码是否可重试
+ */
+export function isRetryableErrorCode(code: ToolErrorCodeValue): boolean {
+  return RETRYABLE_ERROR_CODES.has(code as string);
+}
+
+const RETRYABLE_ERROR_CODES = new Set<string>([
+  ToolErrorCode.FILE_NOT_FOUND,
+  ToolErrorCode.ARGUMENT_ERROR,
+  ToolErrorCode.TOOL_TIMEOUT,
+  ToolErrorCode.DIR_NOT_FOUND,
+  ToolErrorCode.CUSTOM_TOOL_FAILED,
+]);
+
 export interface FriendlyErrorOptions {
   /** 用户能看懂的简短标题（中文） */
   title: string;
@@ -28,6 +75,8 @@ export interface FriendlyErrorOptions {
   suggestions: string[];
   /** 错误分类 */
   category: ErrorCategory;
+  /** 工具错误码（用于 AgentLoop Reflection 判断是否可重试） */
+  errorCode?: ToolErrorCodeValue;
   /** 原始错误（保留 stack） */
   cause?: Error;
 }
@@ -37,6 +86,8 @@ export class MemoraError extends Error {
   readonly detail: string | undefined;
   readonly suggestions: readonly string[];
   readonly category: ErrorCategory;
+  /** 工具错误码（用于 AgentLoop 反思判断是否可重试） */
+  readonly errorCode: ToolErrorCodeValue | undefined;
   readonly cause: Error | undefined;
 
   constructor(opts: FriendlyErrorOptions) {
@@ -46,6 +97,7 @@ export class MemoraError extends Error {
     this.detail = opts.detail;
     this.suggestions = Object.freeze(opts.suggestions);
     this.category = opts.category;
+    this.errorCode = opts.errorCode;
     this.cause = opts.cause;
   }
 
@@ -128,8 +180,9 @@ export function toolError(
   detail: string | undefined,
   suggestions: string[],
   cause?: Error,
+  errorCode?: ToolErrorCodeValue,
 ): MemoraError {
-  return new MemoraError({ title, detail, suggestions, category: 'tool', cause });
+  return new MemoraError({ title, detail, suggestions, category: 'tool', cause, errorCode });
 }
 
 /**

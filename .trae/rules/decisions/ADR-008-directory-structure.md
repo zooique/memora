@@ -47,7 +47,7 @@ src/
 
 > **已移出至宿主项目**：
 > - `cli/` → 泊文 `hosts/memora-cli/`
-> - `SqliteStorage`（原 `memory/index.ts`） → 泊文 `hosts/memora-utils/sqlite-storage.ts`
+> - `SqliteStorage`（原 `memory/index.ts`） → 泊文 `hosts/memora-utils/sqliteStorage.ts`
 > - `commander`、`picocolors` → 泊文 dependencies
 
 ## 年轮修订
@@ -104,6 +104,6 @@ src/
 **设计演进**：
 - memora 内核定位为零 native 依赖纯逻辑库
 - CLI 移出至宿主项目（泊文 `hosts/memora-cli/`）
-- SqliteStorage 移出至宿主项目（泊文 `hosts/memora-utils/sqlite-storage.ts`）
+- SqliteStorage 移出至宿主项目（泊文 `hosts/memora-utils/sqliteStorage.ts`）
 - `src/index.ts` 从 CLI 入口转变为库导出入口
 - 目录结构简化为 9 个纯逻辑模块

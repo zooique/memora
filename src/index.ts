@@ -43,6 +43,10 @@ export type { Config } from './config/loader.js';
 // 事件系统
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from './utils/eventEmitter.js';
 
+// ─── 可观测性导出 ────────────────────────────────────────
+export type { ITracer, ISpan } from './agent/tracer.js';
+export { noopTracer, TRACE_SPANS } from './agent/tracer.js';
+
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS, inferSource, escapeLike, validateSource } from './memory/types.js';
 export type { Memory } from './memory/types.js';
@@ -65,6 +69,10 @@ export type { ILogger } from './logging/loggerInterface.js';
 export { setLogger, logger } from './logging/logger.js';
 
 // ─── 工具导出 ────────────────────────────────────────────
-// 分词工具：宿主项目（如 SqliteStorage）依赖
+// 分词工具：宿主项目（如 SqliteStorage）依赖// 工具导出
 export { segmentText, tokenizeKeywords } from './memory/segmenter.js';
 export type { SkillEntry } from './skill/skillManager.js';
+
+// ─── 错误类型导出 ────────────────────────────────────────
+export { ToolErrorCode, isRetryableErrorCode } from './utils/errors.js';
+export type { ToolErrorCodeValue } from './utils/errors.js';

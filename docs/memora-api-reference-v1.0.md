@@ -1,10 +1,12 @@
-# Memora 内核 API 参考手册（v3.0）
+# Memora 内核 API 参考手册（v3.1）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v3.0（最后更新：2026-06-12）
+> **版本**：v3.1（最后更新：2026-06-15）
+>
+> **v3.1 变更**：新增 ITracer/ISpan 可观测性接口、ToolErrorCode 错误码、Guardrails 护栏、Reflection 反思机制。详见 [Agent Harness 增强方案](./agent-harness-增强方案-v1.0.md)。
 >
 > **v3.0 重大变更**：Agent God Object 拆分。记忆、配置、Insight、工具、角色等方法从 Agent 面类迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见各章节。
 
@@ -70,6 +72,7 @@
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，引导记忆不被召回） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
+| `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 
 ### 2.2 生命周期方法
 
@@ -277,6 +280,7 @@ interface Memory {
 | `SOURCE_LABELS.INSIGHT` | `'insight'` | 对话洞察 |
 | `SOURCE_LABELS.PROFILE` | `'profile'` | 用户画像 |
 | `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
+| `SOURCE_LABELS.GUARDRAIL` | `'guardrail'` | 内容护栏规则 |
 
 > source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。
 
@@ -578,6 +582,108 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ---
 
+## 十五、可观测性（ITracer / ISpan）
+
+Memora 内置轻量 Span/Trace 抽象，宿主注入实现后可观测 AgentLoop 行为。
+
+### 15.1 ITracer 接口
+
+```typescript
+interface ITracer {
+  startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan;
+}
+```
+
+### 15.2 ISpan 接口
+
+```typescript
+interface ISpan {
+  setAttribute(key: string, value: string | number | boolean): void;
+  end(): void;
+  recordException(error: Error): void;
+}
+```
+
+### 15.3 NoopTracer（默认实现）
+
+```typescript
+import { noopTracer } from 'memora';
+
+// 不注入 tracer 时自动使用 noopTracer，零运行时开销
+// noopTracer.startSpan() 返回共享的 NoopSpan 单例，所有方法为空操作
+```
+
+### 15.4 TRACE_SPANS 常量
+
+```typescript
+import { TRACE_SPANS } from 'memora';
+
+TRACE_SPANS.RECALL     // 'recall.recall'    — 记忆召回阶段
+TRACE_SPANS.LLM_CALL   // 'llm.call'         — LLM API 调用
+TRACE_SPANS.TOOL_EXEC  // 'tool.execute'     — 工具执行
+TRACE_SPANS.RESPONSE   // 'response.generate' — 整轮响应
+```
+
+---
+
+## 十六、工具错误码（ToolErrorCode）
+
+工具执行失败时，错误结果包含 `[ERR:TOOL:code]` 前缀，供 Reflection 逻辑和宿主项目解析。
+
+### 16.1 错误码枚举
+
+| 错误码 | 可重试 | 说明 |
+|--------|--------|------|
+| `PATH_NOT_ALLOWED` | ❌ | 路径不在白名单内 |
+| `FILE_NOT_FOUND` | ✅ | 文件不存在（LLM 可能用错路径） |
+| `PERMISSION_DENIED` | ❌ | 权限不足 |
+| `ARGUMENT_ERROR` | ✅ | 工具参数错误（LLM 可修正参数格式） |
+| `TOOL_TIMEOUT` | ✅ | 工具执行超时 |
+| `WRITE_REJECTED` | ❌ | 用户拒绝写入 |
+| `DIR_NOT_FOUND` | ✅ | 目录不存在 |
+| `UNKNOWN_TOOL` | ❌ | 未知工具 |
+| `CUSTOM_TOOL_FAILED` | ✅ | 自定义工具执行失败 |
+| `UNKNOWN` | ❌ | 通用错误 |
+
+### 16.2 isRetryableErrorCode()
+
+```typescript
+import { ToolErrorCode, isRetryableErrorCode } from 'memora';
+
+isRetryableErrorCode(ToolErrorCode.FILE_NOT_FOUND);   // true
+isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
+```
+
+---
+
+## 十七、内容护栏（Guardrails）
+
+### 17.1 护栏规则格式
+
+护栏规则以 `source: "guardrail"` 记忆形式存储，放在 `configDir/rules/guardrails/` 目录下：
+
+```markdown
+---
+name: 禁止执行代码
+source: guardrail
+---
+
+pattern: /执行|运行|eval|exec/
+action: block
+```
+
+### 17.2 护栏行为
+
+- **输入护栏**：用户输入注入上下文前检查，命中 `block` 时阻断对话
+- **输出护栏**：LLM 响应返回用户前检查，命中 `block` 时替换输出
+- **降级策略**：护栏自身异常时降级为"放行 + 记日志"，永远不阻断对话
+
+### 17.3 工具错误反思（Reflection）
+
+当工具执行失败且错误码为 retryable 时，AgentLoop 自动注入 `[REFLECTION_HINT]` 系统消息，引导 LLM 修正参数后重试。默认最多重试 2 次（`maxReflectionRetries`）。
+
+---
+
 ## 十三、类型导出
 
 ```typescript
@@ -619,6 +725,14 @@ export { VectorStore } from 'memora';
 export type { EmbeddingService } from 'memora';
 // 事件系统
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from 'memora';
+
+// 可观测性
+export type { ITracer, ISpan } from 'memora';
+export { noopTracer, TRACE_SPANS } from 'memora';
+
+// 错误码
+export { ToolErrorCode, isRetryableErrorCode } from 'memora';
+export type { ToolErrorCodeValue } from 'memora';
 
 // 日志
 export type { ILogger } from 'memora';
@@ -668,6 +782,6 @@ Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁�
 
 ---
 
-**版本**：v3.0  
-**最后更新**：2026-06-12  
+**版本**：v3.1
+**最后更新**：2026-06-15
 **配套文档**：[memora-接入指南-v1.0.md](./memora-接入指南-v1.0.md)（步骤式教程）

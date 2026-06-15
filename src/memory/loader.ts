@@ -20,11 +20,13 @@ import { SOURCE_LABELS, type Memory } from './types.js';
  * 启动时全量扫描的 source 列表
  * - insight/profile/work-projection：运行时产生，不由 FileStore 管理
  * - tool：由 registerTool() 注册为 tool_call，不再重复注入 system prompt
+ * - guardrail：由 AgentLoop 运行时读取，不注入 system prompt
  */
 const STARTUP_SCAN_SOURCES: string[] = [
   SOURCE_LABELS.PERSONA,
   SOURCE_LABELS.RULE,
   SOURCE_LABELS.SKILL,
+  SOURCE_LABELS.GUARDRAIL,
 ];
 
 /**

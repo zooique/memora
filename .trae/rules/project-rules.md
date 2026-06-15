@@ -93,9 +93,14 @@ chore: 升级 dependencies
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
-- ✅ 测试 324 全量通过（InMemoryStorage，零 IO）
+- ✅ 测试 317 全量通过（InMemoryStorage，零 IO）
 - ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，6 事件类型：memoryAdded / personaSwitched / decayCompleted / memoryRecalled / sessionForked / insightExtracted）
 - ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
 - ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）
 - ✅ LLM 调用韧性（AgentLoop 指数退避重试，流式输出前可重试）
 - ✅ chat() 并发锁超时保护（5 分钟自动释放）
+- ✅ 可观测性（ITracer/ISpan 接口 + NoopTracer 默认实现 + 4 个关键 Span 埋点）
+- ✅ 结构化输出（ChatOptions.response_format + LlmProvider.supportsStructuredOutput 能力声明）
+- ✅ 内容护栏（source:guardrail 记忆 + 输入/输出护栏 + 降级优先）
+- ✅ 工具错误反思（ToolErrorCode 10 种错误码 + isRetryableErrorCode + Reflection 循环）
+- ✅ 评估框架（EvalScenario 类型 + collectAgentChunks/evaluateResult 工具函数）

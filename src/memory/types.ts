@@ -59,6 +59,8 @@ export const SOURCE_LABELS = {
   PROFILE: 'profile',
   /** 作品投影（Agent 读取用户作品时生成的概要） */
   WORK_PROJECTION: 'work-projection',
+  /** 内容护栏规则（configDir/rules/guardrails/ 下的规则文件） */
+  GUARDRAIL: 'guardrail',
 } as const;
 
 // ─── 分词相关 ─────────────────────────────────────────────
