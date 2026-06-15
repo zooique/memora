@@ -28,20 +28,21 @@
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
  */
 import { basename } from 'node:path';
-import { AgentLoop } from './loop.js';
+import type { AgentLoop } from './loop.js';
 import type { AgentChunk } from './types.js';
-import { ToolExecutor } from './toolExecutor.js';
-import { MessageHistory } from './messageHistory.js';
+import type { ToolExecutor } from './toolExecutor.js';
+import type { MessageHistory } from './messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { recall, decayScores } from '@/memory/recall.js';
-import { PersonaManager } from '@/persona/personaManager.js';
-import { UserProfile } from '@/memory/userProfile.js';
-import { WorkProjectionManager } from './workProjection.js';
-import { SkillManager } from '@/skill/skillManager.js';
-import { InsightExtractor } from './insightExtractor.js';
-import { ConfigManager } from './configManager.js';
-import { MemoryInspector } from './memoryInspector.js';
+import type { PersonaManager } from '@/persona/personaManager.js';
+import type { UserProfile } from '@/memory/userProfile.js';
+import type { SkillManager } from '@/skill/skillManager.js';
+import type { InsightExtractor } from './insightExtractor.js';
+import type { ConfigManager } from './configManager.js';
+import type { MemoryInspector } from './memoryInspector.js';
+import { extractUserFacts } from './userFactExtractor.js';
+import { assembleComponents } from './assembler.js';
 import { configError } from '@/utils/errors.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
@@ -118,7 +119,7 @@ export interface AgentBuildCtx {
 
 export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 构造参数
-  #provider: LlmProvider;
+  private _provider: LlmProvider;
   private backgroundProvider: LlmProvider | null;
   private dataDir: string;
   private registryDir: string | undefined;
@@ -144,7 +145,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // v4.0 新模块
   private personaManager: PersonaManager | null = null;
   private userProfile: UserProfile | null = null;
-  private workProjection: WorkProjectionManager | null = null;
   private skillManager: SkillManager | null = null;
 
   // v4.0 拆分出的专职 Manager
@@ -157,11 +157,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // 上下文
   private ctx: AgentContext | null = null;
-  #initialized = false;
+  private _initialized = false;
   private pctx: ProjectContext | null = null;
 
   /** chat() 并发锁 */
-  #chatBusy = false;
+  private _chatBusy = false;
   /** 聊天锁超时计时器（防止 LLM 卡死时锁永久持有） */
   private chatLockTimer: ReturnType<typeof setTimeout> | null = null;
   /** 聊天锁超时时间（5 分钟） */
@@ -173,12 +173,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 记忆衰减间隔（1 小时） */
   private static readonly DECAY_INTERVAL_MS = 3_600_000;
   /** 最近一次 chat() 调用的时间戳 */
-  #lastInteractionAt: Date | null = null;
+  private _lastInteractionAt: Date | null = null;
 
   constructor(opts: AgentOptions) {
     super();
     this.projectPath = opts.projectPath;
-    this.#provider = opts.provider;
+    this._provider = opts.provider;
     this.backgroundProvider = opts.backgroundProvider ?? null;
     this.configDir = opts.configDir;
     this.dataDir = opts.dataDir ?? '~/.memora';
@@ -204,7 +204,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 初始化 Agent：加载索引、组装内部组件
    */
   async init(projectPathOverride?: string): Promise<ProjectContext> {
-    if (this.#initialized) {
+    if (this._initialized) {
       await this.close();
     }
 
@@ -236,7 +236,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
 
-    this.#initialized = true;
+    this._initialized = true;
 
     // 启动时记忆衰减（insight/archive 来源）
     this.runMemoryDecay();
@@ -260,21 +260,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
 
-    if (this.#chatBusy) {
+    if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再发起新对话', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽（收到 done 事件）',
         '宿主程序应确保同一时间只有一个 chat() 调用',
       ]);
     }
-    this.#chatBusy = true;
+    this._chatBusy = true;
     // 超时保护：LLM 卡死时自动释放锁，防止永久锁定
     this.chatLockTimer = setTimeout(() => {
       logger.warn('chat() 锁超时（5 分钟），强制释放');
-      this.#chatBusy = false;
+      this._chatBusy = false;
       this.chatLockTimer = null;
     }, Agent.CHAT_LOCK_TIMEOUT_MS);
     try {
-      this.#lastInteractionAt = new Date();
+      this._lastInteractionAt = new Date();
 
       // 基元驱动召回（双通道：语义 + 关键词）
       yield { type: 'thinking', phase: 'recalling' };
@@ -335,10 +335,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 后处理阶段
       yield { type: 'thinking', phase: 'archiving' };
 
-      // v4.0：用户画像实时归档
+      // v4.0：用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
       if (this.userProfile) {
         const turnIndex = `turn-${Date.now()}`;
-        this.userProfile.archive(input, turnIndex).catch((err) => {
+        const facts = extractUserFacts(input, turnIndex);
+        this.userProfile.archiveFacts(facts).catch((err) => {
           logger.warn({ err }, '用户画像实时归档失败');
         });
       }
@@ -380,7 +381,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         }
       }
     } finally {
-      this.#chatBusy = false;
+      this._chatBusy = false;
       if (this.chatLockTimer) {
         clearTimeout(this.chatLockTimer);
         this.chatLockTimer = null;
@@ -424,7 +425,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   forkSession(targetSession?: string): { newSession: string; messageCount: number } {
     this.assertInitialized('forkSession');
 
-    if (this.#chatBusy) {
+    if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再分叉', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
       ]);
@@ -492,89 +493,30 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 组件组装 ─────────────────────────────────────────
 
   /**
-   * 组装所有运行时组件（v4.0 统一入口）
+   * 组装所有运行时组件（委托给 assembler 工厂）
    */
   private async assembleComponents(pctx: ProjectContext): Promise<void> {
-    const activeProvider = this.#provider;
-    if (!activeProvider) return;
-
-    // 消息历史
-    this.history = new MessageHistory(pctx.index, this.sessionStore);
-
-    // v4.0：作品投影管理器
-    this.workProjection = new WorkProjectionManager(
-      pctx.index,
-      this.backgroundProvider ?? activeProvider,
-    );
-
-    // Insight 提取器
-    this.insightExtractor = new InsightExtractor(
-      activeProvider,
-      pctx.index,
-      (rounds: number) => this.loop?.getRecentHistory(rounds) ?? [],
-    );
-
-    // 工具执行器（v4.0：注入 workProjection）
-    const toolExec = new ToolExecutor(
-      this.projectPath,
-      pctx.security,
-      pctx.index,
-      this.workProjection,
-    );
-    this.toolExec = toolExec;
-
-    // v4.0：角色管理器
-    this.personaManager = new PersonaManager(this.configDir, pctx.index);
-    const personaPrompt = await this.personaManager.load(this.personaName);
-
-    // v4.0：用户画像管理器
-    this.userProfile = new UserProfile(pctx.index);
-    await this.userProfile.load();
-
-    // v4.0：技能管理器（首次创建后复用）
-    if (!this.skillManager) {
-      this.skillManager = new SkillManager(this.configDir);
-      this.skillManager.load();
-    }
-
-    // v4.0 拆分：配置管理器
-    this.configManager = new ConfigManager(
-      pctx.index,
-      this.skillManager,
-      (msg: string) => this.loop?.injectSystemMessage(msg),
-      this.configDir,
-    );
-
-    // v4.0：构建系统 prompt 前缀
-    const systemPrefixParts = [personaPrompt];
-    const profilePrompt = this.userProfile.buildSystemPrompt();
-    if (profilePrompt) systemPrefixParts.push(profilePrompt);
-    const systemPromptPrefix =
-      systemPrefixParts.filter(Boolean).join('\n\n') +
-      (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');
-
-    // Agent Loop
-    this.loop = new AgentLoop({
-      provider: activeProvider,
-      bootstrapMemories: pctx.bootstrapMemories,
-      toolExecutor: (name: string, args: string) =>
-        toolExec.execute(
-          name,
-          args,
-          this.insightExtractor?.writeExtensions ?? undefined,
-        ),
-      systemPromptPrefix,
-      toolDefinitions: toolExec.getToolDefinitions(),
+    const result = await assembleComponents(pctx, {
+      provider: this.provider,
+      backgroundProvider: this.backgroundProvider,
+      projectPath: this.projectPath,
+      configDir: this.configDir,
+      personaName: this.personaName,
       maxContextTokens: this.maxContextTokens,
+      sessionStore: this.sessionStore,
       tracer: this.tracer,
-      // 护栏规则：从记忆索引中筛选 source:guardrail 的记忆
-      guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
+      existingSkillManager: this.skillManager,
     });
 
-    // v4.0 拆分：记忆查看器（依赖已创建的 loop + history）
-    if (this.loop && this.history) {
-      this.memoryInspector = new MemoryInspector(pctx.index, this.loop, this.history);
-    }
+    this.history = result.history;
+    this.loop = result.loop;
+    this.toolExec = result.toolExec;
+    this.personaManager = result.personaManager;
+    this.userProfile = result.userProfile;
+    this.skillManager = result.skillManager;
+    this.insightExtractor = result.insightExtractor;
+    this.configManager = result.configManager;
+    this.memoryInspector = result.memoryInspector;
   }
 
   /**
@@ -588,7 +530,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── Provider 管理 ────────────────────────────────────
 
   setProvider(provider: LlmProvider): void {
-    this.#provider = provider;
+    this._provider = provider;
     if (this.loop) {
       this.loop.setProvider(provider);
     }
@@ -711,29 +653,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     methodName: string,
     requires: Array<'history' | 'loop' | 'projectManager' | 'provider'> = ['history', 'loop'],
   ): void {
-    if (!this.#initialized) {
+    if (!this._initialized) {
       throw configError('Agent 未初始化', '请先调用 init()', [
         `在 ${methodName}() 前调用 await agent.init()`,
       ]);
     }
+    const deps: Record<string, unknown> = {
+      history: this.history,
+      loop: this.loop,
+      projectManager: this.projectManager,
+      provider: this.provider,
+    };
     for (const dep of requires) {
-      if (dep === 'history' && !this.history) {
-        throw configError('Agent 未初始化', 'history 组件不可用', [
-          `在 ${methodName}() 前调用 await agent.init()`,
-        ]);
-      }
-      if (dep === 'loop' && !this.loop) {
-        throw configError('Agent 未初始化', 'loop 组件不可用', [
-          `在 ${methodName}() 前调用 await agent.init()`,
-        ]);
-      }
-      if (dep === 'projectManager' && !this.projectManager) {
-        throw configError('Agent 未初始化', 'projectManager 组件不可用', [
-          `在 ${methodName}() 前调用 await agent.init()`,
-        ]);
-      }
-      if (dep === 'provider' && !this.#provider) {
-        throw configError('Agent 未初始化', 'provider 组件不可用', [
+      if (!deps[dep]) {
+        throw configError('Agent 未初始化', `${dep} 组件不可用`, [
           `在 ${methodName}() 前调用 await agent.init()`,
         ]);
       }
@@ -794,9 +727,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.projectManager) {
       await this.projectManager.shutdown();
     }
-    this.#initialized = false;
+    this._initialized = false;
     this.backgroundProvider = null;
-    this.#chatBusy = false;
+    this._chatBusy = false;
     this.history = null;
     this.loop = null;
     this.projectManager = null;
@@ -810,7 +743,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 只读访问器 ───────────────────────────────────────
 
   get initialized(): boolean {
-    return this.#initialized;
+    return this._initialized;
   }
 
   get context(): AgentContext | null {
@@ -826,15 +759,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   get provider(): LlmProvider {
-    return this.#provider;
+    return this._provider;
   }
 
   get isBusy(): boolean {
-    return this.#chatBusy;
+    return this._chatBusy;
   }
 
   get lastInteractionAt(): Date | null {
-    return this.#lastInteractionAt;
+    return this._lastInteractionAt;
   }
 
   // ─── Manager 暴露（激进拆分：调用方直接操作 Manager）──

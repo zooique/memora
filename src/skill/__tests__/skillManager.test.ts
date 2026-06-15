@@ -41,7 +41,7 @@ describe('SkillManager', () => {
   });
 
   describe('load', () => {
-    it('应该加载单个技能文件', () => {
+    it('应该加载单个技能文件', async () => {
       createSkillFile(
         skillsDir,
         'read-file.md',
@@ -57,18 +57,18 @@ keywords: 文件,读取,打开
       );
 
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('读取文件');
       expect(match).not.toBeNull();
       expect(match!.skill.name).toBe('读文件');
     });
 
-    it('应该在目录不存在时安全降级', () => {
+    it('应该在目录不存在时安全降级', async () => {
       const nonExistentDir = join(testDir, 'nonexistent');
       const skillManager = new SkillManager(nonExistentDir);
 
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('任意输入');
       expect(match).toBeNull();
@@ -92,27 +92,27 @@ keywords: 文件,读取,打开
       );
     });
 
-    it('应该通过 trigger 正则匹配', () => {
+    it('应该通过 trigger 正则匹配', async () => {
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('帮我读取这个文件');
       expect(match).not.toBeNull();
       expect(match!.skill.name).toBe('读文件');
     });
 
-    it('应该通过关键词匹配', () => {
+    it('应该通过关键词匹配', async () => {
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('查看文件内容');
       expect(match).not.toBeNull();
       expect(match!.skill.name).toBe('读文件');
     });
 
-    it('应该在无匹配时返回 null', () => {
+    it('应该在无匹配时返回 null', async () => {
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('今天天气怎么样');
       expect(match).toBeNull();
@@ -120,7 +120,7 @@ keywords: 文件,读取,打开
   });
 
   describe('排除规则', () => {
-    it('应该排除隐藏文件', () => {
+    it('应该排除隐藏文件', async () => {
       createSkillFile(
         skillsDir,
         '.hidden.md',
@@ -133,13 +133,13 @@ keywords: 隐藏
       );
 
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('隐藏');
       expect(match).toBeNull();
     });
 
-    it('应该排除 _ 前缀文件', () => {
+    it('应该排除 _ 前缀文件', async () => {
       createSkillFile(
         skillsDir,
         '_underscore.md',
@@ -152,13 +152,13 @@ keywords: 下划线
       );
 
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('下划线');
       expect(match).toBeNull();
     });
 
-    it('应该排除 README、CHANGELOG、LICENSE', () => {
+    it('应该排除 README、CHANGELOG、LICENSE', async () => {
       createSkillFile(
         skillsDir,
         'README.md',
@@ -171,7 +171,7 @@ README 内容`,
       );
 
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const match = skillManager.match('readme');
       expect(match).toBeNull();
@@ -179,7 +179,7 @@ README 内容`,
   });
 
   describe('buildSystemPrompt', () => {
-    it('应该构建技能的 system prompt', () => {
+    it('应该构建技能的 system prompt', async () => {
       createSkillFile(
         skillsDir,
         'read-file.md',
@@ -194,16 +194,16 @@ keywords: 文件,读取
       );
 
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const prompt = skillManager.buildSystemPrompt('读文件');
       expect(prompt).toContain('读文件技能');
       expect(prompt).toContain('read_file');
     });
 
-    it('应该在技能不存在时返回空字符串', () => {
+    it('应该在技能不存在时返回空字符串', async () => {
       const skillManager = new SkillManager(testDir);
-      skillManager.load();
+      await skillManager.load();
 
       const prompt = skillManager.buildSystemPrompt('不存在的技能');
       expect(prompt).toBeFalsy();

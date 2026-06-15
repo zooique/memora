@@ -429,7 +429,7 @@ agent.on('sessionForked', (event) => {
 | `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` |
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
-| `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(s)` / `.buildSystemPrompt()` |
+| `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
 | `agent.on()` / `agent.off()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` |
 
 ### Provider 管理
@@ -489,6 +489,7 @@ import type {
   ConfigSuggestion,
   ConfigSuggestionHandler,
   PersonaMode,
+  Persona,
   SkillEntry,
   RecallOptions,
   EmbeddingService,

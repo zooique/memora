@@ -23,10 +23,13 @@ import { cosineSimilarity } from '@/utils/math.js';
 /**
  * 嵌入服务接口（原 memory/types.ts 导出，重构后内联）
  * 向量存储依赖此接口生成文本嵌入向量
+ *
+ * batchEmbed 返回向量数组，顺序与输入一致。
+ * EmbeddingProvider（llm/embedding.ts）满足此接口（结构子类型）。
  */
 export interface EmbeddingService {
-  embed(text: string): Promise<number[]>;
-  batchEmbed(texts: string[]): Promise<Array<{ id: string; vector: number[] }>>;
+   embed(text: string): Promise<number[]>;
+   batchEmbed(texts: string[]): Promise<Array<{ text: string; vector: number[] }>>;
 }
 
 /**

@@ -17,35 +17,13 @@
  *   - 单层角色：只有宿主程序级 <configDir>/personas/*.md
  *   - 目录名 personas/ 与代码 Persona 术语一致，区别于用户身份信息
  */
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import { parseFrontmatter } from '@/memory/frontmatter.js';
-import { scoreByKeywords } from '@/memory/segmenter.js';
+import { scoreByKeywords } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
-
-/**
- * 角色定义（从 personas/*.md frontmatter 解析）
- */
-export interface Persona {
-  /** 角色名（文件名去 .md） */
-  name: string;
-  /** 唯一 id（用于 SQLite 索引） */
-  id: string;
-  /** 角色描述（可选） */
-  description?: string;
-  /** 关键词（用于自动匹配切换） */
-  keywords: string[];
-  /** 人格正文（frontmatter 之后的 markdown 内容） */
-  content: string;
-  /** 来源路径 */
-  filePath: string;
-}
-
-/** 角色激活模式 */
-export type PersonaMode = 'auto' | 'manual';
+import type { Persona, PersonaMode } from './types.js';
+import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
 
 /**
  * 角色管理器（v1.2：personas/ + SQLite + 关键词匹配）
@@ -87,7 +65,7 @@ export class PersonaManager {
    * @returns 激活角色的 system prompt 段
    */
   async load(activePersona?: string): Promise<string> {
-    this.personaList = this.scanPersonas();
+    this.personaList = await this.scanPersonas();
 
     if (this.personaList.length === 0) {
       logger.warn('未找到任何角色文件，将使用默认角色');
@@ -270,49 +248,24 @@ export class PersonaManager {
   /**
    * 扫描单层目录，加载角色列表
    */
-  private scanPersonas(): Persona[] {
+  private async scanPersonas(): Promise<Persona[]> {
     const list: Persona[] = [];
 
-    if (!this.configDir) return list;
+    const personasDir = resolveSubdir(this.configDir, 'personas');
+    if (!personasDir) return list;
 
-    // 扫描 configDir/personas/ 目录
-    const personasDir = resolve(this.configDir, 'personas');
-    if (!existsSync(personasDir)) {
-      logger.debug({ dir: personasDir }, '角色目录不存在，跳过');
-      return list;
-    }
+    const entries = await scanMarkdownDir(personasDir);
 
-    let files: string[];
-    try {
-      files = readdirSync(personasDir).filter((f) => f.endsWith('.md'));
-    } catch {
-      logger.warn({ dir: personasDir }, '扫描角色目录失败');
-      return list;
-    }
-
-    for (const file of files) {
-      try {
-        const filePath = join(personasDir, file);
-        const raw = readFileSync(filePath, 'utf-8');
-        const { frontmatter: fm, body } = parseFrontmatter(raw);
-
-        const name = fm['name'] ?? file.replace(/\.md$/, '');
-        const id = fm['id'] ?? `persona:${name}`;
-        list.push({
-          name,
-          id,
-          description: fm['description'],
-          keywords:
-            fm['keywords']
-              ?.split(',')
-              .map((s: string) => s.trim())
-              .filter(Boolean) ?? [],
-          content: body.trim(),
-          filePath,
-        });
-      } catch (err) {
-        logger.warn({ file, err }, '解析角色文件失败');
-      }
+    for (const entry of entries) {
+      const fm = entry.frontmatter;
+      list.push({
+        name: entry.name,
+        id: fm['id'] ?? `persona:${entry.name}`,
+        description: fm['description'],
+        keywords: parseKeywords(fm),
+        content: entry.body.trim(),
+        filePath: entry.filePath,
+      });
     }
 
     return list;

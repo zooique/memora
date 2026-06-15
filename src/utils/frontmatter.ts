@@ -1,7 +1,7 @@
 /**
  * Frontmatter 通用解析/序列化工具
  *
- * 为 memory/store.ts 和 memory/loader.ts 提供共享的 frontmatter 处理
+ * 为 memory/store.ts、persona/personaManager.ts、skill/skillManager.ts 提供共享的 frontmatter 处理
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  */
 

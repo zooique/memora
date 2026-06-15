@@ -6,11 +6,11 @@
  *   - 置信度确认机制
  *   - system prompt 组装
  *
- * 注意：UserProfile.extractUserFacts() 是私有方法，
- * 通过 archive() 间接测试提取逻辑。
+ * 注意：extractUserFacts() 在 agent/ 层，此处通过 archiveFacts() 间接测试归档逻辑。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { UserProfile } from '../userProfile.js';
+import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import type { IMemoryStorage } from '../storageInterface.js';
 import type { Memory } from '../types.js';
 import { SOURCE_LABELS } from '../types.js';
@@ -49,13 +49,14 @@ describe('UserProfile', () => {
     userProfile = new UserProfile(mockStorage);
   });
 
-  describe('archive - 身份信息', () => {
+  describe('archiveFacts - 身份信息', () => {
     it('应该归档身份信息到存储', async () => {
       // Given
       await userProfile.load();
 
       // When
-      await userProfile.archive('我叫张三', 'turn-1');
+      const facts = extractUserFacts('我叫张三', 'turn-1');
+      await userProfile.archiveFacts(facts);
 
       // Then
       expect(mockStorage.upsert).toHaveBeenCalled();
@@ -67,23 +68,26 @@ describe('UserProfile', () => {
     it('应该使用 upsert 语义（幂等写入）', async () => {
       // Given
       await userProfile.load();
-      await userProfile.archive('我叫张三', 'turn-1');
+      const facts1 = extractUserFacts('我叫张三', 'turn-1');
+      await userProfile.archiveFacts(facts1);
 
       // When - 再次归档相同信息
-      await userProfile.archive('我叫张三', 'turn-2');
+      const facts2 = extractUserFacts('我叫张三', 'turn-2');
+      await userProfile.archiveFacts(facts2);
 
       // Then - upsert 被调用两次（幂等）
       expect(mockStorage.upsert).toHaveBeenCalledTimes(2);
     });
   });
 
-  describe('archive - 偏好信息', () => {
+  describe('archiveFacts - 偏好信息', () => {
     it('应该归档偏好信息', async () => {
       // Given
       await userProfile.load();
 
       // When - 正则要求动词后跟 用|写|做|的
-      await userProfile.archive('我喜欢用TypeScript', 'turn-1');
+      const facts = extractUserFacts('我喜欢用TypeScript', 'turn-1');
+      await userProfile.archiveFacts(facts);
 
       // Then
       expect(mockStorage.upsert).toHaveBeenCalled();
@@ -93,13 +97,14 @@ describe('UserProfile', () => {
     });
   });
 
-  describe('archive - 不匹配输入', () => {
+  describe('archiveFacts - 不匹配输入', () => {
     it('应该在不匹配正则时不归档', async () => {
       // Given
       await userProfile.load();
 
       // When - "好像"插入导致正则不匹配
-      await userProfile.archive('我好像叫张三', 'turn-1');
+      const facts = extractUserFacts('我好像叫张三', 'turn-1');
+      await userProfile.archiveFacts(facts);
 
       // Then - 不匹配正则 → 无事实提取 → upsert 不被调用
       expect(mockStorage.upsert).not.toHaveBeenCalled();
@@ -135,7 +140,8 @@ describe('UserProfile', () => {
     it('应该构建用户画像的 system prompt', async () => {
       // Given
       await userProfile.load();
-      await userProfile.archive('我叫张三', 'turn-1');
+      const facts = extractUserFacts('我叫张三', 'turn-1');
+      await userProfile.archiveFacts(facts);
 
       // When
       const prompt = userProfile.buildSystemPrompt();
@@ -164,7 +170,8 @@ describe('UserProfile', () => {
       await userProfile.load();
 
       // When - 明确表达（高置信度 ≥ 0.8）
-      await userProfile.archive('我叫张三', 'turn-1');
+      const facts = extractUserFacts('我叫张三', 'turn-1');
+      await userProfile.archiveFacts(facts);
 
       // Then - 高置信度的应该在 getConfirmed 中
       const confirmed = userProfile.getConfirmed();
@@ -177,7 +184,8 @@ describe('UserProfile', () => {
       await userProfile.load();
 
       // When - 较低置信度表达
-      await userProfile.archive('我熟悉React', 'turn-1');
+      const facts = extractUserFacts('我熟悉React', 'turn-1');
+      await userProfile.archiveFacts(facts);
 
       // Then - 低置信度（0.75）应标记为待确认
       const confirmed = userProfile.getConfirmed();

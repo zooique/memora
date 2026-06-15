@@ -9,7 +9,7 @@
  * 详见 V-001：补测试 frontmatter.ts
  */
 import { describe, expect, it } from 'vitest';
-import { parseFrontmatter, serializeFrontmatter } from '@/memory/frontmatter.js';
+import { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
 
 describe('V-001 · Frontmatter 解析/序列化', () => {
   // ─── parseFrontmatter ──────────────────────────────────

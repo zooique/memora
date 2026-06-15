@@ -57,11 +57,13 @@ export interface IMemoryStorage {
   /**
    * 关键词搜索记忆
    *
-   * 搜索逻辑：
-   * 1. 从 query 中提取关键词（Intl.Segmenter 分词 + 停用词过滤）
+   * 搜索逻辑（宿主实现）：
+   * 1. 从 query 中提取关键词（推荐使用 Intl.Segmenter 分词 + 停用词过滤）
    * 2. 用 LIKE 关键词匹配 content 和 name 字段
    * 3. 按 score 降序排列
    * 4. 返回 top N 结果
+   *
+   * InMemoryStorage 使用 segmentText() 规范分词 + includes 匹配（与 SqliteStorage 行为一致）。
    *
    * @param query - 搜索查询文本
    * @param limit - 返回数量上限（默认 10）

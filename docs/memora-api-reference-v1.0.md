@@ -495,11 +495,11 @@ await agent.config.addSimpleRule(
 
 | 方法 | 用途 | 写到哪里 |
 |------|------|----------|
-| `config.addSkill(memory)` | 添加技能（需 `source='skill'`，session-only） | SkillManager |
-| `config.addSimpleSkill(name, content, keywords?)` | 同上，简化版（session-only） | SkillManager |
+| `config.addSkill(memory)` | 添加技能（需 `source='skill'`，session-only） | SQLite + SkillManager |
+| `config.addSimpleSkill(name, content, keywords?)` | 同上，简化版（session-only） | SQLite + SkillManager |
 
 ```typescript
-// 注入技能（session-only，重启后丢失）
+// 注入技能（session-only，同时写入 SQLite 索引以支持 recall() 检索，重启后丢失）
 await agent.config.addSimpleSkill(
   '大纲生成',
   '当用户说“生成大纲”时，按三幕结构生成章节大纲……',
@@ -524,7 +524,7 @@ await agent.config.confirm({
 
 **双写机制**：
 - `config.addRule()` → 写 SQLite（会话级，临时）
-- `config.addSkill()` → 只写 SkillManager（session-only，不写 SQLite）
+- `config.addSkill()` → 写 SQLite + SkillManager（session-only，运行时注入）
 - `config.confirm()` → 写配置文件（真理源，重启后自动加载，适用于 rule/persona/skill 三种类型）
 
 ---

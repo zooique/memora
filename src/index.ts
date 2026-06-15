@@ -23,7 +23,7 @@ export type {
   AgentBuildCtx,
 } from './agent/agent.js';
 export type { ToolDefinition, ToolHandler, WriteExtensions } from './agent/toolExecutor.js';
-export type { PersonaMode } from './persona/personaManager.js';
+export type { PersonaMode, Persona } from './persona/types.js';
 // v4.0 拆分：类型从专职模块导出
 export type { MemoryKeywords } from './agent/insightExtractor.js';
 export type {
@@ -69,9 +69,10 @@ export type { ILogger } from './logging/loggerInterface.js';
 export { setLogger, logger } from './logging/logger.js';
 
 // ─── 工具导出 ────────────────────────────────────────────
-// 分词工具：宿主项目（如 SqliteStorage）依赖// 工具导出
-export { segmentText, tokenizeKeywords } from './memory/segmenter.js';
-export type { SkillEntry } from './skill/skillManager.js';
+// 分词工具：宿主项目（如 SqliteStorage）依赖
+// 工具导出
+export { segmentText, tokenizeKeywords } from './utils/segmenter.js';
+export type { SkillEntry, SkillMatch } from './skill/types.js';
 
 // ─── 错误类型导出 ────────────────────────────────────────
 export { ToolErrorCode, isRetryableErrorCode } from './utils/errors.js';

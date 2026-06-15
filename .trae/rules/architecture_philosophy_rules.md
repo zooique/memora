@@ -23,12 +23,12 @@ date: 2026-06-12
 
 **Persona 和 Skill 的定位**：
 
-- **Skill（技能）**是“配置型记忆”——**不进入 SQLite 索引**，由 SkillManager 在内存中独立管理。类似人的“长期训练形成的思维模式”，通过关键词匹配触发，在上下文组装时作为最高优先级注入
+- **Skill（技能）**是“配置型记忆”——由 SkillManager 在内存中独立管理，同时写入 SQLite 索引（`source: skill`）以支持 recall 检索。类似人的“长期训练形成的思维模式”，通过关键词匹配触发，在上下文组装时作为最高优先级注入
   - 双路径设计：
-    - 路径一（文件加载）：`SkillManager.load()` 启动时扫描 `configDir/skills/*.md` → 内存
-    - 路径二（运行时注入）：`config.addSkill()` → `SkillManager.register()` → 内存（session-only，重启后丢失）
+    - 路径一（文件加载）：`SkillManager.load()` 启动时扫描 `configDir/skills/*.md` → 内存 + SQLite
+    - 路径二（运行时注入）：`config.addSkill()` → `SkillManager.register()` + SQLite 索引（session-only，重启后丢失）
     - 路径三（持久化新增）：`config.confirm({type:'skill',...})` → 写配置文件 → 下次启动自动加载
-  - **为什么 Skill 不走“万物皆记忆”SQLite 路径**：技能是高频触发的思维模式，不是“被想起”的记忆；SkillManager 只从文件加载，SQLite 写入是无效副作用
+  - **Skill 写入 SQLite 的理由**：技能虽由 SkillManager 独立管理，但写入 SQLite 索引后可被 recall() 检索到，实现语义/关键词双通道召回，与 PersonaManager 保持一致的存储策略
 - **Persona（角色）**遵循“万物皆记忆”原则——存入 SQLite 作为 `source: persona` 的记忆。**在召回管线中做特殊处理**：bootstrap 时过滤掉所有 persona 来源，由 PersonaManager 单独管理角色注入（systemPromptPrefix）。角色可被话题关键词动态匹配自动切换，也可手动指定，支持 auto/manual 两种模式
 - 类比人类：性格是你 persona 的一部分，可以被“选择”（在不同场合以不同角色应对），而技能是“能力”，始终在线
 
@@ -36,7 +36,7 @@ date: 2026-06-12
 
 - **PersonaManager**：扫描 `personas/*.md`，加载为 `source: persona` 记忆，存入 SQLite 索引。支持关键词自动匹配 + 手动指定 + 时间窗口缓冲（60s/3次）。角色通过 systemPromptPrefix 注入，不进 bootstrap
 - **SkillManager**：扫描 configDir/skills/ 目录 + 关键词匹配，匹配到后注入下一轮 system
-  prompt。**不进 SQLite**。运行时注入的技能（`addSkill()`）仅在当前会话有效，持久化需走 `config.confirm()`
+  prompt。**写入 SQLite 索引**（`source: skill`），支持 recall() 检索。运行时注入的技能（`addSkill()`）仅在当前会话有效，持久化需走 `config.confirm()`
 - 记忆管道层（规则、话题归档、心得）通过 `recall()` 的统一召回管线检索
 - `source` 开放字符串区分来源：`persona` 用于角色记忆，`rule` 用于规则，`skill` 用于技能，`insight` 用于对话提取
 - `bootstrap` 阶段对 `source: persona` 做特殊过滤：全部排除，由 PersonaManager 通过 systemPromptPrefix 单独注入当前激活角色

@@ -31,6 +31,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
+import { parseLlmJson } from '@/utils/json.js';
 
 /** 作品投影的持久化结构 */
 export interface WorkProjectionEntry {
@@ -220,25 +221,26 @@ export class WorkProjectionManager {
       if (chunk.content) result += chunk.content;
     }
 
-    try {
-      const parsed = JSON.parse(result.trim()) as {
-        summary: string;
-        structure: string[];
-        keyDecisions: string[];
-      };
+    const parsed = parseLlmJson<{
+      summary: string;
+      structure: string[];
+      keyDecisions: string[];
+    }>(result.trim());
+
+    if (parsed) {
       return {
         summary: parsed.summary ?? `${name}（无法获取概要）`,
         structure: parsed.structure ?? [],
         keyDecisions: parsed.keyDecisions ?? [],
       };
-    } catch {
-      // JSON 解析失败，降级为全文摘要
-      return {
-        summary: result.trim().slice(0, 100),
-        structure: [name],
-        keyDecisions: [],
-      };
     }
+
+    // JSON 解析失败，降级为全文摘要
+    return {
+      summary: result.trim().slice(0, 100),
+      structure: [name],
+      keyDecisions: [],
+    };
   }
 
   /**
@@ -249,11 +251,23 @@ export class WorkProjectionManager {
   }
 
   /**
-   * 从 Memory content 的 HTML 注释中解析 hash
+   * 从 Memory content 中解析 hash
    *
-   * content 格式：<!-- wp:hash:<hash> -->\n<!-- wp:structure:... -->\n<!-- wp:decisions:... -->\n<summary>
+   * content 格式：JSON 元数据行 + 空行 + summary
+   * 旧格式（HTML 注释）兼容解析
    */
   private parseHash(memory: Memory): string | null {
+    // 新格式：首行 JSON
+    const firstLine = memory.content.split('\n')[0] ?? '';
+    if (firstLine.startsWith('{')) {
+      try {
+        const meta = JSON.parse(firstLine) as { hash?: string };
+        return meta.hash ?? null;
+      } catch {
+        // 继续
+      }
+    }
+    // 旧格式兼容：HTML 注释
     const match = memory.content.match(/<!--\s*wp:hash:(\S+)\s*-->/);
     return match?.[1] ?? null;
   }
@@ -261,7 +275,7 @@ export class WorkProjectionManager {
   /**
    * 将 WorkProjectionEntry 转为 Memory（用于写入存储）
    *
-   * 元数据（hash / structure / keyDecisions）编码为 content 中的 HTML 注释，
+   * 元数据（hash / structure / keyDecisions）编码为 content 首行 JSON，
    * summary 保持为可见内容。source = 'work-projection'。
    */
   private toMemory(entry: WorkProjectionEntry, hash: string): Memory {
@@ -297,12 +311,11 @@ export class WorkProjectionManager {
   }
 
   /**
-   * 将投影元数据编码为 content（Markdown HTML 注释 + summary）
+   * 将投影元数据编码为 content（JSON 元数据行 + 空行 + summary）
    *
    * 格式：
-   *   <!-- wp:hash:<hash> -->
-   *   <!-- wp:structure:<item1>|<item2>|... -->
-   *   <!-- wp:decisions:<item1>|<item2>|... -->
+   *   {"hash":"...","structure":["..."],"decisions":["..."]}
+   *   (空行)
    *   <summary>
    */
   private encodeContent(
@@ -311,22 +324,15 @@ export class WorkProjectionManager {
     keyDecisions: string[],
     summary: string,
   ): string {
-    const parts: string[] = [];
-    parts.push(`<!-- wp:hash:${hash} -->`);
-    if (structure.length > 0) {
-      parts.push(`<!-- wp:structure:${structure.join('|')} -->`);
-    }
-    if (keyDecisions.length > 0) {
-      parts.push(`<!-- wp:decisions:${keyDecisions.join('|')} -->`);
-    }
-    parts.push(summary);
-    return parts.join('\n');
+    const meta = JSON.stringify({ hash, structure, decisions: keyDecisions });
+    return `${meta}\n\n${summary}`;
   }
 
   /**
    * 从 content 中解码投影元数据
    *
-   * 解析 encodeContent 生成的 HTML 注释格式
+   * 新格式：首行 JSON + 空行 + summary
+   * 旧格式（HTML 注释）兼容解析
    */
   private decodeContent(content: string): {
     hash: string | null;
@@ -334,11 +340,31 @@ export class WorkProjectionManager {
     keyDecisions: string[];
     summary: string;
   } {
+    // 新格式：首行 JSON
+    const firstLine = content.split('\n')[0] ?? '';
+    if (firstLine.startsWith('{')) {
+      try {
+        const meta = JSON.parse(firstLine) as {
+          hash?: string;
+          structure?: string[];
+          decisions?: string[];
+        };
+        const summary = content.slice(firstLine.length).trim();
+        return {
+          hash: meta.hash ?? null,
+          structure: meta.structure ?? [],
+          keyDecisions: meta.decisions ?? [],
+          summary,
+        };
+      } catch {
+        // JSON 解析失败，降级到旧格式
+      }
+    }
+
+    // 旧格式兼容：HTML 注释
     const hashMatch = content.match(/<!--\s*wp:hash:(\S+)\s*-->/);
     const structureMatch = content.match(/<!--\s*wp:structure:(.+?)\s*-->/);
     const decisionsMatch = content.match(/<!--\s*wp:decisions:(.+?)\s*-->/);
-
-    // summary = 移除所有 <!-- wp:... --> 注释后的剩余内容
     const summary = content.replace(/<!--\s*wp:\S+\s*-->\n?/g, '').trim();
 
     return {

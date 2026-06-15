@@ -104,17 +104,15 @@ export class UserProfile {
   }
 
   /**
-   * 实时归档：提取对话中的用户事实，写入 SQLite
+   * 实时归档：将提取的用户事实写入存储
    *
-   * 每轮 chat() 结束后调用。
+   * 每轮 chat() 结束后，由 Agent 调用 extractUserFacts() 提取事实后传入。
    * 高置信度（≥0.8）→ 直接归档为 confirmed
    * 低置信度 → 标记 confirmed = false，首次召回时 Agent 向用户确认
    *
-   * @param userInput 本轮用户输入
-   * @param turnIndex 当前轮次索引
+   * @param facts 由 extractUserFacts() 提取的事实列表
    */
-  async archive(userInput: string, turnIndex: string): Promise<number> {
-    const facts = this.extractUserFacts(userInput, turnIndex);
+  async archiveFacts(facts: ExtractedFact[]): Promise<number> {
     if (facts.length === 0) return 0;
 
     let archived = 0;
@@ -144,14 +142,12 @@ export class UserProfile {
    */
   buildSystemPrompt(): string {
     const confirmed = this.getConfirmed();
-    // 过滤掉待确认的条目
-    const filtered = confirmed.filter((e) => e.confirmed);
 
-    if (filtered.length === 0) return '';
+    if (confirmed.length === 0) return '';
 
     // 按分类聚合
     const grouped = new Map<ProfileCategory, string[]>();
-    for (const e of filtered) {
+    for (const e of confirmed) {
       const list = grouped.get(e.category) ?? [];
       list.push(
         e.value
@@ -204,98 +200,6 @@ export class UserProfile {
   }
 
   // ── 私有方法 ──────────────────────────────────────
-
-  /**
-   * 从用户输入中提取事实
-   *
-   * 使用正则 + 关键词规则，兼顾阶段一的低成本需求。
-   * 高置信度规则（≥0.9）→ 直接归档
-   * 中置信度（0.7-0.8）→ 标记待确认
-   *
-   * @param input 用户原始输入
-   * @param turnIndex 当前轮次标识
-   */
-  private extractUserFacts(input: string, turnIndex: string): ExtractedFact[] {
-    const facts: ExtractedFact[] = [];
-
-    // ── 高置信度：身份声明 ──
-    // "我叫张三" "我是张三" "我的名字是张三"
-    const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!！?？\n]{1,15})/);
-    if (identityMatch) {
-      facts.push({
-        category: 'identity',
-        value: `姓名: ${identityMatch[1]}`,
-        sourceTurn: turnIndex,
-        confidence: 0.95,
-      });
-    }
-
-    // "我住在北京" "我家在上海"
-    const locationMatch = input.match(/(?:我住在?|我家在)\s*([^\s，。,\.!！?？\n]{1,15})/);
-    if (locationMatch) {
-      facts.push({
-        category: 'identity',
-        value: `住址: ${locationMatch[1]}`,
-        sourceTurn: turnIndex,
-        confidence: 0.9,
-      });
-    }
-
-    // "我(是|当|做).*?(的)" —— 职业声明
-    const jobMatch = input.match(
-      /我(?:是|当|做)(?:一[个名位])?\s*([^\s，。,\.!！?？\n]{1,10})(?:的)?/,
-    );
-    if (jobMatch && !identityMatch) {
-      // 避免与 identityMatch 重复
-      facts.push({
-        category: 'identity',
-        value: `职业: ${jobMatch[1]}`,
-        sourceTurn: turnIndex,
-        confidence: 0.85,
-      });
-    }
-
-    // ── 高置信度：偏好声明 ──
-    // "我喜欢TS" "我更喜欢Python" "我习惯用VS Code"
-    // 移除外层可选标记，确保动词必须出现才能匹配
-    const prefMatch = input.match(
-      /(?:我(?:很|非常|最|更)?(?:喜欢|爱|习惯|偏好)(?:用|写|做|的))\s*([^\s，。,\.!！?？\n]{1,20})/,
-    );
-    if (prefMatch) {
-      facts.push({
-        category: 'preference',
-        value: `偏好: ${prefMatch[1]}`,
-        sourceTurn: turnIndex,
-        confidence: 0.85,
-      });
-    }
-
-    // ── 中置信度：工具/环境声明 ──
-    // "我用VS Code" "我的环境是Windows"
-    const toolMatch = input.match(/我(?:用|使用|的环境是)\s*([^\s，。,\.!！?？\n]{1,20})/);
-    if (toolMatch && !prefMatch) {
-      facts.push({
-        category: 'preference',
-        value: `工具: ${toolMatch[1]}`,
-        sourceTurn: turnIndex,
-        confidence: 0.8,
-      });
-    }
-
-    // ── 较低置信度：专长声明 ──
-    // "我熟悉React" "我擅长后端"
-    const expertiseMatch = input.match(/我(?:熟悉|擅长|精通|会)\s*([^\s，。,\.!！?？\n]{1,20})/);
-    if (expertiseMatch) {
-      facts.push({
-        category: 'expertise',
-        value: `专长: ${expertiseMatch[1]}`,
-        sourceTurn: turnIndex,
-        confidence: 0.75,
-      });
-    }
-
-    return facts;
-  }
 
   /**
    * 写入单条事实到 SQLite

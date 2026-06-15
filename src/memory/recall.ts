@@ -11,7 +11,7 @@ import type { IMemoryStorage } from './storageInterface.js';
 import type { VectorStore } from './vectorStore.js';
 import { logger } from '../logging/logger.js';
 import { STOPWORDS } from './types.js';
-import { segmentText } from './segmenter.js';
+import { segmentText } from '../utils/segmenter.js';
 
 /**
  * 从文本中提取关键词（用于记忆召回）

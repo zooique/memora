@@ -16,6 +16,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
+import { parseLlmJson } from '@/utils/json.js';
 import type { WriteExtensions } from './toolExecutor.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -177,33 +178,10 @@ ${contextSection}
         return;
       }
 
-      // 尝试解析 JSON（多级回退策略）
-      let insight: string | null = null;
-      try {
-        const parsed = JSON.parse(trimmedResponse);
-        if (parsed && typeof parsed.insight === 'string' && parsed.insight.trim()) {
-          insight = parsed.insight.trim();
-        }
-      } catch {
-        // JSON 解析失败，尝试修复常见错误后重新解析
-        const fixedJson = trimmedResponse
-          .replace(/'/g, '"') // 单引号转双引号
-          .replace(/,\s*}/g, '}') // 移除尾逗号
-          .replace(/,\s*]/g, ']');
-
-        try {
-          const parsed = JSON.parse(fixedJson);
-          if (parsed && typeof parsed.insight === 'string' && parsed.insight.trim()) {
-            insight = parsed.insight.trim();
-          }
-        } catch {
-          // 二次解析失败，回退到正则提取
-          const match = trimmedResponse.match(/"insight"\s*:\s*"([^"]+)"/);
-          if (match && match[1]) {
-            insight = match[1];
-          }
-        }
-      }
+      const parsed = parseLlmJson<{ insight?: string }>(trimmedResponse);
+      const insight = parsed && typeof parsed.insight === 'string' && parsed.insight.trim()
+        ? parsed.insight.trim()
+        : null;
 
       if (!insight) {
         logger.debug('extractInsight: 无法解析 LLM 响应');

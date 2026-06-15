@@ -4,53 +4,25 @@
  * 职责：
  *   - 启动时扫描 configDir/skills/ 目录
  *   - 通过关键词匹配选择技能（初期阶段一/二）
- *   - 技能文件不进入 SQLite 记忆索引——它是"配置"，不是"记忆"
+ *   - 写入 SQLite 索引（source: skill，遵循"万物皆记忆"）
  *   - 后期触发条件（≥15个技能 / 关键词命中率 <80%）→ 切换为 LLM 自主选择
  *
- * 设计原则（01-主架构-v4.0.md §5.2.1）：
- *   - 技能是"怎么做事"的配置，不是"记住了什么"的记忆
+ * 设计原则（01-主架构-v4.0.md §5.2.1 + ADR-004 万物皆记忆）：
+ *   - 技能遵循"万物皆记忆"——存入 SQLite 作为 skill 来源记忆
  *   - 单层目录：<configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）
- *   - 管理组件独立于 SQLite 记忆索引
+ *   - 与 PersonaManager 存储策略一致：文件加载 → 内存缓存 + SQLite 索引
  *
  * 触发词说明：
  *   每个 skill 文件的 frontmatter 声明 keywords（逗号分隔）和 trigger（触发正则，可选）。
  *   skill 文件命名规范：`<技能名>.md`（如"去AI味.md""审视角.md""写代码.md"）。
  */
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { resolve, join, basename } from 'node:path';
-import { parseFrontmatter } from '@/memory/frontmatter.js';
-import { scoreByKeywords } from '@/memory/segmenter.js';
+import { scoreByKeywords } from '@/utils/segmenter.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
+import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
-
-/**
- * 技能条目（从 skills/*.md 解析）
- */
-export interface SkillEntry {
-  /** 技能名（文件名去 .md） */
-  name: string;
-  /** 触发关键词列表 */
-  keywords: string[];
-  /** 触发正则（可选，优先级高于 keywords） */
-  trigger?: RegExp;
-  /** 技能描述（可选） */
-  description?: string;
-  /** 技能 prompt 正文 */
-  content: string;
-  /** 来源路径 */
-  filePath: string;
-  /** 来源层（agent / project） */
-  layer: 'agent' | 'project';
-}
-
-/**
- * 技能匹配结果
- */
-export interface SkillMatch {
-  /** 匹配的技能 */
-  skill: SkillEntry;
-  /** 匹配得分（0-1，用于排序） */
-  score: number;
-}
+import type { SkillEntry, SkillMatch } from './types.js';
+import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
 
 /**
  * 技能管理器
@@ -61,9 +33,11 @@ export class SkillManager {
 
   /**
    * @param configDir 配置目录（技能文件在 <configDir>/skills/ 下）
+   * @param index SQLite 索引（用于写入 skill 记忆）
    */
   constructor(
     private readonly configDir?: string,
+    private readonly index?: IMemoryStorage,
   ) {}
 
   /**
@@ -71,12 +45,16 @@ export class SkillManager {
    *
    * @returns 加载的技能数量
    */
-  load(): number {
-    this.skills = this.scanSkills();
+  async load(): Promise<number> {
+    this.skills = await this.scanSkills();
     logger.info(
       { count: this.skills.length, names: this.skills.map((s) => s.name) },
       '技能加载完成',
     );
+
+    // 写入 SQLite 索引（遵循"万物皆记忆"——与 PersonaManager 一致）
+    await this.writeAllToIndex();
+
     return this.skills.length;
   }
 
@@ -176,98 +154,61 @@ export class SkillManager {
   // ── 私有方法 ──────────────────────────────────────
 
   /**
+   * 将所有技能写入 SQLite 索引
+   */
+  private async writeAllToIndex(): Promise<void> {
+    if (!this.index) return;
+    for (const skill of this.skills) {
+      this.writeSkillToIndex(skill);
+    }
+    logger.info({ count: this.skills.length }, '技能记忆已写入 SQLite');
+  }
+
+  /**
+   * 将单个技能写入 SQLite 索引
+   */
+  private writeSkillToIndex(skill: SkillEntry): void {
+    if (!this.index) return;
+    const now = new Date().toISOString();
+    const memory: Memory = {
+      id: `skill:${skill.name}`,
+      content: skill.content,
+      source: SOURCE_LABELS.SKILL,
+      name: skill.name,
+      createdAt: now,
+      accessedAt: now,
+      score: 0.7,
+    };
+    this.index.upsert(memory);
+  }
+
+  /**
    * 扫描 configDir/skills/ 目录
    *
    * 宿主负责将全局+项目级技能汇总到 configDir，
    * 内核只扫描一个目录，不做路径假设。
    */
-  private scanSkills(): SkillEntry[] {
+  private async scanSkills(): Promise<SkillEntry[]> {
     const map = new Map<string, SkillEntry>();
 
-    if (this.configDir) {
-      const skillsDir = resolve(this.configDir, 'skills');
-      this.scanDir(skillsDir, 'project', map);
+    const skillsDir = resolveSubdir(this.configDir, 'skills');
+    if (skillsDir) {
+      const entries = await scanMarkdownDir(skillsDir);
+      for (const entry of entries) {
+        const skill: SkillEntry = {
+          name: entry.name,
+          keywords: parseKeywords(entry.frontmatter),
+          trigger: parseTrigger(entry.frontmatter),
+          description: entry.frontmatter['description'],
+          content: entry.body.trim(),
+          filePath: entry.filePath,
+          layer: 'project',
+        };
+        map.set(entry.name, skill);
+      }
     }
 
     return Array.from(map.values());
-  }
-
-  /**
-   * 扫描单个目录下的 *.md 文件，解析技能
-   *
-   * 排除规则（与 agent设计.md §10.6.1 一致）：
-   *   - 文件名以 `.` 开头的隐藏文件
-   *   - 文件名以 `_` 前缀的私有文件
-   *   - README.md / CHANGELOG.md / LICENSE
-   *
-   * @param dir 目录路径
-   * @param layer 来源层
-   * @param map 技能 Map（同名覆盖）
-   */
-  private scanDir(dir: string, layer: 'agent' | 'project', map: Map<string, SkillEntry>): void {
-    if (!existsSync(dir)) {
-      logger.debug({ dir }, '技能目录不存在，跳过');
-      return;
-    }
-
-    // 排除列表
-    const EXCLUDED = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
-
-    let files: string[];
-    try {
-      files = readdirSync(dir).filter(
-        (f) => f.endsWith('.md') && !f.startsWith('.') && !f.startsWith('_') && !EXCLUDED.has(f),
-      );
-    } catch {
-      logger.warn({ dir }, '扫描技能目录失败');
-      return;
-    }
-
-    for (const file of files) {
-      try {
-        const filePath = join(dir, file);
-        const raw = readFileSync(filePath, 'utf-8');
-        const { frontmatter: fm, body } = parseFrontmatter(raw);
-
-        const name = fm['name'] ?? basename(file, '.md');
-
-        // 解析 keywords（逗号分隔）
-        const keywords: string[] = fm['keywords']
-          ? String(fm['keywords'])
-              .split(',')
-              .map((s: string) => s.trim())
-              .filter(Boolean)
-          : [];
-
-        // 解析 trigger（正则字符串，格式：/pattern/flags）
-        let trigger: RegExp | undefined;
-        if (fm['trigger']) {
-          try {
-            const pattern = String(fm['trigger']).trim();
-            // 安全解析：先检测是否以 / 开头，再找末尾 /flags
-            const match = pattern.match(/^\/(.+)\/([gimsuy]*)$/);
-            const clean = match ? match[1]! : pattern;
-            trigger = new RegExp(clean, 'i');
-          } catch {
-            logger.warn({ file, trigger: fm['trigger'] }, '技能触发正则无效，已忽略');
-          }
-        }
-
-        const skill: SkillEntry = {
-          name,
-          keywords,
-          trigger,
-          description: fm['description'],
-          content: body.trim(),
-          filePath,
-          layer,
-        };
-
-        map.set(name, skill); // 同名覆盖（项目级覆盖全局级）
-      } catch (err) {
-        logger.warn({ file, err }, '解析技能文件失败');
-      }
-    }
   }
 
 }

@@ -12,7 +12,7 @@ import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import { SOURCE_LABELS, inferSource, type Memory } from './types.js';
-import { parseFrontmatter, serializeFrontmatter as serializeFm } from './frontmatter.js';
+import { parseFrontmatter, serializeFrontmatter as serializeFm } from '../utils/frontmatter.js';
 
 /**
  * 已知 source 到文件系统目录的映射

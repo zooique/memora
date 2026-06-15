@@ -7,7 +7,6 @@
  * - 沙箱/演示环境
  *
  * 注意：此实现不持久化，进程退出后数据丢失。
- * 不支持中文分词搜索（search() 使用简单的 includes 匹配）。
  *
  * 重构变更（2026-06-11）：
  * - 移除 getByPermanence() / getByType() / touch() / applyDecay()
@@ -22,6 +21,7 @@
 import type { IMemoryStorage } from './storageInterface.js';
 import type { Memory } from './types.js';
 import { validateSource } from './types.js';
+import { segmentText } from '../utils/segmenter.js';
 import { logger } from '@/logging/logger.js';
 
 /**
@@ -74,9 +74,9 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 简单文本搜索（内存版）
+   * 文本搜索（内存版）
    *
-   * 不使用 Intl.Segmenter 分词，直接用 includes 匹配。
+   * 使用 segmentText() 规范分词，与 SqliteStorage 行为一致。
    * 搜索 content 和 name 字段，按 score 降序排列。
    *
    * @param query - 搜索查询文本
@@ -91,11 +91,11 @@ export class InMemoryStorage implements IMemoryStorage {
         .slice(0, limit);
     }
 
-    // 简单空格分词（不使用 Intl.Segmenter）
-    const tokens = query.trim().split(/\s+/).filter(Boolean);
+    // 规范分词（与 recall.ts extractKeywords 共用 segmentText）
+    const tokens = segmentText(query).map(t => t.toLowerCase());
 
-    // 若分词后无有效 token（纯标点/符号查询），降级为按 score 返回
-    if (tokens.every((t) => !/[\w\u4e00-\u9fff]/.test(t))) {
+    // 若分词后无有效 token，降级为按 score 返回
+    if (tokens.length === 0) {
       return Array.from(this.memories.values())
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
@@ -104,7 +104,7 @@ export class InMemoryStorage implements IMemoryStorage {
     const results = Array.from(this.memories.values()).filter((m) => {
       const text = `${m.content} ${m.name}`.toLowerCase();
       // 任一 token 命中即可
-      return tokens.some((t) => text.includes(t.toLowerCase()));
+      return tokens.some((t) => text.includes(t));
     });
 
     // 按 score 降序排序

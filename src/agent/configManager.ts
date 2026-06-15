@@ -13,7 +13,6 @@
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import { FileStore } from '@/memory/store.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
@@ -57,13 +56,13 @@ export class ConfigManager {
    * @param index - 记忆存储（规则写入 SQLite）
    * @param skillManager - 技能管理器（运行时注入技能）
    * @param injectSystemMessage - 注入 system 消息的回调（来自 AgentLoop）
-   * @param configDir - 配置目录（模式 3 写入配置文件时使用）
+   * @param writeConfigFile - 写入配置文件的回调（来自 Agent，解耦 FileStore 依赖）
    */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly skillManager: SkillManager,
     private readonly injectSystemMessage: (message: string) => void,
-    private readonly configDir?: string,
+    private readonly writeConfigFile?: (memory: Memory) => Promise<void>,
   ) {}
 
   // ─── 配置建议 ─────────────────────────────────────────
@@ -94,10 +93,9 @@ export class ConfigManager {
    * - confirm() → 写入配置文件（持久化，重启后自动加载）
    */
   async confirm(suggestion: ConfigSuggestion): Promise<void> {
-    if (!this.configDir) {
-      throw configError('configDir 未设置', '模式 3 需要指定 configDir 才能写入配置文件', [
-        '在 Agent 构造时传入 configDir 参数',
-        '例如：new Agent({ configDir: "~/.memora/agent-config", ... })',
+    if (!this.writeConfigFile) {
+      throw configError('writeConfigFile 未设置', '模式 3 需要注入配置文件写入回调才能持久化', [
+        '在 Agent 构造时传入 configDir 参数（Agent 会自动创建 FileStore 并注入回调）',
       ]);
     }
 
@@ -111,7 +109,6 @@ export class ConfigManager {
 
     // 构造记忆对象并写入配置文件（真理源）
     // 不写入 SQLite——遵守"配置文件是真理源"约束
-    const fileStore = new FileStore(this.configDir);
     const now = new Date().toISOString();
     const memory: Memory = {
       id: `${source}:${suggestion.name}`,
@@ -122,7 +119,7 @@ export class ConfigManager {
       accessedAt: now,
       score: suggestion.confidence,
     };
-    await fileStore.write(memory);
+    await this.writeConfigFile(memory);
 
     // 如果是规则，立即注入到 AgentLoop（当前会话生效，重启后由配置文件自动加载）
     if (suggestion.type === 'rule') {
@@ -187,10 +184,10 @@ export class ConfigManager {
    *
    * 技能在 Skill 的设计中属于"配置型记忆"——
    * 由 SkillManager 在内存中管理，通过关键词匹配触发，
-   * 不进入 SQLite 索引（与 rule/persona 的"万物皆记忆"路径不同）。
+   * 同时写入 SQLite 索引（source: skill）以支持 recall() 检索。
    *
-   * 路径一（文件加载）：SkillManager.load() 扫描 configDir/skills/*.md → 内存
-   * 路径二（运行时注入）：addSkill() → SkillManager.register() → 内存
+   * 路径一（文件加载）：SkillManager.load() 扫描 configDir/skills/*.md → 内存 + SQLite
+   * 路径二（运行时注入）：addSkill() → SkillManager.register() → 内存 + SQLite
    * 路径三（持久化新增）：config.confirm({type:'skill',...}) → 写配置文件 → 下次 load() 自动加载
    *
    * 注意：运行时注入的技能仅在当前会话内生效，重启后需重新注入。
@@ -203,9 +200,10 @@ export class ConfigManager {
       ]);
     }
 
-    // Skill 不写 SQLite——SkillManager 在内存中管理技能，
-    // SQLite 写入的数据不会被 SkillManager.load() 读回（它只扫描文件），
-    // 因此写入 SQLite 是无效副作用。
+    // 写入 SQLite 索引（遵循"万物皆记忆"——与 PersonaManager 一致）
+    this.index.upsert(memory);
+
+    // 同时注册到 SkillManager（内存缓存，用于关键词匹配）
     this.skillManager.register({
       name: memory.name,
       keywords: [],
@@ -215,7 +213,7 @@ export class ConfigManager {
       layer: 'agent',
     });
 
-    logger.info({ name: memory.name }, '技能已注入（session-only）');
+    logger.info({ name: memory.name }, '技能已注入');
   }
 
   /**

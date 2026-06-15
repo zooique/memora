@@ -4,7 +4,7 @@
  * 详见 M-202：Intl.Segmenter 中文分词
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText, tokenizeKeywords, scoreByKeywords } from '@/memory/segmenter.js';
+import { segmentText, tokenizeKeywords, scoreByKeywords } from '@/utils/segmenter.js';
 
 describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {

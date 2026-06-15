@@ -55,10 +55,10 @@ date: 2026-06-12
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`      | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
-| `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector）+ 对话快照 + 作品投影 | 直接调 LLM HTTP（通过 provider 接口）           |
+| `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector）+ 对话快照 + 作品投影 + 用户事实提取 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
-| `skill/`    | 技能文件扫描、关键词匹配、prompt 注入（内存管理，不写 SQLite） | 直接调 LLM、操作记忆索引                        |
+| `skill/`    | 技能文件扫描、关键词匹配、prompt 注入、写入 SQLite 索引 | 直接调 LLM、操作记忆索引                        |
 | `llm/`      | LLM 适配、协议解析、流式处理                       | 读写文件                                        |
 | `security/` | 路径白名单、写入确认、Prompt 注入防御              | 业务逻辑                                        |
 | `config/`   | 配置加载、环境变量展开                             | 业务逻辑                                        |
@@ -73,10 +73,14 @@ agent/      →  llm/         （对话调用 Provider）
             →  skill/       （技能管理，通过 SkillManager）
             →  security/    （路径校验，跨切）
 memory/     →  security/    （项目管理器路径校验）
-persona/    →  memory/      （frontmatter 解析 + segmenter 分词 + SQLite 写入 + 类型定义）
-skill/      →  memory/      （frontmatter 解析 + segmenter 分词）
+            →  utils/       （frontmatter 解析 + segmenter 分词）
+persona/    →  memory/      （SQLite 写入 + 类型定义）
+            →  utils/       （frontmatter 解析 + segmenter 分词）
+skill/      →  memory/      （SQLite 写入 + 类型定义）
+            →  utils/       （frontmatter 解析 + segmenter 分词 + scanner 扫描）
 config/     →  （被所有层调）
 logging/    →  （被所有层调）
+utils/      →  （被所有层调，无外部依赖）
 ```
 
 **禁止**：
@@ -93,6 +97,7 @@ logging/    →  （被所有层调）
 ```
 agent/
 ├── agent.ts              # Agent 门面类（对外入口，编排层）
+├── assembler.ts          # 组件组装器（Agent init 时组装各 Manager）
 ├── loop.ts               # AgentLoop 主循环
 ├── toolExecutor.ts       # 工具执行器（registerTool + execute）
 ├── messageHistory.ts     # 消息持久化 + 会话归档
@@ -100,13 +105,19 @@ agent/
 ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
 ├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计）
 ├── workProjection.ts     # 作品投影管理器
+├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
+├── userFactExtractor.ts  # 用户事实提取器（正则规则，从 userProfile 迁入）
 ├── types.ts              # Agent 类型定义
 └── __tests__/            # 单元测试
 
 utils/
-├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 5 事件）
+├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 6 事件）
 ├── errors.ts             # 错误类型（MemoraError / AgentNotInitializedError / ConfigError / LlmError / LlmResponseError / FileOperationError / SecurityError / AbortError）
+├── frontmatter.ts        # Frontmatter 解析/序列化（从 memory/ 迁入，供 memory/persona/skill 共享）
+├── json.ts               # JSON 安全解析/序列化
 ├── math.ts               # 数学工具（sigmoid / cosineSimilarity / clamp）
+├── scanner.ts            # Markdown 目录扫描工具（供 persona/skill 共享）
+├── segmenter.ts          # 中文分词器（Intl.Segmenter，从 memory/ 迁入，供 memory/persona/skill 共享）
 └── strings.ts            # 字符串工具（slugify）
 ```
 
