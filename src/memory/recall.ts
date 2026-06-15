@@ -11,39 +11,26 @@ import type { IMemoryStorage } from './storageInterface.js';
 import type { VectorStore } from './vectorStore.js';
 import { logger } from '../logging/logger.js';
 import { STOPWORDS } from './types.js';
+import { segmentText } from './segmenter.js';
 
 /**
- * 从文本中提取关键词
+ * 从文本中提取关键词（用于记忆召回）
  *
- * 优先使用 Intl.Segmenter（浏览器/Node.js 内置），回退 2-gram
+ * 基于 segmentText() 精确分词，叠加停用词过滤 + 英文词补充 + 去重。
+ * 分词基础设施统一由 segmenter.ts 提供，避免重复实现。
  *
  * @param input - 输入文本
  * @returns 关键词数组（去重 + 停用词过滤）
  */
 export function extractKeywords(input: string): string[] {
-  const words: string[] = [];
+  // 复用 segmenter.ts 的精确分词（Intl.Segmenter ICU 词典切分）
+  const words = segmentText(input).map(w => w.toLowerCase());
 
-  // 优先使用 Intl.Segmenter 做中文分词（比 2-gram 精准）
-  try {
-    const segmenter = new Intl.Segmenter('zh-CN', { granularity: 'word' });
-    for (const { segment, isWordLike } of segmenter.segment(input)) {
-      if (isWordLike && segment.trim().length >= 2) {
-        words.push(segment.trim());
-      }
-    }
-  } catch {
-    // 回退：2-gram
-    const cleaned = input.replace(/[^\u4e00-\u9fff]/g, '');
-    for (let i = 0; i < cleaned.length - 1; i++) {
-      words.push(cleaned[i]! + cleaned[i + 1]!);
-    }
-  }
-
-  // 英文词提取
+  // 补充英文词（segmentText 可能遗漏连续英文大写缩写，如 APIKey → "apikey" 整词）
   const englishWords = input.match(/[a-z]{2,}/gi) || [];
   words.push(...englishWords.map(w => w.toLowerCase()));
 
-  // 去重 + 停用词过滤
+  // 去重 + 停用词过滤 + 最短长度
   return [...new Set(words)].filter(w => w.length >= 2 && !STOPWORDS.has(w));
 }
 

@@ -66,7 +66,7 @@ export class WorkProjectionManager {
    * A4 修复：in-flight Promise 缓存，防止同文件并发读取时重复调用 LLM
    * key: sourcePath（同一文件路径只会有一个未完成的生成 Promise）
    */
-  private readonly _inflight: Map<string, Promise<WorkProjectionEntry | null>> = new Map();
+  private readonly inflight: Map<string, Promise<WorkProjectionEntry | null>> = new Map();
 
   /**
    * 检查并更新作品投影
@@ -90,25 +90,25 @@ export class WorkProjectionManager {
     content: string,
     fileName?: string,
   ): Promise<WorkProjectionEntry | null> {
-    const inflight = this._inflight.get(filePath);
+    const inflight = this.inflight.get(filePath);
     if (inflight) {
       return inflight;
     }
 
-    const promise = this._doEnsureProjection(filePath, content, fileName);
-    this._inflight.set(filePath, promise);
+    const promise = this.doEnsureProjection(filePath, content, fileName);
+    this.inflight.set(filePath, promise);
     try {
       return await promise;
     } finally {
       // 不论成功失败都清理占位（让下一次调用重新走流程）
-      this._inflight.delete(filePath);
+      this.inflight.delete(filePath);
     }
   }
 
   /**
    * 实际生成投影的核心逻辑（A4 修复后从 ensureProjection 拆出）
    */
-  private async _doEnsureProjection(
+  private async doEnsureProjection(
     filePath: string,
     content: string,
     fileName?: string,
@@ -118,7 +118,7 @@ export class WorkProjectionManager {
 
     // 查询已有投影
     const existingId = `work-proj-${slugify(name)}`;
-    const existing = await this.index.getById(existingId);
+    const existing = this.index.getById(existingId);
 
     if (existing) {
       // 检查 hash 是否变化
@@ -144,7 +144,7 @@ export class WorkProjectionManager {
       };
 
       // 写入存储（source = 'work-projection'，语义独立）
-      await this.index.upsert(this.toMemory(entry, hash));
+      this.index.upsert(this.toMemory(entry, hash));
       logger.info(
         { file: filePath, hash, summaryLen: projection.summary.length },
         '作品投影已生成',
@@ -166,7 +166,7 @@ export class WorkProjectionManager {
   async getProjection(filePath: string): Promise<WorkProjectionEntry | null> {
     const name = filePath.split(/[/\\]/).pop() ?? 'unknown';
     const id = `work-proj-${slugify(name)}`;
-    const existing = await this.index.getById(id);
+    const existing = this.index.getById(id);
     return existing ? this.fromMemory(existing) : null;
   }
 
@@ -174,7 +174,7 @@ export class WorkProjectionManager {
    * 加载所有作品投影（按 source 标签召回）
    */
   async loadAll(): Promise<WorkProjectionEntry[]> {
-    const memories = await this.index.getBySource(SOURCE_LABELS.WORK_PROJECTION);
+    const memories = this.index.getBySource(SOURCE_LABELS.WORK_PROJECTION);
     return memories.map((m: Memory) => this.fromMemory(m));
   }
 

@@ -72,7 +72,7 @@ export class UserProfile {
    * name 字段格式：`${category}: ${value}`（如 "identity: 姓名: 张三"）
    */
   async load(): Promise<UserProfileEntry[]> {
-    const memories = await this.index.getBySource(SOURCE_LABELS.PROFILE);
+    const memories = this.index.getBySource(SOURCE_LABELS.PROFILE);
     const entries: UserProfileEntry[] = [];
 
     for (const m of memories) {
@@ -184,7 +184,7 @@ export class UserProfile {
     entry.confirmed = true;
     // 确认后写入存储（此前仅存内存缓存）
     const memory = this.toMemory(entry);
-    await this.index.upsert(memory);
+    this.index.upsert(memory);
     logger.info({ id, category: entry.category, value: entry.value }, '用户画像条目已确认');
   }
 
@@ -196,7 +196,7 @@ export class UserProfile {
   async reject(id: string): Promise<void> {
     this.cache.delete(id);
     try {
-      await this.index.delete(id);
+      this.index.delete(id);
     } catch {
       // 索引中可能不存在（低置信度条目可能未写入），忽略
     }
@@ -328,7 +328,7 @@ export class UserProfile {
       // 仅已确认条目写入存储（待确认条目仅存内存缓存）
       if (entry.confirmed) {
         const memory = this.toMemory(entry);
-        await this.index.upsert(memory);
+        this.index.upsert(memory);
       }
       this.cache.set(id, entry);
 
@@ -362,7 +362,7 @@ export class UserProfile {
    */
   private async removeConflictingEntries(fact: ExtractedFact): Promise<void> {
     try {
-      const existing = await this.index.getBySource(SOURCE_LABELS.PROFILE);
+      const existing = this.index.getBySource(SOURCE_LABELS.PROFILE);
       // 提取新事实的核心模式（如 "姓名: 李四" → 前缀 "姓名"）
       const newPrefix = fact.value.split(':')[0]!.trim();
 
@@ -375,7 +375,7 @@ export class UserProfile {
           const oldPrefix = m.content.split(':')[0]!.trim();
           // 核心模式相同（如 "姓名" vs "姓名"）→ 确认冲突
           if (oldPrefix === newPrefix) {
-            await this.index.delete(m.id);
+            this.index.delete(m.id);
             logger.info(
               { oldId: m.id, oldValue: m.content, newValue: fact.value },
               '用户画像冲突已解决',

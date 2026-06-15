@@ -78,7 +78,7 @@ export class MemoryLoader {
             result.skipped++;
             continue;
           }
-          await this.index.upsert(memory);
+          this.index.upsert(memory);
           result.loaded++;
         } catch (err) {
           result.skipped++;
@@ -106,8 +106,8 @@ export class MemoryLoader {
   async bootstrap(): Promise<{ memories: Memory[]; loadResult: LoadResult }> {
     const loadResult = await this.loadAllToIndex();
     // 按 source 获取 rule 和 skill 记忆（跳过 persona，由 PersonaManager 单独管理）
-    const rules = await this.index.getBySource(SOURCE_LABELS.RULE);
-    const skills = await this.index.getBySource(SOURCE_LABELS.SKILL);
+    const rules = this.index.getBySource(SOURCE_LABELS.RULE);
+    const skills = this.index.getBySource(SOURCE_LABELS.SKILL);
     const memories = [...rules, ...skills];
     return {
       memories,

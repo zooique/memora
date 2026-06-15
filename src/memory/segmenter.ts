@@ -16,8 +16,8 @@ const ZH_SEGMENTER = new Intl.Segmenter('zh-CN', { granularity: 'word' });
  * 轻量关键词分词（用于关键词匹配场景）
  *
  * 与 segmentText() 的区别：
- *   - segmentText：精确分词，用于 LLM 输出切分（依赖 Intl.Segmenter）
- *   - tokenizeKeywords：轻量分词，用于 persona/skill 关键词匹配 + recall
+ *   - segmentText：精确分词（Intl.Segmenter ICU 词典切分），用于 LLM 输出切分 + recall 关键词提取
+ *   - tokenizeKeywords：轻量分词，用于 persona/skill 关键词匹配
  *     提取中文连续段（≥2 字）+ 英文词，不做 ICU 词典切分
  *
  * @param input - 用户输入文本

@@ -21,17 +21,17 @@ import { SOURCE_LABELS } from '../types.js';
 const createMockStorage = (): IMemoryStorage => {
   const store = new Map<string, Memory>();
   return {
-    upsert: vi.fn(async (memory: Memory) => {
+    upsert: vi.fn((memory: Memory) => {
       store.set(memory.id, memory);
     }),
-    delete: vi.fn(async (id: string) => {
+    delete: vi.fn((id: string) => {
       store.delete(id);
     }),
-    getById: vi.fn(async (id: string) => store.get(id) ?? null),
-    getBySource: vi.fn(async (source: string) =>
+    getById: vi.fn((id: string) => store.get(id) ?? null),
+    getBySource: vi.fn((source: string) =>
       Array.from(store.values()).filter((m) => m.source === source),
     ),
-    search: vi.fn(async () => []),
+    search: vi.fn(() => []),
     count: vi.fn(() => store.size),
     countBySource: vi.fn((source: string) =>
       Array.from(store.values()).filter((m) => m.source === source).length,
@@ -119,7 +119,7 @@ describe('UserProfile', () => {
         score: 0.9,
       };
 
-      (mockStorage.getBySource as ReturnType<typeof vi.fn>).mockResolvedValue([existingMemory]);
+      (mockStorage.getBySource as ReturnType<typeof vi.fn>).mockReturnValue([existingMemory]);
 
       // When
       const entries = await userProfile.load();

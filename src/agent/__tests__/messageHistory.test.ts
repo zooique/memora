@@ -5,7 +5,6 @@
  *   - switchSession 切换会话
  *   - appendUser / appendAssistant 消息追加
  *   - listAllSessions 返回空数组
- *   - archiveCurrentSession 返回 null
  *   - registerPendingArchive / awaitPendingArchives
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -20,8 +19,8 @@ const createMockStorage = (): IMemoryStorage => {
     upsert: vi.fn(),
     delete: vi.fn(),
     getById: vi.fn(),
-    getBySource: vi.fn(async () => []),
-    search: vi.fn(async () => []),
+    getBySource: vi.fn(() => []),
+    search: vi.fn(() => []),
     count: vi.fn(() => 0),
     countBySource: vi.fn(() => 0),
     close: vi.fn(),
@@ -89,38 +88,6 @@ describe('MessageHistory · loadSessionMessages', () => {
   });
 });
 
-describe('MessageHistory · loadMostRecentSession', () => {
-  it('应返回空数组', async () => {
-    const history = new MessageHistory(createMockStorage());
-    const messages = await history.loadMostRecentSession('main');
-    expect(messages).toEqual([]);
-  });
-});
-
-describe('MessageHistory · archiveCurrentSession', () => {
-  it('应返回 null', async () => {
-    const history = new MessageHistory(createMockStorage());
-    const result = await history.archiveCurrentSession('signal');
-    expect(result).toBeNull();
-  });
-
-  it('不同 reason 都应返回 null', async () => {
-    const history = new MessageHistory(createMockStorage());
-    expect(await history.archiveCurrentSession('switch')).toBeNull();
-    expect(await history.archiveCurrentSession('signal')).toBeNull();
-    expect(await history.archiveCurrentSession('lazy')).toBeNull();
-    expect(await history.archiveCurrentSession('midway')).toBeNull();
-  });
-});
-
-describe('MessageHistory · archiveMissingSessions', () => {
-  it('应返回 0', async () => {
-    const history = new MessageHistory(createMockStorage());
-    const count = await history.archiveMissingSessions(500);
-    expect(count).toBe(0);
-  });
-});
-
 describe('MessageHistory · pendingArchives', () => {
   it('registerPendingArchive 应注册并等待完成', async () => {
     const history = new MessageHistory(createMockStorage());
@@ -160,25 +127,5 @@ describe('MessageHistory · pendingArchives', () => {
 
     const allDone = await history.awaitPendingArchives(100);
     expect(allDone).toBe(false);
-  });
-});
-
-describe('MessageHistory · getCurrentSessionMessages', () => {
-  it('应返回空数组', async () => {
-    const history = new MessageHistory(createMockStorage());
-    const messages = await history.getCurrentSessionMessages();
-    expect(messages).toEqual([]);
-  });
-});
-
-describe('MessageHistory · setCurrentSessionSeedSnapshots', () => {
-  it('空快照应跳过', async () => {
-    const history = new MessageHistory(createMockStorage());
-    await expect(history.setCurrentSessionSeedSnapshots([])).resolves.toBeUndefined();
-  });
-
-  it('非空快照不应抛错', async () => {
-    const history = new MessageHistory(createMockStorage());
-    await expect(history.setCurrentSessionSeedSnapshots(['快照1', '快照2'])).resolves.toBeUndefined();
   });
 });

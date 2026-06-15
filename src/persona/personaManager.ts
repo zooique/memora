@@ -344,7 +344,7 @@ export class PersonaManager {
       accessedAt: now,
       score: 1.0,
     };
-    await this.index.upsert(memory);
+    this.index.upsert(memory);
   }
 
   /**

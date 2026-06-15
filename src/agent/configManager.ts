@@ -51,7 +51,7 @@ export type ConfigSuggestionHandler = (suggestion: ConfigSuggestion) => void;
 
 export class ConfigManager {
   /** 配置建议回调（模式 3） */
-  private _suggestionHandler: ConfigSuggestionHandler | null = null;
+  private suggestionHandler: ConfigSuggestionHandler | null = null;
 
   /**
    * @param index - 记忆存储（规则写入 SQLite）
@@ -75,12 +75,12 @@ export class ConfigManager {
    * 提取到配置建议时，通过此回调通知宿主。
    */
   onSuggestion(handler: ConfigSuggestionHandler): void {
-    this._suggestionHandler = handler;
+    this.suggestionHandler = handler;
   }
 
   /** 获取当前注册的配置建议回调 */
   get suggestionCallback(): ConfigSuggestionHandler | null {
-    return this._suggestionHandler;
+    return this.suggestionHandler;
   }
 
   /**
@@ -152,7 +152,7 @@ export class ConfigManager {
       ]);
     }
 
-    await this.index.upsert(memory);
+    this.index.upsert(memory);
 
     const rulePrompt = `【项目规则】${memory.name}\n${memory.content}`;
     this.injectSystemMessage(rulePrompt);

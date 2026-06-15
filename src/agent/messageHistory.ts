@@ -54,17 +54,17 @@ export class MessageHistory {
   constructor(
     /**
      * 内存索引（可选）
-     * 注入后，archiveCurrentSession() 会把摘要同步写入 SQLite，
+     * 注入后，会话记忆写入逻辑可同步写入索引，
      * 让召回层能跨会话召回。
      * 不注入则跳过索引写入（保持向后兼容）。
      */
-    private readonly _index?: IMemoryStorage,
+    private readonly index?: IMemoryStorage,
     /**
      * 会话存储（可选）
      * 注入后，消息会持久化到宿主提供的存储实现。
      * 不注入则仅在内存中保存（AgentLoop.messages[]）。
      */
-    private readonly _sessionStore?: ISessionStore,
+    private readonly sessionStore?: ISessionStore,
     /**
      * 临时记忆最小窗口轮次（记忆减法方案 v1.0 · 排雷修正 L2）
      *
@@ -78,8 +78,8 @@ export class MessageHistory {
   ) {
     this.currentDate = initialDate ?? todayDate();
     this.currentSession = initialSession;
-    // _index 保留供未来会话记忆写入逻辑使用
-    void this._index;
+    // index 保留供未来会话记忆写入逻辑使用
+    void this.index;
   }
 
   /**
@@ -132,9 +132,9 @@ export class MessageHistory {
    * @param sourceSession - 源会话标识
    * @returns 自动生成的分支名（如 "main-b1"）
    */
-  private _autoBranchName(sourceSession: string): string {
-    if (!this._sessionStore) return `${sourceSession}-b1`;
-    const allSessions = this._sessionStore.listSessions();
+  private autoBranchName(sourceSession: string): string {
+    if (!this.sessionStore) return `${sourceSession}-b1`;
+    const allSessions = this.sessionStore.listSessions();
     const prefix = `${sourceSession}-b`;
 
     // 提取匹配前缀的序号
@@ -172,13 +172,13 @@ export class MessageHistory {
    * @throws 若 sessionStore 未注入、copySession 未实现或当前会话无消息
    */
   forkSession(targetSession?: string): ForkResult {
-    if (!this._sessionStore) {
+    if (!this.sessionStore) {
       throw configError('无法分叉会话', 'ISessionStore 未注入', [
         '在创建 Agent 时注入 sessionStore 参数',
       ]);
     }
 
-    if (!this._sessionStore.copySession) {
+    if (!this.sessionStore.copySession) {
       throw configError('无法分叉会话', 'ISessionStore.copySession 未实现', [
         '升级宿主项目的 ISessionStore 实现，添加 copySession() 方法',
       ]);
@@ -188,7 +188,7 @@ export class MessageHistory {
     const sourceSession = this.currentSession;
 
     // 加载源会话消息
-    const messages = this._sessionStore.loadMessages(sourceDate, sourceSession);
+    const messages = this.sessionStore.loadMessages(sourceDate, sourceSession);
     if (messages.length === 0) {
       throw configError('无法分叉会话', '当前会话无消息', [
         '先进行一些对话后再尝试分叉',
@@ -200,7 +200,7 @@ export class MessageHistory {
     if (targetSession) {
       // 检查目标会话在当天是否已存在
       const targetFullName = `${todayDate()}-${targetSession}`;
-      const existingSessions = this._sessionStore.listSessions();
+      const existingSessions = this.sessionStore.listSessions();
       if (existingSessions.includes(targetFullName)) {
         throw configError('无法分叉会话', `当天会话 "${targetSession}" 已存在`, [
           '使用不同的名称，或不传参数自动生成',
@@ -208,14 +208,14 @@ export class MessageHistory {
       }
       newSession = targetSession;
     } else {
-      newSession = this._autoBranchName(sourceSession);
+      newSession = this.autoBranchName(sourceSession);
     }
 
     // 计算目标日期
     const targetDate = todayDate();
 
     // 原子复制消息
-    this._sessionStore.copySession(sourceDate, sourceSession, targetDate, newSession);
+    this.sessionStore.copySession(sourceDate, sourceSession, targetDate, newSession);
 
     // 切换当前会话到新分支
     this.switchSession(newSession);
@@ -242,10 +242,10 @@ export class MessageHistory {
       timestamp: nowTimestamp(),
     };
     // 使用 ISessionStore 持久化（如果已注入）
-    if (this._sessionStore) {
+    if (this.sessionStore) {
       try {
         // 动态获取当天日期，避免跨日后写入旧日期目录
-        this._sessionStore.appendMessage(todayDate(), this.currentSession, message);
+        this.sessionStore.appendMessage(todayDate(), this.currentSession, message);
       } catch (err) {
         logger.warn({ err, session: this.currentSessionName }, 'appendUser: 会话持久化失败');
       }
@@ -267,10 +267,10 @@ export class MessageHistory {
       timestamp: nowTimestamp(),
     };
     // 使用 ISessionStore 持久化（如果已注入）
-    if (this._sessionStore) {
+    if (this.sessionStore) {
       try {
         // 动态获取当天日期，避免跨日后写入旧日期目录
-        this._sessionStore.appendMessage(todayDate(), this.currentSession, message);
+        this.sessionStore.appendMessage(todayDate(), this.currentSession, message);
       } catch (err) {
         logger.warn({ err, session: this.currentSessionName }, 'appendAssistant: 会话持久化失败');
       }
@@ -284,11 +284,11 @@ export class MessageHistory {
    * @returns 会话标识列表（格式：YYYY-MM-DD-session），未注入 ISessionStore 则返回空
    */
   async listAllSessions(): Promise<string[]> {
-    if (!this._sessionStore) {
+    if (!this.sessionStore) {
       logger.debug('listAllSessions: ISessionStore 未注入，返回空数组');
       return [];
     }
-    return this._sessionStore.listSessions();
+    return this.sessionStore.listSessions();
   }
 
   /**
@@ -304,73 +304,14 @@ export class MessageHistory {
     this.currentDate = date;
     this.currentSession = session;
 
-    if (!this._sessionStore) {
+    if (!this.sessionStore) {
       logger.debug({ date, session }, 'loadSessionMessages: ISessionStore 未注入，返回空数组');
       return [];
     }
 
-    const messages = this._sessionStore.loadMessages(date, session);
+    const messages = this.sessionStore.loadMessages(date, session);
     logger.info({ date, session, count: messages.length }, 'loadSessionMessages');
     return messages;
-  }
-
-  /**
-   * 加载最近的会话
-   * 用于启动时自动恢复上次对话
-   * 策略：先找今天的会话，没有则找最近日期的会话
-   *
-   * TODO(v4.1): 基元驱动重构后会话归档逻辑尚未迁移。
-   * 当前返回空数组，宿主应通过 ISessionStore 自行实现会话恢复。
-   *
-   * @param preferredSession - 优先加载的会话名（默认 'main'）
-   * @returns 会话消息列表
-   */
-  async loadMostRecentSession(preferredSession = 'main'): Promise<SessionMessage[]> {
-    logger.warn(
-      { preferredSession },
-      '[WARN] loadMostRecentSession: 会话归档逻辑未迁移（warn）（基元驱动重构），返回空数组。宿主应通过 ISessionStore 自行恢复。',
-    );
-    return [];
-  }
-
-  /**
-   * 公开方法：为当前会话生成摘要，并同步写入索引
-   *
-   * 四种调用场景：
-   * - 'switch'  : 会话切换时（旧会话的最终归档），已有摘要则幂等跳过
-   * - 'signal'  : 检测到强信号（实时关键信息）→ 强制重新归档
-   * - 'lazy'    : 启动时补归档（兜底历史会话），已有摘要跳过
-   * - 'midway'  : 超长会话中途归档，已有摘要时仍重新调用（追加覆盖）
-   *
-   * TODO(v4.1): 基元驱动重构后，会话归档由 InsightExtractor.extract() 替代。
-   * 此方法保留 API 兼容性，内部为空操作。
-   *
-   * @param reason - 归档触发原因
-   * @returns null
-   */
-  async archiveCurrentSession(
-    reason: 'switch' | 'signal' | 'lazy' | 'midway' = 'switch',
-  ): Promise<null> {
-    logger.warn(
-      { reason, session: this.currentSessionName },
-      '[WARN] archiveCurrentSession: 归档逻辑已迁移至 InsightExtractor，此方法为空操作。',
-    );
-    return null;
-  }
-
-  /**
-   * 启动时补归档：扫描所有 session-*.md，找出"还没在索引里"的，
-   * 后台异步补齐。
-   *
-   * TODO(v4.1): 基元驱动重构后，会话文件格式已变更，补归档逻辑需要重写。
-   * 此方法保留 API 兼容性，返回 0。
-   *
-   * @param timeoutMs 单个 session 补归档超时（默认 3000ms）
-   * @returns 0
-   */
-  async archiveMissingSessions(_timeoutMs = 3000): Promise<number> {
-    logger.warn('[WARN] archiveMissingSessions: 补归档逻辑未迁移（基元驱动重构），返回 0。');
-    return 0;
   }
 
   /**
@@ -419,30 +360,5 @@ export class MessageHistory {
     }
 
     return this.pendingArchives.size === 0;
-  }
-
-  /**
-   * v4.0：获取当前会话的完整消息列表（会话归档用）
-   *
-   * TODO(v4.1): 从 ISessionStore 加载当前会话消息。当前返回空数组。
-   *
-   * @returns 当前会话的所有消息
-   */
-  async getCurrentSessionMessages(): Promise<SessionMessage[]> {
-    logger.warn('[WARN] getCurrentSessionMessages: 未实现，返回空数组。');
-    return [];
-  }
-
-  /**
-   * v4.0：写入种子快照到当前会话的 frontmatter
-   *
-   * @param snapshots 种子句列表
-   */
-  async setCurrentSessionSeedSnapshots(snapshots: string[]): Promise<void> {
-    if (snapshots.length === 0) return;
-    logger.warn(
-      { session: this.currentSessionName, snapshotCount: snapshots.length },
-      '[WARN] setCurrentSessionSeedSnapshots: 快照未持久化',
-    );
   }
 }

@@ -92,7 +92,7 @@ export class SecurityGuard {
    * 宿主注册后，requestWriteConfirmation() 走自定义 UI；
    * 不注册时回退到终端 readline（CLI 场景）。
    */
-  private _confirmationHandler: WriteConfirmationRequest | null = null;
+  private confirmationHandler: WriteConfirmationRequest | null = null;
 
   constructor(
     private readonly projectPath: string,
@@ -118,7 +118,7 @@ export class SecurityGuard {
    *   });
    */
   onWriteConfirmation(handler: WriteConfirmationRequest | null): void {
-    this._confirmationHandler = handler;
+    this.confirmationHandler = handler;
   }
 
   /**
@@ -222,7 +222,7 @@ export class SecurityGuard {
    *   - owner + confirmWrites=true：要求确认
    *   - owner + confirmWrites=false：自动批准
    *
-   * A1 修复：优先走 _confirmationHandler 注入式回调（宿主程序），
+   * A1 修复：优先走 confirmationHandler 注入式回调（宿主程序），
    * 未注册时回退到 readline + stdin（CLI 场景）。
    *
    * @returns true 确认通过；false 用户拒绝
@@ -253,9 +253,9 @@ export class SecurityGuard {
       needsConfirm: needConfirm,
     };
 
-    if (this._confirmationHandler) {
+    if (this.confirmationHandler) {
       try {
-        const ok = await this._confirmationHandler(info);
+        const ok = await this.confirmationHandler(info);
         this.emitAudit({
           type: ok ? 'write-confirm' : 'write-decline',
           path: targetPath,

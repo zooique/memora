@@ -51,10 +51,10 @@ export interface MemoryKeywords {
 
 export class InsightExtractor {
   /** 宿主提供的记忆关键词（用于输入分类 Layer 2） */
-  private _hostKeywords: MemoryKeywords | null = null;
+  private hostKeywords: MemoryKeywords | null = null;
 
   /** 写入扩展回调（宿主注入 diff 对比确认逻辑） */
-  private _writeExtensions: WriteExtensions | null = null;
+  public writeExtensions: WriteExtensions | null = null;
 
   /**
    * @param provider - LLM Provider（用于 insight 提取）
@@ -73,7 +73,7 @@ export class InsightExtractor {
    * 设置宿主记忆关键词（输入分类 Layer 2）
    */
   setKeywords(keywords: MemoryKeywords): void {
-    this._hostKeywords = keywords;
+    this.hostKeywords = keywords;
     logger.info(
       { domainCount: keywords.domain.length, personalCount: keywords.personal.length },
       '宿主记忆关键词已设置',
@@ -84,13 +84,8 @@ export class InsightExtractor {
    * 设置写入扩展回调
    */
   setWriteExtensions(ext: WriteExtensions | null): void {
-    this._writeExtensions = ext;
+    this.writeExtensions = ext;
     logger.info({ hasExtensions: !!ext }, '写入扩展已设置');
-  }
-
-  /** 获取当前写入扩展（供 Agent 传递给 ToolExecutor） */
-  get writeExtensions(): WriteExtensions | null {
-    return this._writeExtensions;
   }
 
   // ─── 输入分类 ─────────────────────────────────────────
@@ -106,11 +101,11 @@ export class InsightExtractor {
    */
   classify(input: string): 'skip' | 'extract' {
     // Layer 1: 通用规则
-    const ruleResult = this._classifyByRules(input);
+    const ruleResult = this.classifyByRules(input);
     if (ruleResult) return ruleResult;
 
     // Layer 2: 宿主关键词
-    const keywordResult = this._classifyByHostKeywords(input);
+    const keywordResult = this.classifyByHostKeywords(input);
     if (keywordResult) return keywordResult;
 
     // Layer 3: 默认 extract（宁可多提，不可漏提）
@@ -264,7 +259,7 @@ ${contextSection}
    *
    * 零成本规则过滤：短输入、问候、确认等无信息量输入 → skip
    */
-  private _classifyByRules(input: string): 'skip' | null {
+  private classifyByRules(input: string): 'skip' | null {
     const trimmed = input.trim();
     // 太短不可能含值得记忆的信息
     if (trimmed.length < 5) return 'skip';
@@ -279,13 +274,13 @@ ${contextSection}
    *
    * 宿主提供的领域关键词和用户专属关键词匹配。
    */
-  private _classifyByHostKeywords(input: string): 'extract' | null {
-    if (!this._hostKeywords) return null; // 宿主未注册关键词，跳过此层
+  private classifyByHostKeywords(input: string): 'extract' | null {
+    if (!this.hostKeywords) return null; // 宿主未注册关键词，跳过此层
 
     // 领域关键词匹配
-    if (this._hostKeywords.domain.some((k) => input.includes(k))) return 'extract';
+    if (this.hostKeywords.domain.some((k) => input.includes(k))) return 'extract';
     // 用户专属关键词匹配
-    if (this._hostKeywords.personal.some((k) => input.includes(k))) return 'extract';
+    if (this.hostKeywords.personal.some((k) => input.includes(k))) return 'extract';
 
     return null; // 未命中，交给下一层
   }

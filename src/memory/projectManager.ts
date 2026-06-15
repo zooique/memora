@@ -221,8 +221,8 @@ export class ProjectManager {
     }
 
     // bootstrap 过滤：按 source 获取 rule + skill 必召记忆（跳过 persona，由 PersonaManager 管理）
-    const rules = await index.getBySource(SOURCE_LABELS.RULE);
-    const skills = await index.getBySource(SOURCE_LABELS.SKILL);
+    const rules = index.getBySource(SOURCE_LABELS.RULE);
+    const skills = index.getBySource(SOURCE_LABELS.SKILL);
     const bootstrapMemories = [...rules, ...skills];
 
     // 安全守卫（随项目切换更新）
