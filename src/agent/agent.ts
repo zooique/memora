@@ -224,10 +224,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.ctx = pctx;
 
     if (!this.loop || !this.history) {
-      throw configError('Agent 初始化失败', 'LLM Provider 不可用或创建失败', [
+      throw configError('Agent 初始化失败', '组件组装后 loop 或 history 为空（可能 assembleComponents 抛异常被静默吞掉）', [
+        '检查 assembleComponents() 是否有未捕获的异常',
         '检查传入的 provider 参数是否有效',
         '确认 API Key 已配置（环境变量或配置文件）',
-        '使用 setProvider() 运行时切换 Provider',
       ]);
     }
 
@@ -273,24 +273,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 基元驱动召回（双通道：语义 + 关键词）
       yield { type: 'thinking', phase: 'recalling' };
-      const recalledMemories = await recall(this.pctx!.index, input, {
-        limit: 5,
-        vectorStore: this.vectorStore,
-        excludeSources: this.recallExcludeSources,
-      });
-      if (recalledMemories.length > 0) {
-        this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
-      }
-
-      // Layer 5: 最近对话注入
-      const recentHistory = this.loop!.getRecentHistory(3);
-      if (recentHistory.length > 0) {
-        const recentPrompt = '[最近对话]\n' + recentHistory.map(m =>
-          `${m.role === 'user' ? '用户' : '助手'}：${m.content}`
-        ).join('\n');
-        this.loop!.injectSystemMessage(recentPrompt);
-        logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
-      }
+      const recalledMemories = await this.recallAndInject(input);
 
       if (signal?.aborted) {
         yield { type: 'aborted', reason: '用户取消了对话' };
@@ -299,14 +282,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 注入上一轮匹配的技能 prompt
       yield { type: 'thinking', phase: 'processing' };
-      if (this.activeSkill && this.skillManager && this.loop) {
-        const skillPrompt = this.skillManager.buildSystemPrompt(this.activeSkill);
-        if (skillPrompt) {
-          this.loop.injectSystemMessage(skillPrompt);
-          logger.debug({ skill: this.activeSkill }, '技能 prompt 已注入');
-        }
-        this.activeSkill = null;
-      }
+      this.injectActiveSkill();
 
       await this.history!.appendUser(input);
 
@@ -336,6 +312,53 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         clearTimeout(this.chatLockTimer);
         this.chatLockTimer = null;
       }
+    }
+  }
+
+  /**
+   * 召回记忆 + 注入最近对话上下文
+   *
+   * 从 chat() 中提取，职责：
+   *   1. 双通道召回（语义 + 关键词）
+   *   2. Layer 5: 最近对话注入
+   *
+   * @param input 用户输入
+   * @returns 召回的记忆列表
+   */
+  private async recallAndInject(input: string): Promise<Memory[]> {
+    const recalledMemories = await recall(this.pctx!.index, input, {
+      limit: 5,
+      vectorStore: this.vectorStore,
+      excludeSources: this.recallExcludeSources,
+    });
+    if (recalledMemories.length > 0) {
+      this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
+    }
+
+    // Layer 5: 最近对话注入
+    const recentHistory = this.loop!.getRecentHistory(3);
+    if (recentHistory.length > 0) {
+      const recentPrompt = '[最近对话]\n' + recentHistory.map(m =>
+        `${m.role === 'user' ? '用户' : '助手'}：${m.content}`
+      ).join('\n');
+      this.loop!.injectSystemMessage(recentPrompt);
+      logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
+    }
+
+    return recalledMemories;
+  }
+
+  /**
+   * 注入上一轮匹配的技能 prompt
+   */
+  private injectActiveSkill(): void {
+    if (this.activeSkill && this.skillManager && this.loop) {
+      const skillPrompt = this.skillManager.buildSystemPrompt(this.activeSkill);
+      if (skillPrompt) {
+        this.loop.injectSystemMessage(skillPrompt);
+        logger.debug({ skill: this.activeSkill }, '技能 prompt 已注入');
+      }
+      this.activeSkill = null;
     }
   }
 

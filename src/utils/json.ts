@@ -39,8 +39,10 @@ export function parseLlmJson<T = unknown>(raw: string): T | null {
   }
 
   // 3. 修复常见错误后重试
+  // 只替换作为 JSON key/value 定界符的单引号，不替换字符串内容中的单引号
+  // 匹配模式：单引号紧跟在 {, [, :, , 后面（定界符位置），或紧靠在 }, ], ,, : 前面
   const fixed = trimmed
-    .replace(/'/g, '"')
+    .replace(/(?<=[{\[:,\s])'|'(?=[}\]:,\s])/g, '"')
     .replace(/,\s*}/g, '}')
     .replace(/,\s*]/g, ']');
   try {

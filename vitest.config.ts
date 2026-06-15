@@ -12,9 +12,11 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.ts'],
     // 强制 picocolors 输出 ANSI 颜色码（系统 NO_COLOR=1 会禁用颜色，测试环境需覆盖）
+    // 禁用 pino 文件日志：避免 vitest 进程退出时 pino 写入已销毁的文件描述符导致 EBADF
     env: {
       FORCE_COLOR: '1',
       NO_COLOR: '',
+      MEMORA_LOG_FILE: '0',
     },
     coverage: {
       provider: 'v8',

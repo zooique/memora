@@ -623,11 +623,15 @@ export class ToolExecutor {
 
   /**
    * 在记忆索引中搜索
+   *
+   * @param query 搜索关键词
+   * @param limitStr 返回数量上限
+   * @param modeStr 搜索模式："match"（任一命中，默认）或 "near"（全部命中）
    */
   private async searchMemories(
     query: string,
     limitStr: string,
-    _modeStr: string,
+    modeStr: string,
   ): Promise<ToolResult> {
     if (!query) {
       throw toolError('search_memories 工具调用缺少 query 参数', 'LLM 未传 query', [
@@ -643,16 +647,29 @@ export class ToolExecutor {
       limit = 50;
     }
 
-    const results = this.memoryIndex.search(query, limit);
+    const mode = modeStr === 'near' ? 'near' : 'match';
+    let results = this.memoryIndex.search(query, limit);
+
+    // near 模式：过滤只保留所有关键词都命中的结果
+    if (mode === 'near' && results.length > 0) {
+      const keywords = query.toLowerCase().split(/\s+/).filter(Boolean);
+      if (keywords.length > 1) {
+        results = results.filter((m) => {
+          const text = `${m.content} ${m.name}`.toLowerCase();
+          return keywords.every((kw) => text.includes(kw));
+        });
+      }
+    }
+
     if (results.length === 0) {
-      return `（未找到匹配 "${query}" 的记忆）`;
+      return `（未找到匹配 "${query}" 的记忆${mode === 'near' ? '（near 模式：所有关键词必须命中）' : ''}）`;
     }
 
     const lines = results.map((m, i) => {
       const preview = m.content.length > 80 ? `${m.content.slice(0, 80)}…` : m.content;
       return `${i + 1}. [${m.source}:${m.name}] (score=${m.score})\n   ${preview.replace(/\n/g, ' ')}`;
     });
-    return `搜索 "${query}" 找到 ${results.length} 条：\n${lines.join('\n')}`;
+    return `搜索 "${query}" 找到 ${results.length} 条（${mode} 模式）：\n${lines.join('\n')}`;
   }
 
   /**

@@ -90,8 +90,8 @@ export async function recall(
         }
       }
     } catch (err) {
-          logger.debug({ err }, '语义搜索失败，降级到关键词');
-        }
+      logger.debug({ err }, '语义搜索失败，降级到关键词');
+    }
   }
 
   // ── 通道 2：关键词搜索 ──

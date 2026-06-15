@@ -171,6 +171,9 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
  */
 let _logger: ILogger = createConsoleLogger();
 
+/** 标记 _logger 是否已被宿主注入（用于 setLogger 覆盖检测） */
+let _loggerInjected = false;
+
 // 模块加载时异步尝试升级到 pino（不阻塞模块导入）
 void tryCreatePinoLogger().then((pinoLogger) => {
   if (pinoLogger) {
@@ -213,12 +216,24 @@ export const logger: ILogger = {
  *
  * 宿主项目在 Agent 初始化前调用此函数注入自定义 logger。
  * 传入 undefined 则恢复为默认（pino 或 console fallback）。
+ *
+ * 注意：此函数修改全局状态。在单 Agent 模型下（ADR-011），
+ * 同一进程只有一个 Agent 实例，不会冲突。若同一进程创建多个
+ * Agent 实例并分别注入 logger，后者会覆盖前者——此时会输出警告。
  */
 export function setLogger(newLogger: ILogger | undefined): void {
   if (newLogger) {
+    // 检测覆盖：如果当前 logger 已被宿主注入，且新 logger 不是同一个，说明有多处注入
+    if (_loggerInjected && _logger !== newLogger) {
+      _logger.warn(
+        'setLogger 覆盖了已有的自定义 logger（单 Agent 模型下不应出现此情况）',
+      );
+    }
+    _loggerInjected = true;
     _logger = newLogger;
   } else {
     // 恢复默认：尝试 pino，否则 console
+    _loggerInjected = false;
     void tryCreatePinoLogger().then((pinoLogger) => {
       _logger = pinoLogger ?? createConsoleLogger();
     });

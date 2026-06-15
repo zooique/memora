@@ -286,6 +286,33 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
       expect(result).toContain('找到');
     });
 
+    it('near 模式：部分 token 不命中时该结果应被过滤', async () => {
+      // mem-1 包含 "Memora" 但不包含 "TypeScript"；near 模式要求全部命中
+      const result = await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'Memora TypeScript', mode: 'near' }),
+      );
+      // 两条记忆都不同时包含两个关键词，应返回未找到
+      expect(result).toContain('未找到');
+      expect(result).toContain('near 模式');
+    });
+
+    it('near 模式：单 token 等同于 match 模式', async () => {
+      const result = await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'Memora', mode: 'near' }),
+      );
+      expect(result).toContain('找到');
+    });
+
+    it('match 模式：结果应包含模式标注', async () => {
+      const result = await executor.execute(
+        'search_memories',
+        JSON.stringify({ query: 'Memora', mode: 'match' }),
+      );
+      expect(result).toContain('match 模式');
+    });
+
     it('空查询应返回兜底（按 weight 排序）', async () => {
       // Intl.Segmenter 切出空 tokens → 走 getByWeight
       const result = await executor.execute('search_memories', JSON.stringify({ query: '，。' }));
