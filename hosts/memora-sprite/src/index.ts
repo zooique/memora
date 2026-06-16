@@ -156,7 +156,9 @@ export async function startSprite(opts?: {
   const projectPath = opts?.projectPath ?? process.cwd();
   const configDir = opts?.configDir ?? resolve(homedir(), '.memora-config');
   // 展开 ~ 为实际 home 目录
-  const rawDir = config.memory.dataDir.replace(/^~[/\\]/, homedir());
+  const rawDir = config.memory.dataDir.startsWith('~')
+    ? resolve(homedir(), config.memory.dataDir.slice(1).replace(/^[/\\]/, ''))
+    : config.memory.dataDir;
   const dataDir = opts?.dataDir ?? rawDir;
 
   // 2. 打开 SQLite 数据库（确保目录存在）
