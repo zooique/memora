@@ -83,6 +83,19 @@ export interface IMemoryStorage {
   countBySource(source: string): number;
 
   /**
+   * 衰减指定来源的记忆 score（自然遗忘机制）
+   *
+   * 长时间未访问的记忆 score 逐渐降低。
+   * 宿主实现（SqliteStorage）可用一条 SQL UPDATE 批量完成，
+   * 避免内核逐条全量加载。
+   *
+   * @param sources - 要衰减的来源标签列表（如 ['insight', 'profile']）
+   * @param now - 当前时间
+   * @returns 受影响的记忆数量
+   */
+  decayScores(sources: string[], now: Date): number;
+
+  /**
    * 关闭存储连接（可选）
    *
    * 宿主注入的实现可能不需要关闭（如共享数据库连接），

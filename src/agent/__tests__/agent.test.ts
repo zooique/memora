@@ -77,6 +77,16 @@ function makeAgent(
     dataDir,
     permission: 'owner',
     allowedPaths: [dataDir],
+    messages: {
+      abortedByUser: '用户取消了对话',
+      maxIterationsReached: '\n\n[已达到最大迭代次数]',
+      recentConversationLabel: '[最近对话]',
+      userLabel: '用户',
+      assistantLabel: '助手',
+      inputBlockedByGuard: (rule) => `输入被护栏规则"${rule}"阻止`,
+      guardrailWarningPrefix: '[护栏警告]',
+      outputBlockedByGuard: (rule) => `输出被护栏规则"${rule}"阻止`,
+    },
   });
 }
 

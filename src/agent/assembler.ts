@@ -26,6 +26,7 @@ import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { ITracer } from './tracer.js';
+import type { UIMessages } from './types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 
 /** 组装器输入参数 */
@@ -38,6 +39,8 @@ export interface AssembleInput {
   maxContextTokens: number;
   sessionStore: ISessionStore | undefined;
   tracer: ITracer | undefined;
+  messages: UIMessages | undefined;
+  enableContextSummary: boolean;
   /** 已有的 SkillManager（首次为 null，后续复用） */
   existingSkillManager: SkillManager | null;
 }
@@ -84,6 +87,8 @@ export async function assembleComponents(
     maxContextTokens,
     sessionStore,
     tracer,
+    messages,
+    enableContextSummary,
     existingSkillManager,
   } = input;
 
@@ -140,6 +145,8 @@ export async function assembleComponents(
     toolDefinitions: toolExec.getToolDefinitions(),
     maxContextTokens,
     tracer,
+    messages,
+    enableContextSummary,
     guardrailRules: pctx.index.getBySource(SOURCE_LABELS.GUARDRAIL),
   });
   insightExtractor.bindGetRecentHistory((rounds: number) => loop.getRecentHistory(rounds));

@@ -122,6 +122,28 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
+   * 衰减指定来源的记忆 score
+   *
+   * 遍历所有匹配 source 的记忆，按时间衰减。
+   * 生产环境宿主（SqliteStorage）应重写为 SQL UPDATE 批量操作。
+   */
+  decayScores(sources: string[], now: Date): number {
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+    let count = 0;
+    for (const m of this.memories.values()) {
+      if (!sources.includes(m.source)) continue;
+      const accessedAt = new Date(m.accessedAt);
+      if (isNaN(accessedAt.getTime())) continue;
+      const daysSinceAccess = (now.getTime() - accessedAt.getTime()) / ONE_DAY;
+      if (daysSinceAccess > 7) {
+        m.score = Math.max(0.1, m.score - 0.02 * Math.floor(daysSinceAccess / 7));
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
    * 关闭（内存实现无需关闭）
    */
   close(): void {

@@ -89,7 +89,7 @@ describe('Guardrail · 输入护栏阻断', () => {
 
     // 应有 text chunk 包含阻断消息
     const textChunks = chunks.filter(c => c.type === 'text').map(c => c.content);
-    expect(textChunks.some(t => t!.includes('护栏规则'))).toBe(true);
+    expect(textChunks.some(t => t!.includes('guardrail rule'))).toBe(true);
     expect(textChunks.some(t => t!.includes('禁止暴力'))).toBe(true);
 
     // 应有 done 事件
@@ -118,7 +118,7 @@ describe('Guardrail · 输出护栏阻断', () => {
     // 应有 text chunk 包含输出阻断消息
     const textChunks = chunks.filter(c => c.type === 'text').map(c => c.content);
     // 输出被护栏阻断后，应有阻断提示
-    const hasBlockMessage = textChunks.some(t => t!.includes('护栏规则'));
+    const hasBlockMessage = textChunks.some(t => t!.includes('guardrail rule'));
     expect(hasBlockMessage).toBe(true);
 
     // 应有 done 事件
@@ -206,7 +206,7 @@ describe('Guardrail · warn 级别放行', () => {
     const textChunks = chunks.filter(c => c.type === 'text').map(c => c.content);
 
     // 应有护栏警告消息
-    const hasWarning = textChunks.some(t => t!.includes('护栏警告'));
+    const hasWarning = textChunks.some(t => t!.includes('Guardrail Warning'));
     expect(hasWarning).toBe(true);
 
     // LLM 仍应正常回复（warn 不阻断）
@@ -233,7 +233,7 @@ describe('Guardrail · warn 级别放行', () => {
     const textChunks = chunks.filter(c => c.type === 'text').map(c => c.content);
 
     // 应有护栏警告消息
-    const hasWarning = textChunks.some(t => t!.includes('护栏警告'));
+    const hasWarning = textChunks.some(t => t!.includes('Guardrail Warning'));
     expect(hasWarning).toBe(true);
 
     // LLM 回复仍应出现（warn 不阻断）

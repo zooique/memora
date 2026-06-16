@@ -24,12 +24,12 @@
  */
 import { basename } from 'node:path';
 import type { AgentLoop } from './loop.js';
-import type { AgentChunk } from './types.js';
+import type { AgentChunk, UIMessages } from './types.js';
 import type { ToolExecutor } from './toolExecutor.js';
 import type { MessageHistory } from './messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
-import { recall, decayScores } from '@/memory/recall.js';
+import { recall } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
@@ -94,6 +94,10 @@ export interface AgentOptions {
   logger?: ILogger;
   /** 可观测性 Tracer（可选，不传则使用 NoopTracer 静默丢弃所有 span） */
   tracer?: ITracer;
+  /** 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） */
+  messages?: UIMessages;
+  /** 上下文超限时是否自动生成摘要（默认 false，开启后首次截断时增加 ~1-2s 延迟） */
+  enableContextSummary?: boolean;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */
@@ -131,10 +135,42 @@ interface AgentConfig {
   projectPath: string;
   configDir: string | undefined;
   tracer: ITracer | undefined;
+  messages: UIMessages | undefined;
+  enableContextSummary: boolean;
 }
 
 // ─── Agent 门面类 ───────────────────────────────────────
 
+/**
+ * Memora Agent 门面类
+ *
+ * **设计哲学**：单 Agent，单配置，单记忆。每个 Agent 实例拥有独立的
+ * 对话管线（AgentLoop）、独立的消息历史（MessageHistory）和独立的
+ * 运行时状态（activeSkill、chatBusy）。
+ *
+ * **多实例**：宿主可通过 new Agent({ dataDir: './agent2' }) 创建
+ * 独立实例。只要 dataDir 不同，它们拥有完全隔离的记忆库和会话。
+ * 内核不负责多 Agent 编排——那是宿主层的职责。
+ *
+ * **fork vs 多实例**：
+ * - forkSession() 分叉对话历史，但记忆索引全局共享
+ * - new Agent() + 独立 dataDir 实现完全隔离的记忆空间
+ *
+ * @example
+ * ```ts
+ * const agent = new Agent({
+ *   projectPath: '/path/to/project',
+ *   provider: new OpenAIProvider({ apiKey: '...' }),
+ *   configDir: '/path/to/config',
+ *   dataDir: '/path/to/data',
+ *   permission: 'owner',
+ *   allowedPaths: ['/path/to/project'],
+ * });
+ * await agent.init();
+ * const iter = agent.chat('你好');
+ * for await (const chunk of iter) { ... }
+ * ```
+ */
 export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 构造参数分组
   #config: AgentConfig;
@@ -199,6 +235,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       sessionStore: opts.sessionStore,
       configDir: opts.configDir,
       tracer: opts.tracer,
+      messages: opts.messages,
+      enableContextSummary: opts.enableContextSummary ?? false,
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
@@ -289,7 +327,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const recalledMemories = await this.recallAndInject(input);
 
       if (signal?.aborted) {
-        yield { type: 'aborted', reason: '用户取消了对话' };
+        yield { type: 'aborted', reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation' };
         return;
       }
 
@@ -352,8 +390,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const loop = this.requireNonNull(this.loop, 'loop');
     const recentHistory = loop.getRecentHistory(3);
     if (recentHistory.length > 0) {
-      const recentPrompt = '[最近对话]\n' + recentHistory.map(m =>
-        `${m.role === 'user' ? '用户' : '助手'}：${m.content}`
+      const msgs = this.#config.messages;
+      const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
+      const userLabel = msgs?.userLabel ?? 'User';
+      const assistantLabel = msgs?.assistantLabel ?? 'Assistant';
+      const recentPrompt = `${label}\n` + recentHistory.map(m =>
+        `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`
       ).join('\n');
       loop.injectSystemMessage(recentPrompt);
       logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
@@ -457,6 +499,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * - 新分支拥有独立的消息历史，后续对话互不干扰
    * - 记忆索引（IMemoryStorage）全局共享，不受分叉影响
    *
+   * **注意**：fork 不隔离记忆。分支 A 中提取的 insight 会在分支 B
+   * 的召回中出现，反之亦然。如需要完全独立的记忆空间（如多用户场景），
+   * 应创建独立 Agent 实例 + 独立 dataDir，而非 fork。
+   *
    * @param targetSession - 自定义新分支名（可选，不传则自动生成）
    * @returns { newSession, messageCount }
    */
@@ -546,6 +592,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       maxContextTokens: this.#config.maxContextTokens,
       sessionStore: this.#config.sessionStore,
       tracer: this.#config.tracer,
+      messages: this.#config.messages,
+      enableContextSummary: this.#config.enableContextSummary,
       existingSkillManager: this.skillManager,
     });
 
@@ -733,28 +781,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 记忆生命周期 ───────────────────────────────────────
 
   /**
-   * 对 insight/archive 记忆执行 score 衰减
+   * 对 insight/profile/work-projection 记忆执行 score 衰减
    *
    * 长期未访问的记忆 score 逐渐降低，体现"自然遗忘"
    * 不影响 persona/rule/skill（这些是配置型记忆，不应衰减）
+   *
+   * 衰减逻辑委派给 IMemoryStorage.decayScores()，
+   * 宿主（SqliteStorage）可用一条 SQL UPDATE 批量完成，避免 O(n) 全量加载。
    */
   private runMemoryDecay(): void {
     if (!this.pctx) return;
     try {
-      const now = new Date();
       const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
-      let decayedCount = 0;
-      for (const source of sources) {
-        const memories = this.pctx.index.getBySource(source);
-        if (memories.length === 0) continue;
-        decayScores(memories, now);
-        for (const m of memories) {
-          this.pctx.index.upsert(m);
-        }
-        decayedCount += memories.length;
-      }
+      const decayedCount = this.pctx.index.decayScores(sources, new Date());
       logger.debug({ decayedCount }, '记忆衰减完成');
-      this.emit('decayCompleted', { decayedCount: decayedCount });
+      this.emit('decayCompleted', { decayedCount });
     } catch (err) {
       logger.warn({ err }, '记忆衰减异常，跳过本轮');
     }

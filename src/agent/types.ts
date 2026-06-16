@@ -24,3 +24,39 @@ export type AgentChunk =
   | { type: 'tool_result'; name: string; ok: boolean; summary?: string }
   | { type: 'aborted'; reason: string }
   | { type: 'done' };
+
+// ─── 宿主可覆盖的 UI 文本 ────────────────────────────────
+
+/**
+ * 宿主可覆盖的 UI 消息文本
+ *
+ * 核心库内置英文默认值，宿主可通过 AgentOptions.messages
+ * 覆盖为任意语言（中文/日文/自定义）。
+ *
+ * 遵循领域无关原则：核心库不耦合特定语言。
+ */
+export interface UIMessages {
+  /** 对话取消提示（默认 "User cancelled the conversation"） */
+  abortedByUser?: string;
+  /** 达到最大迭代次数提示（默认 "\n\n[Max iterations reached]"） */
+  maxIterationsReached?: string;
+  /**
+   * 上下文窗口截断提示生成函数
+   * @param skipped 被裁剪的消息数
+   * @param kept 保留的消息数
+   * @returns 系统消息内容
+   */
+  contextTruncated?: (skipped: number, kept: number) => string;
+  /** 最近对话标签（默认 "[Recent conversation]"） */
+  recentConversationLabel?: string;
+  /** 用户角色标签（默认 "User"） */
+  userLabel?: string;
+  /** 助手角色标签（默认 "Assistant"） */
+  assistantLabel?: string;
+  /** 护栏阻断提示模板（{rule} 会被替换为规则名） */
+  inputBlockedByGuard?: (rule: string) => string;
+  /** 护栏警告前缀（默认 "[Guardrail Warning]"） */
+  guardrailWarningPrefix?: string;
+  /** 输出被护栏阻断提示模板 */
+  outputBlockedByGuard?: (rule: string) => string;
+}

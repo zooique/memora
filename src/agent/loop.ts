@@ -11,7 +11,7 @@
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from './toolExecutor.js';
-import type { AgentChunk } from './types.js';
+import type { AgentChunk, UIMessages } from './types.js';
 import type { ITracer } from './tracer.js';
 import { NOOP_TRACER, TRACE_SPANS } from './tracer.js';
 import { MemoraError, isRetryableErrorCode, type ToolErrorCodeValue } from '@/utils/errors.js';
@@ -55,6 +55,16 @@ export interface AgentLoopOptions {
    * 而非立即结束当前迭代。超过此上限后放弃反思。
    */
   maxReflectionRetries?: number;
+  /** 宿主可覆盖的 UI 消息文本（默认英文） */
+  messages?: UIMessages;
+  /**
+   * 上下文超限时是否自动生成摘要（默认 false）
+   *
+   * 开启后，当消息历史超过 maxContextTokens 时，
+   * 会对被裁剪的消息调用 provider 生成一段摘要注入到系统提示中，
+   * 避免关键信息永久丢失。（首次触发时增加 ~1-2s 延迟）
+   */
+  enableContextSummary?: boolean;
 }
 
 /** callLlmWithRetry 的返回结果 */
@@ -75,6 +85,12 @@ export class AgentLoop {
   private readonly guardrailRules: readonly Memory[];
   /** Reflection 最大重试次数（默认 2） */
   private readonly maxReflectionRetries: number;
+  /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
+  private readonly ui: Required<UIMessages>;
+  /** 上下文超限时是否自动生成摘要 */
+  private readonly enableContextSummary: boolean;
+  /** 上下文摘要缓存（首次截断后缓存，后续截断复用） */
+  private contextSummary: string | null = null;
   /** 字符到 token 的粗略换算比（中英文混合平均 ~2.5 chars/token，保守取 3） */
   private static readonly CHARS_PER_TOKEN = 3;
   /** LLM 调用最大重试次数（仅在流式输出前失败时重试） */
@@ -88,6 +104,19 @@ export class AgentLoop {
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.guardrailRules = opts.guardrailRules ?? [];
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
+    this.ui = {
+      abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
+      maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
+      contextTruncated: opts.messages?.contextTruncated ?? ((skipped, kept) =>
+        `[Context window management] ${skipped} earlier messages have been trimmed to maintain conversation flow. ${kept} recent messages are preserved along with the full system prompt. Ask the user if you need to review earlier content.`),
+      recentConversationLabel: opts.messages?.recentConversationLabel ?? '[Recent conversation]',
+      userLabel: opts.messages?.userLabel ?? 'User',
+      assistantLabel: opts.messages?.assistantLabel ?? 'Assistant',
+      inputBlockedByGuard: opts.messages?.inputBlockedByGuard ?? ((rule: string) => `Input blocked by guardrail rule "${rule}"`),
+      guardrailWarningPrefix: opts.messages?.guardrailWarningPrefix ?? '[Guardrail Warning]',
+      outputBlockedByGuard: opts.messages?.outputBlockedByGuard ?? ((rule: string) => `Output blocked by guardrail rule "${rule}"`),
+    };
+    this.enableContextSummary = opts.enableContextSummary ?? false;
 
     // 初始化 system prompt（基于永驻记忆，加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
@@ -135,13 +164,13 @@ export class AgentLoop {
     const inputGuardResult = this.runInputGuardrails(userInput);
     if (inputGuardResult.blocked) {
       responseSpan.end();
-      yield { type: 'text', content: inputGuardResult.message ?? '输入被护栏规则阻止' };
+      yield { type: 'text', content: inputGuardResult.message ?? 'Input blocked by guardrail' };
       yield { type: 'done' };
       return;
     }
     if (inputGuardResult.warning) {
       // warn 级别只通知，不阻断
-      yield { type: 'text', content: `[护栏警告] ${inputGuardResult.warning}` };
+      yield { type: 'text', content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}` };
     }
 
     this.messages.push({ role: 'user', content: enhancedInput });
@@ -154,13 +183,24 @@ export class AgentLoop {
       // V-105：每次迭代前检查是否已被取消
       if (signal?.aborted) {
         responseSpan.end();
-        yield { type: 'aborted', reason: '用户取消了对话' };
+        yield { type: 'aborted', reason: this.ui.abortedByUser };
         return;
       }
 
       // 调用 LLM（带重试 + 截断保护）
       const chatOpts = this.buildChatOptions();
-      const safeMessages = this.truncateMessages(this.messages);
+
+      // 上下文摘要：如果启用且首次截断，生成摘要
+      let contextSummary: string | undefined;
+      if (this.enableContextSummary && this.estimateTokens(this.messages) > this.maxContextTokens && this.messages.length > 3) {
+        if (this.contextSummary) {
+          contextSummary = this.contextSummary;
+        } else {
+          contextSummary = await this.generateContextSummary();
+          this.contextSummary = contextSummary;
+        }
+      }
+      const safeMessages = this.truncateMessages(this.messages, contextSummary);
 
       let llmResult: LlmCallResult;
       try {
@@ -172,7 +212,7 @@ export class AgentLoop {
 
       if (llmResult.aborted) {
         responseSpan.end();
-        yield { type: 'aborted', reason: '用户取消了对话' };
+        yield { type: 'aborted', reason: this.ui.abortedByUser };
         return;
       }
 
@@ -181,7 +221,7 @@ export class AgentLoop {
         const execResult = yield* this.executeToolCalls(llmResult.toolCalls, llmResult.fullContent, signal);
         if (execResult.aborted) {
           responseSpan.end();
-          yield { type: 'aborted', reason: '用户取消了对话' };
+          yield { type: 'aborted', reason: this.ui.abortedByUser };
           return;
         }
 
@@ -216,12 +256,12 @@ export class AgentLoop {
       const outputGuardResult = this.runOutputGuardrails(llmResult.fullContent);
       if (outputGuardResult.blocked) {
         responseSpan.end();
-        yield { type: 'text', content: outputGuardResult.message ?? '输出被护栏规则阻止' };
+        yield { type: 'text', content: outputGuardResult.message ?? 'Output blocked by guardrail' };
         yield { type: 'done' };
         return;
       }
       if (outputGuardResult.warning) {
-        yield { type: 'text', content: `[护栏警告] ${outputGuardResult.warning}` };
+        yield { type: 'text', content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}` };
       }
 
       responseSpan.end();
@@ -231,7 +271,7 @@ export class AgentLoop {
 
     logger.warn({ iterations: iteration }, '达到最大迭代次数');
     responseSpan.end();
-    yield { type: 'text', content: '\n\n[已达到最大迭代次数]' };
+    yield { type: 'text', content: this.ui.maxIterationsReached };
     yield { type: 'done' };
   }
 
@@ -472,7 +512,7 @@ export class AgentLoop {
    * @param messages 完整消息数组
    * @returns 截断后的消息数组（可能是原数组引用，无修改时）
    */
-  private truncateMessages(messages: readonly Message[]): readonly Message[] {
+  private truncateMessages(messages: readonly Message[], summary?: string): readonly Message[] {
     const estimated = this.estimateTokens(messages);
     if (estimated <= this.maxContextTokens || messages.length <= 3) {
       return messages; // 未超阈值，无需截断
@@ -519,10 +559,15 @@ export class AgentLoop {
     // 构造一条占位消息，让 LLM 知道有历史被裁剪了
     const placeholder: Message = {
       role: 'system',
-      content: `[上下文窗口管理] 为保持对话流畅，已自动裁剪 ${skipped} 条较早的历史消息。当前保留最近 ${tail.length} 条消息 + 完整系统提示。如需回顾早期内容，可向用户询问。`,
+      content: this.ui.contextTruncated(skipped, tail.length),
     };
 
-    const truncated = [systemMsg, placeholder, ...tail];
+    const truncated: Message[] = [systemMsg, placeholder, ...tail];
+
+    // 如果有摘要，插入到 system prompt 和 placeholder 之间
+    if (summary) {
+      truncated.splice(1, 0, { role: 'system', content: summary });
+    }
     const newEstimated = this.estimateTokens(truncated);
 
     logger.info(
@@ -537,6 +582,49 @@ export class AgentLoop {
     );
 
     return truncated;
+  }
+
+  /**
+   * 生成上下文摘要（enableContextSummary 时调用）
+   *
+   * 在首次截断时，提取即将被裁剪的消息中最近几条用户/助手对话，
+   * 调用 provider 生成一句摘要，作为"遗忘补偿"注入到 system prompt 中。
+   * 摘要只生成一次，后续截断复用缓存。
+   *
+   * @returns 摘要字符串（失败时返回空字符串，降级为无摘要）
+   */
+  private async generateContextSummary(): Promise<string> {
+    const messagesToSummarize = this.messages.slice(1);
+    const recentMessages = messagesToSummarize
+      .filter(m => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
+      .slice(-6)
+      .map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, 200) : '[tool]'}`)
+      .join('\n');
+
+    if (!recentMessages) return '';
+
+    try {
+      const stream = this.opts.provider.chat(
+        [
+          {
+            role: 'system',
+            content:
+              'Summarize the following conversation excerpt in 1-2 sentences. Focus on key facts, decisions, and user preferences. Be concise.',
+          },
+          { role: 'user', content: recentMessages },
+        ],
+        { maxTokens: 150, temperature: 0 },
+      );
+      let summary = '';
+      for await (const chunk of stream) {
+        if (chunk.content) summary += chunk.content;
+      }
+      logger.info({ summaryLength: summary.length }, '上下文摘要已生成');
+      return `[Context summary of earlier conversation]\n${summary}`;
+    } catch (err) {
+      logger.warn({ err }, '上下文摘要生成失败，降级为无摘要');
+      return '';
+    }
   }
 
   /**
@@ -759,10 +847,10 @@ export class AgentLoop {
         if (regex.test(input)) {
           if (action === 'block') {
             logger.warn({ rule: rule.name, pattern: regexStr }, '输入护栏阻断');
-            return { blocked: true, message: `输入被护栏规则"${rule.name}"阻止` };
+            return { blocked: true, message: this.ui.inputBlockedByGuard(rule.name) };
           }
           logger.warn({ rule: rule.name, pattern: regexStr }, '输入护栏警告');
-          return { blocked: false, warning: `输入命中护栏规则"${rule.name}"，请注意` };
+          return { blocked: false, warning: this.ui.inputBlockedByGuard(rule.name) };
         }
       } catch (err) {
         // 护栏自身异常降级：放行 + 记日志

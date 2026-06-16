@@ -255,9 +255,9 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
       chunks.push(chunk);
     }
 
-    // 最后一个 text chunk 是"已达到最大迭代次数"
+    // 最后一个 text chunk 是最大迭代次数提示
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
-    expect(texts[texts.length - 1]).toContain('已达到最大迭代次数');
+    expect(texts[texts.length - 1]).toContain('Max iterations reached');
     // 最后一个是 done 事件
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   });

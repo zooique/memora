@@ -10,7 +10,7 @@
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from './agent/agent.js';
-export type { AgentChunk, ThinkingPhase } from './agent/types.js';
+export type { AgentChunk, ThinkingPhase, UIMessages } from './agent/types.js';
 export type {
   AgentOptions,
   AgentContext,
