@@ -321,6 +321,11 @@ export class Sprite {
     lines.push('── 记忆仪表盘 ──');
     lines.push(`总记忆数：${data.total}`);
 
+    // 精灵状态
+    const registeredTriggers = this.triggerBus.registeredTriggers;
+    lines.push(`累积事件：${this.pendingNotices.length}（阈值 ${this.config.proactiveThreshold}）`);
+    lines.push(`已注册触发器：${registeredTriggers.join(', ')}`);
+
     if (Object.keys(data.bySource).length > 0) {
       const sourceList = Object.entries(data.bySource)
         .sort(([, a], [, b]) => b - a)

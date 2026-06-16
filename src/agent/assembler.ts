@@ -126,6 +126,21 @@ export async function assembleComponents(
   const systemPrefixParts = [personaPrompt];
   const profilePrompt = userProfile.buildSystemPrompt();
   if (profilePrompt) systemPrefixParts.push(profilePrompt);
+
+  // 注入当前时间（让 Agent 知道实时时间，避免 LLM 知识截止日期滞后）
+  const now = new Date();
+  const timeStr = now.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
+
   const systemPromptPrefix =
     systemPrefixParts.filter(Boolean).join('\n\n') +
     (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '');

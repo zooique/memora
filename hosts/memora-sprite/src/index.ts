@@ -17,6 +17,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { exec } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
@@ -237,7 +238,7 @@ async function main(): Promise<void> {
   const interaction: IInteraction = new CliInteraction();
   sprite.setInteraction(interaction);
 
-  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /config 配置）\n');
+  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /search <关键词> 搜索 | /config 配置）\n');
 
   interaction.onClose(async () => {
     console.log('\n正在关闭...');
@@ -277,6 +278,29 @@ async function main(): Promise<void> {
       } else {
         console.log(`角色 "${name}" 不存在或角色管理不可用`);
       }
+      return;
+    }
+
+    if (text.startsWith('/search ')) {
+      const query = text.slice(8).trim();
+      if (!query) {
+        console.log('用法：/search <搜索关键词>');
+        return;
+      }
+      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+      const platform = process.platform;
+      const cmd = platform === 'win32'
+        ? `start "" "${searchUrl}"`
+        : platform === 'darwin'
+          ? `open "${searchUrl}"`
+          : `xdg-open "${searchUrl}"`;
+      exec(cmd, (err) => {
+        if (err) {
+          console.log(`无法打开浏览器：${err.message}`);
+        } else {
+          console.log(`已在浏览器中搜索：${query}`);
+        }
+      });
       return;
     }
 
