@@ -8,6 +8,7 @@
  *   agent.on('memoryAdded', (e) => console.log(e.source, e.name));
  *   agent.off('memoryAdded', handler);
  */
+import { logger } from '@/logging/logger.js';
 
 /** Agent 事件映射表（事件名 → 事件载荷类型） */
 export interface AgentEventMap {
@@ -90,8 +91,8 @@ export class TypedEventEmitter<EventMap extends object> {
     for (const handler of set) {
       try {
         handler(payload);
-      } catch {
-        // 宿主处理器异常不影响 Agent 内部流程
+      } catch (err) {
+        logger.warn({ event, err: (err as Error).message }, '宿主事件处理器异常');
       }
     }
   }

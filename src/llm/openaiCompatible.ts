@@ -8,6 +8,7 @@ import { LlmProvider } from './provider.js';
 import type { Message, ChatOptions } from './provider.js';
 import type { LlmChunk, ToolCall } from './types.js';
 import { llmError, networkError, configError } from '@/utils/errors.js';
+import { logger } from '@/logging/logger.js';
 
 export interface OpenAICompatibleConfig {
   baseUrl: string;
@@ -97,8 +98,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
       // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
       try {
         await response.body?.cancel();
-      } catch {
-        // 忽略
+      } catch (err) {
+        logger.debug({ err: (err as Error).message }, 'response.body.cancel 失败');
       }
       throw err;
     }
@@ -113,8 +114,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
     const errorText = await response.text().catch(() => '<无法读取响应体>');
     try {
       await response.body?.cancel();
-    } catch {
-      // 忽略 cancel 失败
+    } catch (err) {
+      logger.debug({ err: (err as Error).message }, 'response.body.cancel 失败');
     }
     const status = response.status;
 
@@ -250,8 +251,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
               chunk.finishReason = choice.finish_reason as LlmChunk['finishReason'];
             }
             yield chunk;
-          } catch {
-            // 忽略无法解析的行
+          } catch (err) {
+            logger.debug({ line: line.slice(0, 80), err: (err as Error).message }, 'SSE 行解析失败');
           }
         }
       }

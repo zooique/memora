@@ -14,6 +14,7 @@
  */
 import type { Agent, AgentEventMap } from 'memora';
 import type { SuggestHit } from 'memora';
+import { logger } from 'memora';
 import { TriggerBus } from './triggers.js';
 import {
   loadSpriteConfig,
@@ -135,7 +136,7 @@ export class Sprite {
       }
     }
 
-    console.log('[Sprite] 精灵已启动，等待唤醒...');
+    logger.info('精灵已启动，等待唤醒...');
   }
 
   /** 停止精灵主控 */
@@ -307,7 +308,7 @@ export class Sprite {
     const prompt = this.buildProactivePrompt(triggers, summaries);
 
     this.emitSprite('proactivePrompt', { prompt, triggers });
-    console.log(`[Sprite] 主动提示：${prompt}`);
+    logger.info({ prompt }, '主动提示');
   }
 
   /** 根据累积事件生成上下文感知提示文本 */
@@ -357,7 +358,7 @@ export class Sprite {
     const onMemoryAdded = (e: AgentEventMap['memoryAdded']) => {
       this.emitSprite('memoryNoticed', { source: e.source, name: e.name });
       this.addPendingNotice('memory', `[${e.source}] ${e.name}`);
-      console.log(`[Sprite] 注意到新记忆：[${e.source}] ${e.name}`);
+      logger.info({ source: e.source, name: e.name }, '注意到新记忆');
     };
     this.agentHandlers.memoryAdded = onMemoryAdded;
     this.agent.on('memoryAdded', onMemoryAdded);
@@ -366,7 +367,7 @@ export class Sprite {
     const onPersonaSwitched = (e: AgentEventMap['personaSwitched']) => {
       this.emitSprite('personaChanged', { from: e.from, to: e.to });
       this.addPendingNotice('persona', `${e.from ?? '(无)'} → ${e.to}`);
-      console.log(`[Sprite] 角色切换：${e.from ?? '(无)'} → ${e.to}`);
+      logger.info({ from: e.from, to: e.to }, '角色切换');
     };
     this.agentHandlers.personaSwitched = onPersonaSwitched;
     this.agent.on('personaSwitched', onPersonaSwitched);
@@ -375,7 +376,7 @@ export class Sprite {
     const onInsightExtracted = (e: AgentEventMap['insightExtracted']) => {
       this.emitSprite('insightGained', { source: e.source, insight: e.insight });
       this.addPendingNotice('insight', e.insight);
-      console.log(`[Sprite] 获得洞察：${e.insight}`);
+      logger.info({ insight: e.insight }, '获得洞察');
     };
     this.agentHandlers.insightExtracted = onInsightExtracted;
     this.agent.on('insightExtracted', onInsightExtracted);
@@ -399,7 +400,7 @@ export class Sprite {
     this.emitSprite('timerTriggered', { reason });
     // 定时触发时检查是否有待提示的累积事件
     this.tryEmitProactivePrompt();
-    console.log(`[Sprite] 触发唤醒：${reason}`);
-    console.log(this.formatDashboard());
+    logger.info({ reason }, '触发唤醒');
+    logger.debug(this.formatDashboard());
   }
 }

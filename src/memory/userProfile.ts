@@ -282,8 +282,9 @@ export class UserProfile {
           }
         }
       }
-    } catch {
+    } catch (err) {
       // 冲突解决失败不阻塞写入
+      logger.debug({ err: (err as Error).message }, '用户画像冲突解决失败');
     }
   }
 

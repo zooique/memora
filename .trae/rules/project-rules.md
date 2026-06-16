@@ -104,3 +104,5 @@ chore: 升级 dependencies
 - ✅ 内容护栏（source:guardrail 记忆 + 输入/输出护栏 + 降级优先）
 - ✅ 工具错误反思（ToolErrorCode 10 种错误码 + isRetryableErrorCode + Reflection 循环）
 - ✅ 评估框架（EvalScenario 类型 + collectAgentChunks/evaluateResult 工具函数）
+- ✅ 精灵主动行为（事件累积 + 上下文感知提示生成 + 冷却保护 + 静默模式）
+- ✅ 精灵配置持久化（SpriteConfig + sprite.json + 启动时加载 + 偏好变更自动保存）

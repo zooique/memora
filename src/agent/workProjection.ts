@@ -259,8 +259,8 @@ export class WorkProjectionManager {
       try {
         const meta = JSON.parse(firstLine) as { hash?: string };
         return meta.hash ?? null;
-      } catch {
-        // 继续
+      } catch (err) {
+        logger.warn({ id: memory.id, err: (err as Error).message }, '作品投影 hash 解析失败');
       }
     }
     // 旧格式兼容：HTML 注释
@@ -352,8 +352,8 @@ export class WorkProjectionManager {
           keyDecisions: meta.decisions ?? [],
           summary,
         };
-      } catch {
-        // JSON 解析失败，降级到旧格式
+      } catch (err) {
+        logger.debug({ err: (err as Error).message }, '作品投影 JSON 解析失败，降级到旧格式');
       }
     }
 

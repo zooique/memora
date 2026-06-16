@@ -155,8 +155,9 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
             truncateSync(logFilePath, 0);
             process.stderr.write(`[memora] 日志文件超过 10MB，已截断：${logFilePath}\n`);
           }
-        } catch {
+        } catch (err) {
           // 文件不存在或无法 stat，正常——首次写入
+          if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] stat 日志文件失败：${(err as Error).message}\n`);
         }
 
         streams.push({
@@ -173,8 +174,9 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
     }
 
     return pino({ level }, pino.multistream(streams)) as unknown as ILogger;
-  } catch {
+  } catch (err) {
     // pino 未安装，回退到 console logger
+    if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] pino 加载失败：${(err as Error).message}\n`);
     return null;
   }
 }

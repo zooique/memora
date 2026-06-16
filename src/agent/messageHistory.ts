@@ -336,15 +336,17 @@ export class MessageHistory {
    * @returns 是否所有归档都完成（false 表示有超时）
    */
   async awaitPendingArchives(timeoutMs = 5000): Promise<boolean> {
+    // 快速路径：无挂起任务时立即返回（避免空轮询浪费 5s）
+    if (this.pendingArchives.size === 0) return true;
+
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
       const current = Array.from(this.pendingArchives);
 
       if (current.length === 0) {
-        // 没有挂起任务，但需要让其他微任务有机会加入新的
-        await new Promise<void>((resolve) => setTimeout(resolve, 50));
-        continue;
+        // 所有归档已完成
+        return true;
       }
 
       // 有挂起任务 → 等所有 settle

@@ -10,7 +10,7 @@
 import type Database from 'better-sqlite3';
 import type { IMemoryStorage } from 'memora';
 import type { Memory } from 'memora';
-import { segmentText, validateSource } from 'memora';
+import { segmentText, validateSource, logger } from 'memora';
 
 /** 建表 SQL */
 const CREATE_TABLE_SQL = `
@@ -46,7 +46,7 @@ export class SqliteStorage implements IMemoryStorage {
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
     if (result.warning) {
-      console.warn(`[SqliteStorage] source 校验警告: ${result.warning}`);
+      logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');
     }
 
     this.db.prepare(`

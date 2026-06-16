@@ -27,7 +27,8 @@ hosts/memora-sprite/
     │   ├── sqliteStorage.ts  ← IMemoryStorage 实现
     │   └── sessionStore.ts   ← ISessionStore 实现
     ├── sprite/
-    │   ├── sprite.ts         ← 精灵主控：唤醒调度 + 对话管理
+    │   ├── sprite.ts         ← 精灵主控：唤醒调度 + 对话管理 + 主动行为
+    │   ├── spriteConfig.ts   ← 精灵配置持久化（sprite.json 读写）
     │   └── triggers.ts       ← 唤醒触发器（热键/定时/文件变化）
     └── __tests__/
         ├── sqliteStorage.test.ts

@@ -50,3 +50,5 @@ description: "memora-sprite 宿主：精灵感知原则——上下文感知而�
 - 精灵的 `triggers.ts` 只实现信号级感知，不接触任何用户输入内容
 - 主动唤醒的判断逻辑基于 memora 的 insight/profile 记忆，不基于实时输入
 - 阶段二引入 active-win 时，只读取窗口标题和进程名，不读取窗口内容
+- 精灵主动行为（`proactivePrompt` 事件）基于 Agent 事件累积（memoryAdded/insightExtracted/personaSwitched），不基于用户输入内容
+- 静默模式（`silentMode`）可完全关闭主动提示，用户始终拥有控制权

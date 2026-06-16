@@ -398,8 +398,8 @@ export class ProjectManager {
   private async safeUnlink(filePath: string): Promise<void> {
     try {
       await unlink(filePath);
-    } catch {
-      // 文件不存在或无法删除，忽略
+    } catch (err) {
+      logger.debug({ path: filePath, err: (err as Error).message }, 'safeUnlink 忽略删除失败');
     }
   }
 
@@ -415,6 +415,7 @@ export class ProjectManager {
       process.kill(pid, 0);
       return true;
     } catch {
+      logger.debug({ pid }, '进程不存在');
       return false;
     }
   }
