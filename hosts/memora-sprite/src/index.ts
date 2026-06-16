@@ -25,6 +25,7 @@ import type { UIMessages, Config } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 import { Sprite } from './sprite/sprite.js';
+export type { DashboardData } from './sprite/sprite.js';
 
 /** 中文 UI 消息覆盖 */
 const ZH_MESSAGES: UIMessages = {
@@ -215,9 +216,9 @@ export async function startSprite(opts?: {
 // ─── CLI 直接运行 ──────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { agent, close } = await startSprite();
+  const { agent, sprite, close } = await startSprite();
 
-  console.log('\nMemora Sprite 已启动（输入 /quit 退出）\n');
+  console.log('\nMemora Sprite 已启动（输入 /quit 退出，/dashboard 查看记忆仪表盘）\n');
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
@@ -229,6 +230,11 @@ async function main(): Promise<void> {
       await close();
       rl.close();
       process.exit(0);
+    }
+
+    if (input === '/dashboard') {
+      console.log(sprite.formatDashboard());
+      return;
     }
 
     try {
