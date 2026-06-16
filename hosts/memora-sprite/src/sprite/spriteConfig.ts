@@ -24,6 +24,14 @@ export interface SpriteConfig {
   proactiveThreshold?: number;
   /** 主动提示冷却时间（毫秒），默认 300_000（5 分钟） */
   proactiveCooldownMs?: number;
+  /** 文件监听是否启用，默认 true */
+  fileWatcherEnabled?: boolean;
+  /** 文件监听路径（相对于 projectPath），默认 ['.'] */
+  fileWatcherPaths?: string[];
+  /** 文件监听忽略模式（glob），默认 node_modules/.git/dist */
+  fileWatcherIgnore?: string[];
+  /** 文件监听防抖时间（毫秒），默认 1000 */
+  fileWatcherDebounceMs?: number;
 }
 
 /** 配置键名联合类型 */
@@ -36,6 +44,10 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   silentMode: false,
   proactiveThreshold: 3,
   proactiveCooldownMs: 300_000,
+  fileWatcherEnabled: true,
+  fileWatcherPaths: ['.'],
+  fileWatcherIgnore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
+  fileWatcherDebounceMs: 1_000,
 };
 
 /** 配置文件名 */

@@ -15,8 +15,10 @@
 import type { Agent, AgentEventMap } from 'memora';
 import type { SuggestHit } from 'memora';
 import { logger } from 'memora';
+import { resolve } from 'node:path';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
+import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import type { IInteraction } from './interaction.js';
 import {
   loadSpriteConfig,
@@ -71,6 +73,8 @@ export class Sprite {
   private agentHandlers: Partial<{ [K in keyof AgentEventMap]: (e: AgentEventMap[K]) => void }> = {};
   /** 交互层（可选，用于主动提示输出） */
   private interaction: IInteraction | null = null;
+  /** 项目路径（用于 FileWatcherTrigger 的默认监听目录） */
+  private projectPath: string;
 
   // ─── 配置持久化 ────────────────────────────────────────
   private dataDir: string;
@@ -82,13 +86,31 @@ export class Sprite {
   /** 上次主动提示时间戳 */
   private lastProactiveAt = 0;
 
-  constructor(agent: Agent, dataDir: string, interaction?: IInteraction) {
+  constructor(agent: Agent, dataDir: string, projectPath?: string, interaction?: IInteraction) {
     this.agent = agent;
     this.dataDir = dataDir;
+    this.projectPath = projectPath ?? dataDir;
     this.interaction = interaction ?? null;
     this.config = loadSpriteConfig(dataDir);
     this.triggerBus = new TriggerBus();
     this.triggerBus.register(new TimerTrigger(this.config.triggerIntervalMs));
+
+    // 注册文件监听触发器（默认启用）
+    if (this.config.fileWatcherEnabled) {
+      this.registerFileWatcher();
+    }
+  }
+
+  /** 注册 FileWatcherTrigger */
+  private registerFileWatcher(): void {
+    const watchPaths = this.config.fileWatcherPaths.map(p =>
+      resolve(this.projectPath, p),
+    );
+    this.triggerBus.register(new FileWatcherTrigger({
+      watchPaths,
+      ignore: this.config.fileWatcherIgnore,
+      debounceMs: this.config.fileWatcherDebounceMs,
+    }));
   }
 
   /** 设置交互层（可在构造后注入，为 Electron 铺路） */
@@ -236,6 +258,29 @@ export class Sprite {
         this.triggerBus.start();
       }
     }
+
+    // 特殊处理：文件监听配置变更时重建 FileWatcherTrigger
+    if (key === 'fileWatcherEnabled') {
+      this.triggerBus.unregister('fileWatcher');
+      if (value === true) {
+        this.registerFileWatcher();
+      }
+      if (this.running) {
+        this.triggerBus.stop();
+        this.triggerBus.start();
+      }
+    }
+
+    if (key === 'fileWatcherPaths' || key === 'fileWatcherIgnore' || key === 'fileWatcherDebounceMs') {
+      if (this.config.fileWatcherEnabled) {
+        this.triggerBus.unregister('fileWatcher');
+        this.registerFileWatcher();
+        if (this.running) {
+          this.triggerBus.stop();
+          this.triggerBus.start();
+        }
+      }
+    }
   }
 
   /** 格式化配置为可读文本 */
@@ -246,6 +291,12 @@ export class Sprite {
     lines.push(`  静默模式：${this.config.silentMode ? '开启' : '关闭'}`);
     lines.push(`  主动提示阈值：${this.config.proactiveThreshold} 个事件`);
     lines.push(`  主动提示冷却：${this.config.proactiveCooldownMs / 60_000} 分钟`);
+    lines.push(`  文件监听：${this.config.fileWatcherEnabled ? '开启' : '关闭'}`);
+    if (this.config.fileWatcherEnabled) {
+      lines.push(`  监听路径：${this.config.fileWatcherPaths.join(', ')}`);
+      lines.push(`  忽略模式：${this.config.fileWatcherIgnore.join(', ')}`);
+      lines.push(`  防抖时间：${this.config.fileWatcherDebounceMs} 毫秒`);
+    }
     return lines.join('\n');
   }
 
@@ -349,6 +400,10 @@ export class Sprite {
     if (typeCounts.has('persona')) {
       parts.push('角色发生了变化');
     }
+    if (typeCounts.has('file')) {
+      const count = typeCounts.get('file')!;
+      parts.push(count > 1 ? `检测到 ${count} 次文件变化` : '检测到文件变化');
+    }
 
     // 摘要中最有信息量的一条
     const bestSummary = summaries.find(s => s.length > 0);
@@ -413,10 +468,19 @@ export class Sprite {
   /** 处理触发器事件 */
   private handleTrigger(payload: TriggerPayload): void {
     if (this.state !== 'idle') return;
-    this.emitSprite('timerTriggered', { reason: payload.reason });
-    // 定时触发时检查是否有待提示的累积事件
+
+    if (payload.source === 'fileWatcher') {
+      // 文件变化触发：累积为 file 事件类型
+      this.addPendingNotice('file', payload.reason);
+      logger.info({ reason: payload.reason, source: payload.source }, '文件变化触发');
+    } else {
+      // 定时触发
+      this.emitSprite('timerTriggered', { reason: payload.reason });
+      logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
+    }
+
+    // 触发时检查是否有待提示的累积事件
     this.tryEmitProactivePrompt();
-    logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
     logger.debug(this.formatDashboard());
   }
 }

@@ -211,7 +211,7 @@ export async function startSprite(opts?: {
   await agent.init();
 
   // 6. 启动精灵主控
-  const sprite = new Sprite(agent, dataDir);
+  const sprite = new Sprite(agent, dataDir, projectPath);
   sprite.start();
 
   const close = async () => {
@@ -289,7 +289,7 @@ async function main(): Promise<void> {
       const parts = text.slice(8).trim().split(/\s+/);
       if (parts.length < 2) {
         console.log('用法：/config <键名> <值>');
-        console.log('可用键名：triggerIntervalMs, defaultPersona, silentMode, proactiveThreshold, proactiveCooldownMs');
+        console.log('可用键名：triggerIntervalMs, defaultPersona, silentMode, proactiveThreshold, proactiveCooldownMs, fileWatcherEnabled, fileWatcherPaths, fileWatcherIgnore, fileWatcherDebounceMs');
         return;
       }
       const [key, ...valueParts] = parts;
@@ -297,14 +297,16 @@ async function main(): Promise<void> {
 
       // 类型转换
       let value: unknown;
-      if (key === 'silentMode') {
+      if (key === 'silentMode' || key === 'fileWatcherEnabled') {
         value = rawValue === 'true' || rawValue === 'on' || rawValue === '1';
-      } else if (key === 'triggerIntervalMs' || key === 'proactiveThreshold' || key === 'proactiveCooldownMs') {
+      } else if (key === 'triggerIntervalMs' || key === 'proactiveThreshold' || key === 'proactiveCooldownMs' || key === 'fileWatcherDebounceMs') {
         value = Number(rawValue);
         if (Number.isNaN(value)) {
           console.log(`错误：${key} 需要数字值`);
           return;
         }
+      } else if (key === 'fileWatcherPaths' || key === 'fileWatcherIgnore') {
+        value = rawValue.split(',').map(s => s.trim()).filter(Boolean);
       } else {
         value = rawValue;
       }
