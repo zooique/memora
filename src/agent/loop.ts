@@ -2,9 +2,8 @@
  * Agent Loop — Agent 的核心执行引擎
  *
  * 模型自主决定何时推理、何时调用工具，循环直到输出纯文本
- * 详见 01-主架构-v4.0.md §2.1 运行闭环
  *
- * 上下文组装公式（02-上下文组装-v4.0.md §1）：
+ * 上下文组装公式：
  *   上下文 = 用户主动输入 + Agent 记忆召回结果 + Agent Loop 工作记忆
  * 其中"Agent 记忆召回结果"由 Agent 层通过 processUserInput 的
  * recalledMemories 参数注入。
@@ -14,7 +13,7 @@ import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from './toolExecutor.js';
 import type { AgentChunk } from './types.js';
 import type { ITracer } from './tracer.js';
-import { noopTracer, TRACE_SPANS } from './tracer.js';
+import { NOOP_TRACER, TRACE_SPANS } from './tracer.js';
 import { MemoraError, isRetryableErrorCode, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 
@@ -38,7 +37,7 @@ export interface AgentLoopOptions {
    * 宿主可通过 AgentLoopOptions 覆盖。
    */
   maxContextTokens?: number;
-  /** 可观测性 Tracer（宿主注入，默认 noopTracer 静默丢弃所有 span） */
+  /** 可观测性 Tracer（宿主注入，默认 NOOP_TRACER 静默丢弃所有 span） */
   tracer?: ITracer;
   /**
    * 内容护栏规则（启动时从 configDir 加载的 guardrail 记忆）
@@ -70,7 +69,7 @@ export class AgentLoop {
   private readonly maxIterations: number;
   /** 上下文窗口 token 上限（默认 8000，约 32K 中文字符） */
   private readonly maxContextTokens: number;
-  /** 可观测性 Tracer（默认 noopTracer 零开销） */
+  /** 可观测性 Tracer（默认 NOOP_TRACER 零开销） */
   private readonly tracer: ITracer;
   /** 内容护栏规则（启动时加载，运行时不可变） */
   private readonly guardrailRules: readonly Memory[];
@@ -86,7 +85,7 @@ export class AgentLoop {
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
     this.maxContextTokens = opts.maxContextTokens ?? 8000;
-    this.tracer = opts.tracer ?? noopTracer;
+    this.tracer = opts.tracer ?? NOOP_TRACER;
     this.guardrailRules = opts.guardrailRules ?? [];
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
 

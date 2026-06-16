@@ -6,7 +6,7 @@ description: 选用 Node.js 22 LTS + TypeScript 5 + ESM 作为运行时栈
 # ADR-001 · 选用 Node.js 22 LTS + TypeScript 5 + ESM 作为运行时栈
 
 > **状态**：✅ 已接受 **日期**：2026-06-02 **播种批次**：Memora 模式 A v1
-> **来源**：[项目决策表.md §一](../../docs/项目决策表.md)
+> **来源**：(历史设计文档已归档：项目决策表.md §一)
 
 ## 背景
 

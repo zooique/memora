@@ -4,7 +4,7 @@
  * 定义 ITracer 和 ISpan 接口，让宿主项目注入 OpenTelemetry 等实现。
  * 默认 NoopTracer 静默丢弃所有 span，不引入任何运行时开销。
  *
- * 设计约束（详见 docs/agent-harness-增强方案-v1.0.md §3.2）：
+ * 设计约束（详见 ADR-001 · 运行时栈，零依赖原则）：
  *   - 禁止直接 import OpenTelemetry SDK（违反零依赖原则）
  *   - Span 收集为 fire-and-forget，不阻塞 AgentLoop 主流程
  *   - Tracer 未注入时自动降级，不抛异常
@@ -78,7 +78,7 @@ class NoopTracer implements ITracer {
 const NOOP_SPAN = new NoopSpan();
 
 /** NoopTracer 单例（在未注入 tracer 时使用） */
-export const noopTracer: ITracer = new NoopTracer();
+export const NOOP_TRACER: ITracer = new NoopTracer();
 
 // ─── AgentLoop 预定义 Span 名称 ─────────────────────
 

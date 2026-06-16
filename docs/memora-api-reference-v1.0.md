@@ -609,10 +609,10 @@ interface ISpan {
 ### 15.3 NoopTracer（默认实现）
 
 ```typescript
-import { noopTracer } from 'memora';
+import { NOOP_TRACER } from 'memora';
 
-// 不注入 tracer 时自动使用 noopTracer，零运行时开销
-// noopTracer.startSpan() 返回共享的 NoopSpan 单例，所有方法为空操作
+// 不注入 tracer 时自动使用 NOOP_TRACER，零运行时开销
+// NOOP_TRACER.startSpan() 返回共享的 NoopSpan 单例，所有方法为空操作
 ```
 
 ### 15.4 TRACE_SPANS 常量
@@ -730,7 +730,7 @@ export type { AgentEventMap, AgentEventName, AgentEventHandler } from 'memora';
 
 // 可观测性
 export type { ITracer, ISpan } from 'memora';
-export { noopTracer, TRACE_SPANS } from 'memora';
+export { NOOP_TRACER, TRACE_SPANS } from 'memora';
 
 // 错误码
 export { ToolErrorCode, isRetryableErrorCode, MemoraError } from 'memora';

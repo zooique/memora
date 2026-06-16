@@ -12,7 +12,7 @@ import { resolve, join, basename } from 'node:path';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import { logger } from '@/logging/logger.js';
 
-/** 排除的文件名（与 agent设计.md §10.6.1 一致） */
+/** 排除的文件名（README / CHANGELOG / LICENSE 不纳入扫描） */
 const EXCLUDED_FILES = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
 
 /** 扫描结果条目（通用 frontmatter 解析产物） */

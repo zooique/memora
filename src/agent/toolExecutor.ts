@@ -24,7 +24,6 @@ type ToolResult = string;
  *
  * 用于在 writeFile 之前注入自定义逻辑（如 diff 展示 + 用户确认）。
  * 当 onBeforeWrite 被提供时，它将替代 SecurityGuard.requestWriteConfirmation 的安全确认流程。
- * 详见 方案-行动侧打磨-v1.0.md §二
  */
 export interface WriteExtensions {
   /**

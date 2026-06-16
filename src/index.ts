@@ -4,7 +4,7 @@
  * 零 native 依赖。宿主项目通过注入 IMemoryStorage 实现持久化。
  * CLI 由宿主项目提供（hosts/memora-cli/）。
  *
- * 设计哲学：万物皆记忆（详见 docs/基础设计文档/01-主架构-v4.0.md §1.2）
+ * 设计哲学：万物皆记忆（详见 architecture_philosophy_rules.md §1）
  * 决策追溯：详见 .trae/rules/decisions/ 下的 ADR
  */
 
@@ -39,7 +39,7 @@ export type { AgentEventMap, AgentEventName, AgentEventHandler } from './utils/e
 
 // ─── 可观测性导出 ────────────────────────────────────────
 export type { ITracer, ISpan } from './agent/tracer.js';
-export { noopTracer, TRACE_SPANS } from './agent/tracer.js';
+export { NOOP_TRACER, TRACE_SPANS } from './agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS, inferSource, escapeLike, validateSource } from './memory/types.js';

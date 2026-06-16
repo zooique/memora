@@ -8,7 +8,7 @@
  *   - 启动时从 SQLite 全量加载（source = 'profile'）
  *   - confidence 机制：高置信度（≥0.8）直接归档，低置信度首次召回时确认
  *
- * 设计原则（01-主架构-v4.0.md §3.5）：
+ * 设计原则（architecture_philosophy_rules.md §2 永久性分级）：
  *   - 用户画像属于助手记忆，source = 'profile'，每轮必召回
  *   - 实时归档解决"重启进程短期身份丢失"的核心 bug
  *   - 确认机制防止正则误归档污染画像

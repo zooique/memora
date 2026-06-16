@@ -461,7 +461,7 @@ import {
   escapeLike,
   validateSource,
   tokenizeKeywords,
-  noopTracer,
+  NOOP_TRACER,
   TRACE_SPANS,
   ToolErrorCode,
   isRetryableErrorCode,
@@ -521,7 +521,7 @@ import type {
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `tokenizeKeywords(text)` | 中英文混合分词（中文字 ≥2 连字 + 英文单词），供宿主 FTS5 使用 |
-| `noopTracer` | ITracer 的空实现（静默丢弃所有 span，零开销） |
+| `NOOP_TRACER` | ITracer 的空实现（静默丢弃所有 span，零开销） |
 | `TRACE_SPANS` | AgentLoop 预定义 Span 名称常量（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE） |
 | `ToolErrorCode` | 工具错误码枚举（10 种，含 PATH_NOT_ALLOWED / FILE_NOT_FOUND 等） |
 | `isRetryableErrorCode(code)` | 判断错误码是否可重试（5 种 retryable） |
@@ -586,7 +586,7 @@ const agent = new Agent({
 });
 ```
 
-> **不注入时**：默认使用 `noopTracer`（静默丢弃所有 span，零运行时开销）。
+> **不注入时**：默认使用 `NOOP_TRACER`（静默丢弃所有 span，零运行时开销）。
 
 ---
 

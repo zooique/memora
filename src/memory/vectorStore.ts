@@ -11,8 +11,8 @@
  * - 单用户本地场景，5k 条记录内纯 JS 余弦相似度 < 10ms
  * - 向量维度由 embedding 模型决定，存储层不关心
  *
- * 详见 ADR-002 · 阶段三向量检索备选方案
- * 详见 00-记忆归档原则-v1.0.md · 信息不对称原则
+ * 详见 ADR-002 · 存储层抽象（向量检索备选方案）
+ * 详见 ADR-013 · 记忆归档三步价值过滤
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';

@@ -6,7 +6,7 @@ description: LLM 适配层使用 OpenAI Chat Completions 兼容协议
 # ADR-003 · LLM 适配层使用 OpenAI Chat Completions 兼容协议
 
 > **状态**：✅ 已接受 **日期**：2026-06-02 **播种批次**：Memora 模式 A v1
-> **来源**：[项目决策表.md §三](../../docs/项目决策表.md)
+> **来源**：(历史设计文档已归档：项目决策表.md §三)
 
 ## 背景
 

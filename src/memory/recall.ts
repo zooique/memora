@@ -4,7 +4,7 @@
  * 设计哲学：每次用户发消息，从所有记忆中搜索最相关的几条注入上下文
  * 不需要话题概念，不需要漂移检测，不需要管理器
  *
- * 详见 docs/记忆系统重构方案_排雷炼化版.md §4
+ * 详见 ADR-004 · 记忆统一模型 + architecture_philosophy_rules.md §6 增量召回
  */
 import type { Memory } from './types.js';
 import type { IMemoryStorage } from './storageInterface.js';

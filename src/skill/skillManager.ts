@@ -7,7 +7,7 @@
  *   - 写入 SQLite 索引（source: skill，遵循"万物皆记忆"）
  *   - 后期触发条件（≥15个技能 / 关键词命中率 <80%）→ 切换为 LLM 自主选择
  *
- * 设计原则（01-主架构-v4.0.md §5.2.1 + ADR-004 万物皆记忆）：
+ * 设计原则（ADR-004 万物皆记忆）：
  *   - 技能遵循"万物皆记忆"——存入 SQLite 作为 skill 来源记忆
  *   - 单层目录：<configDir>/skills/（宿主负责汇总全局+项目级技能到 configDir）
  *   - 与 PersonaManager 存储策略一致：文件加载 → 内存缓存 + SQLite 索引
