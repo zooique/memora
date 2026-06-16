@@ -25,7 +25,7 @@ import type { UIMessages, Config } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 import { Sprite } from './sprite/sprite.js';
-export type { DashboardData } from './sprite/sprite.js';
+export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
 
 /** 中文 UI 消息覆盖 */
 const ZH_MESSAGES: UIMessages = {
@@ -218,7 +218,7 @@ export async function startSprite(opts?: {
 async function main(): Promise<void> {
   const { agent, sprite, close } = await startSprite();
 
-  console.log('\nMemora Sprite 已启动（输入 /quit 退出，/dashboard 查看记忆仪表盘）\n');
+  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色）\n');
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
@@ -234,6 +234,26 @@ async function main(): Promise<void> {
 
     if (input === '/dashboard') {
       console.log(sprite.formatDashboard());
+      return;
+    }
+
+    if (input === '/persona') {
+      console.log(sprite.formatPersonas());
+      return;
+    }
+
+    if (input.startsWith('/switch ')) {
+      const name = input.slice(8).trim();
+      if (!name) {
+        console.log('用法：/switch <角色名称>');
+        return;
+      }
+      const result = sprite.switchPersona(name);
+      if (result) {
+        console.log(`已切换到角色：${result}`);
+      } else {
+        console.log(`角色 "${name}" 不存在或角色管理不可用`);
+      }
       return;
     }
 

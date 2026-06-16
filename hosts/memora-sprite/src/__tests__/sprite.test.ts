@@ -11,6 +11,7 @@ const mockAgent = {
   chatSync: vi.fn().mockResolvedValue('mocked response'),
   close: vi.fn().mockResolvedValue(undefined),
   on: vi.fn(),
+  off: vi.fn(),
   removeAllListeners: vi.fn(),
 } as unknown as Agent;
 
