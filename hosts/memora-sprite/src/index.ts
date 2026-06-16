@@ -11,7 +11,8 @@
  * 设计原则（ADR-SP-004）：
  *   上下文感知而非内容感知——精灵知道用户在做什么，不知道用户在打什么
  */
-import { resolve, homedir } from 'node:path';
+import { resolve } from 'node:path';
+import { homedir } from 'node:os';
 import Database from 'better-sqlite3';
 import { Agent, createLlmProvider } from 'memora';
 import type { UIMessages } from 'memora';
@@ -77,10 +78,16 @@ export async function startSprite(opts?: {
   }
 
   const provider = createLlmProvider({
-    provider: 'openai',
-    apiKey,
-    baseUrl,
-    model,
+    llm: {
+      provider: 'openai',
+      model: model ?? 'deepseek-chat',
+      apiKey,
+      baseUrl,
+      temperature: 0.7,
+    },
+    memory: { dataDir, maxContextTokens: 120000 },
+    security: { permission: 'owner', confirmWrites: false },
+    allowedPaths: [projectPath],
   });
 
   // 4. 实例化 Agent
