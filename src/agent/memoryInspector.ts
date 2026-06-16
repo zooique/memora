@@ -94,6 +94,30 @@ export interface AgentStats {
   total: number;
 }
 
+/** 关联推荐选项 */
+export interface SuggestOptions {
+  /** 返回数量上限（默认 5） */
+  limit?: number;
+  /** 排除的 source 标签（默认排除 persona、rule、skill） */
+  excludeSources?: string[];
+  /** 时效性权重（0-1，默认 0.3）：越高越偏好最近访问的记忆 */
+  recencyWeight?: number;
+}
+
+/** 关联推荐结果 */
+export interface SuggestHit {
+  /** 记忆名称 */
+  name: string;
+  /** 来源标签 */
+  source: string;
+  /** 推荐分数（0-1，由 score + recency 综合计算） */
+  relevance: number;
+  /** 内容预览（截断到 120 字符） */
+  contentPreview: string;
+  /** 推荐理由 */
+  reason: string;
+}
+
 // ─── 类 ──────────────────────────────────────────────────
 
 export class MemoryInspector {
@@ -236,5 +260,106 @@ export class MemoryInspector {
     }
 
     return { bySource, total };
+  }
+
+  // ─── 关联推荐 ─────────────────────────────────────────
+
+  /**
+   * 关联推荐：基于已有记忆数据，推荐你可能感兴趣的记忆
+   *
+   * 不调 LLM，纯计算。综合 score（权重）+ accessedAt（时效性）+ source 多样性，
+   * 返回"与你当前关注点相关但尚未直接搜索到"的记忆。
+   *
+   * 适用场景：
+   * - 用户搜索后，展示"你可能还想看"
+   * - 对话开始时，展示"最近你可能关心的记忆"
+   * - 宿主程序构建个性化推荐面板
+   *
+   * @param query - 可选的搜索关键词（提供时结合搜索结果推荐，省略时基于全局热度推荐）
+   * @param options - 推荐选项
+   */
+  suggest(query?: string, options: SuggestOptions = {}): SuggestHit[] {
+    const {
+      limit = 5,
+      excludeSources = [SOURCE_LABELS.PERSONA, SOURCE_LABELS.RULE, SOURCE_LABELS.SKILL],
+      recencyWeight = 0.3,
+    } = options;
+
+    const scoreWeight = 1 - recencyWeight;
+    const now = Date.now();
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+
+    // 收集候选记忆
+    const candidates = new Map<string, { memory: Memory; searchHit: boolean }>();
+
+    // 如果有 query，先搜索直接匹配的记忆（标记为 searchHit）
+    if (query && query.trim()) {
+      const directHits = this.index.search(query, limit * 3);
+      for (const m of directHits) {
+        if (!excludeSources.includes(m.source)) {
+          candidates.set(m.id, { memory: m, searchHit: true });
+        }
+      }
+    }
+
+    // 补充：按 source 分组采样，确保来源多样性
+    const knownSources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
+    for (const source of knownSources) {
+      const count = this.index.countBySource(source);
+      if (count > 0 && !excludeSources.includes(source)) {
+        const memories = this.index.getBySource(source);
+        // 取 score 最高的前 3 条
+        const top = memories.sort((a, b) => b.score - a.score).slice(0, 3);
+        for (const m of top) {
+          if (!candidates.has(m.id)) {
+            candidates.set(m.id, { memory: m, searchHit: false });
+          }
+        }
+      }
+    }
+
+    if (candidates.size === 0) return [];
+
+    // 计算综合推荐分数
+    const scored: Array<{ memory: Memory; searchHit: boolean; relevance: number; reason: string }> = [];
+
+    for (const { memory, searchHit } of candidates.values()) {
+      // 时效性分：7 天内线性衰减，超过 30 天归零
+      const accessedAt = new Date(memory.accessedAt);
+      const daysSinceAccess = isNaN(accessedAt.getTime())
+        ? 30
+        : (now - accessedAt.getTime()) / ONE_DAY;
+      const recency = Math.max(0, 1 - daysSinceAccess / 30);
+
+      const relevance = memory.score * scoreWeight + recency * recencyWeight;
+
+      // 生成推荐理由
+      let reason: string;
+      if (searchHit) {
+        reason = '与搜索相关';
+      } else if (daysSinceAccess < 1) {
+        reason = '最近访问';
+      } else if (memory.score >= 0.8) {
+        reason = '高频记忆';
+      } else {
+        reason = `${memory.source} 推荐`;
+      }
+
+      scored.push({ memory, searchHit, relevance, reason });
+    }
+
+    // 排序：搜索命中优先，然后按 relevance 降序
+    scored.sort((a, b) => {
+      if (a.searchHit !== b.searchHit) return a.searchHit ? -1 : 1;
+      return b.relevance - a.relevance;
+    });
+
+    return scored.slice(0, limit).map(({ memory, relevance, reason }) => ({
+      name: memory.name,
+      source: memory.source,
+      relevance: Math.round(relevance * 100) / 100,
+      contentPreview: memory.content.length > 120 ? memory.content.slice(0, 120) + '...' : memory.content,
+      reason,
+    }));
   }
 }

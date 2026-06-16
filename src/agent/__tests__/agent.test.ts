@@ -501,6 +501,66 @@ describe('Agent · Manager 委托模式', () => {
     expect(typeof stats.bySource).toBe('object');
   });
 
+  it('memory 管理器：suggest 无 query 时应返回全局热度推荐', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const results = agent.memory!.suggest();
+    expect(Array.isArray(results)).toBe(true);
+    for (const hit of results) {
+      expect(hit).toHaveProperty('name');
+      expect(hit).toHaveProperty('source');
+      expect(hit).toHaveProperty('relevance');
+      expect(hit).toHaveProperty('contentPreview');
+      expect(hit).toHaveProperty('reason');
+      expect(hit.relevance).toBeGreaterThanOrEqual(0);
+      expect(hit.relevance).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('memory 管理器：suggest 有 query 时搜索命中应优先', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 写入一条 insight 记忆
+    agent.memory!['index'].upsert({
+      id: 'insight:suggest-test',
+      content: '关于 TypeScript 类型系统的洞察',
+      source: 'insight',
+      name: 'TypeScript 类型系统',
+      createdAt: new Date().toISOString(),
+      accessedAt: new Date().toISOString(),
+      score: 0.9,
+    });
+
+    const results = agent.memory!.suggest('TypeScript');
+    expect(results.length).toBeGreaterThan(0);
+    // 搜索命中的应排在前面
+    const firstHit = results[0]!;
+    expect(firstHit.source).toBe('insight');
+    expect(firstHit.reason).toBe('与搜索相关');
+  });
+
+  it('memory 管理器：suggest 应排除指定 source', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const results = agent.memory!.suggest(undefined, {
+      excludeSources: ['insight', 'profile', 'work-projection', 'persona', 'rule', 'skill'],
+      limit: 10,
+    });
+    // 排除所有 source 后应返回空
+    expect(results).toEqual([]);
+  });
+
+  it('memory 管理器：suggest limit 应限制返回数量', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const results = agent.memory!.suggest(undefined, { limit: 2 });
+    expect(results.length).toBeLessThanOrEqual(2);
+  });
+
   it('config 管理器：addSimpleRule 应注入规则', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();

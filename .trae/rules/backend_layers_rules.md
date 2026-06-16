@@ -27,7 +27,7 @@ date: 2026-06-12
 | UI 界面        | —                                                                       | ✅ 自行实现（CLI / Web / TUI）        | ✅ 已有       |
 | Diff 确认写入  | ✅ 提供 Differ + DiffRenderer                                           | ✅ 决定何时展示 diff                  | ✅ 已有       |
 | Markdown 渲染  | ✅ 提供 MarkdownRenderer                                                | ✅ 决定是否启用                       | ✅ 已有       |
-| 自我进化机制   | ✅ 提供 `config.onSuggestion()` + `config.confirm()` + `memory.snapshot()` / `memory.search()` | ✅ 决定进化呈现方式（桌宠/徽章/面板） | ✅ 已有       |
+| 自我进化机制   | ✅ 提供 `config.onSuggestion()` + `config.confirm()` + `memory.snapshot()` / `memory.search()` / `memory.suggest()` | ✅ 决定进化呈现方式（桌宠/徽章/面板） | ✅ 已有       |
 
 **判断标准**：新功能应该放在哪里？
 
@@ -104,7 +104,7 @@ agent/
 ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
 ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
 ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
-├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计）
+├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计 + 关联推荐）
 ├── workProjection.ts     # 作品投影管理器
 ├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
 ├── userFactExtractor.ts  # 用户事实提取器（正则规则，从 userProfile 迁入）

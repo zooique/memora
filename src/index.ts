@@ -27,6 +27,8 @@ export type {
   ArchiveSnapshot,
   AgentSearchHit,
   AgentStats,
+  SuggestOptions,
+  SuggestHit,
 } from './agent/memoryInspector.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/configManager.js';
 export type { AutoConfigRefinerOptions } from './agent/autoConfigRefiner.js';
