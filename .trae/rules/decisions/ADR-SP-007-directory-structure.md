@@ -29,11 +29,15 @@ hosts/memora-sprite/
     ├── sprite/
     │   ├── sprite.ts         ← 精灵主控：唤醒调度 + 对话管理 + 主动行为
     │   ├── spriteConfig.ts   ← 精灵配置持久化（sprite.json 读写）
-    │   └── triggers.ts       ← 唤醒触发器（热键/定时/文件变化）
+    │   ├── triggers.ts       ← SpriteTrigger 接口 + TimerTrigger + TriggerBus
+    │   ├── fileWatcherTrigger.ts ← 文件变化触发器（ADR-SP-004 阶段二）
+    │   ├── interaction.ts    ← IInteraction 交互层接口
+    │   └── cliInteraction.ts ← CLI 交互层实现（readline）
     └── __tests__/
         ├── sqliteStorage.test.ts
         ├── sessionStore.test.ts
-        └── sprite.test.ts
+        ├── sprite.test.ts
+        └── sprite-integration.test.ts
 ```
 
 ## 理由

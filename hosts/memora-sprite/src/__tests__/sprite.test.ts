@@ -4,7 +4,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Agent, AgentEventMap } from 'memora';
 import { Sprite } from '../sprite/sprite.js';
-import { TriggerBus } from '../sprite/triggers.js';
+import { TriggerBus, TimerTrigger } from '../sprite/triggers.js';
+import { CliInteraction } from '../sprite/cliInteraction.js';
+import type { IInteraction, InputHandler } from '../sprite/interaction.js';
+import type { SpriteTrigger } from '../sprite/triggers.js';
+import { FileWatcherTrigger } from '../sprite/fileWatcherTrigger.js';
 import { tmpdir } from 'os';
 import { mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
@@ -226,26 +230,169 @@ describe('Sprite 配置持久化', () => {
 });
 
 describe('TriggerBus', () => {
-  it('should emit trigger events', () => {
+  it('should register and emit trigger events', () => {
     const bus = new TriggerBus();
     const handler = vi.fn();
     bus.on(handler);
 
-    bus.emit('test');
-    expect(handler).toHaveBeenCalledWith('test');
+    // 注册一个测试触发器
+    const testTrigger: SpriteTrigger = {
+      name: 'test',
+      start(cb) { cb({ reason: '测试触发', source: 'test' }); },
+      stop() {},
+    };
+    bus.register(testTrigger);
+    bus.start();
+
+    expect(handler).toHaveBeenCalledWith({ reason: '测试触发', source: 'test' });
+    bus.stop();
   });
 
-  it('should start and stop timer', () => {
+  it('should start and stop timer trigger', () => {
     const bus = new TriggerBus();
+    bus.register(new TimerTrigger());
     bus.start();
     bus.stop();
-    // 无抛错即可
   });
 
-  it('should accept custom interval', () => {
-    const bus = new TriggerBus(500);
+  it('should accept custom interval via TimerTrigger', () => {
+    const bus = new TriggerBus();
+    bus.register(new TimerTrigger(500));
     // 无抛错即可，验证构造函数接受参数
     bus.start();
     bus.stop();
+  });
+});
+
+// ─── IInteraction 桥接测试 ────────────────────────────────
+
+/** Mock 交互层 — 记录输出 */
+class MockInteraction implements IInteraction {
+  outputs: string[] = [];
+  errors: string[] = [];
+  private inputHandler: InputHandler | null = null;
+  private closeHandlers: Set<() => void> = new Set();
+
+  start(handler: InputHandler): void {
+    this.inputHandler = handler;
+  }
+
+  output(text: string): void {
+    this.outputs.push(text);
+  }
+
+  error(text: string): void {
+    this.errors.push(text);
+  }
+
+  stop(): void {
+    this.inputHandler = null;
+  }
+
+  onClose(handler: () => void): void {
+    this.closeHandlers.add(handler);
+  }
+
+  /** 模拟用户输入 */
+  simulateInput(text: string): void {
+    this.inputHandler?.({ text });
+  }
+
+  /** 模拟关闭 */
+  simulateClose(): void {
+    for (const handler of this.closeHandlers) handler();
+  }
+}
+
+describe('Sprite + IInteraction 桥接', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+  let interaction: MockInteraction;
+
+  beforeEach(() => {
+    agentListeners.clear();
+    tmpDir = createTmpDir();
+    interaction = new MockInteraction();
+    sprite = new Sprite(mockAgent, tmpDir, interaction);
+    sprite.start();
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('proactivePrompt 应通过 interaction.output 输出', () => {
+    // 累积 3 个事件触发 proactivePrompt
+    emitAgentEvent('memoryAdded', { id: '1', source: 'insight', name: 'A' });
+    emitAgentEvent('memoryAdded', { id: '2', source: 'insight', name: 'B' });
+    emitAgentEvent('memoryAdded', { id: '3', source: 'insight', name: 'C' });
+
+    // interaction.output 应被调用
+    expect(interaction.outputs.length).toBeGreaterThan(0);
+    expect(interaction.outputs[0]).toContain('[精灵]');
+    expect(interaction.outputs[0]).toContain('记忆');
+  });
+
+  it('setInteraction 应可后置注入交互层', () => {
+    const tmpDir2 = createTmpDir();
+    const sprite2 = new Sprite(mockAgent, tmpDir2);
+    const interaction2 = new MockInteraction();
+    sprite2.setInteraction(interaction2);
+    sprite2.start();
+
+    // 累积事件
+    emitAgentEvent('memoryAdded', { id: '1', source: 'insight', name: 'X' });
+    emitAgentEvent('memoryAdded', { id: '2', source: 'insight', name: 'Y' });
+    emitAgentEvent('memoryAdded', { id: '3', source: 'insight', name: 'Z' });
+
+    expect(interaction2.outputs.length).toBeGreaterThan(0);
+    sprite2.stop();
+    rmSync(tmpDir2, { recursive: true, force: true });
+  });
+});
+
+// ─── CliInteraction 测试 ──────────────────────────────────
+
+describe('CliInteraction', () => {
+  it('应实现 IInteraction 接口', () => {
+    const cli = new CliInteraction();
+    expect(typeof cli.start).toBe('function');
+    expect(typeof cli.output).toBe('function');
+    expect(typeof cli.error).toBe('function');
+    expect(typeof cli.stop).toBe('function');
+    expect(typeof cli.onClose).toBe('function');
+  });
+});
+
+// ─── FileWatcherTrigger 测试 ──────────────────────────────
+
+describe('FileWatcherTrigger', () => {
+  it('应实现 SpriteTrigger 接口', () => {
+    const trigger = new FileWatcherTrigger({ watchPaths: [createTmpDir()] });
+    expect(trigger.name).toBe('fileWatcher');
+    expect(typeof trigger.start).toBe('function');
+    expect(typeof trigger.stop).toBe('function');
+  });
+
+  it('start/stop 生命周期应不抛错', () => {
+    const tmpDir2 = createTmpDir();
+    const trigger = new FileWatcherTrigger({ watchPaths: [tmpDir2] });
+    const cb = vi.fn();
+
+    trigger.start(cb);
+    trigger.stop();
+
+    expect(cb).not.toHaveBeenCalled();
+    rmSync(tmpDir2, { recursive: true, force: true });
+  });
+
+  it('应接受自定义配置', () => {
+    const trigger = new FileWatcherTrigger({
+      watchPaths: ['/tmp/test'],
+      ignore: ['**/dist/**'],
+      debounceMs: 500,
+    });
+    expect(trigger.name).toBe('fileWatcher');
   });
 });

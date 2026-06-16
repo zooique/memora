@@ -25,9 +25,17 @@ import type { UIMessages, Config } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 import { Sprite } from './sprite/sprite.js';
+import { CliInteraction } from './sprite/cliInteraction.js';
+import type { IInteraction } from './sprite/interaction.js';
 export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
 export type { SpriteConfig, SpriteConfigKey } from './sprite/spriteConfig.js';
 export { DEFAULT_SPRITE_CONFIG, loadSpriteConfig, saveSpriteConfig } from './sprite/spriteConfig.js';
+export type { SpriteTrigger, TriggerPayload, TriggerCallback } from './sprite/triggers.js';
+export { TimerTrigger, TriggerBus } from './sprite/triggers.js';
+export type { FileWatcherConfig } from './sprite/fileWatcherTrigger.js';
+export { FileWatcherTrigger } from './sprite/fileWatcherTrigger.js';
+export type { IInteraction, InputEvent, InputHandler, CloseHandler } from './sprite/interaction.js';
+export { CliInteraction } from './sprite/cliInteraction.js';
 
 /** 中文 UI 消息覆盖 */
 const ZH_MESSAGES: UIMessages = {
@@ -141,7 +149,7 @@ export async function startSprite(opts?: {
   configDir?: string;
   dataDir?: string;
   configPath?: string;
-}): Promise<{ agent: Agent; sprite: Sprite; close: () => void }> {
+}): Promise<{ agent: Agent; sprite: Sprite; close: () => Promise<void> }> {
   // 1. 加载配置文件（首次启动时自动引导）
   let config: Config;
   try {
@@ -217,35 +225,48 @@ export async function startSprite(opts?: {
 
 // ─── CLI 直接运行 ──────────────────────────────────────
 
+/**
+ * 启动 CLI 交互循环
+ *
+ * 使用 CliInteraction（readline）作为交互层，
+ * 未来可替换为 Electron IPC 实现。
+ */
 async function main(): Promise<void> {
   const { agent, sprite, close } = await startSprite();
 
+  const interaction: IInteraction = new CliInteraction();
+  sprite.setInteraction(interaction);
+
   console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /config 配置）\n');
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  interaction.onClose(async () => {
+    console.log('\n正在关闭...');
+    await close();
+    process.exit(0);
+  });
 
-  rl.on('line', async (line) => {
-    const input = line.trim();
-    if (!input) return;
-
-    if (input === '/quit') {
-      await close();
-      rl.close();
-      process.exit(0);
+  interaction.start(({ text }) => {
+    // 命令路由
+    if (text === '/quit') {
+      close().then(() => {
+        interaction.stop();
+        process.exit(0);
+      });
+      return;
     }
 
-    if (input === '/dashboard') {
+    if (text === '/dashboard') {
       console.log(sprite.formatDashboard());
       return;
     }
 
-    if (input === '/persona') {
+    if (text === '/persona') {
       console.log(sprite.formatPersonas());
       return;
     }
 
-    if (input.startsWith('/switch ')) {
-      const name = input.slice(8).trim();
+    if (text.startsWith('/switch ')) {
+      const name = text.slice(8).trim();
       if (!name) {
         console.log('用法：/switch <角色名称>');
         return;
@@ -259,13 +280,13 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (input === '/config') {
+    if (text === '/config') {
       console.log(sprite.formatConfig());
       return;
     }
 
-    if (input.startsWith('/config ')) {
-      const parts = input.slice(8).trim().split(/\s+/);
+    if (text.startsWith('/config ')) {
+      const parts = text.slice(8).trim().split(/\s+/);
       if (parts.length < 2) {
         console.log('用法：/config <键名> <值>');
         console.log('可用键名：triggerIntervalMs, defaultPersona, silentMode, proactiveThreshold, proactiveCooldownMs');
@@ -293,25 +314,22 @@ async function main(): Promise<void> {
       return;
     }
 
-    try {
-      for await (const chunk of agent.chat(input)) {
-        if (chunk.type === 'text') {
-          process.stdout.write(chunk.content);
-        } else if (chunk.type === 'done') {
-          process.stdout.write('\n');
-        } else if (chunk.type === 'aborted') {
-          console.log(`\n[${chunk.reason}]`);
+    // 对话
+    (async () => {
+      try {
+        for await (const chunk of agent.chat(text)) {
+          if (chunk.type === 'text') {
+            interaction.output(chunk.content);
+          } else if (chunk.type === 'done') {
+            interaction.output('\n');
+          } else if (chunk.type === 'aborted') {
+            console.log(`\n[${chunk.reason}]`);
+          }
         }
+      } catch (err) {
+        console.error('\n对话出错:', err);
       }
-    } catch (err) {
-      console.error('\n对话出错:', err);
-    }
-  });
-
-  process.on('SIGINT', async () => {
-    console.log('\n正在关闭...');
-    await close();
-    process.exit(0);
+    })();
   });
 }
 

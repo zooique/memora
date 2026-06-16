@@ -15,7 +15,9 @@
 import type { Agent, AgentEventMap } from 'memora';
 import type { SuggestHit } from 'memora';
 import { logger } from 'memora';
-import { TriggerBus } from './triggers.js';
+import { TriggerBus, TimerTrigger } from './triggers.js';
+import type { TriggerPayload } from './triggers.js';
+import type { IInteraction } from './interaction.js';
 import {
   loadSpriteConfig,
   saveSpriteConfig,
@@ -67,6 +69,8 @@ export class Sprite {
   private spriteHandlers = new Map<string, Set<(event: unknown) => void>>();
   /** Agent 事件处理器引用（用于 off 取消订阅） */
   private agentHandlers: Partial<{ [K in keyof AgentEventMap]: (e: AgentEventMap[K]) => void }> = {};
+  /** 交互层（可选，用于主动提示输出） */
+  private interaction: IInteraction | null = null;
 
   // ─── 配置持久化 ────────────────────────────────────────
   private dataDir: string;
@@ -78,11 +82,18 @@ export class Sprite {
   /** 上次主动提示时间戳 */
   private lastProactiveAt = 0;
 
-  constructor(agent: Agent, dataDir: string) {
+  constructor(agent: Agent, dataDir: string, interaction?: IInteraction) {
     this.agent = agent;
     this.dataDir = dataDir;
+    this.interaction = interaction ?? null;
     this.config = loadSpriteConfig(dataDir);
-    this.triggerBus = new TriggerBus(this.config.triggerIntervalMs);
+    this.triggerBus = new TriggerBus();
+    this.triggerBus.register(new TimerTrigger(this.config.triggerIntervalMs));
+  }
+
+  /** 设置交互层（可在构造后注入，为 Electron 铺路） */
+  setInteraction(interaction: IInteraction): void {
+    this.interaction = interaction;
   }
 
   // ─── 精灵事件系统（宿主 UI 可订阅） ──────────────────────
@@ -107,7 +118,7 @@ export class Sprite {
     const set = this.spriteHandlers.get(event);
     if (!set) return;
     for (const handler of set) {
-      try { handler(payload); } catch { /* 宿主处理器异常不影响精灵 */ }
+      try { handler(payload); } catch (err) { logger.warn({ event, err: (err as Error).message }, '宿主事件处理器异常'); }
     }
   }
 
@@ -120,8 +131,8 @@ export class Sprite {
     this.state = 'idle';
 
     // 注册触发器回调
-    this.triggerBus.on((reason: string) => {
-      this.handleTrigger(reason);
+    this.triggerBus.on((payload: TriggerPayload) => {
+      this.handleTrigger(payload);
     });
     this.triggerBus.start();
 
@@ -216,13 +227,12 @@ export class Sprite {
     (this.config as Record<string, unknown>)[key] = value;
     saveSpriteConfig(this.dataDir, { [key]: value });
 
-    // 特殊处理：触发器间隔变更时重建 TriggerBus
+    // 特殊处理：触发器间隔变更时重建 TimerTrigger
     if (key === 'triggerIntervalMs' && typeof value === 'number') {
-      const wasRunning = this.running;
-      this.triggerBus.stop();
-      this.triggerBus = new TriggerBus(value);
-      if (wasRunning) {
-        this.triggerBus.on((reason: string) => { this.handleTrigger(reason); });
+      this.triggerBus.unregister('timer');
+      this.triggerBus.register(new TimerTrigger(value));
+      if (this.running) {
+        this.triggerBus.stop();
         this.triggerBus.start();
       }
     }
@@ -308,6 +318,12 @@ export class Sprite {
     const prompt = this.buildProactivePrompt(triggers, summaries);
 
     this.emitSprite('proactivePrompt', { prompt, triggers });
+
+    // 通过交互层输出主动提示
+    if (this.interaction) {
+      this.interaction.output(`\n[精灵] ${prompt}\n`);
+    }
+
     logger.info({ prompt }, '主动提示');
   }
 
@@ -395,12 +411,12 @@ export class Sprite {
   // ─── 触发器处理 ────────────────────────────────────────
 
   /** 处理触发器事件 */
-  private handleTrigger(reason: string): void {
+  private handleTrigger(payload: TriggerPayload): void {
     if (this.state !== 'idle') return;
-    this.emitSprite('timerTriggered', { reason });
+    this.emitSprite('timerTriggered', { reason: payload.reason });
     // 定时触发时检查是否有待提示的累积事件
     this.tryEmitProactivePrompt();
-    logger.info({ reason }, '触发唤醒');
+    logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
     logger.debug(this.formatDashboard());
   }
 }
