@@ -24,8 +24,14 @@ type TriggerHandler = (reason: string) => void;
 export class TriggerBus {
   private handlers: Set<TriggerHandler> = new Set();
   private timer: ReturnType<typeof setInterval> | null = null;
-  /** 定时触发间隔（1 小时） */
-  private static readonly INTERVAL_MS = 3_600_000;
+  /** 定时触发间隔 */
+  private intervalMs: number;
+  /** 默认间隔（1 小时） */
+  static readonly DEFAULT_INTERVAL_MS = 3_600_000;
+
+  constructor(intervalMs?: number) {
+    this.intervalMs = intervalMs ?? TriggerBus.DEFAULT_INTERVAL_MS;
+  }
 
   /** 注册触发器回调 */
   on(handler: TriggerHandler): void {
@@ -49,7 +55,7 @@ export class TriggerBus {
     // 定时触发器
     this.timer = setInterval(() => {
       this.emit('定时检查');
-    }, TriggerBus.INTERVAL_MS);
+    }, this.intervalMs);
   }
 
   /** 停止所有触发器 */

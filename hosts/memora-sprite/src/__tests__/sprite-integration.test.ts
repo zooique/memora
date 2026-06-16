@@ -8,6 +8,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Agent, InMemoryStorage } from 'memora';
 import type { LlmProvider, LlmChunk, ChatOptions } from 'memora';
 import { Sprite } from '../sprite/sprite.js';
+import { tmpdir } from 'os';
+import { mkdirSync, rmSync } from 'fs';
+import { join } from 'path';
 
 /** Mock LLM Provider — 返回固定回复 */
 class MockProvider implements LlmProvider {
@@ -45,15 +48,18 @@ describe('Sprite 端到端集成', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
-    tmpDir = `test-sprite-${Date.now()}`;
+    tmpDir = join(tmpdir(), `memora-sprite-test-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
     agent = createTestAgent(tmpDir);
     await agent.init();
-    sprite = new Sprite(agent);
+    sprite = new Sprite(agent, tmpDir);
   });
 
   afterEach(async () => {
     sprite.stop();
     await agent.close();
+    // 清理临时目录
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* 忽略清理失败 */ }
   });
 
   // ─── 生命周期 ──────────────────────────────────────────

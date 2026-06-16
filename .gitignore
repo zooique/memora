@@ -64,3 +64,6 @@ $RECYCLE.BIN/
 
 # 项目级运行时数据
 .memora/projects.json
+
+# 测试临时目录
+test-sprite-*/

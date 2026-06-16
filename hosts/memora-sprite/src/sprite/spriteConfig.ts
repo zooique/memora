@@ -1,0 +1,86 @@
+/**
+ * 精灵配置持久化 — sprite.json 读写
+ *
+ * 配置文件位于 dataDir/sprite.json（与 memora.db 同级，Agent 级共享）。
+ * 启动时加载，偏好变更时自动保存。
+ *
+ * 设计原则：
+ *   - 所有字段可选，缺失时使用内置默认值
+ *   - 保存时合并（不覆盖未知字段，向前兼容）
+ *   - 文件损坏时静默回退到默认值
+ */
+import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+
+/** 精灵持久化配置 */
+export interface SpriteConfig {
+  /** 定时触发器间隔（毫秒），默认 3_600_000（1 小时） */
+  triggerIntervalMs?: number;
+  /** 默认角色名称，启动时自动切换 */
+  defaultPersona?: string;
+  /** 静默模式：不发射 proactivePrompt 事件，默认 false */
+  silentMode?: boolean;
+  /** 主动提示累积阈值，默认 3 */
+  proactiveThreshold?: number;
+  /** 主动提示冷却时间（毫秒），默认 300_000（5 分钟） */
+  proactiveCooldownMs?: number;
+}
+
+/** 配置键名联合类型 */
+export type SpriteConfigKey = keyof SpriteConfig;
+
+/** 内置默认值 */
+export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
+  triggerIntervalMs: 3_600_000,
+  defaultPersona: '',
+  silentMode: false,
+  proactiveThreshold: 3,
+  proactiveCooldownMs: 300_000,
+};
+
+/** 配置文件名 */
+const CONFIG_FILENAME = 'sprite.json';
+
+/**
+ * 加载精灵配置
+ *
+ * 文件不存在或损坏时返回默认值，不抛错。
+ */
+export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
+  const filePath = resolve(dataDir, CONFIG_FILENAME);
+
+  if (!existsSync(filePath)) {
+    return { ...DEFAULT_SPRITE_CONFIG };
+  }
+
+  try {
+    const raw = readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(raw) as SpriteConfig;
+    return { ...DEFAULT_SPRITE_CONFIG, ...parsed };
+  } catch {
+    // 文件损坏，静默回退
+    return { ...DEFAULT_SPRITE_CONFIG };
+  }
+}
+
+/**
+ * 保存精灵配置
+ *
+ * 合并写入：保留文件中已有但当前接口未定义的字段（向前兼容）。
+ */
+export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
+  const filePath = resolve(dataDir, CONFIG_FILENAME);
+
+  // 读取已有配置（向前兼容）
+  let existing: Record<string, unknown> = {};
+  if (existsSync(filePath)) {
+    try {
+      existing = JSON.parse(readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
+    } catch {
+      // 文件损坏，从空开始
+    }
+  }
+
+  const merged = { ...existing, ...config };
+  writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+}

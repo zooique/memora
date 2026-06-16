@@ -35,7 +35,8 @@ export type { AutoConfigRefinerOptions } from './agent/autoConfigRefiner.js';
 export { loadConfig } from './config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
 export type { ProviderConfig } from './llm/factory.js';
-export type { LlmProvider } from './llm/provider.js';
+export type { LlmProvider, ChatOptions } from './llm/provider.js';
+export type { LlmChunk } from './llm/types.js';
 export type { Config } from './config/loader.js';
 // 事件系统
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from './utils/eventEmitter.js';

@@ -26,6 +26,8 @@ import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 import { Sprite } from './sprite/sprite.js';
 export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
+export type { SpriteConfig, SpriteConfigKey } from './sprite/spriteConfig.js';
+export { DEFAULT_SPRITE_CONFIG, loadSpriteConfig, saveSpriteConfig } from './sprite/spriteConfig.js';
 
 /** 中文 UI 消息覆盖 */
 const ZH_MESSAGES: UIMessages = {
@@ -201,7 +203,7 @@ export async function startSprite(opts?: {
   await agent.init();
 
   // 6. 启动精灵主控
-  const sprite = new Sprite(agent);
+  const sprite = new Sprite(agent, dataDir);
   sprite.start();
 
   const close = async () => {
@@ -218,7 +220,7 @@ export async function startSprite(opts?: {
 async function main(): Promise<void> {
   const { agent, sprite, close } = await startSprite();
 
-  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色）\n');
+  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /config 配置）\n');
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
 
@@ -254,6 +256,40 @@ async function main(): Promise<void> {
       } else {
         console.log(`角色 "${name}" 不存在或角色管理不可用`);
       }
+      return;
+    }
+
+    if (input === '/config') {
+      console.log(sprite.formatConfig());
+      return;
+    }
+
+    if (input.startsWith('/config ')) {
+      const parts = input.slice(8).trim().split(/\s+/);
+      if (parts.length < 2) {
+        console.log('用法：/config <键名> <值>');
+        console.log('可用键名：triggerIntervalMs, defaultPersona, silentMode, proactiveThreshold, proactiveCooldownMs');
+        return;
+      }
+      const [key, ...valueParts] = parts;
+      const rawValue = valueParts.join(' ');
+
+      // 类型转换
+      let value: unknown;
+      if (key === 'silentMode') {
+        value = rawValue === 'true' || rawValue === 'on' || rawValue === '1';
+      } else if (key === 'triggerIntervalMs' || key === 'proactiveThreshold' || key === 'proactiveCooldownMs') {
+        value = Number(rawValue);
+        if (Number.isNaN(value)) {
+          console.log(`错误：${key} 需要数字值`);
+          return;
+        }
+      } else {
+        value = rawValue;
+      }
+
+      sprite.updateConfig(key as never, value);
+      console.log(`已更新：${key} = ${JSON.stringify(value)}`);
       return;
     }
 
