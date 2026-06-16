@@ -7,6 +7,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ProjectManager } from '@/memory/projectManager.js';
+import { SecurityGuard } from '@/security/pathGuard.js';
 import type { Config } from '@/config/loader.js';
 
 function makeConfig(dataDir?: string): Config {
@@ -35,7 +36,12 @@ describe('ProjectManager · initProject', () => {
 
   it('应该初始化项目并返回上下文', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
-    const pm = new ProjectManager({ dataDir: config.memory.dataDir });
+    const pm = new ProjectManager({
+      dataDir: config.memory.dataDir,
+      // A-004: 注入 SecurityGuard 工厂函数
+      createSecurityGuard: (projectPath, memoraDir) =>
+        new SecurityGuard(projectPath, memoraDir, [], false, 'owner'),
+    });
     const ctx = await pm.initProject(tmpDir);
 
     expect(ctx.projectPath).toBe(tmpDir);

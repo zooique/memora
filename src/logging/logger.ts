@@ -18,6 +18,7 @@
  *   setLogger(myCustomLogger);
  */
 import type { ILogger } from './loggerInterface.js';
+import { statSync, truncateSync } from 'node:fs';
 
 /** 日志级别（从环境变量读取，默认 info） */
 const level = process.env['MEMORA_LOG_LEVEL'] ?? 'info';
@@ -139,10 +140,25 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
     }
 
     // 文件流（结构化 JSON，方便后续分析）
+    // SEC-06: 日志轮转保护——超过 10MB 时截断重写，防止长期运行生成巨大文件
     if (fileEnabled) {
       try {
-        mkdirSync(resolve(resolvedDataDir, 'logs'), { recursive: true });
-        const logFilePath = resolve(resolvedDataDir, 'logs', 'memora.log');
+        const logsDir = resolve(resolvedDataDir, 'logs');
+        mkdirSync(logsDir, { recursive: true });
+        const logFilePath = resolve(logsDir, 'memora.log');
+
+        // 检查文件大小，超过 10MB 时截断
+        const LOG_MAX_BYTES = 10 * 1024 * 1024; // 10MB
+        try {
+          const stat = statSync(logFilePath);
+          if (stat.size > LOG_MAX_BYTES) {
+            truncateSync(logFilePath, 0);
+            process.stderr.write(`[memora] 日志文件超过 10MB，已截断：${logFilePath}\n`);
+          }
+        } catch {
+          // 文件不存在或无法 stat，正常——首次写入
+        }
+
         streams.push({
           level: 'info',
           stream: createWriteStream(logFilePath, { flags: 'a' }),

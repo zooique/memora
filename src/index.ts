@@ -16,7 +16,7 @@ export type {
   AgentContext,
   AgentBuildCtx,
 } from './agent/agent.js';
-export type { ToolDefinition, ToolHandler, WriteExtensions } from './agent/toolExecutor.js';
+export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from './agent/toolExecutor.js';
 export type { PersonaMode, Persona } from './persona/types.js';
 // 类型从专职模块导出
 export type { MemoryKeywords } from './agent/insightExtractor.js';
@@ -29,6 +29,7 @@ export type {
   AgentStats,
 } from './agent/memoryInspector.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/configManager.js';
+export type { AutoConfigRefinerOptions } from './agent/autoConfigRefiner.js';
 export { loadConfig } from './config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
 export type { ProviderConfig } from './llm/factory.js';

@@ -36,7 +36,7 @@ import { InMemoryStorage } from './inMemoryStorage.js';
 import type { IMemoryStorage } from './storageInterface.js';
 import { MemoryLoader } from './loader.js';
 import type { LoadResult } from './loader.js';
-import { SecurityGuard } from '@/security/pathGuard.js';
+import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 
@@ -57,8 +57,8 @@ export interface ProjectContext {
   fileStore: FileStore;
   /** SQLite 索引（通过 IMemoryStorage 接口访问） */
   index: IMemoryStorage;
-  /** 安全守卫 */
-  security: SecurityGuard;
+  /** 安全守卫（A-004: 可空，由 Agent 层注入工厂函数创建） */
+  security: SecurityGuard | null;
   /** 启动时加载的必召记忆 */
   bootstrapMemories: Memory[];
   /** 加载结果 */
@@ -95,16 +95,18 @@ export interface ProjectEntry {
 export interface ProjectManagerOptions {
   /** Agent 级数据目录（memora.db + topics/ 的父目录） */
   dataDir: string;
-  /** 允许的路径白名单 */
-  allowedPaths?: string[];
-  /** 写入确认 */
-  confirmWrites?: boolean;
-  /** 安全权限 */
-  permission?: 'owner' | 'guest';
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   storage?: IMemoryStorage;
   /** 注册表目录（可选，默认与 dataDir 相同） */
   registryDir?: string;
+  /**
+   * A-004: SecurityGuard 工厂函数（由 Agent 层注入，解除 memory→security 反向依赖）
+   *
+   * 在项目切换时调用，传入项目路径和 .memora/ 目录，
+   * 返回一个配置好的 SecurityGuard 实例。
+   * 不提供时 ProjectContext.security 为 null（宿主需自行处理安全校验）。
+   */
+  createSecurityGuard?: (projectPath: string, memoraDir: string) => SecurityGuard;
 }
 
 /**
@@ -120,12 +122,6 @@ export class ProjectManager {
   private readonly registryPath: string;
   /** Agent 级数据目录（memora.db + topics/ 的父目录） */
   private readonly agentDataDir: string;
-  /** 允许的路径白名单 */
-  private readonly allowedPaths: string[];
-  /** 写入确认 */
-  private readonly confirmWrites: boolean;
-  /** 安全权限 */
-  private readonly permission: 'owner' | 'guest';
   /** Agent 级存储实例（全局共享，不随项目切换重建） */
   private agentIndex: IMemoryStorage | null = null;
   /** 当前打开的项目路径 */
@@ -134,19 +130,20 @@ export class ProjectManager {
   private currentLockPath: string | null = null;
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
+  /** A-004: SecurityGuard 工厂函数（由 Agent 层注入） */
+  private readonly createSecurityGuard?: (projectPath: string, memoraDir: string) => SecurityGuard;
 
   constructor(options: ProjectManagerOptions) {
-    const { dataDir, allowedPaths = [], confirmWrites = false, permission = 'owner', storage, registryDir } = options;
+    const { dataDir, storage, registryDir, createSecurityGuard } = options;
     const memoraHome = resolve(dataDir.replace(/^~/, homedir()));
     this.agentDataDir = memoraHome;
     // 注册表目录：优先使用宿主指定的用户级路径，避免每项目重复存储
     const registryHome = registryDir ? resolve(registryDir.replace(/^~/, homedir())) : memoraHome;
     this.registryPath = join(registryHome, 'projects.json');
-    this.allowedPaths = allowedPaths;
-    this.confirmWrites = confirmWrites;
-    this.permission = permission;
     // 保存外部注入的存储实例（宿主项目注入时使用）
     this.externalStorage = storage ?? null;
+    // A-004: 保存 SecurityGuard 工厂函数
+    this.createSecurityGuard = createSecurityGuard;
   }
 
   /**
@@ -237,14 +234,10 @@ export class ProjectManager {
     const skills = index.getBySource(SOURCE_LABELS.SKILL);
     const bootstrapMemories = [...rules, ...skills];
 
-    // 安全守卫（随项目切换更新）
-    const security = new SecurityGuard(
-      projectPath,
-      memoraDir,
-      this.allowedPaths,
-      this.confirmWrites,
-      this.permission,
-    );
+    // A-004: 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
+    const security = this.createSecurityGuard
+      ? this.createSecurityGuard(projectPath, memoraDir)
+      : null;
 
     // 注册到项目表
     const name = projectName || this.inferProjectName(projectPath);

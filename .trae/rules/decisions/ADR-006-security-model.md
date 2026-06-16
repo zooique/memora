@@ -43,6 +43,7 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 ## 影响
 
 - 所有工具调用必须经过 `security/` 模块校验
+- 自定义工具通过 `ToolContext.guardPath()` 可选校验路径（S-01 修复后新增）
 - 配置文件必须显式声明权限模式
 - API Key 强制从环境变量读取，配置文件中的 `${VAR}` 占位符展开
 - `.gitignore` 必须包含：`.env`、`config.local.json`、`*.key`

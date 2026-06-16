@@ -41,13 +41,32 @@ export interface WriteExtensions {
 }
 
 /**
+ * 自定义工具的执行上下文
+ *
+ * S-01: 提供安全校验方法，让自定义工具可以（且应该）通过安全层校验路径。
+ * 内置工具（read_file/write_file/list_dir）已内置路径校验，
+ * 自定义工具如需访问文件系统，应调用 ctx.guardPath() 确保路径在白名单内。
+ */
+export interface ToolContext {
+  /**
+   * 校验路径是否在安全白名单内
+   *
+   * @param path 要校验的路径（相对项目根目录或绝对路径）
+   * @throws MemoraError 路径不在白名单内时抛出
+   */
+  guardPath: (path: string) => void;
+}
+
+/**
  * 自定义工具的处理器类型
  *
  * 宿主项目通过 agent.registerTool() 注册领域工具时，
  * 需提供此签名的 handler 函数。
- * handler 接收解析后的参数对象，返回字符串结果。
+ * handler 接收解析后的参数对象和工具上下文，返回字符串结果。
+ *
+ * S-01: 自定义工具如需访问文件系统，应调用 ctx.guardPath(path) 校验路径。
  */
-export type ToolHandler = (args: Record<string, unknown>) => Promise<string>;
+export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 
 /**
  * 自定义工具注册条目
@@ -194,8 +213,15 @@ export class ToolExecutor {
         // 自定义工具 fallback：查找 customTools Map
         const custom = this.customTools.get(name);
         if (custom) {
+          // S-01: 传入 ToolContext，提供 guardPath 安全校验方法
+          const ctx: ToolContext = {
+            guardPath: (path: string) => {
+              const absolutePath = this.resolveSafePath(path);
+              this.guardPathOrThrow(absolutePath, name, 'custom');
+            },
+          };
           try {
-            return await custom.handler(args);
+            return await custom.handler(args, ctx);
           } catch (err) {
             // 统一包装为 MemoraError，保持错误处理一致性
             if (err instanceof MemoraError) throw err;
@@ -693,10 +719,11 @@ export class ToolExecutor {
 
   /**
    * 路径白名单校验（捕获后包装为 toolError）
+   * @param source S-02: 调用链来源标记
    */
-  private guardPathOrThrow(absolutePath: string, tool: string): void {
+  private guardPathOrThrow(absolutePath: string, tool: string, source: 'builtin' | 'custom' | 'system' = 'builtin'): void {
     try {
-      this.security.assertPathAllowed(absolutePath, tool);
+      this.security.assertPathAllowed(absolutePath, tool, source);
     } catch (err) {
       throw toolError(
         '路径不在白名单内',

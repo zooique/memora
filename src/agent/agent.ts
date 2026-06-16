@@ -29,6 +29,8 @@ import type { ToolExecutor } from './toolExecutor.js';
 import type { MessageHistory } from './messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
+import { SecurityGuard } from '@/security/pathGuard.js';
+import type { AutoConfigRefiner } from './autoConfigRefiner.js';
 import { recall } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile } from '@/memory/userProfile.js';
@@ -48,7 +50,6 @@ import type { ILogger } from '@/logging/loggerInterface.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
-import type { SecurityGuard } from '@/security/pathGuard.js';
 import type { ITracer } from './tracer.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
@@ -114,7 +115,7 @@ export interface AgentProjectEntry {
  * Agent 内部组件快照（供宿主项目重建 history/loop 等 CLI 可见对象）
  */
 export interface AgentBuildCtx {
-  security: SecurityGuard;
+  security: SecurityGuard | null;
   index: IMemoryStorage;
   bootstrapMemories: Memory[];
 }
@@ -194,6 +195,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
+  /** V-201: AutoConfigRefiner（模式 3：Agent 智能总结） */
+  private autoConfigRefiner: AutoConfigRefiner | null = null;
 
   /** 当前激活的技能名（上一轮匹配，本轮注入） */
   private activeSkill: string | null = null;
@@ -209,6 +212,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private chatLockTimer: ReturnType<typeof setTimeout> | null = null;
   /** 聊天锁超时时间（5 分钟） */
   private static readonly CHAT_LOCK_TIMEOUT_MS = 300_000;
+  /** chat() 内部 AbortController（超时时中断 generator，防止并发） */
+  private chatAbortController: AbortController | null = null;
   /** chat() 输入最大字符数（128KB） */
   private static readonly CHAT_INPUT_MAX_LENGTH = 128 * 1024;
   /** 记忆衰减定时器 */
@@ -260,11 +265,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     this.projectManager = new ProjectManager({
       dataDir: this.#config.dataDir,
-      allowedPaths: this.#config.allowedPaths,
-      confirmWrites: this.#config.confirmWrites,
-      permission: this.#config.permission,
       storage: this.#config.storage,
       registryDir: this.#config.registryDir,
+      // A-004: SecurityGuard 由 Agent 层创建，解除 memory→security 反向依赖
+      createSecurityGuard: (projectPath: string, memoraDir: string) =>
+        new SecurityGuard(
+          projectPath,
+          memoraDir,
+          this.#config.allowedPaths,
+          this.#config.confirmWrites,
+          this.#config.permission,
+        ),
     });
 
     const pctx = await this.projectManager.initProject(this.#config.projectPath, undefined, this.#config.configDir);
@@ -313,11 +324,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
     this._chatBusy = true;
-    // 超时保护：LLM 卡死时自动释放锁，防止永久锁定
+    // SEC-02: 内部 AbortController，超时时中断 generator 而非仅释放锁
+    const internalAbort = new AbortController();
+    this.chatAbortController = internalAbort;
+    // 合并外部 signal：外部 abort 时也触发内部
+    const onExternalAbort = () => internalAbort.abort();
+    signal?.addEventListener('abort', onExternalAbort, { once: true });
+    const combinedSignal = internalAbort.signal;
+
+    // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
     this.chatLockTimer = setTimeout(() => {
-      logger.warn({ timeoutMs: Agent.CHAT_LOCK_TIMEOUT_MS }, 'chat() 锁超时，强制释放');
+      logger.warn({ timeoutMs: Agent.CHAT_LOCK_TIMEOUT_MS }, 'chat() 锁超时，中断 generator 并释放锁');
+      internalAbort.abort();
       this._chatBusy = false;
       this.chatLockTimer = null;
+      this.chatAbortController = null;
     }, Agent.CHAT_LOCK_TIMEOUT_MS);
     try {
       this._lastInteractionAt = new Date();
@@ -326,7 +347,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'recalling' };
       const recalledMemories = await this.recallAndInject(input);
 
-      if (signal?.aborted) {
+      if (combinedSignal.aborted) {
         yield { type: 'aborted', reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation' };
         return;
       }
@@ -339,7 +360,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       let assistantContent = '';
       let wasAborted = false;
-      for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(input, recalledMemories, signal)) {
+      for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(input, recalledMemories, combinedSignal)) {
         yield chunk;
         if (chunk.type === 'text') {
           assistantContent += chunk.content;
@@ -359,10 +380,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       await this.postProcess(input, assistantContent);
     } finally {
       this._chatBusy = false;
+      this.chatAbortController = null;
       if (this.chatLockTimer) {
         clearTimeout(this.chatLockTimer);
         this.chatLockTimer = null;
       }
+      signal?.removeEventListener('abort', onExternalAbort);
     }
   }
 
@@ -466,6 +489,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         const p = this.insightExtractor.extract(input, assistantContent).catch(() => null);
         this.requireNonNull(this.history, 'history').registerPendingArchive(p);
       }
+    }
+
+    // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
+    if (this.autoConfigRefiner) {
+      this.autoConfigRefiner.analyze(input, assistantContent).catch((err) => {
+        logger.warn({ err }, 'AutoConfigRefiner 分析失败');
+      });
     }
   }
 
@@ -606,6 +636,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = result.insightExtractor;
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
+    this.autoConfigRefiner = result.autoConfigRefiner;
   }
 
   /**
@@ -628,6 +659,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   setBackgroundProvider(provider: LlmProvider | null): void {
     this.#backgroundProvider = provider;
+    // V-201: 同步更新 AutoConfigRefiner 的后台 Provider
+    if (this.autoConfigRefiner) {
+      this.autoConfigRefiner.setBackgroundProvider(provider);
+    }
     logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
   }
 
@@ -816,6 +851,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       clearTimeout(this.chatLockTimer);
       this.chatLockTimer = null;
     }
+    if (this.chatAbortController) {
+      this.chatAbortController.abort();
+      this.chatAbortController = null;
+    }
     this.removeAllListeners();
 
     if (this.history) {
@@ -834,6 +873,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = null;
     this.configManager = null;
     this.memoryInspector = null;
+    this.autoConfigRefiner = null;
     this.ctx = null;
     this.pctx = null;
   }

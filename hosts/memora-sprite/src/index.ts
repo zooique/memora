@@ -153,13 +153,20 @@ export async function startSprite(opts?: {
     config = await loadConfig(opts?.configPath);
   }
 
-  const projectPath = opts?.projectPath ?? process.cwd();
   const configDir = opts?.configDir ?? resolve(homedir(), '.memora-config');
   // 展开 ~ 为实际 home 目录
   const rawDir = config.memory.dataDir.startsWith('~')
     ? resolve(homedir(), config.memory.dataDir.slice(1).replace(/^[/\\]/, ''))
     : config.memory.dataDir;
   const dataDir = opts?.dataDir ?? rawDir;
+
+  // 精灵的工作空间：~/.memora/workspace/（而非源码目录）
+  // 桌面精灵不是项目级工具，不应往自己的源码目录写文件
+  const workspaceDir = resolve(dataDir, 'workspace');
+  const projectPath = opts?.projectPath ?? workspaceDir;
+  if (!existsSync(workspaceDir)) {
+    await mkdir(workspaceDir, { recursive: true });
+  }
 
   // 2. 打开 SQLite 数据库（确保目录存在）
   const dbPath = resolve(dataDir, 'memora.db');

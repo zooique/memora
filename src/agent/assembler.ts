@@ -22,6 +22,7 @@ import { SkillManager } from '@/skill/skillManager.js';
 import { InsightExtractor } from './insightExtractor.js';
 import { ConfigManager } from './configManager.js';
 import { MemoryInspector } from './memoryInspector.js';
+import { AutoConfigRefiner } from './autoConfigRefiner.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
@@ -57,6 +58,7 @@ export interface AssembleOutput {
   insightExtractor: InsightExtractor;
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
+  autoConfigRefiner: AutoConfigRefiner;
   /** 角色激活后的 system prompt */
   personaPrompt: string;
 }
@@ -103,7 +105,7 @@ export async function assembleComponents(
 
   const toolExec = new ToolExecutor(
     projectPath,
-    pctx.security,
+    pctx.security!, // A-004: Agent 层总是注入 createSecurityGuard，security 不为 null
     pctx.index,
     workProjection,
   );
@@ -163,6 +165,12 @@ export async function assembleComponents(
 
   const memoryInspector = new MemoryInspector(pctx.index, loop, history);
 
+  // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
+  const autoConfigRefiner = new AutoConfigRefiner(
+    (suggestion) => configManager.suggestionCallback?.(suggestion),
+  );
+  autoConfigRefiner.setBackgroundProvider(backgroundProvider);
+
   return {
     history,
     loop,
@@ -174,6 +182,7 @@ export async function assembleComponents(
     insightExtractor,
     configManager,
     memoryInspector,
+    autoConfigRefiner,
     personaPrompt,
   };
 }

@@ -40,8 +40,10 @@ export interface AuditEvent {
   type: 'path-allow' | 'path-deny' | 'write-confirm' | 'write-decline' | 'write-auto';
   /** 涉及的绝对路径 */
   path: string;
-  /** 工具名（read_file / write_file） */
+  /** 工具名（read_file / write_file / 自定义工具名） */
   tool?: string;
+  /** S-02: 调用链来源（builtin / custom / system），标记安全检查的触发方 */
+  source?: 'builtin' | 'custom' | 'system';
   /** 用户决策（写入二次确认场景） */
   decision?: WriteDecision;
   /** 拒绝原因 */
@@ -142,9 +144,12 @@ export class SecurityGuard {
   /**
    * 断言路径允许访问
    * @throws Error 不在白名单时
+   * @param source S-02: 调用链来源标记
    */
-  assertPathAllowed(absolutePath: string, tool?: string): void {
-    const resolved = resolve(absolutePath);
+  assertPathAllowed(absolutePath: string, tool?: string, source?: 'builtin' | 'custom' | 'system'): void {
+    // SEC-05: NFKC 规范化，防止全角字符（如 ．．/）绕过黑名单正则
+    const normalized = absolutePath.normalize('NFKC');
+    const resolved = resolve(normalized);
 
     // 1. 黑名单优先
     for (const pattern of BLOCKED_PATTERNS) {
@@ -153,6 +158,7 @@ export class SecurityGuard {
           type: 'path-deny',
           path: resolved,
           tool,
+          source,
           reason: `命中黑名单规则 (${pattern})`,
           timestamp: new Date().toISOString(),
         });
@@ -170,6 +176,7 @@ export class SecurityGuard {
         type: 'path-allow',
         path: resolved,
         tool,
+        source,
         timestamp: new Date().toISOString(),
       });
       return;
@@ -182,6 +189,7 @@ export class SecurityGuard {
         type: 'path-allow',
         path: resolved,
         tool,
+        source,
         timestamp: new Date().toISOString(),
       });
       return;
@@ -194,6 +202,7 @@ export class SecurityGuard {
           type: 'path-allow',
           path: resolved,
           tool,
+          source,
           timestamp: new Date().toISOString(),
         });
         return;
@@ -204,6 +213,7 @@ export class SecurityGuard {
       type: 'path-deny',
       path: resolved,
       tool,
+      source,
       reason: '路径越界，不在白名单内',
       timestamp: new Date().toISOString(),
     });
