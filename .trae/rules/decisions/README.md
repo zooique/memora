@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：13
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：20（内核 13 + 精灵 7）
 
 ---
 
@@ -26,6 +26,18 @@ description: Memora 关键决策年轮
 | [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
 | [ADR-012](./ADR-012-domain-switch.md)       | 领域切换（已废弃，由角色自动匹配替代）                    | ❌ 已废弃 | 架构   |
 | [ADR-013](./ADR-013-archive-pipeline.md)    | 记忆归档三步价值过滤（judge → distill → converge）        | ✅ 已接受 | 架构   |
+
+### 精灵宿主（SP 系列）
+
+| ID                                                  | 标题                                              | 状态      | 类别   |
+| --------------------------------------------------- | ------------------------------------------------- | --------- | ------ |
+| [ADR-SP-001](./ADR-SP-001-runtime.md)              | 运行时栈：Node.js 22 + TS5 + ESM                  | ✅ 已接受 | 运行时 |
+| [ADR-SP-002](./ADR-SP-002-storage.md)              | 存储层：better-sqlite3 + 同库会话                  | ✅ 已接受 | 数据层 |
+| [ADR-SP-003](./ADR-SP-003-desktop-shell.md)        | 桌面壳：阶段一 CLI → 阶段二 Electron              | ✅ 已接受 | 形态   |
+| [ADR-SP-004](./ADR-SP-004-perception.md)           | 感知原则：上下文感知而非内容感知                   | ✅ 已接受 | 安全   |
+| [ADR-SP-005](./ADR-SP-005-package-management.md)   | 包管理：npm + file: 协议                           | ✅ 已接受 | 工程   |
+| [ADR-SP-006](./ADR-SP-006-testing.md)              | 测试：Vitest + InMemoryStorage + 临时 SQLite       | ✅ 已接受 | 质量   |
+| [ADR-SP-007](./ADR-SP-007-directory-structure.md)  | 目录结构：hosts/memora-sprite/ 按职责分层          | ✅ 已接受 | 工程   |
 
 ---
 
