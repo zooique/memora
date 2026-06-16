@@ -16,6 +16,7 @@
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
@@ -154,10 +155,15 @@ export async function startSprite(opts?: {
 
   const projectPath = opts?.projectPath ?? process.cwd();
   const configDir = opts?.configDir ?? resolve(homedir(), '.memora-config');
-  const dataDir = opts?.dataDir ?? resolve(homedir(), config.memory.dataDir);
+  // 展开 ~ 为实际 home 目录
+  const rawDir = config.memory.dataDir.replace(/^~[/\\]/, homedir());
+  const dataDir = opts?.dataDir ?? rawDir;
 
-  // 2. 打开 SQLite 数据库
+  // 2. 打开 SQLite 数据库（确保目录存在）
   const dbPath = resolve(dataDir, 'memora.db');
+  if (!existsSync(dataDir)) {
+    await mkdir(dataDir, { recursive: true });
+  }
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
 
