@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * Memora Sprite — 桌面精灵宿主入口
  *
@@ -269,6 +270,12 @@ export async function startSprite(opts?: {
   });
 
   await agent.init();
+
+  // 恢复上次会话（连续演化任务的核心体验）
+  const restored = await agent.restoreMostRecentSession('main');
+  if (restored > 0) {
+    console.log(`已恢复上次会话（${restored} 条消息）\n`);
+  }
 
   // 6. 启动精灵主控
   const sprite = new Sprite(agent, dataDir, projectPath, vectorStore);

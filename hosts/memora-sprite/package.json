@@ -4,6 +4,9 @@
   "description": "Memora 桌面精灵宿主——能自我进化的本地 AI Agent",
   "type": "module",
   "main": "./dist/index.js",
+  "bin": {
+    "memora-sprite": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "tsx src/index.ts",
