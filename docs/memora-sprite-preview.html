@@ -620,6 +620,283 @@ header p {
   border: 1px solid var(--rule);
   margin-bottom: 40px;
 }
+
+/* ===== Three-State Window Model ===== */
+.three-state-demo {
+  background: var(--bg2);
+  border-radius: var(--window-radius);
+  border: 1px solid var(--rule);
+  padding: 30px;
+  margin-bottom: 40px;
+}
+.state-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 60px;
+  min-height: 200px;
+  position: relative;
+  margin-bottom: 24px;
+}
+.state-item {
+  text-align: center;
+  position: relative;
+  transition: all 0.3s;
+}
+.state-item.dim {
+  opacity: 0.3;
+  transform: scale(0.85);
+}
+.state-item.active {
+  opacity: 1;
+  transform: scale(1.1);
+}
+.state-item.active::after {
+  content: "";
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* Tray state */
+.tray-state-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent2);
+  margin: 0 auto 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  box-shadow: 0 0 12px rgba(166, 227, 161, 0.4);
+}
+
+/* Float state */
+.float-icon-demo {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent3) 100%);
+  margin: 0 auto 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  position: relative;
+  box-shadow: 0 8px 24px rgba(137, 180, 250, 0.4);
+  cursor: grab;
+  user-select: none;
+  transition: transform 0.2s;
+}
+.float-icon-demo:active { cursor: grabbing; }
+.float-icon-demo.bounce { animation: floatBounce 0.6s ease; }
+@keyframes floatBounce {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-12px); }
+  60% { transform: translateY(-4px); }
+}
+.float-status-dot {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--bg2);
+  background: var(--accent2);
+}
+.float-status-dot.active { background: var(--accent); animation: dotPulse 1.5s infinite; }
+.float-status-dot.sleeping { background: var(--warning); }
+@keyframes dotPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(137, 180, 250, 0.6); }
+  50% { box-shadow: 0 0 0 6px rgba(137, 180, 250, 0); }
+}
+.float-unread-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--error);
+  color: var(--bg2);
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+/* Full state */
+.full-window-mini {
+  width: 120px;
+  height: 90px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  margin: 0 auto 8px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.full-window-mini .mini-titlebar {
+  height: 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  padding: 0 4px;
+  gap: 3px;
+}
+.full-window-mini .mini-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.full-window-mini .mini-content {
+  flex: 1;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.full-window-mini .mini-line {
+  height: 4px;
+  background: var(--surface);
+  border-radius: 2px;
+}
+.full-window-mini .mini-line.short { width: 60%; }
+.full-window-mini .mini-line.user { background: var(--accent2); width: 50%; align-self: flex-end; }
+
+.state-label {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.state-desc {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* State transition arrows */
+.state-arrow {
+  color: var(--accent);
+  font-size: 1.5rem;
+  opacity: 0.5;
+}
+
+/* State switcher buttons */
+.state-switcher {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+.state-btn {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--btn-radius);
+  padding: 8px 16px;
+  color: var(--ink);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.state-btn:hover { border-color: var(--accent); }
+.state-btn.active {
+  background: var(--accent);
+  color: var(--bg2);
+  border-color: var(--accent);
+}
+
+/* ===== Stream Output Demo ===== */
+.stream-demo {
+  background: var(--bg2);
+  border-radius: var(--window-radius);
+  border: 1px solid var(--rule);
+  padding: 20px;
+  margin-bottom: 40px;
+}
+.stream-message {
+  background: var(--surface);
+  border-radius: var(--bubble-radius);
+  padding: 14px 18px;
+  font-family: "LXGW WenKai", "Segoe UI", system-ui, sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  min-height: 60px;
+  margin-bottom: 16px;
+  border-bottom-left-radius: 4px;
+  position: relative;
+}
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursorBlink 1s infinite;
+}
+@keyframes cursorBlink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+.stream-controls {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.stream-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--btn-radius);
+  padding: 8px 20px;
+  color: var(--bg2);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.stream-btn:hover { opacity: 0.85; }
+.stream-btn.abort {
+  background: var(--error);
+}
+.stream-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ===== Chat Abort Button ===== */
+.abort-btn {
+  background: var(--error);
+  border: none;
+  border-radius: var(--btn-radius);
+  padding: 10px 16px;
+  color: var(--bg2);
+  font-weight: 600;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+.abort-btn.visible { display: flex; }
+.abort-btn::before {
+  content: "■";
+  font-size: 0.7rem;
+}
 .tray-icon {
   text-align: center;
 }
@@ -1017,7 +1294,8 @@ footer {
       <!-- Input -->
       <div class="input-area">
         <input type="text" placeholder="输入消息..." id="chatInput" onkeypress="handleEnter(event)">
-        <button class="send-btn" onclick="sendMessage()">发送</button>
+        <button class="abort-btn" id="abortBtn" onclick="abortChat()">中断</button>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">发送</button>
       </div>
     </div>
 
@@ -1183,8 +1461,85 @@ footer {
   </div>
 </div>
 
+<!-- ==================== 三态窗口模型 ==================== -->
+<h2 class="section-title">二、三态窗口模型</h2>
+
+<div class="three-state-demo">
+  <div class="state-display" id="stateDisplay">
+    <!-- 托盘态 -->
+    <div class="state-item dim" id="stateTray">
+      <div class="tray-state-icon">🟢</div>
+      <div class="state-label">托盘态</div>
+      <div class="state-desc">最低存在感</div>
+    </div>
+
+    <div class="state-arrow">↔</div>
+
+    <!-- 浮动态 -->
+    <div class="state-item active" id="stateFloat">
+      <div class="float-icon-demo" id="floatIconDemo" onclick="floatIconClick()">
+        🌿
+        <div class="float-status-dot" id="floatStatusDot"></div>
+        <div class="float-unread-badge hidden" id="unreadBadge">3</div>
+      </div>
+      <div class="state-label">浮动态</div>
+      <div class="state-desc">中等存在感</div>
+    </div>
+
+    <div class="state-arrow">↔</div>
+
+    <!-- 完整态 -->
+    <div class="state-item dim" id="stateFull">
+      <div class="full-window-mini">
+        <div class="mini-titlebar">
+          <div class="mini-dot" style="background:var(--error)"></div>
+          <div class="mini-dot" style="background:var(--warning)"></div>
+          <div class="mini-dot" style="background:var(--accent2)"></div>
+        </div>
+        <div class="mini-content">
+          <div class="mini-line user"></div>
+          <div class="mini-line"></div>
+          <div class="mini-line short"></div>
+        </div>
+      </div>
+      <div class="state-label">完整态</div>
+      <div class="state-desc">最高交互能力</div>
+    </div>
+  </div>
+
+  <div class="state-switcher">
+    <button class="state-btn" onclick="switchState('tray')">托盘态</button>
+    <button class="state-btn active" onclick="switchState('float')">浮动态</button>
+    <button class="state-btn" onclick="switchState('full')">完整态</button>
+    <button class="state-btn" onclick="simulateProactive()" style="background:var(--accent3);color:var(--bg2);border-color:var(--accent3)">模拟主动提示</button>
+  </div>
+
+  <p style="text-align:center;margin-top:16px;font-size:0.8rem;color:var(--muted)">
+    点击浮动图标模拟"单击展开为完整窗口" · 点击"模拟主动提示"查看图标弹跳 + 未读计数
+  </p>
+</div>
+
+<!-- ==================== 流式输出演示 ==================== -->
+<h2 class="section-title">三、流式输出与中断</h2>
+
+<div class="stream-demo">
+  <p style="font-size:0.85rem;color:var(--muted);margin-bottom:16px">
+    真正的逐字打字机效果（模拟 chunk 到达），生成中可点击"中断"停止：
+  </p>
+  <div class="stream-message" id="streamMessage">
+    <span class="stream-cursor"></span>
+  </div>
+  <div class="stream-controls">
+    <button class="stream-btn" id="streamStartBtn" onclick="startStreamDemo()">开始流式输出</button>
+    <button class="stream-btn abort" id="streamAbortBtn" onclick="abortStreamDemo()" disabled>中断生成</button>
+  </div>
+  <p style="text-align:center;margin-top:12px;font-size:0.75rem;color:var(--muted)">
+    对应方案 6.2 流式输出架构 · IPC 通道：sprite-stream-start / chunk / end + chat-abort
+  </p>
+</div>
+
 <!-- ==================== 系统托盘预览 ==================== -->
-<h2 class="section-title">二、系统托盘状态</h2>
+<h2 class="section-title">四、系统托盘状态</h2>
 
 <div class="tray-mockup">
   <div class="tray-icon">
@@ -1213,7 +1568,7 @@ footer {
 </div>
 
 <!-- ==================== 主动提示预览 ==================== -->
-<h2 class="section-title">三、主动提示效果</h2>
+<h2 class="section-title">五、主动提示效果</h2>
 
 <div class="info-grid">
   <div class="info-card">
@@ -1237,7 +1592,7 @@ footer {
 </div>
 
 <!-- ==================== 配色方案 ==================== -->
-<h2 class="section-title">四、视觉风格 — Catppuccin Mocha</h2>
+<h2 class="section-title">六、视觉风格 — Catppuccin Mocha</h2>
 
 <div class="palette-grid">
   <div class="palette-item">
@@ -1273,7 +1628,7 @@ footer {
 </div>
 
 <!-- ==================== 动画效果 ==================== -->
-<h2 class="section-title">五、交互动画</h2>
+<h2 class="section-title">七、交互动画</h2>
 
 <div class="anim-demo">
   <div class="anim-item">
@@ -1297,7 +1652,7 @@ footer {
 </div>
 
 <!-- ==================== 设计原则 ==================== -->
-<h2 class="section-title">六、设计原则</h2>
+<h2 class="section-title">八、设计原则</h2>
 
 <div class="info-grid">
   <div class="info-card">
@@ -1315,7 +1670,7 @@ footer {
 </div>
 
 <!-- ==================== 实现优先级 ==================== -->
-<h2 class="section-title">七、实现优先级</h2>
+<h2 class="section-title">九、实现优先级</h2>
 
 <div class="info-grid">
   <div class="info-card">
@@ -1351,6 +1706,129 @@ function toggleTheme() {
   document.body.classList.toggle('light-theme');
 }
 
+// ===== Three-State Window Model =====
+let currentState = 'float';
+let unreadCount = 0;
+
+function switchState(target) {
+  if (currentState === target) return;
+  currentState = target;
+
+  // Update visual states
+  document.getElementById('stateTray').classList.remove('active', 'dim');
+  document.getElementById('stateFloat').classList.remove('active', 'dim');
+  document.getElementById('stateFull').classList.remove('active', 'dim');
+
+  document.getElementById('stateTray').classList.add(target === 'tray' ? 'active' : 'dim');
+  document.getElementById('stateFloat').classList.add(target === 'float' ? 'active' : 'dim');
+  document.getElementById('stateFull').classList.add(target === 'full' ? 'active' : 'dim');
+
+  // Update switcher buttons
+  document.querySelectorAll('.state-btn').forEach(btn => {
+    if (btn.textContent.includes('托盘') || btn.textContent.includes('浮动') || btn.textContent.includes('完整')) {
+      btn.classList.remove('active');
+    }
+  });
+  const btnMap = { tray: 0, float: 1, full: 2 };
+  document.querySelectorAll('.state-btn')[btnMap[target]].classList.add('active');
+
+  // Clear unread when entering full state
+  if (target === 'full') {
+    unreadCount = 0;
+    updateUnreadBadge();
+  }
+}
+
+function floatIconClick() {
+  // 单击浮动图标 → 展开为完整窗口
+  switchState('full');
+}
+
+function simulateProactive() {
+  // 主动提示：图标弹跳 + 未读计数 +1
+  const floatIcon = document.getElementById('floatIconDemo');
+  floatIcon.classList.add('bounce');
+  setTimeout(() => floatIcon.classList.remove('bounce'), 600);
+
+  // 如果当前不在完整态，增加未读计数
+  if (currentState !== 'full') {
+    unreadCount++;
+    updateUnreadBadge();
+  }
+
+  // 状态点变为 active
+  const dot = document.getElementById('floatStatusDot');
+  dot.classList.add('active');
+  setTimeout(() => dot.classList.remove('active'), 3000);
+}
+
+function updateUnreadBadge() {
+  const badge = document.getElementById('unreadBadge');
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+// ===== Stream Output Demo =====
+let streamTimer = null;
+let streamAborted = false;
+const streamDemoText = "记得你上次提到用第三人称叙事，这次还是延续了这个风格。这让我想起你读过的《百年孤独》，马尔克斯在开头就用了那种时空交错的手法——'多年以后，奥雷里亚诺·布恩迪亚上校面对行刑队，将会回想起父亲带他去见识冰块的那个遥远的下午。'";
+
+function startStreamDemo() {
+  const messageEl = document.getElementById('streamMessage');
+  const startBtn = document.getElementById('streamStartBtn');
+  const abortBtn = document.getElementById('streamAbortBtn');
+
+  // Reset
+  messageEl.innerHTML = '<span class="stream-cursor"></span>';
+  startBtn.disabled = true;
+  abortBtn.disabled = false;
+  streamAborted = false;
+
+  let charIndex = 0;
+  const cursor = '<span class="stream-cursor"></span>';
+
+  // 模拟 chunk 到达（每 50ms 一个字符，偶尔有 longer pause 模拟网络延迟）
+  streamTimer = setInterval(() => {
+    if (streamAborted) {
+      clearInterval(streamTimer);
+      messageEl.innerHTML = messageEl.innerHTML.replace(cursor, '') +
+        '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule);font-size:0.75rem;color:var(--error)">⏹ 已中断</div>';
+      startBtn.disabled = false;
+      abortBtn.disabled = true;
+      return;
+    }
+
+    if (charIndex >= streamDemoText.length) {
+      clearInterval(streamTimer);
+      messageEl.innerHTML = messageEl.innerHTML.replace(cursor, '');
+      startBtn.disabled = false;
+      abortBtn.disabled = true;
+      return;
+    }
+
+    // 每次追加 1-3 个字符（模拟 chunk）
+    const chunkSize = Math.floor(Math.random() * 3) + 1;
+    const chunk = streamDemoText.slice(charIndex, charIndex + chunkSize);
+    charIndex += chunkSize;
+
+    // 在 cursor 前插入文本
+    const currentText = messageEl.innerHTML.replace(cursor, '');
+    messageEl.innerHTML = currentText + escapeHtml(chunk) + cursor;
+
+    // 自动滚动
+    messageEl.scrollTop = messageEl.scrollHeight;
+  }, 50);
+}
+
+function abortStreamDemo() {
+  streamAborted = true;
+  if (streamTimer) clearInterval(streamTimer);
+}
+
 // ===== Panel Navigation =====
 function showPanel(panel) {
   document.getElementById('chatPanel').classList.add('hidden');
@@ -1373,6 +1851,9 @@ function showPanel(panel) {
 }
 
 // ===== Chat Functions =====
+let chatStreamTimer = null;
+let chatAborted = false;
+
 function handleEnter(e) {
   if (e.key === 'Enter') sendMessage();
 }
@@ -1393,40 +1874,88 @@ function sendMessage() {
   input.value = '';
   messages.scrollTop = messages.scrollHeight;
 
-  // Simulate typing
-  const typing = document.createElement('div');
-  typing.className = 'message sprite';
-  typing.id = 'typingMsg';
-  typing.innerHTML = `
+  // 切换到生成中状态：隐藏发送按钮，显示中断按钮
+  document.getElementById('sendBtn').style.display = 'none';
+  document.getElementById('abortBtn').classList.add('visible');
+  chatAborted = false;
+
+  // 创建精灵消息气泡（空内容 + 流式 cursor）
+  const spriteMsg = document.createElement('div');
+  spriteMsg.className = 'message sprite';
+  spriteMsg.id = 'streamingMsg';
+  spriteMsg.innerHTML = `
     <img src="assets/sprite_avatar.jpg" class="message-avatar" alt="">
-    <div class="message-bubble"><div class="typing-indicator"><span></span><span></span><span></span></div></div>
+    <div class="message-bubble" id="streamingBubble">
+      <span class="stream-cursor"></span>
+    </div>
   `;
-  messages.appendChild(typing);
+  messages.appendChild(spriteMsg);
   messages.scrollTop = messages.scrollHeight;
 
-  // Simulate response after delay
-  setTimeout(() => {
-    typing.remove();
-    const spriteMsg = document.createElement('div');
-    spriteMsg.className = 'message sprite';
-    spriteMsg.innerHTML = `
-      <img src="assets/sprite_avatar.jpg" class="message-avatar" alt="">
-      <div class="message-bubble">
-        我记下了。这会让你已有的「创作习惯」记忆更加丰富。
-        <div class="memory-recall">
-          <span>💡</span>
-          <span>召回记忆：创作习惯（score: 0.91）</span>
-        </div>
-      </div>
-    `;
-    messages.appendChild(spriteMsg);
-    messages.scrollTop = messages.scrollHeight;
+  // 模拟流式回复
+  const replyText = "我记下了。这会让你已有的「创作习惯」记忆更加丰富。要不要我帮你关联到之前关于叙事节奏的洞察？";
+  const cursor = '<span class="stream-cursor"></span>';
+  let charIndex = 0;
 
-    // Trigger memory count animation
-    const memStat = document.getElementById('statMemories');
-    memStat.classList.add('pulse');
-    setTimeout(() => memStat.classList.remove('pulse'), 300);
-  }, 1500);
+  chatStreamTimer = setInterval(() => {
+    if (chatAborted) {
+      clearInterval(chatStreamTimer);
+      const bubble = document.getElementById('streamingBubble');
+      if (bubble) {
+        bubble.innerHTML = bubble.innerHTML.replace(cursor, '') +
+          '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--rule);font-size:0.75rem;color:var(--error)">⏹ 已中断</div>';
+      }
+      finishChat();
+      return;
+    }
+
+    if (charIndex >= replyText.length) {
+      clearInterval(chatStreamTimer);
+      const bubble = document.getElementById('streamingBubble');
+      if (bubble) {
+        bubble.innerHTML = bubble.innerHTML.replace(cursor, '') +
+          `<div class="memory-recall">
+            <span>💡</span>
+            <span>召回记忆：创作习惯（score: 0.91）</span>
+          </div>`;
+      }
+      finishChat();
+
+      // Trigger memory count animation
+      const memStat = document.getElementById('statMemories');
+      memStat.textContent = parseInt(memStat.textContent) + 1;
+      memStat.classList.add('pulse');
+      setTimeout(() => memStat.classList.remove('pulse'), 300);
+      return;
+    }
+
+    // 每次追加 1-3 个字符
+    const chunkSize = Math.floor(Math.random() * 3) + 1;
+    const chunk = replyText.slice(charIndex, charIndex + chunkSize);
+    charIndex += chunkSize;
+
+    const bubble = document.getElementById('streamingBubble');
+    if (bubble) {
+      const currentText = bubble.innerHTML.replace(cursor, '');
+      bubble.innerHTML = currentText + escapeHtml(chunk) + cursor;
+    }
+    messages.scrollTop = messages.scrollHeight;
+  }, 60);
+}
+
+function abortChat() {
+  chatAborted = true;
+  if (chatStreamTimer) clearInterval(chatStreamTimer);
+}
+
+function finishChat() {
+  document.getElementById('sendBtn').style.display = '';
+  document.getElementById('abortBtn').classList.remove('visible');
+  // 清理 id 以免重复
+  const msg = document.getElementById('streamingMsg');
+  if (msg) msg.removeAttribute('id');
+  const bubble = document.getElementById('streamingBubble');
+  if (bubble) bubble.removeAttribute('id');
 }
 
 function escapeHtml(text) {
