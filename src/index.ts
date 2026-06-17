@@ -54,6 +54,9 @@ export { InMemoryStorage } from './memory/inMemoryStorage.js';
 // 向量存储：宿主注入 EmbeddingService 后创建 VectorStore，传入 AgentOptions 启用语义搜索
 export { VectorStore } from './memory/vectorStore.js';
 export type { EmbeddingService } from './memory/vectorStore.js';
+// Embedding Provider：OpenAI 兼容 /embeddings 端点实现（满足 EmbeddingService 接口）
+export { EmbeddingProvider } from './llm/embedding.js';
+export type { EmbeddingConfig, EmbeddingResult } from './llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from './memory/sessionStore.js';
 // 消息历史类型：loadSessionMessages() 返回值

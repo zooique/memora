@@ -637,6 +637,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
     this.autoConfigRefiner = result.autoConfigRefiner;
+    // V-101：注入 VectorStore 到 MemoryInspector，启用混合搜索
+    if (this.memoryInspector && this.#config.vectorStore) {
+      this.memoryInspector.setVectorStore(this.#config.vectorStore);
+    }
   }
 
   /**

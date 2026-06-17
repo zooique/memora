@@ -21,7 +21,7 @@ import { exec } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
-import { Agent, createLlmProvider, loadConfig } from 'memora';
+import { Agent, createLlmProvider, loadConfig, VectorStore, EmbeddingProvider } from 'memora';
 import type { UIMessages, Config } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
@@ -107,6 +107,43 @@ async function setupWizard(): Promise<void> {
     process.exit(1);
   }
 
+  // ── 可选：Embedding 配置（启用语义召回） ──
+  console.log('\n── Embedding 配置（可选） ──');
+  console.log('配置后启用语义搜索（向量召回），让记忆搜索更智能。');
+  console.log('Embedding API 与 Chat API 独立，可使用不同提供商。');
+  console.log('常见选项：');
+  console.log('  - OpenAI text-embedding-3-small（$0.02/1M tokens）');
+  console.log('  - 硅基流动 BAAI/bge-large-zh-v1.5（免费）');
+  console.log('  - Ollama 本地 bge-m3（完全免费，需安装 Ollama）');
+  console.log('  - 与 Chat 相同的提供商（如果支持 /embeddings 端点）');
+
+  let embedding: Config['embedding'];
+  const wantEmbedding = await ask(rl, '\n是否配置 Embedding？[y/N]：');
+  if (wantEmbedding.toLowerCase() === 'y' || wantEmbedding.toLowerCase() === 'yes') {
+    const useSameAsChat = await ask(rl, '复用 Chat 的 baseUrl 和 apiKey？[Y/n]：');
+    let embBaseUrl: string;
+    let embApiKey: string;
+    if (useSameAsChat.toLowerCase() === 'n' || useSameAsChat.toLowerCase() === 'no') {
+      embBaseUrl = await ask(rl, 'Embedding API 地址（如 https://api.siliconflow.cn/v1）：');
+      embApiKey = await ask(rl, 'Embedding API Key：');
+      if (!embApiKey) {
+        console.error('错误：Embedding API Key 不能为空');
+        rl.close();
+        process.exit(1);
+      }
+    } else {
+      embBaseUrl = providerConfig.baseUrl;
+      embApiKey = apiKey;
+    }
+    const embModel = await ask(rl, 'Embedding 模型名称（如 text-embedding-3-small、BAAI/bge-large-zh-v1.5）：');
+    if (!embModel) {
+      console.error('错误：Embedding 模型名称不能为空');
+      rl.close();
+      process.exit(1);
+    }
+    embedding = { baseUrl: embBaseUrl, apiKey: embApiKey, model: embModel };
+  }
+
   rl.close();
 
   // 保存配置
@@ -125,10 +162,16 @@ async function setupWizard(): Promise<void> {
     memory: { dataDir: '~/.memora', maxContextTokens: 120000 },
     security: { permission: 'owner', confirmWrites: false },
     allowedPaths: [],
+    ...(embedding ? { embedding } : {}),
   };
 
   await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
   console.log(`\n配置已保存到：${configPath}`);
+  if (embedding) {
+    console.log('✅ 已启用语义搜索（向量召回）');
+  } else {
+    console.log('ℹ️  未配置 Embedding，使用纯关键词召回（后续可手动配置）');
+  }
 }
 
 // ─── 启动精灵 ──────────────────────────────────────────
@@ -195,6 +238,21 @@ export async function startSprite(opts?: {
   // 4. 创建 LLM Provider
   const provider = createLlmProvider(config);
 
+  // 4.5 创建 VectorStore（可选，配置了 embedding 时启用语义召回）
+  let vectorStore: VectorStore | undefined;
+  if (config.embedding?.model) {
+    const embeddingProvider = new EmbeddingProvider({
+      baseUrl: config.embedding.baseUrl ?? config.llm.baseUrl ?? '',
+      apiKey: config.embedding.apiKey ?? config.llm.apiKey ?? '',
+      model: config.embedding.model,
+    });
+    vectorStore = new VectorStore(
+      resolve(dataDir, 'vectors.json'),
+      embeddingProvider,
+    );
+    await vectorStore.load();
+  }
+
   // 5. 实例化 Agent
   const agent = new Agent({
     projectPath,
@@ -203,6 +261,7 @@ export async function startSprite(opts?: {
     provider,
     storage,
     sessionStore,
+    vectorStore,
     messages: ZH_MESSAGES,
     enableContextSummary: true,
     permission: config.security.permission,
@@ -212,12 +271,13 @@ export async function startSprite(opts?: {
   await agent.init();
 
   // 6. 启动精灵主控
-  const sprite = new Sprite(agent, dataDir, projectPath);
+  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore);
   sprite.start();
 
   const close = async () => {
     sprite.stop();
     await agent.close();
+    if (vectorStore) await vectorStore.save();
     storage.close();
   };
 
@@ -227,7 +287,7 @@ export async function startSprite(opts?: {
 // ─── 记忆管理命令 ──────────────────────────────────────
 
 /** 处理 /memories 命令 */
-function handleMemories(args: string, sprite: Sprite): void {
+async function handleMemories(args: string, sprite: Sprite): Promise<void> {
   const parts = args.split(/\s+/);
   const sub = parts[0] ?? '';
 
@@ -280,14 +340,13 @@ function handleMemories(args: string, sprite: Sprite): void {
   if (sub === 'search') {
     const query = parts.slice(1).join(' ');
     if (!query) { console.log('用法：/memories search <关键词>'); return; }
-    const inspector = sprite.agent.memory;
-    if (!inspector) { console.log('记忆查看器不可用'); return; }
-    const hits = inspector.search(query);
+    const hits = await sprite.searchMemories(query);
     if (hits.length === 0) { console.log(`未找到与 "${query}" 相关的记忆`); return; }
     console.log(`\n搜索 "${query}" — ${hits.length} 条结果:`);
     console.log('─'.repeat(70));
     for (const h of hits) {
-      console.log(`[${h.name}]  ·  ${h.source}  ·  score: ${h.score}`);
+      const simTag = h.similarity !== undefined ? `  ·  相似度: ${(h.similarity * 100).toFixed(0)}%` : '';
+      console.log(`[${h.name}]  ·  ${h.source}  ·  score: ${h.score}${simTag}`);
       console.log(`  ${h.contentPreview}`);
       console.log('');
     }
@@ -338,7 +397,7 @@ async function main(): Promise<void> {
     process.exit(0);
   });
 
-  interaction.start(({ text }) => {
+  interaction.start(async ({ text }) => {
     // 命令路由
     if (text === '/quit') {
       close().then(() => {
@@ -410,7 +469,7 @@ async function main(): Promise<void> {
 
     if (text.startsWith('/memories')) {
       const args = text.slice(9).trim();
-      handleMemories(args, sprite);
+      await handleMemories(args, sprite);
       return;
     }
 

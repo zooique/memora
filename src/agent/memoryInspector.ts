@@ -11,9 +11,11 @@
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { VectorStore } from '@/memory/vectorStore.js';
 import type { MessageHistory } from './messageHistory.js';
 import type { AgentLoop } from './loop.js';
 import { configError } from '@/utils/errors.js';
+import { logger } from '@/logging/logger.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -84,6 +86,8 @@ export interface AgentSearchHit {
   score: number;
   /** 内容预览（截断到 120 字符） */
   contentPreview: string;
+  /** 语义相似度（0-1，仅 searchHybrid 返回，纯关键词搜索时无此字段） */
+  similarity?: number;
 }
 
 /** 记忆库统计数据 */
@@ -121,6 +125,9 @@ export interface SuggestHit {
 // ─── 类 ──────────────────────────────────────────────────
 
 export class MemoryInspector {
+  /** 向量存储（可选，提供时 searchHybrid 启用语义搜索） */
+  private vectorStore: VectorStore | null = null;
+
   /**
    * @param index - 记忆存储（用于搜索 + 统计）
    * @param loop - AgentLoop（用于获取工作记忆）
@@ -131,6 +138,13 @@ export class MemoryInspector {
     private readonly loop: AgentLoop,
     private readonly history: MessageHistory,
   ) {}
+
+  /**
+   * 注入向量存储（由 Agent 在初始化后调用，解决构造时序）
+   */
+  setVectorStore(vs: VectorStore | null): void {
+    this.vectorStore = vs;
+  }
 
   // ─── 快照 ─────────────────────────────────────────────
 
@@ -225,6 +239,67 @@ export class MemoryInspector {
       score: m.score,
       // 截断长内容到 120 字符
       contentPreview: m.content.length > 120 ? m.content.slice(0, 120) + '...' : m.content,
+    }));
+  }
+
+  /**
+   * 混合搜索记忆（语义 + 关键词双通道）
+   *
+   * V-101：当 VectorStore 可用时，启用语义搜索通道，补强关键词召回的语义缺口。
+   * 向量搜索失败时静默降级到纯关键词（降级优先原则）。
+   *
+   * @returns 混合排序后的搜索结果（含相似度分数）
+   */
+  async searchHybrid(query: string, limit = 10): Promise<AgentSearchHit[]> {
+    if (!query || query.trim() === '') {
+      throw configError('搜索关键词为空', 'searchHybrid() 需要非空 query', [
+        '传入非空字符串关键词',
+      ]);
+    }
+    if (limit <= 0 || !Number.isInteger(limit)) {
+      throw configError('无效 limit', `limit 必须是正整数，收到 ${limit}`, [
+        '使用 limit = 10（默认值）',
+      ]);
+    }
+
+    const merged = new Map<string, { memory: Memory; vectorScore: number }>();
+
+    // ── 通道 1：语义搜索（VectorStore 可用时） ──
+    if (this.vectorStore && this.vectorStore.size > 0) {
+      try {
+        const vectorResults = await this.vectorStore.search(query, limit * 2, 0.3);
+        for (const vr of vectorResults) {
+          const memory = this.index.getById(vr.id);
+          if (memory) {
+            merged.set(memory.id, { memory, vectorScore: vr.similarity });
+          }
+        }
+      } catch (err) {
+        logger.debug({ err }, '语义搜索失败，降级到关键词');
+      }
+    }
+
+    // ── 通道 2：关键词搜索（补齐语义通道未覆盖的） ──
+    const keywordResults = this.index.search(query, limit * 2);
+    for (const m of keywordResults) {
+      if (!merged.has(m.id)) {
+        merged.set(m.id, { memory: m, vectorScore: 0 });
+      }
+    }
+
+    // ── 综合排序：vectorScore（语义相关度）+ memory.score（权重） ──
+    const sorted = [...merged.values()].sort((a, b) => {
+      const scoreA = a.vectorScore * 0.6 + a.memory.score * 0.4;
+      const scoreB = b.vectorScore * 0.6 + b.memory.score * 0.4;
+      return scoreB - scoreA;
+    });
+
+    return sorted.slice(0, limit).map(({ memory, vectorScore }) => ({
+      name: memory.name,
+      source: memory.source,
+      score: memory.score,
+      similarity: vectorScore,
+      contentPreview: memory.content.length > 120 ? memory.content.slice(0, 120) + '...' : memory.content,
     }));
   }
 

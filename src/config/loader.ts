@@ -83,6 +83,19 @@ const ConfigSchema = z.object({
   allowedPaths: z.array(z.string()).default([]),
   // 默认角色名（对应 personas/*.md）
   persona: z.string().optional(),
+  /**
+   * Embedding 配置（可选，配置后启用向量语义召回）
+   *
+   * 复用 OpenAI 兼容协议的 /embeddings 端点。
+   * 不配置时降级为纯关键词召回（当前行为）。
+   */
+  embedding: z
+    .object({
+      model: z.string(),
+      baseUrl: z.string().optional(),
+      apiKey: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -103,6 +116,7 @@ const DEFAULT_CONFIG: Config = {
   },
   allowedPaths: [],
   persona: undefined,
+  embedding: undefined,
 };
 
 /**

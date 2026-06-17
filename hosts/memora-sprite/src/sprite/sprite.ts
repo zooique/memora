@@ -13,7 +13,7 @@
  *   不监听键盘输入内容。
  */
 import type { Agent, AgentEventMap } from 'memora';
-import type { SuggestHit } from 'memora';
+import type { SuggestHit, VectorStore } from 'memora';
 import { logger } from 'memora';
 import { resolve } from 'node:path';
 import { TriggerBus, TimerTrigger } from './triggers.js';
@@ -75,6 +75,8 @@ export class Sprite {
   private interaction: IInteraction | null = null;
   /** 项目路径（用于 FileWatcherTrigger 的默认监听目录） */
   private projectPath: string;
+  /** 向量存储（可选，启用语义召回时同步更新向量索引） */
+  private vectorStore: VectorStore | null;
 
   // ─── 配置持久化 ────────────────────────────────────────
   private dataDir: string;
@@ -86,10 +88,11 @@ export class Sprite {
   /** 上次主动提示时间戳 */
   private lastProactiveAt = 0;
 
-  constructor(agent: Agent, dataDir: string, projectPath?: string, interaction?: IInteraction) {
+  constructor(agent: Agent, dataDir: string, projectPath?: string, vectorStore?: VectorStore, interaction?: IInteraction) {
     this.agent = agent;
     this.dataDir = dataDir;
     this.projectPath = projectPath ?? dataDir;
+    this.vectorStore = vectorStore ?? null;
     this.interaction = interaction ?? null;
     this.config = loadSpriteConfig(dataDir);
     this.triggerBus = new TriggerBus();
@@ -277,6 +280,8 @@ export class Sprite {
     const exists = storage.getById(id);
     if (!exists) return false;
     storage.delete(id);
+    // 同步删除向量索引
+    this.vectorStore?.delete(id);
     return true;
   }
 
@@ -295,7 +300,25 @@ export class Sprite {
       createdAt: now,
       accessedAt: now,
     });
+    // 异步更新向量索引（不阻塞主流程，降级优先）
+    if (this.vectorStore) {
+      this.vectorStore.upsert(id, content).catch(err => {
+        logger.warn({ err, id }, '向量索引更新失败，降级为纯关键词召回');
+      });
+    }
     return id;
+  }
+
+  /** 混合搜索记忆（V-101：语义 + 关键词双通道） */
+  async searchMemories(query: string, limit = 10): Promise<Array<{ name: string; source: string; score: number; contentPreview: string; similarity?: number }>> {
+    const inspector = this.agent.memory;
+    if (!inspector) return [];
+    try {
+      return await inspector.searchHybrid(query, limit);
+    } catch {
+      // 降级到纯关键词
+      return inspector.search(query, limit);
+    }
   }
 
   /** 格式化角色列表为可读文本 */

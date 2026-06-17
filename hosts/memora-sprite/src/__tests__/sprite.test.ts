@@ -313,7 +313,7 @@ describe('Sprite + IInteraction 桥接', () => {
     agentListeners.clear();
     tmpDir = createTmpDir();
     interaction = new MockInteraction();
-    sprite = new Sprite(mockAgent, tmpDir, tmpDir, interaction);
+    sprite = new Sprite(mockAgent, tmpDir, tmpDir, undefined, interaction);
     sprite.start();
   });
 
