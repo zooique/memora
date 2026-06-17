@@ -224,6 +224,80 @@ export async function startSprite(opts?: {
   return { agent, sprite, close };
 }
 
+// ─── 记忆管理命令 ──────────────────────────────────────
+
+/** 处理 /memories 命令 */
+function handleMemories(args: string, sprite: Sprite): void {
+  const parts = args.split(/\s+/);
+  const sub = parts[0] ?? '';
+
+  if (!sub || sub === 'list') {
+    // /memories [source]
+    const source = parts[1] || undefined;
+    const memories = sprite.listMemories(source);
+    if (memories.length === 0) {
+      console.log(source ? `没有来源为 "${source}" 的记忆` : '记忆库为空');
+      return;
+    }
+    console.log(`\n记忆列表（${memories.length} 条）${source ? ` · source: ${source}` : ''}:`);
+    console.log('─'.repeat(70));
+    for (const m of memories) {
+      console.log(`[${m.id}]`);
+      console.log(`  ${m.name}  ·  ${m.source}  ·  score: ${m.score}`);
+      console.log(`  ${m.contentPreview}`);
+      console.log('');
+    }
+    console.log('用法：/memories show <id> | /memories delete <id> | /memories search <关键词>');
+    return;
+  }
+
+  if (sub === 'show') {
+    const id = parts[1];
+    if (!id) { console.log('用法：/memories show <id>'); return; }
+    const m = sprite.showMemory(id);
+    if (!m) { console.log(`记忆 ${id} 不存在`); return; }
+    console.log(`\n记忆详情：${m.id}`);
+    console.log('─'.repeat(60));
+    console.log(`名称：${m.name}`);
+    console.log(`来源：${m.source}`);
+    console.log(`权重：${m.score}`);
+    console.log(`创建时间：${m.createdAt}`);
+    console.log(`最近访问：${m.accessedAt}`);
+    console.log(`内容：`);
+    console.log(m.content);
+    console.log('─'.repeat(60));
+    return;
+  }
+
+  if (sub === 'delete') {
+    const id = parts[1];
+    if (!id) { console.log('用法：/memories delete <id>'); return; }
+    const ok = sprite.deleteMemory(id);
+    console.log(ok ? `已删除记忆：${id}` : `记忆 ${id} 不存在`);
+    return;
+  }
+
+  if (sub === 'search') {
+    const query = parts.slice(1).join(' ');
+    if (!query) { console.log('用法：/memories search <关键词>'); return; }
+    const inspector = sprite.agent.memory;
+    if (!inspector) { console.log('记忆查看器不可用'); return; }
+    const hits = inspector.search(query);
+    if (hits.length === 0) { console.log(`未找到与 "${query}" 相关的记忆`); return; }
+    console.log(`\n搜索 "${query}" — ${hits.length} 条结果:`);
+    console.log('─'.repeat(70));
+    for (const h of hits) {
+      console.log(`[${h.name}]  ·  ${h.source}  ·  score: ${h.score}`);
+      console.log(`  ${h.contentPreview}`);
+      console.log('');
+    }
+    return;
+  }
+
+  console.log(`未知子命令：${sub}`);
+  console.log('用法：/memories [list [source]] | show <id> | delete <id> | search <关键词>');
+}
+
 // ─── CLI 直接运行 ──────────────────────────────────────
 
 /**
@@ -238,7 +312,7 @@ async function main(): Promise<void> {
   const interaction: IInteraction = new CliInteraction();
   sprite.setInteraction(interaction);
 
-  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /search <关键词> 搜索 | /config 配置）\n');
+  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /mode auto|manual 匹配模式 | /search <关键词> 搜索 | /memories 记忆管理 | /config 配置）\n');
 
   interaction.onClose(async () => {
     console.log('\n正在关闭...');
@@ -281,6 +355,18 @@ async function main(): Promise<void> {
       return;
     }
 
+    if (text.startsWith('/mode')) {
+      const modeArg = text.slice(5).trim();
+      if (modeArg === 'auto' || modeArg === 'manual') {
+        sprite.setPersonaMode(modeArg);
+        console.log(`角色匹配模式已切换为：${modeArg}`);
+      } else {
+        console.log(`当前模式：${sprite.personaMode}`);
+        console.log('用法：/mode auto（自动匹配）| /mode manual（手动固定）');
+      }
+      return;
+    }
+
     if (text.startsWith('/search ')) {
       const query = text.slice(8).trim();
       if (!query) {
@@ -301,6 +387,12 @@ async function main(): Promise<void> {
           console.log(`已在浏览器中搜索：${query}`);
         }
       });
+      return;
+    }
+
+    if (text.startsWith('/memories')) {
+      const args = text.slice(9).trim();
+      handleMemories(args, sprite);
       return;
     }
 

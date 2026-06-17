@@ -939,4 +939,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   get memory(): MemoryInspector | null {
     return this.memoryInspector;
   }
+
+  /** 记忆存储（宿主可直接调用 CRUD，如 delete/upsert） */
+  get storage(): IMemoryStorage | null {
+    return this.#config.storage ?? null;
+  }
 }

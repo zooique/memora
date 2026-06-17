@@ -222,6 +222,64 @@ export class Sprite {
     return pm.switchPersona(name);
   }
 
+  /** 设置角色匹配模式 */
+  setPersonaMode(mode: 'auto' | 'manual'): boolean {
+    const pm = this.agent.persona;
+    if (!pm) return false;
+    pm.setMode(mode);
+    return true;
+  }
+
+  /** 获取当前角色匹配模式 */
+  get personaMode(): string {
+    return this.agent.persona?.currentMode ?? 'auto';
+  }
+
+  // ─── 记忆管理 ──────────────────────────────────────────
+
+  /** 列出记忆（可按 source 过滤） */
+  listMemories(source?: string, limit = 50): { id: string; name: string; source: string; score: number; contentPreview: string }[] {
+    const storage = this.agent.storage;
+    if (!storage) return [];
+    const memories = source
+      ? storage.getBySource(source)
+      : storage.search('', limit);
+    return memories.map(m => ({
+      id: m.id,
+      name: m.name,
+      source: m.source,
+      score: Math.round(m.score * 100) / 100,
+      contentPreview: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
+    }));
+  }
+
+  /** 查看单条记忆详情 */
+  showMemory(id: string): { id: string; name: string; source: string; score: number; content: string; createdAt: string; accessedAt: string } | null {
+    const storage = this.agent.storage;
+    if (!storage) return null;
+    const m = storage.getById(id);
+    if (!m) return null;
+    return {
+      id: m.id,
+      name: m.name,
+      source: m.source,
+      score: Math.round(m.score * 100) / 100,
+      content: m.content,
+      createdAt: new Date(m.createdAt).toLocaleString('zh-CN'),
+      accessedAt: new Date(m.accessedAt).toLocaleString('zh-CN'),
+    };
+  }
+
+  /** 删除记忆 */
+  deleteMemory(id: string): boolean {
+    const storage = this.agent.storage;
+    if (!storage) return false;
+    const exists = storage.getById(id);
+    if (!exists) return false;
+    storage.delete(id);
+    return true;
+  }
+
   /** 格式化角色列表为可读文本 */
   formatPersonas(): string {
     const personas = this.listPersonas();

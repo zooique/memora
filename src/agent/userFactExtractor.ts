@@ -28,7 +28,8 @@ export function extractUserFacts(input: string, turnIndex: string): ExtractedFac
 
   // ── 高置信度：身份声明 ──
   // "我叫张三" "我是张三" "我的名字是张三"
-  const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!！?？\n]{1,15})/);
+  // 排除问句关键词（谁/哪/什/吗），防止 "我是谁" "我是哪个" 误匹配
+const identityMatch = input.match(/我(?:叫|是|的名字是)\s*([^\s，。,\.!！?？\n谁哪什吗]{1,15})/);
   if (identityMatch) {
     facts.push({
       category: 'identity',
@@ -51,7 +52,7 @@ export function extractUserFacts(input: string, turnIndex: string): ExtractedFac
 
   // "我(是|当|做).*?(的)" —— 职业声明
   const jobMatch = input.match(
-    /我(?:是|当|做)(?:一[个名位])?\s*([^\s，。,\.!！?？\n]{1,10})(?:的)?/,
+    /我(?:是|当|做)(?:一[个名位])?\s*([^\s，。,\.!！?？\n谁哪什吗]{1,10})(?:的)?/,
   );
   if (jobMatch && !identityMatch) {
     // 避免与 identityMatch 重复
