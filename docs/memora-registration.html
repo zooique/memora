@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memora · 桌面精灵 — 万物皆记忆，越用越进化的 AI 伴侣</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-deep: #0a0a12;
+      --bg-card: #12121e;
+      --bg-card-hover: #1a1a2e;
+      --amber: #f6ad55;
+      --amber-light: #fbd38d;
+      --amber-glow: rgba(246, 173, 85, 0.15);
+      --teal: #38b2ac;
+      --teal-light: #81e6d9;
+      --teal-glow: rgba(56, 178, 172, 0.1);
+      --rose: #ed64a6;
+      --purple: #b794f4;
+      --purple-glow: rgba(183, 148, 244, 0.1);
+      --green: #48bb78;
+      --green-glow: rgba(72, 187, 120, 0.1);
+      --text-primary: #e2e8f0;
+      --text-secondary: #a0aec0;
+      --text-muted: #718096;
+      --border: rgba(255, 255, 255, 0.06);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Noto Serif SC', 'Songti SC', serif;
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      line-height: 1.8;
+      overflow-x: hidden;
+    }
+
+    /* ===== 背景粒子网络 ===== */
+    .bg-network {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    }
+    .bg-network canvas { width: 100%; height: 100%; }
+
+    /* ===== 顶部光晕 ===== */
+    .hero-glow {
+      position: absolute; top: -200px; left: 50%; transform: translateX(-50%);
+      width: 800px; height: 800px;
+      background: radial-gradient(circle, rgba(246, 173, 85, 0.08) 0%, transparent 70%);
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ===== 主容器 ===== */
+    .container {
+      position: relative; z-index: 1;
+      max-width: 960px; margin: 0 auto; padding: 0 24px;
+    }
+
+    /* ===== 导航标签 ===== */
+    .track-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 16px;
+      background: rgba(246, 173, 85, 0.1);
+      border: 1px solid rgba(246, 173, 85, 0.25);
+      border-radius: 100px;
+      font-size: 13px; color: var(--amber); letter-spacing: 2px;
+      margin-bottom: 32px;
+      animation: fadeSlideDown 0.8s ease-out;
+    }
+    .track-badge::before {
+      content: ''; width: 8px; height: 8px;
+      background: var(--amber); border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    /* ===== Hero 区域 ===== */
+    .hero {
+      padding: 100px 0 80px; text-align: center;
+    }
+    .hero-title {
+      font-size: clamp(48px, 8vw, 80px); font-weight: 900; line-height: 1.1;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--amber-light) 0%, var(--amber) 50%, var(--rose) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: fadeSlideDown 1s ease-out;
+    }
+    .hero-subtitle {
+      font-size: clamp(16px, 2.5vw, 22px); color: var(--teal-light);
+      font-weight: 400; margin-bottom: 16px;
+      animation: fadeSlideDown 1s ease-out 0.15s both;
+    }
+    .hero-desc {
+      font-size: clamp(14px, 2vw, 17px); color: var(--text-secondary);
+      margin-bottom: 36px;
+      animation: fadeSlideDown 1s ease-out 0.25s both;
+    }
+    .hero-philosophy {
+      display: inline-block; padding: 12px 32px;
+      background: linear-gradient(135deg, rgba(246, 173, 85, 0.08), rgba(237, 100, 166, 0.08));
+      border: 1px solid rgba(246, 173, 85, 0.15); border-radius: 12px;
+      font-size: 16px; color: var(--amber-light); font-style: italic;
+      animation: fadeSlideDown 1s ease-out 0.35s both;
+    }
+
+    /* ===== 通用的 section 标题 ===== */
+    .section-label {
+      display: inline-flex; align-items: center; gap: 10px;
+      font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
+      color: var(--teal); margin-bottom: 20px;
+    }
+    .section-label::before { content: ''; width: 24px; height: 1px; background: var(--teal); }
+    .section-label.amber { color: var(--amber); }
+    .section-label.amber::before { background: var(--amber); }
+    .section-label.purple { color: var(--purple); }
+    .section-label.purple::before { background: var(--purple); }
+    .section-label.green { color: var(--green); }
+    .section-label.green::before { background: var(--green); }
+    .section-title {
+      font-size: clamp(28px, 5vw, 40px); font-weight: 700;
+      margin-bottom: 16px; color: var(--text-primary);
+    }
+    .section-desc {
+      font-size: 15px; color: var(--text-secondary); margin-bottom: 32px;
+    }
+
+    /* 通用 section padding */
+    .section { padding: 80px 0; }
+
+    /* ===== 问题卡片网格 ===== */
+    .problem-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 40px;
+    }
+    .problem-card {
+      padding: 32px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 16px;
+      transition: all 0.3s ease; position: relative; overflow: hidden;
+    }
+    .problem-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--amber), var(--rose));
+      opacity: 0; transition: opacity 0.3s ease;
+    }
+    .problem-card:hover {
+      background: var(--bg-card-hover); transform: translateY(-4px);
+      border-color: rgba(246, 173, 85, 0.15);
+    }
+    .problem-card:hover::before { opacity: 1; }
+    .problem-icon { font-size: 32px; margin-bottom: 16px; }
+    .problem-card h3 {
+      font-size: 18px; font-weight: 700; margin-bottom: 12px; color: var(--amber-light);
+    }
+    .problem-card p { font-size: 15px; color: var(--text-secondary); line-height: 1.7; }
+
+    /* ===== 对比区 ===== */
+    .comparison-wrapper {
+      display: grid; grid-template-columns: 1fr auto 1fr; gap: 32px; align-items: start;
+    }
+    .comparison-card {
+      padding: 40px 32px; border-radius: 20px; position: relative;
+    }
+    .comparison-card.before {
+      background: linear-gradient(135deg, rgba(237, 100, 166, 0.06), rgba(237, 100, 166, 0.02));
+      border: 1px solid rgba(237, 100, 166, 0.15);
+    }
+    .comparison-card.after {
+      background: linear-gradient(135deg, rgba(56, 178, 172, 0.06), rgba(56, 178, 172, 0.02));
+      border: 1px solid rgba(56, 178, 172, 0.15);
+    }
+    .card-label {
+      display: inline-block; padding: 4px 12px; border-radius: 6px;
+      font-size: 12px; letter-spacing: 1px; margin-bottom: 20px;
+    }
+    .comparison-card.before .card-label { background: rgba(237, 100, 166, 0.15); color: var(--rose); }
+    .comparison-card.after .card-label { background: rgba(56, 178, 172, 0.15); color: var(--teal); }
+    .comparison-card h3 { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+    .comparison-card.before h3 { color: var(--rose); }
+    .comparison-card.after h3 { color: var(--teal-light); }
+    .comparison-list { list-style: none; }
+    .comparison-list li {
+      padding: 10px 0; font-size: 15px; color: var(--text-secondary);
+      display: flex; align-items: flex-start; gap: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .comparison-list li:last-child { border-bottom: none; }
+    .comparison-list li .icon { flex-shrink: 0; width: 20px; text-align: center; }
+    .comparison-arrow {
+      display: flex; align-items: center; justify-content: center; align-self: center;
+      font-size: 32px; color: var(--amber);
+      animation: arrowPulse 2s infinite;
+    }
+
+    /* ===== 机制三卡片 ===== */
+    .mechanism-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    }
+    .mechanism-card {
+      padding: 32px 24px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 16px;
+      text-align: center; transition: all 0.3s ease; position: relative;
+    }
+    .mechanism-card:hover {
+      transform: translateY(-6px); border-color: rgba(246, 173, 85, 0.2);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+    .mechanism-number {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg, var(--amber), var(--rose));
+      border-radius: 14px; font-size: 20px; font-weight: 900; color: var(--bg-deep);
+      margin-bottom: 20px;
+    }
+    .mechanism-card h3 {
+      font-size: 18px; font-weight: 700; margin-bottom: 12px; color: var(--amber-light);
+    }
+    .mechanism-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
+    /* ===== 双核架构区 ===== */
+    .dual-arch-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 32px;
+    }
+    .dual-arch-card {
+      padding: 40px 32px; border-radius: 20px; position: relative; overflow: hidden;
+    }
+    .dual-arch-card.kernel {
+      background: linear-gradient(135deg, rgba(246, 173, 85, 0.06), rgba(246, 173, 85, 0.01));
+      border: 1px solid rgba(246, 173, 85, 0.15);
+    }
+    .dual-arch-card.host {
+      background: linear-gradient(135deg, rgba(183, 148, 244, 0.06), rgba(183, 148, 244, 0.01));
+      border: 1px solid rgba(183, 148, 244, 0.15);
+    }
+    .dual-arch-card .arch-badge {
+      display: inline-block; padding: 4px 12px; border-radius: 6px;
+      font-size: 12px; letter-spacing: 1px; margin-bottom: 20px;
+    }
+    .dual-arch-card.kernel .arch-badge {
+      background: rgba(246, 173, 85, 0.15); color: var(--amber);
+    }
+    .dual-arch-card.host .arch-badge {
+      background: rgba(183, 148, 244, 0.15); color: var(--purple);
+    }
+    .dual-arch-card h3 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+    .dual-arch-card.kernel h3 { color: var(--amber-light); }
+    .dual-arch-card.host h3 { color: var(--purple); }
+    .dual-arch-card .arch-subtitle {
+      font-size: 14px; color: var(--text-muted); margin-bottom: 20px; font-style: italic;
+    }
+    .dual-arch-card .arch-features { list-style: none; }
+    .dual-arch-card .arch-features li {
+      padding: 8px 0; font-size: 14px; color: var(--text-secondary);
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .dual-arch-card .arch-features li .dot {
+      flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; margin-top: 8px;
+    }
+    .dual-arch-card.kernel .arch-features li .dot { background: var(--amber); }
+    .dual-arch-card.host .arch-features li .dot { background: var(--purple); }
+
+    /* ===== 感知层五级 ===== */
+    .perception-grid {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+    }
+    .perception-card {
+      padding: 24px 16px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 14px;
+      text-align: center; transition: all 0.3s ease;
+    }
+    .perception-card:hover { transform: translateY(-4px); border-color: rgba(56, 178, 172, 0.2); }
+    .perception-card .level {
+      display: inline-block; width: 36px; height: 36px; line-height: 36px;
+      border-radius: 10px; font-size: 14px; font-weight: 900;
+      background: rgba(56, 178, 172, 0.15); color: var(--teal);
+      margin-bottom: 12px;
+    }
+    .perception-card h4 { font-size: 13px; font-weight: 700; color: var(--teal-light); margin-bottom: 6px; }
+    .perception-card p { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+
+    /* ===== 隐私对比表 ===== */
+    .privacy-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+    }
+    .privacy-card {
+      padding: 32px; border-radius: 16px; text-align: center; transition: all 0.3s ease;
+    }
+    .privacy-card.allow {
+      background: linear-gradient(135deg, rgba(72, 187, 120, 0.06), transparent);
+      border: 1px solid rgba(72, 187, 120, 0.15);
+    }
+    .privacy-card.allow:hover { border-color: rgba(72, 187, 120, 0.3); transform: translateY(-4px); }
+    .privacy-card.deny {
+      background: linear-gradient(135deg, rgba(237, 100, 166, 0.06), transparent);
+      border: 1px solid rgba(237, 100, 166, 0.1);
+    }
+    .privacy-card h4 { font-size: 16px; font-weight: 700; margin-bottom: 20px; }
+    .privacy-card.allow h4 { color: var(--green); }
+    .privacy-card.deny h4 { color: var(--rose); }
+    .privacy-card ul { list-style: none; }
+    .privacy-card ul li {
+      padding: 8px 0; font-size: 13px; color: var(--text-secondary);
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .privacy-card ul li .check { color: var(--green); }
+    .privacy-card ul li .nope { color: var(--rose); }
+    .privacy-principle {
+      margin-top: 24px; padding: 16px 24px;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+      text-align: center;
+    }
+    .privacy-principle p {
+      font-size: 15px; color: var(--text-secondary);
+    }
+    .privacy-principle strong { color: var(--amber-light); }
+
+    /* ===== 价值卡片 ===== */
+    .value-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    }
+    .value-card {
+      padding: 32px 24px;
+      background: linear-gradient(135deg, var(--bg-card), var(--bg-card-hover));
+      border: 1px solid var(--border); border-radius: 16px; text-align: center;
+      transition: all 0.3s ease;
+    }
+    .value-card:hover { transform: translateY(-4px); border-color: rgba(246, 173, 85, 0.2); }
+    .value-icon { font-size: 40px; margin-bottom: 16px; }
+    .value-card h3 { font-size: 18px; font-weight: 700; color: var(--amber-light); margin-bottom: 12px; }
+    .value-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
+    /* ===== 用户画像 ===== */
+    .user-persona-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px;
+    }
+    .persona-card {
+      padding: 32px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 16px; transition: all 0.3s ease;
+    }
+    .persona-card:hover { border-color: rgba(56, 178, 172, 0.2); background: var(--bg-card-hover); }
+    .persona-emoji { font-size: 40px; margin-bottom: 16px; }
+    .persona-card h3 { font-size: 18px; font-weight: 700; color: var(--teal-light); margin-bottom: 8px; }
+    .persona-card .scenario {
+      font-size: 13px; color: var(--amber); margin-bottom: 12px;
+      padding: 4px 10px; background: rgba(246, 173, 85, 0.08);
+      border-radius: 6px; display: inline-block;
+    }
+    .persona-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.7; }
+
+    /* ===== 架构图 ===== */
+    .arch-diagram {
+      padding: 48px 32px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 20px;
+    }
+    .arch-layers { display: flex; flex-direction: column; gap: 14px; }
+    .arch-layer {
+      display: flex; align-items: center; gap: 20px;
+      padding: 18px 24px; border-radius: 12px; transition: all 0.3s ease;
+    }
+    .arch-layer:hover { transform: translateX(8px); }
+    .arch-layer.layer-1 { background: linear-gradient(90deg, rgba(246, 173, 85, 0.1), transparent); border-left: 3px solid var(--amber); }
+    .arch-layer.layer-2 { background: linear-gradient(90deg, rgba(56, 178, 172, 0.1), transparent); border-left: 3px solid var(--teal); }
+    .arch-layer.layer-3 { background: linear-gradient(90deg, rgba(237, 100, 166, 0.1), transparent); border-left: 3px solid var(--rose); }
+    .arch-layer.layer-4 { background: linear-gradient(90deg, rgba(183, 148, 244, 0.1), transparent); border-left: 3px solid var(--purple); }
+    .arch-layer.layer-5 { background: linear-gradient(90deg, rgba(226, 232, 240, 0.05), transparent); border-left: 3px solid var(--text-secondary); }
+    .arch-layer.layer-6 { background: linear-gradient(90deg, rgba(72, 187, 120, 0.1), transparent); border-left: 3px solid var(--green); }
+    .layer-num {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 32px; height: 32px; border-radius: 8px;
+      font-size: 14px; font-weight: 700; color: var(--bg-deep); flex-shrink: 0;
+    }
+    .layer-1 .layer-num { background: var(--amber); }
+    .layer-2 .layer-num { background: var(--teal); }
+    .layer-3 .layer-num { background: var(--rose); }
+    .layer-4 .layer-num { background: var(--purple); }
+    .layer-5 .layer-num { background: var(--text-secondary); }
+    .layer-6 .layer-num { background: var(--green); }
+    .layer-content { flex: 1; }
+    .layer-content h4 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .layer-content p { font-size: 13px; color: var(--text-muted); }
+    .layer-tag {
+      padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; flex-shrink: 0;
+    }
+    .layer-1 .layer-tag { background: rgba(246, 173, 85, 0.15); color: var(--amber); }
+    .layer-2 .layer-tag { background: rgba(56, 178, 172, 0.15); color: var(--teal); }
+    .layer-3 .layer-tag { background: rgba(237, 100, 166, 0.15); color: var(--rose); }
+    .layer-4 .layer-tag { background: rgba(183, 148, 244, 0.15); color: var(--purple); }
+    .layer-5 .layer-tag { background: rgba(226, 232, 240, 0.08); color: var(--text-secondary); }
+    .layer-6 .layer-tag { background: rgba(72, 187, 120, 0.15); color: var(--green); }
+
+    /* ===== 技术栈 ===== */
+    .tech-stack-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+    }
+    .tech-chip {
+      padding: 16px 20px; background: var(--bg-card);
+      border: 1px solid var(--border); border-radius: 12px; text-align: center;
+      transition: all 0.3s ease;
+    }
+    .tech-chip:hover { border-color: rgba(246, 173, 85, 0.2); transform: translateY(-2px); }
+    .tech-chip .tech-name { font-size: 14px; font-weight: 700; color: var(--amber-light); margin-bottom: 4px; }
+    .tech-chip .tech-desc { font-size: 12px; color: var(--text-muted); }
+
+    /* ===== Footer ===== */
+    .footer {
+      padding: 60px 0 40px; text-align: center;
+      border-top: 1px solid var(--border); margin-top: 40px;
+    }
+    .footer-logo {
+      font-size: 24px; font-weight: 900;
+      background: linear-gradient(135deg, var(--amber-light), var(--amber));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text; margin-bottom: 12px;
+    }
+    .footer p { font-size: 14px; color: var(--text-muted); }
+    .footer .tagline {
+      font-size: 16px; color: var(--text-secondary); margin-top: 16px; font-style: italic;
+    }
+
+    /* ===== 动画 ===== */
+    @keyframes fadeSlideDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    @keyframes arrowPulse {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(8px); }
+    }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 768px) {
+      .problem-grid, .comparison-wrapper, .mechanism-grid,
+      .user-persona-grid, .value-grid, .dual-arch-grid,
+      .privacy-grid { grid-template-columns: 1fr; }
+      .perception-grid { grid-template-columns: repeat(2, 1fr); }
+      .comparison-arrow { transform: rotate(90deg); }
+      .tech-stack-grid { grid-template-columns: repeat(2, 1fr); }
+      .hero { padding: 60px 0 40px; }
+    }
+
+    /* ===== 滚动揭示 ===== */
+    .reveal {
+      opacity: 0; transform: translateY(30px);
+      transition: opacity 0.8s ease, transform 0.8s ease;
+    }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+  </style>
+</head>
+<body>
+
+  <!-- 背景粒子网络 -->
+  <div class="bg-network"><canvas id="networkCanvas"></canvas></div>
+  <!-- 顶部光晕 -->
+  <div class="hero-glow"></div>
+
+  <!-- ===================== Hero ===================== -->
+  <section class="hero">
+    <div class="container">
+      <div class="track-badge">学习工作赛道</div>
+      <h1 class="hero-title">Memora · 桌面精灵</h1>
+      <p class="hero-subtitle">越用越进化的 AI 记忆伴侣</p>
+      <p class="hero-desc">纯逻辑记忆内核 + 桌面精灵宿主 = 每轮闭环，永不污染</p>
+      <div class="hero-philosophy">"应无所住，而生其心" —— 启动时无所挂碍，开口时记忆自然浮现</div>
+    </div>
+  </section>
+
+  <!-- ===================== 问题 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label reveal">创意介绍</div>
+      <h2 class="section-title reveal">在 AI 上下文爆炸的时代，<br>我们选择让每一轮都重新开始</h2>
+      <p class="section-desc reveal">市面上的 AI 工具都在追逐多 Agent、多对话窗口、多线操作——但我们认为真正的答案恰恰相反：单窗口、单 Agent、每轮闭环。</p>
+
+      <div class="problem-grid">
+        <div class="problem-card reveal">
+          <div class="problem-icon">💥</div>
+          <h3>上下文污染</h3>
+          <p>使用 Trae IDE 等 AI 工具时，单窗口问答越积越多。即使有压缩，早期对话的噪声仍会持续污染后续推理——模型开始"记混"或"答偏"。</p>
+        </div>
+        <div class="problem-card reveal">
+          <div class="problem-icon">🔀</div>
+          <h3>多窗口碎片化</h3>
+          <p>为避免污染被迫开多个窗口，但记忆被割裂在不同窗口中。上下文连贯性丢失，切换窗口反而增加了认知负担。</p>
+        </div>
+        <div class="problem-card reveal">
+          <div class="problem-icon">🧠</div>
+          <h3>Agent 失忆症</h3>
+          <p>LLM 本身无状态——每次推理都是"失忆"的。传统方案靠全量加载历史对话模拟记忆，浪费宝贵的上下文窗口，且随时间越来越不精准。</p>
+        </div>
+        <div class="problem-card reveal">
+          <div class="problem-icon">🎯</div>
+          <h3>为什么不做单一窗口？</h3>
+          <p>如果每轮问答都是独立闭环，每轮都动态组装上下文——那上下文就永远是<strong style="color: var(--amber-light);">精简、相关、高效</strong>的，永远不会膨胀污染。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 方案对比 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label reveal">方案对比</div>
+      <h2 class="section-title reveal">从"全量加载"到"按需召回"</h2>
+
+      <div class="comparison-wrapper reveal">
+        <div class="comparison-card before">
+          <div class="card-label">传统方案</div>
+          <h3>上下文膨胀模型</h3>
+          <ul class="comparison-list">
+            <li><span class="icon">❌</span> 所有历史对话塞入上下文</li>
+            <li><span class="icon">❌</span> Token 消耗随时间线性增长</li>
+            <li><span class="icon">❌</span> 早期噪声持续干扰推理</li>
+            <li><span class="icon">❌</span> 压缩 = 信息丢失</li>
+            <li><span class="icon">❌</span> 多窗口 = 记忆碎片化</li>
+          </ul>
+        </div>
+        <div class="comparison-arrow">→</div>
+        <div class="comparison-card after">
+          <div class="card-label">Memora 方案</div>
+          <h3>闭环动态组装模型</h3>
+          <ul class="comparison-list">
+            <li><span class="icon">✅</span> 每轮问答独立闭环</li>
+            <li><span class="icon">✅</span> 上下文固定预算，不膨胀</li>
+            <li><span class="icon">✅</span> 按语义相关度召回记忆</li>
+            <li><span class="icon">✅</span> 自然遗忘低价值记忆</li>
+            <li><span class="icon">✅</span> 单窗口 + 跨会话连续体验</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 双核架构 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label amber reveal">产品全景</div>
+      <h2 class="section-title reveal">内核 + 宿主：缺一不可的双核架构</h2>
+      <p class="section-desc reveal">纯记忆引擎需要宿主才可落地，桌面精灵需要记忆引擎才能真正"懂你"。<br>Memora 提供记忆内核，Sprite 提供存在感——二者合一完成从"工具"到"伴侣"的跃迁。</p>
+
+      <div class="dual-arch-grid reveal">
+        <div class="dual-arch-card kernel">
+          <div class="arch-badge">记忆内核</div>
+          <h3>Memora</h3>
+          <p class="arch-subtitle">Pure logic library · Zero native deps · Any host</p>
+          <ul class="arch-features">
+            <li><span class="dot"></span>万物皆记忆：角色、规则、技能、对话全部统一为 Memory</li>
+            <li><span class="dot"></span>每轮闭环：启动时无所挂碍，开口时记忆按需浮现</li>
+            <li><span class="dot"></span>自然遗忘：衰减机制自动剪枝低价值记忆，拥抱不完美</li>
+            <li><span class="dot"></span>零 native 依赖：纯 TypeScript 逻辑库，可嵌入任何项目</li>
+            <li><span class="dot"></span>领域无关：换一套 .memora/ 目录就能切到完全不同的领域</li>
+            <li><span class="dot"></span>439 测试全量通过，Vitest + MSW Mock LLM</li>
+          </ul>
+        </div>
+        <div class="dual-arch-card host">
+          <div class="arch-badge">桌面宿主</div>
+          <h3>Sprite</h3>
+          <p class="arch-subtitle">Context-aware · Not content-aware · Privacy-first</p>
+          <ul class="arch-features">
+            <li><span class="dot"></span>热键召唤：规划中——Ctrl+Shift+M 即召唤即对话</li>
+            <li><span class="dot"></span>定时巡检：周期性检查用户洞察变化，主动分享</li>
+            <li><span class="dot"></span>文件感知：监听项目文件变化，知道你正在编辑什么</li>
+            <li><span class="dot"></span>窗口上下文：规划中——获取活跃窗口标题，不读取内容</li>
+            <li><span class="dot"></span>降级优先：感知能力不可用时静默降级，不打断使用</li>
+            <li><span class="dot"></span>CLI → Electron：从命令行到桌面存在感</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Memora 内核三大机制 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label amber reveal">内核机制</div>
+      <h2 class="section-title reveal">Memora 三机制驱动的专注模式</h2>
+
+      <div class="mechanism-grid">
+        <div class="mechanism-card reveal">
+          <div class="mechanism-number">1</div>
+          <h3>按需召回 recall()</h3>
+          <p>启动时只加载角色、规则、技能三类"硬记忆"。用户开口时，自动双通道（语义 + 关键词）召回相关记忆注入当前上下文。</p>
+        </div>
+        <div class="mechanism-card reveal">
+          <div class="mechanism-number">2</div>
+          <h3>自然遗忘 decayScores()</h3>
+          <p>超过 7 天未被访问的记忆按周递减权重，被命中的记忆访问时间重置。不用的记忆逐渐淡出，常用的始终在线——像人脑一样，不是记住一切，而是记住重要的。</p>
+        </div>
+        <div class="mechanism-card reveal">
+          <div class="mechanism-number">3</div>
+          <h3>上下文截断 truncateMessages()</h3>
+          <p>当工作记忆接近 Token 预算时，保留 system prompt 和最近对话，裁剪较早的消息并替换为摘要。保证上下文窗口永远精简高效，不被历史噪声污染。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 六层 System Prompt ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label reveal">记忆架构</div>
+      <h2 class="section-title reveal">六层 System Prompt 动态组装</h2>
+      <p class="section-desc reveal">每一轮问答，Memora 都会从零组装上下文——不多不少，刚好需要。</p>
+
+      <div class="arch-diagram reveal">
+        <div class="arch-layers">
+          <div class="arch-layer layer-1">
+            <div class="layer-num">1</div>
+            <div class="layer-content">
+              <h4>角色人格 Persona</h4>
+              <p>Agent 的"性格"，可通过关键词自动匹配或手动切换</p>
+            </div>
+            <div class="layer-tag">每次注入</div>
+          </div>
+          <div class="arch-layer layer-2">
+            <div class="layer-num">2</div>
+            <div class="layer-content">
+              <h4>创作规则 Rule</h4>
+              <p>编码规范、安全策略等硬性约束</p>
+            </div>
+            <div class="layer-tag">每次注入</div>
+          </div>
+          <div class="arch-layer layer-3">
+            <div class="layer-num">3</div>
+            <div class="layer-content">
+              <h4>技能知识 Skill</h4>
+              <p>领域知识、能力技能，启动加载 + 关键词匹配触发</p>
+            </div>
+            <div class="layer-tag">按需注入</div>
+          </div>
+          <div class="arch-layer layer-4">
+            <div class="layer-num">4</div>
+            <div class="layer-content">
+              <h4>相关记忆 Recall</h4>
+              <p>语义搜索 + 关键词双通道召回，按相关度排序去重</p>
+            </div>
+            <div class="layer-tag">增量召回</div>
+          </div>
+          <div class="arch-layer layer-5">
+            <div class="layer-num">5</div>
+            <div class="layer-content">
+              <h4>最近对话 Recent</h4>
+              <p>最近 3 轮 user + assistant 消息，保持对话连贯</p>
+            </div>
+            <div class="layer-tag">固定窗口</div>
+          </div>
+          <div class="arch-layer layer-6">
+            <div class="layer-num">6</div>
+            <div class="layer-content">
+              <h4>工具描述 Tools</h4>
+              <p>Agent 可调用的工具定义（如有）</p>
+            </div>
+            <div class="layer-tag">按需注入</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Sprite 感知层 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label purple reveal">精灵感知</div>
+      <h2 class="section-title reveal">Sprite：五层上下文感知</h2>
+      <p class="section-desc reveal">精灵知道你在做什么，不知道你在打什么。<br>从被动召唤到主动陪伴，五层感知能力逐级递进。</p>
+
+      <div class="perception-grid reveal">
+        <div class="perception-card" style="opacity: 0.45;">
+          <div class="level">L1</div>
+          <h4>热键召唤</h4>
+          <p>Ctrl+Shift+M<br>规划中</p>
+        </div>
+        <div class="perception-card">
+          <div class="level">L2</div>
+          <h4>定时巡检</h4>
+          <p>周期性检查<br>✅ 已实现</p>
+        </div>
+        <div class="perception-card">
+          <div class="level">L3</div>
+          <h4>文件感知</h4>
+          <p>监听项目文件变化<br>✅ 已实现</p>
+        </div>
+        <div class="perception-card" style="opacity: 0.45;">
+          <div class="level">L4</div>
+          <h4>窗口上下文</h4>
+          <p>获取窗口标题<br>规划中</p>
+        </div>
+        <div class="perception-card" style="opacity: 0.45;">
+          <div class="level">L5</div>
+          <h4>日程感知</h4>
+          <p>基于时间主动<br>规划中</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 隐私设计 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label green reveal">隐私设计</div>
+      <h2 class="section-title reveal">上下文感知 ≠ 内容感知</h2>
+      <p class="section-desc reveal">在提供智能辅助的同时，严守隐私底线。以下是你永远不需要担心的——</p>
+
+      <div class="privacy-grid reveal">
+        <div class="privacy-card allow">
+          <h4>✅ 可以感知</h4>
+          <ul>
+            <li><span class="check">✓</span> 活跃窗口的标题</li>
+            <li><span class="check">✓</span> 活跃窗口的进程名</li>
+            <li><span class="check">✓</span> 文件是否被修改</li>
+            <li><span class="check">✓</span> 用户是否有交互</li>
+            <li><span class="check">✓</span> 当前时间和日程</li>
+          </ul>
+        </div>
+        <div class="privacy-card deny">
+          <h4>❌ 永远不碰</h4>
+          <ul>
+            <li><span class="nope">✗</span> 全局键盘监听（keylogger）</li>
+            <li><span class="nope">✗</span> 剪贴板内容读取</li>
+            <li><span class="nope">✗</span> 屏幕截图 / OCR</li>
+            <li><span class="nope">✗</span> 网络流量监听</li>
+            <li><span class="nope">✗</span> 任意输入框内容读取</li>
+          </ul>
+        </div>
+      </div>
+      <div class="privacy-principle reveal">
+        <p>核心原则：<strong>感知上下文，不感知内容</strong> — 纯本地运行，数据不出本机</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 越用越进化 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label amber reveal">进化机制</div>
+      <h2 class="section-title reveal">越使用，越懂你</h2>
+      <p class="section-desc reveal">不是配置出来的智能，是使用出来的智能。每一次对话都让精灵更理解你。</p>
+
+      <div class="mechanism-grid reveal">
+        <div class="mechanism-card">
+          <div class="mechanism-number">📝</div>
+          <h3>洞察提取</h3>
+          <p>每轮对话闭环后，Agent 自动提炼关键洞察（insight），沉淀为长期记忆。不需要你主动总结。</p>
+        </div>
+        <div class="mechanism-card">
+          <div class="mechanism-number">👤</div>
+          <h3>用户画像</h3>
+          <p>持续积累你的身份、偏好、专长、习惯——从对话中自动学习，而不是让你填表单配置。</p>
+        </div>
+        <div class="mechanism-card">
+          <div class="mechanism-number">🏗️</div>
+          <h3>作品投影</h3>
+          <p>Agent 读取文件时生成摘要（work-projection），在不读取隐私内容的前提下了解你的产出物。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 目标用户 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label reveal">目标用户及痛点</div>
+      <h2 class="section-title reveal">谁需要 Memora · 桌面精灵？</h2>
+
+      <div class="user-persona-grid">
+        <div class="persona-card reveal">
+          <div class="persona-emoji">👨‍💻</div>
+          <h3>程序员 / 开发者</h3>
+          <div class="scenario">场景：长时间使用 AI 编程助手</div>
+          <p>在 Trae IDE 中连续编码数小时，对话累积导致 AI 开始"答非所问"。Memora 让每轮对话独立闭环，AI 始终基于最相关的项目记忆回答。Sprite 在后台感知当前项目上下文。</p>
+        </div>
+        <div class="persona-card reveal">
+          <div class="persona-emoji">✍️</div>
+          <h3>内容创作者</h3>
+          <div class="scenario">场景：长篇小说 / 剧本创作</div>
+          <p>创作长篇作品时需要 AI 记住角色设定、剧情线索，但不想每次都手动提醒。Memora 自动召回相关创作记忆，保持角色一致性，拒绝上下文噪声。</p>
+        </div>
+        <div class="persona-card reveal">
+          <div class="persona-emoji">🔬</div>
+          <h3>研究人员</h3>
+          <div class="scenario">场景：跨天的深度研究对话</div>
+          <p>研究课题跨越多天多轮——传统对话窗口要么丢失上下文，要么被无关信息污染。Memora 按语义召回相关研究记忆，自然遗忘不相关的噪声。</p>
+        </div>
+        <div class="persona-card reveal">
+          <div class="persona-emoji">🎓</div>
+          <h3>学生 / 学习者</h3>
+          <div class="scenario">场景：持续学习某一领域知识</div>
+          <p>希望 AI 助教能记住自己的学习进度和薄弱点，但又不想每次重新解释。Memora 的用户画像功能自动跟踪学习状态，越用越精准。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 价值与意义 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label reveal">价值与意义</div>
+      <h2 class="section-title reveal">为什么 Memora · 桌面精灵重要？</h2>
+
+      <div class="value-grid">
+        <div class="value-card reveal">
+          <div class="value-icon">⚡</div>
+          <h3>效率革命</h3>
+          <p>Token 消耗固定预算，不随对话累积增长。用户无需手动管理上下文，专注思考而非"喂养"AI。每轮对话都是最优上下文，减少无效重试。</p>
+        </div>
+        <div class="value-card reveal">
+          <div class="value-icon">🏗️</div>
+          <h3>架构范式</h3>
+          <p>提出"每轮闭环 + 动态组装"的 Agent 记忆范式，可被任何 AI 应用复用。零 native 依赖的纯逻辑库，任何宿主项目都能接入——内核不绑定任何形态。</p>
+        </div>
+        <div class="value-card reveal">
+          <div class="value-icon">🔒</div>
+          <h3>隐私范式</h3>
+          <p>在 AI 桌面助手领域率先践行"上下文感知不内容感知"——精灵知道你在做什么，不知道你在打什么。纯本地运行，为行业提供隐私友好的技术参考。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== 技术栈 ===================== -->
+  <section class="section">
+    <div class="container">
+      <div class="section-label reveal">技术选型</div>
+      <h2 class="section-title reveal">精简而强大的技术栈</h2>
+
+      <div class="tech-stack-grid reveal">
+        <div class="tech-chip">
+          <div class="tech-name">Node.js 22</div>
+          <div class="tech-desc">LTS 运行时</div>
+        </div>
+        <div class="tech-chip">
+          <div class="tech-name">TypeScript 5</div>
+          <div class="tech-desc">Strict 模式</div>
+        </div>
+        <div class="tech-chip">
+          <div class="tech-name">ESM</div>
+          <div class="tech-desc">原生模块</div>
+        </div>
+        <div class="tech-chip">
+          <div class="tech-name">Vitest</div>
+          <div class="tech-desc">439 测试全通过</div>
+        </div>
+        <div class="tech-chip">
+          <div class="tech-name">SQLite</div>
+          <div class="tech-desc">统一记忆索引</div>
+        </div>
+        <div class="tech-chip">
+          <div class="tech-name">Zod</div>
+          <div class="tech-desc">运行时校验</div>
+        </div>
+        <div class="tech-chip">
+          <div class="tech-name">MSW</div>
+          <div class="tech-desc">Mock LLM 测试</div>
+        </div>
+        <div class="tech-chip">
+          <div class="tech-name">零 Native</div>
+          <div class="tech-desc">纯逻辑库内核</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Footer ===================== -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-logo">Memora · 桌面精灵</div>
+      <p>通用 Agent 记忆架构 · 纯逻辑库内核 · 桌面精灵宿主 · 本地优先 · 领域无关</p>
+      <p class="tagline">"应无所住，而生其心" —— 万物皆记忆，越用越进化</p>
+    </div>
+  </footer>
+
+  <!-- ===================== 粒子网络脚本 ===================== -->
+  <script>
+    // 神经网络背景粒子效果
+    const canvas = document.getElementById('networkCanvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [];
+    let animationId;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    class Particle {
+      constructor() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.vx = (Math.random() - 0.5) * 0.3;
+        this.vy = (Math.random() - 0.5) * 0.3;
+        this.radius = Math.random() * 1.5 + 0.5;
+        this.opacity = Math.random() * 0.4 + 0.1;
+      }
+      update() {
+        this.x += this.vx; this.y += this.vy;
+        if (this.x < 0 || this.x > canvas.width) this.vx *= -1;
+        if (this.y < 0 || this.y > canvas.height) this.vy *= -1;
+      }
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(246, 173, 85, ${this.opacity})`;
+        ctx.fill();
+      }
+    }
+
+    function initParticles() {
+      particles = [];
+      const count = Math.min(60, Math.floor((canvas.width * canvas.height) / 15000));
+      for (let i = 0; i < count; i++) particles.push(new Particle());
+    }
+
+    function drawLines() {
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 150) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(246, 173, 85, ${0.06 * (1 - dist / 150)})`;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    function animate() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => { p.update(); p.draw(); });
+      drawLines();
+      animationId = requestAnimationFrame(animate);
+    }
+
+    resize(); initParticles(); animate();
+    window.addEventListener('resize', () => { resize(); initParticles(); });
+
+    // 滚动动画
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) entry.target.classList.add('visible');
+      });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>
