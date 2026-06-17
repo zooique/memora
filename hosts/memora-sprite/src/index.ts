@@ -247,7 +247,7 @@ function handleMemories(args: string, sprite: Sprite): void {
       console.log(`  ${m.contentPreview}`);
       console.log('');
     }
-    console.log('用法：/memories show <id> | /memories delete <id> | /memories search <关键词>');
+    console.log('用法：/memories add <source> <name> <内容> | /memories show <id> | /memories delete <id> | /memories search <关键词>');
     return;
   }
 
@@ -294,8 +294,26 @@ function handleMemories(args: string, sprite: Sprite): void {
     return;
   }
 
+  if (sub === 'add') {
+    const source = parts[1];
+    const name = parts[2];
+    const content = parts.slice(3).join(' ');
+    if (!source || !name || !content) {
+      console.log('用法：/memories add <source> <name> <内容>');
+      console.log('示例：/memories add insight "React 经验" 用户有 3 年 React 经验');
+      return;
+    }
+    try {
+      const id = sprite.upsertMemory(source, name, content);
+      console.log(`已添加记忆：${id}`);
+    } catch (e) {
+      console.log(`添加失败：${(e as Error).message}`);
+    }
+    return;
+  }
+
   console.log(`未知子命令：${sub}`);
-  console.log('用法：/memories [list [source]] | show <id> | delete <id> | search <关键词>');
+  console.log('用法：/memories [list [source]] | add <source> <name> <内容> | show <id> | delete <id> | search <关键词>');
 }
 
 // ─── CLI 直接运行 ──────────────────────────────────────

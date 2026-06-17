@@ -31,7 +31,7 @@ Memora 需要支持宿主项目接入：
    - **Provider**：`setProvider()` / `setBackgroundProvider()`
    - **调试**：`getBuildCtx()`
    - **只读访问器**：`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory`
-   - **Manager 访问器**：`persona` / `tools` / `skills` / `config` / `insight` / `memory`
+   - **Manager 访问器**：`persona` / `tools` / `skills` / `config` / `insight` / `memory` / `storage`
 3. ~~CLI 的 `repl.ts` 通过 `Agent` 类调用~~（CLI 已移出至宿主项目）
 4. 库模式用户直接实例化 `Agent`，无需了解内部实现
 

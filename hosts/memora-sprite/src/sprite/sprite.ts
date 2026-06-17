@@ -280,6 +280,24 @@ export class Sprite {
     return true;
   }
 
+  /** 添加或更新记忆（自动生成 id、时间戳、默认 score） */
+  upsertMemory(source: string, name: string, content: string, score = 0.5): string {
+    const storage = this.agent.storage;
+    if (!storage) throw new Error('存储不可用');
+    const now = new Date().toISOString();
+    const id = `${source}:${name}`;
+    storage.upsert({
+      id,
+      source,
+      name,
+      content,
+      score,
+      createdAt: now,
+      accessedAt: now,
+    });
+    return id;
+  }
+
   /** 格式化角色列表为可读文本 */
   formatPersonas(): string {
     const personas = this.listPersonas();
