@@ -14,7 +14,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { SkillManager } from '@/skill/skillManager.js';
-import { configError } from '@/utils/errors.js';
+import { configError, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 
 // ─── 类型 ────────────────────────────────────────────────
@@ -123,15 +123,16 @@ export class ConfigManager {
     try {
       await this.writeConfigFile(memory);
     } catch (err) {
+      const e = toError(err);
       throw configError(
         '配置文件写入失败',
-        `source=${source} name=${suggestion.name} 错误：${(err as Error).message}`,
+        `source=${source} name=${suggestion.name} 错误：${e.message}`,
         [
           '检查 configDir 路径是否存在且可写',
           '确认磁盘空间充足',
           '确认进程对配置目录有写权限',
         ],
-        err as Error,
+        e,
       );
     }
 

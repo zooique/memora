@@ -7,7 +7,7 @@
 import { LlmProvider } from './provider.js';
 import type { Message, ChatOptions } from './provider.js';
 import type { LlmChunk, ToolCall } from './types.js';
-import { llmError, networkError, configError } from '@/utils/errors.js';
+import { llmError, networkError, configError, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 
 export interface OpenAICompatibleConfig {
@@ -69,15 +69,16 @@ export class OpenAICompatibleProvider extends LlmProvider {
         body: JSON.stringify(body),
       });
     } catch (err) {
+      const e = toError(err);
       throw networkError(
         'LLM 服务连接失败',
-        `无法访问 ${this.config.baseUrl}：${(err as Error).message}`,
+        `无法访问 ${this.config.baseUrl}：${e.message}`,
         [
           '检查网络连接（是否能访问 baseUrl）',
           '确认 baseUrl 配置正确',
           '如使用 VPN/代理，检查代理设置',
         ],
-        err as Error,
+        e,
       );
     }
 
@@ -99,7 +100,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
       try {
         await response.body?.cancel();
       } catch (err) {
-        logger.debug({ err: (err as Error).message }, 'response.body.cancel 失败');
+        logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
       }
       throw err;
     }
@@ -115,7 +116,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
     try {
       await response.body?.cancel();
     } catch (err) {
-      logger.debug({ err: (err as Error).message }, 'response.body.cancel 失败');
+      logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
     }
     const status = response.status;
 
@@ -252,7 +253,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
             }
             yield chunk;
           } catch (err) {
-            logger.debug({ line: line.slice(0, 80), err: (err as Error).message }, 'SSE 行解析失败');
+            logger.debug({ line: line.slice(0, 80), err: toError(err).message }, 'SSE 行解析失败');
           }
         }
       }

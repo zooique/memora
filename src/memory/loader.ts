@@ -9,6 +9,7 @@
 import type { FileStore } from './store.js';
 import type { IMemoryStorage } from './storageInterface.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
+import { toError } from '@/utils/errors.js';
 
 /**
  * 启动时全量扫描的 source 列表
@@ -80,7 +81,7 @@ export class MemoryLoader {
           result.skipped++;
           result.errors.push({
             file: `${source}/${name}`,
-            error: (err as Error).message,
+            error: toError(err).message,
           });
         }
       }

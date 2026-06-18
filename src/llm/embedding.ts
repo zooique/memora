@@ -14,7 +14,7 @@
  * 详见 ADR-003 · LLM 适配层使用 OpenAI Chat Completions 兼容协议
  */
 import { logger } from '@/logging/logger.js';
-import { networkError, configError } from '@/utils/errors.js';
+import { networkError, configError, toError } from '@/utils/errors.js';
 
 /**
  * Embedding 配置（与 OpenAICompatibleConfig 共用 baseUrl/apiKey）
@@ -106,11 +106,12 @@ export class EmbeddingProvider {
         }),
       });
     } catch (err) {
+      const e = toError(err);
       throw networkError(
         'Embedding 服务连接失败',
-        `无法访问 ${url}：${(err as Error).message}`,
+        `无法访问 ${url}：${e.message}`,
         ['检查网络连接', '确认 baseUrl 配置正确'],
-        err as Error,
+        e,
       );
     }
 

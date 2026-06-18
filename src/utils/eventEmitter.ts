@@ -9,6 +9,7 @@
  *   agent.off('memoryAdded', handler);
  */
 import { logger } from '@/logging/logger.js';
+import { toError } from './errors.js';
 
 /** Agent 事件映射表（事件名 → 事件载荷类型） */
 export interface AgentEventMap {
@@ -92,7 +93,7 @@ export class TypedEventEmitter<EventMap extends object> {
       try {
         handler(payload);
       } catch (err) {
-        logger.warn({ event, err: (err as Error).message }, '宿主事件处理器异常');
+        logger.warn({ event, err: toError(err).message }, '宿主事件处理器异常');
       }
     }
   }

@@ -18,6 +18,7 @@ import type { WindowStateManager } from './windowState.js';
 import type { WindowManager } from './windowManager.js';
 import type { TrayManager } from './trayIcon.js';
 import type { Agent } from 'memora';
+import { toError } from 'memora';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
@@ -304,7 +305,7 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
   } catch (error) {
     if (!fullWindow.isDestroyed()) {
       fullWindow.webContents.send('sprite-error', {
-        text: `对话出错：${(error as Error).message}`,
+        text: `对话出错：${toError(error).message}`,
       });
       fullWindow.webContents.send('sprite-stream-end', { messageId });
     }

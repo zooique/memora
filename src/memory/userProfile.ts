@@ -18,6 +18,7 @@ import type { IMemoryStorage } from './storageInterface.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
+import { toError } from '@/utils/errors.js';
 
 /** 用户画像子分类 */
 export type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' | 'history';
@@ -284,7 +285,7 @@ export class UserProfile {
       }
     } catch (err) {
       // 冲突解决失败不阻塞写入
-      logger.debug({ err: (err as Error).message }, '用户画像冲突解决失败');
+      logger.debug({ err: toError(err).message }, '用户画像冲突解决失败');
     }
   }
 

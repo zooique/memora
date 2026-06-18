@@ -29,7 +29,8 @@ interface AppError {
 // ─── 导入 UI 管理器 ─────────────────────────────────────
 
 import { UIManager } from './ui.js';
-import type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from './ui.js';
+import type { MemoryListItem, SpriteConfigForm } from './ui.js';
+import { toError } from 'memora';
 
 // ─── 状态 ───────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const { memory } = await window.electronAPI.showMemory(memoryName);
       if (memory) {
-        uiManager.showMemoryDetail(memory as MemoryDetail);
+        uiManager.showMemoryDetail(memory);
       }
     } catch (error) {
       // 记忆可能已删除，记录日志辅助排查
@@ -335,7 +336,7 @@ function setupMemoryPanel(): void {
     }
     try {
       const { hits } = await window.electronAPI.searchMemories(query);
-      const items: MemoryListItem[] = (hits as MemorySearchHit[]).map(h => ({
+      const items: MemoryListItem[] = hits.map(h => ({
         id: h.name, // 搜索结果没有 id 字段，用 name 作为标识
         name: h.name,
         source: h.source,
@@ -359,7 +360,7 @@ function setupMemoryPanel(): void {
     try {
       const { memory } = await window.electronAPI.showMemory(id);
       if (memory) {
-        uiManager.showMemoryDetail(memory as MemoryDetail);
+        uiManager.showMemoryDetail(memory);
       }
     } catch (error) {
       console.error('[onMemoryClick] 查看记忆详情失败:', error);
@@ -406,12 +407,12 @@ async function loadMemoryList(): Promise<void> {
     const filterEl = document.getElementById('memory-filter-source') as HTMLSelectElement | null;
     const source = filterEl?.value || undefined;
     const { memories } = await window.electronAPI.listMemories(source ? { source } : {});
-    uiManager.renderMemoryList(memories as MemoryListItem[]);
+    uiManager.renderMemoryList(memories);
 
     // 更新仪表盘记忆计数
     const countEl = document.getElementById('memory-count');
     if (countEl) {
-      countEl.textContent = String((memories as unknown[]).length);
+      countEl.textContent = String(memories.length);
     }
   } catch (error) {
     console.error('[loadMemoryList] 加载记忆列表失败:', error);
@@ -432,7 +433,7 @@ function setupPersonaSelector(): void {
       console.error('[onPersonaSwitch] 切换角色失败:', error);
       uiManager.appendMessage({
         role: 'system',
-        content: `⚠️ 切换角色失败：${(error as Error).message}`,
+        content: `⚠️ 切换角色失败：${toError(error).message}`,
       });
     }
   });
@@ -477,7 +478,7 @@ function setupSettingsPanel(): void {
     } catch (error) {
       uiManager.appendMessage({
         role: 'system',
-        content: `⚠️ 保存精灵配置失败：${(error as Error).message}`,
+        content: `⚠️ 保存精灵配置失败：${toError(error).message}`,
       });
     }
   });
@@ -532,7 +533,7 @@ function setupSettingsPanel(): void {
     } catch (error) {
       uiManager.appendMessage({
         role: 'system',
-        content: `⚠️ 保存 LLM 配置失败：${(error as Error).message}`,
+        content: `⚠️ 保存 LLM 配置失败：${toError(error).message}`,
       });
     }
   });
@@ -565,7 +566,7 @@ function setupSettingsPanel(): void {
     } catch (error) {
       uiManager.showLlmTestResult({
         success: false,
-        error: (error as Error).message,
+        error: toError(error).message,
       });
     }
   });
@@ -574,8 +575,7 @@ function setupSettingsPanel(): void {
 /** 加载配置到表单 */
 async function loadConfig(): Promise<void> {
   try {
-    const { config } = await window.electronAPI.getConfig();
-    const cfg = config as Record<string, unknown>;
+    const { config: cfg } = await window.electronAPI.getConfig();
 
     const formConfig: SpriteConfigForm = {
       silentMode: Boolean(cfg.silentMode),
@@ -583,7 +583,7 @@ async function loadConfig(): Promise<void> {
       proactiveCooldownMs: Number(cfg.proactiveCooldownMs) || 300_000,
       triggerIntervalMs: Number(cfg.triggerIntervalMs) || 3_600_000,
       fileWatcherEnabled: Boolean(cfg.fileWatcherEnabled),
-      fileWatcherPaths: Array.isArray(cfg.fileWatcherPaths) ? (cfg.fileWatcherPaths as string[]) : ['.'],
+      fileWatcherPaths: Array.isArray(cfg.fileWatcherPaths) ? cfg.fileWatcherPaths : ['.'],
       fileWatcherDebounceMs: Number(cfg.fileWatcherDebounceMs) || 1000,
       defaultPersona: String(cfg.defaultPersona ?? ''),
     };

@@ -6,6 +6,7 @@ import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
+import { toError } from '@/utils/errors.js';
 
 let server: ReturnType<typeof setupServer>;
 
@@ -237,7 +238,7 @@ describe('OpenAICompatibleProvider · 错误处理', () => {
       expect.unreachable('应该抛出错误');
     } catch (err) {
       expect(err).toBeInstanceOf(Error);
-      expect((err as Error).message).toContain('服务端错误');
+      expect(toError(err).message).toContain('服务端错误');
       // detail 应包含响应体内容（errorText.slice(0, 200)）
       const memoraErr = err as { detail?: string };
       expect(memoraErr.detail).toContain(errorBody);

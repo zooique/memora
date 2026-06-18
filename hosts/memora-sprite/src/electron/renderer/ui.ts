@@ -15,6 +15,12 @@
 
 // ─── 类型定义 ─────────────────────────────────────────────
 
+// 从 preload.ts 导入共享类型（避免类型重复定义）
+import type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from '../preload.js';
+
+// 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
+export type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm };
+
 /** 毫秒/分钟转换常量（用于配置表单的分钟 ↔ 毫秒换算） */
 const MS_PER_MINUTE = 60_000;
 
@@ -34,33 +40,13 @@ export interface UIState {
 }
 
 /** 记忆列表项（与 sprite.listMemories 返回值对齐） */
-export interface MemoryListItem {
-  id: string;
-  name: string;
-  source: string;
-  score: number;
-  contentPreview: string;
-}
+// MemoryListItem 已从 preload.ts 导入并重新导出
 
 /** 记忆搜索结果（与 sprite.searchMemories 返回值对齐，含相似度） */
-export interface MemorySearchHit {
-  name: string;
-  source: string;
-  score: number;
-  contentPreview: string;
-  similarity?: number;
-}
+// MemorySearchHit 已从 preload.ts 导入并重新导出
 
 /** 记忆详情（与 sprite.showMemory 返回值对齐） */
-export interface MemoryDetail {
-  id: string;
-  name: string;
-  source: string;
-  score: number;
-  content: string;
-  createdAt: string;
-  accessedAt: string;
-}
+// MemoryDetail 已从 preload.ts 导入并重新导出
 
 /** 角色列表项（与 sprite.listPersonas 返回值对齐） */
 export interface PersonaItem {
@@ -70,16 +56,7 @@ export interface PersonaItem {
 }
 
 /** 精灵配置（与 SpriteConfig 对齐，渲染进程用） */
-export interface SpriteConfigForm {
-  silentMode: boolean;
-  proactiveThreshold: number;
-  proactiveCooldownMs: number;
-  triggerIntervalMs: number;
-  fileWatcherEnabled: boolean;
-  fileWatcherPaths: string[];
-  fileWatcherDebounceMs: number;
-  defaultPersona: string;
-}
+// SpriteConfigForm 已从 preload.ts 导入并重新导出
 
 /** LLM 配置表单数据 */
 export interface LlmConfigForm {

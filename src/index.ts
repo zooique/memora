@@ -77,5 +77,5 @@ export { segmentText, tokenizeKeywords } from './utils/segmenter.js';
 export type { SkillEntry, SkillMatch } from './skill/types.js';
 
 // ─── 错误类型导出 ────────────────────────────────────────
-export { MemoraError, ToolErrorCode, isRetryableErrorCode } from './utils/errors.js';
+export { MemoraError, ToolErrorCode, isRetryableErrorCode, toError } from './utils/errors.js';
 export type { ToolErrorCodeValue } from './utils/errors.js';

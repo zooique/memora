@@ -38,6 +38,7 @@ import { MemoryLoader } from './loader.js';
 import type { LoadResult } from './loader.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
+import { toError } from '@/utils/errors.js';
 import { SOURCE_LABELS, type Memory } from './types.js';
 
 /**
@@ -399,7 +400,7 @@ export class ProjectManager {
     try {
       await unlink(filePath);
     } catch (err) {
-      logger.debug({ path: filePath, err: (err as Error).message }, 'safeUnlink 忽略删除失败');
+      logger.debug({ path: filePath, err: toError(err).message }, 'safeUnlink 忽略删除失败');
     }
   }
 

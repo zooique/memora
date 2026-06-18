@@ -15,7 +15,7 @@ import type { AgentChunk, UIMessages } from './types.js';
 import type { ITracer } from './tracer.js';
 import { LOOP_CONSTANTS } from './constants.js';
 import { NOOP_TRACER, TRACE_SPANS } from './tracer.js';
-import { MemoraError, isRetryableErrorCode, type ToolErrorCodeValue } from '@/utils/errors.js';
+import { MemoraError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 
 export interface AgentLoopOptions {
@@ -356,16 +356,17 @@ export class AgentLoop {
         }
         break; // 成功，退出重试循环
       } catch (err) {
-        lastError = err as Error;
+        const e = toError(err);
+        lastError = e;
         if (streamStarted) {
           // 流式已开始输出，不能重试（用户已看到部分结果），向上抛出
-          llmSpan.recordException(err as Error);
+          llmSpan.recordException(e);
           llmSpan.end();
           throw err;
         }
         if (attempt >= LOOP_CONSTANTS.MAX_LLM_RETRIES) {
           // 重试次数耗尽
-          llmSpan.recordException(err as Error);
+          llmSpan.recordException(e);
           llmSpan.end();
           throw err;
         }
@@ -428,7 +429,8 @@ export class AgentLoop {
       try {
         result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
       } catch (err) {
-        toolSpan.recordException(err as Error);
+        const e = toError(err);
+        toolSpan.recordException(e);
         if (err instanceof MemoraError) {
           const code = err.errorCode ?? 'UNKNOWN';
           result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
@@ -437,7 +439,7 @@ export class AgentLoop {
             '工具执行失败，错误已回传给 LLM',
           );
         } else {
-          result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${(err as Error).message}`;
+          result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${e.message}`;
           logger.error({ tool: tc.function.name, err }, '工具执行异常');
         }
       }

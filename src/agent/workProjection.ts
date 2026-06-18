@@ -27,6 +27,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
+import { toError } from '@/utils/errors.js';
 import { parseLlmJson } from '@/utils/json.js';
 
 /** 作品投影的持久化结构 */
@@ -260,7 +261,7 @@ export class WorkProjectionManager {
         const meta = JSON.parse(firstLine) as { hash?: string };
         return meta.hash ?? null;
       } catch (err) {
-        logger.warn({ id: memory.id, err: (err as Error).message }, '作品投影 hash 解析失败');
+        logger.warn({ id: memory.id, err: toError(err).message }, '作品投影 hash 解析失败');
       }
     }
     // 旧格式兼容：HTML 注释
@@ -353,7 +354,7 @@ export class WorkProjectionManager {
           summary,
         };
       } catch (err) {
-        logger.debug({ err: (err as Error).message }, '作品投影 JSON 解析失败，降级到旧格式');
+        logger.debug({ err: toError(err).message }, '作品投影 JSON 解析失败，降级到旧格式');
       }
     }
 

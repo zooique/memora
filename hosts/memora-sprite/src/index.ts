@@ -22,7 +22,7 @@ import { exec } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
-import { Agent, createLlmProvider, loadConfig, VectorStore, EmbeddingProvider } from 'memora';
+import { Agent, createLlmProvider, loadConfig, VectorStore, EmbeddingProvider, toError } from 'memora';
 import type { UIMessages, Config } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
@@ -489,7 +489,7 @@ async function handleMemories(args: string, sprite: Sprite): Promise<void> {
       const id = sprite.upsertMemory(source, name, content);
       console.log(`已添加记忆：${id}`);
     } catch (e) {
-      console.log(`添加失败：${(e as Error).message}`);
+      console.log(`添加失败：${toError(e).message}`);
     }
     return;
   }

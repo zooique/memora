@@ -20,6 +20,15 @@
 import type { ILogger } from './loggerInterface.js';
 import { statSync, truncateSync } from 'node:fs';
 
+/**
+ * 从 unknown 值提取错误消息（避免 `err as Error` 类型断言）
+ * 内联实现以避免与 utils/errors.ts 形成循环依赖
+ */
+function errMsg(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 /** 日志级别（从环境变量读取，默认 info） */
 const level = process.env['MEMORA_LOG_LEVEL'] ?? 'info';
 
@@ -157,7 +166,7 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
           }
         } catch (err) {
           // 文件不存在或无法 stat，正常——首次写入
-          if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] stat 日志文件失败：${(err as Error).message}\n`);
+          if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] stat 日志文件失败：${errMsg(err)}\n`);
         }
 
         streams.push({
@@ -165,7 +174,7 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
           stream: createWriteStream(logFilePath, { flags: 'a' }),
         });
       } catch (err) {
-        process.stderr.write(`[memora] 日志文件创建失败：${(err as Error).message}\n`);
+        process.stderr.write(`[memora] 日志文件创建失败：${errMsg(err)}\n`);
       }
     }
 
@@ -176,7 +185,7 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
     return pino({ level }, pino.multistream(streams)) as unknown as ILogger;
   } catch (err) {
     // pino 未安装，回退到 console logger
-    if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] pino 加载失败：${(err as Error).message}\n`);
+    if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] pino 加载失败：${errMsg(err)}\n`);
     return null;
   }
 }

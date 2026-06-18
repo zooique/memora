@@ -14,7 +14,7 @@
  */
 import type { Agent, AgentEventMap } from 'memora';
 import type { VectorStore } from 'memora';
-import { logger } from 'memora';
+import { logger, toError } from 'memora';
 import { resolve } from 'node:path';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
@@ -160,7 +160,7 @@ export class Sprite {
       try {
         handler(payload);
       } catch (err) {
-        logger.warn({ event, err: (err as Error).message }, '宿主事件处理器异常');
+        logger.warn({ event, err: toError(err).message }, '宿主事件处理器异常');
       }
     }
   }

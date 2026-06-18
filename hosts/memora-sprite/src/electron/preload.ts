@@ -12,6 +12,47 @@ import type { IpcRendererEvent } from 'electron';
 
 // ─── 类型定义（与主进程 IPC 通道对应） ─────────────────────
 
+/** 记忆列表项（与 sprite.listMemories 返回值对齐） */
+export interface MemoryListItem {
+  id: string;
+  name: string;
+  source: string;
+  score: number;
+  contentPreview: string;
+}
+
+/** 记忆搜索结果（与 sprite.searchMemories 返回值对齐，含相似度） */
+export interface MemorySearchHit {
+  name: string;
+  source: string;
+  score: number;
+  contentPreview: string;
+  similarity?: number;
+}
+
+/** 记忆详情（与 sprite.showMemory 返回值对齐） */
+export interface MemoryDetail {
+  id: string;
+  name: string;
+  source: string;
+  score: number;
+  content: string;
+  createdAt: string;
+  accessedAt: string;
+}
+
+/** 精灵配置（与 SpriteConfig 对齐，渲染进程用） */
+export interface SpriteConfigForm {
+  silentMode: boolean;
+  proactiveThreshold: number;
+  proactiveCooldownMs: number;
+  triggerIntervalMs: number;
+  fileWatcherEnabled: boolean;
+  fileWatcherPaths: string[];
+  fileWatcherDebounceMs: number;
+  defaultPersona: string;
+}
+
 export interface ElectronAPI {
   // 对话
   sendUserInput: (text: string) => void;
@@ -74,14 +115,14 @@ export interface ElectronAPI {
   removeAgentReadyListener: () => void;
 
   // 记忆
-  listMemories: (query?: { source?: string }) => Promise<{ memories: unknown[] }>;
-  searchMemories: (query: string) => Promise<{ hits: unknown[] }>;
-  showMemory: (id: string) => Promise<{ memory: unknown }>;
+  listMemories: (query?: { source?: string }) => Promise<{ memories: MemoryListItem[] }>;
+  searchMemories: (query: string) => Promise<{ hits: MemorySearchHit[] }>;
+  showMemory: (id: string) => Promise<{ memory: MemoryDetail | null }>;
   deleteMemory: (id: string) => Promise<{ deleted: boolean }>;
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
 
   // 配置
-  getConfig: () => Promise<{ config: unknown }>;
+  getConfig: () => Promise<{ config: SpriteConfigForm }>;
   updateConfig: (key: string, value: unknown) => Promise<{ updated: boolean }>;
 
   // 角色

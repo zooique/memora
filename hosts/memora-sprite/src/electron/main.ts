@@ -36,7 +36,7 @@ import {
   PROVIDER_PRESETS,
 } from '../index.js';
 import { loadSpriteConfig } from '../sprite/spriteConfig.js';
-import { loadConfig, createProviderFromConfig } from 'memora';
+import { loadConfig, createProviderFromConfig, toError } from 'memora';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SpriteEventMap } from '../sprite/sprite.js';
 import type { Agent } from 'memora';
@@ -280,7 +280,7 @@ function registerMinimalIpcHandlers(): void {
 
         return { success: true, error: null };
       } catch (error) {
-        return { success: false, error: (error as Error).message };
+        return { success: false, error: toError(error).message };
       }
     },
   );
@@ -387,7 +387,7 @@ function registerMinimalIpcHandlers(): void {
           code: ErrorCode.INITIALIZATION_FAILED,
           context: '保存 LLM 配置并重新初始化 Agent 失败',
         });
-        return { success: false, error: (error as Error).message };
+        return { success: false, error: toError(error).message };
       }
     },
   );

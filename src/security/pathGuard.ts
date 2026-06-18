@@ -10,7 +10,7 @@ import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { logger } from '@/logging/logger.js';
-import { securityError } from '@/utils/errors.js';
+import { securityError, toError } from '@/utils/errors.js';
 
 const BLOCKED_PATTERNS = [
   // 系统凭证
@@ -283,7 +283,7 @@ export class SecurityGuard {
           path: targetPath,
           tool,
           decision: 'declined',
-          reason: `回调异常：${(err as Error).message}`,
+          reason: `回调异常：${toError(err).message}`,
           timestamp: new Date().toISOString(),
         });
         return false;

@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promi
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/pathGuard.js';
-import { toolError, configError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
+import { toolError, configError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from './workProjection.js';
@@ -160,11 +160,12 @@ export class ToolExecutor {
     try {
       args = JSON.parse(argsJson) as Record<string, unknown>;
     } catch (err) {
+      const e = toError(err);
       throw toolError(
         '工具参数解析失败',
-        `args JSON 无效：${(err as Error).message}`,
+        `args JSON 无效：${e.message}`,
         ['检查 LLM 输出的工具调用格式', '确认 args 是合法 JSON'],
-        err as Error,
+        e,
         ToolErrorCode.ARGUMENT_ERROR,
       );
     }
@@ -224,11 +225,12 @@ export class ToolExecutor {
           } catch (err) {
             // 统一包装为 MemoraError，保持错误处理一致性
             if (err instanceof MemoraError) throw err;
+            const e = toError(err);
             throw toolError(
               '自定义工具执行失败',
-              `${name}: ${(err as Error).message}`,
+              `${name}: ${e.message}`,
               ['检查工具参数是否正确', '检查工具 handler 实现是否有 bug'],
-              err as Error,
+              e,
               ToolErrorCode.CUSTOM_TOOL_FAILED,
             );
           }
@@ -276,11 +278,12 @@ export class ToolExecutor {
       }
       return content;
     } catch (err) {
+      const e = toError(err);
       throw toolError(
         '文件读取失败',
-        `${absolutePath}：${(err as Error).message}`,
+        `${absolutePath}：${e.message}`,
         ['确认文件存在', '确认当前进程有读取权限'],
-        err as Error,
+        e,
         ToolErrorCode.FILE_NOT_FOUND,
       );
     }
@@ -421,11 +424,12 @@ export class ToolExecutor {
         (beforeContent !== null ? ` [旧文件: ${oldLines} 行]` : ' [新文件]')
       );
     } catch (err) {
+      const e = toError(err);
       throw toolError(
         '文件写入失败',
-        `${absolutePath}：${(err as Error).message}`,
+        `${absolutePath}：${e.message}`,
         ['确认父目录可写', '确认磁盘空间充足'],
-        err as Error,
+        e,
         ToolErrorCode.PERMISSION_DENIED,
       );
     }
@@ -526,11 +530,12 @@ export class ToolExecutor {
       }
     } catch (err) {
       if ((err as { code?: string }).code === 'ENOENT') {
+        const e = toError(err);
         throw toolError(
           'list_dir 路径不存在',
           `${absolutePath}：目录不存在`,
           ['确认路径存在', '使用 list_dir(".") 列出项目根'],
-          err as Error,
+          e,
           ToolErrorCode.DIR_NOT_FOUND,
         );
       }
@@ -590,7 +595,7 @@ export class ToolExecutor {
         }
       } catch (err) {
         // 跳过无法访问的条目（符号链接断开、权限不足等）
-        out.push(`❓ ${childRel}（无法访问：${(err as Error).message}）`);
+        out.push(`❓ ${childRel}（无法访问：${toError(err).message}）`);
       }
     }
   }
@@ -782,14 +787,15 @@ export class ToolExecutor {
     try {
       this.security.assertPathAllowed(absolutePath, tool, source);
     } catch (err) {
+      const e = toError(err);
       throw toolError(
         '路径不在白名单内',
-        (err as Error).message,
+        e.message,
         [
           '确认路径在白名单内（项目目录/数据目录/显式 allowedPaths）',
           '查看审计日志：~/.memora/logs/memora.log',
         ],
-        err as Error,
+        e,
         ToolErrorCode.PATH_NOT_ALLOWED,
       );
     }

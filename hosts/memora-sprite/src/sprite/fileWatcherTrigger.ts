@@ -10,7 +10,7 @@
  *   - 不监听剪贴板
  */
 import type { SpriteTrigger, TriggerCallback } from './triggers.js';
-import { logger } from 'memora';
+import { logger, toError } from 'memora';
 import { watch } from 'node:fs';
 
 /** FileWatcherTrigger 配置 */
@@ -63,7 +63,7 @@ export class FileWatcherTrigger implements SpriteTrigger {
         this.watchers.push(watcher);
         logger.info({ path: watchPath }, '文件监听已启动');
       } catch (err) {
-        logger.warn({ path: watchPath, err: (err as Error).message }, '文件监听启动失败');
+        logger.warn({ path: watchPath, err: toError(err).message }, '文件监听启动失败');
       }
     }
   }
