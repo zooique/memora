@@ -99,6 +99,31 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
   });
 
+  // ─── 兄弟目录绕过防护（P1 安全漏洞修复验证）──
+
+  it('应该拒绝项目目录的兄弟目录（前缀匹配绕过防护）', () => {
+    // 场景：projectPath = /tmp/memora-test-xxx
+    // 攻击路径：/tmp/memora-test-xxx-evil/secret.txt
+    // 旧的 startsWith(projectPath) 会误判为允许，新的 startsWith(projectPath + sep) 正确拒绝
+    const evilPath = `${projectPath}-evil`;
+    const filePath = join(evilPath, 'secret.txt');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
+  });
+
+  it('应该拒绝数据目录的兄弟目录（前缀匹配绕过防护）', () => {
+    const evilPath = `${dataDir}-evil`;
+    const filePath = join(evilPath, 'secret.txt');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
+  });
+
+  it('应该拒绝额外允许路径的兄弟目录（前缀匹配绕过防护）', () => {
+    const extraPath = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    const guard2 = new SecurityGuard(projectPath, dataDir, [extraPath]);
+    const evilPath = `${extraPath}-evil`;
+    const filePath = join(evilPath, 'secret.txt');
+    expect(() => guard2.assertPathAllowed(filePath)).toThrow(/越界/);
+  });
+
   it('应该支持用户显式声明的额外允许路径', () => {
     const extraPath = mkdtempSync(join(tmpdir(), 'memora-extra-'));
     const guard2 = new SecurityGuard(projectPath, dataDir, [extraPath]);

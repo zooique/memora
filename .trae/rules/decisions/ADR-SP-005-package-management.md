@@ -21,10 +21,16 @@ description: "memora-sprite 宿主：包管理与依赖引用方式"
 {
   "dependencies": {
     "memora": "file:../..",
-    "better-sqlite3": "^11.0.0"
+    "better-sqlite3": "^12.10.0",
+    "electron": "^40.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0"
   }
 }
 ```
+
+> **版本演进**：初始决策 better-sqlite3 为 `^11.0.0`，2026-06 阶段二升级至 `^12.10.0` 以适配 Node.js 24 LTS 与 Electron 40。`electron-rebuild` 包名已迁移为 `@electron/rebuild`（scoped package）。
 
 ## 理由
 

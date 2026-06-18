@@ -97,27 +97,26 @@ export interface LlmProvider {
 
 ### 多 Provider 管理 API
 
-| 方法                              | 说明                           |
-| --------------------------------- | ------------------------------ |
-| `agent.listProviders()`           | 列出所有已注册 Provider 别名   |
-| `agent.getActiveProviderName()`   | 获取当前激活的 Provider 名     |
-| `agent.switchProvider(name)`      | 切换 Provider（即时生效）      |
-| `agent.addProvider(name, config)` | 运行时动态添加（不写配置文件） |
-| `agent.currentProvider`           | 只读访问当前 Provider 实例     |
+> **年轮修订（2026-06-18）**：以下多 Provider 映射表管理 API（listProviders/switchProvider/addProvider 等）在 God Object 拆分后已移出内核。当前内核仅提供 `setProvider(provider)` 和 `setBackgroundProvider(provider)` 两个方法，多 Provider 映射表管理由宿主项目负责。
+
+| 方法                              | 说明                           | 状态 |
+| --------------------------------- | ------------------------------ | ---- |
+| `agent.setProvider(provider)`     | 运行时切换前台 Provider        | ✅ 已实现 |
+| `agent.setBackgroundProvider(provider)` | 运行时切换后台 Provider  | ✅ 已实现 |
+| `agent.listProviders()`           | 列出所有已注册 Provider 别名   | ❌ 已移出至宿主 |
+| `agent.getActiveProviderName()`   | 获取当前激活的 Provider 名     | ❌ 已移出至宿主 |
+| `agent.switchProvider(name)`      | 切换 Provider（即时生效）      | ❌ 已移出至宿主 |
+| `agent.addProvider(name, config)` | 运行时动态添加（不写配置文件） | ❌ 已移出至宿主 |
+| `agent.currentProvider`           | 只读访问当前 Provider 实例     | ❌ 已移出至宿主 |
 
 ### CLI 命令
 
+> CLI 已移出至宿主项目（详见 [ADR-005](./ADR-005-cli-first.md)）。以下命令由宿主项目（如 `hosts/memora-sprite/`）实现。
+
 ```bash
-memora config-llm list          # 列出 Provider
-memora config-llm add <name>    # 交互式添加（写入配置文件）
-memora config-llm use <name>    # 切换激活 Provider（写入配置文件）
-```
-
-### REPL 命令
-
-```
-/provider          # 列出 Provider
-/provider <name>   # 切换 Provider
+memora config-llm list          # 列出 Provider（宿主实现）
+memora config-llm add <name>    # 交互式添加（写入配置文件，宿主实现）
+memora config-llm use <name>    # 切换激活 Provider（写入配置文件，宿主实现）
 ```
 
 ## 何时回顾

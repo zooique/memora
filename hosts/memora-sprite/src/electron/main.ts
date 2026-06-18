@@ -30,8 +30,9 @@ import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { startSprite, reinitAgent, saveLlmConfig, isLlmConfigured, PROVIDER_PRESETS } from '../index.js';
 import { loadSpriteConfig } from '../sprite/spriteConfig.js';
-import { loadConfig } from 'memora';
+import { loadConfig, createProviderFromConfig } from 'memora';
 import type { Sprite } from '../sprite/sprite.js';
+import type { SpriteEventMap } from '../sprite/sprite.js';
 import type { Agent } from 'memora';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
@@ -61,6 +62,28 @@ let currentAbortController: AbortController | null = null;
 
 /** Agent 是否已就绪 */
 let agentReady = false;
+
+/** 精灵事件取消订阅函数集合（Agent 重新初始化前调用，避免重复注册） */
+let spriteEventUnsubscribers: Array<() => void> = [];
+
+/** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
+let unreadCount = 0;
+
+/** 增加未读计数并推送到浮动窗口 */
+function incrementUnreadCount(): void {
+  unreadCount++;
+  windowManager?.getFloatWindow()?.setUnreadCount(unreadCount);
+}
+
+/** 清零未读计数并推送到浮动窗口 + 完整窗口 */
+function resetUnreadCount(): void {
+  unreadCount = 0;
+  windowManager?.getFloatWindow()?.setUnreadCount(0);
+  const fullWindow = windowManager?.getFullWindow();
+  if (fullWindow && !fullWindow.isDestroyed()) {
+    fullWindow.webContents.send('float-unread', 0);
+  }
+}
 
 // ─── 应用启动 ───────────────────────────────────────────────
 
@@ -97,14 +120,20 @@ async function initializeApp(): Promise<void> {
     });
 
     // 3. 创建窗口管理器并创建所有窗口
-    windowManager = new WindowManager(windowStateManager);
+    windowManager = new WindowManager(windowStateManager, {
+      onExpandToFull: resetUnreadCount,
+    });
     await windowManager.createWindows();
 
     // 4. 创建托盘
     const iconPath = await fs.access(TRAY_ICON_PATH).then(() => TRAY_ICON_PATH).catch(() => '');
     trayManager = new TrayManager(iconPath, {
       onShowFloat: () => windowStateManager.transition('float'),
-      onShowFull: () => windowStateManager.transition('full'),
+      onShowFull: () => {
+        windowStateManager.transition('full');
+        // 从托盘展开完整窗口时清零未读计数
+        resetUnreadCount();
+      },
       onHideToTray: () => windowStateManager.transition('tray'),
       onQuit: () => {
         windowManager.closeAll();
@@ -119,8 +148,10 @@ async function initializeApp(): Promise<void> {
       interaction.setMainWindow(fullWindow);
     }
 
-    // 6. 窗口创建完成，进入配置的窗口状态
-    await windowStateManager.transition(spriteConfig.windowState);
+    // 6. 窗口创建完成，显示初始状态对应的窗口
+    // 使用 showInitial() 而非 transition()——transition 在 state 已等于 target 时早返回，
+    // 会导致首次启动窗口不显示（构造函数已设置 defaultState）
+    windowStateManager.showInitial();
   } catch (error) {
     // 窗口创建失败是致命错误
     errorHandler.handle(error, {
@@ -153,6 +184,9 @@ async function initializeApp(): Promise<void> {
       trayManager,
       getAbortController: () => currentAbortController,
       setAbortController: (ctrl: AbortController | null) => { currentAbortController = ctrl; },
+      getUnreadCount: () => unreadCount,
+      incrementUnreadCount,
+      resetUnreadCount,
     };
     registerIpcHandlers(ipcContext);
 
@@ -197,6 +231,39 @@ function registerMinimalIpcHandlers(): void {
   // Agent 状态查询
   ipcMain.handle('agent-status', async () => {
     return { ready: agentReady, error: agentReady ? null : '配置不完整，请在设置面板中配置 LLM 提供商和 API Key' };
+  });
+
+  // LLM 连接测试（保存前验证配置是否可用）
+  // 创建临时 Provider，发送最小测试消息，消费首个 chunk 即判定连接成功
+  ipcMain.handle('llm-config-test', async (
+    _event,
+    llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
+  ) => {
+    try {
+      // 1. 创建临时 Provider（不保存配置，不初始化 Agent）
+      const provider = createProviderFromConfig('test', {
+        provider: llmConfig.provider,
+        model: llmConfig.model,
+        baseUrl: llmConfig.baseUrl || undefined,
+        apiKey: llmConfig.apiKey,
+      });
+
+      // 2. 发送最小测试消息，消费首个 chunk 验证连接
+      const stream = provider.chat([
+        { role: 'user', content: 'ping' },
+      ], { stream: true });
+
+      // AsyncIterable 需通过 [Symbol.asyncIterator]() 获取迭代器
+      const iterator = stream[Symbol.asyncIterator]();
+      const firstChunk = await iterator.next();
+      if (firstChunk.done) {
+        return { success: false, error: 'LLM 返回空响应，请检查模型名称是否正确' };
+      }
+
+      return { success: true, error: null };
+    } catch (error) {
+      return { success: false, error: (error as Error).message };
+    }
   });
 
   // LLM 配置读取（从 ~/.memora/config.json）
@@ -252,6 +319,7 @@ function registerMinimalIpcHandlers(): void {
       // 4. 移除最小化 IPC 中的 LLM 配置处理器（避免重复注册）
       ipcMain.removeHandler('llm-config-get');
       ipcMain.removeHandler('llm-config-save');
+      ipcMain.removeHandler('llm-config-test');
       ipcMain.removeHandler('agent-status');
       ipcMain.removeHandler('config-get');
 
@@ -265,6 +333,9 @@ function registerMinimalIpcHandlers(): void {
         trayManager,
         getAbortController: () => currentAbortController,
         setAbortController: (ctrl: AbortController | null) => { currentAbortController = ctrl; },
+        getUnreadCount: () => unreadCount,
+        incrementUnreadCount,
+        resetUnreadCount,
       };
       registerIpcHandlers(ipcContext);
 
@@ -297,16 +368,23 @@ function registerMinimalIpcHandlers(): void {
  * - 托盘脉冲（始终执行）
  * - 系统通知（非静默模式）
  * - 窗口内提示（非静默 + 窗口可见）
+ *
+ * 取消订阅机制：Agent 重新初始化前调用 unsubscribeSpriteEvents()，
+ * 避免旧 sprite 实例的监听器残留导致同一事件触发多次。
  */
 function setupSpriteEventListeners(): void {
   if (!sprite) return;
 
-  sprite.on('proactivePrompt', ({ prompt, silent }) => {
-    // 始终执行：托盘脉冲
-    trayManager?.startPulse();
+  // 先取消旧订阅（防止 reinitAgent 时重复注册）
+  unsubscribeSpriteEvents();
 
-    // 非静默模式：系统通知
-    if (!silent) {
+  // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示
+  const onProactivePrompt: (e: SpriteEventMap['proactivePrompt']) => void = ({ prompt, silent }) => {
+    // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
+    trayManager?.setState('active');
+
+    // 非静默模式：系统通知（检查系统是否支持，避免不支持时崩溃）
+    if (!silent && Notification.isSupported()) {
       const notification = new Notification({
         title: 'Memora 精灵',
         body: prompt,
@@ -327,10 +405,12 @@ function setupSpriteEventListeners(): void {
         silent,
       });
     }
-  });
+  };
+  sprite.on('proactivePrompt', onProactivePrompt);
+  spriteEventUnsubscribers.push(() => sprite?.off('proactivePrompt', onProactivePrompt));
 
   // 记忆新增 → 仪表盘计数 +1
-  sprite.on('memoryNoticed', () => {
+  const onMemoryNoticed: (e: SpriteEventMap['memoryNoticed']) => void = () => {
     const fullWindow = windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
       fullWindow.webContents.send('sprite-event', {
@@ -339,10 +419,12 @@ function setupSpriteEventListeners(): void {
         silent: true,
       });
     }
-  });
+  };
+  sprite.on('memoryNoticed', onMemoryNoticed);
+  spriteEventUnsubscribers.push(() => sprite?.off('memoryNoticed', onMemoryNoticed));
 
   // 洞察提取 → 仪表盘计数 +1
-  sprite.on('insightGained', () => {
+  const onInsightGained: (e: SpriteEventMap['insightGained']) => void = () => {
     const fullWindow = windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
       fullWindow.webContents.send('sprite-event', {
@@ -351,10 +433,12 @@ function setupSpriteEventListeners(): void {
         silent: true,
       });
     }
-  });
+  };
+  sprite.on('insightGained', onInsightGained);
+  spriteEventUnsubscribers.push(() => sprite?.off('insightGained', onInsightGained));
 
   // 角色切换 → 顶栏角色标签更新
-  sprite.on('personaChanged', ({ from, to }) => {
+  const onPersonaChanged: (e: SpriteEventMap['personaChanged']) => void = ({ from, to }) => {
     const fullWindow = windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
       fullWindow.webContents.send('sprite-event', {
@@ -363,8 +447,23 @@ function setupSpriteEventListeners(): void {
         silent: true,
       });
     }
-    trayManager?.stopPulse();
-  });
+    // 角色切换不影响托盘状态（托盘状态由流式输出/静默模式/主动提示驱动）
+  };
+  sprite.on('personaChanged', onPersonaChanged);
+  spriteEventUnsubscribers.push(() => sprite?.off('personaChanged', onPersonaChanged));
+}
+
+/** 取消所有精灵事件订阅（Agent 重新初始化前调用） */
+function unsubscribeSpriteEvents(): void {
+  for (const unsubscribe of spriteEventUnsubscribers) {
+    try {
+      unsubscribe();
+    } catch (error) {
+      // 旧 sprite 实例可能已关闭，忽略取消订阅错误
+      console.error('[unsubscribeSpriteEvents] 取消订阅失败:', error);
+    }
+  }
+  spriteEventUnsubscribers = [];
 }
 
 // ─── 应用生命周期 ─────────────────────────────────────────
@@ -386,6 +485,9 @@ app.on('before-quit', async (e) => {
   // 防止重复清理
   if (isQuitting) return;
   isQuitting = true;
+
+  // 标记窗口管理器正在退出，允许窗口真正关闭（而非 preventDefault 转为浮动）
+  windowManager?.setQuitting(true);
 
   // 阻止立即退出，先清理资源
   e.preventDefault();

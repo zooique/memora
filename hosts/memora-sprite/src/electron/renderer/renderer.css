@@ -1,10 +1,17 @@
 /**
  * Memora 精灵 — 渲染进程样式
  * 主题：Catppuccin Mocha
- * 字体：霞鹜文楷 / system-ui fallback
+ * 字体：霞鹜文楷（精灵消息）/ system-ui fallback
+ *
+ * 设计契约：docs/memora-sprite-preview.html
+ * - 用户气泡：绿色（--green）
+ * - 精灵气泡：surface 背景 + 霞鹜文楷字体 + 头像
+ * - 主动提示 banner：蓝粉渐变顶部滑入
+ * - 召回记忆：dashed 顶边 + 浅色文字 + 可点击
  */
 
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&display=swap');
+/* 霞鹜文楷：精灵消息字体（方案 §7.2 要求，HTML 预览 §6.6 对齐） */
+@import url('https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont/style.css');
 
 /* ─── 变量 ─────────────────────────────────────────────────── */
 :root {
@@ -22,6 +29,8 @@
   --red:       #f38ba8;
   --radius:    8px;
   --shadow:    0 4px 16px rgba(0, 0, 0, 0.4);
+  /* 精灵消息字体变量：便于统一引用与未来主题切换 */
+  --font-sprite: 'LXGW WenKai', 'Noto Serif SC', system-ui, sans-serif;
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */
@@ -33,7 +42,7 @@
 
 html, body {
   height: 100%;
-  font-family: 'Noto Serif SC', system-ui, sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
@@ -181,8 +190,19 @@ html, body {
   transition: transform 0.3s ease;
 }
 
+/**
+ * 仪表盘数字脉冲动画
+ * 对齐 docs/memora-sprite-preview.html @keyframes numberPulse：
+ * scale 放大 + 颜色从 accent(蓝) 变为 pink(粉)
+ */
 .dash-value.pulse {
-  transform: scale(1.3);
+  animation: numberPulse 0.3s ease;
+}
+
+@keyframes numberPulse {
+  0% { transform: scale(1); color: var(--accent); }
+  50% { transform: scale(1.3); color: var(--pink); }
+  100% { transform: scale(1); color: var(--accent); }
 }
 
 /* ─── 侧边栏导航 ────────────────────────────────────────────── */
@@ -196,7 +216,7 @@ html, body {
 
 .nav-btn {
   padding: 8px 10px;
-  border: none;
+  border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
   color: var(--subtext);
@@ -204,7 +224,7 @@ html, body {
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .nav-btn:hover {
@@ -212,9 +232,11 @@ html, body {
   color: var(--text);
 }
 
+/* 对齐 HTML 预览 .nav-btn.active：背景 + 边框 + 文字颜色 */
 .nav-btn.active {
-  background: var(--accent);
-  color: var(--bg);
+  background: var(--surface1);
+  border-color: var(--accent);
+  color: var(--accent);
   font-weight: 600;
 }
 
@@ -241,6 +263,70 @@ html, body {
 /* ─── 对话面板 ─────────────────────────────────────────────── */
 #panel-chat {
   height: 100%;
+  position: relative; /* 主动提示 banner 绝对定位的锚点 */
+}
+
+/**
+ * 主动提示 banner：顶部滑入，蓝粉渐变背景
+ * 对齐 docs/memora-sprite-preview.html §6.6 .proactive-banner
+ * 由 ui.ts showProactiveBanner() 控制 .hidden 类切换
+ */
+#proactive-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--pink) 100%);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#proactive-banner:not(.hidden) {
+  animation: bannerSlideDown 0.3s ease-out;
+}
+
+@keyframes bannerSlideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+#proactive-banner .banner-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+#proactive-banner .banner-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--bg);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#proactive-banner .banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#proactive-banner .banner-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: var(--bg);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#proactive-banner .banner-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 #messages {
@@ -252,11 +338,14 @@ html, body {
   gap: 8px;
 }
 
+/**
+ * 消息容器：flex 布局以容纳头像 + 气泡
+ * 对齐 docs/memora-sprite-preview.html §6.2
+ */
 .message {
+  display: flex;
+  gap: 10px;
   max-width: 80%;
-  padding: 8px 12px;
-  border-radius: var(--radius);
-  line-height: 1.5;
   animation: slideIn 0.15s ease-out;
 }
 
@@ -265,20 +354,18 @@ html, body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* 用户消息：右对齐，头像在右 */
 .message.user {
   align-self: flex-end;
-  background: var(--accent);
-  color: var(--bg);
-  border-bottom-right-radius: 2px;
+  flex-direction: row-reverse;
 }
 
+/* 精灵消息：左对齐，头像在左 */
 .message.assistant {
   align-self: flex-start;
-  background: var(--surface0);
-  color: var(--text);
-  border-bottom-left-radius: 2px;
 }
 
+/* 系统消息：居中，无头像 */
 .message.system {
   align-self: center;
   background: var(--surface1);
@@ -286,6 +373,52 @@ html, body {
   font-size: 12px;
   text-align: center;
   max-width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+
+/**
+ * 消息头像：32px 圆形
+ * 精灵头像使用渐变背景 + emoji，避免外部资源依赖
+ */
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--pink) 100%);
+  box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
+  user-select: none;
+}
+
+/**
+ * 消息气泡：实际文本容器
+ * 用户气泡绿色，精灵气泡 surface 背景 + 霞鹜文楷字体
+ */
+.message-bubble {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  line-height: 1.5;
+  position: relative;
+  word-break: break-word;
+}
+
+.message.user .message-bubble {
+  background: var(--green);
+  color: var(--bg);
+  border-bottom-right-radius: 2px;
+}
+
+.message.assistant .message-bubble {
+  background: var(--surface0);
+  color: var(--text);
+  border-bottom-left-radius: 2px;
+  /* 精灵消息使用霞鹜文楷，对齐方案 §7.2 + HTML 预览 §6.6 */
+  font-family: var(--font-sprite);
 }
 
 .message .meta {
@@ -294,7 +427,7 @@ html, body {
   margin-top: 4px;
 }
 
-.message.streaming {
+.message.streaming .message-bubble {
   border-right: 2px solid var(--accent);
   padding-right: 14px;
 }
@@ -311,6 +444,56 @@ html, body {
 
 @keyframes blink {
   50% { opacity: 0; }
+}
+
+/**
+ * 打字指示器：精灵正在思考时的三点跳动动画
+ * 对齐 docs/memora-sprite-preview.html §6.2 .typing-indicator
+ * 由 ui.ts 在流式开始前显示，首个 chunk 到达后移除
+ */
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+/**
+ * 召回记忆提示：精灵消息内嵌的"召回来源"标签
+ * 对齐 HTML 预览 §6.2 .memory-recall
+ * 由 ui.ts 在精灵消息气泡末尾追加，点击可跳转到记忆详情
+ */
+.memory-recall {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--surface2);
+  font-size: 12px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.memory-recall:hover {
+  color: var(--pink);
+  text-decoration: underline;
 }
 
 /* ─── 输入区 ───────────────────────────────────────────────── */
@@ -439,40 +622,69 @@ html, body {
   gap: 6px;
 }
 
+/**
+ * 记忆列表项：卡片式设计
+ * 对齐 docs/memora-sprite-preview.html §6.4 .memory-item
+ * 结构：header（title + source 标签）+ content 预览 + meta（score）
+ */
 .memory-item {
-  padding: 10px 12px;
+  padding: 12px 14px;
   background: var(--surface0);
+  border: 1px solid var(--surface1);
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background 0.15s;
-  border-left: 3px solid transparent;
+  transition: border-color 0.2s, background 0.15s;
 }
 
 .memory-item:hover {
+  border-color: var(--accent);
   background: var(--surface1);
-  border-left-color: var(--accent);
 }
 
 .memory-item .name {
   font-size: 13px;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
+/**
+ * source 标签：小圆角徽章
+ * 不同 source 用不同颜色区分（profile 绿/insight 蓝/guardrail 粉等）
+ */
 .memory-item .meta {
   font-size: 11px;
   color: var(--overlay0);
   display: flex;
   gap: 8px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.memory-item .meta .source-tag {
+  background: var(--surface2);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.memory-item .meta .score {
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .memory-item .preview {
   font-size: 12px;
   color: var(--subtext);
   margin-top: 4px;
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 /* ─── 设置面板 ─────────────────────────────────────────────── */
@@ -514,6 +726,25 @@ html, body {
   font-size: 13px;
   outline: none;
   margin-bottom: 12px;
+}
+
+/* 下拉选择框：与输入框样式一致，避免浏览器默认样式破坏整体视觉 */
+.settings-group select {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.settings-group select:focus {
+  border-color: var(--accent);
 }
 
 .settings-group input[type="checkbox"] {
@@ -713,7 +944,8 @@ html, body {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--text);
-  font-family: inherit;
+  /* 对齐 docs/memora-sprite-preview.html .detail-content：记忆详情使用霞鹜文楷 */
+  font-family: var(--font-sprite);
 }
 
 /* ─── 按钮样式 ─────────────────────────────────────────────── */

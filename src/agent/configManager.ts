@@ -119,7 +119,21 @@ export class ConfigManager {
       accessedAt: now,
       score: suggestion.confidence,
     };
-    await this.writeConfigFile(memory);
+    // 包裹错误处理：磁盘满/权限不足/路径越界等异常转为友好的 configError
+    try {
+      await this.writeConfigFile(memory);
+    } catch (err) {
+      throw configError(
+        '配置文件写入失败',
+        `source=${source} name=${suggestion.name} 错误：${(err as Error).message}`,
+        [
+          '检查 configDir 路径是否存在且可写',
+          '确认磁盘空间充足',
+          '确认进程对配置目录有写权限',
+        ],
+        err as Error,
+      );
+    }
 
     // 如果是规则，立即注入到 AgentLoop（当前会话生效，重启后由配置文件自动加载）
     if (suggestion.type === 'rule') {

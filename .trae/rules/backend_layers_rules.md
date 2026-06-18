@@ -15,7 +15,7 @@ date: 2026-06-12
 > **核心矛盾**：核心库必须领域无关，宿主项目必须领域相关。
 > **边界原则**：核心库提供"机制"，宿主项目提供"策略"。
 
-| 职能           | 核心库（`src/`）                                                        | 宿主项目（`examples/` / 外部）        | 当前状态      |
+| 职能           | 核心库（`src/`）                                                        | 宿主项目（`hosts/` / 外部）           | 当前状态      |
 | -------------- | ----------------------------------------------------------------------- | ------------------------------------- | ------------- |
 | LLM 对话       | ✅ 提供 provider 抽象 + 流式协议                                        | —                                     | ✅ 已有       |
 | 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回                                                | —                                     | ✅ 已有       |
@@ -33,7 +33,7 @@ date: 2026-06-12
 
 ```
 该功能是否与特定领域（小说/编程/日程...）耦合？
-  ├─ 是 → 宿主项目（examples/ 或外部项目）
+  ├─ 是 → 宿主项目（hosts/ 或外部项目）
   │       例：create_chapter、update_character、代码 diff 展示
   └─ 否 → 该功能是否所有宿主项目都需要？
          ├─ 是 → 核心库（src/），但必须通过抽象接口提供
@@ -113,10 +113,10 @@ agent/
 
 utils/
 ├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 6 事件）
-├── errors.ts             # 错误类型（MemoraError / AgentNotInitializedError / ConfigError / LlmError / LlmResponseError / FileOperationError / SecurityError / AbortError）
+├── errors.ts             # 错误类型（MemoraError + 工厂函数 configError/networkError/llmError/toolError/securityError + ToolErrorCode 10 种错误码）
 ├── frontmatter.ts        # Frontmatter 解析/序列化（从 memory/ 迁入，供 memory/persona/skill 共享）
 ├── json.ts               # JSON 安全解析/序列化
-├── math.ts               # 数学工具（sigmoid / cosineSimilarity / clamp）
+├── math.ts               # 数学工具（cosineSimilarity）
 ├── scanner.ts            # Markdown 目录扫描工具（供 persona/skill 共享）
 ├── segmenter.ts          # 中文分词器（Intl.Segmenter，从 memory/ 迁入，供 memory/persona/skill 共享）
 └── strings.ts            # 字符串工具（slugify）

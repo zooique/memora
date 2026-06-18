@@ -117,7 +117,8 @@ export async function saveLlmConfig(
     ...(embeddingConfig ? { embedding: embeddingConfig } : {}),
   };
 
-  await writeFile(targetPath, JSON.stringify(config, null, 2), 'utf-8');
+  // 设置 0600 权限：仅文件所有者可读写（防止 apiKey 泄露给同机其他用户）
+  await writeFile(targetPath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 });
 }
 
 /**
@@ -231,7 +232,8 @@ async function setupWizard(): Promise<void> {
     ...(embedding ? { embedding } : {}),
   };
 
-  await writeFile(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  // 设置 0600 权限：仅文件所有者可读写（防止 apiKey 泄露给同机其他用户）
+  await writeFile(configPath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 });
   console.log(`\n配置已保存到：${configPath}`);
   if (embedding) {
     console.log('✅ 已启用语义搜索（向量召回）');

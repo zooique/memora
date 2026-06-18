@@ -51,10 +51,43 @@ document.addEventListener('DOMContentLoaded', async () => {
   initStreamListeners();
   initSpriteOutputListener();
   initSpriteEventListener();
-  initProactivePromptListener();
   initAppErrorListener();
+  initSpriteErrorListener();
   initFloatUnreadListener();
   initAgentReadyListener();
+
+  // 初始化主动提示 banner 按钮（查看/稍后/静默）
+  uiManager.initProactiveBannerButtons({
+    onView: () => {
+      // 已在对话面板内，仅确保面板可见
+      uiManager.switchPanel('chat');
+    },
+    onLater: () => {
+      // banner 已隐藏，无需额外操作
+    },
+    onSilent: () => {
+      // 通知主进程进入静默模式 1 小时
+      void window.electronAPI.updateConfig('silentMode', true);
+      uiManager.appendMessage({
+        role: 'system',
+        content: '🔕 已进入静默模式，精灵 1 小时内不会主动提示',
+      });
+    },
+  });
+
+  // 召回记忆点击：跳转到记忆面板并显示详情
+  uiManager.onMemoryRecallClick(async (memoryName) => {
+    uiManager.switchPanel('memories');
+    try {
+      const { memory } = await window.electronAPI.showMemory(memoryName);
+      if (memory) {
+        uiManager.showMemoryDetail(memory as MemoryDetail);
+      }
+    } catch (error) {
+      // 记忆可能已删除，记录日志辅助排查
+      console.error('[memoryRecall] 查看记忆详情失败:', error);
+    }
+  });
 
   // 加载 LLM 配置到设置面板（无论 Agent 是否就绪都加载）
   await loadLlmConfig();
@@ -74,8 +107,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       await loadConfig();
       return;
     }
-  } catch {
-    // agent-status 通道不存在（旧版本兼容），继续正常加载
+  } catch (error) {
+    // agent-status 通道不存在（旧版本兼容），记录日志后继续正常加载
+    console.warn('[init] 查询 Agent 状态失败（可能为旧版本兼容）:', error);
   }
 
   // 加载初始数据
@@ -87,9 +121,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // ─── 清理资源 ─────────────────────────────────────────────
 
-// 页面卸载时清理资源
+// 页面卸载时清理资源：UI 监听器 + IPC 监听器
+// IPC 监听器若不清理，重新加载页面时会累积，导致同一事件触发多次
 window.addEventListener('beforeunload', () => {
   uiManager?.cleanup();
+  // 清理 IPC 监听器（防止内存泄漏与重复触发）
+  window.electronAPI?.removeStreamListeners();
+  window.electronAPI?.removeSpriteOutputListener();
+  window.electronAPI?.removeSpriteEventListener();
+  window.electronAPI?.removeSpriteErrorListener();
+  window.electronAPI?.removeAppErrorListener();
+  window.electronAPI?.removeAgentReadyListener();
+  window.electronAPI?.removeFloatUnreadListener();
 });
 
 // ─── 业务逻辑设置 ─────────────────────────────────────────
@@ -123,13 +166,18 @@ async function loadSessionHistory(): Promise<void> {
   try {
     const { messages } = await window.electronAPI.loadSession({});
     for (const msg of messages as Array<{ role: string; content: string }>) {
+      // 保留合法角色，未知角色回退为 assistant（避免 system 被错误映射为 assistant）
+      const role = (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
+        ? msg.role as 'user' | 'assistant' | 'system'
+        : 'assistant';
       uiManager.appendMessage({
-        role: msg.role === 'user' ? 'user' : 'assistant',
+        role,
         content: msg.content,
       });
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    // 会话历史加载失败不影响主流程，记录日志辅助排查
+    console.error('[loadSessionHistory] 加载会话历史失败:', error);
   }
 }
 
@@ -166,41 +214,62 @@ function initSpriteOutputListener(): void {
   });
 }
 
-// ─── 精灵事件 ──────────────────────────────────────────────
+// ─── 精灵事件（统一监听，按 type 分发） ──────────────────────
 
+/**
+ * 精灵事件监听
+ *
+ * 对齐 docs/memora-sprite-preview.html：
+ * - §6.3 memoryNoticed/insightGained → 仪表盘计数 +1 动画
+ * - §6.6 proactivePrompt → 顶部滑入蓝粉渐变 banner（非静默模式）
+ *
+ * 注意：onSpriteEvent 在同一 IPC 通道上注册多次会导致同一事件触发多次。
+ * 此处统一注册一个监听器，内部按 type 分发，避免重复触发。
+ */
 function initSpriteEventListener(): void {
   window.electronAPI.onSpriteEvent((msg) => {
     if (msg.type === 'memoryNoticed') {
       pulseCounter('memory-count');
     } else if (msg.type === 'insightGained') {
       pulseCounter('insight-count');
+    } else if (msg.type === 'proactivePrompt') {
+      handleProactivePrompt(msg);
     }
   });
 }
 
+/**
+ * 处理主动提示事件
+ *
+ * 对齐 docs/memora-sprite-preview.html §6.6：
+ * - 静默模式：仅更新托盘数字，不打扰用户
+ * - 非静默模式：确保对话面板可见，然后显示蓝粉渐变 banner
+ */
+function handleProactivePrompt(msg: { type: string; payload: unknown; silent: boolean }): void {
+  const payload = msg.payload as { prompt: string; triggers: string[]; silent: boolean };
+
+  if (payload.silent) {
+    // 静默模式：仅更新数字，不弹窗（由托盘在 ipcHandlers 层处理）
+    return;
+  }
+
+  // 非静默模式：确保对话面板可见，然后显示 banner
+  if (uiManager.getCurrentPanel() !== 'chat') {
+    uiManager.switchPanel('chat');
+  }
+  uiManager.showProactiveBanner(payload.prompt);
+
+  // 通知主进程：主动提示已显示（用于清除未读计数）
+  window.electronAPI.proactivePromptShown();
+}
+
+/** 仪表盘计数 +1 并触发脉冲动画（对齐 HTML 预览 §6.3 .stat-value.pulse） */
 function pulseCounter(id: string): void {
   const el = document.getElementById(id);
   if (!el) return;
   el.textContent = String(parseInt(el.textContent ?? '0') + 1);
   el.classList.add('pulse');
   setTimeout(() => el.classList.remove('pulse'), 300);
-}
-
-// ─── 主动提示（Electron 分发逻辑） ─────────────────────────
-
-function initProactivePromptListener(): void {
-  window.electronAPI.onSpriteEvent((msg) => {
-    if (msg.type !== 'proactivePrompt') return;
-    const { silent } = msg.payload as { prompt: string; triggers: string[]; silent: boolean };
-
-    if (!silent) {
-      // 非静默模式：通知渲染进程显示窗口内提示
-      if (uiManager.getCurrentPanel() !== 'chat') {
-        uiManager.switchPanel('chat');
-      }
-    }
-    // 静默模式下：仅更新数字，不弹窗（由托盘在 ipcHandlers 层处理）
-  });
 }
 
 // ─── 应用错误处理 ─────────────────────────────────────────
@@ -217,18 +286,39 @@ function initAppErrorListener(): void {
   });
 }
 
+/**
+ * 精灵错误监听
+ *
+ * 监听 'sprite-error' 通道（ipcHandlers.ts 在对话流式输出出错时发送）。
+ * 与 app-error（应用级错误）区分：sprite-error 是对话级错误。
+ */
+function initSpriteErrorListener(): void {
+  window.electronAPI.onSpriteError((msg: { text: string }) => {
+    uiManager.appendMessage({
+      role: 'system',
+      content: `⚠️ ${msg.text}`,
+    });
+    console.error('[sprite-error]', msg.text);
+  });
+}
+
 // ─── 浮动窗口未读计数 ─────────────────────────────────────
 
+/**
+ * 浮动窗口未读计数同步
+ *
+ * 主进程在浮动窗口收到新消息时推送 count 到完整窗口。
+ * 完整窗口的徽章由 UIManager 内部维护（appendMessage 时累加），
+ * 此处仅同步主进程的权威计数，避免双窗口计数不一致。
+ *
+ * 注意：原实现错误地在对话区追加"精灵有 N 条新消息"系统消息，
+ * 会污染对话历史。已改为仅更新徽章。
+ */
 function initFloatUnreadListener(): void {
   window.electronAPI.onFloatUnread((count: number) => {
-    // 浮动窗口未读计数同步（完整窗口的徽章由 UIManager 内部维护）
-    // 这里仅处理浮动窗口的未读计数显示逻辑
-    if (count > 0) {
-      uiManager.appendMessage({
-        role: 'system',
-        content: `精灵有 ${count} 条新消息`,
-      });
-    }
+    // 直接同步主进程的未读计数到徽章
+    // UIManager.clearUnreadCount() 会清零，此处需要补充设置方法
+    uiManager.setUnreadCount(count);
   });
 }
 
@@ -253,8 +343,9 @@ function setupMemoryPanel(): void {
         contentPreview: h.contentPreview,
       }));
       uiManager.renderMemoryList(items);
-    } catch {
-      // 搜索失败时保持原列表
+    } catch (error) {
+      // 搜索失败时保持原列表，记录日志辅助排查
+      console.error('[onMemorySearch] 记忆搜索失败:', error);
     }
   });
 
@@ -270,8 +361,8 @@ function setupMemoryPanel(): void {
       if (memory) {
         uiManager.showMemoryDetail(memory as MemoryDetail);
       }
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error('[onMemoryClick] 查看记忆详情失败:', error);
     }
   });
 
@@ -283,8 +374,12 @@ function setupMemoryPanel(): void {
       await window.electronAPI.deleteMemory(id);
       uiManager.hideModal('memory-detail-modal');
       await loadMemoryList();
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error('[onMemoryDelete] 删除记忆失败:', error);
+      uiManager.appendMessage({
+        role: 'system',
+        content: '⚠️ 删除记忆失败，请查看控制台日志',
+      });
     }
   });
 
@@ -295,8 +390,12 @@ function setupMemoryPanel(): void {
       uiManager.clearAddMemoryForm();
       uiManager.hideModal('memory-add-modal');
       await loadMemoryList();
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error('[onMemoryAdd] 添加记忆失败:', error);
+      uiManager.appendMessage({
+        role: 'system',
+        content: '⚠️ 添加记忆失败，请查看控制台日志',
+      });
     }
   });
 }
@@ -314,8 +413,8 @@ async function loadMemoryList(): Promise<void> {
     if (countEl) {
       countEl.textContent = String((memories as unknown[]).length);
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[loadMemoryList] 加载记忆列表失败:', error);
   }
 }
 
@@ -329,8 +428,12 @@ function setupPersonaSelector(): void {
       if (switched && activeName) {
         uiManager.updateActivePersona(activeName);
       }
-    } catch {
-      // ignore
+    } catch (error) {
+      console.error('[onPersonaSwitch] 切换角色失败:', error);
+      uiManager.appendMessage({
+        role: 'system',
+        content: `⚠️ 切换角色失败：${(error as Error).message}`,
+      });
     }
   });
 }
@@ -346,8 +449,8 @@ async function loadPersonaList(): Promise<void> {
     if (active) {
       uiManager.updateActivePersona(active.name);
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[loadPersonaList] 加载角色列表失败:', error);
   }
 }
 
@@ -439,6 +542,33 @@ function setupSettingsPanel(): void {
     void loadConfig();
     void loadLlmConfig();
   });
+
+  // LLM 连接测试：调用主进程验证配置，显示结果
+  uiManager.onLlmTest(async () => {
+    const config = uiManager.getLlmConfigFromForm();
+    if (!config.provider || !config.model || !config.apiKey) {
+      uiManager.showLlmTestResult({
+        success: false,
+        error: '提供商、模型、API Key 为必填项',
+      });
+      return;
+    }
+
+    // 显示"测试中..."状态
+    uiManager.showLlmTestResult({ success: false, error: '测试中...' });
+    const startTime = Date.now();
+
+    try {
+      const result = await window.electronAPI.testLlmConfig(config);
+      const elapsed = Date.now() - startTime;
+      uiManager.showLlmTestResult(result, elapsed);
+    } catch (error) {
+      uiManager.showLlmTestResult({
+        success: false,
+        error: (error as Error).message,
+      });
+    }
+  });
 }
 
 /** 加载配置到表单 */
@@ -459,8 +589,8 @@ async function loadConfig(): Promise<void> {
     };
 
     uiManager.loadConfigToForm(formConfig);
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[loadConfig] 加载精灵配置失败:', error);
   }
 }
 
@@ -469,8 +599,8 @@ async function loadLlmConfig(): Promise<void> {
   try {
     const data = await window.electronAPI.getLlmConfig();
     uiManager.loadLlmConfigToForm(data);
-  } catch {
-    // ignore
+  } catch (error) {
+    console.error('[loadLlmConfig] 加载 LLM 配置失败:', error);
   }
 }
 

@@ -45,6 +45,12 @@ export interface IpcContext {
   getAbortController: () => AbortController | null;
   /** 设置当前对话的 AbortController */
   setAbortController: (ctrl: AbortController | null) => void;
+  /** 获取当前未读计数（完整窗口隐藏时的消息数） */
+  getUnreadCount: () => number;
+  /** 增加未读计数并推送到浮动窗口 */
+  incrementUnreadCount: () => void;
+  /** 清零未读计数并推送到浮动窗口 + 完整窗口 */
+  resetUnreadCount: () => void;
 }
 
 /**
@@ -184,6 +190,16 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle('config-update', async (_event, key: string, value: unknown) => {
     try {
       ctx.sprite.updateConfig(key as never, value);
+
+      // 静默模式切换时同步托盘状态
+      if (key === 'silentMode') {
+        if (value === true) {
+          ctx.trayManager?.setState('sleeping');
+        } else {
+          ctx.trayManager?.setState('idle');
+        }
+      }
+
       return { updated: true };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '更新配置失败' });
@@ -230,7 +246,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   /** 渲染进程通知主动提示已显示，清除未读计数 */
   ipcMain.on('proactive-prompt-shown', () => {
-    ctx.trayManager?.stopPulse();
+    // 主动提示已显示，托盘切回 idle 状态
+    ctx.trayManager?.setState('idle');
   });
 }
 
@@ -250,6 +267,15 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
 
   const messageId = randomUUID();
   fullWindow.webContents.send('sprite-stream-start', { messageId });
+
+  // 完整窗口不可见时增加未读计数（推送到浮动窗口徽章）
+  // 对齐方案 §12 验证标准第 11 项：浮动窗口未读计数
+  if (!fullWindow.isVisible()) {
+    ctx.incrementUnreadCount();
+  }
+
+  // 托盘切换为 active 状态（蓝色 + 脉冲），表示精灵正在思考
+  ctx.trayManager?.setState('active');
 
   // 创建 AbortController 供中断使用
   const abortController = new AbortController();
@@ -285,6 +311,8 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
     errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
   } finally {
     ctx.setAbortController(null);
+    // 流式结束：托盘切回 idle 状态（绿色静态）
+    ctx.trayManager?.setState('idle');
   }
 }
 

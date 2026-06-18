@@ -24,7 +24,7 @@ Memora 的核心矛盾是"无状态推理 ←→ 连续演化任务"。LLM 本�
 
 1. **recall()（按需召回）**：启动时只加载 `persona` + `rule` + `skill`
    记忆（bootstrap）；用户首条消息触发关键词提取，自动召回匹配的记忆
-2. **记忆衰减（score 指数衰减）**：未被命中的记忆 score 按衰减因子递减；被命中时 score 重置为 1.0；衰减不影响永久性标记，只影响召回优先级
+2. **记忆衰减（score 指数衰减）**：未被命中的记忆 score 按衰减因子递减；被命中时 score 增量提升 0.05（上限 1.0，非重置）；衰减不影响永久性标记，只影响召回优先级。具体参数：超过 7 天未访问，每 7 天降低 0.02
 3. **上下文截断（truncateMessages）**：当工作记忆接近 token 预算时，优先驱逐低 score 记忆
 
 ## 关键实现
@@ -32,7 +32,9 @@ Memora 的核心矛盾是"无状态推理 ←→ 连续演化任务"。LLM 本�
 | 组件                   | 文件                                     | 职责                      |
 | ---------------------- | ---------------------------------------- | ------------------------- |
 | recall()               | `src/memory/recall.ts`                   | 关键词提取 + 双通道召回   |
-| decayScores()          | `src/memory/recall.ts`                   | score 指数衰减 + 定时触发 |
+| decayScores()（工具函数） | `src/memory/recall.ts`                | 操作内存数组的 score 衰减（测试/InMemoryStorage 用） |
+| IMemoryStorage.decayScores()（接口方法） | `src/memory/storageInterface.ts` | 宿主实现批量 SQL UPDATE 衰减（如 SqliteStorage） |
+| boostScore()           | `src/memory/recall.ts`                   | 命中时 score 增量提升 0.05（上限 1.0） |
 | truncateMessages()     | `src/agent/loop.ts`                      | token 预算截断 + 低 score 优先驱逐 |
 
 ## 后果

@@ -25,32 +25,48 @@ description: "memora-sprite 宿主项目总则、技术栈清单、目录结构�
 
 | 类别 | 选型 | 决策 |
 |------|------|------|
-| 运行时 | Node.js 22 LTS + TypeScript 5 strict + ESM | ADR-SP-001 |
-| 数据库 | better-sqlite3（阶段二 + sqlite-vec） | ADR-SP-002 |
-| 桌面壳 | 阶段一 CLI → 阶段二 Electron | ADR-SP-003 |
+| 运行时 | Node.js 24 LTS + TypeScript 5 strict + ESM | ADR-SP-001 |
+| 数据库 | better-sqlite3（native 模块，^12.10.0） | ADR-SP-002 |
+| 桌面壳 | 阶段一 CLI → 阶段二 Electron 40 | ADR-SP-003 |
 | 感知层 | 上下文感知，非内容感知 | ADR-SP-004 |
-| 包管理 | npm + file: 协议 | ADR-SP-005 |
+| 包管理 | npm + file: 协议 + @electron/rebuild | ADR-SP-005 |
 | 测试 | Vitest + InMemoryStorage + 临时 SQLite | ADR-SP-006 |
 
 ## 3. 目录结构
 
+> 详见 [ADR-SP-007](./decisions/ADR-SP-007-directory-structure.md)
+
 ```
 hosts/memora-sprite/
-├── package.json              ← 独立依赖（memora + better-sqlite3）
-├── tsconfig.json
+├── package.json              ← 独立依赖（memora + better-sqlite3 + electron）
+├── tsconfig.json / tsconfig.electron.json
 ├── vitest.config.ts
 └── src/
     ├── index.ts              ← 入口：Agent 实例化 + 生命周期
-    ├── storage/
-    │   ├── sqliteStorage.ts  ← IMemoryStorage 实现
-    │   └── sessionStore.ts   ← ISessionStore 实现
-    ├── sprite/
-    │   ├── sprite.ts         ← 精灵主控：唤醒调度 + 对话管理
-    │   └── triggers.ts       ← 唤醒触发器（热键/定时/文件变化）
+    ├── storage/              ← IMemoryStorage / ISessionStore 实现
+    │   ├── sqliteStorage.ts
+    │   └── sessionStore.ts
+    ├── sprite/               ← 精灵主控 + 触发器 + 控制器
+    │   ├── sprite.ts
+    │   ├── spriteConfig.ts
+    │   ├── triggers.ts
+    │   ├── fileWatcherTrigger.ts
+    │   ├── interaction.ts / cliInteraction.ts
+    │   └── controllers/      ← 专职控制器（阶段二新增）
+    │       ├── memoryController.ts
+    │       ├── personaController.ts
+    │       └── proactiveEngine.ts
+    ├── electron/             ← Electron 主进程 + 渲染进程（阶段二新增）
+    │   ├── main.ts / preload.ts
+    │   ├── windowManager.ts / windowState.ts / floatWindow.ts
+    │   ├── trayIcon.ts / ipcHandlers.ts
+    │   ├── interaction.ts / errorHandler.ts
+    │   └── renderer/         ← index.html / float.html / renderer.ts / ui.ts / renderer.css
     └── __tests__/
         ├── sqliteStorage.test.ts
         ├── sessionStore.test.ts
-        └── sprite.test.ts
+        ├── sprite.test.ts
+        └── sprite-integration.test.ts
 ```
 
 ## 4. 命名规范（与内核一致）

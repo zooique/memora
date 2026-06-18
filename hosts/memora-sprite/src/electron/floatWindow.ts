@@ -20,8 +20,12 @@ export class FloatWindow {
   private win!: BrowserWindow;
   /** 当前拖动状态（用于 IPC 处理器判断） */
   private isDragging = false;
+  /** 展开为完整窗口时的回调（用于清零未读计数） */
+  private onExpandToFull?: () => void;
 
-  constructor(private windowStateManager: WindowStateManager) {}
+  constructor(private windowStateManager: WindowStateManager, options?: { onExpandToFull?: () => void }) {
+    this.onExpandToFull = options?.onExpandToFull;
+  }
 
   async create(): Promise<BrowserWindow> {
     const size = this.windowStateManager.getFloatSize();
@@ -49,6 +53,16 @@ export class FloatWindow {
     // 加载浮动窗口 HTML
     const htmlPath = path.join(__dirname, 'renderer', 'float.html');
     await this.win.loadFile(htmlPath);
+
+    // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）
+    this.win.webContents.on('will-navigate', (e, url) => {
+      if (url !== this.win.webContents.getURL()) {
+        e.preventDefault();
+      }
+    });
+    this.win.webContents.setWindowOpenHandler(() => {
+      return { action: 'deny' };
+    });
 
     // 关闭时隐藏而非退出
     this.win.on('close', (e) => {
@@ -101,6 +115,8 @@ export class FloatWindow {
       const currentState = this.windowStateManager.getState();
       if (currentState === 'float') {
         this.windowStateManager.transition('full');
+        // 展开完整窗口时清零未读计数
+        this.onExpandToFull?.();
       }
     });
   }

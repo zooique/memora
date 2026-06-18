@@ -14,9 +14,11 @@ memora-sprite 是 memora 内核的第一个真实宿主——桌面精灵。需�
 
 ## 决策
 
-**Node.js 22 LTS + TypeScript 5 strict + ESM**
+**Node.js 24 LTS + TypeScript 5 strict + ESM**
 
 与 memora 内核完全一致（ADR-001），确保类型共享和模块导入零摩擦。
+
+> **版本演进**：初始决策为 Node.js 22 LTS，2026-06 阶段二升级至 24 LTS（package.json `engines.node: ">=24.0.0"`），以获得更好的 Electron 40 兼容性与 native 模块性能。
 
 ## 理由
 

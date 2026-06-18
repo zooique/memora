@@ -28,6 +28,17 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'public/**', '*.config.js', '*.config.ts'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'coverage/**',
+      'public/**',
+      '*.config.js',
+      '*.config.ts',
+      // 宿主项目的编译产物（hosts/memora-sprite/dist、dist-electron 等）
+      'hosts/**/dist/**',
+      'hosts/**/dist-electron/**',
+      'hosts/**/node_modules/**',
+    ],
   },
 ];

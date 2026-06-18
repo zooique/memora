@@ -23,6 +23,14 @@ description: 记忆归档三步价值过滤（judge → distill → converge）
 
 过滤后的记忆以 `source: insight` 存入统一索引，不再使用独立的 topic-*.md 文件。
 
+> **年轮修订（2026-06-18）**：v2.0 基元驱动重构后，三步过滤已简化为**一步 LLM 提取 + Jaccard 去重**。
+> 当前 `InsightExtractor.extract()` 的实际流程：
+> 1. 单次 LLM 调用判断"是否值得记忆"并返回 insight 文本（合并了 Judge + Distill）
+> 2. Jaccard 相似度去重检查（替代 Converge 的"合并"语义）
+> 3. 写入 SQLite（source='insight'）
+>
+> 原三步过滤设计保留为**未来演进方向**，当记忆量级增长到需要分级处理时可重新引入。
+
 ## 关键实现
 
 | 组件             | 文件                             | 职责                                   |

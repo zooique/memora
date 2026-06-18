@@ -27,9 +27,19 @@ export class WindowManager {
   private windowStateManager: WindowStateManager;
   private floatWindow: FloatWindow | null = null;
   private fullWindow: BrowserWindow | null = null;
+  /** 应用是否正在退出（区分"用户关闭"与"应用退出"） */
+  private isQuitting = false;
+  /** 展开为完整窗口时的回调（由 main.ts 注入，用于清零未读计数） */
+  private onExpandToFull?: () => void;
 
-  constructor(windowStateManager: WindowStateManager) {
+  constructor(windowStateManager: WindowStateManager, options?: { onExpandToFull?: () => void }) {
     this.windowStateManager = windowStateManager;
+    this.onExpandToFull = options?.onExpandToFull;
+  }
+
+  /** 标记应用正在退出，允许窗口真正关闭 */
+  setQuitting(quitting: boolean): void {
+    this.isQuitting = quitting;
   }
 
   /** 创建所有窗口 */
@@ -62,7 +72,9 @@ export class WindowManager {
 
   /** 创建浮动窗口 */
   private async createFloatWindow(): Promise<void> {
-    this.floatWindow = new FloatWindow(this.windowStateManager);
+    this.floatWindow = new FloatWindow(this.windowStateManager, {
+      onExpandToFull: this.onExpandToFull,
+    });
     await this.floatWindow.create();
   }
 
@@ -91,6 +103,16 @@ export class WindowManager {
     // 加载 HTML 文件
     const htmlPath = path.join(__dirname, 'renderer', 'index.html');
     await this.fullWindow.loadFile(htmlPath);
+
+    // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）
+    this.fullWindow.webContents.on('will-navigate', (e, url) => {
+      if (url !== this.fullWindow!.webContents.getURL()) {
+        e.preventDefault();
+      }
+    });
+    this.fullWindow.webContents.setWindowOpenHandler(() => {
+      return { action: 'deny' };
+    });
   }
 
   /** 注册窗口控制 IPC */
@@ -121,6 +143,8 @@ export class WindowManager {
     if (!this.fullWindow) return;
 
     this.fullWindow.on('close', (e) => {
+      // 应用退出时允许窗口真正关闭
+      if (this.isQuitting) return;
       if (!this.fullWindow!.isDestroyed()) {
         e.preventDefault();
         this.windowStateManager.transition('float');

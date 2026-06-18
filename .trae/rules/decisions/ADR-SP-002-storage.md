@@ -38,7 +38,7 @@ memora 内核定义了 `IMemoryStorage` 和 `ISessionStore` 接口（ADR-002）�
 
 ## 影响
 
-- 精灵的 `dependencies` 包含 `better-sqlite3`（native 模块）
-- Electron 环境需 `electron-rebuild` 或 `@electron/rebuild`
+- 精灵的 `dependencies` 包含 `better-sqlite3`（native 模块，当前 `^12.10.0`）
+- Electron 环境需 `@electron/rebuild`（已迁移至 scoped package，替代旧 `electron-rebuild`）
 - SqliteStorage 的 `search()` 使用 FTS5 全文搜索（阶段一用 LIKE 关键词匹配）
 - `decayScores()` 用一条 SQL UPDATE 批量完成，替代内核的 O(n) 遍历

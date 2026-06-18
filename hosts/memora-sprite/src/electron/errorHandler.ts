@@ -55,47 +55,56 @@ export class ErrorHandler {
     this.mainWindow = win;
   }
 
-  /** 处理错误 */
-  handle(error: unknown, context?: Record<string, unknown>): AppError {
-    const appError = this.normalizeError(error, context);
-    
+  /**
+   * 处理错误
+   *
+   * @param error 原始错误对象
+   * @param options 选项：code 显式指定错误代码（优先于从 message 推断）；context 人类可读的上下文描述
+   */
+  handle(error: unknown, options?: { code?: ErrorCode; context?: string }): AppError {
+    const appError = this.normalizeError(error, options?.code, options?.context);
+
     // 记录错误
     this.logError(appError);
-    
+
     // 显示用户友好的错误消息
     this.showErrorToUser(appError);
-    
+
     // 输出到控制台
     this.logToConsole(appError);
-    
+
     return appError;
   }
 
-  /** 标准化错误对象 */
-  private normalizeError(error: unknown, context?: Record<string, unknown>): AppError {
+  /**
+   * 标准化错误对象
+   *
+   * code 优先级：调用方显式传入 > 从 error.message 推断 > UNKNOWN
+   */
+  private normalizeError(error: unknown, explicitCode?: ErrorCode, context?: string): AppError {
     if (error instanceof Error) {
       return {
-        code: this.extractErrorCode(error),
+        code: explicitCode ?? this.extractErrorCode(error),
         message: error.message,
         originalError: error,
-        context,
+        context: context ? { description: context } : undefined,
         timestamp: new Date(),
       };
     }
-    
+
     if (typeof error === 'string') {
       return {
-        code: ErrorCode.UNKNOWN,
+        code: explicitCode ?? ErrorCode.UNKNOWN,
         message: error,
-        context,
+        context: context ? { description: context } : undefined,
         timestamp: new Date(),
       };
     }
-    
+
     return {
-      code: ErrorCode.UNKNOWN,
+      code: explicitCode ?? ErrorCode.UNKNOWN,
       message: '发生未知错误',
-      context,
+      context: context ? { description: context } : undefined,
       timestamp: new Date(),
     };
   }
@@ -203,12 +212,12 @@ export const errorHandler = new ErrorHandler();
 /** 处理异步错误 */
 export async function handleAsyncError<T>(
   operation: () => Promise<T>,
-  context?: Record<string, unknown>
+  options?: { code?: ErrorCode; context?: string },
 ): Promise<T | null> {
   try {
     return await operation();
   } catch (error) {
-    errorHandler.handle(error, context);
+    errorHandler.handle(error, options);
     return null;
   }
 }
@@ -216,12 +225,12 @@ export async function handleAsyncError<T>(
 /** 处理同步错误 */
 export function handleSyncError<T>(
   operation: () => T,
-  context?: Record<string, unknown>
+  options?: { code?: ErrorCode; context?: string },
 ): T | null {
   try {
     return operation();
   } catch (error) {
-    errorHandler.handle(error, context);
+    errorHandler.handle(error, options);
     return null;
   }
 }
@@ -229,19 +238,19 @@ export function handleSyncError<T>(
 /** 包装异步函数，自动处理错误 */
 export function wrapAsyncFunction<T extends (...args: never[]) => Promise<unknown>>(
   fn: T,
-  context?: Record<string, unknown>
+  options?: { code?: ErrorCode; context?: string },
 ): T {
   return ((...args: never[]) => {
-    return handleAsyncError(() => fn(...args), context);
+    return handleAsyncError(() => fn(...args), options);
   }) as T;
 }
 
 /** 包装同步函数，自动处理错误 */
 export function wrapSyncFunction<T extends (...args: never[]) => unknown>(
   fn: T,
-  context?: Record<string, unknown>
+  options?: { code?: ErrorCode; context?: string },
 ): T {
   return ((...args: never[]) => {
-    return handleSyncError(() => fn(...args), context);
+    return handleSyncError(() => fn(...args), options);
   }) as T;
 }

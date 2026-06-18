@@ -84,6 +84,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 | `search(query, limit?)` | 关键词搜索记忆 |
 | `count()` | 统计记忆总数 |
 | `countBySource(source)` | 按来源标签统计数量 |
+| `decayScores(sources, now)` | 批量衰减指定 source 的记忆 score（宿主实现批量 SQL UPDATE） |
 | `close?()` | 关闭连接（可选） |
 
 ## package.json 变更

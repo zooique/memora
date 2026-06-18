@@ -18,25 +18,37 @@ export interface ElectronAPI {
   abortChat: () => Promise<void>;
   loadSession: (query: { date?: string; session?: string }) => Promise<{ messages: unknown[] }>;
 
-  // 流式监听
+  // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
   onStreamChunk: (cb: (msg: { messageId: string; text: string }) => void) => void;
   onStreamEnd: (cb: (msg: { messageId: string }) => void) => void;
+  /** 移除所有流式监听器（页面卸载或重新初始化时调用） */
+  removeStreamListeners: () => void;
 
   // 精灵输出（主动提示 / 系统消息）
   onSpriteOutput: (cb: (msg: { text: string; kind: 'proactive' | 'system' }) => void) => void;
+  /** 移除精灵输出监听器 */
+  removeSpriteOutputListener: () => void;
 
   // 精灵事件
   onSpriteEvent: (cb: (msg: { type: string; payload: unknown; silent: boolean }) => void) => void;
+  /** 移除精灵事件监听器 */
+  removeSpriteEventListener: () => void;
 
   // 错误
   onSpriteError: (cb: (msg: { text: string }) => void) => void;
+  /** 移除精灵错误监听器 */
+  removeSpriteErrorListener: () => void;
 
   // 应用错误
   onAppError: (cb: (msg: { code: string; message: string; timestamp: string }) => void) => void;
+  /** 移除应用错误监听器 */
+  removeAppErrorListener: () => void;
 
   // 中断确认
   onChatAbortAck: (cb: () => void) => void;
+  /** 移除中断确认监听器 */
+  removeChatAbortAckListener: () => void;
 
   // Agent 状态查询
   getAgentStatus: () => Promise<{ ready: boolean; error: string | null }>;
@@ -53,8 +65,13 @@ export interface ElectronAPI {
     embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
   ) => Promise<{ success: boolean; error: string | null }>;
 
+  /** 测试 LLM 连接（保存前验证配置是否可用） */
+  testLlmConfig: (llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ success: boolean; error: string | null }>;
+
   // Agent 就绪通知（主进程 → 渲染进程）
   onAgentReady: (cb: () => void) => void;
+  /** 移除 Agent 就绪监听器 */
+  removeAgentReadyListener: () => void;
 
   // 记忆
   listMemories: (query?: { source?: string }) => Promise<{ memories: unknown[] }>;
@@ -82,6 +99,12 @@ export interface ElectronAPI {
   onFloatDragStart: (cb: () => void) => void;
   onFloatDragEnd: (cb: () => void) => void;
   onFloatUnread: (cb: (count: number) => void) => void;
+  /** 移除浮动窗口未读计数监听器 */
+  removeFloatUnreadListener: () => void;
+  /** 移除浮动窗口拖动开始监听器 */
+  removeFloatDragStartListener: () => void;
+  /** 移除浮动窗口拖动结束监听器 */
+  removeFloatDragEndListener: () => void;
   moveFloatWindow: (dx: number, dy: number) => void;
   saveFloatPosition: () => void;
   expandToFull: () => void;
@@ -96,25 +119,47 @@ const electronAPI: ElectronAPI = {
   abortChat: () => ipcRenderer.invoke('chat-abort'),
   loadSession: (query) => ipcRenderer.invoke('session-load', query),
 
-  // 流式
+  // 流式监听
+  // 注意：ipcRenderer.on 注册的监听器会累积，多次调用 on* 方法会导致同一事件触发多次。
+  // 提供 remove* 方法供渲染进程在重新初始化或页面卸载时清理。
   onStreamStart: (cb) => ipcRenderer.on('sprite-stream-start', (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
   onStreamChunk: (cb) => ipcRenderer.on('sprite-stream-chunk', (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
   onStreamEnd: (cb) => ipcRenderer.on('sprite-stream-end', (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
+  removeStreamListeners: () => {
+    ipcRenderer.removeAllListeners('sprite-stream-start');
+    ipcRenderer.removeAllListeners('sprite-stream-chunk');
+    ipcRenderer.removeAllListeners('sprite-stream-end');
+  },
 
   // 精灵输出
   onSpriteOutput: (cb) => ipcRenderer.on('sprite-output', (_: IpcRendererEvent, msg: { text: string; kind: 'proactive' | 'system' }) => cb(msg)),
+  removeSpriteOutputListener: () => {
+    ipcRenderer.removeAllListeners('sprite-output');
+  },
 
   // 精灵事件
   onSpriteEvent: (cb) => ipcRenderer.on('sprite-event', (_: IpcRendererEvent, msg: { type: string; payload: unknown; silent: boolean }) => cb(msg)),
+  removeSpriteEventListener: () => {
+    ipcRenderer.removeAllListeners('sprite-event');
+  },
 
   // 错误
   onSpriteError: (cb) => ipcRenderer.on('sprite-error', (_: IpcRendererEvent, msg: { text: string }) => cb(msg)),
+  removeSpriteErrorListener: () => {
+    ipcRenderer.removeAllListeners('sprite-error');
+  },
 
   // 应用错误
   onAppError: (cb) => ipcRenderer.on('app-error', (_: IpcRendererEvent, msg: { code: string; message: string; timestamp: string }) => cb(msg)),
+  removeAppErrorListener: () => {
+    ipcRenderer.removeAllListeners('app-error');
+  },
 
   // 中断确认
   onChatAbortAck: (cb) => ipcRenderer.on('chat-abort-ack', () => cb()),
+  removeChatAbortAckListener: () => {
+    ipcRenderer.removeAllListeners('chat-abort-ack');
+  },
 
   // Agent 状态查询
   getAgentStatus: () => ipcRenderer.invoke('agent-status'),
@@ -122,9 +167,13 @@ const electronAPI: ElectronAPI = {
   // LLM 配置读写
   getLlmConfig: () => ipcRenderer.invoke('llm-config-get'),
   saveLlmConfig: (llmConfig, embeddingConfig) => ipcRenderer.invoke('llm-config-save', llmConfig, embeddingConfig),
+  testLlmConfig: (llmConfig) => ipcRenderer.invoke('llm-config-test', llmConfig),
 
   // Agent 就绪通知
   onAgentReady: (cb) => ipcRenderer.on('agent-ready', () => cb()),
+  removeAgentReadyListener: () => {
+    ipcRenderer.removeAllListeners('agent-ready');
+  },
 
   // 记忆
   listMemories: (query) => ipcRenderer.invoke('memories-list', query ?? {}),
@@ -152,6 +201,15 @@ const electronAPI: ElectronAPI = {
   onFloatDragStart: (cb) => ipcRenderer.on('float-drag-start', () => cb()),
   onFloatDragEnd: (cb) => ipcRenderer.on('float-drag-end', () => cb()),
   onFloatUnread: (cb) => ipcRenderer.on('float-unread', (_: IpcRendererEvent, count: number) => cb(count)),
+  removeFloatUnreadListener: () => {
+    ipcRenderer.removeAllListeners('float-unread');
+  },
+  removeFloatDragStartListener: () => {
+    ipcRenderer.removeAllListeners('float-drag-start');
+  },
+  removeFloatDragEndListener: () => {
+    ipcRenderer.removeAllListeners('float-drag-end');
+  },
   moveFloatWindow: (dx, dy) => ipcRenderer.send('move-float-window', dx, dy),
   saveFloatPosition: () => ipcRenderer.send('save-float-position'),
   expandToFull: () => ipcRenderer.send('expand-to-full'),

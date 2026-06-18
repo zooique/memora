@@ -20,6 +20,8 @@ export interface Message {
   content: string;
   streaming?: boolean;
   messageId?: string;
+  /** 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall） */
+  memoryRecall?: { name: string; score: number };
 }
 
 export interface UIState {
@@ -245,19 +247,61 @@ export class UIManager {
 
   // ─── 消息渲染 ─────────────────────────────────────────
 
-  /** 添加消息到界面 */
+  /**
+   * 添加消息到界面
+   *
+   * 结构对齐 docs/memora-sprite-preview.html §6.2：
+   *   <div class="message [user|assistant|system]">
+   *     <div class="message-avatar">🧚</div>  <!-- 仅 user/assistant -->
+   *     <div class="message-bubble">
+   *       {文本内容}
+   *       <div class="memory-recall">...</div>  <!-- 仅精灵消息且有召回时 -->
+   *     </div>
+   *   </div>
+   *
+   * 系统消息保持简单结构（无头像无气泡），居中显示。
+   */
   appendMessage(message: Message): HTMLElement {
     const el = document.createElement('div');
     el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}`;
-    
-    // 使用textContent安全地设置文本内容
-    el.textContent = message.content;
 
-    // 为流式消息添加光标元素
-    if (message.streaming) {
-      const cursor = document.createElement('span');
-      cursor.className = 'cursor';
-      el.appendChild(cursor);
+    if (message.role === 'system') {
+      // 系统消息：简单文本，居中无头像
+      el.textContent = message.content;
+    } else {
+      // 用户/精灵消息：头像 + 气泡结构
+      const avatar = document.createElement('div');
+      avatar.className = 'message-avatar';
+      avatar.textContent = message.role === 'user' ? '🧑' : '🧚';
+      el.appendChild(avatar);
+
+      const bubble = document.createElement('div');
+      bubble.className = 'message-bubble';
+      // 使用 textContent 安全设置文本（防 XSS）
+      bubble.textContent = message.content;
+      el.appendChild(bubble);
+
+      // 召回记忆提示（仅精灵消息）
+      if (message.role === 'assistant' && message.memoryRecall) {
+        const recall = document.createElement('div');
+        recall.className = 'memory-recall';
+        recall.innerHTML = '<span>💡</span>';
+        const recallText = document.createElement('span');
+        recallText.textContent = `召回记忆：${message.memoryRecall.name}（score: ${message.memoryRecall.score.toFixed(2)}）`;
+        recall.appendChild(recallText);
+        // 点击跳转记忆面板（回调由 renderer.ts 注册）
+        recall.addEventListener('click', () => {
+          this.memoryRecallClickCallback?.(message.memoryRecall!.name);
+        });
+        bubble.appendChild(recall);
+      }
+
+      // 为流式消息添加光标元素
+      if (message.streaming) {
+        const cursor = document.createElement('span');
+        cursor.className = 'cursor';
+        bubble.appendChild(cursor);
+      }
     }
 
     this.messagesEl.appendChild(el);
@@ -272,33 +316,48 @@ export class UIManager {
     return el;
   }
 
-  /** 更新流式消息内容 */
+  /**
+   * 更新流式消息内容
+   *
+   * 消息结构为 message > message-bubble > [textNode, cursor]
+   * 需要定位到 bubble 元素更新其文本节点，保留 cursor 元素。
+   */
   updateStreamingMessage(messageId: string, text: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
+    // 定位到气泡元素（assistant 消息结构：message > message-bubble）
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
     // 安全地更新文本内容，保留光标元素
-    const textNode = el.firstChild;
+    const textNode = bubble.firstChild;
     if (textNode && textNode.nodeType === Node.TEXT_NODE) {
       textNode.textContent = text;
     } else {
-      // 如果没有文本节点，创建一个
+      // 如果没有文本节点，创建一个并插入到最前面（cursor 之前）
       const newTextNode = document.createTextNode(text);
-      el.insertBefore(newTextNode, el.firstChild);
+      bubble.insertBefore(newTextNode, bubble.firstChild);
     }
-    
+
     this.scrollToBottom();
   }
 
-  /** 完成流式消息 */
+  /**
+   * 完成流式消息
+   *
+   * 移除 streaming 类和光标元素。
+   * 注意：原实现中的 `/【.*】$/` 正则无注释且语义不明，已移除——
+   * 流式文本由主进程逐 chunk 拼接，不应在渲染层做尾部标记清理。
+   */
   finishStreamingMessage(messageId: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
-    // 清理文本内容，移除标记
-    const textContent = el.textContent?.replace(/【.*】$/, '').trim() ?? '';
-    el.textContent = textContent;
     el.classList.remove('streaming');
+    // 移除光标元素
+    const cursor = el.querySelector('.cursor');
+    if (cursor) cursor.remove();
     this.streamingMessages.delete(messageId);
   }
 
@@ -373,21 +432,21 @@ export class UIManager {
     return text;
   }
 
-  /** 验证并清理用户输入，防止XSS和注入攻击 */
+  /**
+   * 验证并清理用户输入
+   *
+   * 设计原则：渲染层使用 textContent 设置消息内容，已天然防 XSS。
+   * 此处仅做长度限制和首尾空白清理，不再移除合法的 `<>` 字符——
+   * 用户可能输入代码片段、数学符号等合法内容，过度过滤会破坏体验。
+   *
+   * 真正的 XSS 防护由 textContent（而非 innerHTML）保证。
+   */
   private sanitizeInput(input: string): string {
-    // 移除潜在的HTML标签和脚本
-    const sanitized = input
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/<[^>]*>/g, '')
-      .replace(/javascript:/gi, '')
-      .replace(/on\w+\s*=/gi, '')
-      .trim();
-    
-    // 限制长度，防止DoS攻击
     const MAX_INPUT_LENGTH = 10000;
-    return sanitized.length > MAX_INPUT_LENGTH 
-      ? sanitized.substring(0, MAX_INPUT_LENGTH) 
-      : sanitized;
+    const trimmed = input.trim();
+    return trimmed.length > MAX_INPUT_LENGTH
+      ? trimmed.substring(0, MAX_INPUT_LENGTH)
+      : trimmed;
   }
 
   // ─── 未读计数 ─────────────────────────────────────────
@@ -405,6 +464,17 @@ export class UIManager {
   /** 清除未读计数 */
   clearUnreadCount(): void {
     this.state.unreadCount = 0;
+    this.updateBadge();
+  }
+
+  /**
+   * 设置未读计数（由主进程同步）
+   *
+   * 用于浮动窗口与完整窗口的未读计数同步：
+   * 主进程在浮动窗口收到新消息时推送权威计数到完整窗口。
+   */
+  setUnreadCount(count: number): void {
+    this.state.unreadCount = Math.max(0, count);
     this.updateBadge();
   }
 
@@ -456,6 +526,64 @@ export class UIManager {
 
   private handleClose(): void {
     window.electronAPI.windowClose();
+  }
+
+  // ─── 主动提示 banner ──────────────────────────────────
+
+  /**
+   * 显示主动提示 banner
+   *
+   * 对齐 docs/memora-sprite-preview.html §6.6：
+   * 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作。
+   * 由 renderer.ts 在收到 proactivePrompt 事件时调用。
+   */
+  showProactiveBanner(text: string): void {
+    const banner = document.getElementById('proactive-banner');
+    const textEl = document.getElementById('proactive-banner-text');
+    if (!banner || !textEl) return;
+
+    textEl.textContent = text;
+    banner.classList.remove('hidden');
+  }
+
+  /**
+   * 隐藏主动提示 banner
+   *
+   * 用户点击任意操作按钮后调用，或切换面板时调用。
+   */
+  hideProactiveBanner(): void {
+    const banner = document.getElementById('proactive-banner');
+    if (!banner) return;
+    banner.classList.add('hidden');
+  }
+
+  /**
+   * 初始化主动提示 banner 按钮事件
+   *
+   * 三个按钮的语义：
+   * - 查看：切换到对话面板（banner 已在对话面板内，仅隐藏 banner）
+   * - 稍后：隐藏 banner，等待下次触发
+   * - 静默 1 小时：通知主进程进入静默模式
+   *
+   * 由 renderer.ts 调用以注册回调。
+   */
+  initProactiveBannerButtons(handlers: {
+    onView: () => void;
+    onLater: () => void;
+    onSilent: () => void;
+  }): void {
+    const banner = document.getElementById('proactive-banner');
+    if (!banner) return;
+
+    banner.querySelectorAll<HTMLElement>('.banner-btn').forEach(btn => {
+      const action = btn.dataset.action;
+      this.addEventListener(btn, 'click', () => {
+        this.hideProactiveBanner();
+        if (action === 'view') handlers.onView();
+        else if (action === 'later') handlers.onLater();
+        else if (action === 'silent') handlers.onSilent();
+      });
+    });
   }
 
   // ─── 事件发射 ─────────────────────────────────────────
@@ -538,9 +666,25 @@ export class UIManager {
     });
   }
 
-  /** 渲染记忆列表 */
+  /**
+   * 渲染记忆列表
+   *
+   * 卡片结构对齐 docs/memora-sprite-preview.html §6.4：
+   *   <div class="memory-item">
+   *     <div class="name">{name}</div>
+   *     <div class="meta">
+   *       <span class="source-tag">{source}</span>
+   *       <span class="score">score: {score}</span>
+   *     </div>
+   *     <div class="preview">{contentPreview}</div>
+   *   </div>
+   */
   renderMemoryList(memories: MemoryListItem[]): void {
-    this.memoryListEl.innerHTML = '';
+    // 安全清空容器：while + removeChild 比 innerHTML = '' 更安全
+    // （虽然 innerHTML = '' 清空时不解析 HTML，但保持一致性用 removeChild）
+    while (this.memoryListEl.firstChild) {
+      this.memoryListEl.removeChild(this.memoryListEl.firstChild);
+    }
 
     if (memories.length === 0) {
       const empty = document.createElement('div');
@@ -561,13 +705,23 @@ export class UIManager {
       nameEl.textContent = mem.name;
       item.appendChild(nameEl);
 
-      // 元数据（source + score）
+      // 元数据（source 标签 + score）
       const metaEl = document.createElement('div');
       metaEl.className = 'meta';
-      metaEl.textContent = `source: ${mem.source} · score: ${mem.score.toFixed(2)}`;
+
+      const sourceTag = document.createElement('span');
+      sourceTag.className = 'source-tag';
+      sourceTag.textContent = mem.source;
+      metaEl.appendChild(sourceTag);
+
+      const scoreEl = document.createElement('span');
+      scoreEl.className = 'score';
+      scoreEl.textContent = `score: ${mem.score.toFixed(2)}`;
+      metaEl.appendChild(scoreEl);
+
       item.appendChild(metaEl);
 
-      // 预览
+      // 预览（2 行截断）
       const previewEl = document.createElement('div');
       previewEl.className = 'preview';
       previewEl.textContent = mem.contentPreview;
@@ -690,7 +844,13 @@ export class UIManager {
   // 角色切换回调
   private personaSwitchCallback: ((name: string) => void) | null = null;
 
+  /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
+  private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
+
   onPersonaSwitch(cb: (name: string) => void): void { this.personaSwitchCallback = cb; }
+
+  /** 注册召回记忆点击回调 */
+  onMemoryRecallClick(cb: (memoryName: string) => void): void { this.memoryRecallClickCallback = cb; }
 
   // ─── 设置面板 ─────────────────────────────────────────
 
@@ -698,6 +858,7 @@ export class UIManager {
   private initSettingsPanelListeners(): void {
     const btnSave = document.getElementById('btn-settings-save') as HTMLButtonElement;
     const btnCancel = document.getElementById('btn-settings-cancel') as HTMLButtonElement;
+    const btnLlmTest = document.getElementById('btn-llm-test') as HTMLButtonElement | null;
 
     // 保存按钮：同时收集精灵配置和 LLM 配置
     this.addEventListener(btnSave, 'click', () => {
@@ -718,6 +879,13 @@ export class UIManager {
         this.applyLlmPreset(presetKey);
       }
     });
+
+    // LLM 连接测试按钮：调用主进程验证配置
+    if (btnLlmTest) {
+      this.addEventListener(btnLlmTest, 'click', () => {
+        this.llmTestCallback?.();
+      });
+    }
   }
 
   /** 应用 LLM 预设到表单 */
@@ -842,10 +1010,44 @@ export class UIManager {
   private configSaveCallback: ((config: SpriteConfigForm) => void) | null = null;
   private configCancelCallback: (() => void) | null = null;
   private llmConfigSaveCallback: ((payload: LlmConfigSavePayload) => void) | null = null;
+  /** LLM 连接测试回调：由 renderer.ts 注册，调用主进程 testLlmConfig */
+  private llmTestCallback: (() => void) | null = null;
 
   onConfigSave(cb: (config: SpriteConfigForm) => void): void { this.configSaveCallback = cb; }
   onConfigCancel(cb: () => void): void { this.configCancelCallback = cb; }
   onLlmConfigSave(cb: (payload: LlmConfigSavePayload) => void): void { this.llmConfigSaveCallback = cb; }
+  /** 注册 LLM 连接测试回调 */
+  onLlmTest(cb: () => void): void { this.llmTestCallback = cb; }
+
+  /**
+   * 显示 LLM 测试连接结果
+   *
+   * @param result 测试结果（success + error）
+   * @param elapsedMs 测试耗时（毫秒），用于展示响应速度
+   */
+  showLlmTestResult(result: { success: boolean; error: string | null }, elapsedMs?: number): void {
+    const resultEl = document.getElementById('llm-test-result');
+    if (!resultEl) return;
+
+    if (result.success) {
+      const timeHint = elapsedMs !== undefined ? `（${elapsedMs}ms）` : '';
+      resultEl.textContent = `✓ 连接成功${timeHint}`;
+      resultEl.style.color = 'var(--green)';
+    } else {
+      resultEl.textContent = `✗ 失败：${result.error ?? '未知错误'}`;
+      resultEl.style.color = 'var(--red)';
+    }
+  }
+
+  /** 收集表单中的 LLM 配置（供测试连接复用） */
+  getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
+    return {
+      provider: this.cfgLlmProvider.value.trim(),
+      model: this.cfgLlmModel.value.trim(),
+      baseUrl: this.cfgLlmBaseUrl.value.trim(),
+      apiKey: this.cfgLlmApiKey.value.trim(),
+    };
+  }
 
   // ─── 弹窗管理 ─────────────────────────────────────────
 

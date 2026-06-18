@@ -5,7 +5,7 @@
  * 详见 ADR-006 · 安全模型
  * 阶段二新增：M-101 写入二次确认 + M-105 审计日志
  */
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
@@ -170,8 +170,9 @@ export class SecurityGuard {
       }
     }
 
-    // 2. 白名单：项目目录
-    if (resolved.startsWith(resolve(this.projectPath))) {
+    // 2. 白名单：项目目录（严格前缀匹配，追加 sep 防止兄弟目录绕过）
+    const projectRoot = resolve(this.projectPath);
+    if (resolved === projectRoot || resolved.startsWith(projectRoot + sep)) {
       this.emitAudit({
         type: 'path-allow',
         path: resolved,
@@ -182,9 +183,9 @@ export class SecurityGuard {
       return;
     }
 
-    // 3. 白名单：数据目录
+    // 3. 白名单：数据目录（严格前缀匹配，追加 sep 防止兄弟目录绕过）
     const memoraDir = resolve(this.dataDir.replace(/^~/, homedir()));
-    if (resolved.startsWith(memoraDir)) {
+    if (resolved === memoraDir || resolved.startsWith(memoraDir + sep)) {
       this.emitAudit({
         type: 'path-allow',
         path: resolved,
@@ -195,9 +196,10 @@ export class SecurityGuard {
       return;
     }
 
-    // 4. 白名单：用户显式声明
+    // 4. 白名单：用户显式声明（严格前缀匹配，追加 sep 防止兄弟目录绕过）
     for (const allowed of this.extraAllowedPaths) {
-      if (resolved.startsWith(resolve(allowed))) {
+      const allowedRoot = resolve(allowed);
+      if (resolved === allowedRoot || resolved.startsWith(allowedRoot + sep)) {
         this.emitAudit({
           type: 'path-allow',
           path: resolved,

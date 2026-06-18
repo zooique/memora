@@ -3,8 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self'" />
   <title>Memora 精灵</title>
+  <!-- 霞鹜文楷：精灵消息字体（方案 §7.2 要求） -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont/style.css" />
   <link rel="stylesheet" href="renderer.css" />
 </head>
 <body>
@@ -62,6 +64,17 @@
     <main id="main-content">
       <!-- 对话面板 -->
       <div id="panel-chat" class="panel active">
+        <!-- 主动提示 banner（顶部滑入，对齐 docs/memora-sprite-preview.html §6.6） -->
+        <div id="proactive-banner" class="hidden">
+          <span class="banner-icon">🧚</span>
+          <div class="banner-text" id="proactive-banner-text"></div>
+          <div class="banner-actions">
+            <button class="banner-btn" data-action="view">查看</button>
+            <button class="banner-btn" data-action="later">稍后</button>
+            <button class="banner-btn" data-action="silent">静默 1 小时</button>
+          </div>
+        </div>
+
         <div id="messages"></div>
         <div id="input-area">
           <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
@@ -109,6 +122,9 @@
           <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
           <label for="cfg-llm-temperature">温度（temperature）</label>
           <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
+          <!-- 测试连接按钮：保存前验证 LLM 配置是否可用，避免无效配置导致 Agent 初始化失败 -->
+          <button id="btn-llm-test" class="btn-secondary" type="button">测试连接</button>
+          <span id="llm-test-result" class="settings-hint"></span>
         </div>
 
         <!-- Embedding 配置（可选） -->
@@ -196,7 +212,16 @@
       </div>
       <div class="modal-body">
         <label for="memory-add-source">来源（source）</label>
-        <input type="text" id="memory-add-source" placeholder="profile / insight / guardrail ..." />
+        <!-- source 下拉：提供常用预设，支持自定义输入（datalist 兼顾灵活性与一致性） -->
+        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail ..." />
+        <datalist id="source-presets">
+          <option value="profile">用户画像</option>
+          <option value="insight">洞察记忆</option>
+          <option value="guardrail">内容护栏</option>
+          <option value="skill">技能记忆</option>
+          <option value="persona">角色记忆</option>
+          <option value="topic">话题记忆</option>
+        </datalist>
         <label for="memory-add-name">名称（name）</label>
         <input type="text" id="memory-add-name" placeholder="记忆名称" />
         <label for="memory-add-content">内容（content）</label>

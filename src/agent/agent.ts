@@ -38,7 +38,7 @@ import type { UserProfile } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { InsightExtractor } from './insightExtractor.js';
 import type { ConfigManager } from './configManager.js';
-import type { MemoryInspector } from './memoryInspector.js';
+import type { MemoryInspector, MemorySnapshot, AgentStats, AgentSearchHit } from './memoryInspector.js';
 import { extractUserFacts } from './userFactExtractor.js';
 import { assembleComponents } from './assembler.js';
 import { configError } from '@/utils/errors.js';
@@ -937,6 +937,34 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 记忆查看器（快照 + 搜索 + 统计） */
   get memory(): MemoryInspector | null {
     return this.memoryInspector;
+  }
+
+  // ─── Agent 门面包装方法（向后兼容 project_memory API 契约）──
+  // God Object 拆分后方法移至 MemoryInspector，此处保留门面方法供宿主项目按旧契约调用
+
+  /**
+   * 获取当前演化状态快照（project_memory 约束 27/29/54 要求的 inspect() API）
+   * 委托至 MemoryInspector.snapshot()
+   */
+  inspect(): MemorySnapshot | null {
+    return this.memoryInspector?.snapshot() ?? null;
+  }
+
+  /**
+   * 获取记忆统计（project_memory 约束 28 要求的 getStats() API）
+   * 委托至 MemoryInspector.stats()
+   */
+  getStats(): AgentStats | null {
+    return this.memoryInspector?.stats() ?? null;
+  }
+
+  /**
+   * 搜索记忆（project_memory 约束 70 要求的 searchMemories() API）
+   * 委托至 MemoryInspector.search()
+   */
+  searchMemories(query: string, limit = 10): AgentSearchHit[] {
+    if (!this.memoryInspector) return [];
+    return this.memoryInspector.search(query, limit);
   }
 
   /** 记忆存储（宿主可直接调用 CRUD，如 delete/upsert） */

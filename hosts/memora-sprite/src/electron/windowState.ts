@@ -48,7 +48,7 @@ export class WindowStateManager {
     this.configPath = opts.configPath ?? path.join(process.cwd(), 'sprite.json');
   }
 
-  /** 状态转换 */
+  /** 状态转换：隐藏当前窗口 → 显示目标窗口 → 持久化 */
   async transition(target: WindowState): Promise<void> {
     if (this.state === target) return;
 
@@ -74,6 +74,24 @@ export class WindowStateManager {
     this.saveState();
   }
 
+  /**
+   * 显示当前状态对应的窗口（首次启动用）
+   *
+   * 与 transition 的区别：不隐藏其他窗口（创建后均为 hidden），
+   * 仅根据当前 state 显示对应窗口。解决 transition 早返回导致首次启动窗口不显示的问题。
+   */
+  showInitial(): void {
+    if (this.state === 'float' && this.floatWindow) {
+      this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
+      this.floatWindow.show();
+    }
+    if (this.state === 'full' && this.fullWindow) {
+      this.fullWindow.show();
+      this.fullWindow.focus();
+    }
+    // tray 态：不显示任何窗口（仅托盘图标）
+  }
+
   /** 保存状态到配置文件 */
   private saveState(): void {
     try {
@@ -82,7 +100,7 @@ export class WindowStateManager {
         config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
       }
       config.windowState = this.state;
-      config.floatPosition = this.floatPosition;
+      config.floatIconPosition = this.floatPosition;
       fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
     } catch (error) {
       // 记录错误但不中断应用运行
