@@ -64,12 +64,77 @@ function ask(rl: Interface, question: string): Promise<string> {
   });
 }
 
-/** LLM 预设配置 */
-const PROVIDER_PRESETS: Record<string, { provider: string; model: string; baseUrl: string }> = {
+/** LLM 预设配置（导出供 Electron 设置面板使用） */
+export const PROVIDER_PRESETS: Record<string, { provider: string; model: string; baseUrl: string }> = {
   '1': { provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' },
   '2': { provider: 'openai', model: 'gpt-4o', baseUrl: 'https://api.openai.com/v1' },
   '3': { provider: 'openai', model: 'gpt-4o-mini', baseUrl: 'https://api.openai.com/v1' },
 };
+
+/**
+ * 保存 LLM 配置到 ~/.memora/config.json
+ *
+ * 供 Electron 设置面板调用——用户在 UI 中配置 LLM 后，
+ * 通过此函数持久化到配置文件，随后调用 reinitAgent 重新初始化 Agent。
+ *
+ * @param llmConfig LLM 配置（provider/model/baseUrl/apiKey）
+ * @param embeddingConfig 可选的 Embedding 配置
+ * @param configPath 配置文件路径（默认 ~/.memora/config.json）
+ */
+export async function saveLlmConfig(
+  llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
+  embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
+  configPath?: string,
+): Promise<void> {
+  const configDir = resolve(homedir(), '.memora');
+  const targetPath = configPath ?? resolve(configDir, 'config.json');
+  await mkdir(configDir, { recursive: true });
+
+  // 读取现有配置（保留其他字段），不存在则用默认值
+  let existing: Config;
+  try {
+    existing = await loadConfig(targetPath);
+  } catch {
+    existing = {
+      llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
+      memory: { dataDir: '~/.memora', maxContextTokens: 120000 },
+      security: { permission: 'owner', confirmWrites: false },
+      allowedPaths: [],
+    };
+  }
+
+  // 合并新配置
+  const config: Config = {
+    ...existing,
+    llm: {
+      ...existing.llm,
+      provider: llmConfig.provider,
+      model: llmConfig.model,
+      baseUrl: llmConfig.baseUrl,
+      apiKey: llmConfig.apiKey,
+      temperature: llmConfig.temperature ?? existing.llm.temperature ?? 0.7,
+    },
+    ...(embeddingConfig ? { embedding: embeddingConfig } : {}),
+  };
+
+  await writeFile(targetPath, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+/**
+ * 检查 LLM 配置是否完整
+ *
+ * 供 Electron 启动时判断是否需要显示首次启动引导。
+ * @param configPath 配置文件路径（默认 ~/.memora/config.json）
+ * @returns true 表示配置完整，false 表示需要引导
+ */
+export async function isLlmConfigured(configPath?: string): Promise<boolean> {
+  try {
+    const config = await loadConfig(configPath);
+    return Boolean(config.llm.apiKey && config.llm.provider !== 'mock');
+  } catch {
+    return false;
+  }
+}
 
 /**
  * 首次启动引导
@@ -178,37 +243,15 @@ async function setupWizard(): Promise<void> {
 // ─── 启动精灵 ──────────────────────────────────────────
 
 /**
- * 启动精灵
+ * 从配置初始化 Agent + Sprite（内部函数）
  *
- * 配置优先级（高 → 低）：
- *   1. opts 参数（编程调用时传入）
- *   2. ~/.memora/config.json（用户级配置）
- *   3. .memora/config.json（项目级配置）
- *   4. 内置默认值
- *
- * @param opts - 启动选项（可选，覆盖配置文件）
- * @returns 精灵实例（用于外部控制）
+ * 不负责配置加载和 CLI 引导，仅根据传入的 Config 实例化 Agent + Sprite。
+ * 供 startSprite 和 reinitAgent 复用。
  */
-export async function startSprite(opts?: {
-  projectPath?: string;
-  configDir?: string;
-  dataDir?: string;
-  configPath?: string;
-}): Promise<{ agent: Agent; sprite: Sprite; close: () => Promise<void> }> {
-  // 1. 加载配置文件（首次启动时自动引导）
-  let config: Config;
-  try {
-    config = await loadConfig(opts?.configPath);
-    // 检查是否有 API Key
-    if (!config.llm.apiKey) {
-      throw new Error('API Key 未配置');
-    }
-  } catch {
-    // 首次启动或配置不完整，引导用户配置
-    await setupWizard();
-    config = await loadConfig(opts?.configPath);
-  }
-
+async function initAgentFromConfig(
+  config: Config,
+  opts?: { configDir?: string; dataDir?: string; projectPath?: string },
+): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
   const configDir = opts?.configDir ?? resolve(homedir(), '.memora-config');
   // 展开 ~ 为实际 home 目录
   const rawDir = config.memory.dataDir.startsWith('~')
@@ -217,7 +260,6 @@ export async function startSprite(opts?: {
   const dataDir = opts?.dataDir ?? rawDir;
 
   // 精灵的工作空间：~/.memora/workspace/（而非源码目录）
-  // 桌面精灵不是项目级工具，不应往自己的源码目录写文件
   const workspaceDir = resolve(dataDir, 'workspace');
   const projectPath = opts?.projectPath ?? workspaceDir;
   if (!existsSync(workspaceDir)) {
@@ -288,7 +330,79 @@ export async function startSprite(opts?: {
     storage.close();
   };
 
-  return { agent, sprite, close };
+  return { agent, sprite, sessionStore, dataDir, close };
+}
+
+/**
+ * 重新初始化 Agent + Sprite
+ *
+ * 供 Electron 设置面板调用——用户在 UI 中修改 LLM 配置后，
+ * 先调用 saveLlmConfig 持久化，再调用此函数重新初始化 Agent。
+ *
+ * @param prevClose 上一次 startSprite/reinitAgent 返回的 close 函数（用于清理旧实例）
+ * @param opts 配置选项
+ * @returns 新的 Agent + Sprite + close 函数
+ */
+export async function reinitAgent(
+  prevClose: (() => Promise<void>) | null,
+  opts?: { configDir?: string; dataDir?: string; projectPath?: string; configPath?: string },
+): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
+  // 1. 清理旧实例
+  if (prevClose) {
+    try {
+      await prevClose();
+    } catch {
+      // 旧实例清理失败不阻塞重新初始化
+    }
+  }
+
+  // 2. 重新加载配置
+  const config = await loadConfig(opts?.configPath);
+
+  // 3. 用新配置初始化
+  return initAgentFromConfig(config, opts);
+}
+
+/**
+ * 启动精灵
+ *
+ * 配置优先级（高 → 低）：
+ *   1. opts 参数（编程调用时传入）
+ *   2. ~/.memora/config.json（用户级配置）
+ *   3. .memora/config.json（项目级配置）
+ *   4. 内置默认值
+ *
+ * @param opts - 启动选项（可选，覆盖配置文件）
+ * @returns 精灵实例 + 会话存储 + 关闭函数（用于外部控制）
+ */
+export async function startSprite(opts?: {
+  projectPath?: string;
+  configDir?: string;
+  dataDir?: string;
+  configPath?: string;
+  /** Electron 模式：跳过 CLI 交互式引导，配置缺失时抛错由前端处理 */
+  skipWizard?: boolean;
+}): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
+  // 1. 加载配置文件（首次启动时自动引导）
+  let config: Config;
+  try {
+    config = await loadConfig(opts?.configPath);
+    // 检查是否有 API Key
+    if (!config.llm.apiKey) {
+      throw new Error('API Key 未配置');
+    }
+  } catch {
+    if (opts?.skipWizard) {
+      // Electron 模式：不阻塞，抛出配置错误由前端设置面板处理
+      throw new Error('配置不完整，请在设置面板中配置 LLM 提供商和 API Key');
+    }
+    // CLI 模式：交互式引导用户配置
+    await setupWizard();
+    config = await loadConfig(opts?.configPath);
+  }
+
+  // 2. 用配置初始化 Agent + Sprite
+  return initAgentFromConfig(config, opts);
 }
 
 // ─── 记忆管理命令 ──────────────────────────────────────

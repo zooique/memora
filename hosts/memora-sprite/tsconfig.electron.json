@@ -3,8 +3,8 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "lib": ["ES2022"],
-    "outDir": "./dist",
+    "lib": ["ES2022", "DOM"],
+    "outDir": "./dist-electron",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
@@ -17,11 +17,10 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "isolatedModules": true,
-    "declaration": true,
+    "declaration": false,
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/electron"]
+  "include": ["src/electron/**/*"],
+  "exclude": ["node_modules", "dist", "dist-electron"]
 }

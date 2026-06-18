@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <title>Memora 精灵</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-app-region: no-drag;
+    }
+
+    body {
+      width: 80px;
+      height: 80px;
+      background: transparent;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    #sphere {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #1e1e2e 0%, #313244 100%);
+      border: 2px solid #6c7086;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      transition: transform 0.2s ease, border-color 0.3s ease;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    #sphere:hover {
+      transform: scale(1.08);
+      border-color: #89b4fa;
+    }
+
+    #sphere.dragging {
+      transform: scale(0.95);
+      opacity: 0.8;
+    }
+
+    #badge {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      min-width: 18px;
+      height: 18px;
+      border-radius: 9px;
+      background: #f38ba8;
+      color: #1e1e2e;
+      font-size: 10px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+    }
+
+    #badge.visible {
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+  <div id="sphere">🧚</div>
+  <div id="badge">0</div>
+
+  <script>
+    'use strict';
+    const sphere = document.getElementById('sphere');
+    const badge = document.getElementById('badge');
+
+    // ─── 拖动检测（方案 §5.4 排雷修正） ──────────────────────
+    // 使用鼠标事件手动处理拖动，避免 -webkit-app-region: drag 吞掉单击事件
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let lastScreenX = 0;
+    let lastScreenY = 0;
+
+    document.addEventListener('mousedown', (e) => {
+      isDragging = false;
+      startX = e.screenX;
+      startY = e.screenY;
+      lastScreenX = e.screenX;
+      lastScreenY = e.screenY;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (e.buttons !== 1) return;  // 只处理左键按下
+      const dx = e.screenX - startX;
+      const dy = e.screenY - startY;
+
+      // 阈值判断：移动超过 3px 才认为是拖动
+      if (!isDragging && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        isDragging = true;
+        sphere.classList.add('dragging');
+        window.electronAPI.moveFloatWindow(0, 0);  // 触发拖动开始（主进程标记 isDragging）
+      }
+
+      if (isDragging) {
+        // 计算增量并移动窗口
+        const moveDx = e.screenX - lastScreenX;
+        const moveDy = e.screenY - lastScreenY;
+        if (moveDx !== 0 || moveDy !== 0) {
+          window.electronAPI.moveFloatWindow(moveDx, moveDy);
+        }
+        lastScreenX = e.screenX;
+        lastScreenY = e.screenY;
+      }
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        // 拖动结束，保存位置
+        sphere.classList.remove('dragging');
+        window.electronAPI.saveFloatPosition();
+      } else {
+        // 非拖动 → 单击 → 展开为完整窗口
+        window.electronAPI.expandToFull();
+      }
+      isDragging = false;
+    });
+
+    // ─── 未读计数 ──────────────────────────────────────────
+    window.electronAPI.onFloatUnread((count) => {
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.classList.add('visible');
+      } else {
+        badge.classList.remove('visible');
+      }
+    });
+  </script>
+</body>
+</html>

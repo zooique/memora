@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'" />
+  <title>Memora 精灵</title>
+  <link rel="stylesheet" href="renderer.css" />
+</head>
+<body>
+  <!-- 窗口标题栏（拖动区域） -->
+  <header id="titlebar">
+    <div id="titlebar-drag">
+      <span id="app-title">🧚 Memora</span>
+    </div>
+    <div id="titlebar-controls">
+      <button id="btn-minimize" title="最小化">─</button>
+      <button id="btn-maximize" title="最大化">□</button>
+      <button id="btn-close" title="关闭">✕</button>
+    </div>
+  </header>
+
+  <div id="app">
+    <!-- 侧边栏 -->
+    <aside id="sidebar">
+      <div id="sidebar-header">
+        <!-- 角色选择器（点击展开下拉菜单） -->
+        <div id="persona-selector">
+          <span id="persona-icon">🧚</span>
+          <span id="persona-name">精灵</span>
+          <span id="persona-arrow">▼</span>
+        </div>
+        <!-- 角色下拉菜单（动态填充） -->
+        <div id="persona-dropdown" class="dropdown hidden"></div>
+      </div>
+      <div id="sidebar-content">
+        <!-- 仪表盘 -->
+        <div id="dashboard">
+          <div class="dash-item">
+            <span class="dash-label">记忆</span>
+            <span class="dash-value" id="memory-count">0</span>
+          </div>
+          <div class="dash-item">
+            <span class="dash-label">洞察</span>
+            <span class="dash-value" id="insight-count">0</span>
+          </div>
+          <div class="dash-item">
+            <span class="dash-label">角色</span>
+            <span class="dash-value" id="persona-count">0</span>
+          </div>
+        </div>
+        <!-- 快捷入口 -->
+        <nav id="sidebar-nav">
+          <button class="nav-btn active" data-panel="chat">💬 对话</button>
+          <button class="nav-btn" data-panel="memories">🧠 记忆</button>
+          <button class="nav-btn" data-panel="settings">⚙️ 设置</button>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <main id="main-content">
+      <!-- 对话面板 -->
+      <div id="panel-chat" class="panel active">
+        <div id="messages"></div>
+        <div id="input-area">
+          <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
+          <button id="btn-send">发送</button>
+          <button id="btn-stop" class="hidden" title="停止">■</button>
+        </div>
+      </div>
+
+      <!-- 记忆面板 -->
+      <div id="panel-memories" class="panel">
+        <div class="panel-header">
+          <input type="text" id="memory-search" placeholder="搜索记忆…" />
+          <select id="memory-filter-source" title="按来源筛选">
+            <option value="">全部来源</option>
+            <option value="profile">profile</option>
+            <option value="insight">insight</option>
+            <option value="guardrail">guardrail</option>
+            <option value="skill">skill</option>
+            <option value="rule">rule</option>
+          </select>
+          <button id="btn-add-memory">+ 添加</button>
+        </div>
+        <div id="memory-list"></div>
+      </div>
+
+      <!-- 设置面板 -->
+      <div id="panel-settings" class="panel">
+        <!-- LLM 配置 -->
+        <div class="settings-group">
+          <h3>LLM 配置</h3>
+          <label for="cfg-llm-preset">提供商预设</label>
+          <select id="cfg-llm-preset">
+            <option value="">自定义</option>
+            <option value="1">DeepSeek（推荐，性价比高）</option>
+            <option value="2">OpenAI GPT-4o</option>
+            <option value="3">OpenAI GPT-4o-mini</option>
+          </select>
+          <label for="cfg-llm-provider">提供商（provider）</label>
+          <input type="text" id="cfg-llm-provider" placeholder="deepseek / openai / 自定义" />
+          <label for="cfg-llm-model">模型（model）</label>
+          <input type="text" id="cfg-llm-model" placeholder="deepseek-chat" />
+          <label for="cfg-llm-base-url">API 地址（baseUrl）</label>
+          <input type="text" id="cfg-llm-base-url" placeholder="https://api.deepseek.com" />
+          <label for="cfg-llm-api-key">API Key</label>
+          <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
+          <label for="cfg-llm-temperature">温度（temperature）</label>
+          <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
+        </div>
+
+        <!-- Embedding 配置（可选） -->
+        <div class="settings-group">
+          <h3>Embedding 配置（可选）</h3>
+          <p class="settings-hint">配置后启用语义搜索（向量召回），让记忆搜索更智能。</p>
+          <label for="cfg-emb-enabled">启用语义搜索</label>
+          <input type="checkbox" id="cfg-emb-enabled" />
+          <label for="cfg-emb-model">模型（model）</label>
+          <input type="text" id="cfg-emb-model" placeholder="text-embedding-3-small" />
+          <label for="cfg-emb-base-url">API 地址（留空复用 LLM 配置）</label>
+          <input type="text" id="cfg-emb-base-url" placeholder="https://api.openai.com/v1" />
+          <label for="cfg-emb-api-key">API Key（留空复用 LLM 配置）</label>
+          <input type="password" id="cfg-emb-api-key" placeholder="sk-****" />
+        </div>
+
+        <!-- 精灵配置 -->
+        <div class="settings-group">
+          <h3>精灵配置</h3>
+          <label for="cfg-silent">静默模式</label>
+          <input type="checkbox" id="cfg-silent" />
+          <label for="cfg-threshold">主动提示阈值（事件数）</label>
+          <input type="number" id="cfg-threshold" min="1" max="20" value="3" />
+          <label for="cfg-cooldown">主动提示冷却（分钟）</label>
+          <input type="number" id="cfg-cooldown" min="1" max="60" value="5" />
+          <label for="cfg-interval">定时触发间隔（分钟）</label>
+          <input type="number" id="cfg-interval" min="1" max="1440" value="60" />
+        </div>
+        <div class="settings-group">
+          <h3>文件监听</h3>
+          <label for="cfg-watcher-enabled">启用文件监听</label>
+          <input type="checkbox" id="cfg-watcher-enabled" />
+          <label for="cfg-watcher-paths">监听路径（逗号分隔）</label>
+          <input type="text" id="cfg-watcher-paths" placeholder="." />
+          <label for="cfg-watcher-debounce">防抖时间（毫秒）</label>
+          <input type="number" id="cfg-watcher-debounce" min="100" max="10000" value="1000" />
+        </div>
+        <div class="settings-group">
+          <h3>角色</h3>
+          <label for="cfg-persona-mode">匹配模式</label>
+          <div class="radio-group">
+            <label><input type="radio" name="persona-mode" value="auto" /> 自动</label>
+            <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
+          </div>
+          <label for="cfg-default-persona">默认角色</label>
+          <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" />
+        </div>
+        <div class="settings-actions">
+          <button id="btn-settings-cancel">取消</button>
+          <button id="btn-settings-save">保存</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 记忆详情弹窗 -->
+  <div id="memory-detail-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="memory-detail-name"></h3>
+        <button class="modal-close" data-modal="memory-detail-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="memory-meta">
+          <span>来源: <code id="memory-detail-source"></code></span>
+          <span>权重: <span id="memory-detail-score"></span></span>
+          <span>创建: <span id="memory-detail-created"></span></span>
+          <span>访问: <span id="memory-detail-accessed"></span></span>
+        </div>
+        <pre id="memory-detail-content"></pre>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-memory-delete" class="btn-danger">删除</button>
+        <button class="btn-secondary" data-modal="memory-detail-modal">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 添加记忆弹窗 -->
+  <div id="memory-add-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>添加记忆</h3>
+        <button class="modal-close" data-modal="memory-add-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <label for="memory-add-source">来源（source）</label>
+        <input type="text" id="memory-add-source" placeholder="profile / insight / guardrail ..." />
+        <label for="memory-add-name">名称（name）</label>
+        <input type="text" id="memory-add-name" placeholder="记忆名称" />
+        <label for="memory-add-content">内容（content）</label>
+        <textarea id="memory-add-content" rows="6" placeholder="记忆内容..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-modal="memory-add-modal">取消</button>
+        <button id="btn-memory-add-confirm" class="btn-primary">添加</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="renderer.js"></script>
+</body>
+</html>

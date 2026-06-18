@@ -22,18 +22,21 @@ export type InputHandler = (event: InputEvent) => void;
 /** 关闭回调 */
 export type CloseHandler = () => void;
 
+/** 输出类型（区分主动提示与系统消息，Electron 模式用于 IPC 路由） */
+export type OutputKind = 'proactive' | 'system';
+
 /**
  * 交互层接口
  *
  * 宿主通过此接口与用户交互。
  * CLI 实现：readline（stdin/stdout）
- * Electron 实现：IPC 渲染进程（未来）
+ * Electron 实现：IPC 渲染进程
  */
 export interface IInteraction {
   /** 启动交互层 */
   start(handler: InputHandler): void;
-  /** 输出文本到用户 */
-  output(text: string): void;
+  /** 输出文本到用户（kind 区分主动提示与系统消息，CLI 实现可忽略） */
+  output(text: string, kind?: OutputKind): void;
   /** 输出错误信息到用户 */
   error(text: string): void;
   /** 停止交互层 */

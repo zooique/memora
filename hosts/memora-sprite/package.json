@@ -1,33 +1,40 @@
 {
   "name": "memora-sprite",
   "version": "0.1.0",
-  "description": "Memora 桌面精灵宿主——能自我进化的本地 AI Agent",
+  "description": "Memora 精灵桌面伴侣——能自我进化的本地 AI Agent",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist-electron/electron/main.js",
   "bin": {
     "memora-sprite": "./dist/index.js"
   },
   "scripts": {
     "build": "tsc",
+    "build:electron": "tsc -p tsconfig.electron.json && node -e \"const fs=require('fs'),path=require('path');['src/electron/renderer/index.html','src/electron/renderer/float.html','src/electron/renderer/renderer.css'].forEach(f=>{const src=f;const dest=path.join('dist-electron',f.replace('src/',''));fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(src,dest)})\"",
+    "build:all": "npm run build && npm run build:electron",
     "start": "tsx src/index.ts",
+    "start:electron": "npm run build:electron && electron ./dist-electron/electron/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"**/*.{ts,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,md,json}\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
+    "rebuild": "electron-rebuild -f -w better-sqlite3"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
     "memora": "file:../..",
-    "better-sqlite3": "^11.9.1"
+    "better-sqlite3": "^12.10.0",
+    "electron": "^40.0.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^22.7.0",
+    "@types/node": "^24.9.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
     "eslint": "^9.12.0",

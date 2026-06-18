@@ -32,6 +32,12 @@ export interface SpriteConfig {
   fileWatcherIgnore?: string[];
   /** 文件监听防抖时间（毫秒），默认 1000 */
   fileWatcherDebounceMs?: number;
+  /** 浮动图标位置（屏幕坐标），默认 { x: -1, y: -1 } 表示首次启动居中 */
+  floatIconPosition?: { x: number; y: number };
+  /** 窗口状态（持久化），默认 'float' */
+  windowState?: 'tray' | 'float' | 'full';
+  /** 浮动图标是否可见，默认 true */
+  floatIconVisible?: boolean;
 }
 
 /** 配置键名联合类型 */
@@ -48,6 +54,9 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   fileWatcherPaths: ['.'],
   fileWatcherIgnore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
   fileWatcherDebounceMs: 1_000,
+  floatIconPosition: { x: -1, y: -1 },
+  windowState: 'float',
+  floatIconVisible: true,
 };
 
 /** 配置文件名 */

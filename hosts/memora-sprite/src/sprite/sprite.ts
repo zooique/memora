@@ -46,7 +46,7 @@ export interface SpriteEventMap {
   /** 定时触发器唤醒 */
   timerTriggered: { reason: string };
   /** 精灵主动提示（累积事件后生成） */
-  proactivePrompt: { prompt: string; triggers: string[] };
+  proactivePrompt: { prompt: string; triggers: string[]; silent: boolean };
 }
 
 // 重新导出 DashboardData 供外部使用

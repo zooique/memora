@@ -27,7 +27,7 @@ export interface ProactiveConfig {
 }
 
 /** 精灵事件发射器 */
-export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string; triggers: string[] }) => void;
+export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string; triggers: string[]; silent: boolean }) => void;
 
 /**
  * 主动提示引擎
@@ -88,7 +88,7 @@ export class ProactiveEngine {
     const summaries = notices.map(n => n.summary);
     const prompt = this.buildPrompt(triggers, summaries);
 
-    this.emitSprite?.('proactivePrompt', { prompt, triggers });
+    this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: this.config.silentMode });
 
     // 通过交互层输出主动提示
     if (this.interaction) {

@@ -67,3 +67,5 @@ $RECYCLE.BIN/
 
 # 测试临时目录
 test-sprite-*/
+hosts/memora-sprite/dist-electron
+hosts/memora-sprite/dist-electron/*
