@@ -890,13 +890,11 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
     await agent.chatSync('你好');
 
     // 模拟 chat 忙碌（直接设置内部状态以测试并发锁行为）
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (agent as any)._chatBusy = true;
+    Reflect.set(agent, '_chatBusy', true);
 
     expect(() => agent!.forkSession()).toThrow(/对话繁忙/);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (agent as any)._chatBusy = false;
+    Reflect.set(agent, '_chatBusy', false);
   });
 });
 

@@ -38,7 +38,12 @@ import type { UserProfile } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { InsightExtractor } from './insightExtractor.js';
 import type { ConfigManager } from './configManager.js';
-import type { MemoryInspector, MemorySnapshot, AgentStats, AgentSearchHit } from './memoryInspector.js';
+import type {
+  MemoryInspector,
+  MemorySnapshot,
+  AgentStats,
+  AgentSearchHit,
+} from './memoryInspector.js';
 import { extractUserFacts } from './userFactExtractor.js';
 import { assembleComponents } from './assembler.js';
 import { configError } from '@/utils/errors.js';
@@ -202,9 +207,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 当前激活的技能名（上一轮匹配，本轮注入） */
   private activeSkill: string | null = null;
 
-  // 上下文
-  private ctx: AgentContext | null = null;
   private _initialized = false;
+  // 项目上下文（AgentContext 与 ProjectContext 等价，直接使用后者避免重复字段）
   private pctx: ProjectContext | null = null;
 
   /** chat() 并发锁 */
@@ -230,7 +234,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       allowedPaths: opts.allowedPaths ?? [],
       confirmWrites: opts.confirmWrites ?? false,
       vectorStore: opts.vectorStore,
-      recallExcludeSources: opts.recallExcludeSources ?? [...AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES],
+      recallExcludeSources: opts.recallExcludeSources ?? [
+        ...AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES,
+      ],
       storage: opts.storage,
       sessionStore: opts.sessionStore,
       configDir: opts.configDir,
@@ -273,19 +279,26 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         ),
     });
 
-    const pctx = await this.projectManager.initProject(this.#config.projectPath, undefined, this.#config.configDir);
+    const pctx = await this.projectManager.initProject(
+      this.#config.projectPath,
+      undefined,
+      this.#config.configDir,
+    );
 
     await this.assembleComponents(pctx);
 
     this.pctx = pctx;
-    this.ctx = pctx;
 
     if (!this.loop || !this.history) {
-      throw configError('Agent 初始化失败', '组件组装后 loop 或 history 为空（可能 assembleComponents 抛异常被静默吞掉）', [
-        '检查 assembleComponents() 是否有未捕获的异常',
-        '检查传入的 provider 参数是否有效',
-        '确认 API Key 已配置（环境变量或配置文件）',
-      ]);
+      throw configError(
+        'Agent 初始化失败',
+        '组件组装后 loop 或 history 为空（可能 assembleComponents 抛异常被静默吞掉）',
+        [
+          '检查 assembleComponents() 是否有未捕获的异常',
+          '检查传入的 provider 参数是否有效',
+          '确认 API Key 已配置（环境变量或配置文件）',
+        ],
+      );
     }
 
     this._initialized = true;
@@ -306,10 +319,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('chat');
 
     if (input.length > AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH) {
-      throw configError('输入过长', `输入超过最大长度限制（${AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH / 1024}KB）`, [
-        '缩短输入内容',
-        '分多次对话发送',
-      ]);
+      throw configError(
+        '输入过长',
+        `输入超过最大长度限制（${AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH / 1024}KB）`,
+        ['缩短输入内容', '分多次对话发送'],
+      );
     }
 
     if (this._chatBusy) {
@@ -329,7 +343,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
     this.chatLockTimer = setTimeout(() => {
-      logger.warn({ timeoutMs: AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS }, 'chat() 锁超时，中断 generator 并释放锁');
+      logger.warn(
+        { timeoutMs: AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS },
+        'chat() 锁超时，中断 generator 并释放锁',
+      );
       internalAbort.abort();
       this._chatBusy = false;
       this.chatLockTimer = null;
@@ -343,7 +360,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const recalledMemories = await this.recallAndInject(input);
 
       if (combinedSignal.aborted) {
-        yield { type: 'aborted', reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation' };
+        yield {
+          type: 'aborted',
+          reason: this.#config.messages?.abortedByUser ?? 'User cancelled the conversation',
+        };
         return;
       }
 
@@ -355,7 +375,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       let assistantContent = '';
       let wasAborted = false;
-      for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(input, recalledMemories, combinedSignal)) {
+      for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(
+        input,
+        recalledMemories,
+        combinedSignal,
+      )) {
         yield chunk;
         if (chunk.type === 'text') {
           assistantContent += chunk.content;
@@ -395,11 +419,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @returns 召回的记忆列表
    */
   private async recallAndInject(input: string): Promise<Memory[]> {
-    const recalledMemories = await recall(this.requireNonNull(this.pctx, 'projectContext').index, input, {
-      limit: 5,
-      vectorStore: this.#config.vectorStore,
-      excludeSources: this.#config.recallExcludeSources,
-    });
+    const recalledMemories = await recall(
+      this.requireNonNull(this.pctx, 'projectContext').index,
+      input,
+      {
+        limit: 5,
+        vectorStore: this.#config.vectorStore,
+        excludeSources: this.#config.recallExcludeSources,
+      },
+    );
     if (recalledMemories.length > 0) {
       this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
     }
@@ -412,9 +440,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
       const userLabel = msgs?.userLabel ?? 'User';
       const assistantLabel = msgs?.assistantLabel ?? 'Assistant';
-      const recentPrompt = `${label}\n` + recentHistory.map(m =>
-        `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`
-      ).join('\n');
+      const recentPrompt =
+        `${label}\n` +
+        recentHistory
+          .map((m) => `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`)
+          .join('\n');
       loop.injectSystemMessage(recentPrompt);
       logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
     }
@@ -596,7 +626,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const newPctx = await pm.initProject(projectPath, projectName, this.#config.configDir);
 
     this.pctx = newPctx;
-    this.ctx = newPctx;
     await this.rebuildComponentsWithCurrentCtx();
 
     return newPctx;
@@ -709,18 +738,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 优先匹配 preferredSession，否则取最后一个
     const today = new Date().toISOString().slice(0, 10);
-    const preferred = sessions.find(s => s === `${today}-${preferredSession}`)
-      ?? sessions[sessions.length - 1];
+    const preferred =
+      sessions.find((s) => s === `${today}-${preferredSession}`) ?? sessions[sessions.length - 1];
 
     // 解析 "YYYY-MM-DD-session" 格式
-    const match = this.requireNonNull(preferred, 'preferredSession').match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
+    const match = this.requireNonNull(preferred, 'preferredSession').match(
+      /^(\d{4}-\d{2}-\d{2})-(.+)$/,
+    );
     if (!match) {
       logger.debug({ session: preferred }, '会话标识格式不匹配');
       return 0;
     }
 
     const [, date, session] = match;
-    const sessionMessages = this.#config.sessionStore.loadMessages(this.requireNonNull(date, 'date'), this.requireNonNull(session, 'session'));
+    const sessionMessages = this.#config.sessionStore.loadMessages(
+      this.requireNonNull(date, 'date'),
+      this.requireNonNull(session, 'session'),
+    );
     if (sessionMessages.length === 0) {
       logger.debug({ messageCount: 0 }, '没有找到可恢复的历史会话');
       return 0;
@@ -737,7 +771,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async restoreSession(date: string, session: string): Promise<number> {
     this.assertInitialized('restoreSession');
 
-    const sessionMessages = await this.requireNonNull(this.history, 'history').loadSessionMessages(date, session);
+    const sessionMessages = await this.requireNonNull(this.history, 'history').loadSessionMessages(
+      date,
+      session,
+    );
     if (sessionMessages.length === 0) {
       return 0;
     }
@@ -758,7 +795,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── 守卫方法 ───────────────────────────────────────────
 
-  private applySessionToLoop(sessionMessages: ReadonlyArray<{ role: string; content: string }>): void {
+  private applySessionToLoop(
+    sessionMessages: ReadonlyArray<{ role: string; content: string }>,
+  ): void {
     const messages: Message[] = sessionMessages.map((tm) => ({
       role: tm.role as Message['role'],
       content: tm.content,
@@ -805,9 +844,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private requireNonNull<T>(value: T | null | undefined, name: string): T {
     if (value === null || value === undefined) {
-      throw configError('Agent 未初始化', `${name} 组件不可用`, [
-        '请先调用 await agent.init()',
-      ]);
+      throw configError('Agent 未初始化', `${name} 组件不可用`, ['请先调用 await agent.init()']);
     }
     return value;
   }
@@ -873,7 +910,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.configManager = null;
     this.memoryInspector = null;
     this.autoConfigRefiner = null;
-    this.ctx = null;
     this.pctx = null;
   }
 
@@ -884,7 +920,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   get context(): AgentContext | null {
-    return this.ctx;
+    return this.pctx;
   }
 
   get agentLoop(): AgentLoop | null {

@@ -13,6 +13,7 @@ import type { Memory } from './types.js';
 import { validateSource } from './types.js';
 import { segmentText } from '@/utils/segmenter.js';
 import { logger } from '@/logging/logger.js';
+import { applyDecayToMemory } from './recall.js';
 
 /**
  * 内存存储实现
@@ -35,7 +36,10 @@ export class InMemoryStorage implements IMemoryStorage {
       throw new Error(`source 校验失败（拒绝写入）：${result.warning}`);
     }
     if (result.severity === 'warn' && result.warning) {
-      logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');
+      logger.warn(
+        { id: memory.id, source: memory.source, warning: result.warning },
+        'source 校验警告',
+      );
     }
     this.memories.set(memory.id, { ...memory });
   }
@@ -85,7 +89,7 @@ export class InMemoryStorage implements IMemoryStorage {
     }
 
     // 规范分词（与 recall.ts extractKeywords 共用 segmentText）
-    const tokens = segmentText(query).map(t => t.toLowerCase());
+    const tokens = segmentText(query).map((t) => t.toLowerCase());
 
     // 若分词后无有效 token，降级为按 score 返回
     if (tokens.length === 0) {
@@ -131,15 +135,10 @@ export class InMemoryStorage implements IMemoryStorage {
    * 生产环境宿主（SqliteStorage）应重写为 SQL UPDATE 批量操作。
    */
   decayScores(sources: string[], now: Date): number {
-    const ONE_DAY = 24 * 60 * 60 * 1000;
     let count = 0;
     for (const m of this.memories.values()) {
       if (!sources.includes(m.source)) continue;
-      const accessedAt = new Date(m.accessedAt);
-      if (isNaN(accessedAt.getTime())) continue;
-      const daysSinceAccess = (now.getTime() - accessedAt.getTime()) / ONE_DAY;
-      if (daysSinceAccess > 7) {
-        m.score = Math.max(0.1, m.score - 0.02 * Math.floor(daysSinceAccess / 7));
+      if (applyDecayToMemory(m, now)) {
         count++;
       }
     }

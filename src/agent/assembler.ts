@@ -96,12 +96,9 @@ export async function assembleComponents(
 
   // ── Phase 1: 无依赖组件 ──
 
-  const history = new MessageHistory(pctx.index, sessionStore);
+  const history = new MessageHistory(sessionStore);
 
-  const workProjection = new WorkProjectionManager(
-    pctx.index,
-    backgroundProvider ?? provider,
-  );
+  const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider);
 
   const toolExec = new ToolExecutor(
     projectPath,
@@ -153,11 +150,7 @@ export async function assembleComponents(
     provider,
     bootstrapMemories: pctx.bootstrapMemories,
     toolExecutor: (name: string, args: string) =>
-      toolExec.execute(
-        name,
-        args,
-        insightExtractor.writeExtensions ?? undefined,
-      ),
+      toolExec.execute(name, args, insightExtractor.writeExtensions ?? undefined),
     systemPromptPrefix,
     toolDefinitions: toolExec.getToolDefinitions(),
     maxContextTokens,
@@ -181,8 +174,8 @@ export async function assembleComponents(
   const memoryInspector = new MemoryInspector(pctx.index, loop, history);
 
   // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
-  const autoConfigRefiner = new AutoConfigRefiner(
-    (suggestion) => configManager.suggestionCallback?.(suggestion),
+  const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
+    configManager.suggestionCallback?.(suggestion),
   );
   autoConfigRefiner.setBackgroundProvider(backgroundProvider);
 

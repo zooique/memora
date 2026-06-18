@@ -48,7 +48,7 @@ describe('extractKeywords · 关键词提取', () => {
 
   it('应该去重', () => {
     const keywords = extractKeywords('测试 测试 测试');
-    const testCount = keywords.filter(k => k === '测试').length;
+    const testCount = keywords.filter((k) => k === '测试').length;
     expect(testCount).toBe(1);
   });
 });
@@ -79,7 +79,7 @@ describe('recall · 记忆召回', () => {
     const memories = await recall(mockStorage, '测试查询');
 
     expect(memories).toHaveLength(2);
-    expect(mockStorage.search).toHaveBeenCalledWith('测试查询', 10); // limit * 2
+    expect(mockStorage.search).toHaveBeenCalledWith('测试 查询', 10); // 提取关键词后组合搜索
   });
 
   it('应该排除默认的 persona、rule 和 skill source', async () => {

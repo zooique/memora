@@ -54,17 +54,17 @@ export type ToolErrorCodeValue = (typeof ToolErrorCode)[keyof typeof ToolErrorCo
 /**
  * 判断错误码是否可重试
  */
-export function isRetryableErrorCode(code: ToolErrorCodeValue): boolean {
-  return RETRYABLE_ERROR_CODES.has(code as string);
-}
-
-const RETRYABLE_ERROR_CODES = new Set<string>([
+const RETRYABLE_ERROR_CODES = new Set<ToolErrorCodeValue>([
   ToolErrorCode.FILE_NOT_FOUND,
   ToolErrorCode.ARGUMENT_ERROR,
   ToolErrorCode.TOOL_TIMEOUT,
   ToolErrorCode.DIR_NOT_FOUND,
   ToolErrorCode.CUSTOM_TOOL_FAILED,
 ]);
+
+export function isRetryableErrorCode(code: ToolErrorCodeValue): boolean {
+  return RETRYABLE_ERROR_CODES.has(code);
+}
 
 export interface FriendlyErrorOptions {
   /** 用户能看懂的简短标题（中文） */
@@ -196,5 +196,3 @@ export function securityError(
 ): MemoraError {
   return new MemoraError({ title, detail, suggestions, category: 'security', cause });
 }
-
-

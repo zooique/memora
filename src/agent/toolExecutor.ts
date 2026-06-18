@@ -118,19 +118,15 @@ export class ToolExecutor {
     }
     // 不允许覆盖内置工具
     if (BUILTIN_TOOLS.some((t) => t.name === definition.name)) {
-      throw configError(
-        `不能覆盖内置工具：${definition.name}`,
-        undefined,
-        ['请使用不同的工具名称'],
-      );
+      throw configError(`不能覆盖内置工具：${definition.name}`, undefined, [
+        '请使用不同的工具名称',
+      ]);
     }
     // 不允许重复注册
     if (this.customTools.has(definition.name)) {
-      throw configError(
-        `工具已注册：${definition.name}`,
-        undefined,
-        ['请使用不同的工具名称，或先注销已有工具'],
-      );
+      throw configError(`工具已注册：${definition.name}`, undefined, [
+        '请使用不同的工具名称，或先注销已有工具',
+      ]);
     }
     this.customTools.set(definition.name, { definition, handler });
     logger.info({ tool: definition.name }, '自定义工具已注册');
@@ -182,7 +178,10 @@ export class ToolExecutor {
     }
 
     const safeArgs = Object.fromEntries(
-      Object.entries(args).map(([k, v]) => [k, typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}...` : v]),
+      Object.entries(args).map(([k, v]) => [
+        k,
+        typeof v === 'string' && v.length > 200 ? `${v.slice(0, 200)}...` : v,
+      ]),
     );
     logger.info({ tool: name, args: safeArgs }, '执行工具');
 
@@ -234,12 +233,18 @@ export class ToolExecutor {
             );
           }
         }
-        throw toolError('未知工具', `agent 调用了未注册的工具：${name}`, [
-          `已注册工具：${this.getToolDefinitions()
-            .map((t) => t.name)
-            .join(', ')}`,
-          '检查 personality.md 是否限制了工具集',
-        ], undefined, ToolErrorCode.UNKNOWN_TOOL);
+        throw toolError(
+          '未知工具',
+          `agent 调用了未注册的工具：${name}`,
+          [
+            `已注册工具：${this.getToolDefinitions()
+              .map((t) => t.name)
+              .join(', ')}`,
+            '检查 personality.md 是否限制了工具集',
+          ],
+          undefined,
+          ToolErrorCode.UNKNOWN_TOOL,
+        );
       }
     }
   }
@@ -249,10 +254,13 @@ export class ToolExecutor {
    */
   private async readFile(relativePath: string): Promise<ToolResult> {
     if (!relativePath) {
-      throw toolError('read_file 工具调用缺少 path 参数', 'LLM 未传 path', [
-        '检查 personality.md 是否明确了 read_file 用法',
-        '检查 LLM 输出',
-      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
+      throw toolError(
+        'read_file 工具调用缺少 path 参数',
+        'LLM 未传 path',
+        ['检查 personality.md 是否明确了 read_file 用法', '检查 LLM 输出'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
     }
 
     const absolutePath = this.resolveSafePath(relativePath);
@@ -309,14 +317,22 @@ export class ToolExecutor {
     insertLine?: string,
   ): Promise<ToolResult> {
     if (!relativePath) {
-      throw toolError('write_file 工具调用缺少 path 参数', 'LLM 未传 path', [
-        '检查 personality.md 是否明确了 write_file 用法',
-      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
+      throw toolError(
+        'write_file 工具调用缺少 path 参数',
+        'LLM 未传 path',
+        ['检查 personality.md 是否明确了 write_file 用法'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
     }
     if (typeof content !== 'string') {
-      throw toolError('write_file 工具调用缺少 content 参数', 'LLM 未传 content', [
-        '确认 content 是字符串',
-      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
+      throw toolError(
+        'write_file 工具调用缺少 content 参数',
+        'LLM 未传 content',
+        ['确认 content 是字符串'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
     }
 
     // 校验 mode 参数合法性
@@ -333,9 +349,13 @@ export class ToolExecutor {
 
     // insert 模式必须提供 insert_line
     if (mode === 'insert' && !insertLine) {
-      throw toolError('write_file 参数错误', 'insert 模式必须提供 insert_line 参数', [
-        'insert_line 指定插入位置的行号（从 1 开始）',
-      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
+      throw toolError(
+        'write_file 参数错误',
+        'insert 模式必须提供 insert_line 参数',
+        ['insert_line 指定插入位置的行号（从 1 开始）'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
     }
 
     const absolutePath = this.resolveSafePath(relativePath);
@@ -358,9 +378,13 @@ export class ToolExecutor {
     if (extensions?.onBeforeWrite) {
       const ok = await extensions.onBeforeWrite(relativePath, beforeContent, finalContent);
       if (!ok) {
-        throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
-          '如需写入，请重新发起请求并确认',
-        ], undefined, ToolErrorCode.WRITE_REJECTED);
+        throw toolError(
+          '用户拒绝写入',
+          `用户取消了 write_file 操作：${absolutePath}`,
+          ['如需写入，请重新发起请求并确认'],
+          undefined,
+          ToolErrorCode.WRITE_REJECTED,
+        );
       }
     } else {
       // 回退到原有安全确认流程
@@ -371,9 +395,13 @@ export class ToolExecutor {
         description,
       );
       if (!confirmed) {
-        throw toolError('用户拒绝写入', `用户取消了 write_file 操作：${absolutePath}`, [
-          '如需写入，请重新发起请求并确认',
-        ], undefined, ToolErrorCode.WRITE_REJECTED);
+        throw toolError(
+          '用户拒绝写入',
+          `用户取消了 write_file 操作：${absolutePath}`,
+          ['如需写入，请重新发起请求并确认'],
+          undefined,
+          ToolErrorCode.WRITE_REJECTED,
+        );
       }
     }
 
@@ -439,9 +467,13 @@ export class ToolExecutor {
         }
         const lineNum = Number.parseInt(insertLine ?? '1', 10);
         if (Number.isNaN(lineNum) || lineNum < 1) {
-          throw toolError('write_file 参数错误', `insert_line 必须是正整数，收到：${insertLine}`, [
-            'insert_line 从 1 开始计数',
-          ], undefined, ToolErrorCode.ARGUMENT_ERROR);
+          throw toolError(
+            'write_file 参数错误',
+            `insert_line 必须是正整数，收到：${insertLine}`,
+            ['insert_line 从 1 开始计数'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
         }
         const lines = beforeContent.split('\n');
         // 行号超出范围时追加到末尾
@@ -484,9 +516,13 @@ export class ToolExecutor {
     try {
       const stats = await stat(absolutePath);
       if (!stats.isDirectory()) {
-        throw toolError('list_dir 路径不是目录', `${absolutePath} 是文件，不是目录`, [
-          'path 参数必须指向目录',
-        ], undefined, ToolErrorCode.DIR_NOT_FOUND);
+        throw toolError(
+          'list_dir 路径不是目录',
+          `${absolutePath} 是文件，不是目录`,
+          ['path 参数必须指向目录'],
+          undefined,
+          ToolErrorCode.DIR_NOT_FOUND,
+        );
       }
     } catch (err) {
       if ((err as { code?: string }).code === 'ENOENT') {
@@ -559,12 +595,21 @@ export class ToolExecutor {
     }
   }
 
+  /** list_dir 默认忽略的目录/文件名 */
+  static readonly IGNORED_DIR_NAMES = [
+    '.git',
+    'node_modules',
+    '.memora',
+    'dist',
+    'coverage',
+    '.next',
+  ];
+
   /**
    * 判断目录/文件名是否应被忽略
    */
   private shouldIgnore(name: string): boolean {
-    const ignored = ['.git', 'node_modules', '.memora', 'dist', 'coverage', '.next'];
-    return ignored.includes(name);
+    return ToolExecutor.IGNORED_DIR_NAMES.includes(name);
   }
 
   /**
@@ -580,9 +625,13 @@ export class ToolExecutor {
     modeStr: string,
   ): Promise<ToolResult> {
     if (!query) {
-      throw toolError('search_memories 工具调用缺少 query 参数', 'LLM 未传 query', [
-        'query 不能为空',
-      ], undefined, ToolErrorCode.ARGUMENT_ERROR);
+      throw toolError(
+        'search_memories 工具调用缺少 query 参数',
+        'LLM 未传 query',
+        ['query 不能为空'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
     }
 
     let limit = Number.parseInt(limitStr, 10);
@@ -648,9 +697,13 @@ export class ToolExecutor {
     // 检查必填参数
     for (const req of required) {
       if (result[req] === undefined || result[req] === null) {
-        throw toolError('工具参数缺失', `${toolName}: 缺少必填参数 "${req}"`, [
-          `参数 "${req}" 类型应为 ${props[req]?.type ?? 'unknown'}`,
-        ], undefined, ToolErrorCode.ARGUMENT_ERROR);
+        throw toolError(
+          '工具参数缺失',
+          `${toolName}: 缺少必填参数 "${req}"`,
+          [`参数 "${req}" 类型应为 ${props[req]?.type ?? 'unknown'}`],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
       }
     }
 
@@ -721,7 +774,11 @@ export class ToolExecutor {
    * 路径白名单校验（捕获后包装为 toolError）
    * @param source S-02: 调用链来源标记
    */
-  private guardPathOrThrow(absolutePath: string, tool: string, source: 'builtin' | 'custom' | 'system' = 'builtin'): void {
+  private guardPathOrThrow(
+    absolutePath: string,
+    tool: string,
+    source: 'builtin' | 'custom' | 'system' = 'builtin',
+  ): void {
     try {
       this.security.assertPathAllowed(absolutePath, tool, source);
     } catch (err) {

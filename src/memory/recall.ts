@@ -13,6 +13,38 @@ import { logger } from '@/logging/logger.js';
 import { STOPWORDS, SOURCE_LABELS } from './types.js';
 import { segmentText } from '@/utils/segmenter.js';
 
+// ─── 召回与衰减常量 ─────────────────────────────────────
+
+/** 语义搜索默认相似度阈值 */
+const DEFAULT_MIN_SIMILARITY = 0.3;
+
+/** 语义搜索召回倍率（在最终 limit 基础上多召回一些，供后续融合排序） */
+const RECALL_LIMIT_MULTIPLIER = 2;
+
+/** 综合排序时语义相似度权重 */
+const VECTOR_SCORE_WEIGHT = 0.6;
+
+/** 综合排序时记忆 score 权重 */
+const MEMORY_SCORE_WEIGHT = 0.4;
+
+/** 每次召回时 score 提升量 */
+const BOOST_INCREMENT = 0.05;
+
+/** score 上限 */
+const SCORE_CEILING = 1.0;
+
+/** 衰减：未访问天数阈值 */
+const DECAY_AGE_DAYS = 7;
+
+/** 衰减：每过一个周期 score 降低量 */
+const DECAY_AMOUNT = 0.02;
+
+/** 衰减：score 下限 */
+const DECAY_FLOOR = 0.1;
+
+/** 一天对应的毫秒数 */
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * 从文本中提取关键词（用于记忆召回）
  *
@@ -24,14 +56,14 @@ import { segmentText } from '@/utils/segmenter.js';
  */
 export function extractKeywords(input: string): string[] {
   // 复用 segmenter.ts 的精确分词（Intl.Segmenter ICU 词典切分）
-  const words = segmentText(input).map(w => w.toLowerCase());
+  const words = segmentText(input).map((w) => w.toLowerCase());
 
   // 补充英文词（segmentText 可能遗漏连续英文大写缩写，如 APIKey → "apikey" 整词）
   const englishWords = input.match(/[a-z]{2,}/gi) || [];
-  words.push(...englishWords.map(w => w.toLowerCase()));
+  words.push(...englishWords.map((w) => w.toLowerCase()));
 
   // 去重 + 停用词过滤 + 最短长度
-  return [...new Set(words)].filter(w => w.length >= 2 && !STOPWORDS.has(w));
+  return [...new Set(words)].filter((w) => w.length >= 2 && !STOPWORDS.has(w));
 }
 
 // ─── 召回函数 ─────────────────────────────────────────────
@@ -74,7 +106,7 @@ export async function recall(
     limit = 5,
     excludeSources = [SOURCE_LABELS.PERSONA, SOURCE_LABELS.RULE, SOURCE_LABELS.SKILL],
     vectorStore,
-    minSimilarity = 0.3,
+    minSimilarity = DEFAULT_MIN_SIMILARITY,
   } = options;
 
   const merged = new Map<string, { memory: Memory; vectorScore: number }>();
@@ -82,7 +114,11 @@ export async function recall(
   // ── 通道 1：语义搜索（VectorStore 可用时） ──
   if (vectorStore && vectorStore.size > 0) {
     try {
-      const vectorResults = await vectorStore.search(query, limit * 2, minSimilarity);
+      const vectorResults = await vectorStore.search(
+        query,
+        limit * RECALL_LIMIT_MULTIPLIER,
+        minSimilarity,
+      );
       for (const vr of vectorResults) {
         const memory = storage.getById(vr.id);
         if (memory && !excludeSources.includes(memory.source)) {
@@ -97,7 +133,8 @@ export async function recall(
   // ── 通道 2：关键词搜索 ──
   const keywords = extractKeywords(query);
   if (keywords.length > 0) {
-    const keywordResults = storage.search(query, limit * 2);
+    // 使用提取后的关键词组合搜索，避免原始 query 中的停用词/噪声影响匹配
+    const keywordResults = storage.search(keywords.join(' '), limit * RECALL_LIMIT_MULTIPLIER);
     for (const m of keywordResults) {
       if (!excludeSources.includes(m.source) && !merged.has(m.id)) {
         merged.set(m.id, { memory: m, vectorScore: 0 });
@@ -110,8 +147,8 @@ export async function recall(
 
   // ── 综合排序：vectorScore（语义相关度）+ memory.score（权重） ──
   const sorted = [...merged.values()].sort((a, b) => {
-    const scoreA = a.vectorScore * 0.6 + a.memory.score * 0.4;
-    const scoreB = b.vectorScore * 0.6 + b.memory.score * 0.4;
+    const scoreA = a.vectorScore * VECTOR_SCORE_WEIGHT + a.memory.score * MEMORY_SCORE_WEIGHT;
+    const scoreB = b.vectorScore * VECTOR_SCORE_WEIGHT + b.memory.score * MEMORY_SCORE_WEIGHT;
     return scoreB - scoreA;
   });
 
@@ -140,32 +177,45 @@ export async function recall(
  * @param now - 当前时间戳（ISO 8601）
  */
 export function boostScore(memory: Memory, now?: string): void {
-  memory.score = Math.min(1.0, memory.score + 0.05);
+  memory.score = Math.min(SCORE_CEILING, memory.score + BOOST_INCREMENT);
   memory.accessedAt = now ?? new Date().toISOString();
 }
 
 /**
- * 定期衰减：长时间未访问的记忆 score 逐渐降低（下限 0.1）
+ * 对单条记忆执行衰减计算
  *
- * 超过 7 天未访问的记忆，每 7 天 score 降低 0.02，
+ * @param memory - 要衰减的记忆
+ * @param now - 当前时间（Date 对象）
+ * @returns 是否实际发生了衰减
+ */
+export function applyDecayToMemory(memory: Memory, now: Date): boolean {
+  const accessedAt = new Date(memory.accessedAt);
+  if (isNaN(accessedAt.getTime())) {
+    return false; // 跳过无效日期的记忆
+  }
+
+  const daysSinceAccess = (now.getTime() - accessedAt.getTime()) / ONE_DAY_MS;
+  if (daysSinceAccess <= DECAY_AGE_DAYS) {
+    return false;
+  }
+
+  const periods = Math.floor(daysSinceAccess / DECAY_AGE_DAYS);
+  memory.score = Math.max(DECAY_FLOOR, memory.score - DECAY_AMOUNT * periods);
+  return true;
+}
+
+/**
+ * 定期衰减：长时间未访问的记忆 score 逐渐降低（下限 DECAY_FLOOR）
+ *
+ * 超过 DECAY_AGE_DAYS 天未访问的记忆，每过一个周期 score 降低 DECAY_AMOUNT，
  * 体现"越久不用越不重要"。
  *
  * @param memories - 要衰减的记忆列表
  * @param now - 当前时间（Date 对象）
  */
 export function decayScores(memories: Memory[], now?: Date): void {
-  const ONE_DAY = 24 * 60 * 60 * 1000;
-  const currentTime = now?.getTime() ?? Date.now();
-
+  const currentTime = now ?? new Date();
   for (const m of memories) {
-    // 增加日期有效性验证，跳过无效日期
-    const accessedAt = new Date(m.accessedAt);
-    if (isNaN(accessedAt.getTime())) {
-      continue; // 跳过无效日期的记忆
-    }
-    const daysSinceAccess = (currentTime - accessedAt.getTime()) / ONE_DAY;
-    if (daysSinceAccess > 7) {
-      m.score = Math.max(0.1, m.score - 0.02 * Math.floor(daysSinceAccess / 7));
-    }
+    applyDecayToMemory(m, currentTime);
   }
 }

@@ -7,64 +7,41 @@
  *   - listAllSessions 返回空数组
  *   - registerPendingArchive / awaitPendingArchives
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
-
-/**
- * 创建 Mock IMemoryStorage
- */
-const createMockStorage = (): IMemoryStorage => {
-  return {
-    upsert: vi.fn(),
-    delete: vi.fn(),
-    getById: vi.fn(),
-    getBySource: vi.fn(() => []),
-    search: vi.fn(() => []),
-    count: vi.fn(() => 0),
-    countBySource: vi.fn(() => 0),
-    close: vi.fn(),
-  } as unknown as IMemoryStorage;
-};
 
 describe('MessageHistory · 基本操作', () => {
-  let mockStorage: IMemoryStorage;
-
-  beforeEach(() => {
-    mockStorage = createMockStorage();
-  });
-
   it('构造函数应初始化默认日期和会话', () => {
-    const history = new MessageHistory(mockStorage);
+    const history = new MessageHistory();
     expect(history.session).toBe('main');
     expect(history.currentSessionName).toContain('main');
   });
 
   it('构造函数应接受自定义初始日期和会话', () => {
-    const history = new MessageHistory(mockStorage, undefined, 3, '2026-06-01', 'custom-session');
+    const history = new MessageHistory(undefined, 3, '2026-06-01', 'custom-session');
     expect(history.session).toBe('custom-session');
     expect(history.currentSessionName).toBe('2026-06-01-custom-session');
   });
 
   it('switchSession 应更新当前会话', () => {
-    const history = new MessageHistory(mockStorage);
+    const history = new MessageHistory();
     const newName = history.switchSession('new-session');
     expect(history.session).toBe('new-session');
     expect(newName).toContain('new-session');
   });
 
   it('appendUser 不应抛错', async () => {
-    const history = new MessageHistory(mockStorage);
+    const history = new MessageHistory();
     await expect(history.appendUser('你好')).resolves.toBeUndefined();
   });
 
   it('appendAssistant 不应抛错', async () => {
-    const history = new MessageHistory(mockStorage);
+    const history = new MessageHistory();
     await expect(history.appendAssistant('你好')).resolves.toBeUndefined();
   });
 
   it('appendAssistant 空内容应跳过', async () => {
-    const history = new MessageHistory(mockStorage);
+    const history = new MessageHistory();
     await expect(history.appendAssistant('')).resolves.toBeUndefined();
     await expect(history.appendAssistant('   ')).resolves.toBeUndefined();
   });
@@ -72,7 +49,7 @@ describe('MessageHistory · 基本操作', () => {
 
 describe('MessageHistory · listAllSessions', () => {
   it('应返回空数组', async () => {
-    const history = new MessageHistory(createMockStorage());
+    const history = new MessageHistory();
     const sessions = await history.listAllSessions();
     expect(sessions).toEqual([]);
   });
@@ -80,7 +57,7 @@ describe('MessageHistory · listAllSessions', () => {
 
 describe('MessageHistory · loadSessionMessages', () => {
   it('应返回空数组并更新当前会话', async () => {
-    const history = new MessageHistory(createMockStorage());
+    const history = new MessageHistory();
     const messages = await history.loadSessionMessages('2026-06-01', 'old-session');
     expect(messages).toEqual([]);
     // 应更新当前会话为请求的会话
@@ -90,7 +67,7 @@ describe('MessageHistory · loadSessionMessages', () => {
 
 describe('MessageHistory · pendingArchives', () => {
   it('registerPendingArchive 应注册并等待完成', async () => {
-    const history = new MessageHistory(createMockStorage());
+    const history = new MessageHistory();
     let resolved = false;
     const p = new Promise<void>((resolve) => {
       setTimeout(() => {
@@ -106,7 +83,7 @@ describe('MessageHistory · pendingArchives', () => {
   });
 
   it('awaitPendingArchives 应等待所有挂起的归档', async () => {
-    const history = new MessageHistory(createMockStorage());
+    const history = new MessageHistory();
 
     // 注册多个归档
     const p1 = new Promise<void>((resolve) => setTimeout(resolve, 30));
@@ -119,10 +96,12 @@ describe('MessageHistory · pendingArchives', () => {
   });
 
   it('超时时应返回 false', async () => {
-    const history = new MessageHistory(createMockStorage());
+    const history = new MessageHistory();
 
     // 注册一个永不完成的归档
-    const p = new Promise<void>(() => { /* never resolves */ });
+    const p = new Promise<void>(() => {
+      /* never resolves */
+    });
     history.registerPendingArchive(p);
 
     const allDone = await history.awaitPendingArchives(100);

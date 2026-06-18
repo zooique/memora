@@ -102,14 +102,20 @@ export class AgentLoop {
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
-      contextTruncated: opts.messages?.contextTruncated ?? ((skipped, kept) =>
-        `[Context window management] ${skipped} earlier messages have been trimmed to maintain conversation flow. ${kept} recent messages are preserved along with the full system prompt. Ask the user if you need to review earlier content.`),
+      contextTruncated:
+        opts.messages?.contextTruncated ??
+        ((skipped, kept) =>
+          `[Context window management] ${skipped} earlier messages have been trimmed to maintain conversation flow. ${kept} recent messages are preserved along with the full system prompt. Ask the user if you need to review earlier content.`),
       recentConversationLabel: opts.messages?.recentConversationLabel ?? '[Recent conversation]',
       userLabel: opts.messages?.userLabel ?? 'User',
       assistantLabel: opts.messages?.assistantLabel ?? 'Assistant',
-      inputBlockedByGuard: opts.messages?.inputBlockedByGuard ?? ((rule: string) => `Input blocked by guardrail rule "${rule}"`),
+      inputBlockedByGuard:
+        opts.messages?.inputBlockedByGuard ??
+        ((rule: string) => `Input blocked by guardrail rule "${rule}"`),
       guardrailWarningPrefix: opts.messages?.guardrailWarningPrefix ?? '[Guardrail Warning]',
-      outputBlockedByGuard: opts.messages?.outputBlockedByGuard ?? ((rule: string) => `Output blocked by guardrail rule "${rule}"`),
+      outputBlockedByGuard:
+        opts.messages?.outputBlockedByGuard ??
+        ((rule: string) => `Output blocked by guardrail rule "${rule}"`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? false;
 
@@ -165,7 +171,10 @@ export class AgentLoop {
     }
     if (inputGuardResult.warning) {
       // warn 级别只通知，不阻断
-      yield { type: 'text', content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}` };
+      yield {
+        type: 'text',
+        content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}`,
+      };
     }
 
     this.messages.push({ role: 'user', content: enhancedInput });
@@ -187,7 +196,11 @@ export class AgentLoop {
 
       // 上下文摘要：如果启用且首次截断，生成摘要
       let contextSummary: string | undefined;
-      if (this.enableContextSummary && this.estimateTokens(this.messages) > this.maxContextTokens && this.messages.length > 3) {
+      if (
+        this.enableContextSummary &&
+        this.estimateTokens(this.messages) > this.maxContextTokens &&
+        this.messages.length > 3
+      ) {
         if (this.contextSummary) {
           contextSummary = this.contextSummary;
         } else {
@@ -218,7 +231,11 @@ export class AgentLoop {
 
       // 工具调用分支
       if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
-        const execResult = yield* this.executeToolCalls(llmResult.toolCalls, llmResult.fullContent, signal);
+        const execResult = yield* this.executeToolCalls(
+          llmResult.toolCalls,
+          llmResult.fullContent,
+          signal,
+        );
         if (execResult.aborted) {
           responseSpan.end();
           yield { type: 'aborted', reason: this.ui.abortedByUser };
@@ -261,7 +278,10 @@ export class AgentLoop {
         return;
       }
       if (outputGuardResult.warning) {
-        yield { type: 'text', content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}` };
+        yield {
+          type: 'text',
+          content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}`,
+        };
       }
 
       responseSpan.end();
@@ -312,13 +332,15 @@ export class AgentLoop {
         // 仅在流式输出前失败时重试（streamStarted = false）
         const delay = LOOP_CONSTANTS.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
         logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
-        await new Promise(r => setTimeout(r, delay));
+        await new Promise((r) => setTimeout(r, delay));
         fullContent = '';
         toolCalls = undefined;
       }
 
       try {
-        for await (const chunk of this.opts.provider.chat(safeMessages as Message[], chatOpts)) {
+        // safeMessages 为 readonly Message[]，provider.chat 期望 Message[]；
+        // 通过浅拷贝转换为可变数组，避免类型断言。
+        for await (const chunk of this.opts.provider.chat([...safeMessages], chatOpts)) {
           streamStarted = true;
           if (signal?.aborted) {
             aborted = true;
@@ -410,7 +432,10 @@ export class AgentLoop {
         if (err instanceof MemoraError) {
           const code = err.errorCode ?? 'UNKNOWN';
           result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
-          logger.warn({ tool: tc.function.name, errorCode: code, title: err.title }, '工具执行失败，错误已回传给 LLM');
+          logger.warn(
+            { tool: tc.function.name, errorCode: code, title: err.title },
+            '工具执行失败，错误已回传给 LLM',
+          );
         } else {
           result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${(err as Error).message}`;
           logger.error({ tool: tc.function.name, err }, '工具执行异常');
@@ -485,7 +510,12 @@ export class AgentLoop {
       }
       trimmedBlock = kept.join('\n');
       logger.info(
-        { originalChars: memoryBlock.length, trimmedChars: trimmedBlock.length, originalLines: lines.length, keptLines: kept.length },
+        {
+          originalChars: memoryBlock.length,
+          trimmedChars: trimmedBlock.length,
+          originalLines: lines.length,
+          keptLines: kept.length,
+        },
         '召回记忆上下文超限，已裁剪',
       );
     }
@@ -559,7 +589,8 @@ export class AgentLoop {
     }
 
     // 剩余可用 token 数（留 10% 缓冲给 LLM 响应）
-    const availableTokens = Math.floor(this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) - systemTokens;
+    const availableTokens =
+      Math.floor(this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) - systemTokens;
 
     // 从尾部向前收集消息（最近的最重要）
     const tail: Message[] = [];
@@ -620,9 +651,12 @@ export class AgentLoop {
   private async generateContextSummary(): Promise<string> {
     const messagesToSummarize = this.messages.slice(1);
     const recentMessages = messagesToSummarize
-      .filter(m => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
+      .filter((m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
       .slice(-6)
-      .map(m => `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, 200) : '[tool]'}`)
+      .map(
+        (m) =>
+          `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, 200) : '[tool]'}`,
+      )
       .join('\n');
 
     if (!recentMessages) return '';
@@ -699,7 +733,10 @@ export class AgentLoop {
           schema: {
             type: 'object',
             properties: {
-              content: { type: 'string', description: 'Assistant response text (may be empty if tool calls are needed)' },
+              content: {
+                type: 'string',
+                description: 'Assistant response text (may be empty if tool calls are needed)',
+              },
               tool_calls: {
                 type: 'array',
                 items: {
@@ -863,9 +900,8 @@ export class AgentLoop {
         const pattern = patternMatch[1]!.trim();
         const action = actionMatch[1]!.trim();
         // 去掉正则定界符 //
-        const regexStr = pattern.startsWith('/') && pattern.endsWith('/')
-          ? pattern.slice(1, -1)
-          : pattern;
+        const regexStr =
+          pattern.startsWith('/') && pattern.endsWith('/') ? pattern.slice(1, -1) : pattern;
         const regex = new RegExp(regexStr, 'i');
 
         if (regex.test(input)) {

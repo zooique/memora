@@ -7,7 +7,6 @@
  *   - 维护当前会话上下文（date + session）
  *   - 通过 ISessionStore 接口实现会话持久化
  */
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
@@ -53,13 +52,6 @@ export class MessageHistory {
 
   constructor(
     /**
-     * 内存索引（可选）
-     * 注入后，会话记忆写入逻辑可同步写入索引，
-     * 让召回层能跨会话召回。
-     * 不注入则跳过索引写入（保持向后兼容）。
-     */
-    private readonly index?: IMemoryStorage,
-    /**
      * 会话存储（可选）
      * 注入后，消息会持久化到宿主提供的存储实现。
      * 不注入则仅在内存中保存（AgentLoop.messages[]）。
@@ -78,8 +70,6 @@ export class MessageHistory {
   ) {
     this.currentDate = initialDate ?? todayDate();
     this.currentSession = initialSession;
-    // index 保留供未来会话记忆写入逻辑使用
-    void this.index;
   }
 
   /**
@@ -190,9 +180,7 @@ export class MessageHistory {
     // 加载源会话消息
     const messages = this.sessionStore.loadMessages(sourceDate, sourceSession);
     if (messages.length === 0) {
-      throw configError('无法分叉会话', '当前会话无消息', [
-        '先进行一些对话后再尝试分叉',
-      ]);
+      throw configError('无法分叉会话', '当前会话无消息', ['先进行一些对话后再尝试分叉']);
     }
 
     // 生成目标会话名

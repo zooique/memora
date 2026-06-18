@@ -22,6 +22,9 @@ const SOURCE_TO_DIR: Record<string, string> = {
   [SOURCE_LABELS.SKILL]: 'skills',
 };
 
+/** 无 frontmatter 或 score 缺失时的默认 score */
+const DEFAULT_MEMORY_SCORE = 0.5;
+
 /**
  * 文件存储类
  *
@@ -127,7 +130,7 @@ export class FileStore {
         name,
         createdAt: now,
         accessedAt: now,
-        score: 0.5,
+        score: DEFAULT_MEMORY_SCORE,
       };
     }
 
@@ -139,7 +142,7 @@ export class FileStore {
       name,
       createdAt: meta['createdAt'] ?? now,
       accessedAt: meta['accessedAt'] ?? now,
-      score: Number(meta['score'] ?? '0.5'),
+      score: Number(meta['score'] ?? DEFAULT_MEMORY_SCORE),
     };
   }
 }

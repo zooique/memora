@@ -14,21 +14,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageHistory } from '../messageHistory.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
-
-/**
- * 创建 Mock IMemoryStorage
- */
-const createMockStorage = (): IMemoryStorage => ({
-  upsert: vi.fn(),
-  delete: vi.fn(),
-  getById: vi.fn(),
-  getBySource: vi.fn(() => []),
-  search: vi.fn(() => []),
-  count: vi.fn(() => 0),
-  countBySource: vi.fn(() => 0),
-  close: vi.fn(),
-}) as unknown as IMemoryStorage;
 
 /**
  * 创建 Mock ISessionStore
@@ -41,14 +26,12 @@ const createMockSessionStore = (): ISessionStore => ({
 });
 
 describe('ISessionStore 契约 · appendMessage', () => {
-  let mockStorage: IMemoryStorage;
   let mockSessionStore: ISessionStore;
   let history: MessageHistory;
 
   beforeEach(() => {
-    mockStorage = createMockStorage();
     mockSessionStore = createMockSessionStore();
-    history = new MessageHistory(mockStorage, mockSessionStore);
+    history = new MessageHistory(mockSessionStore);
   });
 
   it('appendUser 应调用 sessionStore.appendMessage', async () => {
@@ -115,14 +98,12 @@ describe('ISessionStore 契约 · appendMessage', () => {
 });
 
 describe('ISessionStore 契约 · loadMessages', () => {
-  let mockStorage: IMemoryStorage;
   let mockSessionStore: ISessionStore;
   let history: MessageHistory;
 
   beforeEach(() => {
-    mockStorage = createMockStorage();
     mockSessionStore = createMockSessionStore();
-    history = new MessageHistory(mockStorage, mockSessionStore);
+    history = new MessageHistory(mockSessionStore);
   });
 
   it('loadSessionMessages 应调用 sessionStore.loadMessages', async () => {
@@ -146,7 +127,7 @@ describe('ISessionStore 契约 · loadMessages', () => {
   });
 
   it('sessionStore 未注入时应返回空数组', async () => {
-    const historyWithoutStore = new MessageHistory(mockStorage);
+    const historyWithoutStore = new MessageHistory();
 
     const result = await historyWithoutStore.loadSessionMessages('2026-01-01', 'test-session');
 
@@ -155,14 +136,12 @@ describe('ISessionStore 契约 · loadMessages', () => {
 });
 
 describe('ISessionStore 契约 · listSessions', () => {
-  let mockStorage: IMemoryStorage;
   let mockSessionStore: ISessionStore;
   let history: MessageHistory;
 
   beforeEach(() => {
-    mockStorage = createMockStorage();
     mockSessionStore = createMockSessionStore();
-    history = new MessageHistory(mockStorage, mockSessionStore);
+    history = new MessageHistory(mockSessionStore);
   });
 
   it('listAllSessions 应调用 sessionStore.listSessions', async () => {
@@ -176,7 +155,7 @@ describe('ISessionStore 契约 · listSessions', () => {
   });
 
   it('sessionStore 未注入时应返回空数组', async () => {
-    const historyWithoutStore = new MessageHistory(mockStorage);
+    const historyWithoutStore = new MessageHistory();
 
     const result = await historyWithoutStore.listAllSessions();
 
@@ -185,14 +164,12 @@ describe('ISessionStore 契约 · listSessions', () => {
 });
 
 describe('ISessionStore 契约 · copySession', () => {
-  let mockStorage: IMemoryStorage;
   let mockSessionStore: ISessionStore;
   let history: MessageHistory;
 
   beforeEach(() => {
-    mockStorage = createMockStorage();
     mockSessionStore = createMockSessionStore();
-    history = new MessageHistory(mockStorage, mockSessionStore);
+    history = new MessageHistory(mockSessionStore);
   });
 
   it('forkSession 应调用 sessionStore.copySession', async () => {
@@ -271,7 +248,7 @@ describe('ISessionStore 契约 · copySession', () => {
   });
 
   it('forkSession sessionStore 未注入时应抛出错误', () => {
-    const historyWithoutStore = new MessageHistory(mockStorage);
+    const historyWithoutStore = new MessageHistory();
 
     expect(() => historyWithoutStore.forkSession()).toThrow('无法分叉会话');
   });
@@ -283,9 +260,7 @@ describe('ISessionStore 契约 · copySession', () => {
     vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
     // 使用今天的日期，这样才会匹配
     const today = new Date().toISOString().slice(0, 10);
-    vi.mocked(mockSessionStore.listSessions).mockReturnValue([
-      `${today}-experiment`,
-    ]);
+    vi.mocked(mockSessionStore.listSessions).mockReturnValue([`${today}-experiment`]);
 
     expect(() => history.forkSession('experiment')).toThrow('无法分叉会话');
   });
