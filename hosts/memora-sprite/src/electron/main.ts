@@ -28,7 +28,13 @@ import { WindowManager } from './windowManager.js';
 import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
-import { startSprite, reinitAgent, saveLlmConfig, isLlmConfigured, PROVIDER_PRESETS } from '../index.js';
+import {
+  startSprite,
+  reinitAgent,
+  saveLlmConfig,
+  isLlmConfigured,
+  PROVIDER_PRESETS,
+} from '../index.js';
 import { loadSpriteConfig } from '../sprite/spriteConfig.js';
 import { loadConfig, createProviderFromConfig } from 'memora';
 import type { Sprite } from '../sprite/sprite.js';
@@ -42,6 +48,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const RESOURCES_DIR = path.join(__dirname, '../../resources');
 const TRAY_ICON_PATH = path.join(RESOURCES_DIR, 'tray-icon.png');
+
+/** 首次启动时浮动窗口的默认位置（屏幕左上角偏移） */
+const DEFAULT_FLOAT_POSITION = { x: 100, y: 100 };
 
 // ─── 主进程状态 ──────────────────────────────────────────────
 
@@ -110,9 +119,10 @@ async function initializeApp(): Promise<void> {
     const configPath = path.join(defaultDataDir, 'sprite.json');
 
     // 2. 初始化窗口状态管理器
-    const floatPosition = spriteConfig.floatIconPosition.x === -1
-      ? { x: 100, y: 100 }  // 首次启动使用默认位置
-      : spriteConfig.floatIconPosition;
+    const floatPosition =
+      spriteConfig.floatIconPosition.x === -1
+        ? DEFAULT_FLOAT_POSITION // 首次启动使用默认位置
+        : spriteConfig.floatIconPosition;
     windowStateManager = new WindowStateManager({
       defaultState: spriteConfig.windowState,
       floatPosition,
@@ -126,7 +136,10 @@ async function initializeApp(): Promise<void> {
     await windowManager.createWindows();
 
     // 4. 创建托盘
-    const iconPath = await fs.access(TRAY_ICON_PATH).then(() => TRAY_ICON_PATH).catch(() => '');
+    const iconPath = await fs
+      .access(TRAY_ICON_PATH)
+      .then(() => TRAY_ICON_PATH)
+      .catch(() => '');
     trayManager = new TrayManager(iconPath, {
       onShowFloat: () => windowStateManager.transition('float'),
       onShowFull: () => {
@@ -183,7 +196,9 @@ async function initializeApp(): Promise<void> {
       windowManager,
       trayManager,
       getAbortController: () => currentAbortController,
-      setAbortController: (ctrl: AbortController | null) => { currentAbortController = ctrl; },
+      setAbortController: (ctrl: AbortController | null) => {
+        currentAbortController = ctrl;
+      },
       getUnreadCount: () => unreadCount,
       incrementUnreadCount,
       resetUnreadCount,
@@ -230,41 +245,45 @@ function registerMinimalIpcHandlers(): void {
 
   // Agent 状态查询
   ipcMain.handle('agent-status', async () => {
-    return { ready: agentReady, error: agentReady ? null : '配置不完整，请在设置面板中配置 LLM 提供商和 API Key' };
+    return {
+      ready: agentReady,
+      error: agentReady ? null : '配置不完整，请在设置面板中配置 LLM 提供商和 API Key',
+    };
   });
 
   // LLM 连接测试（保存前验证配置是否可用）
   // 创建临时 Provider，发送最小测试消息，消费首个 chunk 即判定连接成功
-  ipcMain.handle('llm-config-test', async (
-    _event,
-    llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
-  ) => {
-    try {
-      // 1. 创建临时 Provider（不保存配置，不初始化 Agent）
-      const provider = createProviderFromConfig('test', {
-        provider: llmConfig.provider,
-        model: llmConfig.model,
-        baseUrl: llmConfig.baseUrl || undefined,
-        apiKey: llmConfig.apiKey,
-      });
+  ipcMain.handle(
+    'llm-config-test',
+    async (
+      _event,
+      llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
+    ) => {
+      try {
+        // 1. 创建临时 Provider（不保存配置，不初始化 Agent）
+        const provider = createProviderFromConfig('test', {
+          provider: llmConfig.provider,
+          model: llmConfig.model,
+          baseUrl: llmConfig.baseUrl || undefined,
+          apiKey: llmConfig.apiKey,
+        });
 
-      // 2. 发送最小测试消息，消费首个 chunk 验证连接
-      const stream = provider.chat([
-        { role: 'user', content: 'ping' },
-      ], { stream: true });
+        // 2. 发送最小测试消息，消费首个 chunk 验证连接
+        const stream = provider.chat([{ role: 'user', content: 'ping' }], { stream: true });
 
-      // AsyncIterable 需通过 [Symbol.asyncIterator]() 获取迭代器
-      const iterator = stream[Symbol.asyncIterator]();
-      const firstChunk = await iterator.next();
-      if (firstChunk.done) {
-        return { success: false, error: 'LLM 返回空响应，请检查模型名称是否正确' };
+        // AsyncIterable 需通过 [Symbol.asyncIterator]() 获取迭代器
+        const iterator = stream[Symbol.asyncIterator]();
+        const firstChunk = await iterator.next();
+        if (firstChunk.done) {
+          return { success: false, error: 'LLM 返回空响应，请检查模型名称是否正确' };
+        }
+
+        return { success: true, error: null };
+      } catch (error) {
+        return { success: false, error: (error as Error).message };
       }
-
-      return { success: true, error: null };
-    } catch (error) {
-      return { success: false, error: (error as Error).message };
-    }
-  });
+    },
+  );
 
   // LLM 配置读取（从 ~/.memora/config.json）
   ipcMain.handle('llm-config-get', async () => {
@@ -284,11 +303,13 @@ function registerMinimalIpcHandlers(): void {
           apiKey: config.llm.apiKey ?? '',
           temperature: config.llm.temperature,
         },
-        embedding: config.embedding ? {
-          model: config.embedding.model,
-          baseUrl: config.embedding.baseUrl ?? '',
-          apiKey: config.embedding.apiKey ?? '',
-        } : null,
+        embedding: config.embedding
+          ? {
+              model: config.embedding.model,
+              baseUrl: config.embedding.baseUrl ?? '',
+              apiKey: config.embedding.apiKey ?? '',
+            }
+          : null,
         presets: PROVIDER_PRESETS,
       };
     } catch {
@@ -297,68 +318,79 @@ function registerMinimalIpcHandlers(): void {
   });
 
   // LLM 配置保存 + 重新初始化 Agent
-  ipcMain.handle('llm-config-save', async (
-    _event,
-    llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
-    embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
-  ) => {
-    try {
-      // 1. 保存配置到文件
-      await saveLlmConfig(llmConfig, embeddingConfig);
+  ipcMain.handle(
+    'llm-config-save',
+    async (
+      _event,
+      llmConfig: {
+        provider: string;
+        model: string;
+        baseUrl: string;
+        apiKey: string;
+        temperature?: number;
+      },
+      embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
+    ) => {
+      try {
+        // 1. 保存配置到文件
+        await saveLlmConfig(llmConfig, embeddingConfig);
 
-      // 2. 重新初始化 Agent（清理旧实例）
-      const result = await reinitAgent(closeSprite);
-      agent = result.agent;
-      sprite = result.sprite;
-      sessionStore = result.sessionStore;
-      closeSprite = result.close;
+        // 2. 重新初始化 Agent（清理旧实例）
+        const result = await reinitAgent(closeSprite);
+        agent = result.agent;
+        sprite = result.sprite;
+        sessionStore = result.sessionStore;
+        closeSprite = result.close;
 
-      // 3. 注入交互层
-      sprite.setInteraction(interaction);
+        // 3. 注入交互层
+        sprite.setInteraction(interaction);
 
-      // 4. 移除最小化 IPC 中的 LLM 配置处理器（避免重复注册）
-      ipcMain.removeHandler('llm-config-get');
-      ipcMain.removeHandler('llm-config-save');
-      ipcMain.removeHandler('llm-config-test');
-      ipcMain.removeHandler('agent-status');
-      ipcMain.removeHandler('config-get');
+        // 4. 移除最小化 IPC 中的 LLM 配置处理器（避免重复注册）
+        ipcMain.removeHandler('llm-config-get');
+        ipcMain.removeHandler('llm-config-save');
+        ipcMain.removeHandler('llm-config-test');
+        ipcMain.removeHandler('agent-status');
+        ipcMain.removeHandler('config-get');
 
-      // 5. 注册完整 IPC 处理器
-      const ipcContext: IpcContext = {
-        agent,
-        sprite,
-        sessionStore,
-        windowStateManager,
-        windowManager,
-        trayManager,
-        getAbortController: () => currentAbortController,
-        setAbortController: (ctrl: AbortController | null) => { currentAbortController = ctrl; },
-        getUnreadCount: () => unreadCount,
-        incrementUnreadCount,
-        resetUnreadCount,
-      };
-      registerIpcHandlers(ipcContext);
+        // 5. 注册完整 IPC 处理器
+        const ipcContext: IpcContext = {
+          agent,
+          sprite,
+          sessionStore,
+          windowStateManager,
+          windowManager,
+          trayManager,
+          getAbortController: () => currentAbortController,
+          setAbortController: (ctrl: AbortController | null) => {
+            currentAbortController = ctrl;
+          },
+          getUnreadCount: () => unreadCount,
+          incrementUnreadCount,
+          resetUnreadCount,
+        };
+        registerIpcHandlers(ipcContext);
 
-      // 6. 订阅精灵事件
-      setupSpriteEventListeners();
+        // 6. 订阅精灵事件
+        setupSpriteEventListeners();
 
-      agentReady = true;
+        agentReady = true;
 
-      // 7. 通知渲染进程 Agent 已就绪
-      const fullWindow = windowManager.getFullWindow();
-      if (fullWindow && !fullWindow.isDestroyed()) {
-        fullWindow.webContents.send('agent-ready', { ready: true });
+        // 7. 通知渲染进程 Agent 已就绪
+        const fullWindow = windowManager.getFullWindow();
+        if (fullWindow && !fullWindow.isDestroyed()) {
+          fullWindow.webContents.send('agent-ready', { ready: true });
+        }
+
+        return { success: true, error: null };
+      } catch (error) {
+        errorHandler.handle(error, {
+          code: ErrorCode.INITIALIZATION_FAILED,
+          context: '保存 LLM 配置并重新初始化 Agent 失败',
+        });
+        return { success: false, error: (error as Error).message };
       }
-
-      return { success: true, error: null };
-    } catch (error) {
-      errorHandler.handle(error, {
-        code: ErrorCode.INITIALIZATION_FAILED,
-        context: '保存 LLM 配置并重新初始化 Agent 失败',
-      });
-      return { success: false, error: (error as Error).message };
-    }
-  });
+    },
+  );
 }
 
 // ─── 精灵事件监听（主动提示分发） ─────────────────────────
@@ -379,7 +411,10 @@ function setupSpriteEventListeners(): void {
   unsubscribeSpriteEvents();
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示
-  const onProactivePrompt: (e: SpriteEventMap['proactivePrompt']) => void = ({ prompt, silent }) => {
+  const onProactivePrompt: (e: SpriteEventMap['proactivePrompt']) => void = ({
+    prompt,
+    silent,
+  }) => {
     // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
     trayManager?.setState('active');
 

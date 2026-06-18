@@ -27,6 +27,8 @@ export interface WindowStateOptions {
 
 const FLOAT_SIZE = { width: 80, height: 80 };
 const FULL_SIZE = { width: 420, height: 640 };
+/** 首次启动时浮动窗口的默认位置（屏幕左上角偏移） */
+const DEFAULT_FLOAT_POSITION = { x: 100, y: 100 };
 
 export class WindowStateManager {
   private state: WindowState = 'float';
@@ -41,7 +43,7 @@ export class WindowStateManager {
   private configPath: string;
 
   constructor(opts: WindowStateOptions = {}) {
-    this.floatPosition = opts.floatPosition ?? { x: 100, y: 100 };
+    this.floatPosition = opts.floatPosition ?? DEFAULT_FLOAT_POSITION;
     this.floatSize = opts.floatSize ?? FLOAT_SIZE;
     this.fullSize = opts.fullSize ?? FULL_SIZE;
     this.state = opts.defaultState ?? 'float';

@@ -15,6 +15,9 @@
 
 // ─── 类型定义 ─────────────────────────────────────────────
 
+/** 毫秒/分钟转换常量（用于配置表单的分钟 ↔ 毫秒换算） */
+const MS_PER_MINUTE = 60_000;
+
 export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -168,7 +171,9 @@ export class UIManager {
     // 记忆面板
     this.memoryListEl = document.getElementById('memory-list')!;
     this.memorySearchEl = document.getElementById('memory-search') as HTMLInputElement;
-    this.memoryFilterSourceEl = document.getElementById('memory-filter-source') as HTMLSelectElement;
+    this.memoryFilterSourceEl = document.getElementById(
+      'memory-filter-source',
+    ) as HTMLSelectElement;
     this.memoryDetailModal = document.getElementById('memory-detail-modal')!;
 
     // 角色选择器
@@ -215,20 +220,32 @@ export class UIManager {
     // 输入框事件
     this.addEventListener(this.inputEl, 'keydown', this.handleInputKeydown.bind(this));
     this.addEventListener(this.inputEl, 'input', this.handleInputChange.bind(this));
-    
+
     // 按钮事件
     this.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
     this.addEventListener(this.btnStop, 'click', this.handleStopClick.bind(this));
-    
+
     // 导航事件
-    document.querySelectorAll<HTMLElement>('.nav-btn').forEach(btn => {
+    document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
       this.addEventListener(btn, 'click', this.handleNavClick.bind(this));
     });
-    
+
     // 标题栏事件
-    this.addEventListener(document.getElementById('btn-minimize')!, 'click', this.handleMinimize.bind(this));
-    this.addEventListener(document.getElementById('btn-maximize')!, 'click', this.handleMaximize.bind(this));
-    this.addEventListener(document.getElementById('btn-close')!, 'click', this.handleClose.bind(this));
+    this.addEventListener(
+      document.getElementById('btn-minimize')!,
+      'click',
+      this.handleMinimize.bind(this),
+    );
+    this.addEventListener(
+      document.getElementById('btn-maximize')!,
+      'click',
+      this.handleMaximize.bind(this),
+    );
+    this.addEventListener(
+      document.getElementById('btn-close')!,
+      'click',
+      this.handleClose.bind(this),
+    );
   }
 
   /** 添加事件监听器并记录清理函数 */
@@ -241,7 +258,7 @@ export class UIManager {
 
   /** 清理所有事件监听器 */
   cleanup(): void {
-    this.eventCleanupFunctions.forEach(cleanup => cleanup());
+    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
     this.eventCleanupFunctions = [];
   }
 
@@ -369,10 +386,10 @@ export class UIManager {
       streaming: true,
       messageId,
     });
-    
+
     this.streamingMessages.set(messageId, el);
     this.state.isStreaming = true;
-    
+
     // 更新UI状态
     this.btnSend.disabled = true;
     this.btnStop.classList.remove('hidden');
@@ -390,7 +407,7 @@ export class UIManager {
     }
     this.streamingMessages.clear();
     this.state.isStreaming = false;
-    
+
     // 更新UI状态
     this.btnSend.disabled = false;
     this.btnStop.classList.add('hidden');
@@ -401,16 +418,16 @@ export class UIManager {
   /** 切换面板 */
   switchPanel(panel: string): void {
     // 移除所有活动状态
-    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
 
     // 激活目标面板
     const panelEl = document.getElementById(`panel-${panel}`);
     const navBtn = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
-    
+
     panelEl?.classList.add('active');
     navBtn?.classList.add('active');
-    
+
     this.state.currentPanel = panel;
   }
 
@@ -428,7 +445,7 @@ export class UIManager {
     // 清空输入框
     this.inputEl.value = '';
     this.inputEl.style.height = 'auto';
-    
+
     return text;
   }
 
@@ -444,9 +461,7 @@ export class UIManager {
   private sanitizeInput(input: string): string {
     const MAX_INPUT_LENGTH = 10000;
     const trimmed = input.trim();
-    return trimmed.length > MAX_INPUT_LENGTH
-      ? trimmed.substring(0, MAX_INPUT_LENGTH)
-      : trimmed;
+    return trimmed.length > MAX_INPUT_LENGTH ? trimmed.substring(0, MAX_INPUT_LENGTH) : trimmed;
   }
 
   // ─── 未读计数 ─────────────────────────────────────────
@@ -575,7 +590,7 @@ export class UIManager {
     const banner = document.getElementById('proactive-banner');
     if (!banner) return;
 
-    banner.querySelectorAll<HTMLElement>('.banner-btn').forEach(btn => {
+    banner.querySelectorAll<HTMLElement>('.banner-btn').forEach((btn) => {
       const action = btn.dataset.action;
       this.addEventListener(btn, 'click', () => {
         this.hideProactiveBanner();
@@ -761,7 +776,9 @@ export class UIManager {
   private getAddMemoryFormData(): { source: string; name: string; content: string } | null {
     const source = (document.getElementById('memory-add-source') as HTMLInputElement).value.trim();
     const name = (document.getElementById('memory-add-name') as HTMLInputElement).value.trim();
-    const content = (document.getElementById('memory-add-content') as HTMLTextAreaElement).value.trim();
+    const content = (
+      document.getElementById('memory-add-content') as HTMLTextAreaElement
+    ).value.trim();
 
     if (!source || !name || !content) {
       return null;
@@ -786,13 +803,25 @@ export class UIManager {
   private memoryFilterCallback: ((source: string) => void) | null = null;
   private memoryClickCallback: ((id: string) => void) | null = null;
   private memoryDeleteCallback: (() => void) | null = null;
-  private memoryAddCallback: ((data: { source: string; name: string; content: string }) => void) | null = null;
+  private memoryAddCallback:
+    | ((data: { source: string; name: string; content: string }) => void)
+    | null = null;
 
-  onMemorySearch(cb: (query: string) => void): void { this.memorySearchCallback = cb; }
-  onMemoryFilter(cb: (source: string) => void): void { this.memoryFilterCallback = cb; }
-  onMemoryClick(cb: (id: string) => void): void { this.memoryClickCallback = cb; }
-  onMemoryDelete(cb: () => void): void { this.memoryDeleteCallback = cb; }
-  onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void { this.memoryAddCallback = cb; }
+  onMemorySearch(cb: (query: string) => void): void {
+    this.memorySearchCallback = cb;
+  }
+  onMemoryFilter(cb: (source: string) => void): void {
+    this.memoryFilterCallback = cb;
+  }
+  onMemoryClick(cb: (id: string) => void): void {
+    this.memoryClickCallback = cb;
+  }
+  onMemoryDelete(cb: () => void): void {
+    this.memoryDeleteCallback = cb;
+  }
+  onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void {
+    this.memoryAddCallback = cb;
+  }
 
   // ─── 角色选择器 ─────────────────────────────────────────
 
@@ -812,7 +841,10 @@ export class UIManager {
 
   /** 渲染角色下拉菜单 */
   renderPersonaDropdown(personas: PersonaItem[]): void {
-    this.personaDropdownEl.innerHTML = '';
+    // 安全清空容器：与 renderMemoryList 保持一致，使用 removeChild 而非 innerHTML
+    while (this.personaDropdownEl.firstChild) {
+      this.personaDropdownEl.removeChild(this.personaDropdownEl.firstChild);
+    }
 
     for (const p of personas) {
       const item = document.createElement('div');
@@ -847,10 +879,14 @@ export class UIManager {
   /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
   private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
 
-  onPersonaSwitch(cb: (name: string) => void): void { this.personaSwitchCallback = cb; }
+  onPersonaSwitch(cb: (name: string) => void): void {
+    this.personaSwitchCallback = cb;
+  }
 
   /** 注册召回记忆点击回调 */
-  onMemoryRecallClick(cb: (memoryName: string) => void): void { this.memoryRecallClickCallback = cb; }
+  onMemoryRecallClick(cb: (memoryName: string) => void): void {
+    this.memoryRecallClickCallback = cb;
+  }
 
   // ─── 设置面板 ─────────────────────────────────────────
 
@@ -917,8 +953,8 @@ export class UIManager {
       this.cfgLlmTemperature.value = String(data.config.temperature);
 
       // 反向匹配预设
-      const presetKey = Object.entries(data.presets).find(([, p]) =>
-        p.provider === data.config?.provider && p.model === data.config.model,
+      const presetKey = Object.entries(data.presets).find(
+        ([, p]) => p.provider === data.config?.provider && p.model === data.config.model,
       )?.[0];
       this.cfgLlmPreset.value = presetKey ?? '';
     }
@@ -960,15 +996,17 @@ export class UIManager {
   loadConfigToForm(config: SpriteConfigForm): void {
     this.cfgSilent.checked = config.silentMode;
     this.cfgThreshold.value = String(config.proactiveThreshold);
-    this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / 60_000));
-    this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / 60_000));
+    this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
+    this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
     this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
     this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
     this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
     this.cfgDefaultPersona.value = config.defaultPersona;
 
     // 角色匹配模式（单选按钮）
-    const modeRadio = document.querySelector(`input[name="persona-mode"][value="${this.currentPersonaMode}"]`) as HTMLInputElement | null;
+    const modeRadio = document.querySelector(
+      `input[name="persona-mode"][value="${this.currentPersonaMode}"]`,
+    ) as HTMLInputElement | null;
     if (modeRadio) {
       modeRadio.checked = true;
     }
@@ -980,7 +1018,9 @@ export class UIManager {
   /** 设置角色匹配模式（供 renderer.ts 调用） */
   setPersonaMode(mode: string): void {
     this.currentPersonaMode = mode;
-    const radio = document.querySelector(`input[name="persona-mode"][value="${mode}"]`) as HTMLInputElement | null;
+    const radio = document.querySelector(
+      `input[name="persona-mode"][value="${mode}"]`,
+    ) as HTMLInputElement | null;
     if (radio) {
       radio.checked = true;
     }
@@ -988,19 +1028,21 @@ export class UIManager {
 
   /** 收集表单中的配置 */
   collectConfigFromForm(): SpriteConfigForm {
-    const modeRadio = document.querySelector('input[name="persona-mode"]:checked') as HTMLInputElement | null;
+    const modeRadio = document.querySelector(
+      'input[name="persona-mode"]:checked',
+    ) as HTMLInputElement | null;
     this.currentPersonaMode = modeRadio?.value ?? 'auto';
 
     return {
       silentMode: this.cfgSilent.checked,
       proactiveThreshold: parseInt(this.cfgThreshold.value, 10) || 3,
-      proactiveCooldownMs: (parseInt(this.cfgCooldown.value, 10) || 5) * 60_000,
-      triggerIntervalMs: (parseInt(this.cfgInterval.value, 10) || 60) * 60_000,
+      proactiveCooldownMs: (parseInt(this.cfgCooldown.value, 10) || 5) * MS_PER_MINUTE,
+      triggerIntervalMs: (parseInt(this.cfgInterval.value, 10) || 60) * MS_PER_MINUTE,
       fileWatcherEnabled: this.cfgWatcherEnabled.checked,
       fileWatcherPaths: this.cfgWatcherPaths.value
         .split(',')
-        .map(s => s.trim())
-        .filter(s => s.length > 0),
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
       fileWatcherDebounceMs: parseInt(this.cfgWatcherDebounce.value, 10) || 1000,
       defaultPersona: this.cfgDefaultPersona.value.trim(),
     };
@@ -1013,11 +1055,19 @@ export class UIManager {
   /** LLM 连接测试回调：由 renderer.ts 注册，调用主进程 testLlmConfig */
   private llmTestCallback: (() => void) | null = null;
 
-  onConfigSave(cb: (config: SpriteConfigForm) => void): void { this.configSaveCallback = cb; }
-  onConfigCancel(cb: () => void): void { this.configCancelCallback = cb; }
-  onLlmConfigSave(cb: (payload: LlmConfigSavePayload) => void): void { this.llmConfigSaveCallback = cb; }
+  onConfigSave(cb: (config: SpriteConfigForm) => void): void {
+    this.configSaveCallback = cb;
+  }
+  onConfigCancel(cb: () => void): void {
+    this.configCancelCallback = cb;
+  }
+  onLlmConfigSave(cb: (payload: LlmConfigSavePayload) => void): void {
+    this.llmConfigSaveCallback = cb;
+  }
   /** 注册 LLM 连接测试回调 */
-  onLlmTest(cb: () => void): void { this.llmTestCallback = cb; }
+  onLlmTest(cb: () => void): void {
+    this.llmTestCallback = cb;
+  }
 
   /**
    * 显示 LLM 测试连接结果
@@ -1054,7 +1104,7 @@ export class UIManager {
   /** 初始化弹窗事件监听（关闭按钮、背景点击） */
   private initModalListeners(): void {
     // 所有带 data-modal 属性的关闭按钮
-    document.querySelectorAll<HTMLElement>('[data-modal]').forEach(btn => {
+    document.querySelectorAll<HTMLElement>('[data-modal]').forEach((btn) => {
       const modalId = btn.dataset.modal;
       if (modalId) {
         btn.addEventListener('click', () => this.hideModal(modalId));
@@ -1062,7 +1112,7 @@ export class UIManager {
     });
 
     // 点击弹窗背景关闭
-    document.querySelectorAll<HTMLElement>('.modal').forEach(modal => {
+    document.querySelectorAll<HTMLElement>('.modal').forEach((modal) => {
       modal.addEventListener('click', (e) => {
         if (e.target === modal) {
           modal.classList.add('hidden');
