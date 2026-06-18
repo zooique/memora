@@ -31,8 +31,16 @@ export class ElectronInteraction implements IInteraction {
     // 无操作——用户输入由 ipcHandlers.ts 处理
   }
 
-  /** 输出主动提示或系统消息 */
+  /**
+   * 输出主动提示或系统消息
+   *
+   * proactive 类型：主动提示由 main.ts 的 onProactivePrompt 推送 sprite-event 显示 banner，
+   * 此处不再重复发送到对话区，避免用户看到两条重复提示。
+   * system 类型：普通系统消息，正常推送到对话区。
+   */
   output(text: string, kind: OutputKind = 'system'): void {
+    // proactive 类型已由 banner 展示，跳过对话区推送
+    if (kind === 'proactive') return;
     this.mainWindow?.webContents.send('sprite-output', { text, kind });
   }
 

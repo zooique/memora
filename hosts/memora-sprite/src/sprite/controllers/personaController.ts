@@ -65,7 +65,10 @@ export class PersonaController {
   /** 格式化角色列表为可读文本 */
   format(): string {
     const personas = this.list();
-    if (personas.length === 0) return '暂无可用角色';
+    if (personas.length === 0) {
+      // 空状态引导：告知用户角色文件存放位置，避免不知道如何添加角色
+      return '暂无可用角色\n\n提示：在 agent-config/personas/ 目录下创建角色配置文件（.md 格式）即可添加角色';
+    }
 
     const lines: string[] = ['── 角色列表 ──'];
     for (const p of personas) {

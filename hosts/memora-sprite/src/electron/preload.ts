@@ -23,6 +23,8 @@ export interface MemoryListItem {
 
 /** 记忆搜索结果（与 sprite.searchMemories 返回值对齐，含相似度） */
 export interface MemorySearchHit {
+  /** 记忆唯一标识（${source}:${name} 格式） */
+  id: string;
   name: string;
   source: string;
   score: number;
@@ -86,11 +88,6 @@ export interface ElectronAPI {
   /** 移除应用错误监听器 */
   removeAppErrorListener: () => void;
 
-  // 中断确认
-  onChatAbortAck: (cb: () => void) => void;
-  /** 移除中断确认监听器 */
-  removeChatAbortAckListener: () => void;
-
   // Agent 状态查询
   getAgentStatus: () => Promise<{ ready: boolean; error: string | null }>;
 
@@ -134,7 +131,6 @@ export interface ElectronAPI {
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
-  windowFloat: () => void;
 
   // 浮动窗口
   onFloatDragStart: (cb: () => void) => void;
@@ -196,12 +192,6 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners('app-error');
   },
 
-  // 中断确认
-  onChatAbortAck: (cb) => ipcRenderer.on('chat-abort-ack', () => cb()),
-  removeChatAbortAckListener: () => {
-    ipcRenderer.removeAllListeners('chat-abort-ack');
-  },
-
   // Agent 状态查询
   getAgentStatus: () => ipcRenderer.invoke('agent-status'),
 
@@ -236,7 +226,6 @@ const electronAPI: ElectronAPI = {
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),
   windowClose: () => ipcRenderer.send('window-close'),
-  windowFloat: () => ipcRenderer.send('window-float'),
 
   // 浮动窗口
   onFloatDragStart: (cb) => ipcRenderer.on('float-drag-start', () => cb()),

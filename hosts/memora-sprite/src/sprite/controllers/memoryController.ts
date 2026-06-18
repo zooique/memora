@@ -41,6 +41,8 @@ export interface MemoryDetail {
 
 /** 搜索结果项 */
 export interface MemorySearchResult {
+  /** 记忆唯一标识（${source}:${name} 格式） */
+  id: string;
   name: string;
   source: string;
   score: number;

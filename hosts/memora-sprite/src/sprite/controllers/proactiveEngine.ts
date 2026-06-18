@@ -90,9 +90,9 @@ export class ProactiveEngine {
 
     this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: this.config.silentMode });
 
-    // 通过交互层输出主动提示
+    // 通过交互层输出主动提示（传入 kind='proactive'，Electron 模式下由 banner 展示，避免重复）
     if (this.interaction) {
-      this.interaction.output(`\n[精灵] ${prompt}\n`);
+      this.interaction.output(`\n[精灵] ${prompt}\n`, 'proactive');
     }
 
     logger.info({ prompt }, '主动提示');

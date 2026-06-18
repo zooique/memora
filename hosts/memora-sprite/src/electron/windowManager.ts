@@ -132,10 +132,6 @@ export class WindowManager {
     ipcMain.on('window-close', () => {
       this.windowStateManager.transition('float');
     });
-
-    ipcMain.on('window-float', () => {
-      this.windowStateManager.transition('float');
-    });
   }
 
   /** 设置窗口事件处理器 */

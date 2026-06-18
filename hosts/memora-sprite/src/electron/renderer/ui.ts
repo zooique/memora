@@ -651,9 +651,11 @@ export class UIManager {
       }
     });
 
-    // 删除按钮
+    // 删除按钮（带确认对话框，防止误删不可恢复数据）
     const btnDelete = document.getElementById('btn-memory-delete') as HTMLButtonElement;
     this.addEventListener(btnDelete, 'click', () => {
+      // 确认删除：记忆是持久化数据，删除后不可恢复，需二次确认
+      if (!window.confirm('确定要删除这条记忆吗？此操作不可撤销。')) return;
       this.memoryDeleteCallback?.();
     });
   }
@@ -682,6 +684,16 @@ export class UIManager {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.textContent = '暂无记忆';
+
+      // 空状态引导：提供"添加第一条记忆"按钮，避免用户不知道下一步
+      const hintBtn = document.createElement('button');
+      hintBtn.className = 'empty-action-btn';
+      hintBtn.textContent = '+ 添加第一条记忆';
+      this.addEventListener(hintBtn, 'click', () => {
+        this.showModal('memory-add-modal');
+      });
+      empty.appendChild(hintBtn);
+
       this.memoryListEl.appendChild(empty);
       return;
     }
@@ -1061,7 +1073,9 @@ export class UIManager {
       resultEl.textContent = `✓ 连接成功${timeHint}`;
       resultEl.style.color = 'var(--green)';
     } else {
-      resultEl.textContent = `✗ 失败：${result.error ?? '未知错误'}`;
+      // 失败时补充排查建议，引导用户修复而非仅显示错误
+      const hint = '\n排查建议：检查 API Key 是否正确 / baseUrl 是否可达 / model 名称是否支持';
+      resultEl.textContent = `✗ 失败：${result.error ?? '未知错误'}${hint}`;
       resultEl.style.color = 'var(--red)';
     }
   }

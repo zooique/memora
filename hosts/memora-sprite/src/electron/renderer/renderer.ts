@@ -36,6 +36,9 @@ import { toError } from 'memora';
 
 let uiManager: UIManager;
 
+/** 静默模式定时恢复句柄（多次点击"静默 1 小时"时清理旧定时器，避免重复恢复） */
+let silentRecoveryTimer: number | null = null;
+
 // ─── 初始化 ────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -67,12 +70,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       // banner 已隐藏，无需额外操作
     },
     onSilent: () => {
-      // 通知主进程进入静默模式 1 小时
+      // 通知主进程进入静默模式（1 小时后自动恢复）
       void window.electronAPI.updateConfig('silentMode', true);
       uiManager.appendMessage({
         role: 'system',
-        content: '🔕 已进入静默模式，精灵 1 小时内不会主动提示',
+        content: '🔕 已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）',
       });
+      // 清理旧的恢复定时器，避免多次点击产生重复恢复
+      if (silentRecoveryTimer !== null) {
+        window.clearTimeout(silentRecoveryTimer);
+      }
+      // 设置本地定时器：1 小时后自动关闭静默模式
+      // 注意：页面刷新会丢失定时器，但静默模式是持久化配置，用户可在设置面板手动关闭
+      silentRecoveryTimer = window.setTimeout(() => {
+        silentRecoveryTimer = null;
+        void window.electronAPI.updateConfig('silentMode', false).then(() => {
+          uiManager.appendMessage({
+            role: 'system',
+            content: '🔔 静默模式已到期自动恢复，精灵可正常主动提示',
+          });
+        });
+      }, 60 * 60 * 1000);
     },
   });
 
@@ -337,7 +355,7 @@ function setupMemoryPanel(): void {
     try {
       const { hits } = await window.electronAPI.searchMemories(query);
       const items: MemoryListItem[] = hits.map(h => ({
-        id: h.name, // 搜索结果没有 id 字段，用 name 作为标识
+        id: h.id,
         name: h.name,
         source: h.source,
         score: h.similarity ?? h.score,

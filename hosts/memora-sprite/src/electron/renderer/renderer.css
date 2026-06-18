@@ -819,6 +819,25 @@ html, body {
   font-size: 13px;
 }
 
+/* 空状态引导按钮：引导用户执行下一步操作 */
+.empty-action-btn {
+  display: block;
+  margin: 12px auto 0;
+  padding: 6px 16px;
+  border: 1px solid var(--surface2);
+  border-radius: 6px;
+  background: var(--surface1);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.empty-action-btn:hover {
+  border-color: var(--blue);
+  background: var(--surface2);
+}
+
 /* ─── 弹窗 ─────────────────────────────────────────────────── */
 .modal {
   position: fixed;

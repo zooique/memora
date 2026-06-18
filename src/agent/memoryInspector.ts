@@ -78,6 +78,8 @@ export interface ArchiveSnapshot {
 
 /** Agent 记忆搜索结果（cli 友好的扁平结构） */
 export interface AgentSearchHit {
+  /** 记忆唯一标识（${source}:${name} 格式，供 showMemory/deleteMemory 等操作使用） */
+  id: string;
   /** 记忆名称 */
   name: string;
   /** 来源标签 */
@@ -234,6 +236,7 @@ export class MemoryInspector {
     }
     const hits = this.index.search(query, limit);
     return hits.map((m: Memory) => ({
+      id: m.id,
       name: m.name,
       source: m.source,
       score: m.score,
@@ -295,6 +298,7 @@ export class MemoryInspector {
     });
 
     return sorted.slice(0, limit).map(({ memory, vectorScore }) => ({
+      id: memory.id,
       name: memory.name,
       source: memory.source,
       score: memory.score,

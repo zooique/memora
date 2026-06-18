@@ -512,7 +512,7 @@ async function main(): Promise<void> {
   const interaction: IInteraction = new CliInteraction();
   sprite.setInteraction(interaction);
 
-  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /mode auto|manual 匹配模式 | /search <关键词> 搜索 | /memories 记忆管理 | /config 配置）\n');
+  console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /mode auto|manual 匹配模式 | /web <关键词> 浏览器搜索 | /memories 记忆管理 | /config 配置）\n');
 
   interaction.onClose(async () => {
     console.log('\n正在关闭...');
@@ -567,10 +567,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    if (text.startsWith('/search ')) {
-      const query = text.slice(8).trim();
+    if (text.startsWith('/web ')) {
+      const query = text.slice(5).trim();
       if (!query) {
-        console.log('用法：/search <搜索关键词>');
+        console.log('用法：/web <搜索关键词>');
         return;
       }
       const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;

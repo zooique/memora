@@ -287,6 +287,7 @@ export class Sprite {
     limit = 10,
   ): Promise<
     Array<{
+      id: string;
       name: string;
       source: string;
       score: number;
