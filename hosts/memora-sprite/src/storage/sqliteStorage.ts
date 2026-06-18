@@ -45,7 +45,10 @@ export class SqliteStorage implements IMemoryStorage {
 
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
-    if (result.warning) {
+    if (result.severity === 'block') {
+      throw new Error(`source 校验失败（拒绝写入）：${result.warning}`);
+    }
+    if (result.severity === 'warn' && result.warning) {
       logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');
     }
 

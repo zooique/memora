@@ -4,6 +4,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { MemorySchema, SOURCE_LABELS, inferSource, escapeLike, STOPWORDS, validateSource } from '@/memory/types.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import type { Memory } from '@/memory/types.js';
 
 describe('记忆类型定义', () => {
   it('应该暴露 7 种 source 标签约定', () => {
@@ -133,40 +135,94 @@ describe('validateSource 校验函数', () => {
     expect(validateSource('my-plugin')).toEqual({ valid: true });
   });
 
-  it('应检测接近已知标签的拼写错误', () => {
+  it('应检测接近已知标签的拼写错误（severity: warn）', () => {
     const result = validateSource('rul'); // 接近 'rule'
     expect(result.valid).toBe(true);
+    expect(result.severity).toBe('warn');
     expect(result.warning).toContain('rule');
     expect(result.warning).toContain('拼写错误');
   });
 
-  it('空字符串应返回 valid: false', () => {
+  it('空字符串应返回 valid: false, severity: block', () => {
     const result = validateSource('');
     expect(result.valid).toBe(false);
+    expect(result.severity).toBe('block');
     expect(result.warning).toBeDefined();
   });
 
-  it('首尾空格应返回 valid: false', () => {
+  it('首尾空格应返回 valid: false, severity: block', () => {
     const result = validateSource(' rule ');
     expect(result.valid).toBe(false);
+    expect(result.severity).toBe('block');
     expect(result.warning).toContain('空格');
   });
 
   it('短距离差异不误报（差异 > 2 的不警告）', () => {
     const result = validateSource('completely-different');
     expect(result.valid).toBe(true);
+    expect(result.severity).toBeUndefined();
     expect(result.warning).toBeUndefined();
   });
 
-  it('路径遍历序列应返回 valid: false', () => {
+  it('路径遍历序列应返回 valid: false, severity: block', () => {
     const result = validateSource('skill::../etc/passwd');
     expect(result.valid).toBe(false);
+    expect(result.severity).toBe('block');
     expect(result.warning).toContain('路径遍历');
   });
 
-  it('null 字节应返回 valid: false', () => {
+  it('null 字节应返回 valid: false, severity: block', () => {
     const result = validateSource('insight\x00malicious');
     expect(result.valid).toBe(false);
+    expect(result.severity).toBe('block');
     expect(result.warning).toContain('null 字节');
+  });
+});
+
+// validateSource 校验函数的集成测试见下文 InMemoryStorage block 测试
+
+describe('InMemoryStorage · source block 校验', () => {
+  function makeMemory(source: string): Memory {
+    return {
+      id: `test:${source}`,
+      content: '测试内容',
+      source,
+      name: 'test',
+      createdAt: '2026-06-18T00:00:00.000Z',
+      accessedAt: '2026-06-18T00:00:00.000Z',
+      score: 0.5,
+    };
+  }
+
+  it('路径遍历 source 应被 upsert 拒绝（throw）', () => {
+    const store = new InMemoryStorage();
+    expect(() => store.upsert(makeMemory('skill::../etc/passwd'))).toThrow(/source 校验失败/);
+  });
+
+  it('null 字节 source 应被 upsert 拒绝（throw）', () => {
+    const store = new InMemoryStorage();
+    expect(() => store.upsert(makeMemory('insight\x00malicious'))).toThrow(/source 校验失败/);
+  });
+
+  it('空字符串 source 应被 upsert 拒绝（throw）', () => {
+    const store = new InMemoryStorage();
+    expect(() => store.upsert(makeMemory(''))).toThrow(/source 校验失败/);
+  });
+
+  it('首尾空格 source 应被 upsert 拒绝（throw）', () => {
+    const store = new InMemoryStorage();
+    expect(() => store.upsert(makeMemory(' rule '))).toThrow(/source 校验失败/);
+  });
+
+  it('typo 级别 source 应允许写入（warn 不 throw）', () => {
+    const store = new InMemoryStorage();
+    expect(() => store.upsert(makeMemory('rul'))).not.toThrow();
+    expect(store.getById('test:rul')).not.toBeNull();
+  });
+
+  it('正常 source 应正常写入', () => {
+    const store = new InMemoryStorage();
+    expect(() => store.upsert(makeMemory('rule'))).not.toThrow();
+    expect(store.getById('test:rule')).not.toBeNull();
   });
 });

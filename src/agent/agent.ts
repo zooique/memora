@@ -23,6 +23,7 @@
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
  */
 import { basename } from 'node:path';
+import { AGENT_CONSTANTS } from './constants.js';
 import type { AgentLoop } from './loop.js';
 import type { AgentChunk, UIMessages } from './types.js';
 import type { ToolExecutor } from './toolExecutor.js';
@@ -210,16 +211,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private _chatBusy = false;
   /** 聊天锁超时计时器（防止 LLM 卡死时锁永久持有） */
   private chatLockTimer: ReturnType<typeof setTimeout> | null = null;
-  /** 聊天锁超时时间（5 分钟） */
-  private static readonly CHAT_LOCK_TIMEOUT_MS = 300_000;
   /** chat() 内部 AbortController（超时时中断 generator，防止并发） */
   private chatAbortController: AbortController | null = null;
-  /** chat() 输入最大字符数（128KB） */
-  private static readonly CHAT_INPUT_MAX_LENGTH = 128 * 1024;
   /** 记忆衰减定时器 */
   private decayTimer: ReturnType<typeof setInterval> | null = null;
-  /** 记忆衰减间隔（1 小时） */
-  private static readonly DECAY_INTERVAL_MS = 3_600_000;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
 
@@ -229,13 +224,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       projectPath: opts.projectPath,
       dataDir: opts.dataDir ?? '~/.memora',
       registryDir: opts.registryDir,
-      maxContextTokens: opts.maxContextTokens ?? 120000,
+      maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
       personaName: opts.persona,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
       confirmWrites: opts.confirmWrites ?? false,
       vectorStore: opts.vectorStore,
-      recallExcludeSources: opts.recallExcludeSources ?? ['persona', 'rule', 'skill'],
+      recallExcludeSources: opts.recallExcludeSources ?? [...AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES],
       storage: opts.storage,
       sessionStore: opts.sessionStore,
       configDir: opts.configDir,
@@ -299,7 +294,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.runMemoryDecay();
 
     // 定期记忆衰减（每小时）
-    this.decayTimer = setInterval(() => this.runMemoryDecay(), Agent.DECAY_INTERVAL_MS);
+    this.decayTimer = setInterval(() => this.runMemoryDecay(), AGENT_CONSTANTS.DECAY_INTERVAL_MS);
 
     return pctx;
   }
@@ -310,8 +305,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     this.assertInitialized('chat');
 
-    if (input.length > Agent.CHAT_INPUT_MAX_LENGTH) {
-      throw configError('输入过长', `输入超过最大长度限制（${Agent.CHAT_INPUT_MAX_LENGTH / 1024}KB）`, [
+    if (input.length > AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH) {
+      throw configError('输入过长', `输入超过最大长度限制（${AGENT_CONSTANTS.CHAT_INPUT_MAX_LENGTH / 1024}KB）`, [
         '缩短输入内容',
         '分多次对话发送',
       ]);
@@ -334,12 +329,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
     this.chatLockTimer = setTimeout(() => {
-      logger.warn({ timeoutMs: Agent.CHAT_LOCK_TIMEOUT_MS }, 'chat() 锁超时，中断 generator 并释放锁');
+      logger.warn({ timeoutMs: AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS }, 'chat() 锁超时，中断 generator 并释放锁');
       internalAbort.abort();
       this._chatBusy = false;
       this.chatLockTimer = null;
       this.chatAbortController = null;
-    }, Agent.CHAT_LOCK_TIMEOUT_MS);
+    }, AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS);
     try {
       this._lastInteractionAt = new Date();
 

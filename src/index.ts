@@ -11,6 +11,7 @@
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from './agent/agent.js';
 export type { AgentChunk, ThinkingPhase, UIMessages } from './agent/types.js';
+export { AGENT_CONSTANTS, LOOP_CONSTANTS } from './agent/constants.js';
 export type {
   AgentOptions,
   AgentContext,
@@ -47,7 +48,7 @@ export { NOOP_TRACER, TRACE_SPANS } from './agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS, inferSource, escapeLike, validateSource } from './memory/types.js';
-export type { Memory } from './memory/types.js';
+export type { Memory, SourceValidationSeverity } from './memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from './memory/storageInterface.js';
 export { InMemoryStorage } from './memory/inMemoryStorage.js';

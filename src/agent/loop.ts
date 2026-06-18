@@ -13,6 +13,7 @@ import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from './toolExecutor.js';
 import type { AgentChunk, UIMessages } from './types.js';
 import type { ITracer } from './tracer.js';
+import { LOOP_CONSTANTS } from './constants.js';
 import { NOOP_TRACER, TRACE_SPANS } from './tracer.js';
 import { MemoraError, isRetryableErrorCode, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
@@ -91,14 +92,6 @@ export class AgentLoop {
   private readonly enableContextSummary: boolean;
   /** 上下文摘要缓存（首次截断后缓存，后续截断复用） */
   private contextSummary: string | null = null;
-  /** 字符到 token 的粗略换算比（中英文混合平均 ~2.5 chars/token，保守取 3） */
-  private static readonly CHARS_PER_TOKEN = 3;
-  /** SEC-04: 召回记忆注入总量上限（字符数），超出时从尾部裁剪 */
-  private static readonly RECALL_CONTEXT_MAX_CHARS = 2000;
-  /** LLM 调用最大重试次数（仅在流式输出前失败时重试） */
-  private static readonly MAX_LLM_RETRIES = 2;
-  /** 重试基础延迟（指数退避：1s, 2s） */
-  private static readonly RETRY_BASE_DELAY_MS = 1000;
 
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
@@ -314,10 +307,10 @@ export class AgentLoop {
       iteration,
     });
 
-    for (let attempt = 0; attempt <= AgentLoop.MAX_LLM_RETRIES; attempt++) {
+    for (let attempt = 0; attempt <= LOOP_CONSTANTS.MAX_LLM_RETRIES; attempt++) {
       if (attempt > 0) {
         // 仅在流式输出前失败时重试（streamStarted = false）
-        const delay = AgentLoop.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        const delay = LOOP_CONSTANTS.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
         logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
         await new Promise(r => setTimeout(r, delay));
         fullContent = '';
@@ -348,7 +341,7 @@ export class AgentLoop {
           llmSpan.end();
           throw err;
         }
-        if (attempt >= AgentLoop.MAX_LLM_RETRIES) {
+        if (attempt >= LOOP_CONSTANTS.MAX_LLM_RETRIES) {
           // 重试次数耗尽
           llmSpan.recordException(err as Error);
           llmSpan.end();
@@ -481,12 +474,12 @@ export class AgentLoop {
 
     // SEC-04: 总量上限保护，超出时从尾部裁剪（最不相关）
     let trimmedBlock = memoryBlock;
-    if (trimmedBlock.length > AgentLoop.RECALL_CONTEXT_MAX_CHARS) {
+    if (trimmedBlock.length > LOOP_CONSTANTS.RECALL_CONTEXT_MAX_CHARS) {
       const lines = trimmedBlock.split('\n');
       const kept: string[] = [];
       let total = 0;
       for (const line of lines) {
-        if (total + line.length + 1 > AgentLoop.RECALL_CONTEXT_MAX_CHARS) break;
+        if (total + line.length + 1 > LOOP_CONSTANTS.RECALL_CONTEXT_MAX_CHARS) break;
         kept.push(line);
         total += line.length + 1;
       }
@@ -526,7 +519,7 @@ export class AgentLoop {
         totalChars += JSON.stringify(m.toolCalls).length;
       }
     }
-    return Math.ceil(totalChars / AgentLoop.CHARS_PER_TOKEN);
+    return Math.ceil(totalChars / LOOP_CONSTANTS.CHARS_PER_TOKEN);
   }
 
   /**
@@ -566,7 +559,7 @@ export class AgentLoop {
     }
 
     // 剩余可用 token 数（留 10% 缓冲给 LLM 响应）
-    const availableTokens = Math.floor(this.maxContextTokens * 0.9) - systemTokens;
+    const availableTokens = Math.floor(this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) - systemTokens;
 
     // 从尾部向前收集消息（最近的最重要）
     const tail: Message[] = [];

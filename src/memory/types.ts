@@ -115,33 +115,63 @@ export function escapeLike(str: string): string {
 const KNOWN_SOURCES: Set<string> = new Set(Object.values(SOURCE_LABELS));
 
 /**
+ * source 校验严重级别
+ *
+ * - 'block'：安全边界违规，调用方必须拒绝写入（throw）
+ * - 'warn'：调用方 bug 或疑似 typo，应 warn 但允许写入
+ * - undefined：无异常
+ */
+export type SourceValidationSeverity = 'block' | 'warn';
+
+/**
  * 校验 source 字段是否为已知标签
  *
- * 返回校验结果，包含警告信息（如有）。
- * 不抛错——source 是开放字符串，未知 source 应被允许（宿主可能自定义）。
- * 只对常见 typo 发出警告。
+ * 返回校验结果，包含严重级别与警告信息（如有）。
+ *
+ * 分级策略：
+ * - 路径遍历（`..`）与 null 字节 → severity='block'（安全边界，必须拒绝）
+ * - 空字符串、非字符串、首尾空格 → severity='block'（调用方 bug，必须拒绝）
+ * - 与已知标签 Levenshtein 距离 ≤ 2 的疑似 typo → severity='warn'（保持开放性）
+ * - 其他自定义 source → valid: true（完全允许）
  *
  * @param source - 待校验的 source 字符串
  * @returns 校验结果
  */
 export function validateSource(source: string): {
   valid: boolean;
+  severity?: SourceValidationSeverity;
   warning?: string;
 } {
   if (!source || typeof source !== 'string') {
-    return { valid: false, warning: `source 不能为空或非字符串，收到：${String(source)}` };
+    return {
+      valid: false,
+      severity: 'block',
+      warning: `source 不能为空或非字符串，收到：${String(source)}`,
+    };
   }
 
   if (source.trim() !== source) {
-    return { valid: false, warning: `source 包含首尾空格："${source}"` };
+    return {
+      valid: false,
+      severity: 'block',
+      warning: `source 包含首尾空格："${source}"`,
+    };
   }
 
   if (source.includes('..')) {
-    return { valid: false, warning: `source 不能包含路径遍历序列："${source}"` };
+    return {
+      valid: false,
+      severity: 'block',
+      warning: `source 不能包含路径遍历序列："${source}"`,
+    };
   }
 
   if (source.includes('\0')) {
-    return { valid: false, warning: `source 不能包含 null 字节` };
+    return {
+      valid: false,
+      severity: 'block',
+      warning: `source 不能包含 null 字节`,
+    };
   }
 
   // 检查与已知标签的相似度（简单 Levenshtein 距离 ≤ 2）
@@ -152,6 +182,7 @@ export function validateSource(source: string): {
     if (closeMatch) {
       return {
         valid: true,
+        severity: 'warn',
         warning: `source "${source}" 可能是 "${closeMatch}" 的拼写错误（已知标签：${[...KNOWN_SOURCES].join(', ')}）`,
       };
     }
