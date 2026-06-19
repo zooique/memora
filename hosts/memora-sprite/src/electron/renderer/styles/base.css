@@ -71,3 +71,44 @@ html, body {
   pointer-events: none;
   transition: opacity 0.2s ease;
 }
+
+/* UI-UX-03 统一错误状态：居中错误图标 + 文字 + 重试按钮 */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--overlay0);
+  font-size: 13px;
+  gap: 8px;
+}
+
+.error-state .error-icon {
+  font-size: 28px;
+  margin-bottom: 4px;
+}
+
+.error-state .error-message {
+  color: var(--subtext);
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+.error-state .error-retry-btn {
+  margin-top: 8px;
+  padding: 6px 16px;
+  border: 1px solid var(--surface2);
+  border-radius: 6px;
+  background: var(--surface1);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.error-state .error-retry-btn:hover {
+  border-color: var(--accent);
+  background: var(--surface2);
+}

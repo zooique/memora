@@ -695,6 +695,50 @@ export class UIManager {
   }
 
   /**
+   * UI-UX-03 显示错误状态
+   *
+   * 在指定容器中显示统一错误提示，包含错误图标、消息和可选的重试按钮。
+   * 与 showEmptyState 保持一致的视觉风格。
+   *
+   * @param containerEl 容器元素
+   * @param message 错误描述
+   * @param onRetry 重试回调（可选，不提供则不显示重试按钮）
+   */
+  showErrorState(
+    containerEl: HTMLElement,
+    message: string,
+    onRetry?: () => void,
+  ): void {
+    this.clearElement(containerEl);
+    const div = document.createElement('div');
+    div.className = 'error-state';
+
+    const icon = document.createElement('div');
+    icon.className = 'error-icon';
+    icon.textContent = '⚠';
+
+    const msg = document.createElement('div');
+    msg.className = 'error-message';
+    msg.textContent = message;
+
+    div.appendChild(icon);
+    div.appendChild(msg);
+
+    if (onRetry) {
+      const btn = document.createElement('button');
+      btn.className = 'error-retry-btn';
+      btn.textContent = '重试';
+      btn.addEventListener('click', () => {
+        btn.remove();
+        onRetry();
+      });
+      div.appendChild(btn);
+    }
+
+    containerEl.appendChild(div);
+  }
+
+  /**
    * FD-08 设置按钮 loading 状态
    *
    * 异步操作进行中时禁用按钮并显示 loading 文本，防止用户重复点击。
@@ -1007,6 +1051,14 @@ export class UIManager {
         else if (action === 'silent') handlers.onSilent();
       });
     });
+
+    // UI-UX-02 关闭按钮：直接隐藏 banner，不触发任何回调
+    const closeBtn = banner.querySelector<HTMLElement>('.banner-close');
+    if (closeBtn) {
+      this.addEventListener(closeBtn, 'click', () => {
+        this.hideProactiveBanner();
+      });
+    }
   }
 
   // ─── 事件发射 ─────────────────────────────────────────
@@ -1406,8 +1458,42 @@ export class UIManager {
   /** FD-07 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
 
+  /**
+   * UI-UX-01 初始化设置面板 tab 切换
+   *
+   * 点击 tab 按钮时切换对应的内容区显示，
+   * 保持 tab 按钮的 active 状态同步。
+   */
+  private initSettingsTabListeners(): void {
+    const tabButtons = document.querySelectorAll<HTMLElement>('.settings-tab');
+    const tabContents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
+
+    tabButtons.forEach((btn) => {
+      this.addEventListener(btn, 'click', () => {
+        const targetTab = btn.dataset.settingsTab;
+        if (!targetTab) return;
+
+        // 切换 tab 按钮 active 状态
+        tabButtons.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        // 切换内容区显示
+        tabContents.forEach((content) => {
+          if (content.dataset.settingsTab === targetTab) {
+            content.classList.add('active');
+          } else {
+            content.classList.remove('active');
+          }
+        });
+      });
+    });
+  }
+
   /** 初始化设置面板事件监听 */
   private initSettingsPanelListeners(): void {
+    // UI-UX-01 设置面板 tab 切换
+    this.initSettingsTabListeners();
+
     const btnSave = getOptionalElement('btn-settings-save', 'button');
     const btnCancel = getOptionalElement('btn-settings-cancel', 'button');
     const btnLlmTest = document.getElementById('btn-llm-test');

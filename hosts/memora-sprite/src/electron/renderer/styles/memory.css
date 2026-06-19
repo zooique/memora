@@ -169,6 +169,7 @@
   margin-bottom: 12px;
   font-size: 12px;
   color: var(--subtext);
+  flex-shrink: 0;
 }
 
 .memory-meta code {
@@ -178,6 +179,7 @@
   font-size: 11px;
 }
 
+/* UI-UX-04 记忆详情内容溢出保护 */
 #memory-detail-content {
   background: var(--bg);
   padding: 12px;
@@ -186,7 +188,34 @@
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
   color: var(--text);
   /* 对齐 docs/memora-sprite-preview.html .detail-content：记忆详情使用霞鹜文楷 */
   font-family: var(--font-sprite);
+  /* 长内容时内容区可滚动，避免撑破弹窗 */
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* UI-UX-04 模态框 body 滚动条样式（与记忆详情内容保持一致） */
+.modal-body::-webkit-scrollbar,
+#memory-detail-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track,
+#memory-detail-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-body::-webkit-scrollbar-thumb,
+#memory-detail-content::-webkit-scrollbar-thumb {
+  background: var(--surface2);
+  border-radius: 3px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover,
+#memory-detail-content::-webkit-scrollbar-thumb:hover {
+  background: var(--overlay0);
 }

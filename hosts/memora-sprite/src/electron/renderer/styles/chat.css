@@ -42,19 +42,30 @@
  * 主动提示 banner：顶部滑入，蓝粉渐变背景
  * 对齐 docs/memora-sprite-preview.html §6.6 .proactive-banner
  * 由 ui.ts showProactiveBanner() 控制 .hidden 类切换
+ *
+ * UI-UX-02 改为相对定位流式布局，消息区自动下推，避免遮挡
  */
 #proactive-banner {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  position: relative;
   background: linear-gradient(90deg, var(--accent) 0%, var(--pink) 100%);
-  padding: 12px 16px;
+  padding: 10px 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   z-index: 10;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+  overflow: hidden;
+  max-height: 60px;
+  transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+}
+
+#proactive-banner.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  box-shadow: none;
 }
 
 #proactive-banner:not(.hidden) {
@@ -98,7 +109,32 @@
 }
 
 #proactive-banner .banner-btn:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* UI-UX-02 关闭按钮：右上角，与 actions 分离 */
+#proactive-banner .banner-close {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  cursor: pointer;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+#proactive-banner .banner-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  color: white;
 }
 
 #messages {

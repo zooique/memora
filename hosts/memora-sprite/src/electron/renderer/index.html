@@ -46,26 +46,26 @@
       <div id="sidebar-content">
         <!-- 仪表盘（FD-03 完整仪表盘，对齐 CLI /dashboard） -->
         <div id="dashboard">
-          <div class="dash-item">
-            <span class="dash-label">记忆</span>
+          <div class="dash-item" title="Agent 记忆总数">
+            <span class="dash-label">🧠 记忆</span>
             <span class="dash-value" id="memory-count">0</span>
           </div>
-          <div class="dash-item">
-            <span class="dash-label">洞察</span>
+          <div class="dash-item" title="AI 提取的洞察数">
+            <span class="dash-label">💡 洞察</span>
             <span class="dash-value" id="insight-count">0</span>
           </div>
-          <div class="dash-item">
-            <span class="dash-label">角色</span>
+          <div class="dash-item" title="已加载的角色数">
+            <span class="dash-label">🎭 角色</span>
             <span class="dash-value" id="persona-count">0</span>
           </div>
           <!-- FD-03 累积事件（接近阈值时高亮，提示即将主动提示） -->
           <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值">
-            <span class="dash-label">事件</span>
+            <span class="dash-label">📥 事件</span>
             <span class="dash-value" id="pending-count">0/3</span>
           </div>
           <!-- FD-03 已注册触发器（显示触发器数量，hover 看详情） -->
-          <div class="dash-item" id="dash-triggers" title="已注册触发器列表">
-            <span class="dash-label">触发器</span>
+          <div class="dash-item" id="dash-triggers" title="已注册的触发器数">
+            <span class="dash-label">🔔 触发器</span>
             <span class="dash-value" id="trigger-count">0</span>
           </div>
         </div>
@@ -103,6 +103,8 @@
             <button class="banner-btn" data-action="later">稍后</button>
             <button class="banner-btn" data-action="silent">静默 1 小时</button>
           </div>
+          <!-- UI-UX-02 关闭按钮：手动关闭 banner，与 actions 独立 -->
+          <button class="banner-close" data-action="close" title="关闭">✕</button>
         </div>
 
         <div id="messages">
@@ -145,95 +147,113 @@
 
       <!-- 设置面板 -->
       <div id="panel-settings" class="panel">
+        <!-- UI-UX-01 设置面板分组导航：tab 切换替代长滚动 -->
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-settings-tab="llm">大模型</button>
+          <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
+          <button class="settings-tab" data-settings-tab="sprite">精灵</button>
+          <button class="settings-tab" data-settings-tab="project">项目</button>
+        </div>
+
         <!-- LLM 配置 -->
-        <div class="settings-group">
-          <h3>LLM 配置</h3>
-          <label for="cfg-llm-preset">提供商预设</label>
-          <select id="cfg-llm-preset">
-            <option value="">自定义</option>
-            <option value="1">DeepSeek（推荐，性价比高）</option>
-            <option value="2">OpenAI GPT-4o</option>
-            <option value="3">OpenAI GPT-4o-mini</option>
-          </select>
-          <label for="cfg-llm-provider">提供商（provider）</label>
-          <input type="text" id="cfg-llm-provider" placeholder="deepseek / openai / 自定义" />
-          <label for="cfg-llm-model">模型（model）</label>
-          <input type="text" id="cfg-llm-model" placeholder="deepseek-chat" />
-          <label for="cfg-llm-base-url">API 地址（baseUrl）</label>
-          <input type="text" id="cfg-llm-base-url" placeholder="https://api.deepseek.com" />
-          <label for="cfg-llm-api-key">API Key</label>
-          <div class="input-with-action">
-            <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
-            <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key">👁</button>
+        <div class="settings-tab-content active" data-settings-tab="llm">
+          <div class="settings-group">
+            <h3>LLM 配置</h3>
+            <label for="cfg-llm-preset">提供商预设</label>
+            <select id="cfg-llm-preset">
+              <option value="">自定义</option>
+              <option value="1">DeepSeek（推荐，性价比高）</option>
+              <option value="2">OpenAI GPT-4o</option>
+              <option value="3">OpenAI GPT-4o-mini</option>
+            </select>
+            <label for="cfg-llm-provider">提供商（provider）</label>
+            <input type="text" id="cfg-llm-provider" placeholder="deepseek / openai / 自定义" />
+            <label for="cfg-llm-model">模型（model）</label>
+            <input type="text" id="cfg-llm-model" placeholder="deepseek-chat" />
+            <label for="cfg-llm-base-url">API 地址（baseUrl）</label>
+            <input type="text" id="cfg-llm-base-url" placeholder="https://api.deepseek.com" />
+            <label for="cfg-llm-api-key">API Key</label>
+            <div class="input-with-action">
+              <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
+              <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key">👁</button>
+            </div>
+            <label for="cfg-llm-temperature">温度（temperature）</label>
+            <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
+            <!-- 测试连接按钮：保存前验证 LLM 配置是否可用，避免无效配置导致 Agent 初始化失败 -->
+            <button id="btn-llm-test" class="btn-secondary" type="button">测试连接</button>
+            <span id="llm-test-result" class="settings-hint"></span>
           </div>
-          <label for="cfg-llm-temperature">温度（temperature）</label>
-          <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
-          <!-- 测试连接按钮：保存前验证 LLM 配置是否可用，避免无效配置导致 Agent 初始化失败 -->
-          <button id="btn-llm-test" class="btn-secondary" type="button">测试连接</button>
-          <span id="llm-test-result" class="settings-hint"></span>
         </div>
 
         <!-- Embedding 配置（可选） -->
-        <div class="settings-group">
-          <h3>Embedding 配置（可选）</h3>
-          <p class="settings-hint">配置后启用语义搜索（向量召回），让记忆搜索更智能。</p>
-          <label for="cfg-emb-enabled">启用语义搜索</label>
-          <input type="checkbox" id="cfg-emb-enabled" />
-          <label for="cfg-emb-model">模型（model）</label>
-          <input type="text" id="cfg-emb-model" placeholder="text-embedding-3-small" />
-          <label for="cfg-emb-base-url">API 地址（留空复用 LLM 配置）</label>
-          <input type="text" id="cfg-emb-base-url" placeholder="https://api.openai.com/v1" />
-          <label for="cfg-emb-api-key">API Key（留空复用 LLM 配置）</label>
-          <div class="input-with-action">
-            <input type="password" id="cfg-emb-api-key" placeholder="sk-****" />
-            <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key">👁</button>
+        <div class="settings-tab-content" data-settings-tab="embedding">
+          <div class="settings-group">
+            <h3>Embedding 配置（可选）</h3>
+            <p class="settings-hint">配置后启用语义搜索（向量召回），让记忆搜索更智能。</p>
+            <label for="cfg-emb-enabled">启用语义搜索</label>
+            <input type="checkbox" id="cfg-emb-enabled" />
+            <label for="cfg-emb-model">模型（model）</label>
+            <input type="text" id="cfg-emb-model" placeholder="text-embedding-3-small" />
+            <label for="cfg-emb-base-url">API 地址（留空复用 LLM 配置）</label>
+            <input type="text" id="cfg-emb-base-url" placeholder="https://api.openai.com/v1" />
+            <label for="cfg-emb-api-key">API Key（留空复用 LLM 配置）</label>
+            <div class="input-with-action">
+              <input type="password" id="cfg-emb-api-key" placeholder="sk-****" />
+              <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key">👁</button>
+            </div>
           </div>
         </div>
 
         <!-- 精灵配置 -->
-        <div class="settings-group">
-          <h3>精灵配置</h3>
-          <label for="cfg-silent">静默模式</label>
-          <input type="checkbox" id="cfg-silent" />
-          <label for="cfg-threshold">主动提示阈值（事件数）</label>
-          <input type="number" id="cfg-threshold" min="1" max="20" value="3" />
-          <label for="cfg-cooldown">主动提示冷却（分钟）</label>
-          <input type="number" id="cfg-cooldown" min="1" max="60" value="5" />
-          <label for="cfg-interval">定时触发间隔（分钟）</label>
-          <input type="number" id="cfg-interval" min="1" max="1440" value="60" />
-        </div>
-        <div class="settings-group">
-          <h3>文件监听</h3>
-          <label for="cfg-watcher-enabled">启用文件监听</label>
-          <input type="checkbox" id="cfg-watcher-enabled" />
-          <label for="cfg-watcher-paths">监听路径（逗号分隔）</label>
-          <input type="text" id="cfg-watcher-paths" placeholder="." />
-          <label for="cfg-watcher-debounce">防抖时间（毫秒）</label>
-          <input type="number" id="cfg-watcher-debounce" min="100" max="10000" value="1000" />
-        </div>
-        <div class="settings-group">
-          <h3>角色</h3>
-          <label for="cfg-persona-mode">匹配模式</label>
-          <div class="radio-group">
-            <label><input type="radio" name="persona-mode" value="auto" /> 自动</label>
-            <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
+        <div class="settings-tab-content" data-settings-tab="sprite">
+          <div class="settings-group">
+            <h3>精灵配置</h3>
+            <label for="cfg-silent">静默模式</label>
+            <input type="checkbox" id="cfg-silent" />
+            <label for="cfg-threshold">主动提示阈值（事件数）</label>
+            <input type="number" id="cfg-threshold" min="1" max="20" value="3" />
+            <label for="cfg-cooldown">主动提示冷却（分钟）</label>
+            <input type="number" id="cfg-cooldown" min="1" max="60" value="5" />
+            <label for="cfg-interval">定时触发间隔（分钟）</label>
+            <input type="number" id="cfg-interval" min="1" max="1440" value="60" />
           </div>
-          <label for="cfg-default-persona">默认角色</label>
-          <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" />
+          <div class="settings-group">
+            <h3>文件监听</h3>
+            <label for="cfg-watcher-enabled">启用文件监听</label>
+            <input type="checkbox" id="cfg-watcher-enabled" />
+            <label for="cfg-watcher-paths">监听路径（逗号分隔）</label>
+            <input type="text" id="cfg-watcher-paths" placeholder="." />
+            <label for="cfg-watcher-debounce">防抖时间（毫秒）</label>
+            <input type="number" id="cfg-watcher-debounce" min="100" max="10000" value="1000" />
+          </div>
+          <div class="settings-group">
+            <h3>角色</h3>
+            <label for="cfg-persona-mode">匹配模式</label>
+            <div class="radio-group">
+              <label><input type="radio" name="persona-mode" value="auto" /> 自动</label>
+              <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
+            </div>
+            <label for="cfg-default-persona">默认角色</label>
+            <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" />
+          </div>
         </div>
+
         <!-- FD-04 项目模式配置 -->
-        <div class="settings-group">
-          <h3>项目模式</h3>
-          <label for="cfg-project-mode">模式</label>
-          <div class="radio-group">
-            <label><input type="radio" name="project-mode" value="smart" /> 智能模式（监听启动项目）</label>
-            <label><input type="radio" name="project-mode" value="focus" /> 专注模式（锁定特定项目）</label>
+        <div class="settings-tab-content" data-settings-tab="project">
+          <div class="settings-group">
+            <h3>项目模式</h3>
+            <label for="cfg-project-mode">模式</label>
+            <div class="radio-group">
+              <label><input type="radio" name="project-mode" value="smart" /> 智能模式（监听启动项目）</label>
+              <label><input type="radio" name="project-mode" value="focus" /> 专注模式（锁定特定项目）</label>
+            </div>
+            <label for="cfg-focus-project">专注项目（仅专注模式生效）</label>
+            <select id="cfg-focus-project" disabled>
+              <option value="">-- 选择项目 --</option>
+            </select>
           </div>
-          <label for="cfg-focus-project">专注项目（仅专注模式生效）</label>
-          <select id="cfg-focus-project" disabled>
-            <option value="">-- 选择项目 --</option>
-          </select>
         </div>
+
         <div class="settings-actions">
           <button id="btn-settings-cancel">取消</button>
           <button id="btn-settings-save">保存</button>

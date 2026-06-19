@@ -140,6 +140,14 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+/* UI-UX-05 仪表盘项 hover 微交互 */
+.dash-item:hover {
+  background: var(--surface1);
 }
 
 .dash-label {
