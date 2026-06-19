@@ -22,7 +22,7 @@ import * as fs from 'fs/promises';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { app, ipcMain, Notification } from 'electron';
-import { loadConfig, createProviderFromConfig, toError } from 'memora';
+import { loadConfig, createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
 import { TrayManager } from './trayIcon.js';
@@ -89,6 +89,64 @@ function resetUnreadCount(): void {
   if (fullWindow && !fullWindow.isDestroyed()) {
     fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, 0);
   }
+}
+
+/**
+ * 构建静默模式切换回调
+ *
+ * windowManager 和 trayManager 都需要注入 onToggleSilent / isSilentMode 回调，
+ * 两者逻辑完全相同——切换配置 + 同步托盘状态 + 重建菜单。
+ * 提取为工厂函数避免重复定义（DRY）。
+ *
+ * @param activeSprite 已就绪的 Sprite 实例（闭包捕获，避免非空断言）
+ */
+function createSilentModeCallbacks(activeSprite: Sprite): {
+  onToggleSilent: (newSilent: boolean) => void;
+  isSilentMode: () => boolean;
+} {
+  return {
+    onToggleSilent: (newSilent: boolean) => {
+      activeSprite.updateConfig('silentMode', newSilent);
+      // 同步托盘状态（与 ipcHandlers.ts config-update 逻辑一致）
+      trayManager?.setState(newSilent ? 'sleeping' : 'idle');
+      // 重建托盘菜单以反映静默模式勾选状态
+      trayManager?.updateMenu();
+    },
+    isSilentMode: () => activeSprite.getConfig().silentMode,
+  };
+}
+
+/**
+ * 构建 IPC 处理器上下文
+ *
+ * initializeApp 阶段 2 和 reinitAgent 路径都需要构造 IpcContext 注册完整 IPC。
+ * 两者仅 agent/sprite/sessionStore 不同（来自不同的初始化结果），其余字段完全相同。
+ * 提取为工厂函数避免 12 个字段的重复构造（DRY）。
+ *
+ * @param activeAgent 已就绪的 Agent 实例
+ * @param activeSprite 已就绪的 Sprite 实例
+ * @param activeSessionStore 已就绪的会话存储
+ */
+function createIpcContext(
+  activeAgent: Agent,
+  activeSprite: Sprite,
+  activeSessionStore: SqliteSessionStore,
+): IpcContext {
+  return {
+    agent: activeAgent,
+    sprite: activeSprite,
+    sessionStore: activeSessionStore,
+    windowStateManager,
+    windowManager,
+    trayManager,
+    getAbortController: () => currentAbortController,
+    setAbortController: (ctrl: AbortController | null) => {
+      currentAbortController = ctrl;
+    },
+    getUnreadCount: () => unreadCount,
+    incrementUnreadCount,
+    resetUnreadCount,
+  };
 }
 
 // ─── 应用启动 ───────────────────────────────────────────────
@@ -193,28 +251,16 @@ async function initializeApp(): Promise<void> {
     activeSprite.setInteraction(interaction);
 
     // 注册完整 IPC 处理器（注入 Agent + Sprite + SessionStore）
-    const ipcContext: IpcContext = {
-      agent,
-      sprite,
-      sessionStore,
-      windowStateManager,
-      windowManager,
-      trayManager,
-      getAbortController: () => currentAbortController,
-      setAbortController: (ctrl: AbortController | null) => {
-        currentAbortController = ctrl;
-      },
-      getUnreadCount: () => unreadCount,
-      incrementUnreadCount,
-      resetUnreadCount,
-    };
+    // 通过工厂函数构造，与 reinitAgent 路径共享同一份构造逻辑（DRY）
+    const ipcContext = createIpcContext(agent, sprite, sessionStore);
     registerIpcHandlers(ipcContext);
 
     // 订阅精灵事件（主动提示分发）
     setupSpriteEventListeners();
 
     // 补充注入浮动窗口右键菜单回调（需要 Agent/Sprite 就绪后才能查询/切换静默模式）
-    // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / onToggleSilent / isSilentMode
+    // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / 静默模式回调
+    // 静默模式回调通过工厂函数生成，与托盘注入共享同一份逻辑（DRY）
     windowManager.updateFloatCallbacks({
       onHideToTray: () => windowStateManager.transition('tray'),
       onQuit: () => {
@@ -222,27 +268,12 @@ async function initializeApp(): Promise<void> {
         windowManager.closeAll();
         app.quit();
       },
-      onToggleSilent: (newSilent: boolean) => {
-        activeSprite.updateConfig('silentMode', newSilent);
-        // 同步托盘状态（与 ipcHandlers.ts config-update 逻辑一致）
-        trayManager?.setState(newSilent ? 'sleeping' : 'idle');
-        // 重建托盘菜单以反映静默模式勾选状态
-        trayManager?.updateMenu();
-      },
-      isSilentMode: () => activeSprite.getConfig().silentMode,
+      ...createSilentModeCallbacks(activeSprite),
     });
 
     // 补充注入托盘右键菜单静默模式回调（对齐方案 §5.5 托盘菜单设计）
     // TrayManager 在 Agent 初始化前创建，需延迟注入 onToggleSilent / isSilentMode
-    trayManager?.updateCallbacks({
-      onToggleSilent: (newSilent: boolean) => {
-        activeSprite.updateConfig('silentMode', newSilent);
-        trayManager?.setState(newSilent ? 'sleeping' : 'idle');
-        // 重建托盘菜单以反映静默模式勾选状态
-        trayManager?.updateMenu();
-      },
-      isSilentMode: () => activeSprite.getConfig().silentMode,
-    });
+    trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
 
     agentReady = true;
   } catch (error) {
@@ -389,21 +420,7 @@ function registerMinimalIpcHandlers(): void {
         ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
 
         // 5. 注册完整 IPC 处理器
-        const ipcContext: IpcContext = {
-          agent,
-          sprite,
-          sessionStore,
-          windowStateManager,
-          windowManager,
-          trayManager,
-          getAbortController: () => currentAbortController,
-          setAbortController: (ctrl: AbortController | null) => {
-            currentAbortController = ctrl;
-          },
-          getUnreadCount: () => unreadCount,
-          incrementUnreadCount,
-          resetUnreadCount,
-        };
+        const ipcContext = createIpcContext(agent, sprite, sessionStore);
         registerIpcHandlers(ipcContext);
 
         // 6. 订阅精灵事件
@@ -531,7 +548,7 @@ function unsubscribeSpriteEvents(): void {
       unsubscribe();
     } catch (error) {
       // 旧 sprite 实例可能已关闭，忽略取消订阅错误
-      console.error('[unsubscribeSpriteEvents] 取消订阅失败:', error);
+      logger.warn({ error: toError(error) }, '[unsubscribeSpriteEvents] 取消订阅失败');
     }
   }
   spriteEventUnsubscribers = [];

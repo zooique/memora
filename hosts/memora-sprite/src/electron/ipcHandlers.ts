@@ -57,6 +57,38 @@ export interface IpcContext {
 }
 
 /**
+ * IPC handler 错误兜底包装
+ *
+ * 统一 try-catch 模板：执行业务逻辑，失败时走 errorHandler + 返回降级值。
+ * 适用于"简单查询/操作 + 固定降级返回值"的 handler（占 IPC 处理器的大多数）。
+ *
+ * 不适用场景（保持手写 try-catch）：
+ * - try 内有副作用逻辑（如 CONFIG_UPDATE 需同步托盘状态）
+ * - catch 返回值含 error.message（如 SESSION_NEW 需返回错误详情给 UI）
+ * - try 内业务逻辑复杂含多分支（如 SESSION_LOAD 会话选择）
+ * - 返回值结构复杂（如 DASHBOARD_GET 聚合多字段）
+ *
+ * @param context 错误上下文描述（人类可读，用于日志）
+ * @param fallback 失败时返回的降级值（与 fn 返回值同类型）
+ * @param fn 业务逻辑，返回最终响应体（同步或异步均可）
+ * @param code 错误代码，默认 UNKNOWN
+ * @returns fn 的返回值，或失败时的 fallback
+ */
+async function safeHandle<T>(
+  context: string,
+  fallback: T,
+  fn: () => T | Promise<T>,
+  code: ErrorCode = ErrorCode.UNKNOWN,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    errorHandler.handle(error, { code, context });
+    return fallback;
+  }
+}
+
+/**
  * 注册所有 IPC 处理器
  *
  * @param ctx IPC 上下文（Agent + Sprite + SessionStore + WindowManager 等）
@@ -125,72 +157,36 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 记忆相关 ────────────────────────────────────────────
 
   /** 列出记忆（可按 source 过滤） */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST, async (_event, query: { source?: string }) => {
-    try {
-      const memories = ctx.sprite.listMemories(query?.source);
-      return { memories };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '列出记忆失败' });
-      return { memories: [] };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST, async (_event, query: { source?: string }) =>
+    safeHandle('列出记忆失败', { memories: [] }, () => ({ memories: ctx.sprite.listMemories(query?.source) })),
+  );
 
   /** 搜索记忆（混合搜索：关键词 + 向量召回） */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_SEARCH, async (_event, query: string) => {
-    try {
-      const hits = await ctx.sprite.searchMemories(query);
-      return { hits };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '搜索记忆失败' });
-      return { hits: [] };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_SEARCH, async (_event, query: string) =>
+    safeHandle('搜索记忆失败', { hits: [] }, async () => ({ hits: await ctx.sprite.searchMemories(query) })),
+  );
 
   /** 查看单条记忆详情 */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_SHOW, async (_event, id: string) => {
-    try {
-      const memory = ctx.sprite.showMemory(id);
-      return { memory };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '查看记忆详情失败' });
-      return { memory: null };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_SHOW, async (_event, id: string) =>
+    safeHandle('查看记忆详情失败', { memory: null }, () => ({ memory: ctx.sprite.showMemory(id) })),
+  );
 
   /** 删除记忆 */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE, async (_event, id: string) => {
-    try {
-      const deleted = ctx.sprite.deleteMemory(id);
-      return { deleted };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '删除记忆失败' });
-      return { deleted: false };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE, async (_event, id: string) =>
+    safeHandle('删除记忆失败', { deleted: false }, () => ({ deleted: ctx.sprite.deleteMemory(id) })),
+  );
 
   /** 添加记忆 */
-  ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD, async (_event, data: { source: string; name: string; content: string }) => {
-    try {
-      const id = ctx.sprite.upsertMemory(data.source, data.name, data.content);
-      return { id };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '添加记忆失败' });
-      return { id: '' };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD, async (_event, data: { source: string; name: string; content: string }) =>
+    safeHandle('添加记忆失败', { id: '' }, () => ({ id: ctx.sprite.upsertMemory(data.source, data.name, data.content) })),
+  );
 
   // ─── 配置相关 ────────────────────────────────────────────
 
   /** 获取精灵配置 */
-  ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () => {
-    try {
-      const config = ctx.sprite.getConfig();
-      return { config };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.CONFIG_LOAD_FAILED, context: '获取配置失败' });
-      return { config: {} };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () =>
+    safeHandle('获取配置失败', { config: {} }, () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
+  );
 
   /**
    * 校验配置键是否属于 SpriteConfig
@@ -228,47 +224,27 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 角色相关 ────────────────────────────────────────────
 
   /** 列出所有角色 */
-  ipcMain.handle(IPC_CHANNELS.PERSONA_LIST, async () => {
-    try {
-      const personas = ctx.sprite.listPersonas();
-      return { personas };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '列出角色失败' });
-      return { personas: [] };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.PERSONA_LIST, async () =>
+    safeHandle('列出角色失败', { personas: [] }, () => ({ personas: ctx.sprite.listPersonas() })),
+  );
 
   /** 切换角色 */
-  ipcMain.handle(IPC_CHANNELS.PERSONA_SWITCH, async (_event, name: string) => {
-    try {
+  ipcMain.handle(IPC_CHANNELS.PERSONA_SWITCH, async (_event, name: string) =>
+    safeHandle('切换角色失败', { switched: false, name: null }, () => {
       const result = ctx.sprite.switchPersona(name);
       return { switched: result !== null, name: result };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '切换角色失败' });
-      return { switched: false };
-    }
-  });
+    }),
+  );
 
   /** 设置角色匹配模式 */
-  ipcMain.handle(IPC_CHANNELS.PERSONA_MODE, async (_event, mode: 'auto' | 'manual') => {
-    try {
-      const set = ctx.sprite.setPersonaMode(mode);
-      return { set };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '设置角色模式失败' });
-      return { set: false };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.PERSONA_MODE, async (_event, mode: 'auto' | 'manual') =>
+    safeHandle('设置角色模式失败', { set: false }, () => ({ set: ctx.sprite.setPersonaMode(mode) })),
+  );
 
   /** IX-07 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */
-  ipcMain.handle(IPC_CHANNELS.PERSONA_MODE_GET, () => {
-    try {
-      return { mode: ctx.sprite.personaMode };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '查询角色模式失败' });
-      return { mode: 'auto' };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.PERSONA_MODE_GET, async () =>
+    safeHandle('查询角色模式失败', { mode: 'auto' }, () => ({ mode: ctx.sprite.personaMode })),
+  );
 
   // ─── 主动提示分发 ────────────────────────────────────────
 
@@ -281,14 +257,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 项目管理（FD-04 项目模式） ──────────────────────────
 
   /** 列出已注册项目（供 UI 专注模式选择器使用） */
-  ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, () => {
-    try {
-      return { projects: ctx.sprite.listProjects() };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取项目列表失败' });
-      return { projects: [] };
-    }
-  });
+  ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () =>
+    safeHandle('获取项目列表失败', { projects: [] }, () => ({ projects: ctx.sprite.listProjects() })),
+  );
 
   // ─── 仪表盘（FD-03 UI 完整仪表盘） ──────────────────────
 

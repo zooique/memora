@@ -319,6 +319,9 @@ export class Sprite {
    *
    * 类型安全写入：通过分支判断将 unknown 类型的 value 赋给对应类型的配置字段，
    * 避免 `as Record<string, unknown>` 类型断言。
+   *
+   * 触发器重建委托给 rebuildFileWatcher / restartTriggersIfRunning，
+   * 避免 stop/start 逻辑在 3 处重复（DRY）。
    */
   updateConfig(key: SpriteConfigKey, value: unknown): void {
     this.setConfigField(key, value);
@@ -328,36 +331,22 @@ export class Sprite {
     if (key === 'triggerIntervalMs' && typeof value === 'number') {
       this.triggerBus.unregister('timer');
       this.triggerBus.register(new TimerTrigger(value));
-      if (this.running) {
-        this.triggerBus.stop();
-        this.triggerBus.start();
-      }
+      this.restartTriggersIfRunning();
     }
 
     // 特殊处理：文件监听配置变更时重建 FileWatcherTrigger
     if (key === 'fileWatcherEnabled') {
-      this.triggerBus.unregister('fileWatcher');
-      if (value === true) {
-        this.registerFileWatcher();
-      }
-      if (this.running) {
-        this.triggerBus.stop();
-        this.triggerBus.start();
-      }
+      this.rebuildFileWatcher();
     }
 
+    // 文件监听路径/忽略/防抖变更时，仅在已启用时重建
     if (
       key === 'fileWatcherPaths' ||
       key === 'fileWatcherIgnore' ||
       key === 'fileWatcherDebounceMs'
     ) {
       if (this.config.fileWatcherEnabled) {
-        this.triggerBus.unregister('fileWatcher');
-        this.registerFileWatcher();
-        if (this.running) {
-          this.triggerBus.stop();
-          this.triggerBus.start();
-        }
+        this.rebuildFileWatcher();
       }
     }
 
@@ -374,6 +363,35 @@ export class Sprite {
     // 专注模式锁定特定项目，其他项目的文件变化被忽略
     if (key === 'projectMode' || key === 'focusProjectPath') {
       this.applyProjectMode();
+    }
+  }
+
+  /**
+   * 重建文件监听触发器
+   *
+   * 先注销当前 fileWatcher，再根据 config.fileWatcherEnabled 决定是否重新注册。
+   * 若 Sprite 正在运行，重建后自动重启触发器总线。
+   * 统一 fileWatcherEnabled / fileWatcherPaths / fileWatcherIgnore / fileWatcherDebounceMs
+   * 四个配置变更时的重建逻辑（DRY）。
+   */
+  private rebuildFileWatcher(): void {
+    this.triggerBus.unregister('fileWatcher');
+    if (this.config.fileWatcherEnabled) {
+      this.registerFileWatcher();
+    }
+    this.restartTriggersIfRunning();
+  }
+
+  /**
+   * 若 Sprite 正在运行则重启触发器总线
+   *
+   * 配置变更（triggerIntervalMs / fileWatcher*）后，需重启 TriggerBus 使新触发器生效。
+   * 提取为公共方法避免 stop/start 两行逻辑在多处重复（DRY）。
+   */
+  private restartTriggersIfRunning(): void {
+    if (this.running) {
+      this.triggerBus.stop();
+      this.triggerBus.start();
     }
   }
 

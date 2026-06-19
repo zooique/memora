@@ -10,39 +10,18 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+// 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。
+// 使用 import type：编译时擦除，不引入运行时耦合；electron 层依赖 sprite 层是合理依赖方向。
+import type {
+  MemoryListItem,
+  MemoryDetail,
+  MemorySearchResult as MemorySearchHit,
+} from '../sprite/controllers/memoryController.js';
+
+// 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
+export type { MemoryListItem, MemoryDetail, MemorySearchHit };
 
 // ─── 类型定义（与主进程 IPC 通道对应） ─────────────────────
-
-/** 记忆列表项（与 sprite.listMemories 返回值对齐） */
-export interface MemoryListItem {
-  id: string;
-  name: string;
-  source: string;
-  score: number;
-  contentPreview: string;
-}
-
-/** 记忆搜索结果（与 sprite.searchMemories 返回值对齐，含相似度） */
-export interface MemorySearchHit {
-  /** 记忆唯一标识（${source}:${name} 格式） */
-  id: string;
-  name: string;
-  source: string;
-  score: number;
-  contentPreview: string;
-  similarity?: number;
-}
-
-/** 记忆详情（与 sprite.showMemory 返回值对齐） */
-export interface MemoryDetail {
-  id: string;
-  name: string;
-  source: string;
-  score: number;
-  content: string;
-  createdAt: string;
-  accessedAt: string;
-}
 
 /** 会话消息（渲染进程展示用，与 SessionMessage 对齐但仅暴露必要字段） */
 export interface ChatMessage {

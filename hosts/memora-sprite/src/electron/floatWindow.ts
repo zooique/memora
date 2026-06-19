@@ -42,11 +42,14 @@ export class FloatWindow {
   private isDragging = false;
   /** 回调集合（由 main.ts 注入） */
   private callbacks: FloatWindowCallbacks;
+  /** 窗口状态管理器（查询浮动窗口尺寸/位置） */
+  private windowStateManager: WindowStateManager;
 
   constructor(
-    private windowStateManager: WindowStateManager,
+    windowStateManager: WindowStateManager,
     options?: FloatWindowCallbacks,
   ) {
+    this.windowStateManager = windowStateManager;
     this.callbacks = options ?? {};
   }
 

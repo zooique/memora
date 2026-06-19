@@ -8,7 +8,7 @@
  */
 
 import type { BrowserWindow } from 'electron';
-import { toError } from 'memora';
+import { toError, logger } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
@@ -60,8 +60,8 @@ export class ErrorHandler {
     // 显示用户友好的错误消息
     this.showErrorToUser(appError);
 
-    // 输出到控制台
-    this.logToConsole(appError);
+    // 输出结构化日志
+    this.logError(appError);
 
     return appError;
   }
@@ -132,19 +132,17 @@ export class ErrorHandler {
     return errorMessages[error.code] || error.message;
   }
 
-  /** 输出到控制台 */
-  private logToConsole(error: AppError): void {
-    const logMessage = `[${error.timestamp.toISOString()}] ${error.code}: ${error.message}`;
-
-    if (error.originalError) {
-      console.error(logMessage, error.originalError);
-    } else {
-      console.error(logMessage);
-    }
-
-    if (error.context) {
-      console.error('Context:', error.context);
-    }
+  /** 输出结构化日志（替代 console.error，与项目日志规范一致） */
+  private logError(error: AppError): void {
+    // 使用 logger.error 结构化输出，便于日志聚合和过滤
+    logger.error(
+      {
+        code: error.code,
+        context: error.context,
+        originalError: error.originalError,
+      },
+      error.message,
+    );
   }
 }
 
