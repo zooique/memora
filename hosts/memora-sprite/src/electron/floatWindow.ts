@@ -14,9 +14,9 @@
  * - 角色切换子菜单归档为 P2（完整窗口侧边栏已有入口，浮动右键菜单保持精简）
  */
 
-import { BrowserWindow, ipcMain, Menu } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { BrowserWindow, ipcMain, Menu } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 

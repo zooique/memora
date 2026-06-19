@@ -11,20 +11,19 @@
  * - 角色切换
  */
 
-import { ipcMain } from 'electron';
 import { randomUUID } from 'crypto';
-import type { BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
+import { toError } from 'memora';
+import type { Agent } from 'memora';
 import type { WindowStateManager } from './windowState.js';
 import type { WindowManager } from './windowManager.js';
 import type { TrayManager } from './trayIcon.js';
-import type { Agent } from 'memora';
-import { toError } from 'memora';
-import type { Sprite } from '../sprite/sprite.js';
-import type { SqliteSessionStore } from '../storage/sessionStore.js';
-import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
-import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import type { Sprite } from '../sprite/sprite.js';
+import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
+import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
+import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
 /**
  * IPC 处理器上下文
@@ -410,17 +409,5 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
     ctx.setAbortController(null);
     // 流式结束：托盘切回 idle 状态（绿色静态）
     ctx.trayManager?.setState('idle');
-  }
-}
-
-/** 发送精灵事件到渲染进程（供主进程调用） */
-export function emitSpriteEvent(
-  win: BrowserWindow,
-  event: string,
-  payload: unknown,
-  silent: boolean,
-): void {
-  if (!win.isDestroyed()) {
-    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, { type: event, payload, silent });
   }
 }

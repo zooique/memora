@@ -9,9 +9,9 @@
  *   - 不监听键盘输入
  *   - 不监听剪贴板
  */
-import type { SpriteTrigger, TriggerCallback } from './triggers.js';
-import { logger, toError } from 'memora';
 import { watch } from 'node:fs';
+import { logger, toError } from 'memora';
+import type { SpriteTrigger, TriggerCallback } from './triggers.js';
 
 /** FileWatcherTrigger 配置 */
 export interface FileWatcherConfig {

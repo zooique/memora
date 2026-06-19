@@ -11,6 +11,8 @@
  */
 
 import type { ElectronAPI } from '../preload.js';
+import { UIManager } from './ui.js';
+import type { MemoryListItem, SpriteConfigForm } from './ui.js';
 
 declare global {
   interface Window {
@@ -20,17 +22,22 @@ declare global {
 
 // ─── 错误类型定义 ─────────────────────────────────────────
 
+/** IPC 传输后的错误形态（主进程 AppError 序列化后的渲染进程视图） */
 interface AppError {
   code: string;
   message: string;
   timestamp: string;
 }
 
-// ─── 导入 UI 管理器 ─────────────────────────────────────
-
-import { UIManager } from './ui.js';
-import type { MemoryListItem, SpriteConfigForm } from './ui.js';
-import { toError } from 'memora';
+/** 将未知错误转为 Error（渲染进程本地实现，行为与内核 toError 对齐） */
+function toError(err: unknown): Error {
+  if (err instanceof Error) return err;
+  if (typeof err === 'string') return new Error(err);
+  if (typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string') {
+    return new Error((err as { message: string }).message);
+  }
+  return new Error(String(err ?? '未知错误'));
+}
 
 // ─── 状态 ───────────────────────────────────────────────────
 
@@ -408,9 +415,6 @@ function initSpriteErrorListener(): void {
  * 主进程在浮动窗口收到新消息时推送 count 到完整窗口。
  * 完整窗口的徽章由 UIManager 内部维护（appendMessage 时累加），
  * 此处仅同步主进程的权威计数，避免双窗口计数不一致。
- *
- * 注意：原实现错误地在对话区追加"精灵有 N 条新消息"系统消息，
- * 会污染对话历史。已改为仅更新徽章。
  */
 function initFloatUnreadListener(): void {
   window.electronAPI.onFloatUnread((count: number) => {

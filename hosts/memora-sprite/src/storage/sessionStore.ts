@@ -56,9 +56,9 @@ export class SqliteSessionStore implements ISessionStore {
 
   listSessions(): string[] {
     const rows = this.db.prepare(
-      "SELECT DISTINCT date || '-' || session AS session_id FROM sessions ORDER BY session_id"
-    ).all() as { session_id: string }[];
-    return rows.map(r => r.session_id);
+      "SELECT DISTINCT date || '-' || session AS sessionId FROM sessions ORDER BY sessionId"
+    ).all() as { sessionId: string }[];
+    return rows.map(r => r.sessionId);
   }
 
   copySession(

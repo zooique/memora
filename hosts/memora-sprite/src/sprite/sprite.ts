@@ -12,10 +12,10 @@
  *   上下文感知而非内容感知——精灵通过文件变化、时间等上下文信号唤醒，
  *   不监听键盘输入内容。
  */
+import { resolve } from 'node:path';
 import type { Agent, AgentEventMap } from 'memora';
 import type { VectorStore } from 'memora';
 import { logger, toError } from 'memora';
-import { resolve } from 'node:path';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
@@ -36,8 +36,6 @@ export interface SpriteEventMap {
   personaChanged: { from: string | null; to: string };
   /** 精灵注意到洞察提取 */
   insightGained: { source: string; insight: string };
-  /** 定时触发器唤醒 */
-  timerTriggered: { reason: string };
   /** 精灵主动提示（累积事件后生成） */
   proactivePrompt: { prompt: string; triggers: string[]; silent: boolean };
 }
@@ -416,8 +414,7 @@ export class Sprite {
   /**
    * 类型安全地设置配置字段
    *
-   * 通过运行时类型检查将 unknown 类型的 value 写入对应类型的配置字段，
-   * 替代原有的 `(this.config as Record<string, unknown>)[key] = value` 类型断言。
+   * 通过运行时类型检查将 unknown 类型的 value 写入对应类型的配置字段。
    * 不符合类型的 value 会被忽略（保持原值），由调用方保证传入正确类型。
    */
   private setConfigField(key: SpriteConfigKey, value: unknown): void {
@@ -440,7 +437,7 @@ export class Sprite {
       return;
     }
     // 布尔类型字段
-    if (key === 'silentMode' || key === 'fileWatcherEnabled' || key === 'floatIconVisible') {
+    if (key === 'silentMode' || key === 'fileWatcherEnabled') {
       if (typeof value === 'boolean') {
         this.config[key] = value;
       }
@@ -598,7 +595,6 @@ export class Sprite {
       logger.info({ reason: payload.reason, source: payload.source }, '文件变化触发');
     } else {
       // 定时触发
-      this.emitSprite('timerTriggered', { reason: payload.reason });
       logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
     }
 

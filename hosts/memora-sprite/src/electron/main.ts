@@ -17,11 +17,13 @@
  * 零内核改动：Sprite 和 Agent 完全不知道运行在 CLI 还是 Electron 模式
  */
 
-import { app, ipcMain, Notification } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
+import { app, ipcMain, Notification } from 'electron';
+import { loadConfig, createProviderFromConfig, toError } from 'memora';
+import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
 import { TrayManager } from './trayIcon.js';
 import { WindowManager } from './windowManager.js';
@@ -37,10 +39,7 @@ import {
   PROVIDER_PRESETS,
 } from '../index.js';
 import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
-import { loadConfig, createProviderFromConfig, toError } from 'memora';
-import type { Sprite } from '../sprite/sprite.js';
-import type { SpriteEventMap } from '../sprite/sprite.js';
-import type { Agent } from 'memora';
+import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

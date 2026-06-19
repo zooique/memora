@@ -12,9 +12,9 @@
  * - 错误处理：统一使用错误处理器
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
+import { BrowserWindow, ipcMain } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';

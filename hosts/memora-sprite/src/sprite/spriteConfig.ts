@@ -36,8 +36,6 @@ export interface SpriteConfig {
   floatIconPosition?: { x: number; y: number };
   /** 窗口状态（持久化），默认 'float' */
   windowState?: 'tray' | 'float' | 'full';
-  /** 浮动图标是否可见，默认 true */
-  floatIconVisible?: boolean;
   /**
    * 项目模式（FD-04）：
    * - 'smart'（默认）：智能模式，监听启动时的 projectPath，未来可扩展多项目自动识别
@@ -60,11 +58,10 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   proactiveCooldownMs: 300_000,
   fileWatcherEnabled: true,
   fileWatcherPaths: ['.'],
-  fileWatcherIgnore: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
+  fileWatcherIgnore: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/.memora/**'],
   fileWatcherDebounceMs: 1_000,
   floatIconPosition: { x: -1, y: -1 },
   windowState: 'float',
-  floatIconVisible: true,
   projectMode: 'smart',
   focusProjectPath: '',
 };

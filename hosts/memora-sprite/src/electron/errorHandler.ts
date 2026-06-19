@@ -3,12 +3,12 @@
  *
  * 职责：
  * - 提供统一的错误处理函数
- * - 错误日志记录
  * - 用户友好的错误消息
  * - 错误分类和严重程度判断
  */
 
 import type { BrowserWindow } from 'electron';
+import { toError } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
@@ -18,19 +18,13 @@ export enum ErrorCode {
   UNKNOWN = 'UNKNOWN',
   INITIALIZATION_FAILED = 'INITIALIZATION_FAILED',
   CONFIG_LOAD_FAILED = 'CONFIG_LOAD_FAILED',
-  
+
   // 窗口相关错误
   WINDOW_CREATE_FAILED = 'WINDOW_CREATE_FAILED',
-  WINDOW_LOAD_FAILED = 'WINDOW_LOAD_FAILED',
-  
-  // IPC相关错误
-  IPC_HANDLER_FAILED = 'IPC_HANDLER_FAILED',
-  IPC_SEND_FAILED = 'IPC_SEND_FAILED',
-  
+
   // 文件系统错误
   FILE_READ_FAILED = 'FILE_READ_FAILED',
-  FILE_WRITE_FAILED = 'FILE_WRITE_FAILED',
-  
+
   // 网络错误
   NETWORK_ERROR = 'NETWORK_ERROR',
   API_ERROR = 'API_ERROR',
@@ -48,8 +42,6 @@ export interface AppError {
 
 export class ErrorHandler {
   private mainWindow: BrowserWindow | null = null;
-  private errorLog: AppError[] = [];
-  private maxLogSize = 1000;
 
   /** 设置主窗口引用 */
   setMainWindow(win: BrowserWindow): void {
@@ -65,9 +57,6 @@ export class ErrorHandler {
   handle(error: unknown, options?: { code?: ErrorCode; context?: string }): AppError {
     const appError = this.normalizeError(error, options?.code, options?.context);
 
-    // 记录错误
-    this.logError(appError);
-
     // 显示用户友好的错误消息
     this.showErrorToUser(appError);
 
@@ -80,31 +69,15 @@ export class ErrorHandler {
   /**
    * 标准化错误对象
    *
+   * 复用内核 toError 完成 unknown → Error 转换。
    * code 优先级：调用方显式传入 > 从 error.message 推断 > UNKNOWN
    */
   private normalizeError(error: unknown, explicitCode?: ErrorCode, context?: string): AppError {
-    if (error instanceof Error) {
-      return {
-        code: explicitCode ?? this.extractErrorCode(error),
-        message: error.message,
-        originalError: error,
-        context: context ? { description: context } : undefined,
-        timestamp: new Date(),
-      };
-    }
-
-    if (typeof error === 'string') {
-      return {
-        code: explicitCode ?? ErrorCode.UNKNOWN,
-        message: error,
-        context: context ? { description: context } : undefined,
-        timestamp: new Date(),
-      };
-    }
-
+    const err = toError(error);
     return {
-      code: explicitCode ?? ErrorCode.UNKNOWN,
-      message: '发生未知错误',
+      code: explicitCode ?? this.extractErrorCode(err),
+      message: err.message,
+      originalError: err,
       context: context ? { description: context } : undefined,
       timestamp: new Date(),
     };
@@ -116,26 +89,16 @@ export class ErrorHandler {
     if (error.message.includes('ENOENT') || error.message.includes('文件')) {
       return ErrorCode.FILE_READ_FAILED;
     }
-    
+
     if (error.message.includes('网络') || error.message.includes('fetch')) {
       return ErrorCode.NETWORK_ERROR;
     }
-    
+
     if (error.message.includes('初始化') || error.message.includes('init')) {
       return ErrorCode.INITIALIZATION_FAILED;
     }
-    
-    return ErrorCode.UNKNOWN;
-  }
 
-  /** 记录错误到内存日志 */
-  private logError(error: AppError): void {
-    this.errorLog.push(error);
-    
-    // 保持日志大小在限制内
-    if (this.errorLog.length > this.maxLogSize) {
-      this.errorLog.shift();
-    }
+    return ErrorCode.UNKNOWN;
   }
 
   /** 显示用户友好的错误消息 */
@@ -145,7 +108,7 @@ export class ErrorHandler {
     }
 
     const userMessage = this.getUserFriendlyMessage(error);
-    
+
     // 发送错误消息到渲染进程
     this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, {
       code: error.code,
@@ -161,11 +124,7 @@ export class ErrorHandler {
       [ErrorCode.INITIALIZATION_FAILED]: '应用初始化失败，请重启应用',
       [ErrorCode.CONFIG_LOAD_FAILED]: '配置加载失败，使用默认配置',
       [ErrorCode.WINDOW_CREATE_FAILED]: '窗口创建失败，请重启应用',
-      [ErrorCode.WINDOW_LOAD_FAILED]: '页面加载失败，请检查网络连接',
-      [ErrorCode.IPC_HANDLER_FAILED]: '操作执行失败，请稍后重试',
-      [ErrorCode.IPC_SEND_FAILED]: '通信失败，请重启应用',
       [ErrorCode.FILE_READ_FAILED]: '文件读取失败，请检查文件权限',
-      [ErrorCode.FILE_WRITE_FAILED]: '文件保存失败，请检查磁盘空间',
       [ErrorCode.NETWORK_ERROR]: '网络连接失败，请检查网络设置',
       [ErrorCode.API_ERROR]: 'API调用失败，请稍后重试',
     };
@@ -176,82 +135,19 @@ export class ErrorHandler {
   /** 输出到控制台 */
   private logToConsole(error: AppError): void {
     const logMessage = `[${error.timestamp.toISOString()}] ${error.code}: ${error.message}`;
-    
+
     if (error.originalError) {
       console.error(logMessage, error.originalError);
     } else {
       console.error(logMessage);
     }
-    
+
     if (error.context) {
       console.error('Context:', error.context);
     }
-  }
-
-  /** 获取错误日志 */
-  getErrorLog(): AppError[] {
-    return [...this.errorLog];
-  }
-
-  /** 清除错误日志 */
-  clearErrorLog(): void {
-    this.errorLog = [];
-  }
-
-  /** 获取最近的错误 */
-  getRecentErrors(count: number = 10): AppError[] {
-    return this.errorLog.slice(-count);
   }
 }
 
 // ─── 全局错误处理器实例 ─────────────────────────────────
 
 export const errorHandler = new ErrorHandler();
-
-// ─── 便捷函数 ─────────────────────────────────────────
-
-/** 处理异步错误 */
-export async function handleAsyncError<T>(
-  operation: () => Promise<T>,
-  options?: { code?: ErrorCode; context?: string },
-): Promise<T | null> {
-  try {
-    return await operation();
-  } catch (error) {
-    errorHandler.handle(error, options);
-    return null;
-  }
-}
-
-/** 处理同步错误 */
-export function handleSyncError<T>(
-  operation: () => T,
-  options?: { code?: ErrorCode; context?: string },
-): T | null {
-  try {
-    return operation();
-  } catch (error) {
-    errorHandler.handle(error, options);
-    return null;
-  }
-}
-
-/** 包装异步函数，自动处理错误 */
-export function wrapAsyncFunction<T extends (...args: never[]) => Promise<unknown>>(
-  fn: T,
-  options?: { code?: ErrorCode; context?: string },
-): T {
-  return ((...args: never[]) => {
-    return handleAsyncError(() => fn(...args), options);
-  }) as T;
-}
-
-/** 包装同步函数，自动处理错误 */
-export function wrapSyncFunction<T extends (...args: never[]) => unknown>(
-  fn: T,
-  options?: { code?: ErrorCode; context?: string },
-): T {
-  return ((...args: never[]) => {
-    return handleSyncError(() => fn(...args), options);
-  }) as T;
-}

@@ -13,12 +13,7 @@
  * - 提供清晰的 API 供其他模块调用
  */
 
-// ─── 类型定义 ─────────────────────────────────────────────
-
-// 从 preload.ts 导入共享类型（避免类型重复定义）
 import type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from '../preload.js';
-
-// 安全的 Markdown 渲染器（零依赖，DOM API 实现，防 XSS）
 import { renderMarkdown } from './markdown.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
@@ -30,7 +25,6 @@ const MS_PER_MINUTE = 60_000;
 /**
  * 获取必需的 DOM 元素，若缺失或标签名不匹配则抛出明确错误
  *
- * 替代 `document.getElementById('id')!` 与 `as HTMLXxxElement`，
  * 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败。
  *
  * **仅用于核心交互元素**（消息区、输入框、发送按钮、停止按钮）。
@@ -60,7 +54,6 @@ function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
 /**
  * 获取可选的 DOM 元素，缺失时 warn 并返回 null（不阻塞其他功能）
  *
- * UI-IR-01：替代 `getRequiredElement` 用于非核心面板元素。
  * 当 HTML 与 TS 不同步时，缺失的功能降级而非整个 UI 崩溃。
  *
  * @param id 元素 id
@@ -548,8 +541,7 @@ export class UIManager {
    * 完成流式消息
    *
    * 移除 streaming 类和光标元素，添加复制按钮。
-   * 注意：原实现中的 `/【.*】$/` 正则无注释且语义不明，已移除——
-   * 流式文本由主进程逐 chunk 拼接，不应在渲染层做尾部标记清理。
+   * 流式文本由主进程逐 chunk 拼接，渲染层不做尾部标记清理。
    */
   finishStreamingMessage(messageId: string): void {
     const el = this.streamingMessages.get(messageId);
@@ -695,50 +687,6 @@ export class UIManager {
   }
 
   /**
-   * UI-UX-03 显示错误状态
-   *
-   * 在指定容器中显示统一错误提示，包含错误图标、消息和可选的重试按钮。
-   * 与 showEmptyState 保持一致的视觉风格。
-   *
-   * @param containerEl 容器元素
-   * @param message 错误描述
-   * @param onRetry 重试回调（可选，不提供则不显示重试按钮）
-   */
-  showErrorState(
-    containerEl: HTMLElement,
-    message: string,
-    onRetry?: () => void,
-  ): void {
-    this.clearElement(containerEl);
-    const div = document.createElement('div');
-    div.className = 'error-state';
-
-    const icon = document.createElement('div');
-    icon.className = 'error-icon';
-    icon.textContent = '⚠';
-
-    const msg = document.createElement('div');
-    msg.className = 'error-message';
-    msg.textContent = message;
-
-    div.appendChild(icon);
-    div.appendChild(msg);
-
-    if (onRetry) {
-      const btn = document.createElement('button');
-      btn.className = 'error-retry-btn';
-      btn.textContent = '重试';
-      btn.addEventListener('click', () => {
-        btn.remove();
-        onRetry();
-      });
-      div.appendChild(btn);
-    }
-
-    containerEl.appendChild(div);
-  }
-
-  /**
    * FD-08 设置按钮 loading 状态
    *
    * 异步操作进行中时禁用按钮并显示 loading 文本，防止用户重复点击。
@@ -763,47 +711,6 @@ export class UIManager {
       el.disabled = false;
       el.textContent = el.dataset.originalText ?? el.textContent ?? '';
       delete el.dataset.originalText;
-    }
-  }
-
-  /**
-   * UI-IR-05 设置输入框 loading 状态
-   *
-   * 异步操作进行中时禁用输入框，防止用户重复触发。
-   * 适用于记忆搜索框、角色选择器等输入元素。
-   *
-   * @param inputId 输入框 DOM ID
-   * @param loading 是否处于 loading 状态
-   */
-  setInputLoading(inputId: string, loading: boolean): void {
-    const el = document.getElementById(inputId);
-    if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement) && !(el instanceof HTMLSelectElement)) return;
-
-    if (loading) {
-      el.dataset.loadingDisabled = 'true';
-      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = true;
-    } else {
-      delete el.dataset.loadingDisabled;
-      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = false;
-    }
-  }
-
-  /**
-   * UI-IR-05 设置元素 loading 状态（通用方法）
-   *
-   * 为任意元素添加/移除 loading 类，用于视觉反馈。
-   * 适用于角色选择器、记忆列表等容器元素。
-   *
-   * @param elementId 元素 DOM ID
-   * @param loading 是否处于 loading 状态
-   */
-  setElementLoading(elementId: string, loading: boolean): void {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    if (loading) {
-      el.classList.add('loading');
-    } else {
-      el.classList.remove('loading');
     }
   }
 
