@@ -27,6 +27,31 @@ export type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm };
 /** 毫秒/分钟转换常量（用于配置表单的分钟 ↔ 毫秒换算） */
 const MS_PER_MINUTE = 60_000;
 
+/**
+ * 获取必需的 DOM 元素，若缺失或类型不匹配则抛出明确错误
+ *
+ * 替代 `document.getElementById('id')!` 与 `as HTMLXxxElement`，
+ * 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败。
+ *
+ * @param id 元素 id
+ * @param tagName 期望的 HTML 标签名（用于 instanceof 校验）
+ * @returns 类型安全的 DOM 元素
+ */
+function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
+  id: string,
+  tagName: T,
+): HTMLElementTagNameMap[T] {
+  const el = document.getElementById(id);
+  if (!el) {
+    throw new Error(`[UIManager] 必需的 DOM 元素 #${id} 未找到，UI 无法初始化`);
+  }
+  const expectedCtor = HTMLElementTagNameMap[tagName];
+  if (!(el instanceof expectedCtor)) {
+    throw new Error(`[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>`);
+  }
+  return el;
+}
+
 export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -93,7 +118,8 @@ export class UIManager {
   private inputEl: HTMLTextAreaElement;
   private btnSend: HTMLButtonElement;
   private btnStop: HTMLButtonElement;
-  private badge: HTMLElement;
+  /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
+  private badge: HTMLElement | null;
   /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
   private btnNewSession: HTMLButtonElement;
 
@@ -147,52 +173,50 @@ export class UIManager {
   private llmPresets: Record<string, { provider: string; model: string; baseUrl: string }> = {};
 
   constructor() {
-    // 获取 DOM 元素引用
-    this.messagesEl = document.getElementById('messages')!;
-    this.inputEl = document.getElementById('input') as HTMLTextAreaElement;
-    this.btnSend = document.getElementById('btn-send') as HTMLButtonElement;
-    this.btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
-    this.badge = document.getElementById('badge')!;
+    // 获取 DOM 元素引用：使用 getRequiredElement 替代 !/as，初始化失败时给出明确错误
+    this.messagesEl = getRequiredElement('messages', 'div');
+    this.inputEl = getRequiredElement('input', 'textarea');
+    this.btnSend = getRequiredElement('btn-send', 'button');
+    this.btnStop = getRequiredElement('btn-stop', 'button');
+    this.badge = document.getElementById('badge');
     // FD-05 新建会话按钮
-    this.btnNewSession = document.getElementById('btn-new-session') as HTMLButtonElement;
+    this.btnNewSession = getRequiredElement('btn-new-session', 'button');
 
     // 记忆面板
-    this.memoryListEl = document.getElementById('memory-list')!;
-    this.memorySearchEl = document.getElementById('memory-search') as HTMLInputElement;
-    this.memoryFilterSourceEl = document.getElementById(
-      'memory-filter-source',
-    ) as HTMLSelectElement;
-    this.memoryDetailModal = document.getElementById('memory-detail-modal')!;
+    this.memoryListEl = getRequiredElement('memory-list', 'div');
+    this.memorySearchEl = getRequiredElement('memory-search', 'input');
+    this.memoryFilterSourceEl = getRequiredElement('memory-filter-source', 'select');
+    this.memoryDetailModal = getRequiredElement('memory-detail-modal', 'div');
 
     // 角色选择器
-    this.personaSelectorEl = document.getElementById('persona-selector')!;
-    this.personaDropdownEl = document.getElementById('persona-dropdown')!;
-    this.personaNameEl = document.getElementById('persona-name')!;
+    this.personaSelectorEl = getRequiredElement('persona-selector', 'div');
+    this.personaDropdownEl = getRequiredElement('persona-dropdown', 'div');
+    this.personaNameEl = getRequiredElement('persona-name', 'span');
 
     // 设置面板 - LLM 配置
-    this.cfgLlmPreset = document.getElementById('cfg-llm-preset') as HTMLSelectElement;
-    this.cfgLlmProvider = document.getElementById('cfg-llm-provider') as HTMLInputElement;
-    this.cfgLlmModel = document.getElementById('cfg-llm-model') as HTMLInputElement;
-    this.cfgLlmBaseUrl = document.getElementById('cfg-llm-base-url') as HTMLInputElement;
-    this.cfgLlmApiKey = document.getElementById('cfg-llm-api-key') as HTMLInputElement;
-    this.cfgLlmTemperature = document.getElementById('cfg-llm-temperature') as HTMLInputElement;
+    this.cfgLlmPreset = getRequiredElement('cfg-llm-preset', 'select');
+    this.cfgLlmProvider = getRequiredElement('cfg-llm-provider', 'input');
+    this.cfgLlmModel = getRequiredElement('cfg-llm-model', 'input');
+    this.cfgLlmBaseUrl = getRequiredElement('cfg-llm-base-url', 'input');
+    this.cfgLlmApiKey = getRequiredElement('cfg-llm-api-key', 'input');
+    this.cfgLlmTemperature = getRequiredElement('cfg-llm-temperature', 'input');
 
     // 设置面板 - Embedding 配置
-    this.cfgEmbEnabled = document.getElementById('cfg-emb-enabled') as HTMLInputElement;
-    this.cfgEmbModel = document.getElementById('cfg-emb-model') as HTMLInputElement;
-    this.cfgEmbBaseUrl = document.getElementById('cfg-emb-base-url') as HTMLInputElement;
-    this.cfgEmbApiKey = document.getElementById('cfg-emb-api-key') as HTMLInputElement;
+    this.cfgEmbEnabled = getRequiredElement('cfg-emb-enabled', 'input');
+    this.cfgEmbModel = getRequiredElement('cfg-emb-model', 'input');
+    this.cfgEmbBaseUrl = getRequiredElement('cfg-emb-base-url', 'input');
+    this.cfgEmbApiKey = getRequiredElement('cfg-emb-api-key', 'input');
 
     // 设置面板 - 精灵配置
-    this.cfgSilent = document.getElementById('cfg-silent') as HTMLInputElement;
-    this.cfgThreshold = document.getElementById('cfg-threshold') as HTMLInputElement;
-    this.cfgCooldown = document.getElementById('cfg-cooldown') as HTMLInputElement;
-    this.cfgInterval = document.getElementById('cfg-interval') as HTMLInputElement;
-    this.cfgWatcherEnabled = document.getElementById('cfg-watcher-enabled') as HTMLInputElement;
-    this.cfgWatcherPaths = document.getElementById('cfg-watcher-paths') as HTMLInputElement;
-    this.cfgWatcherDebounce = document.getElementById('cfg-watcher-debounce') as HTMLInputElement;
-    this.cfgDefaultPersona = document.getElementById('cfg-default-persona') as HTMLInputElement;
-    this.cfgFocusProject = document.getElementById('cfg-focus-project') as HTMLSelectElement;
+    this.cfgSilent = getRequiredElement('cfg-silent', 'input');
+    this.cfgThreshold = getRequiredElement('cfg-threshold', 'input');
+    this.cfgCooldown = getRequiredElement('cfg-cooldown', 'input');
+    this.cfgInterval = getRequiredElement('cfg-interval', 'input');
+    this.cfgWatcherEnabled = getRequiredElement('cfg-watcher-enabled', 'input');
+    this.cfgWatcherPaths = getRequiredElement('cfg-watcher-paths', 'input');
+    this.cfgWatcherDebounce = getRequiredElement('cfg-watcher-debounce', 'input');
+    this.cfgDefaultPersona = getRequiredElement('cfg-default-persona', 'input');
+    this.cfgFocusProject = getRequiredElement('cfg-focus-project', 'select');
 
     // 初始化 UI
     this.initEventListeners();
@@ -225,17 +249,17 @@ export class UIManager {
 
     // 标题栏事件
     this.addEventListener(
-      document.getElementById('btn-minimize')!,
+      getRequiredElement('btn-minimize', 'button'),
       'click',
       this.handleMinimize.bind(this),
     );
     this.addEventListener(
-      document.getElementById('btn-maximize')!,
+      getRequiredElement('btn-maximize', 'button'),
       'click',
       this.handleMaximize.bind(this),
     );
     this.addEventListener(
-      document.getElementById('btn-close')!,
+      getRequiredElement('btn-close', 'button'),
       'click',
       this.handleClose.bind(this),
     );
@@ -252,38 +276,38 @@ export class UIManager {
    * - Ctrl/Cmd + N：新建会话
    */
   private handleGlobalKeydown(e: Event): void {
-    const keyboardEvent = e as KeyboardEvent;
-    const isMod = keyboardEvent.ctrlKey || keyboardEvent.metaKey;
+    if (!(e instanceof KeyboardEvent)) return;
+    const isMod = e.ctrlKey || e.metaKey;
 
     // Esc：关闭所有打开的弹窗
-    if (keyboardEvent.key === 'Escape') {
+    if (e.key === 'Escape') {
       const openModals = document.querySelectorAll('.modal:not(.hidden)');
       if (openModals.length > 0) {
         openModals.forEach((modal) => modal.classList.add('hidden'));
-        keyboardEvent.preventDefault();
+        e.preventDefault();
       }
       return;
     }
 
     // Ctrl/Cmd + 数字：切换面板
-    if (isMod && ['1', '2', '3'].includes(keyboardEvent.key)) {
+    if (isMod && ['1', '2', '3'].includes(e.key)) {
       const panelMap: Record<string, string> = {
         '1': 'chat',
         '2': 'memories',
         '3': 'settings',
       };
-      const panel = panelMap[keyboardEvent.key];
+      const panel = panelMap[e.key];
       if (panel) {
         this.switchPanel(panel);
-        keyboardEvent.preventDefault();
+        e.preventDefault();
       }
       return;
     }
 
     // Ctrl/Cmd + N：新建会话
-    if (isMod && keyboardEvent.key === 'n') {
+    if (isMod && e.key === 'n') {
       this.newSessionCallback?.();
-      keyboardEvent.preventDefault();
+      e.preventDefault();
       return;
     }
   }
@@ -379,16 +403,17 @@ export class UIManager {
       el.appendChild(contentWrapper);
 
       // 召回记忆提示（仅精灵消息）
-      if (message.role === 'assistant' && message.memoryRecall) {
+      const memoryRecall = message.memoryRecall;
+      if (message.role === 'assistant' && memoryRecall) {
         const recall = document.createElement('div');
         recall.className = 'memory-recall';
         recall.innerHTML = '<span>💡</span>';
         const recallText = document.createElement('span');
-        recallText.textContent = `召回记忆：${message.memoryRecall.name}（score: ${message.memoryRecall.score.toFixed(2)}）`;
+        recallText.textContent = `召回记忆：${memoryRecall.name}（score: ${memoryRecall.score.toFixed(2)}）`;
         recall.appendChild(recallText);
         // 点击跳转记忆面板（回调由 renderer.ts 注册）
         recall.addEventListener('click', () => {
-          this.memoryRecallClickCallback?.(message.memoryRecall!.name);
+          this.memoryRecallClickCallback?.(memoryRecall.name);
         });
         bubble.appendChild(recall);
       }
@@ -466,9 +491,7 @@ export class UIManager {
     if (recall) preserved.push(recall);
 
     // 安全清空 bubble（保留 cursor 和 recall）
-    while (bubble.firstChild) {
-      bubble.removeChild(bubble.firstChild);
-    }
+    this.clearElement(bubble);
 
     // 重新渲染 Markdown 内容
     bubble.appendChild(renderMarkdown(text));
@@ -505,7 +528,10 @@ export class UIManager {
     const contentWrapper = el.querySelector('.message-content');
     if (bubble && contentWrapper) {
       // 提取纯文本内容（排除 memory-recall 提示）
-      const clone = bubble.cloneNode(true) as HTMLElement;
+      const clone = bubble.cloneNode(true);
+      if (!(clone instanceof HTMLElement)) {
+        throw new Error('[finishStreamingMessage] 复制的消息气泡不是 HTMLElement');
+      }
       const recallInClone = clone.querySelector('.memory-recall');
       if (recallInClone) recallInClone.remove();
       const finalText = clone.textContent ?? '';
@@ -578,9 +604,7 @@ export class UIManager {
    * 使用 while + removeChild 模式（对齐 project_memory 工程约定）。
    */
   clearMessages(): void {
-    while (this.messagesEl.firstChild) {
-      this.messagesEl.removeChild(this.messagesEl.firstChild);
-    }
+    this.clearElement(this.messagesEl);
     this.streamingMessages.clear();
     this.state.isStreaming = false;
     this.btnSend.disabled = false;
@@ -643,20 +667,20 @@ export class UIManager {
    * @param loadingText loading 时显示的文本（可选，默认在原文本前加 "..."）
    */
   setButtonLoading(buttonId: string, loading: boolean, loadingText?: string): void {
-    const btn = document.getElementById(buttonId) as HTMLButtonElement | null;
-    if (!btn) return;
+    const el = document.getElementById(buttonId);
+    if (!(el instanceof HTMLButtonElement)) return;
 
     if (loading) {
       // 保存原始文本到 dataset，用于恢复
-      if (!btn.dataset.originalText) {
-        btn.dataset.originalText = btn.textContent ?? '';
+      if (!el.dataset.originalText) {
+        el.dataset.originalText = el.textContent ?? '';
       }
-      btn.disabled = true;
-      btn.textContent = loadingText ?? `${btn.dataset.originalText}...`;
+      el.disabled = true;
+      el.textContent = loadingText ?? `${el.dataset.originalText}...`;
     } else {
-      btn.disabled = false;
-      btn.textContent = btn.dataset.originalText ?? btn.textContent ?? '';
-      delete btn.dataset.originalText;
+      el.disabled = false;
+      el.textContent = el.dataset.originalText ?? el.textContent ?? '';
+      delete el.dataset.originalText;
     }
   }
 
@@ -713,8 +737,23 @@ export class UIManager {
 
   // ─── 未读计数 ─────────────────────────────────────────
 
+  /**
+   * 安全清空 DOM 容器
+   *
+   * 使用 while + removeChild 模式（对齐 project_memory 工程约定），
+   * 避免 innerHTML = '' 可能带来的事件监听器残留和 XSS 一致性问题。
+   */
+  private clearElement(el: Element): void {
+    while (el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
+  }
+
   /** 更新未读计数徽章 */
   private updateBadge(): void {
+    // 若当前布局未提供 badge 元素则静默跳过，避免初始化崩溃
+    if (!this.badge) return;
+
     if (this.state.unreadCount > 0) {
       this.badge.textContent = this.state.unreadCount > 99 ? '99+' : String(this.state.unreadCount);
       this.badge.classList.add('visible');
@@ -782,9 +821,9 @@ export class UIManager {
   // ─── 事件处理器 ─────────────────────────────────────
 
   private handleInputKeydown(e: Event): void {
-    const keyboardEvent = e as KeyboardEvent;
-    if (keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) {
-      keyboardEvent.preventDefault();
+    if (!(e instanceof KeyboardEvent)) return;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       this.emitSendMessage();
     }
   }
@@ -815,8 +854,9 @@ export class UIManager {
   }
 
   private handleNavClick(e: Event): void {
-    const btn = e.currentTarget as HTMLElement;
-    const panel = btn.dataset.panel;
+    const target = e.currentTarget;
+    if (!(target instanceof HTMLElement)) return;
+    const panel = target.dataset.panel;
     if (panel) {
       this.switchPanel(panel);
     }
@@ -958,13 +998,13 @@ export class UIManager {
     });
 
     // 添加按钮
-    const btnAdd = document.getElementById('btn-add-memory') as HTMLButtonElement;
+    const btnAdd = getRequiredElement('btn-add-memory', 'button');
     this.addEventListener(btnAdd, 'click', () => {
       this.showModal('memory-add-modal');
     });
 
     // 添加确认按钮
-    const btnAddConfirm = document.getElementById('btn-memory-add-confirm') as HTMLButtonElement;
+    const btnAddConfirm = getRequiredElement('btn-memory-add-confirm', 'button');
     this.addEventListener(btnAddConfirm, 'click', () => {
       const data = this.getAddMemoryFormData();
       if (data) {
@@ -973,7 +1013,7 @@ export class UIManager {
     });
 
     // 删除按钮（带确认对话框，防止误删不可恢复数据）
-    const btnDelete = document.getElementById('btn-memory-delete') as HTMLButtonElement;
+    const btnDelete = getRequiredElement('btn-memory-delete', 'button');
     this.addEventListener(btnDelete, 'click', async () => {
       // 确认删除：记忆是持久化数据，删除后不可恢复，需二次确认
       // 使用自定义确认弹窗替代 window.confirm，提供一致的视觉体验
@@ -1002,11 +1042,8 @@ export class UIManager {
    *   </div>
    */
   renderMemoryList(memories: MemoryListItem[]): void {
-    // 安全清空容器：while + removeChild 比 innerHTML = '' 更安全
-    // （虽然 innerHTML = '' 清空时不解析 HTML，但保持一致性用 removeChild）
-    while (this.memoryListEl.firstChild) {
-      this.memoryListEl.removeChild(this.memoryListEl.firstChild);
-    }
+    // 安全清空容器（使用 clearElement 统一封装 while + removeChild 模式）
+    this.clearElement(this.memoryListEl);
 
     if (memories.length === 0) {
       const empty = document.createElement('div');
@@ -1072,12 +1109,12 @@ export class UIManager {
 
   /** 显示记忆详情 */
   showMemoryDetail(memory: MemoryDetail): void {
-    const nameEl = document.getElementById('memory-detail-name')!;
-    const sourceEl = document.getElementById('memory-detail-source')!;
-    const scoreEl = document.getElementById('memory-detail-score')!;
-    const createdEl = document.getElementById('memory-detail-created')!;
-    const accessedEl = document.getElementById('memory-detail-accessed')!;
-    const contentEl = document.getElementById('memory-detail-content')!;
+    const nameEl = getRequiredElement('memory-detail-name', 'span');
+    const sourceEl = getRequiredElement('memory-detail-source', 'span');
+    const scoreEl = getRequiredElement('memory-detail-score', 'span');
+    const createdEl = getRequiredElement('memory-detail-created', 'span');
+    const accessedEl = getRequiredElement('memory-detail-accessed', 'span');
+    const contentEl = getRequiredElement('memory-detail-content', 'pre');
 
     nameEl.textContent = memory.name;
     sourceEl.textContent = memory.source;
@@ -1114,11 +1151,9 @@ export class UIManager {
 
   /** 获取添加记忆表单数据 */
   private getAddMemoryFormData(): { source: string; name: string; content: string } | null {
-    const source = (document.getElementById('memory-add-source') as HTMLInputElement).value.trim();
-    const name = (document.getElementById('memory-add-name') as HTMLInputElement).value.trim();
-    const content = (
-      document.getElementById('memory-add-content') as HTMLTextAreaElement
-    ).value.trim();
+    const source = getRequiredElement('memory-add-source', 'input').value.trim();
+    const name = getRequiredElement('memory-add-name', 'input').value.trim();
+    const content = getRequiredElement('memory-add-content', 'textarea').value.trim();
 
     if (!source || !name || !content) {
       return null;
@@ -1128,9 +1163,9 @@ export class UIManager {
 
   /** 清空添加记忆表单 */
   clearAddMemoryForm(): void {
-    (document.getElementById('memory-add-source') as HTMLInputElement).value = '';
-    (document.getElementById('memory-add-name') as HTMLInputElement).value = '';
-    (document.getElementById('memory-add-content') as HTMLTextAreaElement).value = '';
+    getRequiredElement('memory-add-source', 'input').value = '';
+    getRequiredElement('memory-add-name', 'input').value = '';
+    getRequiredElement('memory-add-content', 'textarea').value = '';
   }
 
   /** 获取当前查看的记忆 ID（供删除使用） */
@@ -1181,10 +1216,8 @@ export class UIManager {
 
   /** 渲染角色下拉菜单 */
   renderPersonaDropdown(personas: PersonaItem[]): void {
-    // 安全清空容器：与 renderMemoryList 保持一致，使用 removeChild 而非 innerHTML
-    while (this.personaDropdownEl.firstChild) {
-      this.personaDropdownEl.removeChild(this.personaDropdownEl.firstChild);
-    }
+    // 安全清空容器（与 renderMemoryList 保持一致，使用 clearElement 封装）
+    this.clearElement(this.personaDropdownEl);
 
     for (const p of personas) {
       const item = document.createElement('div');
@@ -1266,9 +1299,9 @@ export class UIManager {
 
   /** 初始化设置面板事件监听 */
   private initSettingsPanelListeners(): void {
-    const btnSave = document.getElementById('btn-settings-save') as HTMLButtonElement;
-    const btnCancel = document.getElementById('btn-settings-cancel') as HTMLButtonElement;
-    const btnLlmTest = document.getElementById('btn-llm-test') as HTMLButtonElement | null;
+    const btnSave = getRequiredElement('btn-settings-save', 'button');
+    const btnCancel = getRequiredElement('btn-settings-cancel', 'button');
+    const btnLlmTest = document.getElementById('btn-llm-test');
 
     // API Key 显示/隐藏切换：LLM + Embedding
     this.initApiKeyToggle('btn-toggle-llm-key', 'cfg-llm-api-key');
@@ -1331,19 +1364,18 @@ export class UIManager {
     }
 
     // FD-04 项目模式单选按钮：切换时启用/禁用专注项目下拉框
-    const projectModeRadios = document.querySelectorAll('input[name="project-mode"]');
+    const projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
     projectModeRadios.forEach((radio) => {
-      this.addEventListener(radio as HTMLInputElement, 'change', () => {
-        const selectedMode = (radio as HTMLInputElement).value;
-        this.cfgFocusProject.disabled = selectedMode !== 'focus';
+      this.addEventListener(radio, 'change', () => {
+        this.cfgFocusProject.disabled = radio.value !== 'focus';
       });
     });
 
     // IX-07 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
-    const personaModeRadios = document.querySelectorAll('input[name="persona-mode"]');
+    const personaModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="persona-mode"]');
     personaModeRadios.forEach((radio) => {
-      this.addEventListener(radio as HTMLInputElement, 'change', () => {
-        const selectedMode = (radio as HTMLInputElement).value;
+      this.addEventListener(radio, 'change', () => {
+        const selectedMode = radio.value;
         this.currentPersonaMode = selectedMode;
         this.updatePersonaModeBadge(selectedMode);
         this.personaModeChangeCallback?.(selectedMode);
@@ -1361,9 +1393,9 @@ export class UIManager {
    * @param inputId 输入框 ID
    */
   private initApiKeyToggle(toggleBtnId: string, inputId: string): void {
-    const btn = document.getElementById(toggleBtnId) as HTMLButtonElement | null;
-    const input = document.getElementById(inputId) as HTMLInputElement | null;
-    if (!btn || !input) return;
+    const btn = document.getElementById(toggleBtnId);
+    const input = document.getElementById(inputId);
+    if (!(btn instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) return;
 
     this.addEventListener(btn, 'click', () => {
       if (input.type === 'password') {
@@ -1469,17 +1501,17 @@ export class UIManager {
     this.cfgDefaultPersona.value = config.defaultPersona;
 
     // 角色匹配模式（单选按钮）
-    const modeRadio = document.querySelector(
+    const modeRadio = document.querySelector<HTMLInputElement>(
       `input[name="persona-mode"][value="${this.currentPersonaMode}"]`,
-    ) as HTMLInputElement | null;
+    );
     if (modeRadio) {
       modeRadio.checked = true;
     }
 
     // FD-04 项目模式（单选按钮 + 专注项目下拉框）
-    const projectModeRadio = document.querySelector(
+    const projectModeRadio = document.querySelector<HTMLInputElement>(
       `input[name="project-mode"][value="${config.projectMode}"]`,
-    ) as HTMLInputElement | null;
+    );
     if (projectModeRadio) {
       projectModeRadio.checked = true;
     }
@@ -1508,9 +1540,9 @@ export class UIManager {
   /** 设置角色匹配模式（供 renderer.ts 调用） */
   setPersonaMode(mode: string): void {
     this.currentPersonaMode = mode;
-    const radio = document.querySelector(
+    const radio = document.querySelector<HTMLInputElement>(
       `input[name="persona-mode"][value="${mode}"]`,
-    ) as HTMLInputElement | null;
+    );
     if (radio) {
       radio.checked = true;
     }
@@ -1518,16 +1550,16 @@ export class UIManager {
 
   /** 收集表单中的配置 */
   collectConfigFromForm(): SpriteConfigForm {
-    const modeRadio = document.querySelector(
+    const modeRadio = document.querySelector<HTMLInputElement>(
       'input[name="persona-mode"]:checked',
-    ) as HTMLInputElement | null;
+    );
     this.currentPersonaMode = modeRadio?.value ?? 'auto';
 
     // FD-04 收集项目模式
-    const projectModeRadio = document.querySelector(
+    const projectModeRadio = document.querySelector<HTMLInputElement>(
       'input[name="project-mode"]:checked',
-    ) as HTMLInputElement | null;
-    const projectMode = (projectModeRadio?.value ?? 'smart') as 'smart' | 'focus';
+    );
+    const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
 
     return {
       silentMode: this.cfgSilent.checked,
@@ -1655,8 +1687,8 @@ export class UIManager {
       const modal = document.getElementById('confirm-modal');
       const titleEl = document.getElementById('confirm-title');
       const messageEl = document.getElementById('confirm-message');
-      const btnOk = document.getElementById('btn-confirm-ok') as HTMLButtonElement | null;
-      const btnCancel = document.getElementById('btn-confirm-cancel') as HTMLButtonElement | null;
+      const btnOk = document.getElementById('btn-confirm-ok');
+      const btnCancel = document.getElementById('btn-confirm-cancel');
       if (!modal || !titleEl || !messageEl || !btnOk || !btnCancel) {
         // 元素缺失时回退为 window.confirm（防御性编程）
         resolve(window.confirm(options.message));

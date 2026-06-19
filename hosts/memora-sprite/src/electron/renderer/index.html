@@ -6,7 +6,14 @@
   <!-- CSP：仅允许 self 资源，移除 CDN 依赖以支持离线使用 + 安全加固 -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'" />
   <title>Memora 精灵</title>
-  <link rel="stylesheet" href="renderer.css" />
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/layout.css" />
+  <link rel="stylesheet" href="styles/chat.css" />
+  <link rel="stylesheet" href="styles/memory.css" />
+  <link rel="stylesheet" href="styles/settings.css" />
+  <link rel="stylesheet" href="styles/modal.css" />
+  <link rel="stylesheet" href="styles/toast.css" />
+  <link rel="stylesheet" href="styles/markdown.css" />
 </head>
 <body>
   <!-- 窗口标题栏（拖动区域） -->
@@ -68,6 +75,13 @@
           <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）">🧠 记忆</button>
           <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）">⚙️ 设置</button>
         </nav>
+
+        <!-- 推荐区（对齐方案 §6.3 侧边栏推荐记忆列表） -->
+        <!-- 由 loadDashboard() 动态填充，无推荐时隐藏 -->
+        <div id="recommendations" class="dashboard-section hidden">
+          <h3>推荐</h3>
+          <ul id="recommendation-list" class="suggestion-list"></ul>
+        </div>
       </div>
     </aside>
 

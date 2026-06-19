@@ -9,6 +9,7 @@
  */
 
 import type { BrowserWindow } from 'electron';
+import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
 
@@ -146,7 +147,7 @@ export class ErrorHandler {
     const userMessage = this.getUserFriendlyMessage(error);
     
     // 发送错误消息到渲染进程
-    this.mainWindow.webContents.send('app-error', {
+    this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, {
       code: error.code,
       message: userMessage,
       timestamp: error.timestamp.toISOString(),

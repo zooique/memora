@@ -1,0 +1,158 @@
+/**
+ * Memora 精灵 — 设置面板样式
+ *
+ * 包含：设置分组、表单输入、下拉框、复选框、单选组、操作按钮区、
+ *       API Key 显示/隐藏切换、提示文字。
+ */
+
+/* ─── 设置面板 ─────────────────────────────────────────────── */
+#panel-settings {
+  height: 100%;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.settings-group {
+  margin-bottom: 24px;
+}
+
+.settings-group h3 {
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--surface1);
+}
+
+.settings-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--subtext);
+}
+
+.settings-group input[type="text"],
+.settings-group input[type="password"],
+.settings-group input[type="number"] {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 12px;
+}
+
+/* 下拉选择框：与输入框样式一致，避免浏览器默认样式破坏整体视觉 */
+.settings-group select {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.settings-group select:focus {
+  border-color: var(--accent);
+}
+
+.settings-group input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.settings-group input:focus {
+  border-color: var(--accent);
+}
+
+/**
+ * 带操作按钮的输入框容器：API Key 显示/隐藏切换
+ * 输入框占满宽度，按钮绝对定位在右侧
+ */
+.input-with-action {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.input-with-action input {
+  width: 100%;
+  padding: 6px 36px 6px 10px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.input-with-action input:focus {
+  border-color: var(--accent);
+}
+
+/* 显示/隐藏切换按钮：绝对定位在输入框右侧 */
+.toggle-visibility {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+  line-height: 1;
+}
+
+.toggle-visibility:hover {
+  background: var(--surface2);
+}
+
+/* ─── 设置面板扩展 ─────────────────────────────────────────── */
+.settings-hint {
+  font-size: 12px;
+  color: var(--overlay0);
+  font-style: italic;
+  margin-bottom: 8px;
+}
+
+.radio-group {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+.radio-group input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--surface1);
+}

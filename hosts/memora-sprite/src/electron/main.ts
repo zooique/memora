@@ -22,12 +22,13 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
-import { WindowStateManager } from './windowState.js';
+import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
 import { TrayManager } from './trayIcon.js';
 import { WindowManager } from './windowManager.js';
 import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 import {
   startSprite,
   reinitAgent,
@@ -35,7 +36,7 @@ import {
   isLlmConfigured,
   PROVIDER_PRESETS,
 } from '../index.js';
-import { loadSpriteConfig } from '../sprite/spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import { loadConfig, createProviderFromConfig, toError } from 'memora';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SpriteEventMap } from '../sprite/sprite.js';
@@ -48,9 +49,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const RESOURCES_DIR = path.join(__dirname, '../../resources');
 const TRAY_ICON_PATH = path.join(RESOURCES_DIR, 'tray-icon.png');
-
-/** 首次启动时浮动窗口的默认位置（屏幕左上角偏移） */
-const DEFAULT_FLOAT_POSITION = { x: 100, y: 100 };
 
 // ─── 主进程状态 ──────────────────────────────────────────────
 
@@ -90,7 +88,7 @@ function resetUnreadCount(): void {
   windowManager?.getFloatWindow()?.setUnreadCount(0);
   const fullWindow = windowManager?.getFullWindow();
   if (fullWindow && !fullWindow.isDestroyed()) {
-    fullWindow.webContents.send('float-unread', 0);
+    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, 0);
   }
 }
 
@@ -116,7 +114,6 @@ async function initializeApp(): Promise<void> {
     // 1. 加载精灵配置（从 dataDir/sprite.json，首次启动使用默认值）
     const defaultDataDir = path.join(homedir(), '.memora');
     const spriteConfig = loadSpriteConfig(defaultDataDir);
-    const configPath = path.join(defaultDataDir, 'sprite.json');
 
     // 2. 初始化窗口状态管理器
     const floatPosition =
@@ -126,7 +123,13 @@ async function initializeApp(): Promise<void> {
     windowStateManager = new WindowStateManager({
       defaultState: spriteConfig.windowState,
       floatPosition,
-      configPath,
+      // 持久化委托给 saveSpriteConfig（避免与 spriteConfig.ts 重复写文件）
+      onSaveState: (data) => {
+        saveSpriteConfig(defaultDataDir, {
+          windowState: data.windowState,
+          floatIconPosition: data.floatPosition,
+        });
+      },
     });
 
     // 3. 创建窗口管理器并创建所有窗口
@@ -184,8 +187,11 @@ async function initializeApp(): Promise<void> {
     sessionStore = spriteResult.sessionStore;
     closeSprite = spriteResult.close;
 
+    // 捕获已初始化的 sprite 引用，供后续回调闭包使用（避免非空断言）
+    const activeSprite = sprite;
+
     // 注入交互层
-    sprite.setInteraction(interaction);
+    activeSprite.setInteraction(interaction);
 
     // 注册完整 IPC 处理器（注入 Agent + Sprite + SessionStore）
     const ipcContext: IpcContext = {
@@ -218,12 +224,25 @@ async function initializeApp(): Promise<void> {
         app.quit();
       },
       onToggleSilent: (newSilent: boolean) => {
-        // sprite 在 try 块内已赋值，此处必然非 null
-        sprite!.updateConfig('silentMode', newSilent);
+        activeSprite.updateConfig('silentMode', newSilent);
         // 同步托盘状态（与 ipcHandlers.ts config-update 逻辑一致）
         trayManager?.setState(newSilent ? 'sleeping' : 'idle');
+        // 重建托盘菜单以反映静默模式勾选状态
+        trayManager?.updateMenu();
       },
-      isSilentMode: () => sprite!.getConfig().silentMode,
+      isSilentMode: () => activeSprite.getConfig().silentMode,
+    });
+
+    // 补充注入托盘右键菜单静默模式回调（对齐方案 §5.5 托盘菜单设计）
+    // TrayManager 在 Agent 初始化前创建，需延迟注入 onToggleSilent / isSilentMode
+    trayManager?.updateCallbacks({
+      onToggleSilent: (newSilent: boolean) => {
+        activeSprite.updateConfig('silentMode', newSilent);
+        trayManager?.setState(newSilent ? 'sleeping' : 'idle');
+        // 重建托盘菜单以反映静默模式勾选状态
+        trayManager?.updateMenu();
+      },
+      isSilentMode: () => activeSprite.getConfig().silentMode,
     });
 
     agentReady = true;
@@ -252,7 +271,7 @@ async function initializeApp(): Promise<void> {
  */
 function registerMinimalIpcHandlers(): void {
   // 精灵配置读写（直接操作文件，不需要 Agent）
-  ipcMain.handle('config-get', async () => {
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () => {
     try {
       const defaultDataDir = path.join(homedir(), '.memora');
       return { config: loadSpriteConfig(defaultDataDir) };
@@ -262,7 +281,7 @@ function registerMinimalIpcHandlers(): void {
   });
 
   // Agent 状态查询
-  ipcMain.handle('agent-status', async () => {
+  ipcMain.handle(IPC_CHANNELS.AGENT_STATUS, async () => {
     return {
       ready: agentReady,
       error: agentReady ? null : '配置不完整，请在设置面板中配置 LLM 提供商和 API Key',
@@ -272,7 +291,7 @@ function registerMinimalIpcHandlers(): void {
   // LLM 连接测试（保存前验证配置是否可用）
   // 创建临时 Provider，发送最小测试消息，消费首个 chunk 即判定连接成功
   ipcMain.handle(
-    'llm-config-test',
+    IPC_CHANNELS.LLM_CONFIG_TEST,
     async (
       _event,
       llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
@@ -304,7 +323,7 @@ function registerMinimalIpcHandlers(): void {
   );
 
   // LLM 配置读取（从 ~/.memora/config.json）
-  ipcMain.handle('llm-config-get', async () => {
+  ipcMain.handle(IPC_CHANNELS.LLM_CONFIG_GET, async () => {
     try {
       const configured = await isLlmConfigured();
       if (!configured) {
@@ -337,7 +356,7 @@ function registerMinimalIpcHandlers(): void {
 
   // LLM 配置保存 + 重新初始化 Agent
   ipcMain.handle(
-    'llm-config-save',
+    IPC_CHANNELS.LLM_CONFIG_SAVE,
     async (
       _event,
       llmConfig: {
@@ -364,11 +383,11 @@ function registerMinimalIpcHandlers(): void {
         sprite.setInteraction(interaction);
 
         // 4. 移除最小化 IPC 中的 LLM 配置处理器（避免重复注册）
-        ipcMain.removeHandler('llm-config-get');
-        ipcMain.removeHandler('llm-config-save');
-        ipcMain.removeHandler('llm-config-test');
-        ipcMain.removeHandler('agent-status');
-        ipcMain.removeHandler('config-get');
+        ipcMain.removeHandler(IPC_CHANNELS.LLM_CONFIG_GET);
+        ipcMain.removeHandler(IPC_CHANNELS.LLM_CONFIG_SAVE);
+        ipcMain.removeHandler(IPC_CHANNELS.LLM_CONFIG_TEST);
+        ipcMain.removeHandler(IPC_CHANNELS.AGENT_STATUS);
+        ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
 
         // 5. 注册完整 IPC 处理器
         const ipcContext: IpcContext = {
@@ -396,7 +415,7 @@ function registerMinimalIpcHandlers(): void {
         // 7. 通知渲染进程 Agent 已就绪
         const fullWindow = windowManager.getFullWindow();
         if (fullWindow && !fullWindow.isDestroyed()) {
-          fullWindow.webContents.send('agent-ready', { ready: true });
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
         }
 
         return { success: true, error: null };
@@ -452,7 +471,7 @@ function setupSpriteEventListeners(): void {
     const fullWindow = windowManager.getFullWindow();
     const isFullVisible = fullWindow?.isVisible() && !fullWindow?.isMinimized();
     if (!silent && isFullVisible && fullWindow && !fullWindow.isDestroyed()) {
-      fullWindow.webContents.send('sprite-event', {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
         type: 'proactivePrompt',
         payload: { prompt, silent },
         silent,
@@ -466,7 +485,7 @@ function setupSpriteEventListeners(): void {
   const onMemoryNoticed: (e: SpriteEventMap['memoryNoticed']) => void = () => {
     const fullWindow = windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
-      fullWindow.webContents.send('sprite-event', {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
         type: 'memoryNoticed',
         payload: {},
         silent: true,
@@ -480,7 +499,7 @@ function setupSpriteEventListeners(): void {
   const onInsightGained: (e: SpriteEventMap['insightGained']) => void = () => {
     const fullWindow = windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
-      fullWindow.webContents.send('sprite-event', {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
         type: 'insightGained',
         payload: {},
         silent: true,
@@ -494,7 +513,7 @@ function setupSpriteEventListeners(): void {
   const onPersonaChanged: (e: SpriteEventMap['personaChanged']) => void = ({ from, to }) => {
     const fullWindow = windowManager.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
-      fullWindow.webContents.send('sprite-event', {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
         type: 'personaChanged',
         payload: { from, to },
         silent: true,

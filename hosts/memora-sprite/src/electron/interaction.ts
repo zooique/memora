@@ -12,6 +12,7 @@
 
 import type { BrowserWindow } from 'electron';
 import type { IInteraction, InputHandler, CloseHandler, OutputKind } from '../sprite/interaction.js';
+import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 export class ElectronInteraction implements IInteraction {
   private mainWindow: BrowserWindow | null = null;
@@ -41,12 +42,12 @@ export class ElectronInteraction implements IInteraction {
   output(text: string, kind: OutputKind = 'system'): void {
     // proactive 类型已由 banner 展示，跳过对话区推送
     if (kind === 'proactive') return;
-    this.mainWindow?.webContents.send('sprite-output', { text, kind });
+    this.mainWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, { text, kind });
   }
 
   /** 输出错误信息 */
   error(text: string): void {
-    this.mainWindow?.webContents.send('sprite-error', { text });
+    this.mainWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, { text });
   }
 
   /** 停止交互层 */

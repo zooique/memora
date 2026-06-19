@@ -23,6 +23,10 @@ export interface TrayCallbacks {
   onShowFull: () => void;
   onHideToTray: () => void;
   onQuit: () => void;
+  /** 切换静默模式（参数为切换后的新状态，来自 menuItem.checked） */
+  onToggleSilent?: (newSilent: boolean) => void;
+  /** 查询当前静默模式状态（同步返回，用于菜单勾选） */
+  isSilentMode?: () => boolean;
 }
 
 export class TrayManager {
@@ -33,8 +37,11 @@ export class TrayManager {
   private pulseTimer: ReturnType<typeof setInterval> | null = null;
   /** 预渲染的三态图标缓存（避免重复创建） */
   private icons: Record<TrayState, NativeImage>;
+  /** 回调集合（由 main.ts 注入，支持延迟注入静默模式回调） */
+  private callbacks: TrayCallbacks;
 
-  constructor(iconPath: string | NativeImage, private callbacks: TrayCallbacks) {
+  constructor(iconPath: string | NativeImage, callbacks: TrayCallbacks) {
+    this.callbacks = callbacks;
     // 预渲染三态图标
     this.icons = {
       idle: this.createStateIcon('idle'),
@@ -60,8 +67,19 @@ export class TrayManager {
     });
   }
 
-  private updateMenu(): void {
-    const contextMenu = Menu.buildFromTemplate([
+  /**
+   * 更新托盘右键菜单
+   *
+   * 对齐方案 §5.5 托盘右键菜单设计：
+   * - 显示浮动图标 / 显示完整窗口
+   * - 静默模式（勾选态反映当前配置，点击切换）
+   * - 隐藏到托盘
+   * - 退出
+   */
+  updateMenu(): void {
+    const isSilent = this.callbacks.isSilentMode?.() ?? false;
+
+    const menuItems: Electron.MenuItemConstructorOptions[] = [
       {
         label: '显示浮动图标',
         click: () => this.callbacks.onShowFloat(),
@@ -69,6 +87,15 @@ export class TrayManager {
       {
         label: '显示完整窗口',
         click: () => this.callbacks.onShowFull(),
+      },
+      { type: 'separator' },
+      {
+        label: '静默模式',
+        type: 'checkbox',
+        checked: isSilent,
+        click: (menuItem) => {
+          this.callbacks.onToggleSilent?.(menuItem.checked);
+        },
       },
       { type: 'separator' },
       {
@@ -80,8 +107,21 @@ export class TrayManager {
         label: '退出',
         click: () => this.callbacks.onQuit(),
       },
-    ]);
+    ];
+
+    const contextMenu = Menu.buildFromTemplate(menuItems);
     this.tray.setContextMenu(contextMenu);
+  }
+
+  /**
+   * 更新回调集合（main.ts 在 Agent 初始化后补充注入静默模式相关回调）
+   *
+   * 场景：TrayManager 在 Agent 初始化前创建，此时 onToggleSilent / isSilentMode 不可用。
+   * Agent 就绪后调用此方法补充注入，并重建菜单以反映当前静默状态。
+   */
+  updateCallbacks(callbacks: Partial<TrayCallbacks>): void {
+    this.callbacks = { ...this.callbacks, ...callbacks };
+    this.updateMenu(); // 重建菜单以反映静默模式勾选状态
   }
 
   /**

@@ -21,7 +21,10 @@ import type { Agent } from 'memora';
 import { toError } from 'memora';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
+import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
+import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 /**
  * IPC 处理器上下文
@@ -69,12 +72,12 @@ export function registerIpcHandlers(ctx: IpcContext): void {
    * 主进程直接消费 agent.chat()，通过专用 IPC 通道发送 chunk，
    * 不走 IInteraction（IInteraction 仅负责非流式输出）。
    */
-  ipcMain.on('user-input', (_event, text: string) => {
+  ipcMain.on(IPC_CHANNELS.USER_INPUT, (_event, text: string) => {
     void handleUserInput(text, ctx);
   });
 
   /** 中断当前对话 */
-  ipcMain.handle('chat-abort', async () => {
+  ipcMain.handle(IPC_CHANNELS.CHAT_ABORT, async () => {
     const ctrl = ctx.getAbortController();
     if (ctrl) {
       ctrl.abort();
@@ -84,7 +87,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 加载历史会话消息 */
-  ipcMain.handle('session-load', async (_event, query: { date?: string; session?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_event, query: { date?: string; session?: string }) => {
     try {
       const sessions = ctx.sessionStore.listSessions();
       if (sessions.length === 0) {
@@ -110,7 +113,10 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       }
 
       const messages = ctx.sessionStore.loadMessages(match[1], match[2]);
-      return { messages };
+      // 仅暴露渲染进程需要的字段，保持 preload 契约与 IPC 通道类型一致
+      return {
+        messages: messages.map((msg) => ({ role: msg.role, content: msg.content })),
+      };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '加载会话历史失败' });
       return { messages: [] };
@@ -120,7 +126,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 记忆相关 ────────────────────────────────────────────
 
   /** 列出记忆（可按 source 过滤） */
-  ipcMain.handle('memories-list', async (_event, query: { source?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST, async (_event, query: { source?: string }) => {
     try {
       const memories = ctx.sprite.listMemories(query?.source);
       return { memories };
@@ -131,7 +137,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 搜索记忆（混合搜索：关键词 + 向量召回） */
-  ipcMain.handle('memories-search', async (_event, query: string) => {
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_SEARCH, async (_event, query: string) => {
     try {
       const hits = await ctx.sprite.searchMemories(query);
       return { hits };
@@ -142,7 +148,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 查看单条记忆详情 */
-  ipcMain.handle('memories-show', async (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_SHOW, async (_event, id: string) => {
     try {
       const memory = ctx.sprite.showMemory(id);
       return { memory };
@@ -153,7 +159,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 删除记忆 */
-  ipcMain.handle('memories-delete', async (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE, async (_event, id: string) => {
     try {
       const deleted = ctx.sprite.deleteMemory(id);
       return { deleted };
@@ -164,7 +170,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 添加记忆 */
-  ipcMain.handle('memories-add', async (_event, data: { source: string; name: string; content: string }) => {
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD, async (_event, data: { source: string; name: string; content: string }) => {
     try {
       const id = ctx.sprite.upsertMemory(data.source, data.name, data.content);
       return { id };
@@ -177,7 +183,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 配置相关 ────────────────────────────────────────────
 
   /** 获取精灵配置 */
-  ipcMain.handle('config-get', async () => {
+  ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () => {
     try {
       const config = ctx.sprite.getConfig();
       return { config };
@@ -187,18 +193,30 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   });
 
-  /** 更新配置项 */
-  ipcMain.handle('config-update', async (_event, key: string, value: unknown) => {
-    try {
-      ctx.sprite.updateConfig(key as never, value);
+  /**
+   * 校验配置键是否属于 SpriteConfig
+   */
+  function isSpriteConfigKey(key: string): key is SpriteConfigKey {
+    return key in DEFAULT_SPRITE_CONFIG;
+  }
 
-      // 静默模式切换时同步托盘状态
+  /** 更新配置项 */
+  ipcMain.handle(IPC_CHANNELS.CONFIG_UPDATE, async (_event, key: string, value: unknown) => {
+    try {
+      if (!isSpriteConfigKey(key)) {
+        return { success: false, error: `非法配置键：${key}` };
+      }
+      ctx.sprite.updateConfig(key, value);
+
+      // 静默模式切换时同步托盘状态 + 重建菜单（确保勾选状态一致）
       if (key === 'silentMode') {
         if (value === true) {
           ctx.trayManager?.setState('sleeping');
         } else {
           ctx.trayManager?.setState('idle');
         }
+        // 重建托盘菜单以反映静默模式勾选状态（通过设置面板/IPC 切换时菜单不会自动更新）
+        ctx.trayManager?.updateMenu();
       }
 
       return { updated: true };
@@ -211,7 +229,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 角色相关 ────────────────────────────────────────────
 
   /** 列出所有角色 */
-  ipcMain.handle('persona-list', async () => {
+  ipcMain.handle(IPC_CHANNELS.PERSONA_LIST, async () => {
     try {
       const personas = ctx.sprite.listPersonas();
       return { personas };
@@ -222,7 +240,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 切换角色 */
-  ipcMain.handle('persona-switch', async (_event, name: string) => {
+  ipcMain.handle(IPC_CHANNELS.PERSONA_SWITCH, async (_event, name: string) => {
     try {
       const result = ctx.sprite.switchPersona(name);
       return { switched: result !== null, name: result };
@@ -233,7 +251,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 设置角色匹配模式 */
-  ipcMain.handle('persona-mode', async (_event, mode: 'auto' | 'manual') => {
+  ipcMain.handle(IPC_CHANNELS.PERSONA_MODE, async (_event, mode: 'auto' | 'manual') => {
     try {
       const set = ctx.sprite.setPersonaMode(mode);
       return { set };
@@ -244,7 +262,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** IX-07 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */
-  ipcMain.handle('persona-mode-get', () => {
+  ipcMain.handle(IPC_CHANNELS.PERSONA_MODE_GET, () => {
     try {
       return { mode: ctx.sprite.personaMode };
     } catch (error) {
@@ -256,7 +274,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 主动提示分发 ────────────────────────────────────────
 
   /** 渲染进程通知主动提示已显示，清除未读计数 */
-  ipcMain.on('proactive-prompt-shown', () => {
+  ipcMain.on(IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN, () => {
     // 主动提示已显示，托盘切回 idle 状态
     ctx.trayManager?.setState('idle');
   });
@@ -264,7 +282,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   // ─── 项目管理（FD-04 项目模式） ──────────────────────────
 
   /** 列出已注册项目（供 UI 专注模式选择器使用） */
-  ipcMain.handle('projects-list', () => {
+  ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, () => {
     try {
       return { projects: ctx.sprite.listProjects() };
     } catch (error) {
@@ -284,7 +302,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
    * - 已注册触发器列表
    * - 关联推荐记忆
    */
-  ipcMain.handle('dashboard-get', () => {
+  ipcMain.handle(IPC_CHANNELS.DASHBOARD_GET, () => {
     try {
       const data = ctx.sprite.dashboard();
       return {
@@ -316,7 +334,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
    * 生成基于时间戳的会话名（session-HHmmss），调用 agent.switchSession 切换。
    * 旧会话数据保留在 SessionStore 中，不删除。
    */
-  ipcMain.handle('session-new', async () => {
+  ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async () => {
     try {
       const now = new Date();
       // 会话名格式：session-HHmmss（如 session-143052）
@@ -345,7 +363,7 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
   if (!fullWindow || fullWindow.isDestroyed()) return;
 
   const messageId = randomUUID();
-  fullWindow.webContents.send('sprite-stream-start', { messageId });
+  fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, { messageId });
 
   // 完整窗口不可见时增加未读计数（推送到浮动窗口徽章）
   // 对齐方案 §12 验证标准第 11 项：浮动窗口未读计数
@@ -366,15 +384,15 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
       if (fullWindow.isDestroyed()) break;
 
       if (chunk.type === 'text') {
-        fullWindow.webContents.send('sprite-stream-chunk', {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, {
           messageId,
           text: chunk.content,
         });
       } else if (chunk.type === 'done') {
-        fullWindow.webContents.send('sprite-stream-end', { messageId });
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
       } else if (chunk.type === 'aborted') {
-        fullWindow.webContents.send('sprite-stream-end', { messageId });
-        fullWindow.webContents.send('sprite-output', {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, {
           text: `[已中断：${chunk.reason}]`,
           kind: 'system',
         });
@@ -382,10 +400,10 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
     }
   } catch (error) {
     if (!fullWindow.isDestroyed()) {
-      fullWindow.webContents.send('sprite-error', {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
         text: `对话出错：${toError(error).message}`,
       });
-      fullWindow.webContents.send('sprite-stream-end', { messageId });
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
     }
     errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
   } finally {
@@ -403,6 +421,6 @@ export function emitSpriteEvent(
   silent: boolean,
 ): void {
   if (!win.isDestroyed()) {
-    win.webContents.send('sprite-event', { type: event, payload, silent });
+    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, { type: event, payload, silent });
   }
 }

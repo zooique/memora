@@ -6,29 +6,32 @@
  * 设计要点：
  * - 两个独立的 BrowserWindow（float + full）
  * - 任意时刻只有一个窗口可见
- * - 状态变更写入 sprite.json 持久化（与精灵配置同文件）
+ * - 持久化委托给外部回调（避免与 spriteConfig.ts 重复写文件）
  */
 
 import type { BrowserWindow } from 'electron';
-import * as fs from 'fs';
-import * as path from 'path';
-import { errorHandler, ErrorCode } from './errorHandler.js';
 
 export type WindowState = 'tray' | 'float' | 'full';
+
+/** 窗口状态持久化数据（由外部回调保存到配置文件） */
+export interface WindowStateData {
+  windowState: WindowState;
+  floatPosition: { x: number; y: number };
+}
 
 export interface WindowStateOptions {
   defaultState?: WindowState;
   floatPosition?: { x: number; y: number };
   floatSize?: { width: number; height: number };
   fullSize?: { width: number; height: number };
-  /** sprite.json 完整路径（用于持久化窗口状态） */
-  configPath?: string;
+  /** 窗口状态持久化回调（由 main.ts 注入，委托给 saveSpriteConfig） */
+  onSaveState?: (data: WindowStateData) => void;
 }
 
 const FLOAT_SIZE = { width: 80, height: 80 };
 const FULL_SIZE = { width: 420, height: 640 };
 /** 首次启动时浮动窗口的默认位置（屏幕左上角偏移） */
-const DEFAULT_FLOAT_POSITION = { x: 100, y: 100 };
+export const DEFAULT_FLOAT_POSITION = { x: 100, y: 100 };
 
 export class WindowStateManager {
   private state: WindowState = 'float';
@@ -40,14 +43,15 @@ export class WindowStateManager {
   floatWindow: BrowserWindow | null = null;
   fullWindow: BrowserWindow | null = null;
 
-  private configPath: string;
+  /** 持久化回调（由 main.ts 注入，委托给 saveSpriteConfig） */
+  private onSaveState?: (data: WindowStateData) => void;
 
   constructor(opts: WindowStateOptions = {}) {
     this.floatPosition = opts.floatPosition ?? DEFAULT_FLOAT_POSITION;
     this.floatSize = opts.floatSize ?? FLOAT_SIZE;
     this.fullSize = opts.fullSize ?? FULL_SIZE;
     this.state = opts.defaultState ?? 'float';
-    this.configPath = opts.configPath ?? path.join(process.cwd(), 'sprite.json');
+    this.onSaveState = opts.onSaveState;
   }
 
   /** 状态转换：隐藏当前窗口 → 显示目标窗口 → 持久化 */
@@ -73,7 +77,7 @@ export class WindowStateManager {
     }
 
     this.state = target;
-    this.saveState();
+    this.persistState();
   }
 
   /**
@@ -94,29 +98,18 @@ export class WindowStateManager {
     // tray 态：不显示任何窗口（仅托盘图标）
   }
 
-  /** 保存状态到配置文件 */
-  private saveState(): void {
-    try {
-      let config: Record<string, unknown> = {};
-      if (fs.existsSync(this.configPath)) {
-        config = JSON.parse(fs.readFileSync(this.configPath, 'utf-8'));
-      }
-      config.windowState = this.state;
-      config.floatIconPosition = this.floatPosition;
-      fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
-    } catch (error) {
-      // 记录错误但不中断应用运行
-      errorHandler.handle(error, {
-        code: ErrorCode.FILE_WRITE_FAILED,
-        context: '保存窗口状态失败'
-      });
-    }
+  /** 持久化当前状态到配置文件（委托外部回调） */
+  private persistState(): void {
+    this.onSaveState?.({
+      windowState: this.state,
+      floatPosition: this.floatPosition,
+    });
   }
 
   /** 保存浮动窗口位置 */
   saveFloatPosition(x: number, y: number): void {
     this.floatPosition = { x, y };
-    this.saveState();
+    this.persistState();
   }
 
   getState(): WindowState {

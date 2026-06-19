@@ -36,6 +36,9 @@ import { toError } from 'memora';
 
 let uiManager: UIManager;
 
+/** 静默模式自动恢复时间（1 小时） */
+const SILENT_RECOVERY_MS = 60 * 60 * 1000;
+
 /** 静默模式定时恢复句柄（多次点击"静默 1 小时"时清理旧定时器，避免重复恢复） */
 let silentRecoveryTimer: number | null = null;
 
@@ -86,7 +89,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           // IX-06 恢复提示走 toast
           uiManager.showToast('静默模式已到期自动恢复，精灵可正常主动提示', 'info');
         });
-      }, 60 * 60 * 1000);
+      }, SILENT_RECOVERY_MS);
     },
   });
 
@@ -239,10 +242,10 @@ function setupBusinessLogic(): void {
 async function loadSessionHistory(): Promise<void> {
   try {
     const { messages } = await window.electronAPI.loadSession({});
-    for (const msg of messages as Array<{ role: string; content: string }>) {
+    for (const msg of messages) {
       // 保留合法角色，未知角色回退为 assistant（避免 system 被错误映射为 assistant）
       const role = (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
-        ? msg.role as 'user' | 'assistant' | 'system'
+        ? msg.role
         : 'assistant';
       uiManager.appendMessage({
         role,
@@ -323,10 +326,33 @@ function initSpriteEventListener(): void {
  * - 静默模式：仅更新托盘数字，不打扰用户
  * - 非静默模式：确保对话面板可见，然后显示蓝粉渐变 banner
  */
-function handleProactivePrompt(msg: { type: string; payload: unknown; silent: boolean }): void {
-  const payload = msg.payload as { prompt: string; triggers: string[]; silent: boolean };
+interface ProactivePromptPayload {
+  prompt: string;
+  triggers: string[];
+  silent: boolean;
+}
 
-  if (payload.silent) {
+/**
+ * 校验主动提示 payload 结构
+ */
+function isProactivePromptPayload(value: unknown): value is ProactivePromptPayload {
+  if (typeof value !== 'object' || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.prompt === 'string' &&
+    Array.isArray(obj.triggers) &&
+    obj.triggers.every((t) => typeof t === 'string') &&
+    typeof obj.silent === 'boolean'
+  );
+}
+
+function handleProactivePrompt(msg: { type: string; payload: unknown; silent: boolean }): void {
+  if (!isProactivePromptPayload(msg.payload)) {
+    console.error('[handleProactivePrompt] 收到格式错误的主动提示 payload:', msg.payload);
+    return;
+  }
+
+  if (msg.payload.silent) {
     // 静默模式：仅更新数字，不弹窗（由托盘在 ipcHandlers 层处理）
     return;
   }
@@ -335,7 +361,7 @@ function handleProactivePrompt(msg: { type: string; payload: unknown; silent: bo
   if (uiManager.getCurrentPanel() !== 'chat') {
     uiManager.switchPanel('chat');
   }
-  uiManager.showProactiveBanner(payload.prompt);
+  uiManager.showProactiveBanner(msg.payload.prompt);
 
   // 通知主进程：主动提示已显示（用于清除未读计数）
   window.electronAPI.proactivePromptShown();
@@ -363,7 +389,7 @@ function initAppErrorListener(): void {
 /**
  * 精灵错误监听
  *
- * 监听 'sprite-error' 通道（ipcHandlers.ts 在对话流式输出出错时发送）。
+ * 监听主进程推送的精灵对话级错误（ipcHandlers.ts 在对话流式输出出错时发送）。
  * 与 app-error（应用级错误）区分：sprite-error 是对话级错误。
  * IX-06 统一走 toast 通知，保持错误反馈渠道一致。
  */
@@ -478,8 +504,8 @@ function setupMemoryPanel(): void {
 /** 加载记忆列表 */
 async function loadMemoryList(): Promise<void> {
   try {
-    const filterEl = document.getElementById('memory-filter-source') as HTMLSelectElement | null;
-    const source = filterEl?.value || undefined;
+    const filterEl = document.getElementById('memory-filter-source');
+    const source = filterEl instanceof HTMLSelectElement ? filterEl.value : undefined;
     const { memories } = await window.electronAPI.listMemories(source ? { source } : {});
     uiManager.renderMemoryList(memories);
 
@@ -530,6 +556,33 @@ async function loadDashboard(): Promise<void> {
         : '无触发器';
       dashTriggers.title = `已注册触发器：${triggerList}`;
     }
+
+    // 渲染推荐记忆列表（对齐方案 §6.3 推荐区）
+    const recList = document.getElementById('recommendation-list');
+    const recSection = document.getElementById('recommendations');
+    if (recList && recSection) {
+      if (data.suggestions && data.suggestions.length > 0) {
+        recList.innerHTML = '';
+        for (const s of data.suggestions) {
+          const li = document.createElement('li');
+          li.title = `${s.contentPreview}\n\n${s.reason}`;
+          // 记忆名称
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = s.name;
+          // 相关度分数
+          const scoreSpan = document.createElement('span');
+          scoreSpan.className = 'suggestion-score';
+          scoreSpan.textContent = s.relevance.toFixed(2);
+          li.appendChild(nameSpan);
+          li.appendChild(scoreSpan);
+          recList.appendChild(li);
+        }
+        recSection.classList.remove('hidden');
+      } else {
+        // 无推荐时隐藏推荐区
+        recSection.classList.add('hidden');
+      }
+    }
   } catch (error) {
     console.error('[loadDashboard] 加载仪表盘数据失败:', error);
   }
@@ -556,7 +609,8 @@ function setupPersonaSelector(): void {
   // IX-07 角色匹配模式变更：实时持久化 + 更新标签
   uiManager.onPersonaModeChange(async (mode: string) => {
     try {
-      const { set } = await window.electronAPI.setPersonaMode(mode as 'auto' | 'manual');
+      const validMode = mode === 'manual' ? 'manual' : 'auto';
+      const { set } = await window.electronAPI.setPersonaMode(validMode);
       if (set) {
         uiManager.showToast(`角色匹配模式已切换为：${mode === 'auto' ? '自动' : '手动'}`, 'success');
       } else {

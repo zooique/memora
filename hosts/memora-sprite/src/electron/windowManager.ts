@@ -19,6 +19,7 @@ import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
+import { IPC_CHANNELS } from './ipcChannels.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -131,11 +132,11 @@ export class WindowManager {
 
   /** 注册窗口控制 IPC */
   private registerWindowControls(): void {
-    ipcMain.on('window-minimize', () => {
+    ipcMain.on(IPC_CHANNELS.WINDOW_MINIMIZE, () => {
       this.fullWindow?.minimize();
     });
 
-    ipcMain.on('window-maximize', () => {
+    ipcMain.on(IPC_CHANNELS.WINDOW_MAXIMIZE, () => {
       if (this.fullWindow?.isMaximized()) {
         this.fullWindow.unmaximize();
       } else {
@@ -143,7 +144,7 @@ export class WindowManager {
       }
     });
 
-    ipcMain.on('window-close', () => {
+    ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, () => {
       this.windowStateManager.transition('float');
     });
   }

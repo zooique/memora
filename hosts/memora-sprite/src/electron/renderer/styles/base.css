@@ -1,0 +1,66 @@
+/**
+ * Memora 精灵 — 基础样式
+ *
+ * 包含：CSS 变量、全局重置、滚动条、通用工具类。
+ * 主题：Catppuccin Mocha
+ */
+
+/* ─── 变量 ─────────────────────────────────────────────────── */
+:root {
+  --bg:        #1e1e2e;
+  --surface0:  #313244;
+  --surface1:  #45475a;
+  --surface2:  #585b70;
+  --overlay0:  #6c7086;
+  --text:      #cdd6f4;
+  --subtext:   #a6adc8;
+  --accent:    #89b4fa;
+  --green:     #a6e3a1;
+  --yellow:    #f9e2af;
+  --pink:      #f5c2e7;
+  --red:       #f38ba8;
+  /* source 标签专用颜色（对齐 Catppuccin Mocha 调色板） */
+  --mauve:     #cba6f7;  /* 紫色：rule */
+  --teal:      #94e2d5;  /* 青色：persona */
+  --peach:     #fab387;  /* 橙色：topic */
+  --radius:    8px;
+  --shadow:    0 4px 16px rgba(0, 0, 0, 0.4);
+  /* 精灵消息字体：霞鹜文楷优先（用户系统已安装则启用），否则回退到系统 serif */
+  --font-sprite: 'LXGW WenKai', 'LXGW WenKai Screen', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', system-ui, serif;
+}
+
+/* ─── 重置 ─────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* ─── 滚动条 ───────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--surface2);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--overlay0);
+}
+
+/* ─── 通用工具类 ───────────────────────────────────────────── */
+.hidden {
+  display: none !important;
+}

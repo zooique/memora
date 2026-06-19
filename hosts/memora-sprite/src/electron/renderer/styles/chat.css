@@ -1,0 +1,498 @@
+/**
+ * Memora 精灵 — 对话面板样式
+ *
+ * 包含：对话工具栏、主动提示 banner、消息气泡、输入区、打字指示器、
+ *       召回记忆提示、对话区空状态引导。
+ */
+
+/* ─── 对话面板 ─────────────────────────────────────────────── */
+#panel-chat {
+  height: 100%;
+  position: relative; /* 主动提示 banner 绝对定位的锚点 */
+}
+
+/**
+ * 对话工具栏：FD-05 新建会话按钮容器
+ * 置于对话面板顶部右侧，主动可见但不抢眼
+ */
+#chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--surface0);
+}
+
+#btn-new-session {
+  padding: 4px 12px;
+  border: 1px solid var(--surface2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--subtext);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#btn-new-session:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/**
+ * 主动提示 banner：顶部滑入，蓝粉渐变背景
+ * 对齐 docs/memora-sprite-preview.html §6.6 .proactive-banner
+ * 由 ui.ts showProactiveBanner() 控制 .hidden 类切换
+ */
+#proactive-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--pink) 100%);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#proactive-banner:not(.hidden) {
+  animation: bannerSlideDown 0.3s ease-out;
+}
+
+@keyframes bannerSlideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+#proactive-banner .banner-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+#proactive-banner .banner-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--bg);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+#proactive-banner .banner-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#proactive-banner .banner-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: var(--bg);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#proactive-banner .banner-btn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/**
+ * 消息容器：flex 布局以容纳头像 + 内容
+ * 对齐 docs/memora-sprite-preview.html §6.2
+ * max-width 限制气泡宽度，避免长消息占满全屏
+ */
+.message {
+  display: flex;
+  gap: 10px;
+  max-width: 85%;
+  animation: slideIn 0.15s ease-out;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 用户消息：右对齐，头像在右 */
+.message.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+/* 精灵消息：左对齐，头像在左 */
+.message.assistant {
+  align-self: flex-start;
+}
+
+/* 系统消息：居中，无头像 */
+.message.system {
+  align-self: center;
+  background: var(--surface1);
+  color: var(--subtext);
+  font-size: 12px;
+  text-align: center;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+}
+
+/**
+ * 消息头像：32px 圆形
+ * 精灵头像使用渐变背景 + emoji，避免外部资源依赖
+ */
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--pink) 100%);
+  box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
+  user-select: none;
+}
+
+/**
+ * 消息内容容器：包裹气泡 + 时间戳 + 复制按钮
+ * 相对定位，复制按钮绝对定位在右上角
+ */
+.message-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+
+/* 用户消息内容容器：右对齐 */
+.message.user .message-content {
+  align-items: flex-end;
+}
+
+/* 精灵消息内容容器：左对齐 */
+.message.assistant .message-content {
+  align-items: flex-start;
+}
+
+/**
+ * 消息气泡：实际文本容器
+ * 用户气泡绿色，精灵气泡 surface 背景 + 霞鹜文楷字体
+ */
+.message-bubble {
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  line-height: 1.5;
+  position: relative;
+  word-break: break-word;
+}
+
+.message.user .message-bubble {
+  background: var(--green);
+  color: var(--bg);
+  border-bottom-right-radius: 2px;
+}
+
+.message.assistant .message-bubble {
+  background: var(--surface0);
+  color: var(--text);
+  border-bottom-left-radius: 2px;
+  /* 精灵消息使用霞鹜文楷，对齐方案 §7.2 + HTML 预览 §6.6 */
+  font-family: var(--font-sprite);
+}
+
+.message .meta {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-top: 4px;
+}
+
+.message.streaming .message-bubble {
+  border-right: 2px solid var(--accent);
+  padding-right: 14px;
+}
+
+/**
+ * 消息时间戳：气泡下方小字，浅色
+ * 对齐聊天应用习惯，显示消息发送时间
+ */
+.message-time {
+  font-size: 10px;
+  color: var(--overlay0);
+  margin-top: 4px;
+  padding: 0 4px;
+  user-select: none;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/**
+ * 消息复制按钮：hover 时显示在气泡右上角
+ * 仅精灵消息（非流式）显示，点击复制原始内容到剪贴板
+ */
+.message-copy-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--surface2);
+  border-radius: 50%;
+  background: var(--surface1);
+  color: var(--subtext);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 5;
+}
+
+/* hover 时显示复制按钮 */
+.message-content:hover .message-copy-btn {
+  opacity: 1;
+}
+
+.message-copy-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.message .cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--accent);
+  margin-left: 2px;
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/**
+ * 打字指示器：精灵正在思考时的三点跳动动画
+ * 对齐 docs/memora-sprite-preview.html §6.2 .typing-indicator
+ * 由 ui.ts 在流式开始前显示，首个 chunk 到达后移除
+ */
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.typing-indicator span {
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  animation: typingBounce 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typingBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+/**
+ * 召回记忆提示：精灵消息内嵌的"召回来源"标签
+ * 对齐 HTML 预览 §6.2 .memory-recall
+ * 由 ui.ts 在精灵消息气泡末尾追加，点击可跳转到记忆详情
+ */
+.memory-recall {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--surface2);
+  font-size: 12px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.memory-recall:hover {
+  color: var(--pink);
+  text-decoration: underline;
+}
+
+/* ─── 输入区 ───────────────────────────────────────────────── */
+#input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface0);
+  border-top: 1px solid var(--surface1);
+  align-items: flex-end;
+}
+
+#input {
+  flex: 1;
+  resize: none;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+#input:focus {
+  border-color: var(--accent);
+}
+
+#input::placeholder {
+  color: var(--overlay0);
+}
+
+#btn-send {
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+#btn-send:hover {
+  opacity: 0.85;
+}
+
+#btn-send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+#btn-stop {
+  padding: 8px 12px;
+  background: var(--red);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+#btn-stop.hidden {
+  display: none;
+}
+
+/* ─── 对话区空状态引导 ─────────────────────────────────────── */
+/* 无消息时显示欢迎语 + 示例问题，引导新用户快速开始对话        */
+/* 有消息后通过 .hidden 类隐藏                                  */
+
+.chat-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 精灵头像：大尺寸渐变圆形，与消息头像风格一致 */
+.chat-empty-state .empty-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--pink) 100%);
+  box-shadow: 0 4px 16px rgba(137, 180, 250, 0.3);
+  margin-bottom: 16px;
+  user-select: none;
+}
+
+/* 欢迎标题：主色调强调 */
+.chat-empty-state .empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  /* 标题不使用霞鹜文楷，保持系统字体清晰度 */
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* 副标题：浅色描述 */
+.chat-empty-state .empty-subtitle {
+  font-size: 13px;
+  color: var(--subtext);
+  margin-bottom: 24px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* 示例问题网格：2 列布局，紧凑卡片 */
+.chat-empty-state .empty-suggestions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+}
+
+/* 示例问题按钮：卡片式，hover 高亮 */
+.chat-empty-state .suggestion-btn {
+  padding: 10px 12px;
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  text-align: left;
+}
+
+.chat-empty-state .suggestion-btn:hover {
+  border-color: var(--accent);
+  background: var(--surface1);
+  transform: translateY(-1px);
+}
+
+.chat-empty-state .suggestion-btn:active {
+  transform: translateY(0);
+}

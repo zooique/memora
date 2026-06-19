@@ -488,8 +488,8 @@ async function handleMemories(args: string, sprite: Sprite): Promise<void> {
     try {
       const id = sprite.upsertMemory(source, name, content);
       console.log(`已添加记忆：${id}`);
-    } catch (e) {
-      console.log(`添加失败：${toError(e).message}`);
+    } catch (error) {
+      console.log(`添加失败：${toError(error).message}`);
     }
     return;
   }

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:electron": "tsc -p tsconfig.electron.json && node -e \"const fs=require('fs'),path=require('path');['src/electron/renderer/index.html','src/electron/renderer/float.html','src/electron/renderer/renderer.css'].forEach(f=>{const src=f;const dest=path.join('dist-electron',f.replace('src/',''));fs.mkdirSync(path.dirname(dest),{recursive:true});fs.copyFileSync(src,dest)})\"",
+    "build:electron": "tsc -p tsconfig.electron.json && node -e \"const fs=require('fs'),path=require('path');function copyDir(src,dest){fs.mkdirSync(dest,{recursive:true});for(const entry of fs.readdirSync(src,{withFileTypes:true})){const srcPath=path.join(src,entry.name);const destPath=path.join(dest,entry.name);if(entry.isDirectory()){copyDir(srcPath,destPath)}else if(!entry.name.endsWith('.ts')){fs.copyFileSync(srcPath,destPath)}}}copyDir('src/electron/renderer','dist-electron/electron/renderer')\"",
     "build:all": "npm run build && npm run build:electron",
     "start": "tsx src/index.ts",
     "start:electron": "npm run build:electron && electron ./dist-electron/electron/main.js",

@@ -1,0 +1,82 @@
+/**
+ * Memora 精灵 — Toast 通知样式
+ *
+ * 包含：Toast 容器、Toast 项、语义变体、进入/离开动画。
+ */
+
+/* ─── IX-06 Toast 通知区域 ─────────────────────────────────── */
+/* 独立于对话历史，用于显示操作反馈（成功/失败/警告），自动消失 */
+
+#toast-container {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 2000;
+  pointer-events: none;
+  max-width: 360px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: auto;
+  animation: toast-slide-in 0.2s ease-out;
+}
+
+/* 语义变体：左侧色条区分类型 */
+.toast.success { border-left: 3px solid var(--green); }
+.toast.error   { border-left: 3px solid var(--red); }
+.toast.warning { border-left: 3px solid var(--yellow); }
+.toast.info    { border-left: 3px solid var(--accent); }
+
+.toast-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toast-content {
+  flex: 1;
+  word-break: break-word;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--subtext);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 0 0 0 4px;
+}
+
+.toast-close:hover {
+  color: var(--text);
+}
+
+.toast.leaving {
+  animation: toast-slide-out 0.2s ease-in forwards;
+}
+
+@keyframes toast-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes toast-slide-out {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(100%); opacity: 0; }
+}

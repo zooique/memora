@@ -9,6 +9,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 // ─── 类型定义（与主进程 IPC 通道对应） ─────────────────────
 
@@ -43,6 +44,12 @@ export interface MemoryDetail {
   accessedAt: string;
 }
 
+/** 会话消息（渲染进程展示用，与 SessionMessage 对齐但仅暴露必要字段） */
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
 /** 精灵配置（与 SpriteConfig 对齐，渲染进程用） */
 export interface SpriteConfigForm {
   silentMode: boolean;
@@ -63,7 +70,7 @@ export interface ElectronAPI {
   // 对话
   sendUserInput: (text: string) => void;
   abortChat: () => Promise<void>;
-  loadSession: (query: { date?: string; session?: string }) => Promise<{ messages: unknown[] }>;
+  loadSession: (query: { date?: string; session?: string }) => Promise<{ messages: ChatMessage[] }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
@@ -145,7 +152,7 @@ export interface ElectronAPI {
   getDashboard: () => Promise<{
     total: number;
     bySource: Record<string, number>;
-    suggestions: Array<{ name: string; source: string; reason: string; relevance: number }>;
+    suggestions: Array<{ name: string; source: string; reason: string; relevance: number; contentPreview: string }>;
     pendingNotices: number;
     proactiveThreshold: number;
     registeredTriggers: string[];
@@ -178,119 +185,112 @@ export interface ElectronAPI {
 
 const electronAPI: ElectronAPI = {
   // 对话
-  sendUserInput: (text) => ipcRenderer.send('user-input', text),
-  abortChat: () => ipcRenderer.invoke('chat-abort'),
-  loadSession: (query) => ipcRenderer.invoke('session-load', query),
+  sendUserInput: (text) => ipcRenderer.send(IPC_CHANNELS.USER_INPUT, text),
+  abortChat: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_ABORT),
+  loadSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD, query),
 
   // 流式监听
   // 注意：ipcRenderer.on 注册的监听器会累积，多次调用 on* 方法会导致同一事件触发多次。
   // 提供 remove* 方法供渲染进程在重新初始化或页面卸载时清理。
-  onStreamStart: (cb) => ipcRenderer.on('sprite-stream-start', (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
-  onStreamChunk: (cb) => ipcRenderer.on('sprite-stream-chunk', (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
-  onStreamEnd: (cb) => ipcRenderer.on('sprite-stream-end', (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
+  onStreamStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
+  onStreamChunk: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
+  onStreamEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
   removeStreamListeners: () => {
-    ipcRenderer.removeAllListeners('sprite-stream-start');
-    ipcRenderer.removeAllListeners('sprite-stream-chunk');
-    ipcRenderer.removeAllListeners('sprite-stream-end');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
   },
 
   // 精灵输出
-  onSpriteOutput: (cb) => ipcRenderer.on('sprite-output', (_: IpcRendererEvent, msg: { text: string; kind: 'proactive' | 'system' }) => cb(msg)),
+  onSpriteOutput: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, (_: IpcRendererEvent, msg: { text: string; kind: 'proactive' | 'system' }) => cb(msg)),
   removeSpriteOutputListener: () => {
-    ipcRenderer.removeAllListeners('sprite-output');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT);
   },
 
   // 精灵事件
-  onSpriteEvent: (cb) => ipcRenderer.on('sprite-event', (_: IpcRendererEvent, msg: { type: string; payload: unknown; silent: boolean }) => cb(msg)),
+  onSpriteEvent: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, (_: IpcRendererEvent, msg: { type: string; payload: unknown; silent: boolean }) => cb(msg)),
   removeSpriteEventListener: () => {
-    ipcRenderer.removeAllListeners('sprite-event');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT);
   },
 
   // 错误
-  onSpriteError: (cb) => ipcRenderer.on('sprite-error', (_: IpcRendererEvent, msg: { text: string }) => cb(msg)),
+  onSpriteError: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, (_: IpcRendererEvent, msg: { text: string }) => cb(msg)),
   removeSpriteErrorListener: () => {
-    ipcRenderer.removeAllListeners('sprite-error');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR);
   },
 
   // 应用错误
-  onAppError: (cb) => ipcRenderer.on('app-error', (_: IpcRendererEvent, msg: { code: string; message: string; timestamp: string }) => cb(msg)),
+  onAppError: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, (_: IpcRendererEvent, msg: { code: string; message: string; timestamp: string }) => cb(msg)),
   removeAppErrorListener: () => {
-    ipcRenderer.removeAllListeners('app-error');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.APP_ERROR);
   },
 
   // Agent 状态查询
-  getAgentStatus: () => ipcRenderer.invoke('agent-status'),
+  getAgentStatus: () => ipcRenderer.invoke(IPC_CHANNELS.AGENT_STATUS),
 
   // LLM 配置读写
-  getLlmConfig: () => ipcRenderer.invoke('llm-config-get'),
-  saveLlmConfig: (llmConfig, embeddingConfig) => ipcRenderer.invoke('llm-config-save', llmConfig, embeddingConfig),
-  testLlmConfig: (llmConfig) => ipcRenderer.invoke('llm-config-test', llmConfig),
+  getLlmConfig: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_GET),
+  saveLlmConfig: (llmConfig, embeddingConfig) => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_SAVE, llmConfig, embeddingConfig),
+  testLlmConfig: (llmConfig) => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_TEST, llmConfig),
 
   // Agent 就绪通知
-  onAgentReady: (cb) => ipcRenderer.on('agent-ready', () => cb()),
+  onAgentReady: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, () => cb()),
   removeAgentReadyListener: () => {
-    ipcRenderer.removeAllListeners('agent-ready');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.AGENT_READY);
   },
 
   // 记忆
-  listMemories: (query) => ipcRenderer.invoke('memories-list', query ?? {}),
-  searchMemories: (q) => ipcRenderer.invoke('memories-search', q),
-  showMemory: (id) => ipcRenderer.invoke('memories-show', id),
-  deleteMemory: (id) => ipcRenderer.invoke('memories-delete', id),
-  addMemory: (data) => ipcRenderer.invoke('memories-add', data),
+  listMemories: (query) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_LIST, query ?? {}),
+  searchMemories: (q) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SEARCH, q),
+  showMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
+  deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),
+  addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
 
   // 配置
-  getConfig: () => ipcRenderer.invoke('config-get'),
-  updateConfig: (key, value) => ipcRenderer.invoke('config-update', key, value),
+  getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET),
+  updateConfig: (key, value) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_UPDATE, key, value),
 
   // 角色
-  listPersonas: () => ipcRenderer.invoke('persona-list'),
-  switchPersona: (name) => ipcRenderer.invoke('persona-switch', name),
-  setPersonaMode: (mode) => ipcRenderer.invoke('persona-mode', mode),
+  listPersonas: () => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_LIST),
+  switchPersona: (name) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_SWITCH, name),
+  setPersonaMode: (mode) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_MODE, mode),
   /** IX-07 查询当前角色匹配模式 */
-  getPersonaMode: () => ipcRenderer.invoke('persona-mode-get') as Promise<{ mode: string }>,
+  getPersonaMode: () => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_MODE_GET),
 
   // 项目（FD-04）
-  listProjects: () => ipcRenderer.invoke('projects-list'),
+  listProjects: () => ipcRenderer.invoke(IPC_CHANNELS.PROJECTS_LIST),
 
   // 会话（FD-05）
-  newSession: () => ipcRenderer.invoke('session-new'),
+  newSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
 
   // 仪表盘（FD-03）
-  getDashboard: () => ipcRenderer.invoke('dashboard-get') as Promise<{
-    total: number;
-    bySource: Record<string, number>;
-    suggestions: Array<{ name: string; source: string; reason: string; relevance: number }>;
-    pendingNotices: number;
-    proactiveThreshold: number;
-    registeredTriggers: string[];
-  }>,
+  getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),
 
   // 窗口
-  windowMinimize: () => ipcRenderer.send('window-minimize'),
-  windowMaximize: () => ipcRenderer.send('window-maximize'),
-  windowClose: () => ipcRenderer.send('window-close'),
+  windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),
+  windowMaximize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MAXIMIZE),
+  windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
 
   // 浮动窗口
-  onFloatDragStart: (cb) => ipcRenderer.on('float-drag-start', () => cb()),
-  onFloatDragEnd: (cb) => ipcRenderer.on('float-drag-end', () => cb()),
-  onFloatUnread: (cb) => ipcRenderer.on('float-unread', (_: IpcRendererEvent, count: number) => cb(count)),
+  onFloatDragStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_START, () => cb()),
+  onFloatDragEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END, () => cb()),
+  onFloatUnread: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, (_: IpcRendererEvent, count: number) => cb(count)),
   removeFloatUnreadListener: () => {
-    ipcRenderer.removeAllListeners('float-unread');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD);
   },
   removeFloatDragStartListener: () => {
-    ipcRenderer.removeAllListeners('float-drag-start');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_START);
   },
   removeFloatDragEndListener: () => {
-    ipcRenderer.removeAllListeners('float-drag-end');
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END);
   },
-  moveFloatWindow: (dx, dy) => ipcRenderer.send('move-float-window', dx, dy),
-  saveFloatPosition: () => ipcRenderer.send('save-float-position'),
-  expandToFull: () => ipcRenderer.send('expand-to-full'),
-  showFloatContextMenu: () => ipcRenderer.send('float-context-menu'),
+  moveFloatWindow: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_FLOAT_WINDOW, dx, dy),
+  saveFloatPosition: () => ipcRenderer.send(IPC_CHANNELS.SAVE_FLOAT_POSITION),
+  expandToFull: () => ipcRenderer.send(IPC_CHANNELS.EXPAND_TO_FULL),
+  showFloatContextMenu: () => ipcRenderer.send(IPC_CHANNELS.FLOAT_CONTEXT_MENU),
 
   // 主动提示
-  proactivePromptShown: () => ipcRenderer.send('proactive-prompt-shown'),
+  proactivePromptShown: () => ipcRenderer.send(IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
