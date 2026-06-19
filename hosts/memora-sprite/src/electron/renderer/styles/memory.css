@@ -108,13 +108,13 @@
  * 对齐 ui.ts getSourceColorClass() 的颜色映射
  * 颜色语义：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/topic(橙)
  */
-.source-tag.source-profile   { background: rgba(166, 227, 161, 0.2); color: var(--green); }
-.source-tag.source-insight   { background: rgba(137, 180, 250, 0.2); color: var(--accent); }
-.source-tag.source-guardrail { background: rgba(245, 194, 231, 0.2); color: var(--pink); }
-.source-tag.source-skill     { background: rgba(249, 226, 175, 0.2); color: var(--yellow); }
-.source-tag.source-rule      { background: rgba(203, 166, 247, 0.2); color: var(--mauve); }
-.source-tag.source-persona   { background: rgba(148, 226, 213, 0.2); color: var(--teal); }
-.source-tag.source-topic     { background: rgba(250, 179, 135, 0.2); color: var(--peach); }
+.source-tag.source-profile   { background: var(--green-20); color: var(--green); }
+.source-tag.source-insight   { background: var(--accent-20); color: var(--accent); }
+.source-tag.source-guardrail { background: var(--pink-20); color: var(--pink); }
+.source-tag.source-skill     { background: var(--yellow-20); color: var(--yellow); }
+.source-tag.source-rule      { background: var(--mauve-20); color: var(--mauve); }
+.source-tag.source-persona   { background: var(--teal-20); color: var(--teal); }
+.source-tag.source-topic     { background: var(--peach-20); color: var(--peach); }
 .source-tag.source-default   { background: var(--surface2); color: var(--subtext); }
 
 /* 记忆详情弹窗中的 source 标签：使用 code 元素，复用 source 颜色类 */

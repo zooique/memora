@@ -27,6 +27,22 @@
   --shadow:    0 4px 16px rgba(0, 0, 0, 0.4);
   /* 精灵消息字体：霞鹜文楷优先（用户系统已安装则启用），否则回退到系统 serif */
   --font-sprite: 'LXGW WenKai', 'LXGW WenKai Screen', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', system-ui, serif;
+
+  /* UI-AE-01 主题一致性审计：提取硬编码 rgba 为变量 */
+  /* 阴影 */
+  --shadow-banner:  0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-accent:  0 2px 8px rgba(137, 180, 250, 0.3);
+  --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
+  /* 遮罩 */
+  --modal-backdrop: rgba(0, 0, 0, 0.6);
+  /* 主题色 20% 透明度（用于标签背景、badge 等） */
+  --accent-20: rgba(137, 180, 250, 0.2);
+  --green-20:  rgba(166, 227, 161, 0.2);
+  --pink-20:   rgba(245, 194, 231, 0.2);
+  --yellow-20: rgba(249, 226, 175, 0.2);
+  --mauve-20:  rgba(203, 166, 247, 0.2);
+  --teal-20:   rgba(148, 226, 213, 0.2);
+  --peach-20:  rgba(250, 179, 135, 0.2);
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */
@@ -43,6 +59,14 @@ html, body {
   color: var(--text);
   background: var(--bg);
   overflow: hidden;
+  /* UI-AE-04 字体加载策略：swap 避免不可见文本闪烁，CJK 排版优化 */
+  font-display: swap;
+  font-feature-settings: "kern" 1, "liga" 1;
+}
+
+/* UI-AE-04 统一等宽字体变量（与 markdown.css 代码块对齐） */
+:root {
+  --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', 'Monaco', monospace;
 }
 
 /* ─── 滚动条 ───────────────────────────────────────────────── */
@@ -111,4 +135,39 @@ html, body {
 .error-state .error-retry-btn:hover {
   border-color: var(--accent);
   background: var(--surface2);
+}
+
+/* ─── UI-AE-02 prefers-reduced-motion ──────────────────────────── */
+/* 尊重用户系统偏好：减少/禁用所有非必要动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ─── UI-AE-03 统一交互状态反馈 ───────────────────────────────── */
+/* focus-visible：仅键盘导航时显示焦点环（鼠标点击不影响），使用 accent 色 */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 按钮/可点击元素按下反馈：微缩放 + 亮度变化 */
+button:active,
+.nav-btn:active,
+.settings-tab:active,
+.banner-btn:active {
+  transform: scale(0.97);
+  transition: transform 0.1s ease;
+}
+
+/* 输入框 click 按下时无需缩放（避免文本抖动） */
+input:active,
+textarea:active,
+select:active {
+  transform: none;
 }

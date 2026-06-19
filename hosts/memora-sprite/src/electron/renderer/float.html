@@ -56,13 +56,14 @@
     }
 
     /* 主动提示弹跳动画（对齐 HTML 预览 @keyframes floatBounce） */
+    /* UI-AE-02 弱化弹跳幅度：12px→6px，与专注模式基调一致 */
     #sphere.bounce {
-      animation: floatBounce 0.6s ease;
+      animation: floatBounce 0.5s ease;
     }
     @keyframes floatBounce {
       0%, 100% { transform: translateY(0); }
-      30% { transform: translateY(-12px); }
-      60% { transform: translateY(-4px); }
+      40%  { transform: translateY(-6px); }
+      70%  { transform: translateY(-2px); }
     }
 
     /* ===== 状态指示点（右下角，对齐 HTML 预览 .float-status-dot） ===== */
@@ -73,23 +74,33 @@
       width: 14px;
       height: 14px;
       border-radius: 50%;
-      border: 2px solid #1e1e2e;  /* 与背景同色，形成镂空效果 */
-      background: #a6e3a1;  /* 默认 idle 绿色 */
+      border: 2px solid var(--bg);  /* 与背景同色，形成镂空效果 */
+      background: var(--green);  /* 默认 idle 绿色 */
     }
 
     /* active 状态：蓝色 + 脉冲动画 */
     #status-dot.active {
-      background: #89b4fa;
+      background: var(--accent);
       animation: dotPulse 1.5s infinite;
     }
     @keyframes dotPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(137, 180, 250, 0.6); }
-      50% { box-shadow: 0 0 0 6px rgba(137, 180, 250, 0); }
+      0%, 100% { box-shadow: 0 0 0 0 var(--accent-20); }
+      50% { box-shadow: 0 0 0 6px transparent; }
     }
 
     /* sleeping 状态：黄色月牙 */
     #status-dot.sleeping {
-      background: #f9e2af;
+      background: var(--yellow);
+    }
+
+    /* UI-AE-02 prefers-reduced-motion：尊重用户系统偏好 */
+    @media (prefers-reduced-motion: reduce) {
+      #sphere.bounce {
+        animation: none;
+      }
+      #status-dot.active {
+        animation: none;
+      }
     }
 
     /* ===== 未读计数徽章（右上角，对齐 HTML 预览 .float-unread-badge） ===== */
