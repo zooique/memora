@@ -1359,13 +1359,67 @@ export class UIManager {
     // 点击选择器切换下拉菜单
     this.addEventListener(this.personaSelectorEl, 'click', (e) => {
       e.stopPropagation();
-      this.personaDropdownEl!.classList.toggle('hidden');
+      this.togglePersonaDropdown();
+    });
+
+    // UI-AR-01 键盘支持：Enter/Space 展开下拉，Escape 关闭
+    this.addEventListener(this.personaSelectorEl, 'keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter' || ke.key === ' ') {
+        ke.preventDefault();
+        this.togglePersonaDropdown();
+      } else if (ke.key === 'Escape') {
+        this.personaDropdownEl!.classList.add('hidden');
+        this.personaSelectorEl!.focus();
+      }
+    });
+
+    // UI-AR-01 键盘导航：在下拉菜单内用方向键移动焦点
+    this.addEventListener(this.personaDropdownEl, 'keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      const items = this.personaDropdownEl!.querySelectorAll<HTMLElement>('.dropdown-item');
+      if (items.length === 0) return;
+
+      const currentIdx = Array.from(items).findIndex(
+        (item) => item === document.activeElement,
+      );
+
+      if (ke.key === 'ArrowDown') {
+        ke.preventDefault();
+        const nextIdx = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
+        const nextItem = items[nextIdx];
+        if (nextItem) nextItem.focus();
+      } else if (ke.key === 'ArrowUp') {
+        ke.preventDefault();
+        const prevIdx = currentIdx < 0 ? items.length - 1 : Math.max(currentIdx - 1, 0);
+        const prevItem = items[prevIdx];
+        if (prevItem) prevItem.focus();
+      } else if (ke.key === 'Escape') {
+        this.personaDropdownEl!.classList.add('hidden');
+        this.personaSelectorEl!.focus();
+      }
     });
 
     // 点击页面其他区域关闭下拉菜单（走统一清理机制）
     this.addEventListener(document, 'click', () => {
       this.personaDropdownEl?.classList.add('hidden');
     });
+  }
+
+  /** UI-AR-01 切换角色下拉菜单的显示/隐藏 */
+  private togglePersonaDropdown(): void {
+    if (!this.personaDropdownEl) return;
+    const isHidden = this.personaDropdownEl.classList.contains('hidden');
+    this.personaDropdownEl.classList.toggle('hidden');
+
+    // 展开时聚焦第一个选项，方便键盘导航
+    if (isHidden) {
+      const firstItem = this.personaDropdownEl.querySelector<HTMLElement>('.dropdown-item');
+      if (firstItem) {
+        // 给 DOM 渲染时间，确保元素可见后再聚焦
+        requestAnimationFrame(() => firstItem.focus());
+      }
+    }
   }
 
   /** 渲染角色下拉菜单 */
@@ -1383,6 +1437,10 @@ export class UIManager {
       item.className = 'dropdown-item' + (p.active ? ' active' : '');
       item.textContent = p.name;
       item.title = p.description;
+      // UI-AR-01 可聚焦但不参与 Tab 顺序（键盘导航用方向键）
+      item.setAttribute('tabindex', '-1');
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', p.active ? 'true' : 'false');
 
       item.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1842,7 +1900,7 @@ export class UIManager {
 
   // ─── 弹窗管理 ─────────────────────────────────────────
 
-  /** 初始化弹窗事件监听（关闭按钮、背景点击） */
+  /** 初始化弹窗事件监听（关闭按钮、背景点击、Escape 键） */
   private initModalListeners(): void {
     // 所有带 data-modal 属性的关闭按钮
     document.querySelectorAll<HTMLElement>('[data-modal]').forEach((btn) => {
@@ -1860,17 +1918,59 @@ export class UIManager {
         }
       });
     });
+
+    // UI-AR-01 全局 Escape 键关闭弹窗
+    this.addEventListener(document, 'keydown', (e: Event) => {
+      if ((e as KeyboardEvent).key !== 'Escape') return;
+      // 查找当前可见的弹窗（排除 confirm 弹窗，它有独立处理）
+      const visibleModals = document.querySelectorAll<HTMLElement>(
+        '.modal:not(.hidden):not(#confirm-modal)',
+      );
+      // 关闭最上层弹窗
+      if (visibleModals.length > 0) {
+        const topModal = visibleModals[visibleModals.length - 1];
+        if (topModal) {
+          this.hideModal(topModal.id);
+        }
+      }
+    });
   }
 
   /** 显示弹窗 */
   showModal(modalId: string): void {
-    document.getElementById(modalId)?.classList.remove('hidden');
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    // UI-AR-02 保存当前焦点元素，关闭弹窗时恢复
+    this.previousFocusEl = document.activeElement as HTMLElement | null;
+
+    modal.classList.remove('hidden');
+
+    // UI-AR-02 将焦点移到弹窗内第一个可交互元素
+    const firstFocusable = modal.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (firstFocusable) {
+      firstFocusable.focus();
+    }
   }
 
   /** 隐藏弹窗 */
   hideModal(modalId: string): void {
-    document.getElementById(modalId)?.classList.add('hidden');
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    modal.classList.add('hidden');
+
+    // UI-AR-02 恢复焦点到触发弹窗的元素
+    if (this.previousFocusEl && typeof this.previousFocusEl.focus === 'function') {
+      this.previousFocusEl.focus();
+      this.previousFocusEl = null;
+    }
   }
+
+  /** UI-AR-02 弹窗打开前的焦点元素（供关闭时恢复） */
+  private previousFocusEl: HTMLElement | null = null;
 
   /**
    * 显示通用确认弹窗（替代 window.confirm）
@@ -1915,6 +2015,18 @@ export class UIManager {
 
       // 清理函数：移除所有临时监听器
       let resolved = false;
+
+      // UI-AR-01 键盘支持：Escape 取消，Enter 确认
+      const onKeydown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          onOk();
+        }
+      };
+
       const cleanup = () => {
         if (resolved) return;
         resolved = true;
@@ -1922,6 +2034,7 @@ export class UIManager {
         btnOk.removeEventListener('click', onOk);
         btnCancel.removeEventListener('click', onCancel);
         modal.removeEventListener('click', onBackdrop);
+        modal.removeEventListener('keydown', onKeydown);
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) closeBtn.removeEventListener('click', onCancel);
       };
@@ -1931,6 +2044,7 @@ export class UIManager {
       // 注册监听器
       btnOk.addEventListener('click', onOk);
       btnCancel.addEventListener('click', onCancel);
+      modal.addEventListener('keydown', onKeydown);
       // 使用 stopPropagation 防止 initModalListeners 的全局 backdrop 处理器也触发
       const onBackdrop = (e: MouseEvent) => {
         if (e.target === modal) {
@@ -1944,6 +2058,15 @@ export class UIManager {
 
       // 显示弹窗
       modal.classList.remove('hidden');
+
+      // UI-AR-02 保存当前焦点 + 将焦点移到确认弹窗
+      // 危险操作：焦点放在取消按钮上（防止误操作）；普通操作：焦点放在确认按钮上
+      this.previousFocusEl = document.activeElement as HTMLElement | null;
+      if (options.danger) {
+        btnCancel.focus();
+      } else {
+        btnOk.focus();
+      }
     });
   }
 

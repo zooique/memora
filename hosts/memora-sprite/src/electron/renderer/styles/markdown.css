@@ -152,7 +152,7 @@
 /* 删除线 */
 .message-bubble .md-strike {
   text-decoration: line-through;
-  color: var(--overlay0);
+  color: var(--muted);
 }
 
 /* 链接：accent 蓝色 + 下划线 */

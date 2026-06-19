@@ -268,7 +268,7 @@
  */
 .message-time {
   font-size: 10px;
-  color: var(--overlay0);
+  color: var(--muted);
   margin-top: 4px;
   padding: 0 4px;
   user-select: none;
@@ -407,7 +407,7 @@
 }
 
 #input::placeholder {
-  color: var(--overlay0);
+  color: var(--muted);
 }
 
 #btn-send {

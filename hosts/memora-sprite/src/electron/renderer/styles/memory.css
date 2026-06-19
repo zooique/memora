@@ -89,7 +89,7 @@
  */
 .memory-item .meta {
   font-size: 11px;
-  color: var(--overlay0);
+  color: var(--muted);
   display: flex;
   gap: 8px;
   align-items: center;

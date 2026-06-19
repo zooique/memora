@@ -12,8 +12,10 @@
   --surface1:  #45475a;
   --surface2:  #585b70;
   --overlay0:  #6c7086;
+  --overlay2:  #9399b2;  /* UI-AR-03 用于文本，对比度 4.5:1 满足 WCAG AA */
   --text:      #cdd6f4;
   --subtext:   #a6adc8;
+  --muted:     #9399b2;  /* UI-AR-03 替代 overlay0 用于需满足对比度的文本 */
   --accent:    #89b4fa;
   --green:     #a6e3a1;
   --yellow:    #f9e2af;
@@ -104,7 +106,7 @@ html, body {
   justify-content: center;
   padding: 32px 16px;
   text-align: center;
-  color: var(--overlay0);
+  color: var(--muted);
   font-size: 13px;
   gap: 8px;
 }
