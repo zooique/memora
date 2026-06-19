@@ -1,17 +1,14 @@
 /**
  * Memora 精灵 — 渲染进程样式
  * 主题：Catppuccin Mocha
- * 字体：霞鹜文楷（精灵消息）/ system-ui fallback
+ * 字体：系统字体优先，霞鹜文楷（若用户系统已安装）作为精灵消息字体
  *
  * 设计契约：docs/memora-sprite-preview.html
  * - 用户气泡：绿色（--green）
- * - 精灵气泡：surface 背景 + 霞鹜文楷字体 + 头像
+ * - 精灵气泡：surface 背景 + serif 字体 + 头像
  * - 主动提示 banner：蓝粉渐变顶部滑入
  * - 召回记忆：dashed 顶边 + 浅色文字 + 可点击
  */
-
-/* 霞鹜文楷：精灵消息字体（方案 §7.2 要求，HTML 预览 §6.6 对齐） */
-@import url('https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont/style.css');
 
 /* ─── 变量 ─────────────────────────────────────────────────── */
 :root {
@@ -27,10 +24,14 @@
   --yellow:    #f9e2af;
   --pink:      #f5c2e7;
   --red:       #f38ba8;
+  /* source 标签专用颜色（对齐 Catppuccin Mocha 调色板） */
+  --mauve:     #cba6f7;  /* 紫色：rule */
+  --teal:      #94e2d5;  /* 青色：persona */
+  --peach:     #fab387;  /* 橙色：topic */
   --radius:    8px;
   --shadow:    0 4px 16px rgba(0, 0, 0, 0.4);
-  /* 精灵消息字体变量：便于统一引用与未来主题切换 */
-  --font-sprite: 'LXGW WenKai', 'Noto Serif SC', system-ui, sans-serif;
+  /* 精灵消息字体：霞鹜文楷优先（用户系统已安装则启用），否则回退到系统 serif */
+  --font-sprite: 'LXGW WenKai', 'LXGW WenKai Screen', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', system-ui, serif;
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */
@@ -119,7 +120,7 @@ html, body {
 
 /* ─── 侧边栏 ───────────────────────────────────────────────── */
 #sidebar {
-  width: 140px;
+  width: 180px;
   background: var(--surface0);
   border-right: 1px solid var(--surface1);
   display: flex;
@@ -177,7 +178,7 @@ html, body {
 /* 自动模式：蓝色调 */
 .mode-badge.auto {
   background: rgba(137, 180, 250, 0.2);
-  color: var(--blue);
+  color: var(--accent);
 }
 
 /* 手动模式：绿色调 */
@@ -315,15 +316,15 @@ html, body {
   border: 1px solid var(--surface2);
   border-radius: 6px;
   background: transparent;
-  color: var(--subtext0);
+  color: var(--subtext);
   font-size: 12px;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
 
 #btn-new-session:hover {
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /**
@@ -399,13 +400,14 @@ html, body {
 }
 
 /**
- * 消息容器：flex 布局以容纳头像 + 气泡
+ * 消息容器：flex 布局以容纳头像 + 内容
  * 对齐 docs/memora-sprite-preview.html §6.2
+ * max-width 限制气泡宽度，避免长消息占满全屏
  */
 .message {
   display: flex;
   gap: 10px;
-  max-width: 80%;
+  max-width: 85%;
   animation: slideIn 0.15s ease-out;
 }
 
@@ -456,6 +458,27 @@ html, body {
 }
 
 /**
+ * 消息内容容器：包裹气泡 + 时间戳 + 复制按钮
+ * 相对定位，复制按钮绝对定位在右上角
+ */
+.message-content {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+}
+
+/* 用户消息内容容器：右对齐 */
+.message.user .message-content {
+  align-items: flex-end;
+}
+
+/* 精灵消息内容容器：左对齐 */
+.message.assistant .message-content {
+  align-items: flex-start;
+}
+
+/**
  * 消息气泡：实际文本容器
  * 用户气泡绿色，精灵气泡 surface 背景 + 霞鹜文楷字体
  */
@@ -490,6 +513,55 @@ html, body {
 .message.streaming .message-bubble {
   border-right: 2px solid var(--accent);
   padding-right: 14px;
+}
+
+/**
+ * 消息时间戳：气泡下方小字，浅色
+ * 对齐聊天应用习惯，显示消息发送时间
+ */
+.message-time {
+  font-size: 10px;
+  color: var(--overlay0);
+  margin-top: 4px;
+  padding: 0 4px;
+  user-select: none;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/**
+ * 消息复制按钮：hover 时显示在气泡右上角
+ * 仅精灵消息（非流式）显示，点击复制原始内容到剪贴板
+ */
+.message-copy-btn {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--surface2);
+  border-radius: 50%;
+  background: var(--surface1);
+  color: var(--subtext);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  z-index: 5;
+}
+
+/* hover 时显示复制按钮 */
+.message-content:hover .message-copy-btn {
+  opacity: 1;
+}
+
+.message-copy-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
 }
 
 .message .cursor {
@@ -730,6 +802,30 @@ html, body {
   font-size: 11px;
 }
 
+/**
+ * source 标签颜色区分：不同 source 类型用不同颜色
+ * 对齐 ui.ts getSourceColorClass() 的颜色映射
+ * 颜色语义：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/topic(橙)
+ */
+.source-tag.source-profile   { background: rgba(166, 227, 161, 0.2); color: var(--green); }
+.source-tag.source-insight   { background: rgba(137, 180, 250, 0.2); color: var(--accent); }
+.source-tag.source-guardrail { background: rgba(245, 194, 231, 0.2); color: var(--pink); }
+.source-tag.source-skill     { background: rgba(249, 226, 175, 0.2); color: var(--yellow); }
+.source-tag.source-rule      { background: rgba(203, 166, 247, 0.2); color: var(--mauve); }
+.source-tag.source-persona   { background: rgba(148, 226, 213, 0.2); color: var(--teal); }
+.source-tag.source-topic     { background: rgba(250, 179, 135, 0.2); color: var(--peach); }
+.source-tag.source-default   { background: var(--surface2); color: var(--subtext); }
+
+/* 记忆详情弹窗中的 source 标签：使用 code 元素，复用 source 颜色类 */
+#memory-detail-source.source-profile   { color: var(--green); }
+#memory-detail-source.source-insight   { color: var(--accent); }
+#memory-detail-source.source-guardrail { color: var(--pink); }
+#memory-detail-source.source-skill     { color: var(--yellow); }
+#memory-detail-source.source-rule      { color: var(--mauve); }
+#memory-detail-source.source-persona   { color: var(--teal); }
+#memory-detail-source.source-topic     { color: var(--peach); }
+#memory-detail-source.source-default   { color: var(--subtext); }
+
 .memory-item .meta .score {
   color: var(--accent);
   font-weight: 500;
@@ -818,6 +914,51 @@ html, body {
   border-color: var(--accent);
 }
 
+/**
+ * 带操作按钮的输入框容器：API Key 显示/隐藏切换
+ * 输入框占满宽度，按钮绝对定位在右侧
+ */
+.input-with-action {
+  position: relative;
+  margin-bottom: 12px;
+}
+
+.input-with-action input {
+  width: 100%;
+  padding: 6px 36px 6px 10px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.input-with-action input:focus {
+  border-color: var(--accent);
+}
+
+/* 显示/隐藏切换按钮：绝对定位在输入框右侧 */
+.toggle-visibility {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+  line-height: 1;
+}
+
+.toggle-visibility:hover {
+  background: var(--surface2);
+}
+
 /* ─── 角色下拉菜单 ─────────────────────────────────────────── */
 .dropdown {
   position: absolute;
@@ -894,7 +1035,7 @@ html, body {
 }
 
 .empty-action-btn:hover {
-  border-color: var(--blue);
+  border-color: var(--accent);
   background: var(--surface2);
 }
 
@@ -926,6 +1067,105 @@ html, body {
   max-height: 80vh;
   display: flex;
   flex-direction: column;
+}
+
+/* 小尺寸弹窗：用于确认对话框等简单交互，避免占用过多屏幕空间 */
+.modal-content-sm {
+  max-width: 400px;
+}
+
+/* 确认弹窗消息文本：保留换行，行高舒适 */
+.confirm-message {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* ─── 三态首次引导弹窗 ─────────────────────────────────── */
+/* 介绍三态窗口模型 + 快捷键，首次打开完整窗口时显示 */
+.onboarding-intro {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--subtext);
+  margin: 0 0 16px 0;
+}
+
+/* 三态介绍列表：图标 + 文字横向排列 */
+.onboarding-states {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.onboarding-state-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface0);
+  border-radius: var(--radius);
+  border: 1px solid var(--surface1);
+}
+
+.onboarding-state-icon {
+  font-size: 24px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.onboarding-state-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.onboarding-state-text strong {
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.onboarding-state-text span {
+  font-size: 12px;
+  color: var(--subtext);
+  line-height: 1.4;
+}
+
+/* 快捷键区域 */
+.onboarding-shortcuts {
+  padding: 12px;
+  background: var(--surface0);
+  border-radius: var(--radius);
+  border: 1px solid var(--surface1);
+}
+
+.onboarding-shortcut-title {
+  font-size: 12px;
+  color: var(--subtext);
+  margin-bottom: 8px;
+}
+
+.onboarding-shortcut-list {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 2;
+}
+
+/* kbd 键盘按键样式：对齐 Catppuccin Mocha 配色 */
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: var(--text);
+  background: var(--surface2);
+  border: 1px solid var(--overlay0);
+  border-radius: 4px;
+  margin: 0 2px;
 }
 
 .modal-header {
@@ -1145,7 +1385,7 @@ html, body {
 .toast.success { border-left: 3px solid var(--green); }
 .toast.error   { border-left: 3px solid var(--red); }
 .toast.warning { border-left: 3px solid var(--yellow); }
-.toast.info    { border-left: 3px solid var(--blue); }
+.toast.info    { border-left: 3px solid var(--accent); }
 
 .toast-icon {
   flex-shrink: 0;
@@ -1185,4 +1425,263 @@ html, body {
 @keyframes toast-slide-out {
   from { transform: translateX(0); opacity: 1; }
   to   { transform: translateX(100%); opacity: 0; }
+}
+
+/* ─── Markdown 渲染样式 ────────────────────────────────────── */
+/* 精灵消息气泡内的 Markdown 元素样式                            */
+/* 设计原则：与 Catppuccin Mocha 主题一致，不破坏气泡整体布局    */
+
+/* 段落：气泡内段落间距紧凑，避免占用过多垂直空间 */
+.message-bubble .md-p {
+  margin: 0;
+}
+
+/* 多段落时，段落间留 8px 间距 */
+.message-bubble .md-p + .md-p {
+  margin-top: 8px;
+}
+
+/* 标题：层级递减，颜色用 accent 强调 */
+.message-bubble .md-h {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.message-bubble .md-h:first-child {
+  margin-top: 0;
+}
+
+.message-bubble .md-h-1 { font-size: 18px; color: var(--accent); }
+.message-bubble .md-h-2 { font-size: 16px; color: var(--accent); }
+.message-bubble .md-h-3 { font-size: 15px; color: var(--accent); }
+.message-bubble .md-h-4 { font-size: 14px; color: var(--text); }
+.message-bubble .md-h-5 { font-size: 13px; color: var(--text); }
+.message-bubble .md-h-6 { font-size: 12px; color: var(--subtext); }
+
+/* 代码块：深色背景 + 等宽字体 + 水平滚动 */
+.message-bubble .md-code-block {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface1);
+  border-radius: 6px;
+  overflow-x: auto;
+  /* 代码块不使用霞鹜文楷，使用等宽字体 */
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.message-bubble .md-code {
+  display: block;
+  white-space: pre;
+  color: var(--text);
+}
+
+/* 行内代码：浅色背景 + 等宽字体 */
+.message-bubble .md-code-inline {
+  padding: 1px 5px;
+  background: var(--surface2);
+  border-radius: 3px;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
+  font-size: 0.9em;
+  color: var(--pink);
+}
+
+/* 列表：紧凑布局，嵌套缩进 */
+.message-bubble .md-ul,
+.message-bubble .md-ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.message-bubble .md-ul + .md-ul,
+.message-bubble .md-ol + .md-ol,
+.message-bubble .md-p + .md-ul,
+.message-bubble .md-p + .md-ol {
+  margin-top: 8px;
+}
+
+.message-bubble .md-li {
+  margin: 2px 0;
+  line-height: 1.5;
+}
+
+/* 嵌套列表：减少缩进，避免过深 */
+.message-bubble .md-ul-nested,
+.message-bubble .md-ol-nested {
+  margin: 4px 0 0;
+}
+
+/* 引用块：左侧色条 + 浅色文字 */
+.message-bubble .md-blockquote {
+  margin: 8px 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface1);
+  border-radius: 0 4px 4px 0;
+  color: var(--subtext);
+}
+
+.message-bubble .md-blockquote .md-p {
+  margin: 0;
+}
+
+/* 分割线：浅色细线 */
+.message-bubble .md-hr {
+  margin: 12px 0;
+  border: none;
+  border-top: 1px solid var(--surface2);
+}
+
+/* 表格：细边框 + 表头强调 */
+.message-bubble .md-table {
+  margin: 8px 0;
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.message-bubble .md-th {
+  padding: 6px 10px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+}
+
+.message-bubble .md-td {
+  padding: 6px 10px;
+  border: 1px solid var(--surface2);
+  color: var(--text);
+}
+
+/* 表格行悬停高亮（提升可读性） */
+.message-bubble .md-table tbody tr:hover {
+  background: var(--surface1);
+}
+
+/* 加粗：使用更粗的字重 */
+.message-bubble .md-bold {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* 斜体 */
+.message-bubble .md-italic {
+  font-style: italic;
+}
+
+/* 删除线 */
+.message-bubble .md-strike {
+  text-decoration: line-through;
+  color: var(--overlay0);
+}
+
+/* 链接：accent 蓝色 + 下划线 */
+.message-bubble .md-link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.message-bubble .md-link:hover {
+  color: var(--pink);
+}
+
+/* 不安全链接（协议被禁用）：显示为普通文本样式，不可点击 */
+.message-bubble .md-link-unsafe {
+  color: var(--subtext);
+  text-decoration: none;
+  cursor: default;
+}
+
+/* ─── 对话区空状态引导 ─────────────────────────────────────── */
+/* 无消息时显示欢迎语 + 示例问题，引导新用户快速开始对话        */
+/* 有消息后通过 .hidden 类隐藏                                  */
+
+.chat-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 24px;
+  text-align: center;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 精灵头像：大尺寸渐变圆形，与消息头像风格一致 */
+.chat-empty-state .empty-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--pink) 100%);
+  box-shadow: 0 4px 16px rgba(137, 180, 250, 0.3);
+  margin-bottom: 16px;
+  user-select: none;
+}
+
+/* 欢迎标题：主色调强调 */
+.chat-empty-state .empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  /* 标题不使用霞鹜文楷，保持系统字体清晰度 */
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* 副标题：浅色描述 */
+.chat-empty-state .empty-subtitle {
+  font-size: 13px;
+  color: var(--subtext);
+  margin-bottom: 24px;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* 示例问题网格：2 列布局，紧凑卡片 */
+.chat-empty-state .empty-suggestions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+}
+
+/* 示例问题按钮：卡片式，hover 高亮 */
+.chat-empty-state .suggestion-btn {
+  padding: 10px 12px;
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  text-align: left;
+}
+
+.chat-empty-state .suggestion-btn:hover {
+  border-color: var(--accent);
+  background: var(--surface1);
+  transform: translateY(-1px);
+}
+
+.chat-empty-state .suggestion-btn:active {
+  transform: translateY(0);
 }

@@ -17,6 +17,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
+import type { FloatWindowCallbacks } from './floatWindow.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,12 +30,15 @@ export class WindowManager {
   private fullWindow: BrowserWindow | null = null;
   /** 应用是否正在退出（区分"用户关闭"与"应用退出"） */
   private isQuitting = false;
-  /** 展开为完整窗口时的回调（由 main.ts 注入，用于清零未读计数） */
-  private onExpandToFull?: () => void;
+  /** 浮动窗口回调集合（由 main.ts 注入，包含右键菜单所需的所有回调） */
+  private floatCallbacks: FloatWindowCallbacks;
 
-  constructor(windowStateManager: WindowStateManager, options?: { onExpandToFull?: () => void }) {
+  constructor(
+    windowStateManager: WindowStateManager,
+    options?: FloatWindowCallbacks,
+  ) {
     this.windowStateManager = windowStateManager;
-    this.onExpandToFull = options?.onExpandToFull;
+    this.floatCallbacks = options ?? {};
   }
 
   /** 标记应用正在退出，允许窗口真正关闭 */
@@ -42,21 +46,33 @@ export class WindowManager {
     this.isQuitting = quitting;
   }
 
+  /**
+   * 更新浮动窗口回调（main.ts 在 Agent 初始化后补充注入静默模式相关回调）
+   *
+   * 场景：WindowManager 在 Agent 初始化前创建，此时无法查询静默模式状态。
+   * Agent 就绪后调用此方法补充注入 onToggleSilent / isSilentMode 回调。
+   */
+  updateFloatCallbacks(callbacks: FloatWindowCallbacks): void {
+    this.floatCallbacks = { ...this.floatCallbacks, ...callbacks };
+    // 同步更新已创建的 FloatWindow 实例的回调
+    this.floatWindow?.updateCallbacks(this.floatCallbacks);
+  }
+
   /** 创建所有窗口 */
   async createWindows(): Promise<void> {
     try {
       // 创建浮动窗口
       await this.createFloatWindow();
-      
+
       // 创建完整窗口
       await this.createFullWindow();
-      
+
       // 注册窗口控制 IPC
       this.registerWindowControls();
-      
+
       // 设置窗口事件处理器
       this.setupWindowEvents();
-      
+
       // 设置错误处理器的主窗口引用
       if (this.fullWindow) {
         errorHandler.setMainWindow(this.fullWindow);
@@ -72,9 +88,7 @@ export class WindowManager {
 
   /** 创建浮动窗口 */
   private async createFloatWindow(): Promise<void> {
-    this.floatWindow = new FloatWindow(this.windowStateManager, {
-      onExpandToFull: this.onExpandToFull,
-    });
+    this.floatWindow = new FloatWindow(this.windowStateManager, this.floatCallbacks);
     await this.floatWindow.create();
   }
 

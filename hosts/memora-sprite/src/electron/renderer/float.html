@@ -295,6 +295,14 @@
       isDragging = false;
     });
 
+    // ─── 右键菜单（方案 §5.4） ────────────────────────────
+    // 阻止默认右键菜单，通知主进程弹出原生 Menu
+    // 菜单项：展开窗口 / 静默模式 / 隐藏到托盘 / 退出
+    document.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      window.electronAPI.showFloatContextMenu();
+    });
+
     // ─── 未读计数监听 ──────────────────────────────────────
     window.electronAPI.onFloatUnread((count) => {
       if (count > 0) {

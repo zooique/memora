@@ -208,6 +208,24 @@ async function initializeApp(): Promise<void> {
     // 订阅精灵事件（主动提示分发）
     setupSpriteEventListeners();
 
+    // 补充注入浮动窗口右键菜单回调（需要 Agent/Sprite 就绪后才能查询/切换静默模式）
+    // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / onToggleSilent / isSilentMode
+    windowManager.updateFloatCallbacks({
+      onHideToTray: () => windowStateManager.transition('tray'),
+      onQuit: () => {
+        windowManager.setQuitting(true);
+        windowManager.closeAll();
+        app.quit();
+      },
+      onToggleSilent: (newSilent: boolean) => {
+        // sprite 在 try 块内已赋值，此处必然非 null
+        sprite!.updateConfig('silentMode', newSilent);
+        // 同步托盘状态（与 ipcHandlers.ts config-update 逻辑一致）
+        trayManager?.setState(newSilent ? 'sleeping' : 'idle');
+      },
+      isSilentMode: () => sprite!.getConfig().silentMode,
+    });
+
     agentReady = true;
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息

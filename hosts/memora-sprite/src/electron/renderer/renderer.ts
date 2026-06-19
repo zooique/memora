@@ -133,6 +133,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   void loadPersonaList();
   void loadConfig();
   void loadDashboard();
+
+  // 三态首次引导：Agent 就绪且首次使用时显示（介绍三态窗口模型 + 快捷键）
+  // 使用 localStorage 标记，老用户不再显示
+  if (uiManager.shouldShowOnboarding()) {
+    uiManager.showOnboardingDialog();
+  }
 });
 
 // ─── 清理资源 ─────────────────────────────────────────────
@@ -169,6 +175,17 @@ function setupBusinessLogic(): void {
     window.electronAPI.sendUserInput(text);
   });
 
+  // 空状态示例问题回调：点击示例问题等同于用户输入并发送
+  uiManager.onSuggestionClick((text) => {
+    // 显示用户消息
+    uiManager.appendMessage({
+      role: 'user',
+      content: text,
+    });
+    // 发送到主进程
+    window.electronAPI.sendUserInput(text);
+  });
+
   // 设置停止消息回调
   uiManager.onStopMessage(async () => {
     await window.electronAPI.abortChat();
@@ -188,7 +205,13 @@ function setupBusinessLogic(): void {
     }
 
     // 确认对话框：清空当前对话区是不可逆的（但历史保留在 SessionStore）
-    if (!window.confirm('开始新会话？\n\n当前对话将保留在历史中，可随时切换回来查看。')) {
+    // 使用自定义确认弹窗替代 window.confirm，提供一致的视觉体验
+    const confirmed = await uiManager.showConfirmDialog({
+      title: '开始新会话',
+      message: '当前对话将保留在历史中，可随时切换回来查看。',
+      confirmText: '开始新会话',
+    });
+    if (!confirmed) {
       return;
     }
 

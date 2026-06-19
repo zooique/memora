@@ -130,6 +130,8 @@ export interface ElectronAPI {
   listPersonas: () => Promise<{ personas: Array<{ name: string; description: string; active: boolean }> }>;
   switchPersona: (name: string) => Promise<{ switched: boolean; name: string | null }>;
   setPersonaMode: (mode: 'auto' | 'manual') => Promise<{ set: boolean }>;
+  /** IX-07 查询当前角色匹配模式 */
+  getPersonaMode: () => Promise<{ mode: string }>;
 
   // 项目（FD-04 项目模式）
   /** 列出已注册项目（供专注模式选择器使用） */
@@ -138,6 +140,16 @@ export interface ElectronAPI {
   // 会话（FD-05 新建会话）
   /** 新建会话（生成时间戳会话名，切换到新会话） */
   newSession: () => Promise<{ success: boolean; sessionName?: string; error?: string }>;
+
+  // 仪表盘（FD-03）
+  getDashboard: () => Promise<{
+    total: number;
+    bySource: Record<string, number>;
+    suggestions: Array<{ name: string; source: string; reason: string; relevance: number }>;
+    pendingNotices: number;
+    proactiveThreshold: number;
+    registeredTriggers: string[];
+  }>;
 
   // 窗口控制
   windowMinimize: () => void;
@@ -157,6 +169,8 @@ export interface ElectronAPI {
   moveFloatWindow: (dx: number, dy: number) => void;
   saveFloatPosition: () => void;
   expandToFull: () => void;
+  /** 显示浮动窗口右键菜单（主进程原生 Menu） */
+  showFloatContextMenu: () => void;
 
   // 主动提示已显示通知
   proactivePromptShown: () => void;
@@ -273,6 +287,7 @@ const electronAPI: ElectronAPI = {
   moveFloatWindow: (dx, dy) => ipcRenderer.send('move-float-window', dx, dy),
   saveFloatPosition: () => ipcRenderer.send('save-float-position'),
   expandToFull: () => ipcRenderer.send('expand-to-full'),
+  showFloatContextMenu: () => ipcRenderer.send('float-context-menu'),
 
   // 主动提示
   proactivePromptShown: () => ipcRenderer.send('proactive-prompt-shown'),

@@ -18,6 +18,9 @@
 // 从 preload.ts 导入共享类型（避免类型重复定义）
 import type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from '../preload.js';
 
+// 安全的 Markdown 渲染器（零依赖，DOM API 实现，防 XSS）
+import { renderMarkdown } from './markdown.js';
+
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm };
 
@@ -29,6 +32,8 @@ export interface Message {
   content: string;
   streaming?: boolean;
   messageId?: string;
+  /** 消息时间戳（ISO 字符串，可选）。未提供时使用当前时间。 */
+  timestamp?: string;
   /** 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall） */
   memoryRecall?: { name: string; score: number };
 }
@@ -195,6 +200,8 @@ export class UIManager {
     this.initPersonaSelectorListeners();
     this.initSettingsPanelListeners();
     this.initModalListeners();
+    this.initEmptyStateListeners();
+    this.initScrollListener();
   }
 
   // ─── 事件监听器管理 ─────────────────────────────────────
@@ -232,10 +239,57 @@ export class UIManager {
       'click',
       this.handleClose.bind(this),
     );
+
+    // 全局键盘快捷键
+    this.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
+  }
+
+  /**
+   * 全局键盘快捷键处理
+   *
+   * - Esc：关闭所有打开的弹窗
+   * - Ctrl/Cmd + 1/2/3：切换面板（对话/记忆/设置）
+   * - Ctrl/Cmd + N：新建会话
+   */
+  private handleGlobalKeydown(e: Event): void {
+    const keyboardEvent = e as KeyboardEvent;
+    const isMod = keyboardEvent.ctrlKey || keyboardEvent.metaKey;
+
+    // Esc：关闭所有打开的弹窗
+    if (keyboardEvent.key === 'Escape') {
+      const openModals = document.querySelectorAll('.modal:not(.hidden)');
+      if (openModals.length > 0) {
+        openModals.forEach((modal) => modal.classList.add('hidden'));
+        keyboardEvent.preventDefault();
+      }
+      return;
+    }
+
+    // Ctrl/Cmd + 数字：切换面板
+    if (isMod && ['1', '2', '3'].includes(keyboardEvent.key)) {
+      const panelMap: Record<string, string> = {
+        '1': 'chat',
+        '2': 'memories',
+        '3': 'settings',
+      };
+      const panel = panelMap[keyboardEvent.key];
+      if (panel) {
+        this.switchPanel(panel);
+        keyboardEvent.preventDefault();
+      }
+      return;
+    }
+
+    // Ctrl/Cmd + N：新建会话
+    if (isMod && keyboardEvent.key === 'n') {
+      this.newSessionCallback?.();
+      keyboardEvent.preventDefault();
+      return;
+    }
   }
 
   /** 添加事件监听器并记录清理函数 */
-  private addEventListener(element: HTMLElement, event: string, handler: EventListener): void {
+  private addEventListener(element: HTMLElement | Document, event: string, handler: EventListener): void {
     element.addEventListener(event, handler);
     this.eventCleanupFunctions.push(() => {
       element.removeEventListener(event, handler);
@@ -268,8 +322,11 @@ export class UIManager {
     const el = document.createElement('div');
     el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}`;
 
+    // 有消息时隐藏空状态引导（首次添加消息触发）
+    this.hideEmptyState();
+
     if (message.role === 'system') {
-      // 系统消息：简单文本，居中无头像
+      // 系统消息：简单文本，居中无头像（系统消息为纯文本，不渲染 Markdown）
       el.textContent = message.content;
     } else {
       // 用户/精灵消息：头像 + 气泡结构
@@ -278,11 +335,48 @@ export class UIManager {
       avatar.textContent = message.role === 'user' ? '🧑' : '🧚';
       el.appendChild(avatar);
 
+      // 消息内容容器（气泡 + 时间戳 + 操作按钮）
+      const contentWrapper = document.createElement('div');
+      contentWrapper.className = 'message-content';
+
       const bubble = document.createElement('div');
       bubble.className = 'message-bubble';
-      // 使用 textContent 安全设置文本（防 XSS）
-      bubble.textContent = message.content;
-      el.appendChild(bubble);
+
+      if (message.role === 'assistant') {
+        // 精灵消息：渲染 Markdown（代码块/列表/表格/标题/加粗/链接等）
+        // LLM 输出经常包含 Markdown 格式，纯文本显示会丢失结构
+        bubble.appendChild(renderMarkdown(message.content));
+      } else {
+        // 用户消息：使用 textContent（用户输入不应被 Markdown 渲染，保持原样 + 防 XSS）
+        bubble.textContent = message.content;
+      }
+      contentWrapper.appendChild(bubble);
+
+      // 精灵消息：添加复制按钮（hover 时显示，点击复制原始内容）
+      if (message.role === 'assistant' && !message.streaming) {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'message-copy-btn';
+        copyBtn.title = '复制';
+        copyBtn.textContent = '📋';
+        copyBtn.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(message.content);
+            this.showToast('已复制到剪贴板', 'success', 2000);
+          } catch {
+            this.showToast('复制失败，请手动选择文本复制', 'error');
+          }
+        });
+        contentWrapper.appendChild(copyBtn);
+      }
+
+      // 时间戳（用户/精灵消息显示时间，对齐聊天应用习惯）
+      const timestamp = message.timestamp ?? new Date().toISOString();
+      const timeEl = document.createElement('div');
+      timeEl.className = 'message-time';
+      timeEl.textContent = this.formatTimestamp(timestamp);
+      contentWrapper.appendChild(timeEl);
+
+      el.appendChild(contentWrapper);
 
       // 召回记忆提示（仅精灵消息）
       if (message.role === 'assistant' && message.memoryRecall) {
@@ -320,10 +414,42 @@ export class UIManager {
   }
 
   /**
+   * 格式化时间戳显示
+   *
+   * - 当天：HH:MM
+   * - 非当天：MM-DD HH:MM
+   * - 解析失败：返回原始字符串
+   */
+  private formatTimestamp(isoString: string): string {
+    try {
+      const date = new Date(isoString);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+
+      const hh = String(date.getHours()).padStart(2, '0');
+      const mm = String(date.getMinutes()).padStart(2, '0');
+      const time = `${hh}:${mm}`;
+
+      if (isToday) {
+        return time;
+      }
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${month}-${day} ${time}`;
+    } catch {
+      return isoString;
+    }
+  }
+
+  /**
    * 更新流式消息内容
    *
-   * 消息结构为 message > message-bubble > [textNode, cursor]
-   * 需要定位到 bubble 元素更新其文本节点，保留 cursor 元素。
+   * 流式过程中每次 chunk 都重新渲染 Markdown（text 是累积的完整文本）。
+   * 保留 cursor 元素和 memory-recall 元素，仅替换 Markdown 内容区域。
+   *
+   * 性能考虑：
+   * - LLM 输出通常在几百到几千字，同步 DOM 渲染性能可接受
+   * - 若后续发现卡顿，可加 requestAnimationFrame 节流
    */
   updateStreamingMessage(messageId: string, text: string): void {
     const el = this.streamingMessages.get(messageId);
@@ -333,14 +459,26 @@ export class UIManager {
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 安全地更新文本内容，保留光标元素
-    const textNode = bubble.firstChild;
-    if (textNode && textNode.nodeType === Node.TEXT_NODE) {
-      textNode.textContent = text;
-    } else {
-      // 如果没有文本节点，创建一个并插入到最前面（cursor 之前）
-      const newTextNode = document.createTextNode(text);
-      bubble.insertBefore(newTextNode, bubble.firstChild);
+    // 保留 cursor 和 memory-recall 元素，移除其他内容
+    const cursor = bubble.querySelector('.cursor');
+    const recall = bubble.querySelector('.memory-recall');
+    const preserved: Element[] = [];
+    if (recall) preserved.push(recall);
+
+    // 安全清空 bubble（保留 cursor 和 recall）
+    while (bubble.firstChild) {
+      bubble.removeChild(bubble.firstChild);
+    }
+
+    // 重新渲染 Markdown 内容
+    bubble.appendChild(renderMarkdown(text));
+
+    // 重新追加保留的元素（recall 在前，cursor 在最后）
+    for (const node of preserved) {
+      bubble.appendChild(node);
+    }
+    if (cursor) {
+      bubble.appendChild(cursor);
     }
 
     this.scrollToBottom();
@@ -349,7 +487,7 @@ export class UIManager {
   /**
    * 完成流式消息
    *
-   * 移除 streaming 类和光标元素。
+   * 移除 streaming 类和光标元素，添加复制按钮。
    * 注意：原实现中的 `/【.*】$/` 正则无注释且语义不明，已移除——
    * 流式文本由主进程逐 chunk 拼接，不应在渲染层做尾部标记清理。
    */
@@ -361,6 +499,38 @@ export class UIManager {
     // 移除光标元素
     const cursor = el.querySelector('.cursor');
     if (cursor) cursor.remove();
+
+    // 流式完成后添加复制按钮（从 bubble 提取最终文本）
+    const bubble = el.querySelector('.message-bubble');
+    const contentWrapper = el.querySelector('.message-content');
+    if (bubble && contentWrapper) {
+      // 提取纯文本内容（排除 memory-recall 提示）
+      const clone = bubble.cloneNode(true) as HTMLElement;
+      const recallInClone = clone.querySelector('.memory-recall');
+      if (recallInClone) recallInClone.remove();
+      const finalText = clone.textContent ?? '';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'message-copy-btn';
+      copyBtn.title = '复制';
+      copyBtn.textContent = '📋';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(finalText);
+          this.showToast('已复制到剪贴板', 'success', 2000);
+        } catch {
+          this.showToast('复制失败，请手动选择文本复制', 'error');
+        }
+      });
+      // 插入到时间戳之前（复制按钮在气泡右上角）
+      const timeEl = contentWrapper.querySelector('.message-time');
+      if (timeEl) {
+        contentWrapper.insertBefore(copyBtn, timeEl);
+      } else {
+        contentWrapper.appendChild(copyBtn);
+      }
+    }
+
     this.streamingMessages.delete(messageId);
   }
 
@@ -415,6 +585,51 @@ export class UIManager {
     this.state.isStreaming = false;
     this.btnSend.disabled = false;
     this.btnStop.classList.add('hidden');
+    // 清空后重新显示空状态引导
+    this.showEmptyState();
+    // 清空后重置滚动状态，确保新消息能自动滚动
+    this.forceScrollToBottom();
+  }
+
+  // ─── 空状态引导 ─────────────────────────────────────────
+
+  /** 示例问题点击回调（由 renderer.ts 注册，触发发送消息） */
+  private suggestionClickCallback: ((text: string) => void) | null = null;
+
+  /** 注册示例问题点击回调 */
+  onSuggestionClick(callback: (text: string) => void): void {
+    this.suggestionClickCallback = callback;
+  }
+
+  /**
+   * 初始化空状态引导的事件监听
+   *
+   * 点击示例问题按钮时，将问题文本填入输入框并触发发送。
+   * 对齐 user_rules "主动可见"：示例问题始终可见，引导新用户快速开始对话。
+   */
+  private initEmptyStateListeners(): void {
+    const emptyState = document.getElementById('chat-empty-state');
+    if (!emptyState) return;
+
+    emptyState.querySelectorAll<HTMLElement>('.suggestion-btn').forEach((btn) => {
+      const suggestion = btn.dataset.suggestion;
+      if (suggestion) {
+        this.addEventListener(btn, 'click', () => {
+          // 将示例问题填入输入框并触发发送回调
+          this.suggestionClickCallback?.(suggestion);
+        });
+      }
+    });
+  }
+
+  /** 显示空状态引导（无消息时） */
+  showEmptyState(): void {
+    document.getElementById('chat-empty-state')?.classList.remove('hidden');
+  }
+
+  /** 隐藏空状态引导（有消息时） */
+  hideEmptyState(): void {
+    document.getElementById('chat-empty-state')?.classList.add('hidden');
   }
 
   /**
@@ -527,9 +742,41 @@ export class UIManager {
 
   // ─── 滚动控制 ─────────────────────────────────────────
 
-  /** 滚动到底部 */
+  /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
+  private isNearBottom = true;
+
+  /** 判断"底部附近"的阈值（像素） */
+  private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
+
+  /**
+   * 智能滚动到底部
+   *
+   * 仅当用户已在底部附近时才自动滚动，避免用户向上查看历史时被强制拉回底部。
+   * 流式输出和用户发送消息时会触发滚动。
+   */
   private scrollToBottom(): void {
+    if (!this.isNearBottom) return;
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /**
+   * 强制滚动到底部（用户主动操作时调用，如点击"新会话"）
+   */
+  private forceScrollToBottom(): void {
+    this.isNearBottom = true;
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  }
+
+  /**
+   * 监听消息区滚动，更新 isNearBottom 状态
+   *
+   * 在 initEventListeners 中注册。
+   */
+  private initScrollListener(): void {
+    this.messagesEl.addEventListener('scroll', () => {
+      const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
+      this.isNearBottom = scrollHeight - scrollTop - clientHeight < UIManager.SCROLL_BOTTOM_THRESHOLD;
+    });
   }
 
   // ─── 事件处理器 ─────────────────────────────────────
@@ -727,9 +974,16 @@ export class UIManager {
 
     // 删除按钮（带确认对话框，防止误删不可恢复数据）
     const btnDelete = document.getElementById('btn-memory-delete') as HTMLButtonElement;
-    this.addEventListener(btnDelete, 'click', () => {
+    this.addEventListener(btnDelete, 'click', async () => {
       // 确认删除：记忆是持久化数据，删除后不可恢复，需二次确认
-      if (!window.confirm('确定要删除这条记忆吗？此操作不可撤销。')) return;
+      // 使用自定义确认弹窗替代 window.confirm，提供一致的视觉体验
+      const confirmed = await this.showConfirmDialog({
+        title: '删除记忆',
+        message: '确定要删除这条记忆吗？此操作不可撤销。',
+        confirmText: '删除',
+        danger: true,
+      });
+      if (!confirmed) return;
       this.memoryDeleteCallback?.();
     });
   }
@@ -788,7 +1042,9 @@ export class UIManager {
       metaEl.className = 'meta';
 
       const sourceTag = document.createElement('span');
-      sourceTag.className = 'source-tag';
+      // source 标签颜色区分：不同 source 类型用不同颜色，提升视觉识别度
+      // 颜色映射：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/topic(橙)
+      sourceTag.className = `source-tag source-${this.getSourceColorClass(mem.source)}`;
       sourceTag.textContent = mem.source;
       metaEl.appendChild(sourceTag);
 
@@ -825,6 +1081,8 @@ export class UIManager {
 
     nameEl.textContent = memory.name;
     sourceEl.textContent = memory.source;
+    // source 标签颜色区分（与列表保持一致）
+    sourceEl.className = `source-${this.getSourceColorClass(memory.source)}`;
     scoreEl.textContent = memory.score.toFixed(2);
     createdEl.textContent = memory.createdAt;
     accessedEl.textContent = memory.accessedAt;
@@ -833,6 +1091,25 @@ export class UIManager {
     // 记录当前查看的记忆 ID（供删除按钮使用）
     this.memoryDetailModal.dataset.memoryId = memory.id;
     this.showModal('memory-detail-modal');
+  }
+
+  /**
+   * 将 source 字符串映射到颜色类名
+   *
+   * 颜色映射规则（对齐记忆系统 source 分类）：
+   * - profile → green（用户画像，绿色代表身份）
+   * - insight → blue（洞察，蓝色代表智慧）
+   * - guardrail → pink（护栏，粉色代表警示）
+   * - skill → yellow（技能，黄色代表能力）
+   * - rule → purple（规则，紫色代表约束）
+   * - persona → cyan（角色，青色代表个性）
+   * - topic → orange（话题，橙色代表活跃）
+   * - 其他 → default（灰色）
+   */
+  private getSourceColorClass(source: string): string {
+    const normalized = source.toLowerCase().trim();
+    const knownSources = ['profile', 'insight', 'guardrail', 'skill', 'rule', 'persona', 'topic'];
+    return knownSources.includes(normalized) ? normalized : 'default';
   }
 
   /** 获取添加记忆表单数据 */
@@ -993,6 +1270,10 @@ export class UIManager {
     const btnCancel = document.getElementById('btn-settings-cancel') as HTMLButtonElement;
     const btnLlmTest = document.getElementById('btn-llm-test') as HTMLButtonElement | null;
 
+    // API Key 显示/隐藏切换：LLM + Embedding
+    this.initApiKeyToggle('btn-toggle-llm-key', 'cfg-llm-api-key');
+    this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
+
     // FD-07 监听设置面板所有表单元素的变更，标记 dirty
     // 覆盖：精灵配置输入框 + LLM 配置输入框 + Embedding 配置 + 单选按钮 + 下拉框
     const settingsPanel = document.getElementById('panel-settings');
@@ -1016,9 +1297,16 @@ export class UIManager {
     });
 
     // FD-07 取消按钮：有未保存修改时确认，避免误点丢失修改
-    this.addEventListener(btnCancel, 'click', () => {
+    this.addEventListener(btnCancel, 'click', async () => {
       if (this.settingsFormDirty) {
-        if (!window.confirm('有未保存的修改，确定要放弃吗？')) {
+        // 使用自定义确认弹窗替代 window.confirm
+        const confirmed = await this.showConfirmDialog({
+          title: '放弃修改',
+          message: '有未保存的修改，确定要放弃吗？',
+          confirmText: '放弃',
+          danger: true,
+        });
+        if (!confirmed) {
           return;
         }
       }
@@ -1060,6 +1348,33 @@ export class UIManager {
         this.updatePersonaModeBadge(selectedMode);
         this.personaModeChangeCallback?.(selectedMode);
       });
+    });
+  }
+
+  /**
+   * 初始化 API Key 显示/隐藏切换
+   *
+   * 点击眼睛图标在 password 和 text 之间切换输入框类型，
+   * 方便用户确认输入的 Key 是否正确。
+   *
+   * @param toggleBtnId 切换按钮 ID
+   * @param inputId 输入框 ID
+   */
+  private initApiKeyToggle(toggleBtnId: string, inputId: string): void {
+    const btn = document.getElementById(toggleBtnId) as HTMLButtonElement | null;
+    const input = document.getElementById(inputId) as HTMLInputElement | null;
+    if (!btn || !input) return;
+
+    this.addEventListener(btn, 'click', () => {
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+        btn.title = '隐藏 API Key';
+      } else {
+        input.type = 'password';
+        btn.textContent = '👁';
+        btn.title = '显示 API Key';
+      }
     });
   }
 
@@ -1314,6 +1629,133 @@ export class UIManager {
   /** 隐藏弹窗 */
   hideModal(modalId: string): void {
     document.getElementById(modalId)?.classList.add('hidden');
+  }
+
+  /**
+   * 显示通用确认弹窗（替代 window.confirm）
+   *
+   * 返回 Promise，异步等待用户选择：
+   * - true：用户点击确认按钮
+   * - false：用户点击取消按钮、关闭按钮或背景
+   *
+   * @param options.title 弹窗标题（默认"确认"）
+   * @param options.message 确认消息文本
+   * @param options.confirmText 确认按钮文本（默认"确定"）
+   * @param options.cancelText 取消按钮文本（默认"取消"）
+   * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
+   */
+  showConfirmDialog(options: {
+    title?: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+  }): Promise<boolean> {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('confirm-modal');
+      const titleEl = document.getElementById('confirm-title');
+      const messageEl = document.getElementById('confirm-message');
+      const btnOk = document.getElementById('btn-confirm-ok') as HTMLButtonElement | null;
+      const btnCancel = document.getElementById('btn-confirm-cancel') as HTMLButtonElement | null;
+      if (!modal || !titleEl || !messageEl || !btnOk || !btnCancel) {
+        // 元素缺失时回退为 window.confirm（防御性编程）
+        resolve(window.confirm(options.message));
+        return;
+      }
+
+      // 设置弹窗内容
+      titleEl.textContent = options.title ?? '确认';
+      messageEl.textContent = options.message;
+      btnOk.textContent = options.confirmText ?? '确定';
+      btnCancel.textContent = options.cancelText ?? '取消';
+
+      // 危险操作：确认按钮使用红色样式
+      btnOk.className = options.danger ? 'btn-danger' : 'btn-primary';
+
+      // 清理函数：移除所有临时监听器
+      let resolved = false;
+      const cleanup = () => {
+        if (resolved) return;
+        resolved = true;
+        modal.classList.add('hidden');
+        btnOk.removeEventListener('click', onOk);
+        btnCancel.removeEventListener('click', onCancel);
+        modal.removeEventListener('click', onBackdrop);
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) closeBtn.removeEventListener('click', onCancel);
+      };
+      const onOk = () => { cleanup(); resolve(true); };
+      const onCancel = () => { cleanup(); resolve(false); };
+      const onBackdrop = (e: MouseEvent) => { if (e.target === modal) onCancel(); };
+
+      // 注册监听器
+      btnOk.addEventListener('click', onOk);
+      btnCancel.addEventListener('click', onCancel);
+      modal.addEventListener('click', onBackdrop);
+      const closeBtn = modal.querySelector('.modal-close');
+      if (closeBtn) closeBtn.addEventListener('click', onCancel);
+
+      // 显示弹窗
+      modal.classList.remove('hidden');
+    });
+  }
+
+  // ─── 三态首次引导 ─────────────────────────────────────
+
+  /** localStorage 键名：标记是否已显示过三态引导 */
+  private static readonly ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
+
+  /**
+   * 检查是否需要显示三态首次引导
+   *
+   * 使用 localStorage 标记，首次使用（未标记）时返回 true。
+   * 老用户（已标记）不再显示，避免重复打扰。
+   */
+  shouldShowOnboarding(): boolean {
+    return localStorage.getItem(UIManager.ONBOARDING_SEEN_KEY) !== '1';
+  }
+
+  /**
+   * 显示三态首次引导弹窗
+   *
+   * 介绍三态窗口模型（完整/浮动/托盘）+ 快捷键。
+   * 用户点击"开始使用"或关闭弹窗后标记为已见过。
+   */
+  showOnboardingDialog(): void {
+    const modal = document.getElementById('onboarding-modal');
+    const btnOk = document.getElementById('btn-onboarding-ok');
+    if (!modal || !btnOk) return;
+
+    // 标记已见过引导（无论用户点击确定还是关闭）
+    const markSeen = () => {
+      localStorage.setItem(UIManager.ONBOARDING_SEEN_KEY, '1');
+    };
+
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      markSeen();
+      modal.classList.add('hidden');
+      btnOk.removeEventListener('click', onOk);
+      modal.removeEventListener('click', onBackdrop);
+      const closeBtn = modal.querySelector('.modal-close');
+      if (closeBtn) closeBtn.removeEventListener('click', onClose);
+    };
+
+    const onOk = () => close();
+    const onClose = () => close();
+    const onBackdrop = (e: MouseEvent) => {
+      if (e.target === modal) close();
+    };
+
+    btnOk.addEventListener('click', onOk);
+    modal.addEventListener('click', onBackdrop);
+    const closeBtn = modal.querySelector('.modal-close');
+    if (closeBtn) closeBtn.addEventListener('click', onClose);
+
+    // 显示弹窗
+    modal.classList.remove('hidden');
   }
 
   // ─── IX-06 Toast 通知 ─────────────────────────────────
