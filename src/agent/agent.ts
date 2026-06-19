@@ -53,7 +53,6 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { ILogger } from '@/logging/loggerInterface.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
@@ -93,13 +92,6 @@ export interface AgentOptions {
   storage?: IMemoryStorage;
   /** 外部注入的会话存储（可选，不传则仅在内存中保存） */
   sessionStore?: ISessionStore;
-  /**
-   * 外部注入的日志实现（可选，不传则使用默认 console fallback）。
-   * 如需自定义日志，请在创建 Agent 前调用 `setLogger()` 全局设置，
-   * 而非通过此字段传入——避免多 Agent 实例互相覆盖全局 logger。
-   * @deprecated 请使用 `import { setLogger } from '@memora/core'` 在创建 Agent 前全局设置
-   */
-  logger?: ILogger;
   /** 可观测性 Tracer（可选，不传则使用 NoopTracer 静默丢弃所有 span） */
   tracer?: ITracer;
   /** 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） */
@@ -260,8 +252,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
-    // CR-01: 不再在构造函数中调用 setLogger()——避免多 Agent 实例互相覆盖全局 logger。
-    // 用户如需自定义 logger，应在创建 Agent 前自行调用 setLogger()。
+    // 如需自定义日志，请在创建 Agent 前调用 `import { setLogger } from '@memora/core'` 全局设置
   }
 
   // ─── 生命周期 ─────────────────────────────────────────
@@ -557,8 +548,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 切换当前会话
+   *
+   * 与 forkSession() 对齐：底层 MessageHistory.switchSession 是纯同步操作（字段赋值），
+   * Agent 层不引入无意义的 async 包装。返回新会话名。
    */
-  async switchSession(newSession: string): Promise<string> {
+  switchSession(newSession: string): string {
     this.assertInitialized('switchSession', ['history']);
 
     // FD-31: 对话进行中切换会话会导致消息持久化分散（appendUser 写入旧会话，appendAssistant 写入新会话）
@@ -628,9 +622,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 列出已注册项目
+   * @deprecated 请使用 `agent.projects.list` getter 代替
    */
   listProjects(): AgentProjectEntry[] {
-    this.assertInitialized('listProjects', ['projectManager']);
+    this.assertInitialized('listProjects');
     return this.requireNonNull(this.projectManager, 'projectManager').listProjects();
   }
 
@@ -664,8 +659,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     const newPctx = await pm.initProject(projectPath, projectName, this.#config.configDir);
 
+    // A-003: 记录源项目路径（用于事件），切换前 pctx 可能不存在（首次初始化）
+    const fromProjectPath = this.pctx?.projectPath ?? null;
+
     this.pctx = newPctx;
     await this.rebuildComponentsWithCurrentCtx();
+
+    // A-003: 发射项目切换事件（供宿主 UI 刷新项目相关界面）
+    this.emit('projectSwitched', {
+      from: fromProjectPath,
+      to: projectPath,
+      projectName,
+    });
 
     return newPctx;
   }
@@ -1050,13 +1055,31 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.memoryInspector;
   }
 
+  /** 项目管理器（IX-02：统一为 getter 风格，与 persona/skills 一致） */
+  get projects(): ProjectManager | null {
+    return this.projectManager;
+  }
+
   // ─── Agent 门面包装方法（向后兼容 project_memory API 契约）──
   // God Object 拆分后方法移至 MemoryInspector，此处保留门面方法供宿主项目按旧契约调用
   // 错误策略统一：未初始化时抛 MemoraError（与其他 Agent 方法一致），不静默返回 null/[]
 
   /**
+   * 获取当前演化状态快照
+   * 委托至 MemoryInspector.snapshot()
+   *
+   * IX-05：门面方法与委托方法命名对齐。推荐使用 `snapshot()` 代替 `inspect()`。
+   * @throws MemoraError 如果 Agent 未初始化
+   */
+  snapshot(): MemorySnapshot {
+    this.assertInitialized('snapshot');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').snapshot();
+  }
+
+  /**
    * 获取当前演化状态快照（project_memory 约束 27/29/54 要求的 inspect() API）
    * 委托至 MemoryInspector.snapshot()
+   * @deprecated 请使用 `snapshot()` 代替（与委托方法命名对齐）
    * @throws MemoraError 如果 Agent 未初始化
    */
   inspect(): MemorySnapshot {
@@ -1065,8 +1088,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 获取记忆统计
+   * 委托至 MemoryInspector.stats()
+   *
+   * IX-05：门面方法与委托方法命名对齐。推荐使用 `stats()` 代替 `getStats()`。
+   * @throws MemoraError 如果 Agent 未初始化
+   */
+  stats(): AgentStats {
+    this.assertInitialized('stats');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').stats();
+  }
+
+  /**
    * 获取记忆统计（project_memory 约束 28 要求的 getStats() API）
    * 委托至 MemoryInspector.stats()
+   * @deprecated 请使用 `stats()` 代替（与委托方法命名对齐）
    * @throws MemoraError 如果 Agent 未初始化
    */
   getStats(): AgentStats {
@@ -1077,9 +1113,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 搜索记忆（project_memory 约束 70 要求的 searchMemories() API）
    * 委托至 MemoryInspector.search()
+   *
+   * 与 searchMemoriesHybrid() 对齐：统一为异步方法，便于调用方统一使用 await。
    * @throws MemoraError 如果 Agent 未初始化
    */
-  searchMemories(query: string, limit = 10): AgentSearchHit[] {
+  async searchMemories(query: string, limit = 10): Promise<AgentSearchHit[]> {
     this.assertInitialized('searchMemories');
     return this.requireNonNull(this.memoryInspector, 'memoryInspector').search(query, limit);
   }

@@ -25,6 +25,10 @@ export interface AgentEventMap {
   sessionForked: { from: string; to: string; messageCount: number };
   /** 洞察被提取 */
   insightExtracted: { source: string; insight: string };
+  /** 项目被切换（A-003：宿主 UI 可据此刷新项目相关界面） */
+  projectSwitched: { from: string | null; to: string; projectName: string };
+  /** 技能被匹配（A-003：宿主 UI 可据此展示当前激活技能） */
+  skillMatched: { skill: string; score: number };
 }
 
 /** 事件名联合类型 */

@@ -133,13 +133,21 @@ export class ToolExecutor {
   }
 
   /**
+   * 获取所有工具定义（IX-02：统一为 getter 风格，与 persona/skill 一致）
+   */
+  get list(): ToolDefinition[] {
+    return [...BUILTIN_TOOLS, ...[...this.customTools.values()].map((e) => e.definition)];
+  }
+
+  /**
    * 获取所有工具定义（内置 + 自定义）
    *
    * 用于构建 LLM 请求的 tools 参数，
    * 以及 AgentLoop 的 system prompt 工具描述。
+   * @deprecated 请使用 `tools.list` getter 代替
    */
   getToolDefinitions(): ToolDefinition[] {
-    return [...BUILTIN_TOOLS, ...[...this.customTools.values()].map((e) => e.definition)];
+    return this.list;
   }
 
   /**

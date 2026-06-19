@@ -1,7 +1,7 @@
 /**
  * AutoConfigRefiner — Agent 智能总结接口（模式 3）
  *
- * 从对话中提取配置建议（规则/角色/技能），通过 ConfigManager.onSuggestion 通知宿主。
+ * 从对话中提取配置建议（规则/角色/技能），通过 ConfigManager.onConfigSuggestion 通知宿主。
  *
  * 设计原则：
  *   - 使用后台 Provider（setBackgroundProvider 注入），不占用前台对话资源
@@ -40,7 +40,7 @@ export class AutoConfigRefiner {
   private backgroundProvider: LlmProvider | null = null;
 
   constructor(
-    private readonly onSuggestion: (suggestion: ConfigSuggestion) => void,
+    private readonly onConfigSuggestion: (suggestion: ConfigSuggestion) => void,
     options?: AutoConfigRefinerOptions,
   ) {
     this.options = { ...DEFAULT_OPTIONS, ...options };
@@ -91,7 +91,7 @@ export class AutoConfigRefiner {
 
       // FD-25: 单条建议回调失败时记日志并继续处理下一条，避免一条失败导致后续全部丢失
       try {
-        this.onSuggestion(suggestion);
+        this.onConfigSuggestion(suggestion);
       } catch (err) {
         logger.warn(
           { err, suggestionName: raw.name, suggestionType: raw.type },

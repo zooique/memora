@@ -22,13 +22,13 @@ import { logger } from '@/logging/logger.js';
 /**
  * 配置建议（模式 3 · Agent 智能总结）
  *
- * AutoConfigRefiner 从对话中提取的配置建议，通过 onSuggestion 回调通知宿主。
+ * AutoConfigRefiner 从对话中提取的配置建议，通过 onConfigSuggestion 回调通知宿主。
  * 宿主决定展示方式（桌宠气泡 / CLI 打印 / WebUI 弹窗），
- * 用户确认后调用 confirm() 写入配置文件。
+ * 用户确认后调用 confirmConfigSuggestion() 写入配置文件。
  *
  * 与 addRule() 的区别：
  * - addRule() 写入 SQLite（运行时注入，会话级）
- * - confirm() 写入配置文件（持久化，重启后依然生效）
+ * - confirmConfigSuggestion() 写入配置文件（持久化，重启后依然生效）
  */
 export interface ConfigSuggestion {
   /** 建议类型 */
@@ -73,7 +73,7 @@ export class ConfigManager {
    * 宿主项目通过此方法注册回调，当 AutoConfigRefiner 从对话中
    * 提取到配置建议时，通过此回调通知宿主。
    */
-  onSuggestion(handler: ConfigSuggestionHandler): void {
+  onConfigSuggestion(handler: ConfigSuggestionHandler): void {
     this.suggestionHandler = handler;
   }
 
@@ -90,9 +90,9 @@ export class ConfigManager {
    *
    * 与 addRule() 的关键区别：
    * - addRule() → 写入 SQLite（运行时注入，会话级，重启后需重新注入）
-   * - confirm() → 写入配置文件（持久化，重启后自动加载）
+   * - confirmConfigSuggestion() → 写入配置文件（持久化，重启后自动加载）
    */
-  async confirm(suggestion: ConfigSuggestion): Promise<void> {
+  async confirmConfigSuggestion(suggestion: ConfigSuggestion): Promise<void> {
     if (!this.writeConfigFile) {
       throw configError('writeConfigFile 未设置', '模式 3 需要注入配置文件写入回调才能持久化', [
         '在 Agent 构造时传入 configDir 参数（Agent 会自动创建 FileStore 并注入回调）',
@@ -203,10 +203,10 @@ export class ConfigManager {
    *
    * 路径一（文件加载）：SkillManager.load() 扫描 configDir/skills/*.md → 内存 + SQLite
    * 路径二（运行时注入）：addSkill() → SkillManager.register() → 内存 + SQLite
-   * 路径三（持久化新增）：config.confirm({type:'skill',...}) → 写配置文件 → 下次 load() 自动加载
+   * 路径三（持久化新增）：config.confirmConfigSuggestion({type:'skill',...}) → 写配置文件 → 下次 load() 自动加载
    *
    * 注意：运行时注入的技能仅在当前会话内生效，重启后需重新注入。
-   * 如需跨会话持久化，宿主应调用 config.confirm() 写入配置文件。
+   * 如需跨会话持久化，宿主应调用 config.confirmConfigSuggestion() 写入配置文件。
    */
   async addSkill(memory: Memory): Promise<void> {
     if (memory.source !== SOURCE_LABELS.SKILL) {
@@ -236,7 +236,7 @@ export class ConfigManager {
    *
    * 宿主程序只需提供 name + content 两个业务字段，
    * 内部自动填充 id / source / createdAt / accessedAt / score。
-   * 注入后仅在当前会话生效，持久化需调用 config.confirm()。
+   * 注入后仅在当前会话生效，持久化需调用 config.confirmConfigSuggestion()。
    */
   async addSimpleSkill(name: string, content: string, keywords: string[] = []): Promise<void> {
     void keywords; // 基元驱动模型下关键词暂不存储到 Memory，由 SkillManager 管理

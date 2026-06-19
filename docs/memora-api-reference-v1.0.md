@@ -330,12 +330,16 @@ interface ISessionStore {
 
 以下方法直接挂在 Agent 上：
 
+> **switch* 返回值约定**（FD-27）：各 switch 操作返回与其操作语义最匹配的值 ——
+> `switchSession` 返回新会话名（string）、`switchProject` 返回完整项目上下文（AgentContext，含 bootstrap 记忆等）、
+> `personaManager.switchPersona` 返回 system prompt 文本（string）。这是设计性差异，非 bug。
+
 | 方法 | 用途 |
 |------|------|
-| `listProjects()` → `AgentProjectEntry[]` | 列出所有已注册项目 |
+| `listProjects()` → `AgentProjectEntry[]` | 列出所有已注册项目（@deprecated 请使用 `agent.projects.list`） |
 | `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆，自动 rebuild） |
 | `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
-| `switchSession(newName)` → `Promise<string>` | 切换到指定会话（自动归档旧会话） |
+| `switchSession(newName)` → `string` | 切换到指定会话（自动归档旧会话） |
 | `forkSession(targetSession?)` → `{ newSession: string; messageCount: number }` | 分叉当前会话（复制完整消息历史到新分支） |
 | `loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
 | `restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
@@ -411,7 +415,7 @@ console.log(agent.persona.currentMode);               // 当前模式
 | 方法 | 用途 |
 |------|------|
 | `tools.registerTool(definition, handler)` | 注册自定义工具（会话级） |
-| `tools.getToolDefinitions()` → `ToolDefinition[]` | 获取所有工具定义（内置 + 自定义） |
+| `tools.getToolDefinitions()` → `ToolDefinition[]` | 获取所有工具定义（@deprecated 请使用 `tools.list`） |
 | `tools.execute(name, argsJson, extensions?)` → `Promise<string>` | 执行工具调用 |
 
 ```typescript
@@ -509,7 +513,7 @@ await agent.config.addSimpleSkill(
 );
 
 // 如需跨会话持久化，写入配置文件
-await agent.config.confirm({
+await agent.config.confirmConfigSuggestion({
   type: 'skill',
   name: '大纲生成',
   content: '当用户说“生成大纲”时……',
@@ -521,13 +525,13 @@ await agent.config.confirm({
 
 | 方法 | 用途 |
 |------|------|
-| `config.onSuggestion(handler)` | 注册配置建议回调 |
-| `config.confirm(suggestion)` | 确认建议，写入配置文件（持久化） |
+| `config.onConfigSuggestion(handler)` | 注册配置建议回调 |
+| `config.confirmConfigSuggestion(suggestion)` | 确认建议，写入配置文件（持久化） |
 
 **双写机制**：
 - `config.addRule()` → 写 SQLite（会话级，临时）
 - `config.addSkill()` → 写 SQLite + SkillManager（session-only，运行时注入）
-- `config.confirm()` → 写配置文件（真理源，重启后自动加载，适用于 rule/persona/skill 三种类型）
+- `config.confirmConfigSuggestion()` → 写配置文件（真理源，重启后自动加载，适用于 rule/persona/skill 三种类型）
 
 ---
 
@@ -559,11 +563,11 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 生命周期 | `init()` / `close()` |
 | 对话 | `chat()` / `chatSync()` |
 | 事件 | `on()` / `off()` |
-| 项目/会话 | `listProjects()` / `switchProject()` / `rebuildComponents()` / `switchSession()` / `forkSession()` / `loadSessionMessages()` / `restoreMostRecentSession()` / `restoreSession()` |
+| `agent.projects` | `.list` / `.switchProject()` / `.listProjects()` / `.rebuildComponents()` |
 | Provider | `setProvider()` / `setBackgroundProvider()` |
 | 调试 | `getBuildCtx()` |
 
-### Agent 面类只读访问器（7 个）
+### Agent 面类只读访问器（8 个）
 
 `initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory`
 
@@ -576,9 +580,9 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | Manager | 公开成员 |
 |---------|---------|
 | `agent.persona` | `.list` / `.activeName` / `.currentMode` / `.active` / `.switchPersona()` / `.setMode()` |
-| `agent.tools` | `.registerTool()` / `.getToolDefinitions()` / `.execute()` |
+| `agent.tools` | `.list` / `.registerTool()` / `.getToolDefinitions()` / `.execute()` |
 | `agent.skills` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
-| `agent.config` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onSuggestion()` / `.confirm()` |
+| `agent.config` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onConfigSuggestion()` / `.confirmConfigSuggestion()` |
 | `agent.insight` | `.classify(input)` / `.extract(userInput, assistantContent)` / `.setKeywords(keywords)` / `.setWriteExtensions(ext)` |
 | `agent.memory` | `.snapshot()` / `.search()` / `.stats()` |
 

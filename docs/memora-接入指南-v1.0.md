@@ -410,10 +410,10 @@ agent.on('sessionForked', (event) => {
 
 | 方法 | 说明 |
 |------|------|
-| `agent.listProjects()` | 列出已注册的子项目 |
+| `agent.listProjects()` | 列出已注册的子项目（@deprecated 请使用 `agent.projects.list`） |
 | `agent.switchProject(name)` | 切换到其他子项目 |
 | `agent.rebuildComponents()` | 通常不需要手动调用（`switchProject` 已自动执行），仅在强制刷新配置时使用 |
-| `agent.switchSession(name)` | 切换当前会话（自动归档旧会话） |
+| `agent.switchSession(name)` | 切换当前会话（同步，返回新会话名） |
 | `agent.forkSession(name?)` | 分叉当前会话（复制完整消息历史到新分支） |
 | `agent.loadSessionMessages(date, session)` | 加载指定日期/会话的消息 |
 | `agent.restoreSession(date, session)` | 恢复指定日期/会话 |
@@ -426,7 +426,7 @@ agent.on('sessionForked', (event) => {
 |------|---------|---------|
 | `agent.memory.xxx()` | MemoryInspector | `snapshot()` / `search(q, n)` / `stats()` |
 | `agent.config.xxx()` | ConfigManager | `addRule(m)` / `addSimpleRule(n, c)` / `addSkill(m)` / `addSimpleSkill(n, c, k?)` / `onSuggestion(h)` / `confirm(s)` |
-| `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` |
+| `agent.tools.xxx()` | ToolExecutor | `registerTool(d, h)` / `getToolDefinitions()` / `execute(n, a)` / `list` |
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |

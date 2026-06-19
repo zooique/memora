@@ -321,7 +321,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       const now = new Date();
       // 会话名格式：session-HHmmss（如 session-143052）
       const sessionName = `session-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-      await ctx.agent.switchSession(sessionName);
+      ctx.agent.switchSession(sessionName);
       return { success: true, sessionName };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '新建会话失败' });

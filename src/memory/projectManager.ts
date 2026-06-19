@@ -309,7 +309,15 @@ export class ProjectManager {
   }
 
   /**
+   * 列出已注册的项目（IX-02：统一为 getter 风格，与 persona/skill 一致）
+   */
+  get list(): ProjectEntry[] {
+    return this.readRegistry();
+  }
+
+  /**
    * 列出已注册的项目
+   * @deprecated 请使用 `projectManager.list` getter 代替
    */
   listProjects(): ProjectEntry[] {
     return this.readRegistry();

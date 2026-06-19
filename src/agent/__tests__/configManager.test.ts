@@ -172,14 +172,14 @@ describe('ConfigManager', () => {
     });
   });
 
-  // ─── onSuggestion / suggestionCallback ───────────────
+  // ─── onConfigSuggestion / suggestionCallback ───────────────
 
-  describe('onSuggestion / suggestionCallback', () => {
+  describe('onConfigSuggestion / suggestionCallback', () => {
     it('应注册并获取回调', () => {
       expect(manager.suggestionCallback).toBeNull();
 
       const handler = (_s: ConfigSuggestion) => {};
-      manager.onSuggestion(handler);
+      manager.onConfigSuggestion(handler);
 
       expect(manager.suggestionCallback).toBe(handler);
     });
@@ -188,17 +188,17 @@ describe('ConfigManager', () => {
       const handler1 = (_s: ConfigSuggestion) => {};
       const handler2 = (_s: ConfigSuggestion) => {};
 
-      manager.onSuggestion(handler1);
+      manager.onConfigSuggestion(handler1);
       expect(manager.suggestionCallback).toBe(handler1);
 
-      manager.onSuggestion(handler2);
+      manager.onConfigSuggestion(handler2);
       expect(manager.suggestionCallback).toBe(handler2);
     });
   });
 
-  // ─── confirm ─────────────────────────────────────────
+  // ─── confirmConfigSuggestion ─────────────────────────────────────────
 
-  describe('confirm', () => {
+  describe('confirmConfigSuggestion', () => {
     it('writeConfigFile 未设置时应抛错', async () => {
       const suggestion: ConfigSuggestion = {
         type: 'rule',
@@ -207,7 +207,7 @@ describe('ConfigManager', () => {
         confidence: 0.9,
       };
 
-      await expect(manager.confirm(suggestion)).rejects.toThrow(/writeConfigFile 未设置/);
+      await expect(manager.confirmConfigSuggestion(suggestion)).rejects.toThrow(/writeConfigFile 未设置/);
     });
 
     it('writeConfigFile 已设置时应调用写入回调', async () => {
@@ -226,7 +226,7 @@ describe('ConfigManager', () => {
         confidence: 0.85,
       };
 
-      await managerWithWrite.confirm(suggestion);
+      await managerWithWrite.confirmConfigSuggestion(suggestion);
 
       // 写入回调被调用
       expect(written).toHaveLength(1);
@@ -239,7 +239,7 @@ describe('ConfigManager', () => {
       expect(systemMessages[0]).toContain('【项目规则】持久化规则');
     });
 
-    it('persona 类型 confirm 不应注入 system 消息', async () => {
+    it('persona 类型 confirmConfigSuggestion 不应注入 system 消息', async () => {
       const written: Memory[] = [];
       const managerWithWrite = new ConfigManager(
         storage,
@@ -255,7 +255,7 @@ describe('ConfigManager', () => {
         confidence: 0.9,
       };
 
-      await managerWithWrite.confirm(suggestion);
+      await managerWithWrite.confirmConfigSuggestion(suggestion);
 
       expect(written).toHaveLength(1);
       expect(written[0]!.source).toBe(SOURCE_LABELS.PERSONA);
