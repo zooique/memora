@@ -135,7 +135,7 @@ id: test-003
     it('解析后序列化应能还原键值对', () => {
       const original = `---
 id: round-trip
-type: topic
+type: session
 permanence: domain
 ---
 正文内容`;

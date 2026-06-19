@@ -25,7 +25,7 @@ describe('SecurityGuard · 路径白名单', () => {
   });
 
   it('应该允许数据目录内的路径', () => {
-    const filePath = join(dataDir, 'topics', '2026-06-02.md');
+    const filePath = join(dataDir, 'sessions', '2026-06-02.md');
     expect(() => guard.assertPathAllowed(filePath)).not.toThrow();
   });
 

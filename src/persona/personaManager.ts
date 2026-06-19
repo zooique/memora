@@ -11,7 +11,7 @@
  * 设计原则（architecture_philosophy_rules.md §1）：
  *   - Persona 遵循"万物皆记忆"——存入 SQLite 作为 persona 来源记忆
  *   - 召回管线做特殊处理：bootstrap 只取当前激活角色的 1 条 persona 记忆
- *   - 角色可被话题关键词动态匹配自动切换，也可手动指定
+ *   - 角色可被会话关键词动态匹配自动切换，也可手动指定
  *
  * 目录约定：
  *   - 单层角色：只有宿主程序级 <configDir>/personas/*.md

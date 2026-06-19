@@ -13,9 +13,6 @@
  *
  * 基元驱动记忆模型（2026-06-11 重构）：
  * - MemoryType/Permanence 枚举 → source 开放字符串
- * - TopicMount → 移除
- * - ArchiveManager → 移除
- * - 归档模式 → 移除
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';

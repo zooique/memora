@@ -89,7 +89,15 @@ export class AutoConfigRefiner {
         'AutoConfigRefiner: 提取到配置建议',
       );
 
-      this.onSuggestion(suggestion);
+      // FD-25: 单条建议回调失败时记日志并继续处理下一条，避免一条失败导致后续全部丢失
+      try {
+        this.onSuggestion(suggestion);
+      } catch (err) {
+        logger.warn(
+          { err, suggestionName: raw.name, suggestionType: raw.type },
+          'AutoConfigRefiner: 单条建议回调失败，跳过该条继续处理',
+        );
+      }
     }
   }
 

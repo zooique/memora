@@ -2,7 +2,8 @@
  * 记忆召回 — 简化关键词搜索
  *
  * 设计哲学：每次用户发消息，从所有记忆中搜索最相关的几条注入上下文
- * 不需要话题概念，不需要漂移检测，不需要管理器
+ * 基于基元驱动模型，通过 source 开放字符串区分记忆来源，
+ * 通过双通道（语义 + 关键词）召回，无需独立管理器
  *
  * 详见 ADR-004 · 记忆统一模型 + architecture_philosophy_rules.md §6 增量召回
  */
@@ -133,12 +134,17 @@ export async function recall(
   // ── 通道 2：关键词搜索 ──
   const keywords = extractKeywords(query);
   if (keywords.length > 0) {
-    // 使用提取后的关键词组合搜索，避免原始 query 中的停用词/噪声影响匹配
-    const keywordResults = storage.search(keywords.join(' '), limit * RECALL_LIMIT_MULTIPLIER);
-    for (const m of keywordResults) {
-      if (!excludeSources.includes(m.source) && !merged.has(m.id)) {
-        merged.set(m.id, { memory: m, vectorScore: 0 });
+    // FD-23: 关键词搜索失败时降级返回已收集的语义结果，与通道 1 降级策略对称
+    try {
+      // 使用提取后的关键词组合搜索，避免原始 query 中的停用词/噪声影响匹配
+      const keywordResults = storage.search(keywords.join(' '), limit * RECALL_LIMIT_MULTIPLIER);
+      for (const m of keywordResults) {
+        if (!excludeSources.includes(m.source) && !merged.has(m.id)) {
+          merged.set(m.id, { memory: m, vectorScore: 0 });
+        }
       }
+    } catch (err) {
+      logger.debug({ err }, '关键词搜索失败，仅返回语义搜索结果');
     }
   }
 

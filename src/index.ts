@@ -16,6 +16,8 @@ export type {
   AgentOptions,
   AgentContext,
   AgentBuildCtx,
+  AgentForkResult,
+  AgentProjectEntry,
 } from './agent/agent.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from './agent/toolExecutor.js';
 export type { PersonaMode, Persona } from './persona/types.js';
@@ -60,7 +62,7 @@ export { EmbeddingProvider } from './llm/embedding.js';
 export type { EmbeddingConfig, EmbeddingResult } from './llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from './memory/sessionStore.js';
-// 消息历史类型：loadSessionMessages() 返回值
+// 消息历史内部类型：MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from './agent/messageHistory.js';
 // 召回函数：简化关键词搜索
 export { recall, extractKeywords, decayScores } from './memory/recall.js';
