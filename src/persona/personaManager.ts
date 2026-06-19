@@ -22,6 +22,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
+import { configError } from '@/utils/errors.js';
 import type { Persona, PersonaMode } from './types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
 
@@ -109,11 +110,15 @@ export class PersonaManager {
   /**
    * 切换角色（带时间窗口缓冲）
    *
+   * 错误策略统一（IX-03）：角色不存在时抛 MemoraError，与 switchProject 一致。
+   * 交换锁定时仍返回当前 prompt（非错误，是限流保护）。
+   *
    * @param name 角色名
-   * @returns 新角色的 system prompt 段，角色不存在返回当前 prompt
+   * @returns 新角色的 system prompt 段
+   * @throws MemoraError 如果角色不存在
    */
   switchPersona(name: string): string {
-    // 缓冲区检查
+    // 缓冲区检查（限流保护，非错误）
     if (this.switchLocked) {
       logger.info({ persona: name }, '角色切换已锁定（60s 内超过 3 次），保持当前');
       return this.buildSystemPrompt();
@@ -121,8 +126,11 @@ export class PersonaManager {
 
     const found = this.personaList.find((p) => p.name === name);
     if (!found) {
-      logger.warn({ requested: name }, '未找到指定角色，保持当前角色');
-      return this.buildSystemPrompt();
+      // 统一错误策略：找不到目标时抛错，而非静默保持当前
+      throw configError('角色切换失败', `角色 "${name}" 不存在`, [
+        '使用 persona.list 查看可用角色',
+        '在 agent-config/personas/ 目录下创建该角色配置文件',
+      ]);
     }
     if (this.activePersona?.name === name) {
       return this.buildSystemPrompt(); // 同一角色，不需要切换

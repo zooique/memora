@@ -30,13 +30,15 @@
         <div id="persona-selector">
           <span id="persona-icon">🧚</span>
           <span id="persona-name">精灵</span>
+          <!-- IX-07 当前角色匹配模式标签（auto/manual） -->
+          <span id="persona-mode-badge" class="mode-badge" title="角色匹配模式：自动（根据上下文自动切换角色）">自动</span>
           <span id="persona-arrow">▼</span>
         </div>
         <!-- 角色下拉菜单（动态填充） -->
         <div id="persona-dropdown" class="dropdown hidden"></div>
       </div>
       <div id="sidebar-content">
-        <!-- 仪表盘 -->
+        <!-- 仪表盘（FD-03 完整仪表盘，对齐 CLI /dashboard） -->
         <div id="dashboard">
           <div class="dash-item">
             <span class="dash-label">记忆</span>
@@ -49,6 +51,16 @@
           <div class="dash-item">
             <span class="dash-label">角色</span>
             <span class="dash-value" id="persona-count">0</span>
+          </div>
+          <!-- FD-03 累积事件（接近阈值时高亮，提示即将主动提示） -->
+          <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值">
+            <span class="dash-label">事件</span>
+            <span class="dash-value" id="pending-count">0/3</span>
+          </div>
+          <!-- FD-03 已注册触发器（显示触发器数量，hover 看详情） -->
+          <div class="dash-item" id="dash-triggers" title="已注册触发器列表">
+            <span class="dash-label">触发器</span>
+            <span class="dash-value" id="trigger-count">0</span>
           </div>
         </div>
         <!-- 快捷入口 -->
@@ -64,6 +76,11 @@
     <main id="main-content">
       <!-- 对话面板 -->
       <div id="panel-chat" class="panel active">
+        <!-- 对话工具栏（FD-05 新建会话按钮，主动可见低频操作） -->
+        <div id="chat-toolbar">
+          <button id="btn-new-session" title="开始新会话（当前会话保留在历史中）">✨ 新会话</button>
+        </div>
+
         <!-- 主动提示 banner（顶部滑入，对齐 docs/memora-sprite-preview.html §6.6） -->
         <div id="proactive-banner" class="hidden">
           <span class="banner-icon">🧚</span>
@@ -172,6 +189,19 @@
           <label for="cfg-default-persona">默认角色</label>
           <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" />
         </div>
+        <!-- FD-04 项目模式配置 -->
+        <div class="settings-group">
+          <h3>项目模式</h3>
+          <label for="cfg-project-mode">模式</label>
+          <div class="radio-group">
+            <label><input type="radio" name="project-mode" value="smart" /> 智能模式（监听启动项目）</label>
+            <label><input type="radio" name="project-mode" value="focus" /> 专注模式（锁定特定项目）</label>
+          </div>
+          <label for="cfg-focus-project">专注项目（仅专注模式生效）</label>
+          <select id="cfg-focus-project" disabled>
+            <option value="">-- 选择项目 --</option>
+          </select>
+        </div>
         <div class="settings-actions">
           <button id="btn-settings-cancel">取消</button>
           <button id="btn-settings-save">保存</button>
@@ -233,6 +263,10 @@
       </div>
     </div>
   </div>
+
+  <!-- IX-06 Toast 通知区域（独立于对话历史，避免污染 #messages） -->
+  <!-- 用于显示操作反馈（成功/失败/警告），自动消失，不持久化 -->
+  <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <script type="module" src="renderer.js"></script>
 </body>

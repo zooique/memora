@@ -243,12 +243,90 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   });
 
+  /** IX-07 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */
+  ipcMain.handle('persona-mode-get', () => {
+    try {
+      return { mode: ctx.sprite.personaMode };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '查询角色模式失败' });
+      return { mode: 'auto' };
+    }
+  });
+
   // ─── 主动提示分发 ────────────────────────────────────────
 
   /** 渲染进程通知主动提示已显示，清除未读计数 */
   ipcMain.on('proactive-prompt-shown', () => {
     // 主动提示已显示，托盘切回 idle 状态
     ctx.trayManager?.setState('idle');
+  });
+
+  // ─── 项目管理（FD-04 项目模式） ──────────────────────────
+
+  /** 列出已注册项目（供 UI 专注模式选择器使用） */
+  ipcMain.handle('projects-list', () => {
+    try {
+      return { projects: ctx.sprite.listProjects() };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取项目列表失败' });
+      return { projects: [] };
+    }
+  });
+
+  // ─── 仪表盘（FD-03 UI 完整仪表盘） ──────────────────────
+
+  /**
+   * 获取完整仪表盘数据
+   *
+   * 对齐 CLI /dashboard 命令，提供：
+   * - 记忆总数 + 按来源分组
+   * - 累积事件数 + 主动提示阈值
+   * - 已注册触发器列表
+   * - 关联推荐记忆
+   */
+  ipcMain.handle('dashboard-get', () => {
+    try {
+      const data = ctx.sprite.dashboard();
+      return {
+        total: data.total,
+        bySource: data.bySource,
+        suggestions: data.suggestions,
+        pendingNotices: ctx.sprite.pendingCount,
+        proactiveThreshold: ctx.sprite.proactiveThreshold,
+        registeredTriggers: ctx.sprite.registeredTriggers,
+      };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取仪表盘数据失败' });
+      return {
+        total: 0,
+        bySource: {},
+        suggestions: [],
+        pendingNotices: 0,
+        proactiveThreshold: 3,
+        registeredTriggers: [],
+      };
+    }
+  });
+
+  // ─── 会话管理（FD-05 新建会话） ──────────────────────────
+
+  /**
+   * 新建会话
+   *
+   * 生成基于时间戳的会话名（session-HHmmss），调用 agent.switchSession 切换。
+   * 旧会话数据保留在 SessionStore 中，不删除。
+   */
+  ipcMain.handle('session-new', async () => {
+    try {
+      const now = new Date();
+      // 会话名格式：session-HHmmss（如 session-143052）
+      const sessionName = `session-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+      await ctx.agent.switchSession(sessionName);
+      return { success: true, sessionName };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '新建会话失败' });
+      return { success: false, error: toError(error).message };
+    }
   });
 }
 

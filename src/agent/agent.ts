@@ -43,6 +43,7 @@ import type {
   MemorySnapshot,
   AgentStats,
   AgentSearchHit,
+  SuggestHit,
 } from './memoryInspector.js';
 import { extractUserFacts } from './userFactExtractor.js';
 import { assembleComponents } from './assembler.js';
@@ -977,30 +978,56 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── Agent 门面包装方法（向后兼容 project_memory API 契约）──
   // God Object 拆分后方法移至 MemoryInspector，此处保留门面方法供宿主项目按旧契约调用
+  // 错误策略统一：未初始化时抛 MemoraError（与其他 Agent 方法一致），不静默返回 null/[]
 
   /**
    * 获取当前演化状态快照（project_memory 约束 27/29/54 要求的 inspect() API）
    * 委托至 MemoryInspector.snapshot()
+   * @throws MemoraError 如果 Agent 未初始化
    */
-  inspect(): MemorySnapshot | null {
-    return this.memoryInspector?.snapshot() ?? null;
+  inspect(): MemorySnapshot {
+    this.assertInitialized('inspect');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').snapshot();
   }
 
   /**
    * 获取记忆统计（project_memory 约束 28 要求的 getStats() API）
    * 委托至 MemoryInspector.stats()
+   * @throws MemoraError 如果 Agent 未初始化
    */
-  getStats(): AgentStats | null {
-    return this.memoryInspector?.stats() ?? null;
+  getStats(): AgentStats {
+    this.assertInitialized('getStats');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').stats();
   }
 
   /**
    * 搜索记忆（project_memory 约束 70 要求的 searchMemories() API）
    * 委托至 MemoryInspector.search()
+   * @throws MemoraError 如果 Agent 未初始化
    */
   searchMemories(query: string, limit = 10): AgentSearchHit[] {
-    if (!this.memoryInspector) return [];
-    return this.memoryInspector.search(query, limit);
+    this.assertInitialized('searchMemories');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').search(query, limit);
+  }
+
+  /**
+   * 混合搜索记忆（语义 + 关键词，project_memory 约束要求的双通道召回）
+   * 委托至 MemoryInspector.searchHybrid()
+   * @throws MemoraError 如果 Agent 未初始化
+   */
+  async searchMemoriesHybrid(query: string, limit = 10): Promise<AgentSearchHit[]> {
+    this.assertInitialized('searchMemoriesHybrid');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').searchHybrid(query, limit);
+  }
+
+  /**
+   * 记忆推荐（基于上下文的智能推荐，project_memory 约束要求的 suggest API）
+   * 委托至 MemoryInspector.suggest()
+   * @throws MemoraError 如果 Agent 未初始化
+   */
+  suggestMemories(query?: string, options?: { limit?: number }): SuggestHit[] {
+    this.assertInitialized('suggestMemories');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').suggest(query, options);
   }
 
   /** 记忆存储（宿主可直接调用 CRUD，如 delete/upsert） */

@@ -294,7 +294,7 @@ keywords: 编程, 代码
       expect(personaManager.active?.name).toBe('程序员助手');
     });
 
-    it('应该在切换到不存在的角色时保持当前角色', async () => {
+    it('应该在切换到不存在的角色时抛出 MemoraError', async () => {
       createPersonaFile(
         personasDir,
         'default.md',
@@ -308,9 +308,8 @@ keywords: 通用
       const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
-      const result = personaManager.switchPersona('nonexistent');
-
-      expect(result).toContain('默认助手');
+      // IX-03 统一错误策略：找不到角色时抛错，与 switchProject 一致
+      expect(() => personaManager.switchPersona('nonexistent')).toThrow('角色切换失败');
       expect(personaManager.active?.name).toBe('默认助手');
     });
 

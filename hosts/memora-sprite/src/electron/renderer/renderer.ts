@@ -72,10 +72,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     onSilent: () => {
       // 通知主进程进入静默模式（1 小时后自动恢复）
       void window.electronAPI.updateConfig('silentMode', true);
-      uiManager.appendMessage({
-        role: 'system',
-        content: '🔕 已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）',
-      });
+      // IX-06 操作反馈走 toast（静默模式是用户主动触发的状态变更）
+      uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）', 'info');
       // 清理旧的恢复定时器，避免多次点击产生重复恢复
       if (silentRecoveryTimer !== null) {
         window.clearTimeout(silentRecoveryTimer);
@@ -85,10 +83,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       silentRecoveryTimer = window.setTimeout(() => {
         silentRecoveryTimer = null;
         void window.electronAPI.updateConfig('silentMode', false).then(() => {
-          uiManager.appendMessage({
-            role: 'system',
-            content: '🔔 静默模式已到期自动恢复，精灵可正常主动提示',
-          });
+          // IX-06 恢复提示走 toast
+          uiManager.showToast('静默模式已到期自动恢复，精灵可正常主动提示', 'info');
         });
       }, 60 * 60 * 1000);
     },
@@ -136,6 +132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   void loadMemoryList();
   void loadPersonaList();
   void loadConfig();
+  void loadDashboard();
 });
 
 // ─── 清理资源 ─────────────────────────────────────────────
@@ -176,6 +173,41 @@ function setupBusinessLogic(): void {
   uiManager.onStopMessage(async () => {
     await window.electronAPI.abortChat();
     uiManager.stopAllStreaming();
+  });
+
+  // FD-05 新建会话回调
+  // 设计：精灵默认推荐"一个对话走到底"（上下文只用前三轮），
+  // 但用户可能需要主动切换会话以开启全新上下文。
+  // 此处通过确认对话框防止误操作，新会话创建后清空对话区并显示系统消息。
+  uiManager.onNewSession(async () => {
+    // 防止流式输出中创建新会话（避免上下文混乱）
+    if (uiManager.isStreaming()) {
+      // IX-06 操作反馈走 toast
+      uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止后再新建会话', 'warning');
+      return;
+    }
+
+    // 确认对话框：清空当前对话区是不可逆的（但历史保留在 SessionStore）
+    if (!window.confirm('开始新会话？\n\n当前对话将保留在历史中，可随时切换回来查看。')) {
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.newSession();
+      if (result.success) {
+        // 清空对话区并显示新会话提示（新会话提示是对话内容，保留在 #messages）
+        uiManager.clearMessages();
+        uiManager.appendMessage({
+          role: 'system',
+          content: `✨ 新会话已开始（${result.sessionName ?? ''}）`,
+        });
+      } else {
+        // IX-06 失败反馈走 toast
+        uiManager.showToast(`新建会话失败：${result.error ?? '未知错误'}`, 'error');
+      }
+    } catch (error) {
+      uiManager.showToast(`新建会话失败：${toError(error).message}`, 'error');
+    }
   });
 }
 
@@ -249,8 +281,12 @@ function initSpriteEventListener(): void {
   window.electronAPI.onSpriteEvent((msg) => {
     if (msg.type === 'memoryNoticed') {
       pulseCounter('memory-count');
+      // FD-03 记忆变化后刷新仪表盘（累积事件数可能变化）
+      void loadDashboard();
     } else if (msg.type === 'insightGained') {
       pulseCounter('insight-count');
+      // FD-03 洞察变化后刷新仪表盘
+      void loadDashboard();
     } else if (msg.type === 'proactivePrompt') {
       handleProactivePrompt(msg);
     }
@@ -295,12 +331,8 @@ function pulseCounter(id: string): void {
 
 function initAppErrorListener(): void {
   window.electronAPI.onAppError((error: AppError) => {
-    // 显示错误消息给用户
-    uiManager.appendMessage({
-      role: 'system',
-      content: `⚠️ ${error.message}`,
-    });
-
+    // IX-06 应用级错误走 toast，不污染对话历史
+    uiManager.showToast(error.message, 'error');
     console.error(`[${error.code}] ${error.message}`, error);
   });
 }
@@ -310,13 +342,11 @@ function initAppErrorListener(): void {
  *
  * 监听 'sprite-error' 通道（ipcHandlers.ts 在对话流式输出出错时发送）。
  * 与 app-error（应用级错误）区分：sprite-error 是对话级错误。
+ * IX-06 统一走 toast 通知，保持错误反馈渠道一致。
  */
 function initSpriteErrorListener(): void {
   window.electronAPI.onSpriteError((msg: { text: string }) => {
-    uiManager.appendMessage({
-      role: 'system',
-      content: `⚠️ ${msg.text}`,
-    });
+    uiManager.showToast(msg.text, 'error');
     console.error('[sprite-error]', msg.text);
   });
 }
@@ -393,28 +423,31 @@ function setupMemoryPanel(): void {
       await window.electronAPI.deleteMemory(id);
       uiManager.hideModal('memory-detail-modal');
       await loadMemoryList();
+      // IX-06 操作反馈走 toast
+      uiManager.showToast('记忆已删除', 'success');
     } catch (error) {
       console.error('[onMemoryDelete] 删除记忆失败:', error);
-      uiManager.appendMessage({
-        role: 'system',
-        content: '⚠️ 删除记忆失败，请查看控制台日志',
-      });
+      uiManager.showToast(`删除记忆失败：${toError(error).message}`, 'error');
     }
   });
 
   // 添加记忆
   uiManager.onMemoryAdd(async (data) => {
+    // FD-08 进行中反馈：禁用按钮防止重复点击
+    uiManager.setButtonLoading('btn-memory-add-confirm', true, '添加中...');
     try {
       await window.electronAPI.addMemory(data);
       uiManager.clearAddMemoryForm();
       uiManager.hideModal('memory-add-modal');
       await loadMemoryList();
+      // IX-06 操作反馈走 toast
+      uiManager.showToast('记忆已添加', 'success');
     } catch (error) {
       console.error('[onMemoryAdd] 添加记忆失败:', error);
-      uiManager.appendMessage({
-        role: 'system',
-        content: '⚠️ 添加记忆失败，请查看控制台日志',
-      });
+      uiManager.showToast(`添加记忆失败：${toError(error).message}`, 'error');
+    } finally {
+      // FD-08 恢复按钮状态
+      uiManager.setButtonLoading('btn-memory-add-confirm', false);
     }
   });
 }
@@ -437,6 +470,48 @@ async function loadMemoryList(): Promise<void> {
   }
 }
 
+/**
+ * FD-03 加载完整仪表盘数据
+ *
+ * 对齐 CLI /dashboard 命令，在侧边栏仪表盘显示：
+ * - 累积事件数 / 主动提示阈值（接近阈值黄色，达到阈值粉色）
+ * - 已注册触发器数量（hover 看触发器名称列表）
+ */
+async function loadDashboard(): Promise<void> {
+  try {
+    const data = await window.electronAPI.getDashboard();
+
+    // 累积事件数 / 阈值
+    const pendingEl = document.getElementById('pending-count');
+    const dashPending = document.getElementById('dash-pending');
+    if (pendingEl && dashPending) {
+      pendingEl.textContent = `${data.pendingNotices}/${data.proactiveThreshold}`;
+      // 高亮状态：接近阈值（>=80%）黄色，达到阈值粉色
+      dashPending.classList.remove('near-threshold', 'at-threshold');
+      if (data.pendingNotices >= data.proactiveThreshold) {
+        dashPending.classList.add('at-threshold');
+      } else if (data.proactiveThreshold > 0
+        && data.pendingNotices / data.proactiveThreshold >= 0.8) {
+        dashPending.classList.add('near-threshold');
+      }
+    }
+
+    // 已注册触发器数量 + hover 详情
+    const triggerEl = document.getElementById('trigger-count');
+    const dashTriggers = document.getElementById('dash-triggers');
+    if (triggerEl && dashTriggers) {
+      triggerEl.textContent = String(data.registeredTriggers.length);
+      // hover 显示触发器名称列表
+      const triggerList = data.registeredTriggers.length > 0
+        ? data.registeredTriggers.join(', ')
+        : '无触发器';
+      dashTriggers.title = `已注册触发器：${triggerList}`;
+    }
+  } catch (error) {
+    console.error('[loadDashboard] 加载仪表盘数据失败:', error);
+  }
+}
+
 // ─── 角色选择器业务逻辑 ───────────────────────────────────
 
 /** 设置角色选择器回调 */
@@ -446,13 +521,27 @@ function setupPersonaSelector(): void {
       const { switched, name: activeName } = await window.electronAPI.switchPersona(name);
       if (switched && activeName) {
         uiManager.updateActivePersona(activeName);
+        // IX-06 操作反馈走 toast
+        uiManager.showToast(`已切换到角色：${activeName}`, 'success');
       }
     } catch (error) {
       console.error('[onPersonaSwitch] 切换角色失败:', error);
-      uiManager.appendMessage({
-        role: 'system',
-        content: `⚠️ 切换角色失败：${toError(error).message}`,
-      });
+      uiManager.showToast(`切换角色失败：${toError(error).message}`, 'error');
+    }
+  });
+
+  // IX-07 角色匹配模式变更：实时持久化 + 更新标签
+  uiManager.onPersonaModeChange(async (mode: string) => {
+    try {
+      const { set } = await window.electronAPI.setPersonaMode(mode as 'auto' | 'manual');
+      if (set) {
+        uiManager.showToast(`角色匹配模式已切换为：${mode === 'auto' ? '自动' : '手动'}`, 'success');
+      } else {
+        uiManager.showToast('角色匹配模式切换失败', 'error');
+      }
+    } catch (error) {
+      console.error('[onPersonaModeChange] 设置角色模式失败:', error);
+      uiManager.showToast(`设置角色模式失败：${toError(error).message}`, 'error');
     }
   });
 }
@@ -468,6 +557,15 @@ async function loadPersonaList(): Promise<void> {
     if (active) {
       uiManager.updateActivePersona(active.name);
     }
+
+    // IX-07 加载当前角色匹配模式并更新标签
+    try {
+      const { mode } = await window.electronAPI.getPersonaMode();
+      uiManager.updatePersonaModeBadge(mode);
+      uiManager.setPersonaMode(mode);
+    } catch (modeErr) {
+      console.error('[loadPersonaList] 加载角色模式失败:', modeErr);
+    }
   } catch (error) {
     console.error('[loadPersonaList] 加载角色列表失败:', error);
   }
@@ -478,6 +576,8 @@ async function loadPersonaList(): Promise<void> {
 /** 设置设置面板回调 */
 function setupSettingsPanel(): void {
   uiManager.onConfigSave(async (config: SpriteConfigForm) => {
+    // FD-08 进行中反馈：禁用保存按钮防止重复点击
+    uiManager.setButtonLoading('btn-settings-save', true, '保存中...');
     try {
       // 逐项更新配置（sprite.updateConfig 一次只更新一个键）
       await window.electronAPI.updateConfig('silentMode', config.silentMode);
@@ -488,16 +588,17 @@ function setupSettingsPanel(): void {
       await window.electronAPI.updateConfig('fileWatcherPaths', config.fileWatcherPaths);
       await window.electronAPI.updateConfig('fileWatcherDebounceMs', config.fileWatcherDebounceMs);
       await window.electronAPI.updateConfig('defaultPersona', config.defaultPersona);
+      // FD-04 项目模式：先更新路径再切换模式（确保专注模式切换时路径已就绪）
+      await window.electronAPI.updateConfig('focusProjectPath', config.focusProjectPath);
+      await window.electronAPI.updateConfig('projectMode', config.projectMode);
 
-      uiManager.appendMessage({
-        role: 'system',
-        content: '✓ 精灵配置已保存',
-      });
+      // IX-06 操作反馈走 toast，不污染对话历史
+      uiManager.showToast('精灵配置已保存', 'success');
     } catch (error) {
-      uiManager.appendMessage({
-        role: 'system',
-        content: `⚠️ 保存精灵配置失败：${toError(error).message}`,
-      });
+      uiManager.showToast(`保存精灵配置失败：${toError(error).message}`, 'error');
+    } finally {
+      // FD-08 恢复按钮状态
+      uiManager.setButtonLoading('btn-settings-save', false);
     }
   });
 
@@ -505,18 +606,15 @@ function setupSettingsPanel(): void {
   uiManager.onLlmConfigSave(async (payload) => {
     // 校验必填字段
     if (!payload.llm.provider || !payload.llm.model || !payload.llm.apiKey) {
-      uiManager.appendMessage({
-        role: 'system',
-        content: '⚠️ LLM 配置不完整：提供商、模型、API Key 为必填项',
-      });
+      uiManager.showToast('LLM 配置不完整：提供商、模型、API Key 为必填项', 'warning');
       return;
     }
 
+    // FD-08 进行中反馈：禁用保存按钮防止重复点击
+    uiManager.setButtonLoading('btn-settings-save', true, '保存中...');
     try {
-      uiManager.appendMessage({
-        role: 'system',
-        content: '正在保存 LLM 配置并初始化 Agent...',
-      });
+      // IX-06 进行中反馈走 toast（不自动消失，等结果出来后由成功/失败 toast 替换）
+      uiManager.showToast('正在保存 LLM 配置并初始化 Agent...', 'info', 0);
 
       const embeddingConfig = payload.embedding?.enabled
         ? {
@@ -538,21 +636,15 @@ function setupSettingsPanel(): void {
       );
 
       if (success) {
-        uiManager.appendMessage({
-          role: 'system',
-          content: '✓ LLM 配置已保存，Agent 已就绪',
-        });
+        uiManager.showToast('LLM 配置已保存，Agent 已就绪', 'success');
       } else {
-        uiManager.appendMessage({
-          role: 'system',
-          content: `⚠️ 初始化失败：${error}`,
-        });
+        uiManager.showToast(`初始化失败：${error}`, 'error');
       }
     } catch (error) {
-      uiManager.appendMessage({
-        role: 'system',
-        content: `⚠️ 保存 LLM 配置失败：${toError(error).message}`,
-      });
+      uiManager.showToast(`保存 LLM 配置失败：${toError(error).message}`, 'error');
+    } finally {
+      // FD-08 恢复按钮状态
+      uiManager.setButtonLoading('btn-settings-save', false);
     }
   });
 
@@ -573,6 +665,8 @@ function setupSettingsPanel(): void {
       return;
     }
 
+    // FD-08 进行中反馈：禁用测试按钮防止重复点击
+    uiManager.setButtonLoading('btn-llm-test', true, '测试中...');
     // 显示"测试中..."状态
     uiManager.showLlmTestResult({ success: false, error: '测试中...' });
     const startTime = Date.now();
@@ -586,6 +680,9 @@ function setupSettingsPanel(): void {
         success: false,
         error: toError(error).message,
       });
+    } finally {
+      // FD-08 恢复按钮状态
+      uiManager.setButtonLoading('btn-llm-test', false);
     }
   });
 }
@@ -604,9 +701,23 @@ async function loadConfig(): Promise<void> {
       fileWatcherPaths: Array.isArray(cfg.fileWatcherPaths) ? cfg.fileWatcherPaths : ['.'],
       fileWatcherDebounceMs: Number(cfg.fileWatcherDebounceMs) || 1000,
       defaultPersona: String(cfg.defaultPersona ?? ''),
+      // FD-04 项目模式字段
+      projectMode: cfg.projectMode === 'focus' ? 'focus' : 'smart',
+      focusProjectPath: String(cfg.focusProjectPath ?? ''),
     };
 
     uiManager.loadConfigToForm(formConfig);
+
+    // FD-04 加载项目列表到专注项目下拉框
+    try {
+      const { projects } = await window.electronAPI.listProjects();
+      uiManager.loadProjectsToForm(projects, formConfig.focusProjectPath);
+    } catch (err) {
+      console.error('[loadConfig] 加载项目列表失败:', err);
+    }
+
+    // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
+    uiManager.resetSettingsFormDirty();
   } catch (error) {
     console.error('[loadConfig] 加载精灵配置失败:', error);
   }
@@ -617,6 +728,8 @@ async function loadLlmConfig(): Promise<void> {
   try {
     const data = await window.electronAPI.getLlmConfig();
     uiManager.loadLlmConfigToForm(data);
+    // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
+    uiManager.resetSettingsFormDirty();
   } catch (error) {
     console.error('[loadLlmConfig] 加载 LLM 配置失败:', error);
   }
@@ -627,13 +740,12 @@ async function loadLlmConfig(): Promise<void> {
 /** 监听主进程 Agent 就绪通知（LLM 配置保存成功后触发） */
 function initAgentReadyListener(): void {
   window.electronAPI.onAgentReady(() => {
-    uiManager.appendMessage({
-      role: 'system',
-      content: '🎉 Agent 已就绪，可以开始对话了',
-    });
+    // IX-06 Agent 就绪是操作反馈（LLM 配置保存后触发），走 toast
+    uiManager.showToast('Agent 已就绪，可以开始对话了', 'success');
     // Agent 就绪后加载会话历史和初始数据
     void loadSessionHistory();
     void loadMemoryList();
     void loadPersonaList();
+    void loadDashboard();
   });
 }

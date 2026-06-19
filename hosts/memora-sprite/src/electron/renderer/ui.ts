@@ -89,6 +89,8 @@ export class UIManager {
   private btnSend: HTMLButtonElement;
   private btnStop: HTMLButtonElement;
   private badge: HTMLElement;
+  /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
+  private btnNewSession: HTMLButtonElement;
 
   // 记忆面板元素
   private memoryListEl: HTMLElement;
@@ -124,6 +126,8 @@ export class UIManager {
   private cfgWatcherPaths: HTMLInputElement;
   private cfgWatcherDebounce: HTMLInputElement;
   private cfgDefaultPersona: HTMLInputElement;
+  /** FD-04 项目模式：专注项目选择下拉框 */
+  private cfgFocusProject: HTMLSelectElement;
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -144,6 +148,8 @@ export class UIManager {
     this.btnSend = document.getElementById('btn-send') as HTMLButtonElement;
     this.btnStop = document.getElementById('btn-stop') as HTMLButtonElement;
     this.badge = document.getElementById('badge')!;
+    // FD-05 新建会话按钮
+    this.btnNewSession = document.getElementById('btn-new-session') as HTMLButtonElement;
 
     // 记忆面板
     this.memoryListEl = document.getElementById('memory-list')!;
@@ -181,6 +187,7 @@ export class UIManager {
     this.cfgWatcherPaths = document.getElementById('cfg-watcher-paths') as HTMLInputElement;
     this.cfgWatcherDebounce = document.getElementById('cfg-watcher-debounce') as HTMLInputElement;
     this.cfgDefaultPersona = document.getElementById('cfg-default-persona') as HTMLInputElement;
+    this.cfgFocusProject = document.getElementById('cfg-focus-project') as HTMLSelectElement;
 
     // 初始化 UI
     this.initEventListeners();
@@ -201,6 +208,8 @@ export class UIManager {
     // 按钮事件
     this.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
     this.addEventListener(this.btnStop, 'click', this.handleStopClick.bind(this));
+    // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
+    this.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
 
     // 导航事件
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
@@ -390,6 +399,52 @@ export class UIManager {
     this.btnStop.classList.add('hidden');
   }
 
+  /**
+   * FD-05 清空对话区消息
+   *
+   * 新会话创建后调用：清空当前对话区的所有消息显示，
+   * 并重置流式状态。历史会话保留在 SessionStore 中，可通过会话切换找回。
+   *
+   * 使用 while + removeChild 模式（对齐 project_memory 工程约定）。
+   */
+  clearMessages(): void {
+    while (this.messagesEl.firstChild) {
+      this.messagesEl.removeChild(this.messagesEl.firstChild);
+    }
+    this.streamingMessages.clear();
+    this.state.isStreaming = false;
+    this.btnSend.disabled = false;
+    this.btnStop.classList.add('hidden');
+  }
+
+  /**
+   * FD-08 设置按钮 loading 状态
+   *
+   * 异步操作进行中时禁用按钮并显示 loading 文本，防止用户重复点击。
+   * 操作完成后恢复按钮原始状态。
+   *
+   * @param buttonId 按钮 DOM ID
+   * @param loading 是否处于 loading 状态
+   * @param loadingText loading 时显示的文本（可选，默认在原文本前加 "..."）
+   */
+  setButtonLoading(buttonId: string, loading: boolean, loadingText?: string): void {
+    const btn = document.getElementById(buttonId) as HTMLButtonElement | null;
+    if (!btn) return;
+
+    if (loading) {
+      // 保存原始文本到 dataset，用于恢复
+      if (!btn.dataset.originalText) {
+        btn.dataset.originalText = btn.textContent ?? '';
+      }
+      btn.disabled = true;
+      btn.textContent = loadingText ?? `${btn.dataset.originalText}...`;
+    } else {
+      btn.disabled = false;
+      btn.textContent = btn.dataset.originalText ?? btn.textContent ?? '';
+      delete btn.dataset.originalText;
+    }
+  }
+
   // ─── 面板管理 ─────────────────────────────────────────
 
   /** 切换面板 */
@@ -500,6 +555,18 @@ export class UIManager {
     this.emitStopMessage();
   }
 
+  /**
+   * FD-05 新建会话按钮点击处理器
+   *
+   * 设计原则（对齐 user_rules "主动可见"）：
+   * - 低频但重要的操作，按钮始终可见，不依赖 hover
+   * - 触发回调由 renderer.ts 注册，调用主进程 session-new IPC
+   * - 确认对话框防止误操作（清空当前对话区是不可逆的，但历史保留在 SessionStore）
+   */
+  private handleNewSessionClick(): void {
+    this.newSessionCallback?.();
+  }
+
   private handleNavClick(e: Event): void {
     const btn = e.currentTarget as HTMLElement;
     const panel = btn.dataset.panel;
@@ -582,6 +649,8 @@ export class UIManager {
 
   private sendMessageCallback: (() => void) | null = null;
   private stopMessageCallback: (() => void) | null = null;
+  /** FD-05 新建会话回调（由 renderer.ts 注册） */
+  private newSessionCallback: (() => void) | null = null;
 
   /** 设置发送消息回调 */
   onSendMessage(callback: () => void): void {
@@ -591,6 +660,11 @@ export class UIManager {
   /** 设置停止消息回调 */
   onStopMessage(callback: () => void): void {
     this.stopMessageCallback = callback;
+  }
+
+  /** FD-05 注册新建会话回调 */
+  onNewSession(callback: () => void): void {
+    this.newSessionCallback = callback;
   }
 
   private emitSendMessage(): void {
@@ -862,14 +936,45 @@ export class UIManager {
     this.personaNameEl.textContent = name;
   }
 
+  /**
+   * IX-07 更新角色匹配模式标签
+   *
+   * 在角色选择器旁显示当前模式（auto/manual），
+   * 对齐 CLI /mode 查询能力，让 UI 用户也能一眼看到当前模式。
+   *
+   * @param mode 模式值：'auto' | 'manual'（其他值回退为 'auto'）
+   */
+  updatePersonaModeBadge(mode: string): void {
+    const badge = document.getElementById('persona-mode-badge');
+    if (!badge) return;
+
+    const normalizedMode = mode === 'manual' ? 'manual' : 'auto';
+    const label = normalizedMode === 'auto' ? '自动' : '手动';
+    const title = normalizedMode === 'auto'
+      ? '角色匹配模式：自动（根据上下文自动切换角色）'
+      : '角色匹配模式：手动（仅手动切换角色，不自动匹配）';
+
+    badge.textContent = label;
+    badge.title = title;
+    badge.classList.remove('auto', 'manual');
+    badge.classList.add(normalizedMode);
+  }
+
   // 角色切换回调
   private personaSwitchCallback: ((name: string) => void) | null = null;
+  /** IX-07 角色匹配模式变更回调（由 renderer.ts 注册，调用主进程持久化） */
+  private personaModeChangeCallback: ((mode: string) => void) | null = null;
 
   /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
   private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
 
   onPersonaSwitch(cb: (name: string) => void): void {
     this.personaSwitchCallback = cb;
+  }
+
+  /** IX-07 注册角色匹配模式变更回调 */
+  onPersonaModeChange(cb: (mode: string) => void): void {
+    this.personaModeChangeCallback = cb;
   }
 
   /** 注册召回记忆点击回调 */
@@ -879,21 +984,46 @@ export class UIManager {
 
   // ─── 设置面板 ─────────────────────────────────────────
 
+  /** FD-07 设置表单是否有未保存修改（dirty 标志） */
+  private settingsFormDirty = false;
+
   /** 初始化设置面板事件监听 */
   private initSettingsPanelListeners(): void {
     const btnSave = document.getElementById('btn-settings-save') as HTMLButtonElement;
     const btnCancel = document.getElementById('btn-settings-cancel') as HTMLButtonElement;
     const btnLlmTest = document.getElementById('btn-llm-test') as HTMLButtonElement | null;
 
+    // FD-07 监听设置面板所有表单元素的变更，标记 dirty
+    // 覆盖：精灵配置输入框 + LLM 配置输入框 + Embedding 配置 + 单选按钮 + 下拉框
+    const settingsPanel = document.getElementById('panel-settings');
+    if (settingsPanel) {
+      this.addEventListener(settingsPanel, 'input', () => {
+        this.settingsFormDirty = true;
+      });
+      this.addEventListener(settingsPanel, 'change', () => {
+        this.settingsFormDirty = true;
+      });
+    }
+
     // 保存按钮：同时收集精灵配置和 LLM 配置
     this.addEventListener(btnSave, 'click', () => {
       const spriteConfig = this.collectConfigFromForm();
       const llmConfig = this.collectLlmConfigFromForm();
+      // FD-07 保存后清除 dirty 标志
+      this.settingsFormDirty = false;
       this.configSaveCallback?.(spriteConfig);
       this.llmConfigSaveCallback?.(llmConfig);
     });
 
+    // FD-07 取消按钮：有未保存修改时确认，避免误点丢失修改
     this.addEventListener(btnCancel, 'click', () => {
+      if (this.settingsFormDirty) {
+        if (!window.confirm('有未保存的修改，确定要放弃吗？')) {
+          return;
+        }
+      }
+      // 清除 dirty 标志后执行取消回调（重新加载配置）
+      this.settingsFormDirty = false;
       this.configCancelCallback?.();
     });
 
@@ -911,6 +1041,37 @@ export class UIManager {
         this.llmTestCallback?.();
       });
     }
+
+    // FD-04 项目模式单选按钮：切换时启用/禁用专注项目下拉框
+    const projectModeRadios = document.querySelectorAll('input[name="project-mode"]');
+    projectModeRadios.forEach((radio) => {
+      this.addEventListener(radio as HTMLInputElement, 'change', () => {
+        const selectedMode = (radio as HTMLInputElement).value;
+        this.cfgFocusProject.disabled = selectedMode !== 'focus';
+      });
+    });
+
+    // IX-07 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
+    const personaModeRadios = document.querySelectorAll('input[name="persona-mode"]');
+    personaModeRadios.forEach((radio) => {
+      this.addEventListener(radio as HTMLInputElement, 'change', () => {
+        const selectedMode = (radio as HTMLInputElement).value;
+        this.currentPersonaMode = selectedMode;
+        this.updatePersonaModeBadge(selectedMode);
+        this.personaModeChangeCallback?.(selectedMode);
+      });
+    });
+  }
+
+  /**
+   * FD-07 重置 dirty 标志
+   *
+   * 在 loadConfigToForm / loadLlmConfigToForm 后由 renderer.ts 调用，
+   * 因为程序化设置表单值会触发 input/change 事件，需要重置 dirty 标志
+   * 以避免"取消"按钮误判为有修改。
+   */
+  resetSettingsFormDirty(): void {
+    this.settingsFormDirty = false;
   }
 
   /** 应用 LLM 预设到表单 */
@@ -999,6 +1160,31 @@ export class UIManager {
     if (modeRadio) {
       modeRadio.checked = true;
     }
+
+    // FD-04 项目模式（单选按钮 + 专注项目下拉框）
+    const projectModeRadio = document.querySelector(
+      `input[name="project-mode"][value="${config.projectMode}"]`,
+    ) as HTMLInputElement | null;
+    if (projectModeRadio) {
+      projectModeRadio.checked = true;
+    }
+    this.cfgFocusProject.disabled = config.projectMode !== 'focus';
+    // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
+  }
+
+  /** FD-04 加载项目列表到专注项目下拉框 */
+  loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void {
+    // 保留第一个占位选项
+    while (this.cfgFocusProject.options.length > 1) {
+      this.cfgFocusProject.remove(1);
+    }
+    for (const p of projects) {
+      const opt = document.createElement('option');
+      opt.value = p.path;
+      opt.textContent = `${p.name} (${p.path})`;
+      this.cfgFocusProject.appendChild(opt);
+    }
+    this.cfgFocusProject.value = selectedPath;
   }
 
   /** 当前角色匹配模式（由 renderer.ts 设置） */
@@ -1022,6 +1208,12 @@ export class UIManager {
     ) as HTMLInputElement | null;
     this.currentPersonaMode = modeRadio?.value ?? 'auto';
 
+    // FD-04 收集项目模式
+    const projectModeRadio = document.querySelector(
+      'input[name="project-mode"]:checked',
+    ) as HTMLInputElement | null;
+    const projectMode = (projectModeRadio?.value ?? 'smart') as 'smart' | 'focus';
+
     return {
       silentMode: this.cfgSilent.checked,
       proactiveThreshold: parseInt(this.cfgThreshold.value, 10) || 3,
@@ -1034,6 +1226,8 @@ export class UIManager {
         .filter((s) => s.length > 0),
       fileWatcherDebounceMs: parseInt(this.cfgWatcherDebounce.value, 10) || 1000,
       defaultPersona: this.cfgDefaultPersona.value.trim(),
+      projectMode,
+      focusProjectPath: projectMode === 'focus' ? this.cfgFocusProject.value : '',
     };
   }
 
@@ -1121,4 +1315,84 @@ export class UIManager {
   hideModal(modalId: string): void {
     document.getElementById(modalId)?.classList.add('hidden');
   }
+
+  // ─── IX-06 Toast 通知 ─────────────────────────────────
+
+  /** Toast 类型与图标映射 */
+  private static readonly TOAST_ICONS: Record<ToastType, string> = {
+    success: '✓',
+    error: '✗',
+    warning: '⚠',
+    info: 'ℹ',
+  };
+
+  /** Toast 默认自动消失时长（毫秒），error 类型不自动消失 */
+  private static readonly TOAST_DEFAULT_DURATION = 4000;
+
+  /**
+   * 显示 Toast 通知
+   *
+   * IX-06 设计原则：
+   * - 独立于对话历史（#messages），避免污染上下文
+   * - 操作反馈（保存成功/失败/警告）走 toast，对话内容走 #messages
+   * - error 类型不自动消失，需用户手动关闭，确保错误被看到
+   * - 同时最多显示 5 条，超出时移除最早的，避免堆积
+   *
+   * @param message 通知文本
+   * @param type 通知类型（默认 info）
+   * @param duration 自动消失时长（毫秒），0 表示不自动消失；默认按类型决定
+   */
+  showToast(message: string, type: ToastType = 'info', duration?: number): void {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    // 限制最多 5 条，移除最早的（FIFO）
+    while (container.children.length >= 5) {
+      container.firstChild?.remove();
+    }
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+
+    // 图标
+    const icon = document.createElement('span');
+    icon.className = 'toast-icon';
+    icon.textContent = UIManager.TOAST_ICONS[type];
+    toast.appendChild(icon);
+
+    // 内容
+    const content = document.createElement('div');
+    content.className = 'toast-content';
+    content.textContent = message;
+    toast.appendChild(content);
+
+    // 关闭按钮
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.textContent = '✕';
+    closeBtn.title = '关闭';
+    closeBtn.addEventListener('click', () => this.removeToast(toast));
+    toast.appendChild(closeBtn);
+
+    container.appendChild(toast);
+
+    // 自动消失（error 默认不消失，需用户手动关闭）
+    const autoDuration = duration ?? (type === 'error' ? 0 : UIManager.TOAST_DEFAULT_DURATION);
+    if (autoDuration > 0) {
+      setTimeout(() => this.removeToast(toast), autoDuration);
+    }
+  }
+
+  /** 移除 Toast（带离场动画） */
+  private removeToast(toast: HTMLElement): void {
+    if (!toast.parentElement) return;
+    toast.classList.add('leaving');
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  }
 }
+
+// ─── IX-06 Toast 类型定义 ─────────────────────────────────
+
+/** Toast 通知类型 */
+export type ToastType = 'success' | 'error' | 'warning' | 'info';

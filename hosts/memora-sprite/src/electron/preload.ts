@@ -53,6 +53,10 @@ export interface SpriteConfigForm {
   fileWatcherPaths: string[];
   fileWatcherDebounceMs: number;
   defaultPersona: string;
+  /** FD-04 项目模式：'smart'（智能）| 'focus'（专注） */
+  projectMode: 'smart' | 'focus';
+  /** FD-04 专注模式锁定的项目路径 */
+  focusProjectPath: string;
 }
 
 export interface ElectronAPI {
@@ -126,6 +130,14 @@ export interface ElectronAPI {
   listPersonas: () => Promise<{ personas: Array<{ name: string; description: string; active: boolean }> }>;
   switchPersona: (name: string) => Promise<{ switched: boolean; name: string | null }>;
   setPersonaMode: (mode: 'auto' | 'manual') => Promise<{ set: boolean }>;
+
+  // 项目（FD-04 项目模式）
+  /** 列出已注册项目（供专注模式选择器使用） */
+  listProjects: () => Promise<{ projects: Array<{ name: string; path: string }> }>;
+
+  // 会话（FD-05 新建会话）
+  /** 新建会话（生成时间戳会话名，切换到新会话） */
+  newSession: () => Promise<{ success: boolean; sessionName?: string; error?: string }>;
 
   // 窗口控制
   windowMinimize: () => void;
@@ -221,6 +233,24 @@ const electronAPI: ElectronAPI = {
   listPersonas: () => ipcRenderer.invoke('persona-list'),
   switchPersona: (name) => ipcRenderer.invoke('persona-switch', name),
   setPersonaMode: (mode) => ipcRenderer.invoke('persona-mode', mode),
+  /** IX-07 查询当前角色匹配模式 */
+  getPersonaMode: () => ipcRenderer.invoke('persona-mode-get') as Promise<{ mode: string }>,
+
+  // 项目（FD-04）
+  listProjects: () => ipcRenderer.invoke('projects-list'),
+
+  // 会话（FD-05）
+  newSession: () => ipcRenderer.invoke('session-new'),
+
+  // 仪表盘（FD-03）
+  getDashboard: () => ipcRenderer.invoke('dashboard-get') as Promise<{
+    total: number;
+    bySource: Record<string, number>;
+    suggestions: Array<{ name: string; source: string; reason: string; relevance: number }>;
+    pendingNotices: number;
+    proactiveThreshold: number;
+    registeredTriggers: string[];
+  }>,
 
   // 窗口
   windowMinimize: () => ipcRenderer.send('window-minimize'),

@@ -241,6 +241,17 @@ export class Sprite {
     return this.personaController.currentMode;
   }
 
+  // ─── 项目管理（FD-04 项目模式） ────────────────────────
+
+  /**
+   * 列出已注册项目（供 UI 项目模式选择器使用）
+   *
+   * FD-04 专注模式需要用户选择锁定项目，此方法返回 Agent 注册表中的项目列表。
+   */
+  listProjects(): Array<{ name: string; path: string }> {
+    return this.agent.listProjects().map((p) => ({ name: p.name, path: p.path }));
+  }
+
   /** 格式化角色列表为可读文本 */
   formatPersonas(): string {
     return this.personaController.format();
@@ -360,6 +371,46 @@ export class Sprite {
         silentMode: this.config.silentMode,
       });
     }
+
+    // FD-04 特殊处理：专注模式切换时调用 agent.switchProject 切换 Agent 上下文
+    // 专注模式锁定特定项目，其他项目的文件变化被忽略
+    if (key === 'projectMode' || key === 'focusProjectPath') {
+      this.applyProjectMode();
+    }
+  }
+
+  /**
+   * FD-04 应用项目模式
+   *
+   * - smart 模式：保持当前 projectPath（启动时设定），不切换
+   * - focus 模式：调用 agent.switchProject 切换到 focusProjectPath，
+   *   使 Agent 上下文（安全守卫 + 项目规则/技能）聚焦到锁定项目
+   *
+   * 注意：switchProject 是异步操作，此处不 await（updateConfig 是同步方法）。
+   * 切换在后台完成，失败时仅记录日志，不阻塞配置更新。
+   */
+  private applyProjectMode(): void {
+    if (this.config.projectMode !== 'focus') return;
+    const focusPath = this.config.focusProjectPath;
+    if (!focusPath) {
+      logger.warn('专注模式未设置 focusProjectPath，保持当前项目');
+      return;
+    }
+    // 异步切换，不阻塞配置更新
+    this.agent.switchProject(focusPath).then(() => {
+      logger.info({ focusPath }, '已切换到专注项目');
+      // 重建 FileWatcherTrigger 以监听新项目路径
+      if (this.config.fileWatcherEnabled) {
+        this.triggerBus.unregister('fileWatcher');
+        this.registerFileWatcher();
+        if (this.running) {
+          this.triggerBus.stop();
+          this.triggerBus.start();
+        }
+      }
+    }).catch((err: unknown) => {
+      logger.warn({ focusPath, err: toError(err).message }, '专注项目切换失败');
+    });
   }
 
   /**
@@ -423,6 +474,20 @@ export class Sprite {
       }
       return;
     }
+    // FD-04 项目模式枚举字段
+    if (key === 'projectMode') {
+      if (value === 'smart' || value === 'focus') {
+        this.config[key] = value;
+      }
+      return;
+    }
+    // FD-04 专注项目路径（字符串）
+    if (key === 'focusProjectPath') {
+      if (typeof value === 'string') {
+        this.config[key] = value;
+      }
+      return;
+    }
   }
 
   /** 格式化配置为可读文本 */
@@ -439,6 +504,12 @@ export class Sprite {
       lines.push(`  忽略模式：${this.config.fileWatcherIgnore.join(', ')}`);
       lines.push(`  防抖时间：${this.config.fileWatcherDebounceMs} 毫秒`);
     }
+    // FD-04 项目模式信息
+    const modeLabel = this.config.projectMode === 'focus' ? '专注模式' : '智能模式';
+    lines.push(`  项目模式：${modeLabel}`);
+    if (this.config.projectMode === 'focus' && this.config.focusProjectPath) {
+      lines.push(`  专注项目：${this.config.focusProjectPath}`);
+    }
     return lines.join('\n');
   }
 
@@ -447,6 +518,21 @@ export class Sprite {
   /** 获取记忆仪表盘数据 */
   dashboard(): DashboardData {
     return this.memoryController.dashboard();
+  }
+
+  /** FD-03 累积事件数（供 UI 仪表盘显示） */
+  get pendingCount(): number {
+    return this.proactiveEngine.pendingCount;
+  }
+
+  /** FD-03 主动提示阈值（供 UI 仪表盘显示） */
+  get proactiveThreshold(): number {
+    return this.config.proactiveThreshold;
+  }
+
+  /** FD-03 已注册触发器列表（供 UI 仪表盘显示） */
+  get registeredTriggers(): string[] {
+    return this.triggerBus.registeredTriggers;
   }
 
   /** 格式化仪表盘为可读文本 */

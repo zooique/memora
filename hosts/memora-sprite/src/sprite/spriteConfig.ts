@@ -38,6 +38,14 @@ export interface SpriteConfig {
   windowState?: 'tray' | 'float' | 'full';
   /** 浮动图标是否可见，默认 true */
   floatIconVisible?: boolean;
+  /**
+   * 项目模式（FD-04）：
+   * - 'smart'（默认）：智能模式，监听启动时的 projectPath，未来可扩展多项目自动识别
+   * - 'focus'：专注模式，锁定 focusProjectPath 指定的项目，其他项目的文件变化被忽略
+   */
+  projectMode?: 'smart' | 'focus';
+  /** 专注模式锁定的项目路径（绝对路径），仅 projectMode='focus' 时生效 */
+  focusProjectPath?: string;
 }
 
 /** 配置键名联合类型 */
@@ -57,6 +65,8 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   floatIconPosition: { x: -1, y: -1 },
   windowState: 'float',
   floatIconVisible: true,
+  projectMode: 'smart',
+  focusProjectPath: '',
 };
 
 /** 配置文件名 */

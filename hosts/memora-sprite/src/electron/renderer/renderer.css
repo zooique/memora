@@ -163,6 +163,29 @@ html, body {
   color: var(--overlay0);
 }
 
+/* IX-07 角色匹配模式标签（角色选择器旁，显示当前模式） */
+.mode-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--surface2);
+  color: var(--subtext);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* 自动模式：蓝色调 */
+.mode-badge.auto {
+  background: rgba(137, 180, 250, 0.2);
+  color: var(--blue);
+}
+
+/* 手动模式：绿色调 */
+.mode-badge.manual {
+  background: rgba(166, 227, 161, 0.2);
+  color: var(--green);
+}
+
 /* ─── 仪表盘 ───────────────────────────────────────────────── */
 #dashboard {
   padding: 12px;
@@ -203,6 +226,16 @@ html, body {
   0% { transform: scale(1); color: var(--accent); }
   50% { transform: scale(1.3); color: var(--pink); }
   100% { transform: scale(1); color: var(--accent); }
+}
+
+/* FD-03 累积事件接近阈值时高亮（黄色警告） */
+#dash-pending.near-threshold .dash-value {
+  color: var(--yellow);
+}
+
+/* FD-03 累积事件达到阈值时高亮（粉色，即将触发主动提示） */
+#dash-pending.at-threshold .dash-value {
+  color: var(--pink);
 }
 
 /* ─── 侧边栏导航 ────────────────────────────────────────────── */
@@ -264,6 +297,33 @@ html, body {
 #panel-chat {
   height: 100%;
   position: relative; /* 主动提示 banner 绝对定位的锚点 */
+}
+
+/**
+ * 对话工具栏：FD-05 新建会话按钮容器
+ * 置于对话面板顶部右侧，主动可见但不抢眼
+ */
+#chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--surface0);
+}
+
+#btn-new-session {
+  padding: 4px 12px;
+  border: 1px solid var(--surface2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--subtext0);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#btn-new-session:hover {
+  border-color: var(--blue);
+  color: var(--blue);
 }
 
 /**
@@ -1049,4 +1109,80 @@ html, body {
   gap: 8px;
   padding-top: 16px;
   border-top: 1px solid var(--surface1);
+}
+
+/* ─── IX-06 Toast 通知区域 ─────────────────────────────────── */
+/* 独立于对话历史，用于显示操作反馈（成功/失败/警告），自动消失 */
+#toast-container {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 2000;
+  pointer-events: none;
+  max-width: 360px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  pointer-events: auto;
+  animation: toast-slide-in 0.2s ease-out;
+}
+
+/* 语义变体：左侧色条区分类型 */
+.toast.success { border-left: 3px solid var(--green); }
+.toast.error   { border-left: 3px solid var(--red); }
+.toast.warning { border-left: 3px solid var(--yellow); }
+.toast.info    { border-left: 3px solid var(--blue); }
+
+.toast-icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.toast-content {
+  flex: 1;
+  word-break: break-word;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--subtext);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 0 0 0 4px;
+}
+
+.toast-close:hover {
+  color: var(--text);
+}
+
+.toast.leaving {
+  animation: toast-slide-out 0.2s ease-in forwards;
+}
+
+@keyframes toast-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes toast-slide-out {
+  from { transform: translateX(0); opacity: 1; }
+  to   { transform: translateX(100%); opacity: 0; }
 }
