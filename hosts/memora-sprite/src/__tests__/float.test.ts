@@ -17,6 +17,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { initFloatWindow, type FloatElectronAPI } from '../electron/renderer/float.js';
 
+/** 测试辅助：初始化浮动窗口并返回 cleanup 函数 */
+function setupFloat(mockAPI: FloatElectronAPI): () => void {
+  return initFloatWindow(mockAPI);
+}
+
 /** float.html 的 DOM 结构 */
 const FLOAT_HTML = `<!DOCTYPE html>
 <html><body>
@@ -98,7 +103,7 @@ afterEach(() => {
 
 describe('拖动检测', () => {
   it('移动超过 3px 阈值时触发拖动并调用 moveFloatWindow', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     // 鼠标按下（派发到 document，监听器注册在 document 上）
     document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
@@ -116,7 +121,7 @@ describe('拖动检测', () => {
   });
 
   it('移动未超过 3px 阈值时不触发拖动', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
       screenX: 100, screenY: 100, button: 0,
@@ -130,7 +135,7 @@ describe('拖动检测', () => {
   });
 
   it('拖动结束后保存位置', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
       screenX: 100, screenY: 100, button: 0,
@@ -148,7 +153,7 @@ describe('拖动检测', () => {
   });
 
   it('连续拖动时传递增量移动', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
       screenX: 100, screenY: 100,
@@ -171,7 +176,7 @@ describe('拖动检测', () => {
 
 describe('单击展开', () => {
   it('未拖动时单击展开为完整窗口', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
       screenX: 100, screenY: 100, button: 0,
@@ -193,7 +198,7 @@ describe('单击展开', () => {
 
 describe('右键菜单', () => {
   it('右键点击阻止默认行为并通知主进程', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     const event = new dom.window.MouseEvent('contextmenu', {
       button: 2, bubbles: true, cancelable: true,
@@ -208,7 +213,7 @@ describe('右键菜单', () => {
 
 describe('未读计数', () => {
   it('正数未读计数时显示徽章', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     expect(unreadCallback).not.toBeNull();
     unreadCallback!(5);
@@ -219,7 +224,7 @@ describe('未读计数', () => {
   });
 
   it('超过 99 时显示 99+', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     unreadCallback!(100);
 
@@ -228,7 +233,7 @@ describe('未读计数', () => {
   });
 
   it('计数为 0 时隐藏徽章', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     unreadCallback!(5);
     unreadCallback!(0);
@@ -243,7 +248,7 @@ describe('未读计数', () => {
 describe('精灵事件', () => {
   it('proactivePrompt 事件触发球体弹跳', () => {
     vi.useFakeTimers();
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     expect(spriteEventCallback).not.toBeNull();
     spriteEventCallback!({ type: 'proactivePrompt', payload: {} });
@@ -260,7 +265,7 @@ describe('精灵事件', () => {
 
   it('proactivePrompt 事件切换状态点为活跃', () => {
     vi.useFakeTimers();
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     spriteEventCallback!({ type: 'proactivePrompt', payload: {} });
 
@@ -275,7 +280,7 @@ describe('精灵事件', () => {
   });
 
   it('formUpdate 事件切换形态图片', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     spriteEventCallback!({
       type: 'formUpdate',
@@ -295,7 +300,7 @@ describe('精灵事件', () => {
 
 describe('拖动引导提示', () => {
   it('首次悬停时显示引导提示', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     const sphere = document.getElementById('sphere')!;
     const dragHint = document.getElementById('drag-hint')!;
@@ -307,7 +312,7 @@ describe('拖动引导提示', () => {
   });
 
   it('首次拖动后引导提示消失', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     // 拖动超过阈值
     document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
@@ -324,7 +329,7 @@ describe('拖动引导提示', () => {
   });
 
   it('首次单击后引导提示消失', () => {
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     // 单击（未超过阈值）
     document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
@@ -343,7 +348,7 @@ describe('拖动引导提示', () => {
     // 模拟已见过引导
     (dom.window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue('1');
 
-    initFloatWindow(mockAPI);
+    setupFloat(mockAPI);
 
     const sphere = document.getElementById('sphere')!;
     const dragHint = document.getElementById('drag-hint')!;
@@ -353,14 +358,84 @@ describe('拖动引导提示', () => {
   });
 });
 
-// ─── 元素缺失防护 ─────────────────────────────────────────
+// ─── 清理函数 ─────────────────────────────────────────────
+
+describe('清理函数', () => {
+  it('调用 cleanup 后事件监听器被移除，拖动不再触发', () => {
+    const cleanup = setupFloat(mockAPI);
+
+    // 先确认拖动正常工作
+    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
+      screenX: 100, screenY: 100, button: 0,
+    }));
+    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
+      screenX: 110, screenY: 100, button: 0, buttons: 1,
+    }));
+    expect(mockAPI.moveFloatWindow).toHaveBeenCalled();
+
+    // 重置 mock 并调用 cleanup
+    vi.clearAllMocks();
+    cleanup();
+
+    // cleanup 后拖动不应触发任何 API 调用
+    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
+      screenX: 100, screenY: 100, button: 0,
+    }));
+    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
+      screenX: 110, screenY: 100, button: 0, buttons: 1,
+    }));
+    document.dispatchEvent(new dom.window.MouseEvent('mouseup', {
+      screenX: 110, screenY: 100, button: 0,
+    }));
+
+    expect(mockAPI.moveFloatWindow).not.toHaveBeenCalled();
+    expect(mockAPI.saveFloatPosition).not.toHaveBeenCalled();
+    expect(mockAPI.expandToFull).not.toHaveBeenCalled();
+  });
+
+  it('调用 cleanup 后右键菜单不再触发', () => {
+    const cleanup = setupFloat(mockAPI);
+
+    cleanup();
+    vi.clearAllMocks();
+
+    const event = new dom.window.MouseEvent('contextmenu', {
+      button: 2, bubbles: true, cancelable: true,
+    });
+    document.dispatchEvent(event);
+
+    expect(mockAPI.showFloatContextMenu).not.toHaveBeenCalled();
+  });
+
+  it('调用 cleanup 后球体 mouseenter 事件被移除', () => {
+    const cleanup = setupFloat(mockAPI);
+
+    cleanup();
+
+    const sphere = document.getElementById('sphere')!;
+    const dragHint = document.getElementById('drag-hint')!;
+
+    // mouseenter 不再触发引导提示
+    sphere.dispatchEvent(new dom.window.Event('mouseenter'));
+    expect(dragHint.classList.contains('visible')).toBe(false);
+  });
+
+  it('cleanup 多次调用不抛异常', () => {
+    const cleanup = setupFloat(mockAPI);
+
+    expect(() => {
+      cleanup();
+      cleanup(); // 第二次调用不应抛异常
+    }).not.toThrow();
+  });
+});
 
 describe('元素缺失防护', () => {
   it('关键元素缺失时静默退出不抛异常', () => {
     // 清空 DOM 后初始化
     document.body.innerHTML = '';
 
-    expect(() => initFloatWindow(mockAPI)).not.toThrow();
+    expect(() => setupFloat(mockAPI)).not.toThrow();
     // 不注册任何事件监听
     expect(mockAPI.onFloatUnread).not.toHaveBeenCalled();
   });

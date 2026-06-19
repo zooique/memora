@@ -64,3 +64,10 @@ html, body {
 .hidden {
   display: none !important;
 }
+
+/* UI-IR-05 异步操作进行中反馈：半透明 + 禁用指针交互 */
+.loading {
+  opacity: 0.5;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}

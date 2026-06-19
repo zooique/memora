@@ -7,6 +7,8 @@
  * - 右键菜单
  * - 未读计数监听
  * - 精灵事件监听（主动提示弹跳 + 形态进化预留）
+ *
+ * 返回 cleanup 函数供调用方在窗口关闭时清理事件监听器和定时器。
  */
 
 /** 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供） */
@@ -26,19 +28,35 @@ const DRAG_HINT_SEEN_KEY = 'memora-drag-hint-seen';
  * 初始化浮动窗口交互逻辑
  *
  * @param electronAPI - preload.ts 暴露的 ElectronAPI 对象
+ * @returns 清理函数，调用后移除所有事件监听器并清除定时器
  */
-export function initFloatWindow(electronAPI: FloatElectronAPI): void {
+export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // ─── DOM 引用 ─────────────────────────────────────────
   const sphere = document.getElementById('sphere');
   const sphereEmoji = document.getElementById('sphere-emoji');
-  const sphereImage = document.getElementById('sphere-image') as HTMLImageElement;
+  const sphereImage = document.getElementById('sphere-image') as HTMLImageElement | null;
   const statusDot = document.getElementById('status-dot');
   const badge = document.getElementById('badge');
   const dragHint = document.getElementById('drag-hint');
 
   // 防护：关键元素缺失时静默退出（测试/非标准环境）
   if (!sphere || !statusDot || !badge) {
-    return;
+    return () => {}; // 空 cleanup
+  }
+
+  // 定时器追踪（用于 cleanup 时统一清理）
+  const activeTimers: ReturnType<typeof setTimeout>[] = [];
+
+  /** 安全的 setTimeout 包装，自动追踪定时器 */
+  function safeSetTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(() => {
+      fn();
+      // 执行后从追踪列表中移除
+      const idx = activeTimers.indexOf(timer);
+      if (idx !== -1) activeTimers.splice(idx, 1);
+    }, ms);
+    activeTimers.push(timer);
+    return timer;
   }
 
   // ─── FD-06 首次使用拖动引导 ───────────────────────────
@@ -53,8 +71,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
     if (hasShownDragHint || !dragHint) return;
     dragHint.classList.add('visible');
     // 5 秒后自动隐藏（避免长时间遮挡）
-    dragHintTimer = setTimeout(() => {
-      dragHint.classList.remove('visible');
+    dragHintTimer = safeSetTimeout(() => {
+      dragHint?.classList.remove('visible');
     }, 5000);
   }
 
@@ -73,9 +91,9 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
     }
   }
 
-  // 鼠标进入球体时显示引导（仅首次）
-  sphere.addEventListener('mouseenter', showDragHintIfFirstTime);
-  sphere.addEventListener('mouseleave', () => {
+  // 球体事件处理器（命名函数，便于 cleanup 时 removeEventListener）
+  const onSphereMouseEnter = showDragHintIfFirstTime;
+  const onSphereMouseLeave = () => {
     if (dragHintTimer) {
       clearTimeout(dragHintTimer);
       dragHintTimer = null;
@@ -83,7 +101,10 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
     if (dragHint) {
       dragHint.classList.remove('visible');
     }
-  });
+  };
+
+  sphere.addEventListener('mouseenter', onSphereMouseEnter);
+  sphere.addEventListener('mouseleave', onSphereMouseLeave);
 
   // ─── 拖动检测（方案 §5.4 排雷修正） ──────────────────────
   // 使用鼠标事件手动处理拖动，避免 -webkit-app-region: drag 吞掉单击事件
@@ -93,15 +114,16 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
   let lastScreenX = 0;
   let lastScreenY = 0;
 
-  document.addEventListener('mousedown', (e: MouseEvent) => {
+  // 命名函数引用（便于 cleanup 时 removeEventListener）
+  const onMouseDown = (e: MouseEvent) => {
     isDragging = false;
     startX = e.screenX;
     startY = e.screenY;
     lastScreenX = e.screenX;
     lastScreenY = e.screenY;
-  });
+  };
 
-  document.addEventListener('mousemove', (e: MouseEvent) => {
+  const onMouseMove = (e: MouseEvent) => {
     if (e.buttons !== 1) return; // 只处理左键按下
     const dx = e.screenX - startX;
     const dy = e.screenY - startY;
@@ -126,9 +148,9 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
       lastScreenX = e.screenX;
       lastScreenY = e.screenY;
     }
-  });
+  };
 
-  document.addEventListener('mouseup', () => {
+  const onMouseUp = () => {
     if (isDragging) {
       // 拖动结束，保存位置
       sphere.classList.remove('dragging');
@@ -140,15 +162,18 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
       electronAPI.expandToFull();
     }
     isDragging = false;
-  });
+  };
 
-  // ─── 右键菜单（方案 §5.4） ────────────────────────────
-  // 阻止默认右键菜单，通知主进程弹出原生 Menu
-  // 菜单项：展开窗口 / 静默模式 / 隐藏到托盘 / 退出
-  document.addEventListener('contextmenu', (e: Event) => {
+  // 右键菜单处理器
+  const onContextMenu = (e: Event) => {
     e.preventDefault();
     electronAPI.showFloatContextMenu();
-  });
+  };
+
+  document.addEventListener('mousedown', onMouseDown);
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+  document.addEventListener('contextmenu', onContextMenu);
 
   // ─── 未读计数监听 ──────────────────────────────────────
   electronAPI.onFloatUnread((count: number) => {
@@ -167,15 +192,15 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
     // 主动提示：球体弹跳动画 + 状态点切换
     if (event.type === 'proactivePrompt') {
       sphere.classList.add('bounce');
-      setTimeout(() => sphere.classList.remove('bounce'), 600);
+      safeSetTimeout(() => sphere.classList.remove('bounce'), 600);
 
       statusDot.classList.add('active');
       // 3 秒后恢复 idle
-      setTimeout(() => statusDot.classList.remove('active'), 3000);
+      safeSetTimeout(() => statusDot.classList.remove('active'), 3000);
     }
 
     // 阶段三形态进化预留：加载生成的形态图片
-    if (event.type === 'formUpdate' && event.payload?.imageUrl) {
+    if (event.type === 'formUpdate' && event.payload?.imageUrl && sphereImage) {
       sphereImage.src = event.payload.imageUrl;
       sphereImage.style.display = 'block';
       if (sphereEmoji) {
@@ -183,6 +208,19 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): void {
       }
     }
   });
+
+  // ─── 返回清理函数 ─────────────────────────────────────
+  return () => {
+    document.removeEventListener('mousedown', onMouseDown);
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+    document.removeEventListener('contextmenu', onContextMenu);
+    sphere.removeEventListener('mouseenter', onSphereMouseEnter);
+    sphere.removeEventListener('mouseleave', onSphereMouseLeave);
+    if (dragHintTimer) clearTimeout(dragHintTimer);
+    activeTimers.forEach(clearTimeout);
+    activeTimers.length = 0;
+  };
 }
 
 // 在 Electron 渲染进程中自动初始化

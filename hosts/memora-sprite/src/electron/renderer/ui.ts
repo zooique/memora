@@ -33,6 +33,9 @@ const MS_PER_MINUTE = 60_000;
  * 替代 `document.getElementById('id')!` 与 `as HTMLXxxElement`，
  * 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败。
  *
+ * **仅用于核心交互元素**（消息区、输入框、发送按钮、停止按钮）。
+ * 非核心元素请使用 `getOptionalElement`，避免单个面板缺失导致整个 UI 崩溃。
+ *
  * @param id 元素 id
  * @param tagName 期望的 HTML 标签名
  * @returns 类型安全的 DOM 元素
@@ -50,6 +53,35 @@ function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
     throw new Error(
       `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>`,
     );
+  }
+  return el as HTMLElementTagNameMap[T];
+}
+
+/**
+ * 获取可选的 DOM 元素，缺失时 warn 并返回 null（不阻塞其他功能）
+ *
+ * UI-IR-01：替代 `getRequiredElement` 用于非核心面板元素。
+ * 当 HTML 与 TS 不同步时，缺失的功能降级而非整个 UI 崩溃。
+ *
+ * @param id 元素 id
+ * @param tagName 期望的 HTML 标签名
+ * @returns 类型安全的 DOM 元素或 null
+ */
+function getOptionalElement<T extends keyof HTMLElementTagNameMap>(
+  id: string,
+  tagName: T,
+): HTMLElementTagNameMap[T] | null {
+  const el = document.getElementById(id);
+  if (!el) {
+    console.warn(`[UIManager] 可选的 DOM 元素 #${id} 未找到，相关功能将降级`);
+    return null;
+  }
+  // 运行时标签名校验
+  if (el.tagName.toLowerCase() !== tagName) {
+    console.warn(
+      `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>，相关功能将降级`,
+    );
+    return null;
   }
   return el as HTMLElementTagNameMap[T];
 }
@@ -116,51 +148,54 @@ export interface LlmConfigSavePayload {
 // ─── UI 管理器类 ─────────────────────────────────────────
 
 export class UIManager {
+  // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private btnSend: HTMLButtonElement;
   private btnStop: HTMLButtonElement;
+
+  // ─── 可选元素（缺失时降级，不阻塞其他功能） ────────────
   /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
   private badge: HTMLElement | null;
   /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
-  private btnNewSession: HTMLButtonElement;
+  private btnNewSession: HTMLButtonElement | null;
 
   // 记忆面板元素
-  private memoryListEl: HTMLElement;
-  private memorySearchEl: HTMLInputElement;
-  private memoryFilterSourceEl: HTMLSelectElement;
-  private memoryDetailModal: HTMLElement;
+  private memoryListEl: HTMLElement | null;
+  private memorySearchEl: HTMLInputElement | null;
+  private memoryFilterSourceEl: HTMLSelectElement | null;
+  private memoryDetailModal: HTMLElement | null;
 
   // 角色选择器元素
-  private personaSelectorEl: HTMLElement;
-  private personaDropdownEl: HTMLElement;
-  private personaNameEl: HTMLElement;
+  private personaSelectorEl: HTMLElement | null;
+  private personaDropdownEl: HTMLElement | null;
+  private personaNameEl: HTMLElement | null;
 
   // 设置面板元素 - LLM 配置
-  private cfgLlmPreset: HTMLSelectElement;
-  private cfgLlmProvider: HTMLInputElement;
-  private cfgLlmModel: HTMLInputElement;
-  private cfgLlmBaseUrl: HTMLInputElement;
-  private cfgLlmApiKey: HTMLInputElement;
-  private cfgLlmTemperature: HTMLInputElement;
+  private cfgLlmPreset: HTMLSelectElement | null;
+  private cfgLlmProvider: HTMLInputElement | null;
+  private cfgLlmModel: HTMLInputElement | null;
+  private cfgLlmBaseUrl: HTMLInputElement | null;
+  private cfgLlmApiKey: HTMLInputElement | null;
+  private cfgLlmTemperature: HTMLInputElement | null;
 
   // 设置面板元素 - Embedding 配置
-  private cfgEmbEnabled: HTMLInputElement;
-  private cfgEmbModel: HTMLInputElement;
-  private cfgEmbBaseUrl: HTMLInputElement;
-  private cfgEmbApiKey: HTMLInputElement;
+  private cfgEmbEnabled: HTMLInputElement | null;
+  private cfgEmbModel: HTMLInputElement | null;
+  private cfgEmbBaseUrl: HTMLInputElement | null;
+  private cfgEmbApiKey: HTMLInputElement | null;
 
   // 设置面板元素 - 精灵配置
-  private cfgSilent: HTMLInputElement;
-  private cfgThreshold: HTMLInputElement;
-  private cfgCooldown: HTMLInputElement;
-  private cfgInterval: HTMLInputElement;
-  private cfgWatcherEnabled: HTMLInputElement;
-  private cfgWatcherPaths: HTMLInputElement;
-  private cfgWatcherDebounce: HTMLInputElement;
-  private cfgDefaultPersona: HTMLInputElement;
+  private cfgSilent: HTMLInputElement | null;
+  private cfgThreshold: HTMLInputElement | null;
+  private cfgCooldown: HTMLInputElement | null;
+  private cfgInterval: HTMLInputElement | null;
+  private cfgWatcherEnabled: HTMLInputElement | null;
+  private cfgWatcherPaths: HTMLInputElement | null;
+  private cfgWatcherDebounce: HTMLInputElement | null;
+  private cfgDefaultPersona: HTMLInputElement | null;
   /** FD-04 项目模式：专注项目选择下拉框 */
-  private cfgFocusProject: HTMLSelectElement;
+  private cfgFocusProject: HTMLSelectElement | null;
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -175,50 +210,51 @@ export class UIManager {
   private llmPresets: Record<string, { provider: string; model: string; baseUrl: string }> = {};
 
   constructor() {
-    // 获取 DOM 元素引用：使用 getRequiredElement 替代 !/as，初始化失败时给出明确错误
+    // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
     this.messagesEl = getRequiredElement('messages', 'div');
     this.inputEl = getRequiredElement('input', 'textarea');
     this.btnSend = getRequiredElement('btn-send', 'button');
     this.btnStop = getRequiredElement('btn-stop', 'button');
+
+    // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
-    // FD-05 新建会话按钮
-    this.btnNewSession = getRequiredElement('btn-new-session', 'button');
+    this.btnNewSession = getOptionalElement('btn-new-session', 'button');
 
     // 记忆面板
-    this.memoryListEl = getRequiredElement('memory-list', 'div');
-    this.memorySearchEl = getRequiredElement('memory-search', 'input');
-    this.memoryFilterSourceEl = getRequiredElement('memory-filter-source', 'select');
-    this.memoryDetailModal = getRequiredElement('memory-detail-modal', 'div');
+    this.memoryListEl = getOptionalElement('memory-list', 'div');
+    this.memorySearchEl = getOptionalElement('memory-search', 'input');
+    this.memoryFilterSourceEl = getOptionalElement('memory-filter-source', 'select');
+    this.memoryDetailModal = getOptionalElement('memory-detail-modal', 'div');
 
     // 角色选择器
-    this.personaSelectorEl = getRequiredElement('persona-selector', 'div');
-    this.personaDropdownEl = getRequiredElement('persona-dropdown', 'div');
-    this.personaNameEl = getRequiredElement('persona-name', 'span');
+    this.personaSelectorEl = getOptionalElement('persona-selector', 'div');
+    this.personaDropdownEl = getOptionalElement('persona-dropdown', 'div');
+    this.personaNameEl = getOptionalElement('persona-name', 'span');
 
     // 设置面板 - LLM 配置
-    this.cfgLlmPreset = getRequiredElement('cfg-llm-preset', 'select');
-    this.cfgLlmProvider = getRequiredElement('cfg-llm-provider', 'input');
-    this.cfgLlmModel = getRequiredElement('cfg-llm-model', 'input');
-    this.cfgLlmBaseUrl = getRequiredElement('cfg-llm-base-url', 'input');
-    this.cfgLlmApiKey = getRequiredElement('cfg-llm-api-key', 'input');
-    this.cfgLlmTemperature = getRequiredElement('cfg-llm-temperature', 'input');
+    this.cfgLlmPreset = getOptionalElement('cfg-llm-preset', 'select');
+    this.cfgLlmProvider = getOptionalElement('cfg-llm-provider', 'input');
+    this.cfgLlmModel = getOptionalElement('cfg-llm-model', 'input');
+    this.cfgLlmBaseUrl = getOptionalElement('cfg-llm-base-url', 'input');
+    this.cfgLlmApiKey = getOptionalElement('cfg-llm-api-key', 'input');
+    this.cfgLlmTemperature = getOptionalElement('cfg-llm-temperature', 'input');
 
     // 设置面板 - Embedding 配置
-    this.cfgEmbEnabled = getRequiredElement('cfg-emb-enabled', 'input');
-    this.cfgEmbModel = getRequiredElement('cfg-emb-model', 'input');
-    this.cfgEmbBaseUrl = getRequiredElement('cfg-emb-base-url', 'input');
-    this.cfgEmbApiKey = getRequiredElement('cfg-emb-api-key', 'input');
+    this.cfgEmbEnabled = getOptionalElement('cfg-emb-enabled', 'input');
+    this.cfgEmbModel = getOptionalElement('cfg-emb-model', 'input');
+    this.cfgEmbBaseUrl = getOptionalElement('cfg-emb-base-url', 'input');
+    this.cfgEmbApiKey = getOptionalElement('cfg-emb-api-key', 'input');
 
     // 设置面板 - 精灵配置
-    this.cfgSilent = getRequiredElement('cfg-silent', 'input');
-    this.cfgThreshold = getRequiredElement('cfg-threshold', 'input');
-    this.cfgCooldown = getRequiredElement('cfg-cooldown', 'input');
-    this.cfgInterval = getRequiredElement('cfg-interval', 'input');
-    this.cfgWatcherEnabled = getRequiredElement('cfg-watcher-enabled', 'input');
-    this.cfgWatcherPaths = getRequiredElement('cfg-watcher-paths', 'input');
-    this.cfgWatcherDebounce = getRequiredElement('cfg-watcher-debounce', 'input');
-    this.cfgDefaultPersona = getRequiredElement('cfg-default-persona', 'input');
-    this.cfgFocusProject = getRequiredElement('cfg-focus-project', 'select');
+    this.cfgSilent = getOptionalElement('cfg-silent', 'input');
+    this.cfgThreshold = getOptionalElement('cfg-threshold', 'input');
+    this.cfgCooldown = getOptionalElement('cfg-cooldown', 'input');
+    this.cfgInterval = getOptionalElement('cfg-interval', 'input');
+    this.cfgWatcherEnabled = getOptionalElement('cfg-watcher-enabled', 'input');
+    this.cfgWatcherPaths = getOptionalElement('cfg-watcher-paths', 'input');
+    this.cfgWatcherDebounce = getOptionalElement('cfg-watcher-debounce', 'input');
+    this.cfgDefaultPersona = getOptionalElement('cfg-default-persona', 'input');
+    this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
 
     // 初始化 UI
     this.initEventListeners();
@@ -242,29 +278,28 @@ export class UIManager {
     this.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
     this.addEventListener(this.btnStop, 'click', this.handleStopClick.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
-    this.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
+    if (this.btnNewSession) {
+      this.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
+    }
 
     // 导航事件
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
       this.addEventListener(btn, 'click', this.handleNavClick.bind(this));
     });
 
-    // 标题栏事件
-    this.addEventListener(
-      getRequiredElement('btn-minimize', 'button'),
-      'click',
-      this.handleMinimize.bind(this),
-    );
-    this.addEventListener(
-      getRequiredElement('btn-maximize', 'button'),
-      'click',
-      this.handleMaximize.bind(this),
-    );
-    this.addEventListener(
-      getRequiredElement('btn-close', 'button'),
-      'click',
-      this.handleClose.bind(this),
-    );
+    // 标题栏按钮（可选，部分布局可能不提供）
+    const btnMinimize = getOptionalElement('btn-minimize', 'button');
+    const btnMaximize = getOptionalElement('btn-maximize', 'button');
+    const btnClose = getOptionalElement('btn-close', 'button');
+    if (btnMinimize) {
+      this.addEventListener(btnMinimize, 'click', this.handleMinimize.bind(this));
+    }
+    if (btnMaximize) {
+      this.addEventListener(btnMaximize, 'click', this.handleMaximize.bind(this));
+    }
+    if (btnClose) {
+      this.addEventListener(btnClose, 'click', this.handleClose.bind(this));
+    }
 
     // 全局键盘快捷键
     this.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
@@ -687,6 +722,47 @@ export class UIManager {
     }
   }
 
+  /**
+   * UI-IR-05 设置输入框 loading 状态
+   *
+   * 异步操作进行中时禁用输入框，防止用户重复触发。
+   * 适用于记忆搜索框、角色选择器等输入元素。
+   *
+   * @param inputId 输入框 DOM ID
+   * @param loading 是否处于 loading 状态
+   */
+  setInputLoading(inputId: string, loading: boolean): void {
+    const el = document.getElementById(inputId);
+    if (!(el instanceof HTMLInputElement) && !(el instanceof HTMLTextAreaElement) && !(el instanceof HTMLSelectElement)) return;
+
+    if (loading) {
+      el.dataset.loadingDisabled = 'true';
+      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = true;
+    } else {
+      delete el.dataset.loadingDisabled;
+      (el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled = false;
+    }
+  }
+
+  /**
+   * UI-IR-05 设置元素 loading 状态（通用方法）
+   *
+   * 为任意元素添加/移除 loading 类，用于视觉反馈。
+   * 适用于角色选择器、记忆列表等容器元素。
+   *
+   * @param elementId 元素 DOM ID
+   * @param loading 是否处于 loading 状态
+   */
+  setElementLoading(elementId: string, loading: boolean): void {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    if (loading) {
+      el.classList.add('loading');
+    } else {
+      el.classList.remove('loading');
+    }
+  }
+
   // ─── 面板管理 ─────────────────────────────────────────
 
   /** 切换面板 */
@@ -811,11 +887,9 @@ export class UIManager {
 
   /**
    * 监听消息区滚动，更新 isNearBottom 状态
-   *
-   * 在 initEventListeners 中注册。
    */
   private initScrollListener(): void {
-    this.messagesEl.addEventListener('scroll', () => {
+    this.addEventListener(this.messagesEl, 'scroll', () => {
       const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
       this.isNearBottom = scrollHeight - scrollTop - clientHeight < UIManager.SCROLL_BOTTOM_THRESHOLD;
     });
@@ -986,49 +1060,57 @@ export class UIManager {
 
   /** 初始化记忆面板事件监听 */
   private initMemoryPanelListeners(): void {
+    // 记忆面板元素缺失时静默降级（不阻塞其他功能）
+    if (!this.memorySearchEl || !this.memoryFilterSourceEl) return;
+
     // 搜索框：输入时触发搜索（带防抖）
     let searchTimer: ReturnType<typeof setTimeout> | null = null;
     this.addEventListener(this.memorySearchEl, 'input', () => {
       if (searchTimer) clearTimeout(searchTimer);
       searchTimer = setTimeout(() => {
-        this.memorySearchCallback?.(this.memorySearchEl.value.trim());
+        this.memorySearchCallback?.(this.memorySearchEl!.value.trim());
       }, 300);
     });
 
     // source 筛选变更
     this.addEventListener(this.memoryFilterSourceEl, 'change', () => {
-      this.memoryFilterCallback?.(this.memoryFilterSourceEl.value);
+      this.memoryFilterCallback?.(this.memoryFilterSourceEl!.value);
     });
 
-    // 添加按钮
-    const btnAdd = getRequiredElement('btn-add-memory', 'button');
-    this.addEventListener(btnAdd, 'click', () => {
-      this.showModal('memory-add-modal');
-    });
-
-    // 添加确认按钮
-    const btnAddConfirm = getRequiredElement('btn-memory-add-confirm', 'button');
-    this.addEventListener(btnAddConfirm, 'click', () => {
-      const data = this.getAddMemoryFormData();
-      if (data) {
-        this.memoryAddCallback?.(data);
-      }
-    });
-
-    // 删除按钮（带确认对话框，防止误删不可恢复数据）
-    const btnDelete = getRequiredElement('btn-memory-delete', 'button');
-    this.addEventListener(btnDelete, 'click', async () => {
-      // 确认删除：记忆是持久化数据，删除后不可恢复，需二次确认
-      // 使用自定义确认弹窗替代 window.confirm，提供一致的视觉体验
-      const confirmed = await this.showConfirmDialog({
-        title: '删除记忆',
-        message: '确定要删除这条记忆吗？此操作不可撤销。',
-        confirmText: '删除',
-        danger: true,
+    // 添加按钮（可选）
+    const btnAdd = getOptionalElement('btn-add-memory', 'button');
+    if (btnAdd) {
+      this.addEventListener(btnAdd, 'click', () => {
+        this.showModal('memory-add-modal');
       });
-      if (!confirmed) return;
-      this.memoryDeleteCallback?.();
-    });
+    }
+
+    // 添加确认按钮（可选）
+    const btnAddConfirm = getOptionalElement('btn-memory-add-confirm', 'button');
+    if (btnAddConfirm) {
+      this.addEventListener(btnAddConfirm, 'click', () => {
+        const data = this.getAddMemoryFormData();
+        if (data) {
+          this.memoryAddCallback?.(data);
+        }
+      });
+    }
+
+    // 删除按钮（可选，带确认对话框，防止误删不可恢复数据）
+    const btnDelete = getOptionalElement('btn-memory-delete', 'button');
+    if (btnDelete) {
+      this.addEventListener(btnDelete, 'click', async () => {
+        // 确认删除：记忆是持久化数据，删除后不可恢复，需二次确认
+        const confirmed = await this.showConfirmDialog({
+          title: '删除记忆',
+          message: '确定要删除这条记忆吗？此操作不可撤销。',
+          confirmText: '删除',
+          danger: true,
+        });
+        if (!confirmed) return;
+        this.memoryDeleteCallback?.();
+      });
+    }
   }
 
   /**
@@ -1045,6 +1127,9 @@ export class UIManager {
    *   </div>
    */
   renderMemoryList(memories: MemoryListItem[]): void {
+    // 记忆面板元素缺失时静默降级
+    if (!this.memoryListEl) return;
+
     // 安全清空容器（使用 clearElement 统一封装 while + removeChild 模式）
     this.clearElement(this.memoryListEl);
 
@@ -1112,21 +1197,25 @@ export class UIManager {
 
   /** 显示记忆详情 */
   showMemoryDetail(memory: MemoryDetail): void {
-    const nameEl = getRequiredElement('memory-detail-name', 'h3');
-    const sourceEl = getRequiredElement('memory-detail-source', 'code');
-    const scoreEl = getRequiredElement('memory-detail-score', 'span');
-    const createdEl = getRequiredElement('memory-detail-created', 'span');
-    const accessedEl = getRequiredElement('memory-detail-accessed', 'span');
-    const contentEl = getRequiredElement('memory-detail-content', 'pre');
+    if (!this.memoryDetailModal) return;
 
-    nameEl.textContent = memory.name;
-    sourceEl.textContent = memory.source;
-    // source 标签颜色区分（与列表保持一致）
-    sourceEl.className = `source-${this.getSourceColorClass(memory.source)}`;
-    scoreEl.textContent = memory.score.toFixed(2);
-    createdEl.textContent = memory.createdAt;
-    accessedEl.textContent = memory.accessedAt;
-    contentEl.textContent = memory.content;
+    const nameEl = getOptionalElement('memory-detail-name', 'h3');
+    const sourceEl = getOptionalElement('memory-detail-source', 'code');
+    const scoreEl = getOptionalElement('memory-detail-score', 'span');
+    const createdEl = getOptionalElement('memory-detail-created', 'span');
+    const accessedEl = getOptionalElement('memory-detail-accessed', 'span');
+    const contentEl = getOptionalElement('memory-detail-content', 'pre');
+
+    if (nameEl) nameEl.textContent = memory.name;
+    if (sourceEl) {
+      sourceEl.textContent = memory.source;
+      // source 标签颜色区分（与列表保持一致）
+      sourceEl.className = `source-${this.getSourceColorClass(memory.source)}`;
+    }
+    if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
+    if (createdEl) createdEl.textContent = memory.createdAt;
+    if (accessedEl) accessedEl.textContent = memory.accessedAt;
+    if (contentEl) contentEl.textContent = memory.content;
 
     // 记录当前查看的记忆 ID（供删除按钮使用）
     this.memoryDetailModal.dataset.memoryId = memory.id;
@@ -1154,9 +1243,14 @@ export class UIManager {
 
   /** 获取添加记忆表单数据 */
   private getAddMemoryFormData(): { source: string; name: string; content: string } | null {
-    const source = getRequiredElement('memory-add-source', 'input').value.trim();
-    const name = getRequiredElement('memory-add-name', 'input').value.trim();
-    const content = getRequiredElement('memory-add-content', 'textarea').value.trim();
+    const sourceEl = getOptionalElement('memory-add-source', 'input');
+    const nameEl = getOptionalElement('memory-add-name', 'input');
+    const contentEl = getOptionalElement('memory-add-content', 'textarea');
+    if (!sourceEl || !nameEl || !contentEl) return null;
+
+    const source = sourceEl.value.trim();
+    const name = nameEl.value.trim();
+    const content = contentEl.value.trim();
 
     if (!source || !name || !content) {
       return null;
@@ -1166,14 +1260,17 @@ export class UIManager {
 
   /** 清空添加记忆表单 */
   clearAddMemoryForm(): void {
-    getRequiredElement('memory-add-source', 'input').value = '';
-    getRequiredElement('memory-add-name', 'input').value = '';
-    getRequiredElement('memory-add-content', 'textarea').value = '';
+    const sourceEl = getOptionalElement('memory-add-source', 'input');
+    const nameEl = getOptionalElement('memory-add-name', 'input');
+    const contentEl = getOptionalElement('memory-add-content', 'textarea');
+    if (sourceEl) sourceEl.value = '';
+    if (nameEl) nameEl.value = '';
+    if (contentEl) contentEl.value = '';
   }
 
   /** 获取当前查看的记忆 ID（供删除使用） */
   getCurrentMemoryId(): string | null {
-    return this.memoryDetailModal.dataset.memoryId ?? null;
+    return this.memoryDetailModal?.dataset.memoryId ?? null;
   }
 
   // 记忆面板回调
@@ -1205,22 +1302,29 @@ export class UIManager {
 
   /** 初始化角色选择器事件监听 */
   private initPersonaSelectorListeners(): void {
+    if (!this.personaSelectorEl || !this.personaDropdownEl) return;
+
     // 点击选择器切换下拉菜单
     this.addEventListener(this.personaSelectorEl, 'click', (e) => {
       e.stopPropagation();
-      this.personaDropdownEl.classList.toggle('hidden');
+      this.personaDropdownEl!.classList.toggle('hidden');
     });
 
-    // 点击页面其他区域关闭下拉菜单
-    document.addEventListener('click', () => {
-      this.personaDropdownEl.classList.add('hidden');
+    // 点击页面其他区域关闭下拉菜单（走统一清理机制）
+    this.addEventListener(document, 'click', () => {
+      this.personaDropdownEl?.classList.add('hidden');
     });
   }
 
   /** 渲染角色下拉菜单 */
   renderPersonaDropdown(personas: PersonaItem[]): void {
+    if (!this.personaDropdownEl) return;
+
+    // 捕获局部引用，避免闭包中的 null 检查问题
+    const dropdown = this.personaDropdownEl;
+
     // 安全清空容器（与 renderMemoryList 保持一致，使用 clearElement 封装）
-    this.clearElement(this.personaDropdownEl);
+    this.clearElement(dropdown);
 
     for (const p of personas) {
       const item = document.createElement('div');
@@ -1231,10 +1335,10 @@ export class UIManager {
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         this.personaSwitchCallback?.(p.name);
-        this.personaDropdownEl.classList.add('hidden');
+        dropdown.classList.add('hidden');
       });
 
-      this.personaDropdownEl.appendChild(item);
+      dropdown.appendChild(item);
     }
 
     // 更新角色计数
@@ -1246,7 +1350,9 @@ export class UIManager {
 
   /** 更新当前角色显示 */
   updateActivePersona(name: string): void {
-    this.personaNameEl.textContent = name;
+    if (this.personaNameEl) {
+      this.personaNameEl.textContent = name;
+    }
   }
 
   /**
@@ -1302,16 +1408,18 @@ export class UIManager {
 
   /** 初始化设置面板事件监听 */
   private initSettingsPanelListeners(): void {
-    const btnSave = getRequiredElement('btn-settings-save', 'button');
-    const btnCancel = getRequiredElement('btn-settings-cancel', 'button');
+    const btnSave = getOptionalElement('btn-settings-save', 'button');
+    const btnCancel = getOptionalElement('btn-settings-cancel', 'button');
     const btnLlmTest = document.getElementById('btn-llm-test');
+
+    // 设置面板核心元素缺失时静默降级
+    if (!btnSave && !btnCancel) return;
 
     // API Key 显示/隐藏切换：LLM + Embedding
     this.initApiKeyToggle('btn-toggle-llm-key', 'cfg-llm-api-key');
     this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
 
     // FD-07 监听设置面板所有表单元素的变更，标记 dirty
-    // 覆盖：精灵配置输入框 + LLM 配置输入框 + Embedding 配置 + 单选按钮 + 下拉框
     const settingsPanel = document.getElementById('panel-settings');
     if (settingsPanel) {
       this.addEventListener(settingsPanel, 'input', () => {
@@ -1323,41 +1431,45 @@ export class UIManager {
     }
 
     // 保存按钮：同时收集精灵配置和 LLM 配置
-    this.addEventListener(btnSave, 'click', () => {
-      const spriteConfig = this.collectConfigFromForm();
-      const llmConfig = this.collectLlmConfigFromForm();
-      // FD-07 保存后清除 dirty 标志
-      this.settingsFormDirty = false;
-      this.configSaveCallback?.(spriteConfig);
-      this.llmConfigSaveCallback?.(llmConfig);
-    });
+    if (btnSave) {
+      this.addEventListener(btnSave, 'click', () => {
+        const spriteConfig = this.collectConfigFromForm();
+        const llmConfig = this.collectLlmConfigFromForm();
+        // FD-07 保存后清除 dirty 标志
+        this.settingsFormDirty = false;
+        this.configSaveCallback?.(spriteConfig);
+        this.llmConfigSaveCallback?.(llmConfig);
+      });
+    }
 
     // FD-07 取消按钮：有未保存修改时确认，避免误点丢失修改
-    this.addEventListener(btnCancel, 'click', async () => {
-      if (this.settingsFormDirty) {
-        // 使用自定义确认弹窗替代 window.confirm
-        const confirmed = await this.showConfirmDialog({
-          title: '放弃修改',
-          message: '有未保存的修改，确定要放弃吗？',
-          confirmText: '放弃',
-          danger: true,
-        });
-        if (!confirmed) {
-          return;
+    if (btnCancel) {
+      this.addEventListener(btnCancel, 'click', async () => {
+        if (this.settingsFormDirty) {
+          const confirmed = await this.showConfirmDialog({
+            title: '放弃修改',
+            message: '有未保存的修改，确定要放弃吗？',
+            confirmText: '放弃',
+            danger: true,
+          });
+          if (!confirmed) {
+            return;
+          }
         }
-      }
-      // 清除 dirty 标志后执行取消回调（重新加载配置）
-      this.settingsFormDirty = false;
-      this.configCancelCallback?.();
-    });
+        this.settingsFormDirty = false;
+        this.configCancelCallback?.();
+      });
+    }
 
     // LLM 预设切换：自动填充 provider/model/baseUrl
-    this.addEventListener(this.cfgLlmPreset, 'change', () => {
-      const presetKey = this.cfgLlmPreset.value;
-      if (presetKey) {
-        this.applyLlmPreset(presetKey);
-      }
-    });
+    if (this.cfgLlmPreset) {
+      this.addEventListener(this.cfgLlmPreset, 'change', () => {
+        const presetKey = this.cfgLlmPreset!.value;
+        if (presetKey) {
+          this.applyLlmPreset(presetKey);
+        }
+      });
+    }
 
     // LLM 连接测试按钮：调用主进程验证配置
     if (btnLlmTest) {
@@ -1370,7 +1482,9 @@ export class UIManager {
     const projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
     projectModeRadios.forEach((radio) => {
       this.addEventListener(radio, 'change', () => {
-        this.cfgFocusProject.disabled = radio.value !== 'focus';
+        if (this.cfgFocusProject) {
+          this.cfgFocusProject.disabled = radio.value !== 'focus';
+        }
       });
     });
 
@@ -1427,7 +1541,7 @@ export class UIManager {
   /** 应用 LLM 预设到表单 */
   private applyLlmPreset(key: string): void {
     const preset = this.llmPresets[key];
-    if (preset) {
+    if (preset && this.cfgLlmProvider && this.cfgLlmModel && this.cfgLlmBaseUrl) {
       this.cfgLlmProvider.value = preset.provider;
       this.cfgLlmModel.value = preset.model;
       this.cfgLlmBaseUrl.value = preset.baseUrl;
@@ -1446,46 +1560,48 @@ export class UIManager {
     this.llmPresets = data.presets ?? {};
 
     if (data.config) {
-      this.cfgLlmProvider.value = data.config.provider;
-      this.cfgLlmModel.value = data.config.model;
-      this.cfgLlmBaseUrl.value = data.config.baseUrl;
-      this.cfgLlmApiKey.value = data.config.apiKey;
-      this.cfgLlmTemperature.value = String(data.config.temperature);
+      if (this.cfgLlmProvider) this.cfgLlmProvider.value = data.config.provider;
+      if (this.cfgLlmModel) this.cfgLlmModel.value = data.config.model;
+      if (this.cfgLlmBaseUrl) this.cfgLlmBaseUrl.value = data.config.baseUrl;
+      if (this.cfgLlmApiKey) this.cfgLlmApiKey.value = data.config.apiKey;
+      if (this.cfgLlmTemperature) this.cfgLlmTemperature.value = String(data.config.temperature);
 
       // 反向匹配预设
-      const presetKey = Object.entries(data.presets).find(
-        ([, p]) => p.provider === data.config?.provider && p.model === data.config.model,
-      )?.[0];
-      this.cfgLlmPreset.value = presetKey ?? '';
+      if (this.cfgLlmPreset) {
+        const presetKey = Object.entries(data.presets).find(
+          ([, p]) => p.provider === data.config?.provider && p.model === data.config.model,
+        )?.[0];
+        this.cfgLlmPreset.value = presetKey ?? '';
+      }
     }
 
     if (data.embedding) {
-      this.cfgEmbEnabled.checked = true;
-      this.cfgEmbModel.value = data.embedding.model;
-      this.cfgEmbBaseUrl.value = data.embedding.baseUrl;
-      this.cfgEmbApiKey.value = data.embedding.apiKey;
+      if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = true;
+      if (this.cfgEmbModel) this.cfgEmbModel.value = data.embedding.model;
+      if (this.cfgEmbBaseUrl) this.cfgEmbBaseUrl.value = data.embedding.baseUrl;
+      if (this.cfgEmbApiKey) this.cfgEmbApiKey.value = data.embedding.apiKey;
     } else {
-      this.cfgEmbEnabled.checked = false;
+      if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = false;
     }
   }
 
   /** 收集表单中的 LLM 配置 */
   collectLlmConfigFromForm(): LlmConfigSavePayload {
     const llm: LlmConfigForm = {
-      provider: this.cfgLlmProvider.value.trim(),
-      model: this.cfgLlmModel.value.trim(),
-      baseUrl: this.cfgLlmBaseUrl.value.trim(),
-      apiKey: this.cfgLlmApiKey.value.trim(),
-      temperature: parseFloat(this.cfgLlmTemperature.value) || 0.7,
+      provider: this.cfgLlmProvider?.value.trim() ?? '',
+      model: this.cfgLlmModel?.value.trim() ?? '',
+      baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
+      apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
+      temperature: parseFloat(this.cfgLlmTemperature?.value ?? '0.7') || 0.7,
     };
 
     let embedding: EmbeddingConfigForm | null = null;
-    if (this.cfgEmbEnabled.checked) {
+    if (this.cfgEmbEnabled?.checked) {
       embedding = {
         enabled: true,
-        model: this.cfgEmbModel.value.trim(),
-        baseUrl: this.cfgEmbBaseUrl.value.trim(),
-        apiKey: this.cfgEmbApiKey.value.trim(),
+        model: this.cfgEmbModel?.value.trim() ?? '',
+        baseUrl: this.cfgEmbBaseUrl?.value.trim() ?? '',
+        apiKey: this.cfgEmbApiKey?.value.trim() ?? '',
       };
     }
 
@@ -1494,14 +1610,14 @@ export class UIManager {
 
   /** 加载配置到表单 */
   loadConfigToForm(config: SpriteConfigForm): void {
-    this.cfgSilent.checked = config.silentMode;
-    this.cfgThreshold.value = String(config.proactiveThreshold);
-    this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
-    this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
-    this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
-    this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
-    this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
-    this.cfgDefaultPersona.value = config.defaultPersona;
+    if (this.cfgSilent) this.cfgSilent.checked = config.silentMode;
+    if (this.cfgThreshold) this.cfgThreshold.value = String(config.proactiveThreshold);
+    if (this.cfgCooldown) this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
+    if (this.cfgInterval) this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
+    if (this.cfgWatcherEnabled) this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
+    if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
+    if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
+    if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
 
     // 角色匹配模式（单选按钮）
     const modeRadio = document.querySelector<HTMLInputElement>(
@@ -1518,12 +1634,16 @@ export class UIManager {
     if (projectModeRadio) {
       projectModeRadio.checked = true;
     }
-    this.cfgFocusProject.disabled = config.projectMode !== 'focus';
+    if (this.cfgFocusProject) {
+      this.cfgFocusProject.disabled = config.projectMode !== 'focus';
+    }
     // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
   }
 
   /** FD-04 加载项目列表到专注项目下拉框 */
   loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void {
+    if (!this.cfgFocusProject) return;
+
     // 保留第一个占位选项
     while (this.cfgFocusProject.options.length > 1) {
       this.cfgFocusProject.remove(1);
@@ -1565,19 +1685,19 @@ export class UIManager {
     const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
 
     return {
-      silentMode: this.cfgSilent.checked,
-      proactiveThreshold: parseInt(this.cfgThreshold.value, 10) || 3,
-      proactiveCooldownMs: (parseInt(this.cfgCooldown.value, 10) || 5) * MS_PER_MINUTE,
-      triggerIntervalMs: (parseInt(this.cfgInterval.value, 10) || 60) * MS_PER_MINUTE,
-      fileWatcherEnabled: this.cfgWatcherEnabled.checked,
-      fileWatcherPaths: this.cfgWatcherPaths.value
+      silentMode: this.cfgSilent?.checked ?? false,
+      proactiveThreshold: parseInt(this.cfgThreshold?.value ?? '3', 10) || 3,
+      proactiveCooldownMs: (parseInt(this.cfgCooldown?.value ?? '5', 10) || 5) * MS_PER_MINUTE,
+      triggerIntervalMs: (parseInt(this.cfgInterval?.value ?? '60', 10) || 60) * MS_PER_MINUTE,
+      fileWatcherEnabled: this.cfgWatcherEnabled?.checked ?? false,
+      fileWatcherPaths: this.cfgWatcherPaths?.value
         .split(',')
         .map((s) => s.trim())
-        .filter((s) => s.length > 0),
-      fileWatcherDebounceMs: parseInt(this.cfgWatcherDebounce.value, 10) || 1000,
-      defaultPersona: this.cfgDefaultPersona.value.trim(),
+        .filter((s) => s.length > 0) ?? [],
+      fileWatcherDebounceMs: parseInt(this.cfgWatcherDebounce?.value ?? '1000', 10) || 1000,
+      defaultPersona: this.cfgDefaultPersona?.value.trim() ?? '',
       projectMode,
-      focusProjectPath: projectMode === 'focus' ? this.cfgFocusProject.value : '',
+      focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
     };
   }
 
@@ -1627,10 +1747,10 @@ export class UIManager {
   /** 收集表单中的 LLM 配置（供测试连接复用） */
   getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
     return {
-      provider: this.cfgLlmProvider.value.trim(),
-      model: this.cfgLlmModel.value.trim(),
-      baseUrl: this.cfgLlmBaseUrl.value.trim(),
-      apiKey: this.cfgLlmApiKey.value.trim(),
+      provider: this.cfgLlmProvider?.value.trim() ?? '',
+      model: this.cfgLlmModel?.value.trim() ?? '',
+      baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
+      apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
     };
   }
 
@@ -1642,15 +1762,15 @@ export class UIManager {
     document.querySelectorAll<HTMLElement>('[data-modal]').forEach((btn) => {
       const modalId = btn.dataset.modal;
       if (modalId) {
-        btn.addEventListener('click', () => this.hideModal(modalId));
+        this.addEventListener(btn, 'click', () => this.hideModal(modalId));
       }
     });
 
-    // 点击弹窗背景关闭
+    // 点击弹窗背景关闭（统一使用 hideModal，避免与 showConfirmDialog 冲突）
     document.querySelectorAll<HTMLElement>('.modal').forEach((modal) => {
-      modal.addEventListener('click', (e) => {
+      this.addEventListener(modal, 'click', (e) => {
         if (e.target === modal) {
-          modal.classList.add('hidden');
+          this.hideModal(modal.id);
         }
       });
     });
@@ -1721,11 +1841,17 @@ export class UIManager {
       };
       const onOk = () => { cleanup(); resolve(true); };
       const onCancel = () => { cleanup(); resolve(false); };
-      const onBackdrop = (e: MouseEvent) => { if (e.target === modal) onCancel(); };
 
       // 注册监听器
       btnOk.addEventListener('click', onOk);
       btnCancel.addEventListener('click', onCancel);
+      // 使用 stopPropagation 防止 initModalListeners 的全局 backdrop 处理器也触发
+      const onBackdrop = (e: MouseEvent) => {
+        if (e.target === modal) {
+          e.stopPropagation();
+          onCancel();
+        }
+      };
       modal.addEventListener('click', onBackdrop);
       const closeBtn = modal.querySelector('.modal-close');
       if (closeBtn) closeBtn.addEventListener('click', onCancel);
