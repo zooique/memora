@@ -28,13 +28,13 @@ export type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm };
 const MS_PER_MINUTE = 60_000;
 
 /**
- * 获取必需的 DOM 元素，若缺失或类型不匹配则抛出明确错误
+ * 获取必需的 DOM 元素，若缺失或标签名不匹配则抛出明确错误
  *
  * 替代 `document.getElementById('id')!` 与 `as HTMLXxxElement`，
  * 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败。
  *
  * @param id 元素 id
- * @param tagName 期望的 HTML 标签名（用于 instanceof 校验）
+ * @param tagName 期望的 HTML 标签名
  * @returns 类型安全的 DOM 元素
  */
 function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
@@ -45,11 +45,13 @@ function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
   if (!el) {
     throw new Error(`[UIManager] 必需的 DOM 元素 #${id} 未找到，UI 无法初始化`);
   }
-  const expectedCtor = HTMLElementTagNameMap[tagName];
-  if (!(el instanceof expectedCtor)) {
-    throw new Error(`[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>`);
+  // 运行时标签名校验：使用 tagName 字符串比较（兼容 JSDOM 等无 DOM 构造函数的环境）
+  if (el.tagName.toLowerCase() !== tagName) {
+    throw new Error(
+      `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>`,
+    );
   }
-  return el;
+  return el as HTMLElementTagNameMap[T];
 }
 
 export interface Message {
@@ -604,7 +606,8 @@ export class UIManager {
    * 使用 while + removeChild 模式（对齐 project_memory 工程约定）。
    */
   clearMessages(): void {
-    this.clearElement(this.messagesEl);
+    // 只移除 .message 元素，保留 chat-empty-state（否则 showEmptyState 找不到元素）
+    this.messagesEl.querySelectorAll('.message').forEach((msg) => msg.remove());
     this.streamingMessages.clear();
     this.state.isStreaming = false;
     this.btnSend.disabled = false;
@@ -1109,8 +1112,8 @@ export class UIManager {
 
   /** 显示记忆详情 */
   showMemoryDetail(memory: MemoryDetail): void {
-    const nameEl = getRequiredElement('memory-detail-name', 'span');
-    const sourceEl = getRequiredElement('memory-detail-source', 'span');
+    const nameEl = getRequiredElement('memory-detail-name', 'h3');
+    const sourceEl = getRequiredElement('memory-detail-source', 'code');
     const scoreEl = getRequiredElement('memory-detail-score', 'span');
     const createdEl = getRequiredElement('memory-detail-created', 'span');
     const accessedEl = getRequiredElement('memory-detail-accessed', 'span');
