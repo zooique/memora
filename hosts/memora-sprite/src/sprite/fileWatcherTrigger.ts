@@ -10,6 +10,7 @@
  *   - 不监听剪贴板
  */
 import { watch } from 'node:fs';
+import { resolve, sep } from 'node:path';
 import { logger, toError } from 'memora';
 import type { SpriteTrigger, TriggerCallback } from './triggers.js';
 
@@ -21,6 +22,11 @@ export interface FileWatcherConfig {
   ignore?: string[];
   /** 防抖间隔（毫秒），同一文件短时间内多次变化只触发一次，默认 1000 */
   debounceMs?: number;
+  /**
+   * 允许监听的路径白名单（绝对路径）
+   * 仅允许监听位于白名单目录下的路径，防止配置错误导致监听越界
+   */
+  allowedPaths?: string[];
 }
 
 /** 默认忽略模式 */
@@ -34,7 +40,7 @@ const DEFAULT_IGNORE = [
 /**
  * 文件变化触发器
  *
- * 使用 fs.watch / fs.watchFile 实现零依赖文件监听。
+ * 使用 fs.watch 实现零依赖文件监听。
  * 不引入 chokidar 以保持零 native 依赖（chokidar v4+ 已是纯 JS）。
  * 如需更强大的文件监听，宿主可自行替换为 chokidar 实现。
  */
@@ -51,6 +57,7 @@ export class FileWatcherTrigger implements SpriteTrigger {
       watchPaths: config.watchPaths,
       ignore: config.ignore ?? DEFAULT_IGNORE,
       debounceMs: config.debounceMs ?? 1000,
+      allowedPaths: config.allowedPaths ?? [],
     };
   }
 
@@ -58,6 +65,14 @@ export class FileWatcherTrigger implements SpriteTrigger {
     this.callback = cb;
 
     for (const watchPath of this.config.watchPaths) {
+      // 路径白名单校验：防止监听越界路径（如 .. 或 /etc）
+      if (!this.isPathAllowed(watchPath)) {
+        logger.warn(
+          { path: watchPath, allowedPaths: this.config.allowedPaths },
+          '文件监听路径越界，已跳过',
+        );
+        continue;
+      }
       try {
         const watcher = this.createWatcher(watchPath);
         this.watchers.push(watcher);
@@ -94,6 +109,26 @@ export class FileWatcherTrigger implements SpriteTrigger {
     });
 
     return watcher;
+  }
+
+  /**
+   * 检查路径是否在白名单内
+   *
+   * 与内核 pathGuard 的 assertPathAllowed 逻辑一致（严格前缀匹配，追加 sep 防止兄弟目录绕过）。
+   * 若 allowedPaths 为空，则拒绝所有路径（安全优先）。
+   */
+  private isPathAllowed(absolutePath: string): boolean {
+    // 无白名单时拒绝所有路径
+    if (this.config.allowedPaths.length === 0) return false;
+
+    const resolved = resolve(absolutePath);
+    for (const allowed of this.config.allowedPaths) {
+      const allowedRoot = resolve(allowed);
+      if (resolved === allowedRoot || resolved.startsWith(allowedRoot + sep)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** 检查文件名是否匹配忽略模式 */

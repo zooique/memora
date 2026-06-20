@@ -128,3 +128,21 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   /** 窗口最大化/还原状态变更 */
   WINDOW_STATE_CHANGED: 'window-state-changed',
 } as const;
+
+// ─── IPC 数据传输类型 ────────────────────────────────────
+
+/**
+ * 主进程 AppError 序列化后的 IPC 传输形态
+ *
+ * 主进程的 AppError 包含 Date 对象和 Error 引用，无法直接通过 IPC 传输。
+ * 经由 errorHandler.showErrorToUser 序列化后，渲染进程收到的是此结构的对象。
+ * 主进程和渲染进程共享此类型，消除两处重复定义（errorHandler.ts 和 renderer.ts）。
+ */
+export interface SerializedAppError {
+  /** 错误码（ErrorCode 枚举经 IPC 传输后转为 string） */
+  code: string;
+  /** 用户友好的错误消息（已由 errorHandler 转换） */
+  message: string;
+  /** ISO 8601 时间戳（AppError.timestamp 的 toISOString() 结果） */
+  timestamp: string;
+}

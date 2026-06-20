@@ -58,6 +58,8 @@ export class Sprite {
     {};
   /** 项目路径（用于 FileWatcherTrigger 的默认监听目录） */
   private projectPath: string;
+  /** 路径白名单（来自 Agent 配置，用于 fileWatcher 安全校验） */
+  private allowedPaths: string[];
 
   // ─── 配置持久化 ────────────────────────────────────────
   private dataDir: string;
@@ -74,10 +76,13 @@ export class Sprite {
     projectPath?: string,
     vectorStore?: VectorStore,
     interaction?: IInteraction,
+    /** 路径白名单（来自 Agent 的 allowedPaths，用于 fileWatcher 安全校验） */
+    allowedPaths?: string[],
   ) {
     this.agent = agent;
     this.dataDir = dataDir;
     this.projectPath = projectPath ?? dataDir;
+    this.allowedPaths = allowedPaths ?? [];
     this.config = loadSpriteConfig(dataDir);
     this.triggerBus = new TriggerBus();
     this.triggerBus.register(new TimerTrigger(this.config.triggerIntervalMs));
@@ -108,11 +113,19 @@ export class Sprite {
   /** 注册 FileWatcherTrigger */
   private registerFileWatcher(): void {
     const watchPaths = this.config.fileWatcherPaths.map((p) => resolve(this.projectPath, p));
+    // 构建 fileWatcher 白名单：projectPath + dataDir + Agent 的 allowedPaths
+    // 与内核 pathGuard 保持一致：projectPath 和 dataDir 自动允许，allowedPaths 为额外白名单
+    const fileWatcherAllowedPaths = [
+      this.projectPath,
+      this.dataDir,
+      ...this.allowedPaths,
+    ];
     this.triggerBus.register(
       new FileWatcherTrigger({
         watchPaths,
         ignore: this.config.fileWatcherIgnore,
         debounceMs: this.config.fileWatcherDebounceMs,
+        allowedPaths: fileWatcherAllowedPaths,
       }),
     );
   }

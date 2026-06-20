@@ -327,7 +327,7 @@ async function initAgentFromConfig(
   }
 
   // 6. 启动精灵主控
-  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore);
+  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths);
   sprite.start();
 
   const close = async () => {

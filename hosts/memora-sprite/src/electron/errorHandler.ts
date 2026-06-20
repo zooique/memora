@@ -10,6 +10,7 @@
 import type { BrowserWindow } from 'electron';
 import { toError, logger } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import type { SerializedAppError } from './ipcChannels.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
 
@@ -110,11 +111,12 @@ export class ErrorHandler {
     const userMessage = this.getUserFriendlyMessage(error);
 
     // 发送错误消息到渲染进程
-    this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, {
+    const serializedError: SerializedAppError = {
       code: error.code,
       message: userMessage,
       timestamp: error.timestamp.toISOString(),
-    });
+    };
+    this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, serializedError);
   }
 
   /** 获取用户友好的错误消息 */

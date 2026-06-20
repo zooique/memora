@@ -19,7 +19,6 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
 import { app, ipcMain, Notification } from 'electron';
 import { loadConfig, createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent } from 'memora';
@@ -30,6 +29,7 @@ import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import { ELECTRON_DIR } from './utils/esmShim.js';
 import {
   startSprite,
   reinitAgent,
@@ -42,11 +42,9 @@ import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 // ─── 应用路径 ──────────────────────────────────────────────
 
-const RESOURCES_DIR = path.join(__dirname, '../../resources');
+const RESOURCES_DIR = path.join(ELECTRON_DIR, '../../resources');
 const TRAY_ICON_PATH = path.join(RESOURCES_DIR, 'tray-icon.png');
 
 // ─── 主进程状态 ──────────────────────────────────────────────

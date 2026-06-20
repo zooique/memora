@@ -13,15 +13,13 @@
  */
 
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { BrowserWindow, ipcMain } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { ELECTRON_DIR } from './utils/esmShim.js';
 
 /** 完整窗口最小尺寸：侧边栏 240px + 主内容区至少 400px = 640px；高度 480px 保证核心内容可见 */
 const FULL_WINDOW_MIN_WIDTH = 640;
@@ -112,7 +110,7 @@ export class WindowManager {
       // 避免启动时闪深色（旧值为深色主题的 #1e1e2e）
       backgroundColor: '#f0f0f2',
       webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
+        preload: path.join(ELECTRON_DIR, 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -122,7 +120,7 @@ export class WindowManager {
     this.windowStateManager.fullWindow = this.fullWindow;
 
     // 加载 HTML 文件
-    const htmlPath = path.join(__dirname, 'renderer', 'index.html');
+    const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'index.html');
     await this.fullWindow.loadFile(htmlPath);
 
     // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）

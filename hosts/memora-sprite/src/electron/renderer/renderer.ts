@@ -22,12 +22,7 @@ declare global {
 
 // ─── 错误类型定义 ─────────────────────────────────────────
 
-/** IPC 传输后的错误形态（主进程 AppError 序列化后的渲染进程视图） */
-interface AppError {
-  code: string;
-  message: string;
-  timestamp: string;
-}
+import type { SerializedAppError } from '../ipcChannels.js';
 
 /** 将未知错误转为 Error（渲染进程本地实现，行为与内核 toError 对齐） */
 function toError(err: unknown): Error {
@@ -430,7 +425,7 @@ function pulseCounter(id: string): void {
 // ─── 应用错误处理 ─────────────────────────────────────────
 
 function initAppErrorListener(): void {
-  window.electronAPI.onAppError((error: AppError) => {
+  window.electronAPI.onAppError((error: SerializedAppError) => {
     // IX-06 应用级错误走 toast，不污染对话历史
     uiManager.showToast(error.message, 'error');
     console.error(`[${error.code}] ${error.message}`, error);

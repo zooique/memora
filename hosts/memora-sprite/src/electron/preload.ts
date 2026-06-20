@@ -10,6 +10,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import type { SerializedAppError } from './ipcChannels.js';
 // 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。
 // 使用 import type：编译时擦除，不引入运行时耦合；electron 层依赖 sprite 层是合理依赖方向。
 import type {
@@ -74,7 +75,7 @@ export interface ElectronAPI {
   removeSpriteErrorListener: () => void;
 
   // 应用错误
-  onAppError: (cb: (msg: { code: string; message: string; timestamp: string }) => void) => void;
+  onAppError: (cb: (msg: SerializedAppError) => void) => void;
   /** 移除应用错误监听器 */
   removeAppErrorListener: () => void;
 
@@ -206,7 +207,7 @@ const electronAPI: ElectronAPI = {
   },
 
   // 应用错误
-  onAppError: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, (_: IpcRendererEvent, msg: { code: string; message: string; timestamp: string }) => cb(msg)),
+  onAppError: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, (_: IpcRendererEvent, msg: SerializedAppError) => cb(msg)),
   removeAppErrorListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.APP_ERROR);
   },
