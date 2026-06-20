@@ -234,6 +234,8 @@ export class UIManager {
   private previousFocusEl: HTMLElement | null = null;
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
+  /** 记忆搜索防抖定时器（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -400,6 +402,11 @@ export class UIManager {
   cleanup(): void {
     this.eventCleanupFunctions.forEach((cleanup) => cleanup());
     this.eventCleanupFunctions = [];
+    // 清理搜索防抖定时器，避免回调在 DOM 销毁后触发
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
   }
 
   // ─── 消息渲染 ─────────────────────────────────────────
@@ -483,7 +490,10 @@ export class UIManager {
       if (message.role === 'assistant' && memoryRecall) {
         const recall = document.createElement('div');
         recall.className = 'memory-recall';
-        recall.innerHTML = '<span>💡</span>';
+        // UX-08：使用 createElement 替代 innerHTML，避免 XSS 风险
+        const iconSpan = document.createElement('span');
+        iconSpan.textContent = '💡';
+        recall.appendChild(iconSpan);
         const recallText = document.createElement('span');
         recallText.textContent = `召回记忆：${memoryRecall.name}（score: ${memoryRecall.score.toFixed(2)}）`;
         recall.appendChild(recallText);
@@ -1100,10 +1110,9 @@ export class UIManager {
     if (!this.memorySearchEl || !this.memoryFilterSourceEl) return;
 
     // 搜索框：输入时触发搜索（带防抖）
-    let searchTimer: ReturnType<typeof setTimeout> | null = null;
     this.addEventListener(this.memorySearchEl, 'input', () => {
-      if (searchTimer) clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => {
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+      this.searchTimer = setTimeout(() => {
         this.memorySearchCallback?.(this.memorySearchEl!.value.trim());
       }, 300);
     });
@@ -1419,7 +1428,15 @@ export class UIManager {
     for (const p of personas) {
       const item = document.createElement('div');
       item.className = 'dropdown-item' + (p.active ? ' active' : '');
-      item.textContent = p.name;
+      // UX-04：角色名称作为主标题，描述作为副标题直接可见
+      const nameEl = document.createElement('div');
+      nameEl.className = 'dropdown-item-name';
+      nameEl.textContent = p.name;
+      const descEl = document.createElement('div');
+      descEl.className = 'dropdown-item-desc';
+      descEl.textContent = p.description;
+      item.appendChild(nameEl);
+      item.appendChild(descEl);
       item.title = p.description;
       // UI-AR-01 可聚焦但不参与 Tab 顺序（键盘导航用方向键）
       item.setAttribute('tabindex', '-1');
@@ -1478,7 +1495,7 @@ export class UIManager {
   /** IX-07 角色匹配模式变更回调（由 renderer.ts 注册，调用主进程持久化） */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
 
-  /** ADR-SP-006 主题变更回调（由 renderer.ts 注册，用于同步单选按钮状态等） */
+  /** ADR-SP-008 主题变更回调（由 renderer.ts 注册，用于同步单选按钮状态等） */
   private themeChangeCallback: ((theme: 'light' | 'dark') => void) | null = null;
 
   /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
@@ -1494,7 +1511,7 @@ export class UIManager {
   }
 
   /**
-   * ADR-SP-006 注册主题变更回调
+   * ADR-SP-008 注册主题变更回调
    *
    * 当用户在设置面板切换主题时触发，renderer.ts 可借此执行额外同步逻辑。
    * 主题本身的持久化（localStorage）已在 setTheme 内完成，回调仅用于通知。
@@ -1506,7 +1523,7 @@ export class UIManager {
   }
 
   /**
-   * ADR-SP-006 获取当前主题
+   * ADR-SP-008 获取当前主题
    *
    * 通过读取 <html> 元素的 data-theme 属性判断当前主题，
    * 未设置（默认）视为浅色。
@@ -1518,7 +1535,7 @@ export class UIManager {
   }
 
   /**
-   * ADR-SP-006 设置主题
+   * ADR-SP-008 设置主题
    *
    * 1. 设置 <html> 元素的 data-theme 属性（触发 CSS 变量切换）
    * 2. 持久化到 localStorage（key: 'memora-theme'）
@@ -1544,7 +1561,7 @@ export class UIManager {
   }
 
   /**
-   * ADR-SP-006 同步设置面板主题单选按钮状态
+   * ADR-SP-008 同步设置面板主题单选按钮状态
    *
    * 在外部修改主题后（如初始化加载），调用此方法确保单选按钮选中状态与实际主题一致。
    *
@@ -1691,7 +1708,7 @@ export class UIManager {
       });
     });
 
-    // ADR-SP-006 主题切换单选按钮：切换时立即应用主题（无需等待保存按钮）
+    // ADR-SP-008 主题切换单选按钮：切换时立即应用主题（无需等待保存按钮）
     const themeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
     themeRadios.forEach((radio) => {
       this.addEventListener(radio, 'change', () => {
@@ -2024,6 +2041,9 @@ export class UIManager {
     }
   }
 
+  /** 当前活跃的确认弹窗清理函数（防止并发调用时监听器叠加） */
+  private activeConfirmCleanup: (() => void) | null = null;
+
   /**
    * 显示通用确认弹窗（替代 window.confirm）
    *
@@ -2065,6 +2085,12 @@ export class UIManager {
       // 危险操作：确认按钮使用红色样式
       btnOk.className = options.danger ? 'btn-danger' : 'btn-primary';
 
+      // 并发保护：若已有活跃弹窗，先取消旧的（resolve false），避免监听器叠加
+      if (this.activeConfirmCleanup) {
+        this.activeConfirmCleanup();
+        this.activeConfirmCleanup = null;
+      }
+
       // 清理函数：移除所有临时监听器
       let resolved = false;
 
@@ -2089,9 +2115,13 @@ export class UIManager {
         modal.removeEventListener('keydown', onKeydown);
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) closeBtn.removeEventListener('click', onCancel);
+        this.activeConfirmCleanup = null;
       };
       const onOk = () => { cleanup(); resolve(true); };
       const onCancel = () => { cleanup(); resolve(false); };
+
+      // 注册活跃清理函数，供下次并发调用时取消旧弹窗
+      this.activeConfirmCleanup = () => { cleanup(); resolve(false); };
 
       // 注册监听器
       btnOk.addEventListener('click', onOk);

@@ -38,8 +38,13 @@ const TEST_HTML = `<!DOCTYPE html>
   </header>
   <div id="app">
     <aside id="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">🧚</div>
+        <span>Memora</span>
+      </div>
       <div id="sidebar-header">
         <div id="persona-selector">
+          <span id="persona-icon">🧚</span>
           <span id="persona-name">精灵</span>
           <span id="persona-mode-badge" class="mode-badge">自动</span>
           <span id="persona-arrow">▼</span>
@@ -48,29 +53,41 @@ const TEST_HTML = `<!DOCTYPE html>
       </div>
       <div id="sidebar-content">
         <div id="dashboard">
-          <div class="dash-item"><span class="dash-value" id="memory-count">0</span></div>
-          <div class="dash-item"><span class="dash-value" id="insight-count">0</span></div>
-          <div class="dash-item"><span class="dash-value" id="persona-count">0</span></div>
+          <div class="dash-item"><span class="dash-label">🧠 记忆</span><span class="dash-value" id="memory-count">0</span></div>
+          <div class="dash-item"><span class="dash-label">💡 洞察</span><span class="dash-value" id="insight-count">0</span></div>
+          <div class="dash-item"><span class="dash-label">🎭 角色</span><span class="dash-value" id="persona-count">0</span></div>
+          <div class="dash-item" id="dash-triggers"><span class="dash-label">🔔 触发器</span><span class="dash-value" id="trigger-count">0</span></div>
+          <div class="dash-item" id="dash-pending" style="grid-column: span 2;"><span class="dash-label">📥 事件</span><span class="dash-value" id="pending-count">0/3</span></div>
         </div>
         <nav id="sidebar-nav">
           <button class="nav-btn active" data-panel="chat">💬 对话</button>
           <button class="nav-btn" data-panel="memories">🧠 记忆</button>
           <button class="nav-btn" data-panel="settings">⚙️ 设置</button>
         </nav>
+        <div id="recommendations" class="dashboard-section hidden">
+          <h3>推荐</h3>
+          <ul id="recommendation-list" class="suggestion-list"></ul>
+        </div>
       </div>
     </aside>
     <main id="main-content">
       <div id="panel-chat" class="panel active">
         <div id="chat-toolbar">
+          <div class="chat-toolbar-info">
+            <span class="chat-toolbar-title">对话</span>
+            <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
+          </div>
           <button id="btn-new-session" title="开始新会话">✨ 新会话</button>
         </div>
         <div id="proactive-banner" class="hidden">
+          <span class="banner-icon">🧚</span>
           <span class="banner-text" id="proactive-banner-text"></span>
           <div class="banner-actions">
             <button class="banner-btn" data-action="view">查看</button>
             <button class="banner-btn" data-action="later">稍后</button>
             <button class="banner-btn" data-action="silent">静默 1 小时</button>
           </div>
+          <button class="banner-close" data-action="close" title="关闭">✕</button>
         </div>
         <div id="messages">
           <div id="chat-empty-state" class="chat-empty-state">
@@ -79,8 +96,15 @@ const TEST_HTML = `<!DOCTYPE html>
         </div>
         <div id="input-area">
           <textarea id="input" placeholder="输入消息" rows="1"></textarea>
-          <button id="btn-send">发送</button>
-          <button id="btn-stop" class="hidden" title="停止">■</button>
+          <div class="input-toolbar">
+            <div class="input-actions-left">
+              <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）">➕</button>
+            </div>
+            <div class="input-send-area">
+              <button id="btn-send">发送</button>
+              <button id="btn-stop" class="hidden" title="停止">■</button>
+            </div>
+          </div>
         </div>
       </div>
       <div id="panel-memories" class="panel">
@@ -95,50 +119,142 @@ const TEST_HTML = `<!DOCTYPE html>
         <div id="memory-list"></div>
       </div>
       <div id="panel-settings" class="panel">
-        <div class="settings-group">
-          <select id="cfg-llm-preset"><option value="">自定义</option></select>
-          <input type="text" id="cfg-llm-provider" />
-          <input type="text" id="cfg-llm-model" />
-          <input type="text" id="cfg-llm-base-url" />
-          <input type="password" id="cfg-llm-api-key" />
-          <input type="number" id="cfg-llm-temperature" value="0.7" />
-          <button type="button" id="btn-toggle-llm-key" class="toggle-visibility">👁</button>
-          <button id="btn-llm-test" class="btn-secondary" type="button">测试连接</button>
-          <span id="llm-test-result"></span>
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-settings-tab="llm">大模型</button>
+          <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
+          <button class="settings-tab" data-settings-tab="sprite">精灵</button>
         </div>
-        <div class="settings-group">
-          <input type="checkbox" id="cfg-emb-enabled" />
-          <input type="text" id="cfg-emb-model" />
-          <input type="text" id="cfg-emb-base-url" />
-          <input type="password" id="cfg-emb-api-key" />
-          <button type="button" id="btn-toggle-emb-key" class="toggle-visibility">👁</button>
-        </div>
-        <div class="settings-group">
-          <input type="checkbox" id="cfg-silent" />
-          <input type="number" id="cfg-threshold" min="1" value="3" />
-          <input type="number" id="cfg-cooldown" min="1" value="5" />
-          <input type="number" id="cfg-interval" min="1" value="60" />
-        </div>
-        <div class="settings-group">
-          <input type="checkbox" id="cfg-watcher-enabled" />
-          <input type="text" id="cfg-watcher-paths" value="." />
-          <input type="number" id="cfg-watcher-debounce" min="100" value="1000" />
-        </div>
-        <div class="settings-group">
-          <div class="radio-group">
-            <label><input type="radio" name="persona-mode" value="auto" checked /> 自动</label>
-            <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
+        <div class="settings-tab-content active" data-settings-tab="llm">
+          <div class="settings-group">
+            <div class="settings-row">
+              <label for="cfg-llm-preset">提供商预设</label>
+              <select id="cfg-llm-preset"><option value="">自定义</option></select>
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-provider">提供商</label>
+              <input type="text" id="cfg-llm-provider" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-model">模型</label>
+              <input type="text" id="cfg-llm-model" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-base-url">API 地址</label>
+              <input type="text" id="cfg-llm-base-url" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-api-key">API Key</label>
+              <div class="input-with-action">
+                <input type="password" id="cfg-llm-api-key" />
+                <button type="button" id="btn-toggle-llm-key" class="toggle-visibility">👁</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-temperature">温度</label>
+              <input type="number" id="cfg-llm-temperature" value="0.7" />
+            </div>
+            <div class="settings-row">
+              <label></label>
+              <div>
+                <button id="btn-llm-test" class="btn-secondary" type="button">测试连接</button>
+                <span id="llm-test-result" class="settings-hint"></span>
+              </div>
+            </div>
           </div>
-          <input type="text" id="cfg-default-persona" />
         </div>
-        <div class="settings-group">
-          <div class="radio-group">
-            <label><input type="radio" name="project-mode" value="smart" checked /> 智能</label>
-            <label><input type="radio" name="project-mode" value="focus" /> 专注</label>
+        <div class="settings-tab-content" data-settings-tab="embedding">
+          <div class="settings-group">
+            <div class="settings-row">
+              <label for="cfg-emb-enabled">启用语义搜索</label>
+              <input type="checkbox" id="cfg-emb-enabled" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-emb-model">模型</label>
+              <input type="text" id="cfg-emb-model" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-emb-base-url">API 地址</label>
+              <input type="text" id="cfg-emb-base-url" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-emb-api-key">API Key</label>
+              <div class="input-with-action">
+                <input type="password" id="cfg-emb-api-key" />
+                <button type="button" id="btn-toggle-emb-key" class="toggle-visibility">👁</button>
+              </div>
+            </div>
           </div>
-          <select id="cfg-focus-project" disabled>
-            <option value="">-- 选择项目 --</option>
-          </select>
+        </div>
+        <div class="settings-tab-content" data-settings-tab="sprite">
+          <div class="settings-group">
+            <div class="settings-row">
+              <label for="cfg-theme">界面主题</label>
+              <div class="radio-group">
+                <label><input type="radio" name="theme-mode" value="light" checked /> 浅色</label>
+                <label><input type="radio" name="theme-mode" value="dark" /> 深色</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label for="cfg-silent">静默模式</label>
+              <input type="checkbox" id="cfg-silent" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-threshold">主动提示阈值（事件数）</label>
+              <input type="number" id="cfg-threshold" min="1" value="3" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-cooldown">主动提示冷却（分钟）</label>
+              <input type="number" id="cfg-cooldown" min="1" value="5" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-interval">定时触发间隔（分钟）</label>
+              <input type="number" id="cfg-interval" min="1" value="60" />
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-row">
+              <label for="cfg-watcher-enabled">启用文件监听</label>
+              <input type="checkbox" id="cfg-watcher-enabled" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-watcher-paths">监听路径</label>
+              <input type="text" id="cfg-watcher-paths" value="." />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-watcher-debounce">防抖时间（毫秒）</label>
+              <input type="number" id="cfg-watcher-debounce" min="100" value="1000" />
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-row">
+              <label for="cfg-persona-mode">匹配模式</label>
+              <div class="radio-group">
+                <label><input type="radio" name="persona-mode" value="auto" checked /> 自动</label>
+                <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label for="cfg-default-persona">默认角色</label>
+              <input type="text" id="cfg-default-persona" />
+            </div>
+          </div>
+        </div>
+        <div class="settings-tab-content" data-settings-tab="project">
+          <div class="settings-group">
+            <div class="settings-row">
+              <label for="cfg-project-mode">模式</label>
+              <div class="radio-group">
+                <label><input type="radio" name="project-mode" value="smart" checked /> 智能</label>
+                <label><input type="radio" name="project-mode" value="focus" /> 专注</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label for="cfg-focus-project">专注项目</label>
+              <select id="cfg-focus-project" disabled>
+                <option value="">-- 选择项目 --</option>
+              </select>
+            </div>
+          </div>
         </div>
         <div class="settings-actions">
           <button id="btn-settings-cancel">取消</button>
@@ -259,6 +375,8 @@ function createMockElectronAPI() {
     windowMinimize: vi.fn(),
     windowMaximize: vi.fn(),
     windowClose: vi.fn(),
+    onWindowStateChanged: vi.fn(),
+    removeWindowStateChangedListener: vi.fn(),
     onFloatDragStart: vi.fn(),
     onFloatDragEnd: vi.fn(),
     onFloatUnread: vi.fn(),
@@ -780,7 +898,14 @@ describe('角色面板', () => {
     const dropdown = document.getElementById('persona-dropdown')!;
     expect(dropdown.children.length).toBe(2);
     const activeItem = dropdown.querySelector('.dropdown-item.active');
-    expect(activeItem?.textContent).toBe('代码助手');
+    // UX-04：角色项现在包含名称 + 描述，textContent 包含两者
+    expect(activeItem?.textContent).toContain('代码助手');
+    expect(activeItem?.textContent).toContain('编程助手');
+    // 验证名称和描述分别在各自的子元素中
+    const nameEl = activeItem?.querySelector('.dropdown-item-name');
+    const descEl = activeItem?.querySelector('.dropdown-item-desc');
+    expect(nameEl?.textContent).toBe('代码助手');
+    expect(descEl?.textContent).toBe('编程助手');
   });
 
   it('updateActivePersona: 更新当前角色名', () => {

@@ -314,8 +314,9 @@
 }
 
 /**
- * 消息复制按钮：hover 时显示在气泡右上角
+ * 消息复制按钮：始终可见（半透明），hover 时增强
  * 仅精灵消息（非流式）显示，点击复制原始内容到剪贴板
+ * UX-02：遵循"主动可见"原则，不依赖 hover 才显示
  */
 .message-copy-btn {
   position: absolute;
@@ -329,7 +330,7 @@
   color: var(--text-2);
   font-size: 11px;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0.45;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
   display: flex;
   align-items: center;
@@ -338,7 +339,7 @@
   z-index: 5;
 }
 
-/* hover 时显示复制按钮 */
+/* hover 时增强可见性 */
 .message-content:hover .message-copy-btn {
   opacity: 1;
 }
@@ -347,6 +348,7 @@
   background: var(--accent);
   color: #fff;
   border-color: var(--accent);
+  opacity: 1;
 }
 
 .message .cursor {

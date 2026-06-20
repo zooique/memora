@@ -7,7 +7,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'" />
   <title>Memora 精灵</title>
   <!--
-    主题初始化（ADR-SP-006）：
+    主题初始化（ADR-SP-008）：
     在 CSS 加载前同步读取 localStorage 主题设置，避免页面加载时闪烁。
     默认浅色（light），备选深色（dark）。通过 <html data-theme="dark"> 切换。
   -->
@@ -271,7 +271,7 @@
         <div class="settings-tab-content" data-settings-tab="sprite">
           <div class="settings-group">
             <h3>精灵配置</h3>
-            <!-- ADR-SP-006 界面主题切换：浅色（默认）/ 深色（备选） -->
+            <!-- ADR-SP-008 界面主题切换：浅色（默认）/ 深色（备选） -->
             <div class="settings-row">
               <label for="cfg-theme">界面主题</label>
               <div class="radio-group">

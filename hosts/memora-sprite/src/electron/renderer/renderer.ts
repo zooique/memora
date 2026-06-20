@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPersonaSelector();
   setupSettingsPanel();
 
-  // ADR-SP-006 初始化主题：同步设置面板单选按钮状态
+  // ADR-SP-008 初始化主题：同步设置面板单选按钮状态
   // 注意：data-theme 属性已由 index.html 内联脚本在 CSS 加载前设置（避免闪屏），
   // 此处仅需同步单选按钮选中状态，并注册主题变更回调
   uiManager.syncThemeRadios(uiManager.getTheme());
@@ -439,6 +439,9 @@ function initFloatUnreadListener(): void {
 
 /** 设置记忆面板回调 */
 function setupMemoryPanel(): void {
+  // 搜索请求序列号：防止快速输入时旧结果覆盖新结果（竞态保护）
+  let searchSeq = 0;
+
   // 搜索回调
   uiManager.onMemorySearch(async (query: string) => {
     if (!query) {
@@ -446,8 +449,12 @@ function setupMemoryPanel(): void {
       await loadMemoryList();
       return;
     }
+    // 递增序列号，捕获当前请求的序号
+    const seq = ++searchSeq;
     try {
       const { hits } = await window.electronAPI.searchMemories(query);
+      // 若在等待期间有更新的搜索请求发起，丢弃本次过期结果
+      if (seq !== searchSeq) return;
       const items: MemoryListItem[] = hits.map(h => ({
         id: h.id,
         name: h.name,
@@ -458,6 +465,7 @@ function setupMemoryPanel(): void {
       uiManager.renderMemoryList(items);
     } catch (error) {
       // 搜索失败时保持原列表，记录日志辅助排查
+      if (seq !== searchSeq) return;
       console.error('[onMemorySearch] 记忆搜索失败:', error);
     }
   });
@@ -577,7 +585,10 @@ async function loadDashboard(): Promise<void> {
     const recSection = document.getElementById('recommendations');
     if (recList && recSection) {
       if (data.suggestions && data.suggestions.length > 0) {
-        recList.innerHTML = '';
+        // UX-08：使用 while + removeChild 替代 innerHTML = ''，与项目约定一致
+        while (recList.firstChild) {
+          recList.removeChild(recList.firstChild);
+        }
         for (const s of data.suggestions) {
           const li = document.createElement('li');
           li.title = `${s.contentPreview}\n\n${s.reason}`;

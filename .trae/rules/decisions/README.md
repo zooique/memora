@@ -38,6 +38,7 @@ description: Memora 关键决策年轮
 | [ADR-SP-005](./ADR-SP-005-package-management.md)   | 包管理：npm + file: 协议                           | ✅ 已接受 | 工程   |
 | [ADR-SP-006](./ADR-SP-006-testing.md)              | 测试：Vitest + InMemoryStorage + 临时 SQLite       | ✅ 已接受 | 质量   |
 | [ADR-SP-007](./ADR-SP-007-directory-structure.md)  | 目录结构：hosts/memora-sprite/ 按职责分层          | ✅ 已接受 | 工程   |
+| [ADR-SP-008](./ADR-SP-008-v8-ui-refactor.md)       | v8 UI 重构：双主题 CSS 变量 + 悬浮核心窗口         | ✅ 已接受 | 前端   |
 
 ---
 

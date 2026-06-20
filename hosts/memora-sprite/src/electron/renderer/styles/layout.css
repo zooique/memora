@@ -1,7 +1,7 @@
 /**
  * Memora 精灵 — 布局样式
  *
- * v8 布局策略（ADR-SP-006）：
+ * v8 布局策略（ADR-SP-008）：
  * - 大底板：左侧栏 + 顶部栏融为一体（同色，无边界）
  * - 核心窗口：白色悬浮卡片（margin + border-radius + box-shadow）
  * - 顶部栏：仅保留窗口控制按钮（无标题文字）
@@ -430,6 +430,23 @@
   transition: background 0.12s;
 }
 
+/* UX-04：角色下拉项名称 + 描述双层布局 */
+.dropdown-item-name {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.dropdown-item-desc {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.3;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .dropdown-item:hover {
   background: var(--window-bg-2);
 }
@@ -438,6 +455,11 @@
   color: var(--accent);
   font-weight: 600;
   background: var(--accent-soft);
+}
+
+.dropdown-item.active .dropdown-item-desc {
+  color: var(--accent);
+  opacity: 0.8;
 }
 
 /* ─── 空状态 ───────────────────────────────────────────────── */
@@ -468,7 +490,7 @@
 }
 
 /* ============================================================
- * 响应式适配（ADR-SP-006 §五 响应式策略）
+ * 响应式适配（ADR-SP-008 §五 响应式策略）
  * - ≥800px：完整 240px 侧边栏（默认窗口 900px 在此范围）
  * - 640-799px：侧边栏收窄为 64px 图标模式（minWidth 640px）
  * - <640px：侧边栏隐藏（受 minWidth 约束，通常不会触发）

@@ -3,7 +3,7 @@ alwaysApply: false
 description: "memora-sprite 宿主：v8 UI 重构——双主题 CSS 变量系统 + 悬浮核心窗口"
 ---
 
-# ADR-SP-006 · v8 UI 重构
+# ADR-SP-008 · v8 UI 重构
 
 > **状态**：✅ 已接受（2026-06-20）
 > **依赖**：[ADR-SP-003](./ADR-SP-003-desktop-shell.md)（桌面壳分阶段策略）、[ADR-SP-004](./ADR-SP-004-perception.md)（精灵感知原则）
@@ -60,7 +60,7 @@ description: "memora-sprite 宿主：v8 UI 重构——双主题 CSS 变量系�
 | iter-1 | 对话面板 v8 风格（chat.css 重写 + index.html 输入区 DOM 调整为 textarea + .input-actions 分层） | ✅ |
 | iter-2 | 侧栏 + 顶栏 v8 对齐（在 iter-0 中已完成） | ✅ |
 | iter-3 | 记忆/设置/弹窗/toast v8 风格 + float.html 同步双主题 | ✅ |
-| iter-4 | 收敛 + ADR-SP-006 + 文档更新 | ✅ |
+| iter-4 | 收敛 + ADR-SP-008 + 文档更新 | ✅ |
 
 ### 4. 文档形式
 

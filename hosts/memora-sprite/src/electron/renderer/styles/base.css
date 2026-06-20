@@ -3,7 +3,7 @@
  *
  * 包含：双主题 CSS 变量系统、全局重置、滚动条、通用工具类。
  *
- * 主题策略（ADR-SP-006）：
+ * 主题策略（ADR-SP-008）：
  * - 浅色主题为默认（:root），对齐 docs/demo-new-ui-v8.html
  * - 深色主题为备选（[data-theme="dark"]），保留 Catppuccin Mocha 调色板
  * - 通过 <html data-theme="dark"> 切换，持久化到 localStorage
