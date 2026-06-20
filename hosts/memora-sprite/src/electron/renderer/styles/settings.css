@@ -253,3 +253,38 @@
   border-top: 1px solid var(--surface2);
   flex-shrink: 0;
 }
+
+/* FD-A2 设置面板加载失败状态 */
+.settings-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px;
+  margin: 0;
+  background: #5c1a1a;
+  border-bottom: 1px solid #8b3a3a;
+  color: #fca5a5;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.settings-error.hidden {
+  display: none;
+}
+
+.settings-error-btn {
+  padding: 4px 12px;
+  background: #8b3a3a;
+  border: 1px solid #b45353;
+  border-radius: 4px;
+  color: #fca5a5;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.settings-error-btn:hover {
+  background: #a04242;
+}

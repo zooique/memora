@@ -20,6 +20,8 @@ export const IPC_CHANNELS = {
   SESSION_LOAD: 'session-load',
   /** 新建会话 */
   SESSION_NEW: 'session-new',
+  /** FD-A1 列出所有会话 */
+  SESSION_LIST: 'session-list',
 
   // ─── 记忆相关 ─────────────────────────────────────────
   /** 列出记忆 */

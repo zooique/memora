@@ -153,6 +153,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 加载初始数据
   await loadSessionHistory();
+  // FD-A1 加载会话列表（用于切换历史会话）
+  void loadSessionList();
   void loadMemoryList();
   void loadPersonaList();
   void loadConfig();
@@ -281,6 +283,11 @@ function setupBusinessLogic(): void {
       handleIpcError('onNewSession', error, '新建会话失败');
     }
   });
+
+  // FD-A1 会话切换回调
+  uiManager.setSessionSwitchCallback((sessionId: string) => {
+    void switchSession(sessionId);
+  });
 }
 
 // ─── 历史消息加载 ──────────────────────────────────────────
@@ -301,6 +308,48 @@ async function loadSessionHistory(): Promise<void> {
   } catch (error) {
     // 会话历史加载失败不影响主流程，记录日志辅助排查
     console.error('[loadSessionHistory] 加载会话历史失败:', error);
+  }
+}
+
+// FD-A1 当前会话 ID（用于会话列表 UI 高亮当前项）
+let currentSessionId = '';
+
+// FD-A1 加载会话列表到 UI
+async function loadSessionList(): Promise<void> {
+  try {
+    const { sessions } = await window.electronAPI.listSessions();
+    // 推断当前会话 ID：取最近一条（listSessions 按顺序返回）
+    if (sessions.length > 0) {
+      currentSessionId = sessions[sessions.length - 1].id;
+    }
+    uiManager.updateSessionList(sessions, currentSessionId);
+  } catch (error) {
+    console.error('[loadSessionList] 加载会话列表失败:', error);
+  }
+}
+
+// FD-A1 切换会话
+async function switchSession(sessionId: string): Promise<void> {
+  try {
+    // 清空当前消息区
+    uiManager.clearMessages();
+    // 加载目标会话的消息
+    const parts = sessionId.split('-');
+    const date = parts.slice(0, 3).join('-');
+    const name = parts.slice(3).join('-') || 'main';
+    const { messages } = await window.electronAPI.loadSession({ date, session: name });
+    for (const msg of messages) {
+      const role = (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
+        ? msg.role
+        : 'assistant';
+      uiManager.appendMessage({ role, content: msg.content });
+    }
+    currentSessionId = sessionId;
+    // 刷新会话列表以更新高亮
+    const { sessions } = await window.electronAPI.listSessions();
+    uiManager.updateSessionList(sessions, currentSessionId);
+  } catch (error) {
+    console.error('[switchSession] 切换会话失败:', error);
   }
 }
 
@@ -834,6 +883,8 @@ async function loadConfig(): Promise<void> {
     };
 
     uiManager.loadConfigToForm(formConfig);
+    // FD-A2 加载成功时隐藏之前的错误横幅
+    uiManager.hideSettingsError();
 
     // FD-04 加载项目列表到专注项目下拉框
     try {
@@ -847,6 +898,10 @@ async function loadConfig(): Promise<void> {
     uiManager.resetSettingsFormDirty();
   } catch (error) {
     console.error('[loadConfig] 加载精灵配置失败:', error);
+    // FD-A2 显示错误状态，用户可点击重试
+    uiManager.showSettingsError('加载精灵配置失败，请检查日志或点击重试', () => {
+      void loadConfig();
+    });
   }
 }
 
@@ -855,10 +910,16 @@ async function loadLlmConfig(): Promise<void> {
   try {
     const data = await window.electronAPI.getLlmConfig();
     uiManager.loadLlmConfigToForm(data);
+    // FD-A2 加载成功时隐藏之前的错误横幅
+    uiManager.hideSettingsError();
     // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
     uiManager.resetSettingsFormDirty();
   } catch (error) {
     console.error('[loadLlmConfig] 加载 LLM 配置失败:', error);
+    // FD-A2 显示错误状态，用户可点击重试
+    uiManager.showSettingsError('加载 LLM 配置失败，请检查日志或点击重试', () => {
+      void loadLlmConfig();
+    });
   }
 }
 

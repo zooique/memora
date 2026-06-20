@@ -118,6 +118,16 @@
             <span class="chat-toolbar-title">对话</span>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
+          <!-- FD-A1 会话历史切换下拉 -->
+          <div id="session-selector" class="session-selector hidden">
+            <button id="session-current" class="session-current" title="点击切换会话">
+              <span id="session-current-name">当前会话</span>
+              <span class="session-current-arrow">▾</span>
+            </button>
+            <div id="session-dropdown" class="session-dropdown hidden">
+              <ul id="session-list" class="session-list"></ul>
+            </div>
+          </div>
           <button id="btn-new-session" title="开始新会话（Ctrl+N，当前会话保留在历史中）">✨ 新会话</button>
         </div>
 
@@ -191,6 +201,12 @@
           <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
           <button class="settings-tab" data-settings-tab="sprite">精灵</button>
           <button class="settings-tab" data-settings-tab="project">项目</button>
+        </div>
+
+        <!-- FD-A2 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
+        <div id="settings-error" class="settings-error hidden">
+          <span id="settings-error-msg"></span>
+          <button id="settings-error-retry" class="settings-error-btn">重试</button>
         </div>
 
         <!-- LLM 配置 -->

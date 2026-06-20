@@ -230,6 +230,8 @@ export class UIManager {
   // ─── UI 状态字段 ────────────────────────────────────────
   /** FD-07 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
+  /** FD-A2 设置面板加载失败重试回调 */
+  private settingsErrorRetryCallback: (() => void) | null = null;
   /** 当前角色匹配模式（由 renderer.ts 设置） */
   private currentPersonaMode: string = 'auto';
   /** UI-AR-02 弹窗打开前的焦点元素（供关闭时恢复） */
@@ -314,6 +316,19 @@ export class UIManager {
     if (this.btnNewSession) {
       this.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
     }
+
+    // FD-A1 会话选择器：点击切换下拉菜单
+    const sessionCurrent = document.getElementById('session-current');
+    if (sessionCurrent) {
+      this.addEventListener(sessionCurrent, 'click', () => this.toggleSessionDropdown());
+    }
+    // 点击其他区域关闭下拉
+    this.addEventListener(document, 'click', (e) => {
+      const selector = document.getElementById('session-selector');
+      if (selector && !selector.contains(e.target as Node)) {
+        this.closeSessionDropdown();
+      }
+    });
 
     // 导航事件
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
@@ -1637,6 +1652,14 @@ export class UIManager {
     this.initApiKeyToggle('btn-toggle-llm-key', 'cfg-llm-api-key');
     this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
 
+    // FD-A2 设置面板加载失败重试按钮
+    const btnRetry = document.getElementById('settings-error-retry');
+    if (btnRetry) {
+      this.addEventListener(btnRetry, 'click', () => {
+        this.settingsErrorRetryCallback?.();
+      });
+    }
+
     // FD-07 监听设置面板所有表单元素的变更，标记 dirty
     const settingsPanel = document.getElementById('panel-settings');
     if (settingsPanel) {
@@ -1764,6 +1787,112 @@ export class UIManager {
    */
   resetSettingsFormDirty(): void {
     this.settingsFormDirty = false;
+  }
+
+  /** FD-A2 显示设置面板加载失败错误横幅 */
+  showSettingsError(message: string, retryCallback?: () => void): void {
+    const errorEl = document.getElementById('settings-error');
+    const msgEl = document.getElementById('settings-error-msg');
+    if (errorEl && msgEl) {
+      msgEl.textContent = message;
+      errorEl.classList.remove('hidden');
+    }
+    if (retryCallback) {
+      this.settingsErrorRetryCallback = retryCallback;
+    }
+  }
+
+  /** FD-A2 隐藏设置面板加载失败错误横幅 */
+  hideSettingsError(): void {
+    const errorEl = document.getElementById('settings-error');
+    if (errorEl) {
+      errorEl.classList.add('hidden');
+    }
+    this.settingsErrorRetryCallback = null;
+  }
+
+  // ─── FD-A1 会话历史切换 ─────────────────────────────────────
+
+  /** 会话切换回调（由 renderer.ts 注入） */
+  private sessionSwitchCallback: ((sessionId: string) => void) | null = null;
+
+  /** FD-A1 设置会话切换回调 */
+  setSessionSwitchCallback(cb: (sessionId: string) => void): void {
+    this.sessionSwitchCallback = cb;
+  }
+
+  /**
+   * FD-A1 更新会话列表 UI
+   *
+   * 从主进程获取会话列表后，填充下拉菜单。
+   * 会话数 ≤ 1 时隐藏选择器（无需切换）。
+   */
+  updateSessionList(sessions: Array<{ id: string; date: string; name: string }>, currentSessionId: string): void {
+    const selector = document.getElementById('session-selector');
+    const list = document.getElementById('session-list');
+    const currentName = document.getElementById('session-current-name');
+    if (!selector || !list || !currentName) return;
+
+    // 仅一个会话时隐藏选择器
+    if (sessions.length <= 1) {
+      selector.classList.add('hidden');
+      return;
+    }
+
+    selector.classList.remove('hidden');
+
+    // 找到当前会话
+    const current = sessions.find(s => s.id === currentSessionId);
+    currentName.textContent = current?.name ?? currentSessionId;
+
+    // 清空并重建列表
+    while (list.firstChild) {
+      list.removeChild(list.firstChild);
+    }
+
+    // 按时间倒序（最近在前）
+    const sorted = [...sessions].reverse();
+    for (const session of sorted) {
+      const li = document.createElement('li');
+      li.className = 'session-list-item';
+      if (session.id === currentSessionId) {
+        li.classList.add('active');
+      }
+      li.dataset.sessionId = session.id;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'session-list-item-name';
+      nameSpan.textContent = session.name;
+      li.appendChild(nameSpan);
+
+      const dateSpan = document.createElement('span');
+      dateSpan.className = 'session-list-item-date';
+      dateSpan.textContent = session.date;
+      li.appendChild(dateSpan);
+
+      li.addEventListener('click', () => {
+        this.toggleSessionDropdown(); // 关闭下拉
+        this.sessionSwitchCallback?.(session.id);
+      });
+
+      list.appendChild(li);
+    }
+  }
+
+  /** FD-A1 切换会话下拉菜单的显示/隐藏 */
+  toggleSessionDropdown(): void {
+    const dropdown = document.getElementById('session-dropdown');
+    if (dropdown) {
+      dropdown.classList.toggle('hidden');
+    }
+  }
+
+  /** FD-A1 关闭会话下拉菜单 */
+  closeSessionDropdown(): void {
+    const dropdown = document.getElementById('session-dropdown');
+    if (dropdown) {
+      dropdown.classList.add('hidden');
+    }
   }
 
   /** 应用 LLM 预设到表单 */

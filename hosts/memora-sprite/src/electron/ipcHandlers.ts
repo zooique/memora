@@ -317,6 +317,26 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       return { success: false, error: toError(error).message };
     }
   });
+
+  // FD-A1 列出所有会话
+  ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {
+    try {
+      const sessions = ctx.sessionStore.listSessions();
+      // 解析会话名，提取日期和名称用于 UI 展示
+      const parsed = sessions.map((s) => {
+        const parts = s.split('-');
+        // 格式：YYYY-MM-DD-name（如 2026-06-20-main, 2026-06-20-session-143052）
+        if (parts.length >= 3) {
+          return { id: s, date: parts[0] + '-' + parts[1] + '-' + parts[2], name: parts.slice(3).join('-') || 'main' };
+        }
+        return { id: s, date: s, name: s };
+      });
+      return { sessions: parsed };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '列出会话失败' });
+      return { sessions: [] };
+    }
+  });
 }
 
 // ─── 流式对话处理 ─────────────────────────────────────────

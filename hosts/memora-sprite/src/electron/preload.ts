@@ -51,6 +51,8 @@ export interface ElectronAPI {
   sendUserInput: (text: string) => void;
   abortChat: () => Promise<void>;
   loadSession: (query: { date?: string; session?: string }) => Promise<{ messages: ChatMessage[] }>;
+  /** FD-A1 列出所有会话 */
+  listSessions: () => Promise<{ sessions: Array<{ id: string; date: string; name: string }> }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
@@ -249,6 +251,8 @@ const electronAPI: ElectronAPI = {
 
   // 会话（FD-05）
   newSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
+  // FD-A1 列出所有会话
+  listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST),
 
   // 仪表盘（FD-03）
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),
