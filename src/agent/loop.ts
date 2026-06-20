@@ -10,11 +10,11 @@
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
-import type { ToolDefinition } from './toolExecutor.js';
-import type { AgentChunk, UIMessages } from './types.js';
-import type { ITracer } from './tracer.js';
-import { LOOP_CONSTANTS } from './constants.js';
-import { NOOP_TRACER, TRACE_SPANS } from './tracer.js';
+import type { ToolDefinition } from '@/agent/toolExecutor.js';
+import type { AgentChunk, UIMessages } from '@/agent/types.js';
+import type { ITracer } from '@/agent/tracer.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
+import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 

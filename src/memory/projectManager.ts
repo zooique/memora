@@ -31,15 +31,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
-import { FileStore } from './store.js';
-import { InMemoryStorage } from './inMemoryStorage.js';
-import type { IMemoryStorage } from './storageInterface.js';
-import { MemoryLoader } from './loader.js';
-import type { LoadResult } from './loader.js';
+import { FileStore } from '@/memory/store.js';
+import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import { MemoryLoader } from '@/memory/loader.js';
+import type { LoadResult } from '@/memory/loader.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/errors.js';
-import { SOURCE_LABELS, type Memory } from './types.js';
+import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 
 /**
  * 项目上下文：打开一个项目后产出的一组组件

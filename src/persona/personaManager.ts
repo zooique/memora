@@ -23,7 +23,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
-import type { Persona, PersonaMode } from './types.js';
+import type { Persona, PersonaMode } from '@/persona/types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
 
 /**

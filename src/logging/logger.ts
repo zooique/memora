@@ -17,9 +17,12 @@
  *   import { setLogger } from '@/logging/logger.js';
  *   setLogger(myCustomLogger);
  */
-import type { ILogger } from './loggerInterface.js';
+import type { ILogger } from '@/logging/loggerInterface.js';
 import { statSync, truncateSync } from 'node:fs';
-import { toError } from '../utils/toError.js';
+import { toError } from '@/utils/toError.js';
+// 桥接 utils 层 loggerHolder：utils 运行时不依赖 logging/，
+// 由本模块在加载和 setLogger 时反向注入 logger 实例。
+import { setLogger as setUtilsLogger } from '@/utils/loggerHolder.js';
 
 /**
  * 从 unknown 值提取错误消息（复用零依赖的 toError，避免类型断言）
@@ -200,6 +203,9 @@ let _logger: ILogger = createConsoleLogger();
 /** 标记 _logger 是否已被宿主注入（用于 setLogger 覆盖检测） */
 let _loggerInjected = false;
 
+// 同步初始化 utils 层 logger 桥接（确保 utils 在 pino 异步加载前就有 console fallback）
+setUtilsLogger(_logger);
+
 // 模块加载时异步尝试升级到 pino（不阻塞模块导入）
 void tryCreatePinoLogger().then((pinoLogger) => {
   if (pinoLogger) {
@@ -214,6 +220,8 @@ void tryCreatePinoLogger().then((pinoLogger) => {
       'logger 启动（console fallback，pino 未安装）',
     );
   }
+  // 桥接注入到 utils 层（utils 运行时不依赖 logging/）
+  setUtilsLogger(_logger);
 });
 
 /**
@@ -262,6 +270,10 @@ export function setLogger(newLogger: ILogger | undefined): void {
     _loggerInjected = false;
     void tryCreatePinoLogger().then((pinoLogger) => {
       _logger = pinoLogger ?? createConsoleLogger();
+      // 桥接注入到 utils 层
+      setUtilsLogger(_logger);
     });
   }
+  // 同步桥接注入到 utils 层（覆盖异步路径，确保 setLogger 后立即生效）
+  setUtilsLogger(_logger);
 }

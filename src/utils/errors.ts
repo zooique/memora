@@ -15,9 +15,9 @@
  *   2. 详情（原文）—— 排查用
  *   3. 建议（下一步）—— 怎么修复
  */
-import { logger } from '../logging/logger.js';
+import { getLogger } from '@/utils/loggerHolder.js';
 // 纯逻辑 toError，浏览器端可直接 import 此文件而不引入 logger 依赖
-export { toError } from './toError.js';
+export { toError } from '@/utils/toError.js';
 
 export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
 
@@ -123,7 +123,7 @@ export class MemoraError extends Error {
    * 记录到日志（结构化）
    */
   log(): void {
-    logger.error(
+    getLogger().error(
       {
         err: this,
         category: this.category,

@@ -10,7 +10,7 @@
  *   - 置信度低于阈值时静默跳过
  */
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { ConfigSuggestion } from './configManager.js';
+import type { ConfigSuggestion } from '@/agent/managers/configManager.js';
 import { logger } from '@/logging/logger.js';
 
 /** AutoConfigRefiner 配置 */

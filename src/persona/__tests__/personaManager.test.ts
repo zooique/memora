@@ -15,8 +15,8 @@
  * 测试中目录名必须为 personas。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { PersonaManager } from '../personaManager.js';
-import type { Persona } from '../types.js';
+import { PersonaManager } from '@/persona/personaManager.js';
+import type { Persona } from '@/persona/types.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

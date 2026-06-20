@@ -6,9 +6,9 @@
  *
  * 这是"万物皆记忆"哲学的代码体现——所有记忆共享同一条加载管线
  */
-import type { FileStore } from './store.js';
-import type { IMemoryStorage } from './storageInterface.js';
-import { SOURCE_LABELS, type Memory } from './types.js';
+import type { FileStore } from '@/memory/store.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 import { toError } from '@/utils/errors.js';
 
 /**

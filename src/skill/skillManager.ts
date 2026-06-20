@@ -22,7 +22,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
-import type { SkillEntry, SkillMatch } from './types.js';
+import type { SkillEntry, SkillMatch } from '@/skill/types.js';
 import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
 
 /**

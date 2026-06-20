@@ -12,8 +12,8 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
-import type { MessageHistory } from '../messageHistory.js';
-import type { AgentLoop } from '../loop.js';
+import type { MessageHistory } from '@/agent/messageHistory.js';
+import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import {

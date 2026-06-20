@@ -10,7 +10,7 @@
  *   - loadAll / getProjection 查询
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { WorkProjectionManager } from '../managers/workProjection.js';
+import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';

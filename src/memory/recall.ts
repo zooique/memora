@@ -7,11 +7,11 @@
  *
  * 详见 ADR-004 · 记忆统一模型 + architecture_philosophy_rules.md §6 增量召回
  */
-import type { Memory } from './types.js';
-import type { IMemoryStorage } from './storageInterface.js';
-import type { VectorStore } from './vectorStore.js';
+import type { Memory } from '@/memory/types.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { VectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
-import { STOPWORDS, SOURCE_LABELS } from './types.js';
+import { STOPWORDS, SOURCE_LABELS } from '@/memory/types.js';
 import { segmentText } from '@/utils/segmenter.js';
 
 // ─── 召回与衰减常量 ─────────────────────────────────────

@@ -23,32 +23,32 @@
  *   - 薄包装方法移除，调用方改为 agent.<manager>.xxx()
  */
 import { basename } from 'node:path';
-import { AGENT_CONSTANTS } from './constants.js';
-import type { AgentLoop } from './loop.js';
-import type { AgentChunk, UIMessages } from './types.js';
-import type { ToolExecutor } from './toolExecutor.js';
-import type { MessageHistory } from './messageHistory.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
+import type { AgentLoop } from '@/agent/loop.js';
+import type { AgentChunk, UIMessages } from '@/agent/types.js';
+import type { ToolExecutor } from '@/agent/toolExecutor.js';
+import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
-import type { AutoConfigRefiner } from './managers/autoConfigRefiner.js';
+import type { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { recall } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
-import type { InsightExtractor } from './managers/insightExtractor.js';
-import type { ConfigManager } from './managers/configManager.js';
+import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
+import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type {
   MemoryInspector,
   MemorySnapshot,
   AgentStats,
   AgentSearchHit,
   SuggestHit,
-} from './managers/memoryInspector.js';
-import { extractUserFacts } from './managers/userFactExtractor.js';
-import { assembleComponents } from './assembler.js';
+} from '@/agent/managers/memoryInspector.js';
+import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
+import { assembleComponents } from '@/agent/assembler.js';
 import { configError } from '@/utils/errors.js';
-import { SessionManager, type AgentForkResult } from './managers/sessionManager.js';
+import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
@@ -57,7 +57,7 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
-import type { ITracer } from './tracer.js';
+import type { ITracer } from '@/agent/tracer.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 

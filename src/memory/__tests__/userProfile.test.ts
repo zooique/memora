@@ -10,11 +10,11 @@
  *       避免反向依赖 agent/（memory/ 不可依赖 agent/）。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { UserProfile } from '../userProfile.js';
-import type { ExtractedFact } from '../userProfile.js';
-import type { IMemoryStorage } from '../storageInterface.js';
-import type { Memory } from '../types.js';
-import { SOURCE_LABELS } from '../types.js';
+import { UserProfile } from '@/memory/userProfile.js';
+import type { ExtractedFact } from '@/memory/userProfile.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { Memory } from '@/memory/types.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
 
 /**
  * 创建 Mock IMemoryStorage

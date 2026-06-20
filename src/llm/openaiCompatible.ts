@@ -4,9 +4,9 @@
  * 适用于：DeepSeek / 豆包 / 通义 / Ollama / 任何兼容 OpenAI 协议的 API
  * 详见 ADR-003
  */
-import { LlmProvider } from './provider.js';
-import type { Message, ChatOptions } from './provider.js';
-import type { LlmChunk, ToolCall } from './types.js';
+import { LlmProvider } from '@/llm/provider.js';
+import type { Message, ChatOptions } from '@/llm/provider.js';
+import type { LlmChunk, ToolCall } from '@/llm/types.js';
 import { llmError, networkError, configError, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 

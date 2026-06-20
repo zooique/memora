@@ -4,8 +4,8 @@
  * 详见 ADR-003
  */
 import type { Config } from '@/config/loader.js';
-import { LlmProvider } from './provider.js';
-import { OpenAICompatibleProvider } from './openaiCompatible.js';
+import { LlmProvider } from '@/llm/provider.js';
+import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 

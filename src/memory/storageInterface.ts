@@ -14,7 +14,7 @@
  * 方法签名保持同步语义（与 better-sqlite3 一致），
  * 调用方已有的 `await` 调用仍然安全（await 同步值 = 立即返回）。
  */
-import type { Memory } from './types.js';
+import type { Memory } from '@/memory/types.js';
 
 /**
  * 记忆存储接口

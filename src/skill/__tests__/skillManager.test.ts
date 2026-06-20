@@ -12,7 +12,7 @@
  * 注意：SkillManager(configDir) 只扫描 configDir/skills/ 一个目录
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SkillManager } from '../skillManager.js';
+import { SkillManager } from '@/skill/skillManager.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';

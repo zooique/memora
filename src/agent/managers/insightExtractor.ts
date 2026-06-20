@@ -17,7 +17,7 @@ import { SOURCE_LABELS, escapeLike } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
-import type { WriteExtensions } from '../toolExecutor.js';
+import type { WriteExtensions } from '@/agent/toolExecutor.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 

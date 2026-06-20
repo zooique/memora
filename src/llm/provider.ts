@@ -3,7 +3,7 @@
  * 所有 LLM 实现（DeepSeek / 豆包 / OpenAI / Mock）必须实现此接口
  * 详见 ADR-003
  */
-import type { LlmChunk } from './types.js';
+import type { LlmChunk } from '@/llm/types.js';
 
 export interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool';

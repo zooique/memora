@@ -8,12 +8,12 @@
  *
  * 注意：此实现不持久化，进程退出后数据丢失。
  */
-import type { IMemoryStorage } from './storageInterface.js';
-import type { Memory } from './types.js';
-import { validateSource } from './types.js';
+import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { Memory } from '@/memory/types.js';
+import { validateSource } from '@/memory/types.js';
 import { segmentText } from '@/utils/segmenter.js';
 import { logger } from '@/logging/logger.js';
-import { applyDecayToMemory } from './recall.js';
+import { applyDecayToMemory } from '@/memory/recall.js';
 
 /**
  * 内存存储实现

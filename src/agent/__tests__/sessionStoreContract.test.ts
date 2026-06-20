@@ -12,7 +12,7 @@
  *   - 未注入 sessionStore 时的降级行为
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MessageHistory } from '../messageHistory.js';
+import { MessageHistory } from '@/agent/messageHistory.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 
 /**

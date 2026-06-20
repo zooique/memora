@@ -7,7 +7,7 @@
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import { SOURCE_LABELS, inferSource, type Memory } from './types.js';
+import { SOURCE_LABELS, inferSource, type Memory } from '@/memory/types.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from '@/utils/frontmatter.js';
 
 /**

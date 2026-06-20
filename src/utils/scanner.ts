@@ -10,7 +10,7 @@
 import { readFile, readdir, access } from 'node:fs/promises';
 import { resolve, join, basename } from 'node:path';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
-import { logger } from '@/logging/logger.js';
+import { getLogger } from '@/utils/loggerHolder.js';
 
 /** 排除的文件名（README / CHANGELOG / LICENSE 不纳入扫描） */
 const EXCLUDED_FILES = new Set(['README.md', 'CHANGELOG.md', 'LICENSE']);
@@ -42,7 +42,7 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
   try {
     await access(dir);
   } catch {
-    logger.debug({ dir }, '扫描目录不存在，跳过');
+    getLogger().debug({ dir }, '扫描目录不存在，跳过');
     return [];
   }
 
@@ -56,7 +56,7 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
         !EXCLUDED_FILES.has(f),
     );
   } catch {
-    logger.warn({ dir }, '扫描目录失败');
+    getLogger().warn({ dir }, '扫描目录失败');
     return [];
   }
 
@@ -75,7 +75,7 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
         filePath,
       });
     } catch (err) {
-      logger.warn({ file, err }, '解析 Markdown 文件失败');
+      getLogger().warn({ file, err }, '解析 Markdown 文件失败');
     }
   }
 
@@ -117,7 +117,7 @@ export function parseTrigger(fm: Record<string, string>, key = 'trigger'): RegEx
     const clean = match ? match[1]! : pattern;
     return new RegExp(clean, 'i');
   } catch {
-    logger.warn({ trigger: raw }, '触发正则无效，已忽略');
+    getLogger().warn({ trigger: raw }, '触发正则无效，已忽略');
     return undefined;
   }
 }

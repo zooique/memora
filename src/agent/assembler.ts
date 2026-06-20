@@ -11,23 +11,23 @@
  *   - 组件间的依赖关系在此处显式声明
  */
 
-import { AgentLoop } from './loop.js';
-import { ToolExecutor } from './toolExecutor.js';
-import { MessageHistory } from './messageHistory.js';
+import { AgentLoop } from '@/agent/loop.js';
+import { ToolExecutor } from '@/agent/toolExecutor.js';
+import { MessageHistory } from '@/agent/messageHistory.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import { PersonaManager } from '@/persona/personaManager.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
-import { WorkProjectionManager } from './managers/workProjection.js';
-import { InsightExtractor } from './managers/insightExtractor.js';
-import { ConfigManager } from './managers/configManager.js';
-import { MemoryInspector } from './managers/memoryInspector.js';
-import { AutoConfigRefiner } from './managers/autoConfigRefiner.js';
+import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
+import { InsightExtractor } from '@/agent/managers/insightExtractor.js';
+import { ConfigManager } from '@/agent/managers/configManager.js';
+import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { ITracer } from './tracer.js';
-import type { UIMessages } from './types.js';
+import type { ITracer } from '@/agent/tracer.js';
+import type { UIMessages } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 
 /** 组装器输入参数 */

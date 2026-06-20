@@ -10,8 +10,8 @@
 
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
-import type { AgentLoop } from '../loop.js';
-import type { MessageHistory } from '../messageHistory.js';
+import type { AgentLoop } from '@/agent/loop.js';
+import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
