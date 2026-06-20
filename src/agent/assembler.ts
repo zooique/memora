@@ -152,7 +152,7 @@ export async function assembleComponents(
     toolExecutor: (name: string, args: string) =>
       toolExec.execute(name, args, insightExtractor.writeExtensions ?? undefined),
     systemPromptPrefix,
-    toolDefinitions: toolExec.getToolDefinitions(),
+    toolDefinitions: toolExec.list,
     maxContextTokens,
     tracer,
     messages,
