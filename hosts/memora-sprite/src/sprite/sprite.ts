@@ -416,13 +416,9 @@ export class Sprite {
     this.agent.switchProject(focusPath).then(() => {
       logger.info({ focusPath }, '已切换到专注项目');
       // 重建 FileWatcherTrigger 以监听新项目路径
+      // 复用 rebuildFileWatcher() 封装的 unregister + register + restart 逻辑（DRY）
       if (this.config.fileWatcherEnabled) {
-        this.triggerBus.unregister('fileWatcher');
-        this.registerFileWatcher();
-        if (this.running) {
-          this.triggerBus.stop();
-          this.triggerBus.start();
-        }
+        this.rebuildFileWatcher();
       }
     }).catch((err: unknown) => {
       logger.warn({ focusPath, err: toError(err).message }, '专注项目切换失败');

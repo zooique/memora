@@ -81,7 +81,7 @@ export class WindowManager {
     } catch (error) {
       errorHandler.handle(error, {
         code: ErrorCode.WINDOW_CREATE_FAILED,
-        context: '窗口创建失败'
+        context: '窗口创建失败',
       });
       throw error;
     }
@@ -96,7 +96,7 @@ export class WindowManager {
   /** 创建完整窗口 */
   private async createFullWindow(): Promise<void> {
     const fullSize = this.windowStateManager.getFullSize();
-    
+
     this.fullWindow = new BrowserWindow({
       width: fullSize.width,
       height: fullSize.height,

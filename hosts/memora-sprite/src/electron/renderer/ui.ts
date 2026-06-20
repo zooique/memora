@@ -141,6 +141,21 @@ export interface LlmConfigSavePayload {
 // ─── UI 管理器类 ─────────────────────────────────────────
 
 export class UIManager {
+  // ─── 静态常量 ───────────────────────────────────────────
+  /** 判断"底部附近"的阈值（像素） */
+  private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
+  /** localStorage 键名：标记是否已显示过三态引导 */
+  private static readonly ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
+  /** Toast 类型与图标映射 */
+  private static readonly TOAST_ICONS: Record<ToastType, string> = {
+    success: '✓',
+    error: '✗',
+    warning: '⚠',
+    info: 'ℹ',
+  };
+  /** Toast 默认自动消失时长（毫秒），error 类型不自动消失 */
+  private static readonly TOAST_DEFAULT_DURATION = 4000;
+
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
@@ -201,6 +216,16 @@ export class UIManager {
 
   /** LLM 预设（从主进程加载，避免硬编码） */
   private llmPresets: Record<string, { provider: string; model: string; baseUrl: string }> = {};
+
+  // ─── UI 状态字段 ────────────────────────────────────────
+  /** FD-07 设置表单是否有未保存修改（dirty 标志） */
+  private settingsFormDirty = false;
+  /** 当前角色匹配模式（由 renderer.ts 设置） */
+  private currentPersonaMode: string = 'auto';
+  /** UI-AR-02 弹窗打开前的焦点元素（供关闭时恢复） */
+  private previousFocusEl: HTMLElement | null = null;
+  /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
+  private isNearBottom = true;
 
   constructor() {
     // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -811,12 +836,6 @@ export class UIManager {
 
   // ─── 滚动控制 ─────────────────────────────────────────
 
-  /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
-  private isNearBottom = true;
-
-  /** 判断"底部附近"的阈值（像素） */
-  private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
-
   /**
    * 智能滚动到底部
    *
@@ -1420,9 +1439,6 @@ export class UIManager {
 
   // ─── 设置面板 ─────────────────────────────────────────
 
-  /** FD-07 设置表单是否有未保存修改（dirty 标志） */
-  private settingsFormDirty = false;
-
   /**
    * UI-UX-01 初始化设置面板 tab 切换
    *
@@ -1708,9 +1724,6 @@ export class UIManager {
     this.cfgFocusProject.value = selectedPath;
   }
 
-  /** 当前角色匹配模式（由 renderer.ts 设置） */
-  private currentPersonaMode: string = 'auto';
-
   /** 设置角色匹配模式（供 renderer.ts 调用） */
   setPersonaMode(mode: string): void {
     this.currentPersonaMode = mode;
@@ -1876,9 +1889,6 @@ export class UIManager {
     }
   }
 
-  /** UI-AR-02 弹窗打开前的焦点元素（供关闭时恢复） */
-  private previousFocusEl: HTMLElement | null = null;
-
   /**
    * 显示通用确认弹窗（替代 window.confirm）
    *
@@ -1978,9 +1988,6 @@ export class UIManager {
   }
 
   // ─── 三态首次引导 ─────────────────────────────────────
-
-  /** localStorage 键名：标记是否已显示过三态引导 */
-  private static readonly ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
 
   /**
    * 检查是否需要显示三态首次引导

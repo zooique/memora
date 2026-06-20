@@ -92,7 +92,6 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   }
 
   // 球体事件处理器（命名函数，便于 cleanup 时 removeEventListener）
-  const onSphereMouseEnter = showDragHintIfFirstTime;
   const onSphereMouseLeave = () => {
     if (dragHintTimer) {
       clearTimeout(dragHintTimer);
@@ -103,7 +102,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   };
 
-  sphere.addEventListener('mouseenter', onSphereMouseEnter);
+  sphere.addEventListener('mouseenter', showDragHintIfFirstTime);
   sphere.addEventListener('mouseleave', onSphereMouseLeave);
 
   // ─── 拖动检测（方案 §5.4 排雷修正） ──────────────────────
@@ -215,7 +214,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
     document.removeEventListener('contextmenu', onContextMenu);
-    sphere.removeEventListener('mouseenter', onSphereMouseEnter);
+    sphere.removeEventListener('mouseenter', showDragHintIfFirstTime);
     sphere.removeEventListener('mouseleave', onSphereMouseLeave);
     if (dragHintTimer) clearTimeout(dragHintTimer);
     activeTimers.forEach(clearTimeout);
