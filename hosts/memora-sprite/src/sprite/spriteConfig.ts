@@ -49,8 +49,8 @@ export interface SpriteConfig {
 /** 配置键名联合类型 */
 export type SpriteConfigKey = keyof SpriteConfig;
 
-/** 毫秒/分钟转换常量（供 sprite 和 UI 层共享，DRY） */
-export const MS_PER_MINUTE = 60_000;
+/** 毫秒/分钟转换常量（从 constants.ts 重新导出，保持对旧导入者的兼容） */
+export { MS_PER_MINUTE } from './constants.js';
 
 /** 内置默认值 */
 export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {

@@ -175,6 +175,7 @@ window.addEventListener('beforeunload', () => {
   window.electronAPI?.removeAppErrorListener();
   window.electronAPI?.removeAgentReadyListener();
   window.electronAPI?.removeFloatUnreadListener();
+  window.electronAPI?.removeWindowStateChangedListener();
 });
 
 // ─── 业务逻辑设置 ─────────────────────────────────────────

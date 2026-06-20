@@ -19,7 +19,7 @@ import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
-import { IPC_CHANNELS } from './ipcChannels.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -165,6 +165,14 @@ export class WindowManager {
         e.preventDefault();
         this.windowStateManager.transition('float');
       }
+    });
+
+    // 最大化/还原状态变更 → 推送到渲染进程（用于按钮图标切换）
+    win.on('maximize', () => {
+      win.webContents.send(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED, { maximized: true });
+    });
+    win.on('unmaximize', () => {
+      win.webContents.send(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED, { maximized: false });
     });
   }
 

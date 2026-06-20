@@ -13,12 +13,20 @@
  * - 提供清晰的 API 供其他模块调用
  */
 
-import type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from '../preload.js';
+import type { ElectronAPI, MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from '../preload.js';
 import { renderMarkdown } from './markdown.js';
-import { MS_PER_MINUTE } from '../../sprite/spriteConfig.js';
+/** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块（node:fs/path）带入渲染进程 */
+import { MS_PER_MINUTE } from '../../sprite/constants.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm };
+
+// 扩展全局 Window 类型，消除 TS 编译错误（electronAPI 由 preload.ts 通过 contextBridge 注入）
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
+}
 
 /**
  * 获取必需的 DOM 元素，若缺失或标签名不匹配则抛出明确错误
@@ -165,6 +173,8 @@ export class UIManager {
   private badge: HTMLElement | null;
   /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
   private btnNewSession: HTMLButtonElement | null;
+  /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
+  private btnMaximize: HTMLButtonElement | null;
 
   // 记忆面板元素
   private memoryListEl: HTMLElement | null;
@@ -235,6 +245,7 @@ export class UIManager {
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
     this.btnNewSession = getOptionalElement('btn-new-session', 'button');
+    this.btnMaximize = getOptionalElement('btn-maximize', 'button');
 
     // 记忆面板
     this.memoryListEl = getOptionalElement('memory-list', 'div');
@@ -305,17 +316,21 @@ export class UIManager {
 
     // 标题栏按钮（可选，部分布局可能不提供）
     const btnMinimize = getOptionalElement('btn-minimize', 'button');
-    const btnMaximize = getOptionalElement('btn-maximize', 'button');
     const btnClose = getOptionalElement('btn-close', 'button');
     if (btnMinimize) {
       this.addEventListener(btnMinimize, 'click', this.handleMinimize.bind(this));
     }
-    if (btnMaximize) {
-      this.addEventListener(btnMaximize, 'click', this.handleMaximize.bind(this));
+    if (this.btnMaximize) {
+      this.addEventListener(this.btnMaximize, 'click', this.handleMaximize.bind(this));
     }
     if (btnClose) {
       this.addEventListener(btnClose, 'click', this.handleClose.bind(this));
     }
+
+    // 窗口状态变更监听（最大化按钮图标切换）
+    window.electronAPI.onWindowStateChanged((msg) => {
+      this.updateMaximizeButton(msg.maximized);
+    });
 
     // 全局键盘快捷键
     this.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
@@ -947,6 +962,21 @@ export class UIManager {
 
   private handleClose(): void {
     window.electronAPI.windowClose();
+  }
+
+  /**
+   * 更新最大化按钮图标
+   *
+   * 根据窗口当前是否最大化切换按钮文字：
+   * - 最大化时显示 "❐"（还原图标）
+   * - 普通状态时显示 "□"（最大化图标）
+   *
+   * 仅当 btnMaximize 元素存在时执行（部分布局可能不提供标题栏）
+   */
+  updateMaximizeButton(maximized: boolean): void {
+    if (!this.btnMaximize) return;
+    this.btnMaximize.textContent = maximized ? '❐' : '□';
+    this.btnMaximize.title = maximized ? '还原' : '最大化';
   }
 
   // ─── 主动提示 banner ──────────────────────────────────

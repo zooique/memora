@@ -160,6 +160,11 @@ export interface ElectronAPI {
 
   // 主动提示已显示通知
   proactivePromptShown: () => void;
+
+  // 窗口状态变更（最大化按钮图标切换）
+  onWindowStateChanged: (cb: (msg: { maximized: boolean }) => void) => void;
+  /** 移除窗口状态变更监听器 */
+  removeWindowStateChangedListener: () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -270,6 +275,12 @@ const electronAPI: ElectronAPI = {
 
   // 主动提示
   proactivePromptShown: () => ipcRenderer.send(IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN),
+
+  // 窗口状态变更（最大化按钮图标切换）
+  onWindowStateChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED, (_: IpcRendererEvent, msg: { maximized: boolean }) => cb(msg)),
+  removeWindowStateChangedListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED);
+  },
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

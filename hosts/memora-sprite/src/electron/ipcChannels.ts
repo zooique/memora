@@ -123,4 +123,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   FLOAT_DRAG_END: 'float-drag-end',
   /** 浮动窗口未读计数 */
   FLOAT_UNREAD: 'float-unread',
+
+  // ─── 窗口状态 ─────────────────────────────────────────
+  /** 窗口最大化/还原状态变更 */
+  WINDOW_STATE_CHANGED: 'window-state-changed',
 } as const;
