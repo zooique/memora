@@ -432,19 +432,13 @@ export class Sprite {
    * 不符合类型的 value 会被忽略（保持原值），由调用方保证传入正确类型。
    */
   private setConfigField(key: SpriteConfigKey, value: unknown): void {
-    // 数值类型字段
+    // 数值类型字段（合并 triggerIntervalMs / proactiveCooldownMs / fileWatcherDebounceMs / proactiveThreshold）
     if (
       key === 'triggerIntervalMs' ||
       key === 'proactiveCooldownMs' ||
-      key === 'fileWatcherDebounceMs'
+      key === 'fileWatcherDebounceMs' ||
+      key === 'proactiveThreshold'
     ) {
-      if (typeof value === 'number') {
-        this.config[key] = value;
-      }
-      return;
-    }
-    // 整数类型字段
-    if (key === 'proactiveThreshold') {
       if (typeof value === 'number') {
         this.config[key] = value;
       }

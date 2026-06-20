@@ -122,12 +122,14 @@ export class WindowManager {
     await this.fullWindow.loadFile(htmlPath);
 
     // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）
-    this.fullWindow.webContents.on('will-navigate', (e, url) => {
-      if (url !== this.fullWindow!.webContents.getURL()) {
+    // 缓存 fullWindow 引用避免非空断言，并确保回调中引用的是当前窗口实例
+    const win = this.fullWindow;
+    win.webContents.on('will-navigate', (e, url) => {
+      if (url !== win.webContents.getURL()) {
         e.preventDefault();
       }
     });
-    this.fullWindow.webContents.setWindowOpenHandler(() => {
+    win.webContents.setWindowOpenHandler(() => {
       return { action: 'deny' };
     });
   }
@@ -153,12 +155,13 @@ export class WindowManager {
 
   /** 设置窗口事件处理器 */
   private setupWindowEvents(): void {
-    if (!this.fullWindow) return;
+    const win = this.fullWindow;
+    if (!win) return;
 
-    this.fullWindow.on('close', (e) => {
+    win.on('close', (e) => {
       // 应用退出时允许窗口真正关闭
       if (this.isQuitting) return;
-      if (!this.fullWindow!.isDestroyed()) {
+      if (!win.isDestroyed()) {
         e.preventDefault();
         this.windowStateManager.transition('float');
       }

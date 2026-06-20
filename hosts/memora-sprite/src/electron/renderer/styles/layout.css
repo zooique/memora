@@ -24,6 +24,9 @@
 }
 
 /* ─── 顶部栏（与左侧栏同色，无边界；仅保留窗口控制按钮） ─── */
+/* 注意：不在此处设置 -webkit-app-region: drag，否则 Electron 会将整个
+   标题栏变为拖拽区，导致 #titlebar-controls 按钮点击事件被拖拽行为消费。
+   拖拽区仅限定在 #titlebar-drag 内，控件区完全独立。 */
 #titlebar {
   grid-area: titlebar;
   height: 44px;
@@ -34,13 +37,16 @@
   background: var(--bg);
   border-bottom: none;  /* v8：顶部栏与侧边栏同色，无边界 */
   flex-shrink: 0;
-  -webkit-app-region: drag;
 }
 
-/* v8：顶部栏不再显示标题文字，#titlebar-drag 和 #app-title 仅保留占位（向后兼容） */
+/* v8：顶部栏不再显示标题文字，#titlebar-drag 是唯一的窗口拖拽区域 */
 #titlebar-drag {
+  -webkit-app-region: drag;
   flex: 1;
+  height: 100%;
   padding-left: 12px;
+  display: flex;
+  align-items: center;
 }
 
 #app-title {
@@ -460,13 +466,13 @@
 
 /* ============================================================
  * 响应式适配（ADR-SP-006 §五 响应式策略）
- * - ≥1280px：完整 240px 侧边栏（默认）
- * - 960-1279px：侧边栏收窄为 64px 图标模式
- * - <960px：侧边栏隐藏，核心窗口全宽（抽屉模式需 JS 配合，后续实现）
+ * - ≥800px：完整 240px 侧边栏（默认窗口 900px 在此范围）
+ * - 640-799px：侧边栏收窄为 64px 图标模式（minWidth 640px）
+ * - <640px：侧边栏隐藏（受 minWidth 约束，通常不会触发）
  * ============================================================ */
 
-/* 中屏（960-1279px）：侧边栏图标模式 */
-@media (max-width: 1279px) {
+/* 中屏（640-799px）：侧边栏图标模式 */
+@media (max-width: 799px) {
   #app {
     grid-template-columns: 64px 1fr;
   }
@@ -511,8 +517,8 @@
   }
 }
 
-/* 小屏（<960px）：侧边栏隐藏，核心窗口全宽 */
-@media (max-width: 959px) {
+/* 小屏（<640px）：侧边栏隐藏，核心窗口全宽（受 minWidth 640px 约束，通常不会触发） */
+@media (max-width: 639px) {
   #app {
     grid-template-columns: 0 1fr;
     grid-template-areas:

@@ -152,8 +152,13 @@ export class MemoryController {
 
   /** 获取记忆仪表盘数据 */
   dashboard(): DashboardData {
-    const stats = this.agent.memory!.stats();
-    const suggestions = this.agent.memory!.suggest(undefined, { limit: 5 });
+    // 空值守卫：memory 模块未初始化时返回空仪表盘（降级而非崩溃）
+    const memory = this.agent.memory;
+    if (!memory) {
+      return { total: 0, bySource: {}, suggestions: [] };
+    }
+    const stats = memory.stats();
+    const suggestions = memory.suggest(undefined, { limit: 5 });
     return {
       total: stats.total,
       bySource: stats.bySource,
