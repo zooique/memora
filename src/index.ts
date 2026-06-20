@@ -16,9 +16,9 @@ export type {
   AgentOptions,
   AgentContext,
   AgentBuildCtx,
-  AgentForkResult,
   AgentProjectEntry,
 } from './agent/agent.js';
+export { type AgentForkResult } from './agent/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from './agent/toolExecutor.js';
 export type { PersonaMode, Persona } from './persona/types.js';
 // 类型从专职模块导出

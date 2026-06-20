@@ -48,8 +48,9 @@ import type {
 import { extractUserFacts } from './userFactExtractor.js';
 import { assembleComponents } from './assembler.js';
 import { configError } from '@/utils/errors.js';
+import { SessionManager, type AgentForkResult } from './sessionManager.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
-import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
@@ -117,19 +118,6 @@ export interface AgentBuildCtx {
   security: SecurityGuard | null;
   index: IMemoryStorage;
   bootstrapMemories: Memory[];
-}
-
-/**
- * Agent.forkSession() 返回值类型（FD-33：公共 API 返回类型显式导出）
- *
- * 注意：与 MessageHistory.forkSession() 的内部返回类型 ForkResult 不同，
- * Agent 层做了简化封装，只暴露宿主需要的 newSession 和 messageCount。
- */
-export interface AgentForkResult {
-  /** 新分支会话名（不含日期前缀的简短名，可直接传给 switchSession()） */
-  newSession: string;
-  /** 分叉时复制的消息数量 */
-  messageCount: number;
 }
 
 /** Agent 内部配置（构造参数分组） */
@@ -209,6 +197,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private memoryInspector: MemoryInspector | null = null;
   /** V-201: AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
+  /** 会话管理器（从 Agent 拆分出的会话管理职责） */
+  private sessionManager: SessionManager | null = null;
 
   /** 当前激活的技能名（上一轮匹配，本轮注入） */
   private activeSkill: string | null = null;
@@ -547,77 +537,22 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 切换当前会话
-   *
-   * 与 forkSession() 对齐：底层 MessageHistory.switchSession 是纯同步操作（字段赋值），
-   * Agent 层不引入无意义的 async 包装。返回新会话名。
+   * 切换当前会话（委托至 SessionManager）
    */
   switchSession(newSession: string): string {
     this.assertInitialized('switchSession', ['history']);
-
-    // FD-31: 对话进行中切换会话会导致消息持久化分散（appendUser 写入旧会话，appendAssistant 写入新会话）
-    if (this._chatBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
-    }
-
-    return this.requireNonNull(this.history, 'history').switchSession(newSession);
+    return this.requireNonNull(this.sessionManager, 'sessionManager').switchSession(newSession);
   }
 
   /**
-   * 分叉当前会话：复制完整消息历史到新分支，切换到新分支继续对话
+   * 分叉当前会话（委托至 SessionManager）
    *
-   * 分叉后：
-   * - 原会话完整保留，可随时通过 switchSession() 切回（用原会话简短名）
-   * - 新分支拥有独立的消息历史，后续对话互不干扰
-   * - 记忆索引（IMemoryStorage）全局共享，不受分叉影响
-   *
-   * 返回值 newSession 为不含日期前缀的简短名（如 "main-b1"），
-   * 可直接传给 switchSession() / loadSessionMessages() 等会话相关 API。
-   * 如需含日期前缀的完整名（如 "2026-06-19-main-b1"），通过
-   * agent.agentHistory.currentSessionName 获取。
-   *
-   * **注意**：fork 不隔离记忆。分支 A 中提取的 insight 会在分支 B
-   * 的召回中出现，反之亦然。如需要完全独立的记忆空间（如多用户场景），
-   * 应创建独立 Agent 实例 + 独立 dataDir，而非 fork。
-   *
-   * @param targetSession - 自定义新分支名（可选，不传则自动生成）
-   * @returns { newSession, messageCount }
+   * 分叉后原会话完整保留，新分支拥有独立消息历史。
+   * 记忆索引（IMemoryStorage）全局共享，不受分叉影响。
    */
   forkSession(targetSession?: string): AgentForkResult {
     this.assertInitialized('forkSession');
-
-    if (this._chatBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再分叉', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
-    }
-
-    const history = this.requireNonNull(this.history, 'history');
-
-    // 记录源会话名（用于事件，含日期前缀的完整名）
-    const sourceSessionName = history.currentSessionName;
-
-    // 委托 MessageHistory 完成分叉
-    const result = history.forkSession(targetSession);
-
-    // 将消息恢复到 AgentLoop 的工作记忆
-    this.applySessionToLoop(result.messages);
-
-    // 发射事件（供 UI 响应）：from/to 为含日期前缀的完整名，便于 UI 显示
-    this.emit('sessionForked', {
-      from: sourceSessionName,
-      to: `${result.date}-${result.newSession}`,
-      messageCount: result.messages.length,
-    });
-
-    // 返回值 newSession 为不含日期前缀的简短名，
-    // 与 switchSession() / MessageHistory.forkSession() 的语义一致
-    return {
-      newSession: result.newSession,
-      messageCount: result.messages.length,
-    };
+    return this.requireNonNull(this.sessionManager, 'sessionManager').forkSession(targetSession);
   }
 
   /**
@@ -709,6 +644,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.memoryInspector && this.#config.vectorStore) {
       this.memoryInspector.setVectorStore(this.#config.vectorStore);
     }
+    // 创建会话管理器（通过回调访问当前组件，支持 rebuildComponents 后自动获取最新引用）
+    this.sessionManager = new SessionManager(
+      () => this.requireNonNull(this.history, 'history'),
+      () => this.requireNonNull(this.loop, 'loop'),
+      this.#config.sessionStore,
+      () => this._chatBusy,
+      (event, data) => this.emit(event as keyof AgentEventMap, data as never),
+    );
   }
 
   /**
@@ -717,6 +660,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private async rebuildComponentsWithCurrentCtx(): Promise<void> {
     if (!this.pctx) return;
     await this.assembleComponents(this.pctx);
+    // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例
+    this.sessionManager = new SessionManager(
+      () => this.requireNonNull(this.history, 'history'),
+      () => this.requireNonNull(this.loop, 'loop'),
+      this.#config.sessionStore,
+      () => this._chatBusy,
+      (event, data) => this.emit(event as keyof AgentEventMap, data as never),
+    );
   }
 
   // ─── Provider 管理 ────────────────────────────────────
@@ -766,124 +717,37 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 恢复最近的会话对话
-   *
-   * 通过 ISessionStore 加载最近的会话消息，恢复到 AgentLoop 工作记忆。
-   * 宿主项目需注入 ISessionStore 实现，否则返回 0。
+   * 恢复最近的会话对话（委托至 SessionManager）
    */
   async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
     this.assertInitialized('restoreMostRecentSession');
-
-    // FD-21: 对话进行中恢复会话会导致 loop 工作记忆被替换，与当前对话状态冲突
-    if (this._chatBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再恢复会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
-    }
-
-    if (!this.#config.sessionStore) {
-      logger.debug({ hasSessionStore: false }, '未注入 ISessionStore，无法恢复会话');
-      return 0;
-    }
-
-    // 从 sessionStore 列出所有会话，找到最近的
-    const sessions = this.#config.sessionStore.listSessions();
-    if (sessions.length === 0) {
-      logger.debug({ sessionCount: 0 }, '没有找到可恢复的历史会话');
-      return 0;
-    }
-
-    // 优先匹配 preferredSession，否则取最后一个
-    const today = new Date().toISOString().slice(0, 10);
-    const preferred =
-      sessions.find((s) => s === `${today}-${preferredSession}`) ?? sessions[sessions.length - 1];
-
-    // 解析 "YYYY-MM-DD-session" 格式
-    const match = this.requireNonNull(preferred, 'preferredSession').match(
-      /^(\d{4}-\d{2}-\d{2})-(.+)$/,
+    return this.requireNonNull(this.sessionManager, 'sessionManager').restoreMostRecentSession(
+      preferredSession,
     );
-    if (!match) {
-      logger.debug({ session: preferred }, '会话标识格式不匹配');
-      return 0;
-    }
-
-    const [, date, session] = match;
-    const sessionMessages = this.#config.sessionStore.loadMessages(
-      this.requireNonNull(date, 'date'),
-      this.requireNonNull(session, 'session'),
-    );
-    if (sessionMessages.length === 0) {
-      logger.debug({ messageCount: 0 }, '没有找到可恢复的历史会话');
-      return 0;
-    }
-
-    this.applySessionToLoop(sessionMessages);
-
-    return sessionMessages.length;
   }
 
   /**
-   * 恢复指定会话的对话
+   * 恢复指定会话的对话（委托至 SessionManager）
    */
   async restoreSession(date: string, session: string): Promise<number> {
     this.assertInitialized('restoreSession');
-
-    // FD-21: 对话进行中恢复会话会导致 loop 工作记忆被替换，与当前对话状态冲突
-    if (this._chatBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再恢复会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
-    }
-
-    const sessionMessages = await this.requireNonNull(this.history, 'history').loadSessionMessages(
-      date,
-      session,
-    );
-    if (sessionMessages.length === 0) {
-      return 0;
-    }
-
-    this.applySessionToLoop(sessionMessages);
-
-    return sessionMessages.length;
+    return this.requireNonNull(this.sessionManager, 'sessionManager').restoreSession(date, session);
   }
 
   /**
-   * 对外暴露的 loadSessionMessages 委托
+   * 加载会话消息（委托至 SessionManager）
    *
    * **注意：此方法会切换当前会话**（更新 currentDate/currentSession）。
-   * 加载后，下一次 chat() 的消息会写入被加载的会话。
-   * - 如需仅查看历史消息而不切换会话，请在调用后用 switchSession() 切回原会话
-   * - 如需恢复对话上下文（加载到工作记忆），请使用 restoreSession()
-   *
-   * @param date - 日期（YYYY-MM-DD）
-   * @param session - 会话名
-   * @returns 历史消息列表
    */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
     this.assertInitialized('loadSessionMessages', ['history']);
-
-    // FD-34: 对话进行中加载会话会切换 currentDate/currentSession，导致消息持久化分散
-    if (this._chatBusy) {
-      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再加载会话', [
-        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
-      ]);
-    }
-
-    return this.requireNonNull(this.history, 'history').loadSessionMessages(date, session);
+    return this.requireNonNull(this.sessionManager, 'sessionManager').loadSessionMessages(
+      date,
+      session,
+    );
   }
 
   // ─── 守卫方法 ───────────────────────────────────────────
-
-  private applySessionToLoop(
-    sessionMessages: ReadonlyArray<{ role: string; content: string }>,
-  ): void {
-    const messages: Message[] = sessionMessages.map((tm) => ({
-      role: tm.role as Message['role'],
-      content: tm.content,
-    }));
-    this.requireNonNull(this.loop, 'loop').restoreHistory(messages);
-  }
 
   /**
    * 检查 Agent 是否已初始化
@@ -985,6 +849,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._chatBusy = false;
     this.history = null;
     this.loop = null;
+    this.sessionManager = null;
     this.projectManager = null;
     this.insightExtractor = null;
     this.configManager = null;
@@ -1024,38 +889,75 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   // ─── Manager 暴露（激进拆分：调用方直接操作 Manager）──
+  //
+  // 设计策略（ADR-010 §Manager 访问器）：访问器返回 null，门面方法抛错。
+  // - 访问器（getter）：返回 Manager | null，供宿主项目链式调用和优雅降级
+  //   （如 `agent.persona?.activeName`、`if (!agent.memory) return []`）
+  // - 门面方法（snapshot/inspect/stats/searchMemories 等）：通过
+  //   assertInitialized + requireNonNull 抛 MemoraError，提供明确错误信息
+  // 宿主项目使用访问器时需自行判空，或使用门面方法获得自动错误处理。
 
-  /** 角色管理器 */
+  /**
+   * 角色管理器（可能为 null）
+   *
+   * 返回 null 时表示 Agent 未初始化或角色系统未加载。
+   * 链式调用建议使用可选链：`agent.persona?.activeName`
+   */
   get persona(): PersonaManager | null {
     return this.personaManager;
   }
 
-  /** 工具执行器 */
+  /**
+   * 工具执行器（可能为 null）
+   *
+   * 返回 null 时表示 Agent 未初始化。
+   */
   get tools(): ToolExecutor | null {
     return this.toolExec;
   }
 
-  /** 技能管理器 */
+  /**
+   * 技能管理器（可能为 null）
+   *
+   * 返回 null 时表示 Agent 未初始化或技能系统未加载。
+   */
   get skills(): SkillManager | null {
     return this.skillManager;
   }
 
-  /** 配置管理器（规则/技能注入 + 配置建议） */
+  /**
+   * 配置管理器（可能为 null）—— 规则/技能注入 + 配置建议
+   *
+   * 返回 null 时表示 Agent 未初始化。
+   */
   get config(): ConfigManager | null {
     return this.configManager;
   }
 
-  /** Insight 提取器（输入分类 + 记忆提取） */
+  /**
+   * Insight 提取器（可能为 null）—— 输入分类 + 记忆提取
+   *
+   * 返回 null 时表示 Agent 未初始化或 LLM Provider 未配置。
+   */
   get insight(): InsightExtractor | null {
     return this.insightExtractor;
   }
 
-  /** 记忆查看器（快照 + 搜索 + 统计） */
+  /**
+   * 记忆查看器（可能为 null）—— 快照 + 搜索 + 统计
+   *
+   * 返回 null 时表示 Agent 未初始化或存储层未就绪。
+   * 宿主项目常用模式：`const mem = agent.memory; if (!mem) return [];`
+   */
   get memory(): MemoryInspector | null {
     return this.memoryInspector;
   }
 
-  /** 项目管理器（IX-02：统一为 getter 风格，与 persona/skills 一致） */
+  /**
+   * 项目管理器（可能为 null）
+   *
+   * 返回 null 时表示 Agent 未初始化。
+   */
   get projects(): ProjectManager | null {
     return this.projectManager;
   }
