@@ -20,7 +20,7 @@ import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import type { IInteraction } from './interaction.js';
-import { loadSpriteConfig, saveSpriteConfig } from './spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig, MS_PER_MINUTE } from './spriteConfig.js';
 import type { SpriteConfig, SpriteConfigKey } from './spriteConfig.js';
 import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
 import type { DashboardData } from './controllers/index.js';
@@ -42,9 +42,6 @@ export interface SpriteEventMap {
 
 // 重新导出 DashboardData 供外部使用
 export type { DashboardData };
-
-/** 毫秒/分钟转换常量（用于格式化显示） */
-const MS_PER_MINUTE = 60_000;
 
 /**
  * 精灵主控
@@ -157,8 +154,8 @@ export class Sprite {
     for (const handler of set) {
       try {
         handler(payload);
-      } catch (err) {
-        logger.warn({ event, err: toError(err).message }, '宿主事件处理器异常');
+      } catch (error) {
+        logger.warn({ event, err: toError(error).message }, '宿主事件处理器异常');
       }
     }
   }

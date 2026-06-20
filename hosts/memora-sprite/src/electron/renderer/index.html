@@ -104,7 +104,7 @@
       <div id="titlebar-controls">
         <button id="btn-minimize" title="最小化">─</button>
         <button id="btn-maximize" title="最大化">□</button>
-        <button id="btn-close" title="关闭">✕</button>
+        <button id="btn-close" title="隐藏到浮动窗口">✕</button>
       </div>
     </header>
 
@@ -153,8 +153,10 @@
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
             <div class="input-actions-left">
-              <button class="input-action" id="btn-add-memory-quick" title="添加记忆">➕</button>
-              <button class="input-action" id="btn-attach-file" title="上传文件">📎</button>
+              <!-- 快速添加记忆：与记忆面板的"添加"按钮行为一致，打开添加记忆弹窗 -->
+              <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）">➕</button>
+              <!-- 文件上传暂未实现，隐藏按钮避免误导用户 -->
+              <!-- <button class="input-action" id="btn-attach-file" title="上传文件">📎</button> -->
             </div>
             <div class="input-send-area">
               <button id="btn-stop" class="hidden" title="停止生成">■ 停止</button>
@@ -393,7 +395,7 @@
           <option value="guardrail">内容护栏</option>
           <option value="skill">技能记忆</option>
           <option value="persona">角色记忆</option>
-          <option value="topic">话题记忆</option>
+          <option value="session">会话记忆</option>
         </datalist>
         <label for="memory-add-name">名称（name）</label>
         <input type="text" id="memory-add-name" placeholder="记忆名称" />

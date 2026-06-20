@@ -17,10 +17,10 @@
  * 零内核改动：Sprite 和 Agent 完全不知道运行在 CLI 还是 Electron 模式
  */
 
-import * as path from 'path';
-import * as fs from 'fs/promises';
-import { homedir } from 'os';
-import { fileURLToPath } from 'url';
+import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { app, ipcMain, Notification } from 'electron';
 import { loadConfig, createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent } from 'memora';
@@ -31,6 +31,9 @@ import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+
+/** 默认数据目录（Agent 级共享，~/.memora/） */
+const DEFAULT_DATA_DIR = path.join(homedir(), '.memora');
 import {
   startSprite,
   reinitAgent,
@@ -169,7 +172,7 @@ async function initializeApp(): Promise<void> {
   // ── 阶段 1：创建窗口（始终成功） ──
   try {
     // 1. 加载精灵配置（从 dataDir/sprite.json，首次启动使用默认值）
-    const defaultDataDir = path.join(homedir(), '.memora');
+    const defaultDataDir = DEFAULT_DATA_DIR;
     const spriteConfig = loadSpriteConfig(defaultDataDir);
 
     // 2. 初始化窗口状态管理器
@@ -303,7 +306,7 @@ function registerMinimalIpcHandlers(): void {
   // 精灵配置读写（直接操作文件，不需要 Agent）
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () => {
     try {
-      const defaultDataDir = path.join(homedir(), '.memora');
+      const defaultDataDir = DEFAULT_DATA_DIR;
       return { config: loadSpriteConfig(defaultDataDir) };
     } catch {
       return { config: {} };

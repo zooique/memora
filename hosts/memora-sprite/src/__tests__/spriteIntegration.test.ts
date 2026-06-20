@@ -8,9 +8,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Agent, InMemoryStorage } from 'memora';
 import type { LlmProvider, LlmChunk, ChatOptions } from 'memora';
 import { Sprite } from '../sprite/sprite.js';
-import { tmpdir } from 'os';
-import { mkdirSync, rmSync } from 'fs';
-import { join } from 'path';
+import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
 /** Mock LLM Provider — 返回固定回复 */
 class MockProvider implements LlmProvider {

@@ -803,8 +803,8 @@ async function loadConfig(): Promise<void> {
     try {
       const { projects } = await window.electronAPI.listProjects();
       uiManager.loadProjectsToForm(projects, formConfig.focusProjectPath);
-    } catch (err) {
-      console.error('[loadConfig] 加载项目列表失败:', err);
+    } catch (error) {
+      console.error('[loadConfig] 加载项目列表失败:', error);
     }
 
     // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
@@ -838,5 +838,7 @@ function initAgentReadyListener(): void {
     void loadMemoryList();
     void loadPersonaList();
     void loadDashboard();
+    // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
+    uiManager.switchPanel('chat');
   });
 }

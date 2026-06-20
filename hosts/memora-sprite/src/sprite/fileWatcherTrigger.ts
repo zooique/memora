@@ -62,8 +62,8 @@ export class FileWatcherTrigger implements SpriteTrigger {
         const watcher = this.createWatcher(watchPath);
         this.watchers.push(watcher);
         logger.info({ path: watchPath }, '文件监听已启动');
-      } catch (err) {
-        logger.warn({ path: watchPath, err: toError(err).message }, '文件监听启动失败');
+      } catch (error) {
+        logger.warn({ path: watchPath, err: toError(error).message }, '文件监听启动失败');
       }
     }
   }

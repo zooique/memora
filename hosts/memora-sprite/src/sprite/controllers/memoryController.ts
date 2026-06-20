@@ -76,7 +76,7 @@ export class MemoryController {
       id: m.id,
       name: m.name,
       source: m.source,
-      score: Math.round(m.score * 100) / 100,
+      score: this.#formatScore(m.score),
       contentPreview: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
     }));
   }
@@ -91,11 +91,16 @@ export class MemoryController {
       id: m.id,
       name: m.name,
       source: m.source,
-      score: Math.round(m.score * 100) / 100,
+      score: this.#formatScore(m.score),
       content: m.content,
       createdAt: new Date(m.createdAt).toLocaleString('zh-CN'),
       accessedAt: new Date(m.accessedAt).toLocaleString('zh-CN'),
     };
+  }
+
+  /** 格式化记忆分数，保留两位小数 */
+  #formatScore(score: number): number {
+    return Math.round(score * 100) / 100;
   }
 
   /** 删除记忆 */

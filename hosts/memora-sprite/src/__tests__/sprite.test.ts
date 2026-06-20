@@ -9,9 +9,9 @@ import { CliInteraction } from '../sprite/cliInteraction.js';
 import type { IInteraction, InputHandler } from '../sprite/interaction.js';
 import type { SpriteTrigger } from '../sprite/triggers.js';
 import { FileWatcherTrigger } from '../sprite/fileWatcherTrigger.js';
-import { tmpdir } from 'os';
-import { mkdirSync, rmSync } from 'fs';
-import { join } from 'path';
+import { tmpdir } from 'node:os';
+import { mkdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
 // 记录 Agent.on 注册的回调，以便手动触发
 type AgentEventHandler = (e: unknown) => void;

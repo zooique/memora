@@ -15,12 +15,10 @@
 
 import type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from '../preload.js';
 import { renderMarkdown } from './markdown.js';
+import { MS_PER_MINUTE } from '../../sprite/spriteConfig.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm };
-
-/** 毫秒/分钟转换常量（用于配置表单的分钟 ↔ 毫秒换算） */
-const MS_PER_MINUTE = 60_000;
 
 /**
  * 获取必需的 DOM 元素，若缺失或标签名不匹配则抛出明确错误
@@ -321,6 +319,14 @@ export class UIManager {
 
     // 全局键盘快捷键
     this.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
+
+    // 快速添加记忆按钮（输入工具栏）：打开记忆添加弹窗
+    const btnAddMemoryQuick = getOptionalElement('btn-add-memory-quick', 'button');
+    if (btnAddMemoryQuick) {
+      this.addEventListener(btnAddMemoryQuick, 'click', () => {
+        this.showModal('memory-add-modal');
+      });
+    }
   }
 
   /**
@@ -483,6 +489,11 @@ export class UIManager {
 
     this.messagesEl.appendChild(el);
     this.scrollToBottom();
+
+    // 更新消息计数（非系统消息，显示在对话工具栏副标题）
+    if (message.role !== 'system') {
+      this.updateMessageCount();
+    }
 
     // 更新未读计数（完整窗口隐藏时）
     if (message.role === 'assistant' && document.hidden) {
@@ -834,6 +845,23 @@ export class UIManager {
     this.updateBadge();
   }
 
+  /** 非系统消息计数（显示在对话工具栏副标题） */
+  private messageCount = 0;
+
+  /**
+   * 更新消息计数显示
+   *
+   * 在对话工具栏副标题显示"今日已交流 N 条消息"。
+   * 会话历史加载时也会累加计数，确保初始显示正确。
+   */
+  private updateMessageCount(): void {
+    this.messageCount++;
+    const countEl = document.getElementById('chat-message-count');
+    if (countEl) {
+      countEl.textContent = `今日已交流 ${this.messageCount} 条消息`;
+    }
+  }
+
   // ─── 滚动控制 ─────────────────────────────────────────
 
   /**
@@ -1146,7 +1174,7 @@ export class UIManager {
 
       const sourceTag = document.createElement('span');
       // source 标签颜色区分：不同 source 类型用不同颜色，提升视觉识别度
-      // 颜色映射：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/topic(橙)
+      // 颜色映射：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙)
       sourceTag.className = `source-tag source-${this.getSourceColorClass(mem.source)}`;
       sourceTag.textContent = mem.source;
       metaEl.appendChild(sourceTag);
@@ -1210,12 +1238,12 @@ export class UIManager {
    * - skill → yellow（技能，黄色代表能力）
    * - rule → purple（规则，紫色代表约束）
    * - persona → cyan（角色，青色代表个性）
-   * - topic → orange（话题，橙色代表活跃）
+   * - session → orange（会话，橙色代表活跃）
    * - 其他 → default（灰色）
    */
   private getSourceColorClass(source: string): string {
     const normalized = source.toLowerCase().trim();
-    const knownSources = ['profile', 'insight', 'guardrail', 'skill', 'rule', 'persona', 'topic'];
+    const knownSources = ['profile', 'insight', 'guardrail', 'skill', 'rule', 'persona', 'session'];
     return knownSources.includes(normalized) ? normalized : 'default';
   }
 

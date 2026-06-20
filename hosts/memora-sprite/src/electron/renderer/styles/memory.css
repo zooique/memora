@@ -120,7 +120,7 @@
 /**
  * source 标签颜色区分：不同 source 类型用不同颜色
  * 对齐 ui.ts getSourceColorClass() 的颜色映射
- * 颜色语义：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/topic(橙)
+ * 颜色语义：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙)
  */
 .source-tag.source-profile   { background: var(--green-20); color: var(--green); }
 .source-tag.source-insight   { background: var(--accent-20); color: var(--accent); }
@@ -128,7 +128,7 @@
 .source-tag.source-skill     { background: var(--yellow-20); color: var(--yellow); }
 .source-tag.source-rule      { background: var(--mauve-20); color: var(--mauve); }
 .source-tag.source-persona   { background: var(--teal-20); color: var(--teal); }
-.source-tag.source-topic     { background: var(--peach-20); color: var(--peach); }
+.source-tag.source-session  { background: var(--peach-20); color: var(--peach); }
 .source-tag.source-default   { background: var(--surface2); color: var(--subtext); }
 
 /* 记忆详情弹窗中的 source 标签：使用 code 元素，复用 source 颜色类 */
@@ -138,7 +138,7 @@
 #memory-detail-source.source-skill     { color: var(--yellow); }
 #memory-detail-source.source-rule      { color: var(--mauve); }
 #memory-detail-source.source-persona   { color: var(--teal); }
-#memory-detail-source.source-topic     { color: var(--peach); }
+#memory-detail-source.source-session  { color: var(--peach); }
 #memory-detail-source.source-default   { color: var(--subtext); }
 
 .memory-item .meta .score {

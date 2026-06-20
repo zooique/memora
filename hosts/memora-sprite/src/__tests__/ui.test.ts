@@ -837,3 +837,23 @@ describe('记忆面板', () => {
     expect(modal.classList.contains('hidden')).toBe(false);
   });
 });
+
+describe('标题栏窗口控制按钮', () => {
+  it('点击最小化调用 window.electronAPI.windowMinimize', () => {
+    const btn = document.getElementById('btn-minimize')!;
+    btn.click();
+    expect(window.electronAPI.windowMinimize).toHaveBeenCalled();
+  });
+
+  it('点击最大化调用 window.electronAPI.windowMaximize', () => {
+    const btn = document.getElementById('btn-maximize')!;
+    btn.click();
+    expect(window.electronAPI.windowMaximize).toHaveBeenCalled();
+  });
+
+  it('点击关闭调用 window.electronAPI.windowClose（隐藏到浮动窗口）', () => {
+    const btn = document.getElementById('btn-close')!;
+    btn.click();
+    expect(window.electronAPI.windowClose).toHaveBeenCalled();
+  });
+});

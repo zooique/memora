@@ -53,6 +53,12 @@ const ZH_MESSAGES: UIMessages = {
   outputBlockedByGuard: (rule) => `[输出被护栏拦截：${rule}]`,
 };
 
+/** 默认数据目录（Agent 级共享，~/.memora/） */
+const DEFAULT_DATA_DIR = resolve(homedir(), '.memora');
+
+/** 默认配置目录（Agent 级共享，~/.memora-config/） */
+const DEFAULT_CONFIG_DIR = resolve(homedir(), '.memora-config');
+
 // ─── 首次启动引导 ──────────────────────────────────────
 
 /** 交互式提问 */
@@ -86,7 +92,7 @@ export async function saveLlmConfig(
   embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
   configPath?: string,
 ): Promise<void> {
-  const configDir = resolve(homedir(), '.memora');
+  const configDir = DEFAULT_DATA_DIR;
   const targetPath = configPath ?? resolve(configDir, 'config.json');
   await mkdir(configDir, { recursive: true });
 
@@ -214,9 +220,8 @@ async function setupWizard(): Promise<void> {
   rl.close();
 
   // 保存配置
-  const configPath = resolve(homedir(), '.memora', 'config.json');
-  const configDir = resolve(homedir(), '.memora');
-  await mkdir(configDir, { recursive: true });
+  const configPath = resolve(DEFAULT_DATA_DIR, 'config.json');
+  await mkdir(DEFAULT_DATA_DIR, { recursive: true });
 
   const config: Config = {
     llm: {
@@ -254,7 +259,7 @@ async function initAgentFromConfig(
   config: Config,
   opts?: { configDir?: string; dataDir?: string; projectPath?: string },
 ): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
-  const configDir = opts?.configDir ?? resolve(homedir(), '.memora-config');
+  const configDir = opts?.configDir ?? DEFAULT_CONFIG_DIR;
   // 展开 ~ 为实际 home 目录
   const rawDir = config.memory.dataDir.startsWith('~')
     ? resolve(homedir(), config.memory.dataDir.slice(1).replace(/^[/\\]/, ''))
@@ -644,8 +649,8 @@ async function main(): Promise<void> {
             console.log(`\n[${chunk.reason}]`);
           }
         }
-      } catch (err) {
-        console.error('\n对话出错:', err);
+      } catch (error) {
+        console.error('\n对话出错:', error);
       }
     })();
   });

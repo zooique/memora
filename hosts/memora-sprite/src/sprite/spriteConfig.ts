@@ -49,6 +49,9 @@ export interface SpriteConfig {
 /** 配置键名联合类型 */
 export type SpriteConfigKey = keyof SpriteConfig;
 
+/** 毫秒/分钟转换常量（供 sprite 和 UI 层共享，DRY） */
+export const MS_PER_MINUTE = 60_000;
+
 /** 内置默认值 */
 export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   triggerIntervalMs: 3_600_000,

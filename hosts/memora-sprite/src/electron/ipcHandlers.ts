@@ -11,7 +11,7 @@
  * - 角色切换
  */
 
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 import { ipcMain } from 'electron';
 import { toError } from 'memora';
 import type { Agent } from 'memora';

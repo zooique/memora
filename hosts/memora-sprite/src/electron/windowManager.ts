@@ -12,8 +12,8 @@
  * - 错误处理：统一使用错误处理器
  */
 
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BrowserWindow, ipcMain } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
