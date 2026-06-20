@@ -1,0 +1,221 @@
+/**
+ * 模态框管理模块
+ *
+ * 职责：
+ * - 通用模态框显示/隐藏（showModal/hideModal）
+ * - 通用确认弹窗（showConfirmDialog，替代 window.confirm）
+ * - 全局模态框事件监听（关闭按钮、背景点击、Escape 键）
+ * - 焦点管理（UI-AR-02 弹窗打开前保存焦点，关闭时恢复）
+ *
+ * 设计原则：
+ * - 独立于 UIManager，通过组合方式持有
+ * - 事件监听器纳入跟踪集合，cleanup 时统一清理
+ * - 确认弹窗支持并发保护，避免监听器叠加
+ */
+
+/**
+ * 模态框管理器
+ *
+ * 独立管理模态框的显示、隐藏和事件监听，UIManager 通过组合持有。
+ */
+export class ModalManager {
+  /** UI-AR-02 弹窗打开前的焦点元素（供关闭时恢复） */
+  private previousFocusEl: HTMLElement | null = null;
+
+  /** 当前活跃的确认弹窗清理函数（防止并发调用时监听器叠加） */
+  private activeConfirmCleanup: (() => void) | null = null;
+
+  /** 事件清理函数集合（initModalListeners 注册的监听器） */
+  private eventCleanupFunctions: Array<() => void> = [];
+
+  /** 添加事件监听器并记录清理函数 */
+  private addEventListener(element: HTMLElement | Document, event: string, handler: EventListener): void {
+    element.addEventListener(event, handler);
+    this.eventCleanupFunctions.push(() => {
+      element.removeEventListener(event, handler);
+    });
+  }
+
+  /** 初始化弹窗事件监听（关闭按钮、背景点击、Escape 键） */
+  initModalListeners(): void {
+    // 所有带 data-modal 属性的关闭按钮
+    document.querySelectorAll<HTMLElement>('[data-modal]').forEach((btn) => {
+      const modalId = btn.dataset.modal;
+      if (modalId) {
+        this.addEventListener(btn, 'click', () => this.hideModal(modalId));
+      }
+    });
+
+    // 点击弹窗背景关闭（统一使用 hideModal，避免与 showConfirmDialog 冲突）
+    document.querySelectorAll<HTMLElement>('.modal').forEach((modal) => {
+      this.addEventListener(modal, 'click', (e) => {
+        if (e.target === modal) {
+          this.hideModal(modal.id);
+        }
+      });
+    });
+
+    // UI-AR-01 全局 Escape 键关闭弹窗
+    this.addEventListener(document, 'keydown', (e: Event) => {
+      if ((e as KeyboardEvent).key !== 'Escape') return;
+      // 查找当前可见的弹窗（排除 confirm 弹窗，它有独立处理）
+      const visibleModals = document.querySelectorAll<HTMLElement>(
+        '.modal:not(.hidden):not(#confirm-modal)',
+      );
+      // 关闭最上层弹窗
+      if (visibleModals.length > 0) {
+        const topModal = visibleModals[visibleModals.length - 1];
+        if (topModal) {
+          this.hideModal(topModal.id);
+        }
+      }
+    });
+  }
+
+  /** 显示弹窗 */
+  showModal(modalId: string): void {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    // UI-AR-02 保存当前焦点元素，关闭弹窗时恢复
+    this.previousFocusEl = document.activeElement as HTMLElement | null;
+
+    modal.classList.remove('hidden');
+
+    // UI-AR-02 将焦点移到弹窗内第一个可交互元素
+    const firstFocusable = modal.querySelector<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    if (firstFocusable) {
+      firstFocusable.focus();
+    }
+  }
+
+  /** 隐藏弹窗 */
+  hideModal(modalId: string): void {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    modal.classList.add('hidden');
+
+    // UI-AR-02 恢复焦点到触发弹窗的元素
+    if (this.previousFocusEl && typeof this.previousFocusEl.focus === 'function') {
+      this.previousFocusEl.focus();
+      this.previousFocusEl = null;
+    }
+  }
+
+  /**
+   * 显示通用确认弹窗（替代 window.confirm）
+   *
+   * 返回 Promise，异步等待用户选择：
+   * - true：用户点击确认按钮
+   * - false：用户点击取消按钮、关闭按钮或背景
+   *
+   * @param options.title 弹窗标题（默认"确认"）
+   * @param options.message 确认消息文本
+   * @param options.confirmText 确认按钮文本（默认"确定"）
+   * @param options.cancelText 取消按钮文本（默认"取消"）
+   * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
+   */
+  showConfirmDialog(options: {
+    title?: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    danger?: boolean;
+  }): Promise<boolean> {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('confirm-modal');
+      const titleEl = document.getElementById('confirm-title');
+      const messageEl = document.getElementById('confirm-message');
+      const btnOk = document.getElementById('btn-confirm-ok');
+      const btnCancel = document.getElementById('btn-confirm-cancel');
+      if (!modal || !titleEl || !messageEl || !btnOk || !btnCancel) {
+        // 元素缺失时回退为 window.confirm（防御性编程）
+        resolve(window.confirm(options.message));
+        return;
+      }
+
+      // 设置弹窗内容
+      titleEl.textContent = options.title ?? '确认';
+      messageEl.textContent = options.message;
+      btnOk.textContent = options.confirmText ?? '确定';
+      btnCancel.textContent = options.cancelText ?? '取消';
+
+      // 危险操作：确认按钮使用红色样式
+      btnOk.className = options.danger ? 'btn-danger' : 'btn-primary';
+
+      // 并发保护：若已有活跃弹窗，先取消旧的（resolve false），避免监听器叠加
+      if (this.activeConfirmCleanup) {
+        this.activeConfirmCleanup();
+        this.activeConfirmCleanup = null;
+      }
+
+      // 清理函数：移除所有临时监听器
+      let resolved = false;
+
+      // UI-AR-01 键盘支持：Escape 取消，Enter 确认
+      const onKeydown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          onOk();
+        }
+      };
+
+      const cleanup = () => {
+        if (resolved) return;
+        resolved = true;
+        modal.classList.add('hidden');
+        btnOk.removeEventListener('click', onOk);
+        btnCancel.removeEventListener('click', onCancel);
+        modal.removeEventListener('click', onBackdrop);
+        modal.removeEventListener('keydown', onKeydown);
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) closeBtn.removeEventListener('click', onCancel);
+        this.activeConfirmCleanup = null;
+      };
+      const onOk = () => { cleanup(); resolve(true); };
+      const onCancel = () => { cleanup(); resolve(false); };
+
+      // 注册活跃清理函数，供下次并发调用时取消旧弹窗
+      this.activeConfirmCleanup = () => { cleanup(); resolve(false); };
+
+      // 注册监听器
+      btnOk.addEventListener('click', onOk);
+      btnCancel.addEventListener('click', onCancel);
+      modal.addEventListener('keydown', onKeydown);
+      // 使用 stopPropagation 防止 initModalListeners 的全局 backdrop 处理器也触发
+      const onBackdrop = (e: MouseEvent) => {
+        if (e.target === modal) {
+          e.stopPropagation();
+          onCancel();
+        }
+      };
+      modal.addEventListener('click', onBackdrop);
+      const closeBtn = modal.querySelector('.modal-close');
+      if (closeBtn) closeBtn.addEventListener('click', onCancel);
+
+      // 显示弹窗
+      modal.classList.remove('hidden');
+
+      // UI-AR-02 保存当前焦点 + 将焦点移到确认弹窗
+      // 危险操作：焦点放在取消按钮上（防止误操作）；普通操作：焦点放在确认按钮上
+      this.previousFocusEl = document.activeElement as HTMLElement | null;
+      if (options.danger) {
+        btnCancel.focus();
+      } else {
+        btnOk.focus();
+      }
+    });
+  }
+
+  /** 清理所有事件监听器（UIManager.cleanup 时调用） */
+  cleanup(): void {
+    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
+    this.eventCleanupFunctions = [];
+  }
+}

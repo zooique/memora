@@ -1,5 +1,5 @@
 /**
- * UI 模块 — 处理所有 DOM 操作
+ * UI 管理器 — 渲染进程 UI 门面
  *
  * 职责：
  * - 消息渲染和更新
@@ -8,141 +8,50 @@
  * - 用户界面状态管理
  *
  * 设计原则：
- * - 所有 DOM 操作集中在此模块
+ * - 通过组合方式持有独立子模块（Toast/Modal/Onboarding/Theme/ProactiveBanner）
  * - 业务逻辑与 UI 操作分离
  * - 提供清晰的 API 供其他模块调用
+ * - 子模块公共 API 通过 UIManager 代理，保持向后兼容
  */
 
-import type { ElectronAPI, MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm } from '../preload.js';
 import { renderMarkdown } from './markdown.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块（node:fs/path）带入渲染进程 */
 import { MS_PER_MINUTE } from '../../sprite/constants.js';
+// 子模块导入（组合模式：UIManager 持有独立子模块实例）
+import { getRequiredElement, getOptionalElement } from './domHelpers.js';
+import { ToastManager } from './toast.js';
+import { ModalManager } from './modal.js';
+import { OnboardingManager } from './onboarding.js';
+import { ThemeManager } from './themeManager.js';
+import { ProactiveBanner } from './proactiveBanner.js';
+// 类型导入（仅用于类型注解，不引入运行时依赖）
+import type {
+  Message,
+  UIState,
+  PersonaItem,
+  LlmConfigForm,
+  EmbeddingConfigForm,
+  LlmConfigSavePayload,
+  MemoryListItem,
+  MemoryDetail,
+  SpriteConfigForm,
+  ToastType,
+} from './types.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
-export type { MemoryListItem, MemorySearchHit, MemoryDetail, SpriteConfigForm };
-
-// 扩展全局 Window 类型，消除 TS 编译错误（electronAPI 由 preload.ts 通过 contextBridge 注入）
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI;
-  }
-}
-
-/**
- * 获取必需的 DOM 元素，若缺失或标签名不匹配则抛出明确错误
- *
- * 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败。
- *
- * **仅用于核心交互元素**（消息区、输入框、发送按钮、停止按钮）。
- * 非核心元素请使用 `getOptionalElement`，避免单个面板缺失导致整个 UI 崩溃。
- *
- * @param id 元素 id
- * @param tagName 期望的 HTML 标签名
- * @returns 类型安全的 DOM 元素
- */
-function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
-  id: string,
-  tagName: T,
-): HTMLElementTagNameMap[T] {
-  const el = document.getElementById(id);
-  if (!el) {
-    throw new Error(`[UIManager] 必需的 DOM 元素 #${id} 未找到，UI 无法初始化`);
-  }
-  // 运行时标签名校验：使用 tagName 字符串比较（兼容 JSDOM 等无 DOM 构造函数的环境）
-  if (el.tagName.toLowerCase() !== tagName) {
-    throw new Error(
-      `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>`,
-    );
-  }
-  return el as HTMLElementTagNameMap[T];
-}
-
-/**
- * 获取可选的 DOM 元素，缺失时 warn 并返回 null（不阻塞其他功能）
- *
- * 当 HTML 与 TS 不同步时，缺失的功能降级而非整个 UI 崩溃。
- *
- * @param id 元素 id
- * @param tagName 期望的 HTML 标签名
- * @returns 类型安全的 DOM 元素或 null
- */
-function getOptionalElement<T extends keyof HTMLElementTagNameMap>(
-  id: string,
-  tagName: T,
-): HTMLElementTagNameMap[T] | null {
-  const el = document.getElementById(id);
-  if (!el) {
-    console.warn(`[UIManager] 可选的 DOM 元素 #${id} 未找到，相关功能将降级`);
-    return null;
-  }
-  // 运行时标签名校验
-  if (el.tagName.toLowerCase() !== tagName) {
-    console.warn(
-      `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>，相关功能将降级`,
-    );
-    return null;
-  }
-  return el as HTMLElementTagNameMap[T];
-}
-
-export interface Message {
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  streaming?: boolean;
-  messageId?: string;
-  /** 消息时间戳（ISO 字符串，可选）。未提供时使用当前时间。 */
-  timestamp?: string;
-  /** 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall） */
-  memoryRecall?: { name: string; score: number };
-}
-
-export interface UIState {
-  currentPanel: string;
-  unreadCount: number;
-  isStreaming: boolean;
-}
-
-/** 记忆列表项（与 sprite.listMemories 返回值对齐） */
-// MemoryListItem 已从 preload.ts 导入并重新导出
-
-/** 记忆搜索结果（与 sprite.searchMemories 返回值对齐，含相似度） */
-// MemorySearchHit 已从 preload.ts 导入并重新导出
-
-/** 记忆详情（与 sprite.showMemory 返回值对齐） */
-// MemoryDetail 已从 preload.ts 导入并重新导出
-
-/** 角色列表项（与 sprite.listPersonas 返回值对齐） */
-export interface PersonaItem {
-  name: string;
-  description: string;
-  active: boolean;
-}
-
-/** 精灵配置（与 SpriteConfig 对齐，渲染进程用） */
-// SpriteConfigForm 已从 preload.ts 导入并重新导出
-
-/** LLM 配置表单数据 */
-export interface LlmConfigForm {
-  provider: string;
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-  temperature: number;
-}
-
-/** Embedding 配置表单数据 */
-export interface EmbeddingConfigForm {
-  enabled: boolean;
-  model: string;
-  baseUrl: string;
-  apiKey: string;
-}
-
-/** LLM 配置保存回调参数（包含 LLM + Embedding） */
-export interface LlmConfigSavePayload {
-  llm: LlmConfigForm;
-  embedding: EmbeddingConfigForm | null;
-}
+export type {
+  MemoryListItem,
+  MemorySearchHit,
+  MemoryDetail,
+  SpriteConfigForm,
+  Message,
+  UIState,
+  PersonaItem,
+  LlmConfigForm,
+  EmbeddingConfigForm,
+  LlmConfigSavePayload,
+  ToastType,
+} from './types.js';
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
@@ -150,19 +59,18 @@ export class UIManager {
   // ─── 静态常量 ───────────────────────────────────────────
   /** 判断"底部附近"的阈值（像素） */
   private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
-  /** localStorage 键名：标记是否已显示过三态引导 */
-  private static readonly ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
-  /** Toast 类型与图标映射 */
-  private static readonly TOAST_ICONS: Record<ToastType, string> = {
-    success: '✓',
-    error: '✗',
-    warning: '⚠',
-    info: 'ℹ',
-  };
-  /** Toast 默认自动消失时长（毫秒），error 类型不自动消失 */
-  private static readonly TOAST_DEFAULT_DURATION = 4000;
-  /** Toast 最大同时显示数量（FIFO，超出时移除最早的） */
-  private static readonly TOAST_MAX_VISIBLE = 5;
+
+  // ─── 组合子模块（独立管理器，UIManager 代理公共 API） ──
+  /** Toast 通知管理器（独立管理定时器和清理） */
+  private toastManager = new ToastManager();
+  /** 模态框管理器（独立管理焦点恢复和并发保护） */
+  private modalManager = new ModalManager();
+  /** 三态首次引导管理器（独立管理 localStorage 标记） */
+  private onboardingManager = new OnboardingManager();
+  /** 主题管理器（独立管理主题切换和持久化） */
+  private themeManager = new ThemeManager();
+  /** 主动提示横幅管理器（独立管理横幅按钮事件） */
+  private proactiveBanner = new ProactiveBanner();
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -234,14 +142,10 @@ export class UIManager {
   private settingsErrorRetryCallback: (() => void) | null = null;
   /** 当前角色匹配模式（由 renderer.ts 设置） */
   private currentPersonaMode: string = 'auto';
-  /** UI-AR-02 弹窗打开前的焦点元素（供关闭时恢复） */
-  private previousFocusEl: HTMLElement | null = null;
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
   /** 记忆搜索防抖定时器（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Toast 自动消失定时器集合（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
-  private toastTimers: Set<ReturnType<typeof setTimeout>> = new Set();
 
   constructor() {
     // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -296,7 +200,8 @@ export class UIManager {
     this.initMemoryPanelListeners();
     this.initPersonaSelectorListeners();
     this.initSettingsPanelListeners();
-    this.initModalListeners();
+    // 模态框监听器委托给 ModalManager（独立管理事件清理）
+    this.modalManager.initModalListeners();
     this.initEmptyStateListeners();
     this.initScrollListener();
   }
@@ -417,7 +322,7 @@ export class UIManager {
     });
   }
 
-  /** 清理所有事件监听器 */
+  /** 清理所有事件监听器和子模块资源 */
   cleanup(): void {
     this.eventCleanupFunctions.forEach((cleanup) => cleanup());
     this.eventCleanupFunctions = [];
@@ -426,11 +331,10 @@ export class UIManager {
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
     }
-    // 清理 Toast 自动消失定时器，避免回调在 DOM 销毁后触发
-    for (const timer of this.toastTimers) {
-      clearTimeout(timer);
-    }
-    this.toastTimers.clear();
+    // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、ProactiveBanner 监听器）
+    this.toastManager.cleanup();
+    this.modalManager.cleanup();
+    this.proactiveBanner.cleanup();
   }
 
   // ─── 消息渲染 ─────────────────────────────────────────
@@ -1013,37 +917,30 @@ export class UIManager {
     this.btnMaximize.title = maximized ? '还原' : '最大化';
   }
 
-  // ─── 主动提示 banner ──────────────────────────────────
+  // ─── 主动提示 banner（代理到 ProactiveBanner） ──────────
 
   /**
-   * 显示主动提示 banner
+   * 显示主动提示 banner（代理到 ProactiveBanner）
    *
    * 对齐 docs/memora-sprite-preview.html §6.6：
    * 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作。
    * 由 renderer.ts 在收到 proactivePrompt 事件时调用。
    */
   showProactiveBanner(text: string): void {
-    const banner = document.getElementById('proactive-banner');
-    const textEl = document.getElementById('proactive-banner-text');
-    if (!banner || !textEl) return;
-
-    textEl.textContent = text;
-    banner.classList.remove('hidden');
+    this.proactiveBanner.showProactiveBanner(text);
   }
 
   /**
-   * 隐藏主动提示 banner
+   * 隐藏主动提示 banner（代理到 ProactiveBanner）
    *
    * 用户点击任意操作按钮后调用，或切换面板时调用。
    */
   hideProactiveBanner(): void {
-    const banner = document.getElementById('proactive-banner');
-    if (!banner) return;
-    banner.classList.add('hidden');
+    this.proactiveBanner.hideProactiveBanner();
   }
 
   /**
-   * 初始化主动提示 banner 按钮事件
+   * 初始化主动提示 banner 按钮事件（代理到 ProactiveBanner）
    *
    * 三个按钮的语义：
    * - 查看：切换到对话面板（banner 已在对话面板内，仅隐藏 banner）
@@ -1057,26 +954,7 @@ export class UIManager {
     onLater: () => void;
     onSilent: () => void;
   }): void {
-    const banner = document.getElementById('proactive-banner');
-    if (!banner) return;
-
-    banner.querySelectorAll<HTMLElement>('.banner-btn').forEach((btn) => {
-      const action = btn.dataset.action;
-      this.addEventListener(btn, 'click', () => {
-        this.hideProactiveBanner();
-        if (action === 'view') handlers.onView();
-        else if (action === 'later') handlers.onLater();
-        else if (action === 'silent') handlers.onSilent();
-      });
-    });
-
-    // UI-UX-02 关闭按钮：直接隐藏 banner，不触发任何回调
-    const closeBtn = banner.querySelector<HTMLElement>('.banner-close');
-    if (closeBtn) {
-      this.addEventListener(closeBtn, 'click', () => {
-        this.hideProactiveBanner();
-      });
-    }
+    this.proactiveBanner.initProactiveBannerButtons(handlers);
   }
 
   // ─── 事件发射 ─────────────────────────────────────────
@@ -1519,9 +1397,6 @@ export class UIManager {
   /** IX-07 角色匹配模式变更回调（由 renderer.ts 注册，调用主进程持久化） */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
 
-  /** ADR-SP-008 主题变更回调（由 renderer.ts 注册，用于同步单选按钮状态等） */
-  private themeChangeCallback: ((theme: 'light' | 'dark') => void) | null = null;
-
   /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
   private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
 
@@ -1535,7 +1410,7 @@ export class UIManager {
   }
 
   /**
-   * ADR-SP-008 注册主题变更回调
+   * ADR-SP-008 注册主题变更回调（代理到 ThemeManager）
    *
    * 当用户在设置面板切换主题时触发，renderer.ts 可借此执行额外同步逻辑。
    * 主题本身的持久化（localStorage）已在 setTheme 内完成，回调仅用于通知。
@@ -1543,11 +1418,11 @@ export class UIManager {
    * @param cb 主题变更回调函数
    */
   onThemeChange(cb: (theme: 'light' | 'dark') => void): void {
-    this.themeChangeCallback = cb;
+    this.themeManager.onThemeChange(cb);
   }
 
   /**
-   * ADR-SP-008 获取当前主题
+   * ADR-SP-008 获取当前主题（代理到 ThemeManager）
    *
    * 通过读取 <html> 元素的 data-theme 属性判断当前主题，
    * 未设置（默认）视为浅色。
@@ -1555,11 +1430,11 @@ export class UIManager {
    * @returns 当前主题（'light' | 'dark'）
    */
   getTheme(): 'light' | 'dark' {
-    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    return this.themeManager.getTheme();
   }
 
   /**
-   * ADR-SP-008 设置主题
+   * ADR-SP-008 设置主题（代理到 ThemeManager）
    *
    * 1. 设置 <html> 元素的 data-theme 属性（触发 CSS 变量切换）
    * 2. 持久化到 localStorage（key: 'memora-theme'）
@@ -1569,33 +1444,18 @@ export class UIManager {
    * @param theme 目标主题
    */
   setTheme(theme: 'light' | 'dark'): void {
-    if (theme === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark');
-    } else {
-      // 浅色为默认，移除属性即可
-      document.documentElement.removeAttribute('data-theme');
-    }
-    try {
-      localStorage.setItem('memora-theme', theme);
-    } catch {
-      // localStorage 不可用时静默降级（如隐私模式）
-    }
-    this.syncThemeRadios(theme);
-    this.themeChangeCallback?.(theme);
+    this.themeManager.setTheme(theme);
   }
 
   /**
-   * ADR-SP-008 同步设置面板主题单选按钮状态
+   * ADR-SP-008 同步设置面板主题单选按钮状态（代理到 ThemeManager）
    *
    * 在外部修改主题后（如初始化加载），调用此方法确保单选按钮选中状态与实际主题一致。
    *
    * @param theme 当前主题
    */
   syncThemeRadios(theme: 'light' | 'dark'): void {
-    const radios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
-    radios.forEach((radio) => {
-      radio.checked = radio.value === theme;
-    });
+    this.themeManager.syncThemeRadios(theme);
   }
 
   /** 注册召回记忆点击回调 */
@@ -2108,82 +1968,20 @@ export class UIManager {
     };
   }
 
-  // ─── 弹窗管理 ─────────────────────────────────────────
+  // ─── 弹窗管理（代理到 ModalManager） ──────────────────
 
-  /** 初始化弹窗事件监听（关闭按钮、背景点击、Escape 键） */
-  private initModalListeners(): void {
-    // 所有带 data-modal 属性的关闭按钮
-    document.querySelectorAll<HTMLElement>('[data-modal]').forEach((btn) => {
-      const modalId = btn.dataset.modal;
-      if (modalId) {
-        this.addEventListener(btn, 'click', () => this.hideModal(modalId));
-      }
-    });
-
-    // 点击弹窗背景关闭（统一使用 hideModal，避免与 showConfirmDialog 冲突）
-    document.querySelectorAll<HTMLElement>('.modal').forEach((modal) => {
-      this.addEventListener(modal, 'click', (e) => {
-        if (e.target === modal) {
-          this.hideModal(modal.id);
-        }
-      });
-    });
-
-    // UI-AR-01 全局 Escape 键关闭弹窗
-    this.addEventListener(document, 'keydown', (e: Event) => {
-      if ((e as KeyboardEvent).key !== 'Escape') return;
-      // 查找当前可见的弹窗（排除 confirm 弹窗，它有独立处理）
-      const visibleModals = document.querySelectorAll<HTMLElement>(
-        '.modal:not(.hidden):not(#confirm-modal)',
-      );
-      // 关闭最上层弹窗
-      if (visibleModals.length > 0) {
-        const topModal = visibleModals[visibleModals.length - 1];
-        if (topModal) {
-          this.hideModal(topModal.id);
-        }
-      }
-    });
-  }
-
-  /** 显示弹窗 */
+  /** 显示弹窗（代理到 ModalManager） */
   showModal(modalId: string): void {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
-
-    // UI-AR-02 保存当前焦点元素，关闭弹窗时恢复
-    this.previousFocusEl = document.activeElement as HTMLElement | null;
-
-    modal.classList.remove('hidden');
-
-    // UI-AR-02 将焦点移到弹窗内第一个可交互元素
-    const firstFocusable = modal.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
-    if (firstFocusable) {
-      firstFocusable.focus();
-    }
+    this.modalManager.showModal(modalId);
   }
 
-  /** 隐藏弹窗 */
+  /** 隐藏弹窗（代理到 ModalManager） */
   hideModal(modalId: string): void {
-    const modal = document.getElementById(modalId);
-    if (!modal) return;
-
-    modal.classList.add('hidden');
-
-    // UI-AR-02 恢复焦点到触发弹窗的元素
-    if (this.previousFocusEl && typeof this.previousFocusEl.focus === 'function') {
-      this.previousFocusEl.focus();
-      this.previousFocusEl = null;
-    }
+    this.modalManager.hideModal(modalId);
   }
-
-  /** 当前活跃的确认弹窗清理函数（防止并发调用时监听器叠加） */
-  private activeConfirmCleanup: (() => void) | null = null;
 
   /**
-   * 显示通用确认弹窗（替代 window.confirm）
+   * 显示通用确认弹窗（代理到 ModalManager，替代 window.confirm）
    *
    * 返回 Promise，异步等待用户选择：
    * - true：用户点击确认按钮
@@ -2202,153 +2000,35 @@ export class UIManager {
     cancelText?: string;
     danger?: boolean;
   }): Promise<boolean> {
-    return new Promise((resolve) => {
-      const modal = document.getElementById('confirm-modal');
-      const titleEl = document.getElementById('confirm-title');
-      const messageEl = document.getElementById('confirm-message');
-      const btnOk = document.getElementById('btn-confirm-ok');
-      const btnCancel = document.getElementById('btn-confirm-cancel');
-      if (!modal || !titleEl || !messageEl || !btnOk || !btnCancel) {
-        // 元素缺失时回退为 window.confirm（防御性编程）
-        resolve(window.confirm(options.message));
-        return;
-      }
-
-      // 设置弹窗内容
-      titleEl.textContent = options.title ?? '确认';
-      messageEl.textContent = options.message;
-      btnOk.textContent = options.confirmText ?? '确定';
-      btnCancel.textContent = options.cancelText ?? '取消';
-
-      // 危险操作：确认按钮使用红色样式
-      btnOk.className = options.danger ? 'btn-danger' : 'btn-primary';
-
-      // 并发保护：若已有活跃弹窗，先取消旧的（resolve false），避免监听器叠加
-      if (this.activeConfirmCleanup) {
-        this.activeConfirmCleanup();
-        this.activeConfirmCleanup = null;
-      }
-
-      // 清理函数：移除所有临时监听器
-      let resolved = false;
-
-      // UI-AR-01 键盘支持：Escape 取消，Enter 确认
-      const onKeydown = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          onCancel();
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          onOk();
-        }
-      };
-
-      const cleanup = () => {
-        if (resolved) return;
-        resolved = true;
-        modal.classList.add('hidden');
-        btnOk.removeEventListener('click', onOk);
-        btnCancel.removeEventListener('click', onCancel);
-        modal.removeEventListener('click', onBackdrop);
-        modal.removeEventListener('keydown', onKeydown);
-        const closeBtn = modal.querySelector('.modal-close');
-        if (closeBtn) closeBtn.removeEventListener('click', onCancel);
-        this.activeConfirmCleanup = null;
-      };
-      const onOk = () => { cleanup(); resolve(true); };
-      const onCancel = () => { cleanup(); resolve(false); };
-
-      // 注册活跃清理函数，供下次并发调用时取消旧弹窗
-      this.activeConfirmCleanup = () => { cleanup(); resolve(false); };
-
-      // 注册监听器
-      btnOk.addEventListener('click', onOk);
-      btnCancel.addEventListener('click', onCancel);
-      modal.addEventListener('keydown', onKeydown);
-      // 使用 stopPropagation 防止 initModalListeners 的全局 backdrop 处理器也触发
-      const onBackdrop = (e: MouseEvent) => {
-        if (e.target === modal) {
-          e.stopPropagation();
-          onCancel();
-        }
-      };
-      modal.addEventListener('click', onBackdrop);
-      const closeBtn = modal.querySelector('.modal-close');
-      if (closeBtn) closeBtn.addEventListener('click', onCancel);
-
-      // 显示弹窗
-      modal.classList.remove('hidden');
-
-      // UI-AR-02 保存当前焦点 + 将焦点移到确认弹窗
-      // 危险操作：焦点放在取消按钮上（防止误操作）；普通操作：焦点放在确认按钮上
-      this.previousFocusEl = document.activeElement as HTMLElement | null;
-      if (options.danger) {
-        btnCancel.focus();
-      } else {
-        btnOk.focus();
-      }
-    });
+    return this.modalManager.showConfirmDialog(options);
   }
 
-  // ─── 三态首次引导 ─────────────────────────────────────
+  // ─── 三态首次引导（代理到 OnboardingManager） ──────────
 
   /**
-   * 检查是否需要显示三态首次引导
+   * 检查是否需要显示三态首次引导（代理到 OnboardingManager）
    *
    * 使用 localStorage 标记，首次使用（未标记）时返回 true。
    * 老用户（已标记）不再显示，避免重复打扰。
    */
   shouldShowOnboarding(): boolean {
-    return localStorage.getItem(UIManager.ONBOARDING_SEEN_KEY) !== '1';
+    return this.onboardingManager.shouldShowOnboarding();
   }
 
   /**
-   * 显示三态首次引导弹窗
+   * 显示三态首次引导弹窗（代理到 OnboardingManager）
    *
    * 介绍三态窗口模型（完整/浮动/托盘）+ 快捷键。
    * 用户点击"开始使用"或关闭弹窗后标记为已见过。
    */
   showOnboardingDialog(): void {
-    const modal = document.getElementById('onboarding-modal');
-    const btnOk = document.getElementById('btn-onboarding-ok');
-    if (!modal || !btnOk) return;
-
-    // 标记已见过引导（无论用户点击确定还是关闭）
-    const markSeen = () => {
-      localStorage.setItem(UIManager.ONBOARDING_SEEN_KEY, '1');
-    };
-
-    let closed = false;
-    const close = () => {
-      if (closed) return;
-      closed = true;
-      markSeen();
-      modal.classList.add('hidden');
-      btnOk.removeEventListener('click', onOk);
-      modal.removeEventListener('click', onBackdrop);
-      const closeBtn = modal.querySelector('.modal-close');
-      if (closeBtn) closeBtn.removeEventListener('click', onClose);
-    };
-
-    const onOk = () => close();
-    const onClose = () => close();
-    const onBackdrop = (e: MouseEvent) => {
-      if (e.target === modal) close();
-    };
-
-    btnOk.addEventListener('click', onOk);
-    modal.addEventListener('click', onBackdrop);
-    const closeBtn = modal.querySelector('.modal-close');
-    if (closeBtn) closeBtn.addEventListener('click', onClose);
-
-    // 显示弹窗
-    modal.classList.remove('hidden');
+    this.onboardingManager.showOnboardingDialog();
   }
 
-  // ─── IX-06 Toast 通知 ─────────────────────────────────
+  // ─── IX-06 Toast 通知（代理到 ToastManager） ──────────
 
   /**
-   * 显示 Toast 通知
+   * 显示 Toast 通知（代理到 ToastManager）
    *
    * IX-06 设计原则：
    * - 独立于对话历史（#messages），避免污染上下文
@@ -2361,61 +2041,6 @@ export class UIManager {
    * @param duration 自动消失时长（毫秒），0 表示不自动消失；默认按类型决定
    */
   showToast(message: string, type: ToastType = 'info', duration?: number): void {
-    const container = document.getElementById('toast-container');
-    if (!container) return;
-
-    // 限制最多显示数量，移除最早的（FIFO）
-    while (container.children.length >= UIManager.TOAST_MAX_VISIBLE) {
-      container.firstChild?.remove();
-    }
-
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
-
-    // 图标
-    const icon = document.createElement('span');
-    icon.className = 'toast-icon';
-    icon.textContent = UIManager.TOAST_ICONS[type];
-    toast.appendChild(icon);
-
-    // 内容
-    const content = document.createElement('div');
-    content.className = 'toast-content';
-    content.textContent = message;
-    toast.appendChild(content);
-
-    // 关闭按钮
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'toast-close';
-    closeBtn.textContent = '✕';
-    closeBtn.title = '关闭';
-    closeBtn.addEventListener('click', () => this.removeToast(toast));
-    toast.appendChild(closeBtn);
-
-    container.appendChild(toast);
-
-    // 自动消失（error 默认不消失，需用户手动关闭）
-    const autoDuration = duration ?? (type === 'error' ? 0 : UIManager.TOAST_DEFAULT_DURATION);
-    if (autoDuration > 0) {
-      // 纳入 toastTimers 跟踪，cleanup 时统一清理，避免回调在 DOM 销毁后触发
-      const timer = setTimeout(() => {
-        this.toastTimers.delete(timer);
-        this.removeToast(toast);
-      }, autoDuration);
-      this.toastTimers.add(timer);
-    }
-  }
-
-  /** 移除 Toast（带离场动画） */
-  private removeToast(toast: HTMLElement): void {
-    if (!toast.parentElement) return;
-    toast.classList.add('leaving');
-    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+    this.toastManager.showToast(message, type, duration);
   }
 }
-
-// ─── IX-06 Toast 类型定义 ─────────────────────────────────
-
-/** Toast 通知类型 */
-export type ToastType = 'success' | 'error' | 'warning' | 'info';
