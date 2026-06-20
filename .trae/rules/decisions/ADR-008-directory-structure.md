@@ -107,3 +107,13 @@ src/
 - SqliteStorage 移出至宿主项目（泊文 `hosts/memora-utils/sqliteStorage.ts`）
 - `src/index.ts` 从 CLI 入口转变为库导出入口
 - 目录结构简化为 9 个纯逻辑模块
+
+### v0.5（2026-06-20）· agent/managers/ 子目录
+
+**变更**：新增 `agent/managers/` 子目录，归拢 7 个专职 Manager 文件
+
+**设计演进**：
+- agent/ 目录从 17 个文件增长，专职 Manager 散落导致查找困难
+- 7 个 Manager 文件（ConfigManager / SessionManager / MemoryInspector / InsightExtractor / AutoConfigRefiner / WorkProjectionManager / UserFactExtractor）归入 `agent/managers/`
+- 核心文件（agent.ts / loop.ts / assembler.ts / toolExecutor.ts 等）保留在 `agent/`
+- 符合 ADR-008 原设计"当 agent/ 目录超过 20 个文件需要再细分"的回顾条件

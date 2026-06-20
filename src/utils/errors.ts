@@ -16,6 +16,8 @@
  *   3. 建议（下一步）—— 怎么修复
  */
 import { logger } from '@/logging/logger.js';
+// 纯逻辑 toError，浏览器端可直接 import 此文件而不引入 logger 依赖
+export { toError } from './toError.js';
 
 export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
 
@@ -197,22 +199,4 @@ export function securityError(
   return new MemoraError({ title, detail, suggestions, category: 'security', cause });
 }
 
-/**
- * 将 catch 块中的 unknown 值安全转换为 Error 对象
- *
- * 替代 `err as Error` 类型断言，避免以下风险：
- * - Promise rejection 可能抛出非 Error 值（字符串、null、对象）
- * - 类型断言绕过 TS 检查，若实际非 Error，访问 `.message` 会得到 undefined
- *
- * 转换规则：
- * - Error 实例：原样返回
- * - 对象且含 message 属性：包装为 Error
- * - 其他：调用 String() 转为 message
- */
-export function toError(err: unknown): Error {
-  if (err instanceof Error) return err;
-  if (typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string') {
-    return new Error((err as { message: string }).message);
-  }
-  return new Error(String(err));
-}
+// toError 已移至 ./toError.ts（纯逻辑，零依赖），此处 re-export 保持向后兼容

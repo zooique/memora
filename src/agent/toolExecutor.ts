@@ -12,7 +12,7 @@ import type { SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, configError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { WorkProjectionManager } from './workProjection.js';
+import type { WorkProjectionManager } from './managers/workProjection.js';
 import { BUILTIN_TOOLS, type ToolDefinition } from './builtinTools.js';
 export { BUILTIN_TOOLS } from './builtinTools.js';
 export type { ToolDefinition } from './builtinTools.js';

@@ -12,10 +12,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SkillManager } from '@/skill/skillManager.js';
-import { ConfigManager } from '@/agent/configManager.js';
+import { ConfigManager } from '@/agent/managers/configManager.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
-import type { ConfigSuggestion } from '@/agent/configManager.js';
+import type { ConfigSuggestion } from '@/agent/managers/configManager.js';
 
 describe('ConfigManager', () => {
   let storage: InMemoryStorage;

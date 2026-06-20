@@ -17,7 +17,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
-import type { WriteExtensions } from './toolExecutor.js';
+import type { WriteExtensions } from '../toolExecutor.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 

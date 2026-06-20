@@ -10,7 +10,7 @@
  * - 默认提取行为
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { InsightExtractor, type MemoryKeywords } from '@/agent/insightExtractor.js';
+import { InsightExtractor, type MemoryKeywords } from '@/agent/managers/insightExtractor.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { LlmProvider } from '@/llm/provider.js';
 import { SOURCE_LABELS } from '@/memory/types.js';

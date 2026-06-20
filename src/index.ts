@@ -18,11 +18,11 @@ export type {
   AgentBuildCtx,
   AgentProjectEntry,
 } from './agent/agent.js';
-export { type AgentForkResult } from './agent/sessionManager.js';
+export { type AgentForkResult } from './agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from './agent/toolExecutor.js';
 export type { PersonaMode, Persona } from './persona/types.js';
 // 类型从专职模块导出
-export type { MemoryKeywords } from './agent/insightExtractor.js';
+export type { MemoryKeywords } from './agent/managers/insightExtractor.js';
 export type {
   MemorySnapshot,
   WorkingMemorySnapshot,
@@ -32,9 +32,9 @@ export type {
   AgentStats,
   SuggestOptions,
   SuggestHit,
-} from './agent/memoryInspector.js';
-export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/configManager.js';
-export type { AutoConfigRefinerOptions } from './agent/autoConfigRefiner.js';
+} from './agent/managers/memoryInspector.js';
+export type { ConfigSuggestion, ConfigSuggestionHandler } from './agent/managers/configManager.js';
+export type { AutoConfigRefinerOptions } from './agent/managers/autoConfigRefiner.js';
 export { loadConfig } from './config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from './llm/factory.js';
 export type { ProviderConfig } from './llm/factory.js';
@@ -42,6 +42,7 @@ export type { LlmProvider, ChatOptions } from './llm/provider.js';
 export type { LlmChunk } from './llm/types.js';
 export type { Config } from './config/loader.js';
 // 事件系统
+export { TypedEventEmitter } from './utils/eventEmitter.js';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from './utils/eventEmitter.js';
 
 // ─── 可观测性导出 ────────────────────────────────────────
@@ -79,5 +80,7 @@ export { segmentText, tokenizeKeywords } from './utils/segmenter.js';
 export type { SkillEntry, SkillMatch } from './skill/types.js';
 
 // ─── 错误类型导出 ────────────────────────────────────────
-export { MemoraError, ToolErrorCode, isRetryableErrorCode, toError } from './utils/errors.js';
+export { MemoraError, ToolErrorCode, isRetryableErrorCode } from './utils/errors.js';
+// toError 独立导出，浏览器端可直接 import 而不引入 logging（pino）依赖
+export { toError } from './utils/toError.js';
 export type { ToolErrorCodeValue } from './utils/errors.js';

@@ -31,24 +31,24 @@ import type { MessageHistory } from './messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
-import type { AutoConfigRefiner } from './autoConfigRefiner.js';
+import type { AutoConfigRefiner } from './managers/autoConfigRefiner.js';
 import { recall } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
-import type { InsightExtractor } from './insightExtractor.js';
-import type { ConfigManager } from './configManager.js';
+import type { InsightExtractor } from './managers/insightExtractor.js';
+import type { ConfigManager } from './managers/configManager.js';
 import type {
   MemoryInspector,
   MemorySnapshot,
   AgentStats,
   AgentSearchHit,
   SuggestHit,
-} from './memoryInspector.js';
-import { extractUserFacts } from './userFactExtractor.js';
+} from './managers/memoryInspector.js';
+import { extractUserFacts } from './managers/userFactExtractor.js';
 import { assembleComponents } from './assembler.js';
 import { configError } from '@/utils/errors.js';
-import { SessionManager, type AgentForkResult } from './sessionManager.js';
+import { SessionManager, type AgentForkResult } from './managers/sessionManager.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
