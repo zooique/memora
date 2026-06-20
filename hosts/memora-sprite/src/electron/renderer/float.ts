@@ -13,6 +13,7 @@
 
 /** 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供） */
 export interface FloatElectronAPI {
+  startFloatDrag(): void;
   moveFloatWindow(dx: number, dy: number): void;
   saveFloatPosition(): void;
   expandToFull(): void;
@@ -133,8 +134,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
       sphere.classList.add('dragging');
       // FD-06 首次拖动后标记已见过引导，不再显示
       markDragHintSeen();
-      // 通知主进程开始拖动
-      electronAPI.moveFloatWindow(0, 0);
+      // 通知主进程开始拖动（设置 isDragging 标志），否则后续 moveFloatWindow 会被忽略
+      electronAPI.startFloatDrag();
     }
 
     if (isDragging) {

@@ -152,6 +152,8 @@ export interface ElectronAPI {
   removeFloatDragStartListener: () => void;
   /** 移除浮动窗口拖动结束监听器 */
   removeFloatDragEndListener: () => void;
+  /** 通知主进程开始拖动（设置 isDragging 标志） */
+  startFloatDrag: () => void;
   moveFloatWindow: (dx: number, dy: number) => void;
   saveFloatPosition: () => void;
   expandToFull: () => void;
@@ -268,6 +270,7 @@ const electronAPI: ElectronAPI = {
   removeFloatDragEndListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END);
   },
+  startFloatDrag: () => ipcRenderer.send(IPC_CHANNELS.FLOAT_DRAG_BEGIN),
   moveFloatWindow: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_FLOAT_WINDOW, dx, dy),
   saveFloatPosition: () => ipcRenderer.send(IPC_CHANNELS.SAVE_FLOAT_POSITION),
   expandToFull: () => ipcRenderer.send(IPC_CHANNELS.EXPAND_TO_FULL),

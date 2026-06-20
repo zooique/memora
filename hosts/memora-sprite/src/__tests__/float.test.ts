@@ -41,6 +41,7 @@ const FLOAT_HTML = `<!DOCTYPE html>
 /** 创建 FloatElectronAPI mock */
 function createMockFloatAPI(): FloatElectronAPI {
   return {
+    startFloatDrag: vi.fn(),
     moveFloatWindow: vi.fn(),
     saveFloatPosition: vi.fn(),
     expandToFull: vi.fn(),
@@ -102,7 +103,7 @@ afterEach(() => {
 // ─── 拖动检测 ─────────────────────────────────────────────
 
 describe('拖动检测', () => {
-  it('移动超过 3px 阈值时触发拖动并调用 moveFloatWindow', () => {
+  it('移动超过 3px 阈值时触发拖动并调用 startFloatDrag', () => {
     setupFloat(mockAPI);
 
     // 鼠标按下（派发到 document，监听器注册在 document 上）
@@ -115,7 +116,7 @@ describe('拖动检测', () => {
       screenX: 105, screenY: 100, button: 0, buttons: 1,
     }));
 
-    expect(mockAPI.moveFloatWindow).toHaveBeenCalled();
+    expect(mockAPI.startFloatDrag).toHaveBeenCalled();
     const sphere = document.getElementById('sphere')!;
     expect(sphere.classList.contains('dragging')).toBe(true);
   });
@@ -161,8 +162,8 @@ describe('拖动检测', () => {
     document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
       screenX: 105, screenY: 100, buttons: 1,
     }));
-    // 第一次 mousemove 触发 drag 起始，moveFloatWindow(0,0) 被调用
-    expect(mockAPI.moveFloatWindow).toHaveBeenCalledWith(0, 0);
+    // 第一次 mousemove 触发 drag 起始，startFloatDrag 被调用
+    expect(mockAPI.startFloatDrag).toHaveBeenCalled();
 
     document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
       screenX: 108, screenY: 102, buttons: 1,
@@ -371,7 +372,7 @@ describe('清理函数', () => {
     document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
       screenX: 110, screenY: 100, button: 0, buttons: 1,
     }));
-    expect(mockAPI.moveFloatWindow).toHaveBeenCalled();
+    expect(mockAPI.startFloatDrag).toHaveBeenCalled();
 
     // 重置 mock 并调用 cleanup
     vi.clearAllMocks();

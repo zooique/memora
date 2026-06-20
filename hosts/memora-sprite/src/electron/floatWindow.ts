@@ -38,8 +38,6 @@ export interface FloatWindowCallbacks {
 
 export class FloatWindow {
   private win!: BrowserWindow;
-  /** 当前拖动状态（用于 IPC 处理器判断） */
-  private isDragging = false;
   /** 回调集合（由 main.ts 注入） */
   private callbacks: FloatWindowCallbacks;
   /** 窗口状态管理器（查询浮动窗口尺寸/位置） */
@@ -107,8 +105,8 @@ export class FloatWindow {
   /** 注册浮动窗口专用 IPC 处理器 */
   private registerFloatIpcHandlers(): void {
     // 渲染进程请求移动窗口（拖动时持续调用）
+    // 移除 isDragging 守卫：渲染进程完全控制拖动逻辑，避免 IPC 异步时序问题
     ipcMain.on(IPC_CHANNELS.MOVE_FLOAT_WINDOW, (_event, dx: number, dy: number) => {
-      if (!this.isDragging) return;
       const pos = this.win.getPosition();
       const currentX = pos[0] ?? 0;
       const currentY = pos[1] ?? 0;
@@ -119,19 +117,15 @@ export class FloatWindow {
 
     // 渲染进程通知拖动结束，保存最终位置
     ipcMain.on(IPC_CHANNELS.SAVE_FLOAT_POSITION, () => {
-      if (this.isDragging) {
-        const pos = this.win.getPosition();
-        const x = pos[0] ?? 0;
-        const y = pos[1] ?? 0;
-        this.windowStateManager.saveFloatPosition(x, y);
-        this.isDragging = false;
-        this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END);
-      }
+      const pos = this.win.getPosition();
+      const x = pos[0] ?? 0;
+      const y = pos[1] ?? 0;
+      this.windowStateManager.saveFloatPosition(x, y);
+      this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END);
     });
 
     // 渲染进程通知拖动开始
     ipcMain.on(IPC_CHANNELS.FLOAT_DRAG_BEGIN, () => {
-      this.isDragging = true;
       this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_START);
     });
 
