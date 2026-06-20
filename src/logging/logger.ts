@@ -19,14 +19,13 @@
  */
 import type { ILogger } from './loggerInterface.js';
 import { statSync, truncateSync } from 'node:fs';
+import { toError } from '../utils/toError.js';
 
 /**
- * 从 unknown 值提取错误消息（避免 `err as Error` 类型断言）
- * 内联实现以避免与 utils/errors.ts 形成循环依赖
+ * 从 unknown 值提取错误消息（复用零依赖的 toError，避免类型断言）
  */
 function errMsg(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return String(err);
+  return toError(err).message;
 }
 
 /** 日志级别（从环境变量读取，默认 info） */

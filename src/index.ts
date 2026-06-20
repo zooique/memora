@@ -66,7 +66,7 @@ export type { ISessionStore, SessionMessage } from './memory/sessionStore.js';
 // 消息历史内部类型：MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from './agent/messageHistory.js';
 // 召回函数：简化关键词搜索
-export { recall, extractKeywords, decayScores } from './memory/recall.js';
+export { recall, extractKeywords } from './memory/recall.js';
 export type { RecallOptions } from './memory/recall.js';
 
 // ─── 日志抽象 ────────────────────────────────────────────

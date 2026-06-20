@@ -13,7 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
+import { SOURCE_LABELS, escapeLike } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
@@ -202,7 +202,7 @@ ${contextSection}
       }
 
       // Step 2: 去重检查（使用 Jaccard 相似度）
-      const snippet = insight.slice(0, 50).replace(/[%_]/g, '\\$&');
+      const snippet = escapeLike(insight.slice(0, 50));
       const existing = this.index.search(snippet, 3);
       const existingMemory = existing.find((m) => {
         // 计算 Jaccard 相似度（词级）

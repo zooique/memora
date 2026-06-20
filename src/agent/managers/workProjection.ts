@@ -250,23 +250,11 @@ export class WorkProjectionManager {
   /**
    * 从 Memory content 中解析 hash
    *
-   * content 格式：JSON 元数据行 + 空行 + summary
-   * 旧格式（HTML 注释）兼容解析
+   * 复用 decodeContent，避免重复 JSON 解析与 HTML 注释匹配逻辑。
+   * content 格式：JSON 元数据行 + 空行 + summary（旧格式：HTML 注释兼容）
    */
   private parseHash(memory: Memory): string | null {
-    // 新格式：首行 JSON
-    const firstLine = memory.content.split('\n')[0] ?? '';
-    if (firstLine.startsWith('{')) {
-      try {
-        const meta = JSON.parse(firstLine) as { hash?: string };
-        return meta.hash ?? null;
-      } catch (err) {
-        logger.warn({ id: memory.id, err: toError(err).message }, '作品投影 hash 解析失败');
-      }
-    }
-    // 旧格式兼容：HTML 注释
-    const match = memory.content.match(/<!--\s*wp:hash:(\S+)\s*-->/);
-    return match?.[1] ?? null;
+    return this.decodeContent(memory.content).hash;
   }
 
   /**

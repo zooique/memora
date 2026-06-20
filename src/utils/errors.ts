@@ -15,7 +15,7 @@
  *   2. 详情（原文）—— 排查用
  *   3. 建议（下一步）—— 怎么修复
  */
-import { logger } from '@/logging/logger.js';
+import { logger } from '../logging/logger.js';
 // 纯逻辑 toError，浏览器端可直接 import 此文件而不引入 logger 依赖
 export { toError } from './toError.js';
 

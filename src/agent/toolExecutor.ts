@@ -11,6 +11,7 @@ import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:pat
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, configError, MemoraError, ToolErrorCode, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
+import { segmentText } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { WorkProjectionManager } from './managers/workProjection.js';
 import { BUILTIN_TOOLS, type ToolDefinition } from './builtinTools.js';
@@ -537,7 +538,13 @@ export class ToolExecutor {
         );
       }
     } catch (err) {
-      if ((err as { code?: string }).code === 'ENOENT') {
+      // 运行时类型检查：Node.js fs 错误带有 code 属性（避免类型断言）
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code: unknown }).code === 'ENOENT'
+      ) {
         const e = toError(err);
         throw toolError(
           'list_dir 路径不存在',
@@ -660,7 +667,8 @@ export class ToolExecutor {
 
     // near 模式：过滤只保留所有关键词都命中的结果
     if (mode === 'near' && results.length > 0) {
-      const keywords = query.toLowerCase().split(/\s+/).filter(Boolean);
+      // 复用 segmentText 分词，与 inMemoryStorage 搜索保持一致
+      const keywords = segmentText(query).map((t) => t.toLowerCase());
       if (keywords.length > 1) {
         results = results.filter((m) => {
           const text = `${m.content} ${m.name}`.toLowerCase();

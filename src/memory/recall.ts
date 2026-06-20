@@ -20,13 +20,13 @@ import { segmentText } from '@/utils/segmenter.js';
 const DEFAULT_MIN_SIMILARITY = 0.3;
 
 /** 语义搜索召回倍率（在最终 limit 基础上多召回一些，供后续融合排序） */
-const RECALL_LIMIT_MULTIPLIER = 2;
+export const RECALL_LIMIT_MULTIPLIER = 2;
 
 /** 综合排序时语义相似度权重 */
-const VECTOR_SCORE_WEIGHT = 0.6;
+export const VECTOR_SCORE_WEIGHT = 0.6;
 
 /** 综合排序时记忆 score 权重 */
-const MEMORY_SCORE_WEIGHT = 0.4;
+export const MEMORY_SCORE_WEIGHT = 0.4;
 
 /** 每次召回时 score 提升量 */
 const BOOST_INCREMENT = 0.05;
@@ -44,7 +44,7 @@ const DECAY_AMOUNT = 0.02;
 const DECAY_FLOOR = 0.1;
 
 /** 一天对应的毫秒数 */
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * 从文本中提取关键词（用于记忆召回）
@@ -208,20 +208,4 @@ export function applyDecayToMemory(memory: Memory, now: Date): boolean {
   const periods = Math.floor(daysSinceAccess / DECAY_AGE_DAYS);
   memory.score = Math.max(DECAY_FLOOR, memory.score - DECAY_AMOUNT * periods);
   return true;
-}
-
-/**
- * 定期衰减：长时间未访问的记忆 score 逐渐降低（下限 DECAY_FLOOR）
- *
- * 超过 DECAY_AGE_DAYS 天未访问的记忆，每过一个周期 score 降低 DECAY_AMOUNT，
- * 体现"越久不用越不重要"。
- *
- * @param memories - 要衰减的记忆列表
- * @param now - 当前时间（Date 对象）
- */
-export function decayScores(memories: Memory[], now?: Date): void {
-  const currentTime = now ?? new Date();
-  for (const m of memories) {
-    applyDecayToMemory(m, currentTime);
-  }
 }

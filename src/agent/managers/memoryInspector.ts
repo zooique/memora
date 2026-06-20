@@ -16,6 +16,12 @@ import type { MessageHistory } from '../messageHistory.js';
 import type { AgentLoop } from '../loop.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
+import {
+  RECALL_LIMIT_MULTIPLIER,
+  VECTOR_SCORE_WEIGHT,
+  MEMORY_SCORE_WEIGHT,
+  ONE_DAY_MS,
+} from '@/memory/recall.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -270,7 +276,7 @@ export class MemoryInspector {
     // ── 通道 1：语义搜索（VectorStore 可用时） ──
     if (this.vectorStore && this.vectorStore.size > 0) {
       try {
-        const vectorResults = await this.vectorStore.search(query, limit * 2, 0.3);
+        const vectorResults = await this.vectorStore.search(query, limit * RECALL_LIMIT_MULTIPLIER, 0.3);
         for (const vr of vectorResults) {
           const memory = this.index.getById(vr.id);
           if (memory) {
@@ -283,7 +289,7 @@ export class MemoryInspector {
     }
 
     // ── 通道 2：关键词搜索（补齐语义通道未覆盖的） ──
-    const keywordResults = this.index.search(query, limit * 2);
+    const keywordResults = this.index.search(query, limit * RECALL_LIMIT_MULTIPLIER);
     for (const m of keywordResults) {
       if (!merged.has(m.id)) {
         merged.set(m.id, { memory: m, vectorScore: 0 });
@@ -292,8 +298,8 @@ export class MemoryInspector {
 
     // ── 综合排序：vectorScore（语义相关度）+ memory.score（权重） ──
     const sorted = [...merged.values()].sort((a, b) => {
-      const scoreA = a.vectorScore * 0.6 + a.memory.score * 0.4;
-      const scoreB = b.vectorScore * 0.6 + b.memory.score * 0.4;
+      const scoreA = a.vectorScore * VECTOR_SCORE_WEIGHT + a.memory.score * MEMORY_SCORE_WEIGHT;
+      const scoreB = b.vectorScore * VECTOR_SCORE_WEIGHT + b.memory.score * MEMORY_SCORE_WEIGHT;
       return scoreB - scoreA;
     });
 
@@ -366,7 +372,6 @@ export class MemoryInspector {
 
     const scoreWeight = 1 - recencyWeight;
     const now = Date.now();
-    const ONE_DAY = 24 * 60 * 60 * 1000;
 
     // 收集候选记忆
     const candidates = new Map<string, { memory: Memory; searchHit: boolean }>();
@@ -407,7 +412,7 @@ export class MemoryInspector {
       const accessedAt = new Date(memory.accessedAt);
       const daysSinceAccess = isNaN(accessedAt.getTime())
         ? 30
-        : (now - accessedAt.getTime()) / ONE_DAY;
+        : (now - accessedAt.getTime()) / ONE_DAY_MS;
       const recency = Math.max(0, 1 - daysSinceAccess / 30);
 
       const relevance = memory.score * scoreWeight + recency * recencyWeight;
