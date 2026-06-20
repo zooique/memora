@@ -23,6 +23,10 @@ import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** 完整窗口最小尺寸：侧边栏 240px + 主内容区至少 400px = 640px；高度 480px 保证核心内容可见 */
+const FULL_WINDOW_MIN_WIDTH = 640;
+const FULL_WINDOW_MIN_HEIGHT = 480;
+
 // ─── 窗口管理器类 ─────────────────────────────────────────
 
 export class WindowManager {
@@ -100,8 +104,8 @@ export class WindowManager {
     this.fullWindow = new BrowserWindow({
       width: fullSize.width,
       height: fullSize.height,
-      minWidth: 640,   /* 侧边栏 240px + 主内容区至少 400px */
-      minHeight: 480,
+      minWidth: FULL_WINDOW_MIN_WIDTH,
+      minHeight: FULL_WINDOW_MIN_HEIGHT,
       frame: false,
       show: false,
       // ADR-SP-008：浅色主题为默认，窗口背景色对齐大底板色（--bg: #f0f0f2）

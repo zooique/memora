@@ -147,8 +147,9 @@ export class MemoryController {
     if (!inspector) return [];
     try {
       return await inspector.searchHybrid(query, limit);
-    } catch {
-      // 降级到纯关键词
+    } catch (error) {
+      // 降级到纯关键词搜索，记录降级原因辅助排查
+      logger.warn({ err: error, query }, '混合搜索失败，降级为纯关键词搜索');
       return inspector.search(query, limit);
     }
   }

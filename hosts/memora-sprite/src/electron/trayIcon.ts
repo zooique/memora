@@ -18,6 +18,9 @@ import type { NativeImage } from 'electron';
 /** 托盘状态类型：对齐浮动窗口状态指示点 */
 export type TrayState = 'idle' | 'active' | 'sleeping';
 
+/** 托盘脉冲动画间隔（毫秒）——active 状态下 tooltip 文字循环切换 */
+const TRAY_PULSE_INTERVAL_MS = 2000;
+
 export interface TrayCallbacks {
   /** 显示完整窗口 */
   onShowFull: () => void;
@@ -190,7 +193,7 @@ export class TrayManager {
     this.pulseTimer = setInterval(() => {
       this.tray.setToolTip(frames[step % frames.length] ?? 'Memora');
       step++;
-    }, 2000);
+    }, TRAY_PULSE_INTERVAL_MS);
   }
 
   /** 停止托盘脉冲动画 */

@@ -46,6 +46,12 @@ let uiManager: UIManager;
 /** 静默模式自动恢复时间（1 小时） */
 const SILENT_RECOVERY_MS = 60 * 60 * 1000;
 
+/** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
+const DASHBOARD_PULSE_MS = 300;
+
+/** 累积事件接近阈值的百分比（>=80% 显示黄色高亮） */
+const NEAR_THRESHOLD_RATIO = 0.8;
+
 /** 静默模式定时恢复句柄（多次点击"静默 1 小时"时清理旧定时器，避免重复恢复） */
 let silentRecoveryTimer: number | null = null;
 
@@ -102,9 +108,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 注意：页面刷新会丢失定时器，但静默模式是持久化配置，用户可在设置面板手动关闭
       silentRecoveryTimer = window.setTimeout(() => {
         silentRecoveryTimer = null;
+        // 追加 .catch 防止 IPC 失败时产生 unhandled rejection
         void window.electronAPI.updateConfig('silentMode', false).then(() => {
           // IX-06 恢复提示走 toast
           uiManager.showToast('静默模式已到期自动恢复，精灵可正常主动提示', 'info');
+        }).catch((err: unknown) => {
+          console.error('[silentRecovery] 自动恢复静默模式失败:', err);
         });
       }, SILENT_RECOVERY_MS);
     },
@@ -161,12 +170,36 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
+// ─── 错误处理辅助 ─────────────────────────────────────────
+
+/**
+ * 统一处理 IPC 错误：记录日志 + 可选 toast 反馈
+ *
+ * 提取自 8+ 处 catch 块的重复模式（console.error + toError + showToast）。
+ * 统一错误处理风格，避免每个回调都写 2-3 行错误处理代码。
+ *
+ * @param context 错误上下文标识（用于日志前缀，如 'onMemoryDelete'）
+ * @param error 捕获的错误对象
+ * @param toastPrefix 可选的 toast 提示前缀（如 '删除记忆失败'）；不提供则仅记录日志
+ */
+function handleIpcError(context: string, error: unknown, toastPrefix?: string): void {
+  console.error(`[${context}]`, error);
+  if (toastPrefix) {
+    uiManager.showToast(`${toastPrefix}：${toError(error).message}`, 'error');
+  }
+}
+
 // ─── 清理资源 ─────────────────────────────────────────────
 
 // 页面卸载时清理资源：UI 监听器 + IPC 监听器
 // IPC 监听器若不清理，重新加载页面时会累积，导致同一事件触发多次
 window.addEventListener('beforeunload', () => {
   uiManager?.cleanup();
+  // 清理静默模式恢复定时器，避免定时器触发时操作已销毁的 DOM 或产生未捕获 rejection
+  if (silentRecoveryTimer !== null) {
+    window.clearTimeout(silentRecoveryTimer);
+    silentRecoveryTimer = null;
+  }
   // 清理 IPC 监听器（防止内存泄漏与重复触发）
   window.electronAPI?.removeStreamListeners();
   window.electronAPI?.removeSpriteOutputListener();
@@ -250,7 +283,7 @@ function setupBusinessLogic(): void {
         uiManager.showToast(`新建会话失败：${result.error ?? '未知错误'}`, 'error');
       }
     } catch (error) {
-      uiManager.showToast(`新建会话失败：${toError(error).message}`, 'error');
+      handleIpcError('onNewSession', error, '新建会话失败');
     }
   });
 }
@@ -391,7 +424,7 @@ function pulseCounter(id: string): void {
   if (!el) return;
   el.textContent = String(parseInt(el.textContent ?? '0') + 1);
   el.classList.add('pulse');
-  setTimeout(() => el.classList.remove('pulse'), 300);
+  setTimeout(() => el.classList.remove('pulse'), DASHBOARD_PULSE_MS);
 }
 
 // ─── 应用错误处理 ─────────────────────────────────────────
@@ -498,8 +531,7 @@ function setupMemoryPanel(): void {
       // IX-06 操作反馈走 toast
       uiManager.showToast('记忆已删除', 'success');
     } catch (error) {
-      console.error('[onMemoryDelete] 删除记忆失败:', error);
-      uiManager.showToast(`删除记忆失败：${toError(error).message}`, 'error');
+      handleIpcError('onMemoryDelete', error, '删除记忆失败');
     }
   });
 
@@ -515,8 +547,7 @@ function setupMemoryPanel(): void {
       // IX-06 操作反馈走 toast
       uiManager.showToast('记忆已添加', 'success');
     } catch (error) {
-      console.error('[onMemoryAdd] 添加记忆失败:', error);
-      uiManager.showToast(`添加记忆失败：${toError(error).message}`, 'error');
+      handleIpcError('onMemoryAdd', error, '添加记忆失败');
     } finally {
       // FD-08 恢复按钮状态
       uiManager.setButtonLoading('btn-memory-add-confirm', false);
@@ -563,7 +594,7 @@ async function loadDashboard(): Promise<void> {
       if (data.pendingNotices >= data.proactiveThreshold) {
         dashPending.classList.add('at-threshold');
       } else if (data.proactiveThreshold > 0
-        && data.pendingNotices / data.proactiveThreshold >= 0.8) {
+        && data.pendingNotices / data.proactiveThreshold >= NEAR_THRESHOLD_RATIO) {
         dashPending.classList.add('near-threshold');
       }
     }
@@ -627,8 +658,7 @@ function setupPersonaSelector(): void {
         uiManager.showToast(`已切换到角色：${activeName}`, 'success');
       }
     } catch (error) {
-      console.error('[onPersonaSwitch] 切换角色失败:', error);
-      uiManager.showToast(`切换角色失败：${toError(error).message}`, 'error');
+      handleIpcError('onPersonaSwitch', error, '切换角色失败');
     }
   });
 
@@ -643,8 +673,7 @@ function setupPersonaSelector(): void {
         uiManager.showToast('角色匹配模式切换失败', 'error');
       }
     } catch (error) {
-      console.error('[onPersonaModeChange] 设置角色模式失败:', error);
-      uiManager.showToast(`设置角色模式失败：${toError(error).message}`, 'error');
+      handleIpcError('onPersonaModeChange', error, '设置角色模式失败');
     }
   });
 }
@@ -698,7 +727,7 @@ function setupSettingsPanel(): void {
       // IX-06 操作反馈走 toast，不污染对话历史
       uiManager.showToast('精灵配置已保存', 'success');
     } catch (error) {
-      uiManager.showToast(`保存精灵配置失败：${toError(error).message}`, 'error');
+      handleIpcError('onConfigSave', error, '保存精灵配置失败');
     } finally {
       // FD-08 恢复按钮状态
       uiManager.setButtonLoading('btn-settings-save', false);
@@ -744,7 +773,7 @@ function setupSettingsPanel(): void {
         uiManager.showToast(`初始化失败：${error}`, 'error');
       }
     } catch (error) {
-      uiManager.showToast(`保存 LLM 配置失败：${toError(error).message}`, 'error');
+      handleIpcError('onLlmConfigSave', error, '保存 LLM 配置失败');
     } finally {
       // FD-08 恢复按钮状态
       uiManager.setButtonLoading('btn-settings-save', false);

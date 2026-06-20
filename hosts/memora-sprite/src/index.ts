@@ -18,7 +18,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
@@ -54,10 +54,10 @@ const ZH_MESSAGES: UIMessages = {
 };
 
 /** 默认数据目录（Agent 级共享，~/.memora/） */
-const DEFAULT_DATA_DIR = resolve(homedir(), '.memora');
+export const DEFAULT_DATA_DIR = resolve(homedir(), '.memora');
 
 /** 默认配置目录（Agent 级共享，~/.memora-config/） */
-const DEFAULT_CONFIG_DIR = resolve(homedir(), '.memora-config');
+export const DEFAULT_CONFIG_DIR = resolve(homedir(), '.memora-config');
 
 // ─── 首次启动引导 ──────────────────────────────────────
 
@@ -579,13 +579,12 @@ async function main(): Promise<void> {
         return;
       }
       const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+      // 使用 execFile 而非 exec：直接调用可执行文件，不经过 shell，消除命令注入风险
+      // Windows: start 是 cmd 内建命令，需通过 cmd /c 调用；macOS/Linux: 直接调用 open/xdg-open
       const platform = process.platform;
-      const cmd = platform === 'win32'
-        ? `start "" "${searchUrl}"`
-        : platform === 'darwin'
-          ? `open "${searchUrl}"`
-          : `xdg-open "${searchUrl}"`;
-      exec(cmd, (err) => {
+      const cmd = platform === 'win32' ? 'cmd' : platform === 'darwin' ? 'open' : 'xdg-open';
+      const args = platform === 'win32' ? ['/c', 'start', '', searchUrl] : [searchUrl];
+      execFile(cmd, args, (err) => {
         if (err) {
           console.log(`无法打开浏览器：${err.message}`);
         } else {

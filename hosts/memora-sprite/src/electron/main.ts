@@ -19,7 +19,6 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { app, ipcMain, Notification } from 'electron';
 import { loadConfig, createProviderFromConfig, toError, logger } from 'memora';
@@ -31,15 +30,13 @@ import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-
-/** 默认数据目录（Agent 级共享，~/.memora/） */
-const DEFAULT_DATA_DIR = path.join(homedir(), '.memora');
 import {
   startSprite,
   reinitAgent,
   saveLlmConfig,
   isLlmConfigured,
   PROVIDER_PRESETS,
+  DEFAULT_DATA_DIR,
 } from '../index.js';
 import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
@@ -467,6 +464,37 @@ function registerMinimalIpcHandlers(): void {
 // ─── 精灵事件监听（主动提示分发） ─────────────────────────
 
 /**
+ * 向完整窗口发送精灵事件（若窗口可见）
+ *
+ * 提取自 setupSpriteEventListeners 中 3 处重复的"检查 fullWindow 可见性 → 发送 SPRITE_EVENT"模式。
+ * 仅在完整窗口存在且可见时发送，避免窗口隐藏或销毁时调用 webContents.send 抛错。
+ *
+ * @param type 事件类型（对应 SpriteEventMap 的 key）
+ * @param payload 事件载荷
+ * @param silent 是否静默（默认 true，仅 proactivePrompt 为 false）
+ */
+function sendSpriteEventIfVisible(
+  type: string,
+  payload: Record<string, unknown>,
+  silent = true,
+): void {
+  const fullWindow = windowManager.getFullWindow();
+  // 同时检查 isVisible 和 !isMinimized：macOS 上最小化的窗口 isVisible 可能仍为 true
+  if (
+    fullWindow &&
+    !fullWindow.isDestroyed() &&
+    fullWindow.isVisible() &&
+    !fullWindow.isMinimized()
+  ) {
+    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+      type,
+      payload,
+      silent,
+    });
+  }
+}
+
+/**
  * 订阅精灵事件，实现方案 §6.6 主动提示分发逻辑：
  * - 托盘脉冲（始终执行）
  * - 系统通知（非静默模式）
@@ -502,14 +530,8 @@ function setupSpriteEventListeners(): void {
     }
 
     // 非静默模式 + 完整窗口可见：窗口内提示
-    const fullWindow = windowManager.getFullWindow();
-    const isFullVisible = fullWindow?.isVisible() && !fullWindow?.isMinimized();
-    if (!silent && isFullVisible && fullWindow && !fullWindow.isDestroyed()) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-        type: 'proactivePrompt',
-        payload: { prompt, silent },
-        silent,
-      });
+    if (!silent) {
+      sendSpriteEventIfVisible('proactivePrompt', { prompt, silent }, silent);
     }
   };
   sprite.on('proactivePrompt', onProactivePrompt);
@@ -517,42 +539,21 @@ function setupSpriteEventListeners(): void {
 
   // 记忆新增 → 仪表盘计数 +1
   const onMemoryNoticed: (e: SpriteEventMap['memoryNoticed']) => void = () => {
-    const fullWindow = windowManager.getFullWindow();
-    if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-        type: 'memoryNoticed',
-        payload: {},
-        silent: true,
-      });
-    }
+    sendSpriteEventIfVisible('memoryNoticed', {});
   };
   sprite.on('memoryNoticed', onMemoryNoticed);
   spriteEventUnsubscribers.push(() => sprite?.off('memoryNoticed', onMemoryNoticed));
 
   // 洞察提取 → 仪表盘计数 +1
   const onInsightGained: (e: SpriteEventMap['insightGained']) => void = () => {
-    const fullWindow = windowManager.getFullWindow();
-    if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-        type: 'insightGained',
-        payload: {},
-        silent: true,
-      });
-    }
+    sendSpriteEventIfVisible('insightGained', {});
   };
   sprite.on('insightGained', onInsightGained);
   spriteEventUnsubscribers.push(() => sprite?.off('insightGained', onInsightGained));
 
   // 角色切换 → 顶栏角色标签更新
   const onPersonaChanged: (e: SpriteEventMap['personaChanged']) => void = ({ from, to }) => {
-    const fullWindow = windowManager.getFullWindow();
-    if (fullWindow && !fullWindow.isDestroyed() && fullWindow.isVisible()) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-        type: 'personaChanged',
-        payload: { from, to },
-        silent: true,
-      });
-    }
+    sendSpriteEventIfVisible('personaChanged', { from, to });
     // 角色切换不影响托盘状态（托盘状态由流式输出/静默模式/主动提示驱动）
   };
   sprite.on('personaChanged', onPersonaChanged);
@@ -574,7 +575,14 @@ function unsubscribeSpriteEvents(): void {
 
 // ─── 应用生命周期 ─────────────────────────────────────────
 
-app.whenReady().then(initializeApp);
+// initializeApp 内部两阶段均有 try-catch，但阶段 2 的 catch 块调用 registerMinimalIpcHandlers()
+// 若该函数抛错会变成 unhandled rejection，追加 .catch 兜底
+app.whenReady().then(initializeApp).catch((error) => {
+  errorHandler.handle(error, {
+    code: ErrorCode.UNKNOWN,
+    context: '应用启动失败（initializeApp 未捕获异常）',
+  });
+});
 
 app.on('window-all-closed', () => {
   // 不退出——托盘常驻

@@ -161,6 +161,8 @@ export class UIManager {
   };
   /** Toast 默认自动消失时长（毫秒），error 类型不自动消失 */
   private static readonly TOAST_DEFAULT_DURATION = 4000;
+  /** Toast 最大同时显示数量（FIFO，超出时移除最早的） */
+  private static readonly TOAST_MAX_VISIBLE = 5;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -236,6 +238,8 @@ export class UIManager {
   private isNearBottom = true;
   /** 记忆搜索防抖定时器（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Toast 自动消失定时器集合（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
+  private toastTimers: Set<ReturnType<typeof setTimeout>> = new Set();
 
   constructor() {
     // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -407,6 +411,11 @@ export class UIManager {
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
     }
+    // 清理 Toast 自动消失定时器，避免回调在 DOM 销毁后触发
+    for (const timer of this.toastTimers) {
+      clearTimeout(timer);
+    }
+    this.toastTimers.clear();
   }
 
   // ─── 消息渲染 ─────────────────────────────────────────
@@ -2226,8 +2235,8 @@ export class UIManager {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
-    // 限制最多 5 条，移除最早的（FIFO）
-    while (container.children.length >= 5) {
+    // 限制最多显示数量，移除最早的（FIFO）
+    while (container.children.length >= UIManager.TOAST_MAX_VISIBLE) {
       container.firstChild?.remove();
     }
 
@@ -2260,7 +2269,12 @@ export class UIManager {
     // 自动消失（error 默认不消失，需用户手动关闭）
     const autoDuration = duration ?? (type === 'error' ? 0 : UIManager.TOAST_DEFAULT_DURATION);
     if (autoDuration > 0) {
-      setTimeout(() => this.removeToast(toast), autoDuration);
+      // 纳入 toastTimers 跟踪，cleanup 时统一清理，避免回调在 DOM 销毁后触发
+      const timer = setTimeout(() => {
+        this.toastTimers.delete(timer);
+        this.removeToast(toast);
+      }, autoDuration);
+      this.toastTimers.add(timer);
     }
   }
 

@@ -127,5 +127,7 @@ export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
   }
 
   const merged = { ...existing, ...config };
-  writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
+  // 设置 0o600 权限：仅文件所有者可读写
+  // sprite.json 含 focusProjectPath 等路径信息，与 config.json（含 apiKey）保持一致的权限保护
+  writeFileSync(filePath, JSON.stringify(merged, null, 2), { encoding: 'utf-8', mode: 0o600 });
 }
