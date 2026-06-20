@@ -149,7 +149,8 @@ export class WindowManager {
     });
 
     ipcMain.on(IPC_CHANNELS.WINDOW_CLOSE, () => {
-      this.windowStateManager.transition('float');
+      // 关闭完整窗口 → 回到托盘态（float 显示由 showFloatBubble 偏好控制）
+      this.windowStateManager.transition('tray');
     });
   }
 
@@ -163,7 +164,8 @@ export class WindowManager {
       if (this.isQuitting) return;
       if (!win.isDestroyed()) {
         e.preventDefault();
-        this.windowStateManager.transition('float');
+        // 关闭完整窗口 → 回到托盘态（float 显示由 showFloatBubble 偏好控制）
+        this.windowStateManager.transition('tray');
       }
     });
 

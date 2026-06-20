@@ -472,7 +472,7 @@ export class Sprite {
     }
     // 枚举类型字段
     if (key === 'windowState') {
-      if (value === 'tray' || value === 'float' || value === 'full') {
+      if (value === 'tray' || value === 'full') {
         this.config[key] = value;
       }
       return;

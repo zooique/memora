@@ -183,11 +183,13 @@ async function initializeApp(): Promise<void> {
     windowStateManager = new WindowStateManager({
       defaultState: spriteConfig.windowState,
       floatPosition,
+      showFloatBubble: spriteConfig.showFloatBubble,
       // 持久化委托给 saveSpriteConfig（避免与 spriteConfig.ts 重复写文件）
       onSaveState: (data) => {
         saveSpriteConfig(defaultDataDir, {
           windowState: data.windowState,
           floatIconPosition: data.floatPosition,
+          showFloatBubble: data.showFloatBubble,
         });
       },
     });
@@ -204,12 +206,19 @@ async function initializeApp(): Promise<void> {
       .then(() => TRAY_ICON_PATH)
       .catch(() => '');
     trayManager = new TrayManager(iconPath, {
-      onShowFloat: () => windowStateManager.transition('float'),
       onShowFull: () => {
         windowStateManager.transition('full');
         // 从托盘展开完整窗口时清零未读计数
         resetUnreadCount();
       },
+      onToggleFloatBubble: (checked: boolean) => {
+        windowStateManager.setShowFloatBubble(checked);
+        // 同步持久化到 spriteConfig
+        saveSpriteConfig(defaultDataDir, { showFloatBubble: checked });
+        // 重建托盘菜单以反映勾选状态
+        trayManager?.updateMenu();
+      },
+      isFloatBubbleVisible: () => windowStateManager.getShowFloatBubble(),
       onHideToTray: () => windowStateManager.transition('tray'),
       onQuit: () => {
         windowManager.closeAll();
@@ -265,7 +274,13 @@ async function initializeApp(): Promise<void> {
     // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / 静默模式回调
     // 静默模式回调通过工厂函数生成，与托盘注入共享同一份逻辑（DRY）
     windowManager.updateFloatCallbacks({
-      onHideToTray: () => windowStateManager.transition('tray'),
+      // 浮动气泡右键"隐藏到托盘"：关闭浮动气泡（设置 showFloatBubble = false）
+      onHideToTray: () => {
+        windowStateManager.setShowFloatBubble(false);
+        // 同步持久化 + 重建托盘菜单
+        saveSpriteConfig(DEFAULT_DATA_DIR, { showFloatBubble: false });
+        trayManager?.updateMenu();
+      },
       onQuit: () => {
         windowManager.setQuitting(true);
         windowManager.closeAll();

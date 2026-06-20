@@ -139,7 +139,8 @@ export class FloatWindow {
     ipcMain.on(IPC_CHANNELS.EXPAND_TO_FULL, () => {
       // 单击只在非拖动时触发（渲染进程已做阈值判断）
       const currentState = this.windowStateManager.getState();
-      if (currentState === 'float') {
+      // 浮动气泡仅在 tray 态显示，展开到 full
+      if (currentState === 'tray') {
         this.windowStateManager.transition('full');
         // 展开完整窗口时清零未读计数
         this.callbacks.onExpandToFull?.();

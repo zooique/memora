@@ -34,8 +34,10 @@ export interface SpriteConfig {
   fileWatcherDebounceMs?: number;
   /** 浮动图标位置（屏幕坐标），默认 { x: -1, y: -1 } 表示首次启动居中 */
   floatIconPosition?: { x: number; y: number };
-  /** 窗口状态（持久化），默认 'float' */
-  windowState?: 'tray' | 'float' | 'full';
+  /** 窗口状态（持久化），默认 'tray'。仅支持 tray/full 二态，float 已独立为 showFloatBubble */
+  windowState?: 'tray' | 'full';
+  /** 是否显示浮动气泡（桌面小部件），默认 true。仅当 windowState === 'tray' 时生效 */
+  showFloatBubble?: boolean;
   /**
    * 项目模式（FD-04）：
    * - 'smart'（默认）：智能模式，监听启动时的 projectPath，未来可扩展多项目自动识别
@@ -64,7 +66,8 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   fileWatcherIgnore: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/.memora/**'],
   fileWatcherDebounceMs: 1_000,
   floatIconPosition: { x: -1, y: -1 },
-  windowState: 'float',
+  windowState: 'tray',
+  showFloatBubble: true,
   projectMode: 'smart',
   focusProjectPath: '',
 };
@@ -87,7 +90,18 @@ export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
   try {
     const raw = readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw) as SpriteConfig;
-    return { ...DEFAULT_SPRITE_CONFIG, ...parsed };
+    const merged = { ...DEFAULT_SPRITE_CONFIG, ...parsed };
+
+    // 迁移：旧版 windowState='float' 转换为 tray + showFloatBubble
+    if ((merged.windowState as string) === 'float') {
+      merged.windowState = 'tray';
+      // 仅当用户未显式设置 showFloatBubble 时才设为 true（避免覆盖已有偏好）
+      if (parsed.showFloatBubble === undefined) {
+        merged.showFloatBubble = true;
+      }
+    }
+
+    return merged;
   } catch {
     // 文件损坏，静默回退
     return { ...DEFAULT_SPRITE_CONFIG };

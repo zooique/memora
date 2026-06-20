@@ -3,7 +3,7 @@
  *
  * 职责：
  * - 托盘图标 + 悬浮提示
- * - 右键菜单（显示浮动图标 / 显示完整窗口 / 隐藏到托盘 / 退出）
+ * - 右键菜单（浮动气泡开关 / 显示完整窗口 / 静默模式 / 隐藏到托盘 / 退出）
  * - 三态图标切换（idle/active/sleeping），对齐 HTML 预览 §6.3
  *
  * 三态语义：
@@ -19,9 +19,15 @@ import type { NativeImage } from 'electron';
 export type TrayState = 'idle' | 'active' | 'sleeping';
 
 export interface TrayCallbacks {
-  onShowFloat: () => void;
+  /** 显示完整窗口 */
   onShowFull: () => void;
+  /** 切换浮动气泡显示（参数为切换后的新状态） */
+  onToggleFloatBubble?: (checked: boolean) => void;
+  /** 查询浮动气泡是否可见（同步返回，用于菜单勾选） */
+  isFloatBubbleVisible?: () => boolean;
+  /** 隐藏到托盘（当前窗口 → tray 态） */
   onHideToTray: () => void;
+  /** 退出应用 */
   onQuit: () => void;
   /** 切换静默模式（参数为切换后的新状态，来自 menuItem.checked） */
   onToggleSilent?: (newSilent: boolean) => void;
@@ -70,19 +76,25 @@ export class TrayManager {
   /**
    * 更新托盘右键菜单
    *
-   * 对齐方案 §5.5 托盘右键菜单设计：
-   * - 显示浮动图标 / 显示完整窗口
-   * - 静默模式（勾选态反映当前配置，点击切换）
+   * 对齐方案：托盘菜单二态设计
+   * - 浮动气泡（checkbox 勾选态，点击切换显示/隐藏）
+   * - 显示完整窗口
+   * - 静默模式（checkbox 勾选态，点击切换）
    * - 隐藏到托盘
    * - 退出
    */
   updateMenu(): void {
     const isSilent = this.callbacks.isSilentMode?.() ?? false;
+    const isFloatVisible = this.callbacks.isFloatBubbleVisible?.() ?? true;
 
     const menuItems: Electron.MenuItemConstructorOptions[] = [
       {
-        label: '显示浮动图标',
-        click: () => this.callbacks.onShowFloat(),
+        label: '显示浮动气泡',
+        type: 'checkbox',
+        checked: isFloatVisible,
+        click: (menuItem) => {
+          this.callbacks.onToggleFloatBubble?.(menuItem.checked);
+        },
       },
       {
         label: '显示完整窗口',

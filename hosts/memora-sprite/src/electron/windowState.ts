@@ -1,22 +1,32 @@
 /**
- * 三态窗口管理器
+ * 二态窗口状态管理器
  *
- * 状态：tray（托盘态）/ float（浮动态）/ full（完整态）
+ * 状态：tray（托盘态）/ full（完整态）
+ * 浮动气泡：独立偏好 showFloatBubble，不在状态机内
  *
  * 设计要点：
  * - 两个独立的 BrowserWindow（float + full）
- * - 任意时刻只有一个窗口可见
+ * - 任意时刻最多一个窗口可见（float 仅在 tray 态 + showFloatBubble 时显示）
  * - 持久化委托给外部回调（避免与 spriteConfig.ts 重复写文件）
+ *
+ * 过渡规则：
+ *   tray → full:  托盘菜单 / 双击浮动气泡
+ *   full → tray:  关闭完整窗口（X 按钮）/ 最小化
+ *   float 可见:   当 state === 'tray' && showFloatBubble === true 时
+ *   float 隐藏:   当 showFloatBubble === false 时
  */
 
 import type { BrowserWindow } from 'electron';
 
-export type WindowState = 'tray' | 'float' | 'full';
+/** 窗口状态（仅二态，float 已独立为偏好） */
+export type WindowState = 'tray' | 'full';
 
 /** 窗口状态持久化数据（由外部回调保存到配置文件） */
 export interface WindowStateData {
   windowState: WindowState;
   floatPosition: { x: number; y: number };
+  /** 浮动气泡显示偏好 */
+  showFloatBubble: boolean;
 }
 
 export interface WindowStateOptions {
@@ -24,6 +34,8 @@ export interface WindowStateOptions {
   floatPosition?: { x: number; y: number };
   floatSize?: { width: number; height: number };
   fullSize?: { width: number; height: number };
+  /** 浮动气泡显示偏好（从配置读取），默认 true */
+  showFloatBubble?: boolean;
   /** 窗口状态持久化回调（由 main.ts 注入，委托给 saveSpriteConfig） */
   onSaveState?: (data: WindowStateData) => void;
 }
@@ -35,10 +47,12 @@ const FULL_SIZE = { width: 900, height: 680 };
 export const DEFAULT_FLOAT_POSITION = { x: 100, y: 100 };
 
 export class WindowStateManager {
-  private state: WindowState = 'float';
+  private state: WindowState = 'tray';
   private floatPosition: { x: number; y: number };
   private floatSize: { width: number; height: number };
   private fullSize: { width: number; height: number };
+  /** 浮动气泡显示偏好（独立于状态机） */
+  private showFloatBubble: boolean;
 
   // 窗口实例（由外部注入）
   floatWindow: BrowserWindow | null = null;
@@ -51,33 +65,27 @@ export class WindowStateManager {
     this.floatPosition = opts.floatPosition ?? DEFAULT_FLOAT_POSITION;
     this.floatSize = opts.floatSize ?? FLOAT_SIZE;
     this.fullSize = opts.fullSize ?? FULL_SIZE;
-    this.state = opts.defaultState ?? 'float';
+    this.state = opts.defaultState ?? 'tray';
+    this.showFloatBubble = opts.showFloatBubble ?? true;
     this.onSaveState = opts.onSaveState;
   }
 
-  /** 状态转换：隐藏当前窗口 → 显示目标窗口 → 持久化 */
+  // ─── 状态转换 ──────────────────────────────────────────────
+
+  /**
+   * 状态转换：tray ↔ full
+   *
+   * 仅管理二态切换。float 的显示/隐藏由 setShowFloatBubble 控制。
+   */
   async transition(target: WindowState): Promise<void> {
     if (this.state === target) return;
 
     // 隐藏当前窗口
-    if (this.state === 'float' && this.floatWindow) {
-      this.floatWindow.hide();
-    }
-    if (this.state === 'full' && this.fullWindow) {
-      this.fullWindow.hide();
-    }
+    this.hideCurrentWindow();
 
     // 显示目标窗口
-    if (target === 'float' && this.floatWindow) {
-      this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
-      this.floatWindow.show();
-    }
-    if (target === 'full' && this.fullWindow) {
-      this.fullWindow.show();
-      this.fullWindow.focus();
-    }
-
     this.state = target;
+    this.showTargetWindow();
     this.persistState();
   }
 
@@ -85,18 +93,72 @@ export class WindowStateManager {
    * 显示当前状态对应的窗口（首次启动用）
    *
    * 与 transition 的区别：不隐藏其他窗口（创建后均为 hidden），
-   * 仅根据当前 state 显示对应窗口。解决 transition 早返回导致首次启动窗口不显示的问题。
+   * 仅根据当前 state 和 showFloatBubble 显示对应窗口。
    */
   showInitial(): void {
-    if (this.state === 'float' && this.floatWindow) {
-      this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
-      this.floatWindow.show();
-    }
     if (this.state === 'full' && this.fullWindow) {
       this.fullWindow.show();
       this.fullWindow.focus();
+    } else if (this.state === 'tray' && this.showFloatBubble && this.floatWindow) {
+      // tray 态 + 浮动气泡可见 → 显示浮动气泡
+      this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
+      this.floatWindow.show();
     }
-    // tray 态：不显示任何窗口（仅托盘图标）
+    // tray 态 + 浮动气泡隐藏 → 不显示任何窗口（仅托盘图标）
+  }
+
+  // ─── 浮动气泡偏好 ──────────────────────────────────────────
+
+  /** 查询浮动气泡是否可见 */
+  getShowFloatBubble(): boolean {
+    return this.showFloatBubble;
+  }
+
+  /**
+   * 设置浮动气泡显示偏好
+   *
+   * 立即生效：如果当前是 tray 态，根据新值显示/隐藏浮动气泡。
+   */
+  setShowFloatBubble(value: boolean): void {
+    if (this.showFloatBubble === value) return;
+    this.showFloatBubble = value;
+
+    if (this.state === 'tray') {
+      if (value && this.floatWindow) {
+        this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
+        this.floatWindow.show();
+      } else if (!value && this.floatWindow) {
+        this.floatWindow.hide();
+      }
+    }
+    // full 态时浮动气泡始终隐藏，切换偏好不影响当前显示
+
+    this.persistState();
+  }
+
+  // ─── 内部方法 ──────────────────────────────────────────────
+
+  /** 隐藏当前状态对应的窗口 */
+  private hideCurrentWindow(): void {
+    if (this.state === 'tray' && this.floatWindow && !this.floatWindow.isDestroyed()) {
+      this.floatWindow.hide();
+    }
+    if (this.state === 'full' && this.fullWindow && !this.fullWindow.isDestroyed()) {
+      this.fullWindow.hide();
+    }
+  }
+
+  /** 显示目标状态对应的窗口 */
+  private showTargetWindow(): void {
+    if (this.state === 'full' && this.fullWindow && !this.fullWindow.isDestroyed()) {
+      this.fullWindow.show();
+      this.fullWindow.focus();
+    } else if (this.state === 'tray' && this.showFloatBubble && this.floatWindow && !this.floatWindow.isDestroyed()) {
+      // tray 态 + 浮动气泡可见 → 显示浮动气泡
+      this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
+      this.floatWindow.show();
+    }
+    // tray 态 + 浮动气泡隐藏 → 不显示任何窗口
   }
 
   /** 持久化当前状态到配置文件（委托外部回调） */
@@ -104,8 +166,11 @@ export class WindowStateManager {
     this.onSaveState?.({
       windowState: this.state,
       floatPosition: this.floatPosition,
+      showFloatBubble: this.showFloatBubble,
     });
   }
+
+  // ─── 公共访问器 ────────────────────────────────────────────
 
   /** 保存浮动窗口位置 */
   saveFloatPosition(x: number, y: number): void {
