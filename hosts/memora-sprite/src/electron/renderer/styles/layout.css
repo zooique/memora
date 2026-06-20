@@ -63,6 +63,7 @@
   font-size: 11px;
   cursor: pointer;
   transition: background 0.12s;
+  -webkit-app-region: no-drag; /* 必须显式声明，继承可能失效 */
 }
 
 #titlebar-controls button:hover {
@@ -87,11 +88,36 @@
   flex-shrink: 0;
 }
 
+/* 品牌区（对齐 demo：🧚 Memora 作为侧边栏顶部唯一品牌标识） */
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.sidebar-brand-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-grad);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 /* 侧边栏头部（角色选择器容器） */
 #sidebar-header {
   padding: 0;
   border-bottom: none;  /* v8：无分隔线 */
   position: relative;
+  flex-shrink: 0;
 }
 
 /* ─── 角色选择器（v8 卡片式） ─────────────────────────────── */
@@ -430,4 +456,78 @@
 .empty-action-btn:hover {
   border-color: var(--accent);
   background: var(--surface1);
+}
+
+/* ============================================================
+ * 响应式适配（ADR-SP-006 §五 响应式策略）
+ * - ≥1280px：完整 240px 侧边栏（默认）
+ * - 960-1279px：侧边栏收窄为 64px 图标模式
+ * - <960px：侧边栏隐藏，核心窗口全宽（抽屉模式需 JS 配合，后续实现）
+ * ============================================================ */
+
+/* 中屏（960-1279px）：侧边栏图标模式 */
+@media (max-width: 1279px) {
+  #app {
+    grid-template-columns: 64px 1fr;
+  }
+
+  /* 品牌区：仅显示图标，隐藏文字 */
+  .sidebar-brand {
+    justify-content: center;
+    padding: 0;
+  }
+  .sidebar-brand span {
+    display: none;
+  }
+
+  /* 角色选择器：仅显示头像，隐藏名称和箭头 */
+  #persona-selector {
+    justify-content: center;
+    padding: 8px;
+  }
+  #persona-name,
+  #persona-mode-badge,
+  #persona-arrow {
+    display: none;
+  }
+
+  /* 仪表盘：单列布局，仅显示数字 */
+  #dashboard {
+    grid-template-columns: 1fr;
+  }
+  .dash-label {
+    font-size: 9px;
+  }
+
+  /* 导航：仅显示图标，隐藏文字和快捷键 */
+  .nav-btn {
+    justify-content: center;
+    padding: 8px;
+  }
+
+  /* 推荐区：隐藏（图标模式空间不足） */
+  #recommendations {
+    display: none;
+  }
+}
+
+/* 小屏（<960px）：侧边栏隐藏，核心窗口全宽 */
+@media (max-width: 959px) {
+  #app {
+    grid-template-columns: 0 1fr;
+    grid-template-areas:
+      "titlebar titlebar"
+      "window window";
+  }
+
+  /* 侧边栏隐藏（抽屉模式需 JS 配合，后续实现） */
+  #sidebar {
+    display: none;
+  }
+
+  /* 核心窗口全宽 */
+  #main-content {
+    margin: 0;
+    border-radius: 0;
+  }
 }

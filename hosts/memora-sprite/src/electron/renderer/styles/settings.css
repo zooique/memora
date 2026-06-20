@@ -6,10 +6,10 @@
  */
 
 /* ─── 设置面板（v8） ─────────────────────────────────────── */
+/* 面板的 display 和 flex 布局由 .panel / .panel.active 统一控制，
+   此处不要覆盖 display，否则会导致设置面板始终可见（ID 选择器优先级高于 .panel） */
 #panel-settings {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
+  /* display 和 height 由 .panel 继承，无需重复声明 */
 }
 
 /* ─── UI-UX-01 设置面板 tab 导航（v8：52px 高度，无背景色） ─── */
@@ -70,7 +70,47 @@
   margin-bottom: 12px;
 }
 
-/* v8：表单行横向布局（label 左侧固定宽度，input 右侧自适应） */
+/* settings-row：对齐 demo 左右布局（label 固定 140px，input 自适应） */
+.settings-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.settings-row label {
+  width: 140px;
+  font-size: 12px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.settings-row input[type="text"],
+.settings-row input[type="password"],
+.settings-row input[type="number"],
+.settings-row select {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+
+.settings-row input:focus,
+.settings-row select:focus {
+  border-color: var(--accent);
+}
+
+.settings-row input[type="checkbox"] {
+  margin: 0;
+}
+
+/* 兼容旧版垂直堆叠 label（未包裹在 settings-row 中的） */
 .settings-group label {
   display: block;
   margin-bottom: 6px;
@@ -127,15 +167,17 @@
 
 /**
  * 带操作按钮的输入框容器：API Key 显示/隐藏切换
- * 输入框占满宽度，按钮绝对定位在右侧
+ * 在 settings-row 内 flex:1 占满右侧空间
  */
 .input-with-action {
   position: relative;
-  margin-bottom: 12px;
+  flex: 1;
+  display: flex;
+  gap: 6px;
 }
 
 .input-with-action input {
-  width: 100%;
+  flex: 1;
   padding: 6px 36px 6px 10px;
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -182,12 +224,13 @@
 .radio-group {
   display: flex;
   gap: 16px;
-  margin-bottom: 12px;
   font-size: 12px;
   color: var(--text-2);
 }
 
+/* radio-group 内的 label 不继承 settings-row label 的 140px 宽度 */
 .radio-group label {
+  width: auto;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -195,6 +238,7 @@
   color: var(--text-2);
   margin-bottom: 0;
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .radio-group input[type="radio"] {

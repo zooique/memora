@@ -115,3 +115,31 @@ description: "memora-sprite 宿主：v8 UI 重构——双主题 CSS 变量系�
 - 新增 UI 组件必须使用 v8 语义变量，禁止硬编码颜色
 - 深色主题调整只需修改 `base.css` 的 `[data-theme="dark"]` 块
 - `float.html` 的内联 CSS 变量需与 `base.css` 保持同步（浮动窗口独立加载，无法引用外部 CSS）
+
+## 迭代记录：布局对齐 demo（2026-06-20）
+
+以 `docs/demo-new-ui-v8.html` 为基准，对齐信息架构与视觉层次：
+
+### 改动清单
+
+| 文件 | 改动 |
+|------|------|
+| `index.html` | 补回 `.sidebar-brand` 品牌区（🧚 Memora）；仪表盘调整为 4 项 2×2 + 事件跨 2 列；chat-toolbar 补回标题+副标题；input-area 改为 `.input-toolbar` 左右分组（工具按钮+停止/发送）；设置面板所有表单项包裹 `.settings-row` 左右布局 |
+| `layout.css` | 新增 `.sidebar-brand`/`.sidebar-brand-icon` 样式；新增响应式断点（中屏 64px 图标模式 + 小屏侧边栏隐藏） |
+| `chat.css` | chat-toolbar 改为 `space-between`；新增 `.chat-toolbar-info`/`.chat-toolbar-title`/`.chat-toolbar-subtitle`；input-actions 改为 `.input-toolbar` + `.input-actions-left` + `.input-send-area`；新增 `.input-action` 圆形工具按钮；空状态示例按钮改为胶囊 chips 横向排列 |
+| `settings.css` | 新增 `.settings-row` 左右布局（label 140px + input flex:1）；`input-with-action` 改为 `flex:1`；`radio-group label` 不继承 140px 宽度 |
+
+### 对齐 demo 的核心元素
+
+1. **品牌区**：侧边栏顶部 `🧚 Memora`（demo 基准）
+2. **仪表盘**：4 项 2×2 + 事件跨 2 列高亮（demo 基准）
+3. **对话 toolbar**：左侧标题+副标题，右侧新会话按钮（demo 基准）
+4. **输入卡**：左侧工具按钮（➕📎）+ 右侧停止/发送（demo 基准）
+5. **空状态**：56px 渐变 orb + 胶囊 chips 横向排列（demo 基准）
+6. **设置表单**：`.settings-row` 左右布局，label 140px 固定（demo 基准）
+7. **响应式**：中屏图标模式 + 小屏全宽（扩展，demo 未涉及）
+
+### 验证
+- `typecheck:electron`：0 错误
+- `lint`：0 警告
+- `vitest`：112/112 通过

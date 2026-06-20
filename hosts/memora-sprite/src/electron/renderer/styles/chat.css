@@ -12,16 +12,40 @@
 }
 
 /**
- * 对话工具栏：FD-05 新建会话按钮容器
- * v8：高度 52px，左右 24px padding，对齐核心窗口内边距
+ * 对话工具栏：对齐 demo v8
+ * - 高度 52px，左右 24px padding
+ * - 左侧标题+副标题，右侧新会话按钮（space-between）
  */
 #chat-toolbar {
   height: 52px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 0 24px;
   flex-shrink: 0;
+}
+
+/* 工具栏左侧信息区：标题 + 副标题 */
+.chat-toolbar-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chat-toolbar-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.chat-toolbar-subtitle {
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #btn-new-session {
@@ -433,11 +457,46 @@
   color: var(--text-3);
 }
 
-/* 输入区操作行：右侧发送/停止按钮 */
-#input-area > .input-actions {
+/* 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） */
+#input-area > .input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 左侧工具按钮组 */
+.input-actions-left {
+  display: flex;
+  gap: 6px;
+}
+
+/* 工具按钮：圆形，对齐 demo .input-action */
+.input-action {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid var(--surface2);
+  background: var(--window-bg-2);
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+  padding: 0;
+}
+
+.input-action:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+/* 右侧发送/停止按钮组 */
+.input-send-area {
   display: flex;
   gap: 8px;
-  justify-content: flex-end;
   align-items: center;
 }
 
@@ -539,34 +598,34 @@
   font-family: system-ui, -apple-system, sans-serif;
 }
 
-/* 示例问题网格：2 列布局，紧凑卡片 */
+/* 示例问题胶囊（对齐 demo .suggestion-chips：横向排列 + 圆角 100px） */
 .chat-empty-state .empty-suggestions {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
   width: 100%;
-  max-width: 420px;
-  margin-top: 12px;
+  max-width: 480px;
+  margin-top: 6px;
 }
 
-/* 示例问题按钮：v8 卡片式，hover 高亮 */
+/* 示例问题按钮：胶囊式，对齐 demo */
 .chat-empty-state .suggestion-btn {
-  padding: 10px 12px;
-  background: var(--window-bg-2);
+  padding: 6px 14px;
+  background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius-md);
+  border-radius: 100px;
   color: var(--text);
   font-family: system-ui, -apple-system, sans-serif;
-  font-size: 12.5px;
+  font-size: 12px;
   cursor: pointer;
-  transition: all 0.12s;
-  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+  text-align: center;
 }
 
 .chat-empty-state .suggestion-btn:hover {
-  background: var(--surface0);
-  border-color: var(--accent);
-  transform: translateY(-1px);
+  background: var(--window-bg-2);
+  border-color: var(--text-3);
 }
 
 .chat-empty-state .suggestion-btn:active {

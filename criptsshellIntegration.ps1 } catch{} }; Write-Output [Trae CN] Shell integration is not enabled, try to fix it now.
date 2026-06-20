@@ -1,0 +1,15 @@
+warning: in the working copy of '.trae/rules/decisions/ADR-SP-006-v8-ui-refactor.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'hosts/memora-sprite/src/electron/renderer/index.html', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'hosts/memora-sprite/src/electron/renderer/styles/chat.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'hosts/memora-sprite/src/electron/renderer/styles/layout.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'hosts/memora-sprite/src/electron/renderer/styles/settings.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'hosts/memora-sprite/src/electron/windowManager.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'hosts/memora-sprite/src/electron/windowState.ts', LF will be replaced by CRLF the next time Git touches it
+ .trae/rules/decisions/ADR-SP-006-v8-ui-refactor.md |  28 [32m+++[m
+ .../memora-sprite/src/electron/renderer/index.html | 215 [32m++++++++++++++[m[31m-------[m
+ .../src/electron/renderer/styles/chat.css          | 103 [32m+++++++[m[31m---[m
+ .../src/electron/renderer/styles/layout.css        | 100 [32m++++++++++[m
+ .../src/electron/renderer/styles/settings.css      |  60 [32m+++++[m[31m-[m
+ hosts/memora-sprite/src/electron/windowManager.ts  |   2 [32m+[m[31m-[m
+ hosts/memora-sprite/src/electron/windowState.ts    |   3 [32m+[m[31m-[m
+ 7 files changed, 404 insertions(+), 107 deletions(-)

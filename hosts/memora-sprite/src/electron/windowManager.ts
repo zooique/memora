@@ -100,7 +100,7 @@ export class WindowManager {
     this.fullWindow = new BrowserWindow({
       width: fullSize.width,
       height: fullSize.height,
-      minWidth: 320,
+      minWidth: 640,   /* 侧边栏 240px + 主内容区至少 400px */
       minHeight: 480,
       frame: false,
       show: false,
