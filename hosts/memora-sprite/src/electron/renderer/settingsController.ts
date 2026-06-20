@@ -1,0 +1,215 @@
+/**
+ * 设置控制器 — 设置面板业务逻辑
+ *
+ * 职责：
+ * - 设置精灵配置保存回调（逐项更新配置）
+ * - 设置 LLM 配置保存回调（触发主进程重新初始化 Agent）
+ * - 设置 LLM 连接测试回调
+ * - 设置取消回调（重新加载配置）
+ * - 加载精灵配置和 LLM 配置到表单
+ *
+ * 设计原则：
+ * - 接收 UIManager 实例，不持有模块级状态
+ * - FD-08 进行中反馈：保存/测试时禁用按钮防止重复点击
+ * - FD-A2 加载失败时显示错误横幅，提供重试按钮
+ * - FD-07 程序化设置表单值后重置 dirty 标志
+ */
+
+import type { UIManager } from './ui.js';
+import type { SpriteConfigForm } from './types.js';
+import { createIpcErrorHandler, toError } from './errorHelpers.js';
+
+/**
+ * 创建设置控制器
+ *
+ * @param uiManager UI 管理器实例
+ * @returns 设置控制器接口（设置回调、加载配置）
+ */
+export function createSettingsController(uiManager: UIManager) {
+  /** IPC 错误处理函数（绑定 uiManager） */
+  const handleIpcError = createIpcErrorHandler(uiManager);
+
+  /**
+   * 设置设置面板回调
+   *
+   * 包含精灵配置保存、LLM 配置保存、LLM 连接测试、取消。
+   */
+  function setupSettingsPanel(): void {
+    uiManager.onConfigSave(async (config: SpriteConfigForm) => {
+      // FD-08 进行中反馈：禁用保存按钮防止重复点击
+      uiManager.setButtonLoading('btn-settings-save', true, '保存中...');
+      try {
+        // 逐项更新配置（sprite.updateConfig 一次只更新一个键）
+        await window.electronAPI.updateConfig('silentMode', config.silentMode);
+        await window.electronAPI.updateConfig('proactiveThreshold', config.proactiveThreshold);
+        await window.electronAPI.updateConfig('proactiveCooldownMs', config.proactiveCooldownMs);
+        await window.electronAPI.updateConfig('triggerIntervalMs', config.triggerIntervalMs);
+        await window.electronAPI.updateConfig('fileWatcherEnabled', config.fileWatcherEnabled);
+        await window.electronAPI.updateConfig('fileWatcherPaths', config.fileWatcherPaths);
+        await window.electronAPI.updateConfig('fileWatcherDebounceMs', config.fileWatcherDebounceMs);
+        await window.electronAPI.updateConfig('defaultPersona', config.defaultPersona);
+        // FD-04 项目模式：先更新路径再切换模式（确保专注模式切换时路径已就绪）
+        await window.electronAPI.updateConfig('focusProjectPath', config.focusProjectPath);
+        await window.electronAPI.updateConfig('projectMode', config.projectMode);
+
+        // IX-06 操作反馈走 toast，不污染对话历史
+        uiManager.showToast('精灵配置已保存', 'success');
+      } catch (error) {
+        handleIpcError('onConfigSave', error, '保存精灵配置失败');
+      } finally {
+        // FD-08 恢复按钮状态
+        uiManager.setButtonLoading('btn-settings-save', false);
+      }
+    });
+
+    // LLM 配置保存：调用 saveLlmConfig 触发主进程重新初始化 Agent
+    uiManager.onLlmConfigSave(async (payload) => {
+      // 校验必填字段
+      if (!payload.llm.provider || !payload.llm.model || !payload.llm.apiKey) {
+        uiManager.showToast('LLM 配置不完整：提供商、模型、API Key 为必填项', 'warning');
+        return;
+      }
+
+      // FD-08 进行中反馈：禁用保存按钮防止重复点击
+      uiManager.setButtonLoading('btn-settings-save', true, '保存中...');
+      try {
+        // IX-06 进行中反馈走 toast（不自动消失，等结果出来后由成功/失败 toast 替换）
+        uiManager.showToast('正在保存 LLM 配置并初始化 Agent...', 'info', 0);
+
+        const embeddingConfig = payload.embedding?.enabled
+          ? {
+              model: payload.embedding.model,
+              baseUrl: payload.embedding.baseUrl || undefined,
+              apiKey: payload.embedding.apiKey || undefined,
+            }
+          : undefined;
+
+        const { success, error } = await window.electronAPI.saveLlmConfig(
+          {
+            provider: payload.llm.provider,
+            model: payload.llm.model,
+            baseUrl: payload.llm.baseUrl,
+            apiKey: payload.llm.apiKey,
+            temperature: payload.llm.temperature,
+          },
+          embeddingConfig,
+        );
+
+        if (success) {
+          uiManager.showToast('LLM 配置已保存，Agent 已就绪', 'success');
+        } else {
+          uiManager.showToast(`初始化失败：${error}`, 'error');
+        }
+      } catch (error) {
+        handleIpcError('onLlmConfigSave', error, '保存 LLM 配置失败');
+      } finally {
+        // FD-08 恢复按钮状态
+        uiManager.setButtonLoading('btn-settings-save', false);
+      }
+    });
+
+    uiManager.onConfigCancel(() => {
+      // 取消时重新加载配置
+      void loadConfig();
+      void loadLlmConfig();
+    });
+
+    // LLM 连接测试：调用主进程验证配置，显示结果
+    uiManager.onLlmTest(async () => {
+      const config = uiManager.getLlmConfigFromForm();
+      if (!config.provider || !config.model || !config.apiKey) {
+        uiManager.showLlmTestResult({
+          success: false,
+          error: '提供商、模型、API Key 为必填项',
+        });
+        return;
+      }
+
+      // FD-08 进行中反馈：禁用测试按钮防止重复点击
+      uiManager.setButtonLoading('btn-llm-test', true, '测试中...');
+      // 显示"测试中..."状态
+      uiManager.showLlmTestResult({ success: false, error: '测试中...' });
+      const startTime = Date.now();
+
+      try {
+        const result = await window.electronAPI.testLlmConfig(config);
+        const elapsed = Date.now() - startTime;
+        uiManager.showLlmTestResult(result, elapsed);
+      } catch (error) {
+        uiManager.showLlmTestResult({
+          success: false,
+          error: toError(error).message,
+        });
+      } finally {
+        // FD-08 恢复按钮状态
+        uiManager.setButtonLoading('btn-llm-test', false);
+      }
+    });
+  }
+
+  /** 加载精灵配置到表单 */
+  async function loadConfig(): Promise<void> {
+    try {
+      const { config: cfg } = await window.electronAPI.getConfig();
+
+      const formConfig: SpriteConfigForm = {
+        silentMode: Boolean(cfg.silentMode),
+        proactiveThreshold: Number(cfg.proactiveThreshold) || 3,
+        proactiveCooldownMs: Number(cfg.proactiveCooldownMs) || 300_000,
+        triggerIntervalMs: Number(cfg.triggerIntervalMs) || 3_600_000,
+        fileWatcherEnabled: Boolean(cfg.fileWatcherEnabled),
+        fileWatcherPaths: Array.isArray(cfg.fileWatcherPaths) ? cfg.fileWatcherPaths : ['.'],
+        fileWatcherDebounceMs: Number(cfg.fileWatcherDebounceMs) || 1000,
+        defaultPersona: String(cfg.defaultPersona ?? ''),
+        // FD-04 项目模式字段
+        projectMode: cfg.projectMode === 'focus' ? 'focus' : 'smart',
+        focusProjectPath: String(cfg.focusProjectPath ?? ''),
+      };
+
+      uiManager.loadConfigToForm(formConfig);
+      // FD-A2 加载成功时隐藏之前的错误横幅
+      uiManager.hideSettingsError();
+
+      // FD-04 加载项目列表到专注项目下拉框
+      try {
+        const { projects } = await window.electronAPI.listProjects();
+        uiManager.loadProjectsToForm(projects, formConfig.focusProjectPath);
+      } catch (error) {
+        console.error('[loadConfig] 加载项目列表失败:', error);
+      }
+
+      // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
+      uiManager.resetSettingsFormDirty();
+    } catch (error) {
+      console.error('[loadConfig] 加载精灵配置失败:', error);
+      // FD-A2 显示错误状态，用户可点击重试
+      uiManager.showSettingsError('加载精灵配置失败，请检查日志或点击重试', () => {
+        void loadConfig();
+      });
+    }
+  }
+
+  /** 加载 LLM 配置到表单 */
+  async function loadLlmConfig(): Promise<void> {
+    try {
+      const data = await window.electronAPI.getLlmConfig();
+      uiManager.loadLlmConfigToForm(data);
+      // FD-A2 加载成功时隐藏之前的错误横幅
+      uiManager.hideSettingsError();
+      // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
+      uiManager.resetSettingsFormDirty();
+    } catch (error) {
+      console.error('[loadLlmConfig] 加载 LLM 配置失败:', error);
+      // FD-A2 显示错误状态，用户可点击重试
+      uiManager.showSettingsError('加载 LLM 配置失败，请检查日志或点击重试', () => {
+        void loadLlmConfig();
+      });
+    }
+  }
+
+  return {
+    setupSettingsPanel,
+    loadConfig,
+    loadLlmConfig,
+  };
+}

@@ -29,6 +29,7 @@ import { SqliteSessionStore } from './storage/sessionStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { CliInteraction } from './sprite/cliInteraction.js';
 import type { IInteraction } from './sprite/interaction.js';
+import type { SpriteConfigKey } from './sprite/spriteConfig.js';
 export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
 export type { SpriteConfig, SpriteConfigKey } from './sprite/spriteConfig.js';
 export { DEFAULT_SPRITE_CONFIG, loadSpriteConfig, saveSpriteConfig } from './sprite/spriteConfig.js';
@@ -412,6 +413,32 @@ export async function startSprite(opts?: {
   return initAgentFromConfig(config, opts);
 }
 
+// ─── 配置命令辅助 ──────────────────────────────────────
+
+/** CLI /config 命令可配置的键名集合（与帮助文本保持一致） */
+const CLI_CONFIG_KEYS: ReadonlySet<string> = new Set([
+  'triggerIntervalMs',
+  'defaultPersona',
+  'silentMode',
+  'proactiveThreshold',
+  'proactiveCooldownMs',
+  'fileWatcherEnabled',
+  'fileWatcherPaths',
+  'fileWatcherIgnore',
+  'fileWatcherDebounceMs',
+]);
+
+/**
+ * 类型守卫：校验字符串是否为 CLI 可配置的 SpriteConfigKey
+ *
+ * 替代 `key as never` 类型断言，通过运行时校验 + 类型窄化确保类型安全。
+ * 仅允许 CLI 帮助文本中列出的 8 个键名通过，其他键名（如 floatIconPosition、windowState 等）
+ * 不通过 CLI /config 命令配置，由各自专属的 UI 操作管理。
+ */
+function isCliConfigKey(key: string): key is SpriteConfigKey {
+  return CLI_CONFIG_KEYS.has(key);
+}
+
 // ─── 记忆管理命令 ──────────────────────────────────────
 
 /** 处理 /memories 命令 */
@@ -609,13 +636,20 @@ async function main(): Promise<void> {
       const parts = text.slice(8).trim().split(/\s+/);
       if (parts.length < 2) {
         console.log('用法：/config <键名> <值>');
-        console.log('可用键名：triggerIntervalMs, defaultPersona, silentMode, proactiveThreshold, proactiveCooldownMs, fileWatcherEnabled, fileWatcherPaths, fileWatcherIgnore, fileWatcherDebounceMs');
+        console.log(`可用键名：${[...CLI_CONFIG_KEYS].join(', ')}`);
         return;
       }
-      const [key, ...valueParts] = parts;
+      const [key = '', ...valueParts] = parts;
       const rawValue = valueParts.join(' ');
 
-      // 类型转换
+      // 键名校验：用类型守卫替代 `as never`，无效键名直接报错
+      if (!isCliConfigKey(key)) {
+        console.log(`错误：未知配置键名 "${key}"`);
+        console.log(`可用键名：${[...CLI_CONFIG_KEYS].join(', ')}`);
+        return;
+      }
+
+      // 类型转换（key 已窄化为 SpriteConfigKey，分支判断类型安全）
       let value: unknown;
       if (key === 'silentMode' || key === 'fileWatcherEnabled') {
         value = rawValue === 'true' || rawValue === 'on' || rawValue === '1';
@@ -631,7 +665,7 @@ async function main(): Promise<void> {
         value = rawValue;
       }
 
-      sprite.updateConfig(key as never, value);
+      sprite.updateConfig(key, value);
       console.log(`已更新：${key} = ${JSON.stringify(value)}`);
       return;
     }
