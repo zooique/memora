@@ -1,27 +1,50 @@
 /**
  * Memora 精灵 — 布局样式
  *
- * 包含：标题栏、应用整体布局、侧边栏、仪表盘、导航、面板容器。
+ * v8 布局策略（ADR-SP-006）：
+ * - 大底板：左侧栏 + 顶部栏融为一体（同色，无边界）
+ * - 核心窗口：白色悬浮卡片（margin + border-radius + box-shadow）
+ * - 顶部栏：仅保留窗口控制按钮（无标题文字）
+ * - CSS Grid 布局：grid-template-areas 定义三区域
+ *
+ * 包含：大底板容器、顶部栏、侧边栏、仪表盘、导航、面板容器。
  */
 
-/* ─── 标题栏 ───────────────────────────────────────────────── */
+/* ─── 大底板容器（grid 布局，左侧 + 顶部连成一片） ───────── */
+#app {
+  height: 100vh;
+  display: grid;
+  /* 左侧栏 240px + 右侧自适应；顶部栏 44px + 下方自适应 */
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 44px 1fr;
+  grid-template-areas:
+    "sidebar titlebar"
+    "sidebar window";
+  background: var(--bg);
+}
+
+/* ─── 顶部栏（与左侧栏同色，无边界；仅保留窗口控制按钮） ─── */
 #titlebar {
-  height: 36px;
-  background: var(--surface0);
+  grid-area: titlebar;
+  height: 44px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--surface1);
+  justify-content: flex-end;
+  padding: 0;
+  background: var(--bg);
+  border-bottom: none;  /* v8：顶部栏与侧边栏同色，无边界 */
   flex-shrink: 0;
   -webkit-app-region: drag;
 }
 
+/* v8：顶部栏不再显示标题文字，#titlebar-drag 和 #app-title 仅保留占位（向后兼容） */
 #titlebar-drag {
   flex: 1;
   padding-left: 12px;
 }
 
 #app-title {
+  display: none;  /* v8：顶部栏无标题 */
   font-size: 13px;
   color: var(--subtext);
 }
@@ -33,13 +56,13 @@
 
 #titlebar-controls button {
   width: 46px;
-  height: 36px;
+  height: 44px;
   border: none;
   background: transparent;
-  color: var(--subtext);
-  font-size: 12px;
+  color: var(--text);
+  font-size: 11px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.12s;
 }
 
 #titlebar-controls button:hover {
@@ -48,59 +71,71 @@
 
 #titlebar-controls #btn-close:hover {
   background: var(--red);
-  color: white;
+  color: #fff;
 }
 
-/* ─── 布局 ─────────────────────────────────────────────────── */
-#app {
-  display: flex;
-  height: calc(100vh - 36px);
-}
-
-/* ─── 侧边栏 ───────────────────────────────────────────────── */
+/* ─── 侧边栏（与顶部栏同色，无边界） ─────────────────────── */
 #sidebar {
-  width: 180px;
-  background: var(--surface0);
-  border-right: 1px solid var(--surface1);
+  grid-area: sidebar;
+  background: var(--bg);
+  border-right: none;  /* v8：侧边栏与大底板同色，无边界 */
   display: flex;
   flex-direction: column;
+  padding: 16px 14px;
+  gap: 18px;
+  overflow-y: auto;
   flex-shrink: 0;
 }
 
+/* 侧边栏头部（角色选择器容器） */
 #sidebar-header {
-  padding: 12px;
-  border-bottom: 1px solid var(--surface1);
+  padding: 0;
+  border-bottom: none;  /* v8：无分隔线 */
   position: relative;
 }
 
+/* ─── 角色选择器（v8 卡片式） ─────────────────────────────── */
 #persona-selector {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   cursor: pointer;
-  padding: 6px 8px;
-  border-radius: var(--radius);
-  transition: background 0.15s;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  transition: background 0.12s, border-color 0.12s;
 }
 
 #persona-selector:hover {
-  background: var(--surface1);
+  background: var(--window-bg-2);
+  border-color: var(--muted);
 }
 
 #persona-icon {
-  font-size: 16px;
+  font-size: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--brand-grad);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 #persona-name {
   font-size: 13px;
+  font-weight: 600;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text);
 }
 
 #persona-arrow {
-  font-size: 8px;
+  font-size: 10px;
   color: var(--muted);
 }
 
@@ -108,58 +143,92 @@
 .mode-badge {
   font-size: 10px;
   padding: 1px 6px;
-  border-radius: 8px;
-  background: var(--surface2);
+  border-radius: var(--radius-sm);
+  background: var(--surface1);
   color: var(--subtext);
   white-space: nowrap;
   flex-shrink: 0;
+  font-weight: 500;
 }
 
-/* 自动模式：蓝色调 */
+/* 自动模式：蓝色调（v8 accent-soft） */
 .mode-badge.auto {
-  background: var(--accent-20);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
-/* 手动模式：绿色调 */
+/* 手动模式：灰色调 */
 .mode-badge.manual {
-  background: var(--green-20);
-  color: var(--green);
-}
-
-/* ─── 仪表盘 ───────────────────────────────────────────────── */
-#dashboard {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  border-bottom: 1px solid var(--surface1);
-}
-
-.dash-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 6px;
-  border-radius: 4px;
-  transition: background 0.15s;
-}
-
-/* UI-UX-05 仪表盘项 hover 微交互 */
-.dash-item:hover {
   background: var(--surface1);
-}
-
-.dash-label {
-  font-size: 12px;
   color: var(--subtext);
 }
 
+/* ─── 侧边栏内容区 ───────────────────────────────────────── */
+#sidebar-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+}
+
+/* ─── 仪表盘（v8 网格布局） ──────────────────────────────── */
+#dashboard {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0;
+  border-bottom: none;  /* v8：无分隔线 */
+}
+
+.dash-item {
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  padding: 8px 6px;
+  text-align: center;
+  transition: background 0.12s;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-item:hover {
+  background: var(--window-bg-2);
+}
+
+/* v8：累积事件接近阈值时高亮（accent-soft 背景） */
+.dash-item.near-threshold {
+  border-color: var(--yellow);
+  background: var(--yellow-20);
+}
+
+/* v8：累积事件达到阈值时高亮（accent-soft 背景 + accent 文字） */
+.dash-item.at-threshold {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.dash-label {
+  font-size: 10px;
+  color: var(--subtext);
+  display: block;
+}
+
 .dash-value {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
   transition: transform 0.3s ease;
+}
+
+/* 接近/达到阈值时数值变色 */
+.dash-item.near-threshold .dash-value {
+  color: var(--yellow);
+}
+
+.dash-item.at-threshold .dash-value {
+  color: var(--accent);
 }
 
 /**
@@ -185,36 +254,29 @@
   }
 }
 
-/* FD-03 累积事件接近阈值时高亮（黄色警告） */
-#dash-pending.near-threshold .dash-value {
-  color: var(--yellow);
-}
-
-/* FD-03 累积事件达到阈值时高亮（粉色，即将触发主动提示） */
-#dash-pending.at-threshold .dash-value {
-  color: var(--pink);
-}
-
-/* ─── 侧边栏导航 ────────────────────────────────────────────── */
+/* ─── 侧边栏导航（v8 列表式） ────────────────────────────── */
 #sidebar-nav {
-  padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1;
+  gap: 2px;
+  padding: 0;
+  flex-shrink: 0;
 }
 
 .nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--subtext);
   font-size: 13px;
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.12s, color 0.12s;
 }
 
 .nav-btn:hover {
@@ -222,26 +284,29 @@
   color: var(--text);
 }
 
-/* 对齐 HTML 预览 .nav-btn.active：背景 + 边框 + 文字颜色 */
+/* v8 active 态：白色背景 + 边框 + 阴影（悬浮卡片感） */
 .nav-btn.active {
-  background: var(--surface1);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--window-bg);
+  border-color: var(--surface2);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  /* margin: -1px 抵消 border 占用的空间，避免布局抖动 */
+  margin: -1px;
 }
 
 /* ─── 侧边栏推荐记忆列表（对齐方案 §6.3 推荐区） ──────────────── */
 .dashboard-section {
-  padding: 8px 10px 4px;
+  padding: 0;
 }
 
 .dashboard-section h3 {
   font-size: 11px;
   font-weight: 600;
-  color: var(--overlay);
+  color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--surface1);
+  padding: 0 4px 4px;
   margin-bottom: 4px;
 }
 
@@ -249,32 +314,27 @@
   list-style: none;
   padding: 0;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .suggestion-list li {
-  padding: 5px 0;
+  padding: 6px 10px;
   font-size: 12px;
   color: var(--subtext);
   cursor: pointer;
-  transition: color 0.15s;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  transition: background 0.12s, color 0.12s;
+  line-height: 1.4;
+  border-radius: var(--radius-md);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .suggestion-list li:hover {
-  color: var(--accent);
-}
-
-.suggestion-list li::before {
-  content: "·";
-  color: var(--accent);
-  font-weight: bold;
-  font-size: 14px;
-  flex-shrink: 0;
+  background: var(--surface1);
+  color: var(--text);
 }
 
 .suggestion-list .suggestion-score {
@@ -284,20 +344,27 @@
   flex-shrink: 0;
 }
 
-/* ─── 主内容区 ─────────────────────────────────────────────── */
+/* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
-  flex: 1;
+  grid-area: window;
+  margin: 0 6px 6px 0;  /* v8：四周留边距，形成悬浮感 */
+  background: var(--window-bg);
+  border-radius: var(--radius-window);
+  box-shadow: var(--shadow-window);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
 }
 
-/* ─── 面板 ─────────────────────────────────────────────────── */
+/* ─── 面板（v8：核心窗口内的面板容器） ────────────────────── */
 .panel {
   display: none;
+  flex: 1;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
+  position: relative;
 }
 
 .panel.active {
@@ -308,15 +375,16 @@
 .dropdown {
   position: absolute;
   top: 100%;
-  left: 12px;
-  right: 12px;
-  background: var(--surface1);
+  left: 0;
+  right: 0;
+  background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
   z-index: 100;
   max-height: 240px;
   overflow-y: auto;
+  margin-top: 4px;
 }
 
 .dropdown-item {
@@ -324,16 +392,17 @@
   font-size: 13px;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.12s;
 }
 
 .dropdown-item:hover {
-  background: var(--surface2);
+  background: var(--window-bg-2);
 }
 
 .dropdown-item.active {
   color: var(--accent);
   font-weight: 600;
+  background: var(--accent-soft);
 }
 
 /* ─── 空状态 ───────────────────────────────────────────────── */
@@ -350,8 +419,8 @@
   margin: 12px auto 0;
   padding: 6px 16px;
   border: 1px solid var(--surface2);
-  border-radius: 6px;
-  background: var(--surface1);
+  border-radius: var(--radius-sm);
+  background: var(--window-bg-2);
   color: var(--text);
   font-size: 12px;
   cursor: pointer;
@@ -360,5 +429,5 @@
 
 .empty-action-btn:hover {
   border-color: var(--accent);
-  background: var(--surface2);
+  background: var(--surface1);
 }

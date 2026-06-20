@@ -5,33 +5,36 @@
  *       API Key 显示/隐藏切换、提示文字。
  */
 
-/* ─── 设置面板 ─────────────────────────────────────────────── */
+/* ─── 设置面板（v8） ─────────────────────────────────────── */
 #panel-settings {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-/* ─── UI-UX-01 设置面板 tab 导航 ─────────────────────────────── */
+/* ─── UI-UX-01 设置面板 tab 导航（v8：52px 高度，无背景色） ─── */
 .settings-tabs {
   display: flex;
   gap: 0;
-  padding: 0 16px;
-  background: var(--surface0);
-  border-bottom: 1px solid var(--surface1);
+  padding: 0 24px;
+  background: transparent;
+  border-bottom: 1px solid var(--surface2);
   flex-shrink: 0;
+  height: 52px;
+  align-items: center;
 }
 
 .settings-tab {
-  padding: 8px 16px;
+  padding: 12px 16px;
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  color: var(--subtext);
+  color: var(--text-2);
   font-family: inherit;
   font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.12s, border-color 0.12s;
 }
 
 .settings-tab:hover {
@@ -41,6 +44,7 @@
 .settings-tab.active {
   color: var(--accent);
   border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 
 /* tab 内容区：默认隐藏，仅 active 时显示 */
@@ -48,7 +52,7 @@
   display: none;
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 20px 24px;
 }
 
 .settings-tab-content.active {
@@ -61,17 +65,17 @@
 
 .settings-group h3 {
   font-size: 13px;
-  color: var(--accent);
+  font-weight: 600;
+  color: var(--text);
   margin-bottom: 12px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--surface1);
 }
 
+/* v8：表单行横向布局（label 左侧固定宽度，input 右侧自适应） */
 .settings-group label {
   display: block;
   margin-bottom: 6px;
-  font-size: 13px;
-  color: var(--subtext);
+  font-size: 12px;
+  color: var(--text-2);
 }
 
 .settings-group input[type="text"],
@@ -79,29 +83,31 @@
 .settings-group input[type="number"] {
   width: 100%;
   padding: 6px 10px;
-  background: var(--surface1);
+  background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   outline: none;
   margin-bottom: 12px;
+  transition: border-color 0.12s;
 }
 
 /* 下拉选择框：与输入框样式一致，避免浏览器默认样式破坏整体视觉 */
 .settings-group select {
   width: 100%;
   padding: 6px 10px;
-  background: var(--surface1);
+  background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   outline: none;
   margin-bottom: 12px;
   cursor: pointer;
+  transition: border-color 0.12s;
 }
 
 .settings-group select:focus {
@@ -112,7 +118,7 @@
   width: 16px;
   height: 16px;
   accent-color: var(--accent);
-  margin-bottom: 12px;
+  margin: 0;
 }
 
 .settings-group input:focus {
@@ -131,13 +137,14 @@
 .input-with-action input {
   width: 100%;
   padding: 6px 36px 6px 10px;
-  background: var(--surface1);
+  background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   outline: none;
+  transition: border-color 0.12s;
 }
 
 .input-with-action input:focus {
@@ -155,19 +162,19 @@
   cursor: pointer;
   font-size: 14px;
   padding: 2px 4px;
-  border-radius: 4px;
-  transition: background 0.15s;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s;
   line-height: 1;
 }
 
 .toggle-visibility:hover {
-  background: var(--surface2);
+  background: var(--window-bg-2);
 }
 
-/* ─── 设置面板扩展 ─────────────────────────────────────────── */
+/* ─── 设置面板扩展（v8） ─────────────────────────────────── */
 .settings-hint {
-  font-size: 12px;
-  color: var(--muted);
+  font-size: 11px;
+  color: var(--text-3);
   font-style: italic;
   margin-bottom: 8px;
 }
@@ -176,14 +183,16 @@
   display: flex;
   gap: 16px;
   margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-2);
 }
 
 .radio-group label {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
-  color: var(--text);
+  font-size: 12px;
+  color: var(--text-2);
   margin-bottom: 0;
   cursor: pointer;
 }
@@ -196,6 +205,7 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--surface1);
+  padding: 12px 24px;
+  border-top: 1px solid var(--surface2);
+  flex-shrink: 0;
 }

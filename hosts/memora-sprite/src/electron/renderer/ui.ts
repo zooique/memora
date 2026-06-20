@@ -1420,6 +1420,9 @@ export class UIManager {
   /** IX-07 角色匹配模式变更回调（由 renderer.ts 注册，调用主进程持久化） */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
 
+  /** ADR-SP-006 主题变更回调（由 renderer.ts 注册，用于同步单选按钮状态等） */
+  private themeChangeCallback: ((theme: 'light' | 'dark') => void) | null = null;
+
   /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
   private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
 
@@ -1430,6 +1433,70 @@ export class UIManager {
   /** IX-07 注册角色匹配模式变更回调 */
   onPersonaModeChange(cb: (mode: string) => void): void {
     this.personaModeChangeCallback = cb;
+  }
+
+  /**
+   * ADR-SP-006 注册主题变更回调
+   *
+   * 当用户在设置面板切换主题时触发，renderer.ts 可借此执行额外同步逻辑。
+   * 主题本身的持久化（localStorage）已在 setTheme 内完成，回调仅用于通知。
+   *
+   * @param cb 主题变更回调函数
+   */
+  onThemeChange(cb: (theme: 'light' | 'dark') => void): void {
+    this.themeChangeCallback = cb;
+  }
+
+  /**
+   * ADR-SP-006 获取当前主题
+   *
+   * 通过读取 <html> 元素的 data-theme 属性判断当前主题，
+   * 未设置（默认）视为浅色。
+   *
+   * @returns 当前主题（'light' | 'dark'）
+   */
+  getTheme(): 'light' | 'dark' {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  /**
+   * ADR-SP-006 设置主题
+   *
+   * 1. 设置 <html> 元素的 data-theme 属性（触发 CSS 变量切换）
+   * 2. 持久化到 localStorage（key: 'memora-theme'）
+   * 3. 同步设置面板单选按钮状态
+   * 4. 触发 themeChangeCallback 通知 renderer.ts
+   *
+   * @param theme 目标主题
+   */
+  setTheme(theme: 'light' | 'dark'): void {
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      // 浅色为默认，移除属性即可
+      document.documentElement.removeAttribute('data-theme');
+    }
+    try {
+      localStorage.setItem('memora-theme', theme);
+    } catch {
+      // localStorage 不可用时静默降级（如隐私模式）
+    }
+    this.syncThemeRadios(theme);
+    this.themeChangeCallback?.(theme);
+  }
+
+  /**
+   * ADR-SP-006 同步设置面板主题单选按钮状态
+   *
+   * 在外部修改主题后（如初始化加载），调用此方法确保单选按钮选中状态与实际主题一致。
+   *
+   * @param theme 当前主题
+   */
+  syncThemeRadios(theme: 'light' | 'dark'): void {
+    const radios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
+    radios.forEach((radio) => {
+      radio.checked = radio.value === theme;
+    });
   }
 
   /** 注册召回记忆点击回调 */
@@ -1563,6 +1630,16 @@ export class UIManager {
         this.currentPersonaMode = selectedMode;
         this.updatePersonaModeBadge(selectedMode);
         this.personaModeChangeCallback?.(selectedMode);
+      });
+    });
+
+    // ADR-SP-006 主题切换单选按钮：切换时立即应用主题（无需等待保存按钮）
+    const themeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
+    themeRadios.forEach((radio) => {
+      this.addEventListener(radio, 'change', () => {
+        if (radio.checked) {
+          this.setTheme(radio.value === 'dark' ? 'dark' : 'light');
+        }
       });
     });
   }
@@ -2043,17 +2120,6 @@ export class UIManager {
   }
 
   // ─── IX-06 Toast 通知 ─────────────────────────────────
-
-  /** Toast 类型与图标映射 */
-  private static readonly TOAST_ICONS: Record<ToastType, string> = {
-    success: '✓',
-    error: '✗',
-    warning: '⚠',
-    info: 'ℹ',
-  };
-
-  /** Toast 默认自动消失时长（毫秒），error 类型不自动消失 */
-  private static readonly TOAST_DEFAULT_DURATION = 4000;
 
   /**
    * 显示 Toast 通知

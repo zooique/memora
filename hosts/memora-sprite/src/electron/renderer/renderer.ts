@@ -61,6 +61,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupPersonaSelector();
   setupSettingsPanel();
 
+  // ADR-SP-006 初始化主题：同步设置面板单选按钮状态
+  // 注意：data-theme 属性已由 index.html 内联脚本在 CSS 加载前设置（避免闪屏），
+  // 此处仅需同步单选按钮选中状态，并注册主题变更回调
+  uiManager.syncThemeRadios(uiManager.getTheme());
+  uiManager.onThemeChange((theme) => {
+    // 主题已由 UIManager.setTheme 持久化到 localStorage，此处仅用于未来扩展
+    // （如通知主进程、同步浮动窗口主题等）
+    console.debug(`[theme] 主题已切换为: ${theme}`);
+  });
+
   // 初始化 IPC 监听器
   initStreamListeners();
   initSpriteOutputListener();

@@ -6,7 +6,49 @@
   <!-- CSP：允许内联脚本与样式（浮动窗口为独立小窗口，无外部资源） -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Memora 精灵</title>
+  <!--
+    主题初始化（ADR-SP-006）：
+    浮动窗口独立于主窗口，需自行读取 localStorage 主题设置。
+    默认浅色（light），备选深色（dark）。
+  -->
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('memora-theme');
+        if (theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) {
+        // localStorage 不可用时静默降级为默认浅色主题
+      }
+    })();
+  </script>
   <style>
+    /* ===== 主题变量（从 base.css 提取浮动窗口所需的最小集） ===== */
+    :root {
+      --bg: #f0f0f2;
+      --green: #34c759;
+      --accent: #0066ff;
+      --accent-20: rgba(0, 102, 255, 0.2);
+      --yellow: #ffb300;
+      --hint-bg: rgba(30, 30, 46, 0.95);
+      --hint-text: #cdd6f4;
+      --badge-text: #1e1e2e;
+      --badge-border: #1e1e2e;
+    }
+
+    [data-theme="dark"] {
+      --bg: #1e1e2e;
+      --green: #a6e3a1;
+      --accent: #89b4fa;
+      --accent-20: rgba(137, 180, 250, 0.2);
+      --yellow: #f9e2af;
+      --hint-bg: rgba(205, 214, 244, 0.95);
+      --hint-text: #1e1e2e;
+      --badge-text: #1e1e2e;
+      --badge-border: #cdd6f4;
+    }
+
     /* ===== 全局重置 ===== */
     * {
       margin: 0;
@@ -112,14 +154,14 @@
       height: 20px;
       border-radius: 10px;
       background: #f38ba8;
-      color: #1e1e2e;
+      color: var(--badge-text);
       font-size: 0.7rem;
       font-weight: 700;
       display: none;
       align-items: center;
       justify-content: center;
       padding: 0 6px;
-      border: 2px solid #1e1e2e;
+      border: 2px solid var(--badge-border);
     }
 
     #badge.visible {
@@ -151,8 +193,8 @@
       bottom: -28px;
       left: 50%;
       transform: translateX(-50%);
-      background: rgba(30, 30, 46, 0.95);
-      color: #cdd6f4;
+      background: var(--hint-bg);
+      color: var(--hint-text);
       font-size: 11px;
       padding: 4px 10px;
       border-radius: 6px;
@@ -176,7 +218,7 @@
       transform: translateX(-50%);
       border-left: 4px solid transparent;
       border-right: 4px solid transparent;
-      border-bottom: 4px solid rgba(30, 30, 46, 0.95);
+      border-bottom: 4px solid var(--hint-bg);
     }
   </style>
 </head>

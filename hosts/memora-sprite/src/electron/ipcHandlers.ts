@@ -22,7 +22,7 @@ import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
-import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
+import type { SpriteConfig, SpriteConfigKey } from '../sprite/spriteConfig.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
 /**
@@ -185,7 +185,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   /** 获取精灵配置 */
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () =>
-    safeHandle('获取配置失败', { config: {} }, () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
+    // fallback 空对象需要类型断言以匹配 getConfig() 返回的 Readonly<Required<SpriteConfig>>
+    safeHandle('获取配置失败', { config: {} as Readonly<Required<SpriteConfig>> }, () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
   );
 
   /**

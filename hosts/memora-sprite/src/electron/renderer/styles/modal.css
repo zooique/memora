@@ -5,7 +5,7 @@
  *       按钮基础样式（primary/secondary/danger）。
  */
 
-/* ─── 弹窗 ─────────────────────────────────────────────────── */
+/* ─── 弹窗（v8） ─────────────────────────────────────────── */
 .modal {
   position: fixed;
   top: 0;
@@ -17,19 +17,26 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: modalFadeIn 0.15s ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal.hidden {
   display: none;
 }
 
+/* v8：弹窗内容区白色背景 + 大圆角 + 深阴影 */
 .modal-content {
-  background: var(--surface0);
-  border: 1px solid var(--surface1);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  width: 80%;
-  max-width: 560px;
+  background: var(--window-bg);
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  width: 480px;
+  max-width: 90%;
   max-height: 80vh;
   display: flex;
   flex-direction: column;
@@ -37,7 +44,7 @@
 
 /* 小尺寸弹窗：用于确认对话框等简单交互，避免占用过多屏幕空间 */
 .modal-content-sm {
-  max-width: 400px;
+  width: 360px;
 }
 
 /* 确认弹窗消息文本：保留换行，行高舒适 */
@@ -50,12 +57,12 @@
   margin: 0;
 }
 
-/* ─── 三态首次引导弹窗 ─────────────────────────────────── */
+/* ─── 三态首次引导弹窗（v8） ─────────────────────────────── */
 /* 介绍三态窗口模型 + 快捷键，首次打开完整窗口时显示 */
 .onboarding-intro {
   font-size: 13px;
   line-height: 1.6;
-  color: var(--subtext);
+  color: var(--text-2);
   margin: 0 0 16px 0;
 }
 
@@ -63,22 +70,22 @@
 .onboarding-states {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .onboarding-state-item {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 12px;
-  padding: 12px;
-  background: var(--surface0);
-  border-radius: var(--radius);
-  border: 1px solid var(--surface1);
+  padding: 10px;
+  background: var(--window-bg-2);
+  border-radius: var(--radius-md);
+  border: none;
 }
 
 .onboarding-state-icon {
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
   flex-shrink: 0;
 }
@@ -96,41 +103,42 @@
 }
 
 .onboarding-state-text span {
-  font-size: 12px;
-  color: var(--subtext);
+  font-size: 11px;
+  color: var(--text-2);
   line-height: 1.4;
 }
 
 /* 快捷键区域 */
 .onboarding-shortcuts {
-  padding: 12px;
-  background: var(--surface0);
-  border-radius: var(--radius);
-  border: 1px solid var(--surface1);
+  padding: 10px 12px;
+  background: var(--window-bg-2);
+  border-radius: var(--radius-md);
+  border: none;
 }
 
 .onboarding-shortcut-title {
   font-size: 12px;
-  color: var(--subtext);
-  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
 }
 
 .onboarding-shortcut-list {
-  font-size: 12px;
-  color: var(--text);
-  line-height: 2;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.8;
 }
 
-/* kbd 键盘按键样式：对齐 Catppuccin Mocha 配色 */
+/* kbd 键盘按键样式（v8） */
 kbd {
   display: inline-block;
-  padding: 2px 6px;
-  font-size: 11px;
+  padding: 1px 5px;
+  font-size: 10px;
   font-family: var(--font-mono);
   color: var(--text);
-  background: var(--surface2);
-  border: 1px solid var(--overlay0);
-  border-radius: 4px;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
   margin: 0 2px;
 }
 
@@ -138,56 +146,69 @@ kbd {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--surface1);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--surface2);
 }
 
 .modal-header h3 {
   font-size: 14px;
-  color: var(--accent);
+  font-weight: 600;
+  color: var(--text);
 }
 
 .modal-close {
+  width: 24px;
+  height: 24px;
   background: transparent;
   border: none;
-  color: var(--subtext);
+  color: var(--text-3);
   font-size: 14px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-close:hover {
-  background: var(--surface1);
+  background: var(--window-bg-2);
   color: var(--text);
 }
 
 .modal-body {
-  padding: 16px;
+  padding: 16px 18px;
   overflow-y: auto;
   flex: 1;
+  font-size: 13px;
 }
 
 .modal-body label {
   display: block;
   margin-bottom: 4px;
+  margin-top: 10px;
   font-size: 12px;
-  color: var(--subtext);
+  color: var(--text-2);
+}
+
+.modal-body label:first-child {
+  margin-top: 0;
 }
 
 .modal-body input[type="text"],
-.modal-body textarea {
+.modal-body textarea,
+.modal-body select {
   width: 100%;
   padding: 6px 10px;
-  background: var(--surface1);
+  background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   outline: none;
   margin-bottom: 12px;
   resize: vertical;
+  transition: border-color 0.12s;
 }
 
 .modal-body input:focus,
@@ -199,54 +220,57 @@ kbd {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--surface1);
+  padding: 12px 18px;
+  border-top: 1px solid var(--surface2);
 }
 
-/* ─── 按钮样式 ─────────────────────────────────────────────── */
+/* ─── 按钮样式（v8） ─────────────────────────────────────── */
 .btn-primary {
-  padding: 6px 16px;
+  padding: 6px 18px;
   background: var(--accent);
-  color: var(--bg);
+  color: #fff;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.12s;
 }
 
 .btn-primary:hover {
-  opacity: 0.85;
+  background: var(--accent-hover);
 }
 
 .btn-secondary {
-  padding: 6px 16px;
-  background: var(--surface1);
-  color: var(--text);
+  padding: 6px 14px;
+  background: var(--window-bg);
+  color: var(--text-2);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
 
 .btn-secondary:hover {
-  background: var(--surface2);
+  background: var(--window-bg-2);
+  color: var(--text);
 }
 
 .btn-danger {
-  padding: 6px 16px;
+  padding: 6px 14px;
   background: var(--red);
-  color: white;
+  color: #fff;
   border: none;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
   cursor: pointer;
+  transition: opacity 0.12s;
 }
 
 .btn-danger:hover {
-  opacity: 0.85;
+  opacity: 0.9;
 }

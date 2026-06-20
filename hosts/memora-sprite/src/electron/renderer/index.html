@@ -6,6 +6,23 @@
   <!-- CSP：仅允许 self 资源，移除 CDN 依赖以支持离线使用 + 安全加固 -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'" />
   <title>Memora 精灵</title>
+  <!--
+    主题初始化（ADR-SP-006）：
+    在 CSS 加载前同步读取 localStorage 主题设置，避免页面加载时闪烁。
+    默认浅色（light），备选深色（dark）。通过 <html data-theme="dark"> 切换。
+  -->
+  <script>
+    (function () {
+      try {
+        var theme = localStorage.getItem('memora-theme');
+        if (theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      } catch (e) {
+        // localStorage 不可用时静默降级为默认浅色主题
+      }
+    })();
+  </script>
   <link rel="stylesheet" href="styles/base.css" />
   <link rel="stylesheet" href="styles/layout.css" />
   <link rel="stylesheet" href="styles/chat.css" />
@@ -16,18 +33,7 @@
   <link rel="stylesheet" href="styles/markdown.css" />
 </head>
 <body>
-  <!-- 窗口标题栏（拖动区域） -->
-  <header id="titlebar">
-    <div id="titlebar-drag">
-      <span id="app-title">🧚 Memora</span>
-    </div>
-    <div id="titlebar-controls">
-      <button id="btn-minimize" title="最小化">─</button>
-      <button id="btn-maximize" title="最大化">□</button>
-      <button id="btn-close" title="关闭">✕</button>
-    </div>
-  </header>
-
+  <!-- 大底板容器：grid 布局（左侧栏 + 顶部栏 + 核心悬浮窗口） -->
   <div id="app">
     <!-- 侧边栏 -->
     <aside id="sidebar">
@@ -85,7 +91,19 @@
       </div>
     </aside>
 
-    <!-- 主内容区 -->
+    <!-- 顶部栏（与左侧栏同色，无边界；v8 仅保留窗口控制按钮） -->
+    <header id="titlebar">
+      <div id="titlebar-drag">
+        <span id="app-title">🧚 Memora</span>
+      </div>
+      <div id="titlebar-controls">
+        <button id="btn-minimize" title="最小化">─</button>
+        <button id="btn-maximize" title="最大化">□</button>
+        <button id="btn-close" title="关闭">✕</button>
+      </div>
+    </header>
+
+    <!-- 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） -->
     <main id="main-content">
       <!-- 对话面板 -->
       <div id="panel-chat" class="panel active">
@@ -123,8 +141,10 @@
         </div>
         <div id="input-area">
           <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
-          <button id="btn-send">发送</button>
-          <button id="btn-stop" class="hidden" title="停止">■</button>
+          <div class="input-actions">
+            <button id="btn-stop" class="hidden" title="停止生成">停止</button>
+            <button id="btn-send" title="发送（Enter）">➤</button>
+          </div>
         </div>
       </div>
 
@@ -208,6 +228,12 @@
         <div class="settings-tab-content" data-settings-tab="sprite">
           <div class="settings-group">
             <h3>精灵配置</h3>
+            <!-- ADR-SP-006 界面主题切换：浅色（默认）/ 深色（备选） -->
+            <label for="cfg-theme">界面主题</label>
+            <div class="radio-group">
+              <label><input type="radio" name="theme-mode" value="light" checked /> 浅色（默认）</label>
+              <label><input type="radio" name="theme-mode" value="dark" /> 深色</label>
+            </div>
             <label for="cfg-silent">静默模式</label>
             <input type="checkbox" id="cfg-silent" />
             <label for="cfg-threshold">主动提示阈值（事件数）</label>

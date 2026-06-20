@@ -104,7 +104,9 @@ export class WindowManager {
       minHeight: 480,
       frame: false,
       show: false,
-      backgroundColor: '#1e1e2e',
+      // ADR-SP-006：浅色主题为默认，窗口背景色对齐大底板色（--bg: #f0f0f2）
+      // 避免启动时闪深色（旧值为深色主题的 #1e1e2e）
+      backgroundColor: '#f0f0f2',
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
