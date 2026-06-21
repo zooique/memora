@@ -28,20 +28,20 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-float);
+  /* UX-PP-15 用 box-shadow 替代 border-left，避免四边边框不对称 */
+  box-shadow: var(--shadow-float), inset 3px 0 0 var(--accent);
   color: var(--text);
   font-size: 12px;
   line-height: 1.5;
   pointer-events: auto;
-  animation: toast-slide-in 0.2s ease-out;
-  border-left: 3px solid var(--accent);
+  animation: toast-slide-in var(--transition-base) ease-out;
 }
 
-/* 语义变体：左侧色条区分类型 */
-.toast.success { border-left-color: var(--green); }
-.toast.error   { border-left-color: var(--red); }
-.toast.warning { border-left-color: var(--yellow); }
-.toast.info    { border-left-color: var(--accent); }
+/* 语义变体：左侧色条区分类型（通过 box-shadow 实现，避免 border 不对称） */
+.toast.success { box-shadow: var(--shadow-float), inset 3px 0 0 var(--green); }
+.toast.error   { box-shadow: var(--shadow-float), inset 3px 0 0 var(--red); }
+.toast.warning { box-shadow: var(--shadow-float), inset 3px 0 0 var(--yellow); }
+.toast.info    { box-shadow: var(--shadow-float), inset 3px 0 0 var(--accent); }
 
 .toast-icon {
   flex-shrink: 0;
@@ -70,7 +70,7 @@
 }
 
 .toast.leaving {
-  animation: toast-slide-out 0.2s ease-in forwards;
+  animation: toast-slide-out var(--transition-base) ease-in forwards;
 }
 
 @keyframes toast-slide-in {

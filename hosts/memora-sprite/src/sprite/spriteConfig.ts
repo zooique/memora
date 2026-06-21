@@ -34,7 +34,7 @@ export interface SpriteConfig {
   fileWatcherIgnore?: string[];
   /** 文件监听防抖时间（毫秒），默认 1000 */
   fileWatcherDebounceMs?: number;
-  /** 浮动图标位置（屏幕坐标），默认 { x: -1, y: -1 } 表示首次启动居中 */
+  /** 浮动图标位置（屏幕坐标），默认 { x: -1, y: -1 } 表示使用 DEFAULT_FLOAT_POSITION */
   floatIconPosition?: { x: number; y: number };
   /** 窗口状态（持久化），默认 'tray'。仅支持 tray/full 二态，float 已独立为 showFloatBubble */
   windowState?: 'tray' | 'full';
@@ -156,7 +156,14 @@ export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
     }
 
     // FD-11 执行配置版本迁移链（v1→v2→...→CURRENT）
-    return runMigrations(merged);
+    const migrated = runMigrations(merged);
+
+    // UX-PP-19 迁移后立即持久化，避免下次启动重复执行迁移
+    if (migrated.configVersion !== merged.configVersion) {
+      saveSpriteConfig(dataDir, migrated);
+    }
+
+    return migrated;
   } catch {
     // 文件损坏，静默回退
     return { ...DEFAULT_SPRITE_CONFIG };

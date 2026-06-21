@@ -34,7 +34,7 @@
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
   display: flex;
   align-items: center;
 }
@@ -118,7 +118,7 @@
   font-family: inherit;
   font-size: 12px;
   outline: none;
-  transition: border-color 0.12s;
+  transition: border-color var(--transition-fast);
 }
 
 /* 垂直堆叠模式（直接子元素）：宽度 100% + 底部边距 */
@@ -183,7 +183,7 @@
   font-family: inherit;
   font-size: 12px;
   outline: none;
-  transition: border-color 0.12s;
+  transition: border-color var(--transition-fast);
 }
 
 .input-with-action input:focus {
@@ -202,7 +202,7 @@
   font-size: 14px;
   padding: 2px 4px;
   border-radius: var(--radius-sm);
-  transition: background 0.12s;
+  transition: background var(--transition-fast);
   line-height: 1;
 }
 
@@ -278,7 +278,7 @@
   color: var(--red);
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
   white-space: nowrap;
 }
 

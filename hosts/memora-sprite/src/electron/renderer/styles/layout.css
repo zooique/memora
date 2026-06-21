@@ -66,7 +66,7 @@
   color: var(--text);
   font-size: 11px;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--transition-fast);
   -webkit-app-region: no-drag;
 }
 
@@ -134,7 +134,7 @@
   border-radius: var(--radius-md);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 #persona-selector:hover {
@@ -217,7 +217,7 @@
   border-radius: var(--radius-md);
   padding: 8px 6px;
   text-align: center;
-  transition: background 0.12s;
+  transition: background var(--transition-fast);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -249,7 +249,7 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
-  transition: transform 0.3s ease;
+  transition: transform var(--transition-slow) ease;
 }
 
 /* 接近/达到阈值时数值变色 */
@@ -268,7 +268,7 @@
  * UI-AE-02 弱化：scale(1.3)→scale(1.1)，更符合专注模式基调
  */
 .dash-value.pulse {
-  animation: numberPulse 0.3s ease;
+  animation: numberPulse var(--transition-slow) ease;
 }
 
 @keyframes numberPulse {
@@ -306,7 +306,7 @@
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .nav-btn:hover {
@@ -353,7 +353,7 @@
   font-size: 12px;
   color: var(--subtext);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--transition-fast), color var(--transition-fast);
   line-height: 1.4;
   border-radius: var(--radius-md);
   /* UX-P2-29 允许 2 行显示，避免单行截断丢失信息（原 white-space: nowrap + ellipsis 仅显示一行） */
@@ -425,7 +425,7 @@
   font-size: 13px;
   color: var(--text);
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background var(--transition-fast);
 }
 
 /* UX-04：角色下拉项名称 + 描述双层布局 */
@@ -478,11 +478,11 @@
 /* ============================================================
  * 响应式适配（ADR-SP-008 §五 响应式策略）
  * - ≥800px：完整 240px 侧边栏（默认窗口 900px 在此范围）
- * - 640-799px：侧边栏收窄为 64px 图标模式（minWidth 640px）
- * - <640px：侧边栏隐藏（受 minWidth 约束，通常不会触发）
+ * - ≤799px：侧边栏收窄为 64px 图标模式
+ * - ≤639px：侧边栏隐藏（受 minWidth 640px 约束，通常不会触发）
  * ============================================================ */
 
-/* 中屏（640-799px）：侧边栏图标模式 */
+/* 中屏（≤799px）：侧边栏图标模式 */
 @media (max-width: 799px) {
   #app {
     grid-template-columns: 64px 1fr;
@@ -532,7 +532,7 @@
   }
 }
 
-/* 小屏（<640px）：侧边栏隐藏，核心窗口全宽（受 minWidth 640px 约束，通常不会触发） */
+/* 小屏（≤639px）：侧边栏隐藏，核心窗口全宽（受 minWidth 640px 约束，通常不会触发） */
 @media (max-width: 639px) {
   #app {
     grid-template-columns: 0 1fr;

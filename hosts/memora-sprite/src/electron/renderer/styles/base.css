@@ -30,10 +30,6 @@
   --text-2:      #6e6e73;  /* v8 命名，= --subtext */
   --text-3:      #a1a1a6;  /* v8 命名，= --muted */
 
-  /* overlay 变量保留（兼容旧引用） */
-  --overlay0:    #a1a1a6;
-  --overlay2:    #6e6e73;
-
   /* 强调色 */
   --accent:        #0066ff;  /* 主强调色（v8 --accent） */
   /* UX-P2-39 统一 --accent-soft 为 rgba 策略（原浅色用 hex，深色用 rgba，策略不一致） */
@@ -74,7 +70,12 @@
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
 
-  /* 遮罩 */
+  /* UX-PP-10 统一动画时长变量 */
+  --transition-fast: 0.12s;  /* 微交互（hover/active/按钮） */
+  --transition-base: 0.2s;   /* 标准过渡（动画/滑入/淡入） */
+  --transition-slow: 0.3s;   /* 大型过渡（面板展开/脉冲） */
+
+  /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.25);
 
   /* 主题色透明度（用于标签背景、badge 等；浅色主题下降低透明度避免过艳） */
@@ -111,10 +112,6 @@
   --muted:       #9399b2;
   --text-2:      #a6adc8;
   --text-3:      #9399b2;
-
-  /* overlay 变量 */
-  --overlay0:    #6c7086;
-  --overlay2:    #9399b2;
 
   /* 强调色 */
   --accent:        #89b4fa;
@@ -155,7 +152,12 @@
   --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
   --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
 
-  /* 遮罩 */
+  /* UX-PP-10 统一动画时长变量（深色主题与浅色一致） */
+  --transition-fast: 0.12s;
+  --transition-base: 0.2s;
+  --transition-slow: 0.3s;
+
+  /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.6);
 
   /* 主题色透明度 */
@@ -211,7 +213,7 @@ html, body {
 .loading {
   opacity: 0.5;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 /* UI-UX-03 统一错误状态：居中错误图标 + 文字 + 重试按钮 */
@@ -269,7 +271,7 @@ button:active,
 .settings-tab:active,
 .banner-btn:active {
   transform: scale(0.97);
-  transition: transform 0.1s ease;
+  transition: transform var(--transition-fast) ease;
 }
 
 /* 输入框 click 按下时无需缩放（避免文本抖动） */

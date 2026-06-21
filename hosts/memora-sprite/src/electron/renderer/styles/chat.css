@@ -59,7 +59,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all var(--transition-fast);
 }
 
 #btn-new-session:hover {
@@ -90,7 +90,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all var(--transition-fast);
   white-space: nowrap;
   max-width: 160px;
   overflow: hidden;
@@ -168,7 +168,7 @@
   font-size: 11px;
   cursor: pointer;
   opacity: 0.45;
-  transition: opacity 0.15s;
+  transition: opacity var(--transition-fast);
 }
 
 .session-list-item-del {
@@ -206,7 +206,7 @@
   color: var(--text-2);
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: background 0.12s;
+  transition: background var(--transition-fast);
   gap: 8px;
 }
 
@@ -255,7 +255,7 @@
   max-height: 80px;
   font-size: 13px;
   color: var(--text);
-  transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+  transition: max-height var(--transition-base) ease, padding var(--transition-base) ease, opacity var(--transition-base) ease;
 }
 
 #proactive-banner.hidden {
@@ -267,7 +267,7 @@
 }
 
 #proactive-banner:not(.hidden) {
-  animation: bannerSlideDown 0.25s ease-out;
+  animation: bannerSlideDown var(--transition-base) ease-out;
 }
 
 @keyframes bannerSlideDown {
@@ -304,7 +304,7 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all var(--transition-fast);
 }
 
 #proactive-banner .banner-btn:hover {
@@ -329,7 +329,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 #proactive-banner .banner-close:hover {
@@ -355,7 +355,7 @@
   display: flex;
   gap: 10px;
   max-width: 80%;
-  animation: slideIn 0.2s ease-out;
+  animation: slideIn var(--transition-base) ease-out;
 }
 
 @keyframes slideIn {
@@ -452,7 +452,7 @@
 .message.user .message-bubble {
   background: var(--accent);
   color: var(--accent-fg);  /* 使用主题感知前景色，保证深色主题下浅蓝背景+深字对比度达标 */
-  border-bottom-right-radius: 2px;
+  border-bottom-right-radius: 4px;  /* UX-PP-16 尖角从 2px 增大到 4px，视觉更清晰 */
   /* UX-P2-17 用户消息统一使用系统字体（原继承 body 系统字体，保持不变） */
 }
 
@@ -495,8 +495,9 @@
  */
 .message-copy-btn {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  /* UX-PP-17 改为正偏移避免被 overflow 裁剪 */
+  top: 4px;
+  right: 4px;
   width: 24px;
   height: 24px;
   border: 1px solid var(--surface2);
@@ -506,7 +507,7 @@
   font-size: 11px;
   cursor: pointer;
   opacity: 0.45;
-  transition: opacity 0.15s, background 0.15s, color 0.15s;
+  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -559,7 +560,7 @@
   animation: typingDot 1.4s infinite ease-in-out;
 }
 
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(2) { animation-delay: var(--transition-base); }
 .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes typingDot {
@@ -583,7 +584,7 @@
   color: var(--accent);
   cursor: pointer;
   font-weight: 500;
-  transition: color 0.15s;
+  transition: color var(--transition-fast);
 }
 
 .memory-recall:hover {
@@ -607,7 +608,7 @@
   border: 1px solid var(--surface2);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-float);
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition: box-shadow var(--transition-base), border-color var(--transition-base);
 }
 
 #input-area:focus-within {
@@ -662,7 +663,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s, color 0.12s;
+  transition: background var(--transition-fast), color var(--transition-fast);
   padding: 0;
 }
 
@@ -691,7 +692,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.12s;
+  transition: background var(--transition-fast);
 }
 
 #btn-send:hover {
@@ -712,7 +713,7 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.12s;
+  transition: all var(--transition-fast);
 }
 
 #btn-stop:hover {
@@ -739,7 +740,7 @@
   color: var(--text-2);
   min-height: 280px;
   gap: 12px;
-  animation: fadeIn 0.3s ease-out;
+  animation: fadeIn var(--transition-slow) ease-out;
 }
 
 @keyframes fadeIn {
@@ -797,7 +798,7 @@
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 12px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
   text-align: center;
 }
 
@@ -847,7 +848,7 @@
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 12px;
   /* 进入动画：淡入 + 轻微上移 */
-  animation: tool-call-in 0.2s ease-out;
+  animation: tool-call-in var(--transition-base) ease-out;
 }
 
 @keyframes tool-call-in {
