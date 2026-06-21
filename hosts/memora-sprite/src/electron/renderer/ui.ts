@@ -146,6 +146,8 @@ export class UIManager {
   private isNearBottom = true;
   /** 记忆搜索防抖定时器（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 非系统消息计数（显示在对话工具栏副标题，P2-009：移至 state 字段区） */
+  private messageCount = 0;
 
   constructor() {
     // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -855,9 +857,6 @@ export class UIManager {
     this.state.unreadCount = Math.max(0, count);
     this.updateBadge();
   }
-
-  /** 非系统消息计数（显示在对话工具栏副标题） */
-  private messageCount = 0;
 
   /**
    * 更新消息计数显示

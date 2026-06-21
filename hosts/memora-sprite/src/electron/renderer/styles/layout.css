@@ -24,8 +24,10 @@
 }
 
 /* ─── 顶部栏（与左侧栏同色，无边界；仅保留窗口控制按钮） ─── */
-/* 拖动策略：drag 放在 #titlebar-drag（左侧空白区），no-drag 放在按钮上。
-   这样按钮可点击，空白区可拖动，互不干扰。 */
+/* 拖动策略（P1-1 修复）：#titlebar 整体设为 drag，按钮区域显式 no-drag。
+   原方案仅 #titlebar-drag 设 drag，flex:1 drag 区与 no-drag 按钮区边界处
+   在 Windows Electron 上存在事件吞没，导致按钮点击无响应。
+   整体 drag + 按钮 no-drag 的方案避免了边界问题，且语义更清晰。 */
 #titlebar {
   grid-area: titlebar;
   height: 44px;
@@ -36,16 +38,16 @@
   background: var(--bg);
   border-bottom: none;  /* v8：顶部栏与侧边栏同色，无边界 */
   flex-shrink: 0;
+  -webkit-app-region: drag;  /* P1-1：整体设为可拖动区域 */
 }
 
-/* v8：顶部栏拖拽区域（仅此区域可拖动窗口） */
+/* v8：顶部栏拖拽占位区（继承父级 drag，无需重复声明） */
 #titlebar-drag {
   flex: 1;
   height: 100%;
   padding-left: 12px;
   display: flex;
   align-items: center;
-  -webkit-app-region: drag;
   cursor: default;
 }
 

@@ -120,7 +120,12 @@ export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
   let existing: Record<string, unknown> = {};
   if (existsSync(filePath)) {
     try {
-      existing = JSON.parse(readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(readFileSync(filePath, 'utf-8'));
+      // P2-005 修复：添加类型守卫，避免 sprite.json 被篡改为非对象类型时
+      // 展开操作产生异常行为（如数组或原始值）
+      if (isPlainObject(parsed)) {
+        existing = parsed;
+      }
     } catch {
       // 文件损坏，从空开始
     }
@@ -130,4 +135,13 @@ export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
   // 设置 0o600 权限：仅文件所有者可读写
   // sprite.json 含 focusProjectPath 等路径信息，与 config.json（含 apiKey）保持一致的权限保护
   writeFileSync(filePath, JSON.stringify(merged, null, 2), { encoding: 'utf-8', mode: 0o600 });
+}
+
+/**
+ * 类型守卫：判断值是否为普通对象（非数组、非 null）
+ *
+ * 用于校验 JSON.parse 的结果，避免对非对象类型执行展开操作。
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

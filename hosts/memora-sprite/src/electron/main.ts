@@ -38,7 +38,7 @@ import {
   PROVIDER_PRESETS,
   DEFAULT_DATA_DIR,
 } from '../index.js';
-import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
 import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
@@ -319,7 +319,9 @@ function registerMinimalIpcHandlers(): void {
       const defaultDataDir = DEFAULT_DATA_DIR;
       return { config: loadSpriteConfig(defaultDataDir) };
     } catch {
-      return { config: {} };
+      // P2-011 修复：使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象
+      // 违反 SpriteConfigForm 类型契约（与 P2-010 同类问题）
+      return { config: { ...DEFAULT_SPRITE_CONFIG } };
     }
   });
 

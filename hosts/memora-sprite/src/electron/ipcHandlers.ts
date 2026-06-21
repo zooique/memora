@@ -22,7 +22,7 @@ import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
-import type { SpriteConfig, SpriteConfigKey } from '../sprite/spriteConfig.js';
+import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
 /**
@@ -185,8 +185,10 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   /** 获取精灵配置 */
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () =>
-    // fallback 空对象需要类型断言以匹配 getConfig() 返回的 Readonly<Required<SpriteConfig>>
-    safeHandle('获取配置失败', { config: {} as Readonly<Required<SpriteConfig>> }, () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
+    // P2-010 修复：使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象类型断言。
+    // 原方案 {} as Readonly<Required<SpriteConfig>> 会欺骗类型系统，渲染进程访问
+    // config.silentMode 等字段时得到 undefined，可能引发运行时错误。
+    safeHandle('获取配置失败', { config: DEFAULT_SPRITE_CONFIG }, () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
   );
 
   /**

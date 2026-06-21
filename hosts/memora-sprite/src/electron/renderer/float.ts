@@ -2,13 +2,18 @@
  * 浮动窗口脚本 — 精灵球体交互逻辑
  *
  * 从 float.html 内联 <script> 提取，职责：
- * - 拖动检测（mousedown / mousemove / mouseup）
+ * - 拖动检测（pointerdown / pointermove / pointerup + setPointerCapture）
  * - 首次使用拖动引导提示（localStorage）
  * - 右键菜单
  * - 未读计数监听
  * - 精灵事件监听（主动提示弹跳 + 形态进化预留）
  *
  * 返回 cleanup 函数供调用方在窗口关闭时清理事件监听器和定时器。
+ *
+ * P1-2 修复：原方案使用 mousemove 监听 document，但浮动窗口是 80x80 的
+ * alwaysOnTop + frame:false 窗口，鼠标移出窗口范围后 mousemove 停止触发，
+ * 导致拖动失效。改用 PointerEvent + setPointerCapture 后，指针捕获确保
+ * 鼠标移出窗口仍能持续接收 pointermove 事件，拖动可跨屏幕范围。
  */
 
 /** 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供） */
@@ -106,25 +111,36 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   sphere.addEventListener('mouseenter', showDragHintIfFirstTime);
   sphere.addEventListener('mouseleave', onSphereMouseLeave);
 
-  // ─── 拖动检测（方案 §5.4 排雷修正） ──────────────────────
-  // 使用鼠标事件手动处理拖动，避免 -webkit-app-region: drag 吞掉单击事件
+  // ─── 拖动检测（P1-2 修复：PointerEvent + setPointerCapture） ───
+  // 原方案使用 document mousemove，但浮动窗口是 80x80 alwaysOnTop + frame:false
+  // 窗口，鼠标移出窗口范围后 mousemove 停止触发，导致拖动失效。
+  // 改用 PointerEvent + setPointerCapture：在 pointerdown 时将指针捕获到 sphere 元素，
+  // 后续 pointermove/pointerup 即使鼠标移出窗口也能持续触发，实现跨屏幕拖动。
   let isDragging = false;
-  let startX = 0;
-  let startY = 0;
-  let lastScreenX = 0;
-  let lastScreenY = 0;
+  let startX = 0;  // 拖动起始 screenX（用于判断是否超过阈值）
+  let startY = 0;  // 拖动起始 screenY
+  let lastScreenX = 0;  // 上一次 pointermove 的 screenX（用于计算增量）
+  let lastScreenY = 0;  // 上一次 pointermove 的 screenY
+  let activePointerId: number | null = null;  // 当前捕获的指针 ID（用于 cleanup 时释放）
 
   // 命名函数引用（便于 cleanup 时 removeEventListener）
-  const onMouseDown = (e: MouseEvent) => {
+  const onPointerDown = (e: PointerEvent) => {
+    // 仅处理左键（button=0）或触摸（pointerType=touch）
+    if (e.button !== 0) return;
     isDragging = false;
     startX = e.screenX;
     startY = e.screenY;
     lastScreenX = e.screenX;
     lastScreenY = e.screenY;
+    activePointerId = e.pointerId;
+    // 捕获指针：确保后续 pointermove/pointerup 即使鼠标移出窗口也能触发
+    sphere.setPointerCapture(e.pointerId);
   };
 
-  const onMouseMove = (e: MouseEvent) => {
-    if (e.buttons !== 1) return; // 只处理左键按下
+  const onPointerMove = (e: PointerEvent) => {
+    // 仅处理当前捕获的指针（避免多点触控干扰）
+    if (activePointerId !== e.pointerId) return;
+    if (e.buttons !== 1) return; // 只处理左键按下（兼容鼠标）
     const dx = e.screenX - startX;
     const dy = e.screenY - startY;
 
@@ -150,7 +166,15 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   };
 
-  const onMouseUp = () => {
+  const onPointerUp = (e: PointerEvent) => {
+    // 仅处理当前捕获的指针
+    if (activePointerId !== e.pointerId) return;
+    // 释放指针捕获
+    if (sphere.hasPointerCapture(e.pointerId)) {
+      sphere.releasePointerCapture(e.pointerId);
+    }
+    activePointerId = null;
+
     if (isDragging) {
       // 拖动结束，保存位置
       sphere.classList.remove('dragging');
@@ -170,10 +194,11 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     electronAPI.showFloatContextMenu();
   };
 
-  document.addEventListener('mousedown', onMouseDown);
-  document.addEventListener('mousemove', onMouseMove);
-  document.addEventListener('mouseup', onMouseUp);
-  document.addEventListener('contextmenu', onContextMenu);
+  // 事件绑定到 sphere（而非 document），配合 setPointerCapture 确保事件不丢失
+  sphere.addEventListener('pointerdown', onPointerDown);
+  sphere.addEventListener('pointermove', onPointerMove);
+  sphere.addEventListener('pointerup', onPointerUp);
+  sphere.addEventListener('contextmenu', onContextMenu);
 
   // ─── 未读计数监听 ──────────────────────────────────────
   electronAPI.onFloatUnread((count: number) => {
@@ -211,10 +236,16 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
 
   // ─── 返回清理函数 ─────────────────────────────────────
   return () => {
-    document.removeEventListener('mousedown', onMouseDown);
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    document.removeEventListener('contextmenu', onContextMenu);
+    // 释放可能残留的指针捕获（避免窗口关闭时指针泄漏）
+    if (activePointerId !== null && sphere.hasPointerCapture(activePointerId)) {
+      sphere.releasePointerCapture(activePointerId);
+    }
+    activePointerId = null;
+
+    sphere.removeEventListener('pointerdown', onPointerDown);
+    sphere.removeEventListener('pointermove', onPointerMove);
+    sphere.removeEventListener('pointerup', onPointerUp);
+    sphere.removeEventListener('contextmenu', onContextMenu);
     sphere.removeEventListener('mouseenter', showDragHintIfFirstTime);
     sphere.removeEventListener('mouseleave', onSphereMouseLeave);
     if (dragHintTimer) clearTimeout(dragHintTimer);

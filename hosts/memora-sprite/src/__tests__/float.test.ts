@@ -4,13 +4,16 @@
  * @vitest-environment jsdom
  *
  * 覆盖范围：
- * - 拖动检测（mousedown → mousemove 超过阈值 → mouseup 保存位置）
- * - 单击展开（mousedown → mouseup 未超过阈值 → expandToFull）
+ * - 拖动检测（pointerdown → pointermove 超过阈值 → pointerup 保存位置）
+ * - 单击展开（pointerdown → pointerup 未超过阈值 → expandToFull）
  * - 右键菜单（contextmenu → showFloatContextMenu）
  * - 未读计数监听（onFloatUnread）
  * - 精灵事件监听（proactivePrompt → bounce 弹跳）
  * - 拖动引导提示（localStorage + drag-hint visibility）
  * - 元素缺失防护（静默退出）
+ *
+ * P1-2 适配：事件从 MouseEvent/document 改为 PointerEvent/sphere + setPointerCapture。
+ * JSDOM 默认不支持 PointerEvent 和 setPointerCapture，需在 beforeEach 中 polyfill。
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -65,6 +68,63 @@ beforeEach(() => {
   global.HTMLElement = dom.window.HTMLElement;
   global.HTMLImageElement = dom.window.HTMLImageElement;
 
+  // ─── JSDOM PointerEvent & setPointerCapture polyfill ───
+  // JSDOM 默认不实现 PointerEvent 和 Element.prototype.setPointerCapture，
+  // 需手动注入以支持 float.ts 的 PointerEvent + setPointerCapture 拖动逻辑。
+  // PointerEvent 继承 MouseEvent，添加 pointerId/pointerType 等字段。
+  if (!dom.window.PointerEvent) {
+    class PointerEventPolyfill extends dom.window.MouseEvent {
+      pointerId: number;
+      pointerType: string;
+      width: number;
+      height: number;
+      pressure: number;
+      tangentialPressure: number;
+      tiltX: number;
+      tiltY: number;
+      twist: number;
+      isPrimary: boolean;
+
+      constructor(type: string, init: Record<string, unknown> = {}) {
+        super(type, init);
+        this.pointerId = (init.pointerId as number) ?? 0;
+        this.pointerType = (init.pointerType as string) ?? 'mouse';
+        this.width = (init.width as number) ?? 1;
+        this.height = (init.height as number) ?? 1;
+        this.pressure = (init.pressure as number) ?? 0;
+        this.tangentialPressure = (init.tangentialPressure as number) ?? 0;
+        this.tiltX = (init.tiltX as number) ?? 0;
+        this.tiltY = (init.tiltY as number) ?? 0;
+        this.twist = (init.twist as number) ?? 0;
+        this.isPrimary = (init.isPrimary as boolean) ?? true;
+      }
+    }
+    (dom.window as unknown as Record<string, unknown>).PointerEvent = PointerEventPolyfill;
+    (global as unknown as Record<string, unknown>).PointerEvent = PointerEventPolyfill;
+  }
+
+  // setPointerCapture/releasePointerCapture/hasPointerCapture polyfill
+  // 真实浏览器中这些方法将指针事件路由到指定元素，JSDOM 中简化为标记捕获状态
+  const capturedPointers = new Map<number, Element>();
+  const ElementProto = dom.window.Element.prototype;
+  if (!ElementProto.setPointerCapture) {
+    ElementProto.setPointerCapture = function (pointerId: number): void {
+      capturedPointers.set(pointerId, this);
+    };
+  }
+  if (!ElementProto.releasePointerCapture) {
+    ElementProto.releasePointerCapture = function (pointerId: number): void {
+      if (capturedPointers.get(pointerId) === this) {
+        capturedPointers.delete(pointerId);
+      }
+    };
+  }
+  if (!ElementProto.hasPointerCapture) {
+    ElementProto.hasPointerCapture = function (pointerId: number): boolean {
+      return capturedPointers.get(pointerId) === this;
+    };
+  }
+
   // 注入 localStorage（JSDOM 中需显式设为全局变量，否则 float.ts 中直接引用 localStorage 会指向 undefined）
   const storage: Record<string, string> = {};
   const localStorageMock = {
@@ -100,21 +160,36 @@ afterEach(() => {
   dom.window.close();
 });
 
+/** 测试辅助：在 sphere 元素上派发 PointerEvent */
+function dispatchPointerEvent(
+  type: 'pointerdown' | 'pointermove' | 'pointerup',
+  init: { screenX?: number; screenY?: number; button?: number; buttons?: number; pointerId?: number } = {},
+): void {
+  const sphere = document.getElementById('sphere')!;
+  const event = new dom.window.PointerEvent(type, {
+    screenX: init.screenX ?? 0,
+    screenY: init.screenY ?? 0,
+    button: init.button ?? 0,
+    buttons: init.buttons ?? 0,
+    pointerId: init.pointerId ?? 1,
+    pointerType: 'mouse',
+    bubbles: true,
+    cancelable: true,
+  });
+  sphere.dispatchEvent(event);
+}
+
 // ─── 拖动检测 ─────────────────────────────────────────────
 
 describe('拖动检测', () => {
   it('移动超过 3px 阈值时触发拖动并调用 startFloatDrag', () => {
     setupFloat(mockAPI);
 
-    // 鼠标按下（派发到 document，监听器注册在 document 上）
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100, button: 0,
-    }));
+    // 指针按下（派发到 sphere，监听器注册在 sphere 上）
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
 
     // 移动超过阈值
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 105, screenY: 100, button: 0, buttons: 1,
-    }));
+    dispatchPointerEvent('pointermove', { screenX: 105, screenY: 100, buttons: 1 });
 
     expect(mockAPI.startFloatDrag).toHaveBeenCalled();
     const sphere = document.getElementById('sphere')!;
@@ -124,12 +199,8 @@ describe('拖动检测', () => {
   it('移动未超过 3px 阈值时不触发拖动', () => {
     setupFloat(mockAPI);
 
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100, button: 0,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 101, screenY: 101, button: 0, buttons: 1,
-    }));
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointermove', { screenX: 101, screenY: 101, buttons: 1 });
 
     // 未超过阈值，不应调用 moveFloatWindow
     expect(mockAPI.moveFloatWindow).not.toHaveBeenCalled();
@@ -138,15 +209,9 @@ describe('拖动检测', () => {
   it('拖动结束后保存位置', () => {
     setupFloat(mockAPI);
 
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100, button: 0,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 110, screenY: 100, button: 0, buttons: 1,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mouseup', {
-      screenX: 110, screenY: 100, button: 0,
-    }));
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointermove', { screenX: 110, screenY: 100, buttons: 1 });
+    dispatchPointerEvent('pointerup', { screenX: 110, screenY: 100, button: 0 });
 
     expect(mockAPI.saveFloatPosition).toHaveBeenCalled();
     const sphere = document.getElementById('sphere')!;
@@ -156,20 +221,25 @@ describe('拖动检测', () => {
   it('连续拖动时传递增量移动', () => {
     setupFloat(mockAPI);
 
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 105, screenY: 100, buttons: 1,
-    }));
-    // 第一次 mousemove 触发 drag 起始，startFloatDrag 被调用
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointermove', { screenX: 105, screenY: 100, buttons: 1 });
+    // 第一次 pointermove 触发 drag 起始，startFloatDrag 被调用
     expect(mockAPI.startFloatDrag).toHaveBeenCalled();
 
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 108, screenY: 102, buttons: 1,
-    }));
+    dispatchPointerEvent('pointermove', { screenX: 108, screenY: 102, buttons: 1 });
     // 增量移动 (108-105, 102-100) = (3, 2)
     expect(mockAPI.moveFloatWindow).toHaveBeenCalledWith(3, 2);
+  });
+
+  it('非左键按下时忽略 pointerdown（避免右键误触发拖动）', () => {
+    setupFloat(mockAPI);
+
+    // 右键按下（button=2）
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 2 });
+    dispatchPointerEvent('pointermove', { screenX: 110, screenY: 100, buttons: 1 });
+
+    // 应被忽略，不触发拖动
+    expect(mockAPI.startFloatDrag).not.toHaveBeenCalled();
   });
 });
 
@@ -179,15 +249,9 @@ describe('单击展开', () => {
   it('未拖动时单击展开为完整窗口', () => {
     setupFloat(mockAPI);
 
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100, button: 0,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 101, screenY: 100, button: 0, buttons: 1,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mouseup', {
-      screenX: 101, screenY: 100, button: 0,
-    }));
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointermove', { screenX: 101, screenY: 100, buttons: 1 });
+    dispatchPointerEvent('pointerup', { screenX: 101, screenY: 100, button: 0 });
 
     // 移动未超阈值，应触发单击展开
     expect(mockAPI.expandToFull).toHaveBeenCalled();
@@ -201,10 +265,11 @@ describe('右键菜单', () => {
   it('右键点击阻止默认行为并通知主进程', () => {
     setupFloat(mockAPI);
 
+    const sphere = document.getElementById('sphere')!;
     const event = new dom.window.MouseEvent('contextmenu', {
       button: 2, bubbles: true, cancelable: true,
     });
-    document.dispatchEvent(event);
+    sphere.dispatchEvent(event);
 
     expect(mockAPI.showFloatContextMenu).toHaveBeenCalled();
   });
@@ -316,12 +381,8 @@ describe('拖动引导提示', () => {
     setupFloat(mockAPI);
 
     // 拖动超过阈值
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 110, screenY: 100, buttons: 1,
-    }));
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointermove', { screenX: 110, screenY: 100, buttons: 1 });
 
     const dragHint = document.getElementById('drag-hint')!;
     expect(dragHint.classList.contains('visible')).toBe(false);
@@ -333,12 +394,8 @@ describe('拖动引导提示', () => {
     setupFloat(mockAPI);
 
     // 单击（未超过阈值）
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mouseup', {
-      screenX: 100, screenY: 100,
-    }));
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointerup', { screenX: 100, screenY: 100, button: 0 });
 
     const dragHint = document.getElementById('drag-hint')!;
     expect(dragHint.classList.contains('visible')).toBe(false);
@@ -366,12 +423,8 @@ describe('清理函数', () => {
     const cleanup = setupFloat(mockAPI);
 
     // 先确认拖动正常工作
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100, button: 0,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 110, screenY: 100, button: 0, buttons: 1,
-    }));
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointermove', { screenX: 110, screenY: 100, buttons: 1 });
     expect(mockAPI.startFloatDrag).toHaveBeenCalled();
 
     // 重置 mock 并调用 cleanup
@@ -379,15 +432,9 @@ describe('清理函数', () => {
     cleanup();
 
     // cleanup 后拖动不应触发任何 API 调用
-    document.dispatchEvent(new dom.window.MouseEvent('mousedown', {
-      screenX: 100, screenY: 100, button: 0,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mousemove', {
-      screenX: 110, screenY: 100, button: 0, buttons: 1,
-    }));
-    document.dispatchEvent(new dom.window.MouseEvent('mouseup', {
-      screenX: 110, screenY: 100, button: 0,
-    }));
+    dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
+    dispatchPointerEvent('pointermove', { screenX: 110, screenY: 100, buttons: 1 });
+    dispatchPointerEvent('pointerup', { screenX: 110, screenY: 100, button: 0 });
 
     expect(mockAPI.moveFloatWindow).not.toHaveBeenCalled();
     expect(mockAPI.saveFloatPosition).not.toHaveBeenCalled();
@@ -400,10 +447,11 @@ describe('清理函数', () => {
     cleanup();
     vi.clearAllMocks();
 
+    const sphere = document.getElementById('sphere')!;
     const event = new dom.window.MouseEvent('contextmenu', {
       button: 2, bubbles: true, cancelable: true,
     });
-    document.dispatchEvent(event);
+    sphere.dispatchEvent(event);
 
     expect(mockAPI.showFloatContextMenu).not.toHaveBeenCalled();
   });
