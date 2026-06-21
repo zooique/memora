@@ -580,6 +580,27 @@ function sendSpriteEventIfVisible(
 }
 
 /**
+ * QC-R2-01 通用精灵事件注册 helper
+ *
+ * 统一"定义回调 → sprite.on 注册 → 推送取消订阅"模式，
+ * 消除 setupSpriteEventListeners 中 4 处重复的 3 行模板代码。
+ *
+ * 类型安全：通过泛型 K 约束 eventName 必须是 SpriteEventMap 的合法键，
+ * handler 的参数类型自动推导为 SpriteEventMap[K]。
+ *
+ * @param eventName 事件名（对应 SpriteEventMap 的 key）
+ * @param handler 事件回调
+ */
+function registerSpriteEvent<K extends keyof SpriteEventMap>(
+  eventName: K,
+  handler: (e: SpriteEventMap[K]) => void,
+): void {
+  if (!sprite) return;
+  sprite.on(eventName, handler);
+  spriteEventUnsubscribers.push(() => sprite?.off(eventName, handler));
+}
+
+/**
  * 订阅精灵事件，实现方案 §6.6 主动提示分发逻辑：
  * - 托盘脉冲（始终执行）
  * - 系统通知（非静默模式）
@@ -595,10 +616,7 @@ function setupSpriteEventListeners(): void {
   unsubscribeSpriteEvents();
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示
-  const onProactivePrompt: (e: SpriteEventMap['proactivePrompt']) => void = ({
-    prompt,
-    silent,
-  }) => {
+  registerSpriteEvent('proactivePrompt', ({ prompt, silent }) => {
     // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
     trayManager?.setState('active');
 
@@ -626,31 +644,23 @@ function setupSpriteEventListeners(): void {
         incrementUnreadCount();
       }
     }
-  };
-  sprite.on('proactivePrompt', onProactivePrompt);
-  spriteEventUnsubscribers.push(() => sprite?.off('proactivePrompt', onProactivePrompt));
+  });
 
   // 记忆新增 → 仪表盘计数 +1
-  const onMemoryNoticed: (e: SpriteEventMap['memoryNoticed']) => void = () => {
+  registerSpriteEvent('memoryNoticed', () => {
     sendSpriteEventIfVisible('memoryNoticed', {});
-  };
-  sprite.on('memoryNoticed', onMemoryNoticed);
-  spriteEventUnsubscribers.push(() => sprite?.off('memoryNoticed', onMemoryNoticed));
+  });
 
   // 洞察提取 → 仪表盘计数 +1
-  const onInsightGained: (e: SpriteEventMap['insightGained']) => void = () => {
+  registerSpriteEvent('insightGained', () => {
     sendSpriteEventIfVisible('insightGained', {});
-  };
-  sprite.on('insightGained', onInsightGained);
-  spriteEventUnsubscribers.push(() => sprite?.off('insightGained', onInsightGained));
+  });
 
   // 角色切换 → 顶栏角色标签更新
-  const onPersonaChanged: (e: SpriteEventMap['personaChanged']) => void = ({ from, to }) => {
+  registerSpriteEvent('personaChanged', ({ from, to }) => {
     sendSpriteEventIfVisible('personaChanged', { from, to });
     // 角色切换不影响托盘状态（托盘状态由流式输出/静默模式/主动提示驱动）
-  };
-  sprite.on('personaChanged', onPersonaChanged);
-  spriteEventUnsubscribers.push(() => sprite?.off('personaChanged', onPersonaChanged));
+  });
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */
