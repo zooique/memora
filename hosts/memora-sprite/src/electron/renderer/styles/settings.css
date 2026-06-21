@@ -8,9 +8,7 @@
 /* ─── 设置面板（v8） ─────────────────────────────────────── */
 /* 面板的 display 和 flex 布局由 .panel / .panel.active 统一控制，
    此处不要覆盖 display，否则会导致设置面板始终可见（ID 选择器优先级高于 .panel） */
-#panel-settings {
-  /* display 和 height 由 .panel 继承，无需重复声明 */
-}
+/* UX-P2-25 移除 #panel-settings 空规则集（原仅含注释，无实际样式声明） */
 
 /* ─── UI-UX-01 设置面板 tab 导航（v8：52px 高度，无背景色） ─── */
 .settings-tabs {
@@ -25,6 +23,8 @@
 }
 
 .settings-tab {
+  /* UX-P2-36 改为 stretch 使 tab 按钮撑满高度，border-bottom 与容器边框对齐（原 align-items: center 导致 border-bottom 视觉悬空） */
+  align-self: stretch;
   padding: 12px 16px;
   background: transparent;
   border: none;
@@ -35,6 +35,8 @@
   font-weight: 500;
   cursor: pointer;
   transition: color 0.12s, border-color 0.12s;
+  display: flex;
+  align-items: center;
 }
 
 .settings-tab:hover {
@@ -85,58 +87,29 @@
   flex-shrink: 0;
 }
 
+/* UX-P2-40 .settings-row input 的公共样式由 .settings-group input 统一提供，此处仅声明布局差异 */
 .settings-row input[type="text"],
 .settings-row input[type="password"],
 .settings-row input[type="number"],
 .settings-row select {
   flex: 1;
-  padding: 6px 10px;
-  background: var(--window-bg);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  outline: none;
-  transition: border-color 0.12s;
-}
-
-.settings-row input:focus,
-.settings-row select:focus {
-  border-color: var(--accent);
-}
-
-.settings-row input[type="checkbox"] {
-  margin: 0;
 }
 
 /* 兼容旧版垂直堆叠 label（未包裹在 settings-row 中的） */
-.settings-group label {
+/* UX-P2-19 使用直接子选择器 > label，避免匹配 .settings-row 内的 label（原 .settings-group label 会匹配所有层级） */
+.settings-group > label {
   display: block;
   margin-bottom: 6px;
   font-size: 12px;
   color: var(--text-2);
 }
 
+/* UX-P2-40 合并 .settings-group input 和 .settings-row input 的公共样式，消除重复定义 */
+/* 公共输入框样式：适用于设置面板内所有文本/密码/数字输入框和下拉框 */
 .settings-group input[type="text"],
 .settings-group input[type="password"],
-.settings-group input[type="number"] {
-  width: 100%;
-  padding: 6px 10px;
-  background: var(--window-bg);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12px;
-  outline: none;
-  margin-bottom: 12px;
-  transition: border-color 0.12s;
-}
-
-/* 下拉选择框：与输入框样式一致，避免浏览器默认样式破坏整体视觉 */
+.settings-group input[type="number"],
 .settings-group select {
-  width: 100%;
   padding: 6px 10px;
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -145,13 +118,34 @@
   font-family: inherit;
   font-size: 12px;
   outline: none;
-  margin-bottom: 12px;
-  cursor: pointer;
   transition: border-color 0.12s;
 }
 
+/* 垂直堆叠模式（直接子元素）：宽度 100% + 底部边距 */
+.settings-group > input[type="text"],
+.settings-group > input[type="password"],
+.settings-group > input[type="number"],
+.settings-group > select {
+  width: 100%;
+  margin-bottom: 12px;
+}
+
+/* 水平布局模式（settings-row 内）：flex: 1 占满右侧空间 */
+.settings-row input[type="text"],
+.settings-row input[type="password"],
+.settings-row input[type="number"],
+.settings-row select {
+  flex: 1;
+}
+
+.settings-group input:focus,
 .settings-group select:focus {
   border-color: var(--accent);
+}
+
+/* 下拉选择框：增加 cursor: pointer（仅 select 需要） */
+.settings-group select {
+  cursor: pointer;
 }
 
 .settings-group input[type="checkbox"] {
@@ -161,8 +155,11 @@
   margin: 0;
 }
 
-.settings-group input:focus {
-  border-color: var(--accent);
+/* settings-row 内的 checkbox 不需要宽高设置（与 label 横向排列） */
+.settings-row input[type="checkbox"] {
+  margin: 0;
+  width: auto;
+  height: auto;
 }
 
 /**
@@ -262,9 +259,9 @@
   gap: 12px;
   padding: 10px 24px;
   margin: 0;
-  background: #5c1a1a;
-  border-bottom: 1px solid #8b3a3a;
-  color: #fca5a5;
+  background: var(--red-20);  /* 使用主题变量，跟随主题切换 */
+  border-bottom: 1px solid var(--red);
+  color: var(--red);
   font-size: 13px;
   flex-shrink: 0;
 }
@@ -275,10 +272,10 @@
 
 .panel-error-btn {
   padding: 4px 12px;
-  background: #8b3a3a;
-  border: 1px solid #b45353;
+  background: var(--window-bg);
+  border: 1px solid var(--red);
   border-radius: 4px;
-  color: #fca5a5;
+  color: var(--red);
   font-size: 12px;
   cursor: pointer;
   transition: background 0.15s;
@@ -286,5 +283,5 @@
 }
 
 .panel-error-btn:hover {
-  background: #a04242;
+  background: var(--surface1);
 }

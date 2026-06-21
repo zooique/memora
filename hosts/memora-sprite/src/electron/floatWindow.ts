@@ -232,4 +232,16 @@ export class FloatWindow {
       this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, count);
     }
   }
+
+  /**
+   * UX-P2-10 广播主题变更到浮动窗口
+   *
+   * 完整窗口切换主题时，主进程通过此方法将主题同步到浮动窗口，
+   * 避免两个窗口主题不一致。
+   */
+  broadcastTheme(theme: 'light' | 'dark'): void {
+    if (!this.win.isDestroyed()) {
+      this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST, theme);
+    }
+  }
 }

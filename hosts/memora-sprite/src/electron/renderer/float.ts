@@ -39,6 +39,8 @@ export type FloatElectronAPI = Pick<
   | 'showFloatContextMenu'
   | 'onFloatUnread'
   | 'onSpriteEvent'
+  | 'onThemeBroadcast'
+  | 'removeThemeBroadcastListener'
 >;
 
 /** localStorage 键名：已见过拖动引导提示 */
@@ -265,6 +267,17 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   });
 
+  // ─── UX-P2-10 主题变更监听 ────────────────────────────
+  // 完整窗口切换主题后，主进程通过 THEME_BROADCAST 通道通知浮动窗口，
+  // 浮动窗口同步切换 data-theme 属性，确保两个窗口主题一致。
+  electronAPI.onThemeBroadcast((theme) => {
+    if (theme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  });
+
   // ─── 返回清理函数 ─────────────────────────────────────
   return () => {
     // 释放可能残留的指针捕获（避免窗口关闭时指针泄漏）
@@ -279,6 +292,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     sphere.removeEventListener('contextmenu', onContextMenu);
     sphere.removeEventListener('mouseenter', showDragHintIfFirstTime);
     sphere.removeEventListener('mouseleave', onSphereMouseLeave);
+    // UX-P2-10 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM
+    electronAPI.removeThemeBroadcastListener();
     if (dragHintTimer) clearTimeout(dragHintTimer);
     activeTimers.forEach(clearTimeout);
     activeTimers.length = 0;

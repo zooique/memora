@@ -50,7 +50,7 @@
           <span id="persona-name">精灵</span>
           <!-- IX-07 当前角色匹配模式标签（auto/manual） -->
           <span id="persona-mode-badge" class="mode-badge" title="角色匹配模式：自动（根据上下文自动切换角色）">自动</span>
-          <span id="persona-arrow">▼</span>
+          <span id="persona-arrow">▾</span>
         </div>
         <!-- 角色下拉菜单（动态填充） -->
         <div id="persona-dropdown" class="dropdown hidden"></div>
@@ -98,13 +98,13 @@
 
     <!-- 顶部栏（与左侧栏同色，无边界；v8 仅保留窗口控制按钮） -->
     <header id="titlebar">
-      <div id="titlebar-drag">
-        <span id="app-title">🧚 Memora</span>
-      </div>
+      <!-- UX-P2-24 移除 #app-title 元素（原 display:none 但保留在 HTML 中，无实际作用） -->
+      <div id="titlebar-drag"></div>
       <div id="titlebar-controls">
         <button id="btn-minimize" title="最小化">─</button>
         <button id="btn-maximize" title="最大化">□</button>
-        <button id="btn-close" title="隐藏到浮动窗口">✕</button>
+        <!-- UX-P2-21 调整 title 文案与 ✕ 图标语义一致（原"隐藏到浮动窗口"与关闭图标不符） -->
+        <button id="btn-close" title="关闭">✕</button>
       </div>
     </header>
 
@@ -124,7 +124,7 @@
               <span id="session-current-name">当前会话</span>
               <span class="session-current-arrow">▾</span>
             </button>
-            <div id="session-dropdown" class="session-dropdown hidden">
+            <div id="session-dropdown" class="dropdown session-dropdown hidden">
               <ul id="session-list" class="session-list"></ul>
             </div>
           </div>

@@ -39,6 +39,7 @@ const IPC_CHANNELS = {
   SESSION_LOAD: 'session-load',
   SESSION_NEW: 'session-new',
   SESSION_LIST: 'session-list',
+  SESSION_SWITCH: 'session-switch',
   MEMORIES_LIST: 'memories-list',
   MEMORIES_SEARCH: 'memories-search',
   MEMORIES_SHOW: 'memories-show',
@@ -60,6 +61,7 @@ const IPC_CHANNELS = {
   WINDOW_MINIMIZE: 'window-minimize',
   WINDOW_MAXIMIZE: 'window-maximize',
   WINDOW_CLOSE: 'window-close',
+  THEME_CHANGED: 'theme-changed',
   MOVE_FLOAT_WINDOW: 'move-float-window',
   SAVE_FLOAT_POSITION: 'save-float-position',
   FLOAT_DRAG_BEGIN: 'float-drag-begin',
@@ -72,6 +74,9 @@ const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_STREAM_CHUNK: 'sprite-stream-chunk',
   SPRITE_STREAM_END: 'sprite-stream-end',
   SPRITE_STREAM_RECALL: 'sprite-stream-recall',
+  SPRITE_STREAM_TOOL_START: 'sprite-stream-tool-start',
+  SPRITE_STREAM_TOOL_RESULT: 'sprite-stream-tool-result',
+  SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
   SPRITE_OUTPUT: 'sprite-output',
   SPRITE_EVENT: 'sprite-event',
   SPRITE_ERROR: 'sprite-error',
@@ -81,6 +86,7 @@ const MAIN_TO_RENDERER_CHANNELS = {
   FLOAT_DRAG_END: 'float-drag-end',
   FLOAT_UNREAD: 'float-unread',
   WINDOW_STATE_CHANGED: 'window-state-changed',
+  THEME_BROADCAST: 'theme-broadcast',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
@@ -92,6 +98,8 @@ export type { MemoryListItem, MemoryDetail, MemorySearchHit };
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  /** UX-P2-06 消息原始时间戳（ISO 8601），用于历史消息显示正确时间 */
+  timestamp?: string;
 }
 
 /** 精灵配置（与 SpriteConfig 对齐，渲染进程用） */
@@ -114,9 +122,11 @@ export interface ElectronAPI {
   // 对话
   sendUserInput: (text: string) => void;
   abortChat: () => Promise<void>;
-  loadSession: (query: { date?: string; session?: string }) => Promise<{ messages: ChatMessage[] }>;
+  loadSession: (query: { date?: string; session?: string }) => Promise<{ messages: ChatMessage[]; loadedSessionId?: string }>;
   /** FD-A1 列出所有会话 */
   listSessions: () => Promise<{ sessions: Array<{ id: string; date: string; name: string }> }>;
+  /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
+  switchSession: (query: { date: string; session: string }) => Promise<{ success: boolean; messages: ChatMessage[]; error?: string }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
@@ -127,6 +137,12 @@ export interface ElectronAPI {
    * 在 text chunk 之前触发，携带本次对话召回的记忆摘要列表
    */
   onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => void) => void;
+  /** UX-P1-02 工具调用开始监听（携带工具名和参数） */
+  onStreamToolStart: (cb: (msg: { messageId: string; name: string; args?: string }) => void) => void;
+  /** UX-P1-02 工具调用结果监听（携带工具名、成功状态和摘要） */
+  onStreamToolResult: (cb: (msg: { messageId: string; name: string; ok: boolean; summary?: string }) => void) => void;
+  /** UX-P2-01 思考阶段监听（recalling/processing/archiving） */
+  onStreamThinking: (cb: (msg: { messageId: string; phase: string }) => void) => void;
   /** 移除所有流式监听器（页面卸载或重新初始化时调用） */
   removeStreamListeners: () => void;
 
@@ -239,6 +255,13 @@ export interface ElectronAPI {
   onWindowStateChanged: (cb: (msg: { maximized: boolean }) => void) => void;
   /** 移除窗口状态变更监听器 */
   removeWindowStateChangedListener: () => void;
+
+  /** UX-P2-10 通知主进程主题已变更（需同步到浮动窗口） */
+  notifyThemeChanged: (theme: 'light' | 'dark') => void;
+  /** UX-P2-10 监听主进程广播的主题变更（浮动窗口使用） */
+  onThemeBroadcast: (cb: (theme: 'light' | 'dark') => void) => void;
+  /** UX-P2-10 移除主题广播监听器 */
+  removeThemeBroadcastListener: () => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -254,11 +277,17 @@ const electronAPI: ElectronAPI = {
   onStreamChunk: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
   onStreamEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
   onStreamRecall: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, (_: IpcRendererEvent, msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => cb(msg)),
+  onStreamToolStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, (_: IpcRendererEvent, msg: { messageId: string; name: string; args?: string }) => cb(msg)),
+  onStreamToolResult: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, (_: IpcRendererEvent, msg: { messageId: string; name: string; ok: boolean; summary?: string }) => cb(msg)),
+  onStreamThinking: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, (_: IpcRendererEvent, msg: { messageId: string; phase: string }) => cb(msg)),
   removeStreamListeners: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING);
   },
 
   // 精灵输出
@@ -324,6 +353,8 @@ const electronAPI: ElectronAPI = {
   newSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
   // FD-A1 列出所有会话
   listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST),
+  // UX-P1-04 切换到已有会话（更新 Agent 内部状态）
+  switchSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, query),
 
   // 仪表盘（FD-03）
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),
@@ -359,6 +390,13 @@ const electronAPI: ElectronAPI = {
   onWindowStateChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED, (_: IpcRendererEvent, msg: { maximized: boolean }) => cb(msg)),
   removeWindowStateChangedListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED);
+  },
+
+  // UX-P2-10 主题变更同步（完整窗口 → 主进程 → 浮动窗口）
+  notifyThemeChanged: (theme) => ipcRenderer.send(IPC_CHANNELS.THEME_CHANGED, theme),
+  onThemeBroadcast: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST, (_: IpcRendererEvent, theme: 'light' | 'dark') => cb(theme)),
+  removeThemeBroadcastListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST);
   },
 };
 

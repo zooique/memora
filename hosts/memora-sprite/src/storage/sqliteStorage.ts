@@ -32,6 +32,31 @@ CREATE INDEX IF NOT EXISTS idx_memories_score ON memories(score DESC);
 `;
 
 /**
+ * 重建 memories 表以补齐所有缺失列
+ *
+ * 旧版 schema 可能只有 id/content 等少量列，逐个 ALTER TABLE ADD COLUMN
+ * 需要多轮迭代。直接建新表、拷数据、删旧表、重命名，可一次性对齐 schema。
+ * 默认值：source='unknown'（来源不可考），score=0.5，createdAt/accessedAt 为当前时间。
+ */
+const REBUILD_TABLE_SQL = `
+BEGIN TRANSACTION;
+CREATE TABLE memories_new (
+  id        TEXT PRIMARY KEY,
+  content   TEXT NOT NULL,
+  source    TEXT NOT NULL DEFAULT 'unknown',
+  name      TEXT NOT NULL DEFAULT '',
+  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
+  accessedAt TEXT NOT NULL DEFAULT (datetime('now')),
+  score     REAL NOT NULL DEFAULT 0.5
+);
+INSERT INTO memories_new (id, content)
+  SELECT id, content FROM memories;
+DROP TABLE memories;
+ALTER TABLE memories_new RENAME TO memories;
+COMMIT;
+`;
+
+/**
  * better-sqlite3 实现的 IMemoryStorage
  */
 export class SqliteStorage implements IMemoryStorage {
@@ -40,7 +65,35 @@ export class SqliteStorage implements IMemoryStorage {
   constructor(db: Database.Database) {
     this.db = db;
     this.db.exec(CREATE_TABLE_SQL);
+    this.migrateColumns();
     this.db.exec(CREATE_INDEX_SQL);
+  }
+
+  /**
+   * 迁移：为旧版 memories 表补齐缺失列
+   *
+   * 通过 PRAGMA table_info 检测列是否存在，若核心列缺失则重建表一次性对齐 schema。
+   * 旧数据仅保留 id/content，其余字段使用默认值填充。
+   *
+   * @private
+   */
+  private migrateColumns(): void {
+    const tableInfo = this.db.prepare("PRAGMA table_info(memories)").all() as Array<{
+      name: string;
+    }>;
+    const requiredColumns = ['source', 'name', 'createdAt', 'accessedAt', 'score'];
+    const existingColumns = new Set(tableInfo.map((column) => column.name));
+    const missingColumns = requiredColumns.filter((column) => !existingColumns.has(column));
+
+    if (missingColumns.length === 0) {
+      return;
+    }
+
+    logger.warn(
+      { missingColumns },
+      '[SqliteStorage] memories 表 schema 过期，执行一次性迁移'
+    );
+    this.db.exec(REBUILD_TABLE_SQL);
   }
 
   /**

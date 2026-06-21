@@ -51,11 +51,7 @@
   cursor: default;
 }
 
-#app-title {
-  display: none;  /* v8：顶部栏无标题 */
-  font-size: 13px;
-  color: var(--subtext);
-}
+/* UX-P2-24 #app-title 已从 HTML 移除，此处不再需要空规则 */
 
 #titlebar-controls {
   display: flex;
@@ -325,8 +321,7 @@
   color: var(--text);
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  /* margin: -1px 抵消 border 占用的空间，避免布局抖动 */
-  margin: -1px;
+  /* UX-P2-14 移除 margin: -1px（原意抵消 border 空间，但会导致 hover→active 布局抖动） */
 }
 
 /* ─── 侧边栏推荐记忆列表（对齐方案 §6.3 推荐区） ──────────────── */
@@ -361,9 +356,12 @@
   transition: background 0.12s, color 0.12s;
   line-height: 1.4;
   border-radius: var(--radius-md);
-  white-space: nowrap;
+  /* UX-P2-29 允许 2 行显示，避免单行截断丢失信息（原 white-space: nowrap + ellipsis 仅显示一行） */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .suggestion-list li:hover {
@@ -381,7 +379,8 @@
 /* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
   grid-area: window;
-  margin: 0 6px 6px 0;  /* v8：四周留边距，形成悬浮感 */
+  /* UX-P2-15 修正 margin 不对称问题，四周留边距形成完整悬浮感（原 0 6px 6px 0 缺少左侧边距） */
+  margin: 0 6px 6px 6px;
   background: var(--window-bg);
   border-radius: var(--radius-window);
   box-shadow: var(--shadow-window);
@@ -469,23 +468,11 @@
   font-size: 13px;
 }
 
-/* 空状态引导按钮：引导用户执行下一步操作 */
+/* UX-P2-27 空状态引导按钮复用 .btn-secondary 样式（modal.css），消除重复定义 */
+/* 保留 .empty-action-btn 类名作为语义别名，HTML 中同时添加 .btn-secondary 类即可 */
 .empty-action-btn {
   display: block;
   margin: 12px auto 0;
-  padding: 6px 16px;
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  background: var(--window-bg-2);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.empty-action-btn:hover {
-  border-color: var(--accent);
-  background: var(--surface1);
 }
 
 /* ============================================================
@@ -524,6 +511,10 @@
   /* 仪表盘：单列布局，仅显示数字 */
   #dashboard {
     grid-template-columns: 1fr;
+  }
+  /* UX-P2-28 中屏模式下重置 #dash-pending 的 grid-column: span 2（原内联样式在单列布局下失效，但保留 span 2 会导致布局错位） */
+  #dash-pending {
+    grid-column: span 1;
   }
   .dash-label {
     font-size: 9px;

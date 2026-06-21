@@ -586,6 +586,169 @@ describe('流式消息管理', () => {
   });
 });
 
+// ─── UX-P1-02 工具调用卡片 ─────────────────────────────────
+
+describe('工具调用卡片（UX-P1-02）', () => {
+  it('showToolStart: 在流式消息气泡内渲染工具调用卡片', () => {
+    uiManager.startStreaming('msg-tool-1');
+    uiManager.showToolStart('msg-tool-1', 'read_file', '{"path":"test.txt"}');
+
+    const toolCard = document.querySelector('.tool-call.tool-call-running');
+    expect(toolCard).not.toBeNull();
+    expect(toolCard?.getAttribute('data-tool-name')).toBe('read_file');
+
+    // 验证卡片包含工具名和状态
+    expect(toolCard?.querySelector('.tool-call-name')?.textContent).toBe('read_file');
+    expect(toolCard?.querySelector('.tool-call-status')?.textContent).toContain('执行中');
+    expect(toolCard?.querySelector('.tool-call-args')?.textContent).toContain('test.txt');
+  });
+
+  it('showToolStart: 无参数时不渲染 .tool-call-args', () => {
+    uiManager.startStreaming('msg-tool-2');
+    uiManager.showToolStart('msg-tool-2', 'list_dir');
+
+    const toolCard = document.querySelector('.tool-call.tool-call-running');
+    expect(toolCard).not.toBeNull();
+    expect(toolCard?.querySelector('.tool-call-args')).toBeNull();
+  });
+
+  it('updateToolResult: 成功时更新卡片状态为 success', () => {
+    uiManager.startStreaming('msg-tool-3');
+    uiManager.showToolStart('msg-tool-3', 'search_memories', '{"query":"test"}');
+    uiManager.updateToolResult('msg-tool-3', 'search_memories', true, '找到 3 条记忆');
+
+    const toolCard = document.querySelector('.tool-call');
+    expect(toolCard?.classList.contains('tool-call-running')).toBe(false);
+    expect(toolCard?.classList.contains('tool-call-success')).toBe(true);
+    expect(toolCard?.querySelector('.tool-call-status')?.textContent).toContain('成功');
+    expect(toolCard?.querySelector('.tool-call-result')?.textContent).toContain('找到 3 条记忆');
+  });
+
+  it('updateToolResult: 失败时更新卡片状态为 failed', () => {
+    uiManager.startStreaming('msg-tool-4');
+    uiManager.showToolStart('msg-tool-4', 'write_file', '{"path":"test.txt"}');
+    uiManager.updateToolResult('msg-tool-4', 'write_file', false, '权限不足');
+
+    const toolCard = document.querySelector('.tool-call');
+    expect(toolCard?.classList.contains('tool-call-failed')).toBe(true);
+    expect(toolCard?.querySelector('.tool-call-status')?.textContent).toContain('失败');
+  });
+
+  it('updateToolResult: 无摘要时不渲染 .tool-call-result', () => {
+    uiManager.startStreaming('msg-tool-5');
+    uiManager.showToolStart('msg-tool-5', 'read_file');
+    uiManager.updateToolResult('msg-tool-5', 'read_file', true);
+
+    const toolCard = document.querySelector('.tool-call');
+    expect(toolCard?.querySelector('.tool-call-result')).toBeNull();
+  });
+
+  it('updateStreamingMessage: 保留工具调用卡片不丢失', () => {
+    uiManager.startStreaming('msg-tool-6');
+    uiManager.showToolStart('msg-tool-6', 'read_file', '{"path":"a.txt"}');
+    // 流式更新文本时，工具卡片应保留
+    uiManager.updateStreamingMessage('msg-tool-6', '读取完成');
+
+    const toolCard = document.querySelector('.tool-call');
+    expect(toolCard).not.toBeNull();
+    expect(toolCard?.getAttribute('data-tool-name')).toBe('read_file');
+  });
+});
+
+// ─── UX-P2-01 思考阶段指示器 ───────────────────────────────
+
+describe('思考阶段指示器（UX-P2-01）', () => {
+  it('showThinkingPhase: 在气泡内渲染思考阶段指示器', () => {
+    uiManager.startStreaming('msg-think-1');
+    uiManager.showThinkingPhase('msg-think-1', 'recalling');
+
+    const indicator = document.querySelector('.thinking-phase');
+    expect(indicator).not.toBeNull();
+    expect(indicator?.textContent).toContain('正在回忆');
+  });
+
+  it('showThinkingPhase: 不同阶段显示不同文案', () => {
+    uiManager.startStreaming('msg-think-2');
+
+    uiManager.showThinkingPhase('msg-think-2', 'processing');
+    expect(document.querySelector('.thinking-phase')?.textContent).toContain('正在处理');
+
+    uiManager.showThinkingPhase('msg-think-2', 'archiving');
+    expect(document.querySelector('.thinking-phase')?.textContent).toContain('正在归档');
+  });
+
+  it('showThinkingPhase: 未知阶段使用原始字符串', () => {
+    uiManager.startStreaming('msg-think-3');
+    uiManager.showThinkingPhase('msg-think-3', 'custom-phase');
+
+    expect(document.querySelector('.thinking-phase')?.textContent).toContain('custom-phase');
+  });
+
+  it('updateStreamingMessage: text chunk 到达后移除思考阶段指示器', () => {
+    uiManager.startStreaming('msg-think-4');
+    uiManager.showThinkingPhase('msg-think-4', 'recalling');
+    expect(document.querySelector('.thinking-phase')).not.toBeNull();
+
+    // 首个 text chunk 到达，指示器应被移除
+    uiManager.updateStreamingMessage('msg-think-4', '回复内容');
+    expect(document.querySelector('.thinking-phase')).toBeNull();
+  });
+});
+
+// ─── UX-P2-03 Agent 就绪状态 ───────────────────────────────
+
+describe('Agent 就绪状态（UX-P2-03）', () => {
+  it('初始状态 isAgentReady 为 false', () => {
+    expect(uiManager.getState().isAgentReady).toBe(false);
+  });
+
+  it('setAgentReady(true): 解除发送限制', () => {
+    uiManager.setAgentReady(true);
+    const cb = vi.fn();
+    uiManager.onSendMessage(cb);
+
+    const btnSend = document.getElementById('btn-send')!;
+    btnSend.click();
+
+    expect(cb).toHaveBeenCalled();
+  });
+
+  it('未就绪时点击发送显示 warning toast', () => {
+    uiManager.setAgentReady(false);
+    const cb = vi.fn();
+    uiManager.onSendMessage(cb);
+
+    const btnSend = document.getElementById('btn-send')!;
+    btnSend.click();
+
+    expect(cb).not.toHaveBeenCalled();
+    // toast 容器应有 warning 类
+    const toast = document.querySelector('.toast');
+    expect(toast).not.toBeNull();
+  });
+});
+
+// ─── UX-P2-02 流式状态发送拦截 ─────────────────────────────
+
+describe('流式状态发送拦截（UX-P2-02）', () => {
+  it('流式输出中按 Enter 发送显示 warning toast', () => {
+    uiManager.setAgentReady(true);
+    uiManager.startStreaming('msg-block-1');
+
+    const cb = vi.fn();
+    uiManager.onSendMessage(cb);
+
+    // 流式时发送按钮被 disabled，但 Enter 键不受按钮 disabled 影响，
+    // 因此 UX-P2-02 的核心场景是 Enter 键发送拦截
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    expect(cb).not.toHaveBeenCalled();
+    const toast = document.querySelector('.toast');
+    expect(toast).not.toBeNull();
+  });
+});
+
 // ─── 面板切换 ─────────────────────────────────────────────
 
 describe('面板切换', () => {
@@ -695,6 +858,9 @@ describe('事件回调注册', () => {
   it('onSendMessage: 注册并触发', () => {
     const cb = vi.fn();
     uiManager.onSendMessage(cb);
+
+    // UX-P2-03 设置 Agent 就绪状态，否则 emitSendMessage 会拦截发送
+    uiManager.setAgentReady(true);
 
     // 模拟点击发送按钮
     const btnSend = document.getElementById('btn-send')!;

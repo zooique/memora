@@ -123,6 +123,21 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.setMemoryRecall(msg.messageId, msg.memories);
   });
 
+  // UX-P2-01 思考阶段指示：在 text chunk 之前到达，显示"正在回忆.../处理.../归档..."
+  window.electronAPI.onStreamThinking((msg) => {
+    uiManager.showThinkingPhase(msg.messageId, msg.phase);
+  });
+
+  // UX-P1-02 工具调用开始：在消息气泡内渲染工具调用卡片
+  window.electronAPI.onStreamToolStart((msg) => {
+    uiManager.showToolStart(msg.messageId, msg.name, msg.args);
+  });
+
+  // UX-P1-02 工具调用结果：更新工具调用卡片状态（成功/失败 + 摘要）
+  window.electronAPI.onStreamToolResult((msg) => {
+    uiManager.updateToolResult(msg.messageId, msg.name, msg.ok, msg.summary);
+  });
+
   window.electronAPI.onStreamChunk((msg) => {
     uiManager.updateStreamingMessage(msg.messageId, msg.text);
   });

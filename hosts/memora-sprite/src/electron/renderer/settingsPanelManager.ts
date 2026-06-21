@@ -75,6 +75,13 @@ export class SettingsPanelManager {
   // ─── 状态 ────────────────────────────────────────────────
   /** FD-07 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
+  /**
+   * UX-P2-11 LLM 表单是否有未保存修改
+   *
+   * 独立于 settingsFormDirty，用于判断是否需要触发 LLM 配置保存。
+   * 避免用户仅修改精灵配置时，因 LLM 字段未配置而弹出误导性 warning。
+   */
+  private llmFormDirty = false;
   /** LLM 预设（从主进程加载，避免硬编码） */
   private llmPresets: Record<string, { provider: string; model: string; baseUrl: string }> = {};
   /** 当前角色匹配模式（由 UIManager 同步） */
@@ -169,14 +176,43 @@ export class SettingsPanelManager {
       });
     }
 
+    // UX-P2-11 监听 LLM 表单字段变更，独立标记 llmFormDirty
+    // 避免用户仅修改精灵配置时，LLM 保存逻辑被误触发导致误导性 warning
+    const llmFields = [
+      this.cfgLlmPreset,
+      this.cfgLlmProvider,
+      this.cfgLlmModel,
+      this.cfgLlmBaseUrl,
+      this.cfgLlmApiKey,
+      this.cfgLlmTemperature,
+      this.cfgEmbEnabled,
+      this.cfgEmbModel,
+      this.cfgEmbBaseUrl,
+      this.cfgEmbApiKey,
+    ];
+    for (const field of llmFields) {
+      if (field) {
+        this.addEventListener(field, 'input', () => {
+          this.llmFormDirty = true;
+        });
+        this.addEventListener(field, 'change', () => {
+          this.llmFormDirty = true;
+        });
+      }
+    }
+
     // 保存按钮：同时收集精灵配置和 LLM 配置
     if (btnSave) {
       this.addEventListener(btnSave, 'click', () => {
         this.settingsFormDirty = false;
         const spriteConfig = this.collectConfigFromForm();
-        const llmConfig = this.collectLlmConfigFromForm();
         this.configSaveCallback?.(spriteConfig);
-        this.llmConfigSaveCallback?.(llmConfig);
+        // UX-P2-11 仅在 LLM 表单有修改时触发保存，避免未配置 LLM 时弹出误导性 warning
+        if (this.llmFormDirty) {
+          const llmConfig = this.collectLlmConfigFromForm();
+          this.llmConfigSaveCallback?.(llmConfig);
+          this.llmFormDirty = false;
+        }
       });
     }
 
@@ -329,6 +365,8 @@ export class SettingsPanelManager {
    */
   resetFormDirty(): void {
     this.settingsFormDirty = false;
+    // UX-P2-11 同步重置 LLM 表单 dirty 标志
+    this.llmFormDirty = false;
   }
 
   /** 加载 LLM 配置到表单 */

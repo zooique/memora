@@ -34,7 +34,8 @@
   background: var(--window-bg);
   border: none;
   border-radius: var(--radius-lg);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+  /* UX-P2-30 使用主题感知阴影变量，深色主题下阴影颜色自动适配（原硬编码 rgba(0, 0, 0, 0.15)） */
+  box-shadow: var(--shadow-window);
   width: 480px;
   max-width: 90%;
   max-height: 80vh;

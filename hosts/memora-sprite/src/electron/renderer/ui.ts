@@ -103,6 +103,8 @@ export class UIManager {
     currentPanel: 'chat',
     unreadCount: 0,
     isStreaming: false,
+    // UX-P2-03 初始为 false，onAgentReady 回调中置 true
+    isAgentReady: false,
   };
 
   private streamingMessages = new Map<string, HTMLElement>();
@@ -446,19 +448,32 @@ export class UIManager {
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 保留 cursor 和 memory-recall 元素，移除其他内容
+    // 保留 cursor、memory-recall-container 和 tool-call 元素，移除其他内容
     const cursor = bubble.querySelector('.cursor');
-    const recall = bubble.querySelector('.memory-recall');
+    // UX-P1-03 修复：使用 .memory-recall-container 查询整个容器（包含多条召回记忆），
+    // 而非 .memory-recall（仅匹配第一个 item），避免多条召回记忆在流式更新时丢失
+    const recall = bubble.querySelector('.memory-recall-container');
+    // UX-P1-02 保留所有工具调用卡片，避免流式更新时丢失工具调用记录
+    const toolCalls = bubble.querySelectorAll('.tool-call');
     const preserved: Element[] = [];
     if (recall) preserved.push(recall);
+    for (const tc of Array.from(toolCalls)) {
+      preserved.push(tc);
+    }
 
-    // 安全清空 bubble（保留 cursor 和 recall）
+    // UX-P2-01 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
+    const thinkingIndicator = bubble.querySelector('.thinking-phase');
+    if (thinkingIndicator) {
+      thinkingIndicator.remove();
+    }
+
+    // 安全清空 bubble（保留 cursor 和 recall 和 tool-call）
     this.clearElement(bubble);
 
     // 重新渲染 Markdown 内容
     bubble.appendChild(renderMarkdown(text));
 
-    // 重新追加保留的元素（recall 在前，cursor 在最后）
+    // 重新追加保留的元素（recall 和 tool-call 在前，cursor 在最后）
     for (const node of preserved) {
       bubble.appendChild(node);
     }
@@ -590,6 +605,149 @@ export class UIManager {
     return recallContainer;
   }
 
+  // ─── UX-P2-01 思考阶段指示器 ──────────────────────────────
+
+  /** 思考阶段中文映射 */
+  private static readonly THINKING_PHASE_LABELS: Record<string, string> = {
+    recalling: '正在回忆...',
+    processing: '正在处理...',
+    archiving: '正在归档...',
+  };
+
+  /**
+   * UX-P2-01 显示思考阶段指示器
+   *
+   * 在消息气泡内显示"正在回忆.../处理.../归档..."提示，
+   * 让用户在等待首个 text chunk 时知道精灵正在工作。
+   * 当 text chunk 到达时，指示器会被 updateStreamingMessage 移除。
+   *
+   * @param messageId 流式消息 ID
+   * @param phase 思考阶段（recalling/processing/archiving）
+   */
+  showThinkingPhase(messageId: string, phase: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 查找或创建思考阶段指示器
+    let indicator = bubble.querySelector('.thinking-phase') as HTMLDivElement | null;
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.className = 'thinking-phase';
+      bubble.appendChild(indicator);
+    }
+
+    // 更新阶段文案
+    const label = UIManager.THINKING_PHASE_LABELS[phase] ?? phase;
+    indicator.textContent = `⚙️ ${label}`;
+  }
+
+  // ─── UX-P1-02 工具调用卡片 ────────────────────────────────
+
+  /**
+   * UX-P1-02 显示工具调用开始卡片
+   *
+   * 在消息气泡内渲染工具调用卡片，显示工具名和参数，
+   * 让用户感知精灵正在执行工具（如文件读取、记忆搜索等）。
+   *
+   * @param messageId 流式消息 ID
+   * @param name 工具名称
+   * @param args 工具参数（可选，JSON 字符串）
+   */
+  showToolStart(messageId: string, name: string, args?: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 创建工具调用卡片
+    const toolCard = document.createElement('div');
+    toolCard.className = 'tool-call tool-call-running';
+    toolCard.setAttribute('data-tool-name', name);
+
+    // 工具图标 + 名称
+    const header = document.createElement('div');
+    header.className = 'tool-call-header';
+    const icon = document.createElement('span');
+    icon.textContent = '🔧';
+    header.appendChild(icon);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tool-call-name';
+    nameSpan.textContent = name;
+    header.appendChild(nameSpan);
+    const status = document.createElement('span');
+    status.className = 'tool-call-status';
+    status.textContent = '执行中...';
+    header.appendChild(status);
+    toolCard.appendChild(header);
+
+    // 工具参数（若提供）
+    if (args) {
+      const argsDiv = document.createElement('div');
+      argsDiv.className = 'tool-call-args';
+      argsDiv.textContent = args;
+      toolCard.appendChild(argsDiv);
+    }
+
+    // 插入到光标元素之前（若存在），否则追加到 bubble 末尾
+    const cursor = bubble.querySelector('.cursor');
+    if (cursor) {
+      bubble.insertBefore(toolCard, cursor);
+    } else {
+      bubble.appendChild(toolCard);
+    }
+  }
+
+  /**
+   * UX-P1-02 更新工具调用结果
+   *
+   * 更新工具调用卡片状态为成功/失败，显示结果摘要。
+   *
+   * @param messageId 流式消息 ID
+   * @param name 工具名称（用于定位对应卡片）
+   * @param ok 是否成功
+   * @param summary 结果摘要（可选）
+   */
+  updateToolResult(messageId: string, name: string, ok: boolean, summary?: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 查找对应工具的卡片（按 data-tool-name 匹配，取最后一个未完成的）
+    const cards = bubble.querySelectorAll(`.tool-call[data-tool-name="${name}"]`);
+    let targetCard: Element | null = null;
+    for (const card of Array.from(cards)) {
+      if (card.classList.contains('tool-call-running')) {
+        targetCard = card;
+        break;
+      }
+    }
+    if (!targetCard) return;
+
+    // 更新卡片状态
+    targetCard.classList.remove('tool-call-running');
+    targetCard.classList.add(ok ? 'tool-call-success' : 'tool-call-failed');
+
+    // 更新状态文本
+    const status = targetCard.querySelector('.tool-call-status');
+    if (status) {
+      status.textContent = ok ? '✓ 成功' : '✗ 失败';
+    }
+
+    // 追加结果摘要
+    if (summary) {
+      const resultDiv = document.createElement('div');
+      resultDiv.className = 'tool-call-result';
+      resultDiv.textContent = summary;
+      targetCard.appendChild(resultDiv);
+    }
+  }
+
   /** 开始流式输出 */
   startStreaming(messageId: string): void {
     const el = this.appendMessage({
@@ -640,6 +798,9 @@ export class UIManager {
     this.state.isStreaming = false;
     this.btnSend.disabled = false;
     this.btnStop.classList.add('hidden');
+    // UX-P2-05 修复：清空消息时重置计数器，避免跨会话累加导致显示错误
+    this.messageCount = 0;
+    this.refreshMessageCountDisplay();
     // 清空后重新显示空状态引导
     this.showEmptyState();
     // 清空后重置滚动状态，确保新消息能自动滚动
@@ -818,6 +979,16 @@ export class UIManager {
    */
   private updateMessageCount(): void {
     this.messageCount++;
+    this.refreshMessageCountDisplay();
+  }
+
+  /**
+   * 刷新消息计数显示（不累加计数，仅更新 DOM）
+   *
+   * UX-P2-05 修复：clearMessages 重置计数后调用此方法更新显示，
+   * 避免跨会话累加导致"今日已交流 N 条消息"数字错误。
+   */
+  private refreshMessageCountDisplay(): void {
     const countEl = document.getElementById('chat-message-count');
     if (countEl) {
       countEl.textContent = `今日已交流 ${this.messageCount} 条消息`;
@@ -989,6 +1160,16 @@ export class UIManager {
   }
 
   private emitSendMessage(): void {
+    // UX-P2-02 流式输出中禁止发送（Enter 键和 Send 按钮共用此检查）
+    if (this.state.isStreaming) {
+      this.showToast('精灵正在回复中，请等待完成或点击停止', 'warning');
+      return;
+    }
+    // UX-P2-03 Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败）
+    if (!this.state.isAgentReady) {
+      this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
+      return;
+    }
     this.sendMessageCallback?.();
   }
 
@@ -1006,6 +1187,16 @@ export class UIManager {
   /** 是否正在流式输出 */
   isStreaming(): boolean {
     return this.state.isStreaming;
+  }
+
+  /**
+   * UX-P2-03 设置 Agent 就绪状态
+   *
+   * 由 renderer.ts 在 onAgentReady 回调中调用，
+   * 设置为 true 后用户才能发送消息。
+   */
+  setAgentReady(ready: boolean): void {
+    this.state.isAgentReady = ready;
   }
 
   /** 获取当前面板 */
@@ -1096,7 +1287,8 @@ export class UIManager {
 
       // 空状态引导：提供"添加第一条记忆"按钮，避免用户不知道下一步
       const hintBtn = document.createElement('button');
-      hintBtn.className = 'empty-action-btn';
+      // UX-P2-27 同时添加 .btn-secondary 类复用通用按钮样式
+      hintBtn.className = 'empty-action-btn btn-secondary';
       hintBtn.textContent = '+ 添加第一条记忆';
       this.addEventListener(hintBtn, 'click', () => {
         this.showModal('memory-add-modal');

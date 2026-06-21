@@ -58,8 +58,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 此处仅需同步单选按钮选中状态，并注册主题变更回调
   uiManager.syncThemeRadios(uiManager.getTheme());
   uiManager.onThemeChange((theme) => {
-    // 主题已由 UIManager.setTheme 持久化到 localStorage，此处仅用于未来扩展
-    // （如通知主进程、同步浮动窗口主题等）
+    // 主题已由 UIManager.setTheme 持久化到 localStorage
+    // UX-P2-10 通知主进程同步到浮动窗口，避免两个窗口主题不一致
+    window.electronAPI.notifyThemeChanged(theme);
     console.debug(`[theme] 主题已切换为: ${theme}`);
   });
 
@@ -78,6 +79,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     // Agent 就绪：加载初始数据 + 切换到对话面板
     onAgentReady: () => {
+      // UX-P2-03 标记 Agent 就绪，解除发送消息限制
+      uiManager.setAgentReady(true);
       void sessionController.loadSessionHistory();
       // FD-A1 Gap 1 修复：Agent 就绪后加载会话列表（第 162 行调用时 Agent 未就绪，静默失败）
       void sessionController.loadSessionList();

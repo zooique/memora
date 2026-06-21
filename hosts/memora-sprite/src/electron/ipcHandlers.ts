@@ -91,9 +91,44 @@ async function safeHandle<T>(
 /**
  * 注册所有 IPC 处理器
  *
+ * 支持重复调用：reinitAgent 路径会在 Agent 重新初始化后再次调用本函数。
+ * 先清理本函数注册的通道，避免重复注册 handle 或重复监听 on 事件。
+ *
  * @param ctx IPC 上下文（Agent + Sprite + SessionStore + WindowManager 等）
  */
 export function registerIpcHandlers(ctx: IpcContext): void {
+  // reinitAgent 路径可能重复调用本函数，先清理本函数自身注册的通道。
+  // ipcMain.handle 重复注册会抛错；ipcMain.on 重复监听会导致同一事件触发多次。
+  const handleChannels = [
+    IPC_CHANNELS.CHAT_ABORT,
+    IPC_CHANNELS.SESSION_LOAD,
+    IPC_CHANNELS.SESSION_NEW,
+    IPC_CHANNELS.SESSION_LIST,
+    IPC_CHANNELS.MEMORIES_LIST,
+    IPC_CHANNELS.MEMORIES_SEARCH,
+    IPC_CHANNELS.MEMORIES_SHOW,
+    IPC_CHANNELS.MEMORIES_DELETE,
+    IPC_CHANNELS.MEMORIES_ADD,
+    IPC_CHANNELS.CONFIG_GET,
+    IPC_CHANNELS.CONFIG_UPDATE,
+    IPC_CHANNELS.PERSONA_LIST,
+    IPC_CHANNELS.PERSONA_SWITCH,
+    IPC_CHANNELS.PERSONA_MODE,
+    IPC_CHANNELS.PERSONA_MODE_GET,
+    IPC_CHANNELS.PROJECTS_LIST,
+    IPC_CHANNELS.DASHBOARD_GET,
+  ] as const;
+  const onChannels = [IPC_CHANNELS.USER_INPUT, IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN, IPC_CHANNELS.THEME_CHANGED] as const;
+
+  for (const channel of handleChannels) {
+    // removeHandler 对未注册通道是 no-op，安全用于幂等注册
+    ipcMain.removeHandler(channel);
+  }
+  for (const channel of onChannels) {
+    // 这些 on 通道仅由本函数注册，移除全部监听器是安全的
+    ipcMain.removeAllListeners(channel);
+  }
+
   // ─── 对话相关 ────────────────────────────────────────────
 
   /**
@@ -122,7 +157,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     try {
       const sessions = ctx.sessionStore.listSessions();
       if (sessions.length === 0) {
-        return { messages: [] };
+        return { messages: [], loadedSessionId: '' };
       }
 
       // 优先使用查询参数，否则选择最近会话
@@ -135,22 +170,46 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       }
 
       if (!target) {
-        return { messages: [] };
+        return { messages: [], loadedSessionId: '' };
       }
 
       const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
       if (!match || !match[1] || !match[2]) {
-        return { messages: [] };
+        return { messages: [], loadedSessionId: '' };
       }
 
       const messages = ctx.sessionStore.loadMessages(match[1], match[2]);
-      // 仅暴露渲染进程需要的字段，保持 preload 契约与 IPC 通道类型一致
+      // UX-P2-06 保留 timestamp 字段，UX-P2-07 返回 loadedSessionId 供渲染进程正确高亮当前会话
       return {
-        messages: messages.map((msg) => ({ role: msg.role, content: msg.content })),
+        messages: messages.map((msg) => ({ role: msg.role, content: msg.content, timestamp: msg.timestamp })),
+        loadedSessionId: target,
       };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '加载会话历史失败' });
-      return { messages: [] };
+      return { messages: [], loadedSessionId: '' };
+    }
+  });
+
+  /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
+  ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, query: { date: string; session: string }) => {
+    try {
+      if (!ctx.agent) {
+        return { success: false, messages: [], error: 'Agent 未初始化' };
+      }
+
+      // 1. 切换 Agent 内部会话标识（更新 currentSession，后续 chat() 写入新会话）
+      ctx.agent.switchSession(query.session);
+      // 2. 恢复目标会话的历史消息到 AgentLoop 工作记忆（供 LLM 上下文使用）
+      await ctx.agent.restoreSession(query.date, query.session);
+      // 3. 加载会话消息供 UI 渲染（保留 timestamp）
+      const messages = ctx.sessionStore.loadMessages(query.date, query.session);
+      return {
+        success: true,
+        messages: messages.map((msg) => ({ role: msg.role, content: msg.content, timestamp: msg.timestamp })),
+      };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '切换会话失败' });
+      return { success: false, messages: [], error: toError(error).message };
     }
   });
 
@@ -339,6 +398,17 @@ export function registerIpcHandlers(ctx: IpcContext): void {
       return { sessions: [] };
     }
   });
+
+  /**
+   * UX-P2-10 主题变更通知
+   *
+   * 完整窗口切换主题后通知主进程，主进程广播到浮动窗口，
+   * 确保两个窗口主题一致。
+   */
+  ipcMain.on(IPC_CHANNELS.THEME_CHANGED, (_event, theme: 'light' | 'dark') => {
+    const floatWindow = ctx.windowManager.getFloatWindow();
+    floatWindow?.broadcastTheme(theme);
+  });
 }
 
 // ─── 流式对话处理 ─────────────────────────────────────────
@@ -372,20 +442,45 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
   ctx.setAbortController(abortController);
 
   try {
+    // UX-P1-01 累积完整文本，每次 chunk 发送累积值（而非 delta），避免渲染层只显示最后一个 chunk
+    let accumulatedText = '';
     for await (const chunk of ctx.agent.chat(text, abortController.signal)) {
       // 检查窗口是否仍然可用
       if (fullWindow.isDestroyed()) break;
 
       if (chunk.type === 'text') {
+        // 累积 delta 后发送完整文本，渲染层清空重渲染也不会丢失内容
+        accumulatedText += chunk.content;
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, {
           messageId,
-          text: chunk.content,
+          text: accumulatedText,
         });
       } else if (chunk.type === 'recall') {
         // MS-12 召回透明度：推送召回记忆摘要到渲染层，在消息底部展示
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, {
           messageId,
           memories: chunk.memories,
+        });
+      } else if (chunk.type === 'tool_start') {
+        // UX-P1-02 工具调用开始：推送工具名和参数，UI 渲染工具调用卡片
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, {
+          messageId,
+          name: chunk.name,
+          args: chunk.args,
+        });
+      } else if (chunk.type === 'tool_result') {
+        // UX-P1-02 工具调用结果：推送工具名、成功状态和摘要，UI 更新工具卡片状态
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, {
+          messageId,
+          name: chunk.name,
+          ok: chunk.ok,
+          summary: chunk.summary,
+        });
+      } else if (chunk.type === 'thinking') {
+        // UX-P2-01 思考阶段指示：推送阶段名称，UI 显示"正在回忆.../处理.../归档..."
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, {
+          messageId,
+          phase: chunk.phase,
         });
       } else if (chunk.type === 'done') {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });

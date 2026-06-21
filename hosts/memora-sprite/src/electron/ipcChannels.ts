@@ -22,6 +22,8 @@ export const IPC_CHANNELS = {
   SESSION_NEW: 'session-new',
   /** FD-A1 列出所有会话 */
   SESSION_LIST: 'session-list',
+  /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
+  SESSION_SWITCH: 'session-switch',
 
   // ─── 记忆相关 ─────────────────────────────────────────
   /** 列出记忆 */
@@ -80,6 +82,8 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window-maximize',
   /** 关闭完整窗口（实际切换到浮动态） */
   WINDOW_CLOSE: 'window-close',
+  /** UX-P2-10 通知主进程主题已变更（需同步到浮动窗口） */
+  THEME_CHANGED: 'theme-changed',
 
   // ─── 浮动窗口 ─────────────────────────────────────────
   /** 拖动时持续请求移动浮动窗口位置 */
@@ -109,6 +113,12 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    * 供渲染层在消息底部展示"💡 召回记忆：xxx（score: 0.xx）"
    */
   SPRITE_STREAM_RECALL: 'sprite-stream-recall',
+  /** UX-P1-02 工具调用开始（携带工具名和参数） */
+  SPRITE_STREAM_TOOL_START: 'sprite-stream-tool-start',
+  /** UX-P1-02 工具调用结果（携带工具名、成功状态和摘要） */
+  SPRITE_STREAM_TOOL_RESULT: 'sprite-stream-tool-result',
+  /** UX-P2-01 思考阶段指示（recalling/processing/archiving） */
+  SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
 
   // ─── 精灵输出 / 错误 ──────────────────────────────────
   /** 精灵主动提示或系统消息 */
@@ -135,6 +145,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   // ─── 窗口状态 ─────────────────────────────────────────
   /** 窗口最大化/还原状态变更 */
   WINDOW_STATE_CHANGED: 'window-state-changed',
+  /** UX-P2-10 主题变更通知（主进程广播到浮动窗口） */
+  THEME_BROADCAST: 'theme-broadcast',
 } as const;
 
 // ─── IPC 数据传输类型 ────────────────────────────────────

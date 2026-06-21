@@ -159,6 +159,7 @@
 }
 
 /* ─── 记忆面板筛选下拉（v8） ───────────────────────────────── */
+/* UX-P2-38 复用 settings.css 的通用 select 样式，此处仅声明布局差异 */
 #memory-filter-source {
   padding: 8px 12px;
   background: var(--window-bg-2);
@@ -205,31 +206,11 @@
   overflow-wrap: break-word;
   max-width: 100%;
   color: var(--text);
-  /* 对齐 docs/memora-sprite-preview.html .detail-content：记忆详情使用霞鹜文楷 */
-  font-family: var(--font-sprite);
+  /* UX-P2-18 记忆详情可能包含技术内容（JSON/代码片段），改用系统字体提升可读性（原 var(--font-sprite) 霞鹜文楷不适合技术内容） */
+  font-family: ui-monospace, "SF Mono", Consolas, "Cascadia Code", monospace;
   /* 长内容时内容区可滚动，避免撑破弹窗 */
   max-height: 50vh;
   overflow-y: auto;
 }
 
-/* UI-UX-04 模态框 body 滚动条样式（与记忆详情内容保持一致） */
-.modal-body::-webkit-scrollbar,
-#memory-detail-content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.modal-body::-webkit-scrollbar-track,
-#memory-detail-content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.modal-body::-webkit-scrollbar-thumb,
-#memory-detail-content::-webkit-scrollbar-thumb {
-  background: var(--surface2);
-  border-radius: 3px;
-}
-
-.modal-body::-webkit-scrollbar-thumb:hover,
-#memory-detail-content::-webkit-scrollbar-thumb:hover {
-  background: var(--overlay0);
-}
+/* UX-P2-26 移除重复的滚动条样式（base.css 已全局定义 ::-webkit-scrollbar，此处无需重复） */

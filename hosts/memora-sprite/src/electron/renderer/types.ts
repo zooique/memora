@@ -36,11 +36,13 @@ export interface Message {
   memoryRecall?: Array<{ name: string; score: number; source: string }>;
 }
 
-/** UI 状态快照（供外部查询当前面板、未读数、流式状态） */
+/** UI 状态快照（供外部查询当前面板、未读数、流式状态、Agent 就绪状态） */
 export interface UIState {
   currentPanel: string;
   unreadCount: number;
   isStreaming: boolean;
+  /** UX-P2-03 Agent 是否就绪（LLM 配置保存成功后置 true，未就绪时禁止发送消息） */
+  isAgentReady: boolean;
 }
 
 /** 角色列表项（与 sprite.listPersonas 返回值对齐） */

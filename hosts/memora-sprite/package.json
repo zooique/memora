@@ -21,7 +21,8 @@
     "format:check": "prettier --check \"**/*.{ts,md,json}\"",
     "typecheck": "tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
-    "rebuild": "electron-rebuild -f -w better-sqlite3"
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "engines": {
     "node": ">=24.0.0"

@@ -34,14 +34,16 @@
 }
 
 .chat-toolbar-title {
-  font-size: 15px;
+  /* UX-P2-33 缩小标题字号，与副标题差距更协调（原 15px vs 11px 差距过大） */
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
   flex-shrink: 0;
 }
 
 .chat-toolbar-subtitle {
-  font-size: 11px;
+  /* UX-P2-33 副标题字号略增，与标题差距缩小（原 11px → 12px） */
+  font-size: 12px;
   color: var(--text-3);
   white-space: nowrap;
   overflow: hidden;
@@ -102,24 +104,24 @@
 }
 
 .session-current-arrow {
+  /* UX-P2-22 统一下拉箭头字符为 ▾（原 ▼ 较粗，与 demo 不一致） */
   font-size: 9px;
   color: var(--muted);
   flex-shrink: 0;
 }
 
+/* UX-P2-35 .session-dropdown 复用 .dropdown 通用类（layout.css），此处仅声明差异 */
 .session-dropdown {
-  position: absolute;
+  /* 覆盖 .dropdown 的 top/left/right/margin-top，改为右对齐 + calc 定位 */
   top: calc(100% + 4px);
+  left: auto;
   right: 0;
+  margin-top: 0;
+  /* 覆盖 .dropdown 的 z-index（会话下拉层级低于角色下拉，避免遮挡） */
+  z-index: 50;
+  /* 会话下拉特有：限制宽度范围 */
   min-width: 180px;
   max-width: 260px;
-  background: var(--window-bg);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-float);
-  z-index: 50;
-  max-height: 240px;
-  overflow-y: auto;
 }
 
 .session-dropdown.hidden {
@@ -186,7 +188,8 @@
   z-index: 10;
   flex-shrink: 0;
   overflow: hidden;
-  max-height: 60px;
+  /* UX-P2-34 增大 max-height，避免较长提示文案被裁剪（原 60px → 80px） */
+  max-height: 80px;
   font-size: 13px;
   color: var(--text);
   transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
@@ -274,7 +277,8 @@
 #messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px 140px; /* 底部 140px 留白给悬浮输入卡 */
+  /* UX-P2-20 提取底部留白为 CSS 变量，便于统一调整（原硬编码 140px） */
+  padding: 20px 24px var(--input-area-height, 140px);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -340,9 +344,12 @@
 
 /* 精灵头像：渐变背景 + 白色 emoji */
 .message.assistant .message-avatar {
-  background: var(--brand-grad);
+  /* UX-P2-31 加深渐变末端颜色并添加文字阴影，提升白色 emoji 在浅粉渐变上的对比度 */
+  background: linear-gradient(135deg, #89b4fa 0%, #c084fc 100%);
   color: #fff;
   border-color: transparent;
+  /* 文字阴影增强 emoji 在浅色背景上的可读性 */
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 /**
@@ -373,22 +380,24 @@
   padding: 10px 14px;
   border-radius: var(--radius-lg);
   line-height: 1.6;
-  font-size: 13px;
+  /* UX-P2-32 统一消息字号为 14px，与 #input 字号一致（原 13px 与输入框 14px 不协调） */
+  font-size: 14px;
   position: relative;
   word-break: break-word;
 }
 
 .message.user .message-bubble {
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);  /* 使用主题感知前景色，保证深色主题下浅蓝背景+深字对比度达标 */
   border-bottom-right-radius: 2px;
+  /* UX-P2-17 用户消息统一使用系统字体（原继承 body 系统字体，保持不变） */
 }
 
 .message.assistant .message-bubble {
   background: var(--window-bg-2);
   color: var(--text);
   border-bottom-left-radius: 2px;
-  /* 精灵消息使用霞鹜文楷，对齐方案 §7.2 + HTML 预览 §6.6 */
+  /* UX-P2-17 精灵消息保留霞鹜文楷字体以体现精灵人格，对齐方案 §7.2 + HTML 预览 §6.6 */
   font-family: var(--font-sprite);
 }
 
@@ -540,7 +549,8 @@
 
 #input-area:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 6px 28px rgba(0, 102, 255, 0.12);
+  /* UX-P2-13 使用主题感知阴影变量，深色主题下阴影颜色自动适配（原硬编码 rgba(0, 102, 255, 0.12)） */
+  box-shadow: var(--shadow-accent-lg);
 }
 
 #input {
@@ -735,4 +745,120 @@
 
 .chat-empty-state .suggestion-btn:active {
   transform: translateY(0);
+}
+
+/* ─── UX-P2-01 思考阶段指示器 ─────────────────────────────── */
+/* 精灵在等待首个 text chunk 时显示"⚙️ 正在回忆/处理/归档..."    */
+/* 让用户知道精灵正在工作，避免误以为卡死                        */
+/* 当 text chunk 到达后，ui.ts 会移除该元素                     */
+
+.thinking-phase {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-2);
+  font-family: system-ui, -apple-system, sans-serif;
+  /* 脉冲动画：透明度循环变化，暗示"正在工作" */
+  animation: thinking-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* ─── UX-P1-02 工具调用卡片 ───────────────────────────────── */
+/* 精灵执行工具（read_file/search_memories 等）时显示调用卡片   */
+/* 让用户感知精灵正在执行具体动作，而非黑盒等待                  */
+/* 三种状态：running（执行中）/ success（成功）/ failed（失败） */
+
+.tool-call {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface2);
+  background: var(--surface0);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  /* 进入动画：淡入 + 轻微上移 */
+  animation: tool-call-in 0.2s ease-out;
+}
+
+@keyframes tool-call-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 执行中状态：左侧蓝色边框 + 浅蓝底色 */
+.tool-call-running {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-20);
+}
+
+/* 成功状态：左侧绿色边框 + 浅绿底色 */
+.tool-call-success {
+  border-left: 3px solid var(--green);
+  background: var(--green-20);
+}
+
+/* 失败状态：左侧红色边框 + 浅红底色 */
+.tool-call-failed {
+  border-left: 3px solid var(--red);
+  background: var(--red-20);
+}
+
+/* 卡片头部：图标 + 工具名 + 状态文本 横向排列 */
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 工具名：等宽字体强调"代码感" */
+.tool-call-name {
+  font-weight: 600;
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+/* 状态文本：右侧靠齐，弱化颜色 */
+.tool-call-status {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+/* 工具参数：等宽字体 + 弱化背景，模拟代码块 */
+.tool-call-args {
+  margin-top: 4px;
+  padding: 4px 6px;
+  background: var(--window-bg);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-2);
+  /* 长参数换行显示，避免溢出气泡 */
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+/* 工具结果摘要：等宽字体 + 上下边距分隔 */
+.tool-call-result {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--surface2);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-size: 10px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 120px;
+  overflow-y: auto;
 }

@@ -14,7 +14,8 @@
 :root {
   /* 大底板色（左侧栏 + 顶部栏融为一体，v8 --shell-bg） */
   --bg:          #f0f0f2;  /* 页面背景 = 大底板 */
-  --surface0:    #f0f0f2;  /* 侧边栏/顶部栏背景，与大底板同色 */
+  /* UX-P2-16 浅色主题 --surface0 略深于 --bg，恢复层级语义（原值与 --bg 相同导致概念失效） */
+  --surface0:    #ececee;  /* 侧边栏/顶部栏背景，略深于大底板 */
   --surface1:    #e8e8ea;  /* 次级表面，hover 态（v8 --shell-bg-2） */
   --surface2:    #dbdbdd;  /* 边框/分隔线（v8 --shell-border） */
 
@@ -35,14 +36,18 @@
 
   /* 强调色 */
   --accent:        #0066ff;  /* 主强调色（v8 --accent） */
-  --accent-soft:   #f0f5ff;  /* 强调色浅底（v8 --accent-soft） */
+  /* UX-P2-39 统一 --accent-soft 为 rgba 策略（原浅色用 hex，深色用 rgba，策略不一致） */
+  --accent-soft:   rgba(0, 102, 255, 0.08);  /* 强调色浅底（v8 --accent-soft） */
   --accent-hover:  #0052cc;  /* 强调色 hover（v8 --accent-hover） */
 
   /* 语义色 */
   --green:       #34c759;
   --yellow:      #ff9f0a;
-  --pink:        #f5c2e7;  /* 保留，用于品牌渐变 */
+  --pink:        #ad1457;  /* 浅色主题下使用深玫红色，保证 source-guardrail 标签文字对比度（WCAG AA） */
   --red:         #ff3b30;
+
+  /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
+  --accent-fg:   #ffffff;  /* 浅色主题：深蓝背景 + 白字，对比度达标 */
 
   /* source 标签专用颜色（浅色主题下使用深色文字以保证对比度） */
   --mauve:       #7b1fa2;  /* 紫色：rule */
@@ -64,7 +69,7 @@
   --shadow:           0 4px 12px rgba(0, 0, 0, 0.06);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.08);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.06);
-  --shadow-md:        0 4px 12px rgba(0, 0, 0, 0.06);
+  /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用，合并到 --shadow） */
   --shadow-banner:    0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
@@ -80,6 +85,7 @@
   --mauve-20:  rgba(123, 31, 162, 0.1);
   --teal-20:   rgba(0, 131, 143, 0.1);
   --peach-20:  rgba(230, 81, 0, 0.1);
+  --red-20:    rgba(255, 59, 48, 0.1);  /* 错误横幅背景色 */
 
   /* 字体 */
   --font-sprite: 'LXGW WenKai', 'LXGW WenKai Screen', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', system-ui, serif;
@@ -120,6 +126,9 @@
   --pink:        #f5c2e7;
   --red:         #f38ba8;
 
+  /* accent 背景上的前景色（深色主题：浅蓝背景 + 深字，对比度达标） */
+  --accent-fg:   #1e1e2e;
+
   /* source 标签专用颜色 */
   --mauve:       #cba6f7;
   --teal:        #94e2d5;
@@ -140,7 +149,7 @@
   --shadow:           0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.5);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-md:        0 4px 12px rgba(0, 0, 0, 0.4);
+  /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
   --shadow-banner:    0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
   --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
@@ -156,6 +165,7 @@
   --mauve-20:  rgba(203, 166, 247, 0.2);
   --teal-20:   rgba(148, 226, 213, 0.2);
   --peach-20:  rgba(250, 179, 135, 0.2);
+  --red-20:    rgba(243, 139, 168, 0.2);  /* 错误横幅背景色 */
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */
@@ -172,8 +182,7 @@ html, body {
   color: var(--text);
   background: var(--bg);
   overflow: hidden;
-  /* UI-AE-04 字体加载策略：swap 避免不可见文本闪烁，CJK 排版优化 */
-  font-display: swap;
+  /* UI-AE-04 字体加载策略：CJK 排版优化（font-display 仅在 @font-face 内有效，此处移除） */
   font-feature-settings: "kern" 1, "liga" 1;
 }
 
@@ -228,21 +237,10 @@ html, body {
   line-height: 1.5;
 }
 
+/* UX-P2-27 .error-retry-btn 复用 .btn-secondary 样式（modal.css），消除重复定义 */
+/* 保留 .error-retry-btn 类名作为语义别名，HTML 中同时添加 .btn-secondary 类即可 */
 .error-state .error-retry-btn {
   margin-top: 8px;
-  padding: 6px 16px;
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  background: var(--window-bg-2);
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.error-state .error-retry-btn:hover {
-  border-color: var(--accent);
-  background: var(--surface1);
 }
 
 /* ─── UI-AE-02 prefers-reduced-motion ──────────────────────────── */

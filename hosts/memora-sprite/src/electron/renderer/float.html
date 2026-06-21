@@ -25,12 +25,13 @@
   </script>
   <style>
     /* ===== 主题变量（从 base.css 提取浮动窗口所需的最小集） ===== */
+    /* UX-P2-12 同步 base.css 的变量值，确保两个窗口主题一致 */
     :root {
       --bg: #f0f0f2;
       --green: #34c759;
       --accent: #0066ff;
-      --accent-20: rgba(0, 102, 255, 0.2);
-      --yellow: #ffb300;
+      --accent-20: rgba(0, 102, 255, 0.1);  /* UX-P2-12 与 base.css 浅色主题保持一致（原 0.2 → 0.1） */
+      --yellow: #ff9f0a;  /* UX-P2-12 与 base.css 浅色主题保持一致（原 #ffb300 → #ff9f0a） */
       --hint-bg: rgba(30, 30, 46, 0.95);
       --hint-text: #cdd6f4;
       --badge-text: #1e1e2e;

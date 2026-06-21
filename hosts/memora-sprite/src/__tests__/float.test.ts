@@ -51,6 +51,9 @@ function createMockFloatAPI(): FloatElectronAPI {
     showFloatContextMenu: vi.fn(),
     onFloatUnread: vi.fn(),
     onSpriteEvent: vi.fn(),
+    // UX-P2-10 新增主题广播监听 mock
+    onThemeBroadcast: vi.fn(),
+    removeThemeBroadcastListener: vi.fn(),
   };
 }
 
