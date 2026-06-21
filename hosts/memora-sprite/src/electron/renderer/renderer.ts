@@ -80,12 +80,39 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   settingsController.setupSettingsPanel();
 
-  // ADR-SP-008 初始化主题：同步设置面板单选按钮状态
-  // 注意：data-theme 属性已由 index.html 内联脚本在 CSS 加载前设置（避免闪屏），
-  // 此处仅需同步单选按钮选中状态，并注册主题变更回调
+  // UX-FD-12 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存
+  // 内联脚本（index.html / float.html）已通过 localStorage 设置了 data-theme 属性（避免页面闪烁），
+  // 此处以 sprite.json 为准进行修正，并处理首次迁移（localStorage → sprite.json）
+  try {
+    const { config } = await window.electronAPI.getConfig();
+    if (config.theme) {
+      // sprite.json 中有主题配置，以它为准（覆盖 localStorage 缓存，确保一致性）
+      const currentTheme = uiManager.getTheme();
+      if (config.theme !== currentTheme) {
+        uiManager.setTheme(config.theme);
+      }
+    } else {
+      // sprite.json 中无主题配置（v1→v2 迁移前或首次使用），从 localStorage 迁移
+      try {
+        const cachedTheme = localStorage.getItem('memora-theme');
+        if (cachedTheme === 'dark' || cachedTheme === 'light') {
+          // 迁移：将 localStorage 中的主题写入 sprite.json
+          await window.electronAPI.updateConfig('theme', cachedTheme);
+        }
+      } catch {
+        // localStorage 不可用时静默降级
+      }
+    }
+  } catch {
+    // IPC 不可用时静默降级，使用 localStorage 缓存的主题（内联脚本已设置）
+  }
+
+  // ADR-SP-008 同步设置面板单选按钮状态
   uiManager.syncThemeRadios(uiManager.getTheme());
+
   uiManager.onThemeChange((theme) => {
-    // 主题已由 UIManager.setTheme 持久化到 localStorage
+    // UX-FD-12 持久化主题到 sprite.json（真理源），替换 localStorage 唯一真理源
+    window.electronAPI.updateConfig('theme', theme);
     // UX-P2-10 通知主进程同步到浮动窗口，避免两个窗口主题不一致
     window.electronAPI.notifyThemeChanged(theme);
     console.debug(`[theme] 主题已切换为: ${theme}`);

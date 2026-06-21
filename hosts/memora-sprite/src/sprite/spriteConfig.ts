@@ -52,6 +52,8 @@ export interface SpriteConfig {
   windowBounds?: { x: number; y: number; width: number; height: number } | null;
   /** FD-10 静默模式恢复时间（ISO 8601），过期后自动关闭静默模式。null 表示无定时恢复 */
   silentModeExpiresAt?: string | null;
+  /** UX-FD-12 界面主题，默认 'light'。持久化到 sprite.json，localStorage 仅作为内联脚本缓存 */
+  theme?: 'light' | 'dark';
 }
 
 /** 配置键名联合类型 */
@@ -79,13 +81,14 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   focusProjectPath: '',
   windowBounds: null,
   silentModeExpiresAt: null,
+  theme: 'light',
 };
 
 /** 配置文件名 */
 const CONFIG_FILENAME = 'sprite.json';
 
 /** 当前最新配置版本号（与 DEFAULT_SPRITE_CONFIG.configVersion 保持一致） */
-const CURRENT_CONFIG_VERSION = 1;
+const CURRENT_CONFIG_VERSION = 2;
 
 /**
  * 配置迁移映射表
@@ -99,11 +102,10 @@ const CURRENT_CONFIG_VERSION = 1;
  *   - 示例见下方注释中的 v1→v2 模板
  */
 const MIGRATIONS: Record<number, (config: Required<SpriteConfig>) => SpriteConfig> = {
-  // 示例：当 CURRENT_CONFIG_VERSION = 2 时，取消注释以下迁移
-  // 1: (config) => {
-  //   // v1→v2：新增 xxx 字段，默认值 xxx
-  //   return config;
-  // },
+  // UX-FD-12 v1→v2：新增 theme 字段，默认 'light'
+  1: (config) => {
+    return { ...config, theme: 'light' };
+  },
 };
 
 /**

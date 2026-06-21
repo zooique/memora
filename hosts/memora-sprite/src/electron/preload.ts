@@ -122,6 +122,8 @@ export interface SpriteConfigForm {
   projectMode: 'smart' | 'focus';
   /** FD-04 专注模式锁定的项目路径 */
   focusProjectPath: string;
+  /** UX-FD-12 界面主题 */
+  theme: 'light' | 'dark';
 }
 
 export interface ElectronAPI {
