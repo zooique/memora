@@ -64,7 +64,13 @@ export class MemoryController {
 
   // ─── 记忆 CRUD ────────────────────────────────────────
 
-  /** 列出记忆（可按 source 过滤） */
+  /**
+   * 列出记忆（可按 source 过滤）
+   *
+   * @param source 可选的来源过滤条件
+   * @param limit 返回数量上限，默认 50
+   * @returns 记忆列表项数组
+   */
   list(source?: string, limit = 50): MemoryListItem[] {
     const storage = this.agent.storage;
     if (!storage) return [];
@@ -81,7 +87,12 @@ export class MemoryController {
     }));
   }
 
-  /** 查看单条记忆详情 */
+  /**
+   * 查看单条记忆详情
+   *
+   * @param id 记忆唯一标识（${source}:${name} 格式）
+   * @returns 记忆详情，不存在时返回 null
+   */
   show(id: string): MemoryDetail | null {
     const storage = this.agent.storage;
     if (!storage) return null;
@@ -103,7 +114,14 @@ export class MemoryController {
     return Math.round(score * 100) / 100;
   }
 
-  /** 删除记忆 */
+  /**
+   * 删除记忆
+   *
+   * 同步删除向量索引中对应的向量条目。
+   *
+   * @param id 记忆唯一标识
+   * @returns 是否成功删除
+   */
   delete(id: string): boolean {
     const storage = this.agent.storage;
     if (!storage) return false;
@@ -115,7 +133,17 @@ export class MemoryController {
     return true;
   }
 
-  /** 添加或更新记忆 */
+  /**
+   * 添加或更新记忆
+   *
+   * 同时异步更新向量索引，失败时降级为纯关键词召回。
+   *
+   * @param source 记忆来源
+   * @param name 记忆名称
+   * @param content 记忆内容
+   * @param score 初始权重，默认 0.5
+   * @returns 记忆唯一标识（${source}:${name} 格式）
+   */
   upsert(source: string, name: string, content: string, score = 0.5): string {
     const storage = this.agent.storage;
     if (!storage) throw new Error('存储不可用');
@@ -141,7 +169,15 @@ export class MemoryController {
 
   // ─── 记忆搜索 ──────────────────────────────────────────
 
-  /** 混合搜索记忆（语义 + 关键词双通道） */
+  /**
+   * 混合搜索记忆（语义 + 关键词双通道）
+   *
+   * 优先使用向量搜索，失败时降级为纯关键词搜索。
+   *
+   * @param query 搜索关键词
+   * @param limit 返回数量上限，默认 10
+   * @returns 搜索结果列表
+   */
   async search(query: string, limit = 10): Promise<MemorySearchResult[]> {
     const inspector = this.agent.memory;
     if (!inspector) return [];
@@ -156,7 +192,11 @@ export class MemoryController {
 
   // ─── 仪表盘 ────────────────────────────────────────────
 
-  /** 获取记忆仪表盘数据 */
+  /**
+   * 获取记忆仪表盘数据
+   *
+   * @returns 仪表盘数据（总数、按来源分组、推荐列表）
+   */
   dashboard(): DashboardData {
     // 空值守卫：memory 模块未初始化时返回空仪表盘（降级而非崩溃）
     const memory = this.agent.memory;
@@ -172,7 +212,14 @@ export class MemoryController {
     };
   }
 
-  /** 格式化仪表盘为可读文本 */
+  /**
+   * 格式化仪表盘为可读文本
+   *
+   * @param pendingNotices 累积事件数
+   * @param proactiveThreshold 主动提示阈值
+   * @param registeredTriggers 已注册触发器列表
+   * @returns 格式化后的仪表盘文本
+   */
   formatDashboard(pendingNotices: number, proactiveThreshold: number, registeredTriggers: string[]): string {
     const data = this.dashboard();
     const lines: string[] = [];

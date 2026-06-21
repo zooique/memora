@@ -53,7 +53,11 @@ export class ProactiveEngine {
     this.emitSprite = emit;
   }
 
-  /** 更新配置 */
+  /**
+   * 更新配置
+   *
+   * @param config 部分配置更新（threshold / cooldownMs / silentMode）
+   */
   updateConfig(config: Partial<ProactiveConfig>): void {
     this.config = { ...this.config, ...config };
   }
@@ -63,7 +67,14 @@ export class ProactiveEngine {
     return this.pendingNotices.length;
   }
 
-  /** 累积待提示事件 */
+  /**
+   * 累积待提示事件
+   *
+   * 当事件数量达到阈值时自动触发 tryEmit。
+   *
+   * @param type 事件类型（memory/insight/persona/file）
+   * @param summary 事件摘要
+   */
   addNotice(type: string, summary: string): void {
     this.pendingNotices.push({ type, summary, timestamp: Date.now() });
     if (this.pendingNotices.length >= this.config.threshold) {

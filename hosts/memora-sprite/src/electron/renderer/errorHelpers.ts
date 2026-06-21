@@ -2,11 +2,13 @@
  * 渲染进程错误处理辅助模块
  *
  * 职责：
- * - 提供统一的未知错误转 Error 工具函数
- * - 提供统一的 IPC 错误处理工厂函数（记录日志 + 可选 toast 反馈）
+ * - 提供统一的未知错误转 Error 工具函数（toError）
+ * - 提供统一的错误日志记录函数（reportError），替代分散的 console.error
+ * - 提供统一的 IPC 错误处理工厂函数（createIpcErrorHandler，记录日志 + 可选 toast 反馈）
  *
  * 设计原则：
  * - toError 为纯函数，无副作用，可独立测试
+ * - reportError 统一日志格式为 `[context]` 前缀，便于检索和过滤
  * - createIpcErrorHandler 通过闭包绑定 uiManager，避免每个调用点重复传参
  * - 行为与内核 utils/toError 对齐，但渲染进程独立实现（不引入内核依赖）
  */
@@ -32,10 +34,29 @@ export function toError(err: unknown): Error {
 }
 
 /**
+ * 统一错误日志记录
+ *
+ * 替代渲染进程中分散的 console.error 调用，统一日志格式为 `[context]` 前缀。
+ * 便于在控制台检索和过滤特定模块的错误日志。
+ *
+ * QC-06 收束：约 18 处 console.error 调用统一收束到此函数，
+ * 后续新增错误日志只需调用 reportError。
+ *
+ * @param context 错误上下文标识（如 'loadPersonaList'），自动添加方括号
+ * @param error 错误对象或描述信息
+ */
+export function reportError(context: string, error: unknown): void {
+  console.error(`[${context}]`, error);
+}
+
+/**
  * 创建 IPC 错误处理函数
  *
- * 提取自 8+ 处 catch 块的重复模式（console.error + toError + showToast）。
+ * 提取自 8+ 处 catch 块的重复模式（reportError + toError + showToast）。
  * 统一错误处理风格，避免每个回调都写 2-3 行错误处理代码。
+ *
+ * QC-06 收束：内部使用 reportError 替代原始 console.error，
+ * 确保 IPC 错误日志格式与其他日志一致。
  *
  * @param uiManager UI 管理器实例（用于显示 toast）
  * @returns 绑定了 uiManager 的错误处理函数
@@ -51,7 +72,7 @@ export function createIpcErrorHandler(
    * @param toastPrefix 可选的 toast 提示前缀（如 '删除记忆失败'）；不提供则仅记录日志
    */
   return (context: string, error: unknown, toastPrefix?: string): void => {
-    console.error(`[${context}]`, error);
+    reportError(context, error);
     if (toastPrefix) {
       uiManager.showToast(`${toastPrefix}：${toError(error).message}`, 'error');
     }

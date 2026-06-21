@@ -13,6 +13,7 @@
  */
 
 import type { UIManager } from './ui.js';
+import { reportError } from './errorHelpers.js';
 
 /**
  * 创建会话控制器
@@ -45,7 +46,7 @@ export function createSessionController(uiManager: UIManager) {
       }
     } catch (error) {
       // 会话历史加载失败：显示错误横幅，提供重试
-      console.error('[loadSessionHistory] 加载会话历史失败:', error);
+      reportError('loadSessionHistory', error);
       uiManager.showPanelError('chat', '加载会话历史失败，请检查连接后重试', () => loadSessionHistory());
     }
   }
@@ -64,7 +65,7 @@ export function createSessionController(uiManager: UIManager) {
       }
       uiManager.updateSessionList(sessions, currentSessionId);
     } catch (error) {
-      console.error('[loadSessionList] 加载会话列表失败:', error);
+      reportError('loadSessionList', error);
     }
   }
 
@@ -94,7 +95,7 @@ export function createSessionController(uiManager: UIManager) {
       const { sessions } = await window.electronAPI.listSessions();
       uiManager.updateSessionList(sessions, currentSessionId);
     } catch (error) {
-      console.error('[switchSession] 切换会话失败:', error);
+      reportError('switchSession', error);
     }
   }
 

@@ -48,6 +48,9 @@ export class PersonaController {
    * IX-03 统一错误策略后，switchPersona 找不到角色时抛 MemoraError。
    * 此处捕获异常返回 null，保持宿主门面的"失败返回 null"契约，
    * 让 IPC 层通过 switched=false 告知 UI。
+   *
+   * @param name 角色名称
+   * @returns 切换后的角色名称，失败返回 null
    */
   switch(name: string): string | null {
     const pm = this.agent.persona;
@@ -59,7 +62,12 @@ export class PersonaController {
     }
   }
 
-  /** 设置角色匹配模式 */
+  /**
+   * 设置角色匹配模式
+   *
+   * @param mode 匹配模式（'auto' 自动匹配 / 'manual' 手动固定）
+   * @returns 是否设置成功
+   */
   setMode(mode: 'auto' | 'manual'): boolean {
     const pm = this.agent.persona;
     if (!pm) return false;
@@ -72,7 +80,11 @@ export class PersonaController {
     return this.agent.persona?.currentMode ?? 'auto';
   }
 
-  /** 格式化角色列表为可读文本 */
+  /**
+   * 格式化角色列表为可读文本
+   *
+   * @returns 格式化后的角色列表文本（含当前角色标记）
+   */
   format(): string {
     const personas = this.list();
     if (personas.length === 0) {

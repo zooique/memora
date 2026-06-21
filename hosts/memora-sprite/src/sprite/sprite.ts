@@ -216,11 +216,17 @@ export class Sprite {
     return this.state;
   }
 
-  /** 手动唤醒精灵 */
-  async wakeup(input: string): Promise<string> {
+  /**
+   * 手动唤醒精灵
+   *
+   * @param input 可选的用户输入，无输入时生成主动提示
+   * @returns 精灵响应结果（静默模式返回 null）
+   */
+  async wakeup(input?: string): Promise<string> {
     this.state = 'active';
     try {
-      return await this.agent.chatSync(input);
+      // input 为 undefined 时，生成主动提示（无输入对话）
+      return await this.agent.chatSync(input ?? '');
     } finally {
       this.state = 'idle';
     }
@@ -238,12 +244,22 @@ export class Sprite {
     return this.personaController.list();
   }
 
-  /** 切换角色 */
+  /**
+   * 切换角色
+   *
+   * @param name 角色名称
+   * @returns 切换后的角色名称，失败返回 null
+   */
   switchPersona(name: string): string | null {
     return this.personaController.switch(name);
   }
 
-  /** 设置角色匹配模式 */
+  /**
+   * 设置角色匹配模式
+   *
+   * @param mode 匹配模式（'auto' 自动匹配 / 'manual' 手动固定）
+   * @returns 是否设置成功
+   */
   setPersonaMode(mode: 'auto' | 'manual'): boolean {
     return this.personaController.setMode(mode);
   }
@@ -271,7 +287,13 @@ export class Sprite {
 
   // ─── 记忆管理（委托 MemoryController） ──────────────────
 
-  /** 列出记忆（可按 source 过滤） */
+  /**
+   * 列出记忆（可按 source 过滤）
+   *
+   * @param source 可选的来源过滤条件
+   * @param limit 返回数量上限，默认 50
+   * @returns 记忆列表项数组
+   */
   listMemories(
     source?: string,
     limit = 50,
@@ -279,7 +301,12 @@ export class Sprite {
     return this.memoryController.list(source, limit);
   }
 
-  /** 查看单条记忆详情 */
+  /**
+   * 查看单条记忆详情
+   *
+   * @param id 记忆唯一标识（${source}:${name} 格式）
+   * @returns 记忆详情，不存在时返回 null
+   */
   showMemory(
     id: string,
   ): {
@@ -294,17 +321,38 @@ export class Sprite {
     return this.memoryController.show(id);
   }
 
-  /** 删除记忆 */
+  /**
+   * 删除记忆
+   *
+   * @param id 记忆唯一标识
+   * @returns 是否成功删除
+   */
   deleteMemory(id: string): boolean {
     return this.memoryController.delete(id);
   }
 
-  /** 添加或更新记忆 */
+  /**
+   * 添加或更新记忆
+   *
+   * @param source 记忆来源
+   * @param name 记忆名称
+   * @param content 记忆内容
+   * @param score 初始权重，默认 0.5
+   * @returns 记忆唯一标识
+   */
   upsertMemory(source: string, name: string, content: string, score = 0.5): string {
     return this.memoryController.upsert(source, name, content, score);
   }
 
-  /** 混合搜索记忆 */
+  /**
+   * 混合搜索记忆（语义 + 关键词双通道）
+   *
+   * 优先使用向量搜索，失败时降级为纯关键词搜索。
+   *
+   * @param query 搜索关键词
+   * @param limit 返回数量上限，默认 10
+   * @returns 搜索结果列表
+   */
   async searchMemories(
     query: string,
     limit = 10,
@@ -509,7 +557,11 @@ export class Sprite {
     }
   }
 
-  /** 格式化配置为可读文本 */
+  /**
+   * 格式化配置为可读文本
+   *
+   * @returns 格式化后的配置文本
+   */
   formatConfig(): string {
     const lines: string[] = ['── 精灵配置 ──'];
     lines.push(`  触发器间隔：${this.config.triggerIntervalMs / MS_PER_MINUTE} 分钟`);
@@ -534,7 +586,11 @@ export class Sprite {
 
   // ─── 记忆仪表盘（委托 MemoryController） ──────────────
 
-  /** 获取记忆仪表盘数据 */
+  /**
+   * 获取记忆仪表盘数据
+   *
+   * @returns 仪表盘数据（总数、按来源分组、推荐列表）
+   */
   dashboard(): DashboardData {
     return this.memoryController.dashboard();
   }
@@ -554,7 +610,11 @@ export class Sprite {
     return this.triggerBus.registeredTriggers;
   }
 
-  /** 格式化仪表盘为可读文本 */
+  /**
+   * 格式化仪表盘为可读文本
+   *
+   * @returns 格式化后的仪表盘文本
+   */
   formatDashboard(): string {
     return this.memoryController.formatDashboard(
       this.proactiveEngine.pendingCount,

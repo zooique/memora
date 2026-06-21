@@ -36,6 +36,13 @@ export class SqliteSessionStore implements ISessionStore {
     this.db.exec(CREATE_INDEX_SQL);
   }
 
+  /**
+   * 追加单条消息到会话（ISessionStore 接口实现）
+   *
+   * @param date 会话日期标识
+   * @param session 会话名称
+   * @param message 消息对象（role / content / timestamp）
+   */
   appendMessage(date: string, session: string, message: SessionMessage): void {
     this.db.prepare(`
       INSERT INTO sessions (date, session, role, content, timestamp)
@@ -43,6 +50,13 @@ export class SqliteSessionStore implements ISessionStore {
     `).run(date, session, message.role, message.content, message.timestamp);
   }
 
+  /**
+   * 加载会话消息（ISessionStore 接口实现）
+   *
+   * @param date 会话日期标识
+   * @param session 会话名称
+   * @returns 按时间升序排列的消息数组
+   */
   loadMessages(date: string, session: string): SessionMessage[] {
     const rows = this.db.prepare(
       'SELECT role, content, timestamp FROM sessions WHERE date = ? AND session = ? ORDER BY id ASC'
@@ -54,6 +68,11 @@ export class SqliteSessionStore implements ISessionStore {
     }));
   }
 
+  /**
+   * 列出所有会话（ISessionStore 接口实现）
+   *
+   * @returns 会话 ID 列表（格式：date-session）
+   */
   listSessions(): string[] {
     const rows = this.db.prepare(
       "SELECT DISTINCT date || '-' || session AS sessionId FROM sessions ORDER BY sessionId"
@@ -61,6 +80,17 @@ export class SqliteSessionStore implements ISessionStore {
     return rows.map(r => r.sessionId);
   }
 
+  /**
+   * 复制会话（ISessionStore 接口实现）
+   *
+   * 使用 SQLite 事务保证原子性：先清除目标会话，再逐条复制源会话消息。
+   * 幂等操作：目标会话已存在时覆盖而非追加。
+   *
+   * @param sourceDate 源会话日期
+   * @param sourceSession 源会话名称
+   * @param targetDate 目标会话日期
+   * @param targetSession 目标会话名称
+   */
   copySession(
     sourceDate: string,
     sourceSession: string,

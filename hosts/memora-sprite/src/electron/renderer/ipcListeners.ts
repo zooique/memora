@@ -18,6 +18,7 @@
 
 import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipcChannels.js';
+import { reportError } from './errorHelpers.js';
 
 /**
  * 主动提示 payload 结构
@@ -73,7 +74,7 @@ function handleProactivePrompt(
   msg: { type: string; payload: unknown; silent: boolean },
 ): void {
   if (!isProactivePromptPayload(msg.payload)) {
-    console.error('[handleProactivePrompt] 收到格式错误的主动提示 payload:', msg.payload);
+    reportError('handleProactivePrompt', msg.payload);
     return;
   }
 
@@ -169,7 +170,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   window.electronAPI.onAppError((error: SerializedAppError) => {
     // IX-06 应用级错误走 toast，不污染对话历史
     uiManager.showToast(error.message, 'error');
-    console.error(`[${error.code}] ${error.message}`, error);
+    reportError(error.code, error);
   });
 
   // ─── 精灵错误监听 ─────────────────────────────────────
@@ -180,7 +181,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    */
   window.electronAPI.onSpriteError((msg: { text: string }) => {
     uiManager.showToast(msg.text, 'error');
-    console.error('[sprite-error]', msg.text);
+    reportError('sprite-error', msg.text);
   });
 
   // ─── 浮动窗口未读计数 ─────────────────────────────────

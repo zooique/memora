@@ -193,6 +193,12 @@ async function initializeApp(): Promise<void> {
     windowManager = new WindowManager(windowStateManager, {
       onExpandToFull: resetUnreadCount,
     });
+
+    // 注册最小化 IPC 处理器（必须在 createWindows 之前，确保渲染进程加载时 handler 已就绪）
+    // 渲染进程 DOMContentLoaded 时立即发送 llm-config-get / agent-status 等 IPC 请求，
+    // 若 handler 在阶段 2 才注册（原有逻辑），会产生竞态条件导致 "No handler registered" 错误。
+    registerMinimalIpcHandlers();
+
     await windowManager.createWindows();
 
     // 4. 创建托盘
@@ -257,6 +263,10 @@ async function initializeApp(): Promise<void> {
     // 注入交互层
     activeSprite.setInteraction(interaction);
 
+    // 移除阶段 1 注册的 CONFIG_GET 最小化处理器（替换为完整处理器，使用 sprite.getConfig()）
+    // 保留 AGENT_STATUS / LLM_CONFIG_* 处理器（Agent 就绪后设置面板仍需要这些通道）
+    ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
+
     // 注册完整 IPC 处理器（注入 Agent + Sprite + SessionStore）
     // 通过工厂函数构造，与 reinitAgent 路径共享同一份构造逻辑（DRY）
     const ipcContext = createIpcContext(agent, sprite, sessionStore);
@@ -291,13 +301,11 @@ async function initializeApp(): Promise<void> {
     agentReady = true;
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
+    // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
     errorHandler.handle(error, {
       code: ErrorCode.INITIALIZATION_FAILED,
       context: 'Agent 初始化失败（配置可能不完整）',
     });
-
-    // 注册最小化 IPC 处理器（仅窗口控制 + 配置读写）
-    registerMinimalIpcHandlers();
   }
 }
 
@@ -427,11 +435,8 @@ function registerMinimalIpcHandlers(): void {
         // 3. 注入交互层
         sprite.setInteraction(interaction);
 
-        // 4. 移除最小化 IPC 中的 LLM 配置处理器（避免重复注册）
-        ipcMain.removeHandler(IPC_CHANNELS.LLM_CONFIG_GET);
-        ipcMain.removeHandler(IPC_CHANNELS.LLM_CONFIG_SAVE);
-        ipcMain.removeHandler(IPC_CHANNELS.LLM_CONFIG_TEST);
-        ipcMain.removeHandler(IPC_CHANNELS.AGENT_STATUS);
+        // 4. 移除最小化 IPC 中的 CONFIG_GET 处理器（避免重复注册）
+        // 保留 AGENT_STATUS / LLM_CONFIG_* 处理器（设置面板复用）
         ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
 
         // 5. 注册完整 IPC 处理器

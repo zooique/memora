@@ -17,7 +17,7 @@
 
 import type { UIManager } from './ui.js';
 import type { SpriteConfigForm } from './types.js';
-import { createIpcErrorHandler, toError } from './errorHelpers.js';
+import { createIpcErrorHandler, toError, reportError } from './errorHelpers.js';
 
 /**
  * 创建设置控制器
@@ -175,13 +175,13 @@ export function createSettingsController(uiManager: UIManager) {
         const { projects } = await window.electronAPI.listProjects();
         uiManager.loadProjectsToForm(projects, formConfig.focusProjectPath);
       } catch (error) {
-        console.error('[loadConfig] 加载项目列表失败:', error);
+        reportError('loadConfig-projects', error);
       }
 
       // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
       uiManager.resetSettingsFormDirty();
     } catch (error) {
-      console.error('[loadConfig] 加载精灵配置失败:', error);
+      reportError('loadConfig', error);
       // FD-A2 显示错误状态，用户可点击重试
       uiManager.showSettingsError('加载精灵配置失败，请检查日志或点击重试', () => {
         void loadConfig();
@@ -199,7 +199,7 @@ export function createSettingsController(uiManager: UIManager) {
       // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
       uiManager.resetSettingsFormDirty();
     } catch (error) {
-      console.error('[loadLlmConfig] 加载 LLM 配置失败:', error);
+      reportError('loadLlmConfig', error);
       // FD-A2 显示错误状态，用户可点击重试
       uiManager.showSettingsError('加载 LLM 配置失败，请检查日志或点击重试', () => {
         void loadLlmConfig();

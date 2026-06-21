@@ -12,7 +12,7 @@
  */
 
 import type { UIManager } from './ui.js';
-import { createIpcErrorHandler } from './errorHelpers.js';
+import { createIpcErrorHandler, reportError } from './errorHelpers.js';
 
 /**
  * 创建角色控制器
@@ -83,11 +83,11 @@ export function createPersonaController(uiManager: UIManager) {
         uiManager.updatePersonaModeBadge(mode);
         uiManager.setPersonaMode(mode);
       } catch (modeErr) {
-        console.error('[loadPersonaList] 加载角色模式失败:', modeErr);
+        reportError('loadPersonaList-mode', modeErr);
       }
     } catch (error) {
       // 角色列表加载失败：侧边栏非面板，使用 toast 通知
-      console.error('[loadPersonaList] 加载角色列表失败:', error);
+      reportError('loadPersonaList', error);
       uiManager.showToast('加载角色列表失败，请检查连接后重试', 'error');
     }
   }

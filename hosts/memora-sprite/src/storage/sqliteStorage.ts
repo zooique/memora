@@ -43,6 +43,13 @@ export class SqliteStorage implements IMemoryStorage {
     this.db.exec(CREATE_INDEX_SQL);
   }
 
+  /**
+   * 插入或更新记忆（IMemoryStorage 接口实现）
+   *
+   * 写入前校验 source 合法性，被阻止的 source 抛出异常。
+   *
+   * @param memory 记忆对象（含 id/content/source/name/createdAt/accessedAt/score）
+   */
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
     if (result.severity === 'block') {
@@ -65,15 +72,32 @@ export class SqliteStorage implements IMemoryStorage {
     `).run(memory);
   }
 
+  /**
+   * 删除记忆（IMemoryStorage 接口实现）
+   *
+   * @param id 记忆唯一标识
+   */
   delete(id: string): void {
     this.db.prepare('DELETE FROM memories WHERE id = ?').run(id);
   }
 
+  /**
+   * 按 ID 获取单条记忆（IMemoryStorage 接口实现）
+   *
+   * @param id 记忆唯一标识
+   * @returns 记忆对象，不存在时返回 null
+   */
   getById(id: string): Memory | null {
     const row = this.db.prepare('SELECT * FROM memories WHERE id = ?').get(id) as MemoryRow | undefined;
     return row ? this.rowToMemory(row) : null;
   }
 
+  /**
+   * 按 source 获取记忆列表（IMemoryStorage 接口实现）
+   *
+   * @param source 记忆来源标识
+   * @returns 按权重降序排列的记忆列表
+   */
   getBySource(source: string): Memory[] {
     const rows = this.db.prepare(
       'SELECT * FROM memories WHERE source = ? ORDER BY score DESC'
@@ -81,6 +105,16 @@ export class SqliteStorage implements IMemoryStorage {
     return rows.map(r => this.rowToMemory(r));
   }
 
+  /**
+   * 关键词搜索记忆（IMemoryStorage 接口实现）
+   *
+   * 使用 LIKE 关键词匹配，与 InMemoryStorage 行为一致。
+   * 空查询返回按权重降序的全部记忆。
+   *
+   * @param query 搜索关键词
+   * @param limit 返回数量上限，默认 10
+   * @returns 匹配的记忆列表
+   */
   search(query: string, limit = 10): Memory[] {
     // 空查询：按 score 降序返回
     if (!query.trim()) {
@@ -121,16 +155,37 @@ export class SqliteStorage implements IMemoryStorage {
     return rows.map(r => this.rowToMemory(r));
   }
 
+  /**
+   * 记忆总数（IMemoryStorage 接口实现）
+   *
+   * @returns 数据库中记忆总数
+   */
   count(): number {
     const row = this.db.prepare('SELECT COUNT(*) as cnt FROM memories').get() as { cnt: number };
     return row.cnt;
   }
 
+  /**
+   * 按 source 统计记忆数（IMemoryStorage 接口实现）
+   *
+   * @param source 记忆来源标识
+   * @returns 该 source 下的记忆总数
+   */
   countBySource(source: string): number {
     const row = this.db.prepare('SELECT COUNT(*) as cnt FROM memories WHERE source = ?').get(source) as { cnt: number };
     return row.cnt;
   }
 
+  /**
+   * 记忆衰减（IMemoryStorage 接口实现）
+   *
+   * 衰减公式与 InMemoryStorage 对齐：
+   * daysSinceAccess > 7 时，score -= 0.02 * floor(daysSinceAccess / 7)，下限 0.1。
+   *
+   * @param sources 需要衰减的 source 列表
+   * @param now 当前时间（用于计算 daysSinceAccess）
+   * @returns 受影响的行数
+   */
   decayScores(sources: string[], now: Date): number {
     if (sources.length === 0) return 0;
 
@@ -150,6 +205,9 @@ export class SqliteStorage implements IMemoryStorage {
     return result.changes;
   }
 
+  /**
+   * 关闭数据库连接（IMemoryStorage 接口实现）
+   */
   close(): void {
     this.db.close();
   }

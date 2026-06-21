@@ -14,7 +14,7 @@
 
 import type { UIManager } from './ui.js';
 import type { MemoryListItem } from './types.js';
-import { createIpcErrorHandler } from './errorHelpers.js';
+import { createIpcErrorHandler, reportError } from './errorHelpers.js';
 
 /** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
 const DASHBOARD_PULSE_MS = 300;
@@ -65,7 +65,7 @@ export function createMemoryController(uiManager: UIManager) {
       } catch (error) {
         // 搜索失败时保持原列表，记录日志辅助排查
         if (seq !== searchSeq) return;
-        console.error('[onMemorySearch] 记忆搜索失败:', error);
+        reportError('onMemorySearch', error);
       }
     });
 
@@ -82,7 +82,7 @@ export function createMemoryController(uiManager: UIManager) {
           uiManager.showMemoryDetail(memory);
         }
       } catch (error) {
-        console.error('[onMemoryClick] 查看记忆详情失败:', error);
+        reportError('onMemoryClick', error);
       }
     });
 
@@ -135,7 +135,7 @@ export function createMemoryController(uiManager: UIManager) {
         countEl.textContent = String(memories.length);
       }
     } catch (error) {
-      console.error('[loadMemoryList] 加载记忆列表失败:', error);
+      reportError('loadMemoryList', error);
       uiManager.showPanelError('memory', '加载记忆列表失败，请检查连接后重试', () => loadMemoryList());
     }
   }
@@ -209,7 +209,7 @@ export function createMemoryController(uiManager: UIManager) {
         }
       }
     } catch (error) {
-      console.error('[loadDashboard] 加载仪表盘数据失败:', error);
+      reportError('loadDashboard', error);
     }
   }
 

@@ -19,6 +19,7 @@ import { createMemoryController } from './memoryController.js';
 import { createPersonaController } from './personaController.js';
 import { createSettingsController } from './settingsController.js';
 import { initIpcListeners } from './ipcListeners.js';
+import { reportError } from './errorHelpers.js';
 
 // P2-001 修复：删除重复的 declare global 和未使用的 ElectronAPI 导入。
 // types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
@@ -115,7 +116,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           // IX-06 恢复提示走 toast
           uiManager.showToast('静默模式已到期自动恢复，精灵可正常主动提示', 'info');
         }).catch((err: unknown) => {
-          console.error('[silentRecovery] 自动恢复静默模式失败:', err);
+          reportError('silentRecovery', err);
         });
       }, SILENT_RECOVERY_MS);
     },
@@ -131,7 +132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (error) {
       // 记忆可能已删除，记录日志辅助排查
-      console.error('[memoryRecall] 查看记忆详情失败:', error);
+      reportError('memoryRecall', error);
     }
   });
 
@@ -154,8 +155,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
   } catch (error) {
-    // agent-status 通道不存在（旧版本兼容），记录日志后继续正常加载
-    console.warn('[init] 查询 Agent 状态失败（可能为旧版本兼容）:', error);
+    // agent-status 通道异常（主进程未就绪或网络错误），降级为首次使用引导
+    console.warn('[init] 查询 Agent 状态失败，降级为首次使用引导:', error);
+    uiManager.appendMessage({
+      role: 'system',
+      content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
+    });
+    uiManager.switchPanel('settings');
+    await settingsController.loadConfig();
+    return;
   }
 
   // 加载初始数据
@@ -279,7 +287,7 @@ function setupBusinessLogic(
         uiManager.showToast(`新建会话失败：${result.error ?? '未知错误'}`, 'error');
       }
     } catch (error) {
-      console.error('[onNewSession] 新建会话失败:', error);
+      reportError('onNewSession', error);
       uiManager.showToast(`新建会话失败：${error instanceof Error ? error.message : '未知错误'}`, 'error');
     }
   });
