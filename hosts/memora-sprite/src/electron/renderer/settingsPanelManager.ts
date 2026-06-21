@@ -16,6 +16,7 @@
  */
 
 import { getOptionalElement } from './domHelpers.js';
+import { EventTracker } from './eventTracker.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
 import { MS_PER_MINUTE } from '../../sprite/constants.js';
 import type {
@@ -41,6 +42,8 @@ export interface SettingsPanelHost {
     cancelText?: string;
     danger?: boolean;
   }): Promise<boolean>;
+  /** 显示 toast 通知（P3-FLOW-06 恢复默认按钮反馈） */
+  showToast(message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number): void;
 }
 
 // ─── 设置面板管理器类 ─────────────────────────────────────
@@ -97,7 +100,8 @@ export class SettingsPanelManager {
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
 
   // ─── 事件清理 ────────────────────────────────────────────
-  private eventCleanupFunctions: Array<() => void> = [];
+  /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
+  private events = new EventTracker();
 
   constructor(private host: SettingsPanelHost) {
     // 设置面板 - LLM 配置
@@ -128,18 +132,10 @@ export class SettingsPanelManager {
 
   // ─── 事件监听器管理 ─────────────────────────────────────
 
-  /** 添加事件监听器并记录清理函数 */
-  private addEventListener(element: HTMLElement | Document, event: string, handler: EventListener): void {
-    element.addEventListener(event, handler);
-    this.eventCleanupFunctions.push(() => {
-      element.removeEventListener(event, handler);
-    });
-  }
-
   /** 清理所有事件监听器 */
   cleanup(): void {
-    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
-    this.eventCleanupFunctions = [];
+    // 清理所有事件监听器（通过 EventTracker 统一管理）
+    this.events.cleanup();
   }
 
   // ─── 初始化 ─────────────────────────────────────────────
@@ -156,6 +152,7 @@ export class SettingsPanelManager {
 
     const btnSave = getOptionalElement('btn-settings-save', 'button');
     const btnCancel = getOptionalElement('btn-settings-cancel', 'button');
+    const btnReset = getOptionalElement('btn-settings-reset', 'button');
     const btnLlmTest = document.getElementById('btn-llm-test');
 
     // 设置面板核心元素缺失时静默降级
@@ -168,10 +165,10 @@ export class SettingsPanelManager {
     // FD-07 监听设置面板所有表单元素的变更，标记 dirty
     const settingsPanel = document.getElementById('panel-settings');
     if (settingsPanel) {
-      this.addEventListener(settingsPanel, 'input', () => {
+      this.events.addEventListener(settingsPanel, 'input', () => {
         this.settingsFormDirty = true;
       });
-      this.addEventListener(settingsPanel, 'change', () => {
+      this.events.addEventListener(settingsPanel, 'change', () => {
         this.settingsFormDirty = true;
       });
     }
@@ -192,18 +189,21 @@ export class SettingsPanelManager {
     ];
     for (const field of llmFields) {
       if (field) {
-        this.addEventListener(field, 'input', () => {
+        this.events.addEventListener(field, 'input', () => {
           this.llmFormDirty = true;
+          // P3-FLOW-11 字段变更时清除旧的测试结果，避免误导用户认为旧结果仍有效
+          this.clearLlmTestResult();
         });
-        this.addEventListener(field, 'change', () => {
+        this.events.addEventListener(field, 'change', () => {
           this.llmFormDirty = true;
+          this.clearLlmTestResult();
         });
       }
     }
 
     // 保存按钮：同时收集精灵配置和 LLM 配置
     if (btnSave) {
-      this.addEventListener(btnSave, 'click', () => {
+      this.events.addEventListener(btnSave, 'click', () => {
         this.settingsFormDirty = false;
         const spriteConfig = this.collectConfigFromForm();
         this.configSaveCallback?.(spriteConfig);
@@ -218,7 +218,7 @@ export class SettingsPanelManager {
 
     // FD-07 取消按钮：有未保存修改时确认，避免误点丢失修改
     if (btnCancel) {
-      this.addEventListener(btnCancel, 'click', async () => {
+      this.events.addEventListener(btnCancel, 'click', async () => {
         if (this.settingsFormDirty) {
           const confirmed = await this.host.showConfirmDialog({
             title: '放弃修改',
@@ -235,9 +235,40 @@ export class SettingsPanelManager {
       });
     }
 
+    // P3-FLOW-06 恢复默认按钮：将精灵配置重置为默认值（不影响 LLM 配置）
+    if (btnReset) {
+      this.events.addEventListener(btnReset, 'click', () => {
+        void (async () => {
+          const confirmed = await this.host.showConfirmDialog({
+            title: '恢复默认设置',
+            message: '将精灵配置恢复为默认值（LLM 配置不受影响），确定继续吗？',
+            confirmText: '恢复默认',
+            danger: true,
+          });
+          if (!confirmed) return;
+          // 加载默认配置到表单（不立即保存，用户需点击保存按钮持久化）
+          this.loadConfigToForm({
+            theme: 'light',
+            silentMode: false,
+            proactiveThreshold: 3,
+            proactiveCooldownMs: 300_000,
+            triggerIntervalMs: 3_600_000,
+            fileWatcherEnabled: false,
+            fileWatcherPaths: ['.'],
+            fileWatcherDebounceMs: 1000,
+            defaultPersona: '',
+            projectMode: 'smart',
+            focusProjectPath: '',
+          });
+          this.settingsFormDirty = true;
+          this.host.showToast('已恢复默认设置，点击「保存」生效', 'info');
+        })();
+      });
+    }
+
     // LLM 预设切换：自动填充 provider/model/baseUrl
     if (this.cfgLlmPreset) {
-      this.addEventListener(this.cfgLlmPreset, 'change', () => {
+      this.events.addEventListener(this.cfgLlmPreset, 'change', () => {
         const presetKey = this.cfgLlmPreset!.value;
         if (presetKey) {
           this.applyLlmPreset(presetKey);
@@ -247,7 +278,7 @@ export class SettingsPanelManager {
 
     // LLM 连接测试按钮：调用主进程验证配置
     if (btnLlmTest) {
-      this.addEventListener(btnLlmTest, 'click', () => {
+      this.events.addEventListener(btnLlmTest, 'click', () => {
         this.llmTestCallback?.();
       });
     }
@@ -255,7 +286,7 @@ export class SettingsPanelManager {
     // FD-04 项目模式单选按钮：切换时启用/禁用专注项目下拉框
     const projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
     projectModeRadios.forEach((radio) => {
-      this.addEventListener(radio, 'change', () => {
+      this.events.addEventListener(radio, 'change', () => {
         if (this.cfgFocusProject) {
           this.cfgFocusProject.disabled = radio.value !== 'focus';
         }
@@ -265,7 +296,7 @@ export class SettingsPanelManager {
     // IX-07 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
     const personaModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="persona-mode"]');
     personaModeRadios.forEach((radio) => {
-      this.addEventListener(radio, 'change', () => {
+      this.events.addEventListener(radio, 'change', () => {
         const selectedMode = radio.value;
         this.currentPersonaMode = selectedMode;
         this.host.updatePersonaModeBadge(selectedMode);
@@ -276,7 +307,7 @@ export class SettingsPanelManager {
     // ADR-SP-008 主题切换单选按钮：切换时立即应用主题（无需等待保存按钮）
     const themeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
     themeRadios.forEach((radio) => {
-      this.addEventListener(radio, 'change', () => {
+      this.events.addEventListener(radio, 'change', () => {
         if (radio.checked) {
           this.host.setTheme(radio.value === 'dark' ? 'dark' : 'light');
         }
@@ -297,7 +328,7 @@ export class SettingsPanelManager {
     const tabContents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
 
     tabButtons.forEach((btn) => {
-      this.addEventListener(btn, 'click', () => {
+      this.events.addEventListener(btn, 'click', () => {
         const targetTab = btn.dataset.settingsTab;
         if (!targetTab) return;
 
@@ -331,7 +362,7 @@ export class SettingsPanelManager {
     const input = document.getElementById(inputId);
     if (!(btn instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) return;
 
-    this.addEventListener(btn, 'click', () => {
+    this.events.addEventListener(btn, 'click', () => {
       if (input.type === 'password') {
         input.type = 'text';
         btn.textContent = '🙈';
@@ -502,7 +533,14 @@ export class SettingsPanelManager {
     );
     const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
 
+    // UX-FD-12 收集主题（主题即时生效，onConfigSave 不保存 theme，此处仅满足类型契约）
+    const themeRadio = document.querySelector<HTMLInputElement>(
+      'input[name="theme-mode"]:checked',
+    );
+    const theme = themeRadio?.value === 'dark' ? 'dark' : 'light';
+
     return {
+      theme,
       silentMode: this.cfgSilent?.checked ?? false,
       proactiveThreshold: parseInt(this.cfgThreshold?.value ?? '3', 10) || 3,
       proactiveCooldownMs: (parseInt(this.cfgCooldown?.value ?? '5', 10) || 5) * MS_PER_MINUTE,
@@ -538,6 +576,19 @@ export class SettingsPanelManager {
       const hint = '\n排查建议：检查 API Key 是否正确 / baseUrl 是否可达 / model 名称是否支持';
       resultEl.textContent = `✗ 失败：${result.error ?? '未知错误'}${hint}`;
       resultEl.style.color = 'var(--red)';
+    }
+  }
+
+  /**
+   * P3-FLOW-11 清除 LLM 测试结果显示
+   *
+   * 用户修改任一 LLM 字段时调用，避免旧测试结果误导用户认为当前配置已验证。
+   */
+  clearLlmTestResult(): void {
+    const resultEl = document.getElementById('llm-test-result');
+    if (resultEl) {
+      resultEl.textContent = '';
+      resultEl.style.color = '';
     }
   }
 

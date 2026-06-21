@@ -67,6 +67,7 @@
   /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用，合并到 --shadow） */
   --shadow-banner:    0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
+  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* P1 修复：chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
 
   /* UX-PP-10 统一动画时长变量 */
@@ -76,6 +77,9 @@
 
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.25);
+
+  /* P2-UI-02 输入区域高度：chat.css 引用，定义到 base.css 便于统一维护 */
+  --input-area-height: 140px;
 
   /* 主题色透明度（用于标签背景、badge 等；浅色主题下降低透明度避免过艳） */
   --accent-20: rgba(0, 102, 255, 0.1);
@@ -148,6 +152,7 @@
   /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
   --shadow-banner:    0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
+  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* P1 修复：chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
 
   /* UX-PP-10 统一动画时长变量（深色主题与浅色一致） */
@@ -157,6 +162,9 @@
 
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.6);
+
+  /* P2-UI-02 输入区域高度（深色主题与浅色主题一致） */
+  --input-area-height: 140px;
 
   /* 主题色透明度 */
   --accent-20: rgba(137, 180, 250, 0.2);

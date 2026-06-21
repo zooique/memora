@@ -66,3 +66,18 @@ export function getOptionalElement<T extends keyof HTMLElementTagNameMap>(
   }
   return el as HTMLElementTagNameMap[T];
 }
+
+/**
+ * 安全清空 DOM 容器（while + removeChild 模式）
+ *
+ * 使用 while + removeChild 替代 innerHTML = ''，
+ * 避免事件监听器残留和 XSS 一致性问题。
+ * 供 ui.ts 和 memoryController.ts 等需要清空 DOM 的模块共享。
+ *
+ * @param el 要清空的 DOM 元素
+ */
+export function clearElement(el: Element): void {
+  while (el.firstChild) {
+    el.removeChild(el.firstChild);
+  }
+}

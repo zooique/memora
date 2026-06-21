@@ -16,6 +16,31 @@ import type { UIManager } from './ui.js';
 import { reportError } from './errorHelpers.js';
 
 /**
+ * 将 IPC 消息的角色映射为 UI 消息角色
+ *
+ * 确保 role 值仅限 'user' | 'assistant' | 'system'，
+ * 未知值回退为 'assistant'。消除 3 处重复的映射逻辑。
+ */
+function mapRole(rawRole: string): 'user' | 'assistant' | 'system' {
+  return (rawRole === 'user' || rawRole === 'assistant' || rawRole === 'system')
+    ? rawRole
+    : 'assistant';
+}
+
+/**
+ * 将 IPC 消息数组映射为 UI Message 数组
+ *
+ * 提取自 loadSessionHistory / loadMoreHistory / switchSession 中 3 处相同的映射逻辑（DRY）。
+ */
+function mapMessages(messages: Array<{ role: string; content: string; timestamp?: string }>): Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp?: string }> {
+  return messages.map((msg) => ({
+    role: mapRole(msg.role),
+    content: msg.content,
+    timestamp: msg.timestamp,
+  }));
+}
+
+/**
  * 创建会话控制器
  *
  * @param uiManager UI 管理器实例
@@ -47,16 +72,7 @@ export function createSessionController(uiManager: UIManager) {
         offset: 0,
       });
       // UX-FD-07 批量插入消息（DocumentFragment 优化）
-      uiManager.appendMessages(
-        messages.map((msg) => ({
-          role: (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
-            ? msg.role
-            : 'assistant',
-          content: msg.content,
-          timestamp: msg.timestamp,
-        })),
-        false,
-      );
+      uiManager.appendMessages(mapMessages(messages), false);
       if (loadedSessionId) {
         currentSessionId = loadedSessionId;
         // 解析会话参数用于加载更多
@@ -100,16 +116,7 @@ export function createSessionController(uiManager: UIManager) {
       });
 
       // 插入到消息区顶部（prepend=true）
-      uiManager.appendMessages(
-        messages.map((msg) => ({
-          role: (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
-            ? msg.role
-            : 'assistant',
-          content: msg.content,
-          timestamp: msg.timestamp,
-        })),
-        true,
-      );
+      uiManager.appendMessages(mapMessages(messages), true);
 
       // 更新分页状态
       currentOffset += messages.length;
@@ -179,16 +186,7 @@ export function createSessionController(uiManager: UIManager) {
       }
 
       // 渲染目标会话的消息（UX-FD-07 批量插入）
-      uiManager.appendMessages(
-        result.messages.map((msg) => ({
-          role: (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
-            ? msg.role
-            : 'assistant',
-          content: msg.content,
-          timestamp: msg.timestamp,
-        })),
-        false,
-      );
+      uiManager.appendMessages(mapMessages(result.messages), false);
       currentSessionId = sessionId;
       // 刷新会话列表以更新高亮
       const { sessions } = await window.electronAPI.listSessions();

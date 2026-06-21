@@ -79,10 +79,11 @@ export function createSettingsController(uiManager: UIManager) {
       }
 
       // FD-08 进行中反馈：禁用保存按钮防止重复点击
-      uiManager.setButtonLoading('btn-settings-save', true, '保存中...');
+      uiManager.setButtonLoading('btn-settings-save', true, '初始化中...');
       try {
         // IX-06 进行中反馈走 toast（不自动消失，等结果出来后由成功/失败 toast 替换）
-        uiManager.showToast('正在保存 LLM 配置并初始化 Agent...', 'info', 0);
+        // P2-FLOW-11 优化文案：明确告知用户正在初始化（耗时操作），避免用户以为卡住
+        uiManager.showToast('正在保存配置并初始化 Agent（可能需要数秒）...', 'info', 0);
 
         const embeddingConfig = payload.embedding?.enabled
           ? {
@@ -161,6 +162,9 @@ export function createSettingsController(uiManager: UIManager) {
       const { config: cfg } = await window.electronAPI.getConfig();
 
       const formConfig: SpriteConfigForm = {
+        // UX-FD-12 主题字段：cfg.theme 可选（SpriteConfig），fallback 到 'light'。
+        // 主题即时生效（renderer.ts onThemeChange 单独持久化），此处仅回显到表单单选按钮
+        theme: cfg.theme === 'dark' ? 'dark' : 'light',
         silentMode: Boolean(cfg.silentMode),
         proactiveThreshold: Number(cfg.proactiveThreshold) || 3,
         proactiveCooldownMs: Number(cfg.proactiveCooldownMs) || 300_000,

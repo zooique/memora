@@ -13,6 +13,8 @@
  * - 确认弹窗支持并发保护，避免监听器叠加
  */
 
+import { EventTracker } from './eventTracker.js';
+
 /**
  * 模态框管理器
  *
@@ -25,16 +27,8 @@ export class ModalManager {
   /** 当前活跃的确认弹窗清理函数（防止并发调用时监听器叠加） */
   private activeConfirmCleanup: (() => void) | null = null;
 
-  /** 事件清理函数集合（initModalListeners 注册的监听器） */
-  private eventCleanupFunctions: Array<() => void> = [];
-
-  /** 添加事件监听器并记录清理函数 */
-  private addEventListener(element: HTMLElement | Document, event: string, handler: EventListener): void {
-    element.addEventListener(event, handler);
-    this.eventCleanupFunctions.push(() => {
-      element.removeEventListener(event, handler);
-    });
-  }
+  /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
+  private events = new EventTracker();
 
   /** 初始化弹窗事件监听（关闭按钮、背景点击、Escape 键） */
   initModalListeners(): void {
@@ -42,13 +36,13 @@ export class ModalManager {
     document.querySelectorAll<HTMLElement>('[data-modal]').forEach((btn) => {
       const modalId = btn.dataset.modal;
       if (modalId) {
-        this.addEventListener(btn, 'click', () => this.hideModal(modalId));
+        this.events.addEventListener(btn, 'click', () => this.hideModal(modalId));
       }
     });
 
     // 点击弹窗背景关闭（统一使用 hideModal，避免与 showConfirmDialog 冲突）
     document.querySelectorAll<HTMLElement>('.modal').forEach((modal) => {
-      this.addEventListener(modal, 'click', (e) => {
+      this.events.addEventListener(modal, 'click', (e) => {
         if (e.target === modal) {
           this.hideModal(modal.id);
         }
@@ -56,7 +50,7 @@ export class ModalManager {
     });
 
     // UI-AR-01 全局 Escape 键关闭弹窗
-    this.addEventListener(document, 'keydown', (e: Event) => {
+    this.events.addEventListener(document, 'keydown', (e: Event) => {
       if ((e as KeyboardEvent).key !== 'Escape') return;
       // 查找当前可见的弹窗（排除 confirm 弹窗，它有独立处理）
       const visibleModals = document.querySelectorAll<HTMLElement>(
@@ -215,7 +209,12 @@ export class ModalManager {
 
   /** 清理所有事件监听器（UIManager.cleanup 时调用） */
   cleanup(): void {
-    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
-    this.eventCleanupFunctions = [];
+    // 清理所有事件监听器（通过 EventTracker 统一管理）
+    this.events.cleanup();
+    // 清理活跃的确认弹窗（防止 cleanup 后仍有未完成的 Promise）
+    if (this.activeConfirmCleanup) {
+      this.activeConfirmCleanup();
+      this.activeConfirmCleanup = null;
+    }
   }
 }

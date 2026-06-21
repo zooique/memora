@@ -15,6 +15,7 @@
 import type { UIManager } from './ui.js';
 import type { MemoryListItem } from './types.js';
 import { createIpcErrorHandler, reportError } from './errorHelpers.js';
+import { clearElement } from './domHelpers.js';
 
 /** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
 const DASHBOARD_PULSE_MS = 300;
@@ -184,10 +185,8 @@ export function createMemoryController(uiManager: UIManager) {
       const recSection = document.getElementById('recommendations');
       if (recList && recSection) {
         if (data.suggestions && data.suggestions.length > 0) {
-          // UX-08：使用 while + removeChild 替代 innerHTML = ''，与项目约定一致
-          while (recList.firstChild) {
-            recList.removeChild(recList.firstChild);
-          }
+          // UX-08：使用 clearElement 统一封装 while + removeChild 模式，与项目约定一致
+          clearElement(recList);
           for (const s of data.suggestions) {
             const li = document.createElement('li');
             li.title = `${s.contentPreview}\n\n${s.reason}`;

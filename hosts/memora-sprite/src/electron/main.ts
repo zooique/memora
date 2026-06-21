@@ -141,6 +141,8 @@ function createIpcContext(
     setAbortController: (ctrl: AbortController | null) => {
       currentAbortController = ctrl;
     },
+    // P1 修复：暴露 agentReady 状态，handleUserInput 据此拒绝 reinitAgent 失败后的对话请求
+    isAgentReady: () => agentReady,
     // UX-PP-04 用户中断标志：区分用户 Stop vs 系统错误
     wasUserAborted: false,
     getUnreadCount: () => unreadCount,
@@ -453,6 +455,13 @@ function registerMinimalIpcHandlers(): void {
         // 1. 保存配置到文件
         await saveLlmConfig(llmConfig, embeddingConfig);
 
+        // P2 修复：reinitAgent 前先中断进行中的对话，避免旧 Agent 在对话进行中被 close
+        // 导致 AsyncGenerator 未正常退出、内部并发锁状态不一致
+        if (currentAbortController) {
+          currentAbortController.abort();
+          currentAbortController = null;
+        }
+
         // 2. 重新初始化 Agent（清理旧实例）
         const result = await reinitAgent(closeSprite);
         agent = result.agent;
@@ -484,6 +493,10 @@ function registerMinimalIpcHandlers(): void {
 
         return { success: true, error: null };
       } catch (error) {
+        // P1 修复：reinitAgent 失败时旧 Agent 已关闭（prevClose 已执行），
+        // 标记 agentReady=false 使 handleUserInput 拒绝新对话，避免使用已关闭 Agent 抛错。
+        // 用户需在设置面板重新配置 LLM 并保存触发再次 reinitAgent。
+        agentReady = false;
         errorHandler.handle(error, {
           code: ErrorCode.INITIALIZATION_FAILED,
           context: '保存 LLM 配置并重新初始化 Agent 失败',
@@ -640,6 +653,12 @@ app.on('before-quit', async (e) => {
   e.preventDefault();
 
   try {
+    // P2 修复：先中断进行中的对话，避免 agent.close() 在对话进行中调用
+    // 导致 AsyncGenerator 未正常退出、资源泄漏或状态不一致
+    if (currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
     if (closeSprite) {
       await closeSprite();
     }

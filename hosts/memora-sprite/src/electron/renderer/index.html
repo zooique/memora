@@ -147,6 +147,8 @@
             <button class="banner-btn" data-action="view">查看</button>
             <button class="banner-btn" data-action="later">稍后</button>
             <button class="banner-btn" data-action="silent">静默 1 小时</button>
+            <!-- P3-FLOW-08 增加"关闭主动提示"选项，直接进入静默模式并提示去设置调整阈值 -->
+            <button class="banner-btn" data-action="disable">不再提醒</button>
           </div>
           <!-- UI-UX-02 关闭按钮：手动关闭 banner，与 actions 独立 -->
           <button class="banner-close" data-action="close" title="关闭">✕</button>
@@ -195,6 +197,9 @@
             <option value="guardrail">guardrail</option>
             <option value="skill">skill</option>
             <option value="rule">rule</option>
+            <!-- P2 修复：补充 persona 和 session 选项，与 getSourceColorClass 和添加记忆 datalist 保持一致 -->
+            <option value="persona">persona</option>
+            <option value="session">session</option>
           </select>
           <button id="btn-add-memory">+ 添加</button>
         </div>
@@ -382,8 +387,11 @@
         </div>
 
         <div class="settings-actions">
-          <button id="btn-settings-cancel">取消</button>
-          <button id="btn-settings-save">保存</button>
+          <!-- P1 修复：补充按钮样式类，避免显示为浏览器默认按钮（与全站风格不一致） -->
+          <!-- P3-FLOW-06 增加恢复默认按钮，用户配置出错时可一键恢复 -->
+          <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
+          <button id="btn-settings-cancel" class="btn-secondary">取消</button>
+          <button id="btn-settings-save" class="btn-primary">保存</button>
         </div>
       </div>
     </main>
@@ -428,6 +436,7 @@
           <option value="insight">洞察记忆</option>
           <option value="guardrail">内容护栏</option>
           <option value="skill">技能记忆</option>
+          <option value="rule">规则记忆</option>
           <option value="persona">角色记忆</option>
           <option value="session">会话记忆</option>
         </datalist>

@@ -172,5 +172,41 @@ describe('SqliteSessionStore', () => {
       const result = store.renameSession('invalid', 'new');
       expect(result).toBe(false);
     });
+
+    it('P2 修复：重命名为已存在的会话名时拒绝（避免消息合并）', () => {
+      // 准备两个同日期的会话
+      store.appendMessage('2026-06-16', 'session-a', makeMessage({ content: 'A 的消息' }));
+      store.appendMessage('2026-06-16', 'session-b', makeMessage({ content: 'B 的消息' }));
+
+      // 尝试将 session-a 重命名为 session-b（已存在）
+      const result = store.renameSession('2026-06-16-session-a', 'session-b');
+      expect(result).toBe(false);
+
+      // 验证：两个会话的消息未合并，各自保持独立
+      const messagesA = store.loadMessages('2026-06-16', 'session-a');
+      const messagesB = store.loadMessages('2026-06-16', 'session-b');
+      expect(messagesA).toHaveLength(1);
+      expect(messagesA[0]!.content).toBe('A 的消息');
+      expect(messagesB).toHaveLength(1);
+      expect(messagesB[0]!.content).toBe('B 的消息');
+    });
+
+    it('P2 修复：不同日期的同名会话不冲突（可重命名）', () => {
+      // 不同日期的同名会话不应冲突
+      store.appendMessage('2026-06-15', 'main', makeMessage({ content: '昨天' }));
+      store.appendMessage('2026-06-16', 'chat', makeMessage({ content: '今天' }));
+
+      // 将 2026-06-16 的 chat 重命名为 main（与 2026-06-15 的 main 同名但不同日期）
+      const result = store.renameSession('2026-06-16-chat', 'main');
+      expect(result).toBe(true);
+
+      // 验证：两个日期的 main 会话各自独立
+      const messages1 = store.loadMessages('2026-06-15', 'main');
+      const messages2 = store.loadMessages('2026-06-16', 'main');
+      expect(messages1).toHaveLength(1);
+      expect(messages1[0]!.content).toBe('昨天');
+      expect(messages2).toHaveLength(1);
+      expect(messages2[0]!.content).toBe('今天');
+    });
   });
 });

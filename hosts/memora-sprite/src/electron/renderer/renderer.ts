@@ -20,16 +20,7 @@ import { createPersonaController } from './personaController.js';
 import { createSettingsController, setSilentRecoveryCallback } from './settingsController.js';
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './errorHelpers.js';
-
-/**
- * UX-PP-07 获取本地日期字符串 YYYY-MM-DD
- *
- * 跨天检测必须用本地日期，否则东八区凌晨 0-8 点会被误判为前一天。
- */
-function getLocalDate(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+import { getLocalDate } from '../../sprite/constants.js';
 
 // P2-001 修复：删除重复的 declare global 和未使用的 ElectronAPI 导入。
 // types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
@@ -143,6 +134,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       void memoryController.loadDashboard();
       // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
       uiManager.switchPanel('chat');
+      // P2 修复：首次配置完成后检查是否需要显示三态引导
+      // 初始化流程中 Agent 未就绪时提前 return，三态引导检查不会执行；
+      // 此处 Agent 就绪后补检，确保首次用户能看到窗口模型引导
+      if (uiManager.shouldShowOnboarding()) {
+        uiManager.showOnboardingDialog();
+      }
     },
     // UX-PP-03 流式错误重试：重新发送上一条用户消息
     onSpriteErrorRetry: () => {
@@ -190,6 +187,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       }, SILENT_RECOVERY_MS);
     },
+    // P3-FLOW-08 不再提醒：进入静默模式并提示用户去设置调整阈值
+    onDisable: () => {
+      void window.electronAPI.updateConfig('silentMode', true);
+      // 设置一个较长的恢复时间（24 小时），等效于"不再提醒"
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
+      uiManager.showToast('已关闭主动提示（24 小时内不再提醒）。如需恢复，请到设置面板调整主动提示阈值', 'info');
+    },
   });
 
   // 召回记忆点击：跳转到记忆面板并显示详情
@@ -214,9 +219,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { ready } = await window.electronAPI.getAgentStatus();
     if (!ready) {
       // 首次启动引导：显示欢迎消息 + 自动跳转到设置面板
+      // P3-FLOW-02 文案优化：提示用户先测试连接，避免配置错误导致初始化失败
       uiManager.appendMessage({
         role: 'system',
-        content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
+        content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
       });
       // 自动切换到设置面板
       uiManager.switchPanel('settings');
@@ -229,7 +235,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.warn('[init] 查询 Agent 状态失败，降级为首次使用引导:', error);
     uiManager.appendMessage({
       role: 'system',
-      content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
+      content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
     });
     uiManager.switchPanel('settings');
     await settingsController.loadConfig();

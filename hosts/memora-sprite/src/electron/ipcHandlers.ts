@@ -24,17 +24,7 @@ import type { Sprite } from '../sprite/sprite.js';
 import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
 import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
-
-/**
- * UX-PP-07 获取本地日期字符串 YYYY-MM-DD
- *
- * 会话 ID 使用日期前缀，必须用本地日期而非 UTC，
- * 否则东八区用户在凌晨 0-8 点创建的会话会被归入前一天。
- */
-function getLocalDate(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+import { getLocalDate } from '../sprite/constants.js';
 
 /**
  * IPC 处理器上下文
@@ -59,6 +49,11 @@ export interface IpcContext {
   getAbortController: () => AbortController | null;
   /** 设置当前对话的 AbortController */
   setAbortController: (ctrl: AbortController | null) => void;
+  /**
+   * P1 修复：Agent 是否就绪（reinitAgent 失败后为 false，拒绝新对话避免使用已关闭 Agent）
+   * handleUserInput 入口检查此标志，未就绪时拒绝并提示用户重新配置
+   */
+  isAgentReady: () => boolean;
   /** UX-PP-04 用户是否主动触发了中断（区分用户 Stop vs 系统错误） */
   wasUserAborted: boolean;
   /** 获取当前未读计数（完整窗口隐藏时的消息数） */
@@ -117,6 +112,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     IPC_CHANNELS.SESSION_LOAD,
     IPC_CHANNELS.SESSION_NEW,
     IPC_CHANNELS.SESSION_LIST,
+    // P1 修复：遗漏这三个通道会导致 reinitAgent 时 ipcMain.handle 重复注册抛错
+    // "Attempted to register a second handler"，用户保存 LLM 配置后应用不可用
+    IPC_CHANNELS.SESSION_SWITCH,
+    IPC_CHANNELS.SESSION_DELETE,
+    IPC_CHANNELS.SESSION_RENAME,
     IPC_CHANNELS.MEMORIES_LIST,
     IPC_CHANNELS.MEMORIES_SEARCH,
     IPC_CHANNELS.MEMORIES_SHOW,
@@ -217,6 +217,12 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     try {
       if (!ctx.agent) {
         return { success: false, messages: [], error: 'Agent 未初始化' };
+      }
+
+      // P2 修复：切换会话前检查是否有进行中对话，有则拒绝
+      // 避免旧对话的后续消息持久化到新会话，导致会话内容串扰
+      if (ctx.getAbortController()) {
+        return { success: false, messages: [], error: '有进行中的对话，请等待完成或中断后再切换会话' };
       }
 
       // 1. 切换 Agent 内部会话标识（更新 currentSession，后续 chat() 写入新会话）
@@ -492,6 +498,24 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
   const fullWindow = ctx.windowManager.getFullWindow();
   if (!fullWindow || fullWindow.isDestroyed()) return;
+
+  // P1 修复：Agent 未就绪时拒绝（reinitAgent 失败后旧 Agent 已关闭，新对话会抛错）
+  if (!ctx.isAgentReady()) {
+    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
+      text: 'Agent 未就绪，请在设置面板中重新配置 LLM 后重试',
+    });
+    return;
+  }
+
+  // P1 修复：竞态保护——已有进行中的对话时拒绝，避免 Agent 并发锁抛"对话繁忙"错误。
+  // 用户中断后立即发送新消息时，旧 chat() 的 AsyncGenerator 尚未退出 finally 块，
+  // abortController 仍非空，此时新 chat() 会触发 Agent 内部并发锁。
+  if (ctx.getAbortController()) {
+    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
+      text: '上一条消息仍在处理中，请等待完成或点击停止后再发送',
+    });
+    return;
+  }
 
   const messageId = randomUUID();
   fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, { messageId });

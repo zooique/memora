@@ -150,9 +150,13 @@ export class SqliteSessionStore implements ISessionStore {
    * 更新指定会话的会话名。仅在当前项目下有效。
    * 注意：会话 ID 包含日期前缀，重命名仅修改 session 字段。
    *
+   * P2 修复：重命名前检查目标会话名是否已存在（同日期下），
+   * 避免重命名为已有名称导致两个会话消息合并、数据混乱。
+   * 检查 + 更新使用事务保证原子性，防止 TOCTOU 竞态。
+   *
    * @param sessionId 会话 ID（格式：YYYY-MM-DD-sessionName）
    * @param newName 新会话名
-   * @returns 是否重命名成功
+   * @returns 是否重命名成功（目标名冲突时返回 false）
    */
   renameSession(sessionId: string, newName: string): boolean {
     const parts = sessionId.split('-');
@@ -160,10 +164,21 @@ export class SqliteSessionStore implements ISessionStore {
     const date = parts.slice(0, 3).join('-');
     const session = parts.slice(3).join('-');
 
-    const result = this.db.prepare(
-      'UPDATE sessions SET session = ? WHERE date = ? AND session = ?'
-    ).run(newName, date, session);
-    return result.changes > 0;
+    // P2 修复：事务包裹"冲突检查 + 更新"，防止检查与更新之间的竞态
+    const transaction = this.db.transaction(() => {
+      // 检查目标会话名是否已存在（同日期下）
+      const conflict = this.db.prepare(
+        'SELECT 1 FROM sessions WHERE date = ? AND session = ? LIMIT 1'
+      ).get(date, newName);
+      if (conflict) return false;
+
+      const result = this.db.prepare(
+        'UPDATE sessions SET session = ? WHERE date = ? AND session = ?'
+      ).run(newName, date, session);
+      return result.changes > 0;
+    });
+
+    return transaction();
   }
 
   /**

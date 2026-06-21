@@ -107,10 +107,10 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   function showDragHintIfFirstTime(): void {
     if (hasShownDragHint || !dragHint) return;
     dragHint.classList.add('visible');
-    // 5 秒后自动隐藏（避免长时间遮挡）
+    // P3-FLOW-09 延长到 8 秒，确保用户有足够时间阅读引导文案
     dragHintTimer = safeSetTimeout(() => {
       dragHint?.classList.remove('visible');
-    }, 5000);
+    }, 8000);
   }
 
   /** 标记已见过引导提示（首次拖动或单击后调用） */

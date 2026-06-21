@@ -16,7 +16,8 @@
 
 import { renderMarkdown } from './markdown.js';
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
-import { getRequiredElement, getOptionalElement } from './domHelpers.js';
+import { getRequiredElement, getOptionalElement, clearElement } from './domHelpers.js';
+import { EventTracker } from './eventTracker.js';
 import { ToastManager } from './toast.js';
 import type { ToastOptions } from './toast.js';
 import { ModalManager } from './modal.js';
@@ -65,7 +66,11 @@ export type {
  */
 function formatRelativeTime(dateStr: string): string {
   const today = new Date();
-  const [y, m, d] = dateStr.split('-').map(Number);
+  // noUncheckedIndexedAccess: split+map 解构后元素为 number | undefined，提供默认值确保数值有效
+  const parts = dateStr.split('-').map(Number);
+  const y = parts[0] ?? 0;
+  const m = parts[1] ?? 1;
+  const d = parts[2] ?? 1;
   // 重置时间部分为 0:00:00 以正确计算天数差
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const targetStart = new Date(y, m - 1, d);
@@ -141,7 +146,8 @@ export class UIManager {
   private _latestStreamText = '';
   /** UX-PP-02 当前流式消息 ID（rAF 回调中定位气泡） */
   private _latestStreamMessageId = '';
-  private eventCleanupFunctions: Array<() => void> = [];
+  /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
+  private events = new EventTracker();
 
   // P2-008 settingsFormDirty / llmPresets / currentPersonaMode 已提取至 SettingsPanelManager
 
@@ -199,24 +205,24 @@ export class UIManager {
   /** 初始化事件监听器 */
   private initEventListeners(): void {
     // 输入框事件
-    this.addEventListener(this.inputEl, 'keydown', this.handleInputKeydown.bind(this));
-    this.addEventListener(this.inputEl, 'input', this.handleInputChange.bind(this));
+    this.events.addEventListener(this.inputEl, 'keydown', this.handleInputKeydown.bind(this));
+    this.events.addEventListener(this.inputEl, 'input', this.handleInputChange.bind(this));
 
     // 按钮事件
-    this.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
-    this.addEventListener(this.btnStop, 'click', this.handleStopClick.bind(this));
+    this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
+    this.events.addEventListener(this.btnStop, 'click', this.handleStopClick.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
     if (this.btnNewSession) {
-      this.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
+      this.events.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
     }
 
     // FD-A1 会话选择器：点击切换下拉菜单
     const sessionCurrent = document.getElementById('session-current');
     if (sessionCurrent) {
-      this.addEventListener(sessionCurrent, 'click', () => this.toggleSessionDropdown());
+      this.events.addEventListener(sessionCurrent, 'click', () => this.toggleSessionDropdown());
     }
     // 点击其他区域关闭下拉
-    this.addEventListener(document, 'click', (e) => {
+    this.events.addEventListener(document, 'click', (e) => {
       const selector = document.getElementById('session-selector');
       if (selector && !selector.contains(e.target as Node)) {
         this.closeSessionDropdown();
@@ -225,20 +231,20 @@ export class UIManager {
 
     // 导航事件
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
-      this.addEventListener(btn, 'click', this.handleNavClick.bind(this));
+      this.events.addEventListener(btn, 'click', this.handleNavClick.bind(this));
     });
 
     // 标题栏按钮（可选，部分布局可能不提供）
     const btnMinimize = getOptionalElement('btn-minimize', 'button');
     const btnClose = getOptionalElement('btn-close', 'button');
     if (btnMinimize) {
-      this.addEventListener(btnMinimize, 'click', this.handleMinimize.bind(this));
+      this.events.addEventListener(btnMinimize, 'click', this.handleMinimize.bind(this));
     }
     if (this.btnMaximize) {
-      this.addEventListener(this.btnMaximize, 'click', this.handleMaximize.bind(this));
+      this.events.addEventListener(this.btnMaximize, 'click', this.handleMaximize.bind(this));
     }
     if (btnClose) {
-      this.addEventListener(btnClose, 'click', this.handleClose.bind(this));
+      this.events.addEventListener(btnClose, 'click', this.handleClose.bind(this));
     }
 
     // 窗口状态变更监听（最大化按钮图标切换）
@@ -247,12 +253,12 @@ export class UIManager {
     });
 
     // 全局键盘快捷键
-    this.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
+    this.events.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
 
     // 快速添加记忆按钮（输入工具栏）：打开记忆添加弹窗
     const btnAddMemoryQuick = getOptionalElement('btn-add-memory-quick', 'button');
     if (btnAddMemoryQuick) {
-      this.addEventListener(btnAddMemoryQuick, 'click', () => {
+      this.events.addEventListener(btnAddMemoryQuick, 'click', () => {
         this.showModal('memory-add-modal');
       });
     }
@@ -269,11 +275,17 @@ export class UIManager {
     if (!(e instanceof KeyboardEvent)) return;
     const isMod = e.ctrlKey || e.metaKey;
 
-    // Esc：关闭所有打开的弹窗
+    // Esc：关闭所有打开的弹窗 + 下拉菜单
     if (e.key === 'Escape') {
       const openModals = document.querySelectorAll('.modal:not(.hidden)');
       if (openModals.length > 0) {
         openModals.forEach((modal) => modal.classList.add('hidden'));
+        e.preventDefault();
+      }
+      // P2 修复：Esc 同时关闭展开的下拉菜单（会话/角色），符合通用交互习惯
+      const openDropdowns = document.querySelectorAll('.dropdown:not(.hidden)');
+      if (openDropdowns.length > 0) {
+        openDropdowns.forEach((dropdown) => dropdown.classList.add('hidden'));
         e.preventDefault();
       }
       return;
@@ -300,20 +312,21 @@ export class UIManager {
       e.preventDefault();
       return;
     }
-  }
 
-  /** 添加事件监听器并记录清理函数 */
-  private addEventListener(element: HTMLElement | Document, event: string, handler: EventListener): void {
-    element.addEventListener(event, handler);
-    this.eventCleanupFunctions.push(() => {
-      element.removeEventListener(event, handler);
-    });
+    // P2-FLOW-07 Ctrl/Cmd + .：停止生成（流式输出期间可用键盘快速中断）
+    if (isMod && e.key === '.') {
+      if (this.state.isStreaming) {
+        this.emitStopMessage();
+        e.preventDefault();
+      }
+      return;
+    }
   }
 
   /** 清理所有事件监听器和子模块资源 */
   cleanup(): void {
-    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
-    this.eventCleanupFunctions = [];
+    // 清理所有事件监听器（通过 EventTracker 统一管理）
+    this.events.cleanup();
     // 清理搜索防抖定时器，避免回调在 DOM 销毁后触发
     if (this.searchTimer) {
       clearTimeout(this.searchTimer);
@@ -405,8 +418,9 @@ export class UIManager {
     }
     contentWrapper.appendChild(bubble);
 
-    // 精灵消息：添加复制按钮（hover 时显示）
-    if (message.role === 'assistant' && !message.streaming) {
+    // P3-FLOW-07 用户/精灵消息均添加复制按钮（hover 时显示）
+    // 原仅精灵消息有复制按钮，用户消息需手动选择文本，体验不一致
+    if (!message.streaming) {
       const copyBtn = document.createElement('button');
       copyBtn.className = 'message-copy-btn';
       copyBtn.title = '复制';
@@ -522,7 +536,7 @@ export class UIManager {
         const latestToolCalls = latestBubble.querySelectorAll('.tool-call');
 
         // 安全清空并重新渲染 Markdown
-        this.clearElement(latestBubble);
+        clearElement(latestBubble);
         latestBubble.appendChild(renderMarkdown(this._latestStreamText));
 
         // 重新追加保留元素（recall 和 tool-call 在前，cursor 在最后）
@@ -1004,7 +1018,7 @@ export class UIManager {
     emptyState.querySelectorAll<HTMLElement>('.suggestion-btn').forEach((btn) => {
       const suggestion = btn.dataset.suggestion;
       if (suggestion) {
-        this.addEventListener(btn, 'click', () => {
+        this.events.addEventListener(btn, 'click', () => {
           // 将示例问题填入输入框并触发发送回调
           this.suggestionClickCallback?.(suggestion);
         });
@@ -1066,6 +1080,11 @@ export class UIManager {
     navBtn?.classList.add('active');
 
     this.state.currentPanel = panel;
+
+    // P2 修复：切换到对话面板时自动聚焦输入框，减少多余点击步骤
+    if (panel === 'chat') {
+      this.inputEl.focus();
+    }
   }
 
   // ─── 输入处理 ─────────────────────────────────────────
@@ -1102,18 +1121,6 @@ export class UIManager {
   }
 
   // ─── 未读计数 ─────────────────────────────────────────
-
-  /**
-   * 安全清空 DOM 容器
-   *
-   * 使用 while + removeChild 模式（对齐 project_memory 工程约定），
-   * 避免 innerHTML = '' 可能带来的事件监听器残留和 XSS 一致性问题。
-   */
-  private clearElement(el: Element): void {
-    while (el.firstChild) {
-      el.removeChild(el.firstChild);
-    }
-  }
 
   /** 更新未读计数徽章 */
   private updateBadge(): void {
@@ -1194,7 +1201,7 @@ export class UIManager {
    * 监听消息区滚动，更新 isNearBottom 状态
    */
   private initScrollListener(): void {
-    this.addEventListener(this.messagesEl, 'scroll', () => {
+    this.events.addEventListener(this.messagesEl, 'scroll', () => {
       const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
       this.isNearBottom = scrollHeight - scrollTop - clientHeight < UIManager.SCROLL_BOTTOM_THRESHOLD;
     });
@@ -1307,6 +1314,7 @@ export class UIManager {
     onView: () => void;
     onLater: () => void;
     onSilent: () => void;
+    onDisable?: () => void;
   }): void {
     this.proactiveBanner.initProactiveBannerButtons(handlers);
   }
@@ -1386,7 +1394,7 @@ export class UIManager {
     if (!this.memorySearchEl || !this.memoryFilterSourceEl) return;
 
     // 搜索框：输入时触发搜索（带防抖）
-    this.addEventListener(this.memorySearchEl, 'input', () => {
+    this.events.addEventListener(this.memorySearchEl, 'input', () => {
       if (this.searchTimer) clearTimeout(this.searchTimer);
       this.searchTimer = setTimeout(() => {
         this.memorySearchCallback?.(this.memorySearchEl!.value.trim());
@@ -1394,14 +1402,14 @@ export class UIManager {
     });
 
     // source 筛选变更
-    this.addEventListener(this.memoryFilterSourceEl, 'change', () => {
+    this.events.addEventListener(this.memoryFilterSourceEl, 'change', () => {
       this.memoryFilterCallback?.(this.memoryFilterSourceEl!.value);
     });
 
     // 添加按钮（可选）
     const btnAdd = getOptionalElement('btn-add-memory', 'button');
     if (btnAdd) {
-      this.addEventListener(btnAdd, 'click', () => {
+      this.events.addEventListener(btnAdd, 'click', () => {
         this.showModal('memory-add-modal');
       });
     }
@@ -1409,7 +1417,7 @@ export class UIManager {
     // 添加确认按钮（可选）
     const btnAddConfirm = getOptionalElement('btn-memory-add-confirm', 'button');
     if (btnAddConfirm) {
-      this.addEventListener(btnAddConfirm, 'click', () => {
+      this.events.addEventListener(btnAddConfirm, 'click', () => {
         const data = this.getAddMemoryFormData();
         if (data) {
           this.memoryAddCallback?.(data);
@@ -1420,7 +1428,7 @@ export class UIManager {
     // 删除按钮（可选，带确认对话框，防止误删不可恢复数据）
     const btnDelete = getOptionalElement('btn-memory-delete', 'button');
     if (btnDelete) {
-      this.addEventListener(btnDelete, 'click', async () => {
+      this.events.addEventListener(btnDelete, 'click', async () => {
         // 确认删除：记忆是持久化数据，删除后不可恢复，需二次确认
         const confirmed = await this.showConfirmDialog({
           title: '删除记忆',
@@ -1452,7 +1460,7 @@ export class UIManager {
     if (!this.memoryListEl) return;
 
     // 安全清空容器（使用 clearElement 统一封装 while + removeChild 模式）
-    this.clearElement(this.memoryListEl);
+    clearElement(this.memoryListEl);
 
     if (memories.length === 0) {
       const empty = document.createElement('div');
@@ -1464,7 +1472,7 @@ export class UIManager {
       // UX-P2-27 同时添加 .btn-secondary 类复用通用按钮样式
       hintBtn.className = 'empty-action-btn btn-secondary';
       hintBtn.textContent = '+ 添加第一条记忆';
-      this.addEventListener(hintBtn, 'click', () => {
+      this.events.addEventListener(hintBtn, 'click', () => {
         this.showModal('memory-add-modal');
       });
       empty.appendChild(hintBtn);
@@ -1627,13 +1635,13 @@ export class UIManager {
     if (!this.personaSelectorEl || !this.personaDropdownEl) return;
 
     // 点击选择器切换下拉菜单
-    this.addEventListener(this.personaSelectorEl, 'click', (e) => {
+    this.events.addEventListener(this.personaSelectorEl, 'click', (e) => {
       e.stopPropagation();
       this.togglePersonaDropdown();
     });
 
     // UI-AR-01 键盘支持：Enter/Space 展开下拉，Escape 关闭
-    this.addEventListener(this.personaSelectorEl, 'keydown', (e) => {
+    this.events.addEventListener(this.personaSelectorEl, 'keydown', (e) => {
       const ke = e as KeyboardEvent;
       if (ke.key === 'Enter' || ke.key === ' ') {
         ke.preventDefault();
@@ -1645,7 +1653,7 @@ export class UIManager {
     });
 
     // UI-AR-01 键盘导航：在下拉菜单内用方向键移动焦点
-    this.addEventListener(this.personaDropdownEl, 'keydown', (e) => {
+    this.events.addEventListener(this.personaDropdownEl, 'keydown', (e) => {
       const ke = e as KeyboardEvent;
       const items = this.personaDropdownEl!.querySelectorAll<HTMLElement>('.dropdown-item');
       if (items.length === 0) return;
@@ -1671,7 +1679,7 @@ export class UIManager {
     });
 
     // 点击页面其他区域关闭下拉菜单（走统一清理机制）
-    this.addEventListener(document, 'click', () => {
+    this.events.addEventListener(document, 'click', () => {
       this.personaDropdownEl?.classList.add('hidden');
     });
   }
@@ -1700,7 +1708,7 @@ export class UIManager {
     const dropdown = this.personaDropdownEl;
 
     // 安全清空容器（与 renderMemoryList 保持一致，使用 clearElement 封装）
-    this.clearElement(dropdown);
+    clearElement(dropdown);
 
     for (const p of personas) {
       const item = document.createElement('div');
@@ -1855,7 +1863,7 @@ export class UIManager {
     for (const panelId of panelIds) {
       const retryBtn = document.getElementById(`${panelId}-error-retry`);
       if (retryBtn) {
-        this.addEventListener(retryBtn, 'click', () => {
+        this.events.addEventListener(retryBtn, 'click', () => {
           const callback = this.panelErrorRetryCallbacks.get(panelId);
           if (callback) {
             callback();
@@ -1956,6 +1964,10 @@ export class UIManager {
     const currentName = document.getElementById('session-current-name');
     const searchInput = document.getElementById('session-search') as HTMLInputElement | null;
     if (!selector || !list || !currentName) return;
+
+    // P1 修复：移除初始 hidden 类，使会话选择器可见
+    // HTML 中 session-selector 初始带 hidden 类，此处首次加载时移除
+    selector.classList.remove('hidden');
 
     // FD-08 存储当前会话 ID，供 renderSessionListItems 高亮使用
     this.sessionsCurrentId = currentSessionId;
@@ -2079,7 +2091,8 @@ export class UIManager {
    * FD-08 过滤会话列表
    *
    * 根据搜索关键词过滤显示/隐藏会话列表项。
-   * 匹配规则：会话名或日期包含关键词（忽略大小写）。
+   * 匹配规则：会话名、日期或预览内容包含关键词（忽略大小写）。
+   * P3-FLOW-03 扩展搜索范围：增加 preview 匹配，支持按消息内容关键词查找会话
    */
   private filterSessionList(query: string): void {
     const items = document.querySelectorAll('#session-list .session-list-item');
@@ -2089,8 +2102,10 @@ export class UIManager {
       const el = item as HTMLElement;
       const name = (el.querySelector('.session-list-item-name') as HTMLElement | null)?.textContent ?? '';
       const date = (el.querySelector('.session-list-item-date') as HTMLElement | null)?.textContent ?? '';
+      // P3-FLOW-03 增加预览内容匹配
+      const preview = (el.querySelector('.session-list-item-preview') as HTMLElement | null)?.textContent ?? '';
 
-      if (q === '' || name.toLowerCase().includes(q) || date.includes(q)) {
+      if (q === '' || name.toLowerCase().includes(q) || date.includes(q) || preview.toLowerCase().includes(q)) {
         el.style.display = '';
       } else {
         el.style.display = 'none';

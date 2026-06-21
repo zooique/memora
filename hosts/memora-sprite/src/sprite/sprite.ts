@@ -529,8 +529,17 @@ export class Sprite {
     }
     // 对象类型字段
     if (key === 'floatIconPosition') {
-      if (typeof value === 'object' && value !== null && 'x' in value && 'y' in value) {
-        this.config[key] = value as { x: number; y: number };
+      if (
+        typeof value === 'object' &&
+        value !== null &&
+        'x' in value &&
+        'y' in value
+      ) {
+        // 运行时检查 value.x/value.y 为 number 类型，避免类型断言丢失类型安全
+        const pos = value as { x: unknown; y: unknown };
+        if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+          this.config[key] = { x: pos.x, y: pos.y };
+        }
       }
       return;
     }
