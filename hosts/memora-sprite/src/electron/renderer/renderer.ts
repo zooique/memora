@@ -17,7 +17,7 @@ import { UIManager } from './ui.js';
 import { createSessionController } from './sessionController.js';
 import { createMemoryController } from './memoryController.js';
 import { createPersonaController } from './personaController.js';
-import { createSettingsController } from './settingsController.js';
+import { createSettingsController, setSilentRecoveryCallback } from './settingsController.js';
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './errorHelpers.js';
 
@@ -51,6 +51,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupBusinessLogic(uiManager, sessionController);
   memoryController.setupMemoryPanel();
   personaController.setupPersonaSelector();
+  // FD-10 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
+  setSilentRecoveryCallback((remainingMs: number) => {
+    if (silentRecoveryTimer !== null) window.clearTimeout(silentRecoveryTimer);
+    silentRecoveryTimer = window.setTimeout(() => {
+      silentRecoveryTimer = null;
+      void window.electronAPI.updateConfig('silentMode', false).then(() => {
+        void window.electronAPI.updateConfig('silentModeExpiresAt', null);
+        uiManager.showToast('静默模式已到期自动恢复', 'info');
+      }).catch((err: unknown) => {
+        reportError('silentRecovery', err);
+      });
+    }, remainingMs);
+  });
+
   settingsController.setupSettingsPanel();
 
   // ADR-SP-008 初始化主题：同步设置面板单选按钮状态
@@ -102,8 +116,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       // banner 已隐藏，无需额外操作
     },
     onSilent: () => {
-      // 通知主进程进入静默模式（1 小时后自动恢复）
+      // 通知主进程进入静默模式
       void window.electronAPI.updateConfig('silentMode', true);
+      // FD-10 持久化恢复时间，页面刷新后也能正确恢复
+      const expiresAt = new Date(Date.now() + SILENT_RECOVERY_MS).toISOString();
+      void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
       // IX-06 操作反馈走 toast（静默模式是用户主动触发的状态变更）
       uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）', 'info');
       // 清理旧的恢复定时器，避免多次点击产生重复恢复
@@ -111,12 +128,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.clearTimeout(silentRecoveryTimer);
       }
       // 设置本地定时器：1 小时后自动关闭静默模式
-      // 注意：页面刷新会丢失定时器，但静默模式是持久化配置，用户可在设置面板手动关闭
+      // FD-10 定时器到期后同步清除持久化的 expiresAt
       silentRecoveryTimer = window.setTimeout(() => {
         silentRecoveryTimer = null;
-        // 追加 .catch 防止 IPC 失败时产生 unhandled rejection
         void window.electronAPI.updateConfig('silentMode', false).then(() => {
-          // IX-06 恢复提示走 toast
+          void window.electronAPI.updateConfig('silentModeExpiresAt', null);
           uiManager.showToast('静默模式已到期自动恢复，精灵可正常主动提示', 'info');
         }).catch((err: unknown) => {
           reportError('silentRecovery', err);
@@ -220,9 +236,23 @@ function setupBusinessLogic(
   sessionController: ReturnType<typeof createSessionController>,
 ): void {
   // 设置发送消息回调
-  uiManager.onSendMessage(() => {
+  uiManager.onSendMessage(async () => {
     const text = uiManager.getUserInput();
     if (!text) return;
+
+    // FD-06 跨天续聊检测：当前会话日期与今天不一致时，自动切换到今天的同名会话
+    const currentId = sessionController.getCurrentSessionId();
+    if (currentId) {
+      const todayPrefix = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const sessionDate = currentId.slice(0, 10); // 前 10 字符为日期
+      if (sessionDate !== todayPrefix) {
+        // 提取会话名（去除日期前缀和连字符）
+        const sessionName = currentId.slice(11); // 跳过 YYYY-MM-DD-
+        const todaySessionId = `${todayPrefix}-${sessionName}`;
+        uiManager.showToast('已跨天，自动切换到今天的新会话', 'info');
+        await sessionController.switchSession(todaySessionId);
+      }
+    }
 
     // 显示用户消息
     uiManager.appendMessage({
@@ -298,5 +328,15 @@ function setupBusinessLogic(
   // FD-A1 会话切换回调
   uiManager.setSessionSwitchCallback((sessionId: string) => {
     void sessionController.switchSession(sessionId);
+  });
+
+  // FD-09 会话删除回调
+  uiManager.setSessionDeleteCallback((sessionId: string) => {
+    void sessionController.deleteSession(sessionId);
+  });
+
+  // FD-09 会话重命名回调
+  uiManager.setSessionRenameCallback((sessionId: string) => {
+    void sessionController.renameSession(sessionId);
   });
 }

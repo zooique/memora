@@ -1743,9 +1743,31 @@ export class UIManager {
   /** 会话切换回调（由 renderer.ts 注入） */
   private sessionSwitchCallback: ((sessionId: string) => void) | null = null;
 
+  /** FD-09 会话删除回调（由 renderer.ts 注入） */
+  private sessionDeleteCallback: ((sessionId: string) => void) | null = null;
+
+  /** FD-09 会话重命名回调（由 renderer.ts 注入） */
+  private sessionRenameCallback: ((sessionId: string) => void) | null = null;
+
+  /** FD-08 当前会话 ID（renderSessionListItems 渲染高亮使用） */
+  private sessionsCurrentId: string = '';
+
+  /** FD-08 搜索框事件是否已绑定（仅首次绑定） */
+  private sessionSearchBound: boolean = false;
+
   /** FD-A1 设置会话切换回调 */
   setSessionSwitchCallback(cb: (sessionId: string) => void): void {
     this.sessionSwitchCallback = cb;
+  }
+
+  /** FD-09 设置会话删除回调 */
+  setSessionDeleteCallback(cb: (sessionId: string) => void): void {
+    this.sessionDeleteCallback = cb;
+  }
+
+  /** FD-09 设置会话重命名回调 */
+  setSessionRenameCallback(cb: (sessionId: string) => void): void {
+    this.sessionRenameCallback = cb;
   }
 
   /**
@@ -1758,7 +1780,11 @@ export class UIManager {
     const selector = document.getElementById('session-selector');
     const list = document.getElementById('session-list');
     const currentName = document.getElementById('session-current-name');
+    const searchInput = document.getElementById('session-search') as HTMLInputElement | null;
     if (!selector || !list || !currentName) return;
+
+    // FD-08 存储当前会话 ID，供 renderSessionListItems 高亮使用
+    this.sessionsCurrentId = currentSessionId;
 
     // 仅一个会话时隐藏选择器
     if (sessions.length <= 1) {
@@ -1772,17 +1798,43 @@ export class UIManager {
     const current = sessions.find(s => s.id === currentSessionId);
     currentName.textContent = current?.name ?? currentSessionId;
 
-    // 清空并重建列表
+    // 清空搜索框并渲染全部会话
+    if (searchInput) {
+      searchInput.value = '';
+      // FD-08 绑定搜索过滤事件（仅首次）
+      if (!this.sessionSearchBound) {
+        this.sessionSearchBound = true;
+        searchInput.addEventListener('input', () => {
+          this.filterSessionList(searchInput.value);
+        });
+      }
+    }
+
+    this.renderSessionListItems(sessions);
+  }
+
+  /**
+   * FD-08 渲染会话列表项
+   *
+   * 按时间倒序渲染所有会话到 #session-list。
+   */
+  private renderSessionListItems(sessions: Array<{ id: string; date: string; name: string }>): void {
+    const list = document.getElementById('session-list');
+    if (!list) return;
+
+    // 清空列表
     while (list.firstChild) {
       list.removeChild(list.firstChild);
     }
+
+    const currentId = this.sessionsCurrentId ?? '';
 
     // 按时间倒序（最近在前）
     const sorted = [...sessions].reverse();
     for (const session of sorted) {
       const li = document.createElement('li');
       li.className = 'session-list-item';
-      if (session.id === currentSessionId) {
+      if (session.id === currentId) {
         li.classList.add('active');
       }
       li.dataset.sessionId = session.id;
@@ -1797,13 +1849,60 @@ export class UIManager {
       dateSpan.textContent = session.date;
       li.appendChild(dateSpan);
 
+      // FD-09 删除按钮（仅非当前会话显示）
+      if (session.id !== currentId) {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'session-list-item-del';
+        delBtn.title = '删除会话';
+        delBtn.textContent = '🗑';
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.sessionDeleteCallback?.(session.id);
+        });
+        li.appendChild(delBtn);
+      }
+
+      // FD-09 重命名按钮
+      const renameBtn = document.createElement('button');
+      renameBtn.className = 'session-list-item-rename';
+      renameBtn.title = '重命名会话';
+      renameBtn.textContent = '✏';
+      renameBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.sessionRenameCallback?.(session.id);
+      });
+      li.appendChild(renameBtn);
+
       li.addEventListener('click', () => {
-        this.toggleSessionDropdown(); // 关闭下拉
+        this.toggleSessionDropdown();
         this.sessionSwitchCallback?.(session.id);
       });
 
       list.appendChild(li);
     }
+  }
+
+  /**
+   * FD-08 过滤会话列表
+   *
+   * 根据搜索关键词过滤显示/隐藏会话列表项。
+   * 匹配规则：会话名或日期包含关键词（忽略大小写）。
+   */
+  private filterSessionList(query: string): void {
+    const items = document.querySelectorAll('#session-list .session-list-item');
+    const q = query.toLowerCase().trim();
+
+    items.forEach((item) => {
+      const el = item as HTMLElement;
+      const name = (el.querySelector('.session-list-item-name') as HTMLElement | null)?.textContent ?? '';
+      const date = (el.querySelector('.session-list-item-date') as HTMLElement | null)?.textContent ?? '';
+
+      if (q === '' || name.toLowerCase().includes(q) || date.includes(q)) {
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+    });
   }
 
   /** FD-A1 切换会话下拉菜单的显示/隐藏 */

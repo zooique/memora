@@ -24,6 +24,10 @@ export const IPC_CHANNELS = {
   SESSION_LIST: 'session-list',
   /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   SESSION_SWITCH: 'session-switch',
+  /** FD-09 删除会话（含确认对话框） */
+  SESSION_DELETE: 'session-delete',
+  /** FD-09 重命名会话 */
+  SESSION_RENAME: 'session-rename',
 
   // ─── 记忆相关 ─────────────────────────────────────────
   /** 列出记忆 */

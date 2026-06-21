@@ -213,6 +213,48 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     }
   });
 
+  // FD-09 删除会话
+  ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_event, sessionId: string) => {
+    try {
+      if (!ctx.agent) {
+        return { success: false, error: 'Agent 未初始化' };
+      }
+
+      const deleted = ctx.sessionStore.deleteSession(sessionId);
+      if (!deleted) {
+        return { success: false, error: '会话不存在或删除失败' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '删除会话失败' });
+      return { success: false, error: toError(error).message };
+    }
+  });
+
+  // FD-09 重命名会话
+  ipcMain.handle(IPC_CHANNELS.SESSION_RENAME, async (_event, sessionId: string, newName: string) => {
+    try {
+      if (!ctx.agent) {
+        return { success: false, error: 'Agent 未初始化' };
+      }
+
+      if (!newName || !newName.trim()) {
+        return { success: false, error: '会话名不能为空' };
+      }
+
+      const renamed = ctx.sessionStore.renameSession(sessionId, newName.trim());
+      if (!renamed) {
+        return { success: false, error: '会话不存在或重命名失败' };
+      }
+
+      return { success: true };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '重命名会话失败' });
+      return { success: false, error: toError(error).message };
+    }
+  });
+
   // ─── 记忆相关 ────────────────────────────────────────────
 
   /** 列出记忆（可按 source 过滤） */

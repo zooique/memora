@@ -88,7 +88,8 @@
   --red-20:    rgba(255, 59, 48, 0.1);  /* 错误横幅背景色 */
 
   /* 字体 */
-  --font-sprite: 'LXGW WenKai', 'LXGW WenKai Screen', 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', system-ui, serif;
+  /* UX-FD-01 不打包字体文件，使用系统默认字体栈（跨平台一致性） */
+  --font-sprite: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
   --font-mono:   'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', 'Monaco', monospace;
 }
 

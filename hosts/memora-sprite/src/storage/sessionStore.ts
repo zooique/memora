@@ -81,6 +81,49 @@ export class SqliteSessionStore implements ISessionStore {
   }
 
   /**
+   * FD-09 删除会话
+   *
+   * 删除指定会话的所有消息记录。不可恢复，调用方需自行确认。
+   *
+   * @param sessionId 会话 ID（格式：YYYY-MM-DD-sessionName）
+   * @returns 是否删除成功
+   */
+  deleteSession(sessionId: string): boolean {
+    const parts = sessionId.split('-');
+    // 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段）
+    if (parts.length < 4) return false;
+    const date = parts.slice(0, 3).join('-'); // YYYY-MM-DD
+    const session = parts.slice(3).join('-'); // sessionName
+
+    const result = this.db.prepare(
+      'DELETE FROM sessions WHERE date = ? AND session = ?'
+    ).run(date, session);
+    return result.changes > 0;
+  }
+
+  /**
+   * FD-09 重命名会话
+   *
+   * 更新指定会话的会话名。仅在当前项目下有效。
+   * 注意：会话 ID 包含日期前缀，重命名仅修改 session 字段。
+   *
+   * @param sessionId 会话 ID（格式：YYYY-MM-DD-sessionName）
+   * @param newName 新会话名
+   * @returns 是否重命名成功
+   */
+  renameSession(sessionId: string, newName: string): boolean {
+    const parts = sessionId.split('-');
+    if (parts.length < 4) return false;
+    const date = parts.slice(0, 3).join('-');
+    const session = parts.slice(3).join('-');
+
+    const result = this.db.prepare(
+      'UPDATE sessions SET session = ? WHERE date = ? AND session = ?'
+    ).run(newName, date, session);
+    return result.changes > 0;
+  }
+
+  /**
    * 复制会话（ISessionStore 接口实现）
    *
    * 使用 SQLite 事务保证原子性：先清除目标会话，再逐条复制源会话消息。

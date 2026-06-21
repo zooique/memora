@@ -40,6 +40,10 @@ const IPC_CHANNELS = {
   SESSION_NEW: 'session-new',
   SESSION_LIST: 'session-list',
   SESSION_SWITCH: 'session-switch',
+  /** FD-09 删除会话（含确认对话框） */
+  SESSION_DELETE: 'session-delete',
+  /** FD-09 重命名会话 */
+  SESSION_RENAME: 'session-rename',
   MEMORIES_LIST: 'memories-list',
   MEMORIES_SEARCH: 'memories-search',
   MEMORIES_SHOW: 'memories-show',
@@ -105,6 +109,8 @@ export interface ChatMessage {
 /** 精灵配置（与 SpriteConfig 对齐，渲染进程用） */
 export interface SpriteConfigForm {
   silentMode: boolean;
+  /** FD-10 静默模式恢复时间（ISO 8601），null 表示无定时恢复 */
+  silentModeExpiresAt?: string | null;
   proactiveThreshold: number;
   proactiveCooldownMs: number;
   triggerIntervalMs: number;
@@ -127,6 +133,10 @@ export interface ElectronAPI {
   listSessions: () => Promise<{ sessions: Array<{ id: string; date: string; name: string }> }>;
   /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   switchSession: (query: { date: string; session: string }) => Promise<{ success: boolean; messages: ChatMessage[]; error?: string }>;
+  /** FD-09 删除会话（不可恢复，调用方需自行确认） */
+  deleteSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+  /** FD-09 重命名会话 */
+  renameSession: (sessionId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
@@ -355,6 +365,8 @@ const electronAPI: ElectronAPI = {
   listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST),
   // UX-P1-04 切换到已有会话（更新 Agent 内部状态）
   switchSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, query),
+  deleteSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId),
+  renameSession: (sessionId, newName) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RENAME, sessionId, newName),
 
   // 仪表盘（FD-03）
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),

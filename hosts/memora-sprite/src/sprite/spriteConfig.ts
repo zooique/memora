@@ -14,6 +14,8 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
 /** 精灵持久化配置 */
 export interface SpriteConfig {
+  /** 配置版本号，用于迁移管理。默认 1（初始版本），递增时触发对应迁移函数 */
+  configVersion?: number;
   /** 定时触发器间隔（毫秒），默认 3_600_000（1 小时） */
   triggerIntervalMs?: number;
   /** 默认角色名称，启动时自动切换 */
@@ -46,6 +48,10 @@ export interface SpriteConfig {
   projectMode?: 'smart' | 'focus';
   /** 专注模式锁定的项目路径（绝对路径），仅 projectMode='focus' 时生效 */
   focusProjectPath?: string;
+  /** FD-05 完整窗口的边界（屏幕坐标 + 尺寸），启动时恢复。null 表示使用默认大小并居中 */
+  windowBounds?: { x: number; y: number; width: number; height: number } | null;
+  /** FD-10 静默模式恢复时间（ISO 8601），过期后自动关闭静默模式。null 表示无定时恢复 */
+  silentModeExpiresAt?: string | null;
 }
 
 /** 配置键名联合类型 */
@@ -56,6 +62,7 @@ export { MS_PER_MINUTE } from './constants.js';
 
 /** 内置默认值 */
 export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
+  configVersion: 1,
   triggerIntervalMs: 3_600_000,
   defaultPersona: '',
   silentMode: false,
@@ -70,10 +77,57 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   showFloatBubble: true,
   projectMode: 'smart',
   focusProjectPath: '',
+  windowBounds: null,
+  silentModeExpiresAt: null,
 };
 
 /** 配置文件名 */
 const CONFIG_FILENAME = 'sprite.json';
+
+/** 当前最新配置版本号（与 DEFAULT_SPRITE_CONFIG.configVersion 保持一致） */
+const CURRENT_CONFIG_VERSION = 1;
+
+/**
+ * 配置迁移映射表
+ *
+ * 键为迁移前的版本号，值为迁移函数（接收配置，返回迁移后的配置）。
+ * 迁移链按版本号递增顺序执行：v1→v2→v3→...→CURRENT。
+ *
+ * 设计原则：
+ *   - 每个迁移函数独立、幂等，仅处理对应版本的变更
+ *   - 新增字段时，在此处添加迁移条目并递增 CURRENT_CONFIG_VERSION
+ *   - 示例见下方注释中的 v1→v2 模板
+ */
+const MIGRATIONS: Record<number, (config: Required<SpriteConfig>) => SpriteConfig> = {
+  // 示例：当 CURRENT_CONFIG_VERSION = 2 时，取消注释以下迁移
+  // 1: (config) => {
+  //   // v1→v2：新增 xxx 字段，默认值 xxx
+  //   return config;
+  // },
+};
+
+/**
+ * 执行配置迁移链
+ *
+ * 从当前配置的版本号开始，依次执行迁移函数，直到最新版本。
+ * 迁移后更新 configVersion 字段。无迁移需求时直接返回原配置。
+ */
+function runMigrations(config: Required<SpriteConfig>): Required<SpriteConfig> {
+  let current = config.configVersion ?? 0;
+  let migrated = { ...config };
+
+  while (current < CURRENT_CONFIG_VERSION) {
+    const migrateFn = MIGRATIONS[current];
+    if (migrateFn) {
+      // 迁移函数接收完整配置，返回迁移后的配置（可能有新字段）
+      migrated = migrateFn(migrated) as Required<SpriteConfig>;
+    }
+    current++;
+  }
+
+  migrated.configVersion = CURRENT_CONFIG_VERSION;
+  return migrated;
+}
 
 /**
  * 加载精灵配置
@@ -101,7 +155,8 @@ export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
       }
     }
 
-    return merged;
+    // FD-11 执行配置版本迁移链（v1→v2→...→CURRENT）
+    return runMigrations(merged);
   } catch {
     // 文件损坏，静默回退
     return { ...DEFAULT_SPRITE_CONFIG };

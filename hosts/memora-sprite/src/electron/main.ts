@@ -201,6 +201,32 @@ async function initializeApp(): Promise<void> {
 
     await windowManager.createWindows();
 
+    // FD-05 恢复窗口边界（上次关闭时的位置和大小）
+    const fullWindow = windowManager.getFullWindow();
+    if (fullWindow && spriteConfig.windowBounds) {
+      const { x, y, width, height } = spriteConfig.windowBounds;
+      fullWindow.setBounds({ x, y, width, height });
+    }
+
+    // FD-05 监听窗口 resize/move 事件，持久化边界（防抖 500ms）
+    if (fullWindow) {
+      let boundsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+      const saveBounds = () => {
+        const bounds = fullWindow.getBounds();
+        saveSpriteConfig(defaultDataDir, {
+          windowBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+        });
+      };
+      fullWindow.on('resize', () => {
+        if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+        boundsSaveTimer = setTimeout(saveBounds, 500);
+      });
+      fullWindow.on('move', () => {
+        if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
+        boundsSaveTimer = setTimeout(saveBounds, 500);
+      });
+    }
+
     // 4. 创建托盘
     const iconPath = await fs
       .access(TRAY_ICON_PATH)
@@ -229,9 +255,9 @@ async function initializeApp(): Promise<void> {
 
     // 5. 初始化交互层
     interaction = new ElectronInteraction();
-    const fullWindow = windowManager.getFullWindow();
-    if (fullWindow) {
-      interaction.setMainWindow(fullWindow);
+    const mainWindowForInteraction = windowManager.getFullWindow();
+    if (mainWindowForInteraction) {
+      interaction.setMainWindow(mainWindowForInteraction);
     }
 
     // 6. 窗口创建完成，显示初始状态对应的窗口

@@ -19,6 +19,14 @@ import type { UIManager } from './ui.js';
 import type { SpriteConfigForm } from './types.js';
 import { createIpcErrorHandler, toError, reportError } from './errorHelpers.js';
 
+/** FD-10 静默恢复回调：renderer 注册此回调，用于重建本地恢复定时器 */
+let silentRecoveryCallback: ((remainingMs: number) => void) | null = null;
+
+/** FD-10 注册静默恢复回调（由 renderer.ts 调用） */
+export function setSilentRecoveryCallback(cb: (remainingMs: number) => void): void {
+  silentRecoveryCallback = cb;
+}
+
 /**
  * 创建设置控制器
  *
@@ -169,6 +177,19 @@ export function createSettingsController(uiManager: UIManager) {
       uiManager.loadConfigToForm(formConfig);
       // FD-A2 加载成功时隐藏之前的错误横幅
       uiManager.hideSettingsError();
+
+      // FD-10 静默模式恢复检查：若 expiresAt 已过期，自动关闭静默模式
+      if (cfg.silentMode && cfg.silentModeExpiresAt) {
+        const expiresAt = new Date(cfg.silentModeExpiresAt).getTime();
+        if (Date.now() >= expiresAt) {
+          await window.electronAPI.updateConfig('silentMode', false);
+          await window.electronAPI.updateConfig('silentModeExpiresAt', null);
+          uiManager.showToast('静默模式已到期自动恢复', 'info');
+        } else {
+          // 未过期：通知 renderer 重建本地恢复定时器（剩余时间）
+          silentRecoveryCallback?.(expiresAt - Date.now());
+        }
+      }
 
       // FD-04 加载项目列表到专注项目下拉框
       try {

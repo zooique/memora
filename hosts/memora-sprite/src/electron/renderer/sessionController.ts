@@ -136,10 +136,66 @@ export function createSessionController(uiManager: UIManager) {
     return currentSessionId;
   }
 
+  /**
+   * FD-09 删除会话
+   *
+   * 弹出确认对话框后删除会话。删除不可恢复。
+   * 删除成功后刷新会话列表 UI。
+   */
+  async function deleteSession(sessionId: string): Promise<void> {
+    // 安全检查：防止未知 sessionId
+    if (!sessionId) return;
+
+    // 确认对话框
+    const confirmed = confirm(`确定删除会话「${sessionId}」吗？此操作不可恢复。`);
+    if (!confirmed) return;
+
+    const result = await window.electronAPI.deleteSession(sessionId);
+    if (result.success) {
+      uiManager.showToast('会话已删除', 'info');
+      // 刷新会话列表
+      await loadSessionList();
+    } else {
+      uiManager.showToast(result.error ?? '删除失败', 'error');
+    }
+  }
+
+  /**
+   * FD-09 重命名会话
+   *
+   * 弹出输入框让用户输入新名称。
+   * 重命名成功后刷新会话列表 UI。
+   */
+  async function renameSession(sessionId: string): Promise<void> {
+    if (!sessionId) return;
+
+    // 提取当前会话名作为默认值（去除日期前缀）
+    const parts = sessionId.split('-');
+    const currentName = parts.length >= 4 ? parts.slice(3).join('-') : sessionId;
+
+    const newName = prompt('输入新会话名：', currentName);
+    if (!newName || !newName.trim()) {
+      if (newName !== null) {
+        uiManager.showToast('会话名不能为空', 'warning');
+      }
+      return;
+    }
+
+    const result = await window.electronAPI.renameSession(sessionId, newName.trim());
+    if (result.success) {
+      uiManager.showToast('会话已重命名', 'info');
+      await loadSessionList();
+    } else {
+      uiManager.showToast(result.error ?? '重命名失败', 'error');
+    }
+  }
+
   return {
     loadSessionHistory,
     loadSessionList,
     switchSession,
+    deleteSession,
+    renameSession,
     getCurrentSessionId,
   };
 }

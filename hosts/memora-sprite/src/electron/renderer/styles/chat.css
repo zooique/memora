@@ -128,6 +128,68 @@
   display: none;
 }
 
+/* FD-08 会话搜索框 */
+.session-search {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 8px 8px 4px;
+  padding: 5px 8px;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+  color: var(--text);
+  background: var(--surface0);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.session-search::placeholder {
+  color: var(--muted);
+}
+
+.session-search:focus {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-accent-sm);
+}
+
+/* FD-09 会话列表操作按钮 */
+.session-list-item-del,
+.session-list-item-rename {
+  /* FD-09 操作按钮主动可见（非 hover-only），通过 opacity 区分常态/hover */
+  display: block;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.15s;
+}
+
+.session-list-item-del {
+  right: 8px;
+}
+
+.session-list-item-rename {
+  right: 30px;
+}
+
+.session-list-item:hover .session-list-item-del,
+.session-list-item:hover .session-list-item-rename {
+  opacity: 0.8;
+}
+
+.session-list-item-del:hover,
+.session-list-item-rename:hover {
+  opacity: 1;
+  background: var(--surface2);
+}
+
 .session-list {
   list-style: none;
   padding: 4px;
@@ -135,6 +197,7 @@
 }
 
 .session-list-item {
+  position: relative; /* FD-09 操作按钮的定位参考 */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -397,7 +460,7 @@
   background: var(--window-bg-2);
   color: var(--text);
   border-bottom-left-radius: 2px;
-  /* UX-P2-17 精灵消息保留霞鹜文楷字体以体现精灵人格，对齐方案 §7.2 + HTML 预览 §6.6 */
+  /* UX-FD-01 精灵消息使用系统字体栈（--font-sprite 已改为系统字体），保持与输入框一致的阅读体验 */
   font-family: var(--font-sprite);
 }
 
