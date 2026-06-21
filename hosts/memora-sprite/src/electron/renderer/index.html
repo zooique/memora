@@ -131,6 +131,12 @@
           <button id="btn-new-session" title="开始新会话（Ctrl+N，当前会话保留在历史中）">✨ 新会话</button>
         </div>
 
+        <!-- FD-A2 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->
+        <div id="chat-error" class="panel-error hidden">
+          <span id="chat-error-msg"></span>
+          <button id="chat-error-retry" class="panel-error-btn">重试</button>
+        </div>
+
         <!-- 主动提示 banner（顶部滑入，对齐 docs/memora-sprite-preview.html §6.6） -->
         <div id="proactive-banner" class="hidden">
           <span class="banner-icon">🧚</span>
@@ -190,6 +196,11 @@
           </select>
           <button id="btn-add-memory">+ 添加</button>
         </div>
+        <!-- FD-A2 记忆面板加载失败状态：默认隐藏，加载失败时显示 -->
+        <div id="memory-error" class="panel-error hidden">
+          <span id="memory-error-msg"></span>
+          <button id="memory-error-retry" class="panel-error-btn">重试</button>
+        </div>
         <div id="memory-list"></div>
       </div>
 
@@ -204,9 +215,9 @@
         </div>
 
         <!-- FD-A2 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
-        <div id="settings-error" class="settings-error hidden">
+        <div id="settings-error" class="panel-error hidden">
           <span id="settings-error-msg"></span>
-          <button id="settings-error-retry" class="settings-error-btn">重试</button>
+          <button id="settings-error-retry" class="panel-error-btn">重试</button>
         </div>
 
         <!-- LLM 配置 -->

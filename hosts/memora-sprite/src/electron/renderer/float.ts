@@ -14,21 +14,50 @@
  * alwaysOnTop + frame:false 窗口，鼠标移出窗口范围后 mousemove 停止触发，
  * 导致拖动失效。改用 PointerEvent + setPointerCapture 后，指针捕获确保
  * 鼠标移出窗口仍能持续接收 pointermove 事件，拖动可跨屏幕范围。
+ *
+ * P2-002/P2-003 修复：原方案自定义 FloatElectronAPI 接口与 ElectronAPI 字段重复，
+ * 且使用双重类型断言访问 window.electronAPI。改为 Pick<ElectronAPI, ...> 提取子集，
+ * 直接使用 window.electronAPI（types.ts 已声明全局类型）。
  */
 
-/** 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供） */
-export interface FloatElectronAPI {
-  startFloatDrag(): void;
-  moveFloatWindow(dx: number, dy: number): void;
-  saveFloatPosition(): void;
-  expandToFull(): void;
-  showFloatContextMenu(): void;
-  onFloatUnread(cb: (count: number) => void): void;
-  onSpriteEvent(cb: (event: { type: string; payload: { prompt?: string; imageUrl?: string; silent?: boolean } }) => void): void;
-}
+import type { ElectronAPI } from '../preload.js';
+// 导入 types.js 确保 window.electronAPI 全局声明加载（float.ts 作为独立入口）
+import './types.js';
+
+/**
+ * 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供）
+ *
+ * P2-003 修复：从自定义接口改为 Pick<ElectronAPI, ...>，消除与 ElectronAPI 的重复定义。
+ * 未来 ElectronAPI 签名变更时，FloatElectronAPI 自动同步。
+ */
+export type FloatElectronAPI = Pick<
+  ElectronAPI,
+  | 'startFloatDrag'
+  | 'moveFloatWindow'
+  | 'saveFloatPosition'
+  | 'expandToFull'
+  | 'showFloatContextMenu'
+  | 'onFloatUnread'
+  | 'onSpriteEvent'
+>;
 
 /** localStorage 键名：已见过拖动引导提示 */
 const DRAG_HINT_SEEN_KEY = 'memora-drag-hint-seen';
+
+/**
+ * 类型守卫：判断 payload 是否包含有效的 imageUrl 字段
+ *
+ * 用于安全访问 formUpdate 事件的 payload.imageUrl，
+ * 替代原方案对 unknown payload 的直接属性访问。
+ */
+function hasImageUrl(payload: unknown): payload is { imageUrl: string } {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    'imageUrl' in payload &&
+    typeof (payload as Record<string, unknown>).imageUrl === 'string'
+  );
+}
 
 /**
  * 初始化浮动窗口交互逻辑
@@ -213,6 +242,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // ─── 精灵事件监听（统一注册，避免重复触发） ────────────
   // 注意：onSpriteEvent 在同一通道上多次注册会导致同一事件触发多次。
   // 此处合并主动提示弹跳 + 阶段三形态进化预留为一个监听器，按 type 分发。
+  // P2-003 修复：ElectronAPI.onSpriteEvent 的 payload 是 unknown（不同事件类型有不同结构），
+  // 此处使用类型守卫 hasImageUrl 安全地访问 formUpdate 事件的 imageUrl 字段。
   electronAPI.onSpriteEvent((event) => {
     // 主动提示：球体弹跳动画 + 状态点切换
     if (event.type === 'proactivePrompt') {
@@ -225,7 +256,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
 
     // 阶段三形态进化预留：加载生成的形态图片
-    if (event.type === 'formUpdate' && event.payload?.imageUrl && sphereImage) {
+    if (event.type === 'formUpdate' && hasImageUrl(event.payload) && sphereImage) {
       sphereImage.src = event.payload.imageUrl;
       sphereImage.style.display = 'block';
       if (sphereEmoji) {
@@ -255,8 +286,9 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
 }
 
 // 在 Electron 渲染进程中自动初始化
-// electronAPI 由 preload.ts 通过 contextBridge 注入到 window 对象
-const api = (window as unknown as Record<string, unknown>).electronAPI;
-if (api) {
-  initFloatWindow(api as FloatElectronAPI);
+// P2-002 修复：直接使用 window.electronAPI（types.ts 已声明全局类型），
+// 替代原方案的双重类型断言 (window as unknown as Record<string, unknown>).electronAPI。
+// electronAPI 由 preload.ts 通过 contextBridge 注入到 window 对象。
+if (window.electronAPI) {
+  initFloatWindow(window.electronAPI);
 }

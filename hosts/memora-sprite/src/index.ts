@@ -37,7 +37,10 @@ export type { SpriteTrigger, TriggerPayload, TriggerCallback } from './sprite/tr
 export { TimerTrigger, TriggerBus } from './sprite/triggers.js';
 export type { FileWatcherConfig } from './sprite/fileWatcherTrigger.js';
 export { FileWatcherTrigger } from './sprite/fileWatcherTrigger.js';
-export type { IInteraction, InputEvent, InputHandler, CloseHandler } from './sprite/interaction.js';
+// P2-007 修复：移除未使用的 InputEvent 导出。
+// InputEvent 仅在 interaction.ts 内部作为 InputHandler 的参数类型使用，
+// 宿主项目通过 InputHandler 间接消费，无需直接引用。
+export type { IInteraction, InputHandler, CloseHandler } from './sprite/interaction.js';
 export { CliInteraction } from './sprite/cliInteraction.js';
 
 /** 中文 UI 消息覆盖 */

@@ -136,6 +136,7 @@ export function createMemoryController(uiManager: UIManager) {
       }
     } catch (error) {
       console.error('[loadMemoryList] 加载记忆列表失败:', error);
+      uiManager.showPanelError('memory', '加载记忆列表失败，请检查连接后重试', () => loadMemoryList());
     }
   }
 

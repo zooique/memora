@@ -13,7 +13,6 @@
  * - 保留 setupBusinessLogic（发送/停止/新建会话），因依赖 uiManager 和 sessionController
  */
 
-import type { ElectronAPI } from '../preload.js';
 import { UIManager } from './ui.js';
 import { createSessionController } from './sessionController.js';
 import { createMemoryController } from './memoryController.js';
@@ -21,11 +20,8 @@ import { createPersonaController } from './personaController.js';
 import { createSettingsController } from './settingsController.js';
 import { initIpcListeners } from './ipcListeners.js';
 
-declare global {
-  interface Window {
-    electronAPI: ElectronAPI;
-  }
-}
+// P2-001 修复：删除重复的 declare global 和未使用的 ElectronAPI 导入。
+// types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
 
 // ─── 状态 ───────────────────────────────────────────────────
 
@@ -82,6 +78,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Agent 就绪：加载初始数据 + 切换到对话面板
     onAgentReady: () => {
       void sessionController.loadSessionHistory();
+      // FD-A1 Gap 1 修复：Agent 就绪后加载会话列表（第 162 行调用时 Agent 未就绪，静默失败）
+      void sessionController.loadSessionList();
       void memoryController.loadMemoryList();
       void personaController.loadPersonaList();
       void memoryController.loadDashboard();
@@ -274,6 +272,8 @@ function setupBusinessLogic(
           role: 'system',
           content: `✨ 新会话已开始（${result.sessionName ?? ''}）`,
         });
+        // FD-A1 Gap 2 修复：新建会话后刷新会话列表，使新会话出现在下拉中
+        void sessionController.loadSessionList();
       } else {
         // IX-06 失败反馈走 toast
         uiManager.showToast(`新建会话失败：${result.error ?? '未知错误'}`, 'error');

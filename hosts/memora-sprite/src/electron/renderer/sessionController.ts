@@ -44,8 +44,9 @@ export function createSessionController(uiManager: UIManager) {
         });
       }
     } catch (error) {
-      // 会话历史加载失败不影响主流程，记录日志辅助排查
+      // 会话历史加载失败：显示错误横幅，提供重试
       console.error('[loadSessionHistory] 加载会话历史失败:', error);
+      uiManager.showPanelError('chat', '加载会话历史失败，请检查连接后重试', () => loadSessionHistory());
     }
   }
 

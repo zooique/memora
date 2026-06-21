@@ -53,9 +53,12 @@ export class Sprite {
   private triggerBus: TriggerBus;
   private running = false;
   private spriteHandlers = new Map<string, Set<(event: unknown) => void>>();
-  /** Agent 事件处理器引用（用于 off 取消订阅） */
-  private agentHandlers: Partial<{ [K in keyof AgentEventMap]: (e: AgentEventMap[K]) => void }> =
-    {};
+  /** Agent 事件处理器引用（用于 off 取消订阅，仅列出实际订阅的 3 个事件） */
+  private agentHandlers: {
+    memoryAdded?: (e: AgentEventMap['memoryAdded']) => void;
+    personaSwitched?: (e: AgentEventMap['personaSwitched']) => void;
+    insightExtracted?: (e: AgentEventMap['insightExtracted']) => void;
+  } = {};
   /** 项目路径（用于 FileWatcherTrigger 的默认监听目录） */
   private projectPath: string;
   /** 路径白名单（来自 Agent 配置，用于 fileWatcher 安全校验） */
@@ -594,10 +597,17 @@ export class Sprite {
 
   /** 取消订阅 Agent 事件 */
   private unsubscribeAgentEvents(): void {
-    for (const [event, handler] of Object.entries(this.agentHandlers)) {
-      if (handler) {
-        this.agent.off(event as keyof AgentEventMap, handler as never);
-      }
+    // P2-004 修复：直接枚举每个事件，避免 Object.entries + as never 的类型安全问题。
+    // Object.entries 会丢失 key-value 类型关联，导致 agent.off 的参数类型不匹配需要 as never。
+    // 显式枚举每个事件，TypeScript 可为每个 agent.off 调用精确推断事件名和 handler 的对应类型。
+    if (this.agentHandlers.memoryAdded) {
+      this.agent.off('memoryAdded', this.agentHandlers.memoryAdded);
+    }
+    if (this.agentHandlers.personaSwitched) {
+      this.agent.off('personaSwitched', this.agentHandlers.personaSwitched);
+    }
+    if (this.agentHandlers.insightExtracted) {
+      this.agent.off('insightExtracted', this.agentHandlers.insightExtracted);
     }
     this.agentHandlers = {};
   }

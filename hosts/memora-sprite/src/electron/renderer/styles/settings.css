@@ -254,8 +254,8 @@
   flex-shrink: 0;
 }
 
-/* FD-A2 设置面板加载失败状态 */
-.settings-error {
+/* FD-A2 面板加载失败状态（统一错误横幅，记忆/对话/设置面板共享） */
+.panel-error {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -269,11 +269,11 @@
   flex-shrink: 0;
 }
 
-.settings-error.hidden {
+.panel-error.hidden {
   display: none;
 }
 
-.settings-error-btn {
+.panel-error-btn {
   padding: 4px 12px;
   background: #8b3a3a;
   border: 1px solid #b45353;
@@ -285,6 +285,6 @@
   white-space: nowrap;
 }
 
-.settings-error-btn:hover {
+.panel-error-btn:hover {
   background: #a04242;
 }

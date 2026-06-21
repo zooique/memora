@@ -34,18 +34,27 @@ interface ProactivePromptPayload {
 }
 
 /**
+ * P2-006 类型守卫：检查值是否为非 null 对象
+ *
+ * 替代 `as Record<string, unknown>` 类型断言，通过类型谓词正确收窄类型。
+ * 可复用于所有需要将 unknown 安全转为对象访问的场景。
+ */
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+/**
  * 校验主动提示 payload 结构
  *
  * 类型守卫，确保 payload 字段类型正确，避免运行时错误。
  */
 function isProactivePromptPayload(value: unknown): value is ProactivePromptPayload {
-  if (typeof value !== 'object' || value === null) return false;
-  const obj = value as Record<string, unknown>;
+  if (!isObject(value)) return false;
   return (
-    typeof obj.prompt === 'string' &&
-    Array.isArray(obj.triggers) &&
-    obj.triggers.every((t) => typeof t === 'string') &&
-    typeof obj.silent === 'boolean'
+    typeof value.prompt === 'string' &&
+    Array.isArray(value.triggers) &&
+    value.triggers.every((t) => typeof t === 'string') &&
+    typeof value.silent === 'boolean'
   );
 }
 

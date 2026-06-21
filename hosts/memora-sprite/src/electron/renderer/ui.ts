@@ -15,8 +15,6 @@
  */
 
 import { renderMarkdown } from './markdown.js';
-/** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块（node:fs/path）带入渲染进程 */
-import { MS_PER_MINUTE } from '../../sprite/constants.js';
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
 import { getRequiredElement, getOptionalElement } from './domHelpers.js';
 import { ToastManager } from './toast.js';
@@ -24,13 +22,14 @@ import { ModalManager } from './modal.js';
 import { OnboardingManager } from './onboarding.js';
 import { ThemeManager } from './themeManager.js';
 import { ProactiveBanner } from './proactiveBanner.js';
+import { SettingsPanelManager } from './settingsPanelManager.js';
+import type { SettingsPanelHost } from './settingsPanelManager.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
   Message,
   UIState,
   PersonaItem,
   LlmConfigForm,
-  EmbeddingConfigForm,
   LlmConfigSavePayload,
   MemoryListItem,
   MemoryDetail,
@@ -48,7 +47,6 @@ export type {
   UIState,
   PersonaItem,
   LlmConfigForm,
-  EmbeddingConfigForm,
   LlmConfigSavePayload,
   ToastType,
 } from './types.js';
@@ -71,6 +69,8 @@ export class UIManager {
   private themeManager = new ThemeManager();
   /** 主动提示横幅管理器（独立管理横幅按钮事件） */
   private proactiveBanner = new ProactiveBanner();
+  /** P2-008 设置面板管理器（独立管理设置面板 DOM 和事件，约 450 行提取） */
+  private settingsPanelManager: SettingsPanelManager;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -97,31 +97,7 @@ export class UIManager {
   private personaDropdownEl: HTMLElement | null;
   private personaNameEl: HTMLElement | null;
 
-  // 设置面板元素 - LLM 配置
-  private cfgLlmPreset: HTMLSelectElement | null;
-  private cfgLlmProvider: HTMLInputElement | null;
-  private cfgLlmModel: HTMLInputElement | null;
-  private cfgLlmBaseUrl: HTMLInputElement | null;
-  private cfgLlmApiKey: HTMLInputElement | null;
-  private cfgLlmTemperature: HTMLInputElement | null;
-
-  // 设置面板元素 - Embedding 配置
-  private cfgEmbEnabled: HTMLInputElement | null;
-  private cfgEmbModel: HTMLInputElement | null;
-  private cfgEmbBaseUrl: HTMLInputElement | null;
-  private cfgEmbApiKey: HTMLInputElement | null;
-
-  // 设置面板元素 - 精灵配置
-  private cfgSilent: HTMLInputElement | null;
-  private cfgThreshold: HTMLInputElement | null;
-  private cfgCooldown: HTMLInputElement | null;
-  private cfgInterval: HTMLInputElement | null;
-  private cfgWatcherEnabled: HTMLInputElement | null;
-  private cfgWatcherPaths: HTMLInputElement | null;
-  private cfgWatcherDebounce: HTMLInputElement | null;
-  private cfgDefaultPersona: HTMLInputElement | null;
-  /** FD-04 项目模式：专注项目选择下拉框 */
-  private cfgFocusProject: HTMLSelectElement | null;
+  // P2-008 设置面板 DOM 元素已提取至 SettingsPanelManager
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -132,16 +108,12 @@ export class UIManager {
   private streamingMessages = new Map<string, HTMLElement>();
   private eventCleanupFunctions: Array<() => void> = [];
 
-  /** LLM 预设（从主进程加载，避免硬编码） */
-  private llmPresets: Record<string, { provider: string; model: string; baseUrl: string }> = {};
+  // P2-008 settingsFormDirty / llmPresets / currentPersonaMode 已提取至 SettingsPanelManager
 
   // ─── UI 状态字段 ────────────────────────────────────────
-  /** FD-07 设置表单是否有未保存修改（dirty 标志） */
-  private settingsFormDirty = false;
-  /** FD-A2 设置面板加载失败重试回调 */
-  private settingsErrorRetryCallback: (() => void) | null = null;
-  /** 当前角色匹配模式（由 renderer.ts 设置） */
-  private currentPersonaMode: string = 'auto';
+  /** FD-A2 面板错误横幅重试回调映射（key: panelId，如 'settings'/'memory'/'chat'） */
+  private panelErrorRetryCallbacks = new Map<string, () => void>();
+  /** P2-008 currentPersonaMode 已提取至 SettingsPanelManager */
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
   /** 记忆搜索防抖定时器（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
@@ -172,36 +144,15 @@ export class UIManager {
     this.personaDropdownEl = getOptionalElement('persona-dropdown', 'div');
     this.personaNameEl = getOptionalElement('persona-name', 'span');
 
-    // 设置面板 - LLM 配置
-    this.cfgLlmPreset = getOptionalElement('cfg-llm-preset', 'select');
-    this.cfgLlmProvider = getOptionalElement('cfg-llm-provider', 'input');
-    this.cfgLlmModel = getOptionalElement('cfg-llm-model', 'input');
-    this.cfgLlmBaseUrl = getOptionalElement('cfg-llm-base-url', 'input');
-    this.cfgLlmApiKey = getOptionalElement('cfg-llm-api-key', 'input');
-    this.cfgLlmTemperature = getOptionalElement('cfg-llm-temperature', 'input');
-
-    // 设置面板 - Embedding 配置
-    this.cfgEmbEnabled = getOptionalElement('cfg-emb-enabled', 'input');
-    this.cfgEmbModel = getOptionalElement('cfg-emb-model', 'input');
-    this.cfgEmbBaseUrl = getOptionalElement('cfg-emb-base-url', 'input');
-    this.cfgEmbApiKey = getOptionalElement('cfg-emb-api-key', 'input');
-
-    // 设置面板 - 精灵配置
-    this.cfgSilent = getOptionalElement('cfg-silent', 'input');
-    this.cfgThreshold = getOptionalElement('cfg-threshold', 'input');
-    this.cfgCooldown = getOptionalElement('cfg-cooldown', 'input');
-    this.cfgInterval = getOptionalElement('cfg-interval', 'input');
-    this.cfgWatcherEnabled = getOptionalElement('cfg-watcher-enabled', 'input');
-    this.cfgWatcherPaths = getOptionalElement('cfg-watcher-paths', 'input');
-    this.cfgWatcherDebounce = getOptionalElement('cfg-watcher-debounce', 'input');
-    this.cfgDefaultPersona = getOptionalElement('cfg-default-persona', 'input');
-    this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
+    // P2-008 设置面板 DOM 元素初始化已提取至 SettingsPanelManager
+    this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
 
     // 初始化 UI
     this.initEventListeners();
     this.initMemoryPanelListeners();
     this.initPersonaSelectorListeners();
-    this.initSettingsPanelListeners();
+    this.settingsPanelManager.initListeners(); // P2-008 委托到 SettingsPanelManager
+    this.initPanelErrorRetryButtons(); // FD-A2 统一面板错误横幅重试按钮
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.initEmptyStateListeners();
@@ -333,10 +284,11 @@ export class UIManager {
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
     }
-    // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、ProactiveBanner 监听器）
+    // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、ProactiveBanner 监听器、SettingsPanel 监听器）
     this.toastManager.cleanup();
     this.modalManager.cleanup();
     this.proactiveBanner.cleanup();
+    this.settingsPanelManager.cleanup(); // P2-008 清理设置面板事件监听器
   }
 
   // ─── 消息渲染 ─────────────────────────────────────────
@@ -1451,8 +1403,6 @@ export class UIManager {
 
   // 角色切换回调
   private personaSwitchCallback: ((name: string) => void) | null = null;
-  /** IX-07 角色匹配模式变更回调（由 renderer.ts 注册，调用主进程持久化） */
-  private personaModeChangeCallback: ((mode: string) => void) | null = null;
 
   /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
   private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
@@ -1461,9 +1411,9 @@ export class UIManager {
     this.personaSwitchCallback = cb;
   }
 
-  /** IX-07 注册角色匹配模式变更回调 */
+  /** IX-07 注册角色匹配模式变更回调（P2-008 委托到 SettingsPanelManager） */
   onPersonaModeChange(cb: (mode: string) => void): void {
-    this.personaModeChangeCallback = cb;
+    this.settingsPanelManager.onPersonaModeChange(cb);
   }
 
   /**
@@ -1520,212 +1470,80 @@ export class UIManager {
     this.memoryRecallClickCallback = cb;
   }
 
-  // ─── 设置面板 ─────────────────────────────────────────
+  // ─── 设置面板（P2-008 已提取至 SettingsPanelManager） ──
+
+  // P2-008 initSettingsTabListeners / initSettingsPanelListeners / initApiKeyToggle / resetSettingsFormDirty
+  // 已提取至 SettingsPanelManager，initListeners 委托给 settingsPanelManager.initListeners()
+
+  // ─── FD-A2 统一面板错误横幅 ───────────────────────────────
 
   /**
-   * UI-UX-01 初始化设置面板 tab 切换
+   * FD-A2 初始化所有面板错误横幅的重试按钮
    *
-   * 点击 tab 按钮时切换对应的内容区显示，
-   * 保持 tab 按钮的 active 状态同步。
+   * 统一为 settings / memory / chat 三个面板绑定重试按钮点击事件，
+   * 从 panelErrorRetryCallbacks Map 中查找对应的重试回调。
+   * 按钮缺失时静默跳过（对应面板可能未提供错误横幅）。
    */
-  private initSettingsTabListeners(): void {
-    const tabButtons = document.querySelectorAll<HTMLElement>('.settings-tab');
-    const tabContents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
-
-    tabButtons.forEach((btn) => {
-      this.addEventListener(btn, 'click', () => {
-        const targetTab = btn.dataset.settingsTab;
-        if (!targetTab) return;
-
-        // 切换 tab 按钮 active 状态
-        tabButtons.forEach((b) => b.classList.remove('active'));
-        btn.classList.add('active');
-
-        // 切换内容区显示
-        tabContents.forEach((content) => {
-          if (content.dataset.settingsTab === targetTab) {
-            content.classList.add('active');
-          } else {
-            content.classList.remove('active');
+  private initPanelErrorRetryButtons(): void {
+    const panelIds = ['settings', 'memory', 'chat'];
+    for (const panelId of panelIds) {
+      const retryBtn = document.getElementById(`${panelId}-error-retry`);
+      if (retryBtn) {
+        this.addEventListener(retryBtn, 'click', () => {
+          const callback = this.panelErrorRetryCallbacks.get(panelId);
+          if (callback) {
+            callback();
           }
         });
-      });
-    });
-  }
-
-  /** 初始化设置面板事件监听 */
-  private initSettingsPanelListeners(): void {
-    // UI-UX-01 设置面板 tab 切换
-    this.initSettingsTabListeners();
-
-    const btnSave = getOptionalElement('btn-settings-save', 'button');
-    const btnCancel = getOptionalElement('btn-settings-cancel', 'button');
-    const btnLlmTest = document.getElementById('btn-llm-test');
-
-    // 设置面板核心元素缺失时静默降级
-    if (!btnSave && !btnCancel) return;
-
-    // API Key 显示/隐藏切换：LLM + Embedding
-    this.initApiKeyToggle('btn-toggle-llm-key', 'cfg-llm-api-key');
-    this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
-
-    // FD-A2 设置面板加载失败重试按钮
-    const btnRetry = document.getElementById('settings-error-retry');
-    if (btnRetry) {
-      this.addEventListener(btnRetry, 'click', () => {
-        this.settingsErrorRetryCallback?.();
-      });
-    }
-
-    // FD-07 监听设置面板所有表单元素的变更，标记 dirty
-    const settingsPanel = document.getElementById('panel-settings');
-    if (settingsPanel) {
-      this.addEventListener(settingsPanel, 'input', () => {
-        this.settingsFormDirty = true;
-      });
-      this.addEventListener(settingsPanel, 'change', () => {
-        this.settingsFormDirty = true;
-      });
-    }
-
-    // 保存按钮：同时收集精灵配置和 LLM 配置
-    if (btnSave) {
-      this.addEventListener(btnSave, 'click', () => {
-        const spriteConfig = this.collectConfigFromForm();
-        const llmConfig = this.collectLlmConfigFromForm();
-        // FD-07 保存后清除 dirty 标志
-        this.settingsFormDirty = false;
-        this.configSaveCallback?.(spriteConfig);
-        this.llmConfigSaveCallback?.(llmConfig);
-      });
-    }
-
-    // FD-07 取消按钮：有未保存修改时确认，避免误点丢失修改
-    if (btnCancel) {
-      this.addEventListener(btnCancel, 'click', async () => {
-        if (this.settingsFormDirty) {
-          const confirmed = await this.showConfirmDialog({
-            title: '放弃修改',
-            message: '有未保存的修改，确定要放弃吗？',
-            confirmText: '放弃',
-            danger: true,
-          });
-          if (!confirmed) {
-            return;
-          }
-        }
-        this.settingsFormDirty = false;
-        this.configCancelCallback?.();
-      });
-    }
-
-    // LLM 预设切换：自动填充 provider/model/baseUrl
-    if (this.cfgLlmPreset) {
-      this.addEventListener(this.cfgLlmPreset, 'change', () => {
-        const presetKey = this.cfgLlmPreset!.value;
-        if (presetKey) {
-          this.applyLlmPreset(presetKey);
-        }
-      });
-    }
-
-    // LLM 连接测试按钮：调用主进程验证配置
-    if (btnLlmTest) {
-      this.addEventListener(btnLlmTest, 'click', () => {
-        this.llmTestCallback?.();
-      });
-    }
-
-    // FD-04 项目模式单选按钮：切换时启用/禁用专注项目下拉框
-    const projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
-    projectModeRadios.forEach((radio) => {
-      this.addEventListener(radio, 'change', () => {
-        if (this.cfgFocusProject) {
-          this.cfgFocusProject.disabled = radio.value !== 'focus';
-        }
-      });
-    });
-
-    // IX-07 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
-    const personaModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="persona-mode"]');
-    personaModeRadios.forEach((radio) => {
-      this.addEventListener(radio, 'change', () => {
-        const selectedMode = radio.value;
-        this.currentPersonaMode = selectedMode;
-        this.updatePersonaModeBadge(selectedMode);
-        this.personaModeChangeCallback?.(selectedMode);
-      });
-    });
-
-    // ADR-SP-008 主题切换单选按钮：切换时立即应用主题（无需等待保存按钮）
-    const themeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
-    themeRadios.forEach((radio) => {
-      this.addEventListener(radio, 'change', () => {
-        if (radio.checked) {
-          this.setTheme(radio.value === 'dark' ? 'dark' : 'light');
-        }
-      });
-    });
-  }
-
-  /**
-   * 初始化 API Key 显示/隐藏切换
-   *
-   * 点击眼睛图标在 password 和 text 之间切换输入框类型，
-   * 方便用户确认输入的 Key 是否正确。
-   *
-   * @param toggleBtnId 切换按钮 ID
-   * @param inputId 输入框 ID
-   */
-  private initApiKeyToggle(toggleBtnId: string, inputId: string): void {
-    const btn = document.getElementById(toggleBtnId);
-    const input = document.getElementById(inputId);
-    if (!(btn instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) return;
-
-    this.addEventListener(btn, 'click', () => {
-      if (input.type === 'password') {
-        input.type = 'text';
-        btn.textContent = '🙈';
-        btn.title = '隐藏 API Key';
-      } else {
-        input.type = 'password';
-        btn.textContent = '👁';
-        btn.title = '显示 API Key';
       }
-    });
+    }
   }
 
   /**
-   * FD-07 重置 dirty 标志
+   * FD-A2 显示面板错误横幅（通用方法）
    *
-   * 在 loadConfigToForm / loadLlmConfigToForm 后由 renderer.ts 调用，
-   * 因为程序化设置表单值会触发 input/change 事件，需要重置 dirty 标志
-   * 以避免"取消"按钮误判为有修改。
+   * 根据 panelId 查找对应的错误横幅元素并显示错误信息。
+   * 可选传入重试回调，点击重试按钮时触发。
+   *
+   * @param panelId 面板标识（如 'settings' / 'memory' / 'chat'）
+   * @param message 错误提示文本
+   * @param retryCallback 重试回调（可选，点击重试按钮时触发）
    */
-  resetSettingsFormDirty(): void {
-    this.settingsFormDirty = false;
-  }
-
-  /** FD-A2 显示设置面板加载失败错误横幅 */
-  showSettingsError(message: string, retryCallback?: () => void): void {
-    const errorEl = document.getElementById('settings-error');
-    const msgEl = document.getElementById('settings-error-msg');
+  showPanelError(panelId: string, message: string, retryCallback?: () => void): void {
+    const errorEl = document.getElementById(`${panelId}-error`);
+    const msgEl = document.getElementById(`${panelId}-error-msg`);
     if (errorEl && msgEl) {
       msgEl.textContent = message;
       errorEl.classList.remove('hidden');
     }
     if (retryCallback) {
-      this.settingsErrorRetryCallback = retryCallback;
+      this.panelErrorRetryCallbacks.set(panelId, retryCallback);
     }
   }
 
-  /** FD-A2 隐藏设置面板加载失败错误横幅 */
-  hideSettingsError(): void {
-    const errorEl = document.getElementById('settings-error');
+  /**
+   * FD-A2 隐藏面板错误横幅（通用方法）
+   *
+   * 隐藏对应面板的错误横幅并清除重试回调。
+   *
+   * @param panelId 面板标识
+   */
+  hidePanelError(panelId: string): void {
+    const errorEl = document.getElementById(`${panelId}-error`);
     if (errorEl) {
       errorEl.classList.add('hidden');
     }
-    this.settingsErrorRetryCallback = null;
+    this.panelErrorRetryCallbacks.delete(panelId);
+  }
+
+  /** FD-A2 显示设置面板加载失败错误横幅（委托到 showPanelError） */
+  showSettingsError(message: string, retryCallback?: () => void): void {
+    this.showPanelError('settings', message, retryCallback);
+  }
+
+  /** FD-A2 隐藏设置面板加载失败错误横幅（委托到 hidePanelError） */
+  hideSettingsError(): void {
+    this.hidePanelError('settings');
   }
 
   // ─── FD-A1 会话历史切换 ─────────────────────────────────────
@@ -1812,217 +1630,71 @@ export class UIManager {
     }
   }
 
-  /** 应用 LLM 预设到表单 */
-  private applyLlmPreset(key: string): void {
-    const preset = this.llmPresets[key];
-    if (preset && this.cfgLlmProvider && this.cfgLlmModel && this.cfgLlmBaseUrl) {
-      this.cfgLlmProvider.value = preset.provider;
-      this.cfgLlmModel.value = preset.model;
-      this.cfgLlmBaseUrl.value = preset.baseUrl;
-    }
-  }
-
-  /** 加载 LLM 配置到表单 */
+  /** P2-008 加载 LLM 配置到表单（委托到 SettingsPanelManager） */
   loadLlmConfigToForm(data: {
     configured: boolean;
     config: LlmConfigForm | null;
-    /** 主进程返回的 embedding（无 enabled 字段，由 configured 推断） */
     embedding: { model: string; baseUrl: string; apiKey: string } | null;
     presets: Record<string, { provider: string; model: string; baseUrl: string }>;
   }): void {
-    // 保存预设供 applyLlmPreset 使用（避免硬编码）
-    this.llmPresets = data.presets ?? {};
-
-    if (data.config) {
-      if (this.cfgLlmProvider) this.cfgLlmProvider.value = data.config.provider;
-      if (this.cfgLlmModel) this.cfgLlmModel.value = data.config.model;
-      if (this.cfgLlmBaseUrl) this.cfgLlmBaseUrl.value = data.config.baseUrl;
-      if (this.cfgLlmApiKey) this.cfgLlmApiKey.value = data.config.apiKey;
-      if (this.cfgLlmTemperature) this.cfgLlmTemperature.value = String(data.config.temperature);
-
-      // 反向匹配预设
-      if (this.cfgLlmPreset) {
-        const presetKey = Object.entries(data.presets).find(
-          ([, p]) => p.provider === data.config?.provider && p.model === data.config.model,
-        )?.[0];
-        this.cfgLlmPreset.value = presetKey ?? '';
-      }
-    }
-
-    if (data.embedding) {
-      if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = true;
-      if (this.cfgEmbModel) this.cfgEmbModel.value = data.embedding.model;
-      if (this.cfgEmbBaseUrl) this.cfgEmbBaseUrl.value = data.embedding.baseUrl;
-      if (this.cfgEmbApiKey) this.cfgEmbApiKey.value = data.embedding.apiKey;
-    } else {
-      if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = false;
-    }
+    this.settingsPanelManager.loadLlmConfigToForm(data);
   }
 
-  /** 收集表单中的 LLM 配置 */
+  /** P2-008 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
   collectLlmConfigFromForm(): LlmConfigSavePayload {
-    const llm: LlmConfigForm = {
-      provider: this.cfgLlmProvider?.value.trim() ?? '',
-      model: this.cfgLlmModel?.value.trim() ?? '',
-      baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
-      apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
-      temperature: parseFloat(this.cfgLlmTemperature?.value ?? '0.7') || 0.7,
-    };
-
-    let embedding: EmbeddingConfigForm | null = null;
-    if (this.cfgEmbEnabled?.checked) {
-      embedding = {
-        enabled: true,
-        model: this.cfgEmbModel?.value.trim() ?? '',
-        baseUrl: this.cfgEmbBaseUrl?.value.trim() ?? '',
-        apiKey: this.cfgEmbApiKey?.value.trim() ?? '',
-      };
-    }
-
-    return { llm, embedding };
+    return this.settingsPanelManager.collectLlmConfigFromForm();
   }
 
-  /** 加载配置到表单 */
+  /** P2-008 加载配置到表单（委托到 SettingsPanelManager） */
   loadConfigToForm(config: SpriteConfigForm): void {
-    if (this.cfgSilent) this.cfgSilent.checked = config.silentMode;
-    if (this.cfgThreshold) this.cfgThreshold.value = String(config.proactiveThreshold);
-    if (this.cfgCooldown) this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
-    if (this.cfgInterval) this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
-    if (this.cfgWatcherEnabled) this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
-    if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
-    if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
-    if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
-
-    // 角色匹配模式（单选按钮）
-    const modeRadio = document.querySelector<HTMLInputElement>(
-      `input[name="persona-mode"][value="${this.currentPersonaMode}"]`,
-    );
-    if (modeRadio) {
-      modeRadio.checked = true;
-    }
-
-    // FD-04 项目模式（单选按钮 + 专注项目下拉框）
-    const projectModeRadio = document.querySelector<HTMLInputElement>(
-      `input[name="project-mode"][value="${config.projectMode}"]`,
-    );
-    if (projectModeRadio) {
-      projectModeRadio.checked = true;
-    }
-    if (this.cfgFocusProject) {
-      this.cfgFocusProject.disabled = config.projectMode !== 'focus';
-    }
-    // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
+    this.settingsPanelManager.loadConfigToForm(config);
   }
 
-  /** FD-04 加载项目列表到专注项目下拉框 */
+  /** P2-008 加载项目列表到专注项目下拉框（委托到 SettingsPanelManager） */
   loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void {
-    if (!this.cfgFocusProject) return;
-
-    // 保留第一个占位选项
-    while (this.cfgFocusProject.options.length > 1) {
-      this.cfgFocusProject.remove(1);
-    }
-    for (const p of projects) {
-      const opt = document.createElement('option');
-      opt.value = p.path;
-      opt.textContent = `${p.name} (${p.path})`;
-      this.cfgFocusProject.appendChild(opt);
-    }
-    this.cfgFocusProject.value = selectedPath;
+    this.settingsPanelManager.loadProjectsToForm(projects, selectedPath);
   }
 
-  /** 设置角色匹配模式（供 renderer.ts 调用） */
+  /** P2-008 设置角色匹配模式（委托到 SettingsPanelManager） */
   setPersonaMode(mode: string): void {
-    this.currentPersonaMode = mode;
-    const radio = document.querySelector<HTMLInputElement>(
-      `input[name="persona-mode"][value="${mode}"]`,
-    );
-    if (radio) {
-      radio.checked = true;
-    }
+    this.settingsPanelManager.setPersonaMode(mode);
   }
 
-  /** 收集表单中的配置 */
+  /** P2-008 收集表单中的配置（委托到 SettingsPanelManager） */
   collectConfigFromForm(): SpriteConfigForm {
-    const modeRadio = document.querySelector<HTMLInputElement>(
-      'input[name="persona-mode"]:checked',
-    );
-    this.currentPersonaMode = modeRadio?.value ?? 'auto';
-
-    // FD-04 收集项目模式
-    const projectModeRadio = document.querySelector<HTMLInputElement>(
-      'input[name="project-mode"]:checked',
-    );
-    const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
-
-    return {
-      silentMode: this.cfgSilent?.checked ?? false,
-      proactiveThreshold: parseInt(this.cfgThreshold?.value ?? '3', 10) || 3,
-      proactiveCooldownMs: (parseInt(this.cfgCooldown?.value ?? '5', 10) || 5) * MS_PER_MINUTE,
-      triggerIntervalMs: (parseInt(this.cfgInterval?.value ?? '60', 10) || 60) * MS_PER_MINUTE,
-      fileWatcherEnabled: this.cfgWatcherEnabled?.checked ?? false,
-      fileWatcherPaths: this.cfgWatcherPaths?.value
-        .split(',')
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0) ?? [],
-      fileWatcherDebounceMs: parseInt(this.cfgWatcherDebounce?.value ?? '1000', 10) || 1000,
-      defaultPersona: this.cfgDefaultPersona?.value.trim() ?? '',
-      projectMode,
-      focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
-    };
+    return this.settingsPanelManager.collectConfigFromForm();
   }
 
-  // 设置面板回调
-  private configSaveCallback: ((config: SpriteConfigForm) => void) | null = null;
-  private configCancelCallback: (() => void) | null = null;
-  private llmConfigSaveCallback: ((payload: LlmConfigSavePayload) => void) | null = null;
-  /** LLM 连接测试回调：由 renderer.ts 注册，调用主进程 testLlmConfig */
-  private llmTestCallback: (() => void) | null = null;
-
+  /** P2-008 设置面板保存回调（委托到 SettingsPanelManager） */
   onConfigSave(cb: (config: SpriteConfigForm) => void): void {
-    this.configSaveCallback = cb;
+    this.settingsPanelManager.onConfigSave(cb);
   }
+  /** P2-008 设置面板取消回调（委托到 SettingsPanelManager） */
   onConfigCancel(cb: () => void): void {
-    this.configCancelCallback = cb;
+    this.settingsPanelManager.onConfigCancel(cb);
   }
+  /** P2-008 LLM 配置保存回调（委托到 SettingsPanelManager） */
   onLlmConfigSave(cb: (payload: LlmConfigSavePayload) => void): void {
-    this.llmConfigSaveCallback = cb;
+    this.settingsPanelManager.onLlmConfigSave(cb);
   }
-  /** 注册 LLM 连接测试回调 */
+  /** P2-008 LLM 连接测试回调（委托到 SettingsPanelManager） */
   onLlmTest(cb: () => void): void {
-    this.llmTestCallback = cb;
+    this.settingsPanelManager.onLlmTest(cb);
   }
 
-  /**
-   * 显示 LLM 测试连接结果
-   *
-   * @param result 测试结果（success + error）
-   * @param elapsedMs 测试耗时（毫秒），用于展示响应速度
-   */
+  /** P2-008 显示 LLM 测试连接结果（委托到 SettingsPanelManager） */
   showLlmTestResult(result: { success: boolean; error: string | null }, elapsedMs?: number): void {
-    const resultEl = document.getElementById('llm-test-result');
-    if (!resultEl) return;
-
-    if (result.success) {
-      const timeHint = elapsedMs !== undefined ? `（${elapsedMs}ms）` : '';
-      resultEl.textContent = `✓ 连接成功${timeHint}`;
-      resultEl.style.color = 'var(--green)';
-    } else {
-      // 失败时补充排查建议，引导用户修复而非仅显示错误
-      const hint = '\n排查建议：检查 API Key 是否正确 / baseUrl 是否可达 / model 名称是否支持';
-      resultEl.textContent = `✗ 失败：${result.error ?? '未知错误'}${hint}`;
-      resultEl.style.color = 'var(--red)';
-    }
+    this.settingsPanelManager.showLlmTestResult(result, elapsedMs);
   }
 
-  /** 收集表单中的 LLM 配置（供测试连接复用） */
+  /** P2-008 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
   getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
-    return {
-      provider: this.cfgLlmProvider?.value.trim() ?? '',
-      model: this.cfgLlmModel?.value.trim() ?? '',
-      baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
-      apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
-    };
+    return this.settingsPanelManager.getLlmConfigFromForm();
+  }
+
+  /** P2-008 重置设置表单 dirty 标志（委托到 SettingsPanelManager） */
+  resetSettingsFormDirty(): void {
+    this.settingsPanelManager.resetFormDirty();
   }
 
   // ─── 弹窗管理（代理到 ModalManager） ──────────────────

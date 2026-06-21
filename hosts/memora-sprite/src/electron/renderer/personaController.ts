@@ -86,7 +86,9 @@ export function createPersonaController(uiManager: UIManager) {
         console.error('[loadPersonaList] 加载角色模式失败:', modeErr);
       }
     } catch (error) {
+      // 角色列表加载失败：侧边栏非面板，使用 toast 通知
       console.error('[loadPersonaList] 加载角色列表失败:', error);
+      uiManager.showToast('加载角色列表失败，请检查连接后重试', 'error');
     }
   }
 
