@@ -136,11 +136,12 @@ export class VectorStore {
 
     for (let i = 0; i < items.length; i++) {
       const result = results[i];
-      if (!result) continue;
+      const item = items[i];
+      if (!result || !item) continue;
       if (this.dimension === 0) {
         this.dimension = result.vector.length;
       }
-      this.entries.set(items[i]!.id, result.vector);
+      this.entries.set(item.id, result.vector);
     }
     this.dirty = true;
   }

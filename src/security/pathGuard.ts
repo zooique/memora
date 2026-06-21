@@ -6,11 +6,11 @@
  * 阶段二新增：M-101 写入二次确认 + M-105 审计日志
  */
 import { resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { logger } from '@/logging/logger.js';
 import { securityError, toError } from '@/utils/errors.js';
+import { expandHome } from '@/utils/path.js';
 
 const BLOCKED_PATTERNS = [
   // 系统凭证
@@ -184,7 +184,7 @@ export class SecurityGuard {
     }
 
     // 3. 白名单：数据目录（严格前缀匹配，追加 sep 防止兄弟目录绕过）
-    const memoraDir = resolve(this.dataDir.replace(/^~/, homedir()));
+    const memoraDir = resolve(expandHome(this.dataDir));
     if (resolved === memoraDir || resolved.startsWith(memoraDir + sep)) {
       this.emitAudit({
         type: 'path-allow',

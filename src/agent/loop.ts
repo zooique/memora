@@ -907,8 +907,9 @@ export class AgentLoop {
         const actionMatch = rule.content.match(/action:\s*(block|warn)/);
         if (!patternMatch || !actionMatch) continue;
 
-        const pattern = patternMatch[1]!.trim();
-        const action = actionMatch[1]!.trim();
+        const pattern = patternMatch[1]?.trim();
+        const action = actionMatch[1]?.trim();
+        if (!pattern || !action) continue;
         // 去掉正则定界符 //
         const regexStr =
           pattern.startsWith('/') && pattern.endsWith('/') ? pattern.slice(1, -1) : pattern;

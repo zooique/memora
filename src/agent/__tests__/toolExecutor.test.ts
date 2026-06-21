@@ -389,8 +389,8 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
       // 不抛错即成功
     });
 
-    it('getToolDefinitions 应包含内置 + 自定义工具', () => {
-      const defs = executor.getToolDefinitions();
+    it('list 应包含内置 + 自定义工具', () => {
+      const defs = executor.list;
       const names = defs.map((t) => t.name);
       // 内置 4 个 + 自定义 1 个
       expect(names).toContain('read_file');

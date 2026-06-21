@@ -264,7 +264,7 @@ export class UserProfile {
     try {
       const existing = this.index.getBySource(SOURCE_LABELS.PROFILE);
       // 提取新事实的核心模式（如 "姓名: 李四" → 前缀 "姓名"）
-      const newPrefix = fact.value.split(':')[0]!.trim();
+      const newPrefix = (fact.value.split(':')[0] ?? '').trim();
 
       for (const m of existing) {
         // 从 name 字段解析 category（格式：${category}: ${value}）
@@ -272,7 +272,7 @@ export class UserProfile {
 
         // 同分类 + 不同值 → 冲突，删除旧条目
         if (category === fact.category && m.content !== fact.value) {
-          const oldPrefix = m.content.split(':')[0]!.trim();
+          const oldPrefix = (m.content.split(':')[0] ?? '').trim();
           // 核心模式相同（如 "姓名" vs "姓名"）→ 确认冲突
           if (oldPrefix === newPrefix) {
             this.index.delete(m.id);

@@ -10,18 +10,7 @@
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
-
-// ─── 内联工具函数 ──
-
-/** 获取当前日期字符串 YYYY-MM-DD */
-function todayDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** 获取当前时间戳 ISO 8601 */
-function nowTimestamp(): string {
-  return new Date().toISOString();
-}
+import { nowIso, todayDate } from '@/utils/time.js';
 
 /**
  * 分叉结果
@@ -227,7 +216,7 @@ export class MessageHistory {
     const message: SessionMessage = {
       role: 'user',
       content,
-      timestamp: nowTimestamp(),
+      timestamp: nowIso(),
     };
     // 使用 ISessionStore 持久化（如果已注入）
     if (this.sessionStore) {
@@ -252,7 +241,7 @@ export class MessageHistory {
     const message: SessionMessage = {
       role: 'assistant',
       content,
-      timestamp: nowTimestamp(),
+      timestamp: nowIso(),
     };
     // 使用 ISessionStore 持久化（如果已注入）
     if (this.sessionStore) {

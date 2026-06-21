@@ -102,7 +102,7 @@ export class ToolExecutor {
    *
    * 宿主项目调用此方法注册领域专属工具（如小说创作的 create_chapter）。
    * 工具名不能与内置工具重复，也不能重复注册。
-   * 注册后工具会出现在 getToolDefinitions() 列表中，
+   * 注册后工具会出现在 `tools.list` 列表中，
    * LLM 可通过 tool_call 调用，execute() 会路由到 handler。
    *
    * @param definition 工具定义（名称、描述、参数 schema）
@@ -141,17 +141,6 @@ export class ToolExecutor {
   }
 
   /**
-   * 获取所有工具定义（内置 + 自定义）
-   *
-   * 用于构建 LLM 请求的 tools 参数，
-   * 以及 AgentLoop 的 system prompt 工具描述。
-   * @deprecated 请使用 `tools.list` getter 代替
-   */
-  getToolDefinitions(): ToolDefinition[] {
-    return this.list;
-  }
-
-  /**
    * 执行工具调用
    *
    * 新增参数类型校验。
@@ -182,7 +171,7 @@ export class ToolExecutor {
     // 参数类型校验 + 自动修正
     // LLM 经常返回 number 代替 string（如 maxDepth: 2 而非 "2"），
     // 校验器根据 ToolDefinition 自动转换，避免后续 as string 出错
-    const definition = this.getToolDefinitions().find((t) => t.name === name);
+    const definition = this.list.find((t) => t.name === name);
     if (definition) {
       args = this.validateAndCoerceArgs(name, args, definition);
     }
@@ -248,7 +237,7 @@ export class ToolExecutor {
           '未知工具',
           `agent 调用了未注册的工具：${name}`,
           [
-            `已注册工具：${this.getToolDefinitions()
+            `已注册工具：${this.list
               .map((t) => t.name)
               .join(', ')}`,
             '检查 personality.md 是否限制了工具集',

@@ -29,6 +29,7 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { UIMessages } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
+import { configError } from '@/utils/errors.js';
 
 /** 组装器输入参数 */
 export interface AssembleInput {
@@ -96,13 +97,18 @@ export async function assembleComponents(
 
   // ── Phase 1: 无依赖组件 ──
 
+  // A-004: Agent 层总是注入 createSecurityGuard，此处显式校验并收窄类型
+  if (!pctx.security) {
+    throw configError('security guard 未注入', undefined, ['检查 AgentOptions.permission 或 createSecurityGuard 配置']);
+  }
+
   const history = new MessageHistory(sessionStore);
 
   const workProjection = new WorkProjectionManager(pctx.index, backgroundProvider ?? provider);
 
   const toolExec = new ToolExecutor(
     projectPath,
-    pctx.security!, // A-004: Agent 层总是注入 createSecurityGuard，security 不为 null
+    pctx.security,
     pctx.index,
     workProjection,
   );

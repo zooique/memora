@@ -12,6 +12,7 @@
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { ConfigSuggestion } from '@/agent/managers/configManager.js';
 import { logger } from '@/logging/logger.js';
+import { parseLlmJson } from '@/utils/json.js';
 
 /** AutoConfigRefiner 配置 */
 export interface AutoConfigRefinerOptions {
@@ -140,8 +141,10 @@ export class AutoConfigRefiner {
         }
       }
 
-      const parsed = JSON.parse(fullContent || '[]');
-      const items = Array.isArray(parsed) ? parsed : parsed.suggestions ?? [];
+      const parsed = parseLlmJson<RawSuggestion[] | { suggestions: RawSuggestion[] }>(
+        fullContent || '[]',
+      );
+      const items = Array.isArray(parsed) ? parsed : parsed?.suggestions ?? [];
 
       return items.filter(
         (s: RawSuggestion) =>

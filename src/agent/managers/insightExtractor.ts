@@ -206,7 +206,7 @@ ${contextSection}
       const existing = this.index.search(snippet, 3);
       const existingMemory = existing.find((m) => {
         // 计算 Jaccard 相似度（词级）
-        const setA = new Set(insight!.split(/\s+/));
+        const setA = new Set(insight.split(/\s+/));
         const setB = new Set(m.content.split(/\s+/));
         const intersection = new Set([...setA].filter((x) => setB.has(x)));
         const union = new Set([...setA, ...setB]);

@@ -475,11 +475,11 @@ describe('Agent · Manager 委托模式', () => {
     expect(['auto', 'manual']).toContain(agent.persona!.currentMode);
   });
 
-  it('tools 管理器：getToolDefinitions 应包含内置工具', async () => {
+  it('tools 管理器：list 应包含内置工具', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const defs = agent.tools!.getToolDefinitions();
+    const defs = agent.tools!.list;
     expect(defs.length).toBeGreaterThanOrEqual(4);
     const names = defs.map((d) => d.name);
     expect(names).toContain('read_file');

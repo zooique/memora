@@ -17,7 +17,7 @@
  *   import { setLogger } from '@/logging/logger.js';
  *   setLogger(myCustomLogger);
  */
-import type { ILogger } from '@/logging/loggerInterface.js';
+import type { ILogger, LogFn } from '@/logging/loggerInterface.js';
 import { statSync, truncateSync } from 'node:fs';
 import { toError } from '@/utils/toError.js';
 // 桥接 utils 层 loggerHolder：utils 运行时不依赖 logging/，
@@ -125,6 +125,29 @@ function createConsoleLogger(): ILogger {
 }
 
 /**
+ * pino → ILogger 包装器
+ *
+ * pino 通过动态 import 加载，实例类型未知。
+ * 包装器显式提取 4 个日志方法，避免 as unknown as ILogger 双重断言。
+ *
+ * @param pinoInst pino 实例（动态导入）
+ * @returns ILogger 兼容对象
+ */
+function wrapPinoAsLogger(pinoInst: {
+  info: LogFn;
+  warn: LogFn;
+  error: LogFn;
+  debug: LogFn;
+}): ILogger {
+  return {
+    info: pinoInst.info.bind(pinoInst),
+    warn: pinoInst.warn.bind(pinoInst),
+    error: pinoInst.error.bind(pinoInst),
+    debug: pinoInst.debug.bind(pinoInst),
+  };
+}
+
+/**
  * 尝试创建 Pino logger
  *
  * pino 为可选 peerDependency，通过动态 import 加载。
@@ -136,11 +159,11 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
   try {
     const pino = (await import('pino')).default;
     const { resolve } = await import('node:path');
-    const { homedir } = await import('node:os');
     const { mkdirSync, createWriteStream } = await import('node:fs');
+    const { expandHome } = await import('@/utils/path.js');
 
     const dataDir = process.env['MEMORA_DATA_DIR'] ?? '~/.memora';
-    const resolvedDataDir = resolve(dataDir.replace(/^~/, homedir()));
+    const resolvedDataDir = resolve(expandHome(dataDir));
 
     // pino.StreamEntry 类型在 pino 未安装时不可用，用内联类型
     const streams: Array<{ level: string; stream: NodeJS.WritableStream }> = [];
@@ -181,10 +204,12 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
     }
 
     if (streams.length === 0) {
-      return pino({ level }) as unknown as ILogger;
+      // 通过包装器适配 ILogger 接口，避免 as unknown as ILogger 双重断言
+      return wrapPinoAsLogger(pino({ level }));
     }
 
-    return pino({ level }, pino.multistream(streams)) as unknown as ILogger;
+    // 通过包装器适配 ILogger 接口
+    return wrapPinoAsLogger(pino({ level }, pino.multistream(streams)));
   } catch (err) {
     // pino 未安装，回退到 console logger
     if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] pino 加载失败：${errMsg(err)}\n`);

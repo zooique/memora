@@ -22,7 +22,6 @@
  * 详见 ADR-008 · 目录结构按"职责分层"
  */
 import { resolve, join } from 'node:path';
-import { homedir } from 'node:os';
 import { hostname } from 'node:os';
 import {
   existsSync,
@@ -39,6 +38,7 @@ import type { LoadResult } from '@/memory/loader.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/errors.js';
+import { expandHome } from '@/utils/path.js';
 import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 
 /**
@@ -136,10 +136,10 @@ export class ProjectManager {
 
   constructor(options: ProjectManagerOptions) {
     const { dataDir, storage, registryDir, createSecurityGuard } = options;
-    const memoraHome = resolve(dataDir.replace(/^~/, homedir()));
+    const memoraHome = resolve(expandHome(dataDir));
     this.agentDataDir = memoraHome;
     // 注册表目录：优先使用宿主指定的用户级路径，避免每项目重复存储
-    const registryHome = registryDir ? resolve(registryDir.replace(/^~/, homedir())) : memoraHome;
+    const registryHome = registryDir ? resolve(expandHome(registryDir)) : memoraHome;
     this.registryPath = join(registryHome, 'projects.json');
     // 保存外部注入的存储实例（宿主项目注入时使用）
     this.externalStorage = storage ?? null;

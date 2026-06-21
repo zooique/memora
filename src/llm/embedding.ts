@@ -58,7 +58,9 @@ export class EmbeddingProvider {
     if (cached) return cached;
 
     const results = await this.batchEmbed([text]);
-    return results[0]!.vector;
+    const first = results[0];
+    if (!first) throw new Error('embed: batchEmbed 返回空结果');
+    return first.vector;
   }
 
   /**

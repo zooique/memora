@@ -561,7 +561,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   listProjects(): AgentProjectEntry[] {
     this.assertInitialized('listProjects');
-    return this.requireNonNull(this.projectManager, 'projectManager').listProjects();
+    return this.requireNonNull(this.projectManager, 'projectManager').list;
   }
 
   /**
@@ -581,7 +581,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     const pm = this.requireNonNull(this.projectManager, 'projectManager');
-    const projects = pm.listProjects();
+    const projects = pm.list;
     let target = projects.find((p) => p.name === nameOrPath || p.path === nameOrPath);
     if (!target) {
       const nameOrPathLower = nameOrPath.toLowerCase();
@@ -645,12 +645,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.memoryInspector.setVectorStore(this.#config.vectorStore);
     }
     // 创建会话管理器（通过回调访问当前组件，支持 rebuildComponents 后自动获取最新引用）
+    // 事件转发桥接：SessionManager 使用宽类型 (string, Record<string,unknown>)，
+    // Agent 内部桥接到 TypedEventEmitter 的强类型 emit
+    const forwardEvent = (event: string, data: Record<string, unknown>) => {
+      this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
+    };
     this.sessionManager = new SessionManager(
       () => this.requireNonNull(this.history, 'history'),
       () => this.requireNonNull(this.loop, 'loop'),
       this.#config.sessionStore,
       () => this._chatBusy,
-      (event, data) => this.emit(event as keyof AgentEventMap, data as never),
+      forwardEvent,
     );
   }
 
@@ -661,12 +666,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!this.pctx) return;
     await this.assembleComponents(this.pctx);
     // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例
+    // 事件转发桥接（同 assembleComponents 中的逻辑）
+    const forwardEvent = (event: string, data: Record<string, unknown>) => {
+      this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
+    };
     this.sessionManager = new SessionManager(
       () => this.requireNonNull(this.history, 'history'),
       () => this.requireNonNull(this.loop, 'loop'),
       this.#config.sessionStore,
       () => this._chatBusy,
-      (event, data) => this.emit(event as keyof AgentEventMap, data as never),
+      forwardEvent,
     );
   }
 
@@ -979,17 +988,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 获取当前演化状态快照（project_memory 约束 27/29/54 要求的 inspect() API）
-   * 委托至 MemoryInspector.snapshot()
-   * @deprecated 请使用 `snapshot()` 代替（与委托方法命名对齐）
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  inspect(): MemorySnapshot {
-    this.assertInitialized('inspect');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').snapshot();
-  }
-
-  /**
    * 获取记忆统计
    * 委托至 MemoryInspector.stats()
    *
@@ -998,17 +996,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   stats(): AgentStats {
     this.assertInitialized('stats');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').stats();
-  }
-
-  /**
-   * 获取记忆统计（project_memory 约束 28 要求的 getStats() API）
-   * 委托至 MemoryInspector.stats()
-   * @deprecated 请使用 `stats()` 代替（与委托方法命名对齐）
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  getStats(): AgentStats {
-    this.assertInitialized('getStats');
     return this.requireNonNull(this.memoryInspector, 'memoryInspector').stats();
   }
 

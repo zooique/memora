@@ -27,6 +27,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
+import { basename } from '@/utils/path.js';
 import { toError } from '@/utils/errors.js';
 import { parseLlmJson } from '@/utils/json.js';
 
@@ -112,7 +113,7 @@ export class WorkProjectionManager {
     fileName?: string,
   ): Promise<WorkProjectionEntry | null> {
     const hash = this.computeHash(content);
-    const name = fileName ?? filePath.split(/[/\\]/).pop() ?? 'unknown';
+    const name = fileName ?? (basename(filePath) || 'unknown');
 
     // 查询已有投影
     const existingId = `work-proj-${slugify(name)}`;
@@ -162,7 +163,7 @@ export class WorkProjectionManager {
    * @returns 投影条目，不存在返回 null
    */
   async getProjection(filePath: string): Promise<WorkProjectionEntry | null> {
-    const name = filePath.split(/[/\\]/).pop() ?? 'unknown';
+    const name = basename(filePath) || 'unknown';
     const id = `work-proj-${slugify(name)}`;
     const existing = this.index.getById(id);
     return existing ? this.fromMemory(existing) : null;
@@ -265,7 +266,7 @@ export class WorkProjectionManager {
    */
   private toMemory(entry: WorkProjectionEntry, hash: string): Memory {
     const now = new Date().toISOString();
-    const fileName = entry.sourcePath.split(/[/\\]/).pop();
+    const fileName = basename(entry.sourcePath);
     return {
       id: entry.id,
       content: this.encodeContent(hash, entry.structure, entry.keyDecisions, entry.summary),

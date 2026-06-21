@@ -97,8 +97,10 @@ export class SkillManager {
 
     // 得分从高到低排序，取第一个
     matches.sort((a, b) => b.score - a.score);
-    logger.debug({ matched: matches[0]!.skill.name, score: matches[0]!.score }, '技能关键词匹配');
-    return matches[0]!;
+    const best = matches[0];
+    if (!best) return null;
+    logger.debug({ matched: best.skill.name, score: best.score }, '技能关键词匹配');
+    return best;
   }
 
   /**
