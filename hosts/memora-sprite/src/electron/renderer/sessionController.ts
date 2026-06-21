@@ -19,46 +19,114 @@ import { reportError } from './errorHelpers.js';
  * 创建会话控制器
  *
  * @param uiManager UI 管理器实例
- * @returns 会话控制器接口（加载历史、加载列表、切换会话、获取当前 ID）
+ * @returns 会话控制器接口（加载历史、加载列表、切换会话、加载更多、获取当前 ID）
  */
 export function createSessionController(uiManager: UIManager) {
   /** FD-A1 当前会话 ID（用于会话列表 UI 高亮当前项） */
   let currentSessionId = '';
 
+  // UX-FD-07 分页状态
+  const PAGE_SIZE = 50;
+  /** 当前已加载的消息偏移量（用于加载更多） */
+  let currentOffset = 0;
+  /** 当前会话消息总数 */
+  let currentTotal = 0;
+  /** 当前会话的 date + session 参数（用于加载更多） */
+  let currentSessionParams: { date: string; session: string } | null = null;
+
   /**
-   * 加载当前会话历史消息
+   * 加载当前会话历史消息（初始加载，最近 50 条）
    *
-   * 从主进程加载会话历史，逐条追加到对话区。
-   * 未知角色回退为 assistant（避免 system 被错误映射）。
-   * UX-P2-06 保留 timestamp 字段，传递给 appendMessage 显示正确时间。
-   * UX-P2-07 使用 SESSION_LOAD 返回的 loadedSessionId 设置当前会话。
-   * UX-P2-09 加载成功后隐藏错误横幅。
+   * UX-FD-07 使用分页加载 + DocumentFragment 批量插入，
+   * 首次加载最近 PAGE_SIZE 条消息，有更多时显示"加载更多"按钮。
    */
   async function loadSessionHistory(): Promise<void> {
     try {
-      const { messages, loadedSessionId } = await window.electronAPI.loadSession({});
-      for (const msg of messages) {
-        // 保留合法角色，未知角色回退为 assistant（避免 system 被错误映射为 assistant）
-        const role = (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
-          ? msg.role
-          : 'assistant';
-        uiManager.appendMessage({
-          role,
+      const { messages, loadedSessionId, total, hasMore } = await window.electronAPI.loadSession({
+        limit: PAGE_SIZE,
+        offset: 0,
+      });
+      // UX-FD-07 批量插入消息（DocumentFragment 优化）
+      uiManager.appendMessages(
+        messages.map((msg) => ({
+          role: (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
+            ? msg.role
+            : 'assistant',
           content: msg.content,
-          // UX-P2-06 传递原始时间戳，避免历史消息显示为当前时间
           timestamp: msg.timestamp,
-        });
-      }
-      // UX-P2-07 使用主进程返回的 loadedSessionId，而非依赖 loadSessionList 推断
+        })),
+        false,
+      );
       if (loadedSessionId) {
         currentSessionId = loadedSessionId;
+        // 解析会话参数用于加载更多
+        const parts = loadedSessionId.split('-');
+        if (parts.length >= 4) {
+          currentSessionParams = {
+            date: parts.slice(0, 3).join('-'),
+            session: parts.slice(3).join('-') || 'main',
+          };
+        }
       }
-      // UX-P2-09 加载成功后隐藏错误横幅（若之前加载失败显示了横幅）
+      // UX-FD-07 更新分页状态
+      currentOffset = messages.length;
+      currentTotal = total ?? messages.length;
+      if (hasMore && currentSessionParams) {
+        uiManager.showLoadMore(currentTotal - currentOffset, loadMoreHistory);
+      }
+
       uiManager.hidePanelError('chat');
     } catch (error) {
-      // 会话历史加载失败：显示错误横幅，提供重试
       reportError('loadSessionHistory', error);
       uiManager.showPanelError('chat', '加载会话历史失败，请检查连接后重试', () => loadSessionHistory());
+    }
+  }
+
+  /**
+   * UX-FD-07 加载更多历史消息
+   *
+   * 从当前已加载位置继续加载更早的消息，插入到消息区顶部。
+   * 加载完成后更新分页状态，无更多消息时隐藏按钮。
+   */
+  async function loadMoreHistory(): Promise<void> {
+    if (!currentSessionParams) return;
+
+    try {
+      const { messages, hasMore, total } = await window.electronAPI.loadSession({
+        date: currentSessionParams.date,
+        session: currentSessionParams.session,
+        limit: PAGE_SIZE,
+        offset: currentOffset,
+      });
+
+      // 插入到消息区顶部（prepend=true）
+      uiManager.appendMessages(
+        messages.map((msg) => ({
+          role: (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
+            ? msg.role
+            : 'assistant',
+          content: msg.content,
+          timestamp: msg.timestamp,
+        })),
+        true,
+      );
+
+      // 更新分页状态
+      currentOffset += messages.length;
+      currentTotal = total ?? currentTotal;
+
+      if (hasMore) {
+        uiManager.showLoadMore(currentTotal - currentOffset, loadMoreHistory);
+      } else {
+        uiManager.hideLoadMore();
+      }
+    } catch (error) {
+      reportError('loadMoreHistory', error);
+      uiManager.showToast('加载更多消息失败', 'error');
+      // 恢复按钮状态
+      if (currentTotal > currentOffset) {
+        uiManager.showLoadMore(currentTotal - currentOffset, loadMoreHistory);
+      }
     }
   }
 
@@ -95,6 +163,10 @@ export function createSessionController(uiManager: UIManager) {
     try {
       // 清空当前消息区
       uiManager.clearMessages();
+      // UX-FD-07 重置分页状态
+      currentOffset = 0;
+      currentTotal = 0;
+      currentSessionParams = null;
       // 解析会话 ID 为 date + session 参数
       const parts = sessionId.split('-');
       const date = parts.slice(0, 3).join('-');
@@ -106,17 +178,17 @@ export function createSessionController(uiManager: UIManager) {
         throw new Error(result.error ?? '切换会话失败');
       }
 
-      // 渲染目标会话的消息（保留 timestamp）
-      for (const msg of result.messages) {
-        const role = (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
-          ? msg.role
-          : 'assistant';
-        uiManager.appendMessage({
-          role,
+      // 渲染目标会话的消息（UX-FD-07 批量插入）
+      uiManager.appendMessages(
+        result.messages.map((msg) => ({
+          role: (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'system')
+            ? msg.role
+            : 'assistant',
           content: msg.content,
           timestamp: msg.timestamp,
-        });
-      }
+        })),
+        false,
+      );
       currentSessionId = sessionId;
       // 刷新会话列表以更新高亮
       const { sessions } = await window.electronAPI.listSessions();
@@ -196,6 +268,7 @@ export function createSessionController(uiManager: UIManager) {
     switchSession,
     deleteSession,
     renameSession,
+    loadMoreHistory,
     getCurrentSessionId,
   };
 }

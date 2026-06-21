@@ -343,81 +343,10 @@ export class UIManager {
    * 系统消息保持简单结构（无头像无气泡），居中显示。
    */
   appendMessage(message: Message): HTMLElement {
-    const el = document.createElement('div');
-    el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}`;
-
     // 有消息时隐藏空状态引导（首次添加消息触发）
     this.hideEmptyState();
 
-    if (message.role === 'system') {
-      // 系统消息：简单文本，居中无头像（系统消息为纯文本，不渲染 Markdown）
-      el.textContent = message.content;
-    } else {
-      // 用户/精灵消息：头像 + 气泡结构
-      const avatar = document.createElement('div');
-      avatar.className = 'message-avatar';
-      avatar.textContent = message.role === 'user' ? '🧑' : '🧚';
-      el.appendChild(avatar);
-
-      // 消息内容容器（气泡 + 时间戳 + 操作按钮）
-      const contentWrapper = document.createElement('div');
-      contentWrapper.className = 'message-content';
-
-      const bubble = document.createElement('div');
-      bubble.className = 'message-bubble';
-
-      if (message.role === 'assistant') {
-        // 精灵消息：渲染 Markdown（代码块/列表/表格/标题/加粗/链接等）
-        // LLM 输出经常包含 Markdown 格式，纯文本显示会丢失结构
-        bubble.appendChild(renderMarkdown(message.content));
-      } else {
-        // 用户消息：使用 textContent（用户输入不应被 Markdown 渲染，保持原样 + 防 XSS）
-        bubble.textContent = message.content;
-      }
-      contentWrapper.appendChild(bubble);
-
-      // 精灵消息：添加复制按钮（hover 时显示，点击复制原始内容）
-      if (message.role === 'assistant' && !message.streaming) {
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'message-copy-btn';
-        copyBtn.title = '复制';
-        copyBtn.textContent = '📋';
-        copyBtn.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(message.content);
-            this.showToast('已复制到剪贴板', 'success', 2000);
-          } catch {
-            this.showToast('复制失败，请手动选择文本复制', 'error');
-          }
-        });
-        contentWrapper.appendChild(copyBtn);
-      }
-
-      // 时间戳（用户/精灵消息显示时间，对齐聊天应用习惯）
-      const timestamp = message.timestamp ?? new Date().toISOString();
-      const timeEl = document.createElement('div');
-      timeEl.className = 'message-time';
-      timeEl.textContent = this.formatTimestamp(timestamp);
-      contentWrapper.appendChild(timeEl);
-
-      el.appendChild(contentWrapper);
-
-      // 召回记忆提示（仅精灵消息，MS-12 支持多条召回记忆展示）
-      const memoryRecall = message.memoryRecall;
-      if (message.role === 'assistant' && memoryRecall && memoryRecall.length > 0) {
-        // 复用 createRecallContainer 统一构建逻辑，避免重复代码
-        const recallContainer = this.createRecallContainer(memoryRecall);
-        bubble.appendChild(recallContainer);
-      }
-
-      // 为流式消息添加光标元素
-      if (message.streaming) {
-        const cursor = document.createElement('span');
-        cursor.className = 'cursor';
-        bubble.appendChild(cursor);
-      }
-    }
-
+    const el = this.buildMessageElement(message);
     this.messagesEl.appendChild(el);
     this.scrollToBottom();
 
@@ -430,6 +359,90 @@ export class UIManager {
     if (message.role === 'assistant' && document.hidden) {
       this.state.unreadCount++;
       this.updateBadge();
+    }
+
+    return el;
+  }
+
+  /**
+   * UX-FD-07 构建消息 DOM 元素（纯函数，无副作用）
+   *
+   * 从 appendMessage 中提取 DOM 构建逻辑，供 appendMessages 批量插入复用。
+   * 不处理 DOM 挂载、滚动、计数等副作用，仅返回完整元素。
+   *
+   * @param message 消息对象
+   * @returns 完整的消息 DOM 元素
+   */
+  private buildMessageElement(message: Message): HTMLElement {
+    const el = document.createElement('div');
+    el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}`;
+
+    if (message.role === 'system') {
+      // 系统消息：简单文本，居中无头像
+      el.textContent = message.content;
+      return el;
+    }
+
+    // 用户/精灵消息：头像 + 气泡结构
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.textContent = message.role === 'user' ? '🧑' : '🧚';
+    el.appendChild(avatar);
+
+    // 消息内容容器（气泡 + 时间戳 + 操作按钮）
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'message-content';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+
+    if (message.role === 'assistant') {
+      // 精灵消息：渲染 Markdown
+      bubble.appendChild(renderMarkdown(message.content));
+    } else {
+      // 用户消息：使用 textContent（防 XSS）
+      bubble.textContent = message.content;
+    }
+    contentWrapper.appendChild(bubble);
+
+    // 精灵消息：添加复制按钮（hover 时显示）
+    if (message.role === 'assistant' && !message.streaming) {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'message-copy-btn';
+      copyBtn.title = '复制';
+      copyBtn.textContent = '📋';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(message.content);
+          this.showToast('已复制到剪贴板', 'success', 2000);
+        } catch {
+          this.showToast('复制失败，请手动选择文本复制', 'error');
+        }
+      });
+      contentWrapper.appendChild(copyBtn);
+    }
+
+    // 时间戳
+    const timestamp = message.timestamp ?? new Date().toISOString();
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    timeEl.textContent = this.formatTimestamp(timestamp);
+    contentWrapper.appendChild(timeEl);
+
+    el.appendChild(contentWrapper);
+
+    // 召回记忆提示（仅精灵消息）
+    const memoryRecall = message.memoryRecall;
+    if (message.role === 'assistant' && memoryRecall && memoryRecall.length > 0) {
+      const recallContainer = this.createRecallContainer(memoryRecall);
+      bubble.appendChild(recallContainer);
+    }
+
+    // 流式消息光标
+    if (message.streaming) {
+      const cursor = document.createElement('span');
+      cursor.className = 'cursor';
+      bubble.appendChild(cursor);
     }
 
     return el;
@@ -834,6 +847,8 @@ export class UIManager {
   clearMessages(): void {
     // 只移除 .message 元素，保留 chat-empty-state（否则 showEmptyState 找不到元素）
     this.messagesEl.querySelectorAll('.message').forEach((msg) => msg.remove());
+    // UX-FD-07 移除加载更多按钮（切换会话时重置）
+    this.hideLoadMore();
     this.streamingMessages.clear();
     this.state.isStreaming = false;
     this.btnSend.disabled = false;
@@ -845,6 +860,84 @@ export class UIManager {
     this.showEmptyState();
     // 清空后重置滚动状态，确保新消息能自动滚动
     this.forceScrollToBottom();
+  }
+
+  /**
+   * UX-FD-07 批量插入消息（DocumentFragment 优化）
+   *
+   * 一次性插入多条消息到 DOM，使用 DocumentFragment 批量操作，
+   * 避免逐条 appendMessage 导致的大量回流和重绘。
+   * 用于会话历史加载和会话切换时的消息渲染。
+   *
+   * @param messages 消息数组
+   * @param prepend 是否插入到顶部（加载更多历史消息时使用）
+   */
+  appendMessages(messages: Message[], prepend: boolean = false): void {
+    if (messages.length === 0) return;
+
+    // 隐藏空状态引导
+    this.hideEmptyState();
+
+    const fragment = document.createDocumentFragment();
+    for (const msg of messages) {
+      const el = this.buildMessageElement(msg);
+      fragment.appendChild(el);
+    }
+
+    if (prepend) {
+      // 加载更多：插入到消息区顶部（在 load-more 按钮之后）
+      const loadMore = this.messagesEl.querySelector('#load-more-container');
+      if (loadMore) {
+        loadMore.after(fragment);
+      } else {
+        this.messagesEl.insertBefore(fragment, this.messagesEl.firstChild);
+      }
+    } else {
+      // 初始加载：追加到消息区末尾
+      this.messagesEl.appendChild(fragment);
+    }
+
+    this.messageCount += messages.length;
+    this.refreshMessageCountDisplay();
+    this.forceScrollToBottom();
+  }
+
+  /**
+   * UX-FD-07 显示"加载更多"按钮
+   *
+   * 在消息区顶部插入加载更多容器，包含按钮和剩余消息数提示。
+   *
+   * @param remaining 剩余消息数
+   * @param onClick 点击回调
+   */
+  showLoadMore(remaining: number, onClick: () => void): void {
+    // 移除旧按钮（避免重复）
+    this.hideLoadMore();
+
+    const container = document.createElement('div');
+    container.id = 'load-more-container';
+    container.className = 'load-more-container';
+
+    const btn = document.createElement('button');
+    btn.className = 'load-more-btn';
+    btn.textContent = `加载更多消息（剩余 ${remaining} 条）`;
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = '加载中...';
+      onClick();
+    });
+    container.appendChild(btn);
+
+    // 插入到消息区顶部
+    this.messagesEl.insertBefore(container, this.messagesEl.firstChild);
+  }
+
+  /**
+   * UX-FD-07 隐藏"加载更多"按钮
+   */
+  hideLoadMore(): void {
+    const existing = this.messagesEl.querySelector('#load-more-container');
+    if (existing) existing.remove();
   }
 
   /**

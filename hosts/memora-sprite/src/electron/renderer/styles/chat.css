@@ -946,6 +946,37 @@
   overflow-y: auto;
 }
 
+/* ─── UX-FD-07 加载更多历史消息按钮 ──────────────────────── */
+/* 位于消息区顶部，点击后加载更早的消息并插入到按钮之前 */
+
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 12px;
+}
+
+.load-more-btn {
+  padding: 5px 16px;
+  background: var(--surface1);
+  color: var(--text-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.load-more-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+.load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* ─── UX-PP-01 流式错误指示器 ─────────────────────────────── */
 /* 流式输出出错时注入到消息气泡底部的错误提示 */
 /* 红色调 + 左侧红色边框，与工具调用失败卡片风格一致 */

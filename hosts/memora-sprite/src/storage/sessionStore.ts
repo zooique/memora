@@ -69,6 +69,49 @@ export class SqliteSessionStore implements ISessionStore {
   }
 
   /**
+   * UX-FD-07 分页加载会话消息（倒序查询，返回时反转）
+   *
+   * 使用 ORDER BY id DESC + LIMIT/OFFSET 实现高效分页。
+   * 查询结果为倒序（最新在前），反转后按时间升序返回。
+   *
+   * @param date 会话日期标识
+   * @param session 会话名称
+   * @param limit 每页条数（默认 50）
+   * @param offset 偏移量（默认 0）
+   * @returns 按时间升序排列的消息数组
+   */
+  loadMessagesPaginated(
+    date: string,
+    session: string,
+    limit: number = 50,
+    offset: number = 0,
+  ): SessionMessage[] {
+    const rows = this.db.prepare(
+      'SELECT role, content, timestamp FROM sessions WHERE date = ? AND session = ? ORDER BY id DESC LIMIT ? OFFSET ?'
+    ).all(date, session, limit, offset) as SessionRow[];
+    // 反转：查询结果为倒序（最新在前），需反转为升序（最旧在前）供 UI 渲染
+    return rows.reverse().map(r => ({
+      role: r.role as SessionMessage['role'],
+      content: r.content,
+      timestamp: r.timestamp,
+    }));
+  }
+
+  /**
+   * UX-FD-07 统计会话消息总数
+   *
+   * @param date 会话日期标识
+   * @param session 会话名称
+   * @returns 消息总数
+   */
+  countMessages(date: string, session: string): number {
+    const row = this.db.prepare(
+      'SELECT COUNT(*) AS count FROM sessions WHERE date = ? AND session = ?'
+    ).get(date, session) as { count: number } | undefined;
+    return row?.count ?? 0;
+  }
+
+  /**
    * 列出所有会话（ISessionStore 接口实现）
    *
    * @returns 会话 ID 列表（格式：date-session）

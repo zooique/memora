@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:electron": "tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
+    "build:electron": "npm run check-ipc && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "build:all": "npm run build && npm run build:electron",
     "start": "tsx src/index.ts",
     "start:electron": "npm run build:electron && electron ./dist-electron/electron/main.js",
@@ -21,6 +21,7 @@
     "format:check": "prettier --check \"**/*.{ts,md,json}\"",
     "typecheck": "tsc --noEmit",
     "typecheck:electron": "tsc -p tsconfig.electron.json --noEmit",
+    "check-ipc": "npx tsx scripts/check-ipc-channels.ts",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },

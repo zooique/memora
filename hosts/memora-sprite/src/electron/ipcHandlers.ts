@@ -168,7 +168,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   });
 
   /** 加载历史会话消息 */
-  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_event, query: { date?: string; session?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_event, query: { date?: string; session?: string; limit?: number; offset?: number }) => {
     try {
       // UX-PP-08 有明确查询参数时直接构造目标，跳过 listSessions 冗余调用
       let target: string | undefined;
@@ -178,30 +178,37 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         // 无查询参数时：列出所有会话，智能选择最近会话
         const sessions = ctx.sessionStore.listSessions();
         if (sessions.length === 0) {
-          return { messages: [], loadedSessionId: '' };
+          return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
         }
         const today = getLocalDate(); // UX-PP-07 本地日期，非 UTC
         target = sessions.find(s => s === `${today}-main`) ?? sessions[sessions.length - 1];
       }
 
       if (!target) {
-        return { messages: [], loadedSessionId: '' };
+        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
       }
 
       const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
       if (!match || !match[1] || !match[2]) {
-        return { messages: [], loadedSessionId: '' };
+        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
       }
 
-      const messages = ctx.sessionStore.loadMessages(match[1], match[2]);
+      // UX-FD-07 分页加载：limit 和 offset 来自 query（默认 50 条）
+      const pageSize = query.limit ?? 50;
+      const offset = query.offset ?? 0;
+      const total = ctx.sessionStore.countMessages(match[1], match[2]);
+      const messages = ctx.sessionStore.loadMessagesPaginated(match[1], match[2], pageSize, offset);
       // UX-P2-06 保留 timestamp 字段，UX-P2-07 返回 loadedSessionId 供渲染进程正确高亮当前会话
       return {
         messages: messages.map((msg) => ({ role: msg.role, content: msg.content, timestamp: msg.timestamp })),
         loadedSessionId: target,
+        // UX-FD-07 分页信息
+        total,
+        hasMore: offset + messages.length < total,
       };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '加载会话历史失败' });
-      return { messages: [], loadedSessionId: '' };
+      return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
     }
   });
 
