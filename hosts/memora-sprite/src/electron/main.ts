@@ -19,7 +19,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { app, ipcMain, Notification } from 'electron';
+import { app, ipcMain, Notification, screen } from 'electron';
 import { loadConfig, createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
@@ -87,6 +87,41 @@ function resetUnreadCount(): void {
   if (fullWindow && !fullWindow.isDestroyed()) {
     fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, 0);
   }
+}
+
+/**
+ * P2-HIS-01 浮动窗口位置显示器边界校验
+ *
+ * 多显示器场景下，用户可能在扩展显示器上使用浮动窗口，关闭应用后断开外接显示器，
+ * 下次启动时持久化的位置已不在任何显示器的工作区内，导致浮动窗口不可见。
+ *
+ * 校验逻辑：
+ * - 遍历所有显示器的工作区（workArea），判断位置是否在某个显示器内
+ * - 若越界，复位到默认位置（DEFAULT_FLOAT_POSITION）
+ * - 浮动窗口尺寸为 80x80，校验时以窗口右下角为基准，确保完整窗口可见
+ *
+ * @param position 持久化的浮动窗口位置
+ * @returns 校验后的安全位置
+ */
+function clampFloatPositionToDisplay(position: { x: number; y: number }): { x: number; y: number } {
+  // 浮动窗口尺寸（与 windowState.ts FLOAT_SIZE 一致）
+  const FLOAT_WIDTH = 80;
+  const FLOAT_HEIGHT = 80;
+
+  // 遍历所有显示器，判断位置是否在某个显示器的工作区内
+  const displays = screen.getAllDisplays();
+  for (const display of displays) {
+    const { x, y, width, height } = display.workArea;
+    // 窗口左上角 + 尺寸需完全落在工作区内
+    if (position.x >= x && position.x + FLOAT_WIDTH <= x + width
+      && position.y >= y && position.y + FLOAT_HEIGHT <= y + height) {
+      return position; // 位置合法，原样返回
+    }
+  }
+
+  // 越界：复位到主显示器默认位置
+  logger.warn(`[P2-HIS-01] 浮动窗口位置越界 (${position.x}, ${position.y})，复位到默认位置`);
+  return { ...DEFAULT_FLOAT_POSITION };
 }
 
 /**
@@ -175,10 +210,14 @@ async function initializeApp(): Promise<void> {
     const spriteConfig = loadSpriteConfig(defaultDataDir);
 
     // 2. 初始化窗口状态管理器
-    const floatPosition =
+    const rawFloatPosition =
       spriteConfig.floatIconPosition.x === -1
         ? DEFAULT_FLOAT_POSITION // 首次启动使用默认位置
         : spriteConfig.floatIconPosition;
+    // P2-HIS-01 浮动窗口位置显示器边界校验
+    // 多显示器断开外接时，持久化的位置可能位于已不存在的显示器区域内
+    // 校验位置是否在某个显示器的工作区内，越界则复位到主显示器默认位置
+    const floatPosition = clampFloatPositionToDisplay(rawFloatPosition);
     windowStateManager = new WindowStateManager({
       defaultState: spriteConfig.windowState,
       floatPosition,
@@ -578,6 +617,14 @@ function setupSpriteEventListeners(): void {
     // 非静默模式 + 完整窗口可见：窗口内提示
     if (!silent) {
       sendSpriteEventIfVisible('proactivePrompt', { prompt, silent }, silent);
+
+      // P2-FLOW-12 浮动窗口主动提示未读徽章
+      // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
+      // 用户展开完整窗口时，resetUnreadCount 会清零徽章
+      const fullWindow = windowManager?.getFullWindow();
+      if (fullWindow && !fullWindow.isVisible()) {
+        incrementUnreadCount();
+      }
     }
   };
   sprite.on('proactivePrompt', onProactivePrompt);

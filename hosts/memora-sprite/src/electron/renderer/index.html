@@ -213,6 +213,11 @@
 
       <!-- 设置面板 -->
       <div id="panel-settings" class="panel">
+        <!-- P3-FLOW-10 Agent 连接状态指示器：实时显示 Agent 是否就绪 -->
+        <div id="agent-status-indicator" class="agent-status-indicator unknown">
+          <span class="agent-status-dot"></span>
+          <span class="agent-status-text">检测中...</span>
+        </div>
         <!-- UX-PP-21 设置面板交互模式说明：主题即时生效，其他需保存 -->
         <div class="settings-mode-notice">
           <span class="settings-mode-notice-icon">💡</span>
@@ -310,12 +315,14 @@
         <div class="settings-tab-content" data-settings-tab="sprite">
           <div class="settings-group">
             <h3>精灵配置</h3>
-            <!-- ADR-SP-008 界面主题切换：浅色（默认）/ 深色（备选） -->
+            <!-- ADR-SP-008 界面主题切换：浅色（默认）/ 深色（备选）/ 跟随系统（P3-FLOW-12） -->
             <div class="settings-row">
               <label for="cfg-theme">界面主题</label>
               <div class="radio-group">
                 <label><input type="radio" name="theme-mode" value="light" checked /> 浅色（默认）</label>
                 <label><input type="radio" name="theme-mode" value="dark" /> 深色</label>
+                <!-- P3-FLOW-12 新增"跟随系统"选项，自动跟随操作系统主题 -->
+                <label><input type="radio" name="theme-mode" value="auto" /> 跟随系统</label>
               </div>
             </div>
             <div class="settings-row">

@@ -52,8 +52,11 @@ export interface SpriteConfig {
   windowBounds?: { x: number; y: number; width: number; height: number } | null;
   /** FD-10 静默模式恢复时间（ISO 8601），过期后自动关闭静默模式。null 表示无定时恢复 */
   silentModeExpiresAt?: string | null;
-  /** UX-FD-12 界面主题，默认 'light'。持久化到 sprite.json，localStorage 仅作为内联脚本缓存 */
-  theme?: 'light' | 'dark';
+  /**
+   * UX-FD-12 界面主题，默认 'light'。持久化到 sprite.json，localStorage 仅作为内联脚本缓存
+   * P3-FLOW-12 新增 'auto' 跟随系统主题
+   */
+  theme?: 'light' | 'dark' | 'auto';
 }
 
 /** 配置键名联合类型 */

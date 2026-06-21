@@ -146,6 +146,24 @@
   font-weight: 500;
 }
 
+/* P3-FLOW-14 记忆列表项创建时间 */
+.memory-item .meta .memory-time {
+  color: var(--text-3, var(--text-2));
+  font-size: 11px;
+  margin-left: auto;
+}
+
+/* P3-FLOW-13 记忆列表"加载更多"按钮 */
+.memory-load-more {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+}
+
 .memory-item .preview {
   font-size: 12px;
   color: var(--text-2);

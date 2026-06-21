@@ -83,12 +83,48 @@ function formatRelativeTime(dateStr: string): string {
   return `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/**
+ * P3-FLOW-14 格式化记忆创建时间为相对时间
+ *
+ * 将 ISO 8601 时间字符串转换为人类可读的相对时间：
+ * - 1 小时内 → "X 分钟前"
+ * - 24 小时内 → "X 小时前"
+ * - 7 天内 → "X 天前"
+ * - 更早 → "MM-DD"（MM-DD 格式）
+ *
+ * @param isoTime ISO 8601 时间字符串
+ * @returns 格式化后的相对时间文本
+ */
+function formatMemoryTime(isoTime: string): string {
+  const date = new Date(isoTime);
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  const diffHour = Math.floor(diffMs / 3_600_000);
+  const diffDay = Math.floor(diffMs / 86_400_000);
+
+  if (diffMin < 1) return '刚刚';
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  if (diffHour < 24) return `${diffHour} 小时前`;
+  if (diffDay < 7) return `${diffDay} 天前`;
+  // 更早：返回 MM-DD 格式
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${m}-${d}`;
+}
+
 // ─── UI 管理器类 ─────────────────────────────────────────
 
 export class UIManager {
   // ─── 静态常量 ───────────────────────────────────────────
   /** 判断"底部附近"的阈值（像素） */
   private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
+
+  /**
+   * P3-FLOW-13 记忆列表分页每页大小
+   * 50 条平衡了首屏渲染性能和用户浏览体验，超过时显示"加载更多"按钮
+   */
+  private static readonly MEMORY_PAGE_SIZE = 50;
 
   // ─── 组合子模块（独立管理器，UIManager 代理公共 API） ──
   /** Toast 通知管理器（独立管理定时器和清理） */
@@ -120,6 +156,12 @@ export class UIManager {
 
   // 记忆面板元素
   private memoryListEl: HTMLElement | null;
+
+  /** P3-FLOW-13 完整记忆列表缓存（供分页使用） */
+  private allMemories: MemoryListItem[] = [];
+
+  /** P3-FLOW-13 当前记忆列表页码（从 1 开始） */
+  private memoryPage = 1;
   private memorySearchEl: HTMLInputElement | null;
   private memoryFilterSourceEl: HTMLSelectElement | null;
   private memoryDetailModal: HTMLElement | null;
@@ -1459,6 +1501,10 @@ export class UIManager {
     // 记忆面板元素缺失时静默降级
     if (!this.memoryListEl) return;
 
+    // P3-FLOW-13 缓存完整列表供分页使用
+    this.allMemories = memories;
+    this.memoryPage = 1;
+
     // 安全清空容器（使用 clearElement 统一封装 while + removeChild 模式）
     clearElement(this.memoryListEl);
 
@@ -1481,7 +1527,28 @@ export class UIManager {
       return;
     }
 
-    for (const mem of memories) {
+    // P3-FLOW-13 渲染第一页
+    this.renderMemoryPage();
+  }
+
+  /**
+   * P3-FLOW-13 渲染当前页的记忆列表项
+   *
+   * 分页策略：每页 MEMORY_PAGE_SIZE 条，超出部分通过"加载更多"按钮加载。
+   * 避免大量记忆一次性渲染导致 DOM 性能下降。
+   */
+  private renderMemoryPage(): void {
+    if (!this.memoryListEl || !this.allMemories) return;
+
+    // 计算当前页的起止索引
+    const start = 0;
+    const end = this.memoryPage * UIManager.MEMORY_PAGE_SIZE;
+    const pageItems = this.allMemories.slice(start, end);
+
+    // 清空容器（保留"加载更多"按钮的容器结构）
+    clearElement(this.memoryListEl);
+
+    for (const mem of pageItems) {
       const item = document.createElement('div');
       item.className = 'memory-item';
       item.dataset.id = mem.id;
@@ -1492,7 +1559,7 @@ export class UIManager {
       nameEl.textContent = mem.name;
       item.appendChild(nameEl);
 
-      // 元数据（source 标签 + score）
+      // 元数据（source 标签 + score + P3-FLOW-14 创建时间）
       const metaEl = document.createElement('div');
       metaEl.className = 'meta';
 
@@ -1508,6 +1575,15 @@ export class UIManager {
       scoreEl.textContent = `score: ${mem.score.toFixed(2)}`;
       metaEl.appendChild(scoreEl);
 
+      // P3-FLOW-14 显示创建时间（仅当存在时）
+      if (mem.createdAt) {
+        const timeEl = document.createElement('span');
+        timeEl.className = 'memory-time';
+        timeEl.title = `创建于 ${mem.createdAt}`;
+        timeEl.textContent = formatMemoryTime(mem.createdAt);
+        metaEl.appendChild(timeEl);
+      }
+
       item.appendChild(metaEl);
 
       // 预览（2 行截断）
@@ -1522,6 +1598,18 @@ export class UIManager {
       });
 
       this.memoryListEl.appendChild(item);
+    }
+
+    // P3-FLOW-13 如果还有更多记忆，添加"加载更多"按钮
+    if (this.allMemories.length > end) {
+      const loadMoreBtn = document.createElement('button');
+      loadMoreBtn.className = 'memory-load-more btn-secondary';
+      loadMoreBtn.textContent = `加载更多（剩余 ${this.allMemories.length - end} 条）`;
+      this.events.addEventListener(loadMoreBtn, 'click', () => {
+        this.memoryPage++;
+        this.renderMemoryPage();
+      });
+      this.memoryListEl.appendChild(loadMoreBtn);
     }
   }
 
@@ -1815,6 +1903,15 @@ export class UIManager {
   }
 
   /**
+   * P3-FLOW-12 获取当前主题模式（代理到 ThemeManager）
+   *
+   * @returns 当前主题模式（'light' | 'dark' | 'auto'）
+   */
+  getThemeMode(): 'light' | 'dark' | 'auto' {
+    return this.themeManager.getThemeMode();
+  }
+
+  /**
    * ADR-SP-008 设置主题（代理到 ThemeManager）
    *
    * 1. 设置 <html> 元素的 data-theme 属性（触发 CSS 变量切换）
@@ -1824,7 +1921,7 @@ export class UIManager {
    *
    * @param theme 目标主题
    */
-  setTheme(theme: 'light' | 'dark'): void {
+  setTheme(theme: 'light' | 'dark' | 'auto'): void {
     this.themeManager.setTheme(theme);
   }
 
@@ -1832,10 +1929,11 @@ export class UIManager {
    * ADR-SP-008 同步设置面板主题单选按钮状态（代理到 ThemeManager）
    *
    * 在外部修改主题后（如初始化加载），调用此方法确保单选按钮选中状态与实际主题一致。
+   * P3-FLOW-12 支持三态主题模式：light / dark / auto
    *
-   * @param theme 当前主题
+   * @param theme 当前主题模式
    */
-  syncThemeRadios(theme: 'light' | 'dark'): void {
+  syncThemeRadios(theme: 'light' | 'dark' | 'auto'): void {
     this.themeManager.syncThemeRadios(theme);
   }
 
@@ -1958,7 +2056,7 @@ export class UIManager {
    * 从主进程获取会话列表后，填充下拉菜单。
    * 会话数 ≤ 1 时隐藏选择器（无需切换）。
    */
-  updateSessionList(sessions: Array<{ id: string; date: string; name: string; preview?: string }>, currentSessionId: string): void {
+  updateSessionList(sessions: Array<{ id: string; date: string; name: string; preview?: string; messageCount?: number }>, currentSessionId: string): void {
     const selector = document.getElementById('session-selector');
     const list = document.getElementById('session-list');
     const currentName = document.getElementById('session-current-name');
@@ -2014,7 +2112,7 @@ export class UIManager {
    *
    * 按时间倒序渲染所有会话到 #session-list。
    */
-  private renderSessionListItems(sessions: Array<{ id: string; date: string; name: string; preview?: string }>): void {
+  private renderSessionListItems(sessions: Array<{ id: string; date: string; name: string; preview?: string; messageCount?: number }>): void {
     const list = document.getElementById('session-list');
     if (!list) return;
 
@@ -2054,18 +2152,27 @@ export class UIManager {
         li.appendChild(previewSpan);
       }
 
-      // FD-09 删除按钮（仅非当前会话显示）
-      if (session.id !== currentId) {
-        const delBtn = document.createElement('button');
-        delBtn.className = 'session-list-item-del';
-        delBtn.title = '删除会话';
-        delBtn.textContent = '🗑';
-        delBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.sessionDeleteCallback?.(session.id);
-        });
-        li.appendChild(delBtn);
+      // P3-FLOW-04 消息数量徽章（仅当有消息时显示，避免空会话显示 0）
+      if (typeof session.messageCount === 'number' && session.messageCount > 0) {
+        const countSpan = document.createElement('span');
+        countSpan.className = 'session-list-item-count';
+        countSpan.textContent = String(session.messageCount);
+        countSpan.title = `${session.messageCount} 条消息`;
+        li.appendChild(countSpan);
       }
+
+      // FD-09 删除按钮
+      // P3-FLOW-05 当前会话也显示删除按钮（原仅非当前会话显示，导致用户无法删除当前会话）
+      // 删除当前会话时由 sessionController 处理切换逻辑
+      const delBtn = document.createElement('button');
+      delBtn.className = 'session-list-item-del';
+      delBtn.title = '删除会话';
+      delBtn.textContent = '🗑';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.sessionDeleteCallback?.(session.id);
+      });
+      li.appendChild(delBtn);
 
       // FD-09 重命名按钮
       const renameBtn = document.createElement('button');
@@ -2196,6 +2303,16 @@ export class UIManager {
   /** P2-008 重置设置表单 dirty 标志（委托到 SettingsPanelManager） */
   resetSettingsFormDirty(): void {
     this.settingsPanelManager.resetFormDirty();
+  }
+
+  /**
+   * P3-FLOW-10 更新 Agent 连接状态指示器（委托到 SettingsPanelManager）
+   *
+   * @param status Agent 连接状态（ready/error/unknown）
+   * @param message 可选的状态描述文本
+   */
+  updateAgentStatusIndicator(status: 'ready' | 'error' | 'unknown', message?: string): void {
+    this.settingsPanelManager.updateAgentStatusIndicator(status, message);
   }
 
   // ─── 弹窗管理（代理到 ModalManager） ──────────────────

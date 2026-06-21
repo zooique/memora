@@ -211,20 +211,43 @@ export function createSessionController(uiManager: UIManager) {
    *
    * 弹出确认对话框后删除会话。删除不可恢复。
    * 删除成功后刷新会话列表 UI。
+   * P3-FLOW-05 支持删除当前会话：删除后自动切换到剩余会话中的第一个
+   * QC-R2-02 统一使用 showConfirmDialog 替代原生 confirm（与项目其他弹窗风格一致）
    */
   async function deleteSession(sessionId: string): Promise<void> {
     // 安全检查：防止未知 sessionId
     if (!sessionId) return;
 
-    // 确认对话框
-    const confirmed = confirm(`确定删除会话「${sessionId}」吗？此操作不可恢复。`);
+    // QC-R2-02 使用自定义确认弹窗（与项目其他弹窗风格一致，支持 Escape/Enter 键盘操作）
+    const confirmed = await uiManager.showConfirmDialog({
+      title: '删除会话',
+      message: `确定删除会话「${sessionId}」吗？此操作不可恢复。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      danger: true,
+    });
     if (!confirmed) return;
 
     const result = await window.electronAPI.deleteSession(sessionId);
     if (result.success) {
       uiManager.showToast('会话已删除', 'info');
-      // 刷新会话列表
-      await loadSessionList();
+
+      // P3-FLOW-05 删除当前会话时，自动切换到剩余会话中的第一个
+      // 避免用户删除当前会话后界面停留在已删除会话的消息上
+      if (sessionId === currentSessionId) {
+        const { sessions: remaining } = await window.electronAPI.listSessions();
+        if (remaining.length > 0) {
+          // 切换到剩余会话中最近的一个（列表已按时间倒序，第一项为最近）
+          await switchSession(remaining[0]!.id);
+        } else {
+          // 没有剩余会话：清空消息区，等待用户开始新对话
+          uiManager.clearMessages();
+          currentSessionId = '';
+        }
+      } else {
+        // 删除非当前会话：仅刷新会话列表
+        await loadSessionList();
+      }
     } else {
       uiManager.showToast(result.error ?? '删除失败', 'error');
     }

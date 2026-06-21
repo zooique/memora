@@ -2,10 +2,11 @@
  * 主题管理模块
  *
  * 职责：
- * - 获取/设置当前主题（light/dark）
+ * - 获取/设置当前主题（light/dark/auto）
  * - 缓存主题到 localStorage（供 index.html / float.html 内联脚本同步读取，避免页面闪烁）
  * - 同步设置面板单选按钮状态
  * - 触发主题变更回调通知 renderer.ts
+ * - P3-FLOW-12 支持 'auto' 主题：跟随系统 prefers-color-scheme 媒体查询
  *
  * 设计原则（ADR-SP-008 + UX-FD-12）：
  * - 通过 <html> 元素的 data-theme 属性触发 CSS 变量切换
@@ -13,6 +14,9 @@
  * - localStorage 不可用时静默降级（如隐私模式）
  * - 独立于 UIManager，通过组合方式持有
  */
+
+/** 主题配置类型（P3-FLOW-12 新增 'auto' 跟随系统） */
+export type ThemeMode = 'light' | 'dark' | 'auto';
 
 /**
  * 主题管理器
@@ -22,6 +26,12 @@
 export class ThemeManager {
   /** 主题变更回调（由 renderer.ts 注册） */
   private themeChangeCallback: ((theme: 'light' | 'dark') => void) | null = null;
+
+  /** P3-FLOW-12 当前主题模式（'light' | 'dark' | 'auto'），'auto' 时跟随系统 */
+  private themeMode: ThemeMode = 'light';
+
+  /** P3-FLOW-12 系统主题变化监听器（'auto' 模式下生效） */
+  private mediaQueryListener: ((e: MediaQueryListEvent) => void) | null = null;
 
   /**
    * ADR-SP-008 注册主题变更回调
@@ -43,10 +53,19 @@ export class ThemeManager {
    * 通过读取 <html> 元素的 data-theme 属性判断当前主题，
    * 未设置（默认）视为浅色。
    *
-   * @returns 当前主题（'light' | 'dark'）
+   * @returns 当前实际生效的主题（'light' | 'dark'），不含 'auto'
    */
   getTheme(): 'light' | 'dark' {
     return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  /**
+   * P3-FLOW-12 获取当前主题模式
+   *
+   * @returns 当前主题模式（'light' | 'dark' | 'auto'）
+   */
+  getThemeMode(): ThemeMode {
+    return this.themeMode;
   }
 
   /**
@@ -57,25 +76,95 @@ export class ThemeManager {
    * 3. 同步设置面板单选按钮状态
    * 4. 触发 themeChangeCallback 通知 renderer.ts（由 renderer.ts 负责 IPC 持久化到 sprite.json）
    *
+   * P3-FLOW-12 新增 'auto' 模式：
+   * - 'auto' 时根据系统 prefers-color-scheme 媒体查询自动选择 light/dark
+   * - 注册系统主题变化监听器，系统主题改变时自动切换
+   * - 切换到非 'auto' 模式时移除监听器
+   *
    * 注：localStorage 是缓存层，真理源为 sprite.json。renderer.ts 的 onThemeChange 回调
    * 负责将主题变更通过 IPC 写入 sprite.json。
    *
-   * @param theme 目标主题
+   * @param mode 目标主题模式（'light' | 'dark' | 'auto'）
    */
-  setTheme(theme: 'light' | 'dark'): void {
-    if (theme === 'dark') {
+  setTheme(mode: ThemeMode): void {
+    this.themeMode = mode;
+
+    // P3-FLOW-12 处理 'auto' 模式：根据系统主题选择实际 light/dark
+    const effectiveTheme = mode === 'auto' ? this.getSystemTheme() : mode;
+
+    // 应用实际主题到 DOM
+    if (effectiveTheme === 'dark') {
       document.documentElement.setAttribute('data-theme', 'dark');
     } else {
       // 浅色为默认，移除属性即可
       document.documentElement.removeAttribute('data-theme');
     }
     try {
-      localStorage.setItem('memora-theme', theme);
+      // P3-FLOW-12 'auto' 模式下缓存实际主题（供内联脚本读取，避免闪烁）
+      localStorage.setItem('memora-theme', effectiveTheme);
     } catch {
       // localStorage 不可用时静默降级（如隐私模式）
     }
-    this.syncThemeRadios(theme);
-    this.themeChangeCallback?.(theme);
+    this.syncThemeRadios(mode);
+    this.themeChangeCallback?.(effectiveTheme);
+
+    // P3-FLOW-12 管理 'auto' 模式的系统主题变化监听器
+    this.updateMediaQueryListener(mode);
+  }
+
+  /**
+   * P3-FLOW-12 获取系统当前主题
+   *
+   * 通过 prefers-color-scheme 媒体查询判断系统当前是浅色还是深色。
+   *
+   * @returns 系统当前主题（'light' | 'dark'）
+   */
+  private getSystemTheme(): 'light' | 'dark' {
+    // matchMedia 可能不支持（如旧版浏览器），降级为浅色
+    if (typeof window.matchMedia !== 'function') return 'light';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+
+  /**
+   * P3-FLOW-12 更新系统主题变化监听器
+   *
+   * 仅在 'auto' 模式下注册监听器，其他模式移除监听器。
+   * 系统主题变化时自动切换实际主题，并触发 themeChangeCallback 通知 renderer.ts 持久化。
+   *
+   * @param mode 当前主题模式
+   */
+  private updateMediaQueryListener(mode: ThemeMode): void {
+    // 不支持 matchMedia 时跳过
+    if (typeof window.matchMedia !== 'function') return;
+
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    // 先移除旧监听器（无论之前是否注册）
+    if (this.mediaQueryListener) {
+      mediaQuery.removeEventListener('change', this.mediaQueryListener);
+      this.mediaQueryListener = null;
+    }
+
+    // 仅 'auto' 模式注册新监听器
+    if (mode === 'auto') {
+      this.mediaQueryListener = (e: MediaQueryListEvent) => {
+        const effectiveTheme: 'light' | 'dark' = e.matches ? 'dark' : 'light';
+        // 应用实际主题到 DOM（不修改 themeMode，保持 'auto'）
+        if (effectiveTheme === 'dark') {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        } else {
+          document.documentElement.removeAttribute('data-theme');
+        }
+        try {
+          localStorage.setItem('memora-theme', effectiveTheme);
+        } catch {
+          // localStorage 不可用时静默降级
+        }
+        // 通知 renderer.ts 持久化实际主题
+        this.themeChangeCallback?.(effectiveTheme);
+      };
+      mediaQuery.addEventListener('change', this.mediaQueryListener);
+    }
   }
 
   /**
@@ -83,12 +172,14 @@ export class ThemeManager {
    *
    * 在外部修改主题后（如初始化加载 sprite.json 配置），调用此方法确保单选按钮选中状态与实际主题一致。
    *
-   * @param theme 当前主题
+   * P3-FLOW-12 支持三态单选按钮：light / dark / auto
+   *
+   * @param mode 当前主题模式
    */
-  syncThemeRadios(theme: 'light' | 'dark'): void {
+  syncThemeRadios(mode: ThemeMode): void {
     const radios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
     radios.forEach((radio) => {
-      radio.checked = radio.value === theme;
+      radio.checked = radio.value === mode;
     });
   }
 }

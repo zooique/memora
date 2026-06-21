@@ -30,8 +30,11 @@ import type {
 
 /** 设置面板管理器需要的宿主能力（跨模块关注点，由 UIManager 注入） */
 export interface SettingsPanelHost {
-  /** 设置主题（ADR-SP-008 主题切换） */
-  setTheme(theme: 'light' | 'dark'): void;
+  /**
+   * 设置主题（ADR-SP-008 主题切换）
+   * P3-FLOW-12 支持 'auto' 跟随系统主题
+   */
+  setTheme(theme: 'light' | 'dark' | 'auto'): void;
   /** 更新角色匹配模式标签（IX-07） */
   updatePersonaModeBadge(mode: string): void;
   /** 显示确认对话框（FD-07 取消按钮） */
@@ -309,7 +312,11 @@ export class SettingsPanelManager {
     themeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
         if (radio.checked) {
-          this.host.setTheme(radio.value === 'dark' ? 'dark' : 'light');
+          // P3-FLOW-12 支持 'auto' 跟随系统主题
+          const value = radio.value;
+          if (value === 'light' || value === 'dark' || value === 'auto') {
+            this.host.setTheme(value);
+          }
         }
       });
     });
@@ -398,6 +405,34 @@ export class SettingsPanelManager {
     this.settingsFormDirty = false;
     // UX-P2-11 同步重置 LLM 表单 dirty 标志
     this.llmFormDirty = false;
+  }
+
+  /**
+   * P3-FLOW-10 更新 Agent 连接状态指示器
+   *
+   * 在设置面板顶部显示 Agent 当前连接状态，帮助用户快速识别配置是否生效。
+   * 三种状态：
+   * - ready（绿色）：Agent 已就绪，可正常对话
+   * - error（红色）：Agent 未就绪，通常因 LLM 配置缺失或初始化失败
+   * - unknown（灰色）：检测中，通常出现在应用启动初期
+   *
+   * @param status Agent 连接状态
+   * @param message 可选的状态描述文本（未提供时使用默认文案）
+   */
+  updateAgentStatusIndicator(status: 'ready' | 'error' | 'unknown', message?: string): void {
+    const indicator = document.getElementById('agent-status-indicator');
+    if (!indicator) return;
+
+    // 更新状态类名（移除旧状态类，添加新状态类）
+    indicator.classList.remove('ready', 'error', 'unknown');
+    indicator.classList.add(status);
+
+    // 更新状态文本
+    const textEl = indicator.querySelector('.agent-status-text');
+    if (textEl) {
+      const defaultText = status === 'ready' ? 'Agent 已就绪' : status === 'error' ? 'Agent 未就绪' : '检测中...';
+      textEl.textContent = message ?? defaultText;
+    }
   }
 
   /** 加载 LLM 配置到表单 */

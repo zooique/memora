@@ -54,7 +54,17 @@ export interface IpcContext {
    * handleUserInput 入口检查此标志，未就绪时拒绝并提示用户重新配置
    */
   isAgentReady: () => boolean;
-  /** UX-PP-04 用户是否主动触发了中断（区分用户 Stop vs 系统错误） */
+  /**
+   * UX-PP-04 用户是否主动触发了中断（区分用户 Stop vs 系统错误）
+   *
+   * P2-AI-04 并发场景风险说明：
+   * 此标志为共享布尔值，理论上在多请求并发时可能被误判（A 请求设置 true 后，
+   * B 请求的 catch 块读取到 true 误以为是用户中断）。
+   * 实际风险已由 P1-IPC-03 竞态保护缓解：handleUserInput 入口检查进行中对话，
+   * 若有进行中对话则拒绝新请求，确保同一时刻最多只有一个活跃对话。
+   * 因此 wasUserAborted 实际仅在单对话场景下使用，并发误判风险极低。
+   * 若未来移除竞态保护，需改为 per-request 的中断标志（如 AbortController.reason）。
+   */
   wasUserAborted: boolean;
   /** 获取当前未读计数（完整窗口隐藏时的消息数） */
   getUnreadCount: () => number;
@@ -462,9 +472,11 @@ export function registerIpcHandlers(ctx: IpcContext): void {
           const name = parts.slice(3).join('-') || 'main';
           // UX-PP-05 获取首条用户消息作为预览
           const preview = ctx.sessionStore.getFirstUserMessage(s);
-          return { id: s, date, name, preview };
+          // P3-FLOW-04 获取消息数量用于会话列表项展示
+          const messageCount = ctx.sessionStore.countMessages(date, name);
+          return { id: s, date, name, preview, messageCount };
         }
-        return { id: s, date: s, name: s, preview: '' };
+        return { id: s, date: s, name: s, preview: '', messageCount: 0 };
       });
       return { sessions: parsed };
     } catch (error) {

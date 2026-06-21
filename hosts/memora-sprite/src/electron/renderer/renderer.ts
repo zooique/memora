@@ -78,8 +78,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const { config } = await window.electronAPI.getConfig();
     if (config.theme) {
       // sprite.json 中有主题配置，以它为准（覆盖 localStorage 缓存，确保一致性）
-      const currentTheme = uiManager.getTheme();
-      if (config.theme !== currentTheme) {
+      // P3-FLOW-12 config.theme 可能为 'auto'，由 ThemeManager 处理实际主题选择
+      const currentMode = uiManager.getThemeMode();
+      if (config.theme !== currentMode) {
         uiManager.setTheme(config.theme);
       }
     } else {
@@ -99,7 +100,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // ADR-SP-008 同步设置面板单选按钮状态
-  uiManager.syncThemeRadios(uiManager.getTheme());
+  // P3-FLOW-12 使用 getThemeMode 同步三态单选按钮（light/dark/auto）
+  uiManager.syncThemeRadios(uiManager.getThemeMode());
 
   uiManager.onThemeChange((theme) => {
     // UX-FD-12 持久化主题到 sprite.json（真理源），替换 localStorage 唯一真理源
@@ -216,7 +218,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 检查 Agent 是否就绪
   try {
-    const { ready } = await window.electronAPI.getAgentStatus();
+    const { ready, error } = await window.electronAPI.getAgentStatus();
+    // P3-FLOW-10 更新设置面板 Agent 连接状态指示器
+    settingsController.updateAgentStatus(ready ? 'ready' : 'error', error ?? undefined);
     if (!ready) {
       // 首次启动引导：显示欢迎消息 + 自动跳转到设置面板
       // P3-FLOW-02 文案优化：提示用户先测试连接，避免配置错误导致初始化失败
@@ -230,9 +234,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       await settingsController.loadConfig();
       return;
     }
-  } catch (error) {
+  } catch (err) {
     // agent-status 通道异常（主进程未就绪或网络错误），降级为首次使用引导
-    console.warn('[init] 查询 Agent 状态失败，降级为首次使用引导:', error);
+    console.warn('[init] 查询 Agent 状态失败，降级为首次使用引导:', err);
+    // P3-FLOW-10 异常时状态指示器显示 unknown
+    settingsController.updateAgentStatus('unknown', '检测中...');
     uiManager.appendMessage({
       role: 'system',
       content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',

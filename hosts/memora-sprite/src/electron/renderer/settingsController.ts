@@ -232,9 +232,22 @@ export function createSettingsController(uiManager: UIManager) {
     }
   }
 
+  /**
+   * P3-FLOW-10 更新 Agent 连接状态指示器
+   *
+   * 委托给 SettingsPanelManager 更新设置面板顶部的状态指示器。
+   *
+   * @param status Agent 连接状态（ready/error/unknown）
+   * @param message 可选的状态描述文本
+   */
+  function updateAgentStatus(status: 'ready' | 'error' | 'unknown', message?: string): void {
+    uiManager.updateAgentStatusIndicator(status, message);
+  }
+
   return {
     setupSettingsPanel,
     loadConfig,
     loadLlmConfig,
+    updateAgentStatus,
   };
 }

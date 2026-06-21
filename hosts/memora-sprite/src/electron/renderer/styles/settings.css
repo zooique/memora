@@ -27,6 +27,51 @@
   font-size: 13px;
 }
 
+/* ─── P3-FLOW-10 Agent 连接状态指示器 ─── */
+/* 显示在设置面板顶部，三态颜色：ready 绿 / error 红 / unknown 灰 */
+.agent-status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 24px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--surface2);
+}
+
+.agent-status-indicator .agent-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 就绪态：绿色圆点 */
+.agent-status-indicator.ready {
+  color: var(--success, #10b981);
+  background: var(--surface1);
+}
+.agent-status-indicator.ready .agent-status-dot {
+  background: var(--success, #10b981);
+}
+
+/* 错误态：红色圆点 */
+.agent-status-indicator.error {
+  color: var(--danger, #ef4444);
+  background: var(--surface1);
+}
+.agent-status-indicator.error .agent-status-dot {
+  background: var(--danger, #ef4444);
+}
+
+/* 未知态：灰色圆点 */
+.agent-status-indicator.unknown {
+  color: var(--text-2);
+  background: var(--surface1);
+}
+.agent-status-indicator.unknown .agent-status-dot {
+  background: var(--text-3, #9ca3af);
+}
+
 .settings-tabs {
   display: flex;
   gap: 0;

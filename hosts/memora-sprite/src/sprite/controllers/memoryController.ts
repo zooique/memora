@@ -26,6 +26,8 @@ export interface MemoryListItem {
   source: string;
   score: number;
   contentPreview: string;
+  /** P3-FLOW-14 创建时间（ISO 8601 字符串），用于列表项展示 */
+  createdAt?: string;
 }
 
 /** 记忆详情 */
@@ -84,6 +86,8 @@ export class MemoryController {
       source: m.source,
       score: this.#formatScore(m.score),
       contentPreview: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
+      // P3-FLOW-14 携带创建时间用于列表项展示（m.createdAt 为 ISO 8601 字符串）
+      createdAt: m.createdAt,
     }));
   }
 

@@ -212,8 +212,9 @@ describe('sessionController', () => {
   });
 
   describe('deleteSession', () => {
-    it('应该调用 confirm 确认后执行删除', async () => {
-      const confirmSpy = vi.spyOn(globalThis, 'confirm').mockReturnValue(true);
+    it('应该调用 showConfirmDialog 确认后执行删除', async () => {
+      // QC-R2-02 deleteSession 改用 showConfirmDialog 替代原生 confirm
+      const confirmSpy = vi.spyOn(uiManager, 'showConfirmDialog').mockResolvedValue(true);
       const controller = createSessionController(uiManager);
 
       await controller.deleteSession('2026-06-20-chat');
@@ -226,7 +227,8 @@ describe('sessionController', () => {
     });
 
     it('应该在用户取消确认时不执行删除', async () => {
-      const confirmSpy = vi.spyOn(globalThis, 'confirm').mockReturnValue(false);
+      // QC-R2-02 deleteSession 改用 showConfirmDialog 替代原生 confirm
+      const confirmSpy = vi.spyOn(uiManager, 'showConfirmDialog').mockResolvedValue(false);
       const controller = createSessionController(uiManager);
 
       await controller.deleteSession('2026-06-20-chat');
