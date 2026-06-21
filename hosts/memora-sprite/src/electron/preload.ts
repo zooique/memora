@@ -5,11 +5,22 @@
  * - 所有 IPC 调用必须显式列出
  * - 敏感 API（如 Shell、FileSystem）不暴露
  * - 通信方式：ipcRenderer.invoke（请求/响应）+ ipcRenderer.on（事件推送）
+ *
+ * ⚠️ Sandbox 兼容性（P1-ROOT 修复）：
+ * Electron sandbox: true 要求 preload 是单个 CommonJS 文件，不能有外部模块的运行时导入。
+ * 原方案 `import { IPC_CHANNELS } from './ipcChannels.js'` 会导致 ESM 多模块加载失败，
+ * contextBridge.exposeInMainWorld() 静默失败，window.electronAPI 为 undefined，
+ * 表现为顶部栏按钮点击无反应、浮动图标无法拖动等全链路 UI 失效。
+ *
+ * 修复策略：
+ * - IPC 通道常量内联到本文件（与 ipcChannels.ts 保持同步，见下方 INLINED_IPC_CHANNELS）
+ * - 仅保留 `import type`（编译时擦除，不产生运行时模块加载）
+ * - 通过 tsconfig.preload.json 编译为 CommonJS 格式的 preload.cjs
+ * - ipcChannels.ts 仍是主进程的真理源；本文件的内联副本需手动保持同步
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 import type { SerializedAppError } from './ipcChannels.js';
 // 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。
 // 使用 import type：编译时擦除，不引入运行时耦合；electron 层依赖 sprite 层是合理依赖方向。
@@ -18,6 +29,59 @@ import type {
   MemoryDetail,
   MemorySearchResult as MemorySearchHit,
 } from '../sprite/controllers/memoryController.js';
+
+// ─── 内联 IPC 通道常量（sandbox 兼容性：不能运行时导入 ipcChannels.ts） ─────
+// ⚠️ 与 ipcChannels.ts 保持同步：修改 ipcChannels.ts 时需同步更新此处的内联副本。
+// 主进程使用 ipcChannels.ts（真理源），preload 使用此内联副本（sandbox 限制）。
+const IPC_CHANNELS = {
+  USER_INPUT: 'user-input',
+  CHAT_ABORT: 'chat-abort',
+  SESSION_LOAD: 'session-load',
+  SESSION_NEW: 'session-new',
+  SESSION_LIST: 'session-list',
+  MEMORIES_LIST: 'memories-list',
+  MEMORIES_SEARCH: 'memories-search',
+  MEMORIES_SHOW: 'memories-show',
+  MEMORIES_DELETE: 'memories-delete',
+  MEMORIES_ADD: 'memories-add',
+  CONFIG_GET: 'config-get',
+  CONFIG_UPDATE: 'config-update',
+  PERSONA_LIST: 'persona-list',
+  PERSONA_SWITCH: 'persona-switch',
+  PERSONA_MODE: 'persona-mode',
+  PERSONA_MODE_GET: 'persona-mode-get',
+  PROJECTS_LIST: 'projects-list',
+  DASHBOARD_GET: 'dashboard-get',
+  LLM_CONFIG_GET: 'llm-config-get',
+  LLM_CONFIG_SAVE: 'llm-config-save',
+  LLM_CONFIG_TEST: 'llm-config-test',
+  AGENT_STATUS: 'agent-status',
+  PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
+  WINDOW_MINIMIZE: 'window-minimize',
+  WINDOW_MAXIMIZE: 'window-maximize',
+  WINDOW_CLOSE: 'window-close',
+  MOVE_FLOAT_WINDOW: 'move-float-window',
+  SAVE_FLOAT_POSITION: 'save-float-position',
+  FLOAT_DRAG_BEGIN: 'float-drag-begin',
+  EXPAND_TO_FULL: 'expand-to-full',
+  FLOAT_CONTEXT_MENU: 'float-context-menu',
+} as const;
+
+const MAIN_TO_RENDERER_CHANNELS = {
+  SPRITE_STREAM_START: 'sprite-stream-start',
+  SPRITE_STREAM_CHUNK: 'sprite-stream-chunk',
+  SPRITE_STREAM_END: 'sprite-stream-end',
+  SPRITE_STREAM_RECALL: 'sprite-stream-recall',
+  SPRITE_OUTPUT: 'sprite-output',
+  SPRITE_EVENT: 'sprite-event',
+  SPRITE_ERROR: 'sprite-error',
+  APP_ERROR: 'app-error',
+  AGENT_READY: 'agent-ready',
+  FLOAT_DRAG_START: 'float-drag-start',
+  FLOAT_DRAG_END: 'float-drag-end',
+  FLOAT_UNREAD: 'float-unread',
+  WINDOW_STATE_CHANGED: 'window-state-changed',
+} as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
 export type { MemoryListItem, MemoryDetail, MemorySearchHit };

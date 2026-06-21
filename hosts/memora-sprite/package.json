@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:electron": "tsc -p tsconfig.electron.json && node scripts/copy-renderer.mjs",
+    "build:electron": "tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "build:all": "npm run build && npm run build:electron",
     "start": "tsx src/index.ts",
     "start:electron": "npm run build:electron && electron ./dist-electron/electron/main.js",

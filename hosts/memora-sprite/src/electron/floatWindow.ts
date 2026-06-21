@@ -65,7 +65,9 @@ export class FloatWindow {
       show: false,
       backgroundColor: '#1e1e2e',
       webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
+        // P1-ROOT 修复：preload 改为 .cjs（CommonJS 格式），兼容 sandbox: true
+        // ESM 格式的 preload.js 与 sandbox 不兼容，导致 contextBridge 暴露失败
+        preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,

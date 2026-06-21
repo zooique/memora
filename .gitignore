@@ -69,3 +69,5 @@ $RECYCLE.BIN/
 test-sprite-*/
 hosts/memora-sprite/dist-electron
 hosts/memora-sprite/dist-electron/*
+hosts/memora-sprite/dist-preload
+hosts/memora-sprite/dist-preload/*
