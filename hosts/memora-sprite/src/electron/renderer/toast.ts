@@ -28,6 +28,12 @@ const TOAST_DEFAULT_DURATION = 4000;
 /** Toast 最大同时显示数量（FIFO，超出时移除最早的） */
 const TOAST_MAX_VISIBLE = 5;
 
+/** Toast 显示选项 */
+export interface ToastOptions {
+  /** 重试按钮回调（提供时显示重试按钮，且 toast 不自动消失） */
+  onRetry?: () => void;
+}
+
 /**
  * Toast 通知管理器
  *
@@ -44,8 +50,9 @@ export class ToastManager {
    * @param message 通知文本
    * @param type 通知类型（默认 info）
    * @param duration 自动消失时长（毫秒），0 表示不自动消失；默认按类型决定
+   * @param options 附加选项（如 onRetry 重试回调）
    */
-  showToast(message: string, type: ToastType = 'info', duration?: number): void {
+  showToast(message: string, type: ToastType = 'info', duration?: number, options?: ToastOptions): void {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
@@ -64,11 +71,30 @@ export class ToastManager {
     icon.textContent = TOAST_ICONS[type];
     toast.appendChild(icon);
 
-    // 内容
+    // 内容 + 操作按钮容器
+    const body = document.createElement('div');
+    body.className = 'toast-body';
+
+    // 内容文本
     const content = document.createElement('div');
     content.className = 'toast-content';
     content.textContent = message;
-    toast.appendChild(content);
+    body.appendChild(content);
+
+    // UX-PP-03 重试按钮（仅在提供 onRetry 回调时显示）
+    if (options?.onRetry) {
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'toast-retry';
+      retryBtn.textContent = '重试';
+      retryBtn.title = '重新发送上一条消息';
+      retryBtn.addEventListener('click', () => {
+        this.removeToast(toast);
+        options.onRetry!();
+      });
+      body.appendChild(retryBtn);
+    }
+
+    toast.appendChild(body);
 
     // 关闭按钮
     const closeBtn = document.createElement('button');
@@ -80,8 +106,9 @@ export class ToastManager {
 
     container.appendChild(toast);
 
-    // 自动消失（error 默认不消失，需用户手动关闭）
-    const autoDuration = duration ?? (type === 'error' ? 0 : TOAST_DEFAULT_DURATION);
+    // 自动消失（有重试按钮时不自动消失，让用户有时间点击重试）
+    const hasRetry = !!options?.onRetry;
+    const autoDuration = hasRetry ? 0 : (duration ?? (type === 'error' ? 0 : TOAST_DEFAULT_DURATION));
     if (autoDuration > 0) {
       // 纳入 toastTimers 跟踪，cleanup 时统一清理，避免回调在 DOM 销毁后触发
       const timer = setTimeout(() => {

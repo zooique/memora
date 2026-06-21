@@ -101,6 +101,8 @@ export interface IpcListenerCallbacks {
   onInsightGained: () => void;
   /** Agent 就绪时回调（加载初始数据 + 切换到对话面板） */
   onAgentReady: () => void;
+  /** UX-PP-03 流式错误重试回调（重新发送上一条用户消息） */
+  onSpriteErrorRetry?: () => void;
 }
 
 /**
@@ -195,7 +197,12 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    * IX-06 统一走 toast 通知，保持错误反馈渠道一致。
    */
   window.electronAPI.onSpriteError((msg: { text: string }) => {
-    uiManager.showToast(msg.text, 'error');
+    // UX-PP-01 将错误注入到流式消息气泡中，让用户直接在对话中看到出错原因
+    uiManager.injectErrorToStreamingMessages(msg.text);
+    // UX-PP-03 提供重试按钮，让用户一键重试失败的消息
+    uiManager.showToast(msg.text, 'error', undefined, {
+      onRetry: callbacks.onSpriteErrorRetry,
+    });
     reportError('sprite-error', msg.text);
   });
 

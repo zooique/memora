@@ -18,6 +18,7 @@ import { renderMarkdown } from './markdown.js';
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
 import { getRequiredElement, getOptionalElement } from './domHelpers.js';
 import { ToastManager } from './toast.js';
+import type { ToastOptions } from './toast.js';
 import { ModalManager } from './modal.js';
 import { OnboardingManager } from './onboarding.js';
 import { ThemeManager } from './themeManager.js';
@@ -108,6 +109,12 @@ export class UIManager {
   };
 
   private streamingMessages = new Map<string, HTMLElement>();
+  /** UX-PP-02 流式 Markdown 渲染 rAF 节流标志（防止同一帧重复渲染） */
+  private _pendingRaF = false;
+  /** UX-PP-02 当前流式渲染的最新文本（rAF 回调中读取） */
+  private _latestStreamText = '';
+  /** UX-PP-02 当前流式消息 ID（rAF 回调中定位气泡） */
+  private _latestStreamMessageId = '';
   private eventCleanupFunctions: Array<() => void> = [];
 
   // P2-008 settingsFormDirty / llmPresets / currentPersonaMode 已提取至 SettingsPanelManager
@@ -448,18 +455,8 @@ export class UIManager {
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 保留 cursor、memory-recall-container 和 tool-call 元素，移除其他内容
-    const cursor = bubble.querySelector('.cursor');
-    // UX-P1-03 修复：使用 .memory-recall-container 查询整个容器（包含多条召回记忆），
-    // 而非 .memory-recall（仅匹配第一个 item），避免多条召回记忆在流式更新时丢失
-    const recall = bubble.querySelector('.memory-recall-container');
-    // UX-P1-02 保留所有工具调用卡片，避免流式更新时丢失工具调用记录
-    const toolCalls = bubble.querySelectorAll('.tool-call');
-    const preserved: Element[] = [];
-    if (recall) preserved.push(recall);
-    for (const tc of Array.from(toolCalls)) {
-      preserved.push(tc);
-    }
+    // UX-PP-02 保留元素在 rAF 回调中重新查询，此处不再维护同步变量
+    // 保留 cursor、memory-recall-container 和 tool-call 元素，在 rAF 回调中重新查询
 
     // UX-P2-01 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
     const thinkingIndicator = bubble.querySelector('.thinking-phase');
@@ -467,18 +464,35 @@ export class UIManager {
       thinkingIndicator.remove();
     }
 
-    // 安全清空 bubble（保留 cursor 和 recall 和 tool-call）
-    this.clearElement(bubble);
+    // UX-PP-02 使用 rAF 节流 Markdown 渲染，避免高频 chunk 导致重复渲染
+    // 存储最新文本，rAF 回调中统一执行 clear + render + 保留元素追加
+    this._latestStreamText = text;
+    this._latestStreamMessageId = messageId;
+    if (!this._pendingRaF) {
+      this._pendingRaF = true;
+      requestAnimationFrame(() => {
+        this._pendingRaF = false;
+        // 重新定位气泡（可能已被 finishStreamingMessage 处理）
+        const latestEl = this.streamingMessages.get(this._latestStreamMessageId);
+        const latestBubble = latestEl?.querySelector('.message-bubble');
+        if (!latestBubble) return;
 
-    // 重新渲染 Markdown 内容
-    bubble.appendChild(renderMarkdown(text));
+        // 重新查询保留元素（rAF 回调中 DOM 可能已变化）
+        const latestCursor = latestBubble.querySelector('.cursor');
+        const latestRecall = latestBubble.querySelector('.memory-recall-container');
+        const latestToolCalls = latestBubble.querySelectorAll('.tool-call');
 
-    // 重新追加保留的元素（recall 和 tool-call 在前，cursor 在最后）
-    for (const node of preserved) {
-      bubble.appendChild(node);
-    }
-    if (cursor) {
-      bubble.appendChild(cursor);
+        // 安全清空并重新渲染 Markdown
+        this.clearElement(latestBubble);
+        latestBubble.appendChild(renderMarkdown(this._latestStreamText));
+
+        // 重新追加保留元素（recall 和 tool-call 在前，cursor 在最后）
+        if (latestRecall) latestBubble.appendChild(latestRecall);
+        for (const tc of Array.from(latestToolCalls)) {
+          latestBubble.appendChild(tc);
+        }
+        if (latestCursor) latestBubble.appendChild(latestCursor);
+      });
     }
 
     this.scrollToBottom();
@@ -805,6 +819,47 @@ export class UIManager {
     this.showEmptyState();
     // 清空后重置滚动状态，确保新消息能自动滚动
     this.forceScrollToBottom();
+  }
+
+  /**
+   * UX-PP-01 向流式消息气泡注入错误提示
+   *
+   * 当流式输出出错时（如网络中断、LLM 返回错误），
+   * 将错误文本注入到所有活跃的流式消息气泡中，
+   * 并停止流式状态。让用户直接在对话中看到出错原因，
+   * 而非仅依赖 toast 通知。
+   *
+   * @param errorText 错误提示文本
+   */
+  injectErrorToStreamingMessages(errorText: string): void {
+    // 无活跃流式消息时跳过
+    if (this.streamingMessages.size === 0) return;
+
+    for (const [, el] of this.streamingMessages) {
+      const bubble = el.querySelector('.message-bubble');
+      if (!bubble) continue;
+
+      // 移除光标和思考指示器（流式已结束）
+      const cursor = bubble.querySelector('.cursor');
+      if (cursor) cursor.remove();
+      const thinkingIndicator = bubble.querySelector('.thinking-phase');
+      if (thinkingIndicator) thinkingIndicator.remove();
+
+      // 添加错误指示器到气泡底部
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'stream-error';
+      errorDiv.textContent = `⚠️ ${errorText}`;
+      bubble.appendChild(errorDiv);
+
+      // 停止流式状态
+      el.classList.remove('streaming');
+    }
+
+    // 清理流式消息映射和 UI 状态
+    this.streamingMessages.clear();
+    this.state.isStreaming = false;
+    this.btnSend.disabled = false;
+    this.btnStop.classList.add('hidden');
   }
 
   // ─── 空状态引导 ─────────────────────────────────────────
@@ -1786,13 +1841,23 @@ export class UIManager {
     // FD-08 存储当前会话 ID，供 renderSessionListItems 高亮使用
     this.sessionsCurrentId = currentSessionId;
 
-    // 仅一个会话时隐藏选择器
+    // UX-PP-06 仅一个会话时保留选择器但禁用下拉（避免 UI 消失导致用户困惑）
     if (sessions.length <= 1) {
-      selector.classList.add('hidden');
+      selector.classList.add('disabled');
+      const sessionCurrent = document.getElementById('session-current');
+      if (sessionCurrent) {
+        sessionCurrent.setAttribute('aria-disabled', 'true');
+      }
+      // 仍然渲染当前会话信息（显示名称 + 日期）
+      this.renderSessionListItems(sessions);
       return;
     }
 
-    selector.classList.remove('hidden');
+    selector.classList.remove('disabled');
+    const sessionCurrent = document.getElementById('session-current');
+    if (sessionCurrent) {
+      sessionCurrent.removeAttribute('aria-disabled');
+    }
 
     // 找到当前会话
     const current = sessions.find(s => s.id === currentSessionId);
@@ -1905,8 +1970,10 @@ export class UIManager {
     });
   }
 
-  /** FD-A1 切换会话下拉菜单的显示/隐藏 */
+  /** FD-A1 切换会话下拉菜单的显示/隐藏（UX-PP-06 禁用状态下不响应） */
   toggleSessionDropdown(): void {
+    const selector = document.getElementById('session-selector');
+    if (selector?.classList.contains('disabled')) return;
     const dropdown = document.getElementById('session-dropdown');
     if (dropdown) {
       dropdown.classList.toggle('hidden');
@@ -2060,7 +2127,7 @@ export class UIManager {
    * @param type 通知类型（默认 info）
    * @param duration 自动消失时长（毫秒），0 表示不自动消失；默认按类型决定
    */
-  showToast(message: string, type: ToastType = 'info', duration?: number): void {
-    this.toastManager.showToast(message, type, duration);
+  showToast(message: string, type: ToastType = 'info', duration?: number, options?: ToastOptions): void {
+    this.toastManager.showToast(message, type, duration, options);
   }
 }

@@ -548,9 +548,12 @@ describe('流式消息管理', () => {
     expect(streamingEl).not.toBeNull();
   });
 
-  it('updateStreamingMessage: 更新累积文本', () => {
+  it('updateStreamingMessage: 更新累积文本', async () => {
     uiManager.startStreaming('msg-stream-2');
     uiManager.updateStreamingMessage('msg-stream-2', 'Hello World');
+
+    // UX-PP-02 rAF 节流：渲染在下一帧执行，需等待 rAF 回调
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     const bubble = document.querySelector('.message.assistant.streaming .message-bubble');
     // 渲染后应包含 Markdown 解析后的内容

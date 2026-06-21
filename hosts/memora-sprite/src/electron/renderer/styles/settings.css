@@ -11,6 +11,22 @@
 /* UX-P2-25 移除 #panel-settings 空规则集（原仅含注释，无实际样式声明） */
 
 /* ─── UI-UX-01 设置面板 tab 导航（v8：52px 高度，无背景色） ─── */
+/* UX-PP-21 设置面板交互模式说明横幅 */
+.settings-mode-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 24px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: var(--surface1);
+  border-bottom: 1px solid var(--surface2);
+}
+
+.settings-mode-notice-icon {
+  font-size: 13px;
+}
+
 .settings-tabs {
   display: flex;
   gap: 0;

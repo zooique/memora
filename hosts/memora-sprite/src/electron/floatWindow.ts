@@ -58,12 +58,12 @@ export class FloatWindow {
       width: size.width,
       height: size.height,
       frame: false,
-      transparent: false,
+      // UX-PP-14 透明窗口：让 badge 和 drag-hint 不被 opaque 背景裁剪
+      transparent: true,
       resizable: false,
       alwaysOnTop: true,
       skipTaskbar: true,
       show: false,
-      backgroundColor: '#1e1e2e',
       webPreferences: {
         // P1-ROOT 修复：preload 改为 .cjs（CommonJS 格式），兼容 sandbox: true
         // ESM 格式的 preload.js 与 sandbox 不兼容，导致 contextBridge 暴露失败

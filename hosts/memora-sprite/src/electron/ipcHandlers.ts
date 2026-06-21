@@ -155,16 +155,16 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   /** 加载历史会话消息 */
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_event, query: { date?: string; session?: string }) => {
     try {
-      const sessions = ctx.sessionStore.listSessions();
-      if (sessions.length === 0) {
-        return { messages: [], loadedSessionId: '' };
-      }
-
-      // 优先使用查询参数，否则选择最近会话
+      // UX-PP-08 有明确查询参数时直接构造目标，跳过 listSessions 冗余调用
       let target: string | undefined;
       if (query.date && query.session) {
         target = `${query.date}-${query.session}`;
       } else {
+        // 无查询参数时：列出所有会话，智能选择最近会话
+        const sessions = ctx.sessionStore.listSessions();
+        if (sessions.length === 0) {
+          return { messages: [], loadedSessionId: '' };
+        }
         const today = new Date().toISOString().slice(0, 10);
         target = sessions.find(s => s === `${today}-main`) ?? sessions[sessions.length - 1];
       }

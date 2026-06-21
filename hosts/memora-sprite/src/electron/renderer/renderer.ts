@@ -29,6 +29,9 @@ import { reportError } from './errorHelpers.js';
 /** UI 管理器实例（模块级，DOMContentLoaded 后初始化） */
 let uiManager: UIManager;
 
+/** UX-PP-03 最后一条用户输入文本（用于流式错误重试） */
+let lastUserInput: string = '';
+
 /** 静默模式自动恢复时间（1 小时） */
 const SILENT_RECOVERY_MS = 60 * 60 * 1000;
 
@@ -103,6 +106,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       void memoryController.loadDashboard();
       // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
       uiManager.switchPanel('chat');
+    },
+    // UX-PP-03 流式错误重试：重新发送上一条用户消息
+    onSpriteErrorRetry: () => {
+      if (lastUserInput) {
+        // 重新显示用户消息并发送
+        uiManager.appendMessage({
+          role: 'user',
+          content: lastUserInput,
+        });
+        window.electronAPI.sendUserInput(lastUserInput);
+      }
     },
   });
 
@@ -240,6 +254,9 @@ function setupBusinessLogic(
     const text = uiManager.getUserInput();
     if (!text) return;
 
+    // UX-PP-03 存储最后用户输入，用于流式错误重试
+    lastUserInput = text;
+
     // FD-06 跨天续聊检测：当前会话日期与今天不一致时，自动切换到今天的同名会话
     const currentId = sessionController.getCurrentSessionId();
     if (currentId) {
@@ -266,6 +283,8 @@ function setupBusinessLogic(
 
   // 空状态示例问题回调：点击示例问题等同于用户输入并发送
   uiManager.onSuggestionClick((text) => {
+    // UX-PP-03 存储最后用户输入，用于流式错误重试
+    lastUserInput = text;
     // 显示用户消息
     uiManager.appendMessage({
       role: 'user',

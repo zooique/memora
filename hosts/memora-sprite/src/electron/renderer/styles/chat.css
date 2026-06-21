@@ -78,6 +78,13 @@
   display: none;
 }
 
+/* UX-PP-06 仅一个会话时禁用下拉，但保留选择器可见 */
+.session-selector.disabled .session-current {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
 .session-current {
   display: flex;
   align-items: center;
@@ -355,10 +362,12 @@
   display: flex;
   gap: 10px;
   max-width: 80%;
-  animation: slideIn var(--transition-base) ease-out;
+  /* UX-PP-11 合并 slideIn/fadeIn 为统一的 fadeIn 动画 */
+  animation: fadeIn var(--transition-base) ease-out;
 }
 
-@keyframes slideIn {
+/* UX-PP-11 统一消息进入动画（原 slideIn + fadeIn 合并） */
+@keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
@@ -740,13 +749,11 @@
   color: var(--text-2);
   min-height: 280px;
   gap: 12px;
+  /* UX-PP-11 空状态使用统一 fadeIn 动画 */
   animation: fadeIn var(--transition-slow) ease-out;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
+/* UX-PP-11 空状态额外样式：更大 padding 和居中布局 */
 
 /* 精灵头像：v8 56px 渐变圆形（brand-grad） */
 .chat-empty-state .empty-avatar {
@@ -925,4 +932,22 @@
   word-break: break-all;
   max-height: 120px;
   overflow-y: auto;
+}
+
+/* ─── UX-PP-01 流式错误指示器 ─────────────────────────────── */
+/* 流式输出出错时注入到消息气泡底部的错误提示 */
+/* 红色调 + 左侧红色边框，与工具调用失败卡片风格一致 */
+
+.stream-error {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--red);
+  background: var(--red-20);
+  color: var(--red);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  /* 进入动画：淡入 */
+  animation: fadeIn var(--transition-base) ease-out;
 }
