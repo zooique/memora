@@ -26,6 +26,17 @@ import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
 /**
+ * UX-PP-07 获取本地日期字符串 YYYY-MM-DD
+ *
+ * 会话 ID 使用日期前缀，必须用本地日期而非 UTC，
+ * 否则东八区用户在凌晨 0-8 点创建的会话会被归入前一天。
+ */
+function getLocalDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * IPC 处理器上下文
  *
  * 封装所有 IPC 处理器需要的依赖，由 main.ts 注入。
@@ -48,6 +59,8 @@ export interface IpcContext {
   getAbortController: () => AbortController | null;
   /** 设置当前对话的 AbortController */
   setAbortController: (ctrl: AbortController | null) => void;
+  /** UX-PP-04 用户是否主动触发了中断（区分用户 Stop vs 系统错误） */
+  wasUserAborted: boolean;
   /** 获取当前未读计数（完整窗口隐藏时的消息数） */
   getUnreadCount: () => number;
   /** 增加未读计数并推送到浮动窗口 */
@@ -144,6 +157,8 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   /** 中断当前对话 */
   ipcMain.handle(IPC_CHANNELS.CHAT_ABORT, async () => {
+    // UX-PP-04 标记用户主动中断，确保 catch 块也能发送系统消息
+    ctx.wasUserAborted = true;
     const ctrl = ctx.getAbortController();
     if (ctrl) {
       ctrl.abort();
@@ -165,7 +180,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         if (sessions.length === 0) {
           return { messages: [], loadedSessionId: '' };
         }
-        const today = new Date().toISOString().slice(0, 10);
+        const today = getLocalDate(); // UX-PP-07 本地日期，非 UTC
         target = sessions.find(s => s === `${today}-main`) ?? sessions[sessions.length - 1];
       }
 
@@ -430,9 +445,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         const parts = s.split('-');
         // 格式：YYYY-MM-DD-name（如 2026-06-20-main, 2026-06-20-session-143052）
         if (parts.length >= 3) {
-          return { id: s, date: parts[0] + '-' + parts[1] + '-' + parts[2], name: parts.slice(3).join('-') || 'main' };
+          const date = parts[0] + '-' + parts[1] + '-' + parts[2];
+          const name = parts.slice(3).join('-') || 'main';
+          // UX-PP-05 获取首条用户消息作为预览
+          const preview = ctx.sessionStore.getFirstUserMessage(s);
+          return { id: s, date, name, preview };
         }
-        return { id: s, date: s, name: s };
+        return { id: s, date: s, name: s, preview: '' };
       });
       return { sessions: parsed };
     } catch (error) {
@@ -536,6 +555,13 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
     }
   } catch (error) {
     if (!fullWindow.isDestroyed()) {
+      // UX-PP-04 用户主动中断时，catch 块也需发送系统消息告知用户
+      if (ctx.wasUserAborted) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, {
+          text: '[已中断：用户手动停止]',
+          kind: 'system',
+        });
+      }
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
         text: `对话出错：${toError(error).message}`,
       });
@@ -544,6 +570,8 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
     errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
   } finally {
     ctx.setAbortController(null);
+    // UX-PP-04 重置用户中断标志
+    ctx.wasUserAborted = false;
     // 流式结束：托盘切回 idle 状态（绿色静态）
     ctx.trayManager?.setState('idle');
   }

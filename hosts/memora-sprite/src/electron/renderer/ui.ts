@@ -52,6 +52,32 @@ export type {
   ToastType,
 } from './types.js';
 
+// ─── 工具函数 ───────────────────────────────────────────
+
+/**
+ * UX-PP-05 相对时间格式化
+ *
+ * 将日期字符串 YYYY-MM-DD 转换为人类可读的相对时间：
+ * - 今天 → "今天"
+ * - 昨天 → "昨天"
+ * - 7 天内 → "3天前"
+ * - 更早 → "06-15"（MM-DD 格式）
+ */
+function formatRelativeTime(dateStr: string): string {
+  const today = new Date();
+  const [y, m, d] = dateStr.split('-').map(Number);
+  // 重置时间部分为 0:00:00 以正确计算天数差
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const targetStart = new Date(y, m - 1, d);
+  const diffDays = Math.round((todayStart.getTime() - targetStart.getTime()) / 86400000);
+
+  if (diffDays === 0) return '今天';
+  if (diffDays === 1) return '昨天';
+  if (diffDays < 7) return `${diffDays}天前`;
+  // 超过 7 天显示 MM-DD
+  return `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
 // ─── UI 管理器类 ─────────────────────────────────────────
 
 export class UIManager {
@@ -1831,7 +1857,7 @@ export class UIManager {
    * 从主进程获取会话列表后，填充下拉菜单。
    * 会话数 ≤ 1 时隐藏选择器（无需切换）。
    */
-  updateSessionList(sessions: Array<{ id: string; date: string; name: string }>, currentSessionId: string): void {
+  updateSessionList(sessions: Array<{ id: string; date: string; name: string; preview?: string }>, currentSessionId: string): void {
     const selector = document.getElementById('session-selector');
     const list = document.getElementById('session-list');
     const currentName = document.getElementById('session-current-name');
@@ -1883,7 +1909,7 @@ export class UIManager {
    *
    * 按时间倒序渲染所有会话到 #session-list。
    */
-  private renderSessionListItems(sessions: Array<{ id: string; date: string; name: string }>): void {
+  private renderSessionListItems(sessions: Array<{ id: string; date: string; name: string; preview?: string }>): void {
     const list = document.getElementById('session-list');
     if (!list) return;
 
@@ -1911,8 +1937,17 @@ export class UIManager {
 
       const dateSpan = document.createElement('span');
       dateSpan.className = 'session-list-item-date';
-      dateSpan.textContent = session.date;
+      // UX-PP-05 使用相对时间格式化（今天/昨天/3天前/MM-DD）
+      dateSpan.textContent = formatRelativeTime(session.date);
       li.appendChild(dateSpan);
+
+      // UX-PP-05 首条消息预览（仅在有内容时显示）
+      if (session.preview) {
+        const previewSpan = document.createElement('span');
+        previewSpan.className = 'session-list-item-preview';
+        previewSpan.textContent = session.preview;
+        li.appendChild(previewSpan);
+      }
 
       // FD-09 删除按钮（仅非当前会话显示）
       if (session.id !== currentId) {

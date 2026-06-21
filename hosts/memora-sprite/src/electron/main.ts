@@ -141,6 +141,8 @@ function createIpcContext(
     setAbortController: (ctrl: AbortController | null) => {
       currentAbortController = ctrl;
     },
+    // UX-PP-04 用户中断标志：区分用户 Stop vs 系统错误
+    wasUserAborted: false,
     getUnreadCount: () => unreadCount,
     incrementUnreadCount,
     resetUnreadCount,

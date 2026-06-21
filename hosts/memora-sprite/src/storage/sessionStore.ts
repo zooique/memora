@@ -161,6 +161,29 @@ export class SqliteSessionStore implements ISessionStore {
 
     transaction();
   }
+
+  /**
+   * UX-PP-05 获取会话首条用户消息用于列表预览
+   *
+   * 仅返回第一条 role='user' 的消息内容，截断到 50 字符。
+   * 无用户消息时返回空字符串。
+   *
+   * @param sessionId 会话 ID（格式：YYYY-MM-DD-sessionName）
+   */
+  getFirstUserMessage(sessionId: string): string {
+    const parts = sessionId.split('-');
+    if (parts.length < 4) return '';
+    const date = parts.slice(0, 3).join('-');
+    const session = parts.slice(3).join('-');
+
+    const row = this.db.prepare(
+      "SELECT content FROM sessions WHERE date = ? AND session = ? AND role = 'user' ORDER BY id ASC LIMIT 1"
+    ).get(date, session) as { content: string } | undefined;
+
+    if (!row) return '';
+    // 截断到 50 字符，避免预览过长
+    return row.content.length > 50 ? row.content.slice(0, 50) + '...' : row.content;
+  }
 }
 
 /** 数据库行类型 */

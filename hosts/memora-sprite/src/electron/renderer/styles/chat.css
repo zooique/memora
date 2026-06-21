@@ -206,6 +206,7 @@
 .session-list-item {
   position: relative; /* FD-09 操作按钮的定位参考 */
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   padding: 7px 10px;
@@ -214,7 +215,7 @@
   cursor: pointer;
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast);
-  gap: 8px;
+  gap: 2px 8px;
 }
 
 .session-list-item:hover {
@@ -239,6 +240,17 @@
   font-size: 10px;
   color: var(--muted);
   flex-shrink: 0;
+}
+
+/* UX-PP-05 会话列表首条消息预览 */
+.session-list-item-preview {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 2px;
 }
 
 /**
@@ -392,7 +404,7 @@
   text-align: center;
   max-width: 100%;
   padding: 8px 12px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
 }
 
 /**

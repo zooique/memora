@@ -90,4 +90,87 @@ describe('SqliteSessionStore', () => {
     const target = store.loadMessages('2026-06-16', 'target');
     expect(target).toHaveLength(0);
   });
+
+  // UX-PP-05 测试
+  describe('getFirstUserMessage', () => {
+    it('should return the first user message content', () => {
+      store.appendMessage('2026-06-16', 'main', makeMessage({ role: 'user', content: '你好，今天天气怎么样？' }));
+      store.appendMessage('2026-06-16', 'main', makeMessage({ role: 'assistant', content: '今天天气不错！' }));
+
+      const preview = store.getFirstUserMessage('2026-06-16-main');
+      expect(preview).toBe('你好，今天天气怎么样？');
+    });
+
+    it('should truncate to 50 characters', () => {
+      // 这是一条超过 50 个中文字符的长消息，用于验证截断功能是否按照预期工作，当消息长度超过五十个字符时应该截断并在末尾添加省略号
+      const longContent = '这是一条超过五十个中文字符的长消息，用来验证截断功能是否按照预期正常工作，当消息长度超过限定值时应截断并添加省略号。';
+      store.appendMessage('2026-06-16', 'main', makeMessage({ role: 'user', content: longContent }));
+
+      const preview = store.getFirstUserMessage('2026-06-16-main');
+      expect(preview).toHaveLength(53); // 50 + '...'
+      expect(preview.endsWith('...')).toBe(true);
+    });
+
+    it('should return empty string when no user message exists', () => {
+      store.appendMessage('2026-06-16', 'main', makeMessage({ role: 'assistant', content: 'Hello' }));
+
+      const preview = store.getFirstUserMessage('2026-06-16-main');
+      expect(preview).toBe('');
+    });
+
+    it('should return empty string for non-existent session', () => {
+      const preview = store.getFirstUserMessage('2026-01-01-nonexistent');
+      expect(preview).toBe('');
+    });
+  });
+
+  // FD-09 测试
+  describe('deleteSession', () => {
+    it('should delete a session and its messages', () => {
+      store.appendMessage('2026-06-16', 'main', makeMessage({ content: 'test' }));
+
+      const result = store.deleteSession('2026-06-16-main');
+      expect(result).toBe(true);
+
+      const messages = store.loadMessages('2026-06-16', 'main');
+      expect(messages).toHaveLength(0);
+    });
+
+    it('should return false for non-existent session', () => {
+      const result = store.deleteSession('2026-01-01-nonexistent');
+      expect(result).toBe(false);
+    });
+
+    it('should return false for invalid session ID format', () => {
+      const result = store.deleteSession('invalid');
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('renameSession', () => {
+    it('should rename a session', () => {
+      store.appendMessage('2026-06-16', 'main', makeMessage({ content: 'test' }));
+
+      const result = store.renameSession('2026-06-16-main', 'renamed');
+      expect(result).toBe(true);
+
+      // 旧会话名不再存在
+      const oldMessages = store.loadMessages('2026-06-16', 'main');
+      expect(oldMessages).toHaveLength(0);
+
+      // 新会话名有消息
+      const newMessages = store.loadMessages('2026-06-16', 'renamed');
+      expect(newMessages).toHaveLength(1);
+    });
+
+    it('should return false for non-existent session', () => {
+      const result = store.renameSession('2026-01-01-nonexistent', 'new');
+      expect(result).toBe(false);
+    });
+
+    it('should return false for invalid session ID format', () => {
+      const result = store.renameSession('invalid', 'new');
+      expect(result).toBe(false);
+    });
+  });
 });

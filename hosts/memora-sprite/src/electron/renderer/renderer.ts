@@ -21,6 +21,16 @@ import { createSettingsController, setSilentRecoveryCallback } from './settingsC
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './errorHelpers.js';
 
+/**
+ * UX-PP-07 获取本地日期字符串 YYYY-MM-DD
+ *
+ * 跨天检测必须用本地日期，否则东八区凌晨 0-8 点会被误判为前一天。
+ */
+function getLocalDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 // P2-001 修复：删除重复的 declare global 和未使用的 ElectronAPI 导入。
 // types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
 
@@ -260,7 +270,7 @@ function setupBusinessLogic(
     // FD-06 跨天续聊检测：当前会话日期与今天不一致时，自动切换到今天的同名会话
     const currentId = sessionController.getCurrentSessionId();
     if (currentId) {
-      const todayPrefix = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const todayPrefix = getLocalDate(); // UX-PP-07 本地日期，非 UTC
       const sessionDate = currentId.slice(0, 10); // 前 10 字符为日期
       if (sessionDate !== todayPrefix) {
         // 提取会话名（去除日期前缀和连字符）
