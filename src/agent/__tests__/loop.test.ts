@@ -282,11 +282,17 @@ describe('AgentLoop · processUserInput recall 事件', () => {
       chunks.push(chunk);
     }
 
-    // 应该有 recall 事件，count = 2
+    // 应该有 recall 事件，memories 数组长度 = 2
     const recalls = chunks.filter((c) => c.type === 'recall');
     expect(recalls).toHaveLength(1);
     if (recalls[0]!.type === 'recall') {
-      expect(recalls[0]!.count).toBe(2);
+      expect(recalls[0]!.memories).toHaveLength(2);
+      // 验证摘要字段（name/score/source），不包含 content
+      expect(recalls[0]!.memories[0]!.name).toBe('记忆1');
+      expect(recalls[0]!.memories[1]!.name).toBe('记忆2');
+      // score 和 source 应存在（makeMemory 默认值）
+      expect(typeof recalls[0]!.memories[0]!.score).toBe('number');
+      expect(typeof recalls[0]!.memories[0]!.source).toBe('string');
     }
   });
 

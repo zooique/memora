@@ -16,8 +16,25 @@
 /** thinking 事件的阶段标识 */
 export type ThinkingPhase = 'recalling' | 'processing' | 'archiving';
 
+/**
+ * 召回记忆摘要（用于 UI 展示"召回透明度"）
+ *
+ * 仅暴露 UI 展示所需字段，不包含 content（避免向 UI 层泄露完整记忆内容）。
+ * - name：可读名称，点击跳转记忆详情
+ * - score：相似度分数（0-1），展示召回质量
+ * - source：来源标签，可选展示（如 rule/insight/profile）
+ */
+export interface RecalledMemorySummary {
+  /** 记忆可读名称（点击跳转记忆详情用） */
+  name: string;
+  /** 相似度分数（0-1） */
+  score: number;
+  /** 来源标签（开放字符串，如 'rule'、'insight'、'profile'） */
+  source: string;
+}
+
 export type AgentChunk =
-  | { type: 'recall'; count: number }
+  | { type: 'recall'; memories: RecalledMemorySummary[] }
   | { type: 'thinking'; phase: ThinkingPhase }
   | { type: 'text'; content: string }
   | { type: 'tool_start'; name: string; args?: string }

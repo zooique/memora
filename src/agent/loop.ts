@@ -155,9 +155,17 @@ export class AgentLoop {
       : userInput;
     recallSpan.end();
 
-    // 有记忆召回时，通知上层（用于 UI 展示"召回 X 条记忆"）
+    // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
+    // 仅暴露 name/score/source 摘要，不泄露完整 content
     if (recalledMemories?.length) {
-      yield { type: 'recall', count: recalledMemories.length };
+      yield {
+        type: 'recall',
+        memories: recalledMemories.map((m) => ({
+          name: m.name,
+          score: m.score,
+          source: m.source,
+        })),
+      };
     }
 
     // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则

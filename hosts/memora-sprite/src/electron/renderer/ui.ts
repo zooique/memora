@@ -413,23 +413,12 @@ export class UIManager {
 
       el.appendChild(contentWrapper);
 
-      // 召回记忆提示（仅精灵消息）
+      // 召回记忆提示（仅精灵消息，MS-12 支持多条召回记忆展示）
       const memoryRecall = message.memoryRecall;
-      if (message.role === 'assistant' && memoryRecall) {
-        const recall = document.createElement('div');
-        recall.className = 'memory-recall';
-        // UX-08：使用 createElement 替代 innerHTML，避免 XSS 风险
-        const iconSpan = document.createElement('span');
-        iconSpan.textContent = '💡';
-        recall.appendChild(iconSpan);
-        const recallText = document.createElement('span');
-        recallText.textContent = `召回记忆：${memoryRecall.name}（score: ${memoryRecall.score.toFixed(2)}）`;
-        recall.appendChild(recallText);
-        // 点击跳转记忆面板（回调由 renderer.ts 注册）
-        recall.addEventListener('click', () => {
-          this.memoryRecallClickCallback?.(memoryRecall.name);
-        });
-        bubble.appendChild(recall);
+      if (message.role === 'assistant' && memoryRecall && memoryRecall.length > 0) {
+        // 复用 createRecallContainer 统一构建逻辑，避免重复代码
+        const recallContainer = this.createRecallContainer(memoryRecall);
+        bubble.appendChild(recallContainer);
       }
 
       // 为流式消息添加光标元素
@@ -576,6 +565,75 @@ export class UIManager {
     }
 
     this.streamingMessages.delete(messageId);
+  }
+
+  /**
+   * MS-12 设置流式消息的召回记忆摘要
+   *
+   * 在 startStreaming 之后、text chunk 之前调用，
+   * 将召回记忆摘要注入到消息气泡底部，用户可点击跳转记忆详情。
+   *
+   * @param messageId 流式消息 ID
+   * @param memories 召回记忆摘要列表（name/score/source）
+   */
+  setMemoryRecall(messageId: string, memories: Array<{ name: string; score: number; source: string }>): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    // 查找或创建召回记忆容器
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 若已存在召回容器，先清空（避免重复追加）
+    const existingContainer = bubble.querySelector('.memory-recall-container');
+    if (existingContainer) {
+      existingContainer.remove();
+    }
+
+    // 无召回记忆时不创建容器
+    if (memories.length === 0) return;
+
+    // 复用 createRecallContainer 统一构建逻辑
+    const recallContainer = this.createRecallContainer(memories);
+    // 插入到光标元素之前（若存在），否则追加到 bubble 末尾
+    const cursor = bubble.querySelector('.cursor');
+    if (cursor) {
+      bubble.insertBefore(recallContainer, cursor);
+    } else {
+      bubble.appendChild(recallContainer);
+    }
+  }
+
+  /**
+   * MS-12 构建召回记忆容器（私有辅助方法）
+   *
+   * 统一 appendMessage 和 setMemoryRecall 的 DOM 构建逻辑，避免重复代码。
+   * 每条召回记忆独立可点击，点击触发 memoryRecallClickCallback 跳转记忆详情。
+   *
+   * @param memories 召回记忆摘要列表
+   * @returns 已填充的容器 DOM 元素
+   */
+  private createRecallContainer(memories: Array<{ name: string; score: number; source: string }>): HTMLDivElement {
+    const recallContainer = document.createElement('div');
+    recallContainer.className = 'memory-recall-container';
+    for (const recall of memories) {
+      const recallItem = document.createElement('div');
+      recallItem.className = 'memory-recall';
+      // UX-08：使用 createElement 替代 innerHTML，避免 XSS 风险
+      const iconSpan = document.createElement('span');
+      iconSpan.textContent = '💡';
+      recallItem.appendChild(iconSpan);
+      const recallText = document.createElement('span');
+      recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
+      recallItem.appendChild(recallText);
+      // 闭包捕获当前 recall.name，避免循环变量引用问题
+      const recallName = recall.name;
+      recallItem.addEventListener('click', () => {
+        this.memoryRecallClickCallback?.(recallName);
+      });
+      recallContainer.appendChild(recallItem);
+    }
+    return recallContainer;
   }
 
   /** 开始流式输出 */

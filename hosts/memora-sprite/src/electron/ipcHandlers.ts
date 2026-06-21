@@ -379,6 +379,12 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
           messageId,
           text: chunk.content,
         });
+      } else if (chunk.type === 'recall') {
+        // MS-12 召回透明度：推送召回记忆摘要到渲染层，在消息底部展示
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, {
+          messageId,
+          memories: chunk.memories,
+        });
       } else if (chunk.type === 'done') {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
       } else if (chunk.type === 'aborted') {

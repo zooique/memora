@@ -58,6 +58,11 @@ export interface ElectronAPI {
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
   onStreamChunk: (cb: (msg: { messageId: string; text: string }) => void) => void;
   onStreamEnd: (cb: (msg: { messageId: string }) => void) => void;
+  /**
+   * MS-12 召回透明度监听
+   * 在 text chunk 之前触发，携带本次对话召回的记忆摘要列表
+   */
+  onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => void) => void;
   /** 移除所有流式监听器（页面卸载或重新初始化时调用） */
   removeStreamListeners: () => void;
 
@@ -184,10 +189,12 @@ const electronAPI: ElectronAPI = {
   onStreamStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
   onStreamChunk: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
   onStreamEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
+  onStreamRecall: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, (_: IpcRendererEvent, msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => cb(msg)),
   removeStreamListeners: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL);
   },
 
   // 精灵输出

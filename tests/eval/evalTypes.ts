@@ -124,7 +124,8 @@ export async function collectAgentChunks(
   for await (const chunk of chunks) {
     switch (chunk.type) {
       case 'recall':
-        collected.recallCount = chunk.count;
+        // MS-12：recall chunk 改为携带 memories 数组，count 由数组长度得出
+        collected.recallCount = chunk.memories.length;
         break;
       case 'tool_start':
         if (!collected.toolsCalled.includes(chunk.name)) {

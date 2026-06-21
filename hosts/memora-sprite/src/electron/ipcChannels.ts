@@ -103,6 +103,12 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_STREAM_CHUNK: 'sprite-stream-chunk',
   /** 流式消息结束 */
   SPRITE_STREAM_END: 'sprite-stream-end',
+  /**
+   * 流式消息召回透明度（MS-12）
+   * 在 text chunk 之前推送，携带本次对话召回的记忆摘要列表，
+   * 供渲染层在消息底部展示"💡 召回记忆：xxx（score: 0.xx）"
+   */
+  SPRITE_STREAM_RECALL: 'sprite-stream-recall',
 
   // ─── 精灵输出 / 错误 ──────────────────────────────────
   /** 精灵主动提示或系统消息 */

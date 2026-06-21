@@ -108,6 +108,11 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.startStreaming(msg.messageId);
   });
 
+  // MS-12 召回透明度：在 text chunk 之前到达，注入召回记忆摘要到消息气泡
+  window.electronAPI.onStreamRecall((msg) => {
+    uiManager.setMemoryRecall(msg.messageId, msg.memories);
+  });
+
   window.electronAPI.onStreamChunk((msg) => {
     uiManager.updateStreamingMessage(msg.messageId, msg.text);
   });

@@ -29,8 +29,11 @@ export interface Message {
   messageId?: string;
   /** 消息时间戳（ISO 字符串，可选）。未提供时使用当前时间。 */
   timestamp?: string;
-  /** 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall） */
-  memoryRecall?: { name: string; score: number };
+  /**
+   * 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall）
+   * MS-12：改为数组支持多条召回记忆展示，每条含 name/score/source
+   */
+  memoryRecall?: Array<{ name: string; score: number; source: string }>;
 }
 
 /** UI 状态快照（供外部查询当前面板、未读数、流式状态） */

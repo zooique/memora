@@ -494,12 +494,16 @@ describe('消息渲染', () => {
   });
 
   it('appendMessage: 精灵消息带召回记忆提示', () => {
+    // MS-12：memoryRecall 改为数组，支持多条召回记忆展示
     const el = uiManager.appendMessage({
       role: 'assistant',
       content: '回答',
-      memoryRecall: { name: '用户偏好', score: 0.85 },
+      memoryRecall: [{ name: '用户偏好', score: 0.85, source: 'profile' }],
     });
 
+    // 多条召回记忆渲染在 container 内，每条独立可点击
+    const container = el.querySelector('.memory-recall-container');
+    expect(container).not.toBeNull();
     const recall = el.querySelector('.memory-recall');
     expect(recall).not.toBeNull();
     expect(recall?.textContent).toContain('用户偏好');
