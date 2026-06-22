@@ -29,10 +29,11 @@ export interface ProactiveConfig {
 /** 精灵事件发射器 */
 export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string; triggers: string[]; silent: boolean }) => void;
 
-/**
- * 主动提示引擎
- */
+/** 主动提示引擎 */
 export class ProactiveEngine {
+  /** P1-7 修复：静默模式下 pendingNotices 最大累积上限，防止长时间静默后内存泄漏 */
+  private static readonly MAX_PENDING_NOTICES = 100;
+
   private config: ProactiveConfig;
   private interaction: IInteraction | null = null;
   private emitSprite: SpriteEmitter | null = null;
@@ -76,6 +77,11 @@ export class ProactiveEngine {
    * @param summary 事件摘要
    */
   addNotice(type: string, summary: string): void {
+    // P1-7 修复：静默模式下限制累积上限，防止长时间静默后内存泄漏
+    if (this.config.silentMode && this.pendingNotices.length >= ProactiveEngine.MAX_PENDING_NOTICES) {
+      // 丢弃最旧的事件，保留最近的事件（FIFO 淘汰）
+      this.pendingNotices.shift();
+    }
     this.pendingNotices.push({ type, summary, timestamp: Date.now() });
     if (this.pendingNotices.length >= this.config.threshold) {
       this.tryEmit();
@@ -99,7 +105,8 @@ export class ProactiveEngine {
     const summaries = notices.map(n => n.summary);
     const prompt = this.buildPrompt(triggers, summaries);
 
-    this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: this.config.silentMode });
+    // P1-8 修复：silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
+    this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false });
 
     // 通过交互层输出主动提示（传入 kind='proactive'，Electron 模式下由 banner 展示，避免重复）
     if (this.interaction) {

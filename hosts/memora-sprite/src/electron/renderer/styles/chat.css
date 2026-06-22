@@ -381,7 +381,7 @@
 .suggestion-card {
   background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md);
   padding: 12px 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
@@ -405,7 +405,7 @@
   color: var(--accent);
   background: var(--accent-soft);
   padding: 2px 8px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
 }
 
 .suggestion-card-confidence {
@@ -422,11 +422,11 @@
   cursor: pointer;
   width: 22px;
   height: 22px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast, 0.15s);
+  transition: all var(--transition-fast);
 }
 
 .suggestion-card-close:hover {
@@ -463,12 +463,12 @@
 
 .suggestion-card-btn {
   padding: 4px 14px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all var(--transition-fast, 0.15s);
+  transition: all var(--transition-fast);
   border: 1px solid transparent;
 }
 

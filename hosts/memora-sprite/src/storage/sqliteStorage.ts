@@ -246,10 +246,11 @@ export class SqliteStorage implements IMemoryStorage {
     // 衰减公式与 InMemoryStorage 对齐：
     //   daysSinceAccess > 7 时，score -= 0.02 * floor(daysSinceAccess / 7)
     //   score 下限 0.1
-    // SQLite 中 CAST(x AS INTEGER) 对正数等价于 floor
+    // P1-S1 修复：先除以 7 再 floor，与 InMemoryStorage 的 floor(days/7) 一致
+    //   原 CAST(days AS INTEGER) / 7 是先 floor 天数再浮点除，结果不一致
     const sql = `
       UPDATE memories
-      SET score = MAX(0.1, score - 0.02 * (CAST((julianday(?) - julianday(accessedAt)) AS INTEGER) / 7))
+      SET score = MAX(0.1, score - 0.02 * CAST((julianday(?) - julianday(accessedAt)) / 7 AS INTEGER))
       WHERE source IN (${placeholders})
         AND (julianday(?) - julianday(accessedAt)) > 7
     `;

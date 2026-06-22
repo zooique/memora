@@ -122,9 +122,9 @@
  * 对齐 ui.ts getSourceColorClass() 的颜色映射
  * 颜色语义：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙)
  */
-.source-tag.source-profile   { background: var(--green-20); color: var(--green); }
-.source-tag.source-insight   { background: var(--accent-20); color: var(--accent); }
-.source-tag.source-guardrail { background: var(--pink-20); color: var(--pink); }
+.source-tag.source-profile   { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }
+.source-tag.source-insight   { background: var(--tag-insight-bg); color: var(--tag-insight-fg); }
+.source-tag.source-guardrail { background: var(--tag-guardrail-bg); color: var(--tag-guardrail-fg); }
 .source-tag.source-skill     { background: var(--yellow-20); color: var(--yellow); }
 .source-tag.source-rule      { background: var(--mauve-20); color: var(--mauve); }
 .source-tag.source-persona   { background: var(--teal-20); color: var(--teal); }

@@ -1002,6 +1002,8 @@ app.on('before-quit', async (e) => {
     if (closeSprite) {
       await closeSprite();
     }
+    // P2-E1 修复：显式销毁托盘，清理 pulseTimer（setInterval）避免退出前再触发 setToolTip
+    trayManager?.destroy();
   } catch (error) {
     errorHandler.handle(error, {
       code: ErrorCode.UNKNOWN,

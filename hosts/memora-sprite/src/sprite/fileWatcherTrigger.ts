@@ -108,6 +108,11 @@ export class FileWatcherTrigger implements SpriteTrigger {
       this.debouncedEmit(filename, eventType);
     });
 
+    // P1-6 修复：监听 error 事件，防止监听目录被删除/权限丢失时触发 uncaughtException 导致进程崩溃
+    watcher.on('error', (err) => {
+      logger.error({ err, watchPath }, '文件监听器错误，停止该路径监听');
+    });
+
     return watcher;
   }
 

@@ -65,8 +65,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupBusinessLogic(uiManager, sessionController);
   memoryController.setupMemoryPanel();
   personaController.setupPersonaSelector();
-  // FD-10 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
-  setSilentRecoveryCallback((remainingMs: number) => {
+
+  // ─── 初始化辅助函数（闭包访问 uiManager/controllers，消除重复逻辑） ───
+
+  /** 静默模式恢复定时器：到期后自动关闭静默模式并通知用户 */
+  function scheduleSilentRecovery(remainingMs: number): void {
     if (silentRecoveryTimer !== null) window.clearTimeout(silentRecoveryTimer);
     silentRecoveryTimer = window.setTimeout(() => {
       silentRecoveryTimer = null;
@@ -77,7 +80,41 @@ document.addEventListener('DOMContentLoaded', async () => {
         reportError('silentRecovery', err);
       });
     }, remainingMs);
-  });
+  }
+
+  /** 显示 Agent 初始化失败错误（含重试按钮 + 自动跳转设置面板） */
+  function showAgentInitError(error: string): void {
+    uiManager.appendMessage({
+      role: 'system',
+      content: `⚠️ Agent 初始化失败\n\n错误信息：${error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora-sprite/data/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
+    });
+    uiManager.showSettingsError(
+      `Agent 初始化失败：${error}。请检查配置或点击重试。`,
+      async () => {
+        try {
+          const llmData = await window.electronAPI.getLlmConfig();
+          if (llmData.config) {
+            await window.electronAPI.saveLlmConfig(llmData.config);
+          }
+        } catch (retryErr) {
+          reportError('retryInit', retryErr);
+        }
+      },
+    );
+    uiManager.switchPanel('settings');
+    void settingsController.loadConfig();
+  }
+
+  /** 显示首次使用欢迎消息（配置缺失或状态查询异常时降级使用） */
+  function showWelcomeMessage(): void {
+    uiManager.appendMessage({
+      role: 'system',
+      content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
+    });
+  }
+
+  // FD-10 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
+  setSilentRecoveryCallback(scheduleSilentRecovery);
 
   settingsController.setupSettingsPanel();
 
@@ -186,21 +223,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
       // IX-06 操作反馈走 toast（静默模式是用户主动触发的状态变更）
       uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）', 'info');
-      // 清理旧的恢复定时器，避免多次点击产生重复恢复
-      if (silentRecoveryTimer !== null) {
-        window.clearTimeout(silentRecoveryTimer);
-      }
-      // 设置本地定时器：1 小时后自动关闭静默模式
-      // FD-10 定时器到期后同步清除持久化的 expiresAt
-      silentRecoveryTimer = window.setTimeout(() => {
-        silentRecoveryTimer = null;
-        void window.electronAPI.updateConfig('silentMode', false).then(() => {
-          void window.electronAPI.updateConfig('silentModeExpiresAt', null);
-          uiManager.showToast('静默模式已到期自动恢复，精灵可正常主动提示', 'info');
-        }).catch((err: unknown) => {
-          reportError('silentRecovery', err);
-        });
-      }, SILENT_RECOVERY_MS);
+      // 设置本地定时器：1 小时后自动关闭静默模式（复用 scheduleSilentRecovery 统一逻辑）
+      scheduleSilentRecovery(SILENT_RECOVERY_MS);
     },
     // P3-FLOW-08 不再提醒：进入静默模式并提示用户去设置调整阈值
     onDisable: () => {
@@ -248,26 +272,8 @@ document.addEventListener('DOMContentLoaded', async () => {
               // 触发完整的 Agent 就绪流程（加载会话历史、记忆列表等）
               onAgentReadyCallback?.();
             } else if (retry.error) {
-              // 初始化失败，显示具体错误
-              uiManager.appendMessage({
-                role: 'system',
-                content: `⚠️ Agent 初始化失败\n\n错误信息：${retry.error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora-sprite/data/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
-              });
-              uiManager.showSettingsError(
-                `Agent 初始化失败：${retry.error}。请检查配置或点击重试。`,
-                async () => {
-                  try {
-                    const llmData = await window.electronAPI.getLlmConfig();
-                    if (llmData.config) {
-                      await window.electronAPI.saveLlmConfig(llmData.config);
-                    }
-                  } catch (retryErr) {
-                    reportError('retryInit', retryErr);
-                  }
-                },
-              );
-              uiManager.switchPanel('settings');
-              await settingsController.loadConfig();
+              // 初始化失败，显示具体错误（复用 showAgentInitError 统一处理）
+              showAgentInitError(retry.error);
             }
           } catch {
             // 重试失败，静默降级
@@ -279,39 +285,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 区分错误来源：配置缺失 vs 初始化失败
       const isConfigMissing = error.includes('配置不完整') || error.includes('API Key');
       if (isConfigMissing) {
-        // 首次启动引导：显示欢迎消息 + 自动跳转到设置面板
-        // P3-FLOW-02 文案优化：提示用户先测试连接，避免配置错误导致初始化失败
-        uiManager.appendMessage({
-          role: 'system',
-          content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
-        });
+        // 首次启动引导：显示欢迎消息 + 跳转设置面板
+        showWelcomeMessage();
+        uiManager.switchPanel('settings');
+        await settingsController.loadConfig();
       } else {
-        // 初始化失败：显示具体错误信息，帮助用户定位问题
-        // 常见原因：better-sqlite3 ABI 不匹配（需 electron-rebuild）、数据库 schema 损坏等
-        uiManager.appendMessage({
-          role: 'system',
-          content: `⚠️ Agent 初始化失败\n\n错误信息：${error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora-sprite/data/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
-        });
-        // 同时在设置面板显示错误横幅，提供重试按钮
-        uiManager.showSettingsError(
-          `Agent 初始化失败：${error}。请检查配置或点击重试。`,
-          async () => {
-            // 重试：重新读取配置并触发保存（保存会触发 reinitAgent）
-            try {
-              const llmData = await window.electronAPI.getLlmConfig();
-              if (llmData.config) {
-                await window.electronAPI.saveLlmConfig(llmData.config);
-              }
-            } catch (retryErr) {
-              reportError('retryInit', retryErr);
-            }
-          },
-        );
+        // 初始化失败：显示错误 + 重试按钮 + 跳转设置面板（复用 showAgentInitError 统一处理）
+        showAgentInitError(error);
       }
-      // 自动切换到设置面板
-      uiManager.switchPanel('settings');
-      // 仍加载精灵配置，让用户能在设置面板中配置
-      await settingsController.loadConfig();
       return;
     }
   } catch (err) {
@@ -319,10 +300,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.warn('[init] 查询 Agent 状态失败，降级为首次使用引导:', err);
     // P3-FLOW-10 异常时状态指示器显示 unknown
     settingsController.updateAgentStatus('unknown', '检测中...');
-    uiManager.appendMessage({
-      role: 'system',
-      content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
-    });
+    showWelcomeMessage();
     uiManager.switchPanel('settings');
     await settingsController.loadConfig();
     return;

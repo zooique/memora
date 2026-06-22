@@ -409,8 +409,18 @@ async function initAgentFromConfig(
 
   const close = async () => {
     sprite.stop();
-    await agent.close();
-    if (vectorStore) await vectorStore.save();
+    // P2-S1 修复：每个清理步骤独立 try/catch，确保 storage.close() 必执行
+    // 避免 agent.close() 抛错导致 SQLite 连接泄漏 + 向量数据丢失
+    try {
+      await agent.close();
+    } catch (err) {
+      console.warn('[close] agent.close() 失败:', err);
+    }
+    try {
+      if (vectorStore) await vectorStore.save();
+    } catch (err) {
+      console.warn('[close] vectorStore.save() 失败:', err);
+    }
     storage.close();
   };
 
@@ -435,8 +445,9 @@ export async function reinitAgent(
   if (prevClose) {
     try {
       await prevClose();
-    } catch {
-      // 旧实例清理失败不阻塞重新初始化
+    } catch (err) {
+      // P2-S2 修复：旧实例清理失败不阻塞重新初始化，但需记录日志辅助排查资源泄漏
+      console.warn('[reinitAgent] 旧实例清理失败:', err);
     }
   }
 

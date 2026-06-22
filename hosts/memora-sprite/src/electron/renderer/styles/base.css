@@ -96,6 +96,14 @@
   --peach-20:  rgba(230, 81, 0, 0.1);
   --red-20:    rgba(255, 59, 48, 0.1);  /* 错误横幅背景色 */
 
+  /* source 标签配色（记忆系统 source-tag + 用户画像 profile-category 共享，避免两处重复定义） */
+  --tag-profile-bg:   var(--green-20);   /* 用户身份/画像：绿色 */
+  --tag-profile-fg:   var(--green);
+  --tag-insight-bg:   var(--accent-20);  /* 洞察/偏好：强调色 */
+  --tag-insight-fg:   var(--accent);
+  --tag-guardrail-bg: var(--pink-20);    /* 护栏：粉色 */
+  --tag-guardrail-fg: var(--pink);
+
   /* 字体 */
   /* UX-FD-01 不打包字体文件，使用系统默认字体栈（跨平台一致性） */
   --font-sprite: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;

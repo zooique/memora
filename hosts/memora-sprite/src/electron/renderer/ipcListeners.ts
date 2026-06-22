@@ -122,6 +122,30 @@ function isProactivePromptPayload(value: unknown): value is ProactivePromptPaylo
   );
 }
 
+/** 校验项目切换 payload 结构（替代 as 断言，确保字段类型安全） */
+function isProjectSwitchedPayload(value: unknown): value is { projectName: string } {
+  return isObject(value) && typeof value.projectName === 'string';
+}
+
+/** 校验技能匹配 payload 结构（替代 as 断言，确保字段类型安全） */
+function isSkillMatchedPayload(value: unknown): value is { skill: string; score: number } {
+  return (
+    isObject(value) &&
+    typeof value.skill === 'string' &&
+    typeof value.score === 'number'
+  );
+}
+
+/** 校验记忆召回 payload 结构（替代 as 断言，确保字段类型安全） */
+function isMemoryRecalledPayload(value: unknown): value is { count: number } {
+  return isObject(value) && typeof value.count === 'number';
+}
+
+/** 校验记忆衰减完成 payload 结构（替代 as 断言，确保字段类型安全） */
+function isDecayCompletedPayload(value: unknown): value is { decayedCount: number } {
+  return isObject(value) && typeof value.decayedCount === 'number';
+}
+
 /**
  * 处理主动提示事件
  *
@@ -178,9 +202,12 @@ function handleProjectSwitched(
   msg: { type: string; payload: unknown; silent: boolean },
 ): void {
   // payload: { from: string | null; to: string; projectName: string }
-  const payload = msg.payload as { projectName: string };
+  if (!isProjectSwitchedPayload(msg.payload)) {
+    reportError('handleProjectSwitched', msg.payload);
+    return;
+  }
   if (msg.silent) return; // 静默模式：不打扰
-  uiManager.showToast(`已切换到项目：${payload.projectName}`, 'info', 3000);
+  uiManager.showToast(`已切换到项目：${msg.payload.projectName}`, 'info', 3000);
 }
 
 /**
@@ -192,11 +219,14 @@ function handleSkillMatched(
   msg: { type: string; payload: unknown; silent: boolean },
 ): void {
   // payload: { skill: string; score: number }
-  const payload = msg.payload as { skill: string; score: number };
+  if (!isSkillMatchedPayload(msg.payload)) {
+    reportError('handleSkillMatched', msg.payload);
+    return;
+  }
   if (msg.silent) return;
   // 分数 < 0.5 的匹配不通知（避免低匹配度噪音）
-  if (payload.score < 0.5) return;
-  uiManager.showToast(`匹配到技能：${payload.skill}`, 'info', 2000);
+  if (msg.payload.score < 0.5) return;
+  uiManager.showToast(`匹配到技能：${msg.payload.skill}`, 'info', 2000);
 }
 
 /**
@@ -209,10 +239,13 @@ function handleMemoryRecalled(
   msg: { type: string; payload: unknown; silent: boolean },
 ): void {
   // payload: { count: number; query: string }
-  const payload = msg.payload as { count: number };
+  if (!isMemoryRecalledPayload(msg.payload)) {
+    reportError('handleMemoryRecalled', msg.payload);
+    return;
+  }
   if (msg.silent) return;
-  if (payload.count <= 0) return; // 0 条不通知
-  uiManager.showToast(`想起 ${payload.count} 条记忆`, 'info', 2000);
+  if (msg.payload.count <= 0) return; // 0 条不通知
+  uiManager.showToast(`想起 ${msg.payload.count} 条记忆`, 'info', 2000);
 }
 
 /**
@@ -225,8 +258,11 @@ function handleDecayCompleted(
   msg: { type: string; payload: unknown; silent: boolean },
 ): void {
   // payload: { decayedCount: number }
-  const payload = msg.payload as { decayedCount: number };
-  if (payload.decayedCount <= 0) return; // 0 条不通知
+  if (!isDecayCompletedPayload(msg.payload)) {
+    reportError('handleDecayCompleted', msg.payload);
+    return;
+  }
+  if (msg.payload.decayedCount <= 0) return; // 0 条不通知
 
   const now = Date.now();
   if (now - lastDecayNoticeTime < DECAY_NOTICE_COOLDOWN_MS) return;
@@ -234,7 +270,7 @@ function handleDecayCompleted(
 
   // 衰减通知不受静默模式控制（教育用户记忆有生命周期）
   uiManager.showToast(
-    `已衰减 ${payload.decayedCount} 条记忆（长期未访问自动降低权重）`,
+    `已衰减 ${msg.payload.decayedCount} 条记忆（长期未访问自动降低权重）`,
     'info',
     4000,
   );

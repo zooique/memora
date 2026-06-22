@@ -253,17 +253,24 @@ kbd {
 }
 
 /* ─── 按钮样式（v8） ─────────────────────────────────────── */
-.btn-primary {
-  padding: 6px 18px;
-  background: var(--accent);
-  color: var(--accent-fg);
+/* 通用按钮基类：共享圆角、字体、光标、过渡等基础属性，变体类只定义差异部分 */
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-danger {
   border: none;
   border-radius: var(--radius-sm);
   font-family: inherit;
   font-size: 12px;
-  font-weight: 600;
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: all var(--transition-fast);
+}
+
+.btn-primary {
+  padding: 6px 18px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
 }
 
 .btn-primary:hover {
@@ -275,11 +282,6 @@ kbd {
   background: var(--window-bg);
   color: var(--text-2);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .btn-secondary:hover {
@@ -291,12 +293,6 @@ kbd {
   padding: 6px 14px;
   background: var(--red);
   color: var(--text-on-red);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  transition: opacity var(--transition-fast);
 }
 
 .btn-danger:hover {

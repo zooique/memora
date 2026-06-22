@@ -361,7 +361,7 @@
   text-align: center;
   padding: 16px 8px;
   background: var(--surface1);
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
 }
 
 /* 加载失败状态 */
@@ -373,7 +373,7 @@
 .profile-card {
   background: var(--window-bg, var(--bg));
   border: 1px solid var(--surface2);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md);
   padding: 10px 12px;
 }
 
@@ -389,16 +389,16 @@
 /* 类别标签：不同类别用不同颜色（复用记忆系统 source 配色） */
 .profile-category {
   padding: 2px 8px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   font-size: 10px;
   font-weight: 500;
   flex-shrink: 0;
 }
 
-/* 身份：绿色（与 source-profile 同色，代表用户身份） */
-.profile-category-identity   { background: var(--green-20); color: var(--green); }
-/* 偏好：蓝色（与 source-insight 同色，代表偏好洞察） */
-.profile-category-preference { background: var(--accent-20); color: var(--accent); }
+/* 身份：绿色（复用 --tag-profile-* 变量，与 source-profile 同色） */
+.profile-category-identity   { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }
+/* 偏好：蓝色（复用 --tag-insight-* 变量，与 source-insight 同色） */
+.profile-category-preference { background: var(--tag-insight-bg); color: var(--tag-insight-fg); }
 /* 专长：黄色（与 source-skill 同色，代表能力） */
 .profile-category-expertise  { background: var(--yellow-20); color: var(--yellow); }
 /* 习惯：紫色（与 source-rule 同色，代表规律） */
@@ -432,12 +432,12 @@
 
 .profile-btn {
   padding: 3px 12px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-sm);
   font-size: 11px;
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all var(--transition-fast, 0.15s);
+  transition: all var(--transition-fast);
   border: 1px solid transparent;
 }
 

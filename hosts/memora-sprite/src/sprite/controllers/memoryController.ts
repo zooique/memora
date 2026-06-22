@@ -76,8 +76,9 @@ export class MemoryController {
   list(source?: string, limit = 50): MemoryListItem[] {
     const storage = this.agent.storage;
     if (!storage) return [];
+    // P1-2 修复：传 source 时也应用 limit，避免全量返回破坏契约
     const memories = source
-      ? storage.getBySource(source)
+      ? storage.getBySource(source).slice(0, limit)
       : storage.search('', limit);
 
     return memories.map(m => ({
@@ -109,9 +110,16 @@ export class MemoryController {
       score: this.#formatScore(m.score),
       content: m.content,
       // R5 日期返回 ISO 8601 原始字符串，由 UI 层根据 locale 格式化
-      createdAt: new Date(m.createdAt).toISOString(),
-      accessedAt: new Date(m.accessedAt).toISOString(),
+      // P1-3 修复：非法日期字符串会导致 new Date(...).toISOString() 抛 RangeError，加 try/catch 降级
+      createdAt: this.#toIso(m.createdAt),
+      accessedAt: this.#toIso(m.accessedAt),
     };
+  }
+
+  /** 安全转换为 ISO 字符串，非法日期降级为原始值 */
+  #toIso(date: string | number): string {
+    const parsed = new Date(date);
+    return isNaN(parsed.getTime()) ? String(date) : parsed.toISOString();
   }
 
   /** 格式化记忆分数，保留两位小数 */
