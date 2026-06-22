@@ -455,8 +455,9 @@ function registerMinimalIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.AGENT_STATUS, async () => {
     return {
       ready: agentReady,
-      // 区分错误来源：配置缺失 vs 初始化失败（如 better-sqlite3 ABI 不匹配、数据库 schema 错误等）
-      error: agentReady ? null : (initErrorDetail ?? '配置不完整，请在设置面板中配置 LLM 提供商和 API Key'),
+      // 区分三种状态：就绪 / 初始化失败（有具体错误）/ 初始化中（无错误详情）
+      // 初始化中时不返回"配置不完整"默认消息，避免误导渲染进程
+      error: agentReady ? null : initErrorDetail,
     };
   });
 
@@ -654,6 +655,12 @@ function registerMinimalIpcHandlers(): void {
     if (auditManager) {
       await auditManager.clear();
     }
+  });
+
+  // FD-04 项目列表：Agent 未就绪时返回空数组（设置面板专注项目下拉框使用）
+  // 完整 IPC 注册时会覆盖此降级 handler，使用 sprite.listProjects() 返回真实数据
+  ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () => {
+    return { projects: [] };
   });
 }
 

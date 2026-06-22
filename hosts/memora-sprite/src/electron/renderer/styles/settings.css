@@ -10,68 +10,74 @@
    此处不要覆盖 display，否则会导致设置面板始终可见（ID 选择器优先级高于 .panel） */
 /* UX-P2-25 移除 #panel-settings 空规则集（原仅含注释，无实际样式声明） */
 
-/* ─── UI-UX-01 设置面板 tab 导航（v8：52px 高度，无背景色） ─── */
-/* UX-PP-21 设置面板交互模式说明横幅 */
-.settings-mode-notice {
+/* ─── UI-UX-01 设置面板顶部区域（统一设计） ─── */
+/* 合并状态指示器与模式提示，减少视觉层级 */
+
+/* 设置面板顶部状态栏：44px 高度，与其他面板头部一致 */
+.settings-top-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 24px;
-  font-size: 12px;
-  color: var(--text-2);
-  background: var(--surface1);
-  border-bottom: 1px solid var(--surface2);
-}
-
-.settings-mode-notice-icon {
-  font-size: 13px;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 44px;
+  flex-shrink: 0;
+  background: transparent;
 }
 
 /* ─── P3-FLOW-10 Agent 连接状态指示器 ─── */
-/* 显示在设置面板顶部，三态颜色：ready 绿 / error 红 / unknown 灰 */
+/* 显示在设置面板顶部左侧，三态颜色：ready 绿 / error 红 / unknown 灰 */
 .agent-status-indicator {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 24px;
+  gap: 6px;
   font-size: 12px;
-  border-bottom: 1px solid var(--surface2);
 }
 
 .agent-status-indicator .agent-status-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 /* 就绪态：绿色圆点 */
 .agent-status-indicator.ready {
-  color: var(--success, #10b981);
-  background: var(--surface1);
+  color: var(--green);
 }
 .agent-status-indicator.ready .agent-status-dot {
-  background: var(--success, #10b981);
+  background: var(--green);
 }
 
 /* 错误态：红色圆点 */
 .agent-status-indicator.error {
-  color: var(--danger, #ef4444);
-  background: var(--surface1);
+  color: var(--red);
 }
 .agent-status-indicator.error .agent-status-dot {
-  background: var(--danger, #ef4444);
+  background: var(--red);
 }
 
 /* 未知态：灰色圆点 */
 .agent-status-indicator.unknown {
-  color: var(--text-2);
-  background: var(--surface1);
+  color: var(--text-3);
 }
 .agent-status-indicator.unknown .agent-status-dot {
-  background: var(--text-3, #9ca3af);
+  background: var(--text-3);
 }
 
+/* UX-PP-21 设置面板交互模式说明：精简为右侧提示 */
+.settings-mode-notice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.settings-mode-notice-icon {
+  font-size: 12px;
+}
+
+/* ─── 设置面板 tab 导航（统一设计：44px 高度，无背景色） ─── */
 .settings-tabs {
   display: flex;
   gap: 0;
@@ -79,7 +85,7 @@
   background: transparent;
   border-bottom: 1px solid var(--surface2);
   flex-shrink: 0;
-  height: 52px;
+  height: 44px;
   align-items: center;
 }
 
@@ -470,12 +476,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 24px;
+  padding: 8px 24px;
   margin: 0;
-  background: var(--red-20);  /* 使用主题变量，跟随主题切换 */
+  background: transparent;
   border-bottom: 1px solid var(--red);
   color: var(--red);
-  font-size: 13px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 
@@ -484,17 +490,17 @@
 }
 
 .panel-error-btn {
-  padding: 4px 12px;
-  background: var(--window-bg);
+  padding: 4px 10px;
+  background: transparent;
   border: 1px solid var(--red);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--red);
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: background var(--transition-fast);
   white-space: nowrap;
 }
 
 .panel-error-btn:hover {
-  background: var(--surface1);
+  background: var(--red-20);
 }

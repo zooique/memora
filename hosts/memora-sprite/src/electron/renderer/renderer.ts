@@ -39,6 +39,9 @@ const SILENT_RECOVERY_MS = 60 * 60 * 1000;
 /** 静默模式定时恢复句柄（多次点击"静默 1 小时"时清理旧定时器，避免重复恢复） */
 let silentRecoveryTimer: number | null = null;
 
+/** Agent 初始化重试定时器句柄（beforeunload 时清理，避免操作已销毁的 DOM） */
+let initRetryTimer: number | null = null;
+
 // ─── 初始化 ────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -221,9 +224,48 @@ document.addEventListener('DOMContentLoaded', async () => {
     // P3-FLOW-10 更新设置面板 Agent 连接状态指示器
     settingsController.updateAgentStatus(ready ? 'ready' : 'error', error ?? undefined);
     if (!ready) {
-      // 区分错误来源：配置缺失 vs 初始化失败（如 native 模块加载失败、数据库错误等）
-      // 避免误导用户以为 LLM 配置缺失，实际可能是 better-sqlite3 ABI 不匹配等问题
-      const isConfigMissing = !error || error.includes('配置不完整') || error.includes('API Key');
+      // 三种状态：配置缺失 / 初始化失败 / 初始化中
+      // 初始化中（error 为 null）：Agent 正在启动，延迟重试而非显示错误
+      if (!error) {
+        settingsController.updateAgentStatus('unknown', '正在初始化...');
+        // 延迟 2 秒后重试，等待主进程完成初始化
+        initRetryTimer = window.setTimeout(async () => {
+          try {
+            const retry = await window.electronAPI.getAgentStatus();
+            if (retry.ready) {
+              settingsController.updateAgentStatus('ready', 'Agent 已就绪');
+              uiManager.setAgentReady(true);
+            } else if (retry.error) {
+              // 初始化失败，显示具体错误
+              uiManager.appendMessage({
+                role: 'system',
+                content: `⚠️ Agent 初始化失败\n\n错误信息：${retry.error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
+              });
+              uiManager.showSettingsError(
+                `Agent 初始化失败：${retry.error}。请检查配置或点击重试。`,
+                async () => {
+                  try {
+                    const llmData = await window.electronAPI.getLlmConfig();
+                    if (llmData.config) {
+                      await window.electronAPI.saveLlmConfig(llmData.config);
+                    }
+                  } catch (retryErr) {
+                    reportError('retryInit', retryErr);
+                  }
+                },
+              );
+              uiManager.switchPanel('settings');
+              await settingsController.loadConfig();
+            }
+          } catch {
+            // 重试失败，静默降级
+          }
+        }, 2000);
+        await settingsController.loadConfig();
+        return;
+      }
+      // 区分错误来源：配置缺失 vs 初始化失败
+      const isConfigMissing = error.includes('配置不完整') || error.includes('API Key');
       if (isConfigMissing) {
         // 首次启动引导：显示欢迎消息 + 自动跳转到设置面板
         // P3-FLOW-02 文案优化：提示用户先测试连接，避免配置错误导致初始化失败
@@ -238,6 +280,21 @@ document.addEventListener('DOMContentLoaded', async () => {
           role: 'system',
           content: `⚠️ Agent 初始化失败\n\n错误信息：${error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
         });
+        // 同时在设置面板显示错误横幅，提供重试按钮
+        uiManager.showSettingsError(
+          `Agent 初始化失败：${error}。请检查配置或点击重试。`,
+          async () => {
+            // 重试：重新读取配置并触发保存（保存会触发 reinitAgent）
+            try {
+              const llmData = await window.electronAPI.getLlmConfig();
+              if (llmData.config) {
+                await window.electronAPI.saveLlmConfig(llmData.config);
+              }
+            } catch (retryErr) {
+              reportError('retryInit', retryErr);
+            }
+          },
+        );
       }
       // 自动切换到设置面板
       uiManager.switchPanel('settings');
@@ -287,6 +344,11 @@ window.addEventListener('beforeunload', () => {
   if (silentRecoveryTimer !== null) {
     window.clearTimeout(silentRecoveryTimer);
     silentRecoveryTimer = null;
+  }
+  // 清理 Agent 初始化重试定时器（与 silentRecoveryTimer 同模式）
+  if (initRetryTimer !== null) {
+    window.clearTimeout(initRetryTimer);
+    initRetryTimer = null;
   }
   // 清理 IPC 监听器（防止内存泄漏与重复触发）
   window.electronAPI?.removeStreamListeners();

@@ -179,7 +179,6 @@
               <!-- <button class="input-action" id="btn-attach-file" title="上传文件">📎</button> -->
             </div>
             <div class="input-send-area">
-              <button id="btn-stop" class="hidden" title="停止生成">■ 停止</button>
               <button id="btn-send" title="发送（Enter）">➤</button>
             </div>
           </div>
@@ -213,15 +212,18 @@
 
       <!-- 设置面板 -->
       <div id="panel-settings" class="panel">
-        <!-- P3-FLOW-10 Agent 连接状态指示器：实时显示 Agent 是否就绪 -->
-        <div id="agent-status-indicator" class="agent-status-indicator unknown">
-          <span class="agent-status-dot"></span>
-          <span class="agent-status-text">检测中...</span>
-        </div>
-        <!-- UX-PP-21 设置面板交互模式说明：主题即时生效，其他需保存 -->
-        <div class="settings-mode-notice">
-          <span class="settings-mode-notice-icon">💡</span>
-          <span>主题切换即时生效，其余配置修改后需点击「保存」</span>
+        <!-- UI-UX-01 设置面板顶部区域：合并状态指示器与模式提示 -->
+        <div class="settings-top-bar">
+          <!-- P3-FLOW-10 Agent 连接状态指示器：实时显示 Agent 是否就绪 -->
+          <div id="agent-status-indicator" class="agent-status-indicator unknown">
+            <span class="agent-status-dot"></span>
+            <span class="agent-status-text">检测中...</span>
+          </div>
+          <!-- UX-PP-21 设置面板交互模式说明：主题即时生效，其他需保存 -->
+          <div class="settings-mode-notice">
+            <span class="settings-mode-notice-icon">💡</span>
+            <span>主题即时生效，其余需保存</span>
+          </div>
         </div>
         <!-- UI-UX-01 设置面板分组导航：tab 切换替代长滚动 -->
         <div class="settings-tabs">

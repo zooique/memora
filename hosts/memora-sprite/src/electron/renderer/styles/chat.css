@@ -13,16 +13,19 @@
 
 /**
  * 对话工具栏：对齐 demo v8
- * - 高度 52px，左右 24px padding
+ * - 高度 44px（与顶部栏一致），左右 24px padding
  * - 左侧标题+副标题，右侧新会话按钮（space-between）
+ * - 取消背景色和分割线，融入核心窗口
  */
 #chat-toolbar {
-  height: 52px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 24px;
   flex-shrink: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--surface2);
 }
 
 /* 工具栏左侧信息区：标题 + 副标题 */
@@ -51,8 +54,8 @@
 }
 
 #btn-new-session {
-  padding: 5px 12px;
-  background: var(--window-bg-2);
+  padding: 6px 14px;
+  background: transparent;
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
   color: var(--text-2);
@@ -63,8 +66,8 @@
 }
 
 #btn-new-session:hover {
-  background: var(--surface0);
-  color: var(--text);
+  background: var(--accent-soft);
+  color: var(--accent);
   border-color: var(--accent);
 }
 
@@ -369,6 +372,11 @@
   z-index: 9; /* 低于 #proactive-banner 的 z-index:10，避免遮挡 */
 }
 
+/* 空容器自动隐藏：无建议卡片时不占空间，避免灰色粗条 */
+.suggestion-container:empty {
+  display: none;
+}
+
 /* 单个建议卡片 */
 .suggestion-card {
   background: var(--window-bg);
@@ -529,7 +537,8 @@
   flex: 1;
   overflow-y: auto;
   /* UX-P2-20 提取底部留白为 CSS 变量，便于统一调整（原硬编码 140px） */
-  padding: 20px 24px var(--input-area-height, 140px);
+  /* 顶部无 padding，工具栏底部 1px 分割线形成丝线分隔效果 */
+  padding: 0 24px var(--input-area-height, 140px);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -862,13 +871,13 @@
   color: var(--text);
 }
 
-/* 右侧发送/停止按钮组 */
+/* 右侧发送按钮区域 */
 .input-send-area {
   display: flex;
-  gap: 8px;
   align-items: center;
 }
 
+/* 发送/停止合并按钮：单按钮双姿态 */
 #btn-send {
   width: 32px;
   height: 32px;
@@ -882,37 +891,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), transform var(--transition-fast);
 }
 
 #btn-send:hover {
   background: var(--accent-hover);
 }
 
+/* 流式态：红色停止按钮 */
+#btn-send.streaming {
+  background: var(--red);
+  color: #fff;
+}
+
+#btn-send.streaming:hover {
+  background: var(--red);
+  opacity: 0.85;
+}
+
 #btn-send:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-#btn-stop {
-  padding: 7px 14px;
-  background: var(--window-bg-2);
-  border: 1px solid var(--surface2);
-  border-radius: 100px;
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-#btn-stop:hover {
-  background: var(--surface0);
-  color: var(--text);
-}
-
-#btn-stop.hidden {
-  display: none;
 }
 
 /* ─── 对话区空状态引导（v8） ───────────────────────────────── */

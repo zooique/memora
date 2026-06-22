@@ -10,9 +10,9 @@
   height: 100%;
 }
 
-/* v8：面板头部 52px，无背景色（融入核心窗口） */
+/* v8：面板头部 44px（与其他面板一致），无背景色（融入核心窗口） */
 .panel-header {
-  height: 52px;
+  height: 44px;
   padding: 0 24px;
   display: flex;
   align-items: center;

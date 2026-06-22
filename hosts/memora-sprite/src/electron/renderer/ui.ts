@@ -154,7 +154,6 @@ export class UIManager {
   private messagesEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private btnSend: HTMLButtonElement;
-  private btnStop: HTMLButtonElement;
 
   // ─── 可选元素（缺失时降级，不阻塞其他功能） ────────────
   /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
@@ -219,7 +218,6 @@ export class UIManager {
     this.messagesEl = getRequiredElement('messages', 'div');
     this.inputEl = getRequiredElement('input', 'textarea');
     this.btnSend = getRequiredElement('btn-send', 'button');
-    this.btnStop = getRequiredElement('btn-stop', 'button');
 
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
@@ -265,9 +263,8 @@ export class UIManager {
     this.events.addEventListener(this.inputEl, 'keydown', this.handleInputKeydown.bind(this));
     this.events.addEventListener(this.inputEl, 'input', this.handleInputChange.bind(this));
 
-    // 按钮事件
+    // 按钮事件（发送按钮合并了停止功能，流式态时点击触发停止）
     this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
-    this.events.addEventListener(this.btnStop, 'click', this.handleStopClick.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
     if (this.btnNewSession) {
       this.events.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
@@ -660,6 +657,12 @@ export class UIManager {
     }
 
     this.streamingMessages.delete(messageId);
+
+    // 所有流式消息都已完成时，重置 isStreaming 状态和按钮
+    if (this.streamingMessages.size === 0) {
+      this.state.isStreaming = false;
+      this.updateSendButton();
+    }
   }
 
   /**
@@ -886,9 +889,8 @@ export class UIManager {
     this.streamingMessages.set(messageId, el);
     this.state.isStreaming = true;
 
-    // 更新UI状态
-    this.btnSend.disabled = true;
-    this.btnStop.classList.remove('hidden');
+    // 更新按钮为停止姿态
+    this.updateSendButton();
   }
 
   /** 停止所有流式输出 */
@@ -904,9 +906,8 @@ export class UIManager {
     this.streamingMessages.clear();
     this.state.isStreaming = false;
 
-    // 更新UI状态
-    this.btnSend.disabled = false;
-    this.btnStop.classList.add('hidden');
+    // 更新按钮为发送姿态
+    this.updateSendButton();
   }
 
   /**
@@ -924,8 +925,7 @@ export class UIManager {
     this.hideLoadMore();
     this.streamingMessages.clear();
     this.state.isStreaming = false;
-    this.btnSend.disabled = false;
-    this.btnStop.classList.add('hidden');
+    this.updateSendButton();
     // UX-P2-05 修复：清空消息时重置计数器，避免跨会话累加导致显示错误
     this.messageCount = 0;
     this.refreshMessageCountDisplay();
@@ -1050,8 +1050,7 @@ export class UIManager {
     // 清理流式消息映射和 UI 状态
     this.streamingMessages.clear();
     this.state.isStreaming = false;
-    this.btnSend.disabled = false;
-    this.btnStop.classList.add('hidden');
+    this.updateSendButton();
   }
 
   // ─── 空状态引导 ─────────────────────────────────────────
@@ -1272,7 +1271,12 @@ export class UIManager {
     if (!(e instanceof KeyboardEvent)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      this.emitSendMessage();
+      // 合并按钮逻辑：流式态时 Enter 触发停止，空闲态时触发发送
+      if (this.state.isStreaming) {
+        this.emitStopMessage();
+      } else {
+        this.emitSendMessage();
+      }
     }
   }
 
@@ -1282,11 +1286,12 @@ export class UIManager {
   }
 
   private handleSendClick(): void {
-    this.emitSendMessage();
-  }
-
-  private handleStopClick(): void {
-    this.emitStopMessage();
+    // 合并按钮：流式态时点击触发停止，空闲态时触发发送
+    if (this.state.isStreaming) {
+      this.emitStopMessage();
+    } else {
+      this.emitSendMessage();
+    }
   }
 
   /**
@@ -1432,11 +1437,6 @@ export class UIManager {
   }
 
   private emitSendMessage(): void {
-    // UX-P2-02 流式输出中禁止发送（Enter 键和 Send 按钮共用此检查）
-    if (this.state.isStreaming) {
-      this.showToast('精灵正在回复中，请等待完成或点击停止', 'warning');
-      return;
-    }
     // UX-P2-03 Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败）
     if (!this.state.isAgentReady) {
       this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
@@ -1447,6 +1447,30 @@ export class UIManager {
 
   private emitStopMessage(): void {
     this.stopMessageCallback?.();
+  }
+
+  /**
+   * 统一更新发送/停止按钮状态
+   *
+   * 合并发送和停止为单一按钮的双姿态：
+   * - 空闲态：蓝色 ➤ 发送按钮
+   * - 流式态：红色 ■ 停止按钮
+   * 所有状态变更统一通过此方法，避免分散操作导致不一致
+   */
+  private updateSendButton(): void {
+    if (this.state.isStreaming) {
+      // 流式态：显示停止姿态
+      this.btnSend.disabled = false;  // 不禁用，点击触发停止
+      this.btnSend.classList.add('streaming');
+      this.btnSend.textContent = '■';
+      this.btnSend.title = '停止生成';
+    } else {
+      // 空闲态：显示发送姿态
+      this.btnSend.disabled = false;
+      this.btnSend.classList.remove('streaming');
+      this.btnSend.textContent = '➤';
+      this.btnSend.title = '发送（Enter）';
+    }
   }
 
   // ─── 状态查询 ─────────────────────────────────────────

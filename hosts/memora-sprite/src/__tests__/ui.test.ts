@@ -102,7 +102,6 @@ const TEST_HTML = `<!DOCTYPE html>
             </div>
             <div class="input-send-area">
               <button id="btn-send">发送</button>
-              <button id="btn-stop" class="hidden" title="停止">■</button>
             </div>
           </div>
         </div>
@@ -734,21 +733,21 @@ describe('Agent 就绪状态（UX-P2-03）', () => {
 // ─── UX-P2-02 流式状态发送拦截 ─────────────────────────────
 
 describe('流式状态发送拦截（UX-P2-02）', () => {
-  it('流式输出中按 Enter 发送显示 warning toast', () => {
+  it('流式输出中按 Enter 触发停止而非发送', () => {
     uiManager.setAgentReady(true);
     uiManager.startStreaming('msg-block-1');
 
-    const cb = vi.fn();
-    uiManager.onSendMessage(cb);
+    const sendCb = vi.fn();
+    const stopCb = vi.fn();
+    uiManager.onSendMessage(sendCb);
+    uiManager.onStopMessage(stopCb);
 
-    // 流式时发送按钮被 disabled，但 Enter 键不受按钮 disabled 影响，
-    // 因此 UX-P2-02 的核心场景是 Enter 键发送拦截
+    // 合并按钮逻辑：流式态时 Enter 触发停止，不触发发送
     const input = document.getElementById('input') as HTMLTextAreaElement;
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-    expect(cb).not.toHaveBeenCalled();
-    const toast = document.querySelector('.toast');
-    expect(toast).not.toBeNull();
+    expect(sendCb).not.toHaveBeenCalled();
+    expect(stopCb).toHaveBeenCalled();
   });
 });
 
@@ -872,13 +871,15 @@ describe('事件回调注册', () => {
     expect(cb).toHaveBeenCalled();
   });
 
-  it('onStopMessage: 注册并触发', () => {
+  it('onStopMessage: 注册并通过合并按钮触发', () => {
     const cb = vi.fn();
     uiManager.onStopMessage(cb);
 
-    const btnStop = document.getElementById('btn-stop')!;
-    btnStop.classList.remove('hidden');
-    btnStop.click();
+    // 合并按钮：先进入流式态，再点击发送按钮触发停止
+    uiManager.setAgentReady(true);
+    uiManager.startStreaming('msg-stop-test');
+    const btnSend = document.getElementById('btn-send')!;
+    btnSend.click();
 
     expect(cb).toHaveBeenCalled();
   });
