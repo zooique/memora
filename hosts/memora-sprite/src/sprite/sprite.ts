@@ -4,7 +4,7 @@
  * 职责（拆分后）：
  *   1. 监听触发器事件，决定是否唤醒精灵
  *   2. 唤醒后启动对话交互
- *   3. 管理精灵状态（idle / active / sleeping）
+ *   3. 管理精灵状态（idle / active）
  *   4. 配置持久化
  *   5. 订阅 Agent 事件，委托 Controller 处理具体逻辑
  *
@@ -14,20 +14,20 @@
  */
 import { resolve } from 'node:path';
 import type { Agent, AgentEventMap } from 'memora';
-import type { VectorStore } from 'memora';
+import type { VectorStore, ITracer } from 'memora';
 import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import type { IInteraction } from './interaction.js';
-import { loadSpriteConfig, saveSpriteConfig, CONFIG_FIELD_SCHEMA } from './spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig, applyConfigField } from './spriteConfig.js';
 import type { SpriteConfig, SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cliFormatter.js';
 import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
 import type { DashboardData } from './controllers/index.js';
 
-/** 精灵状态 */
-export type SpriteState = 'idle' | 'active' | 'sleeping';
+/** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
+export type SpriteState = 'idle' | 'active';
 
 /** 精灵事件载荷 — 宿主 UI 可订阅 */
 export interface SpriteEventMap {
@@ -86,6 +86,8 @@ export class Sprite {
   private memoryController: MemoryController;
   private personaController: PersonaController;
   private proactiveEngine: ProactiveEngine;
+  /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
+  private readonly tracer: ITracer | null;
 
   constructor(
     agent: Agent,
@@ -95,11 +97,14 @@ export class Sprite {
     interaction?: IInteraction,
     /** 路径白名单（来自 Agent 的 allowedPaths，用于 fileWatcher 安全校验） */
     allowedPaths?: string[],
+    /** P2-S6: 可观测性 tracer（可选），注入后关键路径会记录 span 到 trace.log */
+    tracer?: ITracer,
   ) {
     this.agent = agent;
     this.dataDir = dataDir;
     this.projectPath = projectPath ?? dataDir;
     this.allowedPaths = allowedPaths ?? [];
+    this.tracer = tracer ?? null;
     this.config = loadSpriteConfig(dataDir);
     this.triggerBus = new TriggerBus();
     this.triggerBus.register(new TimerTrigger(this.config.triggerIntervalMs));
@@ -238,11 +243,17 @@ export class Sprite {
    */
   async wakeup(input?: string): Promise<string> {
     this.state = 'active';
+    // P2-S6: 唤醒是 LLM 调用主路径，记录 span 用于性能追踪
+    const span = this.tracer?.startSpan('sprite.wakeup', input ? { hasInput: true } : { hasInput: false });
     try {
       // input 为 undefined 时，生成主动提示（无输入对话）
       return await this.agent.chatSync(input ?? '');
+    } catch (err) {
+      span?.recordException(err instanceof Error ? err : new Error(String(err)));
+      throw err;
     } finally {
       this.state = 'idle';
+      span?.end();
     }
   }
 
@@ -489,6 +500,8 @@ export class Sprite {
       logger.warn('专注模式未设置 focusProjectPath，保持当前项目');
       return;
     }
+    // P2-S6: 项目切换含 fileWatcher 重建，记录 span 用于追踪切换耗时与失败率
+    const span = this.tracer?.startSpan('sprite.projectMode', { focusPath });
     // 异步切换，不阻塞配置更新
     this.agent.switchProject(focusPath).then(() => {
       logger.info({ focusPath }, '已切换到专注项目');
@@ -497,8 +510,11 @@ export class Sprite {
       if (this.config.fileWatcherEnabled) {
         this.rebuildFileWatcher();
       }
+      span?.end();
     }).catch((err: unknown) => {
       logger.warn({ focusPath, err: toError(err).message }, '专注项目切换失败');
+      span?.recordException(err instanceof Error ? err : new Error(String(err)));
+      span?.end();
     });
   }
 
@@ -511,74 +527,8 @@ export class Sprite {
    * 不符合类型的 value 会被忽略（保持原值），由调用方保证传入正确类型。
    */
   private setConfigField(key: SpriteConfigKey, value: unknown): void {
-    const schema = CONFIG_FIELD_SCHEMA[key];
-    // 使用 Record<string, unknown> 绕过 TypeScript 对动态 key 赋值的类型检查
-    // 运行时类型校验由 schema 映射表保证，编译时无法推断动态 key 的具体类型
-    const config = this.config as Record<string, unknown>;
-
-    // 数值类型
-    if (schema === 'number') {
-      if (typeof value === 'number') {
-        config[key] = value;
-      }
-      return;
-    }
-
-    // 布尔类型
-    if (schema === 'boolean') {
-      if (typeof value === 'boolean') {
-        config[key] = value;
-      }
-      return;
-    }
-
-    // 字符串类型
-    if (schema === 'string') {
-      if (typeof value === 'string') {
-        config[key] = value;
-      }
-      return;
-    }
-
-    // 字符串数组类型
-    if (schema === 'string[]') {
-      if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
-        config[key] = value;
-      }
-      return;
-    }
-
-    // 对象类型（需额外校验子字段）
-    if (schema === 'object') {
-      if (typeof value === 'object' && value !== null) {
-        // floatIconPosition：校验 x/y 为 number
-        if (key === 'floatIconPosition') {
-          const pos = value as { x: unknown; y: unknown };
-          if ('x' in value && 'y' in value && typeof pos.x === 'number' && typeof pos.y === 'number') {
-            config[key] = { x: pos.x, y: pos.y };
-          }
-        }
-        // windowBounds：校验 x/y/width/height 为 number
-        if (key === 'windowBounds') {
-          const b = value as { x: unknown; y: unknown; width: unknown; height: unknown };
-          if ('x' in value && 'y' in value && 'width' in value && 'height' in value
-            && typeof b.x === 'number' && typeof b.y === 'number'
-            && typeof b.width === 'number' && typeof b.height === 'number') {
-            config[key] = { x: b.x, y: b.y, width: b.width, height: b.height };
-          }
-        }
-      }
-      return;
-    }
-
-    // 枚举类型（格式：'enum:val1|val2|val3'）
-    if (schema.startsWith('enum:')) {
-      const allowedValues = schema.slice(5).split('|');
-      if (typeof value === 'string' && allowedValues.includes(value)) {
-        config[key] = value;
-      }
-      return;
-    }
+    // P2-S3 重构：委托到 spriteConfig.ts 的纯函数，配置逻辑集中管理
+    applyConfigField(this.config, key, value);
   }
 
   /**
@@ -751,16 +701,30 @@ export class Sprite {
   private handleTrigger(payload: TriggerPayload): void {
     if (this.state !== 'idle') return;
 
-    if (payload.source === 'fileWatcher') {
-      // 文件变化触发：累积为 file 事件类型
-      this.proactiveEngine.addNotice('file', payload.reason);
-      logger.info({ reason: payload.reason, source: payload.source }, '文件变化触发');
-    } else {
-      // 定时触发
-      logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
-    }
+    // P2-S6: 触发器响应是精灵主路径，记录 span 用于触发频率与耗时追踪
+    const span = this.tracer?.startSpan('sprite.trigger', {
+      source: payload.source,
+      reason: payload.reason,
+    });
+    try {
+      if (payload.source === 'fileWatcher') {
+        // 文件变化触发：累积为 file 事件类型
+        this.proactiveEngine.addNotice('file', payload.reason);
+        logger.info({ reason: payload.reason, source: payload.source }, '文件变化触发');
+      } else {
+        // 定时触发
+        logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
+      }
 
-    // 触发时检查是否有待提示的累积事件（由 ProactiveEngine 内部处理）
-    logger.debug(this.formatDashboard());
+      // 触发时检查是否有待提示的累积事件（由 ProactiveEngine 内部处理）
+      // P1-9 修复：移除全量 dashboard 计算 debug 日志——logger 不支持惰性求值，
+      // 每次触发都计算 dashboard（含 memory.stats + suggest）是性能热点。
+      // 触发事件已由上方 logger.info 记录，dashboard 可通过 sprite.formatDashboard() 主动查询。
+    } catch (err) {
+      span?.recordException(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    } finally {
+      span?.end();
+    }
   }
 }

@@ -257,3 +257,106 @@ export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
+/**
+ * 应用配置字段更新（纯函数，原地修改 config）
+ *
+ * 根据 CONFIG_FIELD_SCHEMA 校验 value 类型，符合则写入 config[key]，
+ * 不符合则忽略（保持原值）。
+ *
+ * P2-S3 重构：从 Sprite.setConfigField 提取为纯函数，配置逻辑集中到 spriteConfig.ts。
+ * P1-5 修复：windowBounds 允许设为 null（清除窗口边界）。
+ *
+ * @param config - 配置对象（原地修改）
+ * @param key - 配置字段名
+ * @param value - 新值
+ * @returns 是否成功设置（类型校验通过）
+ */
+export function applyConfigField(
+  config: Required<SpriteConfig>,
+  key: SpriteConfigKey,
+  value: unknown,
+): boolean {
+  const schema = CONFIG_FIELD_SCHEMA[key];
+  // 使用 Record<string, unknown> 绕过 TypeScript 对动态 key 赋值的类型检查
+  // 运行时类型校验由 schema 映射表保证，编译时无法推断动态 key 的具体类型
+  const target = config as Record<string, unknown>;
+
+  // 数值类型
+  if (schema === 'number') {
+    if (typeof value === 'number') {
+      target[key] = value;
+      return true;
+    }
+    return false;
+  }
+
+  // 布尔类型
+  if (schema === 'boolean') {
+    if (typeof value === 'boolean') {
+      target[key] = value;
+      return true;
+    }
+    return false;
+  }
+
+  // 字符串类型
+  if (schema === 'string') {
+    if (typeof value === 'string') {
+      target[key] = value;
+      return true;
+    }
+    return false;
+  }
+
+  // 字符串数组类型
+  if (schema === 'string[]') {
+    if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+      target[key] = value;
+      return true;
+    }
+    return false;
+  }
+
+  // 对象类型（需额外校验子字段）
+  if (schema === 'object') {
+    // P1-5 修复：windowBounds 允许设为 null（清除窗口边界）
+    if (value === null && (key === 'windowBounds' || key === 'silentModeExpiresAt')) {
+      target[key] = null;
+      return true;
+    }
+    if (typeof value === 'object' && value !== null) {
+      // floatIconPosition：校验 x/y 为 number
+      if (key === 'floatIconPosition') {
+        const pos = value as { x: unknown; y: unknown };
+        if ('x' in value && 'y' in value && typeof pos.x === 'number' && typeof pos.y === 'number') {
+          target[key] = { x: pos.x, y: pos.y };
+          return true;
+        }
+      }
+      // windowBounds：校验 x/y/width/height 为 number
+      if (key === 'windowBounds') {
+        const b = value as { x: unknown; y: unknown; width: unknown; height: unknown };
+        if ('x' in value && 'y' in value && 'width' in value && 'height' in value
+          && typeof b.x === 'number' && typeof b.y === 'number'
+          && typeof b.width === 'number' && typeof b.height === 'number') {
+          target[key] = { x: b.x, y: b.y, width: b.width, height: b.height };
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // 枚举类型（格式：'enum:val1|val2|val3'）
+  if (schema.startsWith('enum:')) {
+    const allowedValues = schema.slice(5).split('|');
+    if (typeof value === 'string' && allowedValues.includes(value)) {
+      target[key] = value;
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}

@@ -800,6 +800,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   showMemoryDetail(memory: MemoryDetail): void { this.memoryPanel.showMemoryDetail(memory); }
   /** 清空添加记忆表单（委托到 MemoryPanelManager） */
   clearAddMemoryForm(): void { this.memoryPanel.clearAddMemoryForm(); }
+  /** 获取添加记忆表单数据（空字段返回 null，委托到 MemoryPanelManager） */
+  getAddMemoryFormData(): { source: string; name: string; content: string } | null {
+    return this.memoryPanel.getAddMemoryFormData();
+  }
   /** 获取当前查看的记忆 ID（委托到 MemoryPanelManager） */
   getCurrentMemoryId(): string | null { return this.memoryPanel.getCurrentMemoryId(); }
   /** 注册记忆搜索回调（委托到 MemoryPanelManager） */

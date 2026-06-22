@@ -329,8 +329,8 @@ export class MemoryPanelManager {
 
   // ─── 添加记忆表单 ───────────────────────────────────────
 
-  /** 获取添加记忆表单数据 */
-  private getAddMemoryFormData(): { source: string; name: string; content: string } | null {
+  /** 获取添加记忆表单数据（供测试与外部调用） */
+  getAddMemoryFormData(): { source: string; name: string; content: string } | null {
     const sourceEl = getOptionalElement('memory-add-source', 'input');
     const nameEl = getOptionalElement('memory-add-name', 'input');
     const contentEl = getOptionalElement('memory-add-content', 'textarea');

@@ -369,8 +369,8 @@ async function initAgentFromConfig(
     console.log(`已恢复上次会话（${restored} 条消息）\n`);
   }
 
-  // 6. 启动精灵主控
-  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths);
+  // 6. 启动精灵主控（P2-S6: 注入 tracer，关键路径记录 span 到 trace.log）
+  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths, tracer);
   sprite.start();
 
   // H3：最小作品投影生成 — 启动时读取项目关键文件（README + package.json）

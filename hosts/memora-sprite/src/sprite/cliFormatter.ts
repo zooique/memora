@@ -13,6 +13,7 @@
 
 import type { SpriteConfig } from './spriteConfig.js';
 import type { DashboardData } from './controllers/index.js';
+import { DEFAULT_SPRITE_CONFIG } from './spriteConfig.js';
 import { MS_PER_MINUTE } from './constants.js';
 
 /** 角色列表项（与 PersonaController.list() 返回类型对齐） */
@@ -30,11 +31,12 @@ interface PersonaEntry {
  */
 export function formatConfig(config: SpriteConfig): string {
   const lines: string[] = ['── 精灵配置 ──'];
-  lines.push(`  触发器间隔：${(config.triggerIntervalMs ?? 5 * MS_PER_MINUTE) / MS_PER_MINUTE} 分钟`);
+  // P1-4 修复：兜底默认值引用 DEFAULT_SPRITE_CONFIG，避免与实际默认值不一致
+  lines.push(`  触发器间隔：${(config.triggerIntervalMs ?? DEFAULT_SPRITE_CONFIG.triggerIntervalMs) / MS_PER_MINUTE} 分钟`);
   lines.push(`  默认角色：${config.defaultPersona || '(未设置)'}`);
   lines.push(`  静默模式：${config.silentMode ? '开启' : '关闭'}`);
-  lines.push(`  主动提示阈值：${config.proactiveThreshold ?? 5} 个事件`);
-  lines.push(`  主动提示冷却：${(config.proactiveCooldownMs ?? 30 * MS_PER_MINUTE) / MS_PER_MINUTE} 分钟`);
+  lines.push(`  主动提示阈值：${config.proactiveThreshold ?? DEFAULT_SPRITE_CONFIG.proactiveThreshold} 个事件`);
+  lines.push(`  主动提示冷却：${(config.proactiveCooldownMs ?? DEFAULT_SPRITE_CONFIG.proactiveCooldownMs) / MS_PER_MINUTE} 分钟`);
   lines.push(`  文件监听：${config.fileWatcherEnabled ? '开启' : '关闭'}`);
   if (config.fileWatcherEnabled) {
     lines.push(`  监听路径：${(config.fileWatcherPaths ?? []).join(', ')}`);
