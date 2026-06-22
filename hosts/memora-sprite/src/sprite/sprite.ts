@@ -39,6 +39,15 @@ export interface SpriteEventMap {
   insightGained: { source: string; insight: string };
   /** 精灵主动提示（累积事件后生成） */
   proactivePrompt: { prompt: string; triggers: string[]; silent: boolean };
+  // L5：迭代 9 补齐的 4 种未订阅 Agent 事件
+  /** 用户切换项目（专注模式） */
+  projectSwitched: { from: string | null; to: string; projectName: string };
+  /** 技能匹配命中 */
+  skillMatched: { skill: string; score: number };
+  /** 记忆被召回（用于"想起 X 条记忆"提示） */
+  memoryRecalled: { count: number; query: string };
+  /** 记忆衰减完成（24h 节流，避免噪音） */
+  decayCompleted: { decayedCount: number };
 }
 
 // 重新导出 DashboardData 供外部使用
@@ -53,11 +62,16 @@ export class Sprite {
   private triggerBus: TriggerBus;
   private running = false;
   private spriteHandlers = new Map<string, Set<(event: unknown) => void>>();
-  /** Agent 事件处理器引用（用于 off 取消订阅，仅列出实际订阅的 3 个事件） */
+  /** Agent 事件处理器引用（用于 off 取消订阅） */
   private agentHandlers: {
     memoryAdded?: (e: AgentEventMap['memoryAdded']) => void;
     personaSwitched?: (e: AgentEventMap['personaSwitched']) => void;
     insightExtracted?: (e: AgentEventMap['insightExtracted']) => void;
+    // L5：迭代 9 补齐的 4 种事件
+    projectSwitched?: (e: AgentEventMap['projectSwitched']) => void;
+    skillMatched?: (e: AgentEventMap['skillMatched']) => void;
+    memoryRecalled?: (e: AgentEventMap['memoryRecalled']) => void;
+    decayCompleted?: (e: AgentEventMap['decayCompleted']) => void;
   } = {};
   /** 项目路径（用于 FileWatcherTrigger 的默认监听目录） */
   private projectPath: string;
@@ -662,6 +676,45 @@ export class Sprite {
     };
     this.agentHandlers.insightExtracted = onInsightExtracted;
     this.agent.on('insightExtracted', onInsightExtracted);
+
+    // L5：项目切换 → projectSwitched
+    // 用户在专注模式切换项目时，UI 可显示"已切换到 XXX 项目"通知
+    const onProjectSwitched = (e: AgentEventMap['projectSwitched']) => {
+      this.emitSprite('projectSwitched', {
+        from: e.from,
+        to: e.to,
+        projectName: e.projectName,
+      });
+      logger.info({ from: e.from, to: e.to, projectName: e.projectName }, '项目切换');
+    };
+    this.agentHandlers.projectSwitched = onProjectSwitched;
+    this.agent.on('projectSwitched', onProjectSwitched);
+
+    // L5：技能匹配 → skillMatched
+    // 当 Agent 调用技能时通知 UI（用于"匹配到技能 X"提示）
+    const onSkillMatched = (e: AgentEventMap['skillMatched']) => {
+      this.emitSprite('skillMatched', { skill: e.skill, score: e.score });
+      logger.debug({ skill: e.skill, score: e.score }, '技能匹配');
+    };
+    this.agentHandlers.skillMatched = onSkillMatched;
+    this.agent.on('skillMatched', onSkillMatched);
+
+    // L5：记忆召回 → memoryRecalled
+    // 每次对话召回记忆时触发，UI 可显示"想起 X 条记忆"提示
+    const onMemoryRecalled = (e: AgentEventMap['memoryRecalled']) => {
+      this.emitSprite('memoryRecalled', { count: e.count, query: e.query });
+    };
+    this.agentHandlers.memoryRecalled = onMemoryRecalled;
+    this.agent.on('memoryRecalled', onMemoryRecalled);
+
+    // L5：衰减完成 → decayCompleted
+    // 每小时定时衰减触发，UI 可显示"已衰减 N 条记忆"通知（24h 节流避免噪音）
+    const onDecayCompleted = (e: AgentEventMap['decayCompleted']) => {
+      this.emitSprite('decayCompleted', { decayedCount: e.decayedCount });
+      logger.info({ decayedCount: e.decayedCount }, '记忆衰减完成');
+    };
+    this.agentHandlers.decayCompleted = onDecayCompleted;
+    this.agent.on('decayCompleted', onDecayCompleted);
   }
 
   /** 取消订阅 Agent 事件 */
@@ -677,6 +730,19 @@ export class Sprite {
     }
     if (this.agentHandlers.insightExtracted) {
       this.agent.off('insightExtracted', this.agentHandlers.insightExtracted);
+    }
+    // L5：迭代 9 补齐的 4 种事件清理
+    if (this.agentHandlers.projectSwitched) {
+      this.agent.off('projectSwitched', this.agentHandlers.projectSwitched);
+    }
+    if (this.agentHandlers.skillMatched) {
+      this.agent.off('skillMatched', this.agentHandlers.skillMatched);
+    }
+    if (this.agentHandlers.memoryRecalled) {
+      this.agent.off('memoryRecalled', this.agentHandlers.memoryRecalled);
+    }
+    if (this.agentHandlers.decayCompleted) {
+      this.agent.off('decayCompleted', this.agentHandlers.decayCompleted);
     }
     this.agentHandlers = {};
   }

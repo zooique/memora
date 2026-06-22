@@ -30,6 +30,14 @@ import { Sprite } from './sprite/sprite.js';
 import { CliInteraction } from './sprite/cliInteraction.js';
 import type { IInteraction } from './sprite/interaction.js';
 import type { SpriteConfigKey } from './sprite/spriteConfig.js';
+// H4：宿主自定义工具（web_search + memory_search）
+import {
+  WEB_SEARCH_TOOL,
+  MEMORY_SEARCH_TOOL,
+  webSearchHandler,
+  memorySearchHandler,
+  setMemorySearcher,
+} from './sprite/tools.js';
 export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
 export type { SpriteConfig, SpriteConfigKey } from './sprite/spriteConfig.js';
 export { DEFAULT_SPRITE_CONFIG, loadSpriteConfig, saveSpriteConfig } from './sprite/spriteConfig.js';
@@ -358,6 +366,22 @@ async function initAgentFromConfig(
   // 6. 启动精灵主控
   const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths);
   sprite.start();
+
+  // H4：注册宿主自定义工具（web_search + memory_search）
+  // 让 LLM 在对话中可主动调用这些工具，无需用户敲 /web 命令
+  if (agent.tools) {
+    // 注入记忆搜索器引用（handler 委托内核 searchMemories）
+    setMemorySearcher(async (query, limit) => {
+      const hits = await agent.searchMemories(query, limit);
+      return hits.map((h) => ({
+        name: h.name,
+        contentPreview: h.contentPreview ?? '',
+        score: h.score,
+      }));
+    });
+    agent.tools.registerTool(WEB_SEARCH_TOOL, webSearchHandler);
+    agent.tools.registerTool(MEMORY_SEARCH_TOOL, memorySearchHandler);
+  }
 
   const close = async () => {
     sprite.stop();

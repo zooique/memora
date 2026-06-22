@@ -96,3 +96,61 @@ hosts/memora-sprite/
 | 一 | CLI 宿主验证跑通 | SqliteStorage + SqliteSessionStore + CLI 交互 + 热键唤醒 |
 | 二 | 桌面存在感 | Electron 窗口 + 系统托盘 + 通知 + 文件监听 + 窗口感知 |
 | 三 | 多模态 | 语音输入/输出 + 高级 UI |
+| 四 | 能力扩展 | 工具化（registerTool）+ 事件补全 + 后台 Provider + 写入确认 |
+
+## 7. 阶段四：能力扩展（迭代 7-9 沉淀）
+
+> **自然生长原则**：只接入"内核已就绪但宿主未消费"的能力，不闭门造接口。
+> **触发条件**：审核报告（`docs/memora-sprite-交叉对齐审核报告.md`）识别出"机制已建、宿主未用"。
+
+### 7.1 工具注册（`agent.tools.registerTool`）
+
+**沉淀时机**：迭代 9 出现 1 次工具注册（web_search + memory_search）。  
+**抽取阈值**：第 3 次出现时提取通用 helper（当前不抽取，避免过度抽象）。
+
+**当前实现**（[hosts/memora-sprite/src/sprite/tools.ts](../../hosts/memora-sprite/src/sprite/tools.ts)）：
+
+- 工具定义 + handler 同文件聚合，`index.ts` 一次性注册
+- 跨平台 `execFile` 替代 `exec`（命令注入防护，迁移自 `/web` CLI）
+- handler 委托内核能力（memorySearch 委托 `agent.searchMemories`），避免重复实现
+
+**未来扩展点**：
+
+- 当工具数 ≥ 3 时，提取 `registerDefaultTools(agent)` helper
+- 当 ≥ 5 时，提取工具配置 schema + 启用/禁用开关
+
+### 7.2 事件订阅（L5 补全）
+
+**沉淀时机**：迭代 9 补齐 4 种未订阅事件（projectSwitched / skillMatched / memoryRecalled / decayCompleted）。  
+**设计原则**：
+
+- 静默模式过滤：项目切换/技能匹配/记忆召回在静默模式下不弹 toast
+- 24h 节流：衰减完成通知（每小时触发，节流到 24h 一次）
+- 分数阈值：技能匹配 score < 0.5 不通知
+- 0 条跳过：decayedCount=0 / count=0 不通知
+
+**实现位置**（[hosts/memora-sprite/src/electron/renderer/ipcListeners.ts](../../hosts/memora-sprite/src/electron/renderer/ipcListeners.ts)）：
+
+- 4 个 handler 集中定义在文件顶部
+- `onSpriteEvent` 统一入口 + type 分发（避免重复监听器）
+
+### 7.3 多 Provider 路由
+
+**沉淀时机**：迭代 7-8 引入后台 Provider（`agent.setBackgroundProvider`）。  
+**配置入口**：`ConfigSchema.llm.background`（独立块，温度 0.5 默认）。  
+**路由策略**：`ChatOptions.channel: 'chat' | 'background'`。
+
+### 7.4 写入确认闭环
+
+**沉淀时机**：迭代 8 完成写入确认 UI（M1）。  
+**数据流**：
+
+```
+SecurityGuard.requestWriteConfirmation
+  → IPC WRITE_CONFIRMATION 推送到渲染进程
+  → 用户决策
+  → IPC WRITE_CONFIRMATION_RESPONSE 回传
+  → resolve pending Promise
+```
+
+**超时保护**：30s 未响应自动拒绝（主进程 Map + setTimeout）。

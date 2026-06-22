@@ -93,6 +93,89 @@ function handleProactivePrompt(
   window.electronAPI.proactivePromptShown();
 }
 
+/**
+ * L5：精灵事件处理器 — 4 种新增事件的 UI 展示逻辑
+ *
+ * 噪音控制策略（与用户约定）：
+ *   - projectSwitched / skillMatched / memoryRecalled：静默模式下不弹 toast
+ *   - decayCompleted：24h 节流（同一进程生命周期内），无论静默模式
+ *   - 所有事件始终记入控制台（开发可见），但 UI 提示受控
+ */
+
+/** decayCompleted 上次显示时间戳（24h 节流） */
+let lastDecayNoticeTime = 0;
+const DECAY_NOTICE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * 处理项目切换事件
+ * 静默模式：不弹 toast；非静默模式：显示"已切换到 XXX 项目"通知
+ */
+function handleProjectSwitched(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  // payload: { from: string | null; to: string; projectName: string }
+  const payload = msg.payload as { projectName: string };
+  if (msg.silent) return; // 静默模式：不打扰
+  uiManager.showToast(`已切换到项目：${payload.projectName}`, 'info', 3000);
+}
+
+/**
+ * 处理技能匹配事件
+ * 静默模式：不弹 toast；非静默模式：显示"匹配到技能 X"
+ */
+function handleSkillMatched(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  // payload: { skill: string; score: number }
+  const payload = msg.payload as { skill: string; score: number };
+  if (msg.silent) return;
+  // 分数 < 0.5 的匹配不通知（避免低匹配度噪音）
+  if (payload.score < 0.5) return;
+  uiManager.showToast(`匹配到技能：${payload.skill}`, 'info', 2000);
+}
+
+/**
+ * 处理记忆召回事件
+ * 静默模式：不弹 toast；非静默模式：显示"想起 X 条记忆"
+ * 注意：每次对话都会触发，单条消息中只显示一次（外部去重由 onStreamRecall 处理）
+ */
+function handleMemoryRecalled(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  // payload: { count: number; query: string }
+  const payload = msg.payload as { count: number };
+  if (msg.silent) return;
+  if (payload.count <= 0) return; // 0 条不通知
+  uiManager.showToast(`想起 ${payload.count} 条记忆`, 'info', 2000);
+}
+
+/**
+ * 处理记忆衰减完成事件
+ * 24h 节流：同一进程生命周期内只显示一次
+ * 静默模式与非静默模式都遵守节流（衰减是后台事件，与用户操作解耦）
+ */
+function handleDecayCompleted(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  // payload: { decayedCount: number }
+  const payload = msg.payload as { decayedCount: number };
+  if (payload.decayedCount <= 0) return; // 0 条不通知
+
+  const now = Date.now();
+  if (now - lastDecayNoticeTime < DECAY_NOTICE_COOLDOWN_MS) return;
+  lastDecayNoticeTime = now;
+
+  // 衰减通知不受静默模式控制（教育用户记忆有生命周期）
+  uiManager.showToast(
+    `已衰减 ${payload.decayedCount} 条记忆（长期未访问自动降低权重）`,
+    'info',
+    4000,
+  );
+}
 /** IPC 监听器初始化参数 */
 export interface IpcListenerCallbacks {
   /** 记忆被注意时回调（刷新仪表盘 + 脉冲动画） */
@@ -180,6 +263,18 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
       callbacks.onInsightGained();
     } else if (msg.type === 'proactivePrompt') {
       handleProactivePrompt(uiManager, msg);
+    } else if (msg.type === 'projectSwitched') {
+      // L5：项目切换通知
+      handleProjectSwitched(uiManager, msg);
+    } else if (msg.type === 'skillMatched') {
+      // L5：技能匹配通知
+      handleSkillMatched(uiManager, msg);
+    } else if (msg.type === 'memoryRecalled') {
+      // L5：记忆召回通知
+      handleMemoryRecalled(uiManager, msg);
+    } else if (msg.type === 'decayCompleted') {
+      // L5：衰减完成通知（24h 节流）
+      handleDecayCompleted(uiManager, msg);
     }
   });
 

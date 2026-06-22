@@ -740,6 +740,28 @@ function setupSpriteEventListeners(): void {
     sendSpriteEventIfVisible('personaChanged', { from, to });
     // 角色切换不影响托盘状态（托盘状态由流式输出/静默模式/主动提示驱动）
   });
+
+  // L5：项目切换 → 渲染层通知
+  registerSpriteEvent('projectSwitched', ({ from, to, projectName }) => {
+    sendSpriteEventIfVisible('projectSwitched', { from, to, projectName });
+  });
+
+  // L5：技能匹配 → 渲染层通知
+  registerSpriteEvent('skillMatched', ({ skill, score }) => {
+    sendSpriteEventIfVisible('skillMatched', { skill, score });
+  });
+
+  // L5：记忆召回 → 渲染层通知（每次对话触发，按需展示"想起 X 条"）
+  registerSpriteEvent('memoryRecalled', ({ count, query }) => {
+    sendSpriteEventIfVisible('memoryRecalled', { count, query });
+  });
+
+  // L5：衰减完成 → 渲染层通知（24h 节流避免每小时噪音）
+  // 注意：节流由渲染层控制（renderer 维护上次显示时间戳），主进程不节流
+  // —— 保证事件流纯净，过滤逻辑在 UI 层更可控
+  registerSpriteEvent('decayCompleted', ({ decayedCount }) => {
+    sendSpriteEventIfVisible('decayCompleted', { decayedCount });
+  });
 }
 
 /**
