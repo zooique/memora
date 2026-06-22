@@ -76,7 +76,7 @@
 
 #titlebar-controls #btn-close:hover {
   background: var(--red);
-  color: #fff;
+  color: var(--text-on-red);
 }
 
 /* ─── 侧边栏（与顶部栏同色，无边界） ─────────────────────── */

@@ -30,7 +30,7 @@
   padding: 8px 14px;
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
-  border-radius: 100px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   font-family: inherit;
   font-size: 13px;

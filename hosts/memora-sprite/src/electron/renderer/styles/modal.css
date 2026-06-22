@@ -290,7 +290,7 @@ kbd {
 .btn-danger {
   padding: 6px 14px;
   background: var(--red);
-  color: #fff;
+  color: var(--text-on-red);
   border: none;
   border-radius: var(--radius-sm);
   font-family: inherit;

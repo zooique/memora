@@ -173,7 +173,7 @@
   transform: translateY(-50%);
   padding: 2px 4px;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: transparent;
   font-size: 11px;
   cursor: pointer;
@@ -607,7 +607,7 @@
 /* 精灵头像：渐变背景 + 白色 emoji */
 .message.assistant .message-avatar {
   /* UX-P2-31 加深渐变末端颜色并添加文字阴影，提升白色 emoji 在浅粉渐变上的对比度 */
-  background: linear-gradient(135deg, #89b4fa 0%, #c084fc 100%);
+  background: var(--brand-grad);
   color: var(--accent-fg);
   border-color: transparent;
   /* 文字阴影增强 emoji 在浅色背景上的可读性 */
@@ -903,7 +903,7 @@
 /* 流式态：红色停止按钮 */
 #btn-send.streaming {
   background: var(--red);
-  color: #fff;
+  color: var(--text-on-red);
 }
 
 #btn-send.streaming:hover {
@@ -982,7 +982,7 @@
   padding: 6px 14px;
   background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: 100px;
+  border-radius: var(--radius-pill);
   color: var(--text);
   font-family: system-ui, -apple-system, sans-serif;
   font-size: 12px;

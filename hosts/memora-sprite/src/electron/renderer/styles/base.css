@@ -45,6 +45,9 @@
   /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
   --accent-fg:   #ffffff;  /* 浅色主题：深蓝背景 + 白字，对比度达标 */
 
+  /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
+  --text-on-red: #ffffff;
+
   /* source 标签专用颜色（浅色主题下使用深色文字以保证对比度） */
   --mauve:       #7b1fa2;  /* 紫色：rule */
   --teal:        #00838f;  /* 青色：persona */
@@ -54,10 +57,12 @@
   --brand-grad:  linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
 
   /* 圆角：v8 整体收敛，更紧凑 */
+  --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
   --radius-sm:     6px;     /* 小型元素圆角（标签、按钮、卡片） */
   --radius-md:     10px;
   --radius-lg:     12px;
   --radius-xl:     18px;
+  --radius-pill:   100px;   /* 胶囊形按钮/标签 */
   --radius-window: 18px;    /* 核心窗口圆角 */
 
   /* 阴影：浅色主题下更轻量，避免过度悬浮感 */
@@ -130,6 +135,9 @@
   /* accent 背景上的前景色（深色主题：浅蓝背景 + 深字，对比度达标） */
   --accent-fg:   #1e1e2e;
 
+  /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
+  --text-on-red: #ffffff;
+
   /* source 标签专用颜色 */
   --mauve:       #cba6f7;
   --teal:        #94e2d5;
@@ -139,6 +147,7 @@
   --brand-grad:  linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
 
   /* 圆角（与浅色一致） */
+  --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
   --radius-sm:     6px;     /* 小型元素圆角（标签、按钮、卡片） */
   --radius-md:     10px;
   --radius-lg:     12px;
@@ -204,7 +213,7 @@ html, body {
 }
 ::-webkit-scrollbar-thumb {
   background: var(--surface2);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);

@@ -23,6 +23,9 @@ const DASHBOARD_PULSE_MS = 300;
 /** 累积事件接近阈值的百分比（>=80% 显示黄色高亮） */
 const NEAR_THRESHOLD_RATIO = 0.8;
 
+/** 脉冲动画定时器句柄（beforeunload 时清理，避免操作已销毁的 DOM） */
+let pulseTimers: number[] = [];
+
 /**
  * 创建记忆控制器
  *
@@ -64,9 +67,10 @@ export function createMemoryController(uiManager: UIManager) {
         }));
         uiManager.renderMemoryList(items);
       } catch (error) {
-        // 搜索失败时保持原列表，记录日志辅助排查
+        // IX-02 搜索失败时保持原列表，但给用户可见反馈（而非静默吞错）
         if (seq !== searchSeq) return;
         reportError('onMemorySearch', error);
+        uiManager.showToast('搜索记忆失败，请重试', 'error');
       }
     });
 
@@ -226,7 +230,14 @@ export function createMemoryController(uiManager: UIManager) {
     if (!el) return;
     el.textContent = String(parseInt(el.textContent ?? '0') + 1);
     el.classList.add('pulse');
-    setTimeout(() => el.classList.remove('pulse'), DASHBOARD_PULSE_MS);
+    // IX-03 跟踪定时器句柄，支持 beforeunload 时统一清理
+    const timer = window.setTimeout(() => {
+      el.classList.remove('pulse');
+      // 从跟踪数组中移除已完成的定时器
+      const idx = pulseTimers.indexOf(timer);
+      if (idx !== -1) pulseTimers.splice(idx, 1);
+    }, DASHBOARD_PULSE_MS);
+    pulseTimers.push(timer);
   }
 
   /**
@@ -298,5 +309,10 @@ export function createMemoryController(uiManager: UIManager) {
     loadDashboard,
     pulseCounter,
     renderSourceHealth,
+    /** IX-03 清理脉冲动画定时器（由 renderer.ts beforeunload 调用） */
+    cleanup: () => {
+      for (const t of pulseTimers) window.clearTimeout(t);
+      pulseTimers = [];
+    },
   };
 }

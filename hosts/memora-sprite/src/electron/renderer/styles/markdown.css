@@ -40,7 +40,7 @@
   padding: 10px 12px;
   background: var(--bg);
   border: 1px solid var(--surface1);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   overflow-x: auto;
   /* 代码块不使用霞鹜文楷，使用等宽字体 */
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
@@ -58,7 +58,7 @@
 .message-bubble .md-code-inline {
   padding: 1px 5px;
   background: var(--surface2);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
   font-size: 0.9em;
   color: var(--pink);

@@ -45,6 +45,9 @@ let initRetryTimer: number | null = null;
 /** Agent 就绪回调引用（初始化重试成功时复用，避免重复定义） */
 let onAgentReadyCallback: (() => void) | null = null;
 
+/** IX-03 记忆控制器实例（模块级，beforeunload 时清理脉冲定时器） */
+let memoryControllerRef: ReturnType<typeof createMemoryController> | null = null;
+
 // ─── 初始化 ────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -54,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 创建各业务控制器（接收 uiManager 实例，通过闭包绑定）
   const sessionController = createSessionController(uiManager);
   const memoryController = createMemoryController(uiManager);
+  memoryControllerRef = memoryController;
   const personaController = createPersonaController(uiManager);
   const settingsController = createSettingsController(uiManager);
 
@@ -358,6 +362,9 @@ window.addEventListener('beforeunload', () => {
     window.clearTimeout(initRetryTimer);
     initRetryTimer = null;
   }
+  // IX-03 清理脉冲动画定时器（避免操作已销毁的 DOM）
+  memoryControllerRef?.cleanup();
+  memoryControllerRef = null;
   // 清理 IPC 监听器（防止内存泄漏与重复触发）
   window.electronAPI?.removeStreamListeners();
   window.electronAPI?.removeSpriteOutputListener();
@@ -417,6 +424,11 @@ function setupBusinessLogic(
 
   // 空状态示例问题回调：点击示例问题等同于用户输入并发送
   uiManager.onSuggestionClick((text) => {
+    // IX-01 流式防护：流式输出中点击示例问题等同于重复发送，应阻止
+    if (uiManager.isStreaming()) {
+      uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
+      return;
+    }
     // UX-PP-03 存储最后用户输入，用于流式错误重试
     lastUserInput = text;
     // 显示用户消息
