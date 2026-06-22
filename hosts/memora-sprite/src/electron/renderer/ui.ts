@@ -474,6 +474,10 @@ export class UIManager {
     }
     contentWrapper.appendChild(bubble);
 
+    // 元信息行：复制按钮 + 时间戳同行显示
+    const metaRow = document.createElement('div');
+    metaRow.className = 'message-meta';
+
     // P3-FLOW-07 用户/精灵消息均添加复制按钮（hover 时显示）
     // 原仅精灵消息有复制按钮，用户消息需手动选择文本，体验不一致
     if (!message.streaming) {
@@ -489,7 +493,7 @@ export class UIManager {
           this.showToast('复制失败，请手动选择文本复制', 'error');
         }
       });
-      contentWrapper.appendChild(copyBtn);
+      metaRow.appendChild(copyBtn);
     }
 
     // 时间戳
@@ -497,7 +501,9 @@ export class UIManager {
     const timeEl = document.createElement('div');
     timeEl.className = 'message-time';
     timeEl.textContent = this.formatTimestamp(timestamp);
-    contentWrapper.appendChild(timeEl);
+    metaRow.appendChild(timeEl);
+
+    contentWrapper.appendChild(metaRow);
 
     el.appendChild(contentWrapper);
 
@@ -647,10 +653,24 @@ export class UIManager {
           this.showToast('复制失败，请手动选择文本复制', 'error');
         }
       });
-      // 插入到时间戳之前（复制按钮在气泡右上角）
+
+      // 查找或创建 metaRow，将复制按钮插入到时间戳之前
+      let metaRow = contentWrapper.querySelector('.message-meta');
       const timeEl = contentWrapper.querySelector('.message-time');
-      if (timeEl) {
-        contentWrapper.insertBefore(copyBtn, timeEl);
+      if (metaRow) {
+        // metaRow 已存在，插入到时间戳之前
+        if (timeEl) {
+          metaRow.insertBefore(copyBtn, timeEl);
+        } else {
+          metaRow.appendChild(copyBtn);
+        }
+      } else if (timeEl && timeEl.parentNode) {
+        // metaRow 不存在（旧结构），创建并包裹时间戳
+        metaRow = document.createElement('div');
+        metaRow.className = 'message-meta';
+        metaRow.appendChild(copyBtn);
+        timeEl.parentNode.insertBefore(metaRow, timeEl);
+        metaRow.appendChild(timeEl);
       } else {
         contentWrapper.appendChild(copyBtn);
       }

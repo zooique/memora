@@ -42,6 +42,9 @@ let silentRecoveryTimer: number | null = null;
 /** Agent 初始化重试定时器句柄（beforeunload 时清理，避免操作已销毁的 DOM） */
 let initRetryTimer: number | null = null;
 
+/** Agent 就绪回调引用（初始化重试成功时复用，避免重复定义） */
+let onAgentReadyCallback: (() => void) | null = null;
+
 // ─── 初始化 ────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -128,22 +131,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     // Agent 就绪：加载初始数据 + 切换到对话面板
     onAgentReady: () => {
-      // UX-P2-03 标记 Agent 就绪，解除发送消息限制
-      uiManager.setAgentReady(true);
-      void sessionController.loadSessionHistory();
-      // FD-A1 Gap 1 修复：Agent 就绪后加载会话列表（第 162 行调用时 Agent 未就绪，静默失败）
-      void sessionController.loadSessionList();
-      void memoryController.loadMemoryList();
-      void personaController.loadPersonaList();
-      void memoryController.loadDashboard();
-      // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
-      uiManager.switchPanel('chat');
-      // P2 修复：首次配置完成后检查是否需要显示三态引导
-      // 初始化流程中 Agent 未就绪时提前 return，三态引导检查不会执行；
-      // 此处 Agent 就绪后补检，确保首次用户能看到窗口模型引导
-      if (uiManager.shouldShowOnboarding()) {
-        uiManager.showOnboardingDialog();
-      }
+      // 保存回调引用，供初始化重试逻辑复用
+      onAgentReadyCallback = onAgentReadyCallback ?? (() => {
+        // UX-P2-03 标记 Agent 就绪，解除发送消息限制
+        uiManager.setAgentReady(true);
+        void sessionController.loadSessionHistory();
+        // FD-A1 Gap 1 修复：Agent 就绪后加载会话列表（第 162 行调用时 Agent 未就绪，静默失败）
+        void sessionController.loadSessionList();
+        void memoryController.loadMemoryList();
+        void personaController.loadPersonaList();
+        void memoryController.loadDashboard();
+        // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
+        uiManager.switchPanel('chat');
+        // P2 修复：首次配置完成后检查是否需要显示三态引导
+        // 初始化流程中 Agent 未就绪时提前 return，三态引导检查不会执行；
+        // 此处 Agent 就绪后补检，确保首次用户能看到窗口模型引导
+        if (uiManager.shouldShowOnboarding()) {
+          uiManager.showOnboardingDialog();
+        }
+      });
+      onAgentReadyCallback();
     },
     // UX-PP-03 流式错误重试：重新发送上一条用户消息
     onSpriteErrorRetry: () => {
@@ -234,7 +241,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const retry = await window.electronAPI.getAgentStatus();
             if (retry.ready) {
               settingsController.updateAgentStatus('ready', 'Agent 已就绪');
-              uiManager.setAgentReady(true);
+              // 触发完整的 Agent 就绪流程（加载会话历史、记忆列表等）
+              onAgentReadyCallback?.();
             } else if (retry.error) {
               // 初始化失败，显示具体错误
               uiManager.appendMessage({

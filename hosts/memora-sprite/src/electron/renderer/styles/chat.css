@@ -675,54 +675,56 @@
 }
 
 /**
- * 消息时间戳：气泡下方小字，浅色
+ * 消息元信息行：复制按钮 + 时间戳同行显示
+ */
+.message-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+/**
+ * 消息时间戳：元信息行内小字，浅色
  * 对齐聊天应用习惯，显示消息发送时间
  */
 .message-time {
   font-size: 10px;
   color: var(--text-3);
-  margin-top: 4px;
-  padding: 0 4px;
   user-select: none;
   font-family: system-ui, -apple-system, sans-serif;
 }
 
 /**
- * 消息复制按钮：始终可见（半透明），hover 时增强
+ * 消息复制按钮：与时间戳同行显示
  * 仅精灵消息（非流式）显示，点击复制原始内容到剪贴板
  * UX-02：遵循"主动可见"原则，不依赖 hover 才显示
  */
 .message-copy-btn {
-  position: absolute;
-  /* UX-PP-17 改为正偏移避免被 overflow 裁剪 */
-  top: 4px;
-  right: 4px;
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--surface2);
-  border-radius: 50%;
-  background: var(--window-bg);
-  color: var(--text-2);
+  /* 行内元素：由 .message-meta flex 容器排列 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
   font-size: 11px;
   cursor: pointer;
   opacity: 0.45;
-  transition: opacity var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  z-index: 5;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
 /* hover 时增强可见性 */
 .message-content:hover .message-copy-btn {
-  opacity: 1;
+  opacity: 0.8;
 }
 
 .message-copy-btn:hover {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
   opacity: 1;
 }
 

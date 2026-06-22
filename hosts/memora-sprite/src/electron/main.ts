@@ -414,6 +414,9 @@ async function initializeApp(): Promise<void> {
     agentReady = true;
     // 初始化成功后清空错误详情
     initErrorDetail = null;
+    // 通知渲染进程 Agent 已就绪（触发加载会话历史、记忆列表等初始数据）
+    const readyWindow = windowManager.getFullWindow();
+    readyWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
