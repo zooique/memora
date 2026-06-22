@@ -498,7 +498,7 @@ function registerMinimalIpcHandlers(): void {
     },
   );
 
-  // LLM 配置读取（从 ~/.memora/config.json）
+  // LLM 配置读取（从 ~/.memora-sprite/data/config.json）
   ipcMain.handle(IPC_CHANNELS.LLM_CONFIG_GET, async () => {
     try {
       const configured = await isLlmConfigured();

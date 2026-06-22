@@ -42,3 +42,27 @@ memora 内核定义了 `IMemoryStorage` 和 `ISessionStore` 接口（ADR-002）�
 - Electron 环境需 `@electron/rebuild`（已迁移至 scoped package，替代旧 `electron-rebuild`）
 - SqliteStorage 的 `search()` 使用 FTS5 全文搜索（阶段一用 LIKE 关键词匹配）
 - `decayScores()` 用一条 SQL UPDATE 批量完成，替代内核的 O(n) 遍历
+
+## 目录结构
+
+> **v0.2 修订**（2026-06-22）：合并 `~/.memora` + `~/.memora-config` 为 `~/.memora-sprite/`，内部用 `data/` 和 `config/` 子目录区分
+
+```
+~/.memora-sprite/                    ← 唯一根目录
+├── config/                          ← configDir（personas/rules/skills/tools）
+│   ├── personas/
+│   ├── rules/
+│   ├── skills/
+│   └── tools/
+└── data/                            ← dataDir（数据库、配置、日志）
+    ├── config.json                  ← LLM 配置（含 apiKey，0600 权限）
+    ├── memora.db                    ← SQLite 数据库（记忆 + 会话）
+    ├── sprite.json                  ← 精灵配置（窗口位置/主题/阈值等）
+    ├── workspace/                   ← 精灵工作空间（projectPath 默认值）
+    ├── vectors.json                 ← 向量索引（可选，embedding 启用时）
+    ├── audit.log                    ← 审计日志
+    ├── trace.log                    ← 追踪日志
+    └── topics/                      ← 话题文件
+```
+
+**合并理由**：两个隐藏目录（`~/.memora` + `~/.memora-config`）对用户不友好，统一到 `~/.memora-sprite/` 后用户只需关心一个目录，内部子目录仍保持配置/数据分离（对齐 ADR-011 三层架构）。

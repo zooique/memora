@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               // 初始化失败，显示具体错误
               uiManager.appendMessage({
                 role: 'system',
-                content: `⚠️ Agent 初始化失败\n\n错误信息：${retry.error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
+                content: `⚠️ Agent 初始化失败\n\n错误信息：${retry.error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora-sprite/data/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
               });
               uiManager.showSettingsError(
                 `Agent 初始化失败：${retry.error}。请检查配置或点击重试。`,
@@ -290,7 +290,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 常见原因：better-sqlite3 ABI 不匹配（需 electron-rebuild）、数据库 schema 损坏等
         uiManager.appendMessage({
           role: 'system',
-          content: `⚠️ Agent 初始化失败\n\n错误信息：${error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
+          content: `⚠️ Agent 初始化失败\n\n错误信息：${error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora-sprite/data/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
         });
         // 同时在设置面板显示错误横幅，提供重试按钮
         uiManager.showSettingsError(

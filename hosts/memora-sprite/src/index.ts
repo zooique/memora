@@ -3,7 +3,7 @@
  * Memora Sprite — 桌面精灵宿主入口
  *
  * 职责：
- *   1. 加载配置（~/.memora/config.json 或项目级 .memora/config.json）
+ *   1. 加载配置（~/.memora-sprite/data/config.json 或项目级 .memora/config.json）
  *   2. 首次启动时引导用户配置 LLM
  *   3. 打开 SQLite 数据库（memora.db）
  *   4. 创建 SqliteStorage + SqliteSessionStore
@@ -66,11 +66,11 @@ const ZH_MESSAGES: UIMessages = {
   outputBlockedByGuard: (rule) => `[输出被护栏拦截：${rule}]`,
 };
 
-/** 默认数据目录（Agent 级共享，~/.memora/） */
-export const DEFAULT_DATA_DIR = resolve(homedir(), '.memora');
+/** 默认数据目录（Agent 级共享，~/.memora-sprite/data/） */
+export const DEFAULT_DATA_DIR = resolve(homedir(), '.memora-sprite', 'data');
 
-/** 默认配置目录（Agent 级共享，~/.memora-config/） */
-export const DEFAULT_CONFIG_DIR = resolve(homedir(), '.memora-config');
+/** 默认配置目录（Agent 级共享，~/.memora-sprite/config/） */
+export const DEFAULT_CONFIG_DIR = resolve(homedir(), '.memora-sprite', 'config');
 
 // ─── 首次启动引导 ──────────────────────────────────────
 
@@ -91,14 +91,14 @@ export const PROVIDER_PRESETS: Record<string, { provider: string; model: string;
 };
 
 /**
- * 保存 LLM 配置到 ~/.memora/config.json
+ * 保存 LLM 配置到 ~/.memora-sprite/data/config.json
  *
  * 供 Electron 设置面板调用——用户在 UI 中配置 LLM 后，
  * 通过此函数持久化到配置文件，随后调用 reinitAgent 重新初始化 Agent。
  *
  * @param llmConfig LLM 配置（provider/model/baseUrl/apiKey）
  * @param embeddingConfig 可选的 Embedding 配置
- * @param configPath 配置文件路径（默认 ~/.memora/config.json）
+ * @param configPath 配置文件路径（默认 ~/.memora-sprite/data/config.json）
  */
 export async function saveLlmConfig(
   llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number; background?: { enabled: boolean; provider: string; model: string; baseUrl: string; apiKey: string } },
@@ -116,7 +116,7 @@ export async function saveLlmConfig(
   } catch {
     existing = {
       llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
-      memory: { dataDir: '~/.memora', maxContextTokens: 120000 },
+      memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
       security: { permission: 'owner', confirmWrites: false },
       allowedPaths: [],
     };
@@ -154,7 +154,7 @@ export async function saveLlmConfig(
  * 检查 LLM 配置是否完整
  *
  * 供 Electron 启动时判断是否需要显示首次启动引导。
- * @param configPath 配置文件路径（默认 ~/.memora/config.json）
+ * @param configPath 配置文件路径（默认 ~/.memora-sprite/data/config.json）
  * @returns true 表示配置完整，false 表示需要引导
  */
 export async function isLlmConfigured(configPath?: string): Promise<boolean> {
@@ -169,7 +169,7 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
 /**
  * 首次启动引导
  *
- * 交互式收集 LLM 配置并保存到 ~/.memora/config.json
+ * 交互式收集 LLM 配置并保存到 ~/.memora-sprite/data/config.json
  */
 async function setupWizard(): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -254,7 +254,7 @@ async function setupWizard(): Promise<void> {
       apiKey,
       temperature: 0.7,
     },
-    memory: { dataDir: '~/.memora', maxContextTokens: 120000 },
+    memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
     security: { permission: 'owner', confirmWrites: false },
     allowedPaths: [],
     ...(embedding ? { embedding } : {}),
@@ -289,7 +289,7 @@ async function initAgentFromConfig(
     : config.memory.dataDir;
   const dataDir = opts?.dataDir ?? rawDir;
 
-  // 精灵的工作空间：~/.memora/workspace/（而非源码目录）
+  // 精灵的工作空间：~/.memora-sprite/data/workspace/（而非源码目录）
   const workspaceDir = resolve(dataDir, 'workspace');
   const projectPath = opts?.projectPath ?? workspaceDir;
   if (!existsSync(workspaceDir)) {
@@ -452,7 +452,7 @@ export async function reinitAgent(
  *
  * 配置优先级（高 → 低）：
  *   1. opts 参数（编程调用时传入）
- *   2. ~/.memora/config.json（用户级配置）
+ *   2. ~/.memora-sprite/data/config.json（用户级配置）
  *   3. .memora/config.json（项目级配置）
  *   4. 内置默认值
  *
