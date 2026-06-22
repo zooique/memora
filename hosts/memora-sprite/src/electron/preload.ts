@@ -84,6 +84,9 @@ const IPC_CHANNELS = {
   // H3：作品投影查看
   WORK_PROJECTION_LIST: 'work-projection-list',
   WORK_PROJECTION_SHOW: 'work-projection-show',
+  // M2：审计日志查看/清除
+  AUDIT_LOG_LIST: 'audit-log-list',
+  AUDIT_LOG_CLEAR: 'audit-log-clear',
 } as const;
 
 const MAIN_TO_RENDERER_CHANNELS = {
