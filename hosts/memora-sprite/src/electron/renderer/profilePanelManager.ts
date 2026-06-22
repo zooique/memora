@@ -16,6 +16,7 @@
 
 import type { UserProfileEntryPayload } from '../preload.js';
 import { EventTracker } from './eventTracker.js';
+import { reportError, toError } from './errorHelpers.js';
 
 /**
  * 用户画像面板管理器
@@ -89,7 +90,7 @@ export class ProfilePanelManager {
       const { entries } = await window.electronAPI.listUserProfile();
       this.render(entries);
     } catch (err) {
-      console.error('[ProfilePanel] 加载用户画像失败:', err);
+      reportError('ProfilePanel', `加载用户画像失败: ${toError(err).message}`);
       // 在待确认区显示错误提示
       if (this.pendingListEl) {
         // 安全清空容器（使用 while + removeChild 模式，对齐 project_memory 工程约定）
@@ -228,7 +229,7 @@ export class ProfilePanelManager {
           // 确认成功后移除卡片（已确认列表会在下次 load 时更新）
           card.remove();
         } catch (err) {
-          console.error('[ProfilePanel] 确认画像失败:', err);
+          reportError('ProfilePanel', `确认画像失败: ${toError(err).message}`);
           confirmBtn.disabled = false;
           if (rejectBtn) rejectBtn.disabled = false;
           confirmBtn.textContent = '确认';
@@ -246,7 +247,7 @@ export class ProfilePanelManager {
           await window.electronAPI.rejectUserProfile(entry.id);
           card.remove();
         } catch (err) {
-          console.error('[ProfilePanel] 拒绝画像失败:', err);
+          reportError('ProfilePanel', `拒绝画像失败: ${toError(err).message}`);
           rejectBtn.disabled = false;
           confirmBtn.disabled = false;
         }
@@ -264,7 +265,7 @@ export class ProfilePanelManager {
           await window.electronAPI.rejectUserProfile(entry.id);
           card.remove();
         } catch (err) {
-          console.error('[ProfilePanel] 删除画像失败:', err);
+          reportError('ProfilePanel', `删除画像失败: ${toError(err).message}`);
           deleteBtn.disabled = false;
           deleteBtn.textContent = '删除';
         }

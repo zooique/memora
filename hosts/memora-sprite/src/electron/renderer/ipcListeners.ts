@@ -19,6 +19,7 @@
 import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipcChannels.js';
 import { reportError } from './errorHelpers.js';
+import { escapeHtml } from './domHelpers.js';
 
 /**
  * 渲染审计日志列表到 #audit-list
@@ -67,7 +68,7 @@ async function loadAndRenderAuditLog(): Promise<void> {
     listEl.innerHTML = '';
     listEl.appendChild(frag);
   } catch (err) {
-    listEl.innerHTML = `<div class="profile-empty">加载失败: ${err instanceof Error ? err.message : String(err)}</div>`;
+    listEl.innerHTML = `<div class="profile-empty">加载失败: ${escapeHtml(err instanceof Error ? err.message : String(err))}</div>`;
   }
 }
 

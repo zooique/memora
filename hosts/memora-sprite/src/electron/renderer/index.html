@@ -627,6 +627,33 @@
     </div>
   </div>
 
+  <!-- 快捷键帮助弹窗（Ctrl+/ 触发） -->
+  <div id="shortcuts-modal" class="modal hidden">
+    <div class="modal-content modal-content-sm">
+      <div class="modal-header">
+        <h2>键盘快捷键</h2>
+        <button class="modal-close" data-modal="shortcuts-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <table class="shortcuts-table">
+          <tbody>
+            <tr><td><kbd>Ctrl+1</kbd></td><td>切换到对话面板</td></tr>
+            <tr><td><kbd>Ctrl+2</kbd></td><td>切换到记忆面板</td></tr>
+            <tr><td><kbd>Ctrl+3</kbd></td><td>切换到设置面板</td></tr>
+            <tr><td><kbd>Ctrl+N</kbd></td><td>新建会话</td></tr>
+            <tr><td><kbd>Ctrl+.</kbd></td><td>停止生成</td></tr>
+            <tr><td><kbd>Ctrl+/</kbd></td><td>显示快捷键帮助</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>关闭弹窗/下拉菜单</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-modal="shortcuts-modal">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <!-- IX-06 Toast 通知区域（独立于对话历史，避免污染 #messages） -->
   <!-- 用于显示操作反馈（成功/失败/警告），自动消失，不持久化 -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>

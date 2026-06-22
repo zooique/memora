@@ -256,7 +256,7 @@ kbd {
 .btn-primary {
   padding: 6px 18px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   border: none;
   border-radius: var(--radius-sm);
   font-family: inherit;
@@ -301,4 +301,25 @@ kbd {
 
 .btn-danger:hover {
   opacity: 0.9;
+}
+
+/* ─── 快捷键帮助表格 ──────────────────────────────────── */
+.shortcuts-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.shortcuts-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--surface2);
+  font-size: 13px;
+}
+
+.shortcuts-table td:first-child {
+  width: 120px;
+  white-space: nowrap;
+}
+
+.shortcuts-table tr:last-child td {
+  border-bottom: none;
 }

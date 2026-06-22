@@ -81,3 +81,18 @@ export function clearElement(el: Element): void {
     el.removeChild(el.firstChild);
   }
 }
+
+/**
+ * HTML 转义（防止 XSS）
+ *
+ * 将特殊字符（<, >, &, ", '）转为 HTML 实体，
+ * 确保动态内容安全插入 innerHTML。
+ *
+ * @param text 需要转义的原始文本
+ * @returns 转义后的安全 HTML 字符串
+ */
+export function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}

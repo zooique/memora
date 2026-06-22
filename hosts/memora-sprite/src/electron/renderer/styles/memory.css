@@ -46,7 +46,7 @@
 #btn-add-memory {
   padding: 8px 16px;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-fg);
   border: none;
   border-radius: var(--radius-md);
   font-family: inherit;

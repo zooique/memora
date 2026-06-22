@@ -17,6 +17,8 @@
 
 import type { ConfigSuggestionPayload } from '../preload.js';
 import { EventTracker } from './eventTracker.js';
+import { reportError, toError } from './errorHelpers.js';
+import { escapeHtml } from './domHelpers.js';
 
 /**
  * 建议卡片管理器
@@ -126,8 +128,8 @@ export class SuggestionCardManager {
         <span class="suggestion-card-confidence">置信度 ${Math.round(suggestion.confidence * 100)}%</span>
         <button class="suggestion-card-close" title="关闭">✕</button>
       </div>
-      <div class="suggestion-card-name">${this.escapeHtml(suggestion.name)}</div>
-      <div class="suggestion-card-content">${this.escapeHtml(suggestion.content)}</div>
+      <div class="suggestion-card-name">${escapeHtml(suggestion.name)}</div>
+      <div class="suggestion-card-content">${escapeHtml(suggestion.content)}</div>
       <div class="suggestion-card-actions">
         <button class="suggestion-card-btn accept">接受</button>
         <button class="suggestion-card-btn reject">拒绝</button>
@@ -160,13 +162,13 @@ export class SuggestionCardManager {
             acceptBtn.disabled = false;
             capturedRejectBtn && (capturedRejectBtn.disabled = false);
             acceptBtn.textContent = '接受';
-            console.error('[SuggestionCard] 接受建议失败:', result.error);
+            reportError('SuggestionCard', `接受建议失败: ${result.error}`);
           }
         } catch (err) {
           acceptBtn.disabled = false;
           capturedRejectBtn && (capturedRejectBtn.disabled = false);
           acceptBtn.textContent = '接受';
-          console.error('[SuggestionCard] 接受建议异常:', err);
+          reportError('SuggestionCard', `接受建议异常: ${toError(err).message}`);
         }
       });
     }
@@ -182,7 +184,7 @@ export class SuggestionCardManager {
         } catch (err) {
           rejectBtn.disabled = false;
           capturedAcceptBtn && (capturedAcceptBtn.disabled = false);
-          console.error('[SuggestionCard] 拒绝建议异常:', err);
+          reportError('SuggestionCard', `拒绝建议异常: ${toError(err).message}`);
         }
       });
     }
@@ -198,15 +200,6 @@ export class SuggestionCardManager {
     card.addEventListener('animationend', () => {
       card.remove();
     }, { once: true });
-  }
-
-  /**
-   * HTML 转义（防止 XSS）
-   */
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
   }
 
   /** 清理所有事件监听器和卡片（UIManager.cleanup 时调用） */

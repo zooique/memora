@@ -14,6 +14,7 @@
 
 import type { UIManager } from './ui.js';
 import { reportError } from './errorHelpers.js';
+import { escapeHtml } from './domHelpers.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色
@@ -221,7 +222,7 @@ export function createSessionController(uiManager: UIManager) {
     // QC-R2-02 使用自定义确认弹窗（与项目其他弹窗风格一致，支持 Escape/Enter 键盘操作）
     const confirmed = await uiManager.showConfirmDialog({
       title: '删除会话',
-      message: `确定删除会话「${sessionId}」吗？此操作不可恢复。`,
+      message: `确定删除会话「${escapeHtml(sessionId)}」吗？此操作不可恢复。`,
       confirmText: '删除',
       cancelText: '取消',
       danger: true,

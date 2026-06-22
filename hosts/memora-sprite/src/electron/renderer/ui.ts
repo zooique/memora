@@ -16,7 +16,7 @@
 
 import { renderMarkdown } from './markdown.js';
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
-import { getRequiredElement, getOptionalElement, clearElement } from './domHelpers.js';
+import { getRequiredElement, getOptionalElement, clearElement, escapeHtml } from './domHelpers.js';
 import { EventTracker } from './eventTracker.js';
 import { ToastManager } from './toast.js';
 import type { ToastOptions } from './toast.js';
@@ -371,6 +371,16 @@ export class UIManager {
     if (isMod && e.key === '.') {
       if (this.state.isStreaming) {
         this.emitStopMessage();
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // Ctrl/Cmd + /：显示快捷键帮助弹窗
+    if (isMod && e.key === '/') {
+      const modal = document.getElementById('shortcuts-modal');
+      if (modal) {
+        modal.classList.toggle('hidden');
         e.preventDefault();
       }
       return;
@@ -2452,12 +2462,12 @@ export class UIManager {
    * @param info 写入确认请求载荷（来自主进程 WRITE_CONFIRMATION 推送）
    */
   async showWriteConfirmation(info: WriteConfirmationPayload): Promise<void> {
-    // 构建富文本消息：路径 + 工具名 + 描述
+    // 构建富文本消息：路径 + 工具名 + 描述（动态值转义防 XSS）
     const messageHtml = [
       `<div class="write-confirm-info">`,
-      `  <p><strong>工具：</strong>${info.tool}</p>`,
-      `  <p><strong>路径：</strong><code>${info.targetPath}</code></p>`,
-      info.description ? `  <p>${info.description}</p>` : '',
+      `  <p><strong>工具：</strong>${escapeHtml(info.tool)}</p>`,
+      `  <p><strong>路径：</strong><code>${escapeHtml(info.targetPath)}</code></p>`,
+      info.description ? `  <p>${escapeHtml(info.description)}</p>` : '',
       `</div>`,
     ].join('');
 
