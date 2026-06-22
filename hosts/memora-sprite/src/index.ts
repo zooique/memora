@@ -16,18 +16,19 @@
  */
 import { resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
 import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, VectorStore, EmbeddingProvider, toError } from 'memora';
-import type { UIMessages, Config } from 'memora';
+import type { UIMessages, Config, ITracer } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { CliInteraction } from './sprite/cliInteraction.js';
 import type { IInteraction } from './sprite/interaction.js';
+import { SpriteTracer } from './sprite/spriteTracer.js';
 import type { SpriteConfigKey } from './sprite/spriteConfig.js';
 // H4：宿主自定义工具（web_search + memory_search）
 import {
@@ -325,6 +326,10 @@ async function initAgentFromConfig(
     await vectorStore.load();
   }
 
+  // 4.6 实例化可观测性 Tracer（M3）
+  // 记录 LLM 调用、记忆召回、工具执行等各阶段耗时，输出到 trace.log
+  const tracer: ITracer = new SpriteTracer(dataDir);
+
   // 5. 实例化 Agent
   const agent = new Agent({
     projectPath,
@@ -338,6 +343,7 @@ async function initAgentFromConfig(
     enableContextSummary: true,
     permission: config.security.permission,
     allowedPaths: config.allowedPaths,
+    tracer,
   });
 
   await agent.init();
@@ -366,6 +372,24 @@ async function initAgentFromConfig(
   // 6. 启动精灵主控
   const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths);
   sprite.start();
+
+  // H3：最小作品投影生成 — 启动时读取项目关键文件（README + package.json）
+  // 生成概要+结构+关键决策，供后续对话中作为上下文记忆召回
+  if (agent.works) {
+    const keyFiles = ['README.md', 'package.json'];
+    for (const filename of keyFiles) {
+      try {
+        const fullPath = resolve(projectPath, filename);
+        if (existsSync(fullPath)) {
+          const content = await readFile(fullPath, 'utf-8');
+          await agent.works.ensureProjection(fullPath, content, filename);
+        }
+      } catch {
+        // 投影生成失败不影响启动，静默降级
+        console.warn(`[H3] 作品投影生成失败: ${filename}`);
+      }
+    }
+  }
 
   // H4：注册宿主自定义工具（web_search + memory_search）
   // 让 LLM 在对话中可主动调用这些工具，无需用户敲 /web 命令

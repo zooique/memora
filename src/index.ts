@@ -35,6 +35,8 @@ export type {
 } from '@/agent/managers/memoryInspector.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
+// H3：作品投影管理器类型
+export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
 export { loadConfig } from '@/config/loader.js';
 export { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
 export type { ProviderConfig } from '@/llm/factory.js';

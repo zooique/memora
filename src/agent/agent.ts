@@ -38,6 +38,7 @@ import type { UserProfile } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
+import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type {
   MemoryInspector,
   MemorySnapshot,
@@ -195,6 +196,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
+  private workProjection: WorkProjectionManager | null = null;
   /** V-201: AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
@@ -640,6 +642,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
     this.autoConfigRefiner = result.autoConfigRefiner;
+    this.workProjection = result.workProjection;
     // V-101：注入 VectorStore 到 MemoryInspector，启用混合搜索
     if (this.memoryInspector && this.#config.vectorStore) {
       this.memoryInspector.setVectorStore(this.#config.vectorStore);
@@ -996,6 +999,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get security(): SecurityGuard | null {
     return this.pctx?.security ?? null;
+  }
+
+  /**
+   * 作品投影管理器（可能为 null）—— 文件内容 → 概要+结构+决策
+   *
+   * 返回 null 时表示 Agent 未初始化。
+   * 宿主常用模式：
+   *   - `agent.works?.ensureProjection(filePath, content)` 读取文件后触发生成
+   *   - `agent.works?.loadAll()` 获取所有投影
+   */
+  get works(): WorkProjectionManager | null {
+    return this.workProjection;
   }
 
   // ─── Agent 门面包装方法（向后兼容 project_memory API 契约）──
