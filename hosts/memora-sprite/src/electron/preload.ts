@@ -22,6 +22,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { SerializedAppError } from './ipcChannels.js';
+import type { WorkProjectionPayload } from './ipcChannels.js';
 // 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。
 // 使用 import type：编译时擦除，不引入运行时耦合；electron 层依赖 sprite 层是合理依赖方向。
 import type {
@@ -80,6 +81,9 @@ const IPC_CHANNELS = {
   FLOAT_CONTEXT_MENU: 'float-context-menu',
   // M1：写入确认响应（渲染进程 → 主进程）
   WRITE_CONFIRMATION_RESPONSE: 'write-confirmation-response',
+  // H3：作品投影查看
+  WORK_PROJECTION_LIST: 'work-projection-list',
+  WORK_PROJECTION_SHOW: 'work-projection-show',
 } as const;
 
 const MAIN_TO_RENDERER_CHANNELS = {
@@ -391,6 +395,12 @@ export interface ElectronAPI {
   }>>;
   /** 清空审计日志 */
   clearAuditLog: () => Promise<void>;
+
+  // H3：作品投影（WorkProjectionManager 查看）
+  /** 列出所有作品投影 */
+  listWorkProjections: () => Promise<WorkProjectionPayload[]>;
+  /** 查看单个作品投影详情 */
+  showWorkProjection: (filePath: string) => Promise<WorkProjectionPayload | null>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -553,6 +563,10 @@ const electronAPI: ElectronAPI = {
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),
   clearAuditLog: () => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_CLEAR),
+
+  // H3：作品投影（WorkProjectionManager 查看）
+  listWorkProjections: () => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_LIST),
+  showWorkProjection: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_SHOW, filePath),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

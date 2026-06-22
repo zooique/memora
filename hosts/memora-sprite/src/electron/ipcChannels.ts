@@ -113,6 +113,12 @@ export const IPC_CHANNELS = {
   /** M2：清空审计日志 */
   AUDIT_LOG_CLEAR: 'audit-log-clear',
 
+  // ─── 作品投影（H3：WorkProjectionManager 查看） ──────
+  /** 列出所有作品投影（agent.works.loadAll()） */
+  WORK_PROJECTION_LIST: 'work-projection-list',
+  /** 查看单个作品投影详情（agent.works.getProjection()） */
+  WORK_PROJECTION_SHOW: 'work-projection-show',
+
   // ─── 浮动窗口 ─────────────────────────────────────────
   /** 拖动时持续请求移动浮动窗口位置 */
   MOVE_FLOAT_WINDOW: 'move-float-window',
@@ -207,4 +213,28 @@ export interface SerializedAppError {
   message: string;
   /** ISO 8601 时间戳（AppError.timestamp 的 toISOString() 结果） */
   timestamp: string;
+}
+
+/**
+ * 作品投影 IPC 传输形态（H3：WorkProjectionManager 查看）
+ *
+ * 内核 WorkProjectionEntry 的 sourcePath 为服务端绝对路径，
+ * 通过 IPC 传输后渲染进程仅用于展示，不反解析。
+ * 与 WorkProjectionEntry 结构对齐，但确保所有字段可序列化。
+ */
+export interface WorkProjectionPayload {
+  /** 唯一 ID（work-proj-<slug>） */
+  id: string;
+  /** 文件路径（服务端绝对路径，仅展示用） */
+  sourcePath: string;
+  /** 文件 hash（用于变更检测） */
+  fileHash: string;
+  /** 概要（50-100 字） */
+  summary: string;
+  /** 结构（章节/模块列表） */
+  structure: string[];
+  /** 关键决策 */
+  keyDecisions: string[];
+  /** 最后更新时间（ISO 8601） */
+  updatedAt: string;
 }

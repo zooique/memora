@@ -20,6 +20,7 @@ import type { WindowManager } from './windowManager.js';
 import type { TrayManager } from './trayIcon.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import type { WorkProjectionPayload } from './ipcChannels.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
 import type { SpriteConfigKey } from '../sprite/spriteConfig.js';
@@ -147,6 +148,9 @@ export function registerIpcHandlers(ctx: IpcContext): void {
     IPC_CHANNELS.USER_PROFILE_LIST,
     IPC_CHANNELS.USER_PROFILE_CONFIRM,
     IPC_CHANNELS.USER_PROFILE_REJECT,
+    // H3：作品投影查看
+    IPC_CHANNELS.WORK_PROJECTION_LIST,
+    IPC_CHANNELS.WORK_PROJECTION_SHOW,
   ] as const;
   const onChannels = [IPC_CHANNELS.USER_INPUT, IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN, IPC_CHANNELS.THEME_CHANGED] as const;
 
@@ -618,6 +622,65 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         }
         await profile.reject(id);
         return { success: true };
+      },
+      ErrorCode.UNKNOWN,
+    );
+  });
+
+  // ─── 作品投影（H3：WorkProjectionManager 查看） ──────────
+
+  /**
+   * 列出所有作品投影
+   *
+   * 投影由 Agent 读取文件时自动生成（read_file 工具内置 ensureProjection 调用），
+   * 此通道仅提供查看能力，不触发生成。
+   */
+  ipcMain.handle(IPC_CHANNELS.WORK_PROJECTION_LIST, async () => {
+    return safeHandle(
+      'WORK_PROJECTION_LIST',
+      [] as WorkProjectionPayload[],
+      async () => {
+        const works = ctx.agent.works;
+        if (!works) return [];
+        const entries = await works.loadAll();
+        // 映射为 IPC 传输形态（与 WorkProjectionEntry 对齐）
+        return entries.map((e) => ({
+          id: e.id,
+          sourcePath: e.sourcePath,
+          fileHash: e.fileHash,
+          summary: e.summary,
+          structure: e.structure,
+          keyDecisions: e.keyDecisions,
+          updatedAt: e.updatedAt,
+        }));
+      },
+      ErrorCode.UNKNOWN,
+    );
+  });
+
+  /**
+   * 查看单个作品投影详情
+   *
+   * 通过文件路径查询已有投影，不触发生成（如需生成需先通过 Agent 读取文件）。
+   */
+  ipcMain.handle(IPC_CHANNELS.WORK_PROJECTION_SHOW, async (_event, filePath: string) => {
+    return safeHandle(
+      'WORK_PROJECTION_SHOW',
+      null as WorkProjectionPayload | null,
+      async () => {
+        const works = ctx.agent.works;
+        if (!works) return null;
+        const entry = await works.getProjection(filePath);
+        if (!entry) return null;
+        return {
+          id: entry.id,
+          sourcePath: entry.sourcePath,
+          fileHash: entry.fileHash,
+          summary: entry.summary,
+          structure: entry.structure,
+          keyDecisions: entry.keyDecisions,
+          updatedAt: entry.updatedAt,
+        };
       },
       ErrorCode.UNKNOWN,
     );
