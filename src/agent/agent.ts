@@ -45,6 +45,7 @@ import type {
   AgentStats,
   AgentSearchHit,
   SuggestHit,
+  SourceHealthReport,
 } from '@/agent/managers/memoryInspector.js';
 import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
@@ -1039,6 +1040,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   stats(): AgentStats {
     this.assertInitialized('stats');
     return this.requireNonNull(this.memoryInspector, 'memoryInspector').stats();
+  }
+
+  /**
+   * 记忆源健康诊断
+   * 委托至 MemoryInspector.sourceHealth()
+   *
+   * 为每个 source 计算健康指标（数量、平均 score、新鲜度、状态），
+   * 帮助宿主项目判断是否需要触发衰减、清理或补充。
+   * @throws MemoraError 如果 Agent 未初始化
+   */
+  sourceHealth(): SourceHealthReport {
+    this.assertInitialized('sourceHealth');
+    return this.requireNonNull(this.memoryInspector, 'memoryInspector').sourceHealth();
   }
 
   /**

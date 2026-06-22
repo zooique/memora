@@ -106,6 +106,33 @@ export interface AgentStats {
   total: number;
 }
 
+/** 记忆源健康状态 */
+export type SourceHealthStatus = 'healthy' | 'warning' | 'critical';
+
+/** 单个 source 的健康指标 */
+export interface SourceHealthEntry {
+  /** 来源标签 */
+  source: string;
+  /** 记忆数量 */
+  count: number;
+  /** 平均 score（0-1） */
+  avgScore: number;
+  /** 距上次访问的天数（取该 source 中最近访问的记忆） */
+  daysSinceLastAccess: number;
+  /** 健康状态：healthy（score≥0.5 且 7 天内有访问）/ warning（score<0.5 或 7-30 天未访问）/ critical（score<0.2 或 30 天以上未访问） */
+  status: SourceHealthStatus;
+}
+
+/** 记忆源健康诊断报告 */
+export interface SourceHealthReport {
+  /** 各 source 健康指标 */
+  sources: SourceHealthEntry[];
+  /** 整体健康状态（取最差 source 的状态） */
+  overallStatus: SourceHealthStatus;
+  /** 诊断时间（ISO 8601） */
+  diagnosedAt: string;
+}
+
 /** 关联推荐选项 */
 export interface SuggestOptions {
   /** 返回数量上限（默认 5） */
@@ -345,6 +372,96 @@ export class MemoryInspector {
     }
 
     return { bySource, total };
+  }
+
+  // ─── 源健康诊断 ─────────────────────────────────────────
+
+  /**
+   * 记忆源健康诊断
+   *
+   * 为每个 source 计算健康指标（数量、平均 score、新鲜度、状态），
+   * 帮助宿主项目判断是否需要触发衰减、清理或补充。
+   *
+   * 健康状态判定：
+   * - healthy：avgScore ≥ 0.5 且 7 天内有访问
+   * - warning：avgScore < 0.5 或 7-30 天未访问
+   * - critical：avgScore < 0.2 或 30 天以上未访问
+   *
+   * 纯只读、同步、不调 LLM，与 stats() 互补（stats 只有数量，本方法有质量指标）。
+   */
+  sourceHealth(): SourceHealthReport {
+    const now = Date.now();
+    const knownSources = Object.values(SOURCE_LABELS);
+
+    // 收集所有有数据的 source 标签
+    const sourceSet = new Set<string>();
+    for (const source of knownSources) {
+      if (this.index.countBySource(source) > 0) {
+        sourceSet.add(source);
+      }
+    }
+
+    // 补充自定义 source（与 stats() 逻辑一致）
+    const total = this.index.count();
+    const knownCount = [...sourceSet].reduce((sum, s) => sum + this.index.countBySource(s), 0);
+    if (total > knownCount) {
+      const allMemories = this.index.search('', Math.min(total, 1000));
+      for (const m of allMemories) {
+        sourceSet.add(m.source);
+      }
+    }
+
+    // 逐 source 计算健康指标
+    const entries: SourceHealthEntry[] = [];
+    for (const source of sourceSet) {
+      const memories = this.index.getBySource(source);
+      const count = memories.length;
+
+      // 平均 score
+      const avgScore = count > 0
+        ? memories.reduce((sum, m) => sum + m.score, 0) / count
+        : 0;
+
+      // 最近访问时间（取该 source 中最新的 accessedAt）
+      const latestAccess = memories
+        .map((m) => new Date(m.accessedAt).getTime())
+        .filter((t) => !isNaN(t))
+        .sort((a, b) => b - a)[0] ?? 0;
+      const daysSinceLastAccess = latestAccess > 0
+        ? (now - latestAccess) / ONE_DAY_MS
+        : Infinity;
+
+      // 健康状态判定
+      let status: SourceHealthStatus;
+      if (avgScore < 0.2 || daysSinceLastAccess > 30) {
+        status = 'critical';
+      } else if (avgScore < 0.5 || daysSinceLastAccess > 7) {
+        status = 'warning';
+      } else {
+        status = 'healthy';
+      }
+
+      entries.push({
+        source,
+        count,
+        avgScore: Math.round(avgScore * 1000) / 1000,
+        daysSinceLastAccess: Math.round(daysSinceLastAccess * 10) / 10,
+        status,
+      });
+    }
+
+    // 整体状态取最差 source
+    const statusPriority: Record<SourceHealthStatus, number> = { healthy: 0, warning: 1, critical: 2 };
+    const overallStatus = entries.reduce<SourceHealthStatus>(
+      (worst, e) => statusPriority[e.status] > statusPriority[worst] ? e.status : worst,
+      'healthy',
+    );
+
+    return {
+      sources: entries.sort((a, b) => statusPriority[b.status] - statusPriority[a.status]),
+      overallStatus,
+      diagnosedAt: new Date().toISOString(),
+    };
   }
 
   // ─── 关联推荐 ─────────────────────────────────────────

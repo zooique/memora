@@ -97,29 +97,36 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 agent/
 ├── agent.ts              # Agent 门面类（对外入口，编排层）
 ├── assembler.ts          # 组件组装器（Agent init 时组装各 Manager）
+├── constants.ts          # Agent/Loop 常量集合（AGENT_CONSTANTS + LOOP_CONSTANTS）
 ├── loop.ts               # AgentLoop 主循环
 ├── toolExecutor.ts       # 工具执行器（registerTool + execute）
 ├── builtinTools.ts       # 内置工具定义（BUILTIN_TOOLS）
 ├── messageHistory.ts     # 消息持久化 + 会话归档
-├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
-├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
-├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
-├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计 + 关联推荐）
-├── workProjection.ts     # 作品投影管理器
 ├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
-├── userFactExtractor.ts  # 用户事实提取器（正则规则，从 userProfile 迁入）
 ├── types.ts              # Agent 类型定义
+├── managers/             # 专职 Manager 子目录
+│   ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
+│   ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
+│   ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
+│   ├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计 + 关联推荐）
+│   ├── sessionManager.ts     # 会话管理器（fork/switch/restore）
+│   ├── workProjection.ts     # 作品投影管理器
+│   └── userFactExtractor.ts  # 用户事实提取器（正则规则，从 userProfile 迁入）
 └── __tests__/            # 单元测试
 
 utils/
+├── errors.ts             # 错误类型（MemoraError + 工厂函数 + ToolErrorCode 10 种错误码 + re-export toError）
+├── toError.ts            # 纯逻辑 toError（零依赖，浏览器/Node 通用）
 ├── eventEmitter.ts       # 轻量类型事件发射器（AgentEventMap 6 事件）
-├── errors.ts             # 错误类型（MemoraError + 工厂函数 configError/networkError/llmError/toolError/securityError + ToolErrorCode 10 种错误码）
 ├── frontmatter.ts        # Frontmatter 解析/序列化（从 memory/ 迁入，供 memory/persona/skill 共享）
 ├── json.ts               # JSON 安全解析/序列化
+├── loggerHolder.ts       # Logger 持有者（utils/ 内部 getLogger，解耦 utils→logging 循环依赖）
 ├── math.ts               # 数学工具（cosineSimilarity）
+├── path.ts               # 路径工具（expandHome、basename）
 ├── scanner.ts            # Markdown 目录扫描工具（供 persona/skill 共享）
 ├── segmenter.ts          # 中文分词器（Intl.Segmenter，从 memory/ 迁入，供 memory/persona/skill 共享）
-└── strings.ts            # 字符串工具（slugify）
+├── strings.ts            # 字符串工具（slugify）
+└── time.ts               # 时间工具（nowIso、todayDate）
 ```
 
 ## 新增模块流程

@@ -32,6 +32,9 @@ export type {
   AgentStats,
   SuggestOptions,
   SuggestHit,
+  SourceHealthStatus,
+  SourceHealthEntry,
+  SourceHealthReport,
 } from '@/agent/managers/memoryInspector.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';

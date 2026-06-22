@@ -117,3 +117,12 @@ src/
 - 7 个 Manager 文件（ConfigManager / SessionManager / MemoryInspector / InsightExtractor / AutoConfigRefiner / WorkProjectionManager / UserFactExtractor）归入 `agent/managers/`
 - 核心文件（agent.ts / loop.ts / assembler.ts / toolExecutor.ts 等）保留在 `agent/`
 - 符合 ADR-008 原设计"当 agent/ 目录超过 20 个文件需要再细分"的回顾条件
+
+### v0.6（2026-06-22）· 规则文档与实际产出对齐
+
+**变更**：backend_layers_rules.md 文件清单与实际 src/ 目录对齐
+
+**设计演进**：
+- agent/ 清单补充 `constants.ts`（Agent/Loop 常量集合），反映 managers/ 子目录结构
+- utils/ 清单补充 4 个遗漏文件：`toError.ts`（纯逻辑 toError）、`loggerHolder.ts`（Logger 持有者）、`path.ts`（路径工具）、`time.ts`（时间工具）
+- 年轮审判发现规则文档滞后于产出，此次双向对齐
