@@ -40,6 +40,7 @@ import {
 } from '../index.js';
 import { loadSpriteConfig, saveSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
 import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
+import { AuditManager } from '../sprite/auditManager.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
@@ -70,11 +71,11 @@ let agentReady = false;
 /** 初始化失败的具体错误信息（agentReady=false 时有效，用于区分配置缺失 vs 其他初始化错误） */
 let initErrorDetail: string | null = null;
 
-/** 精灵事件取消订阅函数集合（Agent 重新初始化前调用，避免重复注册） */
-let spriteEventUnsubscribers: Array<() => void> = [];
-
 /** M1 写入确认：等待渲染进程响应的 Promise resolver 映射表（requestId → resolve） */
 const pendingWriteConfirmations = new Map<string, (confirmed: boolean) => void>();
+
+/** M2 审计日志：宿主单例（在 initializeApp 中创建） */
+let auditManager: AuditManager | null = null;
 
 /** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
 let unreadCount = 0;
@@ -374,6 +375,10 @@ async function initializeApp(): Promise<void> {
     // M1：注册写入确认回调（SecurityGuard → WRITE_CONFIRMATION 推送 → 确认对话框）
     setupWriteConfirmationListener(agent);
 
+    // M2：初始化审计日志管理器 + 订阅 SecurityGuard.onAudit
+    auditManager = new AuditManager(dataDir);
+    setupAuditListener(agent, auditManager);
+
     // 补充注入浮动窗口右键菜单回调（需要 Agent/Sprite 就绪后才能查询/切换静默模式）
     // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / 静默模式回调
     // 静默模式回调通过工厂函数生成，与托盘注入共享同一份逻辑（DRY）
@@ -574,6 +579,9 @@ function registerMinimalIpcHandlers(): void {
           setupConfigSuggestionListener(agent);
           // M1：重新注册写入确认回调（新 Agent 实例）
           setupWriteConfirmationListener(agent);
+          // M2：重新初始化审计管理器 + 订阅审计事件（新 Agent 实例）
+          auditManager = new AuditManager(dataDir);
+          setupAuditListener(agent, auditManager);
         }
 
         agentReady = true;
@@ -623,6 +631,20 @@ function registerMinimalIpcHandlers(): void {
       }
     },
   );
+
+  // M2：审计日志 IPC 处理器（渲染进程 → 主进程）
+  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_LIST, async (_event, limit: unknown) => {
+    if (!auditManager) return [];
+    const limitNum = Number(limit);
+    const safeLimit = Number.isFinite(limitNum) && limitNum > 0 ? limitNum : 50;
+    return auditManager.readRecent(safeLimit);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_CLEAR, async () => {
+    if (auditManager) {
+      await auditManager.clear();
+    }
+  });
 }
 
 // ─── 精灵事件监听（主动提示分发） ─────────────────────────
@@ -883,6 +905,25 @@ function setupWriteConfirmationListener(activeAgent: Agent): void {
   });
 
   logger.info('[setupWriteConfirmationListener] 写入确认回调已注册');
+}
+
+/**
+ * M2：订阅 SecurityGuard.onAudit → JSONL 持久化
+ *
+ * 所有通过 SecurityGuard 断言的路径访问事件都会被记录为审计日志，
+ * 写入 dataDir/audit.log（JSONL 格式）。写入为 fire-and-forget，
+ * 写失败记一条 stderr 消息，不阻塞主流程。
+ */
+function setupAuditListener(activeAgent: Agent, activeAuditManager: AuditManager): void {
+  const security = activeAgent.security;
+  if (!security) {
+    logger.warn('[setupAuditListener] SecurityGuard 未就绪，跳过审计日志');
+    return;
+  }
+  security.onAudit((event) => {
+    activeAuditManager.record(event);
+  });
+  logger.info('[setupAuditListener] 审计日志回调已注册');
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

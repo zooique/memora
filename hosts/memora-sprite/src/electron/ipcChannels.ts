@@ -107,6 +107,12 @@ export const IPC_CHANNELS = {
   /** 渲染进程 → 主进程：返回写入确认结果（requestId + confirmed） */
   WRITE_CONFIRMATION_RESPONSE: 'write-confirmation-response',
 
+  // ─── 安全与审计 ─────────────────────────────────────
+  /** M2：列出最近 N 条审计日志（SecurityGuard.onAudit 记录） */
+  AUDIT_LOG_LIST: 'audit-log-list',
+  /** M2：清空审计日志 */
+  AUDIT_LOG_CLEAR: 'audit-log-clear',
+
   // ─── 浮动窗口 ─────────────────────────────────────────
   /** 拖动时持续请求移动浮动窗口位置 */
   MOVE_FLOAT_WINDOW: 'move-float-window',

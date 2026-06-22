@@ -378,6 +378,19 @@ export interface ElectronAPI {
   removeWriteConfirmationListener: () => void;
   /** 响应写入确认请求（用户确认/拒绝后回调主进程） */
   responseWriteConfirmation: (requestId: string, confirmed: boolean) => Promise<void>;
+
+  // ─── M2：审计日志 ─────────────────────────────────────
+  /** 列出最近 N 条审计日志 */
+  listAuditLog: (limit?: number) => Promise<Array<{
+    type: string;
+    path?: string;
+    tool?: string;
+    reason?: string;
+    timestamp: string;
+    sessionId: string;
+  }>>;
+  /** 清空审计日志 */
+  clearAuditLog: () => Promise<void>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -536,6 +549,10 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION);
   },
   responseWriteConfirmation: (requestId, confirmed) => ipcRenderer.invoke(IPC_CHANNELS.WRITE_CONFIRMATION_RESPONSE, requestId, confirmed),
+
+  // M2：审计日志（路径白名单的审计事件持久化与查询）
+  listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),
+  clearAuditLog: () => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_CLEAR),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

@@ -21,6 +21,57 @@ import type { SerializedAppError } from '../ipcChannels.js';
 import { reportError } from './errorHelpers.js';
 
 /**
+ * 渲染审计日志列表到 #audit-list
+ *
+ * 按事件类型显示不同符号，时间戳相对化（1 分钟前/今天/昨天）。
+ */
+async function loadAndRenderAuditLog(): Promise<void> {
+  const listEl = document.getElementById('audit-list');
+  const countEl = document.getElementById('audit-count');
+  if (!listEl || !countEl) return;
+
+  try {
+    const entries = await window.electronAPI.listAuditLog(50);
+    countEl.textContent = String(entries.length);
+    if (entries.length === 0) {
+      listEl.innerHTML = '<div class="profile-empty">暂无审计记录</div>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    for (const entry of entries) {
+      const item = document.createElement('div');
+      item.className = 'profile-item';
+      const typeSymbol = entry.type === 'path-allow' ? '✓'
+        : entry.type === 'path-deny' ? '✗'
+        : entry.type === 'write-confirm' ? '⚑'
+        : entry.type === 'write-auto' ? '◯'
+        : entry.type === 'write-decline' ? '↩'
+        : '?';
+      const when = new Date(entry.timestamp);
+      const timeStr = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+      const meta = [
+        entry.path ? `路径: ${entry.path}` : '',
+        entry.tool ? `工具: ${entry.tool}` : '',
+        entry.reason ? `原因: ${entry.reason}` : '',
+      ].filter(Boolean).join(' · ');
+      const nameEl = document.createElement('div');
+      nameEl.className = 'profile-item-name';
+      nameEl.textContent = `${typeSymbol} ${entry.type} · ${timeStr}`;
+      const contentEl = document.createElement('div');
+      contentEl.className = 'profile-item-content';
+      contentEl.textContent = meta || '—';
+      item.appendChild(nameEl);
+      item.appendChild(contentEl);
+      frag.appendChild(item);
+    }
+    listEl.innerHTML = '';
+    listEl.appendChild(frag);
+  } catch (err) {
+    listEl.innerHTML = `<div class="profile-empty">加载失败: ${err instanceof Error ? err.message : String(err)}</div>`;
+  }
+}
+
+/**
  * 主动提示 payload 结构
  *
  * 对齐 docs/memora-sprite-preview.html §6.6：
@@ -342,4 +393,20 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   window.electronAPI.onWriteConfirmation((info) => {
     uiManager.showWriteConfirmation(info);
   });
+
+  // ─── M2 审计日志（刷新/清空按钮） ────────────────────────
+  const auditRefreshBtn = document.getElementById('btn-audit-refresh');
+  if (auditRefreshBtn) {
+    auditRefreshBtn.addEventListener('click', () => {
+      loadAndRenderAuditLog();
+    });
+  }
+
+  const auditClearBtn = document.getElementById('btn-audit-clear');
+  if (auditClearBtn) {
+    auditClearBtn.addEventListener('click', async () => {
+      await window.electronAPI.clearAuditLog();
+      loadAndRenderAuditLog();
+    });
+  }
 }

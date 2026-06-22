@@ -18,7 +18,6 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { execFile } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
@@ -34,6 +33,7 @@ import type { SpriteConfigKey } from './sprite/spriteConfig.js';
 import {
   WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
+  webSearch,
   webSearchHandler,
   memorySearchHandler,
   setMemorySearcher,
@@ -652,24 +652,15 @@ async function main(): Promise<void> {
     }
 
     if (text.startsWith('/web ')) {
+      // H4-补全：/web 命令复用 tools.ts 的 webSearch 纯函数，
+      // 与 web_search 工具共享跨平台 execFile 逻辑，避免实现漂移
       const query = text.slice(5).trim();
       if (!query) {
         console.log('用法：/web <搜索关键词>');
         return;
       }
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
-      // 使用 execFile 而非 exec：直接调用可执行文件，不经过 shell，消除命令注入风险
-      // Windows: start 是 cmd 内建命令，需通过 cmd /c 调用；macOS/Linux: 直接调用 open/xdg-open
-      const platform = process.platform;
-      const cmd = platform === 'win32' ? 'cmd' : platform === 'darwin' ? 'open' : 'xdg-open';
-      const args = platform === 'win32' ? ['/c', 'start', '', searchUrl] : [searchUrl];
-      execFile(cmd, args, (err) => {
-        if (err) {
-          console.log(`无法打开浏览器：${err.message}`);
-        } else {
-          console.log(`已在浏览器中搜索：${query}`);
-        }
-      });
+      const msg = await webSearch(query);
+      console.log(msg);
       return;
     }
 

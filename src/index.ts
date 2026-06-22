@@ -81,6 +81,17 @@ export { setLogger, logger } from '@/logging/logger.js';
 export { segmentText, tokenizeKeywords } from '@/utils/segmenter.js';
 export type { SkillEntry, SkillMatch } from '@/skill/types.js';
 
+// ─── 安全层导出 ────────────────────────────────────────────
+// M2：审计日志类型（SecurityGuard.onAudit 回调的 event 参数）
+export type {
+  AuditEvent,
+  AuditListener,
+  Permission,
+  WriteDecision,
+  WriteConfirmationInfo,
+  WriteConfirmationRequest,
+} from '@/security/pathGuard.js';
+
 // ─── 错误类型导出 ────────────────────────────────────────
 export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@/utils/errors.js';
 // toError 独立导出，浏览器端可直接 import 而不引入 logging（pino）依赖

@@ -52,13 +52,18 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
   },
 };
 
-/** web_search 工具处理器 */
-export const webSearchHandler: ToolHandler = async (args, _ctx: ToolContext) => {
-  const query = String(args.query ?? '').trim();
-  if (!query) {
-    return '错误：query 参数不能为空';
+/**
+ * 执行浏览器搜索（纯函数，CLI 与工具共享）
+ *
+ * 提取自 index.ts 原 `/web` 命令：同一 execFile 逻辑供"用户敲 /web"和
+ * "LLM 调用 web_search 工具"两个入口复用，避免两处实现漂移。
+ */
+export function webSearch(query: string): Promise<string> {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return Promise.resolve('错误：搜索关键词不能为空');
   }
-  const url = `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+  const url = `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
   const { cmd, args: cmdArgs } = buildBrowserOpenCommand(url);
 
   return new Promise<string>((resolve) => {
@@ -67,9 +72,14 @@ export const webSearchHandler: ToolHandler = async (args, _ctx: ToolContext) => 
         resolve(`错误：无法打开浏览器（${err.message}）。请用户手动访问：${url}`);
         return;
       }
-      resolve(`已在系统默认浏览器中搜索："${query}"。请用户查看浏览器窗口。`);
+      resolve(`已在系统默认浏览器中搜索："${trimmed}"。请用户查看浏览器窗口。`);
     });
   });
+}
+
+/** web_search 工具处理器 */
+export const webSearchHandler: ToolHandler = async (args, _ctx: ToolContext) => {
+  return webSearch(String(args.query ?? ''));
 };
 
 /** memory_search 工具定义 */

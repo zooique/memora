@@ -231,6 +231,8 @@
           <button class="settings-tab" data-settings-tab="project">项目</button>
           <!-- H2 用户画像 tab：管理已确认/待确认的画像条目 -->
           <button class="settings-tab" data-settings-tab="profile">画像</button>
+          <!-- M2 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
+          <button class="settings-tab" data-settings-tab="audit">审计</button>
         </div>
 
         <!-- FD-A2 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
@@ -447,6 +449,27 @@
               <h4 class="profile-section-title">已确认（<span id="profile-confirmed-count">0</span>）</h4>
               <div id="profile-confirmed-list" class="profile-list">
                 <div class="profile-empty">暂无已确认条目</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- M2 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
+        <div class="settings-tab-content" data-settings-tab="audit">
+          <div class="settings-group">
+            <div class="profile-header">
+              <h3>审计日志</h3>
+              <button id="btn-audit-refresh" class="btn-secondary" type="button">刷新</button>
+              <button id="btn-audit-clear" class="btn-secondary" type="button">清空</button>
+            </div>
+            <p class="settings-hint">
+              记录精灵所有文件操作（写入/读取/权限判定），由 SecurityGuard 自动生成。
+              保留最近 1000 条，可手动刷新与清空。
+            </p>
+            <div class="audit-list-wrap">
+              <h4 class="profile-section-title">审计记录（<span id="audit-count">0</span>）</h4>
+              <div id="audit-list" class="profile-list">
+                <div class="profile-empty">暂无审计记录</div>
               </div>
             </div>
           </div>
