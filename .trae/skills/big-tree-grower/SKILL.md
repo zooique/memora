@@ -1,9 +1,9 @@
 ---
 name: big-tree-grower
-description: 大树模型项目生长器 — 代码项目。播种机负责扎根，生长器负责养树——让代码项目长得对（规范一致）、长得壮（测试通过/无漏洞）、长得美（前端审美独特）。16 手动 + 8 全自动入口，共 24 个模式。触发场景：(1) 用户说"方案更新/基于方案更新/执行方案/方案落地" (2) 用户说"速修/快速修复/修复bug" (3) 用户说"规则对齐/对齐规则/交叉检查" (4) 用户说"模块重思/重新设计/聚焦模块" (5) 用户说"提交前审查/审查本轮更新/代码审查/审查代码/有没有问题" (6) 用户说"补测试/测试覆盖/补充测试" (7) 用户说"测试回归" (8) 用户说"数据库迁移/加字段/改表" (9) 用户说"检查大树健康/健康度诊断/项目体检" (10) 用户说"剪枝/清理代码/删除死代码/去重" (11) 用户说"体验评审/前端体验评估/交互质量检查" (12) 用户说"安全审计" (13) 用户说"依赖检查/依赖审计/npm audit" (14) 用户说"发布版本/打版本/release" (15) 用户说"问诊/需求评审/帮我看看" (16) 用户说"排雷/沙盘推演/方案排雷" (17) 用户说"新枝破土/全自动创新设计/创新设计/自动加新功能/给我一个惊喜" (18) 用户说"神木回天/全自动健康度优化/健康度优化/自动体检修复/全身体检修复" (19) 用户说"斩木除根/全自动修复任务/修复待办/自动清任务/批量修复任务" (20) 用户说"翠幕天罗/全自动提交审查/自动提交审查/自动审查本轮更新/全自动审查" (21) 用户说"年轮审判/全自动规则对齐/自动规则对齐/自动交叉检查/全自动交叉检查" (22) 用户说"种木成林/从零建造/全自动项目启动/森林崛起" (23) 用户说"自动体检/全自动体检" (24) 用户说"自动安全/全自动安全扫描" (25) 用户说"审核当前项目状态，然后推荐优化流程"。聚焦变体（如"规则对齐：后端分层""问诊 方案更新：XXX"等参数化触发）见正文。适用于已使用 big-tree-seeder 完成扎根的代码项目日常开发阶段。
+description: 大树模型项目生长器（匠码）。播种机负责扎根，生长器负责养树——让代码项目长得对（规范一致）、长得壮（测试通过/无漏洞）、长得美（前端审美独特）。16 个核心模式 + 4 个代码领域专属入口。触发场景：(1) 用户说"方案更新/基于方案更新/执行方案/方案落地" (2) 用户说"速修/快速修复/修复bug" (3) 用户说"规则对齐/对齐规则/交叉检查/年轮审判" (4) 用户说"模块重思/重新设计/聚焦模块" (5) 用户说"提交前审查/审查本轮更新/代码审查/有没有问题/翠幕天罗" (6) 用户说"健康度诊断/项目体检/自动体检/检查大树健康" (7) 用户说"剪枝/清理代码/删除死代码/去重/剪枝：去痕" (8) 用户说"体验评审/前端体验评估/交互质量检查/产出质量评估" (9) 用户说"安全审计/自动安全/全自动安全扫描" (10) 用户说"依赖检查/依赖审计" (11) 用户说"发布版本/打版本/release" (12) 用户说"问诊/需求评审/帮我看看/问诊：自动迭代/问诊：炼化归元" (13) 用户说"新枝破土/全自动创新设计/给我一个惊喜" (14) 用户说"神木回天/全自动健康度优化/全身体检修复" (15) 用户说"斩木除根/全自动修复任务/批量修复任务" (16) 用户说"种木成林/从零建造/森林崛起" + 代码领域专属入口 (17) 用户说"补测试/测试覆盖/补充测试" (18) 用户说"测试回归" (19) 用户说"数据库迁移/加字段/改表" (20) 用户说"排雷/沙盘推演/方案排雷"。适用于已使用 big-tree-seeder 完成扎根的代码项目日常开发阶段。
 ---
 
-# 大树模型项目生长器 — 代码项目
+# 大树模型项目生长器（匠码）
 
 基于大树模型项目工程哲学，将日常迭代开发中的高频操作封装为标准流程。生长器负责养树——让代码项目长得对（规范一致）、长得壮（测试通过/无漏洞）、长得美（前端审美独特），三者浑然一体，不可分割。
 
@@ -18,41 +18,32 @@ description: 大树模型项目生长器 — 代码项目。播种机负责扎�
 
 ## 快速开始
 
-生长器提供两层入口：**全自动模式**（核心引擎，触发一次 AI 自主完成全流程）和**手动模式**（精细控制，你说做什么 AI 做一步）。
+生长器提供 16 个核心模式，触发一次 AI 自主完成全流程。每个模式专注一个场景，模式间可串联形成迭代链路。
 
-**全自动模式** — 核心引擎，触发一次，AI 自主完成全流程（分析→执行→收尾）：
-
-| # | 场景 | 核心触发词 | 详见 |
-|---|------|-----------|------|
-| 16 | 缺功能 | `新枝破土`  | [auto](references/auto-modes-guide.md) |
-| 17 | 项目坏了 | `神木回天` | [auto](references/auto-modes-guide.md) |
-| 18 | 任务堆积 | `斩木除根` | [auto](references/auto-modes-guide.md) |
-| 19 | 变更未审 | `翠幕天罗` | [auto](references/auto-modes-guide.md) |
-| 20 | 规则脱节 | `年轮审判` | [auto](references/auto-modes-guide.md) |
-| 21 | 从零开始 | `种木成林` | [auto](references/auto-modes-guide.md) |
-| 22 | 想体检 | `自动体检` | [auto](references/auto-modes-guide.md) |
-| 23 | 安全漏洞 | `自动安全` | [auto](references/auto-modes-guide.md) |
-
-**手动模式** — 你说做什么，AI 做一步：
-
-| # | 场景 | 核心触发词 | 详见 |
-|---|------|-----------|------|
-| 1 | 新想法→方案 | `方案更新` | [manual](references/manual-modes-guide.md) |
-| 2 | 出了bug | `速修` `修复bug` | [manual](references/manual-modes-guide.md) |
-| 3 | 规则不对齐 | `规则对齐` | [manual](references/manual-modes-guide.md) |
-| 4 | 卡住了 | `模块重思`  | [manual](references/manual-modes-guide.md) |
-| 5 | 写完了自查 | `提交前审查` `代码审查` `审查代码` | [manual](references/manual-modes-guide.md) |
-| 6 | 测试覆盖 | `补测试` `测试覆盖` `补充测试` | [manual](references/manual-modes-guide.md) |
-| 7 | 跑通回归 | `测试回归` | [manual](references/manual-modes-guide.md) |
-| 8 | 改数据库 | `数据库迁移` `加字段` `改表` | [manual](references/manual-modes-guide.md) |
-| 9 | 项目体检 | `检查大树健康` `健康度诊断` `项目体检` | [manual](references/manual-modes-guide.md) |
-| 10 | 代码太肥 | `剪枝` `清理代码` `删除死代码` `去重` `剪枝：去痕` | [manual](references/manual-modes-guide.md) |
-| 11 | 前端审美 | `体验评审` `前端体验评估` `交互质量检查` | [manual](references/manual-modes-guide.md) |
-| 12 | 安全审查 | `安全审计` | [manual](references/manual-modes-guide.md) |
-| 13 | 依赖过时 | `依赖检查` `依赖审计` `npm audit` | [manual](references/manual-modes-guide.md) |
-| 14 | 要发版了 | `发布版本` `打版本` `release` | [manual](references/manual-modes-guide.md) |
-| 15 | 需求评审/自动迭代/炼化归元 | `问诊` `需求评审` `问诊：自动迭代` `问诊：智能路由` `问诊：炼化归元` `问诊 方案更新：XXX` | [manual](references/manual-modes-guide.md) |
-| 16 | 方案有漏 | `排雷` `沙盘推演` `方案排雷` | [manual](references/manual-modes-guide.md) |
+| 场景 | 核心触发词 | 详见 |
+|------|-----------|------|
+| 新想法→方案 | `方案更新` | [modes](references/modes-guide.md) |
+| 出了bug | `速修` `修复bug` | [modes](references/modes-guide.md) |
+| 规则不对齐 | `规则对齐` | [modes](references/modes-guide.md) |
+| 卡住了 | `模块重思`  | [modes](references/modes-guide.md) |
+| 写完了自查 | `提交前审查` `代码审查` `审查代码` | [modes](references/modes-guide.md) |
+| 项目体检 | `健康度诊断` `项目体检` | [modes](references/modes-guide.md) |
+| 太冗长了 | `剪枝` `清理冗余` `清理代码` `删除死代码` `剪枝：productService` `剪枝：去痕` | [modes](references/modes-guide.md) |
+| 读着不对 | `体验评审` `产出质量评估` `前端体验评估` `交互质量检查` `体验评审：审批模块` | [modes](references/modes-guide.md) |
+| 安全扫描 | `安全审计` | [modes](references/modes-guide.md) |
+| 依赖过时 | `依赖检查` `依赖审计` | [modes](references/modes-guide.md) |
+| 要发版了 | `发布版本` `release` | [modes](references/modes-guide.md) |
+| 需求评审/自动迭代/炼化归元 | `问诊` `需求评审` `问诊：自动迭代` `问诊：智能路由` `问诊：炼化归元` `问诊 方案更新：XXX` | [modes](references/modes-guide.md) |
+| 缺功能 | `新枝破土` `自动加新功能` | [modes](references/modes-guide.md) |
+| 代码健康问题 | `神木回天` | [modes](references/modes-guide.md) |
+| 任务堆积 | `斩木除根` | [modes](references/modes-guide.md) |
+| 从零开始 | `种木成林` | [modes](references/modes-guide.md) |
+| 场景 | 核心触发词 | 详见 |
+|------|-----------|------|
+| 测试覆盖 | `补测试` `测试覆盖` `补充测试` | [branch-modes](references/branch-modes-guide.md) |
+| 跑通回归 | `测试回归` | [branch-modes](references/branch-modes-guide.md) |
+| 改数据库 | `数据库迁移` `加字段` `改表` | [branch-modes](references/branch-modes-guide.md) |
+| 方案有漏 | `排雷` `沙盘推演` `方案排雷` | [branch-modes](references/branch-modes-guide.md) |
 
 ## 核心执行骨架
 
@@ -72,7 +63,7 @@ description: 大树模型项目生长器 — 代码项目。播种机负责扎�
 
 ---
 
-> [SKILL-LOCKED] 本文件中标记的 20 个模式的核心流程和触发词、大树模型核心原则、DO/DON'T 清单 + P1-P5 优先级规则、问题统一收敛机制（待完成⇄已完成迁移）、模式间串联规则不可在会话中修改。
+> [SKILL-LOCKED] 本文件中标记的 16 个模式的核心流程和触发词、大树模型核心原则、DO/DON'T 清单 + P1-P5 优先级规则、问题统一收敛机制（待完成⇄已完成迁移）、模式间串联规则不可在会话中修改。
 >
 > > - 补测试：测试生成分层策略（遵循 architecture-quickref.md，不可随意生成）
 > - 测试回归：失败三分类（过期/回归/环境），不可跳过分类
@@ -170,13 +161,13 @@ description: 大树模型项目生长器 — 代码项目。播种机负责扎�
 
 ### 被动触发
 
-AI 根据用户意图自动识别入口，完整映射表见 [references/manual-modes-guide.md](references/manual-modes-guide.md) 和 [references/auto-modes-guide.md](references/auto-modes-guide.md)。
+AI 根据用户意图自动识别入口，完整映射表见 [references/modes-guide.md](references/modes-guide.md)。
 
 ### 多模式串联
 
 ```
 模块重思 → 方案更新 → 提交前审查
-种木成林 → 全自动循环（年轮审判→自动体检→神木回天→斩木除根→翠幕天罗→自动安全→新枝破土→循环）
+种木成林 → 全自动循环（神木回天→斩木除根→新枝破土→循环）
 ```
 
 **常用串联链路**：
@@ -185,7 +176,7 @@ AI 根据用户意图自动识别入口，完整映射表见 [references/manual-
 |------|------|
 | 日常迭代 | 方案更新 → 提交前审查 |
 | 模块重构 | 模块重思 → 产出方案文档 → 方案更新 |
-| 健康闭环 | 神木回天 → 归档待办 → 斩木除根 → 翠幕天罗 |
+| 健康闭环 | 神木回天 → 归档待办 → 斩木除根 |
 | 规则同步 | 规则对齐 → 若规则本身待变更 → 在规则对齐/年轮审判中评估后修正 → 再规则对齐 |
 | 健康诊断 | 检查大树健康 → 发现问题 → 剪枝 → 斩木除根 |
 | 需求把关 | 问诊 → 接纳 → 方案更新 → 提交前审查 |
@@ -201,7 +192,7 @@ AI 根据用户意图自动识别入口，完整映射表见 [references/manual-
 | 依赖维护 | 依赖审计 → 发现高危 → 速修升级 |
 | 排雷把关 | 问诊 → 接纳 → 方案更新（设计） → 排雷 → 方案更新（执行） → 提交前审查 |
 
-完整串联路径和全自动循环数据流见 [references/auto-modes-guide.md](references/auto-modes-guide.md)。
+完整串联路径和全自动循环数据流见 [references/modes-guide.md](references/modes-guide.md)。
 
 ---
 

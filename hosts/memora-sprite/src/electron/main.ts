@@ -73,6 +73,9 @@ let initErrorDetail: string | null = null;
 /** 精灵事件取消订阅函数集合（Agent 重新初始化前调用，避免重复注册） */
 let spriteEventUnsubscribers: Array<() => void> = [];
 
+/** M1 写入确认：等待渲染进程响应的 Promise resolver 映射表（requestId → resolve） */
+const pendingWriteConfirmations = new Map<string, (confirmed: boolean) => void>();
+
 /** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
 let unreadCount = 0;
 
@@ -368,6 +371,9 @@ async function initializeApp(): Promise<void> {
     // H1：注册配置建议回调（AutoConfigRefiner → SUGGESTION_PUSH 推送）
     setupConfigSuggestionListener(agent);
 
+    // M1：注册写入确认回调（SecurityGuard → WRITE_CONFIRMATION 推送 → 确认对话框）
+    setupWriteConfirmationListener(agent);
+
     // 补充注入浮动窗口右键菜单回调（需要 Agent/Sprite 就绪后才能查询/切换静默模式）
     // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / 静默模式回调
     // 静默模式回调通过工厂函数生成，与托盘注入共享同一份逻辑（DRY）
@@ -491,6 +497,17 @@ function registerMinimalIpcHandlers(): void {
           baseUrl: config.llm.baseUrl ?? '',
           apiKey: config.llm.apiKey ?? '',
           temperature: config.llm.temperature,
+          // H6 返回后台 Provider 配置
+          ...(config.llm.background ? {
+            background: {
+              enabled: true,
+              provider: config.llm.background.provider,
+              model: config.llm.background.model,
+              baseUrl: config.llm.background.baseUrl ?? '',
+              apiKey: config.llm.background.apiKey ?? '',
+              temperature: config.llm.background.temperature,
+            },
+          } : {}),
         },
         embedding: config.embedding
           ? {
@@ -555,6 +572,8 @@ function registerMinimalIpcHandlers(): void {
         // H1：重新注册配置建议回调（新 Agent 实例）
         if (agent) {
           setupConfigSuggestionListener(agent);
+          // M1：重新注册写入确认回调（新 Agent 实例）
+          setupWriteConfirmationListener(agent);
         }
 
         agentReady = true;
@@ -586,6 +605,21 @@ function registerMinimalIpcHandlers(): void {
           context: '保存 LLM 配置并重新初始化 Agent 失败',
         });
         return { success: false, error: toError(error).message };
+      }
+    },
+  );
+
+  // M1：写入确认响应处理器（渲染进程 → 主进程）
+  // 渲染进程用户确认/拒绝后，通过此通道传回结果，主进程 resolve 对应的 pending Promise
+  ipcMain.handle(
+    IPC_CHANNELS.WRITE_CONFIRMATION_RESPONSE,
+    async (_event, requestId: string, confirmed: boolean) => {
+      const resolve = pendingWriteConfirmations.get(requestId);
+      if (resolve) {
+        pendingWriteConfirmations.delete(requestId);
+        resolve(confirmed);
+      } else {
+        logger.warn({ requestId }, '[写入确认] 收到未知 requestId 的响应（可能已超时）');
       }
     },
   );
@@ -750,6 +784,83 @@ function setupConfigSuggestionListener(activeAgent: Agent): void {
   });
 
   logger.info('[setupConfigSuggestionListener] 配置建议回调已注册');
+}
+
+/**
+ * M1：注册写入确认回调
+ *
+ * 当 SecurityGuard 检测到写入操作需要二次确认时，通过此回调将确认请求
+ * 推送到渲染进程展示确认对话框，等待用户决策后返回结果。
+ *
+ * 流程：
+ *   1. SecurityGuard.requestWriteConfirmation() 调用此回调
+ *   2. 生成唯一 requestId，存入 pendingWriteConfirmations Map
+ *   3. 通过 WRITE_CONFIRMATION 通道推送到渲染进程
+ *   4. 渲染进程显示确认对话框，用户点击确认/取消
+ *   5. 渲染进程通过 WRITE_CONFIRMATION_RESPONSE 传回结果
+ *   6. resolve pending Promise，返回给 SecurityGuard
+ *
+ * 超时保护：30 秒未收到渲染进程响应时自动拒绝（防止窗口关闭等异常情况
+ * 导致 Promise 永久挂起）。
+ *
+ * 调用时机：Agent 初始化完成后（initAgentFromConfig 返回后）
+ */
+function setupWriteConfirmationListener(activeAgent: Agent): void {
+  const security = activeAgent.security;
+  if (!security) {
+    logger.warn('[setupWriteConfirmationListener] SecurityGuard 未就绪，跳过写入确认回调注册');
+    return;
+  }
+
+  // 写入确认超时时间（毫秒）：窗口关闭等异常情况下自动拒绝
+  const CONFIRMATION_TIMEOUT_MS = 30_000;
+
+  security.onWriteConfirmation(async (info) => {
+    // 不需要确认时直接放行（owner 模式 + confirmWrites=false）
+    if (!info.needsConfirm) {
+      return true;
+    }
+
+    const fullWindow = windowManager.getFullWindow();
+    if (!fullWindow || fullWindow.isDestroyed()) {
+      // 窗口不可用时自动拒绝（安全优先）
+      logger.warn({ path: info.targetPath }, '[写入确认] 窗口不可用，自动拒绝写入');
+      return false;
+    }
+
+    // 生成唯一请求 ID
+    const requestId = `wc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // 创建 Promise 等待渲染进程响应
+    const confirmed = await new Promise<boolean>((resolve) => {
+      // 超时保护：30 秒后自动拒绝
+      const timeoutId = setTimeout(() => {
+        pendingWriteConfirmations.delete(requestId);
+        logger.warn({ requestId, path: info.targetPath }, '[写入确认] 超时未响应，自动拒绝');
+        resolve(false);
+      }, CONFIRMATION_TIMEOUT_MS);
+
+      // 存入映射表（包装 resolve 以清理超时定时器）
+      pendingWriteConfirmations.set(requestId, (result: boolean) => {
+        clearTimeout(timeoutId);
+        resolve(result);
+      });
+
+      // 推送到渲染进程
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION, {
+        requestId,
+        targetPath: info.targetPath,
+        tool: info.tool,
+        description: info.description,
+        permission: info.permission,
+        needsConfirm: info.needsConfirm,
+      });
+    });
+
+    return confirmed;
+  });
+
+  logger.info('[setupWriteConfirmationListener] 写入确认回调已注册');
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

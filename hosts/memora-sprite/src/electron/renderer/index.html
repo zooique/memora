@@ -275,6 +275,35 @@
               <label for="cfg-llm-temperature">温度（temperature）</label>
               <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
             </div>
+            <!-- H6 后台 Provider 配置（可选，用于 Insight 提取/配置分析等后台任务，不阻塞前台对话） -->
+            <div class="settings-section">
+              <div class="settings-row">
+                <label for="cfg-bg-enabled">后台 Provider</label>
+                <div>
+                  <input type="checkbox" id="cfg-bg-enabled" />
+                  <span class="settings-hint" style="display:inline;margin-left:4px;">启用后，Insight 提取和配置分析使用独立 Provider，不阻塞前台对话</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <label for="cfg-bg-provider">提供商（provider）</label>
+                <input type="text" id="cfg-bg-provider" placeholder="deepseek / openai / 自定义" disabled />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-bg-model">模型（model）</label>
+                <input type="text" id="cfg-bg-model" placeholder="deepseek-chat" disabled />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-bg-base-url">API 地址（baseUrl）</label>
+                <input type="text" id="cfg-bg-base-url" placeholder="https://api.deepseek.com" disabled />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-bg-api-key">API Key</label>
+                <div class="input-with-action">
+                  <input type="password" id="cfg-bg-api-key" placeholder="sk-****" disabled />
+                  <button type="button" id="btn-toggle-bg-key" class="toggle-visibility" title="显示/隐藏 API Key" disabled>👁</button>
+                </div>
+              </div>
+            </div>
             <!-- 测试连接按钮：保存前验证 LLM 配置是否可用，避免无效配置导致 Agent 初始化失败 -->
             <div class="settings-row">
               <label></label>

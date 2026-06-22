@@ -235,4 +235,16 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   window.electronAPI.onSuggestionPush((suggestion) => {
     uiManager.showSuggestion(suggestion);
   });
+
+  // ─── M1 写入确认（SecurityGuard 写入二次确认） ──────────
+  /**
+   * 监听主进程推送的写入确认请求（来自 SecurityGuard.onWriteConfirmation 回调）
+   *
+   * 触发时机：Agent 工具尝试写入文件且需要用户确认时
+   * 处理方式：调用 uiManager.showWriteConfirmation 显示确认弹窗，
+   *           用户确认/拒绝后自动通过 responseWriteConfirmation 传回主进程
+   */
+  window.electronAPI.onWriteConfirmation((info) => {
+    uiManager.showWriteConfirmation(info);
+  });
 }

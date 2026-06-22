@@ -60,6 +60,14 @@ export class SettingsPanelManager {
   private cfgLlmApiKey: HTMLInputElement | null;
   private cfgLlmTemperature: HTMLInputElement | null;
 
+  // ─── 设置面板 DOM 元素 - 后台 Provider 配置（H6） ────────
+  private cfgBgEnabled: HTMLInputElement | null;
+  private cfgBgProvider: HTMLInputElement | null;
+  private cfgBgModel: HTMLInputElement | null;
+  private cfgBgBaseUrl: HTMLInputElement | null;
+  private cfgBgApiKey: HTMLInputElement | null;
+  private cfgBgToggleKey: HTMLButtonElement | null;
+
   // ─── 设置面板 DOM 元素 - Embedding 配置 ─────────────────
   private cfgEmbEnabled: HTMLInputElement | null;
   private cfgEmbModel: HTMLInputElement | null;
@@ -115,6 +123,14 @@ export class SettingsPanelManager {
     this.cfgLlmApiKey = getOptionalElement('cfg-llm-api-key', 'input');
     this.cfgLlmTemperature = getOptionalElement('cfg-llm-temperature', 'input');
 
+    // 设置面板 - 后台 Provider 配置（H6）
+    this.cfgBgEnabled = getOptionalElement('cfg-bg-enabled', 'input');
+    this.cfgBgProvider = getOptionalElement('cfg-bg-provider', 'input');
+    this.cfgBgModel = getOptionalElement('cfg-bg-model', 'input');
+    this.cfgBgBaseUrl = getOptionalElement('cfg-bg-base-url', 'input');
+    this.cfgBgApiKey = getOptionalElement('cfg-bg-api-key', 'input');
+    this.cfgBgToggleKey = getOptionalElement('btn-toggle-bg-key', 'button');
+
     // 设置面板 - Embedding 配置
     this.cfgEmbEnabled = getOptionalElement('cfg-emb-enabled', 'input');
     this.cfgEmbModel = getOptionalElement('cfg-emb-model', 'input');
@@ -163,7 +179,11 @@ export class SettingsPanelManager {
 
     // API Key 显示/隐藏切换：LLM + Embedding
     this.initApiKeyToggle('btn-toggle-llm-key', 'cfg-llm-api-key');
+    this.initApiKeyToggle('btn-toggle-bg-key', 'cfg-bg-api-key');
     this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
+
+    // H6 后台 Provider 启用/禁用复选框联动
+    this.initBackgroundProviderToggle();
 
     // FD-07 监听设置面板所有表单元素的变更，标记 dirty
     const settingsPanel = document.getElementById('panel-settings');
@@ -382,6 +402,39 @@ export class SettingsPanelManager {
     });
   }
 
+  /**
+   * H6 后台 Provider 启用/禁用复选框联动
+   *
+   * 当用户勾选/取消"后台 Provider"复选框时，联动启用/禁用后台 Provider 的表单字段。
+   * 未启用时字段保持 disabled，避免用户误填。
+   */
+  private initBackgroundProviderToggle(): void {
+    if (!this.cfgBgEnabled) return;
+
+    const bgFields = [this.cfgBgProvider, this.cfgBgModel, this.cfgBgBaseUrl, this.cfgBgApiKey, this.cfgBgToggleKey];
+    const applyState = (enabled: boolean) => {
+      for (const field of bgFields) {
+        if (field) field.disabled = !enabled;
+      }
+    };
+
+    this.events.addEventListener(this.cfgBgEnabled, 'change', () => {
+      applyState(this.cfgBgEnabled!.checked);
+    });
+  }
+
+  /**
+   * H6 应用后台 Provider 字段启用/禁用状态
+   *
+   * 与 initBackgroundProviderToggle 的联动逻辑一致，但用于程序化设置（如 loadLlmConfigToForm）。
+   */
+  private applyBackgroundProviderState(enabled: boolean): void {
+    const bgFields = [this.cfgBgProvider, this.cfgBgModel, this.cfgBgBaseUrl, this.cfgBgApiKey, this.cfgBgToggleKey];
+    for (const field of bgFields) {
+      if (field) field.disabled = !enabled;
+    }
+  }
+
   /** 应用 LLM 预设到表单 */
   private applyLlmPreset(key: string): void {
     const preset = this.llmPresets[key];
@@ -453,6 +506,20 @@ export class SettingsPanelManager {
       if (this.cfgLlmApiKey) this.cfgLlmApiKey.value = data.config.apiKey;
       if (this.cfgLlmTemperature) this.cfgLlmTemperature.value = String(data.config.temperature);
 
+      // H6 加载后台 Provider 配置
+      if (data.config.background?.enabled) {
+        if (this.cfgBgEnabled) this.cfgBgEnabled.checked = true;
+        if (this.cfgBgProvider) this.cfgBgProvider.value = data.config.background.provider;
+        if (this.cfgBgModel) this.cfgBgModel.value = data.config.background.model;
+        if (this.cfgBgBaseUrl) this.cfgBgBaseUrl.value = data.config.background.baseUrl;
+        if (this.cfgBgApiKey) this.cfgBgApiKey.value = data.config.background.apiKey;
+        // 启用后台 Provider 字段（联动复选框状态）
+        this.applyBackgroundProviderState(true);
+      } else {
+        if (this.cfgBgEnabled) this.cfgBgEnabled.checked = false;
+        this.applyBackgroundProviderState(false);
+      }
+
       // 反向匹配预设
       if (this.cfgLlmPreset) {
         const presetKey = Object.entries(data.presets).find(
@@ -481,6 +548,19 @@ export class SettingsPanelManager {
       apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
       temperature: parseFloat(this.cfgLlmTemperature?.value ?? '0.7') || 0.7,
     };
+
+    // H6 收集后台 Provider 配置
+    if (this.cfgBgEnabled?.checked) {
+      llm.background = {
+        enabled: true,
+        provider: this.cfgBgProvider?.value.trim() ?? '',
+        model: this.cfgBgModel?.value.trim() ?? '',
+        baseUrl: this.cfgBgBaseUrl?.value.trim() ?? '',
+        apiKey: this.cfgBgApiKey?.value.trim() ?? '',
+      };
+    } else {
+      llm.background = { enabled: false, provider: '', model: '', baseUrl: '', apiKey: '' };
+    }
 
     let embedding: EmbeddingConfigForm | null = null;
     if (this.cfgEmbEnabled?.checked) {

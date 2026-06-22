@@ -92,7 +92,7 @@ export const PROVIDER_PRESETS: Record<string, { provider: string; model: string;
  * @param configPath 配置文件路径（默认 ~/.memora/config.json）
  */
 export async function saveLlmConfig(
-  llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
+  llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number; background?: { enabled: boolean; provider: string; model: string; baseUrl: string; apiKey: string } },
   embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
   configPath?: string,
 ): Promise<void> {
@@ -123,6 +123,16 @@ export async function saveLlmConfig(
       baseUrl: llmConfig.baseUrl,
       apiKey: llmConfig.apiKey,
       temperature: llmConfig.temperature ?? existing.llm.temperature ?? 0.7,
+      // H6 保存后台 Provider 配置
+      ...(llmConfig.background?.enabled ? {
+        background: {
+          provider: llmConfig.background.provider,
+          model: llmConfig.background.model,
+          baseUrl: llmConfig.background.baseUrl,
+          apiKey: llmConfig.background.apiKey,
+          temperature: 0.5, // 后台任务默认 temperature，偏低更稳定
+        },
+      } : {}),
     },
     ...(embeddingConfig ? { embedding: embeddingConfig } : {}),
   };

@@ -78,6 +78,8 @@ const IPC_CHANNELS = {
   FLOAT_DRAG_BEGIN: 'float-drag-begin',
   EXPAND_TO_FULL: 'expand-to-full',
   FLOAT_CONTEXT_MENU: 'float-context-menu',
+  // M1：写入确认响应（渲染进程 → 主进程）
+  WRITE_CONFIRMATION_RESPONSE: 'write-confirmation-response',
 } as const;
 
 const MAIN_TO_RENDERER_CHANNELS = {
@@ -100,6 +102,8 @@ const MAIN_TO_RENDERER_CHANNELS = {
   THEME_BROADCAST: 'theme-broadcast',
   // H1：主进程推送配置建议到渲染进程
   SUGGESTION_PUSH: 'suggestion-push',
+  // M1：主进程推送写入确认请求到渲染进程
+  WRITE_CONFIRMATION: 'write-confirmation',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
@@ -147,6 +151,27 @@ export interface UserProfileEntryPayload {
   confirmed: boolean;
   /** 最后更新时间（ISO 8601） */
   updatedAt: string;
+}
+
+/**
+ * M1：写入确认请求载荷（与内核 WriteConfirmationInfo 对齐）
+ *
+ * 主进程 SecurityGuard 发现写入操作需要确认时，
+ * 通过 WRITE_CONFIRMATION 通道推送此结构到渲染进程。
+ */
+export interface WriteConfirmationPayload {
+  /** 本次请求的唯一 ID（用于响应时匹配） */
+  requestId: string;
+  /** 目标文件绝对路径 */
+  targetPath: string;
+  /** 工具名（如 write_file） */
+  tool: string;
+  /** 人类可读的描述（如 "写入 100 字符到 foo.md"） */
+  description?: string;
+  /** 权限模式（owner / guest） */
+  permission: string;
+  /** 是否需要确认（owner + confirmWrites=false 时为 false，宿主可跳过弹窗） */
+  needsConfirm: boolean;
 }
 
 // ─── 类型定义（与主进程 IPC 通道对应） ─────────────────────
@@ -345,6 +370,14 @@ export interface ElectronAPI {
   confirmUserProfile: (id: string) => Promise<{ success: boolean; error?: string }>;
   /** 拒绝画像条目（从缓存删除，已确认的也从存储删除） */
   rejectUserProfile: (id: string) => Promise<{ success: boolean; error?: string }>;
+
+  // ─── M1：写入确认（安全写入确认 UI） ──────────────────
+  /** 监听主进程推送的写入确认请求 */
+  onWriteConfirmation: (cb: (info: WriteConfirmationPayload) => void) => void;
+  /** 移除写入确认推送监听器 */
+  removeWriteConfirmationListener: () => void;
+  /** 响应写入确认请求（用户确认/拒绝后回调主进程） */
+  responseWriteConfirmation: (requestId: string, confirmed: boolean) => Promise<void>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -496,6 +529,13 @@ const electronAPI: ElectronAPI = {
   listUserProfile: () => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_LIST),
   confirmUserProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_CONFIRM, id),
   rejectUserProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_REJECT, id),
+
+  // M1：写入确认（安全写入确认 UI）
+  onWriteConfirmation: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION, (_: IpcRendererEvent, info: WriteConfirmationPayload) => cb(info)),
+  removeWriteConfirmationListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION);
+  },
+  responseWriteConfirmation: (requestId, confirmed) => ipcRenderer.invoke(IPC_CHANNELS.WRITE_CONFIRMATION_RESPONSE, requestId, confirmed),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

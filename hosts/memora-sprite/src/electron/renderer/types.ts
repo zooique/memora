@@ -59,6 +59,15 @@ export interface LlmConfigForm {
   baseUrl: string;
   apiKey: string;
   temperature: number;
+  /** 后台 Provider 配置（可选，用于 Insight 提取/配置分析等后台任务） */
+  background?: {
+    enabled: boolean;
+    provider: string;
+    model: string;
+    baseUrl: string;
+    apiKey: string;
+    temperature?: number;
+  };
 }
 
 /** Embedding 配置表单数据 */

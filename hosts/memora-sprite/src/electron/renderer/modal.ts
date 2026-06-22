@@ -133,7 +133,7 @@ export class ModalManager {
 
       // 设置弹窗内容
       titleEl.textContent = options.title ?? '确认';
-      messageEl.textContent = options.message;
+      messageEl.innerHTML = options.message;
       btnOk.textContent = options.confirmText ?? '确定';
       btnCancel.textContent = options.cancelText ?? '取消';
 

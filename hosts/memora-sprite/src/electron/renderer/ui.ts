@@ -42,6 +42,8 @@ import type {
 } from './types.js';
 // H1：配置建议 payload 类型（从 preload 导入，供 showSuggestion 代理方法使用）
 import type { ConfigSuggestionPayload } from '../preload.js';
+// M1：写入确认 payload 类型（从 preload 导入，供 showWriteConfirmation 方法使用）
+import type { WriteConfirmationPayload } from '../preload.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -2394,6 +2396,36 @@ export class UIManager {
     danger?: boolean;
   }): Promise<boolean> {
     return this.modalManager.showConfirmDialog(options);
+  }
+
+  /**
+   * M1：显示写入确认弹窗
+   *
+   * 当 Agent 工具尝试写入文件时，SecurityGuard 通过 IPC 推送写入确认请求。
+   * 此方法在渲染进程展示确认对话框，显示文件路径、工具名和描述信息，
+   * 用户确认后通过 responseWriteConfirmation 将结果传回主进程。
+   *
+   * @param info 写入确认请求载荷（来自主进程 WRITE_CONFIRMATION 推送）
+   */
+  async showWriteConfirmation(info: WriteConfirmationPayload): Promise<void> {
+    // 构建富文本消息：路径 + 工具名 + 描述
+    const messageHtml = [
+      `<div class="write-confirm-info">`,
+      `  <p><strong>工具：</strong>${info.tool}</p>`,
+      `  <p><strong>路径：</strong><code>${info.targetPath}</code></p>`,
+      info.description ? `  <p>${info.description}</p>` : '',
+      `</div>`,
+    ].join('');
+
+    const confirmed = await this.modalManager.showConfirmDialog({
+      title: '确认写入操作',
+      message: messageHtml,
+      confirmText: '允许写入',
+      cancelText: '取消',
+    });
+
+    // 将用户决策传回主进程
+    await window.electronAPI.responseWriteConfirmation(info.requestId, confirmed);
   }
 
   /**

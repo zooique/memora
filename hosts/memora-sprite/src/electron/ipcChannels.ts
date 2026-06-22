@@ -103,6 +103,10 @@ export const IPC_CHANNELS = {
   /** UX-P2-10 通知主进程主题已变更（需同步到浮动窗口） */
   THEME_CHANGED: 'theme-changed',
 
+  // ─── 写入确认（M1：安全写入确认 UI） ──────────────────
+  /** 渲染进程 → 主进程：返回写入确认结果（requestId + confirmed） */
+  WRITE_CONFIRMATION_RESPONSE: 'write-confirmation-response',
+
   // ─── 浮动窗口 ─────────────────────────────────────────
   /** 拖动时持续请求移动浮动窗口位置 */
   MOVE_FLOAT_WINDOW: 'move-float-window',
@@ -172,6 +176,13 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    * 携带 ConfigSuggestion payload，渲染层显示建议卡片供用户确认/拒绝
    */
   SUGGESTION_PUSH: 'suggestion-push',
+
+  // ─── 写入确认（M1：安全写入确认 UI） ──────────────────
+  /**
+   * 主进程推送写入确认请求到渲染进程
+   * 携带路径、工具名等信息，渲染层显示确认对话框
+   */
+  WRITE_CONFIRMATION: 'write-confirmation',
 } as const;
 
 // ─── IPC 数据传输类型 ────────────────────────────────────

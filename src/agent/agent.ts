@@ -984,6 +984,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.#userProfile;
   }
 
+  /**
+   * 安全守卫（可能为 null）—— 写入确认回调注册
+   *
+   * 返回 null 时表示 Agent 未初始化或 projectPath 未设置。
+   * 宿主常用模式：
+   *   - `agent.security?.onWriteConfirmation(callback)` 注册写入确认回调
+   *   - 回调返回 true 允许写入，返回 false 拒绝写入
+   *
+   * 详见 M1 写入确认 UI 闭环
+   */
+  get security(): SecurityGuard | null {
+    return this.pctx?.security ?? null;
+  }
+
   // ─── Agent 门面包装方法（向后兼容 project_memory API 契约）──
   // God Object 拆分后方法移至 MemoryInspector，此处保留门面方法供宿主项目按旧契约调用
   // 错误策略统一：未初始化时抛 MemoraError（与其他 Agent 方法一致），不静默返回 null/[]
