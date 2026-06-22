@@ -223,4 +223,16 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.showToast('Agent 已就绪，可以开始对话了', 'success');
     callbacks.onAgentReady();
   });
+
+  // ─── H1 配置建议推送（AutoConfigRefiner 闭环） ─────────
+  /**
+   * 监听主进程推送的配置建议（来自 AutoConfigRefiner.onConfigSuggestion 回调）
+   *
+   * 触发时机：用户对话中产生可提取的配置建议时，主进程通过 SUGGESTION_PUSH 通道推送
+   * 处理方式：调用 uiManager.showSuggestion 显示卡片，用户可接受/拒绝
+   * 卡片位置：#proactive-banner 之后、#messages 之前（顶部提示区）
+   */
+  window.electronAPI.onSuggestionPush((suggestion) => {
+    uiManager.showSuggestion(suggestion);
+  });
 }

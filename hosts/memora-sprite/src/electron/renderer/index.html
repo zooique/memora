@@ -229,6 +229,8 @@
           <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
           <button class="settings-tab" data-settings-tab="sprite">精灵</button>
           <button class="settings-tab" data-settings-tab="project">项目</button>
+          <!-- H2 用户画像 tab：管理已确认/待确认的画像条目 -->
+          <button class="settings-tab" data-settings-tab="profile">画像</button>
         </div>
 
         <!-- FD-A2 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
@@ -389,6 +391,34 @@
               <select id="cfg-focus-project" disabled>
                 <option value="">-- 选择项目 --</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- H2 用户画像管理：查看/确认/拒绝画像条目 -->
+        <div class="settings-tab-content" data-settings-tab="profile">
+          <div class="settings-group">
+            <div class="profile-header">
+              <h3>用户画像</h3>
+              <button id="btn-profile-refresh" class="btn-secondary" type="button">刷新</button>
+            </div>
+            <p class="settings-hint">
+              精灵从对话中自动提取用户画像（身份/偏好/专长/习惯/历史）。
+              待确认条目需用户审核后才会持久化，已确认条目可随时删除。
+            </p>
+            <!-- 待确认区：未持久化，进程重启后丢失 -->
+            <div class="profile-section">
+              <h4 class="profile-section-title">待确认（<span id="profile-pending-count">0</span>）</h4>
+              <div id="profile-pending-list" class="profile-list">
+                <div class="profile-empty">暂无待确认条目</div>
+              </div>
+            </div>
+            <!-- 已确认区：持久化在 SQLite（source='profile'） -->
+            <div class="profile-section">
+              <h4 class="profile-section-title">已确认（<span id="profile-confirmed-count">0</span>）</h4>
+              <div id="profile-confirmed-list" class="profile-list">
+                <div class="profile-empty">暂无已确认条目</div>
+              </div>
             </div>
           </div>
         </div>

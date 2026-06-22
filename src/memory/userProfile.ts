@@ -127,6 +127,16 @@ export class UserProfile {
   }
 
   /**
+   * 获取所有待确认的画像条目（供宿主 UI 展示确认/拒绝操作）
+   *
+   * 待确认条目仅存内存缓存（未写入存储），进程重启后丢失。
+   * 宿主应定期或在新对话后查询此方法，展示给用户确认。
+   */
+  getPending(): UserProfileEntry[] {
+    return Array.from(this.cache.values()).filter((e) => !e.confirmed);
+  }
+
+  /**
    * 构建 system prompt 中的用户画像段
    *
    * 格式：

@@ -79,6 +79,20 @@ export const IPC_CHANNELS = {
   /** 渲染进程通知主进程主动提示已显示 */
   PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
 
+  // ─── 配置建议（H1：AutoConfigRefiner 闭环） ──────────
+  /** 接受配置建议（调用 confirmConfigSuggestion 持久化） */
+  SUGGESTION_ACCEPT: 'suggestion-accept',
+  /** 拒绝配置建议（仅记录日志，不持久化） */
+  SUGGESTION_REJECT: 'suggestion-reject',
+
+  // ─── 用户画像（H2：UserProfile 闭环） ────────────────
+  /** 列出画像条目（含已确认 + 待确认） */
+  USER_PROFILE_LIST: 'user-profile-list',
+  /** 确认待确认画像条目 */
+  USER_PROFILE_CONFIRM: 'user-profile-confirm',
+  /** 拒绝画像条目（从缓存删除，已确认的也从存储删除） */
+  USER_PROFILE_REJECT: 'user-profile-reject',
+
   // ─── 窗口控制 ─────────────────────────────────────────
   /** 最小化完整窗口 */
   WINDOW_MINIMIZE: 'window-minimize',
@@ -151,6 +165,13 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   WINDOW_STATE_CHANGED: 'window-state-changed',
   /** UX-P2-10 主题变更通知（主进程广播到浮动窗口） */
   THEME_BROADCAST: 'theme-broadcast',
+
+  // ─── 配置建议推送（H1：AutoConfigRefiner 闭环） ──────
+  /**
+   * 主进程推送配置建议到渲染进程（来自 AutoConfigRefiner 分析）
+   * 携带 ConfigSuggestion payload，渲染层显示建议卡片供用户确认/拒绝
+   */
+  SUGGESTION_PUSH: 'suggestion-push',
 } as const;
 
 // ─── IPC 数据传输类型 ────────────────────────────────────

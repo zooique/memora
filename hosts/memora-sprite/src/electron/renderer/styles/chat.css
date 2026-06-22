@@ -356,6 +356,175 @@
   color: var(--text);
 }
 
+/* ─── H1 配置建议卡片（AutoConfigRefiner 闭环） ────────────── */
+/* 卡片容器：位于 #proactive-banner 之后、#messages 之前，顶部提示区 */
+.suggestion-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 24px;
+  background: var(--surface1);
+  border-bottom: 1px solid var(--surface2);
+  flex-shrink: 0;
+  z-index: 9; /* 低于 #proactive-banner 的 z-index:10，避免遮挡 */
+}
+
+/* 单个建议卡片 */
+.suggestion-card {
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md, 8px);
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* 卡片头部：图标 + 类型标签 + 置信度 + 关闭按钮 */
+.suggestion-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.suggestion-card-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.suggestion-card-type {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+}
+
+.suggestion-card-confidence {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: auto;
+}
+
+.suggestion-card-close {
+  background: transparent;
+  border: none;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm, 4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast, 0.15s);
+}
+
+.suggestion-card-close:hover {
+  background: var(--surface2);
+  color: var(--text);
+}
+
+/* 建议名称 */
+.suggestion-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* 建议内容 */
+.suggestion-card-content {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin-bottom: 10px;
+  /* 限制 3 行，超出省略 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 操作按钮区 */
+.suggestion-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.suggestion-card-btn {
+  padding: 4px 14px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s);
+  border: 1px solid transparent;
+}
+
+/* 接受按钮：主强调色 */
+.suggestion-card-btn.accept {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.suggestion-card-btn.accept:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* 拒绝按钮：次级样式 */
+.suggestion-card-btn.reject {
+  background: transparent;
+  color: var(--text-2);
+  border-color: var(--surface2);
+}
+
+.suggestion-card-btn.reject:hover:not(:disabled) {
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.suggestion-card-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 卡片入场动画：从顶部滑入 + 淡入 */
+.suggestion-card-enter {
+  animation: suggestionCardSlideIn 0.3s ease-out;
+}
+
+@keyframes suggestionCardSlideIn {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* 卡片出场动画：淡出 + 缩小 */
+.suggestion-card-leave {
+  animation: suggestionCardFadeOut 0.25s ease-out forwards;
+}
+
+@keyframes suggestionCardFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+
 #messages {
   flex: 1;
   overflow-y: auto;

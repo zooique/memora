@@ -244,6 +244,21 @@ export function createSettingsController(uiManager: UIManager) {
   }
 
   /**
+   * H2 加载用户画像到设置面板
+   *
+   * 调用 uiManager.loadUserProfile 代理到 ProfilePanelManager，
+   * 从主进程拉取已确认 + 待确认画像条目并渲染到"画像"tab。
+   * 失败时由 ProfilePanelManager 内部处理错误提示，不阻塞其他面板功能。
+   */
+  async function loadUserProfile(): Promise<void> {
+    try {
+      await uiManager.loadUserProfile();
+    } catch (error) {
+      reportError('loadUserProfile', error);
+    }
+  }
+
+  /**
    * P3-FLOW-10 更新 Agent 连接状态指示器
    *
    * 委托给 SettingsPanelManager 更新设置面板顶部的状态指示器。
@@ -259,6 +274,7 @@ export function createSettingsController(uiManager: UIManager) {
     setupSettingsPanel,
     loadConfig,
     loadLlmConfig,
+    loadUserProfile,
     updateAgentStatus,
   };
 }

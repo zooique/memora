@@ -365,6 +365,9 @@ async function initializeApp(): Promise<void> {
     // 订阅精灵事件（主动提示分发）
     setupSpriteEventListeners();
 
+    // H1：注册配置建议回调（AutoConfigRefiner → SUGGESTION_PUSH 推送）
+    setupConfigSuggestionListener(agent);
+
     // 补充注入浮动窗口右键菜单回调（需要 Agent/Sprite 就绪后才能查询/切换静默模式）
     // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / 静默模式回调
     // 静默模式回调通过工厂函数生成，与托盘注入共享同一份逻辑（DRY）
@@ -549,6 +552,11 @@ function registerMinimalIpcHandlers(): void {
         // 6. 订阅精灵事件
         setupSpriteEventListeners();
 
+        // H1：重新注册配置建议回调（新 Agent 实例）
+        if (agent) {
+          setupConfigSuggestionListener(agent);
+        }
+
         agentReady = true;
         // 重新初始化成功后清空错误详情
         initErrorDetail = null;
@@ -698,6 +706,50 @@ function setupSpriteEventListeners(): void {
     sendSpriteEventIfVisible('personaChanged', { from, to });
     // 角色切换不影响托盘状态（托盘状态由流式输出/静默模式/主动提示驱动）
   });
+}
+
+/**
+ * H1：注册配置建议回调
+ *
+ * 当 AutoConfigRefiner 从对话中提取到配置建议时，内核通过 onConfigSuggestion 回调推送。
+ * 此函数将建议通过 SUGGESTION_PUSH 通道转发到渲染进程，由 SuggestionCard 组件展示。
+ *
+ * 调用时机：Agent 初始化完成后（initAgentFromConfig 返回后）
+ * 重新初始化时：先移除旧回调（通过 reinitAgent 重建 Agent 实现，旧 Agent 已 close）
+ */
+function setupConfigSuggestionListener(activeAgent: Agent): void {
+  const config = activeAgent.config;
+  if (!config) {
+    logger.warn('[setupConfigSuggestionListener] ConfigManager 未就绪，跳过配置建议回调注册');
+    return;
+  }
+
+  config.onConfigSuggestion((suggestion) => {
+    const fullWindow = windowManager.getFullWindow();
+    // 复用 sendSpriteEventIfVisible 的可见性检查模式
+    if (
+      fullWindow &&
+      !fullWindow.isDestroyed() &&
+      fullWindow.isVisible() &&
+      !fullWindow.isMinimized()
+    ) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH, {
+        type: suggestion.type,
+        name: suggestion.name,
+        content: suggestion.content,
+        confidence: suggestion.confidence,
+        source: suggestion.source,
+      });
+    } else {
+      // 窗口不可见时记录日志（建议已生成但用户看不到，下次对话可能再次提取）
+      logger.info(
+        { name: suggestion.name, type: suggestion.type },
+        '[配置建议] 窗口不可见，建议未推送（用户下次对话可能再次提取）',
+      );
+    }
+  });
+
+  logger.info('[setupConfigSuggestionListener] 配置建议回调已注册');
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

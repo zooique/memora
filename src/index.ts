@@ -55,6 +55,8 @@ export type { Memory, SourceValidationSeverity } from '@/memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+// 用户画像：宿主通过 agent.userProfile 访问，用于确认/拒绝待确认条目
+export type { UserProfileEntry, ProfileCategory, ExtractedFact } from '@/memory/userProfile.js';
 // 向量存储：宿主注入 EmbeddingService 后创建 VectorStore，传入 AgentOptions 启用语义搜索
 export { VectorStore } from '@/memory/vectorStore.js';
 export type { EmbeddingService } from '@/memory/vectorStore.js';

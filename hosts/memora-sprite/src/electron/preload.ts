@@ -62,6 +62,13 @@ const IPC_CHANNELS = {
   LLM_CONFIG_TEST: 'llm-config-test',
   AGENT_STATUS: 'agent-status',
   PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
+  // H1：配置建议（接受/拒绝）
+  SUGGESTION_ACCEPT: 'suggestion-accept',
+  SUGGESTION_REJECT: 'suggestion-reject',
+  // H2：用户画像管理
+  USER_PROFILE_LIST: 'user-profile-list',
+  USER_PROFILE_CONFIRM: 'user-profile-confirm',
+  USER_PROFILE_REJECT: 'user-profile-reject',
   WINDOW_MINIMIZE: 'window-minimize',
   WINDOW_MAXIMIZE: 'window-maximize',
   WINDOW_CLOSE: 'window-close',
@@ -91,10 +98,56 @@ const MAIN_TO_RENDERER_CHANNELS = {
   FLOAT_UNREAD: 'float-unread',
   WINDOW_STATE_CHANGED: 'window-state-changed',
   THEME_BROADCAST: 'theme-broadcast',
+  // H1：主进程推送配置建议到渲染进程
+  SUGGESTION_PUSH: 'suggestion-push',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
 export type { MemoryListItem, MemoryDetail, MemorySearchHit };
+
+// ─── H1/H2 共享类型定义 ───────────────────────────────────
+
+/**
+ * H1：配置建议（与内核 ConfigSuggestion 对齐）
+ *
+ * 来自 AutoConfigRefiner 分析对话后提取的建议，
+ * 渲染层展示建议卡片供用户接受/拒绝。
+ */
+export interface ConfigSuggestionPayload {
+  /** 建议类型 */
+  type: 'rule' | 'persona' | 'skill';
+  /** 建议名称 */
+  name: string;
+  /** 建议内容（Markdown 格式） */
+  content: string;
+  /** 置信度 0-1 */
+  confidence: number;
+  /** 来源（固定为 'auto-config-refiner'） */
+  source?: string;
+}
+
+/**
+ * H2：用户画像条目（与内核 UserProfileEntry 对齐）
+ *
+ * 已确认条目持久化在 SQLite（source='profile'），
+ * 待确认条目仅存内存缓存，进程重启后丢失。
+ */
+export interface UserProfileEntryPayload {
+  /** 条目 ID（格式：profile:user-profile-{category}-{slug}） */
+  id: string;
+  /** 子分类 */
+  category: 'identity' | 'preference' | 'expertise' | 'habit' | 'history';
+  /** 事实值（如 "姓名: 张三"） */
+  value: string;
+  /** 来源轮次 */
+  source: string;
+  /** 权重 0-1 */
+  weight: number;
+  /** 是否已确认 */
+  confirmed: boolean;
+  /** 最后更新时间（ISO 8601） */
+  updatedAt: string;
+}
 
 // ─── 类型定义（与主进程 IPC 通道对应） ─────────────────────
 
@@ -274,6 +327,24 @@ export interface ElectronAPI {
   onThemeBroadcast: (cb: (theme: 'light' | 'dark') => void) => void;
   /** UX-P2-10 移除主题广播监听器 */
   removeThemeBroadcastListener: () => void;
+
+  // ─── H1：配置建议（AutoConfigRefiner 闭环） ──────────
+  /** 监听主进程推送的配置建议 */
+  onSuggestionPush: (cb: (suggestion: ConfigSuggestionPayload) => void) => void;
+  /** 移除配置建议推送监听器 */
+  removeSuggestionPushListener: () => void;
+  /** 接受配置建议（调用 confirmConfigSuggestion 持久化到配置文件） */
+  acceptSuggestion: (suggestion: ConfigSuggestionPayload) => Promise<{ success: boolean; error?: string }>;
+  /** 拒绝配置建议（仅记录日志，不持久化） */
+  rejectSuggestion: (suggestion: ConfigSuggestionPayload) => Promise<{ success: boolean }>;
+
+  // ─── H2：用户画像（UserProfile 闭环） ────────────────
+  /** 列出所有画像条目（含已确认 + 待确认） */
+  listUserProfile: () => Promise<{ entries: UserProfileEntryPayload[] }>;
+  /** 确认待确认画像条目（写入存储 + 标记 confirmed） */
+  confirmUserProfile: (id: string) => Promise<{ success: boolean; error?: string }>;
+  /** 拒绝画像条目（从缓存删除，已确认的也从存储删除） */
+  rejectUserProfile: (id: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const electronAPI: ElectronAPI = {
@@ -412,6 +483,19 @@ const electronAPI: ElectronAPI = {
   removeThemeBroadcastListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST);
   },
+
+  // H1：配置建议（AutoConfigRefiner 闭环）
+  onSuggestionPush: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH, (_: IpcRendererEvent, suggestion: ConfigSuggestionPayload) => cb(suggestion)),
+  removeSuggestionPushListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH);
+  },
+  acceptSuggestion: (suggestion) => ipcRenderer.invoke(IPC_CHANNELS.SUGGESTION_ACCEPT, suggestion),
+  rejectSuggestion: (suggestion) => ipcRenderer.invoke(IPC_CHANNELS.SUGGESTION_REJECT, suggestion),
+
+  // H2：用户画像（UserProfile 闭环）
+  listUserProfile: () => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_LIST),
+  confirmUserProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_CONFIRM, id),
+  rejectUserProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_REJECT, id),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

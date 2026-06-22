@@ -188,7 +188,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // 新模块
   private personaManager: PersonaManager | null = null;
-  private userProfile: UserProfile | null = null;
+  #userProfile: UserProfile | null = null;
   private skillManager: SkillManager | null = null;
 
   // 拆分出的专职 Manager
@@ -466,11 +466,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
     // 用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
-    if (this.userProfile) {
+    if (this.#userProfile) {
       const turnIndex = `turn-${Date.now()}`;
       const facts = extractUserFacts(input, turnIndex);
       // FD-22: 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
-      const archiveFactsPromise = this.userProfile.archiveFacts(facts).catch((err) => {
+      const archiveFactsPromise = this.#userProfile.archiveFacts(facts).catch((err) => {
         logger.warn({ err }, '用户画像实时归档失败');
       });
       this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
@@ -634,7 +634,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop = result.loop;
     this.toolExec = result.toolExec;
     this.personaManager = result.personaManager;
-    this.userProfile = result.userProfile;
+    this.#userProfile = result.userProfile;
     this.skillManager = result.skillManager;
     this.insightExtractor = result.insightExtractor;
     this.configManager = result.configManager;
@@ -969,6 +969,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get projects(): ProjectManager | null {
     return this.projectManager;
+  }
+
+  /**
+   * 用户画像管理器（可能为 null）—— 实时归档 + 确认/拒绝
+   *
+   * 返回 null 时表示 Agent 未初始化。
+   * 宿主常用模式：
+   *   - `agent.userProfile?.getPending()` 查询待确认条目
+   *   - `await agent.userProfile?.confirm(id)` 确认条目
+   *   - `await agent.userProfile?.reject(id)` 拒绝条目
+   */
+  get userProfile(): UserProfile | null {
+    return this.#userProfile;
   }
 
   // ─── Agent 门面包装方法（向后兼容 project_memory API 契约）──

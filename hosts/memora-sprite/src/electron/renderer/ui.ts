@@ -24,6 +24,8 @@ import { ModalManager } from './modal.js';
 import { OnboardingManager } from './onboarding.js';
 import { ThemeManager } from './themeManager.js';
 import { ProactiveBanner } from './proactiveBanner.js';
+import { SuggestionCardManager } from './suggestionCard.js';
+import { ProfilePanelManager } from './profilePanelManager.js';
 import { SettingsPanelManager } from './settingsPanelManager.js';
 import type { SettingsPanelHost } from './settingsPanelManager.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
@@ -38,6 +40,8 @@ import type {
   SpriteConfigForm,
   ToastType,
 } from './types.js';
+// H1：配置建议 payload 类型（从 preload 导入，供 showSuggestion 代理方法使用）
+import type { ConfigSuggestionPayload } from '../preload.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -137,6 +141,10 @@ export class UIManager {
   private themeManager = new ThemeManager();
   /** 主动提示横幅管理器（独立管理横幅按钮事件） */
   private proactiveBanner = new ProactiveBanner();
+  /** H1 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式） */
+  private suggestionCard = new SuggestionCardManager();
+  /** H2 用户画像面板管理器（独立管理画像 tab 的加载/确认/拒绝） */
+  private profilePanel = new ProfilePanelManager();
   /** P2-008 设置面板管理器（独立管理设置面板 DOM 和事件，约 450 行提取） */
   private settingsPanelManager: SettingsPanelManager;
 
@@ -229,6 +237,11 @@ export class UIManager {
 
     // P2-008 设置面板 DOM 元素初始化已提取至 SettingsPanelManager
     this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
+
+    // H1 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
+    this.suggestionCard.init();
+    // H2 初始化用户画像面板（绑定刷新按钮事件）
+    this.profilePanel.init();
 
     // 初始化 UI
     this.initEventListeners();
@@ -378,6 +391,8 @@ export class UIManager {
     this.toastManager.cleanup();
     this.modalManager.cleanup();
     this.proactiveBanner.cleanup();
+    this.suggestionCard.cleanup(); // H1 清理配置建议卡片事件监听器和 DOM
+    this.profilePanel.cleanup(); // H2 清理用户画像面板事件监听器
     this.settingsPanelManager.cleanup(); // P2-008 清理设置面板事件监听器
   }
 
@@ -1359,6 +1374,37 @@ export class UIManager {
     onDisable?: () => void;
   }): void {
     this.proactiveBanner.initProactiveBannerButtons(handlers);
+  }
+
+  // ─── H1 配置建议卡片（代理到 SuggestionCardManager） ────
+
+  /**
+   * H1 显示配置建议卡片（代理到 SuggestionCardManager）
+   *
+   * 由 ipcListeners.ts 在收到 SUGGESTION_PUSH 事件时调用。
+   * 卡片插入位置：#proactive-banner 之后、#messages 之前（顶部提示区）。
+   * 同时最多显示 3 条建议（FIFO：超出时移除最早的）。
+   *
+   * @param suggestion 来自 AutoConfigRefiner 的配置建议
+   */
+  showSuggestion(suggestion: ConfigSuggestionPayload): void {
+    this.suggestionCard.showSuggestion(suggestion);
+  }
+
+  // ─── H2 用户画像面板（代理到 ProfilePanelManager） ──────
+
+  /**
+   * H2 加载用户画像数据（代理到 ProfilePanelManager）
+   *
+   * 由 settingsController.ts 在以下场景调用：
+   * - 设置面板初始化时预加载
+   * - 切换到"画像"tab 时刷新
+   * - 用户点击"刷新"按钮时（由 ProfilePanelManager 内部处理）
+   *
+   * 加载完成后渲染到 #profile-pending-list 和 #profile-confirmed-list。
+   */
+  async loadUserProfile(): Promise<void> {
+    await this.profilePanel.load();
   }
 
   // ─── 事件发射 ─────────────────────────────────────────

@@ -268,6 +268,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   void personaController.loadPersonaList();
   void settingsController.loadConfig();
   void memoryController.loadDashboard();
+  // H2 预加载用户画像数据（用户切换到"画像"tab 时即可见）
+  void settingsController.loadUserProfile();
 
   // 三态首次引导：Agent 就绪且首次使用时显示（介绍三态窗口模型 + 快捷键）
   // 使用 localStorage 标记，老用户不再显示
@@ -296,6 +298,8 @@ window.addEventListener('beforeunload', () => {
   window.electronAPI?.removeAgentReadyListener();
   window.electronAPI?.removeFloatUnreadListener();
   window.electronAPI?.removeWindowStateChangedListener();
+  // H1 清理配置建议推送监听器
+  window.electronAPI?.removeSuggestionPushListener();
 });
 
 // ─── 业务逻辑设置（发送/停止/新建会话） ─────────────────────
