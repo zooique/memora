@@ -13,6 +13,7 @@
  */
 
 import { formatTimeAgo } from '../domHelpers.js';
+import type { EventTracker } from '../eventTracker.js';
 
 // ─── 会话面板管理器类 ─────────────────────────────────────
 
@@ -32,8 +33,18 @@ export class SessionPanelManager {
   /** FD-08 搜索框事件是否已绑定（仅首次绑定） */
   private sessionSearchBound: boolean = false;
 
-  constructor() {
-    // SessionPanelManager 不持有 DOM 引用，所有 DOM 操作通过 ID 动态查询
+  /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
+  private events: EventTracker;
+
+  constructor(events: EventTracker) {
+    this.events = events;
+  }
+
+  // ─── 资源清理 ──────────────────────────────────────────
+
+  /** 清理事件监听器（页面卸载时调用） */
+  cleanup(): void {
+    this.events.cleanup();
   }
 
   // ─── 回调注册 ───────────────────────────────────────────
@@ -103,10 +114,10 @@ export class SessionPanelManager {
     // 清空搜索框并渲染全部会话
     if (searchInput) {
       searchInput.value = '';
-      // FD-08 绑定搜索过滤事件（仅首次）
+      // FD-08 绑定搜索过滤事件（仅首次，通过 EventTracker 跟踪以便清理）
       if (!this.sessionSearchBound) {
         this.sessionSearchBound = true;
-        searchInput.addEventListener('input', () => {
+        this.events.addEventListener(searchInput, 'input', () => {
           this.filterSessionList(searchInput.value);
         });
       }

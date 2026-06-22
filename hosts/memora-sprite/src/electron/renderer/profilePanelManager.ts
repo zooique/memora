@@ -17,6 +17,7 @@
 import type { UserProfileEntryPayload } from '../preload.js';
 import { EventTracker } from './eventTracker.js';
 import { reportError, toError } from './errorHelpers.js';
+import { clearElement } from './domHelpers.js';
 
 /**
  * 用户画像面板管理器
@@ -93,10 +94,8 @@ export class ProfilePanelManager {
       reportError('ProfilePanel', `加载用户画像失败: ${toError(err).message}`);
       // 在待确认区显示错误提示
       if (this.pendingListEl) {
-        // 安全清空容器（使用 while + removeChild 模式，对齐 project_memory 工程约定）
-        while (this.pendingListEl.firstChild) {
-          this.pendingListEl.removeChild(this.pendingListEl.firstChild);
-        }
+        // Q9 使用 clearElement 工具函数替代手写 while+removeChild
+        clearElement(this.pendingListEl);
         const errorEl = document.createElement('div');
         errorEl.className = 'profile-empty profile-error';
         errorEl.textContent = '加载失败，请点击刷新重试';
@@ -139,10 +138,8 @@ export class ProfilePanelManager {
   ): void {
     if (!container) return;
 
-    // 安全清空容器（使用 while + removeChild 模式，对齐 project_memory 工程约定）
-    while (container.firstChild) {
-      container.removeChild(container.firstChild);
-    }
+    // Q9 使用 clearElement 工具函数替代手写 while+removeChild
+    clearElement(container);
 
     // 空列表提示
     if (entries.length === 0) {

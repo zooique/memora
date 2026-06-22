@@ -16,7 +16,7 @@
  */
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
-import { getRequiredElement, getOptionalElement, escapeHtml } from './domHelpers.js';
+import { getRequiredElement, getOptionalElement } from './domHelpers.js';
 import { EventTracker } from './eventTracker.js';
 import { ToastManager } from './toast.js';
 import type { ToastOptions } from './toast.js';
@@ -70,7 +70,7 @@ export type {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager {
+export class UIManager implements ChatPanelHost, MemoryPanelHost {
   // ─── 静态常量 ───────────────────────────────────────────
   /** 判断"底部附近"的阈值（像素） */
   private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
@@ -165,7 +165,7 @@ export class UIManager {
 
     // 聊天面板管理器
     this.chatPanel = new ChatPanelManager(
-      this as unknown as ChatPanelHost,
+      this,
       this.messagesEl,
       this.events,
       this.state,
@@ -174,7 +174,7 @@ export class UIManager {
 
     // 记忆面板管理器
     this.memoryPanel = new MemoryPanelManager(
-      this as unknown as MemoryPanelHost,
+      this,
       getOptionalElement('memory-list', 'div'),
       getOptionalElement('memory-search', 'input'),
       getOptionalElement('memory-filter-source', 'select'),
@@ -191,7 +191,7 @@ export class UIManager {
     );
 
     // 会话历史面板管理器
-    this.sessionPanel = new SessionPanelManager();
+    this.sessionPanel = new SessionPanelManager(this.events);
 
     // 初始化 UI
     this.initEventListeners();
@@ -350,7 +350,9 @@ export class UIManager {
     this.settingsPanelManager.cleanup(); // P2-008 清理设置面板事件监听器
     // P2-008 清理面板管理器
     this.chatPanel.cleanup();
+    this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.personaPanel.cleanup();
+    this.sessionPanel.cleanup(); // Q2 清理会话面板事件监听器
   }
 
   // ─── 聊天面板 ─ 委托到 ChatPanelManager ─────────────────
@@ -845,18 +847,6 @@ export class UIManager {
   }
 
   /**
-   * ADR-SP-008 获取当前主题（代理到 ThemeManager）
-   *
-   * 通过读取 <html> 元素的 data-theme 属性判断当前主题，
-   * 未设置（默认）视为浅色。
-   *
-   * @returns 当前主题（'light' | 'dark'）
-   */
-  getTheme(): 'light' | 'dark' {
-    return this.themeManager.getTheme();
-  }
-
-  /**
    * P3-FLOW-12 获取当前主题模式（代理到 ThemeManager）
    *
    * @returns 当前主题模式（'light' | 'dark' | 'auto'）
@@ -1106,23 +1096,8 @@ export class UIManager {
    * @param info 写入确认请求载荷（来自主进程 WRITE_CONFIRMATION 推送）
    */
   async showWriteConfirmation(info: WriteConfirmationPayload): Promise<void> {
-    // 构建富文本消息：路径 + 工具名 + 描述（动态值转义防 XSS）
-    const messageHtml = [
-      `<div class="write-confirm-info">`,
-      `  <p><strong>工具：</strong>${escapeHtml(info.tool)}</p>`,
-      `  <p><strong>路径：</strong><code>${escapeHtml(info.targetPath)}</code></p>`,
-      info.description ? `  <p>${escapeHtml(info.description)}</p>` : '',
-      `</div>`,
-    ].join('');
-
-    const confirmed = await this.modalManager.showConfirmDialog({
-      title: '确认写入操作',
-      message: messageHtml,
-      html: true, // U1 显式声明：messageHtml 已通过 escapeHtml 转义，允许富文本
-      confirmText: '允许写入',
-      cancelText: '取消',
-    });
-
+    // Q10 HTML 构建逻辑迁移至 ModalManager.showWriteConfirmation，门面层纯委托
+    const confirmed = await this.modalManager.showWriteConfirmation(info);
     // 将用户决策传回主进程
     await window.electronAPI.responseWriteConfirmation(info.requestId, confirmed);
   }

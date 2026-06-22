@@ -14,6 +14,7 @@
  */
 
 import { EventTracker } from './eventTracker.js';
+import { escapeHtml } from './domHelpers.js';
 
 /**
  * 模态框管理器
@@ -230,6 +231,38 @@ export class ModalManager {
       this.activePromptCleanup();
       this.activePromptCleanup = null;
     }
+  }
+
+  /**
+   * Q10 显示写入确认弹窗（构建富文本消息并委托到 showConfirmDialog）
+   *
+   * 将 HTML 构建逻辑从 UIManager 门面层迁移至此，保持门面层纯粹委托。
+   * 动态值（tool / targetPath / description）均通过 escapeHtml 转义防 XSS。
+   *
+   * @param info 写入确认请求载荷（来自主进程 WRITE_CONFIRMATION 推送）
+   * @returns 用户是否确认写入
+   */
+  async showWriteConfirmation(info: {
+    tool: string;
+    targetPath: string;
+    description?: string;
+  }): Promise<boolean> {
+    // 构建富文本消息：路径 + 工具名 + 描述（动态值转义防 XSS）
+    const messageHtml = [
+      `<div class="write-confirm-info">`,
+      `  <p><strong>工具：</strong>${escapeHtml(info.tool)}</p>`,
+      `  <p><strong>路径：</strong><code>${escapeHtml(info.targetPath)}</code></p>`,
+      info.description ? `  <p>${escapeHtml(info.description)}</p>` : '',
+      `</div>`,
+    ].join('');
+
+    return this.showConfirmDialog({
+      title: '确认写入操作',
+      message: messageHtml,
+      html: true, // U1 显式声明：messageHtml 已通过 escapeHtml 转义，允许富文本
+      confirmText: '允许写入',
+      cancelText: '取消',
+    });
   }
 
   /**

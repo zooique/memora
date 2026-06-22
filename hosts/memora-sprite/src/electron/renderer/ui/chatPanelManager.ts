@@ -22,7 +22,7 @@
 
 import { clearElement } from '../domHelpers.js';
 import { renderMarkdown } from '../markdown.js';
-import { EventTracker } from '../eventTracker.js';
+import type { EventTracker } from '../eventTracker.js';
 import type { Message } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
@@ -99,7 +99,7 @@ export class ChatPanelManager {
   // ─── 事件清理 ──────────────────────────────────────────
 
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
-  private events = new EventTracker();
+  private events: EventTracker;
 
   // ─── 构造函数 ──────────────────────────────────────────
 

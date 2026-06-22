@@ -78,6 +78,17 @@ export class MemoryPanelManager {
     private events: EventTracker,
   ) {}
 
+  // ─── 资源清理 ──────────────────────────────────────────
+
+  /** 清理防抖定时器和事件监听器（页面卸载时调用，避免回调在 DOM 销毁后触发） */
+  cleanup(): void {
+    if (this.searchTimer) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+    this.events.cleanup();
+  }
+
   // ─── 事件监听器初始化 ───────────────────────────────────
 
   /** 初始化记忆面板事件监听 */
