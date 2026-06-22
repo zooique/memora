@@ -376,6 +376,53 @@
   flex-shrink: 0;
 }
 
+/* ─── 记忆源健康状态（消费内核 sourceHealth()） ─ */
+#source-health {
+  margin-top: 8px;
+}
+
+#source-health-list {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0;
+}
+
+.source-health-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 12px;
+  cursor: default;
+}
+
+.source-health-item:hover {
+  background: var(--surface1);
+}
+
+/* 健康状态圆点 */
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.health-dot.health-ok   { background: var(--green); }
+.health-dot.health-warn { background: var(--yellow); }
+.health-dot.health-crit { background: var(--red); }
+
+.health-label {
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+.health-meta {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 /* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
   grid-area: window;

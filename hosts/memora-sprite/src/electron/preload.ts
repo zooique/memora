@@ -320,6 +320,18 @@ export interface ElectronAPI {
     pendingNotices: number;
     proactiveThreshold: number;
     registeredTriggers: string[];
+    /** 记忆源健康诊断（null 表示不可用） */
+    sourceHealth: {
+      sources: Array<{
+        source: string;
+        count: number;
+        avgScore: number;
+        daysSinceLastAccess: number;
+        status: 'healthy' | 'warning' | 'critical';
+      }>;
+      overallStatus: 'healthy' | 'warning' | 'critical';
+      diagnosedAt: string;
+    } | null;
   }>;
 
   // 窗口控制

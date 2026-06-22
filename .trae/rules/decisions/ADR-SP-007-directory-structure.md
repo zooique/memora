@@ -29,36 +29,74 @@ hosts/memora-sprite/
     ├── sprite/
     │   ├── sprite.ts         ← 精灵主控：唤醒调度 + 对话管理 + 主动行为
     │   ├── spriteConfig.ts   ← 精灵配置持久化（sprite.json 读写）
+    │   ├── spriteTracer.ts   ← 可观测性（ITracer/ISpan 实现，pino 日志）
+    │   ├── constants.ts      ← 精灵常量集合
     │   ├── triggers.ts       ← SpriteTrigger 接口 + TimerTrigger + TriggerBus
     │   ├── fileWatcherTrigger.ts ← 文件变化触发器（ADR-SP-004 阶段二）
     │   ├── interaction.ts    ← IInteraction 交互层接口
     │   ├── cliInteraction.ts ← CLI 交互层实现（readline）
+    │   ├── auditManager.ts   ← 审计日志管理器（安全审计事件记录）
+    │   ├── tools.ts          ← 宿主自定义工具注册（webSearchTool + memorySearchTool）
     │   └── controllers/      ← 专职控制器（精灵事件分发，阶段二新增）
     │       ├── index.ts
-    │       ├── memoryController.ts    ← 记忆事件 → 仪表盘计数
+    │       ├── memoryController.ts    ← 记忆事件 → 仪表盘计数 + 向量索引
     │       ├── personaController.ts   ← 角色事件 → 角色标签更新
     │       └── proactiveEngine.ts     ← 事件累积 → 主动提示生成
     ├── electron/             ← Electron 主进程 + 渲染进程（阶段二新增）
     │   ├── main.ts           ← 主进程入口：窗口生命周期 + Agent 管理 + IPC 路由
     │   ├── preload.ts        ← contextBridge 安全桥接
+    │   ├── ipcChannels.ts    ← IPC 通道名称常量（主进程/渲染进程共享）
+    │   ├── ipcHandlers.ts    ← IPC 处理器注册（流式输出 + 记忆 CRUD + 配置）
     │   ├── windowManager.ts  ← 窗口管理器（完整窗口创建 + IPC 控制）
     │   ├── windowState.ts    ← 三态窗口状态机（tray/float/full）
     │   ├── floatWindow.ts    ← 浮动窗口（80x80 悬浮球 + 拖动 + 单击展开）
     │   ├── trayIcon.ts       ← 系统托盘（三态图标 idle/active/sleeping）
-    │   ├── ipcHandlers.ts    ← IPC 处理器注册（流式输出 + 记忆 CRUD + 配置）
     │   ├── interaction.ts    ← ElectronInteraction（IInteraction 实现，非流式输出）
     │   ├── errorHandler.ts   ← 统一错误处理（ErrorCode 分类 + 用户友好消息）
+    │   ├── utils/
+    │   │   └── esmShim.ts    ← ESM 兼容性垫片
     │   └── renderer/         ← 渲染进程
     │       ├── index.html    ← 完整窗口 HTML
     │       ├── float.html    ← 浮动窗口 HTML
-    │       ├── renderer.ts   ← 渲染进程入口（IPC 监听 + 事件分发）
+    │       ├── float.ts      ← 浮动窗口逻辑
+    │       ├── renderer.ts   ← 渲染进程入口（IPC 监听 + 事件分发 + 流式输出）
     │       ├── ui.ts         ← UI 管理器（DOM 操作 + 状态管理）
-    │       └── renderer.css  ← 样式（Catppuccin Mocha + 霞鹜文楷）
+    │       ├── types.ts      ← 渲染进程类型定义
+    │       ├── domHelpers.ts ← DOM 操作工具函数
+    │       ├── errorHelpers.ts ← 错误处理工具函数
+    │       ├── eventTracker.ts ← 事件监听器追踪与清理
+    │       ├── ipcListeners.ts ← IPC 监听器注册
+    │       ├── markdown.ts   ← Markdown 渲染
+    │       ├── modal.ts      ← 模态框管理器
+    │       ├── toast.ts      ← Toast 通知管理器
+    │       ├── onboarding.ts ← 首次引导流程
+    │       ├── themeManager.ts ← 主题管理（浅色/深色/系统跟随）
+    │       ├── memoryController.ts ← 记忆面板控制器
+    │       ├── personaController.ts ← 角色面板控制器
+    │       ├── sessionController.ts ← 会话面板控制器
+    │       ├── settingsController.ts ← 设置面板控制器
+    │       ├── settingsPanelManager.ts ← 设置面板 DOM 管理
+    │       ├── profilePanelManager.ts ← 用户画像面板管理
+    │       ├── suggestionCard.ts ← 配置建议卡片
+    │       ├── proactiveBanner.ts ← 主动提示横幅
+    │       └── styles/       ← 样式文件（v8 语义化变量系统）
+    │           ├── base.css      ← 基础变量 + 重置（Catppuccin Mocha + 霞鹜文楷）
+    │           ├── layout.css    ← 布局（窗口框架 + 侧边栏）
+    │           ├── chat.css      ← 对话区样式
+    │           ├── memory.css    ← 记忆面板样式
+    │           ├── modal.css     ← 模态框样式
+    │           ├── settings.css  ← 设置面板样式
+    │           ├── toast.css     ← Toast 通知样式
+    │           └── markdown.css  ← Markdown 渲染样式
     └── __tests__/
         ├── sqliteStorage.test.ts
         ├── sessionStore.test.ts
         ├── sprite.test.ts
-        └── sprite-integration.test.ts
+        ├── spriteIntegration.test.ts
+        ├── ipcHandlers.test.ts
+        ├── sessionController.test.ts
+        ├── float.test.ts
+        └── ui.test.ts
 ```
 
 ## 理由
@@ -81,3 +119,17 @@ hosts/memora-sprite/
 - `.gitignore` 需添加 `hosts/memora-sprite/node_modules/` 和 `hosts/memora-sprite/dist/`
 - 精灵的 tsconfig.json 的 `paths` 不使用 `@/` 别名（精灵是小项目，相对路径足够）
 - 阶段二引入 Electron 时，新增 `electron/` 目录放主进程和渲染进程代码
+
+## 年轮修订
+
+### v0.2（2026-06-22）· 规则文档与实际产出对齐
+
+**变更**：目录结构树与实际 src/ 完全对齐
+
+**设计演进**：
+- sprite/ 新增 4 个文件：spriteTracer.ts（可观测性）、constants.ts（常量集合）、auditManager.ts（审计日志）、tools.ts（宿主自定义工具）
+- electron/ 新增 2 项：ipcChannels.ts（IPC 通道常量）、utils/esmShim.ts（ESM 兼容垫片）
+- electron/renderer/ 从 5 文件扩展到 24 文件 + styles/ 子目录，反映 v8 UI 重构后的完整前端架构
+- styles/ 替代原 renderer.css，拆分为 8 个语义化 CSS 文件（base/layout/chat/memory/modal/settings/toast/markdown）
+- __tests__/ 从 4 文件扩展到 8 文件，新增 ipcHandlers/sessionController/float/ui 测试
+- 年轮审判发现规则文档严重滞后于产出（缺 20+ 文件），此次双向对齐

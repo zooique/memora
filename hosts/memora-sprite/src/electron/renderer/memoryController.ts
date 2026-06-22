@@ -207,6 +207,9 @@ export function createMemoryController(uiManager: UIManager) {
           recSection.classList.add('hidden');
         }
       }
+
+      // 记忆源健康状态渲染（消费内核 sourceHealth()）
+      renderSourceHealth(data.sourceHealth);
     } catch (error) {
       reportError('loadDashboard', error);
     }
@@ -226,10 +229,74 @@ export function createMemoryController(uiManager: UIManager) {
     setTimeout(() => el.classList.remove('pulse'), DASHBOARD_PULSE_MS);
   }
 
+  /**
+   * 渲染记忆源健康状态
+   *
+   * 消费内核 sourceHealth() 数据，在仪表盘中为每个 source 显示
+   * 健康状态指示器（healthy=绿 / warning=黄 / critical=红）。
+   * 无数据时隐藏健康区域。
+   */
+  function renderSourceHealth(sourceHealth: {
+    sources: Array<{
+      source: string;
+      count: number;
+      avgScore: number;
+      daysSinceLastAccess: number;
+      status: 'healthy' | 'warning' | 'critical';
+    }>;
+    overallStatus: 'healthy' | 'warning' | 'critical';
+    diagnosedAt: string;
+  } | null): void {
+    const healthSection = document.getElementById('source-health');
+    const healthList = document.getElementById('source-health-list');
+    if (!healthSection || !healthList) return;
+
+    // 无数据时隐藏
+    if (!sourceHealth || sourceHealth.sources.length === 0) {
+      healthSection.classList.add('hidden');
+      return;
+    }
+
+    healthSection.classList.remove('hidden');
+    clearElement(healthList);
+
+    // 状态 → CSS 类名映射
+    const statusClass: Record<string, string> = {
+      healthy: 'health-ok',
+      warning: 'health-warn',
+      critical: 'health-crit',
+    };
+
+    for (const s of sourceHealth.sources) {
+      const li = document.createElement('li');
+      li.className = `source-health-item ${statusClass[s.status] ?? ''}`;
+      // 状态圆点
+      const dot = document.createElement('span');
+      dot.className = `health-dot ${statusClass[s.status] ?? ''}`;
+      // 来源名 + 数量
+      const label = document.createElement('span');
+      label.className = 'health-label';
+      label.textContent = `${s.source} (${s.count})`;
+      // 平均 score + 新鲜度
+      const meta = document.createElement('span');
+      meta.className = 'health-meta';
+      const days = s.daysSinceLastAccess === Infinity ? '从未' : `${s.daysSinceLastAccess}天前`;
+      meta.textContent = `score ${s.avgScore.toFixed(2)} · ${days}`;
+      // hover 详情
+      li.title = `来源：${s.source}\n数量：${s.count}\n平均 score：${s.avgScore}\n上次访问：${days}\n状态：${s.status}`;
+
+      li.appendChild(dot);
+      li.appendChild(label);
+      li.appendChild(meta);
+      healthList.appendChild(li);
+    }
+  }
+
   return {
     setupMemoryPanel,
     loadMemoryList,
     loadDashboard,
     pulseCounter,
+    renderSourceHealth,
   };
 }

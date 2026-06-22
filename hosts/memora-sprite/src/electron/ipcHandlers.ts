@@ -428,6 +428,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.DASHBOARD_GET, () => {
     try {
       const data = ctx.sprite.dashboard();
+      // 记忆源健康诊断（消费内核 sourceHealth()，为宿主提供每个 source 的质量指标）
+      let sourceHealth = null;
+      try {
+        sourceHealth = ctx.sprite.sourceHealth();
+      } catch {
+        // 降级：sourceHealth 不可用时仪表盘仍正常返回
+      }
       return {
         total: data.total,
         bySource: data.bySource,
@@ -435,6 +442,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         pendingNotices: ctx.sprite.pendingCount,
         proactiveThreshold: ctx.sprite.proactiveThreshold,
         registeredTriggers: ctx.sprite.registeredTriggers,
+        sourceHealth,
       };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取仪表盘数据失败' });
@@ -445,6 +453,7 @@ export function registerIpcHandlers(ctx: IpcContext): void {
         pendingNotices: 0,
         proactiveThreshold: 3,
         registeredTriggers: [],
+        sourceHealth: null,
       };
     }
   });

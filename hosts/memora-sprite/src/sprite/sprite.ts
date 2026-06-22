@@ -618,6 +618,20 @@ export class Sprite {
     return this.memoryController.dashboard();
   }
 
+  /**
+   * 记忆源健康诊断
+   *
+   * 委托至 Agent.sourceHealth()，为每个 source 计算健康指标
+   * （数量、平均 score、新鲜度、healthy/warning/critical 状态）。
+   * 宿主项目可据此判断是否需要触发衰减、清理或补充。
+   */
+  sourceHealth() {
+    if (!this.agent) {
+      return null;
+    }
+    return this.agent.sourceHealth();
+  }
+
   /** FD-03 累积事件数（供 UI 仪表盘显示） */
   get pendingCount(): number {
     return this.proactiveEngine.pendingCount;
