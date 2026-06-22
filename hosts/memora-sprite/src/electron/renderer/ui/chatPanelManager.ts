@@ -1,0 +1,850 @@
+/**
+ * 聊天面板管理器 — 消息渲染、流式输出、工具调用卡片、思考阶段指示器独立子模块
+ *
+ * 职责：
+ * - 管理聊天消息的 DOM 构建与渲染（appendMessage / buildMessageElement / appendMessages）
+ * - 管理流式输出状态（startStreaming / updateStreamingMessage / finishStreamingMessage / stopAllStreaming）
+ * - 管理工具调用卡片（showToolStart / updateToolResult）
+ * - 管理思考阶段指示器（showThinkingPhase）
+ * - 管理召回记忆展示（setMemoryRecall / createRecallContainer）
+ * - 管理错误注入（injectErrorToStreamingMessages）
+ * - 管理空状态引导（showEmptyState / hideEmptyState / initEmptyStateListeners / onSuggestionClick）
+ * - 管理加载更多按钮（showLoadMore / hideLoadMore）
+ * - 管理消息区域清空（clearMessages）
+ *
+ * 设计原则：
+ * - 遵循 SettingsPanelManager 的组合模式，UIManager 持有实例并委托
+ * - 跨模块关注点（showToast / scrollToBottom / updateSendButton 等）通过 host 回调注入
+ * - 自管理内部状态（流式消息映射、RAF 状态、回调引用），提供 cleanup() 清理
+ *
+ * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 500 行。
+ */
+
+import { clearElement } from '../domHelpers.js';
+import { renderMarkdown } from '../markdown.js';
+import { EventTracker } from '../eventTracker.js';
+import type { Message } from '../types.js';
+
+// ─── Host 接口（跨模块关注点注入） ────────────────────────
+
+/** 聊天面板管理器需要的宿主能力（跨模块关注点，由 UIManager 注入） */
+export interface ChatPanelHost {
+  /** 显示 toast 通知 */
+  showToast(message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number): void;
+  /** 自动滚动到底部（用户在底部附近时） */
+  scrollToBottom(): void;
+  /** 强制滚动到底部（无视用户位置） */
+  forceScrollToBottom(): void;
+  /** 更新发送/停止按钮状态 */
+  updateSendButton(): void;
+  /** 非系统消息计数 +1（appendMessage 中调用） */
+  updateMessageCount(): void;
+  /** 刷新消息计数显示 */
+  refreshMessageCountDisplay(): void;
+  /** 重置消息计数为 0（clearMessages 中调用） */
+  resetMessageCount(): void;
+  /** 更新未读标记（完整窗口隐藏时，新精灵消息到达） */
+  updateBadge(): void;
+  /** 显示空状态引导（无消息时） */
+  showEmptyState(): void;
+  /** 隐藏空状态引导（有消息时） */
+  hideEmptyState(): void;
+  /** 未读计数 +1（完整窗口隐藏时，新精灵消息到达） */
+  updateUnreadCount(): void;
+}
+
+// ─── 聊天面板管理器类 ─────────────────────────────────────
+
+export class ChatPanelManager {
+  // ─── 思考阶段中文映射 ──────────────────────────────────
+
+  /** 思考阶段中文映射 */
+  static readonly THINKING_PHASE_LABELS: Record<string, string> = {
+    recalling: '正在回忆...',
+    processing: '正在处理...',
+    archiving: '正在归档...',
+  };
+
+  // ─── DOM 引用（构造函数注入） ──────────────────────────
+
+  /** 消息容器元素 */
+  private messagesEl: HTMLElement;
+
+  // ─── 共享状态引用（由 UIManager 传入，引用共享） ────────
+
+  /** 共享 UI 状态（isStreaming / unreadCount 等） */
+  private state: { isStreaming: boolean; unreadCount: number };
+  /** 活跃的流式消息映射（messageId → DOM 元素） */
+  private streamingMessages: Map<string, HTMLElement>;
+
+  // ─── 内部状态 ──────────────────────────────────────────
+
+  /**
+   * UX-PP-02 流式渲染 RAF 节流状态
+   * 避免高频 chunk 导致重复 Markdown 渲染，使用 requestAnimationFrame 合并
+   */
+  private _pendingRaF = false;
+  /** UX-PP-02 最新流式文本内容（RAF 回调中使用） */
+  private _latestStreamText = '';
+  /** UX-PP-02 最新流式消息 ID（RAF 回调中使用） */
+  private _latestStreamMessageId = '';
+
+  // ─── 回调引用 ──────────────────────────────────────────
+
+  /** 召回记忆点击回调（跳转记忆详情） */
+  private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
+  /** 示例问题点击回调（填入输入框并触发发送） */
+  private suggestionClickCallback: ((text: string) => void) | null = null;
+
+  // ─── 事件清理 ──────────────────────────────────────────
+
+  /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
+  private events = new EventTracker();
+
+  // ─── 构造函数 ──────────────────────────────────────────
+
+  /**
+   * @param host 宿主能力注入（跨模块关注点回调）
+   * @param messagesEl 消息容器 DOM 元素
+   * @param events 事件跟踪器（复用外部实例，共享生命周期）
+   * @param state 共享 UI 状态引用（isStreaming / unreadCount）
+   * @param streamingMessages 共享流式消息映射引用
+   */
+  constructor(
+    private host: ChatPanelHost,
+    messagesEl: HTMLElement,
+    events: EventTracker,
+    state: { isStreaming: boolean; unreadCount: number },
+    streamingMessages: Map<string, HTMLElement>,
+  ) {
+    this.messagesEl = messagesEl;
+    this.events = events;
+    this.state = state;
+    this.streamingMessages = streamingMessages;
+  }
+
+  // ─── 生命周期 ──────────────────────────────────────────
+
+  /** 清理所有事件监听器 */
+  cleanup(): void {
+    this.events.cleanup();
+  }
+
+  // ─── 消息渲染 ─────────────────────────────────────────
+
+  /**
+   * 添加消息到界面
+   *
+   * 结构对齐 docs/memora-sprite-preview.html §6.2：
+   *   <div class="message [user|assistant|system]">
+   *     <div class="message-avatar">🧚</div>  <!-- 仅 user/assistant -->
+   *     <div class="message-bubble">
+   *       {文本内容}
+   *       <div class="memory-recall">...</div>  <!-- 仅精灵消息且有召回时 -->
+   *     </div>
+   *   </div>
+   *
+   * 系统消息保持简单结构（无头像无气泡），居中显示。
+   */
+  appendMessage(message: Message): HTMLElement {
+    // 有消息时隐藏空状态引导（首次添加消息触发）
+    this.host.hideEmptyState();
+
+    const el = this.buildMessageElement(message);
+    this.messagesEl.appendChild(el);
+    this.host.scrollToBottom();
+
+    // 更新消息计数（非系统消息，显示在对话工具栏副标题）
+    if (message.role !== 'system') {
+      this.host.updateMessageCount();
+    }
+
+    // 更新未读计数（完整窗口隐藏时）
+    if (message.role === 'assistant' && document.hidden) {
+      this.host.updateUnreadCount();
+    }
+
+    return el;
+  }
+
+  /**
+   * UX-FD-07 构建消息 DOM 元素（纯函数，无副作用）
+   *
+   * 从 appendMessage 中提取 DOM 构建逻辑，供 appendMessages 批量插入复用。
+   * 不处理 DOM 挂载、滚动、计数等副作用，仅返回完整元素。
+   *
+   * @param message 消息对象
+   * @returns 完整的消息 DOM 元素
+   */
+  private buildMessageElement(message: Message): HTMLElement {
+    const el = document.createElement('div');
+    el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}`;
+
+    if (message.role === 'system') {
+      // 系统消息：简单文本，居中无头像
+      el.textContent = message.content;
+      return el;
+    }
+
+    // 用户/精灵消息：头像 + 气泡结构
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.textContent = message.role === 'user' ? '🧑' : '🧚';
+    el.appendChild(avatar);
+
+    // 消息内容容器（气泡 + 时间戳 + 操作按钮）
+    const contentWrapper = document.createElement('div');
+    contentWrapper.className = 'message-content';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+
+    if (message.role === 'assistant') {
+      // 精灵消息：渲染 Markdown
+      bubble.appendChild(renderMarkdown(message.content));
+    } else {
+      // 用户消息：使用 textContent（防 XSS）
+      bubble.textContent = message.content;
+    }
+    contentWrapper.appendChild(bubble);
+
+    // 元信息行：复制按钮 + 时间戳同行显示
+    const metaRow = document.createElement('div');
+    metaRow.className = 'message-meta';
+
+    // P3-FLOW-07 用户/精灵消息均添加复制按钮（hover 时显示）
+    // 原仅精灵消息有复制按钮，用户消息需手动选择文本，体验不一致
+    if (!message.streaming) {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'message-copy-btn';
+      copyBtn.title = '复制';
+      copyBtn.textContent = '📋';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(message.content);
+          this.host.showToast('已复制到剪贴板', 'success', 2000);
+        } catch {
+          this.host.showToast('复制失败，请手动选择文本复制', 'error');
+        }
+      });
+      metaRow.appendChild(copyBtn);
+    }
+
+    // 时间戳
+    const timestamp = message.timestamp ?? new Date().toISOString();
+    const timeEl = document.createElement('div');
+    timeEl.className = 'message-time';
+    timeEl.textContent = this.formatTimestamp(timestamp);
+    metaRow.appendChild(timeEl);
+
+    contentWrapper.appendChild(metaRow);
+
+    el.appendChild(contentWrapper);
+
+    // 召回记忆提示（仅精灵消息）
+    const memoryRecall = message.memoryRecall;
+    if (message.role === 'assistant' && memoryRecall && memoryRecall.length > 0) {
+      const recallContainer = this.createRecallContainer(memoryRecall);
+      bubble.appendChild(recallContainer);
+    }
+
+    // 流式消息光标
+    if (message.streaming) {
+      const cursor = document.createElement('span');
+      cursor.className = 'cursor';
+      bubble.appendChild(cursor);
+    }
+
+    return el;
+  }
+
+  /**
+   * 格式化时间戳显示
+   *
+   * - 当天：HH:MM
+   * - 非当天：MM-DD HH:MM
+   * - 解析失败：返回原始字符串
+   */
+  private formatTimestamp(isoString: string): string {
+    try {
+      const date = new Date(isoString);
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+
+      const hh = String(date.getHours()).padStart(2, '0');
+      const mm = String(date.getMinutes()).padStart(2, '0');
+      const time = `${hh}:${mm}`;
+
+      if (isToday) {
+        return time;
+      }
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      return `${month}-${day} ${time}`;
+    } catch {
+      return isoString;
+    }
+  }
+
+  /**
+   * 更新流式消息内容
+   *
+   * 流式过程中每次 chunk 都重新渲染 Markdown（text 是累积的完整文本）。
+   * 保留 cursor 元素和 memory-recall 元素，仅替换 Markdown 内容区域。
+   *
+   * 性能考虑：
+   * - LLM 输出通常在几百到几千字，同步 DOM 渲染性能可接受
+   * - 若后续发现卡顿，可加 requestAnimationFrame 节流
+   */
+  updateStreamingMessage(messageId: string, text: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    // 定位到气泡元素（assistant 消息结构：message > message-bubble）
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // UX-PP-02 保留元素在 rAF 回调中重新查询，此处不再维护同步变量
+    // 保留 cursor、memory-recall-container 和 tool-call 元素，在 rAF 回调中重新查询
+
+    // UX-P2-01 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
+    const thinkingIndicator = bubble.querySelector('.thinking-phase');
+    if (thinkingIndicator) {
+      thinkingIndicator.remove();
+    }
+
+    // UX-PP-02 使用 rAF 节流 Markdown 渲染，避免高频 chunk 导致重复渲染
+    // 存储最新文本，rAF 回调中统一执行 clear + render + 保留元素追加
+    this._latestStreamText = text;
+    this._latestStreamMessageId = messageId;
+    if (!this._pendingRaF) {
+      this._pendingRaF = true;
+      requestAnimationFrame(() => {
+        this._pendingRaF = false;
+        // 重新定位气泡（可能已被 finishStreamingMessage 处理）
+        const latestEl = this.streamingMessages.get(this._latestStreamMessageId);
+        const latestBubble = latestEl?.querySelector('.message-bubble');
+        if (!latestBubble) return;
+
+        // 重新查询保留元素（rAF 回调中 DOM 可能已变化）
+        const latestCursor = latestBubble.querySelector('.cursor');
+        const latestRecall = latestBubble.querySelector('.memory-recall-container');
+        const latestToolCalls = latestBubble.querySelectorAll('.tool-call');
+
+        // 安全清空并重新渲染 Markdown
+        clearElement(latestBubble);
+        latestBubble.appendChild(renderMarkdown(this._latestStreamText));
+
+        // 重新追加保留元素（recall 和 tool-call 在前，cursor 在最后）
+        if (latestRecall) latestBubble.appendChild(latestRecall);
+        for (const tc of Array.from(latestToolCalls)) {
+          latestBubble.appendChild(tc);
+        }
+        if (latestCursor) latestBubble.appendChild(latestCursor);
+      });
+    }
+
+    this.host.scrollToBottom();
+  }
+
+  /**
+   * 完成流式消息
+   *
+   * 移除 streaming 类和光标元素，添加复制按钮。
+   * 流式文本由主进程逐 chunk 拼接，渲染层不做尾部标记清理。
+   */
+  finishStreamingMessage(messageId: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    el.classList.remove('streaming');
+    // 移除光标元素
+    const cursor = el.querySelector('.cursor');
+    if (cursor) cursor.remove();
+
+    // 流式完成后添加复制按钮（从 bubble 提取最终文本）
+    const bubble = el.querySelector('.message-bubble');
+    const contentWrapper = el.querySelector('.message-content');
+    if (bubble && contentWrapper) {
+      // 提取纯文本内容（排除 memory-recall 提示）
+      const clone = bubble.cloneNode(true);
+      if (!(clone instanceof HTMLElement)) {
+        throw new Error('[finishStreamingMessage] 复制的消息气泡不是 HTMLElement');
+      }
+      const recallInClone = clone.querySelector('.memory-recall');
+      if (recallInClone) recallInClone.remove();
+      const finalText = clone.textContent ?? '';
+
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'message-copy-btn';
+      copyBtn.title = '复制';
+      copyBtn.textContent = '📋';
+      copyBtn.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(finalText);
+          this.host.showToast('已复制到剪贴板', 'success', 2000);
+        } catch {
+          this.host.showToast('复制失败，请手动选择文本复制', 'error');
+        }
+      });
+
+      // 查找或创建 metaRow，将复制按钮插入到时间戳之前
+      let metaRow = contentWrapper.querySelector('.message-meta');
+      const timeEl = contentWrapper.querySelector('.message-time');
+      if (metaRow) {
+        // metaRow 已存在，插入到时间戳之前
+        if (timeEl) {
+          metaRow.insertBefore(copyBtn, timeEl);
+        } else {
+          metaRow.appendChild(copyBtn);
+        }
+      } else if (timeEl && timeEl.parentNode) {
+        // metaRow 不存在（旧结构），创建并包裹时间戳
+        metaRow = document.createElement('div');
+        metaRow.className = 'message-meta';
+        metaRow.appendChild(copyBtn);
+        timeEl.parentNode.insertBefore(metaRow, timeEl);
+        metaRow.appendChild(timeEl);
+      } else {
+        contentWrapper.appendChild(copyBtn);
+      }
+    }
+
+    this.streamingMessages.delete(messageId);
+
+    // 所有流式消息都已完成时，重置 isStreaming 状态和按钮
+    if (this.streamingMessages.size === 0) {
+      this.state.isStreaming = false;
+      this.host.updateSendButton();
+    }
+  }
+
+  /**
+   * MS-12 设置流式消息的召回记忆摘要
+   *
+   * 在 startStreaming 之后、text chunk 之前调用，
+   * 将召回记忆摘要注入到消息气泡底部，用户可点击跳转记忆详情。
+   *
+   * @param messageId 流式消息 ID
+   * @param memories 召回记忆摘要列表（name/score/source）
+   */
+  setMemoryRecall(messageId: string, memories: Array<{ name: string; score: number; source: string }>): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    // 查找或创建召回记忆容器
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 若已存在召回容器，先清空（避免重复追加）
+    const existingContainer = bubble.querySelector('.memory-recall-container');
+    if (existingContainer) {
+      existingContainer.remove();
+    }
+
+    // 无召回记忆时不创建容器
+    if (memories.length === 0) return;
+
+    // 复用 createRecallContainer 统一构建逻辑
+    const recallContainer = this.createRecallContainer(memories);
+    // 插入到光标元素之前（若存在），否则追加到 bubble 末尾
+    const cursor = bubble.querySelector('.cursor');
+    if (cursor) {
+      bubble.insertBefore(recallContainer, cursor);
+    } else {
+      bubble.appendChild(recallContainer);
+    }
+  }
+
+  /**
+   * MS-12 构建召回记忆容器（私有辅助方法）
+   *
+   * 统一 appendMessage 和 setMemoryRecall 的 DOM 构建逻辑，避免重复代码。
+   * 每条召回记忆独立可点击，点击触发 memoryRecallClickCallback 跳转记忆详情。
+   *
+   * @param memories 召回记忆摘要列表
+   * @returns 已填充的容器 DOM 元素
+   */
+  private createRecallContainer(memories: Array<{ name: string; score: number; source: string }>): HTMLDivElement {
+    const recallContainer = document.createElement('div');
+    recallContainer.className = 'memory-recall-container';
+    for (const recall of memories) {
+      const recallItem = document.createElement('div');
+      recallItem.className = 'memory-recall';
+      // UX-08：使用 createElement 替代 innerHTML，避免 XSS 风险
+      const iconSpan = document.createElement('span');
+      iconSpan.textContent = '💡';
+      recallItem.appendChild(iconSpan);
+      const recallText = document.createElement('span');
+      recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
+      recallItem.appendChild(recallText);
+      // 闭包捕获当前 recall.name，避免循环变量引用问题
+      const recallName = recall.name;
+      recallItem.addEventListener('click', () => {
+        this.memoryRecallClickCallback?.(recallName);
+      });
+      recallContainer.appendChild(recallItem);
+    }
+    return recallContainer;
+  }
+
+  // ─── UX-P2-01 思考阶段指示器 ──────────────────────────────
+
+  /**
+   * UX-P2-01 显示思考阶段指示器
+   *
+   * 在消息气泡内显示"正在回忆.../处理.../归档..."提示，
+   * 让用户在等待首个 text chunk 时知道精灵正在工作。
+   * 当 text chunk 到达时，指示器会被 updateStreamingMessage 移除。
+   *
+   * @param messageId 流式消息 ID
+   * @param phase 思考阶段（recalling/processing/archiving）
+   */
+  showThinkingPhase(messageId: string, phase: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 查找或创建思考阶段指示器
+    let indicator = bubble.querySelector('.thinking-phase') as HTMLDivElement | null;
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.className = 'thinking-phase';
+      bubble.appendChild(indicator);
+    }
+
+    // 更新阶段文案
+    const label = ChatPanelManager.THINKING_PHASE_LABELS[phase] ?? phase;
+    indicator.textContent = `⚙️ ${label}`;
+  }
+
+  // ─── UX-P1-02 工具调用卡片 ────────────────────────────────
+
+  /**
+   * UX-P1-02 显示工具调用开始卡片
+   *
+   * 在消息气泡内渲染工具调用卡片，显示工具名和参数，
+   * 让用户感知精灵正在执行工具（如文件读取、记忆搜索等）。
+   *
+   * @param messageId 流式消息 ID
+   * @param name 工具名称
+   * @param args 工具参数（可选，JSON 字符串）
+   */
+  showToolStart(messageId: string, name: string, args?: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 创建工具调用卡片
+    const toolCard = document.createElement('div');
+    toolCard.className = 'tool-call tool-call-running';
+    toolCard.setAttribute('data-tool-name', name);
+
+    // 工具图标 + 名称
+    const header = document.createElement('div');
+    header.className = 'tool-call-header';
+    const icon = document.createElement('span');
+    icon.textContent = '🔧';
+    header.appendChild(icon);
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'tool-call-name';
+    nameSpan.textContent = name;
+    header.appendChild(nameSpan);
+    const status = document.createElement('span');
+    status.className = 'tool-call-status';
+    status.textContent = '执行中...';
+    header.appendChild(status);
+    toolCard.appendChild(header);
+
+    // 工具参数（若提供）
+    if (args) {
+      const argsDiv = document.createElement('div');
+      argsDiv.className = 'tool-call-args';
+      argsDiv.textContent = args;
+      toolCard.appendChild(argsDiv);
+    }
+
+    // 插入到光标元素之前（若存在），否则追加到 bubble 末尾
+    const cursor = bubble.querySelector('.cursor');
+    if (cursor) {
+      bubble.insertBefore(toolCard, cursor);
+    } else {
+      bubble.appendChild(toolCard);
+    }
+  }
+
+  /**
+   * UX-P1-02 更新工具调用结果
+   *
+   * 更新工具调用卡片状态为成功/失败，显示结果摘要。
+   *
+   * @param messageId 流式消息 ID
+   * @param name 工具名称（用于定位对应卡片）
+   * @param ok 是否成功
+   * @param summary 结果摘要（可选）
+   */
+  updateToolResult(messageId: string, name: string, ok: boolean, summary?: string): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 查找对应工具的卡片（按 data-tool-name 匹配，取最后一个未完成的）
+    const cards = bubble.querySelectorAll(`.tool-call[data-tool-name="${name}"]`);
+    let targetCard: Element | null = null;
+    for (const card of Array.from(cards)) {
+      if (card.classList.contains('tool-call-running')) {
+        targetCard = card;
+        break;
+      }
+    }
+    if (!targetCard) return;
+
+    // 更新卡片状态
+    targetCard.classList.remove('tool-call-running');
+    targetCard.classList.add(ok ? 'tool-call-success' : 'tool-call-failed');
+
+    // 更新状态文本
+    const status = targetCard.querySelector('.tool-call-status');
+    if (status) {
+      status.textContent = ok ? '✓ 成功' : '✗ 失败';
+    }
+
+    // 追加结果摘要
+    if (summary) {
+      const resultDiv = document.createElement('div');
+      resultDiv.className = 'tool-call-result';
+      resultDiv.textContent = summary;
+      targetCard.appendChild(resultDiv);
+    }
+  }
+
+  /** 开始流式输出 */
+  startStreaming(messageId: string): void {
+    const el = this.appendMessage({
+      role: 'assistant',
+      content: '',
+      streaming: true,
+      messageId,
+    });
+
+    this.streamingMessages.set(messageId, el);
+    this.state.isStreaming = true;
+
+    // 更新按钮为停止姿态
+    this.host.updateSendButton();
+  }
+
+  /** 停止所有流式输出 */
+  stopAllStreaming(): void {
+    for (const el of this.streamingMessages.values()) {
+      el.classList.remove('streaming');
+      // 移除光标元素，保留文本内容
+      const cursor = el.querySelector('.cursor');
+      if (cursor) {
+        cursor.remove();
+      }
+    }
+    this.streamingMessages.clear();
+    this.state.isStreaming = false;
+
+    // 更新按钮为发送姿态
+    this.host.updateSendButton();
+  }
+
+  /**
+   * FD-05 清空对话区消息
+   *
+   * 新会话创建后调用：清空当前对话区的所有消息显示，
+   * 并重置流式状态。历史会话保留在 SessionStore 中，可通过会话切换找回。
+   *
+   * 使用 while + removeChild 模式（对齐 project_memory 工程约定）。
+   */
+  clearMessages(): void {
+    // 只移除 .message 元素，保留 chat-empty-state（否则 showEmptyState 找不到元素）
+    this.messagesEl.querySelectorAll('.message').forEach((msg) => msg.remove());
+    // UX-FD-07 移除加载更多按钮（切换会话时重置）
+    this.hideLoadMore();
+    this.streamingMessages.clear();
+    this.state.isStreaming = false;
+    this.host.updateSendButton();
+    // UX-P2-05 修复：清空消息时重置计数器，避免跨会话累加导致显示错误
+    this.host.resetMessageCount();
+    this.host.refreshMessageCountDisplay();
+    // 清空后重新显示空状态引导
+    this.host.showEmptyState();
+    // 清空后重置滚动状态，确保新消息能自动滚动
+    this.host.forceScrollToBottom();
+  }
+
+  /**
+   * UX-FD-07 批量插入消息（DocumentFragment 优化）
+   *
+   * 一次性插入多条消息到 DOM，使用 DocumentFragment 批量操作，
+   * 避免逐条 appendMessage 导致的大量回流和重绘。
+   * 用于会话历史加载和会话切换时的消息渲染。
+   *
+   * @param messages 消息数组
+   * @param prepend 是否插入到顶部（加载更多历史消息时使用）
+   */
+  appendMessages(messages: Message[], prepend: boolean = false): void {
+    if (messages.length === 0) return;
+
+    // 隐藏空状态引导
+    this.host.hideEmptyState();
+
+    const fragment = document.createDocumentFragment();
+    for (const msg of messages) {
+      const el = this.buildMessageElement(msg);
+      fragment.appendChild(el);
+    }
+
+    if (prepend) {
+      // 加载更多：插入到消息区顶部（在 load-more 按钮之后）
+      const loadMore = this.messagesEl.querySelector('#load-more-container');
+      if (loadMore) {
+        loadMore.after(fragment);
+      } else {
+        this.messagesEl.insertBefore(fragment, this.messagesEl.firstChild);
+      }
+    } else {
+      // 初始加载：追加到消息区末尾
+      this.messagesEl.appendChild(fragment);
+    }
+
+    // 逐个更新消息计数
+    for (let i = 0; i < messages.length; i++) {
+      this.host.updateMessageCount();
+    }
+    this.host.refreshMessageCountDisplay();
+    this.host.forceScrollToBottom();
+  }
+
+  /**
+   * UX-FD-07 显示"加载更多"按钮
+   *
+   * 在消息区顶部插入加载更多容器，包含按钮和剩余消息数提示。
+   *
+   * @param remaining 剩余消息数
+   * @param onClick 点击回调
+   */
+  showLoadMore(remaining: number, onClick: () => void): void {
+    // 移除旧按钮（避免重复）
+    this.hideLoadMore();
+
+    const container = document.createElement('div');
+    container.id = 'load-more-container';
+    container.className = 'load-more-container';
+
+    const btn = document.createElement('button');
+    btn.className = 'load-more-btn';
+    btn.textContent = `加载更多消息（剩余 ${remaining} 条）`;
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      btn.textContent = '加载中...';
+      onClick();
+    });
+    container.appendChild(btn);
+
+    // 插入到消息区顶部
+    this.messagesEl.insertBefore(container, this.messagesEl.firstChild);
+  }
+
+  /**
+   * UX-FD-07 隐藏"加载更多"按钮
+   */
+  hideLoadMore(): void {
+    const existing = this.messagesEl.querySelector('#load-more-container');
+    if (existing) existing.remove();
+  }
+
+  /**
+   * UX-PP-01 向流式消息气泡注入错误提示
+   *
+   * 当流式输出出错时（如网络中断、LLM 返回错误），
+   * 将错误文本注入到所有活跃的流式消息气泡中，
+   * 并停止流式状态。让用户直接在对话中看到出错原因，
+   * 而非仅依赖 toast 通知。
+   *
+   * @param errorText 错误提示文本
+   */
+  injectErrorToStreamingMessages(errorText: string): void {
+    // 无活跃流式消息时跳过
+    if (this.streamingMessages.size === 0) return;
+
+    for (const [, el] of this.streamingMessages) {
+      const bubble = el.querySelector('.message-bubble');
+      if (!bubble) continue;
+
+      // 移除光标和思考指示器（流式已结束）
+      const cursor = bubble.querySelector('.cursor');
+      if (cursor) cursor.remove();
+      const thinkingIndicator = bubble.querySelector('.thinking-phase');
+      if (thinkingIndicator) thinkingIndicator.remove();
+
+      // 添加错误指示器到气泡底部
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'stream-error';
+      errorDiv.textContent = `⚠️ ${errorText}`;
+      bubble.appendChild(errorDiv);
+
+      // 停止流式状态
+      el.classList.remove('streaming');
+    }
+
+    // 清理流式消息映射和 UI 状态
+    this.streamingMessages.clear();
+    this.state.isStreaming = false;
+    this.host.updateSendButton();
+  }
+
+  // ─── 空状态引导 ─────────────────────────────────────────
+
+  /**
+   * 初始化空状态引导的事件监听
+   *
+   * 点击示例问题按钮时，将问题文本填入输入框并触发发送。
+   * 对齐 user_rules "主动可见"：示例问题始终可见，引导新用户快速开始对话。
+   */
+  initEmptyStateListeners(): void {
+    const emptyState = document.getElementById('chat-empty-state');
+    if (!emptyState) return;
+
+    emptyState.querySelectorAll<HTMLElement>('.suggestion-btn').forEach((btn) => {
+      const suggestion = btn.dataset.suggestion;
+      if (suggestion) {
+        this.events.addEventListener(btn, 'click', () => {
+          // 将示例问题填入输入框并触发发送回调
+          this.suggestionClickCallback?.(suggestion);
+        });
+      }
+    });
+  }
+
+  /** 显示空状态引导（无消息时） */
+  showEmptyState(): void {
+    document.getElementById('chat-empty-state')?.classList.remove('hidden');
+  }
+
+  /** 隐藏空状态引导（有消息时） */
+  hideEmptyState(): void {
+    document.getElementById('chat-empty-state')?.classList.add('hidden');
+  }
+
+  // ─── 回调注册 ───────────────────────────────────────────
+
+  /** 注册示例问题点击回调 */
+  onSuggestionClick(callback: (text: string) => void): void {
+    this.suggestionClickCallback = callback;
+  }
+
+  /** 注册召回记忆点击回调（跳转记忆详情） */
+  setMemoryRecallClickCallback(cb: (memoryName: string) => void): void {
+    this.memoryRecallClickCallback = cb;
+  }
+}
