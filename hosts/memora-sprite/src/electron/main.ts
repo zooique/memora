@@ -77,6 +77,15 @@ const pendingWriteConfirmations = new Map<string, (confirmed: boolean) => void>(
 /** M2 审计日志：宿主单例（在 initializeApp 中创建） */
 let auditManager: AuditManager | null = null;
 
+/** 精灵事件订阅者列表（用于 Agent 重新初始化前取消订阅） */
+const spriteEventUnsubscribers: Array<() => void> = [];
+
+// 注意：使用 const 数组 + clear() 方法清空，而非 let 重新赋值
+// 因为 setupSpriteEventListeners 中使用 push 添加订阅
+
+/** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
+let currentDataDir: string = DEFAULT_DATA_DIR;
+
 /** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
 let unreadCount = 0;
 
@@ -231,8 +240,8 @@ async function initializeApp(): Promise<void> {
   // ── 阶段 1：创建窗口（始终成功） ──
   try {
     // 1. 加载精灵配置（从 dataDir/sprite.json，首次启动使用默认值）
-    const defaultDataDir = DEFAULT_DATA_DIR;
-    const spriteConfig = loadSpriteConfig(defaultDataDir);
+    currentDataDir = DEFAULT_DATA_DIR;
+    const spriteConfig = loadSpriteConfig(currentDataDir);
 
     // 2. 初始化窗口状态管理器
     const rawFloatPosition =
@@ -249,7 +258,7 @@ async function initializeApp(): Promise<void> {
       showFloatBubble: spriteConfig.showFloatBubble,
       // 持久化委托给 saveSpriteConfig（避免与 spriteConfig.ts 重复写文件）
       onSaveState: (data) => {
-        saveSpriteConfig(defaultDataDir, {
+        saveSpriteConfig(currentDataDir, {
           windowState: data.windowState,
           floatIconPosition: data.floatPosition,
           showFloatBubble: data.showFloatBubble,
@@ -281,7 +290,7 @@ async function initializeApp(): Promise<void> {
       let boundsSaveTimer: ReturnType<typeof setTimeout> | null = null;
       const saveBounds = () => {
         const bounds = fullWindow.getBounds();
-        saveSpriteConfig(defaultDataDir, {
+        saveSpriteConfig(currentDataDir, {
           windowBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
         });
       };
@@ -309,7 +318,7 @@ async function initializeApp(): Promise<void> {
       onToggleFloatBubble: (checked: boolean) => {
         windowStateManager.setShowFloatBubble(checked);
         // 同步持久化到 spriteConfig
-        saveSpriteConfig(defaultDataDir, { showFloatBubble: checked });
+        saveSpriteConfig(currentDataDir, { showFloatBubble: checked });
         // 重建托盘菜单以反映勾选状态
         trayManager?.updateMenu();
       },
@@ -376,7 +385,7 @@ async function initializeApp(): Promise<void> {
     setupWriteConfirmationListener(agent);
 
     // M2：初始化审计日志管理器 + 订阅 SecurityGuard.onAudit
-    auditManager = new AuditManager(dataDir);
+    auditManager = new AuditManager(currentDataDir);
     setupAuditListener(agent, auditManager);
 
     // 补充注入浮动窗口右键菜单回调（需要 Agent/Sprite 就绪后才能查询/切换静默模式）
@@ -559,6 +568,7 @@ function registerMinimalIpcHandlers(): void {
         sprite = result.sprite;
         sessionStore = result.sessionStore;
         closeSprite = result.close;
+        currentDataDir = result.dataDir;
 
         // 3. 注入交互层
         sprite.setInteraction(interaction);
@@ -580,7 +590,7 @@ function registerMinimalIpcHandlers(): void {
           // M1：重新注册写入确认回调（新 Agent 实例）
           setupWriteConfirmationListener(agent);
           // M2：重新初始化审计管理器 + 订阅审计事件（新 Agent 实例）
-          auditManager = new AuditManager(dataDir);
+          auditManager = new AuditManager(currentDataDir);
           setupAuditListener(agent, auditManager);
         }
 
@@ -936,7 +946,7 @@ function unsubscribeSpriteEvents(): void {
       logger.warn({ error: toError(error) }, '[unsubscribeSpriteEvents] 取消订阅失败');
     }
   }
-  spriteEventUnsubscribers = [];
+  spriteEventUnsubscribers.length = 0;
 }
 
 // ─── 应用生命周期 ─────────────────────────────────────────

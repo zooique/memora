@@ -146,9 +146,10 @@ export class SuggestionCardManager {
     }
 
     if (acceptBtn) {
+      const capturedRejectBtn = rejectBtn;
       this.events.addEventListener(acceptBtn, 'click', async () => {
         acceptBtn.disabled = true;
-        rejectBtn.disabled = true;
+        capturedRejectBtn && (capturedRejectBtn.disabled = true);
         acceptBtn.textContent = '处理中...';
         try {
           const result = await window.electronAPI.acceptSuggestion(suggestion);
@@ -157,13 +158,13 @@ export class SuggestionCardManager {
           } else {
             // 恢复按钮状态，显示错误
             acceptBtn.disabled = false;
-            rejectBtn.disabled = false;
+            capturedRejectBtn && (capturedRejectBtn.disabled = false);
             acceptBtn.textContent = '接受';
             console.error('[SuggestionCard] 接受建议失败:', result.error);
           }
         } catch (err) {
           acceptBtn.disabled = false;
-          rejectBtn.disabled = false;
+          capturedRejectBtn && (capturedRejectBtn.disabled = false);
           acceptBtn.textContent = '接受';
           console.error('[SuggestionCard] 接受建议异常:', err);
         }
@@ -171,15 +172,16 @@ export class SuggestionCardManager {
     }
 
     if (rejectBtn) {
+      const capturedAcceptBtn = acceptBtn;
       this.events.addEventListener(rejectBtn, 'click', async () => {
         rejectBtn.disabled = true;
-        acceptBtn.disabled = true;
+        capturedAcceptBtn && (capturedAcceptBtn.disabled = true);
         try {
           await window.electronAPI.rejectSuggestion(suggestion);
           this.removeCard(card);
         } catch (err) {
           rejectBtn.disabled = false;
-          acceptBtn.disabled = false;
+          capturedAcceptBtn && (capturedAcceptBtn.disabled = false);
           console.error('[SuggestionCard] 拒绝建议异常:', err);
         }
       });
