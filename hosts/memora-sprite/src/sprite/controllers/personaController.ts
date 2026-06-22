@@ -80,25 +80,4 @@ export class PersonaController {
     return this.agent.persona?.currentMode ?? 'auto';
   }
 
-  /**
-   * 格式化角色列表为可读文本
-   *
-   * @returns 格式化后的角色列表文本（含当前角色标记）
-   */
-  format(): string {
-    const personas = this.list();
-    if (personas.length === 0) {
-      // 空状态引导：告知用户角色文件存放位置，避免不知道如何添加角色
-      return '暂无可用角色\n\n提示：在 agent-config/personas/ 目录下创建角色配置文件（.md 格式）即可添加角色';
-    }
-
-    const lines: string[] = ['── 角色列表 ──'];
-    for (const p of personas) {
-      const marker = p.active ? ' *' : '';
-      const desc = p.description ? ` — ${p.description}` : '';
-      lines.push(`  ${p.name}${marker}${desc}`);
-    }
-    lines.push(`\n当前角色：${this.activeName ?? '(无)'}`);
-    return lines.join('\n');
-  }
 }

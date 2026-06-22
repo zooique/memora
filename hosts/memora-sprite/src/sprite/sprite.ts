@@ -20,9 +20,9 @@ import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import type { IInteraction } from './interaction.js';
-import { loadSpriteConfig, saveSpriteConfig } from './spriteConfig.js';
-import { MS_PER_MINUTE } from './constants.js';
+import { loadSpriteConfig, saveSpriteConfig, CONFIG_FIELD_SCHEMA } from './spriteConfig.js';
 import type { SpriteConfig, SpriteConfigKey } from './spriteConfig.js';
+import * as cliFormatter from './cliFormatter.js';
 import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
 import type { DashboardData } from './controllers/index.js';
 
@@ -294,9 +294,9 @@ export class Sprite {
     return this.agent.listProjects().map((p) => ({ name: p.name, path: p.path }));
   }
 
-  /** 格式化角色列表为可读文本 */
+  /** 格式化角色列表为可读文本（委托 cliFormatter） */
   formatPersonas(): string {
-    return this.personaController.format();
+    return cliFormatter.formatPersonas(this.personaController.list(), this.personaController.activeName ?? undefined);
   }
 
   // ─── 记忆管理（委托 MemoryController） ──────────────────
@@ -401,7 +401,8 @@ export class Sprite {
    */
   updateConfig(key: SpriteConfigKey, value: unknown): void {
     this.setConfigField(key, value);
-    saveSpriteConfig(this.dataDir, { [key]: value });
+    // R6 传完整配置写入，避免 saveSpriteConfig 每次读文件
+    saveSpriteConfig(this.dataDir, this.config);
 
     // 特殊处理：触发器间隔变更时重建 TimerTrigger
     if (key === 'triggerIntervalMs' && typeof value === 'number') {
@@ -504,107 +505,89 @@ export class Sprite {
   /**
    * 类型安全地设置配置字段
    *
-   * 通过运行时类型检查将 unknown 类型的 value 写入对应类型的配置字段。
+   * 基于 CONFIG_FIELD_SCHEMA 映射表做运行时类型校验，
+   * 替代原来的 80 行 if-else 链。新增配置字段只需在 schema 表加一行映射。
+   *
    * 不符合类型的 value 会被忽略（保持原值），由调用方保证传入正确类型。
    */
   private setConfigField(key: SpriteConfigKey, value: unknown): void {
-    // 数值类型字段（合并 triggerIntervalMs / proactiveCooldownMs / fileWatcherDebounceMs / proactiveThreshold）
-    if (
-      key === 'triggerIntervalMs' ||
-      key === 'proactiveCooldownMs' ||
-      key === 'fileWatcherDebounceMs' ||
-      key === 'proactiveThreshold'
-    ) {
+    const schema = CONFIG_FIELD_SCHEMA[key];
+    // 使用 Record<string, unknown> 绕过 TypeScript 对动态 key 赋值的类型检查
+    // 运行时类型校验由 schema 映射表保证，编译时无法推断动态 key 的具体类型
+    const config = this.config as Record<string, unknown>;
+
+    // 数值类型
+    if (schema === 'number') {
       if (typeof value === 'number') {
-        this.config[key] = value;
+        config[key] = value;
       }
       return;
     }
-    // 布尔类型字段
-    if (key === 'silentMode' || key === 'fileWatcherEnabled') {
+
+    // 布尔类型
+    if (schema === 'boolean') {
       if (typeof value === 'boolean') {
-        this.config[key] = value;
+        config[key] = value;
       }
       return;
     }
-    // 字符串类型字段
-    if (key === 'defaultPersona') {
+
+    // 字符串类型
+    if (schema === 'string') {
       if (typeof value === 'string') {
-        this.config[key] = value;
+        config[key] = value;
       }
       return;
     }
-    // 字符串数组类型字段
-    if (key === 'fileWatcherPaths' || key === 'fileWatcherIgnore') {
+
+    // 字符串数组类型
+    if (schema === 'string[]') {
       if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
-        this.config[key] = value;
+        config[key] = value;
       }
       return;
     }
-    // 对象类型字段
-    if (key === 'floatIconPosition') {
-      if (
-        typeof value === 'object' &&
-        value !== null &&
-        'x' in value &&
-        'y' in value
-      ) {
-        // 运行时检查 value.x/value.y 为 number 类型，避免类型断言丢失类型安全
-        const pos = value as { x: unknown; y: unknown };
-        if (typeof pos.x === 'number' && typeof pos.y === 'number') {
-          this.config[key] = { x: pos.x, y: pos.y };
+
+    // 对象类型（需额外校验子字段）
+    if (schema === 'object') {
+      if (typeof value === 'object' && value !== null) {
+        // floatIconPosition：校验 x/y 为 number
+        if (key === 'floatIconPosition') {
+          const pos = value as { x: unknown; y: unknown };
+          if ('x' in value && 'y' in value && typeof pos.x === 'number' && typeof pos.y === 'number') {
+            config[key] = { x: pos.x, y: pos.y };
+          }
+        }
+        // windowBounds：校验 x/y/width/height 为 number
+        if (key === 'windowBounds') {
+          const b = value as { x: unknown; y: unknown; width: unknown; height: unknown };
+          if ('x' in value && 'y' in value && 'width' in value && 'height' in value
+            && typeof b.x === 'number' && typeof b.y === 'number'
+            && typeof b.width === 'number' && typeof b.height === 'number') {
+            config[key] = { x: b.x, y: b.y, width: b.width, height: b.height };
+          }
         }
       }
       return;
     }
-    // 枚举类型字段
-    if (key === 'windowState') {
-      if (value === 'tray' || value === 'full') {
-        this.config[key] = value;
-      }
-      return;
-    }
-    // FD-04 项目模式枚举字段
-    if (key === 'projectMode') {
-      if (value === 'smart' || value === 'focus') {
-        this.config[key] = value;
-      }
-      return;
-    }
-    // FD-04 专注项目路径（字符串）
-    if (key === 'focusProjectPath') {
-      if (typeof value === 'string') {
-        this.config[key] = value;
+
+    // 枚举类型（格式：'enum:val1|val2|val3'）
+    if (schema.startsWith('enum:')) {
+      const allowedValues = schema.slice(5).split('|');
+      if (typeof value === 'string' && allowedValues.includes(value)) {
+        config[key] = value;
       }
       return;
     }
   }
 
   /**
-   * 格式化配置为可读文本
+   * 格式化配置为可读文本（委托 cliFormatter）
    *
    * @returns 格式化后的配置文本
    */
   formatConfig(): string {
-    const lines: string[] = ['── 精灵配置 ──'];
-    lines.push(`  触发器间隔：${this.config.triggerIntervalMs / MS_PER_MINUTE} 分钟`);
-    lines.push(`  默认角色：${this.config.defaultPersona || '(未设置)'}`);
-    lines.push(`  静默模式：${this.config.silentMode ? '开启' : '关闭'}`);
-    lines.push(`  主动提示阈值：${this.config.proactiveThreshold} 个事件`);
-    lines.push(`  主动提示冷却：${this.config.proactiveCooldownMs / MS_PER_MINUTE} 分钟`);
-    lines.push(`  文件监听：${this.config.fileWatcherEnabled ? '开启' : '关闭'}`);
-    if (this.config.fileWatcherEnabled) {
-      lines.push(`  监听路径：${this.config.fileWatcherPaths.join(', ')}`);
-      lines.push(`  忽略模式：${this.config.fileWatcherIgnore.join(', ')}`);
-      lines.push(`  防抖时间：${this.config.fileWatcherDebounceMs} 毫秒`);
-    }
-    // FD-04 项目模式信息
-    const modeLabel = this.config.projectMode === 'focus' ? '专注模式' : '智能模式';
-    lines.push(`  项目模式：${modeLabel}`);
-    if (this.config.projectMode === 'focus' && this.config.focusProjectPath) {
-      lines.push(`  专注项目：${this.config.focusProjectPath}`);
-    }
-    return lines.join('\n');
+    return cliFormatter.formatConfig(this.config);
   }
 
   // ─── 记忆仪表盘（委托 MemoryController） ──────────────
@@ -648,12 +631,13 @@ export class Sprite {
   }
 
   /**
-   * 格式化仪表盘为可读文本
+   * 格式化仪表盘为可读文本（委托 cliFormatter）
    *
    * @returns 格式化后的仪表盘文本
    */
   formatDashboard(): string {
-    return this.memoryController.formatDashboard(
+    return cliFormatter.formatDashboard(
+      this.memoryController.dashboard(),
       this.proactiveEngine.pendingCount,
       this.config.proactiveThreshold,
       this.triggerBus.registeredTriggers,

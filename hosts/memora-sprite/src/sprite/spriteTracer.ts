@@ -9,17 +9,16 @@
  *   - 仅实现 ITracer 接口，通过 AgentOptions.tracer 注入
  *   - 与 auditManager 同构：JSONL 输出 + fire-and-forget 写入
  *
- * 设计约束：
- *   - 零外部依赖（符合 ADR-001 零依赖原则）
- *   - 写入为 fire-and-forget（不阻塞 AgentLoop）
- *   - 保持文件大小可控：最大 1000 条，超出时从头截断
+ * 重构（R1）：
+ *   - 提取 JSONL 写入 + 截断逻辑到 JsonlAppender（DRY）
+ *   - SpriteSpan 不再直接操作文件系统，委托给 JsonlAppender
  *
  * 与审计日志的区别（M2 vs M3）：
  *   - audit.log：安全事件（文件访问/写入/拒绝）—— 合规追踪
  *   - trace.log：性能指标（LLM 调用/记忆召回/工具执行耗时）—— 性能调试
  */
 
-import { appendFile, readFile, writeFile } from 'node:fs/promises';
+import { JsonlAppender } from './jsonlAppender.js';
 import type { ITracer, ISpan } from 'memora';
 
 /** 单条 trace 记录（JSONL 每行） */
@@ -43,13 +42,11 @@ interface TraceEntry {
 /**
  * SpriteSpan — 实现 ISpan 接口
  *
- * 记录 startSpan 的时间戳，end() 时将完整记录写入 trace.log。
- * 写入失败时静默降级（不抛错，保持宿主稳定）。
+ * 记录 startSpan 的时间戳，end() 时将完整记录委托给 JsonlAppender 写入。
  */
 class SpriteSpan implements ISpan {
   private readonly name: string;
-  private readonly logFilePath: string;
-  private readonly maxEntries: number;
+  private readonly appender: JsonlAppender;
   private readonly attributes: Record<string, string | number | boolean>;
   private readonly startTime: number;
   private readonly startIso: string;
@@ -57,13 +54,12 @@ class SpriteSpan implements ISpan {
   private errorMessage = '';
   private ended = false;
 
-  constructor(name: string, attributes: Record<string, string | number | boolean>, logFilePath: string, maxEntries: number) {
+  constructor(name: string, attributes: Record<string, string | number | boolean>, appender: JsonlAppender) {
     this.name = name;
     this.attributes = { ...attributes };
+    this.appender = appender;
     this.startTime = Date.now();
     this.startIso = new Date(this.startTime).toISOString();
-    this.logFilePath = logFilePath;
-    this.maxEntries = maxEntries;
   }
 
   /** 设置 span 属性（键值对元数据） */
@@ -77,7 +73,7 @@ class SpriteSpan implements ISpan {
     this.errorMessage = error.message;
   }
 
-  /** 标记 span 结束，异步写入 trace.log（fire-and-forget） */
+  /** 标记 span 结束，委托 JsonlAppender 异步写入 trace.log（fire-and-forget） */
   end(): void {
     // 防重复结束：确保只写一次
     if (this.ended) return;
@@ -94,25 +90,7 @@ class SpriteSpan implements ISpan {
       ...(this.errorMessage ? { errorMessage: this.errorMessage } : {}),
     };
 
-    // fire-and-forget：异步写入，不阻塞主流程
-    appendFile(this.logFilePath, `${JSON.stringify(entry)}\n`)
-      .then(async () => {
-        // 写入成功后，检查文件大小（间隔式：只在 durationMs 为 0 的倍数时检查，避免频繁读文件）
-        // 简化策略：每次写完检查条目数，超过 maxEntries 时截断
-        try {
-          const content = await readFile(this.logFilePath, 'utf8');
-          const lines = content.trim().split('\n');
-          if (lines.length > this.maxEntries) {
-            const trimmed = lines.slice(-this.maxEntries).join('\n') + '\n';
-            await writeFile(this.logFilePath, trimmed, 'utf8');
-          }
-        } catch {
-          // 读取/截断失败，静默忽略（trace 本身是辅助信息）
-        }
-      })
-      .catch(() => {
-        // 写入失败时静默降级，不影响对话
-      });
+    this.appender.append(entry as unknown as Record<string, unknown>);
   }
 }
 
@@ -120,19 +98,20 @@ class SpriteSpan implements ISpan {
  * SpriteTracer — 实现 ITracer 接口
  *
  * 每个 startSpan() 返回一个新的 SpriteSpan，
- * span.end() 时写入 JSONL 记录到 dataDir/trace.log。
+ * span.end() 时委托 JsonlAppender 写入 JSONL 记录到 dataDir/trace.log。
  */
 export class SpriteTracer implements ITracer {
-  private readonly logFilePath: string;
-  private readonly maxEntries: number;
+  private readonly appender: JsonlAppender;
 
   /**
    * @param dataDir - 数据目录（与 audit.log、memora.db 同目录）
    * @param maxEntries - 最大保留条数，超出时从头截断，默认 1000
    */
   constructor(dataDir: string, maxEntries = 1000) {
-    this.logFilePath = `${dataDir}/trace.log`;
-    this.maxEntries = maxEntries;
+    this.appender = new JsonlAppender({
+      filePath: `${dataDir}/trace.log`,
+      maxEntries,
+    });
   }
 
   /**
@@ -143,6 +122,6 @@ export class SpriteTracer implements ITracer {
    * @returns ISpan 实例，调用 .end() 结束并记录
    */
   startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {
-    return new SpriteSpan(name, attributes ?? {}, this.logFilePath, this.maxEntries);
+    return new SpriteSpan(name, attributes ?? {}, this.appender);
   }
 }

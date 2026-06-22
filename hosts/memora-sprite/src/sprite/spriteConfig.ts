@@ -62,6 +62,41 @@ export interface SpriteConfig {
 /** 配置键名联合类型 */
 export type SpriteConfigKey = keyof SpriteConfig;
 
+/**
+ * 配置字段类型 schema 映射表
+ *
+ * 用于 setConfigField 的运行时类型校验，替代 80 行 if-else 链。
+ * 新增配置字段只需在此表加一行映射，无需修改 setConfigField 逻辑。
+ *
+ * 类型含义：
+ *   - 'number'：数值类型
+ *   - 'boolean'：布尔类型
+ *   - 'string'：字符串类型
+ *   - 'string[]'：字符串数组类型
+ *   - 'object'：对象类型（需额外校验子字段）
+ *   - 'enum:val1|val2'：枚举类型，值为竖线分隔的合法值
+ */
+export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
+  configVersion: 'number',
+  triggerIntervalMs: 'number',
+  defaultPersona: 'string',
+  silentMode: 'boolean',
+  proactiveThreshold: 'number',
+  proactiveCooldownMs: 'number',
+  fileWatcherEnabled: 'boolean',
+  fileWatcherPaths: 'string[]',
+  fileWatcherIgnore: 'string[]',
+  fileWatcherDebounceMs: 'number',
+  floatIconPosition: 'object',
+  windowState: 'enum:tray|full',
+  showFloatBubble: 'boolean',
+  projectMode: 'enum:smart|focus',
+  focusProjectPath: 'string',
+  windowBounds: 'object',
+  silentModeExpiresAt: 'string',
+  theme: 'enum:light|dark|auto',
+};
+
 /** 内置默认值 */
 export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   configVersion: 2,
@@ -176,26 +211,39 @@ export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
  * 保存精灵配置
  *
  * 合并写入：保留文件中已有但当前接口未定义的字段（向前兼容）。
+ *
+ * R6 优化：当传入的配置包含所有 DEFAULT_SPRITE_CONFIG 的键时，
+ * 认为是"完整配置"（来自 Sprite.updateConfig），跳过读文件直接写入。
+ * 仅传入部分字段时（如 CLI 直接调用），仍读文件合并。
  */
 export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
   const filePath = resolve(dataDir, CONFIG_FILENAME);
 
-  // 读取已有配置（向前兼容）
-  let existing: Record<string, unknown> = {};
-  if (existsSync(filePath)) {
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(filePath, 'utf-8'));
-      // P2-005 修复：添加类型守卫，避免 sprite.json 被篡改为非对象类型时
-      // 展开操作产生异常行为（如数组或原始值）
-      if (isPlainObject(parsed)) {
-        existing = parsed;
+  // R6 判断是否为完整配置（包含所有默认键），避免每次读文件
+  const isFullConfig = Object.keys(DEFAULT_SPRITE_CONFIG).every(
+    (key) => key in config,
+  );
+
+  let merged: Record<string, unknown>;
+  if (isFullConfig) {
+    // 完整配置：直接写入，无需读文件
+    merged = { ...config };
+  } else {
+    // 部分配置：读文件合并（向前兼容）
+    let existing: Record<string, unknown> = {};
+    if (existsSync(filePath)) {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(filePath, 'utf-8'));
+        if (isPlainObject(parsed)) {
+          existing = parsed;
+        }
+      } catch {
+        // 文件损坏，从空开始
       }
-    } catch {
-      // 文件损坏，从空开始
     }
+    merged = { ...existing, ...config };
   }
 
-  const merged = { ...existing, ...config };
   // 设置 0o600 权限：仅文件所有者可读写
   // sprite.json 含 focusProjectPath 等路径信息，与 config.json（含 apiKey）保持一致的权限保护
   writeFileSync(filePath, JSON.stringify(merged, null, 2), { encoding: 'utf-8', mode: 0o600 });

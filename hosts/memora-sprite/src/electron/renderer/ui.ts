@@ -1733,8 +1733,9 @@ export class UIManager {
       sourceEl.className = `source-${this.getSourceColorClass(memory.source)}`;
     }
     if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
-    if (createdEl) createdEl.textContent = memory.createdAt;
-    if (accessedEl) accessedEl.textContent = memory.accessedAt;
+    // R5 详情面板日期用 formatMemoryTime 统一格式化（ISO → 相对时间）
+    if (createdEl) createdEl.textContent = formatMemoryTime(memory.createdAt);
+    if (accessedEl) accessedEl.textContent = formatMemoryTime(memory.accessedAt);
     if (contentEl) contentEl.textContent = memory.content;
 
     // 记录当前查看的记忆 ID（供删除按钮使用）

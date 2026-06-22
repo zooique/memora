@@ -108,8 +108,9 @@ export class MemoryController {
       source: m.source,
       score: this.#formatScore(m.score),
       content: m.content,
-      createdAt: new Date(m.createdAt).toLocaleString('zh-CN'),
-      accessedAt: new Date(m.accessedAt).toLocaleString('zh-CN'),
+      // R5 日期返回 ISO 8601 原始字符串，由 UI 层根据 locale 格式化
+      createdAt: new Date(m.createdAt).toISOString(),
+      accessedAt: new Date(m.accessedAt).toISOString(),
     };
   }
 
@@ -216,41 +217,4 @@ export class MemoryController {
     };
   }
 
-  /**
-   * 格式化仪表盘为可读文本
-   *
-   * @param pendingNotices 累积事件数
-   * @param proactiveThreshold 主动提示阈值
-   * @param registeredTriggers 已注册触发器列表
-   * @returns 格式化后的仪表盘文本
-   */
-  formatDashboard(pendingNotices: number, proactiveThreshold: number, registeredTriggers: string[]): string {
-    const data = this.dashboard();
-    const lines: string[] = [];
-
-    lines.push('── 记忆仪表盘 ──');
-    lines.push(`总记忆数：${data.total}`);
-
-    lines.push(`累积事件：${pendingNotices}（阈值 ${proactiveThreshold}）`);
-    lines.push(`已注册触发器：${registeredTriggers.join(', ')}`);
-
-    if (Object.keys(data.bySource).length > 0) {
-      const sourceList = Object.entries(data.bySource)
-        .sort(([, a], [, b]) => b - a)
-        .map(([source, count]) => `  ${source}: ${count}`)
-        .join('\n');
-      lines.push(`按来源：\n${sourceList}`);
-    }
-
-    if (data.suggestions.length > 0) {
-      lines.push('推荐关注：');
-      for (const hit of data.suggestions) {
-        lines.push(`  [${hit.source}] ${hit.name} (${hit.reason}, 相关度 ${hit.relevance})`);
-      }
-    } else {
-      lines.push('暂无推荐（记忆库为空或尚无足够数据）');
-    }
-
-    return lines.join('\n');
-  }
 }
