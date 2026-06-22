@@ -13,9 +13,9 @@
  */
 
 import type { UIManager } from './ui.js';
+import { setButtonLoading, clearElement } from './domHelpers.js';
 import type { MemoryListItem } from './types.js';
 import { createIpcErrorHandler, reportError } from './errorHelpers.js';
-import { clearElement } from './domHelpers.js';
 
 /** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
 const DASHBOARD_PULSE_MS = 300;
@@ -109,7 +109,7 @@ export function createMemoryController(uiManager: UIManager) {
     // 添加记忆
     uiManager.onMemoryAdd(async (data) => {
       // FD-08 进行中反馈：禁用按钮防止重复点击
-      uiManager.setButtonLoading('btn-memory-add-confirm', true, '添加中...');
+      setButtonLoading('btn-memory-add-confirm', true, '添加中...');
       try {
         await window.electronAPI.addMemory(data);
         uiManager.clearAddMemoryForm();
@@ -121,7 +121,7 @@ export function createMemoryController(uiManager: UIManager) {
         handleIpcError('onMemoryAdd', error, '添加记忆失败');
       } finally {
         // FD-08 恢复按钮状态
-        uiManager.setButtonLoading('btn-memory-add-confirm', false);
+        setButtonLoading('btn-memory-add-confirm', false);
       }
     });
   }

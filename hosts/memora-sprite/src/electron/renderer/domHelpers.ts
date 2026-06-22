@@ -4,6 +4,7 @@
  * 职责：
  * - 提供类型安全的 DOM 元素获取函数
  * - 核心元素缺失时抛出明确错误，可选元素缺失时降级
+ * - 通用 DOM 操作（清空容器、按钮 loading 状态、时间格式化）
  *
  * 设计原则：
  * - 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败
@@ -95,4 +96,67 @@ export function escapeHtml(text: string): string {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// ─── 时间格式化 ─────────────────────────────────────────
+
+/**
+ * U5 统一相对时间格式化（合并原 formatRelativeTime + formatMemoryTime）
+ *
+ * 将任意日期字符串（ISO 8601 或 YYYY-MM-DD）转换为人类可读的相对时间：
+ * - 1 分钟内 → "刚刚"
+ * - 1 小时内 → "X 分钟前"
+ * - 24 小时内 → "X 小时前"
+ * - 7 天内 → "X 天前"
+ * - 更早 → "MM-DD" 格式
+ *
+ * @param dateStr 日期字符串（支持 ISO 8601 和 YYYY-MM-DD 格式）
+ * @returns 格式化后的相对时间文本
+ */
+export function formatTimeAgo(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  const diffHour = Math.floor(diffMs / 3_600_000);
+  const diffDay = Math.floor(diffMs / 86_400_000);
+
+  if (diffMin < 1) return '刚刚';
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  if (diffHour < 24) return `${diffHour} 小时前`;
+  if (diffDay < 7) return `${diffDay} 天前`;
+  // 更早：返回 MM-DD 格式
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${m}-${d}`;
+}
+
+// ─── 按钮状态管理 ─────────────────────────────────────────
+
+/**
+ * U6 设置按钮 loading 状态（从 UIManager 提取的通用工具方法）
+ *
+ * 异步操作进行中时禁用按钮并显示 loading 文本，防止用户重复点击。
+ * 操作完成后恢复按钮原始状态。
+ *
+ * @param buttonId 按钮 DOM ID
+ * @param loading 是否处于 loading 状态
+ * @param loadingText loading 时显示的文本（可选，默认在原文本前加 "..."）
+ */
+export function setButtonLoading(buttonId: string, loading: boolean, loadingText?: string): void {
+  const el = document.getElementById(buttonId);
+  if (!(el instanceof HTMLButtonElement)) return;
+
+  if (loading) {
+    // 保存原始文本到 dataset，用于恢复
+    if (!el.dataset.originalText) {
+      el.dataset.originalText = el.textContent ?? '';
+    }
+    el.disabled = true;
+    el.textContent = loadingText ?? `${el.dataset.originalText}...`;
+  } else {
+    el.disabled = false;
+    el.textContent = el.dataset.originalText ?? el.textContent ?? '';
+    delete el.dataset.originalText;
+  }
 }

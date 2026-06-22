@@ -108,6 +108,7 @@ export class ModalManager {
    *
    * @param options.title 弹窗标题（默认"确认"）
    * @param options.message 确认消息文本
+   * @param options.html 是否将 message 视为 HTML（默认 false，走 textContent 防 XSS）
    * @param options.confirmText 确认按钮文本（默认"确定"）
    * @param options.cancelText 取消按钮文本（默认"取消"）
    * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
@@ -115,6 +116,8 @@ export class ModalManager {
   showConfirmDialog(options: {
     title?: string;
     message: string;
+    /** U1 是否将 message 视为 HTML（默认 false，走 textContent 防 XSS） */
+    html?: boolean;
     confirmText?: string;
     cancelText?: string;
     danger?: boolean;
@@ -133,7 +136,12 @@ export class ModalManager {
 
       // 设置弹窗内容
       titleEl.textContent = options.title ?? '确认';
-      messageEl.innerHTML = options.message;
+      // U1 默认走 textContent 防 XSS，仅显式声明 html:true 时才走 innerHTML
+      if (options.html) {
+        messageEl.innerHTML = options.message;
+      } else {
+        messageEl.textContent = options.message;
+      }
       btnOk.textContent = options.confirmText ?? '确定';
       btnCancel.textContent = options.cancelText ?? '取消';
 

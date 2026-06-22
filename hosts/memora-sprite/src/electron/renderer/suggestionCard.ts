@@ -18,7 +18,6 @@
 import type { ConfigSuggestionPayload } from '../preload.js';
 import { EventTracker } from './eventTracker.js';
 import { reportError, toError } from './errorHelpers.js';
-import { escapeHtml } from './domHelpers.js';
 
 /**
  * 建议卡片管理器
@@ -120,74 +119,103 @@ export class SuggestionCardManager {
     };
     const typeLabel = typeLabels[suggestion.type] ?? '建议';
 
-    // 构建卡片内容
-    card.innerHTML = `
-      <div class="suggestion-card-header">
-        <span class="suggestion-card-icon">💡</span>
-        <span class="suggestion-card-type">${typeLabel}</span>
-        <span class="suggestion-card-confidence">置信度 ${Math.round(suggestion.confidence * 100)}%</span>
-        <button class="suggestion-card-close" title="关闭">✕</button>
-      </div>
-      <div class="suggestion-card-name">${escapeHtml(suggestion.name)}</div>
-      <div class="suggestion-card-content">${escapeHtml(suggestion.content)}</div>
-      <div class="suggestion-card-actions">
-        <button class="suggestion-card-btn accept">接受</button>
-        <button class="suggestion-card-btn reject">拒绝</button>
-      </div>
-    `;
+    // U3 用 createElement 替代 innerHTML 模板，与项目规范一致且天然防 XSS
 
-    // 注册事件监听器（纳入 EventTracker 统一清理）
-    const closeBtn = card.querySelector<HTMLButtonElement>('.suggestion-card-close');
-    const acceptBtn = card.querySelector<HTMLButtonElement>('.suggestion-card-btn.accept');
-    const rejectBtn = card.querySelector<HTMLButtonElement>('.suggestion-card-btn.reject');
+    // 头部：图标 + 类型标签 + 置信度 + 关闭按钮
+    const header = document.createElement('div');
+    header.className = 'suggestion-card-header';
 
-    if (closeBtn) {
-      this.events.addEventListener(closeBtn, 'click', () => {
-        this.removeCard(card);
-      });
-    }
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'suggestion-card-icon';
+    iconSpan.textContent = '💡';
+    header.appendChild(iconSpan);
 
-    if (acceptBtn) {
-      const capturedRejectBtn = rejectBtn;
-      this.events.addEventListener(acceptBtn, 'click', async () => {
-        acceptBtn.disabled = true;
-        capturedRejectBtn && (capturedRejectBtn.disabled = true);
-        acceptBtn.textContent = '处理中...';
-        try {
-          const result = await window.electronAPI.acceptSuggestion(suggestion);
-          if (result.success) {
-            this.removeCard(card);
-          } else {
-            // 恢复按钮状态，显示错误
-            acceptBtn.disabled = false;
-            capturedRejectBtn && (capturedRejectBtn.disabled = false);
-            acceptBtn.textContent = '接受';
-            reportError('SuggestionCard', `接受建议失败: ${result.error}`);
-          }
-        } catch (err) {
-          acceptBtn.disabled = false;
-          capturedRejectBtn && (capturedRejectBtn.disabled = false);
-          acceptBtn.textContent = '接受';
-          reportError('SuggestionCard', `接受建议异常: ${toError(err).message}`);
-        }
-      });
-    }
+    const typeSpan = document.createElement('span');
+    typeSpan.className = 'suggestion-card-type';
+    typeSpan.textContent = typeLabel;
+    header.appendChild(typeSpan);
 
-    if (rejectBtn) {
-      const capturedAcceptBtn = acceptBtn;
-      this.events.addEventListener(rejectBtn, 'click', async () => {
-        rejectBtn.disabled = true;
-        capturedAcceptBtn && (capturedAcceptBtn.disabled = true);
-        try {
-          await window.electronAPI.rejectSuggestion(suggestion);
+    const confidenceSpan = document.createElement('span');
+    confidenceSpan.className = 'suggestion-card-confidence';
+    confidenceSpan.textContent = `置信度 ${Math.round(suggestion.confidence * 100)}%`;
+    header.appendChild(confidenceSpan);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'suggestion-card-close';
+    closeBtn.title = '关闭';
+    closeBtn.textContent = '✕';
+    header.appendChild(closeBtn);
+
+    card.appendChild(header);
+
+    // 名称
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'suggestion-card-name';
+    nameDiv.textContent = suggestion.name;
+    card.appendChild(nameDiv);
+
+    // 内容
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'suggestion-card-content';
+    contentDiv.textContent = suggestion.content;
+    card.appendChild(contentDiv);
+
+    // 操作按钮
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'suggestion-card-actions';
+
+    const acceptBtn = document.createElement('button');
+    acceptBtn.className = 'suggestion-card-btn accept';
+    acceptBtn.textContent = '接受';
+    actionsDiv.appendChild(acceptBtn);
+
+    const rejectBtn = document.createElement('button');
+    rejectBtn.className = 'suggestion-card-btn reject';
+    rejectBtn.textContent = '拒绝';
+    actionsDiv.appendChild(rejectBtn);
+
+    card.appendChild(actionsDiv);
+
+    // 注册事件监听器（纳入 EventTracker 统一清理，U3 直接使用已创建的元素引用）
+    this.events.addEventListener(closeBtn, 'click', () => {
+      this.removeCard(card);
+    });
+
+    this.events.addEventListener(acceptBtn, 'click', async () => {
+      acceptBtn.disabled = true;
+      rejectBtn.disabled = true;
+      acceptBtn.textContent = '处理中...';
+      try {
+        const result = await window.electronAPI.acceptSuggestion(suggestion);
+        if (result.success) {
           this.removeCard(card);
-        } catch (err) {
+        } else {
+          // 恢复按钮状态，显示错误
+          acceptBtn.disabled = false;
           rejectBtn.disabled = false;
-          capturedAcceptBtn && (capturedAcceptBtn.disabled = false);
-          reportError('SuggestionCard', `拒绝建议异常: ${toError(err).message}`);
+          acceptBtn.textContent = '接受';
+          reportError('SuggestionCard', `接受建议失败: ${result.error}`);
         }
-      });
-    }
+      } catch (err) {
+        acceptBtn.disabled = false;
+        rejectBtn.disabled = false;
+        acceptBtn.textContent = '接受';
+        reportError('SuggestionCard', `接受建议异常: ${toError(err).message}`);
+      }
+    });
+
+    this.events.addEventListener(rejectBtn, 'click', async () => {
+      rejectBtn.disabled = true;
+      acceptBtn.disabled = true;
+      try {
+        await window.electronAPI.rejectSuggestion(suggestion);
+        this.removeCard(card);
+      } catch (err) {
+        rejectBtn.disabled = false;
+        acceptBtn.disabled = false;
+        reportError('SuggestionCard', `拒绝建议异常: ${toError(err).message}`);
+      }
+    });
 
     return card;
   }

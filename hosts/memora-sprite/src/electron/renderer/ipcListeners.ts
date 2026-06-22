@@ -19,7 +19,7 @@
 import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipcChannels.js';
 import { reportError } from './errorHelpers.js';
-import { escapeHtml } from './domHelpers.js';
+import { clearElement } from './domHelpers.js';
 
 /**
  * 渲染审计日志列表到 #audit-list
@@ -35,7 +35,12 @@ async function loadAndRenderAuditLog(): Promise<void> {
     const entries = await window.electronAPI.listAuditLog(50);
     countEl.textContent = String(entries.length);
     if (entries.length === 0) {
-      listEl.innerHTML = '<div class="profile-empty">暂无审计记录</div>';
+      // U2 用 createElement 替代 innerHTML，与项目规范一致
+      clearElement(listEl);
+      const emptyDiv = document.createElement('div');
+      emptyDiv.className = 'profile-empty';
+      emptyDiv.textContent = '暂无审计记录';
+      listEl.appendChild(emptyDiv);
       return;
     }
     const frag = document.createDocumentFragment();
@@ -65,10 +70,16 @@ async function loadAndRenderAuditLog(): Promise<void> {
       item.appendChild(contentEl);
       frag.appendChild(item);
     }
-    listEl.innerHTML = '';
+    // U2 用 clearElement 替代 innerHTML = ''
+    clearElement(listEl);
     listEl.appendChild(frag);
   } catch (err) {
-    listEl.innerHTML = `<div class="profile-empty">加载失败: ${escapeHtml(err instanceof Error ? err.message : String(err))}</div>`;
+    // U2 用 createElement 替代 innerHTML，与项目规范一致
+    clearElement(listEl);
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'profile-empty';
+    errorDiv.textContent = `加载失败: ${err instanceof Error ? err.message : String(err)}`;
+    listEl.appendChild(errorDiv);
   }
 }
 
@@ -228,7 +239,26 @@ function handleDecayCompleted(
     4000,
   );
 }
-/** IPC 监听器初始化参数 */
+/**
+ * U4 精灵事件处理器映射表
+ *
+ * 替代 if-else 链，新增事件类型只需在表中加一行映射。
+ * key: msg.type，value: 处理函数
+ */
+function createSpriteEventHandlers(
+  uiManager: UIManager,
+  callbacks: IpcListenerCallbacks,
+): Record<string, (msg: { type: string; payload: unknown; silent: boolean }) => void> {
+  return {
+    memoryNoticed: () => callbacks.onMemoryNoticed(),
+    insightGained: () => callbacks.onInsightGained(),
+    proactivePrompt: (msg) => handleProactivePrompt(uiManager, msg),
+    projectSwitched: (msg) => handleProjectSwitched(uiManager, msg),
+    skillMatched: (msg) => handleSkillMatched(uiManager, msg),
+    memoryRecalled: (msg) => handleMemoryRecalled(uiManager, msg),
+    decayCompleted: (msg) => handleDecayCompleted(uiManager, msg),
+  };
+}
 export interface IpcListenerCallbacks {
   /** 记忆被注意时回调（刷新仪表盘 + 脉冲动画） */
   onMemoryNoticed: () => void;
@@ -297,7 +327,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     }
   });
 
-  // ─── 精灵事件（统一监听，按 type 分发） ──────────────────
+  // ─── 精灵事件（统一监听，映射表分发） ──────────────────
   /**
    * 精灵事件监听
    *
@@ -306,27 +336,13 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    * - §6.6 proactivePrompt → 顶部滑入蓝粉渐变 banner（非静默模式）
    *
    * 注意：onSpriteEvent 在同一 IPC 通道上注册多次会导致同一事件触发多次。
-   * 此处统一注册一个监听器，内部按 type 分发，避免重复触发。
+   * 此处统一注册一个监听器，内部按映射表分发，避免重复触发。
    */
+  const spriteHandlers = createSpriteEventHandlers(uiManager, callbacks);
   window.electronAPI.onSpriteEvent((msg) => {
-    if (msg.type === 'memoryNoticed') {
-      callbacks.onMemoryNoticed();
-    } else if (msg.type === 'insightGained') {
-      callbacks.onInsightGained();
-    } else if (msg.type === 'proactivePrompt') {
-      handleProactivePrompt(uiManager, msg);
-    } else if (msg.type === 'projectSwitched') {
-      // L5：项目切换通知
-      handleProjectSwitched(uiManager, msg);
-    } else if (msg.type === 'skillMatched') {
-      // L5：技能匹配通知
-      handleSkillMatched(uiManager, msg);
-    } else if (msg.type === 'memoryRecalled') {
-      // L5：记忆召回通知
-      handleMemoryRecalled(uiManager, msg);
-    } else if (msg.type === 'decayCompleted') {
-      // L5：衰减完成通知（24h 节流）
-      handleDecayCompleted(uiManager, msg);
+    const handler = spriteHandlers[msg.type];
+    if (handler) {
+      handler(msg);
     }
   });
 

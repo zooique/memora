@@ -18,6 +18,7 @@
 import type { UIManager } from './ui.js';
 import type { SpriteConfigForm } from './types.js';
 import { createIpcErrorHandler, toError, reportError } from './errorHelpers.js';
+import { setButtonLoading } from './domHelpers.js';
 
 /** FD-10 静默恢复回调：renderer 注册此回调，用于重建本地恢复定时器 */
 let silentRecoveryCallback: ((remainingMs: number) => void) | null = null;
@@ -45,7 +46,7 @@ export function createSettingsController(uiManager: UIManager) {
   function setupSettingsPanel(): void {
     uiManager.onConfigSave(async (config: SpriteConfigForm) => {
       // FD-08 进行中反馈：禁用保存按钮防止重复点击
-      uiManager.setButtonLoading('btn-settings-save', true, '保存中...');
+      setButtonLoading('btn-settings-save', true, '保存中...');
       try {
         // 逐项更新配置（sprite.updateConfig 一次只更新一个键）
         await window.electronAPI.updateConfig('silentMode', config.silentMode);
@@ -66,7 +67,7 @@ export function createSettingsController(uiManager: UIManager) {
         handleIpcError('onConfigSave', error, '保存精灵配置失败');
       } finally {
         // FD-08 恢复按钮状态
-        uiManager.setButtonLoading('btn-settings-save', false);
+        setButtonLoading('btn-settings-save', false);
       }
     });
 
@@ -79,7 +80,7 @@ export function createSettingsController(uiManager: UIManager) {
       }
 
       // FD-08 进行中反馈：禁用保存按钮防止重复点击
-      uiManager.setButtonLoading('btn-settings-save', true, '初始化中...');
+      setButtonLoading('btn-settings-save', true, '初始化中...');
       try {
         // IX-06 进行中反馈走 toast（不自动消失，等结果出来后由成功/失败 toast 替换）
         // P2-FLOW-11 优化文案：明确告知用户正在初始化（耗时操作），避免用户以为卡住
@@ -124,7 +125,7 @@ export function createSettingsController(uiManager: UIManager) {
         handleIpcError('onLlmConfigSave', error, '保存 LLM 配置失败');
       } finally {
         // FD-08 恢复按钮状态
-        uiManager.setButtonLoading('btn-settings-save', false);
+        setButtonLoading('btn-settings-save', false);
       }
     });
 
@@ -146,7 +147,7 @@ export function createSettingsController(uiManager: UIManager) {
       }
 
       // FD-08 进行中反馈：禁用测试按钮防止重复点击
-      uiManager.setButtonLoading('btn-llm-test', true, '测试中...');
+      setButtonLoading('btn-llm-test', true, '测试中...');
       // 显示"测试中..."状态
       uiManager.showLlmTestResult({ success: false, error: '测试中...' });
       const startTime = Date.now();
@@ -162,7 +163,7 @@ export function createSettingsController(uiManager: UIManager) {
         });
       } finally {
         // FD-08 恢复按钮状态
-        uiManager.setButtonLoading('btn-llm-test', false);
+        setButtonLoading('btn-llm-test', false);
       }
     });
   }

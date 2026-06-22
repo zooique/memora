@@ -16,7 +16,7 @@
 
 import { renderMarkdown } from './markdown.js';
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
-import { getRequiredElement, getOptionalElement, clearElement, escapeHtml } from './domHelpers.js';
+import { getRequiredElement, getOptionalElement, clearElement, escapeHtml, formatTimeAgo } from './domHelpers.js';
 import { EventTracker } from './eventTracker.js';
 import { ToastManager } from './toast.js';
 import type { ToastOptions } from './toast.js';
@@ -59,65 +59,7 @@ export type {
   ToastType,
 } from './types.js';
 
-// ─── 工具函数 ───────────────────────────────────────────
-
-/**
- * UX-PP-05 相对时间格式化
- *
- * 将日期字符串 YYYY-MM-DD 转换为人类可读的相对时间：
- * - 今天 → "今天"
- * - 昨天 → "昨天"
- * - 7 天内 → "3天前"
- * - 更早 → "06-15"（MM-DD 格式）
- */
-function formatRelativeTime(dateStr: string): string {
-  const today = new Date();
-  // noUncheckedIndexedAccess: split+map 解构后元素为 number | undefined，提供默认值确保数值有效
-  const parts = dateStr.split('-').map(Number);
-  const y = parts[0] ?? 0;
-  const m = parts[1] ?? 1;
-  const d = parts[2] ?? 1;
-  // 重置时间部分为 0:00:00 以正确计算天数差
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const targetStart = new Date(y, m - 1, d);
-  const diffDays = Math.round((todayStart.getTime() - targetStart.getTime()) / 86400000);
-
-  if (diffDays === 0) return '今天';
-  if (diffDays === 1) return '昨天';
-  if (diffDays < 7) return `${diffDays}天前`;
-  // 超过 7 天显示 MM-DD
-  return `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-}
-
-/**
- * P3-FLOW-14 格式化记忆创建时间为相对时间
- *
- * 将 ISO 8601 时间字符串转换为人类可读的相对时间：
- * - 1 小时内 → "X 分钟前"
- * - 24 小时内 → "X 小时前"
- * - 7 天内 → "X 天前"
- * - 更早 → "MM-DD"（MM-DD 格式）
- *
- * @param isoTime ISO 8601 时间字符串
- * @returns 格式化后的相对时间文本
- */
-function formatMemoryTime(isoTime: string): string {
-  const date = new Date(isoTime);
-  const now = Date.now();
-  const diffMs = now - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  const diffHour = Math.floor(diffMs / 3_600_000);
-  const diffDay = Math.floor(diffMs / 86_400_000);
-
-  if (diffMin < 1) return '刚刚';
-  if (diffMin < 60) return `${diffMin} 分钟前`;
-  if (diffHour < 24) return `${diffHour} 小时前`;
-  if (diffDay < 7) return `${diffDay} 天前`;
-  // 更早：返回 MM-DD 格式
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${m}-${d}`;
-}
+// ─── 工具函数已迁移至 domHelpers.ts（formatTimeAgo、setButtonLoading）──
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
@@ -1124,33 +1066,7 @@ export class UIManager {
     document.getElementById('chat-empty-state')?.classList.add('hidden');
   }
 
-  /**
-   * FD-08 设置按钮 loading 状态
-   *
-   * 异步操作进行中时禁用按钮并显示 loading 文本，防止用户重复点击。
-   * 操作完成后恢复按钮原始状态。
-   *
-   * @param buttonId 按钮 DOM ID
-   * @param loading 是否处于 loading 状态
-   * @param loadingText loading 时显示的文本（可选，默认在原文本前加 "..."）
-   */
-  setButtonLoading(buttonId: string, loading: boolean, loadingText?: string): void {
-    const el = document.getElementById(buttonId);
-    if (!(el instanceof HTMLButtonElement)) return;
-
-    if (loading) {
-      // 保存原始文本到 dataset，用于恢复
-      if (!el.dataset.originalText) {
-        el.dataset.originalText = el.textContent ?? '';
-      }
-      el.disabled = true;
-      el.textContent = loadingText ?? `${el.dataset.originalText}...`;
-    } else {
-      el.disabled = false;
-      el.textContent = el.dataset.originalText ?? el.textContent ?? '';
-      delete el.dataset.originalText;
-    }
-  }
+  // U6: setButtonLoading 已迁移至 domHelpers.ts，UIManager 不再持有此方法
 
   // ─── 面板管理 ─────────────────────────────────────────
 
@@ -1682,7 +1598,7 @@ export class UIManager {
         const timeEl = document.createElement('span');
         timeEl.className = 'memory-time';
         timeEl.title = `创建于 ${mem.createdAt}`;
-        timeEl.textContent = formatMemoryTime(mem.createdAt);
+        timeEl.textContent = formatTimeAgo(mem.createdAt);
         metaEl.appendChild(timeEl);
       }
 
@@ -1733,9 +1649,9 @@ export class UIManager {
       sourceEl.className = `source-${this.getSourceColorClass(memory.source)}`;
     }
     if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
-    // R5 详情面板日期用 formatMemoryTime 统一格式化（ISO → 相对时间）
-    if (createdEl) createdEl.textContent = formatMemoryTime(memory.createdAt);
-    if (accessedEl) accessedEl.textContent = formatMemoryTime(memory.accessedAt);
+    // R5 详情面板日期用 formatTimeAgo 统一格式化（ISO → 相对时间）
+    if (createdEl) createdEl.textContent = formatTimeAgo(memory.createdAt);
+    if (accessedEl) accessedEl.textContent = formatTimeAgo(memory.accessedAt);
     if (contentEl) contentEl.textContent = memory.content;
 
     // 记录当前查看的记忆 ID（供删除按钮使用）
@@ -2244,7 +2160,7 @@ export class UIManager {
       const dateSpan = document.createElement('span');
       dateSpan.className = 'session-list-item-date';
       // UX-PP-05 使用相对时间格式化（今天/昨天/3天前/MM-DD）
-      dateSpan.textContent = formatRelativeTime(session.date);
+      dateSpan.textContent = formatTimeAgo(session.date);
       li.appendChild(dateSpan);
 
       // UX-PP-05 首条消息预览（仅在有内容时显示）
@@ -2440,12 +2356,14 @@ export class UIManager {
    * @param options.title 弹窗标题（默认"确认"）
    * @param options.message 确认消息文本
    * @param options.confirmText 确认按钮文本（默认"确定"）
+   * @param options.html 是否将 message 视为 HTML（默认 false，走 textContent 防 XSS）
    * @param options.cancelText 取消按钮文本（默认"取消"）
    * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
    */
   showConfirmDialog(options: {
     title?: string;
     message: string;
+    html?: boolean;
     confirmText?: string;
     cancelText?: string;
     danger?: boolean;
@@ -2475,6 +2393,7 @@ export class UIManager {
     const confirmed = await this.modalManager.showConfirmDialog({
       title: '确认写入操作',
       message: messageHtml,
+      html: true, // U1 显式声明：messageHtml 已通过 escapeHtml 转义，允许富文本
       confirmText: '允许写入',
       cancelText: '取消',
     });
