@@ -108,7 +108,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.electronAPI.updateConfig('theme', theme);
     // UX-P2-10 通知主进程同步到浮动窗口，避免两个窗口主题不一致
     window.electronAPI.notifyThemeChanged(theme);
-    console.debug(`[theme] 主题已切换为: ${theme}`);
   });
 
   // 初始化 IPC 监听器（统一注册，通过回调解耦业务逻辑）
