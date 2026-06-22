@@ -222,12 +222,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     // P3-FLOW-10 更新设置面板 Agent 连接状态指示器
     settingsController.updateAgentStatus(ready ? 'ready' : 'error', error ?? undefined);
     if (!ready) {
-      // 首次启动引导：显示欢迎消息 + 自动跳转到设置面板
-      // P3-FLOW-02 文案优化：提示用户先测试连接，避免配置错误导致初始化失败
-      uiManager.appendMessage({
-        role: 'system',
-        content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
-      });
+      // 区分错误来源：配置缺失 vs 初始化失败（如 native 模块加载失败、数据库错误等）
+      // 避免误导用户以为 LLM 配置缺失，实际可能是 better-sqlite3 ABI 不匹配等问题
+      const isConfigMissing = !error || error.includes('配置不完整') || error.includes('API Key');
+      if (isConfigMissing) {
+        // 首次启动引导：显示欢迎消息 + 自动跳转到设置面板
+        // P3-FLOW-02 文案优化：提示用户先测试连接，避免配置错误导致初始化失败
+        uiManager.appendMessage({
+          role: 'system',
+          content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
+        });
+      } else {
+        // 初始化失败：显示具体错误信息，帮助用户定位问题
+        // 常见原因：better-sqlite3 ABI 不匹配（需 electron-rebuild）、数据库 schema 损坏等
+        uiManager.appendMessage({
+          role: 'system',
+          content: `⚠️ Agent 初始化失败\n\n错误信息：${error}\n\n可能的原因：\n• better-sqlite3 原生模块未正确编译（尝试运行 npm run rebuild）\n• 数据库文件损坏（可备份后删除 ~/.memora/memora.db 重试）\n• LLM 配置有误（请在设置面板检查并重新保存）\n\n请在设置面板重新保存 LLM 配置以触发重新初始化。`,
+        });
+      }
       // 自动切换到设置面板
       uiManager.switchPanel('settings');
       // 仍加载精灵配置，让用户能在设置面板中配置

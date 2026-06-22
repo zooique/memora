@@ -216,5 +216,134 @@ export class ModalManager {
       this.activeConfirmCleanup();
       this.activeConfirmCleanup = null;
     }
+
+    // 清理活跃的输入弹窗（防止 cleanup 后仍有未完成的 Promise）
+    if (this.activePromptCleanup) {
+      this.activePromptCleanup();
+      this.activePromptCleanup = null;
+    }
   }
+
+  /**
+   * 显示通用输入弹窗（替代 window.prompt）
+   *
+   * 返回 Promise，异步等待用户输入：
+   * - string：用户输入的内容（已 trim）
+   * - null：用户点击取消、关闭按钮或背景
+   *
+   * @param options.title 弹窗标题（默认"输入"）
+   * @param options.message 提示消息文本
+   * @param options.defaultValue 输入框默认值（可选）
+   * @param options.placeholder 输入框占位文本（可选）
+   * @param options.maxLength 输入最大长度（默认 100）
+   * @param options.required 是否必填（默认 true，空值视为取消）
+   */
+  showInputDialog(options: {
+    title?: string;
+    message: string;
+    defaultValue?: string;
+    placeholder?: string;
+    maxLength?: number;
+    required?: boolean;
+  }): Promise<string | null> {
+    return new Promise((resolve) => {
+      const modal = document.getElementById('prompt-modal');
+      const titleEl = document.getElementById('prompt-title');
+      const messageEl = document.getElementById('prompt-message');
+      const inputEl = document.getElementById('prompt-input') as HTMLInputElement | null;
+      const errorEl = document.getElementById('prompt-error');
+      const btnOk = document.getElementById('btn-prompt-ok');
+      const btnCancel = document.getElementById('btn-prompt-cancel');
+      if (!modal || !titleEl || !messageEl || !inputEl || !errorEl || !btnOk || !btnCancel) {
+        // 元素缺失时回退为 window.prompt（防御性编程）
+        const fallback = window.prompt(options.message, options.defaultValue ?? '');
+        resolve(fallback?.trim() || null);
+        return;
+      }
+
+      // 设置弹窗内容
+      titleEl.textContent = options.title ?? '输入';
+      messageEl.textContent = options.message;
+      inputEl.value = options.defaultValue ?? '';
+      inputEl.placeholder = options.placeholder ?? '';
+      inputEl.maxLength = options.maxLength ?? 100;
+      errorEl.classList.add('hidden');
+      const isRequired = options.required ?? true;
+
+      // 并发保护：若已有活跃弹窗，先取消旧的
+      if (this.activePromptCleanup) {
+        this.activePromptCleanup();
+        this.activePromptCleanup = null;
+      }
+
+      let resolved = false;
+
+      // 键盘支持：Escape 取消，Enter 确认
+      const onKeydown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          onOk();
+        }
+      };
+
+      const cleanup = () => {
+        if (resolved) return;
+        resolved = true;
+        modal.classList.add('hidden');
+        btnOk.removeEventListener('click', onOk);
+        btnCancel.removeEventListener('click', onCancel);
+        modal.removeEventListener('click', onBackdrop);
+        modal.removeEventListener('keydown', onKeydown);
+        const closeBtn = modal.querySelector('.modal-close');
+        if (closeBtn) closeBtn.removeEventListener('click', onCancel);
+        this.activePromptCleanup = null;
+      };
+
+      const onOk = () => {
+        const value = inputEl.value.trim();
+        // 必填校验：空值提示错误，不关闭弹窗
+        if (isRequired && !value) {
+          errorEl.textContent = '输入不能为空';
+          errorEl.classList.remove('hidden');
+          inputEl.focus();
+          return;
+        }
+        cleanup();
+        resolve(value || null);
+      };
+
+      const onCancel = () => { cleanup(); resolve(null); };
+
+      // 注册活跃清理函数，供下次并发调用时取消旧弹窗
+      this.activePromptCleanup = () => { cleanup(); resolve(null); };
+
+      // 注册监听器
+      btnOk.addEventListener('click', onOk);
+      btnCancel.addEventListener('click', onCancel);
+      modal.addEventListener('keydown', onKeydown);
+      const onBackdrop = (e: MouseEvent) => {
+        if (e.target === modal) {
+          e.stopPropagation();
+          onCancel();
+        }
+      };
+      modal.addEventListener('click', onBackdrop);
+      const closeBtn = modal.querySelector('.modal-close');
+      if (closeBtn) closeBtn.addEventListener('click', onCancel);
+
+      // 显示弹窗
+      modal.classList.remove('hidden');
+
+      // 保存当前焦点，将焦点移到输入框并选中全部文本（方便快速替换）
+      this.previousFocusEl = document.activeElement as HTMLElement | null;
+      inputEl.focus();
+      inputEl.select();
+    });
+  }
+
+  /** 当前活跃的输入弹窗清理函数（防止并发调用时监听器叠加） */
+  private activePromptCleanup: (() => void) | null = null;
 }

@@ -477,6 +477,26 @@
     </div>
   </div>
 
+  <!-- 通用输入弹窗：替代 window.prompt，提供一致的视觉体验 -->
+  <!-- 由 ui.ts showInputDialog() 控制，用于会话重命名等需要文本输入的场景 -->
+  <div id="prompt-modal" class="modal hidden">
+    <div class="modal-content modal-content-sm">
+      <div class="modal-header">
+        <h3 id="prompt-title">输入</h3>
+        <button class="modal-close" data-modal="prompt-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="prompt-message" class="confirm-message"></p>
+        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" />
+        <p id="prompt-error" class="prompt-error hidden"></p>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-prompt-cancel" class="btn-secondary">取消</button>
+        <button id="btn-prompt-ok" class="btn-primary">确定</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 三态首次引导弹窗：首次打开完整窗口时显示，介绍三态切换方式 + 快捷键 -->
   <!-- 使用 localStorage 标记是否已引导过，避免重复打扰老用户 -->
   <div id="onboarding-modal" class="modal hidden">

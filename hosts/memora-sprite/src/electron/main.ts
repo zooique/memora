@@ -67,6 +67,9 @@ let currentAbortController: AbortController | null = null;
 /** Agent 是否已就绪 */
 let agentReady = false;
 
+/** 初始化失败的具体错误信息（agentReady=false 时有效，用于区分配置缺失 vs 其他初始化错误） */
+let initErrorDetail: string | null = null;
+
 /** 精灵事件取消订阅函数集合（Agent 重新初始化前调用，避免重复注册） */
 let spriteEventUnsubscribers: Array<() => void> = [];
 
@@ -184,6 +187,24 @@ function createIpcContext(
     incrementUnreadCount,
     resetUnreadCount,
   };
+}
+
+// ─── 错误分类辅助函数 ────────────────────────────────────────
+
+/**
+ * 将初始化错误信息分类为"配置缺失"或"初始化失败"
+ *
+ * 统一 initializeApp 和 reinitAgent 的错误分类逻辑，
+ * 避免两处判断不一致导致渲染进程无法正确显示错误类型。
+ *
+ * @param errMessage 原始错误消息
+ * @param prefix 错误前缀（initializeApp 用"初始化失败"，reinitAgent 用"重新初始化失败"）
+ */
+function classifyInitError(errMessage: string, prefix: string): string {
+  // 配置缺失：LLM apiKey 为空
+  return errMessage.includes('API Key 未配置') || errMessage.includes('配置不完整')
+    ? '配置不完整，请在设置面板中配置 LLM 提供商和 API Key'
+    : `${prefix}：${errMessage}`;
 }
 
 // ─── 应用启动 ───────────────────────────────────────────────
@@ -368,12 +389,17 @@ async function initializeApp(): Promise<void> {
     trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
 
     agentReady = true;
+    // 初始化成功后清空错误详情
+    initErrorDetail = null;
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
+    const errMessage = toError(error).message;
+    // 使用统一分类函数，确保与 reinitAgent 逻辑一致
+    initErrorDetail = classifyInitError(errMessage, '初始化失败');
     errorHandler.handle(error, {
       code: ErrorCode.INITIALIZATION_FAILED,
-      context: 'Agent 初始化失败（配置可能不完整）',
+      context: 'Agent 初始化失败',
     });
   }
 }
@@ -406,7 +432,8 @@ function registerMinimalIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.AGENT_STATUS, async () => {
     return {
       ready: agentReady,
-      error: agentReady ? null : '配置不完整，请在设置面板中配置 LLM 提供商和 API Key',
+      // 区分错误来源：配置缺失 vs 初始化失败（如 better-sqlite3 ABI 不匹配、数据库 schema 错误等）
+      error: agentReady ? null : (initErrorDetail ?? '配置不完整，请在设置面板中配置 LLM 提供商和 API Key'),
     };
   });
 
@@ -523,6 +550,8 @@ function registerMinimalIpcHandlers(): void {
         setupSpriteEventListeners();
 
         agentReady = true;
+        // 重新初始化成功后清空错误详情
+        initErrorDetail = null;
 
         // 7. 通知渲染进程 Agent 已就绪
         const fullWindow = windowManager.getFullWindow();
@@ -536,6 +565,14 @@ function registerMinimalIpcHandlers(): void {
         // 标记 agentReady=false 使 handleUserInput 拒绝新对话，避免使用已关闭 Agent 抛错。
         // 用户需在设置面板重新配置 LLM 并保存触发再次 reinitAgent。
         agentReady = false;
+        // 清空旧实例引用：prevClose 已关闭旧 Agent，引用已失效
+        // 避免旧 IPC handler 通过闭包访问已关闭的 Agent 对象（chat 方法行为异常）
+        agent = null;
+        sprite = null;
+        sessionStore = null;
+        closeSprite = null;
+        // 使用统一分类函数，确保与 initializeApp 逻辑一致
+        initErrorDetail = classifyInitError(toError(error).message, '重新初始化失败');
         errorHandler.handle(error, {
           code: ErrorCode.INITIALIZATION_FAILED,
           context: '保存 LLM 配置并重新初始化 Agent 失败',

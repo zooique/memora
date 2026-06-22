@@ -108,6 +108,17 @@ export function createSettingsController(uiManager: UIManager) {
           uiManager.showToast('LLM 配置已保存，Agent 已就绪', 'success');
         } else {
           uiManager.showToast(`初始化失败：${error}`, 'error');
+          // 重新初始化失败后，主进程 agentReady=false，但渲染进程 isAgentReady 可能仍为 true
+          // 主动查询 Agent 状态并同步，避免用户尝试对话时调用已关闭的 Agent
+          try {
+            const { ready, error: statusError } = await window.electronAPI.getAgentStatus();
+            uiManager.setAgentReady(ready);
+            updateAgentStatus(ready ? 'ready' : 'error', statusError ?? error ?? undefined);
+          } catch {
+            // 查询状态失败时也标记为未就绪
+            uiManager.setAgentReady(false);
+            updateAgentStatus('error', error ?? undefined);
+          }
         }
       } catch (error) {
         handleIpcError('onLlmConfigSave', error, '保存 LLM 配置失败');

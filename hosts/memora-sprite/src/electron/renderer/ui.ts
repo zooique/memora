@@ -2350,6 +2350,24 @@ export class UIManager {
     return this.modalManager.showConfirmDialog(options);
   }
 
+  /**
+   * 显示通用输入弹窗（替代 window.prompt）
+   *
+   * 代理到 ModalManager.showInputDialog，提供一致的视觉体验。
+   *
+   * @returns 用户输入的内容（已 trim），取消时返回 null
+   */
+  showInputDialog(options: {
+    title?: string;
+    message: string;
+    defaultValue?: string;
+    placeholder?: string;
+    maxLength?: number;
+    required?: boolean;
+  }): Promise<string | null> {
+    return this.modalManager.showInputDialog(options);
+  }
+
   // ─── 三态首次引导（代理到 OnboardingManager） ──────────
 
   /**

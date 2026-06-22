@@ -22,7 +22,7 @@ import { execFile } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
 import Database from 'better-sqlite3';
-import { Agent, createLlmProvider, loadConfig, VectorStore, EmbeddingProvider, toError } from 'memora';
+import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, VectorStore, EmbeddingProvider, toError } from 'memora';
 import type { UIMessages, Config } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
@@ -323,6 +323,21 @@ async function initAgentFromConfig(
   });
 
   await agent.init();
+
+  // 设置宿主记忆关键词，帮助 InsightExtractor 区分领域相关和个人相关输入
+  // 领域关键词：用户工作内容的核心主题（代码、编程、写作等）
+  // 个人关键词：从用户画像中动态学习，无需预设
+  agent.insight?.setKeywords({
+    domain: ['代码', '编程', '开发', '项目', '文档', '写作', '设计', '调试', '部署', '测试'],
+    personal: [],
+  });
+
+  // 后台 Provider：用于 Insight 提取、配置分析等后台 LLM 任务
+  // 不配时所有消费者复用前台 Provider，完全向后兼容
+  if (config.llm.background) {
+    const bgProvider = createProviderFromConfig('background', config.llm.background);
+    agent.setBackgroundProvider(bgProvider);
+  }
 
   // 恢复上次会话（连续演化任务的核心体验）
   const restored = await agent.restoreMostRecentSession('main');

@@ -250,21 +250,23 @@ describe('sessionController', () => {
   });
 
   describe('renameSession', () => {
-    it('应该调用 prompt 确认后执行重命名', async () => {
-      const promptSpy = vi.spyOn(globalThis, 'prompt').mockReturnValue('new-name');
+    it('应该调用 showInputDialog 确认后执行重命名', async () => {
+      // 模拟 showInputDialog 返回新名称
+      const showInputSpy = vi.spyOn(uiManager, 'showInputDialog').mockResolvedValue('new-name');
       const controller = createSessionController(uiManager);
 
       await controller.renameSession('2026-06-20-chat');
 
-      expect(promptSpy).toHaveBeenCalled();
+      expect(showInputSpy).toHaveBeenCalled();
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       expect(mockApi.renameSession).toHaveBeenCalledWith('2026-06-20-chat', 'new-name');
 
-      promptSpy.mockRestore();
+      showInputSpy.mockRestore();
     });
 
-    it('应该拒绝空名称', async () => {
-      const promptSpy = vi.spyOn(globalThis, 'prompt').mockReturnValue('  ');
+    it('应该拒绝空名称（showInputDialog 返回 null）', async () => {
+      // 模拟 showInputDialog 返回 null（用户取消）
+      const showInputSpy = vi.spyOn(uiManager, 'showInputDialog').mockResolvedValue(null);
       const controller = createSessionController(uiManager);
 
       await controller.renameSession('2026-06-20-chat');
@@ -272,7 +274,7 @@ describe('sessionController', () => {
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
       expect(mockApi.renameSession).not.toHaveBeenCalled();
 
-      promptSpy.mockRestore();
+      showInputSpy.mockRestore();
     });
 
     it('应该跳过空 sessionId', async () => {

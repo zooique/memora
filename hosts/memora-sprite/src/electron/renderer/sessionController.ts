@@ -266,15 +266,20 @@ export function createSessionController(uiManager: UIManager) {
     const parts = sessionId.split('-');
     const currentName = parts.length >= 4 ? parts.slice(3).join('-') : sessionId;
 
-    const newName = prompt('输入新会话名：', currentName);
-    if (!newName || !newName.trim()) {
-      if (newName !== null) {
-        uiManager.showToast('会话名不能为空', 'warning');
-      }
-      return;
-    }
+    // 使用自定义输入弹窗替代原生 prompt，提供一致的视觉体验
+    const newName = await uiManager.showInputDialog({
+      title: '重命名会话',
+      message: '请输入新的会话名称：',
+      defaultValue: currentName,
+      placeholder: '输入会话名',
+      maxLength: 100,
+      required: true,
+    });
 
-    const result = await window.electronAPI.renameSession(sessionId, newName.trim());
+    // 用户取消或输入为空
+    if (!newName) return;
+
+    const result = await window.electronAPI.renameSession(sessionId, newName);
     if (result.success) {
       uiManager.showToast('会话已重命名', 'info');
       await loadSessionList();

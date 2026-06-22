@@ -123,7 +123,10 @@ export class ErrorHandler {
   private getUserFriendlyMessage(error: AppError): string {
     const errorMessages: Record<ErrorCode, string> = {
       [ErrorCode.UNKNOWN]: '发生未知错误，请稍后重试',
-      [ErrorCode.INITIALIZATION_FAILED]: '应用初始化失败，请重启应用',
+      // 初始化失败的原因多样（配置缺失、native 模块加载失败、数据库错误等），
+      // 笼统提示"重启应用"会误导用户——重启无法解决 better-sqlite3 ABI 不匹配等问题。
+      // 具体错误信息通过 AGENT_STATUS 通道返回，渲染进程在对话区显示详情。
+      [ErrorCode.INITIALIZATION_FAILED]: 'Agent 初始化失败，请查看对话区的详细错误信息',
       [ErrorCode.CONFIG_LOAD_FAILED]: '配置加载失败，使用默认配置',
       [ErrorCode.WINDOW_CREATE_FAILED]: '窗口创建失败，请重启应用',
       [ErrorCode.FILE_READ_FAILED]: '文件读取失败，请检查文件权限',
