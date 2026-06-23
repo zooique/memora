@@ -939,7 +939,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const count = await agent.restoreMostRecentSession();
+    const count = await agent.sessionManager!.restoreMostRecentSession();
     expect(count).toBe(0);
   });
 
@@ -956,7 +956,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     });
     await agent.init();
 
-    const count = await agent.restoreMostRecentSession();
+    const count = await agent.sessionManager!.restoreMostRecentSession();
     expect(count).toBe(0);
   });
 
@@ -982,7 +982,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     });
     await agent.init();
 
-    const count = await agent.restoreMostRecentSession('main');
+    const count = await agent.sessionManager!.restoreMostRecentSession('main');
     expect(count).toBe(2);
   });
 
@@ -1008,7 +1008,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     await agent.init();
 
     // preferredSession='main' 不匹配，fallback 到最后一个
-    const count = await agent.restoreMostRecentSession('main');
+    const count = await agent.sessionManager!.restoreMostRecentSession('main');
     expect(count).toBe(1);
   });
 
@@ -1028,7 +1028,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     });
     await agent.init();
 
-    const count = await agent.restoreMostRecentSession();
+    const count = await agent.sessionManager!.restoreMostRecentSession();
     expect(count).toBe(0);
   });
 
@@ -1050,7 +1050,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     });
     await agent.init();
 
-    const count = await agent.restoreMostRecentSession('main');
+    const count = await agent.sessionManager!.restoreMostRecentSession('main');
     expect(count).toBe(0);
   });
 });

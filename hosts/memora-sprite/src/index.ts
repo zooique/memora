@@ -377,7 +377,7 @@ async function setupAgentPostInit(
   }
 
   // 恢复上次会话（连续演化任务的核心体验）
-  const restored = await agent.restoreMostRecentSession('main');
+  const restored = await agent.sessionManager!.restoreMostRecentSession('main');
   if (restored > 0) {
     console.log(`已恢复上次会话（${restored} 条消息）\n`);
   }
@@ -401,7 +401,7 @@ async function setupAgentPostInit(
   // H4：注册宿主自定义工具（web_search + memory_search）
   if (agent.tools) {
     setMemorySearcher(async (query, limit) => {
-      const hits = await agent.searchMemories(query, limit);
+      const hits = await agent.memory!.search(query, limit);
       return hits.map((h) => ({
         name: h.name,
         contentPreview: h.contentPreview ?? '',

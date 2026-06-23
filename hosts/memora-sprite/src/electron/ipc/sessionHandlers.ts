@@ -88,9 +88,9 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       }
 
       // 1. 切换 Agent 内部会话标识（更新 currentSession，后续 chat() 写入新会话）
-      ctx.agent.switchSession(query.session);
+      ctx.agent.sessionManager!.switchSession(query.session);
       // 2. 恢复目标会话的历史消息到 AgentLoop 工作记忆（供 LLM 上下文使用）
-      await ctx.agent.restoreSession(query.date, query.session);
+      await ctx.agent.sessionManager!.restoreSession(query.date, query.session);
       // 3. 加载会话消息供 UI 渲染（保留 timestamp）
       const messages = ctx.sessionStore.loadMessages(query.date, query.session);
       return {
@@ -162,7 +162,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       const now = new Date();
       // 会话名格式：session-HHmmss（如 session-143052）
       const sessionName = `session-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-      ctx.agent.switchSession(sessionName);
+      ctx.agent.sessionManager!.switchSession(sessionName);
       return { success: true, sessionName };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '新建会话失败' });

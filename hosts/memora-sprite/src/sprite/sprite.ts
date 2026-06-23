@@ -298,7 +298,7 @@ export class Sprite {
    * FD-04 专注模式需要用户选择锁定项目，此方法返回 Agent 注册表中的项目列表。
    */
   listProjects(): Array<{ name: string; path: string }> {
-    return this.agent.listProjects().map((p) => ({ name: p.name, path: p.path }));
+    return this.agent.projects?.list.map((p) => ({ name: p.name, path: p.path })) ?? [];
   }
 
   /** 格式化角色列表为可读文本（委托 cliFormatter） */
@@ -558,7 +558,7 @@ export class Sprite {
     if (!this.agent) {
       return null;
     }
-    return this.agent.sourceHealth();
+    return this.agent.memory?.sourceHealth() ?? null;
   }
 
   /** FD-03 累积事件数（供 UI 仪表盘显示） */

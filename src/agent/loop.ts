@@ -954,7 +954,10 @@ export class AgentLoop {
   private isRetryableToolError(result: string): boolean {
     const match = result.match(/^\[ERR:TOOL:(\w+)\]/);
     if (!match) return false;
-    const code = match[1]! as ToolErrorCodeValue;
+    // regex 捕获组保证 match[1] 非空，但使用空值兜底避免非空断言
+    const codeStr = match[1] ?? '';
+    if (!codeStr) return false;
+    const code = codeStr as ToolErrorCodeValue;
     return isRetryableErrorCode(code);
   }
 }

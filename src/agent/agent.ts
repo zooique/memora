@@ -28,7 +28,6 @@ import type { AgentLoop } from '@/agent/loop.js';
 import type { AgentChunk, UIMessages } from '@/agent/types.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
-import type { SessionMessage } from '@/memory/sessionStore.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import type { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
@@ -39,17 +38,11 @@ import type { SkillManager } from '@/skill/skillManager.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
-import type {
-  MemoryInspector,
-  MemorySnapshot,
-  AgentStats,
-  AgentSearchHit,
-  SuggestHit,
-  SourceHealthReport,
-} from '@/agent/managers/memoryInspector.js';
+import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { configError } from '@/utils/errors.js';
+import { safeSetTimeout, clearSafeTimeout, safeSetInterval, clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
@@ -60,6 +53,14 @@ import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer } from '@/agent/tracer.js';
+
+// ─── 模块级常量 ─────────────────────────────────────────
+
+/** Agent 事件名白名单，用于运行时校验 SessionManager 转发的事件类型 */
+const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
+  'memoryAdded', 'personaSwitched', 'decayCompleted',
+  'memoryRecalled', 'sessionForked', 'insightExtracted',
+]);
 
 // ─── 类型定义 ───────────────────────────────────────────
 
@@ -201,7 +202,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** V-201: AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
-  private sessionManager: SessionManager | null = null;
+  private _sessionManager: SessionManager | null = null;
 
   /** 当前激活的技能名（上一轮匹配，本轮注入） */
   private activeSkill: string | null = null;
@@ -305,7 +306,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.runMemoryDecay();
 
     // 定期记忆衰减（每小时）
-    this.decayTimer = setInterval(() => this.runMemoryDecay(), AGENT_CONSTANTS.DECAY_INTERVAL_MS);
+    this.decayTimer = safeSetInterval(() => this.runMemoryDecay(), AGENT_CONSTANTS.DECAY_INTERVAL_MS);
 
     return pctx;
   }
@@ -340,7 +341,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const combinedSignal = internalAbort.signal;
 
     // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
-    this.chatLockTimer = setTimeout(() => {
+    this.chatLockTimer = safeSetTimeout(() => {
       logger.warn(
         { timeoutMs: AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS },
         'chat() 锁超时，中断 generator 并释放锁',
@@ -399,7 +400,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._chatBusy = false;
       this.chatAbortController = null;
       if (this.chatLockTimer) {
-        clearTimeout(this.chatLockTimer);
+        clearSafeTimeout(this.chatLockTimer);
         this.chatLockTimer = null;
       }
       signal?.removeEventListener('abort', onExternalAbort);
@@ -544,16 +545,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 切换当前会话（委托至 SessionManager）
-   *
-   * @deprecated 请使用 `agent.sessionManager.switchSession(newSession)` 代替。此门面方法将在下个大版本中移除。
-   */
-  switchSession(newSession: string): string {
-    this.assertInitialized('switchSession', ['history']);
-    return this.requireNonNull(this.sessionManager, 'sessionManager').switchSession(newSession);
-  }
-
-  /**
    * 分叉当前会话（委托至 SessionManager）
    *
    * 分叉后原会话完整保留，新分支拥有独立消息历史。
@@ -561,16 +552,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   forkSession(targetSession?: string): AgentForkResult {
     this.assertInitialized('forkSession');
-    return this.requireNonNull(this.sessionManager, 'sessionManager').forkSession(targetSession);
-  }
-
-  /**
-   * 列出已注册项目
-   * @deprecated 请使用 `agent.projects.list` getter 代替
-   */
-  listProjects(): AgentProjectEntry[] {
-    this.assertInitialized('listProjects');
-    return this.requireNonNull(this.projectManager, 'projectManager').list;
+    return this.requireNonNull(this._sessionManager, 'sessionManager').forkSession(targetSession);
   }
 
   /**
@@ -657,10 +639,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 创建会话管理器（通过回调访问当前组件，支持 rebuildComponents 后自动获取最新引用）
     // 事件转发桥接：SessionManager 使用宽类型 (string, Record<string,unknown>)，
     // Agent 内部桥接到 TypedEventEmitter 的强类型 emit
+    // 运行时校验事件名是否在 AgentEventMap 中，避免不安全的类型断言
     const forwardEvent = (event: string, data: Record<string, unknown>) => {
-      this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
+      if (AGENT_EVENT_NAMES.has(event)) {
+        this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
+      }
     };
-    this.sessionManager = new SessionManager(
+    this._sessionManager = new SessionManager(
       () => this.requireNonNull(this.history, 'history'),
       () => this.requireNonNull(this.loop, 'loop'),
       this.#config.sessionStore,
@@ -676,11 +661,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!this.pctx) return;
     await this.assembleComponents(this.pctx);
     // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例
-    // 事件转发桥接（同 assembleComponents 中的逻辑）
+    // 事件转发桥接（同 assembleComponents 中的逻辑，含运行时校验）
     const forwardEvent = (event: string, data: Record<string, unknown>) => {
-      this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
+      if (AGENT_EVENT_NAMES.has(event)) {
+        this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
+      }
     };
-    this.sessionManager = new SessionManager(
+    this._sessionManager = new SessionManager(
       () => this.requireNonNull(this.history, 'history'),
       () => this.requireNonNull(this.loop, 'loop'),
       this.#config.sessionStore,
@@ -733,43 +720,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
     await this.rebuildComponentsWithCurrentCtx();
-  }
-
-  /**
-   * 恢复最近的会话对话（委托至 SessionManager）
-   *
-   * @deprecated 请使用 `agent.sessionManager.restoreMostRecentSession(preferredSession)` 代替。此门面方法将在下个大版本中移除。
-   */
-  async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
-    this.assertInitialized('restoreMostRecentSession');
-    return this.requireNonNull(this.sessionManager, 'sessionManager').restoreMostRecentSession(
-      preferredSession,
-    );
-  }
-
-  /**
-   * 恢复指定会话的对话（委托至 SessionManager）
-   *
-   * @deprecated 请使用 `agent.sessionManager.restoreSession(date, session)` 代替。此门面方法将在下个大版本中移除。
-   */
-  async restoreSession(date: string, session: string): Promise<number> {
-    this.assertInitialized('restoreSession');
-    return this.requireNonNull(this.sessionManager, 'sessionManager').restoreSession(date, session);
-  }
-
-  /**
-   * 加载会话消息（委托至 SessionManager）
-   *
-   * **注意：此方法会切换当前会话**（更新 currentDate/currentSession）。
-   *
-   * @deprecated 请使用 `agent.sessionManager.loadSessionMessages(date, session)` 代替。此门面方法将在下个大版本中移除。
-   */
-  async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
-    this.assertInitialized('loadSessionMessages', ['history']);
-    return this.requireNonNull(this.sessionManager, 'sessionManager').loadSessionMessages(
-      date,
-      session,
-    );
   }
 
   // ─── 守卫方法 ───────────────────────────────────────────
@@ -849,11 +799,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async close(): Promise<void> {
     // 清理定时器
     if (this.decayTimer) {
-      clearInterval(this.decayTimer);
+      clearSafeInterval(this.decayTimer);
       this.decayTimer = null;
     }
     if (this.chatLockTimer) {
-      clearTimeout(this.chatLockTimer);
+      clearSafeTimeout(this.chatLockTimer);
       this.chatLockTimer = null;
     }
     if (this.chatAbortController) {
@@ -878,7 +828,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._chatBusy = false;
     this.history = null;
     this.loop = null;
-    this.sessionManager = null;
+    this._sessionManager = null;
     this.projectManager = null;
     this.insightExtractor = null;
     this.configManager = null;
@@ -1030,81 +980,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.workProjection;
   }
 
-  // ─── Agent 门面包装方法（向后兼容，已标记 @deprecated）──
-  // God Object 拆分后方法移至 MemoryInspector/SessionManager，此处保留门面方法供宿主按旧契约调用
-  // 错误策略统一：未初始化时抛 MemoraError（与其他 Agent 方法一致），不静默返回 null/[]
-  // P2-4 渐进式下沉：标记 @deprecated，引导宿主使用 agent.memory / agent.sessionManager 直接访问
-
-  /**
-   * 获取当前演化状态快照
-   * 委托至 MemoryInspector.snapshot()
-   *
-   * @deprecated 请使用 `agent.memory.snapshot()` 代替。此门面方法将在下个大版本中移除。
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  snapshot(): MemorySnapshot {
-    this.assertInitialized('snapshot');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').snapshot();
-  }
-
-  /**
-   * 获取记忆统计
-   * 委托至 MemoryInspector.stats()
-   *
-   * @deprecated 请使用 `agent.memory.stats()` 代替。此门面方法将在下个大版本中移除。
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  stats(): AgentStats {
-    this.assertInitialized('stats');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').stats();
-  }
-
-  /**
-   * 记忆源健康诊断
-   * 委托至 MemoryInspector.sourceHealth()
-   *
-   * @deprecated 请使用 `agent.memory.sourceHealth()` 代替。此门面方法将在下个大版本中移除。
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  sourceHealth(): SourceHealthReport {
-    this.assertInitialized('sourceHealth');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').sourceHealth();
-  }
-
-  /**
-   * 搜索记忆
-   * 委托至 MemoryInspector.search()
-   *
-   * @deprecated 请使用 `agent.memory.search(query, limit)` 代替。此门面方法将在下个大版本中移除。
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  async searchMemories(query: string, limit = 10): Promise<AgentSearchHit[]> {
-    this.assertInitialized('searchMemories');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').search(query, limit);
-  }
-
-  /**
-   * 混合搜索记忆（语义 + 关键词）
-   * 委托至 MemoryInspector.searchHybrid()
-   *
-   * @deprecated 请使用 `agent.memory.searchHybrid(query, limit)` 代替。此门面方法将在下个大版本中移除。
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  async searchMemoriesHybrid(query: string, limit = 10): Promise<AgentSearchHit[]> {
-    this.assertInitialized('searchMemoriesHybrid');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').searchHybrid(query, limit);
-  }
-
-  /**
-   * 记忆推荐
-   * 委托至 MemoryInspector.suggest()
-   *
-   * @deprecated 请使用 `agent.memory.suggest(query, options)` 代替。此门面方法将在下个大版本中移除。
-   * @throws MemoraError 如果 Agent 未初始化
-   */
-  suggestMemories(query?: string, options?: { limit?: number }): SuggestHit[] {
-    this.assertInitialized('suggestMemories');
-    return this.requireNonNull(this.memoryInspector, 'memoryInspector').suggest(query, options);
+  /** 会话管理器（宿主可通过此 getter 访问会话恢复/切换/分叉功能） */
+  get sessionManager(): SessionManager | null {
+    return this._sessionManager;
   }
 
   /** 记忆存储（宿主可直接调用 CRUD，如 delete/upsert） */

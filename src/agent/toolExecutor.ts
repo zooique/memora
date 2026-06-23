@@ -184,28 +184,34 @@ export class ToolExecutor {
     );
     logger.info({ tool: name, args: safeArgs }, '执行工具');
 
+    // 运行时类型安全：从 args 中提取字符串参数，避免不安全的 as string 断言
+    const strArg = (key: string, fallback?: string): string => {
+      const val = args[key];
+      return typeof val === 'string' ? val : (fallback ?? '');
+    };
+
     switch (name) {
       case 'read_file':
-        return this.readFile(args['path'] as string);
+        return this.readFile(strArg('path'));
       case 'write_file':
         return this.writeFile(
-          args['path'] as string,
-          args['content'] as string,
+          strArg('path'),
+          strArg('content'),
           extensions,
-          (args['mode'] as string) ?? 'overwrite',
-          args['insert_line'] as string | undefined,
+          strArg('mode', 'overwrite'),
+          strArg('insert_line') || undefined,
         );
       case 'list_dir':
         return this.listDir(
-          (args['path'] as string) ?? '.',
-          (args['recursive'] as string) ?? 'false',
-          (args['maxDepth'] as string) ?? '2',
+          strArg('path', '.'),
+          strArg('recursive', 'false'),
+          strArg('maxDepth', '2'),
         );
       case 'search_memories':
         return this.searchMemories(
-          args['query'] as string,
-          (args['limit'] as string) ?? '10',
-          (args['mode'] as string) ?? 'match',
+          strArg('query'),
+          strArg('limit', '10'),
+          strArg('mode', 'match'),
         );
       default: {
         // 自定义工具 fallback：查找 customTools Map
