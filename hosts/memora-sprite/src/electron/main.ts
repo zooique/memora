@@ -20,12 +20,13 @@
 // 必须在最早期设置 UTF-8 编码，确保所有后续模块的 console/pino 输出中文不乱码
 // Windows 控制台默认使用 GBK（CP936），Electron 继承此设置，导致 UTF-8 JSON 日志乱码
 // 通过 app.commandLine 追加 --console-utf8 标志，让 Electron 强制使用 UTF-8 编码
-import { app } from 'electron';
+// 注意：import 语句在 ES 模块中会被提升到文件顶部，因此 app.commandLine.appendSwitch
+//       必须紧跟在第一条 import 之后、任何其他模块加载之前执行
+import { app, ipcMain, screen } from 'electron';
 app.commandLine.appendSwitch('console-utf8');
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { app, ipcMain, screen } from 'electron';
 import { createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
