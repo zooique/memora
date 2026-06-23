@@ -74,12 +74,13 @@ export class MemoryController {
    * @returns 记忆列表项数组
    */
   list(source?: string, limit = 50): MemoryListItem[] {
-    const storage = this.agent.storage;
-    if (!storage) return [];
+    // P2-DESIGN-6 修复：统一通过 agent.memory 访问，不再绕过 inspector 直接访问 agent.storage
+    const inspector = this.agent.memory;
+    if (!inspector) return [];
     // P1-2 修复：传 source 时也应用 limit，避免全量返回破坏契约
     const memories = source
-      ? storage.getBySource(source).slice(0, limit)
-      : storage.search('', limit);
+      ? inspector.getBySource(source).slice(0, limit)
+      : inspector.list(limit);
 
     return memories.map(m => ({
       id: m.id,
@@ -99,9 +100,10 @@ export class MemoryController {
    * @returns 记忆详情，不存在时返回 null
    */
   show(id: string): MemoryDetail | null {
-    const storage = this.agent.storage;
-    if (!storage) return null;
-    const m = storage.getById(id);
+    // P2-DESIGN-6 修复：统一通过 agent.memory 访问
+    const inspector = this.agent.memory;
+    if (!inspector) return null;
+    const m = inspector.getById(id);
     if (!m) return null;
     return {
       id: m.id,
@@ -136,11 +138,12 @@ export class MemoryController {
    * @returns 是否成功删除
    */
   delete(id: string): boolean {
-    const storage = this.agent.storage;
-    if (!storage) return false;
-    const exists = storage.getById(id);
+    // P2-DESIGN-6 修复：统一通过 agent.memory 访问
+    const inspector = this.agent.memory;
+    if (!inspector) return false;
+    const exists = inspector.getById(id);
     if (!exists) return false;
-    storage.delete(id);
+    inspector.delete(id);
     // 同步删除向量索引
     this.vectorStore?.delete(id);
     return true;
@@ -158,11 +161,12 @@ export class MemoryController {
    * @returns 记忆唯一标识（${source}:${name} 格式）
    */
   upsert(source: string, name: string, content: string, score = 0.5): string {
-    const storage = this.agent.storage;
-    if (!storage) throw new Error('存储不可用');
+    // P2-DESIGN-6 修复：统一通过 agent.memory 访问
+    const inspector = this.agent.memory;
+    if (!inspector) throw new Error('存储不可用');
     const now = new Date().toISOString();
     const id = `${source}:${name}`;
-    storage.upsert({
+    inspector.upsert({
       id,
       source,
       name,

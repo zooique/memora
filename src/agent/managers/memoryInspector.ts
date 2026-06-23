@@ -181,6 +181,63 @@ export class MemoryInspector {
     this.vectorStore = vs;
   }
 
+  // ─── 写操作代理 ───────────────────────────────────────
+  // P2-DESIGN-6 修复：宿主项目通过 agent.memory 访问写操作，
+  // 无需绕过 inspector 直接访问 agent.storage（分层违规）。
+  // 代理方法内部委托给 this.index（IMemoryStorage 实例）。
+
+  /**
+   * 插入或更新记忆
+   *
+   * @param memory 完整记忆对象
+   */
+  upsert(memory: Memory): void {
+    this.index.upsert(memory);
+  }
+
+  /**
+   * 删除记忆
+   *
+   * @param id 记忆唯一标识（${source}:${name} 格式）
+   */
+  delete(id: string): void {
+    this.index.delete(id);
+  }
+
+  /**
+   * 按 ID 获取单条记忆
+   *
+   * @param id 记忆唯一标识
+   * @returns 记忆对象，不存在时返回 null
+   */
+  getById(id: string): Memory | null {
+    return this.index.getById(id);
+  }
+
+  /**
+   * 按来源标签获取记忆列表
+   *
+   * @param source 来源标签（如 'persona'、'rule'、'insight'）
+   * @returns 该来源的所有记忆
+   */
+  getBySource(source: string): Memory[] {
+    return this.index.getBySource(source);
+  }
+
+  /**
+   * 列出所有记忆（用于宿主项目的记忆管理面板）
+   *
+   * 与 search() 不同，本方法允许空查询，返回按 score 降序排列的记忆列表。
+   * search() 拒绝空查询是为了防止"静默全量返回"的误用；
+   * list() 则是显式声明"我要列出所有记忆"的意图。
+   *
+   * @param limit 返回数量上限（默认 50）
+   * @returns 记忆列表（按 score 降序）
+   */
+  list(limit = 50): Memory[] {
+    return this.index.search('', limit);
+  }
+
   // ─── 快照 ─────────────────────────────────────────────
 
   /**
