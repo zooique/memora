@@ -213,8 +213,10 @@ html, body {
 }
 
 /* ─── 滚动条 ───────────────────────────────────────────────── */
+/* UI-P3-03 统一滚动条样式：同时定义垂直和水平方向，避免水平滚动条显示默认粗样式 */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 6px;   /* 垂直滚动条宽度 */
+  height: 6px;  /* 水平滚动条高度（原缺失，导致水平滚动条显示默认粗样式） */
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -225,6 +227,10 @@ html, body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
+}
+/* 滚动条角落（垂直和水平滚动条交汇处）：透明背景，避免白色方块 */
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* ─── 通用工具类 ───────────────────────────────────────────── */

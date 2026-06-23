@@ -28,8 +28,13 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  /* UX-PP-15 用 box-shadow 替代 border-left，避免四边边框不对称 */
-  box-shadow: var(--shadow-float), inset 3px 0 0 var(--accent);
+  /* UI-P3-04 改用 border-left 实现左侧色条：
+   * - 与 tool-call 卡片设计语言一致（chat.css 用 border-left）
+   * 高 DPI 屏幕下更清晰（inset box-shadow 可能模糊）
+   * 左侧 3px 色条 + 其他三边 1px 边框，形成视觉强调
+   */
+  border-left: 3px solid var(--accent);
+  box-shadow: var(--shadow-float);
   color: var(--text);
   font-size: 12px;
   line-height: 1.5;
@@ -37,11 +42,11 @@
   animation: toast-slide-in var(--transition-base) ease-out;
 }
 
-/* 语义变体：左侧色条区分类型（通过 box-shadow 实现，避免 border 不对称） */
-.toast.success { box-shadow: var(--shadow-float), inset 3px 0 0 var(--green); }
-.toast.error   { box-shadow: var(--shadow-float), inset 3px 0 0 var(--red); }
-.toast.warning { box-shadow: var(--shadow-float), inset 3px 0 0 var(--yellow); }
-.toast.info    { box-shadow: var(--shadow-float), inset 3px 0 0 var(--accent); }
+/* 语义变体：左侧色条区分类型（通过 border-left-color 实现，与 tool-call 一致） */
+.toast.success { border-left-color: var(--green); }
+.toast.error   { border-left-color: var(--red); }
+.toast.warning { border-left-color: var(--yellow); }
+.toast.info    { border-left-color: var(--accent); }
 
 .toast-icon {
   flex-shrink: 0;

@@ -25,45 +25,120 @@
   </script>
   <style>
     /* ===== 主题变量（从 base.css 提取浮动窗口所需的最小集） ===== */
-    /* UX-P2-12 同步 base.css 的变量值，确保两个窗口主题一致 */
+    /* UX-P2-12 同步 base.css 的变量值，确保两个窗口主题一致
+     * UI-P3-02 补齐缺失的语义色变量（--red/--pink 等），与 base.css 保持 1:1 对齐
+     */
     :root {
+      /* 背景与表面色 */
       --bg: #f0f0f2;
+      --surface0: #ececee;
+      --surface2: #dbdbdd;
+      --window-bg: #ffffff;
+      --window-bg-2: #f7f7f9;
+      --muted: #a1a1a6;
+
+      /* 品牌渐变：与 base.css 一致（球体背景 + 头像等） */
+      --brand-grad: linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+
+      /* 语义色（与 base.css 完全对齐） */
       --green: #34c759;
       --accent: #0066ff;
-      --accent-20: rgba(0, 102, 255, 0.1);  /* UX-P2-12 与 base.css 浅色主题保持一致（原 0.2 → 0.1） */
-      --yellow: #ff9f0a;  /* UX-P2-12 与 base.css 浅色主题保持一致（原 #ffb300 → #ff9f0a） */
+      --accent-20: rgba(0, 102, 255, 0.1);
+      --yellow: #ff9f0a;
+      --red: #ff3b30;       /* UI-P3-02 补齐：badge 背景色，原缺失导致 badge 无红色背景 */
+      --pink: #ad1457;       /* UI-P3-02 补齐：与 base.css 浅色主题一致 */
+
+      /* 引导提示 */
       --hint-bg: rgba(30, 30, 46, 0.95);
       --hint-text: #cdd6f4;
+
+      /* 徽章 */
       --badge-text: #1e1e2e;
       --badge-border: #1e1e2e;
+
+      /* 阴影 */
+      --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.06);
+
+      /* 圆角 */
+      --radius-xs: 3px;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-pill: 100px;
+
+      /* 动画 */
+      --transition-fast: 0.12s;
+      --transition-base: 0.2s;
+      --transition-slow: 0.3s;
     }
 
     [data-theme="dark"] {
+      /* 背景与表面色 */
       --bg: #1e1e2e;
+      --surface0: #313244;
+      --surface2: #585b70;
+      --window-bg: #313244;
+      --window-bg-2: #45475a;
+      --muted: #9399b2;
+
+      /* 品牌渐变：与浅色一致（两主题共享） */
+      --brand-grad: linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+
+      /* 语义色（与 base.css 完全对齐） */
       --green: #a6e3a1;
       --accent: #89b4fa;
       --accent-20: rgba(137, 180, 250, 0.2);
       --yellow: #f9e2af;
+      --red: #f38ba8;        /* UI-P3-02 补齐：深色主题红色 */
+      --pink: #f5c2e7;       /* UI-P3-02 补齐：深色主题粉色 */
+
+      /* 引导提示 */
       --hint-bg: rgba(205, 214, 244, 0.95);
       --hint-text: #1e1e2e;
+
+      /* 徽章 */
       --badge-text: #1e1e2e;
       --badge-border: #cdd6f4;
+
+      /* 阴影 */
+      --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.4);
+
+      /* 圆角（与浅色一致） */
+      --radius-xs: 3px;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-pill: 100px;
+
+      /* 动画（与浅色一致） */
+      --transition-fast: 0.12s;
+      --transition-base: 0.2s;
+      --transition-slow: 0.3s;
     }
 
     /* ===== 全局重置 ===== */
-    * {
+    html, body {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
       -webkit-app-region: no-drag;  /* 拖动由鼠标事件手动处理，避免吞掉单击 */
+      width: 80px;
+      height: 80px;
+      background: transparent;
+      /* UI-P3-01 浮动窗口禁止滚动条：badge 和 drag-hint 通过 overflow:visible 溢出显示，
+         但 html 层必须隐藏溢出，否则会出现丑陋的滚动条 */
+      overflow: hidden;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-app-region: no-drag;
     }
 
     /* ===== 浮动窗口主体（80x80 透明背景） ===== */
     body {
-      width: 80px;
-      height: 80px;
-      background: transparent;
-      /* UX-PP-14 允许 badge 和 drag-hint 超出版心显示 */
+      /* UX-PP-14 body 层允许 badge 和 drag-hint 超出版心显示
+         （html 层已 overflow:hidden，不会产生滚动条） */
       overflow: visible;
       display: flex;
       align-items: center;
@@ -78,14 +153,15 @@
       height: 72px;
       border-radius: 50%;
       /* 蓝粉渐变：对齐 docs/memora-sprite-preview.html 的 .float-icon-demo */
-      background: linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+      background: var(--brand-grad, linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%));
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 32px;
       position: relative;
-      transition: transform 0.2s ease, box-shadow 0.3s ease;
-      box-shadow: 0 8px 24px rgba(137, 180, 250, 0.4);
+      transition: transform var(--transition-base) ease, box-shadow var(--transition-slow) ease;
+      /* UI-P3-06 使用主题感知阴影变量，与 base.css 设计系统保持一致 */
+      box-shadow: var(--shadow-float);
     }
 
     /* 悬停：轻微放大 */
@@ -125,11 +201,36 @@
     /* active 状态：蓝色 + 脉冲动画 */
     #status-dot.active {
       background: var(--accent);
-      animation: dotPulse 1.5s infinite;
+      /* UI-P3-05 脉冲动画改用伪元素 + transform 实现：
+       * - box-shadow 动画会触发每帧重绘，性能差
+       * - ::before 伪元素 + transform:scale + opacity 可 GPU 加速，性能更优
+       * - 视觉效果与原方案一致：向外扩散的半透明圆环
+       */
+      position: relative;
+    }
+    #status-dot.active::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: var(--accent);
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0.4;
+      animation: dotPulse 1.5s infinite ease-out;
+      pointer-events: none;
     }
     @keyframes dotPulse {
-      0%, 100% { box-shadow: 0 0 0 0 var(--accent-20); }
-      50% { box-shadow: 0 0 0 6px transparent; }
+      0% {
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 0.4;
+      }
+      100% {
+        transform: translate(-50%, -50%) scale(3);
+        opacity: 0;
+      }
     }
 
     /* sleeping 状态：黄色月牙 */
