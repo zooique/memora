@@ -511,7 +511,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.insightExtractor) {
       const shouldExtract = this.insightExtractor.classify(input);
       if (shouldExtract === 'extract') {
-        const p = this.insightExtractor.extract(input, assistantContent).catch(() => null);
+        // P4-2 静默吞错改为记录警告日志，便于定位 insight 提取失败原因
+        const p = this.insightExtractor.extract(input, assistantContent).catch((err) => {
+          logger.warn({ err }, 'Insight 提取失败');
+          return null;
+        });
         this.requireNonNull(this.history, 'history').registerPendingArchive(p);
       }
     }
@@ -847,6 +851,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.chatAbortController) {
       this.chatAbortController.abort();
       this.chatAbortController = null;
+    }
+    // P2-1 清理 PersonaManager 的角色切换防抖锁计时器，防止关闭后回调触发
+    if (this.personaManager) {
+      this.personaManager.close();
     }
     this.removeAllListeners();
 

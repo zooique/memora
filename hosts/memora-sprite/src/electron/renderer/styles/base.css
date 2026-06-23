@@ -74,6 +74,10 @@
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* P1 修复：chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
+  /* P2-10 小型元素阴影令牌（nav-btn active / suggestion-card 等），深色主题下加重以保证可见性 */
+  --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.04);
+  /* P2-10 emoji 文字阴影令牌（brand-grad 背景上 emoji 可读性），深色主题下加重 */
+  --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.25);
 
   /* UX-PP-10 统一动画时长变量 */
   --transition-fast: 0.12s;  /* 微交互（hover/active/按钮） */
@@ -171,6 +175,10 @@
   --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* P1 修复：chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
+  /* P2-10 小型元素阴影令牌（深色主题加重以保证可见性） */
+  --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.3);
+  /* P2-10 emoji 文字阴影令牌（深色主题加重以保证可读性） */
+  --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.4);
 
   /* UX-PP-10 统一动画时长变量（深色主题与浅色一致） */
   --transition-fast: 0.12s;

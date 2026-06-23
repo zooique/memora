@@ -14,7 +14,6 @@
  */
 
 import { EventTracker } from './eventTracker.js';
-import { escapeHtml } from './domHelpers.js';
 
 /**
  * 模态框管理器
@@ -108,8 +107,8 @@ export class ModalManager {
    * - false：用户点击取消按钮、关闭按钮或背景
    *
    * @param options.title 弹窗标题（默认"确认"）
-   * @param options.message 确认消息文本
-   * @param options.html 是否将 message 视为 HTML（默认 false，走 textContent 防 XSS）
+   * @param options.message 确认消息文本（纯文本，走 textContent 防 XSS）
+   * @param options.messageNodes 确认消息 DOM 节点数组（优先于 message，用于富文本展示）
    * @param options.confirmText 确认按钮文本（默认"确定"）
    * @param options.cancelText 取消按钮文本（默认"取消"）
    * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
@@ -117,8 +116,8 @@ export class ModalManager {
   showConfirmDialog(options: {
     title?: string;
     message: string;
-    /** U1 是否将 message 视为 HTML（默认 false，走 textContent 防 XSS） */
-    html?: boolean;
+    /** 确认消息 DOM 节点数组（优先于 message，用于富文本展示，调用方通过 createElement + textContent 构建天然防 XSS） */
+    messageNodes?: Node[];
     confirmText?: string;
     cancelText?: string;
     danger?: boolean;
@@ -137,9 +136,11 @@ export class ModalManager {
 
       // 设置弹窗内容
       titleEl.textContent = options.title ?? '确认';
-      // U1 默认走 textContent 防 XSS，仅显式声明 html:true 时才走 innerHTML
-      if (options.html) {
-        messageEl.innerHTML = options.message;
+      // P1-4 移除 html 选项，统一走 textContent 或 DOM 节点构建，杜绝 XSS 风险点
+      messageEl.replaceChildren();
+      if (options.messageNodes && options.messageNodes.length > 0) {
+        // 调用方通过 createElement + textContent 构建节点，天然防 XSS
+        messageEl.append(...options.messageNodes);
       } else {
         messageEl.textContent = options.message;
       }
@@ -234,10 +235,11 @@ export class ModalManager {
   }
 
   /**
-   * Q10 显示写入确认弹窗（构建富文本消息并委托到 showConfirmDialog）
+   * Q10 显示写入确认弹窗（构建 DOM 节点并委托到 showConfirmDialog）
    *
-   * 将 HTML 构建逻辑从 UIManager 门面层迁移至此，保持门面层纯粹委托。
-   * 动态值（tool / targetPath / description）均通过 escapeHtml 转义防 XSS。
+   * 将 DOM 构建逻辑从 UIManager 门面层迁移至此，保持门面层纯粹委托。
+   * P1-4 修复：改用 createElement + textContent 构建 DOM 节点，替代 innerHTML，
+   * 从 API 层面杜绝 XSS 风险点（调用方无需也无法传入原始 HTML）。
    *
    * @param info 写入确认请求载荷（来自主进程 WRITE_CONFIRMATION 推送）
    * @returns 用户是否确认写入
@@ -247,19 +249,39 @@ export class ModalManager {
     targetPath: string;
     description?: string;
   }): Promise<boolean> {
-    // 构建富文本消息：路径 + 工具名 + 描述（动态值转义防 XSS）
-    const messageHtml = [
-      `<div class="write-confirm-info">`,
-      `  <p><strong>工具：</strong>${escapeHtml(info.tool)}</p>`,
-      `  <p><strong>路径：</strong><code>${escapeHtml(info.targetPath)}</code></p>`,
-      info.description ? `  <p>${escapeHtml(info.description)}</p>` : '',
-      `</div>`,
-    ].join('');
+    // P1-4 使用 DOM API 构建富文本消息，所有动态值通过 textContent 设置天然防 XSS
+    const container = document.createElement('div');
+    container.className = 'write-confirm-info';
+
+    // 工具行
+    const toolP = document.createElement('p');
+    const toolLabel = document.createElement('strong');
+    toolLabel.textContent = '工具：';
+    toolP.appendChild(toolLabel);
+    toolP.appendChild(document.createTextNode(info.tool));
+    container.appendChild(toolP);
+
+    // 路径行
+    const pathP = document.createElement('p');
+    const pathLabel = document.createElement('strong');
+    pathLabel.textContent = '路径：';
+    pathP.appendChild(pathLabel);
+    const codeEl = document.createElement('code');
+    codeEl.textContent = info.targetPath;
+    pathP.appendChild(codeEl);
+    container.appendChild(pathP);
+
+    // 描述行（可选）
+    if (info.description) {
+      const descP = document.createElement('p');
+      descP.textContent = info.description;
+      container.appendChild(descP);
+    }
 
     return this.showConfirmDialog({
       title: '确认写入操作',
-      message: messageHtml,
-      html: true, // U1 显式声明：messageHtml 已通过 escapeHtml 转义，允许富文本
+      message: '', // messageNodes 优先，message 仅作 fallback 文本
+      messageNodes: [container],
       confirmText: '允许写入',
       cancelText: '取消',
     });

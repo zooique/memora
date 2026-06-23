@@ -217,6 +217,19 @@ export class PersonaManager {
   }
 
   /**
+   * 清理定时器资源（Agent.close() 时调用）
+   *
+   * PersonaManager 持有 unlockTimer（角色切换防抖锁的自动恢复计时器），
+   * 若不清理，Agent 关闭后定时器仍会触发回调，在已关闭的实例上执行引发异常。
+   */
+  close(): void {
+    if (this.unlockTimer) {
+      clearTimeout(this.unlockTimer);
+      this.unlockTimer = null;
+    }
+  }
+
+  /**
    * 构建 system prompt 中的角色段
    */
   buildSystemPrompt(name?: string): string {

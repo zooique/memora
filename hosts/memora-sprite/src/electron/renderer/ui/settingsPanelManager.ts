@@ -41,7 +41,7 @@ export interface SettingsPanelHost {
   showConfirmDialog(options: {
     title?: string;
     message: string;
-    html?: boolean;
+    messageNodes?: Node[];
     confirmText?: string;
     cancelText?: string;
     danger?: boolean;

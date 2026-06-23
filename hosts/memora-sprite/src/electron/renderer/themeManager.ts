@@ -182,4 +182,18 @@ export class ThemeManager {
       radio.checked = radio.value === mode;
     });
   }
+
+  /**
+   * 清理系统主题变化监听器（UIManager.cleanup 时调用）
+   *
+   * P2-6 修复：'auto' 模式下注册的 mediaQueryListener 若不清理，
+   * 页面卸载后仍会监听系统主题变化，在已销毁的 DOM 上执行引发异常。
+   */
+  cleanup(): void {
+    if (this.mediaQueryListener && typeof window.matchMedia === 'function') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      mediaQuery.removeEventListener('change', this.mediaQueryListener);
+      this.mediaQueryListener = null;
+    }
+  }
 }

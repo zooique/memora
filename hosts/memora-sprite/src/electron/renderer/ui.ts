@@ -349,6 +349,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.personaPanel.cleanup();
     this.sessionPanel.cleanup(); // Q2 清理会话面板事件监听器
+    // P2-6 清理 ThemeManager 的系统主题变化监听器
+    this.themeManager.cleanup();
   }
 
   // ─── 聊天面板 ─ 委托到 ChatPanelManager ─────────────────
@@ -1059,14 +1061,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * @param options.title 弹窗标题（默认"确认"）
    * @param options.message 确认消息文本
    * @param options.confirmText 确认按钮文本（默认"确定"）
-   * @param options.html 是否将 message 视为 HTML（默认 false，走 textContent 防 XSS）
+   * @param options.messageNodes 确认消息 DOM 节点数组（优先于 message，用于富文本展示）
    * @param options.cancelText 取消按钮文本（默认"取消"）
    * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
    */
   showConfirmDialog(options: {
     title?: string;
     message: string;
-    html?: boolean;
+    messageNodes?: Node[];
     confirmText?: string;
     cancelText?: string;
     danger?: boolean;

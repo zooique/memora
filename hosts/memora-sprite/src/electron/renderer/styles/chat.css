@@ -383,7 +383,7 @@
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
   padding: 12px 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-sm); /* P2-10 使用令牌替代硬编码 rgba，深色主题自动适配 */
 }
 
 /* 卡片头部：图标 + 类型标签 + 置信度 + 关闭按钮 */
@@ -611,7 +611,7 @@
   color: var(--accent-fg);
   border-color: transparent;
   /* 文字阴影增强 emoji 在浅色背景上的可读性 */
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  text-shadow: var(--text-shadow-emoji); /* P2-10 使用令牌替代硬编码 rgba，深色主题自动适配 */
 }
 
 /**
