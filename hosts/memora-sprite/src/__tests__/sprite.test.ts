@@ -76,14 +76,14 @@ function createTmpDir(): string {
 describe('Sprite', () => {
   it('should start in idle state', () => {
     const tmpDir = createTmpDir();
-    const sprite = new Sprite(mockAgent, tmpDir);
+    const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     expect(sprite.getState()).toBe('idle');
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it('should transition to active on wakeup', async () => {
     const tmpDir = createTmpDir();
-    const sprite = new Sprite(mockAgent, tmpDir);
+    const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     await sprite.wakeup('你好');
     expect(sprite.getState()).toBe('idle');
     rmSync(tmpDir, { recursive: true, force: true });
@@ -91,7 +91,7 @@ describe('Sprite', () => {
 
   it('should start and stop cleanly', () => {
     const tmpDir = createTmpDir();
-    const sprite = new Sprite(mockAgent, tmpDir);
+    const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
     sprite.stop();
     expect(sprite.getState()).toBe('idle');
@@ -107,7 +107,7 @@ describe('Sprite 主动行为', () => {
     agentListeners.clear();
     mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = createTmpDir();
-    sprite = new Sprite(mockAgent, tmpDir);
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
   });
 
@@ -200,7 +200,7 @@ describe('Sprite 配置持久化', () => {
     agentListeners.clear();
     mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = createTmpDir();
-    sprite = new Sprite(mockAgent, tmpDir);
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
   });
 
@@ -222,7 +222,7 @@ describe('Sprite 配置持久化', () => {
     expect(sprite.getConfig().silentMode).toBe(true);
 
     // 重新创建 Sprite 应加载持久化的配置
-    const sprite2 = new Sprite(mockAgent, tmpDir);
+    const sprite2 = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     expect(sprite2.getConfig().silentMode).toBe(true);
     sprite2.stop();
   });
@@ -232,7 +232,7 @@ describe('Sprite 配置持久化', () => {
     expect(sprite.getConfig().triggerIntervalMs).toBe(1_800_000);
 
     // 重新创建 Sprite 应加载持久化的配置
-    const sprite2 = new Sprite(mockAgent, tmpDir);
+    const sprite2 = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     expect(sprite2.getConfig().triggerIntervalMs).toBe(1_800_000);
     sprite2.stop();
   });
@@ -342,7 +342,7 @@ describe('Sprite + IInteraction 桥接', () => {
     mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = createTmpDir();
     interaction = new MockInteraction();
-    sprite = new Sprite(mockAgent, tmpDir, tmpDir, undefined, interaction);
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir, projectPath: tmpDir });
     sprite.start();
   });
 
@@ -371,12 +371,10 @@ describe('Sprite + IInteraction 桥接', () => {
     expect(interaction.outputs.length).toBe(0);
   });
 
-  it('setInteraction 应可后置注入交互层（P2-DESIGN-5：保留为空操作）', () => {
+  it('ProactiveEngine 应不依赖 interaction 直接发射事件', () => {
     const tmpDir2 = createTmpDir();
-    const sprite2 = new Sprite(mockAgent, tmpDir2);
-    const interaction2 = new MockInteraction();
-    // P2-DESIGN-5 修复后：setInteraction 保留为空操作（ProactiveEngine 不再消费 interaction）
-    sprite2.setInteraction(interaction2);
+    const sprite2 = new Sprite({ agent: mockAgent, dataDir: tmpDir2 });
+    // setInteraction 已移除（P3-DESIGN-1），ProactiveEngine 仅通过 emitSprite 发射事件
     sprite2.start();
 
     // 累积事件，验证 proactivePrompt 事件正常发射（不依赖 interaction）

@@ -52,7 +52,7 @@ describe('Sprite 端到端集成', () => {
     mkdirSync(tmpDir, { recursive: true });
     agent = createTestAgent(tmpDir);
     await agent.init();
-    sprite = new Sprite(agent, tmpDir);
+    sprite = new Sprite({ agent, dataDir: tmpDir });
   });
 
   afterEach(async () => {

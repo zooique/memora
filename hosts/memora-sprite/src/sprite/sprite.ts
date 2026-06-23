@@ -19,9 +19,7 @@ import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
-import type { IInteraction } from './interaction.js';
-import { loadSpriteConfig, saveSpriteConfig, applyConfigField } from './spriteConfig.js';
-import type { SpriteConfig, SpriteConfigKey } from './spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig, applyConfigField, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cliFormatter.js';
 import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
 import type { DashboardData } from './controllers/index.js';
@@ -52,6 +50,22 @@ export interface SpriteEventMap {
 
 // 重新导出 DashboardData 供外部使用
 export type { DashboardData };
+
+/** 精灵主控构造选项（P3-DESIGN-1：位置参数 → options 对象） */
+export interface SpriteOptions {
+  /** Agent 实例（必填，由宿主项目创建并注入） */
+  agent: Agent;
+  /** 数据目录（必填，存储 memora.db、sprite.json 等持久化数据） */
+  dataDir: string;
+  /** 项目路径（可选，默认取 dataDir。用于文件监听、项目规则加载等） */
+  projectPath?: string;
+  /** 向量存储（可选，注入后启用语义搜索） */
+  vectorStore?: VectorStore;
+  /** 路径白名单（可选，来自 Agent 的 allowedPaths，用于 fileWatcher 安全校验） */
+  allowedPaths?: string[];
+  /** 可观测性 tracer（可选，注入后关键路径会记录 span 到 trace.log） */
+  tracer?: ITracer;
+}
 
 /**
  * 精灵主控
@@ -89,33 +103,19 @@ export class Sprite {
   /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
 
-  constructor(
-    agent: Agent,
-    dataDir: string,
-    projectPath?: string,
-    vectorStore?: VectorStore,
-    /**
-     * 交互层（P2-DESIGN-5 后已不使用，保留参数以维持向后兼容）
-     * @deprecated ProactiveEngine 不再消费 interaction，此参数将在下一版本移除
-     */
-    _interaction?: IInteraction,
-    /** 路径白名单（来自 Agent 的 allowedPaths，用于 fileWatcher 安全校验） */
-    allowedPaths?: string[],
-    /** P2-S6: 可观测性 tracer（可选），注入后关键路径会记录 span 到 trace.log */
-    tracer?: ITracer,
-  ) {
-    this.agent = agent;
-    this.dataDir = dataDir;
-    this.projectPath = projectPath ?? dataDir;
-    this.allowedPaths = allowedPaths ?? [];
-    this.tracer = tracer ?? null;
+  constructor(options: SpriteOptions) {
+    this.agent = options.agent;
+    this.dataDir = options.dataDir;
+    this.projectPath = options.projectPath ?? options.dataDir;
+    this.allowedPaths = options.allowedPaths ?? [];
+    this.tracer = options.tracer ?? null;
     this.config = loadSpriteConfig();
     this.triggerBus = new TriggerBus();
     this.triggerBus.register(new TimerTrigger(this.config.triggerIntervalMs));
 
     // 初始化控制器
-    this.memoryController = new MemoryController(agent, vectorStore);
-    this.personaController = new PersonaController(agent);
+    this.memoryController = new MemoryController(this.agent, options.vectorStore);
+    this.personaController = new PersonaController(this.agent);
     this.proactiveEngine = new ProactiveEngine({
       threshold: this.config.proactiveThreshold,
       cooldownMs: this.config.proactiveCooldownMs,
@@ -123,7 +123,6 @@ export class Sprite {
     });
 
     // 设置主动提示引擎的发射器
-    // P2-DESIGN-5 修复：移除 setInteraction 调用，ProactiveEngine 仅通过 emitSprite 发射事件
     this.proactiveEngine.setEmitter((event, payload) => {
       this.emitSprite(event, payload);
     });
@@ -152,17 +151,6 @@ export class Sprite {
         allowedPaths: fileWatcherAllowedPaths,
       }),
     );
-  }
-
-  /**
-   * 设置交互层（可在构造后注入，为 Electron 铺路）
-   *
-   * P2-DESIGN-5 修复：ProactiveEngine 不再使用 interaction（仅通过 emitSprite 发射事件），
-   * 此方法保留为空操作以维持向后兼容，未来可移除。
-   * @deprecated ProactiveEngine 不再消费 interaction，此方法将在下一版本移除。
-   */
-  setInteraction(_interaction: IInteraction): void {
-    // 空操作：ProactiveEngine 已不依赖 interaction
   }
 
   // ─── 精灵事件系统（宿主 UI 可订阅） ──────────────────────

@@ -273,10 +273,7 @@ function setupAgentReady(
   activeSessionStore: SqliteSessionStore,
   dataDir: string,
 ): void {
-  // 1. 注入交互层
-  activeSprite.setInteraction(interaction);
-
-  // 2. 移除最小化 CONFIG_GET，注册完整 IPC 处理器
+  // 1. 注册完整 IPC 处理器
   ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
   const ipcContext = createIpcContext(activeAgent, activeSprite, activeSessionStore);
   registerIpcHandlers(ipcContext);

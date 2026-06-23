@@ -436,7 +436,7 @@ function createSpriteAndClose(
   tracer: ITracer,
   storage: SqliteStorage,
 ): { sprite: Sprite; close: () => Promise<void> } {
-  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths, tracer);
+  const sprite = new Sprite({ agent, dataDir, projectPath, vectorStore, allowedPaths: config.allowedPaths, tracer });
   sprite.start();
 
   const close = async () => {
@@ -685,10 +685,9 @@ async function handleMemories(args: string, sprite: Sprite): Promise<void> {
 async function main(): Promise<void> {
   const { agent, sprite, close } = await startSprite();
 
-  const interaction: IInteraction = new CliInteraction();
-  sprite.setInteraction(interaction);
-
   console.log('\nMemora Sprite 已启动（/quit 退出 | /dashboard 仪表盘 | /persona 角色列表 | /switch <名称> 切换角色 | /mode auto|manual 匹配模式 | /web <关键词> 浏览器搜索 | /memories 记忆管理 | /config 配置）\n');
+
+  const interaction: IInteraction = new CliInteraction();
 
   interaction.onClose(async () => {
     console.log('\n正在关闭...');
