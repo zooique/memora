@@ -63,6 +63,10 @@ export class MemoryPanelManager {
   private memoryAddCallback:
     | ((data: { source: string; name: string; content: string }) => void)
     | null = null;
+  /** P2-FLOW-08 记忆编辑回调：携带记忆 ID 和新内容 */
+  private memoryEditCallback: ((id: string, content: string) => void) | null = null;
+  /** P2-FLOW-08 编辑模式状态：true 时显示保存/取消按钮，隐藏编辑/删除按钮 */
+  private isEditing = false;
 
   constructor(
     private host: MemoryPanelHost,
@@ -141,6 +145,30 @@ export class MemoryPanelManager {
         });
         if (!confirmed) return;
         this.memoryDeleteCallback?.();
+      });
+    }
+
+    // P2-FLOW-08 编辑按钮：进入编辑模式，将 content 区域变为可编辑
+    const btnEdit = getOptionalElement('btn-memory-edit', 'button');
+    if (btnEdit) {
+      this.events.addEventListener(btnEdit, 'click', () => {
+        this.enterEditMode();
+      });
+    }
+
+    // P2-FLOW-08 编辑保存按钮：保存编辑内容
+    const btnEditSave = getOptionalElement('btn-memory-edit-save', 'button');
+    if (btnEditSave) {
+      this.events.addEventListener(btnEditSave, 'click', () => {
+        this.saveEdit();
+      });
+    }
+
+    // P2-FLOW-08 编辑取消按钮：退出编辑模式，恢复原始内容
+    const btnEditCancel = getOptionalElement('btn-memory-edit-cancel', 'button');
+    if (btnEditCancel) {
+      this.events.addEventListener(btnEditCancel, 'click', () => {
+        this.exitEditMode();
       });
     }
   }
@@ -282,6 +310,9 @@ export class MemoryPanelManager {
   showMemoryDetail(memory: MemoryDetail): void {
     if (!this.memoryDetailModal) return;
 
+    // P2-FLOW-08 打开详情时退出编辑模式，恢复只读状态
+    this.isEditing = false;
+
     const nameEl = getOptionalElement('memory-detail-name', 'h3');
     const sourceEl = getOptionalElement('memory-detail-source', 'code');
     const scoreEl = getOptionalElement('memory-detail-score', 'span');
@@ -301,8 +332,17 @@ export class MemoryPanelManager {
     if (accessedEl) accessedEl.textContent = formatTimeAgo(memory.accessedAt);
     if (contentEl) contentEl.textContent = memory.content;
 
-    // 记录当前查看的记忆 ID（供删除按钮使用）
+    // P2-FLOW-08 保存原始内容到 dataset，供编辑取消时恢复
+    if (contentEl) contentEl.dataset.originalContent = memory.content;
+
+    // 记录当前查看的记忆 ID（供删除/编辑按钮使用）
     this.memoryDetailModal.dataset.memoryId = memory.id;
+    // P2-FLOW-08 保存 source 和 name 到 dataset，供编辑保存时使用
+    this.memoryDetailModal.dataset.memorySource = memory.source;
+    this.memoryDetailModal.dataset.memoryName = memory.name;
+
+    // P2-FLOW-08 切换按钮可见性：只读模式显示编辑/删除，隐藏保存/取消
+    this.updateDetailButtons();
     this.host.showModal('memory-detail-modal');
   }
 
@@ -325,6 +365,96 @@ export class MemoryPanelManager {
     const normalized = source.toLowerCase().trim();
     const knownSources = ['profile', 'insight', 'guardrail', 'skill', 'rule', 'persona', 'session'];
     return knownSources.includes(normalized) ? normalized : 'default';
+  }
+
+  // ─── P2-FLOW-08 记忆编辑模式 ────────────────────────────
+
+  /**
+   * 进入编辑模式
+   *
+   * 将 content 区域从只读 <pre> 变为可编辑 <textarea>，
+   * 切换底部按钮：隐藏编辑/删除，显示保存/取消。
+   */
+  private enterEditMode(): void {
+    if (this.isEditing) return;
+    this.isEditing = true;
+
+    const contentEl = getOptionalElement('memory-detail-content', 'pre');
+    if (!contentEl) return;
+
+    // 将 <pre> 内容替换为 <textarea>，保留原始内容
+    const originalContent = contentEl.dataset.originalContent ?? contentEl.textContent ?? '';
+    const textarea = document.createElement('textarea');
+    textarea.id = 'memory-detail-content';
+    textarea.className = 'memory-edit-textarea';
+    textarea.value = originalContent;
+    // 保留 dataset 引用
+    textarea.dataset.originalContent = originalContent;
+    contentEl.replaceWith(textarea);
+    textarea.focus();
+
+    this.updateDetailButtons();
+  }
+
+  /**
+   * 退出编辑模式
+   *
+   * 将 <textarea> 恢复为只读 <pre>，恢复原始内容，
+   * 切换底部按钮：显示编辑/删除，隐藏保存/取消。
+   */
+  private exitEditMode(): void {
+    if (!this.isEditing) return;
+    this.isEditing = false;
+
+    const textarea = document.getElementById('memory-detail-content');
+    if (!textarea) return;
+
+    // 恢复为只读 <pre>，使用原始内容
+    const originalContent = textarea.dataset.originalContent ?? '';
+    const pre = document.createElement('pre');
+    pre.id = 'memory-detail-content';
+    pre.textContent = originalContent;
+    pre.dataset.originalContent = originalContent;
+    textarea.replaceWith(pre);
+
+    this.updateDetailButtons();
+  }
+
+  /**
+   * 保存编辑内容
+   *
+   * 读取 textarea 中的新内容，通过回调通知宿主层保存。
+   * 底层使用 upsert 语义（MEMORIES_ADD 通道），无需新增 IPC 通道。
+   */
+  private saveEdit(): void {
+    const textarea = document.getElementById('memory-detail-content') as HTMLTextAreaElement | null;
+    if (!textarea) return;
+
+    const newContent = textarea.value.trim();
+    if (!newContent) return;
+
+    const id = this.memoryDetailModal?.dataset.memoryId;
+    if (!id) return;
+
+    this.memoryEditCallback?.(id, newContent);
+  }
+
+  /**
+   * 切换详情弹窗底部按钮可见性
+   *
+   * 只读模式：显示编辑 + 删除 + 关闭
+   * 编辑模式：显示保存 + 取消 + 关闭
+   */
+  private updateDetailButtons(): void {
+    const btnEdit = getOptionalElement('btn-memory-edit', 'button');
+    const btnDelete = getOptionalElement('btn-memory-delete', 'button');
+    const btnEditSave = getOptionalElement('btn-memory-edit-save', 'button');
+    const btnEditCancel = getOptionalElement('btn-memory-edit-cancel', 'button');
+
+    if (btnEdit) btnEdit.classList.toggle('hidden', this.isEditing);
+    if (btnDelete) btnDelete.classList.toggle('hidden', this.isEditing);
+    if (btnEditSave) btnEditSave.classList.toggle('hidden', !this.isEditing);
+    if (btnEditCancel) btnEditCancel.classList.toggle('hidden', !this.isEditing);
   }
 
   // ─── 添加记忆表单 ───────────────────────────────────────
@@ -377,5 +507,9 @@ export class MemoryPanelManager {
   }
   onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void {
     this.memoryAddCallback = cb;
+  }
+  /** P2-FLOW-08 注册记忆编辑回调 */
+  onMemoryEdit(cb: (id: string, content: string) => void): void {
+    this.memoryEditCallback = cb;
   }
 }

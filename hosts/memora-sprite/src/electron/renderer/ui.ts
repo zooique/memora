@@ -802,6 +802,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   onMemoryDelete(cb: () => void): void { this.memoryPanel.onMemoryDelete(cb); }
   /** 注册记忆添加回调（委托到 MemoryPanelManager） */
   onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void { this.memoryPanel.onMemoryAdd(cb); }
+  /** P2-FLOW-08 注册记忆编辑回调（委托到 MemoryPanelManager） */
+  onMemoryEdit(cb: (id: string, content: string) => void): void { this.memoryPanel.onMemoryEdit(cb); }
 
   // ─── 角色选择器 ─ 委托到 PersonaPanelManager ───────────────
 

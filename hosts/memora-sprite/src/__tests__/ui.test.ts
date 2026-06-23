@@ -278,6 +278,9 @@ const TEST_HTML = `<!DOCTYPE html>
         <pre id="memory-detail-content"></pre>
       </div>
       <div class="modal-footer">
+        <button id="btn-memory-edit-save" class="btn-primary hidden">保存</button>
+        <button id="btn-memory-edit-cancel" class="btn-secondary hidden">取消</button>
+        <button id="btn-memory-edit" class="btn-secondary">编辑</button>
         <button id="btn-memory-delete" class="btn-danger">删除</button>
         <button class="btn-secondary" data-modal="memory-detail-modal">关闭</button>
       </div>

@@ -81,13 +81,14 @@ export function showAgentInitError(
 /**
  * 显示首次使用欢迎消息
  *
- * 配置缺失或状态查询异常时降级使用，引导用户完成初始配置。
+ * P2-FLOW-10 增加"稍后配置"引导：告知用户可以跳过配置先浏览界面，
+ * 点击侧边栏"设置"可随时回来完成配置。
  *
  * @param uiManager UI 管理器实例
  */
 export function showWelcomeMessage(uiManager: UIManager): void {
   uiManager.appendMessage({
     role: 'system',
-    content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
+    content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，再点击「保存」即可开始对话。\n\n💡 暂时不想配置？点击设置面板底部的「稍后配置」可以先浏览界面，稍后随时通过侧边栏回到设置。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
   });
 }

@@ -231,4 +231,25 @@
   overflow-y: auto;
 }
 
+/* P2-FLOW-08 编辑模式 textarea 样式（与只读 pre 保持视觉一致） */
+.memory-edit-textarea {
+  background: var(--window-bg-2);
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--accent);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Consolas, "Cascadia Code", monospace;
+  max-height: 50vh;
+  min-height: 120px;
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
 /* UX-P2-26 移除重复的滚动条样式（base.css 已全局定义 ::-webkit-scrollbar，此处无需重复） */

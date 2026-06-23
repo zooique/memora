@@ -477,6 +477,8 @@
           <!-- P1 修复：补充按钮样式类，避免显示为浏览器默认按钮（与全站风格不一致） -->
           <!-- P3-FLOW-06 增加恢复默认按钮，用户配置出错时可一键恢复 -->
           <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
+          <!-- P2-FLOW-10 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->
+          <button id="btn-settings-skip" class="btn-secondary">稍后配置</button>
           <button id="btn-settings-cancel" class="btn-secondary">取消</button>
           <button id="btn-settings-save" class="btn-primary">保存</button>
         </div>
@@ -501,6 +503,11 @@
         <pre id="memory-detail-content"></pre>
       </div>
       <div class="modal-footer">
+        <!-- P2-FLOW-08 编辑模式按钮：保存/取消（默认隐藏，编辑时显示） -->
+        <button id="btn-memory-edit-save" class="btn-primary hidden">保存</button>
+        <button id="btn-memory-edit-cancel" class="btn-secondary hidden">取消</button>
+        <!-- P2-FLOW-08 只读模式按钮：编辑/删除（默认显示，编辑时隐藏） -->
+        <button id="btn-memory-edit" class="btn-secondary">编辑</button>
         <button id="btn-memory-delete" class="btn-danger">删除</button>
         <button class="btn-secondary" data-modal="memory-detail-modal">关闭</button>
       </div>

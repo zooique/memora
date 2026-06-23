@@ -175,6 +175,16 @@ export class SettingsPanelManager {
     const btnReset = getOptionalElement('btn-settings-reset', 'button');
     const btnLlmTest = document.getElementById('btn-llm-test');
 
+    // P2-FLOW-10 "稍后配置"按钮：首次配置时提供退出路径
+    const btnSkip = getOptionalElement('btn-settings-skip', 'button');
+    if (btnSkip) {
+      this.events.addEventListener(btnSkip, 'click', () => {
+        // 跳过配置，回到对话面板（用户可随时通过侧边栏回到设置）
+        this.settingsFormDirty = false; // 不保存，清除 dirty 标记
+        this.host.switchPanel('chat');
+      });
+    }
+
     // 设置面板核心元素缺失时静默降级
     if (!btnSave && !btnCancel) return;
 

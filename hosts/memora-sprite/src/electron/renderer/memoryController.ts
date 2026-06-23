@@ -124,6 +124,28 @@ export function createMemoryController(uiManager: UIManager) {
         setButtonLoading('btn-memory-add-confirm', false);
       }
     });
+
+    // P2-FLOW-08 编辑记忆：复用 MEMORIES_ADD 通道（底层 upsert 语义）
+    uiManager.onMemoryEdit(async (id: string, content: string) => {
+      // 从详情弹窗 dataset 获取 source 和 name（编辑时不改变这两个字段）
+      const detailModal = document.getElementById('memory-detail-modal');
+      const source = detailModal?.dataset.memorySource ?? '';
+      const name = detailModal?.dataset.memoryName ?? '';
+      if (!source || !name) return;
+
+      setButtonLoading('btn-memory-edit-save', true, '保存中...');
+      try {
+        // 复用 addMemory（底层是 upsert，ID 相同时更新内容）
+        await window.electronAPI.addMemory({ source, name, content });
+        uiManager.hideModal('memory-detail-modal');
+        await loadMemoryList();
+        uiManager.showToast('记忆已更新', 'success');
+      } catch (error) {
+        handleIpcError('onMemoryEdit', error, '更新记忆失败');
+      } finally {
+        setButtonLoading('btn-memory-edit-save', false);
+      }
+    });
   }
 
   /** 加载记忆列表 */
