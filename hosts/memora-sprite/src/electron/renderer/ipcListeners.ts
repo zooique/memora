@@ -331,6 +331,11 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.showThinkingPhase(msg.messageId, msg.phase);
   });
 
+  // OBS-02 上下文截断通知：对话中发生截断时，在消息气泡顶部显示持久提示条
+  window.electronAPI.onContextTruncated((msg) => {
+    uiManager.showTruncationNotice(msg.messageId, msg.count);
+  });
+
   // UX-P1-02 工具调用开始：在消息气泡内渲染工具调用卡片
   window.electronAPI.onStreamToolStart((msg) => {
     uiManager.showToolStart(msg.messageId, msg.name, msg.args);

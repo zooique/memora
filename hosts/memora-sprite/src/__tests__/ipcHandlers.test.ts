@@ -85,7 +85,9 @@ function createMockIpcContext(options: {
   };
 
   const ctx = {
-    agent: {},
+    agent: {
+      getMetrics: () => ({ context: { truncationCount: 0 } }),
+    },
     sprite: {},
     sessionStore: {},
     windowStateManager: {},
@@ -315,7 +317,9 @@ describe('ipcHandlers — P1 修复回归测试', () => {
     it('fullWindow 为 null 时静默返回（不抛错）', async () => {
       const { registerIpcHandlers } = await import('../electron/ipcHandlers.js');
       const ctx = {
-        agent: {},
+        agent: {
+          getMetrics: () => ({ context: { truncationCount: 0 } }),
+        },
         sprite: {},
         sessionStore: {},
         windowStateManager: {},

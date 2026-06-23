@@ -89,6 +89,9 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   const abortController = new AbortController();
   ctx.setAbortController(abortController);
 
+  // OBS-02：记录对话开始前的截断次数，对话结束后对比检测截断事件
+  const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
+
   try {
     // UX-P1-01 累积完整文本，每次 chunk 发送累积值（而非 delta），避免渲染层只显示最后一个 chunk
     let accumulatedText = '';
@@ -131,6 +134,14 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           phase: chunk.phase,
         });
       } else if (chunk.type === 'done') {
+        // OBS-02：对话正常结束时检测截断次数是否增加
+        const truncationAfter = ctx.agent.getMetrics().context.truncationCount;
+        if (truncationAfter > truncationBefore) {
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, {
+            messageId,
+            count: truncationAfter - truncationBefore,
+          });
+        }
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
       } else if (chunk.type === 'aborted') {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });

@@ -97,6 +97,7 @@ const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_STREAM_TOOL_START: 'sprite-stream-tool-start',
   SPRITE_STREAM_TOOL_RESULT: 'sprite-stream-tool-result',
   SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
+  SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
   SPRITE_OUTPUT: 'sprite-output',
   SPRITE_EVENT: 'sprite-event',
   SPRITE_ERROR: 'sprite-error',
@@ -461,6 +462,8 @@ const electronAPI: ElectronAPI = {
   onStreamToolStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, (_: IpcRendererEvent, msg: { messageId: string; name: string; args?: string }) => cb(msg)),
   onStreamToolResult: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, (_: IpcRendererEvent, msg: { messageId: string; name: string; ok: boolean; summary?: string }) => cb(msg)),
   onStreamThinking: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, (_: IpcRendererEvent, msg: { messageId: string; phase: string }) => cb(msg)),
+  /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
+  onContextTruncated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, (_: IpcRendererEvent, msg: { messageId: string; count: number }) => cb(msg)),
   removeStreamListeners: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
@@ -469,6 +472,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED);
   },
 
   // 精灵输出

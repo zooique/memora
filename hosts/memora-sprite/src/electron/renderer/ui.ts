@@ -365,6 +365,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   setMemoryRecall(messageId: string, memories: Array<{ name: string; score: number; source: string }>): void { this.chatPanel.setMemoryRecall(messageId, memories); }
   /** 显示思考阶段指示器（委托到 ChatPanelManager） */
   showThinkingPhase(messageId: string, phase: string): void { this.chatPanel.showThinkingPhase(messageId, phase); }
+  /** OBS-02 显示上下文截断提示条 */
+  showTruncationNotice(messageId: string, count: number): void { this.chatPanel.showTruncationNotice(messageId, count); }
   /** 显示工具调用开始卡片（委托到 ChatPanelManager） */
   showToolStart(messageId: string, name: string, args?: string): void { this.chatPanel.showToolStart(messageId, name, args); }
   /** 更新工具调用结果（委托到 ChatPanelManager） */

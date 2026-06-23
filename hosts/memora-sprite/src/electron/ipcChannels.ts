@@ -154,6 +154,13 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   /** UX-P2-01 思考阶段指示（recalling/processing/archiving） */
   SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
 
+  /**
+   * OBS-02 上下文截断通知
+   * 对话中检测到 metrics.context.truncationCount 增加时推送，
+   * 携带被裁剪的消息数，渲染层在消息气泡顶部显示持久提示条。
+   */
+  SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
+
   // ─── 精灵输出 / 错误 ──────────────────────────────────
   /** 精灵主动提示或系统消息 */
   SPRITE_OUTPUT: 'sprite-output',

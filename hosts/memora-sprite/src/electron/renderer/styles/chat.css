@@ -1023,6 +1023,20 @@
   50%      { opacity: 1; }
 }
 
+/* ─── OBS-02 上下文截断提示条 ─────────────────────────────── */
+/* 对话中发生上下文截断时，在消息气泡顶部显示持久提示条         */
+/* 告知用户部分历史消息已被省略，遵循"主动可见"原则             */
+
+.truncation-notice {
+  margin-bottom: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--warn-fg, #b88500);
+  background: var(--warn-bg, rgba(184, 133, 0, 0.1));
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--warn-fg, #b88500);
+}
+
 /* ─── UX-P1-02 工具调用卡片 ───────────────────────────────── */
 /* 精灵执行工具（read_file/search_memories 等）时显示调用卡片   */
 /* 让用户感知精灵正在执行具体动作，而非黑盒等待                  */

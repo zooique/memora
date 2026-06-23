@@ -559,6 +559,38 @@ export class ChatPanelManager {
     indicator.textContent = `⚙️ ${label}`;
   }
 
+  // ─── OBS-02 上下文截断提示 ────────────────────────────────
+
+  /**
+   * OBS-02 在消息气泡顶部显示上下文截断提示条
+   *
+   * 当对话中发生上下文截断时，在消息气泡顶部插入持久提示条，
+   * 告知用户部分历史消息已被省略。遵循"主动可见"原则，非 hover 显示。
+   *
+   * @param messageId 流式消息 ID
+   * @param count 本次对话中发生的截断次数
+   */
+  showTruncationNotice(messageId: string, count: number): void {
+    const el = this.streamingMessages.get(messageId);
+    if (!el) return;
+
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 查找或创建截断提示条（插入到 bubble 顶部，thinking-phase 之前）
+    let notice = bubble.querySelector('.truncation-notice') as HTMLDivElement | null;
+    if (!notice) {
+      notice = document.createElement('div');
+      notice.className = 'truncation-notice';
+      bubble.insertBefore(notice, bubble.firstChild);
+    }
+
+    // 更新提示文案（count > 1 时显示次数）
+    notice.textContent = count > 1
+      ? `⚠️ 上下文已截断 ${count} 次，部分历史已省略`
+      : '⚠️ 上下文已截断，部分历史已省略';
+  }
+
   // ─── UX-P1-02 工具调用卡片 ────────────────────────────────
 
   /**
