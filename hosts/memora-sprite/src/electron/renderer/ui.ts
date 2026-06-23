@@ -300,7 +300,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       };
       const panel = panelMap[e.key];
       if (panel) {
-        this.switchPanel(panel);
+        void this.switchPanel(panel);
         e.preventDefault();
       }
       return;
@@ -419,8 +419,26 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
   // ─── 面板管理 ─────────────────────────────────────────
 
-  /** 切换面板 */
-  switchPanel(panel: string): void {
+  /**
+   * 切换面板
+   *
+   * P2-FLOW-06：切换前检查当前面板是否有未保存修改，
+   * 有则弹出确认对话框，用户取消则中止切换。
+   */
+  async switchPanel(panel: string): Promise<void> {
+    // P2-FLOW-06：当前在设置面板且有未保存修改时，确认后再切换
+    if (this.state.currentPanel === 'settings' && this.settingsPanelManager.isDirty()) {
+      const confirmed = await this.showConfirmDialog({
+        title: '离开设置',
+        message: '有未保存的修改，离开后将丢失。确定要离开吗？',
+        confirmText: '离开',
+        danger: true,
+      });
+      if (!confirmed) return;
+      // 用户选择离开，重置 dirty 状态避免后续切换重复提示
+      this.settingsPanelManager.resetFormDirty();
+    }
+
     // 移除所有活动状态
     document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
@@ -575,7 +593,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     if (!(target instanceof HTMLElement)) return;
     const panel = target.dataset.panel;
     if (panel) {
-      this.switchPanel(panel);
+      // P2-FLOW-06: switchPanel 已改为 async，void 显式忽略 Promise
+      void this.switchPanel(panel);
     }
   }
 

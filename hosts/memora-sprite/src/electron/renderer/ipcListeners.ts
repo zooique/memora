@@ -172,7 +172,7 @@ function handleProactivePrompt(
 
   // 非静默模式：确保对话面板可见，然后显示 banner
   if (uiManager.getCurrentPanel() !== 'chat') {
-    uiManager.switchPanel('chat');
+    void uiManager.switchPanel('chat');
   }
   uiManager.showProactiveBanner(msg.payload.prompt);
 

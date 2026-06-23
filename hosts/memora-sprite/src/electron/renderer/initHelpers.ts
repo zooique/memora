@@ -74,7 +74,7 @@ export function showAgentInitError(
       }
     },
   );
-  uiManager.switchPanel('settings');
+  void uiManager.switchPanel('settings');
   void settingsController.loadConfig();
 }
 

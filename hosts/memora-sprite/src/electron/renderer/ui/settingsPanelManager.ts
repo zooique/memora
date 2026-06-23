@@ -462,6 +462,16 @@ export class SettingsPanelManager {
   }
 
   /**
+   * P2-FLOW-06 检查设置面板是否有未保存修改
+   *
+   * 供 UIManager.switchPanel() 在面板切换前调用，
+   * 避免用户修改设置后点击导航离开导致修改丢失。
+   */
+  isDirty(): boolean {
+    return this.settingsFormDirty || this.llmFormDirty;
+  }
+
+  /**
    * P3-FLOW-10 更新 Agent 连接状态指示器
    *
    * 在设置面板顶部显示 Agent 当前连接状态，帮助用户快速识别配置是否生效。

@@ -151,7 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         void personaController.loadPersonaList();
         void memoryController.loadDashboard();
         // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
-        uiManager.switchPanel('chat');
+        void uiManager.switchPanel('chat');
         // P2 修复：首次配置完成后检查是否需要显示三态引导
         // 初始化流程中 Agent 未就绪时提前 return，三态引导检查不会执行；
         // 此处 Agent 就绪后补检，确保首次用户能看到窗口模型引导
@@ -178,7 +178,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   uiManager.initProactiveBannerButtons({
     onView: () => {
       // 已在对话面板内，仅确保面板可见
-      uiManager.switchPanel('chat');
+      void uiManager.switchPanel('chat');
     },
     onLater: () => {
       // banner 已隐藏，无需额外操作
@@ -206,7 +206,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 召回记忆点击：跳转到记忆面板并显示详情
   uiManager.onMemoryRecallClick(async (memoryName) => {
-    uiManager.switchPanel('memories');
+    await uiManager.switchPanel('memories');
     try {
       const { memory } = await window.electronAPI.showMemory(memoryName);
       if (memory) {
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (isConfigMissing) {
         // 首次启动引导：显示欢迎消息 + 跳转设置面板
         showWelcomeMessage(uiManager);
-        uiManager.switchPanel('settings');
+        void uiManager.switchPanel('settings');
         await settingsController.loadConfig();
       } else {
         // 初始化失败：显示错误 + 重试按钮 + 跳转设置面板（复用 showAgentInitError 统一处理）
@@ -269,7 +269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // P3-FLOW-10 异常时状态指示器显示 unknown
     settingsController.updateAgentStatus('unknown', '检测中...');
     showWelcomeMessage(uiManager);
-    uiManager.switchPanel('settings');
+    void uiManager.switchPanel('settings');
     await settingsController.loadConfig();
     return;
   }
