@@ -7,10 +7,10 @@
  * 阶段一：search() 使用 LIKE 关键词匹配（与 InMemoryStorage 行为一致）
  * 阶段二：可选升级 FTS5 全文搜索
  */
-import type Database from 'better-sqlite3';
 import type { IMemoryStorage } from 'memora';
 import type { Memory } from 'memora';
 import { segmentText, validateSource, logger } from 'memora';
+import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
 
 /** 建表 SQL */
 const CREATE_TABLE_SQL = `
@@ -60,9 +60,9 @@ COMMIT;
  * better-sqlite3 实现的 IMemoryStorage
  */
 export class SqliteStorage implements IMemoryStorage {
-  private db: Database.Database;
+  private db: ISqliteDatabase;
 
-  constructor(db: Database.Database) {
+  constructor(db: ISqliteDatabase) {
     this.db = db;
     this.db.exec(CREATE_TABLE_SQL);
     this.migrateColumns();

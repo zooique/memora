@@ -9,8 +9,8 @@
  *   - 保存时合并（不覆盖未知字段，向前兼容）
  *   - 文件损坏时静默回退到默认值
  */
-import { resolve } from 'node:path';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 
 /** 精灵持久化配置 */
 export interface SpriteConfig {
@@ -243,6 +243,10 @@ export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
     }
     merged = { ...existing, ...config };
   }
+
+  // 确保目录存在（首次运行时 dataDir 可能尚未创建，如 ~/.memora-sprite/data/）
+  // 否则 writeFileSync 会抛 ENOENT
+  mkdirSync(dirname(filePath), { recursive: true });
 
   // 设置 0o600 权限：仅文件所有者可读写
   // sprite.json 含 focusProjectPath 等路径信息，与 config.json（含 apiKey）保持一致的权限保护

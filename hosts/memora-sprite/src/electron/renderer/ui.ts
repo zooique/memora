@@ -364,7 +364,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 完成流式消息（委托到 ChatPanelManager） */
   finishStreamingMessage(messageId: string): void { this.chatPanel.finishStreamingMessage(messageId); }
   /** 设置流式消息的召回记忆摘要（委托到 ChatPanelManager） */
-  setMemoryRecall(messageId: string, memories: MemoryListItem[]): void { this.chatPanel.setMemoryRecall(messageId, memories); }
+  setMemoryRecall(messageId: string, memories: Array<{ name: string; score: number; source: string }>): void { this.chatPanel.setMemoryRecall(messageId, memories); }
   /** 显示思考阶段指示器（委托到 ChatPanelManager） */
   showThinkingPhase(messageId: string, phase: string): void { this.chatPanel.showThinkingPhase(messageId, phase); }
   /** 显示工具调用开始卡片（委托到 ChatPanelManager） */
@@ -394,44 +394,27 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
   // ─── 消息计数（ChatPanelHost 回调：供 ChatPanelManager 调用） ──
 
-  /**
-   * 更新消息计数（ChatPanelHost 回调）
-   *
-   * 由 ChatPanelManager.appendMessage 调用，非系统消息计数 +1。
-   */
-  private updateMessageCount(): void {
+  /** 更新消息计数（ChatPanelHost 回调：供 ChatPanelManager.appendMessage 调用） */
+  updateMessageCount(): void {
     this.messageCount++;
     this.refreshMessageCountDisplay();
   }
 
-  /**
-   * 刷新消息计数显示（不累加计数，仅更新 DOM）
-   *
-   * UX-P2-05 修复：clearMessages 重置计数后调用此方法更新显示，
-   * 避免跨会话累加导致"今日已交流 N 条消息"数字错误。
-   */
-  private refreshMessageCountDisplay(): void {
+  /** 刷新消息计数显示（不累加计数，仅更新 DOM） */
+  refreshMessageCountDisplay(): void {
     const countEl = document.getElementById('chat-message-count');
     if (countEl) {
       countEl.textContent = `今日已交流 ${this.messageCount} 条消息`;
     }
   }
 
-  /**
-   * 重置消息计数为 0（ChatPanelHost 回调）
-   *
-   * 由 ChatPanelManager.clearMessages 调用，清空消息时重置计数器。
-   */
-  private resetMessageCount(): void {
+  /** 重置消息计数为 0（ChatPanelHost 回调：供 ChatPanelManager.clearMessages 调用） */
+  resetMessageCount(): void {
     this.messageCount = 0;
   }
 
-  /**
-   * 未读计数 +1（ChatPanelHost 回调）
-   *
-   * 由 ChatPanelManager.appendMessage 调用，完整窗口隐藏时更新未读计数。
-   */
-  private updateUnreadCount(): void {
+  /** 未读计数 +1（ChatPanelHost 回调：完整窗口隐藏时新精灵消息到达） */
+  updateUnreadCount(): void {
     this.state.unreadCount++;
     this.updateBadge();
   }
@@ -496,8 +479,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
   // ─── 未读计数 ─────────────────────────────────────────
 
-  /** 更新未读计数徽章 */
-  private updateBadge(): void {
+  /** 更新未读徽章显示（ChatPanelHost 回调） */
+  updateBadge(): void {
     // 若当前布局未提供 badge 元素则静默跳过，避免初始化崩溃
     if (!this.badge) return;
 
@@ -528,21 +511,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
   // ─── 滚动控制 ─────────────────────────────────────────
 
-  /**
-   * 智能滚动到底部
-   *
-   * 仅当用户已在底部附近时才自动滚动，避免用户向上查看历史时被强制拉回底部。
-   * 流式输出和用户发送消息时会触发滚动。
-   */
-  private scrollToBottom(): void {
+  /** 智能滚动到底部（仅当用户在底部附近时才滚动，避免打断历史查看） */
+  scrollToBottom(): void {
     if (!this.isNearBottom) return;
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
-  /**
-   * 强制滚动到底部（用户主动操作时调用，如点击"新会话"）
-   */
-  private forceScrollToBottom(): void {
+  /** 强制滚动到底部（用户主动操作时调用，如点击"新会话"） */
+  forceScrollToBottom(): void {
     this.isNearBottom = true;
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
@@ -741,15 +717,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.stopMessageCallback?.();
   }
 
-  /**
-   * 统一更新发送/停止按钮状态
-   *
-   * 合并发送和停止为单一按钮的双姿态：
-   * - 空闲态：蓝色 ➤ 发送按钮
-   * - 流式态：红色 ■ 停止按钮
-   * 所有状态变更统一通过此方法，避免分散操作导致不一致
-   */
-  private updateSendButton(): void {
+  /** 统一更新发送/停止按钮状态（空闲态发送 / 流式态停止） */
+  updateSendButton(): void {
     if (this.state.isStreaming) {
       // 流式态：显示停止姿态
       this.btnSend.disabled = false;  // 不禁用，点击触发停止

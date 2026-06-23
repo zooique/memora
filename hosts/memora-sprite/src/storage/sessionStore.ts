@@ -4,8 +4,8 @@
  * 会话数据与记忆数据存储在同一 SQLite 数据库中（ADR-SP-002）。
  * 利用 SQLite 事务实现 copySession 的原子性要求。
  */
-import type Database from 'better-sqlite3';
 import type { ISessionStore, SessionMessage } from 'memora';
+import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
 
 /** 建表 SQL */
 const CREATE_TABLE_SQL = `
@@ -28,9 +28,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_date_session ON sessions(date, session);
  * better-sqlite3 实现的 ISessionStore
  */
 export class SqliteSessionStore implements ISessionStore {
-  private db: Database.Database;
+  private db: ISqliteDatabase;
 
-  constructor(db: Database.Database) {
+  constructor(db: ISqliteDatabase) {
     this.db = db;
     this.db.exec(CREATE_TABLE_SQL);
     this.db.exec(CREATE_INDEX_SQL);

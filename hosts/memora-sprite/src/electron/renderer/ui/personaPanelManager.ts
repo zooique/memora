@@ -228,4 +228,9 @@ export class PersonaPanelManager {
   onMemoryRecallClick(cb: (memoryName: string) => void): void {
     this.memoryRecallClickCallback = cb;
   }
+
+  /** 触发召回记忆点击回调（供外部调用，如点击召回记忆标签时跳转记忆详情） */
+  triggerMemoryRecallClick(memoryName: string): void {
+    this.memoryRecallClickCallback?.(memoryName);
+  }
 }
