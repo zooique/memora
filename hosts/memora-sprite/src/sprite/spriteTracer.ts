@@ -19,7 +19,26 @@
  */
 
 import { JsonlAppender } from './jsonlAppender.js';
+import { TRACE_SPANS } from 'memora';
 import type { ITracer, ISpan } from 'memora';
+
+/**
+ * Sprite 宿主自定义 span 命名常量
+ *
+ * 与内核 TRACE_SPANS 对称，统一 sprite 层 span 命名规范。
+ * sprite 自定义 span 以 'sprite.' 前缀标识，与内核 span（recall/llm/tool/response/memory）区分。
+ */
+export const SPRITE_TRACE_SPANS = {
+  /** 精灵唤醒（用户输入或主动提示触发的主对话路径） */
+  WAKEUP: 'sprite.wakeup',
+  /** 项目模式切换（含 fileWatcher 重建） */
+  PROJECT_MODE: 'sprite.projectMode',
+  /** 触发器响应（fileWatcher/timer 等外部事件触发） */
+  TRIGGER: 'sprite.trigger',
+} as const;
+
+// 重导出内核 TRACE_SPANS，供 sprite 层统一引用 span 命名
+export { TRACE_SPANS };
 
 /** 单条 trace 记录（JSONL 每行） */
 interface TraceEntry {

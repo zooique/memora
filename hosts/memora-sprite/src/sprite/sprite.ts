@@ -23,6 +23,7 @@ import { loadSpriteConfig, saveSpriteConfig, applyConfigField, type SpriteConfig
 import * as cliFormatter from './cliFormatter.js';
 import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
 import type { DashboardData } from './controllers/index.js';
+import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
 export type SpriteState = 'idle' | 'active';
@@ -240,7 +241,7 @@ export class Sprite {
   async wakeup(input?: string): Promise<string> {
     this.state = 'active';
     // P2-S6: 唤醒是 LLM 调用主路径，记录 span 用于性能追踪
-    const span = this.tracer?.startSpan('sprite.wakeup', input ? { hasInput: true } : { hasInput: false });
+    const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.WAKEUP, input ? { hasInput: true } : { hasInput: false });
     try {
       // input 为 undefined 时，生成主动提示（无输入对话）
       return await this.agent.chatSync(input ?? '');
@@ -497,7 +498,7 @@ export class Sprite {
       return;
     }
     // P2-S6: 项目切换含 fileWatcher 重建，记录 span 用于追踪切换耗时与失败率
-    const span = this.tracer?.startSpan('sprite.projectMode', { focusPath });
+    const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.PROJECT_MODE, { focusPath });
     // 异步切换，不阻塞配置更新
     this.agent.switchProject(focusPath).then(() => {
       logger.info({ focusPath }, '已切换到专注项目');
@@ -710,7 +711,7 @@ export class Sprite {
     if (this.state !== 'idle') return;
 
     // P2-S6: 触发器响应是精灵主路径，记录 span 用于触发频率与耗时追踪
-    const span = this.tracer?.startSpan('sprite.trigger', {
+    const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.TRIGGER, {
       source: payload.source,
       reason: payload.reason,
     });
