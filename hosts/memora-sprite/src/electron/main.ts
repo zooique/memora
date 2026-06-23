@@ -17,6 +17,12 @@
  * 零内核改动：Sprite 和 Agent 完全不知道运行在 CLI 还是 Electron 模式
  */
 
+// 必须在最早期设置 UTF-8 编码，确保所有后续模块的 console/pino 输出中文不乱码
+// Windows 控制台默认使用 GBK（CP936），Electron 继承此设置，导致 UTF-8 JSON 日志乱码
+// 通过 app.commandLine 追加 --console-utf8 标志，让 Electron 强制使用 UTF-8 编码
+import { app } from 'electron';
+app.commandLine.appendSwitch('console-utf8');
+
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { app, ipcMain, screen } from 'electron';
