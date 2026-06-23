@@ -163,11 +163,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
     // ─── P2-008 面板管理器初始化（提取自 ui.ts 约 1800 行） ───
 
+    // P1-ET-01 每个面板持有独立的 EventTracker，避免 cleanup 时互相干扰
     // 聊天面板管理器
     this.chatPanel = new ChatPanelManager(
       this,
       this.messagesEl,
-      this.events,
+      new EventTracker(),
       this.state,
       this.streamingMessages,
     );
@@ -179,7 +180,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       getOptionalElement('memory-search', 'input'),
       getOptionalElement('memory-filter-source', 'select'),
       getOptionalElement('memory-detail-modal', 'div'),
-      this.events,
+      new EventTracker(),
     );
 
     // 角色选择器面板管理器
@@ -187,11 +188,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       getOptionalElement('persona-selector', 'div'),
       getOptionalElement('persona-dropdown', 'div'),
       getOptionalElement('persona-name', 'span'),
-      this.events,
+      new EventTracker(),
     );
 
     // 会话历史面板管理器
-    this.sessionPanel = new SessionPanelManager(this.events);
+    this.sessionPanel = new SessionPanelManager(new EventTracker());
 
     // 初始化 UI
     this.initEventListeners();
@@ -279,14 +280,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     if (!(e instanceof KeyboardEvent)) return;
     const isMod = e.ctrlKey || e.metaKey;
 
-    // Esc：关闭所有打开的弹窗 + 下拉菜单
+    // Esc：关闭展开的下拉菜单（弹窗由 ModalManager 统一处理）
+    // P1-ESC-01 移除弹窗关闭逻辑，避免与 ModalManager 的 Escape 处理冲突
     if (e.key === 'Escape') {
-      const openModals = document.querySelectorAll('.modal:not(.hidden)');
-      if (openModals.length > 0) {
-        openModals.forEach((modal) => modal.classList.add('hidden'));
-        e.preventDefault();
-      }
-      // P2 修复：Esc 同时关闭展开的下拉菜单（会话/角色），符合通用交互习惯
       const openDropdowns = document.querySelectorAll('.dropdown:not(.hidden)');
       if (openDropdowns.length > 0) {
         openDropdowns.forEach((dropdown) => dropdown.classList.add('hidden'));

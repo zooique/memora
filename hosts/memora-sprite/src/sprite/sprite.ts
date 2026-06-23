@@ -718,7 +718,10 @@ export class Sprite {
       // 触发事件已由上方 logger.info 记录，dashboard 可通过 sprite.formatDashboard() 主动查询。
     } catch (err) {
       span?.recordException(err instanceof Error ? err : new Error(String(err)));
-      throw err;
+      // P2-ERR-02 移除 rethrow：事件处理器中 rethrow 是反模式
+      // emit() 已有 try/catch 兜底，此处仅记录异常即可
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg, source: payload.source }, '触发器处理异常');
     } finally {
       span?.end();
     }

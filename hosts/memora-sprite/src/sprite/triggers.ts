@@ -102,8 +102,17 @@ export class TriggerBus {
 
   /** 发射触发事件 */
   private emit(payload: TriggerPayload): void {
+    // P2-ERR-01 对每个 handler 调用包裹 try/catch，防止单个 handler 异常中断全部分发
+    // 场景：TimerTrigger 的 setInterval 回调和 FileWatcherTrigger 的 fs.watch 回调间接调用 emit，
+    //       未捕获异常会导致 Node.js 进程崩溃
     for (const handler of this.handlers) {
-      handler(payload);
+      try {
+        handler(payload);
+      } catch (err) {
+        // 记录错误但不中断后续 handler 的分发
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[TriggerBus] handler 执行异常: ${msg}`);
+      }
     }
   }
 

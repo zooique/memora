@@ -84,6 +84,8 @@ export class ChatPanelManager {
    * 避免高频 chunk 导致重复 Markdown 渲染，使用 requestAnimationFrame 合并
    */
   private _pendingRaF = false;
+  /** P1-RAF-01 requestAnimationFrame 句柄，cleanup 时取消挂起的回调 */
+  private _rafHandle: number | null = null;
   /** UX-PP-02 最新流式文本内容（RAF 回调中使用） */
   private _latestStreamText = '';
   /** UX-PP-02 最新流式消息 ID（RAF 回调中使用） */
@@ -125,8 +127,14 @@ export class ChatPanelManager {
 
   // ─── 生命周期 ──────────────────────────────────────────
 
-  /** 清理所有事件监听器 */
+  /** 清理所有事件监听器和挂起的 RAF 回调 */
   cleanup(): void {
+    // P1-RAF-01 取消挂起的 requestAnimationFrame，防止 cleanup 后访问已销毁 DOM
+    if (this._rafHandle !== null) {
+      cancelAnimationFrame(this._rafHandle);
+      this._rafHandle = null;
+      this._pendingRaF = false;
+    }
     this.events.cleanup();
   }
 
@@ -319,8 +327,10 @@ export class ChatPanelManager {
     this._latestStreamMessageId = messageId;
     if (!this._pendingRaF) {
       this._pendingRaF = true;
-      requestAnimationFrame(() => {
+      // P1-RAF-01 保存句柄，cleanup 时可取消挂起的回调
+      this._rafHandle = requestAnimationFrame(() => {
         this._pendingRaF = false;
+        this._rafHandle = null;
         // 重新定位气泡（可能已被 finishStreamingMessage 处理）
         const latestEl = this.streamingMessages.get(this._latestStreamMessageId);
         const latestBubble = latestEl?.querySelector('.message-bubble');
@@ -606,7 +616,10 @@ export class ChatPanelManager {
     if (!bubble) return;
 
     // 查找对应工具的卡片（按 data-tool-name 匹配，取最后一个未完成的）
-    const cards = bubble.querySelectorAll(`.tool-call[data-tool-name="${name}"]`);
+    // P1-SEC-02 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
+    // （CSS.escape 在 jsdom 测试环境中不可用，getAttribute 方式更通用）
+    const allCards = bubble.querySelectorAll('.tool-call');
+    const cards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-name') === name);
     let targetCard: Element | null = null;
     for (const card of Array.from(cards)) {
       if (card.classList.contains('tool-call-running')) {

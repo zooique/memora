@@ -207,8 +207,15 @@ export function loadSpriteConfig(): Required<SpriteConfig> {
     const migrated = runMigrations(merged);
 
     // UX-PP-19 迁移后立即持久化，避免下次启动重复执行迁移
+    // P2-CFG-01 迁移持久化单独 try/catch，写入失败不影响已迁移配置的使用
     if (migrated.configVersion !== merged.configVersion) {
-      saveSpriteConfig(migrated);
+      try {
+        saveSpriteConfig(migrated);
+      } catch (persistErr) {
+        // 持久化失败仅记录日志，不影响本次加载已迁移的配置
+        const msg = persistErr instanceof Error ? persistErr.message : String(persistErr);
+        console.error(`[spriteConfig] 迁移后持久化失败: ${msg}`);
+      }
     }
 
     return migrated;

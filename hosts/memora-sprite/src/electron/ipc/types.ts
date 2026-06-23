@@ -41,15 +41,6 @@ export interface IpcContext {
    * handleUserInput 入口检查此标志，未就绪时拒绝并提示用户重新配置
    */
   isAgentReady: () => boolean;
-  /**
-   * UX-PP-04 用户是否主动触发了中断（区分用户 Stop vs 系统错误）
-   *
-   * P2-DESIGN-7 修复：改为 per-request 局部变量追踪中断原因，
-   * 通过 handleUserInput 闭包传递给 abort handler 和 catch 块。
-   * 此字段保留为兼容引用，实际不再使用（由 handleUserInput 内的局部 wasAborted 替代）。
-   * @deprecated 使用 handleUserInput 内的局部 wasAborted 变量
-   */
-  wasUserAborted: boolean;
   /** 获取当前未读计数（完整窗口隐藏时的消息数） */
   getUnreadCount: () => number;
   /** 增加未读计数并推送到浮动窗口 */

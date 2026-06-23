@@ -45,8 +45,10 @@ CREATE TABLE memories_new (
   content   TEXT NOT NULL,
   source    TEXT NOT NULL DEFAULT 'unknown',
   name      TEXT NOT NULL DEFAULT '',
-  createdAt TEXT NOT NULL DEFAULT (datetime('now')),
-  accessedAt TEXT NOT NULL DEFAULT (datetime('now')),
+  -- P2-ISO-01 使用 strftime 产出 ISO 8601 格式，与 Memory schema 的 z.string().datetime() 对齐
+  -- datetime('now') 产出 'YYYY-MM-DD HH:MM:SS'（非 ISO 8601），会导致时区解析偏差
+  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  accessedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   score     REAL NOT NULL DEFAULT 0.5
 );
 INSERT INTO memories_new (id, content)

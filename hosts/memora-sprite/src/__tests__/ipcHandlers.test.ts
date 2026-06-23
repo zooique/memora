@@ -98,7 +98,6 @@ function createMockIpcContext(options: {
       setAbortControllerCalls.push(ctrl);
     },
     isAgentReady: () => options.isAgentReady,
-    wasUserAborted: false,
     getUnreadCount: () => 0,
     incrementUnreadCount: vi.fn(),
     resetUnreadCount: vi.fn(),
@@ -327,7 +326,6 @@ describe('ipcHandlers — P1 修复回归测试', () => {
         getAbortController: () => null,
         setAbortController: vi.fn(),
         isAgentReady: () => true,
-        wasUserAborted: false,
         getUnreadCount: () => 0,
         incrementUnreadCount: vi.fn(),
         resetUnreadCount: vi.fn(),

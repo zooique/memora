@@ -15,6 +15,7 @@ import { toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from '../ipcChannels.js';
 import { getLocalDate } from '../../sprite/constants.js';
+import { isValidSessionName } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -75,6 +76,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, messages: [], error: 'Agent 未初始化' };
       }
 
+      // P1-SEC-01 输入验证：拒绝含路径分隔符的会话名，防止路径遍历
+      if (!isValidSessionName(query.session)) {
+        return { success: false, messages: [], error: '无效的会话名' };
+      }
+
       // P2 修复：切换会话前检查是否有进行中对话，有则拒绝
       // 避免旧对话的后续消息持久化到新会话，导致会话内容串扰
       if (ctx.getAbortController()) {
@@ -104,6 +110,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Agent 未初始化' };
       }
 
+      // P1-SEC-01 输入验证：拒绝含路径分隔符的会话 ID
+      if (!isValidSessionName(sessionId)) {
+        return { success: false, error: '无效的会话 ID' };
+      }
+
       const deleted = ctx.sessionStore.deleteSession(sessionId);
       if (!deleted) {
         return { success: false, error: '会话不存在或删除失败' };
@@ -123,8 +134,9 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, error: 'Agent 未初始化' };
       }
 
-      if (!newName || !newName.trim()) {
-        return { success: false, error: '会话名不能为空' };
+      // P1-SEC-01 输入验证：拒绝含路径分隔符的会话名和新名称
+      if (!isValidSessionName(sessionId) || !isValidSessionName(newName.trim())) {
+        return { success: false, error: '无效的会话名' };
       }
 
       const renamed = ctx.sessionStore.renameSession(sessionId, newName.trim());

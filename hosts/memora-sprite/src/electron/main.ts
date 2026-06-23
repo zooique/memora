@@ -82,6 +82,17 @@ let sessionStore: SqliteSessionStore | null = null;
 /** 关闭函数（清理 Agent + Sprite 资源） */
 let closeSprite: (() => Promise<void>) | null = null;
 
+// ─── 全局异常兜底 ──────────────────────────────────────────
+// P2-GLOBAL-01 注册全局未捕获异常处理器，防止异步错误导致进程静默崩溃
+// 场景：fire-and-forget 的 Promise（如 void handleUserInput）、
+//       async 回调（如 security.onWriteConfirmation）中的未捕获异常
+process.on('unhandledRejection', (reason) => {
+  errorHandler.handle(reason, { code: ErrorCode.UNKNOWN, context: '全局未捕获的 Promise rejection' });
+});
+process.on('uncaughtException', (error) => {
+  errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '全局未捕获异常' });
+});
+
 /**
  * 设置 Agent 运行时状态（第三季：封装 4 变量集中赋值）
  *
@@ -233,8 +244,6 @@ function createIpcContext(
     },
     // P1 修复：暴露 agentReady 状态，handleUserInput 据此拒绝 reinitAgent 失败后的对话请求
     isAgentReady: () => agentReady,
-    // UX-PP-04 用户中断标志：区分用户 Stop vs 系统错误
-    wasUserAborted: false,
     getUnreadCount: () => unreadCount,
     incrementUnreadCount,
     resetUnreadCount,

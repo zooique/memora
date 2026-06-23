@@ -13,6 +13,7 @@
  */
 
 import { appendFile, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /** JSONL 追加写入器配置 */
@@ -45,6 +46,9 @@ export class JsonlAppender {
     this.filePath = options.filePath;
     this.maxEntries = options.maxEntries ?? 1000;
     this.truncateCheckInterval = options.truncateCheckInterval ?? 100;
+    // P2-INIT-01 构造函数中确保目录存在，防止首次 append 时 ENOENT 静默失败
+    // 同步执行：仅在初始化时执行一次，mkdirSync recursive 是幂等的
+    mkdirSync(dirname(this.filePath), { recursive: true });
   }
 
   /**
