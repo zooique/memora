@@ -65,19 +65,20 @@ export class UserProfile {
    * 存储中只保存已确认的条目（confirmed = true），
    * 待确认条目仅存内存缓存，不写入存储。
    *
-   * name 字段格式：`${category}: ${value}`（如 "identity: 姓名: 张三"）
+   * P2-5 content 字段使用 JSON 编码存储 category + value 元数据，
+   * 兼容旧格式（name 字段 "${category}: ${value}"）作为降级路径。
    */
   async load(): Promise<UserProfileEntry[]> {
     const memories = this.index.getBySource(SOURCE_LABELS.PROFILE);
     const entries: UserProfileEntry[] = [];
 
     for (const m of memories) {
-      // 从 name 字段解析 category（格式：${category}: ${value}）
-      const { category, value } = this.parseNameField(m.name);
+      // P2-5 优先从 content JSON 解码，降级到旧格式 name 解析
+      const parsed = this.parseContentField(m.content, m.name);
       const entry: UserProfileEntry = {
         id: m.id,
-        category: category ?? 'identity',
-        value: value ?? m.content,
+        category: parsed.category,
+        value: parsed.value,
         source: '',
         weight: m.score,
         confirmed: true, // 存储中只保存已确认条目
@@ -266,8 +267,8 @@ export class UserProfile {
    * 当用户说"我叫李四"替换之前的"我叫张三"时，移除旧的 identity 条目。
    * 策略：同分类（category）下，新值替换旧值。判断标准是旧条目的 value 前缀。
    *
-   * 新模型中从 name 字段解析 category（格式：${category}: ${value}）
-   * P2-3 优化：构建 contentPrefix → entry 的 Map 索引，冲突检测从 O(n*m) 降为 O(m)。
+   * P2-5 从 content JSON 解码 category，替代 name 字段隐式解析。
+   * P2-3 构建 contentPrefix → entry 的 Map 索引，冲突检测从 O(n*m) 降为 O(m)。
    *
    * @param fact 当前提取到的新事实
    */
@@ -280,11 +281,12 @@ export class UserProfile {
       // P2-3 构建 contentPrefix → Memory 的 Map 索引，冲突检测降为 O(m)
       const prefixIndex = new Map<string, Memory[]>();
       for (const m of existing) {
-        const { category } = this.parseNameField(m.name);
-        if (category !== fact.category) continue;
-        const oldPrefix = (m.content.split(':')[0] ?? '').trim();
+        // P2-5 从 content JSON 解码 category，替代 parseNameField
+        const parsed = this.parseContentField(m.content, m.name);
+        if (parsed.category !== fact.category) continue;
+        const oldPrefix = (parsed.value.split(':')[0] ?? '').trim();
         if (!oldPrefix) continue;
-        const key = `${category}:${oldPrefix}`;
+        const key = `${parsed.category}:${oldPrefix}`;
         const list = prefixIndex.get(key);
         if (list) {
           list.push(m);
@@ -298,10 +300,11 @@ export class UserProfile {
       const conflicts = prefixIndex.get(conflictKey);
       if (conflicts) {
         for (const m of conflicts) {
-          if (m.content !== fact.value) {
+          const parsed = this.parseContentField(m.content, m.name);
+          if (parsed.value !== fact.value) {
             this.index.delete(m.id);
             logger.info(
-              { oldId: m.id, oldValue: m.content, newValue: fact.value },
+              { oldId: m.id, oldValue: parsed.value, newValue: fact.value },
               '用户画像冲突已解决',
             );
           }
@@ -316,16 +319,17 @@ export class UserProfile {
   /**
    * 将 UserProfileEntry 转为 Memory（用于写入 SQLite）
    *
-   * 分类信息编码在 name 字段中：${category}: ${value}
+   * P2-5 content 字段使用 JSON 编码存储 category + value 元数据，
+   * name 字段改为固定可读标签，不再隐式编码 category。
    * 确认状态：仅已确认条目调用此方法（待确认条目不写入存储）
    */
   private toMemory(entry: UserProfileEntry): Memory {
     const now = new Date().toISOString();
     return {
       id: entry.id,
-      content: entry.value,
+      content: JSON.stringify({ category: entry.category, value: entry.value }),
       source: SOURCE_LABELS.PROFILE,
-      name: `${entry.category}: ${entry.value}`,
+      name: `用户画像-${entry.category}`,
       createdAt: now,
       accessedAt: entry.updatedAt || now,
       score: entry.weight,
@@ -333,29 +337,45 @@ export class UserProfile {
   }
 
   /**
-   * 从 name 字段解析分类和值
+   * 从 content 字段解析 category 和 value
    *
-   * name 字段格式：${category}: ${value}
-   * 例如："identity: 姓名: 张三" → { category: 'identity', value: '姓名: 张三' }
+   * P2-5 优先从 content JSON 解码元数据，降级到旧格式 name 字段解析，
+   * 确保已有 SQLite 数据（旧格式 name="${category}: ${value}"）兼容加载。
    *
-   * @param name - Memory 的 name 字段
+   * @param content Memory 的 content 字段（新格式为 JSON，旧格式为纯 value）
+   * @param name Memory 的 name 字段（旧格式为 "${category}: ${value}"）
    * @returns 解析出的 category 和 value
    */
-  private parseNameField(name: string): {
-    category?: ProfileCategory;
-    value?: string;
+  private parseContentField(content: string, name: string): {
+    category: ProfileCategory;
+    value: string;
   } {
+    // 优先尝试 JSON 解码（新格式）
+    try {
+      const parsed = JSON.parse(content) as { category?: string; value?: string };
+      if (parsed.category && parsed.value) {
+        const validCategories: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
+        if (validCategories.includes(parsed.category as ProfileCategory)) {
+          return { category: parsed.category as ProfileCategory, value: parsed.value };
+        }
+      }
+    } catch {
+      // content 不是 JSON，降级到旧格式
+    }
+
+    // 降级：从 name 字段解析（旧格式 "${category}: ${value}"）
     const idx = name.indexOf(':');
-    if (idx < 0) return {};
+    if (idx >= 0) {
+      const category = name.slice(0, idx).trim() as ProfileCategory;
+      const validCategories: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
+      if (validCategories.includes(category)) {
+        const value = name.slice(idx + 1).trim();
+        return { category, value: value || content };
+      }
+    }
 
-    const category = name.slice(0, idx).trim() as ProfileCategory;
-    const value = name.slice(idx + 1).trim();
-
-    // 校验 category 是否为合法的 ProfileCategory
-    const validCategories: ProfileCategory[] = ['identity', 'preference', 'expertise', 'habit', 'history'];
-    if (!validCategories.includes(category)) return {};
-
-    return { category, value: value || undefined };
+    // 最终降级：默认 identity 分类
+    return { category: 'identity', value: content };
   }
 
   /**

@@ -74,6 +74,23 @@ export class FloatWindow {
 
     this.windowStateManager.attachFloatWindow(this.win);
 
+    // P2-11 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
+    // 浮动窗口也需要同步主题，避免悬浮球与完整窗口主题不一致
+    this.win.webContents.on('did-start-loading', () => {
+      if (!this.win.isDestroyed()) {
+        this.win.webContents.executeJavaScript(`
+          (function() {
+            try {
+              var theme = localStorage.getItem('memora-theme');
+              if (theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+              }
+            } catch (e) {}
+          })();
+        `).catch(() => { /* 注入失败时静默降级 */ });
+      }
+    });
+
     // 加载浮动窗口 HTML
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'float.html');
     await this.win.loadFile(htmlPath);

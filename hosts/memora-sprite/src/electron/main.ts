@@ -705,6 +705,13 @@ function registerMinimalIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () => {
     return { projects: [] };
   });
+
+  // P2-9 渲染进程通知主进程主题已变更，动态设置窗口背景色
+  // 深色主题下 backgroundColor 应为 #1e1e2e，浅色为 #f0f0f2
+  ipcMain.on(IPC_CHANNELS.THEME_CHANGED, (_event, theme: 'light' | 'dark') => {
+    const bgColor = theme === 'dark' ? '#1e1e2e' : '#f0f0f2';
+    windowManager?.updateBackgroundColor(bgColor);
+  });
 }
 
 // P2-DESIGN-4 修复：以下函数已提取到独立模块

@@ -545,6 +545,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 切换当前会话（委托至 SessionManager）
+   *
+   * @deprecated 请使用 `agent.sessionManager.switchSession(newSession)` 代替。此门面方法将在下个大版本中移除。
    */
   switchSession(newSession: string): string {
     this.assertInitialized('switchSession', ['history']);
@@ -735,6 +737,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 恢复最近的会话对话（委托至 SessionManager）
+   *
+   * @deprecated 请使用 `agent.sessionManager.restoreMostRecentSession(preferredSession)` 代替。此门面方法将在下个大版本中移除。
    */
   async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
     this.assertInitialized('restoreMostRecentSession');
@@ -745,6 +749,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 恢复指定会话的对话（委托至 SessionManager）
+   *
+   * @deprecated 请使用 `agent.sessionManager.restoreSession(date, session)` 代替。此门面方法将在下个大版本中移除。
    */
   async restoreSession(date: string, session: string): Promise<number> {
     this.assertInitialized('restoreSession');
@@ -755,6 +761,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 加载会话消息（委托至 SessionManager）
    *
    * **注意：此方法会切换当前会话**（更新 currentDate/currentSession）。
+   *
+   * @deprecated 请使用 `agent.sessionManager.loadSessionMessages(date, session)` 代替。此门面方法将在下个大版本中移除。
    */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
     this.assertInitialized('loadSessionMessages', ['history']);
@@ -1022,15 +1030,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.workProjection;
   }
 
-  // ─── Agent 门面包装方法（向后兼容 project_memory API 契约）──
-  // God Object 拆分后方法移至 MemoryInspector，此处保留门面方法供宿主项目按旧契约调用
+  // ─── Agent 门面包装方法（向后兼容，已标记 @deprecated）──
+  // God Object 拆分后方法移至 MemoryInspector/SessionManager，此处保留门面方法供宿主按旧契约调用
   // 错误策略统一：未初始化时抛 MemoraError（与其他 Agent 方法一致），不静默返回 null/[]
+  // P2-4 渐进式下沉：标记 @deprecated，引导宿主使用 agent.memory / agent.sessionManager 直接访问
 
   /**
    * 获取当前演化状态快照
    * 委托至 MemoryInspector.snapshot()
    *
-   * IX-05：门面方法与委托方法命名对齐。推荐使用 `snapshot()` 代替 `inspect()`。
+   * @deprecated 请使用 `agent.memory.snapshot()` 代替。此门面方法将在下个大版本中移除。
    * @throws MemoraError 如果 Agent 未初始化
    */
   snapshot(): MemorySnapshot {
@@ -1042,7 +1051,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 获取记忆统计
    * 委托至 MemoryInspector.stats()
    *
-   * IX-05：门面方法与委托方法命名对齐。推荐使用 `stats()` 代替 `getStats()`。
+   * @deprecated 请使用 `agent.memory.stats()` 代替。此门面方法将在下个大版本中移除。
    * @throws MemoraError 如果 Agent 未初始化
    */
   stats(): AgentStats {
@@ -1054,8 +1063,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 记忆源健康诊断
    * 委托至 MemoryInspector.sourceHealth()
    *
-   * 为每个 source 计算健康指标（数量、平均 score、新鲜度、状态），
-   * 帮助宿主项目判断是否需要触发衰减、清理或补充。
+   * @deprecated 请使用 `agent.memory.sourceHealth()` 代替。此门面方法将在下个大版本中移除。
    * @throws MemoraError 如果 Agent 未初始化
    */
   sourceHealth(): SourceHealthReport {
@@ -1064,10 +1072,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 搜索记忆（project_memory 约束 70 要求的 searchMemories() API）
+   * 搜索记忆
    * 委托至 MemoryInspector.search()
    *
-   * 与 searchMemoriesHybrid() 对齐：统一为异步方法，便于调用方统一使用 await。
+   * @deprecated 请使用 `agent.memory.search(query, limit)` 代替。此门面方法将在下个大版本中移除。
    * @throws MemoraError 如果 Agent 未初始化
    */
   async searchMemories(query: string, limit = 10): Promise<AgentSearchHit[]> {
@@ -1076,8 +1084,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 混合搜索记忆（语义 + 关键词，project_memory 约束要求的双通道召回）
+   * 混合搜索记忆（语义 + 关键词）
    * 委托至 MemoryInspector.searchHybrid()
+   *
+   * @deprecated 请使用 `agent.memory.searchHybrid(query, limit)` 代替。此门面方法将在下个大版本中移除。
    * @throws MemoraError 如果 Agent 未初始化
    */
   async searchMemoriesHybrid(query: string, limit = 10): Promise<AgentSearchHit[]> {
@@ -1086,8 +1096,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 记忆推荐（基于上下文的智能推荐，project_memory 约束要求的 suggest API）
+   * 记忆推荐
    * 委托至 MemoryInspector.suggest()
+   *
+   * @deprecated 请使用 `agent.memory.suggest(query, options)` 代替。此门面方法将在下个大版本中移除。
    * @throws MemoraError 如果 Agent 未初始化
    */
   suggestMemories(query?: string, options?: { limit?: number }): SuggestHit[] {

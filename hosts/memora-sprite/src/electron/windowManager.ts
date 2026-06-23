@@ -121,6 +121,21 @@ export class WindowManager {
 
     this.windowStateManager.attachFullWindow(this.fullWindow);
 
+    // P2-11 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
+    // 在页面开始加载时同步读取 localStorage 并设置 data-theme 属性，避免 FOUC 闪烁
+    this.fullWindow.webContents.on('did-start-loading', () => {
+      this.fullWindow?.webContents.executeJavaScript(`
+        (function() {
+          try {
+            var theme = localStorage.getItem('memora-theme');
+            if (theme === 'dark') {
+              document.documentElement.setAttribute('data-theme', 'dark');
+            }
+          } catch (e) {}
+        })();
+      `).catch(() => { /* 注入失败时静默降级为默认浅色主题 */ });
+    });
+
     // 加载 HTML 文件
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'index.html');
     await this.fullWindow.loadFile(htmlPath);
@@ -190,6 +205,21 @@ export class WindowManager {
   /** 获取浮动窗口引用 */
   getFloatWindow(): FloatWindow | null {
     return this.floatWindow;
+  }
+
+  /**
+   * P2-9 动态更新窗口背景色
+   *
+   * 渲染进程主题切换时，通过 IPC 通知主进程调用此方法，
+   * 使 BrowserWindow 的 backgroundColor 与当前主题一致。
+   * 解决深色主题下窗口背景仍为浅色导致的启动闪烁问题。
+   *
+   * @param color 目标背景色（如 '#f0f0f2' 浅色 / '#1e1e2e' 深色）
+   */
+  updateBackgroundColor(color: string): void {
+    if (this.fullWindow && !this.fullWindow.isDestroyed()) {
+      this.fullWindow.setBackgroundColor(color);
+    }
   }
 
   /** 关闭所有窗口 */

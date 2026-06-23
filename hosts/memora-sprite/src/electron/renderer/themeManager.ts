@@ -108,6 +108,14 @@ export class ThemeManager {
     this.syncThemeRadios(mode);
     this.themeChangeCallback?.(effectiveTheme);
 
+    // P2-9 通知主进程主题已变更，主进程同步窗口背景色
+    // 避免深色主题下窗口 backgroundColor 仍为浅色导致的启动闪烁
+    try {
+      window.electronAPI?.notifyThemeChanged(effectiveTheme);
+    } catch {
+      // IPC 不可用时静默降级（如单元测试环境）
+    }
+
     // P3-FLOW-12 管理 'auto' 模式的系统主题变化监听器
     this.updateMediaQueryListener(mode);
   }

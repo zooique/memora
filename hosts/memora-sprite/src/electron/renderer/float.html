@@ -3,26 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- CSP：允许内联脚本与样式（浮动窗口为独立小窗口，无外部资源） -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
+  <!-- CSP：浮动窗口为独立小窗口，style-src 保留 'unsafe-inline'（内联 CSS 变量定义） -->
+  <!-- P2-11 移除 script-src 'unsafe-inline'，主题初始化改由主进程 executeJavaScript 注入 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Memora 精灵</title>
   <!--
-    主题初始化（ADR-SP-008）：
-    浮动窗口独立于主窗口，需自行读取 localStorage 主题设置。
-    默认浅色（light），备选深色（dark）。
+    P2-11 主题初始化已从内联脚本迁移至主进程 executeJavaScript 注入：
+    详见 floatWindow.ts 中的 did-start-loading 事件处理。
   -->
-  <script>
-    (function () {
-      try {
-        var theme = localStorage.getItem('memora-theme');
-        if (theme === 'dark') {
-          document.documentElement.setAttribute('data-theme', 'dark');
-        }
-      } catch (e) {
-        // localStorage 不可用时静默降级为默认浅色主题
-      }
-    })();
-  </script>
   <style>
     /* ===== 主题变量（从 base.css 提取浮动窗口所需的最小集） ===== */
     /* UX-P2-12 同步 base.css 的变量值，确保两个窗口主题一致
