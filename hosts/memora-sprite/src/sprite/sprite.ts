@@ -105,7 +105,7 @@ export class Sprite {
     this.projectPath = projectPath ?? dataDir;
     this.allowedPaths = allowedPaths ?? [];
     this.tracer = tracer ?? null;
-    this.config = loadSpriteConfig(dataDir);
+    this.config = loadSpriteConfig();
     this.triggerBus = new TriggerBus();
     this.triggerBus.register(new TimerTrigger(this.config.triggerIntervalMs));
 
@@ -413,7 +413,7 @@ export class Sprite {
   updateConfig(key: SpriteConfigKey, value: unknown): void {
     this.setConfigField(key, value);
     // R6 传完整配置写入，避免 saveSpriteConfig 每次读文件
-    saveSpriteConfig(this.dataDir, this.config);
+    saveSpriteConfig(this.config);
 
     // 特殊处理：触发器间隔变更时重建 TimerTrigger
     if (key === 'triggerIntervalMs' && typeof value === 'number') {

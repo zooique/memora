@@ -20,7 +20,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { app, ipcMain, Notification, screen } from 'electron';
-import { loadConfig, createProviderFromConfig, toError, logger } from 'memora';
+import { createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
 import { TrayManager } from './trayIcon.js';
@@ -34,10 +34,10 @@ import {
   startSprite,
   reinitAgent,
   saveLlmConfig,
-  isLlmConfigured,
   PROVIDER_PRESETS,
   DEFAULT_DATA_DIR,
 } from '../index.js';
+import { spriteConfigStore } from '../storage/spriteConfigStore.js';
 import { loadSpriteConfig, saveSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
 import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/auditManager.js';
@@ -241,7 +241,7 @@ async function initializeApp(): Promise<void> {
   try {
     // 1. 加载精灵配置（从 dataDir/sprite.json，首次启动使用默认值）
     currentDataDir = DEFAULT_DATA_DIR;
-    const spriteConfig = loadSpriteConfig(currentDataDir);
+    const spriteConfig = loadSpriteConfig();
 
     // 2. 初始化窗口状态管理器
     const rawFloatPosition =
@@ -258,7 +258,7 @@ async function initializeApp(): Promise<void> {
       showFloatBubble: spriteConfig.showFloatBubble,
       // 持久化委托给 saveSpriteConfig（避免与 spriteConfig.ts 重复写文件）
       onSaveState: (data) => {
-        saveSpriteConfig(currentDataDir, {
+        saveSpriteConfig({
           windowState: data.windowState,
           floatIconPosition: data.floatPosition,
           showFloatBubble: data.showFloatBubble,
@@ -290,7 +290,7 @@ async function initializeApp(): Promise<void> {
       let boundsSaveTimer: ReturnType<typeof setTimeout> | null = null;
       const saveBounds = () => {
         const bounds = fullWindow.getBounds();
-        saveSpriteConfig(currentDataDir, {
+        saveSpriteConfig({
           windowBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
         });
       };
@@ -318,7 +318,7 @@ async function initializeApp(): Promise<void> {
       onToggleFloatBubble: (checked: boolean) => {
         windowStateManager.setShowFloatBubble(checked);
         // 同步持久化到 spriteConfig
-        saveSpriteConfig(currentDataDir, { showFloatBubble: checked });
+        saveSpriteConfig({ showFloatBubble: checked });
         // 重建托盘菜单以反映勾选状态
         trayManager?.updateMenu();
       },
@@ -396,7 +396,7 @@ async function initializeApp(): Promise<void> {
       onHideToTray: () => {
         windowStateManager.setShowFloatBubble(false);
         // 同步持久化 + 重建托盘菜单
-        saveSpriteConfig(DEFAULT_DATA_DIR, { showFloatBubble: false });
+        saveSpriteConfig({ showFloatBubble: false });
         trayManager?.updateMenu();
       },
       onQuit: () => {
@@ -445,8 +445,7 @@ function registerMinimalIpcHandlers(): void {
   // 精灵配置读写（直接操作文件，不需要 Agent）
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () => {
     try {
-      const defaultDataDir = DEFAULT_DATA_DIR;
-      return { config: loadSpriteConfig(defaultDataDir) };
+      return { config: loadSpriteConfig() };
     } catch {
       // P2-011 修复：使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象
       // 违反 SpriteConfigForm 类型契约（与 P2-010 同类问题）
@@ -498,15 +497,15 @@ function registerMinimalIpcHandlers(): void {
     },
   );
 
-  // LLM 配置读取（从 ~/.memora-sprite/data/config.json）
+  // LLM 配置读取（从 spriteConfigStore 统一路径：~/.memora-sprite/config.json）
   ipcMain.handle(IPC_CHANNELS.LLM_CONFIG_GET, async () => {
     try {
-      const configured = await isLlmConfigured();
+      const configured = await spriteConfigStore.isConfigured();
       if (!configured) {
         return { configured: false, config: null, presets: PROVIDER_PRESETS };
       }
-      // 读取已保存的配置
-      const config = await loadConfig();
+      // 读取已保存的配置（通过 spriteConfigStore 确保路径一致）
+      const config = await spriteConfigStore.load();
       return {
         configured: true,
         config: {

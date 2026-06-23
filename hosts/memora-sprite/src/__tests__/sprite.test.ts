@@ -1,5 +1,9 @@
 /**
  * Sprite 主控测试
+ *
+ * 注意：loadSpriteConfig/saveSpriteConfig 重构后不再接受 dataDir 参数，
+ * 始终读写 ~/.memora-sprite/sprite.json。测试中 mock 这两个函数，
+ * 确保测试隔离于真实文件系统。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Agent, AgentEventMap } from 'memora';
@@ -12,6 +16,28 @@ import { FileWatcherTrigger } from '../sprite/fileWatcherTrigger.js';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
+import type { SpriteConfig } from '../sprite/spriteConfig.js';
+
+// ─── Mock spriteConfig 模块（测试隔离） ──────────────────
+// 重构后 loadSpriteConfig/saveSpriteConfig 固定读写 ~/.memora-sprite/sprite.json，
+// 测试中必须 mock 以避免污染用户真实配置文件
+
+/** 模拟的持久化配置存储（内存中，替代真实文件） */
+let mockPersistedConfig: SpriteConfig = { ...DEFAULT_SPRITE_CONFIG };
+
+vi.mock('../sprite/spriteConfig.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    // 从内存中读取，而非真实文件
+    loadSpriteConfig: vi.fn(() => ({ ...DEFAULT_SPRITE_CONFIG, ...mockPersistedConfig })),
+    // 写入内存，而非真实文件
+    saveSpriteConfig: vi.fn((config: SpriteConfig) => {
+      mockPersistedConfig = { ...mockPersistedConfig, ...config };
+    }),
+  };
+});
 
 // 记录 Agent.on 注册的回调，以便手动触发
 type AgentEventHandler = (e: unknown) => void;
@@ -79,6 +105,7 @@ describe('Sprite 主动行为', () => {
 
   beforeEach(() => {
     agentListeners.clear();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = createTmpDir();
     sprite = new Sprite(mockAgent, tmpDir);
     sprite.start();
@@ -171,6 +198,7 @@ describe('Sprite 配置持久化', () => {
 
   beforeEach(() => {
     agentListeners.clear();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = createTmpDir();
     sprite = new Sprite(mockAgent, tmpDir);
     sprite.start();
@@ -311,6 +339,7 @@ describe('Sprite + IInteraction 桥接', () => {
 
   beforeEach(() => {
     agentListeners.clear();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
     tmpDir = createTmpDir();
     interaction = new MockInteraction();
     sprite = new Sprite(mockAgent, tmpDir, tmpDir, undefined, interaction);

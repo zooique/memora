@@ -3,7 +3,7 @@
  * Memora Sprite — 桌面精灵宿主入口
  *
  * 职责：
- *   1. 加载配置（~/.memora-sprite/data/config.json 或项目级 .memora/config.json）
+ *   1. 加载配置（~/.memora-sprite/config.json 或项目级 .memora/config.json）
  *   2. 首次启动时引导用户配置 LLM
  *   3. 打开 SQLite 数据库（memora.db）
  *   4. 创建 SqliteStorage + SqliteSessionStore
@@ -25,6 +25,7 @@ import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, VectorS
 import type { UIMessages, Config, ITracer } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
+import { SpriteConfigStore, DEFAULT_CONFIG_PATH } from './storage/spriteConfigStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { CliInteraction } from './sprite/cliInteraction.js';
 import type { IInteraction } from './sprite/interaction.js';
@@ -91,85 +92,42 @@ export const PROVIDER_PRESETS: Record<string, { provider: string; model: string;
 };
 
 /**
- * 保存 LLM 配置到 ~/.memora-sprite/data/config.json
+ * 保存 LLM 配置到 ~/.memora-sprite/config.json
  *
+ * 委托到 SpriteConfigStore.save，确保读写路径一致。
  * 供 Electron 设置面板调用——用户在 UI 中配置 LLM 后，
  * 通过此函数持久化到配置文件，随后调用 reinitAgent 重新初始化 Agent。
  *
  * @param llmConfig LLM 配置（provider/model/baseUrl/apiKey）
  * @param embeddingConfig 可选的 Embedding 配置
- * @param configPath 配置文件路径（默认 ~/.memora-sprite/data/config.json）
+ * @param configPath 配置文件路径（默认 ~/.memora-sprite/config.json）
  */
 export async function saveLlmConfig(
   llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number; background?: { enabled: boolean; provider: string; model: string; baseUrl: string; apiKey: string } },
   embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
   configPath?: string,
 ): Promise<void> {
-  const configDir = DEFAULT_DATA_DIR;
-  const targetPath = configPath ?? resolve(configDir, 'config.json');
-  await mkdir(configDir, { recursive: true });
-
-  // 读取现有配置（保留其他字段），不存在则用默认值
-  let existing: Config;
-  try {
-    existing = await loadConfig(targetPath);
-  } catch {
-    existing = {
-      llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
-      memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
-      security: { permission: 'owner', confirmWrites: false },
-      allowedPaths: [],
-    };
-  }
-
-  // 合并新配置
-  const config: Config = {
-    ...existing,
-    llm: {
-      ...existing.llm,
-      provider: llmConfig.provider,
-      model: llmConfig.model,
-      baseUrl: llmConfig.baseUrl,
-      apiKey: llmConfig.apiKey,
-      temperature: llmConfig.temperature ?? existing.llm.temperature ?? 0.7,
-      // H6 保存后台 Provider 配置
-      ...(llmConfig.background?.enabled ? {
-        background: {
-          provider: llmConfig.background.provider,
-          model: llmConfig.background.model,
-          baseUrl: llmConfig.background.baseUrl,
-          apiKey: llmConfig.background.apiKey,
-          temperature: 0.5, // 后台任务默认 temperature，偏低更稳定
-        },
-      } : {}),
-    },
-    ...(embeddingConfig ? { embedding: embeddingConfig } : {}),
-  };
-
-  // 设置 0600 权限：仅文件所有者可读写（防止 apiKey 泄露给同机其他用户）
-  await writeFile(targetPath, JSON.stringify(config, null, 2), { encoding: 'utf-8', mode: 0o600 });
+  const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
+  await store.save(llmConfig, embeddingConfig);
 }
 
 /**
  * 检查 LLM 配置是否完整
  *
+ * 委托到 SpriteConfigStore.isConfigured，确保读写路径一致。
  * 供 Electron 启动时判断是否需要显示首次启动引导。
- * @param configPath 配置文件路径（默认 ~/.memora-sprite/data/config.json）
+ * @param configPath 配置文件路径（默认 ~/.memora-sprite/config.json）
  * @returns true 表示配置完整，false 表示需要引导
  */
 export async function isLlmConfigured(configPath?: string): Promise<boolean> {
-  try {
-    const config = await loadConfig(configPath);
-    return Boolean(config.llm.apiKey && config.llm.provider !== 'mock');
-  } catch {
-    return false;
-  }
+  const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
+  return store.isConfigured();
 }
 
 /**
  * 首次启动引导
  *
- * 交互式收集 LLM 配置并保存到 ~/.memora-sprite/data/config.json
+ * 交互式收集 LLM 配置并保存到 ~/.memora-sprite/config.json
  */
 async function setupWizard(): Promise<void> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -242,9 +200,9 @@ async function setupWizard(): Promise<void> {
 
   rl.close();
 
-  // 保存配置
-  const configPath = resolve(DEFAULT_DATA_DIR, 'config.json');
-  await mkdir(DEFAULT_DATA_DIR, { recursive: true });
+  // 保存配置到 ~/.memora-sprite/config.json（根级，与 data/ 分层）
+  const configPath = DEFAULT_CONFIG_PATH;
+  await mkdir(resolve(DEFAULT_CONFIG_PATH, '..'), { recursive: true });
 
   const config: Config = {
     llm: {
@@ -283,11 +241,9 @@ async function initAgentFromConfig(
   opts?: { configDir?: string; dataDir?: string; projectPath?: string },
 ): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
   const configDir = opts?.configDir ?? DEFAULT_CONFIG_DIR;
-  // 展开 ~ 为实际 home 目录
-  const rawDir = config.memory.dataDir.startsWith('~')
-    ? resolve(homedir(), config.memory.dataDir.slice(1).replace(/^[/\\]/, ''))
-    : config.memory.dataDir;
-  const dataDir = opts?.dataDir ?? rawDir;
+  // 默认强制使用 DEFAULT_DATA_DIR（~/.memora-sprite/data），
+  // 避免 loadConfig 默认值中的 dataDir（~/.memora）导致创建错误的目录
+  const dataDir = opts?.dataDir ?? DEFAULT_DATA_DIR;
 
   // 精灵的工作空间：~/.memora-sprite/data/workspace/（而非源码目录）
   const workspaceDir = resolve(dataDir, 'workspace');
@@ -451,8 +407,8 @@ export async function reinitAgent(
     }
   }
 
-  // 2. 重新加载配置
-  const config = await loadConfig(opts?.configPath);
+  // 2. 重新加载配置（默认从 sprite 专属路径读取，确保与 saveLlmConfig 写入路径一致）
+  const config = await loadConfig(opts?.configPath ?? DEFAULT_CONFIG_PATH);
 
   // 3. 用新配置初始化
   return initAgentFromConfig(config, opts);
@@ -463,7 +419,7 @@ export async function reinitAgent(
  *
  * 配置优先级（高 → 低）：
  *   1. opts 参数（编程调用时传入）
- *   2. ~/.memora-sprite/data/config.json（用户级配置）
+ *   2. ~/.memora-sprite/config.json（用户级配置）
  *   3. .memora/config.json（项目级配置）
  *   4. 内置默认值
  *
@@ -479,9 +435,10 @@ export async function startSprite(opts?: {
   skipWizard?: boolean;
 }): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
   // 1. 加载配置文件（首次启动时自动引导）
+  // 默认从 sprite 专属路径读取（~/.memora-sprite/config.json），确保与 saveLlmConfig 写入路径一致
   let config: Config;
   try {
-    config = await loadConfig(opts?.configPath);
+    config = await loadConfig(opts?.configPath ?? DEFAULT_CONFIG_PATH);
     // 检查是否有 API Key
     if (!config.llm.apiKey) {
       throw new Error('API Key 未配置');
@@ -493,7 +450,7 @@ export async function startSprite(opts?: {
     }
     // CLI 模式：交互式引导用户配置
     await setupWizard();
-    config = await loadConfig(opts?.configPath);
+    config = await loadConfig(opts?.configPath ?? DEFAULT_CONFIG_PATH);
   }
 
   // 2. 用配置初始化 Agent + Sprite

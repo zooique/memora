@@ -306,8 +306,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // 加载初始数据
-  await sessionController.loadSessionHistory();
+  // 加载初始数据（会话历史已在 onAgentReady 回调中加载，此处不重复加载）
   // FD-A1 加载会话列表（用于切换历史会话）
   void sessionController.loadSessionList();
   void memoryController.loadMemoryList();

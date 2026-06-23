@@ -1,8 +1,15 @@
 /**
  * 精灵配置持久化 — sprite.json 读写
  *
- * 配置文件位于 dataDir/sprite.json（与 memora.db 同级，Agent 级共享）。
+ * 配置文件位于 ~/.memora-sprite/sprite.json（根级，与 data/ 和 config/ 同级）。
  * 启动时加载，偏好变更时自动保存。
+ *
+ * 目录分层：
+ *   ~/.memora-sprite/
+ *   ├── config.json      ← LLM 配置（根级）
+ *   ├── sprite.json      ← 精灵配置（根级）
+ *   ├── config/          ← Agent 级配置（rules/skills/personas）
+ *   └── data/            ← 用户记忆（memora.db/workspace）
  *
  * 设计原则：
  *   - 所有字段可选，缺失时使用内置默认值
@@ -10,6 +17,7 @@
  *   - 文件损坏时静默回退到默认值
  */
 import { resolve, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 
 /** 精灵持久化配置 */
@@ -122,6 +130,9 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
 /** 配置文件名 */
 const CONFIG_FILENAME = 'sprite.json';
 
+/** 精灵配置文件的绝对路径（~/.memora-sprite/sprite.json） */
+const SPRITE_CONFIG_PATH = resolve(homedir(), '.memora-sprite', CONFIG_FILENAME);
+
 /** 当前最新配置版本号（与 DEFAULT_SPRITE_CONFIG.configVersion 保持一致） */
 const CURRENT_CONFIG_VERSION = 2;
 
@@ -169,10 +180,10 @@ function runMigrations(config: Required<SpriteConfig>): Required<SpriteConfig> {
 /**
  * 加载精灵配置
  *
- * 文件不存在或损坏时返回默认值，不抛错。
+ * 从 ~/.memora-sprite/sprite.json 读取，文件不存在或损坏时返回默认值，不抛错。
  */
-export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
-  const filePath = resolve(dataDir, CONFIG_FILENAME);
+export function loadSpriteConfig(): Required<SpriteConfig> {
+  const filePath = SPRITE_CONFIG_PATH;
 
   if (!existsSync(filePath)) {
     return { ...DEFAULT_SPRITE_CONFIG };
@@ -197,7 +208,7 @@ export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
 
     // UX-PP-19 迁移后立即持久化，避免下次启动重复执行迁移
     if (migrated.configVersion !== merged.configVersion) {
-      saveSpriteConfig(dataDir, migrated);
+      saveSpriteConfig(migrated);
     }
 
     return migrated;
@@ -210,14 +221,14 @@ export function loadSpriteConfig(dataDir: string): Required<SpriteConfig> {
 /**
  * 保存精灵配置
  *
- * 合并写入：保留文件中已有但当前接口未定义的字段（向前兼容）。
+ * 写入 ~/.memora-sprite/sprite.json，合并写入：保留文件中已有但当前接口未定义的字段（向前兼容）。
  *
  * R6 优化：当传入的配置包含所有 DEFAULT_SPRITE_CONFIG 的键时，
  * 认为是"完整配置"（来自 Sprite.updateConfig），跳过读文件直接写入。
  * 仅传入部分字段时（如 CLI 直接调用），仍读文件合并。
  */
-export function saveSpriteConfig(dataDir: string, config: SpriteConfig): void {
-  const filePath = resolve(dataDir, CONFIG_FILENAME);
+export function saveSpriteConfig(config: SpriteConfig): void {
+  const filePath = SPRITE_CONFIG_PATH;
 
   // R6 判断是否为完整配置（包含所有默认键），避免每次读文件
   const isFullConfig = Object.keys(DEFAULT_SPRITE_CONFIG).every(

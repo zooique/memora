@@ -544,9 +544,14 @@ export class ChatPanelManager {
     toolCard.className = 'tool-call tool-call-running';
     toolCard.setAttribute('data-tool-name', name);
 
-    // 工具图标 + 名称
+    // 工具图标 + 折叠箭头 + 名称 + 状态
     const header = document.createElement('div');
     header.className = 'tool-call-header';
+    // 折叠/展开箭头
+    const chevron = document.createElement('span');
+    chevron.className = 'tool-call-chevron';
+    chevron.textContent = '▼';
+    header.appendChild(chevron);
     const icon = document.createElement('span');
     icon.textContent = '🔧';
     header.appendChild(icon);
@@ -558,6 +563,12 @@ export class ChatPanelManager {
     status.className = 'tool-call-status';
     status.textContent = '执行中...';
     header.appendChild(status);
+
+    // 点击表头折叠/展开参数和结果
+    header.addEventListener('click', () => {
+      toolCard.classList.toggle('collapsed');
+    });
+
     toolCard.appendChild(header);
 
     // 工具参数（若提供）
@@ -622,6 +633,9 @@ export class ChatPanelManager {
       resultDiv.textContent = summary;
       targetCard.appendChild(resultDiv);
     }
+
+    // 完成后自动折叠，减少视觉干扰（用户可点击表头展开查看详情）
+    targetCard.classList.add('collapsed');
   }
 
   /** 开始流式输出 */

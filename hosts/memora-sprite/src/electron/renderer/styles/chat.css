@@ -1068,6 +1068,29 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  /* 可点击折叠/展开 */
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 折叠箭头 */
+.tool-call-chevron {
+  display: inline-block;
+  font-size: 8px;
+  color: var(--text-2);
+  transition: transform var(--transition-base) ease;
+  /* 默认展开 → 箭头向下 */
+  transform: rotate(0deg);
+}
+
+/* 折叠状态：箭头向右，隐藏参数和结果 */
+.tool-call.collapsed .tool-call-chevron {
+  transform: rotate(-90deg);
+}
+
+.tool-call.collapsed .tool-call-args,
+.tool-call.collapsed .tool-call-result {
+  display: none;
 }
 
 /* 工具名：等宽字体强调"代码感" */
