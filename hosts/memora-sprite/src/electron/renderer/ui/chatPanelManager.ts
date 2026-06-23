@@ -97,6 +97,8 @@ export class ChatPanelManager {
   private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
   /** 示例问题点击回调（填入输入框并触发发送） */
   private suggestionClickCallback: ((text: string) => void) | null = null;
+  /** QC-11 加载更多按钮回调（事件委托模式） */
+  private loadMoreCallback: (() => void) | null = null;
 
   // ─── 事件清理 ──────────────────────────────────────────
 
@@ -123,6 +125,45 @@ export class ChatPanelManager {
     this.events = events;
     this.state = state;
     this.streamingMessages = streamingMessages;
+
+    // QC-11 事件委托：在 messagesEl 上注册统一的 click 监听器，
+    // 通过 data-action 属性分发，替代动态元素各自的 addEventListener，
+    // 统一纳入 EventTracker 管理，消除监听器泄漏风险
+    this.events.addEventListener(this.messagesEl, 'click', (e: Event) => {
+      const target = e.target as HTMLElement;
+      // 复制按钮：data-action="copy" data-content="..."
+      const copyBtn = target.closest<HTMLElement>('[data-action="copy"]');
+      if (copyBtn) {
+        const content = copyBtn.dataset.content ?? '';
+        navigator.clipboard.writeText(content).then(
+          () => this.host.showToast('已复制到剪贴板', 'success', 2000),
+          () => this.host.showToast('复制失败，请手动选择文本复制', 'error'),
+        );
+        return;
+      }
+      // 召回记忆项：data-action="recall" data-name="..."
+      const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
+      if (recallItem) {
+        const name = recallItem.dataset.name ?? '';
+        this.memoryRecallClickCallback?.(name);
+        return;
+      }
+      // 工具调用折叠头：data-action="toggle-collapse"
+      const collapseHeader = target.closest<HTMLElement>('[data-action="toggle-collapse"]');
+      if (collapseHeader) {
+        const card = collapseHeader.closest<HTMLElement>('.tool-call-card');
+        card?.classList.toggle('collapsed');
+        return;
+      }
+      // 加载更多按钮：data-action="load-more"
+      const loadMoreBtn = target.closest<HTMLElement>('[data-action="load-more"]');
+      if (loadMoreBtn && this.loadMoreCallback) {
+        loadMoreBtn.setAttribute('disabled', '');
+        loadMoreBtn.textContent = '加载中...';
+        this.loadMoreCallback();
+        return;
+      }
+    });
   }
 
   // ─── 生命周期 ──────────────────────────────────────────
@@ -227,14 +268,9 @@ export class ChatPanelManager {
       copyBtn.className = 'message-copy-btn';
       copyBtn.title = '复制';
       copyBtn.textContent = '📋';
-      copyBtn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(message.content);
-          this.host.showToast('已复制到剪贴板', 'success', 2000);
-        } catch {
-          this.host.showToast('复制失败，请手动选择文本复制', 'error');
-        }
-      });
+      // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+      copyBtn.dataset.action = 'copy';
+      copyBtn.dataset.content = message.content;
       metaRow.appendChild(copyBtn);
     }
 
@@ -389,14 +425,9 @@ export class ChatPanelManager {
       copyBtn.className = 'message-copy-btn';
       copyBtn.title = '复制';
       copyBtn.textContent = '📋';
-      copyBtn.addEventListener('click', async () => {
-        try {
-          await navigator.clipboard.writeText(finalText);
-          this.host.showToast('已复制到剪贴板', 'success', 2000);
-        } catch {
-          this.host.showToast('复制失败，请手动选择文本复制', 'error');
-        }
-      });
+      // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+      copyBtn.dataset.action = 'copy';
+      copyBtn.dataset.content = finalText;
 
       // 查找或创建 metaRow，将复制按钮插入到时间戳之前
       let metaRow = contentWrapper.querySelector('.message-meta');
@@ -488,11 +519,9 @@ export class ChatPanelManager {
       const recallText = document.createElement('span');
       recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
       recallItem.appendChild(recallText);
-      // 闭包捕获当前 recall.name，避免循环变量引用问题
-      const recallName = recall.name;
-      recallItem.addEventListener('click', () => {
-        this.memoryRecallClickCallback?.(recallName);
-      });
+      // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+      recallItem.dataset.action = 'recall';
+      recallItem.dataset.name = recall.name;
       recallContainer.appendChild(recallItem);
     }
     return recallContainer;
@@ -575,9 +604,8 @@ export class ChatPanelManager {
     header.appendChild(status);
 
     // 点击表头折叠/展开参数和结果
-    header.addEventListener('click', () => {
-      toolCard.classList.toggle('collapsed');
-    });
+    // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+    header.dataset.action = 'toggle-collapse';
 
     toolCard.appendChild(header);
 
@@ -764,6 +792,9 @@ export class ChatPanelManager {
     // 移除旧按钮（避免重复）
     this.hideLoadMore();
 
+    // QC-11 保存回调引用，由构造函数中的事件委托统一处理
+    this.loadMoreCallback = onClick;
+
     const container = document.createElement('div');
     container.id = 'load-more-container';
     container.className = 'load-more-container';
@@ -771,11 +802,8 @@ export class ChatPanelManager {
     const btn = document.createElement('button');
     btn.className = 'load-more-btn';
     btn.textContent = `加载更多消息（剩余 ${remaining} 条）`;
-    btn.addEventListener('click', () => {
-      btn.disabled = true;
-      btn.textContent = '加载中...';
-      onClick();
-    });
+    // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+    btn.dataset.action = 'load-more';
     container.appendChild(btn);
 
     // 插入到消息区顶部

@@ -7,6 +7,7 @@
  * - 沙箱/演示环境
  *
  * 注意：此实现不持久化，进程退出后数据丢失。
+ * ⚠️ 仅限测试/开发使用，生产环境请注入 SqliteStorage（宿主项目提供）。
  */
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
@@ -18,17 +19,21 @@ import { applyDecayToMemory } from '@/memory/recall.js';
 /**
  * 内存存储实现
  *
- * 使用 Map 存储记忆，所有操作均为 O(n) 级别（n = 记忆总数）。
- * 对于测试场景（通常 < 100 条记忆），性能完全足够。
+ * 使用 Map 存储记忆，核心操作 O(1)~O(log n)。
+ * P2-2 优化：维护 source→count 增量缓存，stats()/sourceHealth() 无需全量遍历。
  */
 export class InMemoryStorage implements IMemoryStorage {
   /** 记忆存储（id → Memory） */
   private memories: Map<string, Memory> = new Map();
 
+  /** P2-2 source→count 增量缓存（upsert/delete 时维护，getAllSources 时直接读取） */
+  private sourceCountCache: Map<string, number> = new Map();
+
   /**
    * 插入或更新记忆
    *
    * 自动校验 source 字段，对疑似 typo 发出警告日志。
+   * P2-2 增量维护 sourceCountCache：更新时旧 source 减 1、新 source 加 1。
    */
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
@@ -41,13 +46,26 @@ export class InMemoryStorage implements IMemoryStorage {
         'source 校验警告',
       );
     }
+    // P2-2 增量维护 source 缓存：若为更新（id 已存在），先减旧 source 计数
+    const existing = this.memories.get(memory.id);
+    if (existing && existing.source !== memory.source) {
+      this.decrementSourceCount(existing.source);
+    }
     this.memories.set(memory.id, { ...memory });
+    // P2-2 增量维护 source 缓存：新 source 加 1
+    this.incrementSourceCount(memory.source);
   }
 
   /**
    * 删除记忆
+   *
+   * P2-2 增量维护 sourceCountCache：删除时对应 source 减 1。
    */
   delete(id: string): void {
+    const existing = this.memories.get(id);
+    if (existing) {
+      this.decrementSourceCount(existing.source);
+    }
     this.memories.delete(id);
   }
 
@@ -146,10 +164,38 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
+   * 获取所有 source 标签及其记忆数量
+   *
+   * P2-2 优化：直接读取增量维护的 sourceCountCache，O(1) 复杂度。
+   */
+  getAllSources(): Map<string, number> {
+    return new Map(this.sourceCountCache);
+  }
+
+  /**
    * 关闭（内存实现无需关闭）
    */
   close(): void {
     // 内存实现无需关闭，清空数据即可
     this.memories.clear();
+    this.sourceCountCache.clear();
+  }
+
+  // ─── P2-2 source 缓存辅助方法 ─────────────────────────────
+
+  /** source 计数 +1 */
+  private incrementSourceCount(source: string): void {
+    this.sourceCountCache.set(source, (this.sourceCountCache.get(source) ?? 0) + 1);
+  }
+
+  /** source 计数 -1（减至 0 时移除键） */
+  private decrementSourceCount(source: string): void {
+    const current = this.sourceCountCache.get(source);
+    if (current === undefined) return;
+    if (current <= 1) {
+      this.sourceCountCache.delete(source);
+    } else {
+      this.sourceCountCache.set(source, current - 1);
+    }
   }
 }

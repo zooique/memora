@@ -33,11 +33,51 @@ export class SessionPanelManager {
   /** FD-08 搜索框事件是否已绑定（仅首次绑定） */
   private sessionSearchBound: boolean = false;
 
+  /** QC-11 事件委托是否已初始化（仅首次绑定） */
+  private listDelegationBound: boolean = false;
+
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events: EventTracker;
 
   constructor(events: EventTracker) {
     this.events = events;
+  }
+
+  /**
+   * QC-11 初始化会话列表事件委托
+   *
+   * 在 list 容器上注册统一的 click 监听器，通过 data-action 属性分发，
+   * 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理。
+   *
+   * @param list 会话列表容器 DOM 元素
+   */
+  initListDelegation(list: HTMLElement): void {
+    this.events.addEventListener(list, 'click', (e: Event) => {
+      const target = e.target as HTMLElement;
+      // 删除按钮：data-action="delete-session" data-session-id="..."
+      const delBtn = target.closest<HTMLElement>('[data-action="delete-session"]');
+      if (delBtn) {
+        e.stopPropagation();
+        const sessionId = delBtn.dataset.sessionId ?? '';
+        this.sessionDeleteCallback?.(sessionId);
+        return;
+      }
+      // 重命名按钮：data-action="rename-session" data-session-id="..."
+      const renameBtn = target.closest<HTMLElement>('[data-action="rename-session"]');
+      if (renameBtn) {
+        e.stopPropagation();
+        const sessionId = renameBtn.dataset.sessionId ?? '';
+        this.sessionRenameCallback?.(sessionId);
+        return;
+      }
+      // 列表项点击：切换到该会话
+      const li = target.closest<HTMLElement>('.session-list-item');
+      if (li) {
+        const sessionId = li.dataset.sessionId ?? '';
+        this.toggleSessionDropdown();
+        this.sessionSwitchCallback?.(sessionId);
+      }
+    });
   }
 
   // ─── 资源清理 ──────────────────────────────────────────
@@ -157,6 +197,12 @@ export class SessionPanelManager {
     const list = document.getElementById('session-list');
     if (!list) return;
 
+    // QC-11 首次渲染时初始化事件委托（仅绑定一次）
+    if (!this.listDelegationBound) {
+      this.initListDelegation(list);
+      this.listDelegationBound = true;
+    }
+
     // 清空列表（P5 统一使用 clearElement 封装，与 profilePanelManager/personaPanelManager 保持一致）
     clearElement(list);
 
@@ -207,10 +253,9 @@ export class SessionPanelManager {
       delBtn.className = 'session-list-item-del';
       delBtn.title = '删除会话';
       delBtn.textContent = '🗑';
-      delBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.sessionDeleteCallback?.(session.id);
-      });
+      // QC-11 使用 data-action 属性替代直接 addEventListener，由 initListDelegation 中的事件委托统一处理
+      delBtn.dataset.action = 'delete-session';
+      delBtn.dataset.sessionId = session.id;
       li.appendChild(delBtn);
 
       // FD-09 重命名按钮
@@ -218,16 +263,13 @@ export class SessionPanelManager {
       renameBtn.className = 'session-list-item-rename';
       renameBtn.title = '重命名会话';
       renameBtn.textContent = '✏';
-      renameBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.sessionRenameCallback?.(session.id);
-      });
+      // QC-11 使用 data-action 属性替代直接 addEventListener，由 initListDelegation 中的事件委托统一处理
+      renameBtn.dataset.action = 'rename-session';
+      renameBtn.dataset.sessionId = session.id;
       li.appendChild(renameBtn);
 
-      li.addEventListener('click', () => {
-        this.toggleSessionDropdown();
-        this.sessionSwitchCallback?.(session.id);
-      });
+      // QC-11 列表项点击由事件委托统一处理，设置 data-session-id 供委托识别
+      li.dataset.sessionId = session.id;
 
       list.appendChild(li);
     }

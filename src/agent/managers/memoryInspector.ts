@@ -403,29 +403,17 @@ export class MemoryInspector {
    * 记忆库统计
    *
    * 返回记忆来源分布、数据库大小等关键指标。
-   * 自动发现所有 source 标签（包括宿主自定义的），不依赖硬编码列表。
+   * P2-2 优化：使用 getAllSources() 一次查询替代多次 countBySource + 全量 search，
+   * 复杂度从 O(n*knownSources + n) 降为 O(distinctSources)。
    */
   stats(): AgentStats {
     const total = this.index.count();
 
-    // 已知 source 标签 + 通过 getBySource 发现的自定义标签
-    const knownSources = Object.values(SOURCE_LABELS);
+    // P2-2 直接使用 getAllSources() 获取所有 source 分布（含宿主自定义标签）
+    const sourceMap = this.index.getAllSources();
     const bySource: Record<string, number> = {};
-
-    for (const source of knownSources) {
-      const c = this.index.countBySource(source);
-      if (c > 0) bySource[source] = c;
-    }
-
-    // 补充：通过空查询发现不在已知列表中的自定义 source
-    // （宿主可能注册了自定义 source 标签）
-    if (total > Object.values(bySource).reduce((a, b) => a + b, 0)) {
-      const allMemories = this.index.search('', Math.min(total, 1000));
-      for (const m of allMemories) {
-        if (!(m.source in bySource)) {
-          bySource[m.source] = (bySource[m.source] ?? 0) + 1;
-        }
-      }
+    for (const [source, count] of sourceMap) {
+      if (count > 0) bySource[source] = count;
     }
 
     return { bySource, total };
@@ -445,27 +433,16 @@ export class MemoryInspector {
    * - critical：avgScore < 0.2 或 30 天以上未访问
    *
    * 纯只读、同步、不调 LLM，与 stats() 互补（stats 只有数量，本方法有质量指标）。
+   * P2-2 优化：使用 getAllSources() 发现所有 source 标签，替代全量 search。
    */
   sourceHealth(): SourceHealthReport {
     const now = Date.now();
-    const knownSources = Object.values(SOURCE_LABELS);
 
-    // 收集所有有数据的 source 标签
+    // P2-2 使用 getAllSources() 获取所有有数据的 source 标签
+    const sourceMap = this.index.getAllSources();
     const sourceSet = new Set<string>();
-    for (const source of knownSources) {
-      if (this.index.countBySource(source) > 0) {
-        sourceSet.add(source);
-      }
-    }
-
-    // 补充自定义 source（与 stats() 逻辑一致）
-    const total = this.index.count();
-    const knownCount = [...sourceSet].reduce((sum, s) => sum + this.index.countBySource(s), 0);
-    if (total > knownCount) {
-      const allMemories = this.index.search('', Math.min(total, 1000));
-      for (const m of allMemories) {
-        sourceSet.add(m.source);
-      }
+    for (const [source, count] of sourceMap) {
+      if (count > 0) sourceSet.add(source);
     }
 
     // 逐 source 计算健康指标

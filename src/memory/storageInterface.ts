@@ -96,6 +96,17 @@ export interface IMemoryStorage {
   decayScores(sources: string[], now: Date): number;
 
   /**
+   * 获取所有 source 标签及其记忆数量
+   *
+   * P2-2 优化：替代 stats()/sourceHealth() 中的全量 search + 逐条遍历，
+   * 宿主实现应使用 SQL `SELECT source, COUNT(*) FROM memories GROUP BY source`，
+   * InMemoryStorage 维护增量更新的 source→count 缓存。
+   *
+   * @returns source 标签到数量的映射（如 { persona: 3, insight: 12, ... }）
+   */
+  getAllSources(): Map<string, number>;
+
+  /**
    * 关闭存储连接（可选）
    *
    * 宿主注入的实现可能不需要关闭（如共享数据库连接），

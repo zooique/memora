@@ -262,6 +262,23 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
+   * 获取所有 source 标签及其记忆数量（IMemoryStorage 接口实现）
+   *
+   * P2-2 优化：使用 SQL GROUP BY 一次查询获取所有 source 分布，
+   * 替代 stats()/sourceHealth() 中的多次 countBySource + 全量 search。
+   *
+   * @returns source 标签到数量的映射
+   */
+  getAllSources(): Map<string, number> {
+    const rows = this.db.prepare('SELECT source, COUNT(*) as cnt FROM memories GROUP BY source').all() as Array<{ source: string; cnt: number }>;
+    const result = new Map<string, number>();
+    for (const row of rows) {
+      result.set(row.source, row.cnt);
+    }
+    return result;
+  }
+
+  /**
    * 关闭数据库连接（IMemoryStorage 接口实现）
    */
   close(): void {

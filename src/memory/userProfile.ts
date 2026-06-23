@@ -267,6 +267,7 @@ export class UserProfile {
    * 策略：同分类（category）下，新值替换旧值。判断标准是旧条目的 value 前缀。
    *
    * 新模型中从 name 字段解析 category（格式：${category}: ${value}）
+   * P2-3 优化：构建 contentPrefix → entry 的 Map 索引，冲突检测从 O(n*m) 降为 O(m)。
    *
    * @param fact 当前提取到的新事实
    */
@@ -276,15 +277,28 @@ export class UserProfile {
       // 提取新事实的核心模式（如 "姓名: 李四" → 前缀 "姓名"）
       const newPrefix = (fact.value.split(':')[0] ?? '').trim();
 
+      // P2-3 构建 contentPrefix → Memory 的 Map 索引，冲突检测降为 O(m)
+      const prefixIndex = new Map<string, Memory[]>();
       for (const m of existing) {
-        // 从 name 字段解析 category（格式：${category}: ${value}）
         const { category } = this.parseNameField(m.name);
+        if (category !== fact.category) continue;
+        const oldPrefix = (m.content.split(':')[0] ?? '').trim();
+        if (!oldPrefix) continue;
+        const key = `${category}:${oldPrefix}`;
+        const list = prefixIndex.get(key);
+        if (list) {
+          list.push(m);
+        } else {
+          prefixIndex.set(key, [m]);
+        }
+      }
 
-        // 同分类 + 不同值 → 冲突，删除旧条目
-        if (category === fact.category && m.content !== fact.value) {
-          const oldPrefix = (m.content.split(':')[0] ?? '').trim();
-          // 核心模式相同（如 "姓名" vs "姓名"）→ 确认冲突
-          if (oldPrefix === newPrefix) {
+      // 在索引中查找冲突条目
+      const conflictKey = `${fact.category}:${newPrefix}`;
+      const conflicts = prefixIndex.get(conflictKey);
+      if (conflicts) {
+        for (const m of conflicts) {
+          if (m.content !== fact.value) {
             this.index.delete(m.id);
             logger.info(
               { oldId: m.id, oldValue: m.content, newValue: fact.value },
