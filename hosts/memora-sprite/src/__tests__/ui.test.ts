@@ -373,6 +373,8 @@ function createMockElectronAPI() {
       proactiveThreshold: 3,
       registeredTriggers: [],
       suggestions: [],
+      sourceHealth: null,
+      metrics: null,
     }),
     windowMinimize: vi.fn(),
     windowMaximize: vi.fn(),

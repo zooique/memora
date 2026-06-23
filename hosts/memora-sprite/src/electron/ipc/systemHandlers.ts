@@ -45,6 +45,8 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    * - 累积事件数 + 主动提示阈值
    * - 已注册触发器列表
    * - 关联推荐记忆
+   * - 记忆源健康诊断
+   * - Agent 运行时指标（OBS-01：LLM/召回/工具/上下文/衰减）
    */
   ipcMain.handle(IPC_CHANNELS.DASHBOARD_GET, () => {
     try {
@@ -56,6 +58,13 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       } catch {
         // 降级：sourceHealth 不可用时仪表盘仍正常返回
       }
+      // OBS-01：Agent 运行时指标（消费内核 agent.getMetrics()）
+      let metrics = null;
+      try {
+        metrics = ctx.sprite.getMetrics();
+      } catch {
+        // 降级：metrics 不可用时仪表盘仍正常返回
+      }
       return {
         total: data.total,
         bySource: data.bySource,
@@ -64,6 +73,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         proactiveThreshold: ctx.sprite.proactiveThreshold,
         registeredTriggers: ctx.sprite.registeredTriggers,
         sourceHealth,
+        metrics,
       };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取仪表盘数据失败' });
@@ -75,6 +85,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         proactiveThreshold: 3,
         registeredTriggers: [],
         sourceHealth: null,
+        metrics: null,
       };
     }
   });

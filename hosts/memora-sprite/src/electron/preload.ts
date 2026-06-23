@@ -332,6 +332,33 @@ export interface ElectronAPI {
       overallStatus: 'healthy' | 'warning' | 'critical';
       diagnosedAt: string;
     } | null;
+    /** OBS-01 Agent 运行时指标（null 表示不可用） */
+    metrics: {
+      llm: {
+        callCount: number;
+        totalInputTokens: number;
+        totalOutputTokens: number;
+      };
+      recall: {
+        totalCount: number;
+        hitCount: number;
+        hitRate: number;
+      };
+      tools: {
+        callCount: number;
+        failureCount: number;
+      };
+      context: {
+        truncationCount: number;
+        messageCount: number;
+        estimatedTokens: number;
+      };
+      decay: {
+        runCount: number;
+        totalDecayedCount: number;
+        lastRunAt: string | null;
+      } | null;
+    } | null;
   }>;
 
   // 窗口控制

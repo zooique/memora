@@ -13,7 +13,7 @@
  *   不监听键盘输入内容。
  */
 import { resolve } from 'node:path';
-import type { Agent, AgentEventMap } from 'memora';
+import type { Agent, AgentEventMap, AgentMetrics } from 'memora';
 import type { VectorStore, ITracer } from 'memora';
 import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
@@ -559,6 +559,18 @@ export class Sprite {
       return null;
     }
     return this.agent.memory?.sourceHealth() ?? null;
+  }
+
+  /**
+   * 获取 Agent 运行时指标快照（OBS-01 可观测性对齐）
+   *
+   * 委托至 Agent.getMetrics()，返回 5 维度指标（llm/recall/tools/context/decay）。
+   * 供宿主项目仪表盘展示 LLM 调用次数、token 数、召回命中率、工具失败率等。
+   *
+   * @returns AgentMetrics 完整快照，Agent 未就绪时返回全零指标
+   */
+  getMetrics(): AgentMetrics {
+    return this.agent.getMetrics();
   }
 
   /** FD-03 累积事件数（供 UI 仪表盘显示） */

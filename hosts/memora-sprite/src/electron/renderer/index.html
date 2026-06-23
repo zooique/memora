@@ -91,6 +91,38 @@
           <h3>记忆健康</h3>
           <ul id="source-health-list"></ul>
         </div>
+
+        <!-- OBS-01 Agent 运行时指标（消费内核 agent.getMetrics()） -->
+        <!-- 由 renderAgentMetrics() 动态填充，无数据时隐藏 -->
+        <div id="agent-metrics" class="dashboard-section hidden">
+          <h3>Agent 指标</h3>
+          <div id="agent-metrics-grid">
+            <div class="dash-item" title="LLM 调用总次数（含重试）">
+              <span class="dash-label">⚡ 调用</span>
+              <span class="dash-value" id="metric-llm-calls">0</span>
+            </div>
+            <div class="dash-item" title="累计输入 + 输出 token 数">
+              <span class="dash-label">🔢 Token</span>
+              <span class="dash-value" id="metric-llm-tokens">0</span>
+            </div>
+            <div class="dash-item" title="记忆召回命中率">
+              <span class="dash-label">🔍 召回</span>
+              <span class="dash-value" id="metric-recall-hit">0%</span>
+            </div>
+            <div class="dash-item" title="工具调用失败率">
+              <span class="dash-label">🛠 工具</span>
+              <span class="dash-value" id="metric-tool-fail">0%</span>
+            </div>
+            <div class="dash-item" title="上下文截断次数">
+              <span class="dash-label">✂️ 截断</span>
+              <span class="dash-value" id="metric-context-trunc">0</span>
+            </div>
+            <div class="dash-item" title="记忆衰减执行次数 / 累计衰减条数">
+              <span class="dash-label">🍂 衰减</span>
+              <span class="dash-value" id="metric-decay">0/0</span>
+            </div>
+          </div>
+        </div>
       </div>
     </aside>
 

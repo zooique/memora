@@ -423,6 +423,17 @@
   font-size: 11px;
 }
 
+/* ─── OBS-01 Agent 运行时指标（2×3 网格，复用 .dash-item） ─── */
+#agent-metrics {
+  margin-top: 8px;
+}
+
+#agent-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
 /* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
   grid-area: window;

@@ -236,6 +236,9 @@ export function createMemoryController(uiManager: UIManager) {
 
       // 记忆源健康状态渲染（消费内核 sourceHealth()）
       renderSourceHealth(data.sourceHealth);
+
+      // OBS-01 Agent 运行时指标渲染（消费内核 agent.getMetrics()）
+      renderAgentMetrics(data.metrics);
     } catch (error) {
       reportError('loadDashboard', error);
     }
@@ -323,6 +326,110 @@ export function createMemoryController(uiManager: UIManager) {
       li.appendChild(meta);
       healthList.appendChild(li);
     }
+  }
+
+  /**
+   * OBS-01 渲染 Agent 运行时指标
+   *
+   * 消费内核 agent.getMetrics() 数据，在仪表盘中展示 6 项运行时指标：
+   * - LLM 调用次数 / Token 数 / 召回命中率 / 工具失败率 / 截断次数 / 衰减次数
+   *
+   * 无数据时隐藏指标区域。token 数超过 1000 时显示为 "1.2k" 格式。
+   *
+   * @param metrics Agent 运行时指标快照（null 表示不可用）
+   */
+  function renderAgentMetrics(metrics: {
+    llm: {
+      callCount: number;
+      totalInputTokens: number;
+      totalOutputTokens: number;
+    };
+    recall: {
+      totalCount: number;
+      hitCount: number;
+      hitRate: number;
+    };
+    tools: {
+      callCount: number;
+      failureCount: number;
+    };
+    context: {
+      truncationCount: number;
+      messageCount: number;
+      estimatedTokens: number;
+    };
+    decay: {
+      runCount: number;
+      totalDecayedCount: number;
+      lastRunAt: string | null;
+    } | null;
+  } | null): void {
+    const metricsSection = document.getElementById('agent-metrics');
+    if (!metricsSection) return;
+
+    // 无数据时隐藏
+    if (!metrics) {
+      metricsSection.classList.add('hidden');
+      return;
+    }
+
+    metricsSection.classList.remove('hidden');
+
+    // LLM 调用次数
+    const callsEl = document.getElementById('metric-llm-calls');
+    if (callsEl) {
+      callsEl.textContent = String(metrics.llm.callCount);
+    }
+
+    // Token 数（输入 + 输出，超过 1000 显示 k 格式）
+    const tokensEl = document.getElementById('metric-llm-tokens');
+    if (tokensEl) {
+      const totalTokens = metrics.llm.totalInputTokens + metrics.llm.totalOutputTokens;
+      tokensEl.textContent = formatTokenCount(totalTokens);
+    }
+
+    // 召回命中率（百分比，保留 0 位小数）
+    const recallEl = document.getElementById('metric-recall-hit');
+    if (recallEl) {
+      recallEl.textContent = `${Math.round(metrics.recall.hitRate * 100)}%`;
+    }
+
+    // 工具失败率（callCount=0 时显示 "—"，避免 0/0 误显示为 0%）
+    const toolFailEl = document.getElementById('metric-tool-fail');
+    if (toolFailEl) {
+      if (metrics.tools.callCount > 0) {
+        const failRate = metrics.tools.failureCount / metrics.tools.callCount;
+        toolFailEl.textContent = `${Math.round(failRate * 100)}%`;
+      } else {
+        toolFailEl.textContent = '—';
+      }
+    }
+
+    // 上下文截断次数
+    const truncEl = document.getElementById('metric-context-trunc');
+    if (truncEl) {
+      truncEl.textContent = String(metrics.context.truncationCount);
+    }
+
+    // 衰减次数 / 累计衰减条数
+    const decayEl = document.getElementById('metric-decay');
+    if (decayEl) {
+      const runCount = metrics.decay?.runCount ?? 0;
+      const totalDecayed = metrics.decay?.totalDecayedCount ?? 0;
+      decayEl.textContent = `${runCount}/${totalDecayed}`;
+    }
+  }
+
+  /**
+   * 格式化 token 数显示
+   *
+   * 超过 1000 时显示为 "1.2k" 格式，否则直接显示数字。
+   */
+  function formatTokenCount(tokens: number): string {
+    if (tokens >= 1000) {
+      return `${(tokens / 1000).toFixed(1)}k`;
+    }
+    return String(tokens);
   }
 
   return {
