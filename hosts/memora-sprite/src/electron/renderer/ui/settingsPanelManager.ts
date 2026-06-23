@@ -15,16 +15,16 @@
  * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 450 行。
  */
 
-import { getOptionalElement } from './domHelpers.js';
-import { EventTracker } from './eventTracker.js';
+import { getOptionalElement } from '../domHelpers.js';
+import { EventTracker } from '../eventTracker.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
-import { MS_PER_MINUTE } from '../../sprite/constants.js';
+import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import type {
   LlmConfigForm,
   EmbeddingConfigForm,
   LlmConfigSavePayload,
   SpriteConfigForm,
-} from './types.js';
+} from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 

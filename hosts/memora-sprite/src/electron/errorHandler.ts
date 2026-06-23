@@ -49,14 +49,14 @@ export interface AppError {
 export class MemoraError extends Error {
   /** 显式错误代码（优先于字符串推断） */
   readonly code: ErrorCode;
+  /** 附加上下文信息（结构化数据，用于日志和调试） */
+  readonly context?: Record<string, unknown>;
 
   constructor(code: ErrorCode, message: string, options?: { cause?: unknown; context?: Record<string, unknown> }) {
     super(message, options as ErrorOptions);
     this.name = 'MemoraError';
     this.code = code;
-    if (options?.context) {
-      (this as unknown as { context?: Record<string, unknown> }).context = options.context;
-    }
+    this.context = options?.context;
   }
 }
 
@@ -148,7 +148,12 @@ export class ErrorHandler {
       message: userMessage,
       timestamp: error.timestamp.toISOString(),
     };
-    this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, serializedError);
+    // QC-16 修复 TOCTOU 竞态：isDestroyed 检查与 send 之间窗口可能被销毁，用 try-catch 兜底
+    try {
+      this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, serializedError);
+    } catch {
+      // 窗口在 send 调用瞬间被销毁，错误已通过 logError 记录，无需额外处理
+    }
   }
 
   /** 获取用户友好的错误消息 */

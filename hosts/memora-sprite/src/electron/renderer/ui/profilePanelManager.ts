@@ -14,10 +14,10 @@
  *   - 类别标签颜色区分，提升视觉识别度
  */
 
-import type { UserProfileEntryPayload } from '../preload.js';
-import { EventTracker } from './eventTracker.js';
-import { reportError, toError } from './errorHelpers.js';
-import { clearElement } from './domHelpers.js';
+import type { UserProfileEntryPayload } from '../../preload.js';
+import { EventTracker } from '../eventTracker.js';
+import { reportError, toError } from '../errorHelpers.js';
+import { clearElement } from '../domHelpers.js';
 
 /**
  * 用户画像面板管理器

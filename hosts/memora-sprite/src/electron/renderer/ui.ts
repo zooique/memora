@@ -25,9 +25,9 @@ import { OnboardingManager } from './onboarding.js';
 import { ThemeManager } from './themeManager.js';
 import { ProactiveBanner } from './proactiveBanner.js';
 import { SuggestionCardManager } from './suggestionCard.js';
-import { ProfilePanelManager } from './profilePanelManager.js';
-import { SettingsPanelManager } from './settingsPanelManager.js';
-import type { SettingsPanelHost } from './settingsPanelManager.js';
+import { ProfilePanelManager } from './ui/profilePanelManager.js';
+import { SettingsPanelManager } from './ui/settingsPanelManager.js';
+import type { SettingsPanelHost } from './ui/settingsPanelManager.js';
 // P2-008 面板管理器导入（组合模式：UIManager 持有实例并委托）
 import { ChatPanelManager } from './ui/chatPanelManager.js';
 import type { ChatPanelHost } from './ui/chatPanelManager.js';
