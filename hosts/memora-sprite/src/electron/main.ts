@@ -60,12 +60,43 @@ let windowManager: WindowManager;
 let interaction: ElectronInteraction;
 let trayManager: TrayManager | null = null;
 
+/** Agent 运行时状态（4 个变量总是一起变化，通过 setAppRuntime 集中管理） */
+interface AppRuntime {
+  agent: Agent;
+  sprite: Sprite;
+  sessionStore: SqliteSessionStore;
+  close: () => Promise<void>;
+}
+
 /** Agent + Sprite 实例（由 startSprite 初始化，可能为 null——配置缺失时） */
 let agent: Agent | null = null;
 let sprite: Sprite | null = null;
 let sessionStore: SqliteSessionStore | null = null;
 /** 关闭函数（清理 Agent + Sprite 资源） */
 let closeSprite: (() => Promise<void>) | null = null;
+
+/**
+ * 设置 Agent 运行时状态（第三季：封装 4 变量集中赋值）
+ *
+ * agent/sprite/sessionStore/closeSprite 在 3 处总是一起变化：
+ * initializeApp 成功 / reinitAgent 成功 / reinitAgent 失败。
+ * 提取为集中赋值函数，避免 4 个独立赋值遗漏。
+ *
+ * @param runtime 运行时实例，传 null 清空所有引用
+ */
+function setAppRuntime(runtime: AppRuntime | null): void {
+  if (runtime) {
+    agent = runtime.agent;
+    sprite = runtime.sprite;
+    sessionStore = runtime.sessionStore;
+    closeSprite = runtime.close;
+  } else {
+    agent = null;
+    sprite = null;
+    sessionStore = null;
+    closeSprite = null;
+  }
+}
 
 /** 当前对话的 AbortController（用于中断流式输出） */
 let currentAbortController: AbortController | null = null;
@@ -223,6 +254,76 @@ function classifyInitError(errMessage: string, prefix: string): string {
 
 // ─── 应用启动 ───────────────────────────────────────────────
 
+/**
+ * Agent 就绪后初始化（共享函数）
+ *
+ * initializeApp 阶段 2 和 reinitAgent 成功后都需要执行相同的初始化步骤：
+ * 注入交互层 → 注册完整 IPC → 订阅事件 → 注册监听器 → 更新回调 → 通知渲染进程。
+ *
+ * 提取为共享函数避免两处 ~40 行重复逻辑漂移（P2-DESIGN-1 第一季）。
+ *
+ * @param activeAgent 已就绪的 Agent 实例
+ * @param activeSprite 已就绪的 Sprite 实例
+ * @param activeSessionStore 已就绪的会话存储
+ * @param dataDir 数据目录（用于审计管理器初始化）
+ */
+function setupAgentReady(
+  activeAgent: Agent,
+  activeSprite: Sprite,
+  activeSessionStore: SqliteSessionStore,
+  dataDir: string,
+): void {
+  // 1. 注入交互层
+  activeSprite.setInteraction(interaction);
+
+  // 2. 移除最小化 CONFIG_GET，注册完整 IPC 处理器
+  ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
+  const ipcContext = createIpcContext(activeAgent, activeSprite, activeSessionStore);
+  registerIpcHandlers(ipcContext);
+
+  // 3. 订阅精灵事件（主动提示分发）
+  const spriteEventDeps: SpriteEventBridgeDeps = {
+    sprite: activeSprite,
+    windowManager,
+    windowStateManager,
+    trayManager,
+    incrementUnreadCount,
+  };
+  setupSpriteEventListeners(spriteEventDeps);
+
+  // 4. 注册配置建议 + 写入确认 + 审计日志监听器
+  const agentListenerDeps: AgentListenerDeps = {
+    windowManager,
+    pendingWriteConfirmations,
+  };
+  setupConfigSuggestionListener(activeAgent, agentListenerDeps);
+  setupWriteConfirmationListener(activeAgent, agentListenerDeps);
+  auditManager = new AuditManager(dataDir);
+  setupAuditListener(activeAgent, auditManager);
+
+  // 5. 补充注入浮动窗口 + 托盘右键菜单回调（需要 Agent 就绪后才能查询静默模式）
+  windowManager.updateFloatCallbacks({
+    onHideToTray: () => {
+      windowStateManager.setShowFloatBubble(false);
+      saveSpriteConfig({ showFloatBubble: false });
+      trayManager?.updateMenu();
+    },
+    onQuit: () => {
+      windowManager.setQuitting(true);
+      windowManager.closeAll();
+      app.quit();
+    },
+    ...createSilentModeCallbacks(activeSprite),
+  });
+  trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
+
+  // 6. 标记就绪 + 通知渲染进程
+  agentReady = true;
+  initErrorDetail = null;
+  const readyWindow = windowManager.getFullWindow();
+  readyWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
+}
+
 async function initializeApp(): Promise<void> {
   // 安全：单实例锁
   const gotLock = app.requestSingleInstanceLock();
@@ -365,80 +466,17 @@ async function initializeApp(): Promise<void> {
   try {
     // skipWizard: Electron 模式跳过 CLI 交互式引导
     const spriteResult = await startSprite({ skipWizard: true });
-    agent = spriteResult.agent;
-    sprite = spriteResult.sprite;
-    sessionStore = spriteResult.sessionStore;
-    closeSprite = spriteResult.close;
-
-    // 捕获已初始化的 sprite 引用，供后续回调闭包使用（避免非空断言）
-    const activeSprite = sprite;
-
-    // 注入交互层
-    activeSprite.setInteraction(interaction);
-
-    // 移除阶段 1 注册的 CONFIG_GET 最小化处理器（替换为完整处理器，使用 sprite.getConfig()）
-    // 保留 AGENT_STATUS / LLM_CONFIG_* 处理器（Agent 就绪后设置面板仍需要这些通道）
-    ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
-
-    // 注册完整 IPC 处理器（注入 Agent + Sprite + SessionStore）
-    // 通过工厂函数构造，与 reinitAgent 路径共享同一份构造逻辑（DRY）
-    const ipcContext = createIpcContext(agent, sprite, sessionStore);
-    registerIpcHandlers(ipcContext);
-
-    // 订阅精灵事件（主动提示分发）
-    // P2-DESIGN-4 修复：事件桥逻辑提取到 spriteEventBridge.ts，通过依赖注入传递窗口/托盘引用
-    const spriteEventDeps: SpriteEventBridgeDeps = {
-      sprite,
-      windowManager,
-      windowStateManager,
-      trayManager,
-      incrementUnreadCount,
-    };
-    setupSpriteEventListeners(spriteEventDeps);
-
-    // H1：注册配置建议回调（AutoConfigRefiner → SUGGESTION_PUSH 推送）
-    // M1：注册写入确认回调（SecurityGuard → WRITE_CONFIRMATION 推送 → 确认对话框）
-    // M2：初始化审计日志管理器 + 订阅 SecurityGuard.onAudit
-    // P2-DESIGN-4 修复：监听器逻辑提取到 agentListeners.ts
-    const agentListenerDeps: AgentListenerDeps = {
-      windowManager,
-      pendingWriteConfirmations,
-    };
-    setupConfigSuggestionListener(agent, agentListenerDeps);
-    setupWriteConfirmationListener(agent, agentListenerDeps);
-
-    auditManager = new AuditManager(currentDataDir);
-    setupAuditListener(agent, auditManager);
-
-    // 补充注入浮动窗口右键菜单回调（需要 Agent/Sprite 就绪后才能查询/切换静默模式）
-    // 初始创建时仅注入了 onExpandToFull，此处补充 onHideToTray / onQuit / 静默模式回调
-    // 静默模式回调通过工厂函数生成，与托盘注入共享同一份逻辑（DRY）
-    windowManager.updateFloatCallbacks({
-      // 浮动气泡右键"隐藏到托盘"：关闭浮动气泡（设置 showFloatBubble = false）
-      onHideToTray: () => {
-        windowStateManager.setShowFloatBubble(false);
-        // 同步持久化 + 重建托盘菜单
-        saveSpriteConfig({ showFloatBubble: false });
-        trayManager?.updateMenu();
-      },
-      onQuit: () => {
-        windowManager.setQuitting(true);
-        windowManager.closeAll();
-        app.quit();
-      },
-      ...createSilentModeCallbacks(activeSprite),
+    currentDataDir = spriteResult.dataDir;
+    // 第三季：集中赋值 agent/sprite/sessionStore/closeSprite
+    setAppRuntime({
+      agent: spriteResult.agent,
+      sprite: spriteResult.sprite,
+      sessionStore: spriteResult.sessionStore,
+      close: spriteResult.close,
     });
 
-    // 补充注入托盘右键菜单静默模式回调（对齐方案 §5.5 托盘菜单设计）
-    // TrayManager 在 Agent 初始化前创建，需延迟注入 onToggleSilent / isSilentMode
-    trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
-
-    agentReady = true;
-    // 初始化成功后清空错误详情
-    initErrorDetail = null;
-    // 通知渲染进程 Agent 已就绪（触发加载会话历史、记忆列表等初始数据）
-    const readyWindow = windowManager.getFullWindow();
-    readyWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
+    // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
+    setupAgentReady(agent!, sprite!, sessionStore!, currentDataDir);
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
@@ -589,57 +627,17 @@ function registerMinimalIpcHandlers(): void {
 
         // 2. 重新初始化 Agent（清理旧实例）
         const result = await reinitAgent(closeSprite);
-        agent = result.agent;
-        sprite = result.sprite;
-        sessionStore = result.sessionStore;
-        closeSprite = result.close;
         currentDataDir = result.dataDir;
+        // 第三季：集中赋值
+        setAppRuntime({
+          agent: result.agent,
+          sprite: result.sprite,
+          sessionStore: result.sessionStore,
+          close: result.close,
+        });
 
-        // 3. 注入交互层
-        sprite.setInteraction(interaction);
-
-        // 4. 移除最小化 IPC 中的 CONFIG_GET 处理器（避免重复注册）
-        // 保留 AGENT_STATUS / LLM_CONFIG_* 处理器（设置面板复用）
-        ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
-
-        // 5. 注册完整 IPC 处理器
-        const ipcContext = createIpcContext(agent, sprite, sessionStore);
-        registerIpcHandlers(ipcContext);
-
-        // 6. 订阅精灵事件
-        // P2-DESIGN-4 修复：通过依赖注入传递窗口/托盘引用
-        const spriteEventDeps: SpriteEventBridgeDeps = {
-          sprite,
-          windowManager,
-          windowStateManager,
-          trayManager,
-          incrementUnreadCount,
-        };
-        setupSpriteEventListeners(spriteEventDeps);
-
-        // H1：重新注册配置建议回调（新 Agent 实例）
-        if (agent) {
-          const agentListenerDeps: AgentListenerDeps = {
-            windowManager,
-            pendingWriteConfirmations,
-          };
-          setupConfigSuggestionListener(agent, agentListenerDeps);
-          // M1：重新注册写入确认回调（新 Agent 实例）
-          setupWriteConfirmationListener(agent, agentListenerDeps);
-          // M2：重新初始化审计管理器 + 订阅审计事件（新 Agent 实例）
-          auditManager = new AuditManager(currentDataDir);
-          setupAuditListener(agent, auditManager);
-        }
-
-        agentReady = true;
-        // 重新初始化成功后清空错误详情
-        initErrorDetail = null;
-
-        // 7. 通知渲染进程 Agent 已就绪
-        const fullWindow = windowManager.getFullWindow();
-        if (fullWindow && !fullWindow.isDestroyed()) {
-          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
-        }
+        // 第一季：Agent 就绪后初始化（共享函数，与 initializeApp 阶段 2 一致）
+        setupAgentReady(agent!, sprite!, sessionStore!, currentDataDir);
 
         return { success: true, error: null };
       } catch (error) {
@@ -647,12 +645,8 @@ function registerMinimalIpcHandlers(): void {
         // 标记 agentReady=false 使 handleUserInput 拒绝新对话，避免使用已关闭 Agent 抛错。
         // 用户需在设置面板重新配置 LLM 并保存触发再次 reinitAgent。
         agentReady = false;
-        // 清空旧实例引用：prevClose 已关闭旧 Agent，引用已失效
-        // 避免旧 IPC handler 通过闭包访问已关闭的 Agent 对象（chat 方法行为异常）
-        agent = null;
-        sprite = null;
-        sessionStore = null;
-        closeSprite = null;
+        // 第三季：清空旧实例引用
+        setAppRuntime(null);
         // 使用统一分类函数，确保与 initializeApp 逻辑一致
         initErrorDetail = classifyInitError(toError(error).message, '重新初始化失败');
         errorHandler.handle(error, {

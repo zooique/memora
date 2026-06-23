@@ -231,62 +231,104 @@ async function setupWizard(): Promise<void> {
 // ─── 启动精灵 ──────────────────────────────────────────
 
 /**
- * 从配置初始化 Agent + Sprite（内部函数）
+ * 创建存储层（SQLite DB + SqliteStorage + SqliteSessionStore）
  *
- * 不负责配置加载和 CLI 引导，仅根据传入的 Config 实例化 Agent + Sprite。
- * 供 startSprite 和 reinitAgent 复用。
+ * 确保 dataDir 目录存在，打开 memora.db（WAL 模式），
+ * 创建存储实现和会话存储实例。
+ *
+ * @param dataDir 数据目录路径
+ * @returns 存储层实例
  */
-async function initAgentFromConfig(
+function createStorage(dataDir: string): {
+  storage: SqliteStorage;
+  sessionStore: SqliteSessionStore;
+  db: Database.Database;
+} {
+  const dbPath = resolve(dataDir, 'memora.db');
+  const db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  const storage = new SqliteStorage(db);
+  const sessionStore = new SqliteSessionStore(db);
+  return { storage, sessionStore, db };
+}
+
+/**
+ * 创建 VectorStore（可选，配置了 embedding 时启用语义召回）
+ *
+ * @param config 应用配置
+ * @param dataDir 数据目录路径
+ * @returns VectorStore 实例，未配置 embedding 时返回 undefined
+ */
+async function createVectorStoreIfNeeded(
+  config: Config,
+  dataDir: string,
+): Promise<VectorStore | undefined> {
+  if (!config.embedding?.model) return undefined;
+
+  const embeddingProvider = new EmbeddingProvider({
+    baseUrl: config.embedding.baseUrl ?? config.llm.baseUrl ?? '',
+    apiKey: config.embedding.apiKey ?? config.llm.apiKey ?? '',
+    model: config.embedding.model,
+  });
+  const vectorStore = new VectorStore(
+    resolve(dataDir, 'vectors.json'),
+    embeddingProvider,
+  );
+  await vectorStore.load();
+  return vectorStore;
+}
+
+/**
+ * 创建并初始化 Agent 实例
+ *
+ * 职责：存储层 + Provider + Agent 构造 + init。
+ * 不负责 post-init 扩展（关键词/后台 Provider/会话恢复/工具注册/作品投影）。
+ *
+ * @param config 应用配置
+ * @param opts 路径选项
+ * @returns Agent 实例 + 存储层引用 + 数据目录
+ */
+async function createAgentInstance(
   config: Config,
   opts?: { configDir?: string; dataDir?: string; projectPath?: string },
-): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
+): Promise<{
+  agent: Agent;
+  sessionStore: SqliteSessionStore;
+  storage: SqliteStorage;
+  vectorStore: VectorStore | undefined;
+  tracer: ITracer;
+  dataDir: string;
+  projectPath: string;
+}> {
   const configDir = opts?.configDir ?? DEFAULT_CONFIG_DIR;
-  // 默认强制使用 DEFAULT_DATA_DIR（~/.memora-sprite/data），
-  // 避免 loadConfig 默认值中的 dataDir（~/.memora）导致创建错误的目录
+  // 默认强制使用 DEFAULT_DATA_DIR，避免 loadConfig 默认值创建错误目录
   const dataDir = opts?.dataDir ?? DEFAULT_DATA_DIR;
 
-  // 精灵的工作空间：~/.memora-sprite/data/workspace/（而非源码目录）
+  // 精灵的工作空间：~/.memora-sprite/data/workspace/
   const workspaceDir = resolve(dataDir, 'workspace');
   const projectPath = opts?.projectPath ?? workspaceDir;
   if (!existsSync(workspaceDir)) {
     await mkdir(workspaceDir, { recursive: true });
   }
 
-  // 2. 打开 SQLite 数据库（确保目录存在）
-  const dbPath = resolve(dataDir, 'memora.db');
+  // 确保 dataDir 存在
   if (!existsSync(dataDir)) {
     await mkdir(dataDir, { recursive: true });
   }
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
 
-  // 3. 创建存储实现
-  const storage = new SqliteStorage(db);
-  const sessionStore = new SqliteSessionStore(db);
+  // 创建存储层
+  const { storage, sessionStore } = createStorage(dataDir);
 
-  // 4. 创建 LLM Provider
+  // 创建 LLM Provider
   const provider = createLlmProvider(config);
 
-  // 4.5 创建 VectorStore（可选，配置了 embedding 时启用语义召回）
-  let vectorStore: VectorStore | undefined;
-  if (config.embedding?.model) {
-    const embeddingProvider = new EmbeddingProvider({
-      baseUrl: config.embedding.baseUrl ?? config.llm.baseUrl ?? '',
-      apiKey: config.embedding.apiKey ?? config.llm.apiKey ?? '',
-      model: config.embedding.model,
-    });
-    vectorStore = new VectorStore(
-      resolve(dataDir, 'vectors.json'),
-      embeddingProvider,
-    );
-    await vectorStore.load();
-  }
+  // 创建 VectorStore（可选，配置了 embedding 时启用语义召回）
+  const vectorStore = await createVectorStoreIfNeeded(config, dataDir);
 
-  // 4.6 实例化可观测性 Tracer（M3）
-  // 记录 LLM 调用、记忆召回、工具执行等各阶段耗时，输出到 trace.log
+  // 实例化可观测性 Tracer
   const tracer: ITracer = new SpriteTracer(dataDir);
 
-  // 5. 实例化 Agent
+  // 实例化 Agent
   const agent = new Agent({
     projectPath,
     configDir,
@@ -304,16 +346,31 @@ async function initAgentFromConfig(
 
   await agent.init();
 
+  return { agent, sessionStore, storage, vectorStore, tracer, dataDir, projectPath };
+}
+
+/**
+ * Agent post-init 扩展设置
+ *
+ * 职责：关键词设置 + 后台 Provider + 会话恢复 + 作品投影 + 工具注册。
+ * 这些操作依赖 Agent 已 init 完成，但与存储层无关。
+ *
+ * @param agent 已初始化的 Agent 实例
+ * @param config 应用配置
+ * @param projectPath 项目路径
+ */
+async function setupAgentPostInit(
+  agent: Agent,
+  config: Config,
+  projectPath: string,
+): Promise<void> {
   // 设置宿主记忆关键词，帮助 InsightExtractor 区分领域相关和个人相关输入
-  // 领域关键词：用户工作内容的核心主题（代码、编程、写作等）
-  // 个人关键词：从用户画像中动态学习，无需预设
   agent.insight?.setKeywords({
     domain: ['代码', '编程', '开发', '项目', '文档', '写作', '设计', '调试', '部署', '测试'],
     personal: [],
   });
 
   // 后台 Provider：用于 Insight 提取、配置分析等后台 LLM 任务
-  // 不配时所有消费者复用前台 Provider，完全向后兼容
   if (config.llm.background) {
     const bgProvider = createProviderFromConfig('background', config.llm.background);
     agent.setBackgroundProvider(bgProvider);
@@ -325,12 +382,7 @@ async function initAgentFromConfig(
     console.log(`已恢复上次会话（${restored} 条消息）\n`);
   }
 
-  // 6. 启动精灵主控（P2-S6: 注入 tracer，关键路径记录 span 到 trace.log）
-  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths, tracer);
-  sprite.start();
-
-  // H3：最小作品投影生成 — 启动时读取项目关键文件（README + package.json）
-  // 生成概要+结构+关键决策，供后续对话中作为上下文记忆召回
+  // H3：最小作品投影生成 — 启动时读取项目关键文件
   if (agent.works) {
     const keyFiles = ['README.md', 'package.json'];
     for (const filename of keyFiles) {
@@ -341,16 +393,13 @@ async function initAgentFromConfig(
           await agent.works.ensureProjection(fullPath, content, filename);
         }
       } catch {
-        // 投影生成失败不影响启动，静默降级
         console.warn(`[H3] 作品投影生成失败: ${filename}`);
       }
     }
   }
 
   // H4：注册宿主自定义工具（web_search + memory_search）
-  // 让 LLM 在对话中可主动调用这些工具，无需用户敲 /web 命令
   if (agent.tools) {
-    // 注入记忆搜索器引用（handler 委托内核 searchMemories）
     setMemorySearcher(async (query, limit) => {
       const hits = await agent.searchMemories(query, limit);
       return hits.map((h) => ({
@@ -362,11 +411,37 @@ async function initAgentFromConfig(
     agent.tools.registerTool(WEB_SEARCH_TOOL, webSearchHandler);
     agent.tools.registerTool(MEMORY_SEARCH_TOOL, memorySearchHandler);
   }
+}
+
+/**
+ * 创建 Sprite 实例 + 关闭清理函数
+ *
+ * 职责：Sprite 构造 + start + 关闭时资源清理（agent.close → vectorStore.save → storage.close）。
+ * 每个清理步骤独立 try/catch，确保 storage.close() 必执行。
+ *
+ * @param agent 已初始化的 Agent 实例
+ * @param dataDir 数据目录
+ * @param projectPath 项目路径
+ * @param vectorStore 向量存储（可选）
+ * @param config 应用配置
+ * @param tracer 可观测性 tracer
+ * @param storage 存储实例（用于 close 清理）
+ */
+function createSpriteAndClose(
+  agent: Agent,
+  dataDir: string,
+  projectPath: string,
+  vectorStore: VectorStore | undefined,
+  config: Config,
+  tracer: ITracer,
+  storage: SqliteStorage,
+): { sprite: Sprite; close: () => Promise<void> } {
+  const sprite = new Sprite(agent, dataDir, projectPath, vectorStore, undefined, config.allowedPaths, tracer);
+  sprite.start();
 
   const close = async () => {
     sprite.stop();
     // P2-S1 修复：每个清理步骤独立 try/catch，确保 storage.close() 必执行
-    // 避免 agent.close() 抛错导致 SQLite 连接泄漏 + 向量数据丢失
     try {
       await agent.close();
     } catch (err) {
@@ -379,6 +454,31 @@ async function initAgentFromConfig(
     }
     storage.close();
   };
+
+  return { sprite, close };
+}
+
+/**
+ * 从配置初始化 Agent + Sprite（内部函数）
+ *
+ * 不负责配置加载和 CLI 引导，仅根据传入的 Config 实例化 Agent + Sprite。
+ * 供 startSprite 和 reinitAgent 复用。
+ *
+ * 第二季重构：拆分为 3 个子函数——createAgentInstance / setupAgentPostInit / createSpriteAndClose。
+ */
+async function initAgentFromConfig(
+  config: Config,
+  opts?: { configDir?: string; dataDir?: string; projectPath?: string },
+): Promise<{ agent: Agent; sprite: Sprite; sessionStore: SqliteSessionStore; dataDir: string; close: () => Promise<void> }> {
+  // 1. 创建 Agent 实例（存储层 + Provider + VectorStore + Tracer）
+  const { agent, sessionStore, storage, vectorStore, tracer, dataDir, projectPath } =
+    await createAgentInstance(config, opts);
+
+  // 2. post-init 扩展（关键词 + 后台 Provider + 会话恢复 + 工具 + 作品投影）
+  await setupAgentPostInit(agent, config, projectPath);
+
+  // 3. 创建 Sprite + 关闭清理函数
+  const { sprite, close } = createSpriteAndClose(agent, dataDir, projectPath, vectorStore, config, tracer, storage);
 
   return { agent, sprite, sessionStore, dataDir, close };
 }
