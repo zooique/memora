@@ -183,10 +183,11 @@ export class TrayManager {
    * 注意：Electron 原生不支持托盘图标脉冲，用 tooltip 文字变化代替。
    */
   private startPulse(): void {
+    // 纯文字状态指示，避免 emoji 在旧版 Windows 不渲染
     const frames = [
-      'Memora 🌀',
-      'Memora ✨',
-      'Memora 💡',
+      'Memora 精灵（思考中...）',
+      'Memora 精灵（处理中...）',
+      'Memora 精灵（生成中...）',
     ];
 
     let step = 0;

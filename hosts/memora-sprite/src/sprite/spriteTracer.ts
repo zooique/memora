@@ -90,7 +90,7 @@ class SpriteSpan implements ISpan {
       ...(this.errorMessage ? { errorMessage: this.errorMessage } : {}),
     };
 
-    this.appender.append(entry as unknown as Record<string, unknown>);
+    this.appender.append(entry);
   }
 }
 

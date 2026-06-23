@@ -119,7 +119,7 @@ export class WindowManager {
       },
     });
 
-    this.windowStateManager.fullWindow = this.fullWindow;
+    this.windowStateManager.attachFullWindow(this.fullWindow);
 
     // 加载 HTML 文件
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'index.html');

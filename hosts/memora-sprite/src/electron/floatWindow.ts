@@ -72,7 +72,7 @@ export class FloatWindow {
       },
     });
 
-    this.windowStateManager.floatWindow = this.win;
+    this.windowStateManager.attachFloatWindow(this.win);
 
     // 加载浮动窗口 HTML
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'float.html');

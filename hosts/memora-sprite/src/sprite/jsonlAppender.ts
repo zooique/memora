@@ -55,7 +55,7 @@ export class JsonlAppender {
    *
    * @param record 要序列化为 JSON 的记录对象
    */
-  append(record: Record<string, unknown>): void {
+  append<T extends object>(record: T): void {
     this.writeCount += 1;
     const shouldCheckTruncate = this.writeCount % this.truncateCheckInterval === 0;
 
@@ -77,7 +77,7 @@ export class JsonlAppender {
    * @param limit 返回数量上限，默认 50
    * @returns 解析后的记录数组，文件不存在时返回空数组
    */
-  async readRecent(limit = 50): Promise<Record<string, unknown>[]> {
+  async readRecent<T extends object = Record<string, unknown>>(limit = 50): Promise<T[]> {
     try {
       const content = await readFile(this.filePath, 'utf8');
       const lines = content.trim().split('\n').filter(Boolean);
@@ -85,12 +85,12 @@ export class JsonlAppender {
       return recent
         .map((line) => {
           try {
-            return JSON.parse(line) as Record<string, unknown>;
+            return JSON.parse(line) as T;
           } catch {
             return null;
           }
         })
-        .filter((e): e is Record<string, unknown> => e !== null)
+        .filter((e): e is T => e !== null)
         .reverse(); // 最新在前
     } catch {
       return [];

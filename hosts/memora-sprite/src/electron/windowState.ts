@@ -54,9 +54,9 @@ export class WindowStateManager {
   /** 浮动气泡显示偏好（独立于状态机） */
   private showFloatBubble: boolean;
 
-  // 窗口实例（由外部注入）
-  floatWindow: BrowserWindow | null = null;
-  fullWindow: BrowserWindow | null = null;
+  /** 窗口实例（由外部注入，通过 attach 方法设置） */
+  private floatWindow: BrowserWindow | null = null;
+  private fullWindow: BrowserWindow | null = null;
 
   /** 持久化回调（由 main.ts 注入，委托给 saveSpriteConfig） */
   private onSaveState?: (data: WindowStateData) => void;
@@ -171,6 +171,16 @@ export class WindowStateManager {
   }
 
   // ─── 公共访问器 ────────────────────────────────────────────
+
+  /** 注入浮动窗口实例（由 FloatWindow 创建后调用） */
+  attachFloatWindow(window: BrowserWindow): void {
+    this.floatWindow = window;
+  }
+
+  /** 注入完整窗口实例（由 WindowManager 创建后调用） */
+  attachFullWindow(window: BrowserWindow): void {
+    this.fullWindow = window;
+  }
 
   /** 保存浮动窗口位置 */
   saveFloatPosition(x: number, y: number): void {

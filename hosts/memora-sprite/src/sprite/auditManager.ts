@@ -44,13 +44,13 @@ export class AuditManager {
       timestamp: new Date().toISOString(),
       sessionId: this.sessionId,
     };
-    this.appender.append(entry as unknown as Record<string, unknown>);
+    this.appender.append(entry);
   }
 
   /** 读取最近 N 条审计日志（从后往前读取，最新在前） */
   async readRecent(limit = 50): Promise<AuditLogEntry[]> {
-    const records = await this.appender.readRecent(limit);
-    return records as unknown as AuditLogEntry[];
+    const records = await this.appender.readRecent<AuditLogEntry>(limit);
+    return records;
   }
 
   /** 清空审计日志 */
