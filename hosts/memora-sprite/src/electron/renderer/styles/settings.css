@@ -173,10 +173,8 @@
 
 /* UX-P2-40 合并 .settings-group input 和 .settings-row input 的公共样式，消除重复定义 */
 /* 公共输入框样式：适用于设置面板内所有文本/密码/数字输入框和下拉框 */
-.settings-group input[type="text"],
-.settings-group input[type="password"],
-.settings-group input[type="number"],
-.settings-group select {
+/* 使用 :is() 伪类简化选择器，避免重复声明（P3-5） */
+.settings-group :is(input[type="text"], input[type="password"], input[type="number"], select) {
   padding: 6px 10px;
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -189,24 +187,17 @@
 }
 
 /* 垂直堆叠模式（直接子元素）：宽度 100% + 底部边距 */
-.settings-group > input[type="text"],
-.settings-group > input[type="password"],
-.settings-group > input[type="number"],
-.settings-group > select {
+.settings-group > :is(input[type="text"], input[type="password"], input[type="number"], select) {
   width: 100%;
   margin-bottom: 12px;
 }
 
 /* 水平布局模式（settings-row 内）：flex: 1 占满右侧空间 */
-.settings-row input[type="text"],
-.settings-row input[type="password"],
-.settings-row input[type="number"],
-.settings-row select {
+.settings-row :is(input[type="text"], input[type="password"], input[type="number"], select) {
   flex: 1;
 }
 
-.settings-group input:focus,
-.settings-group select:focus {
+.settings-group :is(input, select):focus {
   border-color: var(--accent);
 }
 

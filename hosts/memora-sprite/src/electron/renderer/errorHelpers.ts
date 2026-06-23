@@ -21,6 +21,7 @@ import type { UIManager } from './ui.js';
  * 渲染进程本地实现，行为与内核 toError 对齐。
  * 处理 Error 实例、字符串、含 message 属性的对象、其他类型。
  *
+ * @see memora/src/utils/toError.ts — 内核对应实现，逻辑变更时需同步更新
  * @param err 捕获的未知错误
  * @returns 转换后的 Error 实例
  */

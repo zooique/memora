@@ -51,6 +51,8 @@ export class FileWatcherTrigger implements SpriteTrigger {
   private config: Required<FileWatcherConfig>;
   /** 防抖计时器 */
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** P3-CODE-3 预编译的忽略模式正则缓存（构造函数中一次性编译，避免 shouldIgnore 每次重新编译） */
+  private ignoreRegexes: RegExp[];
 
   constructor(config: FileWatcherConfig) {
     this.config = {
@@ -59,6 +61,8 @@ export class FileWatcherTrigger implements SpriteTrigger {
       debounceMs: config.debounceMs ?? 1000,
       allowedPaths: config.allowedPaths ?? [],
     };
+    // 预编译所有忽略模式为正则（构造函数中一次性编译，避免 matchGlob 每次重新编译）
+    this.ignoreRegexes = this.config.ignore.map(pattern => this.compileGlob(pattern));
   }
 
   start(cb: TriggerCallback): void {
@@ -136,24 +140,22 @@ export class FileWatcherTrigger implements SpriteTrigger {
     return false;
   }
 
-  /** 检查文件名是否匹配忽略模式 */
+  /** 检查文件名是否匹配忽略模式（使用预编译正则缓存） */
   private shouldIgnore(filename: string): boolean {
-    for (const pattern of this.config.ignore) {
-      // 简单的 glob 匹配：支持 ** 和 * 通配符
-      if (this.matchGlob(filename, pattern)) return true;
+    for (const regex of this.ignoreRegexes) {
+      if (regex.test(filename)) return true;
     }
     return false;
   }
 
-  /** 简易 glob 匹配（仅支持 ** 和 *） */
-  private matchGlob(str: string, pattern: string): boolean {
+  /** 简易 glob 编译为正则（仅支持 ** 和 *） */
+  private compileGlob(pattern: string): RegExp {
     const regexStr = pattern
       .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // 转义正则特殊字符
       .replace(/\*\*/g, '§§')  // 临时标记 **
       .replace(/\*/g, '[^/]*')  // * 匹配非路径分隔符
       .replace(/§§/g, '.*');    // ** 匹配任意
-    const regex = new RegExp(regexStr);
-    return regex.test(str);
+    return new RegExp(regexStr);
   }
 
   /** 防抖发射触发事件 */

@@ -15,12 +15,10 @@
  */
 
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { BrowserWindow, ipcMain, Menu } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { ELECTRON_DIR } from './utils/esmShim.js';
 
 /** 浮动窗口右键菜单回调（由 main.ts 注入，避免 FloatWindow 直接依赖 Sprite/Agent） */
 export interface FloatWindowCallbacks {
@@ -67,7 +65,7 @@ export class FloatWindow {
       webPreferences: {
         // P1-ROOT 修复：preload 改为 .cjs（CommonJS 格式），兼容 sandbox: true
         // ESM 格式的 preload.js 与 sandbox 不兼容，导致 contextBridge 暴露失败
-        preload: path.join(__dirname, 'preload.cjs'),
+        preload: path.join(ELECTRON_DIR, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
@@ -77,7 +75,7 @@ export class FloatWindow {
     this.windowStateManager.floatWindow = this.win;
 
     // 加载浮动窗口 HTML
-    const htmlPath = path.join(__dirname, 'renderer', 'float.html');
+    const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'float.html');
     await this.win.loadFile(htmlPath);
 
     // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）

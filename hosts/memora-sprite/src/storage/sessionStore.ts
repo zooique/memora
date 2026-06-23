@@ -132,15 +132,12 @@ export class SqliteSessionStore implements ISessionStore {
    * @returns 是否删除成功
    */
   deleteSession(sessionId: string): boolean {
-    const parts = sessionId.split('-');
-    // 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段）
-    if (parts.length < 4) return false;
-    const date = parts.slice(0, 3).join('-'); // YYYY-MM-DD
-    const session = parts.slice(3).join('-'); // sessionName
+    const parsed = this.parseSessionId(sessionId);
+    if (!parsed) return false;
 
     const result = this.db.prepare(
       'DELETE FROM sessions WHERE date = ? AND session = ?'
-    ).run(date, session);
+    ).run(parsed.date, parsed.session);
     return result.changes > 0;
   }
 
@@ -159,22 +156,20 @@ export class SqliteSessionStore implements ISessionStore {
    * @returns 是否重命名成功（目标名冲突时返回 false）
    */
   renameSession(sessionId: string, newName: string): boolean {
-    const parts = sessionId.split('-');
-    if (parts.length < 4) return false;
-    const date = parts.slice(0, 3).join('-');
-    const session = parts.slice(3).join('-');
+    const parsed = this.parseSessionId(sessionId);
+    if (!parsed) return false;
 
     // P2 修复：事务包裹"冲突检查 + 更新"，防止检查与更新之间的竞态
     const transaction = this.db.transaction(() => {
       // 检查目标会话名是否已存在（同日期下）
       const conflict = this.db.prepare(
         'SELECT 1 FROM sessions WHERE date = ? AND session = ? LIMIT 1'
-      ).get(date, newName);
+      ).get(parsed.date, newName);
       if (conflict) return false;
 
       const result = this.db.prepare(
         'UPDATE sessions SET session = ? WHERE date = ? AND session = ?'
-      ).run(newName, date, session);
+      ).run(newName, parsed.date, parsed.session);
       return result.changes > 0;
     });
 
@@ -229,18 +224,35 @@ export class SqliteSessionStore implements ISessionStore {
    * @param sessionId 会话 ID（格式：YYYY-MM-DD-sessionName）
    */
   getFirstUserMessage(sessionId: string): string {
-    const parts = sessionId.split('-');
-    if (parts.length < 4) return '';
-    const date = parts.slice(0, 3).join('-');
-    const session = parts.slice(3).join('-');
+    const parsed = this.parseSessionId(sessionId);
+    if (!parsed) return '';
 
     const row = this.db.prepare(
       "SELECT content FROM sessions WHERE date = ? AND session = ? AND role = 'user' ORDER BY id ASC LIMIT 1"
-    ).get(date, session) as { content: string } | undefined;
+    ).get(parsed.date, parsed.session) as { content: string } | undefined;
 
     if (!row) return '';
     // 截断到 50 字符，避免预览过长
     return row.content.length > 50 ? row.content.slice(0, 50) + '...' : row.content;
+  }
+
+  /**
+   * 解析会话 ID 为日期和会话名
+   *
+   * 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段，date 占 3 段）。
+   * 提取自 deleteSession / renameSession / getFirstUserMessage 三处重复逻辑。
+   *
+   * @param sessionId 会话 ID
+   * @returns 解析后的 { date, session }，格式无效时返回 null
+   */
+  private parseSessionId(sessionId: string): { date: string; session: string } | null {
+    const parts = sessionId.split('-');
+    // 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段）
+    if (parts.length < 4) return null;
+    return {
+      date: parts.slice(0, 3).join('-'), // YYYY-MM-DD
+      session: parts.slice(3).join('-'), // sessionName（可能含连字符）
+    };
   }
 }
 
