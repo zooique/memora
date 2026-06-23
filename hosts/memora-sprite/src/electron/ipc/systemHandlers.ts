@@ -47,6 +47,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    * - 关联推荐记忆
    * - 记忆源健康诊断
    * - Agent 运行时指标（OBS-01：LLM/召回/工具/上下文/衰减）
+   * - GAP-1 已加载技能列表（消费内核 agent.skills.list）
    */
   ipcMain.handle(IPC_CHANNELS.DASHBOARD_GET, () => {
     try {
@@ -65,6 +66,18 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       } catch {
         // 降级：metrics 不可用时仪表盘仍正常返回
       }
+      // GAP-1 已加载技能列表（消费内核 agent.skills.list）
+      let skills: Array<{ name: string; keywords: string[]; description: string; layer: string }> = [];
+      try {
+        skills = ctx.agent.skills.list.map((s) => ({
+          name: s.name,
+          keywords: s.keywords,
+          description: s.description ?? '',
+          layer: s.layer,
+        }));
+      } catch {
+        // 降级：skills 不可用时仪表盘仍正常返回
+      }
       return {
         total: data.total,
         bySource: data.bySource,
@@ -74,6 +87,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         registeredTriggers: ctx.sprite.registeredTriggers,
         sourceHealth,
         metrics,
+        skills,
       };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取仪表盘数据失败' });
@@ -86,6 +100,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         registeredTriggers: [],
         sourceHealth: null,
         metrics: null,
+        skills: [],
       };
     }
   });

@@ -65,6 +65,11 @@
             <span class="dash-label">🔔 触发器</span>
             <span class="dash-value" id="trigger-count">0</span>
           </div>
+          <!-- GAP-1 已加载技能数 -->
+          <div class="dash-item" id="dash-skills" title="已加载的技能数">
+            <span class="dash-label">⚡ 技能</span>
+            <span class="dash-value" id="skill-count">0</span>
+          </div>
           <!-- FD-03 累积事件（跨 2 列，接近阈值时高亮，提示即将主动提示） -->
           <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值" style="grid-column: span 2;">
             <span class="dash-label">📥 事件</span>
@@ -83,6 +88,13 @@
         <div id="recommendations" class="dashboard-section hidden">
           <h3>推荐</h3>
           <ul id="recommendation-list" class="suggestion-list"></ul>
+        </div>
+
+        <!-- GAP-1 已加载技能列表（消费内核 agent.skills.list） -->
+        <!-- 由 loadDashboard() 动态填充，无技能时隐藏 -->
+        <div id="skills-section" class="dashboard-section hidden">
+          <h3>技能</h3>
+          <ul id="skills-list" class="skills-list"></ul>
         </div>
 
         <!-- 记忆源健康状态（消费内核 sourceHealth()） -->

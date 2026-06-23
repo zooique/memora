@@ -239,6 +239,9 @@ export function createMemoryController(uiManager: UIManager) {
 
       // OBS-01 Agent 运行时指标渲染（消费内核 agent.getMetrics()）
       renderAgentMetrics(data.metrics);
+
+      // GAP-1 已加载技能列表渲染（消费内核 agent.skills.list）
+      renderSkills(data.skills);
     } catch (error) {
       reportError('loadDashboard', error);
     }
@@ -430,6 +433,65 @@ export function createMemoryController(uiManager: UIManager) {
       return `${(tokens / 1000).toFixed(1)}k`;
     }
     return String(tokens);
+  }
+
+  /**
+   * GAP-1 渲染已加载技能列表
+   *
+   * 消费内核 agent.skills.list，在仪表盘侧边栏展示当前加载的技能。
+   * 每个技能项展示名称、关键词标签和来源层级（project/agent）。
+   * 无技能时隐藏区域。
+   *
+   * @param skills 技能列表（由 DASHBOARD_GET 返回）
+   */
+  function renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
+    // 更新仪表盘技能计数
+    const countEl = document.getElementById('skill-count');
+    if (countEl) {
+      countEl.textContent = String(skills.length);
+    }
+
+    const listEl = document.getElementById('skills-list');
+    const sectionEl = document.getElementById('skills-section');
+    if (!listEl || !sectionEl) return;
+
+    if (!skills || skills.length === 0) {
+      sectionEl.classList.add('hidden');
+      return;
+    }
+
+    clearElement(listEl);
+    for (const skill of skills) {
+      const li = document.createElement('li');
+      li.className = 'skill-item';
+      li.title = skill.description || skill.name;
+
+      // 技能名称
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'skill-name';
+      nameSpan.textContent = skill.name;
+
+      // 来源层级标签（project/agent）
+      const layerSpan = document.createElement('span');
+      layerSpan.className = `skill-layer skill-layer-${skill.layer}`;
+      layerSpan.textContent = skill.layer === 'agent' ? '全局' : '项目';
+
+      // 关键词标签
+      if (skill.keywords.length > 0) {
+        const kwSpan = document.createElement('span');
+        kwSpan.className = 'skill-keywords';
+        kwSpan.textContent = skill.keywords.slice(0, 5).join(' · ');
+        li.appendChild(nameSpan);
+        li.appendChild(layerSpan);
+        li.appendChild(kwSpan);
+      } else {
+        li.appendChild(nameSpan);
+        li.appendChild(layerSpan);
+      }
+
+      listEl.appendChild(li);
+    }
+    sectionEl.classList.remove('hidden');
   }
 
   return {

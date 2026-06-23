@@ -360,6 +360,13 @@ export interface ElectronAPI {
         lastRunAt: string | null;
       } | null;
     } | null;
+    /** GAP-1 已加载技能列表（空数组表示无技能或不可用） */
+    skills: Array<{
+      name: string;
+      keywords: string[];
+      description: string;
+      layer: string;
+    }>;
   }>;
 
   // 窗口控制
