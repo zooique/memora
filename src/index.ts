@@ -51,7 +51,7 @@ export { TypedEventEmitter } from '@/utils/eventEmitter.js';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from '@/utils/eventEmitter.js';
 
 // ─── 可观测性导出 ────────────────────────────────────────
-export type { ITracer, ISpan } from '@/agent/tracer.js';
+export type { ITracer, ISpan, AgentMetrics } from '@/agent/tracer.js';
 export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────

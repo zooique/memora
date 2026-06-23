@@ -24,6 +24,15 @@ import type { WriteExtensions } from '@/agent/toolExecutor.js';
 /** extractInsight 默认 score 值 */
 const DEFAULT_INSIGHT_SCORE = 0.5;
 
+/** 高价值 insight score（用户明确要求记住、关键决策等） */
+const HIGH_QUALITY_SCORE = 0.8;
+
+/** 低价值 insight score（可能有用但不紧急） */
+const LOW_QUALITY_SCORE = 0.2;
+
+/** 预检去重：用户输入与已有 insight 的 Jaccard 相似度阈值 */
+const PRECHECK_SIMILARITY_THRESHOLD = 0.85;
+
 /** insight 提取：用户输入截断上限（字符） */
 const INSIGHT_USER_INPUT_LIMIT = 500;
 
@@ -145,6 +154,22 @@ export class InsightExtractor {
         ? assistantContent.slice(0, INSIGHT_ASSISTANT_CONTENT_LIMIT) + '…'
         : assistantContent;
 
+      // 预检去重：LLM 调用前先检查用户输入是否与已有 insight 高度相似
+      // 避免对重复内容浪费 LLM 调用
+      const precheckSnippet = escapeLike(safeUserInput.slice(0, 50));
+      const precheckExisting = this.index.search(precheckSnippet, 3);
+      const precheckDuplicate = precheckExisting.find((m) => {
+        const sim = this.jaccardSimilarity(safeUserInput, m.content);
+        return sim > PRECHECK_SIMILARITY_THRESHOLD;
+      });
+      if (precheckDuplicate) {
+        logger.debug(
+          { id: precheckDuplicate.id, similarity: 'high' },
+          'extractInsight: 预检命中高相似度，跳过 LLM 提取',
+        );
+        return;
+      }
+
       const recentHistory = this._getRecentHistory(2);
       const contextSection = recentHistory.length > 0
         ? '\n\n前几轮对话（供参考）：\n' + recentHistory.map(m => {
@@ -158,14 +183,14 @@ export class InsightExtractor {
       const extractionPrompt = `你是一个记忆提取助手。判断以下对话是否包含值得长期记忆的信息。
 
 如果有，输出 JSON：
-{"insight": "一句话描述", "tags": ["关键词1", "关键词2"]}
+{"insight": "一句话描述", "tags": ["关键词1", "关键词2"], "quality": "high|medium|low"}
+
+quality 分级标准：
+- high：用户明确要求记住、关键决策、重要偏好、核心设定
+- medium：用户的偏好、创作中的关键信息（角色、情节、世界观）
+- low：可能有用但不紧急的背景信息
 
 如果没有，输出 null。
-
-值得记忆的信息：
-- 用户的偏好、决策、设定
-- 创作中的关键信息（角色、情节、世界观）
-- 用户明确要求记住的内容
 
 不值得记忆的信息：
 - 问候、确认、闲聊
@@ -191,7 +216,7 @@ ${contextSection}
         return;
       }
 
-      const parsed = parseLlmJson<{ insight?: string }>(trimmedResponse);
+      const parsed = parseLlmJson<{ insight?: string; quality?: string }>(trimmedResponse);
       const insight = parsed && typeof parsed.insight === 'string' && parsed.insight.trim()
         ? parsed.insight.trim()
         : null;
@@ -201,29 +226,28 @@ ${contextSection}
         return;
       }
 
+      // 质量分级：根据 LLM 返回的 quality 字段设置 score
+      const quality = parsed?.quality ?? 'medium';
+      const score = this.scoreByQuality(quality);
+
       // Step 2: 去重检查（使用 Jaccard 相似度）
       const snippet = escapeLike(insight.slice(0, 50));
       const existing = this.index.search(snippet, 3);
       const existingMemory = existing.find((m) => {
-        // 计算 Jaccard 相似度（词级）
-        const setA = new Set(insight.split(/\s+/));
-        const setB = new Set(m.content.split(/\s+/));
-        const intersection = new Set([...setA].filter((x) => setB.has(x)));
-        const union = new Set([...setA, ...setB]);
-        const similarity = union.size > 0 ? intersection.size / union.size : 0;
+        const similarity = this.jaccardSimilarity(insight, m.content);
         return similarity > 0.7; // 阈值 70%
       });
 
       if (existingMemory) {
-        // 已有相似记忆，更新 accessedAt 和 score
-        existingMemory.score = Math.min(1.0, existingMemory.score + 0.05);
+        // 已有相似记忆，更新 accessedAt 和 score（取较高值）
+        existingMemory.score = Math.min(1.0, Math.max(existingMemory.score, score) + 0.05);
         existingMemory.accessedAt = new Date().toISOString();
         this.index.upsert(existingMemory);
         logger.debug({ id: existingMemory.id }, 'extractInsight: 更新已有记忆');
         return;
       }
 
-      // Step 3: 写入 SQLite
+      // Step 3: 写入 SQLite（score 根据质量分级设置）
       const now = new Date().toISOString();
       const insightId = randomUUID(); // 使用 UUID 避免高并发冲突
       const memory: Memory = {
@@ -233,13 +257,41 @@ ${contextSection}
         name: `insight-${insightId.slice(0, 8)}`,
         createdAt: now,
         accessedAt: now,
-        score: DEFAULT_INSIGHT_SCORE,
+        score,
       };
       this.index.upsert(memory);
-      logger.info({ id: memory.id, insight }, 'extractInsight: 写入新记忆');
+      logger.info({ id: memory.id, insight, quality, score }, 'extractInsight: 写入新记忆');
     } catch (err) {
       // 提取失败不影响主对话流程
       logger.warn({ err }, 'extractInsight: 提取失败');
+    }
+  }
+
+  // ─── 私有：工具方法 ───────────────────────────────────
+
+  /**
+   * 计算 Jaccard 相似度（词级）
+   * 用于预检去重和提取后去重
+   */
+  private jaccardSimilarity(a: string, b: string): number {
+    const setA = new Set(a.split(/\s+/));
+    const setB = new Set(b.split(/\s+/));
+    const intersection = new Set([...setA].filter((x) => setB.has(x)));
+    const union = new Set([...setA, ...setB]);
+    return union.size > 0 ? intersection.size / union.size : 0;
+  }
+
+  /**
+   * 根据 LLM 返回的质量分级设置 score
+   * high → 0.8（优先召回）
+   * medium → 0.5（默认值）
+   * low → 0.2（快速衰减）
+   */
+  private scoreByQuality(quality: string): number {
+    switch (quality) {
+      case 'high': return HIGH_QUALITY_SCORE;
+      case 'low': return LOW_QUALITY_SCORE;
+      default: return DEFAULT_INSIGHT_SCORE;
     }
   }
 

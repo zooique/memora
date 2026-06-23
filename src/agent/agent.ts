@@ -41,7 +41,7 @@ import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
-import { configError } from '@/utils/errors.js';
+import { configError, toError } from '@/utils/errors.js';
 import { safeSetTimeout, clearSafeTimeout, safeSetInterval, clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
@@ -52,7 +52,8 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
-import type { ITracer } from '@/agent/tracer.js';
+import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
+import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
@@ -221,6 +222,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private decayTimer: ReturnType<typeof setInterval> | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
+
+  // ─── R-103 衰减指标统计字段 ──────────────────────────
+  // 累计值，从 Agent.init() 起累加，close() 后随实例销毁。
+
+  /** 衰减执行次数（每次 runMemoryDecay 实际执行 +1） */
+  private metricDecayRunCount: number = 0;
+  /** 累计衰减记忆数（score 被调低的记忆条数总和） */
+  private metricTotalDecayedCount: number = 0;
+  /** 上次衰减时间（ISO 8601，null 表示从未执行过） */
+  private metricLastDecayAt: string | null = null;
 
   constructor(opts: AgentOptions) {
     super();
@@ -781,13 +792,26 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private runMemoryDecay(): void {
     if (!this.pctx) return;
+    // R-103 衰减 Span：记录衰减执行过程，补全衰减可观测性缺口
+    const decaySpan = this.#config.tracer?.startSpan(TRACE_SPANS.DECAY) ?? NOOP_TRACER.startSpan(TRACE_SPANS.DECAY);
     try {
       const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
       const decayedCount = this.pctx.index.decayScores(sources, new Date());
       logger.debug({ decayedCount }, '记忆衰减完成');
+
+      // R-103 衰减指标统计：累计执行次数和衰减记忆数
+      this.metricDecayRunCount++;
+      this.metricTotalDecayedCount += decayedCount;
+      this.metricLastDecayAt = new Date().toISOString();
+      decaySpan.setAttribute('decayedCount', decayedCount);
+      decaySpan.setAttribute('totalRuns', this.metricDecayRunCount);
+
       this.emit('decayCompleted', { decayedCount });
     } catch (err) {
       logger.warn({ err }, '记忆衰减异常，跳过本轮');
+      decaySpan.recordException(toError(err));
+    } finally {
+      decaySpan.end();
     }
   }
 
@@ -865,6 +889,51 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   get lastInteractionAt(): Date | null {
     return this._lastInteractionAt;
+  }
+
+  // ─── R-103 运行时指标 ────────────────────────────────
+
+  /**
+   * 获取 Agent 运行时指标快照（R-103 可观测性增强）
+   *
+   * 聚合 AgentLoop 指标（LLM 调用、记忆召回、工具调用、上下文管理）
+   * 与 Agent 层指标（记忆衰减），返回完整的 AgentMetrics 快照。
+   *
+   * 未初始化时返回全零指标（合理的默认值，不抛异常）。
+   * 纯只读、同步、零副作用——适合宿主项目定期轮询构建监控面板。
+   *
+   * 使用方式：
+   *   const metrics = agent.getMetrics();
+   *   console.log(`LLM 调用 ${metrics.llm.callCount} 次，命中率 ${metrics.recall.hitRate}`);
+   *
+   * @returns AgentMetrics 完整快照（含衰减指标）
+   */
+  getMetrics(): AgentMetrics {
+    // 未初始化时返回全零指标，避免调用方需要判空
+    if (!this.loop) {
+      return {
+        llm: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0 },
+        recall: { totalCount: 0, hitCount: 0, hitRate: 0 },
+        tools: { callCount: 0, failureCount: 0 },
+        context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
+        decay: {
+          runCount: this.metricDecayRunCount,
+          totalDecayedCount: this.metricTotalDecayedCount,
+          lastRunAt: this.metricLastDecayAt,
+        },
+      };
+    }
+
+    // 获取 AgentLoop 指标快照，填充衰减字段
+    const loopMetrics = this.loop.getMetrics();
+    return {
+      ...loopMetrics,
+      decay: {
+        runCount: this.metricDecayRunCount,
+        totalDecayedCount: this.metricTotalDecayedCount,
+        lastRunAt: this.metricLastDecayAt,
+      },
+    };
   }
 
   // ─── Manager 暴露（激进拆分：调用方直接操作 Manager）──

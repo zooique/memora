@@ -12,7 +12,7 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import type { AgentChunk, UIMessages } from '@/agent/types.js';
-import type { ITracer } from '@/agent/tracer.js';
+import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
@@ -92,6 +92,29 @@ export class AgentLoop {
   private readonly enableContextSummary: boolean;
   /** 上下文摘要缓存（首次截断后缓存，后续截断复用） */
   private contextSummary: string | null = null;
+  /** 摘要缓存生成时的消息数量，用于判断缓存是否过期 */
+  private contextSummaryMsgCount: number = 0;
+
+  // ─── R-103 运行时指标统计字段 ──────────────────────────
+  // 累计值，从 AgentLoop 构造起累加，供 getMetrics() 返回快照。
+  // 设计为私有字段而非外部注入，保持 AgentLoop 自洽。
+
+  /** LLM 调用总次数（含重试，每次 provider.chat 调用 +1） */
+  private metricLlmCallCount: number = 0;
+  /** 累计输入 token 数（基于 estimateTokens 粗略估算） */
+  private metricTotalInputTokens: number = 0;
+  /** 累计输出 token 数（基于 estimateTokens 粗略估算） */
+  private metricTotalOutputTokens: number = 0;
+  /** 记忆召回总次数（每轮 processUserInput +1） */
+  private metricRecallTotalCount: number = 0;
+  /** 记忆召回命中次数（召回结果非空 +1） */
+  private metricRecallHitCount: number = 0;
+  /** 工具调用总次数 */
+  private metricToolCallCount: number = 0;
+  /** 工具调用失败次数（结果以 [ERR 开头） */
+  private metricToolFailureCount: number = 0;
+  /** 上下文截断次数（truncateMessages 实际触发截断 +1） */
+  private metricTruncationCount: number = 0;
 
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
@@ -153,7 +176,15 @@ export class AgentLoop {
     const enhancedInput = recalledMemories?.length
       ? this.wrapWithRecalledContext(userInput, recalledMemories)
       : userInput;
+    // R-103 补充 span 属性：让宿主监控面板能按命中/未命中过滤
+    recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
     recallSpan.end();
+
+    // R-103 召回命中率统计：每轮对话算一次召回，结果非空算命中
+    this.metricRecallTotalCount++;
+    if (recalledMemories && recalledMemories.length > 0) {
+      this.metricRecallHitCount++;
+    }
 
     // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
     // 仅暴露 name/score/source 摘要，不泄露完整 content
@@ -209,11 +240,15 @@ export class AgentLoop {
         this.estimateTokens(this.messages) > this.maxContextTokens &&
         this.messages.length > 3
       ) {
-        if (this.contextSummary) {
+        // 摘要缓存 TTL：消息数增长超过 10 条时缓存过期，需重新生成
+        const summaryExpired = this.contextSummary !== null &&
+          (this.messages.length - this.contextSummaryMsgCount) > LOOP_CONSTANTS.SUMMARY_CACHE_TTL_MSGS;
+        if (this.contextSummary && !summaryExpired) {
           contextSummary = this.contextSummary;
         } else {
           contextSummary = await this.generateContextSummary();
           this.contextSummary = contextSummary;
+          this.contextSummaryMsgCount = this.messages.length;
         }
       }
       const safeMessages = this.truncateMessages(this.messages, contextSummary);
@@ -334,6 +369,8 @@ export class AgentLoop {
       messageCount: safeMessages.length,
       iteration,
     });
+    // R-103 补充 span 属性：让宿主监控面板能按 token 消耗过滤
+    llmSpan.setAttribute('inputTokens', this.estimateTokens(safeMessages));
 
     for (let attempt = 0; attempt <= LOOP_CONSTANTS.MAX_LLM_RETRIES; attempt++) {
       if (attempt > 0) {
@@ -346,6 +383,10 @@ export class AgentLoop {
       }
 
       try {
+        // R-103 LLM 指标统计：每次 provider.chat 调用 +1，输入 token 累计
+        this.metricLlmCallCount++;
+        this.metricTotalInputTokens += this.estimateTokens(safeMessages);
+
         // safeMessages 为 readonly Message[]，provider.chat 期望 Message[]；
         // 通过浅拷贝转换为可变数组，避免类型断言。
         for await (const chunk of this.opts.provider.chat([...safeMessages], chatOpts)) {
@@ -362,6 +403,10 @@ export class AgentLoop {
             toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
           }
         }
+        // R-103 输出 token 统计：成功时累计输出 token
+        this.metricTotalOutputTokens += this.estimateTokens([
+          { role: 'assistant', content: fullContent },
+        ]);
         break; // 成功，退出重试循环
       } catch (err) {
         const e = toError(err);
@@ -422,6 +467,9 @@ export class AgentLoop {
       if (signal?.aborted) {
         return { aborted: true };
       }
+      // R-103 工具调用统计：每次工具执行 +1
+      this.metricToolCallCount++;
+
       yield { type: 'tool_start', name: tc.function.name, args: tc.function.arguments };
 
       // 工具执行 Span
@@ -458,6 +506,10 @@ export class AgentLoop {
         content: result,
         toolCallId: tc.id,
       });
+      // R-103 工具失败统计：结果以 [ERR 开头算失败
+      if (result.startsWith('[ERR')) {
+        this.metricToolFailureCount++;
+      }
       yield {
         type: 'tool_result',
         name: tc.function.name,
@@ -565,10 +617,14 @@ export class AgentLoop {
   /**
    * 截断消息数组以适配上下文窗口
    *
-   * 策略：保留下方、裁中间。
+   * 策略：保留下方、裁中间、提取关键消息。
    * - messages[0]（system prompt）始终保留（这是 Agent 的"灵魂"）
    * - 从尾部向前取最近的消息对（user + assistant + tool），直到估算 token 接近上限
+   * - 从被裁剪的消息中按重要性权重提取关键用户消息，插入到 placeholder 之前
    * - 头部被裁剪的消息替换为一条摘要占位消息
+   *
+   * 重要性权重：user 消息 > tool 结果 > assistant 回复
+   * 被裁剪的用户消息中，内容较长的（信息量大）优先保留
    *
    * 如果 system prompt 本身就超过 maxContextTokens，不做截断（让 LLM API 报错，
    * 开发者需要缩减 bootstrapMemories 或 toolDefinitions）。
@@ -605,21 +661,32 @@ export class AgentLoop {
     // 从尾部向前收集消息（最近的最重要）
     const tail: Message[] = [];
     let tailTokens = 0;
+    let cutIndex = messages.length; // 被裁剪区域的起始索引
     for (let i = messages.length - 1; i >= 1; i--) {
-      const msg = messages[i]!; // 边界已由 messages.length 保证，i >= 1 且 i < messages.length
+      const msg = messages[i]!;
       const msgTokens = this.estimateTokens([msg]);
       if (tailTokens + msgTokens > availableTokens) {
+        cutIndex = i + 1; // cutIndex 是第一条被保留的尾部消息
         break; // 再加这条就超了
       }
       tail.unshift(msg); // 保持顺序：从尾部取，但插入时保持时间顺序
       tailTokens += msgTokens;
+      cutIndex = i;
     }
 
-    // 计算被裁剪的消息数
-    const skipped = messages.length - 1 - tail.length; // -1 是 system prompt
+    // 计算被裁剪的消息
+    const skipped = cutIndex - 1; // -1 是 system prompt
     if (skipped <= 0) {
       return messages; // 全部保留
     }
+
+    // R-103 截断次数统计：确实发生了截断（skipped > 0）
+    this.metricTruncationCount++;
+
+    // 从被裁剪的消息中按重要性提取关键消息
+    // 重要性权重：user > tool > assistant；内容较长的用户消息优先
+    const cutMessages = messages.slice(1, cutIndex);
+    const keyMessages = this.extractKeyMessages(cutMessages, availableTokens - tailTokens);
 
     // 构造一条占位消息，让 LLM 知道有历史被裁剪了
     const placeholder: Message = {
@@ -627,12 +694,19 @@ export class AgentLoop {
       content: this.ui.contextTruncated(skipped, tail.length),
     };
 
-    const truncated: Message[] = [systemMsg, placeholder, ...tail];
+    const truncated: Message[] = [systemMsg];
 
     // 如果有摘要，插入到 system prompt 和 placeholder 之间
     if (summary) {
-      truncated.splice(1, 0, { role: 'system', content: summary });
+      truncated.push({ role: 'system', content: summary });
     }
+
+    // 插入从被裁剪区域提取的关键消息
+    truncated.push(...keyMessages);
+
+    truncated.push(placeholder);
+    truncated.push(...tail);
+
     const newEstimated = this.estimateTokens(truncated);
 
     logger.info(
@@ -640,6 +714,7 @@ export class AgentLoop {
         originalCount: messages.length,
         truncatedCount: truncated.length,
         skipped,
+        keyExtracted: keyMessages.length,
         originalTokens: estimated,
         newTokens: newEstimated,
       },
@@ -647,6 +722,62 @@ export class AgentLoop {
     );
 
     return truncated;
+  }
+
+  /**
+   * 从被裁剪的消息中按重要性提取关键消息
+   *
+   * 重要性权重：
+   * - user 消息：权重 3（用户输入信息量最高）
+   * - tool 结果：权重 2（工具执行结果有参考价值）
+   * - assistant 回复：权重 1（可由摘要替代）
+   *
+   * 提取策略：按权重降序 + 内容长度降序排列，取 Top-N 直到 token 用完
+   *
+   * @param cutMessages 被裁剪的消息数组
+   * @param availableTokens 剩余可用 token 数
+   * @returns 提取的关键消息数组（按原始时间顺序排列）
+   */
+  private extractKeyMessages(cutMessages: readonly Message[], availableTokens: number): Message[] {
+    if (availableTokens <= 0 || cutMessages.length === 0) return [];
+
+    // 计算每条消息的权重和 token 数
+    const weighted = cutMessages.map((msg, index) => ({
+      msg,
+      index, // 原始顺序索引
+      weight: this.messageImportance(msg),
+      tokens: this.estimateTokens([msg]),
+    }));
+
+    // 按权重降序 + 内容长度降序排列
+    weighted.sort((a, b) => {
+      if (b.weight !== a.weight) return b.weight - a.weight;
+      return b.msg.content.length - a.msg.content.length;
+    });
+
+    // 贪心选取，直到 token 用完
+    const selected: typeof weighted = [];
+    let usedTokens = 0;
+    for (const item of weighted) {
+      if (usedTokens + item.tokens > availableTokens) break;
+      selected.push(item);
+      usedTokens += item.tokens;
+    }
+
+    // 恢复原始时间顺序
+    selected.sort((a, b) => a.index - b.index);
+
+    return selected.map((item) => item.msg);
+  }
+
+  /**
+   * 获取消息的重要性权重
+   * user 消息 > tool 结果 > assistant 回复
+   */
+  private messageImportance(msg: Message): number {
+    if (msg.role === 'user') return 3;
+    if (msg.role === 'tool') return 2;
+    return 1;
   }
 
   /**
@@ -829,6 +960,47 @@ export class AgentLoop {
    */
   getMessages(): readonly Message[] {
     return this.messages;
+  }
+
+  /**
+   * 获取 AgentLoop 运行时指标快照（R-103 可观测性增强）
+   *
+   * 返回 LLM 调用、记忆召回、工具调用、上下文管理四个维度的累计指标。
+   * 衰减指标（decay）由 Agent 层填充，此处返回 null。
+   *
+   * 纯只读、同步、零副作用——适合宿主项目定期轮询构建监控面板。
+   *
+   * @returns AgentMetrics 快照（decay 字段为 null，由 Agent 层填充）
+   */
+  getMetrics(): AgentMetrics {
+    // 计算召回命中率：totalCount 为 0 时返回 0，避免除零
+    const hitRate = this.metricRecallTotalCount > 0
+      ? this.metricRecallHitCount / this.metricRecallTotalCount
+      : 0;
+
+    return {
+      llm: {
+        callCount: this.metricLlmCallCount,
+        totalInputTokens: this.metricTotalInputTokens,
+        totalOutputTokens: this.metricTotalOutputTokens,
+      },
+      recall: {
+        totalCount: this.metricRecallTotalCount,
+        hitCount: this.metricRecallHitCount,
+        hitRate: Math.round(hitRate * 1000) / 1000, // 保留 3 位小数
+      },
+      tools: {
+        callCount: this.metricToolCallCount,
+        failureCount: this.metricToolFailureCount,
+      },
+      context: {
+        truncationCount: this.metricTruncationCount,
+        messageCount: this.messages.length,
+        estimatedTokens: this.estimateTokens(this.messages),
+      },
+      // 衰减指标由 Agent 层填充，AgentLoop 不持有衰减逻辑
+      decay: null,
+    };
   }
 
   /**

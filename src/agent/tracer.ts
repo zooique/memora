@@ -96,4 +96,67 @@ export const TRACE_SPANS = {
   TOOL_EXEC: 'tool.execute',
   /** 最终响应生成 */
   RESPONSE: 'response.generate',
+  /** 记忆衰减执行（R-103 新增，补全衰减可观测性缺口） */
+  DECAY: 'memory.decay',
 } as const;
+
+// ─── 运行时指标快照类型（R-103 可观测性增强）────────
+
+/**
+ * Agent 运行时指标快照
+ *
+ * 由 Agent.getMetrics() 聚合 AgentLoop + Agent 两层指标产出，
+ * 供宿主项目构建监控面板或健康度诊断面板。
+ *
+ * 设计原则：
+ *   - 纯只读快照——调用时不修改任何状态
+ *   - 同步返回——不触发 LLM 或 IO
+ *   - 累计值——指标从 Agent 初始化起累加，close() 后清零
+ *
+ * 分 5 个维度：LLM 调用、记忆召回、工具调用、上下文管理、记忆衰减。
+ */
+export interface AgentMetrics {
+  /** LLM 调用相关指标 */
+  llm: {
+    /** LLM 调用总次数（含重试，每次 provider.chat 调用算一次） */
+    callCount: number;
+    /** 累计输入 token 数（基于 estimateTokens 粗略估算） */
+    totalInputTokens: number;
+    /** 累计输出 token 数（基于 estimateTokens 粗略估算） */
+    totalOutputTokens: number;
+  };
+  /** 记忆召回相关指标 */
+  recall: {
+    /** 召回总次数（每轮对话 processUserInput 算一次） */
+    totalCount: number;
+    /** 命中次数（召回结果非空算命中） */
+    hitCount: number;
+    /** 命中率（0-1，hitCount / totalCount，totalCount 为 0 时返回 0） */
+    hitRate: number;
+  };
+  /** 工具调用相关指标 */
+  tools: {
+    /** 工具调用总次数 */
+    callCount: number;
+    /** 工具调用失败次数（结果以 [ERR 开头） */
+    failureCount: number;
+  };
+  /** 上下文管理指标 */
+  context: {
+    /** 上下文截断次数（messages 超过 maxContextTokens 触发截断的次数） */
+    truncationCount: number;
+    /** 当前工作记忆消息数 */
+    messageCount: number;
+    /** 当前估算 token 数（基于 estimateTokens） */
+    estimatedTokens: number;
+  };
+  /** 记忆衰减指标（由 Agent 层填充，AgentLoop 层此字段为 null） */
+  decay: {
+    /** 衰减执行次数 */
+    runCount: number;
+    /** 累计衰减记忆数（score 被调低的记忆条数） */
+    totalDecayedCount: number;
+    /** 上次衰减时间（ISO 8601，null 表示从未执行过） */
+    lastRunAt: string | null;
+  } | null;
+}

@@ -53,4 +53,7 @@ export const LOOP_CONSTANTS = {
 
   /** 上下文截断时给 LLM 响应预留的缓冲比例。0.9 = 留 10% 给响应。 */
   CONTEXT_TOKENS_BUFFER_RATIO: 0.9,
+
+  /** 摘要缓存 TTL：消息数增长超过此值时缓存过期，需重新生成摘要。 */
+  SUMMARY_CACHE_TTL_MSGS: 10,
 } as const;
