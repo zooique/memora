@@ -19,7 +19,7 @@
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { app, ipcMain, Notification, screen } from 'electron';
+import { app, ipcMain, screen } from 'electron';
 import { createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
@@ -30,6 +30,11 @@ import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 import { ELECTRON_DIR } from './utils/esmShim.js';
+// P2-DESIGN-4 修复：精灵事件桥 + Agent 监听器提取到独立模块
+import { setupSpriteEventListeners } from './spriteEventBridge.js';
+import { setupConfigSuggestionListener, setupWriteConfirmationListener, setupAuditListener } from './agentListeners.js';
+import type { AgentListenerDeps } from './agentListeners.js';
+import type { SpriteEventBridgeDeps } from './spriteEventBridge.js';
 import {
   startSprite,
   reinitAgent,
@@ -39,7 +44,7 @@ import {
 } from '../index.js';
 import { spriteConfigStore } from '../storage/spriteConfigStore.js';
 import { loadSpriteConfig, saveSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
-import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
+import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/auditManager.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
@@ -77,11 +82,7 @@ const pendingWriteConfirmations = new Map<string, (confirmed: boolean) => void>(
 /** M2 审计日志：宿主单例（在 initializeApp 中创建） */
 let auditManager: AuditManager | null = null;
 
-/** 精灵事件订阅者列表（用于 Agent 重新初始化前取消订阅） */
-const spriteEventUnsubscribers: Array<() => void> = [];
-
-// 注意：使用 const 数组 + clear() 方法清空，而非 let 重新赋值
-// 因为 setupSpriteEventListeners 中使用 push 添加订阅
+// P2-DESIGN-4 修复：精灵事件订阅管理已移至 spriteEventBridge.ts
 
 /** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
 let currentDataDir: string = DEFAULT_DATA_DIR;
@@ -385,15 +386,27 @@ async function initializeApp(): Promise<void> {
     registerIpcHandlers(ipcContext);
 
     // 订阅精灵事件（主动提示分发）
-    setupSpriteEventListeners();
+    // P2-DESIGN-4 修复：事件桥逻辑提取到 spriteEventBridge.ts，通过依赖注入传递窗口/托盘引用
+    const spriteEventDeps: SpriteEventBridgeDeps = {
+      sprite,
+      windowManager,
+      windowStateManager,
+      trayManager,
+      incrementUnreadCount,
+    };
+    setupSpriteEventListeners(spriteEventDeps);
 
     // H1：注册配置建议回调（AutoConfigRefiner → SUGGESTION_PUSH 推送）
-    setupConfigSuggestionListener(agent);
-
     // M1：注册写入确认回调（SecurityGuard → WRITE_CONFIRMATION 推送 → 确认对话框）
-    setupWriteConfirmationListener(agent);
-
     // M2：初始化审计日志管理器 + 订阅 SecurityGuard.onAudit
+    // P2-DESIGN-4 修复：监听器逻辑提取到 agentListeners.ts
+    const agentListenerDeps: AgentListenerDeps = {
+      windowManager,
+      pendingWriteConfirmations,
+    };
+    setupConfigSuggestionListener(agent, agentListenerDeps);
+    setupWriteConfirmationListener(agent, agentListenerDeps);
+
     auditManager = new AuditManager(currentDataDir);
     setupAuditListener(agent, auditManager);
 
@@ -594,13 +607,25 @@ function registerMinimalIpcHandlers(): void {
         registerIpcHandlers(ipcContext);
 
         // 6. 订阅精灵事件
-        setupSpriteEventListeners();
+        // P2-DESIGN-4 修复：通过依赖注入传递窗口/托盘引用
+        const spriteEventDeps: SpriteEventBridgeDeps = {
+          sprite,
+          windowManager,
+          windowStateManager,
+          trayManager,
+          incrementUnreadCount,
+        };
+        setupSpriteEventListeners(spriteEventDeps);
 
         // H1：重新注册配置建议回调（新 Agent 实例）
         if (agent) {
-          setupConfigSuggestionListener(agent);
+          const agentListenerDeps: AgentListenerDeps = {
+            windowManager,
+            pendingWriteConfirmations,
+          };
+          setupConfigSuggestionListener(agent, agentListenerDeps);
           // M1：重新注册写入确认回调（新 Agent 实例）
-          setupWriteConfirmationListener(agent);
+          setupWriteConfirmationListener(agent, agentListenerDeps);
           // M2：重新初始化审计管理器 + 订阅审计事件（新 Agent 实例）
           auditManager = new AuditManager(currentDataDir);
           setupAuditListener(agent, auditManager);
@@ -675,297 +700,11 @@ function registerMinimalIpcHandlers(): void {
   });
 }
 
-// ─── 精灵事件监听（主动提示分发） ─────────────────────────
-
-/**
- * 向完整窗口发送精灵事件（若窗口可见）
- *
- * 提取自 setupSpriteEventListeners 中 3 处重复的"检查 fullWindow 可见性 → 发送 SPRITE_EVENT"模式。
- * 仅在完整窗口存在且可见时发送，避免窗口隐藏或销毁时调用 webContents.send 抛错。
- *
- * @param type 事件类型（对应 SpriteEventMap 的 key）
- * @param payload 事件载荷
- * @param silent 是否静默（默认 true，仅 proactivePrompt 为 false）
- */
-function sendSpriteEventIfVisible(
-  type: string,
-  payload: Record<string, unknown>,
-  silent = true,
-): void {
-  const fullWindow = windowManager.getFullWindow();
-  // 同时检查 isVisible 和 !isMinimized：macOS 上最小化的窗口 isVisible 可能仍为 true
-  if (
-    fullWindow &&
-    !fullWindow.isDestroyed() &&
-    fullWindow.isVisible() &&
-    !fullWindow.isMinimized()
-  ) {
-    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-      type,
-      payload,
-      silent,
-    });
-  }
-}
-
-/**
- * QC-R2-01 通用精灵事件注册 helper
- *
- * 统一"定义回调 → sprite.on 注册 → 推送取消订阅"模式，
- * 消除 setupSpriteEventListeners 中 4 处重复的 3 行模板代码。
- *
- * 类型安全：通过泛型 K 约束 eventName 必须是 SpriteEventMap 的合法键，
- * handler 的参数类型自动推导为 SpriteEventMap[K]。
- *
- * @param eventName 事件名（对应 SpriteEventMap 的 key）
- * @param handler 事件回调
- */
-function registerSpriteEvent<K extends keyof SpriteEventMap>(
-  eventName: K,
-  handler: (e: SpriteEventMap[K]) => void,
-): void {
-  if (!sprite) return;
-  sprite.on(eventName, handler);
-  spriteEventUnsubscribers.push(() => sprite?.off(eventName, handler));
-}
-
-/**
- * 订阅精灵事件，实现方案 §6.6 主动提示分发逻辑：
- * - 托盘脉冲（始终执行）
- * - 系统通知（非静默模式）
- * - 窗口内提示（非静默 + 窗口可见）
- *
- * 取消订阅机制：Agent 重新初始化前调用 unsubscribeSpriteEvents()，
- * 避免旧 sprite 实例的监听器残留导致同一事件触发多次。
- */
-function setupSpriteEventListeners(): void {
-  if (!sprite) return;
-
-  // 先取消旧订阅（防止 reinitAgent 时重复注册）
-  unsubscribeSpriteEvents();
-
-  // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示
-  registerSpriteEvent('proactivePrompt', ({ prompt, silent }) => {
-    // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
-    trayManager?.setState('active');
-
-    // 非静默模式：系统通知（检查系统是否支持，避免不支持时崩溃）
-    if (!silent && Notification.isSupported()) {
-      const notification = new Notification({
-        title: 'Memora 精灵',
-        body: prompt,
-      });
-      notification.on('click', () => {
-        windowStateManager.transition('full');
-      });
-      notification.show();
-    }
-
-    // 非静默模式 + 完整窗口可见：窗口内提示
-    if (!silent) {
-      sendSpriteEventIfVisible('proactivePrompt', { prompt, silent }, silent);
-
-      // P2-FLOW-12 浮动窗口主动提示未读徽章
-      // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
-      // 用户展开完整窗口时，resetUnreadCount 会清零徽章
-      const fullWindow = windowManager?.getFullWindow();
-      if (fullWindow && !fullWindow.isVisible()) {
-        incrementUnreadCount();
-      }
-    }
-  });
-
-  // 记忆新增 → 仪表盘计数 +1
-  registerSpriteEvent('memoryNoticed', () => {
-    sendSpriteEventIfVisible('memoryNoticed', {});
-  });
-
-  // 洞察提取 → 仪表盘计数 +1
-  registerSpriteEvent('insightGained', () => {
-    sendSpriteEventIfVisible('insightGained', {});
-  });
-
-  // 角色切换 → 顶栏角色标签更新
-  registerSpriteEvent('personaChanged', ({ from, to }) => {
-    sendSpriteEventIfVisible('personaChanged', { from, to });
-    // 角色切换不影响托盘状态（托盘状态由流式输出/静默模式/主动提示驱动）
-  });
-
-  // L5：项目切换 → 渲染层通知
-  registerSpriteEvent('projectSwitched', ({ from, to, projectName }) => {
-    sendSpriteEventIfVisible('projectSwitched', { from, to, projectName });
-  });
-
-  // L5：技能匹配 → 渲染层通知
-  registerSpriteEvent('skillMatched', ({ skill, score }) => {
-    sendSpriteEventIfVisible('skillMatched', { skill, score });
-  });
-
-  // L5：记忆召回 → 渲染层通知（每次对话触发，按需展示"想起 X 条"）
-  registerSpriteEvent('memoryRecalled', ({ count, query }) => {
-    sendSpriteEventIfVisible('memoryRecalled', { count, query });
-  });
-
-  // L5：衰减完成 → 渲染层通知（24h 节流避免每小时噪音）
-  // 注意：节流由渲染层控制（renderer 维护上次显示时间戳），主进程不节流
-  // —— 保证事件流纯净，过滤逻辑在 UI 层更可控
-  registerSpriteEvent('decayCompleted', ({ decayedCount }) => {
-    sendSpriteEventIfVisible('decayCompleted', { decayedCount });
-  });
-}
-
-/**
- * H1：注册配置建议回调
- *
- * 当 AutoConfigRefiner 从对话中提取到配置建议时，内核通过 onConfigSuggestion 回调推送。
- * 此函数将建议通过 SUGGESTION_PUSH 通道转发到渲染进程，由 SuggestionCard 组件展示。
- *
- * 调用时机：Agent 初始化完成后（initAgentFromConfig 返回后）
- * 重新初始化时：先移除旧回调（通过 reinitAgent 重建 Agent 实现，旧 Agent 已 close）
- */
-function setupConfigSuggestionListener(activeAgent: Agent): void {
-  const config = activeAgent.config;
-  if (!config) {
-    logger.warn('[setupConfigSuggestionListener] ConfigManager 未就绪，跳过配置建议回调注册');
-    return;
-  }
-
-  config.onConfigSuggestion((suggestion) => {
-    const fullWindow = windowManager.getFullWindow();
-    // 复用 sendSpriteEventIfVisible 的可见性检查模式
-    if (
-      fullWindow &&
-      !fullWindow.isDestroyed() &&
-      fullWindow.isVisible() &&
-      !fullWindow.isMinimized()
-    ) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH, {
-        type: suggestion.type,
-        name: suggestion.name,
-        content: suggestion.content,
-        confidence: suggestion.confidence,
-        source: suggestion.source,
-      });
-    } else {
-      // 窗口不可见时记录日志（建议已生成但用户看不到，下次对话可能再次提取）
-      logger.info(
-        { name: suggestion.name, type: suggestion.type },
-        '[配置建议] 窗口不可见，建议未推送（用户下次对话可能再次提取）',
-      );
-    }
-  });
-
-  logger.info('[setupConfigSuggestionListener] 配置建议回调已注册');
-}
-
-/**
- * M1：注册写入确认回调
- *
- * 当 SecurityGuard 检测到写入操作需要二次确认时，通过此回调将确认请求
- * 推送到渲染进程展示确认对话框，等待用户决策后返回结果。
- *
- * 流程：
- *   1. SecurityGuard.requestWriteConfirmation() 调用此回调
- *   2. 生成唯一 requestId，存入 pendingWriteConfirmations Map
- *   3. 通过 WRITE_CONFIRMATION 通道推送到渲染进程
- *   4. 渲染进程显示确认对话框，用户点击确认/取消
- *   5. 渲染进程通过 WRITE_CONFIRMATION_RESPONSE 传回结果
- *   6. resolve pending Promise，返回给 SecurityGuard
- *
- * 超时保护：30 秒未收到渲染进程响应时自动拒绝（防止窗口关闭等异常情况
- * 导致 Promise 永久挂起）。
- *
- * 调用时机：Agent 初始化完成后（initAgentFromConfig 返回后）
- */
-function setupWriteConfirmationListener(activeAgent: Agent): void {
-  const security = activeAgent.security;
-  if (!security) {
-    logger.warn('[setupWriteConfirmationListener] SecurityGuard 未就绪，跳过写入确认回调注册');
-    return;
-  }
-
-  // 写入确认超时时间（毫秒）：窗口关闭等异常情况下自动拒绝
-  const CONFIRMATION_TIMEOUT_MS = 30_000;
-
-  security.onWriteConfirmation(async (info) => {
-    // 不需要确认时直接放行（owner 模式 + confirmWrites=false）
-    if (!info.needsConfirm) {
-      return true;
-    }
-
-    const fullWindow = windowManager.getFullWindow();
-    if (!fullWindow || fullWindow.isDestroyed()) {
-      // 窗口不可用时自动拒绝（安全优先）
-      logger.warn({ path: info.targetPath }, '[写入确认] 窗口不可用，自动拒绝写入');
-      return false;
-    }
-
-    // 生成唯一请求 ID
-    const requestId = `wc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-
-    // 创建 Promise 等待渲染进程响应
-    const confirmed = await new Promise<boolean>((resolve) => {
-      // 超时保护：30 秒后自动拒绝
-      const timeoutId = setTimeout(() => {
-        pendingWriteConfirmations.delete(requestId);
-        logger.warn({ requestId, path: info.targetPath }, '[写入确认] 超时未响应，自动拒绝');
-        resolve(false);
-      }, CONFIRMATION_TIMEOUT_MS);
-
-      // 存入映射表（包装 resolve 以清理超时定时器）
-      pendingWriteConfirmations.set(requestId, (result: boolean) => {
-        clearTimeout(timeoutId);
-        resolve(result);
-      });
-
-      // 推送到渲染进程
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION, {
-        requestId,
-        targetPath: info.targetPath,
-        tool: info.tool,
-        description: info.description,
-        permission: info.permission,
-        needsConfirm: info.needsConfirm,
-      });
-    });
-
-    return confirmed;
-  });
-
-  logger.info('[setupWriteConfirmationListener] 写入确认回调已注册');
-}
-
-/**
- * M2：订阅 SecurityGuard.onAudit → JSONL 持久化
- *
- * 所有通过 SecurityGuard 断言的路径访问事件都会被记录为审计日志，
- * 写入 dataDir/audit.log（JSONL 格式）。写入为 fire-and-forget，
- * 写失败记一条 stderr 消息，不阻塞主流程。
- */
-function setupAuditListener(activeAgent: Agent, activeAuditManager: AuditManager): void {
-  const security = activeAgent.security;
-  if (!security) {
-    logger.warn('[setupAuditListener] SecurityGuard 未就绪，跳过审计日志');
-    return;
-  }
-  security.onAudit((event) => {
-    activeAuditManager.record(event);
-  });
-  logger.info('[setupAuditListener] 审计日志回调已注册');
-}
-
-/** 取消所有精灵事件订阅（Agent 重新初始化前调用） */
-function unsubscribeSpriteEvents(): void {
-  for (const unsubscribe of spriteEventUnsubscribers) {
-    try {
-      unsubscribe();
-    } catch (error) {
-      // 旧 sprite 实例可能已关闭，忽略取消订阅错误
-      logger.warn({ error: toError(error) }, '[unsubscribeSpriteEvents] 取消订阅失败');
-    }
-  }
-  spriteEventUnsubscribers.length = 0;
-}
+// P2-DESIGN-4 修复：以下函数已提取到独立模块
+// - sendSpriteEventIfVisible / registerSpriteEvent / setupSpriteEventListeners / unsubscribeSpriteEvents
+//   → electron/spriteEventBridge.ts
+// - setupConfigSuggestionListener / setupWriteConfirmationListener / setupAuditListener
+//   → electron/agentListeners.ts
 
 // ─── 应用生命周期 ─────────────────────────────────────────
 
