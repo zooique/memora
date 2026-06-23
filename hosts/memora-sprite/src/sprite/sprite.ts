@@ -94,7 +94,11 @@ export class Sprite {
     dataDir: string,
     projectPath?: string,
     vectorStore?: VectorStore,
-    interaction?: IInteraction,
+    /**
+     * 交互层（P2-DESIGN-5 后已不使用，保留参数以维持向后兼容）
+     * @deprecated ProactiveEngine 不再消费 interaction，此参数将在下一版本移除
+     */
+    _interaction?: IInteraction,
     /** 路径白名单（来自 Agent 的 allowedPaths，用于 fileWatcher 安全校验） */
     allowedPaths?: string[],
     /** P2-S6: 可观测性 tracer（可选），注入后关键路径会记录 span 到 trace.log */
@@ -118,13 +122,11 @@ export class Sprite {
       silentMode: this.config.silentMode,
     });
 
-    // 设置主动提示引擎的发射器和交互层
+    // 设置主动提示引擎的发射器
+    // P2-DESIGN-5 修复：移除 setInteraction 调用，ProactiveEngine 仅通过 emitSprite 发射事件
     this.proactiveEngine.setEmitter((event, payload) => {
       this.emitSprite(event, payload);
     });
-    if (interaction) {
-      this.proactiveEngine.setInteraction(interaction);
-    }
 
     // 注册文件监听触发器（默认启用）
     if (this.config.fileWatcherEnabled) {
@@ -152,9 +154,15 @@ export class Sprite {
     );
   }
 
-  /** 设置交互层（可在构造后注入，为 Electron 铺路） */
-  setInteraction(interaction: IInteraction): void {
-    this.proactiveEngine.setInteraction(interaction);
+  /**
+   * 设置交互层（可在构造后注入，为 Electron 铺路）
+   *
+   * P2-DESIGN-5 修复：ProactiveEngine 不再使用 interaction（仅通过 emitSprite 发射事件），
+   * 此方法保留为空操作以维持向后兼容，未来可移除。
+   * @deprecated ProactiveEngine 不再消费 interaction，此方法将在下一版本移除。
+   */
+  setInteraction(_interaction: IInteraction): void {
+    // 空操作：ProactiveEngine 已不依赖 interaction
   }
 
   // ─── 精灵事件系统（宿主 UI 可订阅） ──────────────────────

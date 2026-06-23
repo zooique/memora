@@ -2,12 +2,16 @@
  * Electron 交互层 — 实现 IInteraction
  *
  * 职责：
- * - 输出：向渲染进程发送主动提示 / 系统消息（非流式）
+ * - 输出：向渲染进程发送系统消息（非流式）
  * - 关闭：监听窗口关闭事件
  *
  * 注意：流式输出（agent.chat() 的 AsyncGenerator）和用户输入
  * 由 ipcHandlers.ts 直接处理，不走此交互层。
- * 此交互层仅用于 Sprite 的 ProactiveEngine 发送主动提示。
+ * 此交互层仅用于 Sprite 发送系统消息。
+ *
+ * P2-DESIGN-5 修复：ProactiveEngine 不再通过 interaction.output 发送主动提示，
+ * 改为仅通过 emitSprite('proactivePrompt') 发射事件，由 main.ts 的事件监听器展示为 banner。
+ * 原 proactive 类型的 guard 已移除（无调用方）。
  */
 
 import type { BrowserWindow } from 'electron';
@@ -33,16 +37,12 @@ export class ElectronInteraction implements IInteraction {
   }
 
   /**
-   * 输出主动提示或系统消息
+   * 输出系统消息到渲染进程对话区
    *
-   * proactive 类型：主动提示由 main.ts 的 onProactivePrompt 推送 sprite-event 显示 banner，
-   * 此处不再重复发送到对话区，避免用户看到两条重复提示。
-   * system 类型：普通系统消息，正常推送到对话区。
+   * P2-DESIGN-5 修复：移除 proactive 类型的 guard（ProactiveEngine 已不再通过此方法输出）。
    */
-  output(text: string, kind: OutputKind = 'system'): void {
-    // proactive 类型已由 banner 展示，跳过对话区推送
-    if (kind === 'proactive') return;
-    this.mainWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, { text, kind });
+  output(text: string, _kind: OutputKind = 'system'): void {
+    this.mainWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, { text });
   }
 
   /** 输出错误信息 */

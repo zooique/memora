@@ -58,13 +58,10 @@ export interface IpcContext {
   /**
    * UX-PP-04 用户是否主动触发了中断（区分用户 Stop vs 系统错误）
    *
-   * P2-AI-04 并发场景风险说明：
-   * 此标志为共享布尔值，理论上在多请求并发时可能被误判（A 请求设置 true 后，
-   * B 请求的 catch 块读取到 true 误以为是用户中断）。
-   * 实际风险已由 P1-IPC-03 竞态保护缓解：handleUserInput 入口检查进行中对话，
-   * 若有进行中对话则拒绝新请求，确保同一时刻最多只有一个活跃对话。
-   * 因此 wasUserAborted 实际仅在单对话场景下使用，并发误判风险极低。
-   * 若未来移除竞态保护，需改为 per-request 的中断标志（如 AbortController.reason）。
+   * P2-DESIGN-7 修复：改为 per-request 局部变量追踪中断原因，
+   * 通过 handleUserInput 闭包传递给 abort handler 和 catch 块。
+   * 此字段保留为兼容引用，实际不再使用（由 handleUserInput 内的局部 wasAborted 替代）。
+   * @deprecated 使用 handleUserInput 内的局部 wasAborted 变量
    */
   wasUserAborted: boolean;
   /** 获取当前未读计数（完整窗口隐藏时的消息数） */
@@ -178,11 +175,13 @@ export function registerIpcHandlers(ctx: IpcContext): void {
 
   /** 中断当前对话 */
   ipcMain.handle(IPC_CHANNELS.CHAT_ABORT, async () => {
-    // UX-PP-04 标记用户主动中断，确保 catch 块也能发送系统消息
-    ctx.wasUserAborted = true;
+    // P2-DESIGN-7 修复：使用 AbortController.reason 携带中断原因，替代共享布尔标志
+    // handleUserInput 的 catch 块通过 ctrl.reason 判断是否用户主动中断
     const ctrl = ctx.getAbortController();
     if (ctrl) {
-      ctrl.abort();
+      // 使用 DOMException 模拟标准 AbortController.abort(reason) 行为
+      // reason='user' 标识用户主动中断，catch 块据此发送系统消息
+      ctrl.abort(new DOMException('用户手动停止', 'AbortError'));
       ctx.setAbortController(null);
     }
     return { aborted: true };
@@ -797,8 +796,13 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
     }
   } catch (error) {
     if (!fullWindow.isDestroyed()) {
+      // P2-DESIGN-7 修复：通过 AbortController.reason 判断是否用户主动中断（替代共享布尔标志）
+      // reason 为 DOMException('AbortError') 时表示用户主动中断，其他错误为系统错误
+      const ctrl = ctx.getAbortController();
+      const abortReason = ctrl?.signal.reason;
+      const wasUserAborted = abortReason instanceof DOMException && abortReason.name === 'AbortError';
       // UX-PP-04 用户主动中断时，catch 块也需发送系统消息告知用户
-      if (ctx.wasUserAborted) {
+      if (wasUserAborted) {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, {
           text: '[已中断：用户手动停止]',
           kind: 'system',
@@ -812,8 +816,7 @@ async function handleUserInput(text: string, ctx: IpcContext): Promise<void> {
     errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
   } finally {
     ctx.setAbortController(null);
-    // UX-PP-04 重置用户中断标志
-    ctx.wasUserAborted = false;
+    // P2-DESIGN-7 修复：不再重置共享 wasUserAborted 标志（已改用 per-request reason）
     // 流式结束：托盘切回 idle 状态（绿色静态）
     ctx.trayManager?.setState('idle');
   }

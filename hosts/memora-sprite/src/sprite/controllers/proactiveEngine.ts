@@ -5,8 +5,10 @@
  *   1. 累积待提示事件
  *   2. 冷却保护
  *   3. 上下文感知提示生成
+ *
+ * P2-DESIGN-5 修复：移除 interaction 双通道输出，仅通过 emitSprite 发射 proactivePrompt 事件，
+ * 宿主（main.ts 的事件监听器）负责接收事件并决定是否展示为 banner。
  */
-import type { IInteraction } from '../interaction.js';
 import { logger } from 'memora';
 
 /** 待提示事件 */
@@ -31,22 +33,16 @@ export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string
 
 /** 主动提示引擎 */
 export class ProactiveEngine {
-  /** P1-7 修复：静默模式下 pendingNotices 最大累积上限，防止长时间静默后内存泄漏 */
+  /** P1-7 修复：pendingNotices 最大累积上限，防止长时间静默或 cooldown 期间内存泄漏 */
   private static readonly MAX_PENDING_NOTICES = 100;
 
   private config: ProactiveConfig;
-  private interaction: IInteraction | null = null;
   private emitSprite: SpriteEmitter | null = null;
   private pendingNotices: PendingNotice[] = [];
   private lastProactiveAt = 0;
 
   constructor(config: ProactiveConfig) {
     this.config = config;
-  }
-
-  /** 设置交互层 */
-  setInteraction(interaction: IInteraction): void {
-    this.interaction = interaction;
   }
 
   /** 设置事件发射器 */
@@ -72,13 +68,15 @@ export class ProactiveEngine {
    * 累积待提示事件
    *
    * 当事件数量达到阈值时自动触发 tryEmit。
+   * P2-CODE-1 修复：MAX_PENDING_NOTICES 上限保护应用于所有模式（非仅 silentMode），
+   * 防止 cooldown 期间事件持续累积导致内存增长。
    *
    * @param type 事件类型（memory/insight/persona/file）
    * @param summary 事件摘要
    */
   addNotice(type: string, summary: string): void {
-    // P1-7 修复：静默模式下限制累积上限，防止长时间静默后内存泄漏
-    if (this.config.silentMode && this.pendingNotices.length >= ProactiveEngine.MAX_PENDING_NOTICES) {
+    // 全局上限保护：所有模式下都限制累积上限，防止 cooldown 期间事件持续累积
+    if (this.pendingNotices.length >= ProactiveEngine.MAX_PENDING_NOTICES) {
       // 丢弃最旧的事件，保留最近的事件（FIFO 淘汰）
       this.pendingNotices.shift();
     }
@@ -108,11 +106,10 @@ export class ProactiveEngine {
     // P1-8 修复：silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
     this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false });
 
-    // 通过交互层输出主动提示（传入 kind='proactive'，Electron 模式下由 banner 展示，避免重复）
-    if (this.interaction) {
-      this.interaction.output(`\n[精灵] ${prompt}\n`, 'proactive');
-    }
-
+    // P2-DESIGN-5 修复：移除 interaction.output 双通道输出，仅通过 emitSprite 发射事件。
+    // 宿主（main.ts 的事件监听器）负责接收 proactivePrompt 事件并决定是否展示为 banner。
+    // 原 interaction.output(text, 'proactive') 与 emitSprite 双发，依赖 ElectronInteraction
+    // 对 proactive 类型的隐式 guard 跳过避免重复显示，新增 IInteraction 实现会破坏该契约。
     logger.info({ prompt }, '主动提示');
   }
 

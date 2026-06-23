@@ -66,8 +66,9 @@
   font-size: 14px;
   line-height: 1.5;
   color: var(--text);
-  background: var(--input-bg);
-  border: 1px solid var(--border);
+  /* P1-UI-1 修复：引用已定义的 CSS 变量（原 --input-bg/--border 未在 base.css 定义，导致输入框样式失效） */
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
   outline: none;
   transition: border-color 0.2s ease;
@@ -81,7 +82,8 @@
 /* 输入弹窗错误提示：红色文字，默认隐藏 */
 .prompt-error {
   font-size: 12px;
-  color: var(--danger);
+  /* P1-UI-1 修复：引用已定义的 --red 变量（原 --danger 未定义） */
+  color: var(--red);
   margin: 6px 0 0 0;
 }
 

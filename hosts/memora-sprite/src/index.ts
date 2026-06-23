@@ -599,9 +599,13 @@ async function main(): Promise<void> {
   interaction.start(async ({ text }) => {
     // 命令路由
     if (text === '/quit') {
+      // P2-CODE-3 修复：添加 .catch 防止 close() 抛错时产生 unhandled rejection
       close().then(() => {
         interaction.stop();
         process.exit(0);
+      }).catch((err: unknown) => {
+        console.error('退出清理失败:', err);
+        process.exit(1);
       });
       return;
     }

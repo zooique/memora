@@ -289,6 +289,8 @@ async function initializeApp(): Promise<void> {
     if (fullWindow) {
       let boundsSaveTimer: ReturnType<typeof setTimeout> | null = null;
       const saveBounds = () => {
+        // P2-CODE-2 修复：窗口可能已销毁，getBounds 前检查 isDestroyed
+        if (fullWindow.isDestroyed()) return;
         const bounds = fullWindow.getBounds();
         saveSpriteConfig({
           windowBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
@@ -301,6 +303,13 @@ async function initializeApp(): Promise<void> {
       fullWindow.on('move', () => {
         if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
         boundsSaveTimer = setTimeout(saveBounds, 500);
+      });
+      // P2-CODE-2 修复：窗口销毁时清理防抖定时器，避免定时器触发时操作已销毁窗口
+      fullWindow.on('closed', () => {
+        if (boundsSaveTimer) {
+          clearTimeout(boundsSaveTimer);
+          boundsSaveTimer = null;
+        }
       });
     }
 

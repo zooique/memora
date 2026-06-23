@@ -351,31 +351,44 @@ describe('Sprite + IInteraction 桥接', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('proactivePrompt 应通过 interaction.output 输出', () => {
+  it('proactivePrompt 应通过 emitSprite 发射事件（P2-DESIGN-5：不再通过 interaction.output）', () => {
+    // P2-DESIGN-5 修复后：ProactiveEngine 仅通过 emitSprite 发射 proactivePrompt 事件，
+    // 不再调用 interaction.output（避免双通道输出 + 隐式 guard 依赖）
+    const proactiveEvents: { prompt: string; triggers: string[] }[] = [];
+    sprite.on('proactivePrompt', (payload) => {
+      proactiveEvents.push(payload);
+    });
+
     // 累积 3 个事件触发 proactivePrompt
     emitAgentEvent('memoryAdded', { id: '1', source: 'insight', name: 'A' });
     emitAgentEvent('memoryAdded', { id: '2', source: 'insight', name: 'B' });
     emitAgentEvent('memoryAdded', { id: '3', source: 'insight', name: 'C' });
 
-    // interaction.output 应被调用
-    expect(interaction.outputs.length).toBeGreaterThan(0);
-    expect(interaction.outputs[0]).toContain('[精灵]');
-    expect(interaction.outputs[0]).toContain('记忆');
+    // emitSprite('proactivePrompt') 应被调用
+    expect(proactiveEvents.length).toBeGreaterThan(0);
+    expect(proactiveEvents[0].prompt).toContain('记忆');
+    // interaction.output 不应被调用（已移除双通道输出）
+    expect(interaction.outputs.length).toBe(0);
   });
 
-  it('setInteraction 应可后置注入交互层', () => {
+  it('setInteraction 应可后置注入交互层（P2-DESIGN-5：保留为空操作）', () => {
     const tmpDir2 = createTmpDir();
     const sprite2 = new Sprite(mockAgent, tmpDir2);
     const interaction2 = new MockInteraction();
+    // P2-DESIGN-5 修复后：setInteraction 保留为空操作（ProactiveEngine 不再消费 interaction）
     sprite2.setInteraction(interaction2);
     sprite2.start();
 
-    // 累积事件
+    // 累积事件，验证 proactivePrompt 事件正常发射（不依赖 interaction）
+    const proactiveEvents: { prompt: string }[] = [];
+    sprite2.on('proactivePrompt', (payload) => {
+      proactiveEvents.push(payload);
+    });
     emitAgentEvent('memoryAdded', { id: '1', source: 'insight', name: 'X' });
     emitAgentEvent('memoryAdded', { id: '2', source: 'insight', name: 'Y' });
     emitAgentEvent('memoryAdded', { id: '3', source: 'insight', name: 'Z' });
 
-    expect(interaction2.outputs.length).toBeGreaterThan(0);
+    expect(proactiveEvents.length).toBeGreaterThan(0);
     sprite2.stop();
     rmSync(tmpDir2, { recursive: true, force: true });
   });

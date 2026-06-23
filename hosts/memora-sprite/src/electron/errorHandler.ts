@@ -39,6 +39,27 @@ export interface AppError {
   timestamp: Date;
 }
 
+/**
+ * 结构化错误类（P1-CODE-1 修复）
+ *
+ * 携带显式 ErrorCode 字段，替代基于中文字符串匹配的 extractErrorCode 推断。
+ * 调用方通过 `throw new MemoraError(ErrorCode.FILE_READ_FAILED, '...')` 显式指定错误类型，
+ * ErrorHandler.normalizeError 优先读取 error.code，仅在未携带 code 时降级到字符串匹配。
+ */
+export class MemoraError extends Error {
+  /** 显式错误代码（优先于字符串推断） */
+  readonly code: ErrorCode;
+
+  constructor(code: ErrorCode, message: string, options?: { cause?: unknown; context?: Record<string, unknown> }) {
+    super(message, options as ErrorOptions);
+    this.name = 'MemoraError';
+    this.code = code;
+    if (options?.context) {
+      (this as unknown as { context?: Record<string, unknown> }).context = options.context;
+    }
+  }
+}
+
 // ─── 错误处理类 ─────────────────────────────────────────
 
 export class ErrorHandler {
@@ -71,12 +92,18 @@ export class ErrorHandler {
    * 标准化错误对象
    *
    * 复用内核 toError 完成 unknown → Error 转换。
-   * code 优先级：调用方显式传入 > 从 error.message 推断 > UNKNOWN
+   * code 优先级（P1-CODE-1 修复）：
+   *   1. 调用方显式传入 explicitCode
+   *   2. MemoraError 携带的 error.code（结构化错误）
+   *   3. 从 error.message 字符串推断（降级 fallback，已废弃，新增错误应使用 MemoraError）
+   *   4. UNKNOWN
    */
   private normalizeError(error: unknown, explicitCode?: ErrorCode, context?: string): AppError {
     const err = toError(error);
+    // 优先读取结构化错误码：MemoraError 实例携带 code 字段
+    const structCode = err instanceof MemoraError ? err.code : undefined;
     return {
-      code: explicitCode ?? this.extractErrorCode(err),
+      code: explicitCode ?? structCode ?? this.extractErrorCode(err),
       message: err.message,
       originalError: err,
       context: context ? { description: context } : undefined,
@@ -84,9 +111,14 @@ export class ErrorHandler {
     };
   }
 
-  /** 从错误对象中提取错误代码 */
+  /**
+   * 从错误对象中提取错误代码（降级 fallback）
+   *
+   * @deprecated P1-CODE-1 修复：新增错误应使用 `throw new MemoraError(ErrorCode.XXX, msg)` 显式指定 code，
+   *             不再依赖中文字符串匹配。此方法仅作为未携带 code 的遗留错误降级路径保留。
+   */
   private extractErrorCode(error: Error): ErrorCode {
-    // 检查常见的错误模式
+    // 检查常见的错误模式（降级路径，存在误匹配风险，新增错误应使用 MemoraError）
     if (error.message.includes('ENOENT') || error.message.includes('文件')) {
       return ErrorCode.FILE_READ_FAILED;
     }
