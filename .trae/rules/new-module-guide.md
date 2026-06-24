@@ -49,8 +49,9 @@ src/<new-module>/
 - [ ] 模块入口 `index.ts`（导出公共 API，不导出内部）
 - [ ] 单元测试 ≥ 80% 覆盖率
 - [ ] 至少 1 个集成测试
-- [ ] 在 `.trae/rules/project-rules.md` 的目录结构表中添加
+- [ ] 在 `.trae/rules/project-rules.md` §3 目录结构中添加
 - [ ] 在 `.trae/rules/backend_layers_rules.md` 的职责表中添加
+- [ ] 如引入新数据结构，评估是否需要 ADR（如 ADR-014 记忆关系图谱）
 
 ### 4. ADR 触发条件
 

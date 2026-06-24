@@ -17,7 +17,7 @@ description: "memora-sprite 宿主项目总则、技术栈清单、目录结构�
 | native 模块 | 零（ADR-002） | better-sqlite3（ADR-SP-002） |
 | 接口实现 | 定义接口 | 实现接口（IMemoryStorage / ISessionStore） |
 | 规则关系 | 内核规则精灵必须遵守 | 精灵规则仅约束精灵代码 |
-| ADR 前缀 | ADR-001~013 | ADR-SP-001~008 |
+| ADR 前缀 | ADR-001~014 | ADR-SP-001~008 |
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
@@ -121,7 +121,8 @@ hosts/memora-sprite/
 3. 不做语音交互——阶段一只做文本交互
 4. 不做插件市场——技能通过 configManager.addSkill 本地添加
 5. 不做移动端——专注桌面场景
-6. 不做内容感知——永远不做 keylogger、剪贴板监听、屏幕截图（ADR-SP-004）
+6. 不做内容感知——永远不做 keylogger、屏幕截图、网络流量监听（ADR-SP-004）
+   - **例外**：剪贴板感知采用三重保护方案（被动检测变化 + 主动触发读取 + 用户确认写入），详见 [迭代规划-v0.3-to-v1.0.md](../../docs/迭代规划-v0.3-to-v1.0.md) §Phase 3.1
 
 ## 6. 阶段规划
 

@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 测试规范（三层金字塔 + Mock LLM 策略）
-version: v0.2
-date: 2026-06-12
+version: v0.3
+date: 2026-06-25
 ---
 
 # 测试规范
@@ -48,7 +48,7 @@ date: 2026-06-12
 - `src/**/*.d.ts`（类型声明）
 - `src/**/*.test.ts`（测试自身）
 
-## 4. 当前测试文件清单（23 文件 · 324 用例）
+## 4. 当前测试文件清单（31 文件 · 471 用例）
 
 **agent/**：
 - [x] Agent 门面类（agent.test.ts）
@@ -78,6 +78,10 @@ date: 2026-06-12
 - [x] LLM 工厂（factory.test.ts）
 - [x] LLM Provider Mock（openaiCompatible.test.ts）
 - [x] 错误工具函数（errors.test.ts）
+
+**待新增（Phase 1，ADR-014）**：
+- [ ] 记忆关系存储（relationStore.test.ts）— IMemoryRelationStore 接口 + InMemoryRelationStore 实现
+- [ ] 冲突检测（insightExtractor.test.ts 扩展）— extract() 流程中的关系构建逻辑
 
 ## 5. 测试反模式
 

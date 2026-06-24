@@ -1,14 +1,15 @@
 ---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
-version: v0.5
-date: 2026-06-12
+version: v0.6
+date: 2026-06-25
 ---
 
 # 后端分层规范
 
 > 详见
 > [ADR-008 · 目录结构按"职责分层"](./decisions/ADR-008-directory-structure.md)
+> **记忆关系侧车**：详见 [ADR-014 · 记忆关系图谱](./decisions/ADR-014-memory-relation.md)
 
 ## 核心库 vs 宿主项目职责边界
 
@@ -19,6 +20,7 @@ date: 2026-06-12
 | -------------- | ----------------------------------------------------------------------- | ------------------------------------- | ------------- |
 | LLM 对话       | ✅ 提供 provider 抽象 + 流式协议                                        | —                                     | ✅ 已有       |
 | 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回                                                | —                                     | ✅ 已有       |
+| 记忆关系图谱   | ✅ 提供 IMemoryRelationStore 侧车接口 + InMemoryRelationStore 测试实现 | ✅ 实现 SqliteRelationStore + 关系构建逻辑 | 🚧 规划中（ADR-014） |
 | 安全           | ✅ 提供路径白名单 + 写入确认 + 权限模型                                 | —                                     | ✅ 已有       |
 | 通用文件 I/O   | ✅ 提供 4 个内置工具                                                    | —                                     | ✅ 已有       |
 | 工具注册机制   | ✅ 提供 `tools.registerTool()` + `tools.execute()`                       | ✅ 注册具体领域工具                   | ✅ 已有       |
@@ -56,7 +58,7 @@ date: 2026-06-12
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`（宿主） | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
 | `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector/AutoConfigRefiner）+ 对话快照 + 作品投影 + 用户事实提取 | 直接调 LLM HTTP（通过 provider 接口）           |
-| `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
+| `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选）+ 关系图谱侧车（IMemoryRelationStore 接口，独立于 IMemoryStorage） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入、写入 SQLite 索引 | 直接调 LLM、操作记忆索引                        |
 | `llm/`      | LLM 适配、协议解析、流式处理                       | 读写文件                                        |
@@ -68,11 +70,12 @@ date: 2026-06-12
 
 ```
 agent/      →  llm/         （对话调用 Provider）
-            →  memory/      （记忆存储 + 召回）
+            →  memory/      （记忆存储 + 召回 + 关系图谱侧车）
             →  persona/     （角色管理，通过 PersonaManager）
             →  skill/       （技能管理，通过 SkillManager）
             →  security/    （路径校验，跨切）
 memory/     →  utils/       （frontmatter 解析 + segmenter 分词）
+            →  （relationStore 是侧车，独立于 IMemoryStorage，不反向依赖 agent/）
 persona/    →  memory/      （SQLite 写入 + 类型定义）
             →  utils/       （frontmatter 解析 + segmenter 分词）
 skill/      →  memory/      （SQLite 写入 + 类型定义）
@@ -81,6 +84,12 @@ config/     →  （被所有层调）
 logging/    →  （被所有层调）
 utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 ```
+
+**记忆关系侧车的依赖约束**（ADR-014）：
+- `IMemoryRelationStore` 是独立接口，不依赖 `IMemoryStorage`
+- `InMemoryRelationStore`（测试用）仅依赖 `MemoryRelation` 类型
+- `SqliteRelationStore`（宿主实现）依赖 better-sqlite3，在宿主层
+- 关系构建逻辑（调用 LLM 判断关系类型）在宿主层，不在内核
 
 **禁止**：
 

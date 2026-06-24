@@ -1,8 +1,8 @@
 ---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
-version: v0.5
-date: 2026-06-12
+version: v0.6
+date: 2026-06-25
 ---
 
 # Memora · 项目总则
@@ -10,7 +10,7 @@ date: 2026-06-12
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/rules/decisions/` 下 13 个 ADR
+> **决策追溯**：`.trae/rules/decisions/` 下 14 个 ADR（内核 14 + 精灵 7，含草案 ADR-014）
 
 ## 1. 不可违反的硬约束
 
@@ -30,6 +30,7 @@ date: 2026-06-12
 | ------ | -------------------------------------------- | ----------------------------------------------------- |
 | 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](./decisions/ADR-001-runtime-stack.md)       |
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](./decisions/ADR-002-storage-layer.md)       |
+| 记忆关系 | IMemoryRelationStore 侧车接口（宿主注入实现） | [ADR-014](./decisions/ADR-014-memory-relation.md)    |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](./decisions/ADR-003-llm-adapter.md)         |
 | 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.7](./decisions/ADR-002-storage-layer.md)  |
 | 安全   | 两级权限 + 路径白名单                        | [ADR-006](./decisions/ADR-006-security-model.md)      |
@@ -42,7 +43,7 @@ date: 2026-06-12
 src/
 ├── index.ts        # 库导出入口（纯类型 + 接口导出，无 CLI）
 ├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（7 个专职 Manager）+ 对话快照 + 作品投影 + 关联推荐
-├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回）
+├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
 ├── llm/            # LLM 适配层
@@ -93,7 +94,7 @@ chore: 升级 dependencies
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
-- ✅ 测试 445 全量通过（InMemoryStorage，零 IO）
+- ✅ 测试 471 全量通过（InMemoryStorage，零 IO）
 - ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，6 事件类型：memoryAdded / personaSwitched / decayCompleted / memoryRecalled / sessionForked / insightExtracted）
 - ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
 - ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）
@@ -106,3 +107,14 @@ chore: 升级 dependencies
 - ✅ 评估框架（EvalScenario 类型 + collectAgentChunks/evaluateResult 工具函数）
 - ✅ 精灵主动行为（事件累积 + 上下文感知提示生成 + 冷却保护 + 静默模式）
 - ✅ 精灵配置持久化（SpriteConfig + sprite.json + 启动时加载 + 偏好变更自动保存）
+
+## 7. 阶段二规划（v0.3 → v1.0）
+
+> 详见 [迭代规划-v0.3-to-v1.0.md](../../docs/迭代规划-v0.3-to-v1.0.md)
+
+| Phase | 目标 | 关键交付物 | 状态 |
+|-------|------|-----------|------|
+| Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 拓扑可视化 | 🚧 规则已定（ADR-014 草案） |
+| Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | 📋 待启动 |
+| Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | 📋 待启动 |
+| Phase 4 | 生态准备 | 接入文档 + 存储独立包 + 技能拖入安装 | 📋 待启动 |
