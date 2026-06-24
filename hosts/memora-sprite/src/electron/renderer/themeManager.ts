@@ -25,7 +25,7 @@ export type ThemeMode = 'light' | 'dark' | 'auto';
  */
 export class ThemeManager {
   /** 主题变更回调（由 renderer.ts 注册） */
-  private themeChangeCallback: ((theme: 'light' | 'dark') => void) | null = null;
+  private themeChangeCallback: ((theme: 'light' | 'dark', source: 'user' | 'system') => void) | null = null;
 
   /** P3-FLOW-12 当前主题模式（'light' | 'dark' | 'auto'），'auto' 时跟随系统 */
   private themeMode: ThemeMode = 'light';
@@ -37,13 +37,17 @@ export class ThemeManager {
    * ADR-SP-008 注册主题变更回调
    *
    * 当用户在设置面板切换主题时触发，renderer.ts 可借此执行：
-   * - IPC 持久化到 sprite.json（真理源）
-   * - 通知主进程同步到浮动窗口
+   * - IPC 持久化到 sprite.json（真理源）— 仅 source='user' 时
+   * - 通知主进程同步到浮动窗口 — 两种 source 都需要
    * 主题的 DOM 更新和 localStorage 缓存已在 setTheme 内完成，回调仅用于 IPC 同步。
+   *
+   * QC-THEME-01 修复：新增 source 参数区分"用户主动切换"与"系统主题变化"：
+   * - source='user'：用户在设置面板主动切换，需持久化到 sprite.json
+   * - source='system'：auto 模式下系统主题变化，仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
    *
    * @param cb 主题变更回调函数
    */
-  onThemeChange(cb: (theme: 'light' | 'dark') => void): void {
+  onThemeChange(cb: (theme: 'light' | 'dark', source: 'user' | 'system') => void): void {
     this.themeChangeCallback = cb;
   }
 
@@ -110,7 +114,8 @@ export class ThemeManager {
       // localStorage 不可用时静默降级（如隐私模式）
     }
     this.syncThemeRadios(mode);
-    this.themeChangeCallback?.(effectiveTheme);
+    // QC-THEME-01：用户主动切换主题，source='user'，renderer.ts 会持久化到 sprite.json
+    this.themeChangeCallback?.(effectiveTheme, 'user');
 
     // P3 修复：移除此处的直接 IPC 调用，统一由 renderer.ts 的 onThemeChange 回调负责
     // 原代码在此处调用 notifyThemeChanged，同时 renderer.ts 第 128 行也调用，导致重复 IPC
@@ -168,8 +173,8 @@ export class ThemeManager {
         } catch {
           // localStorage 不可用时静默降级
         }
-        // 通知 renderer.ts 持久化实际主题
-        this.themeChangeCallback?.(effectiveTheme);
+        // QC-THEME-01：系统主题变化，source='system'，renderer.ts 仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
+        this.themeChangeCallback?.(effectiveTheme, 'system');
         // UI-AUDIT-P0-2.2: auto 模式下系统主题变化时同步 theme-color
         this.syncThemeColorMeta(effectiveTheme);
       };

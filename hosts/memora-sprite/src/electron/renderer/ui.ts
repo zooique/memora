@@ -835,9 +835,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * 当用户在设置面板切换主题时触发，renderer.ts 可借此执行额外同步逻辑。
    * 主题本身的持久化（localStorage）已在 setTheme 内完成，回调仅用于通知。
    *
+   * QC-THEME-01：source 参数区分"用户主动切换"与"系统主题变化"，
+   * renderer.ts 据此决定是否持久化到 sprite.json。
+   *
    * @param cb 主题变更回调函数
    */
-  onThemeChange(cb: (theme: 'light' | 'dark') => void): void {
+  onThemeChange(cb: (theme: 'light' | 'dark', source: 'user' | 'system') => void): void {
     this.themeManager.onThemeChange(cb);
   }
 

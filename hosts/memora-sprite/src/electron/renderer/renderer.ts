@@ -17,7 +17,7 @@ import { UIManager } from './ui.js';
 import { createSessionController } from './sessionController.js';
 import { createMemoryController } from './memoryController.js';
 import { createPersonaController } from './personaController.js';
-import { createSettingsController, setSilentRecoveryCallback } from './settingsController.js';
+import { createSettingsController } from './settingsController.js';
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './errorHelpers.js';
 import { getLocalDate } from '../../sprite/constants.js';
@@ -85,7 +85,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const wrappedSchedule = (ms: number) => { originalSchedule(ms); syncTimerRef(); };
 
   // FD-10 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
-  setSilentRecoveryCallback(wrappedSchedule);
+  // QC-STATE-01 修复：改用控制器方法替代原模块级导出函数
+  settingsController.setSilentRecoveryCallback(wrappedSchedule);
 
   settingsController.setupSettingsPanel();
 
@@ -147,25 +148,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   // P3-FLOW-12 使用 getThemeMode 同步三态单选按钮（light/dark/auto）
   uiManager.syncThemeRadios(uiManager.getThemeMode());
 
-  uiManager.onThemeChange((theme) => {
-    // UX-FD-12 持久化主题到 sprite.json（真理源），替换 localStorage 唯一真理源
-    window.electronAPI.updateConfig('theme', theme);
-    // UX-P2-10 通知主进程同步到浮动窗口，避免两个窗口主题不一致
+  uiManager.onThemeChange((theme, source) => {
+    // QC-THEME-01 修复：区分"用户主动切换"与"系统主题变化"
+    // source='user'：用户在设置面板主动切换，需持久化到 sprite.json（真理源）
+    // source='system'：auto 模式下系统主题变化，仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
+    if (source === 'user') {
+      window.electronAPI.updateConfig('theme', theme);
+    }
+    // UX-P2-10 两种场景都需要通知主进程同步到浮动窗口，避免两个窗口主题不一致
     window.electronAPI.notifyThemeChanged(theme);
   });
 
   // 初始化 IPC 监听器（统一注册，通过回调解耦业务逻辑）
   initIpcListeners(uiManager, {
     // 精灵事件：记忆被注意 / 洞察获得 → 仪表盘计数 +1 动画 + 刷新仪表盘
+    // QC-PERF-01：事件密集触发时使用防抖版 loadDashboard，避免频繁 IPC + DOM 操作
     onMemoryNoticed: () => {
       memoryController.pulseCounter('memory-count');
-      // FD-03 记忆变化后刷新仪表盘（累积事件数可能变化）
-      void memoryController.loadDashboard();
+      void memoryController.loadDashboardDebounced();
     },
     onInsightGained: () => {
       memoryController.pulseCounter('insight-count');
-      // FD-03 洞察变化后刷新仪表盘
-      void memoryController.loadDashboard();
+      void memoryController.loadDashboardDebounced();
     },
     // Agent 就绪：加载初始数据 + 切换到对话面板
     onAgentReady: () => {

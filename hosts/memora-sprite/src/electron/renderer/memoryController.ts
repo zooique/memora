@@ -23,8 +23,7 @@ const DASHBOARD_PULSE_MS = 300;
 /** 累积事件接近阈值的百分比（>=80% 显示黄色高亮） */
 const NEAR_THRESHOLD_RATIO = 0.8;
 
-/** 脉冲动画定时器句柄（beforeunload 时清理，避免操作已销毁的 DOM） */
-let pulseTimers: number[] = [];
+/** QC-STATE-01 修复：pulseTimers 已移入 createMemoryController 闭包内 */
 
 /**
  * 创建记忆控制器
@@ -35,6 +34,9 @@ let pulseTimers: number[] = [];
 export function createMemoryController(uiManager: UIManager) {
   /** IPC 错误处理函数（绑定 uiManager） */
   const handleIpcError = createIpcErrorHandler(uiManager);
+
+  /** QC-STATE-01 修复：脉冲动画定时器句柄移入闭包，避免模块级状态违反"不持有模块级状态"原则 */
+  let pulseTimers: number[] = [];
 
   /**
    * 设置记忆面板回调
@@ -169,6 +171,17 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
+   * QC-PERF-01 防抖定时器句柄（loadDashboard 高频调用时合并为单次执行）
+   *
+   * memoryNoticed/insightGained 事件密集触发时，避免每次都发起 IPC + DOM 操作，
+   * 300ms 内的多次调用合并为一次。
+   */
+  let dashboardDebounceTimer: number | null = null;
+
+  /** QC-PERF-01 防抖延迟（毫秒），在事件密集触发时合并 loadDashboard 调用 */
+  const DASHBOARD_DEBOUNCE_MS = 300;
+
+  /**
    * FD-03 加载完整仪表盘数据
    *
    * 对齐 CLI /dashboard 命令，在侧边栏仪表盘显示：
@@ -300,6 +313,9 @@ export function createMemoryController(uiManager: UIManager) {
     healthSection.classList.remove('hidden');
     clearElement(healthList);
 
+    // QC-PERF-02：使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
+    const fragment = document.createDocumentFragment();
+
     // 状态 → CSS 类名映射
     const statusClass: Record<string, string> = {
       healthy: 'health-ok',
@@ -328,8 +344,10 @@ export function createMemoryController(uiManager: UIManager) {
       li.appendChild(dot);
       li.appendChild(label);
       li.appendChild(meta);
-      healthList.appendChild(li);
+      fragment.appendChild(li);
     }
+
+    healthList.appendChild(fragment);
   }
 
   /**
@@ -462,6 +480,10 @@ export function createMemoryController(uiManager: UIManager) {
     }
 
     clearElement(listEl);
+
+    // QC-PERF-02：使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
+    const fragment = document.createDocumentFragment();
+
     for (const skill of skills) {
       const li = document.createElement('li');
       li.className = 'skill-item';
@@ -490,21 +512,45 @@ export function createMemoryController(uiManager: UIManager) {
         li.appendChild(layerSpan);
       }
 
-      listEl.appendChild(li);
+      fragment.appendChild(li);
     }
+
+    listEl.appendChild(fragment);
     sectionEl.classList.remove('hidden');
+  }
+
+  /**
+   * QC-PERF-01 防抖版 loadDashboard
+   *
+   * 在事件密集触发时（memoryNoticed/insightGained），300ms 内的多次调用合并为一次。
+   * 首次调用（如 Agent 就绪后初始化）立即执行，后续调用延迟合并。
+   */
+  function loadDashboardDebounced(): void {
+    if (dashboardDebounceTimer !== null) {
+      window.clearTimeout(dashboardDebounceTimer);
+    }
+    dashboardDebounceTimer = window.setTimeout(async () => {
+      dashboardDebounceTimer = null;
+      await loadDashboard();
+    }, DASHBOARD_DEBOUNCE_MS);
   }
 
   return {
     setupMemoryPanel,
     loadMemoryList,
     loadDashboard,
+    /** QC-PERF-01 防抖版 loadDashboard（事件密集触发时使用） */
+    loadDashboardDebounced,
     pulseCounter,
     renderSourceHealth,
-    /** IX-03 清理脉冲动画定时器（由 renderer.ts beforeunload 调用） */
+    /** IX-03 清理脉冲动画定时器 + 防抖定时器（由 renderer.ts beforeunload 调用） */
     cleanup: () => {
       for (const t of pulseTimers) window.clearTimeout(t);
       pulseTimers = [];
+      if (dashboardDebounceTimer !== null) {
+        window.clearTimeout(dashboardDebounceTimer);
+        dashboardDebounceTimer = null;
+      }
     },
   };
 }
