@@ -544,8 +544,8 @@
   flex: 1;
   overflow-y: auto;
   /* UX-P2-20 提取底部留白为 CSS 变量，便于统一调整（原硬编码 140px） */
-  /* 顶部无 padding，工具栏底部 1px 分割线形成丝线分隔效果 */
-  padding: 0 24px var(--input-area-height, 140px);
+  /* 顶部 16px 间距，避免第一条消息紧贴工具栏分隔线 */
+  padding: 16px 24px var(--input-area-height, 140px);
   display: flex;
   flex-direction: column;
   gap: 16px;

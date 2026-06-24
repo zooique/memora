@@ -207,7 +207,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 12px; /* ADR-NAV-001 缩小 gap（原 18px），各 section 自行管理内部间距） */
   overflow-y: auto;
 }
 
@@ -217,7 +217,9 @@
   grid-template-columns: 1fr 1fr;
   gap: 6px;
   padding: 0;
-  border-bottom: none;  /* v8：无分隔线 */
+  /* ADR-NAV-001 仪表盘底部添加细线分隔，区分数据看板与动态列表区 */
+  border-bottom: 1px solid var(--surface2);
+  padding-bottom: 12px;
 }
 
 .dash-item {
@@ -351,7 +353,7 @@
   z-index: 2; /* 凸起在非 active 按钮之上 */
 }
 
-/* ─── 侧边栏推荐记忆列表（对齐方案 §6.3 推荐区） ──────────────── */
+/* ─── 侧边栏分区（推荐/技能/健康/指标） ──────────────────── */
 .dashboard-section {
   padding: 0;
 }
@@ -362,8 +364,8 @@
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 0 4px 4px;
-  margin-bottom: 4px;
+  padding: 0 4px;
+  margin-bottom: 6px; /* ADR-NAV-001 增大标题与列表间距（原 4px） */
 }
 
 .suggestion-list {
