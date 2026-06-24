@@ -259,18 +259,8 @@
 
       <!-- 设置面板 -->
       <div id="panel-settings" class="panel">
-        <!-- UI-UX-01 设置面板顶部区域：合并状态指示器与模式提示 -->
+        <!-- UI-UX-01 设置面板顶部区域：tab 导航上方留白（原状态指示器和模式说明已迁移） -->
         <div class="settings-top-bar">
-          <!-- P3-FLOW-10 Agent 连接状态指示器：实时显示 Agent 是否就绪 -->
-          <div id="agent-status-indicator" class="agent-status-indicator unknown">
-            <span class="agent-status-dot"></span>
-            <span class="agent-status-text">检测中…</span>
-          </div>
-          <!-- UX-PP-21 设置面板交互模式说明：主题即时生效，其他需保存 -->
-          <div class="settings-mode-notice">
-            <span class="settings-mode-notice-icon">💡</span>
-            <span>主题即时生效，其余需保存</span>
-          </div>
         </div>
         <!-- UI-UX-01 设置面板分组导航：tab 切换替代长滚动 -->
         <div class="settings-tabs">
@@ -406,6 +396,8 @@
                 <!-- P3-FLOW-12 新增"跟随系统"选项，自动跟随操作系统主题 -->
                 <label><input type="radio" name="theme-mode" value="auto" /> 跟随系统</label>
               </div>
+              <!-- UX-PP-21 主题即时生效说明：从顶部栏降级到主题设置行内注释 -->
+              <span class="settings-hint">主题即时生效，其余设置需点击保存</span>
             </div>
             <div class="settings-row">
               <label for="cfg-silent">静默模式</label>
@@ -525,6 +517,12 @@
         </div>
 
         <div class="settings-actions">
+          <!-- P3-FLOW-10 Agent 连接状态指示器：移至底部按钮行左侧 -->
+          <div id="agent-status-indicator" class="agent-status-indicator unknown">
+            <span class="agent-status-dot"></span>
+            <span class="agent-status-text">检测中…</span>
+          </div>
+          <div class="settings-actions-buttons">
           <!-- P1 修复：补充按钮样式类，避免显示为浏览器默认按钮（与全站风格不一致） -->
           <!-- P3-FLOW-06 增加恢复默认按钮，用户配置出错时可一键恢复 -->
           <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
@@ -532,6 +530,7 @@
           <button id="btn-settings-skip" class="btn-secondary">稍后配置</button>
           <button id="btn-settings-cancel" class="btn-secondary">取消</button>
           <button id="btn-settings-save" class="btn-primary">保存</button>
+          </div>
         </div>
       </div>
     </main>

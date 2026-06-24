@@ -14,14 +14,11 @@
 /* 合并状态指示器与模式提示，减少视觉层级 */
 
 /* 设置面板顶部状态栏：44px 高度，与其他面板头部一致 */
+/* ─── 设置面板顶部留白（原状态指示器和模式说明已迁移） ─── */
+/* 保留空容器占位，避免 tab 导航直接贴顶 */
 .settings-top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
   height: 44px;
   flex-shrink: 0;
-  background: transparent;
 }
 
 /* ─── P3-FLOW-10 Agent 连接状态指示器 ─── */
@@ -302,11 +299,28 @@
 
 .settings-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between; /* 左侧 agent 状态，右侧按钮组 */
   gap: 8px;
   padding: 12px 24px;
   border-top: 1px solid var(--surface2);
   flex-shrink: 0;
+}
+
+/* 按钮组容器：右侧对齐 */
+.settings-actions-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto; /* 推到右侧 */
+}
+
+/* ─── 行内提示文字（主题说明等） ─── */
+.settings-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 4px;
 }
 
 /* ─── H2 用户画像面板 ───────────────────────────────────── */
