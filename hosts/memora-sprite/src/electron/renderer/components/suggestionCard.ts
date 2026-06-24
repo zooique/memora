@@ -15,10 +15,10 @@
  *   - 动画：从顶部滑入 + 淡入，操作后淡出消失
  */
 
-import type { ConfigSuggestionPayload } from '../preload.js';
-import { EventTracker } from './eventTracker.js';
-import { reportError, toError } from './errorHelpers.js';
-import { clearElement } from './domHelpers.js';
+import type { ConfigSuggestionPayload } from '../../preload.js';
+import { EventTracker } from '../helpers/eventTracker.js';
+import { reportError, toError } from '../helpers/errorHelpers.js';
+import { clearElement } from '../helpers/domHelpers.js';
 
 /**
  * 建议卡片管理器

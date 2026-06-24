@@ -20,9 +20,9 @@
  * 直接使用 window.electronAPI（types.ts 已声明全局类型）。
  */
 
-import type { ElectronAPI } from '../preload.js';
+import type { ElectronAPI } from '../../preload.js';
 // 导入 types.js 确保 window.electronAPI 全局声明加载（float.ts 作为独立入口）
-import './types.js';
+import '../types.js';
 
 /**
  * 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供）

@@ -16,8 +16,8 @@
  * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 290 行。
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo } from '../domHelpers.js';
-import type { EventTracker } from '../eventTracker.js';
+import { getOptionalElement, clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
+import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────

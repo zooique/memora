@@ -13,7 +13,7 @@
  */
 
 import type { UIManager } from './ui.js';
-import { setButtonLoading, clearElement } from './domHelpers.js';
+import { setButtonLoading, clearElement } from './helpers/domHelpers.js';
 import type { MemoryListItem } from './types.js';
 import { createIpcErrorHandler, reportError } from './errorHelpers.js';
 

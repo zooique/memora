@@ -12,7 +12,7 @@
  */
 
 import type { UIManager } from './ui.js';
-import { createIpcErrorHandler, reportError } from './errorHelpers.js';
+import { createIpcErrorHandler, reportError } from './helpers/errorHelpers.js';
 
 /**
  * 创建角色控制器

@@ -15,9 +15,9 @@
  */
 
 import type { UserProfileEntryPayload } from '../../preload.js';
-import { EventTracker } from '../eventTracker.js';
-import { reportError, toError } from '../errorHelpers.js';
-import { clearElement, formatTimeAgo } from '../domHelpers.js';
+import { EventTracker } from '../helpers/eventTracker.js';
+import { reportError, toError } from '../helpers/errorHelpers.js';
+import { clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
 
 /**
  * 用户画像面板管理器

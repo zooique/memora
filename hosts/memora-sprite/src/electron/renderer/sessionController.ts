@@ -13,7 +13,7 @@
  */
 
 import type { UIManager } from './ui.js';
-import { reportError } from './errorHelpers.js';
+import { reportError } from './helpers/errorHelpers.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色

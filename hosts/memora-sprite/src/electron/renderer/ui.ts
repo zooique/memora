@@ -16,14 +16,14 @@
  */
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
-import { getRequiredElement, getOptionalElement } from './domHelpers.js';
-import { EventTracker } from './eventTracker.js';
-import { ToastManager } from './toast.js';
-import { ModalManager } from './modal.js';
-import { OnboardingManager } from './onboarding.js';
-import { ThemeManager } from './themeManager.js';
-import { ProactiveBanner } from './proactiveBanner.js';
-import { SuggestionCardManager } from './suggestionCard.js';
+import { getRequiredElement, getOptionalElement } from './helpers/domHelpers.js';
+import { EventTracker } from './helpers/eventTracker.js';
+import { ToastManager } from './components/toast.js';
+import { ModalManager } from './components/modal.js';
+import { OnboardingManager } from './components/onboarding.js';
+import { ThemeManager } from './components/themeManager.js';
+import { ProactiveBanner } from './components/proactiveBanner.js';
+import { SuggestionCardManager } from './components/suggestionCard.js';
 import { ProfilePanelManager } from './ui/profilePanelManager.js';
 import { SettingsPanelManager } from './ui/settingsPanelManager.js';
 import type { SettingsPanelHost } from './ui/settingsPanelManager.js';

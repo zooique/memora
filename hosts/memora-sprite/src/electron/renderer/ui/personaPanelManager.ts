@@ -16,8 +16,8 @@
  * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 220 行。
  */
 
-import { clearElement } from '../domHelpers.js';
-import type { EventTracker } from '../eventTracker.js';
+import { clearElement } from '../helpers/domHelpers.js';
+import type { EventTracker } from '../helpers/eventTracker.js';
 import type { PersonaItem } from '../types.js';
 
 // ─── 角色选择器面板管理器类 ──────────────────────────────

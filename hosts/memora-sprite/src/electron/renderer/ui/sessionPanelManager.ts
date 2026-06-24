@@ -12,8 +12,8 @@
  * - 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 300 行。
  */
 
-import { formatTimeAgo, clearElement } from '../domHelpers.js';
-import type { EventTracker } from '../eventTracker.js';
+import { formatTimeAgo, clearElement } from '../helpers/domHelpers.js';
+import type { EventTracker } from '../helpers/eventTracker.js';
 
 // ─── 会话面板管理器类 ─────────────────────────────────────
 

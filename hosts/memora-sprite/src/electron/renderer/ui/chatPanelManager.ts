@@ -20,9 +20,9 @@
  * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 500 行。
  */
 
-import { clearElement, formatTimestamp } from '../domHelpers.js';
-import { renderMarkdown } from '../markdown.js';
-import type { EventTracker } from '../eventTracker.js';
+import { clearElement, formatTimestamp } from '../helpers/domHelpers.js';
+import { renderMarkdown } from '../components/markdown.js';
+import type { EventTracker } from '../helpers/eventTracker.js';
 import type { Message, ToastType } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────

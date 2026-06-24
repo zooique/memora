@@ -17,8 +17,8 @@
 
 import type { UIManager } from './ui.js';
 import type { SpriteConfigForm } from './types.js';
-import { createIpcErrorHandler, toError, reportError } from './errorHelpers.js';
-import { setButtonLoading } from './domHelpers.js';
+import { createIpcErrorHandler, toError, reportError } from './helpers/errorHelpers.js';
+import { setButtonLoading } from './helpers/domHelpers.js';
 
 /** QC-STATE-01 修复：silentRecoveryCallback 已移入 createSettingsController 闭包内 */
 

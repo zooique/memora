@@ -18,8 +18,8 @@
 
 import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipcChannels.js';
-import { reportError, toError } from './errorHelpers.js';
-import { clearElement, formatClock } from './domHelpers.js';
+import { reportError, toError } from './helpers/errorHelpers.js';
+import { clearElement, formatClock } from './helpers/domHelpers.js';
 
 /**
  * 渲染审计日志列表到 #audit-list

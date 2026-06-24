@@ -11,7 +11,7 @@
  * - 事件监听器纳入跟踪集合，cleanup 时统一清理
  */
 
-import { EventTracker } from './eventTracker.js';
+import { EventTracker } from '../helpers/eventTracker.js';
 
 /**
  * 主动提示横幅管理器

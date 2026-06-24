@@ -11,7 +11,7 @@
 
 import type { UIManager } from './ui.js';
 import type { createSettingsController } from './settingsController.js';
-import { reportError } from './errorHelpers.js';
+import { reportError } from './helpers/errorHelpers.js';
 
 /**
  * 创建静默模式恢复定时器工厂

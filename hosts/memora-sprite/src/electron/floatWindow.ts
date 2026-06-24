@@ -18,7 +18,7 @@ import * as path from 'node:path';
 import { BrowserWindow, ipcMain, Menu } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-import { ELECTRON_DIR } from './utils/esmShim.js';
+import { ELECTRON_DIR } from './esmShim.js';
 
 /** 浮动窗口右键菜单回调（由 main.ts 注入，避免 FloatWindow 直接依赖 Sprite/Agent） */
 export interface FloatWindowCallbacks {
@@ -92,7 +92,7 @@ export class FloatWindow {
     });
 
     // 加载浮动窗口 HTML
-    const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'float.html');
+    const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'float', 'float.html');
     await this.win.loadFile(htmlPath);
 
     // 安全防护：拦截外部导航和弹窗（防止 XSS 后跳转到恶意页面获取 IPC 权限）

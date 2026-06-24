@@ -36,7 +36,7 @@ import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-import { ELECTRON_DIR } from './utils/esmShim.js';
+import { ELECTRON_DIR } from './esmShim.js';
 // P2-DESIGN-4 修复：精灵事件桥 + Agent 监听器提取到独立模块
 import { setupSpriteEventListeners } from './spriteEventBridge.js';
 import { setupConfigSuggestionListener, setupWriteConfirmationListener, setupAuditListener } from './agentListeners.js';

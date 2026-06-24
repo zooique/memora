@@ -12,7 +12,7 @@
  * - 定时器纳入跟踪集合，cleanup 时统一清理，避免回调在 DOM 销毁后触发
  */
 
-import type { ToastType, ToastOptions } from './types.js';
+import type { ToastType, ToastOptions } from '../types.js';
 
 /** Toast 类型与图标映射 */
 const TOAST_ICONS: Record<ToastType, string> = {

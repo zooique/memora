@@ -13,8 +13,8 @@
  * - 确认弹窗支持并发保护，避免监听器叠加
  */
 
-import { EventTracker } from './eventTracker.js';
-import type { ConfirmDialogOptions } from './types.js';
+import { EventTracker } from '../helpers/eventTracker.js';
+import type { ConfirmDialogOptions } from '../types.js';
 
 /**
  * 模态框管理器
