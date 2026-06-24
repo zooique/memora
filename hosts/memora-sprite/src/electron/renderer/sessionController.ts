@@ -232,28 +232,34 @@ export function createSessionController(uiManager: UIManager) {
     });
     if (!confirmed) return;
 
-    const result = await window.electronAPI.deleteSession(sessionId);
-    if (result.success) {
-      uiManager.showToast('会话已删除', 'info');
+    // P2 修复：添加 try/catch 包裹整个函数体，避免 IPC 异常成为未处理的 Promise rejection
+    try {
+      const result = await window.electronAPI.deleteSession(sessionId);
+      if (result.success) {
+        uiManager.showToast('会话已删除', 'info');
 
-      // P3-FLOW-05 删除当前会话时，自动切换到剩余会话中的第一个
-      // 避免用户删除当前会话后界面停留在已删除会话的消息上
-      if (sessionId === currentSessionId) {
-        const { sessions: remaining } = await window.electronAPI.listSessions();
-        if (remaining.length > 0) {
-          // 切换到剩余会话中最近的一个（列表已按时间倒序，第一项为最近）
-          await switchSession(remaining[0]!.id);
+        // P3-FLOW-05 删除当前会话时，自动切换到剩余会话中的第一个
+        // 避免用户删除当前会话后界面停留在已删除会话的消息上
+        if (sessionId === currentSessionId) {
+          const { sessions: remaining } = await window.electronAPI.listSessions();
+          if (remaining.length > 0) {
+            // 切换到剩余会话中最近的一个（列表已按时间倒序，第一项为最近）
+            await switchSession(remaining[0]!.id);
+          } else {
+            // 没有剩余会话：清空消息区，等待用户开始新对话
+            uiManager.clearMessages();
+            currentSessionId = '';
+          }
         } else {
-          // 没有剩余会话：清空消息区，等待用户开始新对话
-          uiManager.clearMessages();
-          currentSessionId = '';
+          // 删除非当前会话：仅刷新会话列表
+          await loadSessionList();
         }
       } else {
-        // 删除非当前会话：仅刷新会话列表
-        await loadSessionList();
+        uiManager.showToast(result.error ?? '删除失败', 'error');
       }
-    } else {
-      uiManager.showToast(result.error ?? '删除失败', 'error');
+    } catch (error) {
+      reportError('deleteSession', error);
+      uiManager.showToast('删除会话失败，请检查日志', 'error');
     }
   }
 
@@ -283,12 +289,18 @@ export function createSessionController(uiManager: UIManager) {
     // 用户取消或输入为空
     if (!newName) return;
 
-    const result = await window.electronAPI.renameSession(sessionId, newName);
-    if (result.success) {
-      uiManager.showToast('会话已重命名', 'info');
-      await loadSessionList();
-    } else {
-      uiManager.showToast(result.error ?? '重命名失败', 'error');
+    // P2 修复：添加 try/catch，避免 IPC 异常成为未处理的 Promise rejection
+    try {
+      const result = await window.electronAPI.renameSession(sessionId, newName);
+      if (result.success) {
+        uiManager.showToast('会话已重命名', 'info');
+        await loadSessionList();
+      } else {
+        uiManager.showToast(result.error ?? '重命名失败', 'error');
+      }
+    } catch (error) {
+      reportError('renameSession', error);
+      uiManager.showToast('重命名会话失败，请检查日志', 'error');
     }
   }
 

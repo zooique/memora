@@ -463,8 +463,14 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   const auditClearBtn = document.getElementById('btn-audit-clear');
   if (auditClearBtn) {
     auditClearBtn.addEventListener('click', async () => {
-      await window.electronAPI.clearAuditLog();
-      loadAndRenderAuditLog();
+      // P3 修复：添加 try/catch，避免 clearAuditLog 异常成为未处理的 Promise rejection
+      try {
+        await window.electronAPI.clearAuditLog();
+        await loadAndRenderAuditLog();
+      } catch (error) {
+        reportError('clearAuditLog', error);
+        uiManager.showToast('清空审计日志失败', 'error');
+      }
     });
   }
 }

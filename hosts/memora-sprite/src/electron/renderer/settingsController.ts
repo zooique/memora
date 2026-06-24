@@ -197,7 +197,8 @@ export function createSettingsController(uiManager: UIManager) {
       // FD-10 静默模式恢复检查：若 expiresAt 已过期，自动关闭静默模式
       if (cfg.silentMode && cfg.silentModeExpiresAt) {
         const expiresAt = new Date(cfg.silentModeExpiresAt).getTime();
-        if (Date.now() >= expiresAt) {
+        // P3 修复：无效日期（NaN）时视为已过期，避免 setTimeout(fn, NaN) 立即触发错误关闭静默模式
+        if (Number.isNaN(expiresAt) || Date.now() >= expiresAt) {
           await window.electronAPI.updateConfig('silentMode', false);
           await window.electronAPI.updateConfig('silentModeExpiresAt', null);
           uiManager.showToast('静默模式已到期自动恢复', 'info');

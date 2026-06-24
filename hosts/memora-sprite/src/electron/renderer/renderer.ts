@@ -89,6 +89,32 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   settingsController.setupSettingsPanel();
 
+  // P1 修复：提前赋值 onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
+  // 原代码通过 ?? 惰性赋值（在 onAgentReady IPC 回调中），当 IPC 事件已错过时 callback 为 null，
+  // 导致 else 分支不调用 setAgentReady(true) 和 updateAgentStatus('ready')，
+  // 用户无法发送消息且状态指示器停留在"正在初始化..."
+  onAgentReadyCallback = () => {
+    // Bug 修复：幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
+    if (agentReadyHandled) return;
+    agentReadyHandled = true;
+    // UX-P2-03 标记 Agent 就绪，解除发送消息限制
+    uiManager.setAgentReady(true);
+    // P3-FLOW-10 同步设置面板状态指示器（修复：IPC 事件路径遗漏更新状态指示器）
+    settingsController.updateAgentStatus('ready', 'Agent 已就绪');
+    void sessionController.loadSessionHistory();
+    // FD-A1 Gap 1 修复：Agent 就绪后加载会话列表（第 162 行调用时 Agent 未就绪，静默失败）
+    void sessionController.loadSessionList();
+    void memoryController.loadMemoryList();
+    void personaController.loadPersonaList();
+    void memoryController.loadDashboard();
+    // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
+    void uiManager.switchPanel('chat');
+    // P2 修复：首次配置完成后检查是否需要显示三态引导
+    if (uiManager.shouldShowOnboarding()) {
+      uiManager.showOnboardingDialog();
+    }
+  };
+
   // UX-FD-12 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存
   // 内联脚本（index.html / float.html）已通过 localStorage 设置了 data-theme 属性（避免页面闪烁），
   // 此处以 sprite.json 为准进行修正，并处理首次迁移（localStorage → sprite.json）
@@ -148,33 +174,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.clearTimeout(initRetryTimer);
         initRetryTimer = null;
       }
-      // 保存回调引用，供初始化重试逻辑复用
-      onAgentReadyCallback = onAgentReadyCallback ?? (() => {
-        // Bug 修复：幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
-        if (agentReadyHandled) return;
-        agentReadyHandled = true;
-        // UX-P2-03 标记 Agent 就绪，解除发送消息限制
-        uiManager.setAgentReady(true);
-        void sessionController.loadSessionHistory();
-        // FD-A1 Gap 1 修复：Agent 就绪后加载会话列表（第 162 行调用时 Agent 未就绪，静默失败）
-        void sessionController.loadSessionList();
-        void memoryController.loadMemoryList();
-        void personaController.loadPersonaList();
-        void memoryController.loadDashboard();
-        // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
-        void uiManager.switchPanel('chat');
-        // P2 修复：首次配置完成后检查是否需要显示三态引导
-        // 初始化流程中 Agent 未就绪时提前 return，三态引导检查不会执行；
-        // 此处 Agent 就绪后补检，确保首次用户能看到窗口模型引导
-        if (uiManager.shouldShowOnboarding()) {
-          uiManager.showOnboardingDialog();
-        }
-      });
-      onAgentReadyCallback();
+      // P1 修复：onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
+      onAgentReadyCallback?.();
     },
     // UX-PP-03 流式错误重试：重新发送上一条用户消息
     onSpriteErrorRetry: () => {
       if (lastUserInput) {
+        // P2 修复：重试前检查流式状态，避免流式输出中重复发送
+        if (uiManager.isStreaming()) {
+          uiManager.showToast('请先停止当前回复再重试', 'warning');
+          return;
+        }
         // 重新显示用户消息并发送
         uiManager.appendMessage({
           role: 'user',
@@ -242,22 +252,42 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 初始化中（error 为 null）：Agent 正在启动，延迟重试而非显示错误
       if (!error) {
         settingsController.updateAgentStatus('unknown', '正在初始化...');
-        // 延迟 2 秒后重试，等待主进程完成初始化
-        initRetryTimer = window.setTimeout(async () => {
-          try {
-            const retry = await window.electronAPI.getAgentStatus();
-            if (retry.ready) {
-              settingsController.updateAgentStatus('ready', 'Agent 已就绪');
-              // 触发完整的 Agent 就绪流程（加载会话历史、记忆列表等）
-              onAgentReadyCallback?.();
-            } else if (retry.error) {
-              // 初始化失败，显示具体错误（复用 showAgentInitError 统一处理）
-              showAgentInitError(uiManager, settingsController, retry.error);
+        // P1 修复：提取为可递归的重试函数，避免状态永久停留在"正在初始化..."
+        // 原代码仅重试一次，若 retry.ready=false 且 retry.error=null 则什么都不做
+        const MAX_INIT_RETRIES = 5; // 最多重试 5 次（共 10 秒）
+        const retryAgentStatus = (attempt: number): void => {
+          initRetryTimer = window.setTimeout(async () => {
+            try {
+              const retry = await window.electronAPI.getAgentStatus();
+              if (retry.ready) {
+                initRetryTimer = null;
+                // onAgentReadyCallback 内部会更新状态指示器（幂等保护）
+                onAgentReadyCallback?.();
+              } else if (retry.error) {
+                // 初始化失败，显示具体错误（复用 showAgentInitError 统一处理）
+                initRetryTimer = null;
+                showAgentInitError(uiManager, settingsController, retry.error);
+              } else if (attempt < MAX_INIT_RETRIES) {
+                // 仍在初始化中，继续重试
+                retryAgentStatus(attempt + 1);
+              } else {
+                // 超过最大重试次数，显示超时错误
+                initRetryTimer = null;
+                settingsController.updateAgentStatus('error', 'Agent 初始化超时');
+                uiManager.showToast('Agent 初始化超时，请尝试重启应用', 'error');
+              }
+            } catch {
+              // 重试查询失败，未达上限时继续重试
+              if (attempt < MAX_INIT_RETRIES) {
+                retryAgentStatus(attempt + 1);
+              } else {
+                initRetryTimer = null;
+                settingsController.updateAgentStatus('error', 'Agent 状态查询失败');
+              }
             }
-          } catch {
-            // 重试失败，静默降级
-          }
-        }, 2000);
+          }, 2000);
+        };
+        retryAgentStatus(1);
         await settingsController.loadConfig();
         return;
       }
@@ -285,16 +315,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // Bug 修复：Agent 在渲染进程启动前就已就绪时，IPC 事件已错过，需在此主动触发就绪流程
-  // 原代码注释"会话历史已在 onAgentReady 回调中加载"在此场景下不成立（监听器尚未注册）
-  if (onAgentReadyCallback) {
-    onAgentReadyCallback();
-  } else {
-    // 极端边界：回调尚未初始化（理论上不会到达，防御性兜底）
-    void sessionController.loadSessionList();
-    void memoryController.loadMemoryList();
-    void personaController.loadPersonaList();
-  }
+  // P1 修复：Agent 在渲染进程启动前就已就绪时，IPC 事件已错过，需在此主动触发就绪流程
+  // onAgentReadyCallback 已在初始化阶段提前赋值（第 96 行），直接调用即可
+  // （原 else 分支的防御性兜底已不需要，且原 else 分支遗漏 setAgentReady(true) 导致用户无法发送消息）
+  onAgentReadyCallback();
   void settingsController.loadConfig();
   void memoryController.loadDashboard();
   // H2 预加载用户画像数据（用户切换到"画像"tab 时即可见）
