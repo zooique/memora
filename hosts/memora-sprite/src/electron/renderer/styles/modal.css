@@ -17,6 +17,8 @@
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  /* UI-AUDIT-P1-2.6: 阻止弹窗内容滚动穿透到背景页面 */
+  overscroll-behavior: contain;
   animation: modalFadeIn var(--transition-fast) ease;
 }
 

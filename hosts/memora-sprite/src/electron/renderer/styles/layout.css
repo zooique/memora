@@ -104,6 +104,15 @@
   flex-shrink: 0;
 }
 
+/* UI-AUDIT-P2-2.12: h1 作为品牌名时重置默认 margin/padding，保持视觉不变 */
+.sidebar-brand h1.sidebar-brand-name {
+  margin: 0;
+  padding: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
 .sidebar-brand-icon {
   width: 26px;
   height: 26px;
@@ -249,6 +258,8 @@
   font-size: 15px;
   font-weight: 700;
   color: var(--text);
+  /* UI-AUDIT-P1-2.4: 等宽数字，避免数字变化时仪表盘布局抖动 */
+  font-variant-numeric: tabular-nums;
   transition: transform var(--transition-slow) ease;
 }
 
@@ -551,7 +562,7 @@
     justify-content: center;
     padding: 0;
   }
-  .sidebar-brand span {
+  .sidebar-brand h1.sidebar-brand-name {
     display: none;
   }
 
@@ -587,6 +598,11 @@
   /* 推荐区：隐藏（图标模式空间不足） */
   #recommendations {
     display: none;
+  }
+
+  /* UI-AUDIT-P3-2.15: 中屏模式下消息气泡放宽 max-width，避免可用宽度减少后阅读体验差 */
+  .message {
+    max-width: 90%;
   }
 }
 

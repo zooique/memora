@@ -11,6 +11,7 @@
  */
 
 /* ─── 浅色主题（默认，对齐 v8 demo） ─────────────────────── */
+/* ⚠️ UI-AUDIT-P2-2.16 修改此处变量时，必须同步 float.html 内联变量 [SYNC-BASE-CSS] */
 :root {
   /* 大底板色（左侧栏 + 顶部栏融为一体，v8 --shell-bg） */
   --bg:          #f0f0f2;  /* 页面背景 = 大底板 */
@@ -115,7 +116,12 @@
 }
 
 /* ─── 深色主题（备选，Catppuccin Mocha） ─────────────────── */
+/* ⚠️ UI-AUDIT-P2-2.16 修改此处变量时，必须同步 float.html 内联变量 [SYNC-BASE-CSS] */
+/* UI-AUDIT-P0-2.1: 添加 color-scheme: dark，让浏览器原生控件（select/scrollbar/input）
+ * 在深色主题下自动适配，避免 Windows/macOS 下原生下拉弹出层白底黑字刺眼 */
 [data-theme="dark"] {
+  color-scheme: dark;
+
   /* 大底板色 */
   --bg:          #1e1e2e;
   --surface0:    #313244;  /* 侧边栏/顶部栏背景 */
@@ -207,6 +213,11 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+/* UI-AUDIT-P2-2.14: 按钮和可交互元素禁用双击缩放延迟，提升触屏响应速度 */
+button, a, [role="button"], select {
+  touch-action: manipulation;
 }
 
 html, body {

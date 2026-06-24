@@ -1034,6 +1034,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.settingsPanelManager.resetFormDirty();
   }
 
+  /** UI-AUDIT-P0-2.3 检查设置面板是否有未保存修改（供 beforeunload 保护使用） */
+  isSettingsDirty(): boolean {
+    return this.settingsPanelManager.isDirty();
+  }
+
   /**
    * P3-FLOW-10 更新 Agent 连接状态指示器（委托到 SettingsPanelManager）
    *

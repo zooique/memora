@@ -15,6 +15,10 @@
     /* ===== 主题变量（从 base.css 提取浮动窗口所需的最小集） ===== */
     /* UX-P2-12 同步 base.css 的变量值，确保两个窗口主题一致
      * UI-P3-02 补齐缺失的语义色变量（--red/--pink 等），与 base.css 保持 1:1 对齐
+     *
+     * ⚠️ UI-AUDIT-P2-2.16 同步维护提醒：
+     * 修改 base.css 变量时，必须同步更新此处！
+     * 搜索标记 [SYNC-BASE-CSS] 可快速定位所有需要同步的变量块
      */
     :root {
       /* 背景与表面色 */
@@ -322,7 +326,8 @@
       <!-- 阶段二：emoji 占位；阶段三：替换为 <img src="生成的形态图片"> -->
       <span id="sphere-emoji">🧚</span>
       <!-- UI-AUDIT: 添加 width/height 防止 CLS（虽 display:none，保持规范） -->
-      <img id="sphere-image" alt="" width="72" height="72" />
+      <!-- UI-AUDIT-P3-2.22: 添加 loading="lazy"，图片在视口外时延迟加载 -->
+      <img id="sphere-image" alt="" width="72" height="72" loading="lazy" />
     </div>
     <!-- 状态指示点（idle/active/sleeping） -->
     <div id="status-dot" aria-hidden="true"></div>

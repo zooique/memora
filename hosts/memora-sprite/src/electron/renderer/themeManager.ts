@@ -99,6 +99,10 @@ export class ThemeManager {
       // 浅色为默认，移除属性即可
       document.documentElement.removeAttribute('data-theme');
     }
+
+    // UI-AUDIT-P0-2.2: 同步更新 theme-color meta 标签，让任务栏/标题栏颜色跟随主题
+    this.syncThemeColorMeta(effectiveTheme);
+
     try {
       // P3-FLOW-12 'auto' 模式下缓存实际主题（供内联脚本读取，避免闪烁）
       localStorage.setItem('memora-theme', effectiveTheme);
@@ -170,8 +174,26 @@ export class ThemeManager {
         }
         // 通知 renderer.ts 持久化实际主题
         this.themeChangeCallback?.(effectiveTheme);
+        // UI-AUDIT-P0-2.2: auto 模式下系统主题变化时同步 theme-color
+        this.syncThemeColorMeta(effectiveTheme);
       };
       mediaQuery.addEventListener('change', this.mediaQueryListener);
+    }
+  }
+
+  /**
+   * UI-AUDIT-P0-2.2 同步更新 <meta name="theme-color"> 标签内容
+   *
+   * 让操作系统任务栏/标题栏颜色跟随当前主题：
+   * - 浅色主题：#f0f0f2（大底板色）
+   * - 深色主题：#1e1e2e（大底板色）
+   *
+   * @param effectiveTheme 当前实际生效的主题（'light' | 'dark'）
+   */
+  private syncThemeColorMeta(effectiveTheme: 'light' | 'dark'): void {
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (meta) {
+      meta.content = effectiveTheme === 'dark' ? '#1e1e2e' : '#f0f0f2';
     }
   }
 

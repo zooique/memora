@@ -168,7 +168,7 @@
 /* FD-09 会话列表操作按钮 */
 .session-list-item-del,
 .session-list-item-rename {
-  /* FD-09 操作按钮主动可见（非 hover-only），通过 opacity 区分常态/hover */
+  /* UI-AUDIT-P1-2.9: 改为 hover-only 显示，避免半透明状态既不够明显又占据点击区域导致误触 */
   display: block;
   position: absolute;
   top: 50%;
@@ -179,7 +179,7 @@
   background: transparent;
   font-size: 11px;
   cursor: pointer;
-  opacity: 0.45;
+  opacity: 0;
   transition: opacity var(--transition-fast);
 }
 
@@ -310,6 +310,8 @@
   color: var(--text);
   font-weight: 500;
   line-height: 1.4;
+  /* UI-AUDIT-P1-2.8: 为绝对定位的关闭按钮留出空间，避免与 actions 重叠 */
+  margin-right: 30px;
 }
 
 #proactive-banner .banner-actions {
@@ -557,6 +559,10 @@
   display: flex;
   gap: 10px;
   max-width: 80%;
+  /* UI-AUDIT-P1-2.7: content-visibility 让不可见消息延迟渲染，长对话性能优化 */
+  content-visibility: auto;
+  /* contain-in-size 确保 content-visibility 正确计算元素尺寸 */
+  contain-intrinsic-size: auto 60px;
   /* UX-PP-11 合并 slideIn/fadeIn 为统一的 fadeIn 动画 */
   animation: fadeIn var(--transition-base) ease-out;
 }
@@ -962,6 +968,8 @@
   color: var(--text);
   /* 标题不使用霞鹜文楷，保持系统字体清晰度 */
   font-family: system-ui, -apple-system, sans-serif;
+  /* UI-AUDIT-P3-2.19: 平衡文本换行，避免窄屏下产生孤字 */
+  text-wrap: balance;
 }
 
 /* 副标题：浅色描述 */
@@ -1208,3 +1216,4 @@
   /* 进入动画：淡入 */
   animation: fadeIn var(--transition-base) ease-out;
 }
+

@@ -311,7 +311,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 // 页面卸载时清理资源：UI 监听器 + IPC 监听器
 // IPC 监听器若不清理，重新加载页面时会累积，导致同一事件触发多次
-window.addEventListener('beforeunload', () => {
+window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
+  // UI-AUDIT-P0-2.3: 设置面板有未保存修改时，阻止页面关闭/刷新
+  // 防止用户意外丢失 LLM 配置（含 API Key）等关键数据
+  if (uiManager?.getCurrentPanel() === 'settings' && uiManager.isSettingsDirty()) {
+    e.preventDefault();
+    // 现代浏览器要求设置 returnValue 才能触发确认对话框
+    e.returnValue = '';
+  }
+
   uiManager?.cleanup();
   // 清理静默模式恢复定时器，避免定时器触发时操作已销毁的 DOM 或产生未捕获 rejection
   if (silentRecoveryTimer !== null) {

@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- UI-AUDIT-P0-2.2: theme-color 让任务栏/标题栏颜色跟随主题，默认浅色 -->
+  <meta name="theme-color" content="#f0f0f2" />
   <!-- CSP：仅允许 self 资源，移除 CDN 依赖以支持离线使用 + 安全加固 -->
   <!-- P2-11 移除 style-src 'unsafe-inline'，主题初始化改由主进程 executeJavaScript 注入 -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'" />
@@ -29,9 +31,10 @@
     <!-- 侧边栏 -->
     <aside id="sidebar">
       <!-- 品牌区（对齐 demo：🧚 Memora 作为唯一品牌标识） -->
+      <!-- UI-AUDIT-P2-2.12: 品牌区使用 h1 作为页面最高层级标题，语义 HTML 规范 -->
       <div class="sidebar-brand">
         <div class="sidebar-brand-icon">🧚</div>
-        <span>Memora</span>
+        <h1 class="sidebar-brand-name" translate="no">Memora</h1>
       </div>
 
       <!-- 角色选择器（点击展开下拉菜单） -->
@@ -171,7 +174,7 @@
             <div id="session-dropdown" class="dropdown session-dropdown hidden">
               <!-- FD-08 会话搜索过滤 -->
               <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder，屏幕阅读器无法识别用途） -->
-              <input type="text" id="session-search" class="session-search" placeholder="搜索会话..." autocomplete="off" aria-label="搜索会话" />
+              <input type="text" id="session-search" class="session-search" placeholder="搜索会话…" autocomplete="off" aria-label="搜索会话" />
               <ul id="session-list" class="session-list"></ul>
             </div>
           </div>
@@ -215,7 +218,7 @@
         </div>
         <div id="input-area">
           <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder） -->
-          <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1" aria-label="输入消息"></textarea>
+          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1" aria-label="输入消息"></textarea>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
             <div class="input-actions-left">
@@ -262,7 +265,7 @@
           <!-- P3-FLOW-10 Agent 连接状态指示器：实时显示 Agent 是否就绪 -->
           <div id="agent-status-indicator" class="agent-status-indicator unknown">
             <span class="agent-status-dot"></span>
-            <span class="agent-status-text">检测中...</span>
+            <span class="agent-status-text">检测中…</span>
           </div>
           <!-- UX-PP-21 设置面板交互模式说明：主题即时生效，其他需保存 -->
           <div class="settings-mode-notice">
@@ -303,15 +306,15 @@
             </div>
             <div class="settings-row">
               <label for="cfg-llm-provider">提供商（provider）</label>
-              <input type="text" id="cfg-llm-provider" placeholder="deepseek / openai / 自定义" />
+              <input type="text" id="cfg-llm-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" />
             </div>
             <div class="settings-row">
               <label for="cfg-llm-model">模型（model）</label>
-              <input type="text" id="cfg-llm-model" placeholder="deepseek-chat" />
+              <input type="text" id="cfg-llm-model" placeholder="deepseek-chat" autocomplete="off" />
             </div>
             <div class="settings-row">
               <label for="cfg-llm-base-url">API 地址（baseUrl）</label>
-              <input type="text" id="cfg-llm-base-url" placeholder="https://api.deepseek.com" />
+              <input type="text" id="cfg-llm-base-url" placeholder="https://api.deepseek.com" autocomplete="off" />
             </div>
             <div class="settings-row">
               <label for="cfg-llm-api-key">API Key</label>
@@ -335,15 +338,15 @@
               </div>
               <div class="settings-row">
                 <label for="cfg-bg-provider">提供商（provider）</label>
-                <input type="text" id="cfg-bg-provider" placeholder="deepseek / openai / 自定义" disabled />
+                <input type="text" id="cfg-bg-provider" placeholder="deepseek / openai / 自定义" disabled autocomplete="off" />
               </div>
               <div class="settings-row">
                 <label for="cfg-bg-model">模型（model）</label>
-                <input type="text" id="cfg-bg-model" placeholder="deepseek-chat" disabled />
+                <input type="text" id="cfg-bg-model" placeholder="deepseek-chat" disabled autocomplete="off" />
               </div>
               <div class="settings-row">
                 <label for="cfg-bg-base-url">API 地址（baseUrl）</label>
-                <input type="text" id="cfg-bg-base-url" placeholder="https://api.deepseek.com" disabled />
+                <input type="text" id="cfg-bg-base-url" placeholder="https://api.deepseek.com" disabled autocomplete="off" />
               </div>
               <div class="settings-row">
                 <label for="cfg-bg-api-key">API Key</label>
@@ -375,11 +378,11 @@
             </div>
             <div class="settings-row">
               <label for="cfg-emb-model">模型（model）</label>
-              <input type="text" id="cfg-emb-model" placeholder="text-embedding-3-small" />
+              <input type="text" id="cfg-emb-model" placeholder="text-embedding-3-small" autocomplete="off" />
             </div>
             <div class="settings-row">
               <label for="cfg-emb-base-url">API 地址（留空复用 LLM 配置）</label>
-              <input type="text" id="cfg-emb-base-url" placeholder="https://api.openai.com/v1" />
+              <input type="text" id="cfg-emb-base-url" placeholder="https://api.openai.com/v1" autocomplete="off" />
             </div>
             <div class="settings-row">
               <label for="cfg-emb-api-key">API Key（留空复用 LLM 配置）</label>
@@ -430,7 +433,7 @@
             </div>
             <div class="settings-row">
               <label for="cfg-watcher-paths">监听路径（逗号分隔）</label>
-              <input type="text" id="cfg-watcher-paths" placeholder="." />
+              <input type="text" id="cfg-watcher-paths" placeholder="." autocomplete="off" />
             </div>
             <div class="settings-row">
               <label for="cfg-watcher-debounce">防抖时间（毫秒）</label>
@@ -448,7 +451,7 @@
             </div>
             <div class="settings-row">
               <label for="cfg-default-persona">默认角色</label>
-              <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" />
+              <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" autocomplete="off" />
             </div>
           </div>
         </div>
@@ -573,7 +576,7 @@
       <div class="modal-body">
         <label for="memory-add-source">来源（source）</label>
         <!-- source 下拉：提供常用预设，支持自定义输入（datalist 兼顾灵活性与一致性） -->
-        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail ..." />
+        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" />
         <datalist id="source-presets">
           <option value="profile">用户画像</option>
           <option value="insight">洞察记忆</option>
@@ -584,9 +587,9 @@
           <option value="session">会话记忆</option>
         </datalist>
         <label for="memory-add-name">名称（name）</label>
-        <input type="text" id="memory-add-name" placeholder="记忆名称" />
+        <input type="text" id="memory-add-name" placeholder="记忆名称" autocomplete="off" />
         <label for="memory-add-content">内容（content）</label>
-        <textarea id="memory-add-content" rows="6" placeholder="记忆内容..."></textarea>
+        <textarea id="memory-add-content" rows="6" placeholder="记忆内容…"></textarea>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" data-modal="memory-add-modal">取消</button>
