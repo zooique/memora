@@ -241,6 +241,8 @@ export interface ElectronAPI {
   onStreamToolResult: (cb: (msg: { messageId: string; name: string; ok: boolean; summary?: string }) => void) => void;
   /** UX-P2-01 思考阶段监听（recalling/processing/archiving） */
   onStreamThinking: (cb: (msg: { messageId: string; phase: string }) => void) => void;
+  /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
+  onContextTruncated: (cb: (msg: { messageId: string; count: number }) => void) => void;
   /** 移除所有流式监听器（页面卸载或重新初始化时调用） */
   removeStreamListeners: () => void;
 

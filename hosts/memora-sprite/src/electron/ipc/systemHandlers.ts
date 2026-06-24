@@ -67,17 +67,13 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         // 降级：metrics 不可用时仪表盘仍正常返回
       }
       // GAP-1 已加载技能列表（消费内核 agent.skills.list）
-      let skills: Array<{ name: string; keywords: string[]; description: string; layer: string }> = [];
-      try {
-        skills = ctx.agent.skills.list.map((s) => ({
-          name: s.name,
-          keywords: s.keywords,
-          description: s.description ?? '',
-          layer: s.layer,
-        }));
-      } catch {
-        // 降级：skills 不可用时仪表盘仍正常返回
-      }
+      // 修复 TS18047：agent.skills 可能为 null，使用可选链 + 空数组降级
+      const skills = ctx.agent.skills?.list.map((s) => ({
+        name: s.name,
+        keywords: s.keywords,
+        description: s.description ?? '',
+        layer: s.layer,
+      })) ?? [];
       return {
         total: data.total,
         bySource: data.bySource,

@@ -126,7 +126,8 @@ export function createMemoryController(uiManager: UIManager) {
     });
 
     // P2-FLOW-08 编辑记忆：复用 MEMORIES_ADD 通道（底层 upsert 语义）
-    uiManager.onMemoryEdit(async (id: string, content: string) => {
+    // 修复 TS6133：id 参数未使用（编辑时通过 dataset 获取 source/name），加下划线前缀
+    uiManager.onMemoryEdit(async (_id: string, content: string) => {
       // 从详情弹窗 dataset 获取 source 和 name（编辑时不改变这两个字段）
       const detailModal = document.getElementById('memory-detail-modal');
       const source = detailModal?.dataset.memorySource ?? '';
