@@ -302,8 +302,10 @@ export class SettingsPanelManager {
 
     // LLM 预设切换：自动填充 provider/model/baseUrl
     if (this.cfgLlmPreset) {
-      this.events.addEventListener(this.cfgLlmPreset, 'change', () => {
-        const presetKey = this.cfgLlmPreset!.value;
+      // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+      const presetEl = this.cfgLlmPreset;
+      this.events.addEventListener(presetEl, 'change', () => {
+        const presetKey = presetEl.value;
         if (presetKey) {
           this.applyLlmPreset(presetKey);
         }
@@ -422,6 +424,8 @@ export class SettingsPanelManager {
   private initBackgroundProviderToggle(): void {
     if (!this.cfgBgEnabled) return;
 
+    // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+    const bgEnabledEl = this.cfgBgEnabled;
     const bgFields = [this.cfgBgProvider, this.cfgBgModel, this.cfgBgBaseUrl, this.cfgBgApiKey, this.cfgBgToggleKey];
     const applyState = (enabled: boolean) => {
       for (const field of bgFields) {
@@ -429,8 +433,8 @@ export class SettingsPanelManager {
       }
     };
 
-    this.events.addEventListener(this.cfgBgEnabled, 'change', () => {
-      applyState(this.cfgBgEnabled!.checked);
+    this.events.addEventListener(bgEnabledEl, 'change', () => {
+      applyState(bgEnabledEl.checked);
     });
   }
 

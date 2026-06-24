@@ -9,6 +9,7 @@
  */
 
 import { ipcMain } from 'electron';
+import { logger, toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { safeHandle } from './types.js';
@@ -56,15 +57,17 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       let sourceHealth = null;
       try {
         sourceHealth = ctx.sprite.sourceHealth();
-      } catch {
-        // 降级：sourceHealth 不可用时仪表盘仍正常返回
+      } catch (err) {
+        // 降级：sourceHealth 不可用时仪表盘仍正常返回，debug 级别避免日志噪音
+        logger.debug({ err: toError(err).message }, 'sourceHealth 获取失败，降级为 null');
       }
       // OBS-01：Agent 运行时指标（消费内核 agent.getMetrics()）
       let metrics = null;
       try {
         metrics = ctx.sprite.getMetrics();
-      } catch {
-        // 降级：metrics 不可用时仪表盘仍正常返回
+      } catch (err) {
+        // 降级：metrics 不可用时仪表盘仍正常返回，debug 级别避免日志噪音
+        logger.debug({ err: toError(err).message }, 'metrics 获取失败，降级为 null');
       }
       // GAP-1 已加载技能列表（消费内核 agent.skills.list）
       // 修复 TS18047：agent.skills 可能为 null，使用可选链 + 空数组降级

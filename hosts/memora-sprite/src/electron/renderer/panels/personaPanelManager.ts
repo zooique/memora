@@ -71,29 +71,32 @@ export class PersonaPanelManager {
   /** 初始化角色选择器事件监听 */
   initPersonaSelectorListeners(): void {
     if (!this.personaSelectorEl || !this.personaDropdownEl) return;
+    // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+    const selectorEl = this.personaSelectorEl;
+    const dropdownEl = this.personaDropdownEl;
 
     // 点击选择器切换下拉菜单
-    this.events.addEventListener(this.personaSelectorEl, 'click', (e) => {
+    this.events.addEventListener(selectorEl, 'click', (e) => {
       e.stopPropagation();
       this.togglePersonaDropdown();
     });
 
     // UI-AR-01 键盘支持：Enter/Space 展开下拉，Escape 关闭
-    this.events.addEventListener(this.personaSelectorEl, 'keydown', (e) => {
+    this.events.addEventListener(selectorEl, 'keydown', (e) => {
       const ke = e as KeyboardEvent;
       if (ke.key === 'Enter' || ke.key === ' ') {
         ke.preventDefault();
         this.togglePersonaDropdown();
       } else if (ke.key === 'Escape') {
-        this.personaDropdownEl!.classList.add('hidden');
-        this.personaSelectorEl!.focus();
+        dropdownEl.classList.add('hidden');
+        selectorEl.focus();
       }
     });
 
     // UI-AR-01 键盘导航：在下拉菜单内用方向键移动焦点
-    this.events.addEventListener(this.personaDropdownEl, 'keydown', (e) => {
+    this.events.addEventListener(dropdownEl, 'keydown', (e) => {
       const ke = e as KeyboardEvent;
-      const items = this.personaDropdownEl!.querySelectorAll<HTMLElement>('.dropdown-item');
+      const items = dropdownEl.querySelectorAll<HTMLElement>('.dropdown-item');
       if (items.length === 0) return;
 
       const currentIdx = Array.from(items).findIndex(
@@ -111,14 +114,28 @@ export class PersonaPanelManager {
         const prevItem = items[prevIdx];
         if (prevItem) prevItem.focus();
       } else if (ke.key === 'Escape') {
-        this.personaDropdownEl!.classList.add('hidden');
-        this.personaSelectorEl!.focus();
+        dropdownEl.classList.add('hidden');
+        selectorEl.focus();
       }
     });
 
     // 点击页面其他区域关闭下拉菜单（走统一清理机制）
     this.events.addEventListener(document, 'click', () => {
       this.personaDropdownEl?.classList.add('hidden');
+    });
+
+    // QC-22 角色下拉菜单事件委托：在 dropdown 容器上注册统一 click 监听器，
+    // 通过 data-action="switch-persona" + data-persona-name 分发，
+    // 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理
+    this.events.addEventListener(this.personaDropdownEl, 'click', (e: Event) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest<HTMLElement>('[data-action="switch-persona"]');
+      if (item) {
+        e.stopPropagation();
+        const personaName = item.dataset.personaName ?? '';
+        this.personaSwitchCallback?.(personaName);
+        this.personaDropdownEl!.classList.add('hidden');
+      }
     });
   }
 
@@ -169,12 +186,9 @@ export class PersonaPanelManager {
       item.setAttribute('tabindex', '-1');
       item.setAttribute('role', 'option');
       item.setAttribute('aria-selected', p.active ? 'true' : 'false');
-
-      item.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.personaSwitchCallback?.(p.name);
-        dropdown.classList.add('hidden');
-      });
+      // QC-22 事件委托：用 data-action + data-persona-name 替代直接 addEventListener
+      item.setAttribute('data-action', 'switch-persona');
+      item.setAttribute('data-persona-name', p.name);
 
       dropdown.appendChild(item);
     }

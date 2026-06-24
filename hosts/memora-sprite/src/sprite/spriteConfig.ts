@@ -19,6 +19,7 @@
 import { resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { logger, toError } from 'memora';
 
 /** 精灵持久化配置 */
 export interface SpriteConfig {
@@ -219,8 +220,9 @@ export function loadSpriteConfig(): Required<SpriteConfig> {
     }
 
     return migrated;
-  } catch {
-    // 文件损坏，静默回退
+  } catch (err) {
+    // 文件损坏时回退到默认配置，记录警告便于排查
+    logger.warn({ err: toError(err).message, filePath: SPRITE_CONFIG_PATH }, '精灵配置文件损坏，使用默认配置');
     return { ...DEFAULT_SPRITE_CONFIG };
   }
 }
@@ -255,8 +257,9 @@ export function saveSpriteConfig(config: SpriteConfig): void {
         if (isPlainObject(parsed)) {
           existing = parsed;
         }
-      } catch {
-        // 文件损坏，从空开始
+      } catch (err) {
+        // 文件损坏时从空配置开始，记录警告便于排查
+        logger.warn({ err: toError(err).message, filePath }, '读取现有精灵配置失败，从空配置开始');
       }
     }
     merged = { ...existing, ...config };

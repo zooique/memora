@@ -16,6 +16,7 @@
  *   - 节流/审计交给工具系统自然触发（每次调用走 SecurityGuard 审计日志）
  */
 import { execFile } from 'node:child_process';
+import { logger, toError } from 'memora';
 import type { ToolDefinition, ToolHandler, ToolContext } from 'memora';
 
 /**
@@ -127,6 +128,8 @@ export const memorySearchHandler: ToolHandler = async (args, _ctx: ToolContext) 
     const lines = hits.map((h) => `- [${h.name}] ${h.contentPreview} (score: ${h.score.toFixed(2)})`);
     return `找到 ${hits.length} 条相关记忆：\n${lines.join('\n')}`;
   } catch (err) {
+    // 记忆搜索失败时返回错误信息给 LLM，同时记录警告便于排查
+    logger.warn({ err: toError(err).message, query }, '记忆搜索失败');
     return `错误：记忆搜索失败：${err instanceof Error ? err.message : String(err)}`;
   }
 };

@@ -280,8 +280,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 settingsController.updateAgentStatus('error', 'Agent 初始化超时');
                 uiManager.showToast('Agent 初始化超时，请尝试重启应用', 'error');
               }
-            } catch {
-              // 重试查询失败，未达上限时继续重试
+            } catch (retryErr) {
+              // 重试查询失败，未达上限时继续重试，debug 级别避免日志噪音
+              reportError('init/agentStatusRetry', retryErr);
               if (attempt < MAX_INIT_RETRIES) {
                 retryAgentStatus(attempt + 1);
               } else {

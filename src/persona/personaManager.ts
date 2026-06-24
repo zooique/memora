@@ -91,10 +91,12 @@ export class PersonaManager {
         this.activePersona = found;
       } else {
         logger.warn({ requested: activePersona }, '未找到指定角色，使用第一个');
-        this.activePersona = this.personaList[0]!;
+        // QC-17 移除非空断言：personaList 已在第 72 行检查非空
+        this.activePersona = this.personaList[0] ?? this.createDefaultPersona();
       }
     } else {
-      this.activePersona = this.personaList[0]!;
+      // QC-17 移除非空断言：personaList 已在第 72 行检查非空
+      this.activePersona = this.personaList[0] ?? this.createDefaultPersona();
     }
 
     logger.info({ persona: this.activePersona.name }, '角色已激活');
@@ -174,7 +176,9 @@ export class PersonaManager {
     if (matches.length === 0) return null;
 
     matches.sort((a, b) => b.score - a.score);
-    const best = matches[0]!;
+    // QC-17 移除非空断言：matches 已在第 174 行检查非空
+    const best = matches[0];
+    if (!best) return null;
 
     if (best.score < 0.5) return null;
 

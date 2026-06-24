@@ -105,7 +105,8 @@ export function createLlmProvider(config: Config): LlmProvider {
 
   // 优先使用新的多 Provider 格式
   if (llm.providers && Object.keys(llm.providers).length > 0) {
-    const active = llm.active ?? Object.keys(llm.providers)[0]!;
+    // QC-17 移除非空断言：Object.keys 已检查 length > 0
+    const active = llm.active ?? Object.keys(llm.providers)[0] ?? '';
     const providerConfig = llm.providers[active];
     if (!providerConfig) {
       throw configError('无效的 active Provider', `active="${active}" 不在 providers 映射表中`, [

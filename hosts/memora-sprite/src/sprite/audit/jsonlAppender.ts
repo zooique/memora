@@ -15,6 +15,7 @@
 import { appendFile, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { logger, toError } from 'memora';
 
 /** JSONL 追加写入器配置 */
 export interface JsonlAppenderOptions {
@@ -91,12 +92,16 @@ export class JsonlAppender {
           try {
             return JSON.parse(line) as T;
           } catch {
+            // 单行 JSON 解析失败时跳过该行，debug 级别避免日志噪音
+            logger.debug({ line: line.slice(0, 100) }, '审计日志行解析失败，跳过该行');
             return null;
           }
         })
         .filter((e): e is T => e !== null)
         .reverse(); // 最新在前
-    } catch {
+    } catch (err) {
+      // 文件读取失败时返回空数组，记录警告便于排查
+      logger.warn({ err: toError(err).message, filePath: this.filePath }, '读取审计日志失败');
       return [];
     }
   }
@@ -130,8 +135,9 @@ export class JsonlAppender {
         const trimmed = lines.slice(-this.maxEntries).join('\n') + '\n';
         await writeFile(this.filePath, trimmed, 'utf8');
       }
-    } catch {
-      // 读取/截断失败，静默忽略（日志本身是辅助信息）
+    } catch (err) {
+      // 读取/截断失败时静默忽略（日志本身是辅助信息），debug 级别避免日志噪音
+      logger.debug({ err: toError(err).message, filePath: this.filePath }, '审计日志截断失败');
     }
   }
 }

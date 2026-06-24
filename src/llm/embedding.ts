@@ -134,14 +134,18 @@ export class EmbeddingProvider {
 
     // 填充结果 + 更新缓存
     for (let i = 0; i < uncached.length; i++) {
-      const text = uncached[i]!;
+      // QC-17 移除非空断言：循环条件保证索引有效，null 检查兜底
+      const text = uncached[i];
+      if (!text) continue;
       const vector = sorted[i]?.embedding;
       if (!vector) {
         logger.warn({ text: text.slice(0, 50), index: i }, 'Embedding 缺失，跳过');
         continue;
       }
       this.cache.set(text, vector);
-      results[uncachedIndices[i]!] = { text, vector };
+      // QC-17 移除非空断言：null 检查兜底
+      const idx = uncachedIndices[i];
+      if (idx !== undefined) results[idx] = { text, vector };
     }
 
     return results.filter((r): r is EmbeddingResult => r !== null);

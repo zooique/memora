@@ -114,7 +114,8 @@ export function parseTrigger(fm: Record<string, string>, key = 'trigger'): RegEx
   try {
     const pattern = String(raw).trim();
     const match = pattern.match(/^\/(.+)\/([gimsuy]*)$/);
-    const clean = match ? match[1]! : pattern;
+    // QC-17 移除非空断言：使用空值合并回退到 pattern（与 match 为 null 时逻辑一致）
+    const clean = match?.[1] ?? pattern;
     return new RegExp(clean, 'i');
   } catch {
     getLogger().warn({ trigger: raw }, '触发正则无效，已忽略');

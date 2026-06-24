@@ -244,7 +244,11 @@ export function createSessionController(uiManager: UIManager) {
           const { sessions: remaining } = await window.electronAPI.listSessions();
           if (remaining.length > 0) {
             // 切换到剩余会话中最近的一个（列表已按时间倒序，第一项为最近）
-            await switchSession(remaining[0]!.id);
+            // QC-19 P2 修复：noUncheckedIndexedAccess 下数组索引返回 T | undefined，需 null 检查
+            const recent = remaining[0];
+            if (recent) {
+              await switchSession(recent.id);
+            }
           } else {
             // 没有剩余会话：清空消息区，等待用户开始新对话
             uiManager.clearMessages();

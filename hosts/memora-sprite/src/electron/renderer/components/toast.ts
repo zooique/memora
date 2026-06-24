@@ -79,13 +79,15 @@ export class ToastManager {
 
     // UX-PP-03 重试按钮（仅在提供 onRetry 回调时显示）
     if (options?.onRetry) {
+      // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+      const onRetry = options.onRetry;
       const retryBtn = document.createElement('button');
       retryBtn.className = 'toast-retry';
       retryBtn.textContent = '重试';
       retryBtn.title = '重新发送上一条消息';
       retryBtn.addEventListener('click', () => {
         this.removeToast(toast);
-        options.onRetry!();
+        onRetry();
       });
       body.appendChild(retryBtn);
     }

@@ -59,7 +59,14 @@ async function setupWizard(): Promise<void> {
     const baseUrl = await ask(rl, 'API 地址（如 https://api.deepseek.com）：');
     providerConfig = { provider, model, baseUrl };
   } else {
-    providerConfig = PROVIDER_PRESETS[choice] ?? PROVIDER_PRESETS['1']!;
+    // QC-19 P2 修复：noUncheckedIndexedAccess 下 Record 索引返回 T | undefined，提取常量做 null 检查
+    const preset = PROVIDER_PRESETS[choice] ?? PROVIDER_PRESETS['1'];
+    if (!preset) {
+      console.error('\n错误：预设配置缺失');
+      rl.close();
+      return;
+    }
+    providerConfig = preset;
     console.log(`\n已选择：${providerConfig.provider} / ${providerConfig.model}`);
   }
 

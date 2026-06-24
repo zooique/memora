@@ -252,9 +252,14 @@ async function setupAgentPostInit(
   }
 
   // 恢复上次会话（连续演化任务的核心体验）
-  const restored = await agent.sessionManager!.restoreMostRecentSession('main');
-  if (restored > 0) {
-    console.log(`已恢复上次会话（${restored} 条消息）\n`);
+  // QC-19 P1 修复：添加 sessionManager null 检查
+  if (!agent.sessionManager) {
+    console.warn('SessionManager 未初始化，跳过会话恢复');
+  } else {
+    const restored = await agent.sessionManager.restoreMostRecentSession('main');
+    if (restored > 0) {
+      console.log(`已恢复上次会话（${restored} 条消息）\n`);
+    }
   }
 
   // H3：最小作品投影生成 — 启动时读取项目关键文件
@@ -276,7 +281,9 @@ async function setupAgentPostInit(
   // H4：注册宿主自定义工具（web_search + memory_search）
   if (agent.tools) {
     setMemorySearcher(async (query, limit) => {
-      const hits = await agent.memory!.search(query, limit);
+      // QC-19 P1 修复：添加 memory null 检查
+      if (!agent.memory) return [];
+      const hits = await agent.memory.search(query, limit);
       return hits.map((h) => ({
         name: h.name,
         contentPreview: h.contentPreview ?? '',

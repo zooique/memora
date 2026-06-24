@@ -6,6 +6,7 @@
  *   2. 角色列表展示
  *   3. 角色匹配模式设置
  */
+import { logger, toError } from 'memora';
 import type { Agent } from 'memora';
 
 /** 角色信息 */
@@ -57,7 +58,9 @@ export class PersonaController {
     if (!pm) return null;
     try {
       return pm.switchPersona(name);
-    } catch {
+    } catch (err) {
+      // 角色切换失败时返回 null，记录警告便于排查
+      logger.warn({ err: toError(err).message, name }, '角色切换失败');
       return null;
     }
   }

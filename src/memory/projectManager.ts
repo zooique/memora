@@ -90,6 +90,62 @@ export interface ProjectEntry {
   lastOpened: string;
 }
 
+// ─── QC-24 类型守卫 ─────────────────────────────────────
+// 对不可信磁盘文件 JSON.parse 结果进行运行时校验，替代 `as` 类型断言
+
+/**
+ * 判断值是否为非数组对象（排除 null）
+ *
+ * @param value 待校验的值
+ * @returns true 表示是普通对象
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * 判断值是否为 LockInfo（锁文件结构）
+ *
+ * @param value 待校验的值
+ * @returns true 表示符合 LockInfo 结构
+ */
+function isLockInfo(value: unknown): value is LockInfo {
+  if (!isPlainObject(value)) return false;
+  return (
+    typeof value['pid'] === 'number' &&
+    typeof value['acquiredAt'] === 'string' &&
+    typeof value['hostname'] === 'string'
+  );
+}
+
+/**
+ * 判断值是否为 ProjectEntry（项目注册表条目）
+ *
+ * @param value 待校验的值
+ * @returns true 表示符合 ProjectEntry 结构
+ */
+function isProjectEntry(value: unknown): value is ProjectEntry {
+  if (!isPlainObject(value)) return false;
+  return (
+    typeof value['path'] === 'string' &&
+    typeof value['name'] === 'string' &&
+    typeof value['lastOpened'] === 'string'
+  );
+}
+
+/**
+ * 判断值是否为 ProjectEntry 数组
+ *
+ * 过滤掉不符合结构的条目，仅保留合法条目
+ *
+ * @param value 待校验的值
+ * @returns 解析后的合法条目数组（损坏时返回空数组）
+ */
+function asProjectEntryArray(value: unknown): ProjectEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isProjectEntry);
+}
+
 /**
  * ProjectManager 构造选项
  */
@@ -374,7 +430,15 @@ export class ProjectManager {
     try {
       // 尝试读取锁文件（存在时）
       const raw = await readFile(lockPath, 'utf-8');
-      const info = JSON.parse(raw) as LockInfo;
+      // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as LockInfo` 类型断言
+      const parsed: unknown = JSON.parse(raw);
+      if (!isLockInfo(parsed)) {
+        // 锁文件结构损坏，清理后重新获取
+        logger.warn({ path: lockPath }, '锁文件结构损坏，清理残留');
+        await this.safeUnlink(lockPath);
+        return;
+      }
+      const info = parsed;
 
       // 检查进程是否存活
       if (this.isProcessAlive(info.pid)) {
@@ -472,7 +536,18 @@ export class ProjectManager {
 
     try {
       const raw = readFileSync(this.registryPath, 'utf-8');
-      return JSON.parse(raw) as ProjectEntry[];
+      // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as ProjectEntry[]` 类型断言
+      // 过滤掉不符合结构的条目，仅保留合法条目
+      const parsed: unknown = JSON.parse(raw);
+      const entries = asProjectEntryArray(parsed);
+      if (entries.length === 0 && Array.isArray(parsed) && parsed.length > 0) {
+        // 数组存在但所有条目都不合法，记录警告
+        logger.warn(
+          { path: this.registryPath, totalEntries: parsed.length },
+          '项目注册表所有条目结构不合法，返回空列表',
+        );
+      }
+      return entries;
     } catch (err) {
       // 注册表损坏：记录警告日志便于排查（不存在属正常首次启动，损坏需排查）
       logger.warn({ path: this.registryPath, err: toError(err).message }, '项目注册表解析失败，返回空列表');

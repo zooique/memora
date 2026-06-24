@@ -89,8 +89,9 @@ export function registerMinimalIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () => {
     try {
       return { config: loadSpriteConfig() };
-    } catch {
+    } catch (err) {
       // P2-011 修复：使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象
+      logger.warn({ err: toError(err).message }, '精灵配置加载失败，返回默认配置');
       return { config: { ...DEFAULT_SPRITE_CONFIG } };
     }
   });
@@ -127,6 +128,8 @@ export function registerMinimalIpcHandlers(
 
         return { success: true, error: null };
       } catch (error) {
+        // LLM 连接测试失败时返回错误给 UI，同时记录警告便于排查
+        logger.warn({ err: toError(error).message, provider: llmConfig.provider, model: llmConfig.model }, 'LLM 连接测试失败');
         return { success: false, error: toError(error).message };
       }
     },
@@ -168,7 +171,9 @@ export function registerMinimalIpcHandlers(
           : null,
         presets: PROVIDER_PRESETS,
       };
-    } catch {
+    } catch (err) {
+      // LLM 配置读取失败时返回未配置状态，记录警告便于排查
+      logger.warn({ err: toError(err).message }, 'LLM 配置读取失败');
       return { configured: false, config: null, presets: PROVIDER_PRESETS };
     }
   });

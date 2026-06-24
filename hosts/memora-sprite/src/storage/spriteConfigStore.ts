@@ -26,7 +26,7 @@
 import { resolve } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { loadConfig } from 'memora';
+import { loadConfig, logger, toError } from 'memora';
 import type { Config } from 'memora';
 
 /** 默认 LLM 配置文件路径（~/.memora-sprite/config.json） */
@@ -107,7 +107,9 @@ export class SpriteConfigStore {
     try {
       const config = await this.load();
       return Boolean(config.llm.apiKey && config.llm.provider !== 'mock');
-    } catch {
+    } catch (err) {
+      // 配置加载失败时判定为未配置，避免阻塞启动流程；记录警告便于排查
+      logger.warn({ err: toError(err).message, configPath: this.configPath }, '配置加载失败，判定为未配置');
       return false;
     }
   }
@@ -133,7 +135,9 @@ export class SpriteConfigStore {
     let existing: Config;
     try {
       existing = await this.load();
-    } catch {
+    } catch (err) {
+      // 读取失败时使用默认配置作为 fallback，记录警告便于排查
+      logger.warn({ err: toError(err).message, configPath: this.configPath }, '读取现有配置失败，使用默认配置');
       existing = {
         llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
         memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },

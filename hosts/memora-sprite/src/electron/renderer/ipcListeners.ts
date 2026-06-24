@@ -75,6 +75,7 @@ async function loadAndRenderAuditLog(): Promise<void> {
     listEl.appendChild(frag);
   } catch (err) {
     // U2 用 createElement 替代 innerHTML，与项目规范一致
+    reportError('loadAuditLog', err);
     clearElement(listEl);
     const errorDiv = document.createElement('div');
     errorDiv.className = 'profile-empty';

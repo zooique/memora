@@ -663,7 +663,9 @@ export class AgentLoop {
     let tailTokens = 0;
     let cutIndex = messages.length; // 被裁剪区域的起始索引
     for (let i = messages.length - 1; i >= 1; i--) {
-      const msg = messages[i]!;
+      // QC-17 移除非空断言：循环条件保证索引有效，null 检查兜底
+      const msg = messages[i];
+      if (!msg) break;
       const msgTokens = this.estimateTokens([msg]);
       if (tailTokens + msgTokens > availableTokens) {
         cutIndex = i + 1; // cutIndex 是第一条被保留的尾部消息

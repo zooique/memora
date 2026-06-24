@@ -280,7 +280,7 @@
     }
 
     /* ============================================
-       侧边栏
+       侧边栏 — 一整块大面板，无分割线，轻微优化间距
        ============================================ */
     #sidebar {
       grid-area: sidebar;
@@ -288,8 +288,8 @@
       border-right: none;
       display: flex;
       flex-direction: column;
-      padding: 16px 14px;
-      gap: 18px;
+      padding: 16px 12px;
+      gap: 14px;
       overflow-y: auto;
       flex-shrink: 0;
     }
@@ -299,7 +299,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      padding: 0 6px;
+      padding: 0 4px;
       font-size: 15px;
       font-weight: 700;
       color: var(--text);
@@ -307,14 +307,14 @@
     }
 
     .sidebar-brand-icon {
-      width: 26px;
-      height: 26px;
+      width: 28px;
+      height: 28px;
       border-radius: var(--radius-sm);
       background: var(--brand-grad);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 13px;
+      font-size: 14px;
       flex-shrink: 0;
     }
 
@@ -365,6 +365,13 @@
       color: var(--text);
     }
 
+    #persona-subtitle {
+      font-size: 10px;
+      color: var(--muted);
+      font-weight: 400;
+      margin-top: 1px;
+    }
+
     #persona-mode-badge {
       font-size: 10px;
       padding: 1px 6px;
@@ -386,63 +393,63 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
       overflow-y: auto;
     }
 
-    /* 仪表盘 */
+    /* 仪表盘 — 保持原有2列grid，只调整间距 */
     #dashboard {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: 8px;
       padding: 0;
-      border-bottom: 1px solid var(--surface2);
-      padding-bottom: 12px;
     }
 
     .dash-item {
-      background: var(--window-bg);
-      border: 1px solid var(--surface2);
+      background: transparent;
+      border: none;
       border-radius: var(--radius-md);
-      padding: 8px 6px;
+      padding: 10px 8px;
       text-align: center;
       transition: background var(--transition-fast);
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 3px;
     }
 
     .dash-item:hover {
-      background: var(--window-bg-2);
+      background: rgba(255,255,255,0.5);
     }
 
     .dash-label {
       font-size: 10px;
-      color: var(--subtext);
+      color: var(--muted);
       display: block;
     }
 
     .dash-value {
-      font-size: 15px;
+      font-size: 18px;
       font-weight: 700;
       color: var(--text);
       font-variant-numeric: tabular-nums;
+      line-height: 1.1;
     }
 
     #dash-pending {
       grid-column: span 2;
     }
 
-    /* 默契度卡片 */
+    /* 默契度卡片 — 融入大面板，不做卡片分割 */
     .rapport-card-inner {
-      padding: 10px 6px 4px;
+      padding: 12px 8px 8px;
+      text-align: center;
     }
 
     .rapport-level {
       font-size: 14px;
       font-weight: 700;
       color: var(--text);
-      margin-bottom: 6px;
+      margin-bottom: 8px;
       text-align: center;
     }
 
@@ -451,7 +458,7 @@
       background: var(--surface1);
       border-radius: var(--radius-pill);
       overflow: hidden;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
     }
 
     .rapport-bar-fill {
@@ -468,27 +475,31 @@
       line-height: 1.4;
     }
 
-    /* Agent 运行时指标 */
+    /* Agent 运行时指标 — 保持原有风格，精简到4个 */
     #agent-metrics {
-      border-bottom: 1px solid var(--surface2);
-      padding-bottom: 12px;
+      margin-top: 4px;
     }
 
     #agent-metrics-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: 8px;
     }
 
-    /* 分区标题 */
+    /* 分区标题 — 融入大面板，不用分割线 */
     .dashboard-section h3 {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 600;
       color: var(--muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
       padding: 0 4px;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
+    }
+
+    /* 推荐列表 — Demo简化处理 */
+    #recommendations, #source-health {
+      display: none;
     }
 
     /* 推荐列表 */
@@ -1707,10 +1718,12 @@
       #persona-selector { justify-content: center; padding: 8px; }
       #persona-name, #persona-mode-badge, #persona-arrow { display: none; }
       #dashboard { grid-template-columns: 1fr; }
-      #dash-pending { grid-column: span 1; }
-      .dash-label { font-size: 9px; }
       #agent-metrics-grid { grid-template-columns: 1fr; }
       #recommendations, #source-health, .dashboard-section h3 { display: none; }
+      .dash-label { font-size: 9px; }
+      .dash-value { font-size: 14px; }
+      .rapport-level { font-size: 12px; }
+      .rapport-desc { display: none; }
       #titlebar-nav { margin-left: 8px; padding: 3px; }
       #titlebar-nav .nav-btn { padding: 4px 10px; gap: 0; }
       #titlebar-nav .nav-label { display: none; }
@@ -2203,7 +2216,7 @@
   <!-- 大底板容器 -->
   <div id="app">
 
-    <!-- 侧边栏 -->
+    <!-- 侧边栏 — 一整块大面板 -->
     <aside id="sidebar">
       <!-- 品牌区 -->
       <div class="sidebar-brand">
@@ -2215,42 +2228,36 @@
       <div id="sidebar-header">
         <div id="persona-selector" role="button" tabindex="0">
           <span id="persona-icon">🧚</span>
-          <span id="persona-name">精灵</span>
+          <div style="flex: 1; min-width: 0;">
+            <div id="persona-name">精灵</div>
+          </div>
           <span id="persona-mode-badge">自动</span>
           <span id="persona-arrow">▾</span>
         </div>
       </div>
 
       <div id="sidebar-content">
-        <!-- 仪表盘 -->
+        <!-- 仪表盘 — 原有2列grid布局，保留核心4项 -->
         <div id="dashboard">
           <div class="dash-item" title="Agent 记忆总数">
             <span class="dash-label">🧠 记忆</span>
             <span class="dash-value" id="memory-count">3</span>
           </div>
-          <div class="dash-item" title="AI 提取的洞察数">
+          <div class="dash-item" title="AI 自动提取的用户洞察数">
             <span class="dash-label">💡 洞察</span>
             <span class="dash-value" id="insight-count">0</span>
           </div>
           <div class="dash-item" title="已加载的角色数">
             <span class="dash-label">🎭 角色</span>
-            <span class="dash-value" id="persona-count">0</span>
+            <span class="dash-value" id="persona-count">1</span>
           </div>
-          <div class="dash-item" id="dash-triggers" title="已注册的触发器数">
-            <span class="dash-label">🔔 触发器</span>
-            <span class="dash-value" id="trigger-count">2</span>
-          </div>
-          <div class="dash-item" id="dash-skills" title="已加载的技能数">
-            <span class="dash-label">⚡ 技能</span>
-            <span class="dash-value" id="skill-count">0</span>
-          </div>
-          <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值">
-            <span class="dash-label">📥 事件</span>
-            <span class="dash-value" id="pending-count">0/3</span>
+          <div class="dash-item" title="今日对话消息数">
+            <span class="dash-label">💬 消息</span>
+            <span class="dash-value" id="message-count-sidebar">0</span>
           </div>
         </div>
 
-        <!-- 默契度卡片 -->
+        <!-- 默契度卡片 — 原有简洁风格 -->
         <div id="rapport-card" class="dashboard-section">
           <h3>💕 默契度</h3>
           <div class="rapport-card-inner">
@@ -2262,51 +2269,27 @@
           </div>
         </div>
 
-        <!-- Agent 运行时指标 -->
+        <!-- Agent 运行时指标 — 精简到4个核心 -->
         <div id="agent-metrics" class="dashboard-section">
-          <h3>运行指标</h3>
+          <h3>运行</h3>
           <div id="agent-metrics-grid">
             <div class="dash-item" title="LLM 调用总次数">
               <span class="dash-label">⚡ 调用</span>
-              <span class="dash-value">0</span>
-            </div>
-            <div class="dash-item" title="累计 token 数">
-              <span class="dash-label">🔢 Token</span>
-              <span class="dash-value">0</span>
+              <span class="dash-value" id="call-count">0</span>
             </div>
             <div class="dash-item" title="记忆召回命中率">
               <span class="dash-label">🔍 召回</span>
-              <span class="dash-value">0%</span>
+              <span class="dash-value" id="recall-rate">0%</span>
             </div>
-            <div class="dash-item" title="工具调用失败率">
-              <span class="dash-label">🛠 工具</span>
-              <span class="dash-value">—</span>
+            <div class="dash-item" title="累计 Token（K）">
+              <span class="dash-label">🔢 Token</span>
+              <span class="dash-value" id="token-count">0</span>
             </div>
-            <div class="dash-item" title="上下文截断次数">
-              <span class="dash-label">✂️ 截断</span>
-              <span class="dash-value">0</span>
-            </div>
-            <div class="dash-item" title="记忆衰减">
-              <span class="dash-label">🍂 衰减</span>
-              <span class="dash-value">1/0</span>
+            <div class="dash-item" title="当前会话数">
+              <span class="dash-label">📂 会话</span>
+              <span class="dash-value" id="session-count">1</span>
             </div>
           </div>
-        </div>
-
-        <!-- 推荐 -->
-        <div id="recommendations" class="dashboard-section">
-          <h3>推荐</h3>
-          <ul id="recommendation-list" class="suggestion-list">
-            <!-- 动态生成 -->
-          </ul>
-        </div>
-
-        <!-- 记忆健康 -->
-        <div id="source-health" class="dashboard-section">
-          <h3>记忆健康</h3>
-          <ul id="source-health-list">
-            <!-- 动态生成 -->
-          </ul>
         </div>
       </div>
     </aside>
@@ -2368,10 +2351,11 @@
             <div class="empty-title">你好，我是 Memora 精灵</div>
             <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
             <div class="empty-suggestions">
-              <button class="suggestion-btn" data-text="我是中国人">📝 记录个人信息</button>
-              <button class="suggestion-btn" data-text="你记得我之前说过什么吗？">🧠 查询我的记忆</button>
-              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆系统</button>
-              <button class="suggestion-btn" data-text="切换到代码助手角色">🎭 切换角色</button>
+              <button class="suggestion-btn" data-text="我是中国人，说中文">📝 我是中国人</button>
+              <button class="suggestion-btn" data-text="我是程序员，用 Trae IDE 写代码">💻 我是开发者</button>
+              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
+              <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
+              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
             </div>
           </div>
         </div>
@@ -2734,16 +2718,34 @@
     // 状态管理
     // ========================================
     let messageCount = 0;
+    let sessionCount = 1;
     let isProcessing = false;
+    let messages = []; // 消息历史记录
 
-    // 预设记忆数据：仅系统默认角色，用户记忆随对话产生
+    // 预设记忆数据：展示 Memora 多层记忆结构
     const demoMemories = [
       {
         id: 'default-persona',
         source: 'persona',
-        name: 'default',
+        name: '默认角色',
         content: '你是 Memora 精灵，一个有记忆的本地 AI 助手，以专业、友好的态度回应用户，默认使用中文交流。',
         score: 1.00,
+        time: '系统内置'
+      },
+      {
+        id: 'guardrail-privacy',
+        source: 'guardrail',
+        name: '隐私保护原则',
+        content: '不监听键盘、不读取剪贴板、不截屏、不监听网络流量；所有数据完全本地存储',
+        score: 1.00,
+        time: '系统内置'
+      },
+      {
+        id: 'rule-focus-mode',
+        source: 'rule',
+        name: '专注模式规则',
+        content: '应无所住，而生其心——启动时无所挂碍，开口时记忆自然浮现',
+        score: 0.95,
         time: '系统内置'
       }
     ];
@@ -2930,38 +2932,57 @@
       messageCount++;
       updateMessageCount();
 
-      // 检测是否需要添加记忆
+      // 检测是否需要添加记忆：识别多种用户信息类型
       let newMemory = null;
+      let memName = '';
+      let memContent = '';
+      let memSource = 'profile';
+
+      // 身份信息识别
       if (text.includes('我是') || text.includes('我叫')) {
-        let memContent = '';
-        let memName = '';
         if (text.includes('中国')) {
-          memName = '用户画像-nationality';
-          memContent = '{"category":"nationality","value":"中国"}';
-        } else if (text.includes('程序员') || text.includes('开发')) {
-          memName = '用户画像-occupation';
-          memContent = '{"category":"occupation","value":"开发者/程序员"}';
+          memName = '用户画像-国籍';
+          memContent = '国籍：中国，偏好中文交流';
+        } else if (text.includes('程序员') || text.includes('开发') || text.includes('编程')) {
+          memName = '用户画像-职业';
+          memContent = '职业：开发者/程序员，使用 IDE 进行编码工作';
         } else if (text.includes('学生')) {
-          memName = '用户画像-identity';
-          memContent = '{"category":"identity","value":"学生"}';
+          memName = '用户画像-身份';
+          memContent = '身份：学生，有学习和研究需求';
+        } else if (text.includes('作家') || text.includes('写作') || text.includes('写小说')) {
+          memName = '用户画像-职业';
+          memContent = '职业：创作者/作家，需要长时间深度对话';
         } else {
-          // 通用身份信息
+          // 通用姓名识别
           const nameMatch = text.match(/我叫(.+?)(?:[，。,.\s]|$)/);
           if (nameMatch) {
-            memName = '用户画像-name';
-            memContent = `{"category":"name","value":"${nameMatch[1]}"}`;
+            memName = '用户画像-称呼';
+            memContent = `称呼：${nameMatch[1]}`;
           }
         }
-        if (memName && memContent) {
-          newMemory = {
-            id: 'mem-' + Date.now(),
-            source: 'profile',
-            name: memName,
-            content: memContent,
-            score: 1.00,
-            time: '刚刚'
-          };
-        }
+      }
+      // 偏好识别
+      else if (text.includes('我喜欢') || text.includes('我偏好') || text.includes('我希望')) {
+        memName = '用户偏好';
+        memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
+        memSource = 'insight';
+      }
+      // 项目信息识别
+      else if (text.includes('我在做') || text.includes('我的项目') || text.includes('正在开发')) {
+        memName = '当前项目';
+        memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
+        memSource = 'work-projection';
+      }
+
+      if (memName && memContent) {
+        newMemory = {
+          id: 'mem-' + Date.now(),
+          source: memSource,
+          name: memName,
+          content: memContent,
+          score: 0.95,
+          time: '刚刚'
+        };
       }
 
       // 显示打字指示器
@@ -2972,14 +2993,18 @@
         removeTypingIndicator();
 
         // 如果有新记忆，添加进去并重渲染
+        let addedMemory = null;
         if (newMemory) {
           demoMemories.push(newMemory);
+          addedMemory = newMemory;
           refreshAllMemoryViews();
         }
 
         // 简单的回复逻辑
         let reply = generateReply(text);
-        addAssistantMessage(reply);
+        // 计算召回的记忆数（非系统内置的用户相关记忆）
+        const recallCount = Math.max(0, demoMemories.filter(m => m.source !== 'guardrail' && m.source !== 'rule').length - 1);
+        addAssistantMessage(reply, { newMemory: addedMemory, recallCount });
 
         // 对话后更新默契度
         updateRapport();
@@ -3018,18 +3043,32 @@
         </div>
       `;
       messagesEl.appendChild(div);
+      messages.push({ role: 'user', content: text, time });
       scrollToBottom();
     }
 
-    function addAssistantMessage(text, recalledMemories) {
+    function addAssistantMessage(text, options = {}) {
       const div = document.createElement('div');
       div.className = 'message assistant';
       const time = getCurrentTime();
 
+      // 记忆召回标签：智能判断是否显示
       let recallHtml = '';
-      if (text.includes('记得') || text.includes('记忆')) {
+      const recallCount = options.recallCount || (text.includes('记得') || text.includes('记忆') || demoMemories.length > 3 ? Math.min(demoMemories.length - 1, 3) : 0);
+      if (recallCount > 0) {
         recallHtml = `
-          <span class="memory-recall">📎 召回 2 条记忆</span>
+          <span class="memory-recall">📎 动态召回 ${recallCount} 条相关记忆</span>
+        `;
+      }
+
+      // 记忆提取提示（如果有新记忆产生）
+      let extractHtml = '';
+      if (options.newMemory) {
+        extractHtml = `
+          <div style="margin-top: 6px; padding: 6px 10px; background: var(--green-20, rgba(64, 160, 43, 0.1)); border-radius: var(--radius-sm); font-size: 11px; color: var(--green, #40a02b); display: flex; align-items: center; gap: 6px;">
+            <span>✨</span>
+            <span>本轮对话闭环完成：已提取并保存新记忆「${escapeHtml(options.newMemory.name)}」</span>
+          </div>
         `;
       }
 
@@ -3038,6 +3077,7 @@
         <div class="message-content">
           <div class="message-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
           ${recallHtml}
+          ${extractHtml}
           <div class="message-meta">
             <button class="message-copy-btn">📋</button>
             <span class="message-time">${time}</span>
@@ -3045,6 +3085,7 @@
         </div>
       `;
       messagesEl.appendChild(div);
+      messages.push({ role: 'assistant', content: text, time });
       scrollToBottom();
 
       // 更新仪表盘计数
@@ -3076,27 +3117,52 @@
     // 回复生成（简单模拟）
     // ========================================
     function generateReply(text) {
+      // 身份信息记录
       if (text.includes('我是') || text.includes('我叫')) {
-        // 提取身份信息（简化版演示）
         let identity = '你的个人信息';
-        if (text.includes('中国')) identity = '国籍：中国';
-        else if (text.includes('程序员') || text.includes('开发')) identity = '职业：开发者';
+        if (text.includes('中国')) identity = '国籍：中国（偏好中文交流）';
+        else if (text.includes('程序员') || text.includes('开发') || text.includes('编程')) identity = '职业：开发者（使用 Trae IDE）';
         else if (text.includes('学生')) identity = '身份：学生';
-        return `好的！我已经将${identity}记录到档案中了。\n\n你可以点击顶部「🧠 记忆」标签查看已保存的记忆。下次对话时，我会自动召回相关记忆。多聊几句，我们的默契度会慢慢提升哦~`;
+        else if (text.includes('作家') || text.includes('写作')) identity = '职业：创作者/作家';
+        return `好的！我已经将「${identity}」记录到你的记忆档案中了。\n\n✅ 本轮对话闭环完成\n\n和传统 AI 不同，我不会把所有对话历史都堆在上下文里——而是提取关键信息结构化存储，下次对话时动态召回最相关的记忆。这样既不会「失忆」，也不会因为上下文太长而「记混」。\n\n点击顶部「🧠 记忆」标签可以查看所有已保存的记忆，我们的默契度也会随着交流慢慢提升~`;
       }
-      if (text.includes('记得') || text.includes('记忆')) {
-        return `当然记得！从你的记忆库中，我可以看到：\n\n1. 我们刚刚的对话内容\n2. 你分享过的个人信息\n3. 作品投影和技能记录\n\n这些都是从我们的对话中自动提取并持久化保存的。每条记忆都有置信度评分，不常用的记忆会自然衰减，避免记忆库膨胀。`;
+
+      // 隐私问题
+      if (text.includes('隐私') || text.includes('安全') || text.includes('监听')) {
+        return `🔒 **隐私保护是 Memora 的底线设计**：\n\n1. **上下文感知而非内容感知**：我只通过文件变化、窗口标题等元数据感知工作状态\n2. **四不原则**：不监听键盘、不读取剪贴板、不截屏、不监听网络流量\n3. **纯本地优先**：所有记忆数据完全存储在你的本地设备\n4. **两级权限 + 路径白名单**：文件操作严格受限\n\n你可以在「⚙️ 设置 → 审计」中查看所有文件操作记录。`;
       }
-      if (text.includes('记忆系统') || text.includes('介绍')) {
-        return `Memora 的记忆系统核心是「每轮闭环 + 动态组装」：\n\n1. **每轮闭环**：每次对话结束后，自动提取关键信息作为记忆保存\n2. **动态组装**：下一轮对话开始时，根据当前上下文自动召回最相关的记忆\n3. **记忆衰减**：不常用的记忆会逐渐降低权重，避免记忆库膨胀\n4. **语义搜索**：支持向量召回，找到语义相关的记忆\n\n这样既保证了上下文永远精简，又不会丢失重要信息。`;
+
+      // 偏好设置
+      if (text.includes('喜欢') || text.includes('偏好') || text.includes('希望')) {
+        return `收到！我已经记住你的偏好了 ✨\n\n这会作为 insight 类型的记忆保存，影响我后续的回答风格。你可以在记忆面板中看到这条记录，不常用的偏好会随时间自然衰减。`;
       }
+
+      // 记忆系统介绍
+      if (text.includes('记忆系统') || text.includes('记忆闭环') || text.includes('介绍')) {
+        return `🧠 **Memora 记忆引擎核心机制**\n\n**对比传统 AI：**\n| 维度 | 传统 AI | Memora |\n|------|---------|--------|\n| 上下文 | 线性累积，越长越混乱 | 每轮闭环，永远精简 |\n| Token 消耗 | 随对话增长 | 固定预算 |\n| 跨会话记忆 | 无或有限 | 全局持久化 |\n\n**核心四步闭环：**\n1. **存储**：对话结束自动提取关键信息（profile/insight/work-projection）\n2. **衰减**：不常用记忆 score 逐渐降低，避免记忆库膨胀\n3. **召回**：下轮对话通过「关键词+语义向量」双通道动态召回相关记忆\n4. **组装**：将召回的记忆注入系统提示，上下文永远相关\n\n这就是「应无所住，而生其心」——启动时无所挂碍，开口时记忆自然浮现。`;
+      }
+
+      // 查询记忆
+      if (text.includes('记得') || text.includes('之前说')) {
+        const userMemories = demoMemories.filter(m => m.source === 'profile' || m.source === 'insight' || m.source === 'work-projection');
+        let memoryList = userMemories.length > 0
+          ? userMemories.slice(-3).map(m => `• ${m.name}（score: ${m.score.toFixed(2)}）`).join('\n')
+          : '• （你还没告诉我太多信息，试着聊聊你自己吧~）';
+        return `当然！我从记忆库中召回了 ${Math.min(userMemories.length, 3)} 条相关记忆：\n\n${memoryList}\n\n${userMemories.length > 3 ? `\n...还有 ${userMemories.length - 3} 条记忆，点击顶部「🧠 记忆」标签查看全部。` : ''}\n\n💡 注意：不是所有历史对话都堆在这里——只有真正重要的信息才会被提取为记忆。`;
+      }
+
+      // 角色相关
       if (text.includes('切换角色') || text.includes('角色')) {
-        return '当前支持自动角色匹配模式，精灵会根据对话内容自动判断适合的角色。你也可以在侧边栏点击角色选择器手动切换角色。角色会影响精灵的语气、回答风格和专业领域知识。';
+        return '🎭 当前支持自动角色匹配模式：\n\n精灵会根据对话内容自动判断最适合的角色（程序员助手/写作伙伴/学习顾问等），你也可以点击侧边栏角色选择器手动切换。\n\n不同角色会影响我的回答风格、专业术语使用和主动建议方向。角色配置也作为记忆持久化保存。';
       }
-      if (text.includes('你好') || text.includes('hi') || text.includes('hello')) {
-        return '你好！很高兴认识你 👋 我是 Memora 精灵，你的本地 AI 伙伴。\n\n和我聊天时，我会自动记住重要信息。试试告诉我一些关于你的事吧，比如你的职业、正在做的项目、或者你喜欢的工作方式~';
+
+      // 问候
+      if (text.includes('你好') || text.includes('hi') || text.includes('hello') || text.includes('嗨')) {
+        return '你好！很高兴认识你 👋 我是 Memora 精灵——你的本地 AI 伙伴。\n\n**我和普通 AI 最大的不同：**\n我会记住你告诉我的事情，不会每次对话都从零开始。试试下面这些：\n\n• 告诉我你的职业或身份\n• 说说你的偏好和习惯\n• 聊聊你正在做的项目\n\n每一次交流，都会让我们更有默契 ✨';
       }
-      return '收到！这是 Memora Sprite 的产品演示。你可以：\n\n• 继续和我对话，体验记忆自动积累\n• 点击顶部「🧠 记忆」查看已保存的记忆\n• 点击「⚙️ 设置」了解可配置项\n• 使用页面顶部三态切换器体验浮动图标和托盘态';
+
+      // 默认回复
+      return '收到！继续体验 Memora Sprite：\n\n• 💬 和我对话，观察右侧记忆自动积累\n• 🧠 点击顶部「记忆」标签，查看列表/图谱双视图\n• 🪟 使用顶部三态切换器，体验浮动/托盘形态\n• ⚙️ 点击「设置」查看 LLM/精灵/项目配置项\n• 💕 留意左侧「默契度」随对话成长\n\n提示：试试发送「我喜欢简洁的回答」或「我是开发者」看看记忆提取效果~';
     }
 
     // ========================================
@@ -3109,12 +3175,31 @@
 
     function updateMessageCount() {
       chatMessageCount.textContent = `今日已交流 ${messageCount} 条消息`;
+      // 同步更新侧边栏消息计数
+      const messageCountSidebarEl = document.getElementById('message-count-sidebar');
+      if (messageCountSidebarEl) messageCountSidebarEl.textContent = messageCount;
     }
 
     function updateDashboardCounters() {
+      // 统计各类记忆数量
       const memoryCountEl = document.getElementById('memory-count');
-      const currentCount = parseInt(memoryCountEl.textContent) || 0;
-      memoryCountEl.textContent = currentCount + 1;
+      const insightCountEl = document.getElementById('insight-count');
+      const personaCountEl = document.getElementById('persona-count');
+      const messageCountSidebarEl = document.getElementById('message-count-sidebar');
+      const sessionCountEl = document.getElementById('session-count');
+
+      const totalMemories = demoMemories.length;
+      const insightCount = demoMemories.filter(m =>
+        m.source === 'insight' || m.source === 'session' ||
+        m.source === 'profile' || m.source === 'work-projection'
+      ).length;
+      const personaCount = demoMemories.filter(m => m.source === 'persona').length;
+
+      if (memoryCountEl) memoryCountEl.textContent = totalMemories;
+      if (insightCountEl) insightCountEl.textContent = insightCount;
+      if (personaCountEl) personaCountEl.textContent = personaCount;
+      if (messageCountSidebarEl) messageCountSidebarEl.textContent = messageCount;
+      if (sessionCountEl) sessionCountEl.textContent = sessionCount || 1;
     }
 
     function scrollToBottom() {
@@ -3131,9 +3216,11 @@
     // 新会话按钮
     // ========================================
     document.getElementById('btn-new-session').addEventListener('click', () => {
-      // 清除所有消息
+      // 清除所有消息（记忆保留，这是跨会话记忆的核心特性）
       messagesEl.innerHTML = '';
+      messages = [];
       messageCount = 0;
+      sessionCount++;
       updateMessageCount();
       // 重新显示空状态
       messagesEl.innerHTML = `
@@ -3142,13 +3229,17 @@
           <div class="empty-title">你好，我是 Memora 精灵</div>
           <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
           <div class="empty-suggestions">
-            <button class="suggestion-btn" data-text="我是中国人">📝 记录个人信息</button>
-            <button class="suggestion-btn" data-text="你记得我之前说过什么吗？">🧠 查询我的记忆</button>
-            <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆系统</button>
-            <button class="suggestion-btn" data-text="切换到代码助手角色">🎭 切换角色</button>
+            <button class="suggestion-btn" data-text="我是中国人，说中文">📝 我是中国人</button>
+            <button class="suggestion-btn" data-text="我是程序员，用 Trae IDE 写代码">💻 我是开发者</button>
+            <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
+            <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
+            <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
           </div>
         </div>
       `;
+      // 更新侧边栏数据
+      updateRapport();
+      updateDashboardCounters();
       // 重新绑定建议按钮事件
       document.querySelectorAll('.suggestion-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -3456,8 +3547,11 @@
     // 默契度计算与更新
     // ========================================
     function getRapportLevel(memoryCount, messageCount) {
-      // 只统计用户产生的记忆（排除系统内置的 persona/skill）
-      const userMemories = demoMemories.filter(m => m.source === 'profile' || m.source === 'session' || m.source === 'insight');
+      // 只统计用户产生的记忆（排除系统内置的 persona/skill/guardrail/rule）
+      const userMemories = demoMemories.filter(m =>
+        m.source === 'profile' || m.source === 'session' ||
+        m.source === 'insight' || m.source === 'work-projection'
+      );
       const userMemoryCount = userMemories.length;
       // 基础分：用户记忆数 × 12 + 消息数 × 4，最高 100
       const score = Math.min(100, userMemoryCount * 12 + messageCount * 4);
@@ -3484,9 +3578,7 @@
     }
 
     function updateRapport() {
-      const memoryCount = demoMemories.length;
-      const messageCount = messages.length;
-      const { level, desc, percent } = getRapportLevel(memoryCount, messageCount);
+      const { level, desc, percent } = getRapportLevel(demoMemories.length, messages.length);
 
       const levelEl = document.getElementById('rapport-level');
       const fillEl = document.getElementById('rapport-fill');
@@ -3565,8 +3657,10 @@
     const btnAddMemoryQuick = document.getElementById('btn-add-memory-quick');
     if (btnAddMemoryQuick) btnAddMemoryQuick.addEventListener('click', handleAddMemory);
 
-    // 初始化时更新一次默契度
+    // 初始化时更新仪表盘和默契度
+    updateDashboardCounters();
     updateRapport();
+    updateMessageCount();
   </script>
 
 </body>

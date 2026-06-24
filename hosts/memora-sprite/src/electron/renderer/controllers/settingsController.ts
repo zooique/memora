@@ -117,8 +117,9 @@ export function createSettingsController(uiManager: UIManager) {
             const { ready, error: statusError } = await window.electronAPI.getAgentStatus();
             uiManager.setAgentReady(ready);
             updateAgentStatus(ready ? 'ready' : 'error', statusError ?? error ?? undefined);
-          } catch {
-            // 查询状态失败时也标记为未就绪
+          } catch (statusErr) {
+            // 查询状态失败时也标记为未就绪，记录错误便于排查
+            reportError('settingsController/agentStatus', statusErr);
             uiManager.setAgentReady(false);
             updateAgentStatus('error', error ?? undefined);
           }

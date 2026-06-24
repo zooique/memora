@@ -71,6 +71,7 @@
       font-size: 16px;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+      scroll-behavior: smooth;
     }
 
     body {
@@ -142,16 +143,24 @@
       50% { opacity: 0.2; transform: translate(-50%, -50%) scale(1.1); }
     }
 
-    /* 主容器 - 一屏布局 */
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(24px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* 主容器 */
     .container {
       position: relative;
       z-index: 1;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 48px 24px;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 64px 24px 80px;
     }
 
     /* 大赛标签 */
@@ -185,10 +194,9 @@
 
     /* 标题区域 */
     .hero-title {
-      font-size: clamp(2.8rem, 7vw, 4.5rem);
+      font-size: clamp(2.8rem, 7vw, 4.2rem);
       font-weight: 800;
       letter-spacing: -0.03em;
-      text-align: center;
       margin-bottom: 16px;
       background: var(--brand-grad);
       -webkit-background-clip: text;
@@ -198,9 +206,8 @@
     }
 
     .hero-slogan {
-      font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+      font-size: clamp(1.1rem, 2.5vw, 1.4rem);
       color: var(--text-secondary);
-      text-align: center;
       margin-bottom: 12px;
       font-weight: 500;
       animation: fadeInUp var(--dur-slow) var(--ease-out) 180ms backwards;
@@ -235,37 +242,26 @@
     .hero-desc {
       font-size: 1rem;
       color: var(--text-muted);
-      text-align: center;
-      max-width: 580px;
-      margin-bottom: 48px;
+      max-width: 640px;
+      margin-bottom: 40px;
       line-height: 1.8;
       animation: fadeInUp var(--dur-slow) var(--ease-out) 260ms backwards;
-    }
-
-    @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(24px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
     }
 
     /* 主CTA */
     .cta-group {
       display: flex;
       gap: 16px;
-      margin-bottom: 64px;
+      margin-bottom: 56px;
       animation: fadeInUp var(--dur-slow) var(--ease-out) 340ms backwards;
+      flex-wrap: wrap;
     }
 
     .btn {
       display: inline-flex;
       align-items: center;
       gap: 10px;
-      padding: 16px 40px;
+      padding: 16px 36px;
       border-radius: var(--radius-pill);
       font-size: 1.05rem;
       font-weight: 600;
@@ -309,14 +305,79 @@
       transform: translateX(4px);
     }
 
-    /* 核心特性卡片 - 3个关键点 */
+    /* 对比表格 */
+    .comparison-section {
+      margin-bottom: 56px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 400ms backwards;
+    }
+
+    .section-label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+      color: var(--text-primary);
+    }
+
+    .comparison-table {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .comparison-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .comparison-row.header {
+      background: linear-gradient(135deg, rgba(30, 102, 245, 0.05) 0%, rgba(136, 57, 239, 0.05) 100%);
+      font-weight: 600;
+    }
+
+    .comparison-cell {
+      padding: 14px 20px;
+      font-size: 0.9rem;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .comparison-cell:last-child {
+      border-right: none;
+    }
+
+    .comparison-row:last-child .comparison-cell {
+      border-bottom: none;
+    }
+
+    .comparison-cell.dim {
+      color: var(--text-muted);
+    }
+
+    .comparison-cell.highlight {
+      color: var(--accent);
+      font-weight: 500;
+      background: rgba(30, 102, 245, 0.03);
+    }
+
+    /* 核心特性卡片 */
     .features {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       gap: 20px;
-      max-width: 900px;
-      width: 100%;
-      animation: fadeInUp var(--dur-slow) var(--ease-out) 420ms backwards;
+      margin-bottom: 56px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 460ms backwards;
     }
 
     .feature-card {
@@ -324,7 +385,6 @@
       border: 1px solid var(--border);
       border-radius: var(--radius-lg);
       padding: 28px 24px;
-      text-align: center;
       transition: all var(--dur-base) var(--ease-out);
       position: relative;
       overflow: hidden;
@@ -370,28 +430,70 @@
       line-height: 1.6;
     }
 
+    /* 技术亮点 */
+    .tech-highlights {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 56px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 520ms backwards;
+    }
+
+    .tech-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+    }
+
+    .tech-badge {
+      flex-shrink: 0;
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      background: var(--brand-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+    }
+
+    .tech-content h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .tech-content p {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
     /* 底部提示 */
     .footer-hint {
-      position: absolute;
-      bottom: 32px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 0.82rem;
+      text-align: center;
+      font-size: 0.88rem;
       color: var(--text-muted);
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 8px;
-      animation: fadeInUp var(--dur-slow) var(--ease-out) 500ms backwards;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 580ms backwards;
     }
 
-    .footer-hint .kbd {
+    .kbd {
       display: inline-block;
-      padding: 3px 8px;
+      padding: 4px 10px;
       background: var(--bg-card);
       border: 1px solid var(--border);
-      border-radius: 4px;
-      font-size: 0.78rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
       font-family: inherit;
+      box-shadow: var(--shadow-sm);
     }
 
     /* 响应式 */
@@ -399,12 +501,30 @@
       .features {
         grid-template-columns: 1fr;
         max-width: 400px;
+        margin: 0 auto 40px;
+      }
+
+      .tech-highlights {
+        grid-template-columns: 1fr;
+      }
+
+      .comparison-row {
+        grid-template-columns: 1fr;
+      }
+
+      .comparison-cell {
+        border-right: none;
+      }
+
+      .comparison-row.header {
+        display: none;
       }
 
       .cta-group {
         flex-direction: column;
         width: 100%;
         max-width: 320px;
+        margin: 0 auto 40px;
       }
 
       .btn {
@@ -413,6 +533,10 @@
 
       .hero-title {
         font-size: 2.2rem;
+      }
+
+      .container {
+        padding: 40px 20px 60px;
       }
     }
   </style>
@@ -431,48 +555,120 @@
     </div>
 
     <h1 class="hero-title">Memora Sprite</h1>
-    <p class="hero-slogan">会记忆的桌面精灵</p>
+    <p class="hero-slogan">万物皆记忆，越用越进化的桌面精灵</p>
 
-    <!-- 差异化锚点：一句话讲清与大厂 Agent 的区别 -->
     <div class="differentiator">
       <span class="diff-icon">⚡</span>
-      <span class="diff-text">大厂的 AI 每次从零开始，你的精灵记得关于你的一切</span>
+      <span class="diff-text">反潮流设计：大厂做多 Agent，我们做单 Agent 记忆闭环</span>
     </div>
 
     <p class="hero-desc">
-      每轮对话自动闭环，持续积累关于你的记忆。<br>
-      三态自然交互，不打断工作流，越用越懂你。
+      你有没有遇到过这种情况：和 AI 聊得越久，它越容易"记混"、"答偏"？<br>
+      Memora 的答案是「每轮闭环 + 动态组装」——启动时无所挂碍，开口时记忆自然浮现。
     </p>
 
     <div class="cta-group">
       <a href="app-demo.html" class="btn btn-primary">
-        开始体验
+        🚀 开始交互式体验
         <span class="arrow">→</span>
       </a>
     </div>
 
+    <!-- 对比表格 -->
+    <div class="comparison-section">
+      <div class="section-label">核心差异</div>
+      <h2 class="section-title">为什么我们选择反潮流？</h2>
+      <div class="comparison-table">
+        <div class="comparison-row header">
+          <div class="comparison-cell">维度</div>
+          <div class="comparison-cell">大厂多 Agent 模式</div>
+          <div class="comparison-cell">Memora 单 Agent + 记忆</div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-cell">架构</div>
+          <div class="comparison-cell dim">多 Agent 并行、多窗口协作</div>
+          <div class="comparison-cell highlight">单 Agent 专注、记忆驱动</div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-cell">上下文管理</div>
+          <div class="comparison-cell dim">线性累积、越长越混乱</div>
+          <div class="comparison-cell highlight">每轮闭环、永远精简相关</div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-cell">Token 消耗</div>
+          <div class="comparison-cell dim">随对话长度线性增长</div>
+          <div class="comparison-cell highlight">固定预算、不膨胀</div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-cell">跨会话记忆</div>
+          <div class="comparison-cell dim">无或有限、需要手动管理</div>
+          <div class="comparison-cell highlight">全局持久、自动召回</div>
+        </div>
+        <div class="comparison-row">
+          <div class="comparison-cell">用户体验</div>
+          <div class="comparison-cell dim">复杂、需要学习切换窗口</div>
+          <div class="comparison-cell highlight">简单专注、融入工作流</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 核心特性卡片 -->
     <div class="features">
       <div class="feature-card">
         <span class="feature-icon">🔄</span>
         <h3 class="feature-title">每轮记忆闭环</h3>
-        <p class="feature-desc">对话结束自动提取关键信息，下一轮动态召回相关记忆</p>
+        <p class="feature-desc">对话结束自动提取关键信息，下一轮动态召回相关记忆。记忆双通道召回（关键词+语义向量），不常用记忆自然衰减</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🪟</span>
         <h3 class="feature-title">三态自然交互</h3>
-        <p class="feature-desc">完整窗口/浮动图标/系统托盘，适应不同工作场景</p>
+        <p class="feature-desc">完整窗口深度对话 / 浮动图标随时待命 / 系统托盘后台静默，热键召唤不打断工作流</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🔒</span>
         <h3 class="feature-title">隐私本地优先</h3>
-        <p class="feature-desc">不监听键盘不截屏，两级权限+路径白名单保障安全</p>
+        <p class="feature-desc">不监听键盘、不读剪贴板、不截屏，上下文感知而非内容感知，两级权限+路径白名单，数据完全本地</p>
+      </div>
+    </div>
+
+    <!-- 技术亮点 -->
+    <div class="section-label" style="margin-bottom: 12px;">技术实现</div>
+    <h2 class="section-title">内核级设计亮点</h2>
+    <div class="tech-highlights">
+      <div class="tech-item">
+        <div class="tech-badge">🧪</div>
+        <div class="tech-content">
+          <h4>445 个测试全通过</h4>
+          <p>Vitest + MSW Mock LLM，InMemoryStorage 零 IO 测试覆盖核心逻辑</p>
+        </div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-badge">📦</div>
+        <div class="tech-content">
+          <h4>零 native 依赖内核</h4>
+          <p>纯 TypeScript 逻辑库，持久化/UI/native 能力全由宿主注入，可嵌入任何项目</p>
+        </div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-badge">📐</div>
+        <div class="tech-content">
+          <h4>13 份 ADR 决策记录</h4>
+          <p>从运行时栈到存储层，每个架构决策都有文档追溯，工程规范严谨</p>
+        </div>
+      </div>
+      <div class="tech-item">
+        <div class="tech-badge">💕</div>
+        <div class="tech-content">
+          <h4>默契度真实成长</h4>
+          <p>初识→熟悉→默契→知己，基于真实记忆积累而非虚假数值，精灵越用越懂你</p>
+        </div>
       </div>
     </div>
 
     <div class="footer-hint">
       <span>点击</span>
-      <span class="kbd">开始体验</span>
-      <span>进入交互式 Demo，内置引导步骤</span>
+      <span class="kbd">🚀 开始交互式体验</span>
+      <span>进入完整 Demo，内置引导步骤</span>
     </div>
   </main>
 </body>

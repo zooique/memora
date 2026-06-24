@@ -200,18 +200,25 @@ function levenshtein(a: string, b: string): number {
 
   const matrix: number[][] = [];
   for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-  for (let j = 0; j <= a.length; j++) matrix[0]![j] = j;
+  // QC-17 移除非空断言：提取局部变量并 null 检查
+  const row0 = matrix[0];
+  if (row0) for (let j = 0; j <= a.length; j++) row0[j] = j;
 
   for (let i = 1; i <= b.length; i++) {
+    // QC-17 移除非空断言：提取局部变量，用 ?? 0 兜底（初始化保证值存在）
+    const rowI = matrix[i];
+    const rowPrev = matrix[i - 1];
+    if (!rowI || !rowPrev) continue;
     for (let j = 1; j <= a.length; j++) {
       const cost = b[i - 1] === a[j - 1] ? 0 : 1;
-      matrix[i]![j] = Math.min(
-        matrix[i - 1]![j]! + 1,
-        matrix[i]![j - 1]! + 1,
-        matrix[i - 1]![j - 1]! + cost,
+      rowI[j] = Math.min(
+        (rowPrev[j] ?? 0) + 1,
+        (rowI[j - 1] ?? 0) + 1,
+        (rowPrev[j - 1] ?? 0) + cost,
       );
     }
   }
 
-  return matrix[b.length]![a.length]!;
+  // QC-17 移除非空断言：使用可选链 + 空值合并兜底
+  return matrix[b.length]?.[a.length] ?? 0;
 }

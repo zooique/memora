@@ -93,17 +93,35 @@ export class MemoryPanelManager {
     // 记忆面板元素缺失时静默降级（不阻塞其他功能）
     if (!this.memorySearchEl || !this.memoryFilterSourceEl) return;
 
+    // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+    const searchEl = this.memorySearchEl;
+    const filterSourceEl = this.memoryFilterSourceEl;
+
+    // QC-22 记忆列表事件委托：在 list 容器上注册统一 click 监听器，
+    // 通过 data-action="view-memory" + data-memory-id 分发，
+    // 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理
+    if (this.memoryListEl) {
+      this.events.addEventListener(this.memoryListEl, 'click', (e: Event) => {
+        const target = e.target as HTMLElement;
+        const item = target.closest<HTMLElement>('[data-action="view-memory"]');
+        if (item) {
+          const memoryId = item.dataset.memoryId ?? '';
+          this.memoryClickCallback?.(memoryId);
+        }
+      });
+    }
+
     // 搜索框：输入时触发搜索（带防抖）
-    this.events.addEventListener(this.memorySearchEl, 'input', () => {
+    this.events.addEventListener(searchEl, 'input', () => {
       if (this.searchTimer) clearTimeout(this.searchTimer);
       this.searchTimer = setTimeout(() => {
-        this.memorySearchCallback?.(this.memorySearchEl!.value.trim());
+        this.memorySearchCallback?.(searchEl.value.trim());
       }, 300);
     });
 
     // source 筛选变更
-    this.events.addEventListener(this.memoryFilterSourceEl, 'change', () => {
-      this.memoryFilterCallback?.(this.memoryFilterSourceEl!.value);
+    this.events.addEventListener(filterSourceEl, 'change', () => {
+      this.memoryFilterCallback?.(filterSourceEl.value);
     });
 
     // 添加按钮（可选）
@@ -276,10 +294,9 @@ export class MemoryPanelManager {
       previewEl.textContent = mem.contentPreview;
       item.appendChild(previewEl);
 
-      // 点击查看详情
-      item.addEventListener('click', () => {
-        this.memoryClickCallback?.(mem.id);
-      });
+      // QC-22 事件委托：用 data-action + data-memory-id 替代直接 addEventListener
+      item.setAttribute('data-action', 'view-memory');
+      item.setAttribute('data-memory-id', mem.id);
 
       this.memoryListEl.appendChild(item);
     }
