@@ -83,21 +83,6 @@ export function clearElement(el: Element): void {
   }
 }
 
-/**
- * HTML 转义（防止 XSS）
- *
- * 将特殊字符（<, >, &, ", '）转为 HTML 实体，
- * 确保动态内容安全插入 innerHTML。
- *
- * @param text 需要转义的原始文本
- * @returns 转义后的安全 HTML 字符串
- */
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 // ─── 时间格式化 ─────────────────────────────────────────
 
 /**
@@ -129,6 +114,55 @@ export function formatTimeAgo(dateStr: string): string {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${m}-${d}`;
+}
+
+/**
+ * H3 剪枝：统一时间戳格式化（当天 HH:MM / 非当天 MM-DD HH:MM）
+ *
+ * 合并 chatPanelManager.formatTimestamp 和 ipcListeners 中的手写时间格式化。
+ * 解析失败时返回原始字符串（防御性降级）。
+ *
+ * @param isoString ISO 8601 时间字符串
+ * @returns 当天返回 "HH:MM"，非当天返回 "MM-DD HH:MM"
+ */
+export function formatTimestamp(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    const time = `${hh}:${mm}`;
+
+    if (isToday) {
+      return time;
+    }
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${month}-${day} ${time}`;
+  } catch {
+    return isoString;
+  }
+}
+
+/**
+ * H3 剪枝：统一时钟格式化（HH:MM）
+ *
+ * 合并 ipcListeners 中审计日志的手写 getHours/getMinutes + padStart 逻辑。
+ *
+ * @param isoString ISO 8601 时间字符串
+ * @returns "HH:MM" 格式的时间文本
+ */
+export function formatClock(isoString: string): string {
+  try {
+    const date = new Date(isoString);
+    const hh = String(date.getHours()).padStart(2, '0');
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  } catch {
+    return isoString;
+  }
 }
 
 // ─── 按钮状态管理 ─────────────────────────────────────────

@@ -24,6 +24,8 @@ import type {
   EmbeddingConfigForm,
   LlmConfigSavePayload,
   SpriteConfigForm,
+  ConfirmDialogOptions,
+  ToastType,
 } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
@@ -38,16 +40,9 @@ export interface SettingsPanelHost {
   /** 更新角色匹配模式标签（IX-07） */
   updatePersonaModeBadge(mode: string): void;
   /** 显示确认对话框（FD-07 取消按钮） */
-  showConfirmDialog(options: {
-    title?: string;
-    message: string;
-    messageNodes?: Node[];
-    confirmText?: string;
-    cancelText?: string;
-    danger?: boolean;
-  }): Promise<boolean>;
+  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
   /** 显示 toast 通知（P3-FLOW-06 恢复默认按钮反馈） */
-  showToast(message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number): void;
+  showToast(message: string, type?: ToastType, duration?: number): void;
   /**
    * 切换到指定面板（P2-FLOW-10 "稍后配置"按钮使用）
    * UI-AUDIT: 修复接口缺失导致类型错误（原调用 this.host.switchPanel 但接口未声明）

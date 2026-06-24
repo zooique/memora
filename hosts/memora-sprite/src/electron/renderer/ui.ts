@@ -19,7 +19,6 @@
 import { getRequiredElement, getOptionalElement } from './domHelpers.js';
 import { EventTracker } from './eventTracker.js';
 import { ToastManager } from './toast.js';
-import type { ToastOptions } from './toast.js';
 import { ModalManager } from './modal.js';
 import { OnboardingManager } from './onboarding.js';
 import { ThemeManager } from './themeManager.js';
@@ -46,6 +45,8 @@ import type {
   MemoryDetail,
   SpriteConfigForm,
   ToastType,
+  ToastOptions,
+  ConfirmDialogOptions,
 } from './types.js';
 // H1：配置建议 payload 类型（从 preload 导入，供 showSuggestion 代理方法使用）
 import type { ConfigSuggestionPayload } from '../preload.js';
@@ -1069,14 +1070,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * @param options.cancelText 取消按钮文本（默认"取消"）
    * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
    */
-  showConfirmDialog(options: {
-    title?: string;
-    message: string;
-    messageNodes?: Node[];
-    confirmText?: string;
-    cancelText?: string;
-    danger?: boolean;
-  }): Promise<boolean> {
+  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     return this.modalManager.showConfirmDialog(options);
   }
 

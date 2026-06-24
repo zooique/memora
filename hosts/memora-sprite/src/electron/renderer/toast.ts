@@ -12,7 +12,7 @@
  * - 定时器纳入跟踪集合，cleanup 时统一清理，避免回调在 DOM 销毁后触发
  */
 
-import type { ToastType } from './types.js';
+import type { ToastType, ToastOptions } from './types.js';
 
 /** Toast 类型与图标映射 */
 const TOAST_ICONS: Record<ToastType, string> = {
@@ -28,11 +28,7 @@ const TOAST_DEFAULT_DURATION = 4000;
 /** Toast 最大同时显示数量（FIFO，超出时移除最早的） */
 const TOAST_MAX_VISIBLE = 5;
 
-/** Toast 显示选项 */
-export interface ToastOptions {
-  /** 重试按钮回调（提供时显示重试按钮，且 toast 不自动消失） */
-  onRetry?: () => void;
-}
+// 剪枝：ToastOptions 已提取到 types.ts，此处复用统一类型定义
 
 /**
  * Toast 通知管理器

@@ -87,6 +87,26 @@ export interface LlmConfigSavePayload {
 /** Toast 通知类型 */
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+/** Toast 重试选项（提供 onRetry 时显示重试按钮，且 toast 不自动消失） */
+export interface ToastOptions {
+  onRetry?: () => void;
+}
+
+/**
+ * 确认弹窗选项（H1 剪枝：提取统一类型，消除 4 处内联重复定义）
+ *
+ * 被 modal.ts / ui.ts / ChatPanelHost / SettingsPanelHost / MemoryPanelHost 共享。
+ */
+export interface ConfirmDialogOptions {
+  title?: string;
+  message: string;
+  /** 确认消息 DOM 节点数组（优先于 message，用于富文本展示，调用方通过 createElement + textContent 构建天然防 XSS） */
+  messageNodes?: Node[];
+  confirmText?: string;
+  cancelText?: string;
+  danger?: boolean;
+}
+
 // 扩展全局 Window 类型，消除 TS 编译错误（electronAPI 由 preload.ts 通过 contextBridge 注入）
 declare global {
   interface Window {

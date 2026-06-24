@@ -14,7 +14,6 @@
 
 import type { UIManager } from './ui.js';
 import { reportError } from './errorHelpers.js';
-import { escapeHtml } from './domHelpers.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色
@@ -72,6 +71,9 @@ export function createSessionController(uiManager: UIManager) {
         limit: PAGE_SIZE,
         offset: 0,
       });
+      // Bug 修复：追加前先清空，纵深防御竞态条件导致的重复加载
+      // 与 switchSession 保持一致，即使上游幂等保护失效也不会累积消息
+      uiManager.clearMessages();
       // UX-FD-07 批量插入消息（DocumentFragment 优化）
       uiManager.appendMessages(mapMessages(messages), false);
       if (loadedSessionId) {
@@ -222,7 +224,8 @@ export function createSessionController(uiManager: UIManager) {
     // QC-R2-02 使用自定义确认弹窗（与项目其他弹窗风格一致，支持 Escape/Enter 键盘操作）
     const confirmed = await uiManager.showConfirmDialog({
       title: '删除会话',
-      message: `确定删除会话「${escapeHtml(sessionId)}」吗？此操作不可恢复。`,
+      // 剪枝：删除 escapeHtml 调用（showConfirmDialog 使用 textContent 已防 XSS，双重转义会导致显示 &lt;）
+      message: `确定删除会话「${sessionId}」吗？此操作不可恢复。`,
       confirmText: '删除',
       cancelText: '取消',
       danger: true,

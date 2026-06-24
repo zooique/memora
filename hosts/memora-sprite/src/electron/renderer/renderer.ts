@@ -50,6 +50,9 @@ let initRetryTimer: number | null = null;
 /** Agent 就绪回调引用（初始化重试成功时复用，避免重复定义） */
 let onAgentReadyCallback: (() => void) | null = null;
 
+/** Bug 修复：Agent 就绪流程幂等标志，防止 IPC 事件与重试定时器竞态导致重复加载 */
+let agentReadyHandled = false;
+
 /** IX-03 记忆控制器实例（模块级，beforeunload 时清理脉冲定时器） */
 let memoryControllerRef: ReturnType<typeof createMemoryController> | null = null;
 
@@ -140,8 +143,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     // Agent 就绪：加载初始数据 + 切换到对话面板
     onAgentReady: () => {
+      // Bug 修复：IPC 事件到达时取消挂起的重试定时器，避免两条路径都触发
+      if (initRetryTimer !== null) {
+        window.clearTimeout(initRetryTimer);
+        initRetryTimer = null;
+      }
       // 保存回调引用，供初始化重试逻辑复用
       onAgentReadyCallback = onAgentReadyCallback ?? (() => {
+        // Bug 修复：幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
+        if (agentReadyHandled) return;
+        agentReadyHandled = true;
         // UX-P2-03 标记 Agent 就绪，解除发送消息限制
         uiManager.setAgentReady(true);
         void sessionController.loadSessionHistory();
@@ -274,11 +285,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // 加载初始数据（会话历史已在 onAgentReady 回调中加载，此处不重复加载）
-  // FD-A1 加载会话列表（用于切换历史会话）
-  void sessionController.loadSessionList();
-  void memoryController.loadMemoryList();
-  void personaController.loadPersonaList();
+  // Bug 修复：Agent 在渲染进程启动前就已就绪时，IPC 事件已错过，需在此主动触发就绪流程
+  // 原代码注释"会话历史已在 onAgentReady 回调中加载"在此场景下不成立（监听器尚未注册）
+  if (onAgentReadyCallback) {
+    onAgentReadyCallback();
+  } else {
+    // 极端边界：回调尚未初始化（理论上不会到达，防御性兜底）
+    void sessionController.loadSessionList();
+    void memoryController.loadMemoryList();
+    void personaController.loadPersonaList();
+  }
   void settingsController.loadConfig();
   void memoryController.loadDashboard();
   // H2 预加载用户画像数据（用户切换到"画像"tab 时即可见）
@@ -321,6 +337,8 @@ window.addEventListener('beforeunload', () => {
   window.electronAPI?.removeWindowStateChangedListener();
   // H1 清理配置建议推送监听器
   window.electronAPI?.removeSuggestionPushListener();
+  // 剪枝：补充清理写入确认监听器（原遗漏，防止内存泄漏）
+  window.electronAPI?.removeWriteConfirmationListener();
 });
 
 // ─── 业务逻辑设置（发送/停止/新建会话） ─────────────────────

@@ -18,7 +18,7 @@
 
 import { getOptionalElement, clearElement, formatTimeAgo } from '../domHelpers.js';
 import type { EventTracker } from '../eventTracker.js';
-import type { MemoryListItem, MemoryDetail } from '../types.js';
+import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -27,14 +27,7 @@ export interface MemoryPanelHost {
   /** 显示模态框 */
   showModal(modalId: string): void;
   /** 显示确认对话框（FD-07 取消按钮） */
-  showConfirmDialog(options: {
-    title?: string;
-    message: string;
-    messageNodes?: Node[];
-    confirmText?: string;
-    cancelText?: string;
-    danger?: boolean;
-  }): Promise<boolean>;
+  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
 }
 
 // ─── 记忆面板管理器类 ─────────────────────────────────────

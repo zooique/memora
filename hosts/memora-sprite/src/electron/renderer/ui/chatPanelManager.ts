@@ -20,17 +20,17 @@
  * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 500 行。
  */
 
-import { clearElement } from '../domHelpers.js';
+import { clearElement, formatTimestamp } from '../domHelpers.js';
 import { renderMarkdown } from '../markdown.js';
 import type { EventTracker } from '../eventTracker.js';
-import type { Message } from '../types.js';
+import type { Message, ToastType } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
 /** 聊天面板管理器需要的宿主能力（跨模块关注点，由 UIManager 注入） */
 export interface ChatPanelHost {
   /** 显示 toast 通知 */
-  showToast(message: string, type?: 'info' | 'success' | 'warning' | 'error', duration?: number): void;
+  showToast(message: string, type?: ToastType, duration?: number): void;
   /** 自动滚动到底部（用户在底部附近时） */
   scrollToBottom(): void;
   /** 强制滚动到底部（无视用户位置） */
@@ -278,7 +278,8 @@ export class ChatPanelManager {
     const timestamp = message.timestamp ?? new Date().toISOString();
     const timeEl = document.createElement('div');
     timeEl.className = 'message-time';
-    timeEl.textContent = this.formatTimestamp(timestamp);
+    // H3 剪枝：复用 domHelpers.formatTimestamp
+    timeEl.textContent = formatTimestamp(timestamp);
     metaRow.appendChild(timeEl);
 
     contentWrapper.appendChild(metaRow);
@@ -300,34 +301,6 @@ export class ChatPanelManager {
     }
 
     return el;
-  }
-
-  /**
-   * 格式化时间戳显示
-   *
-   * - 当天：HH:MM
-   * - 非当天：MM-DD HH:MM
-   * - 解析失败：返回原始字符串
-   */
-  private formatTimestamp(isoString: string): string {
-    try {
-      const date = new Date(isoString);
-      const now = new Date();
-      const isToday = date.toDateString() === now.toDateString();
-
-      const hh = String(date.getHours()).padStart(2, '0');
-      const mm = String(date.getMinutes()).padStart(2, '0');
-      const time = `${hh}:${mm}`;
-
-      if (isToday) {
-        return time;
-      }
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${month}-${day} ${time}`;
-    } catch {
-      return isoString;
-    }
   }
 
   /**

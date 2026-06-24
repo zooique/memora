@@ -14,6 +14,7 @@
  */
 
 import { EventTracker } from './eventTracker.js';
+import type { ConfirmDialogOptions } from './types.js';
 
 /**
  * 模态框管理器
@@ -113,15 +114,7 @@ export class ModalManager {
    * @param options.cancelText 取消按钮文本（默认"取消"）
    * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
    */
-  showConfirmDialog(options: {
-    title?: string;
-    message: string;
-    /** 确认消息 DOM 节点数组（优先于 message，用于富文本展示，调用方通过 createElement + textContent 构建天然防 XSS） */
-    messageNodes?: Node[];
-    confirmText?: string;
-    cancelText?: string;
-    danger?: boolean;
-  }): Promise<boolean> {
+  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
     return new Promise((resolve) => {
       const modal = document.getElementById('confirm-modal');
       const titleEl = document.getElementById('confirm-title');

@@ -18,6 +18,7 @@
 import type { ConfigSuggestionPayload } from '../preload.js';
 import { EventTracker } from './eventTracker.js';
 import { reportError, toError } from './errorHelpers.js';
+import { clearElement } from './domHelpers.js';
 
 /**
  * 建议卡片管理器
@@ -233,11 +234,9 @@ export class SuggestionCardManager {
   /** 清理所有事件监听器和卡片（UIManager.cleanup 时调用） */
   cleanup(): void {
     this.events.cleanup();
+    // 剪枝：复用 domHelpers.clearElement 替代手写 while+removeChild
     if (this.container) {
-      // 清空所有卡片
-      while (this.container.firstChild) {
-        this.container.removeChild(this.container.firstChild);
-      }
+      clearElement(this.container);
     }
   }
 }

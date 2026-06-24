@@ -18,8 +18,8 @@
 
 import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipcChannels.js';
-import { reportError } from './errorHelpers.js';
-import { clearElement } from './domHelpers.js';
+import { reportError, toError } from './errorHelpers.js';
+import { clearElement, formatClock } from './domHelpers.js';
 
 /**
  * 渲染审计日志列表到 #audit-list
@@ -53,8 +53,8 @@ async function loadAndRenderAuditLog(): Promise<void> {
         : entry.type === 'write-auto' ? '◯'
         : entry.type === 'write-decline' ? '↩'
         : '?';
-      const when = new Date(entry.timestamp);
-      const timeStr = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+      // H3 剪枝：复用 domHelpers.formatClock 替代手写 getHours/getMinutes + padStart
+      const timeStr = formatClock(entry.timestamp);
       const meta = [
         entry.path ? `路径: ${entry.path}` : '',
         entry.tool ? `工具: ${entry.tool}` : '',
@@ -78,7 +78,7 @@ async function loadAndRenderAuditLog(): Promise<void> {
     clearElement(listEl);
     const errorDiv = document.createElement('div');
     errorDiv.className = 'profile-empty';
-    errorDiv.textContent = `加载失败: ${err instanceof Error ? err.message : String(err)}`;
+    errorDiv.textContent = `加载失败: ${toError(err).message}`;
     listEl.appendChild(errorDiv);
   }
 }
