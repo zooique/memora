@@ -12,7 +12,7 @@
  * - 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 300 行。
  */
 
-import { formatTimeAgo, clearElement } from '../helpers/domHelpers.js';
+import { formatTimeAgo, clearElement, getOptionalElement } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 
 // ─── 会话面板管理器类 ─────────────────────────────────────
@@ -119,7 +119,7 @@ export class SessionPanelManager {
     const selector = document.getElementById('session-selector');
     const list = document.getElementById('session-list');
     const currentName = document.getElementById('session-current-name');
-    const searchInput = document.getElementById('session-search') as HTMLInputElement | null;
+    const searchInput = getOptionalElement('session-search', 'input');
     if (!selector || !list || !currentName) return;
 
     // P1 修复：移除初始 hidden 类，使会话选择器可见

@@ -70,7 +70,7 @@ export class SuggestionCardManager {
    */
   showSuggestion(suggestion: ConfigSuggestionPayload): void {
     if (!this.container) {
-      console.warn('[SuggestionCard] 容器未初始化，跳过建议显示');
+      reportError('SuggestionCard', '容器未初始化，跳过建议显示');
       return;
     }
 

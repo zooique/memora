@@ -23,6 +23,10 @@
 import type { ElectronAPI } from '../../preload.js';
 // 导入 types.js 确保 window.electronAPI 全局声明加载（float.ts 作为独立入口）
 import '../types.js';
+// 共享定时器跟踪器，统一管理 setTimeout/setInterval 的生命周期
+import { SafeTimerTracker } from '../helpers/safeTimer.js';
+// DOM 助手，提供带 tagName 校验的类型安全访问
+import { getOptionalElement } from '../helpers/domHelpers.js';
 
 /**
  * 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供）
@@ -71,7 +75,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // ─── DOM 引用 ─────────────────────────────────────────
   const sphere = document.getElementById('sphere');
   const sphereEmoji = document.getElementById('sphere-emoji');
-  const sphereImage = document.getElementById('sphere-image') as HTMLImageElement | null;
+  const sphereImage = getOptionalElement('sphere-image', 'img');
   const statusDot = document.getElementById('status-dot');
   const badge = document.getElementById('badge');
   const dragHint = document.getElementById('drag-hint');
@@ -81,20 +85,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     return () => {}; // 空 cleanup
   }
 
-  // 定时器追踪（用于 cleanup 时统一清理）
-  const activeTimers: ReturnType<typeof setTimeout>[] = [];
-
-  /** 安全的 setTimeout 包装，自动追踪定时器 */
-  function safeSetTimeout(fn: () => void, ms: number): ReturnType<typeof setTimeout> {
-    const timer = setTimeout(() => {
-      fn();
-      // 执行后从追踪列表中移除
-      const idx = activeTimers.indexOf(timer);
-      if (idx !== -1) activeTimers.splice(idx, 1);
-    }, ms);
-    activeTimers.push(timer);
-    return timer;
-  }
+  // 定时器跟踪器（共享工具，cleanup 时统一清理所有定时器）
+  const timers = new SafeTimerTracker();
 
   // ─── FD-06 首次使用拖动引导 ───────────────────────────
   // 新用户不知道浮动窗口可以拖动，首次悬停时显示引导提示。
@@ -108,7 +100,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     if (hasShownDragHint || !dragHint) return;
     dragHint.classList.add('visible');
     // P3-FLOW-09 延长到 8 秒，确保用户有足够时间阅读引导文案
-    dragHintTimer = safeSetTimeout(() => {
+    dragHintTimer = timers.setTimeout(() => {
       dragHint?.classList.remove('visible');
     }, 8000);
   }
@@ -122,7 +114,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
         dragHint.classList.remove('visible');
       }
       if (dragHintTimer) {
-        clearTimeout(dragHintTimer);
+        timers.clearSafeTimeout(dragHintTimer);
         dragHintTimer = null;
       }
     }
@@ -131,7 +123,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // 球体事件处理器（命名函数，便于 cleanup 时 removeEventListener）
   const onSphereMouseLeave = () => {
     if (dragHintTimer) {
-      clearTimeout(dragHintTimer);
+      timers.clearSafeTimeout(dragHintTimer);
       dragHintTimer = null;
     }
     if (dragHint) {
@@ -262,11 +254,11 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     // 主动提示：球体弹跳动画 + 状态点切换
     if (event.type === 'proactivePrompt') {
       sphere.classList.add('bounce');
-      safeSetTimeout(() => sphere.classList.remove('bounce'), 600);
+      timers.setTimeout(() => sphere.classList.remove('bounce'), 600);
 
       statusDot.classList.add('active');
       // 3 秒后恢复 idle
-      safeSetTimeout(() => statusDot.classList.remove('active'), 3000);
+      timers.setTimeout(() => statusDot.classList.remove('active'), 3000);
     }
 
     // 阶段三形态进化预留：加载生成的形态图片
@@ -308,9 +300,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     sphere.removeEventListener('mouseleave', onSphereMouseLeave);
     // UX-P2-10 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM
     electronAPI.removeThemeBroadcastListener();
-    if (dragHintTimer) clearTimeout(dragHintTimer);
-    activeTimers.forEach(clearTimeout);
-    activeTimers.length = 0;
+    if (dragHintTimer) timers.clearSafeTimeout(dragHintTimer);
+    timers.cleanup();
   };
 }
 

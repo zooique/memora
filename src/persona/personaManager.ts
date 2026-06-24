@@ -25,6 +25,7 @@ import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import type { Persona, PersonaMode } from '@/persona/types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
+import { safeSetTimeout, clearSafeTimeout } from '@/utils/safeTimer.js';
 
 /**
  * 角色管理器（personas/ + SQLite + 关键词匹配）
@@ -224,7 +225,7 @@ export class PersonaManager {
    */
   close(): void {
     if (this.unlockTimer) {
-      clearTimeout(this.unlockTimer);
+      clearSafeTimeout(this.unlockTimer);
       this.unlockTimer = null;
     }
   }
@@ -257,8 +258,8 @@ export class PersonaManager {
       logger.warn({ count: this.switchTimestamps.length }, '角色切换过于频繁，锁定 5 分钟');
       this.switchLocked = true;
       // 5 分钟后自动解锁
-      if (this.unlockTimer) clearTimeout(this.unlockTimer);
-      this.unlockTimer = setTimeout(() => {
+      if (this.unlockTimer) clearSafeTimeout(this.unlockTimer);
+      this.unlockTimer = safeSetTimeout(() => {
         this.switchLocked = false;
         this.switchTimestamps = [];
         logger.info({ mode: this.mode }, '角色切换锁定已自动解除');

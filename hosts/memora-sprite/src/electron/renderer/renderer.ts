@@ -310,7 +310,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   } catch (err) {
     // agent-status 通道异常（主进程未就绪或网络错误），降级为首次使用引导
-    console.warn('[init] 查询 Agent 状态失败，降级为首次使用引导:', err);
+    reportError('init/agent-status', err);
     // P3-FLOW-10 异常时状态指示器显示 unknown
     settingsController.updateAgentStatus('unknown', '检测中...');
     showWelcomeMessage(uiManager);

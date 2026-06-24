@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memora Sprite · 三态模型预览</title>
+<style>
+/* ===== Catppuccin Latte 浅色主题 - 与真实sprite对齐 ===== */
+:root {
+  --rosewater: #dc8a78;
+  --flamingo: #dd7878;
+  --pink: #ea76cb;
+  --mauve: #8839ef;
+  --red: #d20f39;
+  --maroon: #e64553;
+  --peach: #fe640b;
+  --yellow: #df8e1d;
+  --green: #40a02b;
+  --teal: #179299;
+  --sky: #04a5e5;
+  --sapphire: #209fb5;
+  --blue: #1e66f5;
+  --lavender: #7287fd;
+  --text: #4c4f69;
+  --subtext1: #5c5f77;
+  --subtext0: #6c6f85;
+  --overlay2: #7c7f93;
+  --overlay1: #8c8fa1;
+  --overlay0: #9ca0b0;
+  --surface2: #acb0be;
+  --surface1: #bcc0cc;
+  --surface0: #ccd0da;
+  --base: #eff1f5;
+  --mantle: #e6e9ef;
+  --crust: #dce0e8;
+
+  --bg-primary: var(--base);
+  --bg-secondary: var(--mantle);
+  --bg-surface: #ffffff;
+  --text-primary: var(--text);
+  --text-secondary: var(--subtext1);
+  --text-muted: var(--overlay0);
+  --border-color: var(--surface0);
+  --border-light: var(--surface1);
+  --accent-blue: var(--blue);
+  --accent-mauve: var(--mauve);
+  --accent-green: var(--green);
+  --accent-peach: var(--peach);
+  --accent-red: var(--red);
+  --accent-yellow: var(--yellow);
+  --shadow: 0 2px 8px rgba(76, 79, 105, 0.06);
+  --shadow-md: 0 4px 16px rgba(76, 79, 105, 0.08);
+  --shadow-lg: 0 8px 32px rgba(76, 79, 105, 0.12);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 100px;
+  --transition-fast: 0.12s;
+  --transition-base: 0.2s;
+  --brand-grad: linear-gradient(135deg, var(--blue) 0%, var(--mauve) 100%);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Microsoft YaHei", "PingFang SC", "Segoe UI", Roboto, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ===== 顶部导航栏 ===== */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border-color);
+}
+.navbar-brand {
+  font-size: 18px;
+  font-weight: 700;
+  background: var(--brand-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.navbar-brand-icon {
+  width: 28px;
+  height: 28px;
+  background: var(--brand-grad);
+  border-radius: var(--radius-sm);
+  -webkit-text-fill-color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.navbar-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  transition: all var(--transition-base);
+}
+.navbar-link:hover {
+  color: var(--accent-blue);
+  border-color: var(--accent-blue);
+  background: rgba(30, 102, 245, 0.06);
+}
+
+/* ===== 页面主体 ===== */
+.page-content {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+
+.hero-section {
+  text-align: center;
+  margin-bottom: 40px;
+}
+.hero-section h1 {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  background: var(--brand-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.hero-section p {
+  font-size: 15px;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* ===== 三态切换标签 ===== */
+.state-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 32px;
+}
+.state-tab {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-family: inherit;
+}
+.state-tab:hover {
+  color: var(--text-secondary);
+  border-color: var(--border-light);
+}
+.state-tab.active {
+  color: white;
+  background: var(--brand-grad);
+  border-color: transparent;
+  box-shadow: 0 4px 12px rgba(30, 102, 245, 0.25);
+}
+
+/* ===== 三态展示区 ===== */
+.state-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 520px;
+  position: relative;
+}
+.state-view {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+}
+.state-view.active {
+  display: flex;
+  animation: fadeIn 0.3s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ===== 完整窗口态 - 与真实sprite UI对齐 ===== */
+.sprite-window {
+  width: 900px;
+  max-width: 100%;
+  height: 520px;
+  background: var(--bg-surface);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  overflow: hidden;
+}
+
+/* 侧边栏 */
+.sprite-sidebar {
+  width: 200px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.sidebar-brand {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sidebar-brand-icon {
+  width: 26px;
+  height: 26px;
+  background: var(--brand-grad);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 13px;
+}
+.sidebar-brand-text {
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--brand-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 角色选择器 */
+.persona-selector {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+.persona-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 4px 6px;
+}
+.persona-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  margin-bottom: 2px;
+  transition: all var(--transition-fast);
+}
+.persona-item:hover {
+  background: rgba(76, 79, 105, 0.05);
+}
+.persona-item.active {
+  background: rgba(30, 102, 245, 0.1);
+  color: var(--accent-blue);
+  font-weight: 500;
+}
+.persona-item-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+}
+
+/* 仪表盘 */
+.sidebar-dashboard {
+  flex: 1;
+  padding: 10px 8px;
+  overflow-y: auto;
+}
+.dashboard-section {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px;
+  margin-bottom: 6px;
+}
+.metric-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.metric-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.metric-value {
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--brand-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.metric-bar {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.metric-bar-fill {
+  height: 100%;
+  background: var(--brand-grad);
+  border-radius: 2px;
+}
+
+/* 推荐区域 */
+.recommendation-card {
+  background: linear-gradient(135deg, rgba(30, 102, 245, 0.06), rgba(136, 57, 239, 0.04));
+  border: 1px solid rgba(30, 102, 245, 0.15);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.recommendation-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-blue);
+  margin-bottom: 4px;
+}
+.recommendation-desc {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* 主区域 */
+.sprite-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 顶部栏 */
+.sprite-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  min-height: 48px;
+}
+.topbar-nav {
+  display: flex;
+  gap: 4px;
+}
+.topbar-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all var(--transition-fast);
+}
+.topbar-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+.topbar-center {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  padding: 3px;
+  border-radius: var(--radius-md);
+}
+.topbar-tab {
+  padding: 5px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: inherit;
+}
+.topbar-tab.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow);
+}
+.topbar-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* 内容区域 */
+.sprite-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 主面板 */
+.main-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 对话面板 */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.chat-messages {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.message {
+  max-width: 75%;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-lg);
+  line-height: 1.5;
+}
+.message-user {
+  align-self: flex-end;
+  background: var(--accent-blue);
+  color: white;
+  border-bottom-right-radius: var(--radius-sm);
+}
+.message-assistant {
+  align-self: flex-start;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-bottom-left-radius: var(--radius-sm);
+}
+.message-meta {
+  font-size: 10px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+.chat-input-area {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+.chat-input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  outline: none;
+  font-family: inherit;
+  resize: none;
+  min-height: 40px;
+  max-height: 120px;
+  line-height: 1.5;
+}
+.chat-input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(30, 102, 245, 0.1);
+}
+.chat-input::placeholder { color: var(--text-muted); }
+.chat-send-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--brand-grad);
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+.chat-send-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(30, 102, 245, 0.3);
+}
+
+/* 主动提示横幅 */
+.proactive-banner {
+  margin: 10px 14px 0;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(254, 100, 11, 0.08), rgba(220, 138, 120, 0.05));
+  border: 1px solid rgba(254, 100, 11, 0.2);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--accent-peach);
+}
+.proactive-banner-close {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+}
+.proactive-banner-close:hover {
+  background: var(--bg-secondary);
+}
+
+/* ===== 浮动图标态 ===== */
+.float-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+.float-orb-wrapper {
+  position: relative;
+}
+.float-orb {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--brand-grad);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 8px 32px rgba(30, 102, 245, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.float-orb:hover { transform: scale(1.1); }
+.float-orb.bouncing { animation: orbBounce 1.2s ease-in-out; }
+@keyframes orbBounce {
+  0%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-20px); }
+  50% { transform: translateY(-4px); }
+  70% { transform: translateY(-12px); }
+}
+.float-orb-icon {
+  font-size: 30px;
+  pointer-events: none;
+}
+.status-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 3px solid var(--bg-primary);
+  transition: background var(--transition-base);
+}
+.status-dot.idle { background: var(--accent-green); }
+.status-dot.active { background: var(--accent-blue); animation: pulse 2s infinite; }
+.status-dot.sleeping { background: var(--accent-yellow); }
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(30, 102, 245, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(30, 102, 245, 0); }
+}
+.float-bubble {
+  position: absolute;
+  bottom: calc(100% + 16px);
+  left: 50%;
+  transform: translateX(-50%) translateY(8px) scale(0.95);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  width: 260px;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease-out;
+}
+.float-bubble.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0) scale(1);
+  pointer-events: auto;
+}
+.float-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+.status-switcher {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.status-btn {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-family: inherit;
+}
+.status-btn:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+.status-btn.active {
+  background: rgba(30, 102, 245, 0.1);
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+  font-weight: 500;
+}
+.status-btn.proactive {
+  border-color: var(--accent-peach);
+  color: var(--accent-peach);
+}
+.status-btn.proactive:hover {
+  background: rgba(254, 100, 11, 0.08);
+}
+
+/* ===== 系统托盘态 ===== */
+.tray-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+.tray-taskbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.tray-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--brand-grad);
+  cursor: pointer;
+  position: relative;
+  transition: transform var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tray-icon:hover { transform: scale(1.2); }
+.tray-icon::after {
+  content: '✦';
+  font-size: 9px;
+  color: white;
+}
+.tray-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color);
+}
+.tray-dummy {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--border-color);
+  opacity: 0.5;
+}
+.tray-clock {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+  text-align: center;
+  font-weight: 500;
+}
+.context-menu {
+  position: absolute;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+  min-width: 180px;
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  display: none;
+}
+.context-menu.visible {
+  display: block;
+  animation: menuIn 0.15s ease-out;
+}
+@keyframes menuIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.context-menu-item {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background var(--transition-fast);
+}
+.context-menu-item:hover {
+  background: rgba(30, 102, 245, 0.08);
+  color: var(--accent-blue);
+}
+.context-menu-sep {
+  height: 1px;
+  background: var(--border-color);
+  margin: 4px 0;
+}
+.tray-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ===== 隐私说明卡片 ===== */
+.privacy-card {
+  margin-top: 48px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 32px;
+}
+.privacy-card h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.privacy-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.privacy-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.privacy-item-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  width: 24px;
+  text-align: center;
+}
+.privacy-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+/* 响应式 */
+@media (max-width: 960px) {
+  .sprite-window {
+    width: 100%;
+    height: auto;
+    min-height: 480px;
+    flex-direction: column;
+  }
+  .sprite-sidebar {
+    width: 100%;
+    max-height: 120px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-color);
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .sidebar-brand, .persona-selector, .sidebar-dashboard {
+    border: none;
+    padding: 8px;
+    flex-shrink: 0;
+  }
+  .sidebar-dashboard {
+    display: flex;
+    gap: 8px;
+  }
+  .metric-card, .recommendation-card {
+    margin-bottom: 0;
+    min-width: 120px;
+  }
+}
+</style>
+</head>
+<body>
+
+<!-- 顶部导航栏 -->
+<nav class="navbar">
+  <span class="navbar-brand"><span class="navbar-brand-icon">&#10024;</span> Memora Sprite</span>
+  <a href="index.html" class="navbar-link">← 返回主页</a>
+</nav>
+
+<!-- 页面主体 -->
+<div class="page-content">
+
+  <div class="hero-section">
+    <h1>桌面精灵三态模型</h1>
+    <p>Memora Sprite 拥有三种存在形态，通过上下文感知（而非内容感知）来理解你的工作状态。</p>
+  </div>
+
+  <!-- 三态切换标签 -->
+  <div class="state-tabs">
+    <button class="state-tab active" onclick="switchState('window')">🪟 完整窗口态</button>
+    <button class="state-tab" onclick="switchState('float')">💫 浮动图标态</button>
+    <button class="state-tab" onclick="switchState('tray')">🔽 系统托盘态</button>
+  </div>
+
+  <!-- 三态展示区 -->
+  <div class="state-display">
+
+    <!-- ===== 完整窗口态 - 与真实sprite UI对齐 ===== -->
+    <div class="state-view active" id="state-window">
+      <div class="sprite-window">
+        <!-- 侧边栏 -->
+        <div class="sprite-sidebar">
+          <div class="sidebar-brand">
+            <span class="sidebar-brand-icon">✦</span>
+            <span class="sidebar-brand-text">Memora</span>
+          </div>
+          <div class="persona-selector">
+            <div class="persona-label">角色</div>
+            <div class="persona-item active">
+              <span class="persona-item-icon">🧑‍💻</span>
+              <span>程序员</span>
+            </div>
+            <div class="persona-item">
+              <span class="persona-item-icon">✍️</span>
+              <span>作家</span>
+            </div>
+            <div class="persona-item">
+              <span class="persona-item-icon">📚</span>
+              <span>学者</span>
+            </div>
+          </div>
+          <div class="sidebar-dashboard">
+            <div class="dashboard-section">运行指标</div>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">记忆数</span>
+                <span class="metric-value">1,247</span>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-bar-fill" style="width: 72%"></div>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-header">
+                <span class="metric-title">会话</span>
+                <span class="metric-value">89</span>
+              </div>
+              <div class="metric-bar">
+                <div class="metric-bar-fill" style="width: 45%"></div>
+              </div>
+            </div>
+            <div class="dashboard-section" style="margin-top: 12px;">推荐</div>
+            <div class="recommendation-card">
+              <div class="recommendation-title">💡 建议</div>
+              <div class="recommendation-desc">有3条记忆可以归档</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 主区域 -->
+        <div class="sprite-main">
+          <div class="sprite-topbar">
+            <div class="topbar-nav">
+              <button class="topbar-btn">←</button>
+              <button class="topbar-btn">→</button>
+            </div>
+            <div class="topbar-center">
+              <button class="topbar-tab active" onclick="switchPanel('chat', this)">对话</button>
+              <button class="topbar-tab" onclick="switchPanel('memory', this)">记忆</button>
+              <button class="topbar-tab" onclick="switchPanel('settings', this)">设置</button>
+            </div>
+            <div class="topbar-actions">
+              <button class="topbar-btn" onclick="switchState('float')" title="最小化到浮动">—</button>
+              <button class="topbar-btn" title="最大化">▢</button>
+              <button class="topbar-btn" title="关闭" style="color: var(--accent-red)">✕</button>
+            </div>
+          </div>
+
+          <div class="sprite-content">
+            <div class="main-panel">
+              <!-- 主动提示横幅 -->
+              <div class="proactive-banner" id="proactiveBanner">
+                <span>💡</span>
+                <span>检测到你正在编辑代码，需要帮忙吗？</span>
+                <button class="proactive-banner-close" onclick="document.getElementById('proactiveBanner').style.display='none'">✕</button>
+              </div>
+
+              <!-- 对话面板 -->
+              <div class="chat-panel" id="chatPanel">
+                <div class="chat-messages">
+                  <div class="message message-assistant">
+                    你好！我是 Memora 精灵，当前以程序员角色为你服务。有什么我可以帮你的吗？
+                    <div class="message-meta">14:32</div>
+                  </div>
+                  <div class="message message-user">
+                    帮我看看这个函数有什么问题
+                    <div class="message-meta">14:33</div>
+                  </div>
+                  <div class="message message-assistant">
+                    好的，请把代码发给我，我来帮你分析一下。
+                    <div class="message-meta">14:33</div>
+                  </div>
+                  <div class="message message-user">
+                    function add(a, b) { return a - b }
+                    <div class="message-meta">14:34</div>
+                  </div>
+                  <div class="message message-assistant">
+                    发现问题：函数名为 <code style="background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px;">add</code> 但实际执行的是减法操作。建议修改为 <code style="background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px;">return a + b</code>。
+                    <div class="message-meta">14:34</div>
+                  </div>
+                </div>
+                <div class="chat-input-area">
+                  <textarea class="chat-input" placeholder="输入消息..." rows="1" readonly></textarea>
+                  <button class="chat-send-btn">↑</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 浮动图标态 ===== -->
+    <div class="state-view" id="state-float">
+      <div class="float-container">
+        <div class="float-orb-wrapper" style="position: relative;">
+          <div class="float-bubble" id="floatBubble">
+            💡 检测到你切换了项目，需要加载相关记忆吗？
+          </div>
+          <div class="float-orb" id="floatOrb" onclick="switchState('window')">
+            <span class="float-orb-icon">🧚</span>
+            <div class="status-dot idle" id="statusDot"></div>
+          </div>
+        </div>
+
+        <div class="status-switcher">
+          <button class="status-btn active" onclick="setFloatStatus('idle')">🟢 空闲</button>
+          <button class="status-btn" onclick="setFloatStatus('active')">🔵 思考中</button>
+          <button class="status-btn" onclick="setFloatStatus('sleeping')">🟡 休眠</button>
+          <button class="status-btn proactive" onclick="triggerProactiveHint()">💡 触发主动提示</button>
+        </div>
+
+        <p style="font-size: 13px; color: var(--text-muted); text-align: center; max-width: 320px;">
+          点击精灵打开完整窗口 · 状态指示灯显示当前状态<br>
+          精灵会在合适时机主动提供建议
+        </p>
+      </div>
+    </div>
+
+    <!-- ===== 系统托盘态 ===== -->
+    <div class="state-view" id="state-tray">
+      <div class="tray-container">
+        <div style="position: relative;">
+          <div class="tray-taskbar">
+            <div class="tray-dummy"></div>
+            <div class="tray-dummy"></div>
+            <div class="tray-divider"></div>
+            <div class="tray-icon" id="trayIcon"
+                 ondblclick="switchState('window')"
+                 oncontextmenu="showContextMenu(event)"></div>
+            <div class="tray-divider"></div>
+            <div class="tray-dummy"></div>
+            <div class="tray-dummy"></div>
+            <div class="tray-clock" id="trayClock">14:32</div>
+          </div>
+
+          <div class="context-menu" id="contextMenu" style="bottom: calc(100% + 8px); right: 0;">
+            <div class="context-menu-item" onclick="switchState('window'); hideContextMenu();">
+              <span>🪟</span> 打开面板
+            </div>
+            <div class="context-menu-item" onclick="hideContextMenu();">
+              <span>🎭</span> 切换角色
+            </div>
+            <div class="context-menu-item" onclick="hideContextMenu();">
+              <span>📊</span> 记忆统计
+            </div>
+            <div class="context-menu-sep"></div>
+            <div class="context-menu-item" onclick="hideContextMenu();">
+              <span>🔇</span> 静默模式
+            </div>
+            <div class="context-menu-item" onclick="hideContextMenu();">
+              <span>⚙️</span> 设置
+            </div>
+            <div class="context-menu-sep"></div>
+            <div class="context-menu-item" onclick="hideContextMenu();" style="color: var(--accent-red);">
+              <span>🚪</span> 退出
+            </div>
+          </div>
+        </div>
+        <p class="tray-hint">双击图标打开完整窗口 · 右键打开菜单</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 隐私说明 -->
+  <div class="privacy-card">
+    <h3>🔒 上下文感知，而非内容感知</h3>
+    <div class="privacy-items">
+      <div class="privacy-item">
+        <span class="privacy-item-icon">🚫</span>
+        <span>不监听键盘输入</span>
+      </div>
+      <div class="privacy-item">
+        <span class="privacy-item-icon">🚫</span>
+        <span>不读取剪贴板内容</span>
+      </div>
+      <div class="privacy-item">
+        <span class="privacy-item-icon">🚫</span>
+        <span>不截取屏幕画面</span>
+      </div>
+      <div class="privacy-item">
+        <span class="privacy-item-icon">🚫</span>
+        <span>不监听网络流量</span>
+      </div>
+    </div>
+    <p class="privacy-note">精灵通过定时巡检和文件变化监听来感知你的工作状态，同时严守隐私底线。纯本地优先架构，数据控制权在你手中。</p>
+  </div>
+
+</div>
+
+<script>
+/**
+ * 三态模型预览交互逻辑
+ */
+let currentState = 'window';
+
+/**
+ * 切换精灵状态
+ */
+function switchState(state) {
+  currentState = state;
+  document.querySelectorAll('.state-tab').forEach((tab, i) => {
+    const states = ['window', 'float', 'tray'];
+    tab.classList.toggle('active', states[i] === state);
+  });
+  document.querySelectorAll('.state-view').forEach(view => view.classList.remove('active'));
+  document.getElementById(`state-${state}`).classList.add('active');
+  hideContextMenu();
+}
+
+/**
+ * 切换面板（对话/记忆/设置）
+ */
+function switchPanel(panel, btn) {
+  document.querySelectorAll('.topbar-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+/**
+ * 设置浮动球体状态
+ */
+function setFloatStatus(status) {
+  const dot = document.getElementById('statusDot');
+  dot.className = `status-dot ${status}`;
+  const labels = { idle: '🟢 空闲', active: '🔵 思考中', sleeping: '🟡 休眠' };
+  document.querySelectorAll('.status-switcher .status-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.textContent.trim() === labels[status]);
+  });
+}
+
+/**
+ * 触发主动提示
+ */
+function triggerProactiveHint() {
+  const orb = document.getElementById('floatOrb');
+  const bubble = document.getElementById('floatBubble');
+  orb.classList.remove('bouncing');
+  void orb.offsetWidth;
+  orb.classList.add('bouncing');
+  setTimeout(() => bubble.classList.add('visible'), 300);
+  setTimeout(() => bubble.classList.remove('visible'), 4000);
+}
+
+/**
+ * 显示/隐藏右键菜单
+ */
+function showContextMenu(e) {
+  e.preventDefault();
+  document.getElementById('contextMenu').classList.add('visible');
+}
+function hideContextMenu() {
+  document.getElementById('contextMenu').classList.remove('visible');
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.tray-icon') && !e.target.closest('.context-menu')) {
+    hideContextMenu();
+  }
+});
+
+/**
+ * 托盘时钟
+ */
+function updateClock() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  document.getElementById('trayClock').textContent = `${h}:${m}`;
+}
+updateClock();
+setInterval(updateClock, 30000);
+</script>
+</body>
+</html>

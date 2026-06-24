@@ -1,0 +1,3573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Memora 精灵 · 万物皆记忆 — 产品演示</title>
+  <style>
+    /* ============================================
+       CSS 变量 — Catppuccin Latte 浅色主题（与其他demo页面统一）
+       ============================================ */
+    :root {
+      /* Catppuccin Latte 颜色定义 */
+      --rosewater: #dc8a78;
+      --flamingo: #dd7878;
+      --ctp-pink: #ea76cb;
+      --ctp-mauve: #8839ef;
+      --ctp-red: #d20f39;
+      --ctp-maroon: #e64553;
+      --ctp-peach: #fe640b;
+      --ctp-yellow: #df8e1d;
+      --ctp-green: #40a02b;
+      --ctp-teal: #179299;
+      --ctp-sky: #04a5e5;
+      --ctp-blue: #1e66f5;
+      --ctp-lavender: #7287fd;
+      --ctp-text: #4c4f69;
+      --ctp-subtext1: #5c5f77;
+      --ctp-subtext0: #6c6f85;
+      --ctp-overlay2: #7c7f93;
+      --ctp-overlay1: #8c8fa1;
+      --ctp-overlay0: #9ca0b0;
+      --ctp-surface2: #acb0be;
+      --ctp-surface1: #bcc0cc;
+      --ctp-surface0: #ccd0da;
+      --ctp-base: #eff1f5;
+      --ctp-mantle: #e6e9ef;
+      --ctp-crust: #dce0e8;
+
+      /* 大底板色（左侧栏 + 顶部栏融为一体） */
+      --bg:          var(--ctp-mantle);
+      --surface0:    var(--ctp-crust);
+      --surface1:    var(--ctp-surface0);
+      --surface2:    var(--ctp-surface1);
+
+      /* 核心悬浮窗口 */
+      --window-bg:   #ffffff;
+      --window-bg-2: var(--ctp-base);
+
+      /* 文字层级 */
+      --text:        var(--ctp-text);
+      --subtext:     var(--ctp-subtext1);
+      --muted:       var(--ctp-overlay0);
+      --text-2:      var(--ctp-subtext1);
+      --text-3:      var(--ctp-overlay0);
+
+      /* 强调色 */
+      --accent:        var(--ctp-blue);
+      --accent-soft:   rgba(30, 102, 245, 0.08);
+      --accent-hover:  #1a56db;
+      --accent-fg:     #ffffff;
+
+      /* 语义色 */
+      --green:       var(--ctp-green);
+      --yellow:      var(--ctp-yellow);
+      --pink:        var(--ctp-pink);
+      --red:         var(--ctp-red);
+      --text-on-red: #ffffff;
+
+      /* source 标签专用颜色 */
+      --mauve:       var(--ctp-mauve);
+      --teal:        var(--ctp-teal);
+      --peach:       var(--ctp-peach);
+
+      /* 品牌渐变 — 蓝紫渐变 */
+      --brand-grad:  linear-gradient(135deg, var(--ctp-blue) 0%, var(--ctp-mauve) 100%);
+
+      /* 圆角 */
+      --radius-xs:     3px;
+      --radius-sm:     6px;
+      --radius-md:     8px;
+      --radius-lg:     12px;
+      --radius-xl:     16px;
+      --radius-pill:   100px;
+      --radius-window: 16px;
+
+      /* 阴影 */
+      --shadow:           0 2px 8px rgba(76, 79, 105, 0.06);
+      --shadow-window:    0 8px 32px rgba(76, 79, 105, 0.12);
+      --shadow-float:     0 4px 16px rgba(76, 79, 105, 0.08);
+      --shadow-sm:        0 1px 3px rgba(76, 79, 105, 0.04);
+      --shadow-banner:    0 2px 8px rgba(76, 79, 105, 0.06);
+      --shadow-accent:    0 2px 8px rgba(30, 102, 245, 0.25);
+      --shadow-accent-sm: 0 0 0 2px rgba(30, 102, 245, 0.1);
+      --shadow-accent-lg: 0 4px 16px rgba(30, 102, 245, 0.25);
+      --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.15);
+
+      /* 动画 */
+      --transition-fast: 0.12s;
+      --transition-base: 0.2s;
+      --transition-slow: 0.3s;
+
+      /* 遮罩 */
+      --modal-backdrop: rgba(0, 0, 0, 0.2);
+
+      /* 输入区高度 */
+      --input-area-height: 140px;
+
+      /* 主题色透明度 */
+      --accent-20: rgba(30, 102, 245, 0.1);
+      --green-20:  rgba(64, 160, 43, 0.1);
+      --pink-20:   rgba(234, 118, 203, 0.15);
+      --yellow-20: rgba(223, 142, 29, 0.1);
+      --mauve-20:  rgba(136, 57, 239, 0.1);
+      --teal-20:   rgba(23, 146, 153, 0.1);
+      --peach-20:  rgba(254, 100, 11, 0.1);
+      --red-20:    rgba(210, 15, 57, 0.1);
+
+      /* source 标签配色 */
+      --tag-profile-bg:   var(--green-20);
+      --tag-profile-fg:   var(--green);
+      --tag-insight-bg:   var(--accent-20);
+      --tag-insight-fg:   var(--accent);
+      --tag-guardrail-bg: var(--pink-20);
+      --tag-guardrail-fg: var(--pink);
+
+      /* 字体 */
+      --font-sprite: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+      --font-mono:   'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
+    }
+
+    /* ============================================
+       全局重置
+       ============================================ */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    button, a, [role="button"], select {
+      touch-action: manipulation;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg);
+      overflow: hidden;
+      font-feature-settings: "kern" 1, "liga" 1;
+    }
+
+    /* 滚动条 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--surface2);
+      border-radius: var(--radius-xs);
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--muted);
+    }
+    ::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* 工具类 */
+    .hidden {
+      display: none !important;
+    }
+
+    /* ============================================
+       大底板容器（Grid 布局）
+       ============================================ */
+    #app {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      grid-template-rows: 44px 1fr;
+      grid-template-areas:
+        "sidebar titlebar"
+        "sidebar window";
+      background: var(--bg);
+    }
+
+    /* ============================================
+       顶部栏
+       ============================================ */
+    #titlebar {
+      grid-area: titlebar;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 0;
+      background: var(--bg);
+      border-bottom: none;
+      flex-shrink: 0;
+    }
+
+    #titlebar-drag {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      cursor: default;
+    }
+
+    #titlebar-nav {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      padding: 3px;
+      margin-left: 12px;
+      background: var(--surface1);
+      border-radius: var(--radius-pill);
+      flex-shrink: 0;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 14px;
+      border: 1px solid transparent;
+      border-radius: var(--radius-pill);
+      background: transparent;
+      color: var(--subtext);
+      font-size: 13px;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      position: relative;
+      z-index: 1;
+      transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .nav-btn:hover {
+      color: var(--text);
+    }
+
+    .nav-btn.active {
+      background: var(--window-bg);
+      border-color: transparent;
+      color: var(--text);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+      z-index: 2;
+    }
+
+    #titlebar-controls {
+      display: flex;
+      margin-left: auto;
+    }
+
+    #titlebar-controls button {
+      width: 46px;
+      height: 44px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 11px;
+      cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+
+    #titlebar-controls button:hover {
+      background: var(--surface1);
+    }
+
+    #titlebar-controls #btn-close:hover {
+      background: var(--red);
+      color: var(--text-on-red);
+    }
+
+    /* ============================================
+       侧边栏
+       ============================================ */
+    #sidebar {
+      grid-area: sidebar;
+      background: var(--bg);
+      border-right: none;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 14px;
+      gap: 18px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    /* 品牌区 */
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 6px;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .sidebar-brand-icon {
+      width: 26px;
+      height: 26px;
+      border-radius: var(--radius-sm);
+      background: var(--brand-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+
+    /* 角色选择器 */
+    #sidebar-header {
+      padding: 0;
+      border-bottom: none;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    #persona-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      padding: 8px 10px;
+      border-radius: var(--radius-md);
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    #persona-selector:hover {
+      background: var(--window-bg-2);
+      border-color: var(--muted);
+    }
+
+    #persona-icon {
+      font-size: 14px;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--brand-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    #persona-name {
+      font-size: 13px;
+      font-weight: 600;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    #persona-mode-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: var(--radius-sm);
+      background: var(--accent-soft);
+      color: var(--accent);
+      white-space: nowrap;
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+
+    #persona-arrow {
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* 侧边栏内容区 */
+    #sidebar-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow-y: auto;
+    }
+
+    /* 仪表盘 */
+    #dashboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 0;
+      border-bottom: 1px solid var(--surface2);
+      padding-bottom: 12px;
+    }
+
+    .dash-item {
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-md);
+      padding: 8px 6px;
+      text-align: center;
+      transition: background var(--transition-fast);
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .dash-item:hover {
+      background: var(--window-bg-2);
+    }
+
+    .dash-label {
+      font-size: 10px;
+      color: var(--subtext);
+      display: block;
+    }
+
+    .dash-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+    }
+
+    #dash-pending {
+      grid-column: span 2;
+    }
+
+    /* 默契度卡片 */
+    .rapport-card-inner {
+      padding: 10px 6px 4px;
+    }
+
+    .rapport-level {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 6px;
+      text-align: center;
+    }
+
+    .rapport-bar {
+      height: 6px;
+      background: var(--surface1);
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+
+    .rapport-bar-fill {
+      height: 100%;
+      background: var(--brand-grad);
+      border-radius: var(--radius-pill);
+      transition: width 0.5s var(--ease-out, ease-out);
+    }
+
+    .rapport-desc {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    /* Agent 运行时指标 */
+    #agent-metrics {
+      border-bottom: 1px solid var(--surface2);
+      padding-bottom: 12px;
+    }
+
+    #agent-metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    /* 分区标题 */
+    .dashboard-section h3 {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 0 4px;
+      margin-bottom: 6px;
+    }
+
+    /* 推荐列表 */
+    .suggestion-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .suggestion-list li {
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--subtext);
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast);
+      line-height: 1.4;
+      border-radius: var(--radius-md);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+    }
+
+    .suggestion-list li:hover {
+      background: var(--surface1);
+      color: var(--text);
+    }
+
+    .suggestion-score {
+      color: var(--accent);
+      font-size: 11px;
+      margin-left: 4px;
+    }
+
+    /* 记忆健康 */
+    #source-health-list {
+      list-style: none;
+      padding: 0;
+      margin: 4px 0 0;
+    }
+
+    .source-health-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 6px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      cursor: default;
+    }
+
+    .source-health-item:hover {
+      background: var(--surface1);
+    }
+
+    .health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .health-dot.health-ok   { background: var(--green); }
+
+    .health-label {
+      flex-shrink: 0;
+      color: var(--text);
+    }
+
+    .health-meta {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    /* ============================================
+       核心悬浮窗口
+       ============================================ */
+    #main-content {
+      grid-area: window;
+      margin: 0 6px 6px 6px;
+      background: var(--window-bg);
+      border-radius: var(--radius-window);
+      box-shadow: var(--shadow-window);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* 面板 */
+    .panel {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .panel.active {
+      display: flex;
+    }
+
+    /* ============================================
+       对话面板
+       ============================================ */
+    #chat-toolbar {
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 24px;
+      flex-shrink: 0;
+      background: transparent;
+      border-bottom: 1px solid var(--surface2);
+    }
+
+    .chat-toolbar-info {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .chat-toolbar-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .chat-toolbar-subtitle {
+      font-size: 12px;
+      color: var(--text-3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #btn-new-session {
+      padding: 6px 14px;
+      background: transparent;
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-md);
+      color: var(--text-2);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    #btn-new-session:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* 会话选择器 */
+    .session-selector {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .session-current {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      background: transparent;
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-md);
+      color: var(--text-2);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+      white-space: nowrap;
+    }
+
+    .session-current:hover {
+      background: var(--surface0);
+      color: var(--text);
+      border-color: var(--accent);
+    }
+
+    .session-current-arrow {
+      font-size: 9px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    /* 消息区 */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 24px var(--input-area-height);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* 空状态 */
+    .chat-empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 24px;
+      text-align: center;
+      color: var(--text-2);
+      min-height: 280px;
+      gap: 12px;
+      animation: fadeIn var(--transition-slow) ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .empty-avatar {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+      background: var(--brand-grad);
+      user-select: none;
+    }
+
+    .empty-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .empty-subtitle {
+      font-size: 12px;
+      color: var(--text-2);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .empty-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      max-width: 480px;
+      margin-top: 6px;
+    }
+
+    .suggestion-btn {
+      padding: 6px 14px;
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-pill);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+      text-align: center;
+    }
+
+    .suggestion-btn:hover {
+      background: var(--window-bg-2);
+      border-color: var(--text-3);
+    }
+
+    /* 消息气泡 */
+    .message {
+      display: flex;
+      gap: 10px;
+      max-width: 80%;
+      animation: fadeIn var(--transition-base) ease-out;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+    }
+
+    .message-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      background: var(--window-bg-2);
+      color: var(--text-2);
+      border: 1px solid var(--surface2);
+      user-select: none;
+    }
+
+    .message.assistant .message-avatar {
+      background: var(--brand-grad);
+      color: var(--accent-fg);
+      border-color: transparent;
+      text-shadow: var(--text-shadow-emoji);
+    }
+
+    .message-content {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      max-width: 100%;
+    }
+
+    .message.user .message-content {
+      align-items: flex-end;
+    }
+
+    .message.assistant .message-content {
+      align-items: flex-start;
+    }
+
+    .message-bubble {
+      padding: 10px 14px;
+      border-radius: var(--radius-lg);
+      line-height: 1.6;
+      font-size: 14px;
+      position: relative;
+      word-break: break-word;
+    }
+
+    .message.user .message-bubble {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.assistant .message-bubble {
+      background: var(--window-bg-2);
+      color: var(--text);
+      border-bottom-left-radius: 2px;
+      font-family: var(--font-sprite);
+    }
+
+    .message-meta {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 4px;
+      padding: 0 4px;
+    }
+
+    .message-time {
+      font-size: 10px;
+      color: var(--text-3);
+      user-select: none;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .message-copy-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 2px;
+      border: none;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-3);
+      font-size: 11px;
+      cursor: pointer;
+      opacity: 0.45;
+      transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .message-content:hover .message-copy-btn {
+      opacity: 0.8;
+    }
+
+    .message-copy-btn:hover {
+      color: var(--accent);
+      background: var(--accent-soft);
+      opacity: 1;
+    }
+
+    /* 召回记忆标签 */
+    .memory-recall {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 6px;
+      padding: 2px 8px;
+      background: var(--accent-soft);
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      color: var(--accent);
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    /* 打字指示器 */
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 8px 12px;
+      background: var(--window-bg-2);
+      border-radius: var(--radius-lg);
+      border-bottom-left-radius: 2px;
+      width: fit-content;
+    }
+
+    .typing-indicator span {
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: typingDot 1.4s infinite ease-in-out;
+    }
+
+    .typing-indicator span:nth-child(2) { animation-delay: var(--transition-base); }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes typingDot {
+      0%, 60%, 100% { transform: translateY(0); }
+      30% { transform: translateY(-6px); }
+    }
+
+    /* 主动提示 banner */
+    #proactive-banner {
+      position: relative;
+      background: var(--accent-soft);
+      border-bottom: 1px solid var(--surface2);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      z-index: 10;
+      flex-shrink: 0;
+      overflow: hidden;
+      max-height: 80px;
+      font-size: 13px;
+      color: var(--text);
+      transition: max-height var(--transition-base) ease, padding var(--transition-base) ease, opacity var(--transition-base) ease;
+    }
+
+    #proactive-banner.hidden {
+      max-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+      opacity: 0;
+      border-bottom-color: transparent;
+    }
+
+    #proactive-banner .banner-icon {
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+
+    #proactive-banner .banner-text {
+      flex: 1;
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 500;
+      line-height: 1.4;
+      margin-right: 30px;
+    }
+
+    #proactive-banner .banner-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    #proactive-banner .banner-btn {
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+      color: var(--text-2);
+      font-size: 11px;
+      font-weight: 500;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast);
+    }
+
+    #proactive-banner .banner-btn:hover {
+      background: var(--window-bg-2);
+      color: var(--text);
+    }
+
+    #proactive-banner .banner-close {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: transparent;
+      border: none;
+      color: var(--text-3);
+      font-size: 12px;
+      cursor: pointer;
+      width: 22px;
+      height: 22px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--transition-fast), color var(--transition-fast);
+    }
+
+    #proactive-banner .banner-close:hover {
+      background: var(--window-bg-2);
+      color: var(--text);
+    }
+
+    /* 输入区 */
+    #input-area {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 10px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px 14px;
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-float);
+      transition: box-shadow var(--transition-base), border-color var(--transition-base);
+    }
+
+    #input-area:focus-within {
+      border-color: var(--accent);
+      box-shadow: var(--shadow-accent-lg);
+    }
+
+    #input {
+      width: 100%;
+      min-height: 24px;
+      max-height: 120px;
+      resize: none;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      line-height: 1.6;
+      padding: 0;
+      outline: none;
+    }
+
+    #input::placeholder {
+      color: var(--text-3);
+    }
+
+    .input-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .input-actions-left {
+      display: flex;
+      gap: 6px;
+    }
+
+    .input-action {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid var(--surface2);
+      background: var(--window-bg-2);
+      color: var(--text-2);
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--transition-fast), color var(--transition-fast);
+      padding: 0;
+    }
+
+    .input-action:hover {
+      background: var(--surface0);
+      color: var(--text);
+    }
+
+    .input-send-area {
+      display: flex;
+      align-items: center;
+    }
+
+    #btn-send {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: 50%;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background var(--transition-fast), transform var(--transition-fast);
+    }
+
+    #btn-send:hover {
+      background: var(--accent-hover);
+    }
+
+    #btn-send:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ============================================
+       记忆面板
+       ============================================ */
+    .panel-header {
+      height: 44px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: transparent;
+      border-bottom: 1px solid var(--surface2);
+      flex-shrink: 0;
+    }
+
+    .panel-header input {
+      flex: 1;
+      padding: 8px 14px;
+      background: var(--window-bg-2);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-pill);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color var(--transition-fast), background var(--transition-fast);
+    }
+
+    .panel-header input:focus {
+      border-color: var(--accent);
+      background: var(--window-bg);
+    }
+
+    #memory-filter-source {
+      padding: 8px 12px;
+      background: var(--window-bg-2);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-md);
+      color: var(--text-2);
+      font-family: inherit;
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    #memory-filter-source:focus {
+      border-color: var(--accent);
+    }
+
+    #btn-add-memory {
+      padding: 8px 16px;
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: none;
+      border-radius: var(--radius-md);
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+
+    #btn-add-memory:hover {
+      background: var(--accent-hover);
+    }
+
+    #memory-list {
+      padding: 12px 24px 24px;
+      gap: 8px;
+    }
+
+    .memory-item {
+      padding: 12px 16px;
+      background: var(--window-bg-2);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      transition: background var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .memory-item:hover {
+      background: var(--surface0);
+      border-color: var(--muted);
+    }
+
+    .memory-item .name {
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+    }
+
+    .memory-item .preview {
+      font-size: 12px;
+      color: var(--text-2);
+      margin-top: 4px;
+      line-height: 1.5;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+
+    .memory-item .meta {
+      font-size: 10px;
+      color: var(--text-3);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 6px;
+    }
+
+    .source-tag {
+      padding: 2px 8px;
+      border-radius: var(--radius-sm);
+      font-size: 10px;
+      font-weight: 500;
+    }
+
+    .source-tag.source-profile   { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }
+    .source-tag.source-insight   { background: var(--tag-insight-bg); color: var(--tag-insight-fg); }
+    .source-tag.source-guardrail { background: var(--tag-guardrail-bg); color: var(--tag-guardrail-fg); }
+    .source-tag.source-skill     { background: var(--yellow-20); color: var(--yellow); }
+    .source-tag.source-rule      { background: var(--mauve-20); color: var(--mauve); }
+    .source-tag.source-persona   { background: var(--teal-20); color: var(--teal); }
+    .source-tag.source-session   { background: var(--peach-20); color: var(--peach); }
+    .source-tag.source-default   { background: var(--surface2); color: var(--subtext); }
+
+    .memory-item .meta .score {
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .memory-item .meta .memory-time {
+      color: var(--text-3);
+      font-size: 11px;
+      margin-left: auto;
+    }
+
+    /* 记忆视图切换标签 */
+    .memory-view-tabs {
+      display: flex;
+      gap: 2px;
+      padding: 2px;
+      background: var(--window-bg-2);
+      border-radius: var(--radius-md);
+      flex-shrink: 0;
+    }
+
+    .memory-view-tab {
+      padding: 6px 12px;
+      background: transparent;
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--text-2);
+      font-size: 12px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .memory-view-tab:hover {
+      color: var(--text);
+      background: var(--surface0);
+    }
+
+    .memory-view-tab.active {
+      background: var(--window-bg);
+      color: var(--accent);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .soon-badge {
+      font-size: 9px;
+      padding: 1px 5px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: var(--radius-pill);
+      font-weight: 600;
+    }
+
+    /* 记忆视图内容容器 */
+    .memory-view-content {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .memory-view-content.active {
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 图谱视图 */
+    #memory-graph {
+      padding: 24px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .graph-placeholder {
+      width: 100%;
+      max-width: 600px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #graph-canvas {
+      width: 100%;
+      max-width: 560px;
+      aspect-ratio: 560 / 340;
+      height: auto;
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-lg);
+      background: var(--window-bg-2);
+    }
+
+    .graph-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .graph-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-2);
+    }
+
+    .graph-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .graph-hint {
+      font-size: 12px;
+      color: var(--text-3);
+      text-align: center;
+      margin-top: 8px;
+      padding: 10px 16px;
+      background: var(--accent-soft);
+      border-radius: var(--radius-md);
+    }
+
+    /* ============================================
+       设置面板
+       ============================================ */
+    .settings-tabs {
+      display: flex;
+      gap: 0;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--surface2);
+      flex-shrink: 0;
+      overflow-x: auto;
+    }
+
+    .settings-tab {
+      padding: 12px 16px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-3);
+      font-size: 13px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: color var(--transition-fast), border-color var(--transition-fast);
+      white-space: nowrap;
+    }
+
+    .settings-tab:hover {
+      color: var(--text-2);
+    }
+
+    .settings-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .settings-tab-content {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    .settings-tab-content.active {
+      display: block;
+    }
+
+    .settings-group {
+      max-width: 640px;
+      margin-bottom: 24px;
+    }
+
+    .settings-group h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 16px;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 14px;
+      gap: 16px;
+    }
+
+    .settings-row label {
+      width: 140px;
+      flex-shrink: 0;
+      font-size: 13px;
+      color: var(--text-2);
+      text-align: right;
+    }
+
+    .settings-row input[type="text"],
+    .settings-row input[type="password"],
+    .settings-row input[type="number"],
+    .settings-row select {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--window-bg-2);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      transition: border-color var(--transition-fast);
+    }
+
+    .settings-row input:focus,
+    .settings-row select:focus {
+      border-color: var(--accent);
+    }
+
+    .settings-hint {
+      font-size: 12px;
+      color: var(--text-3);
+      line-height: 1.5;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .radio-group label {
+      width: auto;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      color: var(--text);
+    }
+
+    .input-with-action {
+      flex: 1;
+      display: flex;
+      gap: 0;
+    }
+
+    .input-with-action input {
+      flex: 1;
+      padding: 8px 12px;
+      background: var(--window-bg-2);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      outline: none;
+      border-right: none;
+    }
+
+    .toggle-visibility {
+      padding: 8px 12px;
+      background: var(--window-bg-2);
+      border: 1px solid var(--surface2);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      color: var(--text-2);
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .btn-secondary {
+      padding: 8px 16px;
+      background: transparent;
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-sm);
+      color: var(--text-2);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+    }
+
+    .btn-secondary:hover {
+      background: var(--surface1);
+      color: var(--text);
+    }
+
+    .btn-primary {
+      padding: 8px 20px;
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--accent-fg);
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    /* 即将推出功能区域 */
+    .upcoming-section {
+      opacity: 0.85;
+    }
+
+    .soon-label {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      background: var(--yellow-20);
+      color: var(--yellow);
+      border-radius: var(--radius-pill);
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    .upcoming-features {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .upcoming-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      background: var(--window-bg-2);
+      border: 1px dashed var(--surface1);
+      border-radius: var(--radius-md);
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .upcoming-item input[type="checkbox"] {
+      margin-top: 2px;
+      accent-color: var(--muted);
+    }
+
+    .upcoming-content {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .upcoming-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-2);
+    }
+
+    .upcoming-desc {
+      font-size: 11px;
+      color: var(--text-3);
+      line-height: 1.4;
+    }
+
+    .settings-section {
+      margin-top: 20px;
+      padding-top: 20px;
+      border-top: 1px solid var(--surface2);
+    }
+
+    .settings-actions {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 16px 24px;
+      background: var(--window-bg);
+      border-top: 1px solid var(--surface2);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .settings-actions-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .agent-status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+    }
+
+    .agent-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .agent-status-indicator.ready .agent-status-dot {
+      background: var(--green);
+        }
+
+    .agent-status-indicator.ready .agent-status-text {
+      color: var(--green);
+    }
+
+    /* ============================================
+       返回链接
+       ============================================ */
+    .demo-header {
+      position: fixed;
+      top: 0;
+      left: 240px;
+      right: 0;
+      z-index: 1000;
+      height: 0;
+      overflow: visible;
+      pointer-events: none;
+    }
+
+    .back-link {
+      position: absolute;
+      top: 8px;
+      right: 160px;
+      padding: 6px 12px;
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-pill);
+      color: var(--text-2);
+      font-size: 12px;
+      text-decoration: none;
+      pointer-events: auto;
+      transition: all var(--transition-fast);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .back-link:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+
+    /* ============================================
+       响应式
+       ============================================ */
+    @media (max-width: 799px) {
+      #app {
+        grid-template-columns: 64px 1fr;
+      }
+      .sidebar-brand-name { display: none; }
+      .sidebar-brand { justify-content: center; padding: 0; }
+      #persona-selector { justify-content: center; padding: 8px; }
+      #persona-name, #persona-mode-badge, #persona-arrow { display: none; }
+      #dashboard { grid-template-columns: 1fr; }
+      #dash-pending { grid-column: span 1; }
+      .dash-label { font-size: 9px; }
+      #agent-metrics-grid { grid-template-columns: 1fr; }
+      #recommendations, #source-health, .dashboard-section h3 { display: none; }
+      #titlebar-nav { margin-left: 8px; padding: 3px; }
+      #titlebar-nav .nav-btn { padding: 4px 10px; gap: 0; }
+      #titlebar-nav .nav-label { display: none; }
+      .message { max-width: 90%; }
+    }
+
+    /* ============================================
+       欢迎引导层（Onboarding）
+       ============================================ */
+    .onboarding-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(76, 79, 105, 0.6);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.3s ease-out;
+    }
+
+    .onboarding-overlay.hidden {
+      display: none;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .onboarding-card {
+      background: #ffffff;
+      border-radius: var(--radius-xl);
+      padding: 48px 40px;
+      max-width: 520px;
+      width: 90%;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      animation: slideUp 0.4s var(--transition-slow) ease-out backwards;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(30px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .onboarding-icon {
+      font-size: 4rem;
+      margin-bottom: 20px;
+      display: block;
+    }
+
+    .onboarding-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 12px;
+      background: var(--brand-grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .onboarding-desc {
+      font-size: 1rem;
+      color: var(--subtext);
+      line-height: 1.7;
+      margin-bottom: 32px;
+    }
+
+    .onboarding-features {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 36px;
+      text-align: left;
+    }
+
+    .onboarding-feature {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--window-bg-2);
+      border-radius: var(--radius-md);
+      font-size: 0.95rem;
+      color: var(--text);
+    }
+
+    .onboarding-feature-icon {
+      font-size: 1.3rem;
+      flex-shrink: 0;
+    }
+
+    .onboarding-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .onboarding-btn {
+      padding: 14px 32px;
+      border-radius: var(--radius-pill);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: all var(--transition-base);
+    }
+
+    .onboarding-btn-primary {
+      background: var(--brand-grad);
+      color: white;
+      box-shadow: 0 4px 16px rgba(30, 102, 245, 0.3);
+    }
+
+    .onboarding-btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(30, 102, 245, 0.4);
+    }
+
+    /* ============================================
+       演示步骤提示条（Guide Steps）
+       ============================================ */
+    .guide-bar {
+      position: fixed;
+      bottom: 160px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--surface1);
+      border-radius: var(--radius-pill);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 8px 32px rgba(76, 79, 105, 0.18);
+      z-index: 9999;
+      animation: slideUpGuide 0.4s var(--ease-out, ease-out) 0.5s backwards;
+    }
+
+    .guide-bar.hidden {
+      display: none;
+    }
+
+    @keyframes slideUpGuide {
+      from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    .guide-step-indicator {
+      display: flex;
+      gap: 6px;
+    }
+
+    .guide-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--surface1);
+      transition: all var(--transition-fast);
+    }
+
+    .guide-dot.active {
+      background: var(--accent);
+      width: 24px;
+      border-radius: var(--radius-pill);
+    }
+
+    .guide-dot.done {
+      background: var(--green);
+    }
+
+    .guide-text {
+      font-size: 0.9rem;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .guide-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .guide-btn {
+      padding: 6px 14px;
+      border-radius: var(--radius-pill);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      transition: all var(--transition-fast);
+    }
+
+    .guide-btn-next {
+      background: var(--accent);
+      color: white;
+    }
+
+    .guide-btn-next:hover {
+      background: var(--accent-hover);
+    }
+
+    .guide-btn-skip {
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .guide-btn-skip:hover {
+      color: var(--text);
+    }
+
+    /* ============================================
+       三态切换器（Window State Switcher）
+       ============================================ */
+    .state-switcher {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9998;
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--surface1);
+      border-radius: var(--radius-pill);
+      box-shadow: var(--shadow-md);
+    }
+
+    .state-btn {
+      padding: 6px 14px;
+      border: none;
+      background: transparent;
+      color: var(--subtext);
+      font-size: 0.82rem;
+      font-weight: 500;
+      font-family: inherit;
+      border-radius: var(--radius-pill);
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .state-btn:hover {
+      color: var(--text);
+      background: var(--surface0);
+    }
+
+    .state-btn.active {
+      background: var(--brand-grad);
+      color: white;
+    }
+
+    /* 三态预览容器 */
+    .state-preview-container {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 9997;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .state-preview-container.active {
+      display: flex;
+    }
+
+    .state-preview-back {
+      position: absolute;
+      top: 24px;
+      left: 24px;
+      padding: 10px 20px;
+      background: white;
+      border: 1px solid var(--surface1);
+      border-radius: var(--radius-pill);
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all var(--transition-fast);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .state-preview-back:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .state-preview-content {
+      text-align: center;
+    }
+
+    .state-preview-title {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      background: var(--brand-grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .state-preview-desc {
+      color: var(--subtext);
+      margin-bottom: 48px;
+      font-size: 1.05rem;
+    }
+
+    /* 浮动精灵球 */
+    .float-sprite {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: var(--brand-grad);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2.5rem;
+      cursor: pointer;
+      box-shadow: 0 8px 32px rgba(30, 102, 245, 0.4);
+      animation: floatBounce 3s ease-in-out infinite;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .float-sprite::after {
+      content: "";
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 2px solid var(--accent);
+      opacity: 0;
+      animation: spritePulse 2s ease-out infinite;
+    }
+
+    @keyframes floatBounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-12px); }
+    }
+
+    @keyframes spritePulse {
+      0% { transform: scale(1); opacity: 0.5; }
+      100% { transform: scale(1.5); opacity: 0; }
+    }
+
+    .float-sprite-status {
+      margin-top: 24px;
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+    }
+
+    .status-light {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all var(--transition-fast);
+      border: 2px solid white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    .status-light.idle { background: var(--green); }
+    .status-light.thinking { background: var(--accent); animation: blink 1s infinite; }
+    .status-light.sleeping { background: var(--yellow); }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* 托盘图标预览 */
+    .tray-preview {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: white;
+      border: 1px solid var(--surface1);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+    }
+
+    .tray-icon {
+      width: 24px;
+      height: 24px;
+      background: var(--brand-grad);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    .tray-clock {
+      font-size: 0.9rem;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    .tray-hint {
+      margin-top: 24px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 三态切换器 -->
+  <div class="state-switcher" id="state-switcher">
+    <button class="state-btn active" data-state="window">🪟 完整窗口</button>
+    <button class="state-btn" data-state="float">💫 浮动图标</button>
+    <button class="state-btn" data-state="tray">🔽 系统托盘</button>
+  </div>
+
+  <!-- 返回主页链接 -->
+  <div class="demo-header">
+    <a href="index.html" class="back-link">← 返回主页</a>
+  </div>
+
+  <!-- 欢迎引导层 -->
+  <div class="onboarding-overlay" id="onboarding">
+    <div class="onboarding-card">
+      <span class="onboarding-icon">🧚</span>
+      <h2 class="onboarding-title">欢迎体验 Memora Sprite</h2>
+      <p class="onboarding-desc">
+        这是一个会记忆的桌面精灵。每轮对话自动闭环，持续积累关于你的记忆，
+        三态自然交互，越用越懂你。
+      </p>
+      <div class="onboarding-features">
+        <div class="onboarding-feature">
+          <span class="onboarding-feature-icon">💬</span>
+          <span>试试和精灵对话，它会记住你说的话</span>
+        </div>
+        <div class="onboarding-feature">
+          <span class="onboarding-feature-icon">🧠</span>
+          <span>点击顶部「记忆」标签查看已保存的记忆</span>
+        </div>
+        <div class="onboarding-feature">
+          <span class="onboarding-feature-icon">🪟</span>
+          <span>使用顶部切换器体验三种窗口形态</span>
+        </div>
+      </div>
+      <div class="onboarding-actions">
+        <button class="onboarding-btn onboarding-btn-primary" id="onboarding-start">开始体验</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 演示步骤提示条 -->
+  <div class="guide-bar hidden" id="guide-bar">
+    <div class="guide-step-indicator">
+      <span class="guide-dot active" data-step="1"></span>
+      <span class="guide-dot" data-step="2"></span>
+      <span class="guide-dot" data-step="3"></span>
+      <span class="guide-dot" data-step="4"></span>
+    </div>
+    <span class="guide-text" id="guide-text">试试点击下方按钮发送第一条消息</span>
+    <div class="guide-actions">
+      <button class="guide-btn guide-btn-skip" id="guide-skip">跳过</button>
+      <button class="guide-btn guide-btn-next" id="guide-next">下一步</button>
+    </div>
+  </div>
+
+  <!-- 三态预览容器 -->
+  <div class="state-preview-container" id="state-preview">
+    <button class="state-preview-back" id="state-back">← 返回完整窗口</button>
+    <div class="state-preview-content" id="state-preview-content">
+      <!-- 内容由 JS 动态生成 -->
+    </div>
+  </div>
+
+  <!-- 大底板容器 -->
+  <div id="app">
+
+    <!-- 侧边栏 -->
+    <aside id="sidebar">
+      <!-- 品牌区 -->
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">🧚</div>
+        <h1 class="sidebar-brand-name">Memora</h1>
+      </div>
+
+      <!-- 角色选择器 -->
+      <div id="sidebar-header">
+        <div id="persona-selector" role="button" tabindex="0">
+          <span id="persona-icon">🧚</span>
+          <span id="persona-name">精灵</span>
+          <span id="persona-mode-badge">自动</span>
+          <span id="persona-arrow">▾</span>
+        </div>
+      </div>
+
+      <div id="sidebar-content">
+        <!-- 仪表盘 -->
+        <div id="dashboard">
+          <div class="dash-item" title="Agent 记忆总数">
+            <span class="dash-label">🧠 记忆</span>
+            <span class="dash-value" id="memory-count">3</span>
+          </div>
+          <div class="dash-item" title="AI 提取的洞察数">
+            <span class="dash-label">💡 洞察</span>
+            <span class="dash-value" id="insight-count">0</span>
+          </div>
+          <div class="dash-item" title="已加载的角色数">
+            <span class="dash-label">🎭 角色</span>
+            <span class="dash-value" id="persona-count">0</span>
+          </div>
+          <div class="dash-item" id="dash-triggers" title="已注册的触发器数">
+            <span class="dash-label">🔔 触发器</span>
+            <span class="dash-value" id="trigger-count">2</span>
+          </div>
+          <div class="dash-item" id="dash-skills" title="已加载的技能数">
+            <span class="dash-label">⚡ 技能</span>
+            <span class="dash-value" id="skill-count">0</span>
+          </div>
+          <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值">
+            <span class="dash-label">📥 事件</span>
+            <span class="dash-value" id="pending-count">0/3</span>
+          </div>
+        </div>
+
+        <!-- 默契度卡片 -->
+        <div id="rapport-card" class="dashboard-section">
+          <h3>💕 默契度</h3>
+          <div class="rapport-card-inner">
+            <div class="rapport-level" id="rapport-level">👋 初识</div>
+            <div class="rapport-bar">
+              <div class="rapport-bar-fill" id="rapport-fill" style="width: 15%"></div>
+            </div>
+            <div class="rapport-desc" id="rapport-desc">刚开始了解彼此，多聊几句吧</div>
+          </div>
+        </div>
+
+        <!-- Agent 运行时指标 -->
+        <div id="agent-metrics" class="dashboard-section">
+          <h3>运行指标</h3>
+          <div id="agent-metrics-grid">
+            <div class="dash-item" title="LLM 调用总次数">
+              <span class="dash-label">⚡ 调用</span>
+              <span class="dash-value">0</span>
+            </div>
+            <div class="dash-item" title="累计 token 数">
+              <span class="dash-label">🔢 Token</span>
+              <span class="dash-value">0</span>
+            </div>
+            <div class="dash-item" title="记忆召回命中率">
+              <span class="dash-label">🔍 召回</span>
+              <span class="dash-value">0%</span>
+            </div>
+            <div class="dash-item" title="工具调用失败率">
+              <span class="dash-label">🛠 工具</span>
+              <span class="dash-value">—</span>
+            </div>
+            <div class="dash-item" title="上下文截断次数">
+              <span class="dash-label">✂️ 截断</span>
+              <span class="dash-value">0</span>
+            </div>
+            <div class="dash-item" title="记忆衰减">
+              <span class="dash-label">🍂 衰减</span>
+              <span class="dash-value">1/0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 推荐 -->
+        <div id="recommendations" class="dashboard-section">
+          <h3>推荐</h3>
+          <ul id="recommendation-list" class="suggestion-list">
+            <!-- 动态生成 -->
+          </ul>
+        </div>
+
+        <!-- 记忆健康 -->
+        <div id="source-health" class="dashboard-section">
+          <h3>记忆健康</h3>
+          <ul id="source-health-list">
+            <!-- 动态生成 -->
+          </ul>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 顶部栏 -->
+    <header id="titlebar">
+      <nav id="titlebar-nav">
+        <button class="nav-btn active" data-panel="chat">💬 <span class="nav-label">对话</span></button>
+        <button class="nav-btn" data-panel="memories">🧠 <span class="nav-label">记忆</span></button>
+        <button class="nav-btn" data-panel="settings">⚙️ <span class="nav-label">设置</span></button>
+      </nav>
+      <div id="titlebar-drag"></div>
+      <div id="titlebar-controls">
+        <button id="btn-minimize" title="最小化">─</button>
+        <button id="btn-maximize" title="最大化">□</button>
+        <button id="btn-close" title="关闭">✕</button>
+      </div>
+    </header>
+
+    <!-- 核心悬浮窗口 -->
+    <main id="main-content">
+
+      <!-- 对话面板 -->
+      <div id="panel-chat" class="panel active">
+        <!-- 主动提示 banner -->
+        <div id="proactive-banner" class="hidden">
+          <span class="banner-icon">🧚</span>
+          <div class="banner-text" id="proactive-banner-text">检测到项目文件变化，需要我帮忙整理吗？</div>
+          <div class="banner-actions">
+            <button class="banner-btn" data-action="view">查看</button>
+            <button class="banner-btn" data-action="later">稍后</button>
+            <button class="banner-btn" data-action="silent">静默 1 小时</button>
+          </div>
+          <button class="banner-close" data-action="close" title="关闭">✕</button>
+        </div>
+
+        <!-- 对话工具栏 -->
+        <div id="chat-toolbar">
+          <div class="chat-toolbar-info">
+            <span class="chat-toolbar-title">对话</span>
+            <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <div class="session-selector">
+              <button class="session-current">
+                <span>main</span>
+                <span class="session-current-arrow">▾</span>
+              </button>
+            </div>
+            <button id="btn-new-session">✨ 新会话</button>
+          </div>
+        </div>
+
+        <!-- 消息区 -->
+        <div id="messages">
+          <!-- 空状态 -->
+          <div id="chat-empty-state" class="chat-empty-state">
+            <div class="empty-avatar">🧚</div>
+            <div class="empty-title">你好，我是 Memora 精灵</div>
+            <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
+            <div class="empty-suggestions">
+              <button class="suggestion-btn" data-text="我是中国人">📝 记录个人信息</button>
+              <button class="suggestion-btn" data-text="你记得我之前说过什么吗？">🧠 查询我的记忆</button>
+              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆系统</button>
+              <button class="suggestion-btn" data-text="切换到代码助手角色">🎭 切换角色</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 输入区 -->
+        <div id="input-area">
+          <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
+          <div class="input-toolbar">
+            <div class="input-actions-left">
+              <button class="input-action" id="btn-add-memory-quick" title="添加记忆">➕</button>
+            </div>
+            <div class="input-send-area">
+              <button id="btn-send" title="发送（Enter）">➤</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 记忆面板 -->
+      <div id="panel-memories" class="panel">
+        <div class="panel-header">
+          <!-- 列表/图谱切换 -->
+          <div class="memory-view-tabs">
+            <button class="memory-view-tab active" data-memory-view="list">📋 列表</button>
+            <button class="memory-view-tab" data-memory-view="graph">🕸️ 图谱 <span class="soon-badge">即将推出</span></button>
+          </div>
+          <input type="text" id="memory-search" placeholder="搜索记忆…" />
+          <select id="memory-filter-source">
+            <option value="">全部来源</option>
+            <option value="profile">profile</option>
+            <option value="insight">insight</option>
+            <option value="guardrail">guardrail</option>
+            <option value="skill">skill</option>
+            <option value="rule">rule</option>
+            <option value="persona">persona</option>
+            <option value="session">session</option>
+          </select>
+          <button id="btn-add-memory">+ 添加</button>
+        </div>
+        <!-- 列表视图 -->
+        <div id="memory-list" class="memory-view-content active" data-memory-view="list">
+          <!-- 记忆项由 JS 动态生成 -->
+        </div>
+        <!-- 图谱视图（演示） -->
+        <div id="memory-graph" class="memory-view-content" data-memory-view="graph">
+          <div class="graph-placeholder">
+            <canvas id="graph-canvas" width="560" height="340"></canvas>
+            <div class="graph-legend">
+              <span class="graph-legend-item"><span class="graph-dot" style="background: var(--accent);"></span> 洞察 (insight)</span>
+              <span class="graph-legend-item"><span class="graph-dot" style="background: var(--green);"></span> 用户画像 (profile)</span>
+              <span class="graph-legend-item"><span class="graph-dot" style="background: var(--mauve);"></span> 角色 (persona)</span>
+              <span class="graph-legend-item"><span class="graph-dot" style="background: var(--peach);"></span> 作品投影 (work-projection)</span>
+            </div>
+            <p class="graph-hint">🔮 记忆关系图谱正在开发中——记忆之间将支持矛盾、佐证、时序、细化等关系类型</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 设置面板 -->
+      <div id="panel-settings" class="panel">
+        <div class="settings-tabs">
+          <button class="settings-tab active" data-settings-tab="llm">大模型</button>
+          <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
+          <button class="settings-tab" data-settings-tab="sprite">精灵</button>
+          <button class="settings-tab" data-settings-tab="project">项目</button>
+          <button class="settings-tab" data-settings-tab="profile">画像</button>
+          <button class="settings-tab" data-settings-tab="audit">审计</button>
+        </div>
+
+        <!-- LLM 配置 -->
+        <div class="settings-tab-content active" data-settings-tab="llm">
+          <div class="settings-group">
+            <h3>LLM 配置</h3>
+            <div class="settings-row">
+              <label for="cfg-llm-preset">提供商预设</label>
+              <select id="cfg-llm-preset">
+                <option value="">自定义</option>
+                <option value="1">DeepSeek（推荐）</option>
+                <option value="2">OpenAI GPT-4o</option>
+                <option value="3">OpenAI GPT-4o-mini</option>
+              </select>
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-provider">提供商（provider）</label>
+              <input type="text" id="cfg-llm-provider" placeholder="deepseek / openai / 自定义" value="mimo-v2.5-pro" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-model">模型（model）</label>
+              <input type="text" id="cfg-llm-model" placeholder="deepseek-chat" value="mimo-v2.5-pro" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-base-url">API 地址（baseUrl）</label>
+              <input type="text" id="cfg-llm-base-url" placeholder="https://api.deepseek.com" value="https://api.xiaomimimo.com/v1" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-api-key">API Key</label>
+              <div class="input-with-action">
+                <input type="password" id="cfg-llm-api-key" value="sk-************************" />
+                <button type="button" class="toggle-visibility">👁</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label for="cfg-llm-temperature">温度（temperature）</label>
+              <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
+            </div>
+
+            <div class="settings-section">
+              <div class="settings-row">
+                <label for="cfg-bg-enabled">后台 Provider</label>
+                <div>
+                  <input type="checkbox" id="cfg-bg-enabled" />
+                  <span class="settings-hint" style="display:inline;margin-left:4px;">启用后，Insight 提取和配置分析使用独立 Provider</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <label>提供商（provider）</label>
+                <input type="text" placeholder="deepseek / openai / 自定义" disabled />
+              </div>
+              <div class="settings-row">
+                <label>模型（model）</label>
+                <input type="text" placeholder="deepseek-chat" disabled />
+              </div>
+              <div class="settings-row">
+                <label>API 地址（baseUrl）</label>
+                <input type="text" placeholder="https://api.deepseek.com" value="https://api.deepseek.com" disabled />
+              </div>
+              <div class="settings-row">
+                <label>API Key</label>
+                <div class="input-with-action">
+                  <input type="password" placeholder="sk-****" value="sk-****" disabled />
+                  <button type="button" class="toggle-visibility" disabled>👁</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-row" style="margin-top: 16px;">
+              <label></label>
+              <div>
+                <button class="btn-secondary">测试连接</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 嵌入配置 -->
+        <div class="settings-tab-content" data-settings-tab="embedding">
+          <div class="settings-group">
+            <h3>Embedding 配置（可选）</h3>
+            <p class="settings-hint" style="margin-bottom: 16px;">配置后启用语义搜索（向量召回），让记忆搜索更智能。</p>
+            <div class="settings-row">
+              <label>启用语义搜索</label>
+              <input type="checkbox" />
+            </div>
+            <div class="settings-row">
+              <label>模型（model）</label>
+              <input type="text" placeholder="text-embedding-3-small" />
+            </div>
+            <div class="settings-row">
+              <label>API 地址</label>
+              <input type="text" placeholder="https://api.openai.com/v1" />
+            </div>
+            <div class="settings-row">
+              <label>API Key</label>
+              <div class="input-with-action">
+                <input type="password" placeholder="sk-****" />
+                <button type="button" class="toggle-visibility">👁</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 精灵配置 -->
+        <div class="settings-tab-content" data-settings-tab="sprite">
+          <div class="settings-group">
+            <h3>精灵配置</h3>
+            <div class="settings-row">
+              <label>界面主题</label>
+              <div class="radio-group">
+                <label><input type="radio" name="theme-mode" value="light" checked /> 浅色（默认）</label>
+                <label><input type="radio" name="theme-mode" value="dark" /> 深色</label>
+                <label><input type="radio" name="theme-mode" value="auto" /> 跟随系统</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label>静默模式</label>
+              <input type="checkbox" />
+            </div>
+            <div class="settings-row">
+              <label>主动提示阈值</label>
+              <input type="number" min="1" max="20" value="3" />
+            </div>
+            <div class="settings-row">
+              <label>主动提示冷却（分钟）</label>
+              <input type="number" min="1" max="60" value="5" />
+            </div>
+            <div class="settings-row">
+              <label>定时触发间隔（分钟）</label>
+              <input type="number" min="1" max="1440" value="60" />
+            </div>
+          </div>
+          <div class="settings-group">
+            <h3>文件监听</h3>
+            <div class="settings-row">
+              <label>启用文件监听</label>
+              <input type="checkbox" checked />
+            </div>
+            <div class="settings-row">
+              <label>监听路径</label>
+              <input type="text" placeholder="." value="." />
+            </div>
+            <div class="settings-row">
+              <label>防抖时间（毫秒）</label>
+              <input type="number" min="100" max="10000" value="1000" />
+            </div>
+          </div>
+          <div class="settings-group">
+            <h3>角色</h3>
+            <div class="settings-row">
+              <label>匹配模式</label>
+              <div class="radio-group">
+                <label><input type="radio" name="persona-mode" value="auto" checked /> 自动</label>
+                <label><input type="radio" name="persona-mode" value="manual" /> 手动</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label>默认角色</label>
+              <input type="text" placeholder="留空使用自动匹配" />
+            </div>
+          </div>
+
+          <!-- 高级功能预览（即将推出） -->
+          <div class="settings-group upcoming-section">
+            <h3>🔮 即将推出 <span class="soon-label">规划中</span></h3>
+            <p class="settings-hint" style="margin-bottom: 12px;">以下功能正在开发中，v1.0 版本逐步上线</p>
+            <div class="upcoming-features">
+              <label class="upcoming-item">
+                <input type="checkbox" disabled />
+                <div class="upcoming-content">
+                  <span class="upcoming-title">📋 剪贴板感知</span>
+                  <span class="upcoming-desc">被动检测剪贴板变化，用户主动触发分析，敏感内容自动过滤</span>
+                </div>
+              </label>
+              <label class="upcoming-item">
+                <input type="checkbox" disabled />
+                <div class="upcoming-content">
+                  <span class="upcoming-title">👤 工作状态感知</span>
+                  <span class="upcoming-desc">检测用户离开/回来，智能选择是否主动提示</span>
+                </div>
+              </label>
+              <label class="upcoming-item">
+                <input type="checkbox" disabled />
+                <div class="upcoming-content">
+                  <span class="upcoming-title">⌨️ 全局快捷键</span>
+                  <span class="upcoming-desc">Ctrl+Shift+Space 唤起精灵，Ctrl+Shift+M 快速记录</span>
+                </div>
+              </label>
+              <label class="upcoming-item">
+                <input type="checkbox" disabled />
+                <div class="upcoming-content">
+                  <span class="upcoming-title">🕸️ 记忆关系图谱</span>
+                  <span class="upcoming-desc">可视化展示记忆之间的矛盾、佐证、时序关系</span>
+                </div>
+              </label>
+              <label class="upcoming-item">
+                <input type="checkbox" disabled />
+                <div class="upcoming-content">
+                  <span class="upcoming-title">💕 情感基调系统</span>
+                  <span class="upcoming-desc">基于记忆自动调整精灵的语气和风格，越用越有默契</span>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 项目配置 -->
+        <div class="settings-tab-content" data-settings-tab="project">
+          <div class="settings-group">
+            <h3>项目模式</h3>
+            <div class="settings-row">
+              <label>模式</label>
+              <div class="radio-group">
+                <label><input type="radio" name="project-mode" value="smart" checked /> 智能模式</label>
+                <label><input type="radio" name="project-mode" value="focus" /> 专注模式</label>
+              </div>
+            </div>
+            <div class="settings-row">
+              <label>专注项目</label>
+              <select disabled>
+                <option value="">-- 选择项目 --</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 画像配置 -->
+        <div class="settings-tab-content" data-settings-tab="profile">
+          <div class="settings-group">
+            <h3>用户画像</h3>
+            <p class="settings-hint" style="margin-bottom: 16px;">
+              精灵从对话中自动提取用户画像。待确认条目需用户审核后才会持久化。
+            </p>
+            <div style="margin-bottom: 20px;">
+              <h4 style="font-size: 13px; color: var(--text); margin-bottom: 10px;">待确认（0）</h4>
+              <div style="padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; background: var(--window-bg-2); border-radius: var(--radius-sm);">
+                暂无待确认条目
+              </div>
+            </div>
+            <div>
+              <h4 style="font-size: 13px; color: var(--text); margin-bottom: 10px;">已确认（1）</h4>
+              <div style="padding: 12px; background: var(--window-bg-2); border: 1px solid var(--surface2); border-radius: var(--radius-sm); display: flex; align-items: center; gap: 8px;">
+                <span class="source-tag source-profile">profile</span>
+                <span style="font-size: 13px;">国籍: 中国</span>
+                <span style="margin-left: auto; font-size: 11px; color: var(--text-3);">刚刚</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 审计配置 -->
+        <div class="settings-tab-content" data-settings-tab="audit">
+          <div class="settings-group">
+            <h3>审计日志</h3>
+            <p class="settings-hint" style="margin-bottom: 16px;">
+              记录精灵所有文件操作，保留最近 1000 条。
+            </p>
+            <div style="padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; background: var(--window-bg-2); border-radius: var(--radius-sm);">
+              暂无审计记录
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部操作栏 -->
+        <div class="settings-actions">
+          <div class="agent-status-indicator ready">
+            <span class="agent-status-dot"></span>
+            <span class="agent-status-text">Agent 已就绪</span>
+          </div>
+          <div class="settings-actions-buttons">
+            <button class="btn-secondary">恢复默认</button>
+            <button class="btn-secondary">稍后配置</button>
+            <button class="btn-secondary">取消</button>
+            <button class="btn-primary">保存</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- ============================================
+       JavaScript — 交互逻辑
+       ============================================ -->
+  <script>
+    /**
+     * Memora 精灵演示 — 主逻辑
+     * 模拟 memora-sprite 桌面应用的核心交互
+     */
+
+    // ========================================
+    // 状态管理
+    // ========================================
+    let messageCount = 0;
+    let isProcessing = false;
+
+    // 预设记忆数据：仅系统默认角色，用户记忆随对话产生
+    const demoMemories = [
+      {
+        id: 'default-persona',
+        source: 'persona',
+        name: 'default',
+        content: '你是 Memora 精灵，一个有记忆的本地 AI 助手，以专业、友好的态度回应用户，默认使用中文交流。',
+        score: 1.00,
+        time: '系统内置'
+      }
+    ];
+
+    // ========================================
+    // DOM 引用
+    // ========================================
+    const messagesEl = document.getElementById('messages');
+    const inputEl = document.getElementById('input');
+    const btnSend = document.getElementById('btn-send');
+    const chatEmptyState = document.getElementById('chat-empty-state');
+    const chatMessageCount = document.getElementById('chat-message-count');
+    const memoryListEl = document.getElementById('memory-list');
+    const proactiveBanner = document.getElementById('proactive-banner');
+
+    // ========================================
+    // 面板切换
+    // ========================================
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const panel = btn.dataset.panel;
+        // 切换导航按钮状态
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        // 切换面板
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        document.getElementById('panel-' + panel).classList.add('active');
+      });
+    });
+
+    // ========================================
+    // 设置面板 Tab 切换
+    // ========================================
+    document.querySelectorAll('.settings-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabName = tab.dataset.settingsTab;
+        document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`.settings-tab-content[data-settings-tab="${tabName}"]`).classList.add('active');
+      });
+    });
+
+    // ========================================
+    // 主动提示 Banner
+    // ========================================
+    document.querySelectorAll('#proactive-banner .banner-btn, #proactive-banner .banner-close').forEach(btn => {
+      btn.addEventListener('click', () => {
+        proactiveBanner.classList.add('hidden');
+      });
+    });
+
+    // 页面加载 3 秒后显示主动提示（演示效果）
+    setTimeout(() => {
+      proactiveBanner.classList.remove('hidden');
+    }, 3000);
+
+    // ========================================
+    // 记忆面板渲染
+    // ========================================
+    function renderMemoryList() {
+      memoryListEl.innerHTML = demoMemories.map(m => `
+        <div class="memory-item">
+          <div class="name">${escapeHtml(m.name)}</div>
+          <div class="preview">${escapeHtml(m.content.length > 80 ? m.content.substring(0, 80) + '...' : m.content)}</div>
+          <div class="meta">
+            <span class="source-tag source-${m.source === 'work-projection' ? 'insight' : m.source}">${m.source}</span>
+            <span class="score">score: ${m.score.toFixed(2)}</span>
+            <span class="memory-time">${m.time}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 渲染侧边栏推荐（高置信度记忆）
+    function renderRecommendations() {
+      const recListEl = document.getElementById('recommendation-list');
+      if (!recListEl) return;
+      // 取 score 最高的 2 条非 persona 记忆作为推荐
+      const topMemories = demoMemories
+        .filter(m => m.source !== 'persona')
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 2);
+
+      if (topMemories.length === 0) {
+        recListEl.innerHTML = '<li style="color: var(--text-3); font-size: 12px; padding: 4px 0;">暂无推荐，多聊几句吧~</li>';
+        return;
+      }
+
+      recListEl.innerHTML = topMemories.map(m => `
+        <li>${escapeHtml(m.name)} <span class="suggestion-score">${m.score.toFixed(2)}</span></li>
+      `).join('');
+    }
+
+    // 渲染记忆健康统计
+    function renderSourceHealth() {
+      const healthListEl = document.getElementById('source-health-list');
+      if (!healthListEl) return;
+
+      // 按 source 分组统计
+      const sourceStats = {};
+      demoMemories.forEach(m => {
+        if (!sourceStats[m.source]) {
+          sourceStats[m.source] = { count: 0, totalScore: 0, latestTime: m.time };
+        }
+        sourceStats[m.source].count++;
+        sourceStats[m.source].totalScore += m.score;
+      });
+
+      // 排序并渲染
+      const entries = Object.entries(sourceStats);
+      if (entries.length === 0) {
+        healthListEl.innerHTML = '';
+        return;
+      }
+
+      healthListEl.innerHTML = entries.map(([source, stats]) => {
+        const avgScore = (stats.totalScore / stats.count).toFixed(2);
+        const dotClass = stats.count > 0 ? 'health-ok' : 'health-warn';
+        return `
+          <li class="source-health-item">
+            <span class="health-dot ${dotClass}"></span>
+            <span class="health-label">${source} (${stats.count})</span>
+            <span class="health-meta">score ${avgScore} · 刚刚</span>
+          </li>
+        `;
+      }).join('');
+    }
+
+    // 统一刷新所有记忆相关视图
+    function refreshAllMemoryViews() {
+      renderMemoryList();
+      renderRecommendations();
+      renderSourceHealth();
+      updateRapport();
+      // 重置搜索和过滤
+      if (memorySearchEl) memorySearchEl.value = '';
+      if (memoryFilterEl) memoryFilterEl.value = '';
+    }
+
+    renderMemoryList();
+    renderRecommendations();
+    renderSourceHealth();
+
+    // ========================================
+    // 空状态建议按钮
+    // ========================================
+    document.querySelectorAll('.suggestion-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const text = btn.dataset.text;
+        inputEl.value = text;
+        sendMessage();
+      });
+    });
+
+    // ========================================
+    // 输入框自动高度
+    // ========================================
+    inputEl.addEventListener('input', () => {
+      inputEl.style.height = 'auto';
+      inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+    });
+
+    // ========================================
+    // 发送消息
+    // ========================================
+    function sendMessage() {
+      const text = inputEl.value.trim();
+      if (!text || isProcessing) return;
+
+      isProcessing = true;
+      btnSend.disabled = true;
+      inputEl.value = '';
+      inputEl.style.height = 'auto';
+
+      // 隐藏空状态
+      if (chatEmptyState) chatEmptyState.remove();
+
+      // 隐藏主动提示
+      proactiveBanner.classList.add('hidden');
+
+      // 添加用户消息
+      addUserMessage(text);
+      messageCount++;
+      updateMessageCount();
+
+      // 检测是否需要添加记忆
+      let newMemory = null;
+      if (text.includes('我是') || text.includes('我叫')) {
+        let memContent = '';
+        let memName = '';
+        if (text.includes('中国')) {
+          memName = '用户画像-nationality';
+          memContent = '{"category":"nationality","value":"中国"}';
+        } else if (text.includes('程序员') || text.includes('开发')) {
+          memName = '用户画像-occupation';
+          memContent = '{"category":"occupation","value":"开发者/程序员"}';
+        } else if (text.includes('学生')) {
+          memName = '用户画像-identity';
+          memContent = '{"category":"identity","value":"学生"}';
+        } else {
+          // 通用身份信息
+          const nameMatch = text.match(/我叫(.+?)(?:[，。,.\s]|$)/);
+          if (nameMatch) {
+            memName = '用户画像-name';
+            memContent = `{"category":"name","value":"${nameMatch[1]}"}`;
+          }
+        }
+        if (memName && memContent) {
+          newMemory = {
+            id: 'mem-' + Date.now(),
+            source: 'profile',
+            name: memName,
+            content: memContent,
+            score: 1.00,
+            time: '刚刚'
+          };
+        }
+      }
+
+      // 显示打字指示器
+      showTypingIndicator();
+
+      // 模拟思考延迟后回复
+      setTimeout(() => {
+        removeTypingIndicator();
+
+        // 如果有新记忆，添加进去并重渲染
+        if (newMemory) {
+          demoMemories.push(newMemory);
+          refreshAllMemoryViews();
+        }
+
+        // 简单的回复逻辑
+        let reply = generateReply(text);
+        addAssistantMessage(reply);
+
+        // 对话后更新默契度
+        updateRapport();
+
+        isProcessing = false;
+        btnSend.disabled = false;
+        inputEl.focus();
+      }, 1000 + Math.random() * 800);
+    }
+
+    // 回车发送
+    inputEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    btnSend.addEventListener('click', sendMessage);
+
+    // ========================================
+    // 消息渲染
+    // ========================================
+    function addUserMessage(text) {
+      const div = document.createElement('div');
+      div.className = 'message user';
+      const time = getCurrentTime();
+      div.innerHTML = `
+        <div class="message-avatar">🙂</div>
+        <div class="message-content">
+          <div class="message-bubble">${escapeHtml(text)}</div>
+          <div class="message-meta">
+            <button class="message-copy-btn">📋</button>
+            <span class="message-time">${time}</span>
+          </div>
+        </div>
+      `;
+      messagesEl.appendChild(div);
+      scrollToBottom();
+    }
+
+    function addAssistantMessage(text, recalledMemories) {
+      const div = document.createElement('div');
+      div.className = 'message assistant';
+      const time = getCurrentTime();
+
+      let recallHtml = '';
+      if (text.includes('记得') || text.includes('记忆')) {
+        recallHtml = `
+          <span class="memory-recall">📎 召回 2 条记忆</span>
+        `;
+      }
+
+      div.innerHTML = `
+        <div class="message-avatar">🧚</div>
+        <div class="message-content">
+          <div class="message-bubble">${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+          ${recallHtml}
+          <div class="message-meta">
+            <button class="message-copy-btn">📋</button>
+            <span class="message-time">${time}</span>
+          </div>
+        </div>
+      `;
+      messagesEl.appendChild(div);
+      scrollToBottom();
+
+      // 更新仪表盘计数
+      updateDashboardCounters();
+    }
+
+    function showTypingIndicator() {
+      const div = document.createElement('div');
+      div.className = 'message assistant';
+      div.id = 'typing-indicator-msg';
+      div.innerHTML = `
+        <div class="message-avatar">🧚</div>
+        <div class="message-content">
+          <div class="typing-indicator">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+      `;
+      messagesEl.appendChild(div);
+      scrollToBottom();
+    }
+
+    function removeTypingIndicator() {
+      const typing = document.getElementById('typing-indicator-msg');
+      if (typing) typing.remove();
+    }
+
+    // ========================================
+    // 回复生成（简单模拟）
+    // ========================================
+    function generateReply(text) {
+      if (text.includes('我是') || text.includes('我叫')) {
+        // 提取身份信息（简化版演示）
+        let identity = '你的个人信息';
+        if (text.includes('中国')) identity = '国籍：中国';
+        else if (text.includes('程序员') || text.includes('开发')) identity = '职业：开发者';
+        else if (text.includes('学生')) identity = '身份：学生';
+        return `好的！我已经将${identity}记录到档案中了。\n\n你可以点击顶部「🧠 记忆」标签查看已保存的记忆。下次对话时，我会自动召回相关记忆。多聊几句，我们的默契度会慢慢提升哦~`;
+      }
+      if (text.includes('记得') || text.includes('记忆')) {
+        return `当然记得！从你的记忆库中，我可以看到：\n\n1. 我们刚刚的对话内容\n2. 你分享过的个人信息\n3. 作品投影和技能记录\n\n这些都是从我们的对话中自动提取并持久化保存的。每条记忆都有置信度评分，不常用的记忆会自然衰减，避免记忆库膨胀。`;
+      }
+      if (text.includes('记忆系统') || text.includes('介绍')) {
+        return `Memora 的记忆系统核心是「每轮闭环 + 动态组装」：\n\n1. **每轮闭环**：每次对话结束后，自动提取关键信息作为记忆保存\n2. **动态组装**：下一轮对话开始时，根据当前上下文自动召回最相关的记忆\n3. **记忆衰减**：不常用的记忆会逐渐降低权重，避免记忆库膨胀\n4. **语义搜索**：支持向量召回，找到语义相关的记忆\n\n这样既保证了上下文永远精简，又不会丢失重要信息。`;
+      }
+      if (text.includes('切换角色') || text.includes('角色')) {
+        return '当前支持自动角色匹配模式，精灵会根据对话内容自动判断适合的角色。你也可以在侧边栏点击角色选择器手动切换角色。角色会影响精灵的语气、回答风格和专业领域知识。';
+      }
+      if (text.includes('你好') || text.includes('hi') || text.includes('hello')) {
+        return '你好！很高兴认识你 👋 我是 Memora 精灵，你的本地 AI 伙伴。\n\n和我聊天时，我会自动记住重要信息。试试告诉我一些关于你的事吧，比如你的职业、正在做的项目、或者你喜欢的工作方式~';
+      }
+      return '收到！这是 Memora Sprite 的产品演示。你可以：\n\n• 继续和我对话，体验记忆自动积累\n• 点击顶部「🧠 记忆」查看已保存的记忆\n• 点击「⚙️ 设置」了解可配置项\n• 使用页面顶部三态切换器体验浮动图标和托盘态';
+    }
+
+    // ========================================
+    // 工具函数
+    // ========================================
+    function getCurrentTime() {
+      const now = new Date();
+      return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function updateMessageCount() {
+      chatMessageCount.textContent = `今日已交流 ${messageCount} 条消息`;
+    }
+
+    function updateDashboardCounters() {
+      const memoryCountEl = document.getElementById('memory-count');
+      const currentCount = parseInt(memoryCountEl.textContent) || 0;
+      memoryCountEl.textContent = currentCount + 1;
+    }
+
+    function scrollToBottom() {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ========================================
+    // 新会话按钮
+    // ========================================
+    document.getElementById('btn-new-session').addEventListener('click', () => {
+      // 清除所有消息
+      messagesEl.innerHTML = '';
+      messageCount = 0;
+      updateMessageCount();
+      // 重新显示空状态
+      messagesEl.innerHTML = `
+        <div id="chat-empty-state" class="chat-empty-state">
+          <div class="empty-avatar">🧚</div>
+          <div class="empty-title">你好，我是 Memora 精灵</div>
+          <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
+          <div class="empty-suggestions">
+            <button class="suggestion-btn" data-text="我是中国人">📝 记录个人信息</button>
+            <button class="suggestion-btn" data-text="你记得我之前说过什么吗？">🧠 查询我的记忆</button>
+            <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆系统</button>
+            <button class="suggestion-btn" data-text="切换到代码助手角色">🎭 切换角色</button>
+          </div>
+        </div>
+      `;
+      // 重新绑定建议按钮事件
+      document.querySelectorAll('.suggestion-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const text = btn.dataset.text;
+          inputEl.value = text;
+          sendMessage();
+        });
+      });
+    });
+
+    // ========================================
+    // API Key 显示/隐藏切换
+    // ========================================
+    document.querySelectorAll('.toggle-visibility').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = btn.previousElementSibling;
+        if (input && input.tagName === 'INPUT') {
+          input.type = input.type === 'password' ? 'text' : 'password';
+        }
+      });
+    });
+
+    // 聚焦输入框
+    inputEl.focus();
+
+    // ========================================
+    // 欢迎引导层逻辑
+    // ========================================
+    const onboardingEl = document.getElementById('onboarding');
+    const onboardingStartBtn = document.getElementById('onboarding-start');
+    const guideBarEl = document.getElementById('guide-bar');
+    const guideTextEl = document.getElementById('guide-text');
+    const guideNextBtn = document.getElementById('guide-next');
+    const guideSkipBtn = document.getElementById('guide-skip');
+    const guideDots = document.querySelectorAll('.guide-dot');
+
+    let currentGuideStep = 0;
+    const guideSteps = [
+      { text: '点击「📝 记录个人信息」试试发送第一条消息', target: null },
+      { text: '精灵回复后，点击顶部「🧠 记忆」标签查看记忆', target: '[data-panel="memories"]' },
+      { text: '试试顶部三态切换器，体验浮动图标和托盘态', target: '[data-state="float"]' },
+      { text: '演示完成！自由探索吧 ✨', target: null }
+    ];
+
+    function startGuide() {
+      currentGuideStep = 0;
+      updateGuideStep();
+      guideBarEl.classList.remove('hidden');
+    }
+
+    function updateGuideStep() {
+      const step = guideSteps[currentGuideStep];
+      guideTextEl.textContent = step.text;
+      guideDots.forEach((dot, i) => {
+        dot.classList.remove('active', 'done');
+        if (i < currentGuideStep) dot.classList.add('done');
+        if (i === currentGuideStep) dot.classList.add('active');
+      });
+      if (currentGuideStep >= guideSteps.length - 1) {
+        guideNextBtn.textContent = '完成';
+      } else {
+        guideNextBtn.textContent = '下一步';
+      }
+    }
+
+    function nextGuideStep() {
+      if (currentGuideStep < guideSteps.length - 1) {
+        currentGuideStep++;
+        updateGuideStep();
+      } else {
+        guideBarEl.classList.add('hidden');
+      }
+    }
+
+    onboardingStartBtn.addEventListener('click', () => {
+      onboardingEl.classList.add('hidden');
+      startGuide();
+      inputEl.focus();
+    });
+
+    guideNextBtn.addEventListener('click', nextGuideStep);
+    guideSkipBtn.addEventListener('click', () => {
+      guideBarEl.classList.add('hidden');
+    });
+
+    // 发送消息后自动进入第二步
+    messagesEl.addEventListener('DOMNodeInserted', (e) => {
+      if (e.target.classList && e.target.classList.contains('message') && e.target.classList.contains('user')) {
+        if (currentGuideStep === 0) {
+          setTimeout(() => {
+            currentGuideStep = 1;
+            updateGuideStep();
+          }, 1500);
+        }
+      }
+    });
+
+    // 点击记忆标签后进入第三步
+    document.querySelector('[data-panel="memories"]').addEventListener('click', () => {
+      if (currentGuideStep === 1) {
+        setTimeout(() => {
+          currentGuideStep = 2;
+          updateGuideStep();
+        }, 300);
+      }
+    });
+
+    // ========================================
+    // 三态切换逻辑
+    // ========================================
+    const stateSwitcher = document.getElementById('state-switcher');
+    const statePreview = document.getElementById('state-preview');
+    const statePreviewContent = document.getElementById('state-preview-content');
+    const stateBackBtn = document.getElementById('state-back');
+    const stateBtns = document.querySelectorAll('.state-btn');
+    const appEl = document.getElementById('app');
+
+    function showFloatState() {
+      statePreviewContent.innerHTML = `
+        <h2 class="state-preview-title">💫 浮动图标态</h2>
+        <p class="state-preview-desc">桌面边缘悬浮小球，点击展开快速对话，不打断工作流</p>
+        <div class="float-sprite" id="float-sprite-btn">🧚</div>
+        <div class="float-sprite-status">
+          <span class="status-light idle" title="空闲"></span>
+          <span class="status-light thinking" title="思考中"></span>
+          <span class="status-light sleeping" title="休眠"></span>
+        </div>
+        <p class="tray-hint">点击精灵球展开快速对话面板（演示中点击返回）</p>
+      `;
+      document.getElementById('float-sprite-btn').addEventListener('click', () => {
+        showWindowState();
+      });
+    }
+
+    function showTrayState() {
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      statePreviewContent.innerHTML = `
+        <h2 class="state-preview-title">🔽 系统托盘态</h2>
+        <p class="state-preview-desc">后台静默运行，记忆持续积累，有需要时主动出现</p>
+        <div class="tray-preview" style="margin: 0 auto; display: inline-flex;">
+          <span class="tray-icon">🧚</span>
+          <span class="tray-clock">${timeStr}</span>
+        </div>
+        <p class="tray-hint">双击图标打开完整窗口 · 右键打开菜单</p>
+      `;
+    }
+
+    function showWindowState() {
+      stateBtns.forEach(b => b.classList.remove('active'));
+      document.querySelector('[data-state="window"]').classList.add('active');
+      statePreview.classList.remove('active');
+      appEl.style.display = '';
+      stateSwitcher.style.opacity = '1';
+      stateSwitcher.style.pointerEvents = 'auto';
+      guideBarEl.classList.remove('hidden');
+    }
+
+    function setState(state) {
+      stateBtns.forEach(b => b.classList.remove('active'));
+      document.querySelector(`[data-state="${state}"]`).classList.add('active');
+
+      if (state === 'window') {
+        showWindowState();
+      } else {
+        appEl.style.display = 'none';
+        statePreview.classList.add('active');
+        guideBarEl.classList.add('hidden');
+        if (state === 'float') {
+          showFloatState();
+        } else if (state === 'tray') {
+          showTrayState();
+        }
+      }
+
+      // 三态切换后完成引导第三步
+      if (currentGuideStep === 2 && state !== 'window') {
+        setTimeout(() => {
+          currentGuideStep = 3;
+          updateGuideStep();
+        }, 500);
+      }
+    }
+
+    stateBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        setState(btn.dataset.state);
+      });
+    });
+
+    stateBackBtn.addEventListener('click', showWindowState);
+
+    // ========================================
+    // 记忆视图切换（列表 / 图谱）
+    // ========================================
+    document.querySelectorAll('.memory-view-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const view = tab.dataset.memoryView;
+        // 切换标签激活状态
+        document.querySelectorAll('.memory-view-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        // 切换视图显示
+        document.querySelectorAll('.memory-view-content').forEach(c => c.classList.remove('active'));
+        document.querySelector(`.memory-view-content[data-memory-view="${view}"]`).classList.add('active');
+        // 切换到图谱视图时绘制
+        if (view === 'graph') {
+          drawMemoryGraph();
+        }
+      });
+    });
+
+    // ========================================
+    // 绘制记忆关系图谱（Canvas 演示）
+    // ========================================
+    function drawMemoryGraph() {
+      const canvas = document.getElementById('graph-canvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // 清空画布
+      ctx.clearRect(0, 0, w, h);
+
+      // 定义节点（基于演示数据，固定位置便于理解）
+      const nodes = [
+        { id: 'insight1', x: 280, y: 80, r: 18, color: getCssVar('--accent', '#1e66f5'), label: '喜欢简洁\n直接回复' },
+        { id: 'profile1', x: 120, y: 170, r: 20, color: getCssVar('--green', '#40a02b'), label: '国籍\n中国' },
+        { id: 'profile2', x: 280, y: 260, r: 16, color: getCssVar('--green', '#40a02b'), label: '正在测试\nMemora' },
+        { id: 'persona1', x: 440, y: 170, r: 17, color: getCssVar('--mauve', '#8839ef'), label: '程序员\n助手' },
+        { id: 'work1', x: 160, y: 280, r: 14, color: getCssVar('--peach', '#fe640b'), label: 'user_profile\n投影' },
+        { id: 'insight2', x: 420, y: 280, r: 15, color: getCssVar('--accent', '#1e66f5'), label: '中文\n偏好' },
+      ];
+
+      // 定义连线（关系）
+      const edges = [
+        { from: 'profile1', to: 'insight2', rel: '佐证', dashed: false },
+        { from: 'profile2', to: 'insight1', rel: '细化', dashed: false },
+        { from: 'profile1', to: 'work1', rel: '来源', dashed: true },
+        { from: 'persona1', to: 'insight1', rel: '关联', dashed: false },
+        { from: 'profile2', to: 'work1', rel: '产生', dashed: false },
+        { from: 'insight2', to: 'persona1', rel: '影响', dashed: true },
+      ];
+
+      // 绘制连线
+      const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
+      ctx.lineWidth = 1.5;
+      ctx.font = '10px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+
+      edges.forEach(e => {
+        const a = nodeMap[e.from];
+        const b = nodeMap[e.to];
+        if (!a || !b) return;
+        // 线条
+        ctx.beginPath();
+        ctx.setLineDash(e.dashed ? [4, 3] : []);
+        ctx.strokeStyle = getCssVar('--overlay1', '#8c8fa1') + '60';
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // 关系标签（中点）
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        ctx.fillStyle = getCssVar('--text-3', '#6c6f85');
+        ctx.fillText(e.rel, mx, my - 4);
+      });
+
+      // 绘制节点
+      nodes.forEach(n => {
+        // 光晕
+        const gradient = ctx.createRadialGradient(n.x, n.y, n.r * 0.5, n.x, n.y, n.r * 2);
+        gradient.addColorStop(0, n.color + '40');
+        gradient.addColorStop(1, 'transparent');
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r * 2, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        // 圆形
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fillStyle = n.color;
+        ctx.fill();
+        ctx.strokeStyle = getCssVar('--window-bg', '#eff1f5');
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // 标签
+        ctx.fillStyle = getCssVar('--text', '#4c4f69');
+        ctx.font = '10px system-ui, sans-serif';
+        const lines = n.label.split('\n');
+        lines.forEach((line, i) => {
+          const yOffset = i * 13;
+          ctx.fillText(line, n.x, n.y + n.r + 16 + yOffset);
+        });
+      });
+    }
+
+    // 获取 CSS 变量值
+    function getCssVar(name, fallback) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+    }
+
+    // ========================================
+    // 默契度计算与更新
+    // ========================================
+    function getRapportLevel(memoryCount, messageCount) {
+      // 只统计用户产生的记忆（排除系统内置的 persona/skill）
+      const userMemories = demoMemories.filter(m => m.source === 'profile' || m.source === 'session' || m.source === 'insight');
+      const userMemoryCount = userMemories.length;
+      // 基础分：用户记忆数 × 12 + 消息数 × 4，最高 100
+      const score = Math.min(100, userMemoryCount * 12 + messageCount * 4);
+      let level, desc, percent;
+
+      if (score < 15) {
+        level = '👋 初识';
+        desc = '刚开始了解彼此，多聊几句吧';
+        percent = 10;
+      } else if (score < 40) {
+        level = '🤝 熟悉';
+        desc = '开始认识你了，继续交流~';
+        percent = 35;
+      } else if (score < 70) {
+        level = '😊 默契';
+        desc = '越来越懂你了';
+        percent = 65;
+      } else {
+        level = '💖 知己';
+        desc = '心意相通，无需多言';
+        percent = 95;
+      }
+      return { level, desc, percent, score };
+    }
+
+    function updateRapport() {
+      const memoryCount = demoMemories.length;
+      const messageCount = messages.length;
+      const { level, desc, percent } = getRapportLevel(memoryCount, messageCount);
+
+      const levelEl = document.getElementById('rapport-level');
+      const fillEl = document.getElementById('rapport-fill');
+      const descEl = document.getElementById('rapport-desc');
+
+      if (levelEl) levelEl.textContent = level;
+      if (fillEl) fillEl.style.width = percent + '%';
+      if (descEl) descEl.textContent = desc;
+    }
+
+    // ========================================
+    // 记忆搜索、过滤、添加功能
+    // ========================================
+    function renderFilteredMemoryList(searchText, sourceFilter) {
+      const filtered = demoMemories.filter(m => {
+        const matchesSearch = !searchText ||
+          m.name.toLowerCase().includes(searchText.toLowerCase()) ||
+          m.content.toLowerCase().includes(searchText.toLowerCase());
+        const matchesSource = !sourceFilter || m.source === sourceFilter ||
+          (sourceFilter === 'insight' && m.source === 'work-projection');
+        return matchesSearch && matchesSource;
+      });
+
+      memoryListEl.innerHTML = filtered.length === 0
+        ? `<div style="padding: 40px; text-align: center; color: var(--text-3); font-size: 13px;">
+             🔍 没有找到匹配的记忆
+           </div>`
+        : filtered.map(m => `
+            <div class="memory-item">
+              <div class="name">${escapeHtml(m.name)}</div>
+              <div class="preview">${escapeHtml(m.content.length > 80 ? m.content.substring(0, 80) + '...' : m.content)}</div>
+              <div class="meta">
+                <span class="source-tag source-${m.source === 'work-projection' ? 'insight' : m.source}">${m.source}</span>
+                <span class="score">score: ${m.score.toFixed(2)}</span>
+                <span class="memory-time">${m.time}</span>
+              </div>
+            </div>
+          `).join('');
+    }
+
+    // 搜索框
+    const memorySearchEl = document.getElementById('memory-search');
+    if (memorySearchEl) {
+      memorySearchEl.addEventListener('input', () => {
+        renderFilteredMemoryList(memorySearchEl.value, document.getElementById('memory-filter-source').value);
+      });
+    }
+
+    // 来源过滤
+    const memoryFilterEl = document.getElementById('memory-filter-source');
+    if (memoryFilterEl) {
+      memoryFilterEl.addEventListener('change', () => {
+        renderFilteredMemoryList(memorySearchEl ? memorySearchEl.value : '', memoryFilterEl.value);
+      });
+    }
+
+    // 添加记忆按钮（简化版：使用 prompt 演示）
+    function handleAddMemory() {
+      const content = prompt('输入要记住的内容（演示）：', '');
+      if (content && content.trim()) {
+        const newMem = {
+          id: 'manual-' + Date.now(),
+          source: 'session',
+          name: '手动记录',
+          content: content.trim(),
+          score: 0.9,
+          time: '刚刚'
+        };
+        demoMemories.push(newMem);
+        refreshAllMemoryViews();
+      }
+    }
+
+    const btnAddMemory = document.getElementById('btn-add-memory');
+    if (btnAddMemory) btnAddMemory.addEventListener('click', handleAddMemory);
+    const btnAddMemoryQuick = document.getElementById('btn-add-memory-quick');
+    if (btnAddMemoryQuick) btnAddMemoryQuick.addEventListener('click', handleAddMemory);
+
+    // 初始化时更新一次默契度
+    updateRapport();
+  </script>
+
+</body>
+</html>

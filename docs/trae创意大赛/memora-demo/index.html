@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Memora Sprite · 会记忆的桌面精灵</title>
+  <style>
+    :root {
+      /* Catppuccin Latte 设计令牌 */
+      --ctp-rosewater: #dc8a78;
+      --ctp-flamingo: #dd7878;
+      --ctp-pink: #ea76cb;
+      --ctp-mauve: #8839ef;
+      --ctp-red: #d20f39;
+      --ctp-peach: #fe640b;
+      --ctp-yellow: #df8e1d;
+      --ctp-green: #40a02b;
+      --ctp-teal: #179299;
+      --ctp-sky: #04a5e5;
+      --ctp-blue: #1e66f5;
+      --ctp-lavender: #7287fd;
+      --ctp-text: #4c4f69;
+      --ctp-subtext1: #5c5f77;
+      --ctp-subtext0: #6c6f85;
+      --ctp-overlay2: #7c7f93;
+      --ctp-overlay1: #8c8fa1;
+      --ctp-surface2: #acb0be;
+      --ctp-surface1: #bcc0cc;
+      --ctp-surface0: #ccd0da;
+      --ctp-base: #eff1f5;
+      --ctp-mantle: #e6e9ef;
+      --ctp-crust: #dce0e8;
+
+      /* 语义化变量 */
+      --bg: var(--ctp-base);
+      --bg-card: #ffffff;
+      --text-primary: var(--ctp-text);
+      --text-secondary: var(--ctp-subtext1);
+      --text-muted: var(--ctp-overlay0);
+      --border: var(--ctp-surface0);
+      --accent: var(--ctp-blue);
+      --accent-2: var(--ctp-mauve);
+      --brand-grad: linear-gradient(135deg, var(--ctp-blue) 0%, var(--ctp-mauve) 100%);
+      --success: var(--ctp-green);
+      --warning: var(--ctp-peach);
+
+      /* 间距/圆角/阴影 */
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --radius-xl: 24px;
+      --radius-pill: 999px;
+      --shadow-sm: 0 2px 8px rgba(76, 79, 105, 0.06);
+      --shadow-md: 0 8px 24px rgba(76, 79, 105, 0.1);
+      --shadow-lg: 0 16px 48px rgba(76, 79, 105, 0.14);
+
+      /* 动效 */
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+      --dur-fast: 150ms;
+      --dur-base: 250ms;
+      --dur-slow: 400ms;
+    }
+
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* 背景装饰 */
+    .bg-decor {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .bg-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(100px);
+      opacity: 0.35;
+    }
+
+    .bg-blob-1 {
+      width: 500px;
+      height: 500px;
+      background: var(--ctp-blue);
+      top: -150px;
+      right: -100px;
+      animation: float1 12s ease-in-out infinite;
+    }
+
+    .bg-blob-2 {
+      width: 400px;
+      height: 400px;
+      background: var(--ctp-mauve);
+      bottom: -100px;
+      left: -80px;
+      animation: float2 14s ease-in-out infinite reverse;
+    }
+
+    .bg-blob-3 {
+      width: 300px;
+      height: 300px;
+      background: var(--ctp-pink);
+      top: 40%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0.15;
+      animation: pulse 8s ease-in-out infinite;
+    }
+
+    @keyframes float1 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(-40px, 30px) scale(1.08); }
+    }
+
+    @keyframes float2 {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(30px, -40px) scale(1.05); }
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.12; transform: translate(-50%, -50%) scale(1); }
+      50% { opacity: 0.2; transform: translate(-50%, -50%) scale(1.1); }
+    }
+
+    /* 主容器 - 一屏布局 */
+    .container {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 24px;
+    }
+
+    /* 大赛标签 */
+    .contest-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-sm);
+      animation: fadeInUp var(--dur-slow) var(--ease-out) backwards;
+    }
+
+    .contest-badge .dot {
+      width: 8px;
+      height: 8px;
+      background: var(--success);
+      border-radius: 50%;
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* 标题区域 */
+    .hero-title {
+      font-size: clamp(2.8rem, 7vw, 4.5rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      text-align: center;
+      margin-bottom: 16px;
+      background: var(--brand-grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 100ms backwards;
+    }
+
+    .hero-slogan {
+      font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+      color: var(--text-secondary);
+      text-align: center;
+      margin-bottom: 12px;
+      font-weight: 500;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 180ms backwards;
+    }
+
+    /* 差异化锚点 */
+    .differentiator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      background: linear-gradient(135deg, rgba(30, 102, 245, 0.08) 0%, rgba(136, 57, 239, 0.08) 100%);
+      border: 1px solid rgba(30, 102, 245, 0.2);
+      border-radius: var(--radius-pill);
+      margin-bottom: 20px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 220ms backwards;
+    }
+
+    .diff-icon {
+      font-size: 1.1rem;
+    }
+
+    .diff-text {
+      font-size: 0.95rem;
+      font-weight: 600;
+      background: var(--brand-grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-desc {
+      font-size: 1rem;
+      color: var(--text-muted);
+      text-align: center;
+      max-width: 580px;
+      margin-bottom: 48px;
+      line-height: 1.8;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 260ms backwards;
+    }
+
+    @keyframes fadeInUp {
+      from {
+        opacity: 0;
+        transform: translateY(24px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* 主CTA */
+    .cta-group {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 64px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 340ms backwards;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 40px;
+      border-radius: var(--radius-pill);
+      font-size: 1.05rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: all var(--dur-base) var(--ease-out);
+    }
+
+    .btn-primary {
+      background: var(--brand-grad);
+      color: white;
+      box-shadow: 0 8px 24px rgba(30, 102, 245, 0.3);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(30, 102, 245, 0.4);
+    }
+
+    .btn-primary:active {
+      transform: translateY(0);
+    }
+
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--accent);
+      background: var(--ctp-mantle);
+    }
+
+    .btn .arrow {
+      transition: transform var(--dur-fast) var(--ease-out);
+    }
+
+    .btn:hover .arrow {
+      transform: translateX(4px);
+    }
+
+    /* 核心特性卡片 - 3个关键点 */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      max-width: 900px;
+      width: 100%;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 420ms backwards;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px 24px;
+      text-align: center;
+      transition: all var(--dur-base) var(--ease-out);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: var(--brand-grad);
+      opacity: 0;
+      transition: opacity var(--dur-base) var(--ease-out);
+    }
+
+    .feature-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .feature-card:hover::before {
+      opacity: 1;
+    }
+
+    .feature-icon {
+      font-size: 2.2rem;
+      margin-bottom: 16px;
+      display: block;
+    }
+
+    .feature-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
+    .feature-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* 底部提示 */
+    .footer-hint {
+      position: absolute;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 500ms backwards;
+    }
+
+    .footer-hint .kbd {
+      display: inline-block;
+      padding: 3px 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-family: inherit;
+    }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .features {
+        grid-template-columns: 1fr;
+        max-width: 400px;
+      }
+
+      .cta-group {
+        flex-direction: column;
+        width: 100%;
+        max-width: 320px;
+      }
+
+      .btn {
+        justify-content: center;
+      }
+
+      .hero-title {
+        font-size: 2.2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-decor">
+    <div class="bg-blob bg-blob-1"></div>
+    <div class="bg-blob bg-blob-2"></div>
+    <div class="bg-blob bg-blob-3"></div>
+  </div>
+
+  <main class="container">
+    <div class="contest-badge">
+      <span class="dot"></span>
+      TRAE AI 创造力大赛 · 初赛作品
+    </div>
+
+    <h1 class="hero-title">Memora Sprite</h1>
+    <p class="hero-slogan">会记忆的桌面精灵</p>
+
+    <!-- 差异化锚点：一句话讲清与大厂 Agent 的区别 -->
+    <div class="differentiator">
+      <span class="diff-icon">⚡</span>
+      <span class="diff-text">大厂的 AI 每次从零开始，你的精灵记得关于你的一切</span>
+    </div>
+
+    <p class="hero-desc">
+      每轮对话自动闭环，持续积累关于你的记忆。<br>
+      三态自然交互，不打断工作流，越用越懂你。
+    </p>
+
+    <div class="cta-group">
+      <a href="app-demo.html" class="btn btn-primary">
+        开始体验
+        <span class="arrow">→</span>
+      </a>
+    </div>
+
+    <div class="features">
+      <div class="feature-card">
+        <span class="feature-icon">🔄</span>
+        <h3 class="feature-title">每轮记忆闭环</h3>
+        <p class="feature-desc">对话结束自动提取关键信息，下一轮动态召回相关记忆</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🪟</span>
+        <h3 class="feature-title">三态自然交互</h3>
+        <p class="feature-desc">完整窗口/浮动图标/系统托盘，适应不同工作场景</p>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔒</span>
+        <h3 class="feature-title">隐私本地优先</h3>
+        <p class="feature-desc">不监听键盘不截屏，两级权限+路径白名单保障安全</p>
+      </div>
+    </div>
+
+    <div class="footer-hint">
+      <span>点击</span>
+      <span class="kbd">开始体验</span>
+      <span>进入交互式 Demo，内置引导步骤</span>
+    </div>
+  </main>
+</body>
+</html>

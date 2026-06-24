@@ -200,8 +200,9 @@ export class UserProfile {
     this.cache.delete(id);
     try {
       this.index.delete(id);
-    } catch {
-      // 索引中可能不存在（低置信度条目可能未写入），忽略
+    } catch (err) {
+      // 索引中可能不存在（低置信度条目可能未写入）：记录 debug 日志便于排查
+      logger.debug({ id, err: toError(err).message }, '索引删除失败（条目可能未写入索引）');
     }
     logger.info({ id }, '用户画像条目已删除（用户否认）');
   }

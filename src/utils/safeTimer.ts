@@ -57,14 +57,3 @@ export function clearSafeInterval(id: ReturnType<typeof setInterval> | null): vo
     activeTimers.delete(id);
   }
 }
-
-/**
- * 清理所有活跃定时器
- * 用于进程退出或 Agent 完全关闭时调用
- */
-export function clearAllSafeTimers(): void {
-  for (const id of activeTimers) {
-    clearTimeout(id);
-  }
-  activeTimers.clear();
-}

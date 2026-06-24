@@ -14,6 +14,7 @@
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
+import { getOptionalElement } from '../helpers/domHelpers.js';
 import type { ConfirmDialogOptions } from '../types.js';
 
 /**
@@ -306,7 +307,7 @@ export class ModalManager {
       const modal = document.getElementById('prompt-modal');
       const titleEl = document.getElementById('prompt-title');
       const messageEl = document.getElementById('prompt-message');
-      const inputEl = document.getElementById('prompt-input') as HTMLInputElement | null;
+      const inputEl = getOptionalElement('prompt-input', 'input');
       const errorEl = document.getElementById('prompt-error');
       const btnOk = document.getElementById('btn-prompt-ok');
       const btnCancel = document.getElementById('btn-prompt-cancel');

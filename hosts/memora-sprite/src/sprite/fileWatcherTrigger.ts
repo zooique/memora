@@ -29,6 +29,9 @@ export interface FileWatcherConfig {
   allowedPaths?: string[];
 }
 
+/** 默认防抖间隔（毫秒）：同一文件短时间内多次变化只触发一次 */
+const DEFAULT_DEBOUNCE_MS = 1000;
+
 /** 默认忽略模式 */
 const DEFAULT_IGNORE = [
   '**/node_modules/**',
@@ -58,7 +61,7 @@ export class FileWatcherTrigger implements SpriteTrigger {
     this.config = {
       watchPaths: config.watchPaths,
       ignore: config.ignore ?? DEFAULT_IGNORE,
-      debounceMs: config.debounceMs ?? 1000,
+      debounceMs: config.debounceMs ?? DEFAULT_DEBOUNCE_MS,
       allowedPaths: config.allowedPaths ?? [],
     };
     // 预编译所有忽略模式为正则（构造函数中一次性编译，避免 matchGlob 每次重新编译）

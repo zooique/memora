@@ -41,7 +41,7 @@ export function formatConfig(config: SpriteConfig): string {
   if (config.fileWatcherEnabled) {
     lines.push(`  监听路径：${(config.fileWatcherPaths ?? []).join(', ')}`);
     lines.push(`  忽略模式：${(config.fileWatcherIgnore ?? []).join(', ')}`);
-    lines.push(`  防抖时间：${config.fileWatcherDebounceMs ?? 1000} 毫秒`);
+    lines.push(`  防抖时间：${config.fileWatcherDebounceMs ?? DEFAULT_SPRITE_CONFIG.fileWatcherDebounceMs} 毫秒`);
   }
   const modeLabel = config.projectMode === 'focus' ? '专注模式' : '智能模式';
   lines.push(`  项目模式：${modeLabel}`);

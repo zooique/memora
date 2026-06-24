@@ -16,8 +16,8 @@ import { resolve } from 'node:path';
 // ─── 配置 ─────────────────────────────────────────────────
 /** SpriteConfig 定义文件（真理源） */
 const SPRITE_CONFIG_PATH = resolve(import.meta.dirname, '../src/sprite/spriteConfig.ts');
-/** index.ts 文件（包含 CLI_CONFIG_KEYS） */
-const INDEX_PATH = resolve(import.meta.dirname, '../src/index.ts');
+/** cli.ts 文件（包含 CLI_CONFIG_KEYS） */
+const CLI_PATH = resolve(import.meta.dirname, '../src/cli.ts');
 
 // ─── 解析工具 ─────────────────────────────────────────────
 
@@ -117,7 +117,7 @@ function extractCliConfigKeys(source: string): Set<string> {
 function main(): void {
   console.log('[check-cli-config-keys] 开始校验 CLI_CONFIG_KEYS 同步...');
   const configSource = readFileSync(SPRITE_CONFIG_PATH, 'utf-8');
-  const indexSource = readFileSync(INDEX_PATH, 'utf-8');
+  const indexSource = readFileSync(CLI_PATH, 'utf-8');
 
   const spriteConfigFields = extractSpriteConfigFields(configSource);
   const cliConfigKeys = extractCliConfigKeys(indexSource);

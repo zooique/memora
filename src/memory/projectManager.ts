@@ -387,8 +387,9 @@ export class ProjectManager {
         logger.info({ pid: info.pid }, '清理残留锁文件（进程已退出）');
         await this.safeUnlink(lockPath);
       }
-    } catch {
-      // 锁文件不存在或损坏，清理
+    } catch (err) {
+      // 锁文件不存在或损坏，清理：记录 debug 日志便于排查（不存在属正常首次启动）
+      logger.debug({ path: lockPath, err: toError(err).message }, '锁文件读取失败，清理残留');
       await this.safeUnlink(lockPath);
     }
 
@@ -460,6 +461,9 @@ export class ProjectManager {
 
   /**
    * 读取项目注册表
+   *
+   * 同步读取：list getter 契约要求同步返回，注册表操作低频，同步 I/O 影响可控
+   * 损坏时返回空数组并记录警告日志，避免静默吞错掩盖磁盘故障
    */
   private readRegistry(): ProjectEntry[] {
     if (!existsSync(this.registryPath)) {
@@ -469,7 +473,9 @@ export class ProjectManager {
     try {
       const raw = readFileSync(this.registryPath, 'utf-8');
       return JSON.parse(raw) as ProjectEntry[];
-    } catch {
+    } catch (err) {
+      // 注册表损坏：记录警告日志便于排查（不存在属正常首次启动，损坏需排查）
+      logger.warn({ path: this.registryPath, err: toError(err).message }, '项目注册表解析失败，返回空列表');
       return [];
     }
   }

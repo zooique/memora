@@ -6,9 +6,10 @@
  */
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { existsSync } from 'node:fs';
 import { SOURCE_LABELS, inferSource, type Memory } from '@/memory/types.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from '@/utils/frontmatter.js';
+import { logger } from '@/logging/logger.js';
+import { toError } from '@/utils/errors.js';
 
 /**
  * 已知 source 到文件系统目录的映射
@@ -42,13 +43,23 @@ export class FileStore {
    */
   async read(source: string, name: string): Promise<Memory | null> {
     const filePath = this.getFilePath(source, name);
-    if (!existsSync(filePath)) return null;
-
-    const content = await readFile(filePath, 'utf-8');
-    const stat_ = await stat(filePath);
+    // 异步读取：文件不存在时 readFile 抛 ENOENT，捕获后返回 null（避免 existsSync 的 TOCTOU 竞态）
+    let content: string;
+    let fileStat: { mtime: Date };
+    try {
+      content = await readFile(filePath, 'utf-8');
+      fileStat = await stat(filePath);
+    } catch (err) {
+      // ENOENT 属正常情况（文件不存在），静默返回 null；其他错误（EACCES/EISDIR 等）记录警告
+      const error = toError(err) as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        logger.warn({ path: filePath, code: error.code, err: error.message }, '记忆文件读取失败');
+      }
+      return null;
+    }
 
     // 从文件路径推断 source（frontmatter 可覆盖）
-    return this.parseMemory(source, name, content, filePath, stat_.mtime);
+    return this.parseMemory(source, name, content, filePath, fileStat.mtime);
   }
 
   /**
@@ -77,9 +88,18 @@ export class FileStore {
    */
   async list(source: string): Promise<string[]> {
     const dir = join(this.dataDir, this.sourceToDir(source));
-    if (!existsSync(dir)) return [];
-
-    const files = await readdir(dir);
+    // 异步读取：目录不存在时 readdir 抛 ENOENT，捕获后返回空数组（避免 existsSync 的 TOCTOU 竞态）
+    let files: string[];
+    try {
+      files = await readdir(dir);
+    } catch (err) {
+      // ENOENT 属正常情况（目录不存在），静默返回空数组；其他错误（EACCES/EISDIR 等）记录警告
+      const error = toError(err) as NodeJS.ErrnoException;
+      if (error.code !== 'ENOENT') {
+        logger.warn({ dir, code: error.code, err: error.message }, '记忆目录读取失败');
+      }
+      return [];
+    }
     return files.filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, ''));
   }
 

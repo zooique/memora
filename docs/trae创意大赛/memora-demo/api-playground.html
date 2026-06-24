@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Memora API Playground</title>
+<style>
+/* ===== 全局重置与 CSS 变量 ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #1e1e2e;
+  --surface0: #313244;
+  --surface1: #45475a;
+  --surface2: #585b70;
+  --window-bg: #313244;
+  --window-bg-2: #45475a;
+  --text: #cdd6f4;
+  --subtext: #a6adc8;
+  --muted: #9399b2;
+  --accent: #89b4fa;
+  --accent-soft: rgba(137, 180, 250, 0.15);
+  --green: #a6e3a1;
+  --yellow: #f9e2af;
+  --pink: #f5c2e7;
+  --red: #f38ba8;
+  --mauve: #cba6f7;
+  --teal: #94e2d5;
+  --peach: #fab387;
+  --brand-grad: linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-pill: 100px;
+  --shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --transition-fast: 0.12s;
+  --transition-base: 0.2s;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ===== 顶部导航栏 ===== */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  background: var(--surface0);
+  border-bottom: 1px solid var(--surface1);
+  backdrop-filter: blur(12px);
+}
+
+.navbar-brand {
+  font-size: 18px;
+  font-weight: 700;
+  background: var(--brand-grad);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.navbar-link {
+  color: var(--subtext);
+  text-decoration: none;
+  font-size: 14px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--surface1);
+  transition: all var(--transition-base);
+}
+
+.navbar-link:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* ===== 主布局 ===== */
+.main-container {
+  display: flex;
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+
+/* ===== 左侧 API 列表 ===== */
+.api-sidebar {
+  width: 40%;
+  border-right: 1px solid var(--surface1);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface0);
+}
+
+.api-sidebar-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--surface1);
+}
+
+.api-sidebar-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.api-sidebar-header p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* API 列表滚动区 */
+.api-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+/* 分类折叠菜单 */
+.api-category {
+  margin-bottom: 8px;
+}
+
+.api-category-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--subtext);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+  user-select: none;
+}
+
+.api-category-header:hover {
+  background: var(--surface1);
+}
+
+.api-category-arrow {
+  font-size: 10px;
+  transition: transform var(--transition-base);
+  color: var(--muted);
+}
+
+.api-category.open .api-category-arrow {
+  transform: rotate(90deg);
+}
+
+.api-category-items {
+  display: none;
+  padding-left: 12px;
+}
+
+.api-category.open .api-category-items {
+  display: block;
+}
+
+/* API 条目 */
+.api-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  margin-bottom: 2px;
+}
+
+.api-item:hover {
+  color: var(--text);
+  background: var(--surface1);
+}
+
+.api-item.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.api-item-method {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.method-get { background: rgba(166, 227, 161, 0.15); color: var(--green); }
+.method-async { background: rgba(137, 180, 250, 0.15); color: var(--accent); }
+.method-sync { background: rgba(250, 179, 135, 0.15); color: var(--peach); }
+
+/* ===== 右侧 API 详情 ===== */
+.api-detail {
+  width: 60%;
+  overflow-y: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* API 详情标题 */
+.api-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.api-detail-header h2 {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.api-detail-header .method-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+}
+
+/* 代码块 */
+.code-block {
+  background: var(--bg);
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+  position: relative;
+}
+
+.code-block-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+/* 参数表格 */
+.param-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.param-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--surface1);
+  background: var(--surface0);
+}
+
+.param-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--surface1);
+  color: var(--subtext);
+}
+
+.param-table tr:last-child td {
+  border-bottom: none;
+}
+
+.param-name {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.param-type {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--mauve);
+  font-size: 12px;
+}
+
+/* 模拟调用区 */
+.mock-call-section {
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.mock-call-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+
+.mock-call-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.mock-call-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mock-call-field label {
+  font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  color: var(--accent);
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.mock-call-field input {
+  flex: 1;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  outline: none;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.mock-call-field input:focus {
+  border-color: var(--accent);
+}
+
+.mock-call-field input::placeholder {
+  color: var(--muted);
+}
+
+.execute-btn {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bg);
+  background: var(--brand-grad);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: opacity var(--transition-base);
+  font-family: inherit;
+  align-self: flex-start;
+}
+
+.execute-btn:hover { opacity: 0.85; }
+
+/* 返回结果 */
+.result-block {
+  margin-top: 16px;
+  display: none;
+}
+
+.result-block.visible {
+  display: block;
+  animation: resultIn 0.3s ease-out;
+}
+
+@keyframes resultIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* JSON 语法高亮 */
+.json-key { color: var(--accent); }
+.json-string { color: var(--green); }
+.json-number { color: var(--peach); }
+.json-boolean { color: var(--mauve); }
+.json-null { color: var(--red); }
+.json-bracket { color: var(--muted); }
+
+/* ===== 事件系统展示 ===== */
+.event-section {
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+}
+
+.event-section h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.event-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 13px;
+}
+
+.event-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.event-item.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.event-dot.memory { background: var(--green); }
+.event-dot.persona { background: var(--pink); }
+.event-dot.decay { background: var(--yellow); }
+.event-dot.recall { background: var(--accent); }
+.event-dot.session { background: var(--mauve); }
+.event-dot.insight { background: var(--teal); }
+
+.event-name {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+}
+
+.event-desc {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* 事件载荷 */
+.event-payload {
+  display: none;
+  margin-top: 12px;
+}
+
+.event-payload.visible {
+  display: block;
+  animation: resultIn 0.3s ease-out;
+}
+
+/* ===== 空状态 ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+  text-align: center;
+  gap: 12px;
+}
+
+.empty-state-icon {
+  font-size: 48px;
+  opacity: 0.5;
+}
+
+.empty-state p {
+  font-size: 14px;
+}
+
+/* ===== 滚动条美化 ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- 顶部导航栏 -->
+<nav class="navbar">
+  <span class="navbar-brand">🧚 Memora</span>
+  <a href="index.html" class="navbar-link">← 返回主页</a>
+</nav>
+
+<!-- 主布局 -->
+<div class="main-container">
+
+  <!-- 左侧：API 列表 -->
+  <div class="api-sidebar">
+    <div class="api-sidebar-header">
+      <h2>API 列表</h2>
+      <p>点击查看详情与模拟调用</p>
+    </div>
+    <div class="api-list" id="apiList">
+      <!-- 由 JS 动态生成 -->
+    </div>
+  </div>
+
+  <!-- 右侧：API 详情 -->
+  <div class="api-detail" id="apiDetail">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-state-icon">🧪</div>
+      <p>从左侧选择一个 API 开始探索</p>
+    </div>
+    <div id="apiDetailContent" style="display: none;"></div>
+  </div>
+
+</div>
+
+<script>
+/**
+ * API Playground - 主逻辑
+ * 展示 Memora 内核的 API 设计与事件系统
+ */
+
+/* ===== API 数据定义 ===== */
+const apiCategories = [
+  {
+    name: '生命周期',
+    icon: '🏗️',
+    apis: ['agent.init', 'agent.close']
+  },
+  {
+    name: '对话',
+    icon: '💬',
+    apis: ['agent.chat', 'agent.chatSync']
+  },
+  {
+    name: '记忆',
+    icon: '🧠',
+    apis: ['agent.memory.snapshot', 'agent.memory.search', 'agent.memory.stats']
+  },
+  {
+    name: '角色',
+    icon: '🎭',
+    apis: ['agent.persona.list', 'agent.switchPersona', 'agent.setMode']
+  },
+  {
+    name: '配置',
+    icon: '⚙️',
+    apis: ['config.addRule', 'config.addSkill']
+  },
+  {
+    name: '工具',
+    icon: '🔧',
+    apis: ['tools.registerTool', 'tools.execute']
+  }
+];
+
+const apis = {
+  'agent.init': {
+    signature: 'init(projectPathOverride?: string): Promise<ProjectContext>',
+    method: 'async',
+    params: [
+      { name: 'projectPathOverride', type: 'string', desc: '可选的项目路径覆盖' }
+    ],
+    returns: 'ProjectContext { projectPath, projectName, memoraDir, dbPath, ... }',
+    example: {
+      projectPath: './my-project',
+      projectName: 'my-project',
+      memoraDir: './my-project/.memora',
+      dbPath: '~/.memora/memora.db',
+      loadResult: { success: 5, failed: 0 }
+    }
+  },
+  'agent.close': {
+    signature: 'close(): Promise<void>',
+    method: 'async',
+    params: [],
+    returns: 'void',
+    example: { status: 'closed', savedMemories: 42 }
+  },
+  'agent.chat': {
+    signature: 'chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk>',
+    method: 'async',
+    params: [
+      { name: 'input', type: 'string', desc: '用户输入' },
+      { name: 'signal', type: 'AbortSignal', desc: '取消信号（可选）' }
+    ],
+    returns: 'AsyncGenerator<AgentChunk> { type: "text"|"thinking"|"recall"|... }',
+    example: { type: 'text', content: '你好！我是 Memora 精灵，有什么可以帮你的？' }
+  },
+  'agent.chatSync': {
+    signature: 'chatSync(input: string): Promise<string>',
+    method: 'async',
+    params: [
+      { name: 'input', type: 'string', desc: '用户输入' }
+    ],
+    returns: 'Promise<string> — 精灵回复的完整文本',
+    example: '根据你的项目配置，我建议使用 TypeScript 来编写这个模块。'
+  },
+  'agent.memory.snapshot': {
+    signature: 'memory.snapshot(): MemorySnapshot',
+    method: 'get',
+    params: [],
+    returns: 'MemorySnapshot { working, bootstrap, archive }',
+    example: {
+      working: { total: 12, preview: '最近 5 条消息...' },
+      bootstrap: { total: 8, items: [{ source: 'persona', name: '精灵', score: 1.0 }] },
+      archive: { total: 25, insight: 10, profile: 5, 'work-projection': 10 }
+    }
+  },
+  'agent.memory.search': {
+    signature: 'memory.search(query: string, opts?: SearchOptions): Memory[]',
+    method: 'get',
+    params: [
+      { name: 'query', type: 'string', desc: '搜索关键词' },
+      { name: 'opts', type: 'SearchOptions', desc: '搜索选项（limit, source 等）' }
+    ],
+    returns: 'Memory[] — 匹配的记忆条目列表',
+    example: [
+      { id: 'mem_001', source: 'conversation', content: '用户偏好使用 TypeScript', score: 0.92 },
+      { id: 'mem_002', source: 'insight', content: '项目使用 ESM 模块系统', score: 0.85 }
+    ]
+  },
+  'agent.memory.stats': {
+    signature: 'memory.stats(): MemoryStats',
+    method: 'get',
+    params: [],
+    returns: 'MemoryStats { total, bySource, byDecayTier }',
+    example: {
+      total: 45,
+      bySource: { conversation: 12, insight: 10, profile: 5, 'work-projection': 10, persona: 3, skill: 5 },
+      byDecayTier: { fresh: 20, warm: 15, cool: 10 }
+    }
+  },
+  'agent.persona.list': {
+    signature: 'persona.list(): PersonaInfo[]',
+    method: 'get',
+    params: [],
+    returns: 'PersonaInfo[] — 所有可用角色列表',
+    example: [
+      { name: '程序员', icon: '🧑‍💻', desc: '擅长编程、调试、代码审查', active: true },
+      { name: '作家', icon: '✍️', desc: '擅长创作、写作、故事构思', active: false },
+      { name: '学者', icon: '📚', desc: '擅长学习、研究、知识整理', active: false }
+    ]
+  },
+  'agent.switchPersona': {
+    signature: 'switchPersona(name: string): PersonaInfo',
+    method: 'sync',
+    params: [
+      { name: 'name', type: 'string', desc: '目标角色名称' }
+    ],
+    returns: 'PersonaInfo — 切换后的角色信息',
+    example: { name: '作家', icon: '✍️', desc: '擅长创作、写作、故事构思', active: true, mode: 'manual' }
+  },
+  'agent.setMode': {
+    signature: 'setMode(mode: "focus"|"normal"): void',
+    method: 'sync',
+    params: [
+      { name: 'mode', type: '"focus"|"normal"', desc: '精灵模式' }
+    ],
+    returns: 'void',
+    example: { previousMode: 'normal', currentMode: 'focus' }
+  },
+  'config.addRule': {
+    signature: 'addRule(rule: RuleDefinition): void',
+    method: 'sync',
+    params: [
+      { name: 'rule', type: 'RuleDefinition', desc: '规则定义对象' }
+    ],
+    returns: 'void',
+    example: { id: 'rule_001', name: '命名规范', content: '使用小驼峰命名法', priority: 'high' }
+  },
+  'config.addSkill': {
+    signature: 'addSkill(skill: SkillDefinition): void',
+    method: 'sync',
+    params: [
+      { name: 'skill', type: 'SkillDefinition', desc: '技能定义对象' }
+    ],
+    returns: 'void',
+    example: { id: 'skill_001', name: '代码审查', triggers: ['review', '检查'], enabled: true }
+  },
+  'tools.registerTool': {
+    signature: 'registerTool(tool: ToolDefinition): void',
+    method: 'sync',
+    params: [
+      { name: 'tool', type: 'ToolDefinition', desc: '工具定义对象' }
+    ],
+    returns: 'void',
+    example: { name: 'fileSearch', description: '搜索项目文件', parameters: { path: { type: 'string' } } }
+  },
+  'tools.execute': {
+    signature: 'execute(name: string, args: Record<string, unknown>): Promise<ToolResult>',
+    method: 'async',
+    params: [
+      { name: 'name', type: 'string', desc: '工具名称' },
+      { name: 'args', type: 'Record<string, unknown>', desc: '工具参数' }
+    ],
+    returns: 'Promise<ToolResult>',
+    example: { success: true, data: { files: ['src/index.ts', 'src/agent/loop.ts'] } }
+  }
+};
+
+/* ===== 事件数据定义 ===== */
+const events = [
+  {
+    name: 'memoryAdded',
+    dotClass: 'memory',
+    desc: '新记忆被添加',
+    payload: { type: 'memoryAdded', memory: { id: 'mem_042', source: 'conversation', content: '用户正在学习 Rust', score: 1.0, timestamp: '2026-06-24T10:30:00Z' } }
+  },
+  {
+    name: 'personaSwitched',
+    dotClass: 'persona',
+    desc: '角色已切换',
+    payload: { type: 'personaSwitched', from: '程序员', to: '作家', mode: 'auto', reason: '关键词匹配：小说' }
+  },
+  {
+    name: 'decayCompleted',
+    dotClass: 'decay',
+    desc: '衰减周期完成',
+    payload: { type: 'decayCompleted', affected: 8, tier: 'warm', nextRun: '2026-07-24T11:00:00Z' }
+  },
+  {
+    name: 'memoryRecalled',
+    dotClass: 'recall',
+    desc: '记忆被召回',
+    payload: { type: 'memoryRecalled', query: 'TypeScript 配置', results: [{ id: 'mem_015', score: 0.95 }, { id: 'mem_023', score: 0.82 }] }
+  },
+  {
+    name: 'sessionForked',
+    dotClass: 'session',
+    desc: '会话已分叉',
+    payload: { type: 'sessionForked', parentId: 'sess_001', childId: 'sess_002', reason: '用户切换项目' }
+  },
+  {
+    name: 'insightExtracted',
+    dotClass: 'insight',
+    desc: '洞察已提取',
+    payload: { type: 'insightExtracted', insight: { content: '用户偏好函数式编程风格', confidence: 0.88, source: 'conversation' } }
+  }
+];
+
+/* ===== 状态变量 ===== */
+let activeApiId = null;
+let activeEventIdx = -1;
+
+/* ===== 初始化 ===== */
+function init() {
+  renderApiList();
+}
+
+/**
+ * 渲染左侧 API 分类列表
+ */
+function renderApiList() {
+  const list = document.getElementById('apiList');
+  list.innerHTML = apiCategories.map(cat => `
+    <div class="api-category open" id="cat-${cat.name}">
+      <div class="api-category-header" onclick="toggleCategory('${cat.name}')">
+        <span class="api-category-arrow">▶</span>
+        <span>${cat.icon} ${cat.name}</span>
+      </div>
+      <div class="api-category-items">
+        ${cat.apis.map(apiId => {
+          const api = apis[apiId];
+          const methodClass = api.method === 'async' ? 'method-async' : api.method === 'sync' ? 'method-sync' : 'method-get';
+          const methodLabel = api.method === 'async' ? 'ASYNC' : api.method === 'sync' ? 'SYNC' : 'GET';
+          return `
+            <div class="api-item ${activeApiId === apiId ? 'active' : ''}" onclick="selectApi('${apiId}')">
+              <span class="api-item-method ${methodClass}">${methodLabel}</span>
+              <span>${apiId.split('.').pop()}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+/**
+ * 折叠/展开分类
+ * @param {string} name - 分类名称
+ */
+function toggleCategory(name) {
+  document.getElementById(`cat-${name}`).classList.toggle('open');
+}
+
+/**
+ * 选择 API 并显示详情
+ * @param {string} apiId - API 标识符
+ */
+function selectApi(apiId) {
+  activeApiId = apiId;
+  renderApiList();
+  renderApiDetail(apiId);
+}
+
+/**
+ * 渲染 API 详情面板
+ * @param {string} apiId - API 标识符
+ */
+function renderApiDetail(apiId) {
+  const api = apis[apiId];
+  if (!api) return;
+
+  document.getElementById('emptyState').style.display = 'none';
+  const content = document.getElementById('apiDetailContent');
+  content.style.display = 'flex';
+  content.style.flexDirection = 'column';
+  content.style.gap = '20px';
+
+  const methodClass = api.method === 'async' ? 'method-async' : api.method === 'sync' ? 'method-sync' : 'method-get';
+  const methodLabel = api.method === 'async' ? 'ASYNC' : api.method === 'sync' ? 'SYNC' : 'GET';
+
+  content.innerHTML = `
+    <!-- API 标题 -->
+    <div class="api-detail-header">
+      <h2>${apiId}</h2>
+      <span class="method-badge ${methodClass}">${methodLabel}</span>
+    </div>
+
+    <!-- 函数签名 -->
+    <div>
+      <div class="code-block-label">函数签名</div>
+      <div class="code-block"><span class="json-key">${apiId}</span>.<span class="json-string">${api.signature}</span></div>
+    </div>
+
+    <!-- 参数说明 -->
+    ${api.params.length > 0 ? `
+    <div>
+      <div class="code-block-label">参数</div>
+      <table class="param-table">
+        <thead>
+          <tr><th>参数名</th><th>类型</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          ${api.params.map(p => `
+            <tr>
+              <td><span class="param-name">${p.name}</span></td>
+              <td><span class="param-type">${p.type}</span></td>
+              <td>${p.desc}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    ` : ''}
+
+    <!-- 返回值 -->
+    <div>
+      <div class="code-block-label">返回值</div>
+      <div class="code-block">${highlightJson(api.returns)}</div>
+    </div>
+
+    <!-- 模拟调用 -->
+    <div class="mock-call-section">
+      <h3>模拟调用</h3>
+      <div class="mock-call-inputs">
+        ${api.params.map(p => `
+          <div class="mock-call-field">
+            <label>${p.name}</label>
+            <input type="text" id="param-${p.name}" placeholder="${p.type}" value="${getDefaultValue(p)}">
+          </div>
+        `).join('')}
+      </div>
+      <button class="execute-btn" onclick="executeMock('${apiId}')">执行</button>
+      <div class="result-block" id="resultBlock">
+        <div class="code-block-label" style="margin-top: 16px;">返回结果</div>
+        <div class="code-block" id="resultContent"></div>
+      </div>
+    </div>
+
+    <!-- 事件系统展示 -->
+    <div class="event-section">
+      <h3>事件系统</h3>
+      <div class="event-list">
+        ${events.map((ev, i) => `
+          <div class="event-item ${activeEventIdx === i ? 'active' : ''}" onclick="showEvent(${i})">
+            <span class="event-dot ${ev.dotClass}"></span>
+            <span class="event-name">${ev.name}</span>
+            <span class="event-desc">${ev.desc}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div class="event-payload" id="eventPayload">
+        <div class="code-block-label">事件载荷</div>
+        <div class="code-block" id="eventPayloadContent"></div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 获取参数默认值
+ * @param {Object} param - 参数对象
+ * @returns {string} 默认值字符串
+ */
+function getDefaultValue(param) {
+  if (param.name === 'projectPathOverride') return './my-project';
+  if (param.name === 'input') return '你好';
+  if (param.name === 'query') return 'TypeScript';
+  if (param.name === 'name') return '作家';
+  if (param.name === 'mode') return 'focus';
+  if (param.name === 'rule') return '{ "name": "命名规范", "content": "小驼峰" }';
+  if (param.name === 'skill') return '{ "name": "代码审查", "triggers": ["review"] }';
+  if (param.name === 'tool') return '{ "name": "fileSearch" }';
+  if (param.name === 'args') return '{ "path": "./src" }';
+  return '';
+}
+
+/**
+ * 执行模拟调用
+ * @param {string} apiId - API 标识符
+ */
+function executeMock(apiId) {
+  const api = apis[apiId];
+  const resultBlock = document.getElementById('resultBlock');
+  const resultContent = document.getElementById('resultContent');
+
+  /* 显示加载效果 */
+  resultBlock.classList.add('visible');
+  resultContent.innerHTML = '<span class="json-null">⏳ 执行中...</span>';
+
+  /* 模拟延迟后显示结果 */
+  setTimeout(() => {
+    resultContent.innerHTML = highlightJson(JSON.stringify(api.example, null, 2));
+  }, 400);
+}
+
+/**
+ * 显示事件载荷
+ * @param {number} idx - 事件索引
+ */
+function showEvent(idx) {
+  activeEventIdx = idx;
+  const ev = events[idx];
+
+  /* 更新高亮 */
+  document.querySelectorAll('.event-item').forEach((el, i) => {
+    el.classList.toggle('active', i === idx);
+  });
+
+  /* 显示载荷 */
+  const payload = document.getElementById('eventPayload');
+  const payloadContent = document.getElementById('eventPayloadContent');
+  payload.classList.add('visible');
+  payloadContent.innerHTML = highlightJson(JSON.stringify(ev.payload, null, 2));
+}
+
+/**
+ * JSON 语法高亮
+ * 字符串绿色、数字黄色、布尔蓝色、null 红色
+ * @param {string} jsonStr - JSON 字符串
+ * @returns {string} 带 HTML 标签的高亮字符串
+ */
+function highlightJson(jsonStr) {
+  /* 转义 HTML 特殊字符 */
+  const escaped = jsonStr
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  /* 逐 token 高亮 */
+  return escaped.replace(
+    /("(?:[^"\\]|\\.)*")\s*:/g,        /* 键名 */
+    '<span class="json-key">$1</span>:'
+  ).replace(
+    /:\s*("(?:[^"\\]|\\.)*")/g,          /* 字符串值 */
+    ': <span class="json-string">$1</span>'
+  ).replace(
+    /:\s*(-?\d+\.?\d*)/g,               /* 数字 */
+    ': <span class="json-number">$1</span>'
+  ).replace(
+    /:\s*(true|false)/g,                /* 布尔 */
+    ': <span class="json-boolean">$1</span>'
+  ).replace(
+    /:\s*(null)/g,                       /* null */
+    ': <span class="json-null">$1</span>'
+  ).replace(
+    /([{}\[\]])/g,                       /* 括号 */
+    '<span class="json-bracket">$1</span>'
+  );
+}
+
+/* 页面加载后初始化 */
+init();
+</script>
+</body>
+</html>

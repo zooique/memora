@@ -17,7 +17,7 @@
 import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
-import { clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
+import { clearElement, formatTimeAgo, getOptionalElement } from '../helpers/domHelpers.js';
 
 /**
  * 用户画像面板管理器
@@ -69,7 +69,7 @@ export class ProfilePanelManager {
     this.confirmedListEl = document.getElementById('profile-confirmed-list');
     this.pendingCountEl = document.getElementById('profile-pending-count');
     this.confirmedCountEl = document.getElementById('profile-confirmed-count');
-    this.refreshBtn = document.getElementById('btn-profile-refresh') as HTMLButtonElement | null;
+    this.refreshBtn = getOptionalElement('btn-profile-refresh', 'button');
 
     // 绑定刷新按钮事件
     if (this.refreshBtn) {
