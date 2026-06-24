@@ -301,12 +301,16 @@
   display: none; /* 侧边栏导航已废弃，保留选择器避免 TS querySelector 报错 */
 }
 
-/* ─── 顶部栏导航标签（ADR-NAV-001 pill 形式水平排列） ──────── */
+/* ─── 顶部栏导航标签（ADR-NAV-001 segmented control 样式） ──── */
+/* 参考 Trae Work：三个标签合并在一个圆角容器内，active 标签白色凸起 */
 #titlebar-nav {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding-left: 12px;
+  gap: 0; /* 按钮紧贴，无间隙 */
+  padding: 3px; /* 容器内边距，为 active 按钮的凸起留空间 */
+  margin-left: 12px; /* 与左侧边缘保持间距 */
+  background: var(--surface1); /* 容器背景（略深于大底板），衬托 active 按钮的白色凸起 */
+  border-radius: var(--radius-pill);
   -webkit-app-region: no-drag; /* 按钮区域不可拖拽，复用 P1-1 整体 drag + 按钮 no-drag 方案 */
   flex-shrink: 0;
 }
@@ -315,7 +319,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 14px;
+  padding: 4px 14px;
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
@@ -326,21 +330,25 @@
   cursor: pointer;
   /* ADR-NAV-001 顶部栏按钮不可拖拽 */
   -webkit-app-region: no-drag;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+  /* 相邻按钮之间用细边框分隔（可选，当前用颜色差异区分） */
+  position: relative;
+  z-index: 1;
 }
 
 .nav-btn:hover {
-  background: var(--surface1);
   color: var(--text);
+  /* hover 时轻微提亮，但不改变背景（active 态才改变） */
 }
 
-/* ADR-NAV-001 active 态：pill 形式白色背景 + 边框，参考 Trae Work 标签样式 */
+/* ADR-NAV-001 active 态：白色凸起 + 阴影，从 segmented 容器中"浮出" */
 .nav-btn.active {
   background: var(--window-bg);
-  border-color: var(--surface2);
+  border-color: transparent;
   color: var(--text);
   font-weight: 600;
   box-shadow: var(--shadow-sm);
+  z-index: 2; /* 凸起在非 active 按钮之上 */
 }
 
 /* ─── 侧边栏推荐记忆列表（对齐方案 §6.3 推荐区） ──────────────── */
@@ -597,13 +605,13 @@
     font-size: 9px;
   }
 
-  /* ADR-NAV-001 中屏模式下顶部栏导航只显示 emoji 图标，隐藏文字 */
+  /* ADR-NAV-001 中屏模式下 segmented control 紧凑化，只显示 emoji 图标 */
   #titlebar-nav {
-    gap: 2px;
-    padding-left: 8px;
+    margin-left: 8px;
+    padding: 3px;
   }
   #titlebar-nav .nav-btn {
-    padding: 5px 10px;
+    padding: 4px 10px;
     gap: 0;
   }
   /* 隐藏按钮文字标签，只保留 emoji 图标 */
