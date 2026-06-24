@@ -62,7 +62,8 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  /* UI-AUDIT: 列出具体属性替代 transition: all（遵循 Web Interface Guidelines） */
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 #btn-new-session:hover {
@@ -100,7 +101,8 @@
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  /* UI-AUDIT: 列出具体属性替代 transition: all */
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   white-space: nowrap;
   max-width: 160px;
   overflow: hidden;
@@ -326,7 +328,8 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  /* UI-AUDIT: 列出具体属性替代 transition: all */
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 #proactive-banner .banner-btn:hover {
@@ -426,7 +429,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast);
+  /* UI-AUDIT: 列出具体属性替代 transition: all */
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .suggestion-card-close:hover {
@@ -468,7 +472,8 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  /* UI-AUDIT: 列出具体属性替代 transition: all */
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   border: 1px solid transparent;
 }
 
@@ -1031,10 +1036,11 @@
   margin-bottom: 6px;
   padding: 4px 10px;
   font-size: 11px;
-  color: var(--warn-fg, #b88500);
-  background: var(--warn-bg, rgba(184, 133, 0, 0.1));
+  /* UI-AUDIT: 改用主题变量替代硬编码 fallback，深色主题自动适配 */
+  color: var(--yellow);
+  background: var(--yellow-20);
   border-radius: var(--radius-sm);
-  border-left: 3px solid var(--warn-fg, #b88500);
+  border-left: 3px solid var(--yellow);
 }
 
 /* ─── UX-P1-02 工具调用卡片 ───────────────────────────────── */
@@ -1170,7 +1176,8 @@
   border-radius: var(--radius-sm);
   font-size: 11px;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  /* UI-AUDIT: 列出具体属性替代 transition: all */
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .load-more-btn:hover {

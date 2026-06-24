@@ -225,11 +225,23 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     electronAPI.showFloatContextMenu();
   };
 
+  // UI-AUDIT: 键盘可访问性处理器
+  // #sphere 添加 role="button" tabindex="0" 后，需支持 Enter/Space 触发与单击等效的操作
+  const onSphereKeydown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      markDragHintSeen();
+      electronAPI.expandToFull();
+    }
+  };
+
   // 事件绑定到 sphere（而非 document），配合 setPointerCapture 确保事件不丢失
   sphere.addEventListener('pointerdown', onPointerDown);
   sphere.addEventListener('pointermove', onPointerMove);
   sphere.addEventListener('pointerup', onPointerUp);
   sphere.addEventListener('contextmenu', onContextMenu);
+  // UI-AUDIT: 键盘事件绑定（配合 role="button"）
+  sphere.addEventListener('keydown', onSphereKeydown);
 
   // ─── 未读计数监听 ──────────────────────────────────────
   electronAPI.onFloatUnread((count: number) => {
@@ -290,6 +302,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     sphere.removeEventListener('pointermove', onPointerMove);
     sphere.removeEventListener('pointerup', onPointerUp);
     sphere.removeEventListener('contextmenu', onContextMenu);
+    // UI-AUDIT: 清理键盘事件监听器
+    sphere.removeEventListener('keydown', onSphereKeydown);
     sphere.removeEventListener('mouseenter', showDragHintIfFirstTime);
     sphere.removeEventListener('mouseleave', onSphereMouseLeave);
     // UX-P2-10 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM

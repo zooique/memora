@@ -17,7 +17,7 @@
 import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../eventTracker.js';
 import { reportError, toError } from '../errorHelpers.js';
-import { clearElement } from '../domHelpers.js';
+import { clearElement, formatTimeAgo } from '../domHelpers.js';
 
 /**
  * 用户画像面板管理器
@@ -196,7 +196,8 @@ export class ProfilePanelManager {
 
     const updatedSpan = document.createElement('span');
     updatedSpan.className = 'profile-updated';
-    updatedSpan.textContent = this.formatTime(entry.updatedAt);
+    // UI-AUDIT: 复用 domHelpers.formatTimeAgo，避免重复实现时间格式化逻辑
+    updatedSpan.textContent = formatTimeAgo(entry.updatedAt);
     header.appendChild(updatedSpan);
 
     card.appendChild(header);
@@ -272,25 +273,6 @@ export class ProfilePanelManager {
 
     card.appendChild(actions);
     return card;
-  }
-
-  /**
-   * 格式化时间戳为可读文本
-   *
-   * @param isoTime ISO 8601 时间字符串
-   * @returns 格式化后的时间文本（如 "MM-DD HH:MM"）
-   */
-  private formatTime(isoTime: string): string {
-    try {
-      const date = new Date(isoTime);
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      const hh = String(date.getHours()).padStart(2, '0');
-      const mm = String(date.getMinutes()).padStart(2, '0');
-      return `${m}-${d} ${hh}:${mm}`;
-    } catch {
-      return isoTime;
-    }
   }
 
   /** 清理所有事件监听器（UIManager.cleanup 时调用） */

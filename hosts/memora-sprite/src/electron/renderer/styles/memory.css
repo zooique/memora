@@ -273,11 +273,13 @@
   background: var(--window-bg-2);
   font-size: 12px;
   cursor: default;
-  transition: background 0.15s;
+  /* UI-AUDIT: 使用动画时长变量替代硬编码 0.15s，保持设计系统一致性 */
+  transition: background var(--transition-fast);
 }
 
+/* UI-AUDIT: 修复 hover 背景色错误（原 --accent-fg 在浅色主题下为白色，hover 不可见） */
 .skill-item:hover {
-  background: var(--accent-fg);
+  background: var(--surface1);
 }
 
 .skill-name {
@@ -293,19 +295,21 @@
   flex-shrink: 0;
 }
 
-/* 来源层级颜色区分：全局=蓝色，项目=绿色 */
+/* UI-AUDIT: 来源层级颜色改用主题变量，深色主题自动适配（原硬编码 #6495ed/#22c55e） */
+/* 全局=蓝色（复用 --accent），项目=绿色（复用 --green） */
 .skill-layer-agent {
-  background: rgba(100, 149, 237, 0.2);
-  color: #6495ed;
+  background: var(--accent-20);
+  color: var(--accent);
 }
 
 .skill-layer-project {
-  background: rgba(34, 197, 94, 0.2);
-  color: #22c55e;
+  background: var(--green-20);
+  color: var(--green);
 }
 
 .skill-keywords {
-  color: var(--text-secondary);
+  /* UI-AUDIT: 修复未定义变量引用（原 --text-secondary 未在 base.css 定义） */
+  color: var(--text-2);
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;

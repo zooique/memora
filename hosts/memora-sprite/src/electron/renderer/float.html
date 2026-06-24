@@ -316,18 +316,21 @@
 <body>
   <!-- 精灵球体：包含形态容器 + 状态点 + 未读徽章 -->
   <!-- FD-06 title 属性提供原生 tooltip，作为拖动提示的基础层 -->
-  <div id="sphere" title="拖动移动位置 · 单击展开对话">
+  <!-- UI-AUDIT: 添加 role/tabindex/aria-label 提升键盘可访问性（原 div 不可聚焦） -->
+  <div id="sphere" role="button" tabindex="0" aria-label="Memora 精灵，单击展开对话，拖动移动位置" title="拖动移动位置 · 单击展开对话">
     <div id="sphere-form">
       <!-- 阶段二：emoji 占位；阶段三：替换为 <img src="生成的形态图片"> -->
       <span id="sphere-emoji">🧚</span>
-      <img id="sphere-image" alt="" />
+      <!-- UI-AUDIT: 添加 width/height 防止 CLS（虽 display:none，保持规范） -->
+      <img id="sphere-image" alt="" width="72" height="72" />
     </div>
     <!-- 状态指示点（idle/active/sleeping） -->
-    <div id="status-dot"></div>
+    <div id="status-dot" aria-hidden="true"></div>
     <!-- 未读计数徽章 -->
-    <div id="badge">0</div>
+    <!-- UI-AUDIT: 添加 aria-label 提升可访问性 -->
+    <div id="badge" aria-label="未读消息计数">0</div>
     <!-- FD-06 拖动引导提示（首次使用时显示） -->
-    <div id="drag-hint">💡 拖动移动 · 单击展开</div>
+    <div id="drag-hint" role="status">💡 拖动移动 · 单击展开</div>
   </div>
 
   <script type="module" src="float.js"></script>

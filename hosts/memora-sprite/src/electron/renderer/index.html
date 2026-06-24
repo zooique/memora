@@ -36,7 +36,8 @@
 
       <!-- 角色选择器（点击展开下拉菜单） -->
       <div id="sidebar-header">
-        <div id="persona-selector">
+        <!-- UI-AUDIT: 添加 role/tabindex/aria-label 提升键盘可访问性（原 div 不可聚焦） -->
+        <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox">
           <span id="persona-icon">🧚</span>
           <span id="persona-name">精灵</span>
           <!-- IX-07 当前角色匹配模式标签（auto/manual） -->
@@ -143,10 +144,11 @@
       <!-- UX-P2-24 移除 #app-title 元素（原 display:none 但保留在 HTML 中，无实际作用） -->
       <div id="titlebar-drag"></div>
       <div id="titlebar-controls">
-        <button id="btn-minimize" title="最小化">─</button>
-        <button id="btn-maximize" title="最大化">□</button>
+        <!-- UI-AUDIT: 添加 aria-label 提升可访问性（屏幕阅读器支持） -->
+        <button id="btn-minimize" title="最小化" aria-label="最小化窗口">─</button>
+        <button id="btn-maximize" title="最大化" aria-label="最大化窗口">□</button>
         <!-- UX-P2-21 调整 title 文案与 ✕ 图标语义一致（原"隐藏到浮动窗口"与关闭图标不符） -->
-        <button id="btn-close" title="关闭">✕</button>
+        <button id="btn-close" title="关闭" aria-label="关闭窗口">✕</button>
       </div>
     </header>
 
@@ -168,7 +170,8 @@
             </button>
             <div id="session-dropdown" class="dropdown session-dropdown hidden">
               <!-- FD-08 会话搜索过滤 -->
-              <input type="text" id="session-search" class="session-search" placeholder="搜索会话..." autocomplete="off" />
+              <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder，屏幕阅读器无法识别用途） -->
+              <input type="text" id="session-search" class="session-search" placeholder="搜索会话..." autocomplete="off" aria-label="搜索会话" />
               <ul id="session-list" class="session-list"></ul>
             </div>
           </div>
@@ -211,7 +214,8 @@
           </div>
         </div>
         <div id="input-area">
-          <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
+          <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder） -->
+          <textarea id="input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1" aria-label="输入消息"></textarea>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
             <div class="input-actions-left">
@@ -228,7 +232,8 @@
       <!-- 记忆面板 -->
       <div id="panel-memories" class="panel">
         <div class="panel-header">
-          <input type="text" id="memory-search" placeholder="搜索记忆…" />
+          <!-- UI-AUDIT: 添加 aria-label 提升可访问性 -->
+          <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" />
           <select id="memory-filter-source" title="按来源筛选">
             <option value="">全部来源</option>
             <option value="profile">profile</option>
@@ -678,7 +683,8 @@
   <div id="shortcuts-modal" class="modal hidden">
     <div class="modal-content modal-content-sm">
       <div class="modal-header">
-        <h2>键盘快捷键</h2>
+        <!-- UI-AUDIT: 统一标题层级为 h3（原 h2 与其他 modal 的 h3 不一致） -->
+        <h3>键盘快捷键</h3>
         <button class="modal-close" data-modal="shortcuts-modal">✕</button>
       </div>
       <div class="modal-body">

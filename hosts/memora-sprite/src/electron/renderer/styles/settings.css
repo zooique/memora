@@ -428,7 +428,8 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  /* UI-AUDIT: 列出具体属性替代 transition: all */
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   border: 1px solid transparent;
 }
 
