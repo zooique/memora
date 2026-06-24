@@ -80,14 +80,8 @@
             <span class="dash-value" id="pending-count">0/3</span>
           </div>
         </div>
-        <!-- 快捷入口 -->
-        <nav id="sidebar-nav">
-          <button class="nav-btn active" data-panel="chat" title="对话（Ctrl+1）">💬 对话</button>
-          <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）">🧠 记忆</button>
-          <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）">⚙️ 设置</button>
-        </nav>
+        <!-- 快捷入口已迁移至顶部栏（ADR-NAV-001） -->
 
-        <!-- 推荐区（对齐方案 §6.3 侧边栏推荐记忆列表） -->
         <!-- 由 loadDashboard() 动态填充，无推荐时隐藏 -->
         <div id="recommendations" class="dashboard-section hidden">
           <h3>推荐</h3>
@@ -144,6 +138,12 @@
 
     <!-- 顶部栏（与左侧栏同色，无边界；v8 仅保留窗口控制按钮） -->
     <header id="titlebar">
+      <!-- ADR-NAV-001 面板导航标签（从侧边栏迁移，pill 形式水平排列） -->
+      <nav id="titlebar-nav" aria-label="面板切换">
+        <button class="nav-btn active" data-panel="chat" title="对话（Ctrl+1）">💬 <span class="nav-label">对话</span></button>
+        <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）">🧠 <span class="nav-label">记忆</span></button>
+        <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）">⚙️ <span class="nav-label">设置</span></button>
+      </nav>
       <!-- UX-P2-24 移除 #app-title 元素（原 display:none 但保留在 HTML 中，无实际作用） -->
       <div id="titlebar-drag"></div>
       <div id="titlebar-controls">

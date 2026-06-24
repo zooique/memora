@@ -42,10 +42,10 @@
 }
 
 /* v8：顶部栏拖拽占位区（继承父级 drag，无需重复声明） */
+/* ADR-NAV-001 移除 padding-left（导航标签已有独立间距） */
 #titlebar-drag {
   flex: 1;
   height: 100%;
-  padding-left: 12px;
   display: flex;
   align-items: center;
   cursor: default;
@@ -296,28 +296,37 @@
 }
 
 /* ─── 侧边栏导航（v8 列表式） ────────────────────────────── */
+/* ADR-NAV-001 导航按钮已迁移至顶部栏 #titlebar-nav，此处保留 .nav-btn 基础样式供复用 */
 #sidebar-nav {
+  display: none; /* 侧边栏导航已废弃，保留选择器避免 TS querySelector 报错 */
+}
+
+/* ─── 顶部栏导航标签（ADR-NAV-001 pill 形式水平排列） ──────── */
+#titlebar-nav {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0;
+  align-items: center;
+  gap: 4px;
+  padding-left: 12px;
+  -webkit-app-region: no-drag; /* 按钮区域不可拖拽，复用 P1-1 整体 drag + 按钮 no-drag 方案 */
   flex-shrink: 0;
 }
 
 .nav-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 5px 14px;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--subtext);
   font-size: 13px;
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  /* ADR-NAV-001 顶部栏按钮不可拖拽 */
+  -webkit-app-region: no-drag;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .nav-btn:hover {
@@ -325,14 +334,13 @@
   color: var(--text);
 }
 
-/* v8 active 态：白色背景 + 边框 + 阴影（悬浮卡片感） */
+/* ADR-NAV-001 active 态：pill 形式白色背景 + 边框，参考 Trae Work 标签样式 */
 .nav-btn.active {
   background: var(--window-bg);
   border-color: var(--surface2);
   color: var(--text);
   font-weight: 600;
-  box-shadow: var(--shadow-sm); /* P2-10 使用令牌替代硬编码 rgba，深色主题自动适配 */
-  /* UX-P2-14 移除 margin: -1px（原意抵消 border 空间，但会导致 hover→active 布局抖动） */
+  box-shadow: var(--shadow-sm);
 }
 
 /* ─── 侧边栏推荐记忆列表（对齐方案 §6.3 推荐区） ──────────────── */
@@ -589,7 +597,21 @@
     font-size: 9px;
   }
 
-  /* 导航：仅显示图标，隐藏文字和快捷键 */
+  /* ADR-NAV-001 中屏模式下顶部栏导航只显示 emoji 图标，隐藏文字 */
+  #titlebar-nav {
+    gap: 2px;
+    padding-left: 8px;
+  }
+  #titlebar-nav .nav-btn {
+    padding: 5px 10px;
+    gap: 0;
+  }
+  /* 隐藏按钮文字标签，只保留 emoji 图标 */
+  #titlebar-nav .nav-label {
+    display: none;
+  }
+
+  /* 导航：仅显示图标，隐藏文字和快捷键（原侧边栏导航已迁移，此规则保留兼容） */
   .nav-btn {
     justify-content: center;
     padding: 8px;
@@ -618,6 +640,11 @@
   /* 侧边栏隐藏（抽屉模式需 JS 配合，后续实现） */
   #sidebar {
     display: none;
+  }
+
+  /* ADR-NAV-001 小屏下导航标签保持显示，拖拽区左 padding 归零 */
+  #titlebar-drag {
+    padding-left: 0;
   }
 
   /* 核心窗口全宽 */
