@@ -222,3 +222,83 @@ function levenshtein(a: string, b: string): number {
   // QC-17 移除非空断言：使用可选链 + 空值合并兜底
   return matrix[b.length]?.[a.length] ?? 0;
 }
+
+// ─── 记忆关系图谱（ADR-014 侧车模型） ─────────────────────
+
+/**
+ * 记忆关系基元 — 独立于 Memory 7 字段的侧车数据结构
+ *
+ * 设计原则（ADR-014）：
+ * - 不侵入 Memory 类型，与 Memory 平行存在
+ * - 关系类型是开放字符串（非枚举），宿主可自由扩展
+ * - 存储有向（sourceId → targetId），查询时按 direction 参数过滤
+ *
+ * 预设关系类型建议值（非强制）：
+ * - 'contradicts'：矛盾（双向对称）
+ * - 'supports'：支持（有向）
+ * - 'follows'：时间先后（有向）
+ * - 'refines'：细化/演化（有向）
+ * - 'caused'：因果（有向）
+ * - 'related'：泛相关（双向对称）
+ */
+export interface MemoryRelation {
+  /** 关系起点（Memory.id） */
+  sourceId: string;
+  /** 关系终点（Memory.id） */
+  targetId: string;
+  /** 关系类型（开放字符串，非枚举） */
+  type: string;
+  /** 关系强度 0-1（LLM 四档：0.0/0.3/0.7/1.0，代码默认 0.5 兜底） */
+  weight: number;
+  /** 创建时间（ISO 8601） */
+  createdAt: string;
+}
+
+/**
+ * 关系查询方向
+ * - 'outgoing'：只查 sourceId = memoryId 的关系（冲突检测用）
+ * - 'incoming'：只查 targetId = memoryId 的关系
+ * - 'both'：合并两个方向并去重（可视化/召回增强用，默认）
+ */
+export type RelationDirection = 'outgoing' | 'incoming' | 'both';
+
+/**
+ * weight 四档离散值常量（LLM 输出约束）
+ *
+ * 设计理由（ADR-014 §4）：
+ * - 离散值比连续浮点稳定，LLM 输出可预测
+ * - 0.5 兜底避免 LLM 失败时关系数据缺失
+ */
+export const RELATION_WEIGHTS = {
+  /** 几乎无关（LLM 明确判断无关系） */
+  NONE: 0.0,
+  /** 弱相关（关系存在但强度低） */
+  WEAK: 0.3,
+  /** 未判断（代码默认兜底，LLM 失败或未输出时） */
+  UNDEFINED: 0.5,
+  /** 强相关（关系明确且强度高） */
+  STRONG: 0.7,
+  /** 确定关系（矛盾/等价等强关系） */
+  CERTAIN: 1.0,
+} as const;
+
+/**
+ * 预设关系类型建议值（非枚举，仅作约定）
+ *
+ * 注意：type 是开放字符串，新增关系类型无需改代码
+ * 只需在存储时指定 type 字符串即可
+ */
+export const RELATION_TYPES = {
+  /** 矛盾（双向对称） */
+  CONTRADICTS: 'contradicts',
+  /** 支持（有向） */
+  SUPPORTS: 'supports',
+  /** 时间先后（有向） */
+  FOLLOWS: 'follows',
+  /** 细化/演化（有向） */
+  REFINES: 'refines',
+  /** 因果（有向） */
+  CAUSED: 'caused',
+  /** 泛相关（双向对称） */
+  RELATED: 'related',
+} as const;

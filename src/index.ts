@@ -57,9 +57,15 @@ export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 // ─── 记忆层导出 ──────────────────────────────────────────
 export { SOURCE_LABELS, inferSource, escapeLike, validateSource } from '@/memory/types.js';
 export type { Memory, SourceValidationSeverity } from '@/memory/types.js';
+// 记忆关系图谱（ADR-014 侧车模型）
+export { RELATION_TYPES, RELATION_WEIGHTS } from '@/memory/types.js';
+export type { MemoryRelation, RelationDirection } from '@/memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+// 记忆关系存储侧车：宿主项目可实现 IMemoryRelationStore 接口注入 Agent
+export type { IMemoryRelationStore } from '@/memory/relationStore.js';
+export { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
 // 用户画像：宿主通过 agent.userProfile 访问，用于确认/拒绝待确认条目
 export type { UserProfileEntry, ProfileCategory, ExtractedFact } from '@/memory/userProfile.js';
 // 向量存储：宿主注入 EmbeddingService 后创建 VectorStore，传入 AgentOptions 启用语义搜索

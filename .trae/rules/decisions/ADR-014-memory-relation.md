@@ -5,7 +5,7 @@ description: 记忆关系图谱——独立侧车模型，开放字符串关系�
 
 # ADR-014 · 记忆关系图谱（侧车模型）
 
-> **状态**：🚧 草案
+> **状态**：✅ 已接受
 > **日期**：2026-06-25
 > **来源**：[迭代规划-v0.3-to-v1.0.md](../../../docs/迭代规划-v0.3-to-v1.0.md) §Phase 1.1 排雷优化方案
 
@@ -48,14 +48,55 @@ export interface MemoryRelation {
 // 独立于 IMemoryStorage 的侧车接口
 // 宿主项目注入实现（如 SqliteStorage 扩展 memory_relations 表）
 export interface IMemoryRelationStore {
+  /** 添加关系（sourceId+targetId+type 唯一约束，重复添加幂等） */
   addRelation(relation: MemoryRelation): void;
-  getRelations(memoryId: string): MemoryRelation[];
+  /** 查询某记忆的关系，direction 控制方向过滤（默认 'both'） */
+  getRelations(memoryId: string, direction?: 'outgoing' | 'incoming' | 'both'): MemoryRelation[];
+  /** 按关系类型查询（用于冲突检测：getRelationsByType('contradicts')） */
   getRelationsByType(type: string): MemoryRelation[];
+  /** 获取全部关系（用于拓扑可视化构建节点+边图谱） */
+  getAllRelations(): MemoryRelation[];
+  /** 删除指定关系（sourceId+targetId+type 唯一定位） */
   removeRelation(sourceId: string, targetId: string, type: string): void;
 }
 ```
 
-### 3. 构建时机（Sprite 层，不进内核）
+### 3. 方向性设计
+
+关系存储是有向的（sourceId → targetId），但不同关系类型的语义对称性不同：
+
+| 关系类型 | 方向性 | 示例 |
+|---------|--------|------|
+| `contradicts` | 双向对称 | "喜欢咖啡" vs "不喝咖啡了" |
+| `supports` | 有向 | "用 Vue" 支持 "前端工程师" |
+| `follows` | 有向 | "今天下雨" follows "昨天阴天" |
+| `refines` | 有向 | "Vue3 不错" refines "Vue 也不错" |
+
+**查询策略**：`getRelations(memoryId, direction)` 参数控制：
+- `'outgoing'`（默认冲突检测用）：只查 sourceId = memoryId 的关系
+- `'incoming'`：只查 targetId = memoryId 的关系
+- `'both'`（默认，可视化/召回增强用）：合并两个方向并去重
+
+存储仍是有向的，查询时按方向过滤，不增加存储复杂度。
+
+### 4. weight 的来源
+
+weight 表示关系强度（0-1），采用 **LLM 四档离散值 + 代码默认 0.5 兜底**：
+
+| 值 | 语义 | LLM 判断场景 |
+|----|------|--------------|
+| 0.0 | 几乎无关 | LLM 明确判断无关系 |
+| 0.3 | 弱相关 | 关系存在但强度低 |
+| 0.7 | 强相关 | 关系明确且强度高 |
+| 1.0 | 确定关系 | 矛盾/等价等强关系 |
+| 0.5 | 未判断（代码默认） | LLM 失败或未输出时兜底 |
+
+**设计理由**：
+- 离散值比连续浮点稳定，LLM 输出可预测
+- 0.5 兜底避免 LLM 失败时关系数据缺失
+- 用户不可直接编辑 weight，保持 UI 简洁
+
+### 5. 构建时机（Sprite 层，不进内核）
 
 ```
 InsightExtractor.extract() 完成后（fire-and-forget）

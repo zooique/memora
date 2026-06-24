@@ -26,7 +26,7 @@ description: Memora 关键决策年轮
 | [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
 | [ADR-012](./ADR-012-domain-switch.md)       | 领域切换（已废弃，由角色自动匹配替代）                    | ❌ 已废弃 | 架构   |
 | [ADR-013](./ADR-013-archive-pipeline.md)    | 记忆归档三步价值过滤（judge → distill → converge）        | ✅ 已接受 | 架构   |
-| [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | 🚧 草案   | 架构   |
+| [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | ✅ 已接受   | 架构   |
 
 ### 精灵宿主（SP 系列）
 
