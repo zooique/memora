@@ -6,6 +6,12 @@
  * - 右键菜单（浮动气泡开关 / 显示完整窗口 / 静默模式 / 隐藏到托盘 / 退出）
  * - 三态图标切换（idle/active/sleeping），对齐 HTML 预览 §6.3
  *
+ * 图标策略（ADR-TRAY-001）：
+ * 1. 优先使用外部图标文件 resources/tray-icon.png（支持后续替换为专业设计图标）
+ * 2. 外部图标不存在时，使用程序化生成的 fallback 图标
+ * 3. fallback 图标为圆形背景 + 中心星形图案，三态不同颜色
+ * 4. 替换方式：将 16x16（或 32x32）PNG 放到 resources/tray-icon.png 即可自动生效
+ *
  * 三态语义：
  * - idle（默认）：绿色 #a6e3a1，精灵空闲
  * - active：蓝色 #89b4fa + 脉冲动画，精灵正在思考/流式输出
@@ -206,28 +212,58 @@ export class TrayManager {
   }
 
   /**
-   * 创建状态图标（16x16 纯色方块）
+   * ADR-TRAY-001 程序化生成状态图标（fallback）
    *
-   * 颜色对齐 Catppuccin Mocha + HTML 预览 §6.3：
-   * - idle：#a6e3a1（green）
-   * - active：#89b4fa（blue）
-   * - sleeping：#f9e2af（yellow）
+   * 当 resources/tray-icon.png 不存在时使用。
+   * 生成 16x16 图标：圆形背景 + 中心四角星图案，三态不同颜色。
+   * 后续替换：只需在 resources/ 目录放置 tray-icon.png 即可自动生效。
+   *
+   * @param state 托盘状态（idle/active/sleeping）
+   * @returns NativeImage 16x16 像素图标
    */
   private createStateIcon(state: TrayState): NativeImage {
     const size = 16;
+    /** 三态颜色（RGBA），对齐 Catppuccin Mocha + HTML 预览 §6.3 */
     const colors: Record<TrayState, [number, number, number]> = {
       idle:     [0xa6, 0xe3, 0xa1],  // green #a6e3a1
       active:   [0x89, 0xb4, 0xfa],  // blue  #89b4fa
       sleeping: [0xf9, 0xe2, 0xaf],  // yellow #f9e2af
     };
-    const [r, g, b] = colors[state];
-
+    const [cr, cg, cb] = colors[state];
     const buf = Buffer.alloc(size * size * 4);
-    for (let i = 0; i < size * size; i++) {
-      buf[i * 4 + 0] = r;
-      buf[i * 4 + 1] = g;
-      buf[i * 4 + 2] = b;
-      buf[i * 4 + 3] = 0xff;  // A
+    const cx = size / 2; // 圆心 x
+    const cy = size / 2; // 圆心 y
+    const radius = size / 2 - 1; // 圆形背景半径（留 1px 边距）
+
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const idx = (y * size + x) * 4;
+        const dx = x - cx + 0.5; // 像素中心偏移
+        const dy = y - cy + 0.5;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist <= radius) {
+          // 圆形背景区域内
+          // 中心星形图案：四角星（菱形旋转 45°），半径约 3px
+          const starRadius = 3;
+          const absDx = Math.abs(dx);
+          const absDy = Math.abs(dy);
+          // 四角星判断：|dx| + |dy| < starRadius（曼哈顿距离形成菱形）
+          const isStar = (absDx + absDy) < starRadius;
+          // 星形内部使用更深的同色系，形成层次感
+          const darken = isStar ? 0.65 : 1.0;
+          buf[idx + 0] = Math.round(cr * darken);
+          buf[idx + 1] = Math.round(cg * darken);
+          buf[idx + 2] = Math.round(cb * darken);
+          buf[idx + 3] = 0xff;
+        } else {
+          // 圆形外部：透明
+          buf[idx + 0] = 0;
+          buf[idx + 1] = 0;
+          buf[idx + 2] = 0;
+          buf[idx + 3] = 0;
+        }
+      }
     }
     return nativeImage.createFromBuffer(buf, { width: size, height: size });
   }
