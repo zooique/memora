@@ -80,32 +80,10 @@
             <span class="dash-value" id="pending-count">0/3</span>
           </div>
         </div>
-        <!-- 快捷入口已迁移至顶部栏（ADR-NAV-001） -->
-
-        <!-- 由 loadDashboard() 动态填充，无推荐时隐藏 -->
-        <div id="recommendations" class="dashboard-section hidden">
-          <h3>推荐</h3>
-          <ul id="recommendation-list" class="suggestion-list"></ul>
-        </div>
-
-        <!-- GAP-1 已加载技能列表（消费内核 agent.skills.list） -->
-        <!-- 由 loadDashboard() 动态填充，无技能时隐藏 -->
-        <div id="skills-section" class="dashboard-section hidden">
-          <h3>技能</h3>
-          <ul id="skills-list" class="skills-list"></ul>
-        </div>
-
-        <!-- 记忆源健康状态（消费内核 sourceHealth()） -->
-        <!-- 由 renderSourceHealth() 动态填充，无数据时隐藏 -->
-        <div id="source-health" class="dashboard-section hidden">
-          <h3>记忆健康</h3>
-          <ul id="source-health-list"></ul>
-        </div>
-
+        
         <!-- OBS-01 Agent 运行时指标（消费内核 agent.getMetrics()） -->
         <!-- 由 renderAgentMetrics() 动态填充，无数据时隐藏 -->
         <div id="agent-metrics" class="dashboard-section hidden">
-          <h3>Agent 指标</h3>
           <div id="agent-metrics-grid">
             <div class="dash-item" title="LLM 调用总次数（含重试）">
               <span class="dash-label">⚡ 调用</span>
@@ -133,6 +111,27 @@
             </div>
           </div>
         </div>
+
+        <!-- 由 loadDashboard() 动态填充，无推荐时隐藏 -->
+        <div id="recommendations" class="dashboard-section hidden">
+          <h3>推荐</h3>
+          <ul id="recommendation-list" class="suggestion-list"></ul>
+        </div>
+
+        <!-- GAP-1 已加载技能列表（消费内核 agent.skills.list） -->
+        <!-- 由 loadDashboard() 动态填充，无技能时隐藏 -->
+        <div id="skills-section" class="dashboard-section hidden">
+          <h3>技能</h3>
+          <ul id="skills-list" class="skills-list"></ul>
+        </div>
+
+        <!-- 记忆源健康状态（消费内核 sourceHealth()） -->
+        <!-- 由 renderSourceHealth() 动态填充，无数据时隐藏 -->
+        <div id="source-health" class="dashboard-section hidden">
+          <h3>记忆健康</h3>
+          <ul id="source-health-list"></ul>
+        </div>
+       
       </div>
     </aside>
 
