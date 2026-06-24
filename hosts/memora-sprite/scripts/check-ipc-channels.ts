@@ -1,8 +1,8 @@
 /**
  * P2-R2-02 IPC 通道同步校验脚本
  *
- * 构建时校验 preload.ts 内联的 IPC 通道常量与 ipcChannels.ts 是否一致。
- * 如果 ipcChannels.ts 新增/修改通道但 preload.ts 未同步，此脚本会报错。
+ * 构建时校验 preload.ts 内联的 IPC 通道常量与 ipc/channels.ts 是否一致。
+ * 如果 ipc/channels.ts 新增/修改通道但 preload.ts 未同步，此脚本会报错。
  *
  * 集成方式：在 package.json 的 prebuild 或 lint 脚本中调用
  *   "check-ipc": "npx tsx scripts/check-ipc-channels.ts"
@@ -16,8 +16,8 @@ import { resolve } from 'node:path';
 
 // ─── 配置 ─────────────────────────────────────────────────
 
-/** 源文件路径（ipcChannels.ts 是真理源） */
-const IPC_CHANNELS_PATH = resolve(import.meta.dirname, '../src/electron/ipcChannels.ts');
+/** 源文件路径（ipc/channels.ts 是真理源，D-07 从 ipcChannels.ts 迁移而来） */
+const IPC_CHANNELS_PATH = resolve(import.meta.dirname, '../src/electron/ipc/channels.ts');
 /** 目标文件路径（preload.ts 需要与源文件同步） */
 const PRELOAD_PATH = resolve(import.meta.dirname, '../src/electron/preload.ts');
 
@@ -82,7 +82,7 @@ function main(): void {
     const preloadChannels = extractChannels(preloadSource, objectName);
 
     if (ipcChannels.size === 0) {
-      console.error(`[check-ipc-channels] 错误：未能从 ipcChannels.ts 提取 ${objectName}`);
+      console.error(`[check-ipc-channels] 错误：未能从 ipc/channels.ts 提取 ${objectName}`);
       hasErrors = true;
       continue;
     }
@@ -93,7 +93,7 @@ function main(): void {
       continue;
     }
 
-    // 检查 1：ipcChannels.ts 中的每个通道是否在 preload.ts 中存在且值一致
+    // 检查 1：ipc/channels.ts 中的每个通道是否在 preload.ts 中存在且值一致
     for (const [key, value] of ipcChannels) {
       const preloadValue = preloadChannels.get(key);
       if (preloadValue === undefined) {
@@ -101,24 +101,24 @@ function main(): void {
         hasErrors = true;
       } else if (preloadValue !== value) {
         console.error(
-          `[check-ipc-channels] 不一致：${objectName}.${key} 值不匹配 —— ipcChannels.ts='${value}' vs preload.ts='${preloadValue}'`,
+          `[check-ipc-channels] 不一致：${objectName}.${key} 值不匹配 —— ipc/channels.ts='${value}' vs preload.ts='${preloadValue}'`,
         );
         hasErrors = true;
       }
     }
 
-    // 检查 2：preload.ts 中是否有 ipcChannels.ts 不存在的通道（多余）
+    // 检查 2：preload.ts 中是否有 ipc/channels.ts 不存在的通道（多余）
     for (const [key] of preloadChannels) {
       if (!ipcChannels.has(key)) {
-        console.error(`[check-ipc-channels] 多余：preload.ts 包含 ipcChannels.ts 不存在的 ${objectName}.${key}`);
+        console.error(`[check-ipc-channels] 多余：preload.ts 包含 ipc/channels.ts 不存在的 ${objectName}.${key}`);
         hasErrors = true;
       }
     }
   }
 
   if (hasErrors) {
-    console.error('\n[check-ipc-channels] 校验失败！请同步 preload.ts 与 ipcChannels.ts 的通道定义。');
-    console.error('  提示：修改 ipcChannels.ts 后，必须同步更新 preload.ts 中内联的通道常量。');
+    console.error('\n[check-ipc-channels] 校验失败！请同步 preload.ts 与 ipc/channels.ts 的通道定义。');
+  console.error('  提示：修改 ipc/channels.ts 后，必须同步更新 preload.ts 中内联的通道常量。');
     process.exit(1);
   }
 

@@ -17,6 +17,7 @@ import { BrowserWindow, ipcMain } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';
+import { injectThemeScript } from './themeInjector.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
@@ -122,19 +123,8 @@ export class WindowManager {
     this.windowStateManager.attachFullWindow(this.fullWindow);
 
     // P2-11 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
-    // 在页面开始加载时同步读取 localStorage 并设置 data-theme 属性，避免 FOUC 闪烁
-    this.fullWindow.webContents.on('did-start-loading', () => {
-      this.fullWindow?.webContents.executeJavaScript(`
-        (function() {
-          try {
-            var theme = localStorage.getItem('memora-theme');
-            if (theme === 'dark') {
-              document.documentElement.setAttribute('data-theme', 'dark');
-            }
-          } catch (e) {}
-        })();
-      `).catch(() => { /* 注入失败时静默降级为默认浅色主题 */ });
-    });
+    // P2-3 修复：提取为公共函数 themeInjector.ts，与 floatWindow.ts 复用
+    injectThemeScript(this.fullWindow.webContents);
 
     // 加载 HTML 文件
     const htmlPath = path.join(ELECTRON_DIR, 'renderer', 'index.html');

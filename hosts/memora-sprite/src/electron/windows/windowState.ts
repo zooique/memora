@@ -40,9 +40,10 @@ export interface WindowStateOptions {
   onSaveState?: (data: WindowStateData) => void;
 }
 
-const FLOAT_SIZE = { width: 80, height: 80 };
+/** 浮动窗口尺寸（80x80 悬浮球） */
+export const FLOAT_SIZE = { width: 80, height: 80 };
 /** 完整窗口默认尺寸：900x680 确保侧边栏（240px）+ 主内容区有足够空间 */
-const FULL_SIZE = { width: 900, height: 680 };
+export const FULL_SIZE = { width: 900, height: 680 };
 /** 首次启动时浮动窗口的默认位置（屏幕左上角偏移） */
 export const DEFAULT_FLOAT_POSITION = { x: 100, y: 100 };
 

@@ -29,7 +29,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 import { toError, logger } from 'memora';
 import type { Agent } from 'memora';
-import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windows/windowState.js';
+import { WindowStateManager, DEFAULT_FLOAT_POSITION, FLOAT_SIZE } from './windows/windowState.js';
 import { TrayManager } from './trayIcon.js';
 import { WindowManager } from './windows/windowManager.js';
 import { ElectronInteraction } from './interaction.js';
@@ -169,9 +169,9 @@ function resetUnreadCount(): void {
  * @returns 校验后的安全位置
  */
 function clampFloatPositionToDisplay(position: { x: number; y: number }): { x: number; y: number } {
-  // 浮动窗口尺寸（与 windowState.ts FLOAT_SIZE 一致）
-  const FLOAT_WIDTH = 80;
-  const FLOAT_HEIGHT = 80;
+  // 浮动窗口尺寸（引用 windowState.ts 的 FLOAT_SIZE，避免硬编码重复）
+  const FLOAT_WIDTH = FLOAT_SIZE.width;
+  const FLOAT_HEIGHT = FLOAT_SIZE.height;
 
   // 遍历所有显示器，判断位置是否在某个显示器的工作区内
   const displays = screen.getAllDisplays();

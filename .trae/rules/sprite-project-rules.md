@@ -7,7 +7,7 @@ description: "memora-sprite 宿主项目总则、技术栈清单、目录结构�
 
 > **设计哲学**：上下文感知，非内容感知 **核心矛盾**：被动响应 ←→ 主动进化
 > **定位**：memora 内核的第一个真实宿主——能自我进化的桌面精灵
-> **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~007
+> **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~008
 
 ## 1. 与 memora 内核的关系
 
@@ -17,7 +17,7 @@ description: "memora-sprite 宿主项目总则、技术栈清单、目录结构�
 | native 模块 | 零（ADR-002） | better-sqlite3（ADR-SP-002） |
 | 接口实现 | 定义接口 | 实现接口（IMemoryStorage / ISessionStore） |
 | 规则关系 | 内核规则精灵必须遵守 | 精灵规则仅约束精灵代码 |
-| ADR 前缀 | ADR-001~013 | ADR-SP-001~007 |
+| ADR 前缀 | ADR-001~013 | ADR-SP-001~008 |
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
@@ -34,7 +34,7 @@ description: "memora-sprite 宿主项目总则、技术栈清单、目录结构�
 
 ## 3. 目录结构
 
-> 详见 [ADR-SP-007](./decisions/ADR-SP-007-directory-structure.md)
+> 详见 [ADR-SP-007](./decisions/ADR-SP-007-directory-structure.md) 和 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)
 
 ```
 hosts/memora-sprite/
@@ -42,31 +42,65 @@ hosts/memora-sprite/
 ├── tsconfig.json / tsconfig.electron.json
 ├── vitest.config.ts
 └── src/
-    ├── index.ts              ← 入口：Agent 实例化 + 生命周期
-    ├── storage/              ← IMemoryStorage / ISessionStore 实现
-    │   ├── sqliteStorage.ts
-    │   └── sessionStore.ts
-    ├── sprite/               ← 精灵主控 + 触发器 + 控制器
-    │   ├── sprite.ts
-    │   ├── spriteConfig.ts
-    │   ├── triggers.ts
-    │   ├── fileWatcherTrigger.ts
-    │   ├── interaction.ts / cliInteraction.ts
-    │   └── controllers/      ← 专职控制器（阶段二新增）
-    │       ├── memoryController.ts
-    │       ├── personaController.ts
-    │       └── proactiveEngine.ts
-    ├── electron/             ← Electron 主进程 + 渲染进程（阶段二新增）
-    │   ├── main.ts / preload.ts
-    │   ├── windowManager.ts / windowState.ts / floatWindow.ts
-    │   ├── trayIcon.ts / ipcHandlers.ts
-    │   ├── interaction.ts / errorHandler.ts
-    │   └── renderer/         ← index.html / float.html / renderer.ts / ui.ts / renderer.css
-    └── __tests__/
-        ├── sqliteStorage.test.ts
-        ├── sessionStore.test.ts
-        ├── sprite.test.ts
-        └── sprite-integration.test.ts
+    ├── index.ts              ← 纯库导出入口（类型 + 接口 + startSprite）
+    ├── cli.ts                ← CLI 入口（setupWizard + 命令路由 + REPL）
+    │
+    ├── electron/             ← Electron 主进程 + 渲染进程
+    │   ├── main.ts           ← 主进程入口（窗口生命周期 + 应用启动）
+    │   ├── preload.ts        ← 预加载脚本（contextBridge 暴露 API）
+    │   ├── esmShim.ts        ← ESM 兼容 shim
+    │   ├── errorHandler.ts   ← 全局错误处理
+    │   ├── interaction.ts    ← Electron 交互实现（IInteraction 接口）
+    │   ├── agentListeners.ts ← Agent 事件监听器
+    │   ├── spriteEventBridge.ts ← 精灵事件桥接
+    │   ├── trayIcon.ts       ← 系统托盘管理
+    │   │
+    │   ├── ipc/              ← IPC 通信层
+    │   │   ├── index.ts / channels.ts / handlers.ts / minimalHandlers.ts
+    │   │   ├── types.ts / inputValidation.ts
+    │   │   └── chatHandlers.ts / configHandlers.ts / memoryHandlers.ts / ...
+    │   │
+    │   ├── windows/          ← 窗口管理
+    │   │   ├── floatWindow.ts / windowManager.ts / windowState.ts
+    │   │
+    │   └── renderer/         ← 渲染进程（UI 层，不直接导入 electron）
+    │       ├── index.html / renderer.ts / ui.ts / types.ts
+    │       ├── ipcListeners.ts / initHelpers.ts
+    │       ├── controllers/   ← 面板控制器（业务逻辑）
+    │       │   ├── settingsController.ts / sessionController.ts
+    │       │   ├── memoryPanelController.ts / personaPanelController.ts
+    │       ├── helpers/       ← 渲染进程工具函数
+    │       │   ├── domHelpers.ts / errorHelpers.ts / eventTracker.ts
+    │       ├── components/    ← 可复用 UI 组件
+    │       │   ├── themeManager.ts / modal.ts / toast.ts / ...
+    │       ├── panels/        ← 面板管理器（DOM 绑定 + 渲染逻辑）
+    │       │   ├── chatPanelManager.ts / memoryPanelManager.ts / ...
+    │       ├── float/         ← 浮动窗口
+    │       │   ├── float.ts / float.html
+    │       └── styles/        ← CSS 样式表
+    │           ├── base.css / chat.css / layout.css / ...
+    │
+    ├── sprite/               ← 精灵核心层（纯逻辑，零 Electron 依赖）
+    │   ├── sprite.ts / spriteConfig.ts / spriteTracer.ts
+    │   ├── triggers.ts / tools.ts / constants.ts
+    │   ├── fileWatcherTrigger.ts / interaction.ts
+    │   ├── cli/              ← CLI 专属模块
+    │   │   ├── formatter.ts / interaction.ts
+    │   ├── audit/            ← 审计日志
+    │   │   ├── auditManager.ts / jsonlAppender.ts
+    │   └── controllers/      ← 精灵控制器（Agent 能力扩展）
+    │       ├── index.ts / memoryController.ts
+    │       ├── personaController.ts / proactiveEngine.ts
+    │
+    ├── storage/              ← 持久化层
+    │   ├── sessionStore.ts / sqliteStorage.ts
+    │   ├── spriteConfigStore.ts / sqliteDatabaseTypes.ts
+    │
+    └── __tests__/            ← 测试文件（按模块分组）
+        ├── electron/         ← ipcHandlers.test.ts / ui.test.ts
+        ├── sprite/           ← sprite.test.ts / spriteIntegration.test.ts
+        ├── storage/          ← sessionStore.test.ts / sqliteStorage.test.ts + helpers/
+        └── renderer/         ← float.test.ts / sessionController.test.ts
 ```
 
 ## 4. 命名规范（与内核一致）
