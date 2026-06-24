@@ -13,7 +13,7 @@
  * - 行为与内核 utils/toError 对齐，但渲染进程独立实现（不引入内核依赖）
  */
 
-import type { UIManager } from './ui.js';
+import type { UIManager } from '../ui.js';
 
 /**
  * 将未知错误转为 Error

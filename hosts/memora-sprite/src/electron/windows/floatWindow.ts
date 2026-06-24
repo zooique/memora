@@ -17,8 +17,8 @@
 import * as path from 'node:path';
 import { BrowserWindow, ipcMain, Menu } from 'electron';
 import type { WindowStateManager } from './windowState.js';
-import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-import { ELECTRON_DIR } from './esmShim.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipcChannels.js';
+import { ELECTRON_DIR } from '../esmShim.js';
 
 /** 浮动窗口右键菜单回调（由 main.ts 注入，避免 FloatWindow 直接依赖 Sprite/Agent） */
 export interface FloatWindowCallbacks {

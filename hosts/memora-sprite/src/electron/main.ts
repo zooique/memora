@@ -27,16 +27,18 @@ app.commandLine.appendSwitch('console-utf8');
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { createProviderFromConfig, toError, logger } from 'memora';
+import { toError, logger } from 'memora';
 import type { Agent } from 'memora';
-import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windowState.js';
+import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windows/windowState.js';
 import { TrayManager } from './trayIcon.js';
-import { WindowManager } from './windowManager.js';
+import { WindowManager } from './windows/windowManager.js';
 import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
 import { ELECTRON_DIR } from './esmShim.js';
+// D-04 修复：最小化 IPC 处理器提取到独立模块
+import { registerMinimalIpcHandlers, type MinimalIpcState } from './ipc/minimalHandlers.js';
 // P2-DESIGN-4 修复：精灵事件桥 + Agent 监听器提取到独立模块
 import { setupSpriteEventListeners } from './spriteEventBridge.js';
 import { setupConfigSuggestionListener, setupWriteConfirmationListener, setupAuditListener } from './agentListeners.js';
@@ -44,13 +46,9 @@ import type { AgentListenerDeps } from './agentListeners.js';
 import type { SpriteEventBridgeDeps } from './spriteEventBridge.js';
 import {
   startSprite,
-  reinitAgent,
-  saveLlmConfig,
-  PROVIDER_PRESETS,
   DEFAULT_DATA_DIR,
 } from '../index.js';
-import { spriteConfigStore } from '../storage/spriteConfigStore.js';
-import { loadSpriteConfig, saveSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/auditManager.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
@@ -68,6 +66,7 @@ let interaction: ElectronInteraction;
 let trayManager: TrayManager | null = null;
 
 /** Agent 运行时状态（4 个变量总是一起变化，通过 setAppRuntime 集中管理） */
+// D-04 修复：AppRuntime 类型与 ipc/minimalHandlers.ts 共享定义
 interface AppRuntime {
   agent: Agent;
   sprite: Sprite;
@@ -386,10 +385,8 @@ async function initializeApp(): Promise<void> {
       onExpandToFull: resetUnreadCount,
     });
 
-    // 注册最小化 IPC 处理器（必须在 createWindows 之前，确保渲染进程加载时 handler 已就绪）
-    // 渲染进程 DOMContentLoaded 时立即发送 llm-config-get / agent-status 等 IPC 请求，
-    // 若 handler 在阶段 2 才注册（原有逻辑），会产生竞态条件导致 "No handler registered" 错误。
-    registerMinimalIpcHandlers();
+    // D-04 修复：最小化 IPC 处理器已在模块加载时注册（见上文 minimalIpcState 定义处）
+    // 不需要在此处再次调用 registerMinimalIpcHandlers()
 
     await windowManager.createWindows();
 
@@ -477,8 +474,10 @@ async function initializeApp(): Promise<void> {
 
   // ── 阶段 2：初始化 Agent + Sprite（可能因配置缺失失败） ──
   try {
-    // skipWizard: Electron 模式跳过 CLI 交互式引导
-    const spriteResult = await startSprite({ skipWizard: true });
+    // D-01 修复：startSprite 已移除 skipWizard 选项，配置缺失时统一抛错
+    // Electron 模式：阶段 1 已注册 registerMinimalIpcHandlers，
+    // 阶段 2 失败后渲染进程可显示设置面板引导用户配置
+    const spriteResult = await startSprite();
     currentDataDir = spriteResult.dataDir;
     // 第三季：集中赋值 agent/sprite/sessionStore/closeSprite
     setAppRuntime({
@@ -505,220 +504,41 @@ async function initializeApp(): Promise<void> {
 
 // ─── 最小化 IPC 处理器 ──────────────────────────────────────
 
-/**
- * Agent 未就绪时的最小 IPC 处理器
- *
- * 仅支持：窗口控制 + 精灵配置读写 + LLM 配置读写 + Agent 状态查询 + 重新初始化
- * 不支持：对话、记忆、角色等需要 Agent 的功能
- *
- * 用户在设置面板配置 LLM 后，通过 llm-config-save 触发 reinitAgent，
- * 成功后注册完整 IPC 并通知渲染进程。
- */
-function registerMinimalIpcHandlers(): void {
-  // 精灵配置读写（直接操作文件，不需要 Agent）
-  ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () => {
-    try {
-      return { config: loadSpriteConfig() };
-    } catch {
-      // P2-011 修复：使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象
-      // 违反 SpriteConfigForm 类型契约（与 P2-010 同类问题）
-      return { config: { ...DEFAULT_SPRITE_CONFIG } };
-    }
-  });
+// D-04 修复：最小化 IPC 处理器提取到 ipc/minimalHandlers.ts
+// 通过 MinimalIpcState 代理对象链接 main.ts 模块级变量与 IPC 处理器
 
-  // Agent 状态查询
-  ipcMain.handle(IPC_CHANNELS.AGENT_STATUS, async () => {
-    return {
-      ready: agentReady,
-      // 区分三种状态：就绪 / 初始化失败（有具体错误）/ 初始化中（无错误详情）
-      // 初始化中时不返回"配置不完整"默认消息，避免误导渲染进程
-      error: agentReady ? null : initErrorDetail,
-    };
-  });
+/** 最小化 IPC 状态代理（getter/setter 链接到 main.ts 模块级 let 变量） */
+const minimalIpcState: MinimalIpcState = {
+  get agentReady(): boolean { return agentReady; },
+  set agentReady(v: boolean) { agentReady = v; },
+  get initErrorDetail(): string | null { return initErrorDetail; },
+  set initErrorDetail(v: string | null) { initErrorDetail = v; },
+  get currentAbortController(): AbortController | null { return currentAbortController; },
+  set currentAbortController(v: AbortController | null) { currentAbortController = v; },
+  get currentDataDir(): string { return currentDataDir; },
+  set currentDataDir(v: string) { currentDataDir = v; },
+  get pendingWriteConfirmations(): Map<string, (confirmed: boolean) => void> {
+    return pendingWriteConfirmations;
+  },
+  set pendingWriteConfirmations(v: Map<string, (confirmed: boolean) => void>) {
+    // 注意：pendingWriteConfirmations 是 const Map，不替换引用，仅支持 getter
+    // setter 为满足 MinimalIpcState 接口而存在，实际不会调用
+    void v;
+  },
+  get closeSprite(): (() => Promise<void>) | null { return closeSprite; },
+  set closeSprite(v: (() => Promise<void>) | null) { closeSprite = v; },
+  get auditManager(): AuditManager | null { return auditManager; },
+  set auditManager(v: AuditManager | null) { auditManager = v; },
+  get windowManager(): WindowManager { return windowManager; },
+  set windowManager(v: WindowManager) { windowManager = v; },
+};
 
-  // LLM 连接测试（保存前验证配置是否可用）
-  // 创建临时 Provider，发送最小测试消息，消费首个 chunk 即判定连接成功
-  ipcMain.handle(
-    IPC_CHANNELS.LLM_CONFIG_TEST,
-    async (
-      _event,
-      llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
-    ) => {
-      try {
-        // 1. 创建临时 Provider（不保存配置，不初始化 Agent）
-        const provider = createProviderFromConfig('test', {
-          provider: llmConfig.provider,
-          model: llmConfig.model,
-          baseUrl: llmConfig.baseUrl || undefined,
-          apiKey: llmConfig.apiKey,
-        });
-
-        // 2. 发送最小测试消息，消费首个 chunk 验证连接
-        const stream = provider.chat([{ role: 'user', content: 'ping' }], { stream: true });
-
-        // AsyncIterable 需通过 [Symbol.asyncIterator]() 获取迭代器
-        const iterator = stream[Symbol.asyncIterator]();
-        const firstChunk = await iterator.next();
-        if (firstChunk.done) {
-          return { success: false, error: 'LLM 返回空响应，请检查模型名称是否正确' };
-        }
-
-        return { success: true, error: null };
-      } catch (error) {
-        return { success: false, error: toError(error).message };
-      }
-    },
-  );
-
-  // LLM 配置读取（从 spriteConfigStore 统一路径：~/.memora-sprite/config.json）
-  ipcMain.handle(IPC_CHANNELS.LLM_CONFIG_GET, async () => {
-    try {
-      const configured = await spriteConfigStore.isConfigured();
-      if (!configured) {
-        return { configured: false, config: null, presets: PROVIDER_PRESETS };
-      }
-      // 读取已保存的配置（通过 spriteConfigStore 确保路径一致）
-      const config = await spriteConfigStore.load();
-      return {
-        configured: true,
-        config: {
-          provider: config.llm.provider,
-          model: config.llm.model,
-          baseUrl: config.llm.baseUrl ?? '',
-          apiKey: config.llm.apiKey ?? '',
-          temperature: config.llm.temperature,
-          // H6 返回后台 Provider 配置
-          ...(config.llm.background ? {
-            background: {
-              enabled: true,
-              provider: config.llm.background.provider,
-              model: config.llm.background.model,
-              baseUrl: config.llm.background.baseUrl ?? '',
-              apiKey: config.llm.background.apiKey ?? '',
-              temperature: config.llm.background.temperature,
-            },
-          } : {}),
-        },
-        embedding: config.embedding
-          ? {
-              model: config.embedding.model,
-              baseUrl: config.embedding.baseUrl ?? '',
-              apiKey: config.embedding.apiKey ?? '',
-            }
-          : null,
-        presets: PROVIDER_PRESETS,
-      };
-    } catch {
-      return { configured: false, config: null, presets: PROVIDER_PRESETS };
-    }
-  });
-
-  // LLM 配置保存 + 重新初始化 Agent
-  ipcMain.handle(
-    IPC_CHANNELS.LLM_CONFIG_SAVE,
-    async (
-      _event,
-      llmConfig: {
-        provider: string;
-        model: string;
-        baseUrl: string;
-        apiKey: string;
-        temperature?: number;
-      },
-      embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
-    ) => {
-      try {
-        // 1. 保存配置到文件
-        await saveLlmConfig(llmConfig, embeddingConfig);
-
-        // P2 修复：reinitAgent 前先中断进行中的对话，避免旧 Agent 在对话进行中被 close
-        // 导致 AsyncGenerator 未正常退出、内部并发锁状态不一致
-        if (currentAbortController) {
-          currentAbortController.abort();
-          currentAbortController = null;
-        }
-
-        // 2. 重新初始化 Agent（清理旧实例）
-        const result = await reinitAgent(closeSprite);
-        currentDataDir = result.dataDir;
-        // 第三季：集中赋值
-        setAppRuntime({
-          agent: result.agent,
-          sprite: result.sprite,
-          sessionStore: result.sessionStore,
-          close: result.close,
-        });
-
-        // 第一季：Agent 就绪后初始化（共享函数，与 initializeApp 阶段 2 一致）
-        setupAgentReady(agent!, sprite!, sessionStore!, currentDataDir);
-
-        return { success: true, error: null };
-      } catch (error) {
-        // P1 修复：reinitAgent 失败时旧 Agent 已关闭（prevClose 已执行），
-        // 标记 agentReady=false 使 handleUserInput 拒绝新对话，避免使用已关闭 Agent 抛错。
-        // 用户需在设置面板重新配置 LLM 并保存触发再次 reinitAgent。
-        agentReady = false;
-        // 第三季：清空旧实例引用
-        setAppRuntime(null);
-        // 使用统一分类函数，确保与 initializeApp 逻辑一致
-        initErrorDetail = classifyInitError(toError(error).message, '重新初始化失败');
-        errorHandler.handle(error, {
-          code: ErrorCode.INITIALIZATION_FAILED,
-          context: '保存 LLM 配置并重新初始化 Agent 失败',
-        });
-        return { success: false, error: toError(error).message };
-      }
-    },
-  );
-
-  // M1：写入确认响应处理器（渲染进程 → 主进程）
-  // 渲染进程用户确认/拒绝后，通过此通道传回结果，主进程 resolve 对应的 pending Promise
-  ipcMain.handle(
-    IPC_CHANNELS.WRITE_CONFIRMATION_RESPONSE,
-    async (_event, requestId: string, confirmed: boolean) => {
-      const resolve = pendingWriteConfirmations.get(requestId);
-      if (resolve) {
-        pendingWriteConfirmations.delete(requestId);
-        resolve(confirmed);
-      } else {
-        logger.warn({ requestId }, '[写入确认] 收到未知 requestId 的响应（可能已超时）');
-      }
-    },
-  );
-
-  // M2：审计日志 IPC 处理器（渲染进程 → 主进程）
-  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_LIST, async (_event, limit: unknown) => {
-    if (!auditManager) return [];
-    const limitNum = Number(limit);
-    const safeLimit = Number.isFinite(limitNum) && limitNum > 0 ? limitNum : 50;
-    return auditManager.readRecent(safeLimit);
-  });
-
-  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_CLEAR, async () => {
-    if (auditManager) {
-      await auditManager.clear();
-    }
-  });
-
-  // FD-04 项目列表：Agent 未就绪时返回空数组（设置面板专注项目下拉框使用）
-  // 完整 IPC 注册时会覆盖此降级 handler，使用 sprite.listProjects() 返回真实数据
-  ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () => {
-    return { projects: [] };
-  });
-
-  // P2-9 渲染进程通知主进程主题已变更，动态设置窗口背景色
-  // 深色主题下 backgroundColor 应为 #1e1e2e，浅色为 #f0f0f2
-  ipcMain.on(IPC_CHANNELS.THEME_CHANGED, (_event, theme: 'light' | 'dark') => {
-    const bgColor = theme === 'dark' ? '#1e1e2e' : '#f0f0f2';
-    windowManager?.updateBackgroundColor(bgColor);
-  });
-}
-
-// P2-DESIGN-4 修复：以下函数已提取到独立模块
-// - sendSpriteEventIfVisible / registerSpriteEvent / setupSpriteEventListeners / unsubscribeSpriteEvents
-//   → electron/spriteEventBridge.ts
-// - setupConfigSuggestionListener / setupWriteConfirmationListener / setupAuditListener
-//   → electron/agentListeners.ts
+// 调用提取后的函数（在 initializeApp 阶段 1 中调用）
+registerMinimalIpcHandlers(minimalIpcState, {
+  setAppRuntime,
+  setupAgentReady,
+  classifyInitError,
+});
 
 // ─── 应用生命周期 ─────────────────────────────────────────
 

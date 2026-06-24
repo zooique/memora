@@ -13,7 +13,7 @@
 import type { Agent } from 'memora';
 import { logger } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-import type { WindowManager } from './windowManager.js';
+import type { WindowManager } from './windows/windowManager.js';
 import type { AuditManager } from '../sprite/auditManager.js';
 
 /**

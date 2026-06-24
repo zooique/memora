@@ -8,8 +8,8 @@
 import type { Agent } from 'memora';
 import type { Sprite } from '../../sprite/sprite.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
-import type { WindowStateManager } from '../windowState.js';
-import type { WindowManager } from '../windowManager.js';
+import type { WindowStateManager } from '../windows/windowState.js';
+import type { WindowManager } from '../windows/windowManager.js';
 import type { TrayManager } from '../trayIcon.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 
