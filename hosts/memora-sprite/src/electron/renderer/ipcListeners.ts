@@ -17,7 +17,7 @@
  */
 
 import type { UIManager } from './ui.js';
-import type { SerializedAppError } from '../ipcChannels.js';
+import type { SerializedAppError } from '../ipc/channels.js';
 import { reportError, toError } from './helpers/errorHelpers.js';
 import { clearElement, formatClock } from './helpers/domHelpers.js';
 

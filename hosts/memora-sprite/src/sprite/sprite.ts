@@ -20,7 +20,7 @@ import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import { loadSpriteConfig, saveSpriteConfig, applyConfigField, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
-import * as cliFormatter from './cliFormatter.js';
+import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
 import type { DashboardData } from './controllers/index.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';

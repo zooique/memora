@@ -14,7 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { ipcMain } from 'electron';
 import { toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
-import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipcChannels.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 
 /**

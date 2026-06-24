@@ -18,7 +18,7 @@
  *   - trace.log：性能指标（LLM 调用/记忆召回/工具执行耗时）—— 性能调试
  */
 
-import { JsonlAppender } from './jsonlAppender.js';
+import { JsonlAppender } from './audit/jsonlAppender.js';
 import { TRACE_SPANS } from 'memora';
 import type { ITracer, ISpan } from 'memora';
 

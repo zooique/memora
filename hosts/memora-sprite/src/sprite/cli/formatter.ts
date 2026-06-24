@@ -11,10 +11,10 @@
  *   - 提取后 Sprite 只提供结构化数据，格式化由消费方决定
  */
 
-import type { SpriteConfig } from './spriteConfig.js';
-import type { DashboardData } from './controllers/index.js';
-import { DEFAULT_SPRITE_CONFIG } from './spriteConfig.js';
-import { MS_PER_MINUTE } from './constants.js';
+import type { SpriteConfig } from '../spriteConfig.js';
+import type { DashboardData } from '../controllers/index.js';
+import { DEFAULT_SPRITE_CONFIG } from '../spriteConfig.js';
+import { MS_PER_MINUTE } from '../constants.js';
 
 /** 角色列表项（与 PersonaController.list() 返回类型对齐） */
 interface PersonaEntry {

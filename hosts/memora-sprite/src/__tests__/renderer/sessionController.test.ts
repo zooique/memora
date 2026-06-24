@@ -14,8 +14,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { createSessionController } from '../electron/renderer/sessionController.js';
-import { UIManager } from '../electron/renderer/ui.js';
+import { createSessionController } from '../../electron/renderer/controllers/sessionController.js';
+import { UIManager } from '../../electron/renderer/ui.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

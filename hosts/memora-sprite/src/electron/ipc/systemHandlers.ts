@@ -10,7 +10,7 @@
 
 import { ipcMain } from 'electron';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
-import { IPC_CHANNELS } from '../ipcChannels.js';
+import { IPC_CHANNELS } from './channels.js';
 import { safeHandle } from './types.js';
 import type { IpcContext } from './types.js';
 

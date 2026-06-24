@@ -10,7 +10,7 @@
  */
 
 import type { UIManager } from './ui.js';
-import type { createSettingsController } from './settingsController.js';
+import type { createSettingsController } from './controllers/settingsController.js';
 import { reportError } from './helpers/errorHelpers.js';
 
 /**

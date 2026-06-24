@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Agent, InMemoryStorage } from 'memora';
 import type { LlmProvider, LlmChunk, ChatOptions } from 'memora';
-import { Sprite } from '../sprite/sprite.js';
+import { Sprite } from '../../sprite/sprite.js';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';

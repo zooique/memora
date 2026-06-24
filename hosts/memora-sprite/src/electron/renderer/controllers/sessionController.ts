@@ -12,8 +12,8 @@
  * - 会话 ID 格式：YYYY-MM-DD-sessionName（与 SessionStore 对齐）
  */
 
-import type { UIManager } from './ui.js';
-import { reportError } from './helpers/errorHelpers.js';
+import type { UIManager } from '../ui.js';
+import { reportError } from '../helpers/errorHelpers.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色

@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDatabase, type NodeSqliteDatabase } from './helpers/nodeSqliteDatabase.js';
-import { SqliteSessionStore } from '../storage/sessionStore.js';
+import { SqliteSessionStore } from '../../storage/sessionStore.js';
 import type { SessionMessage } from 'memora';
 
 function makeMessage(overrides: Partial<SessionMessage> = {}): SessionMessage {

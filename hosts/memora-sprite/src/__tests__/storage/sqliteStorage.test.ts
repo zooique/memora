@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDatabase } from './helpers/nodeSqliteDatabase.js';
-import { SqliteStorage } from '../storage/sqliteStorage.js';
+import { SqliteStorage } from '../../storage/sqliteStorage.js';
 import type { Memory } from 'memora';
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {

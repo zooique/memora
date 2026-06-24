@@ -13,7 +13,7 @@
 import { ipcMain } from 'electron';
 import { toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
-import { IPC_CHANNELS } from '../ipcChannels.js';
+import { IPC_CHANNELS } from './channels.js';
 import { getLocalDate } from '../../sprite/constants.js';
 import { isValidSessionName } from './inputValidation.js';
 import type { IpcContext } from './types.js';

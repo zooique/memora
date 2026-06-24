@@ -16,7 +16,7 @@
 
 import type { BrowserWindow } from 'electron';
 import type { IInteraction, InputHandler, CloseHandler, OutputKind } from '../sprite/interaction.js';
-import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 
 export class ElectronInteraction implements IInteraction {
   private mainWindow: BrowserWindow | null = null;

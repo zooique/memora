@@ -11,8 +11,8 @@
  * - 角色匹配模式：auto（自动）/ manual（手动），实时持久化
  */
 
-import type { UIManager } from './ui.js';
-import { createIpcErrorHandler, reportError } from './helpers/errorHelpers.js';
+import type { UIManager } from '../ui.js';
+import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 
 /**
  * 创建角色控制器

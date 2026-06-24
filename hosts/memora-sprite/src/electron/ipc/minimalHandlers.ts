@@ -22,11 +22,11 @@
 import { ipcMain } from 'electron';
 import { createProviderFromConfig, toError, logger } from 'memora';
 import type { Agent, Config } from 'memora';
-import { IPC_CHANNELS } from '../ipcChannels.js';
+import { IPC_CHANNELS } from './channels.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { loadSpriteConfig, DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { Sprite } from '../../sprite/sprite.js';
-import type { AuditManager } from '../../sprite/auditManager.js';
+import type { AuditManager } from '../../sprite/audit/auditManager.js';
 import type { WindowManager } from '../windows/windowManager.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import { spriteConfigStore } from '../../storage/spriteConfigStore.js';

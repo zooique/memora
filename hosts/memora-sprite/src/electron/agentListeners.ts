@@ -12,9 +12,9 @@
 
 import type { Agent } from 'memora';
 import { logger } from 'memora';
-import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
-import type { AuditManager } from '../sprite/auditManager.js';
+import type { AuditManager } from '../sprite/audit/auditManager.js';
 
 /**
  * Agent 监听器依赖

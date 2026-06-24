@@ -18,7 +18,7 @@ import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
 import type { FloatWindowCallbacks } from './floatWindow.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
-import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipcChannels.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
 
 /** 完整窗口最小尺寸：侧边栏 240px + 主内容区至少 400px = 640px；高度 480px 保证核心内容可见 */

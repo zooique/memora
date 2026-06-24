@@ -9,7 +9,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from '../ipcChannels.js';
+import { IPC_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { registerChatHandlers } from './chatHandlers.js';
 import { registerSessionHandlers } from './sessionHandlers.js';

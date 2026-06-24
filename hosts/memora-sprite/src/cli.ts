@@ -20,7 +20,7 @@ import { toError } from 'memora';
 import { startSprite, PROVIDER_PRESETS } from './index.js';
 import { DEFAULT_CONFIG_PATH } from './storage/spriteConfigStore.js';
 import type { Sprite, SpriteConfigKey } from './index.js';
-import { CliInteraction } from './sprite/cliInteraction.js';
+import { CliInteraction } from './sprite/cli/interaction.js';
 import type { IInteraction } from './sprite/interaction.js';
 
 // ─── 首次启动引导 ──────────────────────────────────────

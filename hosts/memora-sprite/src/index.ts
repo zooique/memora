@@ -41,7 +41,7 @@ export { TimerTrigger, TriggerBus } from './sprite/triggers.js';
 export type { FileWatcherConfig } from './sprite/fileWatcherTrigger.js';
 export { FileWatcherTrigger } from './sprite/fileWatcherTrigger.js';
 export type { IInteraction, InputHandler, CloseHandler } from './sprite/interaction.js';
-export { CliInteraction } from './sprite/cliInteraction.js';
+export { CliInteraction } from './sprite/cli/interaction.js';
 
 /** 中文 UI 消息覆盖 */
 const ZH_MESSAGES: UIMessages = {

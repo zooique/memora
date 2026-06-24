@@ -9,8 +9,8 @@
 
 import type { BrowserWindow } from 'electron';
 import { toError, logger } from 'memora';
-import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
-import type { SerializedAppError } from './ipcChannels.js';
+import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
+import type { SerializedAppError } from './ipc/channels.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
 

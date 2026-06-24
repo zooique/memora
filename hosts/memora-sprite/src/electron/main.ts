@@ -33,9 +33,9 @@ import { WindowStateManager, DEFAULT_FLOAT_POSITION } from './windows/windowStat
 import { TrayManager } from './trayIcon.js';
 import { WindowManager } from './windows/windowManager.js';
 import { ElectronInteraction } from './interaction.js';
-import { registerIpcHandlers, type IpcContext } from './ipcHandlers.js';
+import { registerIpcHandlers, type IpcContext } from './ipc/handlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
-import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import { ELECTRON_DIR } from './esmShim.js';
 // D-04 修复：最小化 IPC 处理器提取到独立模块
 import { registerMinimalIpcHandlers, type MinimalIpcState } from './ipc/minimalHandlers.js';
@@ -50,7 +50,7 @@ import {
 } from '../index.js';
 import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite } from '../sprite/sprite.js';
-import { AuditManager } from '../sprite/auditManager.js';
+import { AuditManager } from '../sprite/audit/auditManager.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────

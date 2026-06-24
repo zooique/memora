@@ -18,7 +18,7 @@
 import { Notification } from 'electron';
 import { logger, toError } from 'memora';
 import type { Sprite, SpriteEventMap } from '../sprite/sprite.js';
-import { MAIN_TO_RENDERER_CHANNELS } from './ipcChannels.js';
+import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { WindowStateManager } from './windows/windowState.js';
 import type { TrayManager } from './trayIcon.js';

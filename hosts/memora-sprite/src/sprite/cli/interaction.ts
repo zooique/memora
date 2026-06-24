@@ -6,7 +6,7 @@
  */
 import { createInterface } from 'node:readline';
 import type { Interface } from 'node:readline';
-import type { IInteraction, InputHandler, CloseHandler } from './interaction.js';
+import type { IInteraction, InputHandler, CloseHandler } from '../interaction.js';
 
 /**
  * CLI 交互层

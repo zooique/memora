@@ -7,17 +7,17 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Agent, AgentEventMap } from 'memora';
-import { Sprite } from '../sprite/sprite.js';
-import { TriggerBus, TimerTrigger } from '../sprite/triggers.js';
-import { CliInteraction } from '../sprite/cliInteraction.js';
-import type { IInteraction, InputHandler } from '../sprite/interaction.js';
-import type { SpriteTrigger } from '../sprite/triggers.js';
-import { FileWatcherTrigger } from '../sprite/fileWatcherTrigger.js';
+import { Sprite } from '../../sprite/sprite.js';
+import { TriggerBus, TimerTrigger } from '../../sprite/triggers.js';
+import { CliInteraction } from '../../sprite/cli/interaction.js';
+import type { IInteraction, InputHandler } from '../../sprite/interaction.js';
+import type { SpriteTrigger } from '../../sprite/triggers.js';
+import { FileWatcherTrigger } from '../../sprite/fileWatcherTrigger.js';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
-import type { SpriteConfig } from '../sprite/spriteConfig.js';
+import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
+import type { SpriteConfig } from '../../sprite/spriteConfig.js';
 
 // ─── Mock spriteConfig 模块（测试隔离） ──────────────────
 // 重构后 loadSpriteConfig/saveSpriteConfig 固定读写 ~/.memora-sprite/sprite.json，
@@ -26,7 +26,7 @@ import type { SpriteConfig } from '../sprite/spriteConfig.js';
 /** 模拟的持久化配置存储（内存中，替代真实文件） */
 let mockPersistedConfig: SpriteConfig = { ...DEFAULT_SPRITE_CONFIG };
 
-vi.mock('../sprite/spriteConfig.js', async (importOriginal) => {
+vi.mock('../../sprite/spriteConfig.js', async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,

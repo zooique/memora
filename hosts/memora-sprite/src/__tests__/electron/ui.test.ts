@@ -20,8 +20,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { UIManager } from '../electron/renderer/ui.js';
-import type { MemoryListItem, MemoryDetail } from '../electron/renderer/ui.js';
+import { UIManager } from '../../electron/renderer/ui.js';
+import type { MemoryListItem, MemoryDetail } from '../../electron/renderer/ui.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

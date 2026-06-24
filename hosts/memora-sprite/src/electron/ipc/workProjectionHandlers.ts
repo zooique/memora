@@ -10,8 +10,8 @@
  */
 
 import { ipcMain } from 'electron';
-import { IPC_CHANNELS } from '../ipcChannels.js';
-import type { WorkProjectionPayload } from '../ipcChannels.js';
+import { IPC_CHANNELS } from './channels.js';
+import type { WorkProjectionPayload } from './channels.js';
 import { safeHandle } from './types.js';
 import type { IpcContext } from './types.js';
 

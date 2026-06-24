@@ -14,10 +14,10 @@
  */
 
 import { UIManager } from './ui.js';
-import { createSessionController } from './sessionController.js';
-import { createMemoryController } from './memoryPanelController.js';
-import { createPersonaController } from './personaPanelController.js';
-import { createSettingsController } from './settingsController.js';
+import { createSessionController } from './controllers/sessionController.js';
+import { createMemoryController } from './controllers/memoryPanelController.js';
+import { createPersonaController } from './controllers/personaPanelController.js';
+import { createSettingsController } from './controllers/settingsController.js';
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
 import { getLocalDate } from '../../sprite/constants.js';

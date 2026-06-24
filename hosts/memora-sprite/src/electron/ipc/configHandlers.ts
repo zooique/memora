@@ -10,7 +10,7 @@
 
 import { ipcMain } from 'electron';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
-import { IPC_CHANNELS } from '../ipcChannels.js';
+import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { SpriteConfigKey } from '../../sprite/spriteConfig.js';
 import { safeHandle } from './types.js';

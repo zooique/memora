@@ -24,16 +24,15 @@ import { OnboardingManager } from './components/onboarding.js';
 import { ThemeManager } from './components/themeManager.js';
 import { ProactiveBanner } from './components/proactiveBanner.js';
 import { SuggestionCardManager } from './components/suggestionCard.js';
-import { ProfilePanelManager } from './ui/profilePanelManager.js';
-import { SettingsPanelManager } from './ui/settingsPanelManager.js';
-import type { SettingsPanelHost } from './ui/settingsPanelManager.js';
-// P2-008 面板管理器导入（组合模式：UIManager 持有实例并委托）
-import { ChatPanelManager } from './ui/chatPanelManager.js';
-import type { ChatPanelHost } from './ui/chatPanelManager.js';
-import { MemoryPanelManager } from './ui/memoryPanelManager.js';
-import type { MemoryPanelHost } from './ui/memoryPanelManager.js';
-import { PersonaPanelManager } from './ui/personaPanelManager.js';
-import { SessionPanelManager } from './ui/sessionPanelManager.js';
+import { ProfilePanelManager } from './panels/profilePanelManager.js';
+import { SettingsPanelManager } from './panels/settingsPanelManager.js';
+import type { SettingsPanelHost } from './panels/settingsPanelManager.js';
+import { ChatPanelManager } from './panels/chatPanelManager.js';
+import type { ChatPanelHost } from './panels/chatPanelManager.js';
+import { MemoryPanelManager } from './panels/memoryPanelManager.js';
+import type { MemoryPanelHost } from './panels/memoryPanelManager.js';
+import { PersonaPanelManager } from './panels/personaPanelManager.js';
+import { SessionPanelManager } from './panels/sessionPanelManager.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
   Message,

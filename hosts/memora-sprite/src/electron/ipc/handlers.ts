@@ -15,5 +15,5 @@
  * 此文件保留 re-export 以维持向后兼容（main.ts 和测试文件的 import 路径不变）。
  */
 
-export { registerIpcHandlers } from './ipc/index.js';
-export type { IpcContext } from './ipc/types.js';
+export { registerIpcHandlers } from './index.js';
+export type { IpcContext } from './types.js';

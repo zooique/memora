@@ -12,10 +12,10 @@
  * - 仪表盘高亮状态：接近阈值（>=80%）黄色，达到阈值粉色
  */
 
-import type { UIManager } from './ui.js';
-import { setButtonLoading, clearElement } from './helpers/domHelpers.js';
-import type { MemoryListItem } from './types.js';
-import { createIpcErrorHandler, reportError } from './helpers/errorHelpers.js';
+import type { UIManager } from '../ui.js';
+import { setButtonLoading, clearElement } from '../helpers/domHelpers.js';
+import type { MemoryListItem } from '../types.js';
+import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 
 /** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
 const DASHBOARD_PULSE_MS = 300;
