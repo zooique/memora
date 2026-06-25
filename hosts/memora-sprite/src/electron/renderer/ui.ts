@@ -112,7 +112,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
   private badge: HTMLElement | null;
   /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
-  private btnNewSession: HTMLButtonElement | null;
+  /* btnNewSession 已移除 */
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
 
@@ -150,7 +150,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
-    this.btnNewSession = getOptionalElement('btn-new-session', 'button');
+    // btnNewSession 已移除
     this.btnMaximize = getOptionalElement('btn-maximize', 'button');
 
     // P2-008 设置面板 DOM 元素初始化已提取至 SettingsPanelManager
@@ -217,9 +217,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     // 按钮事件（发送按钮合并了停止功能，流式态时点击触发停止）
     this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
-    if (this.btnNewSession) {
-      this.events.addEventListener(this.btnNewSession, 'click', this.handleNewSessionClick.bind(this));
-    }
+    // 新建会话按钮已移除（会话按天自动存储）
 
     // FD-A1 会话选择器：点击切换下拉菜单
     const sessionCurrent = document.getElementById('session-current');
@@ -307,11 +305,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     }
 
     // Ctrl/Cmd + N：新建会话
-    if (isMod && e.key === 'n') {
-      this.newSessionCallback?.();
-      e.preventDefault();
-      return;
-    }
+    // Ctrl+N 已移除（会话按天自动存储）
 
     // P2-FLOW-07 Ctrl/Cmd + .：停止生成（流式输出期间可用键盘快速中断）
     if (isMod && e.key === '.') {
@@ -588,9 +582,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * - 触发回调由 renderer.ts 注册，调用主进程 session-new IPC
    * - 确认对话框防止误操作（清空当前对话区是不可逆的，但历史保留在 SessionStore）
    */
-  private handleNewSessionClick(): void {
-    this.newSessionCallback?.();
-  }
+  /* handleNewSessionClick 已移除 */
 
   private handleNavClick(e: Event): void {
     const target = e.currentTarget;
@@ -705,8 +697,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
   private sendMessageCallback: (() => void) | null = null;
   private stopMessageCallback: (() => void) | null = null;
-  /** FD-05 新建会话回调（由 renderer.ts 注册） */
-  private newSessionCallback: (() => void) | null = null;
+  /* newSessionCallback 已移除 */
 
   /** 设置发送消息回调 */
   onSendMessage(callback: () => void): void {
@@ -716,11 +707,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 设置停止消息回调 */
   onStopMessage(callback: () => void): void {
     this.stopMessageCallback = callback;
-  }
-
-  /** FD-05 注册新建会话回调 */
-  onNewSession(callback: () => void): void {
-    this.newSessionCallback = callback;
   }
 
   private emitSendMessage(): void {
@@ -1196,7 +1182,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * 注册技能安装成功回调
    *
    * 安装成功后调用，renderer.ts 在此回调中刷新技能列表（loadDashboard）。
-   * 与 onNewSession 同模式，保持回调注册风格一致。
+   * 与 onSendMessage 同模式，保持回调注册风格一致。
    */
   onSkillInstalled(callback: () => void): void {
     this.skillInstalledCallback = callback;

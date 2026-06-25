@@ -249,7 +249,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       configDir: opts.configDir,
       tracer: opts.tracer,
       messages: opts.messages,
-      enableContextSummary: opts.enableContextSummary ?? false,
+      enableContextSummary: opts.enableContextSummary ?? true,
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
@@ -367,6 +367,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }, AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS);
     try {
       this._lastInteractionAt = new Date();
+
+      // 清理上一轮注入的临时 system 消息（recentConversation/skill/recall/truncation）
+      // 防止多轮累积：每轮 chat() 开始前，只保留 messages[0] 和非 system 消息
+      this.requireNonNull(this.loop, 'loop').cleanTemporarySystemMessages();
 
       // 基元驱动召回（双通道：语义 + 关键词）
       yield { type: 'thinking', phase: 'recalling' };

@@ -424,16 +424,14 @@ function setupBusinessLogic(
     // UX-PP-03 存储最后用户输入，用于流式错误重试
     lastUserInput = text;
 
-    // FD-06 跨天续聊检测：当前会话日期与今天不一致时，自动切换到今天的同名会话
+    // 跨天检测：当前查看的是历史日期时自动切换到今天的 main 会话
     const currentId = sessionController.getCurrentSessionId();
     if (currentId) {
-      const todayPrefix = getLocalDate(); // UX-PP-07 本地日期，非 UTC
-      const sessionDate = currentId.slice(0, 10); // 前 10 字符为日期
+      const todayPrefix = getLocalDate();
+      const sessionDate = currentId.slice(0, 10);
       if (sessionDate !== todayPrefix) {
-        // 提取会话名（去除日期前缀和连字符）
-        const sessionName = currentId.slice(11); // 跳过 YYYY-MM-DD-
-        const todaySessionId = `${todayPrefix}-${sessionName}`;
-        uiManager.showToast('已跨天，自动切换到今天的新会话', 'info');
+        const todaySessionId = `${todayPrefix}-main`;
+        uiManager.showToast('已切换到今天的对话', 'info');
         await sessionController.switchSession(todaySessionId);
       }
     }
@@ -470,50 +468,6 @@ function setupBusinessLogic(
   uiManager.onStopMessage(async () => {
     await window.electronAPI.abortChat();
     uiManager.stopAllStreaming();
-  });
-
-  // FD-05 新建会话回调
-  // 设计：精灵默认推荐"一个对话走到底"（上下文只用前三轮），
-  // 但用户可能需要主动切换会话以开启全新上下文。
-  // 此处通过确认对话框防止误操作，新会话创建后清空对话区并显示系统消息。
-  uiManager.onNewSession(async () => {
-    // 防止流式输出中创建新会话（避免上下文混乱）
-    if (uiManager.isStreaming()) {
-      // IX-06 操作反馈走 toast
-      uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止后再新建会话', 'warning');
-      return;
-    }
-
-    // 确认对话框：清空当前对话区是不可逆的（但历史保留在 SessionStore）
-    // 使用自定义确认弹窗替代 window.confirm，提供一致的视觉体验
-    const confirmed = await uiManager.showConfirmDialog({
-      title: '开始新会话',
-      message: '当前对话将保留在历史中，可随时切换回来查看。',
-      confirmText: '开始新会话',
-    });
-    if (!confirmed) {
-      return;
-    }
-
-    try {
-      const result = await window.electronAPI.newSession();
-      if (result.success) {
-        // 清空对话区并显示新会话提示（新会话提示是对话内容，保留在 #messages）
-        uiManager.clearMessages();
-        uiManager.appendMessage({
-          role: 'system',
-          content: `✨ 新会话已开始（${result.sessionName ?? ''}）`,
-        });
-        // FD-A1 Gap 2 修复：新建会话后刷新会话列表，使新会话出现在下拉中
-        void sessionController.loadSessionList();
-      } else {
-        // IX-06 失败反馈走 toast
-        uiManager.showToast(`新建会话失败：${result.error ?? '未知错误'}`, 'error');
-      }
-    } catch (error) {
-      reportError('onNewSession', error);
-      uiManager.showToast(`新建会话失败：${error instanceof Error ? error.message : '未知错误'}`, 'error');
-    }
   });
 
   // FD-A1 会话切换回调

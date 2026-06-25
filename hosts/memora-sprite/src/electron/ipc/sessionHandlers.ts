@@ -4,8 +4,7 @@
  * 职责：
  *   1. 加载历史会话消息（支持分页）
  *   2. 切换到已有会话（更新 Agent 内部状态）
- *   3. 新建会话（基于时间戳生成会话名）
- *   4. 列出所有会话（含预览和消息数量）
+ *   3. 列出所有会话（按日期聚合，含预览和消息数量）
  *   5. 删除会话
  *   6. 重命名会话
  */
@@ -107,7 +106,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  // FD-09 删除会话
+  // FD-09 删除会话（如传入日期前缀则删除当天全部子会话）
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_event, sessionId: string) => {
     try {
       if (!ctx.agent) {
@@ -119,9 +118,20 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, error: '无效的会话 ID' };
       }
 
-      const deleted = ctx.sessionStore.deleteSession(sessionId);
-      if (!deleted) {
-        return { success: false, error: '会话不存在或删除失败' };
+      // 按天聚合后删除某天时，删除当天所有子会话（含 main 和遗留的 session-xxx）
+      const datePrefix = sessionId.slice(0, 10); // YYYY-MM-DD
+      const allSessions = ctx.sessionStore.listSessions();
+      let deletedCount = 0;
+      for (const s of allSessions) {
+        if (s.slice(0, 10) === datePrefix) {
+          if (ctx.sessionStore.deleteSession(s)) {
+            deletedCount++;
+          }
+        }
+      }
+
+      if (deletedCount === 0) {
+        return { success: false, error: '未找到该日期的会话记录' };
       }
 
       return { success: true };
@@ -155,48 +165,36 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  /**
-   * 新建会话
-   *
-   * 生成基于时间戳的会话名（session-HHmmss），调用 agent.switchSession 切换。
-   * 旧会话数据保留在 SessionStore 中，不删除。
-   */
-  ipcMain.handle(IPC_CHANNELS.SESSION_NEW, async () => {
-    try {
-      // QC-19 P0 修复：添加 ctx.agent 和 sessionManager null 检查，避免运行时 TypeError
-      if (!ctx.agent || !ctx.agent.sessionManager) {
-        return { success: false, error: 'Agent 或 SessionManager 未初始化' };
-      }
-      const now = new Date();
-      // 会话名格式：session-HHmmss（如 session-143052）
-      const sessionName = `session-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-      ctx.agent.sessionManager.switchSession(sessionName);
-      return { success: true, sessionName };
-    } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '新建会话失败' });
-      return { success: false, error: toError(error).message };
-    }
-  });
+  // SESSION_NEW 已移除：会话按天自动存储，无需手动新建
 
-  // FD-A1 列出所有会话
+  // FD-A1 列出所有会话（按日期聚合，每日期最多一条）
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {
     try {
-      const sessions = ctx.sessionStore.listSessions();
-      // 解析会话名，提取日期和名称用于 UI 展示
-      const parsed = sessions.map((s) => {
-        const parts = s.split('-');
-        // 格式：YYYY-MM-DD-name（如 2026-06-20-main, 2026-06-20-session-143052）
-        if (parts.length >= 3) {
-          const date = parts[0] + '-' + parts[1] + '-' + parts[2];
-          const name = parts.slice(3).join('-') || 'main';
-          // UX-PP-05 获取首条用户消息作为预览
-          const preview = ctx.sessionStore.getFirstUserMessage(s);
-          // P3-FLOW-04 获取消息数量用于会话列表项展示
-          const messageCount = ctx.sessionStore.countMessages(date, name);
-          return { id: s, date, name, preview, messageCount };
-        }
-        return { id: s, date: s, name: s, preview: '', messageCount: 0 };
-      });
+      const sessions = ctx.sessionStore.listSessions(); // 返回 ['YYYY-MM-DD-name', ...]
+
+      // 按日期聚合：同一天取最近创建的会话（列表中最后的那个）作为代表
+      const dateMap = new Map<string, string>(); // date → sessionId
+      for (const s of sessions) {
+        const date = s.slice(0, 10); // YYYY-MM-DD
+        // 后出现的覆盖先出现的（listSessions 按 ID ASC，所以最后的是最新的）
+        dateMap.set(date, s);
+      }
+
+      // 解析每个日期的一条代表会话
+      const parsed = Array.from(dateMap.entries())
+        .sort((a, b) => a[0].localeCompare(b[0])) // 日期升序
+        .map(([_date, s]) => {
+          const parts = s.split('-');
+          if (parts.length >= 3) {
+            const date = parts[0] + '-' + parts[1] + '-' + parts[2];
+            const name = parts.slice(3).join('-') || 'main';
+            const preview = ctx.sessionStore.getFirstUserMessage(s);
+            const messageCount = ctx.sessionStore.countMessages(date, name);
+            return { id: s, date, name, preview, messageCount };
+          }
+          return { id: s, date: s, name: s, preview: '', messageCount: 0 };
+        });
+
       return { sessions: parsed };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '列出会话失败' });

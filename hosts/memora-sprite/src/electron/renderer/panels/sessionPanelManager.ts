@@ -12,7 +12,7 @@
  * - 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 300 行。
  */
 
-import { formatTimeAgo, clearElement, getOptionalElement } from '../helpers/domHelpers.js';
+import { formatTimeAgo, clearElement } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 
 // ─── 会话面板管理器类 ─────────────────────────────────────
@@ -29,9 +29,6 @@ export class SessionPanelManager {
 
   /** FD-08 当前会话 ID（renderSessionListItems 渲染高亮使用） */
   private sessionsCurrentId: string = '';
-
-  /** FD-08 搜索框事件是否已绑定（仅首次绑定） */
-  private sessionSearchBound: boolean = false;
 
   /** QC-11 事件委托是否已初始化（仅首次绑定） */
   private listDelegationBound: boolean = false;
@@ -119,7 +116,6 @@ export class SessionPanelManager {
     const selector = document.getElementById('session-selector');
     const list = document.getElementById('session-list');
     const currentName = document.getElementById('session-current-name');
-    const searchInput = getOptionalElement('session-search', 'input');
     if (!selector || !list || !currentName) return;
 
     // P1 修复：移除初始 hidden 类，使会话选择器可见
@@ -150,18 +146,6 @@ export class SessionPanelManager {
     // 找到当前会话
     const current = sessions.find((s) => s.id === currentSessionId);
     currentName.textContent = current?.name ?? currentSessionId;
-
-    // 清空搜索框并渲染全部会话
-    if (searchInput) {
-      searchInput.value = '';
-      // FD-08 绑定搜索过滤事件（仅首次，通过 EventTracker 跟踪以便清理）
-      if (!this.sessionSearchBound) {
-        this.sessionSearchBound = true;
-        this.events.addEventListener(searchInput, 'input', () => {
-          this.filterSessionList(searchInput.value);
-        });
-      }
-    }
 
     this.renderSessionListItems(sessions);
   }
@@ -229,13 +213,9 @@ export class SessionPanelManager {
       dateSpan.textContent = formatTimeAgo(session.date);
       li.appendChild(dateSpan);
 
-      // UX-PP-05 首条消息预览（仅在有内容时显示）
-      if (session.preview) {
-        const previewSpan = document.createElement('span');
-        previewSpan.className = 'session-list-item-preview';
-        previewSpan.textContent = session.preview;
-        li.appendChild(previewSpan);
-      }
+      // 显示会话名（默认 main，可重命名为自定义名称）
+      const displayName = session.name === 'main' ? '默认会话' : session.name;
+      nameSpan.textContent = displayName;
 
       // P3-FLOW-04 消息数量徽章（仅当有消息时显示，避免空会话显示 0）
       if (typeof session.messageCount === 'number' && session.messageCount > 0) {
@@ -275,29 +255,4 @@ export class SessionPanelManager {
     }
   }
 
-  /**
-   * FD-08 过滤会话列表
-   *
-   * 根据搜索关键词过滤显示/隐藏会话列表项。
-   * 匹配规则：会话名、日期或预览内容包含关键词（忽略大小写）。
-   * P3-FLOW-03 扩展搜索范围：增加 preview 匹配，支持按消息内容关键词查找会话
-   */
-  private filterSessionList(query: string): void {
-    const items = document.querySelectorAll('#session-list .session-list-item');
-    const q = query.toLowerCase().trim();
-
-    items.forEach((item) => {
-      const el = item as HTMLElement;
-      const name = (el.querySelector('.session-list-item-name') as HTMLElement | null)?.textContent ?? '';
-      const date = (el.querySelector('.session-list-item-date') as HTMLElement | null)?.textContent ?? '';
-      // P3-FLOW-03 增加预览内容匹配
-      const preview = (el.querySelector('.session-list-item-preview') as HTMLElement | null)?.textContent ?? '';
-
-      if (q === '' || name.toLowerCase().includes(q) || date.includes(q) || preview.toLowerCase().includes(q)) {
-        el.style.display = '';
-      } else {
-        el.style.display = 'none';
-      }
-    });
-  }
 }

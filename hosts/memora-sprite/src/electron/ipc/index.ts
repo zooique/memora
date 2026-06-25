@@ -27,7 +27,7 @@ import { registerWorkProjectionHandlers } from './workProjectionHandlers.js';
 const HANDLE_CHANNELS = [
   IPC_CHANNELS.CHAT_ABORT,
   IPC_CHANNELS.SESSION_LOAD,
-  IPC_CHANNELS.SESSION_NEW,
+  // SESSION_NEW 已移除（会话按天自动存储）
   IPC_CHANNELS.SESSION_LIST,
   // P1 修复：遗漏这三个通道会导致 reinitAgent 时 ipcMain.handle 重复注册抛错
   IPC_CHANNELS.SESSION_SWITCH,

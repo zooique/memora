@@ -172,7 +172,7 @@
               <ul id="session-list" class="session-list"></ul>
             </div>
           </div>
-          <button id="btn-new-session" title="开始新会话（Ctrl+N，当前会话保留在历史中）">✨ 新会话</button>
+          <!-- btn-new-session 已移除：会话按天自动存储，无需手动新建 -->
         </div>
 
         <!-- FD-A2 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->
@@ -698,7 +698,7 @@
         <div class="onboarding-shortcuts">
           <div class="onboarding-shortcut-title">⌨️ 快捷键</div>
           <div class="onboarding-shortcut-list">
-            <kbd>Ctrl+1</kbd> 对话 <kbd>Ctrl+2</kbd> 记忆 <kbd>Ctrl+3</kbd> 设置 <kbd>Ctrl+N</kbd> 新会话 <kbd>Esc</kbd> 关闭弹窗
+            <kbd>Ctrl+1</kbd> 对话 <kbd>Ctrl+2</kbd> 记忆 <kbd>Ctrl+3</kbd> 设置 <kbd>Ctrl+.</kbd> 停止 <kbd>Esc</kbd> 关闭弹窗
           </div>
         </div>
       </div>
@@ -722,7 +722,7 @@
             <tr><td><kbd>Ctrl+1</kbd></td><td>切换到对话面板</td></tr>
             <tr><td><kbd>Ctrl+2</kbd></td><td>切换到记忆面板</td></tr>
             <tr><td><kbd>Ctrl+3</kbd></td><td>切换到设置面板</td></tr>
-            <tr><td><kbd>Ctrl+N</kbd></td><td>新建会话</td></tr>
+            <!-- Ctrl+N 已移除：会话按天自动存储 -->
             <tr><td><kbd>Ctrl+.</kbd></td><td>停止生成</td></tr>
             <tr><td><kbd>Ctrl+/</kbd></td><td>显示快捷键帮助</td></tr>
             <tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr>

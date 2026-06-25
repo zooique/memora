@@ -39,7 +39,7 @@ const MINIMAL_HTML = `<!DOCTYPE html>
     <div id="session-selector">
       <div id="session-current"><span id="session-current-name"></span></div>
       <div class="session-dropdown">
-        <input id="session-search" />
+
         <ul id="session-list"></ul>
       </div>
     </div>

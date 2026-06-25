@@ -77,7 +77,7 @@ const TEST_HTML = `<!DOCTYPE html>
             <span class="chat-toolbar-title">对话</span>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
-          <button id="btn-new-session" title="开始新会话">✨ 新会话</button>
+
         </div>
         <div id="proactive-banner" class="hidden">
           <span class="banner-icon">🧚</span>
@@ -925,15 +925,7 @@ describe('事件回调注册', () => {
     expect(cb).toHaveBeenCalledWith({ source: 'insight', name: 'test', content: 'content' });
   });
 
-  it('onNewSession: 注册回调', () => {
-    const cb = vi.fn();
-    uiManager.onNewSession(cb);
 
-    const btnNewSession = document.getElementById('btn-new-session')!;
-    btnNewSession.click();
-
-    expect(cb).toHaveBeenCalled();
-  });
 });
 
 // ─── Toast 通知 ───────────────────────────────────────────
