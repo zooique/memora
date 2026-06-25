@@ -453,6 +453,47 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.showWriteConfirmation(info);
   });
 
+  // ─── Phase 3.1 剪贴板三重保护 ──────────────────────────
+  /**
+   * 监听剪贴板变化通知（被动检测，不携带内容）
+   *
+   * 触发时机：ClipboardHandler 轮询检测到剪贴板哈希变化时
+   * 处理方式：显示带"分析"按钮的 Toast，用户点击后触发主动分析
+   */
+  window.electronAPI.onClipboardChanged(() => {
+    uiManager.showClipboardChangedToast();
+  });
+
+  /**
+   * 监听敏感内容忽略通知
+   *
+   * 触发时机：用户点击"分析"后，ClipboardHandler.analyze() 检测到敏感内容
+   * 处理方式：显示 warning Toast 提示用户（不展示内容）
+   */
+  window.electronAPI.onClipboardSensitiveIgnored((payload) => {
+    uiManager.showToast(`检测到敏感内容（${payload.type}），已静默忽略`, 'warning');
+  });
+
+  /**
+   * 监听分析就绪通知（内容已通过敏感检测和护栏）
+   *
+   * 触发时机：ClipboardHandler.analyze() 通过所有检测后
+   * 处理方式：显示确认对话框，用户确认后写入记忆
+   */
+  window.electronAPI.onClipboardAnalysisReady((payload) => {
+    uiManager.showClipboardConfirmDialog(payload.content);
+  });
+
+  /**
+   * 监听分析被拦截通知（输入护栏拦截）
+   *
+   * 触发时机：ClipboardHandler.analyze() 中 inputGuard 拦截内容
+   * 处理方式：显示 warning Toast 提示拦截原因
+   */
+  window.electronAPI.onClipboardAnalysisRejected((payload) => {
+    uiManager.showToast(`剪贴板内容被拦截：${payload.reason}`, 'warning');
+  });
+
   // ─── M2 审计日志（刷新/清空按钮） ────────────────────────
   const auditRefreshBtn = document.getElementById('btn-audit-refresh');
   if (auditRefreshBtn) {

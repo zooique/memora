@@ -435,6 +435,26 @@ export interface ElectronAPI {
   /** 响应写入确认请求（用户确认/拒绝后回调主进程） */
   responseWriteConfirmation: (requestId: string, confirmed: boolean) => Promise<void>;
 
+  // ─── Phase 3.1：剪贴板三重保护 ────────────────────────
+  /** 监听剪贴板变化通知（不携带内容，仅通知 UI 显示"分析"提示） */
+  onClipboardChanged: (cb: () => void) => void;
+  /** 移除剪贴板变化监听器 */
+  removeClipboardChangedListener: () => void;
+  /** 监听敏感内容忽略通知（携带 type，供 UI 记录日志） */
+  onClipboardSensitiveIgnored: (cb: (payload: { type: string }) => void) => void;
+  /** 移除敏感内容忽略监听器 */
+  removeClipboardSensitiveIgnoredListener: () => void;
+  /** 监听分析就绪通知（携带 content，UI 展示确认对话框） */
+  onClipboardAnalysisReady: (cb: (payload: { content: string }) => void) => void;
+  /** 移除分析就绪监听器 */
+  removeClipboardAnalysisReadyListener: () => void;
+  /** 监听分析被拦截通知（携带 reason，UI 提示拦截原因） */
+  onClipboardAnalysisRejected: (cb: (payload: { reason: string }) => void) => void;
+  /** 移除分析被拦截监听器 */
+  removeClipboardAnalysisRejectedListener: () => void;
+  /** 请求主进程分析剪贴板内容（用户点击"分析"按钮触发） */
+  clipboardAnalyze: () => Promise<boolean>;
+
   // ─── M2：审计日志 ─────────────────────────────────────
   /** 列出最近 N 条审计日志 */
   listAuditLog: (limit?: number) => Promise<Array<{
@@ -614,6 +634,25 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION);
   },
   responseWriteConfirmation: (requestId, confirmed) => ipcRenderer.invoke(IPC_CHANNELS.WRITE_CONFIRMATION_RESPONSE, requestId, confirmed),
+
+  // Phase 3.1：剪贴板三重保护
+  onClipboardChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED, (_: IpcRendererEvent) => cb()),
+  removeClipboardChangedListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED);
+  },
+  onClipboardSensitiveIgnored: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_SENSITIVE_IGNORED, (_: IpcRendererEvent, payload: { type: string }) => cb(payload)),
+  removeClipboardSensitiveIgnoredListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_SENSITIVE_IGNORED);
+  },
+  onClipboardAnalysisReady: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_READY, (_: IpcRendererEvent, payload: { content: string }) => cb(payload)),
+  removeClipboardAnalysisReadyListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_READY);
+  },
+  onClipboardAnalysisRejected: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED, (_: IpcRendererEvent, payload: { reason: string }) => cb(payload)),
+  removeClipboardAnalysisRejectedListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED);
+  },
+  clipboardAnalyze: () => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_ANALYZE),
 
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),

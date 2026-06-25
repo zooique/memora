@@ -90,6 +90,12 @@ export type ToastType = 'success' | 'error' | 'warning' | 'info';
 /** Toast 重试选项（提供 onRetry 时显示重试按钮，且 toast 不自动消失） */
 export interface ToastOptions {
   onRetry?: () => void;
+  /**
+   * 自定义操作按钮（Phase 3.1：剪贴板分析触发）
+   * 提供 actionLabel + onAction 时显示操作按钮，且 toast 不自动消失
+   */
+  actionLabel?: string;
+  onAction?: () => void;
 }
 
 /**

@@ -376,6 +376,11 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   window.electronAPI?.removeSuggestionPushListener();
   // 剪枝：补充清理写入确认监听器（原遗漏，防止内存泄漏）
   window.electronAPI?.removeWriteConfirmationListener();
+  // Phase 3.1：清理剪贴板三重保护监听器
+  window.electronAPI?.removeClipboardChangedListener();
+  window.electronAPI?.removeClipboardSensitiveIgnoredListener();
+  window.electronAPI?.removeClipboardAnalysisReadyListener();
+  window.electronAPI?.removeClipboardAnalysisRejectedListener();
 });
 
 // ─── 业务逻辑设置（发送/停止/新建会话） ─────────────────────

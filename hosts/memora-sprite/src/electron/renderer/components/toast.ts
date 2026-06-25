@@ -92,6 +92,21 @@ export class ToastManager {
       body.appendChild(retryBtn);
     }
 
+    // Phase 3.1：自定义操作按钮（如"分析"按钮，触发剪贴板分析）
+    // 复用 onRetry 的 UI 模式，但语义更通用
+    if (options?.onAction && options?.actionLabel) {
+      const onAction = options.onAction;
+      const actionBtn = document.createElement('button');
+      actionBtn.className = 'toast-retry';
+      actionBtn.textContent = options.actionLabel;
+      actionBtn.title = options.actionLabel;
+      actionBtn.addEventListener('click', () => {
+        this.removeToast(toast);
+        onAction();
+      });
+      body.appendChild(actionBtn);
+    }
+
     toast.appendChild(body);
 
     // 关闭按钮
@@ -104,9 +119,10 @@ export class ToastManager {
 
     container.appendChild(toast);
 
-    // 自动消失（有重试按钮时不自动消失，让用户有时间点击重试）
+    // 自动消失（有重试按钮或操作按钮时不自动消失，让用户有时间点击）
     const hasRetry = !!options?.onRetry;
-    const autoDuration = hasRetry ? 0 : (duration ?? (type === 'error' ? 0 : TOAST_DEFAULT_DURATION));
+    const hasAction = !!options?.onAction && !!options?.actionLabel;
+    const autoDuration = (hasRetry || hasAction) ? 0 : (duration ?? (type === 'error' ? 0 : TOAST_DEFAULT_DURATION));
     if (autoDuration > 0) {
       // 纳入 toastTimers 跟踪，cleanup 时统一清理，避免回调在 DOM 销毁后触发
       const timer = setTimeout(() => {
