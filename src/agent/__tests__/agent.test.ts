@@ -21,6 +21,8 @@ import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
 import { LlmProvider } from '@/llm/provider.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
+import { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
+import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
@@ -61,11 +63,13 @@ function seedProject(_projectPath: string, configDir: string, _dataDir: string):
 
 /**
  * 创建 Agent 实例（使用 MockProvider）
+ * @param relationStore 可选，注入关系存储侧车（ADR-014）
  */
 function makeAgent(
   projectPath: string,
   configDir: string,
   dataDir: string,
+  relationStore?: IMemoryRelationStore,
 ): Agent {
   return new Agent({
     projectPath,
@@ -74,6 +78,7 @@ function makeAgent(
     dataDir,
     permission: 'owner',
     allowedPaths: [dataDir],
+    relationStore,
     messages: {
       abortedByUser: '用户取消了对话',
       maxIterationsReached: '\n\n[已达到最大迭代次数]',
@@ -1333,5 +1338,162 @@ describe('Agent · rebuildComponents() · 手动重建组件', () => {
     expect(agent.config).not.toBeNull();
     expect(agent.insight).not.toBeNull();
     expect(agent.memory).not.toBeNull();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：memory 关系查询（ADR-014 侧车）
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · memory 关系查询（ADR-014）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-rel-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-rel-cfg-'));
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-rel-data-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('relationStore 未注入时 getRelations 应返回空数组（向后兼容）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const relations = agent.memory!.getRelations('insight:test');
+    expect(relations).toEqual([]);
+  });
+
+  it('relationStore 未注入时 stats().relationCount 应为 0', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const stats = agent.memory!.stats();
+    expect(stats.relationCount).toBe(0);
+  });
+
+  it('relationStore 未注入时 snapshot().archive.relationCount 应为 0', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const snap = agent.memory!.snapshot();
+    expect(snap.archive.relationCount).toBe(0);
+  });
+
+  it('relationStore 注入后 getRelations 应返回已写入的关系', async () => {
+    const relationStore = new InMemoryRelationStore();
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, relationStore);
+    await agent.init();
+
+    const now = new Date().toISOString();
+    relationStore.addRelation({
+      sourceId: 'insight:a',
+      targetId: 'insight:b',
+      type: 'contradicts',
+      weight: 1.0,
+      createdAt: now,
+    });
+
+    const relations = agent.memory!.getRelations('insight:a');
+    expect(relations.length).toBe(1);
+    expect(relations[0]!.type).toBe('contradicts');
+    expect(relations[0]!.weight).toBe(1.0);
+  });
+
+  it('relationStore 注入后 stats().relationCount 应反映关系总数', async () => {
+    const relationStore = new InMemoryRelationStore();
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, relationStore);
+    await agent.init();
+
+    const now = new Date().toISOString();
+    relationStore.addRelation({
+      sourceId: 'insight:a',
+      targetId: 'insight:b',
+      type: 'supports',
+      weight: 0.7,
+      createdAt: now,
+    });
+    relationStore.addRelation({
+      sourceId: 'insight:b',
+      targetId: 'insight:c',
+      type: 'refines',
+      weight: 0.7,
+      createdAt: now,
+    });
+
+    const stats = agent.memory!.stats();
+    expect(stats.relationCount).toBe(2);
+  });
+
+  it('relationStore 注入后 snapshot().archive.relationCount 应反映关系总数', async () => {
+    const relationStore = new InMemoryRelationStore();
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, relationStore);
+    await agent.init();
+
+    const now = new Date().toISOString();
+    relationStore.addRelation({
+      sourceId: 'insight:a',
+      targetId: 'insight:b',
+      type: 'related',
+      weight: 0.3,
+      createdAt: now,
+    });
+
+    const snap = agent.memory!.snapshot();
+    expect(snap.archive.relationCount).toBe(1);
+  });
+
+  it('getRelations 应支持方向过滤', async () => {
+    const relationStore = new InMemoryRelationStore();
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, relationStore);
+    await agent.init();
+
+    const now = new Date().toISOString();
+    // a → b（a 的出边）
+    relationStore.addRelation({
+      sourceId: 'insight:a',
+      targetId: 'insight:b',
+      type: 'supports',
+      weight: 0.7,
+      createdAt: now,
+    });
+    // c → a（a 的入边）
+    relationStore.addRelation({
+      sourceId: 'insight:c',
+      targetId: 'insight:a',
+      type: 'caused',
+      weight: 0.7,
+      createdAt: now,
+    });
+
+    // outgoing：仅 a 的出边
+    const outgoing = agent.memory!.getRelations('insight:a', 'outgoing');
+    expect(outgoing.length).toBe(1);
+    expect(outgoing[0]!.targetId).toBe('insight:b');
+
+    // incoming：仅 a 的入边
+    const incoming = agent.memory!.getRelations('insight:a', 'incoming');
+    expect(incoming.length).toBe(1);
+    expect(incoming[0]!.sourceId).toBe('insight:c');
+
+    // both：a 的全部边
+    const both = agent.memory!.getRelations('insight:a', 'both');
+    expect(both.length).toBe(2);
   });
 });

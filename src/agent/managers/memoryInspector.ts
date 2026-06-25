@@ -11,6 +11,9 @@
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+// ADR-014 记忆关系图谱：可选注入，未注入时跳过关系查询
+import type { IMemoryRelationStore } from '@/memory/relationStore.js';
+import type { MemoryRelation, RelationDirection } from '@/memory/types.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -70,6 +73,8 @@ export interface BootstrapSnapshot {
 export interface ArchiveSnapshot {
   /** 归档记忆总数（insight + profile + work-projection） */
   archiveCount: number;
+  /** 关系边总数（ADR-014，relationStore 未注入时为 0） */
+  relationCount: number;
   currentSession: string;
   /** 当前会话全名（含日期前缀，与 sessions/*.md 文件名一致） */
   currentSessionName: string;
@@ -104,6 +109,8 @@ export interface AgentStats {
   bySource: Record<string, number>;
   /** 记忆总数 */
   total: number;
+  /** 关系边总数（ADR-014，relationStore 未注入时为 0） */
+  relationCount: number;
 }
 
 /** 记忆源健康状态 */
@@ -162,17 +169,23 @@ export interface SuggestHit {
 export class MemoryInspector {
   /** 向量存储（可选，提供时 searchHybrid 启用语义搜索） */
   private vectorStore: VectorStore | null = null;
+  /** 关系存储（可选，ADR-014 侧车，未注入时跳过关系查询） */
+  private readonly relationStore: IMemoryRelationStore | null;
 
   /**
    * @param index - 记忆存储（用于搜索 + 统计）
    * @param loop - AgentLoop（用于获取工作记忆）
    * @param history - MessageHistory（用于获取当前会话信息）
+   * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系相关方法降级返回空）
    */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly loop: AgentLoop,
     private readonly history: MessageHistory,
-  ) {}
+    relationStore: IMemoryRelationStore | null = null,
+  ) {
+    this.relationStore = relationStore;
+  }
 
   /**
    * 注入向量存储（由 Agent 在初始化后调用，解决构造时序）
@@ -292,6 +305,8 @@ export class MemoryInspector {
       },
       archive: {
         archiveCount: archiveTotal,
+        // ADR-014 关系边总数（relationStore 未注入时为 0）
+        relationCount: this.countRelations(),
         currentSession: this.history.session ?? '(none)',
         currentSessionName: this.history.currentSessionName ?? '(none)',
         hint: '调 listAllSessions() 获取文件清单',
@@ -416,7 +431,35 @@ export class MemoryInspector {
       if (count > 0) bySource[source] = count;
     }
 
-    return { bySource, total };
+    return { bySource, total, relationCount: this.countRelations() };
+  }
+
+  // ─── 关系查询（ADR-014 侧车） ───────────────────────────
+
+  /**
+   * 查询指定记忆的关系边
+   *
+   * ADR-014 侧车模型：关系数据独立于 Memory 7 字段基元，存储在 IMemoryRelationStore。
+   * relationStore 未注入时返回空数组（向后兼容）。
+   *
+   * @param memoryId - 记忆 ID
+   * @param direction - 方向过滤：'outgoing'（出边）/ 'incoming'（入边）/ 'both'（双向，默认）
+   * @returns 关系边数组，按 createdAt 降序
+   */
+  getRelations(memoryId: string, direction: RelationDirection = 'both'): MemoryRelation[] {
+    if (!this.relationStore) return [];
+    return this.relationStore.getRelations(memoryId, direction);
+  }
+
+  /**
+   * 统计关系边总数
+   *
+   * 用于 stats() 和 snapshot() 的 relationCount 字段。
+   * relationStore 未注入时返回 0（向后兼容）。
+   */
+  private countRelations(): number {
+    if (!this.relationStore) return 0;
+    return this.relationStore.getAllRelations().length;
   }
 
   // ─── 源健康诊断 ─────────────────────────────────────────

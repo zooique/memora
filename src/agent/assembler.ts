@@ -182,7 +182,7 @@ export async function assembleComponents(
     configDir ? (memory: Memory) => fileStore.write(memory) : undefined,
   );
 
-  const memoryInspector = new MemoryInspector(pctx.index, loop, history);
+  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null);
 
   // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
