@@ -26,6 +26,7 @@ import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { UIMessages } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -40,6 +41,8 @@ export interface AssembleInput {
   personaName: string | undefined;
   maxContextTokens: number;
   sessionStore: ISessionStore | undefined;
+  /** 记忆关系存储（可选，ADR-014 侧车模型，不传则跳过关系构建） */
+  relationStore: IMemoryRelationStore | undefined;
   tracer: ITracer | undefined;
   messages: UIMessages | undefined;
   enableContextSummary: boolean;
@@ -89,6 +92,7 @@ export async function assembleComponents(
     personaName,
     maxContextTokens,
     sessionStore,
+    relationStore,
     tracer,
     messages,
     enableContextSummary,
@@ -150,7 +154,8 @@ export async function assembleComponents(
 
   // InsightExtractor 的 writeExtensions 在运行时由 Agent.chat() 设置
   // getRecentHistory 在 AgentLoop 创建后通过 bindGetRecentHistory 注入（消除 loopRef 闭包）
-  const insightExtractor = new InsightExtractor(provider, pctx.index);
+  // ADR-014：relationStore 可选注入，未注入时 InsightExtractor 跳过关系构建
+  const insightExtractor = new InsightExtractor(provider, pctx.index, relationStore ?? null);
 
   const loop = new AgentLoop({
     provider,

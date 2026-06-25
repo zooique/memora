@@ -12,8 +12,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InsightExtractor, type MemoryKeywords } from '@/agent/managers/insightExtractor.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
 import { LlmProvider } from '@/llm/provider.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
+import { SOURCE_LABELS, RELATION_WEIGHTS } from '@/memory/types.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 
@@ -518,5 +519,229 @@ describe('InsightExtractor · 默认提取行为', () => {
     const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
     expect(insights.length).toBe(1);
     expect(insights[0]!.content).toBe('用户偏好 Vim 编辑器');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：ADR-014 关系构建（extract() 扩展）
+// ═══════════════════════════════════════════════════════════════
+
+describe('InsightExtractor · ADR-014 关系构建', () => {
+  let extractor: InsightExtractor;
+  let storage: InMemoryStorage;
+  let relationStore: InMemoryRelationStore;
+  let provider: MockProvider;
+
+  beforeEach(() => {
+    storage = new InMemoryStorage();
+    relationStore = new InMemoryRelationStore();
+    provider = new MockProvider();
+    // 注入 relationStore，启用关系构建
+    extractor = new InsightExtractor(provider, storage, relationStore);
+    extractor.bindGetRecentHistory(() => []);
+  });
+
+  it('relationStore 已注入时，LLM 输出 relations 应写入关系', async () => {
+    // 预置一条已有记忆，作为关系判断候选
+    const existingMemory = {
+      id: 'insight:existing-001',
+      content: '用户喜欢咖啡',
+      source: SOURCE_LABELS.INSIGHT,
+      name: 'insight-existing-001',
+      createdAt: new Date().toISOString(),
+      accessedAt: new Date().toISOString(),
+      score: 0.5,
+    };
+    storage.upsert(existingMemory);
+
+    // LLM 输出包含 relations 字段
+    provider.setResponse(
+      JSON.stringify({
+        insight: '用户不再喝咖啡了',
+        tags: ['咖啡', '偏好变化'],
+        quality: 'high',
+        relations: [{ targetId: 'insight:existing-001', type: 'contradicts' }],
+      }),
+    );
+
+    await extractor.extract('我最近不喝咖啡了', '好的，已记录');
+
+    // 验证关系已写入
+    const allRelations = relationStore.getAllRelations();
+    expect(allRelations).toHaveLength(1);
+    expect(allRelations[0]?.sourceId).toMatch(/^insight:[0-9a-f-]+$/);
+    expect(allRelations[0]?.targetId).toBe('insight:existing-001');
+    expect(allRelations[0]?.type).toBe('contradicts');
+    // contradicts → weight 1.0（确定关系）
+    expect(allRelations[0]?.weight).toBe(RELATION_WEIGHTS.CERTAIN);
+  });
+
+  it('relationStore 未注入时，LLM 输出 relations 应跳过（向后兼容）', async () => {
+    // 不注入 relationStore
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
+
+    provider.setResponse(
+      JSON.stringify({
+        insight: '测试洞察',
+        tags: ['测试'],
+        relations: [{ targetId: 'nonexistent', type: 'related' }],
+      }),
+    );
+
+    await extractor.extract('测试输入', '测试回复');
+
+    // 验证 insight 已写入，但关系未构建（无 relationStore）
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    // 无 relationStore 可验证，只要不报错即通过
+  });
+
+  it('LLM 未输出 relations 字段时应跳过关系构建', async () => {
+    const existingMemory = {
+      id: 'insight:existing-002',
+      content: '用户喜欢茶',
+      source: SOURCE_LABELS.INSIGHT,
+      name: 'insight-existing-002',
+      createdAt: new Date().toISOString(),
+      accessedAt: new Date().toISOString(),
+      score: 0.5,
+    };
+    storage.upsert(existingMemory);
+
+    // LLM 输出不含 relations 字段
+    provider.setResponse(
+      JSON.stringify({
+        insight: '用户喜欢绿茶',
+        tags: ['茶', '偏好'],
+        quality: 'medium',
+      }),
+    );
+
+    await extractor.extract('我喜欢绿茶', '好的');
+
+    // 验证新 insight 已写入（排除预置的 existingMemory）
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT).filter(m => m.id !== 'insight:existing-002');
+    expect(insights).toHaveLength(1);
+    expect(relationStore.getAllRelations()).toHaveLength(0);
+  });
+
+  it('LLM 输出无效 targetId 时应跳过该关系', async () => {
+    // 预置记忆 content 包含 '健身'，用户输入也包含 '健身'，确保被召回为候选
+    const existingMemory = {
+      id: 'insight:existing-003',
+      content: '用户喜欢健身运动',
+      source: SOURCE_LABELS.INSIGHT,
+      name: 'insight-existing-003',
+      createdAt: new Date().toISOString(),
+      accessedAt: new Date().toISOString(),
+      score: 0.5,
+    };
+    storage.upsert(existingMemory);
+
+    // LLM 输出无效 targetId（不在候选列表中）+ 有效 targetId
+    provider.setResponse(
+      JSON.stringify({
+        insight: '用户开始健身计划',
+        tags: ['健身'],
+        relations: [
+          { targetId: 'invalid-id-not-in-candidates', type: 'follows' },
+          { targetId: 'insight:existing-003', type: 'refines' },
+        ],
+      }),
+    );
+
+    // 用户输入包含 '健身'，能召回预置记忆
+    await extractor.extract('我开始健身了', '好的');
+
+    // 验证只有有效关系被写入
+    const allRelations = relationStore.getAllRelations();
+    expect(allRelations).toHaveLength(1);
+    expect(allRelations[0]?.targetId).toBe('insight:existing-003');
+    expect(allRelations[0]?.type).toBe('refines');
+    // refines → weight 0.7（强相关）
+    expect(allRelations[0]?.weight).toBe(RELATION_WEIGHTS.STRONG);
+  });
+
+  it('不同关系类型应映射到正确的 weight', async () => {
+    // 预置多条已有记忆
+    const memories = [
+      { id: 'm-contradicts', content: '矛盾测试记忆' },
+      { id: 'm-supports', content: '支持测试记忆' },
+      { id: 'm-follows', content: '跟随测试记忆' },
+      { id: 'm-related', content: '相关测试记忆' },
+    ];
+    for (const m of memories) {
+      storage.upsert({
+        ...m,
+        source: SOURCE_LABELS.INSIGHT,
+        name: m.id,
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+        score: 0.5,
+      });
+    }
+
+    // LLM 输出多种关系类型
+    provider.setResponse(
+      JSON.stringify({
+        insight: '多关系测试',
+        tags: ['测试'],
+        relations: [
+          { targetId: 'm-contradicts', type: 'contradicts' },
+          { targetId: 'm-supports', type: 'supports' },
+          { targetId: 'm-follows', type: 'follows' },
+          { targetId: 'm-related', type: 'related' },
+        ],
+      }),
+    );
+
+    await extractor.extract('多关系测试输入', '回复');
+
+    const allRelations = relationStore.getAllRelations();
+    expect(allRelations).toHaveLength(4);
+
+    const weightMap = new Map(allRelations.map((r) => [r.type, r.weight]));
+    expect(weightMap.get('contradicts')).toBe(RELATION_WEIGHTS.CERTAIN); // 1.0
+    expect(weightMap.get('supports')).toBe(RELATION_WEIGHTS.STRONG); // 0.7
+    expect(weightMap.get('follows')).toBe(RELATION_WEIGHTS.STRONG); // 0.7
+    expect(weightMap.get('related')).toBe(RELATION_WEIGHTS.WEAK); // 0.3
+  });
+
+  it('关系构建失败不应阻塞 insight 写入', async () => {
+    const existingMemory = {
+      id: 'insight:existing-004',
+      content: '已有记忆',
+      source: SOURCE_LABELS.INSIGHT,
+      name: 'insight-existing-004',
+      createdAt: new Date().toISOString(),
+      accessedAt: new Date().toISOString(),
+      score: 0.5,
+    };
+    storage.upsert(existingMemory);
+
+    // 模拟 relationStore.addRelation 抛错
+    const originalAddRelation = relationStore.addRelation.bind(relationStore);
+    relationStore.addRelation = () => {
+      throw new Error('模拟存储失败');
+    };
+
+    provider.setResponse(
+      JSON.stringify({
+        insight: '测试洞察',
+        tags: ['测试'],
+        relations: [{ targetId: 'insight:existing-004', type: 'supports' }],
+      }),
+    );
+
+    // 不应抛错
+    await extractor.extract('测试输入', '测试回复');
+
+    // insight 应正常写入（排除预置的 existingMemory）
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT).filter(m => m.id !== 'insight:existing-004');
+    expect(insights).toHaveLength(1);
+
+    // 恢复原始方法
+    relationStore.addRelation = originalAddRelation;
   });
 });

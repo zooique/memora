@@ -48,6 +48,7 @@ import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -95,6 +96,8 @@ export interface AgentOptions {
   recallExcludeSources?: string[];
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
+  /** 外部注入的记忆关系存储（可选，ADR-014 侧车模型，不传则跳过关系构建） */
+  relationStore?: IMemoryRelationStore;
   /** 外部注入的会话存储（可选，不传则仅在内存中保存） */
   sessionStore?: ISessionStore;
   /** 可观测性 Tracer（可选，不传则使用 NoopTracer 静默丢弃所有 span） */
@@ -136,6 +139,7 @@ interface AgentConfig {
   vectorStore: VectorStore | undefined;
   recallExcludeSources: string[];
   storage: IMemoryStorage | undefined;
+  relationStore: IMemoryRelationStore | undefined;
   sessionStore: ISessionStore | undefined;
   projectPath: string;
   configDir: string | undefined;
@@ -249,6 +253,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         ...AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES,
       ],
       storage: opts.storage,
+      relationStore: opts.relationStore,
       sessionStore: opts.sessionStore,
       configDir: opts.configDir,
       tracer: opts.tracer,
@@ -626,6 +631,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       personaName: this.#config.personaName,
       maxContextTokens: this.#config.maxContextTokens,
       sessionStore: this.#config.sessionStore,
+      relationStore: this.#config.relationStore,
       tracer: this.#config.tracer,
       messages: this.#config.messages,
       enableContextSummary: this.#config.enableContextSummary,
