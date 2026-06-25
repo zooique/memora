@@ -494,6 +494,27 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.showToast(`剪贴板内容被拦截：${payload.reason}`, 'warning');
   });
 
+  // ─── Phase 3.3 第二批：全局快捷键触发 ──────────────────
+  /**
+   * 监听 quick-record 触发
+   *
+   * 触发时机：用户按下 Ctrl+Shift+M 全局快捷键
+   * 处理方式：聚焦聊天输入框，进入快速记录模式
+   */
+  window.electronAPI.onQuickRecordTrigger(() => {
+    uiManager.handleQuickRecordTrigger();
+  });
+
+  /**
+   * 监听 recall-memory 触发
+   *
+   * 触发时机：用户按下 Ctrl+Shift+R 全局快捷键
+   * 处理方式：切换到记忆面板并聚焦搜索框
+   */
+  window.electronAPI.onRecallMemoryTrigger(() => {
+    uiManager.handleRecallMemoryTrigger();
+  });
+
   // ─── M2 审计日志（刷新/清空按钮） ────────────────────────
   const auditRefreshBtn = document.getElementById('btn-audit-refresh');
   if (auditRefreshBtn) {

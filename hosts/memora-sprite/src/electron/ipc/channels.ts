@@ -216,6 +216,12 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   CLIPBOARD_ANALYSIS_READY: 'clipboard-analysis-ready',
   /** 内容被输入护栏拦截（携带 reason，UI 提示拦截原因） */
   CLIPBOARD_ANALYSIS_REJECTED: 'clipboard-analysis-rejected',
+
+  // ─── 全局快捷键触发（Phase 3.3 第二批） ──────────────
+  /** quick-record 触发：通知渲染进程聚焦输入框进入快速记录模式 */
+  QUICK_RECORD_TRIGGER: 'quick-record-trigger',
+  /** recall-memory 触发：通知渲染进程切换到记忆面板 */
+  RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
 } as const;
 
 // ─── IPC 数据传输类型 ────────────────────────────────────

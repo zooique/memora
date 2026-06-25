@@ -381,6 +381,9 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   window.electronAPI?.removeClipboardSensitiveIgnoredListener();
   window.electronAPI?.removeClipboardAnalysisReadyListener();
   window.electronAPI?.removeClipboardAnalysisRejectedListener();
+  // Phase 3.3 第二批：清理全局快捷键触发监听器
+  window.electronAPI?.removeQuickRecordTriggerListener();
+  window.electronAPI?.removeRecallMemoryTriggerListener();
 });
 
 // ─── 业务逻辑设置（发送/停止/新建会话） ─────────────────────

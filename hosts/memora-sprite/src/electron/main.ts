@@ -476,16 +476,39 @@ async function initializeApp(): Promise<void> {
     // 7. Phase 3.3 初始化全局快捷键
     // 在窗口创建后、Agent 初始化前注册，确保快捷键尽早可用
     // toggle-window 动作委托给 windowManager.toggleWindow()
+    // quick-record / recall-memory 动作：先确保完整窗口可见，再推送触发事件到渲染进程
     shortcutManager = new ShortcutManager(globalShortcut, {
       config: spriteConfig.shortcuts ?? {
         enabled: true,
         accelerators: {
           [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Ctrl+Shift+Space',
+          [SHORTCUT_ACTIONS.QUICK_RECORD]: 'Ctrl+Shift+M',
+          [SHORTCUT_ACTIONS.RECALL_MEMORY]: 'Ctrl+Shift+R',
         },
       },
       handlers: {
         [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
           windowManager.toggleWindow();
+        },
+        [SHORTCUT_ACTIONS.QUICK_RECORD]: () => {
+          // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
+          windowManager.showFullWindow();
+          const fullWindow = windowManager.getFullWindow();
+          if (fullWindow && !fullWindow.isDestroyed()) {
+            fullWindow.focus();
+            // 推送触发事件到渲染进程（聚焦输入框进入快速记录模式）
+            fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER);
+          }
+        },
+        [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => {
+          // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
+          windowManager.showFullWindow();
+          const fullWindow = windowManager.getFullWindow();
+          if (fullWindow && !fullWindow.isDestroyed()) {
+            fullWindow.focus();
+            // 推送触发事件到渲染进程（切换到记忆面板）
+            fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER);
+          }
         },
       },
     });

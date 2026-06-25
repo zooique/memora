@@ -455,6 +455,16 @@ export interface ElectronAPI {
   /** 请求主进程分析剪贴板内容（用户点击"分析"按钮触发） */
   clipboardAnalyze: () => Promise<boolean>;
 
+  // ─── Phase 3.3 第二批：全局快捷键触发 ──────────────────
+  /** 监听 quick-record 触发（聚焦输入框进入快速记录模式） */
+  onQuickRecordTrigger: (cb: () => void) => void;
+  /** 移除 quick-record 触发监听器 */
+  removeQuickRecordTriggerListener: () => void;
+  /** 监听 recall-memory 触发（切换到记忆面板） */
+  onRecallMemoryTrigger: (cb: () => void) => void;
+  /** 移除 recall-memory 触发监听器 */
+  removeRecallMemoryTriggerListener: () => void;
+
   // ─── M2：审计日志 ─────────────────────────────────────
   /** 列出最近 N 条审计日志 */
   listAuditLog: (limit?: number) => Promise<Array<{
@@ -653,6 +663,16 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED);
   },
   clipboardAnalyze: () => ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD_ANALYZE),
+
+  // Phase 3.3 第二批：全局快捷键触发
+  onQuickRecordTrigger: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER, (_: IpcRendererEvent) => cb()),
+  removeQuickRecordTriggerListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_RECORD_TRIGGER);
+  },
+  onRecallMemoryTrigger: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER, (_: IpcRendererEvent) => cb()),
+  removeRecallMemoryTriggerListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER);
+  },
 
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),

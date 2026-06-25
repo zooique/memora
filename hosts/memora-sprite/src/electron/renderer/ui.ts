@@ -1159,6 +1159,34 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     }
   }
 
+  // ─── Phase 3.3 第二批：全局快捷键触发处理 ──────────────
+
+  /**
+   * 处理 quick-record 快捷键触发
+   *
+   * 用户按下 Ctrl+Shift+M 时调用。
+   * 切换到对话面板并聚焦输入框，让用户立即开始输入。
+   * 主进程已确保完整窗口可见，此处只需聚焦输入框。
+   */
+  async handleQuickRecordTrigger(): Promise<void> {
+    await this.switchPanel('chat');
+    // switchPanel 已自动聚焦输入框，此处无需重复
+  }
+
+  /**
+   * 处理 recall-memory 快捷键触发
+   *
+   * 用户按下 Ctrl+Shift+R 时调用。
+   * 切换到记忆面板并聚焦搜索框，让用户立即开始搜索记忆。
+   * 主进程已确保完整窗口可见，此处只需切换面板并聚焦搜索框。
+   */
+  async handleRecallMemoryTrigger(): Promise<void> {
+    await this.switchPanel('memory');
+    // 聚焦记忆搜索框（switchPanel 不会自动聚焦非 chat 面板的输入框）
+    const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
+    searchInput?.focus();
+  }
+
   /**
    * 显示通用输入弹窗（替代 window.prompt）
    *

@@ -234,4 +234,17 @@ export class WindowManager {
       this.windowStateManager.transition('tray');
     }
   }
+
+  /**
+   * 确保完整窗口可见（Phase 3.3 第二批：quick-record / recall-memory 动作）
+   *
+   * 与 toggleWindow 不同：仅在当前不是 full 态时切换到 full 态。
+   * 如果已经是 full 态，不做任何操作（避免误隐藏）。
+   */
+  showFullWindow(): void {
+    const currentState = this.windowStateManager.getState();
+    if (currentState !== 'full') {
+      this.windowStateManager.transition('full');
+    }
+  }
 }
