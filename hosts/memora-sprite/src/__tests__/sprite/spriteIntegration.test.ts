@@ -197,3 +197,112 @@ describe('Sprite 端到端集成', () => {
     expect(dashboard.total).toBe(stats.total);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：默契度评估（Phase 2.2）
+// ═══════════════════════════════════════════════════════════════
+
+describe('Sprite · 默契度评估（Phase 2.2）', () => {
+  let agent: Agent;
+  let sprite: Sprite;
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = join(tmpdir(), `memora-rapport-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    agent = createTestAgent(tmpDir);
+    await agent.init();
+    sprite = new Sprite({ agent, dataDir: tmpDir });
+  });
+
+  afterEach(async () => {
+    sprite.stop();
+    await agent.close();
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* 忽略清理失败 */ }
+  });
+
+  it('空记忆库应返回 stranger 等级', () => {
+    const assessment = sprite.rapportLevel();
+    expect(assessment.level).toBe('stranger');
+    expect(assessment.description).toContain('初识');
+    expect(assessment.factors.length).toBeGreaterThan(0);
+  });
+
+  it('记忆总数 ≥ 5 且 profile < 10 应返回 acquaintance', async () => {
+    // 写入 5 条非 profile 记忆（触发 total ≥ 5，但 profile < 10）
+    const now = new Date().toISOString();
+    for (let i = 0; i < 5; i++) {
+      agent.memory!.upsert({
+        id: `rule:test-${i}`,
+        content: `测试规则 ${i}`,
+        source: 'rule',
+        name: `rule-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+
+    const assessment = sprite.rapportLevel();
+    expect(assessment.level).toBe('acquaintance');
+    expect(assessment.description).toContain('相识');
+  });
+
+  it('profile ≥ 10 且 insight < 50 应返回 familiar', async () => {
+    // 写入 10 条 profile 记忆 + 1 条 rule 记忆（确保 total ≥ 5）
+    const now = new Date().toISOString();
+    for (let i = 0; i < 10; i++) {
+      agent.memory!.upsert({
+        id: `profile:user-${i}`,
+        content: `用户偏好 ${i}`,
+        source: 'profile',
+        name: `profile-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+
+    const assessment = sprite.rapportLevel();
+    expect(assessment.level).toBe('familiar');
+    expect(assessment.description).toContain('熟悉');
+  });
+
+  it('insight ≥ 50 应返回 close', async () => {
+    // 写入 50 条 insight + 10 条 profile（确保通过前两级阈值）
+    const now = new Date().toISOString();
+    for (let i = 0; i < 10; i++) {
+      agent.memory!.upsert({
+        id: `profile:user-${i}`,
+        content: `用户偏好 ${i}`,
+        source: 'profile',
+        name: `profile-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+    for (let i = 0; i < 50; i++) {
+      agent.memory!.upsert({
+        id: `insight:habit-${i}`,
+        content: `用户习惯 ${i}`,
+        source: 'insight',
+        name: `insight-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+
+    const assessment = sprite.rapportLevel();
+    expect(assessment.level).toBe('close');
+    expect(assessment.description).toContain('亲密');
+  });
+
+  it('factors 应包含影响因素列表', () => {
+    const assessment = sprite.rapportLevel();
+    // stranger 等级应至少包含记忆总数因素
+    expect(assessment.factors.length).toBeGreaterThan(0);
+    expect(assessment.factors[0]).toContain('记忆总数');
+  });
+});

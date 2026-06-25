@@ -22,7 +22,7 @@ import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import { loadSpriteConfig, saveSpriteConfig, applyConfigField, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
-import type { DashboardData } from './controllers/index.js';
+import type { DashboardData, RapportAssessment } from './controllers/index.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
@@ -546,6 +546,18 @@ export class Sprite {
    */
   dashboard(): DashboardData {
     return this.memoryController.dashboard();
+  }
+
+  /**
+   * 评估默契度等级（Phase 2.2）
+   *
+   * 委托至 MemoryController.rapportLevel()，从仪表盘数据实时推导。
+   * 纯代码计算，不依赖 LLM，不持久化。
+   *
+   * @returns 默契度评估结果（等级 + 描述 + 影响因素）
+   */
+  rapportLevel(): RapportAssessment {
+    return this.memoryController.rapportLevel();
   }
 
   /**

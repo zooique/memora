@@ -10,6 +10,15 @@ import type { Agent, SuggestHit, VectorStore } from 'memora';
 import type { MemoryRelation } from 'memora';
 import { logger } from 'memora';
 
+// ─── 默契度阈值常量（Phase 2.2） ─────────────────────────
+// 经验值，后续基于真实数据校准
+/** stranger → acquaintance 阈值：记忆总数 */
+const RAPPORT_THRESHOLD_TOTAL_STRANGER = 5;
+/** acquaintance → familiar 阈值：用户画像记忆数 */
+const RAPPORT_THRESHOLD_PROFILE_ACQUAINTANCE = 10;
+/** familiar → close 阈值：洞察记忆数 */
+const RAPPORT_THRESHOLD_INSIGHT_FAMILIAR = 50;
+
 /** 仪表盘数据 */
 export interface DashboardData {
   /** 记忆总数 */
@@ -20,6 +29,24 @@ export interface DashboardData {
   suggestions: SuggestHit[];
   /** 关系边总数（ADR-014，relationStore 未注入时为 0） */
   relationCount: number;
+}
+
+/**
+ * 默契度等级（Phase 2.2）
+ *
+ * 从记忆仪表盘数据实时推导，不持久化、不依赖 LLM。
+ * 阈值为经验值，后续基于真实数据校准。
+ */
+export type RapportLevel = 'stranger' | 'acquaintance' | 'familiar' | 'close';
+
+/** 默契度评估结果 */
+export interface RapportAssessment {
+  /** 默契度等级 */
+  level: RapportLevel;
+  /** 等级描述（用于 UI 展示） */
+  description: string;
+  /** 影响因素列表（用于 UI 展示） */
+  factors: string[];
 }
 
 /** 记忆列表项 */
@@ -230,6 +257,71 @@ export class MemoryController {
       bySource: stats.bySource,
       suggestions,
       relationCount: stats.relationCount,
+    };
+  }
+
+  // ─── 默契度（Phase 2.2） ───────────────────────────────
+
+  /**
+   * 评估默契度等级（纯代码推导，不依赖 LLM）
+   *
+   * 从仪表盘数据实时推导，不持久化。阈值为经验值，后续基于真实数据校准。
+   *
+   * 判定逻辑（按优先级）：
+   *   1. totalMemories < 5 → stranger（初识）
+   *   2. profileCount < 10 → acquaintance（相识）
+   *   3. insightCount < 50 → familiar（熟悉）
+   *   4. else → close（亲密）
+   *
+   * @returns 默契度评估结果（等级 + 描述 + 影响因素）
+   */
+  rapportLevel(): RapportAssessment {
+    const dashboard = this.dashboard();
+    const totalMemories = dashboard.total;
+    const profileCount = dashboard.bySource['profile'] ?? 0;
+    const insightCount = dashboard.bySource['insight'] ?? 0;
+    const relationCount = dashboard.relationCount;
+
+    // 等级判定（按优先级，命中即返回）
+    if (totalMemories < RAPPORT_THRESHOLD_TOTAL_STRANGER) {
+      return {
+        level: 'stranger',
+        description: '初识阶段，精灵正在了解你',
+        factors: [`记忆总数 ${totalMemories}/${RAPPORT_THRESHOLD_TOTAL_STRANGER}`],
+      };
+    }
+
+    if (profileCount < RAPPORT_THRESHOLD_PROFILE_ACQUAINTANCE) {
+      return {
+        level: 'acquaintance',
+        description: '相识阶段，精灵记住了你的部分偏好',
+        factors: [
+          `用户画像 ${profileCount}/${RAPPORT_THRESHOLD_PROFILE_ACQUAINTANCE}`,
+          `记忆总数 ${totalMemories}`,
+        ],
+      };
+    }
+
+    if (insightCount < RAPPORT_THRESHOLD_INSIGHT_FAMILIAR) {
+      return {
+        level: 'familiar',
+        description: '熟悉阶段，精灵理解了你的习惯',
+        factors: [
+          `洞察记忆 ${insightCount}/${RAPPORT_THRESHOLD_INSIGHT_FAMILIAR}`,
+          `用户画像 ${profileCount}`,
+          `关系边 ${relationCount}`,
+        ],
+      };
+    }
+
+    return {
+      level: 'close',
+      description: '亲密阶段，精灵与你默契十足',
+      factors: [
+        `洞察记忆 ${insightCount}`,
+        `用户画像 ${profileCount}`,
+        `关系边 ${relationCount}`,
+      ],
     };
   }
 
