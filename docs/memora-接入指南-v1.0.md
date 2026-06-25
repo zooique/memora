@@ -402,7 +402,6 @@ agent.on('sessionForked', (event) => {
 | `agent.isBusy` | 只读 getter，`boolean`（是否正在对话中） |
 | `agent.lastInteractionAt` | 只读 getter，`Date \| null`，最近一次对话时间 |
 | `agent.context` | 只读 getter，`AgentContext \| null`，当前项目上下文 |
-| `agent.getBuildCtx()` | 调试用：暴露 `security` / `index` / `bootstrapMemories` |
 
 ### 对话
 
@@ -651,8 +650,7 @@ Memora 提供了 Mock Eval 框架，用于 Agent 行为回归测试（不发起�
 
 ```typescript
 import type { EvalScenario, EvalExpectation, EvalResult } from 'memora';
-// 注意：Eval 类型在 tests/eval/evalTypes.ts 中定义，
-// 宿主项目可直接复制或 import 该文件
+// Eval 类型已从 memora 主包导出，宿主项目可直接 import
 ```
 
 ### 评估场景示例
@@ -672,7 +670,7 @@ const scenario: EvalScenario = {
 ### 评估工具函数
 
 ```typescript
-import { collectAgentChunks, evaluateResult } from './tests/eval/evalTypes.js';
+import { collectAgentChunks, evaluateResult } from 'memora';
 
 // 从 AgentChunk 流中收集行为数据
 const collected = await collectAgentChunks(agent.chat('帮我看看第一章'));

@@ -15,7 +15,6 @@
 import { resolve } from 'node:path';
 import type { Agent, AgentEventMap, AgentMetrics } from 'memora';
 import type { VectorStore, ITracer } from 'memora';
-import type { PowerMonitor, App } from 'electron';
 import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
@@ -23,7 +22,7 @@ import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import { loadSpriteConfig, saveSpriteConfig, applyConfigField, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine, PresenceController } from './controllers/index.js';
-import type { DashboardData, RapportAssessment } from './controllers/index.js';
+import type { DashboardData, RapportAssessment, IPowerMonitor, IApp } from './controllers/index.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
@@ -256,12 +255,13 @@ export class Sprite {
    * 创建并注入在场状态控制器（Phase 3.2 便捷方法）
    *
    * 由 Sprite 内部创建 PresenceController，自动绑定 emit 回调到 emitSprite。
-   * 宿主只需传入 powerMonitor 和 app（Electron 模块）。
+   * 宿主只需传入满足 IPowerMonitor/IApp 接口的事件源
+   * （Electron 的 powerMonitor/app 模块自动满足，结构子类型）。
    *
-   * @param powerMonitor Electron powerMonitor 模块
-   * @param app Electron app 模块
+   * @param powerMonitor 满足 IPowerMonitor 接口的事件源
+   * @param app 满足 IApp 接口的事件源
    */
-  bindPresence(powerMonitor: PowerMonitor, app: App): void {
+  bindPresence(powerMonitor: IPowerMonitor, app: IApp): void {
     const controller = new PresenceController(powerMonitor, app, {
       proactiveEngine: this.proactiveEngine,
       emit: (event, payload) => {

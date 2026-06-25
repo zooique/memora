@@ -118,15 +118,6 @@ export interface AgentProjectEntry {
   lastOpened: string;
 }
 
-/**
- * Agent 内部组件快照（供宿主项目重建 history/loop 等 CLI 可见对象）
- */
-export interface AgentBuildCtx {
-  security: SecurityGuard | null;
-  index: IMemoryStorage;
-  bootstrapMemories: Memory[];
-}
-
 /** Agent 内部配置（构造参数分组） */
 interface AgentConfig {
   dataDir: string;
@@ -712,15 +703,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   // ─── 组件访问 ─────────────────────────────────────────
-
-  getBuildCtx(): AgentBuildCtx | null {
-    if (!this.pctx) return null;
-    return {
-      security: this.pctx.security,
-      index: this.pctx.index,
-      bootstrapMemories: this.pctx.bootstrapMemories,
-    };
-  }
 
   /**
    * 重建内部组件（history / loop / managers）

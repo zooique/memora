@@ -9,7 +9,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:electron": "npm run check-ipc && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
+    "clean:electron": "node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\"",
+    "build:electron": "npm run check-ipc && npm run clean:electron && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "build:all": "npm run build && npm run build:electron",
     "start": "tsx src/cli.ts",
     "start:electron": "npm run build:electron && electron ./dist-electron/electron/main.js",

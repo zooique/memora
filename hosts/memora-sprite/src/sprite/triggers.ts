@@ -8,6 +8,9 @@
  * **永不监听键盘输入**——这是底线原则。
  */
 
+// 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
+import { safeSetInterval, clearSafeInterval } from 'memora';
+
 // ─── SpriteTrigger 接口 ──────────────────────────────────
 
 /** 触发器回调参数 */
@@ -59,14 +62,16 @@ export class TimerTrigger implements SpriteTrigger {
 
   start(cb: TriggerCallback): void {
     this.callback = cb;
-    this.timer = setInterval(() => {
+    // 使用 safeSetInterval 替代原生 setInterval，便于统一追踪定时器生命周期
+    this.timer = safeSetInterval(() => {
       this.callback?.({ reason: '定时检查', source: this.name });
     }, this.intervalMs);
   }
 
   stop(): void {
     if (this.timer) {
-      clearInterval(this.timer);
+      // 使用 clearSafeInterval 清理定时器并从注册表中移除
+      clearSafeInterval(this.timer);
       this.timer = null;
     }
     this.callback = null;

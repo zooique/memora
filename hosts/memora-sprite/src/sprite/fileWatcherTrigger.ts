@@ -11,7 +11,8 @@
  */
 import { watch } from 'node:fs';
 import { resolve, sep } from 'node:path';
-import { logger, toError } from 'memora';
+// 合并 memora 导入：加入安全定时器包装，统一追踪定时器生命周期
+import { logger, toError, safeSetTimeout, clearSafeTimeout } from 'memora';
 import type { SpriteTrigger, TriggerCallback } from './triggers.js';
 
 /** FileWatcherTrigger 配置 */
@@ -97,7 +98,8 @@ export class FileWatcherTrigger implements SpriteTrigger {
     this.watchers = [];
     // 清理防抖计时器
     for (const timer of this.debounceTimers.values()) {
-      clearTimeout(timer);
+      // 使用 clearSafeTimeout 清理并从注册表中移除
+      clearSafeTimeout(timer);
     }
     this.debounceTimers.clear();
     this.callback = null;
@@ -164,9 +166,10 @@ export class FileWatcherTrigger implements SpriteTrigger {
   /** 防抖发射触发事件 */
   private debouncedEmit(filename: string, eventType: string): void {
     const existing = this.debounceTimers.get(filename);
-    if (existing) clearTimeout(existing);
+    if (existing) clearSafeTimeout(existing);
 
-    const timer = setTimeout(() => {
+    // 使用 safeSetTimeout 替代原生 setTimeout，便于统一追踪定时器生命周期
+    const timer = safeSetTimeout(() => {
       this.debounceTimers.delete(filename);
       this.callback?.({
         reason: `文件变化：${filename}（${eventType}）`,

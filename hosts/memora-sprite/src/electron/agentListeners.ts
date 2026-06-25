@@ -11,7 +11,8 @@
  */
 
 import type { Agent } from 'memora';
-import { logger } from 'memora';
+// 合并 memora 导入：加入安全定时器包装，统一追踪定时器生命周期
+import { logger, safeSetTimeout, clearSafeTimeout } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { AuditManager } from '../sprite/audit/auditManager.js';
@@ -123,8 +124,8 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
 
     // 创建 Promise 等待渲染进程响应
     const confirmed = await new Promise<boolean>((resolve) => {
-      // 超时保护：30 秒后自动拒绝
-      const timeoutId = setTimeout(() => {
+      // 超时保护：30 秒后自动拒绝（使用 safeSetTimeout 便于统一追踪生命周期）
+      const timeoutId = safeSetTimeout(() => {
         deps.pendingWriteConfirmations.delete(requestId);
         logger.warn({ requestId, path: info.targetPath }, '[写入确认] 超时未响应，自动拒绝');
         resolve(false);
@@ -132,7 +133,7 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
 
       // 存入映射表（包装 resolve 以清理超时定时器）
       deps.pendingWriteConfirmations.set(requestId, (result: boolean) => {
-        clearTimeout(timeoutId);
+        clearSafeTimeout(timeoutId);
         resolve(result);
       });
 

@@ -18,36 +18,7 @@
  */
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { logger } from 'memora';
-
-/**
- * 解析 frontmatter 块为键值对（内联实现，避免依赖内核未导出的工具）
- *
- * 与 memora/src/utils/frontmatter.ts 的 parseFrontmatter 行为一致：
- * 匹配 `---\n...\n---\n` 格式，逐行解析 `key: value`。
- */
-function parseFrontmatter(raw: string): {
-  frontmatter: Record<string, string>;
-  body: string;
-} {
-  const normalized = raw.replace(/\r\n/g, '\n');
-  const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-  if (!match || !match[1] || !match[2]) {
-    return { frontmatter: {}, body: raw };
-  }
-
-  const [, fmBlock, body] = match;
-  const frontmatter: Record<string, string> = {};
-  for (const line of fmBlock.split('\n')) {
-    const idx = line.indexOf(':');
-    if (idx < 0) continue;
-    const k = line.slice(0, idx).trim();
-    const v = line.slice(idx + 1).trim();
-    if (k && v) frontmatter[k] = v;
-  }
-
-  return { frontmatter, body };
-}
+import { logger, parseFrontmatter } from 'memora';
 
 /** 校验结果 */
 export interface SkillValidationResult {

@@ -9,8 +9,8 @@
  * 设计原则（P2-DESIGN-4）：
  *   7 个简单转发事件（memoryNoticed / insightGained / personaChanged /
  *   projectSwitched / skillMatched / memoryRecalled / decayCompleted）
- *   提取为声明式映射表 SIMPLE_EVENT_FORWARDERS，消除重复的
- *   registerSpriteEvent + sendSpriteEventIfVisible 模板代码。
+ *   通过类型安全的 forwardSimpleEvent 泛型函数逐个注册，
+ *   消除重复的 registerSpriteEvent + sendSpriteEventIfVisible 模板代码。
  *
  *   proactivePrompt 保留显式处理（含托盘脉冲 + 系统通知 + 未读计数等副作用）。
  */
@@ -47,45 +47,25 @@ export interface SpriteEventBridgeDeps {
 const spriteEventUnsubscribers: Array<() => void> = [];
 
 /**
- * 简单转发事件映射表
+ * 类型安全的简单事件转发注册
  *
- * 每个条目将一个 Sprite 事件转发到渲染层，无需额外副作用。
- * 声明式定义替代 7 处重复的 registerSpriteEvent + sendSpriteEventIfVisible 调用。
+ * 泛型 K 约束 eventName 为 SpriteEventMap 合法键，
+ * toPayload 的参数类型自动推导为 SpriteEventMap[K]，无需类型断言。
+ * 替代原 SIMPLE_EVENT_FORWARDERS 映射表 + never 类型 + as 断言的反模式。
  *
- * 类型安全：通过泛型 K 约束 eventName 必须是 SpriteEventMap 的合法键，
- * payload 转换函数的类型自动推导。
+ * @param deps 依赖
+ * @param eventName 事件名
+ * @param toPayload 将事件载荷转为渲染层可用的 Record
  */
-const SIMPLE_EVENT_FORWARDERS: Array<{
-  eventName: keyof SpriteEventMap;
-  toPayload: (e: never) => Record<string, unknown>;
-}> = [
-  // 记忆新增 → 仪表盘计数 +1
-  { eventName: 'memoryNoticed', toPayload: () => ({}) },
-  // 洞察提取 → 仪表盘计数 +1
-  { eventName: 'insightGained', toPayload: () => ({}) },
-  // 角色切换 → 顶栏角色标签更新
-  { eventName: 'personaChanged', toPayload: (e) => ({ from: (e as { from: string | null }).from, to: (e as { to: string }).to }) },
-  // 项目切换 → 渲染层通知
-  { eventName: 'projectSwitched', toPayload: (e) => {
-    const ev = e as { from: string | null; to: string; projectName: string };
-    return { from: ev.from, to: ev.to, projectName: ev.projectName };
-  } },
-  // 技能匹配 → 渲染层通知
-  { eventName: 'skillMatched', toPayload: (e) => {
-    const ev = e as { skill: string; score: number };
-    return { skill: ev.skill, score: ev.score };
-  } },
-  // 记忆召回 → 渲染层通知（每次对话触发，按需展示"想起 X 条"）
-  { eventName: 'memoryRecalled', toPayload: (e) => {
-    const ev = e as { count: number; query: string };
-    return { count: ev.count, query: ev.query };
-  } },
-  // 衰减完成 → 渲染层通知（24h 节流避免每小时噪音，节流由渲染层控制）
-  { eventName: 'decayCompleted', toPayload: (e) => {
-    const ev = e as { decayedCount: number };
-    return { decayedCount: ev.decayedCount };
-  } },
-];
+function forwardSimpleEvent<K extends keyof SpriteEventMap>(
+  deps: SpriteEventBridgeDeps,
+  eventName: K,
+  toPayload: (e: SpriteEventMap[K]) => Record<string, unknown>,
+): void {
+  registerSpriteEvent(deps, eventName, (e) => {
+    sendSpriteEventIfVisible(deps, eventName, toPayload(e));
+  });
+}
 
 /**
  * 向完整窗口发送精灵事件（若窗口可见）
@@ -185,12 +165,25 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     }
   });
 
-  // 7 个简单转发事件：通过声明式映射表批量注册
-  for (const forwarder of SIMPLE_EVENT_FORWARDERS) {
-    registerSpriteEvent(deps, forwarder.eventName, (e) => {
-      sendSpriteEventIfVisible(deps, forwarder.eventName, forwarder.toPayload(e as never));
-    });
-  }
+  // 7 个简单转发事件：逐个类型安全注册（替代原映射表 + for 循环）
+  // 记忆新增 → 仪表盘计数 +1
+  forwardSimpleEvent(deps, 'memoryNoticed', () => ({}));
+  // 洞察提取 → 仪表盘计数 +1
+  forwardSimpleEvent(deps, 'insightGained', () => ({}));
+  // 角色切换 → 顶栏角色标签更新
+  forwardSimpleEvent(deps, 'personaChanged', (e) => ({ from: e.from, to: e.to }));
+  // 项目切换 → 渲染层通知
+  forwardSimpleEvent(deps, 'projectSwitched', (e) => ({
+    from: e.from,
+    to: e.to,
+    projectName: e.projectName,
+  }));
+  // 技能匹配 → 渲染层通知
+  forwardSimpleEvent(deps, 'skillMatched', (e) => ({ skill: e.skill, score: e.score }));
+  // 记忆召回 → 渲染层通知（每次对话触发，按需展示"想起 X 条"）
+  forwardSimpleEvent(deps, 'memoryRecalled', (e) => ({ count: e.count, query: e.query }));
+  // 衰减完成 → 渲染层通知（24h 节流避免每小时噪音，节流由渲染层控制）
+  forwardSimpleEvent(deps, 'decayCompleted', (e) => ({ decayedCount: e.decayedCount }));
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

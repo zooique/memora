@@ -19,6 +19,13 @@
  */
 import type { GlobalShortcut } from 'electron';
 import { logger } from 'memora';
+// 从配置层导入类型（单一真理源，避免类型重复定义）
+import type { ShortcutConfig } from '../sprite/spriteConfig.js';
+// 从配置层导入默认配置（单一真理源，避免默认值重复）
+import { DEFAULT_SPRITE_CONFIG } from '../sprite/spriteConfig.js';
+
+// 重新导出类型，保持外部 API 不变（测试和消费方仍从 shortcuts.ts 导入）
+export type { ShortcutConfig };
 
 /** 快捷键动作类型（开放字符串，非枚举，遵循 ADR-004） */
 export type ShortcutAction = string;
@@ -32,14 +39,6 @@ export const SHORTCUT_ACTIONS = {
   /** 召回记忆（搜索面板，Phase 3.3 第二批） */
   RECALL_MEMORY: 'recall-memory',
 } as const;
-
-/** 快捷键配置（持久化到 sprite.json） */
-export interface ShortcutConfig {
-  /** 是否启用全局快捷键（总开关） */
-  enabled: boolean;
-  /** 动作 → 加速器字符串映射（如 'Ctrl+Shift+Space'） */
-  accelerators: Record<string, string>;
-}
 
 /** 快捷键管理器构造选项 */
 export interface ShortcutManagerOptions {
@@ -205,14 +204,10 @@ export class ShortcutManager {
 /**
  * 默认快捷键配置
  *
- * 与 DEFAULT_SPRITE_CONFIG.shortcuts 保持一致。
+ * 从 DEFAULT_SPRITE_CONFIG.shortcuts 派生（单一真理源）。
  * 独立导出便于测试和引用。
  */
 export const DEFAULT_SHORTCUT_CONFIG: ShortcutConfig = {
   enabled: true,
-  accelerators: {
-    [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Ctrl+Shift+Space',
-    [SHORTCUT_ACTIONS.QUICK_RECORD]: 'Ctrl+Shift+M',
-    [SHORTCUT_ACTIONS.RECALL_MEMORY]: 'Ctrl+Shift+R',
-  },
+  accelerators: DEFAULT_SPRITE_CONFIG.shortcuts!.accelerators,
 };

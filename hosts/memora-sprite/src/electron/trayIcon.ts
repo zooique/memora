@@ -20,6 +20,8 @@
 
 import { Tray, Menu, nativeImage } from 'electron';
 import type { NativeImage } from 'electron';
+// 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
+import { safeSetInterval, clearSafeInterval } from 'memora';
 
 /** 托盘状态类型：对齐浮动窗口状态指示点 */
 export type TrayState = 'idle' | 'active' | 'sleeping';
@@ -197,7 +199,8 @@ export class TrayManager {
     ];
 
     let step = 0;
-    this.pulseTimer = setInterval(() => {
+    // 使用 safeSetInterval 替代原生 setInterval，便于统一追踪定时器生命周期
+    this.pulseTimer = safeSetInterval(() => {
       this.tray.setToolTip(frames[step % frames.length] ?? 'Memora');
       step++;
     }, TRAY_PULSE_INTERVAL_MS);
@@ -206,7 +209,8 @@ export class TrayManager {
   /** 停止托盘脉冲动画 */
   private stopPulse(): void {
     if (this.pulseTimer) {
-      clearInterval(this.pulseTimer);
+      // 使用 clearSafeInterval 清理定时器并从注册表中移除
+      clearSafeInterval(this.pulseTimer);
       this.pulseTimer = null;
     }
   }

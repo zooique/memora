@@ -658,7 +658,7 @@ interface ConfigSuggestion {
 
 ---
 
-## 九.5、用户画像（`agent.userProfile` · UserProfile）
+## 十、用户画像（`agent.userProfile` · UserProfile）
 
 用户画像从对话中自动提取用户事实（姓名、偏好、技能等），用于个性化 system prompt 注入。高置信度事实直接归档，低置信度事实标记为待确认，由宿主 UI 展示给用户确认。
 
@@ -723,7 +723,7 @@ for (const entry of pending) {
 
 ---
 
-## 九.6、作品投影（`agent.works` · WorkProjectionManager）
+## 十一、作品投影（`agent.works` · WorkProjectionManager）
 
 作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在 SQLite 中供 Agent 快速召回，避免每次对话都读取完整文件。原始文件内容不进 SQLite，Agent 通过工具按需读取。
 
@@ -772,7 +772,7 @@ agent.tools.registerTool(
 
 ---
 
-## 十、Provider 管理
+## 十二、Provider 管理
 
 | 方法 | 用途 |
 |------|------|
@@ -783,17 +783,15 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ---
 
-## 十一、内部调试
+## 十三、内部调试
 
-| 方法 | 用途 |
-|------|------|
-| `getBuildCtx()` → `AgentBuildCtx \| null` | 暴露内部核心组件（`security` / `index` / `bootstrapMemories`），供宿主调试或高级集成使用。正常接入**不需要**调用此方法 |
+> 已移除 `getBuildCtx()` 方法。宿主项目如需调试内部状态，请使用 `agent.inspect()` 获取完整状态快照。
 
 ---
 
-## 十二、完整 API 一览
+## 十四、完整 API 一览
 
-### Agent 面类直接方法（18 个）
+### Agent 面类直接方法（17 个）
 
 | 分组 | 方法 |
 |------|------|
@@ -802,7 +800,6 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 事件 | `on()` / `off()` |
 | `agent.projects` | `.list` / `.switchProject()` / `.listProjects()` / `.rebuildComponents()` |
 | Provider | `setProvider()` / `setBackgroundProvider()` |
-| 调试 | `getBuildCtx()` |
 
 ### Agent 面类只读访问器（8 个）
 
@@ -927,7 +924,7 @@ action: block
 
 ---
 
-## 十三、类型导出
+## 十八、类型导出
 
 ```typescript
 // Agent 与流式事件
@@ -937,7 +934,6 @@ export type {
   ThinkingPhase,
   AgentOptions,
   AgentContext,           // = ProjectContext 的别名
-  AgentBuildCtx,          // getBuildCtx() 返回值
 } from 'memora';
 
 // 记忆快照与搜索
@@ -1008,7 +1004,7 @@ export { segmentText, tokenizeKeywords, SOURCE_LABELS, inferSource, escapeLike, 
 
 ---
 
-## 十四、安全与约束
+## 十九、安全与约束
 
 ### 核心库零越界
 

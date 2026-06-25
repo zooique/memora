@@ -15,7 +15,6 @@ export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 export type {
   AgentOptions,
   AgentContext,
-  AgentBuildCtx,
   AgentProjectEntry,
 } from '@/agent/agent.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
@@ -90,6 +89,10 @@ export { setLogger, logger } from '@/logging/logger.js';
 // 分词工具：宿主项目（如 SqliteStorage）依赖
 // 工具导出
 export { segmentText, tokenizeKeywords } from '@/utils/segmenter.js';
+// Frontmatter 解析/序列化：宿主项目（如 skillInstaller）依赖
+export { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
+// 安全定时器：宿主主进程统一使用 safeSetTimeout/safeSetInterval 跟踪清理
+export { safeSetTimeout, safeSetInterval, clearSafeTimeout, clearSafeInterval } from '@/utils/safeTimer.js';
 export type { SkillEntry, SkillMatch } from '@/skill/types.js';
 
 // ─── 安全层导出 ────────────────────────────────────────────
@@ -108,3 +111,7 @@ export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@/utils/errors
 // toError 独立导出，浏览器端可直接 import 而不引入 logging（pino）依赖
 export { toError } from '@/utils/toError.js';
 export type { ToolErrorCodeValue } from '@/utils/errors.js';
+
+// ─── 评估框架导出（Mock Eval：Agent 行为回归测试，不调用真实 LLM） ───
+export type { EvalScenario, EvalExpectation, EvalResult } from '@/eval/evalTypes.js';
+export { collectAgentChunks, evaluateResult } from '@/eval/evalTypes.js';

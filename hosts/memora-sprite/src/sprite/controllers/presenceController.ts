@@ -18,9 +18,38 @@
  *   - main.ts：注入 powerMonitor 和 app 事件源
  *   - SpriteEventMap：新增 presenceChanged 事件
  */
-import type { PowerMonitor, App } from 'electron';
 import { logger } from 'memora';
 import type { ProactiveEngine } from './proactiveEngine.js';
+
+/**
+ * powerMonitor 事件源抽象接口（解耦 sprite/ 与 electron）
+ *
+ * Electron 的 PowerMonitor 模块自动满足此接口（结构子类型）。
+ * 测试时可注入 mock 实现而无需引入 electron。
+ */
+export interface IPowerMonitor {
+  /** 系统锁屏时触发 */
+  on(event: 'lock-screen', listener: () => void): void;
+  /** 系统挂起（睡眠/休眠）时触发 */
+  on(event: 'suspend', listener: () => void): void;
+  /** 系统解锁时触发 */
+  on(event: 'unlock-screen', listener: () => void): void;
+  /** 系统从挂起恢复时触发 */
+  on(event: 'resume', listener: () => void): void;
+}
+
+/**
+ * app 事件源抽象接口（解耦 sprite/ 与 electron）
+ *
+ * Electron 的 App 模块自动满足此接口（结构子类型）。
+ * 测试时可注入 mock 实现而无需引入 electron。
+ */
+export interface IApp {
+  /** 浏览器窗口失焦时触发 */
+  on(event: 'browser-window-blur', listener: () => void): void;
+  /** 浏览器窗口聚焦时触发 */
+  on(event: 'browser-window-focus', listener: () => void): void;
+}
 
 /** 用户在场状态 */
 export type PresenceState = 'present' | 'away';
@@ -56,18 +85,18 @@ export class PresenceController {
   private state: PresenceState = 'present';
   /** 离开开始时间戳（毫秒），null 表示当前在场 */
   private awaySince: number | null = null;
-  /** Electron powerMonitor 模块（依赖注入） */
-  private readonly powerMonitor: PowerMonitor;
-  /** Electron app 模块（依赖注入） */
-  private readonly app: App;
+  /** 事件源：满足 IPowerMonitor 接口（Electron powerMonitor 或 mock） */
+  private readonly powerMonitor: IPowerMonitor;
+  /** 事件源：满足 IApp 接口（Electron app 或 mock） */
+  private readonly app: IApp;
   /** 构造选项 */
   private readonly options: PresenceControllerOptions;
   /** 是否已启动（避免重复注册事件） */
   private started = false;
 
   constructor(
-    powerMonitor: PowerMonitor,
-    app: App,
+    powerMonitor: IPowerMonitor,
+    app: IApp,
     options: PresenceControllerOptions = {},
   ) {
     this.powerMonitor = powerMonitor;

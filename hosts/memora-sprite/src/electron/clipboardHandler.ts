@@ -19,7 +19,8 @@
  *   - IPC 通道：clipboard:changed / clipboard:analyze / clipboard:confirm
  */
 import type { Clipboard } from 'electron';
-import { logger } from 'memora';
+// 合并 memora 导入：加入安全定时器包装，统一追踪定时器生命周期
+import { logger, safeSetInterval, clearSafeInterval } from 'memora';
 
 /** 剪贴板事件类型（开放字符串，非枚举） */
 export type ClipboardEventType =
@@ -161,7 +162,8 @@ export class ClipboardHandler {
     // 初始化哈希（记录当前剪贴板状态，避免启动时立即触发变化事件）
     this.lastHash = this.computeHash();
 
-    this.pollTimer = setInterval(() => {
+    // 使用 safeSetInterval 替代原生 setInterval，便于统一追踪定时器生命周期
+    this.pollTimer = safeSetInterval(() => {
       this.checkChange();
     }, this.options.pollIntervalMs);
 
@@ -175,7 +177,8 @@ export class ClipboardHandler {
    */
   stopPolling(): void {
     if (this.pollTimer) {
-      clearInterval(this.pollTimer);
+      // 使用 clearSafeInterval 清理定时器并从注册表中移除
+      clearSafeInterval(this.pollTimer);
       this.pollTimer = null;
     }
     this.polling = false;

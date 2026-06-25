@@ -27,7 +27,7 @@ app.commandLine.appendSwitch('console-utf8');
 
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { toError, logger } from 'memora';
+import { toError, logger, safeSetTimeout, clearSafeTimeout } from 'memora';
 import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION, FLOAT_SIZE } from './windows/windowState.js';
 import { TrayManager } from './trayIcon.js';
@@ -53,7 +53,7 @@ import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/audit/auditManager.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
-import { ShortcutManager, SHORTCUT_ACTIONS } from './shortcuts.js';
+import { ShortcutManager, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT_CONFIG } from './shortcuts.js';
 // Phase 3.1：剪贴板三重保护处理器
 import { ClipboardHandler } from './clipboardHandler.js';
 import type { ClipboardEventType } from './clipboardHandler.js';
@@ -420,17 +420,17 @@ async function initializeApp(): Promise<void> {
         });
       };
       fullWindow.on('resize', () => {
-        if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
-        boundsSaveTimer = setTimeout(saveBounds, 500);
+        if (boundsSaveTimer) clearSafeTimeout(boundsSaveTimer);
+        boundsSaveTimer = safeSetTimeout(saveBounds, 500);
       });
       fullWindow.on('move', () => {
-        if (boundsSaveTimer) clearTimeout(boundsSaveTimer);
-        boundsSaveTimer = setTimeout(saveBounds, 500);
+        if (boundsSaveTimer) clearSafeTimeout(boundsSaveTimer);
+        boundsSaveTimer = safeSetTimeout(saveBounds, 500);
       });
       // P2-CODE-2 修复：窗口销毁时清理防抖定时器，避免定时器触发时操作已销毁窗口
       fullWindow.on('closed', () => {
         if (boundsSaveTimer) {
-          clearTimeout(boundsSaveTimer);
+          clearSafeTimeout(boundsSaveTimer);
           boundsSaveTimer = null;
         }
       });
@@ -479,14 +479,7 @@ async function initializeApp(): Promise<void> {
     // toggle-window 动作委托给 windowManager.toggleWindow()
     // quick-record / recall-memory 动作：先确保完整窗口可见，再推送触发事件到渲染进程
     shortcutManager = new ShortcutManager(globalShortcut, {
-      config: spriteConfig.shortcuts ?? {
-        enabled: true,
-        accelerators: {
-          [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Ctrl+Shift+Space',
-          [SHORTCUT_ACTIONS.QUICK_RECORD]: 'Ctrl+Shift+M',
-          [SHORTCUT_ACTIONS.RECALL_MEMORY]: 'Ctrl+Shift+R',
-        },
-      },
+      config: spriteConfig.shortcuts ?? DEFAULT_SHORTCUT_CONFIG,
       handlers: {
         [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
           windowManager.toggleWindow();

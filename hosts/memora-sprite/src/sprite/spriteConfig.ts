@@ -72,12 +72,20 @@ export interface SpriteConfig {
    * 持久化到 sprite.json，支持热更新（不重启应用即可修改快捷键）。
    * accelerators 是 action → accelerator 映射，action 为开放字符串（遵循 ADR-004）。
    */
-  shortcuts?: {
-    /** 是否启用全局快捷键（总开关） */
-    enabled: boolean;
-    /** 动作 → 加速器字符串映射（如 { 'toggle-window': 'Ctrl+Shift+Space' }） */
-    accelerators: Record<string, string>;
-  };
+  shortcuts?: ShortcutConfig;
+}
+
+/**
+ * 全局快捷键配置结构（单一真理源，shortcuts.ts / main.ts 均引用此类型）
+ *
+ * 持久化到 sprite.json，支持热更新（不重启应用即可修改快捷键）。
+ * accelerators 是 action → accelerator 映射，action 为开放字符串（遵循 ADR-004）。
+ */
+export interface ShortcutConfig {
+  /** 是否启用全局快捷键（总开关） */
+  enabled: boolean;
+  /** 动作 → 加速器字符串映射（如 { 'toggle-window': 'Ctrl+Shift+Space' }） */
+  accelerators: Record<string, string>;
 }
 
 /** 配置键名联合类型 */
