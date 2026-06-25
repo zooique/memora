@@ -1,10 +1,12 @@
-# Memora 内核 API 参考手册（v3.1）
+# Memora 内核 API 参考手册（v3.2）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v3.1（最后更新：2026-06-15）
+> **版本**：v3.2（最后更新：2026-06-25）
+>
+> **v3.2 变更**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
 >
 > **v3.1 变更**：新增 ITracer/ISpan 可观测性接口、ToolErrorCode 错误码、Guardrails 护栏、Reflection 反思机制。
 >
@@ -71,8 +73,11 @@
 | `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索召回） |
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，引导记忆不被召回） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
+| `relationStore` | `IMemoryRelationStore` | ❌ | 记忆关系存储（ADR-014 侧车，不传则跳过关系构建） |
 | `logger` | `ILogger` | ❌ | ⚠️ @deprecated 日志注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
+| `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
+| `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 false，开启后首次截断时增加 ~1-2s 延迟） |
 
 ### 2.2 生命周期方法
 
@@ -324,6 +329,84 @@ interface ISessionStore {
 - 幂等：若目标会话已存在，覆盖（而非追加）
 - 若源会话不存在，静默返回（不抛出）
 
+### 5.4 记忆关系图谱（ADR-014 侧车模型）
+
+记忆关系是独立的侧车数据结构，与 Memory 平行存在，互不侵入。关系类型是开放字符串（非枚举），遵循 ADR-004 基元驱动原则。
+
+#### `MemoryRelation` 类型
+
+```typescript
+interface MemoryRelation {
+  sourceId: string;   // 关系起点（Memory.id）
+  targetId: string;   // 关系终点（Memory.id）
+  type: string;       // 关系类型（开放字符串，非枚举）
+  weight: number;     // 关系强度 0-1
+  createdAt: string;  // 创建时间（ISO 8601）
+}
+```
+
+#### 预设关系类型常量（`RELATION_TYPES`）
+
+| 常量 | 值 | 方向 | 说明 |
+|------|------|------|------|
+| `CONTRADICTS` | `'contradicts'` | 双向对称 | 矛盾关系 |
+| `SUPPORTS` | `'supports'` | 有向 | 支持关系 |
+| `FOLLOWS` | `'follows'` | 有向 | 时间先后 |
+| `REFINES` | `'refines'` | 有向 | 细化/演化 |
+| `CAUSED` | `'caused'` | 有向 | 因果关系 |
+| `RELATED` | `'related'` | 双向对称 | 泛相关 |
+
+#### 关系强度常量（`RELATION_WEIGHTS`）
+
+| 常量 | 值 | 说明 |
+|------|------|------|
+| `NONE` | 0.0 | 几乎无关 |
+| `WEAK` | 0.3 | 弱相关 |
+| `UNDEFINED` | 0.5 | 未判断（代码默认兜底） |
+| `STRONG` | 0.7 | 强相关 |
+| `CERTAIN` | 1.0 | 确定关系（矛盾/等价） |
+
+#### `IMemoryRelationStore` 接口
+
+```typescript
+interface IMemoryRelationStore {
+  /** 添加关系（三元组 sourceId+targetId+type 唯一约束，重复添加幂等更新 weight/createdAt） */
+  addRelation(relation: MemoryRelation): void;
+  /** 查询关系（direction 默认 'both'，合并两方向并去重） */
+  getRelations(memoryId: string, direction?: RelationDirection): MemoryRelation[];
+  /** 按类型查询（如 getRelationsByType('contradicts') 获取所有矛盾关系） */
+  getRelationsByType(type: string): MemoryRelation[];
+  /** 获取全部关系（用于拓扑可视化构建节点+边图谱） */
+  getAllRelations(): MemoryRelation[];
+  /** 删除关系（用于关系修正，用户确认冲突后删除误判关系） */
+  removeRelation(sourceId: string, targetId: string, type: string): void;
+}
+```
+
+**`RelationDirection` 类型**：`'outgoing' | 'incoming' | 'both'`
+
+#### 注入方式
+
+```typescript
+import { Agent, InMemoryRelationStore } from 'memora';
+import type { IMemoryRelationStore } from 'memora';
+
+// 测试用：InMemoryRelationStore（纯内存，零 IO）
+const relationStore: IMemoryRelationStore = new InMemoryRelationStore();
+
+// 生产用：宿主实现 SqliteRelationStore
+const agent = new Agent({
+  // ...其他配置
+  relationStore,
+});
+```
+
+> **不注入时**：跳过关系构建，InsightExtractor 不会检测冲突，不生成关系数据。
+
+#### `InMemoryRelationStore` 测试实现
+
+纯内存实现，零 IO，所有方法返回深拷贝（防止外部篡改内部状态）。供单元测试使用，生产环境宿主应实现 `SqliteRelationStore` 等持久化实现。
+
 ---
 
 ## 六、项目 / 会话管理
@@ -521,17 +604,171 @@ await agent.config.confirmConfigSuggestion({
 });
 ```
 
-### 9.3 配置建议（模式 3）
+### 9.3 配置建议（模式 3：AutoConfigRefiner 自进化）
+
+Agent 在对话后自动分析用户输入和助手回复，提取潜在的配置建议（规则/角色/技能），通过回调通知宿主。这是"三种接入模式"中的模式 3（Agent 智能总结接口）。
+
+#### `AutoConfigRefinerOptions` 配置
+
+```typescript
+interface AutoConfigRefinerOptions {
+  minConfidence?: number;   // 最低置信度阈值（0-1），低于此值的建议被丢弃（默认 0.6）
+  maxSuggestions?: number;  // 单次对话最大建议数（默认 3）
+}
+```
+
+#### 工作流程
+
+```
+对话结束 → Agent.postProcess 异步调用 autoConfigRefiner.analyze()
+  → 有后台 Provider：LLM 分析提取建议
+  → 无后台 Provider：启发式规则降级提取
+  → 短对话（<20 字）跳过
+  → 通过 onConfigSuggestion 回调通知 ConfigManager
+  → ConfigManager 转发给宿主注册的 handler
+  → 宿主 UI 展示建议卡片
+  → 用户确认 → config.confirmConfigSuggestion() 写入配置文件
+```
+
+#### `config` 公开方法
 
 | 方法 | 用途 |
 |------|------|
-| `config.onConfigSuggestion(handler)` | 注册配置建议回调 |
+| `config.onConfigSuggestion(handler)` | 注册配置建议回调（宿主 UI 展示建议卡片） |
 | `config.confirmConfigSuggestion(suggestion)` | 确认建议，写入配置文件（持久化） |
+
+#### `ConfigSuggestion` 类型
+
+```typescript
+interface ConfigSuggestion {
+  type: 'rule' | 'persona' | 'skill';
+  name: string;
+  content: string;
+  confidence: number;  // 0-1
+  source: string;      // 建议来源描述
+}
+```
 
 **双写机制**：
 - `config.addRule()` → 写 SQLite（会话级，临时）
 - `config.addSkill()` → 写 SQLite + SkillManager（session-only，运行时注入）
 - `config.confirmConfigSuggestion()` → 写配置文件（真理源，重启后自动加载，适用于 rule/persona/skill 三种类型）
+
+> **降级策略**：无后台 Provider 时，AutoConfigRefiner 使用启发式规则提取建议（非 LLM），建议质量较低但仍可用。单条建议回调失败时记日志并继续处理下一条，避免一条失败导致后续全部丢失。
+
+---
+
+## 九.5、用户画像（`agent.userProfile` · UserProfile）
+
+用户画像从对话中自动提取用户事实（姓名、偏好、技能等），用于个性化 system prompt 注入。高置信度事实直接归档，低置信度事实标记为待确认，由宿主 UI 展示给用户确认。
+
+### 类型定义
+
+```typescript
+/** 用户画像子分类 */
+type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' | 'history';
+
+/** 用户画像条目 */
+interface UserProfileEntry {
+  id: string;           // 画像唯一 ID（格式：profile:user-profile-{category}-{slug}）
+  category: ProfileCategory;
+  value: string;        // 事实值（如 "姓名: 张三"）
+  source: string;       // 来源（哪一轮对话提到）
+  weight: number;       // 权重（0-1）
+  confirmed: boolean;   // 是否已确认（false 表示首次召回时需用户确认）
+  updatedAt: string;    // 最后更新时间（ISO 8601）
+}
+
+/** 事实提取的原始结果 */
+interface ExtractedFact {
+  category: ProfileCategory;
+  value: string;
+  sourceTurn: string;
+  confidence: number;   // 置信度 0-1（≥0.8 直接归档，否则标记待确认）
+}
+```
+
+### `agent.userProfile` 公开方法
+
+| 方法 | 用途 |
+|------|------|
+| `agent.userProfile.load()` | 启动时从存储加载所有已确认的画像条目 |
+| `agent.userProfile.archiveFacts(facts)` | 实时归档：将提取的用户事实写入存储（高置信度直接归档，低置信度标记待确认） |
+| `agent.userProfile.getConfirmed()` | 获取所有已确认的画像条目（system prompt 注入用） |
+| `agent.userProfile.getPending()` | 获取所有待确认的画像条目（供宿主 UI 展示确认/拒绝操作） |
+| `agent.userProfile.buildSystemPrompt()` | 构建 system prompt 中的用户画像段 |
+| `agent.userProfile.confirm(id)` | 确认待确认条目（确认后写入存储） |
+| `agent.userProfile.reject(id)` | 拒绝待确认条目（从缓存和存储中删除） |
+
+> **注意**：`agent.userProfile` 在 `init()` 前返回 `null`。待确认条目仅存内存缓存，进程重启后丢失——宿主应定期查询 `getPending()` 展示给用户确认。
+
+### 宿主接入示例
+
+```typescript
+// 启动后查询待确认条目，展示给用户
+const pending = agent.userProfile?.getPending() ?? [];
+for (const entry of pending) {
+  // 宿主 UI 展示确认对话框
+  const confirmed = await showConfirmDialog({
+    title: '确认用户画像',
+    message: `检测到：${entry.value}（${entry.category}）`,
+  });
+  if (confirmed) {
+    await agent.userProfile?.confirm(entry.id);
+  } else {
+    await agent.userProfile?.reject(entry.id);
+  }
+}
+```
+
+---
+
+## 九.6、作品投影（`agent.works` · WorkProjectionManager）
+
+作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在 SQLite 中供 Agent 快速召回，避免每次对话都读取完整文件。原始文件内容不进 SQLite，Agent 通过工具按需读取。
+
+### 类型定义
+
+```typescript
+interface WorkProjectionEntry {
+  id: string;            // 唯一 ID（work-proj-<slug>）
+  sourcePath: string;    // 文件路径
+  fileHash: string;      // 文件 hash（SHA-256，用于变更检测）
+  summary: string;       // 概要（50-100 字）
+  structure: string[];   // 结构（章节/模块列表，2-8 个）
+  keyDecisions: string[];// 关键决策（1-3 个）
+  updatedAt: string;     // 最后更新时间
+}
+```
+
+### `agent.works` 公开方法
+
+| 方法 | 用途 |
+|------|------|
+| `agent.works.ensureProjection(filePath, content, fileName?)` | 检查并更新作品投影（核心方法）。计算 hash → 查询已有投影 → 无则生成 / hash 变则重新生成 / hash 同则跳过。同文件并发调用时复用 in-flight Promise，避免重复 LLM 调用 |
+| `agent.works.getProjection(filePath)` | 获取已有的作品投影（不触发生成） |
+| `agent.works.loadAll()` | 加载所有作品投影（按 source 标签 `'work-projection'` 召回） |
+
+> **注意**：`agent.works` 在 `init()` 前返回 `null`。`ensureProjection` 依赖后台 LLM Provider 生成摘要，未注入 `backgroundProvider` 时使用前台 Provider。
+
+### 宿主接入示例
+
+```typescript
+// 宿主工具读取文件后，调用 ensureProjection 生成/更新投影
+agent.tools.registerTool(
+  {
+    name: 'read_file',
+    description: '读取文件内容',
+    parameters: { /* ... */ },
+  },
+  async (args) => {
+    const content = await fs.readFile(args.path, 'utf-8');
+    // 异步生成投影（fire-and-forget，不阻塞工具返回）
+    void agent.works?.ensureProjection(args.path, content);
+    return content;
+  },
+);
+```
 
 ---
 

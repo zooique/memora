@@ -1,8 +1,10 @@
-# Memora · 接入指南 v3.1
+# Memora · 接入指南 v3.2
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v3.1（最后更新：2026-06-15）
+> **版本**：v3.2（最后更新：2026-06-25）
+>
+> **v3.2 变更**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
 >
 > **v3.1 变更**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。
 >
@@ -381,11 +383,14 @@ agent.on('sessionForked', (event) => {
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入 |
+| `relationStore` | `IMemoryRelationStore` | ❌ | 记忆关系存储（ADR-014 侧车，不传则跳过关系构建） |
 | `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索） |
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `logger` | `ILogger` | ❌ | 日志注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
+| `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
+| `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 false） |
 
 ### Agent 生命周期与状态
 
@@ -430,6 +435,8 @@ agent.on('sessionForked', (event) => {
 | `agent.insight.xxx()` | InsightExtractor | `setWriteExtensions(e)` / `setKeywords(k)` / `classify(i)` |
 | `agent.persona.xxx` | PersonaManager | `.list` / `.activeName` / `.currentMode` / `.switchPersona(n)` / `.setMode(m)` |
 | `agent.skills.xxx` | SkillManager | `.list` / `.match(i)` / `.register(skill)` / `.buildSystemPrompt()` |
+| `agent.userProfile.xxx()` | UserProfile | `load()` / `archiveFacts(f)` / `getConfirmed()` / `getPending()` / `buildSystemPrompt()` / `confirm(id)` / `reject(id)` |
+| `agent.works.xxx()` | WorkProjectionManager | `ensureProjection(path, content)` / `getProjection(path)` / `loadAll()` |
 | `agent.on()` / `agent.off()` / `agent.once()` | TypedEventEmitter | `memoryAdded` / `personaSwitched` / `decayCompleted` / `memoryRecalled` / `sessionForked` / `insightExtracted` |
 
 ### Provider 管理
