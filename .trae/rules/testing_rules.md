@@ -48,7 +48,7 @@ date: 2026-06-25
 - `src/**/*.d.ts`（类型声明）
 - `src/**/*.test.ts`（测试自身）
 
-## 4. 当前测试文件清单（31 文件 · 471 用例）
+## 4. 当前测试文件清单（32 文件 · 501 用例）
 
 **agent/**：
 - [x] Agent 门面类（agent.test.ts）
@@ -58,16 +58,21 @@ date: 2026-06-25
 - [x] 作品投影（workProjection.test.ts）
 
 **memory/**：
-- [x] Frontmatter 解析（frontmatter.test.ts）
 - [x] 记忆加载器（loader.test.ts）
 - [x] 项目管理器（projectManager.test.ts）
 - [x] 记忆召回（recall.test.ts）
-- [x] 文本分词（segmenter.test.ts）
-- [x] 会话存储（sessionStore.test.ts）
+- [x] 会话存储契约（sessionStoreContract.test.ts）
 - [x] 文件存储（store.test.ts）
 - [x] 记忆类型（types.test.ts）
 - [x] 用户画像（userProfile.test.ts）
 - [x] 向量存储（vectorStore.test.ts）
+- [x] 记忆关系存储（relationStore.test.ts）— IMemoryRelationStore 接口 + InMemoryRelationStore 实现
+
+**utils/**：
+- [x] Frontmatter 解析（frontmatter.test.ts）
+- [x] 文本分词（segmenter.test.ts）
+- [x] 错误工具函数（errors.test.ts）
+- [x] JSON 工具函数（json.test.ts）
 
 **其他模块**：
 - [x] 角色管理（personaManager.test.ts）
@@ -77,11 +82,17 @@ date: 2026-06-25
 - [x] LLM 嵌入（embedding.test.ts）
 - [x] LLM 工厂（factory.test.ts）
 - [x] LLM Provider Mock（openaiCompatible.test.ts）
-- [x] 错误工具函数（errors.test.ts）
+- [x] 集成测试（llm-integration.test.ts）
+- [x] 配置管理器（configManager.test.ts）
+- [x] 洞察提取（insightExtractor.test.ts）
+- [x] 护栏（guardrail.test.ts）
+- [x] 日志（logger.test.ts）
+- [x] 指标（metrics.test.ts）
+- [x] 降级（degradation.test.ts）
 
-**待新增（Phase 1，ADR-014）**：
-- [ ] 记忆关系存储（relationStore.test.ts）— IMemoryRelationStore 接口 + InMemoryRelationStore 实现
-- [ ] 冲突检测（insightExtractor.test.ts 扩展）— extract() 流程中的关系构建逻辑
+**已完成（Phase 1，ADR-014）**：
+- [x] 记忆关系存储（relationStore.test.ts）— IMemoryRelationStore 接口 + InMemoryRelationStore 实现
+- [x] 冲突检测（insightExtractor.test.ts 扩展）— extract() 流程中的关系构建逻辑
 
 ## 5. 测试反模式
 

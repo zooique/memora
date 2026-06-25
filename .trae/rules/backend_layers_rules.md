@@ -20,7 +20,7 @@ date: 2026-06-25
 | -------------- | ----------------------------------------------------------------------- | ------------------------------------- | ------------- |
 | LLM 对话       | ✅ 提供 provider 抽象 + 流式协议                                        | —                                     | ✅ 已有       |
 | 记忆（3 层）   | ✅ 提供存储 + 索引 + 召回                                                | —                                     | ✅ 已有       |
-| 记忆关系图谱   | ✅ 提供 IMemoryRelationStore 侧车接口 + InMemoryRelationStore 测试实现 | ✅ 实现 SqliteRelationStore + 关系构建逻辑 | 🚧 规划中（ADR-014） |
+| 记忆关系图谱   | ✅ 提供 IMemoryRelationStore 侧车接口 + InMemoryRelationStore 测试实现 | ✅ 实现 SqliteRelationStore + 关系构建逻辑 | ✅ 已有 |
 | 安全           | ✅ 提供路径白名单 + 写入确认 + 权限模型                                 | —                                     | ✅ 已有       |
 | 通用文件 I/O   | ✅ 提供 4 个内置工具                                                    | —                                     | ✅ 已有       |
 | 工具注册机制   | ✅ 提供 `tools.registerTool()` + `tools.execute()`                       | ✅ 注册具体领域工具                   | ✅ 已有       |
@@ -132,6 +132,7 @@ utils/
 ├── loggerHolder.ts       # Logger 持有者（utils/ 内部 getLogger，解耦 utils→logging 循环依赖）
 ├── math.ts               # 数学工具（cosineSimilarity）
 ├── path.ts               # 路径工具（expandHome、basename）
+├── safeTimer.ts          # 安全定时器（safeSetTimeout/safeSetInterval + 跟踪清理）
 ├── scanner.ts            # Markdown 目录扫描工具（供 persona/skill 共享）
 ├── segmenter.ts          # 中文分词器（Intl.Segmenter，从 memory/ 迁入，供 memory/persona/skill 共享）
 ├── strings.ts            # 字符串工具（slugify）

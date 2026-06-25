@@ -33,16 +33,17 @@ date: 2026-06-11
 
 ```
 src/
-├── index.ts                # 库导出入口（纯类型 + 接口导出）
-├── agent/                  # Agent Loop + 工具执行 + 对话快照 + 作品投影
-├── memory/                 # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 管理器）
+├── index.ts                # 库导出入口（类型 + 接口 + 函数 + 类导出）
+├── agent/                  # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（7 个专职 Manager）+ 对话快照 + 作品投影
+├── memory/                 # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/                # 角色管理
 ├── skill/                  # 技能管理
 ├── llm/                    # LLM 适配层
 ├── security/               # 安全策略
 ├── config/                 # 配置加载
 ├── logging/                # 日志（ILogger + console fallback）
-└── utils/                  # 工具函数
+├── eval/                   # 评估框架（EvalScenario 类型 + 工具函数）
+└── utils/                  # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 
 > **已移出至宿主项目**：

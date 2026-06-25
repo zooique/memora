@@ -107,7 +107,7 @@ InsightExtractor.extract() 完成后（fire-and-forget）
 
 遵循降级优先（[ADR-006](./ADR-006-security-model.md)）：关系构建失败不阻塞对话，仅记录日志。
 
-### 4. 冲突检测嵌入现有流程（不增加 LLM 调用次数）
+### 6. 冲突检测嵌入现有流程（不增加 LLM 调用次数）
 
 冲突检测嵌入 InsightExtractor 现有 extract() 流程，**不新建独立管线，不增加 LLM 调用次数**：
 

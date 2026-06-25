@@ -10,7 +10,7 @@ date: 2026-06-25
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/rules/decisions/` 下 14 个 ADR（内核 14 + 精灵 7，含草案 ADR-014）
+> **决策追溯**：`.trae/rules/decisions/` 下 22 个 ADR（内核 14 + 精灵 8）
 
 ## 1. 不可违反的硬约束
 
@@ -41,7 +41,7 @@ date: 2026-06-25
 
 ```
 src/
-├── index.ts        # 库导出入口（纯类型 + 接口导出，无 CLI）
+├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
 ├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（7 个专职 Manager）+ 对话快照 + 作品投影 + 关联推荐
 ├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
@@ -50,6 +50,7 @@ src/
 ├── security/       # 安全策略
 ├── config/         # 配置加载
 ├── logging/        # 日志（ILogger 接口 + console fallback）
+├── eval/           # 评估框架（EvalScenario 类型 + 工具函数）
 └── utils/          # 工具函数（含 eventEmitter.ts 事件系统）
 ```
 
@@ -116,5 +117,5 @@ chore: 升级 dependencies
 |-------|------|-----------|------|
 | Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 可观测性 + 拓扑可视化 | ✅ 核心完成（拓扑可视化延后） |
 | Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | 🚧 进行中（rapportLevel + 里程碑检测已完成，AffectController 延后） |
-| Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | ✅ 全部完成（全局快捷键 + 在场状态检测 + 剪贴板三重保护） |
+| Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | ✅ 核心完成（全局快捷键 + 在场状态检测 + 剪贴板三重保护，两项延后） |
 | Phase 4 | 生态准备 | 接入文档 + 存储独立包 + 技能拖入安装 | 🚧 进行中（接入文档 v3.2 已更新） |
