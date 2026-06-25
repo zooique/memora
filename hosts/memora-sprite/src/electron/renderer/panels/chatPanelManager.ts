@@ -597,7 +597,7 @@ export class ChatPanelManager {
    * @param name 工具名称
    * @param args 工具参数（可选，JSON 字符串）
    */
-  showToolStart(messageId: string, name: string, args?: string): void {
+  showToolStart(messageId: string, toolCallId: string, name: string, args?: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
@@ -607,6 +607,7 @@ export class ChatPanelManager {
     // 创建工具调用卡片
     const toolCard = document.createElement('div');
     toolCard.className = 'tool-call tool-call-running';
+    toolCard.setAttribute('data-tool-call-id', toolCallId);
     toolCard.setAttribute('data-tool-name', name);
 
     // 工具图标 + 折叠箭头 + 名称 + 状态
@@ -658,27 +659,31 @@ export class ChatPanelManager {
    * 更新工具调用卡片状态为成功/失败，显示结果摘要。
    *
    * @param messageId 流式消息 ID
-   * @param name 工具名称（用于定位对应卡片）
+   * @param toolCallId 工具调用 ID（用于精确定位对应卡片）
    * @param ok 是否成功
    * @param summary 结果摘要（可选）
    */
-  updateToolResult(messageId: string, name: string, ok: boolean, summary?: string): void {
+  updateToolResult(messageId: string, toolCallId: string, name: string, ok: boolean, summary?: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 查找对应工具的卡片（按 data-tool-name 匹配，取最后一个未完成的）
+    // 查找对应工具的卡片（按 data-tool-call-id 精确定位）
     // P1-SEC-02 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
-    // （CSS.escape 在 jsdom 测试环境中不可用，getAttribute 方式更通用）
     const allCards = bubble.querySelectorAll('.tool-call');
-    const cards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-name') === name);
-    let targetCard: Element | null = null;
-    for (const card of Array.from(cards)) {
-      if (card.classList.contains('tool-call-running')) {
-        targetCard = card;
-        break;
+    const cards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-call-id') === toolCallId);
+    // 精确匹配失败时降级为按 name 匹配（兼容旧格式）
+    let targetCard: Element | null = cards.length > 0 ? cards[0] : null;
+    if (!targetCard) {
+      // 降级：按 data-tool-name 匹配，取最后一个未完成的
+      const nameCards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-name') === name);
+      for (const card of Array.from(nameCards)) {
+        if (card.classList.contains('tool-call-running')) {
+          targetCard = card;
+          break;
+        }
       }
     }
     if (!targetCard) return;

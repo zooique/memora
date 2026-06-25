@@ -37,8 +37,8 @@ export type AgentChunk =
   | { type: 'recall'; memories: RecalledMemorySummary[] }
   | { type: 'thinking'; phase: ThinkingPhase }
   | { type: 'text'; content: string }
-  | { type: 'tool_start'; name: string; args?: string }
-  | { type: 'tool_result'; name: string; ok: boolean; summary?: string }
+  | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
+  | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
   | { type: 'aborted'; reason: string }
   | { type: 'done' };
 

@@ -164,188 +164,187 @@ export class AgentLoop {
     recalledMemories?: readonly Memory[],
     signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 创建顶层 response span（在 done/aborted 时结束）
+    // 创建顶层 response span，由 try/finally 统一管理生命周期
     const responseSpan = this.tracer.startSpan(TRACE_SPANS.RESPONSE, {
       inputLength: userInput.length,
     });
 
-    // 注入记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
-    const recallSpan = this.tracer.startSpan(TRACE_SPANS.RECALL, {
-      recallCount: recalledMemories?.length ?? 0,
-    });
-    // 将召回记忆以 system 消息注入（优先级高、不污染 user 输入）
-    // 替代旧方案：嵌入 user 消息+反指令→模型易混淆
-    if (recalledMemories?.length) {
-      this.injectRecallAsSystem(recalledMemories);
-    }
-    const userInputClean = userInput;
-    // R-103 补充 span 属性：让宿主监控面板能按命中/未命中过滤
-    recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
-    recallSpan.end();
+    try {
+      // 注入记忆召回结果（agent上下文组装协议 §1：Agent 记忆召回结果层）
+      const recallSpan = this.tracer.startSpan(TRACE_SPANS.RECALL, {
+        recallCount: recalledMemories?.length ?? 0,
+      });
+      // 将召回记忆以 system 消息注入（优先级高、不污染 user 输入）
+      // 替代旧方案：嵌入 user 消息+反指令→模型易混淆
+      if (recalledMemories?.length) {
+        this.injectRecallAsSystem(recalledMemories);
+      }
+      const userInputClean = userInput;
+      // R-103 补充 span 属性：让宿主监控面板能按命中/未命中过滤
+      recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
+      recallSpan.end();
 
-    // R-103 召回命中率统计：每轮对话算一次召回，结果非空算命中
-    this.metricRecallTotalCount++;
-    if (recalledMemories && recalledMemories.length > 0) {
-      this.metricRecallHitCount++;
-    }
-
-    // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
-    // 仅暴露 name/score/source 摘要，不泄露完整 content
-    if (recalledMemories?.length) {
-      yield {
-        type: 'recall',
-        memories: recalledMemories.map((m) => ({
-          name: m.name,
-          score: m.score,
-          source: m.source,
-        })),
-      };
-    }
-
-    // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
-    // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
-    const inputGuardResult = this.runInputGuardrails(userInput);
-    if (inputGuardResult.blocked) {
-      responseSpan.end();
-      yield { type: 'text', content: inputGuardResult.message ?? 'Input blocked by guardrail' };
-      yield { type: 'done' };
-      return;
-    }
-    if (inputGuardResult.warning) {
-      // warn 级别只通知，不阻断
-      yield {
-        type: 'text',
-        content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}`,
-      };
-    }
-
-    this.messages.push({ role: 'user', content: userInputClean });
-
-    let iteration = 0;
-    while (iteration < this.maxIterations) {
-      iteration++;
-      logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
-
-      // V-105：每次迭代前检查是否已被取消
-      if (signal?.aborted) {
-        responseSpan.end();
-        yield { type: 'aborted', reason: this.ui.abortedByUser };
-        return;
+      // R-103 召回命中率统计：每轮对话算一次召回，结果非空算命中
+      this.metricRecallTotalCount++;
+      if (recalledMemories && recalledMemories.length > 0) {
+        this.metricRecallHitCount++;
       }
 
-      // 调用 LLM（带重试 + 截断保护）
-      const chatOpts = this.buildChatOptions();
+      // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
+      // 仅暴露 name/score/source 摘要，不泄露完整 content
+      if (recalledMemories?.length) {
+        yield {
+          type: 'recall',
+          memories: recalledMemories.map((m) => ({
+            name: m.name,
+            score: m.score,
+            source: m.source,
+          })),
+        };
+      }
 
-      // 上下文摘要：如果启用且首次截断，生成摘要
-      let contextSummary: string | undefined;
-      if (
-        this.enableContextSummary &&
-        this.estimateTokens(this.messages) > this.maxContextTokens &&
-        this.messages.length > 3
-      ) {
-        // 摘要缓存 TTL：消息数增长超过 10 条时缓存过期，需重新生成
-        const summaryExpired = this.contextSummary !== null &&
-          (this.messages.length - this.contextSummaryMsgCount) > LOOP_CONSTANTS.SUMMARY_CACHE_TTL_MSGS;
-        if (this.contextSummary && !summaryExpired) {
-          contextSummary = this.contextSummary;
-        } else {
-          contextSummary = await this.generateContextSummary();
-          this.contextSummary = contextSummary;
-          this.contextSummaryMsgCount = this.messages.length;
+      // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
+      // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
+      const inputGuardResult = this.runInputGuardrails(userInput);
+      if (inputGuardResult.blocked) {
+        // P3: try/finally 确保 done 一定送达，即使 text yield 异常
+        try {
+          yield { type: 'text', content: inputGuardResult.message ?? 'Input blocked by guardrail' };
+        } finally {
+          yield { type: 'done' };
         }
-      }
-      const safeMessages = this.truncateMessages(this.messages, contextSummary);
-      // SEC-01: 截断后同步替换工作记忆，防止 messages 数组无限增长
-      // 持久化由 MessageHistory 负责，工作记忆只需保留当前上下文窗口内的消息
-      if (safeMessages !== this.messages) {
-        this.messages = [...safeMessages];
-      }
-
-      let llmResult: LlmCallResult;
-      try {
-        llmResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
-      } catch (err) {
-        responseSpan.end();
-        throw err;
-      }
-
-      if (llmResult.aborted) {
-        responseSpan.end();
-        yield { type: 'aborted', reason: this.ui.abortedByUser };
         return;
       }
+      if (inputGuardResult.warning) {
+        // warn 级别只通知，不阻断
+        yield {
+          type: 'text',
+          content: `${this.ui.guardrailWarningPrefix} ${inputGuardResult.warning}`,
+        };
+      }
 
-      // 工具调用分支
-      if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
-        const execResult = yield* this.executeToolCalls(
-          llmResult.toolCalls,
-          llmResult.fullContent,
-          signal,
-        );
-        if (execResult.aborted) {
-          responseSpan.end();
+      this.messages.push({ role: 'user', content: userInputClean });
+
+      let iteration = 0;
+      while (iteration < this.maxIterations) {
+        iteration++;
+        logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
+
+        // V-105：每次迭代前检查是否已被取消
+        if (signal?.aborted) {
           yield { type: 'aborted', reason: this.ui.abortedByUser };
           return;
         }
 
-        // Reflection（反思/自修正）：检查是否有可重试的错误
-        // 如果工具结果中有 retryable 错误，在 LLM 上下文中追加反思提示
-        // 帮助 LLM 聚焦于修正而非放弃
-        const hasRetryableError = this.messages
-          .slice(-llmResult.toolCalls.length) // 只看本轮工具结果
-          .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
-        if (hasRetryableError) {
-          const reflectionHint = this.messages.filter(
-            (m) => m.role === 'system' && m.content === '[REFLECTION_HINT]',
-          ).length;
-          if (reflectionHint < this.maxReflectionRetries) {
-            this.messages.push({
-              role: 'system',
-              content: `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${this.maxReflectionRetries - reflectionHint}`,
-            });
+        // 调用 LLM（带重试 + 截断保护）
+        const chatOpts = this.buildChatOptions();
+
+        // 上下文摘要：如果启用且首次截断，生成摘要
+        let contextSummary: string | undefined;
+        if (
+          this.enableContextSummary &&
+          this.estimateTokens(this.messages) > this.maxContextTokens &&
+          this.messages.length > 3
+        ) {
+          // 摘要缓存 TTL：消息数增长超过 10 条时缓存过期，需重新生成
+          const summaryExpired = this.contextSummary !== null &&
+            (this.messages.length - this.contextSummaryMsgCount) > LOOP_CONSTANTS.SUMMARY_CACHE_TTL_MSGS;
+          if (this.contextSummary && !summaryExpired) {
+            contextSummary = this.contextSummary;
+          } else {
+            contextSummary = await this.generateContextSummary();
+            this.contextSummary = contextSummary;
+            this.contextSummaryMsgCount = this.messages.length;
           }
         }
+        const safeMessages = this.truncateMessages(this.messages, contextSummary);
+        // SEC-01: 截断后同步替换工作记忆，防止 messages 数组无限增长
+        // 持久化由 MessageHistory 负责，工作记忆只需保留当前上下文窗口内的消息
+        if (safeMessages !== this.messages) {
+          this.messages = [...safeMessages];
+        }
 
-        // 继续循环：把工具结果回填给 LLM
-        continue;
-      }
+        const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
 
-      // 纯文本结束
-      if (llmResult.fullContent) {
-        this.messages.push({ role: 'assistant', content: llmResult.fullContent });
-      } else {
-        // LLM 返回空响应（既无文本也无工具调用）的兜底处理
-        // 正常 LLM 不会返回空响应，但某些 provider 异常/边界情况下可能发生
-        logger.warn({ iteration }, 'LLM 返回空响应（无文本、无工具调用），使用兜底提示');
-        const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
-        this.messages.push({ role: 'assistant', content: fallbackText });
-        yield { type: 'text', content: fallbackText };
-      }
+        if (llmResult.aborted) {
+          yield { type: 'aborted', reason: this.ui.abortedByUser };
+          return;
+        }
 
-      // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
-      const outputGuardResult = this.runOutputGuardrails(llmResult.fullContent);
-      if (outputGuardResult.blocked) {
-        responseSpan.end();
-        yield { type: 'text', content: outputGuardResult.message ?? 'Output blocked by guardrail' };
+        // 工具调用分支
+        if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
+          const execResult = yield* this.executeToolCalls(
+            llmResult.toolCalls,
+            llmResult.fullContent,
+            signal,
+          );
+          if (execResult.aborted) {
+            yield { type: 'aborted', reason: this.ui.abortedByUser };
+            return;
+          }
+
+          // Reflection（反思/自修正）：检查是否有可重试的错误
+          // 如果工具结果中有 retryable 错误，在 LLM 上下文中追加反思提示
+          // 帮助 LLM 聚焦于修正而非放弃
+          const hasRetryableError = this.messages
+            .slice(-llmResult.toolCalls.length) // 只看本轮工具结果
+            .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
+          if (hasRetryableError) {
+            const reflectionHint = this.messages.filter(
+              (m) => m.role === 'system' && m.content === '[REFLECTION_HINT]',
+            ).length;
+            if (reflectionHint < this.maxReflectionRetries) {
+              this.messages.push({
+                role: 'system',
+                content: `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${this.maxReflectionRetries - reflectionHint}`,
+              });
+            }
+          }
+
+          // 继续循环：把工具结果回填给 LLM
+          continue;
+        }
+
+        // 纯文本结束
+        if (llmResult.fullContent) {
+          this.messages.push({ role: 'assistant', content: llmResult.fullContent });
+        } else {
+          // LLM 返回空响应（既无文本也无工具调用）的兜底处理
+          // 正常 LLM 不会返回空响应，但某些 provider 异常/边界情况下可能发生
+          logger.warn({ iteration }, 'LLM 返回空响应（无文本、无工具调用），使用兜底提示');
+          const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
+          this.messages.push({ role: 'assistant', content: fallbackText });
+          yield { type: 'text', content: fallbackText };
+        }
+
+        // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
+        const outputGuardResult = this.runOutputGuardrails(llmResult.fullContent);
+        if (outputGuardResult.blocked) {
+          // P3: try/finally 确保 done 一定送达，即使 text yield 异常
+          try {
+            yield { type: 'text', content: outputGuardResult.message ?? 'Output blocked by guardrail' };
+          } finally {
+            yield { type: 'done' };
+          }
+          return;
+        }
+        if (outputGuardResult.warning) {
+          yield {
+            type: 'text',
+            content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}`,
+          };
+        }
+
         yield { type: 'done' };
         return;
       }
-      if (outputGuardResult.warning) {
-        yield {
-          type: 'text',
-          content: `${this.ui.guardrailWarningPrefix} ${outputGuardResult.warning}`,
-        };
-      }
 
-      responseSpan.end();
+      logger.warn({ iterations: iteration }, '达到最大迭代次数');
+      yield { type: 'text', content: this.ui.maxIterationsReached };
       yield { type: 'done' };
-      return;
+    } finally {
+      responseSpan.end();
     }
-
-    logger.warn({ iterations: iteration }, '达到最大迭代次数');
-    responseSpan.end();
-    yield { type: 'text', content: this.ui.maxIterationsReached };
-    yield { type: 'done' };
   }
 
   /**
@@ -488,7 +487,7 @@ export class AgentLoop {
       // R-103 工具调用统计：每次工具执行 +1
       this.metricToolCallCount++;
 
-      yield { type: 'tool_start', name: tc.function.name, args: tc.function.arguments };
+      yield { type: 'tool_start', toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments };
 
       // 工具执行 Span
       const toolSpan = this.tracer.startSpan(TRACE_SPANS.TOOL_EXEC, {
@@ -530,6 +529,7 @@ export class AgentLoop {
       }
       yield {
         type: 'tool_result',
+        toolCallId: tc.id,
         name: tc.function.name,
         ok: !result.startsWith('[ERR'),
         summary: result.slice(0, 100),

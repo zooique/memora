@@ -603,11 +603,12 @@ describe('流式消息管理', () => {
 describe('工具调用卡片（UX-P1-02）', () => {
   it('showToolStart: 在流式消息气泡内渲染工具调用卡片', () => {
     uiManager.startStreaming('msg-tool-1');
-    uiManager.showToolStart('msg-tool-1', 'read_file', '{"path":"test.txt"}');
+    uiManager.showToolStart('msg-tool-1', 'call-1', 'read_file', '{"path":"test.txt"}');
 
     const toolCard = document.querySelector('.tool-call.tool-call-running');
     expect(toolCard).not.toBeNull();
     expect(toolCard?.getAttribute('data-tool-name')).toBe('read_file');
+    expect(toolCard?.getAttribute('data-tool-call-id')).toBe('call-1');
 
     // 验证卡片包含工具名和状态
     expect(toolCard?.querySelector('.tool-call-name')?.textContent).toBe('read_file');
@@ -617,7 +618,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
 
   it('showToolStart: 无参数时不渲染 .tool-call-args', () => {
     uiManager.startStreaming('msg-tool-2');
-    uiManager.showToolStart('msg-tool-2', 'list_dir');
+    uiManager.showToolStart('msg-tool-2', 'call-2', 'list_dir');
 
     const toolCard = document.querySelector('.tool-call.tool-call-running');
     expect(toolCard).not.toBeNull();
@@ -626,8 +627,8 @@ describe('工具调用卡片（UX-P1-02）', () => {
 
   it('updateToolResult: 成功时更新卡片状态为 success', () => {
     uiManager.startStreaming('msg-tool-3');
-    uiManager.showToolStart('msg-tool-3', 'search_memories', '{"query":"test"}');
-    uiManager.updateToolResult('msg-tool-3', 'search_memories', true, '找到 3 条记忆');
+    uiManager.showToolStart('msg-tool-3', 'call-3', 'search_memories', '{"query":"test"}');
+    uiManager.updateToolResult('msg-tool-3', 'call-3', 'search_memories', true, '找到 3 条记忆');
 
     const toolCard = document.querySelector('.tool-call');
     expect(toolCard?.classList.contains('tool-call-running')).toBe(false);
@@ -638,8 +639,8 @@ describe('工具调用卡片（UX-P1-02）', () => {
 
   it('updateToolResult: 失败时更新卡片状态为 failed', () => {
     uiManager.startStreaming('msg-tool-4');
-    uiManager.showToolStart('msg-tool-4', 'write_file', '{"path":"test.txt"}');
-    uiManager.updateToolResult('msg-tool-4', 'write_file', false, '权限不足');
+    uiManager.showToolStart('msg-tool-4', 'call-4', 'write_file', '{"path":"test.txt"}');
+    uiManager.updateToolResult('msg-tool-4', 'call-4', 'write_file', false, '权限不足');
 
     const toolCard = document.querySelector('.tool-call');
     expect(toolCard?.classList.contains('tool-call-failed')).toBe(true);
@@ -648,8 +649,8 @@ describe('工具调用卡片（UX-P1-02）', () => {
 
   it('updateToolResult: 无摘要时不渲染 .tool-call-result', () => {
     uiManager.startStreaming('msg-tool-5');
-    uiManager.showToolStart('msg-tool-5', 'read_file');
-    uiManager.updateToolResult('msg-tool-5', 'read_file', true);
+    uiManager.showToolStart('msg-tool-5', 'call-5', 'read_file');
+    uiManager.updateToolResult('msg-tool-5', 'call-5', 'read_file', true);
 
     const toolCard = document.querySelector('.tool-call');
     expect(toolCard?.querySelector('.tool-call-result')).toBeNull();
@@ -657,7 +658,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
 
   it('updateStreamingMessage: 保留工具调用卡片不丢失', () => {
     uiManager.startStreaming('msg-tool-6');
-    uiManager.showToolStart('msg-tool-6', 'read_file', '{"path":"a.txt"}');
+    uiManager.showToolStart('msg-tool-6', 'call-6', 'read_file', '{"path":"a.txt"}');
     // 流式更新文本时，工具卡片应保留
     uiManager.updateStreamingMessage('msg-tool-6', '读取完成');
 

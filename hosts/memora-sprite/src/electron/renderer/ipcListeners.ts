@@ -341,12 +341,12 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
 
   // UX-P1-02 工具调用开始：在消息气泡内渲染工具调用卡片
   window.electronAPI.onStreamToolStart((msg) => {
-    uiManager.showToolStart(msg.messageId, msg.name, msg.args);
+    uiManager.showToolStart(msg.messageId, msg.toolCallId, msg.name, msg.args);
   });
 
   // UX-P1-02 工具调用结果：更新工具调用卡片状态（成功/失败 + 摘要）
   window.electronAPI.onStreamToolResult((msg) => {
-    uiManager.updateToolResult(msg.messageId, msg.name, msg.ok, msg.summary);
+    uiManager.updateToolResult(msg.messageId, msg.toolCallId, msg.name, msg.ok, msg.summary);
   });
 
   window.electronAPI.onStreamChunk((msg) => {

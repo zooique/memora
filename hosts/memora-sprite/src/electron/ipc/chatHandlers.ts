@@ -131,6 +131,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         // UX-P1-02 工具调用开始：推送工具名和参数，UI 渲染工具调用卡片
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, {
           messageId,
+          toolCallId: chunk.toolCallId,
           name: chunk.name,
           args: chunk.args,
         });
@@ -138,6 +139,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         // UX-P1-02 工具调用结果：推送工具名、成功状态和摘要，UI 更新工具卡片状态
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, {
           messageId,
+          toolCallId: chunk.toolCallId,
           name: chunk.name,
           ok: chunk.ok,
           summary: chunk.summary,

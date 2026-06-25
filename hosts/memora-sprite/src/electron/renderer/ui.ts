@@ -362,9 +362,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** OBS-02 显示上下文截断提示条 */
   showTruncationNotice(messageId: string, count: number): void { this.chatPanel.showTruncationNotice(messageId, count); }
   /** 显示工具调用开始卡片（委托到 ChatPanelManager） */
-  showToolStart(messageId: string, name: string, args?: string): void { this.chatPanel.showToolStart(messageId, name, args); }
+  showToolStart(messageId: string, toolCallId: string, name: string, args?: string): void { this.chatPanel.showToolStart(messageId, toolCallId, name, args); }
   /** 更新工具调用结果（委托到 ChatPanelManager） */
-  updateToolResult(messageId: string, name: string, ok: boolean, summary?: string): void { this.chatPanel.updateToolResult(messageId, name, ok, summary); }
+  updateToolResult(messageId: string, toolCallId: string, name: string, ok: boolean, summary?: string): void { this.chatPanel.updateToolResult(messageId, toolCallId, name, ok, summary); }
   /** 开始流式输出（委托到 ChatPanelManager） */
   startStreaming(messageId: string): void { this.chatPanel.startStreaming(messageId); }
   /** 停止所有流式输出（委托到 ChatPanelManager） */

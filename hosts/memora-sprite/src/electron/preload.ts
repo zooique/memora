@@ -248,9 +248,9 @@ export interface ElectronAPI {
    */
   onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => void) => void;
   /** UX-P1-02 工具调用开始监听（携带工具名和参数） */
-  onStreamToolStart: (cb: (msg: { messageId: string; name: string; args?: string }) => void) => void;
+  onStreamToolStart: (cb: (msg: { messageId: string; toolCallId: string; name: string; args?: string }) => void) => void;
   /** UX-P1-02 工具调用结果监听（携带工具名、成功状态和摘要） */
-  onStreamToolResult: (cb: (msg: { messageId: string; name: string; ok: boolean; summary?: string }) => void) => void;
+  onStreamToolResult: (cb: (msg: { messageId: string; toolCallId: string; name: string; ok: boolean; summary?: string }) => void) => void;
   /** UX-P2-01 思考阶段监听（recalling/processing/archiving） */
   onStreamThinking: (cb: (msg: { messageId: string; phase: string }) => void) => void;
   /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
@@ -514,8 +514,8 @@ const electronAPI: ElectronAPI = {
   onStreamChunk: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
   onStreamEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
   onStreamRecall: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, (_: IpcRendererEvent, msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => cb(msg)),
-  onStreamToolStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, (_: IpcRendererEvent, msg: { messageId: string; name: string; args?: string }) => cb(msg)),
-  onStreamToolResult: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, (_: IpcRendererEvent, msg: { messageId: string; name: string; ok: boolean; summary?: string }) => cb(msg)),
+  onStreamToolStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, (_: IpcRendererEvent, msg: { messageId: string; toolCallId: string; name: string; args?: string }) => cb(msg)),
+  onStreamToolResult: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, (_: IpcRendererEvent, msg: { messageId: string; toolCallId: string; name: string; ok: boolean; summary?: string }) => cb(msg)),
   onStreamThinking: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, (_: IpcRendererEvent, msg: { messageId: string; phase: string }) => cb(msg)),
   /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
   onContextTruncated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, (_: IpcRendererEvent, msg: { messageId: string; count: number }) => cb(msg)),
