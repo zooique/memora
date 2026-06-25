@@ -82,8 +82,17 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   if (history) {
     const todayDate = getLocalDate();
     if (history.currentDateValue !== todayDate) {
+      // QC-TC-01 类型守卫：sessionManager 类型为 SessionManager | null，
+      // 初始化未完成或 close() 后为 null，跨日重置依赖 sessionManager 必须存在
+      const sessionManager = ctx.agent.sessionManager;
+      if (!sessionManager) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
+          text: '会话管理器未初始化，请稍后重试',
+        });
+        return;
+      }
       // 重置到当天 main 会话：更新 currentDate/currentSession + 加载当天已有消息
-      const restoredCount = await ctx.agent.sessionManager.restoreSession(todayDate, 'main');
+      const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
       // restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
       if (restoredCount === 0 && ctx.agent.agentLoop) {
         ctx.agent.agentLoop.restoreHistory([]);

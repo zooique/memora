@@ -687,7 +687,8 @@ export class ChatPanelManager {
     const allCards = bubble.querySelectorAll('.tool-call');
     const cards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-call-id') === toolCallId);
     // 精确匹配失败时降级为按 name 匹配（兼容旧格式）
-    let targetCard: Element | null = cards.length > 0 ? cards[0] : null;
+    // QC-TC-02 noUncheckedIndexedAccess 模式下 cards[0] 类型为 Element | undefined，需 ?? null 收窄
+    let targetCard: Element | null = cards.length > 0 ? (cards[0] ?? null) : null;
     if (!targetCard) {
       // 降级：按 data-tool-name 匹配，取最后一个未完成的
       const nameCards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-name') === name);
