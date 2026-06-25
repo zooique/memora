@@ -231,9 +231,9 @@ export class ModalManager {
   /**
    * Q10 显示写入确认弹窗（构建 DOM 节点并委托到 showConfirmDialog）
    *
-   * 将 DOM 构建逻辑从 UIManager 门面层迁移至此，保持门面层纯粹委托。
-   * P1-4 修复：改用 createElement + textContent 构建 DOM 节点，替代 innerHTML，
-   * 从 API 层面杜绝 XSS 风险点（调用方无需也无法传入原始 HTML）。
+   * 在此构建 DOM 节点并委托到 showConfirmDialog，保持 UIManager 门面层纯委托。
+   * 使用 createElement + textContent 构建 DOM 节点，从 API 层面杜绝 XSS 风险。
+   * 调用方无需也无法传入原始 HTML。
    *
    * @param info 写入确认请求载荷（来自主进程 WRITE_CONFIRMATION 推送）
    * @returns 用户是否确认写入

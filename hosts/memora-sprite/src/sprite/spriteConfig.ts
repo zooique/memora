@@ -322,8 +322,8 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * 根据 CONFIG_FIELD_SCHEMA 校验 value 类型，符合则写入 config[key]，
  * 不符合则忽略（保持原值）。
  *
- * P2-S3 重构：从 Sprite.setConfigField 提取为纯函数，配置逻辑集中到 spriteConfig.ts。
- * P1-5 修复：windowBounds 允许设为 null（清除窗口边界）。
+ * 从 Sprite.setConfigField 提取的纯函数，配置逻辑集中于 spriteConfig.ts。
+ * windowBounds 可设为 null（清除窗口边界）。
  *
  * @param config - 配置对象（原地修改）
  * @param key - 配置字段名

@@ -526,7 +526,7 @@ async function initializeApp(): Promise<void> {
 
   // ── 阶段 2：初始化 Agent + Sprite（可能因配置缺失失败） ──
   try {
-    // D-01 修复：startSprite 已移除 skipWizard 选项，配置缺失时统一抛错
+    // startSprite 配置缺失时统一抛错（无 skipWizard 选项）
     // Electron 模式：阶段 1 已注册 registerMinimalIpcHandlers，
     // 阶段 2 失败后渲染进程可显示设置面板引导用户配置
     const spriteResult = await startSprite();

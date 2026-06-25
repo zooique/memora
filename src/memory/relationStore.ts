@@ -15,7 +15,7 @@
  * - 代码层召回 top-5 相关记忆 → LLM 判断关系类型 → 写入 IMemoryRelationStore
  * - 遵循降级优先（ADR-006）：关系构建失败不阻塞对话，仅记录日志
  */
-import type { MemoryRelation, RelationDirection } from './types.js';
+import type { MemoryRelation, RelationDirection } from '@/memory/types.js';
 
 /**
  * 记忆关系存储接口（侧车）

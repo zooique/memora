@@ -173,7 +173,7 @@ export class ConfigManager {
   }
 
   /**
-   * 新增项目规则的便捷方法（P1-4 修复）
+   * 新增项目规则的便捷方法
    *
    * 宿主程序只需提供 name + content 两个业务字段，
    * 内部自动填充 id / source / createdAt / accessedAt / score 等字段。

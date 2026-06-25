@@ -15,9 +15,8 @@
  * 导致拖动失效。改用 PointerEvent + setPointerCapture 后，指针捕获确保
  * 鼠标移出窗口仍能持续接收 pointermove 事件，拖动可跨屏幕范围。
  *
- * P2-002/P2-003 修复：原方案自定义 FloatElectronAPI 接口与 ElectronAPI 字段重复，
- * 且使用双重类型断言访问 window.electronAPI。改为 Pick<ElectronAPI, ...> 提取子集，
- * 直接使用 window.electronAPI（types.ts 已声明全局类型）。
+ * 使用 Pick<ElectronAPI, ...> 提取浮动窗口所需子集，直接访问 window.electronAPI
+ * （types.ts 声明全局类型，ElectronAPI 签名变更时自动同步）。
  */
 
 import type { ElectronAPI } from '../../preload.js';
@@ -31,7 +30,7 @@ import { getOptionalElement } from '../helpers/domHelpers.js';
 /**
  * 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供）
  *
- * P2-003 修复：从自定义接口改为 Pick<ElectronAPI, ...>，消除与 ElectronAPI 的重复定义。
+ * 通过 Pick<ElectronAPI, ...> 提取子集，避免与 ElectronAPI 重复定义；
  * 未来 ElectronAPI 签名变更时，FloatElectronAPI 自动同步。
  */
 export type FloatElectronAPI = Pick<

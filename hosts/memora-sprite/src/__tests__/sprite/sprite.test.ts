@@ -1,7 +1,7 @@
 /**
  * Sprite 主控测试
  *
- * 注意：loadSpriteConfig/saveSpriteConfig 重构后不再接受 dataDir 参数，
+ * 注意：loadSpriteConfig/saveSpriteConfig 不接受 dataDir 参数，
  * 始终读写 ~/.memora-sprite/sprite.json。测试中 mock 这两个函数，
  * 确保测试隔离于真实文件系统。
  */
@@ -351,9 +351,8 @@ describe('Sprite + IInteraction 桥接', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('proactivePrompt 应通过 emitSprite 发射事件（P2-DESIGN-5：不再通过 interaction.output）', () => {
-    // P2-DESIGN-5 修复后：ProactiveEngine 仅通过 emitSprite 发射 proactivePrompt 事件，
-    // 不再调用 interaction.output（避免双通道输出 + 隐式 guard 依赖）
+  it('proactivePrompt 应通过 emitSprite 发射事件', () => {
+    // ProactiveEngine 通过 emitSprite 发射 proactivePrompt 事件，不调用 interaction.output
     const proactiveEvents: { prompt: string; triggers: string[] }[] = [];
     sprite.on('proactivePrompt', (payload) => {
       proactiveEvents.push(payload);
@@ -367,14 +366,14 @@ describe('Sprite + IInteraction 桥接', () => {
     // emitSprite('proactivePrompt') 应被调用
     expect(proactiveEvents.length).toBeGreaterThan(0);
     expect(proactiveEvents[0].prompt).toContain('记忆');
-    // interaction.output 不应被调用（已移除双通道输出）
+    // interaction.output 不应被调用
     expect(interaction.outputs.length).toBe(0);
   });
 
   it('ProactiveEngine 应不依赖 interaction 直接发射事件', () => {
     const tmpDir2 = createTmpDir();
     const sprite2 = new Sprite({ agent: mockAgent, dataDir: tmpDir2 });
-    // setInteraction 已移除（P3-DESIGN-1），ProactiveEngine 仅通过 emitSprite 发射事件
+    // ProactiveEngine 仅通过 emitSprite 发射事件
     sprite2.start();
 
     // 累积事件，验证 proactivePrompt 事件正常发射（不依赖 interaction）

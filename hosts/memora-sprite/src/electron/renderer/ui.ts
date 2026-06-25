@@ -66,7 +66,7 @@ export type {
   ToastType,
 } from './types.js';
 
-// ─── 工具函数已迁移至 domHelpers.ts（formatTimeAgo、setButtonLoading）──
+// ─── 工具函数（formatTimeAgo、setButtonLoading）见 domHelpers.ts ───
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
@@ -419,7 +419,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.updateBadge();
   }
 
-  // U6: setButtonLoading 已迁移至 domHelpers.ts，UIManager 不再持有此方法
+  // setButtonLoading 见 domHelpers.ts，UIManager 不持有此方法
 
   // ─── 面板管理 ─────────────────────────────────────────
 
@@ -484,8 +484,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * 验证并清理用户输入
    *
    * 设计原则：渲染层使用 textContent 设置消息内容，已天然防 XSS。
-   * 此处仅做长度限制和首尾空白清理，不再移除合法的 `<>` 字符——
-   * 用户可能输入代码片段、数学符号等合法内容，过度过滤会破坏体验。
+   * 此处仅做长度限制和首尾空白清理，保留合法的 `<>` 字符——
+ * 用户可能输入代码片段、数学符号等合法内容，过度过滤会破坏体验。
    *
    * 真正的 XSS 防护由 textContent（而非 innerHTML）保证。
    */
@@ -597,7 +597,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     if (!(target instanceof HTMLElement)) return;
     const panel = target.dataset.panel;
     if (panel) {
-      // P2-FLOW-06: switchPanel 已改为 async，void 显式忽略 Promise
+      // switchPanel 为 async，void 显式忽略 Promise
       void this.switchPanel(panel);
     }
   }
@@ -1091,7 +1091,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * @param info 写入确认请求载荷（来自主进程 WRITE_CONFIRMATION 推送）
    */
   async showWriteConfirmation(info: WriteConfirmationPayload): Promise<void> {
-    // Q10 HTML 构建逻辑迁移至 ModalManager.showWriteConfirmation，门面层纯委托
+    // 委托到 ModalManager.showWriteConfirmation，门面层纯委托
     const confirmed = await this.modalManager.showWriteConfirmation(info);
     // 将用户决策传回主进程
     await window.electronAPI.responseWriteConfirmation(info.requestId, confirmed);

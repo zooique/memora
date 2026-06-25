@@ -93,7 +93,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
 
   try {
-    // UX-P1-01 累积完整文本，每次 chunk 发送累积值（而非 delta），避免渲染层只显示最后一个 chunk
+    // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
     let accumulatedText = '';
     for await (const chunk of ctx.agent.chat(text, abortController.signal)) {
       // 检查窗口是否仍然可用

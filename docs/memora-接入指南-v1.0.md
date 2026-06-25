@@ -40,7 +40,7 @@
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
-**Manager 委托模式（v3.0）。** Agent 面类只做编排，领域操作委托给 6 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory`。
+**Manager 委托模式（v3.0）。** Agent 面类只做编排，领域操作委托给 8 个专职 Manager：`agent.persona` / `agent.tools` / `agent.skills` / `agent.config` / `agent.insight` / `agent.memory` / `agent.userProfile` / `agent.works`。
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -53,7 +53,7 @@
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
-│  │  - 6 个 Manager getter（委托模式）        │               │
+│  │  - 8 个 Manager getter（委托模式）        │               │
 │  │  ⚠️ 不包含：UI / LLM 配置 / 用户配置模板 │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘

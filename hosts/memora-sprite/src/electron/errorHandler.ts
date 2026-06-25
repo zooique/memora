@@ -114,8 +114,8 @@ export class ErrorHandler {
   /**
    * 从错误对象中提取错误代码（降级 fallback）
    *
-   * @deprecated P1-CODE-1 修复：新增错误应使用 `throw new MemoraError(ErrorCode.XXX, msg)` 显式指定 code，
-   *             不再依赖中文字符串匹配。此方法仅作为未携带 code 的遗留错误降级路径保留。
+   * @deprecated 新增错误应使用 `throw new MemoraError(ErrorCode.XXX, msg)` 显式指定 code。
+   *             此方法仅作为未携带 code 的遗留错误降级路径保留。
    */
   private extractErrorCode(error: Error): ErrorCode {
     // 检查常见的错误模式（降级路径，存在误匹配风险，新增错误应使用 MemoraError）

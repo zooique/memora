@@ -20,7 +20,7 @@ import { logger } from '@/logging/logger.js';
 import { cosineSimilarity } from '@/utils/math.js';
 
 /**
- * 嵌入服务接口（原 memory/types.ts 导出，重构后内联）
+ * 嵌入服务接口
  * 向量存储依赖此接口生成文本嵌入向量
  *
  * batchEmbed 返回向量数组，顺序与输入一致。
@@ -57,7 +57,7 @@ interface VectorStoreFile {
  * 纯 JS 实现，内存中维护向量索引，定期持久化到 JSON 文件
  * 适用于单用户本地场景（5k 条记录以内）
  *
- * 分层修复（年轮审判 R-03）：依赖 EmbeddingService 接口而非 llm/ 层的具体实现
+ * 依赖 EmbeddingService 接口（依赖倒置，与 llm/ 层解耦）
  */
 export class VectorStore {
   /** 内存中的向量索引 */

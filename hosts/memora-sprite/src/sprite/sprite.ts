@@ -568,7 +568,7 @@ export class Sprite {
    * 不符合类型的 value 会被忽略（保持原值），由调用方保证传入正确类型。
    */
   private setConfigField(key: SpriteConfigKey, value: unknown): void {
-    // P2-S3 重构：委托到 spriteConfig.ts 的纯函数，配置逻辑集中管理
+    // 委托到 spriteConfig.ts 的纯函数，配置逻辑集中管理
     applyConfigField(this.config, key, value);
   }
 

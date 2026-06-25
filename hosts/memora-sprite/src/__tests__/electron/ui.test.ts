@@ -503,7 +503,7 @@ describe('消息渲染', () => {
   });
 
   it('appendMessage: 精灵消息带召回记忆提示', () => {
-    // MS-12：memoryRecall 改为数组，支持多条召回记忆展示
+    // memoryRecall 为数组，支持多条召回记忆展示
     const el = uiManager.appendMessage({
       role: 'assistant',
       content: '回答',

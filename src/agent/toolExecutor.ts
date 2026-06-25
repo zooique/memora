@@ -276,7 +276,6 @@ export class ToolExecutor {
       const content = await readFile(absolutePath, 'utf-8');
       // 读取文件时自动触发生成/更新作品投影（fire-and-forget，不阻塞读取）
       if (this.workProjection) {
-        // P4-3 静默吞错改为记录警告日志，便于定位投影生成失败原因
         this.workProjection.ensureProjection(absolutePath, content, relativePath).catch((err) => {
           logger.warn({ err, path: absolutePath }, '作品投影生成失败');
         });

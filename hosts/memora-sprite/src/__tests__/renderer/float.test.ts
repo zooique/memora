@@ -12,7 +12,7 @@
  * - 拖动引导提示（localStorage + drag-hint visibility）
  * - 元素缺失防护（静默退出）
  *
- * P1-2 适配：事件从 MouseEvent/document 改为 PointerEvent/sphere + setPointerCapture。
+ * 事件基于 PointerEvent/sphere + setPointerCapture。
  * JSDOM 默认不支持 PointerEvent 和 setPointerCapture，需在 beforeEach 中 polyfill。
  */
 

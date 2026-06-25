@@ -13,8 +13,8 @@
  *
  * 宿主项目应实现 SqliteRelationStore（依赖 better-sqlite3）用于生产环境。
  */
-import type { MemoryRelation, RelationDirection } from './types.js';
-import type { IMemoryRelationStore } from './relationStore.js';
+import type { MemoryRelation, RelationDirection } from '@/memory/types.js';
+import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 
 export class InMemoryRelationStore implements IMemoryRelationStore {
   /** 关系列表（内存数组，不持久化） */
@@ -55,14 +55,10 @@ export class InMemoryRelationStore implements IMemoryRelationStore {
     if (direction === 'incoming') {
       return this.relations.filter((r) => r.targetId === memoryId).map((r) => ({ ...r }));
     }
-    // 'both'：合并两个方向并去重
-    const seen = new Set<MemoryRelation>();
-    for (const r of this.relations) {
-      if (r.sourceId === memoryId || r.targetId === memoryId) {
-        seen.add(r);
-      }
-    }
-    return [...seen].map((r) => ({ ...r }));
+    // 'both'：合并两个方向（每条关系最多匹配一次，无需去重）
+    return this.relations
+      .filter((r) => r.sourceId === memoryId || r.targetId === memoryId)
+      .map((r) => ({ ...r }));
   }
 
   /**

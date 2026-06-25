@@ -111,8 +111,7 @@ export class WindowManager {
       // 避免启动时闪深色（旧值为深色主题的 #1e1e2e）
       backgroundColor: '#f0f0f2',
       webPreferences: {
-        // P1-ROOT 修复：preload 改为 .cjs（CommonJS 格式），兼容 sandbox: true
-        // ESM 格式的 preload.js 与 sandbox 不兼容，导致 contextBridge 暴露失败
+        // preload 使用 .cjs（CommonJS 格式），兼容 sandbox: true；ESM 格式与 sandbox 不兼容
         preload: path.join(ELECTRON_DIR, 'preload.cjs'),
         contextIsolation: true,
         nodeIntegration: false,

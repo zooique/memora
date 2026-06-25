@@ -30,8 +30,25 @@ import {
 
 /** 工作记忆预览条数（最近 N 条） */
 const WORKING_PREVIEW = 5;
-/** 内容预览字符数 */
+/** 内容预览字符数（快照层） */
 const CONTENT_PREVIEW_LEN = 80;
+/** 搜索/推荐结果内容预览字符数（比快照层略长，便于用户判断相关性） */
+const SEARCH_PREVIEW_LEN = 120;
+/** 关联推荐：每个 source 采样 top-N 条 */
+const SUGGEST_TOP_PER_SOURCE = 3;
+/** 关联推荐：时效性衰减窗口（天），超过此天数归零 */
+const SUGGEST_RECENCY_WINDOW_DAYS = 30;
+/** source 健康度阈值（低于此值或超期触发 critical/warning） */
+const SOURCE_HEALTH_THRESHOLDS = {
+  /** 平均 score 低于此值 → critical */
+  CRITICAL_SCORE: 0.2,
+  /** 平均 score 低于此值 → warning */
+  WARNING_SCORE: 0.5,
+  /** 超过此天数未访问 → critical */
+  CRITICAL_DAYS: 30,
+  /** 超过此天数未访问 → warning */
+  WARNING_DAYS: 7,
+} as const;
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -195,7 +212,7 @@ export class MemoryInspector {
   }
 
   // ─── 写操作代理 ───────────────────────────────────────
-  // P2-DESIGN-6 修复：宿主项目通过 agent.memory 访问写操作，
+  // 宿主项目通过 agent.memory 访问写操作，
   // 无需绕过 inspector 直接访问 agent.storage（分层违规）。
   // 代理方法内部委托给 this.index（IMemoryStorage 实例）。
 
@@ -345,8 +362,8 @@ export class MemoryInspector {
       name: m.name,
       source: m.source,
       score: m.score,
-      // 截断长内容到 120 字符
-      contentPreview: m.content.length > 120 ? m.content.slice(0, 120) + '...' : m.content,
+      // 截断长内容到搜索预览长度
+      contentPreview: m.content.length > SEARCH_PREVIEW_LEN ? m.content.slice(0, SEARCH_PREVIEW_LEN) + '...' : m.content,
     }));
   }
 
@@ -408,7 +425,7 @@ export class MemoryInspector {
       source: memory.source,
       score: memory.score,
       similarity: vectorScore,
-      contentPreview: memory.content.length > 120 ? memory.content.slice(0, 120) + '...' : memory.content,
+      contentPreview: memory.content.length > SEARCH_PREVIEW_LEN ? memory.content.slice(0, SEARCH_PREVIEW_LEN) + '...' : memory.content,
     }));
   }
 
@@ -523,9 +540,9 @@ export class MemoryInspector {
 
       // 健康状态判定
       let status: SourceHealthStatus;
-      if (avgScore < 0.2 || daysSinceLastAccess > 30) {
+      if (avgScore < SOURCE_HEALTH_THRESHOLDS.CRITICAL_SCORE || daysSinceLastAccess > SOURCE_HEALTH_THRESHOLDS.CRITICAL_DAYS) {
         status = 'critical';
-      } else if (avgScore < 0.5 || daysSinceLastAccess > 7) {
+      } else if (avgScore < SOURCE_HEALTH_THRESHOLDS.WARNING_SCORE || daysSinceLastAccess > SOURCE_HEALTH_THRESHOLDS.WARNING_DAYS) {
         status = 'warning';
       } else {
         status = 'healthy';
@@ -599,8 +616,8 @@ export class MemoryInspector {
       const count = this.index.countBySource(source);
       if (count > 0 && !excludeSources.includes(source)) {
         const memories = this.index.getBySource(source);
-        // 取 score 最高的前 3 条
-        const top = memories.sort((a, b) => b.score - a.score).slice(0, 3);
+        // 取 score 最高的前 N 条
+        const top = memories.sort((a, b) => b.score - a.score).slice(0, SUGGEST_TOP_PER_SOURCE);
         for (const m of top) {
           if (!candidates.has(m.id)) {
             candidates.set(m.id, { memory: m, searchHit: false });
@@ -615,12 +632,12 @@ export class MemoryInspector {
     const scored: Array<{ memory: Memory; searchHit: boolean; relevance: number; reason: string }> = [];
 
     for (const { memory, searchHit } of candidates.values()) {
-      // 时效性分：7 天内线性衰减，超过 30 天归零
+      // 时效性分：窗口内线性衰减，超过窗口归零
       const accessedAt = new Date(memory.accessedAt);
       const daysSinceAccess = isNaN(accessedAt.getTime())
-        ? 30
+        ? SUGGEST_RECENCY_WINDOW_DAYS
         : (now - accessedAt.getTime()) / ONE_DAY_MS;
-      const recency = Math.max(0, 1 - daysSinceAccess / 30);
+      const recency = Math.max(0, 1 - daysSinceAccess / SUGGEST_RECENCY_WINDOW_DAYS);
 
       const relevance = memory.score * scoreWeight + recency * recencyWeight;
 
@@ -649,7 +666,7 @@ export class MemoryInspector {
       name: memory.name,
       source: memory.source,
       relevance: Math.round(relevance * 100) / 100,
-      contentPreview: memory.content.length > 120 ? memory.content.slice(0, 120) + '...' : memory.content,
+      contentPreview: memory.content.length > SEARCH_PREVIEW_LEN ? memory.content.slice(0, SEARCH_PREVIEW_LEN) + '...' : memory.content,
       reason,
     }));
   }

@@ -321,7 +321,7 @@ export class UserProfile {
    * 将 UserProfileEntry 转为 Memory（用于写入 SQLite）
    *
    * P2-5 content 字段使用 JSON 编码存储 category + value 元数据，
-   * name 字段改为固定可读标签，不再隐式编码 category。
+   * name 字段为固定可读标签，category 通过 content 的 JSON 元数据显式编码。
    * 确认状态：仅已确认条目调用此方法（待确认条目不写入存储）
    */
   private toMemory(entry: UserProfileEntry): Memory {

@@ -56,4 +56,16 @@ export const LOOP_CONSTANTS = {
 
   /** 摘要缓存 TTL：消息数增长超过此值时缓存过期，需重新生成摘要。 */
   SUMMARY_CACHE_TTL_MSGS: 10,
+
+  /** 召回记忆内容注入上下文时的截断长度（字符）。 */
+  RECALL_CONTENT_SLICE: 200,
+
+  /** 上下文摘要：参与摘要的最近消息条数。 */
+  SUMMARY_MSG_COUNT: 6,
+
+  /** 上下文摘要：单条消息内容截断长度（字符）。 */
+  SUMMARY_CONTENT_SLICE: 200,
+
+  /** 上下文摘要：LLM 调用 maxTokens 参数。 */
+  SUMMARY_MAX_TOKENS: 150,
 } as const;

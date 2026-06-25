@@ -104,10 +104,10 @@ export class MemoryController {
    * @returns 记忆列表项数组
    */
   list(source?: string, limit = 50): MemoryListItem[] {
-    // P2-DESIGN-6 修复：统一通过 agent.memory 访问，不再绕过 inspector 直接访问 agent.storage
+    // 统一通过 agent.memory 访问
     const inspector = this.agent.memory;
     if (!inspector) return [];
-    // P1-2 修复：传 source 时也应用 limit，避免全量返回破坏契约
+    // 传 source 时也应用 limit，避免全量返回
     const memories = source
       ? inspector.getBySource(source).slice(0, limit)
       : inspector.list(limit);

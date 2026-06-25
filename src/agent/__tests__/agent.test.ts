@@ -2,7 +2,7 @@
  * Agent 门面类单元测试
  *
  * 覆盖核心方法：
- * - inspect() · 3 层记忆快照（working / bootstrap / archive）
+ * - memory.snapshot() · 3 层记忆快照（working / bootstrap / archive）
  * - addRule() · Q-701
  * - getMessages()
  *
@@ -11,7 +11,7 @@
  * - 用 tmpdir 做项目根目录，不污染真实 .memora/
  * - 每个测试独立 tmp 目录
  *
- * 基元驱动记忆模型（2026-06-11 重构）：
+ * 基元驱动记忆模型：
  * - MemoryType/Permanence 枚举 → source 开放字符串
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -119,7 +119,7 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
     rmSync(tmpData, { recursive: true, force: true });
   });
 
-  it('init 后 inspect() 应返回 3 层快照结构', async () => {
+  it('init 后 memory.snapshot() 应返回 3 层快照结构', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -130,7 +130,7 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
     expect(snap).toHaveProperty('archive');
   });
 
-  it('inspect().working 应反映 AgentLoop 当前消息数', async () => {
+  it('memory.snapshot().working 应反映 AgentLoop 当前消息数', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -148,7 +148,7 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
     expect(lastUser).toBeDefined();
   });
 
-  it('inspect().bootstrap 应返回引导记忆', async () => {
+  it('memory.snapshot().bootstrap 应返回引导记忆', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
@@ -163,7 +163,7 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
     }
   });
 
-  it('inspect().archive 应包含 currentSession 与 currentSessionName 与 hint', async () => {
+  it('memory.snapshot().archive 应包含 currentSession 与 currentSessionName 与 hint', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 

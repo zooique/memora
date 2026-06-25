@@ -31,7 +31,7 @@ export interface Message {
   timestamp?: string;
   /**
    * 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall）
-   * MS-12：改为数组支持多条召回记忆展示，每条含 name/score/source
+   * 数组结构，支持多条召回记忆展示，每条含 name/score/source
    */
   memoryRecall?: Array<{ name: string; score: number; source: string }>;
 }

@@ -528,7 +528,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.insightExtractor) {
       const shouldExtract = this.insightExtractor.classify(input);
       if (shouldExtract === 'extract') {
-        // P4-2 静默吞错改为记录警告日志，便于定位 insight 提取失败原因
         const p = this.insightExtractor.extract(input, assistantContent).catch((err) => {
           logger.warn({ err }, 'Insight 提取失败');
           return null;
@@ -772,7 +771,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 非空断言守卫——将静默的 `!` 断言替换为抛出清晰错误的运行时检查
+   * 非空断言守卫——对 null/undefined 值抛出清晰错误的运行时检查
    *
    * @param value 可能为 null/undefined 的值
    * @param name 组件名称（用于错误消息）

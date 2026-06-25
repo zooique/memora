@@ -99,7 +99,7 @@
 
 ### 2.4 Manager 访问器（委托模式）
 
-v3.0 起，Agent 通过 6 个 getter 暴露专职 Manager。详见后续章节。
+v3.0 起，Agent 通过 8 个 getter 暴露专职 Manager。详见后续章节。
 
 | 访问器 | 类型 | 职责 |
 |--------|------|------|
@@ -808,9 +808,9 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 `initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory`
 
-### Manager 访问器（6 个）
+### Manager 访问器（8 个）
 
-`persona` / `tools` / `skills` / `config` / `insight` / `memory`
+`persona` / `tools` / `skills` / `config` / `insight` / `memory` / `userProfile` / `works`
 
 ### 各 Manager 公开成员
 
@@ -982,7 +982,7 @@ export type { ILogger } from 'memora';
 export { setLogger, logger } from 'memora';
 
 // 召回
-export { recall, extractKeywords, decayScores } from 'memora';
+export { recall, extractKeywords } from 'memora';
 export type { RecallOptions } from 'memora';
 
 // 角色
@@ -1025,6 +1025,6 @@ Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁�
 
 ---
 
-**版本**：v3.1
-**最后更新**：2026-06-15
+**版本**：v3.2
+**最后更新**：2026-06-25
 **配套文档**：[memora-接入指南-v1.0.md](./memora-接入指南-v1.0.md)（步骤式教程）

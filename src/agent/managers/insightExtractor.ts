@@ -34,6 +34,12 @@ const LOW_QUALITY_SCORE = 0.2;
 /** 预检去重：用户输入与已有 insight 的 Jaccard 相似度阈值 */
 const PRECHECK_SIMILARITY_THRESHOLD = 0.85;
 
+/** 写入去重：新 insight 与已有记忆的 Jaccard 相似度阈值（低于预检阈值，允许部分重叠） */
+const DEDUP_SIMILARITY_THRESHOLD = 0.7;
+
+/** 写入去重命中时，已有记忆 score 的提升幅度 */
+const DEDUP_SCORE_BOOST = 0.05;
+
 /** insight 提取：用户输入截断上限（字符） */
 const INSIGHT_USER_INPUT_LIMIT = 500;
 
@@ -269,12 +275,12 @@ ${contextSection}${candidatesSection}${relationsPrompt}
       const existing = this.index.search(snippet, 3);
       const existingMemory = existing.find((m) => {
         const similarity = this.jaccardSimilarity(insight, m.content);
-        return similarity > 0.7; // 阈值 70%
+        return similarity > DEDUP_SIMILARITY_THRESHOLD;
       });
 
       if (existingMemory) {
         // 已有相似记忆，更新 accessedAt 和 score（取较高值）
-        existingMemory.score = Math.min(1.0, Math.max(existingMemory.score, score) + 0.05);
+        existingMemory.score = Math.min(1.0, Math.max(existingMemory.score, score) + DEDUP_SCORE_BOOST);
         existingMemory.accessedAt = new Date().toISOString();
         this.index.upsert(existingMemory);
         logger.debug({ id: existingMemory.id }, 'extractInsight: 更新已有记忆');

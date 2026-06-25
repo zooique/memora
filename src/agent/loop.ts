@@ -556,7 +556,7 @@ export class AgentLoop {
    */
   private wrapWithRecalledContext(userInput: string, memories: readonly Memory[]): string {
     const memoryBlock = memories
-      .map((m) => `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, 200)}`)
+      .map((m) => `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, LOOP_CONSTANTS.RECALL_CONTENT_SLICE)}`)
       .join('\n');
 
     // SEC-04: 总量上限保护，超出时从尾部裁剪（最不相关）
@@ -795,10 +795,10 @@ export class AgentLoop {
     const messagesToSummarize = this.messages.slice(1);
     const recentMessages = messagesToSummarize
       .filter((m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
-      .slice(-6)
+      .slice(-LOOP_CONSTANTS.SUMMARY_MSG_COUNT)
       .map(
         (m) =>
-          `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, 200) : '[tool]'}`,
+          `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, LOOP_CONSTANTS.SUMMARY_CONTENT_SLICE) : '[tool]'}`,
       )
       .join('\n');
 
@@ -814,7 +814,7 @@ export class AgentLoop {
           },
           { role: 'user', content: recentMessages },
         ],
-        { maxTokens: 150, temperature: 0 },
+        { maxTokens: LOOP_CONSTANTS.SUMMARY_MAX_TOKENS, temperature: 0 },
       );
       let summary = '';
       for await (const chunk of stream) {

@@ -273,7 +273,7 @@ async function handleMemories(args: string, sprite: Sprite): Promise<void> {
 /**
  * 启动 CLI 交互循环
  *
- * D-01 修复：startSprite 不再内部调用 setupWizard。
+ * startSprite 不内部调用 setupWizard。
  * CLI 自行处理配置缺失的情况：先尝试启动，失败则引导用户配置后重试。
  */
 async function main(): Promise<void> {

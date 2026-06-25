@@ -9,9 +9,8 @@
  *   - 仅实现 ITracer 接口，通过 AgentOptions.tracer 注入
  *   - 与 auditManager 同构：JSONL 输出 + fire-and-forget 写入
  *
- * 重构（R1）：
- *   - 提取 JSONL 写入 + 截断逻辑到 JsonlAppender（DRY）
- *   - SpriteSpan 不再直接操作文件系统，委托给 JsonlAppender
+ * JSONL 写入与截断逻辑委托给 JsonlAppender（DRY）。
+ * SpriteSpan 不直接操作文件系统，委托给 JsonlAppender。
  *
  * 与审计日志的区别（M2 vs M3）：
  *   - audit.log：安全事件（文件访问/写入/拒绝）—— 合规追踪

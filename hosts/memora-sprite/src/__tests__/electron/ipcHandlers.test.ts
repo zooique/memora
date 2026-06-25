@@ -133,8 +133,7 @@ describe('ipcHandlers — P1 修复回归测试', () => {
       expect(() => registerIpcHandlers(ctx as never)).not.toThrow();
 
       // 第二次注册（模拟 reinitAgent 路径）：应清理旧通道后重新注册，不抛错
-      // P1 修复前：遗漏 SESSION_SWITCH/DELETE/RENAME 的 removeHandler，
-      // 导致 ipcMain.handle 重复注册抛 "Attempted to register a second handler"
+      // 验证重复注册时清理旧通道（SESSION_SWITCH/DELETE/RENAME 的 removeHandler）后重新注册不抛错
       expect(() => registerIpcHandlers(ctx as never)).not.toThrow();
     });
 
