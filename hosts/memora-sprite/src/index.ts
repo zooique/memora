@@ -189,13 +189,21 @@ async function createAgentInstance(
   // 精灵的工作空间：~/.memora-sprite/data/workspace/
   const workspaceDir = resolve(dataDir, 'workspace');
   const projectPath = opts?.projectPath ?? workspaceDir;
-  if (!existsSync(workspaceDir)) {
-    await mkdir(workspaceDir, { recursive: true });
-  }
 
-  // 确保 dataDir 存在
-  if (!existsSync(dataDir)) {
-    await mkdir(dataDir, { recursive: true });
+  // 确保所有必要的目录都存在（包括 config 下的子目录）
+  // 会话记录存储在 memora.db 中，不需要独立的 sessions 目录
+  const requiredDirs = [
+    dataDir,
+    workspaceDir,
+    configDir,
+    resolve(configDir, 'personas'),
+    resolve(configDir, 'skills'),
+    resolve(configDir, 'rules'),
+  ];
+  for (const dir of requiredDirs) {
+    if (!existsSync(dir)) {
+      await mkdir(dir, { recursive: true });
+    }
   }
 
   // 创建存储层（含关系存储侧车）

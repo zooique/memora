@@ -275,13 +275,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       storage: this.#config.storage,
       registryDir: this.#config.registryDir,
       // A-004: SecurityGuard 由 Agent 层创建，解除 memory→security 反向依赖
-      createSecurityGuard: (projectPath: string, memoraDir: string) =>
+      createSecurityGuard: (
+        projectPath: string,
+        memoraDir: string,
+        configDir?: string,
+        agentDataDir?: string,
+      ) =>
         new SecurityGuard(
           projectPath,
           memoraDir,
           this.#config.allowedPaths,
           this.#config.confirmWrites,
           this.#config.permission,
+          configDir ?? this.#config.configDir,
+          agentDataDir ?? this.#config.dataDir,
         ),
     });
 

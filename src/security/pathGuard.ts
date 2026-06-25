@@ -95,15 +95,37 @@ export class SecurityGuard {
    */
   private confirmationHandler: WriteConfirmationRequest | null = null;
 
+  /** 允许访问的根目录列表（白名单） */
+  private readonly allowedRoots: string[];
+
   constructor(
-    private readonly projectPath: string,
-    private readonly dataDir: string,
-    private readonly extraAllowedPaths: string[] = [],
+    projectPath: string,
+    memoraDir: string,
+    extraAllowedPaths: string[] = [],
     /** owner 是否启用写入二次确认；guest 强制开启 */
     public readonly confirmWrites: boolean = false,
     /** 权限模式 */
     public readonly permission: Permission = 'owner',
-  ) {}
+    /** Agent 级配置目录（personas/rules/skills 所在目录） */
+    configDir?: string,
+    /** Agent 级数据目录（memora.db/vectors 所在目录） */
+    agentDataDir?: string,
+  ) {
+    // 构建白名单根目录列表
+    this.allowedRoots = [
+      resolve(projectPath),
+      resolve(expandHome(memoraDir)),
+    ];
+    if (configDir) {
+      this.allowedRoots.push(resolve(expandHome(configDir)));
+    }
+    if (agentDataDir) {
+      this.allowedRoots.push(resolve(expandHome(agentDataDir)));
+    }
+    for (const p of extraAllowedPaths) {
+      this.allowedRoots.push(resolve(expandHome(p)));
+    }
+  }
 
   /**
    * 注册自定义写入确认回调（宿主程序接入）
@@ -170,35 +192,8 @@ export class SecurityGuard {
       }
     }
 
-    // 2. 白名单：项目目录（严格前缀匹配，追加 sep 防止兄弟目录绕过）
-    const projectRoot = resolve(this.projectPath);
-    if (resolved === projectRoot || resolved.startsWith(projectRoot + sep)) {
-      this.emitAudit({
-        type: 'path-allow',
-        path: resolved,
-        tool,
-        source,
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-
-    // 3. 白名单：数据目录（严格前缀匹配，追加 sep 防止兄弟目录绕过）
-    const memoraDir = resolve(expandHome(this.dataDir));
-    if (resolved === memoraDir || resolved.startsWith(memoraDir + sep)) {
-      this.emitAudit({
-        type: 'path-allow',
-        path: resolved,
-        tool,
-        source,
-        timestamp: new Date().toISOString(),
-      });
-      return;
-    }
-
-    // 4. 白名单：用户显式声明（严格前缀匹配，追加 sep 防止兄弟目录绕过）
-    for (const allowed of this.extraAllowedPaths) {
-      const allowedRoot = resolve(allowed);
+    // 2. 白名单：遍历所有允许的根目录（严格前缀匹配，追加 sep 防止兄弟目录绕过）
+    for (const allowedRoot of this.allowedRoots) {
       if (resolved === allowedRoot || resolved.startsWith(allowedRoot + sep)) {
         this.emitAudit({
           type: 'path-allow',

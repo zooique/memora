@@ -150,7 +150,7 @@ function asProjectEntryArray(value: unknown): ProjectEntry[] {
  * ProjectManager 构造选项
  */
 export interface ProjectManagerOptions {
-  /** Agent 级数据目录（memora.db + sessions/ 的父目录） */
+  /** Agent 级数据目录（memora.db 所在目录） */
   dataDir: string;
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   storage?: IMemoryStorage;
@@ -159,11 +159,16 @@ export interface ProjectManagerOptions {
   /**
    * A-004: SecurityGuard 工厂函数（由 Agent 层注入，解除 memory→security 反向依赖）
    *
-   * 在项目切换时调用，传入项目路径和 .memora/ 目录，
+   * 在项目切换时调用，传入项目路径、.memora/ 目录、Agent 级配置目录和数据目录，
    * 返回一个配置好的 SecurityGuard 实例。
    * 不提供时 ProjectContext.security 为 null（宿主需自行处理安全校验）。
    */
-  createSecurityGuard?: (projectPath: string, memoraDir: string) => SecurityGuard;
+  createSecurityGuard?: (
+    projectPath: string,
+    memoraDir: string,
+    configDir?: string,
+    agentDataDir?: string,
+  ) => SecurityGuard;
 }
 
 /**
@@ -177,7 +182,7 @@ export interface ProjectManagerOptions {
 export class ProjectManager {
   /** 项目注册表路径 */
   private readonly registryPath: string;
-  /** Agent 级数据目录（memora.db + sessions/ 的父目录） */
+  /** Agent 级数据目录（memora.db 所在目录） */
   private readonly agentDataDir: string;
   /** Agent 级存储实例（全局共享，不随项目切换重建） */
   private agentIndex: IMemoryStorage | null = null;
@@ -188,7 +193,12 @@ export class ProjectManager {
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
   /** A-004: SecurityGuard 工厂函数（由 Agent 层注入） */
-  private readonly createSecurityGuard?: (projectPath: string, memoraDir: string) => SecurityGuard;
+  private readonly createSecurityGuard?: (
+    projectPath: string,
+    memoraDir: string,
+    configDir?: string,
+    agentDataDir?: string,
+  ) => SecurityGuard;
 
   constructor(options: ProjectManagerOptions) {
     const { dataDir, storage, registryDir, createSecurityGuard } = options;
@@ -295,7 +305,7 @@ export class ProjectManager {
 
       // A-004: 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
       const security = this.createSecurityGuard
-        ? this.createSecurityGuard(projectPath, memoraDir)
+        ? this.createSecurityGuard(projectPath, memoraDir, configDir, this.agentDataDir)
         : null;
 
       // 注册到项目表

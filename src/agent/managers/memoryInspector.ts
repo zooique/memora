@@ -93,7 +93,7 @@ export interface ArchiveSnapshot {
   /** 关系边总数（ADR-014，relationStore 未注入时为 0） */
   relationCount: number;
   currentSession: string;
-  /** 当前会话全名（含日期前缀，与 sessions/*.md 文件名一致） */
+  /** 当前会话全名（含日期前缀） */
   currentSessionName: string;
   hint: string;
   /** 归档记忆来源分布 */

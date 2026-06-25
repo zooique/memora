@@ -100,6 +100,16 @@ export class ChatPanelManager {
   /** QC-11 加载更多按钮回调（事件委托模式） */
   private loadMoreCallback: (() => void) | null = null;
 
+  // ─── 安全兜底 ──────────────────────────────────────────
+
+  /**
+   * 流式输出超时兜底定时器
+   *
+   * 当 isStreaming 卡在 true 时（SPRITE_STREAM_END 未到达），自动重置状态。
+   * 每次收到新 chunk 时重置定时器，30 秒无新 chunk 则判定为卡死。
+   */
+  private _streamSafetyTimer: ReturnType<typeof setTimeout> | null = null;
+
   // ─── 事件清理 ──────────────────────────────────────────
 
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
@@ -176,6 +186,8 @@ export class ChatPanelManager {
       this._rafHandle = null;
       this._pendingRaF = false;
     }
+    // 清除超时兜底定时器
+    this._clearStreamSafetyTimer();
     this.events.cleanup();
   }
 
@@ -317,6 +329,9 @@ export class ChatPanelManager {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
+    // 每次收到新 chunk 重置超时兜底定时器（30 秒无新 chunk 则判定为卡死）
+    this._resetStreamSafetyTimer();
+
     // 定位到气泡元素（assistant 消息结构：message > message-bubble）
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
@@ -429,6 +444,8 @@ export class ChatPanelManager {
     // 所有流式消息都已完成时，重置 isStreaming 状态和按钮
     if (this.streamingMessages.size === 0) {
       this.state.isStreaming = false;
+      // 清除超时兜底定时器（正常结束）
+      this._clearStreamSafetyTimer();
       this.host.updateSendButton();
     }
   }
@@ -696,6 +713,9 @@ export class ChatPanelManager {
     this.streamingMessages.set(messageId, el);
     this.state.isStreaming = true;
 
+    // 启动超时兜底：30 秒无新 chunk 则自动重置（防止 SPRITE_STREAM_END 丢失导致 UI 卡死）
+    this._resetStreamSafetyTimer();
+
     // 更新按钮为停止姿态
     this.host.updateSendButton();
   }
@@ -712,6 +732,8 @@ export class ChatPanelManager {
     }
     this.streamingMessages.clear();
     this.state.isStreaming = false;
+    // 清除超时兜底定时器（手动停止）
+    this._clearStreamSafetyTimer();
 
     // 更新按钮为发送姿态
     this.host.updateSendButton();
@@ -860,7 +882,37 @@ export class ChatPanelManager {
     // 清理流式消息映射和 UI 状态
     this.streamingMessages.clear();
     this.state.isStreaming = false;
+    // 清除超时兜底定时器
+    this._clearStreamSafetyTimer();
     this.host.updateSendButton();
+  }
+
+  // ─── 安全兜底定时器 ─────────────────────────────────────
+
+  /**
+   * 重置流式输出超时兜底定时器
+   *
+   * 每次收到新 chunk 时调用，30 秒无新 chunk 则自动重置 isStreaming。
+   * 防止 SPRITE_STREAM_END 丢失导致 UI 永远卡在"回答中"状态。
+   */
+  private _resetStreamSafetyTimer(): void {
+    this._clearStreamSafetyTimer();
+    this._streamSafetyTimer = setTimeout(() => {
+      if (this.state.isStreaming) {
+        // 强制重置流式状态
+        this.streamingMessages.clear();
+        this.state.isStreaming = false;
+        this.host.updateSendButton();
+      }
+    }, 30_000);
+  }
+
+  /** 清除超时兜底定时器 */
+  private _clearStreamSafetyTimer(): void {
+    if (this._streamSafetyTimer !== null) {
+      clearTimeout(this._streamSafetyTimer);
+      this._streamSafetyTimer = null;
+    }
   }
 
   // ─── 空状态引导 ─────────────────────────────────────────

@@ -142,13 +142,18 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
             count: truncationAfter - truncationBefore,
           });
         }
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+        // done 信号：不 break，让 for-await 自然结束。
+        // agent.chat() 在 done 后仍需执行 appendAssistant（保存助手消息）
+        // 和 postProcess（归档后处理），break 会导致 return() 被调用，
+        // 跳过这些关键步骤。finally 块会在 generator 自然结束后发送 SPRITE_STREAM_END。
       } else if (chunk.type === 'aborted') {
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+        // UX-PP-04 中断系统消息（在 finally 发送 SPRITE_STREAM_END 之前）
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, {
           text: `[已中断：${chunk.reason}]`,
           kind: 'system',
         });
+        // aborted 信号：停止处理后续 chunk，由 finally 统一发送 SPRITE_STREAM_END
+        break;
       }
     }
   } catch (error) {
@@ -167,10 +172,17 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
         text: `对话出错：${toError(error).message}`,
       });
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
     }
+    // 错误路径：由 finally 统一发送 SPRITE_STREAM_END
     errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
   } finally {
+    // 无论生成器以何种方式退出（done/aborted/异常/窗口销毁），都确保发送 SPRITE_STREAM_END。
+    // 修复根因：原架构中 done/aborted 时直接发送 SPRITE_STREAM_END 并 break，但异常路径依赖
+    // catch 块正常执行。如果 catch 内部再次抛出、窗口在 catch 执行前销毁、或生成器以其他方式
+    // 终止，SPRITE_STREAM_END 将不会发送，导致渲染进程 isStreaming 永远卡在 true。
+    if (!fullWindow.isDestroyed()) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+    }
     ctx.setAbortController(null);
     // 流式结束：托盘切回 idle 状态（绿色静态）
     ctx.trayManager?.setState('idle');
