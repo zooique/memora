@@ -22,7 +22,7 @@
 // 通过 app.commandLine 追加 --console-utf8 标志，让 Electron 强制使用 UTF-8 编码
 // 注意：import 语句在 ES 模块中会被提升到文件顶部，因此 app.commandLine.appendSwitch
 //       必须紧跟在第一条 import 之后、任何其他模块加载之前执行
-import { app, ipcMain, screen, globalShortcut, powerMonitor } from 'electron';
+import { app, ipcMain, screen, globalShortcut, powerMonitor, clipboard } from 'electron';
 app.commandLine.appendSwitch('console-utf8');
 
 import * as path from 'node:path';
@@ -53,6 +53,9 @@ import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/audit/auditManager.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 import { ShortcutManager, SHORTCUT_ACTIONS } from './shortcuts.js';
+// Phase 3.1：剪贴板三重保护处理器
+import { ClipboardHandler } from './clipboardHandler.js';
+import type { ClipboardEventType } from './clipboardHandler.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
@@ -133,6 +136,9 @@ let auditManager: AuditManager | null = null;
 
 /** Phase 3.3 全局快捷键管理器（在 initializeApp 中创建） */
 let shortcutManager: ShortcutManager | null = null;
+
+/** Phase 3.1 剪贴板处理器（在 setupAgentReady 后创建，注入 emit 回调转发到渲染进程） */
+let clipboardHandler: ClipboardHandler | null = null;
 
 // P2-DESIGN-4 修复：精灵事件订阅管理已移至 spriteEventBridge.ts
 
@@ -517,6 +523,50 @@ async function initializeApp(): Promise<void> {
     // PresenceController 监听锁屏/挂起/解锁/恢复 + 窗口焦点变化
     // 用户回来时触发 ProactiveEngine.checkPending() 检查累积事件
     sprite?.bindPresence(powerMonitor, app);
+
+    // Phase 3.1：集成剪贴板三重保护
+    // ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程
+    // 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容
+    clipboardHandler = new ClipboardHandler(clipboard, {
+      emit: (event: ClipboardEventType, payload?: unknown) => {
+        const fullWindow = windowManager.getFullWindow();
+        if (!fullWindow || fullWindow.isDestroyed()) return;
+        // 将 ClipboardHandler 事件映射到 IPC 推送通道
+        switch (event) {
+          case 'changed':
+            // 剪贴板有变化，通知 UI 显示"分析"提示（不携带内容）
+            fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_CHANGED);
+            break;
+          case 'sensitive-ignored':
+            // 敏感内容已静默忽略，通知 UI 记录日志（携带 type）
+            fullWindow.webContents.send(
+              MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_SENSITIVE_IGNORED,
+              payload,
+            );
+            break;
+          case 'analysis-ready':
+            // 内容已通过检测，通知 UI 展示确认对话框（携带 content）
+            fullWindow.webContents.send(
+              MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_READY,
+              payload,
+            );
+            break;
+          case 'analysis-rejected':
+            // 内容被输入护栏拦截，通知 UI 提示原因（携带 reason）
+            fullWindow.webContents.send(
+              MAIN_TO_RENDERER_CHANNELS.CLIPBOARD_ANALYSIS_REJECTED,
+              payload,
+            );
+            break;
+        }
+      },
+    });
+    // 注册 IPC 处理器：渲染进程调用 clipboard-analyze 触发主动分析
+    ipcMain.handle(IPC_CHANNELS.CLIPBOARD_ANALYZE, () => {
+      return clipboardHandler?.analyze() ?? false;
+    });
+    // 启动剪贴板变化检测轮询
+    clipboardHandler.startPolling();
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
@@ -611,6 +661,9 @@ app.on('before-quit', async (e) => {
     // Phase 3.3：注销全局快捷键，避免退出后残留占用
     shortcutManager?.unregisterAll();
     shortcutManager = null;
+    // Phase 3.1：停止剪贴板轮询，清理定时器
+    clipboardHandler?.stopPolling();
+    clipboardHandler = null;
     if (closeSprite) {
       await closeSprite();
     }

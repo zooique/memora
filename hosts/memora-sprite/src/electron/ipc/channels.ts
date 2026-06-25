@@ -130,6 +130,10 @@ export const IPC_CHANNELS = {
   EXPAND_TO_FULL: 'expand-to-full',
   /** 请求显示浮动窗口右键菜单 */
   FLOAT_CONTEXT_MENU: 'float-context-menu',
+
+  // ─── 剪贴板（Phase 3.1：三重保护） ────────────────────
+  /** 渲染进程 → 主进程：请求分析剪贴板内容（用户点击"分析"按钮触发） */
+  CLIPBOARD_ANALYZE: 'clipboard-analyze',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */
@@ -202,6 +206,16 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    * 携带路径、工具名等信息，渲染层显示确认对话框
    */
   WRITE_CONFIRMATION: 'write-confirmation',
+
+  // ─── 剪贴板（Phase 3.1：三重保护推送） ────────────────
+  /** 剪贴板内容已变化（不携带内容，仅通知 UI 显示"分析"提示） */
+  CLIPBOARD_CHANGED: 'clipboard-changed',
+  /** 检测到敏感内容，已静默忽略（携带 type，供 UI 记录日志） */
+  CLIPBOARD_SENSITIVE_IGNORED: 'clipboard-sensitive-ignored',
+  /** 内容已通过检测，等待用户确认（携带 content，UI 展示确认对话框） */
+  CLIPBOARD_ANALYSIS_READY: 'clipboard-analysis-ready',
+  /** 内容被输入护栏拦截（携带 reason，UI 提示拦截原因） */
+  CLIPBOARD_ANALYSIS_REJECTED: 'clipboard-analysis-rejected',
 } as const;
 
 // ─── IPC 数据传输类型 ────────────────────────────────────
