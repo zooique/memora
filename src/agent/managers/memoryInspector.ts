@@ -452,6 +452,19 @@ export class MemoryInspector {
   }
 
   /**
+   * 查询全部关系边
+   *
+   * 用于宿主 UI 渲染拓扑可视化（阶段 2.4）。
+   * relationStore 未注入时返回空数组（向后兼容）。
+   *
+   * @returns 全部关系边数组
+   */
+  getAllRelations(): MemoryRelation[] {
+    if (!this.relationStore) return [];
+    return this.relationStore.getAllRelations();
+  }
+
+  /**
    * 统计关系边总数
    *
    * 用于 stats() 和 snapshot() 的 relationCount 字段。

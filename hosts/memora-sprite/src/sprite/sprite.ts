@@ -545,7 +545,11 @@ export class Sprite {
    * @returns 仪表盘数据（总数、按来源分组、推荐列表）
    */
   dashboard(): DashboardData {
-    return this.memoryController.dashboard();
+    const data = this.memoryController.dashboard();
+    // Phase 2.3：检测里程碑事件并注入主动提示队列
+    // 纯计算，幂等保护，空数据时静默
+    this.proactiveEngine.checkMilestones(data);
+    return data;
   }
 
   /**

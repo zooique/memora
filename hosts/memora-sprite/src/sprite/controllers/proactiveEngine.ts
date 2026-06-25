@@ -10,6 +10,7 @@
  * 宿主（main.ts 的事件监听器）负责接收事件并决定是否展示为 banner。
  */
 import { logger } from 'memora';
+import type { DashboardData } from './memoryController.js';
 
 /** 待提示事件 */
 interface PendingNotice {
@@ -31,10 +32,23 @@ export interface ProactiveConfig {
 /** 精灵事件发射器 */
 export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string; triggers: string[]; silent: boolean }) => void;
 
+/** 里程碑触发结果（Phase 2.3） */
+export interface MilestoneTrigger {
+  /** 里程碑类型标识（如 memory_magnitude_2、new_source_profile） */
+  type: string;
+  /** 人类可读描述（用于 addNotice 摘要） */
+  summary: string;
+}
+
 /** 主动提示引擎 */
 export class ProactiveEngine {
   /** P1-7 修复：pendingNotices 最大累积上限，防止长时间静默或 cooldown 期间内存泄漏 */
   private static readonly MAX_PENDING_NOTICES = 100;
+
+  /** Phase 2.3：已通知的记忆量级（幂等保护，重启重置符合"自然遗忘"） */
+  private noticedMagnitudes: Set<number> = new Set();
+  /** Phase 2.3：已知的 source 类型（首次出现时触发里程碑） */
+  private knownSources: Set<string> = new Set();
 
   private config: ProactiveConfig;
   private emitSprite: SpriteEmitter | null = null;
@@ -139,6 +153,10 @@ export class ProactiveEngine {
       const count = typeCounts.get('file')!;
       parts.push(count > 1 ? `检测到 ${count} 次文件变化` : '检测到文件变化');
     }
+    if (typeCounts.has('milestone')) {
+      const count = typeCounts.get('milestone')!;
+      parts.push(count > 1 ? `达成了 ${count} 个里程碑` : '达成了新的里程碑');
+    }
 
     // 摘要中最有信息量的一条
     const bestSummary = summaries.find(s => s.length > 0);
@@ -154,5 +172,73 @@ export class ProactiveEngine {
     prompt += '——需要我帮你整理一下吗？';
 
     return prompt;
+  }
+
+  // ─── 里程碑模式检测（Phase 2.3） ─────────────────────────
+
+  /**
+   * 检测里程碑事件并注入到待提示队列
+   *
+   * 从仪表盘数据实时推导，不依赖 LLM，不新增存储。
+   * 幂等保护：已通知的量级/源不会重复触发（重启重置符合"自然遗忘"原则）。
+   *
+   * 检测模式：
+   *   1. 记忆量级突破（Math.log10(total) ≥ 2，即首次达到 100/1000/...条）
+   *   2. 新 source 类型首次出现
+   *
+   * @param dashboard 记忆仪表盘数据
+   * @returns 本次检测触发的里程碑列表（已注入 addNotice，返回值仅供测试/调试用）
+   */
+  checkMilestones(dashboard: DashboardData): MilestoneTrigger[] {
+    const triggers: MilestoneTrigger[] = [];
+
+    // 模式 1：记忆量级突破（不硬编码具体数字，用数量级）
+    // magnitude ≥ 2 表示首次达到 100 条（10^2）
+    if (dashboard.total > 0) {
+      const magnitude = Math.floor(Math.log10(dashboard.total));
+      if (magnitude >= 2 && !this.noticedMagnitudes.has(magnitude)) {
+        const label = this.magnitudeLabel(magnitude);
+        triggers.push({
+          type: `memory_magnitude_${magnitude}`,
+          summary: `积累了${label}记忆`,
+        });
+        this.noticedMagnitudes.add(magnitude);
+      }
+    }
+
+    // 模式 2：新 source 类型首次出现
+    const currentSources = Object.keys(dashboard.bySource);
+    for (const source of currentSources) {
+      if (!this.knownSources.has(source)) {
+        triggers.push({
+          type: `new_source_${source}`,
+          summary: `首次从 ${source} 中提取了记忆`,
+        });
+        this.knownSources.add(source);
+      }
+    }
+
+    // 将触发的里程碑注入待提示队列
+    for (const trigger of triggers) {
+      this.addNotice('milestone', trigger.summary);
+    }
+
+    return triggers;
+  }
+
+  /**
+   * 量级数字转人类可读标签
+   *
+   * @param magnitude 数量级（2=百，3=千，4=万...）
+   * @returns 中文量级描述
+   */
+  private magnitudeLabel(magnitude: number): string {
+    const labels: Record<number, string> = {
+      2: '上百条',
+      3: '上千条',
+      4: '上万条',
+      5: '十万条',
+    };
+    return labels[magnitude] ?? `10^${magnitude} 条`;
   }
 }

@@ -306,3 +306,133 @@ describe('Sprite · 默契度评估（Phase 2.2）', () => {
     expect(assessment.factors[0]).toContain('记忆总数');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：里程碑模式检测（Phase 2.3）
+// ═══════════════════════════════════════════════════════════════
+
+describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
+  let agent: Agent;
+  let sprite: Sprite;
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = join(tmpdir(), `memora-milestone-${Date.now()}`);
+    mkdirSync(tmpDir, { recursive: true });
+    agent = createTestAgent(tmpDir);
+    await agent.init();
+    sprite = new Sprite({ agent, dataDir: tmpDir });
+  });
+
+  afterEach(async () => {
+    sprite.stop();
+    await agent.close();
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* 忽略清理失败 */ }
+  });
+
+  it('空仪表盘不应触发任何里程碑', () => {
+    const proactiveEvents: { prompt: string; triggers: string[] }[] = [];
+    sprite.on('proactivePrompt', (payload) => {
+      proactiveEvents.push({ prompt: payload.prompt, triggers: payload.triggers });
+    });
+    sprite.start();
+
+    // 空仪表盘调用 dashboard
+    sprite.dashboard();
+
+    // 不应有里程碑事件（total=0，无 source）
+    expect(proactiveEvents.length).toBe(0);
+  });
+
+  it('新 source 类型首次出现应触发里程碑', () => {
+    const proactiveEvents: { prompt: string; triggers: string[] }[] = [];
+    sprite.on('proactivePrompt', (payload) => {
+      proactiveEvents.push({ prompt: payload.prompt, triggers: payload.triggers });
+    });
+    sprite.start();
+
+    // 写入一条 rule 记忆（触发新 source 里程碑）
+    const now = new Date().toISOString();
+    agent.memory!.upsert({
+      id: 'rule:first',
+      content: '第一条规则',
+      source: 'rule',
+      name: 'rule-first',
+      createdAt: now,
+      accessedAt: now,
+      score: 0.5,
+    });
+
+    // 调用 dashboard 触发里程碑检测
+    sprite.dashboard();
+
+    // 累积事件可能未达阈值，手动检查 pendingCount
+    expect(sprite.pendingCount).toBeGreaterThan(0);
+  });
+
+  it('记忆量级达到 100 应触发量级里程碑', () => {
+    const proactiveEvents: { prompt: string; triggers: string[] }[] = [];
+    sprite.on('proactivePrompt', (payload) => {
+      proactiveEvents.push({ prompt: payload.prompt, triggers: payload.triggers });
+    });
+    sprite.start();
+
+    // 写入 100 条记忆（触发 magnitude=2 里程碑）
+    const now = new Date().toISOString();
+    for (let i = 0; i < 100; i++) {
+      agent.memory!.upsert({
+        id: `rule:bulk-${i}`,
+        content: `规则 ${i}`,
+        source: 'rule',
+        name: `rule-bulk-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+
+    // 调用 dashboard 触发里程碑检测
+    sprite.dashboard();
+
+    // 量级突破 + 新 source 累积达阈值，应发射主动提示
+    // 注意：tryEmit 成功后 pendingCount 会被清空（splice(0)），故断言 proactiveEvents 而非 pendingCount
+    expect(proactiveEvents.length).toBeGreaterThan(0);
+    // 提示应包含量级里程碑描述（"上百条" 是 magnitude=2 的标签）
+    const event = proactiveEvents[0];
+    expect(event.prompt).toContain('里程碑');
+    expect(event.prompt).toContain('上百条');
+  });
+
+  it('相同量级不应重复触发里程碑（幂等保护）', () => {
+    const proactiveEvents: { prompt: string; triggers: string[] }[] = [];
+    sprite.on('proactivePrompt', (payload) => {
+      proactiveEvents.push({ prompt: payload.prompt, triggers: payload.triggers });
+    });
+    sprite.start();
+
+    // 写入 100 条记忆
+    const now = new Date().toISOString();
+    for (let i = 0; i < 100; i++) {
+      agent.memory!.upsert({
+        id: `rule:idem-${i}`,
+        content: `规则 ${i}`,
+        source: 'rule',
+        name: `rule-idem-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+
+    // 第一次调用 dashboard：触发里程碑
+    sprite.dashboard();
+    const firstEventCount = proactiveEvents.length;
+
+    // 第二次调用 dashboard：不应重复触发（幂等保护）
+    sprite.dashboard();
+    const secondEventCount = proactiveEvents.length;
+
+    // 事件数不应增加（noticedMagnitudes/knownSources 已记录，不会重复触发）
+    expect(secondEventCount).toBe(firstEventCount);
+  });
+});
