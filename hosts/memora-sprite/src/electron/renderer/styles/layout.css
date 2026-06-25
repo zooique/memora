@@ -368,6 +368,96 @@
   margin-bottom: 6px; /* ADR-NAV-001 增大标题与列表间距（原 4px） */
 }
 
+/* ─── Phase 4.3 第二批：技能文件拖入安装区域 ─────────────── */
+/*
+ * dropzone 设计原则：
+ * - 默认态：虚线边框 + 浅色背景，提示可拖入
+ * - hover/focus 态：边框变实色 + 背景提亮，反馈可点击
+ * - dragover 态：边框变强调色 + 背景高亮，反馈已就绪接收
+ * - 安装中态：降低透明度 + 禁用指针，避免重复触发
+ * - 失败态：边框变红色，短暂闪烁后恢复（由 .is-error 类控制）
+ */
+#skill-install-section {
+  margin-top: 8px;
+}
+
+.skill-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 10px;
+  border: 1.5px dashed var(--surface2);
+  border-radius: var(--radius-md);
+  background: var(--window-bg-2);
+  cursor: pointer;
+  /* UI-AUDIT: 使用动画时长变量替代硬编码，保持设计系统一致性 */
+  transition: border-color var(--transition-fast),
+              background var(--transition-fast),
+              opacity var(--transition-fast);
+  /* 支持键盘聚焦（tabindex=0），与 hover 态视觉一致 */
+  outline: none;
+}
+
+.skill-dropzone:hover,
+.skill-dropzone:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* dragover 态：由 JS 在 dragenter/dragover 时添加 .is-dragover 类 */
+.skill-dropzone.is-dragover {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-soft);
+  /* 强调色阴影提示已就绪接收 */
+  box-shadow: var(--shadow-accent-sm);
+}
+
+/* 安装中态：由 JS 在调用 installSkill 期间添加 .is-installing 类 */
+.skill-dropzone.is-installing {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* 失败态：由 JS 在安装失败时短暂添加 .is-error 类 */
+.skill-dropzone.is-error {
+  border-color: var(--red);
+  background: rgba(220, 38, 38, 0.08);
+  /* 短暂闪烁动画提示错误 */
+  animation: skill-dropzone-shake 0.4s ease;
+}
+
+@keyframes skill-dropzone-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+.dropzone-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.dropzone-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.dropzone-hint {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.dropzone-subtext {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .suggestion-list {
   list-style: none;
   padding: 0;

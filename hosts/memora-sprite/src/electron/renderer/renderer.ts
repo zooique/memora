@@ -243,6 +243,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // ─── Phase 4.3 第二批：技能文件拖入安装初始化 ──────────────
+  // 注册安装成功回调：刷新仪表盘技能列表 + 计数
+  uiManager.onSkillInstalled(() => {
+    void memoryController.loadDashboard();
+  });
+  // 初始化 dropzone 事件监听（dragover/drop/click/change）
+  setupSkillDropzone(uiManager);
+
   // 加载 LLM 配置到设置面板（无论 Agent 是否就绪都加载）
   await settingsController.loadLlmConfig();
 
@@ -512,4 +520,96 @@ function setupBusinessLogic(
   uiManager.setSessionRenameCallback((sessionId: string) => {
     void sessionController.renameSession(sessionId);
   });
+}
+
+// ─── Phase 4.3 第二批：技能文件拖入安装 dropzone 初始化 ──────
+
+/**
+ * 初始化技能拖入安装区域的事件监听
+ *
+ * 绑定以下事件：
+ * - dragenter/dragover：添加 .is-dragover 类，反馈可接收
+ * - dragleave/drop：移除 .is-dragover 类
+ * - drop：提取 File[] 调用 uiManager.handleSkillDrop
+ * - click：触发文件选择对话框（uiManager.handleSkillFileSelect）
+ * - change：文件选择后触发，提取 File[] 调用 uiManager.handleSkillDrop
+ * - keydown：Enter/Space 触发点击（支持键盘可访问性，tabindex=0）
+ *
+ * @param uiManager UI 管理器实例
+ */
+function setupSkillDropzone(uiManager: UIManager): void {
+  const dropzone = document.getElementById('skill-dropzone');
+  const fileInput = document.getElementById('skill-file-input') as HTMLInputElement | null;
+  if (!dropzone) {
+    // dropzone 不存在时静默降级（HTML 可能被裁剪）
+    return;
+  }
+
+  // dragenter/dragover：阻止默认行为（禁止浏览器打开文件）+ 添加高亮类
+  const handleDragOver = (e: DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.add('is-dragover');
+  };
+
+  // dragleave：移除高亮类（仅当离开 dropzone 本身时触发，避免子元素切换抖动）
+  const handleDragLeave = (e: DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    // relatedTarget 为 null 或不在 dropzone 内时才移除高亮
+    const related = e.relatedTarget as Node | null;
+    if (!related || !dropzone.contains(related)) {
+      dropzone.classList.remove('is-dragover');
+    }
+  };
+
+  // drop：提取文件 + 移除高亮 + 调用安装
+  const handleDrop = (e: DragEvent): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzone.classList.remove('is-dragover');
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      // FileList 转为数组传递
+      const fileArray = Array.from(files);
+      void uiManager.handleSkillDrop(fileArray);
+    }
+  };
+
+  // click：触发文件选择对话框
+  const handleClick = (): void => {
+    uiManager.handleSkillFileSelect();
+  };
+
+  // keydown：Enter/Space 触发点击（键盘可访问性）
+  const handleKeydown = (e: KeyboardEvent): void => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      uiManager.handleSkillFileSelect();
+    }
+  };
+
+  // change：文件选择后触发
+  const handleFileChange = (): void => {
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+      const fileArray = Array.from(fileInput.files);
+      void uiManager.handleSkillDrop(fileArray);
+      // 清空 input.value 允许重复选择同一文件（否则 change 事件不触发）
+      fileInput.value = '';
+    }
+  };
+
+  // 注册事件监听器（beforeunload 时由 uiManager.cleanup 统一清理？）
+  // 注意：dropzone 事件不通过 EventTracker 管理，因为 setupSkillDropzone 在
+  // DOMContentLoaded 内调用，且 dropzone 元素随页面卸载自动销毁。
+  // 若未来需要更精细的清理，可改为 EventTracker 模式。
+  dropzone.addEventListener('dragenter', handleDragOver);
+  dropzone.addEventListener('dragover', handleDragOver);
+  dropzone.addEventListener('dragleave', handleDragLeave);
+  dropzone.addEventListener('drop', handleDrop);
+  dropzone.addEventListener('click', handleClick);
+  dropzone.addEventListener('keydown', handleKeydown);
+  if (fileInput) {
+    fileInput.addEventListener('change', handleFileChange);
+  }
 }

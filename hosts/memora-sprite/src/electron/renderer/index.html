@@ -125,6 +125,21 @@
           <ul id="skills-list" class="skills-list"></ul>
         </div>
 
+        <!-- Phase 4.3 第二批：技能文件拖入安装区域 -->
+        <!-- 用户可将 .md 技能文件拖入此区域或点击选择文件 -->
+        <div id="skill-install-section" class="dashboard-section">
+          <h3>安装技能</h3>
+          <div id="skill-dropzone" class="skill-dropzone" tabindex="0" role="button"
+               aria-label="拖入技能文件或点击选择">
+            <div class="dropzone-icon">📥</div>
+            <div class="dropzone-text">
+              <span class="dropzone-hint">拖入 .md 技能文件</span>
+              <span class="dropzone-subtext">或点击选择文件</span>
+            </div>
+            <input type="file" id="skill-file-input" accept=".md" hidden />
+          </div>
+        </div>
+
         <!-- 记忆源健康状态（消费内核 sourceHealth()） -->
         <!-- 由 renderSourceHealth() 动态填充，无数据时隐藏 -->
         <div id="source-health" class="dashboard-section hidden">
