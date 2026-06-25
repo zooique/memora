@@ -134,6 +134,10 @@ export const IPC_CHANNELS = {
   // ─── 剪贴板（Phase 3.1：三重保护） ────────────────────
   /** 渲染进程 → 主进程：请求分析剪贴板内容（用户点击"分析"按钮触发） */
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
+
+  // ─── 技能安装（Phase 4.3） ────────────────────────────
+  /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容） */
+  SKILL_INSTALL: 'skill-install',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */
@@ -222,10 +226,6 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   QUICK_RECORD_TRIGGER: 'quick-record-trigger',
   /** recall-memory 触发：通知渲染进程切换到记忆面板 */
   RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
-
-  // ─── 技能安装（Phase 4.3） ────────────────────────────
-  /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容） */
-  SKILL_INSTALL: 'skill-install',
 } as const;
 
 // ─── IPC 数据传输类型 ────────────────────────────────────

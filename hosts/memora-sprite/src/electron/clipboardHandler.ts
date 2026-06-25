@@ -132,8 +132,8 @@ export interface ClipboardHandlerOptions {
 export class ClipboardHandler {
   /** Electron clipboard 模块（依赖注入） */
   private readonly clipboard: Clipboard;
-  /** 构造选项 */
-  private readonly options: ClipboardHandlerOptions;
+  /** 已解析的配置（pollIntervalMs 构造时已赋默认值，确保为 number） */
+  private readonly options: Omit<ClipboardHandlerOptions, 'pollIntervalMs'> & { pollIntervalMs: number };
   /** 轮询定时器 */
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   /** 上次剪贴板内容的哈希（用于变化检测，不存储原文） */
@@ -143,9 +143,10 @@ export class ClipboardHandler {
 
   constructor(clipboard: Clipboard, options: ClipboardHandlerOptions = {}) {
     this.clipboard = clipboard;
+    // 使用 ?? 确保默认值不会被 undefined 覆盖（展开运算符的陷阱：undefined 会覆盖前面的默认值）
     this.options = {
-      pollIntervalMs: 2000,
       ...options,
+      pollIntervalMs: options.pollIntervalMs ?? 2000,
     };
   }
 

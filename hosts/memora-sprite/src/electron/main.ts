@@ -588,7 +588,7 @@ async function initializeApp(): Promise<void> {
     // Phase 4.3：注册技能文件安装 IPC handler
     // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
     ipcMain.handle(IPC_CHANNELS.SKILL_INSTALL, async (_event, fileName: string, content: string) => {
-      const { installSkill } = await import('./sprite/skillInstaller.js');
+      const { installSkill } = await import('../sprite/skillInstaller.js');
       // configDir 默认为 ~/.memora-sprite/config/，与 Agent 初始化时一致
       const configDir = DEFAULT_CONFIG_DIR;
       const result = await installSkill(content, fileName, configDir);

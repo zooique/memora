@@ -87,6 +87,10 @@ const IPC_CHANNELS = {
   // M2：审计日志查看/清除
   AUDIT_LOG_LIST: 'audit-log-list',
   AUDIT_LOG_CLEAR: 'audit-log-clear',
+  // Phase 3.1：剪贴板三重保护
+  CLIPBOARD_ANALYZE: 'clipboard-analyze',
+  // Phase 4.3：技能安装（渲染进程 → 主进程）
+  SKILL_INSTALL: 'skill-install',
 } as const;
 
 const MAIN_TO_RENDERER_CHANNELS = {
@@ -112,6 +116,14 @@ const MAIN_TO_RENDERER_CHANNELS = {
   SUGGESTION_PUSH: 'suggestion-push',
   // M1：主进程推送写入确认请求到渲染进程
   WRITE_CONFIRMATION: 'write-confirmation',
+  // Phase 3.1：剪贴板三重保护推送
+  CLIPBOARD_CHANGED: 'clipboard-changed',
+  CLIPBOARD_SENSITIVE_IGNORED: 'clipboard-sensitive-ignored',
+  CLIPBOARD_ANALYSIS_READY: 'clipboard-analysis-ready',
+  CLIPBOARD_ANALYSIS_REJECTED: 'clipboard-analysis-rejected',
+  // Phase 3.3 第二批：全局快捷键触发
+  QUICK_RECORD_TRIGGER: 'quick-record-trigger',
+  RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
