@@ -385,6 +385,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   hideEmptyState(): void { this.chatPanel.hideEmptyState(); }
   /** 注册示例问题点击回调（委托到 ChatPanelManager） */
   onSuggestionClick(cb: (text: string) => void): void { this.chatPanel.onSuggestionClick(cb); }
+  /** UX-PP-05 注册错误重试回调（委托到 ChatPanelManager） */
+  onErrorRetry(cb: () => void): void { this.chatPanel.onErrorRetry(cb); }
 
   // ─── 消息计数（ChatPanelHost 回调：供 ChatPanelManager 调用） ──
 

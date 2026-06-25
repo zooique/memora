@@ -99,6 +99,8 @@ export class ChatPanelManager {
   private suggestionClickCallback: ((text: string) => void) | null = null;
   /** QC-11 加载更多按钮回调（事件委托模式） */
   private loadMoreCallback: (() => void) | null = null;
+  /** UX-PP-05 错误重试回调（重新发送上一条用户消息） */
+  private errorRetryCallback: (() => void) | null = null;
 
   // ─── 安全兜底 ──────────────────────────────────────────
 
@@ -171,6 +173,16 @@ export class ChatPanelManager {
         loadMoreBtn.setAttribute('disabled', '');
         loadMoreBtn.textContent = '加载中...';
         this.loadMoreCallback();
+        return;
+      }
+      // UX-PP-05 错误重试按钮：data-action="retry"
+      // 流式出错时在气泡内显示的重试按钮，触发 host 注入的 errorRetryCallback
+      const retryBtn = target.closest<HTMLElement>('[data-action="retry"]');
+      if (retryBtn) {
+        // 禁用按钮防止重复点击
+        retryBtn.setAttribute('disabled', '');
+        retryBtn.textContent = '重试中...';
+        this.errorRetryCallback?.();
         return;
       }
     });
@@ -722,6 +734,25 @@ export class ChatPanelManager {
     this.streamingMessages.set(messageId, el);
     this.state.isStreaming = true;
 
+    // UX-PP-04 首字节前的"正在思考"占位
+    // 从 SPRITE_STREAM_START 到首个 chunk 之间，用户原本只看到空气泡+光标，
+    // 对齐大厂对话体验：立即显示"⚙️ 正在思考..."占位，消除空白期感知。
+    // showThinkingPhase 会复用此元素更新为"正在回忆/处理/归档..."（查找或创建模式）；
+    // updateStreamingMessage / injectErrorToStreamingMessages 会移除此元素。
+    const bubble = el.querySelector('.message-bubble');
+    if (bubble) {
+      const placeholder = document.createElement('div');
+      placeholder.className = 'thinking-phase';
+      placeholder.textContent = '⚙️ 正在思考...';
+      // 插入到光标之前（若存在），否则追加到气泡末尾
+      const cursor = bubble.querySelector('.cursor');
+      if (cursor) {
+        bubble.insertBefore(placeholder, cursor);
+      } else {
+        bubble.appendChild(placeholder);
+      }
+    }
+
     // 启动超时兜底：30 秒无新 chunk 则自动重置（防止 SPRITE_STREAM_END 丢失导致 UI 卡死）
     this._resetStreamSafetyTimer();
 
@@ -884,6 +915,15 @@ export class ChatPanelManager {
       errorDiv.textContent = `⚠️ ${errorText}`;
       bubble.appendChild(errorDiv);
 
+      // UX-PP-05 错误气泡内的"重试"按钮
+      // 对齐大厂对话体验：错误文本下方直接提供重试按钮，与 Toast 重试形成双通道。
+      // 通过 data-action="retry" 标识，由构造函数的事件委托统一处理（QC-11 模式）。
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'stream-error-retry';
+      retryBtn.textContent = '重试';
+      retryBtn.dataset.action = 'retry';
+      bubble.appendChild(retryBtn);
+
       // 停止流式状态
       el.classList.remove('streaming');
     }
@@ -967,5 +1007,17 @@ export class ChatPanelManager {
   /** 注册召回记忆点击回调（跳转记忆详情） */
   setMemoryRecallClickCallback(cb: (memoryName: string) => void): void {
     this.memoryRecallClickCallback = cb;
+  }
+
+  /**
+   * UX-PP-05 注册错误重试回调
+   *
+   * 流式出错时，气泡内的"重试"按钮被点击后触发此回调。
+   * 由 renderer.ts 注入，复用 onSpriteErrorRetry 逻辑（重新发送上一条用户消息）。
+   *
+   * @param cb 重试回调（无参数，由宿主自行获取 lastUserInput）
+   */
+  onErrorRetry(cb: () => void): void {
+    this.errorRetryCallback = cb;
   }
 }

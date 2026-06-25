@@ -1217,3 +1217,32 @@
   animation: fadeIn var(--transition-base) ease-out;
 }
 
+/* UX-PP-05 错误气泡内的"重试"按钮 */
+/* 与 .stream-error 同容器，主动可见（不依赖 hover） */
+.stream-error-retry {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 12px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--red);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background var(--transition-base) ease, color var(--transition-base) ease;
+}
+
+/* hover：填充红色背景，反色强调可点击 */
+.stream-error-retry:hover:not(:disabled) {
+  background: var(--red);
+  color: var(--white);
+}
+
+/* disabled：重试中状态，弱化视觉 */
+.stream-error-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

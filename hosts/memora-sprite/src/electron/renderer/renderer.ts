@@ -159,6 +159,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.electronAPI.notifyThemeChanged(theme);
   });
 
+  // UX-PP-03/UX-PP-05 流式错误重试：重新发送上一条用户消息
+  // 提取为独立函数，供 IPC onSpriteErrorRetry（Toast 重试）和气泡内 onErrorRetry 复用
+  const retryLastUserInput = (): void => {
+    if (!lastUserInput) return;
+    // P2 修复：重试前检查流式状态，避免流式输出中重复发送
+    if (uiManager.isStreaming()) {
+      uiManager.showToast('请先停止当前回复再重试', 'warning');
+      return;
+    }
+    // 重新显示用户消息并发送
+    uiManager.appendMessage({
+      role: 'user',
+      content: lastUserInput,
+    });
+    window.electronAPI.sendUserInput(lastUserInput);
+  };
+
   // 初始化 IPC 监听器（统一注册，通过回调解耦业务逻辑）
   initIpcListeners(uiManager, {
     // 精灵事件：记忆被注意 / 洞察获得 → 仪表盘计数 +1 动画 + 刷新仪表盘
@@ -191,23 +208,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         void memoryController.loadDashboard();
       }, 1000);
     },
-    // UX-PP-03 流式错误重试：重新发送上一条用户消息
-    onSpriteErrorRetry: () => {
-      if (lastUserInput) {
-        // P2 修复：重试前检查流式状态，避免流式输出中重复发送
-        if (uiManager.isStreaming()) {
-          uiManager.showToast('请先停止当前回复再重试', 'warning');
-          return;
-        }
-        // 重新显示用户消息并发送
-        uiManager.appendMessage({
-          role: 'user',
-          content: lastUserInput,
-        });
-        window.electronAPI.sendUserInput(lastUserInput);
-      }
-    },
+    // UX-PP-03/UX-PP-05 流式错误重试（复用提取的 retryLastUserInput）
+    onSpriteErrorRetry: retryLastUserInput,
   });
+
+  // UX-PP-05 注册气泡内错误重试回调（复用 retryLastUserInput，供错误气泡内"重试"按钮调用）
+  uiManager.onErrorRetry(retryLastUserInput);
 
   // 初始化主动提示 banner 按钮（查看/稍后/静默）
   uiManager.initProactiveBannerButtons({
