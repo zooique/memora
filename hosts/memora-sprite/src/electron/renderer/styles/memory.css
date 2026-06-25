@@ -254,7 +254,7 @@
 
 /* UX-P2-26 移除重复的滚动条样式（base.css 已全局定义 ::-webkit-scrollbar，此处无需重复） */
 
-/* GAP-1 技能列表样式（仪表盘侧边栏） */
+/* GAP-1 技能列表样式（设置面板"技能"选项卡） */
 .skills-list {
   list-style: none;
   padding: 0;

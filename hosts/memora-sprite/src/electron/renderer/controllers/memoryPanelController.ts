@@ -457,9 +457,9 @@ export function createMemoryController(uiManager: UIManager) {
   /**
    * GAP-1 渲染已加载技能列表
    *
-   * 消费内核 agent.skills.list，在仪表盘侧边栏展示当前加载的技能。
+   * 消费内核 agent.skills.list，在设置面板"技能"选项卡展示当前加载的技能。
    * 每个技能项展示名称、关键词标签和来源层级（project/agent）。
-   * 无技能时隐藏区域。
+   * 无技能时隐藏列表区域，显示空状态占位。
    *
    * @param skills 技能列表（由 DASHBOARD_GET 返回）
    */
@@ -472,10 +472,13 @@ export function createMemoryController(uiManager: UIManager) {
 
     const listEl = document.getElementById('skills-list');
     const sectionEl = document.getElementById('skills-section');
+    const emptyEl = document.getElementById('skills-empty');
     if (!listEl || !sectionEl) return;
 
     if (!skills || skills.length === 0) {
       sectionEl.classList.add('hidden');
+      // 显示空状态占位（设置面板技能选项卡）
+      if (emptyEl) emptyEl.classList.remove('hidden');
       return;
     }
 
@@ -517,6 +520,8 @@ export function createMemoryController(uiManager: UIManager) {
 
     listEl.appendChild(fragment);
     sectionEl.classList.remove('hidden');
+    // 隐藏空状态占位（有技能时）
+    if (emptyEl) emptyEl.classList.add('hidden');
   }
 
   /**

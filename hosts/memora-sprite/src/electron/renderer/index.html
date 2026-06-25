@@ -118,27 +118,7 @@
           <ul id="recommendation-list" class="suggestion-list"></ul>
         </div>
 
-        <!-- GAP-1 已加载技能列表（消费内核 agent.skills.list） -->
-        <!-- 由 loadDashboard() 动态填充，无技能时隐藏 -->
-        <div id="skills-section" class="dashboard-section hidden">
-          <h3>技能</h3>
-          <ul id="skills-list" class="skills-list"></ul>
-        </div>
-
-        <!-- Phase 4.3 第二批：技能文件拖入安装区域 -->
-        <!-- 用户可将 .md 技能文件拖入此区域或点击选择文件 -->
-        <div id="skill-install-section" class="dashboard-section">
-          <h3>安装技能</h3>
-          <div id="skill-dropzone" class="skill-dropzone" tabindex="0" role="button"
-               aria-label="拖入技能文件或点击选择">
-            <div class="dropzone-icon">📥</div>
-            <div class="dropzone-text">
-              <span class="dropzone-hint">拖入 .md 技能文件</span>
-              <span class="dropzone-subtext">或点击选择文件</span>
-            </div>
-            <input type="file" id="skill-file-input" accept=".md" hidden />
-          </div>
-        </div>
+        <!-- GAP-1 已加载技能列表已迁移到设置面板"技能"选项卡 -->
 
         <!-- 记忆源健康状态（消费内核 sourceHealth()） -->
         <!-- 由 renderSourceHealth() 动态填充，无数据时隐藏 -->
@@ -284,6 +264,8 @@
           <button class="settings-tab" data-settings-tab="profile">画像</button>
           <!-- M2 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit">审计</button>
+          <!-- Phase 4.3：技能管理 tab：已安装技能列表 + 拖入安装 -->
+          <button class="settings-tab" data-settings-tab="skill">技能</button>
         </div>
 
         <!-- FD-A2 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
@@ -524,6 +506,40 @@
               <div id="audit-list" class="profile-list">
                 <div class="profile-empty">暂无审计记录</div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Phase 4.3：技能管理 tab：已安装技能列表 + 拖入安装 -->
+        <div class="settings-tab-content" data-settings-tab="skill">
+          <div class="settings-group">
+            <h3>已安装技能</h3>
+            <p class="settings-hint">
+              技能文件存放在 configDir/skills/ 目录，Agent 启动时自动加载。
+              技能通过 frontmatter 中的 keywords 或 trigger 字段匹配对话上下文。
+            </p>
+            <!-- GAP-1 已加载技能列表（消费内核 agent.skills.list） -->
+            <!-- 由 loadDashboard() 动态填充，无技能时隐藏 -->
+            <div id="skills-section" class="skill-section hidden">
+              <ul id="skills-list" class="skills-list"></ul>
+            </div>
+            <div id="skills-empty" class="profile-empty">暂无已安装技能，拖入 .md 文件安装</div>
+          </div>
+
+          <div class="settings-group">
+            <h3>安装技能</h3>
+            <p class="settings-hint">
+              将 .md 技能文件拖入下方区域，或点击选择文件。安装后立即生效，无需重启。
+            </p>
+            <!-- 用户可将 .md 技能文件拖入此区域或点击选择文件 -->
+            <div id="skill-dropzone" class="skill-dropzone" tabindex="0" role="button"
+                 aria-label="拖入技能文件或点击选择">
+              <div class="dropzone-icon">📥</div>
+              <div class="dropzone-text">
+                <span class="dropzone-hint">拖入 .md 技能文件</span>
+                <span class="dropzone-subtext">或点击选择文件</span>
+              </div>
+              <input type="file" id="skill-file-input" accept=".md" hidden />
             </div>
           </div>
         </div>
