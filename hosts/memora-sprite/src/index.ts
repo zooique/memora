@@ -21,6 +21,8 @@ import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, VectorS
 import type { UIMessages, Config, ITracer } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
+// ADR-014 记忆关系图谱：侧车存储，与 SqliteStorage 共享同一 db 实例
+import { SqliteRelationStore } from './storage/sqliteRelationStore.js';
 import { SpriteConfigStore, DEFAULT_CONFIG_PATH } from './storage/spriteConfigStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
@@ -106,10 +108,11 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
 // ─── 启动精灵 ──────────────────────────────────────────
 
 /**
- * 创建存储层（SQLite DB + SqliteStorage + SqliteSessionStore）
+ * 创建存储层（SQLite DB + SqliteStorage + SqliteSessionStore + SqliteRelationStore）
  *
  * 确保 dataDir 目录存在，打开 memora.db（WAL 模式），
- * 创建存储实现和会话存储实例。
+ * 创建存储实现、会话存储和关系存储实例。
+ * 四者共享同一 db 实例，db.close() 时统一释放。
  *
  * @param dataDir 数据目录路径
  * @returns 存储层实例
@@ -117,6 +120,7 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
 function createStorage(dataDir: string): {
   storage: SqliteStorage;
   sessionStore: SqliteSessionStore;
+  relationStore: SqliteRelationStore;
   db: Database.Database;
 } {
   const dbPath = resolve(dataDir, 'memora.db');
@@ -124,7 +128,9 @@ function createStorage(dataDir: string): {
   db.pragma('journal_mode = WAL');
   const storage = new SqliteStorage(db);
   const sessionStore = new SqliteSessionStore(db);
-  return { storage, sessionStore, db };
+  // ADR-014 侧车模型：关系存储独立建表，不侵入 memories 表
+  const relationStore = new SqliteRelationStore(db);
+  return { storage, sessionStore, relationStore, db };
 }
 
 /**
@@ -170,6 +176,7 @@ async function createAgentInstance(
   agent: Agent;
   sessionStore: SqliteSessionStore;
   storage: SqliteStorage;
+  relationStore: SqliteRelationStore;
   vectorStore: VectorStore | undefined;
   tracer: ITracer;
   dataDir: string;
@@ -191,8 +198,8 @@ async function createAgentInstance(
     await mkdir(dataDir, { recursive: true });
   }
 
-  // 创建存储层
-  const { storage, sessionStore } = createStorage(dataDir);
+  // 创建存储层（含关系存储侧车）
+  const { storage, sessionStore, relationStore } = createStorage(dataDir);
 
   // 创建 LLM Provider
   const provider = createLlmProvider(config);
@@ -203,7 +210,7 @@ async function createAgentInstance(
   // 实例化可观测性 Tracer
   const tracer: ITracer = new SpriteTracer(dataDir);
 
-  // 实例化 Agent
+  // 实例化 Agent（注入 relationStore，启用 InsightExtractor 冲突检测）
   const agent = new Agent({
     projectPath,
     configDir,
@@ -211,6 +218,7 @@ async function createAgentInstance(
     provider,
     storage,
     sessionStore,
+    relationStore,
     vectorStore,
     messages: ZH_MESSAGES,
     enableContextSummary: true,
@@ -221,7 +229,7 @@ async function createAgentInstance(
 
   await agent.init();
 
-  return { agent, sessionStore, storage, vectorStore, tracer, dataDir, projectPath };
+  return { agent, sessionStore, storage, relationStore, vectorStore, tracer, dataDir, projectPath };
 }
 
 /**
