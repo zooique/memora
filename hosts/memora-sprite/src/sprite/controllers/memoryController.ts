@@ -7,6 +7,7 @@
  *   3. 仪表盘数据聚合
  */
 import type { Agent, SuggestHit, VectorStore } from 'memora';
+import type { MemoryRelation } from 'memora';
 import { logger } from 'memora';
 
 /** 仪表盘数据 */
@@ -17,6 +18,8 @@ export interface DashboardData {
   bySource: Record<string, number>;
   /** 关联推荐列表 */
   suggestions: SuggestHit[];
+  /** 关系边总数（ADR-014，relationStore 未注入时为 0） */
+  relationCount: number;
 }
 
 /** 记忆列表项 */
@@ -218,7 +221,7 @@ export class MemoryController {
     // 空值守卫：memory 模块未初始化时返回空仪表盘（降级而非崩溃）
     const memory = this.agent.memory;
     if (!memory) {
-      return { total: 0, bySource: {}, suggestions: [] };
+      return { total: 0, bySource: {}, suggestions: [], relationCount: 0 };
     }
     const stats = memory.stats();
     const suggestions = memory.suggest(undefined, { limit: 5 });
@@ -226,7 +229,29 @@ export class MemoryController {
       total: stats.total,
       bySource: stats.bySource,
       suggestions,
+      relationCount: stats.relationCount,
     };
   }
 
+  // ─── 关系图谱（ADR-014） ────────────────────────────────
+
+  /**
+   * 获取记忆关系图谱（节点 + 边）
+   *
+   * 用于宿主 UI 渲染拓扑可视化。返回所有记忆作为节点，所有关系作为边。
+   * relationStore 未注入时 edges 为空数组（向后兼容）。
+   *
+   * @returns 图谱数据：nodes（记忆列表）+ edges（关系边列表）
+   */
+  getRelationGraph(): { nodes: MemoryListItem[]; edges: MemoryRelation[] } {
+    const memory = this.agent.memory;
+    if (!memory) {
+      return { nodes: [], edges: [] };
+    }
+    // 节点：复用 list() 获取所有记忆
+    const nodes = this.list(undefined, 200);
+    // 边：通过 MemoryInspector.getAllRelations() 获取全量关系
+    const edges = memory.getAllRelations();
+    return { nodes, edges };
+  }
 }
