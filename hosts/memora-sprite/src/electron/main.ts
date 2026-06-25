@@ -47,6 +47,7 @@ import type { SpriteEventBridgeDeps } from './spriteEventBridge.js';
 import {
   startSprite,
   DEFAULT_DATA_DIR,
+  DEFAULT_CONFIG_DIR,
 } from '../index.js';
 import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite } from '../sprite/sprite.js';
@@ -590,6 +591,16 @@ async function initializeApp(): Promise<void> {
     });
     // 启动剪贴板变化检测轮询
     clipboardHandler.startPolling();
+
+    // Phase 4.3：注册技能文件安装 IPC handler
+    // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
+    ipcMain.handle(IPC_CHANNELS.SKILL_INSTALL, async (_event, fileName: string, content: string) => {
+      const { installSkill } = await import('./sprite/skillInstaller.js');
+      // configDir 默认为 ~/.memora-sprite/config/，与 Agent 初始化时一致
+      const configDir = DEFAULT_CONFIG_DIR;
+      const result = await installSkill(content, fileName, configDir);
+      return result;
+    });
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册

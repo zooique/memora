@@ -465,6 +465,10 @@ export interface ElectronAPI {
   /** 移除 recall-memory 触发监听器 */
   removeRecallMemoryTriggerListener: () => void;
 
+  // ─── Phase 4.3：技能文件安装 ──────────────────────────
+  /** 安装技能文件到 configDir/skills/（携带文件名和内容） */
+  installSkill: (fileName: string, content: string) => Promise<{ success: boolean; error?: string; skillName?: string }>;
+
   // ─── M2：审计日志 ─────────────────────────────────────
   /** 列出最近 N 条审计日志 */
   listAuditLog: (limit?: number) => Promise<Array<{
@@ -673,6 +677,9 @@ const electronAPI: ElectronAPI = {
   removeRecallMemoryTriggerListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER);
   },
+
+  // Phase 4.3：技能文件安装
+  installSkill: (fileName, content) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_INSTALL, fileName, content),
 
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),
