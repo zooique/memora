@@ -18,7 +18,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, VectorStore, EmbeddingProvider } from 'memora';
-import type { UIMessages, Config, ITracer } from 'memora';
+import type { UIMessages, Config, ITracer, AgentSearchHit } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 // ADR-014 记忆关系图谱：侧车存储，与 SqliteStorage 共享同一 db 实例
@@ -49,14 +49,14 @@ export { CliInteraction } from './sprite/cli/interaction.js';
 const ZH_MESSAGES: UIMessages = {
   abortedByUser: '用户取消了对话',
   maxIterationsReached: '\n\n[已达到最大迭代次数]',
-  contextTruncated: (skipped, kept) =>
+  contextTruncated: (skipped: number, kept: number) =>
     `[上下文窗口截断：跳过 ${skipped} 条消息，保留最近 ${kept} 条]`,
   recentConversationLabel: '[最近对话]',
   userLabel: '用户',
   assistantLabel: '助手',
-  inputBlockedByGuard: (rule) => `[输入被护栏拦截：${rule}]`,
+  inputBlockedByGuard: (rule: string) => `[输入被护栏拦截：${rule}]`,
   guardrailWarningPrefix: '[护栏警告]',
-  outputBlockedByGuard: (rule) => `[输出被护栏拦截：${rule}]`,
+  outputBlockedByGuard: (rule: string) => `[输出被护栏拦截：${rule}]`,
 };
 
 /** 默认数据目录（Agent 级共享，~/.memora-sprite/data/） */
@@ -300,7 +300,7 @@ async function setupAgentPostInit(
       // QC-19 P1 修复：添加 memory null 检查
       if (!agent.memory) return [];
       const hits = await agent.memory.search(query, limit);
-      return hits.map((h) => ({
+      return hits.map((h: AgentSearchHit) => ({
         name: h.name,
         contentPreview: h.contentPreview ?? '',
         score: h.score,

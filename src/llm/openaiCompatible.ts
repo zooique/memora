@@ -117,8 +117,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
       );
     }
 
-    // fetch 成功，清理外部 signal 监听（超时继续生效，通过 abortController 管理）
-    if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
+    // fetch 成功后保留 optsSignal 监听：用户在 SSE 流式阶段取消时，
+    // 仍需通过 onOptsAbort 触发 abortController.abort() 中断 reader.read()。
+    // 监听器为 { once: true }，abortController 被 abort 时自动移除，无泄漏。
 
     if (!response.ok) {
       clearTimeout(timeoutId);

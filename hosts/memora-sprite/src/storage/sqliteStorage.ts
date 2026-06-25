@@ -180,7 +180,7 @@ export class SqliteStorage implements IMemoryStorage {
     }
 
     // 规范分词（与 InMemoryStorage 行为一致）
-    const tokens = segmentText(query).map(t => t.toLowerCase());
+    const tokens = segmentText(query).map((t: string) => t.toLowerCase());
 
     // 若分词后无有效 token，降级为按 score 返回
     if (tokens.length === 0) {

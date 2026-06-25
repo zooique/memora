@@ -6,7 +6,7 @@
  *   2. 记忆搜索（混合搜索 + 降级）
  *   3. 仪表盘数据聚合
  */
-import type { Agent, SuggestHit, VectorStore } from 'memora';
+import type { Agent, SuggestHit, VectorStore, Memory } from 'memora';
 import type { MemoryRelation } from 'memora';
 import { logger } from 'memora';
 
@@ -112,7 +112,7 @@ export class MemoryController {
       ? inspector.getBySource(source).slice(0, limit)
       : inspector.list(limit);
 
-    return memories.map(m => ({
+    return memories.map((m: Memory) => ({
       id: m.id,
       name: m.name,
       source: m.source,
@@ -207,7 +207,7 @@ export class MemoryController {
     });
     // 异步更新向量索引
     if (this.vectorStore) {
-      this.vectorStore.upsert(id, content).catch(err => {
+      this.vectorStore.upsert(id, content).catch((err: unknown) => {
         logger.warn({ err, id }, '向量索引更新失败，降级为纯关键词召回');
       });
     }

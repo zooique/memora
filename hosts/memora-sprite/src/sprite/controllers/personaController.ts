@@ -7,7 +7,7 @@
  *   3. 角色匹配模式设置
  */
 import { logger, toError } from 'memora';
-import type { Agent } from 'memora';
+import type { Agent, Persona } from 'memora';
 
 /** 角色信息 */
 export interface PersonaInfo {
@@ -36,7 +36,7 @@ export class PersonaController {
     const pm = this.agent.persona;
     if (!pm) return [];
     const activeName = pm.activeName;
-    return pm.list.map(p => ({
+    return pm.list.map((p: Persona) => ({
       name: p.name,
       description: p.description ?? '',
       active: p.name === activeName,

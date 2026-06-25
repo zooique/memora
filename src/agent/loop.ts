@@ -290,8 +290,10 @@ export class AgentLoop {
             .slice(-llmResult.toolCalls.length) // 只看本轮工具结果
             .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
           if (hasRetryableError) {
+            // 反思次数限制：通过前缀匹配统计已推送的 REFLECTION_HINT 消息
+            // （实际推送的 content 带有后缀说明，需用 startsWith 而非严格相等）
             const reflectionHint = this.messages.filter(
-              (m) => m.role === 'system' && m.content === '[REFLECTION_HINT]',
+              (m) => m.role === 'system' && m.content.startsWith('[REFLECTION_HINT]'),
             ).length;
             if (reflectionHint < this.maxReflectionRetries) {
               this.messages.push({

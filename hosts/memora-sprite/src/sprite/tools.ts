@@ -79,7 +79,7 @@ export function webSearch(query: string): Promise<string> {
 }
 
 /** web_search 工具处理器 */
-export const webSearchHandler: ToolHandler = async (args, _ctx: ToolContext) => {
+export const webSearchHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
   return webSearch(String(args.query ?? ''));
 };
 
@@ -105,7 +105,7 @@ export const MEMORY_SEARCH_TOOL: ToolDefinition = {
 };
 
 /** memory_search 工具处理器 */
-export const memorySearchHandler: ToolHandler = async (args, _ctx: ToolContext) => {
+export const memorySearchHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
   const query = String(args.query ?? '').trim();
   if (!query) {
     return '错误：query 参数不能为空';

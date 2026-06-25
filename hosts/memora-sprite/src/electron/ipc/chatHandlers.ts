@@ -41,7 +41,9 @@ export function registerChatHandlers(ctx: IpcContext): void {
       // 使用 DOMException 模拟标准 AbortController.abort(reason) 行为
       // reason='user' 标识用户主动中断，catch 块据此发送系统消息
       ctrl.abort(new DOMException('用户手动停止', 'AbortError'));
-      ctx.setAbortController(null);
+      // 不在此处 setAbortController(null)：catch 块需通过 ctrl.signal.reason 判断是否用户主动中断。
+      // 旧实现立即清空引用，导致 catch 块获取的 ctrl 为 null，wasUserAborted 永远为 false，
+      // 用户取消后会收到误导性的"对话出错"提示。清理统一由 finally 块执行。
     }
     return { aborted: true };
   });
@@ -174,24 +176,27 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       }
     }
   } catch (error) {
+    // 通过 AbortController.reason 判断是否用户主动中断（替代共享布尔标志）
+    const ctrl = ctx.getAbortController();
+    const abortReason = ctrl?.signal.reason;
+    const wasUserAborted = abortReason instanceof DOMException && abortReason.name === 'AbortError';
     if (!fullWindow.isDestroyed()) {
-      // P2-DESIGN-7 修复：通过 AbortController.reason 判断是否用户主动中断（替代共享布尔标志）
-      const ctrl = ctx.getAbortController();
-      const abortReason = ctrl?.signal.reason;
-      const wasUserAborted = abortReason instanceof DOMException && abortReason.name === 'AbortError';
-      // UX-PP-04 用户主动中断时，catch 块也需发送系统消息告知用户
       if (wasUserAborted) {
+        // UX-PP-04 用户主动中断：发送系统消息，不报告为错误
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, {
           text: '[已中断：用户手动停止]',
           kind: 'system',
         });
+      } else {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
+          text: `对话出错：${toError(error).message}`,
+        });
       }
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
-        text: `对话出错：${toError(error).message}`,
-      });
     }
-    // 错误路径：由 finally 统一发送 SPRITE_STREAM_END
-    errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
+    // 用户主动中断不记录为错误；其他错误才上报 errorHandler
+    if (!wasUserAborted) {
+      errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
+    }
   } finally {
     // 无论生成器以何种方式退出（done/aborted/异常/窗口销毁），都确保发送 SPRITE_STREAM_END。
     // 修复根因：原架构中 done/aborted 时直接发送 SPRITE_STREAM_END 并 break，但异常路径依赖
