@@ -1261,8 +1261,65 @@
     .source-tag.source-default   { background: var(--surface2); color: var(--subtext); }
 
     .memory-item .meta .score {
-      color: var(--accent);
       font-weight: 500;
+    }
+
+    /* score 颜色编码：高(绿) / 中(黄) / 低(灰) */
+    .score-high { color: var(--green) !important; }
+    .score-mid  { color: var(--yellow) !important; }
+    .score-low  { color: var(--muted) !important; text-decoration: line-through; opacity: 0.6; }
+
+    /* 衰减指示条（记忆项底部） */
+    .memory-decay-bar {
+      height: 2px;
+      border-radius: 1px;
+      margin-top: 8px;
+      background: var(--surface1);
+      overflow: hidden;
+    }
+    .memory-decay-bar-fill {
+      height: 100%;
+      border-radius: 1px;
+      transition: width 0.6s ease;
+    }
+    .decay-fill-high { background: var(--green); }
+    .decay-fill-mid  { background: var(--yellow); }
+    .decay-fill-low  { background: var(--muted); }
+
+    /* 自动演示模式指示器 */
+    .auto-demo-banner {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      background: var(--accent);
+      color: var(--window-bg);
+      text-align: center;
+      padding: 6px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      animation: slideDown 0.3s ease;
+    }
+    .auto-demo-banner button {
+      background: rgba(255,255,255,0.25);
+      border: none;
+      color: inherit;
+      padding: 2px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .auto-demo-banner button:hover {
+      background: rgba(255,255,255,0.4);
+    }
+    @keyframes slideDown {
+      from { transform: translateY(-100%); }
+      to { transform: translateY(0); }
     }
 
     .memory-item .meta .memory-time {
@@ -2380,7 +2437,7 @@
           <!-- 列表/图谱切换 -->
           <div class="memory-view-tabs">
             <button class="memory-view-tab active" data-memory-view="list">📋 列表</button>
-            <button class="memory-view-tab" data-memory-view="graph">🕸️ 图谱 <span class="soon-badge">即将推出</span></button>
+            <button class="memory-view-tab" data-memory-view="graph">🕸️ 图谱</button>
           </div>
           <input type="text" id="memory-search" placeholder="搜索记忆…" />
           <select id="memory-filter-source">
@@ -2409,7 +2466,7 @@
               <span class="graph-legend-item"><span class="graph-dot" style="background: var(--mauve);"></span> 角色 (persona)</span>
               <span class="graph-legend-item"><span class="graph-dot" style="background: var(--peach);"></span> 作品投影 (work-projection)</span>
             </div>
-            <p class="graph-hint">🔮 记忆关系图谱正在开发中——记忆之间将支持矛盾、佐证、时序、细化等关系类型</p>
+            <p class="graph-hint">图谱随对话动态生成——节点大小反映记忆 score，相同来源的记忆自动关联，系统记忆（外圈）向用户记忆（内圈）注入</p>
           </div>
         </div>
       </div>
@@ -2751,6 +2808,61 @@
     ];
 
     // ========================================
+    // 记忆衰减引擎（模拟真实 decayScores 机制）
+    // ========================================
+
+    /** 衰减系数：模拟真实内核的 decayScores 行为 */
+    const DECAY_RATE = 0.03;
+
+    /** 对所有非系统内置记忆执行一轮衰减，返回受影响的条数 */
+    function decayMemories() {
+      let decayed = 0;
+      demoMemories.forEach(m => {
+        // 系统内置记忆（persona/guardrail/rule）不衰减
+        if (m.source === 'persona' || m.source === 'guardrail' || m.source === 'rule') return;
+        if (m.score > 0.1) {
+          m.score = Math.max(0.1, +(m.score - DECAY_RATE).toFixed(2));
+          decayed++;
+        }
+      });
+      return decayed;
+    }
+
+    /** 根据 score 返回 CSS 类名 */
+    function scoreClass(score) {
+      if (score >= 0.7) return 'score-high';
+      if (score >= 0.4) return 'score-mid';
+      return 'score-low';
+    }
+
+    /** 根据 score 返回衰减条填充类名 */
+    function decayFillClass(score) {
+      if (score >= 0.7) return 'decay-fill-high';
+      if (score >= 0.4) return 'decay-fill-mid';
+      return 'decay-fill-low';
+    }
+
+    /** 真实召回：根据用户输入文本，从 demoMemories 中搜索匹配的记忆 */
+    function recallMemories(query) {
+      if (!query) return [];
+      const q = query.toLowerCase();
+      const results = [];
+      demoMemories.forEach(m => {
+        // 跳过系统内置记忆（persona/guardrail/rule 不参与用户级召回）
+        if (m.source === 'persona' || m.source === 'guardrail' || m.source === 'rule') return;
+        const nameMatch = m.name.toLowerCase().includes(q);
+        const contentMatch = m.content.toLowerCase().includes(q);
+        // 关键词匹配：名字或内容命中
+        if (nameMatch || contentMatch) {
+          results.push({ ...m, matchType: nameMatch ? 'name' : 'content' });
+        }
+      });
+      // 按 score 降序排列（最相关的排在前面）
+      results.sort((a, b) => b.score - a.score);
+      return results.slice(0, 5); // 最多返回 5 条
+    }
+
+    // ========================================
     // DOM 引用
     // ========================================
     const messagesEl = document.getElementById('messages');
@@ -2807,17 +2919,22 @@
     // 记忆面板渲染
     // ========================================
     function renderMemoryList() {
-      memoryListEl.innerHTML = demoMemories.map(m => `
+      memoryListEl.innerHTML = demoMemories.map(m => {
+        const sc = scoreClass(m.score);
+        const dc = decayFillClass(m.score);
+        const pct = Math.round(m.score * 100);
+        return `
         <div class="memory-item">
           <div class="name">${escapeHtml(m.name)}</div>
           <div class="preview">${escapeHtml(m.content.length > 80 ? m.content.substring(0, 80) + '...' : m.content)}</div>
           <div class="meta">
             <span class="source-tag source-${m.source === 'work-projection' ? 'insight' : m.source}">${m.source}</span>
-            <span class="score">score: ${m.score.toFixed(2)}</span>
+            <span class="score ${sc}">score: ${m.score.toFixed(2)}</span>
             <span class="memory-time">${m.time}</span>
           </div>
-        </div>
-      `).join('');
+          <div class="memory-decay-bar"><div class="memory-decay-bar-fill ${dc}" style="width: ${pct}%"></div></div>
+        </div>`;
+      }).join('');
     }
 
     // 渲染侧边栏推荐（高置信度记忆）
@@ -2938,8 +3055,8 @@
       let memContent = '';
       let memSource = 'profile';
 
-      // 身份信息识别
-      if (text.includes('我是') || text.includes('我叫')) {
+      // 身份信息识别（扩展更多自然语言句式）
+      if (text.includes('我是') || text.includes('我叫') || text.includes('我的名字是')) {
         if (text.includes('中国')) {
           memName = '用户画像-国籍';
           memContent = '国籍：中国，偏好中文交流';
@@ -2953,22 +3070,22 @@
           memName = '用户画像-职业';
           memContent = '职业：创作者/作家，需要长时间深度对话';
         } else {
-          // 通用姓名识别
-          const nameMatch = text.match(/我叫(.+?)(?:[，。,.\s]|$)/);
+          // 通用姓名识别：支持"我叫XX"、"我的名字是XX"、"我是XX"
+          const nameMatch = text.match(/(?:我叫|我的名字是|我是)(.+?)(?:[，。,.\s！!？?]|$)/);
           if (nameMatch) {
             memName = '用户画像-称呼';
             memContent = `称呼：${nameMatch[1]}`;
           }
         }
       }
-      // 偏好识别
-      else if (text.includes('我喜欢') || text.includes('我偏好') || text.includes('我希望')) {
+      // 偏好识别（扩展更多表达方式）
+      else if (text.includes('我喜欢') || text.includes('我偏好') || text.includes('我希望') || text.includes('我爱') || text.includes('我习惯')) {
         memName = '用户偏好';
         memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
         memSource = 'insight';
       }
-      // 项目信息识别
-      else if (text.includes('我在做') || text.includes('我的项目') || text.includes('正在开发')) {
+      // 项目信息识别（扩展更多表达方式）
+      else if (text.includes('我在做') || text.includes('我的项目') || text.includes('正在开发') || text.includes('最近在') || text.includes('在做')) {
         memName = '当前项目';
         memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
         memSource = 'work-projection';
@@ -2995,16 +3112,17 @@
         // 如果有新记忆，添加进去并重渲染
         let addedMemory = null;
         if (newMemory) {
+          // 新记忆入库前，对已有记忆执行一轮衰减（模拟真实 decay 机制）
+          const decayedCount = decayMemories();
           demoMemories.push(newMemory);
           addedMemory = newMemory;
           refreshAllMemoryViews();
         }
 
-        // 简单的回复逻辑
-        let reply = generateReply(text);
-        // 计算召回的记忆数（非系统内置的用户相关记忆）
-        const recallCount = Math.max(0, demoMemories.filter(m => m.source !== 'guardrail' && m.source !== 'rule').length - 1);
-        addAssistantMessage(reply, { newMemory: addedMemory, recallCount });
+        // 真实召回：根据用户输入搜索匹配的记忆
+        const recalled = recallMemories(text);
+        let reply = generateReply(text, recalled);
+        addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled });
 
         // 对话后更新默契度
         updateRapport();
@@ -3052,12 +3170,13 @@
       div.className = 'message assistant';
       const time = getCurrentTime();
 
-      // 记忆召回标签：智能判断是否显示
+      // 记忆召回标签：显示真实召回的记忆
       let recallHtml = '';
-      const recallCount = options.recallCount || (text.includes('记得') || text.includes('记忆') || demoMemories.length > 3 ? Math.min(demoMemories.length - 1, 3) : 0);
-      if (recallCount > 0) {
+      const recalled = options.recalledMemories || [];
+      if (recalled.length > 0) {
+        const recallNames = recalled.slice(0, 3).map(m => m.name).join('、');
         recallHtml = `
-          <span class="memory-recall">📎 动态召回 ${recallCount} 条相关记忆</span>
+          <span class="memory-recall" title="从记忆库中召回 ${recalled.length} 条相关记忆">📎 召回 ${recalled.length} 条：${escapeHtml(recallNames)}</span>
         `;
       }
 
@@ -3114,9 +3233,9 @@
     }
 
     // ========================================
-    // 回复生成（简单模拟）
+    // 回复生成（基于真实召回的模拟）
     // ========================================
-    function generateReply(text) {
+    function generateReply(text, recalled = []) {
       // 身份信息记录
       if (text.includes('我是') || text.includes('我叫')) {
         let identity = '你的个人信息';
@@ -3142,13 +3261,26 @@
         return `🧠 **Memora 记忆引擎核心机制**\n\n**对比传统 AI：**\n| 维度 | 传统 AI | Memora |\n|------|---------|--------|\n| 上下文 | 线性累积，越长越混乱 | 每轮闭环，永远精简 |\n| Token 消耗 | 随对话增长 | 固定预算 |\n| 跨会话记忆 | 无或有限 | 全局持久化 |\n\n**核心四步闭环：**\n1. **存储**：对话结束自动提取关键信息（profile/insight/work-projection）\n2. **衰减**：不常用记忆 score 逐渐降低，避免记忆库膨胀\n3. **召回**：下轮对话通过「关键词+语义向量」双通道动态召回相关记忆\n4. **组装**：将召回的记忆注入系统提示，上下文永远相关\n\n这就是「应无所住，而生其心」——启动时无所挂碍，开口时记忆自然浮现。`;
       }
 
-      // 查询记忆
-      if (text.includes('记得') || text.includes('之前说')) {
-        const userMemories = demoMemories.filter(m => m.source === 'profile' || m.source === 'insight' || m.source === 'work-projection');
-        let memoryList = userMemories.length > 0
-          ? userMemories.slice(-3).map(m => `• ${m.name}（score: ${m.score.toFixed(2)}）`).join('\n')
-          : '• （你还没告诉我太多信息，试着聊聊你自己吧~）';
-        return `当然！我从记忆库中召回了 ${Math.min(userMemories.length, 3)} 条相关记忆：\n\n${memoryList}\n\n${userMemories.length > 3 ? `\n...还有 ${userMemories.length - 3} 条记忆，点击顶部「🧠 记忆」标签查看全部。` : ''}\n\n💡 注意：不是所有历史对话都堆在这里——只有真正重要的信息才会被提取为记忆。`;
+      // 查询记忆——基于真实召回结果回复
+      if (text.includes('记得') || text.includes('之前说') || text.includes('你知道') || text.includes('我是谁')) {
+        if (recalled.length > 0) {
+          const memoryDetails = recalled.map(m =>
+            `• **${m.name}**（${m.source}，score: ${m.score.toFixed(2)}）\n  ${m.content}`
+          ).join('\n');
+          return `当然记得！我从记忆库中召回了 ${recalled.length} 条相关记忆：\n\n${memoryDetails}\n\n💡 注意看每条记忆的 score 值——不常用的记忆会随时间自然衰减。你可以在「🧠 记忆」面板中观察衰减过程。`;
+        } else {
+          // 没有匹配结果时，直接列出所有用户记忆（而非提示"没找到"）
+          const userMemories = demoMemories.filter(m =>
+            m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
+          );
+          if (userMemories.length === 0) {
+            return `目前还没有关于你的记忆呢~\n\n试试告诉我一些关于你的信息，比如：\n• 「我是开发者」\n• 「我喜欢简洁的回答」\n• 「我在做一个 Vue 项目」\n\n每条信息都会被提取为结构化记忆，下次对话时自动召回。`;
+          }
+          const allMemDetails = userMemories.map(m =>
+            `• **${m.name}**（${m.source}，score: ${m.score.toFixed(2)}）\n  ${m.content}`
+          ).join('\n');
+          return `我搜索了记忆库，没有找到和「${text}」直接匹配的记忆。不过，这是我目前保存的所有关于你的记忆：\n\n${allMemDetails}\n\n💡 你可以点击「🧠 记忆」标签查看完整列表和图谱视图。`;
+        }
       }
 
       // 角色相关
@@ -3158,7 +3290,24 @@
 
       // 问候
       if (text.includes('你好') || text.includes('hi') || text.includes('hello') || text.includes('嗨')) {
+        // 如果有已积累的记忆，在问候中体现"我记得你"
+        const userMemCount = demoMemories.filter(m =>
+          m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
+        ).length;
+        if (userMemCount > 0) {
+          const topMemories = demoMemories.filter(m =>
+            m.source === 'profile' || m.source === 'insight' || m.source === 'work-projection'
+          ).slice(-3);
+          const memHint = topMemories.map(m => m.name).join('、');
+          return `你好！很高兴又见到你 👋\n\n我记得你——${memHint}。这就是 Memora 的核心能力：跨会话记忆。\n\n继续聊吧，我会越来越懂你 ✨`;
+        }
         return '你好！很高兴认识你 👋 我是 Memora 精灵——你的本地 AI 伙伴。\n\n**我和普通 AI 最大的不同：**\n我会记住你告诉我的事情，不会每次对话都从零开始。试试下面这些：\n\n• 告诉我你的职业或身份\n• 说说你的偏好和习惯\n• 聊聊你正在做的项目\n\n每一次交流，都会让我们更有默契 ✨';
+      }
+
+      // 通用回复——如果有召回的记忆，体现"AI 知道你是谁"
+      if (recalled.length > 0) {
+        const recallHint = recalled.slice(0, 2).map(m => m.name).join('和');
+        return `收到！我注意到你之前提到过「${recallHint}」——这些记忆已经在我脑海中（score: ${recalled[0].score.toFixed(2)}）。\n\n继续聊吧，每条新信息都会被提取为记忆，不常用的记忆会自然衰减。`;
       }
 
       // 默认回复
@@ -3213,7 +3362,7 @@
     }
 
     // ========================================
-    // 新会话按钮
+    // 新会话按钮——清空对话但保留记忆（核心体验：跨会话记忆）
     // ========================================
     document.getElementById('btn-new-session').addEventListener('click', () => {
       // 清除所有消息（记忆保留，这是跨会话记忆的核心特性）
@@ -3222,21 +3371,51 @@
       messageCount = 0;
       sessionCount++;
       updateMessageCount();
-      // 重新显示空状态
-      messagesEl.innerHTML = `
-        <div id="chat-empty-state" class="chat-empty-state">
-          <div class="empty-avatar">🧚</div>
-          <div class="empty-title">你好，我是 Memora 精灵</div>
-          <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
-          <div class="empty-suggestions">
-            <button class="suggestion-btn" data-text="我是中国人，说中文">📝 我是中国人</button>
-            <button class="suggestion-btn" data-text="我是程序员，用 Trae IDE 写代码">💻 我是开发者</button>
-            <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
-            <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
-            <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
+
+      // 统计用户记忆数
+      const userMemCount = demoMemories.filter(m =>
+        m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
+      ).length;
+
+      if (userMemCount > 0) {
+        // 有记忆时：展示"我记得你"的跨会话体验
+        const topMemNames = demoMemories.filter(m =>
+          m.source === 'profile' || m.source === 'insight' || m.source === 'work-projection'
+        ).slice(-3).map(m => m.name).join('、');
+
+        messagesEl.innerHTML = `
+          <div id="chat-empty-state" class="chat-empty-state">
+            <div class="empty-avatar">🧚</div>
+            <div class="empty-title">新会话已开启</div>
+            <div class="empty-subtitle">对话已清空，但记忆完整保留——这就是 Memora 的跨会话记忆能力</div>
+            <div style="padding: 8px 16px; background: var(--accent-soft); border-radius: var(--radius-md); font-size: 12px; color: var(--accent); max-width: 400px; margin: 0 auto;">
+              📎 从记忆中召回 ${userMemCount} 条：${topMemNames}
+            </div>
+            <div class="empty-suggestions">
+              <button class="suggestion-btn" data-text="你还记得我是谁吗？">🧠 你还记得我吗？</button>
+              <button class="suggestion-btn" data-text="我喜欢简洁的回答">⚡ 偏好设置</button>
+              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
+            </div>
           </div>
-        </div>
-      `;
+        `;
+      } else {
+        // 无记忆时：标准空状态
+        messagesEl.innerHTML = `
+          <div id="chat-empty-state" class="chat-empty-state">
+            <div class="empty-avatar">🧚</div>
+            <div class="empty-title">你好，我是 Memora 精灵</div>
+            <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
+            <div class="empty-suggestions">
+              <button class="suggestion-btn" data-text="我是中国人，说中文">📝 我是中国人</button>
+              <button class="suggestion-btn" data-text="我是程序员，用 Trae IDE 写代码">💻 我是开发者</button>
+              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
+              <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
+              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
+            </div>
+          </div>
+        `;
+      }
+
       // 更新侧边栏数据
       updateRapport();
       updateDashboardCounters();
@@ -3318,6 +3497,26 @@
       onboardingEl.classList.add('hidden');
       startGuide();
       inputEl.focus();
+      // 5 秒无操作后自动启动演示（从 onboarding 关闭后开始计时）
+      autoDemoTimer = setTimeout(() => {
+        if (!autoDemoCancelled && !autoDemoRunning) {
+          runAutoDemo();
+        }
+      }, 5000);
+      // 注册用户操作取消监听（延迟 100ms 避免当前 click 事件冒泡触发）
+      setTimeout(() => {
+        ['click', 'keydown', 'input'].forEach(evt => {
+          document.addEventListener(evt, () => {
+            if (autoDemoRunning) {
+              cancelAutoDemo();
+            }
+            if (autoDemoTimer && !autoDemoRunning) {
+              clearTimeout(autoDemoTimer);
+              autoDemoTimer = null;
+            }
+          }, { once: true });
+        });
+      }, 100);
     });
 
     guideNextBtn.addEventListener('click', nextGuideStep);
@@ -3452,7 +3651,7 @@
     });
 
     // ========================================
-    // 绘制记忆关系图谱（Canvas 演示）
+    // 绘制记忆关系图谱（动态生成，基于实际 demoMemories）
     // ========================================
     function drawMemoryGraph() {
       const canvas = document.getElementById('graph-canvas');
@@ -3464,28 +3663,88 @@
       // 清空画布
       ctx.clearRect(0, 0, w, h);
 
-      // 定义节点（基于演示数据，固定位置便于理解）
-      const nodes = [
-        { id: 'insight1', x: 280, y: 80, r: 18, color: getCssVar('--accent', '#1e66f5'), label: '喜欢简洁\n直接回复' },
-        { id: 'profile1', x: 120, y: 170, r: 20, color: getCssVar('--green', '#40a02b'), label: '国籍\n中国' },
-        { id: 'profile2', x: 280, y: 260, r: 16, color: getCssVar('--green', '#40a02b'), label: '正在测试\nMemora' },
-        { id: 'persona1', x: 440, y: 170, r: 17, color: getCssVar('--mauve', '#8839ef'), label: '程序员\n助手' },
-        { id: 'work1', x: 160, y: 280, r: 14, color: getCssVar('--peach', '#fe640b'), label: 'user_profile\n投影' },
-        { id: 'insight2', x: 420, y: 280, r: 15, color: getCssVar('--accent', '#1e66f5'), label: '中文\n偏好' },
-      ];
+      // 从实际记忆数据动态生成节点
+      const sourceColors = {
+        'profile': getCssVar('--green', '#40a02b'),
+        'insight': getCssVar('--accent', '#1e66f5'),
+        'work-projection': getCssVar('--peach', '#fe640b'),
+        'persona': getCssVar('--teal', '#179299'),
+        'guardrail': getCssVar('--pink', '#ea76cb'),
+        'rule': getCssVar('--mauve', '#8839ef'),
+        'session': getCssVar('--yellow', '#df8e1d'),
+      };
+      const defaultColor = getCssVar('--overlay1', '#8c8fa1');
 
-      // 定义连线（关系）
-      const edges = [
-        { from: 'profile1', to: 'insight2', rel: '佐证', dashed: false },
-        { from: 'profile2', to: 'insight1', rel: '细化', dashed: false },
-        { from: 'profile1', to: 'work1', rel: '来源', dashed: true },
-        { from: 'persona1', to: 'insight1', rel: '关联', dashed: false },
-        { from: 'profile2', to: 'work1', rel: '产生', dashed: false },
-        { from: 'insight2', to: 'persona1', rel: '影响', dashed: true },
-      ];
+      // 按来源分组，圆形布局
+      const userMemories = demoMemories.filter(m =>
+        m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
+      );
+      const systemMemories = demoMemories.filter(m =>
+        m.source === 'persona' || m.source === 'guardrail' || m.source === 'rule'
+      );
+
+      // 动态计算节点位置：用户记忆在中心区域，系统记忆在外围
+      const centerX = w / 2;
+      const centerY = h / 2;
+      const innerRadius = Math.min(w, h) * 0.22;
+      const outerRadius = Math.min(w, h) * 0.38;
+
+      const nodes = [];
+
+      // 用户记忆节点（内圈）
+      userMemories.forEach((m, i) => {
+        const angle = (i / Math.max(userMemories.length, 1)) * Math.PI * 2 - Math.PI / 2;
+        const r = userMemories.length === 1 ? 0 : innerRadius;
+        nodes.push({
+          id: m.id,
+          x: centerX + Math.cos(angle) * r,
+          y: centerY + Math.sin(angle) * r,
+          r: Math.max(12, 14 + m.score * 6),
+          color: sourceColors[m.source] || defaultColor,
+          label: m.name.length > 6 ? m.name.substring(0, 6) : m.name,
+          score: m.score,
+          isSystem: false,
+        });
+      });
+
+      // 系统记忆节点（外圈）
+      systemMemories.forEach((m, i) => {
+        const angle = (i / Math.max(systemMemories.length, 1)) * Math.PI * 2 - Math.PI / 2;
+        nodes.push({
+          id: m.id,
+          x: centerX + Math.cos(angle) * outerRadius,
+          y: centerY + Math.sin(angle) * outerRadius,
+          r: 10,
+          color: sourceColors[m.source] || defaultColor,
+          label: m.name.length > 6 ? m.name.substring(0, 6) : m.name,
+          score: m.score,
+          isSystem: true,
+        });
+      });
+
+      // 生成连线：相同 source 的记忆互连，系统记忆连接到所有用户记忆
+      const edges = [];
+      const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
+
+      // 系统记忆 → 用户记忆（虚线，表示"注入"关系）
+      systemMemories.forEach(sm => {
+        userMemories.slice(0, 3).forEach(um => {
+          if (nodeMap[sm.id] && nodeMap[um.id]) {
+            edges.push({ from: sm.id, to: um.id, rel: '注入', dashed: true });
+          }
+        });
+      });
+
+      // 用户记忆之间：相同 source 互连
+      for (let i = 0; i < userMemories.length; i++) {
+        for (let j = i + 1; j < userMemories.length; j++) {
+          if (userMemories[i].source === userMemories[j].source && nodeMap[userMemories[i].id] && nodeMap[userMemories[j].id]) {
+            edges.push({ from: userMemories[i].id, to: userMemories[j].id, rel: '关联', dashed: false });
+          }
+        }
+      }
 
       // 绘制连线
-      const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
       ctx.lineWidth = 1.5;
       ctx.font = '10px system-ui, sans-serif';
       ctx.textAlign = 'center';
@@ -3494,10 +3753,9 @@
         const a = nodeMap[e.from];
         const b = nodeMap[e.to];
         if (!a || !b) return;
-        // 线条
         ctx.beginPath();
         ctx.setLineDash(e.dashed ? [4, 3] : []);
-        ctx.strokeStyle = getCssVar('--overlay1', '#8c8fa1') + '60';
+        ctx.strokeStyle = getCssVar('--overlay1', '#8c8fa1') + '50';
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
@@ -3511,14 +3769,16 @@
 
       // 绘制节点
       nodes.forEach(n => {
-        // 光晕
-        const gradient = ctx.createRadialGradient(n.x, n.y, n.r * 0.5, n.x, n.y, n.r * 2);
-        gradient.addColorStop(0, n.color + '40');
-        gradient.addColorStop(1, 'transparent');
-        ctx.beginPath();
-        ctx.arc(n.x, n.y, n.r * 2, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
-        ctx.fill();
+        // 光晕（用户记忆更明显）
+        if (!n.isSystem) {
+          const gradient = ctx.createRadialGradient(n.x, n.y, n.r * 0.5, n.x, n.y, n.r * 2);
+          gradient.addColorStop(0, n.color + '30');
+          gradient.addColorStop(1, 'transparent');
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, n.r * 2, 0, Math.PI * 2);
+          ctx.fillStyle = gradient;
+          ctx.fill();
+        }
         // 圆形
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
@@ -3529,13 +3789,23 @@
         ctx.stroke();
         // 标签
         ctx.fillStyle = getCssVar('--text', '#4c4f69');
-        ctx.font = '10px system-ui, sans-serif';
-        const lines = n.label.split('\n');
-        lines.forEach((line, i) => {
-          const yOffset = i * 13;
-          ctx.fillText(line, n.x, n.y + n.r + 16 + yOffset);
-        });
+        ctx.font = n.isSystem ? '9px system-ui, sans-serif' : '10px system-ui, sans-serif';
+        ctx.fillText(n.label, n.x, n.y + n.r + 14);
+        // score 标注（仅用户记忆）
+        if (!n.isSystem) {
+          ctx.fillStyle = getCssVar('--text-3', '#6c6f85');
+          ctx.font = '9px system-ui, sans-serif';
+          ctx.fillText(n.score.toFixed(2), n.x, n.y + n.r + 26);
+        }
       });
+
+      // 中心标注
+      if (userMemories.length > 0) {
+        ctx.fillStyle = getCssVar('--text-3', '#6c6f85');
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`共 ${demoMemories.length} 条记忆（${userMemories.length} 条用户记忆）`, centerX, h - 16);
+      }
     }
 
     // 获取 CSS 变量值
@@ -3606,17 +3876,22 @@
         ? `<div style="padding: 40px; text-align: center; color: var(--text-3); font-size: 13px;">
              🔍 没有找到匹配的记忆
            </div>`
-        : filtered.map(m => `
+        : filtered.map(m => {
+            const sc = scoreClass(m.score);
+            const dc = decayFillClass(m.score);
+            const pct = Math.round(m.score * 100);
+            return `
             <div class="memory-item">
               <div class="name">${escapeHtml(m.name)}</div>
               <div class="preview">${escapeHtml(m.content.length > 80 ? m.content.substring(0, 80) + '...' : m.content)}</div>
               <div class="meta">
                 <span class="source-tag source-${m.source === 'work-projection' ? 'insight' : m.source}">${m.source}</span>
-                <span class="score">score: ${m.score.toFixed(2)}</span>
+                <span class="score ${sc}">score: ${m.score.toFixed(2)}</span>
                 <span class="memory-time">${m.time}</span>
               </div>
-            </div>
-          `).join('');
+              <div class="memory-decay-bar"><div class="memory-decay-bar-fill ${dc}" style="width: ${pct}%"></div></div>
+            </div>`;
+          }).join('');
     }
 
     // 搜索框
@@ -3661,7 +3936,105 @@
     updateDashboardCounters();
     updateRapport();
     updateMessageCount();
-  </script>
+
+    // ========================================
+    // 自动演示模式（5 秒无操作自动播放）
+    // ========================================
+    let autoDemoTimer = null;
+    let autoDemoRunning = false;
+    let autoDemoCancelled = false;
+
+    /** 预设演示脚本：展示记忆闭环全流程 */
+    const autoDemoScript = [
+      { delay: 800,  action: 'type', text: '我叫小明，是一名前端开发者' },
+      { delay: 3500, action: 'wait' },
+      { delay: 1000, action: 'type', text: '我喜欢简洁直接的回答' },
+      { delay: 3500, action: 'wait' },
+      { delay: 1000, action: 'type', text: '我最近在做一个 Vue 项目' },
+      { delay: 3500, action: 'wait' },
+      { delay: 1500, action: 'click', selector: '[data-panel="memories"]' },
+      { delay: 2000, action: 'wait' },
+      { delay: 500,  action: 'click', selector: '[data-memory-view="graph"]' },
+      { delay: 2000, action: 'wait' },
+      { delay: 500,  action: 'click', selector: '#btn-new-session' },
+      { delay: 2000, action: 'wait' },
+      { delay: 1000, action: 'type', text: '你还记得我是谁吗？' },
+      { delay: 3500, action: 'end' },
+    ];
+
+    /** 显示自动演示横幅 */
+    function showAutoDemoBanner() {
+      const banner = document.createElement('div');
+      banner.className = 'auto-demo-banner';
+      banner.id = 'auto-demo-banner';
+      banner.innerHTML = `
+        <span>▶ 自动演示中 — 展示记忆闭环全流程</span>
+        <button id="auto-demo-skip">跳过演示</button>
+      `;
+      document.body.appendChild(banner);
+      document.getElementById('auto-demo-skip').addEventListener('click', () => {
+        cancelAutoDemo();
+      });
+    }
+
+    /** 移除自动演示横幅 */
+    function hideAutoDemoBanner() {
+      const banner = document.getElementById('auto-demo-banner');
+      if (banner) banner.remove();
+    }
+
+    /** 取消自动演示 */
+    function cancelAutoDemo() {
+      autoDemoCancelled = true;
+      autoDemoRunning = false;
+      if (autoDemoTimer) {
+        clearTimeout(autoDemoTimer);
+        autoDemoTimer = null;
+      }
+      hideAutoDemoBanner();
+    }
+
+    /** 执行自动演示脚本 */
+    async function runAutoDemo() {
+      if (autoDemoRunning) return;
+      autoDemoRunning = true;
+      autoDemoCancelled = false;
+      showAutoDemoBanner();
+      // 隐藏引导栏，避免与自动演示并存
+      const guideBar = document.getElementById('guide-bar');
+      if (guideBar) guideBar.classList.add('hidden');
+
+      for (const step of autoDemoScript) {
+        if (autoDemoCancelled) break;
+
+        await new Promise(resolve => {
+          autoDemoTimer = setTimeout(resolve, step.delay);
+        });
+
+        if (autoDemoCancelled) break;
+
+        if (step.action === 'type') {
+          inputEl.value = step.text;
+          // 高亮输入框引起注意
+          inputEl.style.borderColor = 'var(--accent)';
+          inputEl.style.boxShadow = '0 0 0 2px var(--accent-soft)';
+          await new Promise(resolve => setTimeout(resolve, 600));
+          if (autoDemoCancelled) break;
+          inputEl.style.borderColor = '';
+          inputEl.style.boxShadow = '';
+          sendMessage();
+        } else if (step.action === 'click' && step.selector) {
+          const el = document.querySelector(step.selector);
+          if (el) el.click();
+        }
+        // 'wait' 和 'end' 不需要额外操作
+      }
+
+      autoDemoRunning = false;
+      hideAutoDemoBanner();
+    }
+
+    </script>
 
 </body>
 </html>
