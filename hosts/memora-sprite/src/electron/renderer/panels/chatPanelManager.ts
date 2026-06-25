@@ -396,6 +396,10 @@ export class ChatPanelManager {
     const cursor = el.querySelector('.cursor');
     if (cursor) cursor.remove();
 
+    // 移除思考阶段指示器（如"正在归档"等），流式结束后不应继续显示
+    const thinkingPhase = el.querySelector('.thinking-phase');
+    if (thinkingPhase) thinkingPhase.remove();
+
     // 流式完成后添加复制按钮（从 bubble 提取最终文本）
     const bubble = el.querySelector('.message-bubble');
     const contentWrapper = el.querySelector('.message-content');

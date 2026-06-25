@@ -383,7 +383,19 @@ export class ToolExecutor {
     // 写入确认：优先使用 WriteExtensions.onBeforeWrite（diff 确认），
     // 否则回退到 SecurityGuard.requestWriteConfirmation（安全确认）
     if (extensions?.onBeforeWrite) {
-      const ok = await extensions.onBeforeWrite(relativePath, beforeContent, finalContent);
+      let ok: boolean;
+      try {
+        ok = await extensions.onBeforeWrite(relativePath, beforeContent, finalContent);
+      } catch (err) {
+        const e = toError(err);
+        throw toolError(
+          '写入确认失败',
+          `写入确认回调异常：${e.message}`,
+          ['重试写入操作', '检查扩展实现是否有 bug'],
+          e,
+          ToolErrorCode.UNKNOWN,
+        );
+      }
       if (!ok) {
         throw toolError(
           '用户拒绝写入',
@@ -396,11 +408,23 @@ export class ToolExecutor {
     } else {
       // 回退到原有安全确认流程
       const description = `写入 ${finalContent.length} 字符到 ${basename(absolutePath)}（模式：${mode}）`;
-      const confirmed = await this.security.requestWriteConfirmation(
-        absolutePath,
-        'write_file',
-        description,
-      );
+      let confirmed: boolean;
+      try {
+        confirmed = await this.security.requestWriteConfirmation(
+          absolutePath,
+          'write_file',
+          description,
+        );
+      } catch (err) {
+        const e = toError(err);
+        throw toolError(
+          '写入确认失败',
+          `安全确认异常：${e.message}`,
+          ['重试写入操作'],
+          e,
+          ToolErrorCode.UNKNOWN,
+        );
+      }
       if (!confirmed) {
         throw toolError(
           '用户拒绝写入',
@@ -414,7 +438,18 @@ export class ToolExecutor {
 
     // 自动创建父目录（mkdir recursive）
     const parentDir = dirname(absolutePath);
-    await mkdir(parentDir, { recursive: true });
+    try {
+      await mkdir(parentDir, { recursive: true });
+    } catch (err) {
+      const e = toError(err);
+      throw toolError(
+        '创建目录失败',
+        `无法创建父目录 ${parentDir}：${e.message}`,
+        ['确认父目录路径可写', '检查磁盘权限'],
+        e,
+        ToolErrorCode.PERMISSION_DENIED,
+      );
+    }
 
     try {
       await writeFile(absolutePath, finalContent, 'utf-8');
@@ -521,19 +556,11 @@ export class ToolExecutor {
       maxDepth = 3;
     }
 
+    let stats;
     try {
-      const stats = await stat(absolutePath);
-      if (!stats.isDirectory()) {
-        throw toolError(
-          'list_dir 路径不是目录',
-          `${absolutePath} 是文件，不是目录`,
-          ['path 参数必须指向目录'],
-          undefined,
-          ToolErrorCode.DIR_NOT_FOUND,
-        );
-      }
+      stats = await stat(absolutePath);
     } catch (err) {
-      // 运行时类型检查：Node.js fs 错误带有 code 属性（避免类型断言）
+      // stat 调用失败：区分 ENOENT（不存在）和其他 IO 错误
       if (
         err !== null &&
         typeof err === 'object' &&
@@ -549,7 +576,26 @@ export class ToolExecutor {
           ToolErrorCode.DIR_NOT_FOUND,
         );
       }
-      throw err;
+      // 其他 IO 错误（如权限问题），包装为统一的 TOOL_ERROR
+      const e = toError(err);
+      throw toolError(
+        'list_dir 访问失败',
+        `${absolutePath}：${e.message}`,
+        ['确认目录权限', '尝试其他路径'],
+        e,
+        ToolErrorCode.UNKNOWN,
+      );
+    }
+
+    // stat 成功，检查是否为目录
+    if (!stats.isDirectory()) {
+      throw toolError(
+        'list_dir 路径不是目录',
+        `${absolutePath} 是文件，不是目录`,
+        ['path 参数必须指向目录'],
+        undefined,
+        ToolErrorCode.DIR_NOT_FOUND,
+      );
     }
 
     const entries: string[] = [];

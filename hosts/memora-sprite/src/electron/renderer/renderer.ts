@@ -181,6 +181,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       // P1 修复：onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
       onAgentReadyCallback?.();
     },
+    // 对话结束：立即刷新仪表盘获取最新 LLM 指标，延迟二次刷新等待异步归档完成
+    onConversationEnd: () => {
+      // 立即刷新：LLM 调用次数、token 数、工具使用等指标在对话结束时已确定
+      void memoryController.loadDashboard();
+      // 延迟 1s 二次刷新：postProcess 中的记忆归档是异步 fire-and-forget 的，
+      // 等待用户画像归档、Insight 提取等后台任务完成后再刷新一次
+      window.setTimeout(() => {
+        void memoryController.loadDashboard();
+      }, 1000);
+    },
     // UX-PP-03 流式错误重试：重新发送上一条用户消息
     onSpriteErrorRetry: () => {
       if (lastUserInput) {

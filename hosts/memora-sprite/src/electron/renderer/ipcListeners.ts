@@ -303,6 +303,8 @@ export interface IpcListenerCallbacks {
   onInsightGained: () => void;
   /** Agent 就绪时回调（加载初始数据 + 切换到对话面板） */
   onAgentReady: () => void;
+  /** 对话结束时回调（刷新仪表盘，获取最新 LLM 指标和记忆数据） */
+  onConversationEnd?: () => void;
   /** UX-PP-03 流式错误重试回调（重新发送上一条用户消息） */
   onSpriteErrorRetry?: () => void;
 }
@@ -353,6 +355,8 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
 
   window.electronAPI.onStreamEnd((msg) => {
     uiManager.finishStreamingMessage(msg.messageId);
+    // 对话结束后刷新仪表盘，获取最新的 LLM 指标和记忆统计
+    callbacks.onConversationEnd?.();
   });
 
   // ─── 精灵输出（主动提示 / 系统消息） ───────────────────

@@ -405,7 +405,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      await this.requireNonNull(this.history, 'history').appendAssistant(assistantContent);
+      // 追加助手消息到历史（best-effort：失败不影响用户已收到的回答）
+      try {
+        await this.requireNonNull(this.history, 'history').appendAssistant(assistantContent);
+      } catch (err) {
+        logger.warn({ err }, '助手消息历史写入失败');
+      }
 
       // 后处理阶段
       yield { type: 'thinking', phase: 'archiving' };
@@ -481,66 +486,89 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 对话后处理：用户画像归档、角色匹配、技能匹配、Insight 提取
+   *
+   * 所有归档/匹配操作均为 best-effort：任何子步骤失败不应影响用户已收到的回答，
+   * 失败仅记录日志，不向上抛出异常。
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
     // 用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
     if (this.#userProfile) {
-      const turnIndex = `turn-${Date.now()}`;
-      const facts = extractUserFacts(input, turnIndex);
-      // FD-22: 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
-      const archiveFactsPromise = this.#userProfile.archiveFacts(facts).catch((err) => {
-        logger.warn({ err }, '用户画像实时归档失败');
-      });
-      this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
-    }
-
-    // 角色自动匹配
-    if (this.personaManager) {
-      const matchedPersona = this.personaManager.autoMatch(input);
-      if (matchedPersona) {
-        const prevName = this.personaManager.activeName;
-        this.personaManager.switchPersona(matchedPersona);
-        this.emit('personaSwitched', { from: prevName, to: matchedPersona });
-        if (this.loop) {
-          const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
-          const personaPrompt = this.personaManager.buildSystemPrompt();
-          const newPrefix =
-            [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
-            ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
-          this.loop.refreshPersonaPrefix(newPrefix);
-        }
-        logger.info({ persona: matchedPersona }, '角色自动切换');
+      try {
+        const turnIndex = `turn-${Date.now()}`;
+        const facts = extractUserFacts(input, turnIndex);
+        // FD-22: 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
+        const archiveFactsPromise = this.#userProfile.archiveFacts(facts).catch((err) => {
+          logger.warn({ err }, '用户画像实时归档失败');
+        });
+        this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
+      } catch (err) {
+        logger.warn({ err }, '用户画像归档初始化失败');
       }
     }
 
-    // 技能关键词匹配
+    // 角色自动匹配（best-effort：失败不阻塞对话结束）
+    if (this.personaManager) {
+      try {
+        const matchedPersona = this.personaManager.autoMatch(input);
+        if (matchedPersona) {
+          const prevName = this.personaManager.activeName;
+          this.personaManager.switchPersona(matchedPersona);
+          this.emit('personaSwitched', { from: prevName, to: matchedPersona });
+          if (this.loop) {
+            const profilePrompt = this.userProfile?.buildSystemPrompt() ?? '';
+            const personaPrompt = this.personaManager.buildSystemPrompt();
+            const newPrefix =
+              [personaPrompt, profilePrompt].filter(Boolean).join('\n\n') +
+              ([personaPrompt, profilePrompt].some(Boolean) ? '\n\n---\n\n' : '');
+            this.loop.refreshPersonaPrefix(newPrefix);
+          }
+          logger.info({ persona: matchedPersona }, '角色自动切换');
+        }
+      } catch (err) {
+        logger.warn({ err }, '角色自动匹配失败');
+      }
+    }
+
+    // 技能关键词匹配（best-effort：失败不阻塞对话结束）
     if (this.skillManager) {
-      const match = this.skillManager.match(input);
-      if (match) {
-        this.activeSkill = match.skill.name;
-        logger.debug({ skill: match.skill.name, score: match.score }, '技能匹配，下一轮注入');
+      try {
+        const match = this.skillManager.match(input);
+        if (match) {
+          this.activeSkill = match.skill.name;
+          logger.debug({ skill: match.skill.name, score: match.score }, '技能匹配，下一轮注入');
+        }
+      } catch (err) {
+        logger.warn({ err }, '技能匹配失败');
       }
     }
 
     // 输入分类 → Insight 提取（委托给 InsightExtractor）
     if (this.insightExtractor) {
-      const shouldExtract = this.insightExtractor.classify(input);
-      if (shouldExtract === 'extract') {
-        const p = this.insightExtractor.extract(input, assistantContent).catch((err) => {
-          logger.warn({ err }, 'Insight 提取失败');
-          return null;
-        });
-        this.requireNonNull(this.history, 'history').registerPendingArchive(p);
+      try {
+        const shouldExtract = this.insightExtractor.classify(input);
+        if (shouldExtract === 'extract') {
+          const p = this.insightExtractor.extract(input, assistantContent).catch((err) => {
+            logger.warn({ err }, 'Insight 提取失败');
+            return null;
+          });
+          this.requireNonNull(this.history, 'history').registerPendingArchive(p);
+        }
+      } catch (err) {
+        logger.warn({ err }, 'Insight 提取初始化失败');
       }
     }
 
     // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
     if (this.autoConfigRefiner) {
-      // FD-22: 注册到 pendingArchives，确保 close() 时等待后台分析完成，避免写入已关闭的存储
-      const analyzePromise = this.autoConfigRefiner.analyze(input, assistantContent).catch((err) => {
-        logger.warn({ err }, 'AutoConfigRefiner 分析失败');
-      });
-      this.requireNonNull(this.history, 'history').registerPendingArchive(analyzePromise);
+      try {
+        // FD-22: 注册到 pendingArchives，确保 close() 时等待后台分析完成，避免写入已关闭的存储
+        const analyzePromise = this.autoConfigRefiner.analyze(input, assistantContent).catch((err) => {
+          logger.warn({ err }, 'AutoConfigRefiner 分析失败');
+        });
+        this.requireNonNull(this.history, 'history').registerPendingArchive(analyzePromise);
+      } catch (err) {
+        logger.warn({ err }, 'AutoConfigRefiner 初始化失败');
+      }
     }
   }
 
