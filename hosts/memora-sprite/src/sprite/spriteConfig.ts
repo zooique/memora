@@ -66,6 +66,18 @@ export interface SpriteConfig {
    * P3-FLOW-12 新增 'auto' 跟随系统主题
    */
   theme?: 'light' | 'dark' | 'auto';
+  /**
+   * Phase 3.3 全局快捷键配置
+   *
+   * 持久化到 sprite.json，支持热更新（不重启应用即可修改快捷键）。
+   * accelerators 是 action → accelerator 映射，action 为开放字符串（遵循 ADR-004）。
+   */
+  shortcuts?: {
+    /** 是否启用全局快捷键（总开关） */
+    enabled: boolean;
+    /** 动作 → 加速器字符串映射（如 { 'toggle-window': 'Ctrl+Shift+Space' }） */
+    accelerators: Record<string, string>;
+  };
 }
 
 /** 配置键名联合类型 */
@@ -104,6 +116,7 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   windowBounds: 'object',
   silentModeExpiresAt: 'string',
   theme: 'enum:light|dark|auto',
+  shortcuts: 'object',
 };
 
 /** 内置默认值 */
@@ -126,6 +139,14 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   windowBounds: null,
   silentModeExpiresAt: null,
   theme: 'light',
+  shortcuts: {
+    enabled: true,
+    accelerators: {
+      'toggle-window': 'Ctrl+Shift+Space',
+      'quick-record': 'Ctrl+Shift+M',
+      'recall-memory': 'Ctrl+Shift+R',
+    },
+  },
 };
 
 /** 配置文件名 */
@@ -194,6 +215,18 @@ export function loadSpriteConfig(): Required<SpriteConfig> {
     const raw = readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw) as SpriteConfig;
     const merged = { ...DEFAULT_SPRITE_CONFIG, ...parsed };
+
+    // shortcuts 对象需要深合并：用户可能只持久化了 enabled 字段，
+    // 浅合并会导致 accelerators 丢失。此处确保 accelerators 有默认值。
+    if (parsed.shortcuts) {
+      merged.shortcuts = {
+        enabled: parsed.shortcuts.enabled ?? DEFAULT_SPRITE_CONFIG.shortcuts.enabled,
+        accelerators: {
+          ...DEFAULT_SPRITE_CONFIG.shortcuts.accelerators,
+          ...parsed.shortcuts.accelerators,
+        },
+      };
+    }
 
     // 迁移：旧版 windowState='float' 转换为 tray + showFloatBubble
     if ((merged.windowState as string) === 'float') {
@@ -367,6 +400,22 @@ export function applyConfigField(
           && typeof b.width === 'number' && typeof b.height === 'number') {
           target[key] = { x: b.x, y: b.y, width: b.width, height: b.height };
           return true;
+        }
+      }
+      // shortcuts：校验 enabled 为 boolean，accelerators 为 Record<string, string>
+      if (key === 'shortcuts') {
+        const s = value as { enabled?: unknown; accelerators?: unknown };
+        if ('enabled' in value && 'accelerators' in value
+          && typeof s.enabled === 'boolean'
+          && typeof s.accelerators === 'object' && s.accelerators !== null
+          && !Array.isArray(s.accelerators)) {
+          // 校验 accelerators 的所有值为字符串
+          const accMap = s.accelerators as Record<string, unknown>;
+          const allStrings = Object.values(accMap).every((v) => typeof v === 'string');
+          if (allStrings) {
+            target[key] = { enabled: s.enabled, accelerators: { ...accMap as Record<string, string> } };
+            return true;
+          }
         }
       }
     }

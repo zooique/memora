@@ -22,7 +22,7 @@
 // 通过 app.commandLine 追加 --console-utf8 标志，让 Electron 强制使用 UTF-8 编码
 // 注意：import 语句在 ES 模块中会被提升到文件顶部，因此 app.commandLine.appendSwitch
 //       必须紧跟在第一条 import 之后、任何其他模块加载之前执行
-import { app, ipcMain, screen } from 'electron';
+import { app, ipcMain, screen, globalShortcut } from 'electron';
 app.commandLine.appendSwitch('console-utf8');
 
 import * as path from 'node:path';
@@ -52,6 +52,7 @@ import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/audit/auditManager.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
+import { ShortcutManager, SHORTCUT_ACTIONS } from './shortcuts.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
@@ -129,6 +130,9 @@ const pendingWriteConfirmations = new Map<string, (confirmed: boolean) => void>(
 
 /** M2 审计日志：宿主单例（在 initializeApp 中创建） */
 let auditManager: AuditManager | null = null;
+
+/** Phase 3.3 全局快捷键管理器（在 initializeApp 中创建） */
+let shortcutManager: ShortcutManager | null = null;
 
 // P2-DESIGN-4 修复：精灵事件订阅管理已移至 spriteEventBridge.ts
 
@@ -462,6 +466,24 @@ async function initializeApp(): Promise<void> {
     // 使用 showInitial() 而非 transition()——transition 在 state 已等于 target 时早返回，
     // 会导致首次启动窗口不显示（构造函数已设置 defaultState）
     windowStateManager.showInitial();
+
+    // 7. Phase 3.3 初始化全局快捷键
+    // 在窗口创建后、Agent 初始化前注册，确保快捷键尽早可用
+    // toggle-window 动作委托给 windowManager.toggleWindow()
+    shortcutManager = new ShortcutManager(globalShortcut, {
+      config: spriteConfig.shortcuts ?? {
+        enabled: true,
+        accelerators: {
+          [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Ctrl+Shift+Space',
+        },
+      },
+      handlers: {
+        [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
+          windowManager.toggleWindow();
+        },
+      },
+    });
+    shortcutManager.registerAll();
   } catch (error) {
     // 窗口创建失败是致命错误
     errorHandler.handle(error, {
@@ -580,6 +602,9 @@ app.on('before-quit', async (e) => {
       currentAbortController.abort();
       currentAbortController = null;
     }
+    // Phase 3.3：注销全局快捷键，避免退出后残留占用
+    shortcutManager?.unregisterAll();
+    shortcutManager = null;
     if (closeSprite) {
       await closeSprite();
     }

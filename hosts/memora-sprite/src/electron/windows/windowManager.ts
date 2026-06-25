@@ -217,4 +217,21 @@ export class WindowManager {
     this.floatWindow?.close();
     this.fullWindow?.destroy();
   }
+
+  /**
+   * 切换窗口可见性（Phase 3.3：全局快捷键 toggle-window 动作）
+   *
+   * 当前为 tray 态 → 切换到 full 态（显示完整窗口）
+   * 当前为 full 态 → 切换到 tray 态（隐藏到托盘）
+   *
+   * 委托给 WindowStateManager.transition，复用现有状态机逻辑。
+   */
+  toggleWindow(): void {
+    const currentState = this.windowStateManager.getState();
+    if (currentState === 'tray') {
+      this.windowStateManager.transition('full');
+    } else {
+      this.windowStateManager.transition('tray');
+    }
+  }
 }
