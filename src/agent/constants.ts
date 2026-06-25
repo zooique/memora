@@ -51,6 +51,9 @@ export const LOOP_CONSTANTS = {
   /** LLM 重试基础延迟（毫秒），指数退避 base。 */
   RETRY_BASE_DELAY_MS: 1000,
 
+  /** 单次 LLM 请求超时（毫秒）。120 秒。超时后可重试。 */
+  LLM_TIMEOUT_MS: 120_000,
+
   /** 上下文截断时给 LLM 响应预留的缓冲比例。0.9 = 留 10% 给响应。 */
   CONTEXT_TOKENS_BUFFER_RATIO: 0.9,
 

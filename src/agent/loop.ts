@@ -310,6 +310,13 @@ export class AgentLoop {
       // 纯文本结束
       if (llmResult.fullContent) {
         this.messages.push({ role: 'assistant', content: llmResult.fullContent });
+      } else {
+        // LLM 返回空响应（既无文本也无工具调用）的兜底处理
+        // 正常 LLM 不会返回空响应，但某些 provider 异常/边界情况下可能发生
+        logger.warn({ iteration }, 'LLM 返回空响应（无文本、无工具调用），使用兜底提示');
+        const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
+        this.messages.push({ role: 'assistant', content: fallbackText });
+        yield { type: 'text', content: fallbackText };
       }
 
       // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
@@ -363,6 +370,14 @@ export class AgentLoop {
     let lastError: Error | null = null;
     let aborted = false;
 
+    // 将 AbortSignal 和超时配置传入 provider，
+    // 确保 fetch 请求和 SSE 流读取都能被及时中断（用户取消/超时）
+    const effectiveOpts: ChatOptions = {
+      ...chatOpts,
+      signal,
+      timeoutMs: LOOP_CONSTANTS.LLM_TIMEOUT_MS,
+    };
+
     // LLM 调用 Span（涵盖重试循环）
     const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {
       model: this.opts.provider.name,
@@ -389,7 +404,7 @@ export class AgentLoop {
 
         // safeMessages 为 readonly Message[]，provider.chat 期望 Message[]；
         // 通过浅拷贝转换为可变数组，避免类型断言。
-        for await (const chunk of this.opts.provider.chat([...safeMessages], chatOpts)) {
+        for await (const chunk of this.opts.provider.chat([...safeMessages], effectiveOpts)) {
           streamStarted = true;
           if (signal?.aborted) {
             aborted = true;
@@ -423,7 +438,7 @@ export class AgentLoop {
           llmSpan.end();
           throw err;
         }
-        // 继续重试
+        // 继续重试（超时/网络错误等在流式开始前均可重试）
       }
     }
 

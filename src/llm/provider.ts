@@ -59,6 +59,18 @@ export interface ChatOptions {
    * 详见接入指南 §九
    */
   channel?: 'chat' | 'background';
+  /**
+   * 中止信号：用于取消正在进行的 LLM 请求
+   *
+   * AgentLoop 在用户取消对话时传入 AbortSignal，
+   * Provider 应将 signal 传给底层 fetch/stream 读取，确保请求可被中断。
+   */
+  signal?: AbortSignal;
+  /**
+   * 请求超时（毫秒）。默认 120 秒。
+   * 超时后抛出 networkError，由 callLlmWithRetry 决定是否重试。
+   */
+  timeoutMs?: number;
 }
 
 /**

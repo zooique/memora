@@ -31,9 +31,14 @@ export class OpenAICompatibleProvider extends LlmProvider {
     this.name = name;
   }
 
+  /** 默认请求超时：120 秒 */
+  private static readonly DEFAULT_TIMEOUT_MS = 120_000;
+
   async *chat(messages: Message[], opts: ChatOptions = {}): AsyncIterable<LlmChunk> {
     const url = `${this.config.baseUrl}/chat/completions`;
     const model = opts.model ?? this.config.defaultModel;
+    // 请求超时控制：默认 120s，可通过 opts.timeoutMs 覆盖
+    const timeoutMs = opts.timeoutMs ?? OpenAICompatibleProvider.DEFAULT_TIMEOUT_MS;
 
     const body: Record<string, unknown> = {
       model,
@@ -58,6 +63,20 @@ export class OpenAICompatibleProvider extends LlmProvider {
       );
     }
 
+    // 合并 AbortSignal：外部取消信号 + 超时信号
+    // 确保用户取消和请求超时都能中断 fetch 和流读取
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(new DOMException('LLM 请求超时', 'TimeoutError')), timeoutMs);
+    const { signal: optsSignal } = opts;
+    const onOptsAbort = () => abortController.abort(optsSignal?.reason);
+    if (optsSignal) {
+      if (optsSignal.aborted) {
+        abortController.abort(optsSignal.reason);
+      } else {
+        optsSignal.addEventListener('abort', onOptsAbort, { once: true });
+      }
+    }
+
     let response: Response;
     try {
       response = await fetch(url, {
@@ -67,9 +86,25 @@ export class OpenAICompatibleProvider extends LlmProvider {
           Authorization: `Bearer ${this.config.apiKey}`,
         },
         body: JSON.stringify(body),
+        signal: abortController.signal,
       });
     } catch (err) {
+      clearTimeout(timeoutId);
+      if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
       const e = toError(err);
+      // 区分超时错误和网络错误
+      if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+        throw networkError(
+          'LLM 请求超时',
+          `${this.config.baseUrl} 请求超过 ${timeoutMs / 1000}s 未响应`,
+          [
+            '检查网络连接稳定性',
+            '如频繁超时，考虑切换 provider 或在 config.json 调整 timeoutMs',
+            '稍后重试',
+          ],
+          e,
+        );
+      }
       throw networkError(
         'LLM 服务连接失败',
         `无法访问 ${this.config.baseUrl}：${e.message}`,
@@ -82,11 +117,16 @@ export class OpenAICompatibleProvider extends LlmProvider {
       );
     }
 
+    // fetch 成功，清理外部 signal 监听（超时继续生效，通过 abortController 管理）
+    if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
+
     if (!response.ok) {
+      clearTimeout(timeoutId);
       await this.handleResponseError(response);
     }
 
     if (!response.body) {
+      clearTimeout(timeoutId);
       throw llmError('LLM API 返回空 body', `${this.config.baseUrl} 返回了 200 但无 body`, [
         '重试一次',
         '如持续出现，联系厂商',
@@ -94,7 +134,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
 
     try {
-      yield* this.parseSseStream(response.body);
+      // 将 abortController.signal 传入 SSE 解析器，使超时/取消能中断流读取
+      yield* this.parseSseStream(response.body, abortController.signal);
     } catch (err) {
       // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
       try {
@@ -103,6 +144,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
         logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
       }
       throw err;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -152,6 +195,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
   /**
    * 格式化消息为 OpenAI 协议格式
+   *
+   * 关键兼容性处理：
+   *   - assistant 消息带 tool_calls 时，若 content 为空字符串，转为 null
+   *     （部分 LLM provider 对空字符串 content 处理异常，导致请求挂起或报错）
+   *   - tool 消息必须包含 tool_call_id 关联对应的工具调用
    */
   private formatMessages(messages: Message[]): unknown[] {
     return messages.map((m) => {
@@ -161,7 +209,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
       if (m.role === 'assistant' && m.toolCalls) {
         return {
           role: 'assistant',
-          content: m.content,
+          // OpenAI 协议：有 tool_calls 时 content 应为 null（而非空字符串），
+          // 空字符串会导致部分 provider 请求异常或无响应
+          content: m.content && m.content.length > 0 ? m.content : null,
           tool_calls: m.toolCalls,
         };
       }
@@ -177,8 +227,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
    * OpenAI 协议中 tool_calls 以 delta 形式分片传输，
    * 需要跨 chunk 累积 function.name 和 function.arguments，
    * 在 finish_reason='tool_calls' 或流结束时输出完整的 toolCalls。
+   *
+   * @param body - SSE 响应流
+   * @param signal - 中止信号（超时/用户取消），中断 reader.read() 等待
    */
-  private async *parseSseStream(body: ReadableStream<Uint8Array>): AsyncIterable<LlmChunk> {
+  private async *parseSseStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncIterable<LlmChunk> {
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -189,6 +242,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     try {
       while (true) {
+        // 检查中止信号：超时或用户取消时立即退出
+        if (signal?.aborted) {
+          throw new DOMException('LLM 流读取被中止', signal.reason?.name ?? 'AbortError');
+        }
+
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -212,7 +270,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
             const json = JSON.parse(data) as {
               choices?: Array<{
                 delta?: {
-                  content?: string;
+                  content?: string | null;
                   tool_calls?: Array<{
                     index?: number;
                     id?: string;
@@ -228,6 +286,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
             if (!choice) continue;
 
             const chunk: LlmChunk = {};
+            // delta.content 可能为 null（tool_calls 场景），!= null 排除 null/undefined
+            // 空字符串在流式中极少出现，但不影响语义，保持原有 truthy 检查即可
             if (choice.delta?.content) chunk.content = choice.delta.content;
 
             // 累积 tool_calls delta
@@ -245,6 +305,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
             // finish_reason='tool_calls' 时输出完整的 toolCalls
             if (choice.finish_reason === 'tool_calls') {
               chunk.toolCalls = this.buildToolCallsFromAccumulators(toolCallAccumulators);
+              toolCallAccumulators.clear();
+            } else if (choice.finish_reason && toolCallAccumulators.size > 0) {
+              // finish_reason 为 stop/length 等非 tool_calls 值时，清空累积器防止污染下一次调用
+              // （某些模型可能在 stop 时残留不完整的 tool_calls 碎片）
               toolCallAccumulators.clear();
             }
 
