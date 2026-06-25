@@ -79,6 +79,17 @@ export class ProactiveEngine {
   }
 
   /**
+   * 检查待提示事件并尝试发射（Phase 3.2：用户回来时触发）
+   *
+   * 与 addNotice 内部的自动触发不同，此方法用于外部主动检查。
+   * 例如用户离开一段时间后回来，应检查是否有累积的待提示事件。
+   * 受 silentMode 和 cooldownMs 约束，与自动触发行为一致。
+   */
+  checkPending(): void {
+    this.tryEmit();
+  }
+
+  /**
    * 累积待提示事件
    *
    * 当事件数量达到阈值时自动触发 tryEmit。
@@ -111,7 +122,6 @@ export class ProactiveEngine {
     // 取出所有待提示事件
     const notices = this.pendingNotices.splice(0);
     this.lastProactiveAt = now;
-
     // 生成上下文感知提示文本
     const triggers = notices.map(n => n.type);
     const summaries = notices.map(n => n.summary);

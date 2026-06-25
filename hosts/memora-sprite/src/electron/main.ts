@@ -22,7 +22,7 @@
 // 通过 app.commandLine 追加 --console-utf8 标志，让 Electron 强制使用 UTF-8 编码
 // 注意：import 语句在 ES 模块中会被提升到文件顶部，因此 app.commandLine.appendSwitch
 //       必须紧跟在第一条 import 之后、任何其他模块加载之前执行
-import { app, ipcMain, screen, globalShortcut } from 'electron';
+import { app, ipcMain, screen, globalShortcut, powerMonitor } from 'electron';
 app.commandLine.appendSwitch('console-utf8');
 
 import * as path from 'node:path';
@@ -511,6 +511,12 @@ async function initializeApp(): Promise<void> {
 
     // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
     setupAgentReady(agent!, sprite!, sessionStore!, currentDataDir);
+
+    // Phase 3.2：绑定在场状态控制器
+    // powerMonitor 和 app 是 Electron 内置模块，在 main 进程可用
+    // PresenceController 监听锁屏/挂起/解锁/恢复 + 窗口焦点变化
+    // 用户回来时触发 ProactiveEngine.checkPending() 检查累积事件
+    sprite?.bindPresence(powerMonitor, app);
   } catch (error) {
     // Agent 初始化失败——窗口已显示，向用户展示错误信息
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册

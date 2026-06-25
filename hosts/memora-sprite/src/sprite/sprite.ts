@@ -15,13 +15,14 @@
 import { resolve } from 'node:path';
 import type { Agent, AgentEventMap, AgentMetrics } from 'memora';
 import type { VectorStore, ITracer } from 'memora';
+import type { PowerMonitor, App } from 'electron';
 import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import { loadSpriteConfig, saveSpriteConfig, applyConfigField, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cli/formatter.js';
-import { MemoryController, PersonaController, ProactiveEngine } from './controllers/index.js';
+import { MemoryController, PersonaController, ProactiveEngine, PresenceController } from './controllers/index.js';
 import type { DashboardData, RapportAssessment } from './controllers/index.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
 
@@ -47,6 +48,8 @@ export interface SpriteEventMap {
   memoryRecalled: { count: number; query: string };
   /** 记忆衰减完成（24h 节流，避免噪音） */
   decayCompleted: { decayedCount: number };
+  /** Phase 3.2：用户在场状态变化（离开/回来） */
+  presenceChanged: { state: 'present' | 'away'; timestamp: string; awayDurationMs?: number; reason: string };
 }
 
 // 重新导出 DashboardData 供外部使用
@@ -101,6 +104,8 @@ export class Sprite {
   private memoryController: MemoryController;
   private personaController: PersonaController;
   private proactiveEngine: ProactiveEngine;
+  /** Phase 3.2：在场状态控制器（可选，需宿主注入 powerMonitor/app） */
+  private presenceController: PresenceController | null = null;
   /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
 
@@ -215,6 +220,9 @@ export class Sprite {
       this.personaController.switch(this.config.defaultPersona);
     }
 
+    // Phase 3.2：启动在场状态控制器（如已注入）
+    this.presenceController?.start();
+
     logger.info('精灵已启动，等待唤醒...');
   }
 
@@ -225,6 +233,42 @@ export class Sprite {
     this.unsubscribeAgentEvents();
     this.spriteHandlers.clear();
     this.state = 'idle';
+  }
+
+  /**
+   * 注入在场状态控制器（Phase 3.2）
+   *
+   * 宿主项目（main.ts）创建 PresenceController 后注入。
+   * 若 Sprite 已启动（running=true），自动调用 presenceController.start()。
+   * 未注入时跳过在场状态检测（向后兼容）。
+   *
+   * @param controller PresenceController 实例
+   */
+  setPresenceController(controller: PresenceController): void {
+    this.presenceController = controller;
+    // 若 Sprite 已启动，自动启动在场状态控制器
+    if (this.running) {
+      controller.start();
+    }
+  }
+
+  /**
+   * 创建并注入在场状态控制器（Phase 3.2 便捷方法）
+   *
+   * 由 Sprite 内部创建 PresenceController，自动绑定 emit 回调到 emitSprite。
+   * 宿主只需传入 powerMonitor 和 app（Electron 模块）。
+   *
+   * @param powerMonitor Electron powerMonitor 模块
+   * @param app Electron app 模块
+   */
+  bindPresence(powerMonitor: PowerMonitor, app: App): void {
+    const controller = new PresenceController(powerMonitor, app, {
+      proactiveEngine: this.proactiveEngine,
+      emit: (event, payload) => {
+        this.emitSprite(event, payload);
+      },
+    });
+    this.setPresenceController(controller);
   }
 
   /** 获取当前状态 */
