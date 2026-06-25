@@ -31,13 +31,9 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       if (query.date && query.session) {
         target = `${query.date}-${query.session}`;
       } else {
-        // 无查询参数时：列出所有会话，智能选择最近会话
-        const sessions = ctx.sessionStore.listSessions();
-        if (sessions.length === 0) {
-          return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
-        }
+        // UT-FQ-01 无查询参数时：始终以当天主会话为默认，即使为空
         const today = getLocalDate(); // UX-PP-07 本地日期，非 UTC
-        target = sessions.find(s => s === `${today}-main`) ?? sessions[sessions.length - 1];
+        target = `${today}-main`;
       }
 
       if (!target) {
@@ -132,6 +128,17 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
       if (deletedCount === 0) {
         return { success: false, error: '未找到该日期的会话记录' };
+      }
+
+      // UT-FQ-02 删除后 Agent 状态同步：如果 Agent 的当前日期正是被删的日期，
+      // 重置到当天主会话，避免 Agent 内部 currentDate / loop.messages[] 指向已删除数据
+      const history = ctx.agent?.agentHistory;
+      if (history) {
+        const today = getLocalDate();
+        if (history.currentDateValue === datePrefix && history.currentDateValue !== today) {
+          await history.loadSessionMessages(today, 'main');
+          ctx.agent.agentLoop?.restoreHistory([]);
+        }
       }
 
       return { success: true };

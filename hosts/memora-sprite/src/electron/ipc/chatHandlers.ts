@@ -16,6 +16,7 @@ import { toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
+import { getLocalDate } from '../../sprite/constants.js';
 
 /**
  * 注册对话相关 IPC 处理器
@@ -72,6 +73,20 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       text: '上一条消息仍在处理中，请等待完成或点击停止后再发送',
     });
     return;
+  }
+
+  // UT-FQ-01 跨日/跨会话自动重置：确保新消息始终归当天主会话
+  const history = ctx.agent.agentHistory;
+  if (history) {
+    const todayDate = getLocalDate();
+    if (history.currentDateValue !== todayDate) {
+      // 重置到当天 main 会话：更新 currentDate/currentSession + 加载当天已有消息
+      const restoredCount = await ctx.agent.sessionManager.restoreSession(todayDate, 'main');
+      // restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
+      if (restoredCount === 0 && ctx.agent.agentLoop) {
+        ctx.agent.agentLoop.restoreHistory([]);
+      }
+    }
   }
 
   const messageId = randomUUID();
