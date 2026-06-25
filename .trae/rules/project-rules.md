@@ -114,7 +114,7 @@ chore: 升级 dependencies
 
 | Phase | 目标 | 关键交付物 | 状态 |
 |-------|------|-----------|------|
-| Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 拓扑可视化 | 🚧 规则已定（ADR-014 草案） |
+| Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 可观测性 + 拓扑可视化 | ✅ 核心完成（拓扑可视化延后） |
 | Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | 📋 待启动 |
 | Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | 📋 待启动 |
 | Phase 4 | 生态准备 | 接入文档 + 存储独立包 + 技能拖入安装 | 📋 待启动 |
