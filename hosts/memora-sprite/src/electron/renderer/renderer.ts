@@ -475,6 +475,22 @@ function setupBusinessLogic(
     uiManager.stopAllStreaming();
   });
 
+  // UX-FD-07 日期导航跳转回调：点击日期项后跳转到该日期的对话
+  uiManager.onDateNavJump(async (date: string) => {
+    await sessionController.jumpToDate(date);
+    // 跳转后刷新日期列表（更新 active 高亮）
+    const dates = await sessionController.loadDateList();
+    const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
+    uiManager.renderDateNavList(dates, currentDate);
+  });
+
+  // UX-FD-07 日期导航下拉打开时加载日期列表
+  uiManager.onDateNavOpen(async () => {
+    const dates = await sessionController.loadDateList();
+    const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
+    uiManager.renderDateNavList(dates, currentDate);
+  });
+
   // FD-A1 会话切换/删除/重命名回调已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
 }
 

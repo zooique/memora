@@ -17,6 +17,7 @@
 
 import type { UIManager } from '../ui.js';
 import { reportError } from '../helpers/errorHelpers.js';
+import { getLocalDate } from '../../../sprite/constants.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色
@@ -102,6 +103,11 @@ export function createSessionController(uiManager: UIManager) {
       // 更新分页状态
       currentOffset = messages.length;
       currentTotal = total;
+      // UX-FD-07 方案 B：今日消息数只统计今天 main 会话的消息
+      // 加载昨天对话时今日消息数为 0，加载今天 main 时为该会话的消息数
+      const today = getLocalDate();
+      const isTodayMain = loadedSessionId === `${today}-main`;
+      uiManager.setMessageCount(isTodayMain ? messages.filter((m) => m.role !== 'system').length : 0);
       // 根据分页和日期状态显示对应的加载按钮
       await updateLoadMoreButton(hasMore);
 
@@ -307,6 +313,10 @@ export function createSessionController(uiManager: UIManager) {
       currentSessionParams = { date, session: name };
       currentOffset = result.messages.length;
       currentTotal = result.messages.length; // switchSession 返回全部消息，无分页
+      // UX-FD-07 方案 B：今日消息数只统计今天 main 会话的消息
+      const today = getLocalDate();
+      const isTodayMain = date === today && name === 'main';
+      uiManager.setMessageCount(isTodayMain ? result.messages.filter((m) => m.role !== 'system').length : 0);
       // 切换成功后隐藏错误横幅
       uiManager.hidePanelError('chat');
     } catch (error) {
@@ -322,11 +332,119 @@ export function createSessionController(uiManager: UIManager) {
     return currentSessionId;
   }
 
+  /**
+   * UX-FD-07 加载日期列表（供日期导航下拉使用）
+   *
+   * 查询所有有对话记录的日期，按日期降序排列（最新的在最前）。
+   * 始终包含今天日期（即使 0 条消息），确保用户可以跳转到今天的对话。
+   *
+   * @returns 日期列表，每项包含日期、消息数、是否今天
+   */
+  async function loadDateList(): Promise<Array<{ date: string; messageCount: number; isToday: boolean }>> {
+    try {
+      const { sessions } = await window.electronAPI.listSessions();
+      const today = getLocalDate();
+
+      // 按日期聚合消息数
+      const dateCountMap = new Map<string, number>();
+      for (const s of sessions) {
+        const count = s.messageCount ?? 0;
+        dateCountMap.set(s.date, (dateCountMap.get(s.date) ?? 0) + count);
+      }
+
+      // 始终包含今天（即使无消息）
+      if (!dateCountMap.has(today)) {
+        dateCountMap.set(today, 0);
+      }
+
+      // 转换为数组并按日期降序排列（最新的在最前）
+      const result = Array.from(dateCountMap.entries())
+        .map(([date, messageCount]) => ({
+          date,
+          messageCount,
+          isToday: date === today,
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      return result;
+    } catch (error) {
+      reportError('loadDateList', error);
+      return [];
+    }
+  }
+
+  /**
+   * UX-FD-07 跳转到指定日期的对话
+   *
+   * 加载指定日期的代表会话消息，替换当前消息区。
+   * 跳转后重置时间流状态，以该日期为起点。
+   *
+   * @param date 目标日期（YYYY-MM-DD）
+   */
+  async function jumpToDate(date: string): Promise<void> {
+    // 流式输出期间禁止跳转
+    if (uiManager.isStreaming()) {
+      uiManager.showToast('精灵正在回复中，请等待完成或点击停止后再跳转', 'warning');
+      return;
+    }
+
+    try {
+      // 查询该日期的代表会话
+      const { sessions } = await window.electronAPI.listSessions();
+      const targetSession = sessions.find((s) => s.date === date);
+      const sessionName = targetSession?.name ?? 'main';
+
+      // 清空当前消息区
+      uiManager.clearMessages();
+      // 重置分页和时间流状态
+      currentOffset = 0;
+      currentTotal = 0;
+      currentSessionParams = null;
+      loadedDates.clear();
+      earliestDate = null;
+
+      // 加载该日期的全部消息
+      const { messages, total, hasMore } = await window.electronAPI.loadSession({
+        date,
+        session: sessionName,
+        limit: PAGE_SIZE,
+        offset: 0,
+      });
+
+      // 渲染消息
+      uiManager.appendMessages(mapMessages(messages), false);
+
+      // 更新状态
+      const sessionId = `${date}-${sessionName}`;
+      currentSessionId = sessionId;
+      currentSessionParams = { date, session: sessionName };
+      currentOffset = messages.length;
+      currentTotal = total;
+      loadedDates.add(date);
+      earliestDate = date;
+
+      // 今日消息数只统计今天 main 会话的消息
+      const today = getLocalDate();
+      const isTodayMain = date === today && sessionName === 'main';
+      uiManager.setMessageCount(isTodayMain ? messages.filter((m) => m.role !== 'system').length : 0);
+
+      // 更新加载按钮状态
+      await updateLoadMoreButton(hasMore);
+
+      uiManager.hidePanelError('chat');
+    } catch (error) {
+      reportError('jumpToDate', error);
+      uiManager.showToast('跳转到指定日期失败', 'error');
+    }
+  }
+
   return {
     loadSessionHistory,
     switchSession,
     loadMoreHistory,
     loadEarlierDay,
+    loadDateList,
+    jumpToDate,
     getCurrentSessionId,
   };
 }

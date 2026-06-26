@@ -259,6 +259,103 @@
 }
 
 /**
+ * UX-FD-07 日期导航按钮：快速跳转到指定日期的历史对话
+ * 位于 chat-toolbar 右侧，点击弹出日期列表下拉
+ */
+.date-navigator {
+  position: relative;
+  margin-left: auto;
+}
+
+.date-nav-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.date-nav-btn:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+/* 日期导航下拉复用 .dropdown 通用类（layout.css），此处仅声明差异 */
+.date-nav-dropdown {
+  /* 覆盖 .dropdown 的定位，改为右对齐 */
+  top: 100%;
+  right: 0;
+  left: auto;
+  margin-top: 4px;
+  min-width: 200px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.date-nav-dropdown.hidden {
+  display: none;
+}
+
+.date-nav-header {
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.date-nav-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.date-nav-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: background 0.15s;
+}
+
+.date-nav-item:hover {
+  background: var(--hover);
+}
+
+.date-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.date-nav-item-date {
+  font-variant-numeric: tabular-nums;
+}
+
+.date-nav-item-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.date-nav-item.active .date-nav-item-count {
+  color: var(--accent);
+}
+
+.date-nav-empty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/**
  * 主动提示 banner：v8 浅色背景 + 底部分隔线
  * 由 ui.ts showProactiveBanner() 控制 .hidden 类切换
  *

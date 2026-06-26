@@ -217,6 +217,37 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
     // FD-A1 会话选择器事件绑定已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
 
+    // UX-FD-07 日期导航按钮：点击切换下拉显示/隐藏
+    const dateNavBtn = document.getElementById('date-nav-btn');
+    if (dateNavBtn) {
+      this.events.addEventListener(dateNavBtn, 'click', (e) => {
+        e.stopPropagation();
+        this.toggleDateNavDropdown();
+      });
+    }
+    // 日期导航列表项点击：触发跳转回调
+    const dateNavList = document.getElementById('date-nav-list');
+    if (dateNavList) {
+      this.events.addEventListener(dateNavList, 'click', (e) => {
+        const target = e.target as HTMLElement;
+        const item = target.closest<HTMLElement>('[data-action="jump-to-date"]');
+        if (item && this.dateNavJumpCallback) {
+          const date = item.dataset.date ?? '';
+          if (date) {
+            this.closeDateNavDropdown();
+            this.dateNavJumpCallback(date);
+          }
+        }
+      });
+    }
+    // 点击其他区域关闭日期导航下拉
+    this.events.addEventListener(document, 'click', (e) => {
+      const navigator = document.getElementById('date-navigator');
+      if (navigator && !navigator.contains(e.target as Node)) {
+        this.closeDateNavDropdown();
+      }
+    });
+
     // 导航事件
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
       this.events.addEventListener(btn, 'click', this.handleNavClick.bind(this));
@@ -380,6 +411,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 更新消息计数（ChatPanelHost 回调：供 ChatPanelManager.appendMessage 调用） */
   updateMessageCount(): void {
     this.messageCount++;
+    this.refreshMessageCountDisplay();
+  }
+
+  /**
+   * UX-FD-07 方案 B 直接设置消息计数（不累加）
+   *
+   * 用于会话历史加载后，根据加载的会话是否当天 main 设置今日消息数。
+   * 加载昨天对话时设为 0（今天还没对话），加载今天 main 时设为该会话的消息数。
+   */
+  setMessageCount(count: number): void {
+    this.messageCount = count;
     this.refreshMessageCountDisplay();
   }
 
@@ -930,6 +972,106 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   }
 
   // ─── 会话历史 ─ 委托方法已移除（方案 B：时间流式 UI，不再需要会话切换下拉） ───
+
+  // ─── UX-FD-07 日期导航 ────────────────────────────────
+
+  /** 日期导航跳转回调（由 renderer.ts 注册，调用 sessionController.jumpToDate） */
+  private dateNavJumpCallback: ((date: string) => void) | null = null;
+  /** 日期导航列表加载回调（下拉打开时触发，由 renderer.ts 注册） */
+  private dateNavLoadCallback: (() => void) | null = null;
+
+  /** 注册日期导航跳转回调 */
+  onDateNavJump(cb: (date: string) => void): void {
+    this.dateNavJumpCallback = cb;
+  }
+
+  /** 注册日期导航列表加载回调（下拉打开时触发） */
+  onDateNavOpen(cb: () => void): void {
+    this.dateNavLoadCallback = cb;
+  }
+
+  /** 切换日期导航下拉的显示/隐藏 */
+  toggleDateNavDropdown(): void {
+    const dropdown = document.getElementById('date-nav-dropdown');
+    if (dropdown) {
+      const wasHidden = dropdown.classList.contains('hidden');
+      dropdown.classList.toggle('hidden');
+      // 下拉打开时触发列表加载（确保数据最新）
+      if (wasHidden && this.dateNavLoadCallback) {
+        this.dateNavLoadCallback();
+      }
+    }
+  }
+
+  /** 关闭日期导航下拉 */
+  closeDateNavDropdown(): void {
+    const dropdown = document.getElementById('date-nav-dropdown');
+    if (dropdown) {
+      dropdown.classList.add('hidden');
+    }
+  }
+
+  /**
+   * 渲染日期列表到日期导航下拉
+   *
+   * @param dates 日期列表（每项包含日期、消息数、是否今天）
+   * @param currentDate 当前查看的日期（用于高亮 active 项）
+   */
+  renderDateNavList(dates: Array<{ date: string; messageCount: number; isToday: boolean }>, currentDate: string): void {
+    const list = document.getElementById('date-nav-list');
+    if (!list) return;
+
+    // 清空旧列表
+    while (list.firstChild) {
+      list.removeChild(list.firstChild);
+    }
+
+    if (dates.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'date-nav-empty';
+      empty.textContent = '暂无历史对话';
+      list.appendChild(empty);
+      return;
+    }
+
+    for (const item of dates) {
+      const li = document.createElement('li');
+      li.className = 'date-nav-item';
+      if (item.date === currentDate) {
+        li.classList.add('active');
+      }
+      // data-action="jump-to-date" data-date="YYYY-MM-DD"
+      li.dataset.action = 'jump-to-date';
+      li.dataset.date = item.date;
+
+      const dateEl = document.createElement('span');
+      dateEl.className = 'date-nav-item-date';
+      // 今天显示"今天"，昨天显示"昨天"，其他显示完整日期
+      if (item.isToday) {
+        dateEl.textContent = '今天';
+      } else {
+        // 简单的相对日期显示
+        const today = new Date();
+        const target = new Date(item.date);
+        const diffDays = Math.floor((today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000));
+        if (diffDays === 1) {
+          dateEl.textContent = '昨天';
+        } else if (diffDays === 2) {
+          dateEl.textContent = '前天';
+        } else {
+          dateEl.textContent = item.date;
+        }
+      }
+
+      const countEl = document.createElement('span');
+      countEl.className = 'date-nav-item-count';
+      countEl.textContent = `${item.messageCount} 条`;
+
+      li.appendChild(dateEl);
+      li.appendChild(countEl);
+      list.appendChild(li);
+    }
+  }
 
   /** P2-008 加载 LLM 配置到表单（委托到 SettingsPanelManager） */
   loadLlmConfigToForm(data: {

@@ -161,6 +161,16 @@
           </div>
           <!-- FD-A1 会话历史切换下拉已移除（方案 B：时间流式 UI，向上滚动加载历史日期） -->
           <!-- btn-new-session 已移除：会话按天自动存储，无需手动新建 -->
+          <!-- UX-FD-07 日期导航按钮：快速跳转到指定日期的历史对话 -->
+          <div id="date-navigator" class="date-navigator">
+            <button id="date-nav-btn" class="date-nav-btn" title="按日期查找历史对话" aria-label="按日期查找历史对话">
+              <span class="date-nav-icon">📅</span>
+            </button>
+            <div id="date-nav-dropdown" class="dropdown date-nav-dropdown hidden">
+              <div class="date-nav-header">历史对话</div>
+              <ul id="date-nav-list" class="date-nav-list"></ul>
+            </div>
+          </div>
         </div>
 
         <!-- FD-A2 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->

@@ -40,6 +40,12 @@ export interface ChatPanelHost {
   updateSendButton(): void;
   /** 非系统消息计数 +1（appendMessage 中调用） */
   updateMessageCount(): void;
+  /**
+   * UX-FD-07 方案 B 直接设置消息计数（不累加）
+   *
+   * 用于会话历史加载后，根据加载的会话是否当天 main 设置今日消息数。
+   */
+  setMessageCount(count: number): void;
   /** 刷新消息计数显示 */
   refreshMessageCountDisplay(): void;
   /** 重置消息计数为 0（clearMessages 中调用） */
@@ -851,10 +857,9 @@ export class ChatPanelManager {
       this.messagesEl.appendChild(fragment);
     }
 
-    // 逐个更新消息计数
-    for (let i = 0; i < messages.length; i++) {
-      this.host.updateMessageCount();
-    }
+    // UX-FD-07 方案 B：历史消息加载不累加今日消息计数
+    // 今日消息数由 sessionController 根据加载的会话是否当天 main 设置
+    // （appendMessages 用于历史加载，appendMessage 用于实时对话才累加）
     this.host.refreshMessageCountDisplay();
     this.host.forceScrollToBottom();
   }
