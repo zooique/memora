@@ -13,8 +13,16 @@
  * 用于 agent.ts 中的并发锁、输入限制、记忆衰减周期等。
  */
 export const AGENT_CONSTANTS = {
-  /** chat() 并发锁超时（毫秒）。超时后中断 generator 并释放锁。 */
-  CHAT_LOCK_TIMEOUT_MS: 300_000,
+  /**
+   * chat() 并发锁超时（毫秒）。超时后中断 generator 并释放锁。
+   *
+   * BUG-STREAM-05 修复：原值 300_000（5 分钟）与超时体系不匹配：
+   * - chunk 级读超时 30s（openaiCompatible parseSseStream）
+   * - LLM 请求超时 120s（LLM_TIMEOUT_MS）
+   * - 宿主层无进展兜底 60s（chatHandlers STREAM_NO_PROGRESS_TIMEOUT_MS）
+   * 现调整为 180s（LLM 120s + 60s 缓冲），作为所有超时失败后的最后兜底。
+   */
+  CHAT_LOCK_TIMEOUT_MS: 180_000,
 
   /** chat() 输入最大长度（字节）。128KB。 */
   CHAT_INPUT_MAX_LENGTH: 128 * 1024,

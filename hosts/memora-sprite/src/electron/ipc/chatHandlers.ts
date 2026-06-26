@@ -224,10 +224,10 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
             count: truncationAfter - truncationBefore,
           });
         }
-        // 修复 P1-2：done 后 agent.chat() 仍要执行 appendAssistant + postProcess（归档）
-        // postProcess 涉及多次 LLM 调用（judge/distill）+ embedding + 存储写入，可能耗时 30-90s
-        // 期间无 chunk yield，渲染层 30s safety timer 会误判卡死并本地清场
-        // 解决：done 到达即发 thinking keepalive（phase=archiving），让渲染层重置 safety timer
+        // done 后 agent.chat() 仍要执行 appendAssistant + postProcess
+        // postProcess 是 fire-and-forget（所有 LLM 调用注册到 pendingArchives 不 await），
+        // 本身执行很快（毫秒级），但 done 到 finally 之间仍有微小窗口期
+        // 发 thinking keepalive（phase=archiving）让渲染层重置 safety timer，覆盖此窗口
         // 对应 chatPanelManager.showThinkingPhase 的 _resetStreamSafetyTimer 调用
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, {
           messageId,
