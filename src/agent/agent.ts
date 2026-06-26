@@ -404,16 +404,34 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       let assistantContent = '';
       let wasAborted = false;
-      for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(
-        input,
-        recalledMemories,
-        combinedSignal,
-      )) {
-        yield chunk;
-        if (chunk.type === 'text') {
-          assistantContent += chunk.content;
-        } else if (chunk.type === 'aborted') {
-          wasAborted = true;
+      // 修复 P1-D：原实现 generator 抛错直接传到宿主，宿主未 catch 会变未处理 rejection
+      // （表现为"几个字就卡住、无错误日志"——流式输出已开始但错误没机会展示）
+      // 改为 try/catch：把 provider 异常转为 yield error chunk，让宿主能优雅展示并清理 UI
+      try {
+        for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(
+          input,
+          recalledMemories,
+          combinedSignal,
+        )) {
+          yield chunk;
+          if (chunk.type === 'text') {
+            assistantContent += chunk.content;
+          } else if (chunk.type === 'aborted') {
+            wasAborted = true;
+          }
+        }
+      } catch (err) {
+        // aborted 已由 loop.ts 内部 yield chunk 处理，此处只捕获真正的异常
+        // （如 LLM 超时、连接断开、AbortError 未被 loop 拦截等）
+        // 转为 error chunk 通知宿主，避免裸 throw 导致 UI 卡死
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // 翠幕天罗 P1 修复：必须 yield aborted chunk 让宿主能展示中断标记
+          // （原仅设置 wasAborted 会导致 chatHandlers catch 不触发，渲染层收不到 ABORTED）
+          yield { type: 'aborted', reason: 'User cancelled the conversation' };
+          return;
+        } else {
+          yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
+          return;
         }
       }
 

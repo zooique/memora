@@ -247,6 +247,12 @@ export class OpenAICompatibleProvider extends LlmProvider {
     // OpenAI 协议：同一个 tool_call 的 name/arguments 可能跨多个 delta 分片到达
     const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 
+    // 修复 P1-C：chunk 级读超时
+    // 原实现 reader.read() 阻塞时无超时，连接半挂（NAT/代理/服务端慢响应不关 TCP）会永久等待
+    // abort signal 也只能在新 chunk 到达后检查，无法中断正在 await 的 read()
+    // 改用 setTimeout + reader.cancel：超时则 cancel reader 让 read() reject 退出
+    const CHUNK_READ_TIMEOUT_MS = 30_000;
+
     try {
       while (true) {
         // 检查中止信号：超时或用户取消时立即退出
@@ -254,7 +260,22 @@ export class OpenAICompatibleProvider extends LlmProvider {
           throw new DOMException('LLM 流读取被中止', signal.reason?.name ?? 'AbortError');
         }
 
-        const { done, value } = await reader.read();
+        // chunk 级读超时：超时则 cancel reader，让正在 await 的 read() 立即 reject
+        // reader.cancel() 会让 pending 的 reader.read() 抛 AbortError（DOMException）
+        const chunkTimer = setTimeout(() => {
+          // cancel 失败也不影响（reader 可能已 done 或被其他路径 cancel）
+          reader.cancel(new DOMException('LLM chunk 读取超时', 'TimeoutError')).catch(() => {});
+        }, CHUNK_READ_TIMEOUT_MS);
+
+        let readResult;
+        try {
+          readResult = await reader.read();
+        } finally {
+          // read 完成（无论成功/失败）都清理 chunk timer，避免泄漏
+          clearTimeout(chunkTimer);
+        }
+
+        const { done, value } = readResult;
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -329,7 +350,15 @@ export class OpenAICompatibleProvider extends LlmProvider {
         }
       }
     } finally {
-      reader.releaseLock();
+      // 修复 P1-C：releaseLock 不会取消流，只是释放锁让其他 reader 能 getReader()
+      // 改用 reader.cancel() 彻底释放底层 TCP 连接，避免 generator 提前 break 时
+      // 底层连接悬挂（CallLlmWithRetry 无 finally 触发 abort 时的兜底）
+      // 已 done/cancel 的 reader 调 cancel 是 no-op，安全
+      try {
+        await reader.cancel();
+      } catch {
+        // cancel 失败不阻塞，reader 会被 GC 回收
+      }
     }
   }
 

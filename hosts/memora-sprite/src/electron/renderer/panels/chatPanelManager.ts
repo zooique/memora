@@ -452,8 +452,25 @@ export class ChatPanelManager {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
-    // 取消挂起的 rAF 回调，防止 finish 后 rAF 重新渲染 Markdown 覆盖已完成状态
-    if (this._rafHandle !== null) {
+    // 修复 P1-A：rAF 还在 pending 时直接 cancel 会丢失最后一批 chunk
+    // 必须先同步 flush 一次渲染，把 _latestStreamText 落到 DOM，再 cancel 后续 rAF
+    // 否则最后一批 chunk 与 END 同事件循环到达时，rAF 还没触发就被 cancel，永久丢失
+    if (this._rafHandle !== null && this._latestStreamMessageId === messageId) {
+      const bubbleToFlush = el.querySelector('.message-bubble');
+      if (bubbleToFlush && this._latestStreamText) {
+        try {
+          // 保留 cursor/recall/tool-call 元素（与正常 rAF 回调一致）
+          const flushRecall = bubbleToFlush.querySelector('.memory-recall-container');
+          const flushToolCalls = bubbleToFlush.querySelectorAll('.tool-call');
+          clearElement(bubbleToFlush);
+          bubbleToFlush.appendChild(renderMarkdown(this._latestStreamText));
+          if (flushRecall) bubbleToFlush.appendChild(flushRecall);
+          for (const tc of flushToolCalls) bubbleToFlush.appendChild(tc);
+        } catch (err) {
+          // 渲染异常时不阻塞收尾流程，保留旧 DOM
+          console.error('[finishStreamingMessage] flush 渲染失败', err);
+        }
+      }
       cancelAnimationFrame(this._rafHandle);
       this._rafHandle = null;
       this._pendingRaF = false;
@@ -1164,13 +1181,41 @@ export class ChatPanelManager {
    */
   private _resetStreamSafetyTimer(): void {
     this._clearStreamSafetyTimer();
+    // 30s 是"无新 chunk 兜底"：通知主进程疑似卡死，主进程决定是否真中断
+    // 修复 P1-B：原实现 onStreamStuck 后立即本地清场（streamingMessages.clear + isStreaming=false），
+    // 导致主进程后续 chunk 与 END 因 Map 已空而静默早退（if (!el) return）——视觉冻结无日志
+    // 现改为：30s 仅通知主进程，本地不清理状态，等待主进程的 END/ABORTED 驱动清理
     this._streamSafetyTimer = setTimeout(() => {
       if (this.state.isStreaming) {
         this.host.onStreamStuck();
-        // 强制重置流式状态
-        this.streamingMessages.clear();
-        this.state.isStreaming = false;
-        this.host.updateSendButton();
+        // 90s 二级兜底（远大于主进程 60s）：若主进程未响应才本地清理
+        // 防止主进程完全失联时 UI 永久锁死
+        this._streamSafetyFallbackTimer = setTimeout(() => {
+          if (!this.state.isStreaming) return;
+          // 清理 fallback timer 自身引用（已触发，置 null 让 _clearStreamSafetyTimer 不再尝试 clearTimeout）
+          this._streamSafetyFallbackTimer = null;
+          console.warn('[chatPanelManager] 90s 兜底：主进程未响应 onStreamStuck，本地清理');
+          // 补齐 rAF 取消与 DOM 清理（原 30s 路径漏掉，导致 .streaming 类残留）
+          if (this._rafHandle !== null) {
+            cancelAnimationFrame(this._rafHandle);
+            this._rafHandle = null;
+            this._pendingRaF = false;
+          }
+          // 清理每条 streaming 消息的 DOM 状态 + 添加 copy 按钮（与 markStreamingAborted 一致）
+          for (const el of this.streamingMessages.values()) {
+            el.classList.remove('streaming');
+            const cursor = el.querySelector('.cursor');
+            if (cursor) cursor.remove();
+            const phase = el.querySelector('.thinking-phase');
+            if (phase) phase.remove();
+            // 翠幕天罗 P2：补齐 copy 按钮，让用户能复制已生成的部分内容
+            this._addCopyButtonToMessage(el);
+          }
+          // 注意：不在此处 delete streamingMessages，留给 markStreamingAborted 走完整嵌入流程
+          this.streamingMessages.clear();
+          this.state.isStreaming = false;
+          this.host.updateSendButton();
+        }, 60_000); // 60s 后触发 = 总等待 30+60=90s
       }
     }, 30_000);
   }
@@ -1180,6 +1225,11 @@ export class ChatPanelManager {
     if (this._streamSafetyTimer !== null) {
       clearTimeout(this._streamSafetyTimer);
       this._streamSafetyTimer = null;
+    }
+    // 清理二级兜底定时器（修复 P1-B 引入的 fallback timer）
+    if (this._streamSafetyFallbackTimer !== null) {
+      clearTimeout(this._streamSafetyFallbackTimer);
+      this._streamSafetyFallbackTimer = null;
     }
   }
 

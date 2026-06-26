@@ -224,10 +224,29 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
             count: truncationAfter - truncationBefore,
           });
         }
+        // 修复 P1-2：done 后 agent.chat() 仍要执行 appendAssistant + postProcess（归档）
+        // postProcess 涉及多次 LLM 调用（judge/distill）+ embedding + 存储写入，可能耗时 30-90s
+        // 期间无 chunk yield，渲染层 30s safety timer 会误判卡死并本地清场
+        // 解决：done 到达即发 thinking keepalive（phase=archiving），让渲染层重置 safety timer
+        // 对应 chatPanelManager.showThinkingPhase 的 _resetStreamSafetyTimer 调用
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, {
+          messageId,
+          phase: 'archiving' as const,
+        });
         // done 信号：不 break，让 for-await 自然结束。
         // agent.chat() 在 done 后仍需执行 appendAssistant（保存助手消息）
         // 和 postProcess（归档后处理），break 会导致 return() 被调用，
         // 跳过这些关键步骤。finally 块会在 generator 自然结束后发送 SPRITE_STREAM_END。
+      } else if (chunk.type === 'error') {
+        // P1-D：内核 yield error chunk（如 LLM 超时、连接断开）
+        // 复用 SPRITE_STREAM_ABORTED 通道展示错误（气泡内嵌错误提示）
+        // 标记 abortedNotified 让 finally 不重复发 ABORTED
+        abortedNotified = true;
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
+          messageId,
+          reason: chunk.message,
+        });
+        break;
       } else if (chunk.type === 'aborted') {
         // UX-PP-10 中断标记内嵌气泡：内核主动 yield aborted chunk 时通知渲染层
         // QC-FLOW-01：标记已发送，catch 块不再重复发送

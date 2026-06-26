@@ -11,6 +11,9 @@
  * - 'recalling'：正在召回会话记忆（recall 双通道：语义 + 关键词）
  * - 'processing'：正在写入历史/注入技能 prompt
  * - 'archiving'：正在归档用户画像/匹配角色/匹配技能
+ *
+ * error 事件：流式过程中发生错误（如 LLM 超时、连接断开），
+ * 替代裸 throw 让宿主能优雅展示错误并清理 UI（避免未处理 rejection 静默卡死）。
  */
 
 /** thinking 事件的阶段标识 */
@@ -40,6 +43,7 @@ export type AgentChunk =
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
   | { type: 'aborted'; reason: string }
+  | { type: 'error'; message: string }
   | { type: 'done' };
 
 // ─── 宿主可覆盖的 UI 文本 ────────────────────────────────
