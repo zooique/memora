@@ -30,6 +30,28 @@ export interface MemoryPanelHost {
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
 }
 
+/**
+ * 将 source 字符串映射到颜色类名
+ *
+ * 颜色映射规则（对齐记忆系统 source 分类）：
+ * - profile → green（用户画像，绿色代表身份）
+ * - insight → blue（洞察，蓝色代表智慧）
+ * - guardrail → pink（护栏，粉色代表警示）
+ * - skill → yellow（技能，黄色代表能力）
+ * - rule → purple（规则，紫色代表约束）
+ * - persona → cyan（角色，青色代表个性）
+ * - session → orange（会话，橙色代表活跃）
+ * - 其他 → default（灰色）
+ *
+ * @param source 记忆来源字符串（开放字符串，如 'profile'、'insight'、'rule'）
+ * @returns 对应的 CSS 颜色类名（如 'profile' / 'default'）
+ */
+export function getSourceColorClass(source: string): string {
+  const normalized = source.toLowerCase().trim();
+  const knownSources = ['profile', 'insight', 'guardrail', 'skill', 'rule', 'persona', 'session'];
+  return knownSources.includes(normalized) ? normalized : 'default';
+}
+
 // ─── 记忆面板管理器类 ─────────────────────────────────────
 
 export class MemoryPanelManager {
@@ -268,7 +290,7 @@ export class MemoryPanelManager {
       const sourceTag = document.createElement('span');
       // source 标签颜色区分：不同 source 类型用不同颜色，提升视觉识别度
       // 颜色映射：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙)
-      sourceTag.className = `source-tag source-${this.getSourceColorClass(mem.source)}`;
+      sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
       sourceTag.textContent = mem.source;
       metaEl.appendChild(sourceTag);
 
@@ -334,7 +356,7 @@ export class MemoryPanelManager {
     if (sourceEl) {
       sourceEl.textContent = memory.source;
       // source 标签颜色区分（与列表保持一致）
-      sourceEl.className = `source-${this.getSourceColorClass(memory.source)}`;
+      sourceEl.className = `source-${getSourceColorClass(memory.source)}`;
     }
     if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
     // R5 详情面板日期用 formatTimeAgo 统一格式化（ISO → 相对时间）
@@ -358,24 +380,7 @@ export class MemoryPanelManager {
 
   // ─── 辅助方法 ───────────────────────────────────────────
 
-  /**
-   * 将 source 字符串映射到颜色类名
-   *
-   * 颜色映射规则（对齐记忆系统 source 分类）：
-   * - profile → green（用户画像，绿色代表身份）
-   * - insight → blue（洞察，蓝色代表智慧）
-   * - guardrail → pink（护栏，粉色代表警示）
-   * - skill → yellow（技能，黄色代表能力）
-   * - rule → purple（规则，紫色代表约束）
-   * - persona → cyan（角色，青色代表个性）
-   * - session → orange（会话，橙色代表活跃）
-   * - 其他 → default（灰色）
-   */
-  private getSourceColorClass(source: string): string {
-    const normalized = source.toLowerCase().trim();
-    const knownSources = ['profile', 'insight', 'guardrail', 'skill', 'rule', 'persona', 'session'];
-    return knownSources.includes(normalized) ? normalized : 'default';
-  }
+  // getSourceColorClass 已提取到模块顶层（对齐 formatTokenCount 模式，支持纯函数测试）
 
   // ─── P2-FLOW-08 记忆编辑模式 ────────────────────────────
 

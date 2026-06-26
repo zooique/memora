@@ -104,7 +104,7 @@ interface ProactivePromptPayload {
  * 替代 `as Record<string, unknown>` 类型断言，通过类型谓词正确收窄类型。
  * 可复用于所有需要将 unknown 安全转为对象访问的场景。
  */
-function isObject(value: unknown): value is Record<string, unknown> {
+export function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
@@ -113,7 +113,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
  *
  * 类型守卫，确保 payload 字段类型正确，避免运行时错误。
  */
-function isProactivePromptPayload(value: unknown): value is ProactivePromptPayload {
+export function isProactivePromptPayload(value: unknown): value is ProactivePromptPayload {
   if (!isObject(value)) return false;
   return (
     typeof value.prompt === 'string' &&
@@ -124,12 +124,12 @@ function isProactivePromptPayload(value: unknown): value is ProactivePromptPaylo
 }
 
 /** 校验项目切换 payload 结构（替代 as 断言，确保字段类型安全） */
-function isProjectSwitchedPayload(value: unknown): value is { projectName: string } {
+export function isProjectSwitchedPayload(value: unknown): value is { projectName: string } {
   return isObject(value) && typeof value.projectName === 'string';
 }
 
 /** 校验技能匹配 payload 结构（替代 as 断言，确保字段类型安全） */
-function isSkillMatchedPayload(value: unknown): value is { skill: string; score: number } {
+export function isSkillMatchedPayload(value: unknown): value is { skill: string; score: number } {
   return (
     isObject(value) &&
     typeof value.skill === 'string' &&
@@ -138,12 +138,12 @@ function isSkillMatchedPayload(value: unknown): value is { skill: string; score:
 }
 
 /** 校验记忆召回 payload 结构（替代 as 断言，确保字段类型安全） */
-function isMemoryRecalledPayload(value: unknown): value is { count: number } {
+export function isMemoryRecalledPayload(value: unknown): value is { count: number } {
   return isObject(value) && typeof value.count === 'number';
 }
 
 /** 校验记忆衰减完成 payload 结构（替代 as 断言，确保字段类型安全） */
-function isDecayCompletedPayload(value: unknown): value is { decayedCount: number } {
+export function isDecayCompletedPayload(value: unknown): value is { decayedCount: number } {
   return isObject(value) && typeof value.decayedCount === 'number';
 }
 
