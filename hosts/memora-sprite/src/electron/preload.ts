@@ -228,7 +228,7 @@ export interface ElectronAPI {
   // 对话
   sendUserInput: (text: string) => void;
   abortChat: () => Promise<void>;
-  loadSession: (query: { date?: string; session?: string; limit?: number; offset?: number }) => Promise<{ messages: ChatMessage[]; loadedSessionId?: string; total?: number; hasMore?: boolean }>;
+  loadSession: (query: { date?: string; session?: string; limit?: number; offset?: number }) => Promise<{ messages: ChatMessage[]; loadedSessionId: string; total: number; hasMore: boolean }>;
   /** FD-A1 列出所有会话 */
   listSessions: () => Promise<{ sessions: Array<{ id: string; date: string; name: string; preview?: string; messageCount?: number }> }>;
   /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */

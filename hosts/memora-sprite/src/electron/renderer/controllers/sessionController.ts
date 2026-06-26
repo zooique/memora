@@ -101,7 +101,7 @@ export function createSessionController(uiManager: UIManager) {
       }
       // 更新分页状态
       currentOffset = messages.length;
-      currentTotal = total ?? messages.length;
+      currentTotal = total;
       // 根据分页和日期状态显示对应的加载按钮
       await updateLoadMoreButton(hasMore);
 
@@ -134,7 +134,7 @@ export function createSessionController(uiManager: UIManager) {
 
       // 更新分页状态
       currentOffset += messages.length;
-      currentTotal = total ?? currentTotal;
+      currentTotal = total;
 
       // 根据分页和日期状态显示对应的加载按钮
       await updateLoadMoreButton(hasMore);
@@ -165,8 +165,10 @@ export function createSessionController(uiManager: UIManager) {
       // 提取所有日期并去重排序（升序）
       const allDates = Array.from(new Set(sessions.map((s) => s.date))).sort();
       // 找到比 earliestDate 更早的日期
-      const earlierDates = earliestDate
-        ? allDates.filter((d) => d < earliestDate)
+      // 使用局部变量保存 narrow 后的值，避免 TS 在 filter 回调中无法保证 let 变量不变
+      const earliest = earliestDate;
+      const earlierDates = earliest
+        ? allDates.filter((d) => d < earliest)
         : allDates;
 
       if (earlierDates.length === 0) {
@@ -239,11 +241,13 @@ export function createSessionController(uiManager: UIManager) {
     uiManager.hideLoadMore();
 
     // 检查是否有更早的日期
-    if (earliestDate) {
+    // 使用局部变量保存 narrow 后的值，避免 TS 在 some 回调中无法保证 let 变量不变
+    const earliest = earliestDate;
+    if (earliest) {
       try {
         const { sessions } = await window.electronAPI.listSessions();
         const allDates = Array.from(new Set(sessions.map((s) => s.date))).sort();
-        const hasEarlier = allDates.some((d) => d < earliestDate!);
+        const hasEarlier = allDates.some((d) => d < earliest);
         if (hasEarlier) {
           uiManager.showLoadEarlierDay(loadEarlierDay);
         }
