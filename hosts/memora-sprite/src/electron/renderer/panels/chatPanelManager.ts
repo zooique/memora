@@ -58,6 +58,13 @@ export interface ChatPanelHost {
   hideEmptyState(): void;
   /** 未读计数 +1（完整窗口隐藏时，新精灵消息到达） */
   updateUnreadCount(): void;
+  /**
+   * 流式输出超时兜底触发时通知宿主联动主进程清理
+   *
+   * 渲染进程 30s 无进展判定卡死后，仅重置 UI 状态不够——主进程 AbortController 仍可能泄漏，
+   * 导致下次发送被竞态保护拒绝。宿主通过此回调通知主进程 abort 当前对话，联动清理。
+   */
+  onStreamStuck(): void;
 }
 
 // ─── 聊天面板管理器类 ─────────────────────────────────────
@@ -495,6 +502,7 @@ export class ChatPanelManager {
   setMemoryRecall(messageId: string, memories: Array<{ name: string; score: number; source: string }>): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
+    this._resetStreamSafetyTimer();
 
     // 查找或创建召回记忆容器
     const bubble = el.querySelector('.message-bubble');
@@ -565,6 +573,7 @@ export class ChatPanelManager {
   showThinkingPhase(messageId: string, phase: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
+    this._resetStreamSafetyTimer();
 
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
@@ -596,6 +605,7 @@ export class ChatPanelManager {
   showTruncationNotice(messageId: string, count: number): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
+    this._resetStreamSafetyTimer();
 
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
@@ -629,6 +639,7 @@ export class ChatPanelManager {
   showToolStart(messageId: string, toolCallId: string, name: string, args?: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
+    this._resetStreamSafetyTimer();
 
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
@@ -695,6 +706,7 @@ export class ChatPanelManager {
   updateToolResult(messageId: string, toolCallId: string, name: string, ok: boolean, summary?: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
+    this._resetStreamSafetyTimer();
 
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
@@ -997,6 +1009,7 @@ export class ChatPanelManager {
     this._clearStreamSafetyTimer();
     this._streamSafetyTimer = setTimeout(() => {
       if (this.state.isStreaming) {
+        this.host.onStreamStuck();
         // 强制重置流式状态
         this.streamingMessages.clear();
         this.state.isStreaming = false;

@@ -444,6 +444,18 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.updateBadge();
   }
 
+  /**
+   * 流式输出超时兜底联动主进程清理
+   *
+   * ChatPanelManager 的 30s 无进展定时器触发时调用，
+   * 通知主进程 abort 当前对话并清理 AbortController，避免下次发送被竞态保护拒绝。
+   * fire-and-forget：主进程清理是 best-effort，渲染进程已自行重置 isStreaming。
+   */
+  onStreamStuck(): void {
+    // 通知主进程中断当前对话（清理 AbortController + 发送 SPRITE_STREAM_END）
+    void window.electronAPI.abortChat();
+  }
+
   // setButtonLoading 见 domHelpers.ts，UIManager 不持有此方法
 
   // ─── 面板管理 ─────────────────────────────────────────

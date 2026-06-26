@@ -18,6 +18,19 @@ import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';
 
+// ─── 流式输出超时兜底常量 ─────────────────────────────────
+
+/**
+ * 流式输出"无进展"超时阈值（毫秒）
+ *
+ * 主进程兜底：每个 chunk 到达即重置定时器，超过此时长无任何 chunk
+ * 则判定为 generator 挂起（LLM 卡死 / postProcess 阻塞 / abort 未响应等），
+ * 强制清理宿主状态并通知渲染进程解锁，避免 AbortController 泄漏导致后续对话被竞态保护拒绝。
+ *
+ * 时长取舍：晚于渲染进程 30s 兜底（留出 abort 响应窗口），早于内核 5 分钟锁超时。
+ */
+const STREAM_NO_PROGRESS_TIMEOUT_MS = 60_000;
+
 /**
  * 注册对话相关 IPC 处理器
  *
@@ -115,6 +128,33 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   const abortController = new AbortController();
   ctx.setAbortController(abortController);
 
+  // 主进程无进展超时兜底：每个 chunk 到达即重置定时器，超时则强制清理（详见 STREAM_NO_PROGRESS_TIMEOUT_MS 注释）
+  let streamTimedOut = false;
+  let streamTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+  /** 重置无进展定时器（chunk 到达或对话开始时调用） */
+  const resetStreamTimeout = (): void => {
+    if (streamTimeoutTimer !== null) clearTimeout(streamTimeoutTimer);
+    streamTimeoutTimer = setTimeout(() => {
+      // 幂等保护：已超时或已清理则跳过
+      if (streamTimedOut) return;
+      streamTimedOut = true;
+      streamTimeoutTimer = null;
+      // 强制中断内核 generator（若 generator 响应 abort 会抛 AbortError 退出）
+      abortController.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
+      // 兜底清理宿主状态：即使 generator 不响应 abort，也确保渲染进程解锁 + AbortController 释放
+      if (!fullWindow.isDestroyed()) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
+          text: '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置',
+        });
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+      }
+      ctx.setAbortController(null);
+      ctx.trayManager?.setState('idle');
+    }, STREAM_NO_PROGRESS_TIMEOUT_MS);
+  };
+  // 启动首次计时
+  resetStreamTimeout();
+
   // OBS-02：记录对话开始前的截断次数，对话结束后对比检测截断事件
   const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
 
@@ -122,8 +162,10 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
     let accumulatedText = '';
     for await (const chunk of ctx.agent.chat(text, abortController.signal)) {
-      // 检查窗口是否仍然可用
-      if (fullWindow.isDestroyed()) break;
+      // 超时已被强制清理，或窗口销毁，则退出循环（break 会触发 generator return()）
+      if (streamTimedOut || fullWindow.isDestroyed()) break;
+      // 每个 chunk 到达即重置无进展定时器（chunk 到达代表 generator 有进展）
+      resetStreamTimeout();
 
       if (chunk.type === 'text') {
         // 累积 delta 后发送完整文本，渲染层清空重渲染也不会丢失内容
@@ -185,6 +227,8 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       }
     }
   } catch (error) {
+    // 超时已在定时器内完成清理与通知，跳过 catch 后续逻辑（finally 仍会执行定时器清理）
+    if (streamTimedOut) return;
     // 通过 AbortController.reason 判断是否用户主动中断（替代共享布尔标志）
     const ctrl = ctx.getAbortController();
     const abortReason = ctrl?.signal.reason;
@@ -207,15 +251,20 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       errorHandler.handle(error, { code: ErrorCode.API_ERROR, context: '对话流式输出失败' });
     }
   } finally {
-    // 无论生成器以何种方式退出（done/aborted/异常/窗口销毁），都确保发送 SPRITE_STREAM_END。
-    // 修复根因：原架构中 done/aborted 时直接发送 SPRITE_STREAM_END 并 break，但异常路径依赖
-    // catch 块正常执行。如果 catch 内部再次抛出、窗口在 catch 执行前销毁、或生成器以其他方式
-    // 终止，SPRITE_STREAM_END 将不会发送，导致渲染进程 isStreaming 永远卡在 true。
-    if (!fullWindow.isDestroyed()) {
-      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+    // 清理无进展超时定时器（正常结束 / 异常 / 中断均需清理）
+    if (streamTimeoutTimer !== null) {
+      clearTimeout(streamTimeoutTimer);
+      streamTimeoutTimer = null;
     }
-    ctx.setAbortController(null);
-    // 流式结束：托盘切回 idle 状态（绿色静态）
-    ctx.trayManager?.setState('idle');
+    // 超时路径已在定时器内发送过 STREAM_END + 清理 AbortController，此处跳过避免重复。
+    if (!streamTimedOut) {
+      // 无论生成器以何种方式退出（done/aborted/异常/窗口销毁），都确保发送 SPRITE_STREAM_END。
+      if (!fullWindow.isDestroyed()) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+      }
+      ctx.setAbortController(null);
+      // 流式结束：托盘切回 idle 状态（绿色静态）
+      ctx.trayManager?.setState('idle');
+    }
   }
 }
