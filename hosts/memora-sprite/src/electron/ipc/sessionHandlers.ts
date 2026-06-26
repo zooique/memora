@@ -26,18 +26,28 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   /** 加载历史会话消息 */
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_event, query: { date?: string; session?: string; limit?: number; offset?: number }) => {
     try {
-      // UX-PP-08 有明确查询参数时直接构造目标，跳过 listSessions 冗余调用
-      let target: string | undefined;
+      let target: string;
       if (query.date && query.session) {
+        // UX-PP-08 有明确查询参数时直接构造目标
         target = `${query.date}-${query.session}`;
       } else {
-        // UT-FQ-01 无查询参数时：始终以当天主会话为默认，即使为空
-        const today = getLocalDate(); // UX-PP-07 本地日期，非 UTC
-        target = `${today}-main`;
-      }
-
-      if (!target) {
-        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+        // UT-FQ-01/BUG-FIX 无查询参数时：优先加载最近有消息的会话，与 restoreMostRecentSession 行为对齐
+        // 原逻辑始终强制加载当天 main 会话，跨日启动时当天无消息导致 UI 显示空状态，
+        // 而 LLM 工作记忆中已恢复昨天的消息（restoreMostRecentSession），造成 UI 与 LLM 上下文不一致
+        const today = getLocalDate();
+        const allSessions = ctx.sessionStore.listSessions();
+        // 优先找当天 main（有消息时）
+        const todayMain = `${today}-main`;
+        if (allSessions.includes(todayMain) && ctx.sessionStore.countMessages(today, 'main') > 0) {
+          target = todayMain;
+        } else if (allSessions.length > 0) {
+          // 当天无消息时加载最近的会话（listSessions 按 ID ASC，最后一个是最新的）
+          // noUncheckedIndexedAccess 模式下数组索引返回 T | undefined，需 ?? 兜底
+          target = allSessions[allSessions.length - 1] ?? todayMain;
+        } else {
+          // 无任何历史会话时显示当天空会话
+          target = todayMain;
+        }
       }
 
       const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
@@ -185,6 +195,14 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         const date = s.slice(0, 10); // YYYY-MM-DD
         // 后出现的覆盖先出现的（listSessions 按 ID ASC，所以最后的是最新的）
         dateMap.set(date, s);
+      }
+
+      // BUG-FIX 始终包含当天 main 会话（即使 0 条消息）
+      // 跨日启动时当天无消息，原逻辑不返回当天会话，导致 sessions.length <= 1 时按钮被禁用，
+      // 用户无法切换查看昨天的对话。补当天占位后，至少有"昨天+今天"两个选项，按钮可用。
+      const today = getLocalDate();
+      if (!dateMap.has(today)) {
+        dateMap.set(today, `${today}-main`);
       }
 
       // 解析每个日期的一条代表会话
