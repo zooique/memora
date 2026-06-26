@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
+import { todayDate } from '@/utils/time.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 
 /**
@@ -258,8 +259,8 @@ describe('ISessionStore 契约 · copySession', () => {
       { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
     ];
     vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
-    // 使用今天的日期，这样才会匹配
-    const today = new Date().toISOString().slice(0, 10);
+    // 使用 todayDate()（本地日期）与 forkSession 内部一致，避免 UTC vs 本地日期跨日窗口不一致
+    const today = todayDate();
     vi.mocked(mockSessionStore.listSessions).mockReturnValue([`${today}-experiment`]);
 
     expect(() => history.forkSession('experiment')).toThrow('无法分叉会话');
