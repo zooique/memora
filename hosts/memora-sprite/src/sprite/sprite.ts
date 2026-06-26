@@ -19,7 +19,7 @@ import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import type { TriggerPayload } from './triggers.js';
 import { FileWatcherTrigger } from './fileWatcherTrigger.js';
-import { loadSpriteConfig, saveSpriteConfig, applyConfigField, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
+import { loadSpriteConfig, saveSpriteConfig, applyConfigField, DEFAULT_SPRITE_CONFIG, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine, PresenceController } from './controllers/index.js';
 import type { DashboardData, RapportAssessment, IPowerMonitor, IApp } from './controllers/index.js';
@@ -495,6 +495,99 @@ export class Sprite {
     if (key === 'projectMode' || key === 'focusProjectPath') {
       this.applyProjectMode();
     }
+  }
+
+  /**
+   * 批量更新配置并持久化（QC-CONFIG-01：事务性保证）
+   *
+   * 相比逐项调用 updateConfig，本方法保证：
+   *   1. 原子性：任一 key 非法或 value 类型校验失败时，全部更新不应用，config 状态不变
+   *   2. 单次持久化：仅调用一次 saveSpriteConfig，避免 N 次 writeFileSync
+   *   3. 副作用去重：批量内涉及同类副作用（如多个 fileWatcher* 键）只触发一次重建
+   *
+   * 校验策略：先在 config 浅副本上用 applyConfigField 校验全部更新，
+   * 全部通过后再应用到真实 config，确保真实 config 不会被部分修改（事务性核心）。
+   *
+   * @param updates 批量更新对象（key → value），运行时校验每个 key/value 合法性
+   * @returns 成功返回 { updated: true }；失败返回 { updated: false, error }，config 状态不变
+   */
+  updateConfigBatch(updates: Partial<SpriteConfig>): { updated: boolean; error?: string } {
+    /** 本次批量更新涉及的键列表（运行时从入参提取） */
+    const keys = Object.keys(updates) as SpriteConfigKey[];
+
+    // 空批量：直接成功，不触发持久化和副作用（幂等）
+    if (keys.length === 0) {
+      return { updated: true };
+    }
+
+    // ─── 校验阶段：在 config 浅副本上校验，不修改真实 config ───
+    // 副本校验是事务性的关键：任一校验失败时真实 config 完全不变
+    /** config 浅副本（仅用于校验，应用失败时丢弃，不影响真实状态） */
+    const configCopy: Required<SpriteConfig> = { ...this.config };
+    for (const key of keys) {
+      // key 合法性校验：必须是 SpriteConfig 已定义的字段
+      if (!(key in DEFAULT_SPRITE_CONFIG)) {
+        return { updated: false, error: `非法配置键：${key}` };
+      }
+      // value 类型校验：在副本上应用，applyConfigField 返回 false 表示类型不匹配
+      const ok = applyConfigField(configCopy, key, updates[key]);
+      if (!ok) {
+        return { updated: false, error: `配置值类型非法：${key}` };
+      }
+    }
+
+    // ─── 应用阶段：校验全部通过，逐个写入真实 config ───
+    // 此时类型已校验，setConfigField 不会再失败，可安全应用
+    for (const key of keys) {
+      this.setConfigField(key, updates[key]);
+    }
+
+    // ─── 持久化：仅一次写盘（R6 完整配置写入，跳过读文件） ───
+    saveSpriteConfig(this.config);
+
+    // ─── 副作用统一触发（去重，每类副作用只触发一次） ───
+    /** 本次批量更新涉及的键集合（O(1) 查询） */
+    const keySet = new Set<string>(keys);
+
+    // triggerIntervalMs → 重建 TimerTrigger（一次）
+    if (keySet.has('triggerIntervalMs') && typeof updates.triggerIntervalMs === 'number') {
+      this.triggerBus.unregister('timer');
+      this.triggerBus.register(new TimerTrigger(updates.triggerIntervalMs));
+      this.restartTriggersIfRunning();
+    }
+
+    // fileWatcher* 任一 → 重建 FileWatcherTrigger（一次）
+    // rebuildFileWatcher 内部根据 this.config.fileWatcherEnabled 决定是否注册，
+    // 因此 fileWatcherEnabled 与其他 fileWatcher* 键可统一走一次重建
+    if (
+      keySet.has('fileWatcherEnabled') ||
+      keySet.has('fileWatcherPaths') ||
+      keySet.has('fileWatcherIgnore') ||
+      keySet.has('fileWatcherDebounceMs')
+    ) {
+      this.rebuildFileWatcher();
+    }
+
+    // proactive 阈值/冷却/静默 → 更新 ProactiveEngine（一次）
+    if (
+      keySet.has('proactiveThreshold') ||
+      keySet.has('proactiveCooldownMs') ||
+      keySet.has('silentMode')
+    ) {
+      this.proactiveEngine.updateConfig({
+        threshold: this.config.proactiveThreshold,
+        cooldownMs: this.config.proactiveCooldownMs,
+        silentMode: this.config.silentMode,
+      });
+    }
+
+    // projectMode/focusProjectPath → applyProjectMode（一次）
+    // FD-04：专注模式切换时调用 agent.switchProject 切换 Agent 上下文
+    if (keySet.has('projectMode') || keySet.has('focusProjectPath')) {
+      this.applyProjectMode();
+    }
+
+    return { updated: true };
   }
 
   /**

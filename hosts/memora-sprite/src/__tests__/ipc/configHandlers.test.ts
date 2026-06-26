@@ -5,6 +5,7 @@
  * - scheduleSilentRecovery：未启用静默/已过期立即关闭/未来到期设定时器（vi.useFakeTimers）
  * - CONFIG_GET：获取配置 + 失败降级
  * - CONFIG_UPDATE：合法键更新 + 非法键拒绝 + silentMode 同步托盘 + silentModeExpiresAt 触发定时器 + 抛错降级
+ * - CONFIG_UPDATE_BATCH（QC-CONFIG-01）：委托 updateConfigBatch + 失败不触发副作用 + silentMode 批量同步托盘 + 抛错降级
  * - PERSONA_LIST：列出角色 + 失败降级
  * - PERSONA_SWITCH：切换角色 + 失败降级
  * - PERSONA_MODE：设置模式 + 失败降级
@@ -64,6 +65,8 @@ function createMockCtx(overrides?: {
         silentModeExpiresAt: null,
       })),
       updateConfig: vi.fn(),
+      // QC-CONFIG-01：默认 batch 成功，单个测试可覆盖为失败以验证事务回滚
+      updateConfigBatch: vi.fn(() => ({ updated: true })),
       listPersonas: vi.fn(() => ['default', 'coder']),
       switchPersona: vi.fn(() => 'coder'),
       setPersonaMode: vi.fn(() => true),
@@ -291,6 +294,108 @@ describe('registerConfigHandlers', () => {
 
     const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE)!;
     expect(() => callback({}, 'silentMode', true)).not.toThrow();
+  });
+
+  // ─── CONFIG_UPDATE_BATCH（QC-CONFIG-01） ───────────────
+
+  it('CONFIG_UPDATE_BATCH 成功应委托 updateConfigBatch 并返回结果', async () => {
+    const updateConfigBatch = vi.fn(() => ({ updated: true }));
+    const ctx = createMockCtx({ sprite: { updateConfigBatch } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    const updates = { silentMode: true, proactiveThreshold: 5 };
+    const result = await callback({}, updates);
+
+    expect(updateConfigBatch).toHaveBeenCalledWith(updates);
+    expect(result).toEqual({ updated: true });
+  });
+
+  it('CONFIG_UPDATE_BATCH 失败应返回错误且不触发托盘副作用', async () => {
+    const setState = vi.fn();
+    const updateMenu = vi.fn();
+    const updateConfigBatch = vi.fn(() => ({ updated: false, error: '配置值类型非法：proactiveThreshold' }));
+    const ctx = createMockCtx({
+      sprite: { updateConfigBatch },
+      trayManager: { setState, updateMenu },
+    });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    const result = await callback({}, { silentMode: true, proactiveThreshold: 'bad' });
+
+    expect(result.updated).toBe(false);
+    expect(result.error).toContain('proactiveThreshold');
+    // 事务失败：不触发任何托盘副作用
+    expect(setState).not.toHaveBeenCalled();
+    expect(updateMenu).not.toHaveBeenCalled();
+  });
+
+  it('含 silentMode=true 应同步托盘 sleeping + 重建菜单', async () => {
+    const setState = vi.fn();
+    const updateMenu = vi.fn();
+    const ctx = createMockCtx({
+      trayManager: { setState, updateMenu },
+    });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    await callback({}, { silentMode: true, proactiveThreshold: 5 });
+
+    expect(setState).toHaveBeenCalledWith('sleeping');
+    expect(updateMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('含 silentMode=false 应同步托盘 idle', async () => {
+    const setState = vi.fn();
+    const updateMenu = vi.fn();
+    const ctx = createMockCtx({
+      trayManager: { setState, updateMenu },
+    });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    await callback({}, { silentMode: false });
+
+    expect(setState).toHaveBeenCalledWith('idle');
+    expect(updateMenu).toHaveBeenCalledTimes(1);
+  });
+
+  it('不含 silentMode 时不应触发托盘同步', async () => {
+    const setState = vi.fn();
+    const updateMenu = vi.fn();
+    const ctx = createMockCtx({
+      trayManager: { setState, updateMenu },
+    });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    await callback({}, { proactiveThreshold: 5, triggerIntervalMs: 1_800_000 });
+
+    expect(setState).not.toHaveBeenCalled();
+    expect(updateMenu).not.toHaveBeenCalled();
+  });
+
+  it('trayManager=null 时含 silentMode 不应抛错', async () => {
+    const ctx = createMockCtx({ trayManager: null });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    await expect(callback({}, { silentMode: true })).resolves.toEqual({ updated: true });
+  });
+
+  it('updateConfigBatch 抛错应降级返回错误', async () => {
+    const updateConfigBatch = vi.fn(() => {
+      throw new Error('batch 内部错误');
+    });
+    const ctx = createMockCtx({ sprite: { updateConfigBatch } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    const result = await callback({}, { silentMode: true });
+
+    expect(result.updated).toBe(false);
+    expect(result.error).toBe('batch 内部错误');
   });
 
   // ─── PERSONA_LIST ──────────────────────────────────────

@@ -16,7 +16,7 @@ import { FileWatcherTrigger } from '../../sprite/fileWatcherTrigger.js';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
+import { DEFAULT_SPRITE_CONFIG, saveSpriteConfig } from '../../sprite/spriteConfig.js';
 import type { SpriteConfig } from '../../sprite/spriteConfig.js';
 
 // ─── Mock spriteConfig 模块（测试隔离） ──────────────────
@@ -254,6 +254,123 @@ describe('Sprite 配置持久化', () => {
     emitAgentEvent('memoryAdded', { id: '3', source: 'insight', name: 'C' });
 
     expect(proactiveHandler).not.toHaveBeenCalled();
+  });
+});
+
+// ─── QC-CONFIG-01: updateConfigBatch 事务性测试 ──────────────
+describe('Sprite updateConfigBatch（QC-CONFIG-01 事务性）', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    agentListeners.clear();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
+    tmpDir = createTmpDir();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('空批量应返回 updated: true 且不触发持久化（幂等）', () => {
+    vi.mocked(saveSpriteConfig).mockClear();
+    const result = sprite.updateConfigBatch({});
+    expect(result.updated).toBe(true);
+    expect(result.error).toBeUndefined();
+    // 空批量不写盘
+    expect(saveSpriteConfig).not.toHaveBeenCalled();
+  });
+
+  it('应一次性应用全部字段并单次持久化', () => {
+    vi.mocked(saveSpriteConfig).mockClear();
+    const result = sprite.updateConfigBatch({
+      silentMode: true,
+      proactiveThreshold: 5,
+      triggerIntervalMs: 1_800_000,
+      fileWatcherDebounceMs: 500,
+    });
+    expect(result.updated).toBe(true);
+
+    const config = sprite.getConfig();
+    expect(config.silentMode).toBe(true);
+    expect(config.proactiveThreshold).toBe(5);
+    expect(config.triggerIntervalMs).toBe(1_800_000);
+    expect(config.fileWatcherDebounceMs).toBe(500);
+
+    // 单次持久化（R6：完整配置跳过读文件，仅一次 writeFileSync）
+    expect(saveSpriteConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('任一字段类型非法时应事务回滚（config 状态不变）', () => {
+    vi.mocked(saveSpriteConfig).mockClear();
+    const before = sprite.getConfig();
+
+    // proactiveThreshold 应为 number，传 string 触发校验失败
+    const result = sprite.updateConfigBatch({
+      silentMode: true,
+      proactiveThreshold: 'invalid' as unknown as number,
+    });
+
+    expect(result.updated).toBe(false);
+    expect(result.error).toContain('proactiveThreshold');
+
+    // 事务回滚：config 状态不变
+    const after = sprite.getConfig();
+    expect(after.silentMode).toBe(before.silentMode);
+    expect(after.proactiveThreshold).toBe(before.proactiveThreshold);
+
+    // 失败时不持久化
+    expect(saveSpriteConfig).not.toHaveBeenCalled();
+  });
+
+  it('非法配置键应返回错误且不持久化', () => {
+    vi.mocked(saveSpriteConfig).mockClear();
+    const result = sprite.updateConfigBatch({
+      invalidKey: 'value',
+    });
+
+    expect(result.updated).toBe(false);
+    expect(result.error).toContain('非法配置键');
+    expect(saveSpriteConfig).not.toHaveBeenCalled();
+  });
+
+  it('副作用去重：多个 fileWatcher 键只触发一次持久化', () => {
+    vi.mocked(saveSpriteConfig).mockClear();
+    const result = sprite.updateConfigBatch({
+      fileWatcherEnabled: false,
+      fileWatcherPaths: ['src', 'docs'],
+      fileWatcherDebounceMs: 2_000,
+      fileWatcherIgnore: ['**/tmp/**'],
+    });
+
+    expect(result.updated).toBe(true);
+    // 4 个同类副作用键，但只持久化一次（去重）
+    expect(saveSpriteConfig).toHaveBeenCalledTimes(1);
+
+    const config = sprite.getConfig();
+    expect(config.fileWatcherEnabled).toBe(false);
+    expect(config.fileWatcherPaths).toEqual(['src', 'docs']);
+    expect(config.fileWatcherDebounceMs).toBe(2_000);
+    expect(config.fileWatcherIgnore).toEqual(['**/tmp/**']);
+  });
+
+  it('批量更新后重新创建 Sprite 应加载持久化的配置', () => {
+    sprite.updateConfigBatch({
+      silentMode: true,
+      proactiveThreshold: 7,
+      triggerIntervalMs: 900_000,
+    });
+
+    // 重新创建 Sprite 应从持久化配置加载
+    const sprite2 = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    const config = sprite2.getConfig();
+    expect(config.silentMode).toBe(true);
+    expect(config.proactiveThreshold).toBe(7);
+    expect(config.triggerIntervalMs).toBe(900_000);
+    sprite2.stop();
   });
 });
 

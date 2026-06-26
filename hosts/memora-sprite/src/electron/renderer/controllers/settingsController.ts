@@ -2,7 +2,7 @@
  * 设置控制器 — 设置面板业务逻辑
  *
  * 职责：
- * - 设置精灵配置保存回调（逐项更新配置）
+ * - 设置精灵配置保存回调（QC-CONFIG-01：批量事务性更新）
  * - 设置 LLM 配置保存回调（触发主进程重新初始化 Agent）
  * - 设置 LLM 连接测试回调
  * - 设置取消回调（重新加载配置）
@@ -50,21 +50,29 @@ export function createSettingsController(uiManager: UIManager) {
       // FD-08 进行中反馈：禁用保存按钮防止重复点击
       setButtonLoading('btn-settings-save', true, '保存中...');
       try {
-        // 逐项更新配置（sprite.updateConfig 一次只更新一个键）
-        await window.electronAPI.updateConfig('silentMode', config.silentMode);
-        await window.electronAPI.updateConfig('proactiveThreshold', config.proactiveThreshold);
-        await window.electronAPI.updateConfig('proactiveCooldownMs', config.proactiveCooldownMs);
-        await window.electronAPI.updateConfig('triggerIntervalMs', config.triggerIntervalMs);
-        await window.electronAPI.updateConfig('fileWatcherEnabled', config.fileWatcherEnabled);
-        await window.electronAPI.updateConfig('fileWatcherPaths', config.fileWatcherPaths);
-        await window.electronAPI.updateConfig('fileWatcherDebounceMs', config.fileWatcherDebounceMs);
-        await window.electronAPI.updateConfig('defaultPersona', config.defaultPersona);
-        // FD-04 项目模式：先更新路径再切换模式（确保专注模式切换时路径已就绪）
-        await window.electronAPI.updateConfig('focusProjectPath', config.focusProjectPath);
-        await window.electronAPI.updateConfig('projectMode', config.projectMode);
+        // QC-CONFIG-01：单次 IPC 批量更新（事务性：原子性 + 单次持久化 + 副作用去重）
+        // 替代原 10 次串行 updateConfig 调用，避免半更新状态和 N 次 writeFileSync
+        const result = await window.electronAPI.updateConfigBatch({
+          silentMode: config.silentMode,
+          proactiveThreshold: config.proactiveThreshold,
+          proactiveCooldownMs: config.proactiveCooldownMs,
+          triggerIntervalMs: config.triggerIntervalMs,
+          fileWatcherEnabled: config.fileWatcherEnabled,
+          fileWatcherPaths: config.fileWatcherPaths,
+          fileWatcherDebounceMs: config.fileWatcherDebounceMs,
+          defaultPersona: config.defaultPersona,
+          // FD-04 项目模式：路径与模式在同一事务内更新，避免中间态
+          focusProjectPath: config.focusProjectPath,
+          projectMode: config.projectMode,
+        });
 
-        // IX-06 操作反馈走 toast，不污染对话历史
-        uiManager.showToast('精灵配置已保存', 'success');
+        if (result.updated) {
+          // IX-06 操作反馈走 toast，不污染对话历史
+          uiManager.showToast('精灵配置已保存', 'success');
+        } else {
+          // 事务回滚：主进程未应用任何更新，提示具体错误
+          uiManager.showToast(`保存失败：${result.error ?? '未知错误'}`, 'error');
+        }
       } catch (error) {
         handleIpcError('onConfigSave', error, '保存精灵配置失败');
       } finally {

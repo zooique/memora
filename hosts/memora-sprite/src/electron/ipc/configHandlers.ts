@@ -17,7 +17,7 @@ import { ipcMain } from 'electron';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
-import type { SpriteConfigKey } from '../../sprite/spriteConfig.js';
+import type { SpriteConfig, SpriteConfigKey } from '../../sprite/spriteConfig.js';
 import { safeHandle } from './types.js';
 import type { IpcContext } from './types.js';
 
@@ -123,6 +123,52 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       return { updated: false, error: message };
     }
   });
+
+  /**
+   * QC-CONFIG-01 批量更新配置（事务性）
+   *
+   * 替代 onConfigSave 中 10 次串行 CONFIG_UPDATE 调用。主进程在单个事务内
+   * 完成全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
+   *
+   * 副作用处理：silentMode / silentModeExpiresAt 与 CONFIG_UPDATE handler 保持
+   * 一致——批量应用成功后，按 key 是否出现在 updates 中触发对应副作用。
+   */
+  ipcMain.handle(
+    IPC_CHANNELS.CONFIG_UPDATE_BATCH,
+    async (_event, updates: Record<string, unknown>) => {
+      try {
+        // 委托给 Sprite.updateConfigBatch：内部完成副本校验 → 原子应用 → 单次持久化 → 副作用去重
+        const result = ctx.sprite.updateConfigBatch(updates as Partial<SpriteConfig>);
+
+        // 应用失败：直接返回错误，不触发任何主进程侧副作用
+        if (!result.updated) {
+          return result;
+        }
+
+        // ─── 主进程侧副作用（与 CONFIG_UPDATE handler 对齐） ───
+        // silentMode 切换时同步托盘状态 + 重建菜单（确保勾选状态一致）
+        if ('silentMode' in updates) {
+          if (updates.silentMode === true) {
+            ctx.trayManager?.setState('sleeping');
+          } else {
+            ctx.trayManager?.setState('idle');
+          }
+          ctx.trayManager?.updateMenu();
+        }
+
+        // silentModeExpiresAt 变更时管理主进程恢复定时器（QC-SPRITE-02）
+        if ('silentModeExpiresAt' in updates) {
+          scheduleSilentRecovery(ctx);
+        }
+
+        return result;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '批量更新配置失败';
+        errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: message });
+        return { updated: false, error: message };
+      }
+    },
+  );
 
   // ─── 角色相关 ────────────────────────────────────────────
 

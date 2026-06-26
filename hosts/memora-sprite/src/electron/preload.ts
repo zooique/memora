@@ -52,6 +52,8 @@ const IPC_CHANNELS = {
   MEMORIES_ADD: 'memories-add',
   CONFIG_GET: 'config-get',
   CONFIG_UPDATE: 'config-update',
+  // QC-CONFIG-01：批量事务性更新配置（必须与 ipc/channels.ts 保持同步）
+  CONFIG_UPDATE_BATCH: 'config-update-batch',
   PERSONA_LIST: 'persona-list',
   PERSONA_SWITCH: 'persona-switch',
   PERSONA_MODE: 'persona-mode',
@@ -319,6 +321,14 @@ export interface ElectronAPI {
   getConfig: () => Promise<{ config: SpriteConfigForm }>;
   /** QC-CFG-03：返回类型新增 error 字段（更新失败时包含错误信息） */
   updateConfig: (key: string, value: unknown) => Promise<{ updated: boolean; error?: string }>;
+  /**
+   * QC-CONFIG-01 批量更新配置（事务性）
+   *
+   * 替代 onConfigSave 中 N 次串行 updateConfig 调用。主进程在单个事务内完成
+   * 全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
+   * 返回类型与 updateConfig 一致，便于复用现有错误处理逻辑。
+   */
+  updateConfigBatch: (updates: Record<string, unknown>) => Promise<{ updated: boolean; error?: string }>;
 
   // 角色
   listPersonas: () => Promise<{ personas: Array<{ name: string; description: string; active: boolean }> }>;
@@ -589,6 +599,7 @@ const electronAPI: ElectronAPI = {
   // 配置
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET),
   updateConfig: (key, value) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_UPDATE, key, value),
+  updateConfigBatch: (updates) => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_UPDATE_BATCH, updates),
 
   // 角色
   listPersonas: () => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_LIST),

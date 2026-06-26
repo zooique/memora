@@ -46,6 +46,13 @@ export const IPC_CHANNELS = {
   CONFIG_GET: 'config-get',
   /** 更新精灵配置项 */
   CONFIG_UPDATE: 'config-update',
+  /**
+   * QC-CONFIG-01 批量更新精灵配置（事务性）
+   *
+   * 替代 onConfigSave 中 10 次串行 CONFIG_UPDATE 调用，主进程在单个事务内
+   * 完成全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
+   */
+  CONFIG_UPDATE_BATCH: 'config-update-batch',
 
   // ─── 角色相关 ─────────────────────────────────────────
   /** 列出所有角色 */
