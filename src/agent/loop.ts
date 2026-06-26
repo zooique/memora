@@ -14,6 +14,7 @@ import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import type { AgentChunk, UIMessages } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
+import { ContextManager } from '@/agent/contextManager.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
@@ -90,10 +91,8 @@ export class AgentLoop {
   private readonly ui: Required<UIMessages>;
   /** 上下文超限时是否自动生成摘要 */
   private readonly enableContextSummary: boolean;
-  /** 上下文摘要缓存（首次截断后缓存，后续截断复用） */
-  private contextSummary: string | null = null;
-  /** 摘要缓存生成时的消息数量，用于判断缓存是否过期 */
-  private contextSummaryMsgCount: number = 0;
+  /** 上下文管理器（QC-R2-08：从 loop 提取的 token 估算 + 截断 + 摘要职责） */
+  private readonly contextManager: ContextManager;
 
   // ─── R-103 运行时指标统计字段 ──────────────────────────
   // 累计值，从 AgentLoop 构造起累加，供 getMetrics() 返回快照。
@@ -113,8 +112,7 @@ export class AgentLoop {
   private metricToolCallCount: number = 0;
   /** 工具调用失败次数（结果以 [ERR 开头） */
   private metricToolFailureCount: number = 0;
-  /** 上下文截断次数（truncateMessages 实际触发截断 +1） */
-  private metricTruncationCount: number = 0;
+  // metricTruncationCount 已移至 ContextManager.truncationCount（QC-R2-08）
 
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
@@ -141,6 +139,13 @@ export class AgentLoop {
         ((rule: string) => `Output blocked by guardrail rule "${rule}"`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
+
+    // QC-R2-08：上下文管理器（token 估算 + 截断 + 摘要）
+    this.contextManager = new ContextManager({
+      maxContextTokens: this.maxContextTokens,
+      provider: opts.provider,
+      contextTruncatedFn: this.ui.contextTruncated,
+    });
 
     // 初始化 system prompt（基于永驻记忆，加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
@@ -243,21 +248,12 @@ export class AgentLoop {
         let contextSummary: string | undefined;
         if (
           this.enableContextSummary &&
-          this.estimateTokens(this.messages) > this.maxContextTokens &&
-          this.messages.length > 3
+          this.contextManager.shouldTruncate(this.messages)
         ) {
-          // 摘要缓存 TTL：消息数增长超过 10 条时缓存过期，需重新生成
-          const summaryExpired = this.contextSummary !== null &&
-            (this.messages.length - this.contextSummaryMsgCount) > LOOP_CONSTANTS.SUMMARY_CACHE_TTL_MSGS;
-          if (this.contextSummary && !summaryExpired) {
-            contextSummary = this.contextSummary;
-          } else {
-            contextSummary = await this.generateContextSummary();
-            this.contextSummary = contextSummary;
-            this.contextSummaryMsgCount = this.messages.length;
-          }
+          // QC-R2-08：摘要缓存管理已移至 ContextManager.getOrCreateSummary
+          contextSummary = await this.contextManager.getOrCreateSummary(this.messages);
         }
-        const safeMessages = this.truncateMessages(this.messages, contextSummary);
+        const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
         // SEC-01: 截断后同步替换工作记忆，防止 messages 数组无限增长
         // 持久化由 MessageHistory 负责，工作记忆只需保留当前上下文窗口内的消息
         if (safeMessages !== this.messages) {
@@ -389,7 +385,7 @@ export class AgentLoop {
       iteration,
     });
     // R-103 补充 span 属性：让宿主监控面板能按 token 消耗过滤
-    llmSpan.setAttribute('inputTokens', this.estimateTokens(safeMessages));
+    llmSpan.setAttribute('inputTokens', this.contextManager.estimateTokens(safeMessages));
 
     for (let attempt = 0; attempt <= LOOP_CONSTANTS.MAX_LLM_RETRIES; attempt++) {
       if (attempt > 0) {
@@ -404,7 +400,7 @@ export class AgentLoop {
       try {
         // R-103 LLM 指标统计：每次 provider.chat 调用 +1，输入 token 累计
         this.metricLlmCallCount++;
-        this.metricTotalInputTokens += this.estimateTokens(safeMessages);
+        this.metricTotalInputTokens += this.contextManager.estimateTokens(safeMessages);
 
         // safeMessages 为 readonly Message[]，provider.chat 期望 Message[]；
         // 通过浅拷贝转换为可变数组，避免类型断言。
@@ -423,7 +419,7 @@ export class AgentLoop {
           }
         }
         // R-103 输出 token 统计：成功时累计输出 token
-        this.metricTotalOutputTokens += this.estimateTokens([
+        this.metricTotalOutputTokens += this.contextManager.estimateTokens([
           { role: 'assistant', content: fullContent },
         ]);
         break; // 成功，退出重试循环
@@ -565,243 +561,6 @@ export class AgentLoop {
     }
 
     return prompt;
-  }
-
-  /**
-   * 估算消息数组的 token 数量
-   *
-   * 使用字符数 / CHARS_PER_TOKEN 的粗略估算（非精确 tokenizer）。
-   * 对于中英文混合文本，保守取 3 chars/token（实际 ~2-2.5），
-   * 确保估算值 ≥ 实际值，不会误判"安全"导致 API 报错。
-   *
-   * @param messages 消息数组
-   * @returns 估算的 token 数量
-   */
-  private estimateTokens(messages: readonly Message[]): number {
-    let totalChars = 0;
-    for (const m of messages) {
-      // 消息本身的内容字符数
-      totalChars += m.content.length;
-      // toolCalls 的 JSON 序列化字符数
-      if (m.toolCalls) {
-        totalChars += JSON.stringify(m.toolCalls).length;
-      }
-    }
-    return Math.ceil(totalChars / LOOP_CONSTANTS.CHARS_PER_TOKEN);
-  }
-
-  /**
-   * 截断消息数组以适配上下文窗口
-   *
-   * 策略：保留下方、裁中间、提取关键消息。
-   * - messages[0]（system prompt）始终保留（这是 Agent 的"灵魂"）
-   * - 从尾部向前取最近的消息对（user + assistant + tool），直到估算 token 接近上限
-   * - 从被裁剪的消息中按重要性权重提取关键用户消息，插入到 placeholder 之前
-   * - 头部被裁剪的消息替换为一条摘要占位消息
-   *
-   * 重要性权重：user 消息 > tool 结果 > assistant 回复
-   * 被裁剪的用户消息中，内容较长的（信息量大）优先保留
-   *
-   * 如果 system prompt 本身就超过 maxContextTokens，不做截断（让 LLM API 报错，
-   * 开发者需要缩减 bootstrapMemories 或 toolDefinitions）。
-   *
-   * @param messages 完整消息数组
-   * @returns 截断后的消息数组（可能是原数组引用，无修改时）
-   */
-  private truncateMessages(messages: readonly Message[], summary?: string): readonly Message[] {
-    const estimated = this.estimateTokens(messages);
-    if (estimated <= this.maxContextTokens || messages.length <= 3) {
-      return messages; // 未超阈值，无需截断
-    }
-
-    // system prompt 单独保留
-    const systemMsg = messages[0];
-    if (!systemMsg || systemMsg.role !== 'system') {
-      return messages; // 异常：没有 system prompt，不截断
-    }
-
-    const systemTokens = this.estimateTokens([systemMsg]);
-    if (systemTokens >= this.maxContextTokens) {
-      // system prompt 本身就超了——这是配置问题，不应该截断
-      logger.warn(
-        { systemTokens, maxContextTokens: this.maxContextTokens },
-        'system prompt 已超过上下文窗口上限，请缩减 bootstrapMemories 或 toolDefinitions',
-      );
-      return messages;
-    }
-
-    // 剩余可用 token 数（留 10% 缓冲给 LLM 响应）
-    const availableTokens =
-      Math.floor(this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) - systemTokens;
-
-    // 从尾部向前收集消息（最近的最重要）
-    const tail: Message[] = [];
-    let tailTokens = 0;
-    let cutIndex = messages.length; // 被裁剪区域的起始索引
-    for (let i = messages.length - 1; i >= 1; i--) {
-      // QC-17 移除非空断言：循环条件保证索引有效，null 检查兜底
-      const msg = messages[i];
-      if (!msg) break;
-      const msgTokens = this.estimateTokens([msg]);
-      if (tailTokens + msgTokens > availableTokens) {
-        cutIndex = i + 1; // cutIndex 是第一条被保留的尾部消息
-        break; // 再加这条就超了
-      }
-      tail.unshift(msg); // 保持顺序：从尾部取，但插入时保持时间顺序
-      tailTokens += msgTokens;
-      cutIndex = i;
-    }
-
-    // 计算被裁剪的消息
-    const skipped = cutIndex - 1; // -1 是 system prompt
-    if (skipped <= 0) {
-      return messages; // 全部保留
-    }
-
-    // R-103 截断次数统计：确实发生了截断（skipped > 0）
-    this.metricTruncationCount++;
-
-    // 从被裁剪的消息中按重要性提取关键消息
-    // 重要性权重：user > tool > assistant；内容较长的用户消息优先
-    const cutMessages = messages.slice(1, cutIndex);
-    const keyMessages = this.extractKeyMessages(cutMessages, availableTokens - tailTokens);
-
-    // 构造一条占位消息，让 LLM 知道有历史被裁剪了
-    const placeholder: Message = {
-      role: 'system',
-      content: this.ui.contextTruncated(skipped, tail.length),
-    };
-
-    const truncated: Message[] = [systemMsg];
-
-    // 如果有摘要，插入到 system prompt 和 placeholder 之间
-    if (summary) {
-      truncated.push({ role: 'system', content: summary });
-    }
-
-    // 插入从被裁剪区域提取的关键消息
-    truncated.push(...keyMessages);
-
-    truncated.push(placeholder);
-    truncated.push(...tail);
-
-    const newEstimated = this.estimateTokens(truncated);
-
-    logger.info(
-      {
-        originalCount: messages.length,
-        truncatedCount: truncated.length,
-        skipped,
-        keyExtracted: keyMessages.length,
-        originalTokens: estimated,
-        newTokens: newEstimated,
-      },
-      '上下文窗口截断完成',
-    );
-
-    return truncated;
-  }
-
-  /**
-   * 从被裁剪的消息中按重要性提取关键消息
-   *
-   * 重要性权重：
-   * - user 消息：权重 3（用户输入信息量最高）
-   * - tool 结果：权重 2（工具执行结果有参考价值）
-   * - assistant 回复：权重 1（可由摘要替代）
-   *
-   * 提取策略：按权重降序 + 内容长度降序排列，取 Top-N 直到 token 用完
-   *
-   * @param cutMessages 被裁剪的消息数组
-   * @param availableTokens 剩余可用 token 数
-   * @returns 提取的关键消息数组（按原始时间顺序排列）
-   */
-  private extractKeyMessages(cutMessages: readonly Message[], availableTokens: number): Message[] {
-    if (availableTokens <= 0 || cutMessages.length === 0) return [];
-
-    // 计算每条消息的权重和 token 数
-    const weighted = cutMessages.map((msg, index) => ({
-      msg,
-      index, // 原始顺序索引
-      weight: this.messageImportance(msg),
-      tokens: this.estimateTokens([msg]),
-    }));
-
-    // 按权重降序 + 内容长度降序排列
-    weighted.sort((a, b) => {
-      if (b.weight !== a.weight) return b.weight - a.weight;
-      return b.msg.content.length - a.msg.content.length;
-    });
-
-    // 贪心选取，直到 token 用完
-    const selected: typeof weighted = [];
-    let usedTokens = 0;
-    for (const item of weighted) {
-      if (usedTokens + item.tokens > availableTokens) break;
-      selected.push(item);
-      usedTokens += item.tokens;
-    }
-
-    // 恢复原始时间顺序
-    selected.sort((a, b) => a.index - b.index);
-
-    return selected.map((item) => item.msg);
-  }
-
-  /**
-   * 获取消息的重要性权重
-   * user 消息 > tool 结果 > assistant 回复
-   */
-  private messageImportance(msg: Message): number {
-    if (msg.role === 'user') return 3;
-    if (msg.role === 'tool') return 2;
-    return 1;
-  }
-
-  /**
-   * 生成上下文摘要（enableContextSummary 时调用）
-   *
-   * 在首次截断时，提取即将被裁剪的消息中最近几条用户/助手对话，
-   * 调用 provider 生成一句摘要，作为"遗忘补偿"注入到 system prompt 中。
-   * 摘要只生成一次，后续截断复用缓存。
-   *
-   * @returns 摘要字符串（失败时返回空字符串，降级为无摘要）
-   */
-  private async generateContextSummary(): Promise<string> {
-    const messagesToSummarize = this.messages.slice(1);
-    const recentMessages = messagesToSummarize
-      .filter((m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
-      .slice(-LOOP_CONSTANTS.SUMMARY_MSG_COUNT)
-      .map(
-        (m) =>
-          `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, LOOP_CONSTANTS.SUMMARY_CONTENT_SLICE) : '[tool]'}`,
-      )
-      .join('\n');
-
-    if (!recentMessages) return '';
-
-    try {
-      const stream = this.opts.provider.chat(
-        [
-          {
-            role: 'system',
-            content:
-              'Summarize the following conversation excerpt in 1-2 sentences. Focus on key facts, decisions, and user preferences. Be concise.',
-          },
-          { role: 'user', content: recentMessages },
-        ],
-        { maxTokens: LOOP_CONSTANTS.SUMMARY_MAX_TOKENS, temperature: 0 },
-      );
-      let summary = '';
-      for await (const chunk of stream) {
-        if (chunk.content) summary += chunk.content;
-      }
-      logger.info({ summaryLength: summary.length }, '上下文摘要已生成');
-      return `[Context summary of earlier conversation]\n${summary}`;
-    } catch (err) {
-      logger.warn({ err }, '上下文摘要生成失败，降级为无摘要');
-      return '';
-    }
   }
 
   /**
@@ -990,9 +749,9 @@ export class AgentLoop {
         failureCount: this.metricToolFailureCount,
       },
       context: {
-        truncationCount: this.metricTruncationCount,
+        truncationCount: this.contextManager.truncationCount,
         messageCount: this.messages.length,
-        estimatedTokens: this.estimateTokens(this.messages),
+        estimatedTokens: this.contextManager.estimateTokens(this.messages),
       },
       // 衰减指标由 Agent 层填充，AgentLoop 不持有衰减逻辑
       decay: null,
