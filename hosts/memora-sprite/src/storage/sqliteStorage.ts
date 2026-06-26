@@ -63,6 +63,8 @@ COMMIT;
  */
 export class SqliteStorage implements IMemoryStorage {
   private db: ISqliteDatabase;
+  /** QC-STORE-01：close 幂等保护标志，避免重复关闭抛异常 */
+  private closed = false;
 
   constructor(db: ISqliteDatabase) {
     this.db = db;
@@ -280,8 +282,14 @@ export class SqliteStorage implements IMemoryStorage {
 
   /**
    * 关闭数据库连接（IMemoryStorage 接口实现）
+   *
+   * QC-STORE-01 修复：添加 closed 标志实现幂等保护。
+   * 重复调用 close（如 agent.close() + app.before-quit 竞态）时跳过，
+   * 避免 better-sqlite3 的 "database is not open" 异常。
    */
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     this.db.close();
   }
 

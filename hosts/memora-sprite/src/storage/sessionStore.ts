@@ -179,8 +179,12 @@ export class SqliteSessionStore implements ISessionStore {
   /**
    * 复制会话（ISessionStore 接口实现）
    *
-   * 使用 SQLite 事务保证原子性：先清除目标会话，再逐条复制源会话消息。
-   * 幂等操作：目标会话已存在时覆盖而非追加。
+   * 使用 SQLite 事务保证原子性：先清除目标会话，再用 INSERT INTO ... SELECT
+   * 数据库层直接拷贝源会话消息。幂等操作：目标会话已存在时覆盖而非追加。
+   *
+   * QC-STORE-03 优化：原实现 loadMessages 全量加载到内存再逐条 insert，
+   * 大型会话（数千条消息）会导致内存峰值和性能下降。
+   * 改用 INSERT INTO ... SELECT 在数据库层直接拷贝，零内存占用。
    *
    * @param sourceDate 源会话日期
    * @param sourceSession 源会话名称
@@ -193,23 +197,20 @@ export class SqliteSessionStore implements ISessionStore {
     targetDate: string,
     targetSession: string,
   ): void {
-    const sourceMessages = this.loadMessages(sourceDate, sourceSession);
-    if (sourceMessages.length === 0) return;
-
     const transaction = this.db.transaction(() => {
       // 先清除目标会话（幂等：覆盖而非追加）
       this.db.prepare(
         'DELETE FROM sessions WHERE date = ? AND session = ?'
       ).run(targetDate, targetSession);
 
-      // 复制源会话消息到目标
-      const insert = this.db.prepare(`
+      // QC-STORE-03：INSERT INTO ... SELECT 数据库层直接拷贝
+      // 避免全量加载到内存，源会话为空时插入 0 行（no-op），无需提前返回
+      this.db.prepare(`
         INSERT INTO sessions (date, session, role, content, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-      `);
-      for (const msg of sourceMessages) {
-        insert.run(targetDate, targetSession, msg.role, msg.content, msg.timestamp);
-      }
+        SELECT ?, ?, role, content, timestamp
+        FROM sessions
+        WHERE date = ? AND session = ?
+      `).run(targetDate, targetSession, sourceDate, sourceSession);
     });
 
     transaction();
@@ -242,6 +243,10 @@ export class SqliteSessionStore implements ISessionStore {
    * 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段，date 占 3 段）。
    * 提取自 deleteSession / renameSession / getFirstUserMessage 三处重复逻辑。
    *
+   * QC-STORE-02 修复：添加日期格式校验，拒绝非法日期（如 "abcd-efg-hijk-session"）
+   * 写入数据库。校验规则：4 位数字 + 2 位数字 + 2 位数字，基本格式检查，
+   * 不校验日期有效性（如 2026-02-30 仍通过），由调用方保证语义正确。
+   *
    * @param sessionId 会话 ID
    * @returns 解析后的 { date, session }，格式无效时返回 null
    */
@@ -249,10 +254,11 @@ export class SqliteSessionStore implements ISessionStore {
     const parts = sessionId.split('-');
     // 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段）
     if (parts.length < 4) return null;
-    return {
-      date: parts.slice(0, 3).join('-'), // YYYY-MM-DD
-      session: parts.slice(3).join('-'), // sessionName（可能含连字符）
-    };
+    const date = parts.slice(0, 3).join('-'); // YYYY-MM-DD
+    const session = parts.slice(3).join('-'); // sessionName（可能含连字符）
+    // QC-STORE-02：校验日期格式（YYYY-MM-DD），拒绝非法日期写入数据库
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    return { date, session };
   }
 }
 
