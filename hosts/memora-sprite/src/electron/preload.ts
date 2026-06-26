@@ -316,7 +316,8 @@ export interface ElectronAPI {
 
   // 配置
   getConfig: () => Promise<{ config: SpriteConfigForm }>;
-  updateConfig: (key: string, value: unknown) => Promise<{ updated: boolean }>;
+  /** QC-CFG-03：返回类型新增 error 字段（更新失败时包含错误信息） */
+  updateConfig: (key: string, value: unknown) => Promise<{ updated: boolean; error?: string }>;
 
   // 角色
   listPersonas: () => Promise<{ personas: Array<{ name: string; description: string; active: boolean }> }>;

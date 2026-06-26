@@ -94,7 +94,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.CONFIG_UPDATE, async (_event, key: string, value: unknown) => {
     try {
       if (!isSpriteConfigKey(key)) {
-        return { success: false, error: `非法配置键：${key}` };
+        return { updated: false, error: `非法配置键：${key}` };
       }
       ctx.sprite.updateConfig(key, value);
 
@@ -116,8 +116,11 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
       return { updated: true };
     } catch (error) {
-      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '更新配置失败' });
-      return { updated: false };
+      // QC-CFG-03 修复：错误返回包含 error 字段，与非法配置键路径返回结构一致
+      // 原实现仅返回 { updated: false }，调用方无法区分"配置键非法"与"更新失败"
+      const message = error instanceof Error ? error.message : '更新配置失败';
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: message });
+      return { updated: false, error: message };
     }
   });
 
