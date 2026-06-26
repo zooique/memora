@@ -169,7 +169,7 @@ export class ChatPanelManager {
         );
         return;
       }
-      // UX-PP-07 代码块独立复制按钮：data-action="copy-code" data-content="..."
+      // UX-PP-11 代码块独立复制按钮：data-action="copy-code" data-content="..."
       // 与消息级复制按钮（data-action="copy"）区分，复用同一剪贴板逻辑
       const copyCodeBtn = target.closest<HTMLElement>('[data-action="copy-code"]');
       if (copyCodeBtn) {
@@ -463,8 +463,8 @@ export class ChatPanelManager {
     if (bubble && contentWrapper) {
       // 提取纯文本内容（排除 UI 元信息元素）
       // - memory-recall：召回记忆提示
-      // - stream-aborted：中断标记（UX-PP-06）
-      // - md-code-header：代码块头部（语言标签 + 复制按钮文本，UX-PP-07）
+      // - stream-aborted：中断标记（UX-PP-10）
+      // - md-code-header：代码块头部（语言标签 + 复制按钮文本，UX-PP-11）
       const clone = bubble.cloneNode(true);
       if (!(clone instanceof HTMLElement)) {
         throw new Error('[finishStreamingMessage] 复制的消息气泡不是 HTMLElement');
@@ -693,7 +693,7 @@ export class ChatPanelManager {
     nameSpan.className = 'tool-call-name';
     nameSpan.textContent = name;
     header.appendChild(nameSpan);
-    // UX-PP-08 执行中 spinner：旋转动画替代静态"执行中..."文本，增强视觉反馈
+    // UX-PP-12 执行中 spinner：旋转动画替代静态"执行中..."文本，增强视觉反馈
     const spinner = document.createElement('span');
     spinner.className = 'tool-call-spinner';
     header.appendChild(spinner);
@@ -766,7 +766,7 @@ export class ChatPanelManager {
     targetCard.classList.remove('tool-call-running');
     targetCard.classList.add(ok ? 'tool-call-success' : 'tool-call-failed');
 
-    // UX-PP-08 移除 spinner（执行结束，不再需要旋转动画）
+    // UX-PP-12 移除 spinner（执行结束，不再需要旋转动画）
     const spinner = targetCard.querySelector('.tool-call-spinner');
     if (spinner) spinner.remove();
 
@@ -983,7 +983,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-PP-06 在流式消息气泡内嵌入中断标记
+   * UX-PP-10 在流式消息气泡内嵌入中断标记
    *
    * 用户主动中断对话时，在原助手气泡底部嵌入中断标记，
    * 保留已生成的部分内容（对齐 Claude Code 的 partial response 保留理念）。
@@ -1151,7 +1151,7 @@ export class ChatPanelManager {
    *
    * 流式出错时，气泡内的"重试"按钮被点击后触发此回调。
    * 由 renderer.ts 注入 retryLastUserInput（重新发送上一条用户消息）。
-   * UX-PP-09 后此为唯一重试通道（Toast 不再携带重试按钮）。
+   * UX-PP-13 后此为唯一重试通道（Toast 不再携带重试按钮）。
    *
    * @param cb 重试回调（无参数，由宿主自行获取 lastUserInput）
    */

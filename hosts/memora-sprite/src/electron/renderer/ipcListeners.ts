@@ -357,7 +357,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     callbacks.onConversationEnd?.();
   });
 
-  // UX-PP-06 流式对话被中断：在原助手气泡内嵌入中断标记，保留已生成的部分内容
+  // UX-PP-10 流式对话被中断：在原助手气泡内嵌入中断标记，保留已生成的部分内容
   // 替代旧的居中系统消息方案（体验割裂，与原气泡内容脱节）
   window.electronAPI.onStreamAborted((msg) => {
     uiManager.markStreamingAborted(msg.messageId, msg.reason);
@@ -408,7 +408,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    * 监听主进程推送的精灵对话级错误（ipcHandlers.ts 在对话流式输出出错时发送）。
    * 与 app-error（应用级错误）区分：sprite-error 是对话级错误。
    *
-   * UX-PP-09 错误反馈去重：气泡内错误指示器 + 重试按钮为主通道（主动可见），
+   * UX-PP-13 错误反馈去重：气泡内错误指示器 + 重试按钮为主通道（主动可见），
    * Toast 仅作辅助提示（无重试按钮，避免与气泡内重试按钮重复）。
    * 控制台日志保留用于排查。原方案同时触发气泡 + Toast（含重试）+ 控制台，
    * 重试入口冗余，用户注意力被分散。

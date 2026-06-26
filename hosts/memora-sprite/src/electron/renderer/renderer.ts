@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // UX-PP-05 流式错误重试：重新发送上一条用户消息
-  // 提取为独立函数，供气泡内 onErrorRetry 复用（UX-PP-09 后 Toast 不再携带重试按钮）
+  // 提取为独立函数，供气泡内 onErrorRetry 复用（UX-PP-13 后 Toast 不再携带重试按钮）
   const retryLastUserInput = (): void => {
     if (!lastUserInput) return;
     // P2 修复：重试前检查流式状态，避免流式输出中重复发送
@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // UX-PP-05 注册气泡内错误重试回调（复用 retryLastUserInput，供错误气泡内"重试"按钮调用）
-  // UX-PP-09 后 Toast 不再携带重试按钮，气泡内重试为唯一主通道
+  // UX-PP-13 后 Toast 不再携带重试按钮，气泡内重试为唯一主通道
   uiManager.onErrorRetry(retryLastUserInput);
 
   // 初始化主动提示 banner 按钮（查看/稍后/静默）

@@ -397,7 +397,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   showLoadEarlierDay(onClick: () => void): void { this.chatPanel.showLoadEarlierDay(onClick); }
   /** 向流式消息气泡注入错误提示（委托到 ChatPanelManager） */
   injectErrorToStreamingMessages(errorText: string): void { this.chatPanel.injectErrorToStreamingMessages(errorText); }
-  /** UX-PP-06 在流式消息气泡内嵌入中断标记（委托到 ChatPanelManager） */
+  /** UX-PP-10 在流式消息气泡内嵌入中断标记（委托到 ChatPanelManager） */
   markStreamingAborted(messageId: string, reason: string): void { this.chatPanel.markStreamingAborted(messageId, reason); }
   /** 显示空状态引导（委托到 ChatPanelManager） */
   showEmptyState(): void { this.chatPanel.showEmptyState(); }

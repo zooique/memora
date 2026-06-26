@@ -170,7 +170,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
 
   /**
-   * UX-PP-06 流式对话被中断通知
+   * UX-PP-10 流式对话被中断通知
    *
    * 用户主动中断（点击停止按钮）或内核 yield aborted chunk 时推送，
    * 携带 messageId 和中断原因。渲染层在原助手气泡内嵌入中断标记，

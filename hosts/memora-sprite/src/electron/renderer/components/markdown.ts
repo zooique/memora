@@ -131,7 +131,7 @@ export function renderMarkdown(text: string): DocumentFragment {
  * 支持语言标签高亮（仅作为 CSS 类名，不做语法高亮——保持零依赖）。
  * 若代码块未闭合（流式中常见），渲染到文本末尾。
  *
- * UX-PP-07 代码块独立复制按钮 + 语言标签：
+ * UX-PP-11 代码块独立复制按钮 + 语言标签：
  * 结构为 `<div class="md-code-block">` 包裹 header（语言标签 + 复制按钮）+ `<pre><code>`，
  * 对齐 Trae IDE / Cursor 等大厂对话流的代码块四动作实践（此处实现核心两动作：复制 + 语言标签）。
  *
@@ -164,7 +164,7 @@ function parseFencedCodeBlock(
   // 但 consumed 只计算到已处理的行
   const consumed = closed ? i - startIdx + 1 : i - startIdx;
 
-  // UX-PP-07 容器：div.md-code-block 包裹 header + pre
+  // UX-PP-11 容器：div.md-code-block 包裹 header + pre
   const container = document.createElement('div');
   container.className = 'md-code-block';
 
