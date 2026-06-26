@@ -8,9 +8,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ClipboardHandler, isSensitive, SENSITIVE_PATTERNS } from '../../electron/clipboardHandler.js';
 import type { Clipboard } from 'electron';
 
+/** Mock Clipboard 类型：Clipboard 接口 + 测试辅助方法 */
+type MockClipboard = Clipboard & { setText: (text: string) => void };
+
 /** Mock Clipboard（模拟 Electron clipboard 模块） */
-function createMockClipboard(initialText = ''): Clipboard & { setText: (text: string) => void } {
+function createMockClipboard(initialText = ''): MockClipboard {
   let currentText = initialText;
+  // vi.fn() 返回的 Mock 类型与 Clipboard 接口方法签名不完全兼容，
+  // 用 as unknown as MockClipboard 显式断言（比 as any 更安全，要求显式转换）
   return {
     readText: vi.fn(() => currentText),
     writeText: vi.fn((text: string) => { currentText = text; }),
@@ -30,7 +35,7 @@ function createMockClipboard(initialText = ''): Clipboard & { setText: (text: st
     writeFindText: vi.fn(),
     // 测试辅助方法
     setText: (text: string) => { currentText = text; },
-  } as any;
+  } as unknown as MockClipboard;
 }
 
 describe('isSensitive 纯函数', () => {

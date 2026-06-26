@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ShortcutManager, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT_CONFIG } from '../../electron/shortcuts.js';
+import type { GlobalShortcut } from 'electron';
 
 /** Mock GlobalShortcut 接口实现 */
 function createMockGlobalShortcut() {
@@ -52,7 +53,7 @@ describe('ShortcutManager', () => {
 
   describe('registerAll', () => {
     it('enabled=true 时注册所有配置的快捷键', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -71,7 +72,7 @@ describe('ShortcutManager', () => {
     });
 
     it('enabled=false 时跳过所有注册', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: false,
           accelerators: {
@@ -92,7 +93,7 @@ describe('ShortcutManager', () => {
     it('注册失败时不中断后续注册', () => {
       mockGlobalShortcut.setRegisterResult(false);
       const handler2 = vi.fn();
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -115,7 +116,7 @@ describe('ShortcutManager', () => {
     });
 
     it('动作未注册处理器时跳过', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -133,7 +134,7 @@ describe('ShortcutManager', () => {
 
   describe('unregisterAll', () => {
     it('注销所有已注册的快捷键', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -160,7 +161,7 @@ describe('ShortcutManager', () => {
 
   describe('updateShortcut（热更新）', () => {
     it('热更新先注销旧快捷键再注册新快捷键', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -183,7 +184,7 @@ describe('ShortcutManager', () => {
     });
 
     it('热更新注册失败时返回 false', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -204,7 +205,7 @@ describe('ShortcutManager', () => {
     });
 
     it('enabled=false 时热更新仅更新配置不注册', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: false,
           accelerators: {
@@ -226,7 +227,7 @@ describe('ShortcutManager', () => {
 
   describe('setEnabled（总开关）', () => {
     it('从禁用切换到启用时注册所有快捷键', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: false,
           accelerators: {
@@ -244,7 +245,7 @@ describe('ShortcutManager', () => {
     });
 
     it('从启用切换到禁用时注销所有快捷键', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -263,7 +264,7 @@ describe('ShortcutManager', () => {
     });
 
     it('状态未变化时不重复操作', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -286,7 +287,7 @@ describe('ShortcutManager', () => {
 
   describe('动作触发', () => {
     it('注册的快捷键触发时调用对应处理器', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -309,7 +310,7 @@ describe('ShortcutManager', () => {
 
   describe('getConfig', () => {
     it('返回只读配置副本', () => {
-      const manager = new ShortcutManager(mockGlobalShortcut as any, {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
         config: {
           enabled: true,
           accelerators: {
@@ -326,7 +327,8 @@ describe('ShortcutManager', () => {
       expect(config.accelerators[SHORTCUT_ACTIONS.TOGGLE_WINDOW]).toBe('Ctrl+Shift+Space');
 
       // 修改返回的副本不应影响内部状态
-      (config as any).enabled = false;
+      // 用 as unknown as 绕过可能的 readonly 检查，模拟"恶意修改"
+      (config as unknown as { enabled: boolean }).enabled = false;
       expect(manager.getConfig().enabled).toBe(true);
     });
   });
