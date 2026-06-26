@@ -32,6 +32,14 @@ export interface DashboardData {
 }
 
 /**
+ * 关系图谱节点数上限（QC-MEM-02）
+ *
+ * 用于 getRelationGraph() 的节点截断，避免大规模记忆库（>200 条）返回过多节点
+ * 导致渲染层性能问题。后续可由调用方配置，当前硬编码为经验值。
+ */
+const RELATION_GRAPH_MAX_NODES = 200;
+
+/**
  * 默契度等级（Phase 2.2）
  *
  * 从记忆仪表盘数据实时推导，不持久化、不依赖 LLM。
@@ -163,6 +171,10 @@ export class MemoryController {
    * 删除记忆
    *
    * 同步删除向量索引中对应的向量条目。
+   * QC-MEM-01 修复：对齐 upsert 的错误处理模式——向量索引操作失败时记录警告而非静默吞没。
+   *
+   * 注：VectorStore.delete 为同步方法（无 Promise 返回值），用 try/catch 捕获；
+   * 与 upsert 的 .catch() 形式不同但语义对齐（统一为"失败降级 + 记录警告"）。
    *
    * @param id 记忆唯一标识
    * @returns 是否成功删除
@@ -174,8 +186,14 @@ export class MemoryController {
     const exists = inspector.getById(id);
     if (!exists) return false;
     inspector.delete(id);
-    // 同步删除向量索引
-    this.vectorStore?.delete(id);
+    // 同步删除向量索引（QC-MEM-01：对齐 upsert 错误处理，失败时记录警告而非静默吞没）
+    if (this.vectorStore) {
+      try {
+        this.vectorStore.delete(id);
+      } catch (err) {
+        logger.warn({ err, id }, '向量索引删除失败，可能残留孤儿向量');
+      }
+    }
     return true;
   }
 
@@ -340,8 +358,8 @@ export class MemoryController {
     if (!memory) {
       return { nodes: [], edges: [] };
     }
-    // 节点：复用 list() 获取所有记忆
-    const nodes = this.list(undefined, 200);
+    // 节点：复用 list() 获取记忆（QC-MEM-02：上限提取为常量 RELATION_GRAPH_MAX_NODES）
+    const nodes = this.list(undefined, RELATION_GRAPH_MAX_NODES);
     // 边：通过 MemoryInspector.getAllRelations() 获取全量关系
     const edges = memory.getAllRelations();
     return { nodes, edges };
