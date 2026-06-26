@@ -18,6 +18,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
+import { segmentText } from '@/utils/segmenter.js';
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -324,12 +325,15 @@ ${contextSection}${candidatesSection}${relationsPrompt}
   // ─── 私有：工具方法 ───────────────────────────────────
 
   /**
-   * 计算 Jaccard 相似度（词级）
-   * 用于预检去重和提取后去重
+   * 计算 Jaccard 相似度（词级，基于 ICU 分词）
+   *
+   * 使用 segmentText（Intl.Segmenter ICU 分词）替代 split(/\s+/)，
+   * 正确处理中文（中文无空格分隔，split 会把整段中文当作一个"词"导致相似度失效）。
+   * 与 recall.ts extractKeywords 保持一致的分词策略。
    */
   private jaccardSimilarity(a: string, b: string): number {
-    const setA = new Set(a.split(/\s+/));
-    const setB = new Set(b.split(/\s+/));
+    const setA = new Set(segmentText(a).map((t) => t.toLowerCase()));
+    const setB = new Set(segmentText(b).map((t) => t.toLowerCase()));
     const intersection = new Set([...setA].filter((x) => setB.has(x)));
     const union = new Set([...setA, ...setB]);
     return union.size > 0 ? intersection.size / union.size : 0;

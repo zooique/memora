@@ -42,10 +42,37 @@ export interface EmbeddingResult {
  * 支持批量嵌入和本地缓存
  */
 export class EmbeddingProvider {
-  /** 本地缓存：text → vector，避免重复调用 API */
+  /** 缓存最大条目数（LRU 上限，防止无界增长导致内存泄漏） */
+  private static readonly CACHE_MAX_SIZE = 1000;
+
+  /** 本地缓存：text → vector（LRU，Map 迭代顺序 = 最近访问顺序） */
   private readonly cache = new Map<string, number[]>();
 
   constructor(private readonly config: EmbeddingConfig) {}
+
+  /**
+   * LRU 读取：命中时把条目移到末尾，标记为最近访问
+   * Map 保持插入顺序，末尾即最近访问，首部即最久未访问（淘汰候选）
+   */
+  private getCached(text: string): number[] | undefined {
+    const vector = this.cache.get(text);
+    if (vector === undefined) return undefined;
+    // 删除后重新插入，移到末尾
+    this.cache.delete(text);
+    this.cache.set(text, vector);
+    return vector;
+  }
+
+  /**
+   * LRU 写入：超过容量时淘汰最旧条目（首部）
+   */
+  private setCache(text: string, vector: number[]): void {
+    if (this.cache.size >= EmbeddingProvider.CACHE_MAX_SIZE) {
+      const oldest = this.cache.keys().next().value;
+      if (oldest !== undefined) this.cache.delete(oldest);
+    }
+    this.cache.set(text, vector);
+  }
 
   /**
    * 嵌入单条文本
@@ -54,7 +81,7 @@ export class EmbeddingProvider {
    */
   async embed(text: string): Promise<number[]> {
     // 缓存命中
-    const cached = this.cache.get(text);
+    const cached = this.getCached(text);
     if (cached) return cached;
 
     const results = await this.batchEmbed([text]);
@@ -74,7 +101,7 @@ export class EmbeddingProvider {
     const uncached: string[] = [];
     const uncachedIndices: number[] = [];
     const results: (EmbeddingResult | null)[] = texts.map((text, i) => {
-      const cached = this.cache.get(text);
+      const cached = this.getCached(text);
       if (cached) return { text, vector: cached };
       uncached.push(text);
       uncachedIndices.push(i);
@@ -142,7 +169,7 @@ export class EmbeddingProvider {
         logger.warn({ text: text.slice(0, 50), index: i }, 'Embedding 缺失，跳过');
         continue;
       }
-      this.cache.set(text, vector);
+      this.setCache(text, vector);
       // QC-17 移除非空断言：null 检查兜底
       const idx = uncachedIndices[i];
       if (idx !== undefined) results[idx] = { text, vector };

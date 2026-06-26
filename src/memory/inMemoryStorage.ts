@@ -71,21 +71,27 @@ export class InMemoryStorage implements IMemoryStorage {
 
   /**
    * 按 ID 获取单条记忆
+   *
+   * 返回浅拷贝，避免调用方修改污染存储内部对象（接口契约：读取隔离）
    */
   getById(id: string): Memory | null {
-    return this.memories.get(id) ?? null;
+    const m = this.memories.get(id);
+    return m ? { ...m } : null;
   }
 
   /**
    * 按来源标签获取记忆
    *
+   * 返回浅拷贝数组，避免调用方修改污染存储内部对象。
+   *
    * @param source - 来源标签（如 'persona'、'rule'、'insight'）
-   * @returns 该来源的所有记忆，按 score 降序排列
+   * @returns 该来源的所有记忆（副本），按 score 降序排列
    */
   getBySource(source: string): Memory[] {
     return Array.from(this.memories.values())
       .filter((m) => m.source === source)
-      .sort((a, b) => b.score - a.score);
+      .sort((a, b) => b.score - a.score)
+      .map((m) => ({ ...m }));
   }
 
   /**
@@ -99,11 +105,12 @@ export class InMemoryStorage implements IMemoryStorage {
    * @returns 匹配的记忆列表
    */
   search(query: string, limit = 10): Memory[] {
-    // 空查询：按 score 降序返回
+    // 空查询：按 score 降序返回（浅拷贝，读取隔离）
     if (!query.trim()) {
       return Array.from(this.memories.values())
         .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
+        .slice(0, limit)
+        .map((m) => ({ ...m }));
     }
 
     // 规范分词（与 recall.ts extractKeywords 共用 segmentText）
@@ -113,7 +120,8 @@ export class InMemoryStorage implements IMemoryStorage {
     if (tokens.length === 0) {
       return Array.from(this.memories.values())
         .sort((a, b) => b.score - a.score)
-        .slice(0, limit);
+        .slice(0, limit)
+        .map((m) => ({ ...m }));
     }
 
     const results = Array.from(this.memories.values()).filter((m) => {
@@ -125,7 +133,8 @@ export class InMemoryStorage implements IMemoryStorage {
     // 按 score 降序排序
     results.sort((a, b) => b.score - a.score);
 
-    return results.slice(0, limit);
+    // 返回浅拷贝，避免调用方修改污染存储内部对象
+    return results.slice(0, limit).map((m) => ({ ...m }));
   }
 
   /**
@@ -137,13 +146,12 @@ export class InMemoryStorage implements IMemoryStorage {
 
   /**
    * 按来源标签统计记忆数量
+   *
+   * P2-2 优化：直接读取 sourceCountCache，O(1) 复杂度（与 getAllSources 一致）
+   * 原实现 O(n) 遍历所有记忆，与增量缓存设计不一致
    */
   countBySource(source: string): number {
-    let count = 0;
-    for (const m of this.memories.values()) {
-      if (m.source === source) count++;
-    }
-    return count;
+    return this.sourceCountCache.get(source) ?? 0;
   }
 
   /**

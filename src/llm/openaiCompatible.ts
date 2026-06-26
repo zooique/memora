@@ -119,34 +119,40 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     // fetch 成功后保留 optsSignal 监听：用户在 SSE 流式阶段取消时，
     // 仍需通过 onOptsAbort 触发 abortController.abort() 中断 reader.read()。
-    // 监听器为 { once: true }，abortController 被 abort 时自动移除，无泄漏。
-
-    if (!response.ok) {
-      clearTimeout(timeoutId);
-      await this.handleResponseError(response);
-    }
-
-    if (!response.body) {
-      clearTimeout(timeoutId);
-      throw llmError('LLM API 返回空 body', `${this.config.baseUrl} 返回了 200 但无 body`, [
-        '重试一次',
-        '如持续出现，联系厂商',
-      ]);
-    }
+    // 注意：{ once: true } 仅在 optsSignal 自身 abort 时移除监听器；
+    // 正常完成或异常路径必须显式 removeEventListener，否则监听器常驻泄漏。
+    // 下方外层 try-finally 统一清理 timeoutId 与 optsSignal 监听器，覆盖所有抛错路径。
 
     try {
-      // 将 abortController.signal 传入 SSE 解析器，使超时/取消能中断流读取
-      yield* this.parseSseStream(response.body, abortController.signal);
-    } catch (err) {
-      // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
-      try {
-        await response.body?.cancel();
-      } catch (err) {
-        logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
+      if (!response.ok) {
+        await this.handleResponseError(response);
       }
-      throw err;
+
+      if (!response.body) {
+        throw llmError('LLM API 返回空 body', `${this.config.baseUrl} 返回了 200 但无 body`, [
+          '重试一次',
+          '如持续出现，联系厂商',
+        ]);
+      }
+
+      try {
+        // 将 abortController.signal 传入 SSE 解析器，使超时/取消能中断流读取
+        yield* this.parseSseStream(response.body, abortController.signal);
+      } catch (err) {
+        // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
+        try {
+          await response.body?.cancel();
+        } catch (err) {
+          logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
+        }
+        throw err;
+      }
     } finally {
+      // 统一清理：覆盖 HTTP 错误、空 body、SSE 异常、正常完成所有路径
+      // 修复 LLM-01：原实现仅在 fetch 网络异常 catch 移除监听器，
+      // handleResponseError/空body/SSE 抛错路径均泄漏监听器与定时器
       clearTimeout(timeoutId);
+      if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
     }
   }
 

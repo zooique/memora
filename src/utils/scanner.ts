@@ -116,7 +116,9 @@ export function parseTrigger(fm: Record<string, string>, key = 'trigger'): RegEx
     const match = pattern.match(/^\/(.+)\/([gimsuy]*)$/);
     // QC-17 移除非空断言：使用空值合并回退到 pattern（与 match 为 null 时逻辑一致）
     const clean = match?.[1] ?? pattern;
-    return new RegExp(clean, 'i');
+    // 修复 UTIL-02：使用捕获的 flags（默认 'i'），原实现硬编码 'i' 丢弃了声明的 flags
+    const flags = match?.[2] || 'i';
+    return new RegExp(clean, flags);
   } catch {
     getLogger().warn({ trigger: raw }, '触发正则无效，已忽略');
     return undefined;

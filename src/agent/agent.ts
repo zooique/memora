@@ -104,7 +104,7 @@ export interface AgentOptions {
   tracer?: ITracer;
   /** 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） */
   messages?: UIMessages;
-  /** 上下文超限时是否自动生成摘要（默认 false，开启后首次截断时增加 ~1-2s 延迟） */
+  /** 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） */
   enableContextSummary?: boolean;
 }
 
@@ -263,7 +263,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async init(projectPathOverride?: string): Promise<ProjectContext> {
     if (this._initialized) {
-      await this.close();
+      // 修复 #3：close() 失败不应阻塞 init() 重建
+      // 原 close() 异常（如 awaitPendingArchives 超时）会传播到 init() 调用方，
+      // 导致 Agent 处于不可用状态。此处捕获后继续重建。
+      try {
+        await this.close();
+      } catch (err) {
+        logger.warn({ err }, 'init() 中 close() 旧实例失败，继续重建');
+      }
     }
 
     if (projectPathOverride) {
@@ -352,6 +359,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 合并外部 signal：外部 abort 时也触发内部
     const onExternalAbort = () => internalAbort.abort();
     signal?.addEventListener('abort', onExternalAbort, { once: true });
+    // 修复 #4：addEventListener 对已 aborted 的 signal 不触发回调
+    // 需手动检查并触发 internalAbort，否则外部已取消的请求仍会进入主流程
+    if (signal?.aborted) {
+      internalAbort.abort();
+    }
     const combinedSignal = internalAbort.signal;
 
     // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
