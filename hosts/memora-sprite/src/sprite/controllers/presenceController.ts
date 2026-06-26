@@ -77,8 +77,14 @@ export interface PresenceChangeEvent {
 
 /** PresenceController 构造选项 */
 export interface PresenceControllerOptions {
-  /** ProactiveEngine 引用（用户回来时触发 checkPending） */
-  proactiveEngine?: ProactiveEngine;
+  /**
+   * ProactiveEngine 引用（用户回来时触发 checkPending）
+   *
+   * QC-SPRITE-LINT 修复：类型从 ProactiveEngine 收窄为 Pick<'checkPending'>，
+   * 应用接口隔离原则——PresenceController 仅依赖 checkPending 方法，
+   * 测试可注入仅含 checkPending 的 mock 而无需 as any 断言。
+   */
+  proactiveEngine?: Pick<ProactiveEngine, 'checkPending'>;
   /** 事件发射器（由 Sprite 注入，转发为精灵事件） */
   emit?: (event: 'presenceChanged', payload: PresenceChangeEvent) => void;
 }

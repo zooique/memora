@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PresenceController } from '../../sprite/controllers/presenceController.js';
-import type { PresenceChangeEvent } from '../../sprite/controllers/presenceController.js';
+import type { PresenceChangeEvent, IPowerMonitor, IApp } from '../../sprite/controllers/presenceController.js';
 
 /** Mock EventEmitter 基类（模拟 Electron 的事件监听 + 取消注册） */
 class MockEventEmitter {
@@ -50,8 +50,21 @@ class MockEventEmitter {
   }
 }
 
+/**
+ * Mock PowerMonitor 类型（IPowerMonitor + 测试辅助方法）
+ *
+ * QC-SPRITE-LINT 修复：工厂返回类型显式标注为 IPowerMonitor + 辅助方法，
+ * 调用处无需 as any 断言。vi.fn() 的 Mock 类型与重载函数签名不完全兼容，
+ * 故工厂内部用 as unknown as 集中断言（比散落的 as any 更安全、更清晰）。
+ */
+type MockPowerMonitor = IPowerMonitor & {
+  emit: (event: string, ...args: unknown[]) => void;
+  clear: () => void;
+  listenerCount: (event: string) => number;
+};
+
 /** Mock PowerMonitor（继承 MockEventEmitter 的事件能力） */
-function createMockPowerMonitor() {
+function createMockPowerMonitor(): MockPowerMonitor {
   const emitter = new MockEventEmitter();
   return {
     on: vi.fn(emitter.on.bind(emitter)),
@@ -59,11 +72,22 @@ function createMockPowerMonitor() {
     emit: emitter.emit.bind(emitter),
     clear: emitter.clear.bind(emitter),
     listenerCount: emitter.listenerCount.bind(emitter),
-  };
+  } as unknown as MockPowerMonitor;
 }
 
+/**
+ * Mock App 类型（IApp + 测试辅助方法）
+ *
+ * 同 MockPowerMonitor，工厂返回类型显式标注避免调用处 as any。
+ */
+type MockApp = IApp & {
+  emit: (event: string, ...args: unknown[]) => void;
+  clear: () => void;
+  listenerCount: (event: string) => number;
+};
+
 /** Mock App（继承 MockEventEmitter 的事件能力） */
-function createMockApp() {
+function createMockApp(): MockApp {
   const emitter = new MockEventEmitter();
   return {
     on: vi.fn(emitter.on.bind(emitter)),
@@ -71,7 +95,7 @@ function createMockApp() {
     emit: emitter.emit.bind(emitter),
     clear: emitter.clear.bind(emitter),
     listenerCount: emitter.listenerCount.bind(emitter),
-  };
+  } as unknown as MockApp;
 }
 
 describe('PresenceController', () => {
@@ -90,8 +114,8 @@ describe('PresenceController', () => {
   describe('start', () => {
     it('启动后注册 powerMonitor 和 app 事件监听', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
 
@@ -110,8 +134,8 @@ describe('PresenceController', () => {
 
     it('重复调用 start 不会重复注册（幂等保护）', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
 
@@ -125,8 +149,8 @@ describe('PresenceController', () => {
 
     it('stop 后取消注册所有事件监听器（QC-SPRITE-01）', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
 
@@ -150,8 +174,8 @@ describe('PresenceController', () => {
 
     it('stop 后可重新 start（reinitAgent 场景）', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
 
@@ -169,8 +193,8 @@ describe('PresenceController', () => {
 
     it('未启动时调用 stop 无副作用（幂等保护）', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
 
@@ -185,8 +209,8 @@ describe('PresenceController', () => {
   describe('离开检测', () => {
     it('锁屏时状态变为 away', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -203,8 +227,8 @@ describe('PresenceController', () => {
 
     it('系统挂起时状态变为 away', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -220,8 +244,8 @@ describe('PresenceController', () => {
 
     it('窗口失焦时状态变为 away', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -237,8 +261,8 @@ describe('PresenceController', () => {
 
     it('已处于 away 状态时重复离开事件不触发（幂等保护）', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -256,8 +280,8 @@ describe('PresenceController', () => {
   describe('回来检测', () => {
     it('解锁时状态变为 present 并计算离开时长', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -288,8 +312,8 @@ describe('PresenceController', () => {
 
     it('系统恢复时状态变为 present', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -302,8 +326,8 @@ describe('PresenceController', () => {
 
     it('窗口聚焦时状态变为 present', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -316,8 +340,8 @@ describe('PresenceController', () => {
 
     it('已处于 present 状态时重复回来事件不触发（幂等保护）', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -333,10 +357,10 @@ describe('PresenceController', () => {
     it('用户回来时调用 proactiveEngine.checkPending()', () => {
       const mockProactiveEngine = { checkPending: checkPendingHandler };
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         {
-          proactiveEngine: mockProactiveEngine as any,
+          proactiveEngine: mockProactiveEngine,
           emit: emitHandler,
         },
       );
@@ -353,8 +377,8 @@ describe('PresenceController', () => {
 
     it('未注入 proactiveEngine 时不报错', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -370,8 +394,8 @@ describe('PresenceController', () => {
   describe('事件载荷格式', () => {
     it('离开事件包含 state/timestamp/reason', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
@@ -387,8 +411,8 @@ describe('PresenceController', () => {
 
     it('回来事件包含 state/timestamp/reason/awayDurationMs', () => {
       const controller = new PresenceController(
-        mockPowerMonitor as any,
-        mockApp as any,
+        mockPowerMonitor,
+        mockApp,
         { emit: emitHandler },
       );
       controller.start();
