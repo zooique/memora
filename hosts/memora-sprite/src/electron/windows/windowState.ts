@@ -100,12 +100,14 @@ export class WindowStateManager {
    *
    * 与 transition 的区别：不隐藏其他窗口（创建后均为 hidden），
    * 仅根据当前 state 和 showFloatBubble 显示对应窗口。
+   *
+   * QC-WIN-07 修复：添加 isDestroyed 守卫，对齐 transition 的 showTargetWindow 守卫模式。
    */
   showInitial(): void {
-    if (this.state === 'full' && this.fullWindow) {
+    if (this.state === 'full' && this.fullWindow && !this.fullWindow.isDestroyed()) {
       this.fullWindow.show();
       this.fullWindow.focus();
-    } else if (this.state === 'tray' && this.showFloatBubble && this.floatWindow) {
+    } else if (this.state === 'tray' && this.showFloatBubble && this.floatWindow && !this.floatWindow.isDestroyed()) {
       // tray 态 + 浮动气泡可见 → 显示浮动气泡
       this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
       this.floatWindow.show();
@@ -129,11 +131,11 @@ export class WindowStateManager {
     if (this.showFloatBubble === value) return;
     this.showFloatBubble = value;
 
-    if (this.state === 'tray') {
-      if (value && this.floatWindow) {
+    if (this.state === 'tray' && this.floatWindow && !this.floatWindow.isDestroyed()) {
+      if (value) {
         this.floatWindow.setPosition(this.floatPosition.x, this.floatPosition.y);
         this.floatWindow.show();
-      } else if (!value && this.floatWindow) {
+      } else {
         this.floatWindow.hide();
       }
     }

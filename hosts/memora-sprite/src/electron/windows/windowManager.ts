@@ -82,6 +82,10 @@ export class WindowManager {
         errorHandler.setMainWindow(this.fullWindow);
       }
     } catch (error) {
+      // QC-WIN-05 修复：部分失败时清理已创建的资源
+      // 场景：createFloatWindow 成功但 createFullWindow 失败，
+      // floatWindow 已创建并注册 IPC 监听器，若不清理会泄漏
+      this.closeAll();
       errorHandler.handle(error, {
         code: ErrorCode.WINDOW_CREATE_FAILED,
         context: '窗口创建失败',
