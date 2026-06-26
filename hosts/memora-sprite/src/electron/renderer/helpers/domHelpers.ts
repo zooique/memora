@@ -100,6 +100,10 @@ export function clearElement(el: Element): void {
  */
 export function formatTimeAgo(dateStr: string): string {
   const date = new Date(dateStr);
+  // Invalid Date 防御：new Date('not-a-date') 返回 Invalid Date 但不抛异常，
+  // 后续 getTime()/getMonth() 返回 NaN 会导致输出 "NaN-NaN" 等错误格式。
+  // 显式检测并降级为原始字符串，与 formatTimestamp/formatClock 降级语义对齐。
+  if (Number.isNaN(date.getTime())) return dateStr;
   const now = Date.now();
   const diffMs = now - date.getTime();
   const diffMin = Math.floor(diffMs / 60_000);
@@ -128,6 +132,9 @@ export function formatTimeAgo(dateStr: string): string {
 export function formatTimestamp(isoString: string): string {
   try {
     const date = new Date(isoString);
+    // Invalid Date 防御：try/catch 无法捕获（new Date 非法字符串不抛异常，返回 Invalid Date）。
+    // 显式检测 date.getTime() 为 NaN 时降级返回原始字符串，确保降级分支可达。
+    if (Number.isNaN(date.getTime())) return isoString;
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
 
@@ -157,6 +164,8 @@ export function formatTimestamp(isoString: string): string {
 export function formatClock(isoString: string): string {
   try {
     const date = new Date(isoString);
+    // Invalid Date 防御：同 formatTimestamp，显式检测确保降级分支可达。
+    if (Number.isNaN(date.getTime())) return isoString;
     const hh = String(date.getHours()).padStart(2, '0');
     const mm = String(date.getMinutes()).padStart(2, '0');
     return `${hh}:${mm}`;

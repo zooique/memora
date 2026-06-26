@@ -85,6 +85,24 @@ describe('formatTimeAgo', () => {
     // 6 天前 → "6 天前"（边界可能因时区 ±1 天，断言两种可能）
     expect(['5 天前', '6 天前', '7 天前']).toContain(result);
   });
+
+  // ─── QC-FIX-DOMHELPERS：Invalid Date 降级（原 TEST-DEFECT-01） ──
+
+  it('无效日期字符串应降级返回原始字符串（Invalid Date 检测）', () => {
+    // 修复后：new Date('not-a-date') 返回 Invalid Date，
+    // Number.isNaN(date.getTime()) 为 true，降级返回原始字符串
+    const invalid = 'not-a-date';
+    expect(formatTimeAgo(invalid)).toBe('not-a-date');
+  });
+
+  it('空字符串应降级返回空字符串', () => {
+    // new Date('') 返回 Invalid Date（空字符串非有效日期格式）
+    expect(formatTimeAgo('')).toBe('');
+  });
+
+  it('纯空格字符串应降级返回原始字符串', () => {
+    expect(formatTimeAgo('   ')).toBe('   ');
+  });
 });
 
 // ─── formatTimestamp ────────────────────────────────────────
@@ -124,12 +142,19 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(dateStr)).toBe('12-31 23:59');
   });
 
-  it('无效日期字符串应返回 NaN 格式（已知行为：try/catch 不可达）', () => {
-    // 已知行为：new Date('not-a-date') 返回 Invalid Date 但不抛异常，
-    // 因此 try/catch 的降级分支不可达，实际返回 NaN 格式字符串。
-    // 此测试断言真实行为，便于后续修复时及时发现回归。
+  it('无效日期字符串应降级返回原始字符串（Invalid Date 检测）', () => {
+    // QC-FIX-DOMHELPERS 修复后：Number.isNaN(date.getTime()) 检测 Invalid Date，
+    // 降级分支可达，返回原始字符串而非 'NaN-NaN NaN:NaN'
     const invalid = 'not-a-date';
-    expect(formatTimestamp(invalid)).toBe('NaN-NaN NaN:NaN');
+    expect(formatTimestamp(invalid)).toBe('not-a-date');
+  });
+
+  it('空字符串应降级返回空字符串', () => {
+    expect(formatTimestamp('')).toBe('');
+  });
+
+  it('纯空格字符串应降级返回原始字符串', () => {
+    expect(formatTimestamp('   ')).toBe('   ');
   });
 });
 
@@ -159,9 +184,17 @@ describe('formatClock', () => {
     expect(formatClock(dateStr)).toBe('01:02');
   });
 
-  it('无效日期字符串应返回 NaN 格式（已知行为：try/catch 不可达）', () => {
-    // 同 formatTimestamp：Invalid Date 不抛异常，降级分支不可达
+  it('无效日期字符串应降级返回原始字符串（Invalid Date 检测）', () => {
+    // QC-FIX-DOMHELPERS 修复后：降级分支可达，返回原始字符串而非 'NaN:NaN'
     const invalid = 'invalid-time';
-    expect(formatClock(invalid)).toBe('NaN:NaN');
+    expect(formatClock(invalid)).toBe('invalid-time');
+  });
+
+  it('空字符串应降级返回空字符串', () => {
+    expect(formatClock('')).toBe('');
+  });
+
+  it('纯空格字符串应降级返回原始字符串', () => {
+    expect(formatClock('   ')).toBe('   ');
   });
 });
