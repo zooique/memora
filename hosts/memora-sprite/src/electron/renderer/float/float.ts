@@ -26,6 +26,8 @@ import '../types.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
 // DOM 助手，提供带 tagName 校验的类型安全访问
 import { getOptionalElement } from '../helpers/domHelpers.js';
+// 事件监听器跟踪器（S-02 修复：统一事件管理范式，与 modal/suggestionCard 等模块对齐）
+import { EventTracker } from '../helpers/eventTracker.js';
 
 /**
  * 浮动窗口所需的 ElectronAPI 子集（由 preload.ts 提供）
@@ -86,6 +88,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
 
   // 定时器跟踪器（共享工具，cleanup 时统一清理所有定时器）
   const timers = new SafeTimerTracker();
+  // 事件监听器跟踪器（S-02 修复：统一事件管理范式，替代手写 addEventListener/removeEventListener）
+  const events = new EventTracker();
 
   // ─── FD-06 首次使用拖动引导 ───────────────────────────
   // 新用户不知道浮动窗口可以拖动，首次悬停时显示引导提示。
@@ -130,8 +134,9 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   };
 
-  sphere.addEventListener('mouseenter', showDragHintIfFirstTime);
-  sphere.addEventListener('mouseleave', onSphereMouseLeave);
+  // S-02 修复：使用 EventTracker 统一管理事件监听器，替代手写 addEventListener
+  events.addEventListener(sphere, 'mouseenter', showDragHintIfFirstTime);
+  events.addEventListener(sphere, 'mouseleave', onSphereMouseLeave);
 
   // ─── 拖动检测（P1-2 修复：PointerEvent + setPointerCapture） ───
   // 原方案使用 document mousemove，但浮动窗口是 80x80 alwaysOnTop + frame:false
@@ -227,12 +232,15 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   };
 
   // 事件绑定到 sphere（而非 document），配合 setPointerCapture 确保事件不丢失
-  sphere.addEventListener('pointerdown', onPointerDown);
-  sphere.addEventListener('pointermove', onPointerMove);
-  sphere.addEventListener('pointerup', onPointerUp);
-  sphere.addEventListener('contextmenu', onContextMenu);
+  // S-02 修复：统一使用 EventTracker 管理，cleanup 时一次性移除全部监听器
+  // 注：EventTracker.addEventListener 签名为 EventListener (e: Event)，
+  // 此处用包装函数将 Event 断言为具体事件类型，保持类型安全的同时兼容接口。
+  events.addEventListener(sphere, 'pointerdown', (e) => onPointerDown(e as PointerEvent));
+  events.addEventListener(sphere, 'pointermove', (e) => onPointerMove(e as PointerEvent));
+  events.addEventListener(sphere, 'pointerup', (e) => onPointerUp(e as PointerEvent));
+  events.addEventListener(sphere, 'contextmenu', onContextMenu);
   // UI-AUDIT: 键盘事件绑定（配合 role="button"）
-  sphere.addEventListener('keydown', onSphereKeydown);
+  events.addEventListener(sphere, 'keydown', (e) => onSphereKeydown(e as KeyboardEvent));
 
   // ─── 未读计数监听 ──────────────────────────────────────
   electronAPI.onFloatUnread((count: number) => {
@@ -289,14 +297,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
     activePointerId = null;
 
-    sphere.removeEventListener('pointerdown', onPointerDown);
-    sphere.removeEventListener('pointermove', onPointerMove);
-    sphere.removeEventListener('pointerup', onPointerUp);
-    sphere.removeEventListener('contextmenu', onContextMenu);
-    // UI-AUDIT: 清理键盘事件监听器
-    sphere.removeEventListener('keydown', onSphereKeydown);
-    sphere.removeEventListener('mouseenter', showDragHintIfFirstTime);
-    sphere.removeEventListener('mouseleave', onSphereMouseLeave);
+    // S-02 修复：EventTracker 统一清理全部 DOM 事件监听器（7 个 sphere 监听器）
+    events.cleanup();
     // UX-P2-10 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM
     electronAPI.removeThemeBroadcastListener();
     if (dragHintTimer) timers.clearSafeTimeout(dragHintTimer);

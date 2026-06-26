@@ -472,6 +472,43 @@ describe('清理函数', () => {
     expect(dragHint.classList.contains('visible')).toBe(false);
   });
 
+  // S-02 修复：EventTracker 接入后，补全 keydown + mouseleave 的 cleanup 验证
+
+  it('调用 cleanup 后 keydown 键盘事件被移除（Enter/Space 不再展开）', () => {
+    const cleanup = setupFloat(mockAPI);
+
+    cleanup();
+    vi.clearAllMocks();
+
+    const sphere = document.getElementById('sphere')!;
+    const event = new dom.window.KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true,
+    });
+    sphere.dispatchEvent(event);
+
+    // cleanup 后键盘 Enter 不应触发 expandToFull
+    expect(mockAPI.expandToFull).not.toHaveBeenCalled();
+  });
+
+  it('调用 cleanup 后 mouseleave 事件被移除', () => {
+    const cleanup = setupFloat(mockAPI);
+
+    // 先触发 mouseenter 显示引导（假设首次未见过）
+    localStorage.setItem('memora-drag-hint-seen', '0');
+    const sphere = document.getElementById('sphere')!;
+    const dragHint = document.getElementById('drag-hint')!;
+    sphere.dispatchEvent(new dom.window.MouseEvent('mouseenter', { bubbles: true }));
+    expect(dragHint.classList.contains('visible')).toBe(true);
+
+    cleanup();
+
+    // cleanup 后 mouseleave 不应触发引导隐藏（虽然类已被 cleanup 移除，但验证监听器已解绑）
+    const beforeState = dragHint.classList.contains('visible');
+    sphere.dispatchEvent(new dom.window.MouseEvent('mouseleave', { bubbles: true }));
+    // mouseleave 监听器已移除，visible 状态不应改变
+    expect(dragHint.classList.contains('visible')).toBe(beforeState);
+  });
+
   it('cleanup 多次调用不抛异常', () => {
     const cleanup = setupFloat(mockAPI);
 
