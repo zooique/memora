@@ -101,6 +101,7 @@ const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_STREAM_TOOL_START: 'sprite-stream-tool-start',
   SPRITE_STREAM_TOOL_RESULT: 'sprite-stream-tool-result',
   SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
+  SPRITE_STREAM_ABORTED: 'sprite-stream-aborted',
   SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
   SPRITE_OUTPUT: 'sprite-output',
   SPRITE_EVENT: 'sprite-event',
