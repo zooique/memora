@@ -72,16 +72,22 @@ function forwardSimpleEvent<K extends keyof SpriteEventMap>(
  *
  * 仅在完整窗口存在且可见时发送，避免窗口隐藏或销毁时调用 webContents.send 抛错。
  *
+ * QC-SPRITE-03 修复：silent 默认值从 true 改为 false。
+ * 原设计意图是简单事件"默认静默"（不弹系统通知），但渲染层 handler 误用
+ * msg.silent 作为"是否显示 toast"的开关，导致 projectSwitched/skillMatched/
+ * memoryRecalled 的 toast 逻辑成为死代码。实际 silent 应仅控制系统通知，
+ * 渲染层 toast 显示由各 handler 自行决定（基于业务逻辑，非 silent 标志）。
+ *
  * @param deps 依赖
  * @param type 事件类型（对应 SpriteEventMap 的 key）
  * @param payload 事件载荷
- * @param silent 是否静默（默认 true，仅 proactivePrompt 为 false）
+ * @param silent 是否静默（默认 false；proactivePrompt 通过 payload.silent 控制）
  */
 function sendSpriteEventIfVisible(
   deps: SpriteEventBridgeDeps,
   type: string,
   payload: Record<string, unknown>,
-  silent = true,
+  silent = false,
 ): void {
   const fullWindow = deps.windowManager.getFullWindow();
   // 同时检查 isVisible 和 !isMinimized：macOS 上最小化的窗口 isVisible 可能仍为 true
@@ -135,33 +141,63 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   // 先取消旧订阅（防止 reinitAgent 时重复注册）
   unsubscribeSpriteEvents();
 
+  /**
+   * QC-SPRITE-05：主动提示托盘状态自动复位定时器
+   *
+   * proactivePrompt 将托盘设为 active 后，若渲染进程不发送 PROACTIVE_PROMPT_SHOWN
+   * （窗口不可见/崩溃/逻辑遗漏），托盘会永久卡在 active 状态（脉冲动画持续运行）。
+   * 此定时器作为兜底：30 秒后自动切回 idle，防止资源泄漏。
+   * 若渲染进程在 30 秒内发送了 PROACTIVE_PROMPT_SHOWN，systemHandlers 会切回 idle，
+   * 此时定时器到期后 setState('idle') 因幂等保护无副作用。
+   */
+  let proactiveTrayResetTimer: ReturnType<typeof setTimeout> | null = null;
+  const PROACTIVE_TRAY_RESET_MS = 30_000;
+
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示（保留显式处理，含复杂副作用）
   registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, silent }) => {
-    // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
-    deps.trayManager?.setState('active');
+    // QC-SPRITE-04：整个 handler 用 try/catch 分段保护，防止单个副作用抛错中断后续逻辑
+    try {
+      // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
+      deps.trayManager?.setState('active');
 
-    // 非静默模式：系统通知（检查系统是否支持，避免不支持时崩溃）
-    if (!silent && Notification.isSupported()) {
-      const notification = new Notification({
-        title: 'Memora 精灵',
-        body: prompt,
-      });
-      notification.on('click', () => {
-        deps.windowStateManager.transition('full');
-      });
-      notification.show();
-    }
-
-    // 非静默模式 + 完整窗口可见：窗口内提示
-    if (!silent) {
-      sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, silent }, silent);
-
-      // P2-FLOW-12 浮动窗口主动提示未读徽章
-      // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
-      const fullWindow = deps.windowManager?.getFullWindow();
-      if (fullWindow && !fullWindow.isVisible()) {
-        deps.incrementUnreadCount();
+      // QC-SPRITE-05：启动托盘状态自动复位定时器（兜底）
+      if (proactiveTrayResetTimer !== null) {
+        clearTimeout(proactiveTrayResetTimer);
       }
+      proactiveTrayResetTimer = setTimeout(() => {
+        proactiveTrayResetTimer = null;
+        deps.trayManager?.setState('idle');
+      }, PROACTIVE_TRAY_RESET_MS);
+
+      // 非静默模式：系统通知（检查系统是否支持，避免不支持时崩溃）
+      // 注意：silent 恒为 false（ProactiveEngine.tryEmit 在 silentMode 时 return），
+      // 此处的 !silent 检查是防御性代码，未来若恢复 silent 路径仍有保护意义
+      if (!silent && Notification.isSupported()) {
+        const notification = new Notification({
+          title: 'Memora 精灵',
+          body: prompt,
+        });
+        notification.on('click', () => {
+          deps.windowStateManager?.transition('full');
+        });
+        notification.show();
+      }
+
+      // 非静默模式 + 完整窗口可见：窗口内提示
+      if (!silent) {
+        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, silent }, silent);
+
+        // P2-FLOW-12 浮动窗口主动提示未读徽章
+        // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
+        // QC-SPRITE-04：补充 isDestroyed() 检查，防止窗口销毁后调用 isVisible() 抛错
+        const fullWindow = deps.windowManager?.getFullWindow();
+        if (fullWindow && !fullWindow.isDestroyed() && !fullWindow.isVisible()) {
+          deps.incrementUnreadCount();
+        }
+      }
+    } catch (error) {
+      // 某个副作用抛错时记录日志，但不影响精灵事件总线中其他 handler 的执行
+      logger.warn({ error: toError(error) }, '[proactivePrompt handler] 副作用执行异常');
     }
   });
 

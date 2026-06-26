@@ -49,6 +49,8 @@ export class ProactiveEngine {
   private noticedMagnitudes: Set<number> = new Set();
   /** Phase 2.3：已知的 source 类型（首次出现时触发里程碑） */
   private knownSources: Set<string> = new Set();
+  /** QC-SPRITE-06：首次 checkMilestones 仅初始化已知状态，不触发通知（避免冷启动首发提示） */
+  private milestoneInitialized = false;
 
   private config: ProactiveConfig;
   private emitSprite: SpriteEmitter | null = null;
@@ -201,6 +203,26 @@ export class ProactiveEngine {
    */
   checkMilestones(dashboard: DashboardData): MilestoneTrigger[] {
     const triggers: MilestoneTrigger[] = [];
+
+    // QC-SPRITE-06：首次调用仅初始化已知状态（knownSources + noticedMagnitudes），
+    // 不触发 addNotice，避免冷启动时用户毫无操作就弹出"积累了上百条记忆"的困惑提示。
+    // 后续调用才正常检测新增的里程碑。
+    if (!this.milestoneInitialized) {
+      this.milestoneInitialized = true;
+      // 初始化已知 source 集合（不触发通知）
+      const currentSources = Object.keys(dashboard.bySource);
+      for (const source of currentSources) {
+        this.knownSources.add(source);
+      }
+      // 初始化已知量级（不触发通知）
+      if (dashboard.total > 0) {
+        const magnitude = Math.floor(Math.log10(dashboard.total));
+        if (magnitude >= 2) {
+          this.noticedMagnitudes.add(magnitude);
+        }
+      }
+      return triggers; // 首次调用返回空数组，不触发任何通知
+    }
 
     // 模式 1：记忆量级突破（不硬编码具体数字，用数量级）
     // magnitude ≥ 2 表示首次达到 100 条（10^2）

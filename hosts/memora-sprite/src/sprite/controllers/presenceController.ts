@@ -26,6 +26,9 @@ import type { ProactiveEngine } from './proactiveEngine.js';
  *
  * Electron 的 PowerMonitor 模块自动满足此接口（结构子类型）。
  * 测试时可注入 mock 实现而无需引入 electron。
+ *
+ * QC-SPRITE-01 修复：新增 removeListener 方法，支持 stop() 时取消注册，
+ * 防止 reinitAgent 后旧 PresenceController 监听器泄漏。
  */
 export interface IPowerMonitor {
   /** 系统锁屏时触发 */
@@ -36,6 +39,8 @@ export interface IPowerMonitor {
   on(event: 'unlock-screen', listener: () => void): void;
   /** 系统从挂起恢复时触发 */
   on(event: 'resume', listener: () => void): void;
+  /** 取消注册事件监听器（QC-SPRITE-01） */
+  removeListener(event: 'lock-screen' | 'suspend' | 'unlock-screen' | 'resume', listener: () => void): void;
 }
 
 /**
@@ -43,12 +48,16 @@ export interface IPowerMonitor {
  *
  * Electron 的 App 模块自动满足此接口（结构子类型）。
  * 测试时可注入 mock 实现而无需引入 electron。
+ *
+ * QC-SPRITE-01 修复：新增 removeListener 方法，支持 stop() 时取消注册。
  */
 export interface IApp {
   /** 浏览器窗口失焦时触发 */
   on(event: 'browser-window-blur', listener: () => void): void;
   /** 浏览器窗口聚焦时触发 */
   on(event: 'browser-window-focus', listener: () => void): void;
+  /** 取消注册事件监听器（QC-SPRITE-01） */
+  removeListener(event: 'browser-window-blur' | 'browser-window-focus', listener: () => void): void;
 }
 
 /** 用户在场状态 */
@@ -94,6 +103,20 @@ export class PresenceController {
   /** 是否已启动（避免重复注册事件） */
   private started = false;
 
+  // ── QC-SPRITE-01：保存监听器引用，stop() 时可取消注册 ──
+  /** lock-screen 监听器引用 */
+  private lockScreenHandler: (() => void) | null = null;
+  /** suspend 监听器引用 */
+  private suspendHandler: (() => void) | null = null;
+  /** unlock-screen 监听器引用 */
+  private unlockScreenHandler: (() => void) | null = null;
+  /** resume 监听器引用 */
+  private resumeHandler: (() => void) | null = null;
+  /** browser-window-blur 监听器引用 */
+  private blurHandler: (() => void) | null = null;
+  /** browser-window-focus 监听器引用 */
+  private focusHandler: (() => void) | null = null;
+
   constructor(
     powerMonitor: IPowerMonitor,
     app: IApp,
@@ -116,33 +139,68 @@ export class PresenceController {
 
     // ── powerMonitor 事件：系统级离开/回来 ──
     // 锁屏 → away
-    this.powerMonitor.on('lock-screen', () => {
-      this.handleAway('lock-screen');
-    });
+    this.lockScreenHandler = () => this.handleAway('lock-screen');
+    this.powerMonitor.on('lock-screen', this.lockScreenHandler);
     // 系统挂起（睡眠/休眠）→ away
-    this.powerMonitor.on('suspend', () => {
-      this.handleAway('suspend');
-    });
+    this.suspendHandler = () => this.handleAway('suspend');
+    this.powerMonitor.on('suspend', this.suspendHandler);
     // 解锁屏幕 → present
-    this.powerMonitor.on('unlock-screen', () => {
-      this.handlePresent('unlock-screen');
-    });
+    this.unlockScreenHandler = () => this.handlePresent('unlock-screen');
+    this.powerMonitor.on('unlock-screen', this.unlockScreenHandler);
     // 系统恢复 → present
-    this.powerMonitor.on('resume', () => {
-      this.handlePresent('resume');
-    });
+    this.resumeHandler = () => this.handlePresent('resume');
+    this.powerMonitor.on('resume', this.resumeHandler);
 
     // ── app 事件：窗口焦点变化 ──
     // 窗口失焦 → away（用户切换到其他应用）
-    this.app.on('browser-window-blur', () => {
-      this.handleAway('window-blur');
-    });
+    this.blurHandler = () => this.handleAway('window-blur');
+    this.app.on('browser-window-blur', this.blurHandler);
     // 窗口聚焦 → present（用户回到精灵窗口）
-    this.app.on('browser-window-focus', () => {
-      this.handlePresent('window-focus');
-    });
+    this.focusHandler = () => this.handlePresent('window-focus');
+    this.app.on('browser-window-focus', this.focusHandler);
 
     logger.info('在场状态控制器已启动');
+  }
+
+  /**
+   * 停止在场状态监听（QC-SPRITE-01 修复）
+   *
+   * 取消注册所有事件监听器，防止 reinitAgent 后旧实例泄漏。
+   * 幂等保护：未启动时调用无副作用。
+   */
+  stop(): void {
+    if (!this.started) return;
+    this.started = false;
+
+    // 逐个取消注册 powerMonitor 监听器
+    if (this.lockScreenHandler) {
+      this.powerMonitor.removeListener('lock-screen', this.lockScreenHandler);
+      this.lockScreenHandler = null;
+    }
+    if (this.suspendHandler) {
+      this.powerMonitor.removeListener('suspend', this.suspendHandler);
+      this.suspendHandler = null;
+    }
+    if (this.unlockScreenHandler) {
+      this.powerMonitor.removeListener('unlock-screen', this.unlockScreenHandler);
+      this.unlockScreenHandler = null;
+    }
+    if (this.resumeHandler) {
+      this.powerMonitor.removeListener('resume', this.resumeHandler);
+      this.resumeHandler = null;
+    }
+
+    // 逐个取消注册 app 监听器
+    if (this.blurHandler) {
+      this.app.removeListener('browser-window-blur', this.blurHandler);
+      this.blurHandler = null;
+    }
+    if (this.focusHandler) {
+      this.app.removeListener('browser-window-focus', this.focusHandler);
+      this.focusHandler = null;
+    }
+
+    logger.info('在场状态控制器已停止');
   }
 
   /**
@@ -199,9 +257,9 @@ export class PresenceController {
     // 幂等保护：已在场则不重复触发
     if (this.state === 'present') return;
 
-    // 计算离开时长
-    const awayDurationMs = this.awaySince ? Date.now() - this.awaySince : 0;
+    // QC-SPRITE-06：单次 Date.now() 调用，避免两次调用间毫秒级差异导致 awayDurationMs 与 timestamp 不一致
     const now = Date.now();
+    const awayDurationMs = this.awaySince ? now - this.awaySince : 0;
 
     this.state = 'present';
     this.awaySince = null;

@@ -6,6 +6,11 @@
  *   2. 角色列表/切换/模式管理（PERSONA_LIST / PERSONA_SWITCH / PERSONA_MODE / PERSONA_MODE_GET）
  *
  * CONFIG_UPDATE 含副作用：静默模式切换时同步托盘状态 + 重建菜单。
+ *
+ * QC-SPRITE-02 修复：静默模式恢复定时器从渲染层移至主进程。
+ * 原实现依赖渲染层 setTimeout，托盘模式下（完整窗口未加载）定时器丢失，
+ * 导致精灵永久静默。现在主进程在 silentModeExpiresAt 变更时管理定时器，
+ * 确保无论渲染层是否运行都能自动恢复。
  */
 
 import { ipcMain } from 'electron';
@@ -15,6 +20,54 @@ import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { SpriteConfigKey } from '../../sprite/spriteConfig.js';
 import { safeHandle } from './types.js';
 import type { IpcContext } from './types.js';
+
+/**
+ * 主进程静默模式恢复定时器（QC-SPRITE-02）
+ *
+ * 替代渲染层的 silentRecoveryTimer，确保托盘模式下也能自动恢复。
+ * 当 silentModeExpiresAt 变更时启动/重置此定时器。
+ */
+let silentRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 安排静默模式自动恢复（QC-SPRITE-02）
+ *
+ * 根据 silentModeExpiresAt 计算剩余时间并设置主进程定时器。
+ * 到期后自动关闭 silentMode 并清理相关状态。
+ *
+ * @param ctx IPC 上下文（用于更新配置和托盘状态）
+ */
+export function scheduleSilentRecovery(ctx: IpcContext): void {
+  // 清除已有定时器（避免多个定时器叠加）
+  if (silentRecoveryTimer !== null) {
+    clearTimeout(silentRecoveryTimer);
+    silentRecoveryTimer = null;
+  }
+
+  const config = ctx.sprite.getConfig();
+  if (!config.silentMode || !config.silentModeExpiresAt) return;
+
+  const expiresAtMs = new Date(config.silentModeExpiresAt).getTime();
+  const remainingMs = expiresAtMs - Date.now();
+
+  if (remainingMs <= 0) {
+    // 已过期：立即关闭静默模式
+    ctx.sprite.updateConfig('silentMode', false);
+    ctx.sprite.updateConfig('silentModeExpiresAt', null);
+    ctx.trayManager?.setState('idle');
+    ctx.trayManager?.updateMenu();
+    return;
+  }
+
+  // 设置主进程定时器，到期后自动恢复
+  silentRecoveryTimer = setTimeout(() => {
+    silentRecoveryTimer = null;
+    ctx.sprite.updateConfig('silentMode', false);
+    ctx.sprite.updateConfig('silentModeExpiresAt', null);
+    ctx.trayManager?.setState('idle');
+    ctx.trayManager?.updateMenu();
+  }, remainingMs);
+}
 
 /**
  * 注册配置与角色 IPC 处理器
@@ -54,6 +107,11 @@ export function registerConfigHandlers(ctx: IpcContext): void {
         }
         // 重建托盘菜单以反映静默模式勾选状态（通过设置面板/IPC 切换时菜单不会自动更新）
         ctx.trayManager?.updateMenu();
+      }
+
+      // QC-SPRITE-02：silentModeExpiresAt 变更时管理主进程恢复定时器
+      if (key === 'silentModeExpiresAt') {
+        scheduleSilentRecovery(ctx);
       }
 
       return { updated: true };

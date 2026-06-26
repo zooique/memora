@@ -34,6 +34,7 @@ import { TrayManager } from './trayIcon.js';
 import { WindowManager } from './windows/windowManager.js';
 import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipc/handlers.js';
+import { scheduleSilentRecovery } from './ipc/configHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import { ELECTRON_DIR } from './esmShim.js';
@@ -340,7 +341,30 @@ function setupAgentReady(
   });
   trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
 
-  // 6. 标记就绪 + 通知渲染进程
+  // 6. 绑定在场状态控制器（QC-SPRITE-01：移入 setupAgentReady 确保 reinitAgent 后也重新绑定）
+  // powerMonitor 和 app 是 Electron 内置模块，在 main 进程可用
+  // PresenceController 监听锁屏/挂起/解锁/恢复 + 窗口焦点变化
+  // 用户回来时触发 ProactiveEngine.checkPending() 检查累积事件
+  activeSprite.bindPresence(powerMonitor, app);
+
+  // QC-SPRITE-02：启动时检查静默模式是否已过期 + 启动主进程恢复定时器
+  // 主进程兜底：托盘模式下渲染层不运行，原渲染层 setTimeout 会丢失
+  const startConfig = activeSprite.getConfig();
+  if (startConfig.silentMode && startConfig.silentModeExpiresAt) {
+    const expiresAtMs = new Date(startConfig.silentModeExpiresAt).getTime();
+    if (Number.isNaN(expiresAtMs) || Date.now() >= expiresAtMs) {
+      // 已过期：立即关闭静默模式
+      activeSprite.updateConfig('silentMode', false);
+      activeSprite.updateConfig('silentModeExpiresAt', null);
+      trayManager?.setState('idle');
+      trayManager?.updateMenu();
+    } else {
+      // 未过期：启动主进程定时器，到期后自动恢复
+      scheduleSilentRecovery(ipcContext);
+    }
+  }
+
+  // 7. 标记就绪 + 通知渲染进程
   agentReady = true;
   initErrorDetail = null;
   const readyWindow = windowManager.getFullWindow();
@@ -533,13 +557,8 @@ async function initializeApp(): Promise<void> {
     });
 
     // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
+    // QC-SPRITE-01：bindPresence 已移入 setupAgentReady，确保 reinitAgent 后也重新绑定
     setupAgentReady(agent!, sprite!, sessionStore!, currentDataDir);
-
-    // Phase 3.2：绑定在场状态控制器
-    // powerMonitor 和 app 是 Electron 内置模块，在 main 进程可用
-    // PresenceController 监听锁屏/挂起/解锁/恢复 + 窗口焦点变化
-    // 用户回来时触发 ProactiveEngine.checkPending() 检查累积事件
-    sprite?.bindPresence(powerMonitor, app);
 
     // Phase 3.1：集成剪贴板三重保护
     // ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程

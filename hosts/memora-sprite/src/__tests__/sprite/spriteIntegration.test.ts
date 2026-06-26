@@ -363,7 +363,20 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
       score: 0.5,
     });
 
-    // 调用 dashboard 触发里程碑检测
+    // QC-SPRITE-06：首次 dashboard 仅初始化已知状态（不触发通知），第二次才检测里程碑
+    sprite.dashboard();
+    // 再写入一条不同 source 的记忆，第二次 dashboard 检测到新 source
+    agent.memory!.upsert({
+      id: 'insight:first',
+      content: '第一条洞察',
+      source: 'insight',
+      name: 'insight-first',
+      createdAt: now,
+      accessedAt: now,
+      score: 0.5,
+    });
+
+    // 第二次调用 dashboard 触发里程碑检测（insight 是新 source）
     sprite.dashboard();
 
     // 累积事件可能未达阈值，手动检查 pendingCount
@@ -391,16 +404,34 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
       });
     }
 
-    // 调用 dashboard 触发里程碑检测
+    // QC-SPRITE-06：首次 dashboard 仅初始化已知状态（magnitude=2 已记录，不触发通知）
+    sprite.dashboard();
+    // 再写入 900 条记忆使总量达到 1000（触发 magnitude=3 里程碑）
+    for (let i = 100; i < 1000; i++) {
+      agent.memory!.upsert({
+        id: `rule:bulk-${i}`,
+        content: `规则 ${i}`,
+        source: 'rule',
+        name: `rule-bulk-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+
+    // 第二次调用 dashboard 检测到 magnitude=3（新量级突破）
     sprite.dashboard();
 
-    // 量级突破 + 新 source 累积达阈值，应发射主动提示
-    // 注意：tryEmit 成功后 pendingCount 会被清空（splice(0)），故断言 proactiveEvents 而非 pendingCount
+    // QC-SPRITE-06：dashboard 仅 addNotice 不自动触发（1 < threshold=3），
+    // 需外部主动调用 checkPending 触发发射（模拟"用户回来时检查"场景）
+    sprite.checkPending();
+
+    // tryEmit 成功后 pendingCount 会被清空（splice(0)），故断言 proactiveEvents
     expect(proactiveEvents.length).toBeGreaterThan(0);
-    // 提示应包含量级里程碑描述（"上百条" 是 magnitude=2 的标签）
+    // 提示应包含量级里程碑描述（"上千条" 是 magnitude=3 的标签）
     const event = proactiveEvents[0];
     expect(event.prompt).toContain('里程碑');
-    expect(event.prompt).toContain('上百条');
+    expect(event.prompt).toContain('上千条');
   });
 
   it('相同量级不应重复触发里程碑（幂等保护）', () => {
@@ -424,15 +455,31 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
       });
     }
 
-    // 第一次调用 dashboard：触发里程碑
+    // QC-SPRITE-06：首次 dashboard 仅初始化（不触发通知）
+    sprite.dashboard();
+
+    // 写入 900 条记忆使总量达到 1000（magnitude=3）
+    for (let i = 100; i < 1000; i++) {
+      agent.memory!.upsert({
+        id: `rule:idem-${i}`,
+        content: `规则 ${i}`,
+        source: 'rule',
+        name: `rule-idem-${i}`,
+        createdAt: now,
+        accessedAt: now,
+        score: 0.5,
+      });
+    }
+
+    // 第二次调用 dashboard：触发 magnitude=3 里程碑
     sprite.dashboard();
     const firstEventCount = proactiveEvents.length;
 
-    // 第二次调用 dashboard：不应重复触发（幂等保护）
+    // 第三次调用 dashboard：不应重复触发（magnitude=3 已记录）
     sprite.dashboard();
     const secondEventCount = proactiveEvents.length;
 
-    // 事件数不应增加（noticedMagnitudes/knownSources 已记录，不会重复触发）
+    // 事件数不应增加（noticedMagnitudes 已记录 magnitude=3，不会重复触发）
     expect(secondEventCount).toBe(firstEventCount);
   });
 });

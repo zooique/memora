@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PresenceController } from '../../sprite/controllers/presenceController.js';
 import type { PresenceChangeEvent } from '../../sprite/controllers/presenceController.js';
 
-/** Mock EventEmitter 基类（模拟 Electron 的事件监听） */
+/** Mock EventEmitter 基类（模拟 Electron 的事件监听 + 取消注册） */
 class MockEventEmitter {
   private listeners = new Map<string, Array<(...args: unknown[]) => void>>();
 
@@ -17,6 +17,16 @@ class MockEventEmitter {
       this.listeners.set(event, []);
     }
     this.listeners.get(event)!.push(listener);
+  }
+
+  /** 取消注册事件监听器（QC-SPRITE-01：模拟 Electron removeListener） */
+  removeListener(event: string, listener: (...args: unknown[]) => void): void {
+    const handlers = this.listeners.get(event);
+    if (!handlers) return;
+    const idx = handlers.indexOf(listener);
+    if (idx !== -1) {
+      handlers.splice(idx, 1);
+    }
   }
 
   /** 触发事件（测试辅助） */
@@ -33,6 +43,11 @@ class MockEventEmitter {
   clear(): void {
     this.listeners.clear();
   }
+
+  /** 获取指定事件的监听器数量（测试辅助） */
+  listenerCount(event: string): number {
+    return this.listeners.get(event)?.length ?? 0;
+  }
 }
 
 /** Mock PowerMonitor（继承 MockEventEmitter 的事件能力） */
@@ -40,8 +55,10 @@ function createMockPowerMonitor() {
   const emitter = new MockEventEmitter();
   return {
     on: vi.fn(emitter.on.bind(emitter)),
+    removeListener: vi.fn(emitter.removeListener.bind(emitter)),
     emit: emitter.emit.bind(emitter),
     clear: emitter.clear.bind(emitter),
+    listenerCount: emitter.listenerCount.bind(emitter),
   };
 }
 
@@ -50,8 +67,10 @@ function createMockApp() {
   const emitter = new MockEventEmitter();
   return {
     on: vi.fn(emitter.on.bind(emitter)),
+    removeListener: vi.fn(emitter.removeListener.bind(emitter)),
     emit: emitter.emit.bind(emitter),
     clear: emitter.clear.bind(emitter),
+    listenerCount: emitter.listenerCount.bind(emitter),
   };
 }
 
@@ -102,6 +121,64 @@ describe('PresenceController', () => {
       // 每个事件只注册一次
       expect(mockPowerMonitor.on).toHaveBeenCalledTimes(4);
       expect(mockApp.on).toHaveBeenCalledTimes(2);
+    });
+
+    it('stop 后取消注册所有事件监听器（QC-SPRITE-01）', () => {
+      const controller = new PresenceController(
+        mockPowerMonitor as any,
+        mockApp as any,
+        { emit: emitHandler },
+      );
+
+      controller.start();
+      controller.stop();
+
+      // 验证所有 powerMonitor 监听器已取消注册
+      expect(mockPowerMonitor.removeListener).toHaveBeenCalledWith('lock-screen', expect.any(Function));
+      expect(mockPowerMonitor.removeListener).toHaveBeenCalledWith('suspend', expect.any(Function));
+      expect(mockPowerMonitor.removeListener).toHaveBeenCalledWith('unlock-screen', expect.any(Function));
+      expect(mockPowerMonitor.removeListener).toHaveBeenCalledWith('resume', expect.any(Function));
+
+      // 验证所有 app 监听器已取消注册
+      expect(mockApp.removeListener).toHaveBeenCalledWith('browser-window-blur', expect.any(Function));
+      expect(mockApp.removeListener).toHaveBeenCalledWith('browser-window-focus', expect.any(Function));
+
+      // 验证事件不再触发
+      mockPowerMonitor.emit('lock-screen');
+      expect(controller.getState()).toBe('present'); // 未变为 away
+    });
+
+    it('stop 后可重新 start（reinitAgent 场景）', () => {
+      const controller = new PresenceController(
+        mockPowerMonitor as any,
+        mockApp as any,
+        { emit: emitHandler },
+      );
+
+      controller.start();
+      controller.stop();
+      // 重新 start 应该重新注册监听器
+      // 注意：vi.fn 的 mock 在 toHaveBeenCalledTimes 中是累积的，需要 clear
+      mockPowerMonitor.on.mockClear();
+      mockApp.on.mockClear();
+      controller.start();
+
+      expect(mockPowerMonitor.on).toHaveBeenCalledTimes(4);
+      expect(mockApp.on).toHaveBeenCalledTimes(2);
+    });
+
+    it('未启动时调用 stop 无副作用（幂等保护）', () => {
+      const controller = new PresenceController(
+        mockPowerMonitor as any,
+        mockApp as any,
+        { emit: emitHandler },
+      );
+
+      // 未调用 start 直接调用 stop
+      controller.stop();
+
+      expect(mockPowerMonitor.removeListener).not.toHaveBeenCalled();
+      expect(mockApp.removeListener).not.toHaveBeenCalled();
     });
   });
 

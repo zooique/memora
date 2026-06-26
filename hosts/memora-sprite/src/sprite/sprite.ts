@@ -230,6 +230,8 @@ export class Sprite {
     this.running = false;
     this.triggerBus.stop();
     this.unsubscribeAgentEvents();
+    // QC-SPRITE-01：停止在场状态控制器，取消注册事件监听器，防止 reinitAgent 后泄漏
+    this.presenceController?.stop();
     this.spriteHandlers.clear();
     this.state = 'idle';
   }
@@ -594,6 +596,23 @@ export class Sprite {
     // 纯计算，幂等保护，空数据时静默
     this.proactiveEngine.checkMilestones(data);
     return data;
+  }
+
+  /**
+   * 主动检查待提示事件并尝试发射（QC-SPRITE-06）
+   *
+   * 委托至 ProactiveEngine.checkPending()，用于外部主动触发"用户回来时检查"。
+   * 与 addNotice 内部的自动触发（累积达阈值时）不同，此方法无视阈值，
+   * 只要 pendingNotices 非空且不在冷却期就发射。
+   *
+   * 使用场景：
+   *   1. 用户从托盘回来时，UI 调用此方法检查是否有累积的待提示事件
+   *   2. 里程碑检测后，dashboard() 仅 addNotice 不自动触发，需外部主动检查
+   *
+   * 受 silentMode 和 cooldownMs 约束，与自动触发行为一致。
+   */
+  checkPending(): void {
+    this.proactiveEngine.checkPending();
   }
 
   /**
