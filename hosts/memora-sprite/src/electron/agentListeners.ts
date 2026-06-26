@@ -8,6 +8,13 @@
  *
  * 这些监听器在 Agent 初始化完成后注册，Agent 重新初始化时需重新注册
  * （旧 Agent 已 close，回调自动失效）。
+ *
+ * QC-AGENT-01 设计说明：
+ *   onConfigSuggestion / onWriteConfirmation 返回 void（内核未提供取消订阅机制），
+ *   onAudit 返回 unsubscribe 函数但需 main.ts 协调 reinitAgent 时调用。
+ *   当前设计依赖 Agent.close() 清理内部状态——close 后 security/config 实例失效，
+ *   即使回调残留也无法执行有意义的操作（webContents.send 会被 isDestroyed 守卫拦截）。
+ *   若未来内核支持所有回调的取消订阅，应在此处保存并返回 unsubscribe 函数。
  */
 
 import type { Agent } from 'memora';

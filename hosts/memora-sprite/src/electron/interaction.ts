@@ -35,14 +35,20 @@ export class ElectronInteraction implements IInteraction {
 
   /**
    * 输出 system 类型消息到渲染进程对话区
+   *
+   * QC-INTERACT-01 修复：添加 isDestroyed 守卫，与 errorHandler/windowManager 的守卫模式一致。
+   * 原实现 `this.mainWindow?.webContents.send()` 仅检查 mainWindow 是否为 null，
+   * 但窗口销毁后 mainWindow 引用仍存在（setMainWindow 未清空），webContents.send 会抛错。
    */
   output(text: string, _kind: OutputKind = 'system'): void {
-    this.mainWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, { text });
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, { text });
   }
 
   /** 输出错误信息 */
   error(text: string): void {
-    this.mainWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, { text });
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, { text });
   }
 
   /** 停止交互层 */
