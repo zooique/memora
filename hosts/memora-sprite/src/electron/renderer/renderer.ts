@@ -103,8 +103,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // P3-FLOW-10 同步设置面板状态指示器（修复：IPC 事件路径遗漏更新状态指示器）
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
     void sessionController.loadSessionHistory();
-    // FD-A1 Gap 1 修复：Agent 就绪后加载会话列表（第 162 行调用时 Agent 未就绪，静默失败）
-    void sessionController.loadSessionList();
+    // FD-A1 会话列表加载已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
     void memoryController.loadMemoryList();
     void personaController.loadPersonaList();
     void memoryController.loadDashboard();
@@ -476,20 +475,7 @@ function setupBusinessLogic(
     uiManager.stopAllStreaming();
   });
 
-  // FD-A1 会话切换回调
-  uiManager.setSessionSwitchCallback((sessionId: string) => {
-    void sessionController.switchSession(sessionId);
-  });
-
-  // FD-09 会话删除回调
-  uiManager.setSessionDeleteCallback((sessionId: string) => {
-    void sessionController.deleteSession(sessionId);
-  });
-
-  // FD-09 会话重命名回调
-  uiManager.setSessionRenameCallback((sessionId: string) => {
-    void sessionController.renameSession(sessionId);
-  });
+  // FD-A1 会话切换/删除/重命名回调已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
 }
 
 // ─── Phase 4.3 第二批：技能文件拖入安装 dropzone 初始化 ──────

@@ -1,15 +1,18 @@
 /**
- * 会话控制器 — 会话历史加载与切换
+ * 会话控制器 — 时间流式会话历史加载
  *
  * 职责：
- * - 加载当前会话历史消息到 UI
- * - 加载会话列表用于历史切换
- * - 切换到指定会话并加载其消息
+ * - 加载当前会话历史消息到 UI（默认当天或最近一天）
+ * - 向上分页加载当前会话的更早消息
+ * - 跨天加载更早日期的对话（时间流式体验，类似微信/QQ）
+ * - 跨日自动切换到今天的 main 会话（保留 LLM 工作记忆一致性）
  *
  * 设计原则：
  * - 接收 UIManager 实例，不持有模块级状态
  * - currentSessionId 通过闭包封装，外部通过返回值访问
  * - 会话 ID 格式：YYYY-MM-DD-sessionName（与 SessionStore 对齐）
+ * - UI 不再提供会话切换按钮，用户通过向上滚动加载历史日期
+ * - loadedDates 跟踪已加载的日期，避免重复加载
  */
 
 import type { UIManager } from '../ui.js';
@@ -19,7 +22,7 @@ import { reportError } from '../helpers/errorHelpers.js';
  * 将 IPC 消息的角色映射为 UI 消息角色
  *
  * 确保 role 值仅限 'user' | 'assistant' | 'system'，
- * 未知值回退为 'assistant'。消除 3 处重复的映射逻辑。
+ * 未知值回退为 'assistant'。消除多处重复的映射逻辑。
  */
 function mapRole(rawRole: string): 'user' | 'assistant' | 'system' {
   return (rawRole === 'user' || rawRole === 'assistant' || rawRole === 'system')
@@ -30,7 +33,7 @@ function mapRole(rawRole: string): 'user' | 'assistant' | 'system' {
 /**
  * 将 IPC 消息数组映射为 UI Message 数组
  *
- * 提取自 loadSessionHistory / loadMoreHistory / switchSession 中 3 处相同的映射逻辑（DRY）。
+ * 提取自 loadSessionHistory / loadMoreHistory 中重复的映射逻辑（DRY）。
  */
 function mapMessages(messages: Array<{ role: string; content: string; timestamp?: string }>): Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp?: string }> {
   return messages.map((msg) => ({
@@ -44,26 +47,33 @@ function mapMessages(messages: Array<{ role: string; content: string; timestamp?
  * 创建会话控制器
  *
  * @param uiManager UI 管理器实例
- * @returns 会话控制器接口（加载历史、加载列表、切换会话、加载更多、获取当前 ID）
+ * @returns 会话控制器接口（加载历史、加载更多、加载更早日期、切换会话、获取当前 ID）
  */
 export function createSessionController(uiManager: UIManager) {
-  /** FD-A1 当前会话 ID（用于会话列表 UI 高亮当前项） */
+  /** 当前会话 ID（用于跨日检测和 LLM 工作记忆同步） */
   let currentSessionId = '';
 
   // UX-FD-07 分页状态
   const PAGE_SIZE = 50;
-  /** 当前已加载的消息偏移量（用于加载更多） */
+  /** 当前已加载的消息偏移量（用于当前会话内的分页加载） */
   let currentOffset = 0;
   /** 当前会话消息总数 */
   let currentTotal = 0;
-  /** 当前会话的 date + session 参数（用于加载更多） */
+  /** 当前会话的 date + session 参数（用于当前会话内的分页加载） */
   let currentSessionParams: { date: string; session: string } | null = null;
 
+  // UX-FD-07 方案 B 时间流状态
+  /** 已加载的日期集合（避免重复加载同一天的消息） */
+  const loadedDates = new Set<string>();
+  /** 最早已加载的日期（用于查询更早的日期，null 表示尚未初始化） */
+  let earliestDate: string | null = null;
+
   /**
-   * 加载当前会话历史消息（初始加载，最近 50 条）
+   * 加载当前会话历史消息（初始加载，最近 PAGE_SIZE 条）
    *
    * UX-FD-07 使用分页加载 + DocumentFragment 批量插入，
-   * 首次加载最近 PAGE_SIZE 条消息，有更多时显示"加载更多"按钮。
+   * 首次加载最近 PAGE_SIZE 条消息，有更多时显示"加载更多"按钮，
+   * 当前会话无更多消息时检查是否有更早日期，有则显示"加载更早的对话"按钮。
    */
   async function loadSessionHistory(): Promise<void> {
     try {
@@ -71,28 +81,29 @@ export function createSessionController(uiManager: UIManager) {
         limit: PAGE_SIZE,
         offset: 0,
       });
-      // Bug 修复：追加前先清空，纵深防御竞态条件导致的重复加载
-      // 与 switchSession 保持一致，即使上游幂等保护失效也不会累积消息
+      // 追加前先清空，纵深防御竞态条件导致的重复加载
       uiManager.clearMessages();
-      // UX-FD-07 批量插入消息（DocumentFragment 优化）
+      // 批量插入消息（DocumentFragment 优化）
       uiManager.appendMessages(mapMessages(messages), false);
       if (loadedSessionId) {
         currentSessionId = loadedSessionId;
-        // 解析会话参数用于加载更多
+        // 解析会话参数用于当前会话内分页加载
         const parts = loadedSessionId.split('-');
         if (parts.length >= 4) {
           currentSessionParams = {
             date: parts.slice(0, 3).join('-'),
             session: parts.slice(3).join('-') || 'main',
           };
+          // 记录已加载的日期
+          loadedDates.add(currentSessionParams.date);
+          earliestDate = currentSessionParams.date;
         }
       }
-      // UX-FD-07 更新分页状态
+      // 更新分页状态
       currentOffset = messages.length;
       currentTotal = total ?? messages.length;
-      if (hasMore && currentSessionParams) {
-        uiManager.showLoadMore(currentTotal - currentOffset, loadMoreHistory);
-      }
+      // 根据分页和日期状态显示对应的加载按钮
+      await updateLoadMoreButton(hasMore);
 
       uiManager.hidePanelError('chat');
     } catch (error) {
@@ -102,10 +113,10 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * UX-FD-07 加载更多历史消息
+   * UX-FD-07 加载更多历史消息（当前会话内分页）
    *
    * 从当前已加载位置继续加载更早的消息，插入到消息区顶部。
-   * 加载完成后更新分页状态，无更多消息时隐藏按钮。
+   * 加载完成后更新分页状态，无更多消息时切换为"加载更早的对话"按钮。
    */
   async function loadMoreHistory(): Promise<void> {
     if (!currentSessionParams) return;
@@ -125,11 +136,8 @@ export function createSessionController(uiManager: UIManager) {
       currentOffset += messages.length;
       currentTotal = total ?? currentTotal;
 
-      if (hasMore) {
-        uiManager.showLoadMore(currentTotal - currentOffset, loadMoreHistory);
-      } else {
-        uiManager.hideLoadMore();
-      }
+      // 根据分页和日期状态显示对应的加载按钮
+      await updateLoadMoreButton(hasMore);
     } catch (error) {
       reportError('loadMoreHistory', error);
       uiManager.showToast('加载更多消息失败', 'error');
@@ -141,30 +149,125 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * FD-A1 加载会话列表到 UI
+   * UX-FD-07 方案 B 加载更早日期的对话
    *
-   * 使用 currentSessionId 高亮当前会话（由 loadSessionHistory 或 switchSession 设置）。
+   * 查询比当前最早日期更早的最近一个日期，加载该日期代表会话的全部消息，
+   * prepend 到消息区顶部。加载完成后更新 earliestDate，并检查是否还有更早的日期。
+   *
+   * 设计要点：
+   * - 不更新 currentSessionParams（currentSessionParams 始终指向当前 LLM 工作记忆的会话）
+   * - 仅更新 loadedDates 和 earliestDate（用于跟踪已加载的日期范围）
+   * - 一次加载一天的全部消息（不分页，按天作为加载单位）
    */
-  async function loadSessionList(): Promise<void> {
+  async function loadEarlierDay(): Promise<void> {
     try {
       const { sessions } = await window.electronAPI.listSessions();
-      uiManager.updateSessionList(sessions, currentSessionId);
+      // 提取所有日期并去重排序（升序）
+      const allDates = Array.from(new Set(sessions.map((s) => s.date))).sort();
+      // 找到比 earliestDate 更早的日期
+      const earlierDates = earliestDate
+        ? allDates.filter((d) => d < earliestDate)
+        : allDates;
+
+      if (earlierDates.length === 0) {
+        // 没有更早的日期，隐藏按钮
+        uiManager.hideLoadMore();
+        return;
+      }
+
+      // 取最近的更早日期（earlierDates 升序，最后一项是最接近 earliestDate 的）
+      // noUncheckedIndexedAccess 模式下数组索引返回 T | undefined，需 ?? 兜底
+      const targetDate = earlierDates[earlierDates.length - 1] ?? '';
+      if (!targetDate) {
+        uiManager.hideLoadMore();
+        return;
+      }
+
+      // 找到该日期的代表会话（SESSION_LIST 已按日期聚合，每日期一条代表）
+      const targetSession = sessions.find((s) => s.date === targetDate);
+      if (!targetSession) {
+        uiManager.hideLoadMore();
+        return;
+      }
+
+      // 加载该日期的全部消息（一次加载，按天作为单位）
+      const { messages } = await window.electronAPI.loadSession({
+        date: targetDate,
+        session: targetSession.name,
+        limit: 10000, // 一次加载全部（实际不会那么多）
+        offset: 0,
+      });
+
+      // prepend 到 UI 顶部
+      uiManager.appendMessages(mapMessages(messages), true);
+
+      // 更新时间流状态（不更新 currentSessionParams）
+      loadedDates.add(targetDate);
+      earliestDate = targetDate;
+
+      // 检查是否还有更早的日期
+      const hasEarlier = allDates.some((d) => d < targetDate);
+      if (hasEarlier) {
+        uiManager.showLoadEarlierDay(loadEarlierDay);
+      } else {
+        uiManager.hideLoadMore();
+      }
     } catch (error) {
-      reportError('loadSessionList', error);
+      reportError('loadEarlierDay', error);
+      uiManager.showToast('加载更早的对话失败', 'error');
     }
   }
 
   /**
-   * FD-A1 切换会话
+   * UX-FD-07 方案 B 根据分页和日期状态更新加载按钮
    *
-   * UX-P1-04 修复：调用 switchSession IPC 更新 Agent 内部状态（currentSession + restoreSession），
-   * 避免消息持久化到错误会话。
+   * 优先级：
+   * 1. 当前会话还有更多消息 → 显示"加载更多消息"按钮
+   * 2. 当前会话无更多消息，但有更早日期 → 显示"加载更早的对话"按钮
+   * 3. 无更多消息且无更早日期 → 隐藏按钮
+   *
+   * @param hasMoreCurrent 当前会话是否还有更多消息（来自 IPC 返回值）
+   */
+  async function updateLoadMoreButton(hasMoreCurrent: boolean): Promise<void> {
+    // 当前会话还有更多消息
+    if (hasMoreCurrent && currentSessionParams) {
+      uiManager.showLoadMore(currentTotal - currentOffset, loadMoreHistory);
+      return;
+    }
+
+    // 当前会话无更多消息，隐藏"加载更多"按钮
+    uiManager.hideLoadMore();
+
+    // 检查是否有更早的日期
+    if (earliestDate) {
+      try {
+        const { sessions } = await window.electronAPI.listSessions();
+        const allDates = Array.from(new Set(sessions.map((s) => s.date))).sort();
+        const hasEarlier = allDates.some((d) => d < earliestDate!);
+        if (hasEarlier) {
+          uiManager.showLoadEarlierDay(loadEarlierDay);
+        }
+      } catch (error) {
+        // 查询失败不影响主流程，仅记录日志
+        reportError('updateLoadMoreButton', error);
+      }
+    }
+  }
+
+  /**
+   * 跨日自动切换到指定会话
+   *
+   * 保留 LLM 工作记忆一致性：用户在查看历史日期时发送消息，
+   * 自动切换到今天的 main 会话，确保新消息持久化到正确的会话。
+   *
    * UX-P2-04 检查流式状态，避免流式输出期间切换导致状态混乱。
    * UX-P2-08 失败时显示 toast 和错误横幅，提供重试。
    * 会话 ID 格式：YYYY-MM-DD-sessionName，需解析为 date + session 参数。
+   *
+   * 注意：方案 B 移除了会话切换 UI，此方法仅用于跨日自动切换。
    */
   async function switchSession(sessionId: string): Promise<void> {
-    // UX-P2-04 流式输出期间禁止切换会话，避免状态混乱
+    // 流式输出期间禁止切换会话，避免状态混乱
     if (uiManager.isStreaming()) {
       uiManager.showToast('精灵正在回复中，请等待完成或点击停止后再切换会话', 'warning');
       return;
@@ -173,148 +276,53 @@ export function createSessionController(uiManager: UIManager) {
     try {
       // 清空当前消息区
       uiManager.clearMessages();
-      // UX-FD-07 重置分页状态
+      // 重置分页和时间流状态
       currentOffset = 0;
       currentTotal = 0;
       currentSessionParams = null;
+      loadedDates.clear();
+      earliestDate = null;
       // 解析会话 ID 为 date + session 参数
       const parts = sessionId.split('-');
       const date = parts.slice(0, 3).join('-');
       const name = parts.slice(3).join('-') || 'main';
 
-      // UX-P1-04 调用 switchSession IPC：更新 Agent 内部状态 + 加载会话消息
+      // 调用 switchSession IPC：更新 Agent 内部状态 + 加载会话消息
       const result = await window.electronAPI.switchSession({ date, session: name });
       if (!result.success) {
         throw new Error(result.error ?? '切换会话失败');
       }
 
-      // 渲染目标会话的消息（UX-FD-07 批量插入）
+      // 渲染目标会话的消息（批量插入）
       uiManager.appendMessages(mapMessages(result.messages), false);
       currentSessionId = sessionId;
-      // 刷新会话列表以更新高亮
-      const { sessions } = await window.electronAPI.listSessions();
-      uiManager.updateSessionList(sessions, currentSessionId);
+      // 记录已加载的日期
+      loadedDates.add(date);
+      earliestDate = date;
+      // 解析会话参数用于当前会话内分页
+      currentSessionParams = { date, session: name };
+      currentOffset = result.messages.length;
+      currentTotal = result.messages.length; // switchSession 返回全部消息，无分页
       // 切换成功后隐藏错误横幅
       uiManager.hidePanelError('chat');
     } catch (error) {
       reportError('switchSession', error);
-      // UX-P2-08 失败时显示 toast 和错误横幅，提供重试
+      // 失败时显示 toast 和错误横幅，提供重试
       uiManager.showToast('切换会话失败，请重试', 'error');
       uiManager.showPanelError('chat', `切换会话失败：${error instanceof Error ? error.message : '未知错误'}`, () => switchSession(sessionId));
     }
   }
 
-  /** 获取当前会话 ID（供外部查询高亮状态） */
+  /** 获取当前会话 ID（供跨日检测使用） */
   function getCurrentSessionId(): string {
     return currentSessionId;
   }
 
-  /**
-   * FD-09 删除会话
-   *
-   * 弹出确认对话框后删除会话。删除不可恢复。
-   * 删除成功后刷新会话列表 UI。
-   * P3-FLOW-05 支持删除当前会话：删除后自动切换到剩余会话中的第一个
-   * QC-R2-02 统一使用 showConfirmDialog 替代原生 confirm（与项目其他弹窗风格一致）
-   */
-  async function deleteSession(sessionId: string): Promise<void> {
-    // 安全检查：防止未知 sessionId
-    if (!sessionId) return;
-
-    // QC-R2-02 使用自定义确认弹窗（与项目其他弹窗风格一致，支持 Escape/Enter 键盘操作）
-    const confirmed = await uiManager.showConfirmDialog({
-      title: '删除会话',
-      // 剪枝：删除 escapeHtml 调用（showConfirmDialog 使用 textContent 已防 XSS，双重转义会导致显示 &lt;）
-      message: `确定删除会话「${sessionId}」吗？此操作不可恢复。`,
-      confirmText: '删除',
-      cancelText: '取消',
-      danger: true,
-    });
-    if (!confirmed) return;
-
-    // P2 修复：添加 try/catch 包裹整个函数体，避免 IPC 异常成为未处理的 Promise rejection
-    try {
-      const result = await window.electronAPI.deleteSession(sessionId);
-      if (result.success) {
-        uiManager.showToast('会话已删除', 'info');
-
-        // P3-FLOW-05 删除当前会话时，自动切换到剩余会话中的第一个
-        // 避免用户删除当前会话后界面停留在已删除会话的消息上
-        if (sessionId === currentSessionId) {
-          const { sessions: remaining } = await window.electronAPI.listSessions();
-          if (remaining.length > 0) {
-            // 切换到剩余会话中最近的一个（列表已按时间倒序，第一项为最近）
-            // QC-19 P2 修复：noUncheckedIndexedAccess 下数组索引返回 T | undefined，需 null 检查
-            const recent = remaining[0];
-            if (recent) {
-              await switchSession(recent.id);
-            }
-          } else {
-            // 没有剩余会话：清空消息区，等待用户开始新对话
-            uiManager.clearMessages();
-            currentSessionId = '';
-          }
-        } else {
-          // 删除非当前会话：仅刷新会话列表
-          await loadSessionList();
-        }
-      } else {
-        uiManager.showToast(result.error ?? '删除失败', 'error');
-      }
-    } catch (error) {
-      reportError('deleteSession', error);
-      uiManager.showToast('删除会话失败，请检查日志', 'error');
-    }
-  }
-
-  /**
-   * FD-09 重命名会话
-   *
-   * 弹出输入框让用户输入新名称。
-   * 重命名成功后刷新会话列表 UI。
-   */
-  async function renameSession(sessionId: string): Promise<void> {
-    if (!sessionId) return;
-
-    // 提取当前会话名作为默认值（去除日期前缀）
-    const parts = sessionId.split('-');
-    const currentName = parts.length >= 4 ? parts.slice(3).join('-') : sessionId;
-
-    // 使用自定义输入弹窗替代原生 prompt，提供一致的视觉体验
-    const newName = await uiManager.showInputDialog({
-      title: '重命名会话',
-      message: '请输入新的会话名称：',
-      defaultValue: currentName,
-      placeholder: '输入会话名',
-      maxLength: 100,
-      required: true,
-    });
-
-    // 用户取消或输入为空
-    if (!newName) return;
-
-    // P2 修复：添加 try/catch，避免 IPC 异常成为未处理的 Promise rejection
-    try {
-      const result = await window.electronAPI.renameSession(sessionId, newName);
-      if (result.success) {
-        uiManager.showToast('会话已重命名', 'info');
-        await loadSessionList();
-      } else {
-        uiManager.showToast(result.error ?? '重命名失败', 'error');
-      }
-    } catch (error) {
-      reportError('renameSession', error);
-      uiManager.showToast('重命名会话失败，请检查日志', 'error');
-    }
-  }
-
   return {
     loadSessionHistory,
-    loadSessionList,
     switchSession,
-    deleteSession,
-    renameSession,
     loadMoreHistory,
+    loadEarlierDay,
     getCurrentSessionId,
   };
 }

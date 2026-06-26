@@ -10,6 +10,7 @@
  * - 管理错误注入（injectErrorToStreamingMessages）
  * - 管理空状态引导（showEmptyState / hideEmptyState / initEmptyStateListeners / onSuggestionClick）
  * - 管理加载更多按钮（showLoadMore / hideLoadMore）
+ * - 管理加载更早日期按钮（showLoadEarlierDay，方案 B 时间流）
  * - 管理消息区域清空（clearMessages）
  *
  * 设计原则：
@@ -99,6 +100,8 @@ export class ChatPanelManager {
   private suggestionClickCallback: ((text: string) => void) | null = null;
   /** QC-11 加载更多按钮回调（事件委托模式） */
   private loadMoreCallback: (() => void) | null = null;
+  /** UX-FD-07 方案 B 加载更早日期按钮回调（事件委托模式） */
+  private loadEarlierDayCallback: (() => void) | null = null;
   /** UX-PP-05 错误重试回调（重新发送上一条用户消息） */
   private errorRetryCallback: (() => void) | null = null;
 
@@ -173,6 +176,14 @@ export class ChatPanelManager {
         loadMoreBtn.setAttribute('disabled', '');
         loadMoreBtn.textContent = '加载中...';
         this.loadMoreCallback();
+        return;
+      }
+      // UX-FD-07 方案 B 加载更早日期按钮：data-action="load-earlier-day"
+      const loadEarlierBtn = target.closest<HTMLElement>('[data-action="load-earlier-day"]');
+      if (loadEarlierBtn && this.loadEarlierDayCallback) {
+        loadEarlierBtn.setAttribute('disabled', '');
+        loadEarlierBtn.textContent = '加载中...';
+        this.loadEarlierDayCallback();
         return;
       }
       // UX-PP-05 错误重试按钮：data-action="retry"
@@ -880,10 +891,42 @@ export class ChatPanelManager {
 
   /**
    * UX-FD-07 隐藏"加载更多"按钮
+   *
+   * 方案 B：同时适用于"加载更多"和"加载更早的对话"按钮（共用 #load-more-container）。
    */
   hideLoadMore(): void {
     const existing = this.messagesEl.querySelector('#load-more-container');
     if (existing) existing.remove();
+  }
+
+  /**
+   * UX-FD-07 方案 B 显示"加载更早的对话"按钮
+   *
+   * 在消息区顶部插入加载更早日期的容器，点击后加载前一天的对话。
+   * 与 showLoadMore 共用 #load-more-container（互斥显示），通过 data-action 区分回调。
+   *
+   * @param onClick 点击回调
+   */
+  showLoadEarlierDay(onClick: () => void): void {
+    // 移除旧按钮（避免重复，同时清除可能存在的"加载更多"按钮）
+    this.hideLoadMore();
+
+    // 保存回调引用，由构造函数中的事件委托统一处理
+    this.loadEarlierDayCallback = onClick;
+
+    const container = document.createElement('div');
+    container.id = 'load-more-container';
+    container.className = 'load-more-container';
+
+    const btn = document.createElement('button');
+    btn.className = 'load-more-btn';
+    btn.textContent = '加载更早的对话';
+    // 使用 data-action 区分回调（与 load-more 区分）
+    btn.dataset.action = 'load-earlier-day';
+    container.appendChild(btn);
+
+    // 插入到消息区顶部
+    this.messagesEl.insertBefore(container, this.messagesEl.firstChild);
   }
 
   /**

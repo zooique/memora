@@ -159,19 +159,7 @@
             <span class="chat-toolbar-title">对话</span>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
-          <!-- FD-A1 会话历史切换下拉 -->
-          <div id="session-selector" class="session-selector hidden">
-            <button id="session-current" class="session-current" title="点击切换会话">
-              <span id="session-current-name">当前会话</span>
-              <span class="session-current-arrow">▾</span>
-            </button>
-            <div id="session-dropdown" class="dropdown session-dropdown hidden">
-              <!-- FD-08 会话搜索过滤 -->
-              <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder，屏幕阅读器无法识别用途） -->
-              <input type="text" id="session-search" class="session-search" placeholder="搜索会话…" autocomplete="off" aria-label="搜索会话" />
-              <ul id="session-list" class="session-list"></ul>
-            </div>
-          </div>
+          <!-- FD-A1 会话历史切换下拉已移除（方案 B：时间流式 UI，向上滚动加载历史日期） -->
           <!-- btn-new-session 已移除：会话按天自动存储，无需手动新建 -->
         </div>
 

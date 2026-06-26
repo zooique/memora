@@ -5,10 +5,9 @@
  *
  * 覆盖范围：
  * - loadSessionHistory：加载历史消息并设置 currentSessionId
- * - loadSessionList：加载会话列表并调用 UI 更新
  * - switchSession：流式状态守卫、清空消息、加载新会话
- * - deleteSession：确认对话框 + API 调用
- * - renameSession：输入对话框 + API 调用
+ * - loadMoreHistory：当前会话内分页加载
+ * - loadEarlierDay：方案 B 跨天加载更早日期的对话
  * - getCurrentSessionId：初始状态
  */
 
@@ -36,13 +35,6 @@ const MINIMAL_HTML = `<!DOCTYPE html>
         </div>
       </div>
     </main>
-    <div id="session-selector">
-      <div id="session-current"><span id="session-current-name"></span></div>
-      <div class="session-dropdown">
-
-        <ul id="session-list"></ul>
-      </div>
-    </div>
   </div>
   <div id="toast-container"></div>
 </body></html>`;
@@ -79,22 +71,24 @@ describe('sessionController', () => {
 
     // 模拟 electronAPI
     const mockApi = {
+      // loadSession 默认返回当天会话（2 条消息，无更多分页）
       loadSession: vi.fn().mockResolvedValue({
         messages: makeSessionMessages(),
         loadedSessionId: '2026-06-21-main',
+        total: 2,
+        hasMore: false,
       }),
+      // listSessions 返回两个日期的会话（当天 + 昨天）
       listSessions: vi.fn().mockResolvedValue({
         sessions: [
-          { id: '2026-06-21-main', date: '2026-06-21', name: 'main', preview: 'Hello' },
           { id: '2026-06-20-chat', date: '2026-06-20', name: 'chat', preview: 'Yesterday' },
+          { id: '2026-06-21-main', date: '2026-06-21', name: 'main', preview: 'Hello' },
         ],
       }),
       switchSession: vi.fn().mockResolvedValue({
         success: true,
         messages: makeSessionMessages(),
       }),
-      deleteSession: vi.fn().mockResolvedValue({ success: true }),
-      renameSession: vi.fn().mockResolvedValue({ success: true }),
       sendUserInput: vi.fn(),
       abortChat: vi.fn(),
       // UIManager 构造函数中注册的事件监听器（空 mock 即可）
@@ -154,6 +148,8 @@ describe('sessionController', () => {
       (mockApi.loadSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
         messages: [{ role: 'unknown', content: 'test', timestamp: '2026-01-01T00:00:00.000Z' }],
         loadedSessionId: '2026-01-01-main',
+        total: 1,
+        hasMore: false,
       });
 
       const controller = createSessionController(uiManager);
@@ -163,17 +159,15 @@ describe('sessionController', () => {
       const messageEl = dom.window.document.querySelector('.message');
       expect(messageEl?.classList.contains('assistant')).toBe(true);
     });
-  });
 
-  describe('loadSessionList', () => {
-    it('应该加载会话列表并调用 uiManager.updateSessionList', async () => {
+    it('当前会话无更多消息且有更早日期时，应显示"加载更早的对话"按钮', async () => {
       const controller = createSessionController(uiManager);
 
-      await controller.loadSessionList();
+      await controller.loadSessionHistory();
 
-      // 会话列表应渲染到 DOM
-      const listItems = dom.window.document.querySelectorAll('.session-list-item');
-      expect(listItems.length).toBe(2);
+      // 应显示"加载更早的对话"按钮（data-action="load-earlier-day"）
+      const loadEarlierBtn = dom.window.document.querySelector('[data-action="load-earlier-day"]');
+      expect(loadEarlierBtn).not.toBeNull();
     });
   });
 
@@ -211,79 +205,51 @@ describe('sessionController', () => {
     });
   });
 
-  describe('deleteSession', () => {
-    it('应该调用 showConfirmDialog 确认后执行删除', async () => {
-      // QC-R2-02 deleteSession 改用 showConfirmDialog 替代原生 confirm
-      const confirmSpy = vi.spyOn(uiManager, 'showConfirmDialog').mockResolvedValue(true);
+  describe('loadEarlierDay', () => {
+    it('应该加载更早日期的对话并 prepend 到消息区顶部', async () => {
       const controller = createSessionController(uiManager);
 
-      await controller.deleteSession('2026-06-20-chat');
+      // 先加载当天历史
+      await controller.loadSessionHistory();
+      // 当天有 2 条消息
+      expect(dom.window.document.querySelectorAll('.message').length).toBe(2);
 
-      expect(confirmSpy).toHaveBeenCalled();
+      // mock loadSession 返回前一天的消息（3 条）
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
-      expect(mockApi.deleteSession).toHaveBeenCalledWith('2026-06-20-chat');
+      (mockApi.loadSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        messages: [
+          { role: 'user', content: '昨天的消息1', timestamp: '2026-06-20T10:00:00.000Z' },
+          { role: 'assistant', content: '昨天的回复1', timestamp: '2026-06-20T10:00:01.000Z' },
+          { role: 'user', content: '昨天的消息2', timestamp: '2026-06-20T11:00:00.000Z' },
+        ],
+        loadedSessionId: '2026-06-20-chat',
+        total: 3,
+        hasMore: false,
+      });
 
-      confirmSpy.mockRestore();
+      // 加载更早的对话
+      await controller.loadEarlierDay();
+
+      // 消息区应有 5 条消息（当天 2 条 + 昨天 3 条）
+      expect(dom.window.document.querySelectorAll('.message').length).toBe(5);
     });
 
-    it('应该在用户取消确认时不执行删除', async () => {
-      // QC-R2-02 deleteSession 改用 showConfirmDialog 替代原生 confirm
-      const confirmSpy = vi.spyOn(uiManager, 'showConfirmDialog').mockResolvedValue(false);
+    it('没有更早日期时应隐藏加载按钮', async () => {
       const controller = createSessionController(uiManager);
 
-      await controller.deleteSession('2026-06-20-chat');
-
+      // mock listSessions 只返回当天会话（无更早日期）
       const mockApi = dom.window.electronAPI as Record<string, unknown>;
-      expect(mockApi.deleteSession).not.toHaveBeenCalled();
+      (mockApi.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessions: [
+          { id: '2026-06-21-main', date: '2026-06-21', name: 'main', preview: 'Hello' },
+        ],
+      });
 
-      confirmSpy.mockRestore();
-    });
+      await controller.loadSessionHistory();
 
-    it('应该跳过空 sessionId', async () => {
-      const controller = createSessionController(uiManager);
-
-      await controller.deleteSession('');
-
-      const mockApi = dom.window.electronAPI as Record<string, unknown>;
-      expect(mockApi.deleteSession).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('renameSession', () => {
-    it('应该调用 showInputDialog 确认后执行重命名', async () => {
-      // 模拟 showInputDialog 返回新名称
-      const showInputSpy = vi.spyOn(uiManager, 'showInputDialog').mockResolvedValue('new-name');
-      const controller = createSessionController(uiManager);
-
-      await controller.renameSession('2026-06-20-chat');
-
-      expect(showInputSpy).toHaveBeenCalled();
-      const mockApi = dom.window.electronAPI as Record<string, unknown>;
-      expect(mockApi.renameSession).toHaveBeenCalledWith('2026-06-20-chat', 'new-name');
-
-      showInputSpy.mockRestore();
-    });
-
-    it('应该拒绝空名称（showInputDialog 返回 null）', async () => {
-      // 模拟 showInputDialog 返回 null（用户取消）
-      const showInputSpy = vi.spyOn(uiManager, 'showInputDialog').mockResolvedValue(null);
-      const controller = createSessionController(uiManager);
-
-      await controller.renameSession('2026-06-20-chat');
-
-      const mockApi = dom.window.electronAPI as Record<string, unknown>;
-      expect(mockApi.renameSession).not.toHaveBeenCalled();
-
-      showInputSpy.mockRestore();
-    });
-
-    it('应该跳过空 sessionId', async () => {
-      const controller = createSessionController(uiManager);
-
-      await controller.renameSession('');
-
-      const mockApi = dom.window.electronAPI as Record<string, unknown>;
-      expect(mockApi.renameSession).not.toHaveBeenCalled();
+      // 不应显示"加载更早的对话"按钮
+      const loadEarlierBtn = dom.window.document.querySelector('[data-action="load-earlier-day"]');
+      expect(loadEarlierBtn).toBeNull();
     });
   });
 });

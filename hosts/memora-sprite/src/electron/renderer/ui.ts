@@ -32,7 +32,6 @@ import type { ChatPanelHost } from './panels/chatPanelManager.js';
 import { MemoryPanelManager } from './panels/memoryPanelManager.js';
 import type { MemoryPanelHost } from './panels/memoryPanelManager.js';
 import { PersonaPanelManager } from './panels/personaPanelManager.js';
-import { SessionPanelManager } from './panels/sessionPanelManager.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
   Message,
@@ -100,8 +99,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   private memoryPanel: MemoryPanelManager;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
   private personaPanel: PersonaPanelManager;
-  /** 会话历史面板管理器（列表渲染、搜索过滤、下拉切换） */
-  private sessionPanel: SessionPanelManager;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -191,8 +188,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       new EventTracker(),
     );
 
-    // 会话历史面板管理器
-    this.sessionPanel = new SessionPanelManager(new EventTracker());
+    // 会话历史面板管理器已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
 
     // 初始化 UI
     this.initEventListeners();
@@ -219,18 +215,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
     // 新建会话按钮已移除（会话按天自动存储）
 
-    // FD-A1 会话选择器：点击切换下拉菜单
-    const sessionCurrent = document.getElementById('session-current');
-    if (sessionCurrent) {
-      this.events.addEventListener(sessionCurrent, 'click', () => this.toggleSessionDropdown());
-    }
-    // 点击其他区域关闭下拉
-    this.events.addEventListener(document, 'click', (e) => {
-      const selector = document.getElementById('session-selector');
-      if (selector && !selector.contains(e.target as Node)) {
-        this.closeSessionDropdown();
-      }
-    });
+    // FD-A1 会话选择器事件绑定已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
 
     // 导航事件
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
@@ -342,7 +327,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.personaPanel.cleanup();
-    this.sessionPanel.cleanup(); // Q2 清理会话面板事件监听器
+    // sessionPanel.cleanup() 已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
     // P2-6 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
   }
@@ -377,6 +362,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   showLoadMore(remaining: number, onClick: () => void): void { this.chatPanel.showLoadMore(remaining, onClick); }
   /** 隐藏"加载更多"按钮（委托到 ChatPanelManager） */
   hideLoadMore(): void { this.chatPanel.hideLoadMore(); }
+  /** UX-FD-07 方案 B 显示"加载更早的对话"按钮（委托到 ChatPanelManager） */
+  showLoadEarlierDay(onClick: () => void): void { this.chatPanel.showLoadEarlierDay(onClick); }
   /** 向流式消息气泡注入错误提示（委托到 ChatPanelManager） */
   injectErrorToStreamingMessages(errorText: string): void { this.chatPanel.injectErrorToStreamingMessages(errorText); }
   /** 显示空状态引导（委托到 ChatPanelManager） */
@@ -942,20 +929,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.hidePanelError('settings');
   }
 
-  // ─── 会话历史 ─ 委托到 SessionPanelManager ─────────────────
-
-  /** 设置会话切换回调（委托到 SessionPanelManager） */
-  setSessionSwitchCallback(cb: (sessionId: string) => void): void { this.sessionPanel.setSessionSwitchCallback(cb); }
-  /** 设置会话删除回调（委托到 SessionPanelManager） */
-  setSessionDeleteCallback(cb: (sessionId: string) => void): void { this.sessionPanel.setSessionDeleteCallback(cb); }
-  /** 设置会话重命名回调（委托到 SessionPanelManager） */
-  setSessionRenameCallback(cb: (sessionId: string) => void): void { this.sessionPanel.setSessionRenameCallback(cb); }
-  /** 更新会话列表 UI（委托到 SessionPanelManager） */
-  updateSessionList(sessions: Array<{ id: string; date: string; name: string; preview?: string; messageCount?: number }>, currentSessionId: string): void { this.sessionPanel.updateSessionList(sessions, currentSessionId); }
-  /** 切换会话下拉菜单的显示/隐藏（委托到 SessionPanelManager） */
-  toggleSessionDropdown(): void { this.sessionPanel.toggleSessionDropdown(); }
-  /** 关闭会话下拉菜单（委托到 SessionPanelManager） */
-  closeSessionDropdown(): void { this.sessionPanel.closeSessionDropdown(); }
+  // ─── 会话历史 ─ 委托方法已移除（方案 B：时间流式 UI，不再需要会话切换下拉） ───
 
   /** P2-008 加载 LLM 配置到表单（委托到 SettingsPanelManager） */
   loadLlmConfigToForm(data: {
