@@ -77,8 +77,13 @@ export class WindowStateManager {
    * 状态转换：tray ↔ full
    *
    * 仅管理二态切换。float 的显示/隐藏由 setShowFloatBubble 控制。
+   *
+   * QC-WIN-02 修复：原声明为 `async transition(): Promise<void>` 但函数体无 await，
+   * 属于"类型欺诈"——所有调用方被迫无意义 await 或忽略 Promise。
+   * 改为同步方法，调用方无需 await。内部 hideCurrentWindow/showTargetWindow/persistState
+   * 均为同步操作（BrowserWindow.show/hide 是同步的，持久化回调也是同步的）。
    */
-  async transition(target: WindowState): Promise<void> {
+  transition(target: WindowState): void {
     if (this.state === target) return;
 
     // 隐藏当前窗口
@@ -193,11 +198,13 @@ export class WindowStateManager {
     return this.state;
   }
 
-  getFloatSize() {
+  /** 获取浮动窗口尺寸（QC-WIN-04：显式返回类型注解） */
+  getFloatSize(): { width: number; height: number } {
     return this.floatSize;
   }
 
-  getFullSize() {
+  /** 获取完整窗口尺寸（QC-WIN-04：显式返回类型注解） */
+  getFullSize(): { width: number; height: number } {
     return this.fullSize;
   }
 }

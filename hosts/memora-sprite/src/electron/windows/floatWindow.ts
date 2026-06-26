@@ -205,7 +205,11 @@ export class FloatWindow {
   }
 
   show(): void {
-    this.win.show();
+    // QC-WIN-03 修复：添加 isDestroyed 守卫，防止 create() 前或销毁后调用抛错
+    // 对齐 setUnreadCount/broadcastTheme 的守卫模式
+    if (!this.win.isDestroyed()) {
+      this.win.show();
+    }
   }
 
   /**

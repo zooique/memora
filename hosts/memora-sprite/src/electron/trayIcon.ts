@@ -272,8 +272,16 @@ export class TrayManager {
     return nativeImage.createFromBuffer(buf, { width: size, height: size });
   }
 
+  /**
+   * 销毁托盘
+   *
+   * QC-TRAY-02 修复：添加 isDestroyed 幂等守卫。
+   * 原实现无守卫，重复调用（如退出竞态：before-quit + window-all-closed）会抛异常。
+   */
   destroy(): void {
     this.stopPulse();
-    this.tray.destroy();
+    if (!this.tray.isDestroyed()) {
+      this.tray.destroy();
+    }
   }
 }

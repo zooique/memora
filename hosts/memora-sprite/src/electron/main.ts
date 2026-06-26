@@ -461,30 +461,41 @@ async function initializeApp(): Promise<void> {
     }
 
     // 4. 创建托盘
+    // QC-TRAY-01 修复：包裹 try/catch，无系统托盘环境（headless Linux/某些 Wayland 会话/远程桌面）
+    // 下 new Tray() 会抛异常，此处降级为 null（无托盘模式），应用仍可正常运行窗口模式
     const iconPath = await fs
       .access(TRAY_ICON_PATH)
       .then(() => TRAY_ICON_PATH)
       .catch(() => '');
-    trayManager = new TrayManager(iconPath, {
-      onShowFull: () => {
-        windowStateManager.transition('full');
-        // 从托盘展开完整窗口时清零未读计数
-        resetUnreadCount();
-      },
-      onToggleFloatBubble: (checked: boolean) => {
-        windowStateManager.setShowFloatBubble(checked);
-        // 同步持久化到 spriteConfig
-        saveSpriteConfig({ showFloatBubble: checked });
-        // 重建托盘菜单以反映勾选状态
-        trayManager?.updateMenu();
-      },
-      isFloatBubbleVisible: () => windowStateManager.getShowFloatBubble(),
-      onHideToTray: () => windowStateManager.transition('tray'),
-      onQuit: () => {
-        windowManager.closeAll();
-        app.quit();
-      },
-    });
+    try {
+      trayManager = new TrayManager(iconPath, {
+        onShowFull: () => {
+          windowStateManager.transition('full');
+          // 从托盘展开完整窗口时清零未读计数
+          resetUnreadCount();
+        },
+        onToggleFloatBubble: (checked: boolean) => {
+          windowStateManager.setShowFloatBubble(checked);
+          // 同步持久化到 spriteConfig
+          saveSpriteConfig({ showFloatBubble: checked });
+          // 重建托盘菜单以反映勾选状态
+          trayManager?.updateMenu();
+        },
+        isFloatBubbleVisible: () => windowStateManager.getShowFloatBubble(),
+        onHideToTray: () => windowStateManager.transition('tray'),
+        onQuit: () => {
+          windowManager.closeAll();
+          app.quit();
+        },
+      });
+    } catch (error) {
+      // 降级为无托盘模式：应用仍可通过窗口和快捷键正常使用
+      errorHandler.handle(error, {
+        code: ErrorCode.UNKNOWN,
+        context: '托盘创建失败，降级为无托盘模式',
+      });
+      trayManager = null;
+    }
 
     // 5. 初始化交互层
     interaction = new ElectronInteraction();
