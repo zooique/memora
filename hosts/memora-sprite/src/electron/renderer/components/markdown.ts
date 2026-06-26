@@ -131,6 +131,10 @@ export function renderMarkdown(text: string): DocumentFragment {
  * 支持语言标签高亮（仅作为 CSS 类名，不做语法高亮——保持零依赖）。
  * 若代码块未闭合（流式中常见），渲染到文本末尾。
  *
+ * UX-PP-07 代码块独立复制按钮 + 语言标签：
+ * 结构为 `<div class="md-code-block">` 包裹 header（语言标签 + 复制按钮）+ `<pre><code>`，
+ * 对齐 Trae IDE / Cursor 等大厂对话流的代码块四动作实践（此处实现核心两动作：复制 + 语言标签）。
+ *
  * @returns { node: HTMLElement | null, consumed: number }
  */
 function parseFencedCodeBlock(
@@ -160,21 +164,51 @@ function parseFencedCodeBlock(
   // 但 consumed 只计算到已处理的行
   const consumed = closed ? i - startIdx + 1 : i - startIdx;
 
-  const pre = document.createElement('pre');
-  pre.className = 'md-code-block';
+  // UX-PP-07 容器：div.md-code-block 包裹 header + pre
+  const container = document.createElement('div');
+  container.className = 'md-code-block';
 
   // 语言标签（经过白名单过滤，作为 data 属性供 CSS 选择）
-  if (lang && LANGUAGE_WHITELIST.test(lang)) {
-    pre.dataset.lang = lang;
+  const safeLang = lang && LANGUAGE_WHITELIST.test(lang) ? lang : '';
+  if (safeLang) {
+    container.dataset.lang = safeLang;
   }
 
+  // 代码块头部：语言标签 + 复制按钮
+  const header = document.createElement('div');
+  header.className = 'md-code-header';
+
+  // 语言标签（若有）
+  if (safeLang) {
+    const langSpan = document.createElement('span');
+    langSpan.className = 'md-code-lang';
+    langSpan.textContent = safeLang;
+    header.appendChild(langSpan);
+  }
+
+  // 复制按钮：data-action="copy-code" 由 ChatPanelManager 事件委托统一处理
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'md-code-copy';
+  copyBtn.title = '复制代码';
+  copyBtn.textContent = '复制';
+  copyBtn.dataset.action = 'copy-code';
+  // 代码内容作为 data-content 供事件委托读取（textContent 防 XSS）
+  copyBtn.dataset.content = codeLines.join('\n');
+  header.appendChild(copyBtn);
+
+  container.appendChild(header);
+
+  // 代码主体：pre > code
+  const pre = document.createElement('pre');
+  pre.className = 'md-code-pre';
   const code = document.createElement('code');
   code.className = 'md-code';
   // 使用 textContent 设置代码内容（防 XSS）
   code.textContent = codeLines.join('\n');
   pre.appendChild(code);
+  container.appendChild(pre);
 
-  return { node: pre, consumed: consumed > 0 ? consumed : 1 };
+  return { node: container, consumed: consumed > 0 ? consumed : 1 };
 }
 
 /**

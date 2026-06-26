@@ -255,6 +255,12 @@ export interface ElectronAPI {
   onStreamThinking: (cb: (msg: { messageId: string; phase: string }) => void) => void;
   /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
   onContextTruncated: (cb: (msg: { messageId: string; count: number }) => void) => void;
+  /**
+   * UX-PP-06 流式对话被中断监听
+   * 用户主动中断或内核 yield aborted chunk 时触发，携带 messageId 和中断原因。
+   * 渲染层在原助手气泡内嵌入中断标记，保留已生成的部分内容。
+   */
+  onStreamAborted: (cb: (msg: { messageId: string; reason: string }) => void) => void;
   /** 移除所有流式监听器（页面卸载或重新初始化时调用） */
   removeStreamListeners: () => void;
 
@@ -519,6 +525,8 @@ const electronAPI: ElectronAPI = {
   onStreamThinking: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, (_: IpcRendererEvent, msg: { messageId: string; phase: string }) => cb(msg)),
   /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
   onContextTruncated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, (_: IpcRendererEvent, msg: { messageId: string; count: number }) => cb(msg)),
+  /** UX-PP-06 流式对话被中断监听 */
+  onStreamAborted: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, (_: IpcRendererEvent, msg: { messageId: string; reason: string }) => cb(msg)),
   removeStreamListeners: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
@@ -528,6 +536,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING);
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED);
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED);
   },
 
   // 精灵输出

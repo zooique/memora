@@ -34,13 +34,64 @@
 .message-bubble .md-h-5 { font-size: 13px; color: var(--text); }
 .message-bubble .md-h-6 { font-size: 12px; color: var(--subtext); }
 
-/* 代码块：深色背景 + 等宽字体 + 水平滚动 */
+/* 代码块容器：UX-PP-07 改为 div.md-code-block 包裹 header + pre */
+/* 深色背景 + 等宽字体 + 圆角边框，header 与 pre 共享背景 */
 .message-bubble .md-code-block {
   margin: 8px 0;
-  padding: 10px 12px;
   background: var(--bg);
   border: 1px solid var(--surface1);
   border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+/* 代码块头部：语言标签 + 复制按钮 横向排列 */
+.message-bubble .md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--surface1);
+  border-bottom: 1px solid var(--surface1);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+}
+
+/* 语言标签：等宽字体 + 弱化颜色 */
+.message-bubble .md-code-lang {
+  color: var(--text-3);
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+/* 复制按钮：主动可见（不依赖 hover），点击后短暂"已复制"反馈 */
+.message-bubble .md-code-copy {
+  padding: 1px 8px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-3);
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 10px;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.message-bubble .md-code-copy:hover {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* 复制成功反馈态 */
+.message-bubble .md-code-copy.copied {
+  color: var(--green);
+}
+
+/* 代码主体：等宽字体 + 水平滚动（从 .md-code-block 迁移到 .md-code-pre） */
+.message-bubble .md-code-pre {
+  margin: 0;
+  padding: 10px 12px;
   overflow-x: auto;
   /* 代码块不使用霞鹜文楷，使用等宽字体 */
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;

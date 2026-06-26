@@ -217,10 +217,12 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         // 和 postProcess（归档后处理），break 会导致 return() 被调用，
         // 跳过这些关键步骤。finally 块会在 generator 自然结束后发送 SPRITE_STREAM_END。
       } else if (chunk.type === 'aborted') {
-        // UX-PP-04 中断系统消息（在 finally 发送 SPRITE_STREAM_END 之前）
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, {
-          text: `[已中断：${chunk.reason}]`,
-          kind: 'system',
+        // UX-PP-06 中断标记内嵌气泡：发送 SPRITE_STREAM_ABORTED 通知渲染层
+        // 在原助手气泡内嵌入中断标记并保留已生成的部分内容，
+        // 替代旧的居中系统消息方案（体验割裂，与原气泡内容脱节）。
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
+          messageId,
+          reason: chunk.reason,
         });
         // aborted 信号：停止处理后续 chunk，由 finally 统一发送 SPRITE_STREAM_END
         break;
@@ -235,10 +237,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     const wasUserAborted = abortReason instanceof DOMException && abortReason.name === 'AbortError';
     if (!fullWindow.isDestroyed()) {
       if (wasUserAborted) {
-        // UX-PP-04 用户主动中断：发送系统消息，不报告为错误
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_OUTPUT, {
-          text: '[已中断：用户手动停止]',
-          kind: 'system',
+        // UX-PP-06 用户主动中断：发送 SPRITE_STREAM_ABORTED 通知渲染层嵌入中断标记
+        // 保留已生成的部分内容，替代旧的居中系统消息方案
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
+          messageId,
+          reason: '用户手动停止',
         });
       } else {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {

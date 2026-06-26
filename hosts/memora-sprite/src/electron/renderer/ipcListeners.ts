@@ -305,8 +305,6 @@ export interface IpcListenerCallbacks {
   onAgentReady: () => void;
   /** 对话结束时回调（刷新仪表盘，获取最新 LLM 指标和记忆数据） */
   onConversationEnd?: () => void;
-  /** UX-PP-03 流式错误重试回调（重新发送上一条用户消息） */
-  onSpriteErrorRetry?: () => void;
 }
 
 /**
@@ -359,6 +357,12 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     callbacks.onConversationEnd?.();
   });
 
+  // UX-PP-06 流式对话被中断：在原助手气泡内嵌入中断标记，保留已生成的部分内容
+  // 替代旧的居中系统消息方案（体验割裂，与原气泡内容脱节）
+  window.electronAPI.onStreamAborted((msg) => {
+    uiManager.markStreamingAborted(msg.messageId, msg.reason);
+  });
+
   // ─── 精灵输出（主动提示 / 系统消息） ───────────────────
   window.electronAPI.onSpriteOutput((msg) => {
     uiManager.appendMessage({
@@ -403,15 +407,17 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   /**
    * 监听主进程推送的精灵对话级错误（ipcHandlers.ts 在对话流式输出出错时发送）。
    * 与 app-error（应用级错误）区分：sprite-error 是对话级错误。
-   * IX-06 统一走 toast 通知，保持错误反馈渠道一致。
+   *
+   * UX-PP-09 错误反馈去重：气泡内错误指示器 + 重试按钮为主通道（主动可见），
+   * Toast 仅作辅助提示（无重试按钮，避免与气泡内重试按钮重复）。
+   * 控制台日志保留用于排查。原方案同时触发气泡 + Toast（含重试）+ 控制台，
+   * 重试入口冗余，用户注意力被分散。
    */
   window.electronAPI.onSpriteError((msg: { text: string }) => {
-    // UX-PP-01 将错误注入到流式消息气泡中，让用户直接在对话中看到出错原因
+    // 主通道：将错误注入到流式消息气泡中，含重试按钮（UX-PP-01 + UX-PP-05）
     uiManager.injectErrorToStreamingMessages(msg.text);
-    // UX-PP-03 提供重试按钮，让用户一键重试失败的消息
-    uiManager.showToast(msg.text, 'error', undefined, {
-      onRetry: callbacks.onSpriteErrorRetry,
-    });
+    // 辅助通道：Toast 仅作短暂提示，不携带重试按钮（避免与气泡内重试按钮重复）
+    uiManager.showToast(msg.text, 'error');
     reportError('sprite-error', msg.text);
   });
 

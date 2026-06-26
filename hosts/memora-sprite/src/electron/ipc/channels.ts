@@ -169,6 +169,16 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    */
   SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
 
+  /**
+   * UX-PP-06 流式对话被中断通知
+   *
+   * 用户主动中断（点击停止按钮）或内核 yield aborted chunk 时推送，
+   * 携带 messageId 和中断原因。渲染层在原助手气泡内嵌入中断标记，
+   * 保留已生成的部分内容（对齐 Claude Code 的 partial response 保留理念），
+   * 替代旧的居中系统消息方案（体验割裂）。
+   */
+  SPRITE_STREAM_ABORTED: 'sprite-stream-aborted',
+
   // ─── 精灵输出 / 错误 ──────────────────────────────────
   /** 精灵主动提示或系统消息 */
   SPRITE_OUTPUT: 'sprite-output',
