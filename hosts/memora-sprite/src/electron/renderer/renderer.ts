@@ -469,9 +469,14 @@ function setupBusinessLogic(
   });
 
   // 设置停止消息回调
+  // QC-FLOW-04 修复：不调用 stopAllStreaming()——它会同步清空 streamingMessages Map，
+  // 导致主进程 abort 后异步发送的 SPRITE_STREAM_ABORTED 找不到消息元素，
+  // 中断标记无法嵌入气泡。正确流程：abortChat() → 主进程中断 generator →
+  // SPRITE_STREAM_ABORTED → markStreamingAborted（正确嵌入标记 + 清理状态）→
+  // SPRITE_STREAM_END → finishStreamingMessage（添加复制按钮等收尾）。
+  // stopAllStreaming() 保留给渲染进程超时兜底（onStreamStuck）使用，不用在用户主动停止路径。
   uiManager.onStopMessage(async () => {
     await window.electronAPI.abortChat();
-    uiManager.stopAllStreaming();
   });
 
   // UX-FD-07 日期导航跳转回调：点击日期项后跳转到该日期的对话

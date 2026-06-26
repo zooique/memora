@@ -158,6 +158,18 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   // OBS-02：记录对话开始前的截断次数，对话结束后对比检测截断事件
   const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
 
+  /**
+   * QC-FLOW-01 中断通道已发送标志
+   *
+   * 内核 agent.chat() 有两条路径会产生中断：
+   * 1. for-await 循环中 yield { type: 'aborted' } chunk（内核主动 abort）
+   * 2. AbortController.abort() 导致 generator throw AbortError（外部 abort）
+   * 两条路径最终都会到达：路径1 break 后到 finally，路径2 进入 catch。
+   * 此标志确保 SPRITE_STREAM_ABORTED 只发送一次（单点路由原则），
+   * 避免渲染层重复嵌入中断标记。
+   */
+  let abortedNotified = false;
+
   try {
     // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
     let accumulatedText = '';
@@ -217,9 +229,9 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         // 和 postProcess（归档后处理），break 会导致 return() 被调用，
         // 跳过这些关键步骤。finally 块会在 generator 自然结束后发送 SPRITE_STREAM_END。
       } else if (chunk.type === 'aborted') {
-        // UX-PP-10 中断标记内嵌气泡：发送 SPRITE_STREAM_ABORTED 通知渲染层
-        // 在原助手气泡内嵌入中断标记并保留已生成的部分内容，
-        // 替代旧的居中系统消息方案（体验割裂，与原气泡内容脱节）。
+        // UX-PP-10 中断标记内嵌气泡：内核主动 yield aborted chunk 时通知渲染层
+        // QC-FLOW-01：标记已发送，catch 块不再重复发送
+        abortedNotified = true;
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
           messageId,
           reason: chunk.reason,
@@ -235,14 +247,21 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     const ctrl = ctx.getAbortController();
     const abortReason = ctrl?.signal.reason;
     const wasUserAborted = abortReason instanceof DOMException && abortReason.name === 'AbortError';
+
+    // QC-FLOW-03 IPC 消息顺序保证：错误/中断通知必须在 SPRITE_STREAM_END 之前发送，
+    // 因为 END 会触发 finishStreamingMessage 清理 streamingMessages，
+    // 之后到达的 SPRITE_ERROR/ABORTED 找不到消息元素无法注入提示。
+    // finally 块在 catch 之后执行，SPRITE_STREAM_END 自然在最后发送，保证顺序正确。
     if (!fullWindow.isDestroyed()) {
       if (wasUserAborted) {
-        // UX-PP-10 用户主动中断：发送 SPRITE_STREAM_ABORTED 通知渲染层嵌入中断标记
-        // 保留已生成的部分内容，替代旧的居中系统消息方案
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
-          messageId,
-          reason: '用户手动停止',
-        });
+        // QC-FLOW-01：仅当 aborted chunk 路径未发送过时才发送（避免双重通知）
+        if (!abortedNotified) {
+          fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, {
+            messageId,
+            reason: '用户手动停止',
+          });
+          abortedNotified = true;
+        }
       } else {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
           text: `对话出错：${toError(error).message}`,
@@ -262,6 +281,8 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     // 超时路径已在定时器内发送过 STREAM_END + 清理 AbortController，此处跳过避免重复。
     if (!streamTimedOut) {
       // 无论生成器以何种方式退出（done/aborted/异常/窗口销毁），都确保发送 SPRITE_STREAM_END。
+      // QC-FLOW-03：SPRITE_STREAM_END 在 catch/正常路径之后发送（finally 在 catch 之后执行），
+      // 保证错误/中断通知先于 END 到达渲染层。
       if (!fullWindow.isDestroyed()) {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
       }

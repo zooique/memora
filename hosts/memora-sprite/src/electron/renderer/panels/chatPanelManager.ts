@@ -432,10 +432,14 @@ export class ChatPanelManager {
           latestBubble.appendChild(tc);
         }
         if (latestCursor) latestBubble.appendChild(latestCursor);
+
+        // QC-FLOW-05：DOM 更新完成后再滚动，确保滚动位置准确
+        // 原实现在 rAF 外调用 scrollToBottom，此时 DOM 尚未更新（还在等 rAF），
+        // 滚动到的是旧高度位置，rAF 回调更新 DOM 后内容增高但已不再滚动，
+        // 导致用户看到的位置不是最底部。
+        this.host.scrollToBottom();
       });
     }
-
-    this.host.scrollToBottom();
   }
 
   /**
@@ -448,6 +452,13 @@ export class ChatPanelManager {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
+    // 取消挂起的 rAF 回调，防止 finish 后 rAF 重新渲染 Markdown 覆盖已完成状态
+    if (this._rafHandle !== null) {
+      cancelAnimationFrame(this._rafHandle);
+      this._rafHandle = null;
+      this._pendingRaF = false;
+    }
+
     el.classList.remove('streaming');
     // 移除光标元素
     const cursor = el.querySelector('.cursor');
@@ -458,54 +469,7 @@ export class ChatPanelManager {
     if (thinkingPhase) thinkingPhase.remove();
 
     // 流式完成后添加复制按钮（从 bubble 提取最终文本）
-    const bubble = el.querySelector('.message-bubble');
-    const contentWrapper = el.querySelector('.message-content');
-    if (bubble && contentWrapper) {
-      // 提取纯文本内容（排除 UI 元信息元素）
-      // - memory-recall：召回记忆提示
-      // - stream-aborted：中断标记（UX-PP-10）
-      // - md-code-header：代码块头部（语言标签 + 复制按钮文本，UX-PP-11）
-      const clone = bubble.cloneNode(true);
-      if (!(clone instanceof HTMLElement)) {
-        throw new Error('[finishStreamingMessage] 复制的消息气泡不是 HTMLElement');
-      }
-      const recallInClone = clone.querySelector('.memory-recall');
-      if (recallInClone) recallInClone.remove();
-      const abortedInClone = clone.querySelector('.stream-aborted');
-      if (abortedInClone) abortedInClone.remove();
-      // 移除所有代码块头部（语言标签 + 复制按钮文本不应包含在复制内容中）
-      clone.querySelectorAll('.md-code-header').forEach((h) => h.remove());
-      const finalText = clone.textContent ?? '';
-
-      const copyBtn = document.createElement('button');
-      copyBtn.className = 'message-copy-btn';
-      copyBtn.title = '复制';
-      copyBtn.textContent = '📋';
-      // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
-      copyBtn.dataset.action = 'copy';
-      copyBtn.dataset.content = finalText;
-
-      // 查找或创建 metaRow，将复制按钮插入到时间戳之前
-      let metaRow = contentWrapper.querySelector('.message-meta');
-      const timeEl = contentWrapper.querySelector('.message-time');
-      if (metaRow) {
-        // metaRow 已存在，插入到时间戳之前
-        if (timeEl) {
-          metaRow.insertBefore(copyBtn, timeEl);
-        } else {
-          metaRow.appendChild(copyBtn);
-        }
-      } else if (timeEl && timeEl.parentNode) {
-        // metaRow 不存在（旧结构），创建并包裹时间戳
-        metaRow = document.createElement('div');
-        metaRow.className = 'message-meta';
-        metaRow.appendChild(copyBtn);
-        timeEl.parentNode.insertBefore(metaRow, timeEl);
-        metaRow.appendChild(timeEl);
-      } else {
-        contentWrapper.appendChild(copyBtn);
-      }
-    }
+    this._addCopyButtonToMessage(el);
 
     this.streamingMessages.delete(messageId);
 
@@ -515,6 +479,73 @@ export class ChatPanelManager {
       // 清除超时兜底定时器（正常结束）
       this._clearStreamSafetyTimer();
       this.host.updateSendButton();
+    }
+  }
+
+  /**
+   * QC-FLOW 为已完成的助手消息添加复制按钮
+   *
+   * 抽取为私有方法以复用：finishStreamingMessage（正常结束）和
+   * markStreamingAborted（用户中断）都需要添加复制按钮，
+   * 允许用户复制已生成的部分内容。
+   *
+   * @param el 消息 DOM 元素（.message 容器）
+   */
+  private _addCopyButtonToMessage(el: HTMLElement): void {
+    const bubble = el.querySelector('.message-bubble');
+    const contentWrapper = el.querySelector('.message-content');
+    if (!bubble || !contentWrapper) return;
+
+    // 避免重复添加（幂等保护）
+    if (contentWrapper.querySelector('.message-copy-btn')) return;
+
+    // 提取纯文本内容（排除 UI 元信息元素）
+    // - memory-recall：召回记忆提示
+    // - stream-aborted：中断标记（UX-PP-10）
+    // - md-code-header：代码块头部（语言标签 + 复制按钮文本，UX-PP-11）
+    // - stream-error：错误指示器（QC-FLOW 错误注入路径）
+    // - thinking-phase：思考阶段指示器
+    const clone = bubble.cloneNode(true);
+    if (!(clone instanceof HTMLElement)) return;
+    const recallInClone = clone.querySelector('.memory-recall');
+    if (recallInClone) recallInClone.remove();
+    const abortedInClone = clone.querySelector('.stream-aborted');
+    if (abortedInClone) abortedInClone.remove();
+    const errorInClone = clone.querySelector('.stream-error');
+    if (errorInClone) errorInClone.remove();
+    const thinkingInClone = clone.querySelector('.thinking-phase');
+    if (thinkingInClone) thinkingInClone.remove();
+    // 移除所有代码块头部（语言标签 + 复制按钮文本不应包含在复制内容中）
+    clone.querySelectorAll('.md-code-header').forEach((h) => h.remove());
+    const finalText = clone.textContent ?? '';
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'message-copy-btn';
+    copyBtn.title = '复制';
+    copyBtn.textContent = '📋';
+    // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+    copyBtn.dataset.action = 'copy';
+    copyBtn.dataset.content = finalText;
+
+    // 查找或创建 metaRow，将复制按钮插入到时间戳之前
+    let metaRow = contentWrapper.querySelector('.message-meta');
+    const timeEl = contentWrapper.querySelector('.message-time');
+    if (metaRow) {
+      // metaRow 已存在，插入到时间戳之前
+      if (timeEl) {
+        metaRow.insertBefore(copyBtn, timeEl);
+      } else {
+        metaRow.appendChild(copyBtn);
+      }
+    } else if (timeEl && timeEl.parentNode) {
+      // metaRow 不存在（旧结构），创建并包裹时间戳
+      metaRow = document.createElement('div');
+      metaRow.className = 'message-meta';
+      metaRow.appendChild(copyBtn);
+      timeEl.parentNode.insertBefore(metaRow, timeEl);
+      metaRow.appendChild(timeEl);
+    } else {
+      contentWrapper.appendChild(copyBtn);
     }
   }
 
@@ -828,6 +859,13 @@ export class ChatPanelManager {
 
   /** 停止所有流式输出 */
   stopAllStreaming(): void {
+    // 取消挂起的 rAF 回调，防止 stop 后 rAF 重新渲染 Markdown 覆盖已停止状态
+    if (this._rafHandle !== null) {
+      cancelAnimationFrame(this._rafHandle);
+      this._rafHandle = null;
+      this._pendingRaF = false;
+    }
+
     for (const el of this.streamingMessages.values()) {
       el.classList.remove('streaming');
       // 移除光标元素，保留文本内容
@@ -989,6 +1027,11 @@ export class ChatPanelManager {
    * 保留已生成的部分内容（对齐 Claude Code 的 partial response 保留理念）。
    * 替代旧的居中系统消息方案——居中消息与原气泡内容脱节，体验割裂。
    *
+   * QC-FLOW-02 修复：完整清理流式状态（从 streamingMessages 删除、重置 isStreaming、
+   * 更新发送按钮、清除安全定时器），与 finishStreamingMessage / injectErrorToStreamingMessages
+   * 保持一致。原实现只移除了 streaming 类但未清理 Map 和状态，导致 isStreaming 泄漏、
+   * 用户无法发送新消息、后续 SPRITE_STREAM_END 到达时 finishStreamingMessage 重复处理。
+   *
    * 中断标记视觉上弱化（灰色 + 虚线边框），与错误指示器（红色）区分：
    * 中断是用户主动行为，不应表现为错误。
    *
@@ -999,6 +1042,13 @@ export class ChatPanelManager {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
+    // 取消挂起的 rAF 回调，防止中断后 rAF 重新渲染 Markdown 覆盖中断标记
+    if (this._rafHandle !== null) {
+      cancelAnimationFrame(this._rafHandle);
+      this._rafHandle = null;
+      this._pendingRaF = false;
+    }
+
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
@@ -1008,8 +1058,17 @@ export class ChatPanelManager {
     const thinkingIndicator = bubble.querySelector('.thinking-phase');
     if (thinkingIndicator) thinkingIndicator.remove();
 
-    // 避免重复嵌入中断标记（catch 块和 aborted chunk 可能都触发）
-    if (bubble.querySelector('.stream-aborted')) return;
+    // 幂等保护：避免重复嵌入中断标记（aborted chunk 和 catch 块可能都触发）
+    if (bubble.querySelector('.stream-aborted')) {
+      // 已嵌入过，仍需确保流式状态被清理（之前的调用可能未完成清理）
+      this.streamingMessages.delete(messageId);
+      if (this.streamingMessages.size === 0) {
+        this.state.isStreaming = false;
+        this._clearStreamSafetyTimer();
+        this.host.updateSendButton();
+      }
+      return;
+    }
 
     // 嵌入中断标记到气泡底部
     const abortedDiv = document.createElement('div');
@@ -1017,8 +1076,22 @@ export class ChatPanelManager {
     abortedDiv.textContent = `⏹ 已中断：${reason}（已保留上方生成内容）`;
     bubble.appendChild(abortedDiv);
 
-    // 停止流式状态（移除 streaming 类，但保留已生成内容）
+    // 添加复制按钮，允许用户复制已生成的部分内容
+    this._addCopyButtonToMessage(el);
+
+    // 完整清理流式状态（QC-FLOW-02）
     el.classList.remove('streaming');
+    this.streamingMessages.delete(messageId);
+
+    // 所有流式消息都已完成时，重置 isStreaming 状态和按钮
+    if (this.streamingMessages.size === 0) {
+      this.state.isStreaming = false;
+      this._clearStreamSafetyTimer();
+      this.host.updateSendButton();
+    }
+
+    // 中断标记嵌入后滚动到底部，确保用户看到中断状态
+    this.host.scrollToBottom();
   }
 
   /**
@@ -1034,6 +1107,13 @@ export class ChatPanelManager {
   injectErrorToStreamingMessages(errorText: string): void {
     // 无活跃流式消息时跳过
     if (this.streamingMessages.size === 0) return;
+
+    // 取消挂起的 rAF 回调，防止错误注入后 rAF 重新渲染 Markdown 覆盖错误提示
+    if (this._rafHandle !== null) {
+      cancelAnimationFrame(this._rafHandle);
+      this._rafHandle = null;
+      this._pendingRaF = false;
+    }
 
     for (const [, el] of this.streamingMessages) {
       const bubble = el.querySelector('.message-bubble');
@@ -1070,6 +1150,8 @@ export class ChatPanelManager {
     // 清除超时兜底定时器
     this._clearStreamSafetyTimer();
     this.host.updateSendButton();
+    // 错误注入后滚动到底部，确保用户看到错误提示和重试按钮
+    this.host.scrollToBottom();
   }
 
   // ─── 安全兜底定时器 ─────────────────────────────────────
