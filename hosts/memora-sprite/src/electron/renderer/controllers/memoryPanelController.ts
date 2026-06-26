@@ -26,6 +26,22 @@ const NEAR_THRESHOLD_RATIO = 0.8;
 /** QC-STATE-01 修复：pulseTimers 已移入 createMemoryController 闭包内 */
 
 /**
+ * 格式化 token 数显示
+ *
+ * 超过 1000 时显示为 "1.2k" 格式，否则直接显示数字。
+ * 供仪表盘 LLM Token 指标卡片使用。
+ *
+ * @param tokens token 数量
+ * @returns 格式化后的字符串（如 "999" / "1.2k"）
+ */
+export function formatTokenCount(tokens: number): string {
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}k`;
+  }
+  return String(tokens);
+}
+
+/**
  * 创建记忆控制器
  *
  * @param uiManager UI 管理器实例
@@ -440,18 +456,6 @@ export function createMemoryController(uiManager: UIManager) {
       const totalDecayed = metrics.decay?.totalDecayedCount ?? 0;
       decayEl.textContent = `${runCount}/${totalDecayed}`;
     }
-  }
-
-  /**
-   * 格式化 token 数显示
-   *
-   * 超过 1000 时显示为 "1.2k" 格式，否则直接显示数字。
-   */
-  function formatTokenCount(tokens: number): string {
-    if (tokens >= 1000) {
-      return `${(tokens / 1000).toFixed(1)}k`;
-    }
-    return String(tokens);
   }
 
   /**

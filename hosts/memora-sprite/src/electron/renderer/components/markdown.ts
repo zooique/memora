@@ -19,10 +19,10 @@
 // ─── 常量 ─────────────────────────────────────────────────
 
 /** 允许的链接协议白名单（防止 javascript: 等危险协议） */
-const ALLOWED_LINK_PROTOCOLS = ['http:', 'https:', 'mailto:'] as const;
+export const ALLOWED_LINK_PROTOCOLS = ['http:', 'https:', 'mailto:'] as const;
 
 /** 代码块语言白名单正则（仅允许字母数字和连字符，防止注入） */
-const LANGUAGE_WHITELIST = /^[a-zA-Z0-9+-]+$/;
+export const LANGUAGE_WHITELIST = /^[a-zA-Z0-9+-]+$/;
 
 // ─── 主入口 ───────────────────────────────────────────────
 
@@ -309,7 +309,7 @@ function parseTable(lines: string[], startIdx: number): { node: HTMLElement | nu
 }
 
 /** 分割表格行单元格（处理转义的 \|） */
-function splitTableCells(line: string): string[] {
+export function splitTableCells(line: string): string[] {
   // 移除首尾的 |
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
   // 按未转义的 | 分割
@@ -611,7 +611,7 @@ function appendFormattedText(target: HTMLElement, text: string): void {
 }
 
 /** 收集正则匹配项的辅助函数 */
-function collectMatches(
+export function collectMatches(
   regex: RegExp,
   text: string,
   callback: (m: RegExpExecArray) => void,
@@ -670,7 +670,7 @@ function convertNewlinesToBr(element: HTMLElement): void {
  * 防止 javascript:、data: 等危险协议。
  * 相对 URL（如 /path）也允许，但 Electron 中通常无意义。
  */
-function isSafeUrl(url: string): boolean {
+export function isSafeUrl(url: string): boolean {
   const trimmed = url.trim();
   if (!trimmed) return false;
 

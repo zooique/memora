@@ -128,6 +128,9 @@ export class ChatPanelManager {
    */
   private _streamSafetyTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** 90s 二级兜底定时器（30s 主定时器触发 onStreamStuck 后启动，防止主进程未响应时 UI 永久锁死） */
+  private _streamSafetyFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+
   // ─── 事件清理 ──────────────────────────────────────────
 
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
@@ -465,7 +468,7 @@ export class ChatPanelManager {
           clearElement(bubbleToFlush);
           bubbleToFlush.appendChild(renderMarkdown(this._latestStreamText));
           if (flushRecall) bubbleToFlush.appendChild(flushRecall);
-          for (const tc of flushToolCalls) bubbleToFlush.appendChild(tc);
+          flushToolCalls.forEach((tc) => bubbleToFlush.appendChild(tc));
         } catch (err) {
           // 渲染异常时不阻塞收尾流程，保留旧 DOM
           console.error('[finishStreamingMessage] flush 渲染失败', err);
