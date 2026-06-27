@@ -162,11 +162,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
     // P1-ET-01 每个面板持有独立的 EventTracker，避免 cleanup 时互相干扰
     // 聊天面板管理器
+    // FOUNDATION-SEAL Phase 2：移除 state 参数，改通过 host.setStreaming/isStreaming 封装
     this.chatPanel = new ChatPanelManager(
       this,
       this.messagesEl,
       new EventTracker(),
-      this.state,
       this.streamingMessages,
     );
 
@@ -812,6 +812,18 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 是否正在流式输出 */
   isStreaming(): boolean {
     return this.state.isStreaming;
+  }
+
+  /**
+   * FOUNDATION-SEAL Phase 2：设置流式输出状态
+   *
+   * 替代 ChatPanelManager 通过共享 state 引用直接修改 isStreaming 的"友元类反模式"。
+   * UIManager 作为 state 的唯一持有者，通过此方法封装状态变更。
+   *
+   * @param streaming 是否正在流式输出
+   */
+  setStreaming(streaming: boolean): void {
+    this.state.isStreaming = streaming;
   }
 
   /**

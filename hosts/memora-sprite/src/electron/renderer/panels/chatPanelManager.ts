@@ -48,6 +48,21 @@ export interface ChatPanelHost {
   forceScrollToBottom(): void;
   /** 更新发送/停止按钮状态 */
   updateSendButton(): void;
+  /**
+   * FOUNDATION-SEAL Phase 2：设置流式输出状态
+   *
+   * 替代原"友元类反模式"——ChatPanelManager 通过共享 state 引用直接修改 isStreaming。
+   * 现改为通过 host 方法封装，UIManager 作为 state 的唯一持有者。
+   *
+   * @param streaming 是否正在流式输出
+   */
+  setStreaming(streaming: boolean): void;
+  /**
+   * FOUNDATION-SEAL Phase 2：查询流式输出状态
+   *
+   * @returns 当前是否正在流式输出
+   */
+  isStreaming(): boolean;
   /** 非系统消息计数 +1（appendMessage 中调用） */
   updateMessageCount(): void;
   /**
@@ -89,8 +104,7 @@ export class ChatPanelManager {
 
   // ─── 共享状态引用（由 UIManager 传入，引用共享） ────────
 
-  /** 共享 UI 状态（isStreaming / unreadCount 等） */
-  private state: { isStreaming: boolean; unreadCount: number };
+  // FOUNDATION-SEAL Phase 2：state 字段已移除，改通过 host.setStreaming/isStreaming 封装
   /** 活跃的流式消息映射（messageId → DOM 元素） */
   private streamingMessages: Map<string, HTMLElement>;
 
@@ -142,22 +156,19 @@ export class ChatPanelManager {
   // ─── 构造函数 ──────────────────────────────────────────
 
   /**
-   * @param host 宿主能力注入（跨模块关注点回调）
+   * @param host 宿主能力注入（跨模块关注点回调，含 setStreaming/isStreaming 状态封装）
    * @param messagesEl 消息容器 DOM 元素
    * @param events 事件跟踪器（复用外部实例，共享生命周期）
-   * @param state 共享 UI 状态引用（isStreaming / unreadCount）
    * @param streamingMessages 共享流式消息映射引用
    */
   constructor(
     private host: ChatPanelHost,
     messagesEl: HTMLElement,
     events: EventTracker,
-    state: { isStreaming: boolean; unreadCount: number },
     streamingMessages: Map<string, HTMLElement>,
   ) {
     this.messagesEl = messagesEl;
     this.events = events;
-    this.state = state;
     this.streamingMessages = streamingMessages;
 
     // QC-11 事件委托：在 messagesEl 上注册统一的 click 监听器，
@@ -512,7 +523,7 @@ export class ChatPanelManager {
 
     // 所有流式消息都已完成时，重置 isStreaming 状态和按钮
     if (this.streamingMessages.size === 0) {
-      this.state.isStreaming = false;
+      this.host.setStreaming(false);
       // 清除超时兜底定时器（正常结束）
       this._clearStreamSafetyTimer();
       this.host.updateSendButton();
@@ -711,7 +722,7 @@ export class ChatPanelManager {
     });
 
     this.streamingMessages.set(messageId, el);
-    this.state.isStreaming = true;
+    this.host.setStreaming(true);
 
     // UX-PP-04 首字节前的"正在思考"占位
     // 从 SPRITE_STREAM_START 到首个 chunk 之间，用户原本只看到空气泡+光标，
@@ -757,7 +768,7 @@ export class ChatPanelManager {
       }
     }
     this.streamingMessages.clear();
-    this.state.isStreaming = false;
+    this.host.setStreaming(false);
     // 清除超时兜底定时器（手动停止）
     this._clearStreamSafetyTimer();
 
@@ -779,7 +790,7 @@ export class ChatPanelManager {
     // UX-FD-07 移除加载更多按钮（切换会话时重置）
     this.hideLoadMore();
     this.streamingMessages.clear();
-    this.state.isStreaming = false;
+    this.host.setStreaming(false);
     this.host.updateSendButton();
     // UX-P2-05 修复：清空消息时重置计数器，避免跨会话累加导致显示错误
     this.host.resetMessageCount();
@@ -945,7 +956,7 @@ export class ChatPanelManager {
       // 已嵌入过，仍需确保流式状态被清理（之前的调用可能未完成清理）
       this.streamingMessages.delete(messageId);
       if (this.streamingMessages.size === 0) {
-        this.state.isStreaming = false;
+        this.host.setStreaming(false);
         this._clearStreamSafetyTimer();
         this.host.updateSendButton();
       }
@@ -967,7 +978,7 @@ export class ChatPanelManager {
 
     // 所有流式消息都已完成时，重置 isStreaming 状态和按钮
     if (this.streamingMessages.size === 0) {
-      this.state.isStreaming = false;
+      this.host.setStreaming(false);
       this._clearStreamSafetyTimer();
       this.host.updateSendButton();
     }
@@ -1028,7 +1039,7 @@ export class ChatPanelManager {
 
     // 清理流式消息映射和 UI 状态
     this.streamingMessages.clear();
-    this.state.isStreaming = false;
+    this.host.setStreaming(false);
     // 清除超时兜底定时器
     this._clearStreamSafetyTimer();
     this.host.updateSendButton();
@@ -1051,12 +1062,12 @@ export class ChatPanelManager {
     // 导致主进程后续 chunk 与 END 因 Map 已空而静默早退（if (!el) return）——视觉冻结无日志
     // 现改为：30s 仅通知主进程，本地不清理状态，等待主进程的 END/ABORTED 驱动清理
     this._streamSafetyTimer = setTimeout(() => {
-      if (this.state.isStreaming) {
+      if (this.host.isStreaming()) {
         this.host.onStreamStuck();
         // 90s 二级兜底（远大于主进程 60s）：若主进程未响应才本地清理
         // 防止主进程完全失联时 UI 永久锁死
         this._streamSafetyFallbackTimer = setTimeout(() => {
-          if (!this.state.isStreaming) return;
+          if (!this.host.isStreaming()) return;
           // 清理 fallback timer 自身引用（已触发，置 null 让 _clearStreamSafetyTimer 不再尝试 clearTimeout）
           this._streamSafetyFallbackTimer = null;
           reportError('chatPanelManager', '90s 兜底：主进程未响应 onStreamStuck，本地清理');
@@ -1078,7 +1089,7 @@ export class ChatPanelManager {
           }
           // 注意：不在此处 delete streamingMessages，留给 markStreamingAborted 走完整嵌入流程
           this.streamingMessages.clear();
-          this.state.isStreaming = false;
+          this.host.setStreaming(false);
           this.host.updateSendButton();
         }, 60_000); // 60s 后触发 = 总等待 30+60=90s
       }

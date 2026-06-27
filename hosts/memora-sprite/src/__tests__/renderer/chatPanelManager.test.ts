@@ -6,7 +6,7 @@
  * 覆盖范围：
  * - 构造与 cleanup：字段初始化、事件委托注册、cleanup 取消 rAF + 清除定时器 + events.cleanup、THINKING_PHASE_LABELS
  * - appendMessage：user/assistant/system/streaming 消息渲染、memoryRecall、document.hidden 未读、host 回调
- * - startStreaming：空流式消息创建、thinking-phase 占位、streamingMessages/state/updateSendButton、30s 安全定时器
+ * - startStreaming：空流式消息创建、thinking-phase 占位、streamingMessages/host.setStreaming/updateSendButton、30s 安全定时器
  * - updateStreamingMessage：rAF 节流（首次触发/后续复用）、rAF 回调渲染 + 保留元素、重置定时器 + 移除 thinking-phase
  * - finishStreamingMessage：rAF flush、移除 streaming/cursor/thinking-phase、复制按钮、状态重置
  * - setMemoryRecall：静默返回、空数组、召回容器创建、已存在容器更新、插入到光标前
@@ -55,11 +55,16 @@ vi.mock('../../electron/renderer/components/markdown.js', () => ({
 
 /** 创建 Mock ChatPanelHost（所有方法用 vi.fn 创建，可通过 overrides 替换） */
 function createMockHost(overrides?: Partial<ChatPanelHost>): ChatPanelHost {
+  // FOUNDATION-SEAL Phase 2：setStreaming/isStreaming 维护内部状态，
+  // 使 ChatPanelManager 的 isStreaming() 读取能正确反映 setStreaming 调用
+  let streamingState = false;
   return {
     showToast: vi.fn(),
     scrollToBottom: vi.fn(),
     forceScrollToBottom: vi.fn(),
     updateSendButton: vi.fn(),
+    setStreaming: vi.fn((s: boolean) => { streamingState = s; }),
+    isStreaming: vi.fn(() => streamingState),
     updateMessageCount: vi.fn(),
     setMessageCount: vi.fn(),
     refreshMessageCountDisplay: vi.fn(),
@@ -89,7 +94,6 @@ function createManager(opts?: {
   manager: ChatPanelManager;
   host: ChatPanelHost;
   events: EventTracker;
-  state: { isStreaming: boolean; unreadCount: number };
   streamingMessages: Map<string, HTMLElement>;
   messagesEl: HTMLElement;
 } {
@@ -104,14 +108,14 @@ function createManager(opts?: {
   `;
   const messagesEl = document.getElementById('chat-messages') as HTMLElement;
   const events = new EventTracker();
-  const state = { isStreaming: false, unreadCount: 0 };
+  // FOUNDATION-SEAL Phase 2：state 已移除，改通过 host.setStreaming/isStreaming 封装
   const streamingMessages = new Map<string, HTMLElement>();
   const host = opts?.host ?? createMockHost();
-  const manager = new ChatPanelManager(host, messagesEl, events, state, streamingMessages);
+  const manager = new ChatPanelManager(host, messagesEl, events, streamingMessages);
   if (opts?.initEmptyState) {
     manager.initEmptyStateListeners();
   }
-  return { manager, host, events, state, streamingMessages, messagesEl };
+  return { manager, host, events, streamingMessages, messagesEl };
 }
 
 /** 手动执行所有挂起的 rAF 回调（模拟帧刷新） */
@@ -169,11 +173,11 @@ afterEach(() => {
 // ─── 1. 构造与 cleanup ───────────────────────────────────
 
 describe('构造与 cleanup', () => {
-  it('构造函数应初始化字段并共享 state/streamingMessages 引用', () => {
-    const { manager, state, streamingMessages } = createManager();
-    // 通过 startStreaming 验证引用共享：state 和 streamingMessages 应与外部引用同步
+  it('构造函数应初始化字段并共享 streamingMessages 引用', () => {
+    const { manager, host, streamingMessages } = createManager();
+    // FOUNDATION-SEAL Phase 2：通过 startStreaming 验证 host.setStreaming 调用 + streamingMessages 引用共享
     manager.startStreaming('m1');
-    expect(state.isStreaming).toBe(true);
+    expect(host.setStreaming).toHaveBeenCalledWith(true);
     expect(streamingMessages.has('m1')).toBe(true);
   });
 
@@ -327,11 +331,11 @@ describe('startStreaming', () => {
     expect(msg.querySelector('.cursor')).toBeTruthy();
   });
 
-  it('应设置 streamingMessages + state.isStreaming + 调用 updateSendButton', () => {
-    const { manager, host, state, streamingMessages } = createManager();
+  it('应设置 streamingMessages + host.setStreaming(true) + 调用 updateSendButton', () => {
+    const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     expect(streamingMessages.has('s1')).toBe(true);
-    expect(state.isStreaming).toBe(true);
+    expect(host.setStreaming).toHaveBeenCalledWith(true);
     expect(host.updateSendButton).toHaveBeenCalled();
   });
 
@@ -444,12 +448,13 @@ describe('finishStreamingMessage', () => {
   });
 
   it('最后一条消息完成时应重置 isStreaming + 清除定时器 + updateSendButton', () => {
-    const { manager, host, state } = createManager();
+    const { manager, host } = createManager();
     manager.startStreaming('s1');
-    expect(state.isStreaming).toBe(true);
+    expect(host.setStreaming).toHaveBeenCalledWith(true);
     host.updateSendButton.mockClear();
+    host.setStreaming.mockClear();
     manager.finishStreamingMessage('s1');
-    expect(state.isStreaming).toBe(false);
+    expect(host.setStreaming).toHaveBeenCalledWith(false);
     expect(host.updateSendButton).toHaveBeenCalled();
     // 安全定时器应被清除
     vi.advanceTimersByTime(30_000);
@@ -670,11 +675,11 @@ describe('stopAllStreaming', () => {
   });
 
   it('应清空 streamingMessages + 重置 isStreaming + 清除定时器 + updateSendButton', () => {
-    const { manager, host, state, streamingMessages } = createManager();
+    const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     manager.stopAllStreaming();
     expect(streamingMessages.size).toBe(0);
-    expect(state.isStreaming).toBe(false);
+    expect(host.setStreaming).toHaveBeenCalledWith(false);
     expect(host.updateSendButton).toHaveBeenCalled();
     vi.advanceTimersByTime(30_000);
     expect(host.onStreamStuck).not.toHaveBeenCalled();
@@ -699,12 +704,13 @@ describe('clearMessages', () => {
   });
 
   it('应清空 streamingMessages + 重置状态 + 调用 host 回调', () => {
-    const { manager, host, state, streamingMessages } = createManager();
+    const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     host.updateSendButton.mockClear();
+    host.setStreaming.mockClear();
     manager.clearMessages();
     expect(streamingMessages.size).toBe(0);
-    expect(state.isStreaming).toBe(false);
+    expect(host.setStreaming).toHaveBeenCalledWith(false);
     expect(host.updateSendButton).toHaveBeenCalled();
     expect(host.resetMessageCount).toHaveBeenCalled();
     expect(host.refreshMessageCountDisplay).toHaveBeenCalled();
@@ -810,19 +816,20 @@ describe('markStreamingAborted', () => {
   });
 
   it('应完整清理流式状态（delete + isStreaming=false + 清除定时器 + updateSendButton）', () => {
-    const { manager, host, state, streamingMessages } = createManager();
+    const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     host.updateSendButton.mockClear();
+    host.setStreaming.mockClear();
     manager.markStreamingAborted('s1', '停止');
     expect(streamingMessages.has('s1')).toBe(false);
-    expect(state.isStreaming).toBe(false);
+    expect(host.setStreaming).toHaveBeenCalledWith(false);
     expect(host.updateSendButton).toHaveBeenCalled();
     vi.advanceTimersByTime(30_000);
     expect(host.onStreamStuck).not.toHaveBeenCalled();
   });
 
   it('幂等保护：已存在 .stream-aborted 时不重复嵌入但仍清理状态', () => {
-    const { manager, streamingMessages, state } = createManager();
+    const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     // 手动添加中断标记（模拟已嵌入场景）
     const el = streamingMessages.get('s1') as HTMLElement;
@@ -836,7 +843,7 @@ describe('markStreamingAborted', () => {
     expect(bubble.querySelectorAll('.stream-aborted').length).toBe(1);
     // 仍应清理状态
     expect(streamingMessages.has('s1')).toBe(false);
-    expect(state.isStreaming).toBe(false);
+    expect(host.setStreaming).toHaveBeenCalledWith(false);
   });
 });
 
@@ -866,13 +873,14 @@ describe('injectErrorToStreamingMessages', () => {
   });
 
   it('应清空 streamingMessages + 重置 isStreaming + 清除定时器 + scrollToBottom', () => {
-    const { manager, host, state, streamingMessages } = createManager();
+    const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     host.updateSendButton.mockClear();
+    host.setStreaming.mockClear();
     host.scrollToBottom.mockClear();
     manager.injectErrorToStreamingMessages('错误');
     expect(streamingMessages.size).toBe(0);
-    expect(state.isStreaming).toBe(false);
+    expect(host.setStreaming).toHaveBeenCalledWith(false);
     expect(host.updateSendButton).toHaveBeenCalled();
     expect(host.scrollToBottom).toHaveBeenCalled();
     vi.advanceTimersByTime(30_000);
@@ -908,10 +916,10 @@ describe('空状态引导', () => {
     document.body.innerHTML = '<div id="chat-messages"></div>';
     const messagesEl = document.getElementById('chat-messages') as HTMLElement;
     const events = new EventTracker();
-    const state = { isStreaming: false, unreadCount: 0 };
+    // FOUNDATION-SEAL Phase 2：state 已移除，构造函数不再接收 state 参数
     const streamingMessages = new Map<string, HTMLElement>();
     const host = createMockHost();
-    const manager = new ChatPanelManager(host, messagesEl, events, state, streamingMessages);
+    const manager = new ChatPanelManager(host, messagesEl, events, streamingMessages);
     expect(() => manager.showEmptyState()).not.toThrow();
     expect(() => manager.hideEmptyState()).not.toThrow();
     expect(() => manager.initEmptyStateListeners()).not.toThrow();
@@ -1123,16 +1131,17 @@ describe('超时兜底定时器', () => {
   });
 
   it('90s 二级兜底应本地清理（streamingMessages.clear + isStreaming=false）', () => {
-    const { manager, host, state, streamingMessages } = createManager();
+    const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     // 30s 触发 onStreamStuck + 启动 60s fallback
     vi.advanceTimersByTime(30_000);
     expect(host.onStreamStuck).toHaveBeenCalled();
     host.updateSendButton.mockClear();
+    host.setStreaming.mockClear();
     // 60s 后 fallback 触发本地清理
     vi.advanceTimersByTime(60_000);
     expect(streamingMessages.size).toBe(0);
-    expect(state.isStreaming).toBe(false);
+    expect(host.setStreaming).toHaveBeenCalledWith(false);
     expect(host.updateSendButton).toHaveBeenCalled();
   });
 
