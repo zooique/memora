@@ -2,17 +2,18 @@
  * JsonlAppender 单元测试（QC-TEST-AUDIT）
  *
  * 覆盖范围：
- * - append：追加写入 + fire-and-forget 异步 + writeCount 累计
+ * - append：追加写入 + 串行化写入队列 + writeCount 累计
  * - readRecent：从后往前读取 + 最新在前 + limit 截断
  * - clear：清空文件
  * - truncateIfNeeded：超出 maxEntries 时截断保留最近条目
  * - truncateCheckInterval：计数器间隔检查（非每次写入都截断）
+ * - 串行化写入顺序：快速连续 append 后验证文件内容顺序（QC-FLAKY-JSONL）
  * - 错误降级：文件不存在返回空数组 + 单行 JSON 解析失败跳过
  * - 构造函数：自动创建目录
  *
  * 测试策略：
  * - 使用 tmpdir 真实 I/O（对齐 storage 测试模式，零 mock）
- * - append 是 fire-and-forget，用 await flushWrites() 等待 I/O 完成
+ * - append 通过 writeChain 串行化，用 await flushWrites() 等待队列排空
  * - readRecent 是 async，可直接 await
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -43,10 +44,10 @@ function prewriteRecords(filePath: string, count: number): void {
 }
 
 /**
- * 等待 fire-and-forget 写入完成
+ * 等待 writeChain 写入队列排空
  *
- * append 内部是 appendFile().then().catch()，不返回 Promise。
- * 用 setTimeout(50) 等待 I/O 队列刷新，确保后续 readRecent 能读到全部数据。
+ * append 内部通过 writeChain 串行化，不返回 Promise。
+ * 用 setTimeout 等待队列中所有写入操作完成，确保后续 readRecent 能读到全部数据。
  */
 function flushWrites(ms = 50): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -213,9 +214,50 @@ describe('JsonlAppender', () => {
     expect(lines).toHaveLength(5);
   });
 
+  // ─── 串行化写入顺序（QC-FLAKY-JSONL 修复验证） ──────────
+
+  it('快速连续 append 应保持写入顺序（串行化写入队列）', async () => {
+    // QC-FLAKY-JSONL：验证 writeChain 串行化后，快速连续 append 不会乱序或丢失
+    const appender = new JsonlAppender({ filePath, maxEntries: 0 });
+    // 不等待地连续 append 20 条（模拟高并发写入场景）
+    for (let i = 1; i <= 20; i++) {
+      appender.append({ idx: i });
+    }
+    // 等待 writeChain 队列全部排空
+    await flushWrites(200);
+
+    const content = readFileSync(filePath, 'utf8');
+    const lines = content.trim().split('\n');
+    // 全部 20 条都应写入，顺序与调用顺序一致
+    expect(lines).toHaveLength(20);
+    for (let i = 0; i < 20; i++) {
+      const record = JSON.parse(lines[i]!) as { idx: number };
+      expect(record.idx).toBe(i + 1);
+    }
+  });
+
+  it('并发 append + truncate 应无行丢失（串行化修复核心验证）', async () => {
+    // QC-FLAKY-JSONL 核心验证：maxEntries=5 + truncateCheckInterval=1
+    // 每次 append 都触发 truncateIfNeeded，串行化前会因 read-modify-write
+    // 竞态丢失行，串行化后应完整保留最近 5 条
+    const appender = new JsonlAppender({ filePath, maxEntries: 5, truncateCheckInterval: 1 });
+    // 快速连续 append 10 条（不等待，模拟并发场景）
+    for (let i = 1; i <= 10; i++) {
+      appender.append({ idx: i });
+    }
+    // 等待 writeChain 队列全部排空（含所有 truncateIfNeeded）
+    await flushWrites(300);
+
+    const records = await appender.readRecent<{ idx: number }>();
+    // 截断后只保留最近 5 条（idx 6-10），无丢失
+    expect(records).toHaveLength(5);
+    expect(records[0]!.idx).toBe(10);
+    expect(records[4]!.idx).toBe(6);
+  });
+
   // ─── writeCount 累计 ───────────────────────────────────
 
-  it('getWriteCount 应返回累计写入次数', () => {
+  it('getWriteCount 应返回累计写入次数', async () => {
     const appender = new JsonlAppender({ filePath });
     expect(appender.getWriteCount()).toBe(0);
 
@@ -224,6 +266,8 @@ describe('JsonlAppender', () => {
     appender.append({ c: 3 });
 
     expect(appender.getWriteCount()).toBe(3);
+    // QC-FLAKY-JSONL：串行化后需等待 writeChain 排空，避免 afterEach 删除目录后 pending 操作报错
+    await flushWrites();
   });
 
   // ─── 构造函数 ──────────────────────────────────────────

@@ -6,7 +6,8 @@
  *
  * 设计：
  *   - JSONL 格式：每行一条 JSON，便于 append + grep
- *   - fire-and-forget 写入：不阻塞主流程，写入失败写 stderr
+ *   - 串行化写入队列（writeChain）：所有文件写入操作排队执行，避免并发
+ *     read-modify-write 竞态导致日志行丢失（QC-FLAKY-JSONL 修复）
  *   - 计数器间隔截断：每 truncateCheckInterval 次写入检查一次文件大小，
  *     避免每次写入都读全文件（O(n) 写放大）
  *   - 超出 maxEntries 时保留最近条目，从头截断
@@ -42,6 +43,16 @@ export class JsonlAppender {
   private readonly truncateCheckInterval: number;
   /** 累计写入计数（用于间隔截断检查） */
   private writeCount = 0;
+  /**
+   * 写入队列链（QC-FLAKY-JSONL 修复）
+   *
+   * 串行化所有文件写入操作（append + truncateIfNeeded），避免并发
+   * read-modify-write 竞态导致日志行丢失。
+   *
+   * 每次 append/clear 将操作链接到链尾，确保前一个写入完成后才执行下一个。
+   * 错误隔离：append 的 catch 恢复链为 resolved，单个写入失败不影响后续写入。
+   */
+  private writeChain: Promise<void> = Promise.resolve();
 
   constructor(options: JsonlAppenderOptions) {
     this.filePath = options.filePath;
@@ -55,7 +66,8 @@ export class JsonlAppender {
   /**
    * 追加一条记录到 JSONL 文件
    *
-   * 写入为 fire-and-forget，不阻塞调用方。
+   * 写入通过 writeChain 串行化，保证 append + truncateIfNeeded 不会交错执行。
+   * 方法本身是 fire-and-forget（不返回 Promise），调用方无需 await。
    * 每累计 truncateCheckInterval 次写入后检查文件大小并截断。
    *
    * @param record 要序列化为 JSON 的记录对象
@@ -64,13 +76,16 @@ export class JsonlAppender {
     this.writeCount += 1;
     const shouldCheckTruncate = this.writeCount % this.truncateCheckInterval === 0;
 
-    appendFile(this.filePath, `${JSON.stringify(record)}\n`)
+    // QC-FLAKY-JSONL：将 append + truncate 链接到 writeChain 末尾，串行化执行
+    this.writeChain = this.writeChain
       .then(async () => {
+        await appendFile(this.filePath, `${JSON.stringify(record)}\n`);
         if (shouldCheckTruncate && this.maxEntries > 0) {
           await this.truncateIfNeeded();
         }
       })
       .catch((err: unknown) => {
+        // 错误隔离：记录失败但恢复 writeChain 为 resolved，不阻塞后续写入
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[jsonl-appender] 写入失败: ${msg}`);
       });
@@ -109,11 +124,21 @@ export class JsonlAppender {
   /**
    * 清空日志文件
    *
-   * 确保目录存在后写入空内容。
+   * 通过 writeChain 串行化，确保清空操作不会与并发 append 交错。
+   * await writeChain 确保调用方返回时文件已清空。
+   * 清空失败时错误抛给调用方，但 writeChain 恢复为 resolved 不阻塞后续写入。
    */
   async clear(): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await writeFile(this.filePath, '', 'utf8');
+    // 将 clear 操作链接到 writeChain 末尾（等待之前排队的 append 完成）
+    const clearPromise = this.writeChain
+      .then(async () => {
+        await mkdir(dirname(this.filePath), { recursive: true });
+        await writeFile(this.filePath, '', 'utf8');
+      });
+    // 无论 clear 成功还是失败，writeChain 恢复为 resolved，避免阻塞后续 append
+    this.writeChain = clearPromise.catch(() => {});
+    // 等待 clear 完成，错误抛给调用方
+    await clearPromise;
   }
 
   /** 获取当前累计写入计数（仅用于测试） */
