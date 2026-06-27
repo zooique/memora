@@ -428,14 +428,21 @@ function setupBusinessLogic(
     // UX-PP-03 存储最后用户输入，用于流式错误重试
     lastUserInput = text;
 
-    // 跨天检测：当前查看的是历史日期时自动切换到今天的 main 会话
+    // P2-FLOW-09 跨天检测：当前查看的是历史日期时，确认后切换到今天的 main 会话
     const currentId = sessionController.getCurrentSessionId();
     if (currentId) {
       const todayPrefix = getLocalDate();
       const sessionDate = currentId.slice(0, 10);
       if (sessionDate !== todayPrefix) {
+        // 弹出确认对话框，用户取消则阻止发送，停留在历史会话视图
+        const confirmed = await uiManager.showConfirmDialog({
+          title: '切换到今天的对话',
+          message: `当前查看的是 ${sessionDate} 的历史对话，发送消息将切换到今天的新对话。`,
+          confirmText: '切换并发送',
+          cancelText: '取消',
+        });
+        if (!confirmed) return; // 用户取消：阻止发送
         const todaySessionId = `${todayPrefix}-main`;
-        uiManager.showToast('已切换到今天的对话', 'info');
         await sessionController.switchSession(todaySessionId);
       }
     }
