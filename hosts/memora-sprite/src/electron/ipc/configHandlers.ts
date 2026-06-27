@@ -19,6 +19,7 @@ import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { SpriteConfig, SpriteConfigKey } from '../../sprite/spriteConfig.js';
 import { safeHandle } from './types.js';
+import { isValidPersonaName } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -180,6 +181,10 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   /** 切换角色 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_SWITCH, async (_event, name: string) =>
     safeHandle('切换角色失败', { switched: false, name: null }, () => {
+      // FOUNDATION-SEAL Phase 3 轮2：校验角色名称白名单字符 + 长度，防路径遍历
+      if (!isValidPersonaName(name)) {
+        return { switched: false, name: null };
+      }
       const result = ctx.sprite.switchPersona(name);
       return { switched: result !== null, name: result };
     }),

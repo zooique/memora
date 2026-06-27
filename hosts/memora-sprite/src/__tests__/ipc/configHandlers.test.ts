@@ -455,6 +455,43 @@ describe('registerConfigHandlers', () => {
     expect(result).toEqual({ switched: false, name: null });
   });
 
+  // FOUNDATION-SEAL Phase 3 轮2：角色名称校验失败路径
+  it('PERSONA_SWITCH 含路径分隔符应拒绝（不调用 switchPersona）', async () => {
+    const switchPersona = vi.fn(() => 'coder');
+    const ctx = createMockCtx({ sprite: { switchPersona } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
+    const result = await callback({}, '../etc/passwd');
+
+    expect(switchPersona).not.toHaveBeenCalled();
+    expect(result).toEqual({ switched: false, name: null });
+  });
+
+  it('PERSONA_SWITCH 含空格应拒绝（不调用 switchPersona）', async () => {
+    const switchPersona = vi.fn(() => 'coder');
+    const ctx = createMockCtx({ sprite: { switchPersona } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
+    const result = await callback({}, 'code reviewer');
+
+    expect(switchPersona).not.toHaveBeenCalled();
+    expect(result).toEqual({ switched: false, name: null });
+  });
+
+  it('PERSONA_SWITCH 空字符串应拒绝（不调用 switchPersona）', async () => {
+    const switchPersona = vi.fn(() => 'coder');
+    const ctx = createMockCtx({ sprite: { switchPersona } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_SWITCH)!;
+    const result = await callback({}, '');
+
+    expect(switchPersona).not.toHaveBeenCalled();
+    expect(result).toEqual({ switched: false, name: null });
+  });
+
   // ─── PERSONA_MODE ──────────────────────────────────────
 
   it('PERSONA_MODE 应调用 setPersonaMode 并返回结果', async () => {

@@ -15,7 +15,7 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
 import { safeHandle } from './types.js';
-import { isValidConfigName, isValidContent } from './inputValidation.js';
+import { isValidConfigName, isValidContent, isValidId } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -112,6 +112,10 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
       'USER_PROFILE_CONFIRM',
       { success: false, error: '未知错误' },
       async () => {
+        // FOUNDATION-SEAL Phase 3 轮2：校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
+        if (!isValidId(id)) {
+          return { success: false, error: '非法画像条目 ID' };
+        }
         const profile = ctx.agent.userProfile;
         if (!profile) {
           return { success: false, error: '用户画像管理器未就绪' };
@@ -132,6 +136,10 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
       'USER_PROFILE_REJECT',
       { success: false, error: '未知错误' },
       async () => {
+        // FOUNDATION-SEAL Phase 3 轮2：校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
+        if (!isValidId(id)) {
+          return { success: false, error: '非法画像条目 ID' };
+        }
         const profile = ctx.agent.userProfile;
         if (!profile) {
           return { success: false, error: '用户画像管理器未就绪' };

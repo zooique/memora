@@ -19,6 +19,7 @@ import {
   isValidContent,
   isValidId,
   isValidSearchQuery,
+  isValidPersonaName,
   isPathAllowed,
 } from '../../electron/ipc/inputValidation.js';
 
@@ -240,6 +241,74 @@ describe('isValidSearchQuery', () => {
 
   it('超长关键词（1001 字符）应拒绝', () => {
     expect(isValidSearchQuery('a'.repeat(1001))).toBe(false);
+  });
+});
+
+// ─── isValidPersonaName（FOUNDATION-SEAL Phase 3 轮2） ───
+
+describe('isValidPersonaName', () => {
+  // ─── 合法输入 ──────────────────────────────────────────
+
+  it('纯字母名称应通过', () => {
+    expect(isValidPersonaName('coder')).toBe(true);
+  });
+
+  it('字母+数字组合应通过', () => {
+    expect(isValidPersonaName('writer2')).toBe(true);
+  });
+
+  it('含连字符应通过', () => {
+    expect(isValidPersonaName('code-reviewer')).toBe(true);
+  });
+
+  it('含下划线应通过', () => {
+    expect(isValidPersonaName('code_reviewer')).toBe(true);
+  });
+
+  it('含点应通过', () => {
+    expect(isValidPersonaName('persona.v2')).toBe(true);
+  });
+
+  it('长度恰好 100 应通过（边界，<=）', () => {
+    expect(isValidPersonaName('a'.repeat(100))).toBe(true);
+  });
+
+  // ─── 非法输入 ──────────────────────────────────────────
+
+  it('空字符串应拒绝', () => {
+    expect(isValidPersonaName('')).toBe(false);
+  });
+
+  it('非字符串（number）应拒绝', () => {
+    expect(isValidPersonaName(123 as unknown as string)).toBe(false);
+  });
+
+  it('非字符串（null）应拒绝', () => {
+    expect(isValidPersonaName(null as unknown as string)).toBe(false);
+  });
+
+  it('超长名称（101 字符）应拒绝', () => {
+    expect(isValidPersonaName('a'.repeat(101))).toBe(false);
+  });
+
+  it('含空格应拒绝', () => {
+    expect(isValidPersonaName('code reviewer')).toBe(false);
+  });
+
+  it('含路径分隔符 / 应拒绝（防路径遍历）', () => {
+    expect(isValidPersonaName('../etc/passwd')).toBe(false);
+  });
+
+  it('含路径分隔符 \\ 应拒绝（防路径遍历）', () => {
+    expect(isValidPersonaName('..\\etc\\passwd')).toBe(false);
+  });
+
+  it('含中文字符应拒绝（仅允许 ASCII）', () => {
+    expect(isValidPersonaName('程序员')).toBe(false);
+  });
+
+  it('含特殊字符 @ 应拒绝', () => {
+    expect(isValidPersonaName('coder@v2')).toBe(false);
   });
 });
 

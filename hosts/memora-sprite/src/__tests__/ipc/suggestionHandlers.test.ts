@@ -245,6 +245,35 @@ describe('registerSuggestionHandlers', () => {
     expect(result).toEqual({ success: false, error: '用户画像管理器未就绪' });
   });
 
+  // FOUNDATION-SEAL Phase 3 轮2：画像 ID 校验失败路径
+  it('CONFIRM 空字符串 ID 应拒绝（不调用 profile.confirm）', async () => {
+    const confirm = vi.fn(async () => {});
+    const ctx = createMockCtx({
+      userProfile: { getConfirmed: vi.fn(), getPending: vi.fn(), confirm, reject: vi.fn() },
+    });
+    registerSuggestionHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.USER_PROFILE_CONFIRM)!;
+    const result = await callback({}, '');
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: '非法画像条目 ID' });
+  });
+
+  it('CONFIRM 非字符串 ID 应拒绝（不调用 profile.confirm）', async () => {
+    const confirm = vi.fn(async () => {});
+    const ctx = createMockCtx({
+      userProfile: { getConfirmed: vi.fn(), getPending: vi.fn(), confirm, reject: vi.fn() },
+    });
+    registerSuggestionHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.USER_PROFILE_CONFIRM)!;
+    const result = await callback({}, null as unknown as string);
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: '非法画像条目 ID' });
+  });
+
   // ─── USER_PROFILE_REJECT ───────────────────────────────
 
   it('REJECT 应调用 profile.reject 并返回成功', async () => {
@@ -274,5 +303,34 @@ describe('registerSuggestionHandlers', () => {
     const result = await callback({}, '1');
 
     expect(result).toEqual({ success: false, error: '用户画像管理器未就绪' });
+  });
+
+  // FOUNDATION-SEAL Phase 3 轮2：画像 ID 校验失败路径
+  it('REJECT 空字符串 ID 应拒绝（不调用 profile.reject）', async () => {
+    const reject = vi.fn(async () => {});
+    const ctx = createMockCtx({
+      userProfile: { getConfirmed: vi.fn(), getPending: vi.fn(), confirm: vi.fn(), reject },
+    });
+    registerSuggestionHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.USER_PROFILE_REJECT)!;
+    const result = await callback({}, '');
+
+    expect(reject).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: '非法画像条目 ID' });
+  });
+
+  it('REJECT 超长 ID 应拒绝（不调用 profile.reject）', async () => {
+    const reject = vi.fn(async () => {});
+    const ctx = createMockCtx({
+      userProfile: { getConfirmed: vi.fn(), getPending: vi.fn(), confirm: vi.fn(), reject },
+    });
+    registerSuggestionHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.USER_PROFILE_REJECT)!;
+    const result = await callback({}, 'a'.repeat(501));
+
+    expect(reject).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false, error: '非法画像条目 ID' });
   });
 });

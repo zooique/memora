@@ -94,6 +94,31 @@ export function isValidSearchQuery(query: string): boolean {
   return true;
 }
 
+/** 角色名称长度上限：persona 文件名通常 < 50 字符，留余量到 100 */
+const MAX_PERSONA_NAME_LENGTH = 100;
+
+/**
+ * FOUNDATION-SEAL Phase 3 轮2：验证角色名称 — 白名单字符 + 长度上限
+ *
+ * persona name 作为文件名（configDir/personas/{name}.json），必须严格校验：
+ * - 仅允许字母、数字、连字符、下划线、点（常见角色命名规范）
+ * - 拒绝路径分隔符（/ \）、空格、特殊字符，防止路径遍历
+ * - 长度上限 100 字符
+ *
+ * 与 isValidConfigName 共用防路径遍历策略，但字符集更严格
+ * （config 允许中文名称，persona 保持 ASCII 命名规范）。
+ *
+ * @param name 待验证的角色名称
+ * @returns 验证通过返回 true，否则 false
+ */
+export function isValidPersonaName(name: string): boolean {
+  if (typeof name !== 'string' || name.length === 0 || name.length > MAX_PERSONA_NAME_LENGTH) {
+    return false;
+  }
+  // 白名单：字母 + 数字 + 连字符 + 下划线 + 点，拒绝路径分隔符和空格
+  return /^[a-zA-Z0-9._-]+$/.test(name);
+}
+
 /**
  * 验证文件路径是否在允许的目录白名单内
  *
