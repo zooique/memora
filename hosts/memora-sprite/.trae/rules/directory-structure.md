@@ -33,7 +33,8 @@ src/
 │   │   ├── minimalHandlers.ts  # 最小化 IPC 处理器（Agent 未就绪时降级）
 │   │   ├── types.ts            # IPC 类型定义
 │   │   ├── inputValidation.ts  # 输入验证（用户消息长度/频率限制）
-│   │   ├── chatHandlers.ts     # 对话相关 IPC handler
+│   │   ├── chatHandlers.ts     # 对话 IPC 注册（薄层，QC-R2-04 重构）
+│   │   ├── chatStreamHandler.ts # 对话流式输出处理器（handleUserInput，QC-R2-04 提取）
 │   │   ├── configHandlers.ts   # 配置相关 IPC handler
 │   │   ├── memoryHandlers.ts   # 记忆相关 IPC handler
 │   │   ├── sessionHandlers.ts  # 会话相关 IPC handler

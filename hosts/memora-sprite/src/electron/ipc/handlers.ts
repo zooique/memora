@@ -3,7 +3,8 @@
  *
  * 原单文件 823 行已按领域拆分到 ./ipc/ 目录：
  *   - types.ts              共享类型（IpcContext）+ 工具函数（safeHandle）
- *   - chatHandlers.ts       对话流式输出（USER_INPUT / CHAT_ABORT / handleUserInput）
+ *   - chatHandlers.ts       对话 IPC 注册（USER_INPUT / CHAT_ABORT，薄层）
+ *   - chatStreamHandler.ts  对话流式输出（handleUserInput + 超时兜底，QC-R2-04 提取）
  *   - sessionHandlers.ts    会话管理（SESSION_LOAD / SWITCH / DELETE / RENAME / NEW / LIST）
  *   - memoryHandlers.ts     记忆 CRUD（MEMORIES_*）
  *   - configHandlers.ts     配置 + 角色（CONFIG_* / PERSONA_*）
