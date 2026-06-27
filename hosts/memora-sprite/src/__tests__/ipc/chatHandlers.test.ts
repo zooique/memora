@@ -52,6 +52,20 @@ vi.mock('../../electron/errorHandler.js', () => ({
   },
 }));
 
+// ─── Mock memora 模块（logger + toError） ───────────────
+// emitStreamError 内部调用 logger.warn，需 mock 验证
+// vi.mock 是 hoisted 的，用 vi.hoisted 声明可在 factory 内引用的变量
+const { loggerWarn } = vi.hoisted(() => ({ loggerWarn: vi.fn() }));
+vi.mock('memora', () => ({
+  logger: {
+    warn: loggerWarn,
+    info: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+  toError: vi.fn((err: unknown) => err instanceof Error ? err : new Error(String(err))),
+}));
+
 // ─── Mock getLocalDate 为固定日期（跨日逻辑测试稳定） ───
 const MOCK_TODAY = '2026-06-26';
 vi.mock('../../sprite/constants.js', () => ({
@@ -145,6 +159,7 @@ describe('chatHandlers', () => {
     vi.clearAllMocks();
     handleCallbacks.clear();
     onCallbacks.clear();
+    loggerWarn.mockClear();
   });
 
   // ─── CHAT_ABORT handler ────────────────────────────────
@@ -381,6 +396,106 @@ describe('chatHandlers', () => {
       // 开始时 active，结束时 idle
       expect(setState).toHaveBeenCalledWith('active');
       expect(setState).toHaveBeenLastCalledWith('idle');
+    });
+  });
+
+  // ─── FOUNDATION-SEAL Phase 1：emitStreamError 日志记录 ──
+
+  describe('emitStreamError 日志记录', () => {
+    /**
+     * 验证 emitStreamError 辅助函数的行为契约：
+     * 1. 推送 SPRITE_ERROR 到渲染进程（保留原有 UI 提示）
+     * 2. 调用 logger.warn 记录主进程日志（补齐可观测性）
+     *
+     * 通过 handleUserInput 的前置检查分支间接验证 emitStreamError，
+     * 覆盖 3 个业务拒绝场景 + 1 个超时场景（超时场景需定时器 mock，留待集成测试）。
+     */
+
+    it('Agent 未就绪时应调用 logger.warn 记录上下文', async () => {
+      const wc = createMockWebContents();
+      const wm = createMockWindowManager(wc);
+      const ctx = createMockCtx({
+        windowManager: wm,
+        isAgentReady: vi.fn(() => false),
+      });
+
+      await handleUserInput('测试', ctx);
+
+      // 验证 logger.warn 被调用，携带 context 字段
+      expect(loggerWarn).toHaveBeenCalledTimes(1);
+      const logPayload = loggerWarn.mock.calls[0]![0] as { context: string; text: string };
+      expect(logPayload.context).toBe('Agent 未就绪');
+    });
+
+    it('竞态保护时应调用 logger.warn 记录上下文', async () => {
+      const wc = createMockWebContents();
+      const wm = createMockWindowManager(wc);
+      const ctx = createMockCtx({
+        windowManager: wm,
+        isAgentReady: vi.fn(() => true),
+        getAbortController: vi.fn(() => new AbortController()),
+      });
+
+      await handleUserInput('测试', ctx);
+
+      expect(loggerWarn).toHaveBeenCalledTimes(1);
+      const logPayload = loggerWarn.mock.calls[0]![0] as { context: string };
+      expect(logPayload.context).toBe('对话竞态保护');
+    });
+
+    it('SessionManager 未初始化时应调用 logger.warn 记录上下文', async () => {
+      const wc = createMockWebContents();
+      const wm = createMockWindowManager(wc);
+      const ctx = createMockCtx({
+        windowManager: wm,
+        isAgentReady: vi.fn(() => true),
+        getAbortController: vi.fn(() => null),
+        agent: createMockAgent({
+          agentHistory: { currentDateValue: '2026-06-25' },
+          sessionManager: null,
+        }),
+      });
+
+      await handleUserInput('测试', ctx);
+
+      expect(loggerWarn).toHaveBeenCalledTimes(1);
+      const logPayload = loggerWarn.mock.calls[0]![0] as { context: string };
+      expect(logPayload.context).toBe('SessionManager 未初始化');
+    });
+
+    it('logger.warn 和 SPRITE_ERROR 推送应同时发生（双通道通知）', async () => {
+      const wc = createMockWebContents();
+      const wm = createMockWindowManager(wc);
+      const ctx = createMockCtx({
+        windowManager: wm,
+        isAgentReady: vi.fn(() => false),
+      });
+
+      await handleUserInput('测试', ctx);
+
+      // 双通道：logger.warn（主进程日志）+ SPRITE_ERROR（渲染进程 UI 提示）
+      expect(loggerWarn).toHaveBeenCalled();
+      const errorSend = wc.sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR);
+      expect(errorSend).toBeDefined();
+    });
+
+    it('正常 flow 不应调用 logger.warn（仅错误路径才记录）', async () => {
+      const wc = createMockWebContents();
+      const wm = createMockWindowManager(wc);
+      const chatGen = (async function* () {
+        yield { type: 'done' as const };
+      })();
+      const ctx = createMockCtx({
+        windowManager: wm,
+        agent: createMockAgent({
+          chat: vi.fn(() => chatGen),
+        }),
+      });
+
+      await handleUserInput('测试', ctx);
+
+      // 正常流程不应触发 emitStreamError
+      expect(loggerWarn).not.toHaveBeenCalled();
     });
   });
 });

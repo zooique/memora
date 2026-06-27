@@ -15,11 +15,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { toError } from 'memora';
+import { toError, logger } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { MAIN_TO_RENDERER_CHANNELS } from './channels.js';
 import type { IpcContext } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';
+import type { BrowserWindow } from 'electron';
 
 // ─── 流式输出超时兜底常量 ─────────────────────────────────
 
@@ -33,6 +34,28 @@ import { getLocalDate } from '../../sprite/constants.js';
  * 时长取舍：晚于渲染进程 30s 兜底（留出 abort 响应窗口），早于内核 5 分钟锁超时。
  */
 const STREAM_NO_PROGRESS_TIMEOUT_MS = 60_000;
+
+// ─── 流式错误推送辅助函数 ─────────────────────────────────
+
+/**
+ * 向渲染进程推送对话错误提示，并同步记录主进程日志
+ *
+ * 与 errorHandler.handle 的区别：
+ * - 本函数用于业务拒绝/超时等可预期场景（logger.warn 级别，不推送 APP_ERROR 弹窗）
+ * - errorHandler.handle 用于未捕获错误（logger.error 级别，推送 APP_ERROR 弹窗）
+ *
+ * @param fullWindow 目标窗口（调用前已检查未销毁，函数内部二次防御）
+ * @param text 用户可见的错误提示文本（推送 SPRITE_ERROR）
+ * @param context 错误上下文标识（用于日志检索，如 'Agent 未就绪'）
+ */
+function emitStreamError(fullWindow: BrowserWindow, text: string, context: string): void {
+  // 记录主进程日志（业务拒绝/超时场景用 warn 级别）
+  logger.warn({ context, text }, '对话流式错误提示');
+  // 推送到渲染进程显示错误提示
+  if (!fullWindow.isDestroyed()) {
+    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, { text });
+  }
+}
 
 /**
  * 处理用户输入 — 消费 agent.chat() AsyncGenerator 并推送流式 chunk
@@ -51,17 +74,13 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
 
   // P1 修复：Agent 未就绪时拒绝（reinitAgent 失败后旧 Agent 已关闭，新对话会抛错）
   if (!ctx.isAgentReady()) {
-    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
-      text: 'Agent 未就绪，请在设置面板中重新配置 LLM 后重试',
-    });
+    emitStreamError(fullWindow, 'Agent 未就绪，请在设置面板中重新配置 LLM 后重试', 'Agent 未就绪');
     return;
   }
 
   // P1 修复：竞态保护——已有进行中的对话时拒绝，避免 Agent 并发锁抛"对话繁忙"错误。
   if (ctx.getAbortController()) {
-    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
-      text: '上一条消息仍在处理中，请等待完成或点击停止后再发送',
-    });
+    emitStreamError(fullWindow, '上一条消息仍在处理中，请等待完成或点击停止后再发送', '对话竞态保护');
     return;
   }
 
@@ -74,9 +93,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       // 初始化未完成或 close() 后为 null，跨日重置依赖 sessionManager 必须存在
       const sessionManager = ctx.agent.sessionManager;
       if (!sessionManager) {
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
-          text: '会话管理器未初始化，请稍后重试',
-        });
+        emitStreamError(fullWindow, '会话管理器未初始化，请稍后重试', 'SessionManager 未初始化');
         return;
       }
       // 重置到当天 main 会话：更新 currentDate/currentSession + 加载当天已有消息
@@ -118,9 +135,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       abortController.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
       // 兜底清理宿主状态：即使 generator 不响应 abort，也确保渲染进程解锁 + AbortController 释放
       if (!fullWindow.isDestroyed()) {
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, {
-          text: '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置',
-        });
+        emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
       }
       ctx.setAbortController(null);
