@@ -12,16 +12,11 @@
  */
 
 import type { SpriteConfig } from '../spriteConfig.js';
-import type { DashboardData } from '../controllers/index.js';
+import type { DashboardData, PersonaInfo } from '../controllers/index.js';
 import { DEFAULT_SPRITE_CONFIG } from '../spriteConfig.js';
 import { MS_PER_MINUTE } from '../constants.js';
 
-/** 角色列表项（与 PersonaController.list() 返回类型对齐） */
-interface PersonaEntry {
-  name: string;
-  description?: string;
-  active: boolean;
-}
+// S-03 修复：PersonaEntry 改为导入 PersonaInfo（sprite 层真理源），消除重复定义
 
 /**
  * 格式化精灵配置为 CLI 可读文本
@@ -101,7 +96,7 @@ export function formatDashboard(
  * @param activeName 当前激活角色名
  * @returns 格式化后的角色列表文本
  */
-export function formatPersonas(personas: PersonaEntry[], activeName?: string): string {
+export function formatPersonas(personas: PersonaInfo[], activeName?: string): string {
   if (personas.length === 0) {
     return '暂无可用角色\n\n提示：在 agent-config/personas/ 目录下创建角色配置文件（.md 格式）即可添加角色';
   }

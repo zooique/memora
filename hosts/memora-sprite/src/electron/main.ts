@@ -39,7 +39,7 @@ import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import { ELECTRON_DIR } from './esmShim.js';
 // D-04 修复：最小化 IPC 处理器提取到独立模块
-import { registerMinimalIpcHandlers, type MinimalIpcState } from './ipc/minimalHandlers.js';
+import { registerMinimalIpcHandlers, type MinimalIpcState, type AppRuntime } from './ipc/minimalHandlers.js';
 // P2-DESIGN-4 修复：精灵事件桥 + Agent 监听器提取到独立模块
 import { setupSpriteEventListeners } from './spriteEventBridge.js';
 import { setupConfigSuggestionListener, setupWriteConfirmationListener, setupAuditListener } from './agentListeners.js';
@@ -72,13 +72,7 @@ let interaction: ElectronInteraction;
 let trayManager: TrayManager | null = null;
 
 /** Agent 运行时状态（4 个变量总是一起变化，通过 setAppRuntime 集中管理） */
-// D-04 修复：AppRuntime 类型与 ipc/minimalHandlers.ts 共享定义
-interface AppRuntime {
-  agent: Agent;
-  sprite: Sprite;
-  sessionStore: SqliteSessionStore;
-  close: () => Promise<void>;
-}
+// S-03 修复：AppRuntime 类型从 ipc/minimalHandlers.ts 导入，消除重复定义
 
 /** Agent + Sprite 实例（由 startSprite 初始化，可能为 null——配置缺失时） */
 let agent: Agent | null = null;

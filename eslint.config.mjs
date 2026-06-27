@@ -18,7 +18,7 @@ export default [
     rules: {
       // TypeScript 严格规则
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
       // 通用规则
       'no-console': 'off', // CLI 工具允许 console
