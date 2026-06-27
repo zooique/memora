@@ -342,6 +342,31 @@ describe('确认流程 · 待确认条目', () => {
     expect(document.querySelectorAll('#profile-pending-list .profile-card').length).toBe(0);
   });
 
+  // FD-CONVERGE-LOADING：验证 loading 中状态（disabled + 文案）
+  it('click 确认按钮时应显示 loading 状态（disabled + "处理中..."）', async () => {
+    const entries = [createEntry({ confirmed: false })];
+    window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
+    // 用未 resolve 的 promise 锁定 loading 中状态
+    let resolveConfirm: () => void;
+    window.electronAPI.confirmUserProfile = vi.fn().mockReturnValue(
+      new Promise<void>((resolve) => { resolveConfirm = resolve; }),
+    );
+    const manager = createManager();
+    await manager.load();
+    const acceptBtn = document.querySelector('#profile-pending-list .profile-btn.accept') as HTMLButtonElement;
+    acceptBtn.click();
+    await Promise.resolve();
+
+    // loading 中状态
+    expect(acceptBtn.disabled).toBe(true);
+    expect(acceptBtn.textContent).toBe('处理中...');
+
+    // 恢复
+    resolveConfirm!();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
   it('click 确认按钮失败应恢复按钮状态', async () => {
     const entries = [createEntry({ confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });

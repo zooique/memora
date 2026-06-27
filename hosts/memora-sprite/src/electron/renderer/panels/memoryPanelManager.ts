@@ -80,6 +80,8 @@ export class MemoryPanelManager {
     | null = null;
   /** P2-FLOW-08 记忆编辑回调：携带记忆 ID 和新内容 */
   private memoryEditCallback: ((id: string, content: string) => void) | null = null;
+  /** FD-ADD-MEMORY-DISCUSS 记忆讨论回调：携带记忆名称，切换到对话面板预填讨论提示 */
+  private memoryDiscussCallback: ((memoryName: string) => void) | null = null;
   /** P2-FLOW-08 编辑模式状态：true 时显示保存/取消按钮，隐藏编辑/删除按钮 */
   private isEditing = false;
 
@@ -165,6 +167,21 @@ export class MemoryPanelManager {
       });
     }
 
+    // FD-ADD-CTRL-ENTER：textarea 支持 Ctrl+Enter 快捷提交（与 confirm/prompt 弹窗的 Enter 确认行为对齐）
+    // textarea 中 Enter 是换行，故用 Ctrl+Enter 触发提交
+    const addContentEl = getOptionalElement('memory-add-content', 'textarea');
+    if (addContentEl) {
+      this.events.addEventListener(addContentEl, 'keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          const data = this.getAddMemoryFormData();
+          if (data) {
+            this.memoryAddCallback?.(data);
+          }
+        }
+      });
+    }
+
     // 删除按钮（可选，带确认对话框，防止误删不可恢复数据）
     const btnDelete = getOptionalElement('btn-memory-delete', 'button');
     if (btnDelete) {
@@ -202,6 +219,17 @@ export class MemoryPanelManager {
     if (btnEditCancel) {
       this.events.addEventListener(btnEditCancel, 'click', () => {
         this.exitEditMode();
+      });
+    }
+
+    // FD-ADD-MEMORY-DISCUSS 讨论按钮：关闭详情弹窗，切换到对话面板预填讨论提示
+    const btnDiscuss = getOptionalElement('btn-memory-discuss', 'button');
+    if (btnDiscuss) {
+      this.events.addEventListener(btnDiscuss, 'click', () => {
+        const memoryName = this.memoryDetailModal?.dataset.memoryName ?? '';
+        if (memoryName) {
+          this.memoryDiscussCallback?.(memoryName);
+        }
       });
     }
   }
@@ -457,17 +485,19 @@ export class MemoryPanelManager {
   /**
    * 切换详情弹窗底部按钮可见性
    *
-   * 只读模式：显示编辑 + 删除 + 关闭
+   * 只读模式：显示编辑 + 删除 + 讨论 + 关闭
    * 编辑模式：显示保存 + 取消 + 关闭
    */
   private updateDetailButtons(): void {
     const btnEdit = getOptionalElement('btn-memory-edit', 'button');
     const btnDelete = getOptionalElement('btn-memory-delete', 'button');
+    const btnDiscuss = getOptionalElement('btn-memory-discuss', 'button');
     const btnEditSave = getOptionalElement('btn-memory-edit-save', 'button');
     const btnEditCancel = getOptionalElement('btn-memory-edit-cancel', 'button');
 
     if (btnEdit) btnEdit.classList.toggle('hidden', this.isEditing);
     if (btnDelete) btnDelete.classList.toggle('hidden', this.isEditing);
+    if (btnDiscuss) btnDiscuss.classList.toggle('hidden', this.isEditing);
     if (btnEditSave) btnEditSave.classList.toggle('hidden', !this.isEditing);
     if (btnEditCancel) btnEditCancel.classList.toggle('hidden', !this.isEditing);
   }
@@ -526,5 +556,9 @@ export class MemoryPanelManager {
   /** P2-FLOW-08 注册记忆编辑回调 */
   onMemoryEdit(cb: (id: string, content: string) => void): void {
     this.memoryEditCallback = cb;
+  }
+  /** FD-ADD-MEMORY-DISCUSS 注册记忆讨论回调（记忆名称 → 切换到对话面板预填讨论提示） */
+  onMemoryDiscuss(cb: (memoryName: string) => void): void {
+    this.memoryDiscussCallback = cb;
   }
 }

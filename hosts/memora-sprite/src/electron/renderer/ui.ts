@@ -248,6 +248,21 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       }
     });
 
+    // FD-ADD-REC-CLICK 仪表盘推荐记忆点击：事件委托，复用 triggerMemoryRecall 跳转到记忆面板显示详情
+    const recList = document.getElementById('recommendation-list');
+    if (recList) {
+      this.events.addEventListener(recList, 'click', (e) => {
+        const target = e.target as HTMLElement;
+        const item = target.closest<HTMLElement>('[data-action="view-recommendation"]');
+        if (item) {
+          const memoryName = item.dataset.memoryName ?? '';
+          if (memoryName) {
+            this.triggerMemoryRecall(memoryName);
+          }
+        }
+      });
+    }
+
     // 导航事件
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
       this.events.addEventListener(btn, 'click', this.handleNavClick.bind(this));
@@ -286,9 +301,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /**
    * 全局键盘快捷键处理
    *
-   * - Esc：关闭所有打开的弹窗
+   * - Esc：关闭展开的下拉菜单（弹窗由 ModalManager 统一处理，见 modal.ts）
    * - Ctrl/Cmd + 1/2/3：切换面板（对话/记忆/设置）
-   * - Ctrl/Cmd + N：新建会话
+   * - Ctrl/Cmd + .：停止生成（仅流式输出期间）
+   * - Ctrl/Cmd + /：显示快捷键帮助弹窗
    */
   private handleGlobalKeydown(e: Event): void {
     if (!(e instanceof KeyboardEvent)) return;
@@ -320,9 +336,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       return;
     }
 
-    // Ctrl/Cmd + N：新建会话
-    // Ctrl+N 已移除（会话按天自动存储）
-
     // P2-FLOW-07 Ctrl/Cmd + .：停止生成（流式输出期间可用键盘快速中断）
     if (isMod && e.key === '.') {
       if (this.state.isStreaming) {
@@ -333,10 +346,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     }
 
     // Ctrl/Cmd + /：显示快捷键帮助弹窗
+    // KBD-CONVERGE-P1：走统一 showModal/hideModal 路径，获得 UI-AR-02 焦点保存/恢复
     if (isMod && e.key === '/') {
       const modal = document.getElementById('shortcuts-modal');
       if (modal) {
-        modal.classList.toggle('hidden');
+        if (modal.classList.contains('hidden')) {
+          this.showModal('shortcuts-modal');
+        } else {
+          this.hideModal('shortcuts-modal');
+        }
         e.preventDefault();
       }
       return;
@@ -837,6 +855,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void { this.memoryPanel.onMemoryAdd(cb); }
   /** P2-FLOW-08 注册记忆编辑回调（委托到 MemoryPanelManager） */
   onMemoryEdit(cb: (id: string, content: string) => void): void { this.memoryPanel.onMemoryEdit(cb); }
+  /** FD-ADD-MEMORY-DISCUSS 注册记忆讨论回调（委托到 MemoryPanelManager） */
+  onMemoryDiscuss(cb: (memoryName: string) => void): void { this.memoryPanel.onMemoryDiscuss(cb); }
 
   // ─── 角色选择器 ─ 委托到 PersonaPanelManager ───────────────
 
@@ -853,6 +873,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.personaPanel.onMemoryRecallClick(cb);
     this.chatPanel.setMemoryRecallClickCallback(cb);
   }
+  /** FD-ADD-REC-CLICK 触发召回记忆点击（委托到 PersonaPanelManager，供仪表盘推荐记忆点击复用） */
+  triggerMemoryRecall(memoryName: string): void { this.personaPanel.triggerMemoryRecallClick(memoryName); }
 
   /** IX-07 注册角色匹配模式变更回调（P2-008 委托到 SettingsPanelManager） */
   onPersonaModeChange(cb: (mode: string) => void): void {
@@ -1299,10 +1321,31 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * 主进程已确保完整窗口可见，此处只需切换面板并聚焦搜索框。
    */
   async handleRecallMemoryTrigger(): Promise<void> {
-    await this.switchPanel('memory');
+    // FD-FIX-PANEL-NAME：使用正确的面板 ID（panel-memories）
+    await this.switchPanel('memories');
     // 聚焦记忆搜索框（switchPanel 不会自动聚焦非 chat 面板的输入框）
     const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-    searchInput?.focus();
+    if (searchInput) {
+      searchInput.focus();
+      // FD-ADD-RECALL-FOCUS：选中已有文本，方便用户直接输入新搜索词替换
+      // 不选中时用户需要手动删除或覆盖，降低操作效率
+      searchInput.select();
+    }
+  }
+
+  /**
+   * FD-ADD-MEMORY-DISCUSS 预填对话输入框
+   *
+   * 供记忆详情弹窗的「在对话中讨论」功能使用：
+   * 将指定文本预填到对话输入框，用户可直接编辑或按 Enter 发送。
+   * 仅在切换到对话面板后调用，输入框已由 switchPanel('chat') 自动聚焦。
+   *
+   * @param text 预填的文本内容
+   */
+  prefillChatInput(text: string): void {
+    this.inputEl.value = text;
+    // 触发 input 事件，让 chatPanelManager 感知内容变化（如自动调整高度）
+    this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   // ─── Phase 4.3 第二批：技能文件拖入安装 ──────────────────

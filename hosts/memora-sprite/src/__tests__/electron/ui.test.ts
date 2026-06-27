@@ -303,6 +303,34 @@ const TEST_HTML = `<!DOCTYPE html>
       </div>
     </div>
   </div>
+  <!-- KBD-CONVERGE-P1：shortcuts-modal 用于测试 Ctrl+/ 快捷键和内容同步 -->
+  <div id="shortcuts-modal" class="modal hidden">
+    <div class="modal-content modal-content-sm">
+      <div class="modal-header">
+        <h3>键盘快捷键</h3>
+        <button class="modal-close" data-modal="shortcuts-modal">✕</button>
+      </div>
+      <div class="modal-body">
+        <table class="shortcuts-table">
+          <tbody>
+            <tr><td><kbd>Ctrl+1</kbd></td><td>切换到对话面板</td></tr>
+            <tr><td><kbd>Ctrl+2</kbd></td><td>切换到记忆面板</td></tr>
+            <tr><td><kbd>Ctrl+3</kbd></td><td>切换到设置面板</td></tr>
+            <tr><td><kbd>Ctrl+.</kbd></td><td>停止生成</td></tr>
+            <tr><td><kbd>Ctrl+/</kbd></td><td>显示快捷键帮助</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>发送消息（对话输入框）</td></tr>
+            <tr><td><kbd>Shift+Enter</kbd></td><td>换行（对话输入框）</td></tr>
+            <tr><td><kbd>Ctrl+Enter</kbd></td><td>提交（添加记忆弹窗）</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>关闭弹窗/下拉菜单</td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>导航角色下拉菜单</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" data-modal="shortcuts-modal">关闭</button>
+      </div>
+    </div>
+  </div>
   <div id="confirm-modal" class="modal hidden">
     <div class="modal-content">
       <div class="modal-header">
@@ -791,6 +819,166 @@ describe('面板切换', () => {
   });
 });
 
+// ─── handleRecallMemoryTrigger（Ctrl+Shift+R 快捷键） ─────
+
+describe('handleRecallMemoryTrigger', () => {
+  it('应切换到记忆面板（panel-memories active）', async () => {
+    // 初始状态在 chat 面板
+    expect(uiManager.getCurrentPanel()).toBe('chat');
+
+    await uiManager.handleRecallMemoryTrigger();
+
+    // FD-FIX-PANEL-NAME：验证面板名修复后能切换到 memories
+    expect(uiManager.getCurrentPanel()).toBe('memories');
+    const panel = document.getElementById('panel-memories');
+    expect(panel?.classList.contains('active')).toBe(true);
+  });
+
+  it('导航按钮应高亮记忆面板按钮', async () => {
+    await uiManager.handleRecallMemoryTrigger();
+
+    const activeBtn = document.querySelector('.nav-btn.active');
+    expect(activeBtn?.getAttribute('data-panel')).toBe('memories');
+  });
+
+  it('切换后原面板（chat）应失活', async () => {
+    // 初始在 chat
+    expect(document.getElementById('panel-chat')?.classList.contains('active')).toBe(true);
+
+    await uiManager.handleRecallMemoryTrigger();
+
+    expect(document.getElementById('panel-chat')?.classList.contains('active')).toBe(false);
+    expect(document.getElementById('panel-memories')?.classList.contains('active')).toBe(true);
+  });
+
+  it('应聚焦记忆搜索框', async () => {
+    const searchInput = document.getElementById('memory-search') as HTMLInputElement;
+    expect(searchInput).not.toBeNull();
+
+    await uiManager.handleRecallMemoryTrigger();
+
+    expect(document.activeElement).toBe(searchInput);
+  });
+
+  it('从 settings 面板触发时也应切换到记忆面板', async () => {
+    // 先切换到 settings
+    uiManager.switchPanel('settings');
+    expect(uiManager.getCurrentPanel()).toBe('settings');
+
+    // settingsPanelManager.isDirty() 返回 false（无未保存修改），直接切换
+    await uiManager.handleRecallMemoryTrigger();
+
+    expect(uiManager.getCurrentPanel()).toBe('memories');
+  });
+
+  it('从 settings 面板触发且有未保存修改时应弹出确认对话框', async () => {
+    // 先切换到 settings
+    uiManager.switchPanel('settings');
+
+    // 模拟有未保存修改
+    const settingsPanel = uiManager.settingsPanelManager;
+    vi.spyOn(settingsPanel, 'isDirty').mockReturnValue(true);
+
+    // 模拟用户确认离开
+    vi.spyOn(uiManager, 'showConfirmDialog').mockResolvedValue(true);
+
+    await uiManager.handleRecallMemoryTrigger();
+
+    // 用户确认后应切换到记忆面板
+    expect(uiManager.getCurrentPanel()).toBe('memories');
+  });
+
+  it('从 settings 面板触发且有未保存修改时用户取消应中止切换', async () => {
+    // 先切换到 settings
+    uiManager.switchPanel('settings');
+
+    // 模拟有未保存修改
+    const settingsPanel = uiManager.settingsPanelManager;
+    vi.spyOn(settingsPanel, 'isDirty').mockReturnValue(true);
+
+    // 模拟用户取消
+    vi.spyOn(uiManager, 'showConfirmDialog').mockResolvedValue(false);
+
+    await uiManager.handleRecallMemoryTrigger();
+
+    // 用户取消，仍停留在 settings 面板
+    expect(uiManager.getCurrentPanel()).toBe('settings');
+    expect(document.getElementById('panel-memories')?.classList.contains('active')).toBe(false);
+  });
+
+  it('多次连续触发应保持记忆面板 active（幂等）', async () => {
+    await uiManager.handleRecallMemoryTrigger();
+    await uiManager.handleRecallMemoryTrigger();
+    await uiManager.handleRecallMemoryTrigger();
+
+    expect(uiManager.getCurrentPanel()).toBe('memories');
+    // 只有一个面板 active
+    const activePanels = document.querySelectorAll('.panel.active');
+    expect(activePanels.length).toBe(1);
+  });
+});
+
+// FD-ADD-REC-CLICK ─── triggerMemoryRecall ──────────────
+
+describe('triggerMemoryRecall', () => {
+  it('已注册 onMemoryRecallClick 回调时应触发该回调', () => {
+    const cb = vi.fn();
+    uiManager.onMemoryRecallClick(cb);
+
+    uiManager.triggerMemoryRecall('推荐记忆A');
+
+    expect(cb).toHaveBeenCalledWith('推荐记忆A');
+  });
+
+  it('未注册回调时不应抛错', () => {
+    // 使用全新的 uiManager 实例避免之前测试注册的回调干扰
+    expect(() => uiManager.triggerMemoryRecall('test')).not.toThrow();
+  });
+
+  it('应透传记忆名称到回调', () => {
+    const cb = vi.fn();
+    uiManager.onMemoryRecallClick(cb);
+
+    uiManager.triggerMemoryRecall('带空格 的记忆名');
+
+    expect(cb).toHaveBeenCalledWith('带空格 的记忆名');
+  });
+});
+
+// ─── FD-ADD-REC-CLICK 推荐记忆点击事件委托（EventTracker 路径） ─
+
+describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
+  /**
+   * 验证仪表盘推荐记忆列表的点击事件委托。
+   * 事件通过 UIManager.initEventListeners → EventTracker 注册（与 dateNavList 同模式），
+   * 点击 [data-action="view-recommendation"] 元素触发 triggerMemoryRecall。
+   */
+  it('点击推荐记忆项应触发 onMemoryRecallClick 回调，携带记忆名称', () => {
+    const cb = vi.fn();
+    uiManager.onMemoryRecallClick(cb);
+
+    // 模拟 loadDashboard 渲染的推荐记忆项结构
+    const recList = document.getElementById('recommendation-list')!;
+    recList.innerHTML = '<li data-action="view-recommendation" data-memory-name="推荐记忆A">推荐记忆A</li>';
+
+    const firstItem = recList.querySelector('li') as HTMLElement;
+    firstItem.dispatchEvent(new Event('click', { bubbles: true }));
+
+    expect(cb).toHaveBeenCalledWith('推荐记忆A');
+  });
+
+  it('点击推荐列表容器本身（非 li 子元素）不应触发回调', () => {
+    const cb = vi.fn();
+    uiManager.onMemoryRecallClick(cb);
+
+    const recList = document.getElementById('recommendation-list')!;
+    recList.innerHTML = '';
+    recList.dispatchEvent(new Event('click', { bubbles: true }));
+
+    expect(cb).not.toHaveBeenCalled();
+  });
+});
+
 // ─── 表单收集 ─────────────────────────────────────────────
 
 describe('表单收集', () => {
@@ -1157,5 +1345,183 @@ describe('标题栏窗口控制按钮', () => {
     const btn = document.getElementById('btn-close')!;
     btn.click();
     expect(window.electronAPI.windowClose).toHaveBeenCalled();
+  });
+});
+
+// FD-ADD-MEMORY-DISCUSS ─── prefillChatInput ──────────────
+
+describe('prefillChatInput', () => {
+  it('应设置输入框的值', () => {
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '';
+
+    uiManager.prefillChatInput('关于「记忆A」…');
+
+    expect(input.value).toBe('关于「记忆A」…');
+  });
+
+  it('应触发 input 事件（让 chatPanelManager 感知内容变化）', () => {
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const listener = vi.fn();
+    input.addEventListener('input', listener);
+
+    uiManager.prefillChatInput('新内容');
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    input.removeEventListener('input', listener);
+  });
+
+  it('应覆盖已有输入内容', () => {
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '旧内容';
+
+    uiManager.prefillChatInput('新内容');
+
+    expect(input.value).toBe('新内容');
+  });
+
+  it('空字符串应清空输入框', () => {
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '有内容';
+
+    uiManager.prefillChatInput('');
+
+    expect(input.value).toBe('');
+  });
+});
+
+// ─── KBD-CONVERGE-P1：Ctrl+/ 快捷键与 shortcuts-modal ─────
+
+describe('KBD-CONVERGE-P1：Ctrl+/ 快捷键', () => {
+  /**
+   * 辅助函数：在 document 上派发 Ctrl+/ 键盘事件
+   * KBD-CONVERGE-P1 将 shortcuts-modal 路径从 classList.toggle 改为 showModal/hideModal，
+   * 这些测试验证统一的弹窗路径和焦点管理（UI-AR-02）。
+   */
+  function dispatchCtrlSlash() {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '/', ctrlKey: true, bubbles: true, cancelable: true }),
+    );
+  }
+
+  it('Ctrl+/ 打开 shortcuts-modal（移除 hidden 类）', () => {
+    const modal = document.getElementById('shortcuts-modal')!;
+    expect(modal.classList.contains('hidden')).toBe(true);
+
+    dispatchCtrlSlash();
+
+    expect(modal.classList.contains('hidden')).toBe(false);
+  });
+
+  it('Ctrl+/ 调用 preventDefault 避免浏览器默认行为', () => {
+    const event = new KeyboardEvent('keydown', {
+      key: '/',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    const spy = vi.spyOn(event, 'preventDefault');
+    document.dispatchEvent(event);
+
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('Ctrl+/ 再次按下关闭 shortcuts-modal（添加 hidden 类）', () => {
+    const modal = document.getElementById('shortcuts-modal')!;
+    // 先打开
+    dispatchCtrlSlash();
+    expect(modal.classList.contains('hidden')).toBe(false);
+
+    // 再次按下关闭
+    dispatchCtrlSlash();
+    expect(modal.classList.contains('hidden')).toBe(true);
+  });
+
+  it('普通 / 按键（无 Ctrl）不触发 shortcuts-modal', () => {
+    const modal = document.getElementById('shortcuts-modal')!;
+    expect(modal.classList.contains('hidden')).toBe(true);
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true }),
+    );
+
+    expect(modal.classList.contains('hidden')).toBe(true);
+  });
+
+  it('Cmd+/（metaKey）也能打开 shortcuts-modal（macOS 兼容）', () => {
+    const modal = document.getElementById('shortcuts-modal')!;
+
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: '/', metaKey: true, bubbles: true, cancelable: true }),
+    );
+
+    expect(modal.classList.contains('hidden')).toBe(false);
+  });
+
+  it('打开 shortcuts-modal 时焦点移到弹窗内首个可交互元素（UI-AR-02）', () => {
+    const triggerEl = document.getElementById('btn-send') as HTMLButtonElement;
+    triggerEl.focus();
+
+    dispatchCtrlSlash();
+
+    // 弹窗内首个可交互元素为 .modal-close 按钮（位于 modal-header）
+    const closeBtn = document.querySelector('#shortcuts-modal .modal-close') as HTMLButtonElement;
+    expect(document.activeElement).toBe(closeBtn);
+  });
+
+  it('关闭 shortcuts-modal 时焦点恢复到触发元素（UI-AR-02）', () => {
+    const triggerEl = document.getElementById('btn-send') as HTMLButtonElement;
+    triggerEl.focus();
+
+    // 打开 → 关闭
+    dispatchCtrlSlash();
+    dispatchCtrlSlash();
+
+    expect(document.activeElement).toBe(triggerEl);
+  });
+});
+
+describe('KBD-CONVERGE-P1：shortcuts-modal 内容同步', () => {
+  /**
+   * 验证 shortcuts-modal 表格内容与实际实现的快捷键保持同步。
+   * KBD-CONVERGE-P1 新增了 Shift+Enter、Ctrl+Enter、方向键条目，
+   * 防止文档与实现脱节（这是长线任务的收敛目标）。
+   */
+  function getShortcutsText(): string {
+    const table = document.querySelector('#shortcuts-modal .shortcuts-table');
+    return table?.textContent ?? '';
+  }
+
+  it('包含 Ctrl+1/2/3 面板切换条目', () => {
+    const text = getShortcutsText();
+    expect(text).toContain('Ctrl+1');
+    expect(text).toContain('Ctrl+2');
+    expect(text).toContain('Ctrl+3');
+  });
+
+  it('包含 Ctrl+. 停止生成条目', () => {
+    expect(getShortcutsText()).toContain('Ctrl+.');
+  });
+
+  it('包含 Ctrl+/ 显示快捷键帮助条目', () => {
+    expect(getShortcutsText()).toContain('Ctrl+/');
+  });
+
+  it('包含 Shift+Enter 换行条目（KBD-CONVERGE-P1 新增）', () => {
+    expect(getShortcutsText()).toContain('Shift+Enter');
+  });
+
+  it('包含 Ctrl+Enter 提交条目（KBD-CONVERGE-P1 新增，用于添加记忆弹窗）', () => {
+    expect(getShortcutsText()).toContain('Ctrl+Enter');
+  });
+
+  it('包含 ↑/↓ 方向键导航角色下拉条目（KBD-CONVERGE-P1 新增）', () => {
+    const text = getShortcutsText();
+    expect(text).toContain('↑');
+    expect(text).toContain('↓');
+  });
+
+  it('包含 Esc 关闭弹窗条目', () => {
+    expect(getShortcutsText()).toContain('Esc');
   });
 });

@@ -571,7 +571,9 @@ export class SettingsPanelManager {
       model: this.cfgLlmModel?.value.trim() ?? '',
       baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
       apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
-      temperature: parseFloat(this.cfgLlmTemperature?.value ?? '0.7') || 0.7,
+      // FD-FIX-TEMP：temperature=0 是合法值（确定性输出），不能用 || 0.7（会把 0 视为 falsy）
+      // 仅当字段为空或解析为 NaN 时才回退到默认值 0.7
+      temperature: this.parseTemperature(this.cfgLlmTemperature?.value),
     };
 
     // H6 收集后台 Provider 配置
@@ -598,6 +600,28 @@ export class SettingsPanelManager {
     }
 
     return { llm, embedding };
+  }
+
+  /**
+   * 解析 temperature 输入值（FD-FIX-TEMP）
+   *
+   * temperature=0 是合法值（用于 LLM 确定性输出），不能用 `|| 0.7` 短路，
+   * 否则 0 会被视为 falsy 静默替换为 0.7，用户意图丢失。
+   * 仅当字段为空或解析为 NaN 时回退到默认值 0.7。
+   *
+   * @param value 表单输入值（可能为 undefined/空字符串/"0"/"1.5" 等）
+   * @returns 解析后的 temperature，范围 [0, 2]
+   */
+  private parseTemperature(value: string | undefined): number {
+    if (value === undefined || value.trim() === '') {
+      return 0.7; // 空值回退到默认
+    }
+    const parsed = parseFloat(value);
+    if (Number.isNaN(parsed)) {
+      return 0.7; // 非数字回退到默认
+    }
+    // 限制到 HTML input 声明的 [0, 2] 范围内
+    return Math.max(0, Math.min(2, parsed));
   }
 
   /** 加载配置到表单 */

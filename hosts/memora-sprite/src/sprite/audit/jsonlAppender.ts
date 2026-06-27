@@ -147,6 +147,16 @@ export class JsonlAppender {
   }
 
   /**
+   * 等待写入队列排空（仅用于测试）
+   *
+   * 返回 writeChain 的 Promise，调用方 await 后可确保所有排队的 append/clear 已完成。
+   * 精确等待 writeChain 排空，消除全量测试 I/O 压力下的 flaky test。
+   */
+  flush(): Promise<void> {
+    return this.writeChain;
+  }
+
+  /**
    * 检查文件行数，超出 maxEntries 时截断保留最近条目
    *
    * 读取全文 → 计算行数 → 超出时保留最近 maxEntries 条重写。

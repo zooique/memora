@@ -13,7 +13,7 @@
  *
  * 测试策略：
  * - 使用 tmpdir 真实 I/O（对齐 storage 测试模式，零 mock）
- * - append 通过 writeChain 串行化，用 await flushWrites() 等待队列排空
+ * - append 通过 writeChain 串行化，用 await appender.flush() 等待队列排空
  * - readRecent 是 async，可直接 await
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -33,7 +33,7 @@ function createTmpDir(): string {
  * 预写入 N 条 JSONL 记录到文件（同步，保证顺序）
  *
  * 用于 readRecent 顺序敏感测试，绕过 append 的 fire-and-forget 异步问题。
- * 每次 append 后 flushWrites 会累积大量延迟，预写入避免此问题。
+ * 每次 append 后 await flush() 会序列化等待，预写入避免此开销。
  */
 function prewriteRecords(filePath: string, count: number): void {
   const lines: string[] = [];
@@ -41,16 +41,6 @@ function prewriteRecords(filePath: string, count: number): void {
     lines.push(JSON.stringify({ idx: i }));
   }
   writeFileSync(filePath, lines.join('\n') + '\n', 'utf8');
-}
-
-/**
- * 等待 writeChain 写入队列排空
- *
- * append 内部通过 writeChain 串行化，不返回 Promise。
- * 用 setTimeout 等待队列中所有写入操作完成，确保后续 readRecent 能读到全部数据。
- */
-function flushWrites(ms = 50): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe('JsonlAppender', () => {
@@ -71,9 +61,9 @@ describe('JsonlAppender', () => {
   it('append 应追加 JSONL 行到文件', async () => {
     const appender = new JsonlAppender({ filePath });
     appender.append({ name: 'event1', type: 'read' });
-    await flushWrites(); // fire-and-forget 异步，需等待第一条落盘保证顺序
+    await appender.flush(); // fire-and-forget 异步，需等待第一条落盘保证顺序
     appender.append({ name: 'event2', type: 'write' });
-    await flushWrites();
+    await appender.flush();
 
     // 直接读文件验证 JSONL 格式（每行一条 JSON）
     const content = readFileSync(filePath, 'utf8');
@@ -147,7 +137,7 @@ describe('JsonlAppender', () => {
   it('clear 应清空文件内容', async () => {
     const appender = new JsonlAppender({ filePath });
     appender.append({ data: 'test' });
-    await flushWrites();
+    await appender.flush();
     expect(existsSync(filePath)).toBe(true);
 
     await appender.clear();
@@ -159,7 +149,7 @@ describe('JsonlAppender', () => {
   it('clear 后 readRecent 应返回空数组', async () => {
     const appender = new JsonlAppender({ filePath });
     appender.append({ data: 'test' });
-    await flushWrites();
+    await appender.flush();
 
     await appender.clear();
     const records = await appender.readRecent();
@@ -174,10 +164,10 @@ describe('JsonlAppender', () => {
     for (let i = 1; i <= 10; i++) {
       appender.append({ idx: i });
       // fire-and-forget 异步：需等待 appendFile + truncateIfNeeded 全部完成
-      // 100ms 确保在高并发测试环境下也有足够 I/O 时间
-      await flushWrites(100);
+      // QC-FLAKY-JSONL-V2：用 flush() 精确等待 writeChain 排空
+      await appender.flush();
     }
-    await flushWrites(150); // 最终等待，确保最后一次截断完成
+    await appender.flush(); // 最终等待，确保最后一次截断完成
 
     const records = await appender.readRecent<{ idx: number }>();
     // 截断后只保留最近 5 条
@@ -192,7 +182,7 @@ describe('JsonlAppender', () => {
     for (let i = 1; i <= 5; i++) {
       appender.append({ idx: i });
     }
-    await flushWrites();
+    await appender.flush();
 
     // 未触发截断检查（writeCount=5 未达到 100），文件应有 5 条
     const content = readFileSync(filePath, 'utf8');
@@ -204,9 +194,9 @@ describe('JsonlAppender', () => {
     const appender = new JsonlAppender({ filePath, maxEntries: 0, truncateCheckInterval: 1 });
     for (let i = 1; i <= 5; i++) {
       appender.append({ idx: i });
-      await flushWrites(10);
+      await appender.flush();
     }
-    await flushWrites();
+    await appender.flush();
 
     const content = readFileSync(filePath, 'utf8');
     const lines = content.trim().split('\n');
@@ -224,7 +214,7 @@ describe('JsonlAppender', () => {
       appender.append({ idx: i });
     }
     // 等待 writeChain 队列全部排空
-    await flushWrites(200);
+    await appender.flush();
 
     const content = readFileSync(filePath, 'utf8');
     const lines = content.trim().split('\n');
@@ -246,7 +236,7 @@ describe('JsonlAppender', () => {
       appender.append({ idx: i });
     }
     // 等待 writeChain 队列全部排空（含所有 truncateIfNeeded）
-    await flushWrites(300);
+    await appender.flush();
 
     const records = await appender.readRecent<{ idx: number }>();
     // 截断后只保留最近 5 条（idx 6-10），无丢失
@@ -267,7 +257,7 @@ describe('JsonlAppender', () => {
 
     expect(appender.getWriteCount()).toBe(3);
     // QC-FLAKY-JSONL：串行化后需等待 writeChain 排空，避免 afterEach 删除目录后 pending 操作报错
-    await flushWrites();
+    await appender.flush();
   });
 
   // ─── 构造函数 ──────────────────────────────────────────
@@ -287,7 +277,7 @@ describe('JsonlAppender', () => {
     const appender = new JsonlAppender({ filePath, truncateCheckInterval: 1 });
     appender.append({ idx: 1 });
     appender.append({ idx: 2 });
-    await flushWrites();
+    await appender.flush();
 
     const records = await appender.readRecent<{ idx: number }>();
     expect(records).toHaveLength(2);

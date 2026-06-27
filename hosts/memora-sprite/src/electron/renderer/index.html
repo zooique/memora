@@ -301,7 +301,8 @@
               <label for="cfg-llm-api-key">API Key</label>
               <div class="input-with-action">
                 <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
-                <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key">👁</button>
+                <!-- FD-A11Y-LABEL：图标按钮补齐 aria-label，与 btn-minimize/btn-close 等图标按钮标准一致 -->
+                <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏主 LLM API Key">👁</button>
               </div>
             </div>
             <div class="settings-row">
@@ -333,7 +334,7 @@
                 <label for="cfg-bg-api-key">API Key</label>
                 <div class="input-with-action">
                   <input type="password" id="cfg-bg-api-key" placeholder="sk-****" disabled />
-                  <button type="button" id="btn-toggle-bg-key" class="toggle-visibility" title="显示/隐藏 API Key" disabled>👁</button>
+                  <button type="button" id="btn-toggle-bg-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏后台 LLM API Key" disabled>👁</button>
                 </div>
               </div>
             </div>
@@ -369,7 +370,7 @@
               <label for="cfg-emb-api-key">API Key（留空复用 LLM 配置）</label>
               <div class="input-with-action">
                 <input type="password" id="cfg-emb-api-key" placeholder="sk-****" />
-                <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key">👁</button>
+                <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Embedding API Key">👁</button>
               </div>
             </div>
           </div>
@@ -585,6 +586,8 @@
         <!-- P2-FLOW-08 只读模式按钮：编辑/删除（默认显示，编辑时隐藏） -->
         <button id="btn-memory-edit" class="btn-secondary">编辑</button>
         <button id="btn-memory-delete" class="btn-danger">删除</button>
+        <!-- FD-ADD-MEMORY-DISCUSS：记忆→对话双向流动，关闭弹窗并切换到对话面板预填讨论提示 -->
+        <button id="btn-memory-discuss" class="btn-primary">在对话中讨论</button>
         <button class="btn-secondary" data-modal="memory-detail-modal">关闭</button>
       </div>
     </div>
@@ -600,7 +603,7 @@
       <div class="modal-body">
         <label for="memory-add-source">来源（source）</label>
         <!-- source 下拉：提供常用预设，支持自定义输入（datalist 兼顾灵活性与一致性） -->
-        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" />
+        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" aria-label="记忆来源" />
         <datalist id="source-presets">
           <option value="profile">用户画像</option>
           <option value="insight">洞察记忆</option>
@@ -611,9 +614,9 @@
           <option value="session">会话记忆</option>
         </datalist>
         <label for="memory-add-name">名称（name）</label>
-        <input type="text" id="memory-add-name" placeholder="记忆名称" autocomplete="off" />
+        <input type="text" id="memory-add-name" placeholder="记忆名称" autocomplete="off" aria-label="记忆名称" />
         <label for="memory-add-content">内容（content）</label>
-        <textarea id="memory-add-content" rows="6" placeholder="记忆内容…"></textarea>
+        <textarea id="memory-add-content" rows="6" placeholder="记忆内容…" aria-label="记忆内容"></textarea>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" data-modal="memory-add-modal">取消</button>
@@ -650,7 +653,8 @@
       </div>
       <div class="modal-body">
         <p id="prompt-message" class="confirm-message"></p>
-        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" />
+        <!-- FD-A11Y-LABEL：补齐 aria-labelledby 关联提示文本 + placeholder 兜底（无 label for 关联） -->
+        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" aria-labelledby="prompt-message" placeholder="请输入..." />
         <p id="prompt-error" class="prompt-error hidden"></p>
       </div>
       <div class="modal-footer">
@@ -717,14 +721,17 @@
       <div class="modal-body">
         <table class="shortcuts-table">
           <tbody>
+            <!-- KBD-CONVERGE-P1：同步实际实现的快捷键，按使用场景分组 -->
             <tr><td><kbd>Ctrl+1</kbd></td><td>切换到对话面板</td></tr>
             <tr><td><kbd>Ctrl+2</kbd></td><td>切换到记忆面板</td></tr>
             <tr><td><kbd>Ctrl+3</kbd></td><td>切换到设置面板</td></tr>
-            <!-- Ctrl+N 已移除：会话按天自动存储 -->
             <tr><td><kbd>Ctrl+.</kbd></td><td>停止生成</td></tr>
             <tr><td><kbd>Ctrl+/</kbd></td><td>显示快捷键帮助</td></tr>
-            <tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>发送消息（对话输入框）</td></tr>
+            <tr><td><kbd>Shift+Enter</kbd></td><td>换行（对话输入框）</td></tr>
+            <tr><td><kbd>Ctrl+Enter</kbd></td><td>提交（添加记忆弹窗）</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>关闭弹窗/下拉菜单</td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>导航角色下拉菜单</td></tr>
           </tbody>
         </table>
       </div>

@@ -189,7 +189,20 @@ export function formatClock(isoString: string): string {
 export function setButtonLoading(buttonId: string, loading: boolean, loadingText?: string): void {
   const el = document.getElementById(buttonId);
   if (!(el instanceof HTMLButtonElement)) return;
+  setButtonLoadingEl(el, loading, loadingText);
+}
 
+/**
+ * FD-CONVERGE-LOADING 基于元素引用的按钮 loading 状态设置
+ *
+ * 与 setButtonLoading 功能相同，但接受元素引用而非 ID，
+ * 适用于动态创建的按钮（如 profilePanelManager 中的 confirm/reject/delete 按钮）。
+ *
+ * @param el 按钮元素引用
+ * @param loading 是否处于 loading 状态
+ * @param loadingText loading 时显示的文本（可选，默认在原文本前加 "..."）
+ */
+export function setButtonLoadingEl(el: HTMLButtonElement, loading: boolean, loadingText?: string): void {
   if (loading) {
     // 保存原始文本到 dataset，用于恢复
     if (!el.dataset.originalText) {

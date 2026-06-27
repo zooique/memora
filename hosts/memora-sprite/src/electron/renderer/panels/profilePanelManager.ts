@@ -17,7 +17,7 @@
 import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
-import { clearElement, formatTimeAgo, getOptionalElement } from '../helpers/domHelpers.js';
+import { clearElement, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 
 /**
  * 用户画像面板管理器
@@ -218,19 +218,18 @@ export class ProfilePanelManager {
       confirmBtn.className = 'profile-btn accept';
       confirmBtn.textContent = '确认';
       this.events.addEventListener(confirmBtn, 'click', async () => {
-        confirmBtn.disabled = true;
+        // FD-CONVERGE-LOADING：复用 setButtonLoadingEl，与全项目 loading 模式一致
+        setButtonLoadingEl(confirmBtn, true, '处理中...');
         const rejectBtn = actions.querySelector<HTMLButtonElement>('.reject');
         if (rejectBtn) rejectBtn.disabled = true;
-        confirmBtn.textContent = '处理中...';
         try {
           await window.electronAPI.confirmUserProfile(entry.id);
           // 确认成功后移除卡片（已确认列表会在下次 load 时更新）
           card.remove();
         } catch (err) {
           reportError('ProfilePanel', `确认画像失败: ${toError(err).message}`);
-          confirmBtn.disabled = false;
+          setButtonLoadingEl(confirmBtn, false);
           if (rejectBtn) rejectBtn.disabled = false;
-          confirmBtn.textContent = '确认';
         }
       });
       actions.appendChild(confirmBtn);
@@ -239,14 +238,15 @@ export class ProfilePanelManager {
       rejectBtn.className = 'profile-btn reject';
       rejectBtn.textContent = '拒绝';
       this.events.addEventListener(rejectBtn, 'click', async () => {
-        rejectBtn.disabled = true;
+        // FD-CONVERGE-LOADING：复用 setButtonLoadingEl
+        setButtonLoadingEl(rejectBtn, true, '处理中...');
         confirmBtn.disabled = true;
         try {
           await window.electronAPI.rejectUserProfile(entry.id);
           card.remove();
         } catch (err) {
           reportError('ProfilePanel', `拒绝画像失败: ${toError(err).message}`);
-          rejectBtn.disabled = false;
+          setButtonLoadingEl(rejectBtn, false);
           confirmBtn.disabled = false;
         }
       });
@@ -257,15 +257,14 @@ export class ProfilePanelManager {
       deleteBtn.className = 'profile-btn reject';
       deleteBtn.textContent = '删除';
       this.events.addEventListener(deleteBtn, 'click', async () => {
-        deleteBtn.disabled = true;
-        deleteBtn.textContent = '删除中...';
+        // FD-CONVERGE-LOADING：复用 setButtonLoadingEl
+        setButtonLoadingEl(deleteBtn, true, '删除中...');
         try {
           await window.electronAPI.rejectUserProfile(entry.id);
           card.remove();
         } catch (err) {
           reportError('ProfilePanel', `删除画像失败: ${toError(err).message}`);
-          deleteBtn.disabled = false;
-          deleteBtn.textContent = '删除';
+          setButtonLoadingEl(deleteBtn, false);
         }
       });
       actions.appendChild(deleteBtn);

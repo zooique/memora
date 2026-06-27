@@ -113,6 +113,8 @@ export function createMemoryController(uiManager: UIManager) {
     uiManager.onMemoryDelete(async () => {
       const id = uiManager.getCurrentMemoryId();
       if (!id) return;
+      // FD-FIX-DELETE-LOADING：删除是不可恢复操作，需防重复点击（与 onMemoryAdd/onMemoryEdit 一致）
+      setButtonLoading('btn-memory-delete', true, '删除中...');
       try {
         await window.electronAPI.deleteMemory(id);
         uiManager.hideModal('memory-detail-modal');
@@ -121,6 +123,9 @@ export function createMemoryController(uiManager: UIManager) {
         uiManager.showToast('记忆已删除', 'success');
       } catch (error) {
         handleIpcError('onMemoryDelete', error, '删除记忆失败');
+      } finally {
+        // FD-FIX-DELETE-LOADING：恢复按钮状态（弹窗已关闭时 setButtonLoading 内部会安全降级）
+        setButtonLoading('btn-memory-delete', false);
       }
     });
 
@@ -165,6 +170,9 @@ export function createMemoryController(uiManager: UIManager) {
         setButtonLoading('btn-memory-edit-save', false);
       }
     });
+
+    // FD-ADD-REC-CLICK 仪表盘推荐记忆点击事件委托已迁移到 UIManager.initEventListeners
+    // （通过 EventTracker 统一管理，避免内存泄漏，与 dateNavList 委托同模式）
   }
 
   /** 加载记忆列表 */
@@ -246,6 +254,9 @@ export function createMemoryController(uiManager: UIManager) {
           for (const s of data.suggestions) {
             const li = document.createElement('li');
             li.title = `${s.contentPreview}\n\n${s.reason}`;
+            // FD-ADD-REC-CLICK：添加 data-action 和 data-memory-name，供事件委托识别点击
+            li.dataset.action = 'view-recommendation';
+            li.dataset.memoryName = s.name;
             // 记忆名称
             const nameSpan = document.createElement('span');
             nameSpan.textContent = s.name;

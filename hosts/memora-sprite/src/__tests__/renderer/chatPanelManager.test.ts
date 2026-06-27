@@ -1061,6 +1061,55 @@ describe('回调注册', () => {
     btn.click();
     expect(cb).toHaveBeenCalled();
   });
+
+  // FD-FIX-RETRY-RECOVER：回调执行后按钮应恢复可点击状态
+  it('retry 回调执行后应恢复按钮状态（disabled 移除 + 文案恢复）', async () => {
+    const { manager, messagesEl } = createManager();
+    const retryCb = vi.fn();
+    manager.onErrorRetry(retryCb);
+
+    // 创建 retry 按钮并点击
+    const btn = document.createElement('button');
+    btn.dataset.action = 'retry';
+    btn.textContent = '重试';
+    messagesEl.appendChild(btn);
+    btn.click();
+
+    // 点击后应禁用
+    expect(btn.hasAttribute('disabled')).toBe(true);
+    expect(btn.textContent).toBe('重试中...');
+
+    // 等待 async IIFE 完成（retryCb 是同步函数，await void 后 finally 执行）
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 按钮应恢复
+    expect(btn.hasAttribute('disabled')).toBe(false);
+    expect(btn.textContent).toBe('重试');
+    expect(retryCb).toHaveBeenCalled();
+  });
+
+  // FD-FIX-RETRY-RECOVER：async 回调 reject 时按钮也应恢复
+  it('retry 回调抛错时按钮也应恢复（finally 兜底）', async () => {
+    const { manager, messagesEl } = createManager();
+    const retryCb = vi.fn().mockRejectedValue(new Error('重试失败'));
+    manager.onErrorRetry(retryCb);
+
+    const btn = document.createElement('button');
+    btn.dataset.action = 'retry';
+    btn.textContent = '重试';
+    messagesEl.appendChild(btn);
+    btn.click();
+
+    // 等待 async IIFE 完成（含 rejected promise）
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // 按钮应恢复（finally 兜底）
+    expect(btn.hasAttribute('disabled')).toBe(false);
+    expect(btn.textContent).toBe('重试');
+  });
 });
 
 // ─── 20. 超时兜底定时器 ──────────────────────────────────

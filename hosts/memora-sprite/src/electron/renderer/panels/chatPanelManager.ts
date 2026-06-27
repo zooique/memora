@@ -233,7 +233,20 @@ export class ChatPanelManager {
         // 禁用按钮防止重复点击
         retryBtn.setAttribute('disabled', '');
         retryBtn.textContent = '重试中...';
-        this.errorRetryCallback?.();
+        // FD-FIX-RETRY-RECOVER：回调执行后恢复按钮状态
+        // errorRetryCallback 可能在 isStreaming() 检查时提前返回（toast 提示），
+        // 此时按钮必须恢复，否则用户无法再次点击重试
+        void (async () => {
+          try {
+            await this.errorRetryCallback?.();
+          } catch {
+            // 错误处理由 errorRetryCallback 内部负责（如 toast 提示），
+            // 此处仅需恢复按钮状态，吞掉 rejection 避免 unhandled rejection
+          } finally {
+            retryBtn.removeAttribute('disabled');
+            retryBtn.textContent = '重试';
+          }
+        })();
         return;
       }
     });

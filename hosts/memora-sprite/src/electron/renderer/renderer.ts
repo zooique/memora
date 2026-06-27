@@ -246,6 +246,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 召回记忆点击：跳转到记忆面板并显示详情
   uiManager.onMemoryRecallClick(async (memoryName) => {
     await uiManager.switchPanel('memories');
+    // FD-ADD-RECALL-CONTEXT：预填搜索框 + 触发搜索，让弹窗背后的列表同步显示对应记忆
+    // 用户关闭详情弹窗后，列表已过滤好，无需手动搜索
+    const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
+    if (searchInput) {
+      searchInput.value = memoryName;
+      searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    }
     try {
       const { memory } = await window.electronAPI.showMemory(memoryName);
       if (memory) {
@@ -255,6 +262,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 记忆可能已删除，记录日志辅助排查
       reportError('memoryRecall', error);
     }
+  });
+
+  // FD-ADD-MEMORY-DISCUSS 记忆→对话双向流动：关闭详情弹窗 → 切换到对话面板 → 预填讨论提示
+  uiManager.onMemoryDiscuss((memoryName) => {
+    uiManager.hideModal('memory-detail-modal');
+    // 先预填输入框，再切换面板（switchPanel('chat') 会自动聚焦输入框）
+    uiManager.prefillChatInput(`关于「${memoryName}」…`);
+    void uiManager.switchPanel('chat');
   });
 
   // ─── Phase 4.3 第二批：技能文件拖入安装初始化 ──────────────
@@ -488,18 +503,29 @@ function setupBusinessLogic(
 
   // UX-FD-07 日期导航跳转回调：点击日期项后跳转到该日期的对话
   uiManager.onDateNavJump(async (date: string) => {
-    await sessionController.jumpToDate(date);
-    // 跳转后刷新日期列表（更新 active 高亮）
-    const dates = await sessionController.loadDateList();
-    const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
-    uiManager.renderDateNavList(dates, currentDate);
+    try {
+      await sessionController.jumpToDate(date);
+      // 跳转后刷新日期列表（更新 active 高亮）
+      const dates = await sessionController.loadDateList();
+      const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
+      uiManager.renderDateNavList(dates, currentDate);
+    } catch (error) {
+      // FD-CONVERGE-01 日期跳转失败时 toast 提示并保持当前视图，避免静默破坏 UI 状态
+      reportError('dateNavJump', error);
+      uiManager.showToast('日期跳转失败，请稍后重试', 'error');
+    }
   });
 
   // UX-FD-07 日期导航下拉打开时加载日期列表
   uiManager.onDateNavOpen(async () => {
-    const dates = await sessionController.loadDateList();
-    const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
-    uiManager.renderDateNavList(dates, currentDate);
+    try {
+      const dates = await sessionController.loadDateList();
+      const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
+      uiManager.renderDateNavList(dates, currentDate);
+    } catch (error) {
+      // FD-CONVERGE-01 日期列表加载失败时静默降级，不阻塞用户继续对话
+      reportError('dateNavOpen', error);
+    }
   });
 
   // FD-A1 会话切换/删除/重命名回调已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
