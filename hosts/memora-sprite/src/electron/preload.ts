@@ -50,6 +50,7 @@ const IPC_CHANNELS = {
   MEMORIES_SHOW: 'memories-show',
   MEMORIES_DELETE: 'memories-delete',
   MEMORIES_ADD: 'memories-add',
+  MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
   CONFIG_GET: 'config-get',
   CONFIG_UPDATE: 'config-update',
   // QC-CONFIG-01：批量事务性更新配置（必须与 ipc/channels.ts 保持同步）
@@ -318,6 +319,8 @@ export interface ElectronAPI {
   showMemory: (id: string) => Promise<{ memory: MemoryDetail | null }>;
   deleteMemory: (id: string) => Promise<{ deleted: boolean }>;
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
+  /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
+  getRelationGraph: () => Promise<{ nodes: MemoryListItem[]; edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }> }>;
 
   // 配置
   getConfig: () => Promise<{ config: SpriteConfigForm }>;
@@ -607,6 +610,7 @@ const electronAPI: ElectronAPI = {
   showMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
   deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
+  getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),
 
   // 配置
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET),

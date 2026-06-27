@@ -437,6 +437,21 @@ export class Sprite {
     return this.memoryController.search(query, limit);
   }
 
+  /**
+   * 获取记忆关系图谱数据（ADR-014：拓扑可视化）
+   *
+   * 返回所有记忆作为节点、所有关系作为边，供渲染层 Canvas 2D 力导向图渲染。
+   * 节点上限 RELATION_GRAPH_MAX_NODES（200），避免大规模记忆库性能问题。
+   *
+   * @returns 图谱数据：nodes（记忆列表）+ edges（关系边列表）
+   */
+  getRelationGraph(): {
+    nodes: Array<{ id: string; name: string; source: string; score: number; contentPreview: string }>;
+    edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }>;
+  } {
+    return this.memoryController.getRelationGraph();
+  }
+
   // ─── 配置持久化 ────────────────────────────────────────
 
   /** 获取当前配置（只读副本） */

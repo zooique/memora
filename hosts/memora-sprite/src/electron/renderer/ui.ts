@@ -50,6 +50,8 @@ import type {
 import type { ConfigSuggestionPayload } from '../preload.js';
 // M1：写入确认 payload 类型（从 preload 导入，供 showWriteConfirmation 方法使用）
 import type { WriteConfirmationPayload } from '../preload.js';
+// 图谱数据类型（供 MemoryPanelManager 委托方法使用）
+import type { RelationGraphData } from './components/relationGraph.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -844,7 +846,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   // ─── 记忆面板 ─ 委托到 MemoryPanelManager ─────────────────
 
   /** 渲染记忆列表（委托到 MemoryPanelManager） */
-  renderMemoryList(memories: MemoryListItem[]): void { this.memoryPanel.renderMemoryList(memories); }
+  renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void { this.memoryPanel.renderMemoryList(memories, searchQuery); }
   /** 显示记忆详情（委托到 MemoryPanelManager） */
   showMemoryDetail(memory: MemoryDetail): void { this.memoryPanel.showMemoryDetail(memory); }
   /** 清空添加记忆表单（委托到 MemoryPanelManager） */
@@ -869,6 +871,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   onMemoryEdit(cb: (id: string, content: string) => void): void { this.memoryPanel.onMemoryEdit(cb); }
   /** FD-ADD-MEMORY-DISCUSS 注册记忆讨论回调（委托到 MemoryPanelManager） */
   onMemoryDiscuss(cb: (memoryName: string) => void): void { this.memoryPanel.onMemoryDiscuss(cb); }
+  /** 注册图谱视图切换回调（委托到 MemoryPanelManager） */
+  onGraphToggle(cb: (mode: 'list' | 'graph') => void): void { this.memoryPanel.onGraphToggle(cb); }
+  /** 加载图谱数据到渲染器（委托到 MemoryPanelManager） */
+  loadGraphData(data: RelationGraphData): void { this.memoryPanel.loadGraphData(data); }
+  /** 切换记忆视图模式（委托到 MemoryPanelManager） */
+  switchMemoryView(mode: 'list' | 'graph'): void { this.memoryPanel.switchView(mode); }
+  /** 检查是否有图谱数据（委托到 MemoryPanelManager） */
+  hasGraphData(): boolean { return this.memoryPanel.hasGraphData(); }
 
   // ─── 角色选择器 ─ 委托到 PersonaPanelManager ───────────────
 

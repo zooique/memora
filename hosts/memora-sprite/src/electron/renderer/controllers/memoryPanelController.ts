@@ -16,8 +16,75 @@ import type { UIManager } from '../ui.js';
 import { setButtonLoading, clearElement } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
+import { getSourceColorClass } from '../panels/memoryPanelManager.js';
 
 /** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
+
+/**
+ * 获取当前搜索参数（Phase 2：组合搜索，模块级）
+ *
+ * 从搜索栏、source 筛选、排序下拉、时间范围下拉中读取当前值，
+ * 统一返回 SearchParams 对象供搜索和列表加载共用。
+ * DOM 元素缺失时返回默认值，避免测试环境报错。
+ */
+function getSearchParams(): { query: string; source: string; sort: string; timeRange: string } {
+  const searchEl = document.getElementById('memory-search');
+  const sourceEl = document.getElementById('memory-filter-source');
+  const sortEl = document.getElementById('memory-sort-order');
+  const timeEl = document.getElementById('memory-time-range');
+  return {
+    query: (searchEl instanceof HTMLInputElement ? searchEl.value : '').trim(),
+    source: sourceEl instanceof HTMLSelectElement ? sourceEl.value : '',
+    sort: sortEl instanceof HTMLSelectElement ? sortEl.value : 'relevance',
+    timeRange: timeEl instanceof HTMLSelectElement ? timeEl.value : '',
+  };
+}
+
+/**
+ * 客户端排序 + 时间过滤（Phase 2：搜索增强，模块级）
+ *
+ * 在 IPC 返回结果后，根据当前排序方式和时间范围对结果进行二次处理。
+ * 搜索模式下使用 hits（含 similarity 字段），列表模式下使用 memories。
+ *
+ * @param items 记忆列表项
+ * @param params 搜索参数（sort + timeRange）
+ * @returns 排序和过滤后的列表
+ */
+function applyClientFilters(
+  items: MemoryListItem[],
+  params: { sort: string; timeRange: string },
+): MemoryListItem[] {
+  let result = [...items];
+
+  // 时间范围过滤（客户端，基于 createdAt 字段）
+  if (params.timeRange) {
+    const now = Date.now();
+    const rangeMs: Record<string, number> = {
+      '7d': 7 * 24 * 60 * 60 * 1000,
+      '30d': 30 * 24 * 60 * 60 * 1000,
+      '90d': 90 * 24 * 60 * 60 * 1000,
+    };
+    const cutoff = now - (rangeMs[params.timeRange] || 0);
+    result = result.filter((item) => {
+      if (!item.createdAt) return true; // 无时间信息的记忆保留
+      return new Date(item.createdAt).getTime() >= cutoff;
+    });
+  }
+
+  // 排序
+  if (params.sort === 'score') {
+    result.sort((a, b) => b.score - a.score);
+  } else if (params.sort === 'time') {
+    result.sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta; // 最新在前
+    });
+  }
+  // 'relevance' 保持原始顺序（搜索已按相关度排序，列表按 score 排序）
+
+  return result;
+}
 const DASHBOARD_PULSE_MS = 300;
 
 /** 累积事件接近阈值的百分比（>=80% 显示黄色高亮） */
@@ -63,10 +130,38 @@ export function createMemoryController(uiManager: UIManager) {
     // 搜索请求序列号：防止快速输入时旧结果覆盖新结果（竞态保护）
     let searchSeq = 0;
 
-    // 搜索回调
+    // ─── 高级搜索栏展开/收起（Phase 2：搜索增强） ────────────
+    const advSearchBtn = document.getElementById('btn-advanced-search');
+    const advSearchBar = document.getElementById('advanced-search-bar');
+    if (advSearchBtn && advSearchBar) {
+      advSearchBtn.addEventListener('click', () => {
+        const isHidden = advSearchBar.classList.contains('hidden');
+        advSearchBar.classList.toggle('hidden', !isHidden);
+        advSearchBtn.classList.toggle('active', isHidden);
+      });
+    }
+
+    // ─── 洞察栏展开/收起（Phase 3：记忆洞察面板） ────────────
+    // 展开时异步加载仪表盘 + 关系图谱数据，聚合渲染统计 + 分布 + 关系摘要
+    const insightsBtn = document.getElementById('btn-insights');
+    const insightsBar = document.getElementById('memory-insights-bar');
+    if (insightsBtn && insightsBar) {
+      insightsBtn.addEventListener('click', async () => {
+        const isHidden = insightsBar.classList.contains('hidden');
+        insightsBar.classList.toggle('hidden', !isHidden);
+        insightsBtn.classList.toggle('active', isHidden);
+        // 展开时加载数据（避免折叠状态下浪费 IPC 调用）
+        if (isHidden) {
+          await loadInsights();
+        }
+      });
+    }
+
+    // 搜索回调（Phase 2：组合搜索 — 关键词 + source + 排序 + 时间）
     uiManager.onMemorySearch(async (query: string) => {
+      const params = getSearchParams();
       if (!query) {
-        // 空搜索：加载全部
+        // 空搜索：加载全部（保留 source 筛选）
         await loadMemoryList();
         return;
       }
@@ -76,14 +171,22 @@ export function createMemoryController(uiManager: UIManager) {
         const { hits } = await window.electronAPI.searchMemories(query);
         // 若在等待期间有更新的搜索请求发起，丢弃本次过期结果
         if (seq !== searchSeq) return;
-        const items: MemoryListItem[] = hits.map(h => ({
+        let items: MemoryListItem[] = hits.map(h => ({
           id: h.id,
           name: h.name,
           source: h.source,
           score: h.similarity ?? h.score,
           contentPreview: h.contentPreview,
+          createdAt: (h as Record<string, unknown>).createdAt as string | undefined,
         }));
-        uiManager.renderMemoryList(items);
+        // 客户端 source 筛选（搜索 API 不支持 source 参数，客户端过滤）
+        if (params.source) {
+          items = items.filter(item => item.source === params.source);
+        }
+        // 客户端排序 + 时间过滤
+        items = applyClientFilters(items, params);
+        // 传递搜索关键词用于高亮
+        uiManager.renderMemoryList(items, query);
       } catch (error) {
         // IX-02 搜索失败时保持原列表，但给用户可见反馈（而非静默吞错）
         if (seq !== searchSeq) return;
@@ -92,10 +195,37 @@ export function createMemoryController(uiManager: UIManager) {
       }
     });
 
-    // 筛选回调
+    // 筛选回调（Phase 2：触发时重新加载，应用当前全部筛选条件）
     uiManager.onMemoryFilter((_source: string) => {
       void loadMemoryList();
     });
+
+    // 排序方式变更（Phase 2：搜索增强）
+    // 通过 dispatchEvent 触发搜索输入框的 input 事件，复用已有的 300ms 防抖 + 竞态保护
+    const sortEl = document.getElementById('memory-sort-order');
+    if (sortEl) {
+      sortEl.addEventListener('change', () => {
+        const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
+        if (searchInput && searchInput.value.trim()) {
+          searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          void loadMemoryList();
+        }
+      });
+    }
+
+    // 时间范围变更（Phase 2：搜索增强）
+    const timeEl = document.getElementById('memory-time-range');
+    if (timeEl) {
+      timeEl.addEventListener('change', () => {
+        const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
+        if (searchInput && searchInput.value.trim()) {
+          searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          void loadMemoryList();
+        }
+      });
+    }
 
     // 点击记忆条目：查看详情
     uiManager.onMemoryClick(async (id: string) => {
@@ -173,20 +303,178 @@ export function createMemoryController(uiManager: UIManager) {
 
     // FD-ADD-REC-CLICK 仪表盘推荐记忆点击事件委托已迁移到 UIManager.initEventListeners
     // （通过 EventTracker 统一管理，避免内存泄漏，与 dateNavList 委托同模式）
+
+    // ─── 图谱视图切换（ADR-014：拓扑可视化） ────────────────
+    // 注册图谱视图切换回调：切换到图谱时请求 IPC 加载数据
+    uiManager.onGraphToggle(async (mode) => {
+      if (mode === 'graph') {
+        try {
+          const data = await window.electronAPI.getRelationGraph();
+          uiManager.loadGraphData(data);
+        } catch (error) {
+          reportError('onGraphToggle', error);
+          uiManager.showToast('加载关系图谱失败', 'error');
+          // 失败时回退到列表视图
+          uiManager.switchMemoryView('list');
+        }
+      }
+    });
+
+    // 切换按钮点击事件（列表 ↔ 图谱）
+    const graphBtn = document.getElementById('btn-graph-view');
+    if (graphBtn) {
+      graphBtn.addEventListener('click', () => {
+        const graphContainer = document.getElementById('memory-graph-container');
+        const isGraphView = graphContainer && graphContainer.style.display !== 'none';
+
+        if (isGraphView) {
+          // 当前是图谱视图 → 切换回列表
+          uiManager.switchMemoryView('list');
+        } else {
+          // 当前是列表视图 → 切换到图谱
+          // 如果需要首次加载数据，onGraphToggle 回调会触发 IPC
+          uiManager.switchMemoryView('graph');
+        }
+        // 更新按钮激活态
+        updateGraphButtonState();
+      });
+    }
   }
 
-  /** 加载记忆列表 */
+  /**
+   * 更新图谱视图切换按钮的激活态
+   *
+   * 图谱视图激活时按钮高亮（.active 类），列表视图时恢复默认。
+   */
+  function updateGraphButtonState(): void {
+    const graphBtn = document.getElementById('btn-graph-view');
+    if (!graphBtn) return;
+    // 通过检查 graph container 是否可见判断当前视图
+    const graphContainer = document.getElementById('memory-graph-container');
+    const isGraphView = graphContainer && graphContainer.style.display !== 'none';
+    graphBtn.classList.toggle('active', isGraphView);
+  }
+
+  /**
+   * 加载记忆洞察数据（Phase 3：记忆洞察面板）
+   *
+   * 并行请求仪表盘数据和关系图谱数据，聚合渲染：
+   * - 统计卡片：记忆总数 / 关系数 / 来源数
+   * - source 分布：CSS 条形图（零依赖，无需图表库）
+   * - 关系摘要：最近 3 条关系 + 类型标签
+   *
+   * 纯代码计算，不增加 LLM 调用。
+   */
+  async function loadInsights(): Promise<void> {
+    try {
+      // 并行请求（Promise.all 避免串行延迟）
+      const [dashboard, graph] = await Promise.all([
+        window.electronAPI.getDashboard(),
+        window.electronAPI.getRelationGraph(),
+      ]);
+
+      // ─── 统计卡片 ────────────────────────────────────
+      const totalEl = document.getElementById('insights-total');
+      const relationsEl = document.getElementById('insights-relations');
+      const sourcesEl = document.getElementById('insights-sources');
+      if (totalEl) totalEl.textContent = String(dashboard.total);
+      if (relationsEl) relationsEl.textContent = String(graph.edges.length);
+      if (sourcesEl) sourcesEl.textContent = String(Object.keys(dashboard.bySource).length);
+
+      // ─── source 分布条形图 ────────────────────────────
+      // 每种 source 用对应颜色 + 宽度按比例，零外部依赖
+      const distEl = document.getElementById('insights-distribution');
+      if (distEl) {
+        clearElement(distEl);
+        const sources = Object.entries(dashboard.bySource).sort((a, b) => b[1] - a[1]);
+        const maxCount = Math.max(1, ...sources.map((s) => s[1]));
+        for (const [source, count] of sources) {
+          const bar = document.createElement('div');
+          bar.className = 'insights-distribution-bar';
+          bar.title = `${source}: ${count} 条`;
+
+          const label = document.createElement('span');
+          label.className = 'distribution-label';
+          label.textContent = source;
+
+          const fill = document.createElement('div');
+          fill.className = `distribution-fill source-${getSourceColorClass(source)}`;
+          fill.style.width = `${(count / maxCount) * 100}%`;
+
+          const countSpan = document.createElement('span');
+          countSpan.className = 'distribution-count';
+          countSpan.textContent = String(count);
+
+          bar.appendChild(label);
+          bar.appendChild(fill);
+          bar.appendChild(countSpan);
+          distEl.appendChild(bar);
+        }
+      }
+
+      // ─── 关系摘要：最近 3 条关系 ──────────────────────
+      // 按创建时间倒序取前 3 条，展示类型标签 + 节点名称
+      const summaryEl = document.getElementById('insights-relations-summary');
+      if (summaryEl) {
+        clearElement(summaryEl);
+        if (graph.edges.length === 0) {
+          summaryEl.textContent = '暂无关系数据';
+        } else {
+          // 构建节点 id → name 映射
+          const nodeNameMap = new Map(graph.nodes.map((n) => [n.id, n.name]));
+          // 按时间倒序
+          const recentEdges = [...graph.edges]
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+            .slice(0, 3);
+
+          const title = document.createElement('div');
+          title.className = 'insights-section-title';
+          title.textContent = '最近关系';
+          summaryEl.appendChild(title);
+
+          for (const edge of recentEdges) {
+            const item = document.createElement('div');
+            item.className = 'insights-relation-item';
+
+            const sourceName = nodeNameMap.get(edge.sourceId) || edge.sourceId;
+            const targetName = nodeNameMap.get(edge.targetId) || edge.targetId;
+
+            const typeTag = document.createElement('span');
+            typeTag.className = `relation-type-tag relation-type-${edge.type}`;
+            typeTag.textContent = edge.type;
+
+            const desc = document.createElement('span');
+            desc.className = 'relation-desc';
+            desc.textContent = `${sourceName} → ${targetName}`;
+
+            item.appendChild(typeTag);
+            item.appendChild(desc);
+            summaryEl.appendChild(item);
+          }
+        }
+      }
+    } catch (error) {
+      reportError('loadInsights', error);
+      // 洞察加载失败不阻塞记忆面板主流程
+    }
+  }
+
+  /** 加载记忆列表（Phase 2：支持组合筛选 + 客户端排序/时间过滤） */
   async function loadMemoryList(): Promise<void> {
     try {
-      const filterEl = document.getElementById('memory-filter-source');
-      const source = filterEl instanceof HTMLSelectElement ? filterEl.value : undefined;
-      const { memories } = await window.electronAPI.listMemories(source ? { source } : {});
-      uiManager.renderMemoryList(memories);
+      const params = getSearchParams();
+      const { memories } = await window.electronAPI.listMemories(
+        params.source ? { source: params.source } : {},
+      );
+      // 客户端排序 + 时间过滤
+      const filtered = applyClientFilters(memories, params);
+      // 传递空字符串表示无搜索关键词（不高亮）
+      uiManager.renderMemoryList(filtered, '');
 
       // 更新仪表盘记忆计数
       const countEl = document.getElementById('memory-count');
       if (countEl) {
-        countEl.textContent = String(memories.length);
+        countEl.textContent = String(filtered.length);
       }
     } catch (error) {
       reportError('loadMemoryList', error);

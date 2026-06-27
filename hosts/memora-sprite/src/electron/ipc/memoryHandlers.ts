@@ -71,4 +71,9 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       return { id: ctx.sprite.upsertMemory(data.source, data.name, data.content) };
     }),
   );
+
+  /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_GRAPH, async () =>
+    safeHandle('获取关系图谱失败', { nodes: [], edges: [] }, () => ctx.sprite.getRelationGraph()),
+  );
 }

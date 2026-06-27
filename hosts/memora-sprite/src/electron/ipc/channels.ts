@@ -40,6 +40,8 @@ export const IPC_CHANNELS = {
   MEMORIES_DELETE: 'memories-delete',
   /** 添加/更新记忆 */
   MEMORIES_ADD: 'memories-add',
+  /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
+  MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
 
   // ─── 配置相关 ─────────────────────────────────────────
   /** 获取精灵配置 */

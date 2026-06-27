@@ -19,6 +19,8 @@
 import { getOptionalElement, clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions } from '../types.js';
+import { RelationGraphRenderer } from '../components/relationGraph.js';
+import type { RelationGraphData } from '../components/relationGraph.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -67,8 +69,20 @@ export class MemoryPanelManager {
   private allMemories: MemoryListItem[] = [];
   /** P3-FLOW-13 当前记忆列表页码（从 1 开始） */
   private memoryPage = 1;
+  /** 当前搜索关键词（Phase 2：搜索结果高亮，空字符串表示不高亮） */
+  private currentSearchQuery = '';
   /** 记忆搜索防抖定时器（cleanup 时需清理，避免回调在 DOM 销毁后触发） */
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // ─── 图谱视图状态（ADR-014：拓扑可视化） ──────────────────
+  /** 当前视图模式：list（列表）或 graph（图谱），默认列表 */
+  private viewMode: 'list' | 'graph' = 'list';
+  /** 图谱渲染器实例（Canvas 2D 力导向图） */
+  private graphRenderer: RelationGraphRenderer | null = null;
+  /** 图谱数据缓存（切换回图谱视图时避免重复请求 IPC） */
+  private graphDataCache: RelationGraphData | null = null;
+  /** 图谱视图切换回调（请求宿主加载图谱数据） */
+  private graphToggleCallback: ((mode: 'list' | 'graph') => void) | null = null;
 
   // ─── 回调 ────────────────────────────────────────────────
   private memorySearchCallback: ((query: string) => void) | null = null;
@@ -106,6 +120,11 @@ export class MemoryPanelManager {
     if (this.searchTimer) {
       clearTimeout(this.searchTimer);
       this.searchTimer = null;
+    }
+    // 销毁图谱渲染器（释放 Canvas 和 rAF）
+    if (this.graphRenderer) {
+      this.graphRenderer.destroy();
+      this.graphRenderer = null;
     }
     this.events.cleanup();
   }
@@ -249,7 +268,7 @@ export class MemoryPanelManager {
    *     <div class="preview">{contentPreview}</div>
    *   </div>
    */
-  renderMemoryList(memories: MemoryListItem[]): void {
+  renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void {
     // 记忆面板元素缺失时静默降级
     if (!this.memoryListEl) return;
 
@@ -257,13 +276,39 @@ export class MemoryPanelManager {
     this.allMemories = memories;
     this.memoryPage = 1;
 
+    // 缓存搜索关键词供分页渲染时高亮使用（Phase 2：搜索增强）
+    this.currentSearchQuery = searchQuery || '';
+
     // 安全清空容器（使用 clearElement 统一封装 while + removeChild 模式）
     clearElement(this.memoryListEl);
 
     if (memories.length === 0) {
+      // Phase 4：空状态插画升级（SVG 图标 + 标题 + 副标题 + CTA 按钮）
       const empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.textContent = '暂无记忆';
+      empty.className = 'empty-state memory-empty-state';
+
+      // SVG 图标：大脑轮廓（简洁线条，无外部依赖）
+      const icon = document.createElement('div');
+      icon.className = 'empty-icon';
+      icon.innerHTML = `<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M24 8C18 8 14 12 14 18C10 18 8 22 8 26C8 30 10 34 14 34C14 38 18 40 22 40C26 40 28 38 28 34V14C28 10 26 8 24 8Z" stroke="currentColor" stroke-width="2" fill="none"/>
+        <path d="M28 14C32 14 36 16 36 20C38 20 40 22 40 26C40 30 38 32 36 32C36 36 32 38 28 38" stroke="currentColor" stroke-width="2" fill="none"/>
+        <circle cx="18" cy="24" r="2" fill="currentColor" opacity="0.5"/>
+        <circle cx="32" cy="28" r="1.5" fill="currentColor" opacity="0.3"/>
+      </svg>`;
+      empty.appendChild(icon);
+
+      // 标题
+      const title = document.createElement('div');
+      title.className = 'empty-title';
+      title.textContent = '暂无记忆';
+      empty.appendChild(title);
+
+      // 副标题
+      const subtitle = document.createElement('div');
+      subtitle.className = 'empty-subtitle';
+      subtitle.textContent = '积累对话后，记忆将自动归档到此处';
+      empty.appendChild(subtitle);
 
       // 空状态引导：提供"添加第一条记忆"按钮，避免用户不知道下一步
       const hintBtn = document.createElement('button');
@@ -304,11 +349,15 @@ export class MemoryPanelManager {
       const item = document.createElement('div');
       item.className = 'memory-item';
       item.dataset.id = mem.id;
+      // Phase 4：staggered fade-in 延迟（每项延迟 30ms，上限 300ms 避免长列表卡顿）
+      const staggerIndex = this.memoryListEl.children.length;
+      const delay = Math.min(staggerIndex * 30, 300);
+      item.style.animationDelay = `${delay}ms`;
 
-      // 名称
+      // 名称（Phase 2：搜索结果高亮）
       const nameEl = document.createElement('div');
       nameEl.className = 'name';
-      nameEl.textContent = mem.name;
+      nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
       item.appendChild(nameEl);
 
       // 元数据（source 标签 + score + P3-FLOW-14 创建时间）
@@ -338,10 +387,10 @@ export class MemoryPanelManager {
 
       item.appendChild(metaEl);
 
-      // 预览（2 行截断）
+      // 预览（2 行截断，Phase 2：搜索结果高亮）
       const previewEl = document.createElement('div');
       previewEl.className = 'preview';
-      previewEl.textContent = mem.contentPreview;
+      previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
       item.appendChild(previewEl);
 
       // QC-22 事件委托：用 data-action + data-memory-id 替代直接 addEventListener
@@ -536,6 +585,118 @@ export class MemoryPanelManager {
     return this.memoryDetailModal?.dataset.memoryId ?? null;
   }
 
+  // ─── 图谱视图（ADR-014：拓扑可视化） ──────────────────────
+
+  /**
+   * 高亮文本中的搜索关键词（Phase 2：搜索增强）
+   *
+   * 将匹配关键词的部分用 <mark> 标签包裹，支持中文和英文。
+   * 使用 innerHTML 渲染，已做 HTML 转义处理防止 XSS。
+   *
+   * @param text 原始文本
+   * @param query 搜索关键词（空字符串时返回转义后的原文）
+   * @returns 带 <mark> 高亮的 HTML 字符串
+   */
+  private highlightText(text: string, query: string): string {
+    // 转义 HTML 特殊字符，防止 XSS
+    const escaped = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+    if (!query) return escaped;
+
+    // 转义正则特殊字符，构建匹配模式
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQuery})`, 'gi');
+
+    return escaped.replace(regex, '<mark>$1</mark>');
+  }
+
+  /**
+   * 切换记忆视图模式（列表 ↔ 图谱）
+   *
+   * 图谱视图使用 Canvas 2D 力导向图渲染记忆关系网络。
+   * 首次切换时延迟初始化渲染器（确保 Canvas DOM 已就绪）。
+   * 关系数据为空时隐藏图谱标签，保持列表视图。
+   *
+   * @param mode 目标视图模式
+   */
+  switchView(mode: 'list' | 'graph'): void {
+    this.viewMode = mode;
+
+    // 切换列表和图谱容器的可见性
+    const listEl = this.memoryListEl;
+    const graphEl = document.getElementById('memory-graph-container');
+
+    if (mode === 'list') {
+      if (listEl) listEl.style.display = '';
+      if (graphEl) graphEl.style.display = 'none';
+    } else {
+      if (listEl) listEl.style.display = 'none';
+      if (graphEl) {
+        graphEl.style.display = '';
+        // 延迟初始化图谱渲染器（确保容器尺寸已计算）
+        this.initGraphRenderer();
+        // 加载图谱数据
+        if (this.graphDataCache) {
+          this.graphRenderer?.loadData(this.graphDataCache);
+        } else {
+          this.graphToggleCallback?.('graph');
+        }
+      }
+    }
+  }
+
+  /**
+   * 加载图谱数据到渲染器
+   *
+   * 由宿主层调用（IPC 返回图谱数据后）。
+   * 缓存数据以便切换回图谱视图时避免重复请求。
+   *
+   * @param data 图谱原始数据（nodes + edges）
+   */
+  loadGraphData(data: RelationGraphData): void {
+    this.graphDataCache = data;
+    if (this.viewMode === 'graph' && this.graphRenderer) {
+      this.graphRenderer.loadData(data);
+    }
+  }
+
+  /**
+   * 检查是否有关系数据（用于决定是否显示图谱标签）
+   *
+   * @returns 有缓存数据且边数 > 0 时返回 true
+   */
+  hasGraphData(): boolean {
+    return this.graphDataCache !== null && this.graphDataCache.edges.length > 0;
+  }
+
+  /** 获取当前视图模式 */
+  getViewMode(): 'list' | 'graph' {
+    return this.viewMode;
+  }
+
+  /**
+   * 延迟初始化图谱渲染器
+   *
+   * 首次切换到图谱视图时，Canvas 元素可能尚未渲染，
+   * 使用 requestAnimationFrame 延迟一帧确保 DOM 就绪。
+   */
+  private initGraphRenderer(): void {
+    if (this.graphRenderer) return;
+
+    const canvas = document.getElementById('memory-graph-canvas') as HTMLCanvasElement | null;
+    if (!canvas) return;
+
+    this.graphRenderer = new RelationGraphRenderer(canvas);
+    // 节点点击回调：通过 memoryClickCallback 显示详情
+    this.graphRenderer.setOnNodeClick((nodeId: string) => {
+      this.memoryClickCallback?.(nodeId);
+    });
+  }
+
   // ─── 回调注册 ───────────────────────────────────────────
 
   onMemorySearch(cb: (query: string) => void): void {
@@ -560,5 +721,9 @@ export class MemoryPanelManager {
   /** FD-ADD-MEMORY-DISCUSS 注册记忆讨论回调（记忆名称 → 切换到对话面板预填讨论提示） */
   onMemoryDiscuss(cb: (memoryName: string) => void): void {
     this.memoryDiscussCallback = cb;
+  }
+  /** 注册图谱视图切换回调（宿主请求加载图谱数据） */
+  onGraphToggle(cb: (mode: 'list' | 'graph') => void): void {
+    this.graphToggleCallback = cb;
   }
 }

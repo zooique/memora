@@ -79,12 +79,33 @@
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+  /* Phase 4：staggered fade-in 进场动画 */
+  animation: memoryItemFadeIn var(--transition-slow) ease both;
+}
+
+/* Phase 4：staggered fade-in 关键帧（配合 JS 设置 --stagger-index） */
+@keyframes memoryItemFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .memory-item:hover {
   background: var(--surface0);
   border-color: var(--muted);
+  /* Phase 4：hover 时轻微上浮 */
+  transform: translateY(-1px);
+}
+
+.memory-item:active {
+  /* Phase 4：active 时下沉反馈 */
+  transform: translateY(0);
 }
 
 .memory-item .name {
@@ -315,4 +336,309 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+/* ─── 图谱视图（ADR-014：拓扑可视化） ──────────────────────── */
+
+/* 图谱视图切换按钮 */
+.view-toggle-btn {
+  padding: 6px 10px;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+  line-height: 1;
+}
+
+.view-toggle-btn:hover {
+  background: var(--surface0);
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+/* 图谱视图激活态：按钮高亮 */
+.view-toggle-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* 图谱容器：填充记忆面板内容区 */
+#memory-graph-container {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* 图谱 Canvas：填满容器 */
+#memory-graph-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ─── 高级搜索栏（Phase 2：搜索增强） ──────────────────────── */
+
+/* 高级搜索栏：折叠时隐藏 */
+.advanced-search-bar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--surface2);
+  background: var(--window-bg-2);
+  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
+  max-height: 60px;
+  overflow: hidden;
+}
+
+.advanced-search-bar.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  opacity: 0;
+}
+
+/* 高级搜索行：flex 布局，紧凑排列 */
+.advanced-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 高级搜索标签 */
+.advanced-search-label {
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* 高级搜索下拉框（复用 panel-header select 样式） */
+.advanced-search-row select {
+  padding: 4px 8px;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ─── 搜索结果高亮（Phase 2：搜索增强） ────────────────────── */
+
+/* 搜索关键词高亮标记 */
+.memory-item .name mark,
+.memory-item .preview mark {
+  background: rgba(255, 159, 10, 0.3);
+  color: var(--text);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ─── 记忆洞察栏（Phase 3：记忆洞察面板） ───────────────────── */
+
+/* 洞察栏容器：折叠时隐藏 */
+.insights-bar {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--surface2);
+  background: var(--window-bg-2);
+  max-height: 400px;
+  overflow-y: auto;
+  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
+}
+
+.insights-bar.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  opacity: 0;
+  overflow: hidden;
+}
+
+/* 洞察行：统计卡片 + 分布图水平排列 */
+.insights-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+/* 统计卡片：数字 + 标签 */
+.insights-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 40px;
+}
+
+.insights-stat-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.insights-stat-label {
+  font-size: 10px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* source 分布容器：占满剩余空间 */
+.insights-source-distribution {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* 分布条：label + 条形 + 数量 */
+.insights-distribution-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.distribution-label {
+  width: 60px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 分布填充条：复用 source-* 颜色类 */
+.distribution-fill {
+  height: 6px;
+  border-radius: 3px;
+  min-width: 2px;
+  transition: width var(--transition-fast);
+}
+
+.distribution-count {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
+  text-align: right;
+}
+
+/* 关系摘要区域 */
+.insights-relations-summary {
+  border-top: 1px solid var(--surface2);
+  padding-top: 8px;
+  margin-top: 4px;
+}
+
+.insights-section-title {
+  font-size: 11px;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+/* 单条关系项：类型标签 + 描述 */
+.insights-relation-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 3px 0;
+}
+
+/* 关系类型标签：复用 relationGraph 中的颜色映射 */
+.relation-type-tag {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--surface0);
+  color: var(--text-2);
+}
+
+/* 关系类型颜色（与 relationGraph.ts EDGE_TYPE_COLORS 对齐） */
+.relation-type-contradicts { background: rgba(255, 59, 48, 0.2); color: #ff3b30; }
+.relation-type-supports { background: rgba(52, 199, 89, 0.2); color: #34c759; }
+.relation-type-follows { background: rgba(0, 102, 255, 0.2); color: #0066ff; }
+.relation-type-refines { background: rgba(255, 159, 10, 0.2); color: #ff9f0a; }
+.relation-type-caused { background: rgba(123, 31, 162, 0.2); color: #7b1fa2; }
+.relation-type-related { background: rgba(161, 161, 166, 0.2); color: #a1a1a6; }
+
+.relation-desc {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+/* ─── Phase 4：空状态插画 + 微交互 ─────────────────────────── */
+
+/* 记忆空状态：居中布局 + 图标 + 标题 + 副标题 + CTA */
+.memory-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 16px;
+}
+
+/* SVG 图标容器：使用 text-3 颜色，带轻微浮动动画 */
+.empty-icon {
+  color: var(--text-3);
+  animation: emptyIconFloat 3s ease-in-out infinite;
+  margin-bottom: 4px;
+}
+
+@keyframes emptyIconFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-subtitle {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+/* 搜索框聚焦扩展（Phase 4：微交互） */
+#memory-search {
+  transition: flex var(--transition-base), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+#memory-search:focus {
+  flex: 1.5; /* 聚焦时占据更多空间，视觉引导注意力 */
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-20);
+  outline: none;
+}
+
+/* 弹窗内容缩放进场动画（Phase 4：微交互） */
+.modal-content {
+  animation: modalScaleIn var(--transition-base) ease;
+}
+
+@keyframes modalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
