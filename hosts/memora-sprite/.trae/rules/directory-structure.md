@@ -22,6 +22,9 @@ src/
 │   ├── agentListeners.ts       # Agent 事件监听器（配置建议/写入确认/审计）
 │   ├── spriteEventBridge.ts    # 精灵事件桥接（主进程 → 渲染进程通知）
 │   ├── trayIcon.ts             # 系统托盘管理
+│   ├── clipboardHandler.ts     # 剪贴板三重保护处理器（Phase 3.1）
+│   ├── shortcuts.ts            # 全局快捷键管理器（Phase 3.3）
+│   ├── types.ts                # Electron 主进程类型 barrel（S-03 阶段 2）
 │   │
 │   ├── ipc/                    # IPC 通信层（通道定义 + 处理器注册 + 各类 handler）
 │   │   ├── index.ts            # 聚合导出
@@ -102,6 +105,7 @@ src/
 │   ├── constants.ts            # 精灵常量
 │   ├── fileWatcherTrigger.ts   # 文件监听触发器
 │   ├── interaction.ts          # IInteraction 接口定义
+│   ├── skillInstaller.ts       # 技能安装器（拖入安装，Phase 4.3）
 │   │
 │   ├── cli/                    # CLI 专属模块
 │   │   ├── formatter.ts        # CLI 输出格式化（颜色/表格/进度条）
@@ -115,7 +119,8 @@ src/
 │       ├── index.ts            # 控制器聚合导出
 │       ├── memoryController.ts # 记忆控制器（CRUD/搜索/统计）
 │       ├── personaController.ts # 角色控制器（切换/列表/激活）
-│       └── proactiveEngine.ts  # 精灵主动行为引擎（事件累积/提示生成）
+│       ├── proactiveEngine.ts  # 精灵主动行为引擎（事件累积/提示生成）
+│       └── presenceController.ts # 在场状态控制器（锁屏/挂起/焦点，Phase 3）
 │
 ├── storage/                    # 持久化层
 │   ├── sessionStore.ts         # 会话持久化（SQLite 会话表）

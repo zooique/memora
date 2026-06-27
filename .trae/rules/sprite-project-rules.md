@@ -54,6 +54,9 @@ hosts/memora-sprite/
     │   ├── agentListeners.ts ← Agent 事件监听器
     │   ├── spriteEventBridge.ts ← 精灵事件桥接
     │   ├── trayIcon.ts       ← 系统托盘管理
+    │   ├── clipboardHandler.ts ← 剪贴板三重保护处理器（Phase 3.1）
+    │   ├── shortcuts.ts      ← 全局快捷键管理器（Phase 3.3）
+    │   ├── types.ts          ← Electron 主进程类型 barrel（S-03 阶段 2）
     │   │
     │   ├── ipc/              ← IPC 通信层
     │   │   ├── index.ts / channels.ts / handlers.ts / minimalHandlers.ts
@@ -84,6 +87,7 @@ hosts/memora-sprite/
     │   ├── sprite.ts / spriteConfig.ts / spriteTracer.ts
     │   ├── triggers.ts / tools.ts / constants.ts
     │   ├── fileWatcherTrigger.ts / interaction.ts
+    │   ├── skillInstaller.ts ← 技能安装器（拖入安装，Phase 4.3）
     │   ├── cli/              ← CLI 专属模块
     │   │   ├── formatter.ts / interaction.ts
     │   ├── audit/            ← 审计日志
@@ -91,6 +95,7 @@ hosts/memora-sprite/
     │   └── controllers/      ← 精灵控制器（Agent 能力扩展）
     │       ├── index.ts / memoryController.ts
     │       ├── personaController.ts / proactiveEngine.ts
+    │       └── presenceController.ts ← 在场状态控制器（Phase 3）
     │
     ├── storage/              ← 持久化层
     │   ├── sessionStore.ts / sqliteStorage.ts
@@ -121,8 +126,11 @@ hosts/memora-sprite/
 3. 不做语音交互——阶段一只做文本交互
 4. 不做插件市场——技能通过 configManager.addSkill 本地添加
 5. 不做移动端——专注桌面场景
-6. 不做内容感知——永远不做 keylogger、屏幕截图、网络流量监听（ADR-SP-004）
-   - **例外**：剪贴板感知采用三重保护方案（被动检测变化 + 主动触发读取 + 用户确认写入），详见 [迭代规划-v0.3-to-v1.0.md](../../docs/迭代规划-v0.3-to-v1.0.md) §Phase 3.1
+6. 不做被动内容监听——永远不做 keylogger、屏幕截图、网络流量监听（ADR-SP-004）
+   - 剪贴板感知不属于"被动内容监听"，而是"用户主动触发的上下文感知"：
+     采用三重保护方案（被动检测变化 + 主动触发读取 + 用户确认写入），
+     仅在用户主动操作（复制/粘贴）时触发，且写入需用户显式确认。
+     详见 [迭代规划-v0.3-to-v1.0.md](../../docs/迭代规划-v0.3-to-v1.0.md) §Phase 3.1
 
 ## 6. 阶段规划
 
