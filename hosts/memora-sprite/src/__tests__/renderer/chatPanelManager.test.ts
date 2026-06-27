@@ -212,10 +212,20 @@ describe('构造与 cleanup', () => {
     expect(clipboardWriteText).not.toHaveBeenCalledWith('after-cleanup');
   });
 
-  it('THINKING_PHASE_LABELS 静态映射应包含 recalling/processing/archiving', () => {
-    expect(ChatPanelManager.THINKING_PHASE_LABELS.recalling).toBe('正在回忆...');
-    expect(ChatPanelManager.THINKING_PHASE_LABELS.processing).toBe('正在处理...');
-    expect(ChatPanelManager.THINKING_PHASE_LABELS.archiving).toBe('正在归档...');
+  // QC-R2-12：THINKING_PHASE_LABELS 已迁移到 messageDecorations.ts（私有常量非 export）
+  // 改为黑盒行为测试：验证 showThinkingPhase 渲染的文案包含正确中文标签
+  it('showThinkingPhase 应渲染 recalling/processing/archiving 中文标签', () => {
+    const { manager, messagesEl } = createManager();
+    manager.startStreaming('m1');
+    manager.showThinkingPhase('m1', 'recalling');
+    let indicator = messagesEl.querySelector('.thinking-phase');
+    expect(indicator?.textContent).toContain('正在回忆...');
+    manager.showThinkingPhase('m1', 'processing');
+    indicator = messagesEl.querySelector('.thinking-phase');
+    expect(indicator?.textContent).toContain('正在处理...');
+    manager.showThinkingPhase('m1', 'archiving');
+    indicator = messagesEl.querySelector('.thinking-phase');
+    expect(indicator?.textContent).toContain('正在归档...');
   });
 });
 

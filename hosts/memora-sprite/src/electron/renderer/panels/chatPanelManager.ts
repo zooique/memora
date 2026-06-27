@@ -26,6 +26,13 @@ import { renderMarkdown } from '../components/markdown.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // QC-R2-12：工具调用卡片 DOM 逻辑提取到独立 helper
 import { showToolStart as renderToolStart, updateToolResult as updateToolCardResult } from '../helpers/toolCallCard.js';
+// QC-R2-12：消息装饰器（召回记忆 + 思考阶段 + 截断提示）提取到独立 helper
+import {
+  createRecallContainer as buildRecallContainer,
+  renderMemoryRecall,
+  showThinkingPhase as renderThinkingPhase,
+  showTruncationNotice as renderTruncationNotice,
+} from '../helpers/messageDecorations.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { Message, ToastType } from '../types.js';
 
@@ -73,14 +80,7 @@ export interface ChatPanelHost {
 // ─── 聊天面板管理器类 ─────────────────────────────────────
 
 export class ChatPanelManager {
-  // ─── 思考阶段中文映射 ──────────────────────────────────
-
-  /** 思考阶段中文映射 */
-  static readonly THINKING_PHASE_LABELS: Record<string, string> = {
-    recalling: '正在回忆...',
-    processing: '正在处理...',
-    archiving: '正在归档...',
-  };
+  // QC-R2-12：THINKING_PHASE_LABELS 已迁移到 messageDecorations.ts
 
   // ─── DOM 引用（构造函数注入） ──────────────────────────
 
@@ -364,7 +364,8 @@ export class ChatPanelManager {
     // 召回记忆提示（仅精灵消息）
     const memoryRecall = message.memoryRecall;
     if (message.role === 'assistant' && memoryRecall && memoryRecall.length > 0) {
-      const recallContainer = this.createRecallContainer(memoryRecall);
+      // QC-R2-12：委托到 messageDecorations helper 构建召回记忆容器
+      const recallContainer = buildRecallContainer(memoryRecall);
       bubble.appendChild(recallContainer);
     }
 
@@ -575,8 +576,8 @@ export class ChatPanelManager {
   /**
    * MS-12 设置流式消息的召回记忆摘要
    *
-   * 在 startStreaming 之后、text chunk 之前调用，
-   * 将召回记忆摘要注入到消息气泡底部，用户可点击跳转记忆详情。
+   * 委托到 messageDecorations.ts 的 renderMemoryRecall 纯函数（QC-R2-12 提取）。
+   * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * @param messageId 流式消息 ID
    * @param memories 召回记忆摘要列表（name/score/source）
@@ -586,58 +587,11 @@ export class ChatPanelManager {
     if (!el) return;
     this._resetStreamSafetyTimer();
 
-    // 查找或创建召回记忆容器
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 若已存在召回容器，先清空（避免重复追加）
-    const existingContainer = bubble.querySelector('.memory-recall-container');
-    if (existingContainer) {
-      existingContainer.remove();
-    }
-
-    // 无召回记忆时不创建容器
-    if (memories.length === 0) return;
-
-    // 复用 createRecallContainer 统一构建逻辑
-    const recallContainer = this.createRecallContainer(memories);
-    // 插入到光标元素之前（若存在），否则追加到 bubble 末尾
-    const cursor = bubble.querySelector('.cursor');
-    if (cursor) {
-      bubble.insertBefore(recallContainer, cursor);
-    } else {
-      bubble.appendChild(recallContainer);
-    }
-  }
-
-  /**
-   * MS-12 构建召回记忆容器（私有辅助方法）
-   *
-   * 统一 appendMessage 和 setMemoryRecall 的 DOM 构建逻辑，避免重复代码。
-   * 每条召回记忆独立可点击，点击触发 memoryRecallClickCallback 跳转记忆详情。
-   *
-   * @param memories 召回记忆摘要列表
-   * @returns 已填充的容器 DOM 元素
-   */
-  private createRecallContainer(memories: Array<{ name: string; score: number; source: string }>): HTMLDivElement {
-    const recallContainer = document.createElement('div');
-    recallContainer.className = 'memory-recall-container';
-    for (const recall of memories) {
-      const recallItem = document.createElement('div');
-      recallItem.className = 'memory-recall';
-      // UX-08：使用 createElement 替代 innerHTML，避免 XSS 风险
-      const iconSpan = document.createElement('span');
-      iconSpan.textContent = '💡';
-      recallItem.appendChild(iconSpan);
-      const recallText = document.createElement('span');
-      recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
-      recallItem.appendChild(recallText);
-      // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
-      recallItem.dataset.action = 'recall';
-      recallItem.dataset.name = recall.name;
-      recallContainer.appendChild(recallItem);
-    }
-    return recallContainer;
+    // 委托到 messageDecorations helper 渲染召回记忆容器
+    renderMemoryRecall(bubble, memories);
   }
 
   // ─── UX-P2-01 思考阶段指示器 ──────────────────────────────
@@ -645,9 +599,8 @@ export class ChatPanelManager {
   /**
    * UX-P2-01 显示思考阶段指示器
    *
-   * 在消息气泡内显示"正在回忆.../处理.../归档..."提示，
-   * 让用户在等待首个 text chunk 时知道精灵正在工作。
-   * 当 text chunk 到达时，指示器会被 updateStreamingMessage 移除。
+   * 委托到 messageDecorations.ts 的 renderThinkingPhase 纯函数（QC-R2-12 提取）。
+   * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * @param messageId 流式消息 ID
    * @param phase 思考阶段（recalling/processing/archiving）
@@ -660,17 +613,8 @@ export class ChatPanelManager {
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 查找或创建思考阶段指示器
-    let indicator = bubble.querySelector('.thinking-phase') as HTMLDivElement | null;
-    if (!indicator) {
-      indicator = document.createElement('div');
-      indicator.className = 'thinking-phase';
-      bubble.appendChild(indicator);
-    }
-
-    // 更新阶段文案
-    const label = ChatPanelManager.THINKING_PHASE_LABELS[phase] ?? phase;
-    indicator.textContent = `⚙️ ${label}`;
+    // 委托到 messageDecorations helper 渲染思考阶段指示器
+    renderThinkingPhase(bubble, phase);
   }
 
   // ─── OBS-02 上下文截断提示 ────────────────────────────────
@@ -678,8 +622,8 @@ export class ChatPanelManager {
   /**
    * OBS-02 在消息气泡顶部显示上下文截断提示条
    *
-   * 当对话中发生上下文截断时，在消息气泡顶部插入持久提示条，
-   * 告知用户部分历史消息已被省略。遵循"主动可见"原则，非 hover 显示。
+   * 委托到 messageDecorations.ts 的 renderTruncationNotice 纯函数（QC-R2-12 提取）。
+   * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * @param messageId 流式消息 ID
    * @param count 本次对话中发生的截断次数
@@ -692,18 +636,8 @@ export class ChatPanelManager {
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 查找或创建截断提示条（插入到 bubble 顶部，thinking-phase 之前）
-    let notice = bubble.querySelector('.truncation-notice') as HTMLDivElement | null;
-    if (!notice) {
-      notice = document.createElement('div');
-      notice.className = 'truncation-notice';
-      bubble.insertBefore(notice, bubble.firstChild);
-    }
-
-    // 更新提示文案（count > 1 时显示次数）
-    notice.textContent = count > 1
-      ? `⚠️ 上下文已截断 ${count} 次，部分历史已省略`
-      : '⚠️ 上下文已截断，部分历史已省略';
+    // 委托到 messageDecorations helper 渲染截断提示条
+    renderTruncationNotice(bubble, count);
   }
 
   // ─── UX-P1-02 工具调用卡片 ────────────────────────────────
