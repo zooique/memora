@@ -23,6 +23,7 @@
 
 import { clearElement, formatTimestamp } from '../helpers/domHelpers.js';
 import { renderMarkdown } from '../components/markdown.js';
+import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { Message, ToastType } from '../types.js';
 
@@ -471,7 +472,7 @@ export class ChatPanelManager {
           flushToolCalls.forEach((tc) => bubbleToFlush.appendChild(tc));
         } catch (err) {
           // 渲染异常时不阻塞收尾流程，保留旧 DOM
-          console.error('[finishStreamingMessage] flush 渲染失败', err);
+          reportError('finishStreamingMessage', err);
         }
       }
       cancelAnimationFrame(this._rafHandle);
@@ -1197,7 +1198,7 @@ export class ChatPanelManager {
           if (!this.state.isStreaming) return;
           // 清理 fallback timer 自身引用（已触发，置 null 让 _clearStreamSafetyTimer 不再尝试 clearTimeout）
           this._streamSafetyFallbackTimer = null;
-          console.warn('[chatPanelManager] 90s 兜底：主进程未响应 onStreamStuck，本地清理');
+          reportError('chatPanelManager', '90s 兜底：主进程未响应 onStreamStuck，本地清理');
           // 补齐 rAF 取消与 DOM 清理（原 30s 路径漏掉，导致 .streaming 类残留）
           if (this._rafHandle !== null) {
             cancelAnimationFrame(this._rafHandle);
