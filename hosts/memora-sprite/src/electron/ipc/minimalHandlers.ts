@@ -267,4 +267,15 @@ export function registerMinimalIpcHandlers(
     const bgColor = theme === 'dark' ? '#1e1e2e' : '#f0f0f2';
     state.windowManager?.updateBackgroundColor(bgColor);
   });
+
+  // FOUNDATION-SEAL Phase 4：渲染进程日志上报（转发到主进程 logger）
+  // 渲染进程无 pino，通过 IPC 将错误/警告转发到主进程统一日志
+  ipcMain.on(IPC_CHANNELS.RENDERER_LOG, (_event, payload: { level: 'warn' | 'error'; context: string; message: string }) => {
+    const { level, context, message } = payload;
+    if (level === 'error') {
+      logger.error({ context, source: 'renderer' }, message);
+    } else {
+      logger.warn({ context, source: 'renderer' }, message);
+    }
+  });
 }

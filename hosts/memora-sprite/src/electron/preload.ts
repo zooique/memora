@@ -93,6 +93,8 @@ const IPC_CHANNELS = {
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
   // Phase 4.3：技能安装（渲染进程 → 主进程）
   SKILL_INSTALL: 'skill-install',
+  // FOUNDATION-SEAL Phase 4：渲染进程日志上报（渲染进程 → 主进程）
+  RENDERER_LOG: 'renderer-log',
 } as const;
 
 const MAIN_TO_RENDERER_CHANNELS = {
@@ -517,6 +519,16 @@ export interface ElectronAPI {
   listWorkProjections: () => Promise<WorkProjectionPayload[]>;
   /** 查看单个作品投影详情 */
   showWorkProjection: (filePath: string) => Promise<WorkProjectionPayload | null>;
+
+  // ─── FOUNDATION-SEAL Phase 4：渲染进程日志上报 ────────
+  /**
+   * 上报日志到主进程 logger（渲染进程无 pino，通过 IPC 转发）
+   *
+   * @param level 日志级别（'warn' | 'error'）
+   * @param context 错误上下文标识（如 'loadPersonaList'）
+   * @param message 错误消息文本
+   */
+  rendererLog: (level: 'warn' | 'error', context: string, message: string) => void;
 }
 
 const electronAPI: ElectronAPI = {
@@ -722,6 +734,9 @@ const electronAPI: ElectronAPI = {
   // H3：作品投影（WorkProjectionManager 查看）
   listWorkProjections: () => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_LIST),
   showWorkProjection: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_SHOW, filePath),
+
+  // FOUNDATION-SEAL Phase 4：渲染进程日志上报（fire-and-forget，日志无需等待）
+  rendererLog: (level, context, message) => ipcRenderer.send(IPC_CHANNELS.RENDERER_LOG, { level, context, message }),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);

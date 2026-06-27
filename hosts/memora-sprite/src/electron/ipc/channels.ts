@@ -145,6 +145,10 @@ export const IPC_CHANNELS = {
   // ─── 技能安装（Phase 4.3） ────────────────────────────
   /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容） */
   SKILL_INSTALL: 'skill-install',
+
+  // ─── 可观测性（FOUNDATION-SEAL Phase 4） ───────────────
+  /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
+  RENDERER_LOG: 'renderer-log',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */

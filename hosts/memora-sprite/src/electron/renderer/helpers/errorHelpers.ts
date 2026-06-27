@@ -37,17 +37,25 @@ export function toError(err: unknown): Error {
 /**
  * 统一错误日志记录
  *
- * 替代渲染进程中分散的 console.error 调用，统一日志格式为 `[context]` 前缀。
- * 便于在控制台检索和过滤特定模块的错误日志。
+ * 双通道记录：
+ * 1. console.error：保留渲染进程控制台输出（开发时即时可见）
+ * 2. window.electronAPI.rendererLog：上报主进程 logger（生产环境可观测性）
  *
- * QC-06 收束：约 18 处 console.error 调用统一收束到此函数，
- * 后续新增错误日志只需调用 reportError。
+ * IPC 不可用时（如 preload 加载失败）仅降级到 console.error，不抛错。
  *
  * @param context 错误上下文标识（如 'loadPersonaList'），自动添加方括号
  * @param error 错误对象或描述信息
  */
 export function reportError(context: string, error: unknown): void {
+  const message = toError(error).message;
+  // 控制台输出（开发时即时可见，保留 [context] 前缀格式）
   console.error(`[${context}]`, error);
+  // 上报主进程 logger（生产环境可观测性，try-catch 防止 IPC 不可用时崩溃）
+  try {
+    window.electronAPI?.rendererLog('error', context, message);
+  } catch {
+    // IPC 不可用时静默降级（console.error 已记录，无需额外处理）
+  }
 }
 
 /**

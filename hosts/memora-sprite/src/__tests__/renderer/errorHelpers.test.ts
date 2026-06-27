@@ -3,12 +3,14 @@
  *
  * 覆盖范围：
  * - toError：未知错误转 Error 的纯函数（Error 实例 / 字符串 / 含 message 对象 / 其他类型）
- * - reportError：统一日志格式（[context] 前缀）
+ * - reportError：统一日志格式（[context] 前缀）+ 主进程日志上报（FOUNDATION-SEAL Phase 4）
  * - createIpcErrorHandler：IPC 错误处理闭包（日志 + 可选 toast）
  *
- * 纯逻辑测试，无 JSDOM 依赖，无 electronAPI mock。
+ * 测试环境说明：
+ * - toError / createIpcErrorHandler：纯逻辑测试，无 JSDOM 依赖
+ * - reportError 渲染进程日志上报：通过 vi.stubGlobal mock window.electronAPI
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { toError, reportError, createIpcErrorHandler } from '../../electron/renderer/helpers/errorHelpers.js';
 import type { UIManager } from '../../electron/renderer/ui.js';
 
@@ -112,6 +114,82 @@ describe('reportError', () => {
     reportError('onPersonaSwitch', new Error('切换失败'));
     expect(console.error).toHaveBeenNthCalledWith(1, '[onMemoryDelete]', expect.any(Error));
     expect(console.error).toHaveBeenNthCalledWith(2, '[onPersonaSwitch]', expect.any(Error));
+  });
+});
+
+// ─── reportError - 渲染进程日志上报（FOUNDATION-SEAL Phase 4） ─────
+//
+// reportError 的双通道记录：
+// 1. console.error：保留渲染进程控制台输出
+// 2. window.electronAPI.rendererLog：上报主进程 logger（生产环境可观测性）
+//
+// 降级路径：IPC 不可用时（window 缺失 / electronAPI 缺失 / rendererLog 抛错）
+// 仅 console.error，不向上抛出。
+
+describe('reportError - 渲染进程日志上报（FOUNDATION-SEAL Phase 4）', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    // 清理 window stub，防止影响后续测试（node 环境默认无 window）
+    vi.unstubAllGlobals();
+  });
+
+  it('应调用 window.electronAPI.rendererLog 上报错误到主进程', () => {
+    const rendererLog = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { rendererLog } });
+
+    const error = new Error('测试错误');
+    reportError('loadPersonaList', error);
+
+    // 验证双通道：console.error + rendererLog
+    expect(console.error).toHaveBeenCalledWith('[loadPersonaList]', error);
+    expect(rendererLog).toHaveBeenCalledWith('error', 'loadPersonaList', '测试错误');
+  });
+
+  it('字符串错误也应提取 message 上报到主进程', () => {
+    const rendererLog = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { rendererLog } });
+
+    reportError('fetchData', '网络超时');
+
+    expect(rendererLog).toHaveBeenCalledWith('error', 'fetchData', '网络超时');
+  });
+
+  it('含 message 字段的对象应提取 message 上报', () => {
+    const rendererLog = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { rendererLog } });
+
+    reportError('onFetch', { message: '对象错误', code: 500 });
+
+    expect(rendererLog).toHaveBeenCalledWith('error', 'onFetch', '对象错误');
+  });
+
+  it('window.electronAPI 不存在时仅 console.error，不抛错', () => {
+    // electronAPI 为 undefined（preload 加载失败的场景）
+    vi.stubGlobal('window', {});
+
+    expect(() => reportError('ctx', new Error('err'))).not.toThrow();
+    expect(console.error).toHaveBeenCalledWith('[ctx]', expect.any(Error));
+  });
+
+  it('window 不存在时仅 console.error，不抛错', () => {
+    // node 环境默认无 window，不 stub 即可模拟此场景
+    expect(() => reportError('ctx', new Error('err'))).not.toThrow();
+    expect(console.error).toHaveBeenCalledWith('[ctx]', expect.any(Error));
+  });
+
+  it('rendererLog 抛错时应降级到 console.error，不向上抛出', () => {
+    // 模拟 IPC 通道已关闭或 rendererLog 实现异常
+    const rendererLog = vi.fn(() => {
+      throw new Error('IPC 通道已关闭');
+    });
+    vi.stubGlobal('window', { electronAPI: { rendererLog } });
+
+    expect(() => reportError('ctx', new Error('原错误'))).not.toThrow();
+    expect(console.error).toHaveBeenCalledWith('[ctx]', expect.any(Error));
   });
 });
 
