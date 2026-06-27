@@ -26,6 +26,24 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   /** 加载历史会话消息 */
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_event, query: { date?: string; session?: string; limit?: number; offset?: number }) => {
     try {
+      // FOUNDATION-SEAL Phase 3 轮3：query 对象类型校验，防止 null/undefined 或非对象传入
+      if (!query || typeof query !== 'object') {
+        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+      }
+      // date/session 可选但必须是字符串；limit/offset 可选但必须是数字
+      if (query.date !== undefined && typeof query.date !== 'string') {
+        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+      }
+      if (query.session !== undefined && typeof query.session !== 'string') {
+        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+      }
+      if (query.limit !== undefined && typeof query.limit !== 'number') {
+        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+      }
+      if (query.offset !== undefined && typeof query.offset !== 'number') {
+        return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
+      }
+
       let target: string;
       if (query.date && query.session) {
         // UX-PP-08 有明确查询参数时直接构造目标
@@ -77,6 +95,15 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, query: { date: string; session: string }) => {
     try {
+      // FOUNDATION-SEAL Phase 3 轮3：query 对象类型校验，防止 null/undefined 或非对象传入
+      if (!query || typeof query !== 'object') {
+        return { success: false, messages: [], error: '无效的请求参数' };
+      }
+      // date 字段校验：必填，必须是非空字符串
+      if (typeof query.date !== 'string' || query.date.length === 0) {
+        return { success: false, messages: [], error: '无效的请求参数' };
+      }
+
       if (!ctx.agent) {
         return { success: false, messages: [], error: 'Agent 未初始化' };
       }

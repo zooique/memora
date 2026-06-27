@@ -185,4 +185,48 @@ describe('registerWorkProjectionHandlers', () => {
 
     expect(result).toBeNull();
   });
+
+  // ─── FOUNDATION-SEAL Phase 3 轮3：filePath 校验失败路径 ──
+
+  it('空字符串 filePath 应降级返回 null（不调用 works.getProjection）', async () => {
+    const works = {
+      getProjection: vi.fn(async () => createMockEntry('1', '/path/file.ts')),
+    };
+    const ctx = createMockCtx(works);
+    registerWorkProjectionHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_SHOW)!;
+    const result = await callback({}, '');
+
+    expect(result).toBeNull();
+    expect(works.getProjection).not.toHaveBeenCalled();
+  });
+
+  it('非字符串 filePath 应降级返回 null', async () => {
+    const works = {
+      getProjection: vi.fn(async () => createMockEntry('1', '/path/file.ts')),
+    };
+    const ctx = createMockCtx(works);
+    registerWorkProjectionHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_SHOW)!;
+    const result = await callback({}, null as unknown as string);
+
+    expect(result).toBeNull();
+    expect(works.getProjection).not.toHaveBeenCalled();
+  });
+
+  it('超长 filePath（1001 字符）应降级返回 null', async () => {
+    const works = {
+      getProjection: vi.fn(async () => createMockEntry('1', '/path/file.ts')),
+    };
+    const ctx = createMockCtx(works);
+    registerWorkProjectionHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_SHOW)!;
+    const result = await callback({}, 'a'.repeat(1001));
+
+    expect(result).toBeNull();
+    expect(works.getProjection).not.toHaveBeenCalled();
+  });
 });

@@ -20,6 +20,7 @@ import {
   isValidId,
   isValidSearchQuery,
   isValidPersonaName,
+  isValidFilePath,
   isPathAllowed,
 } from '../../electron/ipc/inputValidation.js';
 
@@ -309,6 +310,58 @@ describe('isValidPersonaName', () => {
 
   it('含特殊字符 @ 应拒绝', () => {
     expect(isValidPersonaName('coder@v2')).toBe(false);
+  });
+});
+
+// ─── isValidFilePath（FOUNDATION-SEAL Phase 3 轮3） ─────
+
+describe('isValidFilePath', () => {
+  // ─── 合法输入 ──────────────────────────────────────────
+
+  it('普通文件路径应通过', () => {
+    expect(isValidFilePath('/home/user/project/file.txt')).toBe(true);
+  });
+
+  it('Windows 绝对路径应通过', () => {
+    expect(isValidFilePath('C:\\Users\\test\\file.ts')).toBe(true);
+  });
+
+  it('相对路径应通过', () => {
+    expect(isValidFilePath('./src/index.ts')).toBe(true);
+  });
+
+  it('含中文路径应通过（不限制字符集）', () => {
+    expect(isValidFilePath('/home/用户/文档/笔记.md')).toBe(true);
+  });
+
+  it('含空格路径应通过', () => {
+    expect(isValidFilePath('/home/user/my project/file.ts')).toBe(true);
+  });
+
+  it('长度恰好 1000 应通过（边界，<=）', () => {
+    expect(isValidFilePath('a'.repeat(1000))).toBe(true);
+  });
+
+  // ─── 非法输入 ──────────────────────────────────────────
+
+  it('空字符串应拒绝', () => {
+    expect(isValidFilePath('')).toBe(false);
+  });
+
+  it('非字符串（number）应拒绝', () => {
+    expect(isValidFilePath(123 as unknown as string)).toBe(false);
+  });
+
+  it('非字符串（null）应拒绝', () => {
+    expect(isValidFilePath(null as unknown as string)).toBe(false);
+  });
+
+  it('非字符串（undefined）应拒绝', () => {
+    expect(isValidFilePath(undefined as unknown as string)).toBe(false);
+  });
+
+  it('超长路径（1001 字符）应拒绝', () => {
+    expect(isValidFilePath('a'.repeat(1001))).toBe(false);
   });
 });
 

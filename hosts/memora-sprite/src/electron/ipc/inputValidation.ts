@@ -97,6 +97,9 @@ export function isValidSearchQuery(query: string): boolean {
 /** 角色名称长度上限：persona 文件名通常 < 50 字符，留余量到 100 */
 const MAX_PERSONA_NAME_LENGTH = 100;
 
+/** 文件路径长度上限：Windows MAX_PATH 260 + 余量到 1000 */
+const MAX_FILE_PATH_LENGTH = 1000;
+
 /**
  * FOUNDATION-SEAL Phase 3 轮2：验证角色名称 — 白名单字符 + 长度上限
  *
@@ -117,6 +120,23 @@ export function isValidPersonaName(name: string): boolean {
   }
   // 白名单：字母 + 数字 + 连字符 + 下划线 + 点，拒绝路径分隔符和空格
   return /^[a-zA-Z0-9._-]+$/.test(name);
+}
+
+/**
+ * FOUNDATION-SEAL Phase 3 轮3：验证文件路径 — 字符串 + 长度上限
+ *
+ * 文件路径可能含中文、空格、路径分隔符等，不限制字符集，
+ * 仅校验类型和长度，防止非字符串或超长值传入内核。
+ * 路径遍历防护由 isPathAllowed 在实际文件操作时校验。
+ *
+ * @param filePath 待验证的文件路径
+ * @returns 验证通过返回 true，否则 false
+ */
+export function isValidFilePath(filePath: string): boolean {
+  if (typeof filePath !== 'string' || filePath.length === 0 || filePath.length > MAX_FILE_PATH_LENGTH) {
+    return false;
+  }
+  return true;
 }
 
 /**

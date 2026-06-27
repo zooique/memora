@@ -252,6 +252,58 @@ describe('sessionHandlers', () => {
 
       expect(result).toEqual({ messages: [], loadedSessionId: '', total: 0, hasMore: false });
     });
+
+    // ─── FOUNDATION-SEAL Phase 3 轮3：query 对象校验失败路径 ──
+
+    it('query=null 应降级返回空数组（不调用内核）', async () => {
+      const sessionStore = createMockSessionStore();
+      const ctx = createMockCtx({ sessionStore });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_LOAD)!;
+      const result = await callback({}, null);
+
+      expect(result).toEqual({ messages: [], loadedSessionId: '', total: 0, hasMore: false });
+      // 内核方法不应被调用
+      expect(sessionStore.listSessions).not.toHaveBeenCalled();
+      expect(sessionStore.loadMessagesPaginated).not.toHaveBeenCalled();
+    });
+
+    it('query 非对象（字符串）应降级返回空数组', async () => {
+      const sessionStore = createMockSessionStore();
+      const ctx = createMockCtx({ sessionStore });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_LOAD)!;
+      const result = await callback({}, 'not-an-object' as unknown as { date?: string });
+
+      expect(result).toEqual({ messages: [], loadedSessionId: '', total: 0, hasMore: false });
+      expect(sessionStore.listSessions).not.toHaveBeenCalled();
+    });
+
+    it('date 字段非字符串应降级返回空数组', async () => {
+      const sessionStore = createMockSessionStore();
+      const ctx = createMockCtx({ sessionStore });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_LOAD)!;
+      const result = await callback({}, { date: 12345 } as unknown as { date: string });
+
+      expect(result).toEqual({ messages: [], loadedSessionId: '', total: 0, hasMore: false });
+      expect(sessionStore.listSessions).not.toHaveBeenCalled();
+    });
+
+    it('limit 字段非数字应降级返回空数组', async () => {
+      const sessionStore = createMockSessionStore();
+      const ctx = createMockCtx({ sessionStore });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_LOAD)!;
+      const result = await callback({}, { date: '2026-06-26', session: 'main', limit: '50' } as unknown as { date: string; session: string; limit: number });
+
+      expect(result).toEqual({ messages: [], loadedSessionId: '', total: 0, hasMore: false });
+      expect(sessionStore.loadMessagesPaginated).not.toHaveBeenCalled();
+    });
   });
 
   // ─── SESSION_SWITCH ────────────────────────────────────
@@ -343,6 +395,52 @@ describe('sessionHandlers', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('恢复失败');
+    });
+
+    // ─── FOUNDATION-SEAL Phase 3 轮3：query 对象 + date 校验失败路径 ──
+
+    it('query=null 应拒绝（不调用 Agent）', async () => {
+      const ctx = createMockCtx();
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_SWITCH)!;
+      const result = await callback({}, null);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('无效的请求参数');
+    });
+
+    it('query 非对象（字符串）应拒绝', async () => {
+      const ctx = createMockCtx();
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_SWITCH)!;
+      const result = await callback({}, 'invalid' as unknown as { date: string; session: string });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('无效的请求参数');
+    });
+
+    it('date 为空字符串应拒绝', async () => {
+      const ctx = createMockCtx();
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_SWITCH)!;
+      const result = await callback({}, { date: '', session: 'main' });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('无效的请求参数');
+    });
+
+    it('date 非字符串（number）应拒绝', async () => {
+      const ctx = createMockCtx();
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_SWITCH)!;
+      const result = await callback({}, { date: 20260626 as unknown as string, session: 'main' });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('无效的请求参数');
     });
   });
 
