@@ -13,6 +13,12 @@ const NAME_PATTERN = /^[\w-]+$/;
 /** 内容长度上限：10MB 文本，防止内存耗尽攻击 */
 const MAX_CONTENT_LENGTH = 10 * 1024 * 1024;
 
+/** ID 长度上限：500 字符，覆盖所有 source:xxx 格式的记忆 ID */
+const MAX_ID_LENGTH = 500;
+
+/** 搜索关键词长度上限：1000 字符，防止超长查询导致性能问题 */
+const MAX_SEARCH_QUERY_LENGTH = 1000;
+
 /**
  * 验证会话名 — 拒绝路径分隔符和特殊字符
  *
@@ -54,6 +60,38 @@ export function isValidContent(content: string, maxLength: number = MAX_CONTENT_
     return false;
   }
   return content.length <= maxLength;
+}
+
+/**
+ * FOUNDATION-SEAL Phase 3：验证记忆 ID — 非空字符串 + 长度上限
+ *
+ * 记忆 ID 格式为 source:xxx（如 "memory:用户偏好"），source 是开放字符串（ADR-004），
+ * 不限制字符集，仅校验类型和长度，防止恶意客户端传入非字符串或超长值。
+ *
+ * @param id 待验证的记忆 ID
+ * @returns 验证通过返回 true，否则 false
+ */
+export function isValidId(id: string): boolean {
+  if (typeof id !== 'string' || id.length === 0 || id.length > MAX_ID_LENGTH) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * FOUNDATION-SEAL Phase 3：验证搜索关键词 — 字符串 + 长度上限
+ *
+ * 搜索关键词允许空字符串（空字符串触发全量召回场景），仅校验类型和长度，
+ * 防止恶意客户端传入非字符串或超长值导致向量检索性能问题。
+ *
+ * @param query 待验证的搜索关键词
+ * @returns 验证通过返回 true，否则 false
+ */
+export function isValidSearchQuery(query: string): boolean {
+  if (typeof query !== 'string' || query.length > MAX_SEARCH_QUERY_LENGTH) {
+    return false;
+  }
+  return true;
 }
 
 /**

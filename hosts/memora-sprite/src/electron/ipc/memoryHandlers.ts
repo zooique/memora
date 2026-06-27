@@ -14,7 +14,7 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
 import { safeHandle } from './types.js';
-import { isValidContent } from './inputValidation.js';
+import { isValidContent, isValidId, isValidSearchQuery } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -30,17 +30,35 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
 
   /** 搜索记忆（混合搜索：关键词 + 向量召回） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_SEARCH, async (_event, query: string) =>
-    safeHandle('搜索记忆失败', { hits: [] }, async () => ({ hits: await ctx.sprite.searchMemories(query) })),
+    safeHandle('搜索记忆失败', { hits: [] }, async () => {
+      // FOUNDATION-SEAL Phase 3：校验搜索关键词类型和长度，防止超长查询导致性能问题
+      if (!isValidSearchQuery(query)) {
+        return { hits: [] };
+      }
+      return { hits: await ctx.sprite.searchMemories(query) };
+    }),
   );
 
   /** 查看单条记忆详情 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_SHOW, async (_event, id: string) =>
-    safeHandle('查看记忆详情失败', { memory: null }, () => ({ memory: ctx.sprite.showMemory(id) })),
+    safeHandle('查看记忆详情失败', { memory: null }, () => {
+      // FOUNDATION-SEAL Phase 3：校验记忆 ID 类型和长度，防止非字符串或超长值传入内核
+      if (!isValidId(id)) {
+        return { memory: null };
+      }
+      return { memory: ctx.sprite.showMemory(id) };
+    }),
   );
 
   /** 删除记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE, async (_event, id: string) =>
-    safeHandle('删除记忆失败', { deleted: false }, () => ({ deleted: ctx.sprite.deleteMemory(id) })),
+    safeHandle('删除记忆失败', { deleted: false }, () => {
+      // FOUNDATION-SEAL Phase 3：校验记忆 ID 类型和长度，防止非字符串或超长值传入内核
+      if (!isValidId(id)) {
+        return { deleted: false };
+      }
+      return { deleted: ctx.sprite.deleteMemory(id) };
+    }),
   );
 
   /** 添加记忆 */

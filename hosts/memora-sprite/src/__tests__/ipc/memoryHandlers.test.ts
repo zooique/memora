@@ -3,9 +3,9 @@
  *
  * 覆盖范围：
  * - MEMORIES_LIST：列出记忆（含 source 过滤）+ 失败降级
- * - MEMORIES_SEARCH：搜索记忆 + 失败降级
- * - MEMORIES_SHOW：查看记忆详情 + 失败降级
- * - MEMORIES_DELETE：删除记忆 + 失败降级
+ * - MEMORIES_SEARCH：搜索记忆 + 失败降级 + 输入验证（非字符串/超长拒绝）
+ * - MEMORIES_SHOW：查看记忆详情 + 失败降级 + 输入验证（空/非字符串/超长 ID 拒绝）
+ * - MEMORIES_DELETE：删除记忆 + 失败降级 + 输入验证（空/非字符串/超长 ID 拒绝）
  * - MEMORIES_ADD：添加记忆 + 输入验证（超大内容拒绝）+ 失败降级
  *
  * Mock 策略：
@@ -143,6 +143,31 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ hits: [] });
   });
 
+  // FOUNDATION-SEAL Phase 3：搜索关键词校验失败路径
+  it('MEMORIES_SEARCH 非字符串关键词应拒绝（返回空结果，不调用内核）', async () => {
+    const searchMemories = vi.fn(async () => []);
+    const ctx = createMockCtx({ searchMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SEARCH)!;
+    const result = await callback({}, 123 as unknown as string);
+
+    expect(searchMemories).not.toHaveBeenCalled();
+    expect(result).toEqual({ hits: [] });
+  });
+
+  it('MEMORIES_SEARCH 超长关键词应拒绝（返回空结果，不调用内核）', async () => {
+    const searchMemories = vi.fn(async () => []);
+    const ctx = createMockCtx({ searchMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SEARCH)!;
+    const result = await callback({}, 'a'.repeat(1001));
+
+    expect(searchMemories).not.toHaveBeenCalled();
+    expect(result).toEqual({ hits: [] });
+  });
+
   // ─── MEMORIES_SHOW ─────────────────────────────────────
 
   it('MEMORIES_SHOW 应返回记忆详情', async () => {
@@ -171,6 +196,43 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ memory: null });
   });
 
+  // FOUNDATION-SEAL Phase 3：记忆 ID 校验失败路径
+  it('MEMORIES_SHOW 空字符串 ID 应拒绝（返回 null，不调用内核）', async () => {
+    const showMemory = vi.fn(() => null);
+    const ctx = createMockCtx({ showMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SHOW)!;
+    const result = await callback({}, '');
+
+    expect(showMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ memory: null });
+  });
+
+  it('MEMORIES_SHOW 非字符串 ID 应拒绝（返回 null，不调用内核）', async () => {
+    const showMemory = vi.fn(() => null);
+    const ctx = createMockCtx({ showMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SHOW)!;
+    const result = await callback({}, null as unknown as string);
+
+    expect(showMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ memory: null });
+  });
+
+  it('MEMORIES_SHOW 超长 ID 应拒绝（返回 null，不调用内核）', async () => {
+    const showMemory = vi.fn(() => null);
+    const ctx = createMockCtx({ showMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SHOW)!;
+    const result = await callback({}, 'a'.repeat(501));
+
+    expect(showMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ memory: null });
+  });
+
   // ─── MEMORIES_DELETE ───────────────────────────────────
 
   it('MEMORIES_DELETE 应返回删除结果', async () => {
@@ -195,6 +257,43 @@ describe('registerMemoryHandlers', () => {
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE)!;
     const result = await callback({}, '1');
 
+    expect(result).toEqual({ deleted: false });
+  });
+
+  // FOUNDATION-SEAL Phase 3：记忆 ID 校验失败路径
+  it('MEMORIES_DELETE 空字符串 ID 应拒绝（返回 deleted: false，不调用内核）', async () => {
+    const deleteMemory = vi.fn(() => false);
+    const ctx = createMockCtx({ deleteMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE)!;
+    const result = await callback({}, '');
+
+    expect(deleteMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ deleted: false });
+  });
+
+  it('MEMORIES_DELETE 非字符串 ID 应拒绝（返回 deleted: false，不调用内核）', async () => {
+    const deleteMemory = vi.fn(() => false);
+    const ctx = createMockCtx({ deleteMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE)!;
+    const result = await callback({}, undefined as unknown as string);
+
+    expect(deleteMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ deleted: false });
+  });
+
+  it('MEMORIES_DELETE 超长 ID 应拒绝（返回 deleted: false，不调用内核）', async () => {
+    const deleteMemory = vi.fn(() => false);
+    const ctx = createMockCtx({ deleteMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE)!;
+    const result = await callback({}, 'a'.repeat(501));
+
+    expect(deleteMemory).not.toHaveBeenCalled();
     expect(result).toEqual({ deleted: false });
   });
 

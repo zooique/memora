@@ -5,6 +5,8 @@
  * - isValidSessionName：会话名校验（白名单 + 长度）
  * - isValidConfigName：配置名校验（防路径遍历写入）
  * - isValidContent：内容长度校验（防内存耗尽）
+ * - isValidId：记忆 ID 校验（类型 + 长度，FOUNDATION-SEAL Phase 3）
+ * - isValidSearchQuery：搜索关键词校验（类型 + 长度，FOUNDATION-SEAL Phase 3）
  * - isPathAllowed：文件路径白名单校验（防路径遍历攻击）
  *
  * 这些函数是 IPC 安全边界，防止路径遍历、注入等安全风险。
@@ -15,6 +17,8 @@ import {
   isValidSessionName,
   isValidConfigName,
   isValidContent,
+  isValidId,
+  isValidSearchQuery,
   isPathAllowed,
 } from '../../electron/ipc/inputValidation.js';
 
@@ -152,6 +156,90 @@ describe('isValidContent', () => {
 
   it('内容长度恰好等于 maxLength 应通过（边界，<=）', () => {
     expect(isValidContent('hello', 5)).toBe(true);
+  });
+});
+
+// ─── isValidId（FOUNDATION-SEAL Phase 3） ────────────────
+
+describe('isValidId', () => {
+  // ─── 合法输入 ──────────────────────────────────────────
+
+  it('普通字符串应通过', () => {
+    expect(isValidId('memory:用户偏好')).toBe(true);
+  });
+
+  it('纯字母 ID 应通过', () => {
+    expect(isValidId('abc')).toBe(true);
+  });
+
+  it('含特殊字符的 ID 应通过（source 开放字符串，不限制字符集）', () => {
+    expect(isValidId('memory:hello world!@#')).toBe(true);
+  });
+
+  it('长度恰好 500 的 ID 应通过（边界，<=）', () => {
+    expect(isValidId('a'.repeat(500))).toBe(true);
+  });
+
+  // ─── 非法输入 ──────────────────────────────────────────
+
+  it('空字符串应拒绝', () => {
+    expect(isValidId('')).toBe(false);
+  });
+
+  it('非字符串（number）应拒绝', () => {
+    expect(isValidId(123 as unknown as string)).toBe(false);
+  });
+
+  it('非字符串（null）应拒绝', () => {
+    expect(isValidId(null as unknown as string)).toBe(false);
+  });
+
+  it('非字符串（undefined）应拒绝', () => {
+    expect(isValidId(undefined as unknown as string)).toBe(false);
+  });
+
+  it('超长 ID（501 字符）应拒绝', () => {
+    expect(isValidId('a'.repeat(501))).toBe(false);
+  });
+});
+
+// ─── isValidSearchQuery（FOUNDATION-SEAL Phase 3） ───────
+
+describe('isValidSearchQuery', () => {
+  // ─── 合法输入 ──────────────────────────────────────────
+
+  it('普通关键词应通过', () => {
+    expect(isValidSearchQuery('用户偏好')).toBe(true);
+  });
+
+  it('空字符串应通过（触发全量召回场景）', () => {
+    expect(isValidSearchQuery('')).toBe(true);
+  });
+
+  it('含特殊字符的关键词应通过', () => {
+    expect(isValidSearchQuery('hello world!@#')).toBe(true);
+  });
+
+  it('长度恰好 1000 的关键词应通过（边界，<=）', () => {
+    expect(isValidSearchQuery('a'.repeat(1000))).toBe(true);
+  });
+
+  // ─── 非法输入 ──────────────────────────────────────────
+
+  it('非字符串（number）应拒绝', () => {
+    expect(isValidSearchQuery(123 as unknown as string)).toBe(false);
+  });
+
+  it('非字符串（null）应拒绝', () => {
+    expect(isValidSearchQuery(null as unknown as string)).toBe(false);
+  });
+
+  it('非字符串（undefined）应拒绝', () => {
+    expect(isValidSearchQuery(undefined as unknown as string)).toBe(false);
+  });
+
+  it('超长关键词（1001 字符）应拒绝', () => {
+    expect(isValidSearchQuery('a'.repeat(1001))).toBe(false);
   });
 });
 
