@@ -18,3 +18,6 @@ export type { RapportState, RapportControllerOptions } from './rapportController
 
 export { ContextAwareness } from './contextAwareness.js';
 export type { ContextState, ContextAwarenessOptions, RhythmType, CoherenceLevel, DepthLevel } from './contextAwareness.js';
+
+export { PatternDetector } from './patternDetector.js';
+export type { DetectedPattern, PatternType, PatternDetectorOptions } from './patternDetector.js';

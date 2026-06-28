@@ -191,6 +191,21 @@ export function isContextPayload(value: unknown): value is ContextPayload {
   );
 }
 
+/** Phase 2+：校验用户模式更新 payload 结构 */
+export function isPatternsPayload(value: unknown): value is PatternsPayload {
+  return (
+    isObject(value) &&
+    Array.isArray(value.patterns) &&
+    value.patterns.every(
+      (p: unknown) =>
+        isObject(p) &&
+        typeof (p as Record<string, unknown>).type === 'string' &&
+        typeof (p as Record<string, unknown>).summary === 'string' &&
+        typeof (p as Record<string, unknown>).confidence === 'number',
+    )
+  );
+}
+
 /** H3：作品投影更新载荷 */
 export interface WorkProjectionUpdatedPayload {
   sourcePath: string;
@@ -381,6 +396,14 @@ function createSpriteEventHandlers(
       }
       callbacks.onContextUpdated?.(msg.payload);
     },
+    // Phase 2+：用户模式更新 → 洞察面板展示
+    patternsUpdated: (msg) => {
+      if (!isPatternsPayload(msg.payload)) {
+        reportError('handlePatternsUpdated', msg.payload);
+        return;
+      }
+      callbacks.onPatternsUpdated?.(msg.payload);
+    },
     // H3：作品投影更新 → 刷新作品投影面板
     workProjectionUpdated: (msg) => {
       if (!isWorkProjectionUpdatedPayload(msg.payload)) {
@@ -410,6 +433,8 @@ export interface IpcListenerCallbacks {
   onContextUpdated?: (payload: ContextPayload) => void;
   /** H3：作品投影更新时回调（刷新作品投影面板） */
   onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
+  /** Phase 2+：用户模式更新时回调（刷新洞察面板） */
+  onPatternsUpdated?: (payload: PatternsPayload) => void;
 }
 
 /** Phase 2.1：情感基调载荷 */
@@ -443,6 +468,16 @@ export interface ContextPayload {
   depth: 'deep' | 'moderate' | 'shallow' | 'none';
   dominantSource: string | null;
   description: string;
+}
+
+/** Phase 2+：用户模式更新载荷 */
+export interface PatternsPayload {
+  patterns: Array<{
+    type: string;
+    summary: string;
+    confidence: number;
+    suggestion?: string;
+  }>;
 }
 
 /**

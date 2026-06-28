@@ -297,12 +297,6 @@
   }
 }
 
-/* ─── 侧边栏导航（v8 列表式） ────────────────────────────── */
-/* ADR-NAV-001 导航按钮已迁移至顶部栏 #titlebar-nav，此处保留 .nav-btn 基础样式供复用 */
-#sidebar-nav {
-  display: none; /* 侧边栏导航已废弃，保留选择器避免 TS querySelector 报错 */
-}
-
 /* ─── 顶部栏导航标签（ADR-NAV-001 segmented control 样式） ──── */
 /* 参考 Trae Work：三个标签合并在一个圆角容器内，active 标签白色凸起 */
 #titlebar-nav {
@@ -420,17 +414,17 @@
   border-radius: 10px;
   font-size: 11px;
   font-weight: 600;
-  color: #fff;
+  color: #fff; /* 白字在彩色徽章上，双主题通用 */
   background: var(--muted);
   margin-bottom: 6px;
   transition: background 0.5s ease;
 }
 
-/* 默契度等级徽章颜色（与 Affect 颜色体系一致） */
-.rapport-level-badge[data-level="stranger"] { background: #6b8dd6; }
-.rapport-level-badge[data-level="acquaintance"] { background: #5ba47b; }
-.rapport-level-badge[data-level="familiar"] { background: #d4a843; }
-.rapport-level-badge[data-level="close"] { background: #d46b6b; }
+/* 默契度等级徽章颜色（使用语义色变量，适配双主题） */
+.rapport-level-badge[data-level="stranger"] { background: var(--accent); }
+.rapport-level-badge[data-level="acquaintance"] { background: var(--green); }
+.rapport-level-badge[data-level="familiar"] { background: var(--yellow); }
+.rapport-level-badge[data-level="close"] { background: var(--red); }
 
 .rapport-description {
   margin: 6px 0 0 0;
@@ -465,6 +459,109 @@
   font-weight: 600;
   color: var(--text);
   transition: color 0.3s ease;
+}
+
+/* ─── Phase 2+：模式洞察列表 ───────────────────────────── */
+.patterns-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pattern-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.pattern-item .pattern-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  margin-top: 1px;
+}
+
+.pattern-item .pattern-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.pattern-item .pattern-confidence {
+  flex-shrink: 0;
+  font-size: 9px;
+  color: var(--muted);
+  align-self: center;
+}
+
+/* ─── FD-01 精灵叙事摘要 ───────────────────────────────── */
+#sprite-narrative {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-20);
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: opacity var(--transition-base) ease, background var(--transition-base) ease;
+}
+
+#sprite-narrative-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  flex: 1;
+}
+
+/* FD-03 叙事卡片折叠/展开箭头 */
+.narrative-toggle {
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform var(--transition-base) ease;
+  flex-shrink: 0;
+}
+.narrative-toggle.expanded {
+  transform: rotate(90deg);
+}
+
+/* 叙事摘要不同状态的颜色变体 */
+#sprite-narrative.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-20);
+}
+
+#sprite-narrative.idle {
+  background: var(--surface1);
+  border-color: var(--surface2);
+  opacity: 0.7;
+}
+
+/* FD-03 详情区容器：折叠/展开过渡 */
+#dashboard-details {
+  overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+  max-height: 800px;
+  opacity: 1;
+}
+#dashboard-details.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* FD-03 叙事卡片更新脉冲动画：感知数据变化时短暂高亮 */
+#sprite-narrative.narrative-updated {
+  animation: narrative-pulse 0.6s ease;
+}
+@keyframes narrative-pulse {
+  0% { box-shadow: 0 0 0 0 var(--accent-20); }
+  50% { box-shadow: 0 0 8px 2px var(--accent); }
+  100% { box-shadow: 0 0 0 0 var(--accent-20); }
 }
 
 /* ─── Phase 4.3：技能文件拖入安装区域（已迁移到设置面板"技能"选项卡） ─── */
@@ -849,8 +946,9 @@
   font-size: 12px;
 }
 
-.review-trend-direction.growing { color: #34c759; }
-.review-trend-direction.declining { color: #ff9f0a; }
+/* 趋势方向颜色（使用 CSS 变量适配双主题） */
+.review-trend-direction.growing { color: var(--green); }
+.review-trend-direction.declining { color: var(--yellow); }
 .review-trend-direction.stable { color: var(--text-2); }
 
 /* 趋势柱状图 */

@@ -13,7 +13,7 @@
  */
 
 import type { UIManager } from '../ui.js';
-import { setButtonLoading, clearElement } from '../helpers/domHelpers.js';
+import { setButtonLoading, clearElement, showPanelLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 import { getSourceColorClass } from '../panels/memoryPanelManager.js';
@@ -133,6 +133,35 @@ export function createMemoryController(uiManager: UIManager) {
   function setupMemoryPanel(): void {
     // 搜索请求序列号：防止快速输入时旧结果覆盖新结果（竞态保护）
     let searchSeq = 0;
+
+    // ─── FD-03 叙事卡片点击：展开/折叠详情区 ────────────
+    const narrativeCard = document.getElementById('sprite-narrative');
+    const detailsContainer = document.getElementById('dashboard-details');
+    const toggleArrow = document.getElementById('narrative-toggle');
+    if (narrativeCard && detailsContainer && toggleArrow) {
+      // 默认折叠详情区
+      detailsContainer.classList.add('collapsed');
+      narrativeCard.addEventListener('click', () => {
+        const isCollapsed = detailsContainer.classList.toggle('collapsed');
+        toggleArrow.classList.toggle('expanded', !isCollapsed);
+      });
+    }
+
+    // ─── FD-03 对话面板叙事行点击：定位到侧边栏叙事卡片 ────
+    const chatNarrative = document.getElementById('chat-narrative');
+    if (chatNarrative && narrativeCard && detailsContainer) {
+      chatNarrative.addEventListener('click', () => {
+        // 展开详情区（若已折叠）
+        detailsContainer.classList.remove('collapsed');
+        if (toggleArrow) toggleArrow.classList.add('expanded');
+        // 滚动侧边栏使叙事卡片可见
+        narrativeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // 短暂脉冲动画标记叙事卡片位置
+        narrativeCard.classList.remove('narrative-updated');
+        void narrativeCard.offsetWidth;
+        narrativeCard.classList.add('narrative-updated');
+      });
+    }
 
     // ─── 高级搜索栏展开/收起（Phase 2：搜索增强） ────────────
     const advSearchBtn = document.getElementById('btn-advanced-search');
@@ -492,6 +521,12 @@ export function createMemoryController(uiManager: UIManager) {
    * 纯代码计算，不增加 LLM 调用。
    */
   async function loadInsights(): Promise<void> {
+    // FD-02 加载态：在 IPC 调用前显示加载指示器
+    const distEl = document.getElementById('insights-distribution');
+    const summaryEl = document.getElementById('insights-relations-summary');
+    if (distEl) showPanelLoading(distEl, '加载洞察数据...');
+    if (summaryEl) showPanelLoading(summaryEl, '加载关系数据...');
+
     try {
       // 并行请求（Promise.all 避免串行延迟）
       const [dashboard, graph] = await Promise.all([
@@ -581,6 +616,15 @@ export function createMemoryController(uiManager: UIManager) {
       }
     } catch (error) {
       reportError('loadInsights', error);
+      // FD-02 加载失败时清除加载态，显示降级文案
+      if (distEl) {
+        clearElement(distEl);
+        distEl.textContent = '加载失败，请重试';
+      }
+      if (summaryEl) {
+        clearElement(summaryEl);
+        summaryEl.textContent = '加载失败，请重试';
+      }
       // 洞察加载失败不阻塞记忆面板主流程
     }
   }
@@ -597,6 +641,12 @@ export function createMemoryController(uiManager: UIManager) {
    * 纯 DOM 操作，不依赖 LLM。
    */
   async function loadHealthDashboard(): Promise<void> {
+    // FD-02 加载态：在 IPC 调用前显示加载指示器
+    const healthBar = document.getElementById('memory-health-bar');
+    // 在 health-metrics 区域插入加载态（不影响 header 区域）
+    const metricsEl = healthBar?.querySelector('.health-metrics');
+    if (metricsEl) showPanelLoading(metricsEl, '加载健康度数据...');
+
     try {
       const data = await window.electronAPI.getHealthDashboard();
 
@@ -688,12 +738,24 @@ export function createMemoryController(uiManager: UIManager) {
 
     } catch (error) {
       reportError('loadHealthDashboard', error);
+      // FD-02 加载失败时清除加载态，显示降级文案
+      if (metricsEl) {
+        clearElement(metricsEl);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-state';
+        errorDiv.textContent = '加载失败，请重试';
+        metricsEl.appendChild(errorDiv);
+      }
       // 健康度加载失败不阻塞记忆面板主流程
     }
   }
 
   /** 加载记忆列表（Phase 2：支持组合筛选 + 客户端排序/时间过滤） */
   async function loadMemoryList(): Promise<void> {
+    // FD-02 加载态：在 IPC 调用前显示加载指示器
+    const listEl = document.getElementById('memory-list');
+    if (listEl) showPanelLoading(listEl, '加载记忆列表...');
+
     try {
       const params = getSearchParams();
       const { memories } = await window.electronAPI.listMemories(
@@ -702,6 +764,7 @@ export function createMemoryController(uiManager: UIManager) {
       // 客户端排序 + 时间过滤
       const filtered = applyClientFilters(memories, params);
       // 传递空字符串表示无搜索关键词（不高亮）
+      // renderMemoryList 内部会 clearElement 清除加载态
       uiManager.renderMemoryList(filtered, '');
 
       // 更新仪表盘记忆计数
@@ -711,6 +774,14 @@ export function createMemoryController(uiManager: UIManager) {
       }
     } catch (error) {
       reportError('loadMemoryList', error);
+      // 加载失败时清除加载态，显示错误状态
+      if (listEl) {
+        clearElement(listEl);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-state';
+        errorDiv.innerHTML = '<span class="error-icon">⚠️</span><span class="error-message">加载记忆列表失败</span>';
+        listEl.appendChild(errorDiv);
+      }
       uiManager.showPanelError('memory', '加载记忆列表失败，请检查连接后重试', () => loadMemoryList());
     }
   }
@@ -1172,6 +1243,135 @@ export function createMemoryController(uiManager: UIManager) {
     }
   }
 
+  /**
+   * Phase 2+：模式类型 → 图标映射
+   *
+   * 用于洞察面板中每个模式项的图标展示。
+   */
+  function PatternDetectorIcon(type: string): string {
+    switch (type) {
+      case 'recurring_topic': return '🔄';
+      case 'knowledge_gap': return '❓';
+      case 'interest_drift': return '📈';
+      default: return '💡';
+    }
+  }
+
+  // ─── FD-01 叙事摘要：闭包级状态（跨事件累积，供 generateNarrative 合成） ──
+
+  /** 最近一次上下文状态 */
+  let lastNarrativeContext: { rhythm: string; coherence: string; depth: string; dominantSource: string | null } | null = null;
+  /** 最近一次情感基调 */
+  let lastNarrativeAffect: { warmth: number; directness: number; initiative: number; playfulness: number } | null = null;
+  /** 最近一次默契度 */
+  let lastNarrativeRapport: { level: string; trust: number } | null = null;
+  /** 最近一次检测到的模式 */
+  let lastNarrativePatterns: Array<{ type: string; summary: string }> = [];
+
+  /**
+   * FD-01 综合感知系统输出，生成一句话叙事摘要
+   *
+   * 数据来源：ContextAwareness + AffectController + RapportController + PatternDetector
+   * 纯客户端合成，不触发 IPC，不依赖 LLM。
+   */
+  function generateNarrative(): string {
+    const parts: string[] = [];
+
+    // 对话上下文
+    if (lastNarrativeContext && lastNarrativeContext.rhythm !== 'idle') {
+      const rhythmLabel = ContextAwarenessDescribeRhythm(lastNarrativeContext.rhythm);
+      parts.push(`对话节奏${rhythmLabel}`);
+    }
+    if (lastNarrativeContext && lastNarrativeContext.coherence === 'focused' && lastNarrativeContext.dominantSource) {
+      parts.push(`正在专注讨论${lastNarrativeContext.dominantSource}相关话题`);
+    } else if (lastNarrativeContext && lastNarrativeContext.coherence === 'scattered') {
+      parts.push('话题较为分散');
+    }
+
+    // 互动基调
+    if (lastNarrativeAffect) {
+      const tones: string[] = [];
+      if (lastNarrativeAffect.warmth > 0.6) tones.push('温暖');
+      if (lastNarrativeAffect.directness > 0.6) tones.push('直接');
+      if (lastNarrativeAffect.initiative > 0.6) tones.push('主动');
+      if (tones.length > 0) {
+        parts.push(`基调${tones.join('、')}`);
+      }
+    }
+
+    // 默契度
+    if (lastNarrativeRapport) {
+      const levelLabel = getRapportLevelLabel(lastNarrativeRapport.level);
+      if (levelLabel !== '初识') {
+        parts.push(`默契度：${levelLabel}`);
+      }
+    }
+
+    // 模式洞察
+    if (lastNarrativePatterns.length > 0) {
+      const recurringCount = lastNarrativePatterns.filter(p => p.type === 'recurring_topic').length;
+      const gapCount = lastNarrativePatterns.filter(p => p.type === 'knowledge_gap').length;
+      const patternDescs: string[] = [];
+      if (recurringCount > 0) patternDescs.push(`${recurringCount} 个重复主题`);
+      if (gapCount > 0) patternDescs.push(`${gapCount} 个知识缺口`);
+      if (patternDescs.length > 0) {
+        parts.push(`检测到${patternDescs.join('、')}`);
+      }
+    }
+
+    if (parts.length === 0) {
+      return '精灵正在感知中...';
+    }
+
+    return parts.join('，') + '。';
+  }
+
+  /**
+   * FD-01 更新叙事摘要 DOM
+   *
+   * 每次感知数据更新时调用，渲染到 #sprite-narrative。
+   */
+  function updateNarrative(): void {
+    const narrativeEl = document.getElementById('sprite-narrative');
+    const textEl = document.getElementById('sprite-narrative-text');
+    if (!narrativeEl || !textEl) return;
+
+    const narrative = generateNarrative();
+    // FD-03 仅当叙事文本实际变化时触发脉冲动画
+    const textChanged = textEl.textContent !== narrative;
+    textEl.textContent = narrative;
+
+    // FD-03 叙事卡片始终可见，只切换 active/idle 状态
+    if (lastNarrativeContext?.rhythm === 'idle' || !lastNarrativeContext) {
+      narrativeEl.classList.add('idle');
+      narrativeEl.classList.remove('active');
+    } else {
+      narrativeEl.classList.add('active');
+      narrativeEl.classList.remove('idle');
+    }
+
+    // FD-03 同步更新对话面板叙事摘要行
+    const chatNarrativeText = document.getElementById('chat-narrative-text');
+    if (chatNarrativeText) {
+      chatNarrativeText.textContent = narrative;
+    }
+
+    // FD-03 感知数据变化时触发脉冲动画（去重：仅文本变化时触发）
+    if (textChanged) {
+      narrativeEl.classList.remove('narrative-updated');
+      void narrativeEl.offsetWidth; // 强制回流以重新触发动画
+      narrativeEl.classList.add('narrative-updated');
+
+      // 同步脉冲动画到对话面板叙事行
+      const chatNarrative = document.getElementById('chat-narrative');
+      if (chatNarrative) {
+        chatNarrative.classList.remove('narrative-updated');
+        void chatNarrative.offsetWidth;
+        chatNarrative.classList.add('narrative-updated');
+      }
+    }
+  }
+
   return {
     setupMemoryPanel,
     loadMemoryList,
@@ -1186,7 +1386,12 @@ export function createMemoryController(uiManager: UIManager) {
      * 由 affectUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
      * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
      */
-    updateAffectDisplay,
+    updateAffectDisplay: (affect: { warmth: number; playfulness: number; directness: number; initiative: number }) => {
+      // FD-01：保存状态供叙事摘要合成
+      lastNarrativeAffect = affect;
+      updateAffectDisplay(affect);
+      updateNarrative();
+    },
     /**
      * Phase 3：更新默契度展示（等级徽章 + 双进度条 + 描述）
      *
@@ -1229,6 +1434,9 @@ export function createMemoryController(uiManager: UIManager) {
       if (descEl) {
         descEl.textContent = rapport.description;
       }
+      // FD-01：保存状态供叙事摘要合成
+      lastNarrativeRapport = { level: rapport.level, trust: rapport.trust };
+      updateNarrative();
     },
     /**
      * Phase 4：更新对话上下文展示（三列指标）
@@ -1265,6 +1473,82 @@ export function createMemoryController(uiManager: UIManager) {
       if (descEl) {
         descEl.textContent = context.description;
       }
+      // FD-01：保存状态供叙事摘要合成
+      lastNarrativeContext = {
+        rhythm: context.rhythm,
+        coherence: context.coherence,
+        depth: context.depth,
+        dominantSource: context.dominantSource,
+      };
+      updateNarrative();
+    },
+    /**
+     * Phase 2+：更新模式洞察面板（PatternDetector 检测结果）
+     *
+     * 由 patternsUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
+     * 展示重复主题、知识缺口和兴趣漂移等检测到的用户模式。
+     */
+    updatePatternsDisplay: (payload: { patterns: Array<{ type: string; summary: string; confidence: number; suggestion?: string }> }) => {
+      // FD-01：保存状态供叙事摘要合成
+      lastNarrativePatterns = payload.patterns.map(p => ({ type: p.type, summary: p.summary }));
+
+      const patternsDisplay = document.getElementById('patterns-display');
+      if (!patternsDisplay) {
+        updateNarrative();
+        return;
+      }
+
+      const patternsList = document.getElementById('patterns-list');
+      if (!patternsList) {
+        updateNarrative();
+        return;
+      }
+
+      // 无模式数据时隐藏（但仍更新叙事摘要）
+      if (payload.patterns.length === 0) {
+        patternsDisplay.classList.add('hidden');
+        updateNarrative();
+        return;
+      }
+
+      // 显示洞察面板
+      patternsDisplay.classList.remove('hidden');
+
+      // 清空并重建列表
+      while (patternsList.firstChild) {
+        patternsList.removeChild(patternsList.firstChild);
+      }
+
+      for (const pattern of payload.patterns) {
+        const item = document.createElement('div');
+        item.className = 'pattern-item';
+
+        // 图标：根据模式类型选择
+        const icon = document.createElement('span');
+        icon.className = 'pattern-icon';
+        icon.textContent = PatternDetectorIcon(pattern.type);
+
+        // 文本
+        const text = document.createElement('span');
+        text.className = 'pattern-text';
+        text.textContent = pattern.summary;
+
+        item.appendChild(icon);
+        item.appendChild(text);
+
+        patternsList.appendChild(item);
+      }
+
+      updateNarrative();
+    },
+    /**
+     * FD-01 更新叙事摘要（综合感知系统输出）
+     *
+     * 由渲染器在每次感知数据更新后调用，不需要额外参数。
+     * 内部从闭包级状态变量合成叙事文本。
+     */
+    updateNarrative: () => {
+      updateNarrative();
     },
     /** IX-03 清理脉冲动画定时器 + 防抖定时器（由 renderer.ts beforeunload 调用） */
     cleanup: () => {

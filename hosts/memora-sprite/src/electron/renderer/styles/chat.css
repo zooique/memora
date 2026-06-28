@@ -53,209 +53,36 @@
   text-overflow: ellipsis;
 }
 
-#btn-new-session {
-  padding: 6px 14px;
-  background: transparent;
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-md);
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  /* UI-AUDIT: 列出具体属性替代 transition: all（遵循 Web Interface Guidelines） */
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-}
-
-#btn-new-session:hover {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-/* FD-A1 会话历史切换下拉 */
-.session-selector {
-  position: relative;
-  flex-shrink: 0;
-}
-
-.session-selector.hidden {
-  display: none;
-}
-
-/* UX-PP-06 仅一个会话时禁用下拉，但保留选择器可见 */
-.session-selector.disabled .session-current {
-  opacity: 0.5;
-  cursor: default;
-  pointer-events: none;
-}
-
-.session-current {
+/* ─── FD-03 对话面板叙事摘要行 ──────────────────────────────── */
+/* 介于工具栏与消息列表之间，紧凑显示当前感知状态 */
+.chat-narrative {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  background: transparent;
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-md);
-  color: var(--text-2);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  /* UI-AUDIT: 列出具体属性替代 transition: all */
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-  white-space: nowrap;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-current:hover {
-  background: var(--surface0);
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-.session-current-arrow {
-  /* UX-P2-22 统一下拉箭头字符为 ▾（原 ▼ 较粗，与 demo 不一致） */
-  font-size: 9px;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-/* UX-P2-35 .session-dropdown 复用 .dropdown 通用类（layout.css），此处仅声明差异 */
-.session-dropdown {
-  /* 覆盖 .dropdown 的 top/left/right/margin-top，改为右对齐 + calc 定位 */
-  top: calc(100% + 4px);
-  left: auto;
-  right: 0;
-  margin-top: 0;
-  /* 覆盖 .dropdown 的 z-index（会话下拉层级低于角色下拉，避免遮挡） */
-  z-index: 50;
-  /* 会话下拉特有：限制宽度范围 */
-  min-width: 180px;
-  max-width: 260px;
-}
-
-.session-dropdown.hidden {
-  display: none;
-}
-
-/* FD-08 会话搜索框 */
-.session-search {
-  display: block;
-  width: calc(100% - 16px);
-  margin: 8px 8px 4px;
-  padding: 5px 8px;
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  font-family: system-ui, -apple-system, sans-serif;
-  color: var(--text);
-  background: var(--surface0);
-  outline: none;
-  box-sizing: border-box;
-}
-
-.session-search::placeholder {
-  color: var(--muted);
-}
-
-.session-search:focus {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-accent-sm);
-}
-
-/* FD-09 会话列表操作按钮 */
-.session-list-item-del,
-.session-list-item-rename {
-  /* UI-AUDIT-P1-2.9: 改为 hover-only 显示，避免半透明状态既不够明显又占据点击区域导致误触 */
-  display: block;
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: 2px 4px;
-  border: none;
-  border-radius: var(--radius-xs);
-  background: transparent;
-  font-size: 11px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
-}
-
-.session-list-item-del {
-  right: 8px;
-}
-
-.session-list-item-rename {
-  right: 30px;
-}
-
-.session-list-item:hover .session-list-item-del,
-.session-list-item:hover .session-list-item-rename {
-  opacity: 0.8;
-}
-
-.session-list-item-del:hover,
-.session-list-item-rename:hover {
-  opacity: 1;
-  background: var(--surface2);
-}
-
-.session-list {
-  list-style: none;
-  padding: 4px;
-  margin: 0;
-}
-
-.session-list-item {
-  position: relative; /* FD-09 操作按钮的定位参考 */
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 10px;
-  font-size: 12px;
-  color: var(--text-2);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast);
-  gap: 2px 8px;
-}
-
-.session-list-item:hover {
-  background: var(--surface1);
-  color: var(--text);
-}
-
-.session-list-item.active {
-  color: var(--accent);
-  font-weight: 600;
+  padding: 6px 24px;
   background: var(--accent-soft);
+  border-bottom: 1px solid var(--accent-20);
+  font-size: 12px;
+  color: var(--text-2);
+  flex-shrink: 0;
+  transition: background var(--transition-base) ease, border-color var(--transition-base) ease;
 }
 
-.session-list-item-name {
+.chat-narrative-icon {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.chat-narrative-text {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.session-list-item-date {
-  font-size: 10px;
-  color: var(--muted);
-  flex-shrink: 0;
-}
-
-/* UX-PP-05 会话列表首条消息预览 */
-.session-list-item-preview {
-  flex-basis: 100%;
-  font-size: 11px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding-left: 2px;
+/* 叙事摘要更新脉冲动画（与仪表盘 #sprite-narrative 共用 narrative-pulse 关键帧） */
+.chat-narrative.narrative-updated {
+  animation: narrative-pulse 0.6s ease;
 }
 
 /**

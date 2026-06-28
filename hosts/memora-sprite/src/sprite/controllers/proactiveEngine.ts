@@ -13,6 +13,7 @@ import { logger } from 'memora';
 import type { DashboardData } from './memoryController.js';
 import type { ContextState } from './contextAwareness.js';
 import type { AffectState } from './affectController.js';
+import type { DetectedPattern } from './patternDetector.js';
 
 /** 待提示事件 */
 interface PendingNotice {
@@ -73,6 +74,12 @@ export class ProactiveEngine {
   private consecutiveRejects = 0;
   /** 当前情感基调（Phase 2：个性化提示内容） */
   private affectState: AffectState | null = null;
+
+  // ─── Phase 2+：模式驱动提示（PatternDetector 集成） ──────────────
+  /** 检测到的用户模式（PatternDetector 最新结果） */
+  private detectedPatterns: DetectedPattern[] = [];
+  /** 已通过模式提示过的模式摘要（幂等保护，避免重复提示同一模式） */
+  private promptedPatterns: Set<string> = new Set();
 
   constructor(config: ProactiveConfig) {
     this.config = config;
@@ -165,6 +172,18 @@ export class ProactiveEngine {
   }
 
   /**
+   * 注入检测到的用户模式（Phase 2+：模式驱动提示）
+   *
+   * 由 Sprite 在每次 wakeup 推导后调用，将 PatternDetector 的结果注入。
+   * 模式数据用于 buildPrompt 生成更具体、更有价值的提示内容。
+   *
+   * @param patterns 检测到的用户模式列表
+   */
+  setPatterns(patterns: DetectedPattern[]): void {
+    this.detectedPatterns = patterns;
+  }
+
+  /**
    * 检查待提示事件并尝试发射（Phase 3.2：用户回来时触发）
    *
    * 与 addNotice 内部的自动触发不同，此方法用于外部主动检查。
@@ -197,9 +216,9 @@ export class ProactiveEngine {
     }
   }
 
-  /** 尝试发射主动提示（Phase 1：智能触发时机） */
+  /** 尝试发射主动提示（Phase 1：智能触发时机 + Phase 2+：模式驱动内容） */
   private tryEmit(options?: { ignoreThreshold?: boolean }): void {
-    if (this.pendingNotices.length === 0) return;
+    if (this.pendingNotices.length === 0 && this.detectedPatterns.length === 0) return;
     if (this.config.silentMode) return;
 
     // Phase 1：对话节奏过快时不打断用户（rapid 节奏下静默）
@@ -216,6 +235,9 @@ export class ProactiveEngine {
     const effectiveCooldown = this.config.cooldownMs * rapportMultiplier * rejectMultiplier;
 
     if (now - this.lastProactiveAt < effectiveCooldown) return;
+
+    // Phase 2+：注入未提示过的模式作为待提示事件
+    this.injectPatternNotices();
 
     // Phase 1：空闲节奏下降低触发阈值（更主动）
     // checkPending() 无视阈值约束（ignoreThreshold=true），仅检查 pending 非空
@@ -239,11 +261,34 @@ export class ProactiveEngine {
     // Phase 2.1：记录一次主动提示（供 AffectController 计算接受率）
     this.suggestCount++;
 
-    // P2-DESIGN-5 修复：移除 interaction.output 双通道输出，仅通过 emitSprite 发射事件。
-    // 宿主（main.ts 的事件监听器）负责接收 proactivePrompt 事件并决定是否展示为 banner。
-    // 原 interaction.output(text, 'proactive') 与 emitSprite 双发，依赖 ElectronInteraction
-    // 对 proactive 类型的隐式 guard 跳过避免重复显示，新增 IInteraction 实现会破坏该契约。
     logger.info({ prompt, effectiveCooldown, effectiveThreshold }, '主动提示');
+  }
+
+  /**
+   * 将未提示过的模式注入待提示队列（Phase 2+）
+   *
+   * 策略：
+   *   1. 过滤已提示过的模式（幂等保护）
+   *   2. 按置信度取 top-3
+   *   3. 注入为 pattern 类型事件
+   */
+  private injectPatternNotices(): void {
+    if (this.detectedPatterns.length === 0) return;
+
+    // 过滤已提示过的模式，按置信度降序取 top-3
+    const newPatterns = this.detectedPatterns
+      .filter((p) => !this.promptedPatterns.has(p.summary))
+      .slice(0, 3);
+
+    for (const pattern of newPatterns) {
+      this.pendingNotices.push({
+        type: 'pattern',
+        summary: pattern.suggestion ?? pattern.summary,
+        timestamp: Date.now(),
+      });
+      // 标记为已提示（幂等保护）
+      this.promptedPatterns.add(pattern.summary);
+    }
   }
 
   /** 根据累积事件生成上下文感知提示文本（Phase 2：个性化语气） */
@@ -285,6 +330,17 @@ export class ProactiveEngine {
       }
       if (suggestionSummary) {
         return `${suggestionSummary}（同时${parts.join('，')}）`;
+      }
+    }
+    // Phase 2+：模式检测结果优先——比事件统计更有价值
+    if (typeCounts.has('pattern')) {
+      const patternSummary = summaries.find(s => s.length > 0);
+      if (patternSummary) {
+        // 模式提示本身就是完整句子，优先返回
+        if (parts.length === 0) {
+          return patternSummary;
+        }
+        return `${patternSummary}（同时${parts.join('，')}）`;
       }
     }
 

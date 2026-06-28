@@ -53,6 +53,12 @@
       <div id="sidebar-content">
         <!-- 仪表盘（对齐 demo：4 项 2×2 + 事件项跨 2 列并高亮） -->
         <div id="dashboard">
+          <!-- FD-01 精灵叙事摘要：综合感知系统输出，一句话描述当前状态 -->
+          <!-- FD-03 始终可见，点击展开/折叠详情区 -->
+          <div id="sprite-narrative" class="dash-item" style="grid-column: 1 / -1;" title="点击展开/折叠详情">
+            <span class="dash-label" id="sprite-narrative-text">精灵正在感知中...</span>
+            <span id="narrative-toggle" class="narrative-toggle">▸</span>
+          </div>
           <div class="dash-item" title="Agent 记忆总数">
             <span class="dash-label">🧠 记忆</span>
             <span class="dash-value" id="memory-count">0</span>
@@ -80,6 +86,9 @@
             <span class="dash-value" id="pending-count">0/3</span>
           </div>
         </div>
+
+        <!-- FD-03 详情区容器：包装所有感知卡片，由叙事卡片点击切换折叠/展开 -->
+        <div id="dashboard-details">
 
         <!-- Phase 2.1：情感基调展示（四维进度条，由 affectUpdated 事件动态更新） -->
         <div id="affect-display" class="dashboard-section hidden">
@@ -145,6 +154,14 @@
             </div>
           </div>
           <p class="rapport-description" id="context-description">--</p>
+        </div>
+        
+        <!-- Phase 2+：用户模式洞察（PatternDetector 检测结果，由 patternsUpdated 事件动态更新） -->
+        <div id="patterns-display" class="dashboard-section hidden">
+          <h3>💡 模式洞察</h3>
+          <div id="patterns-list" class="patterns-list">
+            <!-- 由 updatePatternsDisplay() 动态填充 -->
+          </div>
         </div>
         
         <!-- OBS-01 Agent 运行时指标（消费内核 agent.getMetrics()） -->
@@ -215,6 +232,8 @@
         </div>
 
         <!-- GAP-1 已加载技能列表已迁移到设置面板"技能"选项卡 -->
+
+        </div><!-- /#dashboard-details -->
        
       </div>
     </aside>
@@ -248,8 +267,6 @@
             <span class="chat-toolbar-title">对话</span>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
-          <!-- FD-A1 会话历史切换下拉已移除（方案 B：时间流式 UI，向上滚动加载历史日期） -->
-          <!-- btn-new-session 已移除：会话按天自动存储，无需手动新建 -->
           <!-- UX-FD-07 日期导航按钮：快速跳转到指定日期的历史对话 -->
           <div id="date-navigator" class="date-navigator">
             <button id="date-nav-btn" class="date-nav-btn" title="按日期查找历史对话" aria-label="按日期查找历史对话">
@@ -260,6 +277,12 @@
               <ul id="date-nav-list" class="date-nav-list"></ul>
             </div>
           </div>
+        </div>
+
+        <!-- FD-03 对话面板叙事摘要行：显示当前感知状态，与仪表盘叙事卡片共用 generateNarrative() -->
+        <div id="chat-narrative" class="chat-narrative">
+          <span class="chat-narrative-icon">🧚</span>
+          <span class="chat-narrative-text" id="chat-narrative-text">精灵正在感知中...</span>
         </div>
 
         <!-- FD-A2 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->

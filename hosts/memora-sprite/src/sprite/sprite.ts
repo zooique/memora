@@ -29,6 +29,8 @@ import { RapportController } from './controllers/rapportController.js';
 import type { RapportState } from './controllers/rapportController.js';
 import { ContextAwareness } from './controllers/contextAwareness.js';
 import type { ContextState } from './controllers/contextAwareness.js';
+import { PatternDetector } from './controllers/patternDetector.js';
+import type { DetectedPattern } from './controllers/patternDetector.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
@@ -63,6 +65,8 @@ export interface SpriteEventMap {
   contextUpdated: ContextState;
   /** H3：作品投影更新（文件变化触发投影重新生成后发射） */
   workProjectionUpdated: { sourcePath: string; summary: string };
+  /** Phase 2+：用户模式更新（PatternDetector 检测到新模式后发射） */
+  patternsUpdated: { patterns: DetectedPattern[] };
 }
 
 // 重新导出 DashboardData 和 AffectState 供外部使用
@@ -125,6 +129,8 @@ export class Sprite {
   private rapportController: RapportController;
   /** Phase 4：对话上下文感知器（纯代码推导，从最近记忆推导节奏+话题+深度） */
   private contextAwareness: ContextAwareness;
+  /** Phase 2+：记忆模式检测器 */
+  private patternDetector: PatternDetector;
   /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
 
@@ -169,6 +175,9 @@ export class Sprite {
 
     // Phase 4：初始化对话上下文感知器
     this.contextAwareness = new ContextAwareness();
+
+    // Phase 2+：初始化记忆模式检测器
+    this.patternDetector = new PatternDetector();
 
     // 设置主动提示引擎的发射器
     this.proactiveEngine.setEmitter((event, payload) => {
@@ -1079,6 +1088,9 @@ export class Sprite {
 
     // Phase 1+2：将感知数据注入 ProactiveEngine，实现智能触发和个性化提示
     this.injectPerceptionToProactiveEngine(context);
+
+    // Phase 2+：检测记忆模式并注入 ProactiveEngine
+    this.detectAndInjectPatterns(memories);
   }
 
   /**
@@ -1098,6 +1110,25 @@ export class Sprite {
     }
     if (this.lastAffect) {
       this.proactiveEngine.setAffectState(this.lastAffect);
+    }
+  }
+
+  /**
+   * 检测记忆模式并注入 ProactiveEngine（Phase 2+）
+   *
+   * 从记忆数据中检测重复主题、知识缺口和兴趣漂移，
+   * 将结果注入 ProactiveEngine 供生成具体提示使用。
+   * 纯代码计算，不依赖 LLM。
+   *
+   * @param memories 所有记忆列表
+   */
+  private detectAndInjectPatterns(memories: Memory[]): void {
+    const patterns = this.patternDetector.detectPatterns(memories);
+    this.proactiveEngine.setPatterns(patterns);
+
+    // 发射模式更新事件（供 UI 洞察面板展示）
+    if (patterns.length > 0) {
+      this.emitSprite('patternsUpdated', { patterns });
     }
   }
 

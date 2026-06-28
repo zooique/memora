@@ -31,6 +31,20 @@ import type { WindowManager } from '../windows/windowManager.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import { spriteConfigStore } from '../../storage/spriteConfigStore.js';
 import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS } from '../../index.js';
+import { isValidContent } from './inputValidation.js';
+
+/**
+ * 安全审计 P4 修复：脱敏 API Key 供渲染进程显示
+ *
+ * 仅保留前 3 位 + 后 4 位，中间用 **** 替代。
+ * 渲染进程只需知道"已配置"状态，不需要完整密钥。
+ */
+function maskApiKey(key: string): string {
+  if (!key || key.length <= 8) {
+    return key ? '****' : '';
+  }
+  return `${key.slice(0, 3)}****${key.slice(-4)}`;
+}
 
 // ─── 类型定义 ──────────────────────────────────────────────
 
@@ -111,6 +125,10 @@ export function registerMinimalIpcHandlers(
       _event,
       llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
     ) => {
+      // 安全审计 P4 修复：校验 LLM 配置参数长度，防止超大值传入
+      if (!llmConfig || typeof llmConfig.provider !== 'string' || !isValidContent(llmConfig.apiKey, 1000)) {
+        return { success: false, error: '配置参数无效' };
+      }
       try {
         const provider = createProviderFromConfig('test', {
           provider: llmConfig.provider,
@@ -149,7 +167,8 @@ export function registerMinimalIpcHandlers(
           provider: config.llm.provider,
           model: config.llm.model,
           baseUrl: config.llm.baseUrl ?? '',
-          apiKey: config.llm.apiKey ?? '',
+          // 安全审计 P4 修复：脱敏 apiKey，渲染进程只需知道"已配置"状态
+          apiKey: maskApiKey(config.llm.apiKey ?? ''),
           temperature: config.llm.temperature,
           ...(config.llm.background ? {
             background: {
@@ -157,7 +176,7 @@ export function registerMinimalIpcHandlers(
               provider: config.llm.background.provider,
               model: config.llm.background.model,
               baseUrl: config.llm.background.baseUrl ?? '',
-              apiKey: config.llm.background.apiKey ?? '',
+              apiKey: maskApiKey(config.llm.background.apiKey ?? ''),
               temperature: config.llm.background.temperature,
             },
           } : {}),
@@ -166,7 +185,7 @@ export function registerMinimalIpcHandlers(
           ? {
               model: config.embedding.model,
               baseUrl: config.embedding.baseUrl ?? '',
-              apiKey: config.embedding.apiKey ?? '',
+              apiKey: maskApiKey(config.embedding.apiKey ?? ''),
             }
           : null,
         presets: PROVIDER_PRESETS,
@@ -192,6 +211,10 @@ export function registerMinimalIpcHandlers(
       },
       embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
     ) => {
+      // 安全审计 P4 修复：校验 LLM 配置参数长度，防止超大值传入
+      if (!llmConfig || typeof llmConfig.provider !== 'string' || !isValidContent(llmConfig.apiKey, 1000)) {
+        return { success: false, error: '配置参数无效' };
+      }
       try {
         // 1. 保存配置到文件
         await saveLlmConfig(llmConfig, embeddingConfig);
@@ -272,6 +295,10 @@ export function registerMinimalIpcHandlers(
   // 渲染进程无 pino，通过 IPC 将错误/警告转发到主进程统一日志
   ipcMain.on(IPC_CHANNELS.RENDERER_LOG, (_event, payload: { level: 'warn' | 'error'; context: string; message: string }) => {
     const { level, context, message } = payload;
+    // 安全审计 P5 修复：校验日志参数类型和长度，防止超长日志撑大文件
+    if (typeof context !== 'string' || typeof message !== 'string' || !isValidContent(message, 10000)) {
+      return;
+    }
     if (level === 'error') {
       logger.error({ context, source: 'renderer' }, message);
     } else {

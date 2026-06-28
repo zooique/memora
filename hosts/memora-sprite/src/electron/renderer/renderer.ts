@@ -216,6 +216,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     onContextUpdated: (payload) => {
       memoryController.updateContextDisplay(payload);
     },
+    // Phase 2+：用户模式更新 → 洞察面板
+    onPatternsUpdated: (payload) => {
+      memoryController.updatePatternsDisplay(payload);
+    },
     // H3：作品投影更新 → 刷新作品投影面板
     onWorkProjectionUpdated: (_payload) => {
       void settingsController.loadWorkProjections();

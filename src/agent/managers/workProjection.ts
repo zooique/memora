@@ -201,13 +201,13 @@ export class WorkProjectionManager {
 输出格式（严格 JSON，不含 markdown 代码块标记）：
 {
   "summary": "50-100字的作品概要",
-  "structure": ["章节/模块1", "章节/模块2", "..."],
+  "structure": ["模块1", "模块2", "..."],
   "keyDecisions": ["关键决策1", "关键决策2", "..."]
 }
 
 要求：
 - summary 控制在 50-100 字
-- structure 列出 2-8 个章节/模块名称
+- structure 列出 2-8 个模块名称
 - keyDecisions 列出 1-3 个关键决策（如有）
 - 不评价优劣，只客观描述`,
       },

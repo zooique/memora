@@ -25,7 +25,13 @@ import type { IpcContext } from './types.js';
 export function registerMemoryHandlers(ctx: IpcContext): void {
   /** 列出记忆（可按 source 过滤） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST, async (_event, query: { source?: string }) =>
-    safeHandle('列出记忆失败', { memories: [] }, () => ({ memories: ctx.sprite.listMemories(query?.source) })),
+    safeHandle('列出记忆失败', { memories: [] }, () => {
+      // 安全审计 P5 修复：校验 source 参数类型和长度
+      if (query?.source !== undefined && (typeof query.source !== 'string' || query.source.length > 200)) {
+        return { memories: [] };
+      }
+      return { memories: ctx.sprite.listMemories(query?.source) };
+    }),
   );
 
   /** 搜索记忆（混合搜索：关键词 + 向量召回） */

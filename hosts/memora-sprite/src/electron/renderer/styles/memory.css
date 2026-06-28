@@ -565,13 +565,13 @@
   color: var(--text-2);
 }
 
-/* 关系类型颜色（与 relationGraph.ts EDGE_TYPE_COLORS 对齐） */
-.relation-type-contradicts { background: rgba(255, 59, 48, 0.2); color: #ff3b30; }
-.relation-type-supports { background: rgba(52, 199, 89, 0.2); color: #34c759; }
-.relation-type-follows { background: rgba(0, 102, 255, 0.2); color: #0066ff; }
-.relation-type-refines { background: rgba(255, 159, 10, 0.2); color: #ff9f0a; }
-.relation-type-caused { background: rgba(123, 31, 162, 0.2); color: #7b1fa2; }
-.relation-type-related { background: rgba(161, 161, 166, 0.2); color: #a1a1a6; }
+/* 关系类型颜色（与 relationGraph.ts EDGE_TYPE_COLORS 对齐，使用 CSS 变量适配双主题） */
+.relation-type-contradicts { background: var(--red-20); color: var(--red); }
+.relation-type-supports { background: var(--green-20); color: var(--green); }
+.relation-type-follows { background: var(--accent-20); color: var(--accent); }
+.relation-type-refines { background: var(--yellow-20); color: var(--yellow); }
+.relation-type-caused { background: var(--mauve-20); color: var(--mauve); }
+.relation-type-related { background: var(--muted); color: var(--text); }
 
 .relation-desc {
   color: var(--text);
@@ -685,11 +685,11 @@
   font-weight: 500;
 }
 
-/* 健康等级徽章颜色 */
-.health-badge.excellent { background: rgba(52, 199, 89, 0.15); color: #34c759; }
-.health-badge.good { background: rgba(0, 102, 255, 0.15); color: #0066ff; }
-.health-badge.fair { background: rgba(255, 159, 10, 0.15); color: #ff9f0a; }
-.health-badge.poor { background: rgba(255, 59, 48, 0.15); color: #ff3b30; }
+/* 健康等级徽章颜色（使用 CSS 变量适配双主题） */
+.health-badge.excellent { background: var(--green-20); color: var(--green); }
+.health-badge.good { background: var(--accent-20); color: var(--accent); }
+.health-badge.fair { background: var(--yellow-20); color: var(--yellow); }
+.health-badge.poor { background: var(--red-20); color: var(--red); }
 
 .health-score {
   margin-left: auto;
@@ -737,10 +737,10 @@
   background: var(--accent);
 }
 
-/* 各维度颜色 */
-.health-metric-fill.uniqueness { background: #34c759; }
-.health-metric-fill.freshness { background: #0066ff; }
-.health-metric-fill.completeness { background: #ff9f0a; }
+/* 各维度颜色（使用 CSS 变量适配双主题） */
+.health-metric-fill.uniqueness { background: var(--green); }
+.health-metric-fill.freshness { background: var(--accent); }
+.health-metric-fill.completeness { background: var(--yellow); }
 
 .health-metric-value {
   width: 28px;
@@ -763,14 +763,14 @@
   color: var(--text-2);
 }
 
-/* 有问题的项目高亮 */
+/* 有问题的项目高亮（使用 CSS 变量适配双主题） */
 .health-detail-item.warning {
-  color: #ff9f0a;
+  color: var(--yellow);
   font-weight: 500;
 }
 
 .health-detail-item.danger {
-  color: #ff3b30;
+  color: var(--red);
   font-weight: 500;
 }
 
@@ -806,13 +806,13 @@
 }
 
 .health-action-btn.danger {
-  color: #ff3b30;
-  border-color: rgba(255, 59, 48, 0.3);
+  color: var(--red);
+  border-color: var(--red-20);
 }
 
 .health-action-btn.danger:hover {
-  background: rgba(255, 59, 48, 0.1);
-  border-color: #ff3b30;
+  background: var(--red-20);
+  border-color: var(--red);
 }
 
 .health-action-btn:disabled {
@@ -859,9 +859,10 @@
   margin-top: 16px;
 }
 
+/* 危险按钮（使用 CSS 变量适配双主题） */
 .btn-danger {
-  background: #ff3b30;
-  color: #fff;
+  background: var(--red);
+  color: var(--text-on-red);
   border: none;
   padding: 6px 14px;
   border-radius: var(--radius-sm);
@@ -870,7 +871,7 @@
 }
 
 .btn-danger:hover {
-  background: #ff2d1f;
+  opacity: 0.85;
 }
 
 /* 健康度迷你分数徽章（工具栏内） */
@@ -888,8 +889,8 @@
   display: none;
 }
 
-/* 分数颜色：健康为绿色，警告为橙色，危险为红色 */
-.health-mini-score.excellent { color: #34c759; }
-.health-mini-score.good { color: #0066ff; }
-.health-mini-score.fair { color: #ff9f0a; }
-.health-mini-score.poor { color: #ff3b30; }
+/* 分数颜色（使用 CSS 变量适配双主题） */
+.health-mini-score.excellent { color: var(--green); }
+.health-mini-score.good { color: var(--accent); }
+.health-mini-score.fair { color: var(--yellow); }
+.health-mini-score.poor { color: var(--red); }

@@ -247,6 +247,10 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     sourcePath: e.sourcePath,
     summary: e.summary,
   }));
+  // Phase 2+：用户模式更新 → 渲染层洞察面板展示
+  forwardSimpleEvent(deps, 'patternsUpdated', (e) => ({
+    patterns: e.patterns,
+  }));
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

@@ -26,7 +26,7 @@ const STARTUP_SCAN_SOURCES: string[] = [
 
 /**
  * 判断内容是否为空壳模板（仅含标题和 blockquote 占位说明）
- * 新建项目时 .memora/rules/ 下的 character/worldview/foreshadow 模板属于此类
+ * 新建项目时的空壳规则模板属于此类
  *
  * 判断逻辑：过滤掉标题行和空行后，剩余内容全部是 blockquote 行
  */

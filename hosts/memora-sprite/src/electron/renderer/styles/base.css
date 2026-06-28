@@ -270,6 +270,31 @@ html, body {
   transition: opacity var(--transition-base) ease;
 }
 
+/* FD-02 面板级加载态：居中旋转圆环 + 文字，用于异步数据加载等待 */
+.panel-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  color: var(--text-2);
+  font-size: 13px;
+  gap: 10px;
+  /* 加载态作为独立元素，不使用 ::before 伪元素以兼容 clearElement */
+}
+.panel-loading-spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--surface2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: panel-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes panel-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* UI-UX-03 统一错误状态：居中错误图标 + 文字 + 重试按钮 */
 .error-state {
   display: flex;

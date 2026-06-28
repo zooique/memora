@@ -83,6 +83,48 @@ export function clearElement(el: Element): void {
   }
 }
 
+// ─── 面板加载态 ─────────────────────────────────────────
+
+/**
+ * FD-02 在指定容器中显示加载态
+ *
+ * 创建居中旋转圆环 + 文字提示，清空容器后插入加载元素。
+ * 使用 clearElement 统一清空模式，避免 DOM 操作不一致。
+ *
+ * @param container 目标容器元素
+ * @param text 加载提示文字（默认 "加载中..."）
+ */
+export function showPanelLoading(container: Element, text = '加载中...'): void {
+  clearElement(container);
+  const wrapper = document.createElement('div');
+  wrapper.className = 'panel-loading';
+
+  const spinner = document.createElement('span');
+  spinner.className = 'panel-loading-spinner';
+
+  const label = document.createElement('span');
+  label.textContent = text;
+
+  wrapper.appendChild(spinner);
+  wrapper.appendChild(label);
+  container.appendChild(wrapper);
+}
+
+/**
+ * FD-02 隐藏容器中的加载态
+ *
+ * 遍历容器子元素，移除所有 .panel-loading 元素。
+ * 仅清除加载态，不影响其他内容（如已渲染的列表或空状态）。
+ *
+ * @param container 目标容器元素
+ */
+export function hidePanelLoading(container: Element): void {
+  const loadings = container.querySelectorAll('.panel-loading');
+  for (const el of loadings) {
+    el.remove();
+  }
+}
+
 // ─── 时间格式化 ─────────────────────────────────────────
 
 /**

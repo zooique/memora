@@ -103,7 +103,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
   "peerDependenciesMeta": {
     "pino": { "optional": true }
   }
-  // optionalDependencies 已清空（better-sqlite3 + pino 均移除）
+  // optionalDependencies 保留 pino（纯 JS 日志库，便于宿主零配置可用；非 native 依赖）
   // engines_comment 移除（不再需要标注 ABI 版本说明）
   // bin 字段移除（CLI 由宿主提供）
 }
