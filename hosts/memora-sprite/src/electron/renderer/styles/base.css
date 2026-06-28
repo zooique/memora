@@ -121,9 +121,28 @@
   --font-sprite: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
   --font-mono:   'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', 'Monaco', monospace;
 
-  /* 语义化字号变量（供 layout.css/settings.css 等引用） */
-  --font-sm: 12px;  /* 小字号（辅助信息） */
-  --font-xs: 11px;  /* 超小字号（元信息、标签） */
+  /* ─── 设计系统：字号层级（UX-FD-02 统一规范 + UX-FD-04 rem 改造） ─── */
+  /* 从 9px 到 28px 共 9 级，覆盖全部 UI 场景，基准 html { font-size: 16px } */
+  --font-2xl: 1.75rem;   /* 28px / 16 = 1.75（空状态头像图标） */
+  --font-xl:  1.375rem;  /* 22px / 16 = 1.375（dropzone 图标） */
+  --font-lg:  1rem;      /* 16px / 16 = 1（空状态标题、作品投影图标） */
+  --font-md:  0.9375rem; /* 15px / 16 = 0.9375（品牌名、仪表盘数值、banner 图标） */
+  --font-base:0.875rem;  /* 14px / 16 = 0.875（正文消息、输入框、标题栏） */
+  --font-sm:  0.75rem;   /* 12px / 16 = 0.75（辅助信息、标签文字、设置 label） */
+  --font-xs:  0.6875rem; /* 11px / 16 = 0.6875（元信息、提示文字、标签） */
+  --font-2xs: 0.625rem;  /* 10px / 16 = 0.625（时间戳、角标、数值） */
+  --font-3xs: 0.5625rem; /* 9px / 16 = 0.5625（最低置信度、超窄屏降级） */
+  --font-h1:  1.125rem;  /* 18px / 16 = 1.125（标题 h1、洞察面板数值） */
+  --font-score:1.25rem;   /* 20px / 16 = 1.25（健康度评分） */
+
+  /* ─── 设计系统：按钮规范（UX-FD-02） ─── */
+  --btn-height-sm: 28px;  /* 小按钮高度（工具按钮、图标按钮） */
+  --btn-height-md: 32px;  /* 中按钮高度（发送按钮、操作按钮） */
+  --btn-padding-sm: 4px 10px;   /* 小按钮内边距 */
+  --btn-padding-md: 6px 14px;   /* 中按钮内边距 */
+
+  /* ─── 设计系统：输入框规范（UX-FD-02） ─── */
+  --input-padding: 6px 10px;  /* 输入框统一内边距 */
 
   /* 语义化背景变量（hover/次级背景） */
   --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
@@ -233,9 +252,27 @@
   --peach-20:  rgba(250, 179, 135, 0.2);
   --red-20:    rgba(243, 139, 168, 0.2);  /* 错误横幅背景色 */
 
-  /* 语义化字号变量（与浅色主题一致） */
-  --font-sm: 12px;
-  --font-xs: 11px;
+  /* ─── 设计系统：字号层级（与浅色主题一致） ─── */
+  --font-2xl: 1.75rem;
+  --font-xl:  1.375rem;
+  --font-lg:  1rem;
+  --font-md:  0.9375rem;
+  --font-base:0.875rem;
+  --font-sm:  0.75rem;
+  --font-xs:  0.6875rem;
+  --font-2xs: 0.625rem;
+  --font-3xs: 0.5625rem;
+  --font-h1:  1.125rem;
+  --font-score:1.25rem;
+
+  /* ─── 设计系统：按钮规范（与浅色主题一致） ─── */
+  --btn-height-sm: 28px;
+  --btn-height-md: 32px;
+  --btn-padding-sm: 4px 10px;
+  --btn-padding-md: 6px 14px;
+
+  /* ─── 设计系统：输入框规范（与浅色主题一致） ─── */
+  --input-padding: 6px 10px;
 
   /* 语义化背景变量（深色主题下复用 surface1） */
   --bg-hover:     var(--surface1);
@@ -258,11 +295,16 @@ button, a, [role="button"], select {
   touch-action: manipulation;
 }
 
+/* UX-FD-04 rem 基准：1rem = 16px */
+html {
+  font-size: 16px;
+}
+
 html, body {
   height: 100%;
   /* 使用项目统一字体变量 --font-sprite，避免硬编码 */
   font-family: var(--font-sprite);
-  font-size: 14px;
+  font-size: var(--font-base);  /* UX-FD-02 设计系统基准字号 */
   color: var(--text);
   background: var(--bg);
   overflow: hidden;
@@ -297,13 +339,24 @@ html, body {
 }
 
 /* FD-02 面板级加载态：居中旋转圆环 + 文字，用于异步数据加载等待 */
+/* ─── UX-FD-03 SVG 图标系统：统一替换 emoji ─── */
+.icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.125em;
+  /* 继承父元素颜色，自动适配双主题 */
+  color: inherit;
+  flex-shrink: 0;
+}
+
 .panel-loading {
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 32px 16px;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--font-sm);
   gap: 10px;
   /* 加载态作为独立元素，不使用 ::before 伪元素以兼容 clearElement */
 }
@@ -330,12 +383,12 @@ html, body {
   padding: 32px 16px;
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-sm);
   gap: 8px;
 }
 
 .error-state .error-icon {
-  font-size: 28px;
+  font-size: var(--font-2xl);
   margin-bottom: 4px;
 }
 
@@ -377,6 +430,176 @@ button:active,
 .banner-btn:active {
   transform: scale(0.97);
   transition: transform var(--transition-fast) ease;
+}
+
+/* ─── 快捷命令面板（Command Palette） ──────────────────────────── */
+/* Ctrl+K 触发，类 VS Code 风格：居中浮层 + 模糊遮罩 + 键盘导航 */
+
+.command-palette {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  /* 半透明遮罩层 */
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+  animation: palette-fade-in 0.15s ease;
+}
+
+.command-palette.hidden {
+  display: none;
+}
+
+@keyframes palette-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.command-palette-dialog {
+  width: 560px;
+  max-width: 90vw;
+  max-height: 60vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: palette-slide-in 0.15s ease;
+}
+
+@keyframes palette-slide-in {
+  from { transform: translateY(-8px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+.command-palette-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.command-palette-search-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.command-palette-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: var(--font-base);
+  font-family: var(--font-sprite);
+  color: var(--text);
+  outline: none;
+  /* 移除默认搜索框样式 */
+  -webkit-appearance: none;
+}
+
+.command-palette-input::placeholder {
+  color: var(--muted);
+}
+
+.command-palette-hint {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.command-palette-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+  /* 自定义滚动条：窄、半透明 */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.command-palette-results::-webkit-scrollbar {
+  width: 6px;
+}
+
+.command-palette-results::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.command-palette-section {
+  padding: 6px 16px 2px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  /* 粘性标题：滚动时固定在顶部 */
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.1s ease;
+  border-left: 3px solid transparent;
+}
+
+.command-palette-item:hover {
+  background: var(--bg-hover);
+}
+
+.command-palette-item.active {
+  background: var(--accent-10);
+  border-left-color: var(--accent);
+}
+
+.command-palette-label {
+  font-size: var(--font-sm);
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.command-palette-label mark {
+  background: var(--accent-20);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.command-palette-shortcut {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  background: var(--bg-hover);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.command-palette-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: var(--font-sm);
+  color: var(--muted);
 }
 
 /* 输入框 click 按下时无需缩放（避免文本抖动） */

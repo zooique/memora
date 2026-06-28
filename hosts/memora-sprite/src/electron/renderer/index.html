@@ -26,14 +26,84 @@
   <link rel="stylesheet" href="styles/markdown.css" />
 </head>
 <body>
+  <!-- UX-FD-03 SVG 图标精灵：替换页面内 emoji，统一视觉风格 -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <defs>
+      <!-- 品牌 / 精灵 -->
+      <symbol id="icon-fairy" viewBox="0 0 24 24"><path d="M12 2l1.5 5.5L19 6l-3.5 4.5L20 14l-5.5-.5L14 19l-2-5-2 5-.5-5.5L4 14l4.5-3.5L5 6l5.5.5L12 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="10" r="1.5" fill="currentColor"/></symbol>
+      <!-- 记忆 -->
+      <symbol id="icon-brain" viewBox="0 0 24 24"><path d="M9.5 2C6.5 2 4 4.5 4 7.5c0 1.5.5 3 1.5 4C4 12.5 2.5 14 2.5 16c0 2.5 2 4.5 4.5 4.5 1.5 0 2.5-.5 3.5-1.5v1.5h3V19c1 1 2 1.5 3.5 1.5 2.5 0 4.5-2 4.5-4.5 0-2-1.5-3.5-3-4.5 1-1 1.5-2.5 1.5-4C20 4.5 17.5 2 14.5 2 13 2 11.5 2.5 10.5 4 9.5 2.5 8 2 6.5 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 洞察 / 灵感 -->
+      <symbol id="icon-lightbulb" viewBox="0 0 24 24"><path d="M10 17h4v3a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3z" fill="currentColor"/><path d="M9 8.5C9 6 10.5 4 12 3s3 3 3 5.5c0 1.5-.5 2.5-1 3.5h-4c-.5-1-1-2-1-3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><line x1="10" y1="14" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 图表 -->
+      <symbol id="icon-chart" viewBox="0 0 24 24"><rect x="3" y="14" width="4" height="6" rx="0.5" fill="currentColor"/><rect x="10" y="8" width="4" height="12" rx="0.5" fill="currentColor"/><rect x="17" y="4" width="4" height="16" rx="0.5" fill="currentColor"/></symbol>
+      <!-- 设置 / 齿轮 -->
+      <symbol id="icon-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 1l-2 3.5H7.5L5.5 2l-3 3 2 2.5V10l-2 3 3 3 2-2.5h2.5L12 16l2-2.5h2.5L19 16l3-3-2-3V7.5L22 4.5l-3-3-2 2.5H14.5L12 1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 搜索 -->
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 眼睛 / 可见性 -->
+      <symbol id="icon-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 用户 / 画像 -->
+      <symbol id="icon-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 健康 -->
+      <symbol id="icon-health" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="9" y1="10" x2="15" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="7" x2="12" y2="13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 对话 -->
+      <symbol id="icon-chat" viewBox="0 0 24 24"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 角色 -->
+      <symbol id="icon-persona" viewBox="0 0 24 24"><circle cx="8" cy="9" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="16" cy="9" r="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M3 19c0-3 2.2-5 5-5h1.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M14.5 14H16c2.8 0 5 2 5 5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></symbol>
+      <!-- 闪电 / 技能 -->
+      <symbol id="icon-lightning" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 通知 / 触发器 -->
+      <symbol id="icon-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M13.73 21a2 2 0 01-3.46 0" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 感知 / 天线 -->
+      <symbol id="icon-antenna" viewBox="0 0 24 24"><path d="M5 17a9 9 0 010-10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 14a5 5 0 010-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></symbol>
+      <!-- 备忘录 / 记录 -->
+      <symbol id="icon-memo" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="7" x2="16" y2="7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="8" y1="11" x2="16" y2="11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="8" y1="15" x2="12" y2="15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></symbol>
+      <!-- 刷新 -->
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M1 4v6h6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M23 20v-6h-6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <!-- 日历 -->
+      <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="2" x2="8" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="16" y1="2" x2="16" y2="6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 桌面 / 完整窗口 -->
+      <symbol id="icon-desktop" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="21" x2="16" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="12" y1="17" x2="12" y2="21" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 键盘 -->
+      <symbol id="icon-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="9" x2="18" y2="9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="6" y1="13" x2="14" y2="13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="6" y1="17" x2="10" y2="17" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></symbol>
+      <!-- 文件夹 -->
+      <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 下载 / 导入 -->
+      <symbol id="icon-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><polyline points="7 10 12 15 17 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="15" x2="12" y2="3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 书籍 / 学习 -->
+      <symbol id="icon-books" viewBox="0 0 24 24"><path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" fill="currentColor" opacity=".15"/><line x1="8" y1="9" x2="16" y2="9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><line x1="8" y1="13" x2="16" y2="13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></symbol>
+      <!-- 工具 -->
+      <symbol id="icon-tools" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000-1.4l-1.4-1.4a1 1 0 00-1.4 0L8.5 6.8l-4-4L2 5.3l4 4-3.4 3.4a1 1 0 000 1.4l1.4 1.4a1 1 0 001.4 0L14.7 6.3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M20 20l-6.3-6.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 加号 -->
+      <symbol id="icon-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <!-- 密文 / 数字 -->
+      <symbol id="icon-hash" viewBox="0 0 24 24"><line x1="8" y1="3" x2="8" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="16" y1="3" x2="16" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="3" y1="9" x2="21" y2="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="3" y1="15" x2="21" y2="15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 事件 / 收件箱 -->
+      <symbol id="icon-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 树叶 / 衰减 -->
+      <symbol id="icon-leaf" viewBox="0 0 24 24"><path d="M11 20A7 7 0 014 13c0-6 12-11 12-11s-1 8 3 8a7 7 0 01-8 10z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 剪刀 / 截断 -->
+      <symbol id="icon-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="18" cy="18" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="7.5" y1="7.5" x2="16.5" y2="16.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 浮动图标（蓝色圆形，onboarding 用） -->
+      <symbol id="icon-float-badge" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="4" fill="currentColor" opacity=".3"/></symbol>
+      <!-- 系统托盘（绿色圆形，onboarding 用） -->
+      <symbol id="icon-tray-badge" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="7" y="11" width="10" height="2" rx="1" fill="currentColor"/></symbol>
+      <!-- 音乐 / 互动基调 -->
+      <symbol id="icon-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="18" cy="16" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 握手 / 默契 -->
+      <symbol id="icon-rapport" viewBox="0 0 24 24"><path d="M8 13v-2a2 2 0 012-2h1l2 2h3a3 3 0 013 3v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 13v-2a2 2 0 00-2-2h-1l-2 2H8a3 3 0 00-3 3v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+
   <!-- 大底板容器：grid 布局（左侧栏 + 顶部栏 + 核心悬浮窗口） -->
   <div id="app">
     <!-- 侧边栏 -->
     <aside id="sidebar">
-      <!-- 品牌区（对齐 demo：🧚 Memora 作为唯一品牌标识） -->
+      <!-- 品牌区（对齐 demo：<svg class="icon"><use href="#icon-fairy"/></svg> Memora 作为唯一品牌标识） -->
       <!-- UI-AUDIT-P2-2.12: 品牌区使用 h1 作为页面最高层级标题，语义 HTML 规范 -->
       <div class="sidebar-brand">
-        <div class="sidebar-brand-icon">🧚</div>
+        <div class="sidebar-brand-icon"><svg class="icon"><use href="#icon-fairy"/></svg></div>
         <h1 class="sidebar-brand-name" translate="no">Memora</h1>
       </div>
 
@@ -41,7 +111,7 @@
       <div id="sidebar-header">
         <!-- UI-AUDIT: 添加 role/tabindex/aria-label 提升键盘可访问性（原 div 不可聚焦） -->
         <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox">
-          <span id="persona-icon">🧚</span>
+          <span id="persona-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
           <span id="persona-name">精灵</span>
           <!-- IX-07 当前角色匹配模式标签（auto/manual） -->
           <span id="persona-mode-badge" class="mode-badge" title="角色匹配模式：自动（根据上下文自动切换角色）">自动</span>
@@ -60,30 +130,23 @@
             <span id="narrative-toggle" class="narrative-toggle">▸</span>
           </div>
           <div class="dash-item" title="Agent 记忆总数">
-            <span class="dash-label">🧠 记忆</span>
+            <span class="dash-label"><svg class="icon"><use href="#icon-brain"/></svg> 记忆</span>
             <span class="dash-value" id="memory-count">0</span>
           </div>
           <div class="dash-item" title="AI 提取的洞察数">
-            <span class="dash-label">💡 洞察</span>
+            <span class="dash-label"><svg class="icon"><use href="#icon-lightbulb"/></svg> 洞察</span>
             <span class="dash-value" id="insight-count">0</span>
           </div>
           <div class="dash-item" title="已加载的角色数">
-            <span class="dash-label">🎭 角色</span>
+            <span class="dash-label"><svg class="icon"><use href="#icon-persona"/></svg> 角色</span>
             <span class="dash-value" id="persona-count">0</span>
           </div>
-          <div class="dash-item" id="dash-triggers" title="已注册的触发器数">
-            <span class="dash-label">🔔 触发器</span>
-            <span class="dash-value" id="trigger-count">0</span>
-          </div>
-          <!-- GAP-1 已加载技能数 -->
-          <div class="dash-item" id="dash-skills" title="已加载的技能数">
-            <span class="dash-label">⚡ 技能</span>
-            <span class="dash-value" id="skill-count">0</span>
-          </div>
-          <!-- FD-03 累积事件（跨 2 列，接近阈值时高亮，提示即将主动提示） -->
-          <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值" style="grid-column: span 2;">
-            <span class="dash-label">📥 事件</span>
+          <!-- FD-03 累积事件/触发器/技能（跨 2 列，接近阈值时高亮，提示即将主动提示） -->
+          <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值 · 触发器 · 技能" style="grid-column: span 2;">
+            <span class="dash-label"><svg class="icon"><use href="#icon-inbox"/></svg> 事件</span>
             <span class="dash-value" id="pending-count">0/3</span>
+            <span class="dash-sub-value" id="trigger-count">0 触发器</span>
+            <span class="dash-sub-value" id="skill-count">0 技能</span>
           </div>
         </div>
 
@@ -92,7 +155,7 @@
 
         <!-- Phase 2.1：情感基调展示（四维进度条，由 affectUpdated 事件动态更新） -->
         <div id="affect-display" class="dashboard-section hidden">
-          <h3>🎵 互动基调</h3>
+          <h3><svg class="icon"><use href="#icon-music"/></svg> 互动基调</h3>
           <div class="affect-bars">
             <div class="affect-bar">
               <span class="affect-label">温暖度</span>
@@ -119,7 +182,7 @@
         
         <!-- Phase 3：默契度展示（等级 + 信任度进度条 + 熟悉度进度条 + 描述，由 rapportUpdated 事件动态更新） -->
         <div id="rapport-display" class="dashboard-section hidden">
-          <h3>🤝 默契度</h3>
+          <h3><svg class="icon"><use href="#icon-rapport"/></svg> 默契度</h3>
           <div class="rapport-level-badge" id="rapport-level-badge">初识</div>
           <div class="affect-bars">
             <div class="affect-bar">
@@ -138,7 +201,7 @@
         
         <!-- Phase 4：对话上下文展示（节奏 + 话题 + 深度，由 contextUpdated 事件动态更新） -->
         <div id="context-display" class="dashboard-section hidden">
-          <h3>📡 对话上下文</h3>
+          <h3><svg class="icon"><use href="#icon-antenna"/></svg> 对话上下文</h3>
           <div class="context-metrics">
             <div class="context-metric">
               <span class="context-label">节奏</span>
@@ -158,7 +221,7 @@
         
         <!-- Phase 2+：用户模式洞察（PatternDetector 检测结果，由 patternsUpdated 事件动态更新） -->
         <div id="patterns-display" class="dashboard-section hidden">
-          <h3>💡 模式洞察</h3>
+          <h3><svg class="icon"><use href="#icon-lightbulb"/></svg> 模式洞察</h3>
           <div id="patterns-list" class="patterns-list">
             <!-- 由 updatePatternsDisplay() 动态填充 -->
           </div>
@@ -167,30 +230,30 @@
         <!-- OBS-01 Agent 运行时指标（消费内核 agent.getMetrics()） -->
         <!-- 由 renderAgentMetrics() 动态填充，无数据时隐藏 -->
         <div id="agent-metrics" class="dashboard-section hidden">
-          <h3>📊 运行指标</h3>
+          <h3><svg class="icon"><use href="#icon-chart"/></svg> 运行指标</h3>
           <div id="agent-metrics-grid">
             <div class="dash-item" title="LLM 调用总次数（含重试）">
-              <span class="dash-label">⚡ 调用</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-lightning"/></svg> 调用</span>
               <span class="dash-value" id="metric-llm-calls">0</span>
             </div>
             <div class="dash-item" title="累计输入 + 输出 token 数">
-              <span class="dash-label">🔢 Token</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-hash"/></svg> Token</span>
               <span class="dash-value" id="metric-llm-tokens">0</span>
             </div>
             <div class="dash-item" title="记忆召回命中率">
-              <span class="dash-label">🔍 召回</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-search"/></svg> 召回</span>
               <span class="dash-value" id="metric-recall-hit">0%</span>
             </div>
             <div class="dash-item" title="工具调用失败率">
-              <span class="dash-label">🛠 工具</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-tools"/></svg> 工具</span>
               <span class="dash-value" id="metric-tool-fail">0%</span>
             </div>
             <div class="dash-item" title="上下文截断次数">
-              <span class="dash-label">✂️ 截断</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-scissors"/></svg> 截断</span>
               <span class="dash-value" id="metric-context-trunc">0</span>
             </div>
             <div class="dash-item" title="记忆衰减执行次数 / 累计衰减条数">
-              <span class="dash-label">🍂 衰减</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-leaf"/></svg> 衰减</span>
               <span class="dash-value" id="metric-decay">0/0</span>
             </div>
           </div>
@@ -201,22 +264,22 @@
 
         <!-- 学习与回顾：聚合配置建议/画像/投影/洞察 + 今日回顾 + 推荐 -->
         <div id="learning-progress" class="dashboard-section hidden">
-          <h3>📚 学习与回顾</h3>
+          <h3><svg class="icon"><use href="#icon-books"/></svg> 学习与回顾</h3>
           <div id="learning-progress-grid">
             <div class="dash-item" title="配置自进化建议数">
-              <span class="dash-label">⚙️ 建议</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-gear"/></svg> 建议</span>
               <span class="dash-value" id="learn-suggestions">0</span>
             </div>
             <div class="dash-item" title="已确认用户画像条目数">
-              <span class="dash-label">👤 画像</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-person"/></svg> 画像</span>
               <span class="dash-value" id="learn-profile">0</span>
             </div>
             <div class="dash-item" title="作品投影数">
-              <span class="dash-label">📂 作品</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-folder"/></svg> 作品</span>
               <span class="dash-value" id="learn-works">0</span>
             </div>
             <div class="dash-item" title="AI 提取的洞察数">
-              <span class="dash-label">💡 洞察</span>
+              <span class="dash-label"><svg class="icon"><use href="#icon-lightbulb"/></svg> 洞察</span>
               <span class="dash-value" id="learn-insights">0</span>
             </div>
           </div>
@@ -247,12 +310,19 @@
     <header id="titlebar">
       <!-- ADR-NAV-001 面板导航标签（从侧边栏迁移，pill 形式水平排列） -->
       <nav id="titlebar-nav" aria-label="面板切换">
-        <button class="nav-btn active" data-panel="chat" title="对话（Ctrl+1）">💬 <span class="nav-label">对话</span></button>
-        <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）">🧠 <span class="nav-label">记忆</span></button>
-        <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）">⚙️ <span class="nav-label">设置</span></button>
+        <button class="nav-btn active" data-panel="chat" title="对话（Ctrl+1）"><svg class="icon"><use href="#icon-chat"/></svg> <span class="nav-label">对话</span></button>
+        <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）"><svg class="icon"><use href="#icon-brain"/></svg> <span class="nav-label">记忆</span></button>
+        <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）"><svg class="icon"><use href="#icon-gear"/></svg> <span class="nav-label">设置</span></button>
       </nav>
       <!-- UX-P2-24 移除 #app-title 元素（原 display:none 但保留在 HTML 中，无实际作用） -->
-      <div id="titlebar-drag"></div>
+      <div id="titlebar-drag">
+        <!-- Ctrl+K 快捷键提示：让用户发现命令面板功能 -->
+        <button id="titlebar-cmdk" class="cmdk-hint" title="打开命令面板（Ctrl+K）" aria-label="打开命令面板">
+          <svg class="icon"><use href="#icon-search"/></svg>
+          <span>命令面板</span>
+          <kbd>Ctrl+K</kbd>
+        </button>
+      </div>
       <div id="titlebar-controls">
         <!-- UI-AUDIT: 添加 aria-label 提升可访问性（屏幕阅读器支持） -->
         <button id="btn-minimize" title="最小化" aria-label="最小化窗口">─</button>
@@ -275,7 +345,7 @@
           <!-- UX-FD-07 日期导航按钮：快速跳转到指定日期的历史对话 -->
           <div id="date-navigator" class="date-navigator">
             <button id="date-nav-btn" class="date-nav-btn" title="按日期查找历史对话" aria-label="按日期查找历史对话">
-              <span class="date-nav-icon">📅</span>
+              <span class="date-nav-icon"><svg class="icon"><use href="#icon-calendar"/></svg></span>
             </button>
             <div id="date-nav-dropdown" class="dropdown date-nav-dropdown hidden">
               <div class="date-nav-header">历史对话</div>
@@ -286,7 +356,7 @@
 
         <!-- FD-03 对话面板叙事摘要行：显示当前感知状态，与仪表盘叙事卡片共用 generateNarrative() -->
         <div id="chat-narrative" class="chat-narrative">
-          <span class="chat-narrative-icon">🧚</span>
+          <span class="chat-narrative-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
           <span class="chat-narrative-text" id="chat-narrative-text">精灵正在感知中...</span>
         </div>
 
@@ -298,7 +368,7 @@
 
         <!-- 主动提示 banner（顶部滑入，对齐 docs/memora-sprite-preview.html §6.6） -->
         <div id="proactive-banner" class="hidden">
-          <span class="banner-icon">🧚</span>
+          <span class="banner-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
           <div class="banner-text" id="proactive-banner-text"></div>
           <div class="banner-actions">
             <button class="banner-btn" data-action="view">查看</button>
@@ -314,14 +384,14 @@
         <div id="messages">
           <!-- 对话区空状态引导：无消息时显示欢迎语 + 示例问题，有消息后自动隐藏 -->
           <div id="chat-empty-state" class="chat-empty-state">
-            <div class="empty-avatar">🧚</div>
+            <div class="empty-avatar"><svg class="icon"><use href="#icon-fairy"/></svg></div>
             <div class="empty-title">你好，我是 Memora 精灵</div>
             <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
             <div class="empty-suggestions">
-              <button class="suggestion-btn" data-suggestion="帮我记录今天的工作要点">📝 记录工作要点</button>
-              <button class="suggestion-btn" data-suggestion="你记得我之前提过什么偏好吗？">🧠 查询我的记忆</button>
-              <button class="suggestion-btn" data-suggestion="切换到代码助手角色">🎭 切换角色</button>
-              <button class="suggestion-btn" data-suggestion="帮我整理一下最近的洞察">✨ 整理洞察</button>
+              <button class="suggestion-btn" data-suggestion="帮我记录今天的工作要点"><svg class="icon"><use href="#icon-memo"/></svg> 记录工作要点</button>
+              <button class="suggestion-btn" data-suggestion="你记得我之前提过什么偏好吗？"><svg class="icon"><use href="#icon-brain"/></svg> 查询我的记忆</button>
+              <button class="suggestion-btn" data-suggestion="切换到代码助手角色"><svg class="icon"><use href="#icon-persona"/></svg> 切换角色</button>
+              <button class="suggestion-btn" data-suggestion="帮我整理一下最近的洞察"><svg class="icon"><use href="#icon-fairy"/></svg> 整理洞察</button>
             </div>
           </div>
         </div>
@@ -341,7 +411,7 @@
           <div class="input-toolbar">
             <div class="input-actions-left">
               <!-- 快速添加记忆：与记忆面板的"添加"按钮行为一致，打开添加记忆弹窗 -->
-              <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）">➕</button>
+              <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）"><svg class="icon"><use href="#icon-plus"/></svg></button>
             </div>
             <div class="input-send-area">
               <button id="btn-send" title="发送（Enter）">➤</button>
@@ -353,32 +423,48 @@
       <!-- 记忆面板 -->
       <div id="panel-memories" class="panel">
         <div class="panel-header">
-          <!-- UI-AUDIT: 添加 aria-label 提升可访问性 -->
+          <!-- 搜索框占据主要宽度 -->
           <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" />
-          <select id="memory-filter-source" title="按来源筛选">
-            <option value="">全部来源</option>
-            <option value="profile">profile</option>
-            <option value="insight">insight</option>
-            <option value="guardrail">guardrail</option>
-            <option value="skill">skill</option>
-            <option value="rule">rule</option>
-            <option value="persona">persona</option>
-            <option value="session">session</option>
-          </select>
-          <button id="btn-add-memory">+ 添加</button>
-          <!-- 图谱视图切换按钮（ADR-014：拓扑可视化） -->
-          <button id="btn-graph-view" class="view-toggle-btn" title="切换到图谱视图">◉</button>
-          <!-- 高级搜索展开按钮（Phase 2：搜索增强） -->
-          <button id="btn-advanced-search" class="view-toggle-btn" title="高级搜索">⚙</button>
-          <!-- 洞察展开按钮（Phase 3：记忆洞察面板） -->
-          <button id="btn-insights" class="view-toggle-btn" title="记忆洞察">📊</button>
-          <!-- 健康度展开按钮（Phase 1：健康度诊断） -->
-          <button id="btn-health" class="view-toggle-btn" title="记忆健康度">🩺</button>
+          <!-- 主操作：添加记忆 -->
+          <button id="btn-add-memory" class="btn btn-primary btn-sm">+ 添加</button>
+          <!-- 视图模式切换（列表/图谱） -->
+          <div class="view-switch" role="tablist" aria-label="视图模式">
+            <button id="btn-list-view" class="view-switch-btn active" title="列表视图" role="tab" aria-selected="true"><svg class="icon"><use href="#icon-memo"/></svg></button>
+            <button id="btn-graph-view" class="view-switch-btn" title="图谱视图" role="tab" aria-selected="false"><svg class="icon"><use href="#icon-brain"/></svg></button>
+          </div>
+          <!-- 更多工具下拉菜单（收敛次级操作：高级搜索/洞察/健康度） -->
+          <div class="toolbar-more">
+            <button id="btn-memory-more" class="icon-btn" title="更多工具" aria-haspopup="true" aria-expanded="false">
+              <svg class="icon"><use href="#icon-tools"/></svg>
+            </button>
+            <div id="memory-more-menu" class="dropdown more-menu hidden">
+              <button class="more-menu-item" data-action="advanced-search">
+                <svg class="icon"><use href="#icon-gear"/></svg> 高级筛选
+              </button>
+              <button class="more-menu-item" data-action="insights">
+                <svg class="icon"><use href="#icon-chart"/></svg> 统计洞察
+              </button>
+              <button class="more-menu-item" data-action="health">
+                <svg class="icon"><use href="#icon-health"/></svg> 健康度诊断
+              </button>
+            </div>
+          </div>
           <span id="health-mini-score" class="health-mini-score hidden">100</span>
         </div>
         <!-- 高级搜索栏（Phase 2：搜索增强，默认折叠） -->
         <div id="advanced-search-bar" class="advanced-search-bar hidden">
           <div class="advanced-search-row">
+            <label class="advanced-search-label">来源</label>
+            <select id="memory-filter-source" title="按来源筛选">
+              <option value="">全部来源</option>
+              <option value="profile">profile</option>
+              <option value="insight">insight</option>
+              <option value="guardrail">guardrail</option>
+              <option value="skill">skill</option>
+              <option value="rule">rule</option>
+              <option value="persona">persona</option>
+              <option value="session">session</option>
+            </select>
             <label class="advanced-search-label">排序</label>
             <select id="memory-sort-order" title="排序方式">
               <option value="relevance">相关度</option>
@@ -416,7 +502,7 @@
         <!-- 记忆健康度仪表盘（Phase 1：健康度诊断，默认折叠） -->
         <div id="memory-health-bar" class="health-bar hidden">
           <div class="health-header">
-            <span class="health-title">🩺 记忆健康度</span>
+            <span class="health-title"><svg class="icon"><use href="#icon-health"/></svg> 记忆健康度</span>
             <span class="health-badge" id="health-badge">优秀</span>
             <span class="health-score" id="health-score">100</span>
           </div>
@@ -515,7 +601,7 @@
               <div class="input-with-action">
                 <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
                 <!-- FD-A11Y-LABEL：图标按钮补齐 aria-label，与 btn-minimize/btn-close 等图标按钮标准一致 -->
-                <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏主 LLM API Key">👁</button>
+                <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏主 LLM API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
               </div>
             </div>
             <div class="settings-row">
@@ -547,7 +633,7 @@
                 <label for="cfg-bg-api-key">API Key</label>
                 <div class="input-with-action">
                   <input type="password" id="cfg-bg-api-key" placeholder="sk-****" disabled />
-                  <button type="button" id="btn-toggle-bg-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏后台 LLM API Key" disabled>👁</button>
+                  <button type="button" id="btn-toggle-bg-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏后台 LLM API Key" disabled><svg class="icon"><use href="#icon-eye"/></svg></button>
                 </div>
               </div>
             </div>
@@ -583,7 +669,7 @@
               <label for="cfg-emb-api-key">API Key（留空复用 LLM 配置）</label>
               <div class="input-with-action">
                 <input type="password" id="cfg-emb-api-key" placeholder="sk-****" />
-                <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Embedding API Key">👁</button>
+                <button type="button" id="btn-toggle-emb-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Embedding API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
               </div>
             </div>
           </div>
@@ -746,7 +832,7 @@
             <!-- 用户可将 .md 技能文件拖入此区域或点击选择文件 -->
             <div id="skill-dropzone" class="skill-dropzone" tabindex="0" role="button"
                  aria-label="拖入技能文件或点击选择">
-              <div class="dropzone-icon">📥</div>
+              <div class="dropzone-icon"><svg class="icon"><use href="#icon-download"/></svg></div>
               <div class="dropzone-text">
                 <span class="dropzone-hint">拖入 .md 技能文件</span>
                 <span class="dropzone-subtext">或点击选择文件</span>
@@ -762,7 +848,7 @@
             <div class="settings-group-header">
               <h3>作品投影</h3>
               <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
-              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新">🔄</button>
+              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新"><svg class="icon"><use href="#icon-refresh"/></svg></button>
             </div>
             <p class="settings-hint">
               精灵读取你的代码文件后，自动生成作品投影摘要。
@@ -899,28 +985,28 @@
   <div id="onboarding-modal" class="modal hidden">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>🧚 欢迎使用 Memora 精灵</h3>
+        <h3><svg class="icon"><use href="#icon-fairy"/></svg> 欢迎使用 Memora 精灵</h3>
         <button class="modal-close" data-modal="onboarding-modal">✕</button>
       </div>
       <div class="modal-body">
         <p class="onboarding-intro">你的本地 AI 伙伴，拥有跨会话记忆能力。精灵有三种存在形态：</p>
         <div class="onboarding-states">
           <div class="onboarding-state-item">
-            <div class="onboarding-state-icon">🖥️</div>
+            <div class="onboarding-state-icon"><svg class="icon"><use href="#icon-desktop"/></svg></div>
             <div class="onboarding-state-text">
               <strong>完整窗口</strong>
               <span>完整对话体验，记忆/角色/设置面板</span>
             </div>
           </div>
           <div class="onboarding-state-item">
-            <div class="onboarding-state-icon">🔵</div>
+            <div class="onboarding-state-icon"><svg class="icon"><use href="#icon-float-badge"/></svg></div>
             <div class="onboarding-state-text">
               <strong>浮动图标</strong>
               <span>单击展开 · 拖动移动 · 右键菜单</span>
             </div>
           </div>
           <div class="onboarding-state-item">
-            <div class="onboarding-state-icon">🟢</div>
+            <div class="onboarding-state-icon"><svg class="icon"><use href="#icon-tray-badge"/></svg></div>
             <div class="onboarding-state-text">
               <strong>系统托盘</strong>
               <span>右键菜单 · 双击展开 · 后台常驻</span>
@@ -928,7 +1014,7 @@
           </div>
         </div>
         <div class="onboarding-shortcuts">
-          <div class="onboarding-shortcut-title">⌨️ 快捷键</div>
+          <div class="onboarding-shortcut-title"><svg class="icon"><use href="#icon-keyboard"/></svg> 快捷键</div>
           <div class="onboarding-shortcut-list">
             <kbd>Ctrl+1</kbd> 对话 <kbd>Ctrl+2</kbd> 记忆 <kbd>Ctrl+3</kbd> 设置 <kbd>Ctrl+.</kbd> 停止 <kbd>Esc</kbd> 关闭弹窗
           </div>
@@ -985,6 +1071,25 @@
           <button id="cleanup-confirm-cancel" class="btn btn-secondary">取消</button>
           <button id="cleanup-confirm-confirm" class="btn btn-danger">确认清理</button>
         </div>
+      </div>
+    </div>
+
+    <!-- 快捷命令面板（Ctrl+K 触发，类似 VS Code Command Palette） -->
+    <div id="command-palette" class="command-palette hidden">
+      <div class="command-palette-dialog">
+        <div class="command-palette-input-wrapper">
+          <svg class="icon command-palette-search-icon"><use href="#icon-search"/></svg>
+          <input
+            type="text"
+            id="command-palette-input"
+            class="command-palette-input"
+            placeholder="输入命令搜索..."
+            autocomplete="off"
+            aria-label="搜索命令"
+          />
+          <kbd class="command-palette-hint">Esc 关闭</kbd>
+        </div>
+        <div id="command-palette-results" class="command-palette-results"></div>
       </div>
     </div>
   </body>

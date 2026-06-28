@@ -27,12 +27,12 @@
   margin-top: 0;
 }
 
-.message-bubble .md-h-1 { font-size: 18px; color: var(--accent); }
-.message-bubble .md-h-2 { font-size: 16px; color: var(--accent); }
-.message-bubble .md-h-3 { font-size: 15px; color: var(--accent); }
-.message-bubble .md-h-4 { font-size: 14px; color: var(--text); }
-.message-bubble .md-h-5 { font-size: 13px; color: var(--text); }
-.message-bubble .md-h-6 { font-size: 12px; color: var(--subtext); }
+.message-bubble .md-h-1 { font-size: var(--font-h1); color: var(--accent); }
+.message-bubble .md-h-2 { font-size: var(--font-lg); color: var(--accent); }
+.message-bubble .md-h-3 { font-size: var(--font-md); color: var(--accent); }
+.message-bubble .md-h-4 { font-size: var(--font-base); color: var(--text); }
+.message-bubble .md-h-5 { font-size: var(--font-sm); color: var(--text); }
+.message-bubble .md-h-6 { font-size: var(--font-sm); color: var(--subtext); }
 
 /* 代码块容器：UX-PP-11 改为 div.md-code-block 包裹 header + pre */
 /* 深色背景 + 等宽字体 + 圆角边框，header 与 pre 共享背景 */
@@ -53,14 +53,14 @@
   background: var(--surface1);
   border-bottom: 1px solid var(--surface1);
   font-family: system-ui, -apple-system, sans-serif;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 /* 语言标签：等宽字体 + 弱化颜色 */
 .message-bubble .md-code-lang {
   color: var(--text-3);
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
   text-transform: lowercase;
 }
@@ -73,7 +73,7 @@
   background: transparent;
   color: var(--text-3);
   font-family: system-ui, -apple-system, sans-serif;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   cursor: pointer;
   transition: color var(--transition-fast), background var(--transition-fast);
 }

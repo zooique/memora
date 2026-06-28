@@ -20,7 +20,7 @@
   background: transparent;
   border-bottom: none;
   flex-shrink: 0;
-  font-size: 15px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
@@ -33,7 +33,7 @@
   border-radius: var(--radius-pill);
   color: var(--text);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--font-sm);
   outline: none;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
@@ -50,7 +50,7 @@
   border: none;
   border-radius: var(--radius-md);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
   cursor: pointer;
   transition: background var(--transition-fast);
@@ -109,7 +109,7 @@
 }
 
 .memory-item .name {
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 600;
   margin-bottom: 6px;
   display: flex;
@@ -123,7 +123,7 @@
  * 不同 source 用不同颜色区分（profile 绿/insight 蓝/guardrail 粉等）
  */
 .memory-item .meta {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-3);
   display: flex;
   gap: 12px;
@@ -134,7 +134,7 @@
 .memory-item .meta .source-tag {
   padding: 2px 8px;
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
 }
 
@@ -170,7 +170,7 @@
 /* P3-FLOW-14 记忆列表项创建时间 */
 .memory-item .meta .memory-time {
   color: var(--text-3, var(--text-2));
-  font-size: 11px;
+  font-size: var(--font-xs);
   margin-left: auto;
 }
 
@@ -180,13 +180,13 @@
   width: 100%;
   margin-top: 12px;
   padding: 8px 12px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-align: center;
   cursor: pointer;
 }
 
 .memory-item .preview {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-2);
   margin-top: 4px;
   line-height: 1.5;
@@ -206,7 +206,7 @@
   border-radius: var(--radius-md);
   color: var(--text-2);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   outline: none;
   cursor: pointer;
 }
@@ -221,7 +221,7 @@
   flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 12px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-3);
   flex-shrink: 0;
 }
@@ -230,7 +230,7 @@
   background: var(--window-bg-2);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 /* UI-UX-04 记忆详情内容溢出保护 */
@@ -238,7 +238,7 @@
   background: var(--window-bg-2);
   padding: 12px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--font-sm);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -258,7 +258,7 @@
   padding: 12px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--accent);
-  font-size: 13px;
+  font-size: var(--font-sm);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -292,7 +292,7 @@
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   background: var(--window-bg-2);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: default;
   /* UI-AUDIT: 使用动画时长变量替代硬编码 0.15s，保持设计系统一致性 */
   transition: background var(--transition-fast);
@@ -310,7 +310,7 @@
 }
 
 .skill-layer {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   flex-shrink: 0;
@@ -331,39 +331,111 @@
 .skill-keywords {
   /* UI-AUDIT: 修复未定义变量引用（原 --text-secondary 未在 base.css 定义） */
   color: var(--text-2);
-  font-size: 11px;
+  font-size: var(--font-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
 }
 
-/* ─── 图谱视图（ADR-014：拓扑可视化） ──────────────────────── */
+/* ─── 视图切换器（列表/图谱 segmented control） ──────────────── */
+.view-switch {
+  display: flex;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
 
-/* 图谱视图切换按钮 */
-.view-toggle-btn {
+.view-switch-btn {
   padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.view-switch-btn:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+.view-switch-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ─── 图标按钮（工具栏辅助操作） ────────────────────────────── */
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
   color: var(--text-2);
-  font-size: 14px;
+  font-size: var(--font-sm);
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
-  line-height: 1;
 }
 
-.view-toggle-btn:hover {
+.icon-btn:hover {
   background: var(--surface0);
   border-color: var(--muted);
   color: var(--text);
 }
 
-/* 图谱视图激活态：按钮高亮 */
-.view-toggle-btn.active {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+/* ─── 工具栏更多菜单（下拉） ───────────────────────────────── */
+.toolbar-more {
+  position: relative;
+}
+
+.more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 150px;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  padding: 4px;
+  z-index: 100;
+}
+
+.more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.more-menu-item:hover {
+  background: var(--accent-10);
   color: var(--accent);
+}
+
+.more-menu-item .icon {
+  width: 1rem;
+  height: 1rem;
 }
 
 /* 图谱容器：填充记忆面板内容区 */
@@ -411,7 +483,7 @@
 
 /* 高级搜索标签 */
 .advanced-search-label {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-2);
   white-space: nowrap;
 }
@@ -423,7 +495,7 @@
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -477,14 +549,14 @@
 }
 
 .insights-stat-value {
-  font-size: 18px;
+  font-size: var(--font-h1);
   font-weight: 600;
   color: var(--text);
   line-height: 1.2;
 }
 
 .insights-stat-label {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -504,7 +576,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .distribution-label {
@@ -538,7 +610,7 @@
 }
 
 .insights-section-title {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -550,7 +622,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   padding: 3px 0;
 }
 
@@ -558,7 +630,7 @@
 .relation-type-tag {
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
   white-space: nowrap;
   background: var(--surface0);
@@ -605,13 +677,13 @@
 }
 
 .empty-title {
-  font-size: 15px;
+  font-size: var(--font-md);
   font-weight: 600;
   color: var(--text);
 }
 
 .empty-subtitle {
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-2);
 }
 
@@ -673,7 +745,7 @@
 }
 
 .health-title {
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text);
 }
@@ -681,7 +753,7 @@
 .health-badge {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 500;
 }
 
@@ -693,7 +765,7 @@
 
 .health-score {
   margin-left: auto;
-  font-size: 20px;
+  font-size: var(--font-score);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -715,7 +787,7 @@
 
 .health-metric-label {
   width: 48px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-2);
   white-space: nowrap;
 }
@@ -744,7 +816,7 @@
 
 .health-metric-value {
   width: 28px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   color: var(--text);
   text-align: right;
@@ -759,7 +831,7 @@
 }
 
 .health-detail-item {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-2);
 }
 
@@ -776,7 +848,7 @@
 
 /* 健康度描述文字 */
 .health-description {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-3);
   margin: 0;
   line-height: 1.4;
@@ -795,7 +867,7 @@
   border-radius: var(--radius-sm);
   background: var(--surface0);
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-xs);
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
@@ -846,7 +918,7 @@
 }
 
 .confirm-dialog-title {
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 600;
   margin: 0 0 8px;
   color: var(--text);
@@ -867,7 +939,7 @@
   padding: 6px 14px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .btn-danger:hover {
@@ -876,7 +948,7 @@
 
 /* 健康度迷你分数徽章（工具栏内） */
 .health-mini-score {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   padding: 1px 5px;

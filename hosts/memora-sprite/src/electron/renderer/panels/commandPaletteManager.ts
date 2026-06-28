@@ -1,0 +1,463 @@
+/**
+ * 快捷命令面板管理器（Command Palette）
+ *
+ * 职责：
+ * - 管理命令注册、搜索过滤、键盘导航
+ * - 提供 Ctrl+K 全局快捷键打开/关闭面板
+ * - 执行命令后自动关闭面板
+ *
+ * 设计原则：
+ * - 纯 UI 层组件，零内核依赖
+ * - 命令按 section 分组，支持动态命令（如角色列表）
+ * - 键盘导航：↑↓ 移动、Enter 执行、Esc 关闭
+ */
+
+import type { UIManager } from '../ui.js';
+
+/** 命令项定义 */
+export interface Command {
+  /** 唯一标识 */
+  id: string;
+  /** 显示名称 */
+  label: string;
+  /** 搜索关键词（空格分隔，用于模糊匹配） */
+  keywords: string;
+  /** 所属分组 */
+  section: string;
+  /** 快捷键提示（可选，如 "Ctrl+1"） */
+  shortcut?: string;
+  /** 执行动作 */
+  action: () => void;
+}
+
+/** 搜索结果项 */
+export interface SearchResult {
+  command: Command;
+  /** 匹配得分（越高越相关） */
+  score: number;
+}
+
+// ─── 命令定义 ────────────────────────────────────────────────
+
+/** 创建静态命令列表（不依赖动态数据的命令） */
+function createStaticCommands(uiManager: UIManager): Command[] {
+  return [
+    // ── 导航 ──
+    {
+      id: 'nav-chat',
+      label: '切换到对话面板',
+      keywords: '对话 聊天 chat 消息',
+      section: '导航',
+      shortcut: 'Ctrl+1',
+      action: () => { void uiManager.switchPanel('chat'); },
+    },
+    {
+      id: 'nav-memories',
+      label: '切换到记忆面板',
+      keywords: '记忆 memories 知识',
+      section: '导航',
+      shortcut: 'Ctrl+2',
+      action: () => { void uiManager.switchPanel('memories'); },
+    },
+    {
+      id: 'nav-settings',
+      label: '切换到设置面板',
+      keywords: '设置 settings 配置',
+      section: '导航',
+      shortcut: 'Ctrl+3',
+      action: () => { void uiManager.switchPanel('settings'); },
+    },
+
+    // ── 记忆 ──
+    {
+      id: 'mem-add',
+      label: '添加记忆',
+      keywords: '添加 新增 创建 记忆',
+      section: '记忆',
+      action: () => {
+        void uiManager.switchPanel('memories');
+        uiManager.showModal('memory-add-modal');
+      },
+    },
+    {
+      id: 'mem-search',
+      label: '搜索记忆',
+      keywords: '搜索 查找 记忆 检索',
+      section: '记忆',
+      action: () => {
+        void uiManager.switchPanel('memories');
+        // 聚焦记忆搜索框
+        const input = document.getElementById('memory-search') as HTMLInputElement | null;
+        input?.focus();
+      },
+    },
+    {
+      id: 'mem-health',
+      label: '查看记忆健康度',
+      keywords: '健康 诊断 检查 记忆',
+      section: '记忆',
+      action: () => {
+        void uiManager.switchPanel('memories');
+        // 展开健康度面板
+        const healthBar = document.getElementById('memory-health-bar');
+        if (healthBar) healthBar.classList.toggle('hidden');
+      },
+    },
+
+    // ── 设置 ──
+    {
+      id: 'settings-llm',
+      label: '打开 LLM 设置',
+      keywords: '大模型 模型 API 配置',
+      section: '设置',
+      action: () => {
+        void uiManager.switchPanel('settings');
+        switchSettingsTab('llm');
+      },
+    },
+    {
+      id: 'settings-sprite',
+      label: '打开精灵设置',
+      keywords: '精灵 sprite 行为 主动提示',
+      section: '设置',
+      action: () => {
+        void uiManager.switchPanel('settings');
+        switchSettingsTab('sprite');
+      },
+    },
+    {
+      id: 'settings-profile',
+      label: '打开用户画像',
+      keywords: '画像 用户 profile 偏好',
+      section: '设置',
+      action: () => {
+        void uiManager.switchPanel('settings');
+        switchSettingsTab('profile');
+      },
+    },
+    {
+      id: 'settings-skill',
+      label: '打开技能管理',
+      keywords: '技能 skill 安装',
+      section: '设置',
+      action: () => {
+        void uiManager.switchPanel('settings');
+        switchSettingsTab('skill');
+      },
+    },
+    {
+      id: 'settings-work',
+      label: '打开作品投影',
+      keywords: '作品 投影 work 文件',
+      section: '设置',
+      action: () => {
+        void uiManager.switchPanel('settings');
+        switchSettingsTab('work');
+      },
+    },
+
+    // ── 动作 ──
+    {
+      id: 'action-theme',
+      label: '切换主题（浅色/深色）',
+      keywords: '主题 浅色 深色 暗色 theme',
+      section: '动作',
+      action: () => {
+        const current = uiManager.getThemeMode();
+        const next = current === 'dark' ? 'light' : 'dark';
+        uiManager.setTheme(next);
+        uiManager.showToast(`已切换到${next === 'dark' ? '深色' : '浅色'}主题`, 'info', 2000);
+      },
+    },
+    {
+      id: 'action-shortcuts',
+      label: '显示键盘快捷键',
+      keywords: '快捷键 键盘 shortcut 帮助',
+      section: '动作',
+      shortcut: 'Ctrl+/',
+      action: () => { uiManager.showModal('shortcuts-modal'); },
+    },
+    {
+      id: 'action-onboarding',
+      label: '显示新手引导',
+      keywords: '引导 新手 欢迎 onboarding 介绍',
+      section: '动作',
+      action: () => { uiManager.showOnboardingDialog(); },
+    },
+  ];
+}
+
+/** 切换设置面板的 tab */
+function switchSettingsTab(tabName: string): void {
+  const tab = document.querySelector(`.settings-tab[data-settings-tab="${tabName}"]`) as HTMLButtonElement | null;
+  tab?.click();
+}
+
+// ─── 搜索引擎 ────────────────────────────────────────────────
+
+/** 对命令列表进行模糊搜索并排序 */
+export function searchCommands(commands: Command[], query: string): SearchResult[] {
+  if (!query.trim()) {
+    // 无输入时显示全部命令，按 section 排序
+    return commands.map((cmd) => ({ command: cmd, score: 0 }));
+  }
+
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const results: SearchResult[] = [];
+
+  for (const cmd of commands) {
+    const searchText = `${cmd.label} ${cmd.keywords} ${cmd.section}`.toLowerCase();
+    let score = 0;
+
+    for (const term of terms) {
+      if (searchText.includes(term)) {
+        // 精确匹配 label 得分最高
+        if (cmd.label.toLowerCase().includes(term)) score += 3;
+        // 关键词匹配
+        else if (cmd.keywords.toLowerCase().includes(term)) score += 2;
+        // section 匹配
+        else score += 1;
+      } else {
+        // 有一个词不匹配，该命令出局
+        score = -1;
+        break;
+      }
+    }
+
+    if (score >= 0) {
+      results.push({ command: cmd, score });
+    }
+  }
+
+  // 按得分降序排列
+  results.sort((a, b) => b.score - a.score);
+  return results;
+}
+
+// ─── 管理器类 ────────────────────────────────────────────────
+
+/**
+ * 快捷命令面板管理器
+ *
+ * 管理命令面板的打开/关闭、搜索过滤、键盘导航和命令执行。
+ * 通过 Ctrl+K 快捷键触发，提供类似 VS Code Command Palette 的体验。
+ */
+export class CommandPaletteManager {
+  private uiManager: UIManager;
+  private commands: Command[] = [];
+  private results: SearchResult[] = [];
+  private selectedIndex = 0;
+  private isOpen = false;
+
+  /** 面板容器元素 */
+  private paletteEl: HTMLElement | null = null;
+  /** 搜索输入框 */
+  private inputEl: HTMLInputElement | null = null;
+  /** 搜索结果容器 */
+  private resultsEl: HTMLElement | null = null;
+
+  constructor(uiManager: UIManager) {
+    this.uiManager = uiManager;
+  }
+
+  /** 初始化命令面板（DOM 绑定 + 事件监听） */
+  init(): void {
+    this.paletteEl = document.getElementById('command-palette');
+    this.inputEl = document.getElementById('command-palette-input') as HTMLInputElement | null;
+    this.resultsEl = document.getElementById('command-palette-results');
+
+    if (!this.paletteEl || !this.inputEl || !this.resultsEl) {
+      console.warn('[CommandPalette] 命令面板 DOM 元素缺失，功能降级');
+      return;
+    }
+
+    // 点击遮罩层关闭
+    this.paletteEl.addEventListener('click', (e) => {
+      if (e.target === this.paletteEl) {
+        this.close();
+      }
+    });
+
+    // 输入时实时搜索
+    this.inputEl.addEventListener('input', () => {
+      this.search(this.inputEl!.value);
+    });
+
+    // 键盘导航
+    this.inputEl.addEventListener('keydown', (e) => {
+      this.handleKeydown(e);
+    });
+
+    // 注册全局快捷键 Ctrl+K
+    document.addEventListener('keydown', (e) => {
+      this.handleGlobalKeydown(e);
+    });
+  }
+
+  /** 重新加载命令列表（角色列表变化时调用） */
+  reloadCommands(): void {
+    this.commands = createStaticCommands(this.uiManager);
+    // 如果面板打开中，刷新搜索结果
+    if (this.isOpen && this.inputEl) {
+      this.search(this.inputEl.value);
+    }
+  }
+
+  /** 打开命令面板 */
+  open(): void {
+    if (!this.paletteEl || !this.inputEl) return;
+
+    // 确保命令列表是最新的（角色可能已切换）
+    this.reloadCommands();
+
+    this.paletteEl.classList.remove('hidden');
+    this.isOpen = true;
+    this.selectedIndex = 0;
+
+    // 清空输入并显示全部命令
+    this.inputEl.value = '';
+    this.search('');
+    this.inputEl.focus();
+
+    // 阻止背景滚动
+    document.body.style.overflow = 'hidden';
+  }
+
+  /** 关闭命令面板 */
+  close(): void {
+    if (!this.paletteEl) return;
+
+    this.paletteEl.classList.add('hidden');
+    this.isOpen = false;
+    this.selectedIndex = 0;
+
+    // 恢复背景滚动
+    document.body.style.overflow = '';
+
+    // 清空输入
+    if (this.inputEl) {
+      this.inputEl.value = '';
+    }
+  }
+
+  /** 搜索过滤命令 */
+  private search(query: string): void {
+    this.results = searchCommands(this.commands, query);
+    this.selectedIndex = 0;
+    this.renderResults();
+  }
+
+  /** 渲染搜索结果列表 */
+  private renderResults(): void {
+    if (!this.resultsEl) return;
+
+    this.resultsEl.innerHTML = '';
+
+    if (this.results.length === 0) {
+      this.resultsEl.innerHTML =
+        '<div class="command-palette-empty">无匹配命令</div>';
+      return;
+    }
+
+    // 按 section 分组渲染
+    let lastSection = '';
+    for (let i = 0; i < this.results.length; i++) {
+      const { command } = this.results[i];
+
+      // 分组标题
+      if (command.section !== lastSection) {
+        lastSection = command.section;
+        const header = document.createElement('div');
+        header.className = 'command-palette-section';
+        header.textContent = command.section;
+        this.resultsEl.appendChild(header);
+      }
+
+      // 命令项
+      const item = document.createElement('div');
+      item.className = `command-palette-item${i === this.selectedIndex ? ' active' : ''}`;
+      item.setAttribute('data-index', String(i));
+      item.innerHTML = `
+        <span class="command-palette-label">${this.highlightMatch(command.label)}</span>
+        ${command.shortcut ? `<kbd class="command-palette-shortcut">${command.shortcut}</kbd>` : ''}
+      `;
+
+      // 点击执行
+      item.addEventListener('click', () => {
+        this.executeCommand(i);
+      });
+
+      this.resultsEl.appendChild(item);
+    }
+  }
+
+  /** 高亮匹配的文本 */
+  private highlightMatch(text: string): string {
+    if (!this.inputEl) return text;
+    const query = this.inputEl.value.trim();
+    if (!query) return text;
+
+    const terms = query.split(/\s+/).filter(Boolean);
+    let result = text;
+    for (const term of terms) {
+      const regex = new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+      result = result.replace(regex, '<mark>$1</mark>');
+    }
+    return result;
+  }
+
+  /** 键盘导航处理 */
+  private handleKeydown(e: KeyboardEvent): void {
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        this.selectedIndex = Math.min(this.selectedIndex + 1, this.results.length - 1);
+        this.renderResults();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        this.selectedIndex = Math.max(this.selectedIndex - 1, 0);
+        this.renderResults();
+        break;
+      case 'Enter':
+        e.preventDefault();
+        if (this.results.length > 0) {
+          this.executeCommand(this.selectedIndex);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        this.close();
+        break;
+    }
+  }
+
+  /** 全局快捷键处理 */
+  private handleGlobalKeydown(e: KeyboardEvent): void {
+    // Ctrl+K：打开/关闭命令面板
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      if (this.isOpen) {
+        this.close();
+      } else {
+        this.open();
+      }
+      return;
+    }
+
+    // 命令面板关闭时不处理其他快捷键
+    if (!this.isOpen) return;
+  }
+
+  /** 执行指定索引的命令 */
+  private executeCommand(index: number): void {
+    const result = this.results[index];
+    if (!result) return;
+
+    this.close();
+    // 延迟执行，确保面板关闭动画完成
+    setTimeout(() => {
+      result.command.action();
+    }, 50);
+  }
+}

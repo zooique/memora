@@ -48,7 +48,48 @@
   height: 100%;
   display: flex;
   align-items: center;
+  padding-left: 12px;
   cursor: default;
+}
+
+/* 标题栏命令面板入口：搜索框样式，不占用过多空间 */
+.cmdk-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: var(--font-2xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.cmdk-hint:hover {
+  background: var(--surface0);
+  border-color: var(--muted);
+  color: var(--text-2);
+}
+
+.cmdk-hint .icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.cmdk-hint kbd {
+  font-size: var(--font-3xs);
+  font-family: var(--font-mono);
+  background: var(--surface2);
+  color: var(--muted);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--surface2);
+  margin-left: 2px;
 }
 
 /* UX-P2-24 #app-title 已从 HTML 移除，此处不再需要空规则 */
@@ -64,7 +105,7 @@
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-xs);
   cursor: pointer;
   transition: background var(--transition-fast);
   -webkit-app-region: no-drag;
@@ -98,7 +139,7 @@
   align-items: center;
   gap: 8px;
   padding: 0 6px;
-  font-size: 15px;
+  font-size: var(--font-md);
   font-weight: 700;
   color: var(--text);
   flex-shrink: 0;
@@ -121,7 +162,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: var(--font-sm);
   flex-shrink: 0;
 }
 
@@ -152,7 +193,7 @@
 }
 
 #persona-icon {
-  font-size: 14px;
+  font-size: var(--font-base);
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -164,7 +205,7 @@
 }
 
 #persona-name {
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 600;
   flex: 1;
   overflow: hidden;
@@ -174,13 +215,13 @@
 }
 
 #persona-arrow {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--muted);
 }
 
 /* IX-07 角色匹配模式标签（角色选择器旁，显示当前模式） */
 .mode-badge {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   background: var(--surface1);
@@ -251,18 +292,26 @@
 }
 
 .dash-label {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--subtext);
   display: block;
 }
 
 .dash-value {
-  font-size: 15px;
+  font-size: var(--font-md);
   font-weight: 700;
   color: var(--text);
   /* UI-AUDIT-P1-2.4: 等宽数字，避免数字变化时仪表盘布局抖动 */
   font-variant-numeric: tabular-nums;
   transition: transform var(--transition-slow) ease;
+}
+
+/* 仪表盘子值（事件卡片内显示触发器/技能数量，次要信息） */
+.dash-sub-value {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 接近/达到阈值时数值变色 */
@@ -320,7 +369,7 @@
   border-radius: var(--radius-pill);
   background: transparent;
   color: var(--subtext);
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
@@ -353,7 +402,7 @@
 }
 
 .dashboard-section h3 {
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
@@ -374,7 +423,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .affect-label {
@@ -402,7 +451,7 @@
 .affect-level {
   width: 20px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   flex-shrink: 0;
   text-align: left;
 }
@@ -412,7 +461,7 @@
   display: inline-block;
   padding: 2px 10px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 600;
   color: #fff; /* 白字在彩色徽章上，双主题通用 */
   background: var(--muted);
@@ -429,7 +478,7 @@
 .rapport-description {
   margin: 6px 0 0 0;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   line-height: 1.4;
   transition: color 0.3s ease;
 }
@@ -451,11 +500,11 @@
 
 .context-label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 .context-value {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text);
   transition: color 0.3s ease;
@@ -475,14 +524,14 @@
   padding: 6px 8px;
   border-radius: 6px;
   background: var(--bg-hover);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.5;
   color: var(--text);
 }
 
 .pattern-item .pattern-icon {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-top: 1px;
 }
 
@@ -493,7 +542,7 @@
 
 .pattern-item .pattern-confidence {
   flex-shrink: 0;
-  font-size: 9px;
+  font-size: var(--font-3xs);
   color: var(--muted);
   align-self: center;
 }
@@ -513,7 +562,7 @@
 }
 
 #sprite-narrative-text {
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.6;
   color: var(--text);
   flex: 1;
@@ -521,7 +570,7 @@
 
 /* FD-03 叙事卡片折叠/展开箭头 */
 .narrative-toggle {
-  font-size: 10px;
+  font-size: var(--font-2xs);
   color: var(--muted);
   transition: transform var(--transition-base) ease;
   flex-shrink: 0;
@@ -629,7 +678,7 @@
 }
 
 .dropzone-icon {
-  font-size: 22px;
+  font-size: var(--font-xl);
   line-height: 1;
 }
 
@@ -641,13 +690,13 @@
 }
 
 .dropzone-hint {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text);
 }
 
 .dropzone-subtext {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--muted);
 }
 
@@ -662,7 +711,7 @@
 
 .suggestion-list li {
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--subtext);
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
@@ -683,7 +732,7 @@
 
 .suggestion-list .suggestion-score {
   color: var(--accent);
-  font-size: 11px;
+  font-size: var(--font-xs);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -758,7 +807,7 @@
 
 .dropdown-item {
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: var(--font-sm);
   color: var(--text);
   cursor: pointer;
   transition: background var(--transition-fast);
@@ -766,13 +815,13 @@
 
 /* UX-04：角色下拉项名称 + 描述双层布局 */
 .dropdown-item-name {
-  font-size: 13px;
+  font-size: var(--font-sm);
   font-weight: 500;
   line-height: 1.3;
 }
 
 .dropdown-item-desc {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-3);
   line-height: 1.3;
   margin-top: 2px;
@@ -801,7 +850,7 @@
   padding: 32px 16px;
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 
 /* UX-P2-27 空状态引导按钮复用 .btn-secondary 样式（modal.css），消除重复定义 */
@@ -853,7 +902,7 @@
     grid-column: span 1;
   }
   .dash-label {
-    font-size: 9px;
+    font-size: var(--font-3xs);
   }
 
   /* ADR-NAV-001 中屏模式下 segmented control 紧凑化，只显示 emoji 图标 */
@@ -920,7 +969,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   margin-top: 8px;
 }
 
@@ -937,13 +986,13 @@
 
 .review-unit {
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 /* 趋势方向 */
 .review-trend-direction {
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* 趋势方向颜色（使用 CSS 变量适配双主题） */

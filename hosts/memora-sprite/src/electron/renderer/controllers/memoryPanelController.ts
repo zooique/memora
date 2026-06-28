@@ -165,44 +165,71 @@ export function createMemoryController(uiManager: UIManager) {
       });
     }
 
-    // ─── 高级搜索栏展开/收起（Phase 2：搜索增强） ────────────
-    const advSearchBtn = document.getElementById('btn-advanced-search');
+    // ─── 高级搜索栏展开/收起（Phase 2：搜索增强，现收纳到更多菜单） ────────────
     const advSearchBar = document.getElementById('advanced-search-bar');
-    if (advSearchBtn && advSearchBar) {
-      advSearchBtn.addEventListener('click', () => {
-        const isHidden = advSearchBar.classList.contains('hidden');
-        advSearchBar.classList.toggle('hidden', !isHidden);
-        advSearchBtn.classList.toggle('active', isHidden);
-      });
-    }
-
-    // ─── 洞察栏展开/收起（Phase 3：记忆洞察面板） ────────────
-    // 展开时异步加载仪表盘 + 关系图谱数据，聚合渲染统计 + 分布 + 关系摘要
-    const insightsBtn = document.getElementById('btn-insights');
     const insightsBar = document.getElementById('memory-insights-bar');
-    if (insightsBtn && insightsBar) {
-      insightsBtn.addEventListener('click', async () => {
-        const isHidden = insightsBar.classList.contains('hidden');
-        insightsBar.classList.toggle('hidden', !isHidden);
-        insightsBtn.classList.toggle('active', isHidden);
-        // 展开时加载数据（避免折叠状态下浪费 IPC 调用）
-        if (isHidden) {
-          await loadInsights();
-        }
+    const healthBar = document.getElementById('memory-health-bar');
+    const moreBtn = document.getElementById('btn-memory-more');
+    const moreMenu = document.getElementById('memory-more-menu');
+
+    /** 切换更多菜单的显示/隐藏 */
+    function toggleMoreMenu(show?: boolean): void {
+      if (!moreMenu || !moreBtn) return;
+      const shouldShow = show ?? moreMenu.classList.contains('hidden');
+      moreMenu.classList.toggle('hidden', !shouldShow);
+      moreBtn.setAttribute('aria-expanded', String(shouldShow));
+    }
+
+    // 更多按钮点击切换菜单
+    if (moreBtn) {
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMoreMenu();
       });
     }
 
-    // ─── 健康度栏展开/收起（Phase 1：健康度诊断） ────────────
-    const healthBtn = document.getElementById('btn-health');
-    const healthBar = document.getElementById('memory-health-bar');
-    if (healthBtn && healthBar) {
-      healthBtn.addEventListener('click', async () => {
-        const isHidden = healthBar.classList.contains('hidden');
-        healthBar.classList.toggle('hidden', !isHidden);
-        healthBtn.classList.toggle('active', isHidden);
-        // 展开时加载数据
-        if (isHidden) {
-          await loadHealthDashboard();
+    // 点击外部关闭更多菜单
+    document.addEventListener('click', (e) => {
+      if (moreMenu && !moreMenu.classList.contains('hidden')) {
+        const target = e.target as HTMLElement;
+        if (!moreMenu.contains(target) && target !== moreBtn) {
+          toggleMoreMenu(false);
+        }
+      }
+    });
+
+    // 更多菜单项事件委托
+    if (moreMenu) {
+      moreMenu.addEventListener('click', async (e) => {
+        const item = (e.target as HTMLElement).closest('.more-menu-item') as HTMLElement | null;
+        if (!item) return;
+        const action = item.getAttribute('data-action');
+        toggleMoreMenu(false);
+
+        if (action === 'advanced-search') {
+          // 切换高级筛选栏
+          if (advSearchBar) {
+            const isHidden = advSearchBar.classList.contains('hidden');
+            advSearchBar.classList.toggle('hidden', !isHidden);
+          }
+        } else if (action === 'insights') {
+          // 切换统计洞察栏
+          if (insightsBar) {
+            const isHidden = insightsBar.classList.contains('hidden');
+            insightsBar.classList.toggle('hidden', !isHidden);
+            if (isHidden) {
+              await loadInsights();
+            }
+          }
+        } else if (action === 'health') {
+          // 切换健康度诊断栏
+          if (healthBar) {
+            const isHidden = healthBar.classList.contains('hidden');
+            healthBar.classList.toggle('hidden', !isHidden);
+            if (isHidden) {
+              await loadHealthDashboard();
+            }
+          }
         }
       });
     }
@@ -463,39 +490,38 @@ export function createMemoryController(uiManager: UIManager) {
       }
     });
 
-    // 切换按钮点击事件（列表 ↔ 图谱）
+    // 切换按钮点击事件（列表 ↔ 图谱 segmented control）
+    const listBtn = document.getElementById('btn-list-view');
     const graphBtn = document.getElementById('btn-graph-view');
+
+    function switchViewBtn(view: 'list' | 'graph'): void {
+      if (listBtn) listBtn.classList.toggle('active', view === 'list');
+      if (graphBtn) graphBtn.classList.toggle('active', view === 'graph');
+      if (listBtn) listBtn.setAttribute('aria-selected', String(view === 'list'));
+      if (graphBtn) graphBtn.setAttribute('aria-selected', String(view === 'graph'));
+    }
+
+    if (listBtn) {
+      listBtn.addEventListener('click', () => {
+        uiManager.switchMemoryView('list');
+        switchViewBtn('list');
+      });
+    }
+
     if (graphBtn) {
       graphBtn.addEventListener('click', () => {
         const graphContainer = document.getElementById('memory-graph-container');
         const isGraphView = graphContainer && graphContainer.style.display !== 'none';
 
         if (isGraphView) {
-          // 当前是图谱视图 → 切换回列表
           uiManager.switchMemoryView('list');
+          switchViewBtn('list');
         } else {
-          // 当前是列表视图 → 切换到图谱
-          // 如果需要首次加载数据，onGraphToggle 回调会触发 IPC
           uiManager.switchMemoryView('graph');
+          switchViewBtn('graph');
         }
-        // 更新按钮激活态
-        updateGraphButtonState();
       });
     }
-  }
-
-  /**
-   * 更新图谱视图切换按钮的激活态
-   *
-   * 图谱视图激活时按钮高亮（.active 类），列表视图时恢复默认。
-   */
-  function updateGraphButtonState(): void {
-    const graphBtn = document.getElementById('btn-graph-view');
-    if (!graphBtn) return;
-    // 通过检查 graph container 是否可见判断当前视图
-    const graphContainer = document.getElementById('memory-graph-container');
-    const isGraphView = graphContainer ? graphContainer.style.display !== 'none' : false;
-    graphBtn.classList.toggle('active', isGraphView);
   }
 
   /**
@@ -835,16 +861,18 @@ export function createMemoryController(uiManager: UIManager) {
         }
       }
 
-      // 已注册触发器数量 + hover 详情
+      // 已注册触发器数量（合并到事件卡片的 sub-value）
       const triggerEl = document.getElementById('trigger-count');
-      const dashTriggers = document.getElementById('dash-triggers');
-      if (triggerEl && dashTriggers) {
-        triggerEl.textContent = String(data.registeredTriggers.length);
+      const dashPending = document.getElementById('dash-pending');
+      if (triggerEl && dashPending) {
+        triggerEl.textContent = `${data.registeredTriggers.length} 触发器`;
         // hover 显示触发器名称列表
         const triggerList = data.registeredTriggers.length > 0
           ? data.registeredTriggers.join(', ')
           : '无触发器';
-        dashTriggers.title = `已注册触发器：${triggerList}`;
+        // 更新 title（事件卡片 title 已包含基础信息，追加触发器详情）
+        const baseTitle = dashPending.title.split(' · ')[0];
+        dashPending.title = `${baseTitle} · 触发器：${triggerList}`;
       }
 
       // 渲染推荐记忆列表（合并到学习与回顾节）
@@ -1090,10 +1118,10 @@ export function createMemoryController(uiManager: UIManager) {
    * @param skills 技能列表（由 DASHBOARD_GET 返回）
    */
   function renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
-    // 更新仪表盘技能计数
+    // 更新仪表盘技能计数（合并到事件卡片的 sub-value）
     const countEl = document.getElementById('skill-count');
     if (countEl) {
-      countEl.textContent = String(skills.length);
+      countEl.textContent = `${skills.length} 技能`;
     }
 
     const listEl = document.getElementById('skills-list');

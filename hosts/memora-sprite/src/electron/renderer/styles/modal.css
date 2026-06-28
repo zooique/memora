@@ -52,7 +52,7 @@
 
 /* 确认弹窗消息文本：保留换行，行高舒适 */
 .confirm-message {
-  font-size: 13px;
+  font-size: var(--font-sm);
   line-height: 1.6;
   color: var(--text);
   white-space: pre-wrap;
@@ -65,7 +65,7 @@
   width: 100%;
   padding: 8px 12px;
   margin-top: 12px;
-  font-size: 14px;
+  font-size: var(--font-base);
   line-height: 1.5;
   color: var(--text);
   /* P1-UI-1 修复：引用已定义的 CSS 变量（原 --input-bg/--border 未在 base.css 定义，导致输入框样式失效） */
@@ -84,7 +84,7 @@
 
 /* 输入弹窗错误提示：红色文字，默认隐藏 */
 .prompt-error {
-  font-size: 12px;
+  font-size: var(--font-sm);
   /* P1-UI-1 修复：引用已定义的 --red 变量（原 --danger 未定义） */
   color: var(--red);
   margin: 6px 0 0 0;
@@ -93,7 +93,7 @@
 /* ─── 三态首次引导弹窗（v8） ─────────────────────────────── */
 /* 介绍三态窗口模型 + 快捷键，首次打开完整窗口时显示 */
 .onboarding-intro {
-  font-size: 13px;
+  font-size: var(--font-sm);
   line-height: 1.6;
   color: var(--text-2);
   margin: 0 0 16px 0;
@@ -118,7 +118,7 @@
 }
 
 .onboarding-state-icon {
-  font-size: 22px;
+  font-size: var(--font-xl);
   line-height: 1;
   flex-shrink: 0;
 }
@@ -130,13 +130,13 @@
 }
 
 .onboarding-state-text strong {
-  font-size: 13px;
+  font-size: var(--font-sm);
   color: var(--text);
   font-weight: 600;
 }
 
 .onboarding-state-text span {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-2);
   line-height: 1.4;
 }
@@ -150,14 +150,14 @@
 }
 
 .onboarding-shortcut-title {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text);
   margin-bottom: 6px;
 }
 
 .onboarding-shortcut-list {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-2);
   line-height: 1.8;
 }
@@ -166,7 +166,7 @@
 kbd {
   display: inline-block;
   padding: 1px 5px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-family: var(--font-mono);
   color: var(--text);
   background: var(--window-bg);
@@ -184,7 +184,7 @@ kbd {
 }
 
 .modal-header h3 {
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 600;
   color: var(--text);
 }
@@ -195,7 +195,7 @@ kbd {
   background: transparent;
   border: none;
   color: var(--text-3);
-  font-size: 14px;
+  font-size: var(--font-base);
   cursor: pointer;
   border-radius: var(--radius-sm);
   display: flex;
@@ -212,14 +212,14 @@ kbd {
   padding: 16px 18px;
   overflow-y: auto;
   flex: 1;
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 
 .modal-body label {
   display: block;
   margin-bottom: 4px;
   margin-top: 10px;
-  font-size: 12px;
+  font-size: var(--font-sm);
   color: var(--text-2);
 }
 
@@ -237,7 +237,7 @@ kbd {
   border-radius: var(--radius-sm);
   color: var(--text);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   outline: none;
   margin-bottom: 12px;
   resize: vertical;
@@ -266,7 +266,7 @@ kbd {
   border: none;
   border-radius: var(--radius-sm);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
   /* UI-AUDIT: 列出具体属性替代 transition: all */
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), opacity var(--transition-fast);
@@ -314,7 +314,7 @@ kbd {
 .shortcuts-table td {
   padding: 6px 8px;
   border-bottom: 1px solid var(--surface2);
-  font-size: 13px;
+  font-size: var(--font-sm);
 }
 
 .shortcuts-table td:first-child {

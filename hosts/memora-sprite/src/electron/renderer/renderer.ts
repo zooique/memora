@@ -18,6 +18,7 @@ import { createSessionController } from './controllers/sessionController.js';
 import { createMemoryController } from './controllers/memoryPanelController.js';
 import { createPersonaController } from './controllers/personaPanelController.js';
 import { createSettingsController } from './controllers/settingsController.js';
+import { CommandPaletteManager } from './panels/commandPaletteManager.js';
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
 import { getLocalDate } from '../../sprite/constants.js';
@@ -77,6 +78,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       void memoryController.loadMemoryList();
     }
   });
+
+  // 初始化快捷命令面板（Ctrl+K 触发）
+  const commandPalette = new CommandPaletteManager(State.uiManager);
+  commandPalette.init();
+
+  // 标题栏命令面板入口按钮点击
+  const cmdkBtn = document.getElementById('titlebar-cmdk');
+  if (cmdkBtn) {
+    cmdkBtn.addEventListener('click', () => {
+      commandPalette.open();
+    });
+  }
 
   // ─── 初始化辅助函数（从 initHelpers.ts 导入，闭包访问 State.uiManager/controllers） ───
 
