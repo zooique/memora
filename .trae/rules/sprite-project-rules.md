@@ -1,6 +1,8 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
+version: v0.3
+date: 2026-06-28
 ---
 
 # memora-sprite · 宿主项目总则

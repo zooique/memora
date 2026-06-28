@@ -61,6 +61,8 @@ export interface SpriteEventMap {
   rapportUpdated: RapportState;
   /** Phase 4：对话上下文更新（推导完成后触发，与 affectUpdated 同时发射） */
   contextUpdated: ContextState;
+  /** H3：作品投影更新（文件变化触发投影重新生成后发射） */
+  workProjectionUpdated: { sourcePath: string; summary: string };
 }
 
 // 重新导出 DashboardData 和 AffectState 供外部使用
@@ -1059,6 +1061,10 @@ export class Sprite {
         // 文件变化触发：累积为 file 事件类型
         this.proactiveEngine.addNotice('file', payload.reason);
         logger.info({ reason: payload.reason, source: payload.source }, '文件变化触发');
+
+        // H3：文件变化→作品投影更新
+        // 从 reason 中提取文件名，检查是否有已存在的投影，有则触发生成
+        this.tryUpdateWorkProjection(payload.reason);
       } else {
         // 定时触发
         logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
@@ -1077,5 +1083,42 @@ export class Sprite {
     } finally {
       span?.end();
     }
+  }
+
+  /**
+   * H3 尝试更新作品投影（文件变化触发）
+   *
+   * 从 FileWatcher 的 reason 中提取文件名，检查 agent.works
+   * 是否有该文件的投影记录。如果有，触发投影重新生成（hash 检查
+   * 在内核 WorkProjectionManager 中完成，只在内容真正变化时调用 LLM）。
+   *
+   * 预后更新通过 emitSprite('workProjectionUpdated') 通知宿主 UI。
+   *
+   * @param reason FileWatcher 的 reason 字符串，格式："文件变化：filename（eventType）"
+   */
+  private tryUpdateWorkProjection(reason: string): void {
+    const works = this.agent.works;
+    if (!works) return;
+
+    // 从 reason 中提取文件名（格式："文件变化：filename（eventType）"）
+    const match = reason.match(/文件变化：(.+?)（/);
+    if (!match || !match[1]) return;
+
+    const filename = match[1];
+    // 构造完整路径（fileWatcher 的 reason 是相对路径，拼接 projectPath）
+    const fullPath = resolve(this.projectPath, filename);
+
+    // 异步触发投影更新，不阻塞触发器处理
+    works.getProjection(fullPath).then((entry) => {
+      if (entry) {
+        logger.info({ sourcePath: fullPath, summary: entry.summary }, '作品投影已更新');
+        this.emitSprite('workProjectionUpdated', {
+          sourcePath: fullPath,
+          summary: entry.summary,
+        });
+      }
+    }).catch((err) => {
+      logger.warn({ err: toError(err).message, filePath: fullPath }, '作品投影更新失败');
+    });
   }
 }

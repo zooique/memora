@@ -19,6 +19,7 @@
   --surface0:    #ececee;  /* 侧边栏/顶部栏背景，略深于大底板 */
   --surface1:    #e8e8ea;  /* 次级表面，hover 态（v8 --shell-bg-2） */
   --surface2:    #dbdbdd;  /* 边框/分隔线（v8 --shell-border） */
+  --border:      #dbdbdd;  /* 语义化边框色，= --surface2 */
 
   /* 核心悬浮窗口（v8 新增语义） */
   --window-bg:   #ffffff;  /* 核心窗口背景 */
@@ -30,9 +31,11 @@
   --muted:       #a1a1a6;  /* 弱化文字（v8 --text-3） */
   --text-2:      #6e6e73;  /* v8 命名，= --subtext */
   --text-3:      #a1a1a6;  /* v8 命名，= --muted */
+  --text-4:      #c7c7cc;  /* 最弱文字（时间戳等辅助信息） */
 
   /* 强调色 */
   --accent:        #0066ff;  /* 主强调色（v8 --accent） */
+  --blue:          #0066ff;  /* 语义化别名，= --accent */
   /* UX-P2-39 统一 --accent-soft 为 rgba 策略（原浅色用 hex，深色用 rgba，策略不一致） */
   --accent-soft:   rgba(0, 102, 255, 0.08);  /* 强调色浅底（v8 --accent-soft） */
   --accent-hover:  #0052cc;  /* 强调色 hover（v8 --accent-hover） */
@@ -127,6 +130,7 @@
   --surface0:    #313244;  /* 侧边栏/顶部栏背景 */
   --surface1:    #45475a;  /* 次级表面 */
   --surface2:    #585b70;  /* 边框/分隔线 */
+  --border:      #585b70;  /* 语义化边框色，= --surface2 */
 
   /* 核心悬浮窗口 */
   --window-bg:   #313244;
@@ -138,9 +142,11 @@
   --muted:       #9399b2;
   --text-2:      #a6adc8;
   --text-3:      #9399b2;
+  --text-4:      #6c7086;  /* 最弱文字（深色主题下更暗） */
 
   /* 强调色 */
   --accent:        #89b4fa;
+  --blue:          #89b4fa;  /* 语义化别名，深色主题下 = #89b4fa */
   --accent-soft:   rgba(137, 180, 250, 0.15);
   --accent-hover:  #74a8fc;
 

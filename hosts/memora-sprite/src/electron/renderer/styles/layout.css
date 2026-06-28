@@ -646,6 +646,22 @@
   gap: 6px;
 }
 
+/* ─── H3 学习进度网格（2×2 复用 .dash-item） ─── */
+#learning-progress-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+#learning-progress .dash-item {
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+#learning-progress .dash-item:hover {
+  background: var(--surface1);
+}
+
 /* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
   grid-area: window;

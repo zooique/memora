@@ -191,6 +191,17 @@ export function isContextPayload(value: unknown): value is ContextPayload {
   );
 }
 
+/** H3：作品投影更新载荷 */
+export interface WorkProjectionUpdatedPayload {
+  sourcePath: string;
+  summary: string;
+}
+
+/** H3：作品投影更新载荷类型守卫 */
+export function isWorkProjectionUpdatedPayload(value: unknown): value is WorkProjectionUpdatedPayload {
+  return isObject(value) && typeof value.sourcePath === 'string' && typeof value.summary === 'string';
+}
+
 /**
  * 处理主动提示事件
  *
@@ -370,6 +381,14 @@ function createSpriteEventHandlers(
       }
       callbacks.onContextUpdated?.(msg.payload);
     },
+    // H3：作品投影更新 → 刷新作品投影面板
+    workProjectionUpdated: (msg) => {
+      if (!isWorkProjectionUpdatedPayload(msg.payload)) {
+        reportError('handleWorkProjectionUpdated', msg.payload);
+        return;
+      }
+      callbacks.onWorkProjectionUpdated?.(msg.payload);
+    },
   };
 }
 export interface IpcListenerCallbacks {
@@ -389,6 +408,8 @@ export interface IpcListenerCallbacks {
   onRapportUpdated?: (payload: RapportPayload) => void;
   /** Phase 4：对话上下文更新时回调（更新仪表盘上下文卡片） */
   onContextUpdated?: (payload: ContextPayload) => void;
+  /** H3：作品投影更新时回调（刷新作品投影面板） */
+  onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
 }
 
 /** Phase 2.1：情感基调载荷 */

@@ -1,6 +1,8 @@
 ---
 alwaysApply: false
 description: "memora-sprite 感知层规范——上下文感知而非内容感知，唤醒触发器设计约束"
+version: v0.1
+date: 2026-06-28
 ---
 
 # memora-sprite · 感知层规范

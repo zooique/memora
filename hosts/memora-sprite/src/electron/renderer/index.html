@@ -178,6 +178,29 @@
           </div>
         </div>
 
+        <!-- H3 学习进度：聚合配置建议/画像/投影/洞察，展示精灵学习成果 -->
+        <div id="learning-progress" class="dashboard-section hidden">
+          <h3>📚 学习进度</h3>
+          <div id="learning-progress-grid">
+            <div class="dash-item" title="配置自进化建议数">
+              <span class="dash-label">⚙️ 建议</span>
+              <span class="dash-value" id="learn-suggestions">0</span>
+            </div>
+            <div class="dash-item" title="已确认用户画像条目数">
+              <span class="dash-label">👤 画像</span>
+              <span class="dash-value" id="learn-profile">0</span>
+            </div>
+            <div class="dash-item" title="作品投影数">
+              <span class="dash-label">📂 作品</span>
+              <span class="dash-value" id="learn-works">0</span>
+            </div>
+            <div class="dash-item" title="AI 提取的洞察数">
+              <span class="dash-label">💡 洞察</span>
+              <span class="dash-value" id="learn-insights">0</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 由 loadDashboard() 动态填充，无推荐时隐藏 -->
         <div id="recommendations" class="dashboard-section hidden">
           <h3>推荐</h3>
@@ -384,6 +407,8 @@
           <button class="settings-tab" data-settings-tab="audit">审计</button>
           <!-- Phase 4.3：技能管理 tab：已安装技能列表 + 拖入安装 -->
           <button class="settings-tab" data-settings-tab="skill">技能</button>
+          <!-- H3 作品投影 tab：展示精灵对用户工作文件的理解 -->
+          <button class="settings-tab" data-settings-tab="work">作品</button>
         </div>
 
         <!-- FD-A2 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
@@ -659,6 +684,24 @@
                 <span class="dropzone-subtext">或点击选择文件</span>
               </div>
               <input type="file" id="skill-file-input" accept=".md" hidden />
+            </div>
+          </div>
+        </div>
+
+        <!-- H3 作品投影 tab：展示精灵对用户工作文件的理解 -->
+        <div class="settings-tab-content" data-settings-tab="work">
+          <div class="settings-group">
+            <div class="settings-group-header">
+              <h3>作品投影</h3>
+              <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
+              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新">🔄</button>
+            </div>
+            <p class="settings-hint">
+              精灵读取你的代码文件后，自动生成作品投影摘要。
+              包含文件概要、内部结构和关键设计决策。
+            </p>
+            <div id="work-projection-list" class="work-projection-list-container">
+              <!-- 由 WorkProjectionPanelManager 动态填充 -->
             </div>
           </div>
         </div>

@@ -242,6 +242,11 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     dominantSource: e.dominantSource,
     description: e.description,
   }));
+  // H3：作品投影更新 → 渲染层刷新作品投影面板
+  forwardSimpleEvent(deps, 'workProjectionUpdated', (e) => ({
+    sourcePath: e.sourcePath,
+    summary: e.summary,
+  }));
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

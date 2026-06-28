@@ -235,7 +235,8 @@ export class AgentLoop {
         };
       }
 
-      this.messages.push({ role: 'user', content: userInputClean });
+      // 安全规范 §6：用户输入用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力
+      this.messages.push({ role: 'user', content: `<user_input>${userInputClean}</user_input>` });
 
       let iteration = 0;
       while (iteration < this.maxIterations) {

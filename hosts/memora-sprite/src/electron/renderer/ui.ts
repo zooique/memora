@@ -25,6 +25,7 @@ import { ThemeManager } from './components/themeManager.js';
 import { ProactiveBanner } from './components/proactiveBanner.js';
 import { SuggestionCardManager } from './components/suggestionCard.js';
 import { ProfilePanelManager } from './panels/profilePanelManager.js';
+import { WorkProjectionPanelManager } from './panels/workProjectionPanelManager.js';
 import { SettingsPanelManager } from './panels/settingsPanelManager.js';
 import type { SettingsPanelHost } from './panels/settingsPanelManager.js';
 import { ChatPanelManager } from './panels/chatPanelManager.js';
@@ -91,6 +92,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   private suggestionCard = new SuggestionCardManager();
   /** H2 用户画像面板管理器（独立管理画像 tab 的加载/确认/拒绝） */
   private profilePanel = new ProfilePanelManager();
+  /** H3 作品投影面板管理器（独立管理作品 tab 的加载/渲染/展开） */
+  private workProjectionPanel = new WorkProjectionPanelManager();
   /** P2-008 设置面板管理器（独立管理设置面板 DOM 和事件，约 450 行提取） */
   private settingsPanelManager: SettingsPanelManager;
 
@@ -159,6 +162,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.suggestionCard.init();
     // H2 初始化用户画像面板（绑定刷新按钮事件）
     this.profilePanel.init();
+    // H3 初始化作品投影面板（绑定刷新按钮事件）
+    this.workProjectionPanel.init();
 
     // ─── P2-008 面板管理器初始化（提取自 ui.ts 约 1800 行） ───
 
@@ -373,6 +378,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.proactiveBanner.cleanup();
     this.suggestionCard.cleanup(); // H1 清理配置建议卡片事件监听器和 DOM
     this.profilePanel.cleanup(); // H2 清理用户画像面板事件监听器
+    this.workProjectionPanel.cleanup(); // H3 清理作品投影面板事件监听器
     this.settingsPanelManager.cleanup(); // P2-008 清理设置面板事件监听器
     // P2-008 清理面板管理器
     this.chatPanel.cleanup();
@@ -756,6 +762,71 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    */
   async loadUserProfile(): Promise<void> {
     await this.profilePanel.load();
+  }
+
+  /**
+   * H3 加载作品投影数据（代理到 WorkProjectionPanelManager）
+   *
+   * 由 settingsController.ts 在以下场景调用：
+   * - 应用启动时预加载
+   * - 切换到"作品"tab 时刷新
+   * - 用户点击"刷新"按钮时（由 WorkProjectionPanelManager 内部处理）
+   *
+   * 加载完成后渲染到 #work-projection-list。
+   */
+  async loadWorkProjections(): Promise<void> {
+    await this.workProjectionPanel.load();
+  }
+
+  /**
+   * H3 更新学习进度卡片
+   *
+   * 聚合侧边栏"学习进度"卡片的四项指标：
+   * - 建议数：来自配置建议卡片（suggestionCard）
+   * - 画像数：来自用户画像面板（profilePanel）
+   * - 作品数：来自作品投影面板（workProjectionPanel）
+   * - 洞察数：来自仪表盘已有的洞察计数
+   *
+   * 在以下场景调用：
+   * - 仪表盘加载完成后
+   * - 画像加载完成后
+   * - 作品投影加载完成后
+   * - 配置建议推送后
+   */
+  updateLearningProgress(): void {
+    const section = document.getElementById('learning-progress');
+    if (!section) return;
+
+    // 聚合各数据源的计数（使用已有的 DOM 元素值作为数据源）
+    const suggestions = parseInt(document.getElementById('suggestion-count')?.textContent ?? '0', 10) || 0;
+    const profile = this.getProfileCount();
+    const works = parseInt(document.getElementById('work-projection-count')?.textContent ?? '0', 10) || 0;
+    const insights = parseInt(document.getElementById('insight-count')?.textContent ?? '0', 10) || 0;
+
+    // 更新四项指标
+    const setVal = (id: string, val: number) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(val);
+    };
+    setVal('learn-suggestions', suggestions);
+    setVal('learn-profile', profile);
+    setVal('learn-works', works);
+    setVal('learn-insights', insights);
+
+    // 有数据时显示卡片，无数据时隐藏
+    const hasData = suggestions > 0 || profile > 0 || works > 0 || insights > 0;
+    section.classList.toggle('hidden', !hasData);
+  }
+
+  /**
+   * 获取已确认画像条目数
+   *
+   * 从 #profile-confirmed-count 元素读取（由 ProfilePanelManager 渲染时更新）。
+   * 兜底返回 0。
+   */
+  private getProfileCount(): number {
+    const el = document.getElementById('profile-confirmed-count');
+    return el ? (parseInt(el.textContent ?? '0', 10) || 0) : 0;
   }
 
   // ─── 事件发射 ─────────────────────────────────────────

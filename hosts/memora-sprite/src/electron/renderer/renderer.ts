@@ -10,7 +10,7 @@
  * 设计原则：
  * - 作为协调器，不包含具体业务逻辑（已拆分到各 controller 模块）
  * - 模块间通过回调解耦，避免循环依赖
- * - 保留 setupBusinessLogic（发送/停止/新建会话），因依赖 uiManager 和 sessionController
+ * - 保留 setupBusinessLogic（发送/停止/新建会话），因依赖 State.uiManager 和 sessionController
  */
 
 import { UIManager } from './ui.js';
@@ -30,57 +30,54 @@ import {
 // P2-001 修复：删除重复的 declare global 和未使用的 ElectronAPI 导入。
 // types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
 
-// ─── 状态 ───────────────────────────────────────────────────
+// ─── 状态（QC-01 质量收敛：模块级变量封装为 State 对象） ───
 
-/** UI 管理器实例（模块级，DOMContentLoaded 后初始化） */
-let uiManager: UIManager;
-
-/** UX-PP-03 最后一条用户输入文本（用于流式错误重试） */
-let lastUserInput: string = '';
+/** 渲染进程核心状态（集中管理，避免全局作用域污染） */
+const State = {
+  /** UI 管理器实例（DOMContentLoaded 后初始化） */
+  uiManager: null as UIManager | null,
+  /** UX-PP-03 最后一条用户输入文本（用于流式错误重试） */
+  lastUserInput: '' as string,
+  /** 静默模式定时恢复句柄 */
+  silentRecoveryTimer: null as number | null,
+  /** Agent 初始化重试定时器句柄 */
+  initRetryTimer: null as number | null,
+  /** Agent 就绪回调引用 */
+  onAgentReadyCallback: null as (() => void) | null,
+  /** Agent 就绪流程幂等标志 */
+  agentReadyHandled: false as boolean,
+  /** IX-03 记忆控制器实例 */
+  memoryController: null as ReturnType<typeof createMemoryController> | null,
+};
 
 /** 静默模式自动恢复时间（1 小时） */
 const SILENT_RECOVERY_MS = 60 * 60 * 1000;
-
-/** 静默模式定时恢复句柄（多次点击"静默 1 小时"时清理旧定时器，避免重复恢复） */
-let silentRecoveryTimer: number | null = null;
-
-/** Agent 初始化重试定时器句柄（beforeunload 时清理，避免操作已销毁的 DOM） */
-let initRetryTimer: number | null = null;
-
-/** Agent 就绪回调引用（初始化重试成功时复用，避免重复定义） */
-let onAgentReadyCallback: (() => void) | null = null;
-
-/** Bug 修复：Agent 就绪流程幂等标志，防止 IPC 事件与重试定时器竞态导致重复加载 */
-let agentReadyHandled = false;
-
-/** IX-03 记忆控制器实例（模块级，beforeunload 时清理脉冲定时器） */
-let memoryControllerRef: ReturnType<typeof createMemoryController> | null = null;
 
 // ─── 初始化 ────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', async () => {
   // 初始化 UI 管理器
-  uiManager = new UIManager();
+  State.uiManager = new UIManager();
 
-  // 创建各业务控制器（接收 uiManager 实例，通过闭包绑定）
-  const sessionController = createSessionController(uiManager);
-  const memoryController = createMemoryController(uiManager);
-  memoryControllerRef = memoryController;
-  const personaController = createPersonaController(uiManager);
-  const settingsController = createSettingsController(uiManager);
+  // 创建各业务控制器（接收 State.uiManager 实例，通过闭包绑定）
+  const sessionController = createSessionController(State.uiManager);
+  const memoryController = createMemoryController(State.uiManager);
+  State.memoryController = memoryController;
+  const personaController = createPersonaController(State.uiManager);
+  const settingsController = createSettingsController(State.uiManager);
 
   // 设置业务逻辑回调
-  setupBusinessLogic(uiManager, sessionController);
+  setupBusinessLogic(State.uiManager, sessionController);
   memoryController.setupMemoryPanel();
   personaController.setupPersonaSelector();
 
-  // ─── 初始化辅助函数（从 initHelpers.ts 导入，闭包访问 uiManager/controllers） ───
+  // ─── 初始化辅助函数（从 initHelpers.ts 导入，闭包访问 State.uiManager/controllers） ───
 
   /** 静默模式恢复定时器 ref（由 createSilentRecoveryScheduler 闭包持有） */
-  const silentTimerRef = { current: silentRecoveryTimer };
-  const scheduleSilentRecovery = createSilentRecoveryScheduler(uiManager, silentTimerRef);
+  const silentTimerRef = { current: State.silentRecoveryTimer };
+  const scheduleSilentRecovery = createSilentRecoveryScheduler(State.uiManager, silentTimerRef);
   // 同步 timerRef 回模块级变量，供 beforeunload 清理
-  const syncTimerRef = () => { silentRecoveryTimer = silentTimerRef.current; };
+  const syncTimerRef = () => { State.silentRecoveryTimer = silentTimerRef.current; };
   const originalSchedule = scheduleSilentRecovery;
   const wrappedSchedule = (ms: number) => { originalSchedule(ms); syncTimerRef(); };
 
@@ -90,16 +87,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   settingsController.setupSettingsPanel();
 
-  // P1 修复：提前赋值 onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
+  // P1 修复：提前赋值 State.onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
   // 原代码通过 ?? 惰性赋值（在 onAgentReady IPC 回调中），当 IPC 事件已错过时 callback 为 null，
   // 导致 else 分支不调用 setAgentReady(true) 和 updateAgentStatus('ready')，
   // 用户无法发送消息且状态指示器停留在"正在初始化..."
-  onAgentReadyCallback = () => {
+  State.onAgentReadyCallback = () => {
     // Bug 修复：幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
-    if (agentReadyHandled) return;
-    agentReadyHandled = true;
+    if (State.agentReadyHandled) return;
+    State.agentReadyHandled = true;
     // UX-P2-03 标记 Agent 就绪，解除发送消息限制
-    uiManager.setAgentReady(true);
+    State.uiManager.setAgentReady(true);
     // P3-FLOW-10 同步设置面板状态指示器（修复：IPC 事件路径遗漏更新状态指示器）
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
     void sessionController.loadSessionHistory();
@@ -108,10 +105,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     void personaController.loadPersonaList();
     void memoryController.loadDashboard();
     // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
-    void uiManager.switchPanel('chat');
+    void State.uiManager.switchPanel('chat');
     // P2 修复：首次配置完成后检查是否需要显示三态引导
-    if (uiManager.shouldShowOnboarding()) {
-      uiManager.showOnboardingDialog();
+    if (State.uiManager.shouldShowOnboarding()) {
+      State.uiManager.showOnboardingDialog();
     }
   };
 
@@ -123,9 +120,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (config.theme) {
       // sprite.json 中有主题配置，以它为准（覆盖 localStorage 缓存，确保一致性）
       // P3-FLOW-12 config.theme 可能为 'auto'，由 ThemeManager 处理实际主题选择
-      const currentMode = uiManager.getThemeMode();
+      const currentMode = State.uiManager.getThemeMode();
       if (config.theme !== currentMode) {
-        uiManager.setTheme(config.theme);
+        State.uiManager.setTheme(config.theme);
       }
     } else {
       // sprite.json 中无主题配置（v1→v2 迁移前或首次使用），从 localStorage 迁移
@@ -145,9 +142,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // ADR-SP-008 同步设置面板单选按钮状态
   // P3-FLOW-12 使用 getThemeMode 同步三态单选按钮（light/dark/auto）
-  uiManager.syncThemeRadios(uiManager.getThemeMode());
+  State.uiManager.syncThemeRadios(State.uiManager.getThemeMode());
 
-  uiManager.onThemeChange((theme, source) => {
+  State.uiManager.onThemeChange((theme, source) => {
     // QC-THEME-01 修复：区分"用户主动切换"与"系统主题变化"
     // source='user'：用户在设置面板主动切换，需持久化到 sprite.json（真理源）
     // source='system'：auto 模式下系统主题变化，仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
@@ -161,22 +158,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   // UX-PP-05 流式错误重试：重新发送上一条用户消息
   // 提取为独立函数，供气泡内 onErrorRetry 复用（UX-PP-13 后 Toast 不再携带重试按钮）
   const retryLastUserInput = (): void => {
-    if (!lastUserInput) return;
+    if (!State.lastUserInput) return;
     // P2 修复：重试前检查流式状态，避免流式输出中重复发送
-    if (uiManager.isStreaming()) {
-      uiManager.showToast('请先停止当前回复再重试', 'warning');
+    if (State.uiManager.isStreaming()) {
+      State.uiManager.showToast('请先停止当前回复再重试', 'warning');
       return;
     }
     // 重新显示用户消息并发送
-    uiManager.appendMessage({
+    State.uiManager.appendMessage({
       role: 'user',
-      content: lastUserInput,
+      content: State.lastUserInput,
     });
-    window.electronAPI.sendUserInput(lastUserInput);
+    window.electronAPI.sendUserInput(State.lastUserInput);
   };
 
   // 初始化 IPC 监听器（统一注册，通过回调解耦业务逻辑）
-  initIpcListeners(uiManager, {
+  initIpcListeners(State.uiManager, {
     // 精灵事件：记忆被注意 / 洞察获得 → 仪表盘计数 +1 动画 + 刷新仪表盘
     // QC-PERF-01：事件密集触发时使用防抖版 loadDashboard，避免频繁 IPC + DOM 操作
     onMemoryNoticed: () => {
@@ -190,12 +187,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Agent 就绪：加载初始数据 + 切换到对话面板
     onAgentReady: () => {
       // Bug 修复：IPC 事件到达时取消挂起的重试定时器，避免两条路径都触发
-      if (initRetryTimer !== null) {
-        window.clearTimeout(initRetryTimer);
-        initRetryTimer = null;
+      if (State.initRetryTimer !== null) {
+        window.clearTimeout(State.initRetryTimer);
+        State.initRetryTimer = null;
       }
-      // P1 修复：onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
-      onAgentReadyCallback?.();
+      // P1 修复：State.onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
+      State.onAgentReadyCallback?.();
     },
     // 对话结束：立即刷新仪表盘获取最新 LLM 指标，延迟二次刷新等待异步归档完成
     onConversationEnd: () => {
@@ -219,17 +216,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     onContextUpdated: (payload) => {
       memoryController.updateContextDisplay(payload);
     },
+    // H3：作品投影更新 → 刷新作品投影面板
+    onWorkProjectionUpdated: (_payload) => {
+      void settingsController.loadWorkProjections();
+    },
   });
 
   // UX-PP-05 注册气泡内错误重试回调（复用 retryLastUserInput，供错误气泡内"重试"按钮调用）
   // UX-PP-13 后 Toast 不再携带重试按钮，气泡内重试为唯一主通道
-  uiManager.onErrorRetry(retryLastUserInput);
+  State.uiManager.onErrorRetry(retryLastUserInput);
 
   // 初始化主动提示 banner 按钮（查看/稍后/静默）
-  uiManager.initProactiveBannerButtons({
+  State.uiManager.initProactiveBannerButtons({
     onView: () => {
       // 已在对话面板内，仅确保面板可见
-      void uiManager.switchPanel('chat');
+      void State.uiManager.switchPanel('chat');
     },
     onLater: () => {
       // banner 已隐藏，无需额外操作
@@ -241,7 +242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const expiresAt = new Date(Date.now() + SILENT_RECOVERY_MS).toISOString();
       void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
       // IX-06 操作反馈走 toast（静默模式是用户主动触发的状态变更）
-      uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）', 'info');
+      State.uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）', 'info');
       // 设置本地定时器：1 小时后自动关闭静默模式（复用 wrappedSchedule 统一逻辑）
       wrappedSchedule(SILENT_RECOVERY_MS);
     },
@@ -251,13 +252,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 设置一个较长的恢复时间（24 小时），等效于"不再提醒"
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
       void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
-      uiManager.showToast('已关闭主动提示（24 小时内不再提醒）。如需恢复，请到设置面板调整主动提示阈值', 'info');
+      State.uiManager.showToast('已关闭主动提示（24 小时内不再提醒）。如需恢复，请到设置面板调整主动提示阈值', 'info');
     },
   });
 
   // 召回记忆点击：跳转到记忆面板并显示详情
-  uiManager.onMemoryRecallClick(async (memoryName) => {
-    await uiManager.switchPanel('memories');
+  State.uiManager.onMemoryRecallClick(async (memoryName) => {
+    await State.uiManager.switchPanel('memories');
     // FD-ADD-RECALL-CONTEXT：预填搜索框 + 触发搜索，让弹窗背后的列表同步显示对应记忆
     // 用户关闭详情弹窗后，列表已过滤好，无需手动搜索
     const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
@@ -268,7 +269,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const { memory } = await window.electronAPI.showMemory(memoryName);
       if (memory) {
-        uiManager.showMemoryDetail(memory);
+        State.uiManager.showMemoryDetail(memory);
       }
     } catch (error) {
       // 记忆可能已删除，记录日志辅助排查
@@ -277,20 +278,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // FD-ADD-MEMORY-DISCUSS 记忆→对话双向流动：关闭详情弹窗 → 切换到对话面板 → 预填讨论提示
-  uiManager.onMemoryDiscuss((memoryName) => {
-    uiManager.hideModal('memory-detail-modal');
+  State.uiManager.onMemoryDiscuss((memoryName) => {
+    State.uiManager.hideModal('memory-detail-modal');
     // 先预填输入框，再切换面板（switchPanel('chat') 会自动聚焦输入框）
-    uiManager.prefillChatInput(`关于「${memoryName}」…`);
-    void uiManager.switchPanel('chat');
+    State.uiManager.prefillChatInput(`关于「${memoryName}」…`);
+    void State.uiManager.switchPanel('chat');
   });
 
   // ─── Phase 4.3 第二批：技能文件拖入安装初始化 ──────────────
   // 注册安装成功回调：刷新仪表盘技能列表 + 计数
-  uiManager.onSkillInstalled(() => {
+  State.uiManager.onSkillInstalled(() => {
     void memoryController.loadDashboard();
   });
   // 初始化 dropzone 事件监听（dragover/drop/click/change）
-  setupSkillDropzone(uiManager);
+  setupSkillDropzone(State.uiManager);
 
   // 加载 LLM 配置到设置面板（无论 Agent 是否就绪都加载）
   await settingsController.loadLlmConfig();
@@ -309,25 +310,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 原代码仅重试一次，若 retry.ready=false 且 retry.error=null 则什么都不做
         const MAX_INIT_RETRIES = 5; // 最多重试 5 次（共 10 秒）
         const retryAgentStatus = (attempt: number): void => {
-          initRetryTimer = window.setTimeout(async () => {
+          State.initRetryTimer = window.setTimeout(async () => {
             try {
               const retry = await window.electronAPI.getAgentStatus();
               if (retry.ready) {
-                initRetryTimer = null;
-                // onAgentReadyCallback 内部会更新状态指示器（幂等保护）
-                onAgentReadyCallback?.();
+                State.initRetryTimer = null;
+                // State.onAgentReadyCallback 内部会更新状态指示器（幂等保护）
+                State.onAgentReadyCallback?.();
               } else if (retry.error) {
                 // 初始化失败，显示具体错误（复用 showAgentInitError 统一处理）
-                initRetryTimer = null;
-                showAgentInitError(uiManager, settingsController, retry.error);
+                State.initRetryTimer = null;
+                showAgentInitError(State.uiManager, settingsController, retry.error);
               } else if (attempt < MAX_INIT_RETRIES) {
                 // 仍在初始化中，继续重试
                 retryAgentStatus(attempt + 1);
               } else {
                 // 超过最大重试次数，显示超时错误
-                initRetryTimer = null;
+                State.initRetryTimer = null;
                 settingsController.updateAgentStatus('error', 'Agent 初始化超时');
-                uiManager.showToast('Agent 初始化超时，请尝试重启应用', 'error');
+                State.uiManager.showToast('Agent 初始化超时，请尝试重启应用', 'error');
               }
             } catch (retryErr) {
               // 重试查询失败，未达上限时继续重试，debug 级别避免日志噪音
@@ -335,7 +336,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               if (attempt < MAX_INIT_RETRIES) {
                 retryAgentStatus(attempt + 1);
               } else {
-                initRetryTimer = null;
+                State.initRetryTimer = null;
                 settingsController.updateAgentStatus('error', 'Agent 状态查询失败');
               }
             }
@@ -349,12 +350,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       const isConfigMissing = error.includes('配置不完整') || error.includes('API Key');
       if (isConfigMissing) {
         // 首次启动引导：显示欢迎消息 + 跳转设置面板
-        showWelcomeMessage(uiManager);
-        void uiManager.switchPanel('settings');
+        showWelcomeMessage(State.uiManager);
+        void State.uiManager.switchPanel('settings');
         await settingsController.loadConfig();
       } else {
         // 初始化失败：显示错误 + 重试按钮 + 跳转设置面板（复用 showAgentInitError 统一处理）
-        showAgentInitError(uiManager, settingsController, error);
+        showAgentInitError(State.uiManager, settingsController, error);
       }
       return;
     }
@@ -363,25 +364,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     reportError('init/agent-status', err);
     // P3-FLOW-10 异常时状态指示器显示 unknown
     settingsController.updateAgentStatus('unknown', '检测中...');
-    showWelcomeMessage(uiManager);
-    void uiManager.switchPanel('settings');
+    showWelcomeMessage(State.uiManager);
+    void State.uiManager.switchPanel('settings');
     await settingsController.loadConfig();
     return;
   }
 
   // P1 修复：Agent 在渲染进程启动前就已就绪时，IPC 事件已错过，需在此主动触发就绪流程
-  // onAgentReadyCallback 已在初始化阶段提前赋值（第 96 行），直接调用即可
+  // State.onAgentReadyCallback 已在初始化阶段提前赋值（第 96 行），直接调用即可
   // （原 else 分支的防御性兜底已不需要，且原 else 分支遗漏 setAgentReady(true) 导致用户无法发送消息）
-  onAgentReadyCallback();
+  State.onAgentReadyCallback();
   void settingsController.loadConfig();
   void memoryController.loadDashboard();
   // H2 预加载用户画像数据（用户切换到"画像"tab 时即可见）
   void settingsController.loadUserProfile();
+  // H3 预加载作品投影数据（用户切换到"作品"tab 时即可见）
+  void settingsController.loadWorkProjections();
+
+  // H3 延迟更新学习进度卡片（等待上述异步加载完成后聚合数据）
+  setTimeout(() => State.uiManager.updateLearningProgress(), 500);
 
   // 三态首次引导：Agent 就绪且首次使用时显示（介绍三态窗口模型 + 快捷键）
   // 使用 localStorage 标记，老用户不再显示
-  if (uiManager.shouldShowOnboarding()) {
-    uiManager.showOnboardingDialog();
+  if (State.uiManager.shouldShowOnboarding()) {
+    State.uiManager.showOnboardingDialog();
   }
 });
 
@@ -392,26 +398,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   // UI-AUDIT-P0-2.3: 设置面板有未保存修改时，阻止页面关闭/刷新
   // 防止用户意外丢失 LLM 配置（含 API Key）等关键数据
-  if (uiManager?.getCurrentPanel() === 'settings' && uiManager.isSettingsDirty()) {
+  if (State.uiManager?.getCurrentPanel() === 'settings' && State.uiManager.isSettingsDirty()) {
     e.preventDefault();
     // 现代浏览器要求设置 returnValue 才能触发确认对话框
     e.returnValue = '';
   }
 
-  uiManager?.cleanup();
+  State.uiManager?.cleanup();
   // 清理静默模式恢复定时器，避免定时器触发时操作已销毁的 DOM 或产生未捕获 rejection
-  if (silentRecoveryTimer !== null) {
-    window.clearTimeout(silentRecoveryTimer);
-    silentRecoveryTimer = null;
+  if (State.silentRecoveryTimer !== null) {
+    window.clearTimeout(State.silentRecoveryTimer);
+    State.silentRecoveryTimer = null;
   }
-  // 清理 Agent 初始化重试定时器（与 silentRecoveryTimer 同模式）
-  if (initRetryTimer !== null) {
-    window.clearTimeout(initRetryTimer);
-    initRetryTimer = null;
+  // 清理 Agent 初始化重试定时器（与 State.silentRecoveryTimer 同模式）
+  if (State.initRetryTimer !== null) {
+    window.clearTimeout(State.initRetryTimer);
+    State.initRetryTimer = null;
   }
   // IX-03 清理脉冲动画定时器（避免操作已销毁的 DOM）
-  memoryControllerRef?.cleanup();
-  memoryControllerRef = null;
+  State.memoryController?.cleanup();
+  State.memoryController = null;
   // 清理 IPC 监听器（防止内存泄漏与重复触发）
   window.electronAPI?.removeStreamListeners();
   window.electronAPI?.removeSpriteOutputListener();
@@ -440,7 +446,7 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
 /**
  * 设置发送消息、停止消息、新建会话回调
  *
- * 这三个回调依赖 uiManager 和 sessionController，保留在 renderer.ts 中
+ * 这三个回调依赖 State.uiManager 和 sessionController，保留在 renderer.ts 中
  * 避免引入额外的模块间依赖。
  */
 function setupBusinessLogic(
@@ -448,12 +454,12 @@ function setupBusinessLogic(
   sessionController: ReturnType<typeof createSessionController>,
 ): void {
   // 设置发送消息回调
-  uiManager.onSendMessage(async () => {
-    const text = uiManager.getUserInput();
+  State.uiManager.onSendMessage(async () => {
+    const text = State.uiManager.getUserInput();
     if (!text) return;
 
     // UX-PP-03 存储最后用户输入，用于流式错误重试
-    lastUserInput = text;
+    State.lastUserInput = text;
 
     // P2-FLOW-09 跨天检测：当前查看的是历史日期时，确认后切换到今天的 main 会话
     const currentId = sessionController.getCurrentSessionId();
@@ -462,7 +468,7 @@ function setupBusinessLogic(
       const sessionDate = currentId.slice(0, 10);
       if (sessionDate !== todayPrefix) {
         // 弹出确认对话框，用户取消则阻止发送，停留在历史会话视图
-        const confirmed = await uiManager.showConfirmDialog({
+        const confirmed = await State.uiManager.showConfirmDialog({
           title: '切换到今天的对话',
           message: `当前查看的是 ${sessionDate} 的历史对话，发送消息将切换到今天的新对话。`,
           confirmText: '切换并发送',
@@ -475,7 +481,7 @@ function setupBusinessLogic(
     }
 
     // 显示用户消息
-    uiManager.appendMessage({
+    State.uiManager.appendMessage({
       role: 'user',
       content: text,
     });
@@ -485,16 +491,16 @@ function setupBusinessLogic(
   });
 
   // 空状态示例问题回调：点击示例问题等同于用户输入并发送
-  uiManager.onSuggestionClick((text) => {
+  State.uiManager.onSuggestionClick((text) => {
     // IX-01 流式防护：流式输出中点击示例问题等同于重复发送，应阻止
-    if (uiManager.isStreaming()) {
-      uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
+    if (State.uiManager.isStreaming()) {
+      State.uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
       return;
     }
     // UX-PP-03 存储最后用户输入，用于流式错误重试
-    lastUserInput = text;
+    State.lastUserInput = text;
     // 显示用户消息
-    uiManager.appendMessage({
+    State.uiManager.appendMessage({
       role: 'user',
       content: text,
     });
@@ -509,31 +515,31 @@ function setupBusinessLogic(
   // SPRITE_STREAM_ABORTED → markStreamingAborted（正确嵌入标记 + 清理状态）→
   // SPRITE_STREAM_END → finishStreamingMessage（添加复制按钮等收尾）。
   // stopAllStreaming() 保留给渲染进程超时兜底（onStreamStuck）使用，不用在用户主动停止路径。
-  uiManager.onStopMessage(async () => {
+  State.uiManager.onStopMessage(async () => {
     await window.electronAPI.abortChat();
   });
 
   // UX-FD-07 日期导航跳转回调：点击日期项后跳转到该日期的对话
-  uiManager.onDateNavJump(async (date: string) => {
+  State.uiManager.onDateNavJump(async (date: string) => {
     try {
       await sessionController.jumpToDate(date);
       // 跳转后刷新日期列表（更新 active 高亮）
       const dates = await sessionController.loadDateList();
       const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
-      uiManager.renderDateNavList(dates, currentDate);
+      State.uiManager.renderDateNavList(dates, currentDate);
     } catch (error) {
       // FD-CONVERGE-01 日期跳转失败时 toast 提示并保持当前视图，避免静默破坏 UI 状态
       reportError('dateNavJump', error);
-      uiManager.showToast('日期跳转失败，请稍后重试', 'error');
+      State.uiManager.showToast('日期跳转失败，请稍后重试', 'error');
     }
   });
 
   // UX-FD-07 日期导航下拉打开时加载日期列表
-  uiManager.onDateNavOpen(async () => {
+  State.uiManager.onDateNavOpen(async () => {
     try {
       const dates = await sessionController.loadDateList();
       const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
-      uiManager.renderDateNavList(dates, currentDate);
+      State.uiManager.renderDateNavList(dates, currentDate);
     } catch (error) {
       // FD-CONVERGE-01 日期列表加载失败时静默降级，不阻塞用户继续对话
       reportError('dateNavOpen', error);
@@ -551,14 +557,14 @@ function setupBusinessLogic(
  * 绑定以下事件：
  * - dragenter/dragover：添加 .is-dragover 类，反馈可接收
  * - dragleave/drop：移除 .is-dragover 类
- * - drop：提取 File[] 调用 uiManager.handleSkillDrop
- * - click：触发文件选择对话框（uiManager.handleSkillFileSelect）
- * - change：文件选择后触发，提取 File[] 调用 uiManager.handleSkillDrop
+ * - drop：提取 File[] 调用 State.uiManager.handleSkillDrop
+ * - click：触发文件选择对话框（State.uiManager.handleSkillFileSelect）
+ * - change：文件选择后触发，提取 File[] 调用 State.uiManager.handleSkillDrop
  * - keydown：Enter/Space 触发点击（支持键盘可访问性，tabindex=0）
  *
- * @param uiManager UI 管理器实例
+ * @param State.uiManager UI 管理器实例
  */
-function setupSkillDropzone(uiManager: UIManager): void {
+function setupSkillDropzone(_uiManager: UIManager): void {
   const dropzone = document.getElementById('skill-dropzone');
   const fileInput = document.getElementById('skill-file-input') as HTMLInputElement | null;
   if (!dropzone) {
@@ -593,20 +599,20 @@ function setupSkillDropzone(uiManager: UIManager): void {
     if (files && files.length > 0) {
       // FileList 转为数组传递
       const fileArray = Array.from(files);
-      void uiManager.handleSkillDrop(fileArray);
+      void State.uiManager.handleSkillDrop(fileArray);
     }
   };
 
   // click：触发文件选择对话框
   const handleClick = (): void => {
-    uiManager.handleSkillFileSelect();
+    State.uiManager.handleSkillFileSelect();
   };
 
   // keydown：Enter/Space 触发点击（键盘可访问性）
   const handleKeydown = (e: KeyboardEvent): void => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      uiManager.handleSkillFileSelect();
+      State.uiManager.handleSkillFileSelect();
     }
   };
 
@@ -614,13 +620,13 @@ function setupSkillDropzone(uiManager: UIManager): void {
   const handleFileChange = (): void => {
     if (fileInput && fileInput.files && fileInput.files.length > 0) {
       const fileArray = Array.from(fileInput.files);
-      void uiManager.handleSkillDrop(fileArray);
+      void State.uiManager.handleSkillDrop(fileArray);
       // 清空 input.value 允许重复选择同一文件（否则 change 事件不触发）
       fileInput.value = '';
     }
   };
 
-  // 注册事件监听器（beforeunload 时由 uiManager.cleanup 统一清理？）
+  // 注册事件监听器（beforeunload 时由 State.uiManager.cleanup 统一清理？）
   // 注意：dropzone 事件不通过 EventTracker 管理，因为 setupSkillDropzone 在
   // DOMContentLoaded 内调用，且 dropzone 元素随页面卸载自动销毁。
   // 若未来需要更精细的清理，可改为 EventTracker 模式。

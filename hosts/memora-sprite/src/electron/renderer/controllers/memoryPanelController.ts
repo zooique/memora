@@ -571,6 +571,9 @@ export function createMemoryController(uiManager: UIManager) {
 
       // GAP-1 已加载技能列表渲染（消费内核 agent.skills.list）
       renderSkills(data.skills);
+
+      // H3 仪表盘加载完成后更新学习进度卡片
+      uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadDashboard', error);
     }

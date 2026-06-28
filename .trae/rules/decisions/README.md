@@ -32,7 +32,7 @@ description: Memora 关键决策年轮
 
 | ID                                                  | 标题                                              | 状态      | 类别   |
 | --------------------------------------------------- | ------------------------------------------------- | --------- | ------ |
-| [ADR-SP-001](./ADR-SP-001-runtime.md)              | 运行时栈：Node.js 22 + TS5 + ESM                  | ✅ 已接受 | 运行时 |
+| [ADR-SP-001](./ADR-SP-001-runtime.md)              | 运行时栈：Node.js 24 LTS + TS5 + ESM              | ✅ 已接受 | 运行时 |
 | [ADR-SP-002](./ADR-SP-002-storage.md)              | 存储层：better-sqlite3 + 同库会话                  | ✅ 已接受 | 数据层 |
 | [ADR-SP-003](./ADR-SP-003-desktop-shell.md)        | 桌面壳：阶段一 CLI → 阶段二 Electron              | ✅ 已接受 | 形态   |
 | [ADR-SP-004](./ADR-SP-004-perception.md)           | 感知原则：上下文感知而非内容感知                   | ✅ 已接受 | 安全   |

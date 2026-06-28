@@ -29,6 +29,7 @@ date: 2026-06-25
 | 类别   | 选型                                         | 决策                                                  |
 | ------ | -------------------------------------------- | ----------------------------------------------------- |
 | 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](./decisions/ADR-001-runtime-stack.md)       |
+|        | （精灵宿主要求 Node.js 24 LTS，详见 [sprite-project-rules.md §2](./sprite-project-rules.md)） | |
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](./decisions/ADR-002-storage-layer.md)       |
 | 记忆关系 | IMemoryRelationStore 侧车接口（宿主注入实现） | [ADR-014](./decisions/ADR-014-memory-relation.md)    |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](./decisions/ADR-003-llm-adapter.md)         |

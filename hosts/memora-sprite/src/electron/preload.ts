@@ -23,6 +23,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { SerializedAppError } from './ipc/channels.js';
 import type { WorkProjectionPayload } from './ipc/channels.js';
+// H3 年轮审判修复：重新导出 WorkProjectionPayload，使渲染层统一从 preload 导入
+export type { WorkProjectionPayload };
 // 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。
 // 使用 import type：编译时擦除，不引入运行时耦合；electron 层依赖 sprite 层是合理依赖方向。
 import type {

@@ -266,8 +266,27 @@ export function createSettingsController(uiManager: UIManager) {
   async function loadUserProfile(): Promise<void> {
     try {
       await uiManager.loadUserProfile();
+      // H3 画像加载完成后更新学习进度卡片
+      uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadUserProfile', error);
+    }
+  }
+
+  /**
+   * H3 加载作品投影数据到设置面板
+   *
+   * 调用 uiManager.loadWorkProjections 代理到 WorkProjectionPanelManager，
+   * 从主进程拉取所有作品投影条目并渲染到"作品"tab。
+   * 失败时由 WorkProjectionPanelManager 内部处理错误提示，不阻塞其他面板功能。
+   */
+  async function loadWorkProjections(): Promise<void> {
+    try {
+      await uiManager.loadWorkProjections();
+      // H3 作品投影加载完成后更新学习进度卡片
+      uiManager.updateLearningProgress();
+    } catch (error) {
+      reportError('loadWorkProjections', error);
     }
   }
 
@@ -288,6 +307,7 @@ export function createSettingsController(uiManager: UIManager) {
     loadConfig,
     loadLlmConfig,
     loadUserProfile,
+    loadWorkProjections,
     updateAgentStatus,
     /** QC-STATE-01 修复：暴露静默恢复回调注册方法，替代原模块级导出函数 */
     setSilentRecoveryCallback,

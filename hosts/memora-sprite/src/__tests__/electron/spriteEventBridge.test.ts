@@ -39,8 +39,8 @@ import type { ILogger } from 'memora';
  * vi.hoisted 与 vi.mock 配合使用：vi.hoisted 创建的变量会被提升到 vi.mock 之前，
  * 使得工厂函数可以访问这些变量。
  */
-/** 精灵事件总数（主动提示 + 10 个简单转发事件，含 affectUpdated + rapportUpdated + contextUpdated） */
-const SPRITE_EVENT_COUNT = 11;
+/** 精灵事件总数（1 个主动提示 + 11 个简单转发事件，含 affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated） */
+const SPRITE_EVENT_COUNT = 12;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
@@ -240,11 +240,11 @@ describe('SpriteEventBridge', () => {
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT * 2);
     });
 
-    it('注册 11 个事件订阅（proactivePrompt + 10 个简单事件）', () => {
+    it('注册 12 个事件订阅（proactivePrompt + 11 个简单事件）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
-      // 验证 9 个事件类型都被订阅
+      // 验证 12 个事件类型都被订阅
       const calledEvents = deps.sprite.on.mock.calls.map((call: unknown[]) => call[0]);
       expect(calledEvents).toContain('proactivePrompt');
       expect(calledEvents).toContain('memoryNoticed');
@@ -255,10 +255,13 @@ describe('SpriteEventBridge', () => {
       expect(calledEvents).toContain('memoryRecalled');
       expect(calledEvents).toContain('decayCompleted');
       expect(calledEvents).toContain('affectUpdated');
+      expect(calledEvents).toContain('rapportUpdated');
+      expect(calledEvents).toContain('contextUpdated');
+      expect(calledEvents).toContain('workProjectionUpdated');
       expect(calledEvents).toHaveLength(SPRITE_EVENT_COUNT);
     });
 
-    it('sprite.on 被调用 11 次（每个事件一次）', () => {
+    it('sprite.on 被调用 12 次（每个事件一次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
@@ -545,7 +548,7 @@ describe('SpriteEventBridge', () => {
   // ════════════════════════════════════════════════════════
 
   describe('unsubscribeSpriteEvents', () => {
-    it('调用所有订阅者的 unsubscribe 函数（sprite.off 被调用 9 次）', () => {
+    it('调用所有订阅者的 unsubscribe 函数（sprite.off 被调用 12 次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 

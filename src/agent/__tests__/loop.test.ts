@@ -143,7 +143,7 @@ describe('AgentLoop · processUserInput 纯文本流式输出', () => {
     // system + user + assistant = 3
     expect(messages).toHaveLength(3);
     expect(messages[1]!.role).toBe('user');
-    expect(messages[1]!.content).toBe('用户提问');
+    expect(messages[1]!.content).toBe('<user_input>用户提问</user_input>');
     expect(messages[2]!.role).toBe('assistant');
     expect(messages[2]!.content).toBe('回复内容');
   });
