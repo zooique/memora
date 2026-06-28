@@ -931,6 +931,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.loop;
   }
 
+  /**
+   * 注入情感基调到 system prompt（Phase 2.1：AffectController）
+   *
+   * 委托至 AgentLoop.injectAffect()，在角色前缀和 bootstrap 记忆之间插入情感描述。
+   * 与角色切换独立——切换角色不会清除情感注入。
+   *
+   * @param affectString 情感描述文本，传空字符串清除注入
+   */
+  injectAffect(affectString: string): void {
+    this.loop?.injectAffect(affectString);
+  }
+
   get agentHistory(): MessageHistory | null {
     return this.history;
   }

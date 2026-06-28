@@ -53,9 +53,13 @@ const mockAgent = {
     agentListeners.delete(event);
   }),
   removeAllListeners: vi.fn(),
+  // Phase 2.1：情感基调注入点
+  injectAffect: vi.fn(),
   memory: {
     stats: vi.fn().mockReturnValue({ total: 0, bySource: {} }),
     suggest: vi.fn().mockReturnValue([]),
+    // Phase 2.1：情感基调推导需要 list 方法获取所有记忆
+    list: vi.fn().mockReturnValue([]),
   },
   persona: null,
 } as unknown as Agent;

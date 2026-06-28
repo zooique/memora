@@ -220,6 +220,28 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   forwardSimpleEvent(deps, 'memoryRecalled', (e) => ({ count: e.count, query: e.query }));
   // 衰减完成 → 渲染层通知（24h 节流避免每小时噪音，节流由渲染层控制）
   forwardSimpleEvent(deps, 'decayCompleted', (e) => ({ decayedCount: e.decayedCount }));
+  // Phase 2.1：情感基调更新 → 渲染层仪表盘展示
+  forwardSimpleEvent(deps, 'affectUpdated', (e) => ({
+    warmth: e.warmth,
+    playfulness: e.playfulness,
+    directness: e.directness,
+    initiative: e.initiative,
+  }));
+  // Phase 3：默契度更新 → 渲染层仪表盘展示
+  forwardSimpleEvent(deps, 'rapportUpdated', (e) => ({
+    trust: e.trust,
+    familiarity: e.familiarity,
+    level: e.level,
+    description: e.description,
+  }));
+  // Phase 4：对话上下文更新 → 渲染层仪表盘展示
+  forwardSimpleEvent(deps, 'contextUpdated', (e) => ({
+    rhythm: e.rhythm,
+    coherence: e.coherence,
+    depth: e.depth,
+    dominantSource: e.dominantSource,
+    description: e.description,
+  }));
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

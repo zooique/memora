@@ -80,6 +80,72 @@
             <span class="dash-value" id="pending-count">0/3</span>
           </div>
         </div>
+
+        <!-- Phase 2.1：情感基调展示（四维进度条，由 affectUpdated 事件动态更新） -->
+        <div id="affect-display" class="dashboard-section hidden">
+          <h3>🎵 互动基调</h3>
+          <div class="affect-bars">
+            <div class="affect-bar">
+              <span class="affect-label">温暖度</span>
+              <div class="affect-track"><div class="affect-fill" id="affect-warmth" style="width: 50%;"></div></div>
+              <span class="affect-level" id="affect-warmth-level">中</span>
+            </div>
+            <div class="affect-bar">
+              <span class="affect-label">直接度</span>
+              <div class="affect-track"><div class="affect-fill" id="affect-directness" style="width: 50%;"></div></div>
+              <span class="affect-level" id="affect-directness-level">中</span>
+            </div>
+            <div class="affect-bar">
+              <span class="affect-label">主动度</span>
+              <div class="affect-track"><div class="affect-fill" id="affect-initiative" style="width: 50%;"></div></div>
+              <span class="affect-level" id="affect-initiative-level">中</span>
+            </div>
+            <div class="affect-bar">
+              <span class="affect-label">调皮度</span>
+              <div class="affect-track"><div class="affect-fill" id="affect-playfulness" style="width: 30%;"></div></div>
+              <span class="affect-level" id="affect-playfulness-level">低</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Phase 3：默契度展示（等级 + 信任度进度条 + 熟悉度进度条 + 描述，由 rapportUpdated 事件动态更新） -->
+        <div id="rapport-display" class="dashboard-section hidden">
+          <h3>🤝 默契度</h3>
+          <div class="rapport-level-badge" id="rapport-level-badge">初识</div>
+          <div class="affect-bars">
+            <div class="affect-bar">
+              <span class="affect-label">信任度</span>
+              <div class="affect-track"><div class="affect-fill" id="rapport-trust" style="width: 30%;"></div></div>
+              <span class="affect-level" id="rapport-trust-level">低</span>
+            </div>
+            <div class="affect-bar">
+              <span class="affect-label">熟悉度</span>
+              <div class="affect-track"><div class="affect-fill" id="rapport-familiarity" style="width: 0%;"></div></div>
+              <span class="affect-level" id="rapport-familiarity-level">低</span>
+            </div>
+          </div>
+          <p class="rapport-description" id="rapport-description">初识阶段，精灵正在了解你</p>
+        </div>
+        
+        <!-- Phase 4：对话上下文展示（节奏 + 话题 + 深度，由 contextUpdated 事件动态更新） -->
+        <div id="context-display" class="dashboard-section hidden">
+          <h3>📡 对话上下文</h3>
+          <div class="context-metrics">
+            <div class="context-metric">
+              <span class="context-label">节奏</span>
+              <span class="context-value" id="context-rhythm">--</span>
+            </div>
+            <div class="context-metric">
+              <span class="context-label">话题</span>
+              <span class="context-value" id="context-coherence">--</span>
+            </div>
+            <div class="context-metric">
+              <span class="context-label">深度</span>
+              <span class="context-value" id="context-depth">--</span>
+            </div>
+          </div>
+          <p class="rapport-description" id="context-description">--</p>
+        </div>
         
         <!-- OBS-01 Agent 运行时指标（消费内核 agent.getMetrics()） -->
         <!-- 由 renderAgentMetrics() 动态填充，无数据时隐藏 -->
@@ -207,6 +273,13 @@
               <button class="suggestion-btn" data-suggestion="帮我整理一下最近的洞察">✨ 整理洞察</button>
             </div>
           </div>
+        </div>
+        <!-- Phase 2.2：对话面板情感指示器（输入框上方紧凑四维状态条） -->
+        <div id="chat-affect-indicator" class="chat-affect-indicator hidden">
+          <span class="chat-affect-dot" id="chat-affect-warmth" title="温暖度"></span>
+          <span class="chat-affect-dot" id="chat-affect-directness" title="直接度"></span>
+          <span class="chat-affect-dot" id="chat-affect-initiative" title="主动度"></span>
+          <span class="chat-affect-dot" id="chat-affect-playfulness" title="调皮度"></span>
         </div>
         <div id="input-area">
           <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder） -->

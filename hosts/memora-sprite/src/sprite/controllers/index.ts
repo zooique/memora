@@ -9,3 +9,12 @@ export type { ProactiveConfig, SpriteEmitter } from './proactiveEngine.js';
 
 export { PresenceController } from './presenceController.js';
 export type { PresenceState, PresenceChangeEvent, PresenceControllerOptions, IPowerMonitor, IApp } from './presenceController.js';
+
+export { AffectController } from './affectController.js';
+export type { AffectState, AffectControllerOptions } from './affectController.js';
+
+export { RapportController } from './rapportController.js';
+export type { RapportState, RapportControllerOptions } from './rapportController.js';
+
+export { ContextAwareness } from './contextAwareness.js';
+export type { ContextState, ContextAwarenessOptions, RhythmType, CoherenceLevel, DepthLevel } from './contextAwareness.js';

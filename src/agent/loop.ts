@@ -26,6 +26,13 @@ export interface AgentLoopOptions {
   maxIterations?: number;
   /** 系统 prompt 前缀（角色 + 用户画像 + 技能），注入到 bootstrap 记忆之前 */
   systemPromptPrefix?: string;
+  /**
+   * 情感基调前缀（Phase 2.1：AffectController 注入）
+   *
+   * 在 systemPromptPrefix 和 bootstrapMemories 之间插入。
+   * 由 Agent.injectAffect() 设置，角色切换时保留。
+   */
+  affectPrefix?: string;
   /** v4.0：工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
   /**
@@ -697,15 +704,31 @@ export class AgentLoop {
   }
 
   /**
+   * 注入情感基调到 system prompt（Phase 2.1：AffectController）
+   *
+   * 在角色前缀和 bootstrap 记忆之间插入情感描述文本。
+   * 与 refreshPersonaPrefix 独立——角色切换不会清除情感注入。
+   *
+   * 注入位置：systemPromptPrefix + affectPrefix + bootstrapMemories + toolDefinitions
+   *
+   * @param affectString 情感描述文本（如"当前对话基调：温暖、直接"），传空字符串清除注入
+   */
+  injectAffect(affectString: string): void {
+    this.opts.affectPrefix = affectString;
+    this.rebuildSystemMessage();
+  }
+
+  /**
    * 重建 messages[0] 的 system prompt
    */
   private rebuildSystemMessage(): void {
     const sysMsg = this.messages[0];
     if (sysMsg && sysMsg.role === 'system') {
       const prefix = this.opts.systemPromptPrefix ?? '';
+      const affect = this.opts.affectPrefix ? `\n${this.opts.affectPrefix}\n` : '';
       this.messages[0] = {
         role: 'system',
-        content: prefix + this.buildSystemPrompt(this.opts.bootstrapMemories),
+        content: prefix + affect + this.buildSystemPrompt(this.opts.bootstrapMemories),
       };
     }
   }

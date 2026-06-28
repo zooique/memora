@@ -28,6 +28,30 @@ import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.j
 import { safeSetTimeout, clearSafeTimeout } from '@/utils/safeTimer.js';
 
 /**
+ * 从 frontmatter 解析 traits.* 键值对
+ *
+ * 遍历 frontmatter 中以 "traits." 开头的键，提取数值。
+ * 非数值或超出 0-1 范围的值被静默忽略（防御性解析）。
+ *
+ * @param fm frontmatter 键值对映射
+ * @returns traits 对象，无有效键时返回 undefined
+ */
+function parseTraits(fm: Record<string, string>): Record<string, number> | undefined {
+  const traits: Record<string, number> = {};
+  for (const [key, value] of Object.entries(fm)) {
+    if (!key.startsWith('traits.')) continue;
+    const traitName = key.slice(7); // 去掉 'traits.' 前缀
+    if (!traitName) continue;
+    const num = Number(value);
+    // 防御性校验：必须是有效数值且在 0-1 范围内
+    if (Number.isFinite(num) && num >= 0 && num <= 1) {
+      traits[traitName] = num;
+    }
+  }
+  return Object.keys(traits).length > 0 ? traits : undefined;
+}
+
+/**
  * 角色管理器（personas/ + SQLite + 关键词匹配）
  */
 export class PersonaManager {
@@ -108,6 +132,15 @@ export class PersonaManager {
    */
   get activeName(): string {
     return this.activePersona?.name ?? 'default';
+  }
+
+  /**
+   * 获取当前激活角色对象（Phase 2.1：AffectController 需要 traits 字段）
+   *
+   * 返回 null 时表示未加载任何角色（使用默认行为）。
+   */
+  getActive(): Persona | null {
+    return this.activePersona;
   }
 
   /**
@@ -291,6 +324,8 @@ export class PersonaManager {
         keywords: parseKeywords(fm),
         content: entry.body.trim(),
         filePath: entry.filePath,
+        // Phase 2.1：解析 traits.* 键值对（如 traits.playfulness: 0.7）
+        traits: parseTraits(fm),
       });
     }
 

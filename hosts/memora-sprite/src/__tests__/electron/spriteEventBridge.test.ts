@@ -39,6 +39,9 @@ import type { ILogger } from 'memora';
  * vi.hoisted 与 vi.mock 配合使用：vi.hoisted 创建的变量会被提升到 vi.mock 之前，
  * 使得工厂函数可以访问这些变量。
  */
+/** 精灵事件总数（主动提示 + 10 个简单转发事件，含 affectUpdated + rapportUpdated + contextUpdated） */
+const SPRITE_EVENT_COUNT = 11;
+
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
     on: ReturnType<typeof vi.fn>;
@@ -231,17 +234,17 @@ describe('SpriteEventBridge', () => {
       setupSpriteEventListeners(deps);
       // 第二次注册（模拟 reinitAgent 场景）
       setupSpriteEventListeners(deps);
-      // sprite.off 应被调用 8 次（清除旧订阅）
-      expect(deps.sprite.off).toHaveBeenCalledTimes(8);
-      // sprite.on 应被调用 16 次（每次注册 8 个事件，两次注册）
-      expect(deps.sprite.on).toHaveBeenCalledTimes(16);
+      // sprite.off 应被调用 SPRITE_EVENT_COUNT 次（清除旧订阅）
+      expect(deps.sprite.off).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
+      // sprite.on 应被调用 SPRITE_EVENT_COUNT * 2 次（每次注册 SPRITE_EVENT_COUNT 个事件，两次注册）
+      expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT * 2);
     });
 
-    it('注册 8 个事件订阅（proactivePrompt + 7 个简单事件）', () => {
+    it('注册 11 个事件订阅（proactivePrompt + 10 个简单事件）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
-      // 验证 8 个事件类型都被订阅
+      // 验证 9 个事件类型都被订阅
       const calledEvents = deps.sprite.on.mock.calls.map((call: unknown[]) => call[0]);
       expect(calledEvents).toContain('proactivePrompt');
       expect(calledEvents).toContain('memoryNoticed');
@@ -251,13 +254,14 @@ describe('SpriteEventBridge', () => {
       expect(calledEvents).toContain('skillMatched');
       expect(calledEvents).toContain('memoryRecalled');
       expect(calledEvents).toContain('decayCompleted');
-      expect(calledEvents).toHaveLength(8);
+      expect(calledEvents).toContain('affectUpdated');
+      expect(calledEvents).toHaveLength(SPRITE_EVENT_COUNT);
     });
 
-    it('sprite.on 被调用 8 次（每个事件一次）', () => {
+    it('sprite.on 被调用 11 次（每个事件一次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
-      expect(deps.sprite.on).toHaveBeenCalledTimes(8);
+      expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
     });
   });
 
@@ -446,10 +450,10 @@ describe('SpriteEventBridge', () => {
   });
 
   // ════════════════════════════════════════════════════════
-  // 3. 7 个简单转发事件（7 测试）
+  // 3. 8 个简单转发事件（8 测试 × 2 = 16 测试）
   // ════════════════════════════════════════════════════════
 
-  describe('7 个简单转发事件', () => {
+  describe('8 个简单转发事件', () => {
     const simpleEvents: Array<{
       name: keyof SpriteEventMap;
       payload: SpriteEventMap[keyof SpriteEventMap];
@@ -461,6 +465,9 @@ describe('SpriteEventBridge', () => {
       { name: 'skillMatched', payload: { skill: 'typescript', score: 0.95 } },
       { name: 'memoryRecalled', payload: { count: 5, query: '测试查询' } },
       { name: 'decayCompleted', payload: { decayedCount: 3 } },
+      { name: 'affectUpdated', payload: { warmth: 0.8, playfulness: 0.3, directness: 0.5, initiative: 0.6 } },
+      { name: 'rapportUpdated', payload: { trust: 0.7, familiarity: 0.6, level: 'familiar', description: '熟悉阶段' } },
+      { name: 'contextUpdated', payload: { rhythm: 'normal', coherence: 'focused', depth: 'moderate', dominantSource: 'code', description: '测试' } },
     ];
 
     simpleEvents.forEach(({ name, payload }) => {
@@ -538,15 +545,15 @@ describe('SpriteEventBridge', () => {
   // ════════════════════════════════════════════════════════
 
   describe('unsubscribeSpriteEvents', () => {
-    it('调用所有订阅者的 unsubscribe 函数（sprite.off 被调用 8 次）', () => {
+    it('调用所有订阅者的 unsubscribe 函数（sprite.off 被调用 9 次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
       // 取消订阅
       unsubscribeSpriteEvents();
 
-      // sprite.off 应被调用 8 次（每个事件取消一次）
-      expect(deps.sprite.off).toHaveBeenCalledTimes(8);
+      // sprite.off 应被调用 SPRITE_EVENT_COUNT 次（每个事件取消一次）
+      expect(deps.sprite.off).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
     });
 
     it('取消订阅后 spriteEventUnsubscribers 数组清空', () => {
@@ -559,7 +566,7 @@ describe('SpriteEventBridge', () => {
       // 再次取消订阅（应无操作，不报错）
       expect(() => unsubscribeSpriteEvents()).not.toThrow();
       // sprite.off 不应再被调用（数组已清空）
-      expect(deps.sprite.off).toHaveBeenCalledTimes(8);
+      expect(deps.sprite.off).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
     });
 
     it('QC-R2-01：某个 unsubscribe 抛错时 logger.warn 记录，不影响其他 unsubscribe 执行', () => {
@@ -579,8 +586,8 @@ describe('SpriteEventBridge', () => {
       expect(() => unsubscribeSpriteEvents()).not.toThrow();
       // logger.warn 应被调用（记录错误）
       expect(mockLogger.warn).toHaveBeenCalled();
-      // sprite.off 仍被调用 8 次（不因错误而中断）
-      expect(offCallCount).toBe(8);
+      // sprite.off 仍被调用 SPRITE_EVENT_COUNT 次（不因错误而中断）
+      expect(offCallCount).toBe(SPRITE_EVENT_COUNT);
     });
   });
 });

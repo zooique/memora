@@ -14,6 +14,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TimerTrigger, TriggerBus } from '../../sprite/triggers.js';
 import type { SpriteTrigger, TriggerPayload } from '../../sprite/triggers.js';
+import { logger } from 'memora';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
 
@@ -384,7 +385,7 @@ describe('TriggerBus', () => {
       expect(handlerB).toHaveBeenCalledWith(payload);
     });
 
-    it('异常 handler 错误信息通过 console.error 记录', () => {
+    it('异常 handler 错误信息通过 logger.error 记录', () => {
       const trigger = createMockTrigger('test');
       bus.register(trigger);
       bus.start();
@@ -396,20 +397,20 @@ describe('TriggerBus', () => {
 
       bus.on(handler);
 
-      // 监控 console.error 调用
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // 监控 logger.error 调用
+      const loggerErrorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
 
       // 捕获 trigger.start 收到的回调并手动调用
       const startCb = (trigger.start as ReturnType<typeof vi.fn>).mock.calls[0][0] as (payload: TriggerPayload) => void;
       startCb({ reason: 'test', source: 'test' });
 
-      // console.error 被调用，且包含错误信息
-      expect(consoleErrorSpy).toHaveBeenCalled();
-      const errorCallArg = consoleErrorSpy.mock.calls[0]?.[0];
-      expect(errorCallArg).toContain('[TriggerBus]');
-      expect(errorCallArg).toContain(errorMsg);
+      // logger.error 被调用，且包含错误信息
+      expect(loggerErrorSpy).toHaveBeenCalled();
+      const firstCallArg = loggerErrorSpy.mock.calls[0]?.[0];
+      expect(firstCallArg).toEqual(expect.objectContaining({ err: expect.stringContaining(errorMsg) }));
+      expect(loggerErrorSpy.mock.calls[0]?.[1]).toContain('[TriggerBus]');
 
-      consoleErrorSpy.mockRestore();
+      loggerErrorSpy.mockRestore();
     });
   });
 });

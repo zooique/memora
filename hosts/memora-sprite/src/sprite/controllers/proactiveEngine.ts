@@ -52,6 +52,11 @@ export class ProactiveEngine {
   /** QC-SPRITE-06：首次 checkMilestones 仅初始化已知状态，不触发通知（避免冷启动首发提示） */
   private milestoneInitialized = false;
 
+  /** Phase 2.1：主动提示次数（供 AffectController 计算接受率） */
+  private suggestCount = 0;
+  /** Phase 2.1：用户接受次数（供 AffectController 计算接受率） */
+  private acceptCount = 0;
+
   private config: ProactiveConfig;
   private emitSprite: SpriteEmitter | null = null;
   private pendingNotices: PendingNotice[] = [];
@@ -78,6 +83,27 @@ export class ProactiveEngine {
   /** 获取待提示事件数量 */
   get pendingCount(): number {
     return this.pendingNotices.length;
+  }
+
+  /**
+   * 获取主动提示接受率（Phase 2.1：AffectController 情感推导）
+   *
+   * 纯计算，零副作用。suggestCount 为 0 时返回默认值 0.5。
+   *
+   * @returns 接受率 0-1
+   */
+  get acceptanceRate(): number {
+    if (this.suggestCount === 0) return 0.5;
+    return this.acceptCount / this.suggestCount;
+  }
+
+  /**
+   * 记录用户接受了一次主动提示（Phase 2.1）
+   *
+   * 由宿主 UI 在用户点击"好的"时调用。
+   */
+  recordAccept(): void {
+    this.acceptCount++;
   }
 
   /**
@@ -131,6 +157,8 @@ export class ProactiveEngine {
 
     // P1-8 修复：silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
     this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false });
+    // Phase 2.1：记录一次主动提示（供 AffectController 计算接受率）
+    this.suggestCount++;
 
     // P2-DESIGN-5 修复：移除 interaction.output 双通道输出，仅通过 emitSprite 发射事件。
     // 宿主（main.ts 的事件监听器）负责接收 proactivePrompt 事件并决定是否展示为 banner。

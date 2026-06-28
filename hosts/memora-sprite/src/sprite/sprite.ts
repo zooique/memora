@@ -13,7 +13,7 @@
  *   不监听键盘输入内容。
  */
 import { resolve } from 'node:path';
-import type { Agent, AgentEventMap, AgentMetrics } from 'memora';
+import type { Agent, AgentEventMap, AgentMetrics, Memory } from 'memora';
 import type { VectorStore, ITracer } from 'memora';
 import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
@@ -23,6 +23,12 @@ import { loadSpriteConfig, saveSpriteConfig, applyConfigField, DEFAULT_SPRITE_CO
 import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine, PresenceController } from './controllers/index.js';
 import type { DashboardData, RapportAssessment, IPowerMonitor, IApp } from './controllers/index.js';
+import { AffectController } from './controllers/affectController.js';
+import type { AffectState } from './controllers/affectController.js';
+import { RapportController } from './controllers/rapportController.js';
+import type { RapportState } from './controllers/rapportController.js';
+import { ContextAwareness } from './controllers/contextAwareness.js';
+import type { ContextState } from './controllers/contextAwareness.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
@@ -49,10 +55,16 @@ export interface SpriteEventMap {
   decayCompleted: { decayedCount: number };
   /** Phase 3.2：用户在场状态变化（离开/回来） */
   presenceChanged: { state: 'present' | 'away'; timestamp: string; awayDurationMs?: number; reason: string };
+  /** Phase 2.1：情感基调更新（推导完成后触发） */
+  affectUpdated: AffectState;
+  /** Phase 3：默契度更新（推导完成后触发，与 affectUpdated 同时发射） */
+  rapportUpdated: RapportState;
+  /** Phase 4：对话上下文更新（推导完成后触发，与 affectUpdated 同时发射） */
+  contextUpdated: ContextState;
 }
 
-// 重新导出 DashboardData 供外部使用
-export type { DashboardData };
+// 重新导出 DashboardData 和 AffectState 供外部使用
+export type { DashboardData, AffectState };
 
 /** 精灵主控构造选项（P3-DESIGN-1：位置参数 → options 对象） */
 export interface SpriteOptions {
@@ -105,6 +117,12 @@ export class Sprite {
   private proactiveEngine: ProactiveEngine;
   /** Phase 3.2：在场状态控制器（可选，需宿主注入 powerMonitor/app） */
   private presenceController: PresenceController | null = null;
+  /** Phase 2.1：情感基调控制器（纯代码推导，从记忆数据实时计算四维情感基调） */
+  private affectController: AffectController;
+  /** Phase 3：默契度控制器（纯代码推导，从行为信号推导信任度+熟悉度） */
+  private rapportController: RapportController;
+  /** Phase 4：对话上下文感知器（纯代码推导，从最近记忆推导节奏+话题+深度） */
+  private contextAwareness: ContextAwareness;
   /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
 
@@ -126,6 +144,23 @@ export class Sprite {
       cooldownMs: this.config.proactiveCooldownMs,
       silentMode: this.config.silentMode,
     });
+
+    // Phase 2.1：初始化情感基调控制器
+    this.affectController = new AffectController({
+      acceptanceRate: 0.5, // 初始默认值，后续由 ProactiveEngine 更新
+      currentPersona: null,
+    });
+
+    // Phase 3：初始化默契度控制器
+    this.rapportController = new RapportController({
+      acceptanceRate: 0.5,
+      interactionDays: 0,
+      totalMessages: 0,
+      sourceDiversity: 0,
+    });
+
+    // Phase 4：初始化对话上下文感知器
+    this.contextAwareness = new ContextAwareness();
 
     // 设置主动提示引擎的发射器
     this.proactiveEngine.setEmitter((event, payload) => {
@@ -221,6 +256,9 @@ export class Sprite {
 
     // Phase 3.2：启动在场状态控制器（如已注入）
     this.presenceController?.start();
+
+    // Phase 2.1：首次推导情感基调并注入 system prompt
+    this.deriveAndInjectAffect();
 
     logger.info('精灵已启动，等待唤醒...');
   }
@@ -807,6 +845,8 @@ export class Sprite {
     const onPersonaSwitched = (e: AgentEventMap['personaSwitched']) => {
       this.emitSprite('personaChanged', { from: e.from, to: e.to });
       this.proactiveEngine.addNotice('persona', `${e.from ?? '(无)'} → ${e.to}`);
+      // Phase 2.1：角色切换后重新推导情感基调（traits 可能不同）
+      this.deriveAndInjectAffect();
       logger.info({ from: e.from, to: e.to }, '角色切换');
     };
     this.agentHandlers.personaSwitched = onPersonaSwitched;
@@ -892,6 +932,118 @@ export class Sprite {
   }
 
   // ─── 触发器处理 ────────────────────────────────────────
+
+  /**
+   * 推导情感基调并注入到 system prompt（Phase 2.1）
+   *
+   * 调用时机：
+   *   1. Sprite.start() 首次启动时
+   *   2. 角色切换后（personaSwitched 事件）
+   *   3. 主动提示后（proactivePrompt 事件）
+   *
+   * 纯代码计算，不依赖 LLM，不持久化。推导后发射 affectUpdated 事件供 UI 消费。
+   */
+  private deriveAndInjectAffect(): void {
+    // 更新 AffectController 配置（角色 + 接受率）
+    this.affectController.updateOptions({
+      acceptanceRate: this.proactiveEngine.acceptanceRate,
+      currentPersona: this.agent.persona?.getActive() ?? null,
+    });
+
+    // 获取所有记忆用于推导（上限 1000 条，MemoryInspector.list 按 score 降序）
+    const memories = this.agent.memory?.list(1000) ?? [];
+    const affect = this.affectController.deriveAffect(memories);
+
+    // 生成情感描述文本并注入到 Agent system prompt
+    const affectPrompt = this.affectController.buildAffectPrompt(affect);
+    this.agent.injectAffect(affectPrompt);
+
+    // 发射情感基调更新事件（供 UI 仪表盘展示）
+    this.emitSprite('affectUpdated', affect);
+
+    // Phase 3：同时推导并注入默契度
+    this.deriveAndInjectRapport();
+
+    // Phase 4：同时推导并注入对话上下文
+    this.deriveAndInjectContext();
+  }
+
+  /**
+   * 推导默契度并注入到 system prompt（Phase 3）
+   *
+   * 与 deriveAndInjectAffect 互补：
+   *   - AffectController → 当前互动基调（动态，每次变化）
+   *   - RapportController → 长期关系质量（稳定，缓慢变化）
+   *
+   * 纯代码计算，不依赖 LLM，不持久化。
+   * 推导后发射 rapportUpdated 事件供 UI 消费。
+   * 复用 injectAffect 注入点，追加到 affect 之后。
+   */
+  private deriveAndInjectRapport(): void {
+    // 获取所有记忆用于推导
+    const memories = this.agent.memory?.list(1000) ?? [];
+
+    // 计算交互天数（从最早记忆的创建时间推算）
+    const interactionDays = this.calculateInteractionDays(memories);
+
+    // 更新 RapportController 配置
+    this.rapportController.updateOptions({
+      acceptanceRate: this.proactiveEngine.acceptanceRate,
+      interactionDays,
+      totalMessages: this.agent.getMetrics?.().llm.callCount ?? 0,
+      sourceDiversity: new Set(memories.map((m) => m.source)).size,
+    });
+
+    const rapport = this.rapportController.deriveRapport(memories);
+
+    // 生成默契度描述文本并注入到 Agent system prompt（复用同一注入点）
+    const rapportPrompt = this.rapportController.buildRapportPrompt(rapport);
+    this.agent.injectAffect(rapportPrompt);
+
+    // 发射默契度更新事件（供 UI 仪表盘展示）
+    this.emitSprite('rapportUpdated', rapport);
+  }
+
+  /**
+   * 计算交互天数（从最早记忆的创建时间推算）
+   *
+   * @param memories 记忆列表
+   * @returns 交互天数（最早记忆距今的天数）
+   */
+  private calculateInteractionDays(memories: Memory[]): number {
+    if (memories.length === 0) return 0;
+    const oldestTimestamp = memories.reduce((min, m) => {
+      const ts = new Date(m.createdAt).getTime();
+      return ts < min ? ts : min;
+    }, Date.now());
+    return Math.floor((Date.now() - oldestTimestamp) / (1000 * 60 * 60 * 24));
+  }
+
+  /**
+   * 推导对话上下文并注入到 system prompt（Phase 4）
+   *
+   * 与 deriveAndInjectAffect / deriveAndInjectRapport 互补，形成完整感知三角：
+   *   - AffectController → 当前互动基调（语气）
+   *   - RapportController → 长期关系质量（信任）
+   *   - ContextAwareness → 当前对话上下文（节奏 + 话题 + 深度）
+   *
+   * 纯代码计算，不依赖 LLM，不持久化。
+   * 推导后发射 contextUpdated 事件供 UI 消费。
+   * 复用 injectAffect 注入点，追加到 affect + rapport 之后。
+   */
+  private deriveAndInjectContext(): void {
+    // 获取所有记忆用于推导
+    const memories = this.agent.memory?.list(1000) ?? [];
+
+    const context = this.contextAwareness.deriveContext(memories);
+
+    // 生成上下文感知描述文本并注入到 Agent system prompt
+    const contextPrompt = this.contextAwareness.buildContextPrompt(context);
+    this.agent.injectAffect(contextPrompt);
+
+    // 发射对话上下文更新事件（供 UI 仪表盘展示）
+    this.emitSprite('contextUpdated', context);
+  }
 
   /** 处理触发器事件 */
   private handleTrigger(payload: TriggerPayload): void {

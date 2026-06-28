@@ -147,6 +147,50 @@ export function isDecayCompletedPayload(value: unknown): value is { decayedCount
   return isObject(value) && typeof value.decayedCount === 'number';
 }
 
+/** 校验情感基调更新 payload 结构（替代 as 断言，确保四维字段类型安全） */
+export function isAffectPayload(value: unknown): value is AffectPayload {
+  return (
+    isObject(value) &&
+    typeof value.warmth === 'number' &&
+    typeof value.playfulness === 'number' &&
+    typeof value.directness === 'number' &&
+    typeof value.initiative === 'number'
+  );
+}
+
+/** 校验在场状态变化 payload 结构（替代 as 断言，确保字段类型安全） */
+export function isPresencePayload(value: unknown): value is PresencePayload {
+  return (
+    isObject(value) &&
+    (value.state === 'present' || value.state === 'away') &&
+    typeof value.timestamp === 'string' &&
+    typeof value.reason === 'string'
+  );
+}
+
+/** 校验默契度更新 payload 结构（替代 as 断言，确保四字段类型安全） */
+export function isRapportPayload(value: unknown): value is RapportPayload {
+  return (
+    isObject(value) &&
+    typeof value.trust === 'number' &&
+    typeof value.familiarity === 'number' &&
+    (value.level === 'stranger' || value.level === 'acquaintance' || value.level === 'familiar' || value.level === 'close') &&
+    typeof value.description === 'string'
+  );
+}
+
+/** 校验对话上下文更新 payload 结构（替代 as 断言，确保五字段类型安全） */
+export function isContextPayload(value: unknown): value is ContextPayload {
+  return (
+    isObject(value) &&
+    (value.rhythm === 'rapid' || value.rhythm === 'normal' || value.rhythm === 'slow' || value.rhythm === 'idle') &&
+    (value.coherence === 'focused' || value.coherence === 'moderate' || value.coherence === 'scattered' || value.coherence === 'none') &&
+    (value.depth === 'deep' || value.depth === 'moderate' || value.depth === 'shallow' || value.depth === 'none') &&
+    (value.dominantSource === null || typeof value.dominantSource === 'string') &&
+    typeof value.description === 'string'
+  );
+}
+
 /**
  * 处理主动提示事件
  *
@@ -294,6 +338,38 @@ function createSpriteEventHandlers(
     skillMatched: (msg) => handleSkillMatched(uiManager, msg),
     memoryRecalled: (msg) => handleMemoryRecalled(uiManager, msg),
     decayCompleted: (msg) => handleDecayCompleted(uiManager, msg),
+    // Phase 2.1：情感基调更新 → 仪表盘四维进度条
+    affectUpdated: (msg) => {
+      if (!isAffectPayload(msg.payload)) {
+        reportError('handleAffectUpdated', msg.payload);
+        return;
+      }
+      callbacks.onAffectUpdated?.(msg.payload);
+    },
+    // Phase 3.2：在场状态变化 → 状态指示器
+    presenceChanged: (msg) => {
+      if (!isPresencePayload(msg.payload)) {
+        reportError('handlePresenceChanged', msg.payload);
+        return;
+      }
+      callbacks.onPresenceChanged?.(msg.payload);
+    },
+    // Phase 3：默契度更新 → 仪表盘展示
+    rapportUpdated: (msg) => {
+      if (!isRapportPayload(msg.payload)) {
+        reportError('handleRapportUpdated', msg.payload);
+        return;
+      }
+      callbacks.onRapportUpdated?.(msg.payload);
+    },
+    // Phase 4：对话上下文更新 → 仪表盘展示
+    contextUpdated: (msg) => {
+      if (!isContextPayload(msg.payload)) {
+        reportError('handleContextUpdated', msg.payload);
+        return;
+      }
+      callbacks.onContextUpdated?.(msg.payload);
+    },
   };
 }
 export interface IpcListenerCallbacks {
@@ -305,6 +381,47 @@ export interface IpcListenerCallbacks {
   onAgentReady: () => void;
   /** 对话结束时回调（刷新仪表盘，获取最新 LLM 指标和记忆数据） */
   onConversationEnd?: () => void;
+  /** Phase 2.1：情感基调更新时回调（更新仪表盘四维进度条） */
+  onAffectUpdated?: (payload: AffectPayload) => void;
+  /** Phase 3.2：在场状态变化时回调（更新状态指示器） */
+  onPresenceChanged?: (payload: PresencePayload) => void;
+  /** Phase 3：默契度更新时回调（更新仪表盘默契度卡片） */
+  onRapportUpdated?: (payload: RapportPayload) => void;
+  /** Phase 4：对话上下文更新时回调（更新仪表盘上下文卡片） */
+  onContextUpdated?: (payload: ContextPayload) => void;
+}
+
+/** Phase 2.1：情感基调载荷 */
+export interface AffectPayload {
+  warmth: number;
+  playfulness: number;
+  directness: number;
+  initiative: number;
+}
+
+/** Phase 3.2：在场状态变化载荷 */
+export interface PresencePayload {
+  state: 'present' | 'away';
+  timestamp: string;
+  awayDurationMs?: number;
+  reason: string;
+}
+
+/** Phase 3：默契度更新载荷 */
+export interface RapportPayload {
+  trust: number;
+  familiarity: number;
+  level: 'stranger' | 'acquaintance' | 'familiar' | 'close';
+  description: string;
+}
+
+/** Phase 4：对话上下文更新载荷 */
+export interface ContextPayload {
+  rhythm: 'rapid' | 'normal' | 'slow' | 'idle';
+  coherence: 'focused' | 'moderate' | 'scattered' | 'none';
+  depth: 'deep' | 'moderate' | 'shallow' | 'none';
+  dominantSource: string | null;
+  description: string;
 }
 
 /**

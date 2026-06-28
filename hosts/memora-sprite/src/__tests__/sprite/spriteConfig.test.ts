@@ -32,7 +32,7 @@ vi.mock('node:fs', () => ({
 }));
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { setLogger } from 'memora';
+import { setLogger, logger } from 'memora';
 import type { ILogger } from 'memora';
 import {
   DEFAULT_SPRITE_CONFIG,
@@ -442,21 +442,24 @@ describe('spriteConfig', () => {
       expect(writeFileSync).toHaveBeenCalled();
     });
 
-    it('迁移持久化失败时 console.error 记录但已迁移配置仍可用（P2-CFG-01）', () => {
+    it('迁移持久化失败时 logger.error 记录但已迁移配置仍可用（P2-CFG-01）', () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ configVersion: 1 }));
       // 模拟持久化写入失败
       vi.mocked(writeFileSync).mockImplementation(() => {
         throw new Error('disk full');
       });
-      // 捕获 console.error，避免污染测试输出
-      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      // 捕获 logger.error，避免污染测试输出
+      const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
       const config = loadSpriteConfig();
       // 已迁移的配置仍正常返回（持久化失败不影响内存中的配置）
       expect(config.configVersion).toBe(2);
       expect(config.theme).toBe('light');
-      // 持久化失败已记录日志
-      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('迁移后持久化失败'));
+      // 持久化失败已记录日志（logger.error 格式：{ err: msg }, msg）
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ err: expect.stringContaining('disk full') }),
+        expect.stringContaining('迁移后持久化失败'),
+      );
     });
   });
 

@@ -87,7 +87,7 @@ export class JsonlAppender {
       .catch((err: unknown) => {
         // 错误隔离：记录失败但恢复 writeChain 为 resolved，不阻塞后续写入
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[jsonl-appender] 写入失败: ${msg}`);
+        logger.error({ err: msg }, '[jsonl-appender] 写入失败');
       });
   }
 

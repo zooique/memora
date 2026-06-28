@@ -9,7 +9,7 @@
  */
 
 // 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
-import { safeSetInterval, clearSafeInterval } from 'memora';
+import { safeSetInterval, clearSafeInterval, logger } from 'memora';
 
 // ─── SpriteTrigger 接口 ──────────────────────────────────
 
@@ -116,7 +116,7 @@ export class TriggerBus {
       } catch (err) {
         // 记录错误但不中断后续 handler 的分发
         const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[TriggerBus] handler 执行异常: ${msg}`);
+        logger.error({ err: msg }, '[TriggerBus] handler 执行异常');
       }
     }
   }

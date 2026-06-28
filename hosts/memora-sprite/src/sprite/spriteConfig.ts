@@ -256,7 +256,7 @@ export function loadSpriteConfig(): Required<SpriteConfig> {
       } catch (persistErr) {
         // 持久化失败仅记录日志，不影响本次加载已迁移的配置
         const msg = persistErr instanceof Error ? persistErr.message : String(persistErr);
-        console.error(`[spriteConfig] 迁移后持久化失败: ${msg}`);
+        logger.error({ err: msg }, '[spriteConfig] 迁移后持久化失败');
       }
     }
 

@@ -207,6 +207,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         void memoryController.loadDashboard();
       }, 1000);
     },
+    // Phase 2.1：情感基调更新 → 仪表盘四维进度条
+    onAffectUpdated: (payload) => {
+      memoryController.updateAffectDisplay(payload);
+    },
+    // Phase 3：默契度更新 → 仪表盘默契度卡片
+    onRapportUpdated: (payload) => {
+      memoryController.updateRapportDisplay(payload);
+    },
+    // Phase 4：对话上下文更新 → 仪表盘上下文卡片
+    onContextUpdated: (payload) => {
+      memoryController.updateContextDisplay(payload);
+    },
   });
 
   // UX-PP-05 注册气泡内错误重试回调（复用 retryLastUserInput，供错误气泡内"重试"按钮调用）

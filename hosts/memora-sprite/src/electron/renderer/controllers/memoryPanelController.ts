@@ -843,6 +843,126 @@ export function createMemoryController(uiManager: UIManager) {
     }, DASHBOARD_DEBOUNCE_MS);
   }
 
+  /**
+   * Phase 2.1：更新情感基调展示（四维进度条）
+   *
+   * 由 affectUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
+   * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
+   *
+   * @param affect 四维情感基调数值
+   */
+  function updateAffectDisplay(affect: { warmth: number; playfulness: number; directness: number; initiative: number }): void {
+    // 定义四维映射：id 前缀 → 数值
+    const dimensions: Array<{ id: string; value: number }> = [
+      { id: 'warmth', value: affect.warmth },
+      { id: 'directness', value: affect.directness },
+      { id: 'initiative', value: affect.initiative },
+      { id: 'playfulness', value: affect.playfulness },
+    ];
+
+    // ─── 仪表盘进度条（仅在仪表盘已加载时更新） ──────
+    const affectDisplay = document.getElementById('affect-display');
+    if (affectDisplay) {
+      affectDisplay.classList.remove('hidden');
+
+      for (const dim of dimensions) {
+        const fillEl = document.getElementById(`affect-${dim.id}`);
+        const levelEl = document.getElementById(`affect-${dim.id}-level`);
+        if (!fillEl || !levelEl) continue;
+
+        fillEl.style.width = `${Math.round(dim.value * 100)}%`;
+        fillEl.style.background = getAffectColor(dim.value);
+        levelEl.textContent = getAffectLevel(dim.value);
+      }
+    }
+
+    // ─── Phase 2.2：对话面板情感指示器（四色圆点，始终可见） ────
+    const chatIndicator = document.getElementById('chat-affect-indicator');
+    if (chatIndicator) {
+      chatIndicator.classList.remove('hidden');
+      for (const dim of dimensions) {
+        const dotEl = document.getElementById(`chat-affect-${dim.id}`);
+        if (dotEl) {
+          dotEl.style.background = getAffectColor(dim.value);
+          // 更新 title 属性：hover 时显示维度名 + 等级
+          dotEl.title = `${dotEl.title.split('：')[0]}：${getAffectLevel(dim.value)}`;
+        }
+      }
+    }
+  }
+
+  /**
+   * 将 0-1 数值映射为中文等级描述
+   */
+  function getAffectLevel(value: number): string {
+    if (value < 0.33) return '低';
+    if (value < 0.67) return '中';
+    return '高';
+  }
+
+  /**
+   * 将 0-1 数值映射为进度条颜色
+   *
+   * 低→蓝色(#5B8DEF) 中→绿色(#4CAF50) 高→橙色(#FF9800)
+   */
+  function getAffectColor(value: number): string {
+    if (value < 0.33) return '#5B8DEF';
+    if (value < 0.67) return '#4CAF50';
+    return '#FF9800';
+  }
+
+  /**
+   * 将默契度等级映射为中文标签（Phase 3）
+   */
+  function getRapportLevelLabel(level: string): string {
+    switch (level) {
+      case 'stranger': return '初识';
+      case 'acquaintance': return '相识';
+      case 'familiar': return '熟悉';
+      case 'close': return '亲密';
+      default: return level;
+    }
+  }
+
+  /**
+   * 将对话节奏映射为中文标签（Phase 4，与 ContextAwareness.describeRhythm 一致）
+   */
+  function ContextAwarenessDescribeRhythm(rhythm: string): string {
+    switch (rhythm) {
+      case 'rapid': return '快节奏';
+      case 'normal': return '正常';
+      case 'slow': return '慢节奏';
+      case 'idle': return '空闲';
+      default: return rhythm;
+    }
+  }
+
+  /**
+   * 将话题连贯性映射为中文标签（Phase 4，与 ContextAwareness.describeCoherence 一致）
+   */
+  function ContextAwarenessDescribeCoherence(coherence: string): string {
+    switch (coherence) {
+      case 'focused': return '专注';
+      case 'moderate': return '中等';
+      case 'scattered': return '分散';
+      case 'none': return '无';
+      default: return coherence;
+    }
+  }
+
+  /**
+   * 将对话深度映射为中文标签（Phase 4，与 ContextAwareness.describeDepth 一致）
+   */
+  function ContextAwarenessDescribeDepth(depth: string): string {
+    switch (depth) {
+      case 'deep': return '深度讨论';
+      case 'moderate': return '一般讨论';
+      case 'shallow': return '浅层问答';
+      case 'none': return '无';
+      default: return depth;
+    }
+  }
+
   return {
     setupMemoryPanel,
     loadMemoryList,
@@ -851,6 +971,92 @@ export function createMemoryController(uiManager: UIManager) {
     loadDashboardDebounced,
     pulseCounter,
     renderSourceHealth,
+    /**
+     * Phase 2.1：更新情感基调展示（四维进度条）
+     *
+     * 由 affectUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
+     * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
+     */
+    updateAffectDisplay,
+    /**
+     * Phase 3：更新默契度展示（等级徽章 + 双进度条 + 描述）
+     *
+     * 由 rapportUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
+     */
+    updateRapportDisplay: (rapport: { trust: number; familiarity: number; level: string; description: string }) => {
+      const rapportDisplay = document.getElementById('rapport-display');
+      if (!rapportDisplay) return;
+
+      // 显示默契度卡片
+      rapportDisplay.classList.remove('hidden');
+
+      // 更新等级徽章
+      const badgeEl = document.getElementById('rapport-level-badge');
+      if (badgeEl) {
+        badgeEl.textContent = getRapportLevelLabel(rapport.level);
+        badgeEl.setAttribute('data-level', rapport.level);
+      }
+
+      // 更新信任度进度条
+      const trustFill = document.getElementById('rapport-trust');
+      const trustLevel = document.getElementById('rapport-trust-level');
+      if (trustFill && trustLevel) {
+        trustFill.style.width = `${Math.round(rapport.trust * 100)}%`;
+        trustFill.style.background = getAffectColor(rapport.trust);
+        trustLevel.textContent = getAffectLevel(rapport.trust);
+      }
+
+      // 更新熟悉度进度条
+      const familiarityFill = document.getElementById('rapport-familiarity');
+      const familiarityLevel = document.getElementById('rapport-familiarity-level');
+      if (familiarityFill && familiarityLevel) {
+        familiarityFill.style.width = `${Math.round(rapport.familiarity * 100)}%`;
+        familiarityFill.style.background = getAffectColor(rapport.familiarity);
+        familiarityLevel.textContent = getAffectLevel(rapport.familiarity);
+      }
+
+      // 更新描述文本
+      const descEl = document.getElementById('rapport-description');
+      if (descEl) {
+        descEl.textContent = rapport.description;
+      }
+    },
+    /**
+     * Phase 4：更新对话上下文展示（三列指标）
+     *
+     * 由 contextUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
+     */
+    updateContextDisplay: (context: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string }) => {
+      const contextDisplay = document.getElementById('context-display');
+      if (!contextDisplay) return;
+
+      // 显示上下文卡片
+      contextDisplay.classList.remove('hidden');
+
+      // 更新节奏
+      const rhythmEl = document.getElementById('context-rhythm');
+      if (rhythmEl) {
+        rhythmEl.textContent = ContextAwarenessDescribeRhythm(context.rhythm);
+      }
+
+      // 更新话题
+      const coherenceEl = document.getElementById('context-coherence');
+      if (coherenceEl) {
+        coherenceEl.textContent = ContextAwarenessDescribeCoherence(context.coherence);
+      }
+
+      // 更新深度
+      const depthEl = document.getElementById('context-depth');
+      if (depthEl) {
+        depthEl.textContent = ContextAwarenessDescribeDepth(context.depth);
+      }
+
+      // 更新描述文本
+      const descEl = document.getElementById('context-description');
+      if (descEl) {
+        descEl.textContent = context.description;
+      }
+    },
     /** IX-03 清理脉冲动画定时器 + 防抖定时器（由 renderer.ts beforeunload 调用） */
     cleanup: () => {
       for (const t of pulseTimers) window.clearTimeout(t);
