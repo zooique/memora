@@ -278,6 +278,7 @@ export class ProactiveEngine {
     // 过滤已提示过的模式，按置信度降序取 top-3
     const newPatterns = this.detectedPatterns
       .filter((p) => !this.promptedPatterns.has(p.summary))
+      .sort((a, b) => b.confidence - a.confidence) // 补充按置信度降序排序，确保取 top-3
       .slice(0, 3);
 
     for (const pattern of newPatterns) {
@@ -324,7 +325,8 @@ export class ProactiveEngine {
     // Phase 3：智能建议（健康度/回顾/画像）
     // 建议类文本已是完整句子，直接作为提示主体，不与其他事件拼接
     if (typeCounts.has('suggestion')) {
-      const suggestionSummary = summaries.find(s => s.length > 0);
+      // 按 trigger 索引取对应类型的摘要，而非全局 find（避免取到其他类型的摘要）
+      const suggestionSummary = this.findSummaryByType(triggers, summaries, 'suggestion');
       if (suggestionSummary && parts.length === 0) {
         return `${suggestionSummary}——需要我帮你处理吗？`;
       }
@@ -334,7 +336,8 @@ export class ProactiveEngine {
     }
     // Phase 2+：模式检测结果优先——比事件统计更有价值
     if (typeCounts.has('pattern')) {
-      const patternSummary = summaries.find(s => s.length > 0);
+      // 按 trigger 索引取 pattern 类型的摘要，避免取到其他类型的摘要
+      const patternSummary = this.findSummaryByType(triggers, summaries, 'pattern');
       if (patternSummary) {
         // 模式提示本身就是完整句子，优先返回
         if (parts.length === 0) {
@@ -360,6 +363,26 @@ export class ProactiveEngine {
     prompt += this.buildSuffix();
 
     return prompt;
+  }
+
+  /**
+   * 按 trigger 类型查找对应的摘要文本
+   *
+   * triggers 和 summaries 是平行数组，triggers[i] 对应 summaries[i]。
+   * 此方法返回指定 trigger 类型的第一个非空摘要，避免取到其他类型的摘要。
+   *
+   * @param triggers 事件类型数组
+   * @param summaries 摘要文本数组（与 triggers 平行）
+   * @param type 目标事件类型
+   * @returns 匹配类型的首个非空摘要，无匹配时返回 undefined
+   */
+  private findSummaryByType(triggers: string[], summaries: string[], type: string): string | undefined {
+    for (let i = 0; i < triggers.length; i++) {
+      if (triggers[i] === type && summaries[i] && summaries[i]!.length > 0) {
+        return summaries[i];
+      }
+    }
+    return undefined;
   }
 
   /**

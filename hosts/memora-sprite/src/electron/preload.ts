@@ -6,7 +6,7 @@
  * - 敏感 API（如 Shell、FileSystem）不暴露
  * - 通信方式：ipcRenderer.invoke（请求/响应）+ ipcRenderer.on（事件推送）
  *
- * ⚠️ Sandbox 兼容性（P1-ROOT 修复）：
+ * ⚠️ Sandbox 兼容性：
  * Electron sandbox: true 要求 preload 是单个 CommonJS 文件，不能有外部模块的运行时导入。
  * 原方案 `import { IPC_CHANNELS } from './ipcChannels.js'` 会导致 ESM 多模块加载失败，
  * contextBridge.exposeInMainWorld() 静默失败，window.electronAPI 为 undefined，
@@ -23,7 +23,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { SerializedAppError } from './ipc/channels.js';
 import type { WorkProjectionPayload } from './ipc/channels.js';
-// H3 年轮审判修复：重新导出 WorkProjectionPayload，使渲染层统一从 preload 导入
+// 重新导出 WorkProjectionPayload，使渲染层统一从 preload 导入
 export type { WorkProjectionPayload };
 // 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。
 // 使用 import type：编译时擦除，不引入运行时耦合；electron 层依赖 sprite 层是合理依赖方向。
@@ -554,7 +554,7 @@ export interface ElectronAPI {
   // H3：作品投影（WorkProjectionManager 查看）
   /** 列出所有作品投影 */
   listWorkProjections: () => Promise<WorkProjectionPayload[]>;
-  /** 查看单个作品投影详情 */
+  /** 查看单个作品投影详情（API 已就绪，UI 暂用内联展开替代，供未来宿主集成使用） */
   showWorkProjection: (filePath: string) => Promise<WorkProjectionPayload | null>;
 
   // ─── FOUNDATION-SEAL Phase 4：渲染进程日志上报 ────────

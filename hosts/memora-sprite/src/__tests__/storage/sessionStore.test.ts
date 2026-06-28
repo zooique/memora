@@ -176,7 +176,7 @@ describe('SqliteSessionStore', () => {
       expect(result).toBe(false);
     });
 
-    it('P2 修复：重命名为已存在的会话名时拒绝（避免消息合并）', () => {
+    it('重命名为已存在的会话名时拒绝（避免消息合并）', () => {
       // 准备两个同日期的会话
       store.appendMessage('2026-06-16', 'session-a', makeMessage({ content: 'A 的消息' }));
       store.appendMessage('2026-06-16', 'session-b', makeMessage({ content: 'B 的消息' }));
@@ -194,7 +194,7 @@ describe('SqliteSessionStore', () => {
       expect(messagesB[0]!.content).toBe('B 的消息');
     });
 
-    it('P2 修复：不同日期的同名会话不冲突（可重命名）', () => {
+    it('不同日期的同名会话不冲突（可重命名）', () => {
       // 不同日期的同名会话不应冲突
       store.appendMessage('2026-06-15', 'main', makeMessage({ content: '昨天' }));
       store.appendMessage('2026-06-16', 'chat', makeMessage({ content: '今天' }));

@@ -34,7 +34,7 @@ import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS } from '../../index.js';
 import { isValidContent } from './inputValidation.js';
 
 /**
- * 安全审计 P4 修复：脱敏 API Key 供渲染进程显示
+ * 脱敏 API Key 供渲染进程显示
  *
  * 仅保留前 3 位 + 后 4 位，中间用 **** 替代。
  * 渲染进程只需知道"已配置"状态，不需要完整密钥。
@@ -125,7 +125,7 @@ export function registerMinimalIpcHandlers(
       _event,
       llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string },
     ) => {
-      // 安全审计 P4 修复：校验 LLM 配置参数长度，防止超大值传入
+      // 校验 LLM 配置参数长度，防止超大值传入
       if (!llmConfig || typeof llmConfig.provider !== 'string' || !isValidContent(llmConfig.apiKey, 1000)) {
         return { success: false, error: '配置参数无效' };
       }
@@ -167,7 +167,7 @@ export function registerMinimalIpcHandlers(
           provider: config.llm.provider,
           model: config.llm.model,
           baseUrl: config.llm.baseUrl ?? '',
-          // 安全审计 P4 修复：脱敏 apiKey，渲染进程只需知道"已配置"状态
+          // 脱敏 apiKey，渲染进程只需知道"已配置"状态
           apiKey: maskApiKey(config.llm.apiKey ?? ''),
           temperature: config.llm.temperature,
           ...(config.llm.background ? {
@@ -211,7 +211,7 @@ export function registerMinimalIpcHandlers(
       },
       embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string },
     ) => {
-      // 安全审计 P4 修复：校验 LLM 配置参数长度，防止超大值传入
+      // 校验 LLM 配置参数长度，防止超大值传入
       if (!llmConfig || typeof llmConfig.provider !== 'string' || !isValidContent(llmConfig.apiKey, 1000)) {
         return { success: false, error: '配置参数无效' };
       }
@@ -295,7 +295,7 @@ export function registerMinimalIpcHandlers(
   // 渲染进程无 pino，通过 IPC 将错误/警告转发到主进程统一日志
   ipcMain.on(IPC_CHANNELS.RENDERER_LOG, (_event, payload: { level: 'warn' | 'error'; context: string; message: string }) => {
     const { level, context, message } = payload;
-    // 安全审计 P5 修复：校验日志参数类型和长度，防止超长日志撑大文件
+    // 校验日志参数类型和长度，防止超长日志撑大文件
     if (typeof context !== 'string' || typeof message !== 'string' || !isValidContent(message, 10000)) {
       return;
     }

@@ -46,6 +46,11 @@
   --pink:        #ad1457;  /* 浅色主题下使用深玫红色，保证 source-guardrail 标签文字对比度（WCAG AA） */
   --red:         #ff3b30;
 
+  /* 情感进度条颜色 */
+  --affect-low:  #5b8def;  /* 低值→蓝紫色 */
+  --affect-mid:  #4caf50;  /* 中值→绿色 */
+  --affect-high: #ff9800;  /* 高值→橙色 */
+
   /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
   --accent-fg:   #ffffff;  /* 浅色主题：深蓝背景 + 白字，对比度达标 */
 
@@ -74,9 +79,8 @@
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.08);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.06);
   /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用，合并到 --shadow） */
-  --shadow-banner:    0 2px 8px rgba(0, 0, 0, 0.06);
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
-  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* P1 修复：chat.css .session-search:focus 引用，聚焦环 */
+  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
   /* P2-10 小型元素阴影令牌（nav-btn active / suggestion-card 等），深色主题下加重以保证可见性 */
   --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.04);
@@ -116,6 +120,18 @@
   /* UX-FD-01 不打包字体文件，使用系统默认字体栈（跨平台一致性） */
   --font-sprite: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
   --font-mono:   'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', 'Monaco', monospace;
+
+  /* 语义化字号变量（供 layout.css/settings.css 等引用） */
+  --font-sm: 12px;  /* 小字号（辅助信息） */
+  --font-xs: 11px;  /* 超小字号（元信息、标签） */
+
+  /* 语义化背景变量（hover/次级背景） */
+  --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
+  --bg-secondary: var(--surface1);     /* 次级背景（复用 surface1） */
+
+  /* 语义化文字颜色别名（供 layout.css 等引用，与 --text/--text-2 对齐） */
+  --text-primary:   var(--text);      /* 主文字色别名 */
+  --text-secondary: var(--text-2);    /* 次级文字色别名 */
 }
 
 /* ─── 深色主题（备选，Catppuccin Mocha） ─────────────────── */
@@ -156,6 +172,11 @@
   --pink:        #f5c2e7;
   --red:         #f38ba8;
 
+  /* 情感进度条颜色（深色主题下提亮以保证对比度） */
+  --affect-low:  #89b4fa;  /* 低值→浅蓝（与深色主题 --blue 一致） */
+  --affect-mid:  #a6e3a1;  /* 中值→浅绿（与深色主题 --green 一致） */
+  --affect-high: #f9e2af;  /* 高值→浅橙（与深色主题 --yellow 一致） */
+
   /* accent 背景上的前景色（深色主题：浅蓝背景 + 深字，对比度达标） */
   --accent-fg:   #1e1e2e;
 
@@ -183,9 +204,8 @@
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.5);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.4);
   /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
-  --shadow-banner:    0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
-  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* P1 修复：chat.css .session-search:focus 引用，聚焦环 */
+  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
   /* P2-10 小型元素阴影令牌（深色主题加重以保证可见性） */
   --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.3);
@@ -212,6 +232,18 @@
   --teal-20:   rgba(148, 226, 213, 0.2);
   --peach-20:  rgba(250, 179, 135, 0.2);
   --red-20:    rgba(243, 139, 168, 0.2);  /* 错误横幅背景色 */
+
+  /* 语义化字号变量（与浅色主题一致） */
+  --font-sm: 12px;
+  --font-xs: 11px;
+
+  /* 语义化背景变量（深色主题下复用 surface1） */
+  --bg-hover:     var(--surface1);
+  --bg-secondary: var(--surface1);
+
+  /* 语义化文字颜色别名 */
+  --text-primary:   var(--text);
+  --text-secondary: var(--text-2);
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */
@@ -228,7 +260,8 @@ button, a, [role="button"], select {
 
 html, body {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  /* 使用项目统一字体变量 --font-sprite，避免硬编码 */
+  font-family: var(--font-sprite);
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
@@ -261,13 +294,6 @@ html, body {
 /* ─── 通用工具类 ───────────────────────────────────────────── */
 .hidden {
   display: none !important;
-}
-
-/* UI-IR-05 异步操作进行中反馈：半透明 + 禁用指针交互 */
-.loading {
-  opacity: 0.5;
-  pointer-events: none;
-  transition: opacity var(--transition-base) ease;
 }
 
 /* FD-02 面板级加载态：居中旋转圆环 + 文字，用于异步数据加载等待 */

@@ -18,71 +18,7 @@
 
 import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipc/channels.js';
-import { reportError, toError } from './helpers/errorHelpers.js';
-import { clearElement, formatClock } from './helpers/domHelpers.js';
-
-/**
- * 渲染审计日志列表到 #audit-list
- *
- * 按事件类型显示不同符号，时间戳相对化（1 分钟前/今天/昨天）。
- */
-async function loadAndRenderAuditLog(): Promise<void> {
-  const listEl = document.getElementById('audit-list');
-  const countEl = document.getElementById('audit-count');
-  if (!listEl || !countEl) return;
-
-  try {
-    const entries = await window.electronAPI.listAuditLog(50);
-    countEl.textContent = String(entries.length);
-    if (entries.length === 0) {
-      // U2 用 createElement 替代 innerHTML，与项目规范一致
-      clearElement(listEl);
-      const emptyDiv = document.createElement('div');
-      emptyDiv.className = 'profile-empty';
-      emptyDiv.textContent = '暂无审计记录';
-      listEl.appendChild(emptyDiv);
-      return;
-    }
-    const frag = document.createDocumentFragment();
-    for (const entry of entries) {
-      const item = document.createElement('div');
-      item.className = 'profile-item';
-      const typeSymbol = entry.type === 'path-allow' ? '✓'
-        : entry.type === 'path-deny' ? '✗'
-        : entry.type === 'write-confirm' ? '⚑'
-        : entry.type === 'write-auto' ? '◯'
-        : entry.type === 'write-decline' ? '↩'
-        : '?';
-      // H3 剪枝：复用 domHelpers.formatClock 替代手写 getHours/getMinutes + padStart
-      const timeStr = formatClock(entry.timestamp);
-      const meta = [
-        entry.path ? `路径: ${entry.path}` : '',
-        entry.tool ? `工具: ${entry.tool}` : '',
-        entry.reason ? `原因: ${entry.reason}` : '',
-      ].filter(Boolean).join(' · ');
-      const nameEl = document.createElement('div');
-      nameEl.className = 'profile-item-name';
-      nameEl.textContent = `${typeSymbol} ${entry.type} · ${timeStr}`;
-      const contentEl = document.createElement('div');
-      contentEl.className = 'profile-item-content';
-      contentEl.textContent = meta || '—';
-      item.appendChild(nameEl);
-      item.appendChild(contentEl);
-      frag.appendChild(item);
-    }
-    // U2 用 clearElement 替代 innerHTML = ''
-    clearElement(listEl);
-    listEl.appendChild(frag);
-  } catch (err) {
-    // U2 用 createElement 替代 innerHTML，与项目规范一致
-    reportError('loadAuditLog', err);
-    clearElement(listEl);
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'profile-empty';
-    errorDiv.textContent = `加载失败: ${toError(err).message}`;
-    listEl.appendChild(errorDiv);
-  }
-}
+import { reportError } from './helpers/errorHelpers.js';
 
 /**
  * 主动提示 payload 结构
@@ -698,25 +634,6 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.handleRecallMemoryTrigger();
   });
 
-  // ─── M2 审计日志（刷新/清空按钮） ────────────────────────
-  const auditRefreshBtn = document.getElementById('btn-audit-refresh');
-  if (auditRefreshBtn) {
-    auditRefreshBtn.addEventListener('click', () => {
-      loadAndRenderAuditLog();
-    });
-  }
-
-  const auditClearBtn = document.getElementById('btn-audit-clear');
-  if (auditClearBtn) {
-    auditClearBtn.addEventListener('click', async () => {
-      // P3 修复：添加 try/catch，避免 clearAuditLog 异常成为未处理的 Promise rejection
-      try {
-        await window.electronAPI.clearAuditLog();
-        await loadAndRenderAuditLog();
-      } catch (error) {
-        reportError('clearAuditLog', error);
-        uiManager.showToast('清空审计日志失败', 'error');
-      }
-    });
-  }
+  // M2 审计日志按钮绑定已迁移到 AuditPanelManager（panels/auditPanelManager.ts），
+  // 与 ProfilePanelManager / WorkProjectionPanelManager 同模式，由 init() 统一绑定。
 }

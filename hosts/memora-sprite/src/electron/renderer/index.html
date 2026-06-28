@@ -196,6 +196,9 @@
           </div>
         </div>
 
+        <!-- 隐藏的建议计数元素（供 updateLearningProgress 读取，避免 DOM 查询缺失） -->
+        <span id="suggestion-count" class="hidden">0</span>
+
         <!-- 学习与回顾：聚合配置建议/画像/投影/洞察 + 今日回顾 + 推荐 -->
         <div id="learning-progress" class="dashboard-section hidden">
           <h3>📚 学习与回顾</h3>
@@ -227,6 +230,8 @@
             <span class="review-trend-direction" id="review-trend-dir">—</span>
           </div>
           <div class="review-trend-bars" id="review-trend-bars"></div>
+          <!-- 最近洞察列表（渲染 ReviewData.insights.recent） -->
+          <ul id="recent-insights-list" class="recent-insights-list"></ul>
           <!-- 推荐列表（合并自 recommendations） -->
           <ul id="recommendation-list" class="suggestion-list"></ul>
         </div>
@@ -357,7 +362,6 @@
             <option value="guardrail">guardrail</option>
             <option value="skill">skill</option>
             <option value="rule">rule</option>
-            <!-- P2 修复：补充 persona 和 session 选项，与 getSourceColorClass 和添加记忆 datalist 保持一致 -->
             <option value="persona">persona</option>
             <option value="session">session</option>
           </select>
@@ -777,7 +781,6 @@
             <span class="agent-status-text">检测中…</span>
           </div>
           <div class="settings-actions-buttons">
-          <!-- P1 修复：补充按钮样式类，避免显示为浏览器默认按钮（与全站风格不一致） -->
           <!-- P3-FLOW-06 增加恢复默认按钮，用户配置出错时可一键恢复 -->
           <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
           <!-- P2-FLOW-10 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->

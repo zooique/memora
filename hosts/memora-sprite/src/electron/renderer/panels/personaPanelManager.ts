@@ -71,7 +71,7 @@ export class PersonaPanelManager {
   /** 初始化角色选择器事件监听 */
   initPersonaSelectorListeners(): void {
     if (!this.personaSelectorEl || !this.personaDropdownEl) return;
-    // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+    // 提取局部常量，避免闭包内控制流分析断裂导致的非空断言
     const selectorEl = this.personaSelectorEl;
     const dropdownEl = this.personaDropdownEl;
 

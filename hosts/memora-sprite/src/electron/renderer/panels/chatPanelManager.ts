@@ -104,7 +104,6 @@ export class ChatPanelManager {
 
   // ─── 共享状态引用（由 UIManager 传入，引用共享） ────────
 
-  // FOUNDATION-SEAL Phase 2：state 字段已移除，改通过 host.setStreaming/isStreaming 封装
   /** 活跃的流式消息映射（messageId → DOM 元素） */
   private streamingMessages: Map<string, HTMLElement>;
 
@@ -278,6 +277,31 @@ export class ChatPanelManager {
         return;
       }
     });
+
+    // 键盘可访问性：在 messagesEl 上注册 keydown 委托，
+    // 处理 Enter/Space 键触发 data-action="recall" 和 data-action="toggle-collapse" 元素
+    this.events.addEventListener(this.messagesEl, 'keydown', (e: Event) => {
+      const ke = e as KeyboardEvent;
+      // 仅处理 Enter 和 Space 键
+      if (ke.key !== 'Enter' && ke.key !== ' ') return;
+      const target = ke.target as HTMLElement;
+      // 召回记忆项
+      const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
+      if (recallItem) {
+        ke.preventDefault(); // 防止 Space 滚动页面
+        const name = recallItem.dataset.name ?? '';
+        this.memoryRecallClickCallback?.(name);
+        return;
+      }
+      // 工具调用折叠头
+      const collapseHeader = target.closest<HTMLElement>('[data-action="toggle-collapse"]');
+      if (collapseHeader) {
+        ke.preventDefault(); // 防止 Space 滚动页面
+        const card = collapseHeader.closest<HTMLElement>('.tool-call-card');
+        card?.classList.toggle('collapsed');
+        return;
+      }
+    });
   }
 
   // ─── 生命周期 ──────────────────────────────────────────
@@ -380,7 +404,9 @@ export class ChatPanelManager {
     this.host.hideEmptyState();
 
     // Phase 1：日期变化时插入日期分隔符
-    const msgDate = new Date(message.timestamp ?? Date.now());
+    // 防御无效时间戳导致 toISOString 抛 RangeError（降级为当前时间）
+    const rawDate = new Date(message.timestamp ?? Date.now());
+    const msgDate = isNaN(rawDate.getTime()) ? new Date() : rawDate;
     const dateStr = msgDate.toISOString().slice(0, 10); // YYYY-MM-DD
     if (this.lastMessageDate && dateStr !== this.lastMessageDate) {
       this.insertDateSeparator(msgDate);

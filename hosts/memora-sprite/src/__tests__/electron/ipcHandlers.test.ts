@@ -1,5 +1,5 @@
 /**
- * IPC 处理器测试 — P1 修复回归测试
+ * IPC 处理器测试 — IPC handler 注册/清理回归测试
  *
  * 覆盖范围：
  * - P1-1: registerIpcHandlers 幂等性（reinitAgent 重复调用不抛错）
@@ -110,7 +110,7 @@ function createMockIpcContext(options: {
 
 // ─── 测试套件 ─────────────────────────────────────────────
 
-describe('ipcHandlers — P1 修复回归测试', () => {
+describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
   beforeEach(() => {
     // 每个测试前清空捕获的回调，避免测试间污染
     handleCallbacks.clear();
@@ -147,11 +147,11 @@ describe('ipcHandlers — P1 修复回归测试', () => {
 
       registerIpcHandlers(ctx as never);
 
-      // 验证 removeHandler 被调用的通道列表包含 P1 修复补充的三个通道
+      // 验证 removeHandler 被调用的通道列表包含三个通道
       const removeHandlerCalls = (ipcMain.removeHandler as ReturnType<typeof vi.fn>).mock.calls;
       const removedChannels = removeHandlerCalls.map((call: unknown[]) => call[0] as string);
 
-      // P1 修复的关键断言：这三个通道必须被 removeHandler 清理，
+      // 关键断言：这三个通道必须被 removeHandler 清理，
       // 否则 reinitAgent 时 ipcMain.handle 会抛 "second handler" 错误
       expect(removedChannels).toContain('session-switch');
       expect(removedChannels).toContain('session-delete');

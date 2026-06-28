@@ -147,7 +147,8 @@ export function buildReviewData(
 
   const today: DailyReview = {
     date: todayStr,
-    messageCount: dashboard.total, // 暂时用记忆总数代替（消息数需要从会话系统获取）
+    // messageCount 语义为"当天消息数"，会话系统未接入前保持 0（与下方 daily 一致）
+    messageCount: 0,
     newMemories: todayMemories.length,
     newInsights: todayInsights.length,
   };

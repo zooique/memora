@@ -113,13 +113,13 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, messages: [], error: '无效的会话名' };
       }
 
-      // P2 修复：切换会话前检查是否有进行中对话，有则拒绝
+      // 切换会话前检查是否有进行中对话，有则拒绝
       // 避免旧对话的后续消息持久化到新会话，导致会话内容串扰
       if (ctx.getAbortController()) {
         return { success: false, messages: [], error: '有进行中的对话，请等待完成或中断后再切换会话' };
       }
 
-      // QC-19 P1 修复：添加 sessionManager null 检查
+      // 添加 sessionManager null 检查
       if (!ctx.agent.sessionManager) {
         return { success: false, messages: [], error: 'SessionManager 未初始化' };
       }
@@ -208,8 +208,6 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       return { success: false, error: toError(error).message };
     }
   });
-
-  // SESSION_NEW 已移除：会话按天自动存储，无需手动新建
 
   // FD-A1 列出所有会话（按日期聚合，每日期最多一条）
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {

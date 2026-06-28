@@ -110,21 +110,6 @@ export function showPanelLoading(container: Element, text = '加载中...'): voi
   container.appendChild(wrapper);
 }
 
-/**
- * FD-02 隐藏容器中的加载态
- *
- * 遍历容器子元素，移除所有 .panel-loading 元素。
- * 仅清除加载态，不影响其他内容（如已渲染的列表或空状态）。
- *
- * @param container 目标容器元素
- */
-export function hidePanelLoading(container: Element): void {
-  const loadings = container.querySelectorAll('.panel-loading');
-  for (const el of loadings) {
-    el.remove();
-  }
-}
-
 // ─── 时间格式化 ─────────────────────────────────────────
 
 /**

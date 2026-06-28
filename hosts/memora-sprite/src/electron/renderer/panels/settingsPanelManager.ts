@@ -48,6 +48,13 @@ export interface SettingsPanelHost {
    * UI-AUDIT: 修复接口缺失导致类型错误（原调用 this.host.switchPanel 但接口未声明）
    */
   switchPanel(panel: 'chat' | 'memories' | 'settings'): void;
+  /**
+   * 设置面板内 tab 切换回调（刷新对应 tab 的数据）
+   *
+   * 当用户切换到 profile / work / audit / skill tab 时触发，
+   * 让宿主调用对应 PanelManager 的 load() 刷新数据。
+   */
+  onSettingsTabSwitch?(tab: string): void;
 }
 
 // ─── 设置面板管理器类 ─────────────────────────────────────
@@ -302,7 +309,7 @@ export class SettingsPanelManager {
 
     // LLM 预设切换：自动填充 provider/model/baseUrl
     if (this.cfgLlmPreset) {
-      // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+      // 提取局部常量，避免闭包内控制流分析断裂导致的非空断言
       const presetEl = this.cfgLlmPreset;
       this.events.addEventListener(presetEl, 'change', () => {
         const presetKey = presetEl.value;
@@ -362,6 +369,7 @@ export class SettingsPanelManager {
    *
    * 点击 tab 按钮时切换对应的内容区显示，
    * 保持 tab 按钮的 active 状态同步。
+   * 切换到 profile / work / audit / skill tab 时触发宿主回调刷新数据。
    */
   private initSettingsTabListeners(): void {
     const tabButtons = document.querySelectorAll<HTMLElement>('.settings-tab');
@@ -384,6 +392,9 @@ export class SettingsPanelManager {
             content.classList.remove('active');
           }
         });
+
+        // 触发宿主回调：刷新对应 tab 的数据
+        this.host.onSettingsTabSwitch?.(targetTab);
       });
     });
   }
@@ -424,7 +435,6 @@ export class SettingsPanelManager {
   private initBackgroundProviderToggle(): void {
     if (!this.cfgBgEnabled) return;
 
-    // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
     const bgEnabledEl = this.cfgBgEnabled;
     const bgFields = [this.cfgBgProvider, this.cfgBgModel, this.cfgBgBaseUrl, this.cfgBgApiKey, this.cfgBgToggleKey];
     const applyState = (enabled: boolean) => {
@@ -571,7 +581,7 @@ export class SettingsPanelManager {
       model: this.cfgLlmModel?.value.trim() ?? '',
       baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
       apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
-      // FD-FIX-TEMP：temperature=0 是合法值（确定性输出），不能用 || 0.7（会把 0 视为 falsy）
+      // temperature=0 是合法值（确定性输出），不能用 || 0.7（会把 0 视为 falsy）
       // 仅当字段为空或解析为 NaN 时才回退到默认值 0.7
       temperature: this.parseTemperature(this.cfgLlmTemperature?.value),
     };
@@ -603,7 +613,7 @@ export class SettingsPanelManager {
   }
 
   /**
-   * 解析 temperature 输入值（FD-FIX-TEMP）
+   * 解析 temperature 输入值
    *
    * temperature=0 是合法值（用于 LLM 确定性输出），不能用 `|| 0.7` 短路，
    * 否则 0 会被视为 falsy 静默替换为 0.7，用户意图丢失。

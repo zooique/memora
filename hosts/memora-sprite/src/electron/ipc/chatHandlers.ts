@@ -31,7 +31,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
    * 流式输出架构：主进程直接消费 agent.chat()，通过专用 IPC 通道发送 chunk。
    */
   ipcMain.on(IPC_CHANNELS.USER_INPUT, (_event, text: string) => {
-    // 安全审计 P3 修复：校验用户输入长度，防止超大文本触发内存/CPU 耗尽
+    // 校验用户输入长度，防止超大文本触发内存/CPU 耗尽
     if (!isValidContent(text)) {
       return;
     }

@@ -65,6 +65,8 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
     // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
     recallItem.dataset.action = 'recall';
     recallItem.dataset.name = recall.name;
+    // P3 键盘可访问性：tabindex 使召回记忆项可通过键盘聚焦并 Enter/Space 触发
+    recallItem.setAttribute('tabindex', '0');
     recallContainer.appendChild(recallItem);
   }
   return recallContainer;

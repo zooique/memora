@@ -208,7 +208,7 @@ export function createSettingsController(uiManager: UIManager) {
       // FD-10 静默模式恢复检查：若 expiresAt 已过期，自动关闭静默模式
       if (cfg.silentMode && cfg.silentModeExpiresAt) {
         const expiresAt = new Date(cfg.silentModeExpiresAt).getTime();
-        // P3 修复：无效日期（NaN）时视为已过期，避免 setTimeout(fn, NaN) 立即触发错误关闭静默模式
+        // 无效日期（NaN）时视为已过期，避免 setTimeout(fn, NaN) 立即触发错误关闭静默模式
         if (Number.isNaN(expiresAt) || Date.now() >= expiresAt) {
           await window.electronAPI.updateConfig('silentMode', false);
           await window.electronAPI.updateConfig('silentModeExpiresAt', null);
@@ -291,6 +291,21 @@ export function createSettingsController(uiManager: UIManager) {
   }
 
   /**
+   * M2 加载审计日志数据到设置面板
+   *
+   * 调用 uiManager.loadAuditLog 代理到 AuditPanelManager，
+   * 从主进程拉取最近的审计条目并渲染到"审计"tab。
+   * 失败时由 AuditPanelManager 内部处理错误提示，不阻塞其他面板功能。
+   */
+  async function loadAuditLog(): Promise<void> {
+    try {
+      await uiManager.loadAuditLog();
+    } catch (error) {
+      reportError('loadAuditLog', error);
+    }
+  }
+
+  /**
    * P3-FLOW-10 更新 Agent 连接状态指示器
    *
    * 委托给 SettingsPanelManager 更新设置面板顶部的状态指示器。
@@ -308,6 +323,7 @@ export function createSettingsController(uiManager: UIManager) {
     loadLlmConfig,
     loadUserProfile,
     loadWorkProjections,
+    loadAuditLog,
     updateAgentStatus,
     /** QC-STATE-01 修复：暴露静默恢复回调注册方法，替代原模块级导出函数 */
     setSilentRecoveryCallback,

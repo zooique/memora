@@ -72,13 +72,13 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   const fullWindow = ctx.windowManager.getFullWindow();
   if (!fullWindow || fullWindow.isDestroyed()) return;
 
-  // P1 修复：Agent 未就绪时拒绝（reinitAgent 失败后旧 Agent 已关闭，新对话会抛错）
+  // Agent 未就绪时拒绝（reinitAgent 失败后旧 Agent 已关闭，新对话会抛错）
   if (!ctx.isAgentReady()) {
     emitStreamError(fullWindow, 'Agent 未就绪，请在设置面板中重新配置 LLM 后重试', 'Agent 未就绪');
     return;
   }
 
-  // P1 修复：竞态保护——已有进行中的对话时拒绝，避免 Agent 并发锁抛"对话繁忙"错误。
+  // 竞态保护——已有进行中的对话时拒绝，避免 Agent 并发锁抛"对话繁忙"错误。
   if (ctx.getAbortController()) {
     emitStreamError(fullWindow, '上一条消息仍在处理中，请等待完成或点击停止后再发送', '对话竞态保护');
     return;

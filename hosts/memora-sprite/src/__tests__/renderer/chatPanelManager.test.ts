@@ -108,7 +108,6 @@ function createManager(opts?: {
   `;
   const messagesEl = document.getElementById('chat-messages') as HTMLElement;
   const events = new EventTracker();
-  // FOUNDATION-SEAL Phase 2：state 已移除，改通过 host.setStreaming/isStreaming 封装
   const streamingMessages = new Map<string, HTMLElement>();
   const host = opts?.host ?? createMockHost();
   const manager = new ChatPanelManager(host, messagesEl, events, streamingMessages);
@@ -916,7 +915,6 @@ describe('空状态引导', () => {
     document.body.innerHTML = '<div id="chat-messages"></div>';
     const messagesEl = document.getElementById('chat-messages') as HTMLElement;
     const events = new EventTracker();
-    // FOUNDATION-SEAL Phase 2：state 已移除，构造函数不再接收 state 参数
     const streamingMessages = new Map<string, HTMLElement>();
     const host = createMockHost();
     const manager = new ChatPanelManager(host, messagesEl, events, streamingMessages);

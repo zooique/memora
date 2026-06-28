@@ -18,7 +18,7 @@
 
 import { getOptionalElement, clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
-import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions } from '../types.js';
+import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 
@@ -30,6 +30,8 @@ export interface MemoryPanelHost {
   showModal(modalId: string): void;
   /** 显示确认对话框（FD-07 取消按钮） */
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
+  /** 显示 toast 通知（添加记忆表单校验失败时反馈） */
+  showToast(message: string, type?: ToastType, duration?: number): void;
 }
 
 /**
@@ -136,7 +138,7 @@ export class MemoryPanelManager {
     // 记忆面板元素缺失时静默降级（不阻塞其他功能）
     if (!this.memorySearchEl || !this.memoryFilterSourceEl) return;
 
-    // QC-19 P2 修复：提取局部常量，避免闭包内控制流分析断裂导致的非空断言
+    // 提取局部常量，避免闭包内控制流分析断裂导致的非空断言
     const searchEl = this.memorySearchEl;
     const filterSourceEl = this.memoryFilterSourceEl;
 
@@ -182,6 +184,9 @@ export class MemoryPanelManager {
         const data = this.getAddMemoryFormData();
         if (data) {
           this.memoryAddCallback?.(data);
+        } else {
+          // 表单校验失败时给出反馈（之前静默跳过，用户以为按钮失灵）
+          this.host.showToast('请填写完整：来源、名称和内容', 'warning');
         }
       });
     }
@@ -196,6 +201,9 @@ export class MemoryPanelManager {
           const data = this.getAddMemoryFormData();
           if (data) {
             this.memoryAddCallback?.(data);
+          } else {
+            // Ctrl+Enter 提交校验失败时同样给出反馈
+            this.host.showToast('请填写完整：来源、名称和内容', 'warning');
           }
         }
       }) as EventListener);

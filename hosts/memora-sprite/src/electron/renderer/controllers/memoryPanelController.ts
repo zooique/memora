@@ -18,6 +18,8 @@ import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 import { getSourceColorClass } from '../panels/memoryPanelManager.js';
 import type { HealthDashboardPayload } from '../../preload.js';
+// 复用内核 getDuplicateRemovalIds，消除渲染层重复实现
+import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth.js';
 
 /** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
 
@@ -212,7 +214,7 @@ export function createMemoryController(uiManager: UIManager) {
     if (cleanupDupBtn) {
       cleanupDupBtn.addEventListener('click', () => {
         if (!currentHealthData) return;
-        const dupIds = getDuplicateIds(currentHealthData);
+        const dupIds = getDuplicateRemovalIds(currentHealthData.duplicates);
         if (dupIds.length === 0) {
           uiManager.showToast('没有可清理的重复记忆', 'info');
           return;
@@ -240,7 +242,7 @@ export function createMemoryController(uiManager: UIManager) {
     if (cleanupAllBtn) {
       cleanupAllBtn.addEventListener('click', () => {
         if (!currentHealthData) return;
-        const dupIds = getDuplicateIds(currentHealthData);
+        const dupIds = getDuplicateRemovalIds(currentHealthData.duplicates);
         const staleIds = currentHealthData.staleMemories.map((s) => s.memory.id);
         const allIds = [...new Set([...dupIds, ...staleIds])];
         if (allIds.length === 0) {
@@ -296,20 +298,6 @@ export function createMemoryController(uiManager: UIManager) {
       if (msgEl) msgEl.textContent = message;
       pendingCleanupIds = ids;
       if (cleanupDialog) cleanupDialog.classList.remove('hidden');
-    }
-
-    /**
-     * 从健康度数据中提取重复记忆的 ID（保留每组中 score 最高的一条）
-     */
-    function getDuplicateIds(data: HealthDashboardPayload): string[] {
-      const ids: string[] = [];
-      for (const group of data.duplicates) {
-        const sorted = [...group.memories].sort((a, b) => b.score - a.score);
-        for (let i = 1; i < sorted.length; i++) {
-          ids.push(sorted[i]!.id);
-        }
-      }
-      return ids;
     }
 
     // 搜索回调（Phase 2：组合搜索 — 关键词 + source + 排序 + 时间）
@@ -616,14 +604,24 @@ export function createMemoryController(uiManager: UIManager) {
       }
     } catch (error) {
       reportError('loadInsights', error);
-      // FD-02 加载失败时清除加载态，显示降级文案
+      // 加载失败时显示带重试按钮的错误状态（与 loadMemoryList 的 showPanelError 一致）
       if (distEl) {
         clearElement(distEl);
-        distEl.textContent = '加载失败，请重试';
+        distEl.textContent = '加载失败';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'panel-error-btn inline-retry-btn';
+        retryBtn.textContent = '重试';
+        retryBtn.addEventListener('click', () => void loadInsights());
+        distEl.appendChild(retryBtn);
       }
       if (summaryEl) {
         clearElement(summaryEl);
-        summaryEl.textContent = '加载失败，请重试';
+        summaryEl.textContent = '加载失败';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'panel-error-btn inline-retry-btn';
+        retryBtn.textContent = '重试';
+        retryBtn.addEventListener('click', () => void loadInsights());
+        summaryEl.appendChild(retryBtn);
       }
       // 洞察加载失败不阻塞记忆面板主流程
     }
@@ -738,12 +736,19 @@ export function createMemoryController(uiManager: UIManager) {
 
     } catch (error) {
       reportError('loadHealthDashboard', error);
-      // FD-02 加载失败时清除加载态，显示降级文案
+      // 加载失败时清空 currentHealthData，避免清理按钮基于过期数据触发
+      currentHealthData = null;
+      // 加载失败时显示带重试按钮的错误状态（与 loadMemoryList 的 showPanelError 一致）
       if (metricsEl) {
         clearElement(metricsEl);
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error-state';
-        errorDiv.textContent = '加载失败，请重试';
+        errorDiv.textContent = '加载失败';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'panel-error-btn inline-retry-btn';
+        retryBtn.textContent = '重试';
+        retryBtn.addEventListener('click', () => void loadHealthDashboard());
+        errorDiv.appendChild(retryBtn);
         metricsEl.appendChild(errorDiv);
       }
       // 健康度加载失败不阻塞记忆面板主流程
@@ -774,12 +779,18 @@ export function createMemoryController(uiManager: UIManager) {
       }
     } catch (error) {
       reportError('loadMemoryList', error);
-      // 加载失败时清除加载态，显示错误状态
+      // 加载失败时清除加载态，显示带重试按钮的内联错误状态
+      // 与 loadInsights/loadHealthDashboard 一致——使用 createElement + textContent，避免 innerHTML（XSS 防御 + 项目规范）
       if (listEl) {
         clearElement(listEl);
         const errorDiv = document.createElement('div');
         errorDiv.className = 'error-state';
-        errorDiv.innerHTML = '<span class="error-icon">⚠️</span><span class="error-message">加载记忆列表失败</span>';
+        errorDiv.textContent = '加载记忆列表失败';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'panel-error-btn inline-retry-btn';
+        retryBtn.textContent = '重试';
+        retryBtn.addEventListener('click', () => void loadMemoryList());
+        errorDiv.appendChild(retryBtn);
         listEl.appendChild(errorDiv);
       }
       uiManager.showPanelError('memory', '加载记忆列表失败，请检查连接后重试', () => loadMemoryList());
@@ -865,6 +876,19 @@ export function createMemoryController(uiManager: UIManager) {
       // OBS-01 Agent 运行时指标渲染（消费内核 agent.getMetrics()）
       renderAgentMetrics(data.metrics);
 
+      // 更新记忆总数（data.total 为全量记忆数，不受筛选影响）
+      const memoryCountEl = document.getElementById('memory-count');
+      if (memoryCountEl) memoryCountEl.textContent = String(data.total);
+
+      // 更新洞察计数（bySource 中 source='insight' 的记忆数）
+      const insightCount = data.bySource['insight'] ?? 0;
+      const insightCountEl = document.getElementById('insight-count');
+      if (insightCountEl) insightCountEl.textContent = String(insightCount);
+
+      // 更新建议计数（suggestions 数组长度，供 updateLearningProgress 读取）
+      const suggestionCountEl = document.getElementById('suggestion-count');
+      if (suggestionCountEl) suggestionCountEl.textContent = String(data.suggestions.length);
+
       // GAP-1 已加载技能列表渲染（消费内核 agent.skills.list）
       renderSkills(data.skills);
 
@@ -916,6 +940,25 @@ export function createMemoryController(uiManager: UIManager) {
           if (day.date === today) bar.classList.add('today');
           bar.title = `${day.date}: ${day.newMemories} 条记忆`;
           barsEl.appendChild(bar);
+        }
+      }
+
+      // ─── 最近洞察列表（渲染 ReviewData.insights.recent） ─
+      const insightsListEl = document.getElementById('recent-insights-list');
+      if (insightsListEl) {
+        clearElement(insightsListEl);
+        for (const insight of data.insights.recent) {
+          const li = document.createElement('li');
+          li.className = 'recent-insight-item';
+          const nameEl = document.createElement('span');
+          nameEl.className = 'recent-insight-name';
+          nameEl.textContent = insight.name;
+          const previewEl = document.createElement('span');
+          previewEl.className = 'recent-insight-preview';
+          previewEl.textContent = insight.contentPreview;
+          li.appendChild(nameEl);
+          li.appendChild(previewEl);
+          insightsListEl.appendChild(li);
         }
       }
 
@@ -1181,14 +1224,15 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
-   * 将 0-1 数值映射为进度条颜色
+   * 将 0-1 数值映射为进度条颜色（CSS 变量引用）
    *
-   * 低→蓝色(#5B8DEF) 中→绿色(#4CAF50) 高→橙色(#FF9800)
+   * 低→var(--affect-low) 中→var(--affect-mid) 高→var(--affect-high)
+   * 使用 CSS 变量支持主题切换
    */
   function getAffectColor(value: number): string {
-    if (value < 0.33) return '#5B8DEF';
-    if (value < 0.67) return '#4CAF50';
-    return '#FF9800';
+    if (value < 0.33) return 'var(--affect-low)';
+    if (value < 0.67) return 'var(--affect-mid)';
+    return 'var(--affect-high)';
   }
 
   /**
@@ -1207,7 +1251,7 @@ export function createMemoryController(uiManager: UIManager) {
   /**
    * 将对话节奏映射为中文标签（Phase 4，与 ContextAwareness.describeRhythm 一致）
    */
-  function ContextAwarenessDescribeRhythm(rhythm: string): string {
+  function describeRhythm(rhythm: string): string {
     switch (rhythm) {
       case 'rapid': return '快节奏';
       case 'normal': return '正常';
@@ -1220,7 +1264,7 @@ export function createMemoryController(uiManager: UIManager) {
   /**
    * 将话题连贯性映射为中文标签（Phase 4，与 ContextAwareness.describeCoherence 一致）
    */
-  function ContextAwarenessDescribeCoherence(coherence: string): string {
+  function describeCoherence(coherence: string): string {
     switch (coherence) {
       case 'focused': return '专注';
       case 'moderate': return '中等';
@@ -1233,7 +1277,7 @@ export function createMemoryController(uiManager: UIManager) {
   /**
    * 将对话深度映射为中文标签（Phase 4，与 ContextAwareness.describeDepth 一致）
    */
-  function ContextAwarenessDescribeDepth(depth: string): string {
+  function describeDepth(depth: string): string {
     switch (depth) {
       case 'deep': return '深度讨论';
       case 'moderate': return '一般讨论';
@@ -1248,7 +1292,7 @@ export function createMemoryController(uiManager: UIManager) {
    *
    * 用于洞察面板中每个模式项的图标展示。
    */
-  function PatternDetectorIcon(type: string): string {
+  function getPatternDetectorIcon(type: string): string {
     switch (type) {
       case 'recurring_topic': return '🔄';
       case 'knowledge_gap': return '❓';
@@ -1279,7 +1323,7 @@ export function createMemoryController(uiManager: UIManager) {
 
     // 对话上下文
     if (lastNarrativeContext && lastNarrativeContext.rhythm !== 'idle') {
-      const rhythmLabel = ContextAwarenessDescribeRhythm(lastNarrativeContext.rhythm);
+      const rhythmLabel = describeRhythm(lastNarrativeContext.rhythm);
       parts.push(`对话节奏${rhythmLabel}`);
     }
     if (lastNarrativeContext && lastNarrativeContext.coherence === 'focused' && lastNarrativeContext.dominantSource) {
@@ -1453,19 +1497,19 @@ export function createMemoryController(uiManager: UIManager) {
       // 更新节奏
       const rhythmEl = document.getElementById('context-rhythm');
       if (rhythmEl) {
-        rhythmEl.textContent = ContextAwarenessDescribeRhythm(context.rhythm);
+        rhythmEl.textContent = describeRhythm(context.rhythm);
       }
 
       // 更新话题
       const coherenceEl = document.getElementById('context-coherence');
       if (coherenceEl) {
-        coherenceEl.textContent = ContextAwarenessDescribeCoherence(context.coherence);
+        coherenceEl.textContent = describeCoherence(context.coherence);
       }
 
       // 更新深度
       const depthEl = document.getElementById('context-depth');
       if (depthEl) {
-        depthEl.textContent = ContextAwarenessDescribeDepth(context.depth);
+        depthEl.textContent = describeDepth(context.depth);
       }
 
       // 更新描述文本
@@ -1526,7 +1570,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 图标：根据模式类型选择
         const icon = document.createElement('span');
         icon.className = 'pattern-icon';
-        icon.textContent = PatternDetectorIcon(pattern.type);
+        icon.textContent = getPatternDetectorIcon(pattern.type);
 
         // 文本
         const text = document.createElement('span');

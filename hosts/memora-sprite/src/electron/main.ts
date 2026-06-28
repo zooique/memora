@@ -247,7 +247,7 @@ function createIpcContext(
     setAbortController: (ctrl: AbortController | null) => {
       currentAbortController = ctrl;
     },
-    // P1 修复：暴露 agentReady 状态，handleUserInput 据此拒绝 reinitAgent 失败后的对话请求
+    // 暴露 agentReady 状态，handleUserInput 据此拒绝 reinitAgent 失败后的对话请求
     isAgentReady: () => agentReady,
     getUnreadCount: () => unreadCount,
     incrementUnreadCount,
@@ -703,7 +703,7 @@ app.on('before-quit', async (e) => {
   e.preventDefault();
 
   try {
-    // P2 修复：先中断进行中的对话，避免 agent.close() 在对话进行中调用
+    // 先中断进行中的对话，避免 agent.close() 在对话进行中调用
     // 导致 AsyncGenerator 未正常退出、资源泄漏或状态不一致
     if (currentAbortController) {
       currentAbortController.abort();

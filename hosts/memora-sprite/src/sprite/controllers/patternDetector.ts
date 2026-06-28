@@ -59,6 +59,9 @@ const DEFAULT_MIN_OCCURRENCES = 3;
 /** 默认最小漂移比例 */
 const DEFAULT_MIN_DRIFT_RATIO = 0.3;
 
+/** 知识缺口检测默认置信度 */
+const DEFAULT_KNOWLEDGE_GAP_CONFIDENCE = 0.6;
+
 /** 中文停用词（高频虚词，关键词提取时过滤） */
 const STOP_WORDS = new Set([
   '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一',
@@ -70,7 +73,7 @@ const STOP_WORDS = new Set([
   '觉得', '认为', '想', '让', '把', '被', '从', '对', '与', '或', '及',
   '等', '中', '其', '为', '以', '所', '而', '且', '但', '却', '则',
   '过', '还', '又', '再', '才', '刚', '将', '正', '正在', '一直',
-  '用', '做', '做', '能', '会', '来', '去', '里', '外', '前', '后',
+  '用', '做', '能', '来', '里', '外', '前', '后',
   '比', '更', '最', '非常', '比较', '特别', '太', '真', '真的',
   '吗', '呢', '吧', '啊', '哦', '嗯', '哈', '呀', '嘛',
 ]);
@@ -243,7 +246,7 @@ export class PatternDetector {
         patterns.push({
           type: 'knowledge_gap',
           summary: `你曾问过「${questionText}...」但还没有找到答案`,
-          confidence: 0.6, // 知识缺口判定有不确定性（可能用户自己解决了）
+          confidence: DEFAULT_KNOWLEDGE_GAP_CONFIDENCE, // 知识缺口判定有不确定性（可能用户自己解决了）
           relatedMemoryIds: [question.id],
           suggestion: `需要我帮你查找「${questionText}」的相关信息吗？`,
         });

@@ -71,6 +71,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   memoryController.setupMemoryPanel();
   personaController.setupPersonaSelector();
 
+  // 面板切换时刷新数据：切换到记忆面板时刷新记忆列表
+  State.uiManager.onPanelSwitch((panel) => {
+    if (panel === 'memories') {
+      void memoryController.loadMemoryList();
+    }
+  });
+
   // ─── 初始化辅助函数（从 initHelpers.ts 导入，闭包访问 State.uiManager/controllers） ───
 
   /** 静默模式恢复定时器 ref（由 createSilentRecoveryScheduler 闭包持有） */
@@ -87,10 +94,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   settingsController.setupSettingsPanel();
 
-  // P1 修复：提前赋值 State.onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
-  // 原代码通过 ?? 惰性赋值（在 onAgentReady IPC 回调中），当 IPC 事件已错过时 callback 为 null，
-  // 导致 else 分支不调用 setAgentReady(true) 和 updateAgentStatus('ready')，
-  // 用户无法发送消息且状态指示器停留在"正在初始化..."
+  // 提前赋值 State.onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
   State.onAgentReadyCallback = () => {
     // Bug 修复：幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
     if (State.agentReadyHandled) return;
@@ -100,13 +104,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // P3-FLOW-10 同步设置面板状态指示器（修复：IPC 事件路径遗漏更新状态指示器）
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
     void sessionController.loadSessionHistory();
-    // FD-A1 会话列表加载已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
     void memoryController.loadMemoryList();
     void personaController.loadPersonaList();
     void memoryController.loadDashboard();
     // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
     void State.uiManager.switchPanel('chat');
-    // P2 修复：首次配置完成后检查是否需要显示三态引导
+    // 首次配置完成后检查是否需要显示三态引导
     if (State.uiManager.shouldShowOnboarding()) {
       State.uiManager.showOnboardingDialog();
     }
@@ -159,7 +162,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 提取为独立函数，供气泡内 onErrorRetry 复用（UX-PP-13 后 Toast 不再携带重试按钮）
   const retryLastUserInput = (): void => {
     if (!State.lastUserInput) return;
-    // P2 修复：重试前检查流式状态，避免流式输出中重复发送
+    // 重试前检查流式状态，避免流式输出中重复发送
     if (State.uiManager.isStreaming()) {
       State.uiManager.showToast('请先停止当前回复再重试', 'warning');
       return;
@@ -191,7 +194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         window.clearTimeout(State.initRetryTimer);
         State.initRetryTimer = null;
       }
-      // P1 修复：State.onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
+      // State.onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
       State.onAgentReadyCallback?.();
     },
     // 对话结束：立即刷新仪表盘获取最新 LLM 指标，延迟二次刷新等待异步归档完成
@@ -310,8 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // 初始化中（error 为 null）：Agent 正在启动，延迟重试而非显示错误
       if (!error) {
         settingsController.updateAgentStatus('unknown', '正在初始化...');
-        // P1 修复：提取为可递归的重试函数，避免状态永久停留在"正在初始化..."
-        // 原代码仅重试一次，若 retry.ready=false 且 retry.error=null 则什么都不做
+        // 提取为可递归的重试函数，避免状态永久停留在"正在初始化..."
         const MAX_INIT_RETRIES = 5; // 最多重试 5 次（共 10 秒）
         const retryAgentStatus = (attempt: number): void => {
           State.initRetryTimer = window.setTimeout(async () => {
@@ -374,9 +376,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
-  // P1 修复：Agent 在渲染进程启动前就已就绪时，IPC 事件已错过，需在此主动触发就绪流程
-  // State.onAgentReadyCallback 已在初始化阶段提前赋值（第 96 行），直接调用即可
-  // （原 else 分支的防御性兜底已不需要，且原 else 分支遗漏 setAgentReady(true) 导致用户无法发送消息）
+  // Agent 在渲染进程启动前就已就绪时，IPC 事件已错过，需在此主动触发就绪流程
+  // State.onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
   State.onAgentReadyCallback();
   void settingsController.loadConfig();
   void memoryController.loadDashboard();
@@ -384,6 +385,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   void settingsController.loadUserProfile();
   // H3 预加载作品投影数据（用户切换到"作品"tab 时即可见）
   void settingsController.loadWorkProjections();
+  // M2 预加载审计日志数据（用户切换到"审计"tab 时即可见）
+  void settingsController.loadAuditLog();
 
   // H3 延迟更新学习进度卡片（等待上述异步加载完成后聚合数据）
   setTimeout(() => State.uiManager.updateLearningProgress(), 500);
@@ -549,8 +552,6 @@ function setupBusinessLogic(
       reportError('dateNavOpen', error);
     }
   });
-
-  // FD-A1 会话切换/删除/重命名回调已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
 }
 
 // ─── Phase 4.3 第二批：技能文件拖入安装 dropzone 初始化 ──────

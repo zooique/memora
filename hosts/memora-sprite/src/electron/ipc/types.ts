@@ -37,7 +37,7 @@ export interface IpcContext {
   /** 设置当前对话的 AbortController */
   setAbortController: (ctrl: AbortController | null) => void;
   /**
-   * P1 修复：Agent 是否就绪（reinitAgent 失败后为 false，拒绝新对话避免使用已关闭 Agent）
+   * Agent 是否就绪（reinitAgent 失败后为 false，拒绝新对话避免使用已关闭 Agent）
    * handleUserInput 入口检查此标志，未就绪时拒绝并提示用户重新配置
    */
   isAgentReady: () => boolean;

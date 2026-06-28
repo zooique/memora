@@ -26,6 +26,7 @@ import { ProactiveBanner } from './components/proactiveBanner.js';
 import { SuggestionCardManager } from './components/suggestionCard.js';
 import { ProfilePanelManager } from './panels/profilePanelManager.js';
 import { WorkProjectionPanelManager } from './panels/workProjectionPanelManager.js';
+import { AuditPanelManager } from './panels/auditPanelManager.js';
 import { SettingsPanelManager } from './panels/settingsPanelManager.js';
 import type { SettingsPanelHost } from './panels/settingsPanelManager.js';
 import { ChatPanelManager } from './panels/chatPanelManager.js';
@@ -94,6 +95,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   private profilePanel = new ProfilePanelManager();
   /** H3 作品投影面板管理器（独立管理作品 tab 的加载/渲染/展开） */
   private workProjectionPanel = new WorkProjectionPanelManager();
+  /** M2 审计日志面板管理器（独立管理审计 tab 的加载/渲染/清空） */
+  private auditPanel = new AuditPanelManager();
   /** P2-008 设置面板管理器（独立管理设置面板 DOM 和事件，约 450 行提取） */
   private settingsPanelManager: SettingsPanelManager;
 
@@ -114,7 +117,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
   private badge: HTMLElement | null;
   /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
-  /* btnNewSession 已移除 */
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
 
@@ -152,7 +154,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
-    // btnNewSession 已移除
     this.btnMaximize = getOptionalElement('btn-maximize', 'button');
 
     // P2-008 设置面板 DOM 元素初始化已提取至 SettingsPanelManager
@@ -164,6 +165,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.profilePanel.init();
     // H3 初始化作品投影面板（绑定刷新按钮事件）
     this.workProjectionPanel.init();
+    // M2 初始化审计日志面板（绑定刷新/清空按钮事件）
+    this.auditPanel.init();
 
     // ─── P2-008 面板管理器初始化（提取自 ui.ts 约 1800 行） ───
 
@@ -195,8 +198,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       new EventTracker(),
     );
 
-    // 会话历史面板管理器已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
-
     // 初始化 UI
     this.initEventListeners();
     this.memoryPanel.initMemoryPanelListeners();
@@ -221,9 +222,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     // 按钮事件（发送按钮合并了停止功能，流式态时点击触发停止）
     this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
-    // 新建会话按钮已移除（会话按天自动存储）
-
-    // FD-A1 会话选择器事件绑定已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
 
     // UX-FD-07 日期导航按钮：点击切换下拉显示/隐藏
     const dateNavBtn = document.getElementById('date-nav-btn');
@@ -380,12 +378,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.suggestionCard.cleanup(); // H1 清理配置建议卡片事件监听器和 DOM
     this.profilePanel.cleanup(); // H2 清理用户画像面板事件监听器
     this.workProjectionPanel.cleanup(); // H3 清理作品投影面板事件监听器
+    this.auditPanel.cleanup(); // M2 清理审计日志面板事件监听器
     this.settingsPanelManager.cleanup(); // P2-008 清理设置面板事件监听器
     // P2-008 清理面板管理器
     this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.personaPanel.cleanup();
-    // sessionPanel.cleanup() 已移除（方案 B：时间流式 UI，不再需要会话切换下拉）
     // P2-6 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
   }
@@ -522,10 +520,13 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
     this.state.currentPanel = panel;
 
-    // P2 修复：切换到对话面板时自动聚焦输入框，减少多余点击步骤
+    // 切换到对话面板时自动聚焦输入框，减少多余点击步骤
     if (panel === 'chat') {
       this.inputEl.focus();
     }
+
+    // 面板切换回调：通知外部控制器刷新数据
+    this.panelSwitchCallback?.(panel);
   }
 
   // ─── 输入处理 ─────────────────────────────────────────
@@ -654,7 +655,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * - 触发回调由 renderer.ts 注册，调用主进程 session-new IPC
    * - 确认对话框防止误操作（清空当前对话区是不可逆的，但历史保留在 SessionStore）
    */
-  /* handleNewSessionClick 已移除 */
 
   private handleNavClick(e: Event): void {
     const target = e.currentTarget;
@@ -780,6 +780,47 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   }
 
   /**
+   * M2 加载审计日志数据（代理到 AuditPanelManager）
+   *
+   * 由 settingsController.ts 在以下场景调用：
+   * - 应用启动时预加载
+   * - 切换到"审计"tab 时刷新
+   * - 用户点击"刷新"按钮时（由 AuditPanelManager 内部处理）
+   *
+   * 加载完成后渲染到 #audit-list。
+   */
+  async loadAuditLog(): Promise<void> {
+    await this.auditPanel.load();
+  }
+
+  /**
+   * M2 设置面板内 tab 切换回调（实现 SettingsPanelHost.onSettingsTabSwitch）
+   *
+   * 由 SettingsPanelManager 在 tab 切换时调用，
+   * 根据目标 tab 刷新对应 PanelManager 的数据：
+   * - profile → 刷新用户画像
+   * - work → 刷新作品投影
+   * - audit → 刷新审计日志
+   * - skill → 刷新技能列表（通过 loadDashboard 间接刷新）
+   */
+  onSettingsTabSwitch(tab: string): void {
+    switch (tab) {
+      case 'profile':
+        void this.profilePanel.load();
+        break;
+      case 'work':
+        void this.workProjectionPanel.load();
+        break;
+      case 'audit':
+        void this.auditPanel.load();
+        break;
+      // skill tab 的数据由 loadDashboard → renderSkills 驱动，无需单独加载
+      default:
+        break;
+    }
+  }
+
+  /**
    * H3 更新学习进度卡片
    *
    * 聚合侧边栏"学习进度"卡片的四项指标：
@@ -834,7 +875,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
   private sendMessageCallback: (() => void) | null = null;
   private stopMessageCallback: (() => void) | null = null;
-  /* newSessionCallback 已移除 */
+  /** 面板切换回调（panel 为切换到的目标面板名） */
+  private panelSwitchCallback: ((panel: string) => void) | null = null;
 
   /** 设置发送消息回调 */
   onSendMessage(callback: () => void): void {
@@ -844,6 +886,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 设置停止消息回调 */
   onStopMessage(callback: () => void): void {
     this.stopMessageCallback = callback;
+  }
+
+  /** 设置面板切换回调（切换到指定面板时触发数据刷新） */
+  onPanelSwitch(callback: (panel: string) => void): void {
+    this.panelSwitchCallback = callback;
   }
 
   private emitSendMessage(): void {
@@ -1100,8 +1147,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   hideSettingsError(): void {
     this.hidePanelError('settings');
   }
-
-  // ─── 会话历史 ─ 委托方法已移除（方案 B：时间流式 UI，不再需要会话切换下拉） ───
 
   // ─── UX-FD-07 日期导航 ────────────────────────────────
 
