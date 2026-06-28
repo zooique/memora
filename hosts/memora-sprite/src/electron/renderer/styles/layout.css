@@ -547,6 +547,32 @@
   align-self: center;
 }
 
+/* Phase 2.3：里程碑成就列表 */
+.milestones-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.milestone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  background: linear-gradient(135deg, #f9e2af30, #fab38730);
+  border: 1px solid #f9e2af80;
+  color: #a67c00;
+}
+
+.milestone-badge svg {
+  width: 12px;
+  height: 12px;
+  color: #d4a017;
+}
+
 /* ─── FD-01 精灵叙事摘要 ───────────────────────────────── */
 #sprite-narrative {
   padding: 8px 10px;

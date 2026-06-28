@@ -108,11 +108,15 @@ describe('buildAffectPrompt', () => {
       initiative: 0.6,
     };
     const prompt = controller.buildAffectPrompt(affect);
-    expect(prompt).toContain('【当前互动基调】');
-    expect(prompt).toContain('温暖度：高');
-    expect(prompt).toContain('直接度：中');
-    expect(prompt).toContain('主动度：中');
-    expect(prompt).toContain('调皮度：低');
+    expect(prompt).toContain('【互动基调指导】');
+    expect(prompt).toContain('语气');
+    expect(prompt).toContain('温暖亲切');
+    expect(prompt).toContain('风格');
+    expect(prompt).toContain('平衡表达');
+    expect(prompt).toContain('主动');
+    expect(prompt).toContain('适度主动');
+    expect(prompt).toContain('趣味');
+    expect(prompt).toContain('保持严谨');
   });
 
   it('全低值', () => {
@@ -124,7 +128,11 @@ describe('buildAffectPrompt', () => {
       initiative: 0.1,
     };
     const prompt = controller.buildAffectPrompt(affect);
-    expect(prompt).toBe('【当前互动基调】温暖度：低 | 直接度：低 | 主动度：低 | 调皮度：低');
+    expect(prompt).toContain('【互动基调指导】');
+    expect(prompt).toContain('礼貌克制');
+    expect(prompt).toContain('委婉耐心');
+    expect(prompt).toContain('等待用户明确指令');
+    expect(prompt).toContain('保持严谨');
   });
 
   it('全高值', () => {
@@ -136,7 +144,11 @@ describe('buildAffectPrompt', () => {
       initiative: 1,
     };
     const prompt = controller.buildAffectPrompt(affect);
-    expect(prompt).toBe('【当前互动基调】温暖度：高 | 直接度：高 | 主动度：高 | 调皮度：高');
+    expect(prompt).toContain('【互动基调指导】');
+    expect(prompt).toContain('温暖亲切');
+    expect(prompt).toContain('直奔主题');
+    expect(prompt).toContain('主动追问');
+    expect(prompt).toContain('适度幽默');
   });
 });
 

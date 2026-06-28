@@ -362,7 +362,9 @@ export class CommandPaletteManager {
     // 按 section 分组渲染
     let lastSection = '';
     for (let i = 0; i < this.results.length; i++) {
-      const { command } = this.results[i];
+      const result = this.results[i];
+      if (!result) continue;
+      const { command } = result;
 
       // 分组标题
       if (command.section !== lastSection) {

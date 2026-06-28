@@ -93,6 +93,10 @@ export const IPC_CHANNELS = {
   // ─── 主动提示 ─────────────────────────────────────────
   /** 渲染进程通知主进程主动提示已显示 */
   PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
+  /** Phase 2.1：用户接受了主动提示（点击"查看"） */
+  PROACTIVE_ACCEPT: 'proactive-accept',
+  /** Phase 2.1：用户拒绝/忽略了主动提示（点击"稍后"/关闭） */
+  PROACTIVE_REJECT: 'proactive-reject',
 
   // ─── 配置建议（H1：AutoConfigRefiner 闭环） ──────────
   /** 接受配置建议（调用 confirmConfigSuggestion 持久化） */

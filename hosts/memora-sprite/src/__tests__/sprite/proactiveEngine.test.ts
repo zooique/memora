@@ -281,6 +281,7 @@ describe('ProactiveEngine', () => {
         prompt: '有新的记忆（test summary）——需要我帮你整理一下吗？',
         triggers: ['memory'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -292,6 +293,7 @@ describe('ProactiveEngine', () => {
         prompt: '积累了 2 条新记忆（summary1）——需要我帮你整理一下吗？',
         triggers: ['memory', 'memory'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -302,6 +304,7 @@ describe('ProactiveEngine', () => {
         prompt: '获得了新的洞察（洞察摘要）——需要我帮你整理一下吗？',
         triggers: ['insight'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -313,6 +316,7 @@ describe('ProactiveEngine', () => {
         prompt: '提取了 2 条洞察（洞察1）——需要我帮你整理一下吗？',
         triggers: ['insight', 'insight'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -323,6 +327,7 @@ describe('ProactiveEngine', () => {
         prompt: '角色发生了变化（角色从开发者切换为设计师）——需要我帮你整理一下吗？',
         triggers: ['persona'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -333,6 +338,7 @@ describe('ProactiveEngine', () => {
         prompt: '检测到文件变化（src/index.ts）——需要我帮你整理一下吗？',
         triggers: ['file'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -344,16 +350,18 @@ describe('ProactiveEngine', () => {
         prompt: '检测到 2 次文件变化（file1.ts）——需要我帮你整理一下吗？',
         triggers: ['file', 'file'],
         silent: false,
+        isMilestone: false,
       });
     });
 
     it('单 milestone："达成了新的里程碑（summary）——..."', () => {
       const { engine, mockEmit } = createEngine({ threshold: 1, cooldownMs: 0 });
-      engine.addNotice('milestone', '积累了上百条记忆');
+      engine.addNotice('milestone', '积累了上百条记忆', true);
       expect(mockEmit).toHaveBeenCalledWith('proactivePrompt', {
         prompt: '达成了新的里程碑（积累了上百条记忆）——需要我帮你整理一下吗？',
         triggers: ['milestone'],
         silent: false,
+        isMilestone: true,
       });
     });
 
@@ -365,6 +373,7 @@ describe('ProactiveEngine', () => {
         prompt: '有新的记忆，获得了新的洞察（新记忆）——需要我帮你整理一下吗？',
         triggers: ['memory', 'insight'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -375,6 +384,7 @@ describe('ProactiveEngine', () => {
         prompt: '有新的记忆——需要我帮你整理一下吗？',
         triggers: ['memory'],
         silent: false,
+        isMilestone: false,
       });
     });
 
@@ -385,6 +395,7 @@ describe('ProactiveEngine', () => {
         prompt: '有些事情发生了变化，你可能想看看。',
         triggers: ['unknownType'],
         silent: false,
+        isMilestone: false,
       });
     });
   });
@@ -564,6 +575,7 @@ describe('ProactiveEngine', () => {
         prompt: '有新的记忆（test）——需要我帮你整理一下吗？',
         triggers: ['memory'],
         silent: false,
+        isMilestone: false,
       });
     });
 

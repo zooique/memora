@@ -29,6 +29,26 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     ctx.trayManager?.setState('idle');
   });
 
+  /**
+   * Phase 2.1：用户接受了主动提示（点击"查看"按钮）
+   *
+   * 调用 Sprite.recordProactiveAccept() 记录接受事件，
+   * 更新 ProactiveEngine 的接受率，重新推导情感基调（主动度提升）。
+   */
+  ipcMain.on(IPC_CHANNELS.PROACTIVE_ACCEPT, () => {
+    ctx.sprite.recordProactiveAccept();
+  });
+
+  /**
+   * Phase 2.1：用户拒绝/忽略了主动提示（点击"稍后"/关闭/静默/不再提醒）
+   *
+   * 调用 Sprite.recordProactiveReject() 记录拒绝事件，
+   * 更新 ProactiveEngine 的连续拒绝计数（自适应冷却）。
+   */
+  ipcMain.on(IPC_CHANNELS.PROACTIVE_REJECT, () => {
+    ctx.sprite.recordProactiveReject();
+  });
+
   // ─── 项目管理（FD-04 项目模式） ──────────────────────────
 
   /** 列出已注册项目（供 UI 专注模式选择器使用） */

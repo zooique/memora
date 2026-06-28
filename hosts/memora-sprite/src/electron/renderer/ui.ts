@@ -700,10 +700,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    *
    * 对齐 docs/memora-sprite-preview.html §6.6：
    * 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作。
-   * 由 renderer.ts 在收到 proactivePrompt 事件时调用。
+   * 里程碑事件使用金色渐变庆祝样式。
+   * 由 ipcListeners.ts 在收到 proactivePrompt 事件时调用。
+   *
+   * @param text 提示文本
+   * @param isMilestone 是否为里程碑事件（Phase 2.3）
    */
-  showProactiveBanner(text: string): void {
-    this.proactiveBanner.showProactiveBanner(text);
+  showProactiveBanner(text: string, isMilestone = false): void {
+    this.proactiveBanner.showProactiveBanner(text, isMilestone);
   }
 
   /**

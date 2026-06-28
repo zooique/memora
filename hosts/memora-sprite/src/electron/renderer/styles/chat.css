@@ -288,6 +288,53 @@
   color: var(--text);
 }
 
+/* Phase 2.3：里程碑专属样式（金色渐变庆祝效果） */
+#proactive-banner.is-milestone {
+  background: linear-gradient(135deg, #f9e2af 0%, #fab387 50%, #f5c2e7 100%);
+  border-bottom-color: #f9e2af;
+  color: #5c4a1a;
+  animation: bannerSlideDown var(--transition-base) ease-out, milestoneShimmer 2s ease-in-out;
+}
+
+#proactive-banner.is-milestone .banner-icon {
+  color: #d4a017;
+  animation: milestoneBounce 0.6s ease-out;
+}
+
+#proactive-banner.is-milestone .banner-text {
+  color: #5c4a1a;
+  font-weight: 600;
+}
+
+#proactive-banner.is-milestone .banner-btn {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(212, 160, 23, 0.3);
+  color: #5c4a1a;
+}
+
+#proactive-banner.is-milestone .banner-btn:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+#proactive-banner.is-milestone .banner-close {
+  color: #8b7355;
+}
+
+#proactive-banner.is-milestone .banner-close:hover {
+  background: rgba(255, 255, 255, 0.5);
+  color: #5c4a1a;
+}
+
+@keyframes milestoneShimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+@keyframes milestoneBounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+
 /* ─── H1 配置建议卡片（AutoConfigRefiner 闭环） ────────────── */
 /* 卡片容器：位于 #proactive-banner 之后、#messages 之前，顶部提示区 */
 .suggestion-container {

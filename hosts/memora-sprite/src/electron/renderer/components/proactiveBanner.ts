@@ -27,14 +27,27 @@ export class ProactiveBanner {
    *
    * 对齐 docs/memora-sprite-preview.html §6.6：
    * 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作。
-   * 由 renderer.ts 在收到 proactivePrompt 事件时调用。
+   * 里程碑事件使用金色渐变庆祝样式+奖杯图标。
+   *
+   * @param text 提示文本
+   * @param isMilestone 是否为里程碑事件（Phase 2.3）
    */
-  showProactiveBanner(text: string): void {
+  showProactiveBanner(text: string, isMilestone = false): void {
     const banner = document.getElementById('proactive-banner');
     const textEl = document.getElementById('proactive-banner-text');
+    const iconEl = banner?.querySelector<SVGElement>('.banner-icon');
     if (!banner || !textEl) return;
 
     textEl.textContent = text;
+    // Phase 2.3：里程碑事件添加专属样式类
+    banner.classList.toggle('is-milestone', isMilestone);
+    // 里程碑时切换图标为奖杯（使用 icon-trophy SVG）
+    if (iconEl) {
+      const useEl = iconEl.querySelector('use');
+      if (useEl) {
+        useEl.setAttribute('href', isMilestone ? '#icon-trophy' : '#icon-fairy');
+      }
+    }
     banner.classList.remove('hidden');
   }
 
@@ -42,11 +55,22 @@ export class ProactiveBanner {
    * 隐藏主动提示 banner
    *
    * 用户点击任意操作按钮后调用，或切换面板时调用。
+   * 同时清除里程碑样式类和图标，恢复默认状态。
    */
   hideProactiveBanner(): void {
     const banner = document.getElementById('proactive-banner');
     if (!banner) return;
     banner.classList.add('hidden');
+    // Phase 2.3：隐藏时清除里程碑样式，避免下次普通提示仍显示金色样式
+    banner.classList.remove('is-milestone');
+    // 恢复默认精灵图标
+    const iconEl = banner.querySelector<SVGElement>('.banner-icon');
+    if (iconEl) {
+      const useEl = iconEl.querySelector('use');
+      if (useEl) {
+        useEl.setAttribute('href', '#icon-fairy');
+      }
+    }
   }
 
   /**

@@ -132,23 +132,53 @@ export class AffectController {
   }
 
   /**
-   * 将情感基调转换为自然语言描述（注入 system prompt 用）
+   * 将情感基调转换为可执行的行为指导文本，注入 LLM system prompt
    *
-   * 生成格式：
-   *   "【当前互动基调】温暖度：高 | 直接度：高 | 主动度：中 | 调皮度：低"
+   * 输出自然语言行为准则，让 LLM 知道每个情感维度对应的具体说话方式。
    *
    * @param affect 四维情感基调
-   * @returns 自然语言描述文本
+   * @returns 行为指导文本（自然语言，LLM 可直接遵循）
    */
   buildAffectPrompt(affect: AffectState): string {
-    const parts: string[] = [
-      `温暖度：${AffectController.describeLevel(affect.warmth)}`,
-      `直接度：${AffectController.describeLevel(affect.directness)}`,
-      `主动度：${AffectController.describeLevel(affect.initiative)}`,
-      `调皮度：${AffectController.describeLevel(affect.playfulness)}`,
-    ];
+    const lines: string[] = ['【互动基调指导】请根据以下状态调整你的表达方式：'];
 
-    return `【当前互动基调】${parts.join(' | ')}`;
+    // 温暖度 → 语气温度
+    if (affect.warmth >= 0.67) {
+      lines.push('- 语气：温暖亲切，像熟悉的朋友，可以自然地表达关心和共情');
+    } else if (affect.warmth >= 0.33) {
+      lines.push('- 语气：友好自然，保持适度热情但不过分亲昵');
+    } else {
+      lines.push('- 语气：礼貌克制，保持专业距离，简洁回应即可');
+    }
+
+    // 直接度 → 表达风格
+    if (affect.directness >= 0.67) {
+      lines.push('- 风格：直奔主题，先给结论再补充细节，不用寒暄铺垫');
+    } else if (affect.directness >= 0.33) {
+      lines.push('- 风格：平衡表达，简述背景后给出要点，不啰嗦也不突兀');
+    } else {
+      lines.push('- 风格：委婉耐心，可以适当铺垫和解释，确保用户充分理解');
+    }
+
+    // 主动度 → 主动性边界
+    if (affect.initiative >= 0.67) {
+      lines.push('- 主动：可以主动追问、主动提供相关建议、预判用户可能的需求');
+    } else if (affect.initiative >= 0.33) {
+      lines.push('- 主动：适度主动，回答问题后可以简短追问，但不要推销式输出');
+    } else {
+      lines.push('- 主动：等待用户明确指令，只回答被问到的内容，不主动扩展');
+    }
+
+    // 调皮度 → 表达趣味
+    if (affect.playfulness >= 0.67) {
+      lines.push('- 趣味：可以适度幽默、使用轻松的语气词，但注意不要影响专业性');
+    } else if (affect.playfulness >= 0.33) {
+      lines.push('- 趣味：自然表达即可，偶尔轻松但不刻意搞笑');
+    } else {
+      lines.push('- 趣味：保持严谨，不用表情符号和幽默表达，专注内容本身');
+    }
+
+    return lines.join('\n');
   }
 
   /**

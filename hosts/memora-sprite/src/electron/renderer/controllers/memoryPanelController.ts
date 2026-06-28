@@ -863,7 +863,6 @@ export function createMemoryController(uiManager: UIManager) {
 
       // 已注册触发器数量（合并到事件卡片的 sub-value）
       const triggerEl = document.getElementById('trigger-count');
-      const dashPending = document.getElementById('dash-pending');
       if (triggerEl && dashPending) {
         triggerEl.textContent = `${data.registeredTriggers.length} 触发器`;
         // hover 显示触发器名称列表
@@ -919,6 +918,9 @@ export function createMemoryController(uiManager: UIManager) {
 
       // GAP-1 已加载技能列表渲染（消费内核 agent.skills.list）
       renderSkills(data.skills);
+
+      // Phase 2.3：里程碑成就展示（从仪表盘数据实时推导）
+      updateMilestonesDisplay(data);
 
       // H3 仪表盘加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
@@ -1396,6 +1398,87 @@ export function createMemoryController(uiManager: UIManager) {
     }
 
     return parts.join('，') + '。';
+  }
+
+  /**
+   * Phase 2.3：更新里程碑成就展示
+   *
+   * 从仪表盘数据实时推导已达成的里程碑，不持久化（符合"自然遗忘"原则）。
+   * 检测类型：
+   *   1. 记忆量级：100/1000/10000 条
+   *   2. 记忆源多样性：已探索的 source 类型数量
+   *   3. 关键记忆类型（洞察、画像）
+   *
+   * @param data 仪表盘数据
+   */
+  function updateMilestonesDisplay(data: { total: number; bySource: Record<string, number> }): void {
+    const milestonesDisplay = document.getElementById('milestones-display');
+    const milestonesList = document.getElementById('milestones-list');
+    if (!milestonesDisplay || !milestonesList) return;
+
+    // 收集已达成的里程碑
+    const milestones: Array<{ label: string; icon: string }> = [];
+
+    // 记忆量级里程碑（百/千/万/十万）
+    if (data.total >= 100) {
+      const magnitude = Math.floor(Math.log10(data.total));
+      const magnitudeLabels: Record<number, string> = {
+        2: '百条记忆',
+        3: '千条记忆',
+        4: '万条记忆',
+        5: '十万记忆',
+      };
+      milestones.push({
+        label: magnitudeLabels[magnitude] ?? `${Math.pow(10, magnitude)}+ 条`,
+        icon: '📚',
+      });
+    }
+
+    // 记忆源多样性里程碑
+    const sourceCount = Object.keys(data.bySource).length;
+    if (sourceCount >= 3) {
+      milestones.push({
+        label: `${sourceCount} 种记忆源`,
+        icon: '🔗',
+      });
+    }
+
+    // 洞察记忆存在里程碑
+    if (data.bySource['insight'] && data.bySource['insight'] > 0) {
+      milestones.push({
+        label: '首个洞察',
+        icon: '💡',
+      });
+    }
+
+    // 画像记忆存在里程碑
+    if (data.bySource['profile'] && data.bySource['profile'] > 0) {
+      milestones.push({
+        label: '建立画像',
+        icon: '👤',
+      });
+    }
+
+    // 无里程碑时隐藏区域
+    if (milestones.length === 0) {
+      milestonesDisplay.classList.add('hidden');
+      return;
+    }
+
+    // 显示里程碑区域
+    milestonesDisplay.classList.remove('hidden');
+
+    // 清空并重建列表
+    while (milestonesList.firstChild) {
+      milestonesList.removeChild(milestonesList.firstChild);
+    }
+
+    for (const milestone of milestones) {
+      const badge = document.createElement('span');
+      badge.className = 'milestone-badge';
+      badge.innerHTML = `${milestone.icon} ${milestone.label}`;
+      milestonesList.appendChild(badge);
+    }
   }
 
   /**

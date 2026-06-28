@@ -45,7 +45,7 @@ export interface SpriteEventMap {
   /** 精灵注意到洞察提取 */
   insightGained: { source: string; insight: string };
   /** 精灵主动提示（累积事件后生成） */
-  proactivePrompt: { prompt: string; triggers: string[]; silent: boolean };
+  proactivePrompt: { prompt: string; triggers: string[]; silent: boolean; isMilestone?: boolean };
   // L5：迭代 9 补齐的 4 种未订阅 Agent 事件
   /** 用户切换项目（专注模式） */
   projectSwitched: { from: string | null; to: string; projectName: string };
@@ -344,6 +344,9 @@ export class Sprite {
     // P2-S6: 唤醒是 LLM 调用主路径，记录 span 用于性能追踪
     const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.WAKEUP, input ? { hasInput: true } : { hasInput: false });
     try {
+      // 对话前刷新全量感知，确保 LLM 拿到最新的情感/默契度/上下文/模式/里程碑数据
+      this.refreshPerceptionBeforeChat();
+
       // input 为 undefined 时，生成主动提示（无输入对话）
       return await this.agent.chatSync(input ?? '');
     } catch (err) {
@@ -855,6 +858,30 @@ export class Sprite {
   }
 
   /**
+   * Phase 2.1：记录用户接受了一次主动提示
+   *
+   * 由宿主 UI 在用户点击"查看"按钮时调用。
+   * 调用后重新推导情感基调（主动度会随接受率提升），并发射 affectUpdated 事件。
+   */
+  recordProactiveAccept(): void {
+    this.proactiveEngine.recordAccept();
+    // 重新推导情感基调，更新主动度并通知 UI
+    this.deriveAndInjectAffect();
+    logger.info({ acceptanceRate: this.proactiveEngine.acceptanceRate }, '用户接受主动提示');
+  }
+
+  /**
+   * Phase 2.1：记录用户拒绝/忽略了一次主动提示
+   *
+   * 由宿主 UI 在用户点击"稍后"、关闭 banner 或静默时调用。
+   * 调用后更新连续拒绝计数（自适应冷却），但不立即重新推导 affect（拒绝只影响冷却，不直接降低主动度）。
+   */
+  recordProactiveReject(): void {
+    this.proactiveEngine.recordReject();
+    logger.info('用户拒绝主动提示');
+  }
+
+  /**
    * 格式化仪表盘为可读文本（委托 cliFormatter）
    *
    * @returns 格式化后的仪表盘文本
@@ -1114,10 +1141,13 @@ export class Sprite {
   }
 
   /**
-   * 检测记忆模式并注入 ProactiveEngine（Phase 2+）
+   * 检测记忆模式并注入 ProactiveEngine 和 LLM Prompt（Phase 2+）
    *
    * 从记忆数据中检测重复主题、知识缺口和兴趣漂移，
-   * 将结果注入 ProactiveEngine 供生成具体提示使用。
+   * 将结果同时注入：
+   *   1. ProactiveEngine — 用于生成主动提示的具体内容素材
+   *   2. Agent system prompt — 让 LLM 在对话中利用模式洞察
+   *
    * 纯代码计算，不依赖 LLM。
    *
    * @param memories 所有记忆列表
@@ -1126,10 +1156,53 @@ export class Sprite {
     const patterns = this.patternDetector.detectPatterns(memories);
     this.proactiveEngine.setPatterns(patterns);
 
+    // 将模式洞察注入 LLM system prompt（行为指导格式，与 affect/rapport/context 一致）
+    const patternPrompt = this.patternDetector.buildPatternPrompt(patterns);
+    if (patternPrompt) {
+      this.agent.injectAffect(patternPrompt);
+    }
+
     // 发射模式更新事件（供 UI 洞察面板展示）
     if (patterns.length > 0) {
       this.emitSprite('patternsUpdated', { patterns });
     }
+  }
+
+  /**
+   * 对话前刷新全量感知，确保 LLM 拿到最新状态
+   *
+   * 每次 wakeup() 对话前调用，重新推导并注入：
+   *   1. 情感基调（AffectController）
+   *   2. 默契度（RapportController）
+   *   3. 对话上下文（ContextAwareness）
+   *   4. 用户模式（PatternDetector）
+   *   5. 里程碑信号（ProactiveEngine）
+   */
+  private refreshPerceptionBeforeChat(): void {
+    // 重新推导情感+默契度+上下文+模式
+    this.deriveAndInjectAffect();
+
+    // 注入里程碑信号（若有待处理的里程碑事件）
+    this.injectMilestoneSignal();
+  }
+
+  /**
+   * 注入里程碑信号到 LLM system prompt
+   *
+   * 当 ProactiveEngine 中有待处理的里程碑事件时，
+   * 告知 LLM 这是一个值得庆祝/提及的特殊时刻。
+   * 里程碑是一次性信号：对话时注入，UI banner 独立展示，互不干扰。
+   */
+  private injectMilestoneSignal(): void {
+    const milestones = this.proactiveEngine.peekPendingMilestones();
+    if (milestones.length === 0) return;
+
+    const lines: string[] = ['【里程碑时刻】我们刚刚达成了一个值得注意的里程碑：'];
+    for (const m of milestones) {
+      lines.push(`- ${m}`);
+    }
+    lines.push('→ 这是我们关系中的一个小节点，可以自然地提及或庆祝，但不要刻意生硬');
+    this.agent.injectAffect(lines.join('\n'));
   }
 
   /**

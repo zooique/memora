@@ -74,6 +74,10 @@ const IPC_CHANNELS = {
   LLM_CONFIG_TEST: 'llm-config-test',
   AGENT_STATUS: 'agent-status',
   PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
+  /** Phase 2.1：用户接受了主动提示（点击"查看"） */
+  PROACTIVE_ACCEPT: 'proactive-accept',
+  /** Phase 2.1：用户拒绝/忽略了主动提示（点击"稍后"/关闭） */
+  PROACTIVE_REJECT: 'proactive-reject',
   // H1：配置建议（接受/拒绝）
   SUGGESTION_ACCEPT: 'suggestion-accept',
   SUGGESTION_REJECT: 'suggestion-reject',
@@ -465,6 +469,10 @@ export interface ElectronAPI {
 
   // 主动提示已显示通知
   proactivePromptShown: () => void;
+  /** Phase 2.1：用户接受了主动提示（点击"查看"） */
+  proactiveAccept: () => void;
+  /** Phase 2.1：用户拒绝/忽略了主动提示（点击"稍后"/关闭） */
+  proactiveReject: () => void;
 
   // 窗口状态变更（最大化按钮图标切换）
   onWindowStateChanged: (cb: (msg: { maximized: boolean }) => void) => void;
@@ -702,6 +710,8 @@ const electronAPI: ElectronAPI = {
 
   // 主动提示
   proactivePromptShown: () => ipcRenderer.send(IPC_CHANNELS.PROACTIVE_PROMPT_SHOWN),
+  proactiveAccept: () => ipcRenderer.send(IPC_CHANNELS.PROACTIVE_ACCEPT),
+  proactiveReject: () => ipcRenderer.send(IPC_CHANNELS.PROACTIVE_REJECT),
 
   // 窗口状态变更（最大化按钮图标切换）
   onWindowStateChanged: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED, (_: IpcRendererEvent, msg: { maximized: boolean }) => cb(msg)),

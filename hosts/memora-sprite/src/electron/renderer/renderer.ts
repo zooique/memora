@@ -249,13 +249,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 初始化主动提示 banner 按钮（查看/稍后/静默）
   State.uiManager.initProactiveBannerButtons({
     onView: () => {
+      // Phase 2.1：用户点击"查看"→ 记录接受事件，接受率提升影响主动度
+      window.electronAPI.proactiveAccept();
       // 已在对话面板内，仅确保面板可见
       void State.uiManager.switchPanel('chat');
     },
     onLater: () => {
+      // Phase 2.1：用户点击"稍后"→ 记录拒绝事件，触发自适应冷却
+      window.electronAPI.proactiveReject();
       // banner 已隐藏，无需额外操作
     },
     onSilent: () => {
+      // Phase 2.1：用户点击"静默"→ 记录拒绝事件
+      window.electronAPI.proactiveReject();
       // 通知主进程进入静默模式
       void window.electronAPI.updateConfig('silentMode', true);
       // FD-10 持久化恢复时间，页面刷新后也能正确恢复
@@ -268,6 +274,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     // P3-FLOW-08 不再提醒：进入静默模式并提示用户去设置调整阈值
     onDisable: () => {
+      // Phase 2.1：用户点击"不再提醒"→ 记录拒绝事件
+      window.electronAPI.proactiveReject();
       void window.electronAPI.updateConfig('silentMode', true);
       // 设置一个较长的恢复时间（24 小时），等效于"不再提醒"
       const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();

@@ -257,10 +257,12 @@ describe('ContextAwareness', () => {
       };
       const prompt = ca.buildContextPrompt(context);
 
-      expect(prompt).toContain('【当前对话上下文】');
-      expect(prompt).toContain('节奏：快节奏');
-      expect(prompt).toContain('话题：专注');
-      expect(prompt).toContain('深度：深度讨论');
+      expect(prompt).toContain('【对话策略指导】');
+      expect(prompt).toContain('简洁直接');
+      expect(prompt).toContain('code');
+      expect(prompt).toContain('紧扣主题');
+      expect(prompt).toContain('深入讨论');
+      expect(prompt).toContain('结构化的回答');
     });
 
     it('idle 状态应显示正确标签', () => {
@@ -274,9 +276,8 @@ describe('ContextAwareness', () => {
       };
       const prompt = ca.buildContextPrompt(context);
 
-      expect(prompt).toContain('节奏：空闲');
-      expect(prompt).toContain('话题：无');
-      expect(prompt).toContain('深度：无');
+      expect(prompt).toContain('一段时间没有交流');
+      expect(prompt).toContain('简短问候');
     });
   });
 

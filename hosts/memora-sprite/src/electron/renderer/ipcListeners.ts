@@ -32,6 +32,8 @@ interface ProactivePromptPayload {
   prompt: string;
   triggers: string[];
   silent: boolean;
+  /** Phase 2.3：是否为里程碑事件（专属金色庆祝样式） */
+  isMilestone?: boolean;
 }
 
 /**
@@ -181,7 +183,8 @@ function handleProactivePrompt(
   if (uiManager.getCurrentPanel() !== 'chat') {
     void uiManager.switchPanel('chat');
   }
-  uiManager.showProactiveBanner(msg.payload.prompt);
+  // Phase 2.3：里程碑事件使用专属庆祝样式
+  uiManager.showProactiveBanner(msg.payload.prompt, msg.payload.isMilestone ?? false);
 
   // 通知主进程：主动提示已显示（用于清除未读计数）
   window.electronAPI.proactivePromptShown();

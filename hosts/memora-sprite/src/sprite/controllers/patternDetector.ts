@@ -391,4 +391,50 @@ export class PatternDetector {
     };
     return labels[source] ?? source;
   }
+
+  /**
+   * 将检测到的用户模式转换为 LLM 可执行的行为指导文本，注入 system prompt
+   *
+   * 与 AffectController/RapportController/ContextAwareness 的 buildXxxPrompt 格式一致，
+   * 输出自然语言行为指导，让 LLM 在对话中自然利用用户模式洞察。
+   *
+   * @param patterns detectPatterns() 返回的模式列表
+   * @returns 注入到 system prompt 的行为指导文本；无模式时返回空字符串
+   */
+  buildPatternPrompt(patterns: DetectedPattern[]): string {
+    if (patterns.length === 0) return '';
+
+    const lines: string[] = ['【用户模式洞察】我从记忆数据中发现了以下模式，请在对话中自然地利用这些信息：'];
+
+    // 按类型分组输出
+    const recurringTopics = patterns.filter((p) => p.type === 'recurring_topic');
+    const knowledgeGaps = patterns.filter((p) => p.type === 'knowledge_gap');
+    const interestDrifts = patterns.filter((p) => p.type === 'interest_drift');
+
+    if (recurringTopics.length > 0) {
+      lines.push('- 关注焦点：');
+      for (const p of recurringTopics.slice(0, 2)) {
+        lines.push(`  · ${p.summary}`);
+      }
+      lines.push('  → 回应时可以主动关联这些反复出现的话题，体现你对其持续关注的了解');
+    }
+
+    if (knowledgeGaps.length > 0) {
+      lines.push('- 悬而未决的问题：');
+      for (const p of knowledgeGaps.slice(0, 2)) {
+        lines.push(`  · ${p.summary}`);
+      }
+      lines.push('  → 如果话题相关，可以自然地提起这些未解答的问题，提供帮助');
+    }
+
+    if (interestDrifts.length > 0) {
+      lines.push('- 兴趣变化：');
+      for (const p of interestDrifts.slice(0, 2)) {
+        lines.push(`  · ${p.summary}`);
+      }
+      lines.push('  → 注意用户关注重心的转移，适应当前的兴趣方向');
+    }
+
+    return lines.join('\n');
+  }
 }

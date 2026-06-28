@@ -307,10 +307,11 @@ describe('RapportController', () => {
       };
       const prompt = controller.buildRapportPrompt(rapport);
 
-      expect(prompt).toContain('【当前默契度】');
-      expect(prompt).toContain('等级：亲密');
-      expect(prompt).toContain('信任度：高');
-      expect(prompt).toContain('熟悉度：高');
+      expect(prompt).toContain('【关系边界指导】');
+      expect(prompt).toContain('亲密');
+      expect(prompt).toContain('像老朋友一样交流');
+      expect(prompt).toContain('预判我的需求');
+      expect(prompt).toContain('主动发起话题');
     });
 
     it('stranger 等级应显示"初识"', () => {
@@ -323,9 +324,9 @@ describe('RapportController', () => {
       };
       const prompt = controller.buildRapportPrompt(rapport);
 
-      expect(prompt).toContain('等级：初识');
-      expect(prompt).toContain('信任度：低');
-      expect(prompt).toContain('熟悉度：低');
+      expect(prompt).toContain('初识');
+      expect(prompt).toContain('礼貌用语');
+      expect(prompt).toContain('保持克制');
     });
 
     it('acquaintance 等级应显示"相识"', () => {
@@ -338,7 +339,9 @@ describe('RapportController', () => {
       };
       const prompt = controller.buildRapportPrompt(rapport);
 
-      expect(prompt).toContain('等级：相识');
+      expect(prompt).toContain('相识');
+      expect(prompt).toContain('自然交流');
+      expect(prompt).toContain('合理推断');
     });
 
     it('familiar 等级应显示"熟悉"', () => {
@@ -351,7 +354,9 @@ describe('RapportController', () => {
       };
       const prompt = controller.buildRapportPrompt(rapport);
 
-      expect(prompt).toContain('等级：熟悉');
+      expect(prompt).toContain('熟悉');
+      expect(prompt).toContain('轻松自然');
+      expect(prompt).toContain('直接利用已知偏好');
     });
   });
 

@@ -199,33 +199,52 @@ export class RapportController {
   }
 
   /**
-   * 将默契度转换为自然语言描述（注入 system prompt 用）
+   * 将默契度转换为互动边界指导（注入 system prompt 用）
    *
-   * 生成格式：
-   *   "【当前默契度】等级：亲密 | 信任度：高 | 熟悉度：高"
-   *
-   * 与 AffectController.buildAffectPrompt 互补：
-   *   - AffectController → 当前互动基调（动态，每次变化）
-   *   - RapportController → 长期关系质量（稳定，缓慢变化）
+   * 不同默契度等级对应不同的互动边界：
+   *   - 初识：保持礼貌距离，多确认，不假设用户偏好
+   *   - 相识：可以基于已知信息适当调整，但仍需确认
+   *   - 熟悉：可以主动利用已记住的偏好，省略重复确认
+   *   - 亲密：可以像老朋友一样交流，适当调侃，主动建议
    *
    * @param rapport 默契度状态
-   * @returns 自然语言描述文本
+   * @returns 互动边界指导文本
    */
   buildRapportPrompt(rapport: RapportState): string {
-    const levelLabel = this.getLevelLabel(rapport.level);
-    return `【当前默契度】等级：${levelLabel} | 信任度：${RapportController.describeLevel(rapport.trust)} | 熟悉度：${RapportController.describeLevel(rapport.familiarity)}`;
-  }
+    const lines: string[] = ['【关系边界指导】我们目前的关系阶段决定了互动方式：'];
 
-  /**
-   * 将等级映射为中文标签
-   */
-  private getLevelLabel(level: RapportLevel): string {
-    switch (level) {
-      case 'stranger': return '初识';
-      case 'acquaintance': return '相识';
-      case 'familiar': return '熟悉';
-      case 'close': return '亲密';
+    switch (rapport.level) {
+      case 'stranger':
+        lines.push('- 阶段：初识——我们刚开始认识，彼此还不了解');
+        lines.push('- 称呼：使用礼貌用语，不过度热情，不随意使用亲昵称呼');
+        lines.push('- 偏好：不要假设我喜欢什么，重要选项需要确认');
+        lines.push('- 记忆：可以记住我明确告诉你的信息，但不要过度联想');
+        lines.push('- 主动：保持克制，只回答问题，不主动扩展话题');
+        break;
+      case 'acquaintance':
+        lines.push('- 阶段：相识——你已经记住了我的一些偏好和习惯');
+        lines.push('- 称呼：可以自然交流，适当友好但保持尊重');
+        lines.push('- 偏好：可以基于已有记忆做合理推断，但关键决策仍需确认');
+        lines.push('- 记忆：主动关联你记住的相关信息，帮助我回忆上下文');
+        lines.push('- 主动：可以在回答后简短追问是否需要更多信息');
+        break;
+      case 'familiar':
+        lines.push('- 阶段：熟悉——你理解了我的工作习惯和沟通风格');
+        lines.push('- 称呼：语气可以更轻松自然，像合作已久的搭档');
+        lines.push('- 偏好：可以直接利用已知偏好，不必每次重复确认（除非涉及风险操作）');
+        lines.push('- 记忆：主动串联跨会话的信息，帮我看到联系和模式');
+        lines.push('- 主动：可以主动指出你注意到的问题或机会，给出建设性建议');
+        break;
+      case 'close':
+        lines.push('- 阶段：亲密——你是我信赖的长期伙伴');
+        lines.push('- 称呼：可以像老朋友一样交流，适度调侃，不用过度客套');
+        lines.push('- 偏好：可以预判我的需求，提前准备好我可能需要的信息');
+        lines.push('- 记忆：可以综合长期记忆给出更深入的洞察，甚至指出我自己没意识到的模式');
+        lines.push('- 主动：可以主动发起话题、提醒重要事项、直言不讳地给出反馈（包括反对意见）');
+        break;
     }
+
+    return lines.join('\n');
   }
 
   /**

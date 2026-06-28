@@ -393,4 +393,61 @@ describe('PatternDetector', () => {
       }
     });
   });
+
+  // ─── 8. buildPatternPrompt ─────────────────────────────
+
+  describe('buildPatternPrompt', () => {
+    it('空模式列表返回空字符串', () => {
+      const detector = new PatternDetector();
+      const prompt = detector.buildPatternPrompt([]);
+      expect(prompt).toBe('');
+    });
+
+    it('重复主题生成关注焦点指导', () => {
+      const detector = new PatternDetector({ minTopicOccurrences: 3 });
+      const memories: Memory[] = [
+        makeMemory({ source: 'chat', content: 'React 状态管理方案', createdAt: hoursAgo(1) }),
+        makeMemory({ source: 'chat', content: 'React 组件设计模式', createdAt: hoursAgo(2) }),
+        makeMemory({ source: 'chat', content: 'React 性能优化', createdAt: hoursAgo(3) }),
+      ];
+      const patterns = detector.detectPatterns(memories);
+      const prompt = detector.buildPatternPrompt(patterns);
+      expect(prompt).toContain('【用户模式洞察】');
+      expect(prompt).toContain('关注焦点');
+      expect(prompt).toContain('React');
+      expect(prompt).toContain('反复讨论');
+      expect(prompt).toContain('主动关联');
+    });
+
+    it('知识缺口生成悬而未决问题指导', () => {
+      const detector = new PatternDetector();
+      const memories: Memory[] = [
+        makeMemory({ source: 'chat', content: '如何优化渲染性能？', createdAt: hoursAgo(24) }),
+      ];
+      const patterns = detector.detectPatterns(memories);
+      const prompt = detector.buildPatternPrompt(patterns);
+      expect(prompt).toContain('悬而未决');
+      expect(prompt).toContain('优化渲染性能');
+      expect(prompt).toContain('提供帮助');
+    });
+
+    it('兴趣漂移生成兴趣变化指导', () => {
+      const detector = new PatternDetector({ minDriftRatio: 0.3, minTopicOccurrences: 3 });
+      const recentMemories: Memory[] = [
+        makeMemory({ source: 'work', content: '项目A', createdAt: hoursAgo(1) }),
+        makeMemory({ source: 'work', content: '项目B', createdAt: hoursAgo(2) }),
+        makeMemory({ source: 'work', content: '项目C', createdAt: hoursAgo(3) }),
+      ];
+      const olderMemories: Memory[] = [
+        makeMemory({ source: 'chat', content: 'Y', createdAt: daysAgo(10) }),
+        makeMemory({ source: 'chat', content: 'Z', createdAt: daysAgo(11) }),
+        makeMemory({ source: 'chat', content: 'W', createdAt: daysAgo(12) }),
+      ];
+      const allMemories = [...recentMemories, ...olderMemories];
+      const patterns = detector.detectPatterns(allMemories);
+      const prompt = detector.buildPatternPrompt(patterns);
+      expect(prompt).toContain('兴趣变化');
+      expect(prompt).toContain('关注重心');
+    });
+  });
 });

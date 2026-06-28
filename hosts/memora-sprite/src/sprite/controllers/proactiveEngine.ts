@@ -20,6 +20,8 @@ interface PendingNotice {
   type: string;
   summary: string;
   timestamp: number;
+  /** Phase 2.3：是否为里程碑事件（专属样式+庆祝反馈） */
+  isMilestone?: boolean;
 }
 
 /** 主动提示配置 */
@@ -33,7 +35,10 @@ export interface ProactiveConfig {
 }
 
 /** 精灵事件发射器 */
-export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string; triggers: string[]; silent: boolean }) => void;
+export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string; triggers: string[]; silent: boolean; isMilestone?: boolean }) => void;
+
+/** 里程碑事件回调（Phase 2.3：供 Sprite 发射专门的 milestoneAchieved 事件） */
+export type MilestoneCallback = (milestone: MilestoneTrigger) => void;
 
 /** 里程碑触发结果（Phase 2.3） */
 export interface MilestoneTrigger {
@@ -62,6 +67,8 @@ export class ProactiveEngine {
 
   private config: ProactiveConfig;
   private emitSprite: SpriteEmitter | null = null;
+  /** Phase 2.3：里程碑事件回调（供 Sprite 发射专门的 milestoneAchieved 事件） */
+  private onMilestone: MilestoneCallback | null = null;
   private pendingNotices: PendingNotice[] = [];
   private lastProactiveAt = 0;
 
@@ -88,6 +95,19 @@ export class ProactiveEngine {
   /** 设置事件发射器 */
   setEmitter(emit: SpriteEmitter): void {
     this.emitSprite = emit;
+  }
+
+  /**
+   * 设置里程碑事件回调（Phase 2.3）
+   *
+   * 由 Sprite 在构造时设置，用于在检测到里程碑时发射专门的 milestoneAchieved 事件。
+   * 里程碑事件比普通主动提示更重要，需要：
+   *   1. 系统通知使用"🎉 里程碑达成"标题
+   *   2. Banner 使用金色渐变庆祝样式
+   *   3. 仪表盘记录里程碑历史
+   */
+  setMilestoneCallback(callback: MilestoneCallback): void {
+    this.onMilestone = callback;
   }
 
   /**
@@ -195,22 +215,37 @@ export class ProactiveEngine {
   }
 
   /**
+   * 查看待处理的里程碑事件摘要（Phase 2.3：供 LLM 注入使用）
+   *
+   * 不消费里程碑事件（UI 仍需展示 banner），仅返回里程碑摘要列表。
+   * 里程碑是一次性的特殊时刻信号，下次对话时 LLM 应该感知到。
+   *
+   * @returns 待处理里程碑的人类可读摘要列表；无里程碑时返回空数组
+   */
+  peekPendingMilestones(): string[] {
+    return this.pendingNotices
+      .filter((n) => n.isMilestone)
+      .map((n) => n.summary);
+  }
+
+  /**
    * 累积待提示事件
    *
    * 当事件数量达到阈值时自动触发 tryEmit。
    * P2-CODE-1 修复：MAX_PENDING_NOTICES 上限保护应用于所有模式（非仅 silentMode），
    * 防止 cooldown 期间事件持续累积导致内存增长。
    *
-   * @param type 事件类型（memory/insight/persona/file）
+   * @param type 事件类型（memory/insight/persona/file/milestone）
    * @param summary 事件摘要
+   * @param isMilestone 是否为里程碑事件（Phase 2.3）
    */
-  addNotice(type: string, summary: string): void {
+  addNotice(type: string, summary: string, isMilestone = false): void {
     // 全局上限保护：所有模式下都限制累积上限，防止 cooldown 期间事件持续累积
     if (this.pendingNotices.length >= ProactiveEngine.MAX_PENDING_NOTICES) {
       // 丢弃最旧的事件，保留最近的事件（FIFO 淘汰）
       this.pendingNotices.shift();
     }
-    this.pendingNotices.push({ type, summary, timestamp: Date.now() });
+    this.pendingNotices.push({ type, summary, timestamp: Date.now(), isMilestone });
     if (this.pendingNotices.length >= this.config.threshold) {
       this.tryEmit();
     }
@@ -255,13 +290,15 @@ export class ProactiveEngine {
     const triggers = notices.map(n => n.type);
     const summaries = notices.map(n => n.summary);
     const prompt = this.buildPrompt(triggers, summaries);
+    // Phase 2.3：检测本次提示是否包含里程碑事件
+    const hasMilestone = notices.some(n => n.isMilestone);
 
     // P1-8 修复：silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
-    this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false });
+    this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false, isMilestone: hasMilestone });
     // Phase 2.1：记录一次主动提示（供 AffectController 计算接受率）
     this.suggestCount++;
 
-    logger.info({ prompt, effectiveCooldown, effectiveThreshold }, '主动提示');
+    logger.info({ prompt, effectiveCooldown, effectiveThreshold, hasMilestone }, '主动提示');
   }
 
   /**
@@ -491,9 +528,13 @@ export class ProactiveEngine {
       }
     }
 
-    // 将触发的里程碑注入待提示队列
+    // 将触发的里程碑注入待提示队列（标记为里程碑事件，使用专属样式）
     for (const trigger of triggers) {
-      this.addNotice('milestone', trigger.summary);
+      this.addNotice('milestone', trigger.summary, true);
+      // Phase 2.3：通知里程碑回调（供 Sprite 发射专门的 milestoneAchieved 事件）
+      if (this.onMilestone) {
+        this.onMilestone(trigger);
+      }
     }
 
     return triggers;

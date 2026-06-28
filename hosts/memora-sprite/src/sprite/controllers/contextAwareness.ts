@@ -252,22 +252,61 @@ export class ContextAwareness {
   }
 
   /**
-   * 将上下文状态转换为自然语言描述（注入 system prompt 用）
+   * 将上下文状态转换为对话策略指导文本，注入 LLM system prompt
    *
-   * 生成格式：
-   *   "【当前对话上下文】节奏：快节奏 | 话题：专注 | 深度：深度讨论"
-   *
-   * 与 AffectController.buildAffectPrompt / RapportController.buildRapportPrompt 互补。
+   * 根据当前对话节奏、话题连贯性和讨论深度，给出 LLM 调整回答策略的具体指导。
    *
    * @param context 上下文状态
-   * @returns 自然语言描述文本
+   * @returns 对话策略指导文本
    */
   buildContextPrompt(context: ContextState): string {
-    const rhythmLabel = ContextAwareness.describeRhythm(context.rhythm);
-    const coherenceLabel = ContextAwareness.describeCoherence(context.coherence);
-    const depthLabel = ContextAwareness.describeDepth(context.depth);
+    // 空闲状态单独处理
+    if (context.rhythm === 'idle') {
+      return '【对话策略】我们已经有一段时间没有交流了。下次对话时先简短问候或回顾上次内容，自然地重新开始。';
+    }
 
-    return `【当前对话上下文】节奏：${rhythmLabel} | 话题：${coherenceLabel} | 深度：${depthLabel}`;
+    const lines: string[] = ['【对话策略指导】请根据当前对话状态调整回答方式：'];
+
+    // 节奏策略
+    switch (context.rhythm) {
+      case 'rapid':
+        lines.push('- 节奏：当前对话频率很快，用户在高效工作中。回答务必简洁直接，先给结论，减少铺垫和客套话，除非用户明确要求详细解释');
+        break;
+      case 'normal':
+        lines.push('- 节奏：对话节奏适中，正常回答即可，结论先行，适当补充要点');
+        break;
+      case 'slow':
+        lines.push('- 节奏：对话节奏较慢，用户可能在思考或间歇性回来。可以稍微详尽一些，适当补充背景信息和上下文关联');
+        break;
+    }
+
+    // 话题连贯性策略
+    switch (context.coherence) {
+      case 'focused':
+        lines.push(`- 话题：当前正专注于${context.dominantSource ? `「${context.dominantSource}」` : '同一'}话题，回答应紧扣主题，主动关联这个话题下的记忆，不要跑题`);
+        break;
+      case 'moderate':
+        lines.push('- 话题：话题有一定连贯性但也有跳跃，注意承接上文，如果切换话题请自然过渡');
+        break;
+      case 'scattered':
+        lines.push('- 话题：当前话题比较分散，用户可能在探索多个方向，可以适当帮助梳理思路，确认当前最关心的问题');
+        break;
+    }
+
+    // 深度策略
+    switch (context.depth) {
+      case 'deep':
+        lines.push('- 深度：正在进行深入讨论，可以展开分析、给出结构化的回答、引用相关记忆、提供多角度思考，必要时可以追问关键细节');
+        break;
+      case 'moderate':
+        lines.push('- 深度：一般性讨论，给出清晰的回答要点即可，不必过度展开');
+        break;
+      case 'shallow':
+        lines.push('- 深度：当前是浅层问答，直接给出答案和关键信息，不要长篇大论，保持轻量');
+        break;
+    }
+
+    return lines.join('\n');
   }
 
   // ─── 静态工具方法 ──────────────────────────────────────

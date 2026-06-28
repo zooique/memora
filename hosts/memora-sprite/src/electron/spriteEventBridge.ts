@@ -154,7 +154,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   const PROACTIVE_TRAY_RESET_MS = 30_000;
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示（保留显式处理，含复杂副作用）
-  registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, silent }) => {
+  registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, silent, isMilestone }) => {
     // QC-SPRITE-04：整个 handler 用 try/catch 分段保护，防止单个副作用抛错中断后续逻辑
     try {
       // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
@@ -173,8 +173,9 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
       // 注意：silent 恒为 false（ProactiveEngine.tryEmit 在 silentMode 时 return），
       // 此处的 !silent 检查是防御性代码，未来若恢复 silent 路径仍有保护意义
       if (!silent && Notification.isSupported()) {
+        // Phase 2.3：里程碑使用特殊通知标题
         const notification = new Notification({
-          title: 'Memora 精灵',
+          title: isMilestone ? '🎉 里程碑达成' : 'Memora 精灵',
           body: prompt,
         });
         notification.on('click', () => {
@@ -185,7 +186,8 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
 
       // 非静默模式 + 完整窗口可见：窗口内提示
       if (!silent) {
-        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, silent }, silent);
+        // Phase 2.3：传递 isMilestone 标志到渲染层
+        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, silent, isMilestone }, silent);
 
         // P2-FLOW-12 浮动窗口主动提示未读徽章
         // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
