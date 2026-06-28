@@ -76,4 +76,29 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_GRAPH, async () =>
     safeHandle('获取关系图谱失败', { nodes: [], edges: [] }, () => ctx.sprite.getRelationGraph()),
   );
+
+  /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD, async () =>
+    safeHandle('获取健康度仪表盘失败', { scores: { overall: 100, uniqueness: 100, freshness: 100, completeness: 100 }, duplicates: [], staleMemories: [], lowQualityCount: 0, totalMemories: 0, healthLabel: 'excellent', healthDescription: '暂无数据' }, () => ctx.sprite.getHealthDashboard()),
+  );
+
+  /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_REVIEW_DATA, async () =>
+    safeHandle('获取回顾数据失败', { today: { date: '', messageCount: 0, newMemories: 0, newInsights: 0 }, trend: { last7Days: 0, last30Days: 0, daily: [], direction: 'stable', description: '暂无趋势数据' }, insights: { total: 0, recent: [], bySource: {} }, totalMemories: 0, generatedAt: '' }, () => ctx.sprite.getReviewData()),
+  );
+
+  /** 批量删除记忆（Phase 3：智能清理） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE_BATCH, async (_event, ids: string[]) =>
+    safeHandle('批量删除记忆失败', { deleted: 0, total: ids.length }, async () => {
+      let deleted = 0;
+      for (const id of ids) {
+        // 使用 isValidId 校验（安全规则 § 参数校验）
+        if (typeof id === 'string' && id.length > 0 && id.length <= 500) {
+          const result = ctx.sprite.deleteMemory(id);
+          if (result) deleted++;
+        }
+      }
+      return { deleted, total: ids.length };
+    }),
+  );
 }

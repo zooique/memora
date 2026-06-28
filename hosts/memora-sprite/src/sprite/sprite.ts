@@ -128,6 +128,12 @@ export class Sprite {
   /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
 
+  // ─── 感知数据缓存（Phase 1+2：注入 ProactiveEngine 用） ───
+  /** 最近一次推导的情感基调（供 ProactiveEngine 个性化提示） */
+  private lastAffect: AffectState | null = null;
+  /** 最近一次推导的默契度状态（供 ProactiveEngine 自适应冷却） */
+  private lastRapport: RapportState | null = null;
+
   constructor(options: SpriteOptions) {
     this.agent = options.agent;
     this.dataDir = options.dataDir;
@@ -490,6 +496,29 @@ export class Sprite {
     edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }>;
   } {
     return this.memoryController.getRelationGraph();
+  }
+
+  /**
+   * 获取记忆健康度仪表盘数据（Phase 1：健康度诊断）
+   *
+   * 纯计算，不依赖 LLM。检测重复记忆、过期记忆和低质量记忆，
+   * 生成健康度评分和清理建议。
+   *
+   * @returns 健康度仪表盘完整数据
+   */
+  getHealthDashboard() {
+    return this.memoryController.getHealthDashboard();
+  }
+
+  /**
+   * 获取对话回顾数据（Phase 2：对话回顾与摘要）
+   *
+   * 聚合最近对话的摘要、洞察和增长趋势。纯代码计算，不依赖 LLM。
+   *
+   * @returns 回顾面板完整数据
+   */
+  getReviewData() {
+    return this.memoryController.getReviewData();
   }
 
   // ─── 配置持久化 ────────────────────────────────────────
@@ -955,6 +984,7 @@ export class Sprite {
     // 获取所有记忆用于推导（上限 1000 条，MemoryInspector.list 按 score 降序）
     const memories = this.agent.memory?.list(1000) ?? [];
     const affect = this.affectController.deriveAffect(memories);
+    this.lastAffect = affect; // Phase 1+2：缓存供 ProactiveEngine 注入
 
     // 生成情感描述文本并注入到 Agent system prompt
     const affectPrompt = this.affectController.buildAffectPrompt(affect);
@@ -997,6 +1027,7 @@ export class Sprite {
     });
 
     const rapport = this.rapportController.deriveRapport(memories);
+    this.lastRapport = rapport; // Phase 1+2：缓存供 ProactiveEngine 注入
 
     // 生成默契度描述文本并注入到 Agent system prompt（复用同一注入点）
     const rapportPrompt = this.rapportController.buildRapportPrompt(rapport);
@@ -1045,6 +1076,71 @@ export class Sprite {
 
     // 发射对话上下文更新事件（供 UI 仪表盘展示）
     this.emitSprite('contextUpdated', context);
+
+    // Phase 1+2：将感知数据注入 ProactiveEngine，实现智能触发和个性化提示
+    this.injectPerceptionToProactiveEngine(context);
+  }
+
+  /**
+   * 将感知系统推导结果注入 ProactiveEngine（Phase 1+2）
+   *
+   * 使 ProactiveEngine 能够根据：
+   *   - context.rhythm → 决定触发时机（快节奏静默，空闲更主动）
+   *   - rapport.trust → 调整冷却时间（高信任 → 短冷却）
+   *   - affect → 个性化提示语气（温暖/调皮/直接）
+   *
+   * 在 deriveAndInjectContext() 末尾调用，确保三个感知系统都已推导完成。
+   */
+  private injectPerceptionToProactiveEngine(context: ContextState): void {
+    this.proactiveEngine.setContextState(context);
+    if (this.lastRapport) {
+      this.proactiveEngine.setRapportLevel(this.lastRapport.trust);
+    }
+    if (this.lastAffect) {
+      this.proactiveEngine.setAffectState(this.lastAffect);
+    }
+  }
+
+  /**
+   * 基于健康度数据生成智能建议（Phase 3）
+   *
+   * 在每次触发器唤醒时调用，检测可操作问题并注入 ProactiveEngine 待提示队列。
+   * 纯代码计算，不依赖 LLM。ProactiveEngine 的智能触发时机（Phase 1）会
+   * 决定何时实际展示给用户。
+   *
+   * 检测类型：
+   *   1. 重复记忆 → 建议清理
+   *   2. 过期记忆 → 建议回顾
+   *   3. 用户画像缺失 → 建议补充
+   *
+   * 幂等保护：ProactiveEngine 的冷却机制自然防止重复提示。
+   */
+  private generateSmartSuggestions(): void {
+    try {
+      const health = this.memoryController.getHealthDashboard();
+
+      // 检测重复记忆（超过 1 组时建议清理）
+      const dupCount = health.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
+      if (dupCount > 0) {
+        this.proactiveEngine.addNotice('suggestion', `发现 ${dupCount} 条重复记忆，建议清理以保持记忆库整洁`);
+      }
+
+      // 检测过期记忆（超过 5 条时建议回顾）
+      if (health.staleMemories.length > 5) {
+        this.proactiveEngine.addNotice('suggestion', `有 ${health.staleMemories.length} 条记忆可能已过时，需要回顾一下吗？`);
+      }
+
+      // 检测用户画像是否缺失（profile 记忆为 0 时建议补充）
+      const dashboard = this.memoryController.dashboard();
+      const profileCount = dashboard.bySource['profile'] ?? 0;
+      if (profileCount === 0 && health.totalMemories > 10) {
+        this.proactiveEngine.addNotice('suggestion', '还没有用户画像，告诉我更多关于你的信息吧，这样我能更好地帮助你');
+      }
+    } catch (err) {
+      // 健康度诊断失败不应阻塞触发流程
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ err: msg }, '智能建议生成失败');
+    }
   }
 
   /** 处理触发器事件 */
@@ -1074,6 +1170,9 @@ export class Sprite {
       // P1-9 修复：移除全量 dashboard 计算 debug 日志——logger 不支持惰性求值，
       // 每次触发都计算 dashboard（含 memory.stats + suggest）是性能热点。
       // 触发事件已由上方 logger.info 记录，dashboard 可通过 sprite.formatDashboard() 主动查询。
+
+      // Phase 3：智能建议生成 — 基于健康度数据检测可操作问题
+      this.generateSmartSuggestions();
     } catch (err) {
       span?.recordException(err instanceof Error ? err : new Error(String(err)));
       // P2-ERR-02 移除 rethrow：事件处理器中 rethrow 是反模式

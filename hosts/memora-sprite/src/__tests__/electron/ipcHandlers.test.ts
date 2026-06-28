@@ -173,7 +173,11 @@ describe('ipcHandlers — P1 修复回归测试', () => {
       const registeredChannels = handleCalls.map((call: unknown[]) => call[0] as string);
 
       // 清除 mock 调用记录，便于验证第二次注册前的清理
-      vi.clearAllMocks();
+      // 使用 mockClear 而非 clearAllMocks，保留 mock 实现（removeHandler 需继续清除 handleCallbacks）
+      (ipcMain.handle as ReturnType<typeof vi.fn>).mockClear();
+      (ipcMain.removeHandler as ReturnType<typeof vi.fn>).mockClear();
+      (ipcMain.on as ReturnType<typeof vi.fn>).mockClear();
+      (ipcMain.removeAllListeners as ReturnType<typeof vi.fn>).mockClear();
 
       // 第二次注册
       registerIpcHandlers(ctx as never);

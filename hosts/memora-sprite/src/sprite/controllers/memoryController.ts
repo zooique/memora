@@ -9,6 +9,10 @@
 import type { Agent, SuggestHit, VectorStore, Memory } from 'memora';
 import type { MemoryRelation } from 'memora';
 import { logger } from 'memora';
+import { buildHealthDashboard } from './memoryHealth.js';
+import type { HealthDashboard } from './memoryHealth.js';
+import { buildReviewData } from './reviewManager.js';
+import type { ReviewData } from './reviewManager.js';
 
 // ─── 默契度阈值常量（Phase 2.2） ─────────────────────────
 // 经验值，后续基于真实数据校准
@@ -363,5 +367,35 @@ export class MemoryController {
     // 边：通过 MemoryInspector.getAllRelations() 获取全量关系
     const edges = memory.getAllRelations();
     return { nodes, edges };
+  }
+
+  // ─── 记忆健康度（Phase 1：健康度诊断） ──────────────────
+
+  /**
+   * 获取记忆健康度仪表盘数据
+   *
+   * 纯计算，不依赖 LLM，不持久化。每次调用实时检测重复记忆、
+   * 过期记忆和低质量记忆，生成健康度评分和清理建议。
+   *
+   * @returns 健康度仪表盘完整数据
+   */
+  getHealthDashboard(): HealthDashboard {
+    const allMemories = this.list(undefined, 1000); // 获取全量记忆（上限 1000 条）
+    return buildHealthDashboard(allMemories);
+  }
+
+  // ─── 对话回顾（Phase 2：回顾与摘要） ──────────────────
+
+  /**
+   * 获取对话回顾数据
+   *
+   * 聚合最近对话的摘要、洞察和增长趋势。纯代码计算，不依赖 LLM。
+   *
+   * @returns 回顾面板完整数据
+   */
+  getReviewData(): ReviewData {
+    const dashboard = this.dashboard();
+    const allMemories = this.list(undefined, 1000);
+    return buildReviewData(dashboard, allMemories);
   }
 }

@@ -132,8 +132,25 @@ export class ChatPanelManager {
   private loadMoreCallback: (() => void) | null = null;
   /** UX-FD-07 方案 B 加载更早日期按钮回调（事件委托模式） */
   private loadEarlierDayCallback: (() => void) | null = null;
-  /** UX-PP-05 错误重试回调（重新发送上一条用户消息） */
+  /** 错误重试回调（重新发送上一条用户消息） */
   private errorRetryCallback: (() => void) | null = null;
+
+  // ─── Phase 1：消息分组与日期分隔 ──────────────────────────
+
+  /** 同一角色消息分组时间窗口（毫秒），超过此间隔则开始新分组 */
+  private static readonly GROUP_TIME_WINDOW_MS = 2 * 60 * 1000; // 2 分钟
+
+  /** 上一条消息的角色（用于分组：同角色连续消息合并） */
+  private lastMessageRole: string | null = null;
+
+  /** 上一条消息的时间戳（毫秒，用于分组时间窗口判断） */
+  private lastMessageTime = 0;
+
+  /** 上一条消息的日期字符串（YYYY-MM-DD，用于插入日期分隔符） */
+  private lastMessageDate = '';
+
+  /** 中文星期映射 */
+  private static readonly WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
   // ─── 安全兜底 ──────────────────────────────────────────
 
@@ -278,7 +295,71 @@ export class ChatPanelManager {
     this.events.cleanup();
   }
 
+  /**
+   * Phase 2：初始化回到底部浮动按钮
+   *
+   * 监听 messagesEl 的滚动事件，当用户向上滚动超过一屏时显示按钮。
+   * 点击按钮平滑滚动回消息区底部。
+   */
+  initScrollToBottomButton(): void {
+    const btn = document.getElementById('scroll-to-bottom-btn');
+    if (!btn) return;
+
+    // 滚动监听：距离底部超过一屏时显示按钮
+    this.events.addEventListener(this.messagesEl, 'scroll', () => {
+      const distanceFromBottom = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight;
+      const shouldShow = distanceFromBottom > this.messagesEl.clientHeight;
+      btn.classList.toggle('hidden', !shouldShow);
+    });
+
+    // 点击回到底部
+    this.events.addEventListener(btn, 'click', () => {
+      this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight, behavior: 'smooth' });
+    });
+  }
+
   // ─── 消息渲染 ─────────────────────────────────────────
+
+  /**
+   * 格式化日期分隔符文本（Phase 1：微信/QQ 式时间流）
+   *
+   * 格式：YYYY年M月D日 周X
+   */
+  private formatDateSeparator(date: Date): string {
+    const y = date.getFullYear();
+    const m = date.getMonth() + 1;
+    const d = date.getDate();
+    const w = ChatPanelManager.WEEKDAY_NAMES[date.getDay()]!;
+    return `${y}年${m}月${d}日 ${w}`;
+  }
+
+  /**
+   * 在消息区插入日期分隔符（Phase 1：微信/QQ 式时间流）
+   *
+   * 当消息日期发生变化时，在消息之间插入日期标签。
+   * 样式：居中灰色小字，上下有分隔线效果。
+   */
+  private insertDateSeparator(date: Date): void {
+    const separator = document.createElement('div');
+    separator.className = 'date-separator';
+    separator.textContent = this.formatDateSeparator(date);
+    this.messagesEl.appendChild(separator);
+  }
+
+  /**
+   * 判断新消息是否应与上一条消息合并（Phase 1：消息分组）
+   *
+   * 合并条件：同一角色、时间间隔在 GROUP_TIME_WINDOW_MS 内。
+   *
+   * @param role 新消息角色
+   * @param timestamp 新消息时间戳（ISO 字符串）
+   */
+  private shouldGroupWithPrevious(role: string, timestamp: string): boolean {
+    if (this.lastMessageRole !== role) return false;
+    const newTime = new Date(timestamp).getTime();
+    if (this.lastMessageTime === 0) return false;
+    return (newTime - this.lastMessageTime) < ChatPanelManager.GROUP_TIME_WINDOW_MS;
+  }
 
   /**
    * 添加消息到界面
@@ -298,18 +379,55 @@ export class ChatPanelManager {
     // 有消息时隐藏空状态引导（首次添加消息触发）
     this.host.hideEmptyState();
 
-    const el = this.buildMessageElement(message);
-    this.messagesEl.appendChild(el);
+    // Phase 1：日期变化时插入日期分隔符
+    const msgDate = new Date(message.timestamp ?? Date.now());
+    const dateStr = msgDate.toISOString().slice(0, 10); // YYYY-MM-DD
+    if (this.lastMessageDate && dateStr !== this.lastMessageDate) {
+      this.insertDateSeparator(msgDate);
+    }
+
+    // Phase 1：消息分组——同角色连续消息合并，隐藏头像
+    const shouldGroup = message.role !== 'system' && this.shouldGroupWithPrevious(message.role, message.timestamp ?? new Date().toISOString());
+
+    const el = this.buildMessageElement(message, shouldGroup);
+
+    // 分组消息追加到上一个消息组内（而非独立消息元素）
+    if (shouldGroup && message.role !== 'system') {
+      const lastMessage = this.messagesEl.lastElementChild;
+      if (lastMessage?.classList.contains('message-group')) {
+        lastMessage.appendChild(el);
+      } else {
+        // 兜底：如果上一个不是 message-group，正常追加
+        this.messagesEl.appendChild(el);
+      }
+    } else if (message.role !== 'system') {
+      // 非分组消息：创建 message-group 容器包裹消息元素
+      const group = document.createElement('div');
+      group.className = 'message-group';
+      group.appendChild(el);
+      this.messagesEl.appendChild(group);
+    } else {
+      // 系统消息直接追加
+      this.messagesEl.appendChild(el);
+    }
+
     this.host.scrollToBottom();
 
-    // 更新消息计数（非系统消息，显示在对话工具栏副标题）
+    // 更新消息计数（非系统消息）
     if (message.role !== 'system') {
       this.host.updateMessageCount();
     }
 
-    // 更新未读计数（完整窗口隐藏时）
+    // 更新未读计数
     if (message.role === 'assistant' && document.hidden) {
       this.host.updateUnreadCount();
+    }
+
+    // Phase 1：更新分组状态
+    if (message.role !== 'system') {
+      this.lastMessageRole = message.role;
+      this.lastMessageTime = new Date(message.timestamp ?? Date.now()).getTime();
+      this.lastMessageDate = dateStr;
     }
 
     return el;
@@ -321,12 +439,15 @@ export class ChatPanelManager {
    * 从 appendMessage 中提取 DOM 构建逻辑，供 appendMessages 批量插入复用。
    * 不处理 DOM 挂载、滚动、计数等副作用，仅返回完整元素。
    *
+   * Phase 1：分组模式下省略头像（同角色连续消息合并显示）。
+   *
    * @param message 消息对象
+   * @param grouped 是否为分组消息（连续同角色，省略头像）
    * @returns 完整的消息 DOM 元素
    */
-  private buildMessageElement(message: Message): HTMLElement {
+  private buildMessageElement(message: Message, grouped: boolean = false): HTMLElement {
     const el = document.createElement('div');
-    el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}`;
+    el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}${grouped ? ' grouped' : ''}`;
 
     if (message.role === 'system') {
       // 系统消息：简单文本，居中无头像
@@ -334,11 +455,13 @@ export class ChatPanelManager {
       return el;
     }
 
-    // 用户/精灵消息：头像 + 气泡结构
-    const avatar = document.createElement('div');
-    avatar.className = 'message-avatar';
-    avatar.textContent = message.role === 'user' ? '🧑' : '🧚';
-    el.appendChild(avatar);
+    // 用户/精灵消息：头像 + 气泡结构（分组模式下省略头像）
+    if (!grouped) {
+      const avatar = document.createElement('div');
+      avatar.className = 'message-avatar';
+      avatar.textContent = message.role === 'user' ? '🧑' : '🧚';
+      el.appendChild(avatar);
+    }
 
     // 消息内容容器（气泡 + 时间戳 + 操作按钮）
     const contentWrapper = document.createElement('div');
@@ -603,6 +726,8 @@ export class ChatPanelManager {
    * 委托到 messageDecorations.ts 的 renderMemoryRecall 纯函数（QC-R2-12 提取）。
    * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
+   * Phase 3：同时更新思考阶段指示器，显示具体召回数量。
+   *
    * @param messageId 流式消息 ID
    * @param memories 召回记忆摘要列表（name/score/source）
    */
@@ -616,6 +741,14 @@ export class ChatPanelManager {
 
     // 委托到 messageDecorations helper 渲染召回记忆容器
     renderMemoryRecall(bubble, memories);
+
+    // Phase 3：更新思考阶段指示器，显示具体召回数量
+    if (memories.length > 0) {
+      const indicator = bubble.querySelector('.thinking-phase') as HTMLDivElement | null;
+      if (indicator) {
+        indicator.textContent = `⚙️ 正在回忆 ${memories.length} 条相关记忆...`;
+      }
+    }
   }
 
   // ─── UX-P2-01 思考阶段指示器 ──────────────────────────────
@@ -785,8 +918,8 @@ export class ChatPanelManager {
    * 使用 while + removeChild 模式（对齐 project_memory 工程约定）。
    */
   clearMessages(): void {
-    // 只移除 .message 元素，保留 chat-empty-state（否则 showEmptyState 找不到元素）
-    this.messagesEl.querySelectorAll('.message').forEach((msg) => msg.remove());
+    // 只移除 .message 和 .message-group 和 .date-separator 元素，保留 chat-empty-state
+    this.messagesEl.querySelectorAll('.message, .message-group, .date-separator').forEach((msg) => msg.remove());
     // UX-FD-07 移除加载更多按钮（切换会话时重置）
     this.hideLoadMore();
     this.streamingMessages.clear();
@@ -799,6 +932,10 @@ export class ChatPanelManager {
     this.host.showEmptyState();
     // 清空后重置滚动状态，确保新消息能自动滚动
     this.host.forceScrollToBottom();
+    // Phase 1：重置分组状态
+    this.lastMessageRole = null;
+    this.lastMessageTime = 0;
+    this.lastMessageDate = '';
   }
 
   /**
@@ -824,6 +961,10 @@ export class ChatPanelManager {
     }
 
     if (prepend) {
+      // Phase 2：保存当前滚动位置，加载完成后恢复（避免跳到顶部）
+      const prevScrollHeight = this.messagesEl.scrollHeight;
+      const prevScrollTop = this.messagesEl.scrollTop;
+
       // 加载更多：插入到消息区顶部（在 load-more 按钮之后）
       const loadMore = this.messagesEl.querySelector('#load-more-container');
       if (loadMore) {
@@ -831,16 +972,22 @@ export class ChatPanelManager {
       } else {
         this.messagesEl.insertBefore(fragment, this.messagesEl.firstChild);
       }
+
+      // Phase 2：恢复滚动位置（新内容在顶部，向下偏移新增的高度）
+      const newScrollHeight = this.messagesEl.scrollHeight;
+      const addedHeight = newScrollHeight - prevScrollHeight;
+      this.messagesEl.scrollTop = prevScrollTop + addedHeight;
     } else {
       // 初始加载：追加到消息区末尾
       this.messagesEl.appendChild(fragment);
     }
 
     // UX-FD-07 方案 B：历史消息加载不累加今日消息计数
-    // 今日消息数由 sessionController 根据加载的会话是否当天 main 设置
-    // （appendMessages 用于历史加载，appendMessage 用于实时对话才累加）
     this.host.refreshMessageCountDisplay();
-    this.host.forceScrollToBottom();
+    // 非 prepend 模式才滚动到底部（prepend 模式已恢复滚动位置）
+    if (!prepend) {
+      this.host.forceScrollToBottom();
+    }
   }
 
   /**

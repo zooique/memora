@@ -53,6 +53,12 @@ const IPC_CHANNELS = {
   MEMORIES_DELETE: 'memories-delete',
   MEMORIES_ADD: 'memories-add',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
+  /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
+  MEMORIES_HEALTH_DASHBOARD: 'memories-health-dashboard',
+  /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
+  MEMORIES_REVIEW_DATA: 'memories-review-data',
+  /** 批量删除记忆（Phase 3：智能清理） */
+  MEMORIES_DELETE_BATCH: 'memories-delete-batch',
   CONFIG_GET: 'config-get',
   CONFIG_UPDATE: 'config-update',
   // QC-CONFIG-01：批量事务性更新配置（必须与 ipc/channels.ts 保持同步）
@@ -202,6 +208,26 @@ export interface WriteConfirmationPayload {
   needsConfirm: boolean;
 }
 
+/** 记忆健康度仪表盘 IPC 传输形态（Phase 1：健康度诊断） */
+export interface HealthDashboardPayload {
+  scores: { overall: number; uniqueness: number; freshness: number; completeness: number };
+  duplicates: Array<{ type: 'name' | 'content'; memories: Array<{ id: string; name: string; source: string; score: number; contentPreview: string }>; similarity?: number }>;
+  staleMemories: Array<{ memory: { id: string; name: string; source: string; score: number; contentPreview: string }; reason: 'old_age' | 'low_score' | 'both'; daysSinceAccess: number }>;
+  lowQualityCount: number;
+  totalMemories: number;
+  healthLabel: 'excellent' | 'good' | 'fair' | 'poor';
+  healthDescription: string;
+}
+
+/** 对话回顾数据 IPC 传输形态（Phase 2：对话回顾与摘要） */
+export interface ReviewDataPayload {
+  today: { date: string; messageCount: number; newMemories: number; newInsights: number };
+  trend: { last7Days: number; last30Days: number; daily: Array<{ date: string; messageCount: number; newMemories: number; newInsights: number }>; direction: 'growing' | 'stable' | 'declining'; description: string };
+  insights: { total: number; recent: Array<{ name: string; contentPreview: string; createdAt: string }>; bySource: Record<string, number> };
+  totalMemories: number;
+  generatedAt: string;
+}
+
 // ─── 类型定义（与主进程 IPC 通道对应） ─────────────────────
 
 /** 会话消息（渲染进程展示用，与 SessionMessage 对齐但仅暴露必要字段） */
@@ -323,6 +349,12 @@ export interface ElectronAPI {
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   getRelationGraph: () => Promise<{ nodes: MemoryListItem[]; edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }> }>;
+  /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
+  getHealthDashboard: () => Promise<HealthDashboardPayload>;
+  /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
+  getReviewData: () => Promise<ReviewDataPayload>;
+  /** 批量删除记忆（Phase 3：智能清理） */
+  deleteMemoriesBatch: (ids: string[]) => Promise<{ deleted: number; total: number }>;
 
   // 配置
   getConfig: () => Promise<{ config: SpriteConfigForm }>;
@@ -613,6 +645,9 @@ const electronAPI: ElectronAPI = {
   deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
   getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),
+  getHealthDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD),
+  getReviewData: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_REVIEW_DATA),
+  deleteMemoriesBatch: (ids) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE_BATCH, ids),
 
   // 配置
   getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.CONFIG_GET),

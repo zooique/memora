@@ -28,15 +28,15 @@ export interface MemoryRecallItem {
 }
 
 /**
- * 思考阶段中文映射
+ * 思考阶段中文映射（Phase 3：增强文案，更具体）
  *
  * 将内核 yield 的 thinking phase 标识符映射为用户可读的中文文案。
  * 从 chatPanelManager.THINKING_PHASE_LABELS 迁移（QC-R2-12）。
  */
 const THINKING_PHASE_LABELS: Record<string, string> = {
-  recalling: '正在回忆...',
-  processing: '正在处理...',
-  archiving: '正在归档...',
+  recalling: '正在回忆相关记忆...',
+  processing: '正在处理请求...',
+  archiving: '正在归档对话...',
 };
 
 /**

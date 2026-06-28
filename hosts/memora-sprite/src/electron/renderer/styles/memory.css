@@ -642,3 +642,254 @@
     transform: scale(1);
   }
 }
+
+/* ─── 记忆健康度仪表盘（Phase 1：健康度诊断） ────────────────── */
+
+/* 健康栏容器：折叠时隐藏，展开时下滑 */
+.health-bar {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--surface2);
+  background: var(--window-bg-2);
+  max-height: 300px;
+  overflow-y: auto;
+  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
+}
+
+.health-bar.hidden {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+  opacity: 0;
+  overflow: hidden;
+}
+
+/* 健康度头部：标题 + 等级徽章 + 总分 */
+.health-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.health-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.health-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* 健康等级徽章颜色 */
+.health-badge.excellent { background: rgba(52, 199, 89, 0.15); color: #34c759; }
+.health-badge.good { background: rgba(0, 102, 255, 0.15); color: #0066ff; }
+.health-badge.fair { background: rgba(255, 159, 10, 0.15); color: #ff9f0a; }
+.health-badge.poor { background: rgba(255, 59, 48, 0.15); color: #ff3b30; }
+
+.health-score {
+  margin-left: auto;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 健康度指标三行 */
+.health-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.health-metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-metric-label {
+  width: 48px;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* 进度条轨道 */
+.health-metric-track {
+  flex: 1;
+  height: 6px;
+  background: var(--surface0);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+/* 进度条填充 */
+.health-metric-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s ease;
+  background: var(--accent);
+}
+
+/* 各维度颜色 */
+.health-metric-fill.uniqueness { background: #34c759; }
+.health-metric-fill.freshness { background: #0066ff; }
+.health-metric-fill.completeness { background: #ff9f0a; }
+
+.health-metric-value {
+  width: 28px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 健康度详情行：重复/过期/低质量计数 */
+.health-details {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.health-detail-item {
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+/* 有问题的项目高亮 */
+.health-detail-item.warning {
+  color: #ff9f0a;
+  font-weight: 500;
+}
+
+.health-detail-item.danger {
+  color: #ff3b30;
+  font-weight: 500;
+}
+
+/* 健康度描述文字 */
+.health-description {
+  font-size: 11px;
+  color: var(--text-3);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* 健康度操作按钮 */
+.health-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.health-action-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  background: var(--surface0);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.health-action-btn:hover {
+  background: var(--surface1);
+  border-color: var(--accent);
+}
+
+.health-action-btn.danger {
+  color: #ff3b30;
+  border-color: rgba(255, 59, 48, 0.3);
+}
+
+.health-action-btn.danger:hover {
+  background: rgba(255, 59, 48, 0.1);
+  border-color: #ff3b30;
+}
+
+.health-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 清理确认对话框 */
+.confirm-dialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirm-dialog.hidden {
+  display: none;
+}
+
+.confirm-dialog-content {
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  min-width: 320px;
+  max-width: 420px;
+  animation: modalScaleIn 0.15s ease;
+}
+
+.confirm-dialog-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.btn-danger {
+  background: #ff3b30;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.btn-danger:hover {
+  background: #ff2d1f;
+}
+
+/* 健康度迷你分数徽章（工具栏内） */
+.health-mini-score {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 5px;
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.health-mini-score.hidden {
+  display: none;
+}
+
+/* 分数颜色：健康为绿色，警告为橙色，危险为红色 */
+.health-mini-score.excellent { color: #34c759; }
+.health-mini-score.good { color: #0066ff; }
+.health-mini-score.fair { color: #ff9f0a; }
+.health-mini-score.poor { color: #ff3b30; }

@@ -225,8 +225,8 @@ export class RelationGraphRenderer {
       // 计算斥力（所有节点对）
       for (let i = 0; i < this.nodes.length; i++) {
         for (let j = i + 1; j < this.nodes.length; j++) {
-          const a = this.nodes[i];
-          const b = this.nodes[j];
+          const a = this.nodes[i]!;
+          const b = this.nodes[j]!;
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const dist = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -288,8 +288,8 @@ export class RelationGraphRenderer {
     // 斥力
     for (let i = 0; i < this.nodes.length; i++) {
       for (let j = i + 1; j < this.nodes.length; j++) {
-        const a = this.nodes[i];
-        const b = this.nodes[j];
+        const a = this.nodes[i]!;
+        const b = this.nodes[j]!;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;

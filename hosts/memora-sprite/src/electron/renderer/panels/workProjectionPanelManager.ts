@@ -71,7 +71,7 @@ export class WorkProjectionPanelManager {
   private static getFileIcon(filePath: string): string {
     for (const ext of Object.keys(WorkProjectionPanelManager.FILE_ICONS)) {
       if (filePath.endsWith(ext)) {
-        return WorkProjectionPanelManager.FILE_ICONS[ext];
+        return WorkProjectionPanelManager.FILE_ICONS[ext]!;
       }
     }
     return '📄';

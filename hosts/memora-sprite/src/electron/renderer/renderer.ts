@@ -34,8 +34,8 @@ import {
 
 /** 渲染进程核心状态（集中管理，避免全局作用域污染） */
 const State = {
-  /** UI 管理器实例（DOMContentLoaded 后初始化） */
-  uiManager: null as UIManager | null,
+  /** UI 管理器实例（DOMContentLoaded 中初始化，beforeunload 前始终可用） */
+  uiManager: null! as UIManager,
   /** UX-PP-03 最后一条用户输入文本（用于流式错误重试） */
   lastUserInput: '' as string,
   /** 静默模式定时恢复句柄 */
@@ -450,7 +450,7 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
  * 避免引入额外的模块间依赖。
  */
 function setupBusinessLogic(
-  uiManager: UIManager,
+  _uiManager: UIManager,
   sessionController: ReturnType<typeof createSessionController>,
 ): void {
   // 设置发送消息回调

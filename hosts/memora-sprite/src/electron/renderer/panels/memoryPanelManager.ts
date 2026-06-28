@@ -190,7 +190,7 @@ export class MemoryPanelManager {
     // textarea 中 Enter 是换行，故用 Ctrl+Enter 触发提交
     const addContentEl = getOptionalElement('memory-add-content', 'textarea');
     if (addContentEl) {
-      this.events.addEventListener(addContentEl, 'keydown', (e) => {
+      this.events.addEventListener(addContentEl, 'keydown', ((e: KeyboardEvent) => {
         if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
           e.preventDefault();
           const data = this.getAddMemoryFormData();
@@ -198,7 +198,7 @@ export class MemoryPanelManager {
             this.memoryAddCallback?.(data);
           }
         }
-      });
+      }) as EventListener);
     }
 
     // 删除按钮（可选，带确认对话框，防止误删不可恢复数据）

@@ -11,6 +11,8 @@
  */
 import { logger } from 'memora';
 import type { DashboardData } from './memoryController.js';
+import type { ContextState } from './contextAwareness.js';
+import type { AffectState } from './affectController.js';
 
 /** 待提示事件 */
 interface PendingNotice {
@@ -62,6 +64,16 @@ export class ProactiveEngine {
   private pendingNotices: PendingNotice[] = [];
   private lastProactiveAt = 0;
 
+  // ─── Phase 1：智能触发时机（感知系统整合） ──────────────
+  /** 当前对话上下文状态（ContextAwareness 推导） */
+  private contextState: ContextState | null = null;
+  /** 当前默契度等级 0-1（RapportController 推导） */
+  private rapportLevel = 0;
+  /** 连续拒绝次数（自适应冷却：每次拒绝延长冷却，接受重置） */
+  private consecutiveRejects = 0;
+  /** 当前情感基调（Phase 2：个性化提示内容） */
+  private affectState: AffectState | null = null;
+
   constructor(config: ProactiveConfig) {
     this.config = config;
   }
@@ -104,6 +116,52 @@ export class ProactiveEngine {
    */
   recordAccept(): void {
     this.acceptCount++;
+    // 自适应冷却：接受后重置连续拒绝计数，缩短冷却
+    this.consecutiveRejects = 0;
+  }
+
+  /**
+   * 记录用户拒绝/忽略了一次主动提示（Phase 1：自适应冷却）
+   *
+   * 由宿主 UI 在用户点击"稍后"或关闭提示时调用。
+   * 每次拒绝递增计数器，使冷却时间逐步延长，避免频繁打扰。
+   */
+  recordReject(): void {
+    this.consecutiveRejects++;
+  }
+
+  /**
+   * 注入当前对话上下文状态（Phase 1：智能触发时机）
+   *
+   * 由 Sprite 在每次 wakeup 推导后调用，用于在 tryEmit 中判断是否适合触发提示。
+   *
+   * @param state ContextAwareness 推导的上下文状态
+   */
+  setContextState(state: ContextState): void {
+    this.contextState = state;
+  }
+
+  /**
+   * 注入当前默契度等级（Phase 1：自适应冷却）
+   *
+   * 由 Sprite 在每次 wakeup 推导后调用，用于调整冷却时间。
+   * 默契度越高 → 冷却越短 → 提示更频繁。
+   *
+   * @param level 默契度等级 0-1
+   */
+  setRapportLevel(level: number): void {
+    this.rapportLevel = Math.max(0, Math.min(1, level));
+  }
+
+  /**
+   * 注入当前情感基调（Phase 2：个性化提示内容）
+   *
+   * 由 Sprite 在每次 wakeup 推导后调用，用于 buildPrompt 中调整提示语气。
+   *
+   * @param state AffectController 推导的情感基调
+   */
+  setAffectState(state: AffectState): void {
+    this.affectState = state;
   }
 
   /**
@@ -111,10 +169,10 @@ export class ProactiveEngine {
    *
    * 与 addNotice 内部的自动触发不同，此方法用于外部主动检查。
    * 例如用户离开一段时间后回来，应检查是否有累积的待提示事件。
-   * 受 silentMode 和 cooldownMs 约束，与自动触发行为一致。
+   * 受 silentMode、cooldownMs 和 context rhythm 约束，但无视阈值（ignoreThreshold）。
    */
   checkPending(): void {
-    this.tryEmit();
+    this.tryEmit({ ignoreThreshold: true });
   }
 
   /**
@@ -139,13 +197,34 @@ export class ProactiveEngine {
     }
   }
 
-  /** 尝试发射主动提示 */
-  private tryEmit(): void {
+  /** 尝试发射主动提示（Phase 1：智能触发时机） */
+  private tryEmit(options?: { ignoreThreshold?: boolean }): void {
     if (this.pendingNotices.length === 0) return;
     if (this.config.silentMode) return;
 
+    // Phase 1：对话节奏过快时不打断用户（rapid 节奏下静默）
+    if (this.contextState?.rhythm === 'rapid') {
+      return;
+    }
+
     const now = Date.now();
-    if (now - this.lastProactiveAt < this.config.cooldownMs) return;
+
+    // Phase 1：自适应冷却时间计算
+    //   基础冷却 × 默契度系数（高默契 → 短冷却）× 拒绝惩罚（连续拒绝 → 长冷却）
+    const rapportMultiplier = 1 - this.rapportLevel * 0.5; // 0.5x ~ 1.0x
+    const rejectMultiplier = 1 + this.consecutiveRejects * 0.5; // 每次拒绝 +50%
+    const effectiveCooldown = this.config.cooldownMs * rapportMultiplier * rejectMultiplier;
+
+    if (now - this.lastProactiveAt < effectiveCooldown) return;
+
+    // Phase 1：空闲节奏下降低触发阈值（更主动）
+    // checkPending() 无视阈值约束（ignoreThreshold=true），仅检查 pending 非空
+    const effectiveThreshold = options?.ignoreThreshold
+      ? 1
+      : this.contextState?.rhythm === 'idle'
+        ? Math.max(1, Math.floor(this.config.threshold * 0.5))
+        : this.config.threshold;
+    if (this.pendingNotices.length < effectiveThreshold) return;
 
     // 取出所有待提示事件
     const notices = this.pendingNotices.splice(0);
@@ -164,10 +243,10 @@ export class ProactiveEngine {
     // 宿主（main.ts 的事件监听器）负责接收 proactivePrompt 事件并决定是否展示为 banner。
     // 原 interaction.output(text, 'proactive') 与 emitSprite 双发，依赖 ElectronInteraction
     // 对 proactive 类型的隐式 guard 跳过避免重复显示，新增 IInteraction 实现会破坏该契约。
-    logger.info({ prompt }, '主动提示');
+    logger.info({ prompt, effectiveCooldown, effectiveThreshold }, '主动提示');
   }
 
-  /** 根据累积事件生成上下文感知提示文本 */
+  /** 根据累积事件生成上下文感知提示文本（Phase 2：个性化语气） */
   private buildPrompt(triggers: string[], summaries: string[]): string {
     const parts: string[] = [];
 
@@ -197,6 +276,17 @@ export class ProactiveEngine {
       const count = typeCounts.get('milestone')!;
       parts.push(count > 1 ? `达成了 ${count} 个里程碑` : '达成了新的里程碑');
     }
+    // Phase 3：智能建议（健康度/回顾/画像）
+    // 建议类文本已是完整句子，直接作为提示主体，不与其他事件拼接
+    if (typeCounts.has('suggestion')) {
+      const suggestionSummary = summaries.find(s => s.length > 0);
+      if (suggestionSummary && parts.length === 0) {
+        return `${suggestionSummary}——需要我帮你处理吗？`;
+      }
+      if (suggestionSummary) {
+        return `${suggestionSummary}（同时${parts.join('，')}）`;
+      }
+    }
 
     // 摘要中最有信息量的一条
     const bestSummary = summaries.find(s => s.length > 0);
@@ -209,9 +299,53 @@ export class ProactiveEngine {
     if (bestSummary) {
       prompt += `（${bestSummary}）`;
     }
-    prompt += '——需要我帮你整理一下吗？';
+
+    // Phase 2：基于情感基调选择结尾语气
+    prompt += this.buildSuffix();
 
     return prompt;
+  }
+
+  /**
+   * 基于当前情感基调生成提示结尾语气（Phase 2：个性化提示内容）
+   *
+   * 不同维度影响结尾措辞：
+   *   - 温暖度高 → 亲切关心型
+   *   - 直接度高 → 简洁干练型
+   *   - 调皮度高 → 幽默活泼型
+   *   - 温暖度低 → 正式礼貌型（默认）
+   */
+  private buildSuffix(): string {
+    const affect = this.affectState;
+    if (!affect) return '——需要我帮你整理一下吗？';
+
+    // 调皮度优先：高调皮度使用幽默语气
+    if (affect.playfulness >= 0.67) {
+      const options = [
+        '——要不要我帮你理一理？保证不把你的记忆搞乱~',
+        '——需要我施展整理魔法吗？✨',
+        '——让我来帮你理理？我可是专业的（大概）',
+      ];
+      return options[Math.floor(Math.random() * options.length)]!;
+    }
+
+    // 温暖度高：亲切关心
+    if (affect.warmth >= 0.67) {
+      const options = [
+        '——需要我帮你整理一下吗？',
+        '——想让我帮你理一理这些吗？',
+        '——我来帮你梳理一下吧~',
+      ];
+      return options[Math.floor(Math.random() * options.length)]!;
+    }
+
+    // 直接度高：简洁干练
+    if (affect.directness >= 0.67) {
+      return '——需要整理吗？';
+    }
+
+    // 默认（温暖度低、直接度低）：正式礼貌
+    return '——需要我帮你整理一下吗？';
   }
 
   // ─── 里程碑模式检测（Phase 2.3） ─────────────────────────

@@ -591,53 +591,6 @@
   flex-shrink: 0;
 }
 
-/* ─── 记忆源健康状态（消费内核 sourceHealth()） ─ */
-#source-health {
-  margin-top: 8px;
-}
-
-#source-health-list {
-  list-style: none;
-  padding: 0;
-  margin: 4px 0 0;
-}
-
-.source-health-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  cursor: default;
-}
-
-.source-health-item:hover {
-  background: var(--surface1);
-}
-
-/* 健康状态圆点 */
-.health-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.health-dot.health-ok   { background: var(--green); }
-.health-dot.health-warn { background: var(--yellow); }
-.health-dot.health-crit { background: var(--red); }
-
-.health-label {
-  flex-shrink: 0;
-  color: var(--text);
-}
-
-.health-meta {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 11px;
-}
-
 /* ─── OBS-01 Agent 运行时指标（2×3 网格，复用 .dash-item） ─── */
 
 #agent-metrics-grid {
@@ -861,4 +814,64 @@
     margin: 0;
     border-radius: 0;
   }
+}
+
+/* ─── 回顾行（合并到学习与回顾节） ──────────────────────────── */
+
+/* 回顾行 */
+.review-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.review-label {
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.review-value {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-unit {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* 趋势方向 */
+.review-trend-direction {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.review-trend-direction.growing { color: #34c759; }
+.review-trend-direction.declining { color: #ff9f0a; }
+.review-trend-direction.stable { color: var(--text-2); }
+
+/* 趋势柱状图 */
+.review-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 40px;
+  padding: 2px 0;
+}
+
+.review-trend-bar {
+  flex: 1;
+  min-width: 6px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+  transition: height 0.5s ease;
+  opacity: 0.7;
+}
+
+.review-trend-bar.today {
+  opacity: 1;
+  background: var(--accent-hover);
 }

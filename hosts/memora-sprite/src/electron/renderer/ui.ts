@@ -206,6 +206,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
+    this.chatPanel.initScrollToBottomButton(); // Phase 2：回到底部浮动按钮
     this.initScrollListener();
   }
 

@@ -88,10 +88,10 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
   let mockUiManager: ReturnType<typeof createMockUiManager>;
 
   beforeEach(() => {
-    // 设置 DOM：仪表盘推荐记忆列表容器
+    // 设置 DOM：仪表盘推荐记忆列表容器（合并到学习与回顾节）
     document.body.innerHTML = `
       <ul id="recommendation-list"></ul>
-      <section id="recommendations"></section>
+      <section id="learning-progress"></section>
       <input id="memory-search" type="text" />
       <select id="memory-filter-source"><option value="">全部</option></select>
     `;

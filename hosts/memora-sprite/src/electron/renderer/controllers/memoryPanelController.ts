@@ -17,6 +17,7 @@ import { setButtonLoading, clearElement } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 import { getSourceColorClass } from '../panels/memoryPanelManager.js';
+import type { HealthDashboardPayload } from '../../preload.js';
 
 /** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
 
@@ -121,6 +122,9 @@ export function createMemoryController(uiManager: UIManager) {
   /** QC-STATE-01 修复：脉冲动画定时器句柄移入闭包，避免模块级状态违反"不持有模块级状态"原则 */
   let pulseTimers: number[] = [];
 
+  /** 存储当前健康度数据，供清理操作使用（闭包级，setupMemoryPanel 和 loadHealthDashboard 共享） */
+  let currentHealthData: HealthDashboardPayload | null = null;
+
   /**
    * 设置记忆面板回调
    *
@@ -157,6 +161,128 @@ export function createMemoryController(uiManager: UIManager) {
       });
     }
 
+    // ─── 健康度栏展开/收起（Phase 1：健康度诊断） ────────────
+    const healthBtn = document.getElementById('btn-health');
+    const healthBar = document.getElementById('memory-health-bar');
+    if (healthBtn && healthBar) {
+      healthBtn.addEventListener('click', async () => {
+        const isHidden = healthBar.classList.contains('hidden');
+        healthBar.classList.toggle('hidden', !isHidden);
+        healthBtn.classList.toggle('active', isHidden);
+        // 展开时加载数据
+        if (isHidden) {
+          await loadHealthDashboard();
+        }
+      });
+    }
+
+    // ─── 清理按钮（Phase 3：智能清理） ────────────────────
+
+    // 清理重复按钮
+    const cleanupDupBtn = document.getElementById('health-cleanup-duplicates');
+    if (cleanupDupBtn) {
+      cleanupDupBtn.addEventListener('click', () => {
+        if (!currentHealthData) return;
+        const dupIds = getDuplicateIds(currentHealthData);
+        if (dupIds.length === 0) {
+          uiManager.showToast('没有可清理的重复记忆', 'info');
+          return;
+        }
+        showCleanupConfirm(`确定要清理 ${dupIds.length} 条重复记忆吗？每组将保留分数最高的一条。`, dupIds);
+      });
+    }
+
+    // 清理过期按钮
+    const cleanupStaleBtn = document.getElementById('health-cleanup-stale');
+    if (cleanupStaleBtn) {
+      cleanupStaleBtn.addEventListener('click', () => {
+        if (!currentHealthData) return;
+        const staleIds = currentHealthData.staleMemories.map((s) => s.memory.id);
+        if (staleIds.length === 0) {
+          uiManager.showToast('没有可清理的过期记忆', 'info');
+          return;
+        }
+        showCleanupConfirm(`确定要清理 ${staleIds.length} 条过期记忆吗？这些记忆长期未访问或得分较低。`, staleIds);
+      });
+    }
+
+    // 一键清理按钮
+    const cleanupAllBtn = document.getElementById('health-cleanup-all');
+    if (cleanupAllBtn) {
+      cleanupAllBtn.addEventListener('click', () => {
+        if (!currentHealthData) return;
+        const dupIds = getDuplicateIds(currentHealthData);
+        const staleIds = currentHealthData.staleMemories.map((s) => s.memory.id);
+        const allIds = [...new Set([...dupIds, ...staleIds])];
+        if (allIds.length === 0) {
+          uiManager.showToast('没有可清理的问题记忆', 'info');
+          return;
+        }
+        showCleanupConfirm(
+          `确定要清理 ${allIds.length} 条问题记忆吗？包括 ${dupIds.length} 条重复和 ${staleIds.length} 条过期记忆。`,
+          allIds,
+        );
+      });
+    }
+
+    // 清理确认对话框：取消
+    const cleanupCancelBtn = document.getElementById('cleanup-confirm-cancel');
+    const cleanupDialog = document.getElementById('cleanup-confirm-dialog');
+    if (cleanupCancelBtn && cleanupDialog) {
+      cleanupCancelBtn.addEventListener('click', () => {
+        cleanupDialog.classList.add('hidden');
+      });
+    }
+
+    // 清理确认对话框：确认
+    let pendingCleanupIds: string[] = [];
+    const cleanupConfirmBtn = document.getElementById('cleanup-confirm-confirm');
+    if (cleanupConfirmBtn && cleanupDialog) {
+      cleanupConfirmBtn.addEventListener('click', async () => {
+        cleanupDialog.classList.add('hidden');
+        if (pendingCleanupIds.length === 0) return;
+        try {
+          const result = await window.electronAPI.deleteMemoriesBatch(pendingCleanupIds);
+          uiManager.showToast(`已清理 ${result.deleted}/${result.total} 条记忆`, 'success');
+          // 刷新健康度仪表盘和记忆列表
+          await loadHealthDashboard();
+          await loadMemoryList();
+        } catch (error) {
+          reportError('cleanupConfirm', error);
+          uiManager.showToast('清理失败，请重试', 'error');
+        } finally {
+          pendingCleanupIds = [];
+        }
+      });
+    }
+
+    /**
+     * 显示清理确认对话框
+     *
+     * @param message 确认消息
+     * @param ids 待清理的记忆 ID 列表
+     */
+    function showCleanupConfirm(message: string, ids: string[]): void {
+      const msgEl = document.getElementById('cleanup-confirm-msg');
+      if (msgEl) msgEl.textContent = message;
+      pendingCleanupIds = ids;
+      if (cleanupDialog) cleanupDialog.classList.remove('hidden');
+    }
+
+    /**
+     * 从健康度数据中提取重复记忆的 ID（保留每组中 score 最高的一条）
+     */
+    function getDuplicateIds(data: HealthDashboardPayload): string[] {
+      const ids: string[] = [];
+      for (const group of data.duplicates) {
+        const sorted = [...group.memories].sort((a, b) => b.score - a.score);
+        for (let i = 1; i < sorted.length; i++) {
+          ids.push(sorted[i]!.id);
+        }
+      }
+      return ids;
+    }
+
     // 搜索回调（Phase 2：组合搜索 — 关键词 + source + 排序 + 时间）
     uiManager.onMemorySearch(async (query: string) => {
       const params = getSearchParams();
@@ -177,7 +303,7 @@ export function createMemoryController(uiManager: UIManager) {
           source: h.source,
           score: h.similarity ?? h.score,
           contentPreview: h.contentPreview,
-          createdAt: (h as Record<string, unknown>).createdAt as string | undefined,
+          createdAt: (h as unknown as Record<string, unknown>).createdAt as string | undefined,
         }));
         // 客户端 source 筛选（搜索 API 不支持 source 参数，客户端过滤）
         if (params.source) {
@@ -351,7 +477,7 @@ export function createMemoryController(uiManager: UIManager) {
     if (!graphBtn) return;
     // 通过检查 graph container 是否可见判断当前视图
     const graphContainer = document.getElementById('memory-graph-container');
-    const isGraphView = graphContainer && graphContainer.style.display !== 'none';
+    const isGraphView = graphContainer ? graphContainer.style.display !== 'none' : false;
     graphBtn.classList.toggle('active', isGraphView);
   }
 
@@ -459,6 +585,113 @@ export function createMemoryController(uiManager: UIManager) {
     }
   }
 
+  /**
+   * 加载记忆健康度仪表盘数据（Phase 1：健康度诊断）
+   *
+   * 请求 IPC 获取健康度数据，渲染：
+   * - 健康度评分（总分 + 三维度进度条）
+   * - 健康等级徽章
+   * - 重复/过期/低质量计数
+   * - 健康描述文字
+   *
+   * 纯 DOM 操作，不依赖 LLM。
+   */
+  async function loadHealthDashboard(): Promise<void> {
+    try {
+      const data = await window.electronAPI.getHealthDashboard();
+
+      // 存储数据供清理操作使用
+      currentHealthData = data;
+
+      // ─── 迷你健康分徽章（工具栏内） ────────────────────
+      const miniScore = document.getElementById('health-mini-score');
+      if (miniScore) {
+        miniScore.textContent = String(data.scores.overall);
+        miniScore.className = `health-mini-score ${data.healthLabel}`;
+        miniScore.classList.remove('hidden');
+      }
+
+      // ─── 健康度评分 ────────────────────────────────────
+      const scoreEl = document.getElementById('health-score');
+      if (scoreEl) scoreEl.textContent = String(data.scores.overall);
+
+      // ─── 健康等级徽章 ──────────────────────────────────
+      const badgeEl = document.getElementById('health-badge');
+      if (badgeEl) {
+        // 清除旧等级类名
+        badgeEl.className = 'health-badge';
+        badgeEl.classList.add(data.healthLabel);
+        const labelMap: Record<string, string> = {
+          excellent: '优秀',
+          good: '良好',
+          fair: '一般',
+          poor: '较差',
+        };
+        badgeEl.textContent = labelMap[data.healthLabel] || data.healthLabel;
+      }
+
+      // ─── 三维度进度条 ──────────────────────────────────
+      const dimensions: Array<{ id: string; value: number; cssClass: string }> = [
+        { id: 'uniqueness', value: data.scores.uniqueness, cssClass: 'uniqueness' },
+        { id: 'freshness', value: data.scores.freshness, cssClass: 'freshness' },
+        { id: 'completeness', value: data.scores.completeness, cssClass: 'completeness' },
+      ];
+      for (const dim of dimensions) {
+        const fillEl = document.getElementById(`health-${dim.id}`);
+        const valEl = document.getElementById(`health-${dim.id}-val`);
+        if (fillEl) {
+          fillEl.style.width = `${dim.value}%`;
+          fillEl.className = `health-metric-fill ${dim.cssClass}`;
+        }
+        if (valEl) valEl.textContent = String(dim.value);
+      }
+
+      // ─── 详情计数（重复/过期/低质量） ──────────────────
+      const duplicateCount = data.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
+      const dupEl = document.getElementById('health-duplicates');
+      if (dupEl) {
+        dupEl.textContent = `重复: ${duplicateCount}`;
+        dupEl.className = 'health-detail-item';
+        if (duplicateCount > 0) dupEl.classList.add('warning');
+      }
+
+      const staleEl = document.getElementById('health-stale');
+      if (staleEl) {
+        staleEl.textContent = `过期: ${data.staleMemories.length}`;
+        staleEl.className = 'health-detail-item';
+        if (data.staleMemories.length > 0) staleEl.classList.add('warning');
+      }
+
+      const lowEl = document.getElementById('health-low-quality');
+      if (lowEl) {
+        lowEl.textContent = `低质量: ${data.lowQualityCount}`;
+        lowEl.className = 'health-detail-item';
+        if (data.lowQualityCount > 0) lowEl.classList.add('warning');
+      }
+
+      // ─── 健康描述 ──────────────────────────────────────
+      const descEl = document.getElementById('health-description');
+      if (descEl) descEl.textContent = data.healthDescription;
+
+      // ─── 清理按钮：仅在有可清理项时显示 ──────────────
+      const dupCount = data.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
+      const staleCount = data.staleMemories.length;
+      const dupBtn = document.getElementById('health-cleanup-duplicates');
+      const staleBtn = document.getElementById('health-cleanup-stale');
+      const allBtn = document.getElementById('health-cleanup-all');
+      const actionsEl = document.getElementById('health-actions');
+
+      if (dupBtn) dupBtn.style.display = dupCount > 0 ? '' : 'none';
+      if (staleBtn) staleBtn.style.display = staleCount > 0 ? '' : 'none';
+      if (allBtn) allBtn.style.display = (dupCount > 0 || staleCount > 0) ? '' : 'none';
+      if (actionsEl) actionsEl.style.display = (dupCount > 0 || staleCount > 0) ? '' : 'none';
+
+    } catch (error) {
+      reportError('loadHealthDashboard', error);
+      // 健康度加载失败不阻塞记忆面板主流程
+    }
+  }
+
   /** 加载记忆列表（Phase 2：支持组合筛选 + 客户端排序/时间过滤） */
   async function loadMemoryList(): Promise<void> {
     try {
@@ -532,23 +765,19 @@ export function createMemoryController(uiManager: UIManager) {
         dashTriggers.title = `已注册触发器：${triggerList}`;
       }
 
-      // 渲染推荐记忆列表（对齐方案 §6.3 推荐区）
+      // 渲染推荐记忆列表（合并到学习与回顾节）
       const recList = document.getElementById('recommendation-list');
-      const recSection = document.getElementById('recommendations');
-      if (recList && recSection) {
+      const learningSection = document.getElementById('learning-progress');
+      if (recList && learningSection) {
         if (data.suggestions && data.suggestions.length > 0) {
-          // UX-08：使用 clearElement 统一封装 while + removeChild 模式，与项目约定一致
           clearElement(recList);
           for (const s of data.suggestions) {
             const li = document.createElement('li');
             li.title = `${s.contentPreview}\n\n${s.reason}`;
-            // FD-ADD-REC-CLICK：添加 data-action 和 data-memory-name，供事件委托识别点击
             li.dataset.action = 'view-recommendation';
             li.dataset.memoryName = s.name;
-            // 记忆名称
             const nameSpan = document.createElement('span');
             nameSpan.textContent = s.name;
-            // 相关度分数
             const scoreSpan = document.createElement('span');
             scoreSpan.className = 'suggestion-score';
             scoreSpan.textContent = s.relevance.toFixed(2);
@@ -556,15 +785,11 @@ export function createMemoryController(uiManager: UIManager) {
             li.appendChild(scoreSpan);
             recList.appendChild(li);
           }
-          recSection.classList.remove('hidden');
-        } else {
-          // 无推荐时隐藏推荐区
-          recSection.classList.add('hidden');
+          // 确保学习与回顾节可见
+          learningSection.classList.remove('hidden');
         }
+        // 无推荐时保持列表为空，不隐藏整个节（因为还有回顾数据）
       }
-
-      // 记忆源健康状态渲染（消费内核 sourceHealth()）
-      renderSourceHealth(data.sourceHealth);
 
       // OBS-01 Agent 运行时指标渲染（消费内核 agent.getMetrics()）
       renderAgentMetrics(data.metrics);
@@ -574,8 +799,57 @@ export function createMemoryController(uiManager: UIManager) {
 
       // H3 仪表盘加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
+
+      // ─── 对话回顾数据（合并到学习与回顾节） ──────────────
+      await loadReviewPanel();
     } catch (error) {
       reportError('loadDashboard', error);
+    }
+  }
+
+  /**
+   * 加载对话回顾数据（合并到学习与回顾节）
+   *
+   * 渲染到 #learning-progress 内的今日回顾行和趋势柱状图。
+   * 不再有独立的 review-panel 和 recommendations 节。
+   */
+  async function loadReviewPanel(): Promise<void> {
+    try {
+      const data = await window.electronAPI.getReviewData();
+
+      // ─── 今日概况 ──────────────────────────────────────
+      const todayMemories = document.getElementById('review-today-memories');
+      const todayInsights = document.getElementById('review-today-insights');
+      if (todayMemories) todayMemories.textContent = String(data.today.newMemories);
+      if (todayInsights) todayInsights.textContent = String(data.today.newInsights);
+
+      // ─── 增长趋势 ──────────────────────────────────────
+      const trendDir = document.getElementById('review-trend-dir');
+      if (trendDir) {
+        const dirMap: Record<string, string> = { growing: '↑', stable: '→', declining: '↓' };
+        trendDir.textContent = dirMap[data.trend.direction] || '—';
+        trendDir.className = `review-trend-direction ${data.trend.direction}`;
+      }
+
+      // ─── 趋势柱状图（7 天） ────────────────────────────
+      const barsEl = document.getElementById('review-trend-bars');
+      if (barsEl) {
+        clearElement(barsEl);
+        const maxCount = Math.max(1, ...data.trend.daily.map((d) => d.newMemories));
+        const today = new Date().toISOString().slice(0, 10);
+        for (const day of data.trend.daily) {
+          const bar = document.createElement('div');
+          bar.className = 'review-trend-bar';
+          const height = Math.max(4, Math.round((day.newMemories / maxCount) * 36));
+          bar.style.height = `${height}px`;
+          if (day.date === today) bar.classList.add('today');
+          bar.title = `${day.date}: ${day.newMemories} 条记忆`;
+          barsEl.appendChild(bar);
+        }
+      }
+
+    } catch (error) {
+      reportError('loadReviewPanel', error);
     }
   }
 
@@ -598,74 +872,6 @@ export function createMemoryController(uiManager: UIManager) {
       if (idx !== -1) pulseTimers.splice(idx, 1);
     }, DASHBOARD_PULSE_MS);
     pulseTimers.push(timer);
-  }
-
-  /**
-   * 渲染记忆源健康状态
-   *
-   * 消费内核 sourceHealth() 数据，在仪表盘中为每个 source 显示
-   * 健康状态指示器（healthy=绿 / warning=黄 / critical=红）。
-   * 无数据时隐藏健康区域。
-   */
-  function renderSourceHealth(sourceHealth: {
-    sources: Array<{
-      source: string;
-      count: number;
-      avgScore: number;
-      daysSinceLastAccess: number;
-      status: 'healthy' | 'warning' | 'critical';
-    }>;
-    overallStatus: 'healthy' | 'warning' | 'critical';
-    diagnosedAt: string;
-  } | null): void {
-    const healthSection = document.getElementById('source-health');
-    const healthList = document.getElementById('source-health-list');
-    if (!healthSection || !healthList) return;
-
-    // 无数据时隐藏
-    if (!sourceHealth || sourceHealth.sources.length === 0) {
-      healthSection.classList.add('hidden');
-      return;
-    }
-
-    healthSection.classList.remove('hidden');
-    clearElement(healthList);
-
-    // QC-PERF-02：使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
-    const fragment = document.createDocumentFragment();
-
-    // 状态 → CSS 类名映射
-    const statusClass: Record<string, string> = {
-      healthy: 'health-ok',
-      warning: 'health-warn',
-      critical: 'health-crit',
-    };
-
-    for (const s of sourceHealth.sources) {
-      const li = document.createElement('li');
-      li.className = `source-health-item ${statusClass[s.status] ?? ''}`;
-      // 状态圆点
-      const dot = document.createElement('span');
-      dot.className = `health-dot ${statusClass[s.status] ?? ''}`;
-      // 来源名 + 数量
-      const label = document.createElement('span');
-      label.className = 'health-label';
-      label.textContent = `${s.source} (${s.count})`;
-      // 平均 score + 新鲜度
-      const meta = document.createElement('span');
-      meta.className = 'health-meta';
-      const days = s.daysSinceLastAccess === Infinity ? '从未' : `${s.daysSinceLastAccess}天前`;
-      meta.textContent = `score ${s.avgScore.toFixed(2)} · ${days}`;
-      // hover 详情
-      li.title = `来源：${s.source}\n数量：${s.count}\n平均 score：${s.avgScore}\n上次访问：${days}\n状态：${s.status}`;
-
-      li.appendChild(dot);
-      li.appendChild(label);
-      li.appendChild(meta);
-      fragment.appendChild(li);
-    }
-
-    healthList.appendChild(fragment);
   }
 
   /**
@@ -970,10 +1176,10 @@ export function createMemoryController(uiManager: UIManager) {
     setupMemoryPanel,
     loadMemoryList,
     loadDashboard,
+    loadHealthDashboard,
     /** QC-PERF-01 防抖版 loadDashboard（事件密集触发时使用） */
     loadDashboardDebounced,
     pulseCounter,
-    renderSourceHealth,
     /**
      * Phase 2.1：更新情感基调展示（四维进度条）
      *

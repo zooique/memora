@@ -179,28 +179,28 @@ describe('showThinkingPhase', () => {
     showThinkingPhase(bubble, 'recalling');
     const indicator = bubble.querySelector('.thinking-phase');
     expect(indicator).not.toBeNull();
-    expect(indicator!.textContent).toBe('⚙️ 正在回忆...');
+    expect(indicator!.textContent).toBe('⚙️ 正在回忆相关记忆...');
   });
 
-  it('recalling 阶段应显示中文"正在回忆..."', () => {
+  it('recalling 阶段应显示中文"正在回忆相关记忆"', () => {
     const bubble = createBubble();
     showThinkingPhase(bubble, 'recalling');
     const indicator = bubble.querySelector('.thinking-phase');
-    expect(indicator!.textContent).toBe('⚙️ 正在回忆...');
+    expect(indicator!.textContent).toBe('⚙️ 正在回忆相关记忆...');
   });
 
-  it('processing 阶段应显示中文"正在处理..."', () => {
+  it('processing 阶段应显示中文"正在处理请求"', () => {
     const bubble = createBubble();
     showThinkingPhase(bubble, 'processing');
     const indicator = bubble.querySelector('.thinking-phase');
-    expect(indicator!.textContent).toBe('⚙️ 正在处理...');
+    expect(indicator!.textContent).toBe('⚙️ 正在处理请求...');
   });
 
-  it('archiving 阶段应显示中文"正在归档..."', () => {
+  it('archiving 阶段应显示中文"正在归档对话"', () => {
     const bubble = createBubble();
     showThinkingPhase(bubble, 'archiving');
     const indicator = bubble.querySelector('.thinking-phase');
-    expect(indicator!.textContent).toBe('⚙️ 正在归档...');
+    expect(indicator!.textContent).toBe('⚙️ 正在归档对话...');
   });
 
   it('未知阶段应显示原始 phase 值', () => {
@@ -219,7 +219,7 @@ describe('showThinkingPhase', () => {
     // 应复用同一个元素
     expect(second).toBe(first);
     // 文案已更新
-    expect(second!.textContent).toBe('⚙️ 正在处理...');
+    expect(second!.textContent).toBe('⚙️ 正在处理请求...');
   });
 
   it('多次切换阶段应始终只有一个 .thinking-phase 元素', () => {

@@ -42,6 +42,12 @@ export const IPC_CHANNELS = {
   MEMORIES_ADD: 'memories-add',
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
+  /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
+  MEMORIES_HEALTH_DASHBOARD: 'memories-health-dashboard',
+  /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
+  MEMORIES_REVIEW_DATA: 'memories-review-data',
+  /** 批量删除记忆（Phase 3：智能清理） */
+  MEMORIES_DELETE_BATCH: 'memories-delete-batch',
 
   // ─── 配置相关 ─────────────────────────────────────────
   /** 获取精灵配置 */

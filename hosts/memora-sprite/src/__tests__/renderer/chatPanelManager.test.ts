@@ -223,13 +223,13 @@ describe('构造与 cleanup', () => {
     manager.startStreaming('m1');
     manager.showThinkingPhase('m1', 'recalling');
     let indicator = messagesEl.querySelector('.thinking-phase');
-    expect(indicator?.textContent).toContain('正在回忆...');
+    expect(indicator?.textContent).toContain('正在回忆相关记忆');
     manager.showThinkingPhase('m1', 'processing');
     indicator = messagesEl.querySelector('.thinking-phase');
-    expect(indicator?.textContent).toContain('正在处理...');
+    expect(indicator?.textContent).toContain('正在处理请求');
     manager.showThinkingPhase('m1', 'archiving');
     indicator = messagesEl.querySelector('.thinking-phase');
-    expect(indicator?.textContent).toContain('正在归档...');
+    expect(indicator?.textContent).toContain('正在归档对话');
   });
 });
 
@@ -521,7 +521,7 @@ describe('showThinkingPhase', () => {
     manager.showThinkingPhase('s1', 'recalling');
     const el = streamingMessages.get('s1') as HTMLElement;
     const indicator = el.querySelector('.thinking-phase');
-    expect(indicator?.textContent).toBe('⚙️ 正在回忆...');
+    expect(indicator?.textContent).toBe('⚙️ 正在回忆相关记忆...');
   });
 
   it('应更新已存在指示器 + 未知 phase 降级显示原始字符串', () => {
@@ -530,7 +530,7 @@ describe('showThinkingPhase', () => {
     // startStreaming 已创建 thinking-phase（"正在思考..."），showThinkingPhase 应复用
     manager.showThinkingPhase('s1', 'processing');
     let el = streamingMessages.get('s1') as HTMLElement;
-    expect(el.querySelector('.thinking-phase')?.textContent).toBe('⚙️ 正在处理...');
+    expect(el.querySelector('.thinking-phase')?.textContent).toBe('⚙️ 正在处理请求...');
     // 未知 phase 降级显示原始字符串
     manager.showThinkingPhase('s1', 'unknown-phase');
     el = streamingMessages.get('s1') as HTMLElement;

@@ -648,6 +648,70 @@
   gap: 16px;
 }
 
+/* ─── Phase 1：日期分隔符（微信/QQ 式时间流） ──────────────── */
+/* 跨天消息之间插入的日期标签，居中灰色小字，带上下淡色分隔线效果 */
+
+.date-separator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0 8px;
+  font-size: 11px;
+  color: var(--text-3);
+  font-family: system-ui, -apple-system, sans-serif;
+  user-select: none;
+  /* 进入动画：淡入 */
+  animation: fadeIn var(--transition-base) ease-out;
+}
+
+/* 两侧装饰线 */
+.date-separator::before,
+.date-separator::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--surface2);
+  max-width: 60px;
+}
+
+.date-separator::before {
+  margin-right: 12px;
+}
+
+.date-separator::after {
+  margin-left: 12px;
+}
+
+/* ─── Phase 1：消息分组容器 ──────────────────────────────── */
+/* 同角色连续消息共享一个 message-group 容器，首条显示头像，后续消息省略头像 */
+
+.message-group {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 分组消息：缩小间距，去掉动画延迟 */
+.message.grouped {
+  margin-top: 2px;
+  animation: none;
+}
+
+/* 分组消息的气泡：缩小圆角使其与上方消息视觉连接 */
+.message.grouped .message-bubble {
+  /* 同一分组内后续消息的气泡圆角更小，视觉上连续 */
+  border-radius: var(--radius-sm);
+}
+
+/* 分组消息：用户消息的尖角只在首条显示 */
+.message.grouped.user .message-bubble {
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+/* 分组消息：精灵消息的尖角只在首条显示 */
+.message.grouped.assistant .message-bubble {
+  border-bottom-left-radius: var(--radius-sm);
+}
+
 /**
  * 消息容器：flex 布局以容纳头像 + 内容
  * v8：max-width 80%，gap 10px
@@ -1352,6 +1416,43 @@
   opacity: 0.5;
   cursor: default;
   pointer-events: none;
+}
+
+/* ─── Phase 2：回到底部浮动按钮 ──────────────────────────── */
+/* 用户向上滚动浏览历史时显示，点击平滑滚动回最新消息 */
+
+.scroll-to-bottom-btn {
+  position: absolute;
+  bottom: calc(var(--input-area-height, 140px) + 20px);
+  right: 34px;
+  z-index: 11;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--surface2);
+  background: var(--window-bg);
+  color: var(--text-2);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-float);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.scroll-to-bottom-btn.hidden {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+
+.scroll-to-bottom-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* ─── UX-PP-10 流式中断标记 ─────────────────────────────── */
