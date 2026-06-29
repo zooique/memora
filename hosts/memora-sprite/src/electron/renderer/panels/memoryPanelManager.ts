@@ -191,6 +191,22 @@ export class MemoryPanelManager {
       this.memoryFilterCallback?.(filterSourceEl.value);
     });
 
+    // 排序下拉（高级搜索栏 #memory-sort-order）
+    const sortOrder = document.getElementById('memory-sort-order');
+    if (sortOrder) {
+      this.events.addEventListener(sortOrder, 'change', () => {
+        this.sortChangeCallback?.();
+      });
+    }
+
+    // 时间范围下拉（高级搜索栏 #memory-time-range）
+    const timeRange = document.getElementById('memory-time-range');
+    if (timeRange) {
+      this.events.addEventListener(timeRange, 'change', () => {
+        this.timeRangeChangeCallback?.();
+      });
+    }
+
     // 添加按钮（可选）
     const btnAdd = getOptionalElement('btn-add-memory', 'button');
     if (btnAdd) {
