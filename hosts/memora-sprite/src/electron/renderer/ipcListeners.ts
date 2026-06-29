@@ -32,7 +32,7 @@ interface ProactivePromptPayload {
   prompt: string;
   triggers: string[];
   silent: boolean;
-  /** Phase 2.3：是否为里程碑事件（专属金色庆祝样式） */
+  /** 是否为里程碑事件（专属金色庆祝样式） */
   isMilestone?: boolean;
 }
 
@@ -129,7 +129,7 @@ export function isContextPayload(value: unknown): value is ContextPayload {
   );
 }
 
-/** Phase 2+：校验用户模式更新 payload 结构 */
+/** 校验用户模式更新 payload 结构 */
 export function isPatternsPayload(value: unknown): value is PatternsPayload {
   return (
     isObject(value) &&
@@ -183,7 +183,7 @@ function handleProactivePrompt(
   if (uiManager.getCurrentPanel() !== 'chat') {
     void uiManager.switchPanel('chat');
   }
-  // Phase 2.3：里程碑事件使用专属庆祝样式
+  // 里程碑事件使用专属庆祝样式
   uiManager.showProactiveBanner(msg.payload.prompt, msg.payload.isMilestone ?? false);
 
   // 通知主进程：主动提示已显示（用于清除未读计数）
@@ -303,7 +303,7 @@ function createSpriteEventHandlers(
     skillMatched: (msg) => handleSkillMatched(uiManager, msg),
     memoryRecalled: (msg) => handleMemoryRecalled(uiManager, msg),
     decayCompleted: (msg) => handleDecayCompleted(uiManager, msg),
-    // Phase 2.1：情感基调更新 → 仪表盘四维进度条
+    // 情感基调更新 → 仪表盘四维进度条
     affectUpdated: (msg) => {
       if (!isAffectPayload(msg.payload)) {
         reportError('handleAffectUpdated', msg.payload);
@@ -335,7 +335,7 @@ function createSpriteEventHandlers(
       }
       callbacks.onContextUpdated?.(msg.payload);
     },
-    // Phase 2+：用户模式更新 → 洞察面板展示
+    // 用户模式更新 → 洞察面板展示
     patternsUpdated: (msg) => {
       if (!isPatternsPayload(msg.payload)) {
         reportError('handlePatternsUpdated', msg.payload);
@@ -362,7 +362,7 @@ export interface IpcListenerCallbacks {
   onAgentReady: () => void;
   /** 对话结束时回调（刷新仪表盘，获取最新 LLM 指标和记忆数据） */
   onConversationEnd?: () => void;
-  /** Phase 2.1：情感基调更新时回调（更新仪表盘四维进度条） */
+  /** 情感基调更新时回调（更新仪表盘四维进度条） */
   onAffectUpdated?: (payload: AffectPayload) => void;
   /** Phase 3.2：在场状态变化时回调（更新状态指示器） */
   onPresenceChanged?: (payload: PresencePayload) => void;
@@ -372,11 +372,11 @@ export interface IpcListenerCallbacks {
   onContextUpdated?: (payload: ContextPayload) => void;
   /** H3：作品投影更新时回调（刷新作品投影面板） */
   onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
-  /** Phase 2+：用户模式更新时回调（刷新洞察面板） */
+  /** 用户模式更新时回调（刷新洞察面板） */
   onPatternsUpdated?: (payload: PatternsPayload) => void;
 }
 
-/** Phase 2.1：情感基调载荷 */
+/** 情感基调载荷 */
 export interface AffectPayload {
   warmth: number;
   playfulness: number;
@@ -409,7 +409,7 @@ export interface ContextPayload {
   description: string;
 }
 
-/** Phase 2+：用户模式更新载荷 */
+/** 用户模式更新载荷 */
 export interface PatternsPayload {
   patterns: Array<{
     type: string;
@@ -636,7 +636,4 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   window.electronAPI.onRecallMemoryTrigger(() => {
     uiManager.handleRecallMemoryTrigger();
   });
-
-  // M2 审计日志按钮绑定已迁移到 AuditPanelManager（panels/auditPanelManager.ts），
-  // 与 ProfilePanelManager / WorkProjectionPanelManager 同模式，由 init() 统一绑定。
 }

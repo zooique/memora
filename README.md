@@ -2,6 +2,7 @@
 
 > 通用 Agent 内核 — 本地、私有、领域无关，万物皆记忆
 
+[![npm](https://img.shields.io/npm/v/memora)](https://www.npmjs.com/package/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -47,7 +48,8 @@ const provider = createLlmProvider({
 const agent = new Agent({
   projectPath: '/path/to/project',
   provider,
-  configDir: '/path/to/agent-config',
+  configDir: '/path/to/agent-config', // personas / rules / skills
+  // dataDir 默认为 '~/.memora'，此处显式指定项目级目录
   dataDir: '.memora',
 });
 
@@ -107,6 +109,7 @@ src/
 ├── security/       # 安全策略
 ├── config/         # 配置加载
 ├── logging/        # 日志
+├── eval/           # 评估框架（Mock Eval / Agent 行为回归测试）
 └── utils/          # 工具函数
 ```
 
@@ -114,12 +117,12 @@ src/
 
 | 类别 | 选型 | 决策 |
 |------|------|------|
-| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](./.trae/rules/decisions/ADR-001-runtime-stack.md) |
-| 数据层 | IMemoryStorage 接口（宿主注入持久化实现） | [ADR-002](./.trae/rules/decisions/ADR-002-storage-layer.md) |
-| LLM | OpenAI Chat Completions 兼容协议 | [ADR-003](./.trae/rules/decisions/ADR-003-llm-adapter.md) |
-| 形态 | 纯逻辑库（CLI 由宿主提供） | [ADR-002](./.trae/rules/decisions/ADR-002-storage-layer.md) |
-| 安全 | 两级权限 + 路径白名单 | [ADR-006](./.trae/rules/decisions/ADR-006-security-model.md) |
-| 测试 | Vitest + MSW Mock LLM + InMemoryStorage | [ADR-007](./.trae/rules/decisions/ADR-007-testing-strategy.md) |
+| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | ADR-001 |
+| 数据层 | IMemoryStorage 接口（宿主注入持久化实现） | ADR-002 |
+| LLM | OpenAI Chat Completions 兼容协议 | ADR-003 |
+| 形态 | 纯逻辑库（CLI 由宿主提供） | ADR-002 |
+| 安全 | 两级权限 + 路径白名单 | ADR-006 |
+| 测试 | Vitest + MSW Mock LLM + InMemoryStorage | ADR-007 |
 
 ## 开发命令
 
@@ -132,13 +135,13 @@ npm run lint         # ESLint 检查
 
 ## 文档
 
-- [接入指南](./docs/memora-接入指南-v1.0.md) — 快速接入步骤
-- [API 参考](./docs/memora-api-reference-v1.0.md) — 完整 API 列表
-- [ADR 决策年轮](./.trae/rules/decisions/) — 架构决策记录
+详细接入指南与 API 参考文档随源码提供。本包核心使用方式见上文「快速开始」。
+
+技术决策记录（ADR）目前为内部文档，不随 npm 包分发。
 
 ## 贡献
 
-本项目遵循"大树模型"工程哲学。详细开发规范见 [`.trae/rules/`](./.trae/rules/)。
+本项目遵循"大树模型"工程哲学。
 
 ## 许可证
 

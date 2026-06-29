@@ -41,7 +41,7 @@ export class ThemeManager {
    * - 通知主进程同步到浮动窗口 — 两种 source 都需要
    * 主题的 DOM 更新和 localStorage 缓存已在 setTheme 内完成，回调仅用于 IPC 同步。
    *
-   * QC-THEME-01 修复：新增 source 参数区分"用户主动切换"与"系统主题变化"：
+   * QC-THEME-01 新增 source 参数区分"用户主动切换"与"系统主题变化"：
    * - source='user'：用户在设置面板主动切换，需持久化到 sprite.json
    * - source='system'：auto 模式下系统主题变化，仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
    *
@@ -216,7 +216,7 @@ export class ThemeManager {
   /**
    * 清理系统主题变化监听器（UIManager.cleanup 时调用）
    *
-   * P2-6 修复：'auto' 模式下注册的 mediaQueryListener 若不清理，
+   * P2-6 'auto' 模式下注册的 mediaQueryListener 若不清理，
    * 页面卸载后仍会监听系统主题变化，在已销毁的 DOM 上执行引发异常。
    */
   cleanup(): void {

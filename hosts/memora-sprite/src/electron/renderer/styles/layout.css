@@ -430,7 +430,7 @@
   margin-bottom: 6px; /* ADR-NAV-001 增大标题与列表间距（原 4px） */
 }
 
-/* ─── Phase 2.1：情感基调展示（四维进度条） ──────────────── */
+/* ─── 情感基调展示（四维进度条） ──────────────── */
 .affect-bars {
   display: flex;
   flex-direction: column;
@@ -529,7 +529,7 @@
   transition: color 0.3s ease;
 }
 
-/* ─── Phase 2+：模式洞察列表 ───────────────────────────── */
+/* ─── 模式洞察列表 ───────────────────────────── */
 .patterns-list {
   display: flex;
   flex-direction: column;
@@ -566,7 +566,7 @@
   align-self: center;
 }
 
-/* Phase 2.3：里程碑成就列表 */
+/* 里程碑成就列表 */
 .milestones-list {
   display: flex;
   flex-wrap: wrap;
@@ -670,7 +670,7 @@
   100% { box-shadow: 0 0 0 0 var(--accent-20); }
 }
 
-/* ─── Phase 4.3：技能文件拖入安装区域（已迁移到设置面板"技能"选项卡） ─── */
+/* ─── 技能文件拖入安装区域（设置面板"技能"选项卡） ─── */
 /*
  * dropzone 设计原则：
  * - 默认态：虚线边框 + 浅色背景，提示可拖入
@@ -976,7 +976,7 @@
     display: none;
   }
 
-  /* 导航：仅显示图标，隐藏文字和快捷键（原侧边栏导航已迁移，此规则保留兼容） */
+  /* 导航：仅显示图标，隐藏文字和快捷键（此规则保留兼容） */
   .nav-btn {
     justify-content: center;
     padding: 8px;

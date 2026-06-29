@@ -35,10 +35,8 @@ export default [
       'public/**',
       '*.config.js',
       '*.config.ts',
-      // 宿主项目的编译产物（hosts/memora-sprite/dist、dist-electron 等）
-      'hosts/**/dist/**',
-      'hosts/**/dist-electron/**',
-      'hosts/**/node_modules/**',
+      // 宿主项目：各自拥有独立的构建与 lint 配置，根项目不扫描
+      'hosts/**',
     ],
   },
 ];

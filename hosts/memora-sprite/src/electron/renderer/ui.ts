@@ -1642,7 +1642,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  // ─── Phase 4.3 第二批：技能文件拖入安装 ──────────────────
+  // ─── 技能文件拖入安装 ──────────────────
 
   /** 技能安装成功回调（由 renderer.ts 注册，用于刷新技能列表） */
   private skillInstalledCallback: (() => void) | null = null;

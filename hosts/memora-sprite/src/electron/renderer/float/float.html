@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- CSP：浮动窗口为独立小窗口，style-src 保留 'unsafe-inline'（内联 CSS 变量定义） -->
-  <!-- P2-11 移除 script-src 'unsafe-inline'，主题初始化改由主进程 executeJavaScript 注入 -->
+  <!-- P2-11 script-src 限制为 self，主题初始化由主进程 executeJavaScript 注入 -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Memora 精灵</title>
   <!--

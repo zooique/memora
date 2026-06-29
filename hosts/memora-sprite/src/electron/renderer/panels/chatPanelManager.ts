@@ -95,8 +95,6 @@ export interface ChatPanelHost {
 // ─── 聊天面板管理器类 ─────────────────────────────────────
 
 export class ChatPanelManager {
-  // QC-R2-12：THINKING_PHASE_LABELS 已迁移到 messageDecorations.ts
-
   // ─── DOM 引用（构造函数注入） ──────────────────────────
 
   /** 消息容器元素 */
@@ -965,7 +963,7 @@ export class ChatPanelManager {
     this.streamingMessages.clear();
     this.host.setStreaming(false);
     this.host.updateSendButton();
-    // UX-P2-05 修复：清空消息时重置计数器，避免跨会话累加导致显示错误
+    // UX-P2-05 清空消息时重置计数器，避免跨会话累加导致显示错误
     this.host.resetMessageCount();
     this.host.refreshMessageCountDisplay();
     // 清空后重新显示空状态引导
@@ -1107,7 +1105,7 @@ export class ChatPanelManager {
    * 保留已生成的部分内容（对齐 Claude Code 的 partial response 保留理念）。
    * 替代旧的居中系统消息方案——居中消息与原气泡内容脱节，体验割裂。
    *
-   * QC-FLOW-02 修复：完整清理流式状态（从 streamingMessages 删除、重置 isStreaming、
+   * QC-FLOW-02 完整清理流式状态（从 streamingMessages 删除、重置 isStreaming、
    * 更新发送按钮、清除安全定时器），与 finishStreamingMessage / injectErrorToStreamingMessages
    * 保持一致。原实现只移除了 streaming 类但未清理 Map 和状态，导致 isStreaming 泄漏、
    * 用户无法发送新消息、后续 SPRITE_STREAM_END 到达时 finishStreamingMessage 重复处理。

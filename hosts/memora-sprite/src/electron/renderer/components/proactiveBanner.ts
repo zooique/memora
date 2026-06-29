@@ -30,7 +30,7 @@ export class ProactiveBanner {
    * 里程碑事件使用金色渐变庆祝样式+奖杯图标。
    *
    * @param text 提示文本
-   * @param isMilestone 是否为里程碑事件（Phase 2.3）
+   * @param isMilestone 是否为里程碑事件
    */
   showProactiveBanner(text: string, isMilestone = false): void {
     const banner = document.getElementById('proactive-banner');
@@ -39,7 +39,7 @@ export class ProactiveBanner {
     if (!banner || !textEl) return;
 
     textEl.textContent = text;
-    // Phase 2.3：里程碑事件添加专属样式类
+    // 里程碑事件添加专属样式类
     banner.classList.toggle('is-milestone', isMilestone);
     // 里程碑时切换图标为奖杯（使用 icon-trophy SVG）
     if (iconEl) {
@@ -61,7 +61,7 @@ export class ProactiveBanner {
     const banner = document.getElementById('proactive-banner');
     if (!banner) return;
     banner.classList.add('hidden');
-    // Phase 2.3：隐藏时清除里程碑样式，避免下次普通提示仍显示金色样式
+    // 隐藏时清除里程碑样式，避免下次普通提示仍显示金色样式
     banner.classList.remove('is-milestone');
     // 恢复默认精灵图标
     const iconEl = banner.querySelector<SVGElement>('.banner-icon');

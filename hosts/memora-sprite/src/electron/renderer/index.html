@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- UI-AUDIT-P0-2.2: theme-color 让任务栏/标题栏颜色跟随主题，默认浅色 -->
   <meta name="theme-color" content="#f0f0f2" />
-  <!-- CSP：仅允许 self 资源，移除 CDN 依赖以支持离线使用 + 安全加固 -->
-  <!-- P2-11 移除 style-src 'unsafe-inline'，主题初始化改由主进程 executeJavaScript 注入 -->
+  <!-- CSP：仅允许 self 资源，支持离线使用 + 安全加固 -->
+  <!-- P2-11 style-src 限制为 self，主题初始化由主进程 executeJavaScript 注入 -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'" />
   <title>Memora 精灵</title>
   <!--
-    P2-11 主题初始化已从内联脚本迁移至主进程 executeJavaScript 注入：
+    P2-11 主题初始化由主进程 executeJavaScript 注入：
     主进程的 webContents.executeJavaScript() 不受 CSP 约束，
     可在页面加载前同步读取 localStorage 并设置 data-theme 属性，
     避免 FOUC（Flash of Unstyled Content）闪烁。
@@ -175,7 +175,7 @@
         <!-- FD-03 详情区容器：包装所有感知卡片，由叙事卡片点击切换折叠/展开 -->
         <div id="dashboard-details">
 
-        <!-- Phase 2.1：情感基调展示（四维进度条，由 affectUpdated 事件动态更新） -->
+        <!-- 情感基调展示（四维进度条，由 affectUpdated 事件动态更新） -->
         <div id="affect-display" class="dashboard-section hidden">
           <h3><svg class="icon"><use href="#icon-music"/></svg> 互动基调</h3>
           <div class="affect-bars">
@@ -241,7 +241,7 @@
           <p class="rapport-description" id="context-description">--</p>
         </div>
         
-        <!-- Phase 2+：用户模式洞察（PatternDetector 检测结果，由 patternsUpdated 事件动态更新） -->
+        <!-- 用户模式洞察（PatternDetector 检测结果，由 patternsUpdated 事件动态更新） -->
         <div id="patterns-display" class="dashboard-section hidden">
           <h3><svg class="icon"><use href="#icon-lightbulb"/></svg> 模式洞察</h3>
           <div id="patterns-list" class="patterns-list">
@@ -249,7 +249,7 @@
           </div>
         </div>
 
-        <!-- Phase 2.3：里程碑成就（从 dashboard 数据实时推导，不持久化，符合"自然遗忘"原则） -->
+        <!-- 里程碑成就（从 dashboard 数据实时推导，不持久化，符合"自然遗忘"原则） -->
         <div id="milestones-display" class="dashboard-section hidden">
           <h3><svg class="icon"><use href="#icon-trophy"/></svg> 里程碑</h3>
           <div id="milestones-list" class="milestones-list">
@@ -329,8 +329,6 @@
           <ul id="recommendation-list" class="suggestion-list"></ul>
         </div>
 
-        <!-- GAP-1 已加载技能列表已迁移到设置面板"技能"选项卡 -->
-
         </div><!-- /#dashboard-details -->
        
       </div>
@@ -404,7 +402,7 @@
             <button class="banner-btn" data-action="view">查看</button>
             <button class="banner-btn" data-action="later">稍后</button>
             <button class="banner-btn" data-action="silent">静默 1 小时</button>
-            <!-- P3-FLOW-08 增加"关闭主动提示"选项，直接进入静默模式并提示去设置调整阈值 -->
+            <!-- P3-FLOW-08 关闭主动提示选项，直接进入静默模式并提示去设置调整阈值 -->
             <button class="banner-btn" data-action="disable">不再提醒</button>
           </div>
           <!-- UI-UX-02 关闭按钮：手动关闭 banner，与 actions 独立 -->
@@ -425,9 +423,9 @@
             </div>
           </div>
         </div>
-        <!-- Phase 2：回到底部浮动按钮（用户向上滚动浏览历史时显示） -->
+        <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示） -->
         <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
-        <!-- Phase 2.2：对话面板情感指示器（输入框上方紧凑四维状态条） -->
+        <!-- 对话面板情感指示器（输入框上方紧凑四维状态条） -->
         <div id="chat-affect-indicator" class="chat-affect-indicator hidden">
           <span class="chat-affect-dot" id="chat-affect-warmth" title="温暖度"></span>
           <span class="chat-affect-dot" id="chat-affect-directness" title="直接度"></span>
@@ -481,7 +479,7 @@
           </div>
           <span id="health-mini-score" class="health-mini-score hidden">100</span>
         </div>
-        <!-- 高级搜索栏（Phase 2：搜索增强，默认折叠） -->
+        <!-- 高级搜索栏（搜索增强，默认折叠） -->
         <div id="advanced-search-bar" class="advanced-search-bar hidden">
           <div class="advanced-search-row">
             <label class="advanced-search-label">来源</label>
@@ -621,7 +619,7 @@
           <button class="settings-tab" data-settings-tab="profile">画像</button>
           <!-- M2 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit">审计</button>
-          <!-- Phase 4.3：技能管理 tab：已安装技能列表 + 拖入安装 -->
+          <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
           <button class="settings-tab" data-settings-tab="skill">技能</button>
           <!-- H3 作品投影 tab：展示精灵对用户工作文件的理解 -->
           <button class="settings-tab" data-settings-tab="work">作品</button>
@@ -747,7 +745,7 @@
               <div class="radio-group">
                 <label><input type="radio" name="theme-mode" value="light" checked /> 浅色（默认）</label>
                 <label><input type="radio" name="theme-mode" value="dark" /> 深色</label>
-                <!-- P3-FLOW-12 新增"跟随系统"选项，自动跟随操作系统主题 -->
+                <!-- P3-FLOW-12 跟随系统选项，自动跟随操作系统主题 -->
                 <label><input type="radio" name="theme-mode" value="auto" /> 跟随系统</label>
               </div>
               <!-- UX-PP-21 主题即时生效说明：从顶部栏降级到主题设置行内注释 -->
@@ -870,7 +868,7 @@
           </div>
         </div>
 
-        <!-- Phase 4.3：技能管理 tab：已安装技能列表 + 拖入安装 -->
+        <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
         <div class="settings-tab-content" data-settings-tab="skill">
           <div class="settings-group">
             <h3>已安装技能</h3>
@@ -923,13 +921,13 @@
         </div>
 
         <div class="settings-actions">
-          <!-- P3-FLOW-10 Agent 连接状态指示器：移至底部按钮行左侧 -->
+          <!-- P3-FLOW-10 Agent 连接状态指示器（底部按钮行左侧） -->
           <div id="agent-status-indicator" class="agent-status-indicator unknown">
             <span class="agent-status-dot"></span>
             <span class="agent-status-text">检测中…</span>
           </div>
           <div class="settings-actions-buttons">
-          <!-- P3-FLOW-06 增加恢复默认按钮，用户配置出错时可一键恢复 -->
+          <!-- P3-FLOW-06 恢复默认按钮，用户配置出错时可一键恢复 -->
           <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
           <!-- P2-FLOW-10 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->
           <button id="btn-settings-skip" class="btn-secondary">稍后配置</button>

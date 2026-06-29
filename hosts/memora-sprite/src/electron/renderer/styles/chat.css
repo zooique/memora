@@ -288,7 +288,7 @@
   color: var(--text);
 }
 
-/* Phase 2.3：里程碑专属样式（金色渐变庆祝效果） */
+/* 里程碑专属样式（金色渐变庆祝效果） */
 #proactive-banner.is-milestone {
   background: linear-gradient(135deg, #f9e2af 0%, #fab387 50%, #f5c2e7 100%);
   border-bottom-color: #f9e2af;
@@ -872,7 +872,7 @@
   text-decoration: underline;
 }
 
-/* ─── Phase 2.2：对话面板情感指示器（输入框上方紧凑四维状态条） ── */
+/* ─── 对话面板情感指示器（输入框上方紧凑四维状态条） ── */
 /* 设计：四个彩色圆点一字排开，颜色反映情感基调等级（低蓝/中绿/高橙） */
 /*       默认隐藏，收到 affectUpdated 事件后显示，与仪表盘进度条同步   */
 .chat-affect-indicator {

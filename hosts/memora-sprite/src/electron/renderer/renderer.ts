@@ -28,7 +28,7 @@ import {
   showWelcomeMessage,
 } from './initHelpers.js';
 
-// P2-001 修复：删除重复的 declare global 和未使用的 ElectronAPI 导入。
+// P2-001 删除重复的 declare global 和未使用的 ElectronAPI 导入。
 // types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
 
 // ─── 状态（QC-01 质量收敛：模块级变量封装为 State 对象） ───
@@ -102,19 +102,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const wrappedSchedule = (ms: number) => { originalSchedule(ms); syncTimerRef(); };
 
   // FD-10 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
-  // QC-STATE-01 修复：改用控制器方法替代原模块级导出函数
+  // QC-STATE-01 改用控制器方法替代原模块级导出函数
   settingsController.setSilentRecoveryCallback(wrappedSchedule);
 
   settingsController.setupSettingsPanel();
 
   // 提前赋值 State.onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
   State.onAgentReadyCallback = () => {
-    // Bug 修复：幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
+    // 幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
     if (State.agentReadyHandled) return;
     State.agentReadyHandled = true;
     // UX-P2-03 标记 Agent 就绪，解除发送消息限制
     State.uiManager.setAgentReady(true);
-    // P3-FLOW-10 同步设置面板状态指示器（修复：IPC 事件路径遗漏更新状态指示器）
+    // P3-FLOW-10 同步设置面板状态指示器
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
     void sessionController.loadSessionHistory();
     void memoryController.loadMemoryList();
@@ -161,7 +161,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   State.uiManager.syncThemeRadios(State.uiManager.getThemeMode());
 
   State.uiManager.onThemeChange((theme, source) => {
-    // QC-THEME-01 修复：区分"用户主动切换"与"系统主题变化"
+    // QC-THEME-01 区分"用户主动切换"与"系统主题变化"
     // source='user'：用户在设置面板主动切换，需持久化到 sprite.json（真理源）
     // source='system'：auto 模式下系统主题变化，仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
     if (source === 'user') {
@@ -202,7 +202,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     // Agent 就绪：加载初始数据 + 切换到对话面板
     onAgentReady: () => {
-      // Bug 修复：IPC 事件到达时取消挂起的重试定时器，避免两条路径都触发
+      // IPC 事件到达时取消挂起的重试定时器，避免两条路径都触发
       if (State.initRetryTimer !== null) {
         window.clearTimeout(State.initRetryTimer);
         State.initRetryTimer = null;
@@ -220,7 +220,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         void memoryController.loadDashboard();
       }, 1000);
     },
-    // Phase 2.1：情感基调更新 → 仪表盘四维进度条
+    // 情感基调更新 → 仪表盘四维进度条
     onAffectUpdated: (payload) => {
       memoryController.updateAffectDisplay(payload);
     },
@@ -232,7 +232,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     onContextUpdated: (payload) => {
       memoryController.updateContextDisplay(payload);
     },
-    // Phase 2+：用户模式更新 → 洞察面板
+    // 用户模式更新 → 洞察面板
     onPatternsUpdated: (payload) => {
       memoryController.updatePatternsDisplay(payload);
     },
@@ -249,18 +249,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 初始化主动提示 banner 按钮（查看/稍后/静默）
   State.uiManager.initProactiveBannerButtons({
     onView: () => {
-      // Phase 2.1：用户点击"查看"→ 记录接受事件，接受率提升影响主动度
+      // 用户点击"查看"→ 记录接受事件，接受率提升影响主动度
       window.electronAPI.proactiveAccept();
       // 已在对话面板内，仅确保面板可见
       void State.uiManager.switchPanel('chat');
     },
     onLater: () => {
-      // Phase 2.1：用户点击"稍后"→ 记录拒绝事件，触发自适应冷却
+      // 用户点击"稍后"→ 记录拒绝事件，触发自适应冷却
       window.electronAPI.proactiveReject();
       // banner 已隐藏，无需额外操作
     },
     onSilent: () => {
-      // Phase 2.1：用户点击"静默"→ 记录拒绝事件
+      // 用户点击"静默"→ 记录拒绝事件
       window.electronAPI.proactiveReject();
       // 通知主进程进入静默模式
       void window.electronAPI.updateConfig('silentMode', true);
@@ -274,7 +274,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     // P3-FLOW-08 不再提醒：进入静默模式并提示用户去设置调整阈值
     onDisable: () => {
-      // Phase 2.1：用户点击"不再提醒"→ 记录拒绝事件
+      // 用户点击"不再提醒"→ 记录拒绝事件
       window.electronAPI.proactiveReject();
       void window.electronAPI.updateConfig('silentMode', true);
       // 设置一个较长的恢复时间（24 小时），等效于"不再提醒"
@@ -313,7 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     void State.uiManager.switchPanel('chat');
   });
 
-  // ─── Phase 4.3 第二批：技能文件拖入安装初始化 ──────────────
+  // ─── 技能文件拖入安装初始化 ──────────────
   // 注册安装成功回调：刷新仪表盘技能列表 + 计数
   State.uiManager.onSkillInstalled(() => {
     void memoryController.loadDashboard();
@@ -537,7 +537,7 @@ function setupBusinessLogic(
   });
 
   // 设置停止消息回调
-  // QC-FLOW-04 修复：不调用 stopAllStreaming()——它会同步清空 streamingMessages Map，
+  // QC-FLOW-04 不调用 stopAllStreaming()——它会同步清空 streamingMessages Map，
   // 导致主进程 abort 后异步发送的 SPRITE_STREAM_ABORTED 找不到消息元素，
   // 中断标记无法嵌入气泡。正确流程：abortChat() → 主进程中断 generator →
   // SPRITE_STREAM_ABORTED → markStreamingAborted（正确嵌入标记 + 清理状态）→
@@ -575,7 +575,7 @@ function setupBusinessLogic(
   });
 }
 
-// ─── Phase 4.3 第二批：技能文件拖入安装 dropzone 初始化 ──────
+// ─── 技能文件拖入安装 dropzone 初始化 ──────
 
 /**
  * 初始化技能拖入安装区域的事件监听

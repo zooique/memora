@@ -20,7 +20,7 @@ import type { SpriteConfigForm } from '../types.js';
 import { createIpcErrorHandler, toError, reportError } from '../helpers/errorHelpers.js';
 import { setButtonLoading } from '../helpers/domHelpers.js';
 
-/** QC-STATE-01 修复：silentRecoveryCallback 已移入 createSettingsController 闭包内 */
+/** QC-STATE-01 silentRecoveryCallback 位于 createSettingsController 闭包内 */
 
 /**
  * 创建设置控制器
@@ -32,7 +32,7 @@ export function createSettingsController(uiManager: UIManager) {
   /** IPC 错误处理函数（绑定 uiManager） */
   const handleIpcError = createIpcErrorHandler(uiManager);
 
-  /** QC-STATE-01 修复：静默恢复回调移入闭包，避免模块级状态违反"不持有模块级状态"原则 */
+  /** QC-STATE-01 静默恢复回调位于闭包内，避免模块级状态违反"不持有模块级状态"原则 */
   let silentRecoveryCallback: ((remainingMs: number) => void) | null = null;
 
   /** FD-10 注册静默恢复回调（由 renderer.ts 调用） */
@@ -325,7 +325,7 @@ export function createSettingsController(uiManager: UIManager) {
     loadWorkProjections,
     loadAuditLog,
     updateAgentStatus,
-    /** QC-STATE-01 修复：暴露静默恢复回调注册方法，替代原模块级导出函数 */
+    /** QC-STATE-01 暴露静默恢复回调注册方法，替代原模块级导出函数 */
     setSilentRecoveryCallback,
   };
 }
