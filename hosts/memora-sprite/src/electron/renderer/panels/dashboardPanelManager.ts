@@ -300,6 +300,7 @@ export class DashboardPanelManager {
           const li = document.createElement('li');
           li.title = `${s.contentPreview}\n\n${s.reason}`;
           li.dataset.action = 'view-recommendation';
+          li.dataset.memoryId = s.id;
           li.dataset.memoryName = s.name;
           const nameSpan = document.createElement('span');
           nameSpan.textContent = s.name;
@@ -632,15 +633,23 @@ export class DashboardPanelManager {
    * @param graph 关系图谱数据
    */
   renderInsights(
-    dashboard: { total: number; bySource: Record<string, number> },
+    dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
     graph: RelationGraphData,
   ): void {
     // ─── 统计卡片 ────────────────────────────────────
     const totalEl = document.getElementById('insights-total');
     const relationsEl = document.getElementById('insights-relations');
+    const conflictsEl = document.getElementById('insights-conflicts');
     const sourcesEl = document.getElementById('insights-sources');
     if (totalEl) totalEl.textContent = String(dashboard.total);
     if (relationsEl) relationsEl.textContent = String(graph.edges.length);
+    // 冲突数：优先用后端传的 conflictCount，fallback 从 edges 过滤（向后兼容）
+    const conflictCount = dashboard.conflictCount ?? graph.edges.filter((e) => e.type === 'contradicts').length;
+    if (conflictsEl) {
+      conflictsEl.textContent = String(conflictCount);
+      // 有冲突时红色高亮警示
+      conflictsEl.classList.toggle('has-conflicts', conflictCount > 0);
+    }
     if (sourcesEl) sourcesEl.textContent = String(Object.keys(dashboard.bySource).length);
 
     // ─── source 分布条形图 ────────────────────────────

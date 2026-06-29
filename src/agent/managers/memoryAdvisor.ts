@@ -75,6 +75,8 @@ export interface SuggestOptions {
 
 /** 关联推荐结果 */
 export interface SuggestHit {
+  /** 记忆唯一标识（source:name 格式） */
+  id: string;
   /** 记忆名称 */
   name: string;
   /** 来源标签 */
@@ -277,6 +279,7 @@ export class MemoryAdvisor {
     });
 
     return scored.slice(0, limit).map(({ memory, relevance, reason }) => ({
+      id: memory.id,
       name: memory.name,
       source: memory.source,
       relevance: Math.round(relevance * 100) / 100,

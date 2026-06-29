@@ -277,9 +277,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
         const target = e.target as HTMLElement;
         const item = target.closest<HTMLElement>('[data-action="view-recommendation"]');
         if (item) {
-          const memoryName = item.dataset.memoryName ?? '';
-          if (memoryName) {
-            this.triggerMemoryRecall(memoryName);
+          const memoryId = item.dataset.memoryId ?? '';
+          if (memoryId) {
+            this.triggerMemoryRecall(memoryId);
           }
         }
       });
@@ -422,7 +422,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 完成流式消息（委托到 ChatPanelManager） */
   finishStreamingMessage(messageId: string): void { this.chatPanel.finishStreamingMessage(messageId); }
   /** 设置流式消息的召回记忆摘要（委托到 ChatPanelManager） */
-  setMemoryRecall(messageId: string, memories: Array<{ name: string; score: number; source: string }>): void { this.chatPanel.setMemoryRecall(messageId, memories); }
+  setMemoryRecall(messageId: string, memories: Array<{ id: string; name: string; score: number; source: string }>): void { this.chatPanel.setMemoryRecall(messageId, memories); }
   /** 显示思考阶段指示器（委托到 ChatPanelManager） */
   showThinkingPhase(messageId: string, phase: string): void { this.chatPanel.showThinkingPhase(messageId, phase); }
   /** OBS-02 显示上下文截断提示条 */
@@ -1117,7 +1117,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   showInsightsLoading(): void { this.dashboardPanel.showInsightsLoading(); }
   /** 渲染记忆洞察数据（委托到 DashboardPanelManager） */
   renderInsights(
-    dashboard: { total: number; bySource: Record<string, number> },
+    dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
     graph: RelationGraphData,
   ): void { this.dashboardPanel.renderInsights(dashboard, graph); }
   /** 显示洞察面板加载失败状态（委托到 DashboardPanelManager） */
@@ -1167,13 +1167,13 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   updatePersonaModeBadge(mode: string): void { this.personaPanel.updatePersonaModeBadge(mode); }
   /** 注册角色切换回调（委托到 PersonaPanelManager） */
   onPersonaSwitch(cb: (name: string) => void): void { this.personaPanel.onPersonaSwitch(cb); }
-  /** 注册召回记忆点击回调（委托到 PersonaPanelManager + ChatPanelManager） */
-  onMemoryRecallClick(cb: (memoryName: string) => void): void {
+  /** 注册召回记忆点击回调（委托到 PersonaPanelManager + ChatPanelManager，传完整记忆ID） */
+  onMemoryRecallClick(cb: (memoryId: string) => void): void {
     this.personaPanel.onMemoryRecallClick(cb);
     this.chatPanel.setMemoryRecallClickCallback(cb);
   }
   /** FD-ADD-REC-CLICK 触发召回记忆点击（委托到 PersonaPanelManager，供仪表盘推荐记忆点击复用） */
-  triggerMemoryRecall(memoryName: string): void { this.personaPanel.triggerMemoryRecallClick(memoryName); }
+  triggerMemoryRecall(memoryId: string): void { this.personaPanel.triggerMemoryRecallClick(memoryId); }
 
   /** IX-07 注册角色匹配模式变更回调（委托到 SettingsPanelManager） */
   onPersonaModeChange(cb: (mode: string) => void): void {

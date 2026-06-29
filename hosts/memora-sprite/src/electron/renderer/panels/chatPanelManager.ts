@@ -122,7 +122,8 @@ export class ChatPanelManager {
   // ─── 回调引用 ──────────────────────────────────────────
 
   /** 召回记忆点击回调（跳转记忆详情） */
-  private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
+  /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情（传完整记忆ID） */
+  private memoryRecallClickCallback: ((memoryId: string) => void) | null = null;
   /** 示例问题点击回调（填入输入框并触发发送） */
   private suggestionClickCallback: ((text: string) => void) | null = null;
   /** QC-11 加载更多按钮回调（事件委托模式） */
@@ -230,11 +231,13 @@ export class ChatPanelManager {
         );
         return;
       }
-      // 召回记忆项：data-action="recall" data-name="..."
+      // 召回记忆项：data-action="recall" data-memory-id="..."
       const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
       if (recallItem) {
-        const name = recallItem.dataset.name ?? '';
-        this.memoryRecallClickCallback?.(name);
+        const memoryId = recallItem.dataset.memoryId ?? '';
+        if (memoryId) {
+          this.memoryRecallClickCallback?.(memoryId);
+        }
         return;
       }
       // 工具调用折叠头：data-action="toggle-collapse"
@@ -296,8 +299,10 @@ export class ChatPanelManager {
       const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
       if (recallItem) {
         ke.preventDefault(); // 防止 Space 滚动页面
-        const name = recallItem.dataset.name ?? '';
-        this.memoryRecallClickCallback?.(name);
+        const memoryId = recallItem.dataset.memoryId ?? '';
+        if (memoryId) {
+          this.memoryRecallClickCallback?.(memoryId);
+        }
         return;
       }
       // 工具调用折叠头
@@ -768,7 +773,7 @@ export class ChatPanelManager {
    * @param messageId 流式消息 ID
    * @param memories 召回记忆摘要列表（name/score/source）
    */
-  setMemoryRecall(messageId: string, memories: Array<{ name: string; score: number; source: string }>): void {
+  setMemoryRecall(messageId: string, memories: Array<{ id: string; name: string; score: number; source: string }>): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
     this._resetStreamSafetyTimer();
@@ -1334,8 +1339,8 @@ export class ChatPanelManager {
     this.suggestionClickCallback = callback;
   }
 
-  /** 注册召回记忆点击回调（跳转记忆详情） */
-  setMemoryRecallClickCallback(cb: (memoryName: string) => void): void {
+  /** 注册召回记忆点击回调（跳转记忆详情，传完整记忆ID） */
+  setMemoryRecallClickCallback(cb: (memoryId: string) => void): void {
     this.memoryRecallClickCallback = cb;
   }
 

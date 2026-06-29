@@ -203,11 +203,12 @@ export class AgentLoop {
       }
 
       // 有记忆召回时，通知上层（用于 UI 展示"召回透明度"——记忆名称 + 相似度）
-      // 仅暴露 name/score/source 摘要，不泄露完整 content
+      // 暴露 id/name/score/source 摘要，不泄露完整 content
       if (recalledMemories?.length) {
         yield {
           type: 'recall',
           memories: recalledMemories.map((m) => ({
+            id: m.id,
             name: m.name,
             score: m.score,
             source: m.source,

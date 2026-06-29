@@ -28,7 +28,30 @@ date: 2026-06-29
 > 内核已发布至 npm（`@zooique/memora`），精灵通过 npm alias 引用：`"memora": "npm:@zooique/memora@^0.1.0"`。  
 > 源码中 import 保持 `from 'memora'`，包管理层自动完成 `@zooique/memora` → `memora` 的映射。
 
-当内核代码修改后，按以下步骤同步到精灵：
+### 2.1 本地开发工作流（推荐日常迭代使用）
+
+当内核和精灵需要联调时，使用 `npm link` 建立本地软链接，内核编译后精灵立即生效，无需发布 npm：
+
+```bash
+# 在 memora 根目录（首次）
+npm run build          # 编译内核 src/ → dist/
+npm link               # 全局注册 @zooique/memora 软链接
+
+# 在 hosts/memora-sprite/ 目录（首次）
+npm link memora        # 建立 node_modules/@zooique/memora → 本地内核目录的 Junction
+
+# 后续迭代：每次改内核代码后
+npm run build          # 在 memora 根目录编译，精灵立即生效
+# 或开启 watch 模式：npx tsc -w
+```
+
+> **注意**：`npm link` 仅影响本地开发环境，不修改 package.json 或 package-lock.json。  
+> 提交代码前需确保精灵的 package.json 中 `memora` 依赖仍指向 `npm:@zooique/memora@^0.1.0`（而非 `file:` 协议）。  
+> 发布正式版本前，在精灵目录执行 `npm unlink memora && npm install` 切回 npm 正式包。
+
+### 2.2 正式发布工作流（用于发布 npm 版本）
+
+当内核改动需要发布到 npm 供其他宿主或 CI 使用时：
 
 **Step 1 — 内核发布**
 

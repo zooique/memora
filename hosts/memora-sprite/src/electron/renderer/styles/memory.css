@@ -681,6 +681,11 @@
   line-height: 1.2;
 }
 
+/* 冲突数有值时红色高亮警示 */
+.insights-stat-value.conflict-value.has-conflicts {
+  color: var(--red);
+}
+
 .insights-stat-label {
   font-size: var(--font-2xs);
   color: var(--text-2);
@@ -777,6 +782,74 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 1;
+}
+
+/* ─── 记忆详情弹窗：关联记忆区域 ────────────────────── */
+
+.memory-detail-relations {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.relations-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+.relations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.relation-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: var(--surface0);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  font-size: var(--font-sm);
+}
+
+.relation-item:hover {
+  background: var(--surface1);
+}
+
+.relation-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* 冲突关系特殊高亮：左边框红色警示 */
+.relation-item.relation-type-contradicts {
+  border-left: 3px solid var(--red);
+  background: var(--red-20);
+}
+
+.relation-item.relation-type-contradicts:hover {
+  background: color-mix(in srgb, var(--red-20) 70%, var(--surface1));
+}
+
+.relation-target-name {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-weight {
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ─── Phase 4：空状态插画 + 微交互 ─────────────────────────── */

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 角色选择器面板管理器 — 角色选择器 UI 逻辑独立子模块
  *
  * 职责：
@@ -34,8 +34,8 @@ export class PersonaPanelManager {
   // ─── 回调 ────────────────────────────────────────────────
   /** 角色切换回调：点击下拉菜单项时触发，传递角色名称 */
   private personaSwitchCallback: ((name: string) => void) | null = null;
-  /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情 */
-  private memoryRecallClickCallback: ((memoryName: string) => void) | null = null;
+  /** 召回记忆点击回调：点击精灵消息内的召回标签时触发，跳转到记忆详情（传完整记忆ID） */
+  private memoryRecallClickCallback: ((memoryId: string) => void) | null = null;
 
   // ─── 事件清理 ────────────────────────────────────────────
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
@@ -246,13 +246,13 @@ export class PersonaPanelManager {
     this.personaSwitchCallback = cb;
   }
 
-  /** 注册召回记忆点击回调 */
-  onMemoryRecallClick(cb: (memoryName: string) => void): void {
+  /** 注册召回记忆点击回调（跳转记忆详情，传完整记忆ID） */
+  onMemoryRecallClick(cb: (memoryId: string) => void): void {
     this.memoryRecallClickCallback = cb;
   }
 
   /** 触发召回记忆点击回调（供外部调用，如点击召回记忆标签时跳转记忆详情） */
-  triggerMemoryRecallClick(memoryName: string): void {
-    this.memoryRecallClickCallback?.(memoryName);
+  triggerMemoryRecallClick(memoryId: string): void {
+    this.memoryRecallClickCallback?.(memoryId);
   }
 }

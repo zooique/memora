@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 消息装饰器（QC-R2-12 从 chatPanelManager.ts 提取）
  *
  * 职责：
@@ -19,6 +19,8 @@
 
 /** 召回记忆摘要条目（与 Message.memoryRecall 一致） */
 export interface MemoryRecallItem {
+  /** 记忆唯一标识（source:name 格式，用于点击跳转详情） */
+  id: string;
   /** 记忆名称 */
   name: string;
   /** 召回得分 */
@@ -65,6 +67,8 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
     recallItem.appendChild(recallText);
     // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
     recallItem.dataset.action = 'recall';
+    // 使用完整记忆ID（source:name格式），确保同名记忆跨source时也能精准跳转
+    recallItem.dataset.memoryId = recall.id;
     recallItem.dataset.name = recall.name;
     // P3 键盘可访问性：tabindex 使召回记忆项可通过键盘聚焦并 Enter/Space 触发
     recallItem.setAttribute('tabindex', '0');

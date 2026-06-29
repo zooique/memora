@@ -28,6 +28,8 @@ export type ThinkingPhase = 'recalling' | 'processing' | 'archiving';
  * - source：来源标签，可选展示（如 rule/insight/profile）
  */
 export interface RecalledMemorySummary {
+  /** 记忆唯一标识（source:name 格式，用于前端精准跳转详情） */
+  id: string;
   /** 记忆可读名称（点击跳转记忆详情用） */
   name: string;
   /** 相似度分数（0-1） */

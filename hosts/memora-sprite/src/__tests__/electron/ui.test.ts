@@ -1,4 +1,4 @@
-﻿/**
+/**
  * UIManager 测试覆盖
  *
  * @vitest-environment jsdom
@@ -961,18 +961,18 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
    * 事件通过 UIManager.initEventListeners → EventTracker 注册（与 dateNavList 同模式），
    * 点击 [data-action="view-recommendation"] 元素触发 triggerMemoryRecall。
    */
-  it('点击推荐记忆项应触发 onMemoryRecallClick 回调，携带记忆名称', () => {
+  it('点击推荐记忆项应触发 onMemoryRecallClick 回调，携带记忆ID', () => {
     const cb = vi.fn();
     uiManager.onMemoryRecallClick(cb);
 
     // 模拟 loadDashboard 渲染的推荐记忆项结构
     const recList = document.getElementById('recommendation-list')!;
-    recList.innerHTML = '<li data-action="view-recommendation" data-memory-name="推荐记忆A">推荐记忆A</li>';
+    recList.innerHTML = '<li data-action="view-recommendation" data-memory-id="insight:推荐记忆A" data-memory-name="推荐记忆A">推荐记忆A</li>';
 
     const firstItem = recList.querySelector('li') as HTMLElement;
     firstItem.dispatchEvent(new Event('click', { bubbles: true }));
 
-    expect(cb).toHaveBeenCalledWith('推荐记忆A');
+    expect(cb).toHaveBeenCalledWith('insight:推荐记忆A');
   });
 
   it('点击推荐列表容器本身（非 li 子元素）不应触发回调', () => {

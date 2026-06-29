@@ -1,4 +1,4 @@
-﻿/**
+/**
  * MemoryController 单元测试（QC-TEST-MEM）
  *
  * 覆盖范围：
@@ -208,6 +208,7 @@ describe('MemoryController', () => {
         bySource: {},
         suggestions: [],
         relationCount: 0,
+        conflictCount: 0,
       });
     });
   });
@@ -506,7 +507,7 @@ describe('MemoryController', () => {
     it('inspector 为 null 时返回空仪表盘（降级而非崩溃）', () => {
       const controller = new MemoryController(createMockAgent(null));
       const result = controller.dashboard();
-      expect(result).toEqual({ total: 0, bySource: {}, suggestions: [], relationCount: 0 });
+      expect(result).toEqual({ total: 0, bySource: {}, suggestions: [], relationCount: 0, conflictCount: 0 });
     });
 
     it('relationCount 透传自 stats.relationCount', () => {

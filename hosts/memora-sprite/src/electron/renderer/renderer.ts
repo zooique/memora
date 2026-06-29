@@ -284,18 +284,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
   });
 
-  // 召回记忆点击：跳转到记忆面板并显示详情
-  State.uiManager.onMemoryRecallClick(async (memoryName) => {
+  // 召回记忆点击：跳转到记忆面板并显示详情（使用完整记忆ID精准跳转）
+  State.uiManager.onMemoryRecallClick(async (memoryId) => {
     await State.uiManager.switchPanel('memories');
-    // FD-ADD-RECALL-CONTEXT：预填搜索框 + 触发搜索，让弹窗背后的列表同步显示对应记忆
-    // 用户关闭详情弹窗后，列表已过滤好，无需手动搜索
+    // 预填搜索框为记忆名称（从id: "source:name" 格式中提取name部分），让弹窗背后列表同步
     const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
     if (searchInput) {
-      searchInput.value = memoryName;
+      // memoryId 格式为 "source:name"，冒号后的部分是记忆名称
+      const namePart = memoryId.includes(':') ? memoryId.slice(memoryId.indexOf(':') + 1) : memoryId;
+      searchInput.value = namePart;
       searchInput.dispatchEvent(new Event('input', { bubbles: true }));
     }
     try {
-      const { memory } = await window.electronAPI.showMemory(memoryName);
+      const { memory } = await window.electronAPI.showMemory(memoryId);
       if (memory) {
         State.uiManager.showMemoryDetail(memory);
       }

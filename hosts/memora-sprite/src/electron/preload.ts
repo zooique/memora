@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 预加载脚本 — 安全桥接主进程与渲染进程
  *
  * contextBridge 暴露有限的 API 给渲染进程：
@@ -30,6 +30,7 @@ export type { WorkProjectionPayload };
 import type {
   MemoryListItem,
   MemoryDetail,
+  MemoryRelationItem,
   MemorySearchResult as MemorySearchHit,
 } from '../sprite/controllers/memoryController.js';
 
@@ -145,7 +146,7 @@ const MAIN_TO_RENDERER_CHANNELS = {
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
-export type { MemoryListItem, MemoryDetail, MemorySearchHit };
+export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit };
 
 // ─── H1/H2 共享类型定义 ───────────────────────────────────
 
@@ -284,7 +285,7 @@ export interface ElectronAPI {
    * MS-12 召回透明度监听
    * 在 text chunk 之前触发，携带本次对话召回的记忆摘要列表
    */
-  onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => void) => void;
+  onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => void) => void;
   /** UX-P1-02 工具调用开始监听（携带工具名和参数） */
   onStreamToolStart: (cb: (msg: { messageId: string; toolCallId: string; name: string; args?: string }) => void) => void;
   /** UX-P1-02 工具调用结果监听（携带工具名、成功状态和摘要） */
@@ -588,7 +589,7 @@ const electronAPI: ElectronAPI = {
   onStreamStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
   onStreamChunk: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK, (_: IpcRendererEvent, msg: { messageId: string; text: string }) => cb(msg)),
   onStreamEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, (_: IpcRendererEvent, msg: { messageId: string }) => cb(msg)),
-  onStreamRecall: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, (_: IpcRendererEvent, msg: { messageId: string; memories: Array<{ name: string; score: number; source: string }> }) => cb(msg)),
+  onStreamRecall: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL, (_: IpcRendererEvent, msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => cb(msg)),
   onStreamToolStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, (_: IpcRendererEvent, msg: { messageId: string; toolCallId: string; name: string; args?: string }) => cb(msg)),
   onStreamToolResult: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, (_: IpcRendererEvent, msg: { messageId: string; toolCallId: string; name: string; ok: boolean; summary?: string }) => cb(msg)),
   onStreamThinking: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, (_: IpcRendererEvent, msg: { messageId: string; phase: string }) => cb(msg)),

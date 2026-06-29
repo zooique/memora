@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 聊天面板管理器测试
  *
  * @vitest-environment jsdom
@@ -978,16 +978,17 @@ describe('事件委托 · click 分发', () => {
     expect(btn.classList.contains('copied')).toBe(false);
   });
 
-  it('data-action=recall 应触发 memoryRecallClickCallback（传递 data-name）', () => {
+  it('data-action=recall 应触发 memoryRecallClickCallback（传递 data-memory-id）', () => {
     const { manager, messagesEl } = createManager();
     const cb = vi.fn();
     manager.setMemoryRecallClickCallback(cb);
     const item = document.createElement('div');
     item.dataset.action = 'recall';
+    item.dataset.memoryId = 'insight:记忆详情';
     item.dataset.name = '记忆详情';
     messagesEl.appendChild(item);
     item.click();
-    expect(cb).toHaveBeenCalledWith('记忆详情');
+    expect(cb).toHaveBeenCalledWith('insight:记忆详情');
   });
 
   it('data-action=toggle-collapse 应切换 .tool-call 的 collapsed 类', () => {
@@ -1055,10 +1056,11 @@ describe('回调注册', () => {
     manager.setMemoryRecallClickCallback(cb);
     const item = document.createElement('div');
     item.dataset.action = 'recall';
+    item.dataset.memoryId = 'profile:test-mem';
     item.dataset.name = 'test-mem';
     messagesEl.appendChild(item);
     item.click();
-    expect(cb).toHaveBeenCalledWith('test-mem');
+    expect(cb).toHaveBeenCalledWith('profile:test-mem');
   });
 
   it('onErrorRetry 应注册 errorRetryCallback', () => {

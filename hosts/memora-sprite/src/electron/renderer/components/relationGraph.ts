@@ -83,6 +83,14 @@ const MIN_EDGE_WIDTH = 0.5;
 const MAX_EDGE_WIDTH = 3;
 /** 动画帧率（ms） */
 const FRAME_INTERVAL = 16;
+/** 最小缩放级别 */
+const MIN_ZOOM = 0.3;
+/** 最大缩放级别 */
+const MAX_ZOOM = 3;
+/** 滚轮缩放灵敏度（每步缩放因子） */
+const ZOOM_SENSITIVITY = 0.001;
+/** 双击缩放重置动画时长（ms） */
+const RESET_ANIM_DURATION = 400;
 
 // ─── 颜色映射 ────────────────────────────────────────────────
 
@@ -169,7 +177,7 @@ export class RelationGraphRenderer {
   /** 当前选中的节点 ID（列表/详情联动，显示外发光环） */
   private selectedNodeId: string | null = null;
 
-  // ─── 视口平移（用于选中节点居中动画） ────────────────────────
+  // ─── 视口平移/缩放（用于选中节点居中动画 + 用户交互） ────────
   /** 视口 X 偏移（相机位置） */
   private cameraX = 0;
   /** 视口 Y 偏移（相机位置） */
@@ -178,6 +186,28 @@ export class RelationGraphRenderer {
   private targetCameraX = 0;
   /** 目标视口 Y 偏移（平滑动画目标） */
   private targetCameraY = 0;
+  /** 当前缩放级别（1 = 原始大小） */
+  private zoom = 1;
+  /** 目标缩放级别（平滑动画目标） */
+  private targetZoom = 1;
+  /** 是否正在拖拽画布平移 */
+  private isPanning = false;
+  /** 平移起始屏幕 X 坐标 */
+  private panStartX = 0;
+  /** 平移起始屏幕 Y 坐标 */
+  private panStartY = 0;
+  /** 平移起始相机 X 偏移 */
+  private panStartCameraX = 0;
+  /** 平移起始相机 Y 偏移 */
+  private panStartCameraY = 0;
+  /** 视图重置动画起始时间（0 表示无动画） */
+  private resetAnimStart = 0;
+  /** 视图重置动画起始相机 X */
+  private resetStartCameraX = 0;
+  /** 视图重置动画起始相机 Y */
+  private resetStartCameraY = 0;
+  /** 视图重置动画起始缩放 */
+  private resetStartZoom = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -230,9 +260,9 @@ export class RelationGraphRenderer {
     if (nodeId) {
       const node = this.nodeMap.get(nodeId);
       if (node) {
-        // 设置目标相机位置，使节点居中
-        this.targetCameraX = this.width / 2 - node.x;
-        this.targetCameraY = this.height / 2 - node.y;
+        // 设置目标相机位置，使节点居中（考虑当前缩放级别）
+        this.targetCameraX = this.width / 2 - node.x * this.zoom;
+        this.targetCameraY = this.height / 2 - node.y * this.zoom;
         // 拖拽/选中时恢复动画
         this.layoutStable = false;
         this.stableFrameCount = 0;
@@ -240,12 +270,27 @@ export class RelationGraphRenderer {
     }
   }
 
-  /** 清除所有高亮和选中状态 */
+  /** 清除所有高亮和选中状态，重置视图到初始位置 */
   clearHighlights(): void {
     this.highlightedNodeIds = null;
     this.selectedNodeId = null;
+    this.resetView();
+  }
+
+  /**
+   * 重置视图到初始状态（居中 + 缩放 1x），带动画过渡
+   */
+  resetView(): void {
     this.targetCameraX = 0;
     this.targetCameraY = 0;
+    this.targetZoom = 1;
+    // 启动重置动画
+    this.resetAnimStart = performance.now();
+    this.resetStartCameraX = this.cameraX;
+    this.resetStartCameraY = this.cameraY;
+    this.resetStartZoom = this.zoom;
+    this.layoutStable = false;
+    this.stableFrameCount = 0;
   }
 
   /**
@@ -270,13 +315,17 @@ export class RelationGraphRenderer {
     this.layoutStable = false;
     this.stableFrameCount = 0;
 
-    // 重置高亮/选中/相机状态（新数据不保留旧视图状态）
+    // 重置高亮/选中/相机/缩放状态（新数据不保留旧视图状态）
     this.highlightedNodeIds = null;
     this.selectedNodeId = null;
     this.cameraX = 0;
     this.cameraY = 0;
     this.targetCameraX = 0;
     this.targetCameraY = 0;
+    this.zoom = 1;
+    this.targetZoom = 1;
+    this.isPanning = false;
+    this.resetAnimStart = 0;
 
     // 调整 Canvas 尺寸
     this.resize();
@@ -455,12 +504,29 @@ export class RelationGraphRenderer {
     const loop = (time: number) => {
       if (time - lastTime >= FRAME_INTERVAL) {
         lastTime = time;
+
+        // 处理视图重置动画（ease-out 缓动）
+        if (this.resetAnimStart > 0) {
+          const elapsed = time - this.resetAnimStart;
+          const t = Math.min(1, elapsed / RESET_ANIM_DURATION);
+          // easeOutCubic 缓动函数
+          const ease = 1 - Math.pow(1 - t, 3);
+          this.cameraX = this.resetStartCameraX + (this.targetCameraX - this.resetStartCameraX) * ease;
+          this.cameraY = this.resetStartCameraY + (this.targetCameraY - this.resetStartCameraY) * ease;
+          this.zoom = this.resetStartZoom + (this.targetZoom - this.resetStartZoom) * ease;
+          if (t >= 1) {
+            this.resetAnimStart = 0;
+          }
+        } else {
+          // 正常平滑插值
+          this.cameraX += (this.targetCameraX - this.cameraX) * 0.12;
+          this.cameraY += (this.targetCameraY - this.cameraY) * 0.12;
+          this.zoom += (this.targetZoom - this.zoom) * 0.15;
+        }
+
         if (!this.layoutStable) {
           this.updateLayout();
         }
-        // 相机平滑跟随（lerp 插值，0.12 的系数提供自然的缓动效果）
-        this.cameraX += (this.targetCameraX - this.cameraX) * 0.12;
-        this.cameraY += (this.targetCameraY - this.cameraY) * 0.12;
         this.render();
       }
       this.animFrameId = requestAnimationFrame(loop);
@@ -493,9 +559,10 @@ export class RelationGraphRenderer {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
-    // 应用相机偏移（视口平移）
+    // 应用相机偏移 + 缩放变换（先缩放再平移，保证缩放以画布中心为锚点）
     ctx.save();
     ctx.translate(this.cameraX, this.cameraY);
+    ctx.scale(this.zoom, this.zoom);
 
     // 辅助函数：判断节点是否高亮
     const isNodeHighlighted = (node: GraphNode): boolean => {
@@ -669,15 +736,15 @@ export class RelationGraphRenderer {
   }
 
   /**
-   * 将屏幕坐标转换为世界坐标（考虑相机偏移）
+   * 将屏幕坐标转换为世界坐标（考虑相机偏移 + 缩放）
    * @param screenX 相对于 Canvas 左上角的屏幕 X
    * @param screenY 相对于 Canvas 左上角的屏幕 Y
    * @returns 世界坐标 { x, y }
    */
   private screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
     return {
-      x: screenX - this.cameraX,
-      y: screenY - this.cameraY,
+      x: (screenX - this.cameraX) / this.zoom,
+      y: (screenY - this.cameraY) / this.zoom,
     };
   }
 
@@ -703,6 +770,8 @@ export class RelationGraphRenderer {
     this.canvas.addEventListener('mouseup', this.onMouseUp);
     this.canvas.addEventListener('mouseleave', this.onMouseLeave);
     this.canvas.addEventListener('click', this.onClick);
+    this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
+    this.canvas.addEventListener('dblclick', this.onDblClick);
   }
 
   private unbindEvents(): void {
@@ -711,6 +780,8 @@ export class RelationGraphRenderer {
     this.canvas.removeEventListener('mouseup', this.onMouseUp);
     this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
     this.canvas.removeEventListener('click', this.onClick);
+    this.canvas.removeEventListener('wheel', this.onWheel);
+    this.canvas.removeEventListener('dblclick', this.onDblClick);
   }
 
   private onMouseDown = (e: MouseEvent): void => {
@@ -725,6 +796,15 @@ export class RelationGraphRenderer {
       this.dragOffsetX = node.x - world.x;
       this.dragOffsetY = node.y - world.y;
       this.layoutStable = false; // 拖拽时恢复布局
+    } else {
+      // 未点击到节点 → 开始画布平移
+      this.isPanning = true;
+      this.panStartX = screenX;
+      this.panStartY = screenY;
+      this.panStartCameraX = this.targetCameraX;
+      this.panStartCameraY = this.targetCameraY;
+      this.canvas.style.cursor = 'grabbing';
+      this.hideTooltip();
     }
   };
 
@@ -733,22 +813,34 @@ export class RelationGraphRenderer {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
+    // 节点拖拽
     if (this.dragNode) {
-      // 拖拽：将屏幕坐标转换为世界坐标，加上拖拽偏移
       const world = this.screenToWorld(screenX, screenY);
       this.dragNode.x = world.x + this.dragOffsetX;
       this.dragNode.y = world.y + this.dragOffsetY;
-      // 边界约束（在世界坐标系中）
+      // 宽松边界约束（允许拖拽到较大范围，中心引力会在动画中拉回）
       const r = this.nodeRadius(this.dragNode);
-      this.dragNode.x = Math.max(PADDING + r, Math.min(this.width - PADDING - r, this.dragNode.x));
-      this.dragNode.y = Math.max(PADDING + r, Math.min(this.height - PADDING - r, this.dragNode.y));
+      const bound = Math.max(this.width, this.height) * 2 / this.zoom;
+      this.dragNode.x = Math.max(-bound + r, Math.min(bound - r, this.dragNode.x));
+      this.dragNode.y = Math.max(-bound + r, Math.min(bound - r, this.dragNode.y));
+      this.hideTooltip();
+      return;
+    }
+
+    // 画布平移拖拽
+    if (this.isPanning) {
+      this.targetCameraX = this.panStartCameraX + (screenX - this.panStartX);
+      this.targetCameraY = this.panStartCameraY + (screenY - this.panStartY);
+      // 直接设置当前值避免延迟
+      this.cameraX = this.targetCameraX;
+      this.cameraY = this.targetCameraY;
       this.hideTooltip();
       return;
     }
 
     const prevHover = this.hoverNode;
     this.hoverNode = this.findNodeAt(screenX, screenY);
-    this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'default';
+    this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'grab';
 
     // tooltip 显示/隐藏/更新
     if (this.hoverNode) {
@@ -763,16 +855,23 @@ export class RelationGraphRenderer {
 
   private onMouseUp = (): void => {
     this.dragNode = null;
+    if (this.isPanning) {
+      this.isPanning = false;
+      this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'grab';
+    }
   };
 
   private onMouseLeave = (): void => {
     this.dragNode = null;
     this.hoverNode = null;
-    this.canvas.style.cursor = 'default';
+    this.isPanning = false;
+    this.canvas.style.cursor = 'grab';
     this.hideTooltip();
   };
 
   private onClick = (e: MouseEvent): void => {
+    // 拖拽结束后的 click 不应触发节点选中（拖拽平移或节点拖拽后避免误触）
+    if (this.isPanning || this.dragNode) return;
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
@@ -780,6 +879,44 @@ export class RelationGraphRenderer {
     if (node && this.onNodeClick) {
       this.onNodeClick(node.id);
     }
+  };
+
+  /**
+   * 滚轮缩放事件处理
+   *
+   * 以鼠标位置为锚点缩放，保证鼠标下的内容在缩放前后保持在同一位置。
+   * 缩放通过调整 targetZoom 和 targetCamera 实现，由动画循环平滑插值。
+   */
+  private onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    // 计算缩放因子（deltaY 向下为正 → 缩小；向上为负 → 放大）
+    const delta = -e.deltaY * ZOOM_SENSITIVITY;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.targetZoom * (1 + delta)));
+
+    // 以鼠标位置为锚点调整相机偏移，保证鼠标下的世界坐标点不变
+    // 推导：缩放前 world = (screen - camera) / zoom；缩放后 world' = (screen - camera') / zoom'
+    // 要求 world = world'，则 camera' = screen - (screen - camera) * zoom' / zoom
+    const zoomRatio = newZoom / this.targetZoom;
+    this.targetCameraX = screenX - (screenX - this.targetCameraX) * zoomRatio;
+    this.targetCameraY = screenY - (screenY - this.targetCameraY) * zoomRatio;
+    this.targetZoom = newZoom;
+
+    // 直接同步一部分值，提供即时响应感
+    this.cameraX += (this.targetCameraX - this.cameraX) * 0.3;
+    this.cameraY += (this.targetCameraY - this.cameraY) * 0.3;
+    this.zoom += (this.targetZoom - this.zoom) * 0.3;
+  };
+
+  /**
+   * 双击事件处理：重置视图到初始状态
+   */
+  private onDblClick = (_e: MouseEvent): void => {
+    this.resetView();
   };
 
   // ─── Tooltip 辅助方法 ──────────────────────────────────────

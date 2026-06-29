@@ -33,6 +33,8 @@ export interface DashboardData {
   suggestions: SuggestHit[];
   /** 关系边总数（ADR-014，relationStore 未注入时为 0） */
   relationCount: number;
+  /** 冲突关系数（type='contradicts' 的边数，用于健康度指标） */
+  conflictCount: number;
 }
 
 /**
@@ -72,6 +74,18 @@ export interface MemoryListItem {
   createdAt?: string;
 }
 
+/** 记忆详情中的关联记忆条目 */
+export interface MemoryRelationItem {
+  /** 关联的记忆 ID */
+  targetId: string;
+  /** 关联的记忆名称 */
+  targetName: string;
+  /** 关系类型 */
+  type: string;
+  /** 关系权重 */
+  weight: number;
+}
+
 /** 记忆详情 */
 export interface MemoryDetail {
   id: string;
@@ -81,6 +95,8 @@ export interface MemoryDetail {
   content: string;
   createdAt: string;
   accessedAt: string;
+  /** 关联记忆列表（包含冲突/支持/跟随等关系） */
+  relations: MemoryRelationItem[];
 }
 
 /** 搜索结果项 */
@@ -141,7 +157,7 @@ export class MemoryController {
    * 查看单条记忆详情
    *
    * @param id 记忆唯一标识（${source}:${name} 格式）
-   * @returns 记忆详情，不存在时返回 null
+   * @returns 记忆详情（含关联记忆列表），不存在时返回 null
    */
   show(id: string): MemoryDetail | null {
     // P2-DESIGN-6 修复：统一通过 agent.memory 访问
@@ -149,6 +165,29 @@ export class MemoryController {
     if (!inspector) return null;
     const m = inspector.getById(id);
     if (!m) return null;
+
+    // 查询与该记忆相关的所有关系（作为 source 或 target 的边）
+    const relations: MemoryRelationItem[] = [];
+    const allRelations = inspector.getAllRelations();
+    for (const rel of allRelations) {
+      let targetId: string | null = null;
+      if (rel.sourceId === id) {
+        targetId = rel.targetId;
+      } else if (rel.targetId === id) {
+        targetId = rel.sourceId;
+      }
+      if (targetId) {
+        // 查找关联记忆的名称
+        const targetMem = inspector.getById(targetId);
+        relations.push({
+          targetId,
+          targetName: targetMem?.name ?? targetId,
+          type: rel.type,
+          weight: rel.weight,
+        });
+      }
+    }
+
     return {
       id: m.id,
       name: m.name,
@@ -159,6 +198,7 @@ export class MemoryController {
       // P1-3 修复：非法日期字符串会导致 new Date(...).toISOString() 抛 RangeError，加 try/catch 降级
       createdAt: this.#toIso(m.createdAt),
       accessedAt: this.#toIso(m.accessedAt),
+      relations,
     };
   }
 
@@ -272,15 +312,19 @@ export class MemoryController {
     // 空值守卫：memory 模块未初始化时返回空仪表盘（降级而非崩溃）
     const memory = this.agent.memory;
     if (!memory) {
-      return { total: 0, bySource: {}, suggestions: [], relationCount: 0 };
+      return { total: 0, bySource: {}, suggestions: [], relationCount: 0, conflictCount: 0 };
     }
     const stats = memory.stats();
     const suggestions = memory.suggest(undefined, { limit: 5 });
+    // 统计冲突关系数：遍历所有关系边，type === 'contradicts' 的即为冲突
+    const allEdges = memory.getAllRelations();
+    const conflictCount = allEdges.filter((e) => e.type === 'contradicts').length;
     return {
       total: stats.total,
       bySource: stats.bySource,
       suggestions,
       relationCount: stats.relationCount,
+      conflictCount,
     };
   }
 

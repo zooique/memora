@@ -13,6 +13,8 @@
  *   不监听键盘输入内容。
  */
 import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import type { Agent, AgentEventMap, AgentMetrics, Memory } from 'memora';
 import type { VectorStore, ITracer } from 'memora';
 import { logger, toError } from 'memora';
@@ -1378,9 +1380,14 @@ export class Sprite {
   /**
    * H3 尝试更新作品投影（文件变化触发）
    *
-   * 从 FileWatcher 的 reason 中提取文件名，检查 agent.works
-   * 是否有该文件的投影记录。如果有，触发投影重新生成（hash 检查
-   * 在内核 WorkProjectionManager 中完成，只在内容真正变化时调用 LLM）。
+   * 从 FileWatcher 的 reason 中提取文件名，检查该文件是否已有投影记录。
+   * 如果已有投影，则读取最新文件内容，调用 ensureProjection 触发 hash 比对和
+   * 可能的重新生成（hash 检查在内核 WorkProjectionManager 中完成，只在内容真正
+   * 变化时调用 LLM）。
+   *
+   * 设计决策：只更新已有投影的文件，不对所有变化文件都生成投影——避免对
+   * node_modules、.git 等无关文件无意义地调用 LLM。首次投影由 read_file 工具
+   * 调用或启动时最小投影覆盖。
    *
    * 预后更新通过 emitSprite('workProjectionUpdated') 通知宿主 UI。
    *
@@ -1398,17 +1405,37 @@ export class Sprite {
     // 构造完整路径（fileWatcher 的 reason 是相对路径，拼接 projectPath）
     const fullPath = resolve(this.projectPath, filename);
 
-    // 异步触发投影更新，不阻塞触发器处理
-    works.getProjection(fullPath).then((entry) => {
-      if (entry) {
-        logger.info({ sourcePath: fullPath, summary: entry.summary }, '作品投影已更新');
-        this.emitSprite('workProjectionUpdated', {
-          sourcePath: fullPath,
-          summary: entry.summary,
-        });
+    // 异步执行：不阻塞触发器处理主流程
+    (async () => {
+      try {
+        // 1. 检查文件是否存在（删除/移动事件可能导致文件不存在）
+        if (!existsSync(fullPath)) {
+          return;
+        }
+
+        // 2. 先检查是否已有投影——只更新已有投影的文件，避免对无关文件做 LLM 调用
+        const existing = await works.getProjection(fullPath);
+        if (!existing) {
+          return;
+        }
+
+        // 3. 读取最新文件内容
+        const content = await readFile(fullPath, 'utf-8');
+
+        // 4. 调用 ensureProjection：内部 hash 比对，只在内容真正变化时重新生成
+        const entry = await works.ensureProjection(fullPath, content, filename);
+
+        // 5. 更新成功则通知 UI
+        if (entry) {
+          logger.info({ sourcePath: fullPath, summary: entry.summary }, '作品投影已更新');
+          this.emitSprite('workProjectionUpdated', {
+            sourcePath: fullPath,
+            summary: entry.summary,
+          });
+        }
+      } catch (err) {
+        logger.warn({ err: toError(err).message, filePath: fullPath }, '作品投影更新失败');
       }
-    }).catch((err) => {
-      logger.warn({ err: toError(err).message, filePath: fullPath }, '作品投影更新失败');
-    });
+    })();
   }
 }

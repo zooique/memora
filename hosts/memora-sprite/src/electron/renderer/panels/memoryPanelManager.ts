@@ -887,6 +887,8 @@ export class MemoryPanelManager {
     const createdEl = getOptionalElement('memory-detail-created', 'span');
     const accessedEl = getOptionalElement('memory-detail-accessed', 'span');
     const contentEl = getOptionalElement('memory-detail-content', 'pre');
+    const relationsEl = document.getElementById('memory-detail-relations');
+    const relationsListEl = document.getElementById('memory-relations-list');
 
     if (nameEl) nameEl.textContent = memory.name;
     if (sourceEl) {
@@ -902,6 +904,55 @@ export class MemoryPanelManager {
 
     // P2-FLOW-08 保存原始内容到 dataset，供编辑取消时恢复
     if (contentEl) contentEl.dataset.originalContent = memory.content;
+
+    // 渲染关联记忆列表
+    if (relationsEl && relationsListEl) {
+      if (memory.relations.length > 0) {
+        relationsEl.classList.remove('hidden');
+        relationsListEl.innerHTML = '';
+        for (const rel of memory.relations) {
+          const item = document.createElement('div');
+          item.className = `relation-item relation-type-${rel.type}`;
+          item.dataset.memoryId = rel.targetId;
+          item.setAttribute('tabindex', '0');
+          item.setAttribute('role', 'button');
+
+          const typeTag = document.createElement('span');
+          typeTag.className = `relation-type-tag relation-type-${rel.type}`;
+          typeTag.textContent = rel.type;
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'relation-target-name';
+          nameSpan.textContent = rel.targetName;
+
+          const weightSpan = document.createElement('span');
+          weightSpan.className = 'relation-weight';
+          weightSpan.textContent = `w:${rel.weight.toFixed(2)}`;
+
+          item.appendChild(typeTag);
+          item.appendChild(nameSpan);
+          item.appendChild(weightSpan);
+
+          // 点击关联记忆 → 触发 memoryClickCallback 查看该记忆详情
+          const openRelation = () => {
+            if (this.memoryClickCallback) {
+              this.memoryClickCallback(rel.targetId);
+            }
+          };
+          item.addEventListener('click', openRelation);
+          item.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openRelation();
+            }
+          });
+
+          relationsListEl.appendChild(item);
+        }
+      } else {
+        relationsEl.classList.add('hidden');
+      }
+    }
 
     // 记录当前查看的记忆 ID（供删除/编辑按钮使用）
     this.memoryDetailModal.dataset.memoryId = memory.id;

@@ -525,6 +525,10 @@
               <span class="insights-stat-label">关系</span>
             </div>
             <div class="insights-stat">
+              <span class="insights-stat-value conflict-value" id="insights-conflicts">0</span>
+              <span class="insights-stat-label">冲突</span>
+            </div>
+            <div class="insights-stat">
               <span class="insights-stat-value" id="insights-sources">0</span>
               <span class="insights-stat-label">来源</span>
             </div>
@@ -961,6 +965,11 @@
           <span>访问: <span id="memory-detail-accessed"></span></span>
         </div>
         <pre id="memory-detail-content"></pre>
+        <!-- 关联记忆区域：冲突红色高亮，点击可跳转查看关联记忆 -->
+        <div id="memory-detail-relations" class="memory-detail-relations hidden">
+          <div class="relations-title">关联记忆</div>
+          <div id="memory-relations-list" class="relations-list"></div>
+        </div>
       </div>
       <div class="modal-footer">
         <!-- P2-FLOW-08 编辑模式按钮：保存/取消（默认隐藏，编辑时显示） -->
