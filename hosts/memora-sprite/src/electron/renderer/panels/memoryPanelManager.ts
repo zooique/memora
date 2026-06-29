@@ -79,8 +79,8 @@ export class MemoryPanelManager {
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ─── 图谱视图状态（ADR-014：拓扑可视化） ──────────────────
-  /** 当前视图模式：list（列表）或 graph（图谱），默认列表 */
-  private viewMode: 'list' | 'graph' = 'list';
+  /** 当前视图模式：list（列表）、timeline（时间线）、graph（图谱），默认列表 */
+  private viewMode: 'list' | 'timeline' | 'graph' = 'list';
   /** 图谱渲染器实例（Canvas 2D 力导向图） */
   private graphRenderer: RelationGraphRenderer | null = null;
   /** 图谱数据缓存（切换回图谱视图时避免重复请求 IPC） */
@@ -117,7 +117,7 @@ export class MemoryPanelManager {
   /** 清理确认回调（执行批量删除） */
   private cleanupConfirmCallback: ((ids: string[]) => Promise<void>) | null = null;
   /** 视图切换按钮状态更新回调（通知Controller同步按钮active状态） */
-  private viewSwitchCallback: ((mode: 'list' | 'graph') => void) | null = null;
+  private viewSwitchCallback: ((mode: 'list' | 'timeline' | 'graph') => void) | null = null;
 
   // ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
@@ -364,10 +364,15 @@ export class MemoryPanelManager {
     const graphBtn = document.getElementById('btn-graph-view');
 
     /** 更新视图切换按钮的 active 状态 */
-    const updateViewSwitchBtns = (view: 'list' | 'graph'): void => {
+    const updateViewSwitchBtns = (view: 'list' | 'timeline' | 'graph'): void => {
       if (listBtn) {
         listBtn.classList.toggle('active', view === 'list');
         listBtn.setAttribute('aria-selected', String(view === 'list'));
+      }
+      const timelineBtn = document.getElementById('btn-timeline-view');
+      if (timelineBtn) {
+        timelineBtn.classList.toggle('active', view === 'timeline');
+        timelineBtn.setAttribute('aria-selected', String(view === 'timeline'));
       }
       if (graphBtn) {
         graphBtn.classList.toggle('active', view === 'graph');
@@ -399,6 +404,25 @@ export class MemoryPanelManager {
           updateViewSwitchBtns('graph');
           this.switchView('graph');
           this.viewSwitchCallback?.('graph');
+        }
+      });
+    }
+
+    // 时间线视图按钮
+    const timelineBtn = document.getElementById('btn-timeline-view');
+    if (timelineBtn) {
+      this.events.addEventListener(timelineBtn, 'click', () => {
+        const timelineContainer = document.getElementById('memory-timeline-container');
+        const isTimelineView = timelineContainer && timelineContainer.style.display !== 'none';
+
+        if (isTimelineView) {
+          updateViewSwitchBtns('list');
+          this.switchView('list');
+          this.viewSwitchCallback?.('list');
+        } else {
+          updateViewSwitchBtns('timeline');
+          this.switchView('timeline');
+          this.viewSwitchCallback?.('timeline');
         }
       });
     }
@@ -680,6 +704,158 @@ export class MemoryPanelManager {
     }
   }
 
+  /**
+   * A2：渲染时间线视图（按天分组记忆）
+   *
+   * 将缓存的记忆列表按 createdAt 分组为日期节点，
+   * 以垂直时间线形式展示，每条记忆显示为时间线上的一个节点。
+   * 支持搜索高亮和 source 颜色区分。
+   */
+  private renderTimeline(): void {
+    const container = document.getElementById('memory-timeline-container');
+    if (!container || !this.allMemories || this.allMemories.length === 0) return;
+
+    // 清空容器
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
+
+    // 按天分组记忆（以 createdAt 日期为键）
+    const groups = new Map<string, MemoryListItem[]>();
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    for (const mem of this.allMemories) {
+      const date = mem.createdAt ? new Date(mem.createdAt) : new Date();
+      const dateKey = this.formatDateKey(date);
+      const existing = groups.get(dateKey);
+      if (existing) {
+        existing.push(mem);
+      } else {
+        groups.set(dateKey, [mem]);
+      }
+    }
+
+    // 按日期降序排序（今天 → 昨天 → 更早）
+    const sortedDates = Array.from(groups.keys()).sort((a, b) => b.localeCompare(a));
+
+    if (sortedDates.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'timeline-empty';
+      empty.textContent = '暂无时间线数据';
+      container.appendChild(empty);
+      return;
+    }
+
+    // 渲染时间线容器
+    const timeline = document.createElement('div');
+    timeline.className = 'timeline';
+
+    for (const dateKey of sortedDates) {
+      const items = groups.get(dateKey)!;
+      const dateObj = new Date(dateKey);
+
+      // 日期标签
+      const dateLabel = this.formatDateLabel(dateObj, today, yesterday);
+
+      // 日期组
+      const group = document.createElement('div');
+      group.className = 'timeline-group';
+
+      const header = document.createElement('div');
+      header.className = 'timeline-date-header';
+      header.innerHTML = `<span class="timeline-date-dot"></span><span class="timeline-date-text">${dateLabel}</span><span class="timeline-date-count">${items.length} 条</span>`;
+      group.appendChild(header);
+
+      // 该日期下的记忆列表
+      const itemList = document.createElement('div');
+      itemList.className = 'timeline-items';
+
+      for (const mem of items) {
+        const item = document.createElement('div');
+        item.className = 'timeline-item';
+        item.dataset.id = mem.id;
+        item.setAttribute('data-action', 'view-memory');
+        item.setAttribute('data-memory-id', mem.id);
+
+        // 时间点
+        const timeDot = document.createElement('div');
+        timeDot.className = 'timeline-item-dot';
+        item.appendChild(timeDot);
+
+        // 记忆内容
+        const content = document.createElement('div');
+        content.className = 'timeline-item-content';
+
+        const nameEl = document.createElement('div');
+        nameEl.className = 'timeline-item-name';
+        nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
+        content.appendChild(nameEl);
+
+        const metaEl = document.createElement('div');
+        metaEl.className = 'timeline-item-meta';
+        const sourceTag = document.createElement('span');
+        sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
+        sourceTag.textContent = mem.source;
+        metaEl.appendChild(sourceTag);
+
+        if (mem.createdAt) {
+          const timeEl = document.createElement('span');
+          timeEl.className = 'timeline-item-time';
+          timeEl.textContent = new Date(mem.createdAt).toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          metaEl.appendChild(timeEl);
+        }
+        content.appendChild(metaEl);
+
+        const previewEl = document.createElement('div');
+        previewEl.className = 'timeline-item-preview';
+        previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
+        content.appendChild(previewEl);
+
+        item.appendChild(content);
+        itemList.appendChild(item);
+      }
+
+      group.appendChild(itemList);
+      timeline.appendChild(group);
+    }
+
+    container.appendChild(timeline);
+  }
+
+  /**
+   * 格式化日期为 YYYY-MM-DD 键
+   */
+  private formatDateKey(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  /**
+   * 格式化日期标签（今天/昨天/具体日期）
+   */
+  private formatDateLabel(date: Date, today: Date, yesterday: Date): string {
+    const dateKey = this.formatDateKey(date);
+    const todayKey = this.formatDateKey(today);
+    const yesterdayKey = this.formatDateKey(yesterday);
+
+    if (dateKey === todayKey) return '今天';
+    if (dateKey === yesterdayKey) return '昨天';
+
+    const options: Intl.DateTimeFormatOptions = {
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long',
+    };
+    return date.toLocaleDateString('zh-CN', options);
+  }
+
   // ─── 记忆详情 ───────────────────────────────────────────
 
   /** 显示记忆详情 */
@@ -882,26 +1058,38 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 切换记忆视图模式（列表 ↔ 图谱）
+   * 切换记忆视图模式（列表 ↔ 时间线 ↔ 图谱）
    *
    * 图谱视图使用 Canvas 2D 力导向图渲染记忆关系网络。
+   * 时间线视图按天分组记忆列表。
    * 首次切换时延迟初始化渲染器（确保 Canvas DOM 已就绪）。
    * 关系数据为空时隐藏图谱标签，保持列表视图。
    *
    * @param mode 目标视图模式
    */
-  switchView(mode: 'list' | 'graph'): void {
+  switchView(mode: 'list' | 'timeline' | 'graph'): void {
     this.viewMode = mode;
 
-    // 切换列表和图谱容器的可见性
+    // 切换列表、时间线和图谱容器的可见性
     const listEl = this.memoryListEl;
     const graphEl = document.getElementById('memory-graph-container');
+    const timelineEl = document.getElementById('memory-timeline-container');
 
     if (mode === 'list') {
       if (listEl) listEl.style.display = '';
       if (graphEl) graphEl.style.display = 'none';
+      if (timelineEl) timelineEl.style.display = 'none';
+    } else if (mode === 'timeline') {
+      if (listEl) listEl.style.display = 'none';
+      if (graphEl) graphEl.style.display = 'none';
+      if (timelineEl) {
+        timelineEl.style.display = '';
+        // 渲染时间线视图（使用缓存的记忆列表）
+        this.renderTimeline();
+      }
     } else {
       if (listEl) listEl.style.display = 'none';
+      if (timelineEl) timelineEl.style.display = 'none';
       if (graphEl) {
         graphEl.style.display = '';
         // 延迟初始化图谱渲染器（确保容器尺寸已计算）

@@ -1067,7 +1067,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 加载图谱数据到渲染器（委托到 MemoryPanelManager） */
   loadGraphData(data: RelationGraphData): void { this.memoryPanel.loadGraphData(data); }
   /** 切换记忆视图模式（委托到 MemoryPanelManager） */
-  switchMemoryView(mode: 'list' | 'graph'): void { this.memoryPanel.switchView(mode); }
+  switchMemoryView(mode: 'list' | 'timeline' | 'graph'): void { this.memoryPanel.switchView(mode); }
   /** 检查是否有图谱数据（委托到 MemoryPanelManager） */
   hasGraphData(): boolean { return this.memoryPanel.hasGraphData(); }
   /** 设置图谱高亮节点（搜索联动，委托到 MemoryPanelManager） */

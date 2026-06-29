@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 精灵主控 — 唤醒调度 + 对话管理 + 事件驱动
  *
  * 职责（拆分后）：
@@ -277,7 +277,10 @@ export class Sprite {
     this.presenceController?.start();
 
     // Phase 2.1：首次推导情感基调并注入 system prompt
-    this.deriveAndInjectAffect();
+    const initialPrompt = this.deriveAndInjectAffect();
+    if (initialPrompt) {
+      this.agent.injectAffect(initialPrompt);
+    }
 
     logger.info('精灵已启动，等待唤醒...');
   }
@@ -876,8 +879,11 @@ export class Sprite {
    */
   recordProactiveAccept(): void {
     this.proactiveEngine.recordAccept();
-    // 重新推导情感基调，更新主动度并通知 UI
-    this.deriveAndInjectAffect();
+    // 重新推导情感基调，更新主动度并注入 system prompt
+    const prompt = this.deriveAndInjectAffect();
+    if (prompt) {
+      this.agent.injectAffect(prompt);
+    }
     logger.info({ acceptanceRate: this.proactiveEngine.acceptanceRate }, '用户接受主动提示');
   }
 
@@ -923,8 +929,11 @@ export class Sprite {
     const onPersonaSwitched = (e: AgentEventMap['personaSwitched']) => {
       this.emitSprite('personaChanged', { from: e.from, to: e.to });
       this.proactiveEngine.addNotice('persona', `${e.from ?? '(无)'} → ${e.to}`);
-      // Phase 2.1：角色切换后重新推导情感基调（traits 可能不同）
-      this.deriveAndInjectAffect();
+      // Phase 2.1：角色切换后重新推导情感基调（traits 可能不同）并注入 system prompt
+      const prompt = this.deriveAndInjectAffect();
+      if (prompt) {
+        this.agent.injectAffect(prompt);
+      }
       logger.info({ from: e.from, to: e.to }, '角色切换');
     };
     this.agentHandlers.personaSwitched = onPersonaSwitched;
@@ -1012,16 +1021,11 @@ export class Sprite {
   // ─── 触发器处理 ────────────────────────────────────────
 
   /**
-   * 推导情感基调并注入到 system prompt（Phase 2.1）
+   * 推导情感基调，返回 prompt 文本（不再直接注入，由 refreshPerceptionBeforeChat 统一注入）
    *
-   * 调用时机：
-   *   1. Sprite.start() 首次启动时
-   *   2. 角色切换后（personaSwitched 事件）
-   *   3. 主动提示后（proactivePrompt 事件）
-   *
-   * 纯代码计算，不依赖 LLM，不持久化。推导后发射 affectUpdated 事件供 UI 消费。
+   * 副作用：更新 lastAffect 缓存、发射 affectUpdated 事件、推导默契度+上下文
    */
-  private deriveAndInjectAffect(): void {
+  private deriveAndInjectAffect(): string {
     // 更新 AffectController 配置（角色 + 接受率）
     this.affectController.updateOptions({
       acceptanceRate: this.proactiveEngine.acceptanceRate,
@@ -1040,32 +1044,28 @@ export class Sprite {
 
     this.lastAffect = affect; // Phase 1+2：缓存供 ProactiveEngine 注入
 
-    // 生成情感描述文本并注入到 Agent system prompt
-    const affectPrompt = this.affectController.buildAffectPrompt(affect);
-    this.agent.injectAffect(affectPrompt);
-
     // 发射情感基调更新事件（供 UI 仪表盘展示）
     this.emitSprite('affectUpdated', affect);
 
-    // Phase 3：同时推导并注入默契度
-    this.deriveAndInjectRapport();
+    // 生成情感描述文本（不再直接注入，由调用方统一注入）
+    const affectPrompt = this.affectController.buildAffectPrompt(affect);
 
-    // Phase 4：同时推导并注入对话上下文
-    this.deriveAndInjectContext();
+    // Phase 3：同时推导默契度（返回 prompt 文本）
+    const rapportPrompt = this.deriveAndInjectRapport();
+
+    // Phase 4：同时推导对话上下文（返回 prompt 文本）
+    const contextPrompt = this.deriveAndInjectContext();
+
+    // 累积所有提示文本，用空行分隔
+    return [affectPrompt, rapportPrompt, contextPrompt].filter(Boolean).join('\n\n');
   }
 
   /**
-   * 推导默契度并注入到 system prompt（Phase 3）
+   * 推导默契度，返回 prompt 文本（不再直接注入，由 refreshPerceptionBeforeChat 统一注入）
    *
-   * 与 deriveAndInjectAffect 互补：
-   *   - AffectController → 当前互动基调（动态，每次变化）
-   *   - RapportController → 长期关系质量（稳定，缓慢变化）
-   *
-   * 纯代码计算，不依赖 LLM，不持久化。
-   * 推导后发射 rapportUpdated 事件供 UI 消费。
-   * 复用 injectAffect 注入点，追加到 affect 之后。
+   * 副作用：更新 lastRapport 缓存、发射 rapportUpdated 事件
    */
-  private deriveAndInjectRapport(): void {
+  private deriveAndInjectRapport(): string {
     // 获取所有记忆用于推导
     const memories = this.agent.memory?.list(1000) ?? [];
 
@@ -1083,12 +1083,11 @@ export class Sprite {
     const rapport = this.rapportController.deriveRapport(memories);
     this.lastRapport = rapport; // Phase 1+2：缓存供 ProactiveEngine 注入
 
-    // 生成默契度描述文本并注入到 Agent system prompt（复用同一注入点）
-    const rapportPrompt = this.rapportController.buildRapportPrompt(rapport);
-    this.agent.injectAffect(rapportPrompt);
-
     // 发射默契度更新事件（供 UI 仪表盘展示）
     this.emitSprite('rapportUpdated', rapport);
+
+    // 生成默契度描述文本（不再直接注入，由调用方统一注入）
+    return this.rapportController.buildRapportPrompt(rapport);
   }
 
   /**
@@ -1107,26 +1106,15 @@ export class Sprite {
   }
 
   /**
-   * 推导对话上下文并注入到 system prompt（Phase 4）
+   * 推导对话上下文，返回 prompt 文本（不再直接注入，由 refreshPerceptionBeforeChat 统一注入）
    *
-   * 与 deriveAndInjectAffect / deriveAndInjectRapport 互补，形成完整感知三角：
-   *   - AffectController → 当前互动基调（语气）
-   *   - RapportController → 长期关系质量（信任）
-   *   - ContextAwareness → 当前对话上下文（节奏 + 话题 + 深度）
-   *
-   * 纯代码计算，不依赖 LLM，不持久化。
-   * 推导后发射 contextUpdated 事件供 UI 消费。
-   * 复用 injectAffect 注入点，追加到 affect + rapport 之后。
+   * 副作用：发射 contextUpdated 事件、注入 ProactiveEngine、检测模式
    */
-  private deriveAndInjectContext(): void {
+  private deriveAndInjectContext(): string {
     // 获取所有记忆用于推导
     const memories = this.agent.memory?.list(1000) ?? [];
 
     const context = this.contextAwareness.deriveContext(memories);
-
-    // 生成上下文感知描述文本并注入到 Agent system prompt
-    const contextPrompt = this.contextAwareness.buildContextPrompt(context);
-    this.agent.injectAffect(contextPrompt);
 
     // 发射对话上下文更新事件（供 UI 仪表盘展示）
     this.emitSprite('contextUpdated', context);
@@ -1134,8 +1122,13 @@ export class Sprite {
     // Phase 1+2：将感知数据注入 ProactiveEngine，实现智能触发和个性化提示
     this.injectPerceptionToProactiveEngine(context);
 
-    // Phase 2+：检测记忆模式并注入 ProactiveEngine
-    this.detectAndInjectPatterns(memories);
+    // Phase 2+：检测记忆模式并返回 pattern prompt
+    const patternPrompt = this.detectAndInjectPatterns(memories);
+
+    // 生成上下文感知描述文本（不再直接注入，由调用方统一注入）
+    const contextPrompt = this.contextAwareness.buildContextPrompt(context);
+
+    return [contextPrompt, patternPrompt].filter(Boolean).join('\n\n');
   }
 
   /**
@@ -1159,68 +1152,144 @@ export class Sprite {
   }
 
   /**
-   * 检测记忆模式并注入 ProactiveEngine 和 LLM Prompt（Phase 2+）
+   * 检测记忆模式，返回 prompt 文本（不再直接注入，由 refreshPerceptionBeforeChat 统一注入）
    *
-   * 从记忆数据中检测重复主题、知识缺口和兴趣漂移，
-   * 将结果同时注入：
-   *   1. ProactiveEngine — 用于生成主动提示的具体内容素材
-   *   2. Agent system prompt — 让 LLM 在对话中利用模式洞察
-   *
-   * 纯代码计算，不依赖 LLM。
+   * 副作用：注入 ProactiveEngine、发射 patternsUpdated 事件
    *
    * @param memories 所有记忆列表
+   * @returns 模式洞察 prompt 文本，无模式时返回空字符串
    */
-  private detectAndInjectPatterns(memories: Memory[]): void {
+  private detectAndInjectPatterns(memories: Memory[]): string {
     const patterns = this.patternDetector.detectPatterns(memories);
     this.proactiveEngine.setPatterns(patterns);
-
-    // 将模式洞察注入 LLM system prompt（行为指导格式，与 affect/rapport/context 一致）
-    const patternPrompt = this.patternDetector.buildPatternPrompt(patterns);
-    if (patternPrompt) {
-      this.agent.injectAffect(patternPrompt);
-    }
 
     // 发射模式更新事件（供 UI 洞察面板展示）
     if (patterns.length > 0) {
       this.emitSprite('patternsUpdated', { patterns });
     }
+
+    // 将模式洞察返回（不再直接注入，由调用方统一注入）
+    return this.patternDetector.buildPatternPrompt(patterns) ?? '';
   }
 
   /**
    * 对话前刷新全量感知，确保 LLM 拿到最新状态
    *
-   * 每次 wakeup() 对话前调用，重新推导并注入：
+   * 每次 wakeup() 对话前调用，重新推导并一次性注入所有感知提示。
+   * 之前因各方法独立调用 injectAffect 导致相互覆盖（仅最后生效），
+   * 现已改为累积所有 prompt 统一注入。
+   *
+   * 注入内容：
    *   1. 情感基调（AffectController）
    *   2. 默契度（RapportController）
    *   3. 对话上下文（ContextAwareness）
    *   4. 用户模式（PatternDetector）
    *   5. 里程碑信号（ProactiveEngine）
+   *   6. 跨会话上下文（新）
    */
   private refreshPerceptionBeforeChat(): void {
-    // 重新推导情感+默契度+上下文+模式
-    this.deriveAndInjectAffect();
+    // 收集所有感知提示文本
+    const prompts: string[] = [];
 
-    // 注入里程碑信号（若有待处理的里程碑事件）
-    this.injectMilestoneSignal();
+    // 1-4. 情感基调 + 默契度 + 对话上下文 + 用户模式（链式推导）
+    const perceptionPrompt = this.deriveAndInjectAffect();
+    if (perceptionPrompt) {
+      prompts.push(perceptionPrompt);
+    }
+
+    // 5. 里程碑信号（若有待处理的里程碑事件）
+    const milestonePrompt = this.getMilestonePrompt();
+    if (milestonePrompt) {
+      prompts.push(milestonePrompt);
+    }
+
+    // 6. 跨会话上下文（检测到长时间间隔时注入上次对话摘要）
+    const crossSessionPrompt = this.getCrossSessionContext();
+    if (crossSessionPrompt) {
+      prompts.push(crossSessionPrompt);
+    }
+
+    // 一次性注入所有提示，避免相互覆盖
+    if (prompts.length > 0) {
+      this.agent.injectAffect(prompts.join('\n\n'));
+    }
   }
 
   /**
-   * 注入里程碑信号到 LLM system prompt
+   * 获取里程碑提示文本（不再直接注入，由 refreshPerceptionBeforeChat 统一注入）
    *
    * 当 ProactiveEngine 中有待处理的里程碑事件时，
    * 告知 LLM 这是一个值得庆祝/提及的特殊时刻。
    * 里程碑是一次性信号：对话时注入，UI banner 独立展示，互不干扰。
+   *
+   * @returns 里程碑 prompt 文本，无里程碑时返回空字符串
    */
-  private injectMilestoneSignal(): void {
+  private getMilestonePrompt(): string {
     const milestones = this.proactiveEngine.peekPendingMilestones();
-    if (milestones.length === 0) return;
+    if (milestones.length === 0) return '';
 
     const lines: string[] = ['【里程碑时刻】我们刚刚达成了一个值得注意的里程碑：'];
     for (const m of milestones) {
       lines.push(`- ${m}`);
     }
     lines.push('→ 这是我们关系中的一个小节点，可以自然地提及或庆祝，但不要刻意生硬');
-    this.agent.injectAffect(lines.join('\n'));
+    return lines.join('\n');
+  }
+
+  /**
+   * 获取跨会话上下文提示（A1 新功能）
+   *
+   * 当用户距离上次交互超过 1 小时时，从记忆系统中提取最近的关键记忆，
+   * 生成"上次聊到..."上下文，让 LLM 能够自然地接续对话。
+   *
+   * 纯代码计算，不依赖 LLM。不直接注入，由 refreshPerceptionBeforeChat 统一注入。
+   *
+   * @returns 跨会话上下文 prompt 文本，间隔不足 1 小时或无历史时返回空字符串
+   */
+  private getCrossSessionContext(): string {
+    const lastInteraction = this.agent.lastInteractionAt;
+    if (!lastInteraction) return ''; // 首次交互，无历史
+
+    const gapMs = Date.now() - lastInteraction.getTime();
+    const ONE_HOUR_MS = 60 * 60 * 1000;
+
+    if (gapMs < ONE_HOUR_MS) return ''; // 间隔太短，不需要跨会话上下文
+
+    // 获取最近的记忆（按创建时间排序，最新的在前）
+    const memories = this.agent.memory?.list(50) ?? [];
+    if (memories.length === 0) return '';
+
+    // 提取上次交互以来的记忆
+    const recentMemories = memories.filter((m) => {
+      const createdMs = new Date(m.createdAt).getTime();
+      return (Date.now() - createdMs) < gapMs + ONE_HOUR_MS * 2;
+    });
+
+    // 取最近 5 条关键记忆作为上下文
+    const keyMemories = recentMemories.slice(0, 5);
+    if (keyMemories.length === 0) return '';
+
+    // 生成时间间隔描述
+    const gapHours = Math.round(gapMs / ONE_HOUR_MS);
+    const gapText = gapHours < 24
+      ? `${gapHours} 小时`
+      : `${Math.round(gapHours / 24)} 天`;
+
+    const lines: string[] = [
+      `【跨会话上下文】距离上次对话已经过了 ${gapText}。以下是上次对话中涉及的关键信息，你可能想自然地提及或追问：`,
+    ];
+
+    for (const mem of keyMemories) {
+      const label = mem.source === 'profile' ? '用户信息'
+        : mem.source === 'insight' ? '洞察'
+        : '记忆';
+      // 取 content 前 80 字作为摘要
+      const preview = (mem.content ?? '').substring(0, 80);
+      lines.push(`- [${label}] ${mem.name}: ${preview}`);
+    }
+
+    lines.push('→ 如果合适，可以自然地提及或追问这些内容，让对话有连续感。但不要生硬地列举。');
+    return lines.join('\n');
   }
 
   /**
