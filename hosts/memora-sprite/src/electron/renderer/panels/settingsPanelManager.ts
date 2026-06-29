@@ -413,14 +413,20 @@ export class SettingsPanelManager {
     const input = document.getElementById(inputId);
     if (!(btn instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) return;
 
+    // 使用 SVG 图标替代 emoji（UX-FD-03）
+    const renderIcon = (visible: boolean) => {
+      btn.innerHTML = `<svg class="icon" style="width:14px;height:14px;${visible ? 'color:var(--accent)' : ''}"><use href="#icon-eye"/></svg>`;
+    };
+    renderIcon(false);
+
     this.events.addEventListener(btn, 'click', () => {
       if (input.type === 'password') {
         input.type = 'text';
-        btn.textContent = '🙈';
+        renderIcon(true);
         btn.title = '隐藏 API Key';
       } else {
         input.type = 'password';
-        btn.textContent = '👁';
+        renderIcon(false);
         btn.title = '显示 API Key';
       }
     });

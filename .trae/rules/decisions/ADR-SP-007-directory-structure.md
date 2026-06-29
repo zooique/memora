@@ -101,7 +101,7 @@ hosts/memora-sprite/
 
 ## 理由
 
-- **`hosts/` 先例**：ADR-005 已确立 `hosts/memora-cli/` 作为宿主项目位置，精灵遵循同一约定
+- **`hosts/` 先例**：ADR-005 已确立 `hosts/memora-sprite/` 作为宿主项目位置，精灵遵循同一约定
 - **独立 package.json**：精灵的 native 依赖（better-sqlite3）不污染内核
 - **按职责分层**：与内核 ADR-008 一致，storage/ 和 sprite/ 各自独立
 - **最小结构**：阶段一只需 3 个目录（storage/sprite/__tests__），不过度设计

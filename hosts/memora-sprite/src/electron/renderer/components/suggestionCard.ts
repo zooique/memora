@@ -128,7 +128,8 @@ export class SuggestionCardManager {
 
     const iconSpan = document.createElement('span');
     iconSpan.className = 'suggestion-card-icon';
-    iconSpan.textContent = '💡';
+    // 使用 SVG 图标替代 emoji（UX-FD-03）
+    iconSpan.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
     header.appendChild(iconSpan);
 
     const typeSpan = document.createElement('span');
@@ -144,7 +145,8 @@ export class SuggestionCardManager {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'suggestion-card-close';
     closeBtn.title = '关闭';
-    closeBtn.textContent = '✕';
+    // 使用 SVG 图标替代 Unicode 符号（UX-FD-03）
+    closeBtn.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
     header.appendChild(closeBtn);
 
     card.appendChild(header);

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * UIManager 测试覆盖
  *
  * @vitest-environment jsdom
@@ -479,7 +479,7 @@ describe('消息渲染', () => {
     expect(el.className).toContain('user');
     const avatar = el.querySelector('.message-avatar');
     expect(avatar).not.toBeNull();
-    expect(avatar?.textContent).toBe('🧑');
+    expect(avatar?.innerHTML).toContain('icon-person');
     const bubble = el.querySelector('.message-bubble');
     expect(bubble?.textContent).toBe('你好');
   });
@@ -492,7 +492,7 @@ describe('消息渲染', () => {
 
     expect(el.className).toContain('assistant');
     const avatar = el.querySelector('.message-avatar');
-    expect(avatar?.textContent).toBe('🧚');
+    expect(avatar?.innerHTML).toContain('icon-fairy');
     const bubble = el.querySelector('.message-bubble');
     // 精灵消息应渲染 Markdown（包含 strong 标签，可能带 class 属性）
     expect(bubble?.innerHTML).toContain('<strong');
@@ -569,7 +569,7 @@ describe('消息渲染', () => {
 
     const copyBtn = el.querySelector('.message-copy-btn');
     expect(copyBtn).not.toBeNull();
-    expect(copyBtn?.textContent).toBe('📋');
+    expect(copyBtn?.innerHTML).toContain('icon-copy');
   });
 });
 
@@ -744,6 +744,10 @@ describe('Agent 就绪状态（UX-P2-03）', () => {
   });
 
   it('setAgentReady(true): 解除发送限制', () => {
+    // 设置输入内容，避免空输入时发送按钮 disabled
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = 'test';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     uiManager.setAgentReady(true);
     const cb = vi.fn();
     uiManager.onSendMessage(cb);
@@ -755,6 +759,10 @@ describe('Agent 就绪状态（UX-P2-03）', () => {
   });
 
   it('未就绪时点击发送显示 warning toast', () => {
+    // 设置输入内容，避免空输入时发送按钮 disabled 导致 click 不触发
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = 'test';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
     uiManager.setAgentReady(false);
     const cb = vi.fn();
     uiManager.onSendMessage(cb);
@@ -1062,6 +1070,11 @@ describe('事件回调注册', () => {
 
     // UX-P2-03 设置 Agent 就绪状态，否则 emitSendMessage 会拦截发送
     uiManager.setAgentReady(true);
+
+    // 设置输入内容，避免空输入时发送按钮 disabled
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = 'test';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
 
     // 模拟点击发送按钮
     const btnSend = document.getElementById('btn-send')!;
@@ -1459,7 +1472,8 @@ describe('KBD-CONVERGE-P1：Ctrl+/ 快捷键', () => {
   });
 
   it('打开 shortcuts-modal 时焦点移到弹窗内首个可交互元素（UI-AR-02）', () => {
-    const triggerEl = document.getElementById('btn-send') as HTMLButtonElement;
+    // 使用 #input（始终可聚焦）替代 #btn-send（空输入时 disabled 不可聚焦）
+    const triggerEl = document.getElementById('input') as HTMLTextAreaElement;
     triggerEl.focus();
 
     dispatchCtrlSlash();
@@ -1470,7 +1484,8 @@ describe('KBD-CONVERGE-P1：Ctrl+/ 快捷键', () => {
   });
 
   it('关闭 shortcuts-modal 时焦点恢复到触发元素（UI-AR-02）', () => {
-    const triggerEl = document.getElementById('btn-send') as HTMLButtonElement;
+    // 使用 #input（始终可聚焦）替代 #btn-send（空输入时 disabled 不可聚焦）
+    const triggerEl = document.getElementById('input') as HTMLTextAreaElement;
     triggerEl.focus();
 
     // 打开 → 关闭

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 聊天面板管理器测试
  *
  * @vitest-environment jsdom
@@ -240,7 +240,7 @@ describe('appendMessage · 消息渲染', () => {
     manager.appendMessage(userMsg('hello world', 'u1'));
     const msg = messagesEl.querySelector('.message.user') as HTMLElement;
     expect(msg).toBeTruthy();
-    expect(msg.querySelector('.message-avatar')?.textContent).toBe('🧑');
+    expect(msg.querySelector('.message-avatar')?.innerHTML).toContain('icon-person');
     // 用户消息使用 textContent（防 XSS）
     expect(msg.querySelector('.message-bubble')?.textContent).toBe('hello world');
     // 复制按钮（data-action=copy + data-content）
@@ -259,7 +259,7 @@ describe('appendMessage · 消息渲染', () => {
     const { manager, messagesEl } = createManager();
     manager.appendMessage(assistantMsg('# 标题', 'a1'));
     const msg = messagesEl.querySelector('.message.assistant') as HTMLElement;
-    expect(msg.querySelector('.message-avatar')?.textContent).toBe('🧚');
+    expect(msg.querySelector('.message-avatar')?.innerHTML).toContain('icon-fairy');
     // renderMarkdown 应被调用，气泡内包含 mock markdown 输出
     expect(msg.querySelector('.mock-markdown')?.textContent).toBe('# 标题');
   });
@@ -300,7 +300,7 @@ describe('appendMessage · 消息渲染', () => {
     expect(recallItem).toBeTruthy();
     expect(recallItem?.getAttribute('data-action')).toBe('recall');
     expect(recallItem?.getAttribute('data-name')).toBe('记忆A');
-    expect(recallItem?.textContent).toContain('💡');
+    expect(recallItem?.querySelector('.memory-recall-icon')?.innerHTML).toContain('icon-lightbulb');
     expect(recallItem?.textContent).toContain('记忆A');
     expect(recallItem?.textContent).toContain('0.95');
   });
@@ -323,9 +323,10 @@ describe('startStreaming', () => {
     const msg = messagesEl.querySelector('.message.streaming') as HTMLElement;
     expect(msg).toBeTruthy();
     expect(msg.classList.contains('assistant')).toBe(true);
-    // thinking-phase 占位"⚙️ 正在思考..."
+    // thinking-phase 占位（SVG 齿轮图标 + 文字）
     const phase = msg.querySelector('.thinking-phase');
-    expect(phase?.textContent).toBe('⚙️ 正在思考...');
+    expect(phase?.innerHTML).toContain('icon-gear');
+    expect(phase?.textContent).toContain('正在思考...');
     // 光标元素存在
     expect(msg.querySelector('.cursor')).toBeTruthy();
   });
@@ -520,7 +521,8 @@ describe('showThinkingPhase', () => {
     manager.showThinkingPhase('s1', 'recalling');
     const el = streamingMessages.get('s1') as HTMLElement;
     const indicator = el.querySelector('.thinking-phase');
-    expect(indicator?.textContent).toBe('⚙️ 正在回忆相关记忆...');
+    expect(indicator?.innerHTML).toContain('icon-gear');
+    expect(indicator?.textContent).toContain('正在回忆相关记忆...');
   });
 
   it('应更新已存在指示器 + 未知 phase 降级显示原始字符串', () => {
@@ -529,11 +531,13 @@ describe('showThinkingPhase', () => {
     // startStreaming 已创建 thinking-phase（"正在思考..."），showThinkingPhase 应复用
     manager.showThinkingPhase('s1', 'processing');
     let el = streamingMessages.get('s1') as HTMLElement;
-    expect(el.querySelector('.thinking-phase')?.textContent).toBe('⚙️ 正在处理请求...');
+    expect(el.querySelector('.thinking-phase')?.innerHTML).toContain('icon-gear');
+    expect(el.querySelector('.thinking-phase')?.textContent).toContain('正在处理请求...');
     // 未知 phase 降级显示原始字符串
     manager.showThinkingPhase('s1', 'unknown-phase');
     el = streamingMessages.get('s1') as HTMLElement;
-    expect(el.querySelector('.thinking-phase')?.textContent).toBe('⚙️ unknown-phase');
+    expect(el.querySelector('.thinking-phase')?.innerHTML).toContain('icon-gear');
+    expect(el.querySelector('.thinking-phase')?.textContent).toContain('unknown-phase');
     // 仍只有一个指示器
     expect(el.querySelectorAll('.thinking-phase').length).toBe(1);
   });
@@ -585,7 +589,7 @@ describe('showToolStart', () => {
     expect(card?.getAttribute('data-tool-call-id')).toBe('tc1');
     expect(card?.getAttribute('data-tool-name')).toBe('readFile');
     const header = card?.querySelector('.tool-call-header');
-    expect(header?.querySelector('.tool-call-chevron')?.textContent).toBe('▼');
+    expect(header?.querySelector('.tool-call-chevron')?.innerHTML).toContain('icon-chevron');
     expect(header?.querySelector('.tool-call-name')?.textContent).toBe('readFile');
     expect(header?.querySelector('.tool-call-spinner')).toBeTruthy();
     expect(header?.querySelector('.tool-call-status')?.textContent).toBe('执行中...');
@@ -626,7 +630,7 @@ describe('updateToolResult', () => {
     const card = el.querySelector('.tool-call');
     expect(card?.classList.contains('tool-call-success')).toBe(true);
     expect(card?.classList.contains('tool-call-running')).toBe(false);
-    expect(card?.querySelector('.tool-call-status')?.textContent).toBe('✓ 成功');
+    expect(card?.querySelector('.tool-call-status')?.innerHTML).toContain('icon-check');
     // spinner 应被移除
     expect(card?.querySelector('.tool-call-spinner')).toBeNull();
     // 应自动折叠
@@ -641,7 +645,7 @@ describe('updateToolResult', () => {
     const el = streamingMessages.get('s1') as HTMLElement;
     const card = el.querySelector('.tool-call');
     expect(card?.classList.contains('tool-call-failed')).toBe(true);
-    expect(card?.querySelector('.tool-call-status')?.textContent).toBe('✗ 失败');
+    expect(card?.querySelector('.tool-call-status')?.innerHTML).toContain('icon-close');
     expect(card?.querySelector('.tool-call-result')?.textContent).toBe('文件不存在');
   });
 
@@ -938,7 +942,7 @@ describe('事件委托 · click 分发', () => {
     // 等待 Promise 微任务（clipboard.writeText 返回 resolved Promise）
     await Promise.resolve();
     await Promise.resolve();
-    expect(host.showToast).toHaveBeenCalledWith('已复制到剪贴板', 'success', 2000);
+    expect(host.showToast).toHaveBeenCalledWith('已复制到剪贴板', 'success', 1500);
   });
 
   it('clipboard.writeText 失败时应显示 error toast', async () => {
@@ -986,10 +990,10 @@ describe('事件委托 · click 分发', () => {
     expect(cb).toHaveBeenCalledWith('记忆详情');
   });
 
-  it('data-action=toggle-collapse 应切换 .tool-call-card 的 collapsed 类', () => {
+  it('data-action=toggle-collapse 应切换 .tool-call 的 collapsed 类', () => {
     const { messagesEl } = createManager();
     const card = document.createElement('div');
-    card.className = 'tool-call-card collapsed';
+    card.className = 'tool-call collapsed';
     const header = document.createElement('div');
     header.dataset.action = 'toggle-collapse';
     card.appendChild(header);

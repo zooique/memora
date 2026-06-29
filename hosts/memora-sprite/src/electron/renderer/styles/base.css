@@ -147,10 +147,16 @@
   /* 语义化背景变量（hover/次级背景） */
   --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
   --bg-secondary: var(--surface1);     /* 次级背景（复用 surface1） */
+  --hover:        var(--surface1);     /* hover 态背景简写别名（chat.css/layout.css 引用） */
 
   /* 语义化文字颜色别名（供 layout.css 等引用，与 --text/--text-2 对齐） */
   --text-primary:   var(--text);      /* 主文字色别名 */
   --text-secondary: var(--text-2);    /* 次级文字色别名 */
+
+  /* 命令面板等浮层使用的变量（补全缺失定义，避免回退到浏览器默认值） */
+  --surface:        var(--window-bg); /* 浮层表面背景 = 核心窗口背景 */
+  --accent-10:      rgba(0, 102, 255, 0.05); /* 强调色 5% 透明度（hover 等更弱的强调场景） */
+  --white:          #ffffff;         /* 纯白（红色按钮 hover 等场景） */
 }
 
 /* ─── 深色主题（备选，Catppuccin Mocha） ─────────────────── */
@@ -277,10 +283,16 @@
   /* 语义化背景变量（深色主题下复用 surface1） */
   --bg-hover:     var(--surface1);
   --bg-secondary: var(--surface1);
+  --hover:        var(--surface1);
 
   /* 语义化文字颜色别名 */
   --text-primary:   var(--text);
   --text-secondary: var(--text-2);
+
+  /* 命令面板等浮层使用的变量（深色主题同步定义） */
+  --surface:        var(--window-bg);
+  --accent-10:      rgba(137, 180, 250, 0.08);
+  --white:          #ffffff;
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */

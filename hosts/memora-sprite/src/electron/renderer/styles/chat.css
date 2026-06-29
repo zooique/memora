@@ -373,6 +373,14 @@
 .suggestion-card-icon {
   font-size: var(--font-base);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* 建议卡片图标内的 SVG 尺寸 */
+.suggestion-card-icon .icon {
+  width: 15px;
+  height: 15px;
 }
 
 .suggestion-card-type {
@@ -394,7 +402,6 @@
   background: transparent;
   border: none;
   color: var(--text-3);
-  font-size: var(--font-sm);
   cursor: pointer;
   width: 22px;
   height: 22px;
@@ -402,8 +409,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* UI-AUDIT: 列出具体属性替代 transition: all */
+  padding: 0;
   transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* 关闭按钮内的 SVG 尺寸 */
+.suggestion-card-close .icon {
+  width: 12px;
+  height: 12px;
 }
 
 .suggestion-card-close:hover {
@@ -650,14 +663,17 @@
   user-select: none;
 }
 
-/* 精灵头像：渐变背景 + 白色 emoji */
+/* 头像内的 SVG 图标：统一尺寸 */
+.message-avatar .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* 精灵头像：渐变背景 + 白色图标 */
 .message.assistant .message-avatar {
-  /* UX-P2-31 加深渐变末端颜色并添加文字阴影，提升白色 emoji 在浅粉渐变上的对比度 */
   background: var(--brand-grad);
   color: var(--accent-fg);
   border-color: transparent;
-  /* 文字阴影增强 emoji 在浅色背景上的可读性 */
-  text-shadow: var(--text-shadow-emoji); /* P2-10 使用令牌替代硬编码 rgba，深色主题自动适配 */
 }
 
 /**
@@ -704,7 +720,7 @@
 .message.assistant .message-bubble {
   background: var(--window-bg-2);
   color: var(--text);
-  border-bottom-left-radius: 2px;
+  border-bottom-left-radius: 4px;  /* 尖角与用户消息统一为 4px，视觉平衡 */
   /* UX-FD-01 精灵消息使用系统字体栈（--font-sprite 已改为系统字体），保持与输入框一致的阅读体验 */
   font-family: var(--font-sprite);
 }
@@ -752,26 +768,37 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 2px;
+  padding: 2px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-3);
-  font-size: var(--font-xs);
   cursor: pointer;
-  opacity: 0.45;
+  opacity: 0.65;
   transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
-/* hover 时增强可见性 */
+/* 复制按钮内的 SVG 图标尺寸 */
+.message-copy-btn .icon {
+  width: 13px;
+  height: 13px;
+}
+
+/* hover 消息行时增强可见性 */
 .message-content:hover .message-copy-btn {
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .message-copy-btn:hover {
   color: var(--accent);
   background: var(--accent-soft);
   opacity: 1;
+}
+
+/* 复制成功短暂反馈：绿色勾选 */
+.message-copy-btn.copied {
+  color: var(--green);
+  background: transparent;
 }
 
 .message .cursor {
@@ -830,8 +857,14 @@
   font-size: var(--font-2xs);
   color: var(--accent);
   cursor: pointer;
-  font-weight: 500;
-  transition: color var(--transition-fast);
+  transition: background var(--transition-fast);
+}
+
+/* 召回记忆项内的 SVG 图标 */
+.memory-recall .icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
 
 .memory-recall:hover {
@@ -872,6 +905,18 @@
   transition: background 0.5s ease, transform 0.2s ease;
   cursor: default;
   position: relative;
+  animation: none;
+}
+
+/* 情感变化脉冲动画：颜色更新时触发一次脉冲 */
+.chat-affect-dot.pulse {
+  animation: affect-pulse 0.6s ease-out;
+}
+
+@keyframes affect-pulse {
+  0%   { transform: scale(1);   opacity: 1; }
+  50%  { transform: scale(1.6); opacity: 0.8; }
+  100% { transform: scale(1);   opacity: 1; }
 }
 
 /* hover 时微放大 + 显示 tooltip 式标签 */
@@ -982,6 +1027,12 @@
   transition: background var(--transition-fast), transform var(--transition-fast);
 }
 
+/* 发送按钮内的 SVG 图标尺寸 */
+#btn-send .icon {
+  width: 16px;
+  height: 16px;
+}
+
 #btn-send:hover {
   background: var(--accent-hover);
 }
@@ -989,7 +1040,7 @@
 /* 流式态：红色停止按钮 */
 #btn-send.streaming {
   background: var(--red);
-  color: var(--text-on-red);
+  color: var(--white);
 }
 
 #btn-send.streaming:hover {
@@ -997,9 +1048,16 @@
   opacity: 0.85;
 }
 
-#btn-send:disabled {
-  opacity: 0.4;
+#btn-send:disabled,
+#btn-send.empty {
+  opacity: 0.35;
   cursor: not-allowed;
+  background: var(--surface2);
+  color: var(--text-3);
+}
+
+#btn-send.empty:hover {
+  background: var(--surface2);
 }
 
 /* ─── 对话区空状态引导（v8） ───────────────────────────────── */
@@ -1106,6 +1164,14 @@
   animation: thinking-pulse 1.4s ease-in-out infinite;
 }
 
+/* 思考阶段指示器内的齿轮图标 */
+.thinking-phase .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
 @keyframes thinking-pulse {
   0%, 100% { opacity: 0.55; }
   50%      { opacity: 1; }
@@ -1178,12 +1244,27 @@
 
 /* 折叠箭头 */
 .tool-call-chevron {
-  display: inline-block;
-  font-size: var(--font-3xs);
-  color: var(--text-2);
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-3);
   transition: transform var(--transition-base) ease;
   /* 默认展开 → 箭头向下 */
   transform: rotate(0deg);
+  flex-shrink: 0;
+}
+.tool-call-chevron .icon {
+  width: 12px;
+  height: 12px;
+}
+
+/* 工具图标（SVG）尺寸 */
+.tool-call-icon {
+  display: inline-flex;
+  align-items: center;
+}
+.tool-call-icon .icon {
+  width: 13px;
+  height: 13px;
 }
 
 /* 折叠状态：箭头向右，隐藏参数和结果 */
@@ -1306,15 +1387,20 @@
   border: 1px solid var(--surface2);
   background: var(--window-bg);
   color: var(--text-2);
-  font-size: var(--font-base);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow-float);
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  transition: opacity var(--transition-fast), transform var(--transition-fast), background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   opacity: 1;
   transform: translateY(0);
+}
+
+/* 回到底部按钮内的 SVG 箭头尺寸 */
+.scroll-to-bottom-btn .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .scroll-to-bottom-btn.hidden {

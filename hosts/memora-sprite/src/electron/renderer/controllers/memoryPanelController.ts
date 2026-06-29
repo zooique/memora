@@ -1236,7 +1236,17 @@ export function createMemoryController(uiManager: UIManager) {
       for (const dim of dimensions) {
         const dotEl = document.getElementById(`chat-affect-${dim.id}`);
         if (dotEl) {
-          dotEl.style.background = getAffectColor(dim.value);
+          // 检测颜色是否变化，变化时触发脉冲动画
+          const oldColor = dotEl.style.background;
+          const newColor = getAffectColor(dim.value);
+          if (oldColor !== newColor && oldColor !== '') {
+            dotEl.classList.add('pulse');
+            // 动画结束后移除 pulse 类，允许下次再次触发
+            dotEl.addEventListener('animationend', () => {
+              dotEl.classList.remove('pulse');
+            }, { once: true });
+          }
+          dotEl.style.background = newColor;
           // 更新 title 属性：hover 时显示维度名 + 等级
           dotEl.title = `${dotEl.title.split('：')[0]}：${getAffectLevel(dim.value)}`;
         }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 消息装饰器模块测试（QC-TEST-EXTRACTED）
  *
  * 覆盖范围：
@@ -77,7 +77,7 @@ describe('createRecallContainer', () => {
     const item = container.children[0] as HTMLDivElement;
     // 图标 span
     const iconSpan = item.children[0] as HTMLSpanElement;
-    expect(iconSpan.textContent).toBe('💡');
+    expect(iconSpan.innerHTML).toContain('icon-lightbulb');
     // 名称 span
     const textSpan = item.children[1] as HTMLSpanElement;
     expect(textSpan.textContent).toContain('测试记忆');
@@ -179,35 +179,40 @@ describe('showThinkingPhase', () => {
     showThinkingPhase(bubble, 'recalling');
     const indicator = bubble.querySelector('.thinking-phase');
     expect(indicator).not.toBeNull();
-    expect(indicator!.textContent).toBe('⚙️ 正在回忆相关记忆...');
+    expect(indicator!.innerHTML).toContain('icon-gear');
+    expect(indicator!.textContent).toContain('正在回忆相关记忆...');
   });
 
   it('recalling 阶段应显示中文"正在回忆相关记忆"', () => {
     const bubble = createBubble();
     showThinkingPhase(bubble, 'recalling');
     const indicator = bubble.querySelector('.thinking-phase');
-    expect(indicator!.textContent).toBe('⚙️ 正在回忆相关记忆...');
+    expect(indicator!.innerHTML).toContain('icon-gear');
+    expect(indicator!.textContent).toContain('正在回忆相关记忆...');
   });
 
   it('processing 阶段应显示中文"正在处理请求"', () => {
     const bubble = createBubble();
     showThinkingPhase(bubble, 'processing');
     const indicator = bubble.querySelector('.thinking-phase');
-    expect(indicator!.textContent).toBe('⚙️ 正在处理请求...');
+    expect(indicator!.innerHTML).toContain('icon-gear');
+    expect(indicator!.textContent).toContain('正在处理请求...');
   });
 
   it('archiving 阶段应显示中文"正在归档对话"', () => {
     const bubble = createBubble();
     showThinkingPhase(bubble, 'archiving');
     const indicator = bubble.querySelector('.thinking-phase');
-    expect(indicator!.textContent).toBe('⚙️ 正在归档对话...');
+    expect(indicator!.innerHTML).toContain('icon-gear');
+    expect(indicator!.textContent).toContain('正在归档对话...');
   });
 
   it('未知阶段应显示原始 phase 值', () => {
     const bubble = createBubble();
     showThinkingPhase(bubble, 'unknown_phase');
     const indicator = bubble.querySelector('.thinking-phase');
-    expect(indicator!.textContent).toBe('⚙️ unknown_phase');
+    expect(indicator!.innerHTML).toContain('icon-gear');
+    expect(indicator!.textContent).toContain('unknown_phase');
   });
 
   it('复用已存在的 .thinking-phase 元素（不创建新元素）', () => {
@@ -219,7 +224,8 @@ describe('showThinkingPhase', () => {
     // 应复用同一个元素
     expect(second).toBe(first);
     // 文案已更新
-    expect(second!.textContent).toBe('⚙️ 正在处理请求...');
+    expect(second!.innerHTML).toContain('icon-gear');
+    expect(second!.textContent).toContain('正在处理请求...');
   });
 
   it('多次切换阶段应始终只有一个 .thinking-phase 元素', () => {

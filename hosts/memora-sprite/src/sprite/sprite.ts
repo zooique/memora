@@ -139,6 +139,8 @@ export class Sprite {
   private lastAffect: AffectState | null = null;
   /** 最近一次推导的默契度状态（供 ProactiveEngine 自适应冷却） */
   private lastRapport: RapportState | null = null;
+  /** 最近 N 轮用户消息文本（用于对话语气分析，最多保留 5 条） */
+  private recentUserMessages: string[] = [];
 
   constructor(options: SpriteOptions) {
     this.agent = options.agent;
@@ -344,6 +346,15 @@ export class Sprite {
     // P2-S6: 唤醒是 LLM 调用主路径，记录 span 用于性能追踪
     const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.WAKEUP, input ? { hasInput: true } : { hasInput: false });
     try {
+      // Phase 2.2：记录最近用户消息，用于对话语气实时分析
+      if (input) {
+        this.recentUserMessages.push(input);
+        // 只保留最近 5 条，超出则移除最旧的
+        if (this.recentUserMessages.length > 5) {
+          this.recentUserMessages.shift();
+        }
+      }
+
       // 对话前刷新全量感知，确保 LLM 拿到最新的情感/默契度/上下文/模式/里程碑数据
       this.refreshPerceptionBeforeChat();
 
@@ -1019,7 +1030,14 @@ export class Sprite {
 
     // 获取所有记忆用于推导（上限 1000 条，MemoryInspector.list 按 score 降序）
     const memories = this.agent.memory?.list(1000) ?? [];
-    const affect = this.affectController.deriveAffect(memories);
+    let affect = this.affectController.deriveAffect(memories);
+
+    // Phase 2.2：对话语气实时分析——从最近用户消息推导语气修正值，平滑融合
+    if (this.recentUserMessages.length > 0) {
+      const delta = AffectController.deriveAffectFromMessages(this.recentUserMessages);
+      affect = AffectController.blendAffect(affect, delta);
+    }
+
     this.lastAffect = affect; // Phase 1+2：缓存供 ProactiveEngine 注入
 
     // 生成情感描述文本并注入到 Agent system prompt

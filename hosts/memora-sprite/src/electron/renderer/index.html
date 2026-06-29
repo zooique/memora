@@ -95,6 +95,26 @@
       <symbol id="icon-rapport" viewBox="0 0 24 24"><path d="M8 13v-2a2 2 0 012-2h1l2 2h3a3 3 0 013 3v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 13v-2a2 2 0 00-2-2h-1l-2 2H8a3 3 0 00-3 3v2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <!-- 奖杯 / 里程碑 -->
       <symbol id="icon-trophy" viewBox="0 0 24 24"><path d="M6 4h12v4a6 6 0 01-12 0V4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 6H4a2 2 0 002 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M18 6h2a2 2 0 01-2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 14v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 22h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 18h4v4h-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 复制 -->
+      <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 勾选（复制成功等反馈） -->
+      <symbol id="icon-check" viewBox="0 0 24 24"><polyline points="4 12 10 18 20 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <!-- 发送（纸飞机） -->
+      <symbol id="icon-send" viewBox="0 0 24 24"><path d="M22 2L11 13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M22 2l-7 20-4-9-9-4 20-7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <!-- 停止（实心方块） -->
+      <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/></symbol>
+      <!-- 关闭（X） -->
+      <symbol id="icon-close" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <!-- 向下箭头（回到底部） -->
+      <symbol id="icon-arrow-down" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><polyline points="5 12 12 19 19 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <!-- 最大化 -->
+      <symbol id="icon-maximize" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 还原（最大化后） -->
+      <symbol id="icon-restore" viewBox="0 0 24 24"><rect x="9" y="2" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M15 9H4a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 下箭头（折叠/展开指示器） -->
+      <symbol id="icon-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <!-- 最小化 -->
+      <symbol id="icon-minimize" viewBox="0 0 24 24"><line x1="5" y1="19" x2="19" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
     </defs>
   </svg>
 
@@ -112,12 +132,12 @@
       <!-- 角色选择器（点击展开下拉菜单） -->
       <div id="sidebar-header">
         <!-- UI-AUDIT: 添加 role/tabindex/aria-label 提升键盘可访问性（原 div 不可聚焦） -->
-        <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox">
+        <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
           <span id="persona-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
           <span id="persona-name">精灵</span>
           <!-- IX-07 当前角色匹配模式标签（auto/manual） -->
           <span id="persona-mode-badge" class="mode-badge" title="角色匹配模式：自动（根据上下文自动切换角色）">自动</span>
-          <span id="persona-arrow">▾</span>
+          <span id="persona-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
         </div>
         <!-- 角色下拉菜单（动态填充） -->
         <div id="persona-dropdown" class="dropdown hidden"></div>
@@ -129,7 +149,7 @@
           <!-- FD-03 始终可见，点击展开/折叠详情区 -->
           <div id="sprite-narrative" class="dash-item" style="grid-column: 1 / -1;" title="点击展开/折叠详情">
             <span class="dash-label" id="sprite-narrative-text">精灵正在感知中...</span>
-            <span id="narrative-toggle" class="narrative-toggle">▸</span>
+            <span id="narrative-toggle" class="narrative-toggle"><svg class="icon"><use href="#icon-chevron"/></svg></span>
           </div>
           <div class="dash-item" title="Agent 记忆总数">
             <span class="dash-label"><svg class="icon"><use href="#icon-brain"/></svg> 记忆</span>
@@ -335,10 +355,10 @@
       </div>
       <div id="titlebar-controls">
         <!-- UI-AUDIT: 添加 aria-label 提升可访问性（屏幕阅读器支持） -->
-        <button id="btn-minimize" title="最小化" aria-label="最小化窗口">─</button>
-        <button id="btn-maximize" title="最大化" aria-label="最大化窗口">□</button>
-        <!-- UX-P2-21 调整 title 文案与 ✕ 图标语义一致（原"隐藏到浮动窗口"与关闭图标不符） -->
-        <button id="btn-close" title="关闭" aria-label="关闭窗口">✕</button>
+        <button id="btn-minimize" title="最小化" aria-label="最小化窗口"><svg class="icon"><use href="#icon-minimize"/></svg></button>
+        <button id="btn-maximize" title="最大化" aria-label="最大化窗口"><svg class="icon"><use href="#icon-maximize"/></svg></button>
+        <!-- UX-P2-21 调整 title 文案与关闭图标语义一致（原"隐藏到浮动窗口"与关闭图标不符） -->
+        <button id="btn-close" title="关闭" aria-label="关闭窗口"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
     </header>
 
@@ -406,7 +426,7 @@
           </div>
         </div>
         <!-- Phase 2：回到底部浮动按钮（用户向上滚动浏览历史时显示） -->
-        <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部">↓</button>
+        <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         <!-- Phase 2.2：对话面板情感指示器（输入框上方紧凑四维状态条） -->
         <div id="chat-affect-indicator" class="chat-affect-indicator hidden">
           <span class="chat-affect-dot" id="chat-affect-warmth" title="温暖度"></span>
@@ -424,7 +444,7 @@
               <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）"><svg class="icon"><use href="#icon-plus"/></svg></button>
             </div>
             <div class="input-send-area">
-              <button id="btn-send" title="发送（Enter）">➤</button>
+              <button id="btn-send" title="发送（Enter）"><svg class="icon"><use href="#icon-send"/></svg></button>
             </div>
           </div>
         </div>

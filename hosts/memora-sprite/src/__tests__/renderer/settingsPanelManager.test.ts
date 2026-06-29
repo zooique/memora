@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 设置面板管理器测试
  *
  * @vitest-environment jsdom
@@ -156,14 +156,15 @@ describe('initListeners · API Key 切换', () => {
     // 初始 password
     expect(input.type).toBe('password');
     btn.click();
-    // 切换为 text
+    // 切换为 text（可见态：SVG icon-eye + accent 颜色）
     expect(input.type).toBe('text');
-    expect(btn.textContent).toBe('🙈');
+    expect(btn.innerHTML).toContain('icon-eye');
+    expect(btn.innerHTML).toContain('color:var(--accent)');
     expect(btn.title).toBe('隐藏 API Key');
-    // 再次点击切换回 password
+    // 再次点击切换回 password（隐藏态：SVG icon-eye 无 accent）
     btn.click();
     expect(input.type).toBe('password');
-    expect(btn.textContent).toBe('👁');
+    expect(btn.innerHTML).toContain('icon-eye');
   });
 });
 

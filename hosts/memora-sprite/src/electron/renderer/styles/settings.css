@@ -653,7 +653,7 @@
   color: var(--text-3);
   font-size: var(--font-xs);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .work-projection-expand-btn:hover {

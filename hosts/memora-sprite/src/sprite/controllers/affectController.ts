@@ -17,7 +17,38 @@ import type { Memory } from 'memora';
 import type { Persona } from 'memora';
 import { logger } from 'memora';
 
-// ─── 类型定义 ────────────────────────────────────────────
+// ── 新增：语气关键词用于判断用户当前交互风格 ───────────────────
+
+/** 直接/简洁风格关键词 */
+const DIRECT_KEYWORDS = [
+  '简洁', '直接', '简短', '少废话', '直入主题', '不要废话',
+  '快说', '直接说', '快点', '结果', '结论',
+];
+
+/** 委婉/详细风格关键词 */
+const INDIRECT_KEYWORDS = [
+  '详细', '详细说说', '展开', '解释', '说明白', '多说几句',
+  '慢慢来', '一步步讲', '背景', '原因',
+];
+
+/** 温暖/亲切风格关键词 */
+const WARM_KEYWORDS = [
+  '谢谢', '感谢', '你好', '嗨', '早上好', '下午好', '晚安',
+  '朋友', '加油', '辛苦了', '辛苦了一天', '好久不见',
+  '开心', '很高兴', '恭喜', '太棒了', '很好', '不错',
+];
+
+/** 冷淡/克制风格关键词 */
+const COLD_KEYWORDS = [
+  '不要', '不行', '算了', '就这样吧', '不用', '不用了',
+  '抱歉', '抱歉打扰', '不好意思', '麻烦你',
+  '直接', '快点', '问题', '解决',
+];
+
+/** 指数平滑系数：越大变化越快，越小越平滑 */
+const SMOOTHING_FACTOR = 0.2;
+
+// ── 类型定义 ────────────────────────────────────────────────
 
 /** 四维情感基调（开放字符串键值对，非封闭枚举） */
 export interface AffectState {
@@ -191,5 +222,71 @@ export class AffectController {
     if (value < 0.33) return '低';
     if (value < 0.67) return '中';
     return '高';
+  }
+
+  /**
+   * 从最近几条用户消息分析对话语气，返回情感修正值
+   *
+   * 纯关键词匹配，零 LLM 成本，零存储开销。
+   * 修正值范围 [-0.3, +0.3]，用于平滑融入当前情感。
+   *
+   * @param recentMessages 最近 N 轮用户消息文本
+   * @returns 各维度的修正值（正=提升，负=降低）
+   */
+  static deriveAffectFromMessages(recentMessages: string[]): Partial<AffectState> {
+    if (recentMessages.length === 0) return {};
+
+    const combined = recentMessages.join(' ').toLowerCase();
+
+    // 直接度：检测直接/间接关键词
+    const directHits = DIRECT_KEYWORDS.filter((kw) => combined.includes(kw)).length;
+    const indirectHits = INDIRECT_KEYWORDS.filter((kw) => combined.includes(kw)).length;
+    const directnessDelta = directHits > indirectHits ? 0.2 : indirectHits > directHits ? -0.2 : 0;
+
+    // 温暖度：检测温暖/冷淡关键词
+    const warmHits = WARM_KEYWORDS.filter((kw) => combined.includes(kw)).length;
+    const coldHits = COLD_KEYWORDS.filter((kw) => combined.includes(kw)).length;
+    const warmthDelta = warmHits > coldHits ? 0.15 : coldHits > warmHits ? -0.1 : 0;
+
+    // 主动度：消息越长、问号越多，用户越需要互动
+    const questionCount = (combined.match(/[？?]/g) ?? []).length;
+    const totalLength = combined.length;
+    const initiativeDelta = questionCount > 0
+      ? Math.min(0.2, questionCount * 0.05)
+      : totalLength < 20
+        ? -0.1  // 短消息可能只是敷衍
+        : 0;
+
+    return {
+      warmth: warmthDelta,
+      directness: directnessDelta,
+      initiative: initiativeDelta,
+    };
+  }
+
+  /**
+   * 指数平滑融合：将对话语气修正值缓慢融入当前情感
+   *
+   * 使用指数加权移动平均（EWMA）：
+   *   newValue = currentValue * (1 - α) + targetValue * α
+   * 其中 α = SMOOTHING_FACTOR (0.2)，确保变化平滑不突变。
+   *
+   * @param current 当前情感状态
+   * @param delta 对话语气修正值（来自 deriveAffectFromMessages）
+   * @returns 平滑后的新情感状态
+   */
+  static blendAffect(current: AffectState, delta: Partial<AffectState>): AffectState {
+    const blend = (cur: number, d: number | undefined): number => {
+      if (d === undefined) return cur;
+      const target = Math.max(0, Math.min(1, cur + d));
+      return Math.round((cur * (1 - SMOOTHING_FACTOR) + target * SMOOTHING_FACTOR) * 100) / 100;
+    };
+
+    return {
+      warmth: blend(current.warmth, delta.warmth),
+      playfulness: current.playfulness, // 调皮度由 persona 决定，不随对话变化
+      directness: blend(current.directness, delta.directness),
+      initiative: blend(current.initiative, delta.initiative),
+    };
   }
 }

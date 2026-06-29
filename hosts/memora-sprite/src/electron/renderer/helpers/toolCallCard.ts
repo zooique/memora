@@ -42,13 +42,15 @@ export function showToolStart(
   // 工具图标 + 折叠箭头 + 名称 + 状态（含 spinner）
   const header = document.createElement('div');
   header.className = 'tool-call-header';
-  // 折叠/展开箭头
+  // 折叠/展开箭头（SVG chevron，用 CSS transform 控制旋转方向）
   const chevron = document.createElement('span');
   chevron.className = 'tool-call-chevron';
-  chevron.textContent = '▼';
+  chevron.innerHTML = '<svg class="icon"><use href="#icon-chevron"/></svg>';
   header.appendChild(chevron);
+  // 工具图标：使用 SVG 替代 emoji（UX-FD-03）
   const icon = document.createElement('span');
-  icon.textContent = '🔧';
+  icon.className = 'tool-call-icon';
+  icon.innerHTML = '<svg class="icon"><use href="#icon-tools"/></svg>';
   header.appendChild(icon);
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tool-call-name';
@@ -134,10 +136,12 @@ export function updateToolResult(
   const spinner = targetCard.querySelector('.tool-call-spinner');
   if (spinner) spinner.remove();
 
-  // 更新状态文本
+  // 更新状态文本（使用 SVG 图标替代 Unicode ✓/✗，视觉一致性）
   const status = targetCard.querySelector('.tool-call-status');
   if (status) {
-    status.textContent = ok ? '✓ 成功' : '✗ 失败';
+    const iconId = ok ? '#icon-check' : '#icon-close';
+    const label = ok ? '成功' : '失败';
+    status.innerHTML = `<svg class="icon" style="width:12px;height:12px"><use href="${iconId}"/></svg> ${label}`;
   }
 
   // 追加结果摘要

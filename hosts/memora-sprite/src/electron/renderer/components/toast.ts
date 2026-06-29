@@ -112,7 +112,8 @@ export class ToastManager {
     // 关闭按钮
     const closeBtn = document.createElement('button');
     closeBtn.className = 'toast-close';
-    closeBtn.textContent = '✕';
+    // 使用 SVG 图标替代 Unicode 符号（UX-FD-03）
+    closeBtn.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
     closeBtn.title = '关闭';
     closeBtn.addEventListener('click', () => this.removeToast(toast));
     toast.appendChild(closeBtn);

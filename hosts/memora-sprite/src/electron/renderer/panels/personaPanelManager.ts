@@ -88,7 +88,7 @@ export class PersonaPanelManager {
         ke.preventDefault();
         this.togglePersonaDropdown();
       } else if (ke.key === 'Escape') {
-        dropdownEl.classList.add('hidden');
+        this.closePersonaDropdown();
         selectorEl.focus();
       }
     });
@@ -114,14 +114,14 @@ export class PersonaPanelManager {
         const prevItem = items[prevIdx];
         if (prevItem) prevItem.focus();
       } else if (ke.key === 'Escape') {
-        dropdownEl.classList.add('hidden');
+        this.closePersonaDropdown();
         selectorEl.focus();
       }
     });
 
     // 点击页面其他区域关闭下拉菜单（走统一清理机制）
     this.events.addEventListener(document, 'click', () => {
-      this.personaDropdownEl?.classList.add('hidden');
+      this.closePersonaDropdown();
     });
 
     // QC-22 角色下拉菜单事件委托：在 dropdown 容器上注册统一 click 监听器，
@@ -134,18 +134,26 @@ export class PersonaPanelManager {
         e.stopPropagation();
         const personaName = item.dataset.personaName ?? '';
         this.personaSwitchCallback?.(personaName);
-        this.personaDropdownEl!.classList.add('hidden');
+        this.closePersonaDropdown();
       }
     });
   }
 
   // ─── 私有辅助方法 ───────────────────────────────────────
 
+  /** 关闭角色下拉菜单（统一管理 aria-expanded 状态） */
+  private closePersonaDropdown(): void {
+    if (!this.personaDropdownEl || !this.personaSelectorEl) return;
+    this.personaDropdownEl.classList.add('hidden');
+    this.personaSelectorEl.setAttribute('aria-expanded', 'false');
+  }
+
   /** UI-AR-01 切换角色下拉菜单的显示/隐藏 */
   private togglePersonaDropdown(): void {
-    if (!this.personaDropdownEl) return;
+    if (!this.personaDropdownEl || !this.personaSelectorEl) return;
     const isHidden = this.personaDropdownEl.classList.contains('hidden');
     this.personaDropdownEl.classList.toggle('hidden');
+    this.personaSelectorEl.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
 
     // 展开时聚焦第一个选项，方便键盘导航
     if (isHidden) {

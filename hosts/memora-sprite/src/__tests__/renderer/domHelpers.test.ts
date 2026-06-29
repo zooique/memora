@@ -125,9 +125,9 @@ describe('formatTimestamp', () => {
   });
 
   it('非当天应返回 MM-DD HH:MM 格式', () => {
-    // 前一天 15:45
-    const dateStr = new Date(2026, 5, 25, 15, 45).toISOString();
-    expect(formatTimestamp(dateStr)).toBe('06-25 15:45');
+    // 前天 15:45（避开"昨天"判断，昨天会返回"昨天 HH:MM"）
+    const dateStr = new Date(2026, 5, 24, 15, 45).toISOString();
+    expect(formatTimestamp(dateStr)).toBe('06-24 15:45');
   });
 
   it('跨月应返回正确 MM-DD', () => {

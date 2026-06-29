@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: CLI 已移出至宿主项目（泊文 hosts/memora-cli/）
+description: CLI 已移出至宿主项目（泊文 hosts/memora-sprite/）
 ---
 
 # ADR-005 · CLI 优先于 Web 形态（阶段一交付）
@@ -17,7 +17,7 @@ Memora 作为本地 Agent，需要选择交付形态：CLI / 本地 Web / IDE �
 ## 决策（已迁移）
 
 **CLI 已从 memora 内核移出**。原决策"阶段一交付 CLI 形态"已完成其使命。
-当前 CLI 由宿主项目（泊文 `hosts/memora-cli/`）提供，memora 内核定位为纯逻辑库。
+当前 CLI 由宿主项目（泊文 `hosts/memora-sprite/`）提供，memora 内核定位为纯逻辑库。
 
 ## 理由（历史）
 

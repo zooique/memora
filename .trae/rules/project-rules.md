@@ -43,7 +43,7 @@ date: 2026-06-25
 ```
 src/
 ├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（7 个专职 Manager）+ 对话快照 + 作品投影 + 关联推荐
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（8 个专职 Manager）+ 对话快照 + 作品投影 + 关联推荐
 ├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
@@ -117,6 +117,6 @@ chore: 升级 dependencies
 | Phase | 目标 | 关键交付物 | 状态 |
 |-------|------|-----------|------|
 | Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 可观测性 + 拓扑可视化 | ✅ 核心完成（拓扑可视化延后） |
-| Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | 🚧 进行中（rapportLevel + 里程碑检测已完成，AffectController 延后） |
+| Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | ✅ 核心完成（AffectController + RapportController + ContextAwareness + PatternDetector 全链路实现） |
 | Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | ✅ 核心完成（全局快捷键 + 在场状态检测 + 剪贴板三重保护，两项延后） |
 | Phase 4 | 生态准备 | 接入文档 + 存储独立包 + 技能拖入安装 | 🚧 进行中（接入文档 v3.2 已更新） |

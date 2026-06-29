@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 工具调用卡片渲染器模块测试（QC-TEST-EXTRACTED）
  *
  * 覆盖范围：
@@ -65,9 +65,9 @@ describe('showToolStart', () => {
     const header = bubble.querySelector('.tool-call-header');
     expect(header).not.toBeNull();
     // chevron
-    expect(header!.querySelector('.tool-call-chevron')!.textContent).toBe('▼');
+    expect(header!.querySelector('.tool-call-chevron')!.innerHTML).toContain('icon-chevron');
     // icon
-    expect(header!.querySelector('span:nth-child(2)')!.textContent).toBe('🔧');
+    expect(header!.querySelector('span:nth-child(2)')!.innerHTML).toContain('icon-tools');
     // name
     expect(header!.querySelector('.tool-call-name')!.textContent).toBe('write_file');
     // spinner
@@ -146,20 +146,22 @@ describe('updateToolResult', () => {
     expect(card!.classList.contains('tool-call-failed')).toBe(true);
   });
 
-  it('成功时应更新状态文本为"✓ 成功"', () => {
+  it('成功时应更新状态为 SVG 图标 + 成功文本', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'search');
     updateToolResult(bubble, 'tc-1', 'search', true);
     const status = bubble.querySelector('.tool-call-status');
-    expect(status!.textContent).toBe('✓ 成功');
+    expect(status!.innerHTML).toContain('icon-check');
+    expect(status!.textContent).toContain('成功');
   });
 
-  it('失败时应更新状态文本为"✗ 失败"', () => {
+  it('失败时应更新状态为 SVG 图标 + 失败文本', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'search');
     updateToolResult(bubble, 'tc-1', 'search', false);
     const status = bubble.querySelector('.tool-call-status');
-    expect(status!.textContent).toBe('✗ 失败');
+    expect(status!.innerHTML).toContain('icon-close');
+    expect(status!.textContent).toContain('失败');
   });
 
   it('完成后应移除 spinner 元素', () => {

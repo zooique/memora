@@ -43,7 +43,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 | 依赖管理         | better-sqlite3 完全从 memora 移除，由宿主项目管理            |
 | 注入方式         | Agent 构造函数可选参数 `storage?: IMemoryStorage`            |
 | 日志抽象         | `ILogger` 接口 + 全局单例 `setLogger()`                     |
-| CLI 独立运行     | 移出至宿主项目（泊文 `hosts/memora-cli/`）                   |
+| CLI 独立运行     | 移出至宿主项目（泊文 `hosts/memora-sprite/`）                   |
 
 ## 三层架构
 

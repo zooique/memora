@@ -2,7 +2,7 @@
  * Memora — 通用 Agent 架构（纯逻辑库）
  *
  * 零 native 依赖。宿主项目通过注入 IMemoryStorage 实现持久化。
- * CLI 由宿主项目提供（hosts/memora-cli/）。
+ * CLI 由宿主项目提供（hosts/memora-sprite/）。
  *
  * 设计哲学：万物皆记忆（详见 architecture_philosophy_rules.md §1）
  * 决策追溯：详见 .trae/rules/decisions/ 下的 ADR

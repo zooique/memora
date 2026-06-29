@@ -220,12 +220,13 @@ describe('showToast · 自定义操作按钮', () => {
 // ─── showToast · 关闭按钮 ────────────────────────────────
 
 describe('showToast · 关闭按钮', () => {
-  it('应显示关闭按钮（✕）', () => {
+  it('应显示关闭按钮（SVG 图标）', () => {
     const manager = createManager();
     manager.showToast('消息', 'info');
     const closeBtn = getLastToast().querySelector('.toast-close') as HTMLButtonElement;
     expect(closeBtn).not.toBeNull();
-    expect(closeBtn.textContent).toBe('✕');
+    // 关闭按钮已从 emoji ✕ 改为 SVG 图标（UX-FD-03）
+    expect(closeBtn.innerHTML).toContain('icon-close');
     expect(closeBtn.title).toBe('关闭');
   });
 

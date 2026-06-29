@@ -55,9 +55,10 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
   for (const recall of memories) {
     const recallItem = document.createElement('div');
     recallItem.className = 'memory-recall';
-    // UX-08：使用 createElement 替代 innerHTML，避免 XSS 风险
+    // 使用 SVG 图标替代 emoji（UX-FD-03）
     const iconSpan = document.createElement('span');
-    iconSpan.textContent = '💡';
+    iconSpan.className = 'memory-recall-icon';
+    iconSpan.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
     recallItem.appendChild(iconSpan);
     const recallText = document.createElement('span');
     recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
@@ -124,9 +125,9 @@ export function showThinkingPhase(bubble: Element, phase: string): void {
     bubble.appendChild(indicator);
   }
 
-  // 更新阶段文案
+  // 更新阶段文案（使用 SVG 图标替代 emoji）
   const label = THINKING_PHASE_LABELS[phase] ?? phase;
-  indicator.textContent = `⚙️ ${label}`;
+  indicator.innerHTML = `<svg class="icon"><use href="#icon-gear"/></svg><span>${label}</span>`;
 }
 
 /**

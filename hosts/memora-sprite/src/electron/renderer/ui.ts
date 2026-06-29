@@ -219,6 +219,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.events.addEventListener(this.inputEl, 'keydown', this.handleInputKeydown.bind(this));
     this.events.addEventListener(this.inputEl, 'input', this.handleInputChange.bind(this));
 
+    // 初始化输入框高度和发送按钮状态
+    this.handleInputChange();
+
     // 按钮事件（发送按钮合并了停止功能，流式态时点击触发停止）
     this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
@@ -620,6 +623,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
 
   // ─── 事件处理器 ─────────────────────────────────────
 
+  /**
+   * 输入框键盘事件处理
+   *
+   * - Enter（非 Shift）：发送消息或停止流式输出
+   * - Escape：清空输入（有内容时）或失焦（无内容时），交互参考终端/聊天应用惯例
+   */
   private handleInputKeydown(e: Event): void {
     if (!(e instanceof KeyboardEvent)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -630,12 +639,42 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       } else {
         this.emitSendMessage();
       }
+    } else if (e.key === 'Escape') {
+      // Esc：有内容则清空，无内容则失焦
+      if (this.inputEl.value.trim().length > 0) {
+        this.inputEl.value = '';
+        this.handleInputChange();
+        this.updateSendButtonState();
+      } else {
+        this.inputEl.blur();
+      }
     }
   }
 
+  /**
+   * 输入框内容变化处理
+   *
+   * - 自适应高度：根据 scrollHeight 动态调整，最大 120px
+   * - 更新发送按钮视觉状态（空态弱化）
+   */
   private handleInputChange(): void {
     this.inputEl.style.height = 'auto';
     this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 120) + 'px';
+    this.updateSendButtonState();
+  }
+
+  /**
+   * 根据输入内容和流式状态更新发送按钮视觉反馈
+   *
+   * - 流式态：始终可用（红色停止按钮）
+   * - 空闲态+有内容：可用（蓝色发送按钮）
+   * - 空闲态+无内容：弱化（灰色不可点击）
+   */
+  private updateSendButtonState(): void {
+    if (this.state.isStreaming) return; // 流式态由 updateSendButton 处理
+    const hasContent = this.inputEl.value.trim().length > 0;
+    this.btnSend.disabled = !hasContent;
+    this.btnSend.classList.toggle('empty', !hasContent);
   }
 
   private handleSendClick(): void {
@@ -681,15 +720,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /**
    * 更新最大化按钮图标
    *
-   * 根据窗口当前是否最大化切换按钮文字：
-   * - 最大化时显示 "❐"（还原图标）
-   * - 普通状态时显示 "□"（最大化图标）
+   * 根据窗口当前是否最大化切换 SVG 图标：
+   * - 最大化时显示还原图标（icon-restore）
+   * - 普通状态时显示最大化图标（icon-maximize）
    *
    * 仅当 btnMaximize 元素存在时执行（部分布局可能不提供标题栏）
    */
   updateMaximizeButton(maximized: boolean): void {
     if (!this.btnMaximize) return;
-    this.btnMaximize.textContent = maximized ? '❐' : '□';
+    const iconId = maximized ? '#icon-restore' : '#icon-maximize';
+    this.btnMaximize.innerHTML = `<svg class="icon"><use href="${iconId}"/></svg>`;
     this.btnMaximize.title = maximized ? '还原' : '最大化';
   }
 
@@ -903,6 +943,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
       return;
     }
+    // 空内容不发送
+    if (this.inputEl.value.trim().length === 0) return;
     this.sendMessageCallback?.();
   }
 
@@ -910,20 +952,26 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.stopMessageCallback?.();
   }
 
-  /** 统一更新发送/停止按钮状态（空闲态发送 / 流式态停止） */
+  /**
+   * 统一更新发送/停止按钮状态（空闲态发送 / 流式态停止）
+   *
+   * - 流式态：红色停止按钮，始终可用
+   * - 空闲态：发送图标，空内容时弱化禁用
+   */
   updateSendButton(): void {
     if (this.state.isStreaming) {
-      // 流式态：显示停止姿态
-      this.btnSend.disabled = false;  // 不禁用，点击触发停止
+      // 流式态：显示停止姿态（红色方块图标）
+      this.btnSend.disabled = false;
       this.btnSend.classList.add('streaming');
-      this.btnSend.textContent = '■';
+      this.btnSend.classList.remove('empty');
+      this.btnSend.innerHTML = '<svg class="icon"><use href="#icon-stop"/></svg>';
       this.btnSend.title = '停止生成';
     } else {
-      // 空闲态：显示发送姿态
-      this.btnSend.disabled = false;
+      // 空闲态：显示发送姿态（纸飞机图标），空内容时弱化
       this.btnSend.classList.remove('streaming');
-      this.btnSend.textContent = '➤';
+      this.btnSend.innerHTML = '<svg class="icon"><use href="#icon-send"/></svg>';
       this.btnSend.title = '发送（Enter）';
+      this.updateSendButtonState();
     }
   }
 

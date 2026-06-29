@@ -38,6 +38,18 @@ const level = process.env['MEMORA_LOG_LEVEL'] ?? 'info';
 const SENSITIVE_KEY_PATTERN = /api[_-]?key|token|password|secret|authorization|credential/i;
 
 /**
+ * pino redact 路径配置（与 console fallback 的 SENSITIVE_KEY_PATTERN 保持一致）
+ *
+ * 支持嵌套对象脱敏：`*.apiKey` 匹配任意层级的 apiKey 字段
+ */
+const PINO_REDACT_PATHS = [
+  'apiKey', 'token', 'password', 'secret', 'authorization', 'credential',
+  '*.apiKey', '*.token', '*.password', '*.secret',
+  '*.authorization', '*.credential',
+  '*.*.apiKey', '*.*.token', '*.*.password', '*.*.secret',
+];
+
+/**
  * 对象脱敏：深拷贝对象并将敏感键的值替换为 [REDACTED]
  *
  * 仅用于 console fallback logger 的 JSON.stringify 路径，
@@ -205,11 +217,13 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
 
     if (streams.length === 0) {
       // 通过包装器适配 ILogger 接口，避免 as unknown as ILogger 双重断言
-      return wrapPinoAsLogger(pino({ level }));
+      // SEC-AUDIT: 配置 redact 防止敏感信息写入日志文件
+      return wrapPinoAsLogger(pino({ level, redact: PINO_REDACT_PATHS }));
     }
 
     // 通过包装器适配 ILogger 接口
-    return wrapPinoAsLogger(pino({ level }, pino.multistream(streams)));
+    // SEC-AUDIT: 配置 redact 防止敏感信息写入日志文件
+    return wrapPinoAsLogger(pino({ level, redact: PINO_REDACT_PATHS }, pino.multistream(streams)));
   } catch (err) {
     // pino 未安装，回退到 console logger
     if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] pino 加载失败：${errMsg(err)}\n`);

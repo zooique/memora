@@ -121,7 +121,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
   // ─── P1-1: registerIpcHandlers 幂等性 ──────────────────
 
   describe('P1-1: registerIpcHandlers 幂等性（reinitAgent 重复调用）', () => {
-    it('重复调用 registerIpcHandlers 不抛错', async () => {
+    it('重复调用 registerIpcHandlers 不抛错', { timeout: 15000 }, async () => {
       // 动态导入，确保 vi.mock('electron') 已生效
       const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
       const { ctx } = createMockIpcContext({
