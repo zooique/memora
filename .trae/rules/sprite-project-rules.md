@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v0.3
-date: 2026-06-28
+version: v0.4
+date: 2026-06-29
 ---
 
 # memora-sprite · 宿主项目总则
@@ -23,7 +23,36 @@ date: 2026-06-28
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
-## 2. 技术栈清单
+## 2. 内核更新工作流（npm alias 模式）
+
+> 内核已发布至 npm（`@zooique/memora`），精灵通过 npm alias 引用：`"memora": "npm:@zooique/memora@^0.1.0"`。  
+> 源码中 import 保持 `from 'memora'`，包管理层自动完成 `@zooique/memora` → `memora` 的映射。
+
+当内核代码修改后，按以下步骤同步到精灵：
+
+**Step 1 — 内核发布**
+
+```bash
+# 在 memora 根目录
+npm test              # 924 测试全绿
+npm run typecheck     # 零错误
+npm run build         # 生成 dist/
+npm version patch     # 或 minor / major
+npm publish --access public
+```
+
+**Step 2 — 精灵更新**
+
+```bash
+# 在 hosts/memora-sprite/ 目录
+npm update memora     # 解析 alias 到最新匹配的版本
+npm run typecheck     # 验证类型兼容
+npm run build         # 验证构建通过
+```
+
+> **注意**：`npm update memora` 更新的是 alias 指向的实际包（`@zooique/memora`），而非 alias 本身。alias 声明 `"memora": "npm:@zooique/memora@^0.1.0"` 中的版本约束（`^0.1.0`）决定可更新的范围。
+
+## 3. 技术栈清单
 
 | 类别 | 选型 | 决策 |
 |------|------|------|
@@ -34,7 +63,7 @@ date: 2026-06-28
 | 包管理 | npm + npm alias（`npm:@zooique/memora`）+ @electron/rebuild | ADR-SP-005 |
 | 测试 | Vitest + InMemoryStorage + 临时 SQLite | ADR-SP-006 |
 
-## 3. 目录结构
+## 4. 目录结构
 
 > 详见 [ADR-SP-007](./decisions/ADR-SP-007-directory-structure.md) 和 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)
 
@@ -110,7 +139,7 @@ hosts/memora-sprite/
         └── renderer/         ← float.test.ts / sessionController.test.ts
 ```
 
-## 4. 命名规范（与内核一致）
+## 5. 命名规范（与内核一致）
 
 | 类型 | 规则 |
 |------|------|
@@ -121,7 +150,7 @@ hosts/memora-sprite/
 | 常量 | 全大写下划线 |
 | 类型/接口 | 大驼峰 |
 
-## 5. 不做清单
+## 6. 不做清单
 
 1. 不做多用户——单精灵单用户，与 memora 单 Agent 模型一致
 2. 不做云端同步——纯本地，隐私优先，数据不出本机
@@ -134,7 +163,7 @@ hosts/memora-sprite/
      仅在用户主动操作（复制/粘贴）时触发，且写入需用户显式确认。
      详见 [迭代规划-v0.3-to-v1.0.md](../../docs/迭代规划-v0.3-to-v1.0.md) §Phase 3.1
 
-## 6. 阶段规划
+## 7. 阶段规划
 
 | 阶段 | 目标 | 交付物 |
 |------|------|--------|
@@ -143,7 +172,7 @@ hosts/memora-sprite/
 | 三 | 多模态 | 语音输入/输出 + 高级 UI |
 | 四 | 能力扩展 | 工具化（registerTool）+ 事件补全 + 后台 Provider + 写入确认 |
 
-## 7. 阶段四：能力扩展（迭代 7-9 沉淀）
+## 8. 阶段四：能力扩展（迭代 7-9 沉淀）
 
 > **自然生长原则**：只接入"内核已就绪但宿主未消费"的能力，不闭门造接口。
 > **触发条件**：审核报告（`docs/memora-sprite-交叉对齐审核报告.md`）识别出"机制已建、宿主未用"。

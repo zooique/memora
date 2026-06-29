@@ -420,14 +420,25 @@
   padding: 0;
 }
 
+.dashboard-section + .dashboard-section {
+  /* UI-AUDIT-LAYOUT: section间（非第一个）增加顶部间距，帮助视觉分组 */
+  margin-top: 12px;
+}
+
 .dashboard-section h3 {
   font-size: var(--font-xs);
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 0 4px;
-  margin-bottom: 6px; /* ADR-NAV-001 增大标题与列表间距（原 4px） */
+  padding: 0 4px 0 10px;
+  margin-bottom: 8px;
+  /* UI-AUDIT-LAYOUT: 左侧3px宽accent色条，作为视觉分组锚点，扫视时可快速定位section */
+  border-left: 3px solid var(--accent);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ─── 情感基调展示（四维进度条） ──────────────── */
@@ -581,15 +592,15 @@
   border-radius: 12px;
   font-size: var(--font-xs);
   font-weight: 500;
-  background: linear-gradient(135deg, #f9e2af30, #fab38730);
-  border: 1px solid #f9e2af80;
-  color: #a67c00;
+  background: var(--milestone-badge-grad);
+  border: 1px solid var(--milestone-badge-border);
+  color: var(--milestone-badge-text);
 }
 
 .milestone-badge svg {
   width: 12px;
   height: 12px;
-  color: #d4a017;
+  color: var(--milestone-badge-icon);
 }
 
 /* ─── FD-01 精灵叙事摘要 ───────────────────────────────── */
@@ -723,7 +734,7 @@
 /* 失败态：由 JS 在安装失败时短暂添加 .is-error 类 */
 .skill-dropzone.is-error {
   border-color: var(--red);
-  background: rgba(220, 38, 38, 0.08);
+  background: var(--dropzone-error-bg);
   /* 短暂闪烁动画提示错误 */
   animation: skill-dropzone-shake 0.4s ease;
 }

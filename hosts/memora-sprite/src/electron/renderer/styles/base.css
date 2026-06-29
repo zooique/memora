@@ -157,6 +157,37 @@
   --surface:        var(--window-bg); /* 浮层表面背景 = 核心窗口背景 */
   --accent-10:      rgba(0, 102, 255, 0.05); /* 强调色 5% 透明度（hover 等更弱的强调场景） */
   --white:          #ffffff;         /* 纯白（红色按钮 hover 等场景） */
+
+  /* ─── UI-AUDIT-P0 图谱浮层变量（深色主题自动适配） ─── */
+  /* 记忆图谱 tooltip/legend 使用半透明深色浮层，浅色/深色主题均可读 */
+  --graph-overlay-bg:       rgba(0, 0, 0, 0.85);     /* 浮层背景 */
+  --graph-overlay-fg:       rgba(255, 255, 255, 0.9); /* 浮层文字 */
+  --graph-overlay-border:   rgba(255, 255, 255, 0.1); /* 浮层边框 */
+  --graph-overlay-muted:    rgba(255, 255, 255, 0.6); /* 浮层弱化文字 */
+  --graph-overlay-shadow:   0 4px 16px rgba(0, 0, 0, 0.3); /* 浮层阴影 */
+
+  /* 搜索高亮：黄色半透明背景，双主题通用 */
+  --search-highlight-bg:    rgba(255, 159, 10, 0.3);
+
+  /* 技能拖入错误态背景 */
+  --dropzone-error-bg:      rgba(255, 59, 48, 0.08);
+
+  /* 里程碑庆祝渐变：浅色主题金色调 */
+  --milestone-grad:         linear-gradient(135deg, #f9e2af 0%, #fab387 50%, #f5c2e7 100%);
+  --milestone-border:       #f9e2af;
+  --milestone-text:         #5c4a1a;
+  --milestone-icon:         #d4a017;
+  --milestone-btn-bg:       rgba(255, 255, 255, 0.6);
+  --milestone-btn-border:   rgba(212, 160, 23, 0.3);
+  --milestone-btn-hover:    rgba(255, 255, 255, 0.8);
+  --milestone-close:        #8b7355;
+  --milestone-close-hover-bg: rgba(255, 255, 255, 0.5);
+
+  /* 里程碑侧边栏徽章（小标签） */
+  --milestone-badge-grad:   linear-gradient(135deg, rgba(249, 226, 175, 0.2), rgba(250, 179, 135, 0.2));
+  --milestone-badge-border: rgba(249, 226, 175, 0.5);
+  --milestone-badge-text:   #a67c00;
+  --milestone-badge-icon:   #d4a017;
 }
 
 /* ─── 深色主题（备选，Catppuccin Mocha） ─────────────────── */
@@ -293,6 +324,37 @@
   --surface:        var(--window-bg);
   --accent-10:      rgba(137, 180, 250, 0.08);
   --white:          #ffffff;
+
+  /* ─── UI-AUDIT-P0 图谱浮层变量（深色主题适配） ─── */
+  /* 深色主题下浮层使用 Catppuccin 表面色，带透明度 */
+  --graph-overlay-bg:       rgba(49, 50, 68, 0.95);    /* Catppuccin surface0 */
+  --graph-overlay-fg:       var(--text);              /* 复用主文字色 */
+  --graph-overlay-border:   var(--surface2);          /* 复用边框色 */
+  --graph-overlay-muted:    var(--subtext);           /* 复用次级文字色 */
+  --graph-overlay-shadow:   0 4px 16px rgba(0, 0, 0, 0.5);
+
+  /* 搜索高亮：深色主题下提高对比度 */
+  --search-highlight-bg:    rgba(249, 226, 175, 0.3); /* Catppuccin yellow */
+
+  /* 技能拖入错误态背景（深色主题） */
+  --dropzone-error-bg:      rgba(243, 139, 168, 0.15); /* Catppuccin red */
+
+  /* 里程碑庆祝渐变：深色主题适配（低饱和金色调，适配Catppuccin） */
+  --milestone-grad:         linear-gradient(135deg, rgba(249, 226, 175, 0.3) 0%, rgba(250, 179, 135, 0.3) 50%, rgba(245, 194, 231, 0.3) 100%);
+  --milestone-border:       var(--yellow);
+  --milestone-text:         var(--text);
+  --milestone-icon:         var(--yellow);
+  --milestone-btn-bg:       var(--surface1);
+  --milestone-btn-border:   var(--surface2);
+  --milestone-btn-hover:    var(--surface2);
+  --milestone-close:        var(--subtext);
+  --milestone-close-hover-bg: var(--surface1);
+
+  /* 里程碑侧边栏徽章（深色主题适配：使用Catppuccin黄色系） */
+  --milestone-badge-grad:   linear-gradient(135deg, rgba(249, 226, 175, 0.15), rgba(250, 179, 135, 0.1));
+  --milestone-badge-border: rgba(249, 226, 175, 0.3);
+  --milestone-badge-text:   var(--yellow);
+  --milestone-badge-icon:   var(--yellow);
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */
@@ -619,4 +681,187 @@ input:active,
 textarea:active,
 select:active {
   transform: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   UI-AUDIT-P1 统一组件基类（自然生长原则：3+ 次重复模式提取）
+   所有面板共用的基础组件样式，特定样式通过修饰符类覆盖
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 图标按钮基类 .icon-btn ──────────────────────────────── */
+/* 统一定义 28×28 / 32×32 / 36×36 三种尺寸的圆角图标按钮 */
+/* 用法：<button class="icon-btn [icon-btn-sm|icon-btn-lg]" title="..."> */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), transform 0.08s ease;
+  flex-shrink: 0;
+}
+
+.icon-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn.active {
+  color: var(--accent);
+  background: var(--accent-10);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 小尺寸（24×24，用于行内紧凑场景） */
+.icon-btn.icon-btn-sm {
+  width: 24px;
+  height: 24px;
+}
+
+.icon-btn.icon-btn-sm svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* 大尺寸（32×32，用于工具栏主按钮） */
+.icon-btn.icon-btn-lg {
+  width: 32px;
+  height: 32px;
+}
+
+.icon-btn.icon-btn-lg svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* 图标默认尺寸（基类 28px 对应 16px 图标） */
+.icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* ─── 徽章/标签基类 .badge ───────────────────────────────── */
+/* 统一 source-tag / profile-tag / milestone-tag 等的基础样式 */
+/* 用法：<span class="badge badge-[color]">标签文本</span> */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* 徽章颜色变体（语义色） */
+.badge-accent  { background: var(--accent-10);  color: var(--accent); }
+.badge-success { background: rgba(64, 173, 136, 0.12); color: #1a7f5a; }
+.badge-warning { background: rgba(230, 167, 39, 0.12); color: #b8860b; }
+.badge-danger  { background: var(--red-10);     color: var(--red); }
+.badge-muted   { background: var(--bg-hover);  color: var(--text-2); }
+.badge-info    { background: rgba(30, 144, 255, 0.1); color: #1e90ff; }
+
+/* ─── 卡片基类 .card ─────────────────────────────────────── */
+/* 统一各面板卡片容器的基础样式 */
+.card {
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.card.card-hoverable {
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform 0.12s ease;
+}
+
+.card.card-hoverable:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-float);
+}
+
+/* ─── 关闭按钮基类 .close-btn ────────────────────────────── */
+/* 统一模态框/banner/卡片右上角 × 按钮 */
+.close-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.close-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.close-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ─── 分割线 .divider ────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background: var(--surface2);
+  border: none;
+  margin: 8px 0;
+}
+
+/* ─── 空状态 .empty-state ───────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty-state .empty-icon {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.empty-state .empty-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+
+.empty-state .empty-desc {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  line-height: 1.5;
 }

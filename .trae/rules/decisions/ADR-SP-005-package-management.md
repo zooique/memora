@@ -54,5 +54,8 @@ description: "memora-sprite 宿主：包管理与依赖引用方式"
 ## 影响
 
 - 精灵开发前需在 `hosts/memora-sprite/` 下执行 `npm install`
-- 内核代码修改后需重新 `npm publish` 发布新版本，精灵 `npm update memora` 更新引用
+- 内核代码修改后发布-更新流程：
+  1. 内核目录：`npm test` → `npm run typecheck` → `npm run build` → `npm version patch|minor|major` → `npm publish --access public`
+  2. 精灵目录：`npm update memora` → `npm run typecheck` → `npm run build`
+  > 详见 [sprite-project-rules.md §2](../sprite-project-rules.md)
 - `.gitignore` 需添加 `hosts/memora-sprite/node_modules/`

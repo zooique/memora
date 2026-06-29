@@ -8,9 +8,12 @@
 /* ─── 记忆面板（v8） ───────────────────────────────────────── */
 #panel-memories {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
-/* v8：面板头部 44px（与其他面板一致），无背景色（融入核心窗口） */
+/* v8：面板头部 44px（与chat-toolbar一致），border-bottom分隔线 */
 .panel-header {
   height: 44px;
   padding: 0 24px;
@@ -18,16 +21,23 @@
   align-items: center;
   gap: 10px;
   background: transparent;
-  border-bottom: none;
+  border-bottom: 1px solid var(--surface2);
   flex-shrink: 0;
+}
+
+/* UI-AUDIT-LAYOUT: 面板标题（"记忆"），与对话面板.toolbar-title风格一致 */
+.panel-header .panel-title {
   font-size: var(--font-md);
   font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* v8：搜索框胶囊形 */
 .panel-header input {
   flex: 1;
-  padding: 8px 14px;
+  padding: 6px 12px;
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-pill);
@@ -35,6 +45,7 @@
   font-family: inherit;
   font-size: var(--font-sm);
   outline: none;
+  height: 30px;
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
@@ -406,7 +417,7 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  box-shadow: var(--shadow-float);
   padding: 4px;
   z-index: 100;
 }
@@ -460,25 +471,25 @@
   position: absolute;
   top: 12px;
   right: 12px;
-  background: rgba(30, 30, 30, 0.85);
+  background: var(--graph-overlay-bg);
   backdrop-filter: blur(8px);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: var(--font-xs);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--graph-overlay-fg);
   display: flex;
   flex-direction: column;
   gap: 8px;
   max-width: 220px;
   z-index: 10;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--graph-overlay-border);
 }
 
 /* 图例分区标题 */
 .legend-title {
   font-weight: 600;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--graph-overlay-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 4px;
@@ -520,17 +531,17 @@
 /* tooltip 容器：跟随鼠标，半透明浮层 */
 .graph-tooltip {
   position: absolute;
-  background: rgba(30, 30, 30, 0.95);
+  background: var(--graph-overlay-bg);
   backdrop-filter: blur(12px);
   border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: var(--font-sm);
-  color: #fff;
+  color: var(--graph-overlay-fg);
   max-width: 260px;
   pointer-events: none;
   z-index: 20;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--graph-overlay-border);
+  box-shadow: var(--graph-overlay-shadow);
   transition: opacity 0.15s ease;
 }
 
@@ -552,14 +563,15 @@
 /* tooltip source 标签 */
 .graph-tooltip-source {
   font-size: var(--font-xs);
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--graph-overlay-muted);
   margin-bottom: 4px;
 }
 
 /* tooltip 内容预览 */
 .graph-tooltip-preview {
   font-size: var(--font-xs);
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--graph-overlay-fg);
+  opacity: 0.8;
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -618,7 +630,7 @@
 /* 搜索关键词高亮标记 */
 .memory-item .name mark,
 .memory-item .preview mark {
-  background: rgba(255, 159, 10, 0.3);
+  background: var(--search-highlight-bg);
   color: var(--text);
   border-radius: 2px;
   padding: 0 1px;

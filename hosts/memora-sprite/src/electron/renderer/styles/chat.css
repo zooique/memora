@@ -8,7 +8,18 @@
 /* ─── 对话面板 ─────────────────────────────────────────────── */
 #panel-chat {
   height: 100%;
-  position: relative; /* 主动提示 banner 绝对定位的锚点 */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
 }
 
 /**
@@ -54,30 +65,42 @@
 }
 
 /* ─── FD-03 对话面板叙事摘要行 ──────────────────────────────── */
-/* 介于工具栏与消息列表之间，紧凑显示当前感知状态 */
+/* UI-AUDIT-LAYOUT: 从全宽条改为融入消息区的轻量状态提示，
+   不占据"第二行头部"视觉重量，头部统一44px */
 .chat-narrative {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 24px;
+  padding: 4px 12px;
+  margin: 8px 24px 0;
   background: var(--accent-soft);
-  border-bottom: 1px solid var(--accent-20);
-  font-size: var(--font-sm);
+  border: 1px solid var(--accent-20);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
   color: var(--text-2);
   flex-shrink: 0;
+  align-self: flex-start;
   transition: background var(--transition-base) ease, border-color var(--transition-base) ease;
 }
 
 .chat-narrative-icon {
   flex-shrink: 0;
-  font-size: var(--font-sm);
+  font-size: var(--font-xs);
+  display: inline-flex;
+  align-items: center;
+}
+
+.chat-narrative-icon svg {
+  width: 12px;
+  height: 12px;
 }
 
 .chat-narrative-text {
-  flex: 1;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 300px;
 }
 
 /* 叙事摘要更新脉冲动画（与仪表盘 #sprite-narrative 共用 narrative-pulse 关键帧） */
@@ -290,39 +313,39 @@
 
 /* 里程碑专属样式（金色渐变庆祝效果） */
 #proactive-banner.is-milestone {
-  background: linear-gradient(135deg, #f9e2af 0%, #fab387 50%, #f5c2e7 100%);
-  border-bottom-color: #f9e2af;
-  color: #5c4a1a;
+  background: var(--milestone-grad);
+  border-bottom-color: var(--milestone-border);
+  color: var(--milestone-text);
   animation: bannerSlideDown var(--transition-base) ease-out, milestoneShimmer 2s ease-in-out;
 }
 
 #proactive-banner.is-milestone .banner-icon {
-  color: #d4a017;
+  color: var(--milestone-icon);
   animation: milestoneBounce 0.6s ease-out;
 }
 
 #proactive-banner.is-milestone .banner-text {
-  color: #5c4a1a;
+  color: var(--milestone-text);
   font-weight: 600;
 }
 
 #proactive-banner.is-milestone .banner-btn {
-  background: rgba(255, 255, 255, 0.6);
-  border-color: rgba(212, 160, 23, 0.3);
-  color: #5c4a1a;
+  background: var(--milestone-btn-bg);
+  border-color: var(--milestone-btn-border);
+  color: var(--milestone-text);
 }
 
 #proactive-banner.is-milestone .banner-btn:hover {
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--milestone-btn-hover);
 }
 
 #proactive-banner.is-milestone .banner-close {
-  color: #8b7355;
+  color: var(--milestone-close);
 }
 
 #proactive-banner.is-milestone .banner-close:hover {
-  background: rgba(255, 255, 255, 0.5);
-  color: #5c4a1a;
+  background: var(--milestone-close-hover-bg);
+  color: var(--milestone-text);
 }
 
 @keyframes milestoneShimmer {
