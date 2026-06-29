@@ -1164,7 +1164,7 @@ export class MemoryPanelManager {
   }
 
   /** 获取当前视图模式 */
-  getViewMode(): 'list' | 'graph' {
+  getViewMode(): 'list' | 'timeline' | 'graph' {
     return this.viewMode;
   }
 
@@ -1264,7 +1264,7 @@ export class MemoryPanelManager {
     this.cleanupConfirmCallback = cb;
   }
   /** 注册视图切换回调（通知Controller切换视图后的业务逻辑） */
-  onViewSwitch(cb: (mode: 'list' | 'graph') => void): void {
+  onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void {
     this.viewSwitchCallback = cb;
   }
 }

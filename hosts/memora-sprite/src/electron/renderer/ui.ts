@@ -1087,7 +1087,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 注册清理确认回调（委托到 MemoryPanelManager） */
   onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void { this.memoryPanel.onCleanupConfirm(cb); }
   /** 注册视图切换回调（委托到 MemoryPanelManager） */
-  onViewSwitch(cb: (mode: 'list' | 'graph') => void): void { this.memoryPanel.onViewSwitch(cb); }
+  onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void { this.memoryPanel.onViewSwitch(cb); }
   /** 触发叙事卡片脉冲（委托到 MemoryPanelManager） */
   pulseNarrativeCard(): void { this.memoryPanel.pulseNarrativeCard(); }
 

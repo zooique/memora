@@ -13,7 +13,8 @@
     "build:electron": "npm run check-ipc && npm run clean:electron && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "build:all": "npm run build && npm run build:electron",
     "start": "tsx src/cli.ts",
-    "start:electron": "npm run build:electron && electron ./dist-electron/electron/main.js",
+    "start:electron": "chcp 65001 >nul && set NODE_ENV=production&& npm run build:electron && set NODE_ENV=production&& electron ./dist-electron/electron/main.js",
+    "dev:electron": "chcp 65001 >nul && set NODE_ENV=development&& npm run build:electron && node scripts/dev-watch.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "npm run check-configs && eslint . --ext .ts",
@@ -49,5 +50,10 @@
     "typescript": "^5.6.0",
     "vitest": "^4.1.8"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "electron@40.10.5": true,
+    "esbuild@0.28.1": true
+  }
 }
