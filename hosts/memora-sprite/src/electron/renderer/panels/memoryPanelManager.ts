@@ -28,6 +28,8 @@ import type { RelationGraphData } from '../components/relationGraph.js';
 export interface MemoryPanelHost {
   /** 显示模态框 */
   showModal(modalId: string): void;
+  /** 隐藏模态框 */
+  hideModal(modalId: string): void;
   /** 显示确认对话框（FD-07 取消按钮） */
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
   /** 显示 toast 通知（添加记忆表单校验失败时反馈） */
@@ -83,8 +85,10 @@ export class MemoryPanelManager {
   private graphRenderer: RelationGraphRenderer | null = null;
   /** 图谱数据缓存（切换回图谱视图时避免重复请求 IPC） */
   private graphDataCache: RelationGraphData | null = null;
-  /** 图谱视图切换回调（请求宿主加载图谱数据） */
-  private graphToggleCallback: ((mode: 'list' | 'graph') => void) | null = null;
+  /** 缓存的高亮节点 ID（渲染器初始化前设置的状态需要在初始化后恢复） */
+  private cachedHighlightedNodeIds: string[] | null = null;
+  /** 缓存的选中节点 ID（渲染器初始化前设置的状态需要在初始化后恢复） */
+  private cachedSelectedNodeId: string | null = null;
 
   // ─── 回调 ────────────────────────────────────────────────
   private memorySearchCallback: ((query: string) => void) | null = null;
@@ -100,6 +104,24 @@ export class MemoryPanelManager {
   private memoryDiscussCallback: ((memoryName: string) => void) | null = null;
   /** P2-FLOW-08 编辑模式状态：true 时显示保存/取消按钮，隐藏编辑/删除按钮 */
   private isEditing = false;
+
+  // ─── 工具栏/面板交互回调 ────────────────────────────────
+  /** 更多菜单项点击回调（advanced-search/insights/health） */
+  private moreMenuActionCallback: ((action: string) => void) | null = null;
+  /** 排序方式变更回调 */
+  private sortChangeCallback: (() => void) | null = null;
+  /** 时间范围变更回调 */
+  private timeRangeChangeCallback: (() => void) | null = null;
+  /** 清理按钮点击回调（duplicates/stale/all），返回待清理ID列表 */
+  private cleanupRequestCallback: ((type: 'duplicates' | 'stale' | 'all') => string[]) | null = null;
+  /** 清理确认回调（执行批量删除） */
+  private cleanupConfirmCallback: ((ids: string[]) => Promise<void>) | null = null;
+  /** 视图切换按钮状态更新回调（通知Controller同步按钮active状态） */
+  private viewSwitchCallback: ((mode: 'list' | 'graph') => void) | null = null;
+
+  // ─── 清理对话框状态 ────────────────────────────────────
+  /** 待清理的记忆 ID 列表（确认对话框中使用） */
+  private pendingCleanupIds: string[] = [];
 
   constructor(
     private host: MemoryPanelHost,
@@ -259,6 +281,243 @@ export class MemoryPanelManager {
         }
       });
     }
+
+    // ─── FD-03 叙事卡片点击：展开/折叠详情区 ────────────
+    const narrativeCard = document.getElementById('sprite-narrative');
+    const detailsContainer = document.getElementById('dashboard-details');
+    const toggleArrow = document.getElementById('narrative-toggle');
+    if (narrativeCard && detailsContainer && toggleArrow) {
+      // 默认折叠详情区
+      detailsContainer.classList.add('collapsed');
+      this.events.addEventListener(narrativeCard, 'click', () => {
+        const isCollapsed = detailsContainer.classList.toggle('collapsed');
+        toggleArrow.classList.toggle('expanded', !isCollapsed);
+      });
+    }
+
+    // ─── 更多菜单（高级搜索/洞察/健康度） ──────────────
+    const moreBtn = document.getElementById('btn-memory-more');
+    const moreMenu = document.getElementById('memory-more-menu');
+    const advSearchBar = document.getElementById('advanced-search-bar');
+    const insightsBar = document.getElementById('memory-insights-bar');
+    const healthBar = document.getElementById('memory-health-bar');
+
+    /** 切换更多菜单的显示/隐藏 */
+    const toggleMoreMenu = (show?: boolean): void => {
+      if (!moreMenu || !moreBtn) return;
+      const shouldShow = show ?? moreMenu.classList.contains('hidden');
+      moreMenu.classList.toggle('hidden', !shouldShow);
+      moreBtn.setAttribute('aria-expanded', String(shouldShow));
+    };
+
+    if (moreBtn) {
+      this.events.addEventListener(moreBtn, 'click', (e) => {
+        (e as Event).stopPropagation();
+        toggleMoreMenu();
+      });
+    }
+
+    // 点击外部关闭更多菜单（注册到 document）
+    this.events.addEventListener(document, 'click', (e) => {
+      if (moreMenu && !moreMenu.classList.contains('hidden')) {
+        const target = (e as Event).target as HTMLElement;
+        if (!moreMenu.contains(target) && target !== moreBtn) {
+          toggleMoreMenu(false);
+        }
+      }
+    });
+
+    // 更多菜单项事件委托
+    if (moreMenu) {
+      this.events.addEventListener(moreMenu, 'click', async (e) => {
+        const item = ((e as Event).target as HTMLElement).closest('.more-menu-item') as HTMLElement | null;
+        if (!item) return;
+        const action = item.getAttribute('data-action');
+        toggleMoreMenu(false);
+
+        if (action === 'advanced-search') {
+          if (advSearchBar) {
+            advSearchBar.classList.toggle('hidden');
+          }
+        } else if (action === 'insights') {
+          if (insightsBar) {
+            const isHidden = insightsBar.classList.contains('hidden');
+            insightsBar.classList.toggle('hidden', !isHidden);
+            if (isHidden) {
+              this.moreMenuActionCallback?.('insights');
+            }
+          }
+        } else if (action === 'health') {
+          if (healthBar) {
+            const isHidden = healthBar.classList.contains('hidden');
+            healthBar.classList.toggle('hidden', !isHidden);
+            if (isHidden) {
+              this.moreMenuActionCallback?.('health');
+            }
+          }
+        }
+      });
+    }
+
+    // ─── 视图切换按钮（列表 ↔ 图谱 segmented control） ──
+    const listBtn = document.getElementById('btn-list-view');
+    const graphBtn = document.getElementById('btn-graph-view');
+
+    /** 更新视图切换按钮的 active 状态 */
+    const updateViewSwitchBtns = (view: 'list' | 'graph'): void => {
+      if (listBtn) {
+        listBtn.classList.toggle('active', view === 'list');
+        listBtn.setAttribute('aria-selected', String(view === 'list'));
+      }
+      if (graphBtn) {
+        graphBtn.classList.toggle('active', view === 'graph');
+        graphBtn.setAttribute('aria-selected', String(view === 'graph'));
+      }
+    };
+
+    // 默认列表视图active
+    updateViewSwitchBtns('list');
+
+    if (listBtn) {
+      this.events.addEventListener(listBtn, 'click', () => {
+        updateViewSwitchBtns('list');
+        this.switchView('list');
+        this.viewSwitchCallback?.('list');
+      });
+    }
+
+    if (graphBtn) {
+      this.events.addEventListener(graphBtn, 'click', () => {
+        const graphContainer = document.getElementById('memory-graph-container');
+        const isGraphView = graphContainer && graphContainer.style.display !== 'none';
+
+        if (isGraphView) {
+          updateViewSwitchBtns('list');
+          this.switchView('list');
+          this.viewSwitchCallback?.('list');
+        } else {
+          updateViewSwitchBtns('graph');
+          this.switchView('graph');
+          this.viewSwitchCallback?.('graph');
+        }
+      });
+    }
+
+    // ─── 排序方式变更 ──────────────────────────────────
+    const sortEl = document.getElementById('memory-sort-order') as HTMLSelectElement | null;
+    if (sortEl) {
+      this.events.addEventListener(sortEl, 'change', () => {
+        this.sortChangeCallback?.();
+      });
+    }
+
+    // ─── 时间范围变更 ──────────────────────────────────
+    const timeRangeEl = document.getElementById('memory-time-range') as HTMLSelectElement | null;
+    if (timeRangeEl) {
+      this.events.addEventListener(timeRangeEl, 'change', () => {
+        this.timeRangeChangeCallback?.();
+      });
+    }
+
+    // ─── 清理按钮（Phase 3：智能清理） ─────────────────
+    const cleanupDupBtn = document.getElementById('health-cleanup-duplicates');
+    const cleanupStaleBtn = document.getElementById('health-cleanup-stale');
+    const cleanupAllBtn = document.getElementById('health-cleanup-all');
+    const cleanupDialog = document.getElementById('cleanup-confirm-dialog');
+    const cleanupCancelBtn = document.getElementById('cleanup-confirm-cancel');
+    const cleanupConfirmBtn = document.getElementById('cleanup-confirm-confirm');
+
+    if (cleanupDupBtn) {
+      this.events.addEventListener(cleanupDupBtn, 'click', () => {
+        const ids = this.cleanupRequestCallback?.('duplicates') ?? [];
+        if (ids.length === 0) {
+          this.host.showToast('没有可清理的重复记忆', 'info');
+          return;
+        }
+        this.showCleanupDialog(`确定要清理 ${ids.length} 条重复记忆吗？每组将保留分数最高的一条。`, ids);
+      });
+    }
+
+    if (cleanupStaleBtn) {
+      this.events.addEventListener(cleanupStaleBtn, 'click', () => {
+        const ids = this.cleanupRequestCallback?.('stale') ?? [];
+        if (ids.length === 0) {
+          this.host.showToast('没有可清理的过期记忆', 'info');
+          return;
+        }
+        this.showCleanupDialog(`确定要清理 ${ids.length} 条过期记忆吗？这些记忆长期未访问或得分较低。`, ids);
+      });
+    }
+
+    if (cleanupAllBtn) {
+      this.events.addEventListener(cleanupAllBtn, 'click', () => {
+        const ids = this.cleanupRequestCallback?.('all') ?? [];
+        if (ids.length === 0) {
+          this.host.showToast('没有可清理的问题记忆', 'info');
+          return;
+        }
+        this.showCleanupDialog(`确定要清理 ${ids.length} 条问题记忆吗？`, ids);
+      });
+    }
+
+    if (cleanupCancelBtn && cleanupDialog) {
+      this.events.addEventListener(cleanupCancelBtn, 'click', () => {
+        cleanupDialog.classList.add('hidden');
+        this.pendingCleanupIds = [];
+      });
+    }
+
+    if (cleanupConfirmBtn && cleanupDialog) {
+      this.events.addEventListener(cleanupConfirmBtn, 'click', async () => {
+        cleanupDialog.classList.add('hidden');
+        if (this.pendingCleanupIds.length === 0) return;
+        const ids = [...this.pendingCleanupIds];
+        this.pendingCleanupIds = [];
+        try {
+          await this.cleanupConfirmCallback?.(ids);
+        } catch {
+          // cleanupConfirmCallback 由 Controller 实现，Controller 内部会报告错误和显示 toast
+        }
+      });
+    }
+  }
+
+  /**
+   * 显示清理确认对话框
+   *
+   * @param message 确认消息
+   * @param ids 待清理的记忆 ID 列表
+   */
+  private showCleanupDialog(message: string, ids: string[]): void {
+    const cleanupDialog = document.getElementById('cleanup-confirm-dialog');
+    const cleanupMsgEl = document.getElementById('cleanup-confirm-msg');
+    if (cleanupMsgEl) cleanupMsgEl.textContent = message;
+    this.pendingCleanupIds = ids;
+    if (cleanupDialog) cleanupDialog.classList.remove('hidden');
+  }
+
+  /**
+   * 触发对话面板叙事行点击后，滚动侧边栏到叙事卡片并脉冲
+   *
+   * 由 Controller 在 chatNarrative 点击时调用（跨面板交互）。
+   */
+  pulseNarrativeCard(): void {
+    const narrativeCard = document.getElementById('sprite-narrative');
+    const detailsContainer = document.getElementById('dashboard-details');
+    const toggleArrow = document.getElementById('narrative-toggle');
+    if (!narrativeCard) return;
+
+    // 展开详情区（若已折叠）
+    if (detailsContainer) detailsContainer.classList.remove('collapsed');
+    if (toggleArrow) toggleArrow.classList.add('expanded');
+
+    // 滚动侧边栏使叙事卡片可见
+    narrativeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // 脉冲动画标记叙事卡片位置
+    narrativeCard.classList.remove('narrative-updated');
+    void narrativeCard.offsetWidth;
+    narrativeCard.classList.add('narrative-updated');
   }
 
   // ─── 记忆列表渲染 ───────────────────────────────────────
@@ -647,11 +906,11 @@ export class MemoryPanelManager {
         graphEl.style.display = '';
         // 延迟初始化图谱渲染器（确保容器尺寸已计算）
         this.initGraphRenderer();
-        // 加载图谱数据
+        // 如果已有缓存数据，直接加载并应用缓存状态；
+        // 无缓存时数据加载由 onViewSwitch 回调统一处理（Controller负责IPC）
         if (this.graphDataCache) {
           this.graphRenderer?.loadData(this.graphDataCache);
-        } else {
-          this.graphToggleCallback?.('graph');
+          this.applyCachedGraphState();
         }
       }
     }
@@ -662,6 +921,7 @@ export class MemoryPanelManager {
    *
    * 由宿主层调用（IPC 返回图谱数据后）。
    * 缓存数据以便切换回图谱视图时避免重复请求。
+   * 加载后自动应用缓存的高亮/选中状态（列表视图中操作的状态）。
    *
    * @param data 图谱原始数据（nodes + edges）
    */
@@ -669,6 +929,24 @@ export class MemoryPanelManager {
     this.graphDataCache = data;
     if (this.viewMode === 'graph' && this.graphRenderer) {
       this.graphRenderer.loadData(data);
+      // 数据加载后恢复缓存的高亮/选中状态
+      this.applyCachedGraphState();
+    }
+  }
+
+  /**
+   * 将缓存的高亮/选中状态应用到渲染器
+   *
+   * 解决问题：用户在列表视图搜索/点击后切换到图谱，
+   * 状态需要在渲染器初始化和数据加载后恢复。
+   */
+  private applyCachedGraphState(): void {
+    if (!this.graphRenderer) return;
+    if (this.cachedHighlightedNodeIds !== null) {
+      this.graphRenderer.setHighlightedNodes(this.cachedHighlightedNodeIds);
+    }
+    if (this.cachedSelectedNodeId !== null) {
+      this.graphRenderer.setSelectedNode(this.cachedSelectedNodeId);
     }
   }
 
@@ -684,6 +962,37 @@ export class MemoryPanelManager {
   /** 获取当前视图模式 */
   getViewMode(): 'list' | 'graph' {
     return this.viewMode;
+  }
+
+  /**
+   * 设置图谱高亮节点（搜索结果联动）
+   *
+   * 高亮节点正常显示，非高亮节点淡化。
+   * 传 null 清除高亮。
+   * 若渲染器尚未初始化，缓存状态待初始化后应用。
+   */
+  highlightGraphNodes(nodeIds: string[] | null): void {
+    this.cachedHighlightedNodeIds = nodeIds;
+    this.graphRenderer?.setHighlightedNodes(nodeIds);
+  }
+
+  /**
+   * 设置图谱选中节点（列表/详情联动）
+   *
+   * 选中节点显示蓝色外发光环，并平滑居中到视口。
+   * 传 null 取消选中。
+   * 若渲染器尚未初始化，缓存状态待初始化后应用。
+   */
+  selectGraphNode(nodeId: string | null): void {
+    this.cachedSelectedNodeId = nodeId;
+    this.graphRenderer?.setSelectedNode(nodeId);
+  }
+
+  /** 清除图谱所有高亮和选中状态 */
+  clearGraphHighlights(): void {
+    this.cachedHighlightedNodeIds = null;
+    this.cachedSelectedNodeId = null;
+    this.graphRenderer?.clearHighlights();
   }
 
   /**
@@ -730,8 +1039,28 @@ export class MemoryPanelManager {
   onMemoryDiscuss(cb: (memoryName: string) => void): void {
     this.memoryDiscussCallback = cb;
   }
-  /** 注册图谱视图切换回调（宿主请求加载图谱数据） */
-  onGraphToggle(cb: (mode: 'list' | 'graph') => void): void {
-    this.graphToggleCallback = cb;
+  /** 注册更多菜单项点击回调（加载洞察/健康度数据） */
+  onMoreMenuAction(cb: (action: string) => void): void {
+    this.moreMenuActionCallback = cb;
+  }
+  /** 注册排序变更回调 */
+  onSortChange(cb: () => void): void {
+    this.sortChangeCallback = cb;
+  }
+  /** 注册时间范围变更回调 */
+  onTimeRangeChange(cb: () => void): void {
+    this.timeRangeChangeCallback = cb;
+  }
+  /** 注册清理请求回调（返回待清理ID列表） */
+  onCleanupRequest(cb: (type: 'duplicates' | 'stale' | 'all') => string[]): void {
+    this.cleanupRequestCallback = cb;
+  }
+  /** 注册清理确认回调（执行批量删除IPC） */
+  onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void {
+    this.cleanupConfirmCallback = cb;
+  }
+  /** 注册视图切换回调（通知Controller切换视图后的业务逻辑） */
+  onViewSwitch(cb: (mode: 'list' | 'graph') => void): void {
+    this.viewSwitchCallback = cb;
   }
 }

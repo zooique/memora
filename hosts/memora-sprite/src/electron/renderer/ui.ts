@@ -12,7 +12,7 @@
  * - 业务逻辑与 UI 操作分离
  * - 提供清晰的 API 供其他模块调用
  * - 子模块公共 API 通过 UIManager 代理，保持向后兼容
- * - P2-008：聊天/记忆/角色/会话面板提取至独立 PanelManager，UIManager 仅做 facade 委托
+ * - 聊天/记忆/角色/会话面板委托至独立 PanelManager，UIManager 仅做 facade
  */
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
@@ -33,6 +33,16 @@ import { ChatPanelManager } from './panels/chatPanelManager.js';
 import type { ChatPanelHost } from './panels/chatPanelManager.js';
 import { MemoryPanelManager } from './panels/memoryPanelManager.js';
 import type { MemoryPanelHost } from './panels/memoryPanelManager.js';
+import { DashboardPanelManager } from './panels/dashboardPanelManager.js';
+import type { DashboardPanelHost } from './panels/dashboardPanelManager.js';
+import type {
+  DashboardData,
+  AgentMetrics,
+  AffectData,
+  RapportData,
+  ContextData,
+  PatternsPayload,
+} from './panels/dashboardPanelManager.js';
 import { PersonaPanelManager } from './panels/personaPanelManager.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
@@ -52,6 +62,10 @@ import type {
 import type { ConfigSuggestionPayload } from '../preload.js';
 // M1：写入确认 payload 类型（从 preload 导入，供 showWriteConfirmation 方法使用）
 import type { WriteConfirmationPayload } from '../preload.js';
+// 健康度仪表盘 payload 类型（从 preload 导入，供 renderHealthDashboard 代理方法使用）
+import type { HealthDashboardPayload } from '../preload.js';
+// 对话回顾数据 payload 类型（从 preload 导入，供 renderReviewData 代理方法使用）
+import type { ReviewDataPayload } from '../preload.js';
 // 图谱数据类型（供 MemoryPanelManager 委托方法使用）
 import type { RelationGraphData } from './components/relationGraph.js';
 
@@ -73,7 +87,7 @@ export type {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager implements ChatPanelHost, MemoryPanelHost {
+export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost {
   // ─── 静态常量 ───────────────────────────────────────────
   /** 判断"底部附近"的阈值（像素） */
   private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
@@ -97,14 +111,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   private workProjectionPanel = new WorkProjectionPanelManager();
   /** M2 审计日志面板管理器（独立管理审计 tab 的加载/渲染/清空） */
   private auditPanel = new AuditPanelManager();
-  /** P2-008 设置面板管理器（独立管理设置面板 DOM 和事件，约 450 行提取） */
+  /** 设置面板管理器（独立管理设置面板 DOM 和事件） */
   private settingsPanelManager: SettingsPanelManager;
 
-  // ─── P2-008 面板管理器（聊天/记忆/角色/会话，约 1800 行提取） ──
+  // ─── 面板管理器（聊天/记忆/角色/会话） ──
   /** 聊天面板管理器（消息渲染、流式输出、思考指示器、工具调用卡片） */
   private chatPanel: ChatPanelManager;
   /** 记忆面板管理器（列表渲染、搜索过滤、详情弹窗） */
   private memoryPanel: MemoryPanelManager;
+  /** 仪表盘面板管理器（感知系统 + 仪表盘渲染） */
+  private dashboardPanel: DashboardPanelManager;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
   private personaPanel: PersonaPanelManager;
 
@@ -120,8 +136,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
 
-  // P2-008 设置面板 DOM 元素已提取至 SettingsPanelManager
-
   private state: UIState = {
     currentPanel: 'chat',
     unreadCount: 0,
@@ -135,12 +149,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events = new EventTracker();
 
-  // P2-008 settingsFormDirty / llmPresets / currentPersonaMode 已提取至 SettingsPanelManager
-
   // ─── UI 状态字段 ────────────────────────────────────────
   /** FD-A2 面板错误横幅重试回调映射（key: panelId，如 'settings'/'memory'/'chat'） */
   private panelErrorRetryCallbacks = new Map<string, () => void>();
-  /** P2-008 currentPersonaMode 已提取至 SettingsPanelManager */
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
   /** 非系统消息计数（显示在对话工具栏副标题，P2-009：移至 state 字段区） */
@@ -156,7 +167,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.badge = document.getElementById('badge');
     this.btnMaximize = getOptionalElement('btn-maximize', 'button');
 
-    // P2-008 设置面板 DOM 元素初始化已提取至 SettingsPanelManager
     this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
 
     // H1 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
@@ -168,11 +178,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     // M2 初始化审计日志面板（绑定刷新/清空按钮事件）
     this.auditPanel.init();
 
-    // ─── P2-008 面板管理器初始化（提取自 ui.ts 约 1800 行） ───
+    // ─── 面板管理器初始化 ───
 
     // P1-ET-01 每个面板持有独立的 EventTracker，避免 cleanup 时互相干扰
     // 聊天面板管理器
-    // FOUNDATION-SEAL Phase 2：移除 state 参数，改通过 host.setStreaming/isStreaming 封装
+    // 通过 host.setStreaming/isStreaming 封装流式状态
     this.chatPanel = new ChatPanelManager(
       this,
       this.messagesEl,
@@ -190,6 +200,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
       new EventTracker(),
     );
 
+    // 仪表盘面板管理器（感知系统 + 仪表盘渲染）
+    this.dashboardPanel = new DashboardPanelManager(new EventTracker());
+
     // 角色选择器面板管理器
     this.personaPanel = new PersonaPanelManager(
       getOptionalElement('persona-selector', 'div'),
@@ -202,12 +215,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.initEventListeners();
     this.memoryPanel.initMemoryPanelListeners();
     this.personaPanel.initPersonaSelectorListeners();
-    this.settingsPanelManager.initListeners(); // P2-008 委托到 SettingsPanelManager
+    this.settingsPanelManager.initListeners();
     this.initPanelErrorRetryButtons(); // FD-A2 统一面板错误横幅重试按钮
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
-    this.chatPanel.initScrollToBottomButton(); // Phase 2：回到底部浮动按钮
+    this.chatPanel.initScrollToBottomButton();
     this.initScrollListener();
   }
 
@@ -269,6 +282,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
             this.triggerMemoryRecall(memoryName);
           }
         }
+      });
+    }
+
+    // FD-03 对话面板叙事行点击：触发叙事卡片脉冲动画（跨面板交互，UIManager 统一绑定）
+    const chatNarrative = document.getElementById('chat-narrative');
+    if (chatNarrative) {
+      this.events.addEventListener(chatNarrative, 'click', () => {
+        this.pulseNarrativeCard();
       });
     }
 
@@ -382,10 +403,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.profilePanel.cleanup(); // H2 清理用户画像面板事件监听器
     this.workProjectionPanel.cleanup(); // H3 清理作品投影面板事件监听器
     this.auditPanel.cleanup(); // M2 清理审计日志面板事件监听器
-    this.settingsPanelManager.cleanup(); // P2-008 清理设置面板事件监听器
-    // P2-008 清理面板管理器
+    this.settingsPanelManager.cleanup();
+    // 清理面板管理器
     this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
+    this.dashboardPanel.cleanup(); // 清理仪表盘脉冲定时器与重试按钮事件
     this.personaPanel.cleanup();
     // P2-6 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
@@ -557,7 +579,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * 此处仅做长度限制和首尾空白清理，保留合法的 `<>` 字符——
  * 用户可能输入代码片段、数学符号等合法内容，过度过滤会破坏体验。
    *
-   * 真正的 XSS 防护由 textContent（而非 innerHTML）保证。
+   * 真正的 XSS 防护由 textContent 保证（不使用 innerHTML）。
    */
   private sanitizeInput(input: string): string {
     const MAX_INPUT_LENGTH = 10000;
@@ -744,7 +766,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * 由 ipcListeners.ts 在收到 proactivePrompt 事件时调用。
    *
    * @param text 提示文本
-   * @param isMilestone 是否为里程碑事件（Phase 2.3）
+   * @param isMilestone 是否为里程碑事件
    */
   showProactiveBanner(text: string, isMilestone = false): void {
     this.proactiveBanner.showProactiveBanner(text, isMilestone);
@@ -988,7 +1010,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   }
 
   /**
-   * FOUNDATION-SEAL Phase 2：设置流式输出状态
+   * 设置流式输出状态
    *
    * 替代 ChatPanelManager 通过共享 state 引用直接修改 isStreaming 的"友元类反模式"。
    * UIManager 作为 state 的唯一持有者，通过此方法封装状态变更。
@@ -1042,14 +1064,98 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   onMemoryEdit(cb: (id: string, content: string) => void): void { this.memoryPanel.onMemoryEdit(cb); }
   /** FD-ADD-MEMORY-DISCUSS 注册记忆讨论回调（委托到 MemoryPanelManager） */
   onMemoryDiscuss(cb: (memoryName: string) => void): void { this.memoryPanel.onMemoryDiscuss(cb); }
-  /** 注册图谱视图切换回调（委托到 MemoryPanelManager） */
-  onGraphToggle(cb: (mode: 'list' | 'graph') => void): void { this.memoryPanel.onGraphToggle(cb); }
   /** 加载图谱数据到渲染器（委托到 MemoryPanelManager） */
   loadGraphData(data: RelationGraphData): void { this.memoryPanel.loadGraphData(data); }
   /** 切换记忆视图模式（委托到 MemoryPanelManager） */
   switchMemoryView(mode: 'list' | 'graph'): void { this.memoryPanel.switchView(mode); }
   /** 检查是否有图谱数据（委托到 MemoryPanelManager） */
   hasGraphData(): boolean { return this.memoryPanel.hasGraphData(); }
+  /** 设置图谱高亮节点（搜索联动，委托到 MemoryPanelManager） */
+  highlightGraphNodes(nodeIds: string[] | null): void { this.memoryPanel.highlightGraphNodes(nodeIds); }
+  /** 设置图谱选中节点（列表/详情联动，委托到 MemoryPanelManager） */
+  selectGraphNode(nodeId: string | null): void { this.memoryPanel.selectGraphNode(nodeId); }
+  /** 清除图谱所有高亮和选中（委托到 MemoryPanelManager） */
+  clearGraphHighlights(): void { this.memoryPanel.clearGraphHighlights(); }
+  /** 注册更多菜单项点击回调（委托到 MemoryPanelManager） */
+  onMoreMenuAction(cb: (action: string) => void): void { this.memoryPanel.onMoreMenuAction(cb); }
+  /** 注册排序变更回调（委托到 MemoryPanelManager） */
+  onSortChange(cb: () => void): void { this.memoryPanel.onSortChange(cb); }
+  /** 注册时间范围变更回调（委托到 MemoryPanelManager） */
+  onTimeRangeChange(cb: () => void): void { this.memoryPanel.onTimeRangeChange(cb); }
+  /** 注册清理请求回调（委托到 MemoryPanelManager） */
+  onCleanupRequest(cb: (type: 'duplicates' | 'stale' | 'all') => string[]): void { this.memoryPanel.onCleanupRequest(cb); }
+  /** 注册清理确认回调（委托到 MemoryPanelManager） */
+  onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void { this.memoryPanel.onCleanupConfirm(cb); }
+  /** 注册视图切换回调（委托到 MemoryPanelManager） */
+  onViewSwitch(cb: (mode: 'list' | 'graph') => void): void { this.memoryPanel.onViewSwitch(cb); }
+  /** 触发叙事卡片脉冲（委托到 MemoryPanelManager） */
+  pulseNarrativeCard(): void { this.memoryPanel.pulseNarrativeCard(); }
+
+  // ─── 仪表盘面板 ─ 委托到 DashboardPanelManager ───────────
+
+  /** 渲染仪表盘统计数据（委托到 DashboardPanelManager） */
+  renderDashboardStats(data: DashboardData): void {
+    this.dashboardPanel.renderDashboardStats(data);
+  }
+  /** 渲染 Agent 运行时指标（委托到 DashboardPanelManager） */
+  renderAgentMetrics(metrics: AgentMetrics | null): void {
+    this.dashboardPanel.renderAgentMetrics(metrics);
+  }
+  /** 渲染已加载技能列表（委托到 DashboardPanelManager） */
+  renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
+    this.dashboardPanel.renderSkills(skills);
+  }
+  /** 渲染里程碑成就展示（委托到 DashboardPanelManager） */
+  renderMilestones(data: { total: number; bySource: Record<string, number> }): void {
+    this.dashboardPanel.renderMilestones(data);
+  }
+  /** 渲染对话回顾数据（委托到 DashboardPanelManager） */
+  renderReviewData(data: ReviewDataPayload): void {
+    this.dashboardPanel.renderReviewData(data);
+  }
+  /** 显示洞察面板加载态（委托到 DashboardPanelManager） */
+  showInsightsLoading(): void { this.dashboardPanel.showInsightsLoading(); }
+  /** 渲染记忆洞察数据（委托到 DashboardPanelManager） */
+  renderInsights(
+    dashboard: { total: number; bySource: Record<string, number> },
+    graph: RelationGraphData,
+  ): void { this.dashboardPanel.renderInsights(dashboard, graph); }
+  /** 显示洞察面板加载失败状态（委托到 DashboardPanelManager） */
+  showInsightsError(): void { this.dashboardPanel.showInsightsError(); }
+  /** 显示健康度面板加载态（委托到 DashboardPanelManager） */
+  showHealthLoading(): void { this.dashboardPanel.showHealthLoading(); }
+  /** 渲染记忆健康度仪表盘（委托到 DashboardPanelManager） */
+  renderHealthDashboard(data: HealthDashboardPayload): void { this.dashboardPanel.renderHealthDashboard(data); }
+  /** 显示健康度面板加载失败状态（委托到 DashboardPanelManager） */
+  showHealthError(): void { this.dashboardPanel.showHealthError(); }
+  /** 显示记忆列表加载失败状态（委托到 DashboardPanelManager） */
+  showMemoryListError(listEl: HTMLElement): void { this.dashboardPanel.showMemoryListError(listEl); }
+  /** 仪表盘计数 +1 并触发脉冲动画（委托到 DashboardPanelManager） */
+  pulseCounter(id: string): void { this.dashboardPanel.pulseCounter(id); }
+  /** 更新情感基调展示（委托到 DashboardPanelManager） */
+  updateAffectDisplay(affect: AffectData): void {
+    this.dashboardPanel.updateAffectDisplay(affect);
+  }
+  /** 更新默契度展示（委托到 DashboardPanelManager） */
+  updateRapportDisplay(rapport: RapportData): void {
+    this.dashboardPanel.updateRapportDisplay(rapport);
+  }
+  /** 更新对话上下文展示（委托到 DashboardPanelManager） */
+  updateContextDisplay(context: ContextData): void {
+    this.dashboardPanel.updateContextDisplay(context);
+  }
+  /** 更新模式洞察面板（委托到 DashboardPanelManager） */
+  updatePatternsDisplay(payload: PatternsPayload): void {
+    this.dashboardPanel.updatePatternsDisplay(payload);
+  }
+  /** 更新叙事摘要 DOM（委托到 DashboardPanelManager） */
+  updateNarrative(): void { this.dashboardPanel.updateNarrative(); }
+  /** 注册重试加载洞察数据回调（委托到 DashboardPanelManager） */
+  onReloadInsights(cb: () => void): void { this.dashboardPanel.onReloadInsights(cb); }
+  /** 注册重试加载健康度数据回调（委托到 DashboardPanelManager） */
+  onReloadHealth(cb: () => void): void { this.dashboardPanel.onReloadHealth(cb); }
+  /** 注册重试加载记忆列表回调（委托到 DashboardPanelManager） */
+  onReloadMemoryList(cb: () => void): void { this.dashboardPanel.onReloadMemoryList(cb); }
 
   // ─── 角色选择器 ─ 委托到 PersonaPanelManager ───────────────
 
@@ -1069,7 +1175,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
   /** FD-ADD-REC-CLICK 触发召回记忆点击（委托到 PersonaPanelManager，供仪表盘推荐记忆点击复用） */
   triggerMemoryRecall(memoryName: string): void { this.personaPanel.triggerMemoryRecallClick(memoryName); }
 
-  /** IX-07 注册角色匹配模式变更回调（P2-008 委托到 SettingsPanelManager） */
+  /** IX-07 注册角色匹配模式变更回调（委托到 SettingsPanelManager） */
   onPersonaModeChange(cb: (mode: string) => void): void {
     this.settingsPanelManager.onPersonaModeChange(cb);
   }
@@ -1124,10 +1230,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.themeManager.syncThemeRadios(theme);
   }
 
-  // ─── 设置面板（P2-008 已提取至 SettingsPanelManager） ──
-
-  // P2-008 initSettingsTabListeners / initSettingsPanelListeners / initApiKeyToggle / resetSettingsFormDirty
-  // 已提取至 SettingsPanelManager，initListeners 委托给 settingsPanelManager.initListeners()
+  // ─── 设置面板（委托到 SettingsPanelManager） ──
 
   // ─── FD-A2 统一面板错误横幅 ───────────────────────────────
 
@@ -1300,7 +1403,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     }
   }
 
-  /** P2-008 加载 LLM 配置到表单（委托到 SettingsPanelManager） */
+  /** 加载 LLM 配置到表单（委托到 SettingsPanelManager） */
   loadLlmConfigToForm(data: {
     configured: boolean;
     config: LlmConfigForm | null;
@@ -1310,59 +1413,59 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
     this.settingsPanelManager.loadLlmConfigToForm(data);
   }
 
-  /** P2-008 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
+  /** 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
   collectLlmConfigFromForm(): LlmConfigSavePayload {
     return this.settingsPanelManager.collectLlmConfigFromForm();
   }
 
-  /** P2-008 加载配置到表单（委托到 SettingsPanelManager） */
+  /** 加载配置到表单（委托到 SettingsPanelManager） */
   loadConfigToForm(config: SpriteConfigForm): void {
     this.settingsPanelManager.loadConfigToForm(config);
   }
 
-  /** P2-008 加载项目列表到专注项目下拉框（委托到 SettingsPanelManager） */
+  /** 加载项目列表到专注项目下拉框（委托到 SettingsPanelManager） */
   loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void {
     this.settingsPanelManager.loadProjectsToForm(projects, selectedPath);
   }
 
-  /** P2-008 设置角色匹配模式（委托到 SettingsPanelManager） */
+  /** 设置角色匹配模式（委托到 SettingsPanelManager） */
   setPersonaMode(mode: string): void {
     this.settingsPanelManager.setPersonaMode(mode);
   }
 
-  /** P2-008 收集表单中的配置（委托到 SettingsPanelManager） */
+  /** 收集表单中的配置（委托到 SettingsPanelManager） */
   collectConfigFromForm(): SpriteConfigForm {
     return this.settingsPanelManager.collectConfigFromForm();
   }
 
-  /** P2-008 设置面板保存回调（委托到 SettingsPanelManager） */
+  /** 设置面板保存回调（委托到 SettingsPanelManager） */
   onConfigSave(cb: (config: SpriteConfigForm) => void): void {
     this.settingsPanelManager.onConfigSave(cb);
   }
-  /** P2-008 设置面板取消回调（委托到 SettingsPanelManager） */
+  /** 设置面板取消回调（委托到 SettingsPanelManager） */
   onConfigCancel(cb: () => void): void {
     this.settingsPanelManager.onConfigCancel(cb);
   }
-  /** P2-008 LLM 配置保存回调（委托到 SettingsPanelManager） */
+  /** LLM 配置保存回调（委托到 SettingsPanelManager） */
   onLlmConfigSave(cb: (payload: LlmConfigSavePayload) => void): void {
     this.settingsPanelManager.onLlmConfigSave(cb);
   }
-  /** P2-008 LLM 连接测试回调（委托到 SettingsPanelManager） */
+  /** LLM 连接测试回调（委托到 SettingsPanelManager） */
   onLlmTest(cb: () => void): void {
     this.settingsPanelManager.onLlmTest(cb);
   }
 
-  /** P2-008 显示 LLM 测试连接结果（委托到 SettingsPanelManager） */
+  /** 显示 LLM 测试连接结果（委托到 SettingsPanelManager） */
   showLlmTestResult(result: { success: boolean; error: string | null }, elapsedMs?: number): void {
     this.settingsPanelManager.showLlmTestResult(result, elapsedMs);
   }
 
-  /** P2-008 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
+  /** 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
   getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
     return this.settingsPanelManager.getLlmConfigFromForm();
   }
 
-  /** P2-008 重置设置表单 dirty 标志（委托到 SettingsPanelManager） */
+  /** 重置设置表单 dirty 标志（委托到 SettingsPanelManager） */
   resetSettingsFormDirty(): void {
     this.settingsPanelManager.resetFormDirty();
   }
@@ -1512,7 +1615,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost {
    * 主进程已确保完整窗口可见，此处只需切换面板并聚焦搜索框。
    */
   async handleRecallMemoryTrigger(): Promise<void> {
-    // FD-FIX-PANEL-NAME：使用正确的面板 ID（panel-memories）
+    // 使用正确的面板 ID（panel-memories）
     await this.switchPanel('memories');
     // 聚焦记忆搜索框（switchPanel 不会自动聚焦非 chat 面板的输入框）
     const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;

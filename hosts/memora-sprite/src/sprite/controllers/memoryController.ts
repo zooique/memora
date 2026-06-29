@@ -92,6 +92,8 @@ export interface MemorySearchResult {
   score: number;
   contentPreview: string;
   similarity?: number;
+  /** 创建时间（ISO 8601，由内核 AgentSearchHit 透传，供 UI 层时间筛选/排序使用） */
+  createdAt?: string;
 }
 
 /**

@@ -16,7 +16,8 @@
  * - JSDOM 提供真实 DOM 事件（click 事件委托）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { formatTokenCount, createMemoryController } from '../../electron/renderer/controllers/memoryPanelController.js';
+import { formatTokenCount } from '../../electron/renderer/panels/dashboardPanelManager.js';
+import { createMemoryController } from '../../electron/renderer/controllers/memoryPanelController.js';
 import type { UIManager } from '../../electron/renderer/ui.js';
 
 // ─── 纯函数测试 ───────────────────────────────────────────
@@ -68,9 +69,23 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     onMemoryEdit: vi.fn(),
     onMemoryDiscuss: vi.fn(),
     onGraphToggle: vi.fn(),
+    onMoreMenuAction: vi.fn(),
+    onSortChange: vi.fn(),
+    onTimeRangeChange: vi.fn(),
+    onCleanupRequest: vi.fn(() => []),
+    onCleanupConfirm: vi.fn(),
+    onViewSwitch: vi.fn(),
+    // 仪表盘重试回调（DashboardPanelManager 委托）
+    onReloadInsights: vi.fn(),
+    onReloadHealth: vi.fn(),
+    onReloadMemoryList: vi.fn(),
     switchMemoryView: vi.fn(),
     loadGraphData: vi.fn(),
     hasGraphData: vi.fn(() => false),
+    highlightGraphNodes: vi.fn(),
+    selectGraphNode: vi.fn(),
+    clearGraphHighlights: vi.fn(),
+    pulseNarrativeCard: vi.fn(),
     triggerMemoryRecall: vi.fn(),
     renderMemoryList: vi.fn(),
     showMemoryDetail: vi.fn(),
@@ -79,6 +94,26 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     hideModal: vi.fn(),
     clearAddMemoryForm: vi.fn(),
     getCurrentMemoryId: vi.fn(() => null),
+    updateLearningProgress: vi.fn(),
+    // DashboardPanelManager 委托方法
+    renderDashboardStats: vi.fn(),
+    renderAgentMetrics: vi.fn(),
+    renderSkills: vi.fn(),
+    renderMilestones: vi.fn(),
+    renderReviewData: vi.fn(),
+    showInsightsLoading: vi.fn(),
+    renderInsights: vi.fn(),
+    showInsightsError: vi.fn(),
+    showHealthLoading: vi.fn(),
+    renderHealthDashboard: vi.fn(),
+    showHealthError: vi.fn(),
+    showMemoryListError: vi.fn(),
+    pulseCounter: vi.fn(),
+    updateAffectDisplay: vi.fn(),
+    updateRapportDisplay: vi.fn(),
+    updateContextDisplay: vi.fn(),
+    updatePatternsDisplay: vi.fn(),
+    updateNarrative: vi.fn(),
   };
   // 使用类型断言避免完整实现 UIManager 的所有方法
   return spies as unknown as UIManager & { triggerMemoryRecall: ReturnType<typeof vi.fn> };
@@ -108,11 +143,22 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
           { name: '推荐记忆A', source: 'insight', reason: '相关度高', relevance: 0.95, contentPreview: '预览A' },
           { name: '推荐记忆B', source: 'profile', reason: '近期访问', relevance: 0.80, contentPreview: '预览B' },
         ],
+        // Phase 2 重构后 loadDashboard 调用 renderDashboardStats/renderMilestones 需要这两个字段
+        total: 2,
+        bySource: { insight: 1, profile: 1 },
         sourceHealth: null,
         metrics: null,
         skills: [],
       }),
       listMemories: vi.fn().mockResolvedValue({ memories: [] }),
+      // Phase 2 重构后 loadDashboard 串行调用 getReviewData，需提供 mock 避免抛错
+      getReviewData: vi.fn().mockResolvedValue({
+        today: { date: '2026-06-29', messageCount: 0, newMemories: 0, newInsights: 0 },
+        trend: { last7Days: 0, last30Days: 0, daily: [], direction: 'stable', description: '无数据' },
+        insights: { total: 0, recent: [], bySource: {} },
+        totalMemories: 0,
+        generatedAt: '2026-06-29T00:00:00.000Z',
+      }),
     } as unknown as typeof window.electronAPI;
 
     mockUiManager = createMockUiManager();
@@ -121,14 +167,23 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
   // FD-ADD-REC-CLICK 点击事件委托已迁移到 UIManager.initEventListeners（通过 EventTracker 统一管理）
   // 点击行为测试见 ui.test.ts 的 "FD-ADD-REC-CLICK 推荐记忆点击事件委托" 描述块
 
-  it('推荐记忆项应包含 data-action 和 data-memory-name 属性', async () => {
+  it('loadDashboard 应将仪表盘数据委托给 renderDashboardStats 渲染（推荐记忆数据由 Manager 渲染为 li[data-action]）', async () => {
     const controller = createMemoryController(mockUiManager);
     controller.setupMemoryPanel();
     await controller.loadDashboard();
 
-    const firstItem = document.querySelector('#recommendation-list li') as HTMLElement;
-    expect(firstItem.dataset.action).toBe('view-recommendation');
-    expect(firstItem.dataset.memoryName).toBe('推荐记忆A');
+    // Phase 2 重构后，Controller 仅做 IPC 编排，DOM 渲染委托 DashboardPanelManager
+    // 此处验证 renderDashboardStats 被调用并接收含 suggestions 的完整数据
+    expect(mockUiManager.renderDashboardStats).toHaveBeenCalledTimes(1);
+    const callArg = mockUiManager.renderDashboardStats.mock.calls[0][0];
+    expect(callArg.suggestions).toHaveLength(2);
+    expect(callArg.suggestions[0].name).toBe('推荐记忆A');
+    // 同时验证其他委托方法被调用
+    expect(mockUiManager.renderAgentMetrics).toHaveBeenCalledWith(null);
+    expect(mockUiManager.renderSkills).toHaveBeenCalledWith([]);
+    expect(mockUiManager.renderMilestones).toHaveBeenCalledTimes(1);
+    expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
+    expect(mockUiManager.updateLearningProgress).toHaveBeenCalledTimes(1);
   });
 });
 

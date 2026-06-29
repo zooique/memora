@@ -453,6 +453,120 @@
   display: block;
 }
 
+/* ─── 图谱图例（颜色说明） ──────────────────────────────── */
+
+/* 图例容器：右上角半透明浮层 */
+.graph-legend {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(8px);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: var(--font-xs);
+  color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 220px;
+  z-index: 10;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 图例分区标题 */
+.legend-title {
+  font-weight: 600;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+/* 图例项容器：flex wrap 紧凑排列 */
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+/* 单个图例项 */
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* 节点颜色圆点 */
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* 关系颜色线条 */
+.legend-line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+/* ─── 图谱节点 Hover Tooltip ───────────────────────────── */
+
+/* tooltip 容器：跟随鼠标，半透明浮层 */
+.graph-tooltip {
+  position: absolute;
+  background: rgba(30, 30, 30, 0.95);
+  backdrop-filter: blur(12px);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: var(--font-sm);
+  color: #fff;
+  max-width: 260px;
+  pointer-events: none;
+  z-index: 20;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.15s ease;
+}
+
+.graph-tooltip.hidden {
+  opacity: 0;
+  display: none;
+}
+
+/* tooltip 记忆名称 */
+.graph-tooltip-name {
+  font-weight: 600;
+  font-size: var(--font-sm);
+  margin-bottom: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* tooltip source 标签 */
+.graph-tooltip-source {
+  font-size: var(--font-xs);
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 4px;
+}
+
+/* tooltip 内容预览 */
+.graph-tooltip-preview {
+  font-size: var(--font-xs);
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* ─── 高级搜索栏（Phase 2：搜索增强） ──────────────────────── */
 
 /* 高级搜索栏：折叠时隐藏 */

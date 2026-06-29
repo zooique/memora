@@ -150,6 +150,35 @@ export class RelationGraphRenderer {
   // 高 DPI 缩放
   private dpr = 1;
 
+  // ─── Tooltip DOM 元素 ───────────────────────────────────────
+  /** tooltip 容器元素 */
+  private tooltipEl: HTMLElement | null = null;
+  /** tooltip 名称元素 */
+  private tooltipNameEl: HTMLElement | null = null;
+  /** tooltip source 元素 */
+  private tooltipSourceEl: HTMLElement | null = null;
+  /** tooltip 预览元素 */
+  private tooltipPreviewEl: HTMLElement | null = null;
+
+  // ─── Resize 监听 ────────────────────────────────────────────
+  private resizeObserver: ResizeObserver | null = null;
+
+  // ─── 高亮/选中状态（外部联动） ──────────────────────────────
+  /** 搜索命中高亮节点 ID 集合（这些节点正常显示，其他淡化） */
+  private highlightedNodeIds: Set<string> | null = null;
+  /** 当前选中的节点 ID（列表/详情联动，显示外发光环） */
+  private selectedNodeId: string | null = null;
+
+  // ─── 视口平移（用于选中节点居中动画） ────────────────────────
+  /** 视口 X 偏移（相机位置） */
+  private cameraX = 0;
+  /** 视口 Y 偏移（相机位置） */
+  private cameraY = 0;
+  /** 目标视口 X 偏移（平滑动画目标） */
+  private targetCameraX = 0;
+  /** 目标视口 Y 偏移（平滑动画目标） */
+  private targetCameraY = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
@@ -157,7 +186,16 @@ export class RelationGraphRenderer {
     this.ctx = ctx;
     this.dpr = window.devicePixelRatio || 1;
 
+    // 查找 tooltip DOM 元素
+    this.tooltipEl = document.getElementById('graph-tooltip');
+    if (this.tooltipEl) {
+      this.tooltipNameEl = this.tooltipEl.querySelector('.graph-tooltip-name');
+      this.tooltipSourceEl = this.tooltipEl.querySelector('.graph-tooltip-source');
+      this.tooltipPreviewEl = this.tooltipEl.querySelector('.graph-tooltip-preview');
+    }
+
     this.bindEvents();
+    this.setupResizeObserver();
   }
 
   // ─── 公开 API ──────────────────────────────────────────────
@@ -165,6 +203,49 @@ export class RelationGraphRenderer {
   /** 设置节点点击回调 */
   setOnNodeClick(cb: NodeClickCallback): void {
     this.onNodeClick = cb;
+  }
+
+  /**
+   * 设置高亮节点集合（搜索结果联动）
+   *
+   * 高亮节点正常显示，非高亮节点和连接它们的边会淡化（alpha=0.15）。
+   * 传 null 清除高亮状态，恢复全量显示。
+   *
+   * @param nodeIds 要高亮的节点 ID 数组，null 表示清除高亮
+   */
+  setHighlightedNodes(nodeIds: string[] | null): void {
+    this.highlightedNodeIds = nodeIds ? new Set(nodeIds) : null;
+  }
+
+  /**
+   * 设置选中节点（列表/详情联动）
+   *
+   * 选中节点会显示蓝色外发光环，并通过平滑相机动画将其居中到视口。
+   * 传 null 取消选中。
+   *
+   * @param nodeId 要选中的节点 ID，null 表示取消选中
+   */
+  setSelectedNode(nodeId: string | null): void {
+    this.selectedNodeId = nodeId;
+    if (nodeId) {
+      const node = this.nodeMap.get(nodeId);
+      if (node) {
+        // 设置目标相机位置，使节点居中
+        this.targetCameraX = this.width / 2 - node.x;
+        this.targetCameraY = this.height / 2 - node.y;
+        // 拖拽/选中时恢复动画
+        this.layoutStable = false;
+        this.stableFrameCount = 0;
+      }
+    }
+  }
+
+  /** 清除所有高亮和选中状态 */
+  clearHighlights(): void {
+    this.highlightedNodeIds = null;
+    this.selectedNodeId = null;
+    this.targetCameraX = 0;
+    this.targetCameraY = 0;
   }
 
   /**
@@ -189,6 +270,14 @@ export class RelationGraphRenderer {
     this.layoutStable = false;
     this.stableFrameCount = 0;
 
+    // 重置高亮/选中/相机状态（新数据不保留旧视图状态）
+    this.highlightedNodeIds = null;
+    this.selectedNodeId = null;
+    this.cameraX = 0;
+    this.cameraY = 0;
+    this.targetCameraX = 0;
+    this.targetCameraY = 0;
+
     // 调整 Canvas 尺寸
     this.resize();
 
@@ -209,6 +298,11 @@ export class RelationGraphRenderer {
   destroy(): void {
     this.stopAnimation();
     this.unbindEvents();
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+    this.hideTooltip();
   }
 
   // ─── 布局算法 ──────────────────────────────────────────────
@@ -364,6 +458,9 @@ export class RelationGraphRenderer {
         if (!this.layoutStable) {
           this.updateLayout();
         }
+        // 相机平滑跟随（lerp 插值，0.12 的系数提供自然的缓动效果）
+        this.cameraX += (this.targetCameraX - this.cameraX) * 0.12;
+        this.cameraY += (this.targetCameraY - this.cameraY) * 0.12;
         this.render();
       }
       this.animFrameId = requestAnimationFrame(loop);
@@ -396,23 +493,46 @@ export class RelationGraphRenderer {
     const ctx = this.ctx;
     ctx.clearRect(0, 0, this.width, this.height);
 
+    // 应用相机偏移（视口平移）
+    ctx.save();
+    ctx.translate(this.cameraX, this.cameraY);
+
+    // 辅助函数：判断节点是否高亮
+    const isNodeHighlighted = (node: GraphNode): boolean => {
+      if (!this.highlightedNodeIds) return true; // 无高亮模式，全部显示
+      return this.highlightedNodeIds.has(node.id);
+    };
+
+    // 辅助函数：判断边是否高亮（两端点至少有一个高亮则边高亮）
+    const isEdgeHighlighted = (source: GraphNode, target: GraphNode): boolean => {
+      if (!this.highlightedNodeIds) return true;
+      return this.highlightedNodeIds.has(source.id) || this.highlightedNodeIds.has(target.id);
+    };
+
     // 绘制边
     for (const edge of this.edges) {
       const source = this.nodeMap.get(edge.sourceId);
       const target = this.nodeMap.get(edge.targetId);
       if (!source || !target) continue;
 
-      // Phase 4：hover 节点的高亮边（连接到 hover 节点的边加亮 + 加粗）
+      // hover 节点的高亮边（连接到 hover 节点的边加亮 + 加粗）
       const isConnectedToHover = this.hoverNode && (source === this.hoverNode || target === this.hoverNode);
+      // 搜索高亮淡化
+      const edgeHighlighted = isEdgeHighlighted(source, target);
 
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
       ctx.lineTo(target.x, target.y);
       ctx.strokeStyle = EDGE_TYPE_COLORS[edge.type] || DEFAULT_EDGE_COLOR;
       ctx.lineWidth = MIN_EDGE_WIDTH + (MAX_EDGE_WIDTH - MIN_EDGE_WIDTH) * edge.weight;
-      ctx.globalAlpha = isConnectedToHover ? 0.8 : 0.4;
-      if (isConnectedToHover) {
-        ctx.lineWidth *= 1.5; // 高亮边加粗
+      // 淡化：非高亮边 alpha=0.08，普通边 0.4，hover 边 0.8
+      if (!edgeHighlighted) {
+        ctx.globalAlpha = 0.08;
+      } else if (isConnectedToHover) {
+        ctx.globalAlpha = 0.8;
+        ctx.lineWidth *= 1.5;
+      } else {
+        ctx.globalAlpha = 0.4;
       }
       ctx.stroke();
       ctx.globalAlpha = 1;
@@ -423,9 +543,23 @@ export class RelationGraphRenderer {
       const r = this.nodeRadius(node);
       const isHovered = node === this.hoverNode;
       const isDragged = node === this.dragNode;
+      const isSelected = node.id === this.selectedNodeId;
+      const nodeHighlighted = isNodeHighlighted(node);
 
-      // Phase 4：hover 光晕效果（径向渐变，放大 1.3 倍）
-      if (isHovered) {
+      // 选中节点外发光环（蓝色脉冲效果，在最底层）
+      if (isSelected) {
+        const selectedGlowR = r * 2.2;
+        const gradient = ctx.createRadialGradient(node.x, node.y, r * 1.2, node.x, node.y, selectedGlowR);
+        gradient.addColorStop(0, 'rgba(0, 102, 255, 0.4)');
+        gradient.addColorStop(1, 'rgba(0, 102, 255, 0)');
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, selectedGlowR, 0, Math.PI * 2);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      // hover 光晕效果
+      if (isHovered && nodeHighlighted) {
         const glowR = r * 1.8;
         const gradient = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, glowR);
         gradient.addColorStop(0, this.getNodeColor(node));
@@ -443,26 +577,38 @@ export class RelationGraphRenderer {
       ctx.beginPath();
       ctx.arc(node.x, node.y, renderR, 0, Math.PI * 2);
       ctx.fillStyle = this.getNodeColor(node);
+      // 搜索淡化：非高亮节点降低不透明度
+      ctx.globalAlpha = nodeHighlighted ? 1 : 0.15;
       ctx.fill();
+      ctx.globalAlpha = 1;
 
-      // hover / drag 描边（Phase 4：加粗 + 发光色）
-      if (isHovered || isDragged) {
+      // 选中节点蓝色描边（优先级最高）
+      if (isSelected) {
+        ctx.strokeStyle = '#0066ff';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      } else if (isHovered || isDragged) {
+        // hover / drag 描边
         ctx.strokeStyle = isDragged ? '#0066ff' : 'rgba(0, 102, 255, 0.6)';
         ctx.lineWidth = isDragged ? 2.5 : 2;
         ctx.stroke();
       }
 
-      // 节点名称（截断，hover 时字号略大）
-      const maxNameLen = Math.max(3, Math.floor(renderR / 2));
-      const displayName =
-        node.name.length > maxNameLen ? node.name.slice(0, maxNameLen) + '…' : node.name;
+      // 节点名称（截断，hover 时字号略大；非高亮节点文字也淡化）
+      if (nodeHighlighted) {
+        const maxNameLen = Math.max(3, Math.floor(renderR / 2));
+        const displayName =
+          node.name.length > maxNameLen ? node.name.slice(0, maxNameLen) + '…' : node.name;
 
-      ctx.fillStyle = '#ffffff';
-      ctx.font = `${Math.max(10, renderR * 0.7)}px -apple-system, BlinkMacSystemFont, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(displayName, node.x, node.y);
+        ctx.fillStyle = this.getContrastColor(this.getNodeColor(node));
+        ctx.font = `${Math.max(10, renderR * 0.7)}px -apple-system, BlinkMacSystemFont, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(displayName, node.x, node.y);
+      }
     }
+
+    ctx.restore();
   }
 
   // ─── 辅助方法 ──────────────────────────────────────────────
@@ -475,6 +621,35 @@ export class RelationGraphRenderer {
   /** 根据 source 获取节点颜色 */
   private getNodeColor(node: GraphNode): string {
     return SOURCE_COLORS[node.source] || DEFAULT_NODE_COLOR;
+  }
+
+  /**
+   * 根据背景色十六进制值计算高对比度文字颜色（黑/白）
+   * 使用 YIQ 颜色空间判断亮度
+   */
+  private getContrastColor(hexColor: string): string {
+    // 解析十六进制颜色
+    const hex = hexColor.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    // YIQ 亮度公式
+    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
+    return yiq >= 128 ? '#1d1d1f' : '#ffffff';
+  }
+
+  /**
+   * 设置 ResizeObserver 监听容器大小变化
+   * 窗口大小改变时自动调整 Canvas 尺寸
+   */
+  private setupResizeObserver(): void {
+    const parent = this.canvas.parentElement;
+    if (!parent) return;
+
+    this.resizeObserver = new ResizeObserver(() => {
+      this.resize();
+    });
+    this.resizeObserver.observe(parent);
   }
 
   /** 调整 Canvas 尺寸（响应容器大小 + 高 DPI） */
@@ -493,8 +668,22 @@ export class RelationGraphRenderer {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
   }
 
+  /**
+   * 将屏幕坐标转换为世界坐标（考虑相机偏移）
+   * @param screenX 相对于 Canvas 左上角的屏幕 X
+   * @param screenY 相对于 Canvas 左上角的屏幕 Y
+   * @returns 世界坐标 { x, y }
+   */
+  private screenToWorld(screenX: number, screenY: number): { x: number; y: number } {
+    return {
+      x: screenX - this.cameraX,
+      y: screenY - this.cameraY,
+    };
+  }
+
   /** 根据坐标查找节点 */
-  private findNodeAt(x: number, y: number): GraphNode | null {
+  private findNodeAt(screenX: number, screenY: number): GraphNode | null {
+    const { x, y } = this.screenToWorld(screenX, screenY);
     for (const node of this.nodes) {
       const r = this.nodeRadius(node) + 4; // 增加 4px 的热区
       const dx = node.x - x;
@@ -512,7 +701,7 @@ export class RelationGraphRenderer {
     this.canvas.addEventListener('mousedown', this.onMouseDown);
     this.canvas.addEventListener('mousemove', this.onMouseMove);
     this.canvas.addEventListener('mouseup', this.onMouseUp);
-    this.canvas.addEventListener('mouseleave', this.onMouseUp);
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave);
     this.canvas.addEventListener('click', this.onClick);
   }
 
@@ -520,53 +709,122 @@ export class RelationGraphRenderer {
     this.canvas.removeEventListener('mousedown', this.onMouseDown);
     this.canvas.removeEventListener('mousemove', this.onMouseMove);
     this.canvas.removeEventListener('mouseup', this.onMouseUp);
-    this.canvas.removeEventListener('mouseleave', this.onMouseUp);
+    this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
     this.canvas.removeEventListener('click', this.onClick);
   }
 
   private onMouseDown = (e: MouseEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const node = this.findNodeAt(x, y);
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const node = this.findNodeAt(screenX, screenY);
     if (node) {
       this.dragNode = node;
-      this.dragOffsetX = node.x - x;
-      this.dragOffsetY = node.y - y;
+      // 拖拽偏移：节点世界坐标 - 鼠标世界坐标
+      const world = this.screenToWorld(screenX, screenY);
+      this.dragOffsetX = node.x - world.x;
+      this.dragOffsetY = node.y - world.y;
       this.layoutStable = false; // 拖拽时恢复布局
     }
   };
 
   private onMouseMove = (e: MouseEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
 
     if (this.dragNode) {
-      this.dragNode.x = x + this.dragOffsetX;
-      this.dragNode.y = y + this.dragOffsetY;
-      // 边界约束
+      // 拖拽：将屏幕坐标转换为世界坐标，加上拖拽偏移
+      const world = this.screenToWorld(screenX, screenY);
+      this.dragNode.x = world.x + this.dragOffsetX;
+      this.dragNode.y = world.y + this.dragOffsetY;
+      // 边界约束（在世界坐标系中）
       const r = this.nodeRadius(this.dragNode);
       this.dragNode.x = Math.max(PADDING + r, Math.min(this.width - PADDING - r, this.dragNode.x));
       this.dragNode.y = Math.max(PADDING + r, Math.min(this.height - PADDING - r, this.dragNode.y));
+      this.hideTooltip();
       return;
     }
 
-    this.hoverNode = this.findNodeAt(x, y);
+    const prevHover = this.hoverNode;
+    this.hoverNode = this.findNodeAt(screenX, screenY);
     this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'default';
+
+    // tooltip 显示/隐藏/更新
+    if (this.hoverNode) {
+      if (this.hoverNode !== prevHover) {
+        this.showTooltip(this.hoverNode);
+      }
+      this.updateTooltipPosition(e.clientX, e.clientY);
+    } else {
+      this.hideTooltip();
+    }
   };
 
   private onMouseUp = (): void => {
     this.dragNode = null;
   };
 
+  private onMouseLeave = (): void => {
+    this.dragNode = null;
+    this.hoverNode = null;
+    this.canvas.style.cursor = 'default';
+    this.hideTooltip();
+  };
+
   private onClick = (e: MouseEvent): void => {
     const rect = this.canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const node = this.findNodeAt(x, y);
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+    const node = this.findNodeAt(screenX, screenY);
     if (node && this.onNodeClick) {
       this.onNodeClick(node.id);
     }
   };
+
+  // ─── Tooltip 辅助方法 ──────────────────────────────────────
+
+  /** 显示节点 tooltip */
+  private showTooltip(node: GraphNode): void {
+    if (!this.tooltipEl) return;
+    if (this.tooltipNameEl) this.tooltipNameEl.textContent = node.name;
+    if (this.tooltipSourceEl) this.tooltipSourceEl.textContent = `source: ${node.source}`;
+    if (this.tooltipPreviewEl) this.tooltipPreviewEl.textContent = node.contentPreview;
+    this.tooltipEl.classList.remove('hidden');
+  }
+
+  /** 隐藏 tooltip */
+  private hideTooltip(): void {
+    if (!this.tooltipEl) return;
+    this.tooltipEl.classList.add('hidden');
+  }
+
+  /**
+   * 更新 tooltip 位置（跟随鼠标，避免超出视口）
+   * @param clientX 鼠标相对于视口的 x 坐标
+   * @param clientY 鼠标相对于视口的 y 坐标
+   */
+  private updateTooltipPosition(clientX: number, clientY: number): void {
+    if (!this.tooltipEl) return;
+    const container = this.canvas.parentElement;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const tooltipRect = this.tooltipEl.getBoundingClientRect();
+    const offset = 16; // 鼠标与 tooltip 的间距
+
+    let left = clientX - containerRect.left + offset;
+    let top = clientY - containerRect.top + offset;
+
+    // 防止 tooltip 超出容器右/下边界
+    if (left + tooltipRect.width > containerRect.width - 8) {
+      left = clientX - containerRect.left - tooltipRect.width - offset;
+    }
+    if (top + tooltipRect.height > containerRect.height - 8) {
+      top = clientY - containerRect.top - tooltipRect.height - offset;
+    }
+
+    this.tooltipEl.style.left = `${left}px`;
+    this.tooltipEl.style.top = `${top}px`;
+  }
 }

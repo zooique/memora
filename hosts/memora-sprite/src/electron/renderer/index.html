@@ -574,6 +574,38 @@
         <!-- 图谱视图容器（ADR-014：拓扑可视化，默认隐藏） -->
         <div id="memory-graph-container" style="display:none;">
           <canvas id="memory-graph-canvas"></canvas>
+          <!-- 图谱图例：节点颜色（source类型）+ 边颜色（关系类型） -->
+          <div id="graph-legend" class="graph-legend">
+            <div class="legend-section">
+              <div class="legend-title">节点类型</div>
+              <div class="legend-items">
+                <span class="legend-item"><span class="legend-dot" style="background:#34c759"></span>profile</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#0066ff"></span>insight</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#ff9f0a"></span>skill</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#7b1fa2"></span>rule</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#ad1457"></span>guardrail</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#00838f"></span>persona</span>
+                <span class="legend-item"><span class="legend-dot" style="background:#e65100"></span>session</span>
+              </div>
+            </div>
+            <div class="legend-section">
+              <div class="legend-title">关系类型</div>
+              <div class="legend-items">
+                <span class="legend-item"><span class="legend-line" style="background:#ff3b30"></span>contradicts</span>
+                <span class="legend-item"><span class="legend-line" style="background:#34c759"></span>supports</span>
+                <span class="legend-item"><span class="legend-line" style="background:#0066ff"></span>follows</span>
+                <span class="legend-item"><span class="legend-line" style="background:#ff9f0a"></span>refines</span>
+                <span class="legend-item"><span class="legend-line" style="background:#7b1fa2"></span>caused</span>
+                <span class="legend-item"><span class="legend-line" style="background:#a1a1a6"></span>related</span>
+              </div>
+            </div>
+          </div>
+          <!-- 节点hover tooltip：显示记忆名称和预览 -->
+          <div id="graph-tooltip" class="graph-tooltip hidden">
+            <div class="graph-tooltip-name"></div>
+            <div class="graph-tooltip-source"></div>
+            <div class="graph-tooltip-preview"></div>
+          </div>
         </div>
       </div>
 

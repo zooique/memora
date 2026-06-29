@@ -75,8 +75,15 @@ hosts/memora-sprite/
     │       ├── personaController.ts ← 角色面板控制器
     │       ├── sessionController.ts ← 会话面板控制器
     │       ├── settingsController.ts ← 设置面板控制器
-    │       ├── settingsPanelManager.ts ← 设置面板 DOM 管理
-    │       ├── profilePanelManager.ts ← 用户画像面板管理
+    │       ├── panels/        ← 面板管理器（DOM 绑定 + 渲染逻辑，UIManager facade 委托）
+    │       │   ├── chatPanelManager.ts ← 聊天面板（消息渲染 + 流式输出）
+    │       │   ├── memoryPanelManager.ts ← 记忆面板（列表 + 搜索 + 详情）
+    │       │   ├── dashboardPanelManager.ts ← 仪表盘面板（感知系统 + 仪表盘渲染，Phase 2 提取）
+    │       │   ├── personaPanelManager.ts ← 角色选择器面板
+    │       │   ├── settingsPanelManager.ts ← 设置面板 DOM 管理
+    │       │   ├── profilePanelManager.ts ← 用户画像面板管理
+    │       │   ├── workProjectionPanelManager.ts ← 作品投影面板
+    │       │   └── auditPanelManager.ts ← 审计日志面板
     │       ├── suggestionCard.ts ← 配置建议卡片
     │       ├── proactiveBanner.ts ← 主动提示横幅
     │       └── styles/       ← 样式文件（v8 语义化变量系统）
@@ -133,3 +140,13 @@ hosts/memora-sprite/
 - styles/ 替代原 renderer.css，拆分为 8 个语义化 CSS 文件（base/layout/chat/memory/modal/settings/toast/markdown）
 - __tests__/ 从 4 文件扩展到 8 文件，新增 ipcHandlers/sessionController/float/ui 测试
 - 年轮审判发现规则文档严重滞后于产出（缺 20+ 文件），此次双向对齐
+
+### v0.3（2026-06-29）· Phase 2 模块重思——DashboardPanelManager 提取
+
+**变更**：electron/renderer/panels/ 目录树补完 7 个 PanelManager 完整列表
+
+**设计演进**：
+- v0.2 仅列出 settingsPanelManager/profilePanelManager 2 个 PanelManager，遗漏 chatPanelManager/memoryPanelManager/personaPanelManager/workProjectionPanelManager/auditPanelManager 5 个
+- Phase 2 新增 dashboardPanelManager.ts（1425 行，从 memoryPanelController.ts 提取仪表盘渲染 + 感知系统），目录树补完时一并补齐
+- UIManager facade 透传模式正式确立：所有 PanelManager 通过 DashboardPanelHost/MemoryPanelHost 等 Host 接口注入，UIManager 仅做委托
+- memoryPanelController.ts 从 1542 → 540 行（-1000 行），Controller 仅保留 IPC 编排，DOM 渲染归 PanelManager

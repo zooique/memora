@@ -118,6 +118,8 @@ export interface AgentSearchHit {
   contentPreview: string;
   /** 语义相似度（0-1，仅 searchHybrid 返回，纯关键词搜索时无此字段） */
   similarity?: number;
+  /** 创建时间（ISO 8601，供 UI 层时间筛选/排序使用） */
+  createdAt?: string;
 }
 
 /** 记忆库统计数据 */
@@ -317,6 +319,7 @@ export class MemoryInspector {
       score: m.score,
       // 截断长内容到搜索预览长度
       contentPreview: m.content.length > SEARCH_PREVIEW_LEN ? m.content.slice(0, SEARCH_PREVIEW_LEN) + '...' : m.content,
+      createdAt: m.createdAt,
     }));
   }
 
@@ -379,6 +382,7 @@ export class MemoryInspector {
       score: memory.score,
       similarity: vectorScore,
       contentPreview: memory.content.length > SEARCH_PREVIEW_LEN ? memory.content.slice(0, SEARCH_PREVIEW_LEN) + '...' : memory.content,
+      createdAt: memory.createdAt,
     }));
   }
 
