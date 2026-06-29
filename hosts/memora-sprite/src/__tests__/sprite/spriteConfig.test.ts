@@ -1,4 +1,4 @@
-/**
+﻿/**
  * spriteConfig 单元测试（QC-TEST-SPRITE-CONFIG）
  *
  * 覆盖范围：

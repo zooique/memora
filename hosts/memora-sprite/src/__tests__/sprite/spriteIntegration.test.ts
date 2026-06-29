@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sprite 端到端集成测试
  *
  * 验证完整生命周期：Agent + InMemoryStorage + Sprite + 事件订阅

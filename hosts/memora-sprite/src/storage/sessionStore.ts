@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SqliteSessionStore — ISessionStore 的 better-sqlite3 实现
  *
  * 会话数据与记忆数据存储在同一 SQLite 数据库中（ADR-SP-002）。

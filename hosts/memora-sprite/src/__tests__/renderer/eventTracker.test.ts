@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 事件监听器跟踪器测试
  *
  * @vitest-environment jsdom

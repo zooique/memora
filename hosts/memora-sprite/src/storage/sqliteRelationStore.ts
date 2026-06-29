@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SqliteRelationStore — IMemoryRelationStore 的 better-sqlite3 实现
  *
  * 宿主项目（精灵）持有 better-sqlite3 实例，实现 IMemoryRelationStore 接口后注入 Agent。

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * chatHandlers IPC 处理器测试（QC-TEST-CHAT）
  *
  * 覆盖范围：

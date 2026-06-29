@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sprite 主控测试
  *
  * 注意：loadSpriteConfig/saveSpriteConfig 不接受 dataDir 参数，

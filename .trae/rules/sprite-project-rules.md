@@ -31,7 +31,7 @@ date: 2026-06-28
 | 数据库 | better-sqlite3（native 模块，^12.10.0） | ADR-SP-002 |
 | 桌面壳 | 阶段一 CLI → 阶段二 Electron 40 | ADR-SP-003 |
 | 感知层 | 上下文感知，非内容感知 | ADR-SP-004 |
-| 包管理 | npm + file: 协议 + @electron/rebuild | ADR-SP-005 |
+| 包管理 | npm + npm alias（`npm:@zooique/memora`）+ @electron/rebuild | ADR-SP-005 |
 | 测试 | Vitest + InMemoryStorage + 临时 SQLite | ADR-SP-006 |
 
 ## 3. 目录结构

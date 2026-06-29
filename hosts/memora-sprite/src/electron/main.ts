@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Memora Sprite — Electron 主进程
  *
  * 职责：

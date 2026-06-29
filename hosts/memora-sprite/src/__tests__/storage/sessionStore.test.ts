@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SqliteSessionStore 测试
  *
  * 使用 node:sqlite（Node 22+ 内置）作为 better-sqlite3 的测试替身，

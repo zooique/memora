@@ -1,4 +1,4 @@
-/**
+﻿/**
  * node:sqlite 适配器 — 测试环境零 native 依赖的 SQLite 替身
  *
  * 职责：

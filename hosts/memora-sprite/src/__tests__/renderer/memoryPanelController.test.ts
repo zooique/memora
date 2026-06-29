@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 记忆面板控制器测试
  *
  * @vitest-environment jsdom

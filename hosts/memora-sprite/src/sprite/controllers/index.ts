@@ -1,4 +1,4 @@
-export { MemoryController } from './memoryController.js';
+﻿export { MemoryController } from './memoryController.js';
 export type { DashboardData, MemoryListItem, MemoryDetail, MemorySearchResult, RapportLevel, RapportAssessment } from './memoryController.js';
 
 export { PersonaController } from './personaController.js';

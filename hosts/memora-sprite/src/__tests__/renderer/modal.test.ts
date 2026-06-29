@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 模态框管理器测试
  *
  * @vitest-environment jsdom

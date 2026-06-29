@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 三态首次引导管理器测试
  *
  * @vitest-environment jsdom

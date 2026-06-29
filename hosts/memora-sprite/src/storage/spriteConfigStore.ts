@@ -1,4 +1,4 @@
-/**
+﻿/**
  * SpriteConfigStore — LLM 配置统一读写入口
  *
  * 职责：

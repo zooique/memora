@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 精灵配置持久化 — sprite.json 读写
  *
  * 配置文件位于 ~/.memora-sprite/sprite.json（根级，与 data/ 和 config/ 同级）。

@@ -34,7 +34,7 @@
   "dependencies": {
     "better-sqlite3": "^12.10.0",
     "electron": "^40.0.0",
-    "memora": "file:../.."
+    "memora": "npm:@zooique/memora@^0.1.0"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.6.0",

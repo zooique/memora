@@ -1,4 +1,4 @@
-/**
+﻿/**
  * IPC 共享类型与工具函数
  *
  * 定义所有 IPC 处理器共用的依赖容器（IpcContext）和错误兜底包装（safeHandle）。

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 角色选择器面板管理器测试
  *
  * @vitest-environment jsdom

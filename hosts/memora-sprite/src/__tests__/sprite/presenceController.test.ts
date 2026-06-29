@@ -1,4 +1,4 @@
-/**
+﻿/**
  * PresenceController 单元测试
  *
  * 验证用户离开/回来检测、幂等保护、ProactiveEngine 集成。

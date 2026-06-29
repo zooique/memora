@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 最小化 IPC 处理器测试（FOUNDATION-SEAL Phase 5 迭代 A）
  *
  * 覆盖范围：Agent 未就绪时的 11 个最小化 IPC handler

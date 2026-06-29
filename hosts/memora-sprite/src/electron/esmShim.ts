@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ESM 兼容的目录路径 shim
  *
  * CommonJS 的 __dirname 在 ESM 中不可用，模块若需获取当前目录，

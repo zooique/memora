@@ -1,4 +1,4 @@
-/**
+﻿/**
  * JsonlAppender 单元测试（QC-TEST-AUDIT）
  *
  * 覆盖范围：

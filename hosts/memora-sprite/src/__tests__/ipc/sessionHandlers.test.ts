@@ -1,4 +1,4 @@
-/**
+﻿/**
  * sessionHandlers IPC 处理器测试（QC-TEST-SESSION）
  *
  * 覆盖范围：

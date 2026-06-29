@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 用户画像面板管理器测试
  *
  * @vitest-environment jsdom

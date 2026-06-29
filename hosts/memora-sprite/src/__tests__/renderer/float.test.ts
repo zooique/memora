@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 浮动窗口交互逻辑测试
  *
  * @vitest-environment jsdom

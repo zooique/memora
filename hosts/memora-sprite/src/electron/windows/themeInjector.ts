@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 主题初始化脚本注入器
  *
  * P2-3 修复：从 windowManager.ts 和 floatWindow.ts 提取的重复主题注入逻辑。

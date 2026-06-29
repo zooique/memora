@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Electron 交互层 — 实现 IInteraction
  *
  * 职责：

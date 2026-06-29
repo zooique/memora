@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 主动提示横幅测试
  *
  * @vitest-environment jsdom

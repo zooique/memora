@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 渲染进程初始化辅助函数测试
  *
  * @vitest-environment jsdom

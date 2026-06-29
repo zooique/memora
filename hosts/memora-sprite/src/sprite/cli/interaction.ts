@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CLI 交互层 — 基于 readline 的终端交互实现
  *
  * 将 index.ts 中的 readline 逻辑提取为 IInteraction 实现，

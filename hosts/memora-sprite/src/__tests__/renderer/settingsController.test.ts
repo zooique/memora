@@ -1,4 +1,4 @@
-/**
+﻿/**
  * settingsController 单元测试（QC-TEST-SETTINGS）
  *
  * 覆盖范围：

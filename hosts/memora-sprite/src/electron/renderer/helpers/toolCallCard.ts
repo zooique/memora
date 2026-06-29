@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 工具调用卡片渲染器（QC-R2-12 从 chatPanelManager.ts 提取）
  *
  * 职责：

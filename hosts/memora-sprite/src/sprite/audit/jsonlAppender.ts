@@ -1,4 +1,4 @@
-/**
+﻿/**
  * JSONL 追加写入器 — 公共基础设施
  *
  * 为 auditManager 和 spriteTracer 提供统一的 JSONL 写入 + 截断能力。
