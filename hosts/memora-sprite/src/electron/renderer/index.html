@@ -133,17 +133,14 @@
 
       <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
       <nav class="sidebar-nav" aria-label="主导航">
-        <button class="nav-btn active" data-panel="chat" title="对话（Ctrl+1）" aria-label="对话面板">
+        <button class="nav-btn active" data-panel="chat" data-tooltip="对话" aria-label="对话面板">
           <svg class="icon"><use href="#icon-chat"/></svg>
-          <span class="nav-label">对话</span>
         </button>
-        <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）" aria-label="记忆面板">
+        <button class="nav-btn" data-panel="memories" data-tooltip="记忆" aria-label="记忆面板">
           <svg class="icon"><use href="#icon-brain"/></svg>
-          <span class="nav-label">记忆</span>
         </button>
-        <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）" aria-label="设置面板">
+        <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-label="设置面板">
           <svg class="icon"><use href="#icon-gear"/></svg>
-          <span class="nav-label">设置</span>
         </button>
       </nav>
 

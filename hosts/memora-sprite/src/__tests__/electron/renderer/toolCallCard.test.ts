@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 工具调用卡片渲染器模块测试（QC-TEST-EXTRACTED）
  *
  * 覆盖范围：
@@ -40,7 +40,7 @@ describe('showToolStart', () => {
   it('应创建 .tool-call-running 卡片', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'read_file');
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card).not.toBeNull();
     expect(card!.classList.contains('tool-call-running')).toBe(true);
   });
@@ -48,14 +48,14 @@ describe('showToolStart', () => {
   it('应设置 data-tool-call-id 属性', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-123', 'search');
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card!.getAttribute('data-tool-call-id')).toBe('tc-123');
   });
 
   it('应设置 data-tool-name 属性', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'read_file');
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card!.getAttribute('data-tool-name')).toBe('read_file');
   });
 
@@ -101,7 +101,7 @@ describe('showToolStart', () => {
   it('光标存在时卡片应插入到光标之前', () => {
     const bubble = createBubbleWithCursor();
     showToolStart(bubble, 'tc-1', 'search');
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     const cursor = bubble.querySelector('.cursor');
     expect(card!.nextSibling).toBe(cursor);
   });
@@ -110,7 +110,7 @@ describe('showToolStart', () => {
     const bubble = createBubble();
     bubble.appendChild(document.createElement('span'));
     showToolStart(bubble, 'tc-1', 'search');
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(bubble.lastChild).toBe(card);
   });
 
@@ -118,7 +118,7 @@ describe('showToolStart', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'read_file');
     showToolStart(bubble, 'tc-2', 'write_file');
-    const cards = bubble.querySelectorAll('.tool-call');
+    const cards = bubble.querySelectorAll('.tool-call-card');
     expect(cards.length).toBe(2);
     expect(cards[0].getAttribute('data-tool-call-id')).toBe('tc-1');
     expect(cards[1].getAttribute('data-tool-call-id')).toBe('tc-2');
@@ -132,7 +132,7 @@ describe('updateToolResult', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'search');
     updateToolResult(bubble, 'tc-1', 'search', true);
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card!.classList.contains('tool-call-running')).toBe(false);
     expect(card!.classList.contains('tool-call-success')).toBe(true);
   });
@@ -141,7 +141,7 @@ describe('updateToolResult', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'search');
     updateToolResult(bubble, 'tc-1', 'search', false);
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card!.classList.contains('tool-call-running')).toBe(false);
     expect(card!.classList.contains('tool-call-failed')).toBe(true);
   });
@@ -193,7 +193,7 @@ describe('updateToolResult', () => {
     const bubble = createBubble();
     showToolStart(bubble, 'tc-1', 'search');
     updateToolResult(bubble, 'tc-1', 'search', true);
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card!.classList.contains('collapsed')).toBe(true);
   });
 
@@ -216,7 +216,7 @@ describe('updateToolResult', () => {
     showToolStart(bubble, 'tc-1', 'search');
     // 用不存在的 toolCallId 但匹配的 name 调用
     updateToolResult(bubble, 'tc-nonexistent', 'search', true);
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card!.classList.contains('tool-call-success')).toBe(true);
   });
 
