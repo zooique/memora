@@ -163,8 +163,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private isNearBottom = true;
   /** 非系统消息计数（显示在对话工具栏副标题，P2-009：移至 state 字段区） */
   private messageCount = 0;
-  /** 记忆抽屉是否打开（抽屉是右侧覆盖层，不替换对话面板） */
-  private isMemoryDrawerOpen = false;
 
   constructor() {
     // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -352,15 +350,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       this.events.addEventListener(btn, 'click', this.handleNavClick.bind(this));
     });
 
-    // 记忆抽屉关闭交互：遮罩层点击关闭 + 关闭按钮点击关闭
-    const drawerOverlay = document.getElementById('memory-drawer-overlay');
-    if (drawerOverlay) {
-      this.events.addEventListener(drawerOverlay, 'click', () => this.closeMemoryDrawer());
-    }
-    const drawerCloseBtn = document.getElementById('btn-memory-drawer-close');
-    if (drawerCloseBtn) {
-      this.events.addEventListener(drawerCloseBtn, 'click', () => this.closeMemoryDrawer());
-    }
+    // 记忆面板已改为标准 .panel 显示在核心区（与设置面板对齐），不再需要遮罩层和关闭按钮
 
     // 标题栏按钮（可选，部分布局可能不提供）
     const btnMinimize = getOptionalElement('btn-minimize', 'button');
@@ -404,7 +394,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (!(e instanceof KeyboardEvent)) return;
     const isMod = e.ctrlKey || e.metaKey;
 
-    // Esc：关闭感知面板/记忆抽屉/下拉菜单；设置面板激活时切回对话（弹窗由 ModalManager 统一处理）
+    // Esc：关闭感知面板/下拉菜单；设置或记忆面板激活时切回对话（弹窗由 ModalManager 统一处理）
     if (e.key === 'Escape') {
       // 优先关闭感知面板（感知面板打开时 Escape 关闭面板）
       const panel = document.getElementById('perception-panel');
@@ -413,14 +403,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
         e.preventDefault();
         return;
       }
-      // 优先关闭记忆抽屉（抽屉打开时 Escape 关闭抽屉）
-      if (this.isMemoryDrawerOpen) {
-        this.closeMemoryDrawer();
-        e.preventDefault();
-        return;
-      }
-      // 设置面板激活时，Escape 切回对话面板
-      if (this.state.currentPanel === 'settings') {
+      // 设置或记忆面板激活时，Escape 切回对话面板
+      if (this.state.currentPanel === 'settings' || this.state.currentPanel === 'memories') {
         void this.switchPanel('chat');
         e.preventDefault();
         return;
@@ -433,7 +417,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       return;
     }
 
-    // Ctrl/Cmd + 数字：切换面板（Ctrl+2 toggle记忆抽屉，Ctrl+3 走switchPanel切换设置面板）
+    // Ctrl/Cmd + 数字：切换面板（chat/memories/settings 均走 switchPanel 统一切换）
     if (isMod && ['1', '2', '3'].includes(e.key)) {
       const panelMap: Record<string, string> = {
         '1': 'chat',
@@ -442,12 +426,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       };
       const panel = panelMap[e.key];
       if (panel) {
-        // memories 特殊处理：toggle 抽屉；chat/settings 走 switchPanel 标准面板切换
-        if (panel === 'memories') {
-          this.toggleMemoryDrawer();
-        } else {
-          void this.switchPanel(panel);
-        }
+        void this.switchPanel(panel);
         e.preventDefault();
       }
       return;
@@ -615,8 +594,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * P2-FLOW-06：切换前检查当前面板是否有未保存修改，
    * 有则弹出确认对话框，用户取消则中止切换。
    *
-   * - chat/settings：标准面板切换（.panel.active 控制显隐，替换核心区域内容）
-   * - memories：打开右侧记忆抽屉（对话面板保持可见，抽屉是覆盖层）
+   * chat/memories/settings 三个面板均通过 .panel.active 控制显隐，
+   * 替换核心区域内容。切换到 chat 自动聚焦输入框，切换到 memories 聚焦搜索框。
    */
   async switchPanel(panel: string): Promise<void> {
     // P2-FLOW-06：当前在设置面板且有未保存修改时，确认后再切换
@@ -632,14 +611,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       this.settingsPanelManager.resetFormDirty();
     }
 
-    // 记忆抽屉独立处理：不切换面板，而是打开抽屉（对话面板保持可见）
-    if (panel === 'memories') {
-      this.openMemoryDrawer();
-      return;
-    }
-
-    // 关闭记忆抽屉（切换到 chat/settings 面板时）
-    this.closeMemoryDrawer();
+    // 记忆面板已改为标准 .panel，与 chat/settings 走统一的面板切换逻辑
 
     // 移除所有面板活动状态
     document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
@@ -656,9 +628,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 将之前激活的面板设为 aria-hidden=true
     if (this.state.currentPanel && this.state.currentPanel !== panel) {
       const prevPanel = document.getElementById(`panel-${this.state.currentPanel}`);
-      if (prevPanel && !prevPanel.classList.contains('drawer')) {
-        prevPanel.setAttribute('aria-hidden', 'true');
-      }
+      prevPanel?.setAttribute('aria-hidden', 'true');
     }
 
     this.state.currentPanel = panel;
@@ -667,90 +637,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (panel === 'chat') {
       this.inputEl.focus();
     }
+    // 切换到记忆面板时聚焦搜索框
+    if (panel === 'memories') {
+      const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
+      searchInput?.focus();
+    }
 
     // 面板切换回调：通知外部控制器刷新数据
     this.panelSwitchCallback?.(panel);
-  }
-
-  /**
-   * 切换记忆抽屉打开/关闭状态
-   *
-   * 记忆抽屉是覆盖在对话右侧的独立层，不替换对话面板。
-   * 打开时对话面板保持可见，关闭时回到纯对话视图。
-   */
-  toggleMemoryDrawer(): void {
-    if (this.isMemoryDrawerOpen) {
-      this.closeMemoryDrawer();
-    } else {
-      this.openMemoryDrawer();
-    }
-  }
-
-  /**
-   * 打开记忆抽屉
-   *
-   * 移除抽屉和遮罩的 hidden 类，激活记忆导航按钮，
-   * 通知外部控制器加载记忆数据。
-   */
-  openMemoryDrawer(): void {
-    const drawer = document.getElementById('panel-memories');
-    const overlay = document.getElementById('memory-drawer-overlay');
-    if (!drawer || !overlay) return;
-
-    drawer.classList.remove('hidden');
-    drawer.setAttribute('aria-hidden', 'false');
-    overlay.classList.remove('hidden');
-
-    // 激活记忆导航按钮，取消对话导航按钮（视觉上表示当前焦点在记忆）
-    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
-    const memNavBtn = document.querySelector('.nav-btn[data-panel="memories"]');
-    memNavBtn?.classList.add('active');
-
-    this.isMemoryDrawerOpen = true;
-    // currentPanel 标记为 memories，保持语义一致（外部代码依赖此状态）
-    // 注意：对话 .panel.active 仍保持可见，抽屉是覆盖层
-    this.state.currentPanel = 'memories';
-
-    // 聚焦记忆搜索框，方便用户立即搜索
-    const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-    searchInput?.focus();
-
-    // 通知外部控制器加载记忆数据
-    this.panelSwitchCallback?.('memories');
-  }
-
-  /**
-   * 关闭记忆抽屉
-   *
-   * 添加 hidden 类（CSS 触发滑出动画），取消记忆导航按钮激活态，
-   * 恢复对话导航按钮激活态。
-   */
-  closeMemoryDrawer(): void {
-    const drawer = document.getElementById('panel-memories');
-    const overlay = document.getElementById('memory-drawer-overlay');
-    if (!drawer || !overlay) return;
-
-    // 仅在抽屉打开时处理，避免重复操作
-    if (!this.isMemoryDrawerOpen) return;
-
-    drawer.classList.add('hidden');
-    drawer.setAttribute('aria-hidden', 'true');
-    overlay.classList.add('hidden');
-
-    // 取消记忆导航按钮激活态，恢复对话面板
-    const memNavBtn = document.querySelector('.nav-btn[data-panel="memories"]');
-    memNavBtn?.classList.remove('active');
-
-    // 关闭抽屉后恢复对话面板：移除所有面板的 .active，激活 chat 面板
-    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
-    const chatPanel = document.getElementById('panel-chat');
-    chatPanel?.classList.add('active');
-    chatPanel?.setAttribute('aria-hidden', 'false');
-    const chatNavBtn = document.querySelector('.nav-btn[data-panel="chat"]');
-    chatNavBtn?.classList.add('active');
-
-    this.isMemoryDrawerOpen = false;
-    this.state.currentPanel = 'chat';
   }
 
   // ─── 输入处理 ─────────────────────────────────────────
@@ -917,13 +811,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (!(target instanceof HTMLElement)) return;
     const panel = target.dataset.panel;
     if (panel) {
-      // memories 特殊处理：toggle 抽屉；chat/settings 走 switchPanel 标准面板切换
-      if (panel === 'memories') {
-        this.toggleMemoryDrawer();
-      } else {
-        // switchPanel 为 async，void 显式忽略 Promise
-        void this.switchPanel(panel);
-      }
+      // 记忆面板已改为标准 .panel，与 chat/settings 统一走 switchPanel
+      // switchPanel 为 async，void 显式忽略 Promise
+      void this.switchPanel(panel);
     }
   }
 
@@ -1852,11 +1742,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 处理 recall-memory 快捷键触发
    *
    * 用户按下 Ctrl+Shift+R 时调用。
-   * 切换到记忆面板并聚焦搜索框，让用户立即开始搜索记忆。
+   * 切换到记忆面板（标准 .panel 切换）并聚焦搜索框，让用户立即开始搜索记忆。
    * 主进程已确保完整窗口可见，此处只需切换面板并聚焦搜索框。
    */
   async handleRecallMemoryTrigger(): Promise<void> {
-    // 通过 switchPanel 走设置面板未保存修改检查，再打开抽屉
+    // 通过 switchPanel 走设置面板未保存修改检查，再切换到记忆面板
     await this.switchPanel('memories');
     // 选中已有文本，方便用户直接输入新搜索词替换
     const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;

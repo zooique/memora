@@ -309,6 +309,22 @@ export class MemoryPanelManager {
     const toggleMoreMenu = (show?: boolean): void => {
       if (!moreMenu || !moreBtn) return;
       const shouldShow = show ?? moreMenu.classList.contains('hidden');
+      if (shouldShow) {
+        // 动态计算弹出框位置，默认靠左展开（符合用户期望），
+        // 若右侧空间不足则降级为靠右展开，避免超出窗口被 panel overflow:hidden 裁剪
+        const btnRect = moreBtn.getBoundingClientRect();
+        const menuMinWidth = 150; // 与 CSS .more-menu min-width 一致
+        const wouldOverflowRight = btnRect.left + menuMinWidth > window.innerWidth;
+        if (wouldOverflowRight) {
+          // 右侧空间不足，靠右展开（向左）
+          moreMenu.style.left = 'auto';
+          moreMenu.style.right = '0';
+        } else {
+          // 右侧空间充足，靠左展开（向右）
+          moreMenu.style.left = '0';
+          moreMenu.style.right = 'auto';
+        }
+      }
       moreMenu.classList.toggle('hidden', !shouldShow);
       moreBtn.setAttribute('aria-expanded', String(shouldShow));
     };
@@ -354,6 +370,11 @@ export class MemoryPanelManager {
         } else if (action === 'insights') {
           if (insightsBar) {
             const isHidden = insightsBar.classList.contains('hidden');
+            // 显示 insights 时隐藏视图容器和 health，实现显示类型互斥切换
+            if (isHidden) {
+              this.hideAllDisplayViews();
+              if (healthBar) healthBar.classList.add('hidden');
+            }
             insightsBar.classList.toggle('hidden', !isHidden);
             if (isHidden) {
               this.moreMenuActionCallback?.('insights');
@@ -362,6 +383,11 @@ export class MemoryPanelManager {
         } else if (action === 'health') {
           if (healthBar) {
             const isHidden = healthBar.classList.contains('hidden');
+            // 显示 health 时隐藏视图容器和 insights，实现显示类型互斥切换
+            if (isHidden) {
+              this.hideAllDisplayViews();
+              if (insightsBar) insightsBar.classList.add('hidden');
+            }
             healthBar.classList.toggle('hidden', !isHidden);
             if (isHidden) {
               this.moreMenuActionCallback?.('health');
@@ -406,7 +432,8 @@ export class MemoryPanelManager {
     if (graphBtn) {
       this.events.addEventListener(graphBtn, 'click', () => {
         const graphContainer = document.getElementById('memory-graph-container');
-        const isGraphView = graphContainer && graphContainer.style.display !== 'none';
+        // B2: 统一用 .hidden 类判断可见性（替代 style.display 内联样式）
+        const isGraphView = graphContainer && !graphContainer.classList.contains('hidden');
 
         if (isGraphView) {
           updateViewSwitchBtns('list');
@@ -425,7 +452,8 @@ export class MemoryPanelManager {
     if (timelineBtn) {
       this.events.addEventListener(timelineBtn, 'click', () => {
         const timelineContainer = document.getElementById('memory-timeline-container');
-        const isTimelineView = timelineContainer && timelineContainer.style.display !== 'none';
+        // B2: 统一用 .hidden 类判断可见性（替代 style.display 内联样式）
+        const isTimelineView = timelineContainer && !timelineContainer.classList.contains('hidden');
 
         if (isTimelineView) {
           updateViewSwitchBtns('list');
@@ -1112,6 +1140,54 @@ export class MemoryPanelManager {
   }
 
   /**
+   * 隐藏所有视图容器（list/timeline/graph）
+   *
+   * 当激活 insights 或 health 显示类型时调用，
+   * 确保显示类型互斥切换，避免平铺污染。
+   */
+  private hideAllDisplayViews(): void {
+    const listEl = this.memoryListEl;
+    const graphEl = document.getElementById('memory-graph-container');
+    const timelineEl = document.getElementById('memory-timeline-container');
+    if (listEl) listEl.classList.add('hidden');
+    if (graphEl) graphEl.classList.add('hidden');
+    if (timelineEl) timelineEl.classList.add('hidden');
+  }
+
+  /**
+   * 隐藏 insights 和 health 显示类型
+   *
+   * 当切换视图（list/timeline/graph）时调用，
+   * 确保显示类型互斥切换，避免平铺污染。
+   */
+  private hideInsightsAndHealth(): void {
+    const insightsBar = document.getElementById('memory-insights-bar');
+    const healthBar = document.getElementById('memory-health-bar');
+    if (insightsBar) insightsBar.classList.add('hidden');
+    if (healthBar) healthBar.classList.add('hidden');
+  }
+
+  /**
+   * 更新更多菜单中视图切换项的 active 状态
+   *
+   * 切换视图时，标记当前视图对应的菜单项为 active，
+   * 让用户通过菜单直观感知当前所处视图模式。
+   *
+   * @param mode 当前视图模式
+   */
+  private updateViewMenuItemsActive(mode: 'list' | 'timeline' | 'graph'): void {
+    const moreMenu = document.getElementById('memory-more-menu');
+    if (!moreMenu) return;
+    const items = moreMenu.querySelectorAll('.more-menu-item');
+    items.forEach((item) => {
+      const action = item.getAttribute('data-action');
+      // 仅视图切换项参与 active 标记（advanced-search/insights/health 不参与）
+      const isActive = action === `view-${mode}`;
+      item.classList.toggle('active', isActive);
+    });
+  }
+
+  /**
    * 切换记忆视图模式（列表 ↔ 时间线 ↔ 图谱）
    *
    * 图谱视图使用 Canvas 2D 力导向图渲染记忆关系网络。
@@ -1124,28 +1200,36 @@ export class MemoryPanelManager {
   switchView(mode: 'list' | 'timeline' | 'graph'): void {
     this.viewMode = mode;
 
-    // 切换列表、时间线和图谱容器的可见性
+    // 切换视图时隐藏 insights/health，避免显示类型平铺污染
+    this.hideInsightsAndHealth();
+    // 同步更多菜单中视图切换项的 active 状态
+    this.updateViewMenuItemsActive(mode);
+
+    // B2: 切换列表、时间线和图谱容器的可见性，统一用 .hidden 类
+    // （替代 style.display 内联样式，避免与 .hidden { display:none !important } 兜底冲突）
     const listEl = this.memoryListEl;
     const graphEl = document.getElementById('memory-graph-container');
     const timelineEl = document.getElementById('memory-timeline-container');
 
     if (mode === 'list') {
-      if (listEl) listEl.style.display = '';
-      if (graphEl) graphEl.style.display = 'none';
-      if (timelineEl) timelineEl.style.display = 'none';
+      if (listEl) listEl.classList.remove('hidden');
+      if (graphEl) graphEl.classList.add('hidden');
+      if (timelineEl) timelineEl.classList.add('hidden');
     } else if (mode === 'timeline') {
-      if (listEl) listEl.style.display = 'none';
-      if (graphEl) graphEl.style.display = 'none';
+      if (listEl) listEl.classList.add('hidden');
+      if (graphEl) graphEl.classList.add('hidden');
       if (timelineEl) {
-        timelineEl.style.display = '';
+        timelineEl.classList.remove('hidden');
         // 渲染时间线视图（使用缓存的记忆列表）
         this.renderTimeline();
       }
     } else {
-      if (listEl) listEl.style.display = 'none';
-      if (timelineEl) timelineEl.style.display = 'none';
+      if (listEl) listEl.classList.add('hidden');
+      if (timelineEl) timelineEl.classList.add('hidden');
       if (graphEl) {
-        graphEl.style.display = '';
+        graphEl.classList.remove('hidden');
+        // 切换到图谱视图时更新空状态可见性
+        this.updateGraphEmptyState();
         // 延迟初始化图谱渲染器（确保容器尺寸已计算）
         this.initGraphRenderer();
         // 如果已有缓存数据，直接加载并应用缓存状态；
@@ -1169,11 +1253,27 @@ export class MemoryPanelManager {
    */
   loadGraphData(data: RelationGraphData): void {
     this.graphDataCache = data;
+    // 数据加载后更新空状态（有数据时隐藏空状态提示）
+    this.updateGraphEmptyState();
     if (this.viewMode === 'graph' && this.graphRenderer) {
       this.graphRenderer.loadData(data);
       // 数据加载后恢复缓存的高亮/选中状态
       this.applyCachedGraphState();
     }
+  }
+
+  /**
+   * 更新图谱空状态提示的可见性
+   *
+   * 规则：
+   * - 无缓存数据 或 节点数为 0 → 显示空状态
+   * - 有数据（nodes > 0）→ 隐藏空状态
+   */
+  private updateGraphEmptyState(): void {
+    const emptyEl = document.getElementById('memory-graph-empty');
+    if (!emptyEl) return;
+    const hasData = this.graphDataCache !== null && this.graphDataCache.nodes.length > 0;
+    emptyEl.classList.toggle('hidden', hasData);
   }
 
   /**

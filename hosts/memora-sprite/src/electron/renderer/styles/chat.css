@@ -5,13 +5,7 @@
  *       召回记忆提示、对话区空状态引导。
  */
 
-/* ─── 对话面板 ─────────────────────────────────────────────── */
-/* 可见性由 .panel / .panel.active 统一控制（见 layout.css） */
-#panel-chat {
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-}
+/* ─── 对话面板（可见性由 .panel / .panel.active 统一控制，B1 已删除冗余 ID 选择器） ─── */
 
 #chat-container {
   flex: 1;
@@ -1389,6 +1383,91 @@
 .input-send-area {
   display: flex;
   align-items: center;
+  gap: 6px; /* 角色选择器与发送按钮之间留间距 */
+}
+
+/* 输入区紧凑版角色选择器容器 */
+.input-persona-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 输入区紧凑版角色选择器（高度对齐发送按钮32px，字号更小） */
+.input-persona-container #persona-selector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  cursor: pointer;
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  max-width: 120px;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  height: 30px;
+  -webkit-app-region: no-drag;
+}
+
+.input-persona-container #persona-selector:hover {
+  background: var(--surface1);
+  border-color: var(--muted);
+}
+
+/* 紧凑版角色图标缩小（覆盖 layout.css 中 #persona-icon 的 28px 圆形渐变背景） */
+.input-persona-container #persona-icon {
+  width: 16px !important;
+  height: 16px !important;
+  font-size: var(--font-xs);
+  flex-shrink: 0;
+  border-radius: 0 !important;
+  background: transparent !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.input-persona-container #persona-icon .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-2);
+}
+
+/* 紧凑版角色名截断 */
+.input-persona-container #persona-name {
+  font-size: var(--font-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 50px;
+}
+
+/* 紧凑版模式徽章缩小 */
+.input-persona-container .mode-badge {
+  font-size: var(--font-3xs);
+  padding: 0 3px;
+}
+
+/* 紧凑版箭头图标 */
+.input-persona-container #persona-arrow .icon {
+  width: 10px;
+  height: 10px;
+}
+
+/* 输入区角色下拉菜单（右对齐，避免超出输入框右边缘；向上展开，避免被窗口底部截断） */
+.input-persona-container #persona-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px); /* 向上展开（在按钮上方） */
+  top: auto; /* 覆盖 .dropdown 默认的 top:100%，防止双向定位冲突 */
+  right: 0;
+  left: auto;
+  width: 200px;
+  z-index: 100;
+}
+
+.input-persona-container #persona-dropdown .dropdown-item {
+  padding: 8px 12px;
 }
 
 /* 发送/停止合并按钮：单按钮双姿态 */

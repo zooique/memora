@@ -544,19 +544,19 @@ export class DashboardPanelManager {
     }
 
     // ─── 最近洞察列表（渲染 ReviewData.insights.recent） ─
+    // 隐藏内部 insight.name（如 insight-xxxxx），展示用户可读的 contentPreview
     const insightsListEl = document.getElementById('recent-insights-list');
     if (insightsListEl) {
       clearElement(insightsListEl);
       for (const insight of data.insights.recent) {
         const li = document.createElement('li');
         li.className = 'recent-insight-item';
-        const nameEl = document.createElement('span');
-        nameEl.className = 'recent-insight-name';
-        nameEl.textContent = insight.name;
+        // 截断前60字符作为预览，避免内部 ID 泄露
         const previewEl = document.createElement('span');
         previewEl.className = 'recent-insight-preview';
-        previewEl.textContent = insight.contentPreview;
-        li.appendChild(nameEl);
+        const preview = insight.contentPreview || '(空洞察)';
+        previewEl.textContent = preview.length > 60 ? preview.slice(0, 60) + '…' : preview;
+        previewEl.title = preview; // 完整内容放在 title 中，鼠标悬停可查看
         li.appendChild(previewEl);
         insightsListEl.appendChild(li);
       }

@@ -880,77 +880,9 @@
   display: flex;
 }
 
-/* ─── 记忆抽屉（右侧滑入，覆盖对话右侧，不替换对话面板） ─── */
-/* 抽屉使用 position:fixed 脱离 #main-content 的 flex 布局，
-   覆盖在视口右侧；遮罩层阻止对对话区的交互 */
-.drawer-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.3);
-  z-index: 90;  /* 低于抽屉，高于主内容 */
-  opacity: 1;
-  transition: opacity var(--transition-base) ease;
-}
-
-.drawer-overlay.hidden {
-  display: block;  /* 覆盖 .hidden 的 display:none，用 opacity 控制可见性 */
-  opacity: 0;
-  pointer-events: none;  /* 不可点击，避免拦截下层交互 */
-}
-
-/* 抽屉容器：右侧滑入，360px 宽，全高 */
-.drawer {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 360px;
-  max-width: 90vw;  /* 小屏适配：不超过视口 90% */
-  background: var(--window-bg);
-  box-shadow: var(--shadow-window);
-  z-index: 100;  /* 高于遮罩层 */
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  transform: translateX(0);  /* 默认显示位置 */
-  transition: transform var(--transition-base) ease;
-}
-
-/* hidden 态：滑出视口右侧（用 transform 替代 display:none 以保留动画） */
-.drawer.hidden {
-  display: flex;  /* 覆盖 .hidden 的 display:none，用 transform 控制位置 */
-  transform: translateX(100%);  /* 滑出右侧 */
-  pointer-events: none;
-}
-
-/* 抽屉关闭按钮：头部右侧 */
-.drawer-close-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-3);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  flex-shrink: 0;
-}
-
-.drawer-close-btn:hover {
-  background: var(--surface1);
-  color: var(--text);
-}
-
-.drawer-close-btn .icon {
-  width: 14px;
-  height: 14px;
-}
+/* ─── 记忆抽屉样式已移除 ─── */
+/* 记忆面板已改为标准 .panel（与设置面板对齐），不再使用抽屉模式 */
+/* 原 .drawer / .drawer-overlay / .drawer-close-btn 死代码已清理 */
 
 /* ─── 角色下拉菜单 ─────────────────────────────────────────── */
 .dropdown {

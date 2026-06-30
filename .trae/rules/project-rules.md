@@ -96,7 +96,7 @@ chore: 升级 dependencies
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
-- ✅ 测试 471 全量通过（InMemoryStorage，零 IO）
+- ✅ 测试 992 全量通过（InMemoryStorage，零 IO）
 - ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，6 事件类型：memoryAdded / personaSwitched / decayCompleted / memoryRecalled / sessionForked / insightExtracted）
 - ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
 - ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）

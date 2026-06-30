@@ -118,7 +118,8 @@ agent/
 │   ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
 │   ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
 │   ├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计 + 关联推荐）
-│   ├── sessionManager.ts     # 会话管理器（fork/switch/restore）
+│   ├── memoryAdvisor.ts      # 记忆顾问（记忆质量评估 + 归档价值判断）
+│   ├── sessionManager.ts     # 会话管理器（fork/switch/restore)
 │   ├── workProjection.ts     # 作品投影管理器
 │   └── userFactExtractor.ts  # 用户事实提取器（正则规则，从 userProfile 迁入）
 └── __tests__/            # 单元测试

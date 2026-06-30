@@ -141,6 +141,37 @@ export class PersonaPanelManager {
 
   // ─── 私有辅助方法 ───────────────────────────────────────
 
+  /**
+   * 将内部角色名转换为用户友好的显示名
+   *
+   * 规则：
+   * 1. 已知内部名（ai_agent_role → 精灵）使用固定映射
+   * 2. 蛇形命名（snake_case）转换为 空格分隔，每个单词首字母大写
+   * 3. 已经是中文或已有友好格式的名称保持不变
+   *
+   * @param internalName 角色内部名（如文件名 ai_agent_role）
+   * @returns 用户可读的显示名
+   */
+  private formatDisplayName(internalName: string): string {
+    // 已知内部角色名映射表
+    const KNOWN_NAMES: Record<string, string> = {
+      ai_agent_role: '精灵',
+      default: '精灵',
+      assistant: '助手',
+    };
+    if (KNOWN_NAMES[internalName]) {
+      return KNOWN_NAMES[internalName];
+    }
+    // 蛇形命名转换（snake_case → "Snake Case"，中文不转换）
+    if (/^[a-z][a-z0-9_]*$/.test(internalName)) {
+      return internalName
+        .split('_')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+    }
+    return internalName;
+  }
+
   /** 关闭角色下拉菜单（统一管理 aria-expanded 状态） */
   private closePersonaDropdown(): void {
     if (!this.personaDropdownEl || !this.personaSelectorEl) return;
@@ -183,13 +214,13 @@ export class PersonaPanelManager {
       // UX-04：角色名称作为主标题，描述作为副标题直接可见
       const nameEl = document.createElement('div');
       nameEl.className = 'dropdown-item-name';
-      nameEl.textContent = p.name;
+      nameEl.textContent = this.formatDisplayName(p.name);
       const descEl = document.createElement('div');
       descEl.className = 'dropdown-item-desc';
       descEl.textContent = p.description;
       item.appendChild(nameEl);
       item.appendChild(descEl);
-      item.title = p.description;
+      item.title = p.description || this.formatDisplayName(p.name);
       // UI-AR-01 可聚焦但不参与 Tab 顺序（键盘导航用方向键）
       item.setAttribute('tabindex', '-1');
       item.setAttribute('role', 'option');
@@ -210,8 +241,9 @@ export class PersonaPanelManager {
 
   /** 更新当前角色显示 */
   updateActivePersona(name: string): void {
+    const displayName = this.formatDisplayName(name);
     if (this.personaNameEl) {
-      this.personaNameEl.textContent = name;
+      this.personaNameEl.textContent = displayName;
     }
     // 同步更新侧边栏角色头像图标
     const sidebarAvatar = document.getElementById('sidebar-persona-avatar');
