@@ -246,7 +246,7 @@ export class ChatPanelManager {
       // 工具调用折叠头：data-action="toggle-collapse"
       const collapseHeader = target.closest<HTMLElement>('[data-action="toggle-collapse"]');
       if (collapseHeader) {
-        const card = collapseHeader.closest<HTMLElement>('.tool-call');
+        const card = collapseHeader.closest<HTMLElement>('.tool-call-card');
         card?.classList.toggle('collapsed');
         return;
       }
@@ -678,7 +678,7 @@ export class ChatPanelManager {
         // 重新查询保留元素（rAF 回调中 DOM 可能已变化）
         const latestCursor = latestBubble.querySelector('.cursor');
         const latestRecall = latestBubble.querySelector('.memory-recall-container');
-        const latestToolCalls = latestBubble.querySelectorAll('.tool-call');
+        const latestToolCalls = latestBubble.querySelectorAll('.tool-call-card');
 
         // 安全清空并重新渲染 Markdown
         clearElement(latestBubble);
@@ -719,7 +719,7 @@ export class ChatPanelManager {
         try {
           // 保留 cursor/recall/tool-call 元素（与正常 rAF 回调一致）
           const flushRecall = bubbleToFlush.querySelector('.memory-recall-container');
-          const flushToolCalls = bubbleToFlush.querySelectorAll('.tool-call');
+          const flushToolCalls = bubbleToFlush.querySelectorAll('.tool-call-card');
           clearElement(bubbleToFlush);
           bubbleToFlush.appendChild(renderMarkdown(this._latestStreamText));
           if (flushRecall) bubbleToFlush.appendChild(flushRecall);

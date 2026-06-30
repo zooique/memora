@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 聊天面板管理器测试
  *
  * @vitest-environment jsdom
@@ -584,7 +584,7 @@ describe('showToolStart', () => {
     manager.startStreaming('s1');
     manager.showToolStart('s1', 'tc1', 'readFile');
     const el = streamingMessages.get('s1') as HTMLElement;
-    const card = el.querySelector('.tool-call');
+    const card = el.querySelector('.tool-call-card');
     expect(card?.classList.contains('tool-call-running')).toBe(true);
     expect(card?.getAttribute('data-tool-call-id')).toBe('tc1');
     expect(card?.getAttribute('data-tool-name')).toBe('readFile');
@@ -603,7 +603,7 @@ describe('showToolStart', () => {
     manager.showToolStart('s1', 'tc1', 'search', '{"query":"test"}');
     const el = streamingMessages.get('s1') as HTMLElement;
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
-    const card = bubble.querySelector('.tool-call');
+    const card = bubble.querySelector('.tool-call-card');
     expect(card?.querySelector('.tool-call-args')?.textContent).toBe('{"query":"test"}');
     // 应插入到光标之前
     const children = Array.from(bubble.children);
@@ -627,7 +627,7 @@ describe('updateToolResult', () => {
     manager.showToolStart('s1', 'tc1', 'readFile');
     manager.updateToolResult('s1', 'tc1', 'readFile', true);
     const el = streamingMessages.get('s1') as HTMLElement;
-    const card = el.querySelector('.tool-call');
+    const card = el.querySelector('.tool-call-card');
     expect(card?.classList.contains('tool-call-success')).toBe(true);
     expect(card?.classList.contains('tool-call-running')).toBe(false);
     expect(card?.querySelector('.tool-call-status')?.innerHTML).toContain('icon-check');
@@ -643,7 +643,7 @@ describe('updateToolResult', () => {
     manager.showToolStart('s1', 'tc1', 'readFile');
     manager.updateToolResult('s1', 'tc1', 'readFile', false, '文件不存在');
     const el = streamingMessages.get('s1') as HTMLElement;
-    const card = el.querySelector('.tool-call');
+    const card = el.querySelector('.tool-call-card');
     expect(card?.classList.contains('tool-call-failed')).toBe(true);
     expect(card?.querySelector('.tool-call-status')?.innerHTML).toContain('icon-close');
     expect(card?.querySelector('.tool-call-result')?.textContent).toBe('文件不存在');
@@ -657,7 +657,7 @@ describe('updateToolResult', () => {
     // updateToolResult 用不匹配的 toolCallId 但匹配的 name
     manager.updateToolResult('s1', 'tc-mismatch', 'search', true, 'found 3 results');
     const el = streamingMessages.get('s1') as HTMLElement;
-    const card = el.querySelector('.tool-call');
+    const card = el.querySelector('.tool-call-card');
     expect(card?.classList.contains('tool-call-success')).toBe(true);
     expect(card?.querySelector('.tool-call-result')?.textContent).toBe('found 3 results');
   });
@@ -991,10 +991,10 @@ describe('事件委托 · click 分发', () => {
     expect(cb).toHaveBeenCalledWith('insight:记忆详情');
   });
 
-  it('data-action=toggle-collapse 应切换 .tool-call 的 collapsed 类', () => {
+  it('data-action=toggle-collapse 应切换 .tool-call-card 的 collapsed 类', () => {
     const { messagesEl } = createManager();
     const card = document.createElement('div');
-    card.className = 'tool-call collapsed';
+    card.className = 'tool-call-card collapsed';
     const header = document.createElement('div');
     header.dataset.action = 'toggle-collapse';
     card.appendChild(header);
@@ -1163,3 +1163,75 @@ describe('超时兜底定时器', () => {
     expect(host.onStreamStuck).toHaveBeenCalledTimes(1);
   });
 });
+
+// ─── 21. B1：对话区内联里程碑 banner ─────────────────────
+
+describe('appendMilestoneBanner · 对话区内联里程碑 banner', () => {
+  it('应在 messagesEl 末尾追加 .milestone-banner 元素（含奖杯图标 + 文本 + 关闭按钮）', () => {
+    const { manager, messagesEl, host } = createManager();
+    manager.appendMilestoneBanner('达成里程碑：首次完成 UI 布局重构方案');
+
+    const banner = messagesEl.querySelector('.milestone-banner');
+    expect(banner).toBeTruthy();
+    // 奖杯图标存在（svg.milestone-icon）
+    expect(banner!.querySelector('svg.milestone-icon')).toBeTruthy();
+    // 文本正确注入
+    expect(banner!.querySelector('.milestone-text')?.textContent).toBe('达成里程碑：首次完成 UI 布局重构方案');
+    // 关闭按钮存在且 data-action="close-milestone"
+    const closeBtn = banner!.querySelector('button.milestone-close');
+    expect(closeBtn).toBeTruthy();
+    expect(closeBtn!.dataset.action).toBe('close-milestone');
+    // 通知主进程已显示（用于清除未读计数）由 ipcListeners 调用，此处不验证
+    // host.hideEmptyState 应被调用（有内容时隐藏空状态）
+    expect(host.hideEmptyState).toHaveBeenCalled();
+    // host.scrollToBottom 应被调用（确保用户看到新里程碑）
+    expect(host.scrollToBottom).toHaveBeenCalled();
+  });
+
+  it('不应计入消息计数（不调用 updateMessageCount）', () => {
+    const { manager, host } = createManager();
+    manager.appendMilestoneBanner('达成里程碑');
+    // 里程碑是独立元素，不是消息，不应累加消息计数
+    expect(host.updateMessageCount).not.toHaveBeenCalled();
+  });
+
+  it('不应参与消息分组（lastMessageRole 不变，前后同角色消息仍应分组）', () => {
+    const { manager, messagesEl } = createManager();
+    // 连续两条 assistant 消息（间隔 < 2 分钟，本应分组）
+    manager.appendMessage(assistantMsg('hello', 'a1'));
+    // 中间插入里程碑 banner，不应重置分组状态
+    manager.appendMilestoneBanner('达成里程碑');
+    // 第三条 assistant 消息：与第一条间隔很短，应分组到第一条（隐藏头像）
+    manager.appendMessage(assistantMsg('world', 'a2'));
+    // 验证：第二条 assistant 消息应被分组（含 .grouped class）
+    const messages = messagesEl.querySelectorAll('.message.assistant');
+    expect(messages.length).toBe(2);
+    // 第二条消息应有 grouped class（里程碑不重置 lastMessageRole）
+    expect(messages[1].classList.contains('grouped')).toBe(true);
+    // 里程碑 banner 与消息共存于 messagesEl
+    expect(messagesEl.querySelector('.milestone-banner')).toBeTruthy();
+  });
+
+  it('点击关闭按钮应移除整个 .milestone-banner 元素', () => {
+    const { manager, messagesEl } = createManager();
+    manager.appendMilestoneBanner('达成里程碑');
+    expect(messagesEl.querySelectorAll('.milestone-banner').length).toBe(1);
+    // 模拟点击关闭按钮
+    const closeBtn = messagesEl.querySelector('.milestone-close') as HTMLElement;
+    closeBtn.click();
+    // banner 应被移除
+    expect(messagesEl.querySelectorAll('.milestone-banner').length).toBe(0);
+  });
+
+  it('clearMessages 应同时清除 .milestone-banner 元素', () => {
+    const { manager, messagesEl } = createManager();
+    manager.appendMessage(userMsg('a', 'u1'));
+    manager.appendMilestoneBanner('达成里程碑');
+    expect(messagesEl.querySelectorAll('.milestone-banner').length).toBe(1);
+    manager.clearMessages();
+    // .message 与 .milestone-banner 都应被清除
+    expect(messagesEl.querySelectorAll('.message').length).toBe(0);
+    expect(messagesEl.querySelectorAll('.milestone-banner').length).toBe(0);
+  });
+});
+

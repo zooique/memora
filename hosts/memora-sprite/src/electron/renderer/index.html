@@ -341,6 +341,13 @@
               <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）"><svg class="icon"><use href="#icon-plus"/></svg></button>
             </div>
             <div class="input-send-area">
+              <!-- B2：停止生成浮动按钮（独立于发送按钮，流式态时可见，对齐 demo v3 .btn-stop-float）
+                   注意：不使用 .hidden 初始类（display:none !important 会覆盖 .visible 的 display:flex），
+                   依赖 CSS 默认 display:none + .visible 类切换显示 -->
+              <button id="btn-stop" class="btn-stop-float" title="停止生成" aria-label="停止生成">
+                <svg class="icon" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                <span>停止</span>
+              </button>
               <button id="btn-send" title="发送（Enter）"><svg class="icon"><use href="#icon-send"/></svg></button>
             </div>
           </div>

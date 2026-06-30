@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 工具调用卡片渲染器（QC-R2-12 从 chatPanelManager.ts 提取）
  *
  * 职责：
@@ -35,7 +35,7 @@ export function showToolStart(
 ): void {
   // 创建工具调用卡片
   const toolCard = document.createElement('div');
-  toolCard.className = 'tool-call tool-call-running';
+  toolCard.className = 'tool-call-card tool-call-running';
   toolCard.setAttribute('data-tool-call-id', toolCallId);
   toolCard.setAttribute('data-tool-name', name);
 
@@ -111,7 +111,7 @@ export function updateToolResult(
 ): void {
   // 查找对应工具的卡片（按 data-tool-call-id 精确定位）
   // P1-SEC-02 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
-  const allCards = bubble.querySelectorAll('.tool-call');
+  const allCards = bubble.querySelectorAll('.tool-call-card');
   const cards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-call-id') === toolCallId);
   // 精确匹配失败时降级为按 name 匹配（兼容旧格式）
   // QC-TC-02 noUncheckedIndexedAccess 模式下 cards[0] 类型为 Element | undefined，需 ?? null 收窄

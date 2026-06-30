@@ -1,4 +1,4 @@
-﻿/**
+/**
  * UIManager 测试覆盖
  *
  * @vitest-environment jsdom
@@ -105,6 +105,8 @@ const TEST_HTML = `<!DOCTYPE html>
               <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）">➕</button>
             </div>
             <div class="input-send-area">
+              <!-- B2：停止生成浮动按钮（与 index.html 同结构） -->
+              <button id="btn-stop" class="btn-stop-float">停止</button>
               <button id="btn-send">发送</button>
             </div>
           </div>
@@ -643,7 +645,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
     uiManager.startStreaming('msg-tool-1');
     uiManager.showToolStart('msg-tool-1', 'call-1', 'read_file', '{"path":"test.txt"}');
 
-    const toolCard = document.querySelector('.tool-call.tool-call-running');
+    const toolCard = document.querySelector('.tool-call-card.tool-call-running');
     expect(toolCard).not.toBeNull();
     expect(toolCard?.getAttribute('data-tool-name')).toBe('read_file');
     expect(toolCard?.getAttribute('data-tool-call-id')).toBe('call-1');
@@ -658,7 +660,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
     uiManager.startStreaming('msg-tool-2');
     uiManager.showToolStart('msg-tool-2', 'call-2', 'list_dir');
 
-    const toolCard = document.querySelector('.tool-call.tool-call-running');
+    const toolCard = document.querySelector('.tool-call-card.tool-call-running');
     expect(toolCard).not.toBeNull();
     expect(toolCard?.querySelector('.tool-call-args')).toBeNull();
   });
@@ -668,7 +670,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
     uiManager.showToolStart('msg-tool-3', 'call-3', 'search_memories', '{"query":"test"}');
     uiManager.updateToolResult('msg-tool-3', 'call-3', 'search_memories', true, '找到 3 条记忆');
 
-    const toolCard = document.querySelector('.tool-call');
+    const toolCard = document.querySelector('.tool-call-card');
     expect(toolCard?.classList.contains('tool-call-running')).toBe(false);
     expect(toolCard?.classList.contains('tool-call-success')).toBe(true);
     expect(toolCard?.querySelector('.tool-call-status')?.textContent).toContain('成功');
@@ -680,7 +682,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
     uiManager.showToolStart('msg-tool-4', 'call-4', 'write_file', '{"path":"test.txt"}');
     uiManager.updateToolResult('msg-tool-4', 'call-4', 'write_file', false, '权限不足');
 
-    const toolCard = document.querySelector('.tool-call');
+    const toolCard = document.querySelector('.tool-call-card');
     expect(toolCard?.classList.contains('tool-call-failed')).toBe(true);
     expect(toolCard?.querySelector('.tool-call-status')?.textContent).toContain('失败');
   });
@@ -690,7 +692,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
     uiManager.showToolStart('msg-tool-5', 'call-5', 'read_file');
     uiManager.updateToolResult('msg-tool-5', 'call-5', 'read_file', true);
 
-    const toolCard = document.querySelector('.tool-call');
+    const toolCard = document.querySelector('.tool-call-card');
     expect(toolCard?.querySelector('.tool-call-result')).toBeNull();
   });
 
@@ -700,7 +702,7 @@ describe('工具调用卡片（UX-P1-02）', () => {
     // 流式更新文本时，工具卡片应保留
     uiManager.updateStreamingMessage('msg-tool-6', '读取完成');
 
-    const toolCard = document.querySelector('.tool-call');
+    const toolCard = document.querySelector('.tool-call-card');
     expect(toolCard).not.toBeNull();
     expect(toolCard?.getAttribute('data-tool-name')).toBe('read_file');
   });
@@ -1097,15 +1099,16 @@ describe('事件回调注册', () => {
     expect(cb).toHaveBeenCalled();
   });
 
-  it('onStopMessage: 注册并通过合并按钮触发', () => {
+  it('onStopMessage: 注册并通过独立停止按钮触发（B2 拆分语义）', () => {
     const cb = vi.fn();
     uiManager.onStopMessage(cb);
 
-    // 合并按钮：先进入流式态，再点击发送按钮触发停止
+    // B2：停止按钮已从 #btn-send 拆分为独立 #btn-stop
+    // 先进入流式态（updateSendButton 会显示 #btn-stop），再点击停止按钮触发回调
     uiManager.setAgentReady(true);
     uiManager.startStreaming('msg-stop-test');
-    const btnSend = document.getElementById('btn-send')!;
-    btnSend.click();
+    const btnStop = document.getElementById('btn-stop')!;
+    btnStop.click();
 
     expect(cb).toHaveBeenCalled();
   });
