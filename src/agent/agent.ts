@@ -897,7 +897,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.removeAllListeners();
 
     if (this.history) {
-      await this.history.awaitPendingArchives(5000);
+      await this.history.awaitPendingArchives(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
     }
 
     if (this.projectManager) {

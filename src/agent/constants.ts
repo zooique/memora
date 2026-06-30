@@ -24,6 +24,9 @@ export const AGENT_CONSTANTS = {
    */
   CHAT_LOCK_TIMEOUT_MS: 180_000,
 
+  /** close() 关闭时等待归档完成的超时（毫秒）。 */
+  SHUTDOWN_ARCHIVE_TIMEOUT_MS: 5_000,
+
   /** chat() 输入最大长度（字节）。128KB。 */
   CHAT_INPUT_MAX_LENGTH: 128 * 1024,
 

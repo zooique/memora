@@ -31,6 +31,9 @@ import { basename } from '@/utils/path.js';
 import { toError } from '@/utils/errors.js';
 import { parseLlmJson } from '@/utils/json.js';
 
+/** 作品投影生成时内容截断长度（字符），控制 LLM token 消耗 */
+const CONTENT_TRUNCATE_CHARS = 3000;
+
 /** 作品投影的持久化结构 */
 export interface WorkProjectionEntry {
   /** 唯一 ID（work-proj-<slug>） */
@@ -190,8 +193,8 @@ export class WorkProjectionManager {
     name: string,
     content: string,
   ): Promise<{ summary: string; structure: string[]; keyDecisions: string[] }> {
-    // 截断内容到 3000 字（控制 token 消耗）
-    const truncated = content.slice(0, 3000);
+    // 截断内容（控制 token 消耗）
+    const truncated = content.slice(0, CONTENT_TRUNCATE_CHARS);
 
     const promptMessages: Message[] = [
       {

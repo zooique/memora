@@ -18,7 +18,6 @@
  *   setLogger(myCustomLogger);
  */
 import type { ILogger, LogFn } from '@/logging/loggerInterface.js';
-import { statSync, truncateSync } from 'node:fs';
 import { toError } from '@/utils/toError.js';
 // 桥接 utils 层 loggerHolder：utils 运行时不依赖 logging/，
 // 由本模块在加载和 setLogger 时反向注入 logger 实例。
@@ -171,7 +170,7 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
   try {
     const pino = (await import('pino')).default;
     const { resolve } = await import('node:path');
-    const { mkdirSync, createWriteStream } = await import('node:fs');
+    const { mkdirSync, createWriteStream, statSync, truncateSync } = await import('node:fs');
     const { expandHome } = await import('@/utils/path.js');
 
     const dataDir = process.env['MEMORA_DATA_DIR'] ?? '~/.memora';

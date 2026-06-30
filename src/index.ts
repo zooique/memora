@@ -44,6 +44,8 @@ export { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
 export type { ProviderConfig } from '@/llm/factory.js';
 export type { LlmProvider, ChatOptions } from '@/llm/provider.js';
 export type { LlmChunk } from '@/llm/types.js';
+export { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
+export type { OpenAICompatibleConfig } from '@/llm/openaiCompatible.js';
 export type { Config } from '@/config/loader.js';
 // 事件系统
 export { TypedEventEmitter } from '@/utils/eventEmitter.js';

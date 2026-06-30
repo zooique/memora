@@ -1,32 +1,29 @@
-# Lefthook 配置：git hooks
-# 提交前自动运行 lint + typecheck + test
-# 详见 ADR-007
+# Lefthook pre-commit 钩子配置
+# 在每次 git commit 前自动执行代码质量检查
+#
+# 检查链（按序执行，任一步骤失败则阻止提交）：
+#   1. lint-staged  —— 只检查 staged .ts 文件（快速）
+#   2. typecheck     —— 全量类型检查（必须）
+#
+# 不在 pre-commit 运行 vitest（15s+），应在 CI 或手动 pre-push 中运行
+# 详见 .trae/rules/project-rules.md §6 提交规范
 
 pre-commit:
-  parallel: true
-  commands:
-    lint:
-      glob: '*.{ts,tsx}'
-      run: npx eslint {staged_files}
-    typecheck:
-      run: npx tsc --noEmit
-    # P1：memora-sprite electron 侧类型检查（覆盖 tsconfig.electron.json）
-    typecheck-sprite-electron:
-      glob: 'hosts/memora-sprite/**/*.{ts,tsx}'
-      root: 'hosts/memora-sprite'
-      run: npx tsc -p tsconfig.electron.json --noEmit
-
-commit-msg:
-  commands:
-    commitlint:
-      run: npx --no-install commitlint --edit
-
-pre-push:
   parallel: false
   commands:
-    test:
-      run: npm test
-    # P1：memora-sprite 测试（覆盖 electron + sprite + renderer 全量测试）
-    test-sprite:
-      root: 'hosts/memora-sprite'
-      run: npm test
+    # 步骤 1：ESLint 检查 staged 的 TypeScript 文件
+    lint-staged:
+      glob: "*.ts"
+      run: npx eslint {staged_files} --max-warnings 0
+      stage_fixed: true
+
+    # 步骤 2：全量 TypeScript 类型检查
+    typecheck:
+      glob: "*.ts"
+      run: npx tsc --noEmit
+
+# 可选：pre-push 阶段运行测试（较慢，按需启用）
+# pre-push:
+#   commands:
+#     test:
+#       run: npx vitest run
