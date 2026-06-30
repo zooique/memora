@@ -8,6 +8,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDatabase } from './nodeSqliteDatabase.js';
 import { SqliteStorage } from '../../storage/sqliteStorage.js';
 import type { Memory } from 'memora';
+// P2-4：导入 ErrorCode，用于断言 source 校验阻断路径的错误码
+import { ErrorCode } from '../../sprite/errors.js';
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
   return {
@@ -125,5 +127,37 @@ describe('SqliteStorage', () => {
     // d3 最近访问，不应被衰减
     const d3 = storage.getById('d3');
     expect(d3!.score).toBe(0.9);
+  });
+
+  // ─── P2-4：source 校验阻断路径测试 ──────────────────────
+
+  it('upsert() 空 source 应抛出 MemoraError(VALIDATION_ERROR)', () => {
+    const memory = makeMemory({ source: '' });
+    // 空字符串属于 severity='block'，应被拒绝写入
+    expect(() => storage.upsert(memory)).toThrow(
+      expect.objectContaining({
+        code: ErrorCode.VALIDATION_ERROR,
+      }),
+    );
+  });
+
+  it('upsert() 路径遍历 source 应抛出 MemoraError(VALIDATION_ERROR)', () => {
+    const memory = makeMemory({ source: '../../../etc/passwd' });
+    // 路径遍历序列属于 severity='block'（安全边界），应被拒绝写入
+    expect(() => storage.upsert(memory)).toThrow(
+      expect.objectContaining({
+        code: ErrorCode.VALIDATION_ERROR,
+      }),
+    );
+  });
+
+  it('upsert() 首尾空格 source 应抛出 MemoraError(VALIDATION_ERROR)', () => {
+    const memory = makeMemory({ source: '  insight  ' });
+    // 首尾空格属于 severity='block'（调用方 bug），应被拒绝写入
+    expect(() => storage.upsert(memory)).toThrow(
+      expect.objectContaining({
+        code: ErrorCode.VALIDATION_ERROR,
+      }),
+    );
   });
 });

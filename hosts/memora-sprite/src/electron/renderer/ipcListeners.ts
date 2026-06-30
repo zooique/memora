@@ -39,6 +39,51 @@ interface ProactivePromptPayload {
   isMilestone?: boolean;
 }
 
+// ─── P2-2：感知数据 Payload 类型声明（前置，便于类型守卫引用） ─────
+
+/** 情感基调载荷 */
+export interface AffectPayload {
+  warmth: number;
+  playfulness: number;
+  directness: number;
+  initiative: number;
+}
+
+/** Phase 3.2：在场状态变化载荷 */
+export interface PresencePayload {
+  state: PresenceState;
+  timestamp: string;
+  awayDurationMs?: number;
+  reason: string;
+}
+
+/** Phase 3：默契度更新载荷 */
+export interface RapportPayload {
+  trust: number;
+  familiarity: number;
+  level: RapportLevel;
+  description: string;
+}
+
+/** Phase 4：对话上下文更新载荷 */
+export interface ContextPayload {
+  rhythm: RhythmType;
+  coherence: CoherenceLevel;
+  depth: DepthLevel;
+  dominantSource: string | null;
+  description: string;
+}
+
+/** 用户模式更新载荷 */
+export interface PatternsPayload {
+  patterns: Array<{
+    type: string;
+    summary: string;
+    confidence: number;
+    suggestion?: string;
+  }>;
+}
+
 /**
  * P2-006 类型守卫：检查值是否为非 null 对象
  *
@@ -377,49 +422,6 @@ export interface IpcListenerCallbacks {
   onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
   /** 用户模式更新时回调（刷新洞察面板） */
   onPatternsUpdated?: (payload: PatternsPayload) => void;
-}
-
-/** 情感基调载荷 */
-export interface AffectPayload {
-  warmth: number;
-  playfulness: number;
-  directness: number;
-  initiative: number;
-}
-
-/** Phase 3.2：在场状态变化载荷 */
-export interface PresencePayload {
-  state: PresenceState;
-  timestamp: string;
-  awayDurationMs?: number;
-  reason: string;
-}
-
-/** Phase 3：默契度更新载荷 */
-export interface RapportPayload {
-  trust: number;
-  familiarity: number;
-  level: RapportLevel;
-  description: string;
-}
-
-/** Phase 4：对话上下文更新载荷 */
-export interface ContextPayload {
-  rhythm: RhythmType;
-  coherence: CoherenceLevel;
-  depth: DepthLevel;
-  dominantSource: string | null;
-  description: string;
-}
-
-/** 用户模式更新载荷 */
-export interface PatternsPayload {
-  patterns: Array<{
-    type: string;
-    summary: string;
-    confidence: number;
-    suggestion?: string;
-  }>;
 }
 
 /**

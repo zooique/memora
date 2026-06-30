@@ -1,4 +1,4 @@
-﻿/**
+/**
  * triggers.ts 单元测试
  *
  * 覆盖范围：
@@ -15,6 +15,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { TimerTrigger, TriggerBus } from '../../sprite/triggers.js';
 import type { SpriteTrigger, TriggerPayload } from '../../sprite/triggers.js';
 import { logger } from 'memora';
+// P2-3：导入 ErrorCode，用于断言错误码（防止回归为裸 Error）
+import { ErrorCode } from '../../sprite/errors.js';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
 
@@ -194,8 +196,13 @@ describe('TriggerBus', () => {
       const trigger = createMockTrigger('duplicate');
 
       bus.register(trigger);
-      // 重复注册同名触发器应抛出明确错误
-      expect(() => bus.register(trigger)).toThrow('触发器 "duplicate" 已注册');
+      // P2-3：重复注册应抛出 MemoraError 且携带 VALIDATION_ERROR code（防止回归为裸 Error）
+      expect(() => bus.register(trigger)).toThrow(
+        expect.objectContaining({
+          code: ErrorCode.VALIDATION_ERROR,
+          message: '触发器 "duplicate" 已注册',
+        }),
+      );
     });
 
     it('unregister() 注销触发器：调用 trigger.stop() 并从内部 Map 移除', () => {
