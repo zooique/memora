@@ -18,7 +18,7 @@
  * - KeyboardEvent 需 cancelable: true 才能 preventDefault
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ModalManager } from '../../electron/renderer/components/modal.js';
+import { ModalManager } from '../../../electron/renderer/components/modal.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

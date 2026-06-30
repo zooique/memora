@@ -22,8 +22,8 @@
  * - JSDOM 提供真实 DOM API
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SettingsPanelManager, type SettingsPanelHost } from '../../electron/renderer/panels/settingsPanelManager.js';
-import type { SpriteConfigForm, LlmConfigForm } from '../../electron/renderer/types.js';
+import { SettingsPanelManager, type SettingsPanelHost } from '../../../electron/renderer/panels/settingsPanelManager.js';
+import type { SpriteConfigForm, LlmConfigForm } from '../../../electron/renderer/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

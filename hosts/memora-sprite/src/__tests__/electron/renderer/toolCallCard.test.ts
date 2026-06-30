@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   showToolStart,
   updateToolResult,
-} from '../../electron/renderer/helpers/toolCallCard.js';
+} from '../../../electron/renderer/helpers/toolCallCard.js';
 
 // ─── 测试辅助：创建消息气泡元素 ──────────────────────────
 function createBubble(): HTMLDivElement {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IPC 处理器测试 — IPC handler 注册/清理回归测试
  *
  * 覆盖范围：
@@ -15,7 +15,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mock electron 模块 ──────────────────────────────────
-// ipcHandlers.ts 顶部 import { ipcMain } from 'electron'，
+// handlers.ts 顶部 import { ipcMain } from 'electron'，
 // 在 Node 测试环境中 electron 不可用，必须 mock。
 
 /** 捕获 ipcMain.handle 注册的回调，供测试间接调用 */
@@ -123,7 +123,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
   describe('P1-1: registerIpcHandlers 幂等性（reinitAgent 重复调用）', () => {
     it('重复调用 registerIpcHandlers 不抛错', { timeout: 15000 }, async () => {
       // 动态导入，确保 vi.mock('electron') 已生效
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ctx } = createMockIpcContext({
         isAgentReady: true,
         abortController: null,
@@ -138,7 +138,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     });
 
     it('handleChannels 包含 SESSION_SWITCH/DELETE/RENAME 通道', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ipcMain } = await import('electron');
       const { ctx } = createMockIpcContext({
         isAgentReady: true,
@@ -159,7 +159,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     });
 
     it('所有 handle 通道在重复注册前都被清理', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ipcMain } = await import('electron');
       const { ctx } = createMockIpcContext({
         isAgentReady: true,
@@ -196,7 +196,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
   describe('P1-2: handleUserInput 在 Agent 未就绪时拒绝', () => {
     it('isAgentReady()=false 时发送 SPRITE_ERROR 并提前返回', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ctx, sentMessages } = createMockIpcContext({
         isAgentReady: false, // 模拟 reinitAgent 失败后的状态
         abortController: null,
@@ -227,7 +227,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     });
 
     it('isAgentReady()=true 且无进行中对话时正常进入对话流程', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ctx, sentMessages } = createMockIpcContext({
         isAgentReady: true,
         abortController: null,
@@ -262,7 +262,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
   describe('P1-3: handleUserInput 竞态保护（进行中对话时拒绝）', () => {
     it('getAbortController() 非空时发送 SPRITE_ERROR 并提前返回', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       // 模拟进行中的对话：abortController 非空
       const ongoingController = new AbortController();
       const { ctx, sentMessages } = createMockIpcContext({
@@ -292,7 +292,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
     it('竞态保护优先级低于 Agent 就绪检查', async () => {
       // 两个保护条件同时为 true 时，Agent 未就绪应优先拒绝
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ctx, sentMessages } = createMockIpcContext({
         isAgentReady: false,
         abortController: new AbortController(),
@@ -318,7 +318,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
   describe('窗口销毁保护', () => {
     it('fullWindow 为 null 时静默返回（不抛错）', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const ctx = {
         agent: {
           getMetrics: () => ({ context: { truncationCount: 0 } }),
@@ -350,7 +350,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
   describe('P2-AI-03: SESSION_SWITCH 进行中对话时拒绝', () => {
     it('有进行中对话时切换会话返回失败', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       // 模拟进行中的对话：abortController 非空
       const ongoingController = new AbortController();
       const { ctx } = createMockIpcContext({
@@ -375,7 +375,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     });
 
     it('无进行中对话时允许切换会话', async () => {
-      const { registerIpcHandlers } = await import('../../electron/ipc/handlers.js');
+      const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ctx } = createMockIpcContext({
         isAgentReady: true,
         abortController: null, // 无进行中对话

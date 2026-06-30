@@ -32,8 +32,8 @@ import {
   createSilentRecoveryScheduler,
   showAgentInitError,
   showWelcomeMessage,
-} from '../../electron/renderer/initHelpers.js';
-import type { UIManager } from '../../electron/renderer/ui.js';
+} from '../../../electron/renderer/initHelpers.js';
+import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

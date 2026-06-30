@@ -28,6 +28,8 @@ import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
 // P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from './sprite/errors.js';
+// P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
+import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
 // H4：宿主自定义工具（web_search + memory_search）
 import {
   WEB_SEARCH_TOOL,
@@ -62,10 +64,10 @@ const ZH_MESSAGES: UIMessages = {
 };
 
 /** 默认数据目录（Agent 级共享，~/.memora-sprite/data/） */
-export const DEFAULT_DATA_DIR = resolve(homedir(), '.memora-sprite', 'data');
+export const DEFAULT_DATA_DIR = resolve(homedir(), SPRITE_HOME_DIR_NAME, 'data');
 
 /** 默认配置目录（Agent 级共享，~/.memora-sprite/config/） */
-export const DEFAULT_CONFIG_DIR = resolve(homedir(), '.memora-sprite', 'config');
+export const DEFAULT_CONFIG_DIR = resolve(homedir(), SPRITE_HOME_DIR_NAME, 'config');
 
 /** LLM 预设配置（导出供 Electron 设置面板和 CLI 向导使用） */
 export const PROVIDER_PRESETS: Record<string, { provider: string; model: string; baseUrl: string }> = {

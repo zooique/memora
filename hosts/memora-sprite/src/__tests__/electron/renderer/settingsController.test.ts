@@ -23,12 +23,12 @@ const { mockReportError, mockHandleIpcError } = vi.hoisted(() => ({
 }));
 
 // ─── Mock domHelpers（setButtonLoading 操作 DOM，需 mock） ───
-vi.mock('../../electron/renderer/helpers/domHelpers.js', () => ({
+vi.mock('../../../electron/renderer/helpers/domHelpers.js', () => ({
   setButtonLoading: vi.fn(),
 }));
 
 // ─── Mock errorHelpers（createIpcErrorHandler/reportError 依赖 UI，需 mock） ───
-vi.mock('../../electron/renderer/helpers/errorHelpers.js', () => ({
+vi.mock('../../../electron/renderer/helpers/errorHelpers.js', () => ({
   createIpcErrorHandler: vi.fn(() => mockHandleIpcError),
   toError: vi.fn((err: unknown) => ({
     message: err instanceof Error ? err.message : String(err),
@@ -38,9 +38,9 @@ vi.mock('../../electron/renderer/helpers/errorHelpers.js', () => ({
 }));
 
 // 导入被测模块（在 mock 之后导入，确保 mock 生效）
-import { createSettingsController } from '../../electron/renderer/controllers/settingsController.js';
-import type { UIManager } from '../../electron/renderer/ui.js';
-import type { SpriteConfigForm, LlmConfigForm } from '../../electron/renderer/types.js';
+import { createSettingsController } from '../../../electron/renderer/controllers/settingsController.js';
+import type { UIManager } from '../../../electron/renderer/ui.js';
+import type { SpriteConfigForm, LlmConfigForm } from '../../../electron/renderer/types.js';
 
 // ─── Mock UIManager 工厂 ─────────────────────────────────
 
@@ -176,7 +176,7 @@ describe('settingsController', () => {
   });
 
   it('无论成功失败都应恢复按钮状态（finally）', async () => {
-    const { setButtonLoading } = await import('../../electron/renderer/helpers/domHelpers.js');
+    const { setButtonLoading } = await import('../../../electron/renderer/helpers/domHelpers.js');
     await callbacks.onConfigSave!(makeFormConfig());
 
     // setButtonLoading(true, ...) + setButtonLoading(false)

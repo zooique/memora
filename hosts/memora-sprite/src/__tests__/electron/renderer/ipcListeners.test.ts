@@ -22,7 +22,7 @@ import {
   isSkillMatchedPayload,
   isMemoryRecalledPayload,
   isDecayCompletedPayload,
-} from '../../electron/renderer/ipcListeners.js';
+} from '../../../electron/renderer/ipcListeners.js';
 
 // ─── isObject ─────────────────────────────────────────────
 

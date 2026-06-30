@@ -21,8 +21,8 @@
  * - JSDOM 提供真实 DOM API（classList/appendChild/querySelector/dispatchEvent）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ProfilePanelManager } from '../../electron/renderer/panels/profilePanelManager.js';
-import type { UserProfileEntryPayload } from '../../electron/preload.js';
+import { ProfilePanelManager } from '../../../electron/renderer/panels/profilePanelManager.js';
+import type { UserProfileEntryPayload } from '../../../electron/preload.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

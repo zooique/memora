@@ -12,7 +12,7 @@
  * 使用 vi.useFakeTimers + 固定时间锚点，确保格式化结果可断言。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { formatTimeAgo, formatTimestamp, formatClock } from '../../electron/renderer/helpers/domHelpers.js';
+import { formatTimeAgo, formatTimestamp, formatClock } from '../../../electron/renderer/helpers/domHelpers.js';
 
 /** 锚定时间：2026-06-26 12:00:00（本地时区） */
 const ANCHOR_NOW = new Date(2026, 5, 26, 12, 0, 0).getTime();

@@ -20,7 +20,7 @@ import {
   renderMarkdown,
   ALLOWED_LINK_PROTOCOLS,
   LANGUAGE_WHITELIST,
-} from '../../electron/renderer/components/markdown.js';
+} from '../../../electron/renderer/components/markdown.js';
 
 // ─── ALLOWED_LINK_PROTOCOLS 常量 ─────────────────────────────
 

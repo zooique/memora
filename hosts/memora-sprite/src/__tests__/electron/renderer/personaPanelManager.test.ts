@@ -18,9 +18,9 @@
  * - JSDOM 提供真实 DOM API（classList/focus/querySelectorAll/dispatchEvent）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { PersonaPanelManager } from '../../electron/renderer/panels/personaPanelManager.js';
-import { EventTracker } from '../../electron/renderer/helpers/eventTracker.js';
-import type { PersonaItem } from '../../electron/renderer/types.js';
+import { PersonaPanelManager } from '../../../electron/renderer/panels/personaPanelManager.js';
+import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
+import type { PersonaItem } from '../../../electron/renderer/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

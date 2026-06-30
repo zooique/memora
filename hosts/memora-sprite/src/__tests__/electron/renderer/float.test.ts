@@ -18,7 +18,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { JSDOM } from 'jsdom';
-import { initFloatWindow, type FloatElectronAPI } from '../../electron/renderer/float/float.js';
+import { initFloatWindow, type FloatElectronAPI } from '../../../electron/renderer/float/float.js';
 
 /** 测试辅助：初始化浮动窗口并返回 cleanup 函数 */
 function setupFloat(mockAPI: FloatElectronAPI): () => void {

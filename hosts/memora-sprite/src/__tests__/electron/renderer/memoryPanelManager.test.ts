@@ -13,7 +13,7 @@
  * 纯逻辑测试，无 JSDOM 依赖。
  */
 import { describe, it, expect } from 'vitest';
-import { getSourceColorClass } from '../../electron/renderer/panels/memoryPanelManager.js';
+import { getSourceColorClass } from '../../../electron/renderer/panels/memoryPanelManager.js';
 
 describe('getSourceColorClass', () => {
   // ─── 已知 source 映射 ──────────────────────────────────

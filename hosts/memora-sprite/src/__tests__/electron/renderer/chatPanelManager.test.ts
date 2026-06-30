@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 聊天面板管理器测试
  *
  * @vitest-environment jsdom
@@ -35,12 +35,12 @@
  * - JSDOM 提供真实 DOM API
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ChatPanelManager, type ChatPanelHost } from '../../electron/renderer/panels/chatPanelManager.js';
-import { EventTracker } from '../../electron/renderer/helpers/eventTracker.js';
-import type { Message } from '../../electron/renderer/types.js';
+import { ChatPanelManager, type ChatPanelHost } from '../../../electron/renderer/panels/chatPanelManager.js';
+import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
+import type { Message } from '../../../electron/renderer/types.js';
 
 // Mock renderMarkdown：返回固定 DOM 结构，避免测试 Markdown 解析逻辑
-vi.mock('../../electron/renderer/components/markdown.js', () => ({
+vi.mock('../../../electron/renderer/components/markdown.js', () => ({
   renderMarkdown: vi.fn((text: string): DocumentFragment => {
     const fragment = document.createDocumentFragment();
     const span = document.createElement('span');

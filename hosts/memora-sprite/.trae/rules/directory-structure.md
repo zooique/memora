@@ -149,14 +149,17 @@ src/
     ├── electron/               # Electron 层测试
     │   ├── ipc/                # IPC 处理器测试（镜像 src/electron/ipc/）
     │   │   ├── channels.test.ts
-    │   │   ├── chatHandlers.test.ts
-    │   │   └── ...（11 个 handler 测试）
+    │   │   ├── handlers.test.ts  # 完整 IPC 处理器注册测试（原 ipcHandlers.test.ts，D-07 重命名同步）
+    │   │   └── ...（10 个 handler 测试）
     │   ├── windows/            # 窗口管理测试（镜像 src/electron/windows/）
     │   │   ├── themeInjector.test.ts
     │   │   └── windowState.test.ts
-    │   ├── ipcHandlers.test.ts
-    │   ├── ui.test.ts
-    │   └── ...（6 个 electron 根级测试）
+    │   ├── renderer/           # 渲染进程测试（镜像 src/electron/renderer/，D-12 镜像修复）
+    │   │   ├── ui.test.ts      # 主 UI 管理器测试
+    │   │   ├── chatPanelManager.test.ts
+    │   │   └── ...（26 个 renderer 测试）
+    │   ├── agentListeners.test.ts
+    │   └── ...（5 个 electron 根级测试）
     ├── sprite/                 # 精灵层测试（镜像 src/sprite/）
     │   ├── audit/              # 审计模块测试（镜像 src/sprite/audit/）
     │   │   ├── auditManager.test.ts
@@ -166,13 +169,10 @@ src/
     │   │   └── ...（7 个 controller 测试）
     │   ├── sprite.test.ts      # 精灵根级测试
     │   └── ...（6 个 sprite 根级测试）
-    ├── storage/                # 存储层测试
-    │   ├── nodeSqliteDatabase.ts  # 测试用 SQLite 数据库工厂（node:sqlite 适配器）
-    │   ├── sessionStore.test.ts
-    │   └── sqliteStorage.test.ts
-    └── renderer/               # 渲染进程测试
-        ├── float.test.ts
-        └── sessionController.test.ts
+    └── storage/                # 存储层测试
+        ├── nodeSqliteDatabase.ts  # 测试用 SQLite 数据库工厂（node:sqlite 适配器）
+        ├── sessionStore.test.ts
+        └── sqliteStorage.test.ts
 ```
 
 ---
@@ -226,6 +226,7 @@ src/
 - [x] D-10: `sprite/` 创建 `cli/` + `audit/` 子目录（formatter.ts + interaction.ts + auditManager.ts + jsonlAppender.ts）
 - [x] D-11: `__tests__/` 按模块重组（electron/ sprite/ storage/ renderer/ 四个子目录）
 - [x] D-12: `__tests__/` 镜像源码子目录——ipc/ 迁入 electron/ipc/、windows/ 迁入 electron/windows/、sprite/ 拆分 audit/ + controllers/
+- [x] D-13: `__tests__/` 镜像修复收尾——renderer/ 27 文件迁入 electron/renderer/、ui.test.ts 迁入 electron/renderer/、ipcHandlers.test.ts 重命名为 ipc/handlers.test.ts（2026-06-30，第八轮骨架修复）
 
 ### 延后（非目录结构）
 

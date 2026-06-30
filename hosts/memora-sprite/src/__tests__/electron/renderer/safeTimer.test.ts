@@ -12,7 +12,7 @@
  * 纯逻辑测试，无 JSDOM 依赖（setTimeout/setInterval 是 Node.js 全局 API）。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SafeTimerTracker } from '../../electron/renderer/helpers/safeTimer.js';
+import { SafeTimerTracker } from '../../../electron/renderer/helpers/safeTimer.js';
 
 describe('SafeTimerTracker', () => {
   /** 每个测试前启用假定时器，确保定时器不真实触发 */

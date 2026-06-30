@@ -11,8 +11,8 @@
  * - reportError 渲染进程日志上报：通过 vi.stubGlobal mock window.electronAPI
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { toError, reportError, createIpcErrorHandler } from '../../electron/renderer/helpers/errorHelpers.js';
-import type { UIManager } from '../../electron/renderer/ui.js';
+import { toError, reportError, createIpcErrorHandler } from '../../../electron/renderer/helpers/errorHelpers.js';
+import type { UIManager } from '../../../electron/renderer/ui.js';
 
 /** 创建 UIManager mock（仅需 showToast 方法） */
 function createMockUIManager(): Pick<UIManager, 'showToast'> {

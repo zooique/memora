@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { searchCommands, type Command } from '../../electron/renderer/panels/commandPaletteManager.js';
+import { searchCommands, type Command } from '../../../electron/renderer/panels/commandPaletteManager.js';
 
 // ─── 测试用命令列表 ──────────────────────────────────────────
 

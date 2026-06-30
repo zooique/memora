@@ -15,8 +15,8 @@ import {
   renderMemoryRecall,
   showThinkingPhase,
   showTruncationNotice,
-} from '../../electron/renderer/helpers/messageDecorations.js';
-import type { MemoryRecallItem } from '../../electron/renderer/helpers/messageDecorations.js';
+} from '../../../electron/renderer/helpers/messageDecorations.js';
+import type { MemoryRecallItem } from '../../../electron/renderer/helpers/messageDecorations.js';
 
 // ─── 测试辅助：创建消息气泡元素 ──────────────────────────
 function createBubble(): HTMLDivElement {

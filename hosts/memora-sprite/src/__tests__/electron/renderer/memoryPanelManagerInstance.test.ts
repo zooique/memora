@@ -11,9 +11,9 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MemoryPanelManager } from '../../electron/renderer/panels/memoryPanelManager.js';
-import { EventTracker } from '../../electron/renderer/helpers/eventTracker.js';
-import type { MemoryListItem, MemoryDetail } from '../../electron/renderer/types.js';
+import { MemoryPanelManager } from '../../../electron/renderer/panels/memoryPanelManager.js';
+import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
+import type { MemoryListItem, MemoryDetail } from '../../../electron/renderer/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

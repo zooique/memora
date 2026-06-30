@@ -16,9 +16,9 @@
  * - JSDOM 提供真实 DOM 事件（click 事件委托）
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { formatTokenCount } from '../../electron/renderer/panels/dashboardPanelManager.js';
-import { createMemoryController } from '../../electron/renderer/controllers/memoryPanelController.js';
-import type { UIManager } from '../../electron/renderer/ui.js';
+import { formatTokenCount } from '../../../electron/renderer/panels/dashboardPanelManager.js';
+import { createMemoryController } from '../../../electron/renderer/controllers/memoryPanelController.js';
+import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── 纯函数测试 ───────────────────────────────────────────
 

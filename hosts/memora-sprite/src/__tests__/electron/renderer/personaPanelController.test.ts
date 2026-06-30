@@ -30,8 +30,8 @@
  * - 不依赖真实 DOM（控制器层纯逻辑，UI 委托给 uiManager）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createPersonaController } from '../../electron/renderer/controllers/personaPanelController.js';
-import type { UIManager } from '../../electron/renderer/ui.js';
+import { createPersonaController } from '../../../electron/renderer/controllers/personaPanelController.js';
+import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────
 

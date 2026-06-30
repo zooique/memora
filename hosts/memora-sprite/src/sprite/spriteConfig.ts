@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 精灵配置持久化 — sprite.json 读写
  *
  * 配置文件位于 ~/.memora-sprite/sprite.json（根级，与 data/ 和 config/ 同级）。
@@ -20,6 +20,8 @@ import { resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { logger, toError } from 'memora';
+// P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
+import { SPRITE_HOME_DIR_NAME } from './constants.js';
 
 /** 精灵持久化配置 */
 export interface SpriteConfig {
@@ -161,7 +163,7 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
 const CONFIG_FILENAME = 'sprite.json';
 
 /** 精灵配置文件的绝对路径（~/.memora-sprite/sprite.json） */
-const SPRITE_CONFIG_PATH = resolve(homedir(), '.memora-sprite', CONFIG_FILENAME);
+const SPRITE_CONFIG_PATH = resolve(homedir(), SPRITE_HOME_DIR_NAME, CONFIG_FILENAME);
 
 /** 当前最新配置版本号（与 DEFAULT_SPRITE_CONFIG.configVersion 保持一致） */
 const CURRENT_CONFIG_VERSION = 2;

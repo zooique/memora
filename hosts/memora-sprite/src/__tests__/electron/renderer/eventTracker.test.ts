@@ -13,7 +13,7 @@
  * 避免渲染层长进程的内存泄漏。
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { EventTracker } from '../../electron/renderer/helpers/eventTracker.js';
+import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
 
 /** 创建带 spy 的 button 元素，用于断言 addEventListener/removeEventListener 调用 */
 function createSpyButton(): HTMLButtonElement {

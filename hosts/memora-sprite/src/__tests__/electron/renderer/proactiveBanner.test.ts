@@ -14,7 +14,7 @@
  * - JSDOM 提供真实 DOM API（classList/querySelector/dispatchEvent）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ProactiveBanner } from '../../electron/renderer/components/proactiveBanner.js';
+import { ProactiveBanner } from '../../../electron/renderer/components/proactiveBanner.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

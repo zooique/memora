@@ -20,8 +20,8 @@
  * - JSDOM 提供真实 DOM API（classList/appendChild/querySelector/dispatchEvent）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { SuggestionCardManager } from '../../electron/renderer/components/suggestionCard.js';
-import type { ConfigSuggestionPayload } from '../../electron/preload.js';
+import { SuggestionCardManager } from '../../../electron/renderer/components/suggestionCard.js';
+import type { ConfigSuggestionPayload } from '../../../electron/preload.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

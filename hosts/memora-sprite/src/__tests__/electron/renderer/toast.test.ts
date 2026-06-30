@@ -20,7 +20,7 @@
  * - animationend 事件需手动 dispatch（JSDOM 不触发真实动画）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ToastManager } from '../../electron/renderer/components/toast.js';
+import { ToastManager } from '../../../electron/renderer/components/toast.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

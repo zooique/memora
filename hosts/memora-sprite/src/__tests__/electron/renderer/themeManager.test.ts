@@ -23,7 +23,7 @@
  * - JSDOM 提供真实 DOM API（document.documentElement.setAttribute/localStorage/querySelector）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ThemeManager } from '../../electron/renderer/components/themeManager.js';
+import { ThemeManager } from '../../../electron/renderer/components/themeManager.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

@@ -15,7 +15,7 @@
  * - localStorage 由 JSDOM 默认提供，测试间通过 beforeEach 清理
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OnboardingManager } from '../../electron/renderer/components/onboarding.js';
+import { OnboardingManager } from '../../../electron/renderer/components/onboarding.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
