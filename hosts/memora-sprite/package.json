@@ -27,7 +27,8 @@
     "check-cli-keys": "npx tsx scripts/check-cli-config-keys.ts",
     "check-configs": "npm run check-ipc && npm run check-cli-keys",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "setup:mirrors": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-mirrors.ps1"
   },
   "engines": {
     "node": ">=24.0.0"

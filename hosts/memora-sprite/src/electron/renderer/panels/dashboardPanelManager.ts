@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 仪表盘面板管理器 — 感知系统 + 仪表盘渲染独立子模块
  *
  * 职责：
@@ -76,6 +76,8 @@ export interface DashboardData {
   registeredTriggers: string[];
   /** 推荐记忆列表 */
   suggestions: Array<{
+    /** 记忆唯一标识（source:name 格式，用于点击跳转详情） */
+    id: string;
     name: string;
     source: string;
     reason: string;

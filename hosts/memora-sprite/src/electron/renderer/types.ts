@@ -1,4 +1,4 @@
-﻿/**
+/**
  * UI 模块公共类型定义
  *
  * 职责：
@@ -34,9 +34,10 @@ export interface Message {
   timestamp?: string;
   /**
    * 召回记忆提示（仅精灵消息可能携带，对齐 HTML 预览 §6.2 .memory-recall）
-   * 数组结构，支持多条召回记忆展示，每条含 name/score/source
+   * 数组结构，支持多条召回记忆展示，每条含 id/name/score/source
+   * id 为 source:name 格式，用于点击跳转记忆详情
    */
-  memoryRecall?: Array<{ name: string; score: number; source: string }>;
+  memoryRecall?: Array<{ id: string; name: string; score: number; source: string }>;
 }
 
 /** UI 状态快照（供外部查询当前面板、未读数、流式状态、Agent 就绪状态） */

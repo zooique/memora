@@ -393,7 +393,7 @@ export interface ElectronAPI {
   getDashboard: () => Promise<{
     total: number;
     bySource: Record<string, number>;
-    suggestions: Array<{ name: string; source: string; reason: string; relevance: number; contentPreview: string }>;
+    suggestions: Array<{ id: string; name: string; source: string; reason: string; relevance: number; contentPreview: string }>;
     pendingNotices: number;
     proactiveThreshold: number;
     registeredTriggers: string[];
