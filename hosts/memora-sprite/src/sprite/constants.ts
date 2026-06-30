@@ -59,6 +59,20 @@ export const TOAST_NORMAL_MS = 3_000;
 /** Toast 较长显示时长（如错误提示、汇总信息等需要用户阅读的内容） */
 export const TOAST_LONG_MS = 4_000;
 
+// ─── UI 反馈超时常量（毫秒，P2 剪枝：从 agentListeners/spriteEventBridge 散落定义提取） ─
+
+/** 写入确认超时（agentListeners），超时后自动拒绝写入操作 */
+export const CONFIRMATION_TIMEOUT_MS = 30_000;
+
+/** 主动提示托盘重置超时（spriteEventBridge），超时后重置托盘图标未读计数 */
+export const PROACTIVE_TRAY_RESET_MS = 30_000;
+
+/** 仪表盘脉冲动画间隔（dashboardPanelManager），脉冲动画刷新频率 */
+export const DASHBOARD_PULSE_MS = 300;
+
+/** 仪表盘刷新防抖间隔（memoryPanelController），连续事件合并窗口 */
+export const DASHBOARD_DEBOUNCE_MS = 300;
+
 /**
  * 获取本地日期字符串 YYYY-MM-DD
  *

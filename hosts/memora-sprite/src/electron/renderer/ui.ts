@@ -133,6 +133,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private messagesEl: HTMLElement;
   private inputEl: HTMLTextAreaElement;
   private btnSend: HTMLButtonElement;
+  /** B2：停止生成浮动按钮（独立于发送按钮，流式态时可见，对齐 demo v3 .btn-stop-float） */
+  private btnStop: HTMLButtonElement;
 
   // ─── 可选元素（缺失时降级，不阻塞其他功能） ────────────
   /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
@@ -169,6 +171,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.messagesEl = getRequiredElement('messages', 'div');
     this.inputEl = getRequiredElement('input', 'textarea');
     this.btnSend = getRequiredElement('btn-send', 'button');
+    // B2：停止生成按钮（独立元素，流式态时通过 .visible 类显示）
+    this.btnStop = getRequiredElement('btn-stop', 'button');
 
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
@@ -242,8 +246,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 初始化输入框高度和发送按钮状态
     this.handleInputChange();
 
-    // 按钮事件（发送按钮合并了停止功能，流式态时点击触发停止）
+    // B2：发送按钮仅负责发送（停止功能已拆分到 #btn-stop 独立按钮）
     this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
+    // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
+    this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
 
     // UX-FD-07 日期导航按钮：点击切换下拉显示/隐藏
@@ -498,6 +504,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   /** 添加消息到界面（委托到 ChatPanelManager） */
   appendMessage(message: Message): HTMLElement { return this.chatPanel.appendMessage(message); }
+
+  /**
+   * B1：对话区内联里程碑 banner
+   *
+   * 委托到 ChatPanelManager.appendMilestoneBanner。
+   * 里程碑事件不再走顶部 #proactive-banner，而是作为对话流中的独立元素内联渲染。
+   *
+   * @param text 里程碑文本（如"达成里程碑：首次完成 UI 布局重构方案"）
+   */
+  appendMilestoneBanner(text: string): void { this.chatPanel.appendMilestoneBanner(text); }
   /** 更新流式消息内容（委托到 ChatPanelManager） */
   updateStreamingMessage(messageId: string, text: string): void { this.chatPanel.updateStreamingMessage(messageId, text); }
   /** 完成流式消息（委托到 ChatPanelManager） */
@@ -838,7 +854,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (!(e instanceof KeyboardEvent)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // 合并按钮逻辑：流式态时 Enter 触发停止，空闲态时触发发送
+      // B2：流式态时 Enter 触发停止（键盘快捷键，对齐 #btn-stop 鼠标点击），空闲态触发发送
       if (this.state.isStreaming) {
         this.emitStopMessage();
       } else {
@@ -883,12 +899,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   private handleSendClick(): void {
-    // 合并按钮：流式态时点击触发停止，空闲态时触发发送
-    if (this.state.isStreaming) {
-      this.emitStopMessage();
-    } else {
-      this.emitSendMessage();
-    }
+    // B2：发送按钮仅负责发送（停止功能由独立 #btn-stop 按钮承担）
+    this.emitSendMessage();
   }
 
   /**
@@ -1200,22 +1212,26 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * 统一更新发送/停止按钮状态（空闲态发送 / 流式态停止）
+   * B2：统一更新发送/停止按钮可见性
    *
-   * - 流式态：红色停止按钮，始终可用
-   * - 空闲态：发送图标，空内容时弱化禁用
+   * 设计变更（对齐 demo v3 .btn-stop-float）：
+   * - 流式态：显示 #btn-stop 浮动按钮，#btn-send 隐藏（避免误触发送）
+   * - 空闲态：隐藏 #btn-stop，#btn-send 恢复发送姿态（空内容时弱化禁用）
+   *
+   * 取代旧版的"合并按钮"模式（流式态时改变 #btn-send 图标为停止方块），
+   * 拆分语义更清晰，且与 demo v3 视觉设计一致。
    */
   updateSendButton(): void {
     if (this.state.isStreaming) {
-      // 流式态：显示停止姿态（红色方块图标）
-      this.btnSend.disabled = false;
-      this.btnSend.classList.add('streaming');
-      this.btnSend.classList.remove('empty');
-      this.btnSend.innerHTML = '<svg class="icon"><use href="#icon-stop"/></svg>';
-      this.btnSend.title = '停止生成';
+      // 流式态：显示停止浮动按钮，禁用发送按钮（避免流式中误触发送）
+      this.btnStop.classList.add('visible');
+      this.btnSend.disabled = true;
+      this.btnSend.classList.add('hidden');
     } else {
-      // 空闲态：显示发送姿态（纸飞机图标），空内容时弱化
-      this.btnSend.classList.remove('streaming');
+      // 空闲态：隐藏停止按钮，恢复发送按钮
+      this.btnStop.classList.remove('visible');
+      this.btnSend.classList.remove('hidden');
+      // 恢复发送图标（防御性：避免被其他逻辑污染）
       this.btnSend.innerHTML = '<svg class="icon"><use href="#icon-send"/></svg>';
       this.btnSend.title = '发送（Enter）';
       this.updateSendButtonState();

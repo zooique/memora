@@ -24,7 +24,7 @@ import type { HealthDashboardPayload } from '../../preload.js';
 // 复用内核 getDuplicateRemovalIds 计算待清理 ID
 import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth.js';
 // 复用 sprite 共享时间常量，避免硬编码 24*60*60*1000
-import { MS_PER_DAY } from '../../../sprite/constants.js';
+import { MS_PER_DAY, DASHBOARD_DEBOUNCE_MS } from '../../../sprite/constants.js';
 
 /**
  * 获取当前搜索参数（组合搜索，模块级）
@@ -91,9 +91,6 @@ function applyClientFilters(
 
   return result;
 }
-
-/** QC-PERF-01 防抖延迟（毫秒），在事件密集触发时合并 loadDashboard 调用 */
-const DASHBOARD_DEBOUNCE_MS = 300;
 
 /**
  * 创建记忆控制器

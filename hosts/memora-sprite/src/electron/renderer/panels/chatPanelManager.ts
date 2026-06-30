@@ -12,6 +12,7 @@
  * - 管理加载更多按钮（showLoadMore / hideLoadMore）
  * - 管理加载更早日期按钮（showLoadEarlierDay，方案 B 时间流）
  * - 管理消息区域清空（clearMessages）
+ * - B1：对话区内联里程碑 banner（appendMilestoneBanner，对齐 demo v3）
  *
  * 设计原则：
  * - 遵循 SettingsPanelManager 的组合模式，UIManager 持有实例并委托
@@ -288,6 +289,14 @@ export class ChatPanelManager {
         })();
         return;
       }
+      // B1：里程碑 banner 关闭按钮：data-action="close-milestone"
+      // 点击后移除整个 .milestone-banner 元素（内联渲染，无需调用 ProactiveBanner.hideProactiveBanner）
+      const milestoneCloseBtn = target.closest<HTMLElement>('[data-action="close-milestone"]');
+      if (milestoneCloseBtn) {
+        const banner = milestoneCloseBtn.closest<HTMLElement>('.milestone-banner');
+        banner?.remove();
+        return;
+      }
     });
 
     // 键盘可访问性：在 messagesEl 上注册 keydown 委托，
@@ -471,6 +480,58 @@ export class ChatPanelManager {
     }
 
     return el;
+  }
+
+  /**
+   * B1：对话区内联里程碑 banner
+   *
+   * 对齐 demo v3 `.milestone-banner` 设计：里程碑事件不再走顶部 #proactive-banner，
+   * 而是作为对话流中的独立元素内联渲染，与消息同流，记录"对话中达成的成就"。
+   *
+   * DOM 结构：
+   *   <div class="milestone-banner">
+   *     <svg class="milestone-icon">…奖杯图标…</svg>
+   *     <span class="milestone-text">{text}</span>
+   *     <button class="milestone-close" data-action="close-milestone">
+   *       <svg class="icon">…关闭图标…</svg>
+   *     </button>
+   *   </div>
+   *
+   * 设计要点：
+   * - align-self: center 使其居中显示（不与用户/精灵消息对齐到某一侧）
+   * - 不参与消息分组（lastMessageRole 等状态不变）
+   * - 不计入消息计数（updateMessageCount 不调用）
+   * - 关闭按钮通过事件委托（messagesEl click 监听器，data-action="close-milestone"）
+   *
+   * @param text 里程碑文本（如"达成里程碑：首次完成 UI 布局重构方案"）
+   */
+  appendMilestoneBanner(text: string): void {
+    // 有内容时隐藏空状态引导
+    this.host.hideEmptyState();
+
+    // 构建里程碑 banner DOM
+    const banner = document.createElement('div');
+    banner.className = 'milestone-banner';
+    banner.setAttribute('role', 'status');
+    banner.setAttribute('aria-live', 'polite');
+
+    // 奖杯图标（复用 #icon-trophy symbol，与顶部 banner 一致）
+    banner.innerHTML = `
+      <svg class="milestone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><use href="#icon-trophy"/></svg>
+      <span class="milestone-text"></span>
+      <button class="milestone-close" data-action="close-milestone" type="button" aria-label="关闭里程碑提示">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><use href="#icon-close"/></svg>
+      </button>
+    `;
+    // 使用 textContent 设置文本，避免 XSS
+    const textEl = banner.querySelector<HTMLElement>('.milestone-text');
+    if (textEl) textEl.textContent = text;
+
+    // 追加到消息区末尾（不参与分组，作为独立元素）
+    this.messagesEl.appendChild(banner);
+
+    // 滚动到底部，确保用户看到新里程碑
+    this.host.scrollToBottom();
   }
 
   /**
@@ -963,8 +1024,9 @@ export class ChatPanelManager {
    * 使用 while + removeChild 模式（对齐 project_memory 工程约定）。
    */
   clearMessages(): void {
-    // 只移除 .message 和 .message-group 和 .date-separator 元素，保留 chat-empty-state
-    this.messagesEl.querySelectorAll('.message, .message-group, .date-separator').forEach((msg) => msg.remove());
+    // 只移除 .message 和 .message-group 和 .date-separator 和 .milestone-banner 元素，保留 chat-empty-state
+    // B1：新增 .milestone-banner 选择器，避免清空会话时里程碑 banner 残留
+    this.messagesEl.querySelectorAll('.message, .message-group, .date-separator, .milestone-banner').forEach((msg) => msg.remove());
     // UX-FD-07 移除加载更多按钮（切换会话时重置）
     this.hideLoadMore();
     this.streamingMessages.clear();

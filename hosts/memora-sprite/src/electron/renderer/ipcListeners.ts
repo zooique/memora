@@ -231,8 +231,12 @@ function handleProactivePrompt(
   if (uiManager.getCurrentPanel() !== 'chat') {
     void uiManager.switchPanel('chat');
   }
-  // 里程碑事件使用专属庆祝样式
-  uiManager.showProactiveBanner(msg.payload.prompt, msg.payload.isMilestone ?? false);
+  // B1：里程碑事件改为对话区内联 banner（对齐 demo v3），非里程碑保持顶部 #proactive-banner
+  if (msg.payload.isMilestone) {
+    uiManager.appendMilestoneBanner(msg.payload.prompt);
+  } else {
+    uiManager.showProactiveBanner(msg.payload.prompt, false);
+  }
 
   // 通知主进程：主动提示已显示（用于清除未读计数）
   window.electronAPI.proactivePromptShown();

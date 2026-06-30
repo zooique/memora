@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 精灵事件桥 — Sprite 事件到渲染层的翻译层
  *
  * 职责：
@@ -22,6 +22,8 @@ import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { WindowStateManager } from './windows/windowState.js';
 import type { TrayManager } from './trayIcon.js';
+// P2 剪枝：主动提示托盘重置超时常量从 constants.ts 真理源导入，消除散落定义
+import { PROACTIVE_TRAY_RESET_MS } from '../sprite/constants.js';
 
 /**
  * 精灵事件桥依赖
@@ -151,7 +153,6 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
    * 此时定时器到期后 setState('idle') 因幂等保护无副作用。
    */
   let proactiveTrayResetTimer: ReturnType<typeof setTimeout> | null = null;
-  const PROACTIVE_TRAY_RESET_MS = 30_000;
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示（保留显式处理，含复杂副作用）
   registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, silent, isMilestone }) => {

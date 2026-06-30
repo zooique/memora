@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent 监听器 — 配置建议 + 写入确认 + 审计日志
  *
  * 职责：
@@ -23,6 +23,8 @@ import { logger, safeSetTimeout, clearSafeTimeout } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { AuditManager } from '../sprite/audit/auditManager.js';
+// P2 剪枝：写入确认超时常量从 constants.ts 真理源导入，消除散落定义
+import { CONFIRMATION_TIMEOUT_MS } from '../sprite/constants.js';
 
 /**
  * Agent 监听器依赖
@@ -110,8 +112,7 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
     return;
   }
 
-  // 写入确认超时时间（毫秒）：窗口关闭等异常情况下自动拒绝
-  const CONFIRMATION_TIMEOUT_MS = 30_000;
+  // 写入确认超时（毫秒）：窗口关闭等异常情况下自动拒绝
 
   security.onWriteConfirmation(async (info) => {
     // 不需要确认时直接放行（owner 模式 + confirmWrites=false）

@@ -23,7 +23,9 @@ import type { ToastType } from '../types.js';
 import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // P1 类型统一：感知数据 Payload 类型从 ipcListeners（IPC 契约真理源）导入，消除 Data/Payload 双写
-import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload } from '../ipcListeners.js';
+import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
+// P2 剪枝：仪表盘脉冲动画间隔常量从 constants.ts 真理源导入，消除散落定义
+import { DASHBOARD_PULSE_MS } from '../../../sprite/constants.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -113,9 +115,6 @@ export interface DashboardViewModel {
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** 仪表盘计数脉冲动画时长（毫秒），对齐 layout.css @keyframes numberPulse 的 0.3s */
-const DASHBOARD_PULSE_MS = 300;
-
 /** 累积事件接近阈值的百分比（>=80% 显示黄色高亮） */
 const NEAR_THRESHOLD_RATIO = 0.8;
 
@@ -183,6 +182,11 @@ export class DashboardPanelManager {
   private lastNarrativeRapport: Pick<RapportPayload, 'level' | 'trust'> | null = null;
   /** 最近一次检测到的模式 */
   private lastNarrativePatterns: Array<{ type: string; summary: string }> = [];
+  /**
+   * Phase 3.2：最近一次在场状态（首屏查询 + 事件累积统一入口）
+   * awaySince 为 null 表示用户在场；非 null 为离开起始时间戳（毫秒）。
+   */
+  private lastNarrativePresence: { state: 'present' | 'away'; awaySince: number | null } | null = null;
 
   // ─── 回调（由 Controller 注册，用于重试按钮触发数据重新加载） ──
   /** 重试加载洞察数据回调 */
@@ -1103,6 +1107,31 @@ export class DashboardPanelManager {
   }
 
   /**
+   * Phase 3.2：更新在场状态展示
+   *
+   * 统一入口：首屏主动查询（PRESENCE_GET）与被动事件（presenceChanged）均通过此方法接入。
+   * 将 PresencePayload 转换为内部 lastNarrativePresence 状态（state + awaySince），
+   * 供叙事摘要合成时使用（用户离开时叙事应体现"用户不在"）。
+   *
+   * @param payload 在场状态事件载荷（首屏查询时由 loadPresence 构造，reason='initial-query'）
+   */
+  updatePresenceDisplay(payload: PresencePayload): void {
+    // 从事件载荷派生 awaySince：
+    // - state='present' 时 awaySince=null（用户在场）
+    // - state='away' 且有 awayDurationMs 时，awaySince = Date.now() - awayDurationMs
+    // - state='away' 且无 awayDurationMs 时，awaySince = Date.now()（兜底，避免 null 歧义）
+    if (payload.state === 'present') {
+      this.lastNarrativePresence = { state: 'present', awaySince: null };
+    } else {
+      const awaySince = payload.awayDurationMs !== null && payload.awayDurationMs !== undefined
+        ? Date.now() - payload.awayDurationMs
+        : Date.now();
+      this.lastNarrativePresence = { state: 'away', awaySince };
+    }
+    this.updateNarrative();
+  }
+
+  /**
    * FD-01 更新叙事摘要 DOM
    *
    * 每次感知数据更新时调用，渲染到感知面板 #perception-narrative-text。
@@ -1253,6 +1282,12 @@ export class DashboardPanelManager {
    */
   private generateNarrative(): string {
     const parts: string[] = [];
+
+    // Phase 3.2：在场状态（用户离开时优先展示，覆盖其他叙事）
+    if (this.lastNarrativePresence?.state === 'away' && this.lastNarrativePresence.awaySince !== null) {
+      const awayMinutes = Math.max(1, Math.floor((Date.now() - this.lastNarrativePresence.awaySince) / 60000));
+      parts.push(`用户已离开 ${awayMinutes} 分钟`);
+    }
 
     // 对话上下文
     if (this.lastNarrativeContext && this.lastNarrativeContext.rhythm !== 'idle') {
