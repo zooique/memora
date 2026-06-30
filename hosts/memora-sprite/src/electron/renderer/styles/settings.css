@@ -1,21 +1,49 @@
 /**
- * Memora 精灵 — 设置面板样式
+ * Memora 精灵 — 设置模态窗口样式
  *
- * 包含：设置分组、表单输入、下拉框、复选框、单选组、操作按钮区、
- *       API Key 显示/隐藏切换、提示文字。
+ * 包含：模态窗口容器、垂直 tab 导航、表单输入、下拉框、复选框、
+ *       单选组、操作按钮区、API Key 显示/隐藏切换、提示文字。
  */
 
-/* ─── 设置面板（v8） ─────────────────────────────────────── */
-/* 面板的 display 和 flex 布局由 .panel / .panel.active 统一控制，
-   此处不要覆盖 display，否则会导致设置面板始终可见（ID 选择器优先级高于 .panel） */
-/* UX-P2-25 移除 #panel-settings 空规则集（原仅含注释，无实际样式声明） */
+/* ─── 设置模态窗口（640×520px，垂直 tab 导航） ─────────── */
+/* 模态背景和动画由 .modal 类统一控制（见 modal.css） */
+/* 设置模态内容区：覆盖默认 .modal-content 宽度，使用 640×520px */
+.settings-modal-content {
+  width: 640px;
+  height: 520px;
+  max-width: 90vw;
+  max-height: 85vh;
+}
 
-/* ─── UI-UX-01 设置面板顶部区域（统一设计） ─── */
+/* 模态头部：标题 + 关闭按钮 */
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--surface2);
+  flex-shrink: 0;
+}
+
+.settings-modal-header h3 {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+/* 模态主体：左侧垂直 tab + 右侧内容区，flex 横向布局 */
+.settings-modal-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ─── UI-UX-01 设置模态顶部区域（统一设计） ─── */
 /* 合并状态指示器与模式提示，减少视觉层级 */
 
-/* 设置面板顶部状态栏：44px 高度，与其他面板头部一致 */
 /* ─── P3-FLOW-10 Agent 连接状态指示器 ─── */
-/* 显示在设置面板顶部左侧，三态颜色：ready 绿 / error 红 / unknown 灰 */
+/* 显示在设置模态底部左侧，三态颜色：ready 绿 / error 红 / unknown 灰 */
 .agent-status-indicator {
   display: flex;
   align-items: center;
@@ -54,7 +82,7 @@
   background: var(--text-3);
 }
 
-/* UX-PP-21 设置面板交互模式说明：精简为右侧提示 */
+/* UX-PP-21 设置模态交互模式说明：精简为右侧提示 */
 .settings-mode-notice {
   display: flex;
   align-items: center;
@@ -67,46 +95,50 @@
   font-size: var(--font-sm);
 }
 
-/* ─── 设置面板 tab 导航（统一设计：44px 高度，无背景色） ─── */
+/* ─── 设置模态垂直 tab 导航（左侧 160px 宽） ───────────── */
 .settings-tabs {
   display: flex;
+  flex-direction: column;  /* 垂直排列 */
   gap: 0;
-  padding: 0 24px;
+  padding: 8px 0;
   background: transparent;
-  border-bottom: 1px solid var(--surface2);
+  border-right: 1px solid var(--surface2);  /* 右侧分隔线 */
+  border-bottom: none;
   flex-shrink: 0;
-  height: 44px;
-  align-items: center;
+  width: 160px;
+  align-items: stretch;
 }
 
 .settings-tab {
-  /* UX-P2-36 改为 stretch 使 tab 按钮撑满高度，border-bottom 与容器边框对齐（原 align-items: center 导致 border-bottom 视觉悬空） */
-  align-self: stretch;
-  padding: 12px 16px;
+  padding: 10px 20px;
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-left: 2px solid transparent;  /* 左侧指示条 */
+  border-bottom: none;
   color: var(--text-2);
   font-family: inherit;
   font-size: var(--font-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
   display: flex;
   align-items: center;
+  text-align: left;
 }
 
 .settings-tab:hover {
   color: var(--text);
+  background: var(--surface0);
 }
 
 .settings-tab.active {
   color: var(--accent);
-  border-bottom-color: var(--accent);
+  border-left-color: var(--accent);  /* 左侧 accent 色指示条 */
   font-weight: 600;
+  background: var(--accent-soft);
 }
 
-/* tab 内容区：默认隐藏，仅 active 时显示 */
+/* tab 内容区：默认隐藏，仅 active 时显示；右侧填充剩余空间 */
 .settings-tab-content {
   display: none;
   flex: 1;

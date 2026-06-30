@@ -122,14 +122,30 @@
 
   <!-- 大底板容器：grid 布局（左侧栏 + 顶部栏 + 核心悬浮窗口） -->
   <div id="app">
-    <!-- 侧边栏 -->
+    <!-- 侧边栏（默认 64px 图标模式，点击品牌图标展开为 200px） -->
     <aside id="sidebar">
-      <!-- 品牌区（对齐 demo：<svg class="icon"><use href="#icon-fairy"/></svg> Memora 作为唯一品牌标识） -->
+      <!-- 品牌区（点击展开/收起侧边栏，对齐 demo：🧚 Memora 作为唯一品牌标识） -->
       <!-- UI-AUDIT-P2-2.12: 品牌区使用 h1 作为页面最高层级标题，语义 HTML 规范 -->
-      <div class="sidebar-brand">
+      <div class="sidebar-brand" id="sidebar-toggle" role="button" tabindex="0" title="展开/收起侧边栏" aria-label="展开或收起侧边栏">
         <div class="sidebar-brand-icon"><svg class="icon"><use href="#icon-fairy"/></svg></div>
         <h1 class="sidebar-brand-name" translate="no">Memora</h1>
       </div>
+
+      <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
+      <nav class="sidebar-nav" aria-label="主导航">
+        <button class="nav-btn active" data-panel="chat" title="对话（Ctrl+1）" aria-label="对话面板">
+          <svg class="icon"><use href="#icon-chat"/></svg>
+          <span class="nav-label">对话</span>
+        </button>
+        <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）" aria-label="记忆面板">
+          <svg class="icon"><use href="#icon-brain"/></svg>
+          <span class="nav-label">记忆</span>
+        </button>
+        <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）" aria-label="设置面板">
+          <svg class="icon"><use href="#icon-gear"/></svg>
+          <span class="nav-label">设置</span>
+        </button>
+      </nav>
 
       <!-- 角色选择器（点击展开下拉菜单） -->
       <div id="sidebar-header">
@@ -332,19 +348,18 @@
         </div>
 
         </div><!-- /#dashboard-details -->
-       
+
+      </div>
+
+      <!-- 精灵状态指示器（底部小圆点，颜色表示状态：蓝=正常/黄=思考中/绿=有主动提示） -->
+      <div class="sidebar-status" id="sidebar-status" title="精灵状态：就绪">
+        <span class="status-dot" id="sprite-status-dot"></span>
+        <span class="status-text" id="sprite-status-text">就绪</span>
       </div>
     </aside>
 
-    <!-- 顶部栏（与左侧栏同色，无边界；v8 仅保留窗口控制按钮） -->
+    <!-- 顶部栏（与左侧栏同色，无边界；纯窗口拖拽区 + 命令面板入口 + 窗口控制按钮） -->
     <header id="titlebar">
-      <!-- ADR-NAV-001 面板导航标签（从侧边栏迁移，pill 形式水平排列） -->
-      <nav id="titlebar-nav" aria-label="面板切换">
-        <button class="nav-btn active" data-panel="chat" title="对话（Ctrl+1）"><svg class="icon"><use href="#icon-chat"/></svg> <span class="nav-label">对话</span></button>
-        <button class="nav-btn" data-panel="memories" title="记忆（Ctrl+2）"><svg class="icon"><use href="#icon-brain"/></svg> <span class="nav-label">记忆</span></button>
-        <button class="nav-btn" data-panel="settings" title="设置（Ctrl+3）"><svg class="icon"><use href="#icon-gear"/></svg> <span class="nav-label">设置</span></button>
-      </nav>
-      <!-- UX-P2-24 移除 #app-title 元素（原 display:none 但保留在 HTML 中，无实际作用） -->
       <div id="titlebar-drag">
         <!-- Ctrl+K 快捷键提示：让用户发现命令面板功能 -->
         <button id="titlebar-cmdk" class="cmdk-hint" title="打开命令面板（Ctrl+K）" aria-label="打开命令面板">
@@ -384,7 +399,7 @@
           </div>
         </div>
 
-        <!-- FD-03 对话面板叙事摘要行：显示当前感知状态，与仪表盘叙事卡片共用 generateNarrative() -->
+        <!-- FD-03 对话面板叙事摘要行：仅非 idle 状态显示（Phase 6：非常驻），与仪表盘叙事卡片共用 generateNarrative() -->
         <div id="chat-narrative" class="chat-narrative">
           <span class="chat-narrative-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
           <span class="chat-narrative-text" id="chat-narrative-text">精灵正在感知中...</span>
@@ -450,11 +465,17 @@
         </div>
       </div>
 
-      <!-- 记忆面板 -->
-      <div id="panel-memories" class="panel">
+      <!-- 记忆抽屉（右侧滑入，覆盖对话右侧，不替换对话面板） -->
+      <!-- 遮罩层：点击关闭抽屉 -->
+      <div id="memory-drawer-overlay" class="drawer-overlay hidden" aria-hidden="true"></div>
+      <!-- 抽屉容器 -->
+      <aside id="panel-memories" class="drawer hidden" aria-hidden="true" aria-label="记忆抽屉">
         <div class="panel-header">
-          <!-- UI-AUDIT-LAYOUT: 面板标题，与对话面板一致 -->
+          <!-- 面板标题 + 关闭按钮 -->
           <span class="panel-title">记忆</span>
+          <button id="btn-memory-drawer-close" class="drawer-close-btn" title="关闭（Esc）" aria-label="关闭记忆抽屉">
+            <svg class="icon"><use href="#icon-close"/></svg>
+          </button>
           <!-- 搜索框占据主要宽度 -->
           <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" />
           <!-- 主操作：添加记忆 -->
@@ -616,11 +637,22 @@
         </div>
         <!-- 时间线视图容器（A2：按天分组记忆，默认隐藏） -->
         <div id="memory-timeline-container" style="display:none;"></div>
-      </div>
+      </aside>
 
-      <!-- 设置面板 -->
-      <div id="panel-settings" class="panel">
-        <!-- UI-UX-01 设置面板分组导航：tab 切换替代长滚动 -->
+      <!-- 设置模态窗口（640×520px，垂直 tab 导航，底部操作按钮） -->
+      <div id="panel-settings" class="modal hidden" aria-hidden="true" aria-label="设置">
+        <div class="modal-content settings-modal-content">
+          <!-- 模态头部：标题 + 关闭按钮 -->
+          <div class="modal-header settings-modal-header">
+            <h3>设置</h3>
+            <button class="modal-close" id="btn-settings-modal-close" title="关闭（Esc）" aria-label="关闭设置">
+              <svg class="icon"><use href="#icon-close"/></svg>
+            </button>
+          </div>
+
+          <!-- 模态主体：左侧垂直 tab 导航 + 右侧内容区 -->
+          <div class="settings-modal-body">
+        <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
         <div class="settings-tabs">
           <button class="settings-tab active" data-settings-tab="llm">大模型</button>
           <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
@@ -931,6 +963,9 @@
           </div>
         </div>
 
+          </div><!-- /.settings-modal-body -->
+
+        <!-- 模态底部：Agent 状态 + 操作按钮（保存/取消/恢复默认/稍后配置） -->
         <div class="settings-actions">
           <!-- P3-FLOW-10 Agent 连接状态指示器（底部按钮行左侧） -->
           <div id="agent-status-indicator" class="agent-status-indicator unknown">
@@ -946,6 +981,7 @@
           <button id="btn-settings-save" class="btn-primary">保存</button>
           </div>
         </div>
+        </div><!-- /.modal-content -->
       </div>
     </main>
   </div>

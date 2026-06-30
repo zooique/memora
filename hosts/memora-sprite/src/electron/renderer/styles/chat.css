@@ -6,11 +6,10 @@
  */
 
 /* ─── 对话面板 ─────────────────────────────────────────────── */
+/* 可见性由 .panel / .panel.active 统一控制（见 layout.css） */
 #panel-chat {
   height: 100%;
   position: relative;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
@@ -64,11 +63,11 @@
   text-overflow: ellipsis;
 }
 
-/* ─── FD-03 对话面板叙事摘要行 ──────────────────────────────── */
-/* UI-AUDIT-LAYOUT: 从全宽条改为融入消息区的轻量状态提示，
-   不占据"第二行头部"视觉重量，头部统一44px */
+/* ─── FD-03 对话面板叙事摘要行（条件显示） ─────────────────── */
+/* 设计：默认隐藏，仅在有感知事件（非 idle 状态）时显示          */
+/*       避免常驻占据视觉空间，让对话流获得最大可用区域          */
 .chat-narrative {
-  display: flex;
+  display: none; /* 默认隐藏，由 .visible 类控制显示 */
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
@@ -81,6 +80,11 @@
   flex-shrink: 0;
   align-self: flex-start;
   transition: background var(--transition-base) ease, border-color var(--transition-base) ease;
+}
+
+/* 有事件时显示（由 JS 根据 idle/active 状态切换） */
+.chat-narrative.visible {
+  display: flex;
 }
 
 .chat-narrative-icon {
@@ -895,22 +899,25 @@
   text-decoration: underline;
 }
 
-/* ─── 对话面板情感指示器（输入框上方紧凑四维状态条） ── */
-/* 设计：四个彩色圆点一字排开，颜色反映情感基调等级（低蓝/中绿/高橙） */
-/*       默认隐藏，收到 affectUpdated 事件后显示，与仪表盘进度条同步   */
+/* ─── 对话面板情感指示器（输入框上方右下角微指示） ─── */
+/* 设计：四个小圆点紧凑排列于输入框右上方，默认低透明度减少视觉干扰 */
+/*       hover 整个指示器恢复可见，hover 单个圆点显示等级 tooltip   */
 .chat-affect-indicator {
   position: absolute;
-  left: 10px;
-  right: 10px;
+  right: 12px;
   bottom: 82px; /* 输入区高度约 72px + 10px 间距 */
   z-index: 9;
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: 10px;
-  padding: 4px 0;
-  opacity: 1;
+  gap: 6px;
+  padding: 4px 6px;
+  opacity: 0.45; /* 默认微指示：低透明度减少视觉干扰 */
   transition: opacity 0.3s ease;
+}
+
+/* hover 整个指示器：恢复完全可见 */
+.chat-affect-indicator:hover {
+  opacity: 1;
 }
 
 .chat-affect-indicator.hidden {
@@ -918,10 +925,10 @@
   pointer-events: none;
 }
 
-/* 单个情感圆点：12px 带颜色过渡 */
+/* 单个情感圆点：6px 微尺寸，带颜色过渡 */
 .chat-affect-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--muted);
   /* 颜色由 JS 动态设置，保留 transition 实现平滑过渡 */

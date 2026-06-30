@@ -5,11 +5,11 @@
  *       记忆详情弹窗内的元信息。
  */
 
-/* ─── 记忆面板（v8） ───────────────────────────────────────── */
+/* ─── 记忆抽屉内容 ─────────────────────────────────────────── */
+/* 抽屉容器样式（定位/动画）由 layout.css .drawer 类控制 */
+/* #panel-memories 作为抽屉内容容器，填满抽屉 */
 #panel-memories {
   height: 100%;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 

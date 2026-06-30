@@ -1212,8 +1212,15 @@ export class DashboardPanelManager {
       narrativeEl.classList.remove('idle');
     }
 
-    // FD-03 同步更新对话面板叙事摘要行
+    // FD-03 同步更新对话面板叙事摘要行（条件显示：仅非 idle 状态显示）
+    const chatNarrative = document.getElementById('chat-narrative');
     const chatNarrativeText = document.getElementById('chat-narrative-text');
+    const isIdle = this.lastNarrativeContext?.rhythm === 'idle' || !this.lastNarrativeContext;
+
+    if (chatNarrative) {
+      // idle 状态隐藏叙事条，非 idle 状态显示（Phase 6：非常驻）
+      chatNarrative.classList.toggle('visible', !isIdle);
+    }
     if (chatNarrativeText) {
       chatNarrativeText.textContent = narrative;
     }
@@ -1224,9 +1231,8 @@ export class DashboardPanelManager {
       void narrativeEl.offsetWidth; // 强制回流以重新触发动画
       narrativeEl.classList.add('narrative-updated');
 
-      // 同步脉冲动画到对话面板叙事行
-      const chatNarrative = document.getElementById('chat-narrative');
-      if (chatNarrative) {
+      // 同步脉冲动画到对话面板叙事行（仅显示状态下触发，避免隐藏元素无效动画）
+      if (chatNarrative && !isIdle) {
         chatNarrative.classList.remove('narrative-updated');
         void chatNarrative.offsetWidth;
         chatNarrative.classList.add('narrative-updated');

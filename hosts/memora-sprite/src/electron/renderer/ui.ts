@@ -156,6 +156,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private isNearBottom = true;
   /** 非系统消息计数（显示在对话工具栏副标题，P2-009：移至 state 字段区） */
   private messageCount = 0;
+  /** 记忆抽屉是否打开（抽屉是覆盖层，不影响 currentPanel 状态） */
+  private isMemoryDrawerOpen = false;
+  /** 设置模态是否打开（模态是覆盖层，不影响 currentPanel 状态） */
+  private isSettingsModalOpen = false;
 
   constructor() {
     // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -293,10 +297,48 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       });
     }
 
-    // 导航事件
+    // 导航事件（侧边栏 .nav-btn 按钮，复用 switchPanel 逻辑）
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
       this.events.addEventListener(btn, 'click', this.handleNavClick.bind(this));
     });
+
+    // 侧边栏品牌图标点击：展开/收起侧边栏（切换 #app.sidebar-expanded）
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    if (sidebarToggle) {
+      this.events.addEventListener(sidebarToggle, 'click', this.toggleSidebarExpanded.bind(this));
+      // 键盘可访问性：Enter/Space 触发展开/收起
+      this.events.addEventListener(sidebarToggle, 'keydown', (e) => {
+        if (e instanceof KeyboardEvent && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          this.toggleSidebarExpanded();
+        }
+      });
+    }
+
+    // 记忆抽屉关闭交互：遮罩层点击关闭 + 关闭按钮点击关闭
+    const drawerOverlay = document.getElementById('memory-drawer-overlay');
+    if (drawerOverlay) {
+      this.events.addEventListener(drawerOverlay, 'click', () => this.closeMemoryDrawer());
+    }
+    const drawerCloseBtn = document.getElementById('btn-memory-drawer-close');
+    if (drawerCloseBtn) {
+      this.events.addEventListener(drawerCloseBtn, 'click', () => this.closeMemoryDrawer());
+    }
+
+    // 设置模态关闭交互：关闭按钮点击关闭 + 模态背景点击关闭
+    const settingsCloseBtn = document.getElementById('btn-settings-modal-close');
+    if (settingsCloseBtn) {
+      this.events.addEventListener(settingsCloseBtn, 'click', () => this.hideSettingsModal());
+    }
+    const settingsModal = document.getElementById('panel-settings');
+    if (settingsModal) {
+      // 点击模态背景（非内容区）关闭
+      this.events.addEventListener(settingsModal, 'click', (e) => {
+        if (e.target === settingsModal) {
+          this.hideSettingsModal();
+        }
+      });
+    }
 
     // 标题栏按钮（可选，部分布局可能不提供）
     const btnMinimize = getOptionalElement('btn-minimize', 'button');
@@ -340,9 +382,20 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (!(e instanceof KeyboardEvent)) return;
     const isMod = e.ctrlKey || e.metaKey;
 
-    // Esc：关闭展开的下拉菜单（弹窗由 ModalManager 统一处理）
-    // P1-ESC-01 移除弹窗关闭逻辑，避免与 ModalManager 的 Escape 处理冲突
+    // Esc：关闭展开的下拉菜单 + 关闭设置模态 + 关闭记忆抽屉（弹窗由 ModalManager 统一处理）
     if (e.key === 'Escape') {
+      // 优先关闭设置模态（模态打开时 Escape 关闭模态）
+      if (this.isSettingsModalOpen) {
+        this.hideSettingsModal();
+        e.preventDefault();
+        return;
+      }
+      // 其次关闭记忆抽屉（抽屉打开时 Escape 关闭抽屉）
+      if (this.isMemoryDrawerOpen) {
+        this.closeMemoryDrawer();
+        e.preventDefault();
+        return;
+      }
       const openDropdowns = document.querySelectorAll('.dropdown:not(.hidden)');
       if (openDropdowns.length > 0) {
         openDropdowns.forEach((dropdown) => dropdown.classList.add('hidden'));
@@ -351,7 +404,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       return;
     }
 
-    // Ctrl/Cmd + 数字：切换面板
+    // Ctrl/Cmd + 数字：切换面板（Ctrl+2 切换记忆抽屉，Ctrl+3 切换设置模态）
     if (isMod && ['1', '2', '3'].includes(e.key)) {
       const panelMap: Record<string, string> = {
         '1': 'chat',
@@ -360,7 +413,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       };
       const panel = panelMap[e.key];
       if (panel) {
-        void this.switchPanel(panel);
+        // memories/settings 特殊处理：toggle 抽屉/模态；chat 走 switchPanel
+        if (panel === 'memories') {
+          this.toggleMemoryDrawer();
+        } else if (panel === 'settings') {
+          this.toggleSettingsModal();
+        } else {
+          void this.switchPanel(panel);
+        }
         e.preventDefault();
       }
       return;
@@ -519,7 +579,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 有则弹出确认对话框，用户取消则中止切换。
    */
   async switchPanel(panel: string): Promise<void> {
-    // P2-FLOW-06：当前在设置面板且有未保存修改时，确认后再切换
+    // P2-FLOW-06：当前在设置模态且有未保存修改时，确认后再切换
     if (this.state.currentPanel === 'settings' && this.settingsPanelManager.isDirty()) {
       const confirmed = await this.showConfirmDialog({
         title: '离开设置',
@@ -531,6 +591,22 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       // 用户选择离开，重置 dirty 状态避免后续切换重复提示
       this.settingsPanelManager.resetFormDirty();
     }
+
+    // 记忆抽屉独立处理：不切换面板，而是打开抽屉（对话面板保持可见）
+    if (panel === 'memories') {
+      this.openMemoryDrawer();
+      return;
+    }
+
+    // 设置模态独立处理：不切换面板，而是打开模态（对话面板保持可见）
+    if (panel === 'settings') {
+      this.showSettingsModal();
+      return;
+    }
+
+    // 切换到对话面板时关闭记忆抽屉和设置模态
+    this.closeMemoryDrawer();
+    this.hideSettingsModal();
 
     // 移除所有活动状态
     document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
@@ -552,6 +628,149 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
     // 面板切换回调：通知外部控制器刷新数据
     this.panelSwitchCallback?.(panel);
+  }
+
+  /**
+   * 切换记忆抽屉打开/关闭状态
+   *
+   * 记忆抽屉是覆盖在对话右侧的独立层，不替换对话面板。
+   * 打开时对话面板保持可见，关闭时回到纯对话视图。
+   */
+  toggleMemoryDrawer(): void {
+    if (this.isMemoryDrawerOpen) {
+      this.closeMemoryDrawer();
+    } else {
+      this.openMemoryDrawer();
+    }
+  }
+
+  /**
+   * 打开记忆抽屉
+   *
+   * 移除抽屉和遮罩的 hidden 类，激活记忆导航按钮，
+   * 通知外部控制器加载记忆数据。
+   */
+  openMemoryDrawer(): void {
+    const drawer = document.getElementById('panel-memories');
+    const overlay = document.getElementById('memory-drawer-overlay');
+    if (!drawer || !overlay) return;
+
+    drawer.classList.remove('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
+    overlay.classList.remove('hidden');
+
+    // 激活记忆导航按钮，取消对话导航按钮（视觉上表示当前焦点在记忆）
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
+    const memNavBtn = document.querySelector('.nav-btn[data-panel="memories"]');
+    memNavBtn?.classList.add('active');
+
+    this.isMemoryDrawerOpen = true;
+    // currentPanel 标记为 memories，保持语义一致（外部代码依赖此状态）
+    // 注意：对话 .panel.active 仍保持可见，抽屉是覆盖层
+    this.state.currentPanel = 'memories';
+
+    // 聚焦记忆搜索框，方便用户立即搜索
+    const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
+    searchInput?.focus();
+
+    // 通知外部控制器加载记忆数据
+    this.panelSwitchCallback?.('memories');
+  }
+
+  /**
+   * 关闭记忆抽屉
+   *
+   * 添加 hidden 类（CSS 触发滑出动画），取消记忆导航按钮激活态，
+   * 恢复对话导航按钮激活态。
+   */
+  closeMemoryDrawer(): void {
+    const drawer = document.getElementById('panel-memories');
+    const overlay = document.getElementById('memory-drawer-overlay');
+    if (!drawer || !overlay) return;
+
+    // 仅在抽屉打开时处理，避免重复操作
+    if (!this.isMemoryDrawerOpen) return;
+
+    drawer.classList.add('hidden');
+    drawer.setAttribute('aria-hidden', 'true');
+    overlay.classList.add('hidden');
+
+    // 取消记忆导航按钮激活态，恢复对话导航按钮
+    const memNavBtn = document.querySelector('.nav-btn[data-panel="memories"]');
+    memNavBtn?.classList.remove('active');
+    const chatNavBtn = document.querySelector('.nav-btn[data-panel="chat"]');
+    chatNavBtn?.classList.add('active');
+
+    this.isMemoryDrawerOpen = false;
+    // 恢复 currentPanel 为 chat（对话面板始终可见）
+    this.state.currentPanel = 'chat';
+  }
+
+  /**
+   * 切换设置模态打开/关闭状态
+   *
+   * 设置模态是覆盖在对话上的独立层，不替换对话面板。
+   * 打开时对话面板保持可见，关闭时回到纯对话视图。
+   */
+  toggleSettingsModal(): void {
+    if (this.isSettingsModalOpen) {
+      this.hideSettingsModal();
+    } else {
+      this.showSettingsModal();
+    }
+  }
+
+  /**
+   * 显示设置模态窗口
+   *
+   * 移除模态的 hidden 类，激活设置导航按钮，
+   * 通知外部控制器加载设置数据。
+   */
+  showSettingsModal(): void {
+    const modal = document.getElementById('panel-settings');
+    if (!modal) return;
+
+    modal.classList.remove('hidden');
+    modal.setAttribute('aria-hidden', 'false');
+
+    // 激活设置导航按钮，取消对话导航按钮
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
+    const settingsNavBtn = document.querySelector('.nav-btn[data-panel="settings"]');
+    settingsNavBtn?.classList.add('active');
+
+    this.isSettingsModalOpen = true;
+    // currentPanel 标记为 settings，保持语义一致
+    this.state.currentPanel = 'settings';
+
+    // 通知外部控制器加载设置数据
+    this.panelSwitchCallback?.('settings');
+  }
+
+  /**
+   * 隐藏设置模态窗口
+   *
+   * 添加 hidden 类，取消设置导航按钮激活态，
+   * 恢复对话导航按钮激活态。
+   */
+  hideSettingsModal(): void {
+    const modal = document.getElementById('panel-settings');
+    if (!modal) return;
+
+    // 仅在模态打开时处理，避免重复操作
+    if (!this.isSettingsModalOpen) return;
+
+    modal.classList.add('hidden');
+    modal.setAttribute('aria-hidden', 'true');
+
+    // 取消设置导航按钮激活态，恢复对话导航按钮
+    const settingsNavBtn = document.querySelector('.nav-btn[data-panel="settings"]');
+    settingsNavBtn?.classList.remove('active');
+    const chatNavBtn = document.querySelector('.nav-btn[data-panel="chat"]');
+    chatNavBtn?.classList.add('active');
+
+    this.isSettingsModalOpen = false;
+    // 恢复 currentPanel 为 chat（对话面板始终可见）
+    this.state.currentPanel = 'chat';
   }
 
   // ─── 输入处理 ─────────────────────────────────────────
@@ -722,8 +941,28 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (!(target instanceof HTMLElement)) return;
     const panel = target.dataset.panel;
     if (panel) {
-      // switchPanel 为 async，void 显式忽略 Promise
-      void this.switchPanel(panel);
+      // memories/settings 特殊处理：toggle 抽屉/模态；chat 走 switchPanel
+      if (panel === 'memories') {
+        this.toggleMemoryDrawer();
+      } else if (panel === 'settings') {
+        this.toggleSettingsModal();
+      } else {
+        // switchPanel 为 async，void 显式忽略 Promise
+        void this.switchPanel(panel);
+      }
+    }
+  }
+
+  /**
+   * 切换侧边栏展开/收起状态
+   *
+   * 通过切换 #app.sidebar-expanded 类，CSS grid 自动调整列宽（64px ↔ 200px）。
+   * 展开态显示角色选择器、仪表盘、导航文字；收起态仅显示图标。
+   */
+  private toggleSidebarExpanded(): void {
+    const app = document.getElementById('app');
+    if (app) {
+      app.classList.toggle('sidebar-expanded');
     }
   }
 
@@ -1615,12 +1854,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 主进程已确保完整窗口可见，此处只需切换面板并聚焦搜索框。
    */
   async handleRecallMemoryTrigger(): Promise<void> {
-    // 使用正确的面板 ID（panel-memories）
+    // 通过 switchPanel 走设置面板未保存修改检查，再打开抽屉
     await this.switchPanel('memories');
-    // 聚焦记忆搜索框（switchPanel 不会自动聚焦非 chat 面板的输入框）
+    // 选中已有文本，方便用户直接输入新搜索词替换
     const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
     if (searchInput) {
-      searchInput.focus();
       // FD-ADD-RECALL-FOCUS：选中已有文本，方便用户直接输入新搜索词替换
       // 不选中时用户需要手动删除或覆盖，降低操作效率
       searchInput.select();

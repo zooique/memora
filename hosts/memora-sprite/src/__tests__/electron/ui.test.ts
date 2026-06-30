@@ -106,7 +106,8 @@ const TEST_HTML = `<!DOCTYPE html>
           </div>
         </div>
       </div>
-      <div id="panel-memories" class="panel">
+      <div id="memory-drawer-overlay" class="drawer-overlay hidden"></div>
+      <aside id="panel-memories" class="drawer hidden" aria-hidden="true">
         <div class="panel-header">
           <input type="text" id="memory-search" placeholder="搜索记忆…" />
           <select id="memory-filter-source">
@@ -116,9 +117,10 @@ const TEST_HTML = `<!DOCTYPE html>
           <button id="btn-add-memory">+ 添加</button>
         </div>
         <div id="memory-list"></div>
-      </div>
-      <div id="panel-settings" class="panel">
-        <div class="settings-tabs">
+      </aside>
+      <div id="panel-settings" class="modal hidden" aria-hidden="true">
+        <div class="modal-content settings-modal-content">
+          <div class="settings-tabs">
           <button class="settings-tab active" data-settings-tab="llm">大模型</button>
           <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
           <button class="settings-tab" data-settings-tab="sprite">精灵</button>
@@ -801,12 +803,13 @@ describe('流式状态发送拦截（UX-P2-02）', () => {
 // ─── 面板切换 ─────────────────────────────────────────────
 
 describe('面板切换', () => {
-  it('switchPanel: 切换到记忆面板', () => {
+  it('switchPanel: 切换到记忆面板（打开抽屉）', () => {
     uiManager.switchPanel('memories');
 
     expect(uiManager.getCurrentPanel()).toBe('memories');
-    const panel = document.getElementById('panel-memories');
-    expect(panel?.classList.contains('active')).toBe(true);
+    // 记忆抽屉打开 = 无 hidden 类
+    const drawer = document.getElementById('panel-memories');
+    expect(drawer?.classList.contains('hidden')).toBe(false);
   });
 
   it('switchPanel: 导航按钮高亮同步', () => {
@@ -816,12 +819,12 @@ describe('面板切换', () => {
     expect(activeBtn?.getAttribute('data-panel')).toBe('settings');
   });
 
-  it('switchPanel: 切换后原面板失活', () => {
+  it('switchPanel: 切换后原面板失活（抽屉关闭）', () => {
     uiManager.switchPanel('memories');
     uiManager.switchPanel('chat');
 
-    const memoriesPanel = document.getElementById('panel-memories');
-    expect(memoriesPanel?.classList.contains('active')).toBe(false);
+    const memoriesDrawer = document.getElementById('panel-memories');
+    expect(memoriesDrawer?.classList.contains('hidden')).toBe(true);
     const chatPanel = document.getElementById('panel-chat');
     expect(chatPanel?.classList.contains('active')).toBe(true);
   });
@@ -830,16 +833,16 @@ describe('面板切换', () => {
 // ─── handleRecallMemoryTrigger（Ctrl+Shift+R 快捷键） ─────
 
 describe('handleRecallMemoryTrigger', () => {
-  it('应切换到记忆面板（panel-memories active）', async () => {
+  it('应打开记忆抽屉（panel-memories 无 hidden）', async () => {
     // 初始状态在 chat 面板
     expect(uiManager.getCurrentPanel()).toBe('chat');
 
     await uiManager.handleRecallMemoryTrigger();
 
-    // FD-FIX-PANEL-NAME：验证面板名修复后能切换到 memories
+    // 抽屉打开后 currentPanel 标记为 memories
     expect(uiManager.getCurrentPanel()).toBe('memories');
-    const panel = document.getElementById('panel-memories');
-    expect(panel?.classList.contains('active')).toBe(true);
+    const drawer = document.getElementById('panel-memories');
+    expect(drawer?.classList.contains('hidden')).toBe(false);
   });
 
   it('导航按钮应高亮记忆面板按钮', async () => {
@@ -849,14 +852,16 @@ describe('handleRecallMemoryTrigger', () => {
     expect(activeBtn?.getAttribute('data-panel')).toBe('memories');
   });
 
-  it('切换后原面板（chat）应失活', async () => {
+  it('抽屉打开时对话面板保持可见（active）', async () => {
     // 初始在 chat
     expect(document.getElementById('panel-chat')?.classList.contains('active')).toBe(true);
 
     await uiManager.handleRecallMemoryTrigger();
 
-    expect(document.getElementById('panel-chat')?.classList.contains('active')).toBe(false);
-    expect(document.getElementById('panel-memories')?.classList.contains('active')).toBe(true);
+    // 对话面板始终 active（抽屉是覆盖层，不替换对话）
+    expect(document.getElementById('panel-chat')?.classList.contains('active')).toBe(true);
+    // 抽屉打开 = 无 hidden 类
+    expect(document.getElementById('panel-memories')?.classList.contains('hidden')).toBe(false);
   });
 
   it('应聚焦记忆搜索框', async () => {
@@ -868,7 +873,7 @@ describe('handleRecallMemoryTrigger', () => {
     expect(document.activeElement).toBe(searchInput);
   });
 
-  it('从 settings 面板触发时也应切换到记忆面板', async () => {
+  it('从 settings 面板触发时也应打开记忆抽屉', async () => {
     // 先切换到 settings
     uiManager.switchPanel('settings');
     expect(uiManager.getCurrentPanel()).toBe('settings');
@@ -892,7 +897,7 @@ describe('handleRecallMemoryTrigger', () => {
 
     await uiManager.handleRecallMemoryTrigger();
 
-    // 用户确认后应切换到记忆面板
+    // 用户确认后应打开记忆抽屉
     expect(uiManager.getCurrentPanel()).toBe('memories');
   });
 
@@ -911,18 +916,19 @@ describe('handleRecallMemoryTrigger', () => {
 
     // 用户取消，仍停留在 settings 面板
     expect(uiManager.getCurrentPanel()).toBe('settings');
-    expect(document.getElementById('panel-memories')?.classList.contains('active')).toBe(false);
+    // 抽屉保持关闭
+    expect(document.getElementById('panel-memories')?.classList.contains('hidden')).toBe(true);
   });
 
-  it('多次连续触发应保持记忆面板 active（幂等）', async () => {
+  it('多次连续触发应保持记忆抽屉打开（幂等）', async () => {
     await uiManager.handleRecallMemoryTrigger();
     await uiManager.handleRecallMemoryTrigger();
     await uiManager.handleRecallMemoryTrigger();
 
     expect(uiManager.getCurrentPanel()).toBe('memories');
-    // 只有一个面板 active
-    const activePanels = document.querySelectorAll('.panel.active');
-    expect(activePanels.length).toBe(1);
+    // 抽屉保持打开
+    const drawer = document.getElementById('panel-memories');
+    expect(drawer?.classList.contains('hidden')).toBe(false);
   });
 });
 

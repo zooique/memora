@@ -1,26 +1,34 @@
 /**
  * Memora 精灵 — 布局样式
  *
- * v8 布局策略（ADR-SP-008）：
- * - 大底板：左侧栏 + 顶部栏融为一体（同色，无边界）
+ * v9 布局策略（UI 布局重思方案）：
+ * - 大底板：64px 图标侧边栏 + 顶部栏融为一体（同色，无边界）
+ * - 侧边栏可展开为 200px 详情态（点击品牌图标切换 #app.sidebar-expanded）
  * - 核心窗口：白色悬浮卡片（margin + border-radius + box-shadow）
- * - 顶部栏：仅保留窗口控制按钮（无标题文字）
+ * - 顶部栏：纯窗口拖拽区 + 命令面板入口 + 窗口控制按钮
  * - CSS Grid 布局：grid-template-areas 定义三区域
  *
- * 包含：大底板容器、顶部栏、侧边栏、仪表盘、导航、面板容器。
+ * 包含：大底板容器、顶部栏、侧边栏、导航图标、仪表盘、面板容器。
  */
 
 /* ─── 大底板容器（grid 布局，左侧 + 顶部连成一片） ───────── */
+/* 默认 64px 图标模式；.sidebar-expanded 类切换为 200px 详情模式 */
 #app {
   height: 100vh;
   display: grid;
-  /* 左侧栏 240px + 右侧自适应；顶部栏 44px + 下方自适应 */
-  grid-template-columns: 240px 1fr;
+  /* 左侧栏 64px（图标模式）+ 右侧自适应；顶部栏 44px + 下方自适应 */
+  grid-template-columns: 64px 1fr;
   grid-template-rows: 44px 1fr;
   grid-template-areas:
     "sidebar titlebar"
     "sidebar window";
   background: var(--bg);
+  transition: grid-template-columns var(--transition-base) ease;
+}
+
+/* 展开态：侧边栏 200px，显示角色/仪表盘/导航文字 */
+#app.sidebar-expanded {
+  grid-template-columns: 200px 1fr;
 }
 
 /* ─── 顶部栏（与左侧栏同色，无边界；仅保留窗口控制按钮） ─── */
@@ -129,29 +137,67 @@
   color: var(--text-on-red);
 }
 
-/* ─── 侧边栏（与顶部栏同色，无边界） ─────────────────────── */
+/* ─── 侧边栏（与顶部栏同色，无边界；默认 64px 图标模式） ─── */
 #sidebar {
   grid-area: sidebar;
   background: var(--bg);
-  border-right: none;  /* v8：侧边栏与大底板同色，无边界 */
+  border-right: none;  /* 侧边栏与大底板同色，无边界 */
   display: flex;
   flex-direction: column;
-  padding: 16px 14px;
-  gap: 18px;
+  padding: 12px 8px;  /* 图标模式紧凑 padding */
+  gap: 12px;
   overflow-y: auto;
   flex-shrink: 0;
 }
 
-/* 品牌区（对齐 demo：🧚 Memora 作为侧边栏顶部唯一品牌标识） */
+/* 展开态：恢复宽松间距，容纳角色选择器和仪表盘 */
+#app.sidebar-expanded #sidebar {
+  padding: 16px 14px;
+  gap: 18px;
+}
+
+/* 品牌区（点击展开/收起侧边栏，图标模式仅显示图标） */
 .sidebar-brand {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 6px;
+  padding: 6px;
   font-size: var(--font-md);
   font-weight: 700;
   color: var(--text);
   flex-shrink: 0;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast);
+}
+
+.sidebar-brand:hover {
+  background: var(--surface0);
+}
+
+/* 图标模式：仅显示品牌图标，隐藏品牌名 */
+.sidebar-brand-name {
+  display: none;
+}
+
+/* 展开态：显示品牌名 */
+#app.sidebar-expanded .sidebar-brand-name {
+  display: inline;
+}
+
+/* 图标模式：隐藏角色选择器和仪表盘内容（仅保留品牌+导航+状态指示器） */
+#sidebar-header,
+#sidebar-content {
+  display: none;
+}
+
+/* 展开态：显示角色选择器和仪表盘内容 */
+#app.sidebar-expanded #sidebar-header {
+  display: block;
+}
+
+#app.sidebar-expanded #sidebar-content {
+  display: flex;
 }
 
 /* UI-AUDIT-P2-2.12: h1 作为品牌名时重置默认 margin/padding，保持视觉不变 */
@@ -365,54 +411,93 @@
   }
 }
 
-/* ─── 顶部栏导航标签（ADR-NAV-001 segmented control 样式） ──── */
-/* 参考 Trae Work：三个标签合并在一个圆角容器内，active 标签白色凸起 */
-#titlebar-nav {
+/* ─── 侧边栏导航图标区（垂直排列，复用 .nav-btn 类） ──────── */
+.sidebar-nav {
   display: flex;
-  align-items: center;
-  gap: 0; /* 按钮紧贴，无间隙 */
-  padding: 3px; /* 容器内边距，为 active 按钮的凸起留空间 */
-  margin-left: 12px; /* 与左侧边缘保持间距 */
-  background: var(--surface1); /* 容器背景（略深于大底板），衬托 active 按钮的白色凸起 */
-  border-radius: var(--radius-pill);
-  -webkit-app-region: no-drag; /* 按钮区域不可拖拽，复用 P1-1 整体 drag + 按钮 no-drag 方案 */
+  flex-direction: column;
+  gap: 4px;
   flex-shrink: 0;
 }
 
+/* 导航按钮：图标模式仅显示图标，展开态显示图标+文字 */
 .nav-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
+  gap: 10px;
+  padding: 10px;
+  border: none;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--subtext);
+  color: var(--text-3);
   font-size: var(--font-sm);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  /* ADR-NAV-001 顶部栏按钮不可拖拽 */
-  -webkit-app-region: no-drag;
-  transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
-  /* 相邻按钮之间用细边框分隔（可选，当前用颜色差异区分） */
-  position: relative;
-  z-index: 1;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .nav-btn:hover {
+  background: var(--surface0);
   color: var(--text);
-  /* hover 时轻微提亮，但不改变背景（active 态才改变） */
 }
 
-/* ADR-NAV-001 active 态：白色凸起 + 阴影，从 segmented 容器中"浮出" */
+/* active 态：accent 色背景 + 强调色文字 */
 .nav-btn.active {
-  background: var(--window-bg);
-  border-color: transparent;
-  color: var(--text);
+  background: var(--accent-soft);
+  color: var(--accent);
   font-weight: 600;
-  box-shadow: var(--shadow-sm);
-  z-index: 2; /* 凸起在非 active 按钮之上 */
+}
+
+/* 导航按钮图标尺寸 */
+.nav-btn .icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* 图标模式：隐藏文字标签 */
+.nav-btn .nav-label {
+  display: none;
+}
+
+/* 展开态：显示文字标签，增加水平 padding */
+#app.sidebar-expanded .nav-btn {
+  padding: 10px 12px;
+}
+
+#app.sidebar-expanded .nav-btn .nav-label {
+  display: inline;
+}
+
+/* ─── 精灵状态指示器（侧边栏底部小圆点） ─────────────────── */
+/* 颜色语义：蓝=正常/黄=思考中/绿=有主动提示；margin-top:auto 推到底部 */
+.sidebar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  margin-top: auto;
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);  /* 默认蓝色=正常 */
+  flex-shrink: 0;
+}
+
+/* 图标模式：隐藏状态文字，仅显示圆点 */
+.status-text {
+  display: none;
+}
+
+/* 展开态：显示状态文字 */
+#app.sidebar-expanded .status-text {
+  display: inline;
 }
 
 /* ─── 侧边栏分区（推荐/技能/健康/指标） ──────────────────── */
@@ -857,6 +942,78 @@
   display: flex;
 }
 
+/* ─── 记忆抽屉（右侧滑入，覆盖对话右侧，不替换对话面板） ─── */
+/* 抽屉使用 position:fixed 脱离 #main-content 的 flex 布局，
+   覆盖在视口右侧；遮罩层阻止对对话区的交互 */
+.drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 90;  /* 低于抽屉，高于主内容 */
+  opacity: 1;
+  transition: opacity var(--transition-base) ease;
+}
+
+.drawer-overlay.hidden {
+  display: block;  /* 覆盖 .hidden 的 display:none，用 opacity 控制可见性 */
+  opacity: 0;
+  pointer-events: none;  /* 不可点击，避免拦截下层交互 */
+}
+
+/* 抽屉容器：右侧滑入，360px 宽，全高 */
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 360px;
+  max-width: 90vw;  /* 小屏适配：不超过视口 90% */
+  background: var(--window-bg);
+  box-shadow: var(--shadow-window);
+  z-index: 100;  /* 高于遮罩层 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateX(0);  /* 默认显示位置 */
+  transition: transform var(--transition-base) ease;
+}
+
+/* hidden 态：滑出视口右侧（用 transform 替代 display:none 以保留动画） */
+.drawer.hidden {
+  display: flex;  /* 覆盖 .hidden 的 display:none，用 transform 控制位置 */
+  transform: translateX(100%);  /* 滑出右侧 */
+  pointer-events: none;
+}
+
+/* 抽屉关闭按钮：头部右侧 */
+.drawer-close-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.drawer-close-btn:hover {
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.drawer-close-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+
 /* ─── 角色下拉菜单 ─────────────────────────────────────────── */
 .dropdown {
   position: absolute;
@@ -935,70 +1092,15 @@
  * - ≤639px：侧边栏隐藏（受 minWidth 640px 约束，通常不会触发）
  * ============================================================ */
 
-/* 中屏（≤799px）：侧边栏图标模式 */
+/* 中屏（≤799px）：禁止侧边栏展开，消息气泡放宽 */
 @media (max-width: 799px) {
-  #app {
+  /* 中屏空间不足，强制保持图标模式（覆盖 .sidebar-expanded） */
+  #app,
+  #app.sidebar-expanded {
     grid-template-columns: 64px 1fr;
   }
 
-  /* 品牌区：仅显示图标，隐藏文字 */
-  .sidebar-brand {
-    justify-content: center;
-    padding: 0;
-  }
-  .sidebar-brand h1.sidebar-brand-name {
-    display: none;
-  }
-
-  /* 角色选择器：仅显示头像，隐藏名称和箭头 */
-  #persona-selector {
-    justify-content: center;
-    padding: 8px;
-  }
-  #persona-name,
-  #persona-mode-badge,
-  #persona-arrow {
-    display: none;
-  }
-
-  /* 仪表盘：单列布局，仅显示数字 */
-  #dashboard {
-    grid-template-columns: 1fr;
-  }
-  /* UX-P2-28 中屏模式下重置 #dash-pending 的 grid-column: span 2（原内联样式在单列布局下失效，但保留 span 2 会导致布局错位） */
-  #dash-pending {
-    grid-column: span 1;
-  }
-  .dash-label {
-    font-size: var(--font-3xs);
-  }
-
-  /* ADR-NAV-001 中屏模式下 segmented control 紧凑化，只显示 emoji 图标 */
-  #titlebar-nav {
-    margin-left: 8px;
-    padding: 3px;
-  }
-  #titlebar-nav .nav-btn {
-    padding: 4px 10px;
-    gap: 0;
-  }
-  /* 隐藏按钮文字标签，只保留 emoji 图标 */
-  #titlebar-nav .nav-label {
-    display: none;
-  }
-
-  /* 导航：仅显示图标，隐藏文字和快捷键（此规则保留兼容） */
-  .nav-btn {
-    justify-content: center;
-    padding: 8px;
-  }
-
-  /* 推荐区：隐藏（图标模式空间不足） */
-  #recommendations {
-    display: none;
-  }
-
-  /* UI-AUDIT-P3-2.15: 中屏模式下消息气泡放宽 max-width，避免可用宽度减少后阅读体验差 */
+  /* 消息气泡放宽 max-width，避免可用宽度减少后阅读体验差 */
   .message {
     max-width: 90%;
   }
