@@ -19,6 +19,9 @@
 import type { UIManager } from './ui.js';
 import type { SerializedAppError } from '../ipc/channels.js';
 import { reportError } from './helpers/errorHelpers.js';
+import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
+// P4 类型统一：感知数据联合类型从 sprite 层（业务真理源）导入，消除字面量重复内联
+import type { RapportLevel, PresenceState, RhythmType, CoherenceLevel, DepthLevel } from '../../sprite/controllers/index.js';
 
 /**
  * 主动提示 payload 结构
@@ -201,7 +204,7 @@ function handleProactivePrompt(
 
 /** decayCompleted 上次显示时间戳（24h 节流） */
 let lastDecayNoticeTime = 0;
-const DECAY_NOTICE_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const DECAY_NOTICE_COOLDOWN_MS = MS_PER_DAY;
 
 /**
  * 处理项目切换事件
@@ -217,7 +220,7 @@ function handleProjectSwitched(
     return;
   }
   if (msg.silent) return; // 静默模式：不打扰
-  uiManager.showToast(`已切换到项目：${msg.payload.projectName}`, 'info', 3000);
+  uiManager.showToast(`已切换到项目：${msg.payload.projectName}`, 'info', TOAST_NORMAL_MS);
 }
 
 /**
@@ -236,7 +239,7 @@ function handleSkillMatched(
   if (msg.silent) return;
   // 分数 < 0.5 的匹配不通知（避免低匹配度噪音）
   if (msg.payload.score < 0.5) return;
-  uiManager.showToast(`匹配到技能：${msg.payload.skill}`, 'info', 2000);
+  uiManager.showToast(`匹配到技能：${msg.payload.skill}`, 'info', TOAST_SHORT_MS);
 }
 
 /**
@@ -255,7 +258,7 @@ function handleMemoryRecalled(
   }
   if (msg.silent) return;
   if (msg.payload.count <= 0) return; // 0 条不通知
-  uiManager.showToast(`想起 ${msg.payload.count} 条记忆`, 'info', 2000);
+  uiManager.showToast(`想起 ${msg.payload.count} 条记忆`, 'info', TOAST_SHORT_MS);
 }
 
 /**
@@ -282,7 +285,7 @@ function handleDecayCompleted(
   uiManager.showToast(
     `已衰减 ${msg.payload.decayedCount} 条记忆（长期未访问自动降低权重）`,
     'info',
-    4000,
+    TOAST_LONG_MS,
   );
 }
 /**
@@ -386,7 +389,7 @@ export interface AffectPayload {
 
 /** Phase 3.2：在场状态变化载荷 */
 export interface PresencePayload {
-  state: 'present' | 'away';
+  state: PresenceState;
   timestamp: string;
   awayDurationMs?: number;
   reason: string;
@@ -396,15 +399,15 @@ export interface PresencePayload {
 export interface RapportPayload {
   trust: number;
   familiarity: number;
-  level: 'stranger' | 'acquaintance' | 'familiar' | 'close';
+  level: RapportLevel;
   description: string;
 }
 
 /** Phase 4：对话上下文更新载荷 */
 export interface ContextPayload {
-  rhythm: 'rapid' | 'normal' | 'slow' | 'idle';
-  coherence: 'focused' | 'moderate' | 'scattered' | 'none';
-  depth: 'deep' | 'moderate' | 'shallow' | 'none';
+  rhythm: RhythmType;
+  coherence: CoherenceLevel;
+  depth: DepthLevel;
   dominantSource: string | null;
   description: string;
 }

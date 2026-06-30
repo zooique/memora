@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 文件变化触发器 — 上下文感知而非内容感知（ADR-SP-004 阶段二）
  *
  * 监听项目目录的文件变化，发射触发事件。
@@ -13,6 +13,7 @@ import { watch } from 'node:fs';
 import { resolve, sep } from 'node:path';
 // 合并 memora 导入：加入安全定时器包装，统一追踪定时器生命周期
 import { logger, toError, safeSetTimeout, clearSafeTimeout } from 'memora';
+import { MS_PER_SECOND } from './constants.js';
 import type { SpriteTrigger, TriggerCallback } from './triggers.js';
 
 /** FileWatcherTrigger 配置 */
@@ -30,8 +31,8 @@ export interface FileWatcherConfig {
   allowedPaths?: string[];
 }
 
-/** 默认防抖间隔（毫秒）：同一文件短时间内多次变化只触发一次 */
-const DEFAULT_DEBOUNCE_MS = 1000;
+/** 默认防抖间隔（毫秒）：同一文件短时间内多次变化只触发一次（= MS_PER_SECOND） */
+const DEFAULT_DEBOUNCE_MS = MS_PER_SECOND;
 
 /** 默认忽略模式 */
 const DEFAULT_IGNORE = [

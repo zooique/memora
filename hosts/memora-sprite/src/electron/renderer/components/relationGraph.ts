@@ -18,6 +18,9 @@
  * - 阻尼：每帧速度衰减 0.85
  */
 
+// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
+import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
+
 // ─── 类型定义 ────────────────────────────────────────────────
 
 /** 图谱节点（来自 MemoryListItem） */
@@ -212,7 +215,7 @@ export class RelationGraphRenderer {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Canvas 2D 上下文不可用');
+    if (!ctx) throw new MemoraError(ErrorCode.INITIALIZATION_FAILED, 'Canvas 2D 上下文不可用');
     this.ctx = ctx;
     this.dpr = window.devicePixelRatio || 1;
 

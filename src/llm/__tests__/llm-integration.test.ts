@@ -6,7 +6,7 @@
  * 自动从 ~/.memora/config.json 读取 LLM 配置（与 sprite 宿主一致）
  *
  * 运行方式：
- *   npx vitest run src/__tests__/llm-integration.test.ts
+ *   npx vitest run src/llm/__tests__/llm-integration.test.ts
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';

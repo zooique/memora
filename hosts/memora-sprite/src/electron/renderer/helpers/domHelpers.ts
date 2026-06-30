@@ -1,4 +1,4 @@
-﻿/**
+/**
  * DOM 工具函数模块
  *
  * 职责：
@@ -10,6 +10,10 @@
  * - 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败
  * - 核心元素与可选元素分离，单个面板缺失不阻塞整个 UI
  */
+// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
+import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
+// P2-1：formatTimeAgo 时间常量替换（统一引用 constants.ts 真理源）
+import { MS_PER_MINUTE, MS_PER_HOUR, MS_PER_DAY } from '../../../sprite/constants.js';
 
 /**
  * 获取必需的 DOM 元素，若缺失或标签名不匹配则抛出明确错误
@@ -29,11 +33,12 @@ export function getRequiredElement<T extends keyof HTMLElementTagNameMap>(
 ): HTMLElementTagNameMap[T] {
   const el = document.getElementById(id);
   if (!el) {
-    throw new Error(`[UIManager] 必需的 DOM 元素 #${id} 未找到，UI 无法初始化`);
+    throw new MemoraError(ErrorCode.INITIALIZATION_FAILED, `[UIManager] 必需的 DOM 元素 #${id} 未找到，UI 无法初始化`);
   }
   // 运行时标签名校验：使用 tagName 字符串比较（兼容 JSDOM 等无 DOM 构造函数的环境）
   if (el.tagName.toLowerCase() !== tagName) {
-    throw new Error(
+    throw new MemoraError(
+      ErrorCode.INITIALIZATION_FAILED,
       `[UIManager] DOM 元素 #${id} 类型不匹配，期望 <${tagName}>，实际 <${el.tagName.toLowerCase()}>`,
     );
   }
@@ -133,9 +138,9 @@ export function formatTimeAgo(dateStr: string): string {
   if (Number.isNaN(date.getTime())) return dateStr;
   const now = Date.now();
   const diffMs = now - date.getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  const diffHour = Math.floor(diffMs / 3_600_000);
-  const diffDay = Math.floor(diffMs / 86_400_000);
+  const diffMin = Math.floor(diffMs / MS_PER_MINUTE);
+  const diffHour = Math.floor(diffMs / MS_PER_HOUR);
+  const diffDay = Math.floor(diffMs / MS_PER_DAY);
 
   if (diffMin < 1) return '刚刚';
   if (diffMin < 60) return `${diffMin} 分钟前`;

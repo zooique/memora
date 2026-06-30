@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 主题初始化脚本注入器
  *
  * P2-3 修复：从 windowManager.ts 和 floatWindow.ts 提取的重复主题注入逻辑。
@@ -9,6 +9,7 @@
  */
 
 import type { WebContents } from 'electron';
+import { logger, toError } from 'memora';
 
 /**
  * 注入主题初始化脚本到指定 WebContents
@@ -35,8 +36,10 @@ export function injectThemeScript(webContents: WebContents): void {
           }
         })();
       `)
-      .catch(() => {
+      .catch((err: unknown) => {
         // 注入失败时静默降级为默认浅色主题（不影响功能可用性）
+        // P1：补充 logger.debug 提升可观测性，便于生产环境排查主题注入异常
+        logger.debug({ err: toError(err).message }, '主题注入失败，降级为默认浅色主题');
       });
   });
 }

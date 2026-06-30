@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 快捷命令面板管理器（Command Palette）
  *
  * 职责：
@@ -13,6 +13,8 @@
  */
 
 import type { UIManager } from '../ui.js';
+// Toast 时长常量（第一轮 P1-B 遗漏 import 修复）
+import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
 
 /** 命令项定义 */
 export interface Command {
@@ -166,7 +168,7 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         const current = uiManager.getThemeMode();
         const next = current === 'dark' ? 'light' : 'dark';
         uiManager.setTheme(next);
-        uiManager.showToast(`已切换到${next === 'dark' ? '深色' : '浅色'}主题`, 'info', 2000);
+        uiManager.showToast(`已切换到${next === 'dark' ? '深色' : '浅色'}主题`, 'info', TOAST_SHORT_MS);
       },
     },
     {

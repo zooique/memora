@@ -14,6 +14,7 @@
  */
 
 import { JsonlAppender } from './jsonlAppender.js';
+import { DEFAULT_MAX_ENTRIES } from '../constants.js';
 import type { AuditEvent } from 'memora';
 
 /** 单条审计日志在 JSONL 中的完整记录（比 AuditEvent 多了时间戳 & 运行时 ID） */
@@ -29,7 +30,7 @@ export class AuditManager {
   private readonly appender: JsonlAppender;
   private readonly sessionId: string;
 
-  constructor(dataDir: string, maxEntries = 1000) {
+  constructor(dataDir: string, maxEntries = DEFAULT_MAX_ENTRIES) {
     this.appender = new JsonlAppender({
       filePath: `${dataDir}/audit.log`,
       maxEntries,

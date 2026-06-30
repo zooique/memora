@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 剪贴板处理器 — 三重保护：被动检测 + 主动触发 + 敏感过滤
  *
  * 职责（Phase 3.1）：
@@ -21,6 +21,8 @@
 import type { Clipboard } from 'electron';
 // 合并 memora 导入：加入安全定时器包装，统一追踪定时器生命周期
 import { logger, safeSetInterval, clearSafeInterval } from 'memora';
+// 引入共享时间常量：消除魔法数字 2000，与 sprite 层统一时间单位定义
+import { MS_PER_SECOND } from '../sprite/constants.js';
 
 /** 剪贴板事件类型（开放字符串，非枚举） */
 export type ClipboardEventType =
@@ -112,7 +114,7 @@ export interface ClipboardHandlerOptions {
   emit?: (event: ClipboardEventType, payload?: unknown) => void;
   /** 输入护栏检查函数（由 Agent 注入，可选） */
   inputGuard?: (content: string) => GuardCheckResult;
-  /** 轮询间隔（毫秒），默认 2000 */
+  /** 轮询间隔（毫秒），默认 2 * MS_PER_SECOND（2 秒） */
   pollIntervalMs?: number;
 }
 
@@ -146,7 +148,7 @@ export class ClipboardHandler {
     // 使用 ?? 确保默认值不会被 undefined 覆盖（展开运算符的陷阱：undefined 会覆盖前面的默认值）
     this.options = {
       ...options,
-      pollIntervalMs: options.pollIntervalMs ?? 2000,
+      pollIntervalMs: options.pollIntervalMs ?? 2 * MS_PER_SECOND,
     };
   }
 

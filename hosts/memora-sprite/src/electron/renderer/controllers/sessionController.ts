@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 会话控制器 — 时间流式会话历史加载
  *
  * 职责：
@@ -18,6 +18,8 @@
 import type { UIManager } from '../ui.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { getLocalDate } from '../../../sprite/constants.js';
+// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
+import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
 
 /**
  * 将 IPC 消息的角色映射为 UI 消息角色
@@ -300,7 +302,7 @@ export function createSessionController(uiManager: UIManager) {
       // 调用 switchSession IPC：更新 Agent 内部状态 + 加载会话消息
       const result = await window.electronAPI.switchSession({ date, session: name });
       if (!result.success) {
-        throw new Error(result.error ?? '切换会话失败');
+        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '切换会话失败');
       }
 
       // 渲染目标会话的消息（批量插入）

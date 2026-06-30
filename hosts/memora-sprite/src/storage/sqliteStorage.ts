@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SqliteStorage — IMemoryStorage 的 better-sqlite3 实现
  *
  * 宿主项目（精灵）持有 better-sqlite3 实例，实现 IMemoryStorage 接口后注入 Agent。
@@ -11,6 +11,8 @@ import type { IMemoryStorage } from 'memora';
 import type { Memory } from 'memora';
 import { segmentText, validateSource, logger } from 'memora';
 import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
+// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
+import { MemoraError, ErrorCode } from '../sprite/errors.js';
 
 /** 建表 SQL */
 const CREATE_TABLE_SQL = `
@@ -110,7 +112,7 @@ export class SqliteStorage implements IMemoryStorage {
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
     if (result.severity === 'block') {
-      throw new Error(`source 校验失败（拒绝写入）：${result.warning}`);
+      throw new MemoraError(ErrorCode.VALIDATION_ERROR, `source 校验失败（拒绝写入）：${result.warning}`);
     }
     if (result.severity === 'warn' && result.warning) {
       logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');

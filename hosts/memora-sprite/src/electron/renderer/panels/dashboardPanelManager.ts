@@ -22,6 +22,8 @@ import { getSourceColorClass } from './memoryPanelManager.js';
 import type { ToastType } from '../types.js';
 import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
+// P1 类型统一：感知数据 Payload 类型从 ipcListeners（IPC 契约真理源）导入，消除 Data/Payload 双写
+import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload } from '../ipcListeners.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -66,8 +68,14 @@ export interface AgentMetrics {
   } | null;
 }
 
-/** 仪表盘数据（对齐 IPC getDashboard 返回结构，仅声明 Manager 用到的字段） */
-export interface DashboardData {
+/**
+ * 仪表盘视图模型（对齐 IPC getDashboard 返回结构，仅声明 Manager 用到的字段）
+ *
+ * P0 类型统一：原 DashboardData 与 sprite 层 memoryController.DashboardData 同名冲突，
+ * 重命名为 DashboardViewModel 以消除歧义。sprite 层 DashboardData 是"记忆仪表盘业务数据"，
+ * 本类型是"完整仪表盘视图模型"（含事件/触发器/技能等 UI 字段），二者概念不同。
+ */
+export interface DashboardViewModel {
   /** 累积事件数 */
   pendingNotices: number;
   /** 主动提示阈值 */
@@ -99,40 +107,9 @@ export interface DashboardData {
   }>;
 }
 
-/** 情感基调四维数值 */
-export interface AffectData {
-  warmth: number;
-  playfulness: number;
-  directness: number;
-  initiative: number;
-}
-
-/** 默契度数据 */
-export interface RapportData {
-  trust: number;
-  familiarity: number;
-  level: string;
-  description: string;
-}
-
-/** 对话上下文数据 */
-export interface ContextData {
-  rhythm: string;
-  coherence: string;
-  depth: string;
-  dominantSource: string | null;
-  description: string;
-}
-
-/** 模式洞察 payload */
-export interface PatternsPayload {
-  patterns: Array<{
-    type: string;
-    summary: string;
-    confidence: number;
-    suggestion?: string;
-  }>;
-}
+// P1 类型统一：AffectPayload/RapportPayload/ContextPayload/PatternsPayload
+// 已从 ipcListeners.ts 导入（IPC 契约真理源），消除 Data/Payload 双写。
+// 原AffectData/RapportData/ContextData/PatternsPayload 重复定义已删除。
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -198,17 +175,12 @@ export class DashboardPanelManager {
   private pulseTimers: number[] = [];
 
   // ─── FD-01 叙事摘要：闭包级状态（跨事件累积，供 generateNarrative 合成） ──
-  /** 最近一次上下文状态 */
-  private lastNarrativeContext: {
-    rhythm: string;
-    coherence: string;
-    depth: string;
-    dominantSource: string | null;
-  } | null = null;
+  /** 最近一次上下文状态（P1：从 ContextPayload 派生，消除内联重复） */
+  private lastNarrativeContext: Pick<ContextPayload, 'rhythm' | 'coherence' | 'depth' | 'dominantSource'> | null = null;
   /** 最近一次情感基调 */
-  private lastNarrativeAffect: AffectData | null = null;
-  /** 最近一次默契度 */
-  private lastNarrativeRapport: { level: string; trust: number } | null = null;
+  private lastNarrativeAffect: AffectPayload | null = null;
+  /** 最近一次默契度（P1：从 RapportPayload 派生，消除内联重复） */
+  private lastNarrativeRapport: Pick<RapportPayload, 'level' | 'trust'> | null = null;
   /** 最近一次检测到的模式 */
   private lastNarrativePatterns: Array<{ type: string; summary: string }> = [];
 
@@ -264,7 +236,7 @@ export class DashboardPanelManager {
    *
    * @param data 仪表盘数据
    */
-  renderDashboardStats(data: DashboardData): void {
+  renderDashboardStats(data: DashboardViewModel): void {
     // ─── 累积事件数 / 阈值（高亮状态：接近阈值黄色，达到阈值粉色） ──
     const pendingEl = document.getElementById('perception-pending-count');
     if (pendingEl) {
@@ -926,7 +898,7 @@ export class DashboardPanelManager {
    *
    * @param affect 四维情感基调数值
    */
-  updateAffectDisplay(affect: AffectData): void {
+  updateAffectDisplay(affect: AffectPayload): void {
     // FD-01：保存状态供叙事摘要合成
     this.lastNarrativeAffect = affect;
 
@@ -981,7 +953,7 @@ export class DashboardPanelManager {
    *
    * @param rapport 默契度数据
    */
-  updateRapportDisplay(rapport: RapportData): void {
+  updateRapportDisplay(rapport: RapportPayload): void {
     // ─── 感知面板等级徽章 ────────────────────────────
     const rapportBadge = document.getElementById('perception-rapport-badge');
     if (rapportBadge) {
@@ -1024,7 +996,7 @@ export class DashboardPanelManager {
    *
    * @param context 对话上下文数据
    */
-  updateContextDisplay(context: ContextData): void {
+  updateContextDisplay(context: ContextPayload): void {
     // ─── 感知面板节奏指标 ────────────────────────────
     const paceEl = document.getElementById('perception-pace-value');
     if (paceEl) {

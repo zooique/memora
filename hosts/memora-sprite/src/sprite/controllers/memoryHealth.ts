@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆健康度诊断模块
  *
  * 职责：
@@ -15,6 +15,7 @@
  */
 
 import type { MemoryListItem } from './memoryController.js';
+import { MS_PER_DAY } from '../constants.js';
 
 // ─── 健康度阈值常量（开放字符串，后续可配置化） ──────────
 
@@ -210,7 +211,7 @@ function detectStaleMemories(memories: MemoryListItem[]): StaleMemory[] {
 
   for (const m of memories) {
     const daysSinceAccess = m.createdAt
-      ? Math.floor((now - new Date(m.createdAt).getTime()) / (24 * 60 * 60 * 1000))
+      ? Math.floor((now - new Date(m.createdAt).getTime()) / MS_PER_DAY)
       : -1;
 
     const isOld = daysSinceAccess > STALE_AGE_DAYS;

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆模式检测器 — 从记忆数据中自动发现用户的模式、习惯和知识缺口
  *
  * 职责：
@@ -18,6 +18,7 @@
 
 import type { Memory } from 'memora';
 import { logger } from 'memora';
+import { MS_PER_WEEK } from '../constants.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -50,8 +51,8 @@ export interface PatternDetectorOptions {
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** 默认近期窗口：7 天 */
-const DEFAULT_RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+/** 默认近期窗口：7 天（= MS_PER_WEEK） */
+const DEFAULT_RECENT_WINDOW_MS = MS_PER_WEEK;
 
 /** 默认最小出现次数 */
 const DEFAULT_MIN_OCCURRENCES = 3;

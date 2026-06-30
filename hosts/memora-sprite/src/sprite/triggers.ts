@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 唤醒触发器 — 上下文感知而非内容感知（ADR-SP-004）
  *
  * 触发器架构：
@@ -10,6 +10,8 @@
 
 // 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
 import { safeSetInterval, clearSafeInterval, logger } from 'memora';
+// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
+import { MemoraError, ErrorCode } from './errors.js';
 
 // ─── SpriteTrigger 接口 ──────────────────────────────────
 
@@ -124,7 +126,7 @@ export class TriggerBus {
   /** 注册触发器 */
   register(trigger: SpriteTrigger): void {
     if (this.triggers.has(trigger.name)) {
-      throw new Error(`触发器 "${trigger.name}" 已注册`);
+      throw new MemoraError(ErrorCode.VALIDATION_ERROR, `触发器 "${trigger.name}" 已注册`);
     }
     this.triggers.set(trigger.name, trigger);
   }

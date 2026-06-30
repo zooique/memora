@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Toast 通知模块
  *
  * 职责：
@@ -13,6 +13,8 @@
  */
 
 import type { ToastType, ToastOptions } from '../types.js';
+// 复用 sprite 层共享常量，避免多处硬编码 Toast 时长导致口径不一致
+import { TOAST_LONG_MS } from '../../../sprite/constants.js';
 
 /** Toast 类型与图标映射 */
 const TOAST_ICONS: Record<ToastType, string> = {
@@ -22,8 +24,11 @@ const TOAST_ICONS: Record<ToastType, string> = {
   info: 'ℹ',
 };
 
-/** Toast 默认自动消失时长（毫秒），error 类型不自动消失 */
-const TOAST_DEFAULT_DURATION = 4000;
+/**
+ * Toast 默认自动消失时长（毫秒），error 类型不自动消失
+ * 引用 sprite 层共享常量 TOAST_LONG_MS，统一全局 Toast 长时长口径
+ */
+const TOAST_DEFAULT_DURATION = TOAST_LONG_MS;
 
 /** Toast 最大同时显示数量（FIFO，超出时移除最早的） */
 const TOAST_MAX_VISIBLE = 5;

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 系统托盘管理
  *
  * 职责：
@@ -22,12 +22,14 @@ import { Tray, Menu, nativeImage } from 'electron';
 import type { NativeImage } from 'electron';
 // 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
 import { safeSetInterval, clearSafeInterval } from 'memora';
+// 引入共享时间常量：消除魔法数字 2000，与 sprite 层统一时间单位定义
+import { MS_PER_SECOND } from '../sprite/constants.js';
 
 /** 托盘状态类型：对齐浮动窗口状态指示点 */
 export type TrayState = 'idle' | 'active' | 'sleeping';
 
-/** 托盘脉冲动画间隔（毫秒）——active 状态下 tooltip 文字循环切换 */
-const TRAY_PULSE_INTERVAL_MS = 2000;
+/** 托盘脉冲动画间隔（毫秒，= 2 秒）——active 状态下 tooltip 文字循环切换 */
+const TRAY_PULSE_INTERVAL_MS = 2 * MS_PER_SECOND;
 
 export interface TrayCallbacks {
   /** 显示完整窗口 */

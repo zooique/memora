@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SpriteTracer — M3 ITracer 可观测性最小实现
  *
  * 设计目标：为桌面精灵场景提供零依赖的 Span 收集器，
@@ -18,6 +18,7 @@
  */
 
 import { JsonlAppender } from './audit/jsonlAppender.js';
+import { DEFAULT_MAX_ENTRIES } from './constants.js';
 import { TRACE_SPANS } from 'memora';
 import type { ITracer, ISpan } from 'memora';
 
@@ -123,9 +124,9 @@ export class SpriteTracer implements ITracer {
 
   /**
    * @param dataDir - 数据目录（与 audit.log、memora.db 同目录）
-   * @param maxEntries - 最大保留条数，超出时从头截断，默认 1000
+   * @param maxEntries - 最大保留条数，超出时从头截断，默认 DEFAULT_MAX_ENTRIES
    */
-  constructor(dataDir: string, maxEntries = 1000) {
+  constructor(dataDir: string, maxEntries = DEFAULT_MAX_ENTRIES) {
     this.appender = new JsonlAppender({
       filePath: `${dataDir}/trace.log`,
       maxEntries,

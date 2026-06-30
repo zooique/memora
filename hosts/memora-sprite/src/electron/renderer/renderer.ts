@@ -21,7 +21,7 @@ import { createSettingsController } from './controllers/settingsController.js';
 import { CommandPaletteManager } from './panels/commandPaletteManager.js';
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
-import { getLocalDate } from '../../sprite/constants.js';
+import { getLocalDate, MS_PER_HOUR, MS_PER_DAY } from '../../sprite/constants.js';
 import {
   createSilentRecoveryScheduler,
   showAgentInitError,
@@ -51,8 +51,8 @@ const State = {
   memoryController: null as ReturnType<typeof createMemoryController> | null,
 };
 
-/** 静默模式自动恢复时间（1 小时） */
-const SILENT_RECOVERY_MS = 60 * 60 * 1000;
+/** 静默模式自动恢复时间（1 小时，使用 MS_PER_HOUR 常量统一时间单位） */
+const SILENT_RECOVERY_MS = MS_PER_HOUR;
 
 // ─── 初始化 ────────────────────────────────────────────────
 
@@ -278,7 +278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       window.electronAPI.proactiveReject();
       void window.electronAPI.updateConfig('silentMode', true);
       // 设置一个较长的恢复时间（24 小时），等效于"不再提醒"
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const expiresAt = new Date(Date.now() + MS_PER_DAY).toISOString();
       void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
       State.uiManager.showToast('已关闭主动提示（24 小时内不再提醒）。如需恢复，请到设置面板调整主动提示阈值', 'info');
     },

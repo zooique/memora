@@ -10,6 +10,11 @@ pre-commit:
       run: npx eslint {staged_files}
     typecheck:
       run: npx tsc --noEmit
+    # P1：memora-sprite electron 侧类型检查（覆盖 tsconfig.electron.json）
+    typecheck-sprite-electron:
+      glob: 'hosts/memora-sprite/**/*.{ts,tsx}'
+      root: 'hosts/memora-sprite'
+      run: npx tsc -p tsconfig.electron.json --noEmit
 
 commit-msg:
   commands:
@@ -20,4 +25,8 @@ pre-push:
   parallel: false
   commands:
     test:
+      run: npm test
+    # P1：memora-sprite 测试（覆盖 electron + sprite + renderer 全量测试）
+    test-sprite:
+      root: 'hosts/memora-sprite'
       run: npm test

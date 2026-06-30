@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 对话回顾管理器 — 聚合最近对话的摘要数据
  *
  * 职责：
@@ -14,6 +14,7 @@
  */
 
 import type { MemoryListItem, DashboardData } from './memoryController.js';
+import { MS_PER_DAY } from '../constants.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ function isWithinDays(isoDate: string | undefined, days: number): boolean {
   if (!isoDate) return false;
   const date = new Date(isoDate);
   if (isNaN(date.getTime())) return false;
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const cutoff = Date.now() - days * MS_PER_DAY;
   return date.getTime() >= cutoff;
 }
 

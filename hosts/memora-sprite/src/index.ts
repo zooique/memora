@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Memora Sprite — 桌面精灵宿主库入口
  *
  * 职责：
@@ -26,6 +26,8 @@ import { SqliteRelationStore } from './storage/sqliteRelationStore.js';
 import { SpriteConfigStore, DEFAULT_CONFIG_PATH } from './storage/spriteConfigStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
+// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
+import { MemoraError, ErrorCode } from './sprite/errors.js';
 // H4：宿主自定义工具（web_search + memory_search）
 import {
   WEB_SEARCH_TOOL,
@@ -438,10 +440,10 @@ export async function startSprite(opts?: {
   try {
     config = await loadConfig(opts?.configPath ?? DEFAULT_CONFIG_PATH);
     if (!config.llm.apiKey) {
-      throw new Error('API Key 未配置');
+      throw new MemoraError(ErrorCode.CONFIG_LOAD_FAILED, 'API Key 未配置');
     }
   } catch {
-    throw new Error('配置不完整，请在设置面板中配置 LLM 提供商和 API Key');
+    throw new MemoraError(ErrorCode.CONFIG_LOAD_FAILED, '配置不完整，请在设置面板中配置 LLM 提供商和 API Key');
   }
 
   // 2. 用配置初始化 Agent + Sprite

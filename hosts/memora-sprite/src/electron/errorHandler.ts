@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 统一错误处理工具
  *
  * 职责：
@@ -13,23 +13,10 @@ import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { SerializedAppError } from './ipc/channels.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
-
-export enum ErrorCode {
-  // 通用错误
-  UNKNOWN = 'UNKNOWN',
-  INITIALIZATION_FAILED = 'INITIALIZATION_FAILED',
-  CONFIG_LOAD_FAILED = 'CONFIG_LOAD_FAILED',
-
-  // 窗口相关错误
-  WINDOW_CREATE_FAILED = 'WINDOW_CREATE_FAILED',
-
-  // 文件系统错误
-  FILE_READ_FAILED = 'FILE_READ_FAILED',
-
-  // 网络错误
-  NETWORK_ERROR = 'NETWORK_ERROR',
-  API_ERROR = 'API_ERROR',
-}
+// P0-A：ErrorCode + MemoraError 已提取到 sprite/errors.ts（纯逻辑层，零 electron 依赖），
+// sprite/storage 层可直接导入使用。本模块 re-export 保持公共 API 不变。
+import { ErrorCode, MemoraError } from '../sprite/errors.js';
+export { ErrorCode, MemoraError };
 
 export interface AppError {
   code: ErrorCode;
@@ -37,27 +24,6 @@ export interface AppError {
   originalError?: Error;
   context?: Record<string, unknown>;
   timestamp: Date;
-}
-
-/**
- * 结构化错误类（P1-CODE-1 修复）
- *
- * 携带显式 ErrorCode 字段，替代基于中文字符串匹配的 extractErrorCode 推断。
- * 调用方通过 `throw new MemoraError(ErrorCode.FILE_READ_FAILED, '...')` 显式指定错误类型，
- * ErrorHandler.normalizeError 优先读取 error.code，仅在未携带 code 时降级到字符串匹配。
- */
-export class MemoraError extends Error {
-  /** 显式错误代码（优先于字符串推断） */
-  readonly code: ErrorCode;
-  /** 附加上下文信息（结构化数据，用于日志和调试） */
-  readonly context?: Record<string, unknown>;
-
-  constructor(code: ErrorCode, message: string, options?: { cause?: unknown; context?: Record<string, unknown> }) {
-    super(message, options as ErrorOptions);
-    this.name = 'MemoraError';
-    this.code = code;
-    this.context = options?.context;
-  }
 }
 
 // ─── 错误处理类 ─────────────────────────────────────────
@@ -169,6 +135,9 @@ export class ErrorHandler {
       [ErrorCode.FILE_READ_FAILED]: '文件读取失败，请检查文件权限',
       [ErrorCode.NETWORK_ERROR]: '网络连接失败，请检查网络设置',
       [ErrorCode.API_ERROR]: 'API调用失败，请稍后重试',
+      // P0-B 新增：存储与校验错误的友好消息
+      [ErrorCode.STORAGE_ERROR]: '存储操作失败，请检查数据目录权限',
+      [ErrorCode.VALIDATION_ERROR]: '数据校验失败，请检查输入内容',
     };
 
     return errorMessages[error.code] || error.message;

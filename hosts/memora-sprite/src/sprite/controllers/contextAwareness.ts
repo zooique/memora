@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 对话上下文感知器 — 从记忆数据中实时推导当前对话的节奏、话题和深度
  *
  * 职责：
@@ -23,6 +23,7 @@
 
 import type { Memory } from 'memora';
 import { logger } from 'memora';
+import { MS_PER_HOUR } from '../constants.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -59,8 +60,8 @@ export interface ContextAwarenessOptions {
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** 默认分析窗口：1 小时 */
-const DEFAULT_ANALYSIS_WINDOW_MS = 60 * 60 * 1000;
+/** 默认分析窗口：1 小时（= MS_PER_HOUR） */
+const DEFAULT_ANALYSIS_WINDOW_MS = MS_PER_HOUR;
 
 /** 默认最近消息数上限 */
 const DEFAULT_MAX_RECENT = 50;
@@ -158,7 +159,7 @@ export class ContextAwareness {
    * 基于分析窗口内记忆数量推算消息频率（条/小时）
    */
   private deriveRhythm(memories: Memory[]): RhythmType {
-    const hoursSpan = this.options.analysisWindowMs / (1000 * 60 * 60);
+    const hoursSpan = this.options.analysisWindowMs / MS_PER_HOUR;
     const messagesPerHour = memories.length / hoursSpan;
 
     if (messagesPerHour >= RAPID_THRESHOLD) return 'rapid';

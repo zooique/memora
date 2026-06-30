@@ -24,6 +24,8 @@
 import { clearElement, formatTimestamp } from '../helpers/domHelpers.js';
 import { renderMarkdown } from '../components/markdown.js';
 import { reportError } from '../helpers/errorHelpers.js';
+// 共享常量：时间换算与 Toast 时长，避免硬编码（对齐 sprite/constants.ts）
+import { MS_PER_MINUTE, TOAST_SHORT_MS } from '../../../sprite/constants.js';
 // QC-R2-12：工具调用卡片 DOM 逻辑提取到独立 helper
 import { showToolStart as renderToolStart, updateToolResult as updateToolCardResult } from '../helpers/toolCallCard.js';
 // QC-R2-12：消息装饰器（召回记忆 + 思考阶段 + 截断提示）提取到独立 helper
@@ -136,7 +138,7 @@ export class ChatPanelManager {
   // ─── Phase 1：消息分组与日期分隔 ──────────────────────────
 
   /** 同一角色消息分组时间窗口（毫秒），超过此间隔则开始新分组 */
-  private static readonly GROUP_TIME_WINDOW_MS = 2 * 60 * 1000; // 2 分钟
+  private static readonly GROUP_TIME_WINDOW_MS = 2 * MS_PER_MINUTE; // 2 分钟
 
   /** 上一条消息的角色（用于分组：同角色连续消息合并） */
   private lastMessageRole: string | null = null;
@@ -217,7 +219,7 @@ export class ChatPanelManager {
         const content = copyCodeBtn.dataset.content ?? '';
         navigator.clipboard.writeText(content).then(
           () => {
-            this.host.showToast('已复制代码', 'success', 2000);
+            this.host.showToast('已复制代码', 'success', TOAST_SHORT_MS);
             // 短暂反馈：按钮文本切换为"已复制"，1.2s 后恢复
             const originalText = copyCodeBtn.textContent;
             copyCodeBtn.textContent = '已复制';

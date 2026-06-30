@@ -9,6 +9,9 @@
 import type { Agent, SuggestHit, VectorStore, Memory } from 'memora';
 import type { MemoryRelation } from 'memora';
 import { logger } from 'memora';
+import { DEFAULT_LIST_LIMIT } from '../constants.js';
+// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
+import { MemoraError, ErrorCode } from '../errors.js';
 import { buildHealthDashboard } from './memoryHealth.js';
 import type { HealthDashboard } from './memoryHealth.js';
 import { buildReviewData } from './reviewManager.js';
@@ -257,7 +260,7 @@ export class MemoryController {
   upsert(source: string, name: string, content: string, score = 0.5): string {
     // P2-DESIGN-6 修复：统一通过 agent.memory 访问
     const inspector = this.agent.memory;
-    if (!inspector) throw new Error('存储不可用');
+    if (!inspector) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
     const now = new Date().toISOString();
     const id = `${source}:${name}`;
     inspector.upsert({
@@ -441,7 +444,7 @@ export class MemoryController {
    */
   getReviewData(): ReviewData {
     const dashboard = this.dashboard();
-    const allMemories = this.list(undefined, 1000);
+    const allMemories = this.list(undefined, DEFAULT_LIST_LIMIT);
     return buildReviewData(dashboard, allMemories);
   }
 }

@@ -36,14 +36,19 @@ import type { MemoryPanelHost } from './panels/memoryPanelManager.js';
 import { DashboardPanelManager } from './panels/dashboardPanelManager.js';
 import type { DashboardPanelHost } from './panels/dashboardPanelManager.js';
 import type {
-  DashboardData,
+  DashboardViewModel,
   AgentMetrics,
-  AffectData,
-  RapportData,
-  ContextData,
-  PatternsPayload,
 } from './panels/dashboardPanelManager.js';
+// P2-5：Payload 类型直接从 ipcListeners（IPC 契约真理源）导入，消除中转
+import type {
+  AffectPayload,
+  RapportPayload,
+  ContextPayload,
+  PatternsPayload,
+} from './ipcListeners.js';
 import { PersonaPanelManager } from './panels/personaPanelManager.js';
+// 精灵公共常量（时间常量、Toast 时长，跨进程共享 DRY）
+import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
   Message,
@@ -1314,7 +1319,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // ─── 仪表盘面板 ─ 委托到 DashboardPanelManager ───────────
 
   /** 渲染仪表盘统计数据（委托到 DashboardPanelManager） */
-  renderDashboardStats(data: DashboardData): void {
+  renderDashboardStats(data: DashboardViewModel): void {
     this.dashboardPanel.renderDashboardStats(data);
   }
   /** 渲染 Agent 运行时指标（委托到 DashboardPanelManager） */
@@ -1353,15 +1358,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 仪表盘计数 +1 并触发脉冲动画（委托到 DashboardPanelManager） */
   pulseCounter(id: string): void { this.dashboardPanel.pulseCounter(id); }
   /** 更新情感基调展示（委托到 DashboardPanelManager） */
-  updateAffectDisplay(affect: AffectData): void {
+  updateAffectDisplay(affect: AffectPayload): void {
     this.dashboardPanel.updateAffectDisplay(affect);
   }
   /** 更新默契度展示（委托到 DashboardPanelManager） */
-  updateRapportDisplay(rapport: RapportData): void {
+  updateRapportDisplay(rapport: RapportPayload): void {
     this.dashboardPanel.updateRapportDisplay(rapport);
   }
   /** 更新对话上下文展示（委托到 DashboardPanelManager） */
-  updateContextDisplay(context: ContextData): void {
+  updateContextDisplay(context: ContextPayload): void {
     this.dashboardPanel.updateContextDisplay(context);
   }
   /** 更新模式洞察面板（委托到 DashboardPanelManager） */
@@ -1603,7 +1608,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
         // 简单的相对日期显示
         const today = new Date();
         const target = new Date(item.date);
-        const diffDays = Math.floor((today.getTime() - target.getTime()) / (24 * 60 * 60 * 1000));
+        const diffDays = Math.floor((today.getTime() - target.getTime()) / MS_PER_DAY);
         if (diffDays === 1) {
           dateEl.textContent = '昨天';
         } else if (diffDays === 2) {
@@ -1897,7 +1902,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (mdFiles.length < files.length) {
       // 部分文件被跳过，提示用户
       const skipped = files.length - mdFiles.length;
-      this.showToast(`已跳过 ${skipped} 个非 .md 文件`, 'info', 2000);
+      this.showToast(`已跳过 ${skipped} 个非 .md 文件`, 'info', TOAST_SHORT_MS);
     }
 
     // 逐个安装（避免并发写入冲突）
@@ -1917,11 +1922,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       const msg = successCount === 1
         ? '技能安装成功'
         : `${successCount} 个技能安装成功`;
-      this.showToast(msg, 'success', 3000);
+      this.showToast(msg, 'success', TOAST_NORMAL_MS);
       this.skillInstalledCallback?.();
     }
     if (lastError) {
-      this.showToast(lastError, 'error', 4000);
+      this.showToast(lastError, 'error', TOAST_LONG_MS);
       this.flashDropzoneError();
     }
   }
@@ -1959,14 +1964,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       const result = await window.electronAPI.installSkill(file.name, content);
       if (!result.success) {
         // 校验失败或写入失败，显示具体错误
-        this.showToast(`${file.name}：${result.error}`, 'error', 4000);
+        this.showToast(`${file.name}：${result.error}`, 'error', TOAST_LONG_MS);
         return false;
       }
       return true;
     } catch (err) {
       // 读取文件或 IPC 调用异常
       const errMsg = err instanceof Error ? err.message : String(err);
-      this.showToast(`${file.name}：${errMsg}`, 'error', 4000);
+      this.showToast(`${file.name}：${errMsg}`, 'error', TOAST_LONG_MS);
       return false;
     } finally {
       // 无论成功失败，移除安装中态

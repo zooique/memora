@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 错误处理器测试
  *
  * 覆盖范围：
@@ -95,8 +95,8 @@ describe('MemoraError', () => {
 // ─── ErrorCode 枚举 ──────────────────────────────────────
 
 describe('ErrorCode 枚举', () => {
-  it('应包含 7 种错误码', () => {
-    expect(Object.values(ErrorCode).length).toBe(7);
+  it('应包含 9 种错误码', () => {
+    expect(Object.values(ErrorCode).length).toBe(9);
   });
 
   it('每种错误码应为字符串值', () => {
@@ -113,6 +113,9 @@ describe('ErrorCode 枚举', () => {
     expect(ErrorCode.FILE_READ_FAILED).toBe('FILE_READ_FAILED');
     expect(ErrorCode.NETWORK_ERROR).toBe('NETWORK_ERROR');
     expect(ErrorCode.API_ERROR).toBe('API_ERROR');
+    // P0-B 新增：存储与校验错误码
+    expect(ErrorCode.STORAGE_ERROR).toBe('STORAGE_ERROR');
+    expect(ErrorCode.VALIDATION_ERROR).toBe('VALIDATION_ERROR');
   });
 });
 
@@ -325,6 +328,31 @@ describe('getUserFriendlyMessage 用户友好消息映射', () => {
     expect(mockWin.webContents.send).toHaveBeenCalledWith(
       'app-error',
       expect.objectContaining({ message: '窗口创建失败，请重启应用' }),
+    );
+  });
+
+  // P1：新增错误码的友好消息映射测试（翠幕天罗审查补齐）
+  it('STORAGE_ERROR 应映射为存储操作失败提示', () => {
+    const handler = createErrorHandler();
+    const mockWin = createMockWindow();
+    handler.setMainWindow(mockWin);
+    handler.handle(new MemoraError(ErrorCode.STORAGE_ERROR, '原始消息'));
+
+    expect(mockWin.webContents.send).toHaveBeenCalledWith(
+      'app-error',
+      expect.objectContaining({ message: '存储操作失败，请检查数据目录权限' }),
+    );
+  });
+
+  it('VALIDATION_ERROR 应映射为数据校验失败提示', () => {
+    const handler = createErrorHandler();
+    const mockWin = createMockWindow();
+    handler.setMainWindow(mockWin);
+    handler.handle(new MemoraError(ErrorCode.VALIDATION_ERROR, '原始消息'));
+
+    expect(mockWin.webContents.send).toHaveBeenCalledWith(
+      'app-error',
+      expect.objectContaining({ message: '数据校验失败，请检查输入内容' }),
     );
   });
 });

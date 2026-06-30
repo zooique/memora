@@ -18,9 +18,13 @@ import type { UIManager } from '../ui.js';
 import { setButtonLoading, showPanelLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
+// P1 类型统一：感知数据 Payload 类型从 ipcListeners 导入，消除内联类型重复
+import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload } from '../ipcListeners.js';
 import type { HealthDashboardPayload } from '../../preload.js';
 // 复用内核 getDuplicateRemovalIds 计算待清理 ID
 import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth.js';
+// 复用 sprite 共享时间常量，避免硬编码 24*60*60*1000
+import { MS_PER_DAY } from '../../../sprite/constants.js';
 
 /**
  * 获取当前搜索参数（组合搜索，模块级）
@@ -62,9 +66,9 @@ function applyClientFilters(
   if (params.timeRange) {
     const now = Date.now();
     const rangeMs: Record<string, number> = {
-      '7d': 7 * 24 * 60 * 60 * 1000,
-      '30d': 30 * 24 * 60 * 60 * 1000,
-      '90d': 90 * 24 * 60 * 60 * 1000,
+      '7d': 7 * MS_PER_DAY,
+      '30d': 30 * MS_PER_DAY,
+      '90d': 90 * MS_PER_DAY,
     };
     const cutoff = now - (rangeMs[params.timeRange] || 0);
     result = result.filter((item) => {
@@ -476,7 +480,7 @@ export function createMemoryController(uiManager: UIManager) {
      *
      * 由 affectUpdated 事件驱动，Controller 仅做转发。
      */
-    updateAffectDisplay: (affect: { warmth: number; playfulness: number; directness: number; initiative: number }) => {
+    updateAffectDisplay: (affect: AffectPayload) => {
       uiManager.updateAffectDisplay(affect);
     },
     /**
@@ -484,7 +488,7 @@ export function createMemoryController(uiManager: UIManager) {
      *
      * 由 rapportUpdated 事件驱动，Controller 仅做转发。
      */
-    updateRapportDisplay: (rapport: { trust: number; familiarity: number; level: string; description: string }) => {
+    updateRapportDisplay: (rapport: RapportPayload) => {
       uiManager.updateRapportDisplay(rapport);
     },
     /**
@@ -492,7 +496,7 @@ export function createMemoryController(uiManager: UIManager) {
      *
      * 由 contextUpdated 事件驱动，Controller 仅做转发。
      */
-    updateContextDisplay: (context: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string }) => {
+    updateContextDisplay: (context: ContextPayload) => {
       uiManager.updateContextDisplay(context);
     },
     /**
@@ -500,7 +504,7 @@ export function createMemoryController(uiManager: UIManager) {
      *
      * 由 patternsUpdated 事件驱动，Controller 仅做转发。
      */
-    updatePatternsDisplay: (payload: { patterns: Array<{ type: string; summary: string; confidence: number; suggestion?: string }> }) => {
+    updatePatternsDisplay: (payload: PatternsPayload) => {
       uiManager.updatePatternsDisplay(payload);
     },
     /**

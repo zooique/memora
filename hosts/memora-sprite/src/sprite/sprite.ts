@@ -34,6 +34,7 @@ import type { ContextState } from './controllers/contextAwareness.js';
 import { PatternDetector } from './controllers/patternDetector.js';
 import type { DetectedPattern } from './controllers/patternDetector.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
+import { DEFAULT_LIST_LIMIT, MS_PER_HOUR, MS_PER_DAY } from './constants.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
 export type SpriteState = 'idle' | 'active';
@@ -1069,7 +1070,7 @@ export class Sprite {
    */
   private deriveAndInjectRapport(): string {
     // 获取所有记忆用于推导
-    const memories = this.agent.memory?.list(1000) ?? [];
+    const memories = this.agent.memory?.list(DEFAULT_LIST_LIMIT) ?? [];
 
     // 计算交互天数（从最早记忆的创建时间推算）
     const interactionDays = this.calculateInteractionDays(memories);
@@ -1104,7 +1105,7 @@ export class Sprite {
       const ts = new Date(m.createdAt).getTime();
       return ts < min ? ts : min;
     }, Date.now());
-    return Math.floor((Date.now() - oldestTimestamp) / (1000 * 60 * 60 * 24));
+    return Math.floor((Date.now() - oldestTimestamp) / MS_PER_DAY);
   }
 
   /**
@@ -1253,9 +1254,8 @@ export class Sprite {
     if (!lastInteraction) return ''; // 首次交互，无历史
 
     const gapMs = Date.now() - lastInteraction.getTime();
-    const ONE_HOUR_MS = 60 * 60 * 1000;
 
-    if (gapMs < ONE_HOUR_MS) return ''; // 间隔太短，不需要跨会话上下文
+    if (gapMs < MS_PER_HOUR) return ''; // 间隔太短，不需要跨会话上下文
 
     // 获取最近的记忆（按创建时间排序，最新的在前）
     const memories = this.agent.memory?.list(50) ?? [];
@@ -1264,7 +1264,7 @@ export class Sprite {
     // 提取上次交互以来的记忆
     const recentMemories = memories.filter((m) => {
       const createdMs = new Date(m.createdAt).getTime();
-      return (Date.now() - createdMs) < gapMs + ONE_HOUR_MS * 2;
+      return (Date.now() - createdMs) < gapMs + MS_PER_HOUR * 2;
     });
 
     // 取最近 5 条关键记忆作为上下文
@@ -1272,7 +1272,7 @@ export class Sprite {
     if (keyMemories.length === 0) return '';
 
     // 生成时间间隔描述
-    const gapHours = Math.round(gapMs / ONE_HOUR_MS);
+    const gapHours = Math.round(gapMs / MS_PER_HOUR);
     const gapText = gapHours < 24
       ? `${gapHours} 小时`
       : `${Math.round(gapHours / 24)} 天`;

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * JSONL 追加写入器 — 公共基础设施
  *
  * 为 auditManager 和 spriteTracer 提供统一的 JSONL 写入 + 截断能力。
@@ -17,6 +17,7 @@ import { appendFile, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { logger, toError } from 'memora';
+import { DEFAULT_MAX_ENTRIES } from '../constants.js';
 
 /** JSONL 追加写入器配置 */
 export interface JsonlAppenderOptions {
@@ -56,7 +57,7 @@ export class JsonlAppender {
 
   constructor(options: JsonlAppenderOptions) {
     this.filePath = options.filePath;
-    this.maxEntries = options.maxEntries ?? 1000;
+    this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.truncateCheckInterval = options.truncateCheckInterval ?? 100;
     // P2-INIT-01 构造函数中确保目录存在，防止首次 append 时 ENOENT 静默失败
     // 同步执行：仅在初始化时执行一次，mkdirSync recursive 是幂等的
