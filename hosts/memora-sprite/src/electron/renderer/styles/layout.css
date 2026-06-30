@@ -422,7 +422,8 @@
 .nav-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  position: relative; /* B4：为 ::after tooltip 提供定位锚点 */
   padding: 10px;
   border: none;
   border-radius: var(--radius-md);
@@ -454,10 +455,27 @@
   flex-shrink: 0;
 }
 
-/* 图标模式：隐藏文字标签 */
-.nav-btn .nav-label {
-  display: none;
+/* B4：侧边栏 tooltip 改 CSS ::after（对齐 demo v3，替代原生 title 属性） */
+/* 使用 data-tooltip 属性存储提示文本，hover 时通过 ::after 伪元素渲染 */
+.nav-btn::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  background: var(--surface1);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 50;
+  box-shadow: var(--shadow-sm);
 }
+.nav-btn:hover::after { opacity: 1; }
 
 /* ─── 精灵状态指示器（侧边栏底部小圆点） ─────────────────── */
 /* 颜色语义：蓝=正常/黄=思考中/绿=有主动提示；margin-top:auto 推到底部 */
