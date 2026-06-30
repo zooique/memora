@@ -22,7 +22,7 @@ import {
   FLOAT_SIZE,
   FULL_SIZE,
   DEFAULT_FLOAT_POSITION,
-} from '../../electron/windows/windowState.js';
+} from '../../../electron/windows/windowState.js';
 import type { BrowserWindow } from 'electron';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

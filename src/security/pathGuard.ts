@@ -1,35 +1,88 @@
 /**
  * 路径白名单 + 审计日志
  *
- * 4 类允许 + 12 类禁止
+ * 4 类允许根 + 27 类禁止规则
  * 详见 ADR-006 · 安全模型
  * 阶段二新增：M-101 写入二次确认 + M-105 审计日志
+ * SEC-06（自动安全）：补全 Windows/Linux 系统目录 + 包管理器凭证 + 符号链接逃逸防护
  */
-import { resolve, sep } from 'node:path';
+import { resolve, sep, dirname, basename, join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { logger } from '@/logging/logger.js';
 import { securityError, toError } from '@/utils/errors.js';
 import { expandHome } from '@/utils/path.js';
 
+/**
+ * 解析路径的真实绝对路径（解析符号链接链）
+ *
+ * 安全考量：若不解析符号链接，攻击者可在项目内放置指向 /etc 的符号链接，
+ * 绕过白名单前缀匹配访问任意系统目录（P0 符号链接逃逸漏洞）。
+ *
+ * 策略：
+ * - 路径存在时：realpathSync 解析完整符号链接链
+ * - 路径不存在时（写入新文件场景）：逐级向上查找已存在的父目录并 realpath，再拼接不存在部分
+ * - 全程不存在时：回退到 resolve()（白名单/黑名单仍会兜底校验）
+ *
+ * @param p 任意路径（相对或绝对）
+ * @returns 解析符号链接后的真实绝对路径
+ */
+function resolveRealpath(p: string): string {
+  const resolved = resolve(p);
+  try {
+    return realpathSync(resolved);
+  } catch {
+    // 路径不存在 - 递归解析已存在的父目录
+    const parent = dirname(resolved);
+    const base = basename(resolved);
+    try {
+      const realParent = realpathSync(parent);
+      return join(realParent, base);
+    } catch {
+      // 父目录也不存在 - 继续向上递归
+      const realGrandParent = resolveRealpath(parent);
+      return join(realGrandParent, base);
+    }
+  }
+}
+
 const BLOCKED_PATTERNS = [
-  // 系统凭证
+  // ─── 系统凭证文件（跨平台，路径段匹配）───
   /(^|[\\/])\.ssh([\\/]|$)/i,
   /(^|[\\/])\.gnupg([\\/]|$)/i,
   /(^|[\\/])\.netrc$/i,
   /(^|[\\/])\.pgpass$/i,
-  /[\\/]etc[\\/]passwd/i,
-  // 云服务凭证
+  // ─── 包管理器凭证（SEC-06 补全）───
+  /(^|[\\/])\.gitconfig$/i, // Git 配置（可能含 credential helper token）
+  /(^|[\\/])\.git-credentials$/i, // Git credential store 明文存储
+  /(^|[\\/])\.npmrc$/i, // npm authToken
+  /(^|[\\/])\.pypirc$/i, // PyPI 上传凭证
+  /(^|[\\/])\.gem[\\/]credentials$/i, // RubyGems push 凭证
+  /(^|[\\/])\.composer[\\/]auth\.json$/i, // Composer 凭证
+  /(^|[\\/])\.htpasswd$/i, // Apache Basic Auth 凭证
+  // ─── Linux/macOS 特定凭证文件（向后兼容保留）───
+  /[\\/]etc[\\/]passwd/i, // 用户密码哈希
+  /[\\/]etc[\\/]shadow/i,
+  /[\\/]etc[\\/]gshadow/i, // 组密码哈希
+  /[\\/]etc[\\/]sudoers/i, // sudo 配置
+  // ─── 云服务凭证 ───
   /(^|[\\/])\.aws([\\/]|$)/i,
   /(^|[\\/])\.azure([\\/]|$)/i,
   /(^|[\\/])\.docker([\\/]|$)/i,
   /(^|[\\/])\.kube([\\/]|$)/i,
-  /[\\/]gcloud([\\/]|$)/i,
-  // 仅拦截纯 `.env`、`.env.<name>`（name 不含 .）。
-  /(^|[\\/])\.env$|(^|[\\/])\.env\.[^\\/.]+$/i,
-  // 系统目录
-  /[\\/]system32([\\/]|$)/i,
-  /[\\/]Windows[\\/]System/i,
+  /(^|[\\/])\.config[\\/]gcloud([\\/]|$)/i, // gcloud 配置（SEC-06 修正：加 .config 前缀边界，避免误拦用户 gcloud-tools 目录）
+  // ─── 环境变量文件（.env / .env.local / .env.production.local 等多段后缀）───
+  /(^|[\\/])\.env(\.[^\\/]+)?$/i,
+  // ─── Windows 系统目录（SEC-06 补全：从仅 system32 扩展到完整系统目录）───
+  /[\\/]Windows([\\/]|$)/i, // C:\Windows（含 System、System32 等子目录）
+  /[\\/]Program Files([\\/]|$)/i, // C:\Program Files
+  /[\\/]Program Files \(x86\)([\\/]|$)/i, // C:\Program Files (x86)
+  /[\\/]ProgramData([\\/]|$)/i, // C:\ProgramData（系统级应用数据）
+  // ─── Linux/macOS 系统目录（根目录锚定 ^/，避免误伤项目内同名目录）───
+  /^\/(etc|usr|bin|sbin|var|root|home|lib|lib64|opt)([\\/]|$)/i,
+  // ─── Linux/macOS 虚拟文件系统 + 启动目录（根目录锚定）───
+  /^\/(proc|sys|boot)([\\/]|$)/i,
 ];
 
 export type Permission = 'owner' | 'guest';
@@ -111,19 +164,20 @@ export class SecurityGuard {
     /** Agent 级数据目录（memora.db/vectors 所在目录） */
     agentDataDir?: string,
   ) {
-    // 构建白名单根目录列表
+    // 构建白名单根目录列表（SEC-06：使用 resolveRealpath 解析符号链接，
+    // 确保白名单基准是真实路径，与 assertPathAllowed 中的 resolveRealpath 对齐）
     this.allowedRoots = [
-      resolve(projectPath),
-      resolve(expandHome(memoraDir)),
+      resolveRealpath(expandHome(projectPath)),
+      resolveRealpath(expandHome(memoraDir)),
     ];
     if (configDir) {
-      this.allowedRoots.push(resolve(expandHome(configDir)));
+      this.allowedRoots.push(resolveRealpath(expandHome(configDir)));
     }
     if (agentDataDir) {
-      this.allowedRoots.push(resolve(expandHome(agentDataDir)));
+      this.allowedRoots.push(resolveRealpath(expandHome(agentDataDir)));
     }
     for (const p of extraAllowedPaths) {
-      this.allowedRoots.push(resolve(expandHome(p)));
+      this.allowedRoots.push(resolveRealpath(expandHome(p)));
     }
   }
 
@@ -171,7 +225,8 @@ export class SecurityGuard {
   assertPathAllowed(absolutePath: string, tool?: string, source?: 'builtin' | 'custom' | 'system'): void {
     // SEC-05: NFKC 规范化，防止全角字符（如 ．．/）绕过黑名单正则
     const normalized = absolutePath.normalize('NFKC');
-    const resolved = resolve(normalized);
+    // SEC-06: resolveRealpath 解析符号链接，防止通过项目内符号链接逃逸到系统目录
+    const resolved = resolveRealpath(normalized);
 
     // 1. 黑名单优先
     for (const pattern of BLOCKED_PATTERNS) {

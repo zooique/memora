@@ -17,6 +17,7 @@ import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
+import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { logger } from '@/logging/logger.js';
 
 export interface AgentLoopOptions {
@@ -401,7 +402,7 @@ export class AgentLoop {
         // 仅在流式输出前失败时重试（streamStarted = false）
         const delay = LOOP_CONSTANTS.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
         logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
-        await new Promise((r) => setTimeout(r, delay));
+        await new Promise<void>((r) => safeSetTimeout(r, delay));
         fullContent = '';
         toolCalls = undefined;
       }

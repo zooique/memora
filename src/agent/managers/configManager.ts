@@ -31,8 +31,13 @@ import { logger } from '@/logging/logger.js';
  * - confirmConfigSuggestion() 写入配置文件（持久化，重启后依然生效）
  */
 export interface ConfigSuggestion {
-  /** 建议类型 */
-  type: 'rule' | 'persona' | 'skill';
+  /**
+   * 建议类型（开放字符串，对齐 ADR-004 基元驱动模型）
+   *
+   * 约定值：'rule' | 'persona' | 'skill'（由 sourceMap 映射到 SOURCE_LABELS）
+   * 扩展值：任意字符串，需配合 `memorySource` 字段直接指定记忆 source 标签
+   */
+  type: string;
   /** 建议名称（如"代码风格"、"TypeScript 偏好"） */
   name: string;
   /** 建议内容（Markdown 格式） */
@@ -41,6 +46,12 @@ export interface ConfigSuggestion {
   confidence: number;
   /** 建议来源（如对话摘要、用户画像分析） */
   source?: string;
+  /**
+   * 可选：直接指定记忆 source 标签（绕过 sourceMap）
+   *
+   * 当 type 不在约定值内时，必须提供此字段，否则 confirmConfigSuggestion 抛 configError。
+   */
+  memorySource?: string;
 }
 
 /** 配置建议回调函数类型 */
@@ -99,13 +110,24 @@ export class ConfigManager {
       ]);
     }
 
-    // 根据建议类型映射到 source 标签
-    const sourceMap: Record<ConfigSuggestion['type'], string> = {
+    // 根据建议类型映射到 source 标签（ADR-004：开放字符串，约定值走 sourceMap，扩展值走 memorySource）
+    const sourceMap: Record<string, string> = {
       rule: SOURCE_LABELS.RULE,
       persona: SOURCE_LABELS.PERSONA,
       skill: SOURCE_LABELS.SKILL,
     };
-    const source = sourceMap[suggestion.type];
+    // 优先级：memorySource（扩展值）> sourceMap[type]（约定值）
+    const source = suggestion.memorySource ?? sourceMap[suggestion.type];
+    if (!source) {
+      throw configError(
+        '无法确定配置建议的 source 标签',
+        `type='${suggestion.type}' 不在约定值（rule/persona/skill）内，且未提供 memorySource 字段`,
+        [
+          '使用约定 type 值（rule/persona/skill）',
+          '或提供 memorySource 字段指定自定义 source 标签',
+        ],
+      );
+    }
 
     // 构造记忆对象并写入配置文件（真理源）
     // 不写入 SQLite——遵守"配置文件是真理源"约束

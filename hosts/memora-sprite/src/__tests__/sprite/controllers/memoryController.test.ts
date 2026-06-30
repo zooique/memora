@@ -1,4 +1,4 @@
-/**
+﻿/**
  * MemoryController 单元测试（QC-TEST-MEM）
  *
  * 覆盖范围：
@@ -20,7 +20,7 @@
  * - 禁止 @ts-ignore / as any / as unknown as，使用 Partial<T> as T 单层断言
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryController } from '../../sprite/controllers/memoryController.js';
+import { MemoryController } from '../../../sprite/controllers/memoryController.js';
 import type {
   Agent,
   Memory,

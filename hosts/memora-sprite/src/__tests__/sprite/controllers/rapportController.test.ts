@@ -16,8 +16,8 @@
  *   - 禁止 @ts-ignore / as any
  */
 import { describe, it, expect } from 'vitest';
-import { RapportController } from '../../sprite/controllers/rapportController.js';
-import type { RapportControllerOptions, RapportState } from '../../sprite/controllers/rapportController.js';
+import { RapportController } from '../../../sprite/controllers/rapportController.js';
+import type { RapportControllerOptions, RapportState } from '../../../sprite/controllers/rapportController.js';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
 

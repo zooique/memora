@@ -8,6 +8,7 @@ import { LlmProvider } from '@/llm/provider.js';
 import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
+import { safeSetTimeout } from '@/utils/safeTimer.js';
 
 // 预设 Provider 的默认 baseUrl 和 model（开箱即用）
 const presets: Record<string, { baseUrl: string; defaultModel: string }> = {
@@ -140,7 +141,7 @@ class MockProvider extends LlmProvider {
 
     for (const char of reply) {
       yield { content: char };
-      await new Promise((r) => setTimeout(r, 5));
+      await new Promise<void>((r) => safeSetTimeout(r, 5));
     }
     yield { finishReason: 'stop' as const };
   }

@@ -35,6 +35,12 @@ export const AGENT_CONSTANTS = {
 
   /** recallExcludeSources 默认值——永久记忆不参与增量召回。 */
   DEFAULT_RECALL_EXCLUDE_SOURCES: ['persona', 'rule', 'skill'] as const,
+
+  /**
+   * systemPrompt 时间注入的默认 locale（对齐"核心库领域无关"原则，可被 AssembleInput.locale 覆盖）。
+   * 默认 'zh-CN' 是项目母语，宿主可注入其他 locale 实现国际化。
+   */
+  DEFAULT_LOCALE: 'zh-CN',
 } as const;
 
 /**

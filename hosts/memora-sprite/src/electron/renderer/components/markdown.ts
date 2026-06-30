@@ -12,7 +12,7 @@
  * - 不使用 innerHTML，避免 HTML 注入
  * - 代码块语言标签经过白名单过滤（仅允许字母数字和连字符）
  *
- * 设计契约：docs/memora-sprite-preview.html §6.2 .message-bubble
+ * 设计契约：§6.2 .message-bubble
  * 精灵消息使用系统字体栈（--font-sprite），代码块使用等宽字体
  */
 

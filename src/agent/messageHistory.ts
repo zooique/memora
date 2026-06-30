@@ -10,6 +10,7 @@
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
+import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { nowIso, todayDate } from '@/utils/time.js';
 
 /**
@@ -328,7 +329,7 @@ export class MessageHistory {
 
       // 有挂起任务 → 等所有 settle
       const timeout = new Promise<void>((resolve) =>
-        setTimeout(resolve, Math.max(50, deadline - Date.now())),
+        safeSetTimeout(resolve, Math.max(50, deadline - Date.now())),
       );
       await Promise.race([Promise.allSettled(current), timeout]);
 

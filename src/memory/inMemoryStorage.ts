@@ -13,6 +13,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { validateSource } from '@/memory/types.js';
 import { segmentText } from '@/utils/segmenter.js';
+import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { applyDecayToMemory } from '@/memory/recall.js';
 
@@ -33,12 +34,20 @@ export class InMemoryStorage implements IMemoryStorage {
    * 插入或更新记忆
    *
    * 自动校验 source 字段，对疑似 typo 发出警告日志。
-   * P2-2 增量维护 sourceCountCache：更新时旧 source 减 1、新 source 加 1。
+   * P2-2 增量维护 sourceCountCache：
+   *   - 新增：source 计数 +1
+   *   - 更新同 source：计数不变
+   *   - 更新换 source：旧 source -1、新 source +1
    */
   upsert(memory: Memory): void {
     const result = validateSource(memory.source);
     if (result.severity === 'block') {
-      throw new Error(`source 校验失败（拒绝写入）：${result.warning}`);
+      // 裸 throw 改用 configError 工厂（Iter-1：错误处理统一）
+      throw configError(
+        'source 校验失败，拒绝写入',
+        result.warning,
+        ['请检查 source 字段是否拼写正确', '参考 ADR-004 source 开放字符串规范'],
+      );
     }
     if (result.severity === 'warn' && result.warning) {
       logger.warn(
@@ -46,14 +55,18 @@ export class InMemoryStorage implements IMemoryStorage {
         'source 校验警告',
       );
     }
-    // P2-2 增量维护 source 缓存：若为更新（id 已存在），先减旧 source 计数
+    // P2-2 增量维护 source 缓存：判断是否新增或 source 变化
     const existing = this.memories.get(memory.id);
+    const sourceChanged = !existing || existing.source !== memory.source;
     if (existing && existing.source !== memory.source) {
+      // 更新换 source：旧 source 减 1
       this.decrementSourceCount(existing.source);
     }
     this.memories.set(memory.id, { ...memory });
-    // P2-2 增量维护 source 缓存：新 source 加 1
-    this.incrementSourceCount(memory.source);
+    // 只有新增或 source 变化时才加计数（同 id 同 source 更新不变）
+    if (sourceChanged) {
+      this.incrementSourceCount(memory.source);
+    }
   }
 
   /**

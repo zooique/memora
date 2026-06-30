@@ -9,5 +9,10 @@
     "sourceMap": true
   },
   "include": ["src/electron/**/*"],
-  "exclude": ["node_modules", "dist", "dist-electron"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "dist-electron",
+    "src/electron/preload.ts"
+  ]
 }

@@ -23,7 +23,7 @@ const { mockHandle } = vi.hoisted(() => ({
   mockHandle: vi.fn(),
 }));
 
-vi.mock('../../electron/errorHandler.js', () => ({
+vi.mock('../../../electron/errorHandler.js', () => ({
   errorHandler: {
     handle: mockHandle,
   },
@@ -35,8 +35,8 @@ vi.mock('../../electron/errorHandler.js', () => ({
 }));
 
 // 导入被测函数（在 mock 之后）
-import { safeHandle } from '../../electron/ipc/types.js';
-import { ErrorCode } from '../../electron/errorHandler.js';
+import { safeHandle } from '../../../electron/ipc/types.js';
+import { ErrorCode } from '../../../electron/errorHandler.js';
 
 describe('safeHandle', () => {
   beforeEach(() => {

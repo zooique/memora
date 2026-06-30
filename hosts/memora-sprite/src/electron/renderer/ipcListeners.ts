@@ -23,7 +23,7 @@ import { reportError } from './helpers/errorHelpers.js';
 /**
  * 主动提示 payload 结构
  *
- * 对齐 docs/memora-sprite-preview.html §6.6：
+ * 对齐设计契约 §6.6：
  * - prompt：提示文本
  * - triggers：触发原因列表
  * - silent：是否静默模式（静默时不弹窗，仅更新托盘数字）
@@ -158,7 +158,7 @@ export function isWorkProjectionUpdatedPayload(value: unknown): value is WorkPro
 /**
  * 处理主动提示事件
  *
- * 对齐 docs/memora-sprite-preview.html §6.6：
+ * 对齐设计契约 §6.6：
  * - 静默模式：仅更新托盘数字，不打扰用户
  * - 非静默模式：确保对话面板可见，然后显示蓝粉渐变 banner
  *
@@ -493,7 +493,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   /**
    * 精灵事件监听
    *
-   * 对齐 docs/memora-sprite-preview.html：
+   * 对齐 ：
    * - §6.3 memoryNoticed/insightGained → 仪表盘计数 +1 动画
    * - §6.6 proactivePrompt → 顶部滑入蓝粉渐变 banner（非静默模式）
    *

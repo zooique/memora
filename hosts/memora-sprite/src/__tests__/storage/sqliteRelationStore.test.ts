@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SqliteRelationStore 测试
  *
  * 使用 node:sqlite（Node 22+ 内置）作为 better-sqlite3 的测试替身，
@@ -13,7 +13,7 @@
  * - 持久化（建表+索引）
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createMemoryDatabase } from './helpers/nodeSqliteDatabase.js';
+import { createMemoryDatabase } from './nodeSqliteDatabase.js';
 import { SqliteRelationStore } from '../../storage/sqliteRelationStore.js';
 import { RELATION_TYPES, RELATION_WEIGHTS } from 'memora';
 import type { MemoryRelation } from 'memora';

@@ -36,7 +36,7 @@ vi.mock('electron', () => ({
 }));
 
 // ─── Mock errorHandler 模块（CONFIG_UPDATE catch 块调用 errorHandler.handle） ────
-vi.mock('../../electron/errorHandler.js', () => ({
+vi.mock('../../../electron/errorHandler.js', () => ({
   errorHandler: {
     handle: vi.fn(),
   },
@@ -46,9 +46,9 @@ vi.mock('../../electron/errorHandler.js', () => ({
   },
 }));
 
-import { registerConfigHandlers, scheduleSilentRecovery } from '../../electron/ipc/configHandlers.js';
-import { IPC_CHANNELS } from '../../electron/ipc/channels.js';
-import type { IpcContext } from '../../electron/ipc/types.js';
+import { registerConfigHandlers, scheduleSilentRecovery } from '../../../electron/ipc/configHandlers.js';
+import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
+import type { IpcContext } from '../../../electron/ipc/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

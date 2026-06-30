@@ -10,7 +10,7 @@
  * 零依赖纯逻辑测试。
  */
 import { describe, it, expect } from 'vitest';
-import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../electron/ipc/channels.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../../electron/ipc/channels.js';
 
 // ─── IPC_CHANNELS（渲染 → 主进程） ───────────────────────
 

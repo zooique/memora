@@ -1,12 +1,13 @@
 /**
  * 单元测试：路径白名单
  * 验证安全模块的拒绝/允许逻辑
+ * SEC-06（自动安全）：补充符号链接逃逸 + 包管理器凭证 + 系统目录覆盖测试
  */
 import { describe, expect, it, beforeEach } from 'vitest';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 
 describe('SecurityGuard · 路径白名单', () => {
   let projectPath: string;
@@ -129,6 +130,120 @@ describe('SecurityGuard · 路径白名单', () => {
     const guard2 = new SecurityGuard(projectPath, dataDir, [extraPath]);
     const filePath = join(extraPath, 'docs.md');
     expect(() => guard2.assertPathAllowed(filePath)).not.toThrow();
+  });
+
+  // ─── SEC-06：包管理器凭证文件拦截 ──────────────────────
+
+  it('应该拒绝 .gitconfig 文件', () => {
+    const filePath = join(projectPath, '.gitconfig');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .git-credentials 文件', () => {
+    const filePath = join(projectPath, '.git-credentials');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .npmrc 文件', () => {
+    const filePath = join(projectPath, '.npmrc');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .pypirc 文件', () => {
+    const filePath = join(projectPath, '.pypirc');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .htpasswd 文件', () => {
+    const filePath = join(projectPath, '.htpasswd');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  // ─── SEC-06：环境变量文件多段后缀拦截 ──────────────────
+
+  it('应该拒绝 .env.production.local 等多段后缀文件', () => {
+    // 旧正则 [^\\/.]+ 不允许后缀含 .，导致 .env.production.local 被绕过
+    const filePath = join(projectPath, '.env.production.local');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 .env.development.example 文件', () => {
+    const filePath = join(projectPath, '.env.development.example');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  // ─── SEC-06：Windows 系统目录覆盖 ──────────────────────
+
+  it('应该拒绝 C:\\Windows 直接子文件（非仅 System32）', () => {
+    const filePath = 'C:\\Windows\\win.ini';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 C:\\Program Files 路径', () => {
+    const filePath = 'C:\\Program Files\\app\\config.exe';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 C:\\Program Files (x86) 路径', () => {
+    const filePath = 'C:\\Program Files (x86)\\app\\config.exe';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该拒绝 C:\\ProgramData 路径', () => {
+    const filePath = 'C:\\ProgramData\\app\\secret.dat';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  // ─── SEC-06：Linux/macOS 系统目录覆盖（根目录锚定）───
+  // 跨平台兼容：Linux 上 ^/ 黑名单拦截，Windows 上被白名单越界拦截（C:\usr 不是系统目录）
+  // 两种拒绝都验证了路径被正确阻止
+
+  it('应该拒绝 /usr 目录（非仅 /etc/passwd）', () => {
+    const filePath = '/usr/bin/python3';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单|越界/);
+  });
+
+  it('应该拒绝 /var 目录（非仅 /var/log）', () => {
+    const filePath = '/var/lib/mysql/data';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单|越界/);
+  });
+
+  it('应该拒绝 /root 目录', () => {
+    const filePath = '/root/.bashrc';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单|越界/);
+  });
+
+  it('应该拒绝 /home 目录', () => {
+    const filePath = '/home/otheruser/.ssh/id_rsa';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单|越界/);
+  });
+
+  it('应该拒绝 /etc 目录（整体拦截，非仅 passwd/shadow）', () => {
+    const filePath = '/etc/nginx/nginx.conf';
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单|越界/);
+  });
+
+  // ─── SEC-06：符号链接逃逸防护（P0 安全漏洞）────────────
+
+  it('应该拒绝通过项目内符号链接逃逸到项目外目录', () => {
+    // 攻击场景：项目内存在指向项目外的符号链接，read_file 通过该链接读取敏感文件
+    // 旧实现 resolve() 不解析符号链接，白名单前缀匹配会误判为允许
+    const evilDir = mkdtempSync(join(tmpdir(), 'memora-evil-'));
+    // 在 evilDir 中放置一个文件（确保 realpath 有解析目标）
+    writeFileSync(join(evilDir, 'secret.txt'), 'stolen');
+    const symlinkPath = join(projectPath, 'evil-link');
+    let symlinkCreated = false;
+    try {
+      symlinkSync(evilDir, symlinkPath);
+      symlinkCreated = true;
+    } catch {
+      // Windows 无管理员权限/开发者模式时无法创建符号链接，静默跳过
+    }
+    if (!symlinkCreated) return;
+
+    const filePath = join(symlinkPath, 'secret.txt');
+    // 符号链接被 resolveRealpath 解析为 evilDir/secret.txt，不在白名单内
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
   });
 });
 

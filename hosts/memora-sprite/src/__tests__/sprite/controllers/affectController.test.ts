@@ -14,8 +14,8 @@
  * - 禁止 @ts-ignore / as any
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AffectController } from '../../sprite/controllers/affectController.js';
-import type { AffectState } from '../../sprite/controllers/affectController.js';
+import { AffectController } from '../../../sprite/controllers/affectController.js';
+import type { AffectState } from '../../../sprite/controllers/affectController.js';
 import type { Memory, Persona } from 'memora';
 import { setLogger } from 'memora';
 import type { ILogger } from 'memora';

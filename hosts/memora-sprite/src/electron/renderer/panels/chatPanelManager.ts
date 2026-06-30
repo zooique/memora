@@ -400,7 +400,7 @@ export class ChatPanelManager {
   /**
    * 添加消息到界面
    *
-   * 结构对齐 docs/memora-sprite-preview.html §6.2：
+   * 结构对齐设计契约 §6.2：
    *   <div class="message [user|assistant|system]">
    *     <div class="message-avatar">🧚</div>  <!-- 仅 user/assistant -->
    *     <div class="message-bubble">

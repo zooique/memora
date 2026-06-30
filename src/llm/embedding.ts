@@ -14,7 +14,7 @@
  * 详见 ADR-003 · LLM 适配层使用 OpenAI Chat Completions 兼容协议
  */
 import { logger } from '@/logging/logger.js';
-import { networkError, configError, toError } from '@/utils/errors.js';
+import { networkError, configError, llmError, toError } from '@/utils/errors.js';
 
 /**
  * Embedding 配置（与 OpenAICompatibleConfig 共用 baseUrl/apiKey）
@@ -86,7 +86,14 @@ export class EmbeddingProvider {
 
     const results = await this.batchEmbed([text]);
     const first = results[0];
-    if (!first) throw new Error('embed: batchEmbed 返回空结果');
+    if (!first) {
+      // 裸 throw 改用 llmError 工厂（Iter-1：错误处理统一）
+      throw llmError(
+        '嵌入结果为空',
+        'batchEmbed 返回空结果',
+        ['请检查 Embedding 模型配置', '确认 API 返回了有效的向量数据'],
+      );
+    }
     return first.vector;
   }
 

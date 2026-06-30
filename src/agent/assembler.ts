@@ -30,6 +30,7 @@ import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { UIMessages } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { configError } from '@/utils/errors.js';
 
 /** 组装器输入参数 */
@@ -48,6 +49,11 @@ export interface AssembleInput {
   enableContextSummary: boolean;
   /** 已有的 SkillManager（首次为 null，后续复用） */
   existingSkillManager: SkillManager | null;
+  /**
+   * systemPrompt 时间注入的 locale（默认 AGENT_CONSTANTS.DEFAULT_LOCALE = 'zh-CN'）。
+   * 注入此字段可覆盖默认 locale，实现国际化时间格式。
+   */
+  locale?: string;
 }
 
 /** 组装器输出（所有创建的组件引用） */
@@ -97,6 +103,7 @@ export async function assembleComponents(
     messages,
     enableContextSummary,
     existingSkillManager,
+    locale,
   } = input;
 
   // ── Phase 1: 无依赖组件 ──
@@ -135,8 +142,9 @@ export async function assembleComponents(
   if (profilePrompt) systemPrefixParts.push(profilePrompt);
 
   // 注入当前时间（让 Agent 知道实时时间，避免 LLM 知识截止日期滞后）
+  // locale 可通过 AssembleInput.locale 注入（默认 'zh-CN'），实现国际化时间格式
   const now = new Date();
-  const timeStr = now.toLocaleString('zh-CN', {
+  const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

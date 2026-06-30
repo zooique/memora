@@ -19,9 +19,9 @@
  * - 禁止 @ts-ignore / as any / as unknown as
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ProactiveEngine } from '../../sprite/controllers/proactiveEngine.js';
-import type { ProactiveConfig, SpriteEmitter } from '../../sprite/controllers/proactiveEngine.js';
-import type { DashboardData } from '../../sprite/controllers/memoryController.js';
+import { ProactiveEngine } from '../../../sprite/controllers/proactiveEngine.js';
+import type { ProactiveConfig, SpriteEmitter } from '../../../sprite/controllers/proactiveEngine.js';
+import type { DashboardData } from '../../../sprite/controllers/memoryController.js';
 import { setLogger } from 'memora';
 import type { ILogger } from 'memora';
 

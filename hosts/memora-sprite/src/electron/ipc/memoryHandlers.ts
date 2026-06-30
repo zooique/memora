@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆 CRUD IPC 处理器
  *
  * 职责：
@@ -98,8 +98,8 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     safeHandle('批量删除记忆失败', { deleted: 0, total: ids.length }, async () => {
       let deleted = 0;
       for (const id of ids) {
-        // 使用 isValidId 校验（安全规则 § 参数校验）
-        if (typeof id === 'string' && id.length > 0 && id.length <= 500) {
+        // 使用 isValidId 校验（安全规则 § 参数校验，与 MEMORIES_SHOW/DELETE 保持一致）
+        if (isValidId(id)) {
           const result = ctx.sprite.deleteMemory(id);
           if (result) deleted++;
         }

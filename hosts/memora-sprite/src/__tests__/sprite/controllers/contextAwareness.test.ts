@@ -16,7 +16,7 @@
  *   - 使用 import type 分离类型导入
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ContextAwareness } from '../../sprite/controllers/contextAwareness.js';
+import { ContextAwareness } from '../../../sprite/controllers/contextAwareness.js';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
 

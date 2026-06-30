@@ -16,7 +16,7 @@
  *   - 使用 import type 分离类型导入
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PatternDetector } from '../../sprite/controllers/patternDetector.js';
+import { PatternDetector } from '../../../sprite/controllers/patternDetector.js';
 import type { Memory } from 'memora';
 
 // ─── Mock 工厂 ──────────────────────────────────────────

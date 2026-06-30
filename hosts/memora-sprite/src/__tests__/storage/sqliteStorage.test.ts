@@ -1,11 +1,11 @@
-﻿/**
+/**
  * SqliteStorage 测试
  *
  * 使用 node:sqlite（Node 22+ 内置）作为 better-sqlite3 的测试替身，
  * 避免 Electron 项目中 better-sqlite3 ABI 与 Node.js 测试环境不匹配的问题。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createMemoryDatabase } from './helpers/nodeSqliteDatabase.js';
+import { createMemoryDatabase } from './nodeSqliteDatabase.js';
 import { SqliteStorage } from '../../storage/sqliteStorage.js';
 import type { Memory } from 'memora';
 

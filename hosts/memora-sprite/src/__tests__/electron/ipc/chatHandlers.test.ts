@@ -42,7 +42,7 @@ vi.mock('electron', () => ({
 }));
 
 // ─── Mock errorHandler 模块 ─────────────────────────────
-vi.mock('../../electron/errorHandler.js', () => ({
+vi.mock('../../../electron/errorHandler.js', () => ({
   errorHandler: {
     handle: vi.fn(),
   },
@@ -68,15 +68,15 @@ vi.mock('memora', () => ({
 
 // ─── Mock getLocalDate 为固定日期（跨日逻辑测试稳定） ───
 const MOCK_TODAY = '2026-06-26';
-vi.mock('../../sprite/constants.js', () => ({
+vi.mock('../../../sprite/constants.js', () => ({
   getLocalDate: vi.fn(() => MOCK_TODAY),
 }));
 
 // QC-R2-04：handleUserInput 已迁移到 chatStreamHandler.ts，registerChatHandlers 留在 chatHandlers.ts
-import { registerChatHandlers } from '../../electron/ipc/chatHandlers.js';
-import { handleUserInput } from '../../electron/ipc/chatStreamHandler.js';
-import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../electron/ipc/channels.js';
-import type { IpcContext } from '../../electron/ipc/types.js';
+import { registerChatHandlers } from '../../../electron/ipc/chatHandlers.js';
+import { handleUserInput } from '../../../electron/ipc/chatStreamHandler.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../../electron/ipc/channels.js';
+import type { IpcContext } from '../../../electron/ipc/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

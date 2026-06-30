@@ -25,7 +25,7 @@ export class ProactiveBanner {
   /**
    * 显示主动提示 banner
    *
-   * 对齐 docs/memora-sprite-preview.html §6.6：
+   * 对齐设计契约 §6.6：
    * 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作。
    * 里程碑事件使用金色渐变庆祝样式+奖杯图标。
    *

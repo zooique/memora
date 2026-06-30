@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AuditManager 单元测试（QC-TEST-AUDIT）
  *
  * 覆盖范围：
@@ -12,11 +12,11 @@
  *
  * 测试策略：
  * - 使用 tmpdir 真实 I/O（对齐 jsonlAppender 测试模式）
- * - record 是 fire-and-forget（委托 appender.append），用 flushWrites 等待
+ * - record 是 fire-and-forget（委托 appender.append），用 manager.flush() 精确等待写入队列排空
  * - readRecent 是 async，可直接 await
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { AuditManager } from '../../sprite/audit/auditManager.js';
+import { AuditManager } from '../../../sprite/audit/auditManager.js';
 import type { AuditEvent } from 'memora';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync } from 'node:fs';
@@ -27,11 +27,6 @@ function createTmpDir(): string {
   const dir = join(tmpdir(), `memora-audit-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   mkdirSync(dir, { recursive: true });
   return dir;
-}
-
-/** 等待 fire-and-forget 写入完成（record 委托 appender.append，异步） */
-function flushWrites(ms = 50): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** 构造测试用 AuditEvent（补齐 timestamp 字段，record 会覆盖） */
@@ -60,7 +55,7 @@ describe('AuditManager', () => {
   it('record 应追加带 timestamp + sessionId 的完整记录', async () => {
     const manager = new AuditManager(tmpDir);
     manager.record(makeEvent({ type: 'write-confirm', path: '/a/b.txt', tool: 'write_file' }));
-    await flushWrites();
+    await manager.flush();
 
     const records = await manager.readRecent();
     expect(records).toHaveLength(1);
@@ -77,11 +72,11 @@ describe('AuditManager', () => {
   it('record 多次后 readRecent 应返回最新在前', async () => {
     const manager = new AuditManager(tmpDir);
     manager.record(makeEvent({ path: '/path1' }));
-    await flushWrites();
+    await manager.flush();
     manager.record(makeEvent({ path: '/path2' }));
-    await flushWrites();
+    await manager.flush();
     manager.record(makeEvent({ path: '/path3' }));
-    await flushWrites();
+    await manager.flush();
 
     const records = await manager.readRecent();
     expect(records).toHaveLength(3);
@@ -94,7 +89,7 @@ describe('AuditManager', () => {
     const manager = new AuditManager(tmpDir);
     for (let i = 1; i <= 5; i++) {
       manager.record(makeEvent({ path: `/path${i}` }));
-      await flushWrites(20);
+      await manager.flush();
     }
 
     const records = await manager.readRecent(2);
@@ -110,7 +105,7 @@ describe('AuditManager', () => {
     manager.record(makeEvent({ path: '/a' }));
     manager.record(makeEvent({ path: '/b' }));
     manager.record(makeEvent({ path: '/c' }));
-    await flushWrites();
+    await manager.flush();
 
     const records = await manager.readRecent();
     expect(records).toHaveLength(3);
@@ -130,14 +125,14 @@ describe('AuditManager', () => {
   it('不同实例 record 的 sessionId 应不同', async () => {
     const manager1 = new AuditManager(tmpDir);
     manager1.record(makeEvent({ path: '/from-mgr1' }));
-    await flushWrites();
+    await manager1.flush();
 
     // 第二个 manager 写入不同文件（避免并发追加同一文件）
     const tmpDir2 = createTmpDir();
     try {
       const manager2 = new AuditManager(tmpDir2);
       manager2.record(makeEvent({ path: '/from-mgr2' }));
-      await flushWrites();
+      await manager2.flush();
 
       const records1 = await manager1.readRecent();
       const records2 = await manager2.readRecent();
@@ -153,7 +148,7 @@ describe('AuditManager', () => {
     const manager = new AuditManager(tmpDir);
     const before = Date.now();
     manager.record(makeEvent({ path: '/test' }));
-    await flushWrites();
+    await manager.flush();
 
     const records = await manager.readRecent();
     const entry = records[0]!;
@@ -170,7 +165,7 @@ describe('AuditManager', () => {
     // 传入一个明显错误的旧 timestamp
     const oldTimestamp = '2000-01-01T00:00:00.000Z';
     manager.record(makeEvent({ path: '/test', timestamp: oldTimestamp }));
-    await flushWrites();
+    await manager.flush();
 
     const records = await manager.readRecent();
     // record 内部用 new Date().toISOString() 覆盖，不应保留旧值
@@ -183,7 +178,7 @@ describe('AuditManager', () => {
     const manager = new AuditManager(tmpDir);
     manager.record(makeEvent({ path: '/a' }));
     manager.record(makeEvent({ path: '/b' }));
-    await flushWrites();
+    await manager.flush();
 
     await manager.clear();
 
@@ -205,7 +200,7 @@ describe('AuditManager', () => {
         reason: '用户拒绝写入',
       }),
     );
-    await flushWrites();
+    await manager.flush();
 
     const records = await manager.readRecent();
     const entry = records[0]!;
@@ -226,7 +221,7 @@ describe('AuditManager', () => {
     // 此处仅验证构造函数接受 maxEntries 参数不抛错
     manager.record(makeEvent({ path: '/a' }));
     manager.record(makeEvent({ path: '/b' }));
-    await flushWrites();
+    await manager.flush();
 
     const records = await manager.readRecent();
     expect(records.length).toBeGreaterThanOrEqual(2);

@@ -32,9 +32,9 @@ vi.mock('electron', () => ({
 }));
 
 // 导入被测模块（在 mock 之后）
-import { registerMemoryHandlers } from '../../electron/ipc/memoryHandlers.js';
-import { IPC_CHANNELS } from '../../electron/ipc/channels.js';
-import type { IpcContext } from '../../electron/ipc/types.js';
+import { registerMemoryHandlers } from '../../../electron/ipc/memoryHandlers.js';
+import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
+import type { IpcContext } from '../../../electron/ipc/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

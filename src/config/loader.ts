@@ -19,6 +19,16 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { z } from 'zod';
 
+/**
+ * 默认上下文 token 数（120K）
+ *
+ * 模块级常量，消除 schema default 与 DEFAULT_CONFIG 的重复硬编码。
+ * 注意：与 agent/constants.ts 的 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 保持一致，
+ * 但不跨层引用（config/ 不能反向依赖 agent/，详见 backend_layers_rules.md 依赖方向）。
+ * 修改时需同步两处。
+ */
+const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
+
 // 单个 Provider 配置 schema（用于 providers 映射表的值）
 const ProviderConfigSchema = z.object({
   provider: z.string(),
@@ -73,7 +83,7 @@ const ConfigSchema = z.object({
   }),
   memory: z.object({
     dataDir: z.string().default('~/.memora'),
-    maxContextTokens: z.number().default(120000),
+    maxContextTokens: z.number().default(DEFAULT_MAX_CONTEXT_TOKENS),
   }),
   security: z.object({
     permission: z.enum(['owner', 'guest']).default('owner'),
@@ -108,7 +118,7 @@ const DEFAULT_CONFIG: Config = {
   },
   memory: {
     dataDir: '~/.memora',
-    maxContextTokens: 120000,
+    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
   },
   security: {
     permission: 'owner',

@@ -31,9 +31,9 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { registerSuggestionHandlers } from '../../electron/ipc/suggestionHandlers.js';
-import { IPC_CHANNELS } from '../../electron/ipc/channels.js';
-import type { IpcContext } from '../../electron/ipc/types.js';
+import { registerSuggestionHandlers } from '../../../electron/ipc/suggestionHandlers.js';
+import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
+import type { IpcContext } from '../../../electron/ipc/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

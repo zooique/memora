@@ -74,7 +74,7 @@ vi.mock('memora', () => ({
 }));
 
 // ─── Mock errorHandler ──────────────────────────────────
-vi.mock('../../electron/errorHandler.js', () => ({
+vi.mock('../../../electron/errorHandler.js', () => ({
   errorHandler: mockErrorHandler,
   ErrorCode: {
     UNKNOWN: 'UNKNOWN',
@@ -84,27 +84,27 @@ vi.mock('../../electron/errorHandler.js', () => ({
 
 // ─── Mock spriteConfig ─────────────────────────────────
 
-vi.mock('../../sprite/spriteConfig.js', () => ({
+vi.mock('../../../sprite/spriteConfig.js', () => ({
   loadSpriteConfig: vi.fn(() => mockLoadSpriteConfig()),
   DEFAULT_SPRITE_CONFIG,
 }));
 
 // ─── Mock spriteConfigStore ─────────────────────────────
-vi.mock('../../storage/spriteConfigStore.js', () => ({
+vi.mock('../../../storage/spriteConfigStore.js', () => ({
   spriteConfigStore: mockSpriteConfigStore,
 }));
 
 // ─── Mock index（宿主入口） ──────────────────────────────
 
-vi.mock('../../index.js', () => ({
+vi.mock('../../../index.js', () => ({
   saveLlmConfig: mockSaveLlmConfig,
   reinitAgent: mockReinitAgent,
   PROVIDER_PRESETS,
 }));
 
-import { registerMinimalIpcHandlers } from '../../electron/ipc/minimalHandlers.js';
-import { IPC_CHANNELS } from '../../electron/ipc/channels.js';
-import type { MinimalIpcState, MinimalIpcCallbacks } from '../../electron/ipc/minimalHandlers.js';
+import { registerMinimalIpcHandlers } from '../../../electron/ipc/minimalHandlers.js';
+import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
+import type { MinimalIpcState, MinimalIpcCallbacks } from '../../../electron/ipc/minimalHandlers.js';
 import { createProviderFromConfig } from 'memora';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

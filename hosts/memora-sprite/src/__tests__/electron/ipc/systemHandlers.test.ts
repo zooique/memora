@@ -47,9 +47,9 @@ vi.mock('memora', () => ({
   },
 }));
 
-import { registerSystemHandlers } from '../../electron/ipc/systemHandlers.js';
-import { IPC_CHANNELS } from '../../electron/ipc/channels.js';
-import type { IpcContext } from '../../electron/ipc/types.js';
+import { registerSystemHandlers } from '../../../electron/ipc/systemHandlers.js';
+import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
+import type { IpcContext } from '../../../electron/ipc/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

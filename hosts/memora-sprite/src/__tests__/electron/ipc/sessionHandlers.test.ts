@@ -34,7 +34,7 @@ vi.mock('electron', () => ({
 }));
 
 // ─── Mock errorHandler 模块 ─────────────────────────────
-vi.mock('../../electron/errorHandler.js', () => ({
+vi.mock('../../../electron/errorHandler.js', () => ({
   errorHandler: {
     handle: vi.fn(),
   },
@@ -46,14 +46,14 @@ vi.mock('../../electron/errorHandler.js', () => ({
 
 // ─── Mock getLocalDate 为固定日期（跨日逻辑测试稳定） ───
 const MOCK_TODAY = '2026-06-26';
-vi.mock('../../sprite/constants.js', () => ({
+vi.mock('../../../sprite/constants.js', () => ({
   getLocalDate: vi.fn(() => MOCK_TODAY),
 }));
 
-import { registerSessionHandlers } from '../../electron/ipc/sessionHandlers.js';
-import { IPC_CHANNELS } from '../../electron/ipc/channels.js';
-import type { IpcContext } from '../../electron/ipc/types.js';
-import type { SessionMessage } from '../../storage/sessionStore.js';
+import { registerSessionHandlers } from '../../../electron/ipc/sessionHandlers.js';
+import { IPC_CHANNELS } from '../../../electron/ipc/channels.js';
+import type { IpcContext } from '../../../electron/ipc/types.js';
+import type { SessionMessage } from '../../../storage/sessionStore.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 

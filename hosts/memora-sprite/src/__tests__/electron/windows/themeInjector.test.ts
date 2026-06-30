@@ -13,7 +13,7 @@
  * - executeJavaScript 返回 Promise 以测试 catch 降级路径
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { injectThemeScript } from '../../electron/windows/themeInjector.js';
+import { injectThemeScript } from '../../../electron/windows/themeInjector.js';
 import type { WebContents } from 'electron';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

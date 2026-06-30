@@ -7,10 +7,12 @@
 
 /* ─── 记忆抽屉内容 ─────────────────────────────────────────── */
 /* 抽屉容器样式（定位/动画）由 layout.css .drawer 类控制 */
-/* #panel-memories 作为抽屉内容容器，填满抽屉 */
+/* #panel-memories 作为抽屉内容容器，填满抽屉并纵向排列子元素 */
 #panel-memories {
   height: 100%;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* v8：面板头部 44px（与chat-toolbar一致），border-bottom分隔线 */
@@ -23,6 +25,12 @@
   background: transparent;
   border-bottom: 1px solid var(--surface2);
   flex-shrink: 0;
+}
+
+/* 抽屉头部紧凑适配：360px 宽度减少 padding 和 gap */
+.drawer-header {
+  padding: 0 12px;
+  gap: 8px;
 }
 
 /* UI-AUDIT-LAYOUT: 面板标题（"记忆"），与对话面板.toolbar-title风格一致 */

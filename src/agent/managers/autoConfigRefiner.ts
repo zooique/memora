@@ -22,9 +22,10 @@ export interface AutoConfigRefinerOptions {
   maxSuggestions?: number;
 }
 
-/** LLM 返回的建议结构 */
+/** LLM 返回的建议结构（type 开放字符串，对齐 ADR-004） */
 interface RawSuggestion {
-  type: 'rule' | 'persona' | 'skill';
+  /** 建议类型（约定值：rule/persona/skill，LLM prompt 引导但不强制） */
+  type: string;
   name: string;
   content: string;
   confidence: number;

@@ -1,49 +1,20 @@
 /**
- * Memora 精灵 — 设置模态窗口样式
+ * Memora 精灵 — 设置面板样式
  *
- * 包含：模态窗口容器、垂直 tab 导航、表单输入、下拉框、复选框、
+ * 包含：面板容器、垂直 tab 导航、表单输入、下拉框、复选框、
  *       单选组、操作按钮区、API Key 显示/隐藏切换、提示文字。
  */
 
-/* ─── 设置模态窗口（640×520px，垂直 tab 导航） ─────────── */
-/* 模态背景和动画由 .modal 类统一控制（见 modal.css） */
-/* 设置模态内容区：覆盖默认 .modal-content 宽度，使用 640×520px */
-.settings-modal-content {
-  width: 640px;
-  height: 520px;
-  max-width: 90vw;
-  max-height: 85vh;
-}
+/* ─── 设置面板（核心区域内，垂直 tab 导航） ─────────── */
+/* #panel-settings 作为 .panel 由 layout.css 控制面板显隐 */
 
-/* 模态头部：标题 + 关闭按钮 */
-.settings-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--surface2);
-  flex-shrink: 0;
-}
-
-.settings-modal-header h3 {
-  font-size: var(--font-md);
-  font-weight: 600;
-  color: var(--text);
-  margin: 0;
-}
-
-/* 模态主体：左侧垂直 tab + 右侧内容区，flex 横向布局 */
-.settings-modal-body {
+/* 面板主体：左侧垂直 tab + 右侧内容区，flex 横向布局，填充面板剩余空间 */
+.settings-panel-body {
   flex: 1;
   display: flex;
   overflow: hidden;
+  min-height: 0;
 }
-
-/* ─── UI-UX-01 设置模态顶部区域（统一设计） ─── */
-/* 合并状态指示器与模式提示，减少视觉层级 */
-
-/* ─── P3-FLOW-10 Agent 连接状态指示器 ─── */
-/* 显示在设置模态底部左侧，三态颜色：ready 绿 / error 红 / unknown 灰 */
 .agent-status-indicator {
   display: flex;
   align-items: center;

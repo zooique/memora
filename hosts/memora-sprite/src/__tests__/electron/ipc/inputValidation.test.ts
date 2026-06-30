@@ -22,7 +22,7 @@ import {
   isValidPersonaName,
   isValidFilePath,
   isPathAllowed,
-} from '../../electron/ipc/inputValidation.js';
+} from '../../../electron/ipc/inputValidation.js';
 
 // ─── isValidSessionName ──────────────────────────────────
 

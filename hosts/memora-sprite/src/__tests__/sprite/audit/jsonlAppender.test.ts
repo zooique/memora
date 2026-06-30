@@ -17,7 +17,7 @@
  * - readRecent 是 async，可直接 await
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { JsonlAppender } from '../../sprite/audit/jsonlAppender.js';
+import { JsonlAppender } from '../../../sprite/audit/jsonlAppender.js';
 import { tmpdir } from 'node:os';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

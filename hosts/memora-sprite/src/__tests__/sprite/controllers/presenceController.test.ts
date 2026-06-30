@@ -5,8 +5,8 @@
  * 通过 mock PowerMonitor 和 App 接口实现纯逻辑测试，不依赖 Electron 运行时。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { PresenceController } from '../../sprite/controllers/presenceController.js';
-import type { PresenceChangeEvent, IPowerMonitor, IApp } from '../../sprite/controllers/presenceController.js';
+import { PresenceController } from '../../../sprite/controllers/presenceController.js';
+import type { PresenceChangeEvent, IPowerMonitor, IApp } from '../../../sprite/controllers/presenceController.js';
 
 /** Mock EventEmitter 基类（模拟 Electron 的事件监听 + 取消注册） */
 class MockEventEmitter {
