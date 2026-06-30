@@ -52,7 +52,13 @@ export interface UIState {
 // S-03 PersonaItem re-export PersonaInfo（sprite 层是真理源），保持向后兼容
 export type { PersonaInfo as PersonaItem };
 
-/** LLM 配置表单数据 */
+/**
+ * LLM 配置表单数据（renderer 层 UI 表单形态）
+ *
+ * 与 storage 层 LlmConfigFormData 对齐，但存在以下分层差异（有意设计）：
+ * - temperature 必填（UI 表单需默认值，storage 层允许省略）
+ * - background.temperature 存在（UI 表单可配置后台 temperature，storage 层不持久化）
+ */
 export interface LlmConfigForm {
   provider: string;
   model: string;
@@ -70,7 +76,13 @@ export interface LlmConfigForm {
   };
 }
 
-/** Embedding 配置表单数据 */
+/**
+ * Embedding 配置表单数据（renderer 层 UI 表单形态）
+ *
+ * 与 storage 层 EmbeddingConfigFormData 对齐，但存在以下分层差异（有意设计）：
+ * - enabled 字段存在（UI 表单需开关控件，storage 层用"参数是否传入"判断启用）
+ * - baseUrl/apiKey 必填（UI 表单需默认值，storage 层允许省略）
+ */
 export interface EmbeddingConfigForm {
   enabled: boolean;
   model: string;

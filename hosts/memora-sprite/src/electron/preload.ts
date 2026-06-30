@@ -33,6 +33,8 @@ import type {
   MemoryRelationItem,
   MemorySearchResult as MemorySearchHit,
 } from '../sprite/controllers/memoryController.js';
+// P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
+import type { SpriteConfig } from '../sprite/spriteConfig.js';
 
 // ─── 内联 IPC 通道常量（sandbox 兼容性：不能运行时导入 ipcChannels.ts） ─────
 // ⚠️ 与 ipcChannels.ts 保持同步：修改 ipcChannels.ts 时需同步更新此处的内联副本。
@@ -243,23 +245,27 @@ export interface ChatMessage {
   timestamp?: string;
 }
 
-/** 精灵配置（与 SpriteConfig 对齐，渲染进程用） */
-export interface SpriteConfigForm {
-  silentMode: boolean;
+/**
+ * 精灵配置表单（渲染进程用）
+ *
+ * P3：从 SpriteConfig 派生，消除手写平行结构导致的同步漂移风险。
+ * - 10 个必填字段通过 Required<Pick<SpriteConfig, ...>> 派生（可选→必填）
+ * - silentModeExpiresAt 保持可选（与 SpriteConfig 一致，null 表示无定时恢复）
+ * - theme 单独声明：SpriteConfig.theme 含 'auto'，但表单仅暴露 'light'|'dark'
+ *   （'auto' 由系统跟随逻辑处理，不暴露到表单 UI）
+ * - SpriteConfig 新增/修改字段时，Form 自动同步（除 theme 外）
+ */
+type SpriteConfigFormBase = Required<Pick<SpriteConfig,
+  | 'silentMode' | 'proactiveThreshold'
+  | 'proactiveCooldownMs' | 'triggerIntervalMs' | 'fileWatcherEnabled'
+  | 'fileWatcherPaths' | 'fileWatcherDebounceMs' | 'defaultPersona'
+  | 'projectMode' | 'focusProjectPath'
+>>;
+
+export interface SpriteConfigForm extends SpriteConfigFormBase {
   /** FD-10 静默模式恢复时间（ISO 8601），null 表示无定时恢复 */
   silentModeExpiresAt?: string | null;
-  proactiveThreshold: number;
-  proactiveCooldownMs: number;
-  triggerIntervalMs: number;
-  fileWatcherEnabled: boolean;
-  fileWatcherPaths: string[];
-  fileWatcherDebounceMs: number;
-  defaultPersona: string;
-  /** FD-04 项目模式：'smart'（智能）| 'focus'（专注） */
-  projectMode: 'smart' | 'focus';
-  /** FD-04 专注模式锁定的项目路径 */
-  focusProjectPath: string;
-  /** UX-FD-12 界面主题 */
+  /** UX-FD-12 界面主题（窄化版：'auto' 不暴露到表单，由 onThemeChange 即时处理） */
   theme: 'light' | 'dark';
 }
 

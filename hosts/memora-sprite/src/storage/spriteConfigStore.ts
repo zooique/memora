@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SpriteConfigStore — LLM 配置统一读写入口
  *
  * 职责：
@@ -33,10 +33,14 @@ import type { Config } from 'memora';
 export const DEFAULT_CONFIG_PATH = resolve(homedir(), '.memora-sprite', 'config.json');
 
 /**
- * LLM 配置表单数据（设置面板读写用）
+ * LLM 配置表单数据（设置面板读写用，storage 层持久化形态）
  *
- * 与渲染进程 LlmConfigForm 类型对齐，但去除 background 可选性，
- * 因为保存时 background.enabled 决定是否写入。
+ * 与渲染进程 LlmConfigForm 类型对齐，但存在以下分层差异（有意设计）：
+ * - temperature 改为可选（storage 层允许省略，renderer 层表单必填）
+ * - background.temperature 字段缺失（storage 层不持久化后台 temperature）
+ * - background 仍为可选（保存时 background.enabled 决定是否写入）
+ *
+ * 分层原因：storage 层不应依赖 renderer 层，保留为独立类型。
  */
 export interface LlmConfigFormData {
   provider: string;
@@ -54,7 +58,13 @@ export interface LlmConfigFormData {
   };
 }
 
-/** Embedding 配置表单数据 */
+/**
+ * Embedding 配置表单数据（storage 层持久化形态）
+ *
+ * 与渲染进程 EmbeddingConfigForm 类型对齐，但存在以下分层差异（有意设计）：
+ * - enabled 字段缺失（storage 层用"参数是否传入"判断启用，参见 save() 签名 embeddingConfig?）
+ * - baseUrl/apiKey 改为可选（storage 层允许省略，renderer 层表单必填）
+ */
 export interface EmbeddingConfigFormData {
   model: string;
   baseUrl?: string;
