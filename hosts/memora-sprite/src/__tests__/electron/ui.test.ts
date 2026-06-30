@@ -42,43 +42,47 @@ const TEST_HTML = `<!DOCTYPE html>
         <div class="sidebar-brand-icon">🧚</div>
         <span>Memora</span>
       </div>
-      <div id="sidebar-header">
-        <div id="persona-selector">
-          <span id="persona-icon">🧚</span>
-          <span id="persona-name">精灵</span>
-          <span id="persona-mode-badge" class="mode-badge">自动</span>
-          <span id="persona-arrow">▼</span>
-        </div>
-        <div id="persona-dropdown" class="dropdown hidden"></div>
-      </div>
-      <div id="sidebar-content">
-        <div id="dashboard">
-          <div class="dash-item"><span class="dash-label">🧠 记忆</span><span class="dash-value" id="memory-count">0</span></div>
-          <div class="dash-item"><span class="dash-label">💡 洞察</span><span class="dash-value" id="insight-count">0</span></div>
-          <div class="dash-item"><span class="dash-label">🎭 角色</span><span class="dash-value" id="persona-count">0</span></div>
-          <div class="dash-item" id="dash-triggers"><span class="dash-label">🔔 触发器</span><span class="dash-value" id="trigger-count">0</span></div>
-          <div class="dash-item" id="dash-pending" style="grid-column: span 2;"><span class="dash-label">📥 事件</span><span class="dash-value" id="pending-count">0/3</span></div>
-        </div>
-        <nav id="sidebar-nav">
-          <button class="nav-btn active" data-panel="chat">💬 对话</button>
-          <button class="nav-btn" data-panel="memories">🧠 记忆</button>
-          <button class="nav-btn" data-panel="settings">⚙️ 设置</button>
-        </nav>
-        <div id="recommendations" class="dashboard-section hidden">
-          <h3>推荐</h3>
-          <ul id="recommendation-list" class="suggestion-list"></ul>
-        </div>
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" data-panel="chat">💬 对话</button>
+        <button class="nav-btn" data-panel="memories">🧠 记忆</button>
+        <button class="nav-btn" data-panel="settings">⚙️ 设置</button>
+      </nav>
+      <div class="sidebar-status" id="sidebar-status">
+        <span class="status-dot" id="sprite-status-dot"></span>
+        <span class="status-text" id="sprite-status-text">就绪</span>
       </div>
     </aside>
     <main id="main-content">
       <div id="panel-chat" class="panel active">
+        <!-- v3: 对话工具栏含精灵状态条+角色选择器 -->
         <div id="chat-toolbar">
           <div class="chat-toolbar-info">
-            <span class="chat-toolbar-title">对话</span>
+            <div id="sprite-status-bar" class="sprite-status-bar">
+              <span id="sprite-status-text-bar">就绪</span>
+              <span class="sprite-status-dot" id="sprite-status-dot-bar"></span>
+            </div>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
-
+          <!-- v3: 角色选择器（工具栏内） -->
+          <div id="toolbar-persona-container" class="toolbar-persona-container">
+            <div id="persona-selector">
+              <span id="persona-icon">🧚</span>
+              <span id="persona-name">精灵</span>
+              <span id="persona-mode-badge" class="mode-badge auto">自动</span>
+              <span id="persona-arrow">▼</span>
+            </div>
+            <div id="persona-dropdown" class="dropdown hidden"></div>
+          </div>
         </div>
+        <!-- v3: 感知面板 -->
+        <div id="perception-panel" class="perception-panel hidden">
+          <div class="perception-panel-header">
+            <span class="perception-panel-title">精灵感知状态</span>
+            <button class="perception-panel-close">✕</button>
+          </div>
+        </div>
+        <!-- 保留 recommendation-list 供测试使用（安全降级路径） -->
+        <ul id="recommendation-list" class="suggestion-list"></ul>
         <div id="proactive-banner" class="hidden">
           <span class="banner-icon">🧚</span>
           <span class="banner-text" id="proactive-banner-text"></span>
@@ -118,9 +122,12 @@ const TEST_HTML = `<!DOCTYPE html>
         </div>
         <div id="memory-list"></div>
       </aside>
-      <div id="panel-settings" class="modal hidden" aria-hidden="true">
-        <div class="modal-content settings-modal-content">
-          <div class="settings-tabs">
+      <div id="panel-settings" class="panel" aria-hidden="true">
+        <div class="panel-header">
+          <span class="panel-title">设置</span>
+        </div>
+        <div class="settings-panel-body">
+        <div class="settings-tabs">
           <button class="settings-tab active" data-settings-tab="llm">大模型</button>
           <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
           <button class="settings-tab" data-settings-tab="sprite">精灵</button>
@@ -257,6 +264,7 @@ const TEST_HTML = `<!DOCTYPE html>
             </div>
           </div>
         </div>
+        </div><!-- /.settings-panel-body -->
         <div class="settings-actions">
           <button id="btn-settings-cancel">取消</button>
           <button id="btn-settings-save">保存</button>

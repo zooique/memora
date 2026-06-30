@@ -1,9 +1,9 @@
-/**
+﻿/**
  * Memora 精灵 — 布局样式
  *
  * v9 布局策略（UI 布局重思方案）：
  * - 大底板：64px 图标侧边栏 + 顶部栏融为一体（同色，无边界）
- * - 侧边栏可展开为 200px 详情态（点击品牌图标切换 #app.sidebar-expanded）
+ * - v3：侧边栏固定 64px 图标模式（不再展开）
  * - 核心窗口：白色悬浮卡片（margin + border-radius + box-shadow）
  * - 顶部栏：纯窗口拖拽区 + 命令面板入口 + 窗口控制按钮
  * - CSS Grid 布局：grid-template-areas 定义三区域
@@ -12,7 +12,7 @@
  */
 
 /* ─── 大底板容器（grid 布局，左侧 + 顶部连成一片） ───────── */
-/* 默认 64px 图标模式；.sidebar-expanded 类切换为 200px 详情模式 */
+/* v3：侧边栏固定 64px，不再展开 */
 #app {
   height: 100vh;
   display: grid;
@@ -23,12 +23,8 @@
     "sidebar titlebar"
     "sidebar window";
   background: var(--bg);
+  /* v3：不再有 grid-template-columns 变化，保留 transition 以备后用 */
   transition: grid-template-columns var(--transition-base) ease;
-}
-
-/* 展开态：侧边栏 200px，显示角色/仪表盘/导航文字 */
-#app.sidebar-expanded {
-  grid-template-columns: 200px 1fr;
 }
 
 /* ─── 顶部栏（与左侧栏同色，无边界；仅保留窗口控制按钮） ─── */
@@ -150,12 +146,6 @@
   flex-shrink: 0;
 }
 
-/* 展开态：恢复宽松间距，容纳角色选择器和仪表盘 */
-#app.sidebar-expanded #sidebar {
-  padding: 16px 14px;
-  gap: 18px;
-}
-
 /* 品牌区（点击展开/收起侧边栏，图标模式仅显示图标） */
 .sidebar-brand {
   display: flex;
@@ -180,26 +170,6 @@
   display: none;
 }
 
-/* 展开态：显示品牌名 */
-#app.sidebar-expanded .sidebar-brand-name {
-  display: inline;
-}
-
-/* 图标模式：隐藏角色选择器和仪表盘内容（仅保留品牌+导航+状态指示器） */
-#sidebar-header,
-#sidebar-content {
-  display: none;
-}
-
-/* 展开态：显示角色选择器和仪表盘内容 */
-#app.sidebar-expanded #sidebar-header {
-  display: block;
-}
-
-#app.sidebar-expanded #sidebar-content {
-  display: flex;
-}
-
 /* UI-AUDIT-P2-2.12: h1 作为品牌名时重置默认 margin/padding，保持视觉不变 */
 .sidebar-brand h1.sidebar-brand-name {
   margin: 0;
@@ -218,14 +188,6 @@
   align-items: center;
   justify-content: center;
   font-size: var(--font-sm);
-  flex-shrink: 0;
-}
-
-/* 侧边栏头部（角色选择器容器） */
-#sidebar-header {
-  padding: 0;
-  border-bottom: none;  /* v8：无分隔线 */
-  position: relative;
   flex-shrink: 0;
 }
 
@@ -308,26 +270,63 @@
   color: var(--subtext);
 }
 
-/* ─── 侧边栏内容区 ───────────────────────────────────────── */
-#sidebar-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px; /* ADR-NAV-001 缩小 gap（原 18px），各 section 自行管理内部间距） */
-  overflow-y: auto;
+/* ─── v3：工具栏内角色选择器容器 ────────────────────────── */
+.toolbar-persona-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* v3: 工具栏内角色选择器样式（紧凑版） */
+.toolbar-persona-container #persona-selector {
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  gap: 6px;
+  font-size: var(--font-sm);
+}
+
+.toolbar-persona-container #persona-selector:hover {
+  background: var(--surface1);
+  border-color: var(--muted);
+}
+
+.toolbar-persona-container #persona-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.toolbar-persona-container #persona-name {
+  font-size: var(--font-sm);
+}
+
+.toolbar-persona-container #persona-arrow .icon {
+  width: 10px;
+  height: 10px;
+}
+
+/* 工具栏内角色下拉菜单（右对齐） */
+.toolbar-persona-container #persona-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: auto;
+  width: 220px;
+  margin-top: 4px;
+  z-index: 100;
+}
+
+.toolbar-persona-container #persona-dropdown .dropdown-item {
+  padding: 8px 12px;
+}
+
+.toolbar-persona-container .mode-badge {
+  font-size: var(--font-2xs);
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
 }
 
 /* ─── 仪表盘（v8 网格布局） ──────────────────────────────── */
-#dashboard {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 0;
-  /* ADR-NAV-001 仪表盘底部添加细线分隔，区分数据看板与动态列表区 */
-  border-bottom: 1px solid var(--surface2);
-  padding-bottom: 12px;
-}
-
 .dash-item {
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -390,7 +389,7 @@
 
 /**
  * 仪表盘数字脉冲动画
- * 对齐 docs/memora-sprite-preview.html @keyframes numberPulse：
+ * 对齐 @keyframes numberPulse：
  * scale 放大 + 颜色从 accent(蓝) 变为 green(绿)
  * UI-AE-02 弱化：scale(1.3)→scale(1.1)，更符合专注模式基调
  */
@@ -419,7 +418,7 @@
   flex-shrink: 0;
 }
 
-/* 导航按钮：图标模式仅显示图标，展开态显示图标+文字 */
+/* 导航按钮：图标模式仅显示图标 */
 .nav-btn {
   display: flex;
   align-items: center;
@@ -460,15 +459,6 @@
   display: none;
 }
 
-/* 展开态：显示文字标签，增加水平 padding */
-#app.sidebar-expanded .nav-btn {
-  padding: 10px 12px;
-}
-
-#app.sidebar-expanded .nav-btn .nav-label {
-  display: inline;
-}
-
 /* ─── 精灵状态指示器（侧边栏底部小圆点） ─────────────────── */
 /* 颜色语义：蓝=正常/黄=思考中/绿=有主动提示；margin-top:auto 推到底部 */
 .sidebar-status {
@@ -495,9 +485,41 @@
   display: none;
 }
 
-/* 展开态：显示状态文字 */
-#app.sidebar-expanded .status-text {
-  display: inline;
+/* v3: 侧边栏角色头像 */
+.sidebar-persona-avatar {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  background: var(--brand-grad);
+  color: var(--window-bg);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.sidebar-persona-avatar:hover {
+  transform: scale(1.08);
+  box-shadow: 0 2px 8px rgba(137, 180, 250, 0.3);
+}
+
+.sidebar-persona-avatar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sidebar-persona-avatar .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* 角色头像模式下，sidebar-status 布局调整 */
+.sidebar-persona-avatar ~ .status-dot,
+.sidebar-persona-avatar ~ .status-text {
+  /* 头像存在时隐藏文字和状态点（64px 太窄放不下） */
+  display: none;
 }
 
 /* ─── 侧边栏分区（推荐/技能/健康/指标） ──────────────────── */
@@ -688,84 +710,6 @@
   color: var(--milestone-badge-icon);
 }
 
-/* ─── FD-01 精灵叙事摘要 ───────────────────────────────── */
-#sprite-narrative {
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-20);
-  cursor: pointer;
-  user-select: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  transition: opacity var(--transition-base) ease, background var(--transition-base) ease;
-}
-
-#sprite-narrative-text {
-  font-size: var(--font-sm);
-  line-height: 1.6;
-  color: var(--text);
-  flex: 1;
-}
-
-/* FD-03 叙事卡片折叠/展开箭头 */
-.narrative-toggle {
-  color: var(--muted);
-  transition: transform var(--transition-base) ease;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  border-radius: var(--radius-xs);
-  cursor: pointer;
-}
-.narrative-toggle .icon {
-  width: 12px;
-  height: 12px;
-}
-.narrative-toggle.expanded {
-  transform: rotate(90deg);
-}
-.narrative-toggle:hover {
-  color: var(--text);
-  background: var(--surface1);
-}
-
-/* 叙事摘要不同状态的颜色变体 */
-#sprite-narrative.active {
-  background: var(--accent-soft);
-  border-color: var(--accent-20);
-}
-
-#sprite-narrative.idle {
-  background: var(--surface1);
-  border-color: var(--surface2);
-  opacity: 0.7;
-}
-
-/* FD-03 详情区容器：折叠/展开过渡 */
-#dashboard-details {
-  overflow: hidden;
-  transition: max-height 0.3s ease, opacity 0.3s ease;
-  max-height: 800px;
-  opacity: 1;
-}
-#dashboard-details.collapsed {
-  max-height: 0;
-  opacity: 0;
-}
-
-/* FD-03 叙事卡片更新脉冲动画：感知数据变化时短暂高亮 */
-#sprite-narrative.narrative-updated {
-  animation: narrative-pulse 0.6s ease;
-}
-@keyframes narrative-pulse {
-  0% { box-shadow: 0 0 0 0 var(--accent-20); }
-  50% { box-shadow: 0 0 8px 2px var(--accent); }
-  100% { box-shadow: 0 0 0 0 var(--accent-20); }
-}
-
 /* ─── 技能文件拖入安装区域（设置面板"技能"选项卡） ─── */
 /*
  * dropzone 设计原则：
@@ -888,30 +832,6 @@
   font-size: var(--font-xs);
   margin-left: auto;
   flex-shrink: 0;
-}
-
-/* ─── OBS-01 Agent 运行时指标（2×3 网格，复用 .dash-item） ─── */
-
-#agent-metrics-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-/* ─── H3 学习进度网格（2×2 复用 .dash-item） ─── */
-#learning-progress-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-#learning-progress .dash-item {
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast);
-}
-
-#learning-progress .dash-item:hover {
-  background: var(--surface1);
 }
 
 /* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
@@ -1092,11 +1012,10 @@
  * - ≤639px：侧边栏隐藏（受 minWidth 640px 约束，通常不会触发）
  * ============================================================ */
 
-/* 中屏（≤799px）：禁止侧边栏展开，消息气泡放宽 */
+/* 中屏（≤799px）：消息气泡放宽 */
 @media (max-width: 799px) {
-  /* 中屏空间不足，强制保持图标模式（覆盖 .sidebar-expanded） */
-  #app,
-  #app.sidebar-expanded {
+  /* v3：侧边栏始终 64px，无需 override */
+  #app {
     grid-template-columns: 64px 1fr;
   }
 

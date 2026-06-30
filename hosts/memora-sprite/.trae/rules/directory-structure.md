@@ -45,7 +45,8 @@ src/
 │   ├── windows/                # 窗口管理（浮动窗口 + 完整窗口 + 状态持久化）
 │   │   ├── floatWindow.ts      # 浮动窗口（右键菜单/消息列表/输入框）
 │   │   ├── windowManager.ts    # 窗口管理器（浮动↔完整切换/生命周期）
-│   │   └── windowState.ts      # 窗口状态持久化（位置/大小/显示器恢复）
+│   │   ├── windowState.ts      # 窗口状态持久化（位置/大小/显示器恢复）
+│   │   └── themeInjector.ts    # 主题注入器（CSS 变量动态注入）
 │   │
 │   └── renderer/               # 渲染进程（UI 层，不直接导入 electron）
 │       ├── index.html          # 完整窗口 HTML 入口
@@ -64,7 +65,10 @@ src/
 │       ├── helpers/            # 渲染进程工具函数
 │       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作）
 │       │   ├── errorHelpers.ts # 错误处理辅助（IPC 错误处理器工厂）
-│       │   └── eventTracker.ts # 事件追踪（埋点/用户行为记录）
+│       │   ├── eventTracker.ts # 事件追踪（埋点/用户行为记录）
+│       │   ├── messageDecorations.ts # 消息装饰辅助函数（系统消息/错误消息样式）
+│       │   ├── toolCallCard.ts # 工具调用卡片辅助（工具执行状态展示）
+│       │   └── safeTimer.ts    # 安全定时器辅助（自动清理/防泄漏）
 │       │
 │       ├── components/         # 可复用 UI 组件
 │       │   ├── themeManager.ts      # 主题管理器（auto/light/dark 切换）
@@ -73,6 +77,7 @@ src/
 │       │   ├── onboarding.ts        # 新手引导
 │       │   ├── proactiveBanner.ts   # 精灵主动提示横幅
 │       │   ├── suggestionCard.ts    # 建议卡片
+│       │   ├── relationGraph.ts     # 关系图 Canvas 组件（记忆拓扑可视化）
 │       │   └── markdown.ts          # Markdown 渲染
 │       │
 │       ├── panels/             # 面板管理器（各面板的 DOM 绑定 + 渲染逻辑）
@@ -81,7 +86,11 @@ src/
 │       │   ├── settingsPanelManager.ts   # 设置面板
 │       │   ├── profilePanelManager.ts    # 用户画像面板
 │       │   ├── sessionPanelManager.ts    # 会话面板
-│       │   └── personaPanelManager.ts    # 角色面板
+│       │   ├── personaPanelManager.ts    # 角色面板
+│       │   ├── workProjectionPanelManager.ts # 作品投影面板
+│       │   ├── commandPaletteManager.ts  # 命令面板
+│       │   ├── auditPanelManager.ts      # 审计面板
+│       │   └── dashboardPanelManager.ts  # 仪表盘面板
 │       │
 │       ├── float/              # 浮动窗口
 │       │   ├── float.ts        # 浮动窗口渲染进程逻辑
@@ -121,24 +130,44 @@ src/
 │       ├── memoryController.ts # 记忆控制器（CRUD/搜索/统计）
 │       ├── personaController.ts # 角色控制器（切换/列表/激活）
 │       ├── proactiveEngine.ts  # 精灵主动行为引擎（事件累积/提示生成）
-│       └── presenceController.ts # 在场状态控制器（锁屏/挂起/焦点，Phase 3）
+│       ├── presenceController.ts # 在场状态控制器（锁屏/挂起/焦点，Phase 3）
+│       ├── rapportController.ts  # 默契度控制器（Phase 2 伙伴关系）
+│       ├── contextAwareness.ts   # 上下文感知控制器（场景识别/语境理解）
+│       ├── patternDetector.ts    # 模式检测器（用户行为模式识别）
+│       ├── affectController.ts   # 情感控制器（情绪感知/响应调节）
+│       ├── reviewManager.ts      # 回顾管理器（记忆定期回顾/总结）
+│       └── memoryHealth.ts       # 记忆健康度管理（质量评估/优化建议）
 │
 ├── storage/                    # 持久化层
 │   ├── sessionStore.ts         # 会话持久化（SQLite 会话表）
 │   ├── spriteConfigStore.ts    # 精灵配置持久化（~/.memora-sprite/config.json）
 │   ├── sqliteDatabaseTypes.ts  # SQLite 数据库类型定义
-│   └── sqliteStorage.ts        # SQLite 存储实现（IMemoryStorage 接口）
+│   ├── sqliteStorage.ts        # SQLite 存储实现（IMemoryStorage 接口）
+│   └── sqliteRelationStore.ts  # 记忆关系侧车存储实现（IMemoryRelationStore）
 │
-└── __tests__/                  # 测试文件
+└── __tests__/                  # 测试文件（镜像源码目录结构）
     ├── electron/               # Electron 层测试
+    │   ├── ipc/                # IPC 处理器测试（镜像 src/electron/ipc/）
+    │   │   ├── channels.test.ts
+    │   │   ├── chatHandlers.test.ts
+    │   │   └── ...（11 个 handler 测试）
+    │   ├── windows/            # 窗口管理测试（镜像 src/electron/windows/）
+    │   │   ├── themeInjector.test.ts
+    │   │   └── windowState.test.ts
     │   ├── ipcHandlers.test.ts
-    │   └── ui.test.ts
-    ├── sprite/                 # 精灵层测试
-    │   ├── sprite.test.ts
-    │   └── spriteIntegration.test.ts
+    │   ├── ui.test.ts
+    │   └── ...（6 个 electron 根级测试）
+    ├── sprite/                 # 精灵层测试（镜像 src/sprite/）
+    │   ├── audit/              # 审计模块测试（镜像 src/sprite/audit/）
+    │   │   ├── auditManager.test.ts
+    │   │   └── jsonlAppender.test.ts
+    │   ├── controllers/        # 控制器测试（镜像 src/sprite/controllers/）
+    │   │   ├── affectController.test.ts
+    │   │   └── ...（7 个 controller 测试）
+    │   ├── sprite.test.ts      # 精灵根级测试
+    │   └── ...（6 个 sprite 根级测试）
     ├── storage/                # 存储层测试
-    │   ├── helpers/            # 存储测试辅助（仅 storage 测试使用）
-    │   │   └── nodeSqliteDatabase.ts  # 测试用 SQLite 数据库工厂
+    │   ├── nodeSqliteDatabase.ts  # 测试用 SQLite 数据库工厂（node:sqlite 适配器）
     │   ├── sessionStore.test.ts
     │   └── sqliteStorage.test.ts
     └── renderer/               # 渲染进程测试
@@ -174,8 +203,9 @@ src/
 
 ### 2.3 测试文件组织
 
-- 测试文件按模块分组，镜像 `src/` 结构
-- 测试辅助工具放在对应模块的 `helpers/` 子目录（如 `storage/helpers/`），仅服务于该模块测试
+- **镜像原则**：`__tests__/` 目录结构严格镜像 `src/` 目录结构（`src/electron/ipc/` → `__tests__/electron/ipc/`）
+- 测试文件按模块分组，子目录与源码子目录一一对应
+- 测试辅助工具与测试文件同目录（如 `storage/nodeSqliteDatabase.ts` 与 `storage/*.test.ts` 同级），仅服务于该模块测试
 - 不采用 co-location（测试与源文件同目录），保持 `__tests__/` 集中管理
 
 ---
@@ -194,7 +224,8 @@ src/
 - [x] D-08: `renderer/ui/` → `renderer/panels/`（消除 ui.ts vs ui/ 命名冲突）
 - [x] D-09: `renderer/` 创建 `controllers/` 子目录（4 个 PanelController 移入）
 - [x] D-10: `sprite/` 创建 `cli/` + `audit/` 子目录（formatter.ts + interaction.ts + auditManager.ts + jsonlAppender.ts）
-- [x] D-11: `__tests__/` 按模块重组（electron/ sprite/ storage/ renderer/ 四个子目录 + storage/helpers/）
+- [x] D-11: `__tests__/` 按模块重组（electron/ sprite/ storage/ renderer/ 四个子目录）
+- [x] D-12: `__tests__/` 镜像源码子目录——ipc/ 迁入 electron/ipc/、windows/ 迁入 electron/windows/、sprite/ 拆分 audit/ + controllers/
 
 ### 延后（非目录结构）
 

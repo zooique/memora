@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 审计日志管理器（M2：SecurityGuard.onAudit 闭环）
  *
  * 设计：
@@ -51,6 +51,16 @@ export class AuditManager {
   async readRecent(limit = 50): Promise<AuditLogEntry[]> {
     const records = await this.appender.readRecent<AuditLogEntry>(limit);
     return records;
+  }
+
+  /**
+   * 等待写入队列排空（仅用于测试）
+   *
+   * 委托 JsonlAppender.flush()，精确等待 writeChain 完成，
+   * 替代 setTimeout 等不可靠的竞态等待方式。
+   */
+  flush(): Promise<void> {
+    return this.appender.flush();
   }
 
   /** 清空审计日志 */

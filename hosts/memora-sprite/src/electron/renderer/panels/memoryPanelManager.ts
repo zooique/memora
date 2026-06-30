@@ -298,19 +298,6 @@ export class MemoryPanelManager {
       });
     }
 
-    // ─── FD-03 叙事卡片点击：展开/折叠详情区 ────────────
-    const narrativeCard = document.getElementById('sprite-narrative');
-    const detailsContainer = document.getElementById('dashboard-details');
-    const toggleArrow = document.getElementById('narrative-toggle');
-    if (narrativeCard && detailsContainer && toggleArrow) {
-      // 默认折叠详情区
-      detailsContainer.classList.add('collapsed');
-      this.events.addEventListener(narrativeCard, 'click', () => {
-        const isCollapsed = detailsContainer.classList.toggle('collapsed');
-        toggleArrow.classList.toggle('expanded', !isCollapsed);
-      });
-    }
-
     // ─── 更多菜单（高级搜索/洞察/健康度） ──────────────
     const moreBtn = document.getElementById('btn-memory-more');
     const moreMenu = document.getElementById('memory-more-menu');
@@ -355,6 +342,15 @@ export class MemoryPanelManager {
           if (advSearchBar) {
             advSearchBar.classList.toggle('hidden');
           }
+        } else if (action === 'view-list') {
+          this.switchView('list');
+          this.viewSwitchCallback?.('list');
+        } else if (action === 'view-timeline') {
+          this.switchView('timeline');
+          this.viewSwitchCallback?.('timeline');
+        } else if (action === 'view-graph') {
+          this.switchView('graph');
+          this.viewSwitchCallback?.('graph');
         } else if (action === 'insights') {
           if (insightsBar) {
             const isHidden = insightsBar.classList.contains('hidden');
@@ -541,23 +537,14 @@ export class MemoryPanelManager {
    *
    * 由 Controller 在 chatNarrative 点击时调用（跨面板交互）。
    */
+  /** 脉冲感知面板中的叙事摘要 */
   pulseNarrativeCard(): void {
-    const narrativeCard = document.getElementById('sprite-narrative');
-    const detailsContainer = document.getElementById('dashboard-details');
-    const toggleArrow = document.getElementById('narrative-toggle');
-    if (!narrativeCard) return;
+    const narrativeEl = document.getElementById('perception-narrative-text');
+    if (!narrativeEl) return;
 
-    // 展开详情区（若已折叠）
-    if (detailsContainer) detailsContainer.classList.remove('collapsed');
-    if (toggleArrow) toggleArrow.classList.add('expanded');
-
-    // 滚动侧边栏使叙事卡片可见
-    narrativeCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-    // 脉冲动画标记叙事卡片位置
-    narrativeCard.classList.remove('narrative-updated');
-    void narrativeCard.offsetWidth;
-    narrativeCard.classList.add('narrative-updated');
+    // 添加短暂高亮效果
+    narrativeEl.classList.add('narrative-pulse');
+    setTimeout(() => narrativeEl.classList.remove('narrative-pulse'), 1500);
   }
 
   // ─── 记忆列表渲染 ───────────────────────────────────────
@@ -565,7 +552,7 @@ export class MemoryPanelManager {
   /**
    * 渲染记忆列表
    *
-   * 卡片结构对齐 docs/memora-sprite-preview.html §6.4：
+   * 卡片结构对齐设计契约 §6.4：
    *   <div class="memory-item">
    *     <div class="name">{name}</div>
    *     <div class="meta">

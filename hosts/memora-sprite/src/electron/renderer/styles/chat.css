@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Memora 精灵 — 对话面板样式
  *
  * 包含：对话工具栏、主动提示 banner、消息气泡、输入区、打字指示器、
@@ -63,53 +63,387 @@
   text-overflow: ellipsis;
 }
 
-/* ─── FD-03 对话面板叙事摘要行（条件显示） ─────────────────── */
-/* 设计：默认隐藏，仅在有感知事件（非 idle 状态）时显示          */
-/*       避免常驻占据视觉空间，让对话流获得最大可用区域          */
-.chat-narrative {
-  display: none; /* 默认隐藏，由 .visible 类控制显示 */
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  margin: 8px 24px 0;
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-20);
-  border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  color: var(--text-2);
-  flex-shrink: 0;
-  align-self: flex-start;
-  transition: background var(--transition-base) ease, border-color var(--transition-base) ease;
-}
-
-/* 有事件时显示（由 JS 根据 idle/active 状态切换） */
-.chat-narrative.visible {
-  display: flex;
-}
-
-.chat-narrative-icon {
-  flex-shrink: 0;
-  font-size: var(--font-xs);
+/* ─── v3：精灵状态条（对话工具栏内，替代原 chat-narrative） ── */
+/* 设计：紧凑胶囊形，font-xs，accent-soft 背景，点击展开感知面板 */
+.sprite-status-bar {
   display: inline-flex;
   align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--subtext);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
-.chat-narrative-icon svg {
+.sprite-status-bar:hover {
+  background: var(--accent-10);
+  box-shadow: 0 0 0 1px var(--accent-20);
+}
+
+.sprite-status-bar:active {
+  background: var(--accent-20);
+}
+
+.sprite-status-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 精灵状态条内图标 */
+.sprite-status-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* 脉冲动画点（事件累积状态指示） */
+.sprite-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: statusPulse 2s infinite;
+  flex-shrink: 0;
+}
+
+.sprite-status-dot.warning {
+  background: var(--yellow);
+  animation: statusPulse 1s infinite;
+}
+
+.sprite-status-dot.critical {
+  background: var(--red);
+  animation: statusPulse 0.6s infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 状态文字 */
+#sprite-status-text-bar {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .sprite-status-dot {
+    animation: none;
+  }
+}
+
+/* ─── v3：感知面板（overlay，从消息区顶部 slide-down） ──── */
+.perception-panel {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--window-bg);
+  border-bottom: 1px solid var(--surface2);
+  box-shadow: var(--shadow-window);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  padding: 16px 24px;
+  max-height: 400px;
+  overflow-y: auto;
+  animation: perceptionSlideDown 0.2s ease-out;
+}
+
+.perception-panel.visible {
+  display: block;
+}
+
+/* 面板关闭时动画 */
+.perception-panel.hiding {
+  animation: perceptionSlideUp 0.15s ease-in forwards;
+}
+
+@keyframes perceptionSlideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes perceptionSlideUp {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+/* 感知面板头部 */
+.perception-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.perception-panel-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.perception-panel-close {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.perception-panel-close:hover {
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.perception-panel-close .icon {
   width: 12px;
   height: 12px;
 }
 
-.chat-narrative-text {
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 300px;
+/* 感知面板分节 */
+.perception-section {
+  margin-bottom: 14px;
 }
 
-/* 叙事摘要更新脉冲动画（与仪表盘 #sprite-narrative 共用 narrative-pulse 关键帧） */
-.chat-narrative.narrative-updated {
-  animation: narrative-pulse 0.6s ease;
+.perception-section:last-child {
+  margin-bottom: 0;
+}
+
+.perception-section-title {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.perception-section-title.clickable {
+  cursor: pointer;
+}
+
+.perception-section-title.clickable:hover {
+  color: var(--text);
+}
+
+/* 默契度双进度条 */
+.rapport-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.rapport-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-xs);
+}
+
+.rapport-bar-label {
+  width: 44px;
+  color: var(--muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rapport-fill {
+  transition: width 0.5s ease;
+}
+
+/* 感知面板叙事摘要文本 */
+.perception-narrative-text {
+  font-size: var(--font-sm);
+  color: var(--subtext);
+  line-height: 1.5;
+  margin: 0;
+  transition: color var(--transition-base);
+}
+
+/* v3: 叙事摘要脉冲高亮（由 pulseNarrativeCard 触发） */
+.perception-narrative-text.narrative-pulse {
+  color: var(--accent);
+  animation: narrativePulse 1.5s ease-out;
+}
+
+@keyframes narrativePulse {
+  0% { color: var(--accent); }
+  100% { color: var(--subtext); }
+}
+
+/* 模式洞察列表 */
+.perception-patterns-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.perception-pattern-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--window-bg-2);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  color: var(--subtext);
+}
+
+.perception-pattern-type {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+}
+
+.perception-pattern-type.repeat {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.perception-pattern-type.gap {
+  background: var(--red-20);
+  color: var(--red);
+}
+
+.perception-pattern-type.drift {
+  background: var(--accent-20);
+  color: var(--accent);
+}
+
+/* 运行指标网格 */
+.perception-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.perception-metrics-grid .dash-item {
+  border-radius: var(--radius-sm);
+}
+
+.perception-metrics-grid.hidden {
+  display: none;
+}
+
+/* 对话回顾（感知面板内） */
+.perception-review {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface2);
+}
+
+.review-today {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.review-trend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.review-trend-direction {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+}
+
+.review-trend-direction.growing {
+  color: var(--green);
+  background: var(--green-20);
+}
+
+.review-trend-direction.stable {
+  color: var(--muted);
+  background: var(--surface1);
+}
+
+.review-trend-direction.declining {
+  color: var(--red);
+  background: var(--red-20);
+}
+
+.review-trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 40px;
+  margin-bottom: 10px;
+}
+
+.review-trend-bar {
+  flex: 1;
+  min-height: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--accent-20);
+  transition: height var(--transition-base);
+}
+
+.review-trend-bar:hover {
+  background: var(--accent);
+}
+
+.recent-insights-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.recent-insights-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: var(--font-xs);
+  color: var(--subtext);
+  line-height: 1.4;
+}
+
+.recent-insights-source {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--surface1);
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+/* prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .perception-panel {
+    animation: none;
+  }
+  .perception-panel.hiding {
+    animation: none;
+  }
 }
 
 /**
@@ -844,7 +1178,7 @@
 
 /**
  * 打字指示器：精灵正在思考时的三点跳动动画
- * 对齐 docs/memora-sprite-preview.html §6.2 .typing-indicator
+ * 对齐设计契约 §6.2 .typing-indicator
  * 由 ui.ts 在流式开始前显示，首个 chunk 到达后移除
  */
 .typing-indicator {
@@ -899,60 +1233,6 @@
   text-decoration: underline;
 }
 
-/* ─── 对话面板情感指示器（输入框上方右下角微指示） ─── */
-/* 设计：四个小圆点紧凑排列于输入框右上方，默认低透明度减少视觉干扰 */
-/*       hover 整个指示器恢复可见，hover 单个圆点显示等级 tooltip   */
-.chat-affect-indicator {
-  position: absolute;
-  right: 12px;
-  bottom: 82px; /* 输入区高度约 72px + 10px 间距 */
-  z-index: 9;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  opacity: 0.45; /* 默认微指示：低透明度减少视觉干扰 */
-  transition: opacity 0.3s ease;
-}
-
-/* hover 整个指示器：恢复完全可见 */
-.chat-affect-indicator:hover {
-  opacity: 1;
-}
-
-.chat-affect-indicator.hidden {
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* 单个情感圆点：6px 微尺寸，带颜色过渡 */
-.chat-affect-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-  /* 颜色由 JS 动态设置，保留 transition 实现平滑过渡 */
-  transition: background 0.5s ease, transform 0.2s ease;
-  cursor: default;
-  position: relative;
-  animation: none;
-}
-
-/* 情感变化脉冲动画：颜色更新时触发一次脉冲 */
-.chat-affect-dot.pulse {
-  animation: affect-pulse 0.6s ease-out;
-}
-
-@keyframes affect-pulse {
-  0%   { transform: scale(1);   opacity: 1; }
-  50%  { transform: scale(1.6); opacity: 0.8; }
-  100% { transform: scale(1);   opacity: 1; }
-}
-
-/* hover 时微放大 + 显示 tooltip 式标签 */
-.chat-affect-dot:hover {
-  transform: scale(1.8);
-}
 
 /* ─── 输入区（v8 悬浮输入卡） ──────────────────────────────── */
 /* 绝对定位悬浮于对话区底部，圆角 xl + 阴影，focus 时边框高亮       */

@@ -213,6 +213,15 @@ export class PersonaPanelManager {
     if (this.personaNameEl) {
       this.personaNameEl.textContent = name;
     }
+    // 同步更新侧边栏角色头像图标
+    const sidebarAvatar = document.getElementById('sidebar-persona-avatar');
+    if (sidebarAvatar) {
+      const avatarIcon = sidebarAvatar.querySelector('use');
+      if (avatarIcon) {
+        // 当前所有角色使用同一 icon-fairy 图标
+        avatarIcon.setAttribute('href', '#icon-fairy');
+      }
+    }
   }
 
   /**

@@ -182,6 +182,7 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
     expect(mockUiManager.renderAgentMetrics).toHaveBeenCalledWith(null);
     expect(mockUiManager.renderSkills).toHaveBeenCalledWith([]);
     expect(mockUiManager.renderMilestones).toHaveBeenCalledTimes(1);
+    // v3: renderReviewData DOM 已恢复到感知面板
     expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
     expect(mockUiManager.updateLearningProgress).toHaveBeenCalledTimes(1);
   });

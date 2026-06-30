@@ -259,37 +259,32 @@ export class DashboardPanelManager {
    * 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
    *
    * 由 Controller 在 loadDashboard 中调用，传入 IPC 返回的仪表盘数据。
+   * 原 DOM 位置已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
    * 推荐记忆列表通过 data-action="view-recommendation" 标记，事件委托由 UIManager 统一处理。
    *
    * @param data 仪表盘数据
    */
   renderDashboardStats(data: DashboardData): void {
     // ─── 累积事件数 / 阈值（高亮状态：接近阈值黄色，达到阈值粉色） ──
-    const pendingEl = document.getElementById('pending-count');
-    const dashPending = document.getElementById('dash-pending');
-    if (pendingEl && dashPending) {
+    const pendingEl = document.getElementById('perception-pending-count');
+    if (pendingEl) {
       pendingEl.textContent = `${data.pendingNotices}/${data.proactiveThreshold}`;
-      dashPending.classList.remove('near-threshold', 'at-threshold');
+      pendingEl.classList.remove('near-threshold', 'at-threshold');
       if (data.pendingNotices >= data.proactiveThreshold) {
-        dashPending.classList.add('at-threshold');
+        pendingEl.classList.add('at-threshold');
       } else if (
         data.proactiveThreshold > 0 &&
         data.pendingNotices / data.proactiveThreshold >= NEAR_THRESHOLD_RATIO
       ) {
-        dashPending.classList.add('near-threshold');
+        pendingEl.classList.add('near-threshold');
       }
     }
 
-    // ─── 已注册触发器数量（合并到事件卡片的 sub-value） ────
-    const triggerEl = document.getElementById('trigger-count');
-    if (triggerEl && dashPending) {
-      triggerEl.textContent = `${data.registeredTriggers.length} 触发器`;
-      // hover 显示触发器名称列表
-      const triggerList =
-        data.registeredTriggers.length > 0 ? data.registeredTriggers.join(', ') : '无触发器';
-      // 更新 title（事件卡片 title 已包含基础信息，追加触发器详情）
-      const baseTitle = dashPending.title.split(' · ')[0];
-      dashPending.title = `${baseTitle} · 触发器：${triggerList}`;
+    // ─── 已注册触发器数量（更新事件卡片 title 附加信息） ────
+    const triggerList =
+      data.registeredTriggers.length > 0 ? data.registeredTriggers.join(', ') : '无触发器';
+    if (pendingEl) {
+      pendingEl.title = `累积待处理事件/阈值 · 触发器：${triggerList}`;
     }
 
     // ─── 渲染推荐记忆列表（合并到学习与回顾节） ──────────
@@ -320,92 +315,71 @@ export class DashboardPanelManager {
     }
 
     // ─── 更新记忆总数（data.total 为全量记忆数，不受筛选影响） ──
-    const memoryCountEl = document.getElementById('memory-count');
+    const memoryCountEl = document.getElementById('perception-memory-count');
     if (memoryCountEl) memoryCountEl.textContent = String(data.total);
 
     // ─── 更新洞察计数（bySource 中 source='insight' 的记忆数） ──
     const insightCount = data.bySource['insight'] ?? 0;
-    const insightCountEl = document.getElementById('insight-count');
+    const insightCountEl = document.getElementById('perception-insight-count');
     if (insightCountEl) insightCountEl.textContent = String(insightCount);
 
     // ─── 更新建议计数（suggestions 数组长度，供 updateLearningProgress 读取） ──
-    const suggestionCountEl = document.getElementById('suggestion-count');
+    const suggestionCountEl = document.getElementById('perception-suggestion-count');
     if (suggestionCountEl) suggestionCountEl.textContent = String(data.suggestions.length);
   }
 
   /**
-   * OBS-01 渲染 Agent 运行时指标
+   * 渲染 Agent 运行时指标（感知面板指标网格）
    *
-   * 消费内核 agent.getMetrics() 数据，在仪表盘中展示 6 项运行时指标：
-   * - LLM 调用次数 / Token 数 / 召回命中率 / 工具失败率 / 截断次数 / 衰减次数
+   * 消费内核 agent.getMetrics() 数据，在感知面板中展示 4 项核心指标：
+   * - LLM 调用次数 / Token 数 / 召回命中率 / 工具失败率
    *
-   * 无数据时隐藏指标区域。token 数超过 1000 时显示为 "1.2k" 格式。
+   * 无数据时静默 return。token 数超过 1000 时显示为 "1.2k" 格式。
    *
    * @param metrics Agent 运行时指标快照（null 表示不可用）
    */
   renderAgentMetrics(metrics: AgentMetrics | null): void {
-    const metricsSection = document.getElementById('agent-metrics');
-    if (!metricsSection) return;
+    // 无数据时静默跳过
+    if (!metrics) return;
 
-    // 无数据时隐藏
-    if (!metrics) {
-      metricsSection.classList.add('hidden');
-      return;
+    // ─── 感知面板 LLM 调用次数 ──────────────────────────
+    const llmCallsEl = document.getElementById('perception-llm-calls');
+    if (llmCallsEl) {
+      llmCallsEl.textContent = String(metrics.llm.callCount);
     }
 
-    metricsSection.classList.remove('hidden');
-
-    // LLM 调用次数
-    const callsEl = document.getElementById('metric-llm-calls');
-    if (callsEl) {
-      callsEl.textContent = String(metrics.llm.callCount);
-    }
-
-    // Token 数（输入 + 输出，超过 1000 显示 k 格式）
-    const tokensEl = document.getElementById('metric-llm-tokens');
+    // ─── 感知面板 Token 数（输入 + 输出，超过 1000 显示 k 格式） ──
+    const tokensEl = document.getElementById('perception-tokens');
     if (tokensEl) {
       const totalTokens = metrics.llm.totalInputTokens + metrics.llm.totalOutputTokens;
       tokensEl.textContent = formatTokenCount(totalTokens);
     }
 
-    // 召回命中率（百分比，保留 0 位小数）
-    const recallEl = document.getElementById('metric-recall-hit');
-    if (recallEl) {
-      recallEl.textContent = `${Math.round(metrics.recall.hitRate * 100)}%`;
+    // ─── 感知面板召回命中率（百分比，保留 0 位小数） ────────
+    const recallRateEl = document.getElementById('perception-recall-rate');
+    if (recallRateEl) {
+      recallRateEl.textContent = `${Math.round(metrics.recall.hitRate * 100)}%`;
     }
 
-    // 工具失败率（callCount=0 时显示 "—"，避免 0/0 误显示为 0%）
-    const toolFailEl = document.getElementById('metric-tool-fail');
-    if (toolFailEl) {
+    // ─── 感知面板工具失败率（callCount=0 时显示 "—"，避免 0/0 误显示为 0%） ──
+    const toolFailuresEl = document.getElementById('perception-tool-failures');
+    if (toolFailuresEl) {
       if (metrics.tools.callCount > 0) {
         const failRate = metrics.tools.failureCount / metrics.tools.callCount;
-        toolFailEl.textContent = `${Math.round(failRate * 100)}%`;
+        toolFailuresEl.textContent = `${Math.round(failRate * 100)}%`;
       } else {
-        toolFailEl.textContent = '—';
+        toolFailuresEl.textContent = '—';
       }
-    }
-
-    // 上下文截断次数
-    const truncEl = document.getElementById('metric-context-trunc');
-    if (truncEl) {
-      truncEl.textContent = String(metrics.context.truncationCount);
-    }
-
-    // 衰减次数 / 累计衰减条数
-    const decayEl = document.getElementById('metric-decay');
-    if (decayEl) {
-      const runCount = metrics.decay?.runCount ?? 0;
-      const totalDecayed = metrics.decay?.totalDecayedCount ?? 0;
-      decayEl.textContent = `${runCount}/${totalDecayed}`;
     }
   }
 
   /**
-   * GAP-1 渲染已加载技能列表
+   * 渲染已加载技能列表（安全降级）
    *
    * 消费内核 agent.skills.list，在仪表盘展示当前加载的技能。
    * 每个技能项展示名称、关键词标签和来源层级（project/agent）。
    * 无技能时隐藏列表区域，显示空状态占位。
+   * 原 DOM 位置可能已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
    *
    * @param skills 技能列表（由 DASHBOARD_GET 返回）
    */
@@ -417,10 +391,10 @@ export class DashboardPanelManager {
       layer: string;
     }>,
   ): void {
-    // 更新仪表盘技能计数（合并到事件卡片的 sub-value）
-    const countEl = document.getElementById('skill-count');
+    // 更新仪表盘技能计数（感知面板运行指标区）
+    const countEl = document.getElementById('perception-skill-count');
     if (countEl) {
-      countEl.textContent = `${skills.length} 技能`;
+      countEl.textContent = String(skills.length);
     }
 
     const listEl = document.getElementById('skills-list');
@@ -478,13 +452,14 @@ export class DashboardPanelManager {
   }
 
   /**
-   * 渲染里程碑成就展示
+   * 渲染里程碑成就展示（安全降级）
    *
    * 从仪表盘数据实时推导已达成的里程碑，不持久化（符合"自然遗忘"原则）。
    * 检测类型：
    *   1. 记忆量级：100/1000/10000 条
    *   2. 记忆源多样性：已探索的 source 类型数量
    *   3. 关键记忆类型（洞察、画像）
+   * 原 DOM 位置可能已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
    *
    * @param data 仪表盘数据
    */
@@ -554,9 +529,10 @@ export class DashboardPanelManager {
   }
 
   /**
-   * 渲染对话回顾数据（合并到学习与回顾节）
+   * 渲染对话回顾数据（安全降级，合并到学习与回顾节）
    *
    * 渲染到 #learning-progress 内的今日回顾行和趋势柱状图。
+   * 原 DOM 位置可能已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
    *
    * @param data 对话回顾数据
    */
@@ -941,9 +917,11 @@ export class DashboardPanelManager {
   // ─── 感知系统渲染 ──────────────────────────────────────
 
   /**
-   * 更新情感基调展示（四维进度条 + 对话面板四色圆点）
+   * 更新情感基调展示（感知面板四维进度条 + 状态条指示）
    *
    * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
+   * 渲染到感知面板 (#perception-{dim}-fill / #perception-{dim}-level)。
+   * 同时更新精灵状态条 (#sprite-status-text-bar / #sprite-status-dot-bar)。
    * 同时保存状态供叙事摘要合成。
    *
    * @param affect 四维情感基调数值
@@ -960,48 +938,32 @@ export class DashboardPanelManager {
       { id: 'playfulness', value: affect.playfulness },
     ];
 
-    // ─── 仪表盘进度条（仅在仪表盘已加载时更新） ──────
-    const affectDisplay = document.getElementById('affect-display');
-    if (affectDisplay) {
-      affectDisplay.classList.remove('hidden');
-
-      for (const dim of dimensions) {
-        const fillEl = document.getElementById(`affect-${dim.id}`);
-        const levelEl = document.getElementById(`affect-${dim.id}-level`);
-        if (!fillEl || !levelEl) continue;
-
+    // ─── 感知面板情感进度条 ──────────────────────────
+    for (const dim of dimensions) {
+      const fillEl = document.getElementById(`perception-${dim.id}-fill`);
+      const levelEl = document.getElementById(`perception-${dim.id}-level`);
+      if (fillEl) {
         fillEl.style.width = `${Math.round(dim.value * 100)}%`;
         fillEl.style.background = this.getAffectColor(dim.value);
+      }
+      if (levelEl) {
         levelEl.textContent = this.getAffectLevel(dim.value);
       }
     }
 
-    // ─── 对话面板情感指示器（四色圆点，始终可见） ────
-    const chatIndicator = document.getElementById('chat-affect-indicator');
-    if (chatIndicator) {
-      chatIndicator.classList.remove('hidden');
-      for (const dim of dimensions) {
-        const dotEl = document.getElementById(`chat-affect-${dim.id}`);
-        if (dotEl) {
-          // 检测颜色是否变化，变化时触发脉冲动画
-          const oldColor = dotEl.style.background;
-          const newColor = this.getAffectColor(dim.value);
-          if (oldColor !== newColor && oldColor !== '') {
-            dotEl.classList.add('pulse');
-            // 动画结束后移除 pulse 类，允许下次再次触发
-            dotEl.addEventListener(
-              'animationend',
-              () => {
-                dotEl.classList.remove('pulse');
-              },
-              { once: true },
-            );
-          }
-          dotEl.style.background = newColor;
-          // 更新 title 属性：hover 时显示维度名 + 等级
-          dotEl.title = `${dotEl.title.split('：')[0]}：${this.getAffectLevel(dim.value)}`;
-        }
-      }
+    // ─── 精灵状态条文字（根据主导情感维度生成简短状态描述） ────
+    const statusTextBar = document.getElementById('sprite-status-text-bar');
+    if (statusTextBar) {
+      const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
+      const dominantLabel = { warmth: '温暖', directness: '直接', initiative: '主动', playfulness: '活泼' }[dominant.id] ?? dominant.id;
+      statusTextBar.textContent = `基调：${dominantLabel}（${this.getAffectLevel(dominant.value)}）`;
+    }
+
+    // ─── 精灵状态脉冲点（颜色随主导情感维度变化） ────
+    const statusDotBar = document.getElementById('sprite-status-dot-bar');
+    if (statusDotBar) {
+      const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
+      statusDotBar.style.background = this.getAffectColor(dominant.value);
     }
 
     // 感知数据变化后更新叙事摘要
@@ -1009,108 +971,78 @@ export class DashboardPanelManager {
   }
 
   /**
-   * Phase 3：更新默契度展示（等级徽章 + 双进度条 + 描述）
+   * 更新默契度展示（感知面板等级徽章 + 双进度条 + 描述）
    *
+   * 渲染到感知面板：等级徽章 (#perception-rapport-badge)、信任度进度条
+   * (#perception-trust-fill)、熟悉度进度条 (#perception-familiarity-fill)、
+   * 描述文本 (#perception-rapport-desc)。
    * 由 rapportUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
    * 同时保存状态供叙事摘要合成。
    *
    * @param rapport 默契度数据
    */
   updateRapportDisplay(rapport: RapportData): void {
-    const rapportDisplay = document.getElementById('rapport-display');
-    if (!rapportDisplay) {
-      // 即使面板未加载，也保存状态供叙事摘要合成
-      this.lastNarrativeRapport = { level: rapport.level, trust: rapport.trust };
-      this.updateNarrative();
-      return;
+    // ─── 感知面板等级徽章 ────────────────────────────
+    const rapportBadge = document.getElementById('perception-rapport-badge');
+    if (rapportBadge) {
+      rapportBadge.textContent = this.getRapportLevelLabel(rapport.level);
+      rapportBadge.setAttribute('data-level', rapport.level);
     }
 
-    // 显示默契度卡片
-    rapportDisplay.classList.remove('hidden');
-
-    // 更新等级徽章
-    const badgeEl = document.getElementById('rapport-level-badge');
-    if (badgeEl) {
-      badgeEl.textContent = this.getRapportLevelLabel(rapport.level);
-      badgeEl.setAttribute('data-level', rapport.level);
-    }
-
-    // 更新信任度进度条
-    const trustFill = document.getElementById('rapport-trust');
-    const trustLevel = document.getElementById('rapport-trust-level');
-    if (trustFill && trustLevel) {
+    // ─── 感知面板信任度进度条 ──────────────────────────
+    const trustFill = document.getElementById('perception-trust-fill');
+    if (trustFill) {
       trustFill.style.width = `${Math.round(rapport.trust * 100)}%`;
       trustFill.style.background = this.getAffectColor(rapport.trust);
-      trustLevel.textContent = this.getAffectLevel(rapport.trust);
     }
 
-    // 更新熟悉度进度条
-    const familiarityFill = document.getElementById('rapport-familiarity');
-    const familiarityLevel = document.getElementById('rapport-familiarity-level');
-    if (familiarityFill && familiarityLevel) {
+    // ─── 感知面板熟悉度进度条 ──────────────────────────
+    const familiarityFill = document.getElementById('perception-familiarity-fill');
+    if (familiarityFill) {
       familiarityFill.style.width = `${Math.round(rapport.familiarity * 100)}%`;
       familiarityFill.style.background = this.getAffectColor(rapport.familiarity);
-      familiarityLevel.textContent = this.getAffectLevel(rapport.familiarity);
     }
 
-    // 更新描述文本
-    const descEl = document.getElementById('rapport-description');
-    if (descEl) {
-      descEl.textContent = rapport.description;
+    // ─── 感知面板描述文本 ──────────────────────────────
+    const rapportDesc = document.getElementById('perception-rapport-desc');
+    if (rapportDesc) {
+      rapportDesc.textContent = rapport.description;
     }
+
     // FD-01：保存状态供叙事摘要合成
     this.lastNarrativeRapport = { level: rapport.level, trust: rapport.trust };
     this.updateNarrative();
   }
 
   /**
-   * Phase 4：更新对话上下文展示（三列指标 + 描述）
+   * 更新对话上下文展示（感知面板三列指标）
    *
+   * 渲染到感知面板：节奏 (#perception-pace-value)、话题 (#perception-topic-value)、
+   * 深度 (#perception-depth-value)。
    * 由 contextUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
    * 同时保存状态供叙事摘要合成。
    *
    * @param context 对话上下文数据
    */
   updateContextDisplay(context: ContextData): void {
-    const contextDisplay = document.getElementById('context-display');
-    if (!contextDisplay) {
-      // 即使面板未加载，也保存状态供叙事摘要合成
-      this.lastNarrativeContext = {
-        rhythm: context.rhythm,
-        coherence: context.coherence,
-        depth: context.depth,
-        dominantSource: context.dominantSource,
-      };
-      this.updateNarrative();
-      return;
+    // ─── 感知面板节奏指标 ────────────────────────────
+    const paceEl = document.getElementById('perception-pace-value');
+    if (paceEl) {
+      paceEl.textContent = this.describeRhythm(context.rhythm);
     }
 
-    // 显示上下文卡片
-    contextDisplay.classList.remove('hidden');
-
-    // 更新节奏
-    const rhythmEl = document.getElementById('context-rhythm');
-    if (rhythmEl) {
-      rhythmEl.textContent = this.describeRhythm(context.rhythm);
+    // ─── 感知面板话题连贯性指标 ────────────────────────
+    const topicEl = document.getElementById('perception-topic-value');
+    if (topicEl) {
+      topicEl.textContent = this.describeCoherence(context.coherence);
     }
 
-    // 更新话题
-    const coherenceEl = document.getElementById('context-coherence');
-    if (coherenceEl) {
-      coherenceEl.textContent = this.describeCoherence(context.coherence);
-    }
-
-    // 更新深度
-    const depthEl = document.getElementById('context-depth');
+    // ─── 感知面板深度指标 ────────────────────────────
+    const depthEl = document.getElementById('perception-depth-value');
     if (depthEl) {
       depthEl.textContent = this.describeDepth(context.depth);
     }
 
-    // 更新描述文本
-    const descEl = document.getElementById('context-description');
-    if (descEl) {
-      descEl.textContent = context.description;
-    }
     // FD-01：保存状态供叙事摘要合成
     this.lastNarrativeContext = {
       rhythm: context.rhythm,
@@ -1125,7 +1057,8 @@ export class DashboardPanelManager {
    * 更新模式洞察面板（PatternDetector 检测结果）
    *
    * 由 patternsUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
-   * 展示重复主题、知识缺口和兴趣漂移等检测到的用户模式。
+   * 渲染到感知面板 #perception-patterns-list 容器中，每个 pattern 包含
+   * 类型标签（repeat/gap/drift）和摘要文本。
    * 同时保存状态供叙事摘要合成。
    *
    * @param payload 模式洞察 payload
@@ -1137,27 +1070,21 @@ export class DashboardPanelManager {
       summary: p.summary,
     }));
 
-    const patternsDisplay = document.getElementById('patterns-display');
-    if (!patternsDisplay) {
-      this.updateNarrative();
-      return;
-    }
-
-    const patternsList = document.getElementById('patterns-list');
+    // 渲染到感知面板模式洞察容器
+    const patternsList = document.getElementById('perception-patterns-list');
     if (!patternsList) {
       this.updateNarrative();
       return;
     }
 
-    // 无模式数据时隐藏（但仍更新叙事摘要）
+    // 无模式数据时清空列表（但仍更新叙事摘要）
     if (payload.patterns.length === 0) {
-      patternsDisplay.classList.add('hidden');
+      while (patternsList.firstChild) {
+        patternsList.removeChild(patternsList.firstChild);
+      }
       this.updateNarrative();
       return;
     }
-
-    // 显示洞察面板
-    patternsDisplay.classList.remove('hidden');
 
     // 清空并重建列表（遵循项目规范：while + removeChild）
     while (patternsList.firstChild) {
@@ -1166,19 +1093,35 @@ export class DashboardPanelManager {
 
     for (const pattern of payload.patterns) {
       const item = document.createElement('div');
-      item.className = 'pattern-item';
+      item.className = 'perception-pattern-item';
 
-      // 图标：根据模式类型选择
-      const icon = document.createElement('span');
-      icon.className = 'pattern-icon';
-      icon.textContent = this.getPatternDetectorIcon(pattern.type);
+      // 类型标签：根据模式类型选择对应样式和文字
+      const typeSpan = document.createElement('span');
+      typeSpan.className = 'perception-pattern-type';
+      switch (pattern.type) {
+        case 'repeat':
+          typeSpan.classList.add('repeat');
+          typeSpan.textContent = '重复';
+          break;
+        case 'gap':
+          typeSpan.classList.add('gap');
+          typeSpan.textContent = '缺口';
+          break;
+        case 'drift':
+          typeSpan.classList.add('drift');
+          typeSpan.textContent = '漂移';
+          break;
+        default:
+          typeSpan.classList.add('repeat');
+          typeSpan.textContent = pattern.type;
+          break;
+      }
 
-      // 文本
+      // 摘要文本
       const text = document.createElement('span');
-      text.className = 'pattern-text';
       text.textContent = pattern.summary;
 
-      item.appendChild(icon);
+      item.appendChild(typeSpan);
       item.appendChild(text);
 
       patternsList.appendChild(item);
@@ -1190,52 +1133,25 @@ export class DashboardPanelManager {
   /**
    * FD-01 更新叙事摘要 DOM
    *
-   * 每次感知数据更新时调用，渲染到 #sprite-narrative 和对话面板叙事行。
+   * 每次感知数据更新时调用，渲染到感知面板 #perception-narrative-text。
+   * 同时更新精灵状态条 #sprite-status-text-bar。
    * 内部从闭包级状态变量合成叙事文本。
    */
   updateNarrative(): void {
-    const narrativeEl = document.getElementById('sprite-narrative');
-    const textEl = document.getElementById('sprite-narrative-text');
-    if (!narrativeEl || !textEl) return;
-
     const narrative = this.generateNarrative();
-    // FD-03 仅当叙事文本实际变化时触发脉冲动画
-    const textChanged = textEl.textContent !== narrative;
-    textEl.textContent = narrative;
 
-    // FD-03 叙事卡片始终可见，只切换 active/idle 状态
-    if (this.lastNarrativeContext?.rhythm === 'idle' || !this.lastNarrativeContext) {
-      narrativeEl.classList.add('idle');
-      narrativeEl.classList.remove('active');
-    } else {
-      narrativeEl.classList.add('active');
-      narrativeEl.classList.remove('idle');
+    // ─── 感知面板叙事文本 ──────────────────────────────
+    const perceptionNarrativeText = document.getElementById('perception-narrative-text');
+    if (perceptionNarrativeText) {
+      perceptionNarrativeText.textContent = narrative;
     }
 
-    // FD-03 同步更新对话面板叙事摘要行（条件显示：仅非 idle 状态显示）
-    const chatNarrative = document.getElementById('chat-narrative');
-    const chatNarrativeText = document.getElementById('chat-narrative-text');
+    // ─── 精灵状态条文字（非 idle 状态时更新） ────────────
     const isIdle = this.lastNarrativeContext?.rhythm === 'idle' || !this.lastNarrativeContext;
-
-    if (chatNarrative) {
-      // idle 状态隐藏叙事条，非 idle 状态显示（Phase 6：非常驻）
-      chatNarrative.classList.toggle('visible', !isIdle);
-    }
-    if (chatNarrativeText) {
-      chatNarrativeText.textContent = narrative;
-    }
-
-    // FD-03 感知数据变化时触发脉冲动画（去重：仅文本变化时触发）
-    if (textChanged) {
-      narrativeEl.classList.remove('narrative-updated');
-      void narrativeEl.offsetWidth; // 强制回流以重新触发动画
-      narrativeEl.classList.add('narrative-updated');
-
-      // 同步脉冲动画到对话面板叙事行（仅显示状态下触发，避免隐藏元素无效动画）
-      if (chatNarrative && !isIdle) {
-        chatNarrative.classList.remove('narrative-updated');
-        void chatNarrative.offsetWidth;
-        chatNarrative.classList.add('narrative-updated');
+    if (!isIdle) {
+      const statusTextBar = document.getElementById('sprite-status-text-bar');
+      if (statusTextBar) {
+        statusTextBar.textContent = narrative;
       }
     }
   }
@@ -1353,26 +1269,7 @@ export class DashboardPanelManager {
     }
   }
 
-  /**
-   * 模式类型 → 图标映射
-   *
-   * 用于洞察面板中每个模式项的图标展示。
-   *
-   * @param type 模式类型标识符
-   * @returns 对应的 emoji 图标
-   */
-  private getPatternDetectorIcon(type: string): string {
-    switch (type) {
-      case 'recurring_topic':
-        return '🔄';
-      case 'knowledge_gap':
-        return '❓';
-      case 'interest_drift':
-        return '📈';
-      default:
-        return '💡';
-    }
-  }
+
 
   /**
    * FD-01 综合感知系统输出，生成一句话叙事摘要

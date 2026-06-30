@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 角色控制器 — 角色选择器业务逻辑
  *
  * 职责：
@@ -36,6 +36,14 @@ export function createPersonaController(uiManager: UIManager) {
         const { switched, name: activeName } = await window.electronAPI.switchPersona(name);
         if (switched && activeName) {
           uiManager.updateActivePersona(activeName);
+          // 同步更新侧边栏角色头像
+          const sidebarAvatar = document.getElementById('sidebar-persona-avatar');
+          if (sidebarAvatar) {
+            const avatarIcon = sidebarAvatar.querySelector('use');
+            if (avatarIcon) {
+              avatarIcon.setAttribute('href', '#icon-fairy');
+            }
+          }
           // IX-06 操作反馈走 toast
           uiManager.showToast(`已切换到角色：${activeName}`, 'success');
         }

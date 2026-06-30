@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
@@ -122,11 +122,11 @@
 
   <!-- 大底板容器：grid 布局（左侧栏 + 顶部栏 + 核心悬浮窗口） -->
   <div id="app">
-    <!-- 侧边栏（默认 64px 图标模式，点击品牌图标展开为 200px） -->
+    <!-- 侧边栏（固定 64px 图标模式，不再展开） -->
     <aside id="sidebar">
-      <!-- 品牌区（点击展开/收起侧边栏，对齐 demo：🧚 Memora 作为唯一品牌标识） -->
+      <!-- 品牌区（纯展示，不再承担展开/收起功能） -->
       <!-- UI-AUDIT-P2-2.12: 品牌区使用 h1 作为页面最高层级标题，语义 HTML 规范 -->
-      <div class="sidebar-brand" id="sidebar-toggle" role="button" tabindex="0" title="展开/收起侧边栏" aria-label="展开或收起侧边栏">
+      <div class="sidebar-brand" title="Memora 精灵">
         <div class="sidebar-brand-icon"><svg class="icon"><use href="#icon-fairy"/></svg></div>
         <h1 class="sidebar-brand-name" translate="no">Memora</h1>
       </div>
@@ -147,216 +147,17 @@
         </button>
       </nav>
 
-      <!-- 角色选择器（点击展开下拉菜单） -->
-      <div id="sidebar-header">
-        <!-- UI-AUDIT: 添加 role/tabindex/aria-label 提升键盘可访问性（原 div 不可聚焦） -->
-        <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
-          <span id="persona-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
-          <span id="persona-name">精灵</span>
-          <!-- IX-07 当前角色匹配模式标签（auto/manual） -->
-          <span id="persona-mode-badge" class="mode-badge" title="角色匹配模式：自动（根据上下文自动切换角色）">自动</span>
-          <span id="persona-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
-        </div>
-        <!-- 角色下拉菜单（动态填充） -->
-        <div id="persona-dropdown" class="dropdown hidden"></div>
-      </div>
-      <div id="sidebar-content">
-        <!-- 仪表盘（对齐 demo：4 项 2×2 + 事件项跨 2 列并高亮） -->
-        <div id="dashboard">
-          <!-- FD-01 精灵叙事摘要：综合感知系统输出，一句话描述当前状态 -->
-          <!-- FD-03 始终可见，点击展开/折叠详情区 -->
-          <div id="sprite-narrative" class="dash-item" style="grid-column: 1 / -1;" title="点击展开/折叠详情">
-            <span class="dash-label" id="sprite-narrative-text">精灵正在感知中...</span>
-            <span id="narrative-toggle" class="narrative-toggle"><svg class="icon"><use href="#icon-chevron"/></svg></span>
-          </div>
-          <div class="dash-item" title="Agent 记忆总数">
-            <span class="dash-label"><svg class="icon"><use href="#icon-brain"/></svg> 记忆</span>
-            <span class="dash-value" id="memory-count">0</span>
-          </div>
-          <div class="dash-item" title="AI 提取的洞察数">
-            <span class="dash-label"><svg class="icon"><use href="#icon-lightbulb"/></svg> 洞察</span>
-            <span class="dash-value" id="insight-count">0</span>
-          </div>
-          <div class="dash-item" title="已加载的角色数">
-            <span class="dash-label"><svg class="icon"><use href="#icon-persona"/></svg> 角色</span>
-            <span class="dash-value" id="persona-count">0</span>
-          </div>
-          <!-- FD-03 累积事件/触发器/技能（跨 2 列，接近阈值时高亮，提示即将主动提示） -->
-          <div class="dash-item" id="dash-pending" title="累积事件数 / 主动提示阈值 · 触发器 · 技能" style="grid-column: span 2;">
-            <span class="dash-label"><svg class="icon"><use href="#icon-inbox"/></svg> 事件</span>
-            <span class="dash-value" id="pending-count">0/3</span>
-            <span class="dash-sub-value" id="trigger-count">0 触发器</span>
-            <span class="dash-sub-value" id="skill-count">0 技能</span>
-          </div>
-        </div>
-
-        <!-- FD-03 详情区容器：包装所有感知卡片，由叙事卡片点击切换折叠/展开 -->
-        <div id="dashboard-details">
-
-        <!-- 情感基调展示（四维进度条，由 affectUpdated 事件动态更新） -->
-        <div id="affect-display" class="dashboard-section hidden">
-          <h3><svg class="icon"><use href="#icon-music"/></svg> 互动基调</h3>
-          <div class="affect-bars">
-            <div class="affect-bar">
-              <span class="affect-label">温暖度</span>
-              <div class="affect-track"><div class="affect-fill" id="affect-warmth" style="width: 50%;"></div></div>
-              <span class="affect-level" id="affect-warmth-level">中</span>
-            </div>
-            <div class="affect-bar">
-              <span class="affect-label">直接度</span>
-              <div class="affect-track"><div class="affect-fill" id="affect-directness" style="width: 50%;"></div></div>
-              <span class="affect-level" id="affect-directness-level">中</span>
-            </div>
-            <div class="affect-bar">
-              <span class="affect-label">主动度</span>
-              <div class="affect-track"><div class="affect-fill" id="affect-initiative" style="width: 50%;"></div></div>
-              <span class="affect-level" id="affect-initiative-level">中</span>
-            </div>
-            <div class="affect-bar">
-              <span class="affect-label">调皮度</span>
-              <div class="affect-track"><div class="affect-fill" id="affect-playfulness" style="width: 30%;"></div></div>
-              <span class="affect-level" id="affect-playfulness-level">低</span>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Phase 3：默契度展示（等级 + 信任度进度条 + 熟悉度进度条 + 描述，由 rapportUpdated 事件动态更新） -->
-        <div id="rapport-display" class="dashboard-section hidden">
-          <h3><svg class="icon"><use href="#icon-rapport"/></svg> 默契度</h3>
-          <div class="rapport-level-badge" id="rapport-level-badge">初识</div>
-          <div class="affect-bars">
-            <div class="affect-bar">
-              <span class="affect-label">信任度</span>
-              <div class="affect-track"><div class="affect-fill" id="rapport-trust" style="width: 30%;"></div></div>
-              <span class="affect-level" id="rapport-trust-level">低</span>
-            </div>
-            <div class="affect-bar">
-              <span class="affect-label">熟悉度</span>
-              <div class="affect-track"><div class="affect-fill" id="rapport-familiarity" style="width: 0%;"></div></div>
-              <span class="affect-level" id="rapport-familiarity-level">低</span>
-            </div>
-          </div>
-          <p class="rapport-description" id="rapport-description">初识阶段，精灵正在了解你</p>
-        </div>
-        
-        <!-- Phase 4：对话上下文展示（节奏 + 话题 + 深度，由 contextUpdated 事件动态更新） -->
-        <div id="context-display" class="dashboard-section hidden">
-          <h3><svg class="icon"><use href="#icon-antenna"/></svg> 对话上下文</h3>
-          <div class="context-metrics">
-            <div class="context-metric">
-              <span class="context-label">节奏</span>
-              <span class="context-value" id="context-rhythm">--</span>
-            </div>
-            <div class="context-metric">
-              <span class="context-label">话题</span>
-              <span class="context-value" id="context-coherence">--</span>
-            </div>
-            <div class="context-metric">
-              <span class="context-label">深度</span>
-              <span class="context-value" id="context-depth">--</span>
-            </div>
-          </div>
-          <p class="rapport-description" id="context-description">--</p>
-        </div>
-        
-        <!-- 用户模式洞察（PatternDetector 检测结果，由 patternsUpdated 事件动态更新） -->
-        <div id="patterns-display" class="dashboard-section hidden">
-          <h3><svg class="icon"><use href="#icon-lightbulb"/></svg> 模式洞察</h3>
-          <div id="patterns-list" class="patterns-list">
-            <!-- 由 updatePatternsDisplay() 动态填充 -->
-          </div>
-        </div>
-
-        <!-- 里程碑成就（从 dashboard 数据实时推导，不持久化，符合"自然遗忘"原则） -->
-        <div id="milestones-display" class="dashboard-section hidden">
-          <h3><svg class="icon"><use href="#icon-trophy"/></svg> 里程碑</h3>
-          <div id="milestones-list" class="milestones-list">
-            <!-- 由 updateMilestonesDisplay() 动态填充 -->
-          </div>
-        </div>
-        
-        <!-- OBS-01 Agent 运行时指标（消费内核 agent.getMetrics()） -->
-        <!-- 由 renderAgentMetrics() 动态填充，无数据时隐藏 -->
-        <div id="agent-metrics" class="dashboard-section hidden">
-          <h3><svg class="icon"><use href="#icon-chart"/></svg> 运行指标</h3>
-          <div id="agent-metrics-grid">
-            <div class="dash-item" title="LLM 调用总次数（含重试）">
-              <span class="dash-label"><svg class="icon"><use href="#icon-lightning"/></svg> 调用</span>
-              <span class="dash-value" id="metric-llm-calls">0</span>
-            </div>
-            <div class="dash-item" title="累计输入 + 输出 token 数">
-              <span class="dash-label"><svg class="icon"><use href="#icon-hash"/></svg> Token</span>
-              <span class="dash-value" id="metric-llm-tokens">0</span>
-            </div>
-            <div class="dash-item" title="记忆召回命中率">
-              <span class="dash-label"><svg class="icon"><use href="#icon-search"/></svg> 召回</span>
-              <span class="dash-value" id="metric-recall-hit">0%</span>
-            </div>
-            <div class="dash-item" title="工具调用失败率">
-              <span class="dash-label"><svg class="icon"><use href="#icon-tools"/></svg> 工具</span>
-              <span class="dash-value" id="metric-tool-fail">0%</span>
-            </div>
-            <div class="dash-item" title="上下文截断次数">
-              <span class="dash-label"><svg class="icon"><use href="#icon-scissors"/></svg> 截断</span>
-              <span class="dash-value" id="metric-context-trunc">0</span>
-            </div>
-            <div class="dash-item" title="记忆衰减执行次数 / 累计衰减条数">
-              <span class="dash-label"><svg class="icon"><use href="#icon-leaf"/></svg> 衰减</span>
-              <span class="dash-value" id="metric-decay">0/0</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 隐藏的建议计数元素（供 updateLearningProgress 读取，避免 DOM 查询缺失） -->
-        <span id="suggestion-count" class="hidden">0</span>
-
-        <!-- 学习与回顾：聚合配置建议/画像/投影/洞察 + 今日回顾 + 推荐 -->
-        <div id="learning-progress" class="dashboard-section hidden">
-          <h3><svg class="icon"><use href="#icon-books"/></svg> 学习与回顾</h3>
-          <div id="learning-progress-grid">
-            <div class="dash-item" title="配置自进化建议数">
-              <span class="dash-label"><svg class="icon"><use href="#icon-gear"/></svg> 建议</span>
-              <span class="dash-value" id="learn-suggestions">0</span>
-            </div>
-            <div class="dash-item" title="已确认用户画像条目数">
-              <span class="dash-label"><svg class="icon"><use href="#icon-person"/></svg> 画像</span>
-              <span class="dash-value" id="learn-profile">0</span>
-            </div>
-            <div class="dash-item" title="作品投影数">
-              <span class="dash-label"><svg class="icon"><use href="#icon-folder"/></svg> 作品</span>
-              <span class="dash-value" id="learn-works">0</span>
-            </div>
-            <div class="dash-item" title="AI 提取的洞察数">
-              <span class="dash-label"><svg class="icon"><use href="#icon-lightbulb"/></svg> 洞察</span>
-              <span class="dash-value" id="learn-insights">0</span>
-            </div>
-          </div>
-          <!-- 今日回顾行（合并自 review-panel） -->
-          <div class="review-row">
-            <span class="review-label">今日</span>
-            <span class="review-value" id="review-today-memories">0</span>
-            <span class="review-unit">记忆</span>
-            <span class="review-value" id="review-today-insights">0</span>
-            <span class="review-unit">洞察</span>
-            <span class="review-trend-direction" id="review-trend-dir">—</span>
-          </div>
-          <div class="review-trend-bars" id="review-trend-bars"></div>
-          <!-- 最近洞察列表（渲染 ReviewData.insights.recent） -->
-          <ul id="recent-insights-list" class="recent-insights-list"></ul>
-          <!-- 推荐列表（合并自 recommendations） -->
-          <ul id="recommendation-list" class="suggestion-list"></ul>
-        </div>
-
-        </div><!-- /#dashboard-details -->
-
-      </div>
-
       <!-- 精灵状态指示器（底部小圆点，颜色表示状态：蓝=正常/黄=思考中/绿=有主动提示） -->
       <div class="sidebar-status" id="sidebar-status" title="精灵状态：就绪">
+        <!-- 角色头像（点击跳转角色选择器） -->
+        <div class="sidebar-persona-avatar" id="sidebar-persona-avatar" role="button" tabindex="0" title="切换角色">
+          <svg class="icon"><use href="#icon-fairy"/></svg>
+        </div>
         <span class="status-dot" id="sprite-status-dot"></span>
         <span class="status-text" id="sprite-status-text">就绪</span>
       </div>
     </aside>
+
 
     <!-- 顶部栏（与左侧栏同色，无边界；纯窗口拖拽区 + 命令面板入口 + 窗口控制按钮） -->
     <header id="titlebar">
@@ -381,11 +182,25 @@
     <main id="main-content">
       <!-- 对话面板 -->
       <div id="panel-chat" class="panel active">
-        <!-- 对话工具栏（对齐 demo：左侧标题+副标题，右侧新会话按钮） -->
+        <!-- 对话工具栏（左侧精灵状态条+消息统计，中间角色选择器，右侧日期导航） -->
         <div id="chat-toolbar">
           <div class="chat-toolbar-info">
-            <span class="chat-toolbar-title">对话</span>
+            <!-- 精灵状态条（点击展开感知面板） -->
+            <div id="sprite-status-bar" class="sprite-status-bar" role="button" tabindex="0" title="点击查看精灵感知状态" aria-label="精灵状态：就绪">
+              <svg class="sprite-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-fairy"/></svg>
+              <span id="sprite-status-text-bar">就绪</span>
+              <span class="sprite-status-dot" id="sprite-status-dot-bar"></span>
+            </div>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
+          </div>
+          <div id="toolbar-persona-container" class="toolbar-persona-container">
+            <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
+              <span id="persona-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
+              <span id="persona-name">精灵</span>
+              <span id="persona-mode-badge" class="mode-badge auto" title="角色匹配模式：自动">自动</span>
+              <span id="persona-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
+            </div>
+            <div id="persona-dropdown" class="dropdown hidden"></div>
           </div>
           <!-- UX-FD-07 日期导航按钮：快速跳转到指定日期的历史对话 -->
           <div id="date-navigator" class="date-navigator">
@@ -399,10 +214,84 @@
           </div>
         </div>
 
-        <!-- FD-03 对话面板叙事摘要行：仅非 idle 状态显示（Phase 6：非常驻），与仪表盘叙事卡片共用 generateNarrative() -->
-        <div id="chat-narrative" class="chat-narrative">
-          <span class="chat-narrative-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
-          <span class="chat-narrative-text" id="chat-narrative-text">精灵正在感知中...</span>
+        <!-- 感知面板（overlay，点击精灵状态条展开，覆盖在消息区顶部） -->
+        <div id="perception-panel" class="perception-panel hidden" aria-label="精灵感知面板">
+          <div class="perception-panel-header">
+            <span class="perception-panel-title">精灵感知状态</span>
+            <button class="perception-panel-close" aria-label="关闭感知面板"><svg class="icon"><use href="#icon-close"/></svg></button>
+          </div>
+          <!-- 情感基调（四维进度条） -->
+          <div class="perception-section" id="perception-affect">
+            <h4 class="perception-section-title">情感基调</h4>
+            <div class="affect-bars" id="perception-affect-bars">
+              <div class="affect-bar"><span class="affect-label">温暖</span><div class="affect-track"><div class="affect-fill" id="perception-warmth-fill" style="width:0%"></div></div><span class="affect-level" id="perception-warmth-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">直接</span><div class="affect-track"><div class="affect-fill" id="perception-directness-fill" style="width:0%"></div></div><span class="affect-level" id="perception-directness-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">主动</span><div class="affect-track"><div class="affect-fill" id="perception-initiative-fill" style="width:0%"></div></div><span class="affect-level" id="perception-initiative-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">调皮</span><div class="affect-track"><div class="affect-fill" id="perception-playfulness-fill" style="width:0%"></div></div><span class="affect-level" id="perception-playfulness-level">—</span></div>
+            </div>
+          </div>
+          <!-- 默契度 -->
+          <div class="perception-section" id="perception-rapport">
+            <h4 class="perception-section-title">默契度</h4>
+            <div class="rapport-level-badge" id="perception-rapport-badge" data-level="stranger">初识</div>
+            <div class="rapport-bars">
+              <div class="rapport-bar"><span class="rapport-bar-label">信任度</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-trust-fill" style="width:0%"></div></div></div>
+              <div class="rapport-bar"><span class="rapport-bar-label">熟悉度</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-familiarity-fill" style="width:0%"></div></div></div>
+            </div>
+            <p class="rapport-description" id="perception-rapport-desc">刚开始了解彼此</p>
+          </div>
+          <!-- 对话上下文（三指标） -->
+          <div class="perception-section" id="perception-context">
+            <h4 class="perception-section-title">对话上下文</h4>
+            <div class="context-metrics">
+              <div class="context-metric"><span class="context-label">节奏</span><span class="context-value" id="perception-pace-value">—</span></div>
+              <div class="context-metric"><span class="context-label">话题</span><span class="context-value" id="perception-topic-value">—</span></div>
+              <div class="context-metric"><span class="context-label">深度</span><span class="context-value" id="perception-depth-value">—</span></div>
+            </div>
+          </div>
+          <!-- 叙事摘要 -->
+          <div class="perception-section" id="perception-narrative">
+            <h4 class="perception-section-title">叙事摘要</h4>
+            <p class="perception-narrative-text" id="perception-narrative-text">精灵正在感知中...</p>
+          </div>
+          <!-- 模式洞察（重复主题/知识缺口/兴趣漂移） -->
+          <div class="perception-section" id="perception-patterns">
+            <h4 class="perception-section-title">模式洞察</h4>
+            <div id="perception-patterns-list" class="perception-patterns-list"></div>
+          </div>
+          <!-- 运行指标（默认折叠） -->
+          <div class="perception-section collapsible" id="perception-metrics">
+            <h4 class="perception-section-title clickable" id="perception-metrics-toggle">
+              运行指标
+              <svg class="icon narrative-toggle" id="perception-metrics-arrow"><use href="#icon-chevron"/></svg>
+            </h4>
+            <div class="perception-metrics-grid hidden" id="perception-metrics-grid">
+              <div class="dash-item"><span class="dash-label">LLM 调用</span><span class="dash-value" id="perception-llm-calls">0</span></div>
+              <div class="dash-item"><span class="dash-label">Token</span><span class="dash-value" id="perception-tokens">0</span></div>
+              <div class="dash-item"><span class="dash-label">召回命中率</span><span class="dash-value" id="perception-recall-rate">0%</span></div>
+              <div class="dash-item"><span class="dash-label">工具失败</span><span class="dash-value" id="perception-tool-failures">0</span></div>
+              <div class="dash-item" title="Agent 记忆总数"><span class="dash-label">记忆</span><span class="dash-value" id="perception-memory-count">0</span></div>
+              <div class="dash-item" title="AI 提取的洞察数"><span class="dash-label">洞察</span><span class="dash-value" id="perception-insight-count">0</span></div>
+              <div class="dash-item" title="累积待处理事件/阈值"><span class="dash-label">事件</span><span class="dash-value" id="perception-pending-count">0/0</span></div>
+              <div class="dash-item" title="已安装技能数"><span class="dash-label">技能</span><span class="dash-value" id="perception-skill-count">0</span></div>
+              <div class="dash-item" title="待处理配置建议数"><span class="dash-label">建议</span><span class="dash-value" id="perception-suggestion-count">0</span></div>
+            </div>
+            <!-- 里程碑成就 -->
+            <div id="milestones-display">
+              <div id="milestones-list"></div>
+            </div>
+            <!-- 对话回顾（今日概况+趋势+洞察） -->
+            <div class="perception-review" id="perception-review">
+              <div class="review-today">
+                今日：<span id="review-today-memories">0</span> 条记忆 · <span id="review-today-insights">0</span> 条洞察
+              </div>
+              <div class="review-trend">
+                <span id="review-trend-dir" class="review-trend-direction stable">—</span>
+              </div>
+              <div id="review-trend-bars" class="review-trend-bars"></div>
+              <ul id="recent-insights-list" class="recent-insights-list"></ul>
+            </div>
+          </div>
         </div>
 
         <!-- FD-A2 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->
@@ -411,7 +300,7 @@
           <button id="chat-error-retry" class="panel-error-btn">重试</button>
         </div>
 
-        <!-- 主动提示 banner（顶部滑入，对齐 docs/memora-sprite-preview.html §6.6） -->
+        <!-- 主动提示 banner（顶部滑入，对齐设计契约 §6.6） -->
         <div id="proactive-banner" class="hidden">
           <span class="banner-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
           <div class="banner-text" id="proactive-banner-text"></div>
@@ -442,13 +331,6 @@
         </div>
         <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示） -->
         <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
-        <!-- 对话面板情感指示器（输入框上方紧凑四维状态条） -->
-        <div id="chat-affect-indicator" class="chat-affect-indicator hidden">
-          <span class="chat-affect-dot" id="chat-affect-warmth" title="温暖度"></span>
-          <span class="chat-affect-dot" id="chat-affect-directness" title="直接度"></span>
-          <span class="chat-affect-dot" id="chat-affect-initiative" title="主动度"></span>
-          <span class="chat-affect-dot" id="chat-affect-playfulness" title="调皮度"></span>
-        </div>
         <div id="input-area">
           <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder） -->
           <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1" aria-label="输入消息"></textarea>
@@ -470,23 +352,14 @@
       <div id="memory-drawer-overlay" class="drawer-overlay hidden" aria-hidden="true"></div>
       <!-- 抽屉容器 -->
       <aside id="panel-memories" class="drawer hidden" aria-hidden="true" aria-label="记忆抽屉">
-        <div class="panel-header">
-          <!-- 面板标题 + 关闭按钮 -->
+        <div class="panel-header drawer-header">
+          <!-- 面板标题 -->
           <span class="panel-title">记忆</span>
-          <button id="btn-memory-drawer-close" class="drawer-close-btn" title="关闭（Esc）" aria-label="关闭记忆抽屉">
-            <svg class="icon"><use href="#icon-close"/></svg>
-          </button>
           <!-- 搜索框占据主要宽度 -->
           <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" />
           <!-- 主操作：添加记忆 -->
-          <button id="btn-add-memory" class="btn btn-primary btn-sm">+ 添加</button>
-          <!-- 视图模式切换（列表/图谱） -->
-          <div class="view-switch" role="tablist" aria-label="视图模式">
-            <button id="btn-list-view" class="view-switch-btn active" title="列表视图" role="tab" aria-selected="true"><svg class="icon"><use href="#icon-memo"/></svg></button>
-            <button id="btn-timeline-view" class="view-switch-btn" title="时间线视图" role="tab" aria-selected="false"><svg class="icon"><use href="#icon-timeline"/></svg></button>
-            <button id="btn-graph-view" class="view-switch-btn" title="图谱视图" role="tab" aria-selected="false"><svg class="icon"><use href="#icon-brain"/></svg></button>
-          </div>
-          <!-- 更多工具下拉菜单（收敛次级操作：高级搜索/洞察/健康度） -->
+          <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
+          <!-- 更多工具（含视图切换/高级筛选/洞察/健康度） -->
           <div class="toolbar-more">
             <button id="btn-memory-more" class="icon-btn" title="更多工具" aria-haspopup="true" aria-expanded="false">
               <svg class="icon"><use href="#icon-tools"/></svg>
@@ -494,6 +367,15 @@
             <div id="memory-more-menu" class="dropdown more-menu hidden">
               <button class="more-menu-item" data-action="advanced-search">
                 <svg class="icon"><use href="#icon-gear"/></svg> 高级筛选
+              </button>
+              <button class="more-menu-item" data-action="view-list">
+                <svg class="icon"><use href="#icon-memo"/></svg> 列表视图
+              </button>
+              <button class="more-menu-item" data-action="view-timeline">
+                <svg class="icon"><use href="#icon-timeline"/></svg> 时间线视图
+              </button>
+              <button class="more-menu-item" data-action="view-graph">
+                <svg class="icon"><use href="#icon-brain"/></svg> 图谱视图
               </button>
               <button class="more-menu-item" data-action="insights">
                 <svg class="icon"><use href="#icon-chart"/></svg> 统计洞察
@@ -503,6 +385,10 @@
               </button>
             </div>
           </div>
+          <!-- 关闭按钮（右侧） -->
+          <button id="btn-memory-drawer-close" class="drawer-close-btn" title="关闭（Esc）" aria-label="关闭记忆抽屉">
+            <svg class="icon"><use href="#icon-close"/></svg>
+          </button>
           <span id="health-mini-score" class="health-mini-score hidden">100</span>
         </div>
         <!-- 高级搜索栏（搜索增强，默认折叠） -->
@@ -639,19 +525,15 @@
         <div id="memory-timeline-container" style="display:none;"></div>
       </aside>
 
-      <!-- 设置模态窗口（640×520px，垂直 tab 导航，底部操作按钮） -->
-      <div id="panel-settings" class="modal hidden" aria-hidden="true" aria-label="设置">
-        <div class="modal-content settings-modal-content">
-          <!-- 模态头部：标题 + 关闭按钮 -->
-          <div class="modal-header settings-modal-header">
-            <h3>设置</h3>
-            <button class="modal-close" id="btn-settings-modal-close" title="关闭（Esc）" aria-label="关闭设置">
-              <svg class="icon"><use href="#icon-close"/></svg>
-            </button>
+      <!-- 设置面板（核心区域面板，垂直 tab 导航，底部操作按钮） -->
+      <div id="panel-settings" class="panel" aria-hidden="true" aria-label="设置">
+          <!-- 面板头部 -->
+          <div class="panel-header">
+            <span class="panel-title">设置</span>
           </div>
 
-          <!-- 模态主体：左侧垂直 tab 导航 + 右侧内容区 -->
-          <div class="settings-modal-body">
+          <!-- 面板主体：左侧垂直 tab 导航 + 右侧内容区 -->
+          <div class="settings-panel-body">
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
         <div class="settings-tabs">
           <button class="settings-tab active" data-settings-tab="llm">大模型</button>
@@ -963,9 +845,9 @@
           </div>
         </div>
 
-          </div><!-- /.settings-modal-body -->
+          </div><!-- /.settings-panel-body -->
 
-        <!-- 模态底部：Agent 状态 + 操作按钮（保存/取消/恢复默认/稍后配置） -->
+        <!-- 面板底部：Agent 状态 + 操作按钮（保存/取消/恢复默认/稍后配置） -->
         <div class="settings-actions">
           <!-- P3-FLOW-10 Agent 连接状态指示器（底部按钮行左侧） -->
           <div id="agent-status-indicator" class="agent-status-indicator unknown">
@@ -981,7 +863,6 @@
           <button id="btn-settings-save" class="btn-primary">保存</button>
           </div>
         </div>
-        </div><!-- /.modal-content -->
       </div>
     </main>
   </div>

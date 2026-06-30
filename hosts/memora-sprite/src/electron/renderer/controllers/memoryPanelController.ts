@@ -436,7 +436,7 @@ export function createMemoryController(uiManager: UIManager) {
       // H3 仪表盘加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
 
-      // ─── 对话回顾数据（合并到学习与回顾节） ──────────────
+      // ─── 对话回顾数据（感知面板内） ──────────────
       const reviewData = await window.electronAPI.getReviewData();
       uiManager.renderReviewData(reviewData);
     } catch (error) {
