@@ -10,5 +10,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/electron", "src/__tests__"]
+  "exclude": ["node_modules", "dist", "dist-electron", "dist-web", "src/electron", "src/web", "src/shared", "src/__tests__"]
 }

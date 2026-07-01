@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "outDir": "./dist-web",
+    "declaration": true,
+    "sourceMap": true
+  },
+  "include": ["src/web/**/*", "src/shared/**/*"],
+  "exclude": ["node_modules", "dist", "dist-electron", "dist-web", "src/__tests__"]
+}
