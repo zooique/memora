@@ -1539,6 +1539,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 注册重试加载记忆列表回调（委托到 DashboardPanelManager） */
   onReloadMemoryList(cb: () => void): void { this.dashboardPanel.onReloadMemoryList(cb); }
 
+  /**
+   * 主题切换时重绘 Canvas 图表（委托到 DashboardPanelManager）
+   *
+   * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘。
+   * RelationGraph 有持续动画循环，主题切换会自动生效，无需处理。
+   */
+  repaintCanvasOnThemeChange(): void { this.dashboardPanel.repaintOnThemeChange(); }
+
   // ─── 角色选择器 ─ 委托到 PersonaPanelManager ───────────────
 
   /** 渲染角色下拉菜单（委托到 PersonaPanelManager） */

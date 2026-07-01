@@ -173,6 +173,9 @@ export class DashboardPanelManager {
   /** 脉冲动画定时器句柄列表（cleanup 时统一清理，避免回调在 DOM 销毁后触发） */
   private pulseTimers: number[] = [];
 
+  /** 伙伴洞察记忆缓存（主题切换时重绘增长图表用，避免重新拉取数据） */
+  private lastPartnerMemories: Array<{ source: string; contentPreview: string; createdAt?: string }> = [];
+
   // ─── FD-01 叙事摘要：闭包级状态（跨事件累积，供 generateNarrative 合成） ──
   /** 最近一次上下文状态（P1：从 ContextPayload 派生，消除内联重复） */
   private lastNarrativeContext: Pick<ContextPayload, 'rhythm' | 'coherence' | 'depth' | 'dominantSource'> | null = null;
@@ -210,6 +213,18 @@ export class DashboardPanelManager {
     }
     this.pulseTimers = [];
     this.events.cleanup();
+  }
+
+  /**
+   * 主题切换时重绘 Canvas 图表
+   *
+   * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘。
+   * 使用缓存的伙伴记忆数据重新渲染增长趋势图，避免重新拉取数据。
+   */
+  repaintOnThemeChange(): void {
+    if (this.lastPartnerMemories.length > 0) {
+      this.renderGrowthChart(this.lastPartnerMemories);
+    }
   }
 
   // ─── 回调注册 ──────────────────────────────────────────
@@ -1386,6 +1401,9 @@ export class DashboardPanelManager {
       return;
     }
     panel.classList.remove('hidden');
+
+    // 缓存记忆数据，供主题切换时重绘增长图表（避免重新拉取数据）
+    this.lastPartnerMemories = memories;
 
     // 筛选 profile 记忆（精灵对你的了解）
     const profileMems = memories.filter((m) => m.source === 'profile');

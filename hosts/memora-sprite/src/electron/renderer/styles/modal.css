@@ -194,12 +194,17 @@ kbd {
   background: transparent;
   border: none;
   color: var(--text-3);
-  font-size: var(--font-base);
   cursor: pointer;
   border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.modal-close .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .modal-close:hover {

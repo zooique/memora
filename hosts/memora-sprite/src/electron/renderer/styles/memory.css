@@ -342,38 +342,7 @@
   flex: 1;
 }
 
-/* ─── 视图切换器（列表/图谱 segmented control） ──────────────── */
-.view-switch {
-  display: flex;
-  background: var(--window-bg-2);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.view-switch-btn {
-  padding: 6px 10px;
-  background: transparent;
-  border: none;
-  color: var(--text-2);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-
-.view-switch-btn:hover {
-  background: var(--surface0);
-  color: var(--text);
-}
-
-.view-switch-btn.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
+/* .view-switch / .view-switch-btn 系列已删除（死代码，视图切换已改为 .more-menu 下拉菜单） */
 
 /* ─── 视图切换过渡动画（Phase 4：视觉统一） ─────────────────── */
 
@@ -1324,10 +1293,10 @@
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   background: var(--surface0);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--transition-fast);
   font-size: var(--font-sm);
 }
 

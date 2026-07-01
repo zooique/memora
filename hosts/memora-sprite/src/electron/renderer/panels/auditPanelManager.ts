@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 审计日志面板管理器（M2：审计日志 UI）
  *
  * 职责：
@@ -19,7 +19,7 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
-import { clearElement, formatClock, getOptionalElement } from '../helpers/domHelpers.js';
+import { clearElement, formatClock, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 
 /**
  * 审计日志面板管理器
@@ -60,16 +60,22 @@ export class AuditPanelManager {
     this.refreshBtn = getOptionalElement('btn-audit-refresh', 'button');
     this.clearBtn = getOptionalElement('btn-audit-clear', 'button');
 
-    // 绑定刷新按钮事件
+    // 绑定刷新按钮事件（带 loading 反馈，避免 IPC 调用期间用户重复点击）
     if (this.refreshBtn) {
-      this.events.addEventListener(this.refreshBtn, 'click', () => {
-        void this.load();
+      this.events.addEventListener(this.refreshBtn, 'click', async () => {
+        setButtonLoadingEl(this.refreshBtn!, true, '刷新中...');
+        try {
+          await this.load();
+        } finally {
+          setButtonLoadingEl(this.refreshBtn!, false);
+        }
       });
     }
 
-    // 绑定清空按钮事件
+    // 绑定清空按钮事件（带 loading 反馈，避免清空操作期间用户重复点击）
     if (this.clearBtn) {
       this.events.addEventListener(this.clearBtn, 'click', async () => {
+        setButtonLoadingEl(this.clearBtn!, true, '清空中...');
         try {
           await window.electronAPI.clearAuditLog();
           await this.load();
@@ -83,6 +89,8 @@ export class AuditPanelManager {
             errorDiv.textContent = '清空审计日志失败';
             this.listEl.appendChild(errorDiv);
           }
+        } finally {
+          setButtonLoadingEl(this.clearBtn!, false);
         }
       });
     }
@@ -136,7 +144,7 @@ export class AuditPanelManager {
     const frag = document.createDocumentFragment();
     for (const entry of entries) {
       const item = document.createElement('div');
-      item.className = 'profile-item';
+      item.className = 'audit-item';
 
       // 事件类型 → 符号映射
       const typeSymbol = this.getTypeSymbol(entry.type);
@@ -150,11 +158,11 @@ export class AuditPanelManager {
       ].filter(Boolean).join(' · ');
 
       const nameEl = document.createElement('div');
-      nameEl.className = 'profile-item-name';
+      nameEl.className = 'audit-item-name';
       nameEl.textContent = `${typeSymbol} ${entry.type} · ${timeStr}`;
 
       const contentEl = document.createElement('div');
-      contentEl.className = 'profile-item-content';
+      contentEl.className = 'audit-item-content';
       contentEl.textContent = meta || '—';
 
       item.appendChild(nameEl);

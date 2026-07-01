@@ -770,13 +770,13 @@ select:active {
   white-space: nowrap;
 }
 
-/* 徽章颜色变体（语义色） */
+/* 徽章颜色变体（语义色，统一使用设计令牌，避免硬编码） */
 .badge-accent  { background: var(--accent-10);  color: var(--accent); }
-.badge-success { background: rgba(64, 173, 136, 0.12); color: #1a7f5a; }
-.badge-warning { background: rgba(230, 167, 39, 0.12); color: #b8860b; }
-.badge-danger  { background: var(--red-10);     color: var(--red); }
-.badge-muted   { background: var(--bg-hover);  color: var(--text-2); }
-.badge-info    { background: rgba(30, 144, 255, 0.1); color: #1e90ff; }
+.badge-success { background: var(--green-20);   color: var(--green); }
+.badge-warning { background: var(--yellow-20);  color: var(--yellow); }
+.badge-danger  { background: var(--red-20);     color: var(--red); }
+.badge-muted   { background: var(--bg-hover);   color: var(--text-2); }
+.badge-info    { background: var(--accent-20);  color: var(--blue); }
 
 /* ─── 卡片基类 .card ─────────────────────────────────────── */
 /* 统一各面板卡片容器的基础样式 */

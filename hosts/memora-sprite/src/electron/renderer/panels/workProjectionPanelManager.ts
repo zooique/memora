@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作品投影面板管理器（H3：作品投影 UI）
  *
  * 职责：
@@ -21,6 +21,7 @@ import {
   clearElement,
   formatTimeAgo,
   getOptionalElement,
+  setButtonLoadingEl,
 } from '../helpers/domHelpers.js';
 
 /**
@@ -92,10 +93,15 @@ export class WorkProjectionPanelManager {
     this.countEl = document.getElementById('work-projection-count');
     this.refreshBtn = getOptionalElement('btn-work-projection-refresh', 'button');
 
-    // 绑定刷新按钮事件
+    // 绑定刷新按钮事件（带 loading 反馈，避免 IPC 调用期间用户重复点击）
     if (this.refreshBtn) {
-      this.events.addEventListener(this.refreshBtn, 'click', () => {
-        void this.load();
+      this.events.addEventListener(this.refreshBtn, 'click', async () => {
+        setButtonLoadingEl(this.refreshBtn!, true, '刷新中...');
+        try {
+          await this.load();
+        } finally {
+          setButtonLoadingEl(this.refreshBtn!, false);
+        }
       });
     }
   }

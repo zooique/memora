@@ -133,7 +133,7 @@ describe('load · 成功与失败', () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue(entries);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelectorAll('#audit-list .profile-item').length).toBe(2);
+    expect(document.querySelectorAll('#audit-list .audit-item').length).toBe(2);
   });
 
   it('应以 LOAD_LIMIT=50 调用 listAuditLog', async () => {
@@ -187,42 +187,42 @@ describe('render · 事件类型符号映射', () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'path-allow' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.profile-item-name')!.textContent).toContain('✓');
+    expect(document.querySelector('.audit-item-name')!.textContent).toContain('✓');
   });
 
   it('path-deny 应映射为 ✗', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'path-deny' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.profile-item-name')!.textContent).toContain('✗');
+    expect(document.querySelector('.audit-item-name')!.textContent).toContain('✗');
   });
 
   it('write-confirm 应映射为 ⚑', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'write-confirm' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.profile-item-name')!.textContent).toContain('⚑');
+    expect(document.querySelector('.audit-item-name')!.textContent).toContain('⚑');
   });
 
   it('write-auto 应映射为 ◯', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'write-auto' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.profile-item-name')!.textContent).toContain('◯');
+    expect(document.querySelector('.audit-item-name')!.textContent).toContain('◯');
   });
 
   it('write-decline 应映射为 ↩', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'write-decline' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.profile-item-name')!.textContent).toContain('↩');
+    expect(document.querySelector('.audit-item-name')!.textContent).toContain('↩');
   });
 
   it('未知类型应降级为 ?', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'unknown-event' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.profile-item-name')!.textContent).toContain('?');
+    expect(document.querySelector('.audit-item-name')!.textContent).toContain('?');
   });
 });
 
@@ -233,7 +233,7 @@ describe('render · 元信息拼接', () => {
     ]);
     const manager = createManager();
     await manager.load();
-    const content = document.querySelector('.profile-item-content')!.textContent;
+    const content = document.querySelector('.audit-item-content')!.textContent;
     expect(content).toContain('路径: /a.md');
     expect(content).toContain('工具: write_file');
     expect(content).toContain('原因: 用户确认');
@@ -246,7 +246,7 @@ describe('render · 元信息拼接', () => {
     ]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.profile-item-content')!.textContent).toBe('—');
+    expect(document.querySelector('.audit-item-content')!.textContent).toBe('—');
   });
 
   it('应使用 textContent 防 XSS', async () => {
@@ -256,7 +256,7 @@ describe('render · 元信息拼接', () => {
     ]);
     const manager = createManager();
     await manager.load();
-    const nameEl = document.querySelector('.profile-item-name')!;
+    const nameEl = document.querySelector('.audit-item-name')!;
     expect(nameEl.querySelector('img')).toBeNull();
   });
 });

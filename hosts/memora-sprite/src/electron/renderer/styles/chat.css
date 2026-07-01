@@ -395,40 +395,28 @@
 
 .review-trend-bar {
   flex: 1;
+  min-width: 6px;
   min-height: 2px;
   border-radius: var(--radius-xs);
   background: var(--accent-20);
   transition: height var(--transition-base);
+  opacity: 0.7;
 }
 
 .review-trend-bar:hover {
   background: var(--accent);
+  opacity: 1;
 }
 
-.recent-insights-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+/* 今日柱子：满透明度 + 强调色，区分历史与今日 */
+.review-trend-bar.today {
+  opacity: 1;
+  background: var(--accent);
 }
 
-.recent-insights-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 4px 0;
-  font-size: var(--font-xs);
-  color: var(--subtext);
-  line-height: 1.4;
-}
-
-.recent-insights-source {
-  flex-shrink: 0;
-  padding: 0 4px;
-  border-radius: var(--radius-xs);
-  background: var(--surface1);
-  font-size: var(--font-2xs);
-  color: var(--muted);
-}
+/* .recent-insights-list / .recent-insights-item / .recent-insights-source 已删除 */
+/* 这些复数命名类是死代码，TS 实际使用单数 .recent-insight-item / .recent-insight-preview（layout.css 定义） */
+/* .recent-insights-list 重复定义也已删除，统一由 layout.css 提供完整 flex 布局 */
 
 /* prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
@@ -452,13 +440,13 @@
 .date-nav-btn {
   background: none;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 4px 8px;
   cursor: pointer;
   font-size: var(--font-base);
   line-height: 1;
   color: var(--text);
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .date-nav-btn:hover {
@@ -504,7 +492,7 @@
   cursor: pointer;
   font-size: var(--font-sm);
   color: var(--text);
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
 }
 
 .date-nav-item:hover {
@@ -603,7 +591,7 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
-  padding: 4px 10px;
+  padding: var(--btn-padding-sm);
   color: var(--text-2);
   font-size: var(--font-xs);
   font-weight: 500;
@@ -635,6 +623,12 @@
   align-items: center;
   justify-content: center;
   transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* banner-close 内 SVG 图标尺寸（与 modal-close 统一） */
+#proactive-banner .banner-close .icon {
+  width: 12px;
+  height: 12px;
 }
 
 #proactive-banner .banner-close:hover {
@@ -953,7 +947,8 @@
   overflow-y: auto;
   /* UX-P2-20 提取底部留白为 CSS 变量，便于统一调整（原硬编码 140px） */
   /* 顶部 16px 间距，避免第一条消息紧贴工具栏分隔线 */
-  padding: 16px 24px var(--input-area-height, 140px);
+  /* 底部留白 = input-area 高度 + 20px bottom 偏移，避免浮动输入区遮挡最后一条消息 */
+  padding: 16px 24px calc(var(--input-area-height, 140px) + 20px);
   display: flex;
   flex-direction: column;
   gap: 16px;

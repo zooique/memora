@@ -53,18 +53,7 @@
   background: var(--text-3);
 }
 
-/* UX-PP-21 设置模态交互模式说明：精简为右侧提示 */
-.settings-mode-notice {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--font-xs);
-  color: var(--text-3);
-}
-
-.settings-mode-notice-icon {
-  font-size: var(--font-sm);
-}
+/* .settings-mode-notice / .settings-mode-notice-icon 已删除（死代码，无引用） */
 
 /* ─── 设置模态垂直 tab 导航（左侧 160px 宽） ───────────── */
 .settings-tabs {
@@ -453,7 +442,7 @@
 }
 
 .profile-btn {
-  padding: 3px 12px;
+  padding: var(--btn-padding-sm);
   border-radius: var(--radius-sm);
   font-size: var(--font-xs);
   font-weight: 500;
@@ -512,7 +501,7 @@
 }
 
 .panel-error-btn {
-  padding: 4px 10px;
+  padding: var(--btn-padding-sm);
   background: transparent;
   border: 1px solid var(--red);
   border-radius: var(--radius-sm);
@@ -669,7 +658,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
+  padding: var(--btn-padding-sm);
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -682,4 +671,36 @@
 .work-projection-expand-btn:hover {
   border-color: var(--blue);
   color: var(--blue);
+}
+
+/* ─── H4 审计日志条目（独立于画像卡片，采用日志条目式紧凑布局） ─── */
+/* audit-item 与 profile-card 视觉区分：审计是只读日志，画像是可操作卡片 */
+.audit-item {
+  background: var(--window-bg, var(--bg));
+  border: 1px solid var(--surface2);
+  border-left: 3px solid var(--surface2);  /* 左侧色条，强化"日志"语义 */
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  transition: border-left-color var(--transition-fast);
+}
+
+.audit-item:hover {
+  border-left-color: var(--accent);
+}
+
+/* 审计条目标题行：类型符号 + 事件类型 + 时间 */
+.audit-item-name {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 2px;
+  line-height: 1.4;
+}
+
+/* 审计条目元信息行：路径 / 工具 / 原因（次要文字色） */
+.audit-item-content {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  line-height: 1.4;
+  word-break: break-word;
 }

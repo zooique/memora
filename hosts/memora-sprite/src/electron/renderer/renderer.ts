@@ -233,6 +233,8 @@ async function bootstrapRenderer(): Promise<void> {
     }
     // UX-P2-10 两种场景都需要通知主进程同步到浮动窗口，避免两个窗口主题不一致
     window.electronAPI.notifyThemeChanged(theme);
+    // 主题切换后重绘 Canvas 图表（Canvas 2D 不自动响应 CSS 变量变化）
+    State.uiManager.repaintCanvasOnThemeChange();
   });
 
   // UX-PP-05 流式错误重试：重新发送上一条用户消息
