@@ -144,15 +144,6 @@
         </button>
       </nav>
 
-      <!-- 精灵状态指示器（底部小圆点，颜色表示状态：蓝=正常/黄=思考中/绿=有主动提示） -->
-      <div class="sidebar-status" id="sidebar-status" title="精灵状态：就绪">
-        <!-- 角色头像（点击跳转角色选择器） -->
-        <div class="sidebar-persona-avatar" id="sidebar-persona-avatar" role="button" tabindex="0" title="切换角色">
-          <svg class="icon"><use href="#icon-fairy"/></svg>
-        </div>
-        <span class="status-dot" id="sprite-status-dot"></span>
-        <span class="status-text" id="sprite-status-text">就绪</span>
-      </div>
     </aside>
 
 
@@ -208,6 +199,13 @@
             <span class="perception-panel-title">精灵感知状态</span>
             <button class="perception-panel-close" aria-label="关闭感知面板"><svg class="icon"><use href="#icon-close"/></svg></button>
           </div>
+          <div class="perception-tabs" role="tablist">
+            <button class="perception-tab active" role="tab" data-tab="relation" aria-selected="true">关系</button>
+            <button class="perception-tab" role="tab" data-tab="understanding" aria-selected="false">理解</button>
+            <button class="perception-tab" role="tab" data-tab="insight" aria-selected="false">洞察</button>
+          </div>
+          <div class="perception-tab-panes">
+            <div class="perception-tab-pane active" data-pane="relation">
           <!-- 情感基调（四维进度条） -->
           <div class="perception-section" id="perception-affect">
             <h4 class="perception-section-title">情感基调</h4>
@@ -227,7 +225,9 @@
               <div class="rapport-bar"><span class="rapport-bar-label">熟悉度</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-familiarity-fill" style="width:0%"></div></div></div>
             </div>
             <p class="rapport-description" id="perception-rapport-desc">刚开始了解彼此</p>
-          </div>
+            </div>
+            </div>
+            <div class="perception-tab-pane" data-pane="understanding">
           <!-- 对话上下文（三指标） -->
           <div class="perception-section" id="perception-context">
             <h4 class="perception-section-title">对话上下文</h4>
@@ -241,7 +241,9 @@
           <div class="perception-section" id="perception-narrative">
             <h4 class="perception-section-title">叙事摘要</h4>
             <p class="perception-narrative-text" id="perception-narrative-text">精灵正在感知中...</p>
-          </div>
+            </div>
+            </div>
+            <div class="perception-tab-pane" data-pane="insight">
           <!-- 模式洞察（重复主题/知识缺口/兴趣漂移） -->
           <div class="perception-section" id="perception-patterns">
             <h4 class="perception-section-title">模式洞察</h4>
@@ -279,6 +281,8 @@
               <div id="review-trend-bars" class="review-trend-bars"></div>
               <ul id="recent-insights-list" class="recent-insights-list"></ul>
             </div>
+            </div>
+          </div>
           </div>
         </div>
 

@@ -405,30 +405,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       });
     }
 
-    // 侧边栏角色头像点击（展开工具栏角色选择器）
-    const sidebarAvatar = document.getElementById('sidebar-persona-avatar');
-    if (sidebarAvatar) {
-      this.events.addEventListener(sidebarAvatar as HTMLElement, 'click', () => {
-        // 打开工具栏中的角色选择器
-        const selector = document.getElementById('persona-selector');
-        if (selector) {
-          selector.click();
-        }
-      });
-      this.events.addEventListener(sidebarAvatar as HTMLElement, 'keydown', (e: Event) => {
-        if (e instanceof KeyboardEvent && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault();
-          const selector = document.getElementById('persona-selector');
-          if (selector) selector.click();
-        }
-      });
-    }
-
     // 感知面板关闭按钮
     const panelClose = document.querySelector('.perception-panel-close');
     if (panelClose) {
       this.events.addEventListener(panelClose as HTMLElement, 'click', this.closePerceptionPanel.bind(this));
     }
+    this.bindPerceptionTabs();
 
     // 运行指标折叠/展开
     const metricsToggle = document.getElementById('perception-metrics-toggle');
@@ -1014,6 +996,45 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     }, 150);
   }
 
+  /**
+   * 绑定感知面板选项卡切换逻辑
+   *
+   * 3 个选项卡（关系/理解/洞察）按用户心智模型分组，
+   * 点击切换 active 类，支持左右方向键键盘导航。
+   */
+  private bindPerceptionTabs(): void {
+    const tabs = document.querySelectorAll('.perception-tab');
+    const panes = document.querySelectorAll('.perception-tab-pane');
+    tabs.forEach((tab) => {
+      this.events.addEventListener(tab as HTMLElement, 'click', () => {
+        const target = (tab as HTMLElement).dataset.tab;
+        tabs.forEach((t) => {
+          t.classList.remove('active');
+          t.setAttribute('aria-selected', 'false');
+        });
+        panes.forEach((p) => p.classList.remove('active'));
+        tab.classList.add('active');
+        tab.setAttribute('aria-selected', 'true');
+        const targetPane = document.querySelector(`.perception-tab-pane[data-pane="${target}"]`);
+        if (targetPane) targetPane.classList.add('active');
+      });
+    });
+    const tabList = document.querySelector('.perception-tabs');
+    if (tabList) {
+      this.events.addEventListener(tabList as HTMLElement, 'keydown', (e: Event) => {
+        if (!(e instanceof KeyboardEvent)) return;
+        const tabsArray = Array.from(document.querySelectorAll('.perception-tab'));
+        const currentIndex = tabsArray.findIndex((t) => t.classList.contains('active'));
+        let newIndex = currentIndex;
+        if (e.key === 'ArrowRight') newIndex = (currentIndex + 1) % tabsArray.length;
+        else if (e.key === 'ArrowLeft') newIndex = (currentIndex - 1 + tabsArray.length) % tabsArray.length;
+        else return;
+        e.preventDefault();
+        (tabsArray[newIndex] as HTMLElement).click();
+      });
+    }
+  }
+
   private handleMinimize(): void {
     window.electronAPI.windowMinimize();
   }
@@ -1553,21 +1574,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   renderPersonaDropdown(personas: PersonaItem[]): void { this.personaPanel.renderPersonaDropdown(personas); }
   /** 更新当前角色显示（委托到 PersonaPanelManager） */
   updateActivePersona(name: string): void { this.personaPanel.updateActivePersona(name); }
-  /**
-   * C-8：更新侧边栏角色头像图标
-   *
-   * 原先 personaController.onPersonaSwitch 回调中直接操作 sidebar-persona-avatar
-   * 的 <use> 元素，违反"控制器不直接访问 DOM"的分层原则。改为通过 UIManager 门面操作。
-   *
-   * @param iconId SVG sprite 图标 ID（如 '#icon-fairy'）
-   */
-  updateSidebarAvatarIcon(iconId: string): void {
-    const sidebarAvatar = document.getElementById('sidebar-persona-avatar');
-    const avatarIcon = sidebarAvatar?.querySelector('use');
-    if (avatarIcon) {
-      avatarIcon.setAttribute('href', iconId);
-    }
-  }
   /** 更新角色匹配模式标签（委托到 PersonaPanelManager） */
   updatePersonaModeBadge(mode: string): void { this.personaPanel.updatePersonaModeBadge(mode); }
   /** 注册角色切换回调（委托到 PersonaPanelManager） */

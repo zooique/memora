@@ -118,10 +118,12 @@
       /* source 标签配色 */
       --tag-profile-bg:   var(--green-20);
       --tag-profile-fg:   var(--green);
-      --tag-insight-bg:   var(--accent-20);
-      --tag-insight-fg:   var(--accent);
-      --tag-guardrail-bg: var(--pink-20);
-      --tag-guardrail-fg: var(--pink);
+      --tag-insight-bg:        var(--accent-20);
+      --tag-insight-fg:        var(--accent);
+      --tag-work-projection-bg: var(--peach-20);
+      --tag-work-projection-fg: var(--peach);
+      --tag-guardrail-bg:      var(--pink-20);
+      --tag-guardrail-fg:      var(--pink);
 
       /* 字体 */
       --font-sprite: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
@@ -628,6 +630,90 @@
       min-width: 0;
     }
 
+    /* 精灵状态条 */
+    .sprite-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      background: var(--surface0);
+      border-radius: var(--radius-pill);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: background var(--transition-fast);
+      user-select: none;
+    }
+    .sprite-status-bar:hover { background: var(--surface1); }
+    .sprite-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+
+    /* 停止按钮 */
+    #btn-stop {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      background: var(--red);
+      border: none;
+      border-radius: var(--radius-md);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity var(--transition-fast);
+    }
+    #btn-stop.visible { display: flex; }
+    #btn-stop:hover { opacity: 0.85; }
+
+    /* 回到底部按钮 */
+    #scroll-to-bottom-btn {
+      position: absolute;
+      left: 50%;
+      bottom: 72px;
+      transform: translateX(-50%);
+      padding: 6px 12px;
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-pill);
+      color: var(--text-2);
+      font-size: 12px;
+      cursor: pointer;
+      box-shadow: var(--shadow-float);
+      z-index: 10;
+      transition: opacity var(--transition-fast);
+    }
+    #scroll-to-bottom-btn.hidden { display: none; }
+    #scroll-to-bottom-btn:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* 输入区角色选择器 */
+    .input-persona-container {
+      position: relative;
+    }
+    .input-persona-container #persona-selector {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      background: var(--surface0);
+      border-radius: var(--radius-pill);
+      font-size: 12px;
+      color: var(--text-2);
+      cursor: pointer;
+      transition: background var(--transition-fast);
+    }
+    .input-persona-container #persona-selector:hover { background: var(--surface1); }
+
     .chat-toolbar-title {
       font-size: 14px;
       font-weight: 600;
@@ -643,31 +729,13 @@
       text-overflow: ellipsis;
     }
 
-    #btn-new-session {
-      padding: 6px 14px;
-      background: transparent;
-      border: 1px solid var(--surface2);
-      border-radius: var(--radius-md);
-      color: var(--text-2);
-      font-size: 12px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
-    }
-
-    #btn-new-session:hover {
-      background: var(--accent-soft);
-      color: var(--accent);
-      border-color: var(--accent);
-    }
-
-    /* 会话选择器 */
-    .session-selector {
+    /* 日期导航器 */
+    .date-navigator {
       position: relative;
+      margin-left: auto;
       flex-shrink: 0;
     }
-
-    .session-current {
+    .date-nav-btn {
       display: flex;
       align-items: center;
       gap: 6px;
@@ -680,19 +748,90 @@
       font-weight: 500;
       cursor: pointer;
       transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+    }
+    .date-nav-btn:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .date-nav-dropdown {
+      position: absolute;
+      right: 0;
+      top: 100%;
+      margin-top: 4px;
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-window);
+      padding: 8px 0;
+      min-width: 180px;
+      max-height: 320px;
+      overflow-y: auto;
+      z-index: 100;
+    }
+    .date-nav-dropdown.hidden { display: none; }
+    .date-nav-header {
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-2);
+      border-bottom: 1px solid var(--surface2);
+      margin-bottom: 4px;
+    }
+    .date-nav-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: background var(--transition-fast);
+      font-size: 13px;
+      color: var(--text);
+    }
+    .date-nav-item:hover { background: var(--surface0); }
+    .date-nav-item.active { background: var(--accent-soft); color: var(--accent); }
+    .date-nav-item-count { font-size: 11px; color: var(--muted); }
+
+    /* 日期分隔线 */
+    .date-separator {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 0 8px;
+      font-size: 11px;
+      color: var(--text-3);
+    }
+    .date-separator::before, .date-separator::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--surface2);
+      max-width: 60px;
+    }
+    .date-separator span {
+      padding: 0 10px;
       white-space: nowrap;
     }
 
-    .session-current:hover {
-      background: var(--surface0);
-      color: var(--text);
-      border-color: var(--accent);
+    /* 加载更早对话按钮 */
+    .load-more-container {
+      display: flex;
+      justify-content: center;
+      padding: 8px 0 12px;
     }
-
-    .session-current-arrow {
-      font-size: 9px;
-      color: var(--muted);
-      flex-shrink: 0;
+    .load-more-btn {
+      padding: 5px 16px;
+      background: var(--surface1);
+      border: none;
+      border-radius: var(--radius-sm);
+      color: var(--text-2);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background var(--transition-fast), color var(--transition-fast);
+    }
+    .load-more-btn:hover {
+      background: var(--accent-soft);
+      color: var(--accent);
     }
 
     /* 消息区 */
@@ -793,6 +932,15 @@
 
     .message.assistant {
       align-self: flex-start;
+    }
+
+    /* 同角色连续消息分组：隐藏头像并紧凑布局 */
+    .message.grouped {
+      margin-top: 4px;
+    }
+
+    .message.grouped .message-avatar {
+      visibility: hidden;
     }
 
     .message-avatar {
@@ -1251,9 +1399,10 @@
       font-weight: 500;
     }
 
-    .source-tag.source-profile   { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }
-    .source-tag.source-insight   { background: var(--tag-insight-bg); color: var(--tag-insight-fg); }
-    .source-tag.source-guardrail { background: var(--tag-guardrail-bg); color: var(--tag-guardrail-fg); }
+    .source-tag.source-profile        { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }
+    .source-tag.source-insight        { background: var(--tag-insight-bg); color: var(--tag-insight-fg); }
+    .source-tag.source-work-projection { background: var(--tag-work-projection-bg); color: var(--tag-work-projection-fg); }
+    .source-tag.source-guardrail      { background: var(--tag-guardrail-bg); color: var(--tag-guardrail-fg); }
     .source-tag.source-skill     { background: var(--yellow-20); color: var(--yellow); }
     .source-tag.source-rule      { background: var(--mauve-20); color: var(--mauve); }
     .source-tag.source-persona   { background: var(--teal-20); color: var(--teal); }
@@ -1543,6 +1692,113 @@
       color: var(--text-3);
       line-height: 1.5;
     }
+    .settings-empty-state {
+      padding: 20px;
+      text-align: center;
+      color: var(--text-3);
+      font-size: 12px;
+      background: var(--window-bg-2);
+      border-radius: var(--radius-sm);
+    }
+    .settings-profile-item {
+      padding: 10px;
+      background: var(--window-bg-2);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-sm);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .settings-profile-text {
+      font-size: 13px;
+      flex: 1;
+    }
+    .profile-pending-hint {
+      font-size: 11px;
+      margin-bottom: 8px;
+      color: var(--text-3);
+      line-height: 1.5;
+    }
+    .pending-profile-card {
+      padding: 8px;
+      background: var(--surface0);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      margin-bottom: 6px;
+    }
+    .pending-profile-header {
+      font-size: 12px;
+      color: var(--fg);
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .pending-profile-content {
+      font-size: 11px;
+      color: var(--fg-secondary);
+      margin-bottom: 6px;
+    }
+    .pending-profile-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .pending-profile-actions .suggestion-btn {
+      flex: 1;
+      font-size: 11px;
+      padding: 4px 8px;
+    }
+    .pending-profile-actions .suggestion-btn.reject {
+      background: var(--surface1);
+      color: var(--fg-secondary);
+    }
+    .profile-section-hint {
+      margin-bottom: 16px;
+    }
+    .profile-section-group {
+      margin-bottom: 20px;
+    }
+    .profile-section-heading {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+    .settings-profile-time {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--text-3);
+    }
+    .trait-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .trait-row:last-child {
+      margin-bottom: 0;
+    }
+    .trait-label {
+      font-size: 12px;
+      width: 60px;
+    }
+    .trait-bar-bg {
+      flex: 1;
+      height: 6px;
+      background: var(--surface1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .trait-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+    }
+    .trait-value {
+      font-size: 11px;
+      color: var(--text-3);
+      width: 24px;
+      text-align: right;
+    }
 
     .radio-group {
       display: flex;
@@ -1810,6 +2066,48 @@
     @keyframes fadeIn {
       from { opacity: 0; }
       to { opacity: 1; }
+    }
+
+    /* 工具调用卡片 */
+    .tool-call-card {
+      margin: 6px 0;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      background: var(--surface1);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      animation: fadeIn 0.2s ease;
+    }
+    .tool-call-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--accent);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .tool-call-header.tool-result {
+      color: var(--green);
+    }
+    .tool-call-params {
+      color: var(--fg-secondary);
+      padding: 4px 8px;
+      background: var(--surface0);
+      border-radius: var(--radius-sm);
+      margin: 4px 0;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .tool-call-result {
+      color: var(--fg);
+      padding: 4px 8px;
+      background: var(--green-10, rgba(64, 160, 43, 0.08));
+      border-radius: var(--radius-sm);
+      margin-top: 4px;
+    }
+    .tool-success-icon {
+      color: var(--green);
     }
 
     .onboarding-card {
@@ -2202,6 +2500,205 @@
       color: var(--muted);
       font-size: 0.9rem;
     }
+
+    /* ============================================
+       情感基调面板（新增）
+       ============================================ */
+    #rapport-card,
+    #affect-card,
+    #pending-profiles-card {
+      padding: 12px;
+      background: var(--window-bg);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--surface2);
+    }
+    #rapport-card h3,
+    #affect-card h3,
+    #pending-profiles-card h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-2);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .affect-card-inner {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .affect-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .affect-label {
+      font-size: 11px;
+      color: var(--text-3);
+      width: 44px;
+      flex-shrink: 0;
+      text-align: right;
+    }
+    .affect-bar {
+      flex: 1;
+      height: 6px;
+      background: var(--surface1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .affect-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.6s var(--ease-out);
+    }
+    #affect-warmth { background: linear-gradient(90deg, var(--ctp-blue), var(--ctp-green)); }
+    #affect-directness { background: linear-gradient(90deg, var(--ctp-teal), var(--ctp-sky)); }
+    #affect-initiative { background: linear-gradient(90deg, var(--ctp-peach), var(--ctp-yellow)); }
+    #affect-stability { background: linear-gradient(90deg, var(--ctp-mauve), var(--ctp-pink)); }
+
+    /* ============================================
+       时间线视图（新增）
+       ============================================ */
+    #memory-timeline {
+      padding: 16px 24px;
+      overflow-y: auto;
+    }
+    .timeline-empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+    }
+    .timeline-group {
+      margin-bottom: 20px;
+    }
+    .timeline-date {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-2);
+      margin-bottom: 10px;
+      padding-left: 8px;
+      border-left: 2px solid var(--accent);
+    }
+    .timeline-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 12px;
+      margin-left: 8px;
+      border-left: 2px solid var(--surface1);
+      position: relative;
+    }
+    .timeline-item::before {
+      content: '';
+      position: absolute;
+      left: -5px;
+      top: 14px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .timeline-time {
+      font-size: 11px;
+      color: var(--muted);
+      white-space: nowrap;
+      min-width: 36px;
+    }
+    .timeline-content {
+      flex: 1;
+    }
+    .timeline-content .name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .timeline-content .source {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    /* ============================================
+       思考阶段指示器（新增）
+       ============================================ */
+    .thinking-stage {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      animation: fadeIn 0.3s ease;
+    }
+    .thinking-stage-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse-dot 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 0.4; transform: scale(0.8); }
+      50% { opacity: 1; transform: scale(1.2); }
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* ============================================
+       暗色主题覆盖（新增）
+       ============================================ */
+    [data-theme="dark"] {
+      --ctp-text: #cdd6f4;
+      --ctp-subtext1: #bac2de;
+      --ctp-subtext0: #a6adc8;
+      --ctp-overlay2: #9399b2;
+      --ctp-overlay1: #7f849c;
+      --ctp-surface2: #6c7086;
+      --ctp-surface1: #585b70;
+      --ctp-surface0: #45475a;
+      --ctp-base: #1e1e2e;
+      --ctp-mantle: #181825;
+      --ctp-crust: #11111b;
+      --bg: var(--ctp-mantle);
+      --surface0: var(--ctp-crust);
+      --surface1: var(--ctp-surface0);
+      --surface2: var(--ctp-surface1);
+      --window-bg: #313244;
+      --window-bg-2: #252537;
+      --text: var(--ctp-text);
+      --subtext: var(--ctp-subtext1);
+      --muted: var(--ctp-overlay0);
+      --text-2: var(--ctp-subtext1);
+      --text-3: var(--ctp-overlay0);
+      --accent: #89b4fa;
+      --accent-soft: rgba(137, 180, 250, 0.12);
+      --accent-hover: #74c7ec;
+      --accent-fg: #1e1e2e;
+      --brand-grad: linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+      --green: #a6e3a1;
+      --yellow: #f9e2af;
+      --pink: #f5c2e7;
+      --red: #f38ba8;
+      --mauve: #cba6f7;
+      --teal: #94e2d5;
+      --peach: #fab387;
+      --sky: #89dceb;
+      --blue: #89b4fa;
+      --shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      --shadow-window: 0 8px 32px rgba(0, 0, 0, 0.45);
+      --shadow-float: 0 4px 16px rgba(0, 0, 0, 0.35);
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+      --shadow-banner: 0 2px 8px rgba(0, 0, 0, 0.25);
+      --modal-backdrop: rgba(0, 0, 0, 0.5);
+    }
+    [data-theme="dark"] .bg-blob-1 { background: var(--ctp-blue); opacity: 0.2; }
+    [data-theme="dark"] .bg-blob-2 { background: var(--ctp-mauve); opacity: 0.2; }
+    [data-theme="dark"] .bg-blob-3 { background: var(--ctp-pink); opacity: 0.1; }
+    [data-theme="dark"] .dash-item:hover { background: rgba(255,255,255,0.05); }
+    [data-theme="dark"] .memory-item { background: var(--window-bg-2); }
   </style>
 </head>
 <body>
@@ -2230,15 +2727,15 @@
       <div class="onboarding-features">
         <div class="onboarding-feature">
           <span class="onboarding-feature-icon">💬</span>
-          <span>试试和精灵对话，它会记住你说的话</span>
+          <span>试试和精灵对话，每轮自动提取并保存记忆</span>
         </div>
         <div class="onboarding-feature">
           <span class="onboarding-feature-icon">🧠</span>
-          <span>点击顶部「记忆」标签查看已保存的记忆</span>
+          <span>点击顶部「记忆」标签查看记忆网络与时间线</span>
         </div>
         <div class="onboarding-feature">
           <span class="onboarding-feature-icon">🪟</span>
-          <span>使用顶部切换器体验三种窗口形态</span>
+          <span>观察左侧情感基调与默契度随对话真实成长</span>
         </div>
       </div>
       <div class="onboarding-actions">
@@ -2258,6 +2755,7 @@
     <span class="guide-text" id="guide-text">试试点击下方按钮发送第一条消息</span>
     <div class="guide-actions">
       <button class="guide-btn guide-btn-skip" id="guide-skip">跳过</button>
+      <button class="guide-btn guide-btn-next" id="guide-demo">观看演示</button>
       <button class="guide-btn guide-btn-next" id="guide-next">下一步</button>
     </div>
   </div>
@@ -2300,17 +2798,17 @@
             <span class="dash-label">🧠 记忆</span>
             <span class="dash-value" id="memory-count">3</span>
           </div>
-          <div class="dash-item" title="AI 自动提取的用户洞察数">
-            <span class="dash-label">💡 洞察</span>
+          <div class="dash-item" title="用户产生的记忆数（排除系统内置）">
+            <span class="dash-label">👤 用户记忆</span>
             <span class="dash-value" id="insight-count">0</span>
           </div>
-          <div class="dash-item" title="已加载的角色数">
-            <span class="dash-label">🎭 角色</span>
-            <span class="dash-value" id="persona-count">1</span>
+          <div class="dash-item" title="主动行为累积事件/阈值">
+            <span class="dash-label">⚡ 事件</span>
+            <span class="dash-value" id="event-count">0/3</span>
           </div>
-          <div class="dash-item" title="今日对话消息数">
-            <span class="dash-label">💬 消息</span>
-            <span class="dash-value" id="message-count-sidebar">0</span>
+          <div class="dash-item" title="已注册的技能数">
+            <span class="dash-label">🔧 技能</span>
+            <span class="dash-value" id="skill-count">0</span>
           </div>
         </div>
 
@@ -2323,6 +2821,40 @@
               <div class="rapport-bar-fill" id="rapport-fill" style="width: 15%"></div>
             </div>
             <div class="rapport-desc" id="rapport-desc">刚开始了解彼此，多聊几句吧</div>
+          </div>
+        </div>
+
+        <!-- 情感基调卡片（新增） -->
+        <div id="affect-card" class="dashboard-section">
+          <h3>🎭 情感基调</h3>
+          <div class="affect-card-inner">
+            <div class="affect-row">
+              <span class="affect-label">温暖度</span>
+              <div class="affect-bar"><div class="affect-fill" id="affect-warmth" style="width: 50%"></div></div>
+            </div>
+            <div class="affect-row">
+              <span class="affect-label">直接度</span>
+              <div class="affect-bar"><div class="affect-fill" id="affect-directness" style="width: 50%"></div></div>
+            </div>
+            <div class="affect-row">
+              <span class="affect-label">主动度</span>
+              <div class="affect-bar"><div class="affect-fill" id="affect-initiative" style="width: 50%"></div></div>
+            </div>
+            <div class="affect-row">
+              <span class="affect-label">稳定度</span>
+              <div class="affect-bar"><div class="affect-fill" id="affect-stability" style="width: 50%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 待确认画像面板 -->
+        <div id="pending-profiles-card" class="dashboard-section" style="display: none;">
+          <h3>⏳ 待确认画像</h3>
+          <div class="rapport-card-inner">
+            <p class="profile-pending-hint">
+              精灵提取的画像需你确认后才持久化
+            </p>
+            <div id="pending-profiles-list"></div>
           </div>
         </div>
 
@@ -2386,17 +2918,22 @@
         <!-- 对话工具栏 -->
         <div id="chat-toolbar">
           <div class="chat-toolbar-info">
-            <span class="chat-toolbar-title">对话</span>
+            <div id="sprite-status-bar" class="sprite-status-bar" title="点击展开感知面板">
+              <span>🧚</span>
+              <span id="sprite-status-text">就绪</span>
+              <span class="sprite-status-dot"></span>
+            </div>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <div class="session-selector">
-              <button class="session-current">
-                <span>main</span>
-                <span class="session-current-arrow">▾</span>
-              </button>
+          <!-- 日期导航器：点击日历图标可跳转到历史日期 -->
+          <div id="date-navigator" class="date-navigator">
+            <button id="date-nav-btn" class="date-nav-btn">
+              <span id="date-nav-label">📅 今天</span>
+            </button>
+            <div id="date-nav-dropdown" class="date-nav-dropdown hidden">
+              <div class="date-nav-header">历史对话</div>
+              <ul id="date-nav-list" class="date-nav-list"></ul>
             </div>
-            <button id="btn-new-session">✨ 新会话</button>
           </div>
         </div>
 
@@ -2408,14 +2945,17 @@
             <div class="empty-title">你好，我是 Memora 精灵</div>
             <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
             <div class="empty-suggestions">
-              <button class="suggestion-btn" data-text="我是中国人，说中文">📝 我是中国人</button>
-              <button class="suggestion-btn" data-text="我是程序员，用 Trae IDE 写代码">💻 我是开发者</button>
+              <button class="suggestion-btn" data-text="我叫小明，是一名前端开发者">📝 自我介绍</button>
+              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
+              <button class="suggestion-btn" data-text="我最近在做一个 Vue 项目">🎨 作品投影</button>
               <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
               <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
-              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
             </div>
           </div>
         </div>
+
+        <!-- 回到底部按钮 -->
+        <button id="scroll-to-bottom-btn" class="hidden" title="回到底部">⬇</button>
 
         <!-- 输入区 -->
         <div id="input-area">
@@ -2425,6 +2965,15 @@
               <button class="input-action" id="btn-add-memory-quick" title="添加记忆">➕</button>
             </div>
             <div class="input-send-area">
+              <!-- 输入区角色选择器 -->
+              <div class="input-persona-container">
+                <div id="input-persona-selector">
+                  <span>🧚</span>
+                  <span style="font-size:12px;font-weight:500;">精灵</span>
+                  <span id="input-persona-mode-badge" style="font-size:10px;padding:1px 5px;background:var(--accent-soft);border-radius:var(--radius-pill);color:var(--accent);">自动</span>
+                </div>
+              </div>
+              <button id="btn-stop" title="停止生成">⏹ 停止</button>
               <button id="btn-send" title="发送（Enter）">➤</button>
             </div>
           </div>
@@ -2437,6 +2986,7 @@
           <!-- 列表/图谱切换 -->
           <div class="memory-view-tabs">
             <button class="memory-view-tab active" data-memory-view="list">📋 列表</button>
+            <button class="memory-view-tab" data-memory-view="timeline">🕐 时间线</button>
             <button class="memory-view-tab" data-memory-view="graph">🕸️ 图谱</button>
           </div>
           <input type="text" id="memory-search" placeholder="搜索记忆…" />
@@ -2444,6 +2994,7 @@
             <option value="">全部来源</option>
             <option value="profile">profile</option>
             <option value="insight">insight</option>
+            <option value="work-projection">work-projection</option>
             <option value="guardrail">guardrail</option>
             <option value="skill">skill</option>
             <option value="rule">rule</option>
@@ -2456,6 +3007,13 @@
         <div id="memory-list" class="memory-view-content active" data-memory-view="list">
           <!-- 记忆项由 JS 动态生成 -->
         </div>
+        <!-- 时间线视图（新增） -->
+        <div id="memory-timeline" class="memory-view-content" data-memory-view="timeline">
+          <div id="timeline-container">
+            <div class="timeline-empty">暂无时间线数据，开始对话后将按时间展示记忆</div>
+          </div>
+        </div>
+
         <!-- 图谱视图（演示） -->
         <div id="memory-graph" class="memory-view-content" data-memory-view="graph">
           <div class="graph-placeholder">
@@ -2480,6 +3038,8 @@
           <button class="settings-tab" data-settings-tab="project">项目</button>
           <button class="settings-tab" data-settings-tab="profile">画像</button>
           <button class="settings-tab" data-settings-tab="audit">审计</button>
+          <button class="settings-tab" data-settings-tab="skill">技能</button>
+          <button class="settings-tab" data-settings-tab="work">作品</button>
         </div>
 
         <!-- LLM 配置 -->
@@ -2643,44 +3203,66 @@
             </div>
           </div>
 
-          <!-- 高级功能预览（即将推出） -->
+          <!-- 全局快捷键配置 -->
+          <div class="settings-group">
+            <h3>快捷键</h3>
+            <div class="settings-row">
+              <label>启用全局快捷键</label>
+              <input type="checkbox" id="cfg-shortcuts-enabled" checked />
+            </div>
+            <div class="settings-row">
+              <label>显示/隐藏窗口</label>
+              <input type="text" value="Ctrl+Shift+Space" readonly style="font-family: monospace;" />
+            </div>
+            <div class="settings-row">
+              <label>快速记录</label>
+              <input type="text" value="Ctrl+Shift+R" readonly style="font-family: monospace;" />
+            </div>
+            <div class="settings-row">
+              <label>召回记忆</label>
+              <input type="text" value="Ctrl+Shift+M" readonly style="font-family: monospace;" />
+            </div>
+            <span class="settings-hint">全局快捷键支持热更新，无需重启应用即可生效</span>
+          </div>
+
+          <!-- 已上线高级功能（Phase 2-4 核心完成） -->
           <div class="settings-group upcoming-section">
-            <h3>🔮 即将推出 <span class="soon-label">规划中</span></h3>
-            <p class="settings-hint" style="margin-bottom: 12px;">以下功能正在开发中，v1.0 版本逐步上线</p>
+            <h3>✅ 已上线功能 <span class="soon-label" style="background: var(--green); color: #fff;">Phase 2-4</span></h3>
+            <p class="settings-hint" style="margin-bottom: 12px;">以下功能已完成核心实现，Sprite 桌面宿主中可直接体验</p>
             <div class="upcoming-features">
               <label class="upcoming-item">
-                <input type="checkbox" disabled />
+                <input type="checkbox" checked disabled />
                 <div class="upcoming-content">
                   <span class="upcoming-title">📋 剪贴板感知</span>
-                  <span class="upcoming-desc">被动检测剪贴板变化，用户主动触发分析，敏感内容自动过滤</span>
+                  <span class="upcoming-desc">被动检测剪贴板变化（仅哈希），用户主动触发分析，敏感内容自动过滤</span>
                 </div>
               </label>
               <label class="upcoming-item">
-                <input type="checkbox" disabled />
+                <input type="checkbox" checked disabled />
                 <div class="upcoming-content">
                   <span class="upcoming-title">👤 工作状态感知</span>
                   <span class="upcoming-desc">检测用户离开/回来，智能选择是否主动提示</span>
                 </div>
               </label>
               <label class="upcoming-item">
-                <input type="checkbox" disabled />
+                <input type="checkbox" checked disabled />
                 <div class="upcoming-content">
                   <span class="upcoming-title">⌨️ 全局快捷键</span>
-                  <span class="upcoming-desc">Ctrl+Shift+Space 唤起精灵，Ctrl+Shift+M 快速记录</span>
+                  <span class="upcoming-desc">Ctrl+Shift+Space 唤起精灵，Ctrl+Shift+M 快速记录，支持热更新</span>
                 </div>
               </label>
               <label class="upcoming-item">
-                <input type="checkbox" disabled />
+                <input type="checkbox" checked disabled />
                 <div class="upcoming-content">
                   <span class="upcoming-title">🕸️ 记忆关系图谱</span>
-                  <span class="upcoming-desc">可视化展示记忆之间的矛盾、佐证、时序关系</span>
+                  <span class="upcoming-desc">Canvas 2D 力导向图，支持节点拖拽、缩放、连线、冲突检测</span>
                 </div>
               </label>
               <label class="upcoming-item">
-                <input type="checkbox" disabled />
+                <input type="checkbox" checked disabled />
                 <div class="upcoming-content">
                   <span class="upcoming-title">💕 情感基调系统</span>
-                  <span class="upcoming-desc">基于记忆自动调整精灵的语气和风格，越用越有默契</span>
+                  <span class="upcoming-desc">四维情感推导（温暖/直接/主动/稳定）+ 默契度成长 + 行为模式检测</span>
                 </div>
               </label>
             </div>
@@ -2711,21 +3293,52 @@
         <div class="settings-tab-content" data-settings-tab="profile">
           <div class="settings-group">
             <h3>用户画像</h3>
-            <p class="settings-hint" style="margin-bottom: 16px;">
+            <p class="settings-hint profile-section-hint">
               精灵从对话中自动提取用户画像。待确认条目需用户审核后才会持久化。
             </p>
-            <div style="margin-bottom: 20px;">
-              <h4 style="font-size: 13px; color: var(--text); margin-bottom: 10px;">待确认（0）</h4>
-              <div style="padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; background: var(--window-bg-2); border-radius: var(--radius-sm);">
+            <div class="profile-section-group">
+              <h4 class="profile-section-heading">待确认（0）</h4>
+              <div class="settings-empty-state">
                 暂无待确认条目
               </div>
             </div>
-            <div>
-              <h4 style="font-size: 13px; color: var(--text); margin-bottom: 10px;">已确认（1）</h4>
-              <div style="padding: 12px; background: var(--window-bg-2); border: 1px solid var(--surface2); border-radius: var(--radius-sm); display: flex; align-items: center; gap: 8px;">
+            <div class="profile-section-group">
+              <h4 class="profile-section-heading">已确认（1）</h4>
+              <div class="settings-profile-item">
                 <span class="source-tag source-profile">profile</span>
-                <span style="font-size: 13px;">国籍: 中国</span>
-                <span style="margin-left: auto; font-size: 11px; color: var(--text-3);">刚刚</span>
+                <span class="settings-profile-text">国籍: 中国</span>
+                <span class="settings-profile-time">刚刚</span>
+              </div>
+            </div>
+            <div class="profile-section-group">
+              <h4 class="profile-section-heading">当前角色特质</h4>
+              <div class="settings-profile-item" style="flex-direction: column; align-items: stretch; gap: 12px;">
+                <p class="profile-pending-hint">
+                  角色的 traits 定义在 personas/*.md 的 frontmatter 中，影响回答风格
+                </p>
+                <div id="persona-traits-list">
+                  <div class="trait-row">
+                    <span class="trait-label">温暖度</span>
+                    <div class="trait-bar-bg">
+                      <div class="trait-bar-fill" style="width: 70%; background: var(--pink);"></div>
+                    </div>
+                    <span class="trait-value">0.7</span>
+                  </div>
+                  <div class="trait-row">
+                    <span class="trait-label">直接度</span>
+                    <div class="trait-bar-bg">
+                      <div class="trait-bar-fill" style="width: 50%; background: var(--accent);"></div>
+                    </div>
+                    <span class="trait-value">0.5</span>
+                  </div>
+                  <div class="trait-row">
+                    <span class="trait-label">调皮度</span>
+                    <div class="trait-bar-bg">
+                      <div class="trait-bar-fill" style="width: 30%; background: var(--peach);"></div>
+                    </div>
+                    <span class="trait-value">0.3</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2740,6 +3353,54 @@
             </p>
             <div style="padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; background: var(--window-bg-2); border-radius: var(--radius-sm);">
               暂无审计记录
+            </div>
+          </div>
+        </div>
+
+        <!-- 技能 tab -->
+        <div class="settings-tab-content" data-settings-tab="skill">
+          <div class="settings-group">
+            <h3>已安装技能</h3>
+            <p class="settings-hint" style="margin-bottom: 12px;">
+              技能文件存放在 configDir/skills/ 目录，Agent 启动时自动加载。
+              技能通过 frontmatter 中的 keywords 或 trigger 字段匹配对话上下文。
+            </p>
+            <div id="skills-empty" style="padding: 20px; text-align: center; color: var(--text-3); font-size: 12px; background: var(--window-bg-2); border-radius: var(--radius-sm);">
+              暂无已安装技能，拖入 .md 文件安装
+            </div>
+          </div>
+          <div class="settings-group">
+            <h3>安装技能</h3>
+            <p class="settings-hint" style="margin-bottom: 12px;">
+              将 .md 技能文件拖入下方区域。安装后立即生效，无需重启。
+            </p>
+            <div id="skill-dropzone" style="padding: 40px; text-align: center; border: 2px dashed var(--surface2); border-radius: var(--radius-lg); color: var(--text-3); cursor: pointer; transition: all var(--transition-base);" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--surface2)'">
+              <div style="font-size: 32px; margin-bottom: 8px;">📥</div>
+              <div style="font-size: 14px; font-weight: 500; margin-bottom: 4px;">拖入 .md 技能文件</div>
+              <div style="font-size: 12px; color: var(--muted);">或点击选择文件</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 作品 tab -->
+        <div class="settings-tab-content" data-settings-tab="work">
+          <div class="settings-group">
+            <h3>作品投影</h3>
+            <p class="settings-hint" style="margin-bottom: 12px;">
+              精灵读取你的代码文件后，自动生成作品投影摘要。
+              包含文件概要、内部结构和关键设计决策。
+            </p>
+            <div id="work-projection-list" style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="padding: 16px; background: var(--window-bg-2); border-radius: var(--radius-md); border: 1px solid var(--surface2);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span style="font-size: 13px; font-weight: 600; color: var(--text);">Vue 后台管理系统</span>
+                  <span style="font-size: 11px; color: var(--muted);">刚刚</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-2); line-height: 1.6;">
+                  企业级 Vue 3 + TypeScript 后台管理系统，使用 Pinia 状态管理、Element Plus UI 框架。
+                  项目包含用户管理、权限控制、数据可视化三大核心模块。
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2778,6 +3439,7 @@
     let sessionCount = 1;
     let isProcessing = false;
     let messages = []; // 消息历史记录
+    let pendingProfiles = []; // 待确认的用户画像条目
 
     // 预设记忆数据：展示 Memora 多层记忆结构
     const demoMemories = [
@@ -2793,7 +3455,7 @@
         id: 'guardrail-privacy',
         source: 'guardrail',
         name: '隐私保护原则',
-        content: '不监听键盘、不读取剪贴板、不截屏、不监听网络流量；所有数据完全本地存储',
+        content: '不监听键盘输入、不截屏、不监听网络流量；剪贴板仅被动检测哈希变化，需用户主动触发分析，敏感内容自动过滤；所有数据完全本地存储',
         score: 1.00,
         time: '系统内置'
       },
@@ -2868,7 +3530,6 @@
     const messagesEl = document.getElementById('messages');
     const inputEl = document.getElementById('input');
     const btnSend = document.getElementById('btn-send');
-    const chatEmptyState = document.getElementById('chat-empty-state');
     const chatMessageCount = document.getElementById('chat-message-count');
     const memoryListEl = document.getElementById('memory-list');
     const proactiveBanner = document.getElementById('proactive-banner');
@@ -2928,7 +3589,7 @@
           <div class="name">${escapeHtml(m.name)}</div>
           <div class="preview">${escapeHtml(m.content.length > 80 ? m.content.substring(0, 80) + '...' : m.content)}</div>
           <div class="meta">
-            <span class="source-tag source-${m.source === 'work-projection' ? 'insight' : m.source}">${m.source}</span>
+            <span class="source-tag source-${m.source}">${m.source}</span>
             <span class="score ${sc}">score: ${m.score.toFixed(2)}</span>
             <span class="memory-time">${m.time}</span>
           </div>
@@ -3035,11 +3696,19 @@
 
       isProcessing = true;
       btnSend.disabled = true;
+      document.getElementById('btn-stop').classList.add('visible');
       inputEl.value = '';
       inputEl.style.height = 'auto';
 
+      // 如果当前不在今天的视图，自动切回今天（模拟跨天自动切换）
+      if (!dateNavLabel.textContent.includes('今天')) {
+        dateNavLabel.textContent = '📅 今天';
+        messagesEl.innerHTML = `<div class="date-separator"><span>今天</span></div>`;
+      }
+
       // 隐藏空状态
-      if (chatEmptyState) chatEmptyState.remove();
+      const emptyState = document.getElementById('chat-empty-state');
+      if (emptyState) emptyState.remove();
 
       // 隐藏主动提示
       proactiveBanner.classList.add('hidden');
@@ -3105,31 +3774,65 @@
       // 显示打字指示器
       showTypingIndicator();
 
+      // 检测是否有工具调用意图
+      const toolCall = detectToolCall(text);
+
       // 模拟思考延迟后回复
       setTimeout(() => {
         removeTypingIndicator();
 
-        // 如果有新记忆，添加进去并重渲染
+        // 如果有工具调用，先展示 tool_start 卡片
+        if (toolCall) {
+          showToolCallStart(toolCall);
+        }
+
+        // 如果有新记忆，处理入库或待确认
         let addedMemory = null;
+        let pendingAdded = false;
         if (newMemory) {
           // 新记忆入库前，对已有记忆执行一轮衰减（模拟真实 decay 机制）
           const decayedCount = decayMemories();
-          demoMemories.push(newMemory);
-          addedMemory = newMemory;
+          if (newMemory.source === 'profile') {
+            // profile 类型先放入待确认列表
+            pendingProfiles.push(newMemory);
+            pendingAdded = true;
+            renderPendingProfiles();
+            updateProfileSettings();
+          } else {
+            demoMemories.push(newMemory);
+            addedMemory = newMemory;
+          }
           refreshAllMemoryViews();
         }
 
         // 真实召回：根据用户输入搜索匹配的记忆
         const recalled = recallMemories(text);
-        let reply = generateReply(text, recalled);
-        addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled });
+        let reply = generateReply(text, recalled, toolCall);
 
-        // 对话后更新默契度
-        updateRapport();
+        // 如果有待确认画像，在回复中提示
+        if (pendingAdded) {
+          reply += '\n\n⏳ **用户画像待确认**：我提取了一条关于你的画像信息，请查看左侧「待确认画像」面板或进入「⚙️ 设置 → 画像」进行确认/拒绝。只有确认后才会持久化保存。';
+        }
 
-        isProcessing = false;
-        btnSend.disabled = false;
-        inputEl.focus();
+        // 如果有工具调用，在回复中展示 tool_result
+        if (toolCall) {
+          setTimeout(() => {
+            showToolCallResult(toolCall);
+            addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled });
+            updateRapport();
+            isProcessing = false;
+            btnSend.disabled = false;
+            document.getElementById('btn-stop').classList.remove('visible');
+            inputEl.focus();
+          }, 600);
+        } else {
+          addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled });
+          updateRapport();
+          isProcessing = false;
+          btnSend.disabled = false;
+          document.getElementById('btn-stop').classList.remove('visible');
+          inputEl.focus();
+        }
       }, 1000 + Math.random() * 800);
     }
 
@@ -3143,31 +3846,82 @@
 
     btnSend.addEventListener('click', sendMessage);
 
+    // 停止按钮点击：中断生成（Demo 中模拟立即停止）
+    document.getElementById('btn-stop').addEventListener('click', () => {
+      isProcessing = false;
+      btnSend.disabled = false;
+      document.getElementById('btn-stop').classList.remove('visible');
+      removeTypingIndicator();
+    });
+
+    // 回到底部按钮
+    const scrollToBottomBtn = document.getElementById('scroll-to-bottom-btn');
+    scrollToBottomBtn.addEventListener('click', () => {
+      scrollToBottom();
+      scrollToBottomBtn.classList.add('hidden');
+    });
+    // 滚动检测：不接近底部时显示回到底部按钮
+    messagesEl.addEventListener('scroll', () => {
+      const threshold = 100;
+      const nearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < threshold;
+      scrollToBottomBtn.classList.toggle('hidden', nearBottom);
+    });
+
     // ========================================
     // 消息渲染
     // ========================================
-    function addUserMessage(text) {
+
+    /** 通用消息渲染（用于实际对话和历史消息） */
+    function appendMessageToDOM(m, withScroll = true) {
       const div = document.createElement('div');
-      div.className = 'message user';
-      const time = getCurrentTime();
+      // 检查是否与上一条消息同角色（分组：省略重复头像）
+      const lastMsg = messagesEl.lastElementChild;
+      const isGrouped = lastMsg && lastMsg.classList.contains(m.role);
+      div.className = `message ${m.role}` + (isGrouped ? ' grouped' : '');
+      div.dataset.role = m.role;
+
+      // 记忆召回标签
+      let recallHtml = '';
+      if (m.recalled) {
+        recallHtml = `<span class="memory-recall" title="从记忆库中召回相关记忆">📎 召回记忆</span>`;
+      }
+
+      // 新记忆提示
+      let extractHtml = '';
+      if (m.newMemory) {
+        extractHtml = `
+          <div style="margin-top: 6px; padding: 6px 10px; background: var(--green-20, rgba(64, 160, 43, 0.1)); border-radius: var(--radius-sm); font-size: 11px; color: var(--green, #40a02b); display: flex; align-items: center; gap: 6px;">
+            <span>✨</span>
+            <span>已提取新记忆「${escapeHtml(m.memoryName || '')}」</span>
+          </div>`;
+      }
+
       div.innerHTML = `
-        <div class="message-avatar">🙂</div>
+        <div class="message-avatar">${m.role === 'user' ? '🙂' : '🧚'}</div>
         <div class="message-content">
-          <div class="message-bubble">${escapeHtml(text)}</div>
+          <div class="message-bubble">${escapeHtml(m.content)}${recallHtml}${extractHtml}</div>
           <div class="message-meta">
             <button class="message-copy-btn">📋</button>
-            <span class="message-time">${time}</span>
+            <span class="message-time">${m.time}</span>
           </div>
-        </div>
-      `;
+        </div>`;
       messagesEl.appendChild(div);
-      messages.push({ role: 'user', content: text, time });
-      scrollToBottom();
+      if (withScroll) scrollToBottom();
+    }
+
+    function addUserMessage(text) {
+      const m = { role: 'user', content: text, time: getCurrentTime() };
+      appendMessageToDOM(m);
+      messages.push(m);
     }
 
     function addAssistantMessage(text, options = {}) {
       const div = document.createElement('div');
-      div.className = 'message assistant';
+      // 检查是否与上一条消息同角色（分组：省略重复头像）
+      const lastMsg = messagesEl.lastElementChild;
+      const isGrouped = lastMsg && lastMsg.classList.contains('assistant');
+      div.className = 'message assistant' + (isGrouped ? ' grouped' : '');
+      div.dataset.role = 'assistant';
       const time = getCurrentTime();
 
       // 记忆召回标签：显示真实召回的记忆
@@ -3218,6 +3972,7 @@
       div.innerHTML = `
         <div class="message-avatar">🧚</div>
         <div class="message-content">
+          <div class="thinking-stage" id="thinking-stage"><span class="thinking-stage-dot"></span>正在回忆相关记忆…</div>
           <div class="typing-indicator">
             <span></span><span></span><span></span>
           </div>
@@ -3225,6 +3980,15 @@
       `;
       messagesEl.appendChild(div);
       scrollToBottom();
+      // 模拟思考阶段切换
+      setTimeout(() => {
+        const stage = document.getElementById('thinking-stage');
+        if (stage) stage.innerHTML = '<span class="thinking-stage-dot"></span>正在处理…';
+      }, 600);
+      setTimeout(() => {
+        const stage = document.getElementById('thinking-stage');
+        if (stage) stage.innerHTML = '<span class="thinking-stage-dot"></span>正在整理回复…';
+      }, 1200);
     }
 
     function removeTypingIndicator() {
@@ -3235,7 +3999,23 @@
     // ========================================
     // 回复生成（基于真实召回的模拟）
     // ========================================
-    function generateReply(text, recalled = []) {
+    function generateReply(text, recalled = [], toolCall = null) {
+      // 工具调用回复
+      if (toolCall) {
+        if (toolCall.name === 'write_file') {
+          return `文件已成功创建 ✓\n\n路径：${toolCall.params.path}\n\n这是 Memora 工具调用的一个示例。在实际项目中，精灵会根据你的需求自动调用内置工具（read_file/write_file/list_dir/search_memories 等），所有文件操作都经过路径白名单校验。`;
+        }
+        if (toolCall.name === 'read_file') {
+          return `文件读取完成 ✓\n\n路径：${toolCall.params.path}\n\n内容已安全返回。Memora 的安全策略确保只有白名单内的路径才能被访问。`;
+        }
+        if (toolCall.name === 'list_dir') {
+          return `目录列表获取完成 ✓\n\n路径：${toolCall.params.path}\n\nMemora 的工具调用遵循最小权限原则，所有操作都有审计日志记录。`;
+        }
+        if (toolCall.name === 'search_memories') {
+          return `记忆搜索完成 ✓\n\n查询：「${toolCall.params.query}」\n\n通过 search_memories 工具，你可以让精灵在记忆库中精确查找特定信息。`;
+        }
+      }
+
       // 身份信息记录
       if (text.includes('我是') || text.includes('我叫')) {
         let identity = '你的个人信息';
@@ -3248,7 +4028,7 @@
 
       // 隐私问题
       if (text.includes('隐私') || text.includes('安全') || text.includes('监听')) {
-        return `🔒 **隐私保护是 Memora 的底线设计**：\n\n1. **上下文感知而非内容感知**：我只通过文件变化、窗口标题等元数据感知工作状态\n2. **四不原则**：不监听键盘、不读取剪贴板、不截屏、不监听网络流量\n3. **纯本地优先**：所有记忆数据完全存储在你的本地设备\n4. **两级权限 + 路径白名单**：文件操作严格受限\n\n你可以在「⚙️ 设置 → 审计」中查看所有文件操作记录。`;
+        return `🔒 **隐私保护是 Memora 的底线设计**：\n\n1. **上下文感知而非内容感知**：我只通过文件变化、窗口标题等元数据感知工作状态\n2. **剪贴板三重保护**：被动检测（仅哈希比较）→ 主动触发（用户点击才读取）→ 敏感过滤（密码/Token/密钥自动忽略）\n3. **不监听键盘、不截屏、不监听网络流量**：最小化信息收集\n4. **纯本地优先**：所有记忆数据完全存储在你的本地设备，数据不出本机\n5. **两级权限 + 路径白名单**：文件操作严格受限\n\n你可以在「⚙️ 设置 → 审计」中查看所有文件操作记录。`;
       }
 
       // 偏好设置
@@ -3315,6 +4095,124 @@
     }
 
     // ========================================
+    // 工具调用检测与展示
+    // ========================================
+    function detectToolCall(text) {
+      const lower = text.toLowerCase();
+      if (lower.includes('写文件') || lower.includes('创建文件') || lower.includes('保存文件') || lower.includes('写入')) {
+        return { name: 'write_file', params: { path: './src/example.ts', content: '// 示例代码\nconsole.log("Hello Memora");' } };
+      }
+      if (lower.includes('读文件') || lower.includes('读取文件') || lower.includes('查看文件')) {
+        return { name: 'read_file', params: { path: './README.md' } };
+      }
+      if (lower.includes('列出目录') || lower.includes('列出文件') || lower.includes('ls ')) {
+        return { name: 'list_dir', params: { path: './src' } };
+      }
+      if (lower.includes('搜索记忆') || lower.includes('查找记忆') || lower.includes('搜索记忆')) {
+        return { name: 'search_memories', params: { query: text.replace(/搜索记忆|查找记忆/g, '').trim() } };
+      }
+      return null;
+    }
+
+    function showToolCallStart(tool) {
+      const div = document.createElement('div');
+      // 检查是否与上一条消息同角色（分组：省略重复头像）
+      const lastMsg = messagesEl.lastElementChild;
+      const isGrouped = lastMsg && lastMsg.classList.contains('assistant');
+      div.className = 'message assistant' + (isGrouped ? ' grouped' : '');
+      div.id = 'tool-call-msg';
+      div.innerHTML = `
+        <div class="message-avatar">🧚</div>
+        <div class="message-content">
+          <div class="tool-call-card">
+            <div class="tool-call-header">🔧 调用工具：${tool.name}</div>
+            <div class="tool-call-params">${JSON.stringify(tool.params, null, 2)}</div>
+          </div>
+        </div>
+      `;
+      messagesEl.appendChild(div);
+      scrollToBottom();
+    }
+
+    function showToolCallResult(tool) {
+      const card = document.querySelector('#tool-call-msg .tool-call-card');
+      if (card) {
+        const resultDiv = document.createElement('div');
+        resultDiv.className = 'tool-call-result';
+        resultDiv.innerHTML = `<span class="tool-success-icon">✓</span> 执行成功`;
+        card.appendChild(resultDiv);
+      }
+    }
+
+    // ========================================
+    // 待确认画像管理
+    // ========================================
+    function renderPendingProfiles() {
+      const card = document.getElementById('pending-profiles-card');
+      const list = document.getElementById('pending-profiles-list');
+      if (!card || !list) return;
+      if (pendingProfiles.length === 0) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';
+      list.innerHTML = pendingProfiles.map((p, idx) => `
+        <div class="pending-profile-card">
+          <div class="pending-profile-header">
+            <span class="source-tag source-profile">profile</span>
+            <span>${escapeHtml(p.name)}</span>
+          </div>
+          <div class="pending-profile-content">${escapeHtml(p.content)}</div>
+          <div class="pending-profile-actions">
+            <button class="suggestion-btn" onclick="confirmProfile(${idx})">✓ 确认</button>
+            <button class="suggestion-btn reject" onclick="rejectProfile(${idx})">✕ 拒绝</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function confirmProfile(idx) {
+      const p = pendingProfiles.splice(idx, 1)[0];
+      if (p) {
+        demoMemories.push(p);
+        refreshAllMemoryViews();
+        renderPendingProfiles();
+        updateProfileSettings();
+        updateDashboardCounters();
+      }
+    }
+
+    function rejectProfile(idx) {
+      pendingProfiles.splice(idx, 1);
+      renderPendingProfiles();
+      updateProfileSettings();
+    }
+
+    function updateProfileSettings() {
+      // 更新设置面板中的待确认计数
+      const settingsTab = document.querySelector('[data-settings-tab="profile"]');
+      if (!settingsTab) return;
+      const pendingHeading = Array.from(settingsTab.querySelectorAll('h4')).find(h => h.textContent.includes('待确认'));
+      if (pendingHeading) {
+        pendingHeading.textContent = `待确认（${pendingProfiles.length}）`;
+      }
+      // 找到待确认区域的容器（h4 后面的兄弟 div）
+      const pendingContainer = pendingHeading?.nextElementSibling;
+      if (pendingContainer) {
+        if (pendingProfiles.length === 0) {
+          pendingContainer.innerHTML = '<div class="settings-empty-state">暂无待确认条目</div>';
+        } else {
+          pendingContainer.innerHTML = pendingProfiles.map(p => `
+            <div class="settings-profile-item">
+              <span class="source-tag source-profile">profile</span>
+              <span class="settings-profile-text">${escapeHtml(p.name)}: ${escapeHtml(p.content)}</span>
+            </div>
+          `).join('');
+        }
+      }
+    }
+
+    // ========================================
     // 工具函数
     // ========================================
     function getCurrentTime() {
@@ -3324,30 +4222,30 @@
 
     function updateMessageCount() {
       chatMessageCount.textContent = `今日已交流 ${messageCount} 条消息`;
-      // 同步更新侧边栏消息计数
-      const messageCountSidebarEl = document.getElementById('message-count-sidebar');
-      if (messageCountSidebarEl) messageCountSidebarEl.textContent = messageCount;
+      // 同步更新事件计数（模拟：每条新消息触发一个事件，阈值3）
+      const eventCountEl = document.getElementById('event-count');
+      if (eventCountEl) {
+        const accumulated = Math.min(messageCount, 3);
+        eventCountEl.textContent = `${accumulated}/3`;
+      }
     }
 
     function updateDashboardCounters() {
       // 统计各类记忆数量
       const memoryCountEl = document.getElementById('memory-count');
       const insightCountEl = document.getElementById('insight-count');
-      const personaCountEl = document.getElementById('persona-count');
-      const messageCountSidebarEl = document.getElementById('message-count-sidebar');
+      const skillCountEl = document.getElementById('skill-count');
       const sessionCountEl = document.getElementById('session-count');
 
       const totalMemories = demoMemories.length;
-      const insightCount = demoMemories.filter(m =>
-        m.source === 'insight' || m.source === 'session' ||
-        m.source === 'profile' || m.source === 'work-projection'
+      const userMemoryCount = demoMemories.filter(m =>
+        m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
       ).length;
-      const personaCount = demoMemories.filter(m => m.source === 'persona').length;
+      const skillCount = demoMemories.filter(m => m.source === 'skill').length;
 
       if (memoryCountEl) memoryCountEl.textContent = totalMemories;
-      if (insightCountEl) insightCountEl.textContent = insightCount;
-      if (personaCountEl) personaCountEl.textContent = personaCount;
-      if (messageCountSidebarEl) messageCountSidebarEl.textContent = messageCount;
+      if (insightCountEl) insightCountEl.textContent = userMemoryCount;
+      if (skillCountEl) skillCountEl.textContent = skillCount;
       if (sessionCountEl) sessionCountEl.textContent = sessionCount || 1;
     }
 
@@ -3362,64 +4260,182 @@
     }
 
     // ========================================
-    // 新会话按钮——清空对话但保留记忆（核心体验：跨会话记忆）
+    // 日期导航器 + 加载更早对话（替代原"新会话"按钮）
     // ========================================
-    document.getElementById('btn-new-session').addEventListener('click', () => {
-      // 清除所有消息（记忆保留，这是跨会话记忆的核心特性）
-      messagesEl.innerHTML = '';
-      messages = [];
-      messageCount = 0;
-      sessionCount++;
-      updateMessageCount();
+    // Demo 中模拟的日期数据
+    const demoDateSessions = [
+      { date: getTodayStr(), label: '今天', msgCount: 0 },
+      { date: getYesterdayStr(), label: '昨天', msgCount: 6 },
+      { date: getDayBeforeStr(), label: '前天', msgCount: 4 },
+    ];
 
-      // 统计用户记忆数
-      const userMemCount = demoMemories.filter(m =>
-        m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
-      ).length;
+    const dateNavBtn = document.getElementById('date-nav-btn');
+    const dateNavDropdown = document.getElementById('date-nav-dropdown');
+    const dateNavList = document.getElementById('date-nav-list');
+    const dateNavLabel = document.getElementById('date-nav-label');
 
-      if (userMemCount > 0) {
-        // 有记忆时：展示"我记得你"的跨会话体验
-        const topMemNames = demoMemories.filter(m =>
-          m.source === 'profile' || m.source === 'insight' || m.source === 'work-projection'
-        ).slice(-3).map(m => m.name).join('、');
+    /** 格式化日期字符串 */
+    function getTodayStr() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function getYesterdayStr() {
+      const d = new Date(); d.setDate(d.getDate()-1);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function getDayBeforeStr() {
+      const d = new Date(); d.setDate(d.getDate()-2);
+      return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+    function formatDateLabel(dateStr) {
+      const d = new Date(dateStr);
+      const weekdays = ['周日','周一','周二','周三','周四','周五','周六'];
+      if (dateStr === getTodayStr()) return '今天';
+      if (dateStr === getYesterdayStr()) return '昨天';
+      return `${d.getMonth()+1}月${d.getDate()}日 ${weekdays[d.getDay()]}`;
+    }
 
-        messagesEl.innerHTML = `
-          <div id="chat-empty-state" class="chat-empty-state">
-            <div class="empty-avatar">🧚</div>
-            <div class="empty-title">新会话已开启</div>
-            <div class="empty-subtitle">对话已清空，但记忆完整保留——这就是 Memora 的跨会话记忆能力</div>
-            <div style="padding: 8px 16px; background: var(--accent-soft); border-radius: var(--radius-md); font-size: 12px; color: var(--accent); max-width: 400px; margin: 0 auto;">
-              📎 从记忆中召回 ${userMemCount} 条：${topMemNames}
-            </div>
-            <div class="empty-suggestions">
-              <button class="suggestion-btn" data-text="你还记得我是谁吗？">🧠 你还记得我吗？</button>
-              <button class="suggestion-btn" data-text="我喜欢简洁的回答">⚡ 偏好设置</button>
-              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
-            </div>
-          </div>
-        `;
+    /** 渲染日期导航列表 */
+    function renderDateNavList() {
+      dateNavList.innerHTML = '';
+      demoDateSessions.forEach(s => {
+        // 动态更新今天的消息数
+        if (s.date === getTodayStr()) s.msgCount = messageCount;
+        const li = document.createElement('li');
+        li.className = 'date-nav-item' + (s.date === getTodayStr() ? ' active' : '');
+        li.innerHTML = `<span>${formatDateLabel(s.date)} <span style="color:var(--muted);font-size:11px">${s.date}</span></span><span class="date-nav-item-count">${s.msgCount} 条</span>`;
+        li.addEventListener('click', () => {
+          dateNavDropdown.classList.add('hidden');
+          jumpToDate(s.date);
+        });
+        dateNavList.appendChild(li);
+      });
+    }
+
+    /** 跳转到指定日期 */
+    function jumpToDate(dateStr) {
+      dateNavLabel.textContent = '📅 ' + formatDateLabel(dateStr);
+      // 更新 active 状态
+      dateNavList.querySelectorAll('.date-nav-item').forEach((li, i) => {
+        li.classList.toggle('active', demoDateSessions[i].date === dateStr);
+      });
+      if (dateStr === getTodayStr()) {
+        // 回到今天：显示实际消息
+        renderCurrentMessages();
+        updateMessageCount();
       } else {
-        // 无记忆时：标准空状态
+        // 查看历史日期：显示模拟的历史消息
+        renderHistoryMessages(dateStr);
+        chatMessageCount.textContent = `查看 ${formatDateLabel(dateStr)} 的对话`;
+      }
+    }
+
+    /** 渲染历史日期的模拟消息 */
+    function renderHistoryMessages(dateStr) {
+      const historyData = {
+        [getYesterdayStr()]: [
+          { role: 'user', content: '帮我 review 一下这段代码', time: '09:15' },
+          { role: 'assistant', content: '好的，请贴出代码。不过根据我的记忆，你之前提到过偏好简洁直接的回答，我会以精简的方式给出建议。', time: '09:15', recalled: true, recalledCount: 1 },
+          { role: 'user', content: '这个 Vue 组件的状态管理你觉得用 Pinia 还是 Vuex？', time: '09:18' },
+          { role: 'assistant', content: '推荐 Pinia。你目前在做 Vue 企业级后台管理系统（来自我的记忆），Pinia 是 Vue 3 官方推荐，API 更简洁，TypeScript 支持更好。', time: '09:18', recalled: true, recalledCount: 2, newMemory: true, memoryName: '技术栈偏好：Pinia' },
+          { role: 'user', content: '好的，那就用 Pinia', time: '09:20' },
+          { role: 'assistant', content: '👍 已记下。需要注意 Pinia 的 Store 模块化设计，和你项目规模匹配即可。', time: '09:20' },
+        ],
+        [getDayBeforeStr()]: [
+          { role: 'user', content: '我今天有些疲惫，回复可以简短一些', time: '22:30' },
+          { role: 'assistant', content: '好的，已记下你的状态。后续回复会保持简洁。', time: '22:30', newMemory: true, memoryName: '深夜偏好：简洁回复' },
+          { role: 'user', content: '项目 README 写完了', time: '22:45' },
+          { role: 'assistant', content: '收到。需要我帮你检查格式或内容吗？', time: '22:45' },
+        ],
+      };
+      const msgs = historyData[dateStr] || [];
+      messagesEl.innerHTML = `<div class="date-separator"><span>${formatDateLabel(dateStr)}</span></div>`;
+      msgs.forEach(m => {
+        appendMessageToDOM(m, false);
+      });
+      // 添加"加载更早的对话"按钮（如果有更早日期）
+      addLoadMoreButton(dateStr);
+    }
+
+    /** 渲染当前（今天）的消息 */
+    function renderCurrentMessages() {
+      messagesEl.innerHTML = '';
+      if (messages.length === 0) {
         messagesEl.innerHTML = `
           <div id="chat-empty-state" class="chat-empty-state">
             <div class="empty-avatar">🧚</div>
             <div class="empty-title">你好，我是 Memora 精灵</div>
             <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
             <div class="empty-suggestions">
-              <button class="suggestion-btn" data-text="我是中国人，说中文">📝 我是中国人</button>
-              <button class="suggestion-btn" data-text="我是程序员，用 Trae IDE 写代码">💻 我是开发者</button>
+              <button class="suggestion-btn" data-text="我叫小明，是一名前端开发者">📝 自我介绍</button>
+              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
+              <button class="suggestion-btn" data-text="我最近在做一个 Vue 项目">🎨 作品投影</button>
               <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
               <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
-              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
             </div>
-          </div>
-        `;
+          </div>`;
+        bindSuggestionButtons();
+      } else {
+        messagesEl.innerHTML = `<div class="date-separator"><span>今天</span></div>`;
+        messages.forEach(m => appendMessageToDOM(m, false));
       }
+    }
 
-      // 更新侧边栏数据
-      updateRapport();
-      updateDashboardCounters();
-      // 重新绑定建议按钮事件
+    /** 添加"加载更早的对话"按钮 */
+    function addLoadMoreButton(currentDate) {
+      const allDates = demoDateSessions.map(s => s.date).sort();
+      const idx = allDates.indexOf(currentDate);
+      if (idx < allDates.length - 1) {
+        const container = document.createElement('div');
+        container.className = 'load-more-container';
+        const btn = document.createElement('button');
+        btn.className = 'load-more-btn';
+        btn.textContent = '加载更早的对话';
+        btn.addEventListener('click', () => {
+          const earlierDate = allDates[idx + 1];
+          const separator = document.createElement('div');
+          separator.className = 'date-separator';
+          separator.innerHTML = `<span>${formatDateLabel(earlierDate)}</span>`;
+          container.before(separator);
+          // 模拟加载历史消息
+          const historyData = {
+            [getDayBeforeStr()]: [
+              { role: 'user', content: '我今天有些疲惫，回复可以简短一些', time: '22:30' },
+              { role: 'assistant', content: '好的，已记下你的状态。', time: '22:30' },
+            ],
+          };
+          const msgs = historyData[earlierDate] || [];
+          msgs.forEach(m => {
+            const div = document.createElement('div');
+            div.className = `message ${m.role}`;
+            div.innerHTML = `
+              <div class="message-avatar">${m.role === 'user' ? '👤' : '🧚'}</div>
+              <div class="message-content">
+                <div class="message-bubble">${escapeHtml(m.content)}</div>
+                <div class="message-meta"><span class="message-time">${m.time}</span></div>
+              </div>`;
+            separator.after(div);
+          });
+          container.remove();
+        });
+        container.appendChild(btn);
+        messagesEl.prepend(container);
+      }
+    }
+
+    /** 日期导航按钮点击：切换下拉 */
+    dateNavBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renderDateNavList();
+      dateNavDropdown.classList.toggle('hidden');
+    });
+    // 点击其他区域关闭下拉
+    document.addEventListener('click', () => {
+      dateNavDropdown.classList.add('hidden');
+    });
+
+    /** 绑定建议按钮事件 */
+    function bindSuggestionButtons() {
       document.querySelectorAll('.suggestion-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const text = btn.dataset.text;
@@ -3427,7 +4443,7 @@
           sendMessage();
         });
       });
-    });
+    }
 
     // ========================================
     // API Key 显示/隐藏切换
@@ -3453,6 +4469,7 @@
     const guideTextEl = document.getElementById('guide-text');
     const guideNextBtn = document.getElementById('guide-next');
     const guideSkipBtn = document.getElementById('guide-skip');
+    const guideDemoBtn = document.getElementById('guide-demo');
     const guideDots = document.querySelectorAll('.guide-dot');
 
     let currentGuideStep = 0;
@@ -3497,31 +4514,16 @@
       onboardingEl.classList.add('hidden');
       startGuide();
       inputEl.focus();
-      // 5 秒无操作后自动启动演示（从 onboarding 关闭后开始计时）
-      autoDemoTimer = setTimeout(() => {
-        if (!autoDemoCancelled && !autoDemoRunning) {
-          runAutoDemo();
-        }
-      }, 5000);
-      // 注册用户操作取消监听（延迟 100ms 避免当前 click 事件冒泡触发）
-      setTimeout(() => {
-        ['click', 'keydown', 'input'].forEach(evt => {
-          document.addEventListener(evt, () => {
-            if (autoDemoRunning) {
-              cancelAutoDemo();
-            }
-            if (autoDemoTimer && !autoDemoRunning) {
-              clearTimeout(autoDemoTimer);
-              autoDemoTimer = null;
-            }
-          }, { once: true });
-        });
-      }, 100);
+      // 用户可随时通过引导栏「观看演示」触发自动演示
     });
 
     guideNextBtn.addEventListener('click', nextGuideStep);
     guideSkipBtn.addEventListener('click', () => {
       guideBarEl.classList.add('hidden');
+    });
+    guideDemoBtn.addEventListener('click', () => {
+      guideBarEl.classList.add('hidden');
+      runAutoDemo();
     });
 
     // 发送消息后自动进入第二步
@@ -3647,6 +4649,10 @@
         if (view === 'graph') {
           drawMemoryGraph();
         }
+        // 切换到时间线视图时渲染
+        if (view === 'timeline') {
+          renderTimeline();
+        }
       });
     });
 
@@ -3722,25 +4728,42 @@
         });
       });
 
-      // 生成连线：相同 source 的记忆互连，系统记忆连接到所有用户记忆
+      // 生成连线：使用实际 RELATION_TYPES（contradicts/supports/follows/refines）
       const edges = [];
       const nodeMap = Object.fromEntries(nodes.map(n => [n.id, n]));
+      const RELATION_LABELS = {
+        contradicts: '矛盾',
+        supports: '支持',
+        follows: '跟随',
+        refines: '精炼'
+      };
 
-      // 系统记忆 → 用户记忆（虚线，表示"注入"关系）
+      // 系统记忆 → 用户记忆：follows（系统规则跟随用户状态）
       systemMemories.forEach(sm => {
         userMemories.slice(0, 3).forEach(um => {
           if (nodeMap[sm.id] && nodeMap[um.id]) {
-            edges.push({ from: sm.id, to: um.id, rel: '注入', dashed: true });
+            edges.push({ from: sm.id, to: um.id, rel: 'follows', label: RELATION_LABELS.follows, dashed: true });
           }
         });
       });
 
-      // 用户记忆之间：相同 source 互连
+      // 用户记忆之间：根据 source 组合分配关系类型
       for (let i = 0; i < userMemories.length; i++) {
         for (let j = i + 1; j < userMemories.length; j++) {
-          if (userMemories[i].source === userMemories[j].source && nodeMap[userMemories[i].id] && nodeMap[userMemories[j].id]) {
-            edges.push({ from: userMemories[i].id, to: userMemories[j].id, rel: '关联', dashed: false });
+          if (!nodeMap[userMemories[i].id] || !nodeMap[userMemories[j].id]) continue;
+          const s1 = userMemories[i].source;
+          const s2 = userMemories[j].source;
+          let rel = 'supports';
+          if (s1 === s2) {
+            rel = 'supports';
+          } else if ((s1 === 'profile' && s2 === 'insight') || (s1 === 'insight' && s2 === 'profile')) {
+            rel = 'follows';
+          } else if ((s1 === 'insight' && s2 === 'work-projection') || (s1 === 'work-projection' && s2 === 'insight')) {
+            rel = 'refines';
+          } else if ((s1 === 'profile' && s2 === 'work-projection') || (s1 === 'work-projection' && s2 === 'profile')) {
+            rel = 'contradicts';
           }
+          edges.push({ from: userMemories[i].id, to: userMemories[j].id, rel, label: RELATION_LABELS[rel], dashed: false });
         }
       }
 
@@ -3755,16 +4778,28 @@
         if (!a || !b) return;
         ctx.beginPath();
         ctx.setLineDash(e.dashed ? [4, 3] : []);
-        ctx.strokeStyle = getCssVar('--overlay1', '#8c8fa1') + '50';
+        // 不同关系类型使用不同颜色
+        const relColors = {
+          contradicts: '#e64553',
+          supports: '#40a02b',
+          follows: '#1e66f5',
+          refines: '#df8e1d'
+        };
+        const relColor = relColors[e.rel] || getCssVar('--overlay1', '#8c8fa1');
+        ctx.strokeStyle = relColor + '60';
         ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
         ctx.setLineDash([]);
-        // 关系标签（中点）
+        // 关系标签（中点），带背景使其更易读
         const mx = (a.x + b.x) / 2;
         const my = (a.y + b.y) / 2;
-        ctx.fillStyle = getCssVar('--text-3', '#6c6f85');
-        ctx.fillText(e.rel, mx, my - 4);
+        const label = e.label || e.rel;
+        const textWidth = ctx.measureText(label).width;
+        ctx.fillStyle = getCssVar('--surface0', '#ffffff');
+        ctx.fillRect(mx - textWidth / 2 - 3, my - 12, textWidth + 6, 14);
+        ctx.fillStyle = relColor;
+        ctx.fillText(label, mx, my - 4);
       });
 
       // 绘制节点
@@ -3867,8 +4902,7 @@
         const matchesSearch = !searchText ||
           m.name.toLowerCase().includes(searchText.toLowerCase()) ||
           m.content.toLowerCase().includes(searchText.toLowerCase());
-        const matchesSource = !sourceFilter || m.source === sourceFilter ||
-          (sourceFilter === 'insight' && m.source === 'work-projection');
+        const matchesSource = !sourceFilter || m.source === sourceFilter;
         return matchesSearch && matchesSource;
       });
 
@@ -3885,7 +4919,7 @@
               <div class="name">${escapeHtml(m.name)}</div>
               <div class="preview">${escapeHtml(m.content.length > 80 ? m.content.substring(0, 80) + '...' : m.content)}</div>
               <div class="meta">
-                <span class="source-tag source-${m.source === 'work-projection' ? 'insight' : m.source}">${m.source}</span>
+                <span class="source-tag source-${m.source}">${m.source}</span>
                 <span class="score ${sc}">score: ${m.score.toFixed(2)}</span>
                 <span class="memory-time">${m.time}</span>
               </div>
@@ -3956,8 +4990,9 @@
       { delay: 2000, action: 'wait' },
       { delay: 500,  action: 'click', selector: '[data-memory-view="graph"]' },
       { delay: 2000, action: 'wait' },
-      { delay: 500,  action: 'click', selector: '#btn-new-session' },
+      { delay: 500,  action: 'click', selector: '[data-panel="timeline"]' },
       { delay: 2000, action: 'wait' },
+      { delay: 500,  action: 'click', selector: '[data-panel="chat"]' },
       { delay: 1000, action: 'type', text: '你还记得我是谁吗？' },
       { delay: 3500, action: 'end' },
     ];
@@ -4033,6 +5068,102 @@
       autoDemoRunning = false;
       hideAutoDemoBanner();
     }
+
+    // ========================================
+    // 情感基调更新（新增）
+    // ========================================
+    function updateAffect() {
+      const userMemories = demoMemories.filter(m =>
+        m.source === 'profile' || m.source === 'insight' || m.source === 'work-projection' || m.source === 'session'
+      );
+      const msgCount = messages.filter(m => m.role === 'user').length;
+      // 基于用户记忆数和消息数推导四维情感基调
+      const warmth = Math.min(100, 30 + userMemories.length * 8 + msgCount * 2);
+      const directness = Math.min(100, 40 + msgCount * 3);
+      const initiative = Math.min(100, 25 + userMemories.filter(m => m.source === 'insight').length * 12);
+      const stability = Math.min(100, 50 + userMemories.length * 5);
+      document.getElementById('affect-warmth').style.width = warmth + '%';
+      document.getElementById('affect-directness').style.width = directness + '%';
+      document.getElementById('affect-initiative').style.width = initiative + '%';
+      document.getElementById('affect-stability').style.width = stability + '%';
+    }
+
+    // ========================================
+    // 时间线渲染（新增）
+    // ========================================
+    function renderTimeline() {
+      const container = document.getElementById('timeline-container');
+      if (!container) return;
+      const userMemories = demoMemories.filter(m =>
+        m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
+      );
+      if (userMemories.length === 0) {
+        container.innerHTML = '<div class="timeline-empty">暂无时间线数据，开始对话后将按时间展示记忆</div>';
+        return;
+      }
+      // 按时间分组（演示中按 source 模拟分组）
+      const groups = {};
+      userMemories.forEach(m => {
+        const date = m.time || '今天';
+        if (!groups[date]) groups[date] = [];
+        groups[date].push(m);
+      });
+      let html = '';
+      Object.keys(groups).forEach(date => {
+        html += `<div class="timeline-group"><div class="timeline-date">${date}</div>`;
+        groups[date].forEach(m => {
+          const sourceClass = `source-${m.source}`;
+          const sourceLabel = m.source;
+          html += `
+            <div class="timeline-item">
+              <span class="timeline-time">${getCurrentTime()}</span>
+              <div class="timeline-content">
+                <div class="name">${escapeHtml(m.name)}</div>
+                <div class="source"><span class="source-tag ${sourceClass}">${sourceLabel}</span> · score ${m.score.toFixed(2)}</div>
+              </div>
+            </div>`;
+        });
+        html += '</div>';
+      });
+      container.innerHTML = html;
+    }
+
+    // ========================================
+    // 主题切换（新增）
+    // ========================================
+    function initTheme() {
+      const radios = document.querySelectorAll('input[name="theme-mode"]');
+      radios.forEach(radio => {
+        radio.addEventListener('change', () => {
+          const mode = radio.value;
+          if (mode === 'dark') {
+            document.body.setAttribute('data-theme', 'dark');
+          } else if (mode === 'light') {
+            document.body.removeAttribute('data-theme');
+          } else if (mode === 'auto') {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            if (prefersDark) document.body.setAttribute('data-theme', 'dark');
+            else document.body.removeAttribute('data-theme');
+          }
+        });
+      });
+      // 监听系统主题变化
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+        const autoRadio = document.querySelector('input[name="theme-mode"][value="auto"]');
+        if (autoRadio && autoRadio.checked) {
+          if (e.matches) document.body.setAttribute('data-theme', 'dark');
+          else document.body.removeAttribute('data-theme');
+        }
+      });
+    }
+    initTheme();
+
+    // 在原有 updateDashboardCounters 中追加情感基调更新
+    const origUpdateDashboardCounters = updateDashboardCounters;
+    updateDashboardCounters = function() {
+      origUpdateDashboardCounters();
+      updateAffect();
+    };
 
     </script>
 

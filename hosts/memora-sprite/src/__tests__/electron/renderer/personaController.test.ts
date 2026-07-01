@@ -69,8 +69,6 @@ function createMockUiManager(): {
     renderPersonaDropdown: vi.fn(),
     updatePersonaModeBadge: vi.fn(),
     setPersonaMode: vi.fn(),
-    // C-8：头像更新委托给 UIManager，控制器不直接操作 DOM
-    updateSidebarAvatarIcon: vi.fn(),
   };
   const uiManager = {
     onPersonaSwitch: vi.fn((cb: (name: string) => void) => {
@@ -84,7 +82,6 @@ function createMockUiManager(): {
     renderPersonaDropdown: spies.renderPersonaDropdown,
     updatePersonaModeBadge: spies.updatePersonaModeBadge,
     setPersonaMode: spies.setPersonaMode,
-    updateSidebarAvatarIcon: spies.updateSidebarAvatarIcon,
   } as unknown as UIManager;
   return { uiManager, captured, spies };
 }
@@ -168,8 +165,6 @@ describe('createPersonaController', () => {
 
       expect(window.electronAPI.switchPersona).toHaveBeenCalledWith('教师');
       expect(spies.updateActivePersona).toHaveBeenCalledWith('教师');
-      // C-8：头像更新应委托给 UIManager，控制器不直接操作 DOM
-      expect(spies.updateSidebarAvatarIcon).toHaveBeenCalledWith('#icon-fairy');
       expect(spies.showToast).toHaveBeenCalledWith('已切换到角色：教师', 'success');
     });
 

@@ -36,8 +36,6 @@ export function createPersonaController(uiManager: UIManager) {
         const { switched, name: activeName } = await window.electronAPI.switchPersona(name);
         if (switched && activeName) {
           uiManager.updateActivePersona(activeName);
-          // C-8：侧边栏角色头像更新委托给 UIManager，控制器不直接操作 DOM
-          uiManager.updateSidebarAvatarIcon('#icon-fairy');
           // IX-06 操作反馈走 toast
           uiManager.showToast(`已切换到角色：${activeName}`, 'success');
         }
