@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v0.4
-date: 2026-06-29
+version: v0.6
+date: 2026-07-01
 ---
 
 # memora-sprite · 宿主项目总则
@@ -123,9 +123,9 @@ hosts/memora-sprite/
     │   └── renderer/         ← 渲染进程（UI 层，不直接导入 electron）
     │       ├── index.html / renderer.ts / ui.ts / types.ts
     │       ├── ipcListeners.ts / initHelpers.ts
-    │       ├── controllers/   ← 面板控制器（业务逻辑）
+    │       ├── controllers/   ← 面板控制器（业务逻辑，不直接操作 DOM）
     │       │   ├── settingsController.ts / sessionController.ts
-    │       │   ├── memoryPanelController.ts / personaPanelController.ts
+    │       │   ├── memoryController.ts / personaController.ts
     │       ├── helpers/       ← 渲染进程工具函数
     │       │   ├── domHelpers.ts / errorHelpers.ts / eventTracker.ts
     │       ├── components/    ← 可复用 UI 组件
@@ -161,6 +161,85 @@ hosts/memora-sprite/
         ├── storage/          ← sessionStore.test.ts / sqliteStorage.test.ts + helpers/
         └── renderer/         ← float.test.ts / sessionController.test.ts
 ```
+
+### 4.1 渲染进程分层约束（C-8 确立）
+
+> **原则**：控制器不直接操作 DOM，通过 UIManager 门面委托。
+
+| 层 | 职责 | 禁止 |
+|----|------|------|
+| `controllers/` | 业务编排（IPC 调用 + 回调注册 + 状态决策） | 直接访问 `document.getElementById` / `querySelector` / `classList` 等 DOM API |
+| `panels/` | DOM 绑定 + 渲染逻辑（事件监听 + 元素操作） | 跨面板业务编排（应由 controllers/ 协调） |
+| `components/` | 可复用 UI 组件（Toast / Modal / Theme 等 leaf 组件） | 直接依赖 panels/ 或 controllers/ |
+| `ui.ts` | UIManager 门面（组合持有所有子模块 + 薄委托方法） | 内联复杂 DOM 渲染逻辑（应拆分到 panels/） |
+
+**执行方式**：controllers/ 需要访问 DOM 时，通过 UIManager 提供的门面方法（如 `getMemorySearchParams()` / `triggerMemorySearchInput()` / `setMemoryListState()`），由 UIManager 内部委托到对应 PanelManager。
+
+### 4.2 注释规范（文件头与类级注释关系）
+
+> **原则**：文件头注释和类级注释各司其职，禁止重复内容。
+
+#### 4.2.1 四级注释体系
+
+继承用户规则中的四级注释要求，明确每级注释的内容边界：
+
+| 层级 | 位置 | 必含内容 | 禁含内容 |
+|------|------|----------|----------|
+| 文件级 | 文件首部 `/** ... */` | 模块职责、来源（如 "C-5-x 拆分"）、设计原则 | 类的具体实现细节、字段说明 |
+| 类级 | `export class Foo` 上方 | 类的职责概述、依赖、生命周期 | 与文件级重复的"模块职责" |
+| 函数级 | 方法上方 | 用途、参数、返回值、副作用 | 显而易见的实现 |
+| 变量级 | 字段/局部变量声明处 | 字段用途（私有字段必须） | 类型已说明的冗余解释 |
+
+#### 4.2.2 文件头 vs 类级注释的分工
+
+**典型示例**（ClipboardManager）：
+
+```typescript
+/**
+ * 剪贴板保护面板管理器
+ *
+ * C-5-2：从 UIManager 拆分（约 61 行），统一管理"剪贴板三重保护"的 UI 联动。
+ *
+ * 职责：
+ * - 被动检测到剪贴板变化时，显示带"分析"按钮的 Toast
+ * - 内容通过敏感检测后，弹出确认对话框供用户预览
+ *
+ * 设计原则：
+ * - 依赖注入：通过构造函数接收 ToastManager / ModalManager 引用
+ * - 无事件监听器，无需 EventTracker
+ */
+// ↑ 文件级注释：说明"这是什么模块、从哪来、设计原则"
+
+/**
+ * 剪贴板保护面板管理器类
+ *
+ * 职责：被动检测剪贴板变化 → 用户确认 → 存为记忆
+ * 依赖：ToastManager（显示提示）、ModalManager（确认对话框）
+ * 生命周期：无事件监听器，cleanup() 为空实现
+ */
+export class ClipboardManager { ... }
+// ↑ 类级注释：说明"这个类的运行时行为、依赖、生命周期"
+```
+
+**判定原则**：
+
+| 是否文件级 | 是否类级 | 适用场景 |
+|------------|----------|----------|
+| ✅ | ✅ | 单文件单类的标准结构（推荐） |
+| ✅ | ❌ | 单文件多函数/常量的工具模块（如 constants.ts） |
+| ❌ | ✅ | 文件中仅 1 个类，类注释已涵盖文件级信息（不推荐，建议补文件级） |
+| ❌ | ❌ | 禁止——文件必须有至少一级注释说明 |
+
+**禁止**：文件级和类级注释复制粘贴相同内容。若两者内容高度重叠，保留文件级注释（含来源/设计原则），类级注释改为聚焦"运行时行为"。
+
+#### 4.2.3 PanelManager 必含的注释要素
+
+每个 PanelManager 文件必须包含以下注释要素（与 [ADR-SP-015](./decisions/ADR-SP-015-panel-manager-composition.md) 一致）：
+
+- **文件级**：① 模块职责 ② 拆分来源（如 C-5-x） ③ 设计原则（依赖注入模式）
+- **类级**：① 类的职责概述 ② 依赖（如 ToastManager / ModalManager / EventTracker） ③ 生命周期说明（init/cleanup 行为）
+- **字段级**：每个 `private` 字段必须有单行 `/** ... */` 说明用途
+- **方法级**：公共方法必须含 `@param` / `@returns`，私有方法可简化但需说明意图
 
 ## 5. 命名规范（与内核一致）
 

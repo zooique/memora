@@ -71,8 +71,8 @@ hosts/memora-sprite/
     │       ├── toast.ts      ← Toast 通知管理器
     │       ├── onboarding.ts ← 首次引导流程
     │       ├── themeManager.ts ← 主题管理（浅色/深色/系统跟随）
-    │       ├── memoryController.ts ← 记忆面板控制器
-    │       ├── personaController.ts ← 角色面板控制器
+    │       ├── memoryController.ts ← 记忆面板控制器（C-3 重命名，原 memoryPanelController）
+    │       ├── personaController.ts ← 角色面板控制器（C-3 重命名，原 personaPanelController）
     │       ├── sessionController.ts ← 会话面板控制器
     │       ├── settingsController.ts ← 设置面板控制器
     │       ├── panels/        ← 面板管理器（DOM 绑定 + 渲染逻辑，UIManager facade 委托）
@@ -83,7 +83,12 @@ hosts/memora-sprite/
     │       │   ├── settingsPanelManager.ts ← 设置面板 DOM 管理
     │       │   ├── profilePanelManager.ts ← 用户画像面板管理
     │       │   ├── workProjectionPanelManager.ts ← 作品投影面板
-    │       │   └── auditPanelManager.ts ← 审计日志面板
+    │       │   ├── auditPanelManager.ts ← 审计日志面板
+    │       │   ├── commandPaletteManager.ts ← 命令面板（Ctrl+K）
+    │       │   ├── panelErrorBannerManager.ts ← 面板错误横幅（C-5-1 拆分）
+    │       │   ├── clipboardManager.ts ← 剪贴板保护（C-5-2 拆分）
+    │       │   ├── dateNavManager.ts ← 日期导航（C-5-3 拆分）
+    │       │   └── skillDropManager.ts ← 技能拖入安装（C-5-4 拆分）
     │       ├── suggestionCard.ts ← 配置建议卡片
     │       ├── proactiveBanner.ts ← 主动提示横幅
     │       └── styles/       ← 样式文件（v8 语义化变量系统）
@@ -148,5 +153,21 @@ hosts/memora-sprite/
 **设计演进**：
 - v0.2 仅列出 settingsPanelManager/profilePanelManager 2 个 PanelManager，遗漏 chatPanelManager/memoryPanelManager/personaPanelManager/workProjectionPanelManager/auditPanelManager 5 个
 - Phase 2 新增 dashboardPanelManager.ts（1425 行，从 memoryPanelController.ts 提取仪表盘渲染 + 感知系统），目录树补完时一并补齐
-- UIManager facade 透传模式正式确立：所有 PanelManager 通过 DashboardPanelHost/MemoryPanelHost 等 Host 接口注入，UIManager 仅做委托
+- UIManager facade 透传模式正式确立：PanelManager 依赖注入采用多种模式（详见 [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md)），包括 Host 接口注入（推荐）、共享 leaf 组件注入（ToastManager/ModalManager）、共享 EventTracker 注入、自包含无注入，UIManager 仅做委托
 - memoryPanelController.ts 从 1542 → 540 行（-1000 行），Controller 仅保留 IPC 编排，DOM 渲染归 PanelManager
+
+### v0.4（2026-07-01）· 阶段 C 架构演进——controllers 重命名 + panels 拆分
+
+**变更**：
+- controllers/ 文件名对齐：memoryPanelController.ts → memoryController.ts、personaPanelController.ts → personaController.ts（C-3 重命名，文件名与导出函数名一致）
+- panels/ 补齐 4 个新 Manager（C-5-1~4 拆分，从 UIManager 提取）：
+  - panelErrorBannerManager.ts（91 行，自包含 EventTracker）
+  - clipboardManager.ts（103 行，依赖注入 ToastManager + ModalManager）
+  - dateNavManager.ts（185 行，自包含 EventTracker）
+  - skillDropManager.ts（193 行，依赖注入 ToastManager）
+- ui.ts 从 2131 → 1896 行（-235 行），新增 4 个独立 Manager 共 572 行
+
+**设计演进**：
+- C-5 拆分确立了 PanelManager 组合模式的完整约定，详见 [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md)
+- v0.3 表述"所有 PanelManager 通过 Host 接口注入"过绝对，修正为承认多种注入模式并存（Host 接口 / 共享 leaf 组件 / 共享 EventTracker / 自包含）
+- C-8 确立"控制器不直接操作 DOM"分层约束，详见 [sprite-project-rules.md §4](../sprite-project-rules.md)

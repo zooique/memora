@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-11 全部完成，目录形态已对齐最终目标。
-> **版本**：v1.0（2026-06-24）
+> **当前状态**：D-01~D-14 全部完成，目录形态已对齐最终目标。
+> **版本**：v1.1（2026-07-01）
 
 ---
 
@@ -59,8 +59,8 @@ src/
 │       ├── controllers/        # 面板控制器（业务逻辑，不含 DOM 操作）
 │       │   ├── settingsController.ts    # 设置面板控制器
 │       │   ├── sessionController.ts     # 会话面板控制器
-│       │   ├── memoryPanelController.ts # 记忆面板控制器
-│       │   └── personaPanelController.ts # 角色面板控制器
+│       │   ├── memoryController.ts      # 记忆面板控制器（C-3 重命名，原 memoryPanelController.ts）
+│       │   └── personaController.ts     # 角色面板控制器（C-3 重命名，原 personaPanelController.ts）
 │       │
 │       ├── helpers/            # 渲染进程工具函数
 │       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作）
@@ -90,7 +90,11 @@ src/
 │       │   ├── workProjectionPanelManager.ts # 作品投影面板
 │       │   ├── commandPaletteManager.ts  # 命令面板
 │       │   ├── auditPanelManager.ts      # 审计面板
-│       │   └── dashboardPanelManager.ts  # 仪表盘面板
+│       │   ├── dashboardPanelManager.ts  # 仪表盘面板
+│       │   ├── panelErrorBannerManager.ts # 面板错误横幅（C-5-1 拆分，自包含 EventTracker）
+│       │   ├── clipboardManager.ts       # 剪贴板保护（C-5-2 拆分，依赖注入 ToastManager + ModalManager）
+│       │   ├── dateNavManager.ts         # 日期导航（C-5-3 拆分，自包含 EventTracker）
+│       │   └── skillDropManager.ts       # 技能拖入安装（C-5-4 拆分，依赖注入 ToastManager）
 │       │
 │       ├── float/              # 浮动窗口
 │       │   ├── float.ts        # 浮动窗口渲染进程逻辑
@@ -227,6 +231,7 @@ src/
 - [x] D-11: `__tests__/` 按模块重组（electron/ sprite/ storage/ renderer/ 四个子目录）
 - [x] D-12: `__tests__/` 镜像源码子目录——ipc/ 迁入 electron/ipc/、windows/ 迁入 electron/windows/、sprite/ 拆分 audit/ + controllers/
 - [x] D-13: `__tests__/` 镜像修复收尾——renderer/ 27 文件迁入 electron/renderer/、ui.test.ts 迁入 electron/renderer/、ipcHandlers.test.ts 重命名为 ipc/handlers.test.ts（2026-06-30，第八轮骨架修复）
+- [x] D-14: controllers/ 文件名对齐——memoryPanelController.ts → memoryController.ts、personaPanelController.ts → personaController.ts（C-3 重命名）；panels/ 补齐 4 个新 Manager——panelErrorBannerManager.ts/clipboardManager.ts/dateNavManager.ts/skillDropManager.ts（C-5-1~4 拆分，2026-07-01 阶段 C 架构演进）
 
 ### 延后（非目录结构）
 
