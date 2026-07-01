@@ -439,6 +439,34 @@ export class MemoryInspector {
   }
 
   /**
+   * 添加记忆关系（透传 relationStore）
+   *
+   * 用于宿主 UI 手动创建关系（关系图右键菜单 → 连线 → 创建关系）。
+   * relationStore 未注入时静默降级（不阻塞）。
+   *
+   * @param relation 关系边数据
+   */
+  addRelation(relation: MemoryRelation): void {
+    if (!this.relationStore) return;
+    this.relationStore.addRelation(relation);
+  }
+
+  /**
+   * 删除记忆关系（透传 relationStore）
+   *
+   * 用于宿主 UI 手动删除关系（关系图右键菜单 → 编辑关系 → 删除）。
+   * relationStore 未注入时静默降级（不阻塞）。
+   *
+   * @param sourceId 关系起点
+   * @param targetId 关系终点
+   * @param type 关系类型
+   */
+  removeRelation(sourceId: string, targetId: string, type: string): void {
+    if (!this.relationStore) return;
+    this.relationStore.removeRelation(sourceId, targetId, type);
+  }
+
+  /**
    * 统计关系边总数
    *
    * 用于 stats() 和 snapshot() 的 relationCount 字段。

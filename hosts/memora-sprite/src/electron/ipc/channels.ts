@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IPC 通道名称常量定义
  *
  * 集中管理所有主进程 ↔ 渲染进程通信通道，消灭散落在各文件中的魔法字符串，
@@ -48,6 +48,12 @@ export const IPC_CHANNELS = {
   MEMORIES_REVIEW_DATA: 'memories-review-data',
   /** 批量删除记忆（Phase 3：智能清理） */
   MEMORIES_DELETE_BATCH: 'memories-delete-batch',
+  /** 添加记忆关系（手动创建，关系图交互） */
+  MEMORIES_ADD_RELATION: 'memories-add-relation',
+  /** 删除记忆关系（关系图交互） */
+  MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
+  /** 更新记忆关系（关系图交互） */
+  MEMORIES_UPDATE_RELATION: 'memories-update-relation',
 
   // ─── 配置相关 ─────────────────────────────────────────
   /** 获取精灵配置 */

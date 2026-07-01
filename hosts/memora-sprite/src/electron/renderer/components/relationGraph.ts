@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆关系图谱渲染器 — Canvas 2D 力导向图
  *
  * 职责：
@@ -64,6 +64,15 @@ export interface RelationGraphData {
 /** 节点点击回调 */
 export type NodeClickCallback = (nodeId: string) => void;
 
+/** 节点右键菜单回调 */
+export type NodeContextMenuCallback = (nodeId: string, screenX: number, screenY: number) => void;
+
+/** 边点击回调（编辑关系） */
+export type EdgeClickCallback = (sourceId: string, targetId: string, type: string, weight: number) => void;
+
+/** 手动连线创建关系回调 */
+export type ConnectionCreateCallback = (sourceId: string, targetId: string) => void;
+
 // ─── 常量 ────────────────────────────────────────────────────
 
 /** Canvas 内边距 */
@@ -94,35 +103,42 @@ const MAX_ZOOM = 3;
 const ZOOM_SENSITIVITY = 0.001;
 /** 双击缩放重置动画时长（ms） */
 const RESET_ANIM_DURATION = 400;
+/** 边点击检测热区半径（像素） */
+const EDGE_HIT_RADIUS = 8;
+/** 连线模式提示线虚线间隔 */
+const CONNECTION_LINE_DASH = [6, 4];
+/** 冲突脉冲周期（ms） */
+const CONFLICT_PULSE_PERIOD = 1200;
+/** 冲突脉冲最小 alpha */
+const CONFLICT_PULSE_MIN_ALPHA = 0.3;
+/** 冲突脉冲最大 alpha */
+const CONFLICT_PULSE_MAX_ALPHA = 0.9;
 
-// ─── 颜色映射 ────────────────────────────────────────────────
+// ─── 颜色映射（source → CSS 变量名，运行时从主题解析实际色值） ──
 
-/** source → 节点填充色（CSS 变量引用） */
-const SOURCE_COLORS: Record<string, string> = {
-  profile: '#34c759',
-  insight: '#0066ff',
-  guardrail: '#ad1457',
-  skill: '#ff9f0a',
-  rule: '#7b1fa2',
-  persona: '#00838f',
-  session: '#e65100',
+/** source 类型 → 对应的 CSS 变量名（在 base.css 中定义，支持双主题） */
+const SOURCE_COLOR_VARS: Record<string, string> = {
+  profile: '--green',
+  insight: '--accent',
+  guardrail: '--pink',
+  skill: '--yellow',
+  rule: '--mauve',
+  persona: '--teal',
+  session: '--peach',
 };
 
-/** 默认节点颜色 */
-const DEFAULT_NODE_COLOR = '#a1a1a6';
-
-/** type → 边线颜色 */
-const EDGE_TYPE_COLORS: Record<string, string> = {
-  contradicts: '#ff3b30',
-  supports: '#34c759',
-  follows: '#0066ff',
-  refines: '#ff9f0a',
-  caused: '#7b1fa2',
-  related: '#a1a1a6',
+/** 边类型 → 对应的 CSS 变量名 */
+const EDGE_COLOR_VARS: Record<string, string> = {
+  contradicts: '--red',
+  supports: '--green',
+  follows: '--accent',
+  refines: '--yellow',
+  caused: '--mauve',
+  related: '--muted',
 };
 
-/** 默认边线颜色 */
-const DEFAULT_EDGE_COLOR = '#a1a1a6';
+/** 连线模式预览线使用的 CSS 变量名 */
+const CONNECTION_LINE_VAR = '--yellow';
 
 // ─── 力导向图谱渲染器 ────────────────────────────────────────
 
@@ -147,6 +163,8 @@ export class RelationGraphRenderer {
   /** 拖拽偏移量 */
   private dragOffsetX = 0;
   private dragOffsetY = 0;
+  /** 是否发生过拖拽（用于 onClick 守卫，阻止拖拽结束后误触发 click） */
+  private didDrag = false;
 
   // 动画
   private animFrameId: number | null = null;
@@ -157,6 +175,19 @@ export class RelationGraphRenderer {
 
   // 回调
   private onNodeClick: NodeClickCallback | null = null;
+  /** 节点右键菜单回调 */
+  private onNodeContextMenu: NodeContextMenuCallback | null = null;
+  /** 边点击回调（编辑关系） */
+  private onEdgeClick: EdgeClickCallback | null = null;
+  /** 手动连线创建关系回调 */
+  private onConnectionCreate: ConnectionCreateCallback | null = null;
+
+  // ─── 连线模式状态 ───────────────────────────────────────────
+  /** 连线模式：拖拽的源节点 */
+  private connectionSourceNode: GraphNode | null = null;
+  /** 连线模式：当前鼠标世界坐标 */
+  private connectionMouseX = 0;
+  private connectionMouseY = 0;
 
   // 高 DPI 缩放
   private dpr = 1;
@@ -236,6 +267,21 @@ export class RelationGraphRenderer {
   /** 设置节点点击回调 */
   setOnNodeClick(cb: NodeClickCallback): void {
     this.onNodeClick = cb;
+  }
+
+  /** 设置节点右键菜单回调 */
+  setOnNodeContextMenu(cb: NodeContextMenuCallback): void {
+    this.onNodeContextMenu = cb;
+  }
+
+  /** 设置边点击回调（编辑关系） */
+  setOnEdgeClick(cb: EdgeClickCallback): void {
+    this.onEdgeClick = cb;
+  }
+
+  /** 设置手动连线创建关系回调 */
+  setOnConnectionCreate(cb: ConnectionCreateCallback): void {
+    this.onConnectionCreate = cb;
   }
 
   /**
@@ -547,8 +593,11 @@ export class RelationGraphRenderer {
 
   /** 渲染空状态 */
   private renderEmpty(): void {
+    // Canvas 2D 不支持 CSS var()，需通过 getComputedStyle 解析主题色
+    const textColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--text-3').trim() || '#a1a1a6';
     this.ctx.clearRect(0, 0, this.width, this.height);
-    this.ctx.fillStyle = 'var(--text-3, #a1a1a6)';
+    this.ctx.fillStyle = textColor;
     this.ctx.font = '14px -apple-system, BlinkMacSystemFont, sans-serif';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
@@ -593,10 +642,18 @@ export class RelationGraphRenderer {
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
       ctx.lineTo(target.x, target.y);
-      ctx.strokeStyle = EDGE_TYPE_COLORS[edge.type] || DEFAULT_EDGE_COLOR;
+      ctx.strokeStyle = this.getEdgeColor(edge.type);
       ctx.lineWidth = MIN_EDGE_WIDTH + (MAX_EDGE_WIDTH - MIN_EDGE_WIDTH) * edge.weight;
-      // 淡化：非高亮边 alpha=0.08，普通边 0.4，hover 边 0.8
-      if (!edgeHighlighted) {
+
+      // 冲突边脉冲动画（正弦波 alpha 振荡）
+      if (edge.type === 'contradicts') {
+        const pulse =
+          CONFLICT_PULSE_MIN_ALPHA +
+          (CONFLICT_PULSE_MAX_ALPHA - CONFLICT_PULSE_MIN_ALPHA) *
+          (0.5 + 0.5 * Math.sin(performance.now() / CONFLICT_PULSE_PERIOD * Math.PI * 2));
+        ctx.globalAlpha = pulse;
+        ctx.lineWidth *= 1.4; // 冲突边略粗
+      } else if (!edgeHighlighted) {
         ctx.globalAlpha = 0.08;
       } else if (isConnectedToHover) {
         ctx.globalAlpha = 0.8;
@@ -608,6 +665,20 @@ export class RelationGraphRenderer {
       ctx.globalAlpha = 1;
     }
 
+    // 绘制连线模式预览线（虚线，从源节点到鼠标位置）
+    if (this.connectionSourceNode) {
+      ctx.beginPath();
+      ctx.setLineDash(CONNECTION_LINE_DASH);
+      ctx.moveTo(this.connectionSourceNode.x, this.connectionSourceNode.y);
+      ctx.lineTo(this.connectionMouseX, this.connectionMouseY);
+      ctx.strokeStyle = this.resolveCssVar(CONNECTION_LINE_VAR, '#ff9f0a');
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.8;
+      ctx.stroke();
+      ctx.setLineDash([]); // 重置虚线设置
+      ctx.globalAlpha = 1;
+    }
+
     // 绘制节点
     for (const node of this.nodes) {
       const r = this.nodeRadius(node);
@@ -616,12 +687,13 @@ export class RelationGraphRenderer {
       const isSelected = node.id === this.selectedNodeId;
       const nodeHighlighted = isNodeHighlighted(node);
 
-      // 选中节点外发光环（蓝色脉冲效果，在最底层）
+      // 选中节点外发光环（强调色脉冲效果，在最底层）
       if (isSelected) {
         const selectedGlowR = r * 2.2;
+        const accentColor = this.resolveCssVar('--accent', '#0066ff');
         const gradient = ctx.createRadialGradient(node.x, node.y, r * 1.2, node.x, node.y, selectedGlowR);
-        gradient.addColorStop(0, 'rgba(0, 102, 255, 0.4)');
-        gradient.addColorStop(1, 'rgba(0, 102, 255, 0)');
+        gradient.addColorStop(0, this.hexToRgba(accentColor, 0.4));
+        gradient.addColorStop(1, this.hexToRgba(accentColor, 0));
         ctx.beginPath();
         ctx.arc(node.x, node.y, selectedGlowR, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
@@ -631,9 +703,10 @@ export class RelationGraphRenderer {
       // hover 光晕效果
       if (isHovered && nodeHighlighted) {
         const glowR = r * 1.8;
+        const nodeColor = this.getNodeColor(node);
         const gradient = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, glowR);
-        gradient.addColorStop(0, this.getNodeColor(node));
-        gradient.addColorStop(1, 'rgba(0, 102, 255, 0)');
+        gradient.addColorStop(0, nodeColor);
+        gradient.addColorStop(1, this.hexToRgba(nodeColor, 0));
         ctx.beginPath();
         ctx.arc(node.x, node.y, glowR, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
@@ -652,14 +725,15 @@ export class RelationGraphRenderer {
       ctx.fill();
       ctx.globalAlpha = 1;
 
-      // 选中节点蓝色描边（优先级最高）
+      // 选中节点强调色描边（优先级最高）
       if (isSelected) {
-        ctx.strokeStyle = '#0066ff';
+        ctx.strokeStyle = this.resolveCssVar('--accent', '#0066ff');
         ctx.lineWidth = 3;
         ctx.stroke();
       } else if (isHovered || isDragged) {
-        // hover / drag 描边
-        ctx.strokeStyle = isDragged ? '#0066ff' : 'rgba(0, 102, 255, 0.6)';
+        // hover / drag 描边（强调色半透明）
+        const accentColor = this.resolveCssVar('--accent', '#0066ff');
+        ctx.strokeStyle = isDragged ? accentColor : this.hexToRgba(accentColor, 0.6);
         ctx.lineWidth = isDragged ? 2.5 : 2;
         ctx.stroke();
       }
@@ -688,24 +762,59 @@ export class RelationGraphRenderer {
     return MIN_NODE_RADIUS + (MAX_NODE_RADIUS - MIN_NODE_RADIUS) * Math.min(1, node.score);
   }
 
-  /** 根据 source 获取节点颜色 */
+  /**
+   * 从 CSS 变量解析当前主题色值
+   * Canvas 2D 无法直接使用 CSS var()，需在绘制时动态读取
+   */
+  private resolveCssVar(varName: string, fallback: string): string {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(varName).trim() || fallback;
+  }
+
+  /** 根据 source 获取节点颜色（从 CSS 变量解析，支持双主题自动切换） */
   private getNodeColor(node: GraphNode): string {
-    return SOURCE_COLORS[node.source] || DEFAULT_NODE_COLOR;
+    const varName = SOURCE_COLOR_VARS[node.source];
+    if (varName) {
+      return this.resolveCssVar(varName, '#a1a1a6');
+    }
+    return this.resolveCssVar('--muted', '#a1a1a6');
+  }
+
+  /** 根据边类型获取边颜色（从 CSS 变量解析，支持双主题自动切换） */
+  private getEdgeColor(edgeType: string): string {
+    const varName = EDGE_COLOR_VARS[edgeType];
+    if (varName) {
+      return this.resolveCssVar(varName, '#a1a1a6');
+    }
+    return this.resolveCssVar('--muted', '#a1a1a6');
+  }
+
+  /** 将十六进制颜色转换为 rgba 字符串（用于光晕/渐变等需要透明度的场景） */
+  private hexToRgba(hex: string, alpha: number): string {
+    const h = hex.replace('#', '');
+    if (h.length !== 6) return `rgba(0,0,0,${alpha})`;
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   /**
-   * 根据背景色十六进制值计算高对比度文字颜色（黑/白）
-   * 使用 YIQ 颜色空间判断亮度
+   * 根据背景色计算高对比度文字颜色（黑/白）
+   * 使用 YIQ 颜色空间判断亮度，同时考虑当前主题背景
    */
   private getContrastColor(hexColor: string): string {
-    // 解析十六进制颜色
     const hex = hexColor.replace('#', '');
+    if (hex.length !== 6) return '#ffffff';
     const r = parseInt(hex.substring(0, 2), 16);
     const g = parseInt(hex.substring(2, 4), 16);
     const b = parseInt(hex.substring(4, 6), 16);
     // YIQ 亮度公式
     const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-    return yiq >= 128 ? '#1d1d1f' : '#ffffff';
+    // 亮色背景用深色文字，暗色背景用浅色文字（文字颜色跟随主题 --text）
+    return yiq >= 128
+      ? this.resolveCssVar('--text', '#1d1d1f')
+      : this.resolveCssVar('--white', '#ffffff');
   }
 
   /**
@@ -765,6 +874,68 @@ export class RelationGraphRenderer {
     return null;
   }
 
+  /**
+   * 根据屏幕坐标查找边（点到线段距离检测）
+   *
+   * 返回距离鼠标最近的边，用于点击边触发关系编辑弹窗。
+   * 仅检测距离在 EDGE_HIT_RADIUS 范围内的边。
+   *
+   * @param screenX 屏幕 X 坐标
+   * @param screenY 屏幕 Y 坐标
+   * @returns 最近的边，未命中返回 null
+   */
+  private findEdgeAt(screenX: number, screenY: number): GraphEdge | null {
+    const { x, y } = this.screenToWorld(screenX, screenY);
+    let closestEdge: GraphEdge | null = null;
+    let closestDist = EDGE_HIT_RADIUS;
+
+    for (const edge of this.edges) {
+      const source = this.nodeMap.get(edge.sourceId);
+      const target = this.nodeMap.get(edge.targetId);
+      if (!source || !target) continue;
+
+      // 点到线段距离（数学公式，不依赖 DOM）
+      const dist = this.pointToSegmentDist(x, y, source.x, source.y, target.x, target.y);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestEdge = edge;
+      }
+    }
+    return closestEdge;
+  }
+
+  /**
+   * 计算点到线段的最短距离
+   *
+   * 使用向量投影法，投影参数 t 在 [0,1] 之间时为垂足在线段上，
+   * 否则取到端点的距离。
+   */
+  private pointToSegmentDist(
+    px: number, py: number,
+    ax: number, ay: number,
+    bx: number, by: number,
+  ): number {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) {
+      // 线段退化为点
+      const ex = px - ax;
+      const ey = py - ay;
+      return Math.sqrt(ex * ex + ey * ey);
+    }
+    // 投影参数 t（点在线段上的投影位置）
+    let t = ((px - ax) * dx + (py - ay) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    // 投影点坐标
+    const projX = ax + t * dx;
+    const projY = ay + t * dy;
+    // 点到投影点的距离
+    const ex = px - projX;
+    const ey = py - projY;
+    return Math.sqrt(ex * ex + ey * ey);
+  }
+
   // ─── 事件绑定 ──────────────────────────────────────────────
 
   private bindEvents(): void {
@@ -773,6 +944,7 @@ export class RelationGraphRenderer {
     this.canvas.addEventListener('mouseup', this.onMouseUp);
     this.canvas.addEventListener('mouseleave', this.onMouseLeave);
     this.canvas.addEventListener('click', this.onClick);
+    this.canvas.addEventListener('contextmenu', this.onContextMenu);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('dblclick', this.onDblClick);
   }
@@ -783,15 +955,31 @@ export class RelationGraphRenderer {
     this.canvas.removeEventListener('mouseup', this.onMouseUp);
     this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
     this.canvas.removeEventListener('click', this.onClick);
+    this.canvas.removeEventListener('contextmenu', this.onContextMenu);
     this.canvas.removeEventListener('wheel', this.onWheel);
     this.canvas.removeEventListener('dblclick', this.onDblClick);
   }
 
   private onMouseDown = (e: MouseEvent): void => {
+    // 重置拖拽标志，后续 onMouseMove 中发生拖拽时设为 true
+    this.didDrag = false;
+
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     const node = this.findNodeAt(screenX, screenY);
+
+    // 连线模式：Ctrl + 从节点开始拖拽 → 画连线到目标节点
+    if (node && (e.ctrlKey || e.metaKey)) {
+      this.connectionSourceNode = node;
+      const world = this.screenToWorld(screenX, screenY);
+      this.connectionMouseX = world.x;
+      this.connectionMouseY = world.y;
+      this.canvas.style.cursor = 'crosshair';
+      e.preventDefault();
+      return;
+    }
+
     if (node) {
       this.dragNode = node;
       // 拖拽偏移：节点世界坐标 - 鼠标世界坐标
@@ -816,8 +1004,18 @@ export class RelationGraphRenderer {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
+    // 连线模式：更新鼠标位置，绘制连线预览
+    if (this.connectionSourceNode) {
+      const world = this.screenToWorld(screenX, screenY);
+      this.connectionMouseX = world.x;
+      this.connectionMouseY = world.y;
+      this.hideTooltip();
+      return;
+    }
+
     // 节点拖拽
     if (this.dragNode) {
+      this.didDrag = true; // 标记发生过拖拽，阻止后续 click 事件误触发
       const world = this.screenToWorld(screenX, screenY);
       this.dragNode.x = world.x + this.dragOffsetX;
       this.dragNode.y = world.y + this.dragOffsetY;
@@ -832,6 +1030,7 @@ export class RelationGraphRenderer {
 
     // 画布平移拖拽
     if (this.isPanning) {
+      this.didDrag = true; // 标记发生过拖拽，阻止后续 click 事件误触发
       this.targetCameraX = this.panStartCameraX + (screenX - this.panStartX);
       this.targetCameraY = this.panStartCameraY + (screenY - this.panStartY);
       // 直接设置当前值避免延迟
@@ -856,7 +1055,22 @@ export class RelationGraphRenderer {
     }
   };
 
-  private onMouseUp = (): void => {
+  private onMouseUp = (e: MouseEvent): void => {
+    // 连线模式释放：检测是否在目标节点上
+    if (this.connectionSourceNode) {
+      const rect = this.canvas.getBoundingClientRect();
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top;
+      const targetNode = this.findNodeAt(screenX, screenY);
+      // 释放到另一个节点上 → 触发连线创建回调
+      if (targetNode && targetNode !== this.connectionSourceNode && this.onConnectionCreate) {
+        this.onConnectionCreate(this.connectionSourceNode.id, targetNode.id);
+      }
+      this.connectionSourceNode = null;
+      this.canvas.style.cursor = this.hoverNode ? 'pointer' : 'grab';
+      return;
+    }
+
     this.dragNode = null;
     if (this.isPanning) {
       this.isPanning = false;
@@ -868,19 +1082,46 @@ export class RelationGraphRenderer {
     this.dragNode = null;
     this.hoverNode = null;
     this.isPanning = false;
+    this.connectionSourceNode = null;
     this.canvas.style.cursor = 'grab';
     this.hideTooltip();
   };
 
   private onClick = (e: MouseEvent): void => {
     // 拖拽结束后的 click 不应触发节点选中（拖拽平移或节点拖拽后避免误触）
-    if (this.isPanning || this.dragNode) return;
+    if (this.didDrag) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    // 优先检测边点击（编辑关系）
+    const edge = this.findEdgeAt(screenX, screenY);
+    if (edge && this.onEdgeClick) {
+      this.onEdgeClick(edge.sourceId, edge.targetId, edge.type, edge.weight);
+      return;
+    }
+
+    // 节点点击
+    const node = this.findNodeAt(screenX, screenY);
+    if (node && this.onNodeClick) {
+      this.onNodeClick(node.id);
+    }
+  };
+
+  /**
+   * 右键菜单事件处理
+   *
+   * 右键点击节点时触发 onNodeContextMenu 回调，
+   * 由 memoryPanelManager 显示自定义上下文菜单。
+   */
+  private onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
     const node = this.findNodeAt(screenX, screenY);
-    if (node && this.onNodeClick) {
-      this.onNodeClick(node.id);
+    if (node && this.onNodeContextMenu) {
+      this.onNodeContextMenu(node.id, e.clientX, e.clientY);
     }
   };
 

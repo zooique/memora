@@ -118,8 +118,15 @@ export class MemoryPanelManager {
   private cleanupConfirmCallback: ((ids: string[]) => Promise<void>) | null = null;
   /** 视图切换按钮状态更新回调（通知Controller同步按钮active状态） */
   private viewSwitchCallback: ((mode: 'list' | 'timeline' | 'graph') => void) | null = null;
-
-  // ─── 清理对话框状态 ────────────────────────────────────
+  /** 图谱上下文菜单操作回调 */
+  private graphContextMenuCallback: ((action: string, nodeId: string) => void) | null = null;
+  /** 关系编辑回调 */
+  private relationEditCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
+  /** 关系删除回调 */
+  private relationDeleteCallback: ((sourceId: string, targetId: string, type: string) => void) | null = null;
+  /** 关系创建回调 */
+  private relationCreateCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
+// ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
   private pendingCleanupIds: string[] = [];
 
@@ -744,7 +751,23 @@ export class MemoryPanelManager {
    */
   private renderTimeline(): void {
     const container = document.getElementById('memory-timeline-container');
-    if (!container || !this.allMemories || this.allMemories.length === 0) return;
+    if (!container) return;
+
+    // 无记忆数据时显示空状态
+    if (!this.allMemories || this.allMemories.length === 0) {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+      const empty = document.createElement('div');
+      empty.className = 'timeline-empty';
+      empty.innerHTML = `
+        <span class="empty-icon">⏳</span>
+        <span class="empty-title">暂无时间线数据</span>
+        <span class="empty-subtitle">开始对话后，记忆将按时间自动组织</span>
+      `;
+      container.appendChild(empty);
+      return;
+    }
 
     // 清空容器
     while (container.firstChild) {
@@ -770,14 +793,6 @@ export class MemoryPanelManager {
 
     // 按日期降序排序（今天 → 昨天 → 更早）
     const sortedDates = Array.from(groups.keys()).sort((a, b) => b.localeCompare(a));
-
-    if (sortedDates.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'timeline-empty';
-      empty.textContent = '暂无时间线数据';
-      container.appendChild(empty);
-      return;
-    }
 
     // 渲染时间线容器
     const timeline = document.createElement('div');
@@ -1206,40 +1221,60 @@ export class MemoryPanelManager {
     this.updateViewMenuItemsActive(mode);
 
     // B2: 切换列表、时间线和图谱容器的可见性，统一用 .hidden 类
-    // （替代 style.display 内联样式，避免与 .hidden { display:none !important } 兜底冲突）
     const listEl = this.memoryListEl;
     const graphEl = document.getElementById('memory-graph-container');
     const timelineEl = document.getElementById('memory-timeline-container');
 
-    if (mode === 'list') {
-      if (listEl) listEl.classList.remove('hidden');
-      if (graphEl) graphEl.classList.add('hidden');
-      if (timelineEl) timelineEl.classList.add('hidden');
-    } else if (mode === 'timeline') {
-      if (listEl) listEl.classList.add('hidden');
-      if (graphEl) graphEl.classList.add('hidden');
-      if (timelineEl) {
-        timelineEl.classList.remove('hidden');
-        // 渲染时间线视图（使用缓存的记忆列表）
-        this.renderTimeline();
-      }
-    } else {
-      if (listEl) listEl.classList.add('hidden');
-      if (timelineEl) timelineEl.classList.add('hidden');
-      if (graphEl) {
-        graphEl.classList.remove('hidden');
-        // 切换到图谱视图时更新空状态可见性
-        this.updateGraphEmptyState();
-        // 延迟初始化图谱渲染器（确保容器尺寸已计算）
-        this.initGraphRenderer();
-        // 如果已有缓存数据，直接加载并应用缓存状态；
-        // 无缓存时数据加载由 onViewSwitch 回调统一处理（Controller负责IPC）
-        if (this.graphDataCache) {
-          this.graphRenderer?.loadData(this.graphDataCache);
-          this.applyCachedGraphState();
+    // 视图切换过渡动画：先退出旧视图，再进入新视图
+    const allViews = [listEl, graphEl, timelineEl].filter(Boolean) as HTMLElement[];
+
+    // 当前可见的视图 → 添加退出动画
+    const currentView = allViews.find(v => !v.classList.contains('hidden'));
+    if (currentView) {
+      currentView.classList.add('memory-view-exit');
+    }
+
+    // 延迟切换视图（等待退出动画完成）
+    const TRANSITION_DURATION = 150; // 与 CSS --transition-base (0.15s) 一致
+    setTimeout(() => {
+      // 移除所有视图的退出态
+      allViews.forEach(v => v.classList.remove('memory-view-exit'));
+
+      if (mode === 'list') {
+        if (listEl) {
+          listEl.classList.remove('hidden');
+          listEl.classList.add('memory-view-enter');
+        }
+        if (graphEl) graphEl.classList.add('hidden');
+        if (timelineEl) timelineEl.classList.add('hidden');
+      } else if (mode === 'timeline') {
+        if (listEl) listEl.classList.add('hidden');
+        if (graphEl) graphEl.classList.add('hidden');
+        if (timelineEl) {
+          timelineEl.classList.remove('hidden');
+          timelineEl.classList.add('memory-view-enter');
+          this.renderTimeline();
+        }
+      } else {
+        if (listEl) listEl.classList.add('hidden');
+        if (timelineEl) timelineEl.classList.add('hidden');
+        if (graphEl) {
+          graphEl.classList.remove('hidden');
+          graphEl.classList.add('memory-view-enter');
+          this.updateGraphEmptyState();
+          this.initGraphRenderer();
+          if (this.graphDataCache) {
+            this.graphRenderer?.loadData(this.graphDataCache);
+            this.applyCachedGraphState();
+          }
         }
       }
-    }
+
+      // 动画完成后移除进入类
+      setTimeout(() => {
+        allViews.forEach(v => v.classList.remove('memory-view-enter'));
+      }, TRANSITION_DURATION);
+    }, TRANSITION_DURATION);
   }
 
   /**
@@ -1354,6 +1389,21 @@ export class MemoryPanelManager {
     this.graphRenderer.setOnNodeClick((nodeId: string) => {
       this.memoryClickCallback?.(nodeId);
     });
+
+    // 节点右键菜单回调：显示上下文菜单
+    this.graphRenderer.setOnNodeContextMenu((nodeId: string, x: number, y: number) => {
+      this.showGraphContextMenu(nodeId, x, y);
+    });
+
+    // 边点击回调：打开关系编辑弹窗
+    this.graphRenderer.setOnEdgeClick((sourceId: string, targetId: string, type: string, weight: number) => {
+      this.showRelationEditDialog(sourceId, targetId, type, weight);
+    });
+
+    // 手动连线创建回调：打开关系创建弹窗
+    this.graphRenderer.setOnConnectionCreate((sourceId: string, targetId: string) => {
+      this.showRelationCreateDialog(sourceId, targetId);
+    });
   }
 
   // ─── 回调注册 ───────────────────────────────────────────
@@ -1404,5 +1454,208 @@ export class MemoryPanelManager {
   /** 注册视图切换回调（通知Controller切换视图后的业务逻辑） */
   onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void {
     this.viewSwitchCallback = cb;
+  }
+
+  /** 注册图谱上下文菜单操作回调 */
+  onGraphContextMenuAction(cb: (action: string, nodeId: string) => void): void {
+    this.graphContextMenuCallback = cb;
+  }
+
+  /** 注册关系编辑/创建回调（sourceId, targetId, type, weight） */
+  onRelationEdit(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void {
+    this.relationEditCallback = cb;
+  }
+
+  /** 注册关系删除回调 */
+  onRelationDelete(cb: (sourceId: string, targetId: string, type: string) => void): void {
+    this.relationDeleteCallback = cb;
+  }
+
+  /** 注册关系创建回调 */
+  onRelationCreate(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void {
+    this.relationCreateCallback = cb;
+  }
+
+  // ─── 图谱上下文菜单 ─────────────────────────────────────────
+
+  /**
+   * 显示节点右键上下文菜单
+   *
+   * 菜单选项：聚焦子图 / 查看详情 / 创建连线 / 复制 ID
+   *
+   * @param nodeId 被右键的节点 ID
+   * @param x 菜单显示位置（屏幕 X）
+   * @param y 菜单显示位置（屏幕 Y）
+   */
+  private showGraphContextMenu(nodeId: string, x: number, y: number): void {
+    // 隐藏已有的菜单
+    this.hideGraphContextMenu();
+
+    const menu = document.getElementById('graph-context-menu');
+    if (!menu) return;
+// 绑定菜单项点击事件
+    const focusItem = menu.querySelector('[data-action="focus-subgraph"]');
+    const detailItem = menu.querySelector('[data-action="view-detail"]');
+    const connectItem = menu.querySelector('[data-action="connect-from"]');
+    const copyItem = menu.querySelector('[data-action="copy-id"]');
+
+    const handler = (action: string) => {
+      this.hideGraphContextMenu();
+      this.graphContextMenuCallback?.(action, nodeId);
+    };
+
+    if (focusItem) focusItem.addEventListener('click', () => handler('focus-subgraph'), { once: true });
+    if (detailItem) detailItem.addEventListener('click', () => handler('view-detail'), { once: true });
+    if (connectItem) connectItem.addEventListener('click', () => handler('connect-from'), { once: true });
+    if (copyItem) copyItem.addEventListener('click', () => handler('copy-id'), { once: true });
+
+    // 定位菜单（避免超出视口）
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.classList.remove('hidden');
+
+    // 点击菜单外部关闭
+    const closeHandler = (e: MouseEvent) => {
+      if (!menu.contains(e.target as Node)) {
+        this.hideGraphContextMenu();
+        document.removeEventListener('click', closeHandler);
+      }
+    };
+    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+  }
+
+  /** 隐藏图谱上下文菜单 */
+  private hideGraphContextMenu(): void {
+    const menu = document.getElementById('graph-context-menu');
+    if (menu) {
+      menu.classList.add('hidden');
+    }
+  }
+
+  // ─── 关系编辑弹窗 ──────────────────────────────────────────
+
+  /**
+   * 显示关系编辑弹窗（点击已有边 → 编辑/删除）
+   *
+   * @param sourceId 关系起点
+   * @param targetId 关系终点
+   * @param type 当前关系类型
+   * @param weight 当前权重
+   */
+  private showRelationEditDialog(sourceId: string, targetId: string, type: string, weight: number): void {
+    const dialog = document.getElementById('relation-edit-dialog');
+    if (!dialog) return;
+
+    // 填充当前值
+    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement | null;
+    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement | null;
+    const weightValue = dialog.querySelector('#relation-edit-weight-value') as HTMLElement | null;
+
+    if (typeSelect) typeSelect.value = type;
+    if (weightInput) {
+      weightInput.value = String(weight);
+      if (weightValue) weightValue.textContent = String(Math.round(weight * 100));
+    }
+
+    // 绑定保存
+    const saveBtn = dialog.querySelector('#relation-edit-save') as HTMLElement | null;
+    if (saveBtn) {
+      saveBtn.onclick = () => {
+        const newType = typeSelect?.value || type;
+        const newWeight = weightInput ? parseFloat(weightInput.value) : weight;
+        this.relationEditCallback?.(sourceId, targetId, newType, newWeight);
+        this.hideRelationEditDialog();
+      };
+    }
+
+    // 绑定删除
+    const deleteBtn = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
+    if (deleteBtn) {
+      deleteBtn.onclick = () => {
+        this.relationDeleteCallback?.(sourceId, targetId, type);
+        this.hideRelationEditDialog();
+      };
+    }
+
+    // 绑定取消
+    const cancelBtn = dialog.querySelector('#relation-edit-cancel') as HTMLElement | null;
+    if (cancelBtn) {
+      cancelBtn.onclick = () => this.hideRelationEditDialog();
+    }
+
+    // 权重滑块联动
+    if (weightInput && weightValue) {
+      weightInput.oninput = () => {
+        weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
+      };
+    }
+
+    dialog.classList.remove('hidden');
+  }
+
+  /**
+   * 显示关系创建弹窗（Ctrl+拖拽连线 → 创建新关系）
+   *
+   * @param sourceId 连线起点节点 ID
+   * @param targetId 连线终点节点 ID
+   */
+  private showRelationCreateDialog(sourceId: string, targetId: string): void {
+    const dialog = document.getElementById('relation-edit-dialog');
+    if (!dialog) return;
+
+    // 重置为默认值
+    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement | null;
+    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement | null;
+    const weightValue = dialog.querySelector('#relation-edit-weight-value') as HTMLElement | null;
+    const deleteBtn = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
+    const titleEl = dialog.querySelector('.relation-edit-title') as HTMLElement | null;
+
+    // 创建模式下隐藏删除按钮，标题改为"创建关系"
+    if (deleteBtn) deleteBtn.classList.add('hidden');
+    if (titleEl) titleEl.textContent = '创建关系';
+    if (typeSelect) typeSelect.value = 'related';
+    if (weightInput) {
+      weightInput.value = '0.5';
+      if (weightValue) weightValue.textContent = '50';
+    }
+
+    // 绑定保存
+    const saveBtn = dialog.querySelector('#relation-edit-save') as HTMLElement | null;
+    if (saveBtn) {
+      saveBtn.onclick = () => {
+        const newType = typeSelect?.value || 'related';
+        const newWeight = weightInput ? parseFloat(weightInput.value) : 0.5;
+        this.relationCreateCallback?.(sourceId, targetId, newType, newWeight);
+        this.hideRelationEditDialog();
+      };
+    }
+
+    // 绑定取消
+    const cancelBtn = dialog.querySelector('#relation-edit-cancel') as HTMLElement | null;
+    if (cancelBtn) {
+      cancelBtn.onclick = () => this.hideRelationEditDialog();
+    }
+
+    // 权重滑块联动
+    if (weightInput && weightValue) {
+      weightInput.oninput = () => {
+        weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
+      };
+    }
+
+    dialog.classList.remove('hidden');
+  }
+
+  /** 隐藏关系编辑弹窗，恢复默认状态 */
+  private hideRelationEditDialog(): void {
+    const dialog = document.getElementById('relation-edit-dialog');
+    if (!dialog) return;
+    dialog.classList.add('hidden');
+
+    // 恢复默认 UI（删除按钮、标题）
+    const deleteBtn = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
+    const titleEl = dialog.querySelector('.relation-edit-title') as HTMLElement | null;
+    if (deleteBtn) deleteBtn.classList.remove('hidden');
+    if (titleEl) titleEl.textContent = '编辑关系';
   }
 }

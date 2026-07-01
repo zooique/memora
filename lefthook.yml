@@ -14,7 +14,7 @@ pre-commit:
     # 步骤 1：ESLint 检查 staged 的 TypeScript 文件
     lint-staged:
       glob: "*.ts"
-      run: npx eslint {staged_files} --max-warnings 0
+      run: npx eslint {staged_files} --max-warnings 0 --no-warn-ignored
       stage_fixed: true
 
     # 步骤 2：全量 TypeScript 类型检查

@@ -442,6 +442,25 @@
           </div>
           <div class="insights-relations-summary" id="insights-relations-summary"></div>
         </div>
+        <!-- 伙伴洞察面板（Phase 4：从"仓库"到"理解"） -->
+        <div id="partner-insights" class="partner-insights hidden">
+          <div class="partner-insights-header">
+            <span class="partner-insights-title">精灵对你的了解</span>
+          </div>
+          <div id="partner-profile-cards" class="partner-profile-cards">
+            <!-- JS 动态渲染 profile 记忆卡片 -->
+          </div>
+          <div id="partner-knowledge-gaps" class="partner-knowledge-gaps">
+            <!-- JS 动态渲染知识缺口提示 -->
+          </div>
+          <div class="partner-growth-section">
+            <div class="partner-growth-header">
+              <span class="partner-growth-title">记忆累积趋势</span>
+              <span id="partner-growth-total" class="partner-growth-total">0 条</span>
+            </div>
+            <canvas id="partner-growth-chart" class="partner-growth-chart" width="320" height="120"></canvas>
+          </div>
+        </div>
         <!-- 记忆健康度仪表盘（Phase 1：健康度诊断，默认折叠） -->
         <div id="memory-health-bar" class="health-bar hidden">
           <div class="health-header">
@@ -498,7 +517,7 @@
               </svg>
             </div>
             <div class="graph-empty-title">暂无记忆关系数据</div>
-            <div class="graph-empty-desc">多聊几句后，精灵会自动提炼记忆并构建关联网络</div>
+            <div class="graph-empty-subtitle">多聊几句后，精灵会自动提炼记忆并构建关联网络</div>
           </div>
           <canvas id="memory-graph-canvas"></canvas>
           <!-- 图谱图例：节点颜色（source类型）+ 边颜色（关系类型） -->
@@ -506,24 +525,24 @@
             <div class="legend-section">
               <div class="legend-title">节点类型</div>
               <div class="legend-items">
-                <span class="legend-item"><span class="legend-dot" style="background:#34c759"></span>profile</span>
-                <span class="legend-item"><span class="legend-dot" style="background:#0066ff"></span>insight</span>
-                <span class="legend-item"><span class="legend-dot" style="background:#ff9f0a"></span>skill</span>
-                <span class="legend-item"><span class="legend-dot" style="background:#7b1fa2"></span>rule</span>
-                <span class="legend-item"><span class="legend-dot" style="background:#ad1457"></span>guardrail</span>
-                <span class="legend-item"><span class="legend-dot" style="background:#00838f"></span>persona</span>
-                <span class="legend-item"><span class="legend-dot" style="background:#e65100"></span>session</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-profile"></span>profile</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-insight"></span>insight</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-skill"></span>skill</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-rule"></span>rule</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-guardrail"></span>guardrail</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-persona"></span>persona</span>
+                <span class="legend-item"><span class="legend-dot legend-dot-session"></span>session</span>
               </div>
             </div>
             <div class="legend-section">
               <div class="legend-title">关系类型</div>
               <div class="legend-items">
-                <span class="legend-item"><span class="legend-line" style="background:#ff3b30"></span>contradicts</span>
-                <span class="legend-item"><span class="legend-line" style="background:#34c759"></span>supports</span>
-                <span class="legend-item"><span class="legend-line" style="background:#0066ff"></span>follows</span>
-                <span class="legend-item"><span class="legend-line" style="background:#ff9f0a"></span>refines</span>
-                <span class="legend-item"><span class="legend-line" style="background:#7b1fa2"></span>caused</span>
-                <span class="legend-item"><span class="legend-line" style="background:#a1a1a6"></span>related</span>
+                <span class="legend-item"><span class="legend-line legend-line-contradicts"></span>contradicts</span>
+                <span class="legend-item"><span class="legend-line legend-line-supports"></span>supports</span>
+                <span class="legend-item"><span class="legend-line legend-line-follows"></span>follows</span>
+                <span class="legend-item"><span class="legend-line legend-line-refines"></span>refines</span>
+                <span class="legend-item"><span class="legend-line legend-line-caused"></span>caused</span>
+                <span class="legend-item"><span class="legend-line legend-line-related"></span>related</span>
               </div>
             </div>
           </div>
@@ -532,6 +551,63 @@
             <div class="graph-tooltip-name"></div>
             <div class="graph-tooltip-source"></div>
             <div class="graph-tooltip-preview"></div>
+          </div>
+
+          <!-- 节点右键菜单 -->
+          <div id="graph-context-menu" class="graph-context-menu hidden">
+            <div class="graph-context-menu-item" data-action="focus-subgraph">
+              <span class="graph-context-menu-icon">◎</span>
+              <span>聚焦子图</span>
+            </div>
+            <div class="graph-context-menu-item" data-action="view-detail">
+              <span class="graph-context-menu-icon">☰</span>
+              <span>查看详情</span>
+            </div>
+            <div class="graph-context-menu-item" data-action="connect-from">
+              <span class="graph-context-menu-icon">↗</span>
+              <span>从此节点连线</span>
+              <span class="graph-context-menu-shortcut">Ctrl+拖拽</span>
+            </div>
+            <div class="graph-context-menu-divider"></div>
+            <div class="graph-context-menu-item" data-action="copy-id">
+              <span class="graph-context-menu-icon">📋</span>
+              <span>复制 ID</span>
+            </div>
+          </div>
+
+          <!-- 关系编辑弹窗 -->
+          <div id="relation-edit-dialog" class="relation-edit-dialog hidden">
+            <div class="relation-edit-dialog-overlay"></div>
+            <div class="relation-edit-dialog-content">
+              <div class="relation-edit-header">
+                <span class="relation-edit-title">编辑关系</span>
+              </div>
+              <div class="relation-edit-body">
+                <!-- 关系类型 -->
+                <label class="relation-edit-label">关系类型</label>
+                <select id="relation-edit-type" class="relation-edit-type-select">
+                  <option value="related">相关</option>
+                  <option value="supports">支持</option>
+                  <option value="contradicts">矛盾</option>
+                  <option value="follows">延续</option>
+                  <option value="refines">细化</option>
+                  <option value="caused">导致</option>
+                </select>
+                <!-- 权重 -->
+                <label class="relation-edit-label">关系强度</label>
+                <div class="relation-edit-weight-row">
+                  <input id="relation-edit-weight" type="range" min="0" max="1" step="0.05" value="0.5" class="relation-edit-weight-slider" />
+                  <span id="relation-edit-weight-value" class="relation-edit-weight-value">50</span>
+                </div>
+              </div>
+              <div class="relation-edit-footer">
+                <button id="relation-edit-delete" class="relation-edit-btn relation-edit-btn-danger">删除</button>
+                <div class="relation-edit-footer-right">
+                  <button id="relation-edit-cancel" class="relation-edit-btn relation-edit-btn-secondary">取消</button>
+                  <button id="relation-edit-save" class="relation-edit-btn relation-edit-btn-primary">保存</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <!-- 时间线视图容器（A2：按天分组记忆，默认隐藏） -->

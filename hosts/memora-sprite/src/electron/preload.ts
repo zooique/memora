@@ -62,6 +62,12 @@ const IPC_CHANNELS = {
   MEMORIES_REVIEW_DATA: 'memories-review-data',
   /** 批量删除记忆（Phase 3：智能清理） */
   MEMORIES_DELETE_BATCH: 'memories-delete-batch',
+  /** 添加记忆关系（手动创建，关系图交互） */
+  MEMORIES_ADD_RELATION: 'memories-add-relation',
+  /** 删除记忆关系（关系图交互） */
+  MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
+  /** 更新记忆关系（关系图交互） */
+  MEMORIES_UPDATE_RELATION: 'memories-update-relation',
   CONFIG_GET: 'config-get',
   CONFIG_UPDATE: 'config-update',
   // QC-CONFIG-01：批量事务性更新配置（必须与 ipc/channels.ts 保持同步）
@@ -360,6 +366,12 @@ export interface ElectronAPI {
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   getRelationGraph: () => Promise<{ nodes: MemoryListItem[]; edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }> }>;
+  /** 添加记忆关系（手动创建，关系图交互） */
+  addRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) => Promise<{ success: boolean }>;
+  /** 删除记忆关系（关系图交互） */
+  removeRelation: (data: { sourceId: string; targetId: string; type: string }) => Promise<{ success: boolean }>;
+  /** 更新记忆关系（关系图交互） */
+  updateRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) => Promise<{ success: boolean }>;
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
   getHealthDashboard: () => Promise<HealthDashboardPayload>;
   /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
@@ -660,6 +672,15 @@ const electronAPI: ElectronAPI = {
   deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
   getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),
+  /** 添加记忆关系（手动创建，关系图交互） */
+  addRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD_RELATION, data),
+  /** 删除记忆关系（关系图交互） */
+  removeRelation: (data: { sourceId: string; targetId: string; type: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_REMOVE_RELATION, data),
+  /** 更新记忆关系（关系图交互） */
+  updateRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_UPDATE_RELATION, data),
   getHealthDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD),
   getReviewData: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_REVIEW_DATA),
   deleteMemoriesBatch: (ids) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE_BATCH, ids),

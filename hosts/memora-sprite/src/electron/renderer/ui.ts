@@ -1219,6 +1219,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void { this.memoryPanel.onCleanupConfirm(cb); }
   /** 注册视图切换回调（委托到 MemoryPanelManager） */
   onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void { this.memoryPanel.onViewSwitch(cb); }
+  /** 注册图谱右键菜单操作回调（委托到 MemoryPanelManager） */
+  onGraphContextMenuAction(cb: (action: string, nodeId: string) => void): void { this.memoryPanel.onGraphContextMenuAction(cb); }
+  /** 注册关系编辑回调（委托到 MemoryPanelManager） */
+  onRelationEdit(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void { this.memoryPanel.onRelationEdit(cb); }
+  /** 注册关系删除回调（委托到 MemoryPanelManager） */
+  onRelationDelete(cb: (sourceId: string, targetId: string, type: string) => void): void { this.memoryPanel.onRelationDelete(cb); }
+  /** 注册关系创建回调（委托到 MemoryPanelManager） */
+  onRelationCreate(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void { this.memoryPanel.onRelationCreate(cb); }
   /** 触发叙事卡片脉冲（委托到 MemoryPanelManager） */
   pulseNarrativeCard(): void { this.memoryPanel.pulseNarrativeCard(); }
 
@@ -1251,6 +1259,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
     graph: RelationGraphData,
   ): void { this.dashboardPanel.renderInsights(dashboard, graph); }
+  /** 渲染伙伴洞察面板（委托到 DashboardPanelManager） */
+  renderPartnerInsights(memories: Array<{
+    id: string; name: string; source: string; contentPreview: string; createdAt?: string;
+  }>): void { this.dashboardPanel.renderPartnerInsights(memories); }
+  /** 注册伙伴洞察面板记忆点击回调（委托到 DashboardPanelManager） */
+  onPartnerMemoryClick(cb: (memoryId: string) => void): void { this.dashboardPanel.onMemoryClick(cb); }
   /** 显示洞察面板加载失败状态（委托到 DashboardPanelManager） */
   showInsightsError(): void { this.dashboardPanel.showInsightsError(); }
   /** 显示健康度面板加载态（委托到 DashboardPanelManager） */

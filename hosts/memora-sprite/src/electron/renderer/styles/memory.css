@@ -106,8 +106,9 @@
 .memory-item:hover {
   background: var(--surface0);
   border-color: var(--muted);
-  /* Phase 4：hover 时轻微上浮 */
+  /* Phase 4：hover 时轻微上浮 + 阴影 */
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .memory-item:active {
@@ -378,26 +379,290 @@
   color: var(--accent);
 }
 
-/* ─── 图标按钮（工具栏辅助操作） ────────────────────────────── */
-.icon-btn {
-  width: 32px;
-  height: 32px;
+/* ─── 视图切换过渡动画（Phase 4：视觉统一） ─────────────────── */
+
+/* 视图容器：共享 fade+slide 过渡 */
+#memory-list,
+#memory-timeline-container,
+#memory-graph-container {
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+/* 视图退出态：淡出 + 向左滑动 */
+.memory-view-exit {
+  opacity: 0;
+  transform: translateX(-12px);
+  pointer-events: none;
+}
+
+/* 视图进入态：淡入 + 从右侧滑入 */
+.memory-view-enter {
+  animation: memoryViewEnter var(--transition-base) ease both;
+}
+
+@keyframes memoryViewEnter {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ─── 空状态统一（Phase 4：视觉统一） ────────────────────────── */
+
+/* 搜索无结果空状态：与全局空状态一致，但显示不同文案 */
+.memory-search-empty {
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 16px;
+}
+
+/* 时间线空状态：与列表空状态保持一致 */
+.timeline-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 16px;
+  color: var(--text-2);
+  font-size: var(--font-sm);
+}
+
+.timeline-empty .empty-icon {
+  font-size: 32px;
+  color: var(--text-3);
+  animation: emptyIconFloat 3s ease-in-out infinite;
+  margin-bottom: 4px;
+}
+
+.timeline-empty .empty-title {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.timeline-empty .empty-subtitle {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  text-align: center;
+  max-width: 240px;
+  line-height: 1.5;
+}
+
+/* 图谱空状态：与列表空状态一致 */
+.graph-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 12px;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.graph-empty-state.hidden {
+  display: none;
+}
+
+.graph-empty-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--text-3);
+  opacity: 0.6;
+  animation: emptyIconFloat 3s ease-in-out infinite;
+}
+
+.graph-empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-empty-title {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.graph-empty-subtitle {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* ─── 抽屉面板滚动条（Phase 4：视觉统一） ────────────────────── */
+
+/* 记忆面板内滚动条：与 base.css 全局风格一致，但适配面板暗色背景 */
+#memory-list::-webkit-scrollbar,
+#memory-timeline-container::-webkit-scrollbar,
+#memory-detail-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+#memory-list::-webkit-scrollbar-track,
+#memory-timeline-container::-webkit-scrollbar-track,
+#memory-detail-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#memory-list::-webkit-scrollbar-thumb,
+#memory-timeline-container::-webkit-scrollbar-thumb,
+#memory-detail-content::-webkit-scrollbar-thumb {
+  background: var(--surface2);
+  border-radius: 3px;
+}
+
+#memory-list::-webkit-scrollbar-thumb:hover,
+#memory-timeline-container::-webkit-scrollbar-thumb:hover,
+#memory-detail-content::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ─── 伙伴洞察面板（Phase 4：从"仓库"到"理解"） ──────────────── */
+
+.partner-insights {
+  padding: 0 0 12px 0;
+  border-bottom: 1px solid var(--surface2);
+  margin-bottom: 8px;
+}
+
+.partner-insights.hidden {
+  display: none;
+}
+
+.partner-insights-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 6px;
+}
+
+.partner-insights-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* Profile 记忆卡片（网格布局，最多 4 张） */
+.partner-profile-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 12px 8px;
+}
+
+.partner-profile-card {
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.partner-profile-card:hover {
+  background: var(--surface1);
+  border-color: var(--muted);
+  transform: translateY(-1px);
+}
+
+.partner-profile-card-title {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.partner-profile-card-preview {
+  font-size: 11px;
+  color: var(--text-3);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 知识缺口提示 */
+.partner-knowledge-gaps {
+  padding: 0 12px 8px;
+}
+
+.partner-gap-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--surface0);
+  border: 1px dashed var(--surface2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.partner-gap-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.partner-gap-text {
+  flex: 1;
+}
+
+/* 成长趋势 */
+.partner-growth-section {
+  padding: 8px 12px 0;
+}
+
+.partner-growth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.partner-growth-title {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.partner-growth-total {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+}
+
+.partner-growth-chart {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+}
+
+/* ─── 记忆面板工具栏按钮（限定在记忆面板头部，避免污染全局 .icon-btn） ── */
+#panel-memories .panel-header .icon-btn {
+  width: 32px;
+  height: 32px;
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  color: var(--text-2);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.icon-btn:hover {
+#panel-memories .panel-header .icon-btn:hover {
   background: var(--surface0);
   border-color: var(--muted);
-  color: var(--text);
 }
 
 /* ─── 工具栏更多菜单（下拉） ───────────────────────────────── */
@@ -470,48 +735,7 @@
   display: block;
 }
 
-/* 图谱空状态提示（居中显示友好提示，有数据时由JS添加.hidden隐藏） */
-.graph-empty-state {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  z-index: 5;
-  pointer-events: none;
-}
-
-.graph-empty-state.hidden {
-  display: none;
-}
-
-.graph-empty-icon {
-  width: 64px;
-  height: 64px;
-  color: var(--text-3);
-  opacity: 0.6;
-}
-
-.graph-empty-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.graph-empty-title {
-  font-size: var(--font-sm);
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.graph-empty-desc {
-  font-size: var(--font-xs);
-  color: var(--text-3);
-  text-align: center;
-  max-width: 280px;
-  line-height: 1.5;
-}
+/* ─── 图例（Phase 4：视觉统一） ───────────────────────────────── */
 
 /* ─── 图谱图例（颜色说明） ──────────────────────────────── */
 
@@ -575,6 +799,23 @@
   flex-shrink: 0;
 }
 
+/* ─── 图例颜色类（通过 CSS 变量驱动，自动适配双主题） ────── */
+
+.legend-dot-profile { background: var(--green); }
+.legend-dot-insight { background: var(--accent); }
+.legend-dot-skill { background: var(--yellow); }
+.legend-dot-rule { background: var(--mauve); }
+.legend-dot-guardrail { background: var(--pink); }
+.legend-dot-persona { background: var(--teal); }
+.legend-dot-session { background: var(--peach); }
+
+.legend-line-contradicts { background: var(--red); }
+.legend-line-supports { background: var(--green); }
+.legend-line-follows { background: var(--accent); }
+.legend-line-refines { background: var(--yellow); }
+.legend-line-caused { background: var(--mauve); }
+.legend-line-related { background: var(--muted); }
+
 /* ─── 图谱节点 Hover Tooltip ───────────────────────────── */
 
 /* tooltip 容器：跟随鼠标，半透明浮层 */
@@ -626,6 +867,232 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* ─── 图谱右键菜单 ──────────────────────────────────────── */
+
+.graph-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 180px;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  padding: 4px 0;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.graph-context-menu.hidden {
+  display: none;
+}
+
+.graph-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: var(--font-sm);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  user-select: none;
+}
+
+.graph-context-menu-item:hover {
+  background: var(--surface1);
+}
+
+.graph-context-menu-icon {
+  width: 18px;
+  text-align: center;
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.graph-context-menu-shortcut {
+  margin-left: auto;
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  opacity: 0.6;
+}
+
+.graph-context-menu-divider {
+  height: 1px;
+  background: var(--surface2);
+  margin: 4px 0;
+}
+
+/* ─── 关系编辑弹窗 ──────────────────────────────────────── */
+
+.relation-edit-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.relation-edit-dialog.hidden {
+  display: none;
+}
+
+.relation-edit-dialog-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.relation-edit-dialog-content {
+  position: relative;
+  width: 360px;
+  max-width: 90vw;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.relation-edit-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--surface2);
+}
+
+.relation-edit-title {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.relation-edit-body {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.relation-edit-label {
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.relation-edit-type-select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.relation-edit-type-select:focus {
+  border-color: var(--accent);
+}
+
+.relation-edit-weight-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.relation-edit-weight-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.relation-edit-weight-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--window-bg);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.relation-edit-weight-value {
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  min-width: 28px;
+  text-align: right;
+}
+
+.relation-edit-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--surface2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.relation-edit-footer-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.relation-edit-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.relation-edit-btn-primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.relation-edit-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.relation-edit-btn-secondary {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+.relation-edit-btn-secondary:hover {
+  background: var(--surface1);
+}
+
+.relation-edit-btn-danger {
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+}
+
+.relation-edit-btn-danger:hover {
+  background: rgba(255, 59, 48, 0.1);
+}
+
+.relation-edit-btn-danger.hidden {
+  display: none;
 }
 
 /* ─── 高级搜索栏（Phase 2：搜索增强） ──────────────────────── */
@@ -1293,16 +1760,20 @@
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface0);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
   position: relative;
 }
 
 .timeline-item:hover {
-  background: var(--surface1);
+  background: var(--surface0);
+  border-color: var(--muted);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 /* 时间线节点圆点 */
@@ -1359,12 +1830,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   line-height: 1.4;
-}
-
-/* 时间线空状态 */
-.timeline-empty {
-  text-align: center;
-  padding: 40px 16px;
-  color: var(--text-3);
-  font-size: var(--font-sm);
 }

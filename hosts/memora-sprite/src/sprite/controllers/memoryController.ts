@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆控制器 — 记忆管理 + 仪表盘
  *
  * 职责：
@@ -416,6 +416,61 @@ export class MemoryController {
     // 边：通过 MemoryInspector.getAllRelations() 获取全量关系
     const edges = memory.getAllRelations();
     return { nodes, edges };
+  }
+
+  /**
+   * 添加记忆关系（手动创建）
+   *
+   * 用于宿主 UI 关系图交互：右键菜单 → 连线 → 创建关系。
+   * relationStore 未注入时静默降级。
+   *
+   * @param sourceId 关系起点记忆 ID
+   * @param targetId 关系终点记忆 ID
+   * @param type 关系类型（开放字符串，如 'supports'、'contradicts'）
+   * @param weight 关系权重 0-1
+   */
+  addRelation(sourceId: string, targetId: string, type: string, weight: number): void {
+    const memory = this.agent.memory;
+    if (!memory) return;
+    memory.addRelation({
+      sourceId,
+      targetId,
+      type,
+      weight,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  /**
+   * 删除记忆关系
+   *
+   * 用于宿主 UI 关系图交互：编辑关系弹窗 → 删除关系。
+   * relationStore 未注入时静默降级。
+   *
+   * @param sourceId 关系起点
+   * @param targetId 关系终点
+   * @param type 关系类型
+   */
+  removeRelation(sourceId: string, targetId: string, type: string): void {
+    const memory = this.agent.memory;
+    if (!memory) return;
+    memory.removeRelation(sourceId, targetId, type);
+  }
+
+  /**
+   * 更新记忆关系（先删后加，实现修改类型/权重）
+   *
+   * 用于宿主 UI 关系图交互：编辑关系弹窗 → 修改类型/权重 → 保存。
+   * 由于 relationStore 的 addRelation 是 UPSERT 语义，等效于更新。
+   *
+   * @param sourceId 关系起点
+   * @param targetId 关系终点
+   * @param type 新的关系类型
+   * @param weight 新的关系权重
+   */
+  updateRelation(sourceId: string, targetId: string, type: string, weight: number): void {
+    // 复用 addRelation 的 UPSERT 语义（sourceId+targetId+type 三元组唯一）
+    this.addRelation(sourceId, targetId, type, weight);
   }
 
   // ─── 记忆健康度（Phase 1：健康度诊断） ──────────────────

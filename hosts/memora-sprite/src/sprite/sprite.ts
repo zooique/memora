@@ -528,6 +528,33 @@ export class Sprite {
   }
 
   /**
+   * 添加记忆关系（手动创建）
+   *
+   * 用于宿主 UI 关系图交互：右键菜单 → 连线 → 创建关系。
+   */
+  addRelation(sourceId: string, targetId: string, type: string, weight: number): void {
+    this.memoryController.addRelation(sourceId, targetId, type, weight);
+  }
+
+  /**
+   * 删除记忆关系
+   *
+   * 用于宿主 UI 关系图交互：编辑关系弹窗 → 删除关系。
+   */
+  removeRelation(sourceId: string, targetId: string, type: string): void {
+    this.memoryController.removeRelation(sourceId, targetId, type);
+  }
+
+  /**
+   * 更新记忆关系
+   *
+   * 用于宿主 UI 关系图交互：编辑关系弹窗 → 修改类型/权重 → 保存。
+   */
+  updateRelation(sourceId: string, targetId: string, type: string, weight: number): void {
+    this.memoryController.updateRelation(sourceId, targetId, type, weight);
+  }
+
+  /**
    * 获取记忆健康度仪表盘数据（Phase 1：健康度诊断）
    *
    * 纯计算，不依赖 LLM。检测重复记忆、过期记忆和低质量记忆，

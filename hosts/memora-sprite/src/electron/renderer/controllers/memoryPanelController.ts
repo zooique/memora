@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆控制器 — 记忆面板业务编排 + 仪表盘数据加载
  *
  * 职责：
@@ -119,6 +119,18 @@ export function createMemoryController(uiManager: UIManager) {
     uiManager.onReloadInsights(() => void loadInsights());
     uiManager.onReloadHealth(() => void loadHealthDashboard());
     uiManager.onReloadMemoryList(() => void loadMemoryList());
+
+    // ─── 伙伴洞察卡片点击回调：点击 profile 卡片展示记忆详情 ──
+    uiManager.onPartnerMemoryClick(async (memoryId: string) => {
+      try {
+        const { memory } = await window.electronAPI.showMemory(memoryId);
+        if (memory) {
+          uiManager.showMemoryDetail(memory);
+        }
+      } catch (error) {
+        reportError('partnerMemoryClick', error);
+      }
+    });
 
     // ─── 更多菜单项回调：切换洞察/健康度面板时加载数据 ────
     uiManager.onMoreMenuAction(async (action: string) => {
@@ -305,6 +317,77 @@ export function createMemoryController(uiManager: UIManager) {
         setButtonLoading('btn-memory-edit-save', false);
       }
     });
+
+    // ─── 图谱右键菜单操作回调 ─────────────────────────────
+    uiManager.onGraphContextMenuAction(async (action: string, nodeId: string) => {
+      switch (action) {
+        case 'focus-subgraph':
+          // 聚焦子图：以当前节点为根，高亮其直接邻居
+          uiManager.selectGraphNode(nodeId);
+          break;
+        case 'view-detail': {
+          // 查看详情：与点击节点行为一致
+          uiManager.selectGraphNode(nodeId);
+          try {
+            const { memory } = await window.electronAPI.showMemory(nodeId);
+            if (memory) {
+              uiManager.showMemoryDetail(memory);
+            }
+          } catch (error) {
+            reportError('graphContextMenu.viewDetail', error);
+          }
+          break;
+        }
+        case 'connect-from':
+          // 提示用户使用 Ctrl+拖拽 创建连线
+          uiManager.showToast('按住 Ctrl 从节点拖拽到另一个节点即可创建连线', 'info');
+          break;
+        case 'copy-id':
+          // 复制节点 ID 到剪贴板
+          await navigator.clipboard.writeText(nodeId);
+          uiManager.showToast('节点 ID 已复制', 'success');
+          break;
+      }
+    });
+
+    // ─── 关系编辑回调（更新类型/权重） ────────────────────
+    uiManager.onRelationEdit(async (sourceId: string, targetId: string, type: string, weight: number) => {
+      try {
+        await window.electronAPI.updateRelation({ sourceId, targetId, type, weight });
+        uiManager.showToast('关系已更新', 'success');
+        // 刷新图谱数据
+        const data = await window.electronAPI.getRelationGraph();
+        uiManager.loadGraphData(data);
+      } catch (error) {
+        handleIpcError('onRelationEdit', error, '更新关系失败');
+      }
+    });
+
+    // ─── 关系删除回调 ─────────────────────────────────────
+    uiManager.onRelationDelete(async (sourceId: string, targetId: string, type: string) => {
+      try {
+        await window.electronAPI.removeRelation({ sourceId, targetId, type });
+        uiManager.showToast('关系已删除', 'success');
+        // 刷新图谱数据
+        const data = await window.electronAPI.getRelationGraph();
+        uiManager.loadGraphData(data);
+      } catch (error) {
+        handleIpcError('onRelationDelete', error, '删除关系失败');
+      }
+    });
+
+    // ─── 关系创建回调（Ctrl+拖拽连线后创建） ──────────────
+    uiManager.onRelationCreate(async (sourceId: string, targetId: string, type: string, weight: number) => {
+      try {
+        await window.electronAPI.addRelation({ sourceId, targetId, type, weight });
+        uiManager.showToast('关系已创建', 'success');
+        // 刷新图谱数据
+        const data = await window.electronAPI.getRelationGraph();
+        uiManager.loadGraphData(data);
+      } catch (error) {
+        handleIpcError('onRelationCreate', error, '创建关系失败');
+      }
+    });
   }
 
   /**
@@ -330,6 +413,9 @@ export function createMemoryController(uiManager: UIManager) {
 
       // 渲染委托 DashboardPanelManager
       uiManager.renderInsights(dashboard, graph);
+      // 伙伴洞察面板：基于记忆列表数据渲染（profile 卡片 + 知识缺口 + 成长趋势）
+      const memList = await window.electronAPI.listMemories({});
+      uiManager.renderPartnerInsights(memList.memories);
     } catch (error) {
       reportError('loadInsights', error);
       // 渲染错误状态（含重试按钮，点击触发 onReloadInsights 回调）

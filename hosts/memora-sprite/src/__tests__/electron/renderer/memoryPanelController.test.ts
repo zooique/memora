@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆面板控制器测试
  *
  * @vitest-environment jsdom
@@ -75,10 +75,17 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     onCleanupRequest: vi.fn(() => []),
     onCleanupConfirm: vi.fn(),
     onViewSwitch: vi.fn(),
+    // 图谱关系交互回调（Phase 4：关系图可交互化）
+    onGraphContextMenuAction: vi.fn(),
+    onRelationEdit: vi.fn(),
+    onRelationDelete: vi.fn(),
+    onRelationCreate: vi.fn(),
     // 仪表盘重试回调（DashboardPanelManager 委托）
     onReloadInsights: vi.fn(),
     onReloadHealth: vi.fn(),
     onReloadMemoryList: vi.fn(),
+    // 伙伴洞察卡片点击回调
+    onPartnerMemoryClick: vi.fn(),
     switchMemoryView: vi.fn(),
     loadGraphData: vi.fn(),
     hasGraphData: vi.fn(() => false),

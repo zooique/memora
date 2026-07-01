@@ -107,4 +107,28 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       return { deleted, total: ids.length };
     }),
   );
+
+  /** 添加记忆关系（手动创建，关系图交互） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string; weight: number }) =>
+    safeHandle('添加记忆关系失败', { success: false }, () => {
+      ctx.sprite.addRelation(data.sourceId, data.targetId, data.type, data.weight);
+      return { success: true };
+    }),
+  );
+
+  /** 删除记忆关系（关系图交互） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_REMOVE_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string }) =>
+    safeHandle('删除记忆关系失败', { success: false }, () => {
+      ctx.sprite.removeRelation(data.sourceId, data.targetId, data.type);
+      return { success: true };
+    }),
+  );
+
+  /** 更新记忆关系（关系图交互） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_UPDATE_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string; weight: number }) =>
+    safeHandle('更新记忆关系失败', { success: false }, () => {
+      ctx.sprite.updateRelation(data.sourceId, data.targetId, data.type, data.weight);
+      return { success: true };
+    }),
+  );
 }
