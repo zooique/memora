@@ -63,6 +63,9 @@ const DEFAULT_MIN_DRIFT_RATIO = 0.3;
 /** 知识缺口检测默认置信度 */
 const DEFAULT_KNOWLEDGE_GAP_CONFIDENCE = 0.6;
 
+/** 兴趣漂移检测最小样本数：低于此值时统计偏差过大，跳过漂移检测 */
+const MIN_DRIFT_SAMPLE_SIZE = 5;
+
 /** 中文停用词（高频虚词，关键词提取时过滤） */
 const STOP_WORDS = new Set([
   '的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一',
@@ -275,6 +278,12 @@ export class PatternDetector {
     olderMemories: Memory[],
   ): DetectedPattern[] {
     const patterns: DetectedPattern[] = [];
+
+    // 最小样本数守卫：样本过少时统计偏差极大（如 1 条记忆 → 100% 分布），
+    // 低数据量下漂移检测无意义，直接返回空列表
+    if (recentMemories.length < MIN_DRIFT_SAMPLE_SIZE || olderMemories.length < MIN_DRIFT_SAMPLE_SIZE) {
+      return patterns;
+    }
 
     // 计算近期 source 分布
     const recentSourceDist = this.getSourceDistribution(recentMemories);

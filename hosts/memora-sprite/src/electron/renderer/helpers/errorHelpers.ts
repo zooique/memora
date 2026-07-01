@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 渲染进程错误处理辅助模块
  *
  * 职责：
@@ -30,6 +30,15 @@ export function toError(err: unknown): Error {
   if (typeof err === 'string') return new Error(err);
   if (typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string') {
     return new Error((err as { message: string }).message);
+  }
+  // 普通对象（无 message 属性）：JSON 序列化保留调试信息，try-catch 防止循环引用抛错
+  if (typeof err === 'object' && err !== null) {
+    try {
+      return new Error(JSON.stringify(err));
+    } catch {
+      // 循环引用等无法序列化的情况，降级到 String()
+      return new Error(String(err));
+    }
   }
   return new Error(String(err ?? '未知错误'));
 }

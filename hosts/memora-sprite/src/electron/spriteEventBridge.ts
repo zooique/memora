@@ -155,7 +155,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   let proactiveTrayResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示（保留显式处理，含复杂副作用）
-  registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, silent, isMilestone }) => {
+  registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, triggers, silent, isMilestone }) => {
     // QC-SPRITE-04：整个 handler 用 try/catch 分段保护，防止单个副作用抛错中断后续逻辑
     try {
       // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
@@ -188,7 +188,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
       // 非静默模式 + 完整窗口可见：窗口内提示
       if (!silent) {
         // Phase 2.3：传递 isMilestone 标志到渲染层
-        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, silent, isMilestone }, silent);
+        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone }, silent);
 
         // P2-FLOW-12 浮动窗口主动提示未读徽章
         // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
