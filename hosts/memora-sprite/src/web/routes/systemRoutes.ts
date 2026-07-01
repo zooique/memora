@@ -214,7 +214,14 @@ export async function handleSystemRoute(
         layer: s.layer,
       })) ?? [];
       sendJson(res, 200, {
-        ...data,
+        total: data.total,
+        bySource: data.bySource,
+        suggestions: data.suggestions,
+        pendingNotices: ctx.sprite.pendingCount,
+        proactiveThreshold: ctx.sprite.proactiveThreshold,
+        registeredTriggers: ctx.sprite.registeredTriggers,
+        relationCount: data.relationCount,
+        conflictCount: data.conflictCount,
         sourceHealth,
         metrics,
         skills,

@@ -158,7 +158,9 @@ function stripTypeAnnotations(source: string): string {
  * @returns 适配后的 HTML（注入了 preload 脚本标签）
  */
 export function adaptHtmlForWeb(html: string): string {
-  // 在 </head> 前注入 preload 脚本（模块化加载）
+  // 在 </head> 前注入 preload 脚本标签
+  // Web 模式样式（隐藏窗口按钮、禁用拖拽区域）由 preloadWeb.ts 在运行时动态注入，
+  // 避免 HTML 字符串替换导致 style 标签无法被浏览器正确解析的问题
   const scriptTag = '<script type="module" src="/web/preload-web.mjs"></script>';
   return html.replace('</head>', `${scriptTag}\n</head>`);
 }

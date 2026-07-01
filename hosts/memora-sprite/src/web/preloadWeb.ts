@@ -207,6 +207,12 @@ let activeSseListeners: SseListeners | null = null;
 /** 当前活跃的 SSE AbortController（用于客户端主动取消流式接收） */
 let activeSseAbortController: AbortController | null = null;
 
+/** onAgentReady 回调存储（Web 模式轮询实现使用） */
+let agentReadyCallback: (() => void) | null = null;
+
+/** onAgentReady 轮询定时器句柄（用于取消轮询） */
+let agentReadyPollTimer: number | null = null;
+
 /**
  * 流式监听器注册表
  *
@@ -437,19 +443,18 @@ export const webElectronAPI: WebElectronAPI = {
    * 但渲染进程调用方式一致（fire-and-forget），回调通过 onStream* 注册。
    */
   sendUserInput: (text: string) => {
-    // 防御性清理：移除上一次对话的监听器（避免回调泄漏）
-    if (activeSseListeners) {
-      activeSseListeners = null;
-    }
+    // 防御性清理：如果上一次对话的 SSE 流仍在接收，先中止它
+    // 注意：只 abort 客户端读取，不通知服务端（服务端由下一次请求的竞态保护处理）
     if (activeSseAbortController) {
       activeSseAbortController.abort();
       activeSseAbortController = null;
     }
+    activeSseListeners = null;
 
-    // 收集当前注册的监听器（onStream* 方法注册到 activeSseListeners 的字段）
+    // 收集当前注册的监听器（onStream* 方法注册到 streamListenersRegistry 的字段）
     // 由于 onStream* 方法在 sendUserInput 之前调用注册回调，
     // 这里需要用一个临时对象收集，再传入 startSseStream
-    const listeners: SseListeners = streamListenersRegistry;
+    const listeners: SseListeners = { ...streamListenersRegistry };
     void startSseStream(text, listeners);
   },
 
@@ -523,11 +528,75 @@ export const webElectronAPI: WebElectronAPI = {
 
   getAgentStatus: () => getJson('/api/agent-status'),
 
-  onAgentReady: (_cb) => {
-    // Phase 2: SSE 监听 agent-ready 事件
-    // Phase 1 简化：轮询 agent-status
+  /**
+   * Web 模式下的 onAgentReady 实现
+   *
+   * Electron 模式通过 IPC 推送 AGENT_READY 事件；
+   * Web 模式无推送通道，采用"注册即检查+轮询兜底"策略：
+   * 1. 回调注册后立即检查 getAgentStatus，若已就绪则同步（微任务）调用
+   * 2. 未就绪时启动轮询（每 1.5s，最多 20 次 = 30s），就绪后调用回调并停止
+   * 3. removeAgentReadyListener 可取消轮询
+   */
+  onAgentReady: (cb) => {
+    // 先取消之前可能存在的轮询
+    if (agentReadyPollTimer !== null) {
+      window.clearTimeout(agentReadyPollTimer);
+      agentReadyPollTimer = null;
+    }
+    agentReadyCallback = cb;
+
+    // 立即检查（微任务，避免与 getAgentStatus 初始化竞态）
+    const checkAndFire = async (): Promise<void> => {
+      try {
+        const status = await getJson<{ ready: boolean; error: string | null }>('/api/agent-status');
+        if (status.ready) {
+          agentReadyCallback?.();
+          agentReadyPollTimer = null;
+          agentReadyCallback = null;
+          return;
+        }
+      } catch {
+        // 首次请求可能因服务未完全启动而失败，降级为轮询
+      }
+      // 未就绪：启动轮询
+      startReadyPolling(1);
+    };
+
+    const startReadyPolling = (attempt: number): void => {
+      const MAX_ATTEMPTS = 20; // 最多 30 秒
+      if (attempt > MAX_ATTEMPTS) {
+        agentReadyPollTimer = null;
+        return;
+      }
+      agentReadyPollTimer = window.setTimeout(() => {
+        void (async () => {
+          try {
+            const status = await getJson<{ ready: boolean; error: string | null }>('/api/agent-status');
+            if (status.ready && agentReadyCallback) {
+              agentReadyCallback();
+              agentReadyCallback = null;
+              agentReadyPollTimer = null;
+              return;
+            }
+          } catch {
+            // 轮询请求失败，继续下一轮
+          }
+          if (agentReadyCallback) {
+            startReadyPolling(attempt + 1);
+          }
+        })();
+      }, 1500);
+    };
+
+    void checkAndFire();
   },
-  removeAgentReadyListener: () => { /* Phase 2 */ },
+  removeAgentReadyListener: () => {
+    if (agentReadyPollTimer !== null) {
+      window.clearTimeout(agentReadyPollTimer);
+      agentReadyPollTimer = null;
+    }
+    agentReadyCallback = null;
+  },
 
   // ─── LLM 配置 ──────────────────────────────────────────
 
@@ -704,9 +773,59 @@ export const webElectronAPI: WebElectronAPI = {
  *
  * 注意：本函数仅在浏览器环境执行，Node.js 环境下 window 不存在。
  */
+/**
+ * 初始化 Web 模式 UI 适配
+ *
+ * 采用直接 DOM 样式操作而非 CSS 注入，原因：
+ * IDE 内置浏览器环境中动态创建的 <style> 元素 sheet 为 null（无法解析内联样式），
+ * 直接操作元素 style 属性可确保在任何环境下都生效。
+ * 使用 MutationObserver 监听异步插入的元素。
+ */
+function initWebModeUi(): void {
+  // 添加 body.web-mode 标识 class（供 CSS 选择器使用，即使 style sheet 不可用也无副作用）
+  document.body.classList.add('web-mode');
+
+  /**
+   * 应用 Web 模式样式到指定元素
+   * 直接设置内联样式，优先级最高且不依赖外部样式表
+   */
+  function applyWebStyles(): void {
+    // 隐藏 Electron 窗口控制按钮（最小化/最大化/关闭）
+    const controls = document.getElementById('titlebar-controls');
+    if (controls) {
+      controls.style.setProperty('display', 'none', 'important');
+    }
+    // 禁用 Electron 拖拽区域
+    const titlebarDrag = document.getElementById('titlebar-drag');
+    if (titlebarDrag) {
+      titlebarDrag.style.setProperty('-webkit-app-region', 'no-drag', 'important');
+      titlebarDrag.style.cursor = 'default';
+    }
+    const header = document.querySelector('header');
+    if (header) {
+      (header as HTMLElement).style.setProperty('-webkit-app-region', 'no-drag', 'important');
+    }
+  }
+
+  // 立即应用（元素可能已存在）
+  applyWebStyles();
+
+  // 使用 MutationObserver 监听后续 DOM 变化（元素可能在脚本执行后才插入）
+  const observer = new MutationObserver(() => {
+    applyWebStyles();
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+}
+
 export function injectWebElectronAPI(): void {
   if (typeof window !== 'undefined') {
     (window as unknown as { electronAPI: WebElectronAPI }).electronAPI = webElectronAPI;
+    // 初始化 Web 模式 UI 适配（DOM 加载完成后执行）
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initWebModeUi);
+    } else {
+      initWebModeUi();
+    }
     console.log('[Web] electronAPI 已注入（Web 模式）');
   }
 }

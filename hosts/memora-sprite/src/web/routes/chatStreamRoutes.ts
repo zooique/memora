@@ -94,6 +94,8 @@ export async function handleChatStreamRoute(
   const url = req.url ?? '';
   const path = url.split('?')[0] ?? url;
 
+  logger.info({ method, path }, '[Web SSE] 收到对话请求');
+
   await safeRoute(res, '对话流式', async () => {
     // POST /api/chat/abort — 中断进行中的对话
     if (method === 'POST' && path === '/api/chat/abort') {
@@ -169,12 +171,14 @@ async function handleChatStart(
         sendError(res, 503, '会话管理器未初始化，请稍后重试');
         return;
       }
-      // 重置到当天 main 会话
+      // 重置到当天 main 会话（先 switchSession 再 restoreSession，与其他路径一致）
+      sessionManager.switchSession('main');
       const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
       // restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
       if (restoredCount === 0 && ctx.agent.agentLoop) {
         ctx.agent.agentLoop.restoreHistory([]);
       }
+      logger.info({ todayDate, restoredCount }, '[Web SSE] 跨日自动重置到当天 main 会话');
     }
   }
 

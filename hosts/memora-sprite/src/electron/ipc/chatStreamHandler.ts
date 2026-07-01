@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 对话流式输出处理器（QC-R2-04 从 chatHandlers.ts 提取）
  *
  * 职责：
@@ -96,7 +96,8 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
         emitStreamError(fullWindow, '会话管理器未初始化，请稍后重试', 'SessionManager 未初始化');
         return;
       }
-      // 重置到当天 main 会话：更新 currentDate/currentSession + 加载当天已有消息
+      // 重置到当天 main 会话（先 switchSession 再 restoreSession，与其他路径一致）
+      sessionManager.switchSession('main');
       const restoredCount = await sessionManager.restoreSession(todayDate, 'main');
       // restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
       if (restoredCount === 0 && ctx.agent.agentLoop) {

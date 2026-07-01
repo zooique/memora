@@ -524,20 +524,13 @@ function setupBusinessLogic(
     // UX-PP-03 存储最后用户输入，用于流式错误重试
     State.lastUserInput = text;
 
-    // P2-FLOW-09 跨天检测：当前查看的是历史日期时，确认后切换到今天的 main 会话
+    // P2-FLOW-09 跨天检测：当前查看的是历史日期时，自动静默切换到今天的 main 会话
+    // 设计决策：跨天只是存储层细节，无需打扰用户确认，直接切换即可
     const currentId = sessionController.getCurrentSessionId();
     if (currentId) {
       const todayPrefix = getLocalDate();
       const sessionDate = currentId.slice(0, 10);
       if (sessionDate !== todayPrefix) {
-        // 弹出确认对话框，用户取消则阻止发送，停留在历史会话视图
-        const confirmed = await State.uiManager.showConfirmDialog({
-          title: '切换到今天的对话',
-          message: `当前查看的是 ${sessionDate} 的历史对话，发送消息将切换到今天的新对话。`,
-          confirmText: '切换并发送',
-          cancelText: '取消',
-        });
-        if (!confirmed) return; // 用户取消：阻止发送
         const todaySessionId = `${todayPrefix}-main`;
         await sessionController.switchSession(todaySessionId);
       }
@@ -554,7 +547,7 @@ function setupBusinessLogic(
   });
 
   // 空状态示例问题回调：点击示例问题等同于用户输入并发送
-  State.uiManager.onSuggestionClick((text) => {
+  State.uiManager.onSuggestionClick(async (text) => {
     // IX-01 流式防护：流式输出中点击示例问题等同于重复发送，应阻止
     if (State.uiManager.isStreaming()) {
       State.uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
@@ -562,6 +555,18 @@ function setupBusinessLogic(
     }
     // UX-PP-03 存储最后用户输入，用于流式错误重试
     State.lastUserInput = text;
+
+    // P2-FLOW-09 跨天检测：查看历史日期时静默切换到今天 main 会话
+    const currentId = sessionController.getCurrentSessionId();
+    if (currentId) {
+      const todayPrefix = getLocalDate();
+      const sessionDate = currentId.slice(0, 10);
+      if (sessionDate !== todayPrefix) {
+        const todaySessionId = `${todayPrefix}-main`;
+        await sessionController.switchSession(todaySessionId);
+      }
+    }
+
     // 显示用户消息
     State.uiManager.appendMessage({
       role: 'user',

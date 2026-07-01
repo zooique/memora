@@ -155,7 +155,12 @@ export async function handleSessionRoute(
         // 1. 切换 Agent 内部会话标识（后续 chat() 写入新会话）
         ctx.agent.sessionManager.switchSession(body.session);
         // 2. 恢复目标会话历史消息到 AgentLoop 工作记忆（供 LLM 上下文使用）
-        await ctx.agent.sessionManager.restoreSession(body.date, body.session);
+        const restoredCount = await ctx.agent.sessionManager.restoreSession(body.date, body.session);
+        // 3. restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
+        //    （与 chatStreamRoutes 跨日重置逻辑一致）
+        if (restoredCount === 0 && ctx.agent.agentLoop) {
+          ctx.agent.agentLoop.restoreHistory([]);
+        }
       }
 
       // 加载切换后会话的消息（用 loadMessages 保持与 IPC 一致：全量加载供 UI 渲染）

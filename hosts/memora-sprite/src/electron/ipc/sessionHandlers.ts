@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 会话管理 IPC 处理器
  *
  * 职责：
@@ -126,8 +126,12 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       // 1. 切换 Agent 内部会话标识（更新 currentSession，后续 chat() 写入新会话）
       ctx.agent.sessionManager.switchSession(query.session);
       // 2. 恢复目标会话的历史消息到 AgentLoop 工作记忆（供 LLM 上下文使用）
-      await ctx.agent.sessionManager.restoreSession(query.date, query.session);
-      // 3. 加载会话消息供 UI 渲染（保留 timestamp）
+      const restoredCount = await ctx.agent.sessionManager.restoreSession(query.date, query.session);
+      // 3. restoreSession 仅在有消息时写入工作记忆；无消息时旧上下文残留需手动清理
+      if (restoredCount === 0 && ctx.agent.agentLoop) {
+        ctx.agent.agentLoop.restoreHistory([]);
+      }
+      // 4. 加载会话消息供 UI 渲染（保留 timestamp）
       const messages = ctx.sessionStore.loadMessages(query.date, query.session);
       return {
         success: true,
