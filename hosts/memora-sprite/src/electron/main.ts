@@ -243,6 +243,8 @@ function createIpcContext(
     windowStateManager,
     windowManager,
     trayManager,
+    // Phase 3.3：注入快捷键管理器供 configHandlers 触发热更新（可能为 null）
+    shortcutManager,
     getAbortController: () => currentAbortController,
     setAbortController: (ctrl: AbortController | null) => {
       currentAbortController = ctrl;

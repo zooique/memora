@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 全局快捷键管理器 — 系统级快捷键注册/注销/热更新
  *
  * 职责（Phase 3.3）：
@@ -155,6 +155,33 @@ export class ShortcutManager {
       this.registerAll();
     } else {
       this.unregisterAll();
+    }
+  }
+
+  /**
+   * 全量替换配置并重新注册（热更新批量场景）
+   *
+   * 用于配置批量更新（如设置面板保存快捷键配置）：先注销所有已注册快捷键，
+   * 再用新配置重新注册。相比逐个调用 updateShortcut，避免 N 次注销/注册的抖动。
+   *
+   * 行为：
+   *   1. unregisterAll（清空已注册映射）
+   *   2. 用 newConfig 替换内部 config（深拷贝 accelerators 避免外部引用污染）
+   *   3. 若 enabled=true 则 registerAll；否则保持注销状态
+   *
+   * @param newConfig 新的快捷键配置
+   */
+  setConfig(newConfig: ShortcutConfig): void {
+    // 先注销所有已注册快捷键，避免新旧 accelerator 残留
+    this.unregisterAll();
+    // 深拷贝 accelerators，避免外部引用污染内部状态
+    this.config = {
+      enabled: newConfig.enabled,
+      accelerators: { ...newConfig.accelerators },
+    };
+    // enabled=true 时重新注册所有快捷键；false 时保持注销状态
+    if (this.config.enabled) {
+      this.registerAll();
     }
   }
 

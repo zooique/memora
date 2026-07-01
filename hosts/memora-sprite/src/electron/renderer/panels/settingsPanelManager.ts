@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 设置面板管理器 — 设置面板 UI 逻辑独立子模块
  *
  * 职责：
@@ -94,6 +94,16 @@ export class SettingsPanelManager {
   /** FD-04 项目模式：专注项目选择下拉框 */
   private cfgFocusProject: HTMLSelectElement | null;
 
+  // ─── 设置面板 DOM 元素 - 快捷键配置（Phase 3.3） ─────────
+  /** 快捷键总开关 */
+  private cfgShortcutsEnabled: HTMLInputElement | null;
+  /** 显示/隐藏窗口快捷键（捕获式输入） */
+  private cfgShortcutToggleWindow: HTMLInputElement | null;
+  /** 快速记录快捷键（捕获式输入） */
+  private cfgShortcutQuickRecord: HTMLInputElement | null;
+  /** 召回记忆快捷键（捕获式输入） */
+  private cfgShortcutRecallMemory: HTMLInputElement | null;
+
   // ─── 状态 ────────────────────────────────────────────────
   /** FD-07 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
@@ -155,6 +165,12 @@ export class SettingsPanelManager {
     this.cfgWatcherDebounce = getOptionalElement('cfg-watcher-debounce', 'input');
     this.cfgDefaultPersona = getOptionalElement('cfg-default-persona', 'input');
     this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
+
+    // 设置面板 - 快捷键配置（Phase 3.3）
+    this.cfgShortcutsEnabled = getOptionalElement('cfg-shortcuts-enabled', 'input');
+    this.cfgShortcutToggleWindow = getOptionalElement('cfg-shortcut-toggle-window', 'input');
+    this.cfgShortcutQuickRecord = getOptionalElement('cfg-shortcut-quick-record', 'input');
+    this.cfgShortcutRecallMemory = getOptionalElement('cfg-shortcut-recall-memory', 'input');
   }
 
   // ─── 事件监听器管理 ─────────────────────────────────────
@@ -300,6 +316,15 @@ export class SettingsPanelManager {
             defaultPersona: '',
             projectMode: 'smart',
             focusProjectPath: '',
+            // Phase 3.3 快捷键默认值（与 DEFAULT_SPRITE_CONFIG.shortcuts 一致）
+            shortcuts: {
+              enabled: true,
+              accelerators: {
+                'toggle-window': 'Ctrl+Shift+Space',
+                'quick-record': 'Ctrl+Shift+M',
+                'recall-memory': 'Ctrl+Shift+R',
+              },
+            },
           });
           this.settingsFormDirty = true;
           this.host.showToast('已恢复默认设置，点击「保存」生效', 'info');
@@ -360,6 +385,9 @@ export class SettingsPanelManager {
         }
       });
     });
+
+    // Phase 3.3：初始化快捷键捕获式输入（三个动作 + 冲突检测）
+    this.initShortcutCapture();
   }
 
   // ─── 私有辅助方法 ───────────────────────────────────────
@@ -397,6 +425,179 @@ export class SettingsPanelManager {
         this.host.onSettingsTabSwitch?.(targetTab);
       });
     });
+  }
+
+  // ─── Phase 3.3 快捷键捕获式输入 ─────────────────────────
+
+  /**
+   * 初始化快捷键捕获式输入
+   *
+   * 为三个快捷键输入框注册 focus/blur/keydown 监听器：
+   * - focus：进入捕获状态，显示"按下组合键..."提示
+   * - keydown：解析组合键为 Electron accelerator 格式，Esc 取消，Backspace 清除
+   * - blur：退出捕获状态，恢复默认提示
+   *
+   * 冲突检测：捕获成功后检查与其他动作的快捷键是否重复，重复时提示警告并不填入。
+   */
+  private initShortcutCapture(): void {
+    const inputs: Array<{ input: HTMLInputElement | null; action: string }> = [
+      { input: this.cfgShortcutToggleWindow, action: 'toggle-window' },
+      { input: this.cfgShortcutQuickRecord, action: 'quick-record' },
+      { input: this.cfgShortcutRecallMemory, action: 'recall-memory' },
+    ];
+
+    for (const { input } of inputs) {
+      if (!input) continue;
+
+      /** 捕获状态标志（focus 时置 true，blur/cancel/capture 时置 false） */
+      let capturing = false;
+      /** 进入捕获前的原值（Esc 取消时恢复） */
+      let originalValue = '';
+
+      this.events.addEventListener(input, 'focus', () => {
+        capturing = true;
+        originalValue = input.value;
+        input.classList.add('capturing');
+        input.placeholder = '按下组合键…（Esc 取消，Backspace 清除）';
+      });
+
+      this.events.addEventListener(input, 'blur', () => {
+        if (capturing) {
+          capturing = false;
+          input.classList.remove('capturing');
+          input.placeholder = '点击捕获组合键';
+        }
+      });
+
+      this.events.addEventListener(input, 'keydown', (e: KeyboardEvent) => {
+        if (!capturing) return;
+        // 阻止默认行为（如 Tab 切换焦点、空格滚动页面）
+        e.preventDefault();
+        e.stopPropagation();
+
+        const result = this.keyEventToAccelerator(e);
+        // null 表示不支持的键，继续等待用户按下有效组合键
+        if (result === null) return;
+
+        // Esc 取消：恢复原值并退出捕获
+        if (result === '__cancel__') {
+          input.value = originalValue;
+          input.blur();
+          return;
+        }
+
+        // Backspace（无修饰键）清除快捷键
+        if (result === '__clear__') {
+          input.value = '';
+          input.blur();
+          return;
+        }
+
+        // 冲突检测：检查与其他动作的快捷键是否重复
+        if (this.isShortcutConflict(result, input)) {
+          this.host.showToast(`快捷键 ${result} 与其他动作冲突，请使用其他组合`, 'warning');
+          return; // 不填入，继续等待
+        }
+
+        // 捕获成功：填入并退出捕获状态
+        input.value = result;
+        input.blur();
+      });
+    }
+  }
+
+  /**
+   * 将 KeyboardEvent 解析为 Electron accelerator 格式字符串
+   *
+   * Electron accelerator 格式：修饰键 + 主键，如 "Ctrl+Shift+Space"。
+   * 修饰键顺序：Ctrl → Cmd → Alt → Shift（与 Electron 文档一致）。
+   *
+   * 特殊返回值：
+   * - '__cancel__'：Esc 键，表示取消捕获
+   * - '__clear__'：Backspace（无修饰键），表示清除快捷键
+   * - null：不支持的键（如单独的修饰键、无法识别的键），继续等待
+   *
+   * @param e 键盘事件
+   * @returns accelerator 字符串、特殊标记或 null
+   */
+  private keyEventToAccelerator(e: KeyboardEvent): string | '__cancel__' | '__clear__' | null {
+    // Esc 取消捕获
+    if (e.key === 'Escape') return '__cancel__';
+
+    // Backspace（无修饰键）清除快捷键
+    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+      return '__clear__';
+    }
+
+    // 收集修饰键（顺序：Ctrl → Cmd → Alt → Shift）
+    /** 修饰键列表（按 Electron accelerator 规范顺序） */
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.metaKey) parts.push('Cmd');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+
+    // 单独的修饰键不构成有效快捷键，继续等待
+    if (parts.length === 0) return null;
+
+    // 主键映射表（e.key → Electron accelerator 键名）
+    const keyMap: Record<string, string> = {
+      ' ': 'Space',
+      ArrowUp: 'Up',
+      ArrowDown: 'Down',
+      ArrowLeft: 'Left',
+      ArrowRight: 'Right',
+      Enter: 'Return',
+      Tab: 'Tab',
+      Home: 'Home',
+      End: 'End',
+      PageUp: 'PageUp',
+      PageDown: 'PageDown',
+      Insert: 'Insert',
+      Delete: 'Delete',
+    };
+
+    /** 主键名（Electron accelerator 格式） */
+    let key = keyMap[e.key];
+    if (!key) {
+      // 字母键转大写（accelerator 规范：A-Z）
+      if (/^[a-z]$/i.test(e.key)) {
+        key = e.key.toUpperCase();
+      } else if (/^F\d{1,2}$/i.test(e.key)) {
+        // 功能键 F1-F24 转大写
+        key = e.key.toUpperCase();
+      } else if (/^\d$/.test(e.key)) {
+        // 数字键 0-9
+        key = e.key;
+      } else {
+        // 不支持的键，继续等待
+        return null;
+      }
+    }
+
+    parts.push(key);
+    return parts.join('+');
+  }
+
+  /**
+   * 检查快捷键是否与其他动作冲突
+   *
+   * 遍历三个快捷键输入框（排除当前输入框），检查是否有相同的 accelerator。
+   * 空字符串不视为冲突（允许未设置的快捷键）。
+   *
+   * @param accelerator 待检查的 accelerator 字符串
+   * @param excludeInput 当前输入框（排除自身）
+   * @returns true 表示与其他动作冲突
+   */
+  private isShortcutConflict(accelerator: string, excludeInput: HTMLInputElement): boolean {
+    const inputs = [
+      this.cfgShortcutToggleWindow,
+      this.cfgShortcutQuickRecord,
+      this.cfgShortcutRecallMemory,
+    ];
+    return inputs.some(
+      (inp) => inp !== null && inp !== excludeInput && inp.value === accelerator,
+    );
   }
 
   /**
@@ -670,6 +871,20 @@ export class SettingsPanelManager {
       this.cfgFocusProject.disabled = config.projectMode !== 'focus';
     }
     // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
+
+    // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
+    if (this.cfgShortcutsEnabled) {
+      this.cfgShortcutsEnabled.checked = config.shortcuts.enabled;
+    }
+    if (this.cfgShortcutToggleWindow) {
+      this.cfgShortcutToggleWindow.value = config.shortcuts.accelerators['toggle-window'] ?? '';
+    }
+    if (this.cfgShortcutQuickRecord) {
+      this.cfgShortcutQuickRecord.value = config.shortcuts.accelerators['quick-record'] ?? '';
+    }
+    if (this.cfgShortcutRecallMemory) {
+      this.cfgShortcutRecallMemory.value = config.shortcuts.accelerators['recall-memory'] ?? '';
+    }
   }
 
   /** FD-04 加载项目列表到专注项目下拉框 */
@@ -734,6 +949,15 @@ export class SettingsPanelManager {
       defaultPersona: this.cfgDefaultPersona?.value.trim() ?? '',
       projectMode,
       focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
+      // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
+      shortcuts: {
+        enabled: this.cfgShortcutsEnabled?.checked ?? true,
+        accelerators: {
+          'toggle-window': this.cfgShortcutToggleWindow?.value.trim() ?? '',
+          'quick-record': this.cfgShortcutQuickRecord?.value.trim() ?? '',
+          'recall-memory': this.cfgShortcutRecallMemory?.value.trim() ?? '',
+        },
+      },
     };
   }
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 配置与角色 IPC 处理器
  *
  * 职责：
@@ -17,7 +17,7 @@ import { ipcMain } from 'electron';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
-import type { SpriteConfig, SpriteConfigKey } from '../../sprite/spriteConfig.js';
+import type { SpriteConfig, SpriteConfigKey, ShortcutConfig } from '../../sprite/spriteConfig.js';
 import { safeHandle } from './types.js';
 import { isValidPersonaName } from './inputValidation.js';
 import type { IpcContext } from './types.js';
@@ -91,6 +91,25 @@ export function registerConfigHandlers(ctx: IpcContext): void {
     return key in DEFAULT_SPRITE_CONFIG;
   }
 
+  /**
+   * 校验 shortcuts 配置结构（运行时类型守卫）
+   *
+   * sprite.updateConfig 内部用 applyConfigField 校验 shortcuts，但校验失败时不抛错
+   * 仅忽略更新。此处副作用触发前需二次校验，避免 ShortcutManager 配置与 Sprite
+   * 配置不一致（updateConfig 静默忽略非法值时，副作用不应执行）。
+   */
+  function isValidShortcutConfig(value: unknown): value is ShortcutConfig {
+    if (typeof value !== 'object' || value === null) return false;
+    const s = value as { enabled?: unknown; accelerators?: unknown };
+    return (
+      typeof s.enabled === 'boolean' &&
+      typeof s.accelerators === 'object' &&
+      s.accelerators !== null &&
+      !Array.isArray(s.accelerators) &&
+      Object.values(s.accelerators as Record<string, unknown>).every((v) => typeof v === 'string')
+    );
+  }
+
   /** 更新配置项 */
   ipcMain.handle(IPC_CHANNELS.CONFIG_UPDATE, async (_event, key: string, value: unknown) => {
     try {
@@ -113,6 +132,12 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       // QC-SPRITE-02：silentModeExpiresAt 变更时管理主进程恢复定时器
       if (key === 'silentModeExpiresAt') {
         scheduleSilentRecovery(ctx);
+      }
+
+      // Phase 3.3：shortcuts 变更时热更新全局快捷键（全量替换配置）
+      // 二次校验避免 updateConfig 静默忽略非法值时副作用误触发
+      if (key === 'shortcuts' && ctx.shortcutManager && isValidShortcutConfig(value)) {
+        ctx.shortcutManager.setConfig(value);
       }
 
       return { updated: true };
@@ -160,6 +185,12 @@ export function registerConfigHandlers(ctx: IpcContext): void {
         // silentModeExpiresAt 变更时管理主进程恢复定时器（QC-SPRITE-02）
         if ('silentModeExpiresAt' in updates) {
           scheduleSilentRecovery(ctx);
+        }
+
+        // Phase 3.3：shortcuts 变更时热更新全局快捷键（全量替换配置）
+        // 二次校验避免 updateConfigBatch 静默忽略非法值时副作用误触发
+        if ('shortcuts' in updates && ctx.shortcutManager && isValidShortcutConfig(updates.shortcuts)) {
+          ctx.shortcutManager.setConfig(updates.shortcuts);
         }
 
         return result;

@@ -411,7 +411,6 @@ function createMockElectronAPI() {
     setPersonaMode: vi.fn().mockResolvedValue({ set: true }),
     getPersonaMode: vi.fn().mockResolvedValue({ mode: 'auto' }),
     listProjects: vi.fn().mockResolvedValue({ projects: [] }),
-    newSession: vi.fn().mockResolvedValue({ success: true, sessionName: 'test' }),
     getDashboard: vi.fn().mockResolvedValue({
       pendingNotices: 0,
       proactiveThreshold: 3,

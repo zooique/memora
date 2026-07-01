@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ShortcutManager 单元测试
  *
  * 验证全局快捷键注册/注销/热更新/总开关逻辑。
@@ -282,6 +282,101 @@ describe('ShortcutManager', () => {
       manager.setEnabled(true); // 状态未变化
 
       expect(mockGlobalShortcut.register.mock.calls.length).toBe(registerCountBefore);
+    });
+  });
+
+  describe('setConfig（全量替换配置）', () => {
+    it('enabled=true 时先注销旧的再注册新的', () => {
+      const quickRecordHandler = vi.fn();
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
+        config: {
+          enabled: true,
+          accelerators: {
+            [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Ctrl+Shift+Space',
+          },
+        },
+        handlers: {
+          [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: toggleHandler,
+          [SHORTCUT_ACTIONS.QUICK_RECORD]: quickRecordHandler,
+        },
+      });
+
+      manager.registerAll();
+      expect(mockGlobalShortcut.getRegisteredCount()).toBe(1);
+
+      // 全量替换：新增 quick-record 快捷键
+      manager.setConfig({
+        enabled: true,
+        accelerators: {
+          [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Alt+Space',
+          [SHORTCUT_ACTIONS.QUICK_RECORD]: 'Ctrl+Shift+M',
+        },
+      });
+
+      // 旧的 Ctrl+Shift+Space 应被注销
+      expect(mockGlobalShortcut.unregister).toHaveBeenCalledWith('Ctrl+Shift+Space');
+      // 新的两个快捷键应被注册
+      expect(mockGlobalShortcut.register).toHaveBeenCalledWith('Alt+Space', toggleHandler);
+      expect(mockGlobalShortcut.register).toHaveBeenCalledWith('Ctrl+Shift+M', quickRecordHandler);
+      expect(mockGlobalShortcut.getRegisteredCount()).toBe(2);
+      // 内部配置应更新
+      expect(manager.getConfig().accelerators[SHORTCUT_ACTIONS.TOGGLE_WINDOW]).toBe('Alt+Space');
+    });
+
+    it('新配置 enabled=false 时注销所有但不注册新的', () => {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
+        config: {
+          enabled: true,
+          accelerators: {
+            [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Ctrl+Shift+Space',
+          },
+        },
+        handlers: {
+          [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: toggleHandler,
+        },
+      });
+
+      manager.registerAll();
+      expect(mockGlobalShortcut.getRegisteredCount()).toBe(1);
+
+      // 全量替换：禁用快捷键
+      manager.setConfig({
+        enabled: false,
+        accelerators: {
+          [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Alt+Space',
+        },
+      });
+
+      // 旧的应被注销
+      expect(mockGlobalShortcut.unregister).toHaveBeenCalledWith('Ctrl+Shift+Space');
+      // 不应注册新的
+      expect(mockGlobalShortcut.register).not.toHaveBeenCalledWith('Alt+Space', toggleHandler);
+      expect(mockGlobalShortcut.getRegisteredCount()).toBe(0);
+      // 内部配置应更新（enabled=false）
+      expect(manager.getConfig().enabled).toBe(false);
+    });
+
+    it('深拷贝 accelerators 避免外部引用污染', () => {
+      const manager = new ShortcutManager(mockGlobalShortcut as unknown as GlobalShortcut, {
+        config: {
+          enabled: false,
+          accelerators: {},
+        },
+        handlers: {},
+      });
+
+      /** 外部传入的 accelerators 引用 */
+      const externalAccelerators = {
+        [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: 'Ctrl+Shift+Space',
+      };
+      manager.setConfig({
+        enabled: false,
+        accelerators: externalAccelerators,
+      });
+
+      // 修改外部引用不应影响内部状态
+      externalAccelerators[SHORTCUT_ACTIONS.TOGGLE_WINDOW] = 'Alt+Space';
+      expect(manager.getConfig().accelerators[SHORTCUT_ACTIONS.TOGGLE_WINDOW]).toBe('Ctrl+Shift+Space');
     });
   });
 

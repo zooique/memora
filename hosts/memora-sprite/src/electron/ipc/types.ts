@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IPC 共享类型与工具函数
  *
  * 定义所有 IPC 处理器共用的依赖容器（IpcContext）和错误兜底包装（safeHandle）。
@@ -11,6 +11,8 @@ import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import type { WindowStateManager } from '../windows/windowState.js';
 import type { WindowManager } from '../windows/windowManager.js';
 import type { TrayManager } from '../trayIcon.js';
+// Phase 3.3：注入快捷键管理器，供 configHandlers 触发热更新副作用
+import type { ShortcutManager } from '../shortcuts.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 
 /**
@@ -32,6 +34,13 @@ export interface IpcContext {
   windowManager: WindowManager;
   /** 托盘管理器（主动提示时脉冲） */
   trayManager: TrayManager | null;
+  /**
+   * 全局快捷键管理器（Phase 3.3）
+   *
+   * shortcuts 配置变更时由 configHandlers 调用其热更新方法。
+   * 可能为 null（shortcutManager 在 initializeApp 中创建，未就绪前为 null）。
+   */
+  shortcutManager: ShortcutManager | null;
   /** 获取当前对话的 AbortController */
   getAbortController: () => AbortController | null;
   /** 设置当前对话的 AbortController */
@@ -57,7 +66,7 @@ export interface IpcContext {
  *
  * 不适用场景（保持手写 try-catch）：
  * - try 内有副作用逻辑（如 CONFIG_UPDATE 需同步托盘状态）
- * - catch 返回值含 error.message（如 SESSION_NEW 需返回错误详情给 UI）
+ * - catch 返回值含 error.message（如 SESSION_DELETE 需返回错误详情给 UI）
  * - try 内业务逻辑复杂含多分支（如 SESSION_LOAD 会话选择）
  * - 返回值结构复杂（如 DASHBOARD_GET 聚合多字段）
  *

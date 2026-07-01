@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 配置与角色 IPC 处理器测试
  *
  * 覆盖范围：
@@ -56,6 +56,7 @@ import type { IpcContext } from '../../../electron/ipc/types.js';
 function createMockCtx(overrides?: {
   sprite?: Partial<IpcContext['sprite']>;
   trayManager?: { setState: ReturnType<typeof vi.fn>; updateMenu: ReturnType<typeof vi.fn> } | null;
+  shortcutManager?: { setConfig: ReturnType<typeof vi.fn> } | null;
 }): IpcContext {
   return {
     agent: {} as IpcContext['agent'],
@@ -77,6 +78,8 @@ function createMockCtx(overrides?: {
     windowStateManager: {} as IpcContext['windowStateManager'],
     windowManager: {} as IpcContext['windowManager'],
     trayManager: overrides?.trayManager ?? null,
+    // Phase 3.3：快捷键管理器 mock（默认 null，需要测试 shortcuts 副作用时注入）
+    shortcutManager: overrides?.shortcutManager ?? null,
     getAbortController: vi.fn(() => null),
     setAbortController: vi.fn(),
     isAgentReady: vi.fn(() => true),
@@ -396,6 +399,90 @@ describe('registerConfigHandlers', () => {
 
     expect(result.updated).toBe(false);
     expect(result.error).toBe('batch 内部错误');
+  });
+
+  // ─── Phase 3.3 shortcuts 副作用测试 ─────────────────────
+
+  /** 合法的 shortcuts 配置（用于测试） */
+  const validShortcuts = {
+    enabled: true,
+    accelerators: {
+      'toggle-window': 'Ctrl+Shift+Space',
+      'quick-record': 'Ctrl+Shift+M',
+      'recall-memory': 'Ctrl+Shift+R',
+    },
+  };
+
+  it('CONFIG_UPDATE 含 shortcuts 应调用 shortcutManager.setConfig', async () => {
+    const setConfig = vi.fn();
+    const ctx = createMockCtx({ shortcutManager: { setConfig } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE)!;
+    const result = await callback({}, 'shortcuts', validShortcuts);
+
+    expect(result).toEqual({ updated: true });
+    expect(setConfig).toHaveBeenCalledWith(validShortcuts);
+  });
+
+  it('CONFIG_UPDATE 含非法 shortcuts 不应调用 shortcutManager.setConfig', async () => {
+    const setConfig = vi.fn();
+    const ctx = createMockCtx({ shortcutManager: { setConfig } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE)!;
+    // enabled 缺失，类型非法
+    const result = await callback({}, 'shortcuts', { accelerators: { 'toggle-window': 'Ctrl+X' } });
+
+    expect(result).toEqual({ updated: true });
+    // 二次校验失败，不应触发副作用
+    expect(setConfig).not.toHaveBeenCalled();
+  });
+
+  it('CONFIG_UPDATE shortcutManager=null 时含 shortcuts 不应抛错', async () => {
+    const ctx = createMockCtx({ shortcutManager: null });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE)!;
+    await expect(callback({}, 'shortcuts', validShortcuts)).resolves.toEqual({ updated: true });
+  });
+
+  it('CONFIG_UPDATE_BATCH 含 shortcuts 应调用 shortcutManager.setConfig', async () => {
+    const setConfig = vi.fn();
+    const ctx = createMockCtx({ shortcutManager: { setConfig } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    const result = await callback({}, { shortcuts: validShortcuts });
+
+    expect(result).toEqual({ updated: true });
+    expect(setConfig).toHaveBeenCalledWith(validShortcuts);
+  });
+
+  it('CONFIG_UPDATE_BATCH 含非法 shortcuts 不应调用 shortcutManager.setConfig', async () => {
+    const setConfig = vi.fn();
+    const ctx = createMockCtx({ shortcutManager: { setConfig } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    // accelerators 含非字符串值，类型非法
+    const result = await callback({}, {
+      shortcuts: { enabled: true, accelerators: { 'toggle-window': 123 } },
+    });
+
+    expect(result).toEqual({ updated: true });
+    expect(setConfig).not.toHaveBeenCalled();
+  });
+
+  it('CONFIG_UPDATE_BATCH 不含 shortcuts 时不应调用 shortcutManager.setConfig', async () => {
+    const setConfig = vi.fn();
+    const ctx = createMockCtx({ shortcutManager: { setConfig } });
+    registerConfigHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_UPDATE_BATCH)!;
+    await callback({}, { silentMode: true, proactiveThreshold: 5 });
+
+    expect(setConfig).not.toHaveBeenCalled();
   });
 
   // ─── PERSONA_LIST ──────────────────────────────────────

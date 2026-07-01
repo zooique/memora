@@ -18,8 +18,6 @@ export const IPC_CHANNELS = {
   CHAT_ABORT: 'chat-abort',
   /** 加载历史会话消息 */
   SESSION_LOAD: 'session-load',
-  /** 新建会话 */
-  SESSION_NEW: 'session-new',
   /** FD-A1 列出所有会话 */
   SESSION_LIST: 'session-list',
   /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */

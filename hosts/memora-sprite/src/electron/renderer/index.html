@@ -811,6 +811,27 @@
               <input type="text" id="cfg-default-persona" placeholder="留空使用自动匹配" autocomplete="off" />
             </div>
           </div>
+          <!-- Phase 3.3 全局快捷键配置（捕获式输入 + 冲突检测在 settingsPanelManager） -->
+          <div class="settings-group">
+            <h3>快捷键</h3>
+            <div class="settings-row">
+              <label for="cfg-shortcuts-enabled">启用全局快捷键</label>
+              <input type="checkbox" id="cfg-shortcuts-enabled" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-shortcut-toggle-window">显示/隐藏窗口</label>
+              <input type="text" id="cfg-shortcut-toggle-window" class="shortcut-input" readonly placeholder="点击捕获组合键" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-shortcut-quick-record">快速记录</label>
+              <input type="text" id="cfg-shortcut-quick-record" class="shortcut-input" readonly placeholder="点击捕获组合键" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-shortcut-recall-memory">召回记忆</label>
+              <input type="text" id="cfg-shortcut-recall-memory" class="shortcut-input" readonly placeholder="点击捕获组合键" />
+            </div>
+            <span class="settings-hint">点击输入框后按下组合键捕获，Esc 取消，Backspace 清除。至少包含一个修饰键（Ctrl/Cmd/Alt/Shift）。</span>
+          </div>
         </div>
 
         <!-- FD-04 项目模式配置 -->

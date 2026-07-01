@@ -293,6 +293,27 @@
   accent-color: var(--accent);
 }
 
+/* ─── Phase 3.3 快捷键捕获式输入框 ──────────────────────── */
+/* readonly 输入框，点击进入捕获状态，按键后填入 accelerator 字符串 */
+.shortcut-input {
+  cursor: pointer;
+  text-align: center;
+  font-family: monospace;
+}
+
+/* 捕获状态：高亮边框 + 背景色变化，提示用户正在按键捕获 */
+.shortcut-input.capturing {
+  border-color: var(--accent);
+  background: var(--surface1);
+  color: var(--text-3);
+}
+
+/* 捕获状态下隐藏默认 placeholder 颜色，让"按下组合键..."提示更醒目 */
+.shortcut-input.capturing::placeholder {
+  color: var(--accent);
+  font-style: italic;
+}
+
 .settings-actions {
   display: flex;
   align-items: center;

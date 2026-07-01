@@ -43,7 +43,6 @@ const IPC_CHANNELS = {
   USER_INPUT: 'user-input',
   CHAT_ABORT: 'chat-abort',
   SESSION_LOAD: 'session-load',
-  SESSION_NEW: 'session-new',
   SESSION_LIST: 'session-list',
   SESSION_SWITCH: 'session-switch',
   /** FD-09 删除会话（含确认对话框） */
@@ -255,17 +254,18 @@ export interface ChatMessage {
  * 精灵配置表单（渲染进程用）
  *
  * P3：从 SpriteConfig 派生，消除手写平行结构导致的同步漂移风险。
- * - 10 个必填字段通过 Required<Pick<SpriteConfig, ...>> 派生（可选→必填）
+ * - 11 个必填字段通过 Required<Pick<SpriteConfig, ...>> 派生（可选→必填）
  * - silentModeExpiresAt 保持可选（与 SpriteConfig 一致，null 表示无定时恢复）
  * - theme 单独声明：SpriteConfig.theme 含 'auto'，但表单仅暴露 'light'|'dark'
  *   （'auto' 由系统跟随逻辑处理，不暴露到表单 UI）
+ * - shortcuts 在表单中暴露完整 ShortcutConfig（Phase 3.3 快捷键设置 UI）
  * - SpriteConfig 新增/修改字段时，Form 自动同步（除 theme 外）
  */
 type SpriteConfigFormBase = Required<Pick<SpriteConfig,
   | 'silentMode' | 'proactiveThreshold'
   | 'proactiveCooldownMs' | 'triggerIntervalMs' | 'fileWatcherEnabled'
   | 'fileWatcherPaths' | 'fileWatcherDebounceMs' | 'defaultPersona'
-  | 'projectMode' | 'focusProjectPath'
+  | 'projectMode' | 'focusProjectPath' | 'shortcuts'
 >>;
 
 export interface SpriteConfigForm extends SpriteConfigFormBase {
@@ -402,10 +402,6 @@ export interface ElectronAPI {
   // 项目（FD-04 项目模式）
   /** 列出已注册项目（供专注模式选择器使用） */
   listProjects: () => Promise<{ projects: Array<{ name: string; path: string }> }>;
-
-  // 会话（FD-05 新建会话）
-  /** 新建会话（生成时间戳会话名，切换到新会话） */
-  newSession: () => Promise<{ success: boolean; sessionName?: string; error?: string }>;
 
   // 仪表盘（FD-03）
   getDashboard: () => Promise<{
@@ -700,8 +696,6 @@ const electronAPI: ElectronAPI = {
   // 项目（FD-04）
   listProjects: () => ipcRenderer.invoke(IPC_CHANNELS.PROJECTS_LIST),
 
-  // 会话（FD-05）
-  newSession: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_NEW),
   // FD-A1 列出所有会话
   listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST),
   // UX-P1-04 切换到已有会话（更新 Agent 内部状态）
