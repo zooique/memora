@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 设置控制器 — 设置面板业务逻辑
  *
  * 职责：
@@ -199,6 +199,8 @@ export function createSettingsController(uiManager: UIManager) {
         // FD-04 项目模式字段
         projectMode: cfg.projectMode === 'focus' ? 'focus' : 'smart',
         focusProjectPath: String(cfg.focusProjectPath ?? ''),
+        // Phase 3.3 快捷键配置：cfg.shortcuts 已由主进程保证完整（SpriteConfigForm 必填）
+        shortcuts: cfg.shortcuts,
       };
 
       uiManager.loadConfigToForm(formConfig);

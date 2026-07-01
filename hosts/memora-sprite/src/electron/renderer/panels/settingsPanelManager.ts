@@ -524,13 +524,15 @@ export class SettingsPanelManager {
         }
       });
 
-      this.events.addEventListener(input, 'keydown', (e: KeyboardEvent) => {
+      this.events.addEventListener(input, 'keydown', (e: Event) => {
+        // EventListener 签名要求 (e: Event)，keydown 事件实际为 KeyboardEvent，窄化转换
+        const ke = e as KeyboardEvent;
         if (!capturing) return;
         // 阻止默认行为（如 Tab 切换焦点、空格滚动页面）
-        e.preventDefault();
-        e.stopPropagation();
+        ke.preventDefault();
+        ke.stopPropagation();
 
-        const result = this.keyEventToAccelerator(e);
+        const result = this.keyEventToAccelerator(ke);
         // null 表示不支持的键，继续等待用户按下有效组合键
         if (result === null) return;
 
