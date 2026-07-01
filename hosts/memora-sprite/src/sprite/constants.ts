@@ -70,7 +70,7 @@ export const PROACTIVE_TRAY_RESET_MS = 30_000;
 /** 仪表盘脉冲动画间隔（dashboardPanelManager），脉冲动画刷新频率 */
 export const DASHBOARD_PULSE_MS = 300;
 
-/** 仪表盘刷新防抖间隔（memoryPanelController），连续事件合并窗口 */
+/** 仪表盘刷新防抖间隔（memoryController），连续事件合并窗口 */
 export const DASHBOARD_DEBOUNCE_MS = 300;
 
 /**

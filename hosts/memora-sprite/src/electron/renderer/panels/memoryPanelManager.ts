@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆面板管理器 — 记忆面板 UI 逻辑独立子模块
  *
  * 职责：
@@ -129,6 +129,8 @@ export class MemoryPanelManager {
 // ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
   private pendingCleanupIds: string[] = [];
+  /** P2-UI-3.2：视图切换令牌，防止快速切换时 setTimeout 回调竞态导致空白 */
+  private viewSwitchToken = 0;
 
   constructor(
     private host: MemoryPanelHost,
@@ -1214,6 +1216,8 @@ export class MemoryPanelManager {
    */
   switchView(mode: 'list' | 'timeline' | 'graph'): void {
     this.viewMode = mode;
+    // P2-UI-3.2：递增视图切换令牌，过期 setTimeout 回调会被忽略
+    const token = ++this.viewSwitchToken;
 
     // 切换视图时隐藏 insights/health，避免显示类型平铺污染
     this.hideInsightsAndHealth();
@@ -1237,6 +1241,8 @@ export class MemoryPanelManager {
     // 延迟切换视图（等待退出动画完成）
     const TRANSITION_DURATION = 150; // 与 CSS --transition-base (0.15s) 一致
     setTimeout(() => {
+      // P2-UI-3.2：令牌检查——若期间有新 switchView 调用，本回调作废
+      if (token !== this.viewSwitchToken) return;
       // 移除所有视图的退出态
       allViews.forEach(v => v.classList.remove('memory-view-exit'));
 
@@ -1272,6 +1278,8 @@ export class MemoryPanelManager {
 
       // 动画完成后移除进入类
       setTimeout(() => {
+        // P2-UI-3.2：内层回调同样检查令牌
+        if (token !== this.viewSwitchToken) return;
         allViews.forEach(v => v.classList.remove('memory-view-enter'));
       }, TRANSITION_DURATION);
     }, TRANSITION_DURATION);
@@ -1546,6 +1554,12 @@ export class MemoryPanelManager {
     const dialog = document.getElementById('relation-edit-dialog');
     if (!dialog) return;
 
+    // P0-UI-6.1：重置 UI 状态（防御性，处理 Escape 走 modal.ts hideModal 路径留下的残留）
+    const deleteBtnReset = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
+    const titleElReset = dialog.querySelector('.relation-edit-title') as HTMLElement | null;
+    if (deleteBtnReset) deleteBtnReset.classList.remove('hidden');
+    if (titleElReset) titleElReset.textContent = '编辑关系';
+
     // 填充当前值
     const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement | null;
     const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement | null;
@@ -1581,6 +1595,12 @@ export class MemoryPanelManager {
     const cancelBtn = dialog.querySelector('#relation-edit-cancel') as HTMLElement | null;
     if (cancelBtn) {
       cancelBtn.onclick = () => this.hideRelationEditDialog();
+    }
+
+    // P0-UI-6.1：背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
+    const overlay = dialog.querySelector('.relation-edit-dialog-overlay') as HTMLElement | null;
+    if (overlay) {
+      overlay.onclick = () => this.hideRelationEditDialog();
     }
 
     // 权重滑块联动
@@ -1634,6 +1654,12 @@ export class MemoryPanelManager {
     const cancelBtn = dialog.querySelector('#relation-edit-cancel') as HTMLElement | null;
     if (cancelBtn) {
       cancelBtn.onclick = () => this.hideRelationEditDialog();
+    }
+
+    // P0-UI-6.1：背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
+    const overlay = dialog.querySelector('.relation-edit-dialog-overlay') as HTMLElement | null;
+    if (overlay) {
+      overlay.onclick = () => this.hideRelationEditDialog();
     }
 
     // 权重滑块联动

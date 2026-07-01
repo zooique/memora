@@ -15,7 +15,7 @@
  */
 
 import type { UIManager } from '../ui.js';
-import { setButtonLoading, showPanelLoading } from '../helpers/domHelpers.js';
+import { setButtonLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 // P1 类型统一：感知数据 Payload 类型从 ipcListeners 导入，消除内联类型重复
@@ -26,25 +26,8 @@ import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth
 // 复用 sprite 共享时间常量，避免硬编码 24*60*60*1000
 import { MS_PER_DAY, DASHBOARD_DEBOUNCE_MS } from '../../../sprite/constants.js';
 
-/**
- * 获取当前搜索参数（组合搜索，模块级）
- *
- * 从搜索栏、source 筛选、排序下拉、时间范围下拉中读取当前值，
- * 统一返回 SearchParams 对象供搜索和列表加载共用。
- * DOM 元素缺失时返回默认值，避免测试环境报错。
- */
-function getSearchParams(): { query: string; source: string; sort: string; timeRange: string } {
-  const searchEl = document.getElementById('memory-search');
-  const sourceEl = document.getElementById('memory-filter-source');
-  const sortEl = document.getElementById('memory-sort-order');
-  const timeEl = document.getElementById('memory-time-range');
-  return {
-    query: (searchEl instanceof HTMLInputElement ? searchEl.value : '').trim(),
-    source: sourceEl instanceof HTMLSelectElement ? sourceEl.value : '',
-    sort: sortEl instanceof HTMLSelectElement ? sortEl.value : 'relevance',
-    timeRange: timeEl instanceof HTMLSelectElement ? timeEl.value : '',
-  };
-}
+// C-8：getSearchParams 已移至 UIManager.getMemorySearchParams()
+// 控制器层不再直接访问 DOM，通过 UIManager 门面读取搜索参数
 
 /**
  * 客户端排序 + 时间过滤（搜索增强，模块级）
@@ -143,9 +126,10 @@ export function createMemoryController(uiManager: UIManager) {
 
     // ─── 排序/时间范围变更：触发重新搜索或加载列表 ────────
     const triggerSearchOrReload = () => {
-      const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-      if (searchInput && searchInput.value.trim()) {
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+      // C-8-EXT：通过 UIManager 门面触发搜索框 input 事件，控制器不直接操作 DOM
+      const params = uiManager.getMemorySearchParams();
+      if (params.query) {
+        uiManager.triggerMemorySearchInput();
       } else {
         void loadMemoryList();
       }
@@ -198,7 +182,7 @@ export function createMemoryController(uiManager: UIManager) {
 
     // 搜索回调（组合搜索 — 关键词 + source + 排序 + 时间）
     uiManager.onMemorySearch(async (query: string) => {
-      const params = getSearchParams();
+      const params = uiManager.getMemorySearchParams();
       if (!query) {
         // 空搜索：加载全部（保留 source 筛选），清除图谱高亮
         uiManager.clearGraphHighlights();
@@ -298,10 +282,9 @@ export function createMemoryController(uiManager: UIManager) {
     // P2-FLOW-08 编辑记忆：复用 MEMORIES_ADD 通道（底层 upsert 语义）
     // id 参数未使用（编辑时通过 dataset 获取 source/name），加下划线前缀
     uiManager.onMemoryEdit(async (_id: string, content: string) => {
-      // 从详情弹窗 dataset 获取 source 和 name（编辑时不改变这两个字段）
-      const detailModal = document.getElementById('memory-detail-modal');
-      const source = detailModal?.dataset.memorySource ?? '';
-      const name = detailModal?.dataset.memoryName ?? '';
+      // C-8-EXT：通过 UIManager 门面读取详情弹窗 dataset，控制器不直接访问 DOM
+      const source = uiManager.getMemoryDetailMeta('memorySource');
+      const name = uiManager.getMemoryDetailMeta('memoryName');
       if (!source || !name) return;
 
       setButtonLoading('btn-memory-edit-save', true, '保存中...');
@@ -459,12 +442,11 @@ export function createMemoryController(uiManager: UIManager) {
 
   /** 加载记忆列表（支持组合筛选 + 客户端排序/时间过滤） */
   async function loadMemoryList(): Promise<void> {
-    // FD-02 加载态：在 IPC 调用前显示加载指示器
-    const listEl = document.getElementById('memory-list');
-    if (listEl) showPanelLoading(listEl, '加载记忆列表...');
+    // C-8-EXT：通过 UIManager 门面显示加载态，控制器不直接操作 DOM
+    uiManager.setMemoryListState('loading');
 
     try {
-      const params = getSearchParams();
+      const params = uiManager.getMemorySearchParams();
       const { memories } = await window.electronAPI.listMemories(
         params.source ? { source: params.source } : {},
       );
@@ -477,10 +459,8 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.highlightGraphNodes(null);
     } catch (error) {
       reportError('loadMemoryList', error);
-      // 加载失败时渲染错误状态（含重试按钮，点击触发 onReloadMemoryList 回调）
-      if (listEl) {
-        uiManager.showMemoryListError(listEl);
-      }
+      // C-8-EXT：通过 UIManager 门面显示错误状态（内部查找 #memory-list）
+      uiManager.setMemoryListState('error');
       uiManager.showPanelError('memory', '加载记忆列表失败，请检查连接后重试', () => loadMemoryList());
     }
   }

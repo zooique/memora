@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 角色面板控制器测试
  *
  * @vitest-environment jsdom
@@ -30,7 +30,7 @@
  * - 不依赖真实 DOM（控制器层纯逻辑，UI 委托给 uiManager）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createPersonaController } from '../../../electron/renderer/controllers/personaPanelController.js';
+import { createPersonaController } from '../../../electron/renderer/controllers/personaController.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── 类型定义 ─────────────────────────────────────────────
@@ -69,6 +69,8 @@ function createMockUiManager(): {
     renderPersonaDropdown: vi.fn(),
     updatePersonaModeBadge: vi.fn(),
     setPersonaMode: vi.fn(),
+    // C-8：头像更新委托给 UIManager，控制器不直接操作 DOM
+    updateSidebarAvatarIcon: vi.fn(),
   };
   const uiManager = {
     onPersonaSwitch: vi.fn((cb: (name: string) => void) => {
@@ -82,6 +84,7 @@ function createMockUiManager(): {
     renderPersonaDropdown: spies.renderPersonaDropdown,
     updatePersonaModeBadge: spies.updatePersonaModeBadge,
     setPersonaMode: spies.setPersonaMode,
+    updateSidebarAvatarIcon: spies.updateSidebarAvatarIcon,
   } as unknown as UIManager;
   return { uiManager, captured, spies };
 }
@@ -165,6 +168,8 @@ describe('createPersonaController', () => {
 
       expect(window.electronAPI.switchPersona).toHaveBeenCalledWith('教师');
       expect(spies.updateActivePersona).toHaveBeenCalledWith('教师');
+      // C-8：头像更新应委托给 UIManager，控制器不直接操作 DOM
+      expect(spies.updateSidebarAvatarIcon).toHaveBeenCalledWith('#icon-fairy');
       expect(spies.showToast).toHaveBeenCalledWith('已切换到角色：教师', 'success');
     });
 
@@ -243,6 +248,9 @@ describe('createPersonaController', () => {
       await captured.personaModeChangeCb!('manual');
 
       expect(spies.showToast).toHaveBeenCalledWith('角色匹配模式已切换为：手动', 'success');
+      // C-4：成功后应主动同步 badge + 单选按钮状态
+      expect(spies.updatePersonaModeBadge).toHaveBeenCalledWith('manual');
+      expect(spies.setPersonaMode).toHaveBeenCalledWith('manual');
     });
 
     it('setPersonaMode set=false 应 toast error', async () => {
@@ -254,6 +262,9 @@ describe('createPersonaController', () => {
       await captured.personaModeChangeCb!('manual');
 
       expect(spies.showToast).toHaveBeenCalledWith('角色匹配模式切换失败', 'error');
+      // C-4：IPC 拒绝切换时应回滚 UI 到旧模式（manual → 旧模式 auto）
+      expect(spies.updatePersonaModeBadge).toHaveBeenCalledWith('auto');
+      expect(spies.setPersonaMode).toHaveBeenCalledWith('auto');
     });
 
     it('setPersonaMode 异常应走 handleIpcError（showToast error）', async () => {
@@ -267,6 +278,9 @@ describe('createPersonaController', () => {
       await captured.personaModeChangeCb!('auto');
 
       expect(spies.showToast).toHaveBeenCalledWith('设置角色模式失败：IPC 失败', 'error');
+      // C-4：IPC 异常时应回滚 UI 到旧模式（auto → 旧模式 manual）
+      expect(spies.updatePersonaModeBadge).toHaveBeenCalledWith('manual');
+      expect(spies.setPersonaMode).toHaveBeenCalledWith('manual');
     });
   });
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Memora 精灵 — 对话面板样式
  *
  * 包含：对话工具栏、主动提示 banner、消息气泡、输入区、打字指示器、
@@ -1033,10 +1033,10 @@
   display: flex;
   gap: 10px;
   max-width: 80%;
-  /* UI-AUDIT-P1-2.7: content-visibility 让不可见消息延迟渲染，长对话性能优化 */
-  content-visibility: auto;
-  /* contain-in-size 确保 content-visibility 正确计算元素尺寸 */
-  contain-intrinsic-size: auto 60px;
+  /* P2-UI-2.2：移除 content-visibility: auto + contain-intrinsic-size */
+  /* 原方案导致滚动条位置跳动（元素未渲染时预估 60px，渲染后实际高度差异大） */
+  /* 用 contain: layout style paint 保留部分性能优化（布局/样式/绘制隔离）但不延迟渲染 */
+  contain: layout style paint;
   /* UX-PP-11 合并 slideIn/fadeIn 为统一的 fadeIn 动画 */
   animation: fadeIn var(--transition-base) ease-out;
 }

@@ -15,6 +15,8 @@
 import type { UIManager } from '../ui.js';
 // Toast 时长常量（第一轮 P1-B 遗漏 import 修复）
 import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
+// C-2：事件监听器纳入 EventTracker 统一管理，cleanup 时统一移除，避免内存泄漏
+import { EventTracker } from '../helpers/eventTracker.js';
 
 /** 命令项定义 */
 export interface Command {
@@ -257,6 +259,15 @@ export class CommandPaletteManager {
   private inputEl: HTMLInputElement | null = null;
   /** 搜索结果容器 */
   private resultsEl: HTMLElement | null = null;
+  /**
+   * C-2：事件监听器跟踪器
+   *
+   * 原先 init() 中用裸 addEventListener 注册了 4 个监听器（遮罩点击、输入、
+   * 键盘导航、全局 Ctrl+K），均未纳入统一管理。beforeunload 触发 UIManager.cleanup()
+   * 时不会清理这些监听器，页面重新加载后会累积，导致同一事件触发多次。
+   * 改用 EventTracker 后，cleanup() 时统一移除所有监听器。
+   */
+  private events = new EventTracker();
 
   constructor(uiManager: UIManager) {
     this.uiManager = uiManager;
@@ -274,26 +285,41 @@ export class CommandPaletteManager {
     }
 
     // 点击遮罩层关闭
-    this.paletteEl.addEventListener('click', (e) => {
+    this.events.addEventListener(this.paletteEl, 'click', (e) => {
       if (e.target === this.paletteEl) {
         this.close();
       }
     });
 
     // 输入时实时搜索
-    this.inputEl.addEventListener('input', () => {
+    this.events.addEventListener(this.inputEl, 'input', () => {
       this.search(this.inputEl!.value);
     });
 
     // 键盘导航
-    this.inputEl.addEventListener('keydown', (e) => {
-      this.handleKeydown(e);
+    this.events.addEventListener(this.inputEl, 'keydown', (e) => {
+      this.handleKeydown(e as KeyboardEvent);
     });
 
     // 注册全局快捷键 Ctrl+K
-    document.addEventListener('keydown', (e) => {
-      this.handleGlobalKeydown(e);
+    this.events.addEventListener(document, 'keydown', (e) => {
+      this.handleGlobalKeydown(e as KeyboardEvent);
     });
+  }
+
+  /**
+   * C-2：清理所有事件监听器
+   *
+   * 由 UIManager.cleanup() 统一调用，确保 beforeunload 时移除全局 keydown
+   * 监听器，避免页面重新加载后监听器累积导致同一事件触发多次。
+   */
+  cleanup(): void {
+    this.events.cleanup();
+    // 关闭面板状态，恢复 body 滚动（防御性：cleanup 时若面板仍打开）
+    if (this.isOpen) {
+      document.body.style.overflow = '';
+      this.isOpen = false;
+    }
   }
 
   /** 重新加载命令列表（角色列表变化时调用） */

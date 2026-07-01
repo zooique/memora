@@ -74,6 +74,11 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidContent(data.content)) {
         return { id: '' };
       }
+      // SEC-P1-001：source/name 校验（与 MEMORIES_SHOW/DELETE 的 isValidId 风格一致）
+      // 防止恶意渲染进程传入空字符串/超长字符串/非字符串导致内核异常
+      if (!isValidId(data.source) || !isValidId(data.name)) {
+        return { id: '' };
+      }
       return { id: ctx.sprite.upsertMemory(data.source, data.name, data.content) };
     }),
   );

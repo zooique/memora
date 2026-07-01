@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 渲染进程入口 — 协调器
  *
  * 职责：
@@ -15,13 +15,12 @@
 
 import { UIManager } from './ui.js';
 import { createSessionController } from './controllers/sessionController.js';
-import { createMemoryController } from './controllers/memoryPanelController.js';
-import { createPersonaController } from './controllers/personaPanelController.js';
+import { createMemoryController } from './controllers/memoryController.js';
+import { createPersonaController } from './controllers/personaController.js';
 import { createSettingsController } from './controllers/settingsController.js';
-import { CommandPaletteManager } from './panels/commandPaletteManager.js';
 import { initIpcListeners } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
-import { getLocalDate, MS_PER_HOUR, MS_PER_DAY } from '../../sprite/constants.js';
+import { getLocalDate, MS_PER_HOUR, MS_PER_DAY, TOAST_LONG_MS } from '../../sprite/constants.js';
 import {
   createSilentRecoveryScheduler,
   showAgentInitError,
@@ -56,7 +55,13 @@ const SILENT_RECOVERY_MS = MS_PER_HOUR;
 
 // ─── 初始化 ────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', async () => {
+/**
+ * P1-UI-8.2：渲染进程启动主流程（提取为独立 async 函数，便于统一捕获异常）
+ *
+ * 原内联在 DOMContentLoaded async 回调中，异常会变成 unhandled rejection 导致 UI 空白。
+ * 提取后由 DOMContentLoaded 监听器调用，并通过 .catch() 兜底显示错误提示。
+ */
+async function bootstrapRenderer(): Promise<void> {
   // 初始化 UI 管理器
   State.uiManager = new UIManager();
 
@@ -71,25 +76,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupBusinessLogic(State.uiManager, sessionController);
   memoryController.setupMemoryPanel();
   personaController.setupPersonaSelector();
+  // P1-UI-4.2：设置面板 setup 提前到与其他面板同一位置，避免前置异常导致设置面板无事件监听
+  // setupSettingsPanel 仅注册 UI 事件回调（onConfigSave 等），不依赖 setSilentRecoveryCallback
+  settingsController.setupSettingsPanel();
 
-  // 面板切换时刷新数据：切换到记忆面板时刷新记忆列表
+  // 面板切换时刷新数据
   State.uiManager.onPanelSwitch((panel) => {
     if (panel === 'memories') {
+      // 切换到记忆面板时刷新记忆列表
       void memoryController.loadMemoryList();
+    } else if (panel === 'settings') {
+      // P2-UI-1.2：切换到设置面板时重新加载配置表单，确保与主进程数据一致
+      // 场景：用户在 chat 通过命令面板/角色切换等途径变更了配置，切回 settings
+      //       时表单仍显示旧数据，保存会覆盖主进程的最新配置。
+      // 安全性：switchPanel 已在切走 settings 时检查 dirty（有未保存修改会提示用户），
+      //         切到 settings 时 dirty 必为 false，此处刷新不会覆盖用户编辑。
+      void settingsController.loadConfig();
+      void settingsController.loadLlmConfig();
     }
   });
 
-  // 初始化快捷命令面板（Ctrl+K 触发）
-  const commandPalette = new CommandPaletteManager(State.uiManager);
-  commandPalette.init();
-
-  // 标题栏命令面板入口按钮点击
-  const cmdkBtn = document.getElementById('titlebar-cmdk');
-  if (cmdkBtn) {
-    cmdkBtn.addEventListener('click', () => {
-      commandPalette.open();
-    });
-  }
+  // C-2：CommandPaletteManager 已纳入 UIManager 组合体系（构造函数创建 + init + cleanup）
+  // 不再在 renderer.ts 中单独 new，避免生命周期脱管导致的全局 keydown 监听器泄漏
 
   // ─── 初始化辅助函数（从 initHelpers.ts 导入，闭包访问 State.uiManager/controllers） ───
 
@@ -105,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // QC-STATE-01 改用控制器方法替代原模块级导出函数
   settingsController.setSilentRecoveryCallback(wrappedSchedule);
 
-  settingsController.setupSettingsPanel();
+  // P1-UI-4.2：setupSettingsPanel 已提前到第 82 行与其他面板 setup 同一位置
 
   // 提前赋值 State.onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
   State.onAgentReadyCallback = () => {
@@ -127,6 +135,62 @@ document.addEventListener('DOMContentLoaded', async () => {
       State.uiManager.showOnboardingDialog();
     }
   };
+
+  // P1-UI-7.1：IPC 监听器提前注册——在 controllers 创建 + onAgentReadyCallback 赋值后立即注册，
+  // 避免主进程在 DOMContentLoaded 中段（主题读取/回调注册期间）推送的事件丢失。
+  // 所有回调依赖（memoryController/settingsController/sessionController）均已在上文创建。
+  initIpcListeners(State.uiManager, {
+    // 精灵事件：记忆被注意 / 洞察获得 → 仪表盘计数 +1 动画 + 刷新仪表盘
+    // QC-PERF-01：事件密集触发时使用防抖版 loadDashboard，避免频繁 IPC + DOM 操作
+    onMemoryNoticed: () => {
+      memoryController.pulseCounter('memory-count');
+      void memoryController.loadDashboardDebounced();
+    },
+    onInsightGained: () => {
+      memoryController.pulseCounter('insight-count');
+      void memoryController.loadDashboardDebounced();
+    },
+    // Agent 就绪：加载初始数据 + 切换到对话面板
+    onAgentReady: () => {
+      // IPC 事件到达时取消挂起的重试定时器，避免两条路径都触发
+      if (State.initRetryTimer !== null) {
+        window.clearTimeout(State.initRetryTimer);
+        State.initRetryTimer = null;
+      }
+      // State.onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
+      State.onAgentReadyCallback?.();
+    },
+    // 对话结束：立即刷新仪表盘获取最新 LLM 指标，延迟二次刷新等待异步归档完成
+    onConversationEnd: () => {
+      // 立即刷新：LLM 调用次数、token 数、工具使用等指标在对话结束时已确定
+      void memoryController.loadDashboard();
+      // 延迟 1s 二次刷新：postProcess 中的记忆归档是异步 fire-and-forget 的，
+      // 等待用户画像归档、Insight 提取等后台任务完成后再刷新一次
+      window.setTimeout(() => {
+        void memoryController.loadDashboard();
+      }, 1000);
+    },
+    // 情感基调更新 → 仪表盘四维进度条
+    onAffectUpdated: (payload) => {
+      memoryController.updateAffectDisplay(payload);
+    },
+    // Phase 3：默契度更新 → 仪表盘默契度卡片
+    onRapportUpdated: (payload) => {
+      memoryController.updateRapportDisplay(payload);
+    },
+    // Phase 4：对话上下文更新 → 仪表盘上下文卡片
+    onContextUpdated: (payload) => {
+      memoryController.updateContextDisplay(payload);
+    },
+    // 用户模式更新 → 洞察面板
+    onPatternsUpdated: (payload) => {
+      memoryController.updatePatternsDisplay(payload);
+    },
+    // H3：作品投影更新 → 刷新作品投影面板
+    onWorkProjectionUpdated: (_payload) => {
+      void settingsController.loadWorkProjections();
+    },
+  });
 
   // UX-FD-12 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存
   // 内联脚本（index.html / float.html）已通过 localStorage 设置了 data-theme 属性（避免页面闪烁），
@@ -188,59 +252,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     window.electronAPI.sendUserInput(State.lastUserInput);
   };
 
-  // 初始化 IPC 监听器（统一注册，通过回调解耦业务逻辑）
-  initIpcListeners(State.uiManager, {
-    // 精灵事件：记忆被注意 / 洞察获得 → 仪表盘计数 +1 动画 + 刷新仪表盘
-    // QC-PERF-01：事件密集触发时使用防抖版 loadDashboard，避免频繁 IPC + DOM 操作
-    onMemoryNoticed: () => {
-      memoryController.pulseCounter('memory-count');
-      void memoryController.loadDashboardDebounced();
-    },
-    onInsightGained: () => {
-      memoryController.pulseCounter('insight-count');
-      void memoryController.loadDashboardDebounced();
-    },
-    // Agent 就绪：加载初始数据 + 切换到对话面板
-    onAgentReady: () => {
-      // IPC 事件到达时取消挂起的重试定时器，避免两条路径都触发
-      if (State.initRetryTimer !== null) {
-        window.clearTimeout(State.initRetryTimer);
-        State.initRetryTimer = null;
-      }
-      // State.onAgentReadyCallback 已在初始化阶段提前赋值，直接调用即可
-      State.onAgentReadyCallback?.();
-    },
-    // 对话结束：立即刷新仪表盘获取最新 LLM 指标，延迟二次刷新等待异步归档完成
-    onConversationEnd: () => {
-      // 立即刷新：LLM 调用次数、token 数、工具使用等指标在对话结束时已确定
-      void memoryController.loadDashboard();
-      // 延迟 1s 二次刷新：postProcess 中的记忆归档是异步 fire-and-forget 的，
-      // 等待用户画像归档、Insight 提取等后台任务完成后再刷新一次
-      window.setTimeout(() => {
-        void memoryController.loadDashboard();
-      }, 1000);
-    },
-    // 情感基调更新 → 仪表盘四维进度条
-    onAffectUpdated: (payload) => {
-      memoryController.updateAffectDisplay(payload);
-    },
-    // Phase 3：默契度更新 → 仪表盘默契度卡片
-    onRapportUpdated: (payload) => {
-      memoryController.updateRapportDisplay(payload);
-    },
-    // Phase 4：对话上下文更新 → 仪表盘上下文卡片
-    onContextUpdated: (payload) => {
-      memoryController.updateContextDisplay(payload);
-    },
-    // 用户模式更新 → 洞察面板
-    onPatternsUpdated: (payload) => {
-      memoryController.updatePatternsDisplay(payload);
-    },
-    // H3：作品投影更新 → 刷新作品投影面板
-    onWorkProjectionUpdated: (_payload) => {
-      void settingsController.loadWorkProjections();
-    },
-  });
+  // P1-UI-7.1：IPC 监听器已提前到 onAgentReadyCallback 赋值后注册（见上文），此处无需重复注册
 
   // UX-PP-05 注册气泡内错误重试回调（复用 retryLastUserInput，供错误气泡内"重试"按钮调用）
   // UX-PP-13 后 Toast 不再携带重试按钮，气泡内重试为唯一主通道
@@ -322,12 +334,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 初始化 dropzone 事件监听（dragover/drop/click/change）
   setupSkillDropzone(State.uiManager);
 
-  // 加载 LLM 配置到设置面板（无论 Agent 是否就绪都加载）
-  await settingsController.loadLlmConfig();
-
-  // 检查 Agent 是否就绪
+  // C-7：loadLlmConfig 与 getAgentStatus 无依赖关系，并行执行减少首屏阻塞
+  // loadLlmConfig 加载 LLM 配置到设置面板表单；getAgentStatus 查询 Agent 是否就绪
+  // 两者并行完成后，getAgentStatus 的后续逻辑根据 ready/error 分支处理
+  // 两者均在 try 内，getAgentStatus 通道异常由 catch 统一降级为首次使用引导
   try {
-    const { ready, error } = await window.electronAPI.getAgentStatus();
+    const [, agentStatusResult] = await Promise.all([
+      settingsController.loadLlmConfig(),
+      window.electronAPI.getAgentStatus(),
+    ]);
+    const { ready, error } = agentStatusResult;
+
     // P3-FLOW-10 更新设置面板 Agent 连接状态指示器
     settingsController.updateAgentStatus(ready ? 'ready' : 'error', error ?? undefined);
     if (!ready) {
@@ -418,6 +435,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (State.uiManager.shouldShowOnboarding()) {
     State.uiManager.showOnboardingDialog();
   }
+}
+
+// P1-UI-8.2：DOMContentLoaded 调用 bootstrapRenderer，统一捕获初始化异常避免 UI 空白
+document.addEventListener('DOMContentLoaded', () => {
+  bootstrapRenderer().catch((err: unknown) => {
+    reportError('bootstrapRenderer', err);
+    // UIManager 已构造时用其 toast 展示；未构造时 P0-8.1 已渲染错误卡片到 document.body
+    if (State.uiManager) {
+      try {
+        State.uiManager.showToast('应用初始化失败，请重启或查看日志', 'error', TOAST_LONG_MS);
+      } catch {
+        // UIManager 半初始化，忽略二次错误（P0-8.1 错误卡片已显示）
+      }
+    }
+  });
 });
 
 // ─── 清理资源 ─────────────────────────────────────────────

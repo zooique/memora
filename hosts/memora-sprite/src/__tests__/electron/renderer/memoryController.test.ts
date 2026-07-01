@@ -17,7 +17,7 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { formatTokenCount } from '../../../electron/renderer/panels/dashboardPanelManager.js';
-import { createMemoryController } from '../../../electron/renderer/controllers/memoryPanelController.js';
+import { createMemoryController } from '../../../electron/renderer/controllers/memoryController.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
 
 // ─── 纯函数测试 ───────────────────────────────────────────
@@ -121,6 +121,8 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     updateContextDisplay: vi.fn(),
     updatePatternsDisplay: vi.fn(),
     updateNarrative: vi.fn(),
+    // C-8：控制器通过 UIManager 门面读取搜索参数，不再直接访问 DOM
+    getMemorySearchParams: vi.fn(() => ({ query: '', source: '', sort: 'relevance', timeRange: '' })),
   };
   // 使用类型断言避免完整实现 UIManager 的所有方法
   return spies as unknown as UIManager & { triggerMemoryRecall: ReturnType<typeof vi.fn> };

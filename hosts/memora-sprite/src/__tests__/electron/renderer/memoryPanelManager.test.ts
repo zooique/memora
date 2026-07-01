@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆面板管理器纯函数测试
  *
  * 覆盖范围：
@@ -8,7 +8,7 @@
  * MemoryPanelManager 类重度依赖 DOM + EventTracker + host 回调，
  * 整体测试需完整 mock，留待后续按需补充。
  *
- * 对齐 memoryPanelController.formatTokenCount 提取模式。
+ * 对齐 dashboardPanelManager.formatTokenCount 提取模式。
  *
  * 纯逻辑测试，无 JSDOM 依赖。
  */

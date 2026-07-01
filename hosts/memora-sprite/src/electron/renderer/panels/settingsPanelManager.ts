@@ -171,6 +171,62 @@ export class SettingsPanelManager {
     this.cfgShortcutToggleWindow = getOptionalElement('cfg-shortcut-toggle-window', 'input');
     this.cfgShortcutQuickRecord = getOptionalElement('cfg-shortcut-quick-record', 'input');
     this.cfgShortcutRecallMemory = getOptionalElement('cfg-shortcut-recall-memory', 'input');
+
+    // P2-UI-4.4：构造完成后统一校验所有字段，HTML ID 拼错时一次性 console.error 报告
+    // 避免静默降级导致用户配置静默失效（保存时表单值为 undefined，主进程收到空配置）
+    this.validateSettingsElements();
+  }
+
+  /**
+   * P2-UI-4.4：校验设置面板所有可选元素是否成功获取
+   *
+   * 收集所有 null 字段，统一 console.error 报告（包含字段名和期望 ID），
+   * 让开发者快速定位 HTML 与 TS 不同步问题。
+   *
+   * 不抛异常（设置面板是非核心功能，缺失时降级而非阻断整个 UI），
+   * 但通过显式错误日志让问题在开发阶段被发现，避免生产环境静默失效。
+   */
+  private validateSettingsElements(): void {
+    // 字段映射：[字段名, 元素引用, 期望 ID]
+    const fields: Array<[string, HTMLElement | null, string]> = [
+      ['cfgLlmPreset', this.cfgLlmPreset, 'cfg-llm-preset'],
+      ['cfgLlmProvider', this.cfgLlmProvider, 'cfg-llm-provider'],
+      ['cfgLlmModel', this.cfgLlmModel, 'cfg-llm-model'],
+      ['cfgLlmBaseUrl', this.cfgLlmBaseUrl, 'cfg-llm-base-url'],
+      ['cfgLlmApiKey', this.cfgLlmApiKey, 'cfg-llm-api-key'],
+      ['cfgLlmTemperature', this.cfgLlmTemperature, 'cfg-llm-temperature'],
+      ['cfgBgEnabled', this.cfgBgEnabled, 'cfg-bg-enabled'],
+      ['cfgBgProvider', this.cfgBgProvider, 'cfg-bg-provider'],
+      ['cfgBgModel', this.cfgBgModel, 'cfg-bg-model'],
+      ['cfgBgBaseUrl', this.cfgBgBaseUrl, 'cfg-bg-base-url'],
+      ['cfgBgApiKey', this.cfgBgApiKey, 'cfg-bg-api-key'],
+      ['cfgBgToggleKey', this.cfgBgToggleKey, 'btn-toggle-bg-key'],
+      ['cfgEmbEnabled', this.cfgEmbEnabled, 'cfg-emb-enabled'],
+      ['cfgEmbModel', this.cfgEmbModel, 'cfg-emb-model'],
+      ['cfgEmbBaseUrl', this.cfgEmbBaseUrl, 'cfg-emb-base-url'],
+      ['cfgEmbApiKey', this.cfgEmbApiKey, 'cfg-emb-api-key'],
+      ['cfgSilent', this.cfgSilent, 'cfg-silent'],
+      ['cfgThreshold', this.cfgThreshold, 'cfg-threshold'],
+      ['cfgCooldown', this.cfgCooldown, 'cfg-cooldown'],
+      ['cfgInterval', this.cfgInterval, 'cfg-interval'],
+      ['cfgWatcherEnabled', this.cfgWatcherEnabled, 'cfg-watcher-enabled'],
+      ['cfgWatcherPaths', this.cfgWatcherPaths, 'cfg-watcher-paths'],
+      ['cfgWatcherDebounce', this.cfgWatcherDebounce, 'cfg-watcher-debounce'],
+      ['cfgDefaultPersona', this.cfgDefaultPersona, 'cfg-default-persona'],
+      ['cfgFocusProject', this.cfgFocusProject, 'cfg-focus-project'],
+      ['cfgShortcutsEnabled', this.cfgShortcutsEnabled, 'cfg-shortcuts-enabled'],
+      ['cfgShortcutToggleWindow', this.cfgShortcutToggleWindow, 'cfg-shortcut-toggle-window'],
+      ['cfgShortcutQuickRecord', this.cfgShortcutQuickRecord, 'cfg-shortcut-quick-record'],
+      ['cfgShortcutRecallMemory', this.cfgShortcutRecallMemory, 'cfg-shortcut-recall-memory'],
+    ];
+    // 收集缺失字段
+    const missing = fields.filter(([, el]) => el === null).map(([name, , id]) => `${name} (#${id})`);
+    if (missing.length > 0) {
+      // 一次性报告所有缺失字段，便于开发者一次性定位
+      console.error(
+        `[SettingsPanelManager] ${missing.length} 个设置面板字段未找到，相关配置将静默失效：\n  - ${missing.join('\n  - ')}\n请检查 index.html 中对应的 ID 是否拼写正确或被移除。`,
+      );
+    }
   }
 
   // ─── 事件监听器管理 ─────────────────────────────────────

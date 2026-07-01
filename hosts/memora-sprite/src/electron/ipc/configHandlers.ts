@@ -223,7 +223,14 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 设置角色匹配模式 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE, async (_event, mode: 'auto' | 'manual') =>
-    safeHandle('设置角色模式失败', { set: false }, () => ({ set: ctx.sprite.setPersonaMode(mode) })),
+    safeHandle('设置角色模式失败', { set: false }, () => {
+      // SEC-P2-002：运行期校验（TS 类型在编译期擦除，恶意渲染进程可传任意值）
+      // 仅允许 'auto' / 'manual'，其他值一律拒绝
+      if (mode !== 'auto' && mode !== 'manual') {
+        return { set: false };
+      }
+      return { set: ctx.sprite.setPersonaMode(mode) };
+    }),
   );
 
   /** IX-07 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */

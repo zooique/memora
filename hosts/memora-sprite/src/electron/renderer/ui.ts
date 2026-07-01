@@ -1,4 +1,4 @@
-﻿/**
+/**
  * UI 管理器 — 渲染进程 UI 门面
  *
  * 职责：
@@ -47,8 +47,18 @@ import type {
   PatternsPayload,
 } from './ipcListeners.js';
 import { PersonaPanelManager } from './panels/personaPanelManager.js';
-// 精灵公共常量（时间常量、Toast 时长，跨进程共享 DRY）
-import { MS_PER_DAY, TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../sprite/constants.js';
+// C-2：CommandPaletteManager 纳入 UIManager 组合体系，统一生命周期管理
+import { CommandPaletteManager } from './panels/commandPaletteManager.js';
+// C-5：面板错误横幅拆分为独立 Manager
+import { PanelErrorBannerManager } from './panels/panelErrorBannerManager.js';
+// C-5-2：剪贴板三重保护 UI 联动拆分为独立 Manager
+import { ClipboardManager } from './panels/clipboardManager.js';
+// C-5-3：日期导航拆分为独立 Manager
+import { DateNavManager } from './panels/dateNavManager.js';
+// C-5-4：技能拖入安装拆分为独立 Manager
+import { SkillDropManager } from './panels/skillDropManager.js';
+// 精灵公共常量（Toast 时长已迁移至各 Manager；UIManager 不再直接使用时长常量）
+// C-5-4：TOAST_*_MS 已迁移到 ClipboardManager / SkillDropManager
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
   Message,
@@ -90,6 +100,51 @@ export type {
 
 // ─── 工具函数（formatTimeAgo、setButtonLoading）见 domHelpers.ts ───
 
+/**
+ * P0-UI-8.1：渲染 UIManager 初始化失败错误提示到 document.body
+ *
+ * 在 UIManager 构造函数预检核心元素失败时调用，独立于 UIManager 自身，
+ * 避免半初始化状态下访问 null 引发的二次错误。
+ *
+ * 显示内容：醒目红色错误卡片 + 错误信息 + 排查建议（HTML 与 TS 不同步、构建未刷新等）。
+ * 错误仍然会 rethrow，让上层（renderer.ts DOMContentLoaded）的 catch 也能感知。
+ *
+ * @param err 构造函数抛出的错误（通常是 MemoraError INITIALIZATION_FAILED）
+ */
+function renderInitFailureToBody(err: unknown): void {
+  // 提取错误信息（MemoraError 有 message 字段，普通 Error 同样）
+  const errorMessage = err instanceof Error ? err.message : String(err);
+  // 构建错误提示卡片（inline style 避免依赖 CSS 文件加载状态）
+  const errorCard = document.createElement('div');
+  errorCard.style.cssText = [
+    'position:fixed', 'top:50%', 'left:50%', 'transform:translate(-50%,-50%)',
+    'max-width:560px', 'width:90%', 'padding:24px 28px',
+    'background:#fef2f2', 'border:1px solid #dc2626', 'border-radius:8px',
+    'color:#7f1d1d', 'font-family:system-ui,sans-serif', 'font-size:14px',
+    'line-height:1.6', 'box-shadow:0 8px 32px rgba(220,38,38,0.2)',
+    'z-index:9999',
+  ].join(';');
+  // 标题
+  const title = document.createElement('h2');
+  title.textContent = 'UI 初始化失败';
+  title.style.cssText = 'margin:0 0 12px 0;font-size:18px;color:#991b1b;';
+  errorCard.appendChild(title);
+  // 错误信息
+  const msg = document.createElement('p');
+  msg.textContent = errorMessage;
+  msg.style.cssText = 'margin:0 0 16px 0;font-family:ui-monospace,monospace;background:#fee2e2;padding:8px 12px;border-radius:4px;word-break:break-all;';
+  errorCard.appendChild(msg);
+  // 排查建议
+  const hints = document.createElement('p');
+  hints.innerHTML = '<strong>可能原因：</strong><br>• HTML 元素 ID 缺失或拼写错误（开发阶段引入）<br>• 构建产物未刷新（请尝试重启开发服务器或重新构建）<br>• index.html 与 ui.ts 不同步（最近修改未生效）';
+  hints.style.cssText = 'margin:0;font-size:13px;color:#7f1d1d;';
+  errorCard.appendChild(hints);
+  // 挂载到 body（清空已有错误卡片，避免重复）
+  document.querySelectorAll('#ui-init-failure-card').forEach((el) => el.remove());
+  errorCard.id = 'ui-init-failure-card';
+  document.body.appendChild(errorCard);
+}
+
 // ─── UI 管理器类 ─────────────────────────────────────────
 
 export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost {
@@ -128,6 +183,49 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private dashboardPanel: DashboardPanelManager;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
   private personaPanel: PersonaPanelManager;
+  /**
+   * C-2：快捷命令面板管理器（Ctrl+K）
+   *
+   * 原先在 renderer.ts 中 new + init，未纳入 UIManager 持有，cleanup() 不会
+   * 清理其全局 keydown 监听器，页面重新加载后监听器累积导致 Ctrl+K 触发多次。
+   * 纳入组合体系后，与其他 14 个子管理器同模式：构造函数创建、cleanup 统一清理。
+   */
+  private commandPaletteManager: CommandPaletteManager;
+  /**
+   * C-5：面板错误横幅管理器
+   *
+   * 从 UIManager 拆分，统一管理 settings / memory / chat 三个面板的错误横幅。
+   * 原先 panelErrorRetryCallbacks Map + initPanelErrorRetryButtons + show/hide 方法
+   * 都内联在 UIManager 中（约 70 行），拆分后 UIManager 仅保留薄委托。
+   */
+  private panelErrorBannerManager: PanelErrorBannerManager;
+  /**
+   * C-5-2：剪贴板三重保护面板管理器
+   *
+   * 从 UIManager 拆分，统一管理"剪贴板三重保护"的 UI 联动。
+   * 原先 showClipboardChangedToast + showClipboardConfirmDialog 两个方法
+   * 内联在 UIManager 中（约 61 行），拆分后 UIManager 仅保留薄委托。
+   * 依赖注入 ToastManager / ModalManager 实例，与 UIManager 共享同一引用。
+   */
+  private clipboardManager: ClipboardManager;
+  /**
+   * C-5-3：日期导航面板管理器
+   *
+   * 从 UIManager 拆分，统一管理"日期导航"功能的 UI 联动。
+   * 原先 dateNavJumpCallback/dateNavLoadCallback 字段 + 5 个方法 + 3 个事件监听器
+   * 内联在 UIManager 中（约 99 行），拆分后 UIManager 仅保留薄委托。
+   * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
+   */
+  private dateNavManager: DateNavManager;
+  /**
+   * C-5-4：技能拖入安装面板管理器
+   *
+   * 从 UIManager 拆分，统一管理"技能文件拖入安装"功能的 UI 联动。
+   * 原先 skillInstalledCallback 字段 + 3 个公共方法 + 3 个私有方法
+   * 内联在 UIManager 中（约 150 行），拆分后 UIManager 仅保留薄委托。
+   * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
+   */
+  private skillDropManager: SkillDropManager;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -142,6 +240,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
+  /** P2-UI-2.1：输入区 ResizeObserver，监听 #input-area 高度变化动态更新 --input-area-height CSS 变量 */
+  private inputAreaResizeObserver: ResizeObserver | null = null;
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -157,20 +257,27 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private events = new EventTracker();
 
   // ─── UI 状态字段 ────────────────────────────────────────
-  /** FD-A2 面板错误横幅重试回调映射（key: panelId，如 'settings'/'memory'/'chat'） */
-  private panelErrorRetryCallbacks = new Map<string, () => void>();
+  // C-5：panelErrorRetryCallbacks 已移至 PanelErrorBannerManager
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
   /** 非系统消息计数（显示在对话工具栏副标题，P2-009：移至 state 字段区） */
   private messageCount = 0;
 
   constructor() {
-    // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
-    this.messagesEl = getRequiredElement('messages', 'div');
-    this.inputEl = getRequiredElement('input', 'textarea');
-    this.btnSend = getRequiredElement('btn-send', 'button');
-    // B2：停止生成按钮（独立元素，流式态时通过 .visible 类显示）
-    this.btnStop = getRequiredElement('btn-stop', 'button');
+    // P0-UI-8.1：核心元素预检——缺失时先渲染错误提示到 document.body，再 rethrow。
+    // 保留 fast-fail 设计意图（不进入半初始化状态），同时避免用户看到空白无提示。
+    try {
+      // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
+      this.messagesEl = getRequiredElement('messages', 'div');
+      this.inputEl = getRequiredElement('input', 'textarea');
+      this.btnSend = getRequiredElement('btn-send', 'button');
+      // B2：停止生成按钮（独立元素，流式态时通过 .visible 类显示）
+      this.btnStop = getRequiredElement('btn-stop', 'button');
+    } catch (err) {
+      // 渲染初始化失败错误提示到 document.body（独立于 UIManager 自身，避免半初始化状态）
+      renderInitFailureToBody(err);
+      throw err;
+    }
 
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
@@ -220,17 +327,36 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       new EventTracker(),
     );
 
+    // C-2：快捷命令面板管理器（与其他面板管理器同模式：构造函数创建 + init 调用）
+    this.commandPaletteManager = new CommandPaletteManager(this);
+    // C-5：面板错误横幅管理器（自包含，无依赖，直接创建）
+    this.panelErrorBannerManager = new PanelErrorBannerManager();
+    // C-5-2：剪贴板保护管理器（依赖注入 toastManager + modalManager，与 UIManager 共享同一引用）
+    this.clipboardManager = new ClipboardManager(this.toastManager, this.modalManager);
+    // C-5-3：日期导航管理器（自包含，无依赖，直接创建）
+    this.dateNavManager = new DateNavManager();
+    // C-5-4：技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
+    this.skillDropManager = new SkillDropManager(this.toastManager);
+
     // 初始化 UI
     this.initEventListeners();
     this.memoryPanel.initMemoryPanelListeners();
     this.personaPanel.initPersonaSelectorListeners();
     this.settingsPanelManager.initListeners();
-    this.initPanelErrorRetryButtons(); // FD-A2 统一面板错误横幅重试按钮
+    // C-2：init 需在 initEventListeners 之后（cmdk 按钮监听在 initEventListeners 中注册）
+    this.commandPaletteManager.init();
+    // C-5：面板错误横幅重试按钮初始化（委托到 PanelErrorBannerManager）
+    this.panelErrorBannerManager.init();
+    // C-5-3：日期导航事件初始化（委托到 DateNavManager）
+    this.dateNavManager.init();
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
     this.chatPanel.initScrollToBottomButton();
     this.initScrollListener();
+    // P2-UI-2.1：监听 #input-area 高度变化，动态更新 --input-area-height CSS 变量
+    // 避免输入区长文本撑高时遮挡最后一条消息（原静态 140px 在 textarea 多行时不足）
+    this.initInputAreaResizeObserver();
   }
 
   // ─── 事件监听器管理 ─────────────────────────────────────
@@ -250,37 +376,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
     // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
 
-    // UX-FD-07 日期导航按钮：点击切换下拉显示/隐藏
-    const dateNavBtn = document.getElementById('date-nav-btn');
-    if (dateNavBtn) {
-      this.events.addEventListener(dateNavBtn, 'click', (e) => {
-        e.stopPropagation();
-        this.toggleDateNavDropdown();
-      });
-    }
-    // 日期导航列表项点击：触发跳转回调
-    const dateNavList = document.getElementById('date-nav-list');
-    if (dateNavList) {
-      this.events.addEventListener(dateNavList, 'click', (e) => {
-        const target = e.target as HTMLElement;
-        const item = target.closest<HTMLElement>('[data-action="jump-to-date"]');
-        if (item && this.dateNavJumpCallback) {
-          const date = item.dataset.date ?? '';
-          if (date) {
-            this.closeDateNavDropdown();
-            this.dateNavJumpCallback(date);
-          }
-        }
-      });
-    }
-    // 点击其他区域关闭日期导航下拉
-    this.events.addEventListener(document, 'click', (e) => {
-      const navigator = document.getElementById('date-navigator');
-      if (navigator && !navigator.contains(e.target as Node)) {
-        this.closeDateNavDropdown();
-      }
-    });
-
+    // C-5-3：日期导航事件绑定已委托到 DateNavManager.init()
     // FD-ADD-REC-CLICK 仪表盘推荐记忆点击：事件委托，复用 triggerMemoryRecall 跳转到记忆面板显示详情
     const recList = document.getElementById('recommendation-list');
     if (recList) {
@@ -380,6 +476,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
         this.showModal('memory-add-modal');
       });
     }
+
+    // C-2：标题栏命令面板入口按钮（Ctrl+K 的鼠标入口，与键盘快捷键等效）
+    const btnCmdk = getOptionalElement('titlebar-cmdk', 'button');
+    if (btnCmdk) {
+      this.events.addEventListener(btnCmdk, 'click', () => {
+        this.commandPaletteManager.open();
+      });
+    }
   }
 
   /**
@@ -461,6 +565,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   cleanup(): void {
     // 清理所有事件监听器（通过 EventTracker 统一管理）
     this.events.cleanup();
+    // P2-UI-2.1：断开输入区 ResizeObserver，避免回调在 DOM 销毁后触发
+    if (this.inputAreaResizeObserver) {
+      this.inputAreaResizeObserver.disconnect();
+      this.inputAreaResizeObserver = null;
+    }
     // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、ProactiveBanner 监听器、SettingsPanel 监听器）
     this.toastManager.cleanup();
     this.modalManager.cleanup();
@@ -475,8 +584,28 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.dashboardPanel.cleanup(); // 清理仪表盘脉冲定时器与重试按钮事件
     this.personaPanel.cleanup();
+    // C-2：清理命令面板的全局 keydown 监听器，避免页面重载后累积
+    this.commandPaletteManager.cleanup();
+    // C-5：清理面板错误横幅的重试按钮监听器和回调映射
+    this.panelErrorBannerManager.cleanup();
+    // C-5-2：清理剪贴板保护管理器（空实现，保持统一生命周期接口）
+    this.clipboardManager.cleanup();
+    // C-5-3：清理日期导航管理器的事件监听器和回调
+    this.dateNavManager.cleanup();
+    // C-5-4：清理技能拖入安装管理器的回调引用
+    this.skillDropManager.cleanup();
     // P2-6 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
+  }
+
+  /**
+   * C-2：打开命令面板（Ctrl+K 的程序化入口）
+   *
+   * 供 renderer.ts 在需要时调用（如未来扩展的其他入口按钮），
+   * 当前 cmdk 按钮已内置在 initEventListeners 中。
+   */
+  openCommandPalette(): void {
+    this.commandPaletteManager.open();
   }
 
   // ─── 聊天面板 ─ 委托到 ChatPanelManager ─────────────────
@@ -734,6 +863,37 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
       this.isNearBottom = scrollHeight - scrollTop - clientHeight < UIManager.SCROLL_BOTTOM_THRESHOLD;
     });
+  }
+
+  /**
+   * P2-UI-2.1：初始化输入区 ResizeObserver
+   *
+   * 监听 #input-area 高度变化，动态更新 :root 的 --input-area-height CSS 变量。
+   * 替代原静态 140px，避免 textarea 多行撑高时遮挡最后一条消息。
+   *
+   * 设计要点：
+   * - 使用 ResizeObserver 而非 input 事件，覆盖所有高度变化来源（窗口缩放、内容变化、主题切换）
+   * - 写入 documentElement.style 确保所有引用 --input-area-height 的样式（chat.css:958, chat.css:1867）同步更新
+   * - 元素缺失时静默降级（保持原静态 140px 回退值）
+   */
+  private initInputAreaResizeObserver(): void {
+    const inputArea = document.getElementById('input-area');
+    if (!inputArea) return;
+    // P2-2.1：防御性检查——ResizeObserver 是浏览器 API，jsdom 测试环境不提供
+    // 缺失时静默降级（保持原静态 140px 回退值），不阻断 UIManager 初始化
+    if (typeof ResizeObserver === 'undefined') return;
+    // 创建 ResizeObserver 监听输入区高度变化
+    this.inputAreaResizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        // 获取输入区实际高度（含 padding + border）
+        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+        if (height > 0) {
+          // 更新 CSS 变量，chat.css 中 padding-bottom 和浮动按钮 bottom 都引用此变量
+          document.documentElement.style.setProperty('--input-area-height', `${Math.ceil(height)}px`);
+        }
+      }
+    });
+    this.inputAreaResizeObserver.observe(inputArea);
   }
 
   // ─── 事件处理器 ─────────────────────────────────────
@@ -1150,6 +1310,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   setStreaming(streaming: boolean): void {
     this.state.isStreaming = streaming;
+    // P2-UI-2.3：流式态时通过 inline style 强制显示停止按钮
+    // 兜底机制——即使 updateSendButton 因状态机异常未被调用，
+    // setStreaming(true) 也会覆盖 CSS 的 display:none，确保用户始终能中断流式输出
+    this.btnStop.style.display = streaming ? 'flex' : '';
   }
 
   /**
@@ -1181,6 +1345,79 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
   /** 获取当前查看的记忆 ID（委托到 MemoryPanelManager） */
   getCurrentMemoryId(): string | null { return this.memoryPanel.getCurrentMemoryId(); }
+  /**
+   * C-8：获取当前记忆搜索参数
+   *
+   * 原先 memoryController.getSearchParams 直接访问 4 个 DOM 元素，
+   * 违反"控制器不直接访问 DOM"的分层原则。改为通过 UIManager 门面读取，
+   * 控制器层不再耦合具体 DOM 结构。
+   * DOM 元素缺失时返回默认值，兼容测试环境。
+   */
+  getMemorySearchParams(): { query: string; source: string; sort: string; timeRange: string } {
+    const searchEl = document.getElementById('memory-search');
+    const sourceEl = document.getElementById('memory-filter-source');
+    const sortEl = document.getElementById('memory-sort-order');
+    const timeEl = document.getElementById('memory-time-range');
+    return {
+      query: (searchEl instanceof HTMLInputElement ? searchEl.value : '').trim(),
+      source: sourceEl instanceof HTMLSelectElement ? sourceEl.value : '',
+      sort: sortEl instanceof HTMLSelectElement ? sortEl.value : 'relevance',
+      timeRange: timeEl instanceof HTMLSelectElement ? timeEl.value : '',
+    };
+  }
+
+  /**
+   * C-8-EXT：触发记忆搜索框 input 事件（排序/时间范围变更时重新搜索）
+   *
+   * 控制器不直接操作 DOM，通过此门面方法委托 UIManager 触发搜索框的 input 事件，
+   * 让已注册的 onMemorySearch 回调重新执行搜索逻辑。
+   */
+  triggerMemorySearchInput(): void {
+    const searchEl = document.getElementById('memory-search');
+    if (searchEl instanceof HTMLInputElement && searchEl.value.trim()) {
+      searchEl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  /**
+   * C-8-EXT：读取记忆详情弹窗的 dataset（source/name）
+   *
+   * 编辑记忆时需要从详情弹窗的 dataset 获取 source 和 name 字段。
+   * 控制器不直接访问 DOM，通过此门面方法委托 UIManager 读取。
+   *
+   * @param key dataset 键名（memorySource / memoryName）
+   * @returns dataset 值，不存在时返回空字符串
+   */
+  getMemoryDetailMeta(key: 'memorySource' | 'memoryName'): string {
+    const detailModal = document.getElementById('memory-detail-modal');
+    return detailModal?.dataset[key] ?? '';
+  }
+
+  /**
+   * C-8-EXT：显示记忆列表加载/错误状态
+   *
+   * 控制器不直接传递 DOM 元素给 UIManager，通过此门面方法委托 UIManager
+   * 在内部查找 #memory-list 元素并显示对应状态。
+   *
+   * @param state 状态类型（loading / error）
+   */
+  setMemoryListState(state: 'loading' | 'error'): void {
+    const listEl = document.getElementById('memory-list');
+    if (!listEl) return;
+    if (state === 'loading') {
+      // 加载态：清空列表 + 显示加载提示
+      while (listEl.firstChild) {
+        listEl.removeChild(listEl.firstChild);
+      }
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'loading-state';
+      loadingDiv.textContent = '加载记忆列表...';
+      listEl.appendChild(loadingDiv);
+    } else {
+      // 错误态：复用 DashboardPanelManager 的 showMemoryListError（含重试按钮）
+      this.dashboardPanel.showMemoryListError(listEl);
+    }
+  }
   /** 注册记忆搜索回调（委托到 MemoryPanelManager） */
   onMemorySearch(cb: (query: string) => void): void { this.memoryPanel.onMemorySearch(cb); }
   /** 注册记忆 source 筛选回调（委托到 MemoryPanelManager） */
@@ -1308,6 +1545,21 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   renderPersonaDropdown(personas: PersonaItem[]): void { this.personaPanel.renderPersonaDropdown(personas); }
   /** 更新当前角色显示（委托到 PersonaPanelManager） */
   updateActivePersona(name: string): void { this.personaPanel.updateActivePersona(name); }
+  /**
+   * C-8：更新侧边栏角色头像图标
+   *
+   * 原先 personaController.onPersonaSwitch 回调中直接操作 sidebar-persona-avatar
+   * 的 <use> 元素，违反"控制器不直接访问 DOM"的分层原则。改为通过 UIManager 门面操作。
+   *
+   * @param iconId SVG sprite 图标 ID（如 '#icon-fairy'）
+   */
+  updateSidebarAvatarIcon(iconId: string): void {
+    const sidebarAvatar = document.getElementById('sidebar-persona-avatar');
+    const avatarIcon = sidebarAvatar?.querySelector('use');
+    if (avatarIcon) {
+      avatarIcon.setAttribute('href', iconId);
+    }
+  }
   /** 更新角色匹配模式标签（委托到 PersonaPanelManager） */
   updatePersonaModeBadge(mode: string): void { this.personaPanel.updatePersonaModeBadge(mode); }
   /** 注册角色切换回调（委托到 PersonaPanelManager） */
@@ -1377,175 +1629,58 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // ─── 设置面板（委托到 SettingsPanelManager） ──
 
-  // ─── FD-A2 统一面板错误横幅 ───────────────────────────────
+  // ─── FD-A2 统一面板错误横幅（C-5：委托到 PanelErrorBannerManager） ───
 
-  /**
-   * FD-A2 初始化所有面板错误横幅的重试按钮
-   *
-   * 统一为 settings / memory / chat 三个面板绑定重试按钮点击事件，
-   * 从 panelErrorRetryCallbacks Map 中查找对应的重试回调。
-   * 按钮缺失时静默跳过（对应面板可能未提供错误横幅）。
-   */
-  private initPanelErrorRetryButtons(): void {
-    const panelIds = ['settings', 'memory', 'chat'];
-    for (const panelId of panelIds) {
-      const retryBtn = document.getElementById(`${panelId}-error-retry`);
-      if (retryBtn) {
-        this.events.addEventListener(retryBtn, 'click', () => {
-          const callback = this.panelErrorRetryCallbacks.get(panelId);
-          if (callback) {
-            callback();
-          }
-        });
-      }
-    }
-  }
-
-  /**
-   * FD-A2 显示面板错误横幅（通用方法）
-   *
-   * 根据 panelId 查找对应的错误横幅元素并显示错误信息。
-   * 可选传入重试回调，点击重试按钮时触发。
-   *
-   * @param panelId 面板标识（如 'settings' / 'memory' / 'chat'）
-   * @param message 错误提示文本
-   * @param retryCallback 重试回调（可选，点击重试按钮时触发）
-   */
+  /** FD-A2 显示面板错误横幅（委托到 PanelErrorBannerManager） */
   showPanelError(panelId: string, message: string, retryCallback?: () => void): void {
-    const errorEl = document.getElementById(`${panelId}-error`);
-    const msgEl = document.getElementById(`${panelId}-error-msg`);
-    if (errorEl && msgEl) {
-      msgEl.textContent = message;
-      errorEl.classList.remove('hidden');
-    }
-    if (retryCallback) {
-      this.panelErrorRetryCallbacks.set(panelId, retryCallback);
-    }
+    this.panelErrorBannerManager.showPanelError(panelId, message, retryCallback);
   }
 
-  /**
-   * FD-A2 隐藏面板错误横幅（通用方法）
-   *
-   * 隐藏对应面板的错误横幅并清除重试回调。
-   *
-   * @param panelId 面板标识
-   */
+  /** FD-A2 隐藏面板错误横幅（委托到 PanelErrorBannerManager） */
   hidePanelError(panelId: string): void {
-    const errorEl = document.getElementById(`${panelId}-error`);
-    if (errorEl) {
-      errorEl.classList.add('hidden');
-    }
-    this.panelErrorRetryCallbacks.delete(panelId);
+    this.panelErrorBannerManager.hidePanelError(panelId);
   }
 
-  /** FD-A2 显示设置面板加载失败错误横幅（委托到 showPanelError） */
+  /** FD-A2 显示设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
   showSettingsError(message: string, retryCallback?: () => void): void {
-    this.showPanelError('settings', message, retryCallback);
+    this.panelErrorBannerManager.showPanelError('settings', message, retryCallback);
   }
 
-  /** FD-A2 隐藏设置面板加载失败错误横幅（委托到 hidePanelError） */
+  /** FD-A2 隐藏设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
   hideSettingsError(): void {
-    this.hidePanelError('settings');
+    this.panelErrorBannerManager.hidePanelError('settings');
   }
 
-  // ─── UX-FD-07 日期导航 ────────────────────────────────
+  // ─── UX-FD-07 日期导航（C-5-3：委托到 DateNavManager） ───
 
-  /** 日期导航跳转回调（由 renderer.ts 注册，调用 sessionController.jumpToDate） */
-  private dateNavJumpCallback: ((date: string) => void) | null = null;
-  /** 日期导航列表加载回调（下拉打开时触发，由 renderer.ts 注册） */
-  private dateNavLoadCallback: (() => void) | null = null;
-
-  /** 注册日期导航跳转回调 */
+  /** 注册日期导航跳转回调（委托到 DateNavManager） */
   onDateNavJump(cb: (date: string) => void): void {
-    this.dateNavJumpCallback = cb;
+    this.dateNavManager.onDateNavJump(cb);
   }
 
-  /** 注册日期导航列表加载回调（下拉打开时触发） */
+  /** 注册日期导航列表加载回调（委托到 DateNavManager） */
   onDateNavOpen(cb: () => void): void {
-    this.dateNavLoadCallback = cb;
+    this.dateNavManager.onDateNavOpen(cb);
   }
 
-  /** 切换日期导航下拉的显示/隐藏 */
+  /** 切换日期导航下拉的显示/隐藏（委托到 DateNavManager） */
   toggleDateNavDropdown(): void {
-    const dropdown = document.getElementById('date-nav-dropdown');
-    if (dropdown) {
-      const wasHidden = dropdown.classList.contains('hidden');
-      dropdown.classList.toggle('hidden');
-      // 下拉打开时触发列表加载（确保数据最新）
-      if (wasHidden && this.dateNavLoadCallback) {
-        this.dateNavLoadCallback();
-      }
-    }
+    this.dateNavManager.toggleDateNavDropdown();
   }
 
-  /** 关闭日期导航下拉 */
+  /** 关闭日期导航下拉（委托到 DateNavManager） */
   closeDateNavDropdown(): void {
-    const dropdown = document.getElementById('date-nav-dropdown');
-    if (dropdown) {
-      dropdown.classList.add('hidden');
-    }
+    this.dateNavManager.closeDateNavDropdown();
   }
 
   /**
-   * 渲染日期列表到日期导航下拉
+   * 渲染日期列表到日期导航下拉（委托到 DateNavManager）
    *
    * @param dates 日期列表（每项包含日期、消息数、是否今天）
    * @param currentDate 当前查看的日期（用于高亮 active 项）
    */
   renderDateNavList(dates: Array<{ date: string; messageCount: number; isToday: boolean }>, currentDate: string): void {
-    const list = document.getElementById('date-nav-list');
-    if (!list) return;
-
-    // 清空旧列表
-    while (list.firstChild) {
-      list.removeChild(list.firstChild);
-    }
-
-    if (dates.length === 0) {
-      const empty = document.createElement('li');
-      empty.className = 'date-nav-empty';
-      empty.textContent = '暂无历史对话';
-      list.appendChild(empty);
-      return;
-    }
-
-    for (const item of dates) {
-      const li = document.createElement('li');
-      li.className = 'date-nav-item';
-      if (item.date === currentDate) {
-        li.classList.add('active');
-      }
-      // data-action="jump-to-date" data-date="YYYY-MM-DD"
-      li.dataset.action = 'jump-to-date';
-      li.dataset.date = item.date;
-
-      const dateEl = document.createElement('span');
-      dateEl.className = 'date-nav-item-date';
-      // 今天显示"今天"，昨天显示"昨天"，其他显示完整日期
-      if (item.isToday) {
-        dateEl.textContent = '今天';
-      } else {
-        // 简单的相对日期显示
-        const today = new Date();
-        const target = new Date(item.date);
-        const diffDays = Math.floor((today.getTime() - target.getTime()) / MS_PER_DAY);
-        if (diffDays === 1) {
-          dateEl.textContent = '昨天';
-        } else if (diffDays === 2) {
-          dateEl.textContent = '前天';
-        } else {
-          dateEl.textContent = item.date;
-        }
-      }
-
-      const countEl = document.createElement('span');
-      countEl.className = 'date-nav-item-count';
-      countEl.textContent = `${item.messageCount} 条`;
-
-      li.appendChild(dateEl);
-      li.appendChild(countEl);
-      list.appendChild(li);
-    }
+    this.dateNavManager.renderDateNavList(dates, currentDate);
   }
 
   /** 加载 LLM 配置到表单（委托到 SettingsPanelManager） */
@@ -1676,66 +1811,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     await window.electronAPI.responseWriteConfirmation(info.requestId, confirmed);
   }
 
-  // ─── Phase 3.1：剪贴板三重保护 UI 联动 ──────────────────
+  // ─── Phase 3.1：剪贴板三重保护 UI 联动（C-5-2：委托到 ClipboardManager） ───
 
-  /**
-   * 显示剪贴板变化 Toast（带"分析"按钮）
-   *
-   * 被动检测到剪贴板变化时调用，显示 info Toast 提示用户。
-   * 用户点击"分析"按钮后触发主动分析（读取内容 + 敏感检测 + 护栏检查）。
-   * 不自动消失，让用户有时间决定是否分析。
-   */
+  /** 显示剪贴板变化 Toast（委托到 ClipboardManager） */
   showClipboardChangedToast(): void {
-    this.toastManager.showToast('剪贴板有新内容', 'info', 0, {
-      actionLabel: '分析',
-      onAction: () => {
-        // 用户点击"分析"按钮，调用主进程读取并检测剪贴板内容
-        void window.electronAPI.clipboardAnalyze();
-      },
-    });
+    this.clipboardManager.showClipboardChangedToast();
   }
 
-  /**
-   * 显示剪贴板内容确认对话框
-   *
-   * 内容通过敏感检测和护栏检查后调用，展示内容预览供用户确认。
-   * 用户确认后通过 MEMORIES_ADD 通道写入记忆。
-   *
-   * @param content 剪贴板内容（已通过检测）
-   */
+  /** 显示剪贴板内容确认对话框（委托到 ClipboardManager） */
   async showClipboardConfirmDialog(content: string): Promise<void> {
-    // 构建内容预览 DOM（防 XSS，使用 textContent）
-    const container = document.createElement('div');
-    container.className = 'write-confirm-info';
-
-    const contentP = document.createElement('p');
-    const contentLabel = document.createElement('strong');
-    contentLabel.textContent = '内容：';
-    contentP.appendChild(contentLabel);
-    // 截断过长内容，避免对话框过大
-    const preview = content.length > 200 ? content.slice(0, 200) + '...' : content;
-    const codeEl = document.createElement('code');
-    codeEl.textContent = preview;
-    contentP.appendChild(codeEl);
-    container.appendChild(contentP);
-
-    const confirmed = await this.modalManager.showConfirmDialog({
-      title: '将剪贴板内容存为记忆？',
-      message: '',
-      messageNodes: [container],
-      confirmText: '存为记忆',
-      cancelText: '取消',
-    });
-
-    if (confirmed) {
-      // 用户确认后，通过 MEMORIES_ADD 写入记忆
-      await window.electronAPI.addMemory({
-        content,
-        source: 'clipboard',
-        name: `剪贴板记忆 ${new Date().toLocaleString()}`,
-      });
-      this.showToast('已存为记忆', 'success');
-    }
+    await this.clipboardManager.showClipboardConfirmDialog(content);
   }
 
   // ─── Phase 3.3 第二批：全局快捷键触发处理 ──────────────
@@ -1786,155 +1871,21 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  // ─── 技能文件拖入安装 ──────────────────
+  // ─── 技能文件拖入安装（C-5-4：委托到 SkillDropManager） ───
 
-  /** 技能安装成功回调（由 renderer.ts 注册，用于刷新技能列表） */
-  private skillInstalledCallback: (() => void) | null = null;
-
-  /**
-   * 注册技能安装成功回调
-   *
-   * 安装成功后调用，renderer.ts 在此回调中刷新技能列表（loadDashboard）。
-   * 与 onSendMessage 同模式，保持回调注册风格一致。
-   */
+  /** 注册技能安装成功回调（委托到 SkillDropManager） */
   onSkillInstalled(callback: () => void): void {
-    this.skillInstalledCallback = callback;
+    this.skillDropManager.onSkillInstalled(callback);
   }
 
-  /**
-   * 处理拖入的技能文件
-   *
-   * 由 dropzone 的 drop 事件触发。校验文件类型后调用 installSkillFile。
-   * 多文件场景下逐个安装，任一失败不中断后续文件。
-   *
-   * @param files 拖入的文件列表
-   */
+  /** 处理拖入的技能文件（委托到 SkillDropManager） */
   async handleSkillDrop(files: File[]): Promise<void> {
-    if (!files || files.length === 0) return;
-
-    // 过滤非 .md 文件（拖入多文件时可能混入其他类型）
-    const mdFiles = files.filter((f) => f.name.toLowerCase().endsWith('.md'));
-    if (mdFiles.length === 0) {
-      this.showToast('仅支持 .md 技能文件', 'warning');
-      this.flashDropzoneError();
-      return;
-    }
-    if (mdFiles.length < files.length) {
-      // 部分文件被跳过，提示用户
-      const skipped = files.length - mdFiles.length;
-      this.showToast(`已跳过 ${skipped} 个非 .md 文件`, 'info', TOAST_SHORT_MS);
-    }
-
-    // 逐个安装（避免并发写入冲突）
-    let successCount = 0;
-    let lastError = '';
-    for (const file of mdFiles) {
-      const ok = await this.installSkillFile(file);
-      if (ok) {
-        successCount++;
-      } else {
-        lastError = lastError || '部分文件安装失败';
-      }
-    }
-
-    // 汇总反馈
-    if (successCount > 0) {
-      const msg = successCount === 1
-        ? '技能安装成功'
-        : `${successCount} 个技能安装成功`;
-      this.showToast(msg, 'success', TOAST_NORMAL_MS);
-      this.skillInstalledCallback?.();
-    }
-    if (lastError) {
-      this.showToast(lastError, 'error', TOAST_LONG_MS);
-      this.flashDropzoneError();
-    }
+    await this.skillDropManager.handleSkillDrop(files);
   }
 
-  /**
-   * 触发文件选择对话框
-   *
-   * 由 dropzone 的 click 事件触发。打开隐藏的 <input type="file">，
-   * 用户选择文件后由 change 事件处理（在 renderer.ts 中注册）。
-   */
+  /** 触发文件选择对话框（委托到 SkillDropManager） */
   handleSkillFileSelect(): void {
-    const fileInput = document.getElementById('skill-file-input') as HTMLInputElement | null;
-    fileInput?.click();
-  }
-
-  /**
-   * 安装单个技能文件
-   *
-   * 内部方法，执行实际的文件读取 + IPC 调用 + 状态反馈。
-   * 安装期间添加 .is-installing 类禁用 dropzone，避免重复触发。
-   *
-   * @param file 待安装的 .md 文件
-   * @returns 是否安装成功
-   */
-  private async installSkillFile(file: File): Promise<boolean> {
-    const dropzone = document.getElementById('skill-dropzone');
-    if (!dropzone) return false;
-
-    // 安装中态：降低透明度 + 禁用指针
-    dropzone.classList.add('is-installing');
-    try {
-      // 读取文件内容（FileReader 同步读取为文本）
-      const content = await this.readFileAsText(file);
-      // 调用主进程 IPC 安装（校验 + 写入 configDir/skills/）
-      const result = await window.electronAPI.installSkill(file.name, content);
-      if (!result.success) {
-        // 校验失败或写入失败，显示具体错误
-        this.showToast(`${file.name}：${result.error}`, 'error', TOAST_LONG_MS);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      // 读取文件或 IPC 调用异常
-      const errMsg = err instanceof Error ? err.message : String(err);
-      this.showToast(`${file.name}：${errMsg}`, 'error', TOAST_LONG_MS);
-      return false;
-    } finally {
-      // 无论成功失败，移除安装中态
-      dropzone.classList.remove('is-installing');
-    }
-  }
-
-  /**
-   * 读取 File 为文本（Promise 包装 FileReader）
-   *
-   * @param file 待读取的文件
-   * @returns 文件文本内容
-   */
-  private readFileAsText(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const text = reader.result;
-        if (typeof text === 'string') {
-          resolve(text);
-        } else {
-          reject(new Error('文件内容非文本'));
-        }
-      };
-      reader.onerror = () => reject(reader.error || new Error('文件读取失败'));
-      reader.readAsText(file);
-    });
-  }
-
-  /**
-   * 短暂闪烁 dropzone 错误态
-   *
-   * 添加 .is-error 类触发抖动动画，400ms 后移除。
-   * 与 CSS @keyframes skill-dropzone-shake 时长一致。
-   */
-  private flashDropzoneError(): void {
-    const dropzone = document.getElementById('skill-dropzone');
-    if (!dropzone) return;
-    dropzone.classList.add('is-error');
-    // 动画结束后移除类（与 CSS animation 时长一致）
-    window.setTimeout(() => {
-      dropzone.classList.remove('is-error');
-    }, 400);
+    this.skillDropManager.handleSkillFileSelect();
   }
 
   /**

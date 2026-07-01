@@ -36,14 +36,8 @@ export function createPersonaController(uiManager: UIManager) {
         const { switched, name: activeName } = await window.electronAPI.switchPersona(name);
         if (switched && activeName) {
           uiManager.updateActivePersona(activeName);
-          // 同步更新侧边栏角色头像
-          const sidebarAvatar = document.getElementById('sidebar-persona-avatar');
-          if (sidebarAvatar) {
-            const avatarIcon = sidebarAvatar.querySelector('use');
-            if (avatarIcon) {
-              avatarIcon.setAttribute('href', '#icon-fairy');
-            }
-          }
+          // C-8：侧边栏角色头像更新委托给 UIManager，控制器不直接操作 DOM
+          uiManager.updateSidebarAvatarIcon('#icon-fairy');
           // IX-06 操作反馈走 toast
           uiManager.showToast(`已切换到角色：${activeName}`, 'success');
         }
@@ -53,16 +47,30 @@ export function createPersonaController(uiManager: UIManager) {
     });
 
     // IX-07 角色匹配模式变更：实时持久化 + 更新标签
+    // C-4：IPC 成功后主动同步 badge + 单选按钮状态，确保 UI 与主进程一致；
+    //       IPC 失败时回滚到旧模式，避免 UI 显示新模式但主进程仍为旧模式
     uiManager.onPersonaModeChange(async (mode: string) => {
+      // 回调触发时 settingsPanelManager 已更新 currentPersonaMode 为新模式，
+      // 需在 IPC 调用前保存旧模式用于失败回滚
+      const previousMode = mode === 'manual' ? 'auto' : 'manual';
       try {
         const validMode = mode === 'manual' ? 'manual' : 'auto';
         const { set } = await window.electronAPI.setPersonaMode(validMode);
         if (set) {
+          // C-4：防御性同步——确认 badge + 单选按钮状态与持久化值一致
+          uiManager.updatePersonaModeBadge(validMode);
+          uiManager.setPersonaMode(validMode);
           uiManager.showToast(`角色匹配模式已切换为：${mode === 'auto' ? '自动' : '手动'}`, 'success');
         } else {
+          // C-4：IPC 拒绝切换，回滚 UI 到旧模式
+          uiManager.updatePersonaModeBadge(previousMode);
+          uiManager.setPersonaMode(previousMode);
           uiManager.showToast('角色匹配模式切换失败', 'error');
         }
       } catch (error) {
+        // C-4：IPC 异常，回滚 UI 到旧模式
+        uiManager.updatePersonaModeBadge(previousMode);
+        uiManager.setPersonaMode(previousMode);
         handleIpcError('onPersonaModeChange', error, '设置角色模式失败');
       }
     });

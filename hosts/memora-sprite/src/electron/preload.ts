@@ -39,7 +39,9 @@ import type { SpriteConfig } from '../sprite/spriteConfig.js';
 // ─── 内联 IPC 通道常量（sandbox 兼容性：不能运行时导入 ipcChannels.ts） ─────
 // ⚠️ 与 ipcChannels.ts 保持同步：修改 ipcChannels.ts 时需同步更新此处的内联副本。
 // 主进程使用 ipcChannels.ts（真理源），preload 使用此内联副本（sandbox 限制）。
-const IPC_CHANNELS = {
+// C-1：export 这两个常量，供 channelParity.test.ts 断言键集与真理源一致，
+// 防止 sandbox 限制下的手动复制静默失配（UI 按钮无响应等全链路失效）。
+export const IPC_CHANNELS = {
   USER_INPUT: 'user-input',
   CHAT_ABORT: 'chat-abort',
   SESSION_LOAD: 'session-load',
@@ -118,7 +120,7 @@ const IPC_CHANNELS = {
   RENDERER_LOG: 'renderer-log',
 } as const;
 
-const MAIN_TO_RENDERER_CHANNELS = {
+export const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_STREAM_START: 'sprite-stream-start',
   SPRITE_STREAM_CHUNK: 'sprite-stream-chunk',
   SPRITE_STREAM_END: 'sprite-stream-end',
@@ -812,4 +814,8 @@ const electronAPI: ElectronAPI = {
   rendererLog: (level, context, message) => ipcRenderer.send(IPC_CHANNELS.RENDERER_LOG, { level, context, message }),
 };
 
-contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+// C-1：条件保护——测试环境（vitest）无 contextBridge，直接调用会抛错阻断测试
+// sandbox 环境下 contextBridge 始终存在，此条件不影响生产运行
+if (typeof contextBridge !== 'undefined' && contextBridge.exposeInMainWorld) {
+  contextBridge.exposeInMainWorld('electronAPI', electronAPI);
+}
