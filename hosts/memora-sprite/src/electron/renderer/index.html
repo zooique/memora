@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- UI-AUDIT-P0-2.2: theme-color 让任务栏/标题栏颜色跟随主题，默认浅色 -->
+  <!-- theme-color 让任务栏/标题栏颜色跟随主题，默认浅色 -->
   <meta name="theme-color" content="#f0f0f2" />
   <!-- CSP：仅允许 self 资源，支持离线使用 + 安全加固 -->
   <!-- P2-11 style-src 限制为 self，主题初始化由主进程 executeJavaScript 注入 -->
@@ -125,7 +125,7 @@
     <!-- 侧边栏（固定 64px 图标模式，不再展开） -->
     <aside id="sidebar">
       <!-- 品牌区（纯展示，不再承担展开/收起功能） -->
-      <!-- UI-AUDIT-P2-2.12: 品牌区使用 h1 作为页面最高层级标题，语义 HTML 规范 -->
+      <!-- 品牌区使用 h1 作为页面最高层级标题，语义 HTML 规范 -->
       <div class="sidebar-brand" title="Memora 精灵">
         <div class="sidebar-brand-icon"><svg class="icon"><use href="#icon-fairy"/></svg></div>
         <h1 class="sidebar-brand-name" translate="no">Memora</h1>
@@ -167,7 +167,6 @@
         </button>
       </div>
       <div id="titlebar-controls">
-        <!-- UI-AUDIT: 添加 aria-label 提升可访问性（屏幕阅读器支持） -->
         <button id="btn-minimize" title="最小化" aria-label="最小化窗口"><svg class="icon"><use href="#icon-minimize"/></svg></button>
         <button id="btn-maximize" title="最大化" aria-label="最大化窗口"><svg class="icon"><use href="#icon-maximize"/></svg></button>
         <!-- UX-P2-21 调整 title 文案与关闭图标语义一致（原"隐藏到浮动窗口"与关闭图标不符） -->
@@ -321,7 +320,6 @@
         <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示） -->
         <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         <div id="input-area">
-          <!-- UI-AUDIT: 添加 aria-label 提升可访问性（原仅 placeholder） -->
           <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1" aria-label="输入消息"></textarea>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
@@ -1133,7 +1131,6 @@
   <div id="shortcuts-modal" class="modal hidden">
     <div class="modal-content modal-content-sm">
       <div class="modal-header">
-        <!-- UI-AUDIT: 统一标题层级为 h3（原 h2 与其他 modal 的 h3 不一致） -->
         <h3>键盘快捷键</h3>
         <button class="modal-close" data-modal="shortcuts-modal">✕</button>
       </div>

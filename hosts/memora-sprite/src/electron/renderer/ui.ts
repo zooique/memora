@@ -1750,7 +1750,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.settingsPanelManager.resetFormDirty();
   }
 
-  /** UI-AUDIT-P0-2.3 检查设置面板是否有未保存修改（供 beforeunload 保护使用） */
+  /** 检查设置面板是否有未保存修改（供 beforeunload 保护使用） */
   isSettingsDirty(): boolean {
     return this.settingsPanelManager.isDirty();
   }

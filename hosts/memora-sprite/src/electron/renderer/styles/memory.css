@@ -19,7 +19,7 @@
   flex-shrink: 0;
 }
 
-/* UI-AUDIT-LAYOUT: 面板标题（"记忆"），与对话面板.toolbar-title风格一致 */
+/* 面板标题（"记忆"），与对话面板.toolbar-title风格一致 */
 .panel-header .panel-title {
   font-size: var(--font-md);
   font-weight: 600;
@@ -302,11 +302,9 @@
   background: var(--window-bg-2);
   font-size: var(--font-sm);
   cursor: default;
-  /* UI-AUDIT: 使用动画时长变量替代硬编码 0.15s，保持设计系统一致性 */
   transition: background var(--transition-fast);
 }
 
-/* UI-AUDIT: 修复 hover 背景色错误（原 --accent-fg 在浅色主题下为白色，hover 不可见） */
 .skill-item:hover {
   background: var(--surface1);
 }
@@ -324,7 +322,6 @@
   flex-shrink: 0;
 }
 
-/* UI-AUDIT: 来源层级颜色改用主题变量，深色主题自动适配（原硬编码 #6495ed/#22c55e） */
 /* 全局=蓝色（复用 --accent），项目=绿色（复用 --green） */
 .skill-layer-agent {
   background: var(--accent-20);
@@ -337,7 +334,6 @@
 }
 
 .skill-keywords {
-  /* UI-AUDIT: 修复未定义变量引用（原 --text-secondary 未在 base.css 定义） */
   color: var(--text-2);
   font-size: var(--font-xs);
   overflow: hidden;

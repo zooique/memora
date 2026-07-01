@@ -104,7 +104,7 @@ export class ThemeManager {
       document.documentElement.removeAttribute('data-theme');
     }
 
-    // UI-AUDIT-P0-2.2: 同步更新 theme-color meta 标签，让任务栏/标题栏颜色跟随主题
+    // 同步更新 theme-color meta 标签，让任务栏/标题栏颜色跟随主题
     this.syncThemeColorMeta(effectiveTheme);
 
     try {
@@ -174,7 +174,7 @@ export class ThemeManager {
         }
         // QC-THEME-01：系统主题变化，source='system'，renderer.ts 仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
         this.themeChangeCallback?.(effectiveTheme, 'system');
-        // UI-AUDIT-P0-2.2: auto 模式下系统主题变化时同步 theme-color
+        // auto 模式下系统主题变化时同步 theme-color
         this.syncThemeColorMeta(effectiveTheme);
       };
       mediaQuery.addEventListener('change', this.mediaQueryListener);
@@ -182,7 +182,7 @@ export class ThemeManager {
   }
 
   /**
-   * UI-AUDIT-P0-2.2 同步更新 <meta name="theme-color"> 标签内容
+   * 同步更新 <meta name="theme-color"> 标签内容
    *
    * 让操作系统任务栏/标题栏颜色跟随当前主题：
    * - 浅色主题：#f0f0f2（大底板色）

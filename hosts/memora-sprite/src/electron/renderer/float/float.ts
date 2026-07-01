@@ -221,7 +221,6 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     electronAPI.showFloatContextMenu();
   };
 
-  // UI-AUDIT: 键盘可访问性处理器
   // #sphere 添加 role="button" tabindex="0" 后，需支持 Enter/Space 触发与单击等效的操作
   const onSphereKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -239,7 +238,6 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   events.addEventListener(sphere, 'pointermove', (e) => onPointerMove(e as PointerEvent));
   events.addEventListener(sphere, 'pointerup', (e) => onPointerUp(e as PointerEvent));
   events.addEventListener(sphere, 'contextmenu', onContextMenu);
-  // UI-AUDIT: 键盘事件绑定（配合 role="button"）
   events.addEventListener(sphere, 'keydown', (e) => onSphereKeydown(e as KeyboardEvent));
 
   // ─── 未读计数监听 ──────────────────────────────────────

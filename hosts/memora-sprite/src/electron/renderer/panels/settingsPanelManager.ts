@@ -45,7 +45,6 @@ export interface SettingsPanelHost {
   showToast(message: string, type?: ToastType, duration?: number): void;
   /**
    * 切换到指定面板（P2-FLOW-10 "稍后配置"按钮使用）
-   * UI-AUDIT: 修复接口缺失导致类型错误（原调用 this.host.switchPanel 但接口未声明）
    */
   switchPanel(panel: 'chat' | 'memories' | 'settings'): void;
   /**

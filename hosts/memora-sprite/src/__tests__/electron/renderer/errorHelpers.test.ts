@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 渲染层错误处理辅助模块测试
  *
  * 覆盖范围：
@@ -54,12 +54,13 @@ describe('toError', () => {
     expect(result.message).toBe('对象错误');
   });
 
-  it('含 message 非字符串属性的对象应走 String 兜底', () => {
-    // message 是 number，不满足 typeof === 'string'，应走最后兜底
+  it('含 message 非字符串属性的对象应走 JSON 序列化兜底', () => {
+    // message 是 number，不满足 typeof === 'string'，应走 JSON 序列化兜底
+    // JSON 序列化保留调试信息（源码有意设计，优于无用的 "[object Object]"）
     const obj = { message: 12345 };
     const result = toError(obj);
     expect(result).toBeInstanceOf(Error);
-    expect(result.message).toBe(String(obj));
+    expect(result.message).toBe(JSON.stringify(obj));
   });
 
   it('null 应转为"未知错误"', () => {
@@ -80,11 +81,12 @@ describe('toError', () => {
     expect(result.message).toBe('404');
   });
 
-  it('普通对象应转为字符串 message', () => {
+  it('普通对象应 JSON 序列化为 message', () => {
+    // 源码有意使用 JSON 序列化保留调试信息，优于无用的 "[object Object]"
     const obj = { code: 500, detail: '服务器错误' };
     const result = toError(obj);
     expect(result).toBeInstanceOf(Error);
-    expect(result.message).toBe(String(obj));
+    expect(result.message).toBe(JSON.stringify(obj));
   });
 });
 

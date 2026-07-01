@@ -1,4 +1,4 @@
-﻿/**
+/**
  * PatternDetector 单元测试 — 记忆模式检测全分支覆盖
  *
  * 测试覆盖：
@@ -231,7 +231,7 @@ describe('PatternDetector', () => {
   describe('detectInterestDrift', () => {
     it('source 分布显著变化 → 检测为兴趣漂移', () => {
       const detector = new PatternDetector({ minDriftRatio: 0.3 });
-      // 近期：80% chat，20% profile
+      // 近期：80% chat，20% profile（5 条满足 MIN_DRIFT_SAMPLE_SIZE 守卫）
       const recentMemories: Memory[] = [
         makeMemory({ source: 'chat', content: '前端开发', createdAt: hoursAgo(1) }),
         makeMemory({ source: 'chat', content: 'React Hooks', createdAt: hoursAgo(2) }),
@@ -239,15 +239,18 @@ describe('PatternDetector', () => {
         makeMemory({ source: 'chat', content: 'TypeScript', createdAt: hoursAgo(4) }),
         makeMemory({ source: 'profile', content: '偏好简洁', createdAt: hoursAgo(5) }),
       ];
-      // 远期：50% profile，50% chat
+      // 远期：60% profile，40% chat（5 条满足 MIN_DRIFT_SAMPLE_SIZE 守卫）
       const olderMemories: Memory[] = [
         makeMemory({ source: 'profile', content: '喜欢咖啡', createdAt: daysAgo(10) }),
-        makeMemory({ source: 'chat', content: '日常问候', createdAt: daysAgo(11) }),
+        makeMemory({ source: 'profile', content: '夜间工作', createdAt: daysAgo(11) }),
+        makeMemory({ source: 'profile', content: '偏好深色主题', createdAt: daysAgo(12) }),
+        makeMemory({ source: 'chat', content: '日常问候', createdAt: daysAgo(13) }),
+        makeMemory({ source: 'chat', content: '天气讨论', createdAt: daysAgo(14) }),
       ];
       const allMemories = [...recentMemories, ...olderMemories];
       const patterns = detector.detectPatterns(allMemories);
       const driftPatterns = patterns.filter((p) => p.type === 'interest_drift');
-      // chat 从 50% → 80%（+30%），profile 从 50% → 20%（-30%）
+      // chat 从 40% → 80%（+40%），profile 从 60% → 20%（-40%），均超过 minDriftRatio=0.3
       expect(driftPatterns.length).toBeGreaterThan(0);
     });
 
@@ -433,15 +436,21 @@ describe('PatternDetector', () => {
 
     it('兴趣漂移生成兴趣变化指导', () => {
       const detector = new PatternDetector({ minDriftRatio: 0.3, minTopicOccurrences: 3 });
+      // 近期：100% work（5 条满足 MIN_DRIFT_SAMPLE_SIZE 守卫）
       const recentMemories: Memory[] = [
         makeMemory({ source: 'work', content: '项目A', createdAt: hoursAgo(1) }),
         makeMemory({ source: 'work', content: '项目B', createdAt: hoursAgo(2) }),
         makeMemory({ source: 'work', content: '项目C', createdAt: hoursAgo(3) }),
+        makeMemory({ source: 'work', content: '项目D', createdAt: hoursAgo(4) }),
+        makeMemory({ source: 'work', content: '项目E', createdAt: hoursAgo(5) }),
       ];
+      // 远期：100% chat（5 条满足 MIN_DRIFT_SAMPLE_SIZE 守卫）
       const olderMemories: Memory[] = [
         makeMemory({ source: 'chat', content: 'Y', createdAt: daysAgo(10) }),
         makeMemory({ source: 'chat', content: 'Z', createdAt: daysAgo(11) }),
         makeMemory({ source: 'chat', content: 'W', createdAt: daysAgo(12) }),
+        makeMemory({ source: 'chat', content: 'V', createdAt: daysAgo(13) }),
+        makeMemory({ source: 'chat', content: 'U', createdAt: daysAgo(14) }),
       ];
       const allMemories = [...recentMemories, ...olderMemories];
       const patterns = detector.detectPatterns(allMemories);

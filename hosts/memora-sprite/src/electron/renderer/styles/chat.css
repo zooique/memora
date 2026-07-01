@@ -589,7 +589,7 @@
   color: var(--text);
   font-weight: 500;
   line-height: 1.4;
-  /* UI-AUDIT-P1-2.8: 为绝对定位的关闭按钮留出空间，避免与 actions 重叠 */
+  /* 为绝对定位的关闭按钮留出空间，避免与 actions 重叠 */
   margin-right: 30px;
 }
 
@@ -609,7 +609,6 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  /* UI-AUDIT: 列出具体属性替代 transition: all */
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
@@ -884,7 +883,6 @@
   font-weight: 500;
   font-family: inherit;
   cursor: pointer;
-  /* UI-AUDIT: 列出具体属性替代 transition: all */
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   border: 1px solid transparent;
 }
@@ -1587,7 +1585,7 @@
   color: var(--text);
   /* 标题不使用霞鹜文楷，保持系统字体清晰度 */
   font-family: system-ui, -apple-system, sans-serif;
-  /* UI-AUDIT-P3-2.19: 平衡文本换行，避免窄屏下产生孤字 */
+  /* 平衡文本换行，避免窄屏下产生孤字 */
   text-wrap: balance;
 }
 
@@ -1671,7 +1669,6 @@
   margin-bottom: 6px;
   padding: 4px 10px;
   font-size: var(--font-xs);
-  /* UI-AUDIT: 改用主题变量替代硬编码 fallback，深色主题自动适配 */
   color: var(--yellow);
   background: var(--yellow-20);
   border-radius: var(--radius-sm);
@@ -1844,7 +1841,6 @@
   border-radius: var(--radius-sm);
   font-size: var(--font-xs);
   cursor: pointer;
-  /* UI-AUDIT: 列出具体属性替代 transition: all */
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 

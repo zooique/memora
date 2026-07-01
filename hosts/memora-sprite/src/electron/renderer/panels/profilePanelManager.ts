@@ -196,7 +196,6 @@ export class ProfilePanelManager {
 
     const updatedSpan = document.createElement('span');
     updatedSpan.className = 'profile-updated';
-    // UI-AUDIT: 复用 domHelpers.formatTimeAgo，避免重复实现时间格式化逻辑
     updatedSpan.textContent = formatTimeAgo(entry.updatedAt);
     header.appendChild(updatedSpan);
 

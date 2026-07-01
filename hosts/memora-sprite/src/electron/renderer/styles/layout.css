@@ -170,7 +170,7 @@
   display: none;
 }
 
-/* UI-AUDIT-P2-2.12: h1 作为品牌名时重置默认 margin/padding，保持视觉不变 */
+/* h1 作为品牌名时重置默认 margin/padding，保持视觉不变 */
 .sidebar-brand h1.sidebar-brand-name {
   margin: 0;
   padding: 0;
@@ -365,7 +365,7 @@
   font-size: var(--font-md);
   font-weight: 700;
   color: var(--text);
-  /* UI-AUDIT-P1-2.4: 等宽数字，避免数字变化时仪表盘布局抖动 */
+  /* 等宽数字，避免数字变化时仪表盘布局抖动 */
   font-variant-numeric: tabular-nums;
   transition: transform var(--transition-slow) ease;
 }
@@ -546,7 +546,7 @@
 }
 
 .dashboard-section + .dashboard-section {
-  /* UI-AUDIT-LAYOUT: section间（非第一个）增加顶部间距，帮助视觉分组 */
+  /* section间（非第一个）增加顶部间距，帮助视觉分组 */
   margin-top: 12px;
 }
 
@@ -558,7 +558,7 @@
   letter-spacing: 0.5px;
   padding: 0 4px 0 10px;
   margin-bottom: 8px;
-  /* UI-AUDIT-LAYOUT: 左侧3px宽accent色条，作为视觉分组锚点，扫视时可快速定位section */
+  /* 左侧3px宽accent色条，作为视觉分组锚点，扫视时可快速定位section */
   border-left: 3px solid var(--accent);
   line-height: 1;
   display: flex;
@@ -749,7 +749,6 @@
   border-radius: var(--radius-md);
   background: var(--window-bg-2);
   cursor: pointer;
-  /* UI-AUDIT: 使用动画时长变量替代硬编码，保持设计系统一致性 */
   transition: border-color var(--transition-fast),
               background var(--transition-fast),
               opacity var(--transition-fast);
