@@ -27,7 +27,8 @@
 </head>
 <body>
   <!-- UX-FD-03 SVG 图标精灵：替换页面内 emoji，统一视觉风格 -->
-  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <!-- 使用 class="svg-sprite" + CSS 隐藏，而非内联 style="display:none"（CSP style-src 'self' 会阻止内联样式） -->
+  <svg xmlns="http://www.w3.org/2000/svg" class="svg-sprite" aria-hidden="true">
     <defs>
       <!-- 品牌 / 精灵 -->
       <symbol id="icon-fairy" viewBox="0 0 24 24"><path d="M12 2l1.5 5.5L19 6l-3.5 4.5L20 14l-5.5-.5L14 19l-2-5-2 5-.5-5.5L4 14l4.5-3.5L5 6l5.5.5L12 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><circle cx="12" cy="10" r="1.5" fill="currentColor"/></symbol>
@@ -222,10 +223,10 @@
           <div class="perception-section" id="perception-affect">
             <h4 class="perception-section-title">情感基调</h4>
             <div class="affect-grid" id="perception-affect-bars">
-              <div class="affect-bar"><span class="affect-label">温暖</span><div class="affect-track"><div class="affect-fill" id="perception-warmth-fill" style="width:0%"></div></div><span class="affect-level" id="perception-warmth-level">—</span></div>
-              <div class="affect-bar"><span class="affect-label">直接</span><div class="affect-track"><div class="affect-fill" id="perception-directness-fill" style="width:0%"></div></div><span class="affect-level" id="perception-directness-level">—</span></div>
-              <div class="affect-bar"><span class="affect-label">主动</span><div class="affect-track"><div class="affect-fill" id="perception-initiative-fill" style="width:0%"></div></div><span class="affect-level" id="perception-initiative-level">—</span></div>
-              <div class="affect-bar"><span class="affect-label">调皮</span><div class="affect-track"><div class="affect-fill" id="perception-playfulness-fill" style="width:0%"></div></div><span class="affect-level" id="perception-playfulness-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">温暖</span><div class="affect-track"><div class="affect-fill" id="perception-warmth-fill"></div></div><span class="affect-level" id="perception-warmth-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">直接</span><div class="affect-track"><div class="affect-fill" id="perception-directness-fill"></div></div><span class="affect-level" id="perception-directness-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">主动</span><div class="affect-track"><div class="affect-fill" id="perception-initiative-fill"></div></div><span class="affect-level" id="perception-initiative-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">调皮</span><div class="affect-track"><div class="affect-fill" id="perception-playfulness-fill"></div></div><span class="affect-level" id="perception-playfulness-level">—</span></div>
             </div>
           </div>
           <!-- 默契度（徽章 + 双进度条合并到同一行，描述紧随其后） -->
@@ -234,8 +235,8 @@
             <div class="rapport-row">
               <div class="rapport-level-badge" id="perception-rapport-badge" data-level="stranger">初识</div>
               <div class="rapport-bars">
-                <div class="rapport-bar"><span class="rapport-bar-label">信任</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-trust-fill" style="width:0%"></div></div></div>
-                <div class="rapport-bar"><span class="rapport-bar-label">熟悉</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-familiarity-fill" style="width:0%"></div></div></div>
+                <div class="rapport-bar"><span class="rapport-bar-label">信任</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-trust-fill"></div></div></div>
+                <div class="rapport-bar"><span class="rapport-bar-label">熟悉</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-familiarity-fill"></div></div></div>
               </div>
             </div>
             <p class="rapport-description" id="perception-rapport-desc">刚开始了解彼此</p>
@@ -501,17 +502,17 @@
           <div class="health-metrics">
             <div class="health-metric">
               <span class="health-metric-label">唯一性</span>
-              <div class="health-metric-track"><div class="health-metric-fill" id="health-uniqueness" style="width:100%"></div></div>
+              <div class="health-metric-track"><div class="health-metric-fill" id="health-uniqueness"></div></div>
               <span class="health-metric-value" id="health-uniqueness-val">100</span>
             </div>
             <div class="health-metric">
               <span class="health-metric-label">新鲜度</span>
-              <div class="health-metric-track"><div class="health-metric-fill" id="health-freshness" style="width:100%"></div></div>
+              <div class="health-metric-track"><div class="health-metric-fill" id="health-freshness"></div></div>
               <span class="health-metric-value" id="health-freshness-val">100</span>
             </div>
             <div class="health-metric">
               <span class="health-metric-label">完整度</span>
-              <div class="health-metric-track"><div class="health-metric-fill" id="health-completeness" style="width:100%"></div></div>
+              <div class="health-metric-track"><div class="health-metric-fill" id="health-completeness"></div></div>
               <span class="health-metric-value" id="health-completeness-val">100</span>
             </div>
           </div>
@@ -718,7 +719,7 @@
                 <label for="cfg-bg-enabled">后台 Provider</label>
                 <div>
                   <input type="checkbox" id="cfg-bg-enabled" />
-                  <span class="settings-hint" style="display:inline;margin-left:4px;">启用后，Insight 提取和配置分析使用独立 Provider，不阻塞前台对话</span>
+                  <span class="settings-hint settings-hint-inline">启用后，Insight 提取和配置分析使用独立 Provider，不阻塞前台对话</span>
                 </div>
               </div>
               <div class="settings-row">

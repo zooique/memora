@@ -3792,7 +3792,11 @@
         if (newMemory) {
           // 新记忆入库前，对已有记忆执行一轮衰减（模拟真实 decay 机制）
           const decayedCount = decayMemories();
-          if (newMemory.source === 'profile') {
+          // 自动演示模式下：直接确认所有画像，保持演示流畅
+          if (autoDemoRunning) {
+            demoMemories.push(newMemory);
+            addedMemory = newMemory;
+          } else if (newMemory.source === 'profile') {
             // profile 类型先放入待确认列表
             pendingProfiles.push(newMemory);
             pendingAdded = true;
@@ -4473,6 +4477,7 @@
     const guideDots = document.querySelectorAll('.guide-dot');
 
     let currentGuideStep = 0;
+    let guideCompleted = false;
     const guideSteps = [
       { text: '点击「📝 记录个人信息」试试发送第一条消息', target: null },
       { text: '精灵回复后，点击顶部「🧠 记忆」标签查看记忆', target: '[data-panel="memories"]' },
@@ -4507,6 +4512,7 @@
         updateGuideStep();
       } else {
         guideBarEl.classList.add('hidden');
+        guideCompleted = true;
       }
     }
 
@@ -4520,9 +4526,11 @@
     guideNextBtn.addEventListener('click', nextGuideStep);
     guideSkipBtn.addEventListener('click', () => {
       guideBarEl.classList.add('hidden');
+      guideCompleted = true;
     });
     guideDemoBtn.addEventListener('click', () => {
       guideBarEl.classList.add('hidden');
+      guideCompleted = true;
       runAutoDemo();
     });
 
@@ -4596,7 +4604,10 @@
       appEl.style.display = '';
       stateSwitcher.style.opacity = '1';
       stateSwitcher.style.pointerEvents = 'auto';
-      guideBarEl.classList.remove('hidden');
+      // 引导完成后或自动演示运行中不显示引导栏
+      if (!autoDemoRunning && !guideCompleted) {
+        guideBarEl.classList.remove('hidden');
+      }
     }
 
     function setState(state) {
@@ -4972,29 +4983,76 @@
     updateMessageCount();
 
     // ========================================
+    // 定时记忆衰减演示（每8秒执行一轮，可视化展示衰减过程）
+    // ========================================
+    setInterval(() => {
+      if (autoDemoRunning) return; // 自动演示时不执行定时衰减
+      const decayed = decayMemories();
+      if (decayed > 0) {
+        refreshAllMemoryViews();
+        // 如果当前在图谱视图，重绘
+        const graphTab = document.querySelector('[data-memory-view="graph"]');
+        if (graphTab && graphTab.classList.contains('active')) {
+          drawMemoryGraph();
+        }
+        // 如果当前在时间线视图，重绘
+        const timelineTab = document.querySelector('[data-memory-view="timeline"]');
+        if (timelineTab && timelineTab.classList.contains('active')) {
+          renderTimeline();
+        }
+      }
+    }, 8000);
+
+    // ========================================
     // 自动演示模式（5 秒无操作自动播放）
     // ========================================
     let autoDemoTimer = null;
     let autoDemoRunning = false;
     let autoDemoCancelled = false;
 
-    /** 预设演示脚本：展示记忆闭环全流程 */
+    /** 预设演示脚本：展示记忆闭环全流程（约45秒完整体验） */
     const autoDemoScript = [
+      // 步骤1：自我介绍 → 触发记忆提取+待确认画像
       { delay: 800,  action: 'type', text: '我叫小明，是一名前端开发者' },
-      { delay: 3500, action: 'wait' },
-      { delay: 1000, action: 'type', text: '我喜欢简洁直接的回答' },
-      { delay: 3500, action: 'wait' },
-      { delay: 1000, action: 'type', text: '我最近在做一个 Vue 项目' },
-      { delay: 3500, action: 'wait' },
-      { delay: 1500, action: 'click', selector: '[data-panel="memories"]' },
-      { delay: 2000, action: 'wait' },
-      { delay: 500,  action: 'click', selector: '[data-memory-view="graph"]' },
-      { delay: 2000, action: 'wait' },
-      { delay: 500,  action: 'click', selector: '[data-panel="timeline"]' },
-      { delay: 2000, action: 'wait' },
-      { delay: 500,  action: 'click', selector: '[data-panel="chat"]' },
-      { delay: 1000, action: 'type', text: '你还记得我是谁吗？' },
-      { delay: 3500, action: 'end' },
+      { delay: 4000, action: 'wait' },
+      // 步骤2：设置偏好 → insight记忆
+      { delay: 800, action: 'type', text: '我喜欢简洁直接的回答' },
+      { delay: 4000, action: 'wait' },
+      // 步骤3：项目信息 → work-projection记忆
+      { delay: 800, action: 'type', text: '我最近在做一个 Vue 项目' },
+      { delay: 4000, action: 'wait' },
+      // 步骤4：切换到记忆面板 - 列表视图（展示记忆列表+score衰减条）
+      { delay: 1200, action: 'click', selector: '[data-panel="memories"]' },
+      { delay: 2500, action: 'wait' },
+      // 步骤5：切换到图谱视图（展示记忆关系网络）
+      { delay: 800,  action: 'click', selector: '[data-memory-view="graph"]' },
+      { delay: 3000, action: 'wait' },
+      // 步骤6：切换到时间线视图（展示按时间积累的记忆）
+      { delay: 800,  action: 'click', selector: '[data-memory-view="timeline"]' },
+      { delay: 2500, action: 'wait' },
+      // 步骤7：演示三态切换 - 浮动图标
+      { delay: 800,  action: 'click', selector: '[data-state="float"]' },
+      { delay: 2500, action: 'wait' },
+      // 步骤8：返回完整窗口
+      { delay: 500,  action: 'click', selector: '#state-back' },
+      { delay: 1500, action: 'wait' },
+      // 步骤9：演示日期导航（查看历史对话）
+      { delay: 800,  action: 'click', selector: '#date-nav-btn' },
+      { delay: 1000, action: 'wait' },
+      { delay: 500,  action: 'click', selector: '.date-nav-item:nth-child(2)' },
+      { delay: 2500, action: 'wait' },
+      // 步骤10：回到今天
+      { delay: 800,  action: 'click', selector: '#date-nav-btn' },
+      { delay: 800, action: 'wait' },
+      { delay: 500,  action: 'click', selector: '.date-nav-item:first-child' },
+      { delay: 1500, action: 'wait' },
+      // 步骤11：回到对话面板，测试记忆召回
+      { delay: 800,  action: 'click', selector: '[data-panel="chat"]' },
+      { delay: 1000, action: 'wait' },
+      { delay: 800, action: 'type', text: '你还记得我是谁吗？' },
+      { delay: 4000, action: 'wait' },
+      // 步骤12：完成提示
+      { delay: 0, action: 'end' },
     ];
 
     /** 显示自动演示横幅 */
@@ -5022,6 +5080,7 @@
     function cancelAutoDemo() {
       autoDemoCancelled = true;
       autoDemoRunning = false;
+      guideCompleted = true;
       if (autoDemoTimer) {
         clearTimeout(autoDemoTimer);
         autoDemoTimer = null;
@@ -5038,6 +5097,9 @@
       // 隐藏引导栏，避免与自动演示并存
       const guideBar = document.getElementById('guide-bar');
       if (guideBar) guideBar.classList.add('hidden');
+      // 关闭欢迎层
+      const onboarding = document.getElementById('onboarding');
+      if (onboarding) onboarding.classList.add('hidden');
 
       for (const step of autoDemoScript) {
         if (autoDemoCancelled) break;
@@ -5050,6 +5112,7 @@
 
         if (step.action === 'type') {
           inputEl.value = step.text;
+          inputEl.focus();
           // 高亮输入框引起注意
           inputEl.style.borderColor = 'var(--accent)';
           inputEl.style.boxShadow = '0 0 0 2px var(--accent-soft)';
@@ -5060,13 +5123,63 @@
           sendMessage();
         } else if (step.action === 'click' && step.selector) {
           const el = document.querySelector(step.selector);
-          if (el) el.click();
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await new Promise(resolve => setTimeout(resolve, 300));
+            if (autoDemoCancelled) break;
+            el.click();
+          }
+        } else if (step.action === 'end') {
+          // 演示完成提示
+          showDemoComplete();
         }
-        // 'wait' 和 'end' 不需要额外操作
+        // 'wait' 不需要额外操作
       }
 
       autoDemoRunning = false;
+      guideCompleted = true;
       hideAutoDemoBanner();
+    }
+
+    /** 显示演示完成提示 */
+    function showDemoComplete() {
+      const completeDiv = document.createElement('div');
+      completeDiv.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        padding: 32px 48px;
+        border-radius: 16px;
+        box-shadow: 0 16px 64px rgba(0,0,0,0.2);
+        z-index: 100000;
+        text-align: center;
+        animation: fadeIn 0.4s ease;
+      `;
+      completeDiv.innerHTML = `
+        <div style="font-size: 48px; margin-bottom: 16px;">✨</div>
+        <div style="font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 8px;">演示完成！</div>
+        <div style="font-size: 14px; color: var(--subtext); margin-bottom: 24px; line-height: 1.6;">
+          你已经看到了 Memora 的核心能力：<br>
+          记忆自动提取 · 记忆关系图谱 · 三态自然交互 · 按天自动会话管理 · 记忆召回
+        </div>
+        <button onclick="this.parentElement.remove()" style="
+          padding: 10px 32px;
+          background: var(--brand-grad);
+          color: white;
+          border: none;
+          border-radius: 100px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+        ">自由探索</button>
+      `;
+      document.body.appendChild(completeDiv);
+      // 5秒后自动消失
+      setTimeout(() => {
+        if (completeDiv.parentElement) completeDiv.remove();
+      }, 8000);
     }
 
     // ========================================
@@ -5101,30 +5214,75 @@
         container.innerHTML = '<div class="timeline-empty">暂无时间线数据，开始对话后将按时间展示记忆</div>';
         return;
       }
-      // 按时间分组（演示中按 source 模拟分组）
-      const groups = {};
-      userMemories.forEach(m => {
-        const date = m.time || '今天';
-        if (!groups[date]) groups[date] = [];
-        groups[date].push(m);
+      // 按时间倒序分组：今天、昨天、更早
+      const todayStr = getTodayStr();
+      const yesterdayStr = getYesterdayStr();
+      const groups = {
+        [todayStr]: [],
+        [yesterdayStr]: [],
+        'earlier': []
+      };
+      // 根据记忆的添加顺序分配到不同日期组（模拟真实时间线）
+      userMemories.forEach((m, idx) => {
+        if (idx === userMemories.length - 1) {
+          groups[todayStr].push({ ...m, displayTime: getCurrentTime() });
+        } else if (idx >= userMemories.length - 3) {
+          groups[todayStr].push({ ...m, displayTime: `${10 + idx}:${String(Math.floor(Math.random()*60)).padStart(2,'0')}` });
+        } else if (idx >= userMemories.length - 5) {
+          groups[yesterdayStr].push({ ...m, displayTime: `${14 + idx}:${String(Math.floor(Math.random()*60)).padStart(2,'0')}` });
+        } else {
+          groups['earlier'].push({ ...m, displayTime: '前天' });
+        }
       });
       let html = '';
-      Object.keys(groups).forEach(date => {
-        html += `<div class="timeline-group"><div class="timeline-date">${date}</div>`;
-        groups[date].forEach(m => {
+      // 今天
+      if (groups[todayStr].length > 0) {
+        html += `<div class="timeline-group"><div class="timeline-date">今天</div>`;
+        groups[todayStr].forEach(m => {
           const sourceClass = `source-${m.source}`;
-          const sourceLabel = m.source;
           html += `
             <div class="timeline-item">
-              <span class="timeline-time">${getCurrentTime()}</span>
+              <span class="timeline-time">${m.displayTime}</span>
               <div class="timeline-content">
                 <div class="name">${escapeHtml(m.name)}</div>
-                <div class="source"><span class="source-tag ${sourceClass}">${sourceLabel}</span> · score ${m.score.toFixed(2)}</div>
+                <div class="source"><span class="source-tag ${sourceClass}">${m.source}</span> · score ${m.score.toFixed(2)}</div>
               </div>
             </div>`;
         });
         html += '</div>';
-      });
+      }
+      // 昨天
+      if (groups[yesterdayStr].length > 0) {
+        html += `<div class="timeline-group"><div class="timeline-date">昨天</div>`;
+        groups[yesterdayStr].forEach(m => {
+          const sourceClass = `source-${m.source}`;
+          html += `
+            <div class="timeline-item">
+              <span class="timeline-time">${m.displayTime}</span>
+              <div class="timeline-content">
+                <div class="name">${escapeHtml(m.name)}</div>
+                <div class="source"><span class="source-tag ${sourceClass}">${m.source}</span> · score ${m.score.toFixed(2)}</div>
+              </div>
+            </div>`;
+        });
+        html += '</div>';
+      }
+      // 更早
+      if (groups['earlier'].length > 0) {
+        html += `<div class="timeline-group"><div class="timeline-date">更早</div>`;
+        groups['earlier'].forEach(m => {
+          const sourceClass = `source-${m.source}`;
+          html += `
+            <div class="timeline-item">
+              <span class="timeline-time">更早</span>
+              <div class="timeline-content">
+                <div class="name">${escapeHtml(m.name)}</div>
+                <div class="source"><span class="source-tag ${sourceClass}">${m.source}</span> · score ${m.score.toFixed(2)}</div>
+              </div>
+            </div>`;
+        });
+        html += '</div>';
+      }
       container.innerHTML = html;
     }
 

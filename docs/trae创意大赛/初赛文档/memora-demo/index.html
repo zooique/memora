@@ -252,7 +252,7 @@
     .cta-group {
       display: flex;
       gap: 16px;
-      margin-bottom: 56px;
+      margin-bottom: 48px;
       animation: fadeInUp var(--dur-slow) var(--ease-out) 340ms backwards;
       flex-wrap: wrap;
     }
@@ -303,6 +303,91 @@
 
     .btn:hover .arrow {
       transform: translateX(4px);
+    }
+
+    /* 评审快速体验路径 */
+    .quickstart-section {
+      margin-bottom: 56px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 380ms backwards;
+    }
+
+    .quickstart-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px 32px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .quickstart-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .quickstart-subtitle {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .quickstart-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .quickstart-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 16px;
+      background: var(--ctp-mantle);
+      border-radius: var(--radius-md);
+      border-left: 3px solid var(--accent);
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--brand-grad);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .step-content h4 {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 2px;
+    }
+
+    .step-content p {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .auto-demo-hint {
+      margin-top: 16px;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, rgba(30, 102, 245, 0.06) 0%, rgba(136, 57, 239, 0.06) 100%);
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     /* 对比表格 */
@@ -430,6 +515,63 @@
       line-height: 1.6;
     }
 
+    /* 三态预览 */
+    .three-state-section {
+      margin-bottom: 56px;
+      animation: fadeInUp var(--dur-slow) var(--ease-out) 500ms backwards;
+    }
+
+    .three-state-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .state-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px 20px;
+      text-align: center;
+      transition: all var(--dur-base) var(--ease-out);
+    }
+
+    .state-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--accent);
+    }
+
+    .state-icon {
+      font-size: 2.5rem;
+      margin-bottom: 12px;
+      display: block;
+    }
+
+    .state-name {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: var(--text-primary);
+    }
+
+    .state-desc {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .state-hotkey {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 3px 10px;
+      background: var(--ctp-mantle);
+      border-radius: var(--radius-pill);
+      font-size: 0.75rem;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      color: var(--text-secondary);
+    }
+
     /* 技术亮点 */
     .tech-highlights {
       display: grid;
@@ -504,6 +646,12 @@
         margin: 0 auto 40px;
       }
 
+      .three-state-grid {
+        grid-template-columns: 1fr;
+        max-width: 320px;
+        margin: 0 auto;
+      }
+
       .tech-highlights {
         grid-template-columns: 1fr;
       }
@@ -529,6 +677,10 @@
 
       .btn {
         justify-content: center;
+      }
+
+      .quickstart-steps {
+        grid-template-columns: 1fr;
       }
 
       .hero-title {
@@ -559,12 +711,12 @@
 
     <div class="differentiator">
       <span class="diff-icon">⚡</span>
-      <span class="diff-text">差异化设计：专注单 Agent 记忆闭环</span>
+      <span class="diff-text">反潮流设计：专注单 Agent 记忆闭环</span>
     </div>
 
     <p class="hero-desc">
       你有没有遇到过这种情况：和 AI 聊得越久，它越容易"记混"、"答偏"？<br>
-      Memora 的答案是「每轮闭环 + 动态组装」——启动时无所挂碍，开口时记忆自然浮现。
+      Memora 的答案是「每轮闭环 + 动态组装」——启动时无所挂碍，开口时记忆自然浮现。大厂追逐多 Agent 协作，我们选择把"记住你"这件事做到极致。
     </p>
 
     <div class="cta-group">
@@ -572,6 +724,65 @@
         🚀 开始交互式体验
         <span class="arrow">→</span>
       </a>
+      <a href="#quickstart" class="btn btn-secondary">
+        📋 3分钟体验指南
+      </a>
+    </div>
+
+    <!-- 评审快速体验路径 -->
+    <div class="quickstart-section" id="quickstart">
+      <div class="quickstart-card">
+        <div class="quickstart-title">🎯 评审快速体验路径（3分钟看懂核心价值）</div>
+        <div class="quickstart-subtitle">点击「开始交互式体验」后，按以下步骤操作可快速完整体验 Memora 的核心创新点</div>
+        <div class="quickstart-steps">
+          <div class="quickstart-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <h4>自我介绍</h4>
+              <p>发送「我叫小明，是一名前端开发者」→ 观察记忆自动提取</p>
+            </div>
+          </div>
+          <div class="quickstart-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <h4>偏好+作品</h4>
+              <p>发送「我喜欢简洁回答」「我在做Vue项目」→ 看召回标签和闭环提示</p>
+            </div>
+          </div>
+          <div class="quickstart-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <h4>记忆网络</h4>
+              <p>点击顶部「🧠记忆」→ 切换列表/时间线/图谱三种视图</p>
+            </div>
+          </div>
+          <div class="quickstart-step">
+            <div class="step-num">4</div>
+            <div class="step-content">
+              <h4>跨天衔接</h4>
+              <p>点击工具栏📅日历→查看昨天/前天对话→体验时间流加载</p>
+            </div>
+          </div>
+          <div class="quickstart-step">
+            <div class="step-num">5</div>
+            <div class="step-content">
+              <h4>三态交互</h4>
+              <p>点击顶部三态切换器→体验浮动球/系统托盘形态</p>
+            </div>
+          </div>
+          <div class="quickstart-step">
+            <div class="step-num">6</div>
+            <div class="step-content">
+              <h4>默契成长</h4>
+              <p>观察左侧默契度和情感基调面板随对话真实成长</p>
+            </div>
+          </div>
+        </div>
+        <div class="auto-demo-hint">
+          <span>💡</span>
+          <span>进入 Demo 后可点击引导栏中的「观看演示」按钮，自动演示上述全流程（约30秒）</span>
+        </div>
+      </div>
     </div>
 
     <!-- 对比表格 -->
@@ -609,6 +820,37 @@
           <div class="comparison-cell dim">复杂、需要学习切换窗口</div>
           <div class="comparison-cell highlight">简单专注、融入工作流</div>
         </div>
+        <div class="comparison-row">
+          <div class="comparison-cell">隐私保护</div>
+          <div class="comparison-cell dim">云端处理、数据外泄风险</div>
+          <div class="comparison-cell highlight">本地优先、剪贴板三重保护</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 三态交互预览 -->
+    <div class="three-state-section">
+      <div class="section-label">交互形态</div>
+      <h2 class="section-title">三态自然交互 · 不打断工作流</h2>
+      <div class="three-state-grid">
+        <div class="state-card">
+          <span class="state-icon">🪟</span>
+          <div class="state-name">完整窗口</div>
+          <div class="state-desc">深度对话模式，完整功能面板，支持记忆查看、设置配置</div>
+          <span class="state-hotkey">点击图标展开</span>
+        </div>
+        <div class="state-card">
+          <span class="state-icon">💫</span>
+          <div class="state-name">浮动图标</div>
+          <div class="state-desc">桌面边缘悬浮小球，点击快速对话，不离开当前窗口</div>
+          <span class="state-hotkey">Ctrl+Shift+Space</span>
+        </div>
+        <div class="state-card">
+          <span class="state-icon">🔽</span>
+          <div class="state-name">系统托盘</div>
+          <div class="state-desc">后台静默运行，记忆持续积累，有需要时主动出现</div>
+          <span class="state-hotkey">双击托盘图标</span>
+        </div>
       </div>
     </div>
 
@@ -617,32 +859,32 @@
       <div class="feature-card">
         <span class="feature-icon">🔄</span>
         <h3 class="feature-title">每轮记忆闭环</h3>
-        <p class="feature-desc">对话结束自动提取关键信息，下一轮动态召回相关记忆。记忆双通道召回（关键词+语义向量），不常用记忆自然衰减</p>
+        <p class="feature-desc">对话结束自动提取关键信息（画像/偏好/作品投影），下一轮通过「关键词+语义向量」双通道召回。每条记忆有置信度评分，不常用的随时间自然衰减</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🪟</span>
         <h3 class="feature-title">三态自然交互</h3>
-        <p class="feature-desc">完整窗口深度对话 / 浮动图标随时待命 / 系统托盘后台静默，全局快捷键热更新，不打断工作流</p>
+        <p class="feature-desc">完整窗口深度对话 / 浮动图标热键召唤 / 系统托盘后台静默。会话历史按天自动管理，微信/QQ式时间流向上滚动加载</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🧠</span>
         <h3 class="feature-title">情感基调感知</h3>
-        <p class="feature-desc">温暖度/直接度/主动度/稳定度四维实时推导，对话上下文感知（节奏/话题/深度），精灵真正懂你</p>
+        <p class="feature-desc">温暖度/直接度/主动度/稳定度四维实时推导，对话上下文感知（节奏/话题集中度/对话深度），精灵真正懂你的情绪节奏</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">💕</span>
         <h3 class="feature-title">默契度真实成长</h3>
-        <p class="feature-desc">初识→熟悉→默契→知己，基于真实记忆积累和行为模式检测，信任度+熟悉度双进度条可视化</p>
+        <p class="feature-desc">初识→熟悉→默契→知己，基于真实记忆积累和行为模式检测，信任度+熟悉度双进度条可视化成长</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🕐</span>
         <h3 class="feature-title">会话历史时间流</h3>
-        <p class="feature-desc">微信/QQ式时间流展示，按天向上滚动加载，跨天无缝衔接，超1小时自动注入上次上下文</p>
+        <p class="feature-desc">微信/QQ式时间流展示，按天自动组织会话，跨天无缝衔接。无需手动创建/切换会话，日历导航一键回到任意日期</p>
       </div>
       <div class="feature-card">
         <span class="feature-icon">🔒</span>
         <h3 class="feature-title">隐私本地优先</h3>
-        <p class="feature-desc">不监听键盘、不读剪贴板、不截屏，剪贴板三重保护（哈希检测→用户触发→敏感过滤），数据完全本地</p>
+        <p class="feature-desc">不监听键盘、不读剪贴板、不截屏、不监听网络。剪贴板三重保护（哈希检测→用户触发→敏感过滤），所有记忆100%本地存储</p>
       </div>
     </div>
 
@@ -672,10 +914,10 @@
         </div>
       </div>
       <div class="tech-item">
-        <div class="tech-badge">🧠</div>
+        <div class="tech-badge">🕸️</div>
         <div class="tech-content">
-          <h4>情感基调四维感知</h4>
-          <p>温暖度/直接度/主动度/稳定度实时推导，精灵真正感知你的情绪节奏</p>
+          <h4>记忆关系网络</h4>
+          <p>contradicts/supports/follows/refines 四种关系类型，Canvas 2D 力导向图谱可视化</p>
         </div>
       </div>
       <div class="tech-item">
@@ -697,7 +939,7 @@
     <div class="footer-hint">
       <span>点击</span>
       <span class="kbd">🚀 开始交互式体验</span>
-      <span>进入完整 Demo，内置引导步骤</span>
+      <span>进入完整 Demo，内置引导步骤和自动演示</span>
     </div>
   </main>
 </body>

@@ -671,9 +671,10 @@ export class SettingsPanelManager {
     const input = document.getElementById(inputId);
     if (!(btn instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) return;
 
-    // 使用 SVG 图标替代 emoji（UX-FD-03）
+    // 使用 SVG 图标替代 emoji（UX-FD-03），颜色状态由 data-visible 属性 + CSS 控制
     const renderIcon = (visible: boolean) => {
-      btn.innerHTML = `<svg class="icon" style="width:14px;height:14px;${visible ? 'color:var(--accent)' : ''}"><use href="#icon-eye"/></svg>`;
+      btn.dataset.visible = visible ? 'true' : 'false';
+      btn.innerHTML = '<svg class="icon icon-sm"><use href="#icon-eye"/></svg>';
     };
     renderIcon(false);
 

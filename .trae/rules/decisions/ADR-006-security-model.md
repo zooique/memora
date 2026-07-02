@@ -95,3 +95,45 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 - **护栏不阻断对话**：护栏自身异常时降级放行，这是降级优先原则的直接要求
 - **万物皆记忆**：护栏规则以 `source: "guardrail"` 融入记忆统一模型，不创建独立子系统
 - **反思是增强而非替代**：LLM 原本就能看到错误消息并自行修正，Reflection 只是在可重试场景下给 LLM 一个明确的"请重试"信号
+
+## 补充说明（2026-07-02 · 渲染进程 CSP 与内联样式）
+
+### 背景
+
+精灵宿主 `memora-sprite` 长期仅在 Electron 模式下运行，`renderer/index.html` 声明的 CSP `style-src 'self'` 在 Electron 下执行较宽松，内联 `style=""` 属性可正常解析。当引入 Web 模式（`dev:web` / `start:web`）后，浏览器严格执行 CSP，所有内联样式被静默丢弃，导致：
+
+1. SVG 精灵容器（`style="display:none"`）失去隐藏，默认 300×150px 占位
+2. `#app` 元素被推至 top:153px，界面顶部出现大片空白
+3. 进度条（`style="width:0%"`）回退为 `width:auto`，初始满格闪烁
+4. 设置图标颜色状态（`style="color:var(--accent)"`）失效
+
+### 决策
+
+在原有安全模型基础上，新增**渲染进程 CSP 与内联样式约束**，固化三条硬约束（详见 [security_rules.md §7](../security_rules.md)）：
+
+| 维度 | 设计 |
+|------|------|
+| CSP 严格度 | `renderer/index.html` 严格（`style-src 'self'`）；`float.html` 宽松（保留 `'unsafe-inline'`） |
+| 内联样式 | 渲染进程 HTML 严禁任何 `style=""` 属性（含静态 HTML 与动态 `innerHTML` 拼接产物） |
+| 动态样式来源 | 主题初始化等运行时样式由主进程 `webContents.executeJavaScript()` 注入；动态状态用 `data-*` 属性 + CSS 选择器表达 |
+| 替代模式 | 静态布局迁移到 CSS class（`.svg-sprite` / `.settings-hint-inline` / `.icon-xs` 等）；动态宽度由 CSS 默认值 + JS `.style.width` 设置 |
+
+### 理由
+
+- **Web/Electron 一致性**：同一份 HTML 在两种模式下表现一致，避免"Electron 能用 Web 不能用"的隐性 bug
+- **CSP 是安全资产**：`style-src 'self'` 阻止样式注入攻击（如 CSS 数据外泄），不应为了开发便利性引入 `'unsafe-inline'`
+- **审查可自动化**：`style="` 字面量搜索是 0 引用的硬约束，可被翠幕天罗审查清单覆盖
+- **数据属性语义更清晰**：`data-visible="true"` 比内联 `style="color:var(--accent)"` 更具可读性和可测试性
+
+### 影响
+
+- 所有渲染进程 HTML 修改必须经过 CSP 兼容性检查
+- TS 文件动态 `innerHTML` 拼接产物必须避免 `style="` 字面量
+- 提交前审查新增 4 项 CSP 兼容性检查清单
+- `float.html` 因独立悬浮窗场景，保留 `'unsafe-inline'` 不受此约束
+
+### 何时回顾
+
+- 当 Web 模式被废弃时（CSP 严格度可放宽）
+- 当 Electron 也开始严格执行 CSP 时（需进一步收紧约束）
+- 当引入需要内联样式的第三方库时（评估 nonce 或 hash 白名单方案）

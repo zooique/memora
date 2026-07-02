@@ -250,11 +250,19 @@
   background: var(--window-bg-2);
 }
 
+/* API Key 可见时图标高亮（替代内联 style="color:var(--accent)"，CSP style-src 'self' 兼容） */
+.toggle-visibility[data-visible="true"] .icon {
+  color: var(--accent);
+}
+
 /* ─── 设置面板扩展（v8） ─────────────────────────────────── */
+/* 基础提示类：合并原 259-264 与 330-335 两处重复定义，保留全部属性 */
 .settings-hint {
+  display: block;
   font-size: var(--font-xs);
   color: var(--text-3);
   font-style: italic;
+  margin-top: 4px;
   margin-bottom: 8px;
 }
 
@@ -321,12 +329,12 @@
   margin-left: auto; /* 推到右侧 */
 }
 
-/* ─── 行内提示文字（主题说明等） ─── */
-.settings-hint {
-  display: block;
-  font-size: var(--font-xs);
-  color: var(--text-3);
-  margin-top: 4px;
+/* ─── 行内提示变体（与 checkbox 同行显示，替代内联 style="display:inline;margin-left:4px"） ─── */
+.settings-hint-inline {
+  display: inline;
+  margin-top: 0;
+  margin-bottom: 0;
+  margin-left: 4px;
 }
 
 /* ─── H2 用户画像面板 ───────────────────────────────────── */

@@ -9,15 +9,16 @@
   },
   "scripts": {
     "build": "tsc",
-    "clean:electron": "node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\"",
-    "build:electron": "npm run check-ipc && npm run clean:electron && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
-    "build:all": "npm run build && npm run build:electron",
-    "start": "tsx src/cli.ts",
+    "build:electron": "npm run check-ipc && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
+    "build:web": "tsc -p tsconfig.web.json",
+
     "start:electron": "chcp 65001 >nul && set NODE_ENV=production&& npm run build:electron && set NODE_ENV=production&& electron ./dist-electron/electron/main.js",
     "dev:electron": "chcp 65001 >nul && set NODE_ENV=development&& npm run build:electron && node scripts/dev-watch.mjs",
-    "dev:web": "set NODE_ENV=development&& tsx src/web/server.ts",
+    "dev:web": "set NODE_ENV=development&& npm run build:electron && tsx src/web/server.ts",
+
+    "start": "tsx src/cli.ts",
     "start:web": "set NODE_ENV=production&& npm run build:web && node dist-web/web/server.js",
-    "build:web": "tsc -p tsconfig.web.json",
+
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "npm run check-configs && eslint . --ext .ts",
@@ -31,9 +32,7 @@
     "check-cli-keys": "npx tsx scripts/check-cli-config-keys.ts",
     "check-configs": "npm run check-ipc && npm run check-cli-keys",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "rebuild:web": "npm rebuild better-sqlite3",
-    "postinstall": "electron-rebuild -f -w better-sqlite3",
-    "setup:mirrors": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-mirrors.ps1"
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "engines": {
     "node": ">=24.0.0"

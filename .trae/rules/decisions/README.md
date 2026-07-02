@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：22（内核 14 + 精灵 8）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：23（内核 14 + 精灵 9）
 
 ---
 
@@ -40,6 +40,7 @@ description: Memora 关键决策年轮
 | [ADR-SP-006](./ADR-SP-006-testing.md)              | 测试：Vitest + InMemoryStorage + 临时 SQLite       | ✅ 已接受 | 质量   |
 | [ADR-SP-007](./ADR-SP-007-directory-structure.md)  | 目录结构：hosts/memora-sprite/ 按职责分层          | ✅ 已接受 | 工程   |
 | [ADR-SP-008](./ADR-SP-008-v8-ui-refactor.md)       | v8 UI 重构：双主题 CSS 变量 + 悬浮核心窗口         | ✅ 已接受 | 前端   |
+| [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) | PanelManager 组合模式约定（阶段 C 架构演进沉淀） | ✅ 已接受 | 架构   |
 
 ---
 

@@ -412,6 +412,12 @@ html, body {
   display: none !important;
 }
 
+/* SVG 图标精灵容器：隐藏但保留 defs/symbol 定义供 <use> 引用
+   使用 CSS class 而非内联 style="display:none"，因为 CSP style-src 'self' 会阻止内联样式属性 */
+.svg-sprite {
+  display: none;
+}
+
 /* FD-02 面板级加载态：居中旋转圆环 + 文字，用于异步数据加载等待 */
 /* ─── UX-FD-03 SVG 图标系统：统一替换 emoji ─── */
 .icon {
@@ -423,6 +429,10 @@ html, body {
   color: inherit;
   flex-shrink: 0;
 }
+
+/* 图标尺寸修饰类（替代内联 style="width:Npx;height:Npx"，CSP style-src 'self' 兼容） */
+.icon-xs { width: 12px; height: 12px; }
+.icon-sm { width: 14px; height: 14px; }
 
 .panel-loading {
   display: flex;

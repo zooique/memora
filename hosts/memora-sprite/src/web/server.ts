@@ -18,9 +18,9 @@
  *
  * dev:web 前置条件：
  *   1. npm run build:electron —— 生成 renderer 编译产物（必须，否则启动校验失败）
- *   2. npm run rebuild:web —— 为系统 Node.js 重编译 better-sqlite3（可选）
+ *   2. npm rebuild better-sqlite3 —— 为系统 Node.js 重编译 better-sqlite3（可选）
  *      不执行时 Agent 降级为 not ready，仅支持 UI 调试；执行后支持完整对话功能
- *      注意：rebuild:web 后若要切回 Electron 模式，需运行 npm run rebuild
+ *      注意：rebuild better-sqlite3 后若要切回 Electron 模式，需运行 npm run rebuild
  */
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';

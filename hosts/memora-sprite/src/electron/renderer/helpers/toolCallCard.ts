@@ -141,7 +141,7 @@ export function updateToolResult(
   if (status) {
     const iconId = ok ? '#icon-check' : '#icon-close';
     const label = ok ? '成功' : '失败';
-    status.innerHTML = `<svg class="icon" style="width:12px;height:12px"><use href="${iconId}"/></svg> ${label}`;
+    status.innerHTML = `<svg class="icon icon-xs"><use href="${iconId}"/></svg> ${label}`;
   }
 
   // 追加结果摘要

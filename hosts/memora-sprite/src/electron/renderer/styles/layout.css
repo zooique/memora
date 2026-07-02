@@ -47,9 +47,9 @@
 
 /* v8：顶部栏拖拽占位区（继承父级 drag，无需重复声明） */
 /* ADR-NAV-001 移除 padding-left（导航标签已有独立间距） */
+/* flex 子元素，高度由父级 align-items: center 控制 */
 #titlebar-drag {
   flex: 1;
-  height: 100%;
   display: flex;
   align-items: center;
   padding-left: 12px;
@@ -526,6 +526,7 @@
 }
 
 .affect-fill {
+  width: 0;
   height: 100%;
   border-radius: 3px;
   /* 色调渐变：低→蓝色 中→绿色 高→橙色（由 JS 动态设置 background） */
