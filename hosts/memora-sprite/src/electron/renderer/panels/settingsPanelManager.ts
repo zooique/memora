@@ -126,6 +126,8 @@ export class SettingsPanelManager {
   private llmTestCallback: (() => void) | null = null;
   /** IX-07 角色匹配模式变更回调 */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
+  /** ADR-015 归档模式变更回调（radio change 时即时触发，与主题一样即时生效） */
+  private archiveModeChangeCallback: ((mode: 'full' | 'insights-only' | 'manual') => void) | null = null;
 
   // ─── 事件清理 ────────────────────────────────────────────
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
@@ -436,6 +438,19 @@ export class SettingsPanelManager {
           const value = radio.value;
           if (value === 'light' || value === 'dark' || value === 'auto') {
             this.host.setTheme(value);
+          }
+        }
+      });
+    });
+
+    // ADR-015 归档模式切换：切换时即时应用（与主题一样即时生效，无需等保存按钮）
+    const archiveModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="archive-mode"]');
+    archiveModeRadios.forEach((radio) => {
+      this.events.addEventListener(radio, 'change', () => {
+        if (radio.checked) {
+          const value = radio.value;
+          if (value === 'full' || value === 'insights-only' || value === 'manual') {
+            this.archiveModeChangeCallback?.(value);
           }
         }
       });
@@ -918,6 +933,12 @@ export class SettingsPanelManager {
       modeRadio.checked = true;
     }
 
+    // ADR-015 同步归档模式 radio（即时生效字段，仅回显选中状态）
+    const archiveRadios = document.querySelectorAll<HTMLInputElement>('input[name="archive-mode"]');
+    archiveRadios.forEach((radio) => {
+      radio.checked = radio.value === config.archiveMode;
+    });
+
     // FD-04 项目模式（单选按钮 + 专注项目下拉框）
     const projectModeRadio = document.querySelector<HTMLInputElement>(
       `input[name="project-mode"][value="${config.projectMode}"]`,
@@ -992,8 +1013,13 @@ export class SettingsPanelManager {
     );
     const theme = themeRadio?.value === 'dark' ? 'dark' : 'light';
 
+    // ADR-015 收集归档模式（即时生效，此处仅满足类型契约，实际持久化在 onArchiveModeChange）
+    const archiveModeChecked = document.querySelector<HTMLInputElement>('input[name="archive-mode"]:checked');
+    const archiveMode = (archiveModeChecked?.value as 'full' | 'insights-only' | 'manual') ?? 'full';
+
     return {
       theme,
+      archiveMode,
       silentMode: this.cfgSilent?.checked ?? false,
       proactiveThreshold: parseInt(this.cfgThreshold?.value ?? '3', 10) || 3,
       proactiveCooldownMs: (parseInt(this.cfgCooldown?.value ?? '5', 10) || 5) * MS_PER_MINUTE,
@@ -1082,6 +1108,10 @@ export class SettingsPanelManager {
   /** IX-07 注册角色匹配模式变更回调 */
   onPersonaModeChange(cb: (mode: string) => void): void {
     this.personaModeChangeCallback = cb;
+  }
+  /** ADR-015 注册归档模式变更回调（radio change 时即时触发持久化 + 应用到 Agent） */
+  onArchiveModeChange(cb: (mode: 'full' | 'insights-only' | 'manual') => void): void {
+    this.archiveModeChangeCallback = cb;
   }
 
   /** 获取当前角色匹配模式（供 UIManager 同步到 persona badge） */

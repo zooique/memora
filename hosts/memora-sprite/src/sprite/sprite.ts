@@ -193,6 +193,11 @@ export class Sprite {
     if (this.config.fileWatcherEnabled) {
       this.registerFileWatcher();
     }
+
+    // ADR-015: 启动时从 spriteConfig 读取 archiveMode 并应用到 Agent
+    // loadSpriteConfig 已合并 DEFAULT_SPRITE_CONFIG，archiveMode 必有值
+    // Sprite 构造时 Agent 已 init 完成，调用 setArchiveMode 安全（不在对话中）
+    this.agent.setArchiveMode(this.config.archiveMode);
   }
 
   /** 注册 FileWatcherTrigger */
@@ -634,6 +639,12 @@ export class Sprite {
     // 专注模式锁定特定项目，其他项目的文件变化被忽略
     if (key === 'projectMode' || key === 'focusProjectPath') {
       this.applyProjectMode();
+    }
+
+    // ADR-015: 归档模式变更时应用到 Agent（运行时切换）
+    // setArchiveMode 内部有 _chatBusy 守卫，对话进行中会抛错（设置面板应在非对话时切换）
+    if (key === 'archiveMode') {
+      this.agent.setArchiveMode(this.config.archiveMode);
     }
   }
 

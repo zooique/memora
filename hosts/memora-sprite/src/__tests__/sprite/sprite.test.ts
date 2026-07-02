@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sprite 主控测试
  *
  * 注意：loadSpriteConfig/saveSpriteConfig 不接受 dataDir 参数，
@@ -55,6 +55,8 @@ const mockAgent = {
   removeAllListeners: vi.fn(),
   // Phase 2.1：情感基调注入点
   injectAffect: vi.fn(),
+  // ADR-015 归档模式：Sprite 构造时调用 agent.setArchiveMode，mock 需提供方法
+  setArchiveMode: vi.fn(),
   memory: {
     stats: vi.fn().mockReturnValue({ total: 0, bySource: {} }),
     suggest: vi.fn().mockReturnValue([]),

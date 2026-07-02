@@ -146,6 +146,20 @@ export function createSettingsController(uiManager: UIManager) {
       void loadLlmConfig();
     });
 
+    // ADR-015 归档模式即时切换：radio change 时立即持久化 + 应用到 Agent
+    // 与主题一样即时生效，不走保存按钮（避免用户忘记保存导致归档模式与预期不一致）
+    uiManager.onArchiveModeChange(async (mode) => {
+      try {
+        await window.electronAPI.updateConfig('archiveMode', mode);
+        uiManager.showToast(`归档模式已切换为：${mode === 'full' ? '全自动' : mode === 'insights-only' ? '仅洞察自动' : '全手动'}`, 'success');
+      } catch (error) {
+        reportError('onArchiveModeChange', error);
+        uiManager.showToast('切换归档模式失败，请重试', 'error');
+        // 失败时重新加载表单，恢复 radio 到实际状态
+        void loadConfig();
+      }
+    });
+
     // LLM 连接测试：调用主进程验证配置，显示结果
     uiManager.onLlmTest(async () => {
       const config = uiManager.getLlmConfigFromForm();
@@ -188,6 +202,9 @@ export function createSettingsController(uiManager: UIManager) {
         // UX-FD-12 主题字段：cfg.theme 可选（SpriteConfig），fallback 到 'light'。
         // 主题即时生效（renderer.ts onThemeChange 单独持久化），此处仅回显到表单单选按钮
         theme: cfg.theme === 'dark' ? 'dark' : 'light',
+        // ADR-015 归档模式：cfg.archiveMode 可选（SpriteConfig），fallback 到 'full'。
+        // 归档模式即时生效（onArchiveModeChange 单独持久化），此处仅回显到表单单选按钮
+        archiveMode: cfg.archiveMode ?? 'full',
         silentMode: Boolean(cfg.silentMode),
         proactiveThreshold: Number(cfg.proactiveThreshold) || 3,
         proactiveCooldownMs: Number(cfg.proactiveCooldownMs) || 300_000,

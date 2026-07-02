@@ -1599,6 +1599,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onPersonaModeChange(cb: (mode: string) => void): void {
     this.settingsPanelManager.onPersonaModeChange(cb);
   }
+  /**
+   * ADR-015 注册归档模式变更回调（委托到 SettingsPanelManager）
+   *
+   * radio change 时即时触发，由 settingsController 调用 updateConfig 持久化 + 应用到 Agent。
+   * 与主题一样即时生效，不走保存按钮。
+   *
+   * @param cb 归档模式变更回调函数
+   */
+  onArchiveModeChange(cb: (mode: 'full' | 'insights-only' | 'manual') => void): void {
+    this.settingsPanelManager.onArchiveModeChange(cb);
+  }
 
   /**
    * ADR-SP-008 注册主题变更回调（代理到 ThemeManager）

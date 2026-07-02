@@ -1,4 +1,4 @@
-﻿/**
+/**
  * settingsController 单元测试（QC-TEST-SETTINGS）
  *
  * 覆盖范围：
@@ -64,6 +64,8 @@ function createMockUiManager(callbacks: RegisteredCallbacks = {}): UIManager {
     onLlmConfigSave: vi.fn((cb) => { callbacks.onLlmConfigSave = cb; }),
     onConfigCancel: vi.fn((cb) => { callbacks.onConfigCancel = cb; }),
     onLlmTest: vi.fn((cb) => { callbacks.onLlmTest = cb; }),
+    // ADR-015 归档模式变更回调（setupSettingsPanel 中注册，mock 需提供方法）
+    onArchiveModeChange: vi.fn(),
     showToast: vi.fn(),
     showLlmTestResult: vi.fn(),
     getLlmConfigFromForm: vi.fn(() => ({ provider: '', model: '', baseUrl: '', apiKey: '', temperature: 0.7 })),
@@ -83,6 +85,8 @@ function createMockUiManager(callbacks: RegisteredCallbacks = {}): UIManager {
 function makeFormConfig(overrides: Partial<SpriteConfigForm> = {}): SpriteConfigForm {
   return {
     theme: 'light',
+    // ADR-015 归档模式默认值（SpriteConfigForm 必填字段）
+    archiveMode: 'full',
     silentMode: false,
     proactiveThreshold: 3,
     proactiveCooldownMs: 300_000,

@@ -75,6 +75,17 @@ export interface SpriteConfig {
    * accelerators 是 action → accelerator 映射，action 为开放字符串（遵循 ADR-004）。
    */
   shortcuts?: ShortcutConfig;
+  /**
+   * 归档模式（ADR-015），默认 'full'
+   *
+   * - 'full'：profile facts + insight 自动归档（对话原始内容待 GAP-2 实现后自动）
+   * - 'insights-only'：profile facts + insight 自动归档，对话原始内容需手动
+   * - 'manual'：所有归档都需手动触发
+   *
+   * 持久化到 sprite.json，启动时读取传入 Agent 构造参数，
+   * 运行时可通过设置面板切换（agent.setArchiveMode()）。
+   */
+  archiveMode?: 'full' | 'insights-only' | 'manual';
 }
 
 /**
@@ -127,6 +138,7 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   silentModeExpiresAt: 'string',
   theme: 'enum:light|dark|auto',
   shortcuts: 'object',
+  archiveMode: 'enum:full|insights-only|manual',
 };
 
 /** 内置默认值 */
@@ -157,6 +169,7 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
       'recall-memory': 'Ctrl+Shift+R',
     },
   },
+  archiveMode: 'full',
 };
 
 /** 配置文件名 */

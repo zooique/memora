@@ -259,10 +259,11 @@ export interface ChatMessage {
  * 精灵配置表单（渲染进程用）
  *
  * P3：从 SpriteConfig 派生，消除手写平行结构导致的同步漂移风险。
- * - 11 个必填字段通过 Required<Pick<SpriteConfig, ...>> 派生（可选→必填）
+ * - 12 个必填字段通过 Required<Pick<SpriteConfig, ...>> 派生（可选→必填）
  * - silentModeExpiresAt 保持可选（与 SpriteConfig 一致，null 表示无定时恢复）
  * - theme 单独声明：SpriteConfig.theme 含 'auto'，但表单仅暴露 'light'|'dark'
  *   （'auto' 由系统跟随逻辑处理，不暴露到表单 UI）
+ * - archiveMode 三态全部暴露到表单（与 theme 不同：theme 窄化，archiveMode 不窄化）
  * - shortcuts 在表单中暴露完整 ShortcutConfig（Phase 3.3 快捷键设置 UI）
  * - SpriteConfig 新增/修改字段时，Form 自动同步（除 theme 外）
  */
@@ -271,6 +272,8 @@ type SpriteConfigFormBase = Required<Pick<SpriteConfig,
   | 'proactiveCooldownMs' | 'triggerIntervalMs' | 'fileWatcherEnabled'
   | 'fileWatcherPaths' | 'fileWatcherDebounceMs' | 'defaultPersona'
   | 'projectMode' | 'focusProjectPath' | 'shortcuts'
+  // ADR-015 归档模式三态全部暴露到表单（切换即时生效，不走保存按钮）
+  | 'archiveMode'
 >>;
 
 export interface SpriteConfigForm extends SpriteConfigFormBase {

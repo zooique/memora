@@ -796,6 +796,16 @@
               <!-- UX-PP-21 主题即时生效说明：从顶部栏降级到主题设置行内注释 -->
               <span class="settings-hint">主题即时生效，其余设置需点击保存</span>
             </div>
+            <!-- ADR-015 归档模式切换：full（默认）/ insights-only / manual，切换即时生效 -->
+            <div class="settings-row">
+              <label for="cfg-archive-mode">归档模式</label>
+              <div class="radio-group">
+                <label><input type="radio" name="archive-mode" value="full" checked /> 全自动（默认）</label>
+                <label><input type="radio" name="archive-mode" value="insights-only" /> 仅洞察自动</label>
+                <label><input type="radio" name="archive-mode" value="manual" /> 全手动</label>
+              </div>
+              <span class="settings-hint">控制对话后记忆归档行为，切换即时生效</span>
+            </div>
             <div class="settings-row">
               <label for="cfg-silent">静默模式</label>
               <input type="checkbox" id="cfg-silent" />
