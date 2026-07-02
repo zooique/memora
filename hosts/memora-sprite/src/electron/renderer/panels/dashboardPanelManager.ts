@@ -1093,17 +1093,21 @@ export class DashboardPanelManager {
       item.className = 'perception-pattern-item';
 
       // 类型标签：根据模式类型选择对应样式和文字
+      // 后端 PatternType 映射：recurring_topic→重复、knowledge_gap→缺口、interest_drift→漂移
       const typeSpan = document.createElement('span');
       typeSpan.className = 'perception-pattern-type';
       switch (pattern.type) {
+        case 'recurring_topic':
         case 'repeat':
           typeSpan.classList.add('repeat');
           typeSpan.textContent = '重复';
           break;
+        case 'knowledge_gap':
         case 'gap':
           typeSpan.classList.add('gap');
           typeSpan.textContent = '缺口';
           break;
+        case 'interest_drift':
         case 'drift':
           typeSpan.classList.add('drift');
           typeSpan.textContent = '漂移';
@@ -1149,6 +1153,30 @@ export class DashboardPanelManager {
         : Date.now();
       this.lastNarrativePresence = { state: 'away', awaySince };
     }
+
+    // 更新感知面板在场状态指示器 DOM
+    const presenceDot = document.getElementById('perception-presence-dot');
+    const presenceText = document.getElementById('perception-presence-text');
+    if (presenceDot && presenceText) {
+      if (payload.state === 'present') {
+        presenceDot.className = 'presence-dot present';
+        presenceText.textContent = '用户在场';
+      } else {
+        presenceDot.className = 'presence-dot away';
+        // 计算离开时长显示
+        const awayDurationMs = payload.awayDurationMs ?? 0;
+        const awayMinutes = Math.floor(awayDurationMs / 60000);
+        if (awayMinutes < 1) {
+          presenceText.textContent = '用户刚离开';
+        } else if (awayMinutes < 60) {
+          presenceText.textContent = `用户已离开 ${awayMinutes} 分钟`;
+        } else {
+          const awayHours = Math.floor(awayMinutes / 60);
+          presenceText.textContent = `用户已离开 ${awayHours} 小时`;
+        }
+      }
+    }
+
     this.updateNarrative();
   }
 

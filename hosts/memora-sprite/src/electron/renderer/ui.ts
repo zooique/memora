@@ -45,6 +45,7 @@ import type {
   RapportPayload,
   ContextPayload,
   PatternsPayload,
+  PresencePayload,
 } from './ipcListeners.js';
 import { PersonaPanelManager } from './panels/personaPanelManager.js';
 // C-2：CommandPaletteManager 纳入 UIManager 组合体系，统一生命周期管理
@@ -751,9 +752,25 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (this.state.currentPanel && this.state.currentPanel !== panel) {
       const prevPanel = document.getElementById(`panel-${this.state.currentPanel}`);
       prevPanel?.setAttribute('aria-hidden', 'true');
+      // 离开记忆面板时，关闭所有分析面板（统计洞察/健康度诊断），
+      // 避免切回记忆时分析面板仍遮挡视图
+      if (this.state.currentPanel === 'memories') {
+        this.memoryPanel.dismissAnalysisPanels();
+      }
     }
 
     this.state.currentPanel = panel;
+
+    // 切换面板后重置滚动位置到顶部，避免新面板显示在中间位置
+    // web模式下滚动容器是 documentElement/body，Electron模式下是 main-content
+    requestAnimationFrame(() => {
+      document.documentElement.scrollTop = 0;
+      document.body.scrollTop = 0;
+      const mainContent = document.getElementById('main-content');
+      if (mainContent) mainContent.scrollTop = 0;
+      // 各面板自身也滚动到顶部
+      panelEl?.scrollTo?.(0, 0);
+    });
 
     // 切换到对话面板时自动聚焦输入框，减少多余点击步骤
     if (panel === 'chat') {
@@ -999,6 +1016,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       void window.electronAPI
         .getPerceptionSnapshot()
         .then((snapshot) => {
+          if (!snapshot) return;
           if (snapshot.affect) this.dashboardPanel.updateAffectDisplay(snapshot.affect);
           if (snapshot.rapport) this.dashboardPanel.updateRapportDisplay(snapshot.rapport);
           if (snapshot.context) this.dashboardPanel.updateContextDisplay(snapshot.context);
@@ -1539,6 +1557,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 更新模式洞察面板（委托到 DashboardPanelManager） */
   updatePatternsDisplay(payload: PatternsPayload): void {
     this.dashboardPanel.updatePatternsDisplay(payload);
+  }
+  /** 更新在场状态展示（委托到 DashboardPanelManager） */
+  updatePresenceDisplay(payload: PresencePayload): void {
+    this.dashboardPanel.updatePresenceDisplay(payload);
   }
   /** 更新叙事摘要 DOM（委托到 DashboardPanelManager） */
   updateNarrative(): void { this.dashboardPanel.updateNarrative(); }

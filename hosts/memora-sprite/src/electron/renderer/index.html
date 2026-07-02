@@ -117,6 +117,10 @@
       <symbol id="icon-chevron" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <!-- 最小化 -->
       <symbol id="icon-minimize" viewBox="0 0 24 24"><line x1="5" y1="19" x2="19" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <!-- 筛选（漏斗图标） -->
+      <symbol id="icon-filter" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <!-- 更多（三点水平） -->
+      <symbol id="icon-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/></symbol>
     </defs>
   </svg>
 
@@ -204,6 +208,14 @@
           <!-- 叙事概览行（替代原"叙事摘要"独立分节，无边框无标题，作为一眼可见的摘要） -->
           <p class="perception-overview-text" id="perception-narrative-text">精灵正在感知中...</p>
 
+          <!-- 在场状态（用户在场/离开，紧跟叙事摘要，一眼可见） -->
+          <div class="perception-section" id="perception-presence">
+            <div class="presence-indicator" id="perception-presence-indicator">
+              <span class="presence-dot present" id="perception-presence-dot"></span>
+              <span class="presence-text" id="perception-presence-text">用户在场</span>
+            </div>
+          </div>
+
           <!-- 情感基调（2×2 紧凑网格，四维进度条横向排布） -->
           <div class="perception-section" id="perception-affect">
             <h4 class="perception-section-title">情感基调</h4>
@@ -244,7 +256,7 @@
             <h4 class="perception-section-title">模式洞察</h4>
             <div id="perception-patterns-list" class="perception-patterns-list"></div>
           </div>
-          <!-- 运行指标（独立折叠区） -->
+          <!-- 运行指标（独立折叠区，默认折叠，核心感知数据已在上方展示） -->
           <div class="perception-section collapsible" id="perception-metrics">
             <h4 class="perception-section-title clickable" id="perception-metrics-toggle">
               运行指标
@@ -363,26 +375,30 @@
           <span class="panel-title">记忆</span>
           <!-- 搜索框占据主要宽度 -->
           <input type="text" id="memory-search" placeholder="搜索记忆…" aria-label="搜索记忆" />
+          <!-- 视图切换分段控件：列表/时间线/图谱（常驻，互斥单选） -->
+          <div class="view-switch" role="tablist" aria-label="视图切换">
+            <button id="btn-list-view" class="view-switch-btn active" role="tab" aria-selected="true" title="列表视图">
+              <svg class="icon"><use href="#icon-memo"/></svg>
+            </button>
+            <button id="btn-timeline-view" class="view-switch-btn" role="tab" aria-selected="false" title="时间线视图">
+              <svg class="icon"><use href="#icon-timeline"/></svg>
+            </button>
+            <button id="btn-graph-view" class="view-switch-btn" role="tab" aria-selected="false" title="图谱视图">
+              <svg class="icon"><use href="#icon-brain"/></svg>
+            </button>
+          </div>
+          <!-- 高级筛选按钮（图标按钮，切换筛选栏显示） -->
+          <button id="btn-advanced-filter" class="icon-btn" title="高级筛选">
+            <svg class="icon"><use href="#icon-filter"/></svg>
+          </button>
           <!-- 主操作：添加记忆 -->
           <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
-          <!-- 更多工具（含视图切换/高级筛选/洞察/健康度） -->
+          <!-- 更多工具（统计洞察/健康度诊断） -->
           <div class="toolbar-more">
             <button id="btn-memory-more" class="icon-btn" title="更多工具" aria-haspopup="true" aria-expanded="false">
-              <svg class="icon"><use href="#icon-tools"/></svg>
+              <svg class="icon"><use href="#icon-more"/></svg>
             </button>
             <div id="memory-more-menu" class="dropdown more-menu hidden">
-              <button class="more-menu-item" data-action="advanced-search">
-                <svg class="icon"><use href="#icon-gear"/></svg> 高级筛选
-              </button>
-              <button class="more-menu-item" data-action="view-list">
-                <svg class="icon"><use href="#icon-memo"/></svg> 列表视图
-              </button>
-              <button class="more-menu-item" data-action="view-timeline">
-                <svg class="icon"><use href="#icon-timeline"/></svg> 时间线视图
-              </button>
-              <button class="more-menu-item" data-action="view-graph">
-                <svg class="icon"><use href="#icon-brain"/></svg> 图谱视图
-              </button>
               <button class="more-menu-item" data-action="insights">
                 <svg class="icon"><use href="#icon-chart"/></svg> 统计洞察
               </button>
@@ -424,6 +440,12 @@
         </div>
         <!-- 记忆洞察栏（Phase 3：统计 + source 分布 + 关系摘要，默认折叠） -->
         <div id="memory-insights-bar" class="insights-bar hidden">
+          <div class="insights-header">
+            <span class="insights-title"><svg class="icon"><use href="#icon-chart"/></svg> 统计洞察</span>
+            <button class="panel-close-btn" id="btn-close-insights" title="关闭统计洞察" aria-label="关闭">
+              <svg class="icon"><use href="#icon-close"/></svg>
+            </button>
+          </div>
           <div class="insights-row">
             <div class="insights-stat">
               <span class="insights-stat-value" id="insights-total">0</span>
@@ -470,6 +492,9 @@
             <span class="health-title"><svg class="icon"><use href="#icon-health"/></svg> 记忆健康度</span>
             <span class="health-badge" id="health-badge">优秀</span>
             <span class="health-score" id="health-score">100</span>
+            <button class="panel-close-btn" id="btn-close-health" title="关闭健康度诊断" aria-label="关闭">
+              <svg class="icon"><use href="#icon-close"/></svg>
+            </button>
           </div>
           <div class="health-metrics">
             <div class="health-metric">

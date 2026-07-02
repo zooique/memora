@@ -630,6 +630,54 @@
   border-color: var(--muted);
 }
 
+/* 图标按钮 active 状态（筛选激活时高亮） */
+#panel-memories .panel-header .icon-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ─── 视图切换分段控件（列表/时间线/图谱） ───────────────── */
+.view-switch {
+  display: inline-flex;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 0;
+}
+
+.view-switch-btn {
+  width: 30px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  transition: all var(--transition-fast);
+}
+
+.view-switch-btn .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.view-switch-btn:hover {
+  color: var(--subtext);
+  background: var(--surface0);
+}
+
+.view-switch-btn.active {
+  background: var(--window-bg);
+  color: var(--accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
 /* ─── 工具栏更多菜单（下拉） ───────────────────────────────── */
 .toolbar-more {
   position: relative;
@@ -1138,6 +1186,23 @@
   overflow: hidden;
 }
 
+/* 统计洞察面板头部：标题 + 关闭按钮 */
+.insights-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.insights-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* 洞察行：统计卡片 + 分布图水平排列 */
 .insights-row {
   display: flex;
@@ -1416,7 +1481,7 @@
   overflow: hidden;
 }
 
-/* 健康度头部：标题 + 等级徽章 + 总分 */
+/* 健康度头部：标题 + 等级徽章 + 总分 + 关闭按钮 */
 .health-header {
   display: flex;
   align-items: center;
@@ -1428,6 +1493,9 @@
   font-size: var(--font-sm);
   font-weight: 600;
   color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .health-badge {
@@ -1444,11 +1512,38 @@
 .health-badge.poor { background: var(--red-20); color: var(--red); }
 
 .health-score {
-  margin-left: auto;
   font-size: var(--font-score);
   font-weight: 700;
   color: var(--text);
   font-variant-numeric: tabular-nums;
+}
+
+/* 统一面板关闭按钮（X）：分析面板右上角 */
+.panel-close-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.panel-close-btn:hover {
+  background: var(--surface1);
+  color: var(--text);
+}
+
+.panel-close-btn .icon {
+  width: 16px;
+  height: 16px;
 }
 
 /* 健康度指标三行 */

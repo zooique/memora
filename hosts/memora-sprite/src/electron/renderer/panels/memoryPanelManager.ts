@@ -81,6 +81,10 @@ export class MemoryPanelManager {
   // ─── 图谱视图状态（ADR-014：拓扑可视化） ──────────────────
   /** 当前视图模式：list（列表）、timeline（时间线）、graph（图谱），默认列表 */
   private viewMode: 'list' | 'timeline' | 'graph' = 'list';
+  /** 打开分析面板（统计洞察/健康度诊断）前的视图模式，关闭时恢复 */
+  private previousViewMode: 'list' | 'timeline' | 'graph' = 'list';
+  /** 当前激活的分析面板：null 表示无，'insights' / 'health' */
+  private activeAnalysisPanel: 'insights' | 'health' | null = null;
   /** 图谱渲染器实例（Canvas 2D 力导向图） */
   private graphRenderer: RelationGraphRenderer | null = null;
   /** 图谱数据缓存（切换回图谱视图时避免重复请求 IPC） */
@@ -307,12 +311,19 @@ export class MemoryPanelManager {
       });
     }
 
-    // ─── 更多菜单（高级搜索/洞察/健康度） ──────────────
+    // ─── 高级筛选按钮（独立图标按钮，切换筛选栏显示） ────
+    const advFilterBtn = document.getElementById('btn-advanced-filter');
+    const advSearchBar = document.getElementById('advanced-search-bar');
+    if (advFilterBtn && advSearchBar) {
+      this.events.addEventListener(advFilterBtn, 'click', () => {
+        advSearchBar.classList.toggle('hidden');
+        advFilterBtn.classList.toggle('active', !advSearchBar.classList.contains('hidden'));
+      });
+    }
+
+    // ─── 更多菜单（统计洞察/健康度诊断） ──────────────
     const moreBtn = document.getElementById('btn-memory-more');
     const moreMenu = document.getElementById('memory-more-menu');
-    const advSearchBar = document.getElementById('advanced-search-bar');
-    const insightsBar = document.getElementById('memory-insights-bar');
-    const healthBar = document.getElementById('memory-health-bar');
 
     /** 切换更多菜单的显示/隐藏 */
     const toggleMoreMenu = (show?: boolean): void => {
@@ -355,7 +366,7 @@ export class MemoryPanelManager {
       }
     });
 
-    // 更多菜单项事件委托
+    // 更多菜单项事件委托（仅保留统计洞察和健康度诊断）
     if (moreMenu) {
       this.events.addEventListener(moreMenu, 'click', async (e) => {
         const item = ((e as Event).target as HTMLElement).closest('.more-menu-item') as HTMLElement | null;
@@ -363,46 +374,25 @@ export class MemoryPanelManager {
         const action = item.getAttribute('data-action');
         toggleMoreMenu(false);
 
-        if (action === 'advanced-search') {
-          if (advSearchBar) {
-            advSearchBar.classList.toggle('hidden');
-          }
-        } else if (action === 'view-list') {
-          this.switchView('list');
-          this.viewSwitchCallback?.('list');
-        } else if (action === 'view-timeline') {
-          this.switchView('timeline');
-          this.viewSwitchCallback?.('timeline');
-        } else if (action === 'view-graph') {
-          this.switchView('graph');
-          this.viewSwitchCallback?.('graph');
-        } else if (action === 'insights') {
-          if (insightsBar) {
-            const isHidden = insightsBar.classList.contains('hidden');
-            // 显示 insights 时隐藏视图容器和 health，实现显示类型互斥切换
-            if (isHidden) {
-              this.hideAllDisplayViews();
-              if (healthBar) healthBar.classList.add('hidden');
-            }
-            insightsBar.classList.toggle('hidden', !isHidden);
-            if (isHidden) {
-              this.moreMenuActionCallback?.('insights');
-            }
-          }
+        if (action === 'insights') {
+          this.toggleAnalysisPanel('insights');
         } else if (action === 'health') {
-          if (healthBar) {
-            const isHidden = healthBar.classList.contains('hidden');
-            // 显示 health 时隐藏视图容器和 insights，实现显示类型互斥切换
-            if (isHidden) {
-              this.hideAllDisplayViews();
-              if (insightsBar) insightsBar.classList.add('hidden');
-            }
-            healthBar.classList.toggle('hidden', !isHidden);
-            if (isHidden) {
-              this.moreMenuActionCallback?.('health');
-            }
-          }
+          this.toggleAnalysisPanel('health');
         }
+      });
+    }
+
+    // ─── 分析面板关闭按钮 ──────────────────────────
+    const closeInsightsBtn = document.getElementById('btn-close-insights');
+    if (closeInsightsBtn) {
+      this.events.addEventListener(closeInsightsBtn, 'click', () => {
+        this.hideAnalysisPanel();
+      });
+    }
+    const closeHealthBtn = document.getElementById('btn-close-health');
+    if (closeHealthBtn) {
+      this.events.addEventListener(closeHealthBtn, 'click', () => {
+        this.hideAnalysisPanel();
       });
     }
 
@@ -1172,16 +1162,169 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 隐藏 insights 和 health 显示类型
+   * 轻量隐藏分析面板（不恢复视图）
    *
-   * 当切换视图（list/timeline/graph）时调用，
-   * 确保显示类型互斥切换，避免平铺污染。
+   * 供 switchView() 调用——切换视图时只需要关闭分析面板UI，
+   * 不需要恢复 previousViewMode（因为 switchView 本身会切换到新视图）。
+   * X按钮和菜单项toggle请使用 hideAnalysisPanel()（会恢复之前的视图）。
    */
   private hideInsightsAndHealth(): void {
     const insightsBar = document.getElementById('memory-insights-bar');
     const healthBar = document.getElementById('memory-health-bar');
+    const partnerInsights = document.getElementById('partner-insights');
     if (insightsBar) insightsBar.classList.add('hidden');
     if (healthBar) healthBar.classList.add('hidden');
+    if (partnerInsights) partnerInsights.classList.add('hidden');
+    this.activeAnalysisPanel = null;
+    this.updateAnalysisMenuItemsActive();
+  }
+
+  /**
+   * 显示指定视图容器
+   *
+   * @param mode 要显示的视图模式
+   */
+  private showDisplayView(mode: 'list' | 'timeline' | 'graph'): void {
+    const listEl = this.memoryListEl;
+    const graphEl = document.getElementById('memory-graph-container');
+    const timelineEl = document.getElementById('memory-timeline-container');
+    if (listEl) listEl.classList.toggle('hidden', mode !== 'list');
+    if (graphEl) graphEl.classList.toggle('hidden', mode !== 'graph');
+    if (timelineEl) timelineEl.classList.toggle('hidden', mode !== 'timeline');
+  }
+
+  /**
+   * 更新分析面板菜单项的激活状态
+   *
+   * 打开分析面板时高亮对应菜单项，关闭时取消高亮。
+   */
+  private updateAnalysisMenuItemsActive(): void {
+    const moreMenu = document.getElementById('memory-more-menu');
+    if (!moreMenu) return;
+    const items = moreMenu.querySelectorAll('.more-menu-item');
+    items.forEach((item) => {
+      const action = item.getAttribute('data-action');
+      const isActive = action === this.activeAnalysisPanel;
+      item.classList.toggle('active', isActive);
+    });
+  }
+
+  /**
+   * 切换分析面板（统计洞察 / 健康度诊断）
+   *
+   * - 如果点击的是当前已激活的面板，则关闭它并恢复之前的视图
+   * - 如果点击的是不同面板，则切换到新面板（互斥）
+   * - 首次打开时记录当前视图模式，关闭时恢复
+   *
+   * @param panel 目标面板：'insights' 或 'health'
+   */
+  toggleAnalysisPanel(panel: 'insights' | 'health'): void {
+    const insightsBar = document.getElementById('memory-insights-bar');
+    const healthBar = document.getElementById('memory-health-bar');
+    const partnerInsights = document.getElementById('partner-insights');
+    const targetBar = panel === 'insights' ? insightsBar : healthBar;
+    const otherBar = panel === 'insights' ? healthBar : insightsBar;
+
+    if (!targetBar) return;
+
+    const isAlreadyActive = this.activeAnalysisPanel === panel;
+
+    if (isAlreadyActive) {
+      // 再次点击当前面板 → 关闭
+      this.hideAnalysisPanel();
+      return;
+    }
+
+    // 打开新面板：记录当前视图（如果之前没有激活的面板）
+    if (this.activeAnalysisPanel === null) {
+      this.previousViewMode = this.viewMode;
+    }
+
+    // 隐藏主视图和另一个面板
+    this.hideAllDisplayViews();
+    if (otherBar) otherBar.classList.add('hidden');
+    // 打开health时隐藏partner-insights（它是insights的子内容）
+    if (panel === 'health' && partnerInsights) {
+      partnerInsights.classList.add('hidden');
+    }
+
+    // 显示目标面板
+    targetBar.classList.remove('hidden');
+    this.activeAnalysisPanel = panel;
+
+    // 更新菜单项高亮
+    this.updateAnalysisMenuItemsActive();
+
+    // 触发数据加载回调
+    this.moreMenuActionCallback?.(panel);
+  }
+
+  /**
+   * 隐藏分析面板并恢复主视图
+   *
+   * 点击关闭按钮、再次点击菜单项、或切换视图时调用。
+   * 恢复打开分析面板前的视图模式。
+   */
+  hideAnalysisPanel(): void {
+    const insightsBar = document.getElementById('memory-insights-bar');
+    const healthBar = document.getElementById('memory-health-bar');
+    const partnerInsights = document.getElementById('partner-insights');
+    if (insightsBar) insightsBar.classList.add('hidden');
+    if (healthBar) healthBar.classList.add('hidden');
+    if (partnerInsights) partnerInsights.classList.add('hidden');
+
+    // 恢复之前的主视图
+    if (this.activeAnalysisPanel !== null) {
+      this.showDisplayView(this.previousViewMode);
+      this.viewMode = this.previousViewMode;
+      this.activeAnalysisPanel = null;
+
+      // 同步视图切换按钮状态
+      const listBtn = document.getElementById('btn-list-view');
+      const timelineBtn = document.getElementById('btn-timeline-view');
+      const graphBtn = document.getElementById('btn-graph-view');
+      if (listBtn) {
+        listBtn.classList.toggle('active', this.viewMode === 'list');
+        listBtn.setAttribute('aria-selected', String(this.viewMode === 'list'));
+      }
+      if (timelineBtn) {
+        timelineBtn.classList.toggle('active', this.viewMode === 'timeline');
+        timelineBtn.setAttribute('aria-selected', String(this.viewMode === 'timeline'));
+      }
+      if (graphBtn) {
+        graphBtn.classList.toggle('active', this.viewMode === 'graph');
+        graphBtn.setAttribute('aria-selected', String(this.viewMode === 'graph'));
+      }
+    }
+
+    // 更新菜单项高亮
+    this.updateAnalysisMenuItemsActive();
+  }
+
+  /**
+   * 切换面板时关闭分析面板（公开方法，供 UI 层在离开记忆面板时调用）
+   *
+   * 只隐藏 DOM 元素和重置状态，不恢复视图——因为面板本身将被隐藏，
+   * 下次进入记忆面板时默认显示列表视图。
+   */
+  dismissAnalysisPanels(): void {
+    const insightsBar = document.getElementById('memory-insights-bar');
+    const healthBar = document.getElementById('memory-health-bar');
+    const partnerInsights = document.getElementById('partner-insights');
+    if (insightsBar) insightsBar.classList.add('hidden');
+    if (healthBar) healthBar.classList.add('hidden');
+    if (partnerInsights) partnerInsights.classList.add('hidden');
+    // 重置内部状态：下次打开时重新记录 previousViewMode
+    this.activeAnalysisPanel = null;
+    this.viewMode = 'list';
+    this.updateAnalysisMenuItemsActive();
+    // 同步视图按钮状态到列表
+    const listBtn = document.getElementById('btn-list-view');
+    const timelineBtn = document.getElementById('btn-timeline-view');
+    const graphBtn = document.getElementById('btn-graph-view');
+    if (listBtn) { listBtn.classList.add('active'); listBtn.setAttribute('aria-selected', 'true'); }
+    if (timelineBtn) { timelineBtn.classList.remove('active'); timelineBtn.setAttribute('aria-selected', 'false'); }
+    if (graphBtn) { graphBtn.classList.remove('active'); graphBtn.setAttribute('aria-selected', 'false'); }
   }
 
   /**

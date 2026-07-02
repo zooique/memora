@@ -149,8 +149,8 @@
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   /* 紧凑布局：减小 padding，从 16px 24px → 12px 20px */
   padding: 12px 20px;
-  /* 紧凑布局：降低 max-height，核心数据无需滚动即可查看 */
-  max-height: 320px;
+  /* 增大 max-height 确保运行指标完整显示 */
+  max-height: 480px;
   overflow-y: auto;
   animation: perceptionSlideDown 0.2s ease-out;
 }
@@ -247,6 +247,16 @@
   color: var(--text);
 }
 
+/* 折叠箭头：默认朝右（折叠状态），expanded 时朝下（展开状态） */
+.narrative-toggle {
+  transition: transform 0.2s ease;
+  transform: rotate(-90deg);
+}
+
+.narrative-toggle.expanded {
+  transform: rotate(0deg);
+}
+
 /* 叙事概览行（替代原"叙事摘要"独立分节，紧贴头部下方，无边框无标题） */
 .perception-overview-text {
   font-size: var(--font-xs);
@@ -263,6 +273,59 @@
 .perception-overview-text.narrative-pulse {
   color: var(--accent);
   animation: narrativePulse 1.5s ease-out;
+}
+
+/* ─── 在场状态指示器（用户在场/离开，一眼可见） ──── */
+.presence-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--surface1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  margin-bottom: 6px;
+}
+
+.presence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* 用户在场：绿色脉冲点 */
+.presence-dot.present {
+  background: var(--green);
+  box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4);
+  animation: presencePulse 2s infinite;
+}
+
+/* 用户离开：灰色静态点 */
+.presence-dot.away {
+  background: var(--muted);
+  box-shadow: none;
+  animation: none;
+}
+
+.presence-text {
+  color: var(--subtext);
+  transition: color 0.3s ease;
+  font-weight: 500;
+}
+
+/* 在场状态脉冲动画 */
+@keyframes presencePulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(52, 199, 89, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(52, 199, 89, 0);
+  }
 }
 
 /* 情感基调 2×2 紧凑网格（原 affect-bars 纵向堆叠改为网格） */
@@ -311,19 +374,32 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 6px;
+  gap: 4px 8px;
   font-size: var(--font-xs);
 }
 
 .context-item {
   display: inline-flex;
   align-items: baseline;
-  gap: 3px;
+  gap: 4px;
+}
+
+.context-label {
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  font-weight: 500;
+}
+
+.context-value {
+  color: var(--text);
+  font-size: var(--font-xs);
+  font-weight: 600;
 }
 
 .context-sep {
   color: var(--muted);
-  opacity: 0.6;
+  opacity: 0.4;
+  font-size: var(--font-2xs);
 }
 
 @keyframes narrativePulse {
@@ -373,47 +449,74 @@
   color: var(--accent);
 }
 
-/* 运行指标网格 */
+/* 运行指标：单行内联紧凑布局，标签:值 形式 */
 .perception-metrics-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin-top: 4px;
+  font-size: var(--font-2xs);
 }
 
 .perception-metrics-grid .dash-item {
-  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  background: none;
+  border: none;
+  padding: 0;
+  flex-direction: row;
+}
+
+.perception-metrics-grid .dash-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.perception-metrics-grid .dash-value {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  color: var(--subtext);
 }
 
 .perception-metrics-grid.hidden {
   display: none;
 }
 
+/* 里程碑成就：紧跟在内联指标后 */
+#milestones-display {
+  display: inline;
+  margin-left: 4px;
+}
+
+#milestones-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 /* 对话回顾（感知面板内） */
 .perception-review {
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
   border-top: 1px solid var(--surface2);
 }
 
 .review-today {
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   color: var(--muted);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
+/* 移除趋势方向和柱状图（紧凑空间内意义不明） */
 .review-trend {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  display: none;
 }
 
-.review-trend-direction {
-  font-size: var(--font-xs);
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
+.review-trend-bars {
+  display: none;
 }
 
 .review-trend-direction.growing {

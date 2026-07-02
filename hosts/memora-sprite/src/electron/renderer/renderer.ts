@@ -186,6 +186,10 @@ async function bootstrapRenderer(): Promise<void> {
     onPatternsUpdated: (payload) => {
       memoryController.updatePatternsDisplay(payload);
     },
+    // Phase 3.2：在场状态更新 → 状态指示器
+    onPresenceChanged: (payload) => {
+      memoryController.updatePresenceDisplay(payload);
+    },
     // H3：作品投影更新 → 刷新作品投影面板
     onWorkProjectionUpdated: (_payload) => {
       void settingsController.loadWorkProjections();

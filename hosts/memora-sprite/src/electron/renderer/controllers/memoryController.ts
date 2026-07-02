@@ -19,7 +19,7 @@ import { setButtonLoading } from '../helpers/domHelpers.js';
 import type { MemoryListItem } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 // P1 类型统一：感知数据 Payload 类型从 ipcListeners 导入，消除内联类型重复
-import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload } from '../ipcListeners.js';
+import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
 import type { HealthDashboardPayload } from '../../preload.js';
 // 复用内核 getDuplicateRemovalIds 计算待清理 ID
 import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth.js';
@@ -569,6 +569,14 @@ export function createMemoryController(uiManager: UIManager) {
      */
     updatePatternsDisplay: (payload: PatternsPayload) => {
       uiManager.updatePatternsDisplay(payload);
+    },
+    /**
+     * Phase 3.2：更新在场状态展示（委托 DashboardPanelManager）
+     *
+     * 由 presenceChanged 事件驱动，Controller 仅做转发。
+     */
+    updatePresenceDisplay: (payload: PresencePayload) => {
+      uiManager.updatePresenceDisplay(payload);
     },
     /**
      * FD-01 更新叙事摘要（委托 DashboardPanelManager）

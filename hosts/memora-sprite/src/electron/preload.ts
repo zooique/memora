@@ -35,6 +35,8 @@ import type {
 } from '../sprite/controllers/memoryController.js';
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
 import type { SpriteConfig } from '../sprite/spriteConfig.js';
+// P5：从 sprite 层导入感知状态类型（真理源），修复 getPerceptionSnapshot 返回类型过宽问题
+import type { AffectState, RapportState, ContextState, DetectedPattern } from '../sprite/controllers/index.js';
 
 // ─── 内联 IPC 通道常量（sandbox 兼容性：不能运行时导入 ipcChannels.ts） ─────
 // ⚠️ 与 ipcChannels.ts 保持同步：修改 ipcChannels.ts 时需同步更新此处的内联副本。
@@ -464,11 +466,11 @@ export interface ElectronAPI {
 
   // 感知数据快照（精灵感知面板打开时调用，实时推导返回）
   getPerceptionSnapshot: () => Promise<{
-    affect?: { warmth: number; directness: number; initiative: number; playfulness: number };
-    rapport?: { trust: number; familiarity: number; level: string; description: string };
-    context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
-    patterns?: Array<{ type: string; summary: string; confidence: number }>;
-  }>;
+    affect?: AffectState;
+    rapport?: RapportState;
+    context?: ContextState;
+    patterns?: DetectedPattern[];
+  } | null>;
 
   // 窗口控制
   windowMinimize: () => void;
