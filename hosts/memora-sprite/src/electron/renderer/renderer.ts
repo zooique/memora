@@ -10,7 +10,7 @@
  * 设计原则：
  * - 作为协调器，不包含具体业务逻辑（已拆分到各 controller 模块）
  * - 模块间通过回调解耦，避免循环依赖
- * - 保留 setupBusinessLogic（发送/停止/新建会话），因依赖 State.uiManager 和 sessionController
+ * - 保留 setupBusinessLogic（发送/停止/会话管理），因依赖 State.uiManager 和 sessionController
  */
 
 import { UIManager } from './ui.js';
@@ -508,12 +508,12 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   window.electronAPI?.removeRecallMemoryTriggerListener();
 });
 
-// ─── 业务逻辑设置（发送/停止/新建会话） ─────────────────────
+// ─── 业务逻辑设置（发送/停止/会话管理） ─────────────────────
 
 /**
- * 设置发送消息、停止消息、新建会话回调
+ * 设置发送消息、停止消息、会话管理回调（日期跳转/删除等）
  *
- * 这三个回调依赖 State.uiManager 和 sessionController，保留在 renderer.ts 中
+ * 这些回调依赖 State.uiManager 和 sessionController，保留在 renderer.ts 中
  * 避免引入额外的模块间依赖。
  */
 function setupBusinessLogic(
@@ -603,6 +603,34 @@ function setupBusinessLogic(
       // FD-CONVERGE-01 日期跳转失败时 toast 提示并保持当前视图，避免静默破坏 UI 状态
       reportError('dateNavJump', error);
       State.uiManager.showToast('日期跳转失败，请稍后重试', 'error');
+    }
+  });
+
+  // FD-09 日期导航删除回调：删除指定日期的对话记录（二次确认 + 删除后刷新列表）
+  State.uiManager.onDateNavDelete(async (date: string) => {
+    try {
+      // 二次确认（危险操作，避免误删）
+      const confirmed = await State.uiManager.showConfirmDialog({
+        title: '删除对话记录',
+        message: `确定删除 ${date} 的全部对话记录吗？此操作不可恢复。`,
+        confirmText: '删除',
+        cancelText: '取消',
+        danger: true,
+      });
+      if (!confirmed) return;
+
+      // 调用控制器执行删除（含 Agent 状态同步 + UI 重置）
+      const ok = await sessionController.deleteSession(date);
+      if (ok) {
+        // 删除成功后刷新日期列表（移除已删除项）
+        const dates = await sessionController.loadDateList();
+        const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
+        State.uiManager.renderDateNavList(dates, currentDate);
+      }
+    } catch (error) {
+      // FD-CONVERGE-01 删除失败时 toast 提示，保持下拉打开供用户重试
+      reportError('dateNavDelete', error);
+      State.uiManager.showToast('删除对话记录失败，请稍后重试', 'error');
     }
   });
 

@@ -5,13 +5,10 @@
  *
  * 路由表：
  *   GET    /api/sessions           → 列出所有会话
- *   GET    /api/sessages/messages  → 加载会话消息（支持分页）
+ *   GET    /api/sessions/messages  → 加载会话消息（支持分页）
  *   POST   /api/sessions/switch    → 切换到已有会话
  *   DELETE /api/sessions/:id       → 删除会话
  *   PUT    /api/sessions/:id/rename → 重命名会话
- *
- * 注意：Web 模式不支持新建会话（SESSION_NEW），
- * 新对话自动写入当天 main 会话，与 Electron 模式一致。
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';

@@ -6,8 +6,11 @@
  * - 向上分页加载当前会话的更早消息
  * - 跨天加载更早日期的对话（时间流式体验，类似微信/QQ）
  * - 跨日自动切换到今天的 main 会话（保留 LLM 工作记忆一致性）
+ * - 删除指定日期的对话记录（按日期前缀删除当天全部子会话）
  *
  * 设计原则：
+ * - 用户不需要自己管理会话，系统自动按天管理对话（YYYY-MM-DD-main）
+ * - 仅提供"删除对话记录"功能（按日期删除），不提供"新建会话"功能
  * - 接收 UIManager 实例，不持有模块级状态
  * - currentSessionId 通过闭包封装，外部通过返回值访问
  * - 会话 ID 格式：YYYY-MM-DD-sessionName（与 SessionStore 对齐）
@@ -440,9 +443,59 @@ export function createSessionController(uiManager: UIManager) {
     }
   }
 
+  /**
+   * FD-09 删除指定日期的对话记录
+   *
+   * 调用主进程 SESSION_DELETE 删除该日期所有子会话，
+   * 删除成功后刷新日期导航列表并重置 UI：
+   * - 若删除的是当前查看日期：清空消息区，加载今天 main 会话
+   * - 若删除的是其他日期：仅刷新日期列表
+   *
+   * @param date 目标日期（YYYY-MM-DD）
+   * @returns 是否删除成功（供调用方决定是否刷新日期列表）
+   */
+  async function deleteSession(date: string): Promise<boolean> {
+    // 流式输出期间禁止删除
+    if (uiManager.isStreaming()) {
+      uiManager.showToast('精灵正在回复中，请等待完成或点击停止后再删除', 'warning');
+      return false;
+    }
+
+    try {
+      // 调用主进程删除会话（按日期前缀删除当天全部子会话）
+      const result = await window.electronAPI.deleteSession(date);
+      if (!result.success) {
+        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '删除会话失败');
+      }
+
+      uiManager.showToast('对话记录已删除', 'success');
+
+      // 删除的是当前查看日期：清空消息区并加载今天 main 会话
+      if (currentSessionParams && currentSessionParams.date === date) {
+        uiManager.clearMessages();
+        currentOffset = 0;
+        currentTotal = 0;
+        currentSessionParams = null;
+        loadedDates.clear();
+        earliestDate = null;
+        currentSessionId = '';
+        // 重新加载当前会话历史（会自动加载今天 main 或最近会话）
+        await loadSessionHistory();
+      }
+
+      uiManager.hidePanelError('chat');
+      return true;
+    } catch (error) {
+      reportError('deleteSession', error);
+      uiManager.showToast('删除对话记录失败，请重试', 'error');
+      return false;
+    }
+  }
+
   return {
     loadSessionHistory,
     switchSession,
+    deleteSession,
     loadMoreHistory,
     loadEarlierDay,
     loadDateList,

@@ -238,7 +238,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // ─── 可选元素（缺失时降级，不阻塞其他功能） ────────────
   /** 未读计数徽章（标题栏右上角，部分布局可能未提供该元素） */
   private badge: HTMLElement | null;
-  /** FD-05 新建会话按钮（对话工具栏内，主动可见低频操作） */
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
   /** P2-UI-2.1：输入区 ResizeObserver，监听 #input-area 高度变化动态更新 --input-area-height CSS 变量 */
@@ -375,7 +374,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
     // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
-    // FD-05 新建会话按钮：触发回调（由 renderer.ts 注册，调用主进程创建新会话）
 
     // C-5-3：日期导航事件绑定已委托到 DateNavManager.init()
     // FD-ADD-REC-CLICK 仪表盘推荐记忆点击：事件委托，复用 triggerMemoryRecall 跳转到记忆面板显示详情
@@ -797,9 +795,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     const text = this.sanitizeInput(rawText);
     if (!text) return null;
 
-    // 清空输入框
+    // 清空输入框并重置状态（高度 + 发送按钮视觉）
     this.inputEl.value = '';
-    this.inputEl.style.height = 'auto';
+    this.handleInputChange();
 
     return text;
   }
@@ -859,7 +857,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
   }
 
-  /** 强制滚动到底部（用户主动操作时调用，如点击"新会话"） */
+  /** 强制滚动到底部（用户主动操作时调用，如点击发送按钮、切换会话后） */
   forceScrollToBottom(): void {
     this.isNearBottom = true;
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
@@ -968,12 +966,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * FD-05 新建会话按钮点击处理器
+   * 侧边栏导航按钮点击处理器
    *
+   * 点击侧边栏图标切换到对应面板（chat / memory / settings）。
    * 设计原则（对齐 user_rules "主动可见"）：
-   * - 低频但重要的操作，按钮始终可见，不依赖 hover
-   * - 触发回调由 renderer.ts 注册，调用主进程 session-new IPC
-   * - 确认对话框防止误操作（清空当前对话区是不可逆的，但历史保留在 SessionStore）
+   * - 导航按钮始终可见，不依赖 hover
+   * - 触发回调由 renderer.ts 注册，切换面板状态
    */
 
   private handleNavClick(e: Event): void {
@@ -1681,6 +1679,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 注册日期导航跳转回调（委托到 DateNavManager） */
   onDateNavJump(cb: (date: string) => void): void {
     this.dateNavManager.onDateNavJump(cb);
+  }
+
+  /** 注册日期导航删除回调（委托到 DateNavManager） */
+  onDateNavDelete(cb: (date: string) => void): void {
+    this.dateNavManager.onDateNavDelete(cb);
   }
 
   /** 注册日期导航列表加载回调（委托到 DateNavManager） */

@@ -18,7 +18,7 @@
 /**
  * 对话工具栏：对齐 demo v8
  * - 高度 44px（与顶部栏一致），左右 24px padding
- * - 左侧标题+副标题，右侧新会话按钮（space-between）
+ * - 左侧标题+副标题，右侧日期导航按钮（space-between）
  * - 取消背景色和分割线，融入核心窗口
  */
 #chat-toolbar {
@@ -635,8 +635,8 @@
 
 .date-nav-item {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   padding: 8px 12px;
   cursor: pointer;
   font-size: var(--font-sm);
@@ -659,12 +659,39 @@
 }
 
 .date-nav-item-count {
+  margin-left: auto;
   font-size: var(--font-xs);
   color: var(--muted);
 }
 
 .date-nav-item.active .date-nav-item-count {
   color: var(--accent);
+}
+
+/* FD-09 删除按钮：主动可见（无需 hover 即显示），hover 红色反馈危险操作 */
+.date-nav-item-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.date-nav-item-delete .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.date-nav-item-delete:hover {
+  background: var(--red);
+  color: var(--text-on-red);
 }
 
 .date-nav-empty {
