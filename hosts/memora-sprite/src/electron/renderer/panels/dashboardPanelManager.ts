@@ -1063,19 +1063,25 @@ export class DashboardPanelManager {
 
     // 渲染到感知面板模式洞察容器
     const patternsList = document.getElementById('perception-patterns-list');
+    // 紧凑布局：空列表时隐藏整个 section，避免占用空间
+    const patternsSection = document.getElementById('perception-patterns');
     if (!patternsList) {
       this.updateNarrative();
       return;
     }
 
-    // 无模式数据时清空列表（但仍更新叙事摘要）
+    // 无模式数据时清空列表并隐藏 section（但仍更新叙事摘要）
     if (payload.patterns.length === 0) {
       while (patternsList.firstChild) {
         patternsList.removeChild(patternsList.firstChild);
       }
+      patternsSection?.classList.add('hidden');
       this.updateNarrative();
       return;
     }
+
+    // 有数据时显示 section（可能之前被隐藏）
+    patternsSection?.classList.remove('hidden');
 
     // 清空并重建列表（遵循项目规范：while + removeChild）
     while (patternsList.firstChild) {

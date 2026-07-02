@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 系统级 IPC 处理器
  *
  * 职责：
@@ -121,6 +121,21 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         metrics: null,
         skills: [],
       };
+    }
+  });
+
+  /**
+   * 获取感知数据快照（情感基调/默契度/对话上下文/模式洞察）
+   *
+   * UI 感知面板打开时主动调用，从当前记忆实时推导全量感知数据。
+   * 无副作用：不 emit 事件、不注入 ProactiveEngine。
+   */
+  ipcMain.handle(IPC_CHANNELS.PERCEPTION_GET, () => {
+    try {
+      return ctx.sprite.getPerceptionSnapshot() ?? {};
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取感知数据失败' });
+      return {};
     }
   });
 

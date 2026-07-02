@@ -135,7 +135,7 @@
   }
 }
 
-/* ─── v3：感知面板（overlay，从消息区顶部 slide-down） ──── */
+/* ─── v3：感知面板（overlay，从消息区顶部 slide-down，紧凑布局） ──── */
 .perception-panel {
   display: none;
   position: absolute;
@@ -147,8 +147,10 @@
   border-bottom: 1px solid var(--surface2);
   box-shadow: var(--shadow-window);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  padding: 16px 24px;
-  max-height: 400px;
+  /* 紧凑布局：减小 padding，从 16px 24px → 12px 20px */
+  padding: 12px 20px;
+  /* 紧凑布局：降低 max-height，核心数据无需滚动即可查看 */
+  max-height: 320px;
   overflow-y: auto;
   animation: perceptionSlideDown 0.2s ease-out;
 }
@@ -210,59 +212,14 @@
   height: 12px;
 }
 
-/* 感知面板选项卡栏 */
-.perception-tabs {
-  display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--surface2);
-  margin-bottom: 12px;
-  padding: 0 2px;
+/* 感知面板内容区（单页滚动，不再使用选项卡） */
+.perception-panel-body {
+  /* 无额外样式，由 .perception-panel 的 overflow-y: auto 统一管理滚动 */
 }
 
-.perception-tab {
-  padding: 6px 12px;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--text-3);
-  font-size: var(--font-xs);
-  font-weight: 500;
-  cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
-  margin-bottom: -1px;
-  font-family: inherit;
-}
-
-.perception-tab:hover {
-  color: var(--text-2);
-  background: var(--hover);
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-}
-
-.perception-tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
-
-.perception-tab:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-  border-radius: var(--radius-sm);
-}
-
-/* 选项卡内容区 */
-.perception-tab-pane {
-  display: none;
-}
-
-.perception-tab-pane.active {
-  display: block;
-}
-
-/* 感知面板分节 */
+/* 感知面板分节（紧凑布局：margin 14px → 8px） */
 .perception-section {
-  margin-bottom: 14px;
+  margin-bottom: 8px;
 }
 
 .perception-section:last-child {
@@ -275,7 +232,8 @@
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  margin: 0 0 8px 0;
+  /* 紧凑布局：标题下间距 8px → 4px */
+  margin: 0 0 4px 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -289,23 +247,56 @@
   color: var(--text);
 }
 
-/* 默契度双进度条 */
+/* 叙事概览行（替代原"叙事摘要"独立分节，紧贴头部下方，无边框无标题） */
+.perception-overview-text {
+  font-size: var(--font-xs);
+  color: var(--subtext);
+  line-height: 1.4;
+  margin: 0 0 8px 0;
+  padding: 6px 10px;
+  background: var(--window-bg-2);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-base);
+}
+
+/* v3: 叙事概览脉冲高亮（由 pulseNarrativeCard 触发） */
+.perception-overview-text.narrative-pulse {
+  color: var(--accent);
+  animation: narrativePulse 1.5s ease-out;
+}
+
+/* 情感基调 2×2 紧凑网格（原 affect-bars 纵向堆叠改为网格） */
+.affect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+
+/* 默契度一行布局：徽章 + 双进度条横向并列 */
+.rapport-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 默契度双进度条（横向排列，紧跟徽章） */
 .rapport-bars {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
+  gap: 4px;
+  flex: 1;
 }
 
 .rapport-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: var(--font-xs);
 }
 
+/* 紧凑布局：标签宽度 44px → 28px（"信任"/"熟悉"两字） */
 .rapport-bar-label {
-  width: 44px;
+  width: 28px;
   color: var(--muted);
   flex-shrink: 0;
   text-align: right;
@@ -315,19 +306,24 @@
   transition: width 0.5s ease;
 }
 
-/* 感知面板叙事摘要文本 */
-.perception-narrative-text {
-  font-size: var(--font-sm);
-  color: var(--subtext);
-  line-height: 1.5;
-  margin: 0;
-  transition: color var(--transition-base);
+/* 对话上下文单行内联（三指标用分隔符连接） */
+.context-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  font-size: var(--font-xs);
 }
 
-/* v3: 叙事摘要脉冲高亮（由 pulseNarrativeCard 触发） */
-.perception-narrative-text.narrative-pulse {
-  color: var(--accent);
-  animation: narrativePulse 1.5s ease-out;
+.context-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+}
+
+.context-sep {
+  color: var(--muted);
+  opacity: 0.6;
 }
 
 @keyframes narrativePulse {
@@ -995,13 +991,14 @@
 #messages {
   flex: 1;
   overflow-y: auto;
-  /* UX-P2-20 提取底部留白为 CSS 变量，便于统一调整（原硬编码 140px） */
   /* 顶部 16px 间距，避免第一条消息紧贴工具栏分隔线 */
-  /* 底部留白 = input-area 高度 + 20px bottom 偏移，避免浮动输入区遮挡最后一条消息 */
-  padding: 16px 24px calc(var(--input-area-height, 140px) + 20px);
+  /* 底部 16px 留白，输入区已改为 flex 流占位，不再需要大段避让留白 */
+  padding: 16px 24px 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  /* 为内部的 #scroll-to-bottom-btn 提供定位上下文 */
+  position: relative;
 }
 
 /* ─── Phase 1：日期分隔符（微信/QQ 式时间流） ──────────────── */
@@ -1342,18 +1339,16 @@
 }
 
 
-/* ─── 输入区（v8 悬浮输入卡） ──────────────────────────────── */
-/* 绝对定位悬浮于对话区底部，圆角 xl + 阴影，focus 时边框高亮       */
+/* ─── 输入区（嵌入占位 + 视觉浮动效果） ──────────────────────── */
+/* 从 absolute 悬浮改为 flex 流占位，通过 margin/border-radius/box-shadow */
+/* 模拟视觉上的浮动卡片效果，不再遮挡对话消息                      */
 #input-area {
-  position: absolute;
-  left: 10px;
-  right: 10px;
-  bottom: 10px;
-  z-index: 10;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px 14px;
+  margin: 0 10px 10px;
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-xl);
@@ -1905,8 +1900,8 @@
 
 .scroll-to-bottom-btn {
   position: absolute;
-  bottom: calc(var(--input-area-height, 140px) + 20px);
-  right: 34px;
+  bottom: 8px;
+  right: 16px;
   z-index: 11;
   width: 32px;
   height: 32px;

@@ -81,6 +81,8 @@ export const IPC_CHANNELS = {
   PROJECTS_LIST: 'projects-list',
   /** 获取仪表盘数据 */
   DASHBOARD_GET: 'dashboard-get',
+  /** 获取感知数据快照（情感基调/默契度/对话上下文/模式洞察） */
+  PERCEPTION_GET: 'perception-get',
 
   // ─── LLM 配置相关 ─────────────────────────────────────
   /** 获取 LLM 配置 */

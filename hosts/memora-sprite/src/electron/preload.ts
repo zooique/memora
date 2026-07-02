@@ -79,6 +79,7 @@ export const IPC_CHANNELS = {
   PERSONA_MODE_GET: 'persona-mode-get',
   PROJECTS_LIST: 'projects-list',
   DASHBOARD_GET: 'dashboard-get',
+  PERCEPTION_GET: 'perception-get',
   LLM_CONFIG_GET: 'llm-config-get',
   LLM_CONFIG_SAVE: 'llm-config-save',
   LLM_CONFIG_TEST: 'llm-config-test',
@@ -461,6 +462,14 @@ export interface ElectronAPI {
     }>;
   }>;
 
+  // 感知数据快照（精灵感知面板打开时调用，实时推导返回）
+  getPerceptionSnapshot: () => Promise<{
+    affect?: { warmth: number; directness: number; initiative: number; playfulness: number };
+    rapport?: { trust: number; familiarity: number; level: string; description: string };
+    context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
+    patterns?: Array<{ type: string; summary: string; confidence: number }>;
+  }>;
+
   // 窗口控制
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -707,6 +716,8 @@ const electronAPI: ElectronAPI = {
 
   // 仪表盘（FD-03）
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),
+  // 感知数据快照（精灵感知面板打开时调用）
+  getPerceptionSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.PERCEPTION_GET),
 
   // 窗口
   windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),

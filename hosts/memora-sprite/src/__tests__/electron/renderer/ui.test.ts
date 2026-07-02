@@ -1578,7 +1578,9 @@ describe('KBD-CONVERGE-P1：shortcuts-modal 内容同步', () => {
 
 // ─── 感知面板选项卡化（UX-PERP-01） ─────────────────────────
 
-describe('感知面板选项卡化（UX-PERP-01）', () => {
+// 感知面板已重构为单页紧凑布局，选项卡结构已移除
+// 旧测试已废弃，后续迭代需编写新的单页布局测试
+describe.skip('感知面板选项卡化（UX-PERP-01）- 已废弃：选项卡已移除', () => {
   /** 读取当前选中选项卡的 data-tab 值 */
   const getActiveTab = (): string | null => {
     const el = document.querySelector('.perception-tab.active');

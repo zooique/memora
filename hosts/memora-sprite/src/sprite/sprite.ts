@@ -886,6 +886,60 @@ export class Sprite {
     return this.agent.getMetrics();
   }
 
+  /**
+   * 获取感知数据快照（供 UI 感知面板打开时主动拉取）
+   *
+   * 4 个感知控制器采用"无状态实时推导"设计，不在内部缓存状态。
+   * 此方法从当前记忆列表即时推导全量感知数据并返回，无副作用（不 emit 事件、不注入 ProactiveEngine）。
+   *
+   * 使用场景：用户点击精灵状态条打开感知面板时，UI 调用此方法获取当前快照。
+   *
+   * @returns 感知数据快照（情感基调 + 默契度 + 对话上下文 + 模式洞察），Agent 未就绪时返回 null
+   */
+  getPerceptionSnapshot(): {
+    affect: AffectState;
+    rapport: RapportState;
+    context: ContextState;
+    patterns: DetectedPattern[];
+  } | null {
+    // Agent 未就绪时返回 null（UI 显示占位文案）
+    if (!this.agent?.memory) return null;
+
+    // 获取所有记忆用于推导（上限 1000 条，与 refreshPerceptionBeforeChat 一致）
+    const memories = this.agent.memory.list(DEFAULT_LIST_LIMIT) ?? [];
+    if (memories.length === 0) return null;
+
+    // 1. 情感基调推导（复用 AffectController 配置，不修改状态）
+    this.affectController.updateOptions({
+      acceptanceRate: this.proactiveEngine.acceptanceRate,
+      currentPersona: this.agent.persona?.getActive() ?? null,
+    });
+    let affect = this.affectController.deriveAffect(memories);
+    // 对话语气实时修正（与 deriveAndInjectAffect 逻辑一致）
+    if (this.recentUserMessages.length > 0) {
+      const delta = AffectController.deriveAffectFromMessages(this.recentUserMessages);
+      affect = AffectController.blendAffect(affect, delta);
+    }
+
+    // 2. 默契度推导（先更新配置参数）
+    const interactionDays = this.calculateInteractionDays(memories);
+    this.rapportController.updateOptions({
+      acceptanceRate: this.proactiveEngine.acceptanceRate,
+      interactionDays,
+      totalMessages: this.agent.getMetrics?.().llm.callCount ?? 0,
+      sourceDiversity: new Set(memories.map((m) => m.source)).size,
+    });
+    const rapport = this.rapportController.deriveRapport(memories);
+
+    // 3. 对话上下文推导
+    const context = this.contextAwareness.deriveContext(memories);
+
+    // 4. 模式洞察检测
+    const patterns = this.patternDetector.detectPatterns(memories);
+
+    return { affect, rapport, context, patterns };
+  }
+
   /** FD-03 累积事件数（供 UI 仪表盘显示） */
   get pendingCount(): number {
     return this.proactiveEngine.pendingCount;

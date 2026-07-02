@@ -229,6 +229,19 @@ export async function handleSystemRoute(
       return;
     }
 
+    // GET /api/perception — 获取感知数据快照（精灵感知面板打开时调用）
+    // 实时从记忆推导情感基调/默契度/对话上下文/模式洞察，无副作用
+    if (method === 'GET' && (path === '/api/perception' || path === '/api/perception/')) {
+      try {
+        const snapshot = ctx.sprite.getPerceptionSnapshot();
+        sendJson(res, 200, snapshot ?? {});
+      } catch (err) {
+        logger.debug({ err: toError(err).message }, 'perception 获取失败');
+        sendJson(res, 200, {});
+      }
+      return;
+    }
+
     // 未匹配的路由
     sendError(res, 404, `未找到系统路由: ${method} ${path}`);
   });

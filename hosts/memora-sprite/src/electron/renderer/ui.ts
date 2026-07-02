@@ -410,7 +410,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     if (panelClose) {
       this.events.addEventListener(panelClose as HTMLElement, 'click', this.closePerceptionPanel.bind(this));
     }
-    this.bindPerceptionTabs();
+    // 感知面板已改为单页滚动布局，不再需要选项卡绑定（tabs 结构已从 HTML 移除）
 
     // 运行指标折叠/展开
     const metricsToggle = document.getElementById('perception-metrics-toggle');
@@ -419,6 +419,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
         const grid = document.getElementById('perception-metrics-grid');
         const arrow = document.getElementById('perception-metrics-arrow');
         if (grid) grid.classList.toggle('hidden');
+        if (arrow) arrow.classList.toggle('expanded');
+      });
+    }
+
+    // 对话回顾折叠/展开（与运行指标拆分为独立折叠区）
+    const reviewToggle = document.getElementById('perception-review-toggle');
+    if (reviewToggle) {
+      this.events.addEventListener(reviewToggle, 'click', () => {
+        const review = document.getElementById('perception-review');
+        const arrow = document.getElementById('perception-review-arrow');
+        if (review) review.classList.toggle('hidden');
         if (arrow) arrow.classList.toggle('expanded');
       });
     }
@@ -962,6 +973,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /**
    * 切换感知面板的展开/收起状态
    * 点击精灵状态条触发，overlay 方式显示在消息区顶部
+   *
+   * 打开时主动拉取感知快照（感知数据采用无状态实时派生模型，
+   * 没有事件主动推送，必须显式调用 getPerceptionSnapshot 获取最新值），
+   * 并分发到 dashboardPanelManager 的四个 update 方法。
    */
   private togglePerceptionPanel(): void {
     const panel = document.getElementById('perception-panel');
@@ -979,6 +994,19 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       // 打开面板
       panel.classList.remove('hidden', 'hiding');
       panel.classList.add('visible');
+      // 主动拉取感知快照并刷新四块感知展示
+      // 静默失败：拉取异常时保留 DOM 默认占位值，不阻塞面板展开
+      void window.electronAPI
+        .getPerceptionSnapshot()
+        .then((snapshot) => {
+          if (snapshot.affect) this.dashboardPanel.updateAffectDisplay(snapshot.affect);
+          if (snapshot.rapport) this.dashboardPanel.updateRapportDisplay(snapshot.rapport);
+          if (snapshot.context) this.dashboardPanel.updateContextDisplay(snapshot.context);
+          if (snapshot.patterns) this.dashboardPanel.updatePatternsDisplay({ patterns: snapshot.patterns });
+        })
+        .catch(() => {
+          /* silent fail：保持默认值 */
+        });
     }
   }
 
@@ -994,45 +1022,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       panel.classList.add('hidden');
       panel.classList.remove('hiding');
     }, 150);
-  }
-
-  /**
-   * 绑定感知面板选项卡切换逻辑
-   *
-   * 3 个选项卡（关系/理解/洞察）按用户心智模型分组，
-   * 点击切换 active 类，支持左右方向键键盘导航。
-   */
-  private bindPerceptionTabs(): void {
-    const tabs = document.querySelectorAll('.perception-tab');
-    const panes = document.querySelectorAll('.perception-tab-pane');
-    tabs.forEach((tab) => {
-      this.events.addEventListener(tab as HTMLElement, 'click', () => {
-        const target = (tab as HTMLElement).dataset.tab;
-        tabs.forEach((t) => {
-          t.classList.remove('active');
-          t.setAttribute('aria-selected', 'false');
-        });
-        panes.forEach((p) => p.classList.remove('active'));
-        tab.classList.add('active');
-        tab.setAttribute('aria-selected', 'true');
-        const targetPane = document.querySelector(`.perception-tab-pane[data-pane="${target}"]`);
-        if (targetPane) targetPane.classList.add('active');
-      });
-    });
-    const tabList = document.querySelector('.perception-tabs');
-    if (tabList) {
-      this.events.addEventListener(tabList as HTMLElement, 'keydown', (e: Event) => {
-        if (!(e instanceof KeyboardEvent)) return;
-        const tabsArray = Array.from(document.querySelectorAll('.perception-tab'));
-        const currentIndex = tabsArray.findIndex((t) => t.classList.contains('active'));
-        let newIndex = currentIndex;
-        if (e.key === 'ArrowRight') newIndex = (currentIndex + 1) % tabsArray.length;
-        else if (e.key === 'ArrowLeft') newIndex = (currentIndex - 1 + tabsArray.length) % tabsArray.length;
-        else return;
-        e.preventDefault();
-        (tabsArray[newIndex] as HTMLElement).click();
-      });
-    }
   }
 
   private handleMinimize(): void {

@@ -77,9 +77,10 @@ export async function registerRoutes(
     return;
   }
 
-  // 系统级：/api/dashboard、/api/projects、/api/agent-status、/api/llm-config/*
+  // 系统级：/api/dashboard、/api/perception、/api/projects、/api/agent-status、/api/llm-config/*
   if (
     path === '/api/dashboard' ||
+    path === '/api/perception' ||
     path === '/api/projects' ||
     path === '/api/agent-status' ||
     path.startsWith('/api/llm-config')

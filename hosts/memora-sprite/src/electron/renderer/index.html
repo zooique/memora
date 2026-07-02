@@ -193,73 +193,68 @@
           </div>
         </div>
 
-        <!-- 感知面板（overlay，点击精灵状态条展开，覆盖在消息区顶部） -->
+        <!-- 感知面板（overlay，点击精灵状态条展开，紧凑单页布局） -->
         <div id="perception-panel" class="perception-panel hidden" aria-label="精灵感知面板">
           <div class="perception-panel-header">
             <span class="perception-panel-title">精灵感知状态</span>
             <button class="perception-panel-close" aria-label="关闭感知面板"><svg class="icon"><use href="#icon-close"/></svg></button>
           </div>
-          <div class="perception-tabs" role="tablist">
-            <button class="perception-tab active" role="tab" data-tab="relation" aria-selected="true">关系</button>
-            <button class="perception-tab" role="tab" data-tab="understanding" aria-selected="false">理解</button>
-            <button class="perception-tab" role="tab" data-tab="insight" aria-selected="false">洞察</button>
-          </div>
-          <div class="perception-tab-panes">
-            <div class="perception-tab-pane active" data-pane="relation">
-          <!-- 情感基调（四维进度条） -->
+          <!-- 感知面板内容区（紧凑单页布局：概览 + 2×2 网格 + 内联行 + 折叠区） -->
+          <div class="perception-panel-body">
+          <!-- 叙事概览行（替代原"叙事摘要"独立分节，无边框无标题，作为一眼可见的摘要） -->
+          <p class="perception-overview-text" id="perception-narrative-text">精灵正在感知中...</p>
+
+          <!-- 情感基调（2×2 紧凑网格，四维进度条横向排布） -->
           <div class="perception-section" id="perception-affect">
             <h4 class="perception-section-title">情感基调</h4>
-            <div class="affect-bars" id="perception-affect-bars">
+            <div class="affect-grid" id="perception-affect-bars">
               <div class="affect-bar"><span class="affect-label">温暖</span><div class="affect-track"><div class="affect-fill" id="perception-warmth-fill" style="width:0%"></div></div><span class="affect-level" id="perception-warmth-level">—</span></div>
               <div class="affect-bar"><span class="affect-label">直接</span><div class="affect-track"><div class="affect-fill" id="perception-directness-fill" style="width:0%"></div></div><span class="affect-level" id="perception-directness-level">—</span></div>
               <div class="affect-bar"><span class="affect-label">主动</span><div class="affect-track"><div class="affect-fill" id="perception-initiative-fill" style="width:0%"></div></div><span class="affect-level" id="perception-initiative-level">—</span></div>
               <div class="affect-bar"><span class="affect-label">调皮</span><div class="affect-track"><div class="affect-fill" id="perception-playfulness-fill" style="width:0%"></div></div><span class="affect-level" id="perception-playfulness-level">—</span></div>
             </div>
           </div>
-          <!-- 默契度 -->
+          <!-- 默契度（徽章 + 双进度条合并到同一行，描述紧随其后） -->
           <div class="perception-section" id="perception-rapport">
             <h4 class="perception-section-title">默契度</h4>
-            <div class="rapport-level-badge" id="perception-rapport-badge" data-level="stranger">初识</div>
-            <div class="rapport-bars">
-              <div class="rapport-bar"><span class="rapport-bar-label">信任度</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-trust-fill" style="width:0%"></div></div></div>
-              <div class="rapport-bar"><span class="rapport-bar-label">熟悉度</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-familiarity-fill" style="width:0%"></div></div></div>
+            <div class="rapport-row">
+              <div class="rapport-level-badge" id="perception-rapport-badge" data-level="stranger">初识</div>
+              <div class="rapport-bars">
+                <div class="rapport-bar"><span class="rapport-bar-label">信任</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-trust-fill" style="width:0%"></div></div></div>
+                <div class="rapport-bar"><span class="rapport-bar-label">熟悉</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-familiarity-fill" style="width:0%"></div></div></div>
+              </div>
             </div>
             <p class="rapport-description" id="perception-rapport-desc">刚开始了解彼此</p>
-            </div>
-            </div>
-            <div class="perception-tab-pane" data-pane="understanding">
-          <!-- 对话上下文（三指标） -->
+          </div>
+
+          <!-- 对话上下文（三指标单行内联，最紧凑呈现） -->
           <div class="perception-section" id="perception-context">
             <h4 class="perception-section-title">对话上下文</h4>
-            <div class="context-metrics">
-              <div class="context-metric"><span class="context-label">节奏</span><span class="context-value" id="perception-pace-value">—</span></div>
-              <div class="context-metric"><span class="context-label">话题</span><span class="context-value" id="perception-topic-value">—</span></div>
-              <div class="context-metric"><span class="context-label">深度</span><span class="context-value" id="perception-depth-value">—</span></div>
+            <div class="context-inline">
+              <span class="context-item"><span class="context-label">节奏</span><span class="context-value" id="perception-pace-value">—</span></span>
+              <span class="context-sep">·</span>
+              <span class="context-item"><span class="context-label">话题</span><span class="context-value" id="perception-topic-value">—</span></span>
+              <span class="context-sep">·</span>
+              <span class="context-item"><span class="context-label">深度</span><span class="context-value" id="perception-depth-value">—</span></span>
             </div>
           </div>
-          <!-- 叙事摘要 -->
-          <div class="perception-section" id="perception-narrative">
-            <h4 class="perception-section-title">叙事摘要</h4>
-            <p class="perception-narrative-text" id="perception-narrative-text">精灵正在感知中...</p>
-            </div>
-            </div>
-            <div class="perception-tab-pane" data-pane="insight">
-          <!-- 模式洞察（重复主题/知识缺口/兴趣漂移） -->
-          <div class="perception-section" id="perception-patterns">
+
+          <!-- 模式洞察（空列表时整个 section 由 JS 隐藏） -->
+          <div class="perception-section hidden" id="perception-patterns">
             <h4 class="perception-section-title">模式洞察</h4>
             <div id="perception-patterns-list" class="perception-patterns-list"></div>
           </div>
-          <!-- 运行指标（默认折叠） -->
+          <!-- 运行指标（独立折叠区） -->
           <div class="perception-section collapsible" id="perception-metrics">
             <h4 class="perception-section-title clickable" id="perception-metrics-toggle">
               运行指标
               <svg class="icon narrative-toggle" id="perception-metrics-arrow"><use href="#icon-chevron"/></svg>
             </h4>
             <div class="perception-metrics-grid hidden" id="perception-metrics-grid">
-              <div class="dash-item"><span class="dash-label">LLM 调用</span><span class="dash-value" id="perception-llm-calls">0</span></div>
+              <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="perception-llm-calls">0</span></div>
               <div class="dash-item"><span class="dash-label">Token</span><span class="dash-value" id="perception-tokens">0</span></div>
-              <div class="dash-item"><span class="dash-label">召回命中率</span><span class="dash-value" id="perception-recall-rate">0%</span></div>
-              <div class="dash-item"><span class="dash-label">工具失败</span><span class="dash-value" id="perception-tool-failures">0</span></div>
+              <div class="dash-item"><span class="dash-label">召回</span><span class="dash-value" id="perception-recall-rate">0%</span></div>
+              <div class="dash-item"><span class="dash-label">失败</span><span class="dash-value" id="perception-tool-failures">0</span></div>
               <div class="dash-item" title="Agent 记忆总数"><span class="dash-label">记忆</span><span class="dash-value" id="perception-memory-count">0</span></div>
               <div class="dash-item" title="AI 提取的洞察数"><span class="dash-label">洞察</span><span class="dash-value" id="perception-insight-count">0</span></div>
               <div class="dash-item" title="累积待处理事件/阈值"><span class="dash-label">事件</span><span class="dash-value" id="perception-pending-count">0/0</span></div>
@@ -270,17 +265,23 @@
             <div id="milestones-display">
               <div id="milestones-list"></div>
             </div>
-            <!-- 对话回顾（今日概况+趋势+洞察） -->
-            <div class="perception-review" id="perception-review">
+          </div>
+
+          <!-- 对话回顾（独立折叠区，与运行指标拆分） -->
+          <div class="perception-section collapsible" id="perception-review-section">
+            <h4 class="perception-section-title clickable" id="perception-review-toggle">
+              对话回顾
+              <svg class="icon narrative-toggle" id="perception-review-arrow"><use href="#icon-chevron"/></svg>
+            </h4>
+            <div class="perception-review hidden" id="perception-review">
               <div class="review-today">
-                今日：<span id="review-today-memories">0</span> 条记忆 · <span id="review-today-insights">0</span> 条洞察
+                今日：<span id="review-today-memories">0</span> 记忆 · <span id="review-today-insights">0</span> 洞察
               </div>
               <div class="review-trend">
                 <span id="review-trend-dir" class="review-trend-direction stable">—</span>
               </div>
               <div id="review-trend-bars" class="review-trend-bars"></div>
               <ul id="recent-insights-list" class="recent-insights-list"></ul>
-            </div>
             </div>
           </div>
           </div>
@@ -320,9 +321,9 @@
               <button class="suggestion-btn" data-suggestion="帮我整理一下最近的洞察"><svg class="icon"><use href="#icon-fairy"/></svg> 整理洞察</button>
             </div>
           </div>
+          <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示，置于 messages 内部以便正确定位） -->
+          <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
-        <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示） -->
-        <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         <div id="input-area">
           <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1" aria-label="输入消息"></textarea>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->

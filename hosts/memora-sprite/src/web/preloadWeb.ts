@@ -661,6 +661,10 @@ export const webElectronAPI: WebElectronAPI = {
 
   getDashboard: () => getJson('/api/dashboard'),
 
+  // ─── 感知数据快照（精灵感知面板打开时调用） ─────────────
+
+  getPerceptionSnapshot: () => getJson('/api/perception'),
+
   // ─── 窗口控制（Web 模式降级为 noop） ────────────────────
 
   windowMinimize: () => { /* Web 模式无窗口控制 */ },
@@ -766,53 +770,64 @@ export const webElectronAPI: WebElectronAPI = {
 // ─── 注入到 window ────────────────────────────────────────
 
 /**
- * 注入 Web 版 electronAPI 到 window
- *
- * 在 Web 模式下，renderer/index.html 加载本文件后调用此函数。
- * 渲染进程代码通过 window.electronAPI.xxx() 调用，与 Electron 模式完全一致。
- *
- * 注意：本函数仅在浏览器环境执行，Node.js 环境下 window 不存在。
- */
-/**
  * 初始化 Web 模式 UI 适配
  *
- * 采用直接 DOM 样式操作而非 CSS 注入，原因：
- * IDE 内置浏览器环境中动态创建的 <style> 元素 sheet 为 null（无法解析内联样式），
- * 直接操作元素 style 属性可确保在任何环境下都生效。
- * 使用 MutationObserver 监听异步插入的元素。
+ * 职责：
+ *   1. 给 body 添加 web-mode class（供 CSS 选择器使用）
+ *   2. 隐藏 Electron 专属的窗口控制按钮
+ *   3. 禁用拖拽区域样式
+ *   4. 为侧边栏品牌图标添加点击回到对话面板功能
+ *   5. 使用 MutationObserver 监听异步插入的元素
  */
 function initWebModeUi(): void {
-  // 添加 body.web-mode 标识 class（供 CSS 选择器使用，即使 style sheet 不可用也无副作用）
+  // 添加 body.web-mode 标识 class（供 CSS 选择器使用）
   document.body.classList.add('web-mode');
 
   /**
-   * 应用 Web 模式样式到指定元素
-   * 直接设置内联样式，优先级最高且不依赖外部样式表
+   * 应用 Web 模式样式和交互适配
    */
-  function applyWebStyles(): void {
-    // 隐藏 Electron 窗口控制按钮（最小化/最大化/关闭）
+  function applyWebAdaptations(): void {
+    // 1. 隐藏 Electron 窗口控制按钮（最小化/最大化/关闭）
     const controls = document.getElementById('titlebar-controls');
     if (controls) {
       controls.style.setProperty('display', 'none', 'important');
     }
-    // 禁用 Electron 拖拽区域
+
+    // 2. 禁用 Electron 拖拽区域样式
     const titlebarDrag = document.getElementById('titlebar-drag');
     if (titlebarDrag) {
       titlebarDrag.style.setProperty('-webkit-app-region', 'no-drag', 'important');
-      titlebarDrag.style.cursor = 'default';
+      (titlebarDrag as HTMLElement).style.cursor = 'default';
     }
     const header = document.querySelector('header');
     if (header) {
       (header as HTMLElement).style.setProperty('-webkit-app-region', 'no-drag', 'important');
     }
+    const titlebar = document.getElementById('titlebar');
+    if (titlebar) {
+      titlebar.style.setProperty('-webkit-app-region', 'no-drag', 'important');
+    }
+
+    // 3. 为侧边栏品牌图标添加点击回到对话面板功能
+    const sidebarBrand = document.querySelector('.sidebar-brand');
+    if (sidebarBrand && !sidebarBrand.hasAttribute('data-web-bound')) {
+      sidebarBrand.setAttribute('data-web-bound', 'true');
+      sidebarBrand.addEventListener('click', () => {
+        // 找到对话面板按钮并触发点击
+        const chatBtn = document.querySelector('.nav-btn[data-panel="chat"]') as HTMLButtonElement | null;
+        if (chatBtn) {
+          chatBtn.click();
+        }
+      });
+    }
   }
 
   // 立即应用（元素可能已存在）
-  applyWebStyles();
+  applyWebAdaptations();
 
   // 使用 MutationObserver 监听后续 DOM 变化（元素可能在脚本执行后才插入）
   const observer = new MutationObserver(() => {
-    applyWebStyles();
+    applyWebAdaptations();
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
 }
