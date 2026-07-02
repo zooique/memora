@@ -304,14 +304,17 @@ export function setLogger(newLogger: ILogger | undefined): void {
     _loggerInjected = true;
     _logger = newLogger;
   } else {
-    // 恢复默认：尝试 pino，否则 console
+    // 恢复默认：同步先恢复到 console fallback，异步再尝试升级到 pino
+    // 与模块加载时一致（先 console，再异步 pino），避免 setLogger(undefined) 后 _logger 仍指向旧实例
     _loggerInjected = false;
+    _logger = createConsoleLogger();
+    setUtilsLogger(_logger);
     void tryCreatePinoLogger().then((pinoLogger) => {
-      _logger = pinoLogger ?? createConsoleLogger();
-      // 桥接注入到 utils 层
-      setUtilsLogger(_logger);
+      if (pinoLogger) {
+        _logger = pinoLogger;
+        // 桥接注入到 utils 层
+        setUtilsLogger(_logger);
+      }
     });
   }
-  // 同步桥接注入到 utils 层（覆盖异步路径，确保 setLogger 后立即生效）
-  setUtilsLogger(_logger);
 }

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SpriteEventBridge 单元测试
  *
  * 覆盖范围：
@@ -39,8 +39,8 @@ import type { ILogger } from 'memora';
  * vi.hoisted 与 vi.mock 配合使用：vi.hoisted 创建的变量会被提升到 vi.mock 之前，
  * 使得工厂函数可以访问这些变量。
  */
-/** 精灵事件总数（1 个主动提示 + 12 个简单转发事件，含 affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated） */
-const SPRITE_EVENT_COUNT = 13;
+/** 精灵事件总数（1 个主动提示 + 12 个简单转发事件 + 1 个 presenceChanged，含 memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated） */
+const SPRITE_EVENT_COUNT = 14;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
@@ -240,11 +240,11 @@ describe('SpriteEventBridge', () => {
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT * 2);
     });
 
-    it('注册 12 个事件订阅（proactivePrompt + 11 个简单事件）', () => {
+    it('注册 13 个事件订阅（proactivePrompt + 12 个简单事件 + presenceChanged）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
-      // 验证 12 个事件类型都被订阅
+      // 验证 13 个事件类型都被订阅
       const calledEvents = deps.sprite.on.mock.calls.map((call: unknown[]) => call[0]);
       expect(calledEvents).toContain('proactivePrompt');
       expect(calledEvents).toContain('memoryNoticed');
@@ -262,7 +262,7 @@ describe('SpriteEventBridge', () => {
       expect(calledEvents).toHaveLength(SPRITE_EVENT_COUNT);
     });
 
-    it('sprite.on 被调用 13 次（每个事件一次）', () => {
+    it('sprite.on 被调用 14 次（每个事件一次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
       expect(deps.sprite.on).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
@@ -549,14 +549,14 @@ describe('SpriteEventBridge', () => {
   // ════════════════════════════════════════════════════════
 
   describe('unsubscribeSpriteEvents', () => {
-    it('调用所有订阅者的 unsubscribe 函数（sprite.off 被调用 12 次）', () => {
+    it('调用所有订阅者的 unsubscribe 函数（sprite.off 被调用 14 次）', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 
       // 取消订阅
       unsubscribeSpriteEvents();
 
-      // sprite.off 应被调用 SPRITE_EVENT_COUNT 次（每个事件取消一次）
+      // sprite.off 应被调用 SPRITE_EVENT_COUNT 次（每个事件取消一次，共 14 次）
       expect(deps.sprite.off).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
     });
 

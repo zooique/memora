@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆 CRUD IPC 处理器测试
  *
  * 覆盖范围：
@@ -7,10 +7,12 @@
  * - MEMORIES_SHOW：查看记忆详情 + 失败降级 + 输入验证（空/非字符串/超长 ID 拒绝）
  * - MEMORIES_DELETE：删除记忆 + 失败降级 + 输入验证（空/非字符串/超长 ID 拒绝）
  * - MEMORIES_ADD：添加记忆 + 输入验证（超大内容拒绝）+ 失败降级
+ * - MEMORIES_ARCHIVE_PROFILE：手动归档个人偏好 + 失败降级 + 输入验证（SEC-P2-01）
+ * - MEMORIES_ARCHIVE_INSIGHT：手动归档洞察 + 失败降级 + 输入验证（SEC-P2-01）
  *
  * Mock 策略：
  * - electron.ipcMain：vi.mock + handleCallbacks Map 捕获注册的回调
- * - IpcContext.sprite：mock listMemories/searchMemories/showMemory/deleteMemory/upsertMemory
+ * - IpcContext.sprite：mock listMemories/searchMemories/showMemory/deleteMemory/upsertMemory/archiveProfileFacts/archiveInsight
  * - 复用 ipcHandlers.test.ts 的 mock 模板
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -45,6 +47,8 @@ function createMockCtx(overrides?: {
   showMemory?: ReturnType<typeof vi.fn>;
   deleteMemory?: ReturnType<typeof vi.fn>;
   upsertMemory?: ReturnType<typeof vi.fn>;
+  archiveProfileFacts?: ReturnType<typeof vi.fn>;
+  archiveInsight?: ReturnType<typeof vi.fn>;
 }): IpcContext {
   return {
     agent: {} as IpcContext['agent'],
@@ -54,6 +58,9 @@ function createMockCtx(overrides?: {
       showMemory: overrides?.showMemory ?? vi.fn(() => null),
       deleteMemory: overrides?.deleteMemory ?? vi.fn(() => false),
       upsertMemory: overrides?.upsertMemory ?? vi.fn(() => 'new-id'),
+      // SEC-P2-01：缺口 J 新增的归档委托方法
+      archiveProfileFacts: overrides?.archiveProfileFacts ?? vi.fn(async () => []),
+      archiveInsight: overrides?.archiveInsight ?? vi.fn(async () => []),
     } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
     windowStateManager: {} as IpcContext['windowStateManager'],
@@ -348,5 +355,160 @@ describe('registerMemoryHandlers', () => {
     });
 
     expect(result).toEqual({ id: '' });
+  });
+
+  // ─── MEMORIES_ARCHIVE_PROFILE（SEC-P2-01：缺口 J 手动归档） ─────
+
+  it('MEMORIES_ARCHIVE_PROFILE 合法输入应返回归档条目数', async () => {
+    // 模拟内核归档出 3 条 profile 事实
+    const archiveProfileFacts = vi.fn(async () => [
+      { id: 'p1', name: '偏好1' },
+      { id: 'p2', name: '偏好2' },
+      { id: 'p3', name: '偏好3' },
+    ]);
+    const ctx = createMockCtx({ archiveProfileFacts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE)!;
+    const result = await callback({}, { input: '我喜欢简洁的界面' });
+
+    expect(archiveProfileFacts).toHaveBeenCalledWith('我喜欢简洁的界面');
+    // 返回值精简为 { count: number }，不泄露完整 Memory 对象（最小披露原则）
+    expect(result).toEqual({ count: 3 });
+  });
+
+  it('MEMORIES_ARCHIVE_PROFILE 空输入应拒绝（返回 count: 0，不调用内核）', async () => {
+    const archiveProfileFacts = vi.fn(async () => []);
+    const ctx = createMockCtx({ archiveProfileFacts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE)!;
+    const result = await callback({}, { input: '' });
+
+    expect(archiveProfileFacts).not.toHaveBeenCalled();
+    expect(result).toEqual({ count: 0 });
+  });
+
+  it('MEMORIES_ARCHIVE_PROFILE 非字符串 input 应拒绝（返回 count: 0）', async () => {
+    const archiveProfileFacts = vi.fn(async () => []);
+    const ctx = createMockCtx({ archiveProfileFacts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE)!;
+    const result = await callback({}, { input: null as unknown as string });
+
+    expect(archiveProfileFacts).not.toHaveBeenCalled();
+    expect(result).toEqual({ count: 0 });
+  });
+
+  it('MEMORIES_ARCHIVE_PROFILE 超大内容应拒绝（返回 count: 0）', async () => {
+    const archiveProfileFacts = vi.fn(async () => []);
+    const ctx = createMockCtx({ archiveProfileFacts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE)!;
+    // 构造超过 10MB 的内容
+    const hugeContent = 'a'.repeat(11 * 1024 * 1024);
+    const result = await callback({}, { input: hugeContent });
+
+    expect(archiveProfileFacts).not.toHaveBeenCalled();
+    expect(result).toEqual({ count: 0 });
+  });
+
+  it('MEMORIES_ARCHIVE_PROFILE 抛错应降级返回 count: 0', async () => {
+    const archiveProfileFacts = vi.fn(async () => {
+      throw new Error('LLM 调用失败');
+    });
+    const ctx = createMockCtx({ archiveProfileFacts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE)!;
+    const result = await callback({}, { input: '合法输入' });
+
+    expect(result).toEqual({ count: 0 });
+  });
+
+  it('MEMORIES_ARCHIVE_PROFILE 无价值输入应返回 count: 0（内核返回空数组）', async () => {
+    // 模拟内核 classify 判断无价值，返回空数组
+    const archiveProfileFacts = vi.fn(async () => []);
+    const ctx = createMockCtx({ archiveProfileFacts });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE)!;
+    const result = await callback({}, { input: '今天天气不错' });
+
+    expect(archiveProfileFacts).toHaveBeenCalledWith('今天天气不错');
+    expect(result).toEqual({ count: 0 });
+  });
+
+  // ─── MEMORIES_ARCHIVE_INSIGHT（SEC-P2-01：缺口 J 手动归档） ─────
+
+  it('MEMORIES_ARCHIVE_INSIGHT 合法输入应返回归档条目数', async () => {
+    // 模拟内核归档出 2 条洞察记忆
+    const archiveInsight = vi.fn(async () => [
+      { id: 'i1', name: '洞察1' },
+      { id: 'i2', name: '洞察2' },
+    ]);
+    const ctx = createMockCtx({ archiveInsight });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT)!;
+    const result = await callback({}, {
+      input: '用户提问',
+      assistantContent: '助手回复',
+    });
+
+    expect(archiveInsight).toHaveBeenCalledWith('用户提问', '助手回复');
+    expect(result).toEqual({ count: 2 });
+  });
+
+  it('MEMORIES_ARCHIVE_INSIGHT 空 input 应拒绝（返回 count: 0）', async () => {
+    const archiveInsight = vi.fn(async () => []);
+    const ctx = createMockCtx({ archiveInsight });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT)!;
+    const result = await callback({}, { input: '', assistantContent: '回复' });
+
+    expect(archiveInsight).not.toHaveBeenCalled();
+    expect(result).toEqual({ count: 0 });
+  });
+
+  it('MEMORIES_ARCHIVE_INSIGHT 空 assistantContent 应拒绝（返回 count: 0）', async () => {
+    const archiveInsight = vi.fn(async () => []);
+    const ctx = createMockCtx({ archiveInsight });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT)!;
+    const result = await callback({}, { input: '提问', assistantContent: '' });
+
+    expect(archiveInsight).not.toHaveBeenCalled();
+    expect(result).toEqual({ count: 0 });
+  });
+
+  it('MEMORIES_ARCHIVE_INSIGHT 超大 assistantContent 应拒绝（返回 count: 0）', async () => {
+    const archiveInsight = vi.fn(async () => []);
+    const ctx = createMockCtx({ archiveInsight });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT)!;
+    const hugeContent = 'a'.repeat(11 * 1024 * 1024);
+    const result = await callback({}, { input: '提问', assistantContent: hugeContent });
+
+    expect(archiveInsight).not.toHaveBeenCalled();
+    expect(result).toEqual({ count: 0 });
+  });
+
+  it('MEMORIES_ARCHIVE_INSIGHT 抛错应降级返回 count: 0', async () => {
+    const archiveInsight = vi.fn(async () => {
+      throw new Error('归档失败');
+    });
+    const ctx = createMockCtx({ archiveInsight });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT)!;
+    const result = await callback({}, { input: '提问', assistantContent: '回复' });
+
+    expect(result).toEqual({ count: 0 });
   });
 });

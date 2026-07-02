@@ -1,4 +1,4 @@
-﻿/**
+/**
  * chatHandlers IPC 处理器测试（QC-TEST-CHAT）
  *
  * 覆盖范围：
@@ -138,7 +138,8 @@ function createMockCtx(overrides?: {
   const hasTray = overrides && 'trayManager' in overrides;
   return {
     agent: hasAgent ? (overrides!.agent as IpcContext['agent']) : createMockAgent(),
-    sprite: {} as IpcContext['sprite'],
+    // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+    sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
     windowStateManager: {} as IpcContext['windowStateManager'],
     windowManager: hasWindowManager
@@ -288,7 +289,7 @@ describe('chatHandlers', () => {
         getAbortController: vi.fn(() => null),
         agent: createMockAgent({
           agentHistory: { currentDateValue: '2026-06-25' }, // 跨日
-          sessionManager: { restoreSession },
+          sessionManager: { restoreSession, switchSession: vi.fn() },
           agentLoop: { restoreHistory },
           chat: vi.fn(() => chatGen),
         }),
@@ -316,7 +317,7 @@ describe('chatHandlers', () => {
         getAbortController: vi.fn(() => null),
         agent: createMockAgent({
           agentHistory: { currentDateValue: '2026-06-25' },
-          sessionManager: { restoreSession },
+          sessionManager: { restoreSession, switchSession: vi.fn() },
           agentLoop: { restoreHistory },
           chat: vi.fn(() => chatGen),
         }),

@@ -942,6 +942,37 @@ describe('renderPartnerInsights · 伙伴洞察面板', () => {
     expect(cb).toHaveBeenCalledWith('profile:click-test');
   });
 
+  it('onMemoryClick 应同时委托 partnerInsights 和 perception（缺口 K 双注册）', () => {
+    // 缺口 K：DashboardPanelManager.onMemoryClick 需同时注册到两个子渲染器，
+    // 使伙伴洞察卡片和模式洞察关联按钮共享同一跳转回调
+    const { manager } = createManager();
+    const cb = vi.fn();
+    manager.onMemoryClick(cb);
+
+    // 验证 1：partnerInsights 卡片点击触发回调
+    manager.renderPartnerInsights([
+      { id: 'profile:partner', name: '伙伴', source: 'profile', contentPreview: 'p' },
+    ]);
+    const card = document.querySelector('.partner-profile-card') as HTMLElement;
+    card.click();
+    expect(cb).toHaveBeenCalledWith('profile:partner');
+
+    // 验证 2：perception 模式洞察关联按钮点击也触发同一回调
+    cb.mockClear();
+    manager.updatePatternsDisplay({
+      patterns: [{
+        type: 'recurring_topic',
+        summary: '重复讨论',
+        confidence: 0.9,
+        relatedMemoryIds: ['pattern:related'],
+      }],
+    });
+    const relatedBtn = document.querySelector('.perception-pattern-related') as HTMLElement;
+    expect(relatedBtn).not.toBeNull();
+    relatedBtn.click();
+    expect(cb).toHaveBeenCalledWith('pattern:related');
+  });
+
   it('应渲染知识缺口（占比 < 5% 的 source 类型）', () => {
     const { manager } = createManager();
     // 100 条记忆全是 test，profile 占比 0% < 5%，应提示

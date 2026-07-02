@@ -123,6 +123,9 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     updateNarrative: vi.fn(),
     // C-8：控制器通过 UIManager 门面读取搜索参数，不再直接访问 DOM
     getMemorySearchParams: vi.fn(() => ({ query: '', source: '', sort: 'relevance', timeRange: '' })),
+    // ARCH-P2-1：memoryController 通过 UIManager 门面调用 renderSourceHealth/setMemoryListState
+    renderSourceHealth: vi.fn(),
+    setMemoryListState: vi.fn(),
   };
   // 使用类型断言避免完整实现 UIManager 的所有方法
   return spies as unknown as UIManager & { triggerMemoryRecall: ReturnType<typeof vi.fn> };

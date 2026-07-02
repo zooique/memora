@@ -238,7 +238,7 @@ function createMockCtx(overrides?: {
     agentHistory: hasAgentHistory ? overrides!.agentHistory : { currentDateValue: MOCK_TODAY },
     sessionManager: hasSessionManager
       ? overrides!.sessionManager
-      : { restoreSession: vi.fn().mockResolvedValue(0) },
+      : { restoreSession: vi.fn().mockResolvedValue(0), switchSession: vi.fn() },
     agentLoop: hasAgentLoop ? overrides!.agentLoop : { restoreHistory: vi.fn() },
     chat: makeChatMock(overrides?.chatChunks ?? [], overrides?.chatError),
     getMetrics,
@@ -246,7 +246,8 @@ function createMockCtx(overrides?: {
 
   return {
     agent,
-    sprite: {} as HostContext['sprite'],
+    // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+    sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() } as unknown as HostContext['sprite'],
     sessionStore: {} as HostContext['sessionStore'],
     getAbortController: overrides?.getAbortController ?? vi.fn(() => null),
     setAbortController: overrides?.setAbortController ?? vi.fn(),
@@ -760,7 +761,7 @@ describe('handleChatStreamRoute', () => {
       const ctx = createMockCtx({
         // 跨日：Agent 记录的日期是昨天，mock getLocalDate 返回今天
         agentHistory: { currentDateValue: '2026-06-25' },
-        sessionManager: { restoreSession },
+        sessionManager: { restoreSession, switchSession: vi.fn() },
         agentLoop: { restoreHistory },
         chatChunks: [{ type: 'done' }],
       });

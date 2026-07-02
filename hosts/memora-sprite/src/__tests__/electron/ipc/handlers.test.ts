@@ -88,7 +88,8 @@ function createMockIpcContext(options: {
     agent: {
       getMetrics: () => ({ context: { truncationCount: 0 } }),
     },
-    sprite: {},
+    // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+    sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() },
     sessionStore: {},
     windowStateManager: {},
     windowManager: {
@@ -323,7 +324,8 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
         agent: {
           getMetrics: () => ({ context: { truncationCount: 0 } }),
         },
-        sprite: {},
+        // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+    sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() },
         sessionStore: {},
         windowStateManager: {},
         windowManager: {

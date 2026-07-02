@@ -101,7 +101,7 @@ function createContext(overrides?: Partial<ContextPayload>): ContextPayload {
 }
 
 /** 创建测试用 PatternsPayload */
-function createPatterns(patterns?: Array<{ type: string; summary: string; confidence: number }>): PatternsPayload {
+function createPatterns(patterns?: Array<{ type: string; summary: string; confidence: number; suggestion?: string; relatedMemoryIds?: string[] }>): PatternsPayload {
   return {
     patterns: patterns ?? [
       { type: 'recurring_topic', summary: '重复讨论 X', confidence: 0.9 },
@@ -319,6 +319,60 @@ describe('updatePatternsDisplay() · 模式洞察', () => {
     expect(items.length).toBe(1);
     expect(items[0]!.querySelector('.perception-pattern-type')!.textContent).toBe('漂移');
   });
+
+  // ─── 缺口 K：relatedMemoryIds 关联记忆跳转按钮 ───────────────
+
+  it('含 relatedMemoryIds 的 pattern 应渲染"关联 N 条记忆"按钮', () => {
+    // 缺口 K：PatternDetector 已填充 relatedMemoryIds，渲染层需消费
+    const renderer = createRenderer();
+    renderer.updatePatternsDisplay(createPatterns([
+      { type: 'recurring_topic', summary: '重复讨论', confidence: 0.9, relatedMemoryIds: ['m1', 'm2', 'm3'] },
+    ]));
+    const btn = document.querySelector('.perception-pattern-related') as HTMLElement;
+    expect(btn).not.toBeNull();
+    expect(btn.textContent).toBe('关联 3 条记忆');
+  });
+
+  it('无 relatedMemoryIds 的 pattern 不应渲染关联按钮', () => {
+    const renderer = createRenderer();
+    renderer.updatePatternsDisplay(createPatterns([
+      { type: 'recurring_topic', summary: '无关联', confidence: 0.9 },
+    ]));
+    const btn = document.querySelector('.perception-pattern-related');
+    expect(btn).toBeNull();
+  });
+
+  it('空 relatedMemoryIds 数组不应渲染关联按钮', () => {
+    const renderer = createRenderer();
+    renderer.updatePatternsDisplay(createPatterns([
+      { type: 'recurring_topic', summary: '空数组', confidence: 0.9, relatedMemoryIds: [] },
+    ]));
+    const btn = document.querySelector('.perception-pattern-related');
+    expect(btn).toBeNull();
+  });
+
+  it('click 关联按钮应触发 onMemoryClick 回调（传入第一条记忆 ID）', () => {
+    // 缺口 K：点击按钮跳转第一条相关记忆详情，复用 onMemoryClick 回调
+    const renderer = createRenderer();
+    const cb = vi.fn();
+    renderer.onMemoryClick(cb);
+    renderer.updatePatternsDisplay(createPatterns([
+      { type: 'recurring_topic', summary: '可跳转', confidence: 0.9, relatedMemoryIds: ['first-id', 'second-id'] },
+    ]));
+    const btn = document.querySelector('.perception-pattern-related') as HTMLElement;
+    btn.click();
+    expect(cb).toHaveBeenCalledWith('first-id');
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it('未注册 onMemoryClick 回调时 click 按钮应安全不抛错', () => {
+    const renderer = createRenderer();
+    renderer.updatePatternsDisplay(createPatterns([
+      { type: 'recurring_topic', summary: '无回调', confidence: 0.9, relatedMemoryIds: ['m1'] },
+    ]));
+    const btn = document.querySelector('.perception-pattern-related') as HTMLElement;
+    expect(() => btn.click()).not.toThrow();
+  });
 });
 
 // ─── updatePresenceDisplay() · 在场状态 ─────────────────
@@ -491,7 +545,7 @@ describe('updateNarrative() · 叙事合成', () => {
 // ─── cleanup() · 资源清理 ────────────────────────────────
 
 describe('cleanup() · 资源清理', () => {
-  it('cleanup 应不抛错（无外部资源需清理）', () => {
+  it('cleanup 应不抛错', () => {
     const renderer = createRenderer();
     expect(() => renderer.cleanup()).not.toThrow();
   });
@@ -507,5 +561,22 @@ describe('cleanup() · 资源清理', () => {
     renderer.updateAffectDisplay(createAffect({ warmth: 0.9 }));
     renderer.cleanup();
     expect(() => renderer.updateAffectDisplay(createAffect({ warmth: 0.5 })).not.toThrow());
+  });
+
+  it('cleanup 应清理 onMemoryClickCallback（缺口 K：与 PartnerInsightsRenderer 一致）', () => {
+    // 缺口 K：cleanup 后点击关联按钮不应触发回调（回调引用已被置 null）
+    const renderer = createRenderer();
+    const cb = vi.fn();
+    renderer.onMemoryClick(cb);
+    renderer.updatePatternsDisplay(createPatterns([
+      { type: 'recurring_topic', summary: '测试', confidence: 0.9, relatedMemoryIds: ['m1'] },
+    ]));
+    renderer.cleanup();
+    // cleanup 后 click 按钮，回调不应被调用
+    const btn = document.querySelector('.perception-pattern-related') as HTMLElement;
+    if (btn) {
+      btn.click();
+    }
+    expect(cb).not.toHaveBeenCalled();
   });
 });

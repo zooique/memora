@@ -74,6 +74,8 @@ function createMockHost(overrides?: Partial<ChatPanelHost>): ChatPanelHost {
     hideEmptyState: vi.fn(),
     updateUnreadCount: vi.fn(),
     onStreamStuck: vi.fn(),
+    // 缺口 J：manual 模式归档按钮渲染依赖 host.getArchiveMode()（默认 full 不渲染）
+    getArchiveMode: vi.fn(() => 'full' as const),
     ...overrides,
   };
 }

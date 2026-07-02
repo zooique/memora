@@ -830,11 +830,13 @@ function initWebModeUi(): void {
 export function injectWebElectronAPI(): void {
   if (typeof window !== 'undefined') {
     (window as unknown as { electronAPI: WebElectronAPI }).electronAPI = webElectronAPI;
-    // 初始化 Web 模式 UI 适配（DOM 加载完成后执行）
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initWebModeUi);
-    } else {
-      initWebModeUi();
+    // 初始化 Web 模式 UI 适配（仅在 DOM 可用时执行，Node 环境测试无 document 跳过）
+    if (typeof document !== 'undefined') {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initWebModeUi);
+      } else {
+        initWebModeUi();
+      }
     }
     console.log('[Web] electronAPI 已注入（Web 模式）');
   }

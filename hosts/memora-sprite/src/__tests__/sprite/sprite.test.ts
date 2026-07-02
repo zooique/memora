@@ -105,6 +105,115 @@ describe('Sprite', () => {
   });
 });
 
+// ─── 缺口 I：prepareForChat 公共方法（从 wakeup 抽取） ──────
+
+describe('Sprite prepareForChat（缺口 I：对话前感知刷新）', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    agentListeners.clear();
+    mockAgent.injectAffect = vi.fn();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
+    tmpDir = createTmpDir();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('prepareForChat(input) 应触发情感基调推导并注入 system prompt', () => {
+    // 缺口 I：prepareForChat 是从 wakeup 抽取的公共方法，
+    // 负责对话前感知刷新（推导 affect + rapport + context + 注入 prompt）
+    sprite.prepareForChat('你好');
+    // injectAffect 应被调用（推导后注入 system prompt）
+    expect(mockAgent.injectAffect).toHaveBeenCalled();
+  });
+
+  it('prepareForChat(undefined) 应安全执行（不抛错，仍推导）', () => {
+    expect(() => sprite.prepareForChat(undefined)).not.toThrow();
+    expect(mockAgent.injectAffect).toHaveBeenCalled();
+  });
+
+  it('prepareForChat(null) 应安全执行（空输入不推入 recentUserMessages）', () => {
+    expect(() => sprite.prepareForChat(null)).not.toThrow();
+    expect(mockAgent.injectAffect).toHaveBeenCalled();
+  });
+
+  it('prepareForChat(空字符串) 应安全执行', () => {
+    expect(() => sprite.prepareForChat('')).not.toThrow();
+    expect(mockAgent.injectAffect).toHaveBeenCalled();
+  });
+
+  it('连续 prepareForChat 应正常工作（多次推导不累积异常）', () => {
+    // start() 已触发一次 deriveAndInjectAffect，clear 后仅计 prepareForChat 调用
+    vi.mocked(mockAgent.injectAffect).mockClear();
+    sprite.prepareForChat('第一条');
+    sprite.prepareForChat('第二条');
+    sprite.prepareForChat('第三条');
+    // 每次 prepareForChat 都应触发推导
+    expect(mockAgent.injectAffect).toHaveBeenCalledTimes(3);
+  });
+});
+
+// ─── 缺口 A：dailyMessageCount 每日消息计数 ────────────────
+
+describe('Sprite dailyMessageCount（缺口 A：每日消息计数）', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    agentListeners.clear();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
+    tmpDir = createTmpDir();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('初始状态 getDailyMessageCounts 应返回空对象（无历史数据）', () => {
+    const counts = sprite.getDailyMessageCounts();
+    expect(Object.keys(counts).length).toBe(0);
+  });
+
+  it('incrementDailyMessageCount 后应返回今日计数 1', () => {
+    sprite.incrementDailyMessageCount();
+    const counts = sprite.getDailyMessageCounts();
+    // getLocalDate 使用本地时区日期，toISOString 是 UTC，跨时区时 key 可能不匹配
+    // 改为断言 values 包含 1（今日刚 increment 一次）
+    expect(Object.values(counts)).toContain(1);
+    expect(Object.values(counts).length).toBe(1);
+  });
+
+  it('连续 increment 应累加计数', () => {
+    sprite.incrementDailyMessageCount();
+    sprite.incrementDailyMessageCount();
+    sprite.incrementDailyMessageCount();
+    const counts = sprite.getDailyMessageCounts();
+    // 今日累加 3 次
+    expect(Object.values(counts)).toContain(3);
+    expect(Object.values(counts).length).toBe(1);
+  });
+
+  it('getDailyMessageCounts 应返回可序列化的 Record（供 reviewManager 消费）', () => {
+    sprite.incrementDailyMessageCount();
+    const counts = sprite.getDailyMessageCounts();
+    // 应是普通对象，非 Map
+    expect(counts).toBeTypeOf('object');
+    expect(counts.constructor).toBe(Object);
+    // 值应为数字
+    for (const value of Object.values(counts)) {
+      expect(typeof value).toBe('number');
+    }
+  });
+});
+
 describe('Sprite 主动行为', () => {
   let sprite: Sprite;
   let tmpDir: string;

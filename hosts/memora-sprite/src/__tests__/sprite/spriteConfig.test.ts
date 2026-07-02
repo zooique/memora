@@ -130,9 +130,9 @@ describe('spriteConfig', () => {
       expect(accelerators['recall-memory']).toBe('Ctrl+Shift+R');
     });
 
-    it('CONFIG_FIELD_SCHEMA 包含所有 20 个字段的类型映射', () => {
+    it('CONFIG_FIELD_SCHEMA 包含所有 21 个字段的类型映射', () => {
       const keys = Object.keys(CONFIG_FIELD_SCHEMA); // 全部字段名
-      expect(keys).toHaveLength(20);
+      expect(keys).toHaveLength(21);
       // 逐一验证关键类型映射存在
       expect(CONFIG_FIELD_SCHEMA.configVersion).toBe('number');
       expect(CONFIG_FIELD_SCHEMA.triggerIntervalMs).toBe('number');
