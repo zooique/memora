@@ -89,6 +89,8 @@ export class SettingsPanelManager {
   private cfgWatcherEnabled: HTMLInputElement | null;
   private cfgWatcherPaths: HTMLInputElement | null;
   private cfgWatcherDebounce: HTMLInputElement | null;
+  /** 缺口 II：文件监听忽略模式（glob 列表，逗号分隔输入） */
+  private cfgWatcherIgnore: HTMLInputElement | null;
   private cfgDefaultPersona: HTMLInputElement | null;
   /** FD-04 项目模式：专注项目选择下拉框 */
   private cfgFocusProject: HTMLSelectElement | null;
@@ -164,6 +166,8 @@ export class SettingsPanelManager {
     this.cfgWatcherEnabled = getOptionalElement('cfg-watcher-enabled', 'input');
     this.cfgWatcherPaths = getOptionalElement('cfg-watcher-paths', 'input');
     this.cfgWatcherDebounce = getOptionalElement('cfg-watcher-debounce', 'input');
+    // 缺口 II：文件监听忽略模式输入框
+    this.cfgWatcherIgnore = getOptionalElement('cfg-watcher-ignore', 'input');
     this.cfgDefaultPersona = getOptionalElement('cfg-default-persona', 'input');
     this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
 
@@ -213,6 +217,7 @@ export class SettingsPanelManager {
       ['cfgWatcherEnabled', this.cfgWatcherEnabled, 'cfg-watcher-enabled'],
       ['cfgWatcherPaths', this.cfgWatcherPaths, 'cfg-watcher-paths'],
       ['cfgWatcherDebounce', this.cfgWatcherDebounce, 'cfg-watcher-debounce'],
+      ['cfgWatcherIgnore', this.cfgWatcherIgnore, 'cfg-watcher-ignore'],
       ['cfgDefaultPersona', this.cfgDefaultPersona, 'cfg-default-persona'],
       ['cfgFocusProject', this.cfgFocusProject, 'cfg-focus-project'],
       ['cfgShortcutsEnabled', this.cfgShortcutsEnabled, 'cfg-shortcuts-enabled'],
@@ -923,6 +928,8 @@ export class SettingsPanelManager {
     if (this.cfgWatcherEnabled) this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
     if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
     if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
+    // 缺口 II：加载文件监听忽略模式（glob 列表 → 逗号分隔字符串）
+    if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
     if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
 
     // 角色匹配模式（单选按钮）
@@ -1026,6 +1033,11 @@ export class SettingsPanelManager {
       triggerIntervalMs: (parseInt(this.cfgInterval?.value ?? '60', 10) || 60) * MS_PER_MINUTE,
       fileWatcherEnabled: this.cfgWatcherEnabled?.checked ?? false,
       fileWatcherPaths: this.cfgWatcherPaths?.value
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0) ?? [],
+      // 缺口 II：收集文件监听忽略模式（逗号分隔字符串 → glob 列表，与 fileWatcherPaths 对称处理）
+      fileWatcherIgnore: this.cfgWatcherIgnore?.value
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0) ?? [],

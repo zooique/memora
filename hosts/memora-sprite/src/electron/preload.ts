@@ -36,7 +36,7 @@ import type {
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
 import type { SpriteConfig } from '../sprite/spriteConfig.js';
 // P5：从 sprite 层导入感知状态类型（真理源），修复 getPerceptionSnapshot 返回类型过宽问题
-import type { AffectState, RapportState, ContextState, DetectedPattern } from '../sprite/controllers/index.js';
+import type { AffectState, RapportState, ContextState, DetectedPattern, ProactiveStats } from '../sprite/controllers/index.js';
 
 // ─── 内联 IPC 通道常量（sandbox 兼容性：不能运行时导入 ipcChannels.ts） ─────
 // ⚠️ 与 ipcChannels.ts 保持同步：修改 ipcChannels.ts 时需同步更新此处的内联副本。
@@ -71,6 +71,10 @@ export const IPC_CHANNELS = {
   MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
   /** 更新记忆关系（关系图交互） */
   MEMORIES_UPDATE_RELATION: 'memories-update-relation',
+  /** 手动归档 profile facts（缺口 J：manual 模式下供 UI 调用） */
+  MEMORIES_ARCHIVE_PROFILE: 'memories-archive-profile',
+  /** 手动归档 insight（缺口 J：manual 模式下供 UI 调用） */
+  MEMORIES_ARCHIVE_INSIGHT: 'memories-archive-insight',
   CONFIG_GET: 'config-get',
   CONFIG_UPDATE: 'config-update',
   // QC-CONFIG-01：批量事务性更新配置（必须与 ipc/channels.ts 保持同步）
@@ -380,6 +384,10 @@ export interface ElectronAPI {
   removeRelation: (data: { sourceId: string; targetId: string; type: string }) => Promise<{ success: boolean }>;
   /** 更新记忆关系（关系图交互） */
   updateRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) => Promise<{ success: boolean }>;
+  /** 手动归档 profile facts（缺口 J：manual 模式下供 UI 调用，返回归档条目数） */
+  archiveProfileFacts: (input: string) => Promise<{ count: number }>;
+  /** 手动归档 insight（缺口 J：manual 模式下供 UI 调用，返回归档记忆数） */
+  archiveInsight: (input: string, assistantContent: string) => Promise<{ count: number }>;
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
   getHealthDashboard: () => Promise<HealthDashboardPayload>;
   /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
@@ -473,6 +481,8 @@ export interface ElectronAPI {
     rapport?: RapportState;
     context?: ContextState;
     patterns?: DetectedPattern[];
+    /** 缺口 G+H：主动提示统计（接受率 + 生效冷却） */
+    proactiveStats?: ProactiveStats;
   } | null>;
 
   // 窗口控制
@@ -693,6 +703,10 @@ const electronAPI: ElectronAPI = {
   /** 更新记忆关系（关系图交互） */
   updateRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_UPDATE_RELATION, data),
+  archiveProfileFacts: (input: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE, { input }),
+  archiveInsight: (input: string, assistantContent: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT, { input, assistantContent }),
   getHealthDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD),
   getReviewData: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_REVIEW_DATA),
   deleteMemoriesBatch: (ids) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE_BATCH, ids),

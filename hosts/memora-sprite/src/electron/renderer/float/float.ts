@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 浮动窗口脚本 — 精灵球体交互逻辑
  *
  * 从 float.html 内联 <script> 提取，职责：
@@ -67,6 +67,26 @@ function hasImageUrl(payload: unknown): payload is { imageUrl: string } {
 }
 
 /**
+ * 类型守卫：判断 payload 是否为 presenceChanged 事件载荷（缺口 1.2）
+ *
+ * presenceChanged 事件由 spriteEventBridge.broadcastPresence 推送，
+ * payload 结构为 { state: 'present' | 'away', awayDurationMs?: number }。
+ */
+function isPresencePayload(payload: unknown): payload is {
+  state: 'present' | 'away';
+  awayDurationMs?: number;
+} {
+  if (typeof payload !== 'object' || payload === null) return false;
+  const p = payload as Record<string, unknown>;
+  return p.state === 'present' || p.state === 'away';
+}
+
+/** 离开时长小标签显示阈值（毫秒）：超过 5 分钟才显示"离开 N 分钟" */
+const AWAY_LABEL_THRESHOLD_MS = 5 * 60 * 1000;
+/** 离开时长小标签刷新间隔（毫秒）：每分钟更新一次"离开 N 分钟" */
+const AWAY_LABEL_REFRESH_MS = 60_000;
+
+/**
  * 初始化浮动窗口交互逻辑
  *
  * @param electronAPI - preload.ts 暴露的 ElectronAPI 对象
@@ -80,6 +100,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   const statusDot = document.getElementById('status-dot');
   const badge = document.getElementById('badge');
   const dragHint = document.getElementById('drag-hint');
+  // 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示）
+  const awayLabel = document.getElementById('away-label');
 
   // 防护：关键元素缺失时静默退出（测试/非标准环境）
   if (!sphere || !statusDot || !badge) {
@@ -90,6 +112,65 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   const timers = new SafeTimerTracker();
   // 事件监听器跟踪器（S-02 统一事件管理范式，替代手写 addEventListener/removeEventListener）
   const events = new EventTracker();
+
+  // ─── 缺口 1.2：在场状态视觉反馈 ─────────────────────
+  // 用户离开时球体变暗 + 灰度滤镜，statusDot 切换为月亮黄色
+  // 离开超过 5 分钟时显示"离开 N 分钟"小标签，每分钟刷新
+  let awayLabelTimer: ReturnType<typeof setInterval> | null = null;
+  /** 离开起始时间戳（ms），null 表示当前未离开 */
+  let awaySince: number | null = null;
+
+  /** 格式化离开时长为人类可读字符串 */
+  const formatAwayDuration = (ms: number): string => {
+    const minutes = Math.floor(ms / 60_000);
+    if (minutes < 60) return `离开 ${minutes} 分钟`;
+    const hours = Math.floor(minutes / 60);
+    return `离开 ${hours} 小时`;
+  };
+
+  /** 启动离开时长小标签定时刷新（每分钟更新一次） */
+  const startAwayLabelTimer = (): void => {
+    if (awayLabelTimer !== null) return; // 已启动则跳过
+    awayLabelTimer = timers.setInterval(() => {
+      if (awaySince === null || !awayLabel) return;
+      const elapsed = Date.now() - awaySince;
+      if (elapsed >= AWAY_LABEL_THRESHOLD_MS) {
+        awayLabel.textContent = formatAwayDuration(elapsed);
+      }
+    }, AWAY_LABEL_REFRESH_MS);
+  };
+
+  /** 停止离开时长小标签定时刷新 */
+  const stopAwayLabelTimer = (): void => {
+    if (awayLabelTimer !== null) {
+      timers.clearSafeInterval(awayLabelTimer);
+      awayLabelTimer = null;
+    }
+  };
+
+  /** 应用在场状态视觉反馈 */
+  const applyPresenceState = (state: 'present' | 'away', awayDurationMs?: number): void => {
+    if (state === 'away') {
+      sphere.classList.add('away');
+      statusDot.classList.add('away');
+      // 记录离开起始时间（优先用事件携带的 awayDurationMs 反推，否则用当前时间）
+      awaySince = awayDurationMs ? Date.now() - awayDurationMs : Date.now();
+      // 超过阈值时立即显示小标签，否则等待定时器刷新到阈值时再显示
+      if (awayLabel && awayDurationMs && awayDurationMs >= AWAY_LABEL_THRESHOLD_MS) {
+        awayLabel.textContent = formatAwayDuration(awayDurationMs);
+        awayLabel.classList.add('visible');
+      }
+      startAwayLabelTimer();
+    } else {
+      sphere.classList.remove('away');
+      statusDot.classList.remove('away');
+      awaySince = null;
+      if (awayLabel) {
+        awayLabel.classList.remove('visible');
+      }
+      stopAwayLabelTimer();
+    }
+  };
 
   // ─── FD-06 首次使用拖动引导 ───────────────────────────
   // 新用户不知道浮动窗口可以拖动，首次悬停时显示引导提示。
@@ -274,6 +355,11 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
         sphereEmoji.style.display = 'none';
       }
     }
+
+    // 缺口 1.2：在场状态变化 → 球体变暗 + 离开时长小标签
+    if (event.type === 'presenceChanged' && isPresencePayload(event.payload)) {
+      applyPresenceState(event.payload.state, event.payload.awayDurationMs);
+    }
   });
 
   // ─── UX-P2-10 主题变更监听 ────────────────────────────
@@ -300,6 +386,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     // UX-P2-10 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM
     electronAPI.removeThemeBroadcastListener();
     if (dragHintTimer) timers.clearSafeTimeout(dragHintTimer);
+    // 缺口 1.2：清理离开时长小标签定时器
+    stopAwayLabelTimer();
     timers.cleanup();
   };
 }

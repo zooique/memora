@@ -6,7 +6,7 @@ description: "PanelManager 组合模式约定：拆分阈值、生命周期契�
 # ADR-SP-015 · PanelManager 组合模式约定
 
 > **状态**：✅ 已接受（2026-07-01，阶段 C 架构演进沉淀）
-> **依赖**：[ADR-SP-007](./ADR-SP-007-directory-structure.md)（目录结构）、[sprite-project-rules.md §4.1](../sprite-project-rules.md)（渲染进程分层约束）
+> **依赖**：[ADR-SP-007](./ADR-SP-007-directory-structure.md)（目录结构）、[ADR-SP-003](./ADR-SP-003-desktop-shell.md)（渲染进程分层约束）
 
 ## 背景
 

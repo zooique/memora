@@ -121,10 +121,30 @@ export interface MemorySearchResult {
 export class MemoryController {
   private agent: Agent;
   private vectorStore: VectorStore | null;
+  /**
+   * 每日消息计数提供者（缺口 3.4 修复）
+   *
+   * 由 Sprite 在实例化后通过 setMessageCountProvider 注入，避免 MemoryController
+   * 反向依赖 Sprite（保持依赖方向：sprite → memoryController → reviewManager）。
+   * 未注入时返回空对象，buildReviewData 内 ?? 0 兜底，保持向后兼容。
+   */
+  private messageCountProvider: () => Record<string, number> = () => ({});
 
   constructor(agent: Agent, vectorStore?: VectorStore) {
     this.agent = agent;
     this.vectorStore = vectorStore ?? null;
+  }
+
+  /**
+   * 注入每日消息计数提供者（缺口 3.4）
+   *
+   * 由 Sprite 在构造后立即调用，将自身 dailyMessageCount Map 转换为 Record 暴露给本控制器。
+   * 设计为 setter 而非构造参数，避免 MemoryController 构造签名变更影响测试。
+   *
+   * @param provider 返回最近 7 天每日消息计数的函数（key=YYYY-MM-DD）
+   */
+  setMessageCountProvider(provider: () => Record<string, number>): void {
+    this.messageCountProvider = provider;
   }
 
   // ─── 记忆 CRUD ────────────────────────────────────────
@@ -500,6 +520,7 @@ export class MemoryController {
   getReviewData(): ReviewData {
     const dashboard = this.dashboard();
     const allMemories = this.list(undefined, DEFAULT_LIST_LIMIT);
-    return buildReviewData(dashboard, allMemories);
+    // 缺口 3.4：注入每日消息计数，补齐 today.messageCount / daily[].messageCount
+    return buildReviewData(dashboard, allMemories, this.messageCountProvider());
   }
 }

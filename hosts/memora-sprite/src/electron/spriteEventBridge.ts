@@ -254,6 +254,25 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   forwardSimpleEvent(deps, 'patternsUpdated', (e) => ({
     patterns: e.patterns,
   }));
+
+  // 缺口 1.2：在场状态变化 → 完整窗口感知面板 + 浮动窗口视觉反馈
+  // 此前 presenceChanged 事件未在桥接层转发，渲染层 handler 从未触发（流断点修复）
+  // 浮动窗口需要独立推送：80x80 球体在用户离开时无视觉变化，体验割裂
+  registerSpriteEvent(deps, 'presenceChanged', (e) => {
+    // 1. 推送到完整窗口（perceptionRenderer 更新在场状态指示器）
+    sendSpriteEventIfVisible(deps, 'presenceChanged', {
+      state: e.state,
+      timestamp: e.timestamp,
+      awayDurationMs: e.awayDurationMs,
+      reason: e.reason,
+    });
+    // 2. 推送到浮动窗口（球体变暗 + 离开时长小标签）
+    // 仅在浮动窗口存在时推送，未创建浮动窗口时跳过
+    const floatWindow = deps.windowManager.getFloatWindow();
+    if (floatWindow) {
+      floatWindow.broadcastPresence(e.state, e.awayDurationMs);
+    }
+  });
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

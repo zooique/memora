@@ -146,4 +146,36 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       return { success: true };
     }),
   );
+
+  /**
+   * 手动归档 profile facts（缺口 J：archiveMode='manual' 模式下供 UI 调用）
+   *
+   * 从用户输入中提取个人偏好事实并归档。返回归档的条目数（精简后传输，避免大 payload）。
+   */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE, async (_event, data: { input: string }) =>
+    safeHandle('归档个人偏好失败', { count: 0 }, async () => {
+      // 参数校验：input 必须通过 isValidContent（与 MEMORIES_ADD 一致，拒绝空/超大内容）
+      if (!isValidContent(data?.input)) {
+        return { count: 0 };
+      }
+      const entries = await ctx.sprite.archiveProfileFacts(data.input);
+      return { count: entries.length };
+    }),
+  );
+
+  /**
+   * 手动归档 insight（缺口 J：archiveMode='manual' 模式下供 UI 调用）
+   *
+   * 从对话中提取洞察并归档为记忆。内部走 classify 判断，无价值输入返回 count=0。
+   */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT, async (_event, data: { input: string; assistantContent: string }) =>
+    safeHandle('归档洞察失败', { count: 0 }, async () => {
+      // 参数校验：input/assistantContent 必须通过 isValidContent
+      if (!isValidContent(data?.input) || !isValidContent(data?.assistantContent)) {
+        return { count: 0 };
+      }
+      const memories = await ctx.sprite.archiveInsight(data.input, data.assistantContent);
+      return { count: memories.length };
+    }),
+  );
 }

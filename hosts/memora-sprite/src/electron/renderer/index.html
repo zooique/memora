@@ -100,6 +100,8 @@
       <symbol id="icon-trophy" viewBox="0 0 24 24"><path d="M6 4h12v4a6 6 0 01-12 0V4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M6 6H4a2 2 0 002 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M18 6h2a2 2 0 01-2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M12 14v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 22h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M10 18h4v4h-4z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
       <!-- 复制 -->
       <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 归档（书签+向下箭头：缺口 J manual 模式手动归档按钮） -->
+      <symbol id="icon-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4V3z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M9 9l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <!-- 勾选（复制成功等反馈） -->
       <symbol id="icon-check" viewBox="0 0 24 24"><polyline points="4 12 10 18 20 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <!-- 发送（纸飞机） -->
@@ -259,6 +261,32 @@
             <h4 class="perception-section-title">模式洞察</h4>
             <div id="perception-patterns-list" class="perception-patterns-list"></div>
           </div>
+          <!-- 主动提示统计（缺口 G+H：接受率 + 生效冷却，展示与精灵的互动反馈） -->
+          <div class="perception-section" id="perception-proactive">
+            <h4 class="perception-section-title">主动提示</h4>
+            <div class="perception-proactive-grid">
+              <div class="dash-item" title="历史主动提示总次数">
+                <span class="dash-label">建议</span>
+                <span class="dash-value" id="perception-proactive-suggest">0</span>
+              </div>
+              <div class="dash-item" title="用户接受次数">
+                <span class="dash-label">接受</span>
+                <span class="dash-value" id="perception-proactive-accept">0</span>
+              </div>
+              <div class="dash-item" title="接受率（高/中/低 三色徽章）">
+                <span class="dash-label">接受率</span>
+                <span class="dash-value perception-proactive-rate" id="perception-proactive-rate">50%</span>
+              </div>
+              <div class="dash-item" title="当前连续拒绝次数（>0 时冷却延长）">
+                <span class="dash-label">连续拒绝</span>
+                <span class="dash-value" id="perception-proactive-rejects">0</span>
+              </div>
+              <div class="dash-item" title="当前生效冷却（受默契度 + 拒绝惩罚双调节）">
+                <span class="dash-label">生效冷却</span>
+                <span class="dash-value" id="perception-proactive-cooldown">—</span>
+              </div>
+            </div>
+          </div>
           <!-- 运行指标（独立折叠区，默认折叠，核心感知数据已在上方展示） -->
           <div class="perception-section collapsible" id="perception-metrics">
             <h4 class="perception-section-title clickable" id="perception-metrics-toggle">
@@ -275,11 +303,23 @@
               <div class="dash-item" title="累积待处理事件/阈值"><span class="dash-label">事件</span><span class="dash-value" id="perception-pending-count">0/0</span></div>
               <div class="dash-item" title="已安装技能数"><span class="dash-label">技能</span><span class="dash-value" id="perception-skill-count">0</span></div>
               <div class="dash-item" title="待处理配置建议数"><span class="dash-label">建议</span><span class="dash-value" id="perception-suggestion-count">0</span></div>
+              <div class="dash-item" title="记忆衰减已运行次数（缺口 F）"><span class="dash-label">衰减</span><span class="dash-value" id="perception-decay-runs">—</span></div>
+              <div class="dash-item" title="累计衰减记忆数（缺口 F）"><span class="dash-label">已衰</span><span class="dash-value" id="perception-decay-total">—</span></div>
             </div>
             <!-- 里程碑成就 -->
             <div id="milestones-display">
               <div id="milestones-list"></div>
             </div>
+          </div>
+
+          <!-- 记忆源健康诊断（缺口 E：消费内核 sourceHealth()，展示每个 source 的质量维度） -->
+          <div class="perception-section collapsible hidden" id="source-health-section">
+            <h4 class="perception-section-title clickable" id="source-health-toggle">
+              记忆源健康
+              <span class="source-health-overall-badge healthy" id="source-health-overall">健康</span>
+              <svg class="icon narrative-toggle" id="source-health-arrow"><use href="#icon-chevron"/></svg>
+            </h4>
+            <div class="source-health-list hidden" id="source-health-list"></div>
           </div>
 
           <!-- 对话回顾（独立折叠区，与运行指标拆分） -->
@@ -836,6 +876,10 @@
             <div class="settings-row">
               <label for="cfg-watcher-debounce">防抖时间（毫秒）</label>
               <input type="number" id="cfg-watcher-debounce" min="100" max="10000" value="1000" />
+            </div>
+            <div class="settings-row">
+              <label for="cfg-watcher-ignore">忽略模式（逗号分隔 glob）</label>
+              <input type="text" id="cfg-watcher-ignore" placeholder="**/node_modules/**, **/.git/**" autocomplete="off" />
             </div>
           </div>
           <div class="settings-group">

@@ -130,11 +130,15 @@ function groupByDate(memories: MemoryListItem[]): Map<string, number> {
  *
  * @param dashboard 仪表盘数据
  * @param allMemories 全量记忆列表
+ * @param dailyMessageCount 每日用户消息计数（缺口 3.4 修复：可选注入，key=YYYY-MM-DD）
+ *   - 由 Sprite.incrementDailyMessageCount 累加并持久化到 spriteConfig.dailyMessageCount
+ *   - 未注入时 messageCount 字段保持 0（向后兼容）
  * @returns 回顾面板完整数据
  */
 export function buildReviewData(
   dashboard: DashboardData,
   allMemories: MemoryListItem[],
+  dailyMessageCount?: Record<string, number>,
 ): ReviewData {
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
@@ -148,8 +152,8 @@ export function buildReviewData(
 
   const today: DailyReview = {
     date: todayStr,
-    // messageCount 语义为"当天消息数"，会话系统未接入前保持 0（与下方 daily 一致）
-    messageCount: 0,
+    // 缺口 3.4：从注入的 dailyMessageCount 读取当日消息数；未注入时为 0
+    messageCount: dailyMessageCount?.[todayStr] ?? 0,
     newMemories: todayMemories.length,
     newInsights: todayInsights.length,
   };
@@ -171,7 +175,8 @@ export function buildReviewData(
     ).length;
     daily.push({
       date: dateStr,
-      messageCount: 0, // 消息数需要从会话系统获取
+      // 缺口 3.4：从注入的 dailyMessageCount 读取当日消息数
+      messageCount: dailyMessageCount?.[dateStr] ?? 0,
       newMemories: dailyMap.get(dateStr) || 0,
       newInsights: dayInsights,
     });

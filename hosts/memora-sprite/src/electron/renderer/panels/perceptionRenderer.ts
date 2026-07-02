@@ -29,12 +29,21 @@ import type {
   PatternsPayload,
   PresencePayload,
 } from '../ipcListeners.js';
+// 缺口 G+H：主动提示统计类型从 preload（IPC 契约真理源）导入
+import type { ProactiveStats } from '../../preload.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
 /** 情感维度等级划分阈值：< AFFECT_LOW_THRESHOLD 为"低"，< AFFECT_MID_THRESHOLD 为"中"，否则为"高" */
 const AFFECT_LOW_THRESHOLD = 0.33;
 const AFFECT_MID_THRESHOLD = 0.67;
+
+/** 接受率等级划分阈值：< 0.4 为低，< 0.7 为中，否则为高（与 confidence 徽章一致） */
+const ACCEPTANCE_LOW_THRESHOLD = 0.4;
+const ACCEPTANCE_MID_THRESHOLD = 0.7;
+
+/** 毫秒/分钟转换常量（用于格式化冷却时间显示） */
+const MS_PER_MINUTE = 60 * 1000;
 
 /** 叙事基调判定阈值：warmth/directness/initiative 超过此值时计入基调描述 */
 const AFFECT_TONE_THRESHOLD = 0.6;
@@ -74,6 +83,8 @@ export class PerceptionRenderer {
   cleanup(): void {
     // 当前无外部资源需清理；状态字段为跨事件累积，cleanup 时不重置
     // （与 DashboardPanelManager 生命周期一致，仅在实例销毁时由 GC 回收）
+    // 缺口 K：清理回调引用，与 PartnerInsightsRenderer.cleanup 保持一致（ADR-SP-015 §2）
+    this.onMemoryClickCallback = null;
   }
 
   // ─── 感知数据渲染入口 ──────────────────────────────────
@@ -216,6 +227,19 @@ export class PerceptionRenderer {
   }
 
   /**
+   * 缺口 K：记忆跳转回调（点击模式洞察的"关联记忆"按钮时触发）
+   *
+   * 复用 DashboardPanelManager.onMemoryClick 注入路径，与 PartnerInsightsRenderer
+   * 共享同一回调，点击后跳转记忆详情面板（showMemoryDetail）。
+   */
+  private onMemoryClickCallback: ((memoryId: string) => void) | null = null;
+
+  /** 缺口 K：注册记忆跳转回调（由 DashboardPanelManager.onMemoryClick 委托注入） */
+  onMemoryClick(cb: (memoryId: string) => void): void {
+    this.onMemoryClickCallback = cb;
+  }
+
+  /**
    * 更新模式洞察面板（PatternDetector 检测结果）
    *
    * 由 patternsUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
@@ -263,6 +287,10 @@ export class PerceptionRenderer {
       const item = document.createElement('div');
       item.className = 'perception-pattern-item';
 
+      // 主行容器：类型徽章 + 置信度徽章 + 摘要文本横向排列
+      const main = document.createElement('div');
+      main.className = 'perception-pattern-main';
+
       // 类型标签：根据模式类型选择对应样式和文字
       // 后端 PatternType 映射：recurring_topic→重复、knowledge_gap→缺口、interest_drift→漂移
       const typeSpan = document.createElement('span');
@@ -289,17 +317,139 @@ export class PerceptionRenderer {
           break;
       }
 
-      // 摘要文本
+      // 置信度徽章：>= 0.7 高（绿）/ 0.4-0.7 中（黄）/ < 0.4 低（灰）
+      // 让用户一眼看出该模式的可信程度，辅助判断是否需要采取行动
+      const confidenceSpan = document.createElement('span');
+      confidenceSpan.className = 'perception-pattern-confidence';
+      if (pattern.confidence >= 0.7) {
+        confidenceSpan.classList.add('high');
+        confidenceSpan.textContent = '高置信';
+      } else if (pattern.confidence >= 0.4) {
+        confidenceSpan.classList.add('mid');
+        confidenceSpan.textContent = '中置信';
+      } else {
+        confidenceSpan.classList.add('low');
+        confidenceSpan.textContent = '低置信';
+      }
+      // 精确百分比作为 tooltip，hover 时可见
+      confidenceSpan.title = `置信度 ${Math.round(pattern.confidence * 100)}%`;
+
+      // 摘要文本（flex:1 占据剩余宽度，自然换行）
       const text = document.createElement('span');
+      text.className = 'perception-pattern-text';
       text.textContent = pattern.summary;
 
-      item.appendChild(typeSpan);
-      item.appendChild(text);
+      main.appendChild(typeSpan);
+      main.appendChild(confidenceSpan);
+      main.appendChild(text);
+
+      item.appendChild(main);
+
+      // 建议操作行：仅当 PatternDetector 提供了 suggestion 时渲染
+      // 斜体灰色显示，作为给用户的可选行动指引
+      if (pattern.suggestion) {
+        const suggestion = document.createElement('div');
+        suggestion.className = 'perception-pattern-suggestion';
+        suggestion.textContent = `建议：${pattern.suggestion}`;
+        item.appendChild(suggestion);
+      }
+
+      // 缺口 K：相关记忆跳转按钮（仅当 PatternDetector 检测到 relatedMemoryIds 时渲染）
+      // 点击跳转第一条相关记忆详情，复用 onMemoryClick 回调（与伙伴洞察共享跳转路径）
+      const relatedIds = pattern.relatedMemoryIds;
+      if (relatedIds && relatedIds.length > 0) {
+        const relatedBtn = document.createElement('button');
+        relatedBtn.type = 'button';
+        relatedBtn.className = 'perception-pattern-related';
+        relatedBtn.textContent = `关联 ${relatedIds.length} 条记忆`;
+        relatedBtn.title = '点击查看最相关的一条记忆';
+        relatedBtn.addEventListener('click', () => {
+          this.onMemoryClickCallback?.(relatedIds[0]);
+        });
+        item.appendChild(relatedBtn);
+      }
 
       patternsList.appendChild(item);
     }
 
     this.updateNarrative();
+  }
+
+  /**
+   * 缺口 G+H：更新主动提示统计展示
+   *
+   * 消费 ProactiveEngine.getStats() 返回的统计快照，在感知面板展示：
+   *   1. 历史反馈：建议数 / 接受数 / 接受率徽章（高/中/低 三色）
+   *   2. 当前生效冷却：连续拒绝数 + 生效冷却时长（与基础冷却对比展示）
+   *
+   * 设计意图：让用户看到"我与精灵的互动累计"以及"为什么连续拒绝后精灵变安静"，
+   * 与 pendingNotices/proactiveThreshold 形成"当前累积 + 历史反馈 + 生效参数"三位一体的主动度视图。
+   *
+   * @param stats 主动提示统计快照（null 时静默跳过，保持 DOM 默认值）
+   */
+  updateProactiveStatsDisplay(stats: ProactiveStats | null): void {
+    // 无数据时静默跳过（保持 DOM 默认占位值，不阻塞面板渲染）
+    if (!stats) return;
+
+    // ─── 历史反馈：建议数 / 接受数 ──────────────────────
+    const suggestEl = document.getElementById('perception-proactive-suggest');
+    const acceptEl = document.getElementById('perception-proactive-accept');
+    if (suggestEl) suggestEl.textContent = String(stats.suggestCount);
+    if (acceptEl) acceptEl.textContent = String(stats.acceptCount);
+
+    // ─── 接受率徽章（高/中/低 三色，与 PatternDetector confidence 徽章一致） ──
+    const rateEl = document.getElementById('perception-proactive-rate');
+    if (rateEl) {
+      rateEl.textContent = `${Math.round(stats.acceptanceRate * 100)}%`;
+      rateEl.classList.remove('high', 'mid', 'low');
+      if (stats.acceptanceRate >= ACCEPTANCE_MID_THRESHOLD) {
+        rateEl.classList.add('high');
+      } else if (stats.acceptanceRate >= ACCEPTANCE_LOW_THRESHOLD) {
+        rateEl.classList.add('mid');
+      } else {
+        rateEl.classList.add('low');
+      }
+      // suggestCount=0 时 acceptanceRate 为默认值 0.5，标注 tooltip 提示无实际数据
+      rateEl.title = stats.suggestCount === 0
+        ? '暂无互动数据（默认 50%）'
+        : `接受率 ${Math.round(stats.acceptanceRate * 100)}%（${stats.acceptCount}/${stats.suggestCount}）`;
+    }
+
+    // ─── 连续拒绝数（>0 时高亮，提示用户精灵正在延长冷却） ──
+    const rejectsEl = document.getElementById('perception-proactive-rejects');
+    if (rejectsEl) {
+      rejectsEl.textContent = String(stats.consecutiveRejects);
+      rejectsEl.classList.toggle('warning', stats.consecutiveRejects > 0);
+      rejectsEl.title = stats.consecutiveRejects > 0
+        ? `连续拒绝 ${stats.consecutiveRejects} 次，冷却延长 ${Math.round((1 + stats.consecutiveRejects * 0.5) * 100)}%`
+        : '无连续拒绝（冷却正常）';
+    }
+
+    // ─── 生效冷却时长（与基础冷却对比，体现默契度 + 拒绝惩罚双调节） ──
+    const cooldownEl = document.getElementById('perception-proactive-cooldown');
+    if (cooldownEl) {
+      cooldownEl.textContent = this.formatCooldownMinutes(stats.effectiveCooldownMs);
+      // 生效冷却 > 基础冷却时高亮，提示用户当前处于惩罚状态
+      cooldownEl.classList.toggle('warning', stats.effectiveCooldownMs > stats.baseCooldownMs);
+      cooldownEl.title = `基础 ${this.formatCooldownMinutes(stats.baseCooldownMs)} → 生效 ${this.formatCooldownMinutes(stats.effectiveCooldownMs)}`;
+    }
+  }
+
+  /**
+   * 将毫秒冷却时长格式化为人类可读的分钟/小时字符串
+   *
+   * < 1 分钟显示秒级，< 1 小时显示分钟，否则显示小时。
+   * 用于主动提示生效冷却展示，让用户直观感知冷却长度。
+   *
+   * @param ms 冷却毫秒数
+   * @returns 格式化后的字符串（如 "30 分钟" / "1.5 小时"）
+   */
+  private formatCooldownMinutes(ms: number): string {
+    if (ms < MS_PER_MINUTE) return '< 1 分钟';
+    const minutes = Math.round(ms / MS_PER_MINUTE);
+    if (minutes < 60) return `${minutes} 分钟`;
+    const hours = Math.round((minutes / 60) * 10) / 10;
+    return `${hours} 小时`;
   }
 
   /**

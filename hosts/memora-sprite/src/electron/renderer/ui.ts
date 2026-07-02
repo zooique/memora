@@ -38,6 +38,7 @@ import type { DashboardPanelHost } from './panels/dashboardPanelManager.js';
 import type {
   DashboardViewModel,
   AgentMetrics,
+  SourceHealth,
 } from './panels/dashboardPanelManager.js';
 // P2-5：Payload 类型直接从 ipcListeners（IPC 契约真理源）导入，消除中转
 import type {
@@ -174,6 +175,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private auditPanel = new AuditPanelManager();
   /** 设置面板管理器（独立管理设置面板 DOM 和事件） */
   private settingsPanelManager: SettingsPanelManager;
+  /** 缺口 J：缓存当前 SpriteConfig（供 getArchiveMode 查询，避免异步 IPC 调用） */
+  private currentConfig: SpriteConfigForm | null = null;
 
   // ─── 面板管理器（聊天/记忆/角色/会话） ──
   /** 聊天面板管理器（消息渲染、流式输出、思考指示器、工具调用卡片） */
@@ -433,6 +436,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       });
     }
 
+    // 记忆源健康折叠/展开（缺口 E：与运行指标/对话回顾一致的折叠交互）
+    const sourceHealthToggle = document.getElementById('source-health-toggle');
+    if (sourceHealthToggle) {
+      this.events.addEventListener(sourceHealthToggle, 'click', () => {
+        const list = document.getElementById('source-health-list');
+        const arrow = document.getElementById('source-health-arrow');
+        if (list) list.classList.toggle('hidden');
+        if (arrow) arrow.classList.toggle('expanded');
+      });
+    }
+
     // 导航事件（侧边栏 .nav-btn 按钮，复用 switchPanel 逻辑）
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
       this.events.addEventListener(btn, 'click', this.handleNavClick.bind(this));
@@ -650,6 +664,19 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   showEmptyState(): void { this.chatPanel.showEmptyState(); }
   /** 隐藏空状态引导（委托到 ChatPanelManager） */
   hideEmptyState(): void { this.chatPanel.hideEmptyState(); }
+  /** 缺口 J：查询当前归档模式（从缓存的 SpriteConfig 读取） */
+  getArchiveMode(): 'full' | 'insights-only' | 'manual' {
+    return this.currentConfig?.archiveMode ?? 'full';
+  }
+  /** 缺口 J：手动归档对话（调用 preload 暴露的 archiveProfileFacts + archiveInsight IPC） */
+  async archiveConversation(input: string, assistantContent: string): Promise<number> {
+    // 同时触发 profile facts + insight 归档，返回总条目数
+    const [profileResult, insightResult] = await Promise.all([
+      window.electronAPI.archiveProfileFacts(input),
+      window.electronAPI.archiveInsight(input, assistantContent),
+    ]);
+    return profileResult.count + insightResult.count;
+  }
   /** 注册示例问题点击回调（委托到 ChatPanelManager） */
   onSuggestionClick(cb: (text: string) => void): void { this.chatPanel.onSuggestionClick(cb); }
   /** UX-PP-05 注册错误重试回调（委托到 ChatPanelManager） */
@@ -1019,6 +1046,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
           if (snapshot.rapport) this.dashboardPanel.updateRapportDisplay(snapshot.rapport);
           if (snapshot.context) this.dashboardPanel.updateContextDisplay(snapshot.context);
           if (snapshot.patterns) this.dashboardPanel.updatePatternsDisplay({ patterns: snapshot.patterns });
+          // 缺口 G+H：主动提示统计（接受率 + 生效冷却，与 affect/rapport 同源推导）
+          this.dashboardPanel.updateProactiveStatsDisplay(snapshot.proactiveStats ?? null);
         })
         .catch(() => {
           /* silent fail：保持默认值 */
@@ -1503,6 +1532,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   renderAgentMetrics(metrics: AgentMetrics | null): void {
     this.dashboardPanel.renderAgentMetrics(metrics);
   }
+  /** 渲染记忆源健康诊断（委托到 DashboardPanelManager，消费内核 sourceHealth()） */
+  renderSourceHealth(sourceHealth: SourceHealth | null): void {
+    this.dashboardPanel.renderSourceHealth(sourceHealth);
+  }
   /** 渲染已加载技能列表（委托到 DashboardPanelManager） */
   renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
     this.dashboardPanel.renderSkills(skills);
@@ -1739,6 +1772,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   /** 加载配置到表单（委托到 SettingsPanelManager） */
   loadConfigToForm(config: SpriteConfigForm): void {
+    // 缺口 J：缓存当前配置，供 getArchiveMode 同步查询
+    this.currentConfig = config;
     this.settingsPanelManager.loadConfigToForm(config);
   }
 

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
@@ -145,7 +145,7 @@
       height: 72px;
       border-radius: 50%;
       /* 蓝粉渐变：对齐 的 .float-icon-demo */
-      background: var(--brand-grad, linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%));
+      background: var(--brand-grad);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -165,6 +165,13 @@
     #sphere.dragging {
       transform: scale(0.95);
       opacity: 0.8;
+    }
+
+    /* 缺口 1.2：用户离开态——球体变暗 + 灰度滤镜，表达"精灵等待中" */
+    /* 视觉与 dragging 区分：dragging 是用户主动操作（保留鲜明），away 是被动等待（柔化） */
+    #sphere.away {
+      opacity: 0.5;
+      filter: grayscale(0.6);
     }
 
     /* 主动提示弹跳动画（对齐 HTML 预览 @keyframes floatBounce） */
@@ -227,6 +234,12 @@
 
     /* sleeping 状态：黄色月牙 */
     #status-dot.sleeping {
+      background: var(--yellow);
+    }
+
+    /* 缺口 1.2：away 状态——用户离开时状态点变黄（与 sleeping 视觉一致但语义独立） */
+    /* sleeping 是精灵主动休眠（夜间），away 是用户被动离开（白天） */
+    #status-dot.away {
       background: var(--yellow);
     }
 
@@ -315,6 +328,42 @@
       border-right: 4px solid transparent;
       border-bottom: 4px solid var(--hint-bg);
     }
+
+    /* 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示） */
+    /* 复用 #drag-hint 的视觉风格（hint-bg 半透明黑底 + hint-text 浅色文字） */
+    /* 位置在球体上方（与 drag-hint 底部位置区分，避免同时显示时重叠） */
+    #away-label {
+      position: absolute;
+      top: -28px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--hint-bg);
+      color: var(--hint-text);
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      z-index: 10;
+    }
+
+    #away-label.visible {
+      opacity: 1;
+    }
+
+    /* 离开时长小标签小箭头（指向球体，向下） */
+    #away-label::after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 4px solid var(--hint-bg);
+    }
   </style>
 </head>
 <body>
@@ -333,6 +382,8 @@
     <div id="badge" aria-label="未读消息计数">0</div>
     <!-- FD-06 拖动引导提示（首次使用时显示） -->
     <div id="drag-hint" role="status">💡 拖动移动 · 单击展开</div>
+    <!-- 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示） -->
+    <div id="away-label" role="status"></div>
   </div>
 
   <script type="module" src="float.js"></script>

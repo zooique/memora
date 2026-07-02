@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IPC 监听器模块 — 所有渲染进程 IPC 事件监听
  *
  * 职责：
@@ -81,6 +81,14 @@ export interface PatternsPayload {
     summary: string;
     confidence: number;
     suggestion?: string;
+    /**
+     * 缺口 K：相关记忆 ID 列表
+     *
+     * PatternDetector 在 detectRecurringTopics/detectKnowledgeGaps/detectInterestDrift
+     * 中已填充该字段，但原 PatternsPayload 类型遗漏导致 renderer 无法消费。
+     * 可选字段保证旧数据兼容（类型守卫不强制校验）。
+     */
+    relatedMemoryIds?: string[];
   }>;
 }
 

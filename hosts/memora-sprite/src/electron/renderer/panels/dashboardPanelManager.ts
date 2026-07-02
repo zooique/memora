@@ -22,11 +22,15 @@ import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
 import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
 import { InsightsRenderer } from './insightsRenderer.js';
 import { PerceptionRenderer } from './perceptionRenderer.js';
+// 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
+import { getSourceColorClass } from './memoryPanelManager.js';
 import type { ToastType } from '../types.js';
 import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // 感知数据 Payload 类型从 ipcListeners（IPC 契约真理源）导入
 import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
+// 缺口 G+H：主动提示统计类型从 preload（IPC 契约真理源）导入
+import type { ProactiveStats } from '../../preload.js';
 // 仪表盘脉冲动画间隔常量从 constants.ts 真理源导入
 import { DASHBOARD_PULSE_MS } from '../../../sprite/constants.js';
 
@@ -74,6 +78,30 @@ export interface AgentMetrics {
 }
 
 /**
+ * 记忆源健康诊断快照（对齐 preload.ts getDashboard 返回的 sourceHealth 结构）
+ *
+ * 消费内核 agent.memory.sourceHealth()，展示每个 source 的质量维度：
+ * - count：该 source 记忆数
+ * - avgScore：平均分（0-1，反映记忆整体质量）
+ * - daysSinceLastAccess：距上次访问天数（反映活跃度）
+ * - status：健康状态徽章（healthy/warning/critical）
+ */
+export interface SourceHealth {
+  /** 各 source 的健康明细 */
+  sources: Array<{
+    source: string;
+    count: number;
+    avgScore: number;
+    daysSinceLastAccess: number;
+    status: 'healthy' | 'warning' | 'critical';
+  }>;
+  /** 总体健康状态（取最差的 source 状态） */
+  overallStatus: 'healthy' | 'warning' | 'critical';
+  /** 诊断时间戳（ISO 字符串） */
+  diagnosedAt: string;
+}
+
+/**
  * 仪表盘视图模型（对齐 IPC getDashboard 返回结构，仅声明 Manager 用到的字段）
  *
  * 与 sprite 层 memoryController.DashboardData 概念不同：
@@ -101,6 +129,8 @@ export interface DashboardViewModel {
   total: number;
   /** source → 计数映射 */
   bySource: Record<string, number>;
+  /** 记忆源健康诊断（null 表示不可用，消费内核 sourceHealth()） */
+  sourceHealth: SourceHealth | null;
   /** Agent 运行时指标（null 表示不可用） */
   metrics: AgentMetrics | null;
   /** 已加载技能列表 */
@@ -353,6 +383,105 @@ export class DashboardPanelManager {
       } else {
         toolFailuresEl.textContent = '—';
       }
+    }
+
+    // ─── 缺口 F：衰减历史指标（消费 metrics.decay，与 decayCompleted toast 互补） ──
+    // decay 为 null 表示从未运行过衰减，此时显示 "—" 占位
+    const decayRunsEl = document.getElementById('perception-decay-runs');
+    const decayTotalEl = document.getElementById('perception-decay-total');
+    if (decayRunsEl) {
+      decayRunsEl.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
+    }
+    if (decayTotalEl) {
+      decayTotalEl.textContent = metrics.decay ? String(metrics.decay.totalDecayedCount) : '—';
+    }
+  }
+
+  /**
+   * 渲染记忆源健康诊断（缺口 E：消费内核 sourceHealth()）
+   *
+   * 在仪表盘展示每个 source 的质量维度：计数 / 平均分 / 距上次访问天数 / 健康状态徽章。
+   * 与 InsightsRenderer 的 source 分布条形图互补：
+   * - InsightsRenderer 展示"每个 source 有多少条"（数量维度）
+   * - 本方法展示"每个 source 质量如何"（健康维度）
+   *
+   * 无数据时隐藏整个 section，避免占用空间。有数据时按 status 严重度排序
+   * （critical → warning → healthy），让用户优先看到需要关注的 source。
+   *
+   * @param sourceHealth 记忆源健康诊断数据（null 表示不可用）
+   */
+  renderSourceHealth(sourceHealth: SourceHealth | null): void {
+    const listEl = document.getElementById('source-health-list');
+    const sectionEl = document.getElementById('source-health-section');
+    const overallEl = document.getElementById('source-health-overall');
+    if (!listEl || !sectionEl) return;
+
+    // 无数据时隐藏整个 section（内核降级返回 null 时不展示）
+    if (!sourceHealth || sourceHealth.sources.length === 0) {
+      sectionEl.classList.add('hidden');
+      return;
+    }
+
+    sectionEl.classList.remove('hidden');
+
+    // 总体健康状态徽章
+    if (overallEl) {
+      overallEl.textContent = this.getSourceHealthStatusLabel(sourceHealth.overallStatus);
+      overallEl.className = `source-health-overall-badge ${sourceHealth.overallStatus}`;
+    }
+
+    // 清空并重建列表（遵循项目规范：while + removeChild）
+    while (listEl.firstChild) {
+      listEl.removeChild(listEl.firstChild);
+    }
+
+    // 按 status 严重度排序：critical(0) → warning(1) → healthy(2)
+    // 让需要关注的 source 优先出现在列表顶部
+    const statusOrder: Record<string, number> = { critical: 0, warning: 1, healthy: 2 };
+    const sortedSources = [...sourceHealth.sources].sort(
+      (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9),
+    );
+
+    for (const s of sortedSources) {
+      const item = document.createElement('div');
+      item.className = `source-health-item ${s.status}`;
+
+      // source 标签（中文化 + 复用 InsightsRenderer 的颜色类）
+      const labelSpan = document.createElement('span');
+      labelSpan.className = `source-health-label source-${getSourceColorClass(s.source)}`;
+      labelSpan.textContent = this.getSourceLabel(s.source);
+
+      // 计数（该 source 记忆数）
+      const countSpan = document.createElement('span');
+      countSpan.className = 'source-health-count';
+      countSpan.textContent = `${s.count} 条`;
+
+      // 平均分（百分比，反映记忆整体质量）
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'source-health-score';
+      scoreSpan.textContent = `均分 ${Math.round(s.avgScore * 100)}`;
+      scoreSpan.title = '该 source 所有记忆的平均分（0-100）';
+
+      // 距上次访问天数（反映活跃度，0=今天访问过）
+      const accessSpan = document.createElement('span');
+      accessSpan.className = 'source-health-access';
+      accessSpan.textContent = s.daysSinceLastAccess === 0
+        ? '今日访问'
+        : `${s.daysSinceLastAccess} 天未访`;
+      accessSpan.title = '距上次访问该 source 的天数';
+
+      // 健康状态徽章
+      const statusSpan = document.createElement('span');
+      statusSpan.className = `source-health-status ${s.status}`;
+      statusSpan.textContent = this.getSourceHealthStatusLabel(s.status);
+
+      item.appendChild(labelSpan);
+      item.appendChild(countSpan);
+      item.appendChild(scoreSpan);
+      item.appendChild(accessSpan);
+      item.appendChild(statusSpan);
+
+      listEl.appendChild(item);
     }
   }
 
@@ -665,6 +794,55 @@ export class DashboardPanelManager {
     this.pulseTimers.push(timer);
   }
 
+  // ─── 私有辅助方法（source 健康映射） ──────────────────
+
+  /**
+   * 将记忆源健康状态映射为中文标签
+   *
+   * @param status 健康状态标识符（healthy/warning/critical）
+   * @returns 中文标签
+   */
+  private getSourceHealthStatusLabel(status: 'healthy' | 'warning' | 'critical'): string {
+    switch (status) {
+      case 'healthy':
+        return '健康';
+      case 'warning':
+        return '需关注';
+      case 'critical':
+        return '异常';
+      default:
+        return status;
+    }
+  }
+
+  /**
+   * 将 source 标识符映射为中文友好名称
+   *
+   * 与 PatternDetector.sourceLabel 保持一致，确保全 UI 层 source 命名统一。
+   * 未知 source 透传原值，避免信息丢失。
+   *
+   * @param source 原始 source 字符串
+   * @returns 中文标签
+   */
+  private getSourceLabel(source: string): string {
+    const labels: Record<string, string> = {
+      profile: '个人偏好',
+      insight: '洞察',
+      rule: '规则',
+      skill: '技能',
+      guardrail: '安全',
+      chat: '对话',
+      file: '文件',
+      work: '工作',
+      memory: '记忆',
+      summary: '摘要',
+      note: '笔记',
+      persona: '角色',
+      session: '会话',
+    };
+    return labels[source] ?? source;
+  }
+
   // ─── 感知系统渲染（委托到 PerceptionRenderer） ─────────
 
   /** 更新情感基调展示（委托到 PerceptionRenderer） */
@@ -687,6 +865,11 @@ export class DashboardPanelManager {
     this.perception.updatePatternsDisplay(payload);
   }
 
+  /** 更新主动提示统计展示（委托到 PerceptionRenderer，缺口 G+H） */
+  updateProactiveStatsDisplay(stats: ProactiveStats | null): void {
+    this.perception.updateProactiveStatsDisplay(stats);
+  }
+
   /** 更新在场状态展示（委托到 PerceptionRenderer） */
   updatePresenceDisplay(payload: PresencePayload): void {
     this.perception.updatePresenceDisplay(payload);
@@ -704,6 +887,8 @@ export class DashboardPanelManager {
    */
   onMemoryClick(cb: (memoryId: string) => void): void {
     this.partnerInsights.onMemoryClick(cb);
+    // 缺口 K：感知面板模式洞察也复用同一跳转回调
+    this.perception.onMemoryClick(cb);
   }
 
   /**

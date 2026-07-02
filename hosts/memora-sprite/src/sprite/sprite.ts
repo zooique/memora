@@ -15,7 +15,7 @@
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import type { Agent, AgentEventMap, AgentMetrics, Memory } from 'memora';
+import type { Agent, AgentEventMap, AgentMetrics, Memory, UserProfileEntry } from 'memora';
 import type { VectorStore, ITracer } from 'memora';
 import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
@@ -24,7 +24,7 @@ import { FileWatcherTrigger } from './fileWatcherTrigger.js';
 import { loadSpriteConfig, saveSpriteConfig, applyConfigField, DEFAULT_SPRITE_CONFIG, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
 import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine, PresenceController } from './controllers/index.js';
-import type { DashboardData, RapportAssessment, IPowerMonitor, IApp } from './controllers/index.js';
+import type { DashboardData, RapportAssessment, IPowerMonitor, IApp, ProactiveStats } from './controllers/index.js';
 import { AffectController } from './controllers/affectController.js';
 import type { AffectState } from './controllers/affectController.js';
 import { RapportController } from './controllers/rapportController.js';
@@ -34,7 +34,7 @@ import type { ContextState } from './controllers/contextAwareness.js';
 import { PatternDetector } from './controllers/patternDetector.js';
 import type { DetectedPattern } from './controllers/patternDetector.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
-import { DEFAULT_LIST_LIMIT, MS_PER_HOUR, MS_PER_DAY } from './constants.js';
+import { DEFAULT_LIST_LIMIT, MS_PER_HOUR, MS_PER_DAY, getLocalDate } from './constants.js';
 
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
 export type SpriteState = 'idle' | 'active';
@@ -120,6 +120,15 @@ export class Sprite {
   private dataDir: string;
   private config: Required<SpriteConfig>;
 
+  /**
+   * 每日用户消息计数（缺口 3.4 修复：补齐 ReviewData.today.messageCount 数据断点）
+   *
+   * 内存态 Map（key=YYYY-MM-DD），构造时从 spriteConfig.dailyMessageCount 加载。
+   * 仅保留最近 7 天，更早日数在累加时自动剔除（防止无限增长）。
+   * 累加后同步持久化到 sprite.json（writeFileSync 开销 ~1ms，可接受）。
+   */
+  private dailyMessageCount: Map<string, number> = new Map();
+
   // ─── 控制器 ──────────────────────────────────────────────
   private memoryController: MemoryController;
   private personaController: PersonaController;
@@ -157,6 +166,8 @@ export class Sprite {
 
     // 初始化控制器
     this.memoryController = new MemoryController(this.agent, options.vectorStore);
+    // 缺口 3.4：注入每日消息计数 provider，让 reviewManager 能拿到当日消息数
+    this.memoryController.setMessageCountProvider(() => this.getDailyMessageCounts());
     this.personaController = new PersonaController(this.agent);
     this.proactiveEngine = new ProactiveEngine({
       threshold: this.config.proactiveThreshold,
@@ -198,6 +209,10 @@ export class Sprite {
     // loadSpriteConfig 已合并 DEFAULT_SPRITE_CONFIG，archiveMode 必有值
     // Sprite 构造时 Agent 已 init 完成，调用 setArchiveMode 安全（不在对话中）
     this.agent.setArchiveMode(this.config.archiveMode);
+
+    // 缺口 3.4：从 spriteConfig 加载每日消息计数到内存 Map
+    // 仅保留最近 7 天，更早日数在加载时即剔除（防止历史脏数据堆积）
+    this.loadDailyMessageCount();
   }
 
   /** 注册 FileWatcherTrigger */
@@ -357,17 +372,8 @@ export class Sprite {
     // P2-S6: 唤醒是 LLM 调用主路径，记录 span 用于性能追踪
     const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.WAKEUP, input ? { hasInput: true } : { hasInput: false });
     try {
-      // Phase 2.2：记录最近用户消息，用于对话语气实时分析
-      if (input) {
-        this.recentUserMessages.push(input);
-        // 只保留最近 5 条，超出则移除最旧的
-        if (this.recentUserMessages.length > 5) {
-          this.recentUserMessages.shift();
-        }
-      }
-
-      // 对话前刷新全量感知，确保 LLM 拿到最新的情感/默契度/上下文/模式/里程碑数据
-      this.refreshPerceptionBeforeChat();
+      // 缺口 I：抽取对话前感知刷新为公共方法，供流式路径复用
+      this.prepareForChat(input);
 
       // input 为 undefined 时，生成主动提示（无输入对话）
       return await this.agent.chatSync(input ?? '');
@@ -378,6 +384,35 @@ export class Sprite {
       this.state = 'idle';
       span?.end();
     }
+  }
+
+  /**
+   * 对话前感知刷新（缺口 I：供 Electron 流式路径复用）
+   *
+   * 将 wakeup() 内的"累积用户消息 + 刷新全量感知"逻辑抽取为公共方法，
+   * 让流式对话路径（chatStreamHandler → agent.chat）也能在对话前注入感知上下文。
+   *
+   * 职责：
+   *   1. 累积最近 5 条用户消息（供 AffectController 对话语气实时分析）
+   *   2. 调用 refreshPerceptionBeforeChat() 刷新情感/默契度/上下文/模式/里程碑/跨会话上下文
+   *
+   * 不包含 agent.chat/agent.chatSync 调用——流式路径由 chatStreamHandler 自行驱动 agent.chat，
+   * 非流式路径由 wakeup() 内部调用 chatSync。两条路径共享同一份感知刷新逻辑。
+   *
+   * @param input 用户输入文本（null/undefined 时跳过消息累积，仅刷新感知）
+   */
+  prepareForChat(input?: string | null): void {
+    // Phase 2.2：记录最近用户消息，用于对话语气实时分析
+    if (input) {
+      this.recentUserMessages.push(input);
+      // 只保留最近 5 条，超出则移除最旧的
+      if (this.recentUserMessages.length > 5) {
+        this.recentUserMessages.shift();
+      }
+    }
+
+    // 对话前刷新全量感知，确保 LLM 拿到最新的情感/默契度/上下文/模式/里程碑数据
+    this.refreshPerceptionBeforeChat();
   }
 
   // ─── 角色交互（委托 PersonaController） ────────────────
@@ -560,6 +595,35 @@ export class Sprite {
   }
 
   /**
+   * 手动触发 profile facts 归档（缺口 J：manual 模式下供宿主 UI 调用）
+   *
+   * 委托到 agent.archiveProfileFacts，从用户输入中提取个人偏好事实并归档。
+   * manual 模式下 postProcess 跳过自动归档，用户需通过此方法主动触发。
+   * full / insights-only 模式下也可调用（会重复归档，但不推荐）。
+   *
+   * @param input 本轮用户输入
+   * @returns 写入/更新的 UserProfileEntry 列表
+   */
+  async archiveProfileFacts(input: string): Promise<UserProfileEntry[]> {
+    return this.agent.archiveProfileFacts(input);
+  }
+
+  /**
+   * 手动触发 insight 提取（缺口 J：manual 模式下供宿主 UI 调用）
+   *
+   * 委托到 agent.archiveInsight，从对话中提取洞察并归档为记忆。
+   * manual 模式下 postProcess 跳过自动归档，用户需通过此方法主动触发。
+   * 内部仍走 classify 判断，避免无价值输入浪费 LLM 调用。
+   *
+   * @param input 本轮用户输入
+   * @param assistantContent 本轮助手回复内容
+   * @returns 写入/更新的 Memory 列表
+   */
+  async archiveInsight(input: string, assistantContent: string): Promise<Memory[]> {
+    return this.agent.archiveInsight(input, assistantContent);
+  }
+
+  /**
    * 获取记忆健康度仪表盘数据（Phase 1：健康度诊断）
    *
    * 纯计算，不依赖 LLM。检测重复记忆、过期记忆和低质量记忆，
@@ -580,6 +644,70 @@ export class Sprite {
    */
   getReviewData() {
     return this.memoryController.getReviewData();
+  }
+
+  // ─── 每日消息计数（缺口 3.4：补齐 ReviewData.today.messageCount） ───
+
+  /** 每日消息计数保留窗口（天），与 reviewManager 的 7 天趋势窗口对齐 */
+  private static readonly DAILY_MESSAGE_COUNT_WINDOW_DAYS = 7;
+
+  /**
+   * 从 spriteConfig.dailyMessageCount 加载到内存 Map
+   *
+   * 仅保留最近 7 天，更早日数在加载时即剔除。防止历史脏数据无限堆积，
+   * 同时与 reviewManager 的 7 天趋势窗口对齐（超出窗口的数据无消费者）。
+   */
+  private loadDailyMessageCount(): void {
+    const stored = this.config.dailyMessageCount ?? {};
+    const cutoff = Date.now() - Sprite.DAILY_MESSAGE_COUNT_WINDOW_DAYS * MS_PER_DAY;
+    for (const [date, count] of Object.entries(stored)) {
+      // 跳过非法日期或超出窗口的条目
+      const ts = new Date(date).getTime();
+      if (isNaN(ts) || ts < cutoff) continue;
+      this.dailyMessageCount.set(date, count);
+    }
+  }
+
+  /**
+   * 累加当日用户消息计数（缺口 3.4 入口）
+   *
+   * 由 chatStreamHandler.handleUserInput 在用户发送消息时调用。
+   * 累加后同步持久化到 sprite.json（writeFileSync 开销 ~1ms，消息频率低可接受）。
+   *
+   * 设计权衡：
+   *   - 同步持久化 vs 防抖：选择同步，避免进程崩溃丢失计数（用户消息是有价值的活动数据）
+   *   - 内存 Map vs 直接读写 config：Map 提供快速查询，避免每次都展开 Record
+   */
+  incrementDailyMessageCount(): void {
+    const today = getLocalDate();
+    const current = this.dailyMessageCount.get(today) ?? 0;
+    this.dailyMessageCount.set(today, current + 1);
+
+    // 持久化：序列化为 Record 后写入 config.dailyMessageCount
+    const record: Record<string, number> = {};
+    for (const [date, count] of this.dailyMessageCount) {
+      record[date] = count;
+    }
+    this.config.dailyMessageCount = record;
+    try {
+      saveSpriteConfig(this.config);
+    } catch (err) {
+      // 持久化失败不影响内存态计数（下次累加仍可工作，下次成功写入会覆盖）
+      logger.warn({ err: toError(err).message }, '每日消息计数持久化失败');
+    }
+  }
+
+  /**
+   * 获取最近 7 天每日消息计数（供 reviewManager 消费）
+   *
+   * @returns 日期 → 计数的 Record（仅含最近 7 天）
+   */
+  getDailyMessageCounts(): Record<string, number> {
+    const record: Record<string, number> = {};
+    for (const [date, count] of this.dailyMessageCount) {
+      record[date] = count;
+    }
+    return record;
   }
 
   // ─── 配置持久化 ────────────────────────────────────────
@@ -912,6 +1040,8 @@ export class Sprite {
     rapport: RapportState;
     context: ContextState;
     patterns: DetectedPattern[];
+    /** 缺口 G+H：主动提示统计（接受率 + 生效冷却，供 UI 展示互动反馈） */
+    proactiveStats: ProactiveStats;
   } | null {
     // Agent 未就绪时返回 null（UI 显示占位文案）
     if (!this.agent?.memory) return null;
@@ -948,7 +1078,10 @@ export class Sprite {
     // 4. 模式洞察检测
     const patterns = this.patternDetector.detectPatterns(memories);
 
-    return { affect, rapport, context, patterns };
+    // 5. 缺口 G+H：主动提示统计快照（接受率 + 生效冷却，供 UI 展示互动反馈）
+    const proactiveStats = this.proactiveEngine.getStats();
+
+    return { affect, rapport, context, patterns, proactiveStats };
   }
 
   /** FD-03 累积事件数（供 UI 仪表盘显示） */

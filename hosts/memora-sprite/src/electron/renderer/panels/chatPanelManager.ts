@@ -82,6 +82,20 @@ export interface ChatPanelHost {
   updateBadge(): void;
   /** 显示空状态引导（无消息时） */
   showEmptyState(): void;
+  /**
+   * 缺口 J：查询当前归档模式（manual 模式下显示"归档"按钮）
+   *
+   * @returns 当前 archiveMode（full / insights-only / manual）
+   */
+  getArchiveMode(): 'full' | 'insights-only' | 'manual';
+  /**
+   * 缺口 J：手动归档对话（profile facts + insight 一次性触发）
+   *
+   * @param input 用户输入
+   * @param assistantContent 助手回复
+   * @returns 归档总条目数（profile + insight）
+   */
+  archiveConversation(input: string, assistantContent: string): Promise<number>;
   /** 隐藏空状态引导（有消息时） */
   hideEmptyState(): void;
   /** 未读计数 +1（完整窗口隐藏时，新精灵消息到达） */
@@ -295,6 +309,12 @@ export class ChatPanelManager {
       if (milestoneCloseBtn) {
         const banner = milestoneCloseBtn.closest<HTMLElement>('.milestone-banner');
         banner?.remove();
+        return;
+      }
+      // 缺口 J：归档按钮 data-action="archive"（manual 模式下触发手动归档）
+      const archiveBtn = target.closest<HTMLElement>('[data-action="archive"]');
+      if (archiveBtn) {
+        void this._handleArchiveClick(archiveBtn);
         return;
       }
     });
@@ -823,6 +843,139 @@ export class ChatPanelManager {
     } else {
       contentWrapper.appendChild(copyBtn);
     }
+
+    // 缺口 J：manual 模式下为 assistant 消息追加"归档"按钮
+    // manual 模式内核跳过自动归档，用户需手动触发 profile facts + insight 归档
+    if (el.classList.contains('assistant') && this.host.getArchiveMode() === 'manual') {
+      this._addArchiveButtonToMessage(el, finalText, copyBtn, metaRow);
+    }
+  }
+
+  /**
+   * 为 assistant 消息追加"归档"按钮（缺口 J：manual 模式专用）
+   *
+   * 点击时查找前一条 user 消息内容作为 input，与 assistant 回复一起触发归档。
+   * 归档完成后显示 toast 反馈归档条目数，并禁用按钮防止重复归档。
+   *
+   * @param el 当前 assistant 消息 DOM 元素
+   * @param assistantContent 助手回复纯文本（已排除 UI 元信息）
+   * @param copyBtn 复制按钮（用于确定插入位置）
+   * @param metaRow 元信息行（按钮容器）
+   */
+  private _addArchiveButtonToMessage(
+    el: HTMLElement,
+    assistantContent: string,
+    copyBtn: HTMLButtonElement,
+    metaRow: Element | null,
+  ): void {
+    // 幂等保护：已存在归档按钮则跳过
+    if (el.querySelector('.message-archive-btn')) return;
+
+    const archiveBtn = document.createElement('button');
+    archiveBtn.className = 'message-archive-btn';
+    archiveBtn.title = '归档到记忆（manual 模式）';
+    archiveBtn.innerHTML = '<svg class="icon"><use href="#icon-bookmark"/></svg>';
+    // QC-11 事件委托模式：通过 data-action 统一分发
+    archiveBtn.dataset.action = 'archive';
+
+    // 插入到复制按钮之后
+    if (copyBtn.parentNode) {
+      copyBtn.parentNode.insertBefore(archiveBtn, copyBtn.nextSibling);
+    } else if (metaRow) {
+      metaRow.appendChild(archiveBtn);
+    }
+  }
+
+  /**
+   * 处理归档按钮点击（缺口 J：manual 模式专用）
+   *
+   * 从 DOM 中查找当前 assistant 消息的前一条 user 消息内容作为输入，
+   * 与 assistant 回复一起触发 host.archiveConversation。
+   * 归档完成后显示 toast 反馈条目数，并禁用按钮防止重复归档。
+   */
+  private async _handleArchiveClick(archiveBtn: HTMLElement): Promise<void> {
+    // 查找当前消息元素
+    const messageEl = archiveBtn.closest<HTMLElement>('.message.assistant');
+    if (!messageEl) return;
+
+    // 向上查找前一条 user 消息（同一消息组或前一个消息组）
+    const userMessageEl = this._findPreviousUserMessage(messageEl);
+    if (!userMessageEl) {
+      this.host.showToast('未找到配对的用户消息，无法归档', 'error');
+      return;
+    }
+
+    // 提取 user 消息纯文本
+    const userBubble = userMessageEl.querySelector('.message-bubble');
+    const userInput = userBubble?.textContent ?? '';
+    if (!userInput.trim()) {
+      this.host.showToast('用户消息为空，无法归档', 'error');
+      return;
+    }
+
+    // 提取 assistant 回复纯文本（已排除 UI 元信息，从 bubble 克隆提取）
+    const assistantBubble = messageEl.querySelector('.message-bubble');
+    if (!assistantBubble) return;
+    const clone = assistantBubble.cloneNode(true);
+    if (!(clone instanceof HTMLElement)) return;
+    clone.querySelectorAll('.memory-recall, .stream-aborted, .stream-error, .thinking-phase, .md-code-header').forEach((el) => el.remove());
+    const assistantContent = clone.textContent ?? '';
+
+    // 禁用按钮，防止归档期间重复点击
+    archiveBtn.setAttribute('disabled', '');
+    archiveBtn.classList.add('archiving');
+
+    try {
+      const count = await this.host.archiveConversation(userInput, assistantContent);
+      if (count > 0) {
+        this.host.showToast(`已归档 ${count} 条记忆`, 'success', 2000);
+        archiveBtn.classList.add('archived');
+        archiveBtn.title = '已归档';
+      } else {
+        this.host.showToast('本轮对话无需归档（未提取到有价值信息）', 'info', 2000);
+        archiveBtn.removeAttribute('disabled');
+        archiveBtn.classList.remove('archiving');
+      }
+    } catch {
+      this.host.showToast('归档失败，请重试', 'error');
+      archiveBtn.removeAttribute('disabled');
+      archiveBtn.classList.remove('archiving');
+    }
+  }
+
+  /**
+   * 从当前消息元素向上查找前一条 user 消息（缺口 J 辅助方法）
+   *
+   * 消息可能分组（.message-group）或独立（直接在 messagesEl 下），
+   * 需要跨分组边界查找最近的 .message.user 元素。
+   *
+   * @param startEl 起始消息元素（通常是 assistant 消息）
+   * @returns 最近的 user 消息元素，未找到返回 null
+   */
+  private _findPreviousUserMessage(startEl: HTMLElement): HTMLElement | null {
+    // 使用 elementWalker 风格向前遍历：先在同组内找，再跨组找
+    let current: Element | null = startEl;
+    while (current) {
+      // previousElementSibling 在同组内查找
+      current = current.previousElementSibling;
+      // 如果同级没找到，尝试跳出当前 group
+      if (!current) {
+        const group = startEl.closest('.message-group');
+        if (group) {
+          // 找前一个 group 的最后一个消息
+          const prevGroup = group.previousElementSibling;
+          if (prevGroup) {
+            current = prevGroup.lastElementChild;
+          }
+        }
+        if (!current) break;
+      }
+      // 检查当前元素是否为 user 消息
+      if (current instanceof HTMLElement && current.classList.contains('message') && current.classList.contains('user')) {
+        return current;
+      }
+    }
+    return null;
   }
 
   /**

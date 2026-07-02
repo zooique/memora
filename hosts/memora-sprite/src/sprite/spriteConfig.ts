@@ -86,6 +86,16 @@ export interface SpriteConfig {
    * 运行时可通过设置面板切换（agent.setArchiveMode()）。
    */
   archiveMode?: 'full' | 'insights-only' | 'manual';
+  /**
+   * 每日用户消息计数（缺口 3.4 修复：补齐 ReviewData.today.messageCount 数据断点）
+   *
+   * - key：本地日期 YYYY-MM-DD（使用 getLocalDate()，避免东八区凌晨错位）
+   * - value：当日用户发送的消息条数
+   *
+   * 仅保留最近 7 天，更早日数在累加时自动剔除（防止无限增长）。
+   * 每次累加同步持久化到 sprite.json（用户消息频率低，writeFileSync 开销可忽略）。
+   */
+  dailyMessageCount?: Record<string, number>;
 }
 
 /**
@@ -139,6 +149,7 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   theme: 'enum:light|dark|auto',
   shortcuts: 'object',
   archiveMode: 'enum:full|insights-only|manual',
+  dailyMessageCount: 'object',
 };
 
 /** 内置默认值 */
@@ -170,6 +181,8 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
     },
   },
   archiveMode: 'full',
+  // 缺口 3.4：默认空对象，由 Sprite.incrementDailyMessageCount 累加填充
+  dailyMessageCount: {},
 };
 
 /** 配置文件名 */
@@ -437,6 +450,18 @@ export function applyConfigField(
           const allStrings = Object.values(accMap).every((v) => typeof v === 'string');
           if (allStrings) {
             target[key] = { enabled: s.enabled, accelerators: { ...accMap as Record<string, string> } };
+            return true;
+          }
+        }
+      }
+      // dailyMessageCount：校验为 Record<string, number>（日期 → 计数）
+      if (key === 'dailyMessageCount') {
+        const dmc = value as Record<string, unknown>;
+        // 非数组且所有 value 为 number 时通过
+        if (!Array.isArray(value)) {
+          const allNumbers = Object.values(dmc).every((v) => typeof v === 'number' && Number.isFinite(v));
+          if (allNumbers) {
+            target[key] = { ...dmc as Record<string, number> };
             return true;
           }
         }

@@ -90,7 +90,11 @@ src/
 │       │   ├── workProjectionPanelManager.ts # 作品投影面板
 │       │   ├── commandPaletteManager.ts  # 命令面板
 │       │   ├── auditPanelManager.ts      # 审计面板
-│       │   ├── dashboardPanelManager.ts  # 仪表盘面板
+│       │   ├── dashboardPanelManager.ts  # 仪表盘面板（Facade，持有 4 个子渲染器）
+│       │   ├── partnerInsightsRenderer.ts # 伙伴洞察子渲染器（ADR-SP-015 模式 D）
+│       │   ├── perceptionRenderer.ts     # 感知系统子渲染器（情感/默契/上下文/模式/在场状态/叙事）
+│       │   ├── insightsRenderer.ts       # 洞察统计子渲染器（ADR-SP-015 模式 C）
+│       │   ├── healthDashboardRenderer.ts # 健康度仪表盘子渲染器（ADR-SP-015 模式 C）
 │       │   ├── panelErrorBannerManager.ts # 面板错误横幅（C-5-1 拆分，自包含 EventTracker）
 │       │   ├── clipboardManager.ts       # 剪贴板保护（C-5-2 拆分，依赖注入 ToastManager + ModalManager）
 │       │   ├── dateNavManager.ts         # 日期导航（C-5-3 拆分，自包含 EventTracker）

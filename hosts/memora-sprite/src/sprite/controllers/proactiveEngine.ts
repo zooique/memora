@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 主动提示引擎 — 事件累积 + 提示生成
  *
  * 职责：
@@ -32,6 +32,27 @@ export interface ProactiveConfig {
   cooldownMs: number;
   /** 是否静默模式 */
   silentMode: boolean;
+}
+
+/**
+ * 主动提示统计快照（缺口 G+H：供 UI 感知面板展示）
+ *
+ * 透传 ProactiveEngine 内部的历史反馈和当前生效冷却参数，
+ * 让用户看到"我与精灵的互动累计"以及"为什么连续拒绝后精灵变安静"。
+ */
+export interface ProactiveStats {
+  /** 历史主动提示总次数 */
+  suggestCount: number;
+  /** 用户接受次数 */
+  acceptCount: number;
+  /** 接受率 0-1（suggestCount=0 时为默认值 0.5） */
+  acceptanceRate: number;
+  /** 当前连续拒绝次数（每次拒绝递增，接受重置） */
+  consecutiveRejects: number;
+  /** 当前生效冷却毫秒（受默契度 + 拒绝惩罚双调节） */
+  effectiveCooldownMs: number;
+  /** 基础冷却毫秒（配置值，用于对比展示生效冷却） */
+  baseCooldownMs: number;
 }
 
 /** 精灵事件发射器 */
@@ -134,6 +155,33 @@ export class ProactiveEngine {
   get acceptanceRate(): number {
     if (this.suggestCount === 0) return 0.5;
     return this.acceptCount / this.suggestCount;
+  }
+
+  /**
+   * 聚合主动提示统计指标（缺口 G+H：供 UI 感知面板展示）
+   *
+   * 将分散的内部统计字段打包为统一快照，供 getPerceptionSnapshot() 透传到渲染层。
+   * 包含两类信息：
+   *   1. 历史反馈：suggestCount/acceptCount/acceptanceRate（用户与精灵的互动累计）
+   *   2. 当前生效参数：consecutiveRejects/effectiveCooldownMs/baseCooldownMs
+   *      （解释"为什么连续拒绝后精灵变安静"的自适应冷却机制）
+   *
+   * effectiveCooldownMs 与 tryEmit 内部计算保持一致：
+   *   baseCooldown × (1 - rapportLevel × 0.5) × (1 + consecutiveRejects × 0.5)
+   *
+   * @returns 主动提示统计快照
+   */
+  getStats(): ProactiveStats {
+    const rapportMultiplier = 1 - this.rapportLevel * 0.5;
+    const rejectMultiplier = 1 + this.consecutiveRejects * 0.5;
+    return {
+      suggestCount: this.suggestCount,
+      acceptCount: this.acceptCount,
+      acceptanceRate: this.acceptanceRate,
+      consecutiveRejects: this.consecutiveRejects,
+      effectiveCooldownMs: Math.round(this.config.cooldownMs * rapportMultiplier * rejectMultiplier),
+      baseCooldownMs: this.config.cooldownMs,
+    };
   }
 
   /**
@@ -442,7 +490,7 @@ export class ProactiveEngine {
         '——需要我施展整理魔法吗？✨',
         '——让我来帮你理理？我可是专业的（大概）',
       ];
-      return options[Math.floor(Math.random() * options.length)]!;
+      return options[Math.floor(Math.random() * options.length)] ?? options[0] ?? '';
     }
 
     // 温暖度高：亲切关心
@@ -452,7 +500,7 @@ export class ProactiveEngine {
         '——想让我帮你理一理这些吗？',
         '——我来帮你梳理一下吧~',
       ];
-      return options[Math.floor(Math.random() * options.length)]!;
+      return options[Math.floor(Math.random() * options.length)] ?? options[0] ?? '';
     }
 
     // 直接度高：简洁干练

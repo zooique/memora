@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 浮动窗口管理
  *
  * 80x80 像素悬浮球，单击 → 展开完整窗口，拖动 → 移动位置，右键 → 快速菜单
@@ -249,5 +249,27 @@ export class FloatWindow {
     if (!this.win.isDestroyed()) {
       this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST, theme);
     }
+  }
+
+  /**
+   * 缺口 1.2：广播在场状态变化到浮动窗口
+   *
+   * 完整窗口通过 SPRITE_EVENT 通道接收 presenceChanged 事件并更新感知面板；
+   * 浮动窗口此前无视觉反馈（80x80 迷你球体在用户离开时无变化）。
+   *
+   * 本方法复用 SPRITE_EVENT 通道（与完整窗口同通道），浮动窗口的 onSpriteEvent
+   * 监听器按 type 分发即可，无需新增专用 IPC 通道常量。
+   *
+   * @param state 'present' 用户在场 / 'away' 用户离开
+   * @param awayDurationMs 离开时长（毫秒），仅 state='away' 时有意义
+   */
+  broadcastPresence(state: 'present' | 'away', awayDurationMs?: number): void {
+    if (this.win.isDestroyed()) return;
+    // 复用 SPRITE_EVENT 通道，payload 结构与完整窗口接收的一致
+    this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+      type: 'presenceChanged',
+      payload: { state, awayDurationMs },
+      silent: true, // 在场状态变化不弹通知，仅视觉反馈
+    });
   }
 }

@@ -52,6 +52,10 @@ export const IPC_CHANNELS = {
   MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
   /** 更新记忆关系（关系图交互） */
   MEMORIES_UPDATE_RELATION: 'memories-update-relation',
+  /** 手动归档 profile facts（缺口 J：archiveMode='manual' 模式下供 UI 调用） */
+  MEMORIES_ARCHIVE_PROFILE: 'memories-archive-profile',
+  /** 手动归档 insight（缺口 J：archiveMode='manual' 模式下供 UI 调用） */
+  MEMORIES_ARCHIVE_INSIGHT: 'memories-archive-insight',
 
   // ─── 配置相关 ─────────────────────────────────────────
   /** 获取精灵配置 */

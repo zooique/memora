@@ -494,6 +494,9 @@ export function createMemoryController(uiManager: UIManager) {
       // OBS-01 Agent 运行时指标渲染（消费内核 agent.getMetrics()）
       uiManager.renderAgentMetrics(data.metrics);
 
+      // 缺口 E：记忆源健康诊断渲染（消费内核 sourceHealth()，展示每个 source 的质量维度）
+      uiManager.renderSourceHealth(data.sourceHealth);
+
       // GAP-1 已加载技能列表渲染（消费内核 agent.skills.list）
       uiManager.renderSkills(data.skills);
 
