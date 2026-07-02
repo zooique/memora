@@ -193,7 +193,7 @@ export class ModalManager {
           onCancel();
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          onOk();
+          onOk(e);
         }
       };
 
@@ -212,8 +212,8 @@ export class ModalManager {
         // 原 cleanup 未恢复焦点，关闭确认弹窗后焦点丢失到 body
         this.popFocus();
       };
-      const onOk = () => { cleanup(); resolve(true); };
-      const onCancel = () => { cleanup(); resolve(false); };
+      const onOk = (e: Event) => { e.stopPropagation(); cleanup(); resolve(true); };
+      const onCancel = (e?: Event) => { e?.stopPropagation(); cleanup(); resolve(false); };
 
       // 注册活跃清理函数，供下次并发调用时取消旧弹窗
       this.activeConfirmCleanup = () => { cleanup(); resolve(false); };

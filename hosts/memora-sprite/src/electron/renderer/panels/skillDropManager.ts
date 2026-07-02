@@ -16,7 +16,7 @@
  * - 公共 API：onSkillInstalled / handleSkillDrop / handleSkillFileSelect
  */
 
-import { ToastManager } from '../components/toast.js';
+import type { ToastManager } from '../components/toast.js';
 // 精灵公共常量（Toast 时长，跨进程共享 DRY）
 import { TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../../sprite/constants.js';
 

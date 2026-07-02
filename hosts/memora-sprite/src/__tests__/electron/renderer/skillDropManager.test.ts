@@ -81,7 +81,7 @@ afterEach(() => {
 
 describe('onSkillInstalled · 回调注册', () => {
   it('应注册技能安装成功回调', async () => {
-    const { manager, toast } = createManager();
+    const { manager } = createManager();
     const callback = vi.fn();
     manager.onSkillInstalled(callback);
     await manager.handleSkillDrop([createMdFile('test.md')]);

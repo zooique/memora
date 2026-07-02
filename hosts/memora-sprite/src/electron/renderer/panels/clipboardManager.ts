@@ -14,8 +14,8 @@
  * - 提供空 cleanup() 与其他 Manager 保持统一生命周期接口
  */
 
-import { ToastManager } from '../components/toast.js';
-import { ModalManager } from '../components/modal.js';
+import type { ToastManager } from '../components/toast.js';
+import type { ModalManager } from '../components/modal.js';
 
 /**
  * 剪贴板保护面板管理器类

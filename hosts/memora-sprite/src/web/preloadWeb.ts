@@ -54,6 +54,9 @@ export interface WebElectronAPI {
   onAppError: (cb: (msg: { code: string; message: string; timestamp: string }) => void) => void;
   removeAppErrorListener: () => void;
 
+  // 感知数据快照（精灵感知面板打开时调用）
+  getPerceptionSnapshot: () => Promise<unknown>;
+
   // Agent 状态
   getAgentStatus: () => Promise<{ ready: boolean; error: string | null }>;
   onAgentReady: (cb: () => void) => void;
@@ -201,9 +204,6 @@ interface SseListeners {
   error?: (msg: { messageId: string; message: string }) => void;
 }
 
-/** 当前活跃的 SSE 流监听器（全局单例，新对话开始时覆盖旧的） */
-let activeSseListeners: SseListeners | null = null;
-
 /** 当前活跃的 SSE AbortController（用于客户端主动取消流式接收） */
 let activeSseAbortController: AbortController | null = null;
 
@@ -228,16 +228,14 @@ let streamListenersRegistry: SseListeners = {};
  * 启动 SSE 流式对话
  *
  * 用 fetch + ReadableStream + TextDecoder 解析 SSE 流（EventSource 不支持 POST 请求体）。
- * 解析后按 event 名称分发到 activeSseListeners 中对应的回调。
+ * 解析后按 event 名称分发到 listeners 参数中对应的回调。
  *
- * 流结束后自动清理 activeSseListeners 和 activeSseAbortController。
+ * 流结束后自动清理 activeSseAbortController。
  *
  * @param text 用户输入文本
  * @param listeners SSE 事件回调表
  */
 async function startSseStream(text: string, listeners: SseListeners): Promise<void> {
-  // 覆盖旧的监听器（理论上每次新对话前应先 removeStreamListeners，此处防御性清理）
-  activeSseListeners = listeners;
   activeSseAbortController = new AbortController();
 
   try {
@@ -323,7 +321,6 @@ async function startSseStream(text: string, listeners: SseListeners): Promise<vo
     listeners.error?.({ messageId: '', message: `SSE 流式接收失败：${error instanceof Error ? error.message : String(error)}` });
   } finally {
     // 清理全局引用（流式接收结束）
-    activeSseListeners = null;
     activeSseAbortController = null;
   }
 }
@@ -449,7 +446,6 @@ export const webElectronAPI: WebElectronAPI = {
       activeSseAbortController.abort();
       activeSseAbortController = null;
     }
-    activeSseListeners = null;
 
     // 收集当前注册的监听器（onStream* 方法注册到 streamListenersRegistry 的字段）
     // 由于 onStream* 方法在 sendUserInput 之前调用注册回调，
@@ -510,7 +506,6 @@ export const webElectronAPI: WebElectronAPI = {
       activeSseAbortController.abort();
       activeSseAbortController = null;
     }
-    activeSseListeners = null;
   },
 
   // ─── 精灵输出（Phase 2 用 SSE 实现） ────────────────────

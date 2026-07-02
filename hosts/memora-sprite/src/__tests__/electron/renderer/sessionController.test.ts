@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 会话控制器测试
  *
  * @vitest-environment jsdom
@@ -88,6 +88,10 @@ describe('sessionController', () => {
       switchSession: vi.fn().mockResolvedValue({
         success: true,
         messages: makeSessionMessages(),
+      }),
+      // deleteSession 默认返回成功
+      deleteSession: vi.fn().mockResolvedValue({
+        success: true,
       }),
       sendUserInput: vi.fn(),
       abortChat: vi.fn(),
@@ -250,6 +254,64 @@ describe('sessionController', () => {
       // 不应显示"加载更早的对话"按钮
       const loadEarlierBtn = dom.window.document.querySelector('[data-action="load-earlier-day"]');
       expect(loadEarlierBtn).toBeNull();
+    });
+  });
+
+  describe('deleteSession', () => {
+    it('应该成功删除其他日期会话并返回 true', async () => {
+      const controller = createSessionController(uiManager);
+      // 先加载历史（当前会话为 2026-06-21）
+      await controller.loadSessionHistory();
+      expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
+
+      // 删除昨天（非当前日期）
+      const result = await controller.deleteSession('2026-06-20');
+
+      // 应返回 true
+      expect(result).toBe(true);
+      // deleteSession IPC 应被调用
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      expect(mockApi.deleteSession as ReturnType<typeof vi.fn>).toHaveBeenCalledWith('2026-06-20');
+      // 当前会话不应改变（删除的是其他日期）
+      expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
+    });
+
+    it('删除当前查看日期后应重置状态并重新加载', async () => {
+      const controller = createSessionController(uiManager);
+      // 先加载历史（当前会话为 2026-06-21）
+      await controller.loadSessionHistory();
+      expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
+      // 消息区有 2 条消息
+      expect(dom.window.document.querySelectorAll('.message').length).toBe(2);
+
+      // 删除当前日期
+      await controller.deleteSession('2026-06-21');
+
+      // deleteSession IPC 应被调用
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      expect(mockApi.deleteSession as ReturnType<typeof vi.fn>).toHaveBeenCalledWith('2026-06-21');
+      // loadSession 应被再次调用（重新加载今天 main 会话）
+      // loadSessionHistory 内部调用 loadSession，验证调用次数增加
+      expect(mockApi.loadSession as ReturnType<typeof vi.fn>).toHaveBeenCalled();
+    });
+
+    it('deleteSession 返回失败时应 toast 提示并返回 false', async () => {
+      const controller = createSessionController(uiManager);
+      await controller.loadSessionHistory();
+
+      // mock deleteSession 返回失败
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi.deleteSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+        success: false,
+        error: '未找到该日期的会话记录',
+      });
+
+      const result = await controller.deleteSession('2026-06-20');
+
+      // 应返回 false
+      expect(result).toBe(false);
+      // 当前会话不应改变
+      expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
     });
   });
 });

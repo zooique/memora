@@ -79,7 +79,7 @@ afterEach(() => {
 
 describe('init · 事件绑定', () => {
   it('点击 date-nav-btn 应切换下拉显示', () => {
-    const manager = createManager();
+    createManager();
     const dropdown = document.getElementById('date-nav-dropdown')!;
     expect(dropdown.classList.contains('hidden')).toBe(true);
     document.getElementById('date-nav-btn')!.click();
@@ -87,7 +87,7 @@ describe('init · 事件绑定', () => {
   });
 
   it('再次点击 date-nav-btn 应切换回隐藏', () => {
-    const manager = createManager();
+    createManager();
     const dropdown = document.getElementById('date-nav-dropdown')!;
     document.getElementById('date-nav-btn')!.click();
     document.getElementById('date-nav-btn')!.click();
@@ -95,7 +95,7 @@ describe('init · 事件绑定', () => {
   });
 
   it('点击外部区域应关闭下拉', () => {
-    const manager = createManager();
+    createManager();
     // 先打开下拉
     document.getElementById('date-nav-btn')!.click();
     expect(document.getElementById('date-nav-dropdown')!.classList.contains('hidden')).toBe(false);
@@ -148,7 +148,7 @@ describe('回调注册', () => {
   });
 
   it('未注册 onDateNavOpen 时打开下拉不应抛错', () => {
-    const manager = createManager();
+    createManager();
     expect(() => {
       document.getElementById('date-nav-btn')!.click();
     }).not.toThrow();
@@ -336,6 +336,68 @@ describe('renderDateNavList · 列表项点击跳转', () => {
   });
 });
 
+// ─── renderDateNavList · 删除按钮 ──────────────────────
+
+describe('renderDateNavList · 删除按钮（FD-09）', () => {
+  it('非今天日期应渲染删除按钮', () => {
+    const manager = createManager();
+    manager.renderDateNavList([
+      createDateItem({ date: '2026-06-30', isToday: false }),
+    ], '2026-06-30');
+    const deleteBtn = document.querySelector('[data-action="delete-date"]') as HTMLElement;
+    expect(deleteBtn).not.toBeNull();
+    expect(deleteBtn.dataset.date).toBe('2026-06-30');
+  });
+
+  it('今天日期不应渲染删除按钮', () => {
+    const manager = createManager();
+    manager.renderDateNavList([
+      createDateItem({ date: '2026-07-01', isToday: true }),
+    ], '2026-07-01');
+    const deleteBtn = document.querySelector('[data-action="delete-date"]');
+    expect(deleteBtn).toBeNull();
+  });
+
+  it('点击删除按钮应触发 deleteCallback 且不触发 jumpCallback', () => {
+    const manager = createManager();
+    const jumpCallback = vi.fn();
+    const deleteCallback = vi.fn();
+    manager.onDateNavJump(jumpCallback);
+    manager.onDateNavDelete(deleteCallback);
+    manager.renderDateNavList([
+      createDateItem({ date: '2026-06-30', isToday: false }),
+    ], '2026-06-30');
+    const deleteBtn = document.querySelector('[data-action="delete-date"]') as HTMLElement;
+    deleteBtn.click();
+    // 删除回调应被调用
+    expect(deleteCallback).toHaveBeenCalledWith('2026-06-30');
+    // 跳转回调不应被调用（stopPropagation 阻止冒泡）
+    expect(jumpCallback).not.toHaveBeenCalled();
+  });
+
+  it('未注册 deleteCallback 时点击删除按钮不应抛错', () => {
+    const manager = createManager();
+    manager.renderDateNavList([
+      createDateItem({ date: '2026-06-30', isToday: false }),
+    ], '2026-06-30');
+    const deleteBtn = document.querySelector('[data-action="delete-date"]') as HTMLElement;
+    expect(() => deleteBtn.click()).not.toThrow();
+  });
+
+  it('删除按钮 data-date 为空时不应触发 deleteCallback', () => {
+    const manager = createManager();
+    const deleteCallback = vi.fn();
+    manager.onDateNavDelete(deleteCallback);
+    manager.renderDateNavList([
+      createDateItem({ date: '2026-06-30', isToday: false }),
+    ], '2026-06-30');
+    const deleteBtn = document.querySelector('[data-action="delete-date"]') as HTMLElement;
+    deleteBtn.dataset.date = '';
+    deleteBtn.click();
+    expect(deleteCallback).not.toHaveBeenCalled();
+  });
+});
+
 // ─── cleanup ─────────────────────────────────────────────
 
 describe('cleanup · 事件与回调清理', () => {
@@ -375,20 +437,25 @@ describe('cleanup · 事件与回调清理', () => {
     expect(toggleSpy).not.toHaveBeenCalled();
   });
 
-  it('cleanup 应清空 jumpCallback 和 loadCallback 引用', () => {
+  it('cleanup 应清空 jumpCallback、deleteCallback 和 loadCallback 引用', () => {
     const manager = createManager();
     manager.onDateNavJump(vi.fn());
+    manager.onDateNavDelete(vi.fn());
     manager.onDateNavOpen(vi.fn());
     manager.cleanup();
     // cleanup 后再注册新回调 + 触发应正常工作（验证引用已清空但机制仍可用）
     const newJump = vi.fn();
+    const newDelete = vi.fn();
     const newLoad = vi.fn();
     manager.onDateNavJump(newJump);
+    manager.onDateNavDelete(newDelete);
     manager.onDateNavOpen(newLoad);
     // 注意：cleanup 后 events 已清理，需重新 init 才能绑定事件
     manager.init();
-    manager.renderDateNavList([createDateItem({ date: '2026-07-01' })], '2026-07-01');
+    manager.renderDateNavList([createDateItem({ date: '2026-06-30', isToday: false })], '2026-06-30');
     document.querySelector('[data-action="jump-to-date"]')!.click();
-    expect(newJump).toHaveBeenCalledWith('2026-07-01');
+    expect(newJump).toHaveBeenCalledWith('2026-06-30');
+    document.querySelector('[data-action="delete-date"]')!.click();
+    expect(newDelete).toHaveBeenCalledWith('2026-06-30');
   });
 });
