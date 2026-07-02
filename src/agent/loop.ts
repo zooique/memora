@@ -402,6 +402,14 @@ export class AgentLoop {
         // 仅在流式输出前失败时重试（streamStarted = false）
         const delay = LOOP_CONSTANTS.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
         logger.warn({ attempt, delay, error: lastError?.message }, 'LLM 调用失败，重试中');
+        // 发射 retry chunk：让宿主 UI 显示"网络波动，重试中 N/M..."，消除 3 秒静默
+        yield {
+          type: 'retry',
+          attempt,
+          maxRetries: LOOP_CONSTANTS.MAX_LLM_RETRIES,
+          delayMs: delay,
+          error: lastError?.message ?? 'unknown error',
+        };
         await new Promise<void>((r) => safeSetTimeout(r, delay));
         fullContent = '';
         toolCalls = undefined;

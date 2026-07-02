@@ -14,7 +14,7 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
 import { safeHandle } from './types.js';
-import { isValidContent, isValidId, isValidSearchQuery } from './inputValidation.js';
+import { isValidContent, isValidId, isValidRelationType, isValidSearchQuery } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -26,8 +26,8 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   /** 列出记忆（可按 source 过滤） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST, async (_event, query: { source?: string }) =>
     safeHandle('列出记忆失败', { memories: [] }, () => {
-      // 校验 source 参数类型和长度
-      if (query?.source !== undefined && (typeof query.source !== 'string' || query.source.length > 200)) {
+      // 校验 source 参数：非空时必须通过 isValidId（与 MEMORIES_SHOW/DELETE 一致，500 字符上限）
+      if (query?.source !== undefined && !isValidId(query.source)) {
         return { memories: [] };
       }
       return { memories: ctx.sprite.listMemories(query?.source) };
@@ -116,6 +116,10 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   /** 添加记忆关系（手动创建，关系图交互） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string; weight: number }) =>
     safeHandle('添加记忆关系失败', { success: false }, () => {
+      // 参数校验：sourceId/targetId 必须 isValidId，type 必须 isValidRelationType（ADR-014 白名单）
+      if (!isValidId(data?.sourceId) || !isValidId(data?.targetId) || !isValidRelationType(data?.type)) {
+        return { success: false };
+      }
       ctx.sprite.addRelation(data.sourceId, data.targetId, data.type, data.weight);
       return { success: true };
     }),
@@ -124,6 +128,9 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   /** 删除记忆关系（关系图交互） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_REMOVE_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string }) =>
     safeHandle('删除记忆关系失败', { success: false }, () => {
+      if (!isValidId(data?.sourceId) || !isValidId(data?.targetId) || !isValidRelationType(data?.type)) {
+        return { success: false };
+      }
       ctx.sprite.removeRelation(data.sourceId, data.targetId, data.type);
       return { success: true };
     }),
@@ -132,6 +139,9 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   /** 更新记忆关系（关系图交互） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_UPDATE_RELATION, async (_event, data: { sourceId: string; targetId: string; type: string; weight: number }) =>
     safeHandle('更新记忆关系失败', { success: false }, () => {
+      if (!isValidId(data?.sourceId) || !isValidId(data?.targetId) || !isValidRelationType(data?.type)) {
+        return { success: false };
+      }
       ctx.sprite.updateRelation(data.sourceId, data.targetId, data.type, data.weight);
       return { success: true };
     }),

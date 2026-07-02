@@ -192,8 +192,8 @@ describe('InsightExtractor · extract() insight 提取', () => {
     const errorExtractor = new InsightExtractor(errorProvider, storage);
     errorExtractor.bindGetRecentHistory(() => []);
 
-    // 不应抛错
-    await expect(errorExtractor.extract('测试', '回复')).resolves.toBeUndefined();
+    // 不应抛错，返回空数组（LLM 失败时不写入记忆）
+    await expect(errorExtractor.extract('测试', '回复')).resolves.toEqual([]);
   });
 
   it('应将对话历史传入 LLM prompt', async () => {

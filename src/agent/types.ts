@@ -46,6 +46,7 @@ export type AgentChunk =
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
   | { type: 'aborted'; reason: string }
   | { type: 'error'; message: string }
+  | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: 'done' };
 
 // ─── 宿主可覆盖的 UI 文本 ────────────────────────────────

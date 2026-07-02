@@ -162,7 +162,9 @@ export class InsightExtractor {
    * 2. 去重检查（防止重复写入）
    * 3. 写入 SQLite（source='insight', score=0.5）
    */
-  async extract(userInput: string, assistantContent: string): Promise<void> {
+  async extract(userInput: string, assistantContent: string): Promise<Memory[]> {
+    // 返回本次写入/更新的记忆列表（供 Agent 发射 memoryAdded/insightExtracted 事件）
+    const written: Memory[] = [];
     try {
       const safeUserInput = userInput.length > INSIGHT_USER_INPUT_LIMIT
         ? userInput.slice(0, INSIGHT_USER_INPUT_LIMIT) + '…'
@@ -184,7 +186,7 @@ export class InsightExtractor {
           { id: precheckDuplicate.id, similarity: 'high' },
           'extractInsight: 预检命中高相似度，跳过 LLM 提取',
         );
-        return;
+        return written;
       }
 
       const recentHistory = this._getRecentHistory(2);
@@ -254,7 +256,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
       const trimmedResponse = llmResponse.trim();
       if (trimmedResponse === 'null' || !trimmedResponse) {
         logger.debug({ reason: 'llm_skip' }, 'extractInsight: LLM 判断无值得记忆的信息');
-        return;
+        return written;
       }
 
       const parsed = parseLlmJson<{ insight?: string; quality?: string; relations?: Array<{ targetId?: unknown; type?: unknown }> }>(trimmedResponse);
@@ -264,7 +266,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
 
       if (!insight) {
         logger.debug({ reason: 'parse_fail' }, 'extractInsight: 无法解析 LLM 响应');
-        return;
+        return written;
       }
 
       // 质量分级：根据 LLM 返回的 quality 字段设置 score
@@ -289,7 +291,8 @@ ${contextSection}${candidatesSection}${relationsPrompt}
         if (this.relationStore && Array.isArray(parsed?.relations)) {
           this.buildRelations(existingMemory.id, parsed.relations, relationCandidates);
         }
-        return;
+        written.push(existingMemory);
+        return written;
       }
 
       // Step 3: 写入 SQLite（score 根据质量分级设置）
@@ -306,6 +309,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
       };
       this.index.upsert(memory);
       logger.info({ id: memory.id, insight, quality, score }, 'extractInsight: 写入新记忆');
+      written.push(memory);
 
       // ADR-014 关系构建：写入 insight 后，构建与已有记忆的关系
       // 降级策略：relationStore 未注入/relations 为空/构建失败 → 跳过，不阻塞主流程
@@ -320,6 +324,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
       // 提取失败不影响主对话流程
       logger.warn({ err }, 'extractInsight: 提取失败');
     }
+    return written;
   }
 
   // ─── 私有：工具方法 ───────────────────────────────────

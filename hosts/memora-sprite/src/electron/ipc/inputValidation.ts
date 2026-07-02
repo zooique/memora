@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IPC 输入验证工具
  *
  * 职责：为所有 IPC 处理器提供统一的输入校验，防止路径遍历、注入等安全风险。
@@ -160,4 +160,24 @@ export function isPathAllowed(filePath: string, allowedDirs: string[]): boolean 
     const relative = path.relative(resolvedDir, resolved);
     return !relative.startsWith('..') && !path.isAbsolute(relative);
   });
+}
+
+/** 关系类型白名单：ADR-014 定义的 6 种语义关系 */
+const RELATION_TYPE_WHITELIST = new Set([
+  'contradicts', 'supports', 'follows', 'refines', 'caused', 'related',
+]);
+
+/**
+ * 验证记忆关系类型 — 仅允许 ADR-014 白名单内的 6 种语义
+ *
+ * 防止恶意/异常渲染进程传入任意 type 字符串污染关系存储。
+ *
+ * @param type 关系类型标识符
+ * @returns 验证通过返回 true，否则 false
+ */
+export function isValidRelationType(type: string): boolean {
+  if (typeof type !== 'string' || type.length === 0 || type.length > 50) {
+    return false;
+  }
+  return RELATION_TYPE_WHITELIST.has(type);
 }

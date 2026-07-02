@@ -62,6 +62,7 @@ import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
   'memoryAdded', 'personaSwitched', 'decayCompleted',
   'memoryRecalled', 'sessionForked', 'insightExtracted',
+  'projectSwitched', 'skillMatched',
 ]);
 
 // ─── 类型定义 ───────────────────────────────────────────
@@ -531,7 +532,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         const turnIndex = `turn-${Date.now()}`;
         const facts = extractUserFacts(input, turnIndex);
         // FD-22: 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
-        const archiveFactsPromise = this.#userProfile.archiveFacts(facts).catch((err) => {
+        const archiveFactsPromise = this.#userProfile.archiveFacts(facts).then((entries) => {
+          // 发射 memoryAdded 事件：仅对已确认且写入存储的条目（confirmed=true）
+          for (const entry of entries) {
+            if (entry.confirmed) {
+              this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
+            }
+          }
+        }).catch((err) => {
           logger.warn({ err }, '用户画像实时归档失败');
         });
         this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
@@ -569,6 +577,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         const match = this.skillManager.match(input);
         if (match) {
           this.activeSkill = match.skill.name;
+          // 发射 skillMatched 事件：宿主 UI 可据此展示当前激活技能
+          this.emit('skillMatched', { skill: match.skill.name, score: match.score });
           logger.debug({ skill: match.skill.name, score: match.score }, '技能匹配，下一轮注入');
         }
       } catch (err) {
@@ -581,9 +591,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       try {
         const shouldExtract = this.insightExtractor.classify(input);
         if (shouldExtract === 'extract') {
-          const p = this.insightExtractor.extract(input, assistantContent).catch((err) => {
+          const p = this.insightExtractor.extract(input, assistantContent).then((memories) => {
+            // 发射 memoryAdded + insightExtracted 事件：每条写入/更新的 insight 均通知宿主
+            for (const memory of memories) {
+              this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
+              this.emit('insightExtracted', { source: memory.source, insight: memory.content });
+            }
+          }).catch((err) => {
             logger.warn({ err }, 'Insight 提取失败');
-            return null;
           });
           this.requireNonNull(this.history, 'history').registerPendingArchive(p);
         }
@@ -755,6 +770,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── Provider 管理 ────────────────────────────────────
 
   setProvider(provider: LlmProvider): void {
+    // FD-21: 对话进行中切换 Provider 会导致同一 processUserInput 循环内前后两次 LLM 调用命中不同 Provider
+    // （模型上下文窗口假设不一致 → 可能导致上下文截断逻辑误判或 tool_call 格式不兼容）
+    if (this._chatBusy) {
+      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换 Provider', [
+        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
+      ]);
+    }
     this.#provider = provider;
     if (this.loop) {
       this.loop.setProvider(provider);
@@ -763,6 +785,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   setBackgroundProvider(provider: LlmProvider | null): void {
+    // FD-21: 与 setProvider 一致，对话进行中禁止切换后台 Provider
+    if (this._chatBusy) {
+      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换后台 Provider', [
+        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
+      ]);
+    }
     this.#backgroundProvider = provider;
     // V-201: 同步更新 AutoConfigRefiner 的后台 Provider
     if (this.autoConfigRefiner) {

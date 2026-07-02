@@ -109,15 +109,16 @@ export class UserProfile {
    *
    * @param facts 由 extractUserFacts() 提取的事实列表
    */
-  async archiveFacts(facts: ExtractedFact[]): Promise<number> {
-    if (facts.length === 0) return 0;
+  async archiveFacts(facts: ExtractedFact[]): Promise<UserProfileEntry[]> {
+    // 返回写入的条目列表（供 Agent 发射 memoryAdded 事件）
+    if (facts.length === 0) return [];
 
-    let archived = 0;
+    const written: UserProfileEntry[] = [];
     for (const fact of facts) {
       const entry = await this.upsertFact(fact);
-      if (entry) archived++;
+      if (entry) written.push(entry);
     }
-    return archived;
+    return written;
   }
 
   /**
