@@ -32,6 +32,7 @@ date: 2026-06-25
 |        | （精灵宿主要求 Node.js 24 LTS，详见 [sprite-project-rules.md §2](./sprite-project-rules.md)） | |
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](./decisions/ADR-002-storage-layer.md)       |
 | 记忆关系 | IMemoryRelationStore 侧车接口（宿主注入实现） | [ADR-014](./decisions/ADR-014-memory-relation.md)    |
+| 归档模式 | archiveMode 三态控制（full / insights-only / manual） | [ADR-015](./decisions/ADR-015-archive-mode.md)    |
 | LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](./decisions/ADR-003-llm-adapter.md)         |
 | 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.7](./decisions/ADR-002-storage-layer.md)  |
 | 安全   | 两级权限 + 路径白名单                        | [ADR-006](./decisions/ADR-006-security-model.md)      |

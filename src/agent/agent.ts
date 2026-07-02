@@ -25,7 +25,7 @@
 import { basename } from 'node:path';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
-import type { AgentChunk, UIMessages } from '@/agent/types.js';
+import type { AgentChunk, UIMessages, ArchiveMode } from '@/agent/types.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
@@ -33,7 +33,7 @@ import { SecurityGuard } from '@/security/pathGuard.js';
 import type { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import { recall } from '@/memory/recall.js';
 import type { PersonaManager } from '@/persona/personaManager.js';
-import type { UserProfile } from '@/memory/userProfile.js';
+import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
@@ -107,6 +107,14 @@ export interface AgentOptions {
   messages?: UIMessages;
   /** 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） */
   enableContextSummary?: boolean;
+  /**
+   * 归档模式（ADR-015，默认 'full'）
+   *
+   * - 'full'：profile facts + insight 自动归档（对话原始内容待 GAP-2 实现后自动）
+   * - 'insights-only'：profile facts + insight 自动归档，对话原始内容需手动
+   * - 'manual'：所有归档都需手动触发
+   */
+  archiveMode?: ArchiveMode;
 }
 
 /** Agent 初始化后暴露的运行时上下文 */
@@ -138,6 +146,8 @@ interface AgentConfig {
   tracer: ITracer | undefined;
   messages: UIMessages | undefined;
   enableContextSummary: boolean;
+  /** 归档模式（ADR-015，默认 'full'） */
+  archiveMode: ArchiveMode;
 }
 
 // ─── Agent 门面类 ───────────────────────────────────────
@@ -251,6 +261,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       tracer: opts.tracer,
       messages: opts.messages,
       enableContextSummary: opts.enableContextSummary ?? true,
+      archiveMode: opts.archiveMode ?? 'full',
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
@@ -524,31 +535,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 所有归档/匹配操作均为 best-effort：任何子步骤失败不应影响用户已收到的回答，
    * 失败仅记录日志，不向上抛出异常。
+   *
+   * ADR-015 归档模式控制：
+   * - 角色匹配 + 技能匹配不受 archiveMode 影响（每轮都执行，非归档行为）
+   * - `manual` 模式跳过所有自动归档（profile + insight），需用户手动调用
+   *   archiveProfileFacts() / archiveInsight() 触发
+   * - `full` / `insights-only` 模式下 profile + insight 都自动归档
+   *   （GAP-2 会话归档实现后，`insights-only` 将跳过对话原始内容自动归档）
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
-    // 用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
-    if (this.#userProfile) {
-      try {
-        const turnIndex = `turn-${Date.now()}`;
-        const facts = extractUserFacts(input, turnIndex);
-        // FD-22: 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
-        const archiveFactsPromise = this.#userProfile.archiveFacts(facts).then((entries) => {
-          // 发射 memoryAdded 事件：仅对已确认且写入存储的条目（confirmed=true）
-          for (const entry of entries) {
-            if (entry.confirmed) {
-              this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
-            }
-          }
-        }).catch((err) => {
-          logger.warn({ err }, '用户画像实时归档失败');
-        });
-        this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
-      } catch (err) {
-        logger.warn({ err }, '用户画像归档初始化失败');
-      }
-    }
-
-    // 角色自动匹配（best-effort：失败不阻塞对话结束）
+    // 角色自动匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
     if (this.personaManager) {
       try {
         const matchedPersona = this.personaManager.autoMatch(input);
@@ -571,7 +567,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    // 技能关键词匹配（best-effort：失败不阻塞对话结束）
+    // 技能关键词匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
     if (this.skillManager) {
       try {
         const match = this.skillManager.match(input);
@@ -586,8 +582,40 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
+    // ADR-015: manual 模式跳过所有自动归档（profile + insight），
+    // 需用户手动调用 archiveProfileFacts/archiveInsight 触发。
+    // 角色匹配/技能匹配/AutoConfigRefiner 属"配置学习"行为，非归档，每轮都执行。
+    const skipAutoArchive = this.#config.archiveMode === 'manual';
+    if (skipAutoArchive) {
+      logger.debug({ mode: 'manual' }, '归档模式为 manual，跳过自动归档');
+    }
+
+    // 用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
+    // ADR-015: full / insights-only 模式下 profile facts 自动归档
+    if (!skipAutoArchive && this.#userProfile) {
+      try {
+        const turnIndex = `turn-${Date.now()}`;
+        const facts = extractUserFacts(input, turnIndex);
+        // FD-22: 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
+        const archiveFactsPromise = this.#userProfile.archiveFacts(facts).then((entries) => {
+          // 发射 memoryAdded 事件：仅对已确认且写入存储的条目（confirmed=true）
+          for (const entry of entries) {
+            if (entry.confirmed) {
+              this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
+            }
+          }
+        }).catch((err) => {
+          logger.warn({ err }, '用户画像实时归档失败');
+        });
+        this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
+      } catch (err) {
+        logger.warn({ err }, '用户画像归档初始化失败');
+      }
+    }
+
     // 输入分类 → Insight 提取（委托给 InsightExtractor）
-    if (this.insightExtractor) {
+    // ADR-015: full / insights-only 模式下 insight 自动归档
+    if (!skipAutoArchive && this.insightExtractor) {
       try {
         const shouldExtract = this.insightExtractor.classify(input);
         if (shouldExtract === 'extract') {
@@ -797,6 +825,85 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.autoConfigRefiner.setBackgroundProvider(provider);
     }
     logger.info({ hasBackground: !!provider }, '后台 Provider 已切换');
+  }
+
+  // ─── 归档模式管理（ADR-015） ───────────────────────────
+
+  /**
+   * 运行时切换归档模式
+   *
+   * 与 setProvider 一致，对话进行中禁止切换（避免本轮 postProcess 行为不一致）。
+   *
+   * @param mode 目标模式
+   */
+  setArchiveMode(mode: ArchiveMode): void {
+    if (this._chatBusy) {
+      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换归档模式', [
+        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
+      ]);
+    }
+    const prev = this.#config.archiveMode;
+    if (prev === mode) return; // 幂等：无变更直接返回
+    this.#config.archiveMode = mode;
+    logger.info({ from: prev, to: mode }, '归档模式已切换');
+  }
+
+  /**
+   * 查询当前归档模式
+   *
+   * 宿主 UI（如设置面板）可据此同步显示当前模式。
+   */
+  getArchiveMode(): ArchiveMode {
+    return this.#config.archiveMode;
+  }
+
+  /**
+   * 手动触发 profile facts 归档（manual 模式下使用）
+   *
+   * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
+   * full / insights-only 模式下也可调用（会重复归档，但不推荐）。
+   *
+   * @param input 本轮用户输入
+   * @returns 写入/更新的 UserProfileEntry 列表
+   */
+  async archiveProfileFacts(input: string): Promise<UserProfileEntry[]> {
+    this.assertInitialized('archiveProfileFacts');
+    if (!this.#userProfile) return [];
+    const turnIndex = `turn-${Date.now()}`;
+    const facts = extractUserFacts(input, turnIndex);
+    const entries = await this.#userProfile.archiveFacts(facts);
+    // 发射 memoryAdded 事件：与自动归档路径一致，保持宿主 UI 行为统一
+    for (const entry of entries) {
+      if (entry.confirmed) {
+        this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
+      }
+    }
+    return entries;
+  }
+
+  /**
+   * 手动触发 insight 提取（manual 模式下使用）
+   *
+   * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
+   * 内部仍走 classify 判断（避免无价值输入浪费 LLM 调用）。
+   *
+   * @param input 本轮用户输入
+   * @param assistantContent 本轮助手回复内容
+   * @returns 写入/更新的 Memory 列表
+   */
+  async archiveInsight(input: string, assistantContent: string): Promise<Memory[]> {
+    this.assertInitialized('archiveInsight');
+    if (!this.insightExtractor) return [];
+    // 内部仍走 classify 判断，避免无价值输入浪费 LLM 调用
+    const shouldExtract = this.insightExtractor.classify(input);
+    if (shouldExtract !== 'extract') return [];
+    const memories = await this.insightExtractor.extract(input, assistantContent);
+    // 发射 memoryAdded + insightExtracted 事件：与自动归档路径一致
+    for (const memory of memories) {
+      this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
+      this.emit('insightExtracted', { source: memory.source, insight: memory.content });
+    }
+    return memories;
   }
 
   // ─── 组件访问 ─────────────────────────────────────────

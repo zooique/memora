@@ -84,3 +84,19 @@ export interface UIMessages {
   /** 输出被护栏阻断提示模板 */
   outputBlockedByGuard?: (rule: string) => string;
 }
+
+// ─── 归档模式（ADR-015） ──────────────────────────────────
+
+/**
+ * Agent 归档模式三态控制
+ *
+ * 详见 ADR-015-archive-mode.md。
+ *
+ * - `full`（默认）：profile facts + insight + 对话原始内容（GAP-2 预留）全部自动归档
+ * - `insights-only`：profile facts + insight 自动归档，对话原始内容需手动归档
+ * - `manual`：所有归档都需手动触发，postProcess 跳过所有自动归档分支
+ *
+ * 设计原则：profile facts 与 insight 同属"提炼类记忆"（从输入加工得到，非原始对话），
+ * 归档行为保持一致——`insights-only` 下都自动，`manual` 下都需手动。
+ */
+export type ArchiveMode = 'full' | 'insights-only' | 'manual';

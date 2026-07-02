@@ -70,6 +70,7 @@ function makeAgent(
   configDir: string,
   dataDir: string,
   relationStore?: IMemoryRelationStore,
+  archiveMode?: 'full' | 'insights-only' | 'manual',
 ): Agent {
   return new Agent({
     projectPath,
@@ -79,6 +80,7 @@ function makeAgent(
     permission: 'owner',
     allowedPaths: [dataDir],
     relationStore,
+    archiveMode,
     messages: {
       abortedByUser: '用户取消了对话',
       maxIterationsReached: '\n\n[已达到最大迭代次数]',
@@ -1139,6 +1141,252 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
     agent.setBackgroundProvider(new MockProvider());
     // 清除不抛错
     expect(() => agent!.setBackgroundProvider(null)).not.toThrow();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：archiveMode（ADR-015）· 三种归档模式
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-amode-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-amode-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-amode-cfg-'));
+    seedProjectWithPersonasAndSkills(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  // ─── 默认值与 getter/setter ────────────────────────────
+
+  it('默认归档模式应为 full', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    expect(agent.getArchiveMode()).toBe('full');
+  });
+
+  it('构造时指定 archiveMode 应生效', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'manual');
+    await agent.init();
+
+    expect(agent.getArchiveMode()).toBe('manual');
+  });
+
+  it('setArchiveMode 应切换模式', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    agent.setArchiveMode('insights-only');
+    expect(agent.getArchiveMode()).toBe('insights-only');
+
+    agent.setArchiveMode('manual');
+    expect(agent.getArchiveMode()).toBe('manual');
+  });
+
+  it('setArchiveMode 幂等：相同模式不重复切换', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    agent.setArchiveMode('manual');
+    agent.setArchiveMode('manual'); // 重复切换不抛错
+    expect(agent.getArchiveMode()).toBe('manual');
+  });
+
+  it('setArchiveMode 对话繁忙时抛错', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 模拟对话进行中
+    (agent as unknown as { _chatBusy: boolean })._chatBusy = true;
+    expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
+
+    // 恢复空闲状态
+    (agent as unknown as { _chatBusy: boolean })._chatBusy = false;
+  });
+
+  // ─── manual 模式跳过自动归档 ────────────────────────────
+
+  it('manual 模式：chatSync 后不触发 memoryAdded 事件', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'manual');
+    await agent.init();
+
+    // 监听 memoryAdded 事件
+    let memoryAddedCount = 0;
+    agent.on('memoryAdded', () => {
+      memoryAddedCount++;
+    });
+
+    await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
+
+    // 等待可能的异步归档（fire-and-forget）
+    await new Promise((r) => setTimeout(r, 100));
+
+    // manual 模式应跳过所有自动归档，memoryAdded 不应被触发
+    expect(memoryAddedCount).toBe(0);
+
+    agent.off('memoryAdded', () => {});
+  });
+
+  it('manual 模式：角色匹配/技能匹配仍执行（非归档行为不受影响）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'manual');
+    await agent.init();
+
+    // 监听 personaSwitched 事件（非归档行为，应正常触发）
+    let personaSwitched = false;
+    agent.on('personaSwitched', () => {
+      personaSwitched = true;
+    });
+
+    // 输入包含写作关键词，应触发角色自动切换
+    await agent.chatSync('帮我写一篇关于小说创作的故事');
+
+    expect(personaSwitched).toBe(true);
+
+    agent.off('personaSwitched', () => {});
+  });
+
+  // ─── full 模式（默认）自动归档 ──────────────────────────
+
+  it('full 模式：chatSync 后应触发 memoryAdded 事件（profile + insight）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'full');
+    await agent.init();
+
+    // 监听 memoryAdded 事件
+    let memoryAddedCount = 0;
+    agent.on('memoryAdded', () => {
+      memoryAddedCount++;
+    });
+
+    await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
+
+    // 等待异步归档完成（profile + insight 都 fire-and-forget）
+    await new Promise((r) => setTimeout(r, 200));
+
+    // full 模式应触发自动归档（至少 1 条，profile 或 insight）
+    expect(memoryAddedCount).toBeGreaterThan(0);
+
+    agent.off('memoryAdded', () => {});
+  });
+
+  // ─── insights-only 模式（当前与 full 等价，GAP-2 后差异化） ──
+
+  it('insights-only 模式：profile + insight 自动归档（与 full 等价）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'insights-only');
+    await agent.init();
+
+    let memoryAddedCount = 0;
+    agent.on('memoryAdded', () => {
+      memoryAddedCount++;
+    });
+
+    await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    // insights-only 模式下 profile + insight 都自动归档（与 full 等价）
+    expect(memoryAddedCount).toBeGreaterThan(0);
+
+    agent.off('memoryAdded', () => {});
+  });
+
+  // ─── 手动 API（manual 模式下使用） ─────────────────────
+
+  it('archiveProfileFacts：手动触发 profile facts 归档', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'manual');
+    await agent.init();
+
+    let memoryAddedCount = 0;
+    agent.on('memoryAdded', () => {
+      memoryAddedCount++;
+    });
+
+    // 手动触发 profile 归档
+    const entries = await agent.archiveProfileFacts('我喜欢用 TypeScript 开发');
+
+    // 应返回写入的 entries（可能为空，如果输入无 facts，但不应抛错）
+    expect(Array.isArray(entries)).toBe(true);
+
+    // 如果有写入，应触发 memoryAdded 事件
+    await new Promise((r) => setTimeout(r, 50));
+    expect(memoryAddedCount).toBe(entries.filter((e) => e.confirmed).length);
+
+    agent.off('memoryAdded', () => {});
+  });
+
+  it('archiveInsight：手动触发 insight 提取', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'manual');
+    await agent.init();
+
+    let insightExtractedCount = 0;
+    agent.on('insightExtracted', () => {
+      insightExtractedCount++;
+    });
+
+    // 手动触发 insight 提取
+    const memories = await agent.archiveInsight('我正在开发一个新项目，需要记住这个偏好', 'Mock 响应');
+
+    // 应返回 Memory 数组
+    expect(Array.isArray(memories)).toBe(true);
+
+    // 如果有写入，应触发 insightExtracted 事件
+    expect(insightExtractedCount).toBe(memories.length);
+
+    agent.off('insightExtracted', () => {});
+  });
+
+  it('archiveInsight：classify 返回 skip 时返回空数组', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'manual');
+    await agent.init();
+
+    // trivial 输入，classify 应返回 'skip'
+    const memories = await agent.archiveInsight('好的', 'Mock 响应');
+
+    expect(memories).toEqual([]);
+  });
+
+  // ─── 运行时切换 archiveMode ─────────────────────────────
+
+  it('运行时从 full 切换到 manual：后续对话不再自动归档', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'full');
+    await agent.init();
+
+    // 第一轮：full 模式，应自动归档
+    let memoryAddedCount = 0;
+    agent.on('memoryAdded', () => {
+      memoryAddedCount++;
+    });
+
+    await agent.chatSync('我正在开发一个新项目，需要记住这个偏好');
+    await new Promise((r) => setTimeout(r, 200));
+    const firstRoundCount = memoryAddedCount;
+    expect(firstRoundCount).toBeGreaterThan(0);
+
+    // 切换到 manual 模式
+    agent.setArchiveMode('manual');
+
+    // 第二轮：manual 模式，不应自动归档
+    memoryAddedCount = 0;
+    await agent.chatSync('我还需要记住另一个偏好');
+    await new Promise((r) => setTimeout(r, 200));
+
+    expect(memoryAddedCount).toBe(0);
+
+    agent.off('memoryAdded', () => {});
   });
 });
 
