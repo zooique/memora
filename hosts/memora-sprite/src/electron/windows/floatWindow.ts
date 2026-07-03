@@ -125,12 +125,6 @@ export class FloatWindow {
       const x = pos[0] ?? 0;
       const y = pos[1] ?? 0;
       this.windowStateManager.saveFloatPosition(x, y);
-      this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END);
-    });
-
-    // 渲染进程通知拖动开始
-    ipcMain.on(IPC_CHANNELS.FLOAT_DRAG_BEGIN, () => {
-      this.win.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_START);
     });
 
     // 渲染进程请求展开为完整窗口（单击触发）
@@ -226,7 +220,6 @@ export class FloatWindow {
     // 清理 IPC 监听器
     ipcMain.removeAllListeners(IPC_CHANNELS.MOVE_FLOAT_WINDOW);
     ipcMain.removeAllListeners(IPC_CHANNELS.SAVE_FLOAT_POSITION);
-    ipcMain.removeAllListeners(IPC_CHANNELS.FLOAT_DRAG_BEGIN);
     ipcMain.removeAllListeners(IPC_CHANNELS.EXPAND_TO_FULL);
     ipcMain.removeAllListeners(IPC_CHANNELS.FLOAT_CONTEXT_MENU);
     this.win.destroy();

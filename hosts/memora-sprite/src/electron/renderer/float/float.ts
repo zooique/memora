@@ -37,7 +37,6 @@ import { EventTracker } from '../helpers/eventTracker.js';
  */
 export type FloatElectronAPI = Pick<
   ElectronAPI,
-  | 'startFloatDrag'
   | 'moveFloatWindow'
   | 'saveFloatPosition'
   | 'expandToFull'
@@ -258,8 +257,6 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
       sphere.classList.add('dragging');
       // FD-06 首次拖动后标记已见过引导，不再显示
       markDragHintSeen();
-      // 通知主进程开始拖动（设置 isDragging 标志），否则后续 moveFloatWindow 会被忽略
-      electronAPI.startFloatDrag();
     }
 
     if (isDragging) {

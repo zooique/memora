@@ -393,8 +393,6 @@ describe('webElectronAPI', () => {
     });
 
     it('浮动窗口相关方法应为 noop（不抛错）', () => {
-      expect(() => webElectronAPI.onFloatDragStart(() => {})).not.toThrow();
-      expect(() => webElectronAPI.startFloatDrag()).not.toThrow();
       expect(() => webElectronAPI.moveFloatWindow(10, 20)).not.toThrow();
       expect(() => webElectronAPI.saveFloatPosition()).not.toThrow();
       expect(() => webElectronAPI.expandToFull()).not.toThrow();

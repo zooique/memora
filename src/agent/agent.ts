@@ -61,10 +61,11 @@ import { nowIso } from '@/utils/time.js';
 // ─── 模块级常量 ─────────────────────────────────────────
 
 /** Agent 事件名白名单，用于运行时校验 SessionManager 转发的事件类型 */
+// 必须与 utils/eventEmitter.ts 的 AgentEventMap 键集保持一致（9 个事件）
 const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
   'memoryAdded', 'personaSwitched', 'decayCompleted',
   'memoryRecalled', 'sessionForked', 'insightExtracted',
-  'projectSwitched', 'skillMatched',
+  'conflictDetected', 'projectSwitched', 'skillMatched',
 ]);
 
 // ─── 类型定义 ───────────────────────────────────────────
@@ -778,22 +779,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.memoryInspector && this.#config.vectorStore) {
       this.memoryInspector.setVectorStore(this.#config.vectorStore);
     }
-    // 创建会话管理器（通过回调访问当前组件，支持 rebuildComponents 后自动获取最新引用）
-    // 事件转发桥接：SessionManager 使用宽类型 (string, Record<string,unknown>)，
-    // Agent 内部桥接到 TypedEventEmitter 的强类型 emit
-    // 运行时校验事件名是否在 AgentEventMap 中，避免不安全的类型断言
-    const forwardEvent = (event: string, data: Record<string, unknown>) => {
-      if (AGENT_EVENT_NAMES.has(event)) {
-        this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
-      }
-    };
-    this._sessionManager = new SessionManager(
-      () => this.requireNonNull(this.history, 'history'),
-      () => this.requireNonNull(this.loop, 'loop'),
-      this.#config.sessionStore,
-      () => this._chatBusy,
-      forwardEvent,
-    );
+    // 创建会话管理器（HC-22：提取 createSessionManager 辅助方法，消除重复）
+    this._sessionManager = this.createSessionManager();
   }
 
   /**
@@ -802,14 +789,28 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private async rebuildComponentsWithCurrentCtx(): Promise<void> {
     if (!this.pctx) return;
     await this.assembleComponents(this.pctx);
-    // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例
-    // 事件转发桥接（同 assembleComponents 中的逻辑，含运行时校验）
+    // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例（HC-22：复用 createSessionManager）
+    this._sessionManager = this.createSessionManager();
+  }
+
+  /**
+   * 创建会话管理器（HC-22：提取重复的 forwardEvent + SessionManager 构造逻辑）
+   *
+   * assembleComponents 和 rebuildComponentsWithCurrentCtx 共享同一套构造逻辑：
+   * - 通过回调访问当前组件（支持 rebuild 后自动获取最新引用）
+   * - 事件转发桥接：SessionManager 使用宽类型 (string, Record<string,unknown>)，
+   *   Agent 内部桥接到 TypedEventEmitter 的强类型 emit
+   * - 运行时校验事件名是否在 AgentEventMap 中，避免不安全的类型断言
+   *
+   * @returns 新的 SessionManager 实例
+   */
+  private createSessionManager(): SessionManager {
     const forwardEvent = (event: string, data: Record<string, unknown>) => {
       if (AGENT_EVENT_NAMES.has(event)) {
         this.emit(event as keyof AgentEventMap, data as AgentEventMap[keyof AgentEventMap]);
       }
     };
-    this._sessionManager = new SessionManager(
+    return new SessionManager(
       () => this.requireNonNull(this.history, 'history'),
       () => this.requireNonNull(this.loop, 'loop'),
       this.#config.sessionStore,

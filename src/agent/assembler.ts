@@ -23,6 +23,8 @@ import { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+// HC-21：MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
+import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
@@ -197,7 +199,9 @@ export async function assembleComponents(
     configDir ? (memory: Memory) => fileStore.write(memory) : undefined,
   );
 
-  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null);
+  // HC-21：MemoryAdvisor 在组合根装配，显式注入 MemoryInspector（组合根一致性）
+  const memoryAdvisor = new MemoryAdvisor(pctx.index);
+  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null, memoryAdvisor);
 
   // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>

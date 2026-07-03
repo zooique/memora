@@ -118,7 +118,6 @@ export const IPC_CHANNELS = {
   THEME_CHANGED: 'theme-changed',
   MOVE_FLOAT_WINDOW: 'move-float-window',
   SAVE_FLOAT_POSITION: 'save-float-position',
-  FLOAT_DRAG_BEGIN: 'float-drag-begin',
   EXPAND_TO_FULL: 'expand-to-full',
   FLOAT_CONTEXT_MENU: 'float-context-menu',
   // M1：写入确认响应（渲染进程 → 主进程）
@@ -152,8 +151,6 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_ERROR: 'sprite-error',
   APP_ERROR: 'app-error',
   AGENT_READY: 'agent-ready',
-  FLOAT_DRAG_START: 'float-drag-start',
-  FLOAT_DRAG_END: 'float-drag-end',
   FLOAT_UNREAD: 'float-unread',
   WINDOW_STATE_CHANGED: 'window-state-changed',
   THEME_BROADCAST: 'theme-broadcast',
@@ -532,17 +529,9 @@ export interface ElectronAPI {
   windowClose: () => void;
 
   // 浮动窗口
-  onFloatDragStart: (cb: () => void) => void;
-  onFloatDragEnd: (cb: () => void) => void;
   onFloatUnread: (cb: (count: number) => void) => void;
   /** 移除浮动窗口未读计数监听器 */
   removeFloatUnreadListener: () => void;
-  /** 移除浮动窗口拖动开始监听器 */
-  removeFloatDragStartListener: () => void;
-  /** 移除浮动窗口拖动结束监听器 */
-  removeFloatDragEndListener: () => void;
-  /** 通知主进程开始拖动（设置 isDragging 标志） */
-  startFloatDrag: () => void;
   moveFloatWindow: (dx: number, dy: number) => void;
   saveFloatPosition: () => void;
   expandToFull: () => void;
@@ -791,19 +780,10 @@ const electronAPI: ElectronAPI = {
   windowClose: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_CLOSE),
 
   // 浮动窗口
-  onFloatDragStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_START, () => cb()),
-  onFloatDragEnd: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END, () => cb()),
   onFloatUnread: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, (_: IpcRendererEvent, count: number) => cb(count)),
   removeFloatUnreadListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD);
   },
-  removeFloatDragStartListener: () => {
-    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_START);
-  },
-  removeFloatDragEndListener: () => {
-    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_DRAG_END);
-  },
-  startFloatDrag: () => ipcRenderer.send(IPC_CHANNELS.FLOAT_DRAG_BEGIN),
   moveFloatWindow: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_FLOAT_WINDOW, dx, dy),
   saveFloatPosition: () => ipcRenderer.send(IPC_CHANNELS.SAVE_FLOAT_POSITION),
   expandToFull: () => ipcRenderer.send(IPC_CHANNELS.EXPAND_TO_FULL),

@@ -1,8 +1,8 @@
 ---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
-version: v0.6
-date: 2026-06-25
+version: v0.7
+date: 2026-07-04
 ---
 
 # Memora · 项目总则
@@ -10,7 +10,7 @@ date: 2026-06-25
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/rules/decisions/` 下 23 个 ADR（内核 14 + 精灵 9）
+> **决策追溯**：`.trae/rules/decisions/` 下 24 个 ADR（内核 15 + 精灵 9）
 
 ## 1. 不可违反的硬约束
 
@@ -113,11 +113,46 @@ chore: 升级 dependencies
 
 ## 7. 阶段二规划（v0.3 → v1.0）
 
-> 详见 [迭代规划-v0.3-to-v1.0.md](../../docs/迭代规划-v0.3-to-v1.0.md)
-
 | Phase | 目标 | 关键交付物 | 状态 |
 |-------|------|-----------|------|
 | Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 可观测性 + 拓扑可视化 | ✅ 核心完成（拓扑可视化延后） |
 | Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | ✅ 核心完成（AffectController + RapportController + ContextAwareness + PatternDetector 全链路实现） |
 | Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | ✅ 核心完成（全局快捷键 + 在场状态检测 + 剪贴板三重保护，两项延后） |
 | Phase 4 | 生态准备 | 接入文档 + 存储独立包 + 技能拖入安装 | 🚧 进行中（接入文档 v3.2 已更新） |
+
+## 8. 规则文件索引
+
+> 本节列出 `.trae/rules/` 下所有规则文件，方便按需加载。`alwaysApply: true` 的文件随会话自动加载，其余文件需 AI 主动读取。
+
+### 8.1 总则类（alwaysApply: true，自动加载）
+
+| 文件 | 用途 |
+|------|------|
+| [project-rules.md](./project-rules.md) | 本文件——Memora 项目总则、技术栈、目录结构 |
+
+### 8.2 架构与分层类（按需读取）
+
+| 文件 | 用途 |
+|------|------|
+| [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) | 架构哲学（专注模式、记忆衰减机制等 9 大原则） |
+| [backend_layers_rules.md](./backend_layers_rules.md) | 后端分层规范（src/ 各模块职责边界 + 核心库 vs 宿主项目边界） |
+| [cross-document-reference.md](./cross-document-reference.md) | 跨文档交叉引用规范（"文档.§章节号"格式） |
+| [new-module-guide.md](./new-module-guide.md) | 新增模块标准流程（防止随意加模块破坏架构） |
+
+### 8.3 安全与测试类（按需读取）
+
+| 文件 | 用途 |
+|------|------|
+| [security_rules.md](./security_rules.md) | 安全规范（最小权限、显式允许、审计可追溯） |
+| [testing_rules.md](./testing_rules.md) | 测试规范（三层金字塔 + Mock LLM 策略） |
+
+### 8.4 精灵宿主类（按需读取，仅约束 memora-sprite）
+
+| 文件 | 用途 |
+|------|------|
+| [sprite-project-rules.md](./sprite-project-rules.md) | 精灵宿主项目总则、技术栈、目录结构、与内核关系 |
+| [sprite-感知层规范.md](./sprite-感知层规范.md) | 精灵感知层规范（上下文感知而非内容感知，唤醒触发器设计约束） |
+
+### 8.5 决策记录类（decisions/ 目录，按需读取）
+
+> 详见 [decisions/README.md](./decisions/README.md)。共 24 个 ADR：内核 ADR-001~015 + 精灵 ADR-SP-001~008 + ADR-SP-015。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。

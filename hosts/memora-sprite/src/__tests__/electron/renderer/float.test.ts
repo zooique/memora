@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 浮动窗口交互逻辑测试
  *
  * @vitest-environment jsdom
@@ -44,7 +44,6 @@ const FLOAT_HTML = `<!DOCTYPE html>
 /** 创建 FloatElectronAPI mock */
 function createMockFloatAPI(): FloatElectronAPI {
   return {
-    startFloatDrag: vi.fn(),
     moveFloatWindow: vi.fn(),
     saveFloatPosition: vi.fn(),
     expandToFull: vi.fn(),
@@ -185,7 +184,7 @@ function dispatchPointerEvent(
 // ─── 拖动检测 ─────────────────────────────────────────────
 
 describe('拖动检测', () => {
-  it('移动超过 3px 阈值时触发拖动并调用 startFloatDrag', () => {
+  it('移动超过 3px 阈值时触发拖动', () => {
     setupFloat(mockAPI);
 
     // 指针按下（派发到 sphere，监听器注册在 sphere 上）
@@ -194,7 +193,6 @@ describe('拖动检测', () => {
     // 移动超过阈值
     dispatchPointerEvent('pointermove', { screenX: 105, screenY: 100, buttons: 1 });
 
-    expect(mockAPI.startFloatDrag).toHaveBeenCalled();
     const sphere = document.getElementById('sphere')!;
     expect(sphere.classList.contains('dragging')).toBe(true);
   });
@@ -226,8 +224,6 @@ describe('拖动检测', () => {
 
     dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
     dispatchPointerEvent('pointermove', { screenX: 105, screenY: 100, buttons: 1 });
-    // 第一次 pointermove 触发 drag 起始，startFloatDrag 被调用
-    expect(mockAPI.startFloatDrag).toHaveBeenCalled();
 
     dispatchPointerEvent('pointermove', { screenX: 108, screenY: 102, buttons: 1 });
     // 增量移动 (108-105, 102-100) = (3, 2)
@@ -242,7 +238,7 @@ describe('拖动检测', () => {
     dispatchPointerEvent('pointermove', { screenX: 110, screenY: 100, buttons: 1 });
 
     // 应被忽略，不触发拖动
-    expect(mockAPI.startFloatDrag).not.toHaveBeenCalled();
+    expect(mockAPI.moveFloatWindow).not.toHaveBeenCalled();
   });
 });
 
@@ -428,7 +424,7 @@ describe('清理函数', () => {
     // 先确认拖动正常工作
     dispatchPointerEvent('pointerdown', { screenX: 100, screenY: 100, button: 0 });
     dispatchPointerEvent('pointermove', { screenX: 110, screenY: 100, buttons: 1 });
-    expect(mockAPI.startFloatDrag).toHaveBeenCalled();
+    expect(mockAPI.moveFloatWindow).toHaveBeenCalled();
 
     // 重置 mock 并调用 cleanup
     vi.clearAllMocks();

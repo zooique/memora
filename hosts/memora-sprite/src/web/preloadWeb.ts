@@ -109,13 +109,8 @@ export interface WebElectronAPI {
   windowClose: () => void;
 
   // 浮动窗口（Web 模式降级为 noop）
-  onFloatDragStart: (cb: () => void) => void;
-  onFloatDragEnd: (cb: () => void) => void;
   onFloatUnread: (cb: (count: number) => void) => void;
   removeFloatUnreadListener: () => void;
-  removeFloatDragStartListener: () => void;
-  removeFloatDragEndListener: () => void;
-  startFloatDrag: () => void;
   moveFloatWindow: (dx: number, dy: number) => void;
   saveFloatPosition: () => void;
   expandToFull: () => void;
@@ -712,13 +707,8 @@ export const webElectronAPI: WebElectronAPI = {
 
   // ─── 浮动窗口（Web 模式降级为 noop） ────────────────────
 
-  onFloatDragStart: (_cb) => { /* Web 模式无浮动窗口 */ },
-  onFloatDragEnd: (_cb) => { /* Web 模式无浮动窗口 */ },
   onFloatUnread: (_cb) => { /* Web 模式无浮动窗口 */ },
   removeFloatUnreadListener: () => { /* noop */ },
-  removeFloatDragStartListener: () => { /* noop */ },
-  removeFloatDragEndListener: () => { /* noop */ },
-  startFloatDrag: () => { /* noop */ },
   moveFloatWindow: (_dx, _dy) => { /* noop */ },
   saveFloatPosition: () => { /* noop */ },
   expandToFull: () => { /* noop */ },

@@ -166,8 +166,6 @@ export const IPC_CHANNELS = {
   MOVE_FLOAT_WINDOW: 'move-float-window',
   /** 拖动结束，保存浮动窗口最终位置 */
   SAVE_FLOAT_POSITION: 'save-float-position',
-  /** 通知主进程拖动开始 */
-  FLOAT_DRAG_BEGIN: 'float-drag-begin',
   /** 请求展开为完整窗口 */
   EXPAND_TO_FULL: 'expand-to-full',
   /** 请求显示浮动窗口右键菜单 */
@@ -240,10 +238,6 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   AGENT_READY: 'agent-ready',
 
   // ─── 浮动窗口事件 ─────────────────────────────────────
-  /** 浮动窗口拖动开始 */
-  FLOAT_DRAG_START: 'float-drag-start',
-  /** 浮动窗口拖动结束 */
-  FLOAT_DRAG_END: 'float-drag-end',
   /** 浮动窗口未读计数 */
   FLOAT_UNREAD: 'float-unread',
 

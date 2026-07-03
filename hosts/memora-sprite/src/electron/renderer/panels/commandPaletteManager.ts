@@ -17,6 +17,8 @@ import type { UIManager } from '../ui.js';
 import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
 // C-2：事件监听器纳入 EventTracker 统一管理，cleanup 时统一移除，避免内存泄漏
 import { EventTracker } from '../helpers/eventTracker.js';
+// HC-23：统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
+import { clearElement } from '../helpers/domHelpers.js';
 
 /** 命令项定义 */
 export interface Command {
@@ -459,7 +461,8 @@ export class CommandPaletteManager {
   private renderResults(): void {
     if (!this.resultsEl) return;
 
-    this.resultsEl.innerHTML = '';
+    // HC-23：使用 clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
+    clearElement(this.resultsEl);
 
     if (this.results.length === 0) {
       this.resultsEl.innerHTML =

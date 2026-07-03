@@ -609,7 +609,8 @@ export class MemoryPanelManager {
     if (relationsEl && relationsListEl) {
       if (memory.relations.length > 0) {
         relationsEl.classList.remove('hidden');
-        relationsListEl.innerHTML = '';
+        // HC-23：使用 clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
+        clearElement(relationsListEl);
         for (const rel of memory.relations) {
           const item = document.createElement('div');
           item.className = `relation-item relation-type-${rel.type}`;
