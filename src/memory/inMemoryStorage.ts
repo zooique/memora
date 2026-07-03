@@ -280,7 +280,8 @@ export class InMemoryStorage implements IMemoryStorage {
   /**
    * 按来源标签统计记忆数量
    *
-   * P2-2 优化：直接读取 sourceCountCache，O(1) 复杂度（与 getAllSources 一致）
+   * P2-2 优化：直接读取 sourceCountCache，O(1) 复杂度
+   * （getAllSources 为 O(sources)，因需拷贝 Map，二者复杂度不同）
    * 原实现 O(n) 遍历所有记忆，与增量缓存设计不一致
    */
   countBySource(source: string): number {
@@ -309,7 +310,8 @@ export class InMemoryStorage implements IMemoryStorage {
   /**
    * 获取所有 source 标签及其记忆数量
    *
-   * P2-2 优化：直接读取增量维护的 sourceCountCache，O(1) 复杂度。
+   * P2-2 优化：直接读取增量维护的 sourceCountCache。
+   * P3-13 注释订正：复杂度为 O(sources)（拷贝 Map），相比原全量遍历 O(n) 仍有显著优化。
    */
   getAllSources(): Map<string, number> {
     return new Map(this.sourceCountCache);

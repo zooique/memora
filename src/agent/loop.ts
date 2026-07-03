@@ -87,7 +87,7 @@ interface LlmCallResult {
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
-  /** 上下文窗口 token 上限（默认 8000，约 32K 中文字符） */
+  /** 上下文窗口 token 上限（默认 32000，约 96K 中文字符） */
   private readonly maxContextTokens: number;
   /** 可观测性 Tracer（默认 NOOP_TRACER 零开销） */
   private readonly tracer: ITracer;

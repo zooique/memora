@@ -18,7 +18,7 @@ describe('MessageHistory · 基本操作', () => {
   });
 
   it('构造函数应接受自定义初始日期和会话', () => {
-    const history = new MessageHistory(undefined, 3, '2026-06-01', 'custom-session');
+    const history = new MessageHistory(undefined, '2026-06-01', 'custom-session');
     expect(history.session).toBe('custom-session');
     expect(history.currentSessionName).toBe('2026-06-01-custom-session');
   });

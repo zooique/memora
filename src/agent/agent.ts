@@ -1161,6 +1161,20 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
     this.pctx = null;
+    // P3-11：补全剩余 manager 字段 null 化，与上述字段处理方式一致
+    // （原实现仅 null 化部分 manager，toolExec/personaManager/#userProfile/skillManager/workProjection 遗漏）
+    this.toolExec = null;
+    this.personaManager = null;
+    this.#userProfile = null;
+    this.skillManager = null;
+    this.workProjection = null;
+    // P3-11：清理次要状态字段，防止 re-init 后残留上一会话状态
+    this.activeSkill = null;
+    this._lastInteractionAt = null;
+    // P3-11：重置衰减指标，与注释承诺"close() 后随实例销毁"一致（见字段声明处注释）
+    this.metricDecayRunCount = 0;
+    this.metricTotalDecayedCount = 0;
+    this.metricLastDecayAt = null;
   }
 
   // ─── 只读访问器 ───────────────────────────────────────

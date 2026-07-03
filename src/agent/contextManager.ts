@@ -19,8 +19,8 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 
-/** ContextManager 构造选项 */
-export interface ContextManagerOptions {
+/** ContextManager 构造选项（P3-12：从 export 降为模块私有，0 外部 import） */
+interface ContextManagerOptions {
   /** 上下文窗口 token 上限 */
   readonly maxContextTokens: number;
   /** LLM Provider（用于生成上下文摘要） */

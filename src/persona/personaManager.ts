@@ -244,13 +244,6 @@ export class PersonaManager {
   }
 
   /**
-   * 获取当前激活的角色
-   */
-  get active(): Persona | null {
-    return this.activePersona;
-  }
-
-  /**
    * 获取角色列表
    */
   get list(): Persona[] {

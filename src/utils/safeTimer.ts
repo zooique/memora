@@ -75,7 +75,9 @@ export function getActiveTimerCount(): number {
  *
  * 场景：
  *   - 测试隔离：每个测试 beforeEach 调用，确保 activeTimers 注册表无残留
- *   - Agent.close() 兜底：显式清理后追加调用，防止未来新增定时器遗漏
+ *
+ * P3-13 注释订正：原注释提及"Agent.close() 兜底"场景，但 Agent.close() 实际
+ * 逐个调用 clearSafeInterval/clearSafeTimeout，未调用此函数。此函数当前仅供测试使用。
  *
  * 注意：此函数会清理所有通过 safeSetTimeout/safeSetInterval 创建的定时器，
  *       包括尚未触发的 timeout 和正在重复的 interval。

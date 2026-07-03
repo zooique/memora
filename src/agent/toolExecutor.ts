@@ -75,7 +75,8 @@ export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => P
  * 将工具定义与处理器绑定在一起，
  * 存入 ToolExecutor 的 customTools Map 中。
  */
-export interface CustomToolEntry {
+// P3-12：从 export 降为模块私有（0 外部 import，仅 toolExecutor.ts 内部 customTools Map 使用）
+interface CustomToolEntry {
   /** 工具定义（名称、描述、参数 schema） */
   definition: ToolDefinition;
   /** 工具执行处理器 */

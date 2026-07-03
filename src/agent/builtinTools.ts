@@ -67,7 +67,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'list_dir',
     description:
-      '列出目录内容。默认相对项目根目录。受路径白名单保护。递归深度 ≤ 3，自动忽略 .git / node_modules。',
+      '列出目录内容。默认相对项目根目录。受路径白名单保护。递归深度 ≤ 3，自动忽略 .git / node_modules / .memora / dist / coverage / .next。',
     parameters: {
       type: 'object',
       properties: {

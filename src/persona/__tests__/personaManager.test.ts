@@ -291,7 +291,7 @@ keywords: 编程, 代码
       const result = personaManager.switchPersona('程序员助手');
 
       expect(result).toContain('程序员助手');
-      expect(personaManager.active?.name).toBe('程序员助手');
+      expect(personaManager.getActive()?.name).toBe('程序员助手');
     });
 
     it('应该在切换到不存在的角色时抛出 MemoraError', async () => {
@@ -310,7 +310,7 @@ keywords: 通用
 
       // IX-03 统一错误策略：找不到角色时抛错，与 switchProject 一致
       expect(() => personaManager.switchPersona('nonexistent')).toThrow('角色切换失败');
-      expect(personaManager.active?.name).toBe('默认助手');
+      expect(personaManager.getActive()?.name).toBe('默认助手');
     });
 
     it('切换到相同角色应直接返回当前 prompt', async () => {
@@ -471,16 +471,16 @@ keywords: 编程, 代码, 架构, 设计
   });
 
   // ════════════════════════════════════════════════════════
-  // active getter
+  // getActive
   // ════════════════════════════════════════════════════════
-  describe('active getter', () => {
-    it('未加载时 active 应为 null', () => {
+  describe('getActive', () => {
+    it('未加载时 getActive 应为 null', () => {
       const personaManager = new PersonaManager(testDir);
 
-      expect(personaManager.active).toBeNull();
+      expect(personaManager.getActive()).toBeNull();
     });
 
-    it('加载后 active 应返回当前激活的 Persona', async () => {
+    it('加载后 getActive 应返回当前激活的 Persona', async () => {
       createPersonaFile(
         personasDir,
         'helper.md',
@@ -494,7 +494,7 @@ keywords: 帮助
       const personaManager = new PersonaManager(testDir);
       await personaManager.load();
 
-      const active = personaManager.active;
+      const active = personaManager.getActive();
 
       expect(active).not.toBeNull();
       expect(active!.name).toBe('小助手');

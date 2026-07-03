@@ -17,6 +17,14 @@ export interface OpenAICompatibleConfig {
 }
 
 /**
+ * P3-09：错误响应体截断长度（字符数）。
+ *
+ * handleResponseError 中 4 处 errorText.slice(0, 200) 的统一常量，
+ * 避免魔法数字散落，便于后续调整截断策略。
+ */
+const MAX_ERROR_BODY_LEN = 200;
+
+/**
  * 通用 OpenAI 兼容 Provider
  * 通过 baseUrl 适配不同厂商
  */
@@ -144,11 +152,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
         yield* this.parseSseStream(response.body, abortController.signal);
       } catch (err) {
         // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
-        try {
-          await response.body?.cancel();
-        } catch (err) {
-          logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
-        }
+        await this.safeCancelBody(response);
         throw err;
       }
     } finally {
@@ -167,15 +171,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
    */
   private async handleResponseError(response: Response): Promise<never> {
     const errorText = await response.text().catch(() => '<无法读取响应体>');
-    try {
-      await response.body?.cancel();
-    } catch (err) {
-      logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
-    }
+    await this.safeCancelBody(response);
     const status = response.status;
 
     if (status === 401 || status === 403) {
-      throw configError('LLM API Key 无效', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+      throw configError('LLM API Key 无效', `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`, [
         '检查 API Key 是否正确（注意 ${MEMORA_LLM_API_KEY} 占位符是否已展开）',
         '确认 Key 未过期',
         '如使用 DeepSeek/豆包，确认 Key 来自对应平台',
@@ -183,25 +183,41 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
 
     if (status === 429) {
-      throw llmError('LLM 服务限流', `HTTP 429：${errorText.slice(0, 200)}`, [
+      throw llmError('LLM 服务限流', `HTTP 429：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`, [
         '稍后重试',
         '如频繁触发考虑升级套餐或换用其他 provider',
       ]);
     }
 
     if (status >= 400 && status < 500) {
-      throw llmError('LLM 请求格式错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+      throw llmError('LLM 请求格式错误', `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`, [
         '检查消息内容是否含特殊字符',
         '确认 model 名称正确',
         '如使用 tools，确认 tool schema 有效',
       ]);
     }
 
-    throw llmError('LLM 服务端错误', `HTTP ${status}：${errorText.slice(0, 200)}`, [
+    throw llmError('LLM 服务端错误', `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`, [
       '稍后重试',
       '如持续失败，访问厂商状态页确认服务状态',
       '可在 config.json 切换 provider 兜底',
     ]);
+  }
+
+  /**
+   * P3-09：安全取消 response.body（2 处重复 try/catch 提取的 helper）
+   *
+   * 在 SSE 异常和 HTTP 错误处理路径中均需 cancel response.body 释放底层连接，
+   * cancel 本身失败不应阻塞后续错误抛出，仅 debug 记录。
+   *
+   * @param response - HTTP 响应对象
+   */
+  private async safeCancelBody(response: Response): Promise<void> {
+    try {
+      await response.body?.cancel();
+    } catch (err) {
+      logger.debug({ err: toError(err).message }, 'response.body.cancel 失败');
+    }
   }
 
   /**

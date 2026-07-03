@@ -22,7 +22,8 @@
 // 单独需要 toError 的场景应直接 import from '@/utils/toError.js'（零 logger 依赖，浏览器友好）。
 export { toError } from '@/utils/toError.js';
 
-export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
+// P3-12：从 export 降为模块私有（0 外部 import，仅 errors.ts 内部使用）
+type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
 
 /**
  * 工具错误码 — 用于 AgentLoop 的 Reflection（反思/自修正）逻辑
@@ -77,7 +78,8 @@ export function isRetryableErrorCode(code: ToolErrorCodeValue): boolean {
   return RETRYABLE_ERROR_CODES.has(code);
 }
 
-export interface FriendlyErrorOptions {
+// P3-12：从 export 降为模块私有（0 外部 import，仅 MemoraError 构造函数参数使用）
+interface FriendlyErrorOptions {
   /** 用户能看懂的简短标题（中文） */
   title: string;
   /** 详细原因（可含原文） */

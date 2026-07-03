@@ -47,14 +47,6 @@ export class MessageHistory {
      * 不注入则仅在内存中保存（AgentLoop.messages[]）。
      */
     private readonly sessionStore?: ISessionStore,
-    /**
-     * 临时记忆最小窗口轮次（记忆减法方案 v1.0 · 排雷修正 L2）
-     *
-     * 上下文压缩时，最少保留的对话轮次。即使上下文利用率 ≥ 85%，
-     * 也不压缩到少于此轮次，保证基本上下文连贯性。
-     * 默认 3 轮，不可在运行时突破。
-     */
-    private readonly minWindowRounds = 3,
     initialDate?: string,
     initialSession = 'main',
   ) {
@@ -84,14 +76,6 @@ export class MessageHistory {
    */
   get session(): string {
     return this.currentSession;
-  }
-
-  /**
-   * 获取最小窗口轮次（记忆减法方案 v1.0）
-   * 上下文压缩时的下限保护
-   */
-  get minWindowRoundsValue(): number {
-    return this.minWindowRounds;
   }
 
   /**

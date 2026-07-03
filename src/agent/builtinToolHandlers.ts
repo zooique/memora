@@ -390,7 +390,7 @@ export class BuiltinToolHandlers {
    * 安全策略：
    *   - 路径必须在白名单内
    *   - 递归深度 ≤ 3（maxDepth 入参强校验）
-   *   - 自动忽略：.git / node_modules / .memora / dist / coverage
+   *   - 自动忽略：.git / node_modules / .memora / dist / coverage / .next
    */
   async listDir(
     relativePath: string,

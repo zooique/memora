@@ -562,8 +562,9 @@ export class ProjectManager {
 
   /**
    * 检查进程是否存活
-   * Windows: tasklist /FI "PID eq <pid>"
-   * POSIX: kill(pid, 0)
+   *
+   * P3-13 注释订正：跨平台统一使用 process.kill(pid, 0) 探测进程存活
+   * （原注释提及 Windows tasklist 策略未实际实现，Windows 上 process.kill 同样有效）
    */
   private isProcessAlive(pid: number): boolean {
     try {

@@ -76,7 +76,7 @@ export function extractKeywords(input: string): string[] {
 export interface RecallOptions {
   /** 返回数量上限（默认 5） */
   limit?: number;
-  /** 排除的 source 标签（默认排除 persona 和 rule） */
+  /** 排除的 source 标签（默认排除 persona、rule、skill——已单独注入 system prompt 的记忆） */
   excludeSources?: string[];
   /** 向量存储（可选，提供时启用语义搜索） */
   vectorStore?: VectorStore;
@@ -91,7 +91,7 @@ export interface RecallOptions {
  * 1. 语义搜索（VectorStore 可用时）：向量余弦相似度
  * 2. 关键词搜索（兜底）：LIKE 匹配
  * 3. 两路结果合并去重，按 score + similarity 综合排序
- * 4. 排除已单独注入的记忆（persona、rule）
+ * 4. 排除已单独注入的记忆（persona、rule、skill）
  * 5. 返回 top N
  *
  * @param storage - 记忆存储实例
