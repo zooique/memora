@@ -7,6 +7,7 @@
  *   3. 列出所有会话（按日期聚合，含预览和消息数量）
  *   4. 删除会话
  *   5. 重命名会话
+ *   6. 分叉会话（从当前会话分叉出独立分支，保留全部历史消息）
  */
 
 import { ipcMain } from 'electron';
@@ -212,6 +213,39 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       return { success: true };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '重命名会话失败' });
+      return { success: false, error: toError(error).message };
+    }
+  });
+
+  // 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
+  // 内核 Agent.forkSession() 已实现，发射 sessionForked 事件供 UI 响应
+  ipcMain.handle(IPC_CHANNELS.SESSION_FORK, async (_event, targetSession?: string) => {
+    try {
+      if (!ctx.agent) {
+        return { success: false, error: 'Agent 未初始化' };
+      }
+
+      // 对话进行中拒绝分叉（内核 forkSession 也会检查，这里提前返回更友好的错误信息）
+      if (ctx.getAbortController()) {
+        return { success: false, error: '有进行中的对话，请等待完成或中断后再分叉会话' };
+      }
+
+      // 可选参数校验：若提供 targetSession，必须为合法会话名
+      if (targetSession !== undefined && targetSession !== '') {
+        const trimmed = targetSession.trim();
+        if (!isValidSessionName(trimmed)) {
+          return { success: false, error: '无效的目标会话名' };
+        }
+        // 调用内核 forkSession（trim 后的名称）
+        const result = ctx.agent.forkSession(trimmed);
+        return { success: true, newSession: result.newSession, messageCount: result.messageCount };
+      }
+
+      // 无参数时由内核自动生成分支名
+      const result = ctx.agent.forkSession();
+      return { success: true, newSession: result.newSession, messageCount: result.messageCount };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '分叉会话失败' });
       return { success: false, error: toError(error).message };
     }
   });

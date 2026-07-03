@@ -230,6 +230,12 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   forwardSimpleEvent(deps, 'memoryRecalled', (e) => ({ count: e.count, query: e.query }));
   // 衰减完成 → 渲染层通知（24h 节流避免每小时噪音，节流由渲染层控制）
   forwardSimpleEvent(deps, 'decayCompleted', (e) => ({ decayedCount: e.decayedCount }));
+  // 会话分叉 → 渲染层通知（提示"已从 XXX 分叉出 N 条消息"并自动切换到新会话）
+  forwardSimpleEvent(deps, 'sessionForked', (e) => ({
+    from: e.from,
+    to: e.to,
+    messageCount: e.messageCount,
+  }));
   // Phase 2.1：情感基调更新 → 渲染层仪表盘展示
   forwardSimpleEvent(deps, 'affectUpdated', (e) => ({
     warmth: e.warmth,

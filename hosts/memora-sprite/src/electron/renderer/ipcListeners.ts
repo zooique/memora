@@ -161,6 +161,23 @@ export function isDecayCompletedPayload(value: unknown): value is { decayedCount
   return isObject(value) && typeof value.decayedCount === 'number';
 }
 
+/** 会话分叉事件 payload 结构（from = 源会话 ID，to = 新会话 ID，messageCount = 复制消息数） */
+export interface SessionForkedPayload {
+  from: string;
+  to: string;
+  messageCount: number;
+}
+
+/** 校验会话分叉 payload 结构（确保 from/to/messageCount 字段类型安全） */
+export function isSessionForkedPayload(value: unknown): value is SessionForkedPayload {
+  return (
+    isObject(value) &&
+    typeof value.from === 'string' &&
+    typeof value.to === 'string' &&
+    typeof value.messageCount === 'number'
+  );
+}
+
 /** 校验情感基调更新 payload 结构（替代 as 断言，确保四维字段类型安全） */
 export function isAffectPayload(value: unknown): value is AffectPayload {
   return (
@@ -412,6 +429,14 @@ function createSpriteEventHandlers(
     skillMatched: (msg) => handleSkillMatched(uiManager, msg),
     memoryRecalled: (msg) => handleMemoryRecalled(uiManager, msg),
     decayCompleted: (msg) => handleDecayCompleted(uiManager, msg),
+    // 会话分叉完成 → 切换到新会话（由 renderer.ts 注册的 onSessionForked 回调处理）
+    sessionForked: (msg) => {
+      if (!isSessionForkedPayload(msg.payload)) {
+        reportError('handleSessionForked', msg.payload);
+        return;
+      }
+      callbacks.onSessionForked?.(msg.payload);
+    },
     // 情感基调更新 → 仪表盘四维进度条
     affectUpdated: (msg) => {
       if (!isAffectPayload(msg.payload)) {
@@ -483,6 +508,8 @@ export interface IpcListenerCallbacks {
   onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
   /** 用户模式更新时回调（刷新洞察面板） */
   onPatternsUpdated?: (payload: PatternsPayload) => void;
+  /** 会话分叉完成时回调（切换到新会话，payload.to 为完整的新会话 ID） */
+  onSessionForked?: (payload: SessionForkedPayload) => void;
 }
 
 /**

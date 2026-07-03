@@ -7,10 +7,12 @@
  * - 跨天加载更早日期的对话（时间流式体验，类似微信/QQ）
  * - 跨日自动切换到今天的 main 会话（保留 LLM 工作记忆一致性）
  * - 删除指定日期的对话记录（按日期前缀删除当天全部子会话）
+ * - 重命名会话（文件层面操作，不影响 Agent 内部状态）
+ * - 分叉会话（从当前会话分叉出独立分支，保留全部历史消息）
  *
  * 设计原则：
  * - 用户不需要自己管理会话，系统自动按天管理对话（YYYY-MM-DD-main）
- * - 仅提供"删除对话记录"功能（按日期删除），不提供"新建会话"功能
+ * - 分叉功能是唯一的"新建会话"入口（基于当前上下文分叉，而非空白创建）
  * - 接收 UIManager 实例，不持有模块级状态
  * - currentSessionId 通过闭包封装，外部通过返回值访问
  * - 会话 ID 格式：YYYY-MM-DD-sessionName（与 SessionStore 对齐）
@@ -492,10 +494,79 @@ export function createSessionController(uiManager: UIManager) {
     }
   }
 
+  /**
+   * FD-09 重命名会话
+   *
+   * 调用主进程 SESSION_RENAME 重命名指定会话（文件层面操作，不影响 Agent 内部状态）。
+   * 重命名成功后显示 toast 提示，不切换当前视图。
+   *
+   * @param sessionId 目标会话 ID（YYYY-MM-DD-sessionName）
+   * @param newName 新会话名
+   * @returns 是否重命名成功
+   */
+  async function renameSession(sessionId: string, newName: string): Promise<boolean> {
+    // 流式输出期间禁止重命名
+    if (uiManager.isStreaming()) {
+      uiManager.showToast('精灵正在回复中，请等待完成后再重命名', 'warning');
+      return false;
+    }
+
+    try {
+      const result = await window.electronAPI.renameSession(sessionId, newName);
+      if (!result.success) {
+        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '重命名会话失败');
+      }
+
+      uiManager.showToast(`已重命名为 ${newName}`, 'success');
+      uiManager.hidePanelError('chat');
+      return true;
+    } catch (error) {
+      reportError('renameSession', error);
+      uiManager.showToast('重命名会话失败，请重试', 'error');
+      return false;
+    }
+  }
+
+  /**
+   * 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
+   *
+   * 调用主进程 SESSION_FORK 触发内核 Agent.forkSession()。
+   * 分叉成功后内核会发射 sessionForked 事件，由 ipcListeners 监听并切换到新会话。
+   * 此方法仅负责触发操作和显示反馈，不直接切换 UI（避免与事件处理重复切换）。
+   *
+   * @param targetSession 可选，指定分叉目标会话名；不传时由内核自动生成
+   * @returns 是否分叉成功
+   */
+  async function forkSession(targetSession?: string): Promise<boolean> {
+    // 流式输出期间禁止分叉
+    if (uiManager.isStreaming()) {
+      uiManager.showToast('精灵正在回复中，请等待完成或点击停止后再分叉', 'warning');
+      return false;
+    }
+
+    try {
+      const result = await window.electronAPI.forkSession(targetSession);
+      if (!result.success || !result.newSession) {
+        throw new MemoraError(ErrorCode.API_ERROR, result.error ?? '分叉会话失败');
+      }
+
+      // 分叉成功提示（实际切换由 sessionForked 事件触发）
+      uiManager.showToast(`已分叉出 ${result.messageCount ?? 0} 条消息，正在切换...`, 'success');
+      uiManager.hidePanelError('chat');
+      return true;
+    } catch (error) {
+      reportError('forkSession', error);
+      uiManager.showToast('分叉会话失败，请重试', 'error');
+      return false;
+    }
+  }
+
   return {
     loadSessionHistory,
     switchSession,
     deleteSession,
+    renameSession,
+    forkSession,
     loadMoreHistory,
     loadEarlierDay,
     loadDateList,

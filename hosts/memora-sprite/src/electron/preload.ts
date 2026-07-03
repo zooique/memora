@@ -55,6 +55,8 @@ export const IPC_CHANNELS = {
   SESSION_DELETE: 'session-delete',
   /** FD-09 重命名会话 */
   SESSION_RENAME: 'session-rename',
+  /** 会话分叉（内核 forkSession 已实现，发射 sessionForked 事件） */
+  SESSION_FORK: 'session-fork',
   MEMORIES_LIST: 'memories-list',
   MEMORIES_SEARCH: 'memories-search',
   MEMORIES_SHOW: 'memories-show',
@@ -311,6 +313,13 @@ export interface ElectronAPI {
   deleteSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   /** FD-09 重命名会话 */
   renameSession: (sessionId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
+  /**
+   * 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
+   *
+   * @param targetSession 可选，指定分叉目标会话名；不传时由内核自动生成
+   * @returns 成功时返回新会话名和消息数；失败时返回 error
+   */
+  forkSession: (targetSession?: string) => Promise<{ success: boolean; newSession?: string; messageCount?: number; error?: string }>;
 
   // 流式监听（含移除方法，防止多次调用导致重复触发与内存泄漏）
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
@@ -764,6 +773,8 @@ const electronAPI: ElectronAPI = {
   switchSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, query),
   deleteSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId),
   renameSession: (sessionId, newName) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RENAME, sessionId, newName),
+  // 会话分叉：调用内核 Agent.forkSession()，返回新会话名和消息数
+  forkSession: (targetSession?: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, targetSession),
 
   // 仪表盘（FD-03）
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),

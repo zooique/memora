@@ -483,6 +483,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       });
     }
 
+    // 会话分叉按钮（输入工具栏）：触发 forkSessionCallback（由 renderer.ts 注册调用 sessionController.forkSession）
+    const btnForkSession = getOptionalElement('btn-fork-session', 'button');
+    if (btnForkSession) {
+      this.events.addEventListener(btnForkSession, 'click', () => {
+        this.forkSessionCallback?.();
+      });
+    }
+
     // C-2：标题栏命令面板入口按钮（Ctrl+K 的鼠标入口，与键盘快捷键等效）
     const btnCmdk = getOptionalElement('titlebar-cmdk', 'button');
     if (btnCmdk) {
@@ -1285,6 +1293,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private stopMessageCallback: (() => void) | null = null;
   /** 面板切换回调（panel 为切换到的目标面板名） */
   private panelSwitchCallback: ((panel: string) => void) | null = null;
+  /** 会话分叉回调（用户点击分叉按钮时触发，由 renderer.ts 注册调用 sessionController.forkSession） */
+  private forkSessionCallback: (() => void) | null = null;
 
   /** 设置发送消息回调 */
   onSendMessage(callback: () => void): void {
@@ -1299,6 +1309,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 设置面板切换回调（切换到指定面板时触发数据刷新） */
   onPanelSwitch(callback: (panel: string) => void): void {
     this.panelSwitchCallback = callback;
+  }
+
+  /** 设置会话分叉回调（用户点击输入工具栏分叉按钮时触发） */
+  onForkSession(callback: () => void): void {
+    this.forkSessionCallback = callback;
   }
 
   private emitSendMessage(): void {

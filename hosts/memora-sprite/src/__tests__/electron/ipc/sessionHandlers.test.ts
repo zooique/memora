@@ -6,6 +6,7 @@
  * - SESSION_SWITCH：Agent 未初始化 + 非法会话名 + 竞态保护 + sessionManager 未初始化 + 正常切换
  * - SESSION_DELETE：非法 sessionId + 按日期前缀批量删除 + 未找到匹配 + Agent 状态同步
  * - SESSION_RENAME：非法输入 + 正常重命名 + 会话不存在
+ * - SESSION_FORK：Agent 未初始化 + 对话进行中拒绝 + 非法参数 + 无参数分叉 + 有参数分叉 + 内核抛错降级
  * - SESSION_LIST：按日期聚合 + 当天占位 + 失败降级
  *
  * Mock 策略：
@@ -116,6 +117,8 @@ function createMockAgent(overrides?: {
     // GAP-2：归档模式默认 full（自动归档），archiveSessionContent 默认返回空结果
     getArchiveMode: vi.fn(() => 'full'),
     archiveSessionContent: vi.fn().mockResolvedValue({ memories: [], sessionLabel: '', messageCount: 0 }),
+    // 会话分叉：默认返回 newSession + messageCount（测试可覆盖）
+    forkSession: vi.fn(() => ({ newSession: 'fork-001', messageCount: 5 })),
   } as unknown as IpcContext['agent'];
 }
 
@@ -585,6 +588,107 @@ describe('sessionHandlers', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('不存在或重命名失败');
+    });
+  });
+
+  // ─── SESSION_FORK ──────────────────────────────────────
+
+  describe('SESSION_FORK', () => {
+    it('Agent 未初始化时应返回错误', async () => {
+      const ctx = createMockCtx({ agent: null as unknown as IpcContext['agent'] });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;
+      const result = await callback({}, undefined);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Agent 未初始化');
+    });
+
+    it('有进行中对话时应拒绝分叉', async () => {
+      const ctx = createMockCtx({
+        getAbortController: vi.fn(() => new AbortController()), // 模拟有进行中对话
+      });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;
+      const result = await callback({}, undefined);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('进行中的对话');
+    });
+
+    it('非法 targetSession（含路径分隔符）应被拒绝', async () => {
+      const ctx = createMockCtx();
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;
+      const result = await callback({}, 'fork/../../../etc');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('无效的目标会话名');
+    });
+
+    it('无参数时应调用内核 forkSession 并返回结果', async () => {
+      const agent = createMockAgent();
+      // 覆盖默认返回值，验证无参数路径
+      vi.mocked(agent.forkSession).mockReturnValue({ newSession: 'auto-branch', messageCount: 10 });
+      const ctx = createMockCtx({ agent });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;
+      const result = await callback({}, undefined);
+
+      expect(result.success).toBe(true);
+      expect(result.newSession).toBe('auto-branch');
+      expect(result.messageCount).toBe(10);
+      // 无参数时 forkSession 应被调用且参数为空
+      expect(agent.forkSession).toHaveBeenCalledWith();
+    });
+
+    it('有参数时应调用内核 forkSession 并传入 trim 后的名称', async () => {
+      const agent = createMockAgent();
+      vi.mocked(agent.forkSession).mockReturnValue({ newSession: 'custom-branch', messageCount: 3 });
+      const ctx = createMockCtx({ agent });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;
+      const result = await callback({}, '  custom-name  ');
+
+      expect(result.success).toBe(true);
+      expect(result.newSession).toBe('custom-branch');
+      expect(result.messageCount).toBe(3);
+      // 应 trim 后传入内核
+      expect(agent.forkSession).toHaveBeenCalledWith('custom-name');
+    });
+
+    it('空字符串参数等同于无参数（由内核自动生成）', async () => {
+      const agent = createMockAgent();
+      vi.mocked(agent.forkSession).mockReturnValue({ newSession: 'auto-branch', messageCount: 0 });
+      const ctx = createMockCtx({ agent });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;
+      const result = await callback({}, '');
+
+      expect(result.success).toBe(true);
+      // 空字符串走无参数路径
+      expect(agent.forkSession).toHaveBeenCalledWith();
+    });
+
+    it('内核 forkSession 抛错时应降级返回错误信息', async () => {
+      const agent = createMockAgent();
+      vi.mocked(agent.forkSession).mockImplementation(() => {
+        throw new Error('对话繁忙');
+      });
+      const ctx = createMockCtx({ agent });
+      registerSessionHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_FORK)!;
+      const result = await callback({}, undefined);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('对话繁忙');
     });
   });
 

@@ -62,6 +62,12 @@ export interface SpriteEventMap {
   memoryRecalled: { count: number; query: string };
   /** 记忆衰减完成（24h 节流，避免噪音） */
   decayCompleted: { decayedCount: number };
+  /**
+   * 会话分叉完成（用户从当前会话分叉出独立分支）
+   * from = 源会话 ID，to = 新会话 ID，messageCount = 复制的消息数
+   * UI 可据此提示"已从 XXX 分叉出 N 条消息"并自动切换到新会话
+   */
+  sessionForked: { from: string; to: string; messageCount: number };
   /** Phase 3.2：用户在场状态变化（离开/回来） */
   presenceChanged: { state: 'present' | 'away'; timestamp: string; awayDurationMs?: number; reason: string };
   /** Phase 2.1：情感基调更新（推导完成后触发） */
@@ -116,6 +122,8 @@ export class Sprite {
     skillMatched?: (e: AgentEventMap['skillMatched']) => void;
     memoryRecalled?: (e: AgentEventMap['memoryRecalled']) => void;
     decayCompleted?: (e: AgentEventMap['decayCompleted']) => void;
+    // 会话分叉事件（用户从当前会话分叉出独立分支时触发）
+    sessionForked?: (e: AgentEventMap['sessionForked']) => void;
   } = {};
   /** 项目路径（用于 FileWatcherTrigger 的默认监听目录） */
   private projectPath: string;
@@ -1321,6 +1329,19 @@ export class Sprite {
     };
     this.agentHandlers.decayCompleted = onDecayCompleted;
     this.agent.on('decayCompleted', onDecayCompleted);
+
+    // 会话分叉 → sessionForked
+    // 用户从当前会话分叉出独立分支时触发，UI 可提示并自动切换到新会话
+    const onSessionForked = (e: AgentEventMap['sessionForked']) => {
+      this.emitSprite('sessionForked', {
+        from: e.from,
+        to: e.to,
+        messageCount: e.messageCount,
+      });
+      logger.info({ from: e.from, to: e.to, messageCount: e.messageCount }, '会话分叉完成');
+    };
+    this.agentHandlers.sessionForked = onSessionForked;
+    this.agent.on('sessionForked', onSessionForked);
   }
 
   /** 取消订阅 Agent 事件 */
@@ -1353,6 +1374,10 @@ export class Sprite {
     }
     if (this.agentHandlers.decayCompleted) {
       this.agent.off('decayCompleted', this.agentHandlers.decayCompleted);
+    }
+    // 会话分叉事件清理
+    if (this.agentHandlers.sessionForked) {
+      this.agent.off('sessionForked', this.agentHandlers.sessionForked);
     }
     this.agentHandlers = {};
   }

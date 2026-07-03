@@ -26,6 +26,13 @@ export const IPC_CHANNELS = {
   SESSION_DELETE: 'session-delete',
   /** FD-09 重命名会话 */
   SESSION_RENAME: 'session-rename',
+  /**
+   * 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
+   *
+   * 内核 Agent.forkSession() 已完整实现，发射 sessionForked 事件。
+   * 此通道用于 UI 触发分叉操作，返回新会话名和消息数。
+   */
+  SESSION_FORK: 'session-fork',
 
   // ─── 记忆相关 ─────────────────────────────────────────
   /** 列出记忆 */

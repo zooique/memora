@@ -194,6 +194,11 @@ async function bootstrapRenderer(): Promise<void> {
     onWorkProjectionUpdated: (_payload) => {
       void settingsController.loadWorkProjections();
     },
+    // 会话分叉完成 → 切换到新会话（payload.to 为完整的新会话 ID）
+    // 内核 forkSession 已切换 Agent 内部状态，switchSession 会幂等同步并加载消息
+    onSessionForked: async (payload) => {
+      await sessionController.switchSession(payload.to);
+    },
   });
 
   // UX-FD-12 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存
@@ -590,6 +595,12 @@ function setupBusinessLogic(
   // stopAllStreaming() 保留给渲染进程超时兜底（onStreamStuck）使用，不用在用户主动停止路径。
   State.uiManager.onStopMessage(async () => {
     await window.electronAPI.abortChat();
+  });
+
+  // 会话分叉回调：用户点击输入工具栏分叉按钮时触发
+  // 调用 sessionController.forkSession，成功后由 sessionForked 事件驱动 UI 切换
+  State.uiManager.onForkSession(async () => {
+    await sessionController.forkSession();
   });
 
   // UX-FD-07 日期导航跳转回调：点击日期项后跳转到该日期的对话
