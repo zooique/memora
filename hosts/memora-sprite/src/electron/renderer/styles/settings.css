@@ -53,7 +53,6 @@
   background: var(--text-3);
 }
 
-/* .settings-mode-notice / .settings-mode-notice-icon 已删除（死代码，无引用） */
 
 /* ─── 设置模态垂直 tab 导航（左侧 160px 宽） ───────────── */
 .settings-tabs {
@@ -157,7 +156,7 @@
 /* 公共输入框样式：适用于设置面板内所有文本/密码/数字输入框和下拉框 */
 /* 使用 :is() 伪类简化选择器，避免重复声明（P3-5） */
 .settings-group :is(input[type="text"], input[type="password"], input[type="number"], select) {
-  padding: 6px 10px;
+  padding: var(--input-padding);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
@@ -688,7 +687,7 @@
   border: 1px solid var(--surface2);
   border-left: 3px solid var(--surface2);  /* 左侧色条，强化"日志"语义 */
   border-radius: var(--radius-sm);
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   transition: border-left-color var(--transition-fast);
 }
 

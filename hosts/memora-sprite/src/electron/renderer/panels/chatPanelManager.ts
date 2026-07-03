@@ -864,7 +864,7 @@ export class ChatPanelManager {
    */
   private _addArchiveButtonToMessage(
     el: HTMLElement,
-    assistantContent: string,
+    _assistantContent: string,
     copyBtn: HTMLButtonElement,
     metaRow: Element | null,
   ): void {
@@ -918,7 +918,7 @@ export class ChatPanelManager {
     if (!assistantBubble) return;
     const clone = assistantBubble.cloneNode(true);
     if (!(clone instanceof HTMLElement)) return;
-    clone.querySelectorAll('.memory-recall, .stream-aborted, .stream-error, .thinking-phase, .md-code-header').forEach((el) => el.remove());
+    clone.querySelectorAll('.memory-recall, .stream-aborted, .stream-error, .thinking-phase, .md-code-header').forEach((node) => node.remove());
     const assistantContent = clone.textContent ?? '';
 
     // 禁用按钮，防止归档期间重复点击

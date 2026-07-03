@@ -28,10 +28,7 @@
 }
 
 /* ─── 顶部栏（与左侧栏同色，无边界；仅保留窗口控制按钮） ─── */
-/* 拖动策略（P1-1 修复）：#titlebar 整体设为 drag，按钮区域显式 no-drag。
-   原方案仅 #titlebar-drag 设 drag，flex:1 drag 区与 no-drag 按钮区边界处
-   在 Windows Electron 上存在事件吞没，导致按钮点击无响应。
-   整体 drag + 按钮 no-drag 的方案避免了边界问题，且语义更清晰。 */
+/* 拖动策略：#titlebar 整体设为 drag，按钮区域显式 no-drag */
 #titlebar {
   grid-area: titlebar;
   height: 44px;
@@ -316,7 +313,7 @@
 }
 
 .toolbar-persona-container #persona-dropdown .dropdown-item {
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
 }
 
 .toolbar-persona-container .mode-badge {
@@ -746,7 +743,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: var(--input-padding);
   font-size: var(--font-sm);
   color: var(--subtext);
   cursor: pointer;
@@ -814,7 +811,7 @@
 }
 
 .dropdown-item {
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   font-size: var(--font-sm);
   color: var(--text);
   cursor: pointer;
@@ -909,7 +906,7 @@
   }
 }
 
-/* .review-row / .review-label / .review-value / .review-unit 已删除（死代码，无引用） */
+
 
 /* 最近洞察列表（渲染 ReviewData.insights.recent） */
 .recent-insights-list {
@@ -930,7 +927,7 @@
   background: var(--bg-secondary);
 }
 
-/* .recent-insight-name 已删除（死代码，TS 不显示 insight.name，仅用 .recent-insight-preview） */
+
 
 .recent-insight-preview {
   font-size: var(--font-xs);
@@ -1044,7 +1041,7 @@ body.web-mode #chat-toolbar {
 /* Web 模式：输入区域优化（嵌入占位模式，margin 模拟浮动间距） */
 body.web-mode #input-area {
   margin: 0 16px 16px;
-  padding: 12px 16px;
+  padding: var(--pad-card);
 }
 
 body.web-mode #input {
@@ -1141,11 +1138,11 @@ body.web-mode .settings-panel-body {
 }
 
 body.web-mode .settings-tabs {
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
 }
 
 body.web-mode .settings-tab {
-  padding: 10px 16px;
+  padding: var(--pad-section);
   border-radius: var(--radius-md);
 }
 

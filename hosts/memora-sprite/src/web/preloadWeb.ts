@@ -213,6 +213,9 @@ let agentReadyCallback: (() => void) | null = null;
 /** onAgentReady 轮询定时器句柄（用于取消轮询） */
 let agentReadyPollTimer: number | null = null;
 
+/** onSpriteError 回调存储（SSE error 事件和网络错误统一通过此回调分发） */
+let spriteErrorCallback: ((msg: { text: string }) => void) | null = null;
+
 /**
  * 流式监听器注册表
  *
@@ -249,7 +252,10 @@ async function startSseStream(text: string, listeners: SseListeners): Promise<vo
     // 非 2xx 响应：读取错误信息并通知 error 回调
     if (!response.ok || !response.body) {
       const errorText = await response.text().catch(() => `HTTP ${response.status}`);
-      listeners.error?.({ messageId: '', message: `对话请求失败：${errorText}` });
+      const errorMsg = `对话请求失败：${errorText}`;
+      listeners.error?.({ messageId: '', message: errorMsg });
+      // Web 模式：转发到 spriteErrorCallback 确保 UI 状态重置
+      spriteErrorCallback?.({ text: errorMsg });
       return;
     }
 
@@ -305,6 +311,9 @@ async function startSseStream(text: string, listeners: SseListeners): Promise<vo
             break;
           case 'error':
             listeners.error?.(data as { messageId: string; message: string });
+            // Web 模式：SSE error 事件转发到 onSpriteError 回调（对齐 Electron 的 SPRITE_ERROR 通道）
+            // 确保错误能注入到流式消息气泡并重置 isStreaming 状态，防止 UI 卡死
+            spriteErrorCallback?.({ text: (data as { message: string }).message });
             break;
           default:
             // 未知事件名，忽略（向前兼容）
@@ -317,8 +326,10 @@ async function startSseStream(text: string, listeners: SseListeners): Promise<vo
     if (error instanceof DOMException && error.name === 'AbortError') {
       return;
     }
-    // 其他错误通知 error 回调
-    listeners.error?.({ messageId: '', message: `SSE 流式接收失败：${error instanceof Error ? error.message : String(error)}` });
+    // 其他错误通知 error 回调和 spriteErrorCallback（确保 UI 状态重置）
+    const errorMsg = `SSE 流式接收失败：${error instanceof Error ? error.message : String(error)}`;
+    listeners.error?.({ messageId: '', message: errorMsg });
+    spriteErrorCallback?.({ text: errorMsg });
   } finally {
     // 清理全局引用（流式接收结束）
     activeSseAbortController = null;
@@ -358,6 +369,34 @@ function parseSseEvent(eventBlock: string): { event: string; data: unknown } | n
 }
 
 /**
+ * 解析 fetch 响应为 JSON，并在非 2xx 状态码时抛出错误
+ *
+ * 确保 API 返回 503（Agent 未就绪）或 4xx/5xx 错误时，
+ * 错误响应体（如 { error: '...' }）不会被当作正常数据返回，
+ * 避免上层解构得到 undefined。
+ *
+ * @param response fetch Response 对象
+ * @returns 解析后的 JSON 数据
+ * @throws 当响应非 2xx 时抛出包含错误消息的 Error
+ */
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorBody = await response.json() as { error?: string };
+      if (errorBody?.error) {
+        errorMessage = errorBody.error;
+      }
+    } catch {
+      // 错误响应体不是 JSON，使用状态文本
+      errorMessage = response.statusText || `HTTP ${response.status}`;
+    }
+    throw new Error(errorMessage);
+  }
+  return response.json() as Promise<T>;
+}
+
+/**
  * 发起 JSON POST 请求
  *
  * @param url 请求 URL
@@ -370,7 +409,7 @@ async function postJson<T>(url: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response);
 }
 
 /**
@@ -386,7 +425,7 @@ async function putJson<T>(url: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response);
 }
 
 /**
@@ -402,7 +441,7 @@ async function deleteJson<T>(url: string, body?: unknown): Promise<T> {
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response);
 }
 
 /**
@@ -413,7 +452,7 @@ async function deleteJson<T>(url: string, body?: unknown): Promise<T> {
  */
 async function getJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response);
 }
 
 // ─── Web 版 electronAPI 实现 ──────────────────────────────
@@ -441,10 +480,13 @@ export const webElectronAPI: WebElectronAPI = {
    */
   sendUserInput: (text: string) => {
     // 防御性清理：如果上一次对话的 SSE 流仍在接收，先中止它
-    // 注意：只 abort 客户端读取，不通知服务端（服务端由下一次请求的竞态保护处理）
+    // 必须同时通知服务端 abort（POST /api/chat/abort），
+    // 否则服务端 AgentLoop 仍在运行，可能导致状态泄漏（isStreaming 卡死、竞态保护拒绝新请求）
     if (activeSseAbortController) {
       activeSseAbortController.abort();
       activeSseAbortController = null;
+      // 通知服务端中断上一轮对话（fire-and-forget，不阻塞新消息发送）
+      void postJson('/api/chat/abort').catch(() => { /* 网络错误时静默失败 */ });
     }
 
     // 收集当前注册的监听器（onStream* 方法注册到 streamListenersRegistry 的字段）
@@ -514,8 +556,10 @@ export const webElectronAPI: WebElectronAPI = {
   removeSpriteOutputListener: () => { /* Phase 2 */ },
   onSpriteEvent: (_cb) => { /* Phase 2: SSE EventSource */ },
   removeSpriteEventListener: () => { /* Phase 2 */ },
-  onSpriteError: (_cb) => { /* Phase 2: SSE EventSource */ },
-  removeSpriteErrorListener: () => { /* Phase 2 */ },
+  /** Web 模式：注册精灵错误回调（SSE error 事件和网络错误均通过此回调分发） */
+  onSpriteError: (cb) => { spriteErrorCallback = cb; },
+  /** Web 模式：清除精灵错误回调 */
+  removeSpriteErrorListener: () => { spriteErrorCallback = null; },
   onAppError: (_cb) => { /* Phase 2: SSE EventSource */ },
   removeAppErrorListener: () => { /* Phase 2 */ },
 

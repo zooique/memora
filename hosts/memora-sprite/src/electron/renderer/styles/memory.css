@@ -5,7 +5,7 @@
  *       记忆详情弹窗内的元信息。
  */
 
-/* ─── 记忆面板（可见性由 .panel / .panel.active 统一控制，B1 已删除冗余 ID 选择器） ─── */
+/* ─── 记忆面板（可见性由 .panel / .panel.active 统一控制） ─── */
 
 /* v8：面板头部 44px（与chat-toolbar一致），border-bottom分隔线 */
 .panel-header {
@@ -81,7 +81,7 @@
  * 结构：header（title + source 标签）+ content 预览 + meta（score）
  */
 .memory-item {
-  padding: 12px 16px;
+  padding: var(--pad-card);
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
@@ -187,7 +187,7 @@
   display: block;
   width: 100%;
   margin-top: 12px;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   font-size: var(--font-sm);
   text-align: center;
   cursor: pointer;
@@ -208,7 +208,7 @@
 /* ─── 记忆面板筛选下拉（v8） ───────────────────────────────── */
 /* UX-P2-38 复用 settings.css 的通用 select 样式，此处仅声明布局差异 */
 #memory-filter-source {
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
@@ -341,8 +341,6 @@
   white-space: nowrap;
   flex: 1;
 }
-
-/* .view-switch / .view-switch-btn 系列已删除（死代码，视图切换已改为 .more-menu 下拉菜单） */
 
 /* ─── 视图切换过渡动画（Phase 4：视觉统一） ─────────────────── */
 
@@ -566,7 +564,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: var(--input-padding);
   background: var(--surface0);
   border: 1px dashed var(--surface2);
   border-radius: var(--radius-sm);
@@ -702,7 +700,7 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
@@ -905,7 +903,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   font-size: var(--font-sm);
   color: var(--text);
   cursor: pointer;
@@ -1003,7 +1001,7 @@
 
 .relation-edit-type-select {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
@@ -1112,7 +1110,7 @@
 
 /* 高级搜索栏：折叠时隐藏 */
 .advanced-search-bar {
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   border-bottom: 1px solid var(--surface2);
   background: var(--window-bg-2);
   transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
@@ -1357,7 +1355,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: var(--input-padding);
   border-radius: var(--radius-sm);
   background: var(--surface0);
   cursor: pointer;
@@ -1464,7 +1462,7 @@
 
 /* 健康栏容器：折叠时隐藏，展开时下滑 */
 .health-bar {
-  padding: 12px 16px;
+  padding: var(--pad-card);
   border-bottom: 1px solid var(--surface2);
   background: var(--window-bg-2);
   max-height: 300px;
@@ -1539,6 +1537,79 @@
 .panel-close-btn:hover {
   background: var(--surface1);
   color: var(--text);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   记忆面板视觉增强（新枝破土 · 第三轮）
+   纯增量样式，不修改任何现有规则
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 增强 1：记忆卡片 hover 左侧 accent 色条 ──────────────── */
+/* 原始 hover 有上浮+阴影，但缺乏"被选中"的视觉锚点              */
+/* 增强：hover 时左侧出现 accent 色条，强化"这张卡片被关注"的语义 */
+
+.memory-item:hover {
+  border-left: 3px solid var(--accent);
+  /* 补偿 border-left 从 1px→3px 增加的 2px 偏移，避免内容跳动 */
+  padding-left: 14px;
+}
+
+/* ─── 增强 2：记忆卡片 active 左侧色条加深 ─────────────────── */
+/* active 状态（点击瞬间）左侧色条变为 accent-hover，增强按压反馈 */
+
+.memory-item:active {
+  border-left: 3px solid var(--accent-hover);
+}
+
+/* ─── 增强 3：记忆搜索框聚焦光晕 ───────────────────────────── */
+/* 原始聚焦有 flex 扩展 + border-color + box-shadow              */
+/* 增强：box-shadow 使用 accent-10 叠加，与输入区聚焦光晕风格一致  */
+
+#memory-search:focus {
+  box-shadow: 0 0 0 3px var(--accent-10), 0 0 0 2px var(--accent-20);
+}
+
+/* ─── 增强 4：健康度评分数字进入动画 ───────────────────────── */
+/* 原始评分数字直接显示，缺乏"评估完成"的反馈感                  */
+/* 增强：评分数字使用 count-up 风格的淡入+缩放动画               */
+
+.health-score {
+  animation: scoreReveal 0.4s ease-out;
+}
+
+@keyframes scoreReveal {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ─── 增强 5：source 标签 hover 微交互 ─────────────────────── */
+/* 原始标签是静态的，hover 无反馈                                */
+/* 增强：hover 时轻微放大 + 亮度提升，暗示"可点击筛选"           */
+
+.memory-item .meta .source-tag {
+  transition: transform var(--transition-fast), filter var(--transition-fast);
+  cursor: pointer;
+}
+
+.memory-item .meta .source-tag:hover {
+  transform: scale(1.05);
+  filter: brightness(1.1);
+}
+
+/* prefers-reduced-motion：禁用新增动画 */
+@media (prefers-reduced-motion: reduce) {
+  .health-score {
+    animation: none;
+  }
+  .memory-item .meta .source-tag:hover {
+    transform: none;
+  }
 }
 
 .panel-close-btn .icon {
@@ -1695,21 +1766,6 @@
   margin-top: 16px;
 }
 
-/* 危险按钮（使用 CSS 变量适配双主题） */
-.btn-danger {
-  background: var(--red);
-  color: var(--text-on-red);
-  border: none;
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--font-sm);
-}
-
-.btn-danger:hover {
-  opacity: 0.85;
-}
-
 /* 健康度迷你分数徽章（工具栏内） */
 .health-mini-score {
   font-size: var(--font-sm);
@@ -1737,7 +1793,7 @@
 #memory-timeline-container {
   height: 100%;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: var(--pad-card);
 }
 
 /* 时间线整体 */

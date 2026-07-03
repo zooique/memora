@@ -15,7 +15,7 @@
 :root {
   /* 大底板色（左侧栏 + 顶部栏融为一体，v8 --shell-bg） */
   --bg:          #f0f0f2;  /* 页面背景 = 大底板 */
-  /* UX-P2-16 浅色主题 --surface0 略深于 --bg，恢复层级语义（原值与 --bg 相同导致概念失效） */
+  /* 浅色主题 --surface0 略深于 --bg，保留层级语义 */
   --surface0:    #ececee;  /* 侧边栏/顶部栏背景，略深于大底板 */
   --surface1:    #e8e8ea;  /* 次级表面，hover 态（v8 --shell-bg-2） */
   --surface2:    #dbdbdd;  /* 边框/分隔线（v8 --shell-border） */
@@ -143,6 +143,12 @@
 
   /* ─── 设计系统：输入框规范（UX-FD-02） ─── */
   --input-padding: 6px 10px;  /* 输入框统一内边距 */
+
+  /* ─── 设计系统：语义内边距（UX-FD-02 扩展，高频模式提取） ─── */
+  /* 自然生长原则：3+ 次重复的 padding 模式提取为语义令牌，避免硬编码散落 */
+  --pad-card:      12px 16px;  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
+  --pad-section:   10px 16px;  /* 面板区块内边距（面板头部、引导项等） */
+  --input-padding-md: 8px 12px;  /* 中等输入框内边距（prompt-input、filter 下拉等） */
 
   /* 语义化背景变量（hover/次级背景） */
   --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
@@ -310,6 +316,11 @@
 
   /* ─── 设计系统：输入框规范（与浅色主题一致） ─── */
   --input-padding: 6px 10px;
+
+  /* ─── 设计系统：语义内边距（与浅色主题一致） ─── */
+  --pad-card:      12px 16px;
+  --pad-section:   10px 16px;
+  --input-padding-md: 8px 12px;
 
   /* 语义化背景变量（深色主题下复用 surface1） */
   --bg-hover:     var(--surface1);
@@ -565,7 +576,7 @@ button:active,
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  padding: var(--pad-card);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
 }

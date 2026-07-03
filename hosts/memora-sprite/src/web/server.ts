@@ -35,7 +35,7 @@ import type { Sprite } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 import type { HostContext } from '../shared/hostContext.js';
 import { registerRoutes } from './routes/index.js';
-import { serveStaticFile } from './static.js';
+import { serveStaticFile, SECURITY_HEADERS } from './static.js';
 import { buildPreloadScript, adaptHtmlForWeb } from './webContext.js';
 
 // ─── 常量 ──────────────────────────────────────────────────
@@ -156,7 +156,9 @@ async function handleRequest(
 
   // Web 版 preload 脚本端点（转译后的浏览器 JS）
   if (url === '/web/preload-web.mjs') {
+    // SEC-WEB-04：注入安全响应头
     res.writeHead(200, {
+      ...SECURITY_HEADERS,
       'Content-Type': 'application/javascript; charset=utf-8',
       'Cache-Control': 'no-cache',
     });
@@ -173,7 +175,7 @@ async function handleRequest(
     const normalizedDistRoot = resolve(DIST_ROOT);
     const normalizedDistPath = resolve(distPath);
     if (!normalizedDistPath.startsWith(normalizedDistRoot)) {
-      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      res.writeHead(403, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
       res.end('403 Forbidden');
       return;
     }
@@ -190,7 +192,7 @@ async function handleRequest(
   const normalizedRoot = resolve(RENDERER_ROOT);
   const normalizedFull = resolve(fullPath);
   if (!normalizedFull.startsWith(normalizedRoot)) {
-    res.writeHead(403, { 'Content-Type': 'text/plain' });
+    res.writeHead(403, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
     res.end('403 Forbidden');
     return;
   }
@@ -200,10 +202,17 @@ async function handleRequest(
     try {
       const html = await readFile(normalizedFull, 'utf-8');
       const adaptedHtml = adaptHtmlForWeb(html);
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      // 开发模式：禁用 HTML 缓存，确保每次刷新加载最新版本
+      // SEC-WEB-04：注入安全响应头
+      res.writeHead(200, {
+        ...SECURITY_HEADERS,
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      });
       res.end(adaptedHtml);
     } catch {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      // SEC-WEB-04：注入安全响应头
+      res.writeHead(404, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
       res.end('404 Not Found');
     }
     return;
@@ -276,7 +285,8 @@ async function startWebServer(): Promise<void> {
     } catch (error) {
       logger.error(`[Web] 请求处理异常: ${toError(error).message}`);
       if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
+        // SEC-WEB-04：注入安全响应头
+        res.writeHead(500, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Internal Server Error' }));
       }
     }

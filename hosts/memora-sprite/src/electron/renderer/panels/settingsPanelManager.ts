@@ -378,6 +378,8 @@ export class SettingsPanelManager {
             defaultPersona: '',
             projectMode: 'smart',
             focusProjectPath: '',
+            // ADR-015 归档模式默认 full
+            archiveMode: 'full',
             // Phase 3.3 快捷键默认值（与 DEFAULT_SPRITE_CONFIG.shortcuts 一致）
             shortcuts: {
               enabled: true,

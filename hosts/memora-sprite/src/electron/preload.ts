@@ -285,6 +285,8 @@ export interface SpriteConfigForm extends SpriteConfigFormBase {
   silentModeExpiresAt?: string | null;
   /** UX-FD-12 界面主题（窄化版：'auto' 不暴露到表单，由 onThemeChange 即时处理） */
   theme: 'light' | 'dark';
+  /** 缺口 II：文件监听忽略模式（glob 列表，可选，与 SpriteConfig 一致） */
+  fileWatcherIgnore?: string[];
 }
 
 export interface ElectronAPI {

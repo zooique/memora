@@ -22,6 +22,16 @@ import { setButtonLoading } from '../helpers/domHelpers.js';
 
 /** QC-STATE-01 silentRecoveryCallback 位于 createSettingsController 闭包内 */
 
+/** 默认快捷键配置（cfg.shortcuts 缺失时的 fallback，与 DEFAULT_SPRITE_CONFIG.shortcuts 对齐） */
+const DEFAULT_SHORTCUTS = {
+  enabled: true,
+  accelerators: {
+    'toggle-window': 'Ctrl+Shift+Space',
+    'quick-record': 'Ctrl+Shift+M',
+    'recall-memory': 'Ctrl+Shift+R',
+  },
+};
+
 /**
  * 创建设置控制器
  *
@@ -198,26 +208,32 @@ export function createSettingsController(uiManager: UIManager) {
     try {
       const { config: cfg } = await window.electronAPI.getConfig();
 
+      // 防御性检查：config 为 null/undefined 时使用空对象，避免解构 cfg.theme 等时报错
+      // 场景：Agent 未完全就绪时 getConfig 可能返回 { config: null }
+      const safeCfg = cfg ?? {};
+
       const formConfig: SpriteConfigForm = {
-        // UX-FD-12 主题字段：cfg.theme 可选（SpriteConfig），fallback 到 'light'。
+        // UX-FD-12 主题字段：safeCfg.theme 可选（SpriteConfig），fallback 到 'light'。
         // 主题即时生效（renderer.ts onThemeChange 单独持久化），此处仅回显到表单单选按钮
-        theme: cfg.theme === 'dark' ? 'dark' : 'light',
-        // ADR-015 归档模式：cfg.archiveMode 可选（SpriteConfig），fallback 到 'full'。
+        theme: safeCfg.theme === 'dark' ? 'dark' : 'light',
+        // ADR-015 归档模式：safeCfg.archiveMode 可选（SpriteConfig），fallback 到 'full'。
         // 归档模式即时生效（onArchiveModeChange 单独持久化），此处仅回显到表单单选按钮
-        archiveMode: cfg.archiveMode ?? 'full',
-        silentMode: Boolean(cfg.silentMode),
-        proactiveThreshold: Number(cfg.proactiveThreshold) || 3,
-        proactiveCooldownMs: Number(cfg.proactiveCooldownMs) || 300_000,
-        triggerIntervalMs: Number(cfg.triggerIntervalMs) || 3_600_000,
-        fileWatcherEnabled: Boolean(cfg.fileWatcherEnabled),
-        fileWatcherPaths: Array.isArray(cfg.fileWatcherPaths) ? cfg.fileWatcherPaths : ['.'],
-        fileWatcherDebounceMs: Number(cfg.fileWatcherDebounceMs) || 1000,
-        defaultPersona: String(cfg.defaultPersona ?? ''),
+        archiveMode: safeCfg.archiveMode ?? 'full',
+        silentMode: Boolean(safeCfg.silentMode),
+        proactiveThreshold: Number(safeCfg.proactiveThreshold) || 3,
+        proactiveCooldownMs: Number(safeCfg.proactiveCooldownMs) || 300_000,
+        triggerIntervalMs: Number(safeCfg.triggerIntervalMs) || 3_600_000,
+        fileWatcherEnabled: Boolean(safeCfg.fileWatcherEnabled),
+        fileWatcherPaths: Array.isArray(safeCfg.fileWatcherPaths) ? safeCfg.fileWatcherPaths : ['.'],
+        fileWatcherDebounceMs: Number(safeCfg.fileWatcherDebounceMs) || 1000,
+        /** 缺口 II：文件监听忽略模式（glob 列表，可选） */
+        fileWatcherIgnore: Array.isArray(safeCfg.fileWatcherIgnore) ? safeCfg.fileWatcherIgnore : ['**/node_modules/**', '**/.git/**'],
+        defaultPersona: String(safeCfg.defaultPersona ?? ''),
         // FD-04 项目模式字段
-        projectMode: cfg.projectMode === 'focus' ? 'focus' : 'smart',
-        focusProjectPath: String(cfg.focusProjectPath ?? ''),
-        // Phase 3.3 快捷键配置：cfg.shortcuts 已由主进程保证完整（SpriteConfigForm 必填）
-        shortcuts: cfg.shortcuts,
+        projectMode: safeCfg.projectMode === 'focus' ? 'focus' : 'smart',
+        focusProjectPath: String(safeCfg.focusProjectPath ?? ''),
+        // Phase 3.3 快捷键配置：safeCfg.shortcuts 已由主进程保证完整（SpriteConfigForm 必填）
+        shortcuts: safeCfg.shortcuts ?? DEFAULT_SHORTCUTS,
       };
 
       uiManager.loadConfigToForm(formConfig);
@@ -225,8 +241,8 @@ export function createSettingsController(uiManager: UIManager) {
       uiManager.hideSettingsError();
 
       // FD-10 静默模式恢复检查：若 expiresAt 已过期，自动关闭静默模式
-      if (cfg.silentMode && cfg.silentModeExpiresAt) {
-        const expiresAt = new Date(cfg.silentModeExpiresAt).getTime();
+      if (safeCfg.silentMode && safeCfg.silentModeExpiresAt) {
+        const expiresAt = new Date(safeCfg.silentModeExpiresAt).getTime();
         // 无效日期（NaN）时视为已过期，避免 setTimeout(fn, NaN) 立即触发错误关闭静默模式
         if (Number.isNaN(expiresAt) || Date.now() >= expiresAt) {
           await window.electronAPI.updateConfig('silentMode', false);

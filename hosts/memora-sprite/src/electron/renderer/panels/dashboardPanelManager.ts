@@ -29,8 +29,8 @@ import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js
 import type { RelationGraphData } from '../components/relationGraph.js';
 // 感知数据 Payload 类型从 ipcListeners（IPC 契约真理源）导入
 import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
-// 缺口 G+H：主动提示统计类型从 preload（IPC 契约真理源）导入
-import type { ProactiveStats } from '../../preload.js';
+// 缺口 G+H：主动提示统计类型从 sprite controllers（真理源）导入（preload 仅内部使用，不 re-export）
+import type { ProactiveStats } from '../../../sprite/controllers/index.js';
 // 仪表盘脉冲动画间隔常量从 constants.ts 真理源导入
 import { DASHBOARD_PULSE_MS } from '../../../sprite/constants.js';
 

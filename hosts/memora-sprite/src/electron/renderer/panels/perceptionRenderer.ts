@@ -29,8 +29,8 @@ import type {
   PatternsPayload,
   PresencePayload,
 } from '../ipcListeners.js';
-// 缺口 G+H：主动提示统计类型从 preload（IPC 契约真理源）导入
-import type { ProactiveStats } from '../../preload.js';
+// 缺口 G+H：主动提示统计类型从 sprite controllers（真理源）导入（preload 仅内部使用，不 re-export）
+import type { ProactiveStats } from '../../../sprite/controllers/index.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -358,13 +358,15 @@ export class PerceptionRenderer {
       // 点击跳转第一条相关记忆详情，复用 onMemoryClick 回调（与伙伴洞察共享跳转路径）
       const relatedIds = pattern.relatedMemoryIds;
       if (relatedIds && relatedIds.length > 0) {
+        // 非空断言：length > 0 保证 [0] 存在
+        const firstId: string = relatedIds[0]!;
         const relatedBtn = document.createElement('button');
         relatedBtn.type = 'button';
         relatedBtn.className = 'perception-pattern-related';
         relatedBtn.textContent = `关联 ${relatedIds.length} 条记忆`;
         relatedBtn.title = '点击查看最相关的一条记忆';
         relatedBtn.addEventListener('click', () => {
-          this.onMemoryClickCallback?.(relatedIds[0]);
+          this.onMemoryClickCallback?.(firstId);
         });
         item.appendChild(relatedBtn);
       }

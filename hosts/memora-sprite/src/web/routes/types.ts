@@ -14,6 +14,25 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 
+// ─── 安全响应头（SEC-WEB-04）──────────────────────────────
+
+/**
+ * 通用安全响应头常量
+ *
+ * 所有 HTTP 响应应携带这些头以降低 XSS 点击劫持/MIME 嗅探/Referer 泄露等常见 Web 风险：
+ *   - X-Content-Type-Options: nosniff —— 禁止浏览器 MIME 嗅探（防止 text/plain 被当 HTML 执行）
+ *   - X-Frame-Options: DENY       —— 禁止页面被 iframe 嵌套（防点击劫持）
+ *   - Referrer-Policy: no-referrer —— 不发送 Referer（防止内部 URL/路径泄露给外部）
+ *
+ * 在 sendJson 中统一注入，覆盖所有 routes 层 JSON 响应；
+ * SSE 响应、静态文件响应、入口层 writeHead 各自展开注入（见 static.ts / chatStreamRoutes.ts / server.ts）。
+ */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Referrer-Policy': 'no-referrer',
+};
+
 /**
  * 路由处理函数签名
  *
@@ -77,7 +96,9 @@ export async function parseJsonBody<T = unknown>(req: IncomingMessage): Promise<
  */
 export function sendJson(res: ServerResponse, status: number, data: unknown): void {
   const body = JSON.stringify(data);
+  // SEC-WEB-04：统一注入安全响应头，覆盖所有 routes 层 JSON 响应
   res.writeHead(status, {
+    ...SECURITY_HEADERS,
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(body),
   });

@@ -5,7 +5,7 @@
  *       召回记忆提示、对话区空状态引导。
  */
 
-/* ─── 对话面板（可见性由 .panel / .panel.active 统一控制，B1 已删除冗余 ID 选择器） ─── */
+/* ─── 对话面板（可见性由 .panel / .panel.active 统一控制） ─── */
 
 #chat-container {
   flex: 1;
@@ -263,7 +263,7 @@
   color: var(--subtext);
   line-height: 1.4;
   margin: 0 0 8px 0;
-  padding: 6px 10px;
+  padding: var(--input-padding);
   background: var(--window-bg-2);
   border-radius: var(--radius-sm);
   transition: color var(--transition-base);
@@ -418,7 +418,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 10px;
+  padding: var(--input-padding);
   border-radius: var(--radius-sm);
   background: var(--window-bg-2);
   font-size: var(--font-xs);
@@ -754,10 +754,6 @@
   background: var(--accent);
 }
 
-/* .recent-insights-list / .recent-insights-item / .recent-insights-source 已删除 */
-/* 这些复数命名类是死代码，TS 实际使用单数 .recent-insight-item / .recent-insight-preview（layout.css 定义） */
-/* .recent-insights-list 重复定义也已删除，统一由 layout.css 提供完整 flex 布局 */
-
 /* prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
   .perception-panel {
@@ -811,7 +807,7 @@
 }
 
 .date-nav-header {
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   font-size: var(--font-sm);
   font-weight: 600;
   color: var(--muted);
@@ -828,7 +824,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   cursor: pointer;
   font-size: var(--font-sm);
   color: var(--text);
@@ -1060,7 +1056,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  padding: var(--pad-section);
   background: var(--milestone-grad);
   border: 1px solid var(--milestone-border);
   border-radius: var(--radius-md);
@@ -1394,9 +1390,7 @@
   display: flex;
   gap: 10px;
   max-width: 80%;
-  /* P2-UI-2.2：移除 content-visibility: auto + contain-intrinsic-size */
-  /* 原方案导致滚动条位置跳动（元素未渲染时预估 60px，渲染后实际高度差异大） */
-  /* 用 contain: layout style paint 保留部分性能优化（布局/样式/绘制隔离）但不延迟渲染 */
+  /* contain: 布局/样式/绘制隔离，保留性能优化但不延迟渲染 */
   contain: layout style paint;
   /* UX-PP-11 合并 slideIn/fadeIn 为统一的 fadeIn 动画 */
   animation: fadeIn var(--transition-base) ease-out;
@@ -1427,7 +1421,7 @@
   font-size: var(--font-sm);
   text-align: center;
   max-width: 100%;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   border-radius: var(--radius-sm);
 }
 
@@ -1654,7 +1648,7 @@
 .typing-indicator {
   display: flex;
   gap: 4px;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
 }
 
 .typing-indicator span {
@@ -1723,7 +1717,7 @@
 
 #input-area:focus-within {
   border-color: var(--accent);
-  /* UX-P2-13 使用主题感知阴影变量，深色主题下阴影颜色自动适配（原硬编码 rgba(0, 102, 255, 0.12)） */
+  /* 主题感知阴影变量，深色主题下阴影颜色自动适配 */
   box-shadow: var(--shadow-accent-lg);
 }
 
@@ -1870,7 +1864,7 @@
 }
 
 .input-persona-container #persona-dropdown .dropdown-item {
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
 }
 
 /* 发送/停止合并按钮：单按钮双姿态 */
@@ -1917,7 +1911,7 @@
 /* 独立于 #btn-send，避免合并按钮的语义混淆（发送按钮始终为发送语义）。 */
 
 #btn-stop.btn-stop-float {
-  padding: 6px 14px;
+  padding: var(--btn-padding-md);
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-pill);
@@ -2014,7 +2008,7 @@
 
 /* 示例问题按钮：胶囊式，对齐 demo */
 .chat-empty-state .suggestion-btn {
-  padding: 6px 14px;
+  padding: var(--btn-padding-md);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-pill);
@@ -2308,7 +2302,7 @@
 
 .stream-aborted {
   margin-top: 8px;
-  padding: 6px 10px;
+  padding: var(--input-padding);
   border-radius: var(--radius-sm);
   border: 1px dashed var(--surface2);
   background: var(--surface0);
@@ -2365,5 +2359,143 @@
 .stream-error-retry:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   UI 美观度增强（新枝破土）
+   纯增量样式，不修改任何现有规则，仅通过更高优先级的选择器叠加
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 增强 1：空状态建议按钮微交互 ─────────────────────────── */
+/* 原始按钮仅有 background/border 变化，缺乏深度感和交互反馈     */
+/* 增强：添加 translateY 上浮 + accent 色边框 + 轻微阴影         */
+
+.chat-empty-state .suggestion-btn {
+  /* 增加过渡属性，让上浮和阴影变化更平滑 */
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+              transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.chat-empty-state .suggestion-btn:hover {
+  /* 上浮 2px + accent 色边框 + 轻微阴影，形成"浮起"的交互感 */
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+  background: var(--accent-10);
+}
+
+/* ─── 增强 2：日期分隔符视觉精致化 ─────────────────────────── */
+/* 原始分隔符仅有一条灰色线 + 文字，略显单调                     */
+/* 增强：为文字添加半透明背景胶囊，与线条形成"标签嵌线"效果       */
+
+.date-separator {
+  /* 为文字区域添加胶囊背景，需要在 flex 布局中让文字可定位 */
+  position: relative;
+}
+
+.date-separator::before,
+.date-separator::after {
+  /* 线条渐变淡出：从边缘透明到中间实色，更柔和 */
+  background: linear-gradient(to right, transparent, var(--surface2), transparent);
+}
+
+/* ─── 增强 3：输入区聚焦光晕动画 ───────────────────────────── */
+/* 原始聚焦仅变色 + 阴影，缺乏"聚焦中"的动态感                  */
+/* 增强：添加 accent 色微脉冲，让用户感知输入区已激活            */
+
+#input-area:focus-within {
+  /* 在原有阴影基础上叠加一层 accent 色脉冲动画 */
+  animation: input-focus-pulse 2s ease-in-out infinite;
+}
+
+@keyframes input-focus-pulse {
+  0%, 100% {
+    /* 静态状态：保持原有阴影 */
+    box-shadow: var(--shadow-accent-lg);
+  }
+  50% {
+    /* 脉冲峰值：阴影略微扩散，但不刺眼 */
+    box-shadow: 0 0 0 3px var(--accent-10), var(--shadow-accent-lg);
+  }
+}
+
+/* ─── 增强 4：消息气泡进入动画优化 ─────────────────────────── */
+/* 原始消息进入仅 fadeIn，缺乏方向感                            */
+/* 增强：用户消息从右滑入，精灵消息从左滑入，增强对话流方向感     */
+
+@keyframes messageSlideInUser {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes messageSlideInAssistant {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 仅对非分组消息应用方向性滑入（分组消息保持原 fadeIn 避免抖动） */
+.message:not(.grouped).user {
+  animation: messageSlideInUser var(--transition-base) ease-out;
+}
+
+.message:not(.grouped).assistant {
+  animation: messageSlideInAssistant var(--transition-base) ease-out;
+}
+
+/* ─── 增强 5：精灵状态条 hover 微光效 ─────────────────────── */
+/* 原始 hover 仅变色，缺乏"活着"的感觉                          */
+/* 增强：添加 accent 色微光晕，暗示精灵可交互                    */
+
+.sprite-status-bar:hover {
+  /* 在原有 background/box-shadow 基础上叠加发光效果 */
+  box-shadow: 0 0 0 1px var(--accent-20), 0 0 8px var(--accent-10);
+}
+
+/* ─── 增强 6：滚动到底部按钮出现动画 ───────────────────────── */
+/* 让滚动到底部按钮的出现更自然，从下方滑入而非突然显示          */
+
+#scroll-to-bottom-btn {
+  /* 进入动画：从下方滑入 + 淡入 */
+  animation: scrollBtnSlideIn var(--transition-base) ease-out;
+}
+
+@keyframes scrollBtnSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* prefers-reduced-motion：禁用所有新增动画 */
+@media (prefers-reduced-motion: reduce) {
+  .chat-empty-state .suggestion-btn:hover {
+    transform: none;
+  }
+  #input-area:focus-within {
+    animation: none;
+  }
+  .message:not(.grouped).user,
+  .message:not(.grouped).assistant {
+    animation: none;
+  }
+  #scroll-to-bottom-btn {
+    animation: none;
+  }
 }
 

@@ -37,7 +37,7 @@ import { randomUUID } from 'node:crypto';
 import { toError, logger } from 'memora';
 import { getLocalDate } from '../../sprite/constants.js';
 import type { HostContext } from '../../shared/hostContext.js';
-import { parseJsonBody, sendJson, sendError, safeRoute } from './types.js';
+import { parseJsonBody, sendJson, sendError, safeRoute, SECURITY_HEADERS } from './types.js';
 
 // ─── 常量 ──────────────────────────────────────────────────
 
@@ -74,6 +74,43 @@ const SSE_EVENTS = {
 function writeSSE(res: ServerResponse, eventName: string, data: unknown): void {
   res.write(`event: ${eventName}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+/**
+ * 判断错误是否为网络/连接类错误（SEC-WEB-02 辅助）
+ *
+ * 用于区分 LLM 调用中的网络故障（返回友好提示）与其他异常，避免把
+ * 上游错误细节（如 fetch failed 原文、主机名、API 端点）回传客户端。
+ *
+ * 判断依据：
+ *   1. Node/undici 网络错误码（ENOTFOUND/ECONNREFUSED/ECONNRESET 等）
+ *   2. 错误消息中的网络相关关键词（兜底，覆盖未携带 code 的封装错误）
+ *
+ * @param error 待判断的错误对象
+ * @returns true 表示网络类错误
+ */
+function isNetworkError(error: unknown): boolean {
+  // 检查 Node/undici 错误码（原生网络错误会带 code 字段）
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string') {
+      const NETWORK_CODES = [
+        'ENOTFOUND', 'ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT',
+        'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH',
+        'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
+      ];
+      if (NETWORK_CODES.includes(code)) return true;
+    }
+  }
+  // 检查错误消息关键词（兜底：覆盖被封装/重抛后丢失 code 的网络错误）
+  const msg = toError(error).message.toLowerCase();
+  return (
+    msg.includes('fetch failed')
+    || msg.includes('network')
+    || msg.includes('econnrefused')
+    || msg.includes('timed out')
+    || msg.includes('getaddrinfo')
+  );
 }
 
 // ─── 路由处理函数 ─────────────────────────────────────────
@@ -117,8 +154,9 @@ export async function handleChatStreamRoute(
       return;
     }
 
-    // 未匹配的路由
-    sendError(res, 404, `未找到对话路由: ${method} ${path}`);
+    // SEC-WEB-05：不回显 path 防止用户输入注入到响应体或泄露路由细节，实际路径仅记录到服务端日志
+    logger.info({ method, path }, '[Web SSE] 未匹配的对话路由');
+    sendError(res, 404, '404 Not Found');
   });
 }
 
@@ -183,7 +221,9 @@ async function handleChatStart(
   }
 
   // 初始化 SSE 响应头（text/event-stream，禁用缓冲）
+  // SEC-WEB-04：SSE 响应同样注入安全响应头（sendJson 路径已由 types.ts 统一注入）
   res.writeHead(200, {
+    ...SECURITY_HEADERS,
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
@@ -198,6 +238,19 @@ async function handleChatStart(
   // 创建 AbortController 供中断使用
   const abortController = new AbortController();
   ctx.setAbortController(abortController);
+
+  // 客户端断开标志（监听 req 'close' 事件检测客户端 TCP 连接关闭）
+  // 注意：res.writableEnded 仅在 res.end() 调用后为 true，不检测客户端断开；
+  //       需要监听 req 'close' 事件才能正确感知客户端关闭连接/abort 取消
+  let clientDisconnected = false;
+  req.on('close', () => {
+    clientDisconnected = true;
+    // 客户端断开时立即中止 LLM 请求（释放锁和资源），
+    // 防止服务端继续处理已无客户端接收的请求（导致锁泄漏、后续请求被 409 拒绝）
+    if (!abortController.signal.aborted) {
+      abortController.abort(new DOMException('客户端断开连接', 'AbortError'));
+    }
+  });
 
   // 无进展超时兜底定时器
   let streamTimedOut = false;
@@ -243,8 +296,9 @@ async function handleChatStart(
     for await (const chunk of ctx.agent.chat(body.text, abortController.signal)) {
       // 超时已被强制清理，则退出循环（break 会触发 generator return()）
       if (streamTimedOut) break;
-      // 客户端断开连接时退出（res.writableEnded 在 end() 后为 true）
-      if (res.writableEnded) break;
+      // 客户端断开连接或响应已结束/销毁时退出
+      // clientDisconnected 由 req 'close' 事件设置；writableEnded 由 res.end() 设置；destroyed 由 socket 关闭设置
+      if (clientDisconnected || res.writableEnded || res.destroyed) break;
       // 每个 chunk 到达即重置无进展定时器
       resetStreamTimeout();
 
@@ -315,10 +369,16 @@ async function handleChatStart(
         writeSSE(res, SSE_EVENTS.ABORTED, { messageId, reason: '用户手动停止' });
         abortedNotified = true;
       } else {
-        // 非用户中断的错误，发送 error 事件
+        // SEC-WEB-02：对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
+        // - 网络类错误（DNS 失败/连接拒绝/超时等）→ 提示检查网络或 LLM 配置
+        // - 其他错误（如内核异常）→ 通用"对话出错，请重试"
+        // 原始 error.message 仅在下方 logger.error 中记录到服务端日志
+        const friendlyMessage = isNetworkError(error)
+          ? '对话服务暂不可用，请检查网络或 LLM 配置'
+          : '对话出错，请重试';
         writeSSE(res, SSE_EVENTS.ERROR, {
           messageId,
-          message: `对话出错：${toError(error).message}`,
+          message: friendlyMessage,
         });
       }
     }
@@ -334,13 +394,14 @@ async function handleChatStart(
     }
     // 超时路径已在定时器内发送过 END + 清理 AbortController，此处跳过避免重复
     if (!streamTimedOut) {
-      // 无论生成器以何种方式退出，都确保发送 END 事件
-      if (!res.writableEnded) {
-        writeSSE(res, SSE_EVENTS.END, { messageId });
+      // 客户端未断开且响应未结束时，发送 END 事件并关闭响应
+      // clientDisconnected 表示 TCP 连接已关闭，此时写入会抛错，直接跳过
+      if (!clientDisconnected && !res.writableEnded) {
         try {
+          writeSSE(res, SSE_EVENTS.END, { messageId });
           res.end();
         } catch {
-          // res 已结束则忽略
+          // 写入失败（连接已关闭），忽略
         }
       }
       ctx.setAbortController(null);

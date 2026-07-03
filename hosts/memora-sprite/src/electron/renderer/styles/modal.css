@@ -36,7 +36,7 @@
   background: var(--window-bg);
   border: none;
   border-radius: var(--radius-lg);
-  /* UX-P2-30 使用主题感知阴影变量，深色主题下阴影颜色自动适配（原硬编码 rgba(0, 0, 0, 0.15)） */
+  /* 主题感知阴影变量，深色主题下阴影颜色自动适配 */
   box-shadow: var(--shadow-window);
   width: 480px;
   max-width: 90%;
@@ -63,7 +63,7 @@
 /* 输入弹窗 input 样式：与设计系统一致的输入框 */
 .prompt-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--input-padding-md);
   margin-top: 12px;
   font-size: var(--font-base);
   line-height: 1.5;
@@ -235,7 +235,7 @@ kbd {
 .modal-body textarea,
 .modal-body select {
   width: 100%;
-  padding: 6px 10px;
+  padding: var(--input-padding);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
@@ -287,7 +287,7 @@ kbd {
 }
 
 .btn-secondary {
-  padding: 6px 14px;
+  padding: var(--btn-padding-md);
   background: var(--window-bg);
   color: var(--text-2);
   border: 1px solid var(--surface2);
@@ -299,7 +299,7 @@ kbd {
 }
 
 .btn-danger {
-  padding: 6px 14px;
+  padding: var(--btn-padding-md);
   background: var(--red);
   color: var(--text-on-red);
 }

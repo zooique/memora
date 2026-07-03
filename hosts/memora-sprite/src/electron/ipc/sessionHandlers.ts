@@ -49,23 +49,11 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         // UX-PP-08 有明确查询参数时直接构造目标
         target = `${query.date}-${query.session}`;
       } else {
-        // UT-FQ-01/BUG-FIX 无查询参数时：优先加载最近有消息的会话，与 restoreMostRecentSession 行为对齐
-        // 原逻辑始终强制加载当天 main 会话，跨日启动时当天无消息导致 UI 显示空状态，
-        // 而 LLM 工作记忆中已恢复昨天的消息（restoreMostRecentSession），造成 UI 与 LLM 上下文不一致
+        // 无查询参数时：始终加载今天的 main 会话
+        // 每天的对话独立，LLM 上下文从新会话开始，
+        // 昨天的消息通过"加载更早的对话"按钮访问。
         const today = getLocalDate();
-        const allSessions = ctx.sessionStore.listSessions();
-        // 优先找当天 main（有消息时）
-        const todayMain = `${today}-main`;
-        if (allSessions.includes(todayMain) && ctx.sessionStore.countMessages(today, 'main') > 0) {
-          target = todayMain;
-        } else if (allSessions.length > 0) {
-          // 当天无消息时加载最近的会话（listSessions 按 ID ASC，最后一个是最新的）
-          // noUncheckedIndexedAccess 模式下数组索引返回 T | undefined，需 ?? 兜底
-          target = allSessions[allSessions.length - 1] ?? todayMain;
-        } else {
-          // 无任何历史会话时显示当天空会话
-          target = todayMain;
-        }
+        target = `${today}-main`;
       }
 
       const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);

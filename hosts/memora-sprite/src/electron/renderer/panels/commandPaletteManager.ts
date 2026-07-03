@@ -71,6 +71,17 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       shortcut: 'Ctrl+3',
       action: () => { void uiManager.switchPanel('settings'); },
     },
+    {
+      id: 'nav-perception',
+      label: '打开感知面板',
+      keywords: '感知 精灵状态 情感 默契度 上下文 模式 dashboard',
+      section: '导航',
+      action: () => {
+        // 通过点击精灵状态栏触发完整的感知面板流程（含数据拉取）
+        const statusBar = document.getElementById('sprite-status-bar');
+        statusBar?.click();
+      },
+    },
 
     // ── 记忆 ──
     {
@@ -105,6 +116,40 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         // 展开健康度面板
         const healthBar = document.getElementById('memory-health-bar');
         if (healthBar) healthBar.classList.toggle('hidden');
+      },
+    },
+    {
+      id: 'mem-insights',
+      label: '查看记忆统计洞察',
+      keywords: '统计 洞察 分析 insights 记忆',
+      section: '记忆',
+      action: () => {
+        void uiManager.switchPanel('memories');
+        // 点击更多菜单中的"统计洞察"项（与用户手动点击路径一致）
+        const insightsItem = document.querySelector('.more-menu-item[data-action="insights"]') as HTMLElement | null;
+        insightsItem?.click();
+      },
+    },
+    {
+      id: 'mem-graph',
+      label: '切换到记忆图谱视图',
+      keywords: '图谱 graph 关系 网络 拓扑 可视化',
+      section: '记忆',
+      action: () => {
+        void uiManager.switchPanel('memories');
+        const graphBtn = document.getElementById('btn-graph-view');
+        graphBtn?.click();
+      },
+    },
+    {
+      id: 'mem-timeline',
+      label: '切换到记忆时间线视图',
+      keywords: '时间线 timeline 时间 按日期',
+      section: '记忆',
+      action: () => {
+        void uiManager.switchPanel('memories');
+        const timelineBtn = document.getElementById('btn-timeline-view');
+        timelineBtn?.click();
       },
     },
 
@@ -159,6 +204,16 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         switchSettingsTab('work');
       },
     },
+    {
+      id: 'settings-audit',
+      label: '打开审计日志',
+      keywords: '审计 日志 操作记录 audit 写入确认',
+      section: '设置',
+      action: () => {
+        void uiManager.switchPanel('settings');
+        switchSettingsTab('audit');
+      },
+    },
 
     // ── 动作 ──
     {
@@ -187,6 +242,31 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       keywords: '引导 新手 欢迎 onboarding 介绍',
       section: '动作',
       action: () => { uiManager.showOnboardingDialog(); },
+    },
+    {
+      id: 'action-silent',
+      label: '切换精灵静默模式',
+      keywords: '静默 安静 silent 免打扰 精灵 主动提示',
+      section: '动作',
+      action: () => {
+        // 读取设置面板中静默模式 checkbox 的当前状态
+        const checkbox = document.getElementById('cfg-silent') as HTMLInputElement | null;
+        const isCurrentlySilent = checkbox?.checked ?? false;
+        if (isCurrentlySilent) {
+          // 退出静默模式
+          void window.electronAPI.updateConfig('silentMode', false);
+          void window.electronAPI.updateConfig('silentModeExpiresAt', null);
+          if (checkbox) checkbox.checked = false;
+          uiManager.showToast('已退出静默模式，精灵恢复主动提示', 'info', TOAST_SHORT_MS);
+        } else {
+          // 进入静默模式（1 小时后自动恢复）
+          void window.electronAPI.updateConfig('silentMode', true);
+          const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+          void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
+          if (checkbox) checkbox.checked = true;
+          uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示', 'info', TOAST_SHORT_MS);
+        }
+      },
     },
   ];
 }

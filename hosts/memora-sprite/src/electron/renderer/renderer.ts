@@ -201,7 +201,8 @@ async function bootstrapRenderer(): Promise<void> {
   // 此处以 sprite.json 为准进行修正，并处理首次迁移（localStorage → sprite.json）
   try {
     const { config } = await window.electronAPI.getConfig();
-    if (config.theme) {
+    // 防御性检查：config 为 null/undefined 时跳过主题初始化（Agent 未就绪等场景）
+    if (config && config.theme) {
       // sprite.json 中有主题配置，以它为准（覆盖 localStorage 缓存，确保一致性）
       // P3-FLOW-12 config.theme 可能为 'auto'，由 ThemeManager 处理实际主题选择
       const currentMode = State.uiManager.getThemeMode();

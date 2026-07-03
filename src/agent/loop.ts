@@ -37,13 +37,13 @@ export interface AgentLoopOptions {
   /** v4.0：工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
   /**
-   * 上下文窗口 token 上限（默认 8000）
+   * 上下文窗口 token 上限（默认 32000）
    *
    * 桌面精灵等长运行场景下，messages 数组随对话轮次无限增长会爆 LLM 上下文窗口。
    * 当估算 token 数超过此阈值时，保留 system prompt + 最近 N 条消息，
    * 裁剪中间段，确保 LLM 请求不因上下文溢出而失败。
    *
-   * 保守默认值 8000 token 对多数模型安全（DeepSeek 128K / GPT-4o 128K / 豆包 8K），
+   * 保守默认值 32000 token 对多数模型安全（DeepSeek 128K / GPT-4o 128K / 豆包 8K），
    * 宿主可通过 AgentLoopOptions 覆盖。
    */
   maxContextTokens?: number;
@@ -68,7 +68,7 @@ export interface AgentLoopOptions {
   /** 宿主可覆盖的 UI 消息文本（默认英文） */
   messages?: UIMessages;
   /**
-   * 上下文超限时是否自动生成摘要（默认 false）
+   * 上下文超限时是否自动生成摘要（默认 true）
    *
    * 开启后，当消息历史超过 maxContextTokens 时，
    * 会对被裁剪的消息调用 provider 生成一段摘要注入到系统提示中，
@@ -192,7 +192,7 @@ export class AgentLoop {
       if (recalledMemories?.length) {
         this.injectRecallAsSystem(recalledMemories);
       }
-      const userInputClean = userInput;
+      const userInputClean = userInput; // 保留变量名便于未来扩展输入清洗逻辑
       // R-103 补充 span 属性：让宿主监控面板能按命中/未命中过滤
       recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
       recallSpan.end();
@@ -398,6 +398,12 @@ export class AgentLoop {
     llmSpan.setAttribute('inputTokens', this.contextManager.estimateTokens(safeMessages));
 
     for (let attempt = 0; attempt <= LOOP_CONSTANTS.MAX_LLM_RETRIES; attempt++) {
+      // V-105：每次重试前检查是否已被取消（用户点击停止）
+      if (signal?.aborted) {
+        aborted = true;
+        break;
+      }
+
       if (attempt > 0) {
         // 仅在流式输出前失败时重试（streamStarted = false）
         const delay = LOOP_CONSTANTS.RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
@@ -410,9 +416,29 @@ export class AgentLoop {
           delayMs: delay,
           error: lastError?.message ?? 'unknown error',
         };
-        await new Promise<void>((r) => safeSetTimeout(r, delay));
+        // 重试延迟期间支持 abort：用 Promise.race 替代单纯的 setTimeout
+        await new Promise<void>((resolve) => {
+          if (signal?.aborted) {
+            resolve();
+            return;
+          }
+          const timeoutId = safeSetTimeout(() => {
+            signal?.removeEventListener('abort', onAbort);
+            resolve();
+          }, delay);
+          const onAbort = () => {
+            clearTimeout(timeoutId);
+            resolve();
+          };
+          signal?.addEventListener('abort', onAbort, { once: true });
+        });
         fullContent = '';
         toolCalls = undefined;
+        // 延迟后再次检查 abort
+        if (signal?.aborted) {
+          aborted = true;
+          break;
+        }
       }
 
       try {
@@ -444,6 +470,14 @@ export class AgentLoop {
       } catch (err) {
         const e = toError(err);
         lastError = e;
+
+        // V-105：AbortError 表示用户主动取消或超时中断，不重试，直接标记 aborted 退出
+        // 避免用户点击停止后仍继续发起 LLM 请求，防止 UI 卡在"停止生成"状态
+        if (e.name === 'AbortError' || (err instanceof DOMException && err.name === 'AbortError')) {
+          aborted = true;
+          break;
+        }
+
         if (streamStarted) {
           // 流式已开始输出，不能重试（用户已看到部分结果），向上抛出
           llmSpan.recordException(e);

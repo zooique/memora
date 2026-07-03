@@ -12,6 +12,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { logger } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';
@@ -87,24 +88,32 @@ export async function handleSessionRoute(
     if (method === 'GET' && path === '/api/sessions/messages') {
       const date = queryParams.get('date') ?? undefined;
       const session = queryParams.get('session') ?? undefined;
-      const limit = queryParams.get('limit') ? Number(queryParams.get('limit')) : 50;
-      const offset = queryParams.get('offset') ? Number(queryParams.get('offset')) : 0;
+      // SEC-WEB-03：分页参数严格校验，拒绝 NaN/负数/超大值，非法值回退默认值
+      // - limit ∈ [1, 500]，默认 50（防止一次拉取过多消息耗尽内存）
+      // - offset >= 0，默认 0（防止负数绕过分页起始位）
+      // 用 parseInt 截断浮点/非数字前缀，Number.isFinite 拦截 NaN/Infinity
+      const DEFAULT_LIMIT = 50;
+      const DEFAULT_OFFSET = 0;
+      const MAX_LIMIT = 500;
+      const rawLimit = queryParams.get('limit');
+      const rawOffset = queryParams.get('offset');
+      const parsedLimit = rawLimit !== null ? parseInt(rawLimit, 10) : DEFAULT_LIMIT;
+      const parsedOffset = rawOffset !== null ? parseInt(rawOffset, 10) : DEFAULT_OFFSET;
+      const limit = Number.isFinite(parsedLimit) && parsedLimit >= 1 && parsedLimit <= MAX_LIMIT
+        ? parsedLimit
+        : DEFAULT_LIMIT;
+      const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0
+        ? parsedOffset
+        : DEFAULT_OFFSET;
 
       let target: string;
       if (date && session) {
         target = `${date}-${session}`;
       } else {
-        // 无查询参数时：优先加载最近有消息的会话
+        // 无查询参数时：始终加载今天的 main 会话
+        // 每天的对话独立，昨天的消息通过"加载更早的对话"按钮访问。
         const today = getLocalDate();
-        const allSessions = ctx.sessionStore.listSessions();
-        const todayMain = `${today}-main`;
-        if (allSessions.includes(todayMain) && ctx.sessionStore.countMessages(today, 'main') > 0) {
-          target = todayMain;
-        } else if (allSessions.length > 0) {
-          target = allSessions[allSessions.length - 1] ?? todayMain;
-        } else {
-          target = todayMain;
-        }
+        target = `${today}-main`;
       }
 
       const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
@@ -204,7 +213,9 @@ export async function handleSessionRoute(
     }
 
     // PUT /api/sessions/:id/rename — 重命名会话
-    if (method === 'PUT' && path.includes('/rename')) {
+    // SEC-WEB-06：用 endsWith 精确匹配路径后缀，避免 includes 误匹配
+    // （如 /api/sessions/rename-xxx 或 /rename/extra 都不会被命中，仅 /api/sessions/:id/rename 命中）
+    if (method === 'PUT' && path.endsWith('/rename')) {
       const sessionId = decodeURIComponent(path.replace('/api/sessions/', '').replace('/rename', ''));
       const body = await parseJsonBody<{ newName: string }>(req);
       if (!body?.newName || !isValidSessionName(body.newName.trim())) {
@@ -225,7 +236,8 @@ export async function handleSessionRoute(
       return;
     }
 
-    // 未匹配的路由
-    sendError(res, 404, `未找到会话路由: ${method} ${path}`);
+    // SEC-WEB-05：不回显 path 防止用户输入注入到响应体或泄露路由细节，实际路径仅记录到服务端日志
+    logger.info({ method, path }, '[Web Session] 未匹配的会话路由');
+    sendError(res, 404, '404 Not Found');
   });
 }

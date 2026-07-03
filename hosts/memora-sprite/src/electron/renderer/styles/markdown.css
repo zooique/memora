@@ -170,7 +170,7 @@
 }
 
 .message-bubble .md-th {
-  padding: 6px 10px;
+  padding: var(--input-padding);
   background: var(--surface1);
   border: 1px solid var(--surface2);
   font-weight: 600;
@@ -179,7 +179,7 @@
 }
 
 .message-bubble .md-td {
-  padding: 6px 10px;
+  padding: var(--input-padding);
   border: 1px solid var(--surface2);
   color: var(--text);
 }
@@ -223,4 +223,80 @@
   color: var(--subtext);
   text-decoration: none;
   cursor: default;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Markdown 视觉增强（新枝破土 · 第三轮）
+   纯增量样式，不修改任何现有规则
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ─── 增强 1：代码块左侧 accent 色条 ───────────────────────── */
+/* 原始代码块仅 1px 边框，缺乏视觉层次和"代码区域"的语义强调    */
+/* 增强：添加 3px accent 色左侧条，与 tool-call-card 设计语言一致  */
+
+.message-bubble .md-code-block {
+  border-left: 3px solid var(--accent);
+}
+
+/* ─── 增强 2：代码块 header 背景层次 ───────────────────────── */
+/* 原始 header 与代码主体背景区分不够，语言标签区域不够突出       */
+/* 增强：header 使用 accent-soft 浅底，强化"这是代码头部"的语义   */
+
+.message-bubble .md-code-header {
+  background: var(--accent-10);
+}
+
+/* ─── 增强 3：引用块左侧渐变色条 ───────────────────────────── */
+/* 原始引用块左侧是纯色 accent 实线，略显生硬                    */
+/* 增强：改为渐变色条（accent → transparent），更柔和精致         */
+
+.message-bubble .md-blockquote {
+  border-left: 3px solid;
+  border-image: linear-gradient(to bottom, var(--accent), var(--accent-10)) 1;
+}
+
+/* ─── 增强 4：行内代码 hover 微交互 ────────────────────────── */
+/* 原始行内代码是静态的，缺乏交互反馈                           */
+/* 增强：hover 时背景加深 + 轻微放大，暗示"可复制"或"可关注"     */
+
+.message-bubble .md-code-inline {
+  transition: background var(--transition-fast), transform var(--transition-fast);
+  cursor: text;
+}
+
+.message-bubble .md-code-inline:hover {
+  background: var(--surface1);
+  transform: scale(1.02);
+}
+
+/* ─── 增强 5：表格表头文字间距优化 ─────────────────────────── */
+/* 原始表头缺乏字间距，紧凑时显得拥挤                           */
+/* 增强：添加轻微字间距，提升表头可读性                         */
+
+.message-bubble .md-th {
+  letter-spacing: 0.02em;
+}
+
+/* ─── 增强 6：代码块复制按钮成功反馈增强 ───────────────────── */
+/* 原始复制成功仅变绿色，缺乏动效反馈                           */
+/* 增强：添加 scale 弹跳动画，让"已复制"反馈更生动               */
+
+.message-bubble .md-code-copy.copied {
+  animation: copySuccessBounce 0.3s ease;
+}
+
+@keyframes copySuccessBounce {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+/* prefers-reduced-motion：禁用新增动画 */
+@media (prefers-reduced-motion: reduce) {
+  .message-bubble .md-code-inline:hover {
+    transform: none;
+  }
+  .message-bubble .md-code-copy.copied {
+    animation: none;
+  }
 }
