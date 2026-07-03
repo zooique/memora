@@ -1,53 +1,55 @@
 /**
  * 单元测试：路径工具函数
  *
- * 覆盖 basename / expandHome，重点验证：
- *   - basename 跨平台兼容（Unix / 与 Windows \）
- *   - basename 空路径、纯分隔符、无扩展名等边界
+ * 覆盖 getBaseName / expandHome，重点验证：
+ *   - getBaseName 跨平台兼容（Unix / 与 Windows \）
+ *   - getBaseName 空路径、纯分隔符、无扩展名等边界
  *   - expandHome 仅展开开头 ~，不处理 ~otheruser
  *   - expandHome 不含 ~ 原样返回
+ *
+ * R-04：basename 重命名为 getBaseName，避免与 node:path.basename 同名冲突
  */
 import { describe, expect, it } from 'vitest';
-import { basename, expandHome } from '@/utils/path.js';
+import { getBaseName, expandHome } from '@/utils/path.js';
 
 describe('utils/path', () => {
-  describe('basename', () => {
+  describe('getBaseName', () => {
     it('应提取 Unix 路径 basename', () => {
-      expect(basename('/a/b/c.txt')).toBe('c.txt');
+      expect(getBaseName('/a/b/c.txt')).toBe('c.txt');
     });
 
     it('应提取 Windows 路径 basename', () => {
-      expect(basename('C:\\Users\\SJ\\data.txt')).toBe('data.txt');
+      expect(getBaseName('C:\\Users\\SJ\\data.txt')).toBe('data.txt');
     });
 
     it('应处理混合分隔符', () => {
-      expect(basename('a/b\\c.txt')).toBe('c.txt');
+      expect(getBaseName('a/b\\c.txt')).toBe('c.txt');
     });
 
     it('应处理无目录的纯文件名', () => {
-      expect(basename('file.md')).toBe('file.md');
+      expect(getBaseName('file.md')).toBe('file.md');
     });
 
     it('空路径应返回空字符串', () => {
-      expect(basename('')).toBe('');
+      expect(getBaseName('')).toBe('');
     });
 
     it('纯分隔符路径应返回空字符串', () => {
-      expect(basename('/')).toBe('');
-      expect(basename('\\')).toBe('');
-      expect(basename('///')).toBe('');
+      expect(getBaseName('/')).toBe('');
+      expect(getBaseName('\\')).toBe('');
+      expect(getBaseName('///')).toBe('');
     });
 
     it('结尾分隔符应返回空字符串', () => {
-      expect(basename('/a/b/')).toBe('');
+      expect(getBaseName('/a/b/')).toBe('');
     });
 
     it('无扩展名的文件名应原样返回', () => {
-      expect(basename('/path/to/README')).toBe('README');
+      expect(getBaseName('/path/to/README')).toBe('README');
     });
 
     it('多个连续分隔符应正确处理', () => {
-      expect(basename('a//b///c.txt')).toBe('c.txt');
+      expect(getBaseName('a//b///c.txt')).toBe('c.txt');
     });
   });
 

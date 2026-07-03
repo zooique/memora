@@ -7,6 +7,8 @@
  *   - clear 传入 null 不抛错
  *   - 内部 activeTimers 注册表正确跟踪
  *
+ * R-06：新增 activeTimers 注册表清理的直接验证（通过 getActiveTimerCount）
+ *
  * 使用 vi.useFakeTimers 控制时间推进。
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
@@ -15,11 +17,15 @@ import {
   safeSetInterval,
   clearSafeTimeout,
   clearSafeInterval,
+  getActiveTimerCount,
+  clearAllSafeTimers,
 } from '@/utils/safeTimer.js';
 
 describe('utils/safeTimer', () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // R-06：清理前序测试残留的定时器，确保 activeTimers 注册表隔离
+    clearAllSafeTimers();
   });
 
   afterEach(() => {
@@ -132,6 +138,124 @@ describe('utils/safeTimer', () => {
       vi.advanceTimersByTime(500);
       expect(timeoutCb).toHaveBeenCalledTimes(1);
       expect(intervalCb).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── R-06：activeTimers 注册表直接验证 ──────────────────
+
+  describe('R-06 · activeTimers 注册表直接验证', () => {
+    it('初始状态活跃定时器应为 0（无残留）', () => {
+      // 每个测试开始前应无残留定时器
+      expect(getActiveTimerCount()).toBe(0);
+    });
+
+    it('safeSetTimeout 创建后活跃定时器应 +1', () => {
+      safeSetTimeout(vi.fn(), 1000);
+      expect(getActiveTimerCount()).toBe(1);
+    });
+
+    it('safeSetInterval 创建后活跃定时器应 +1', () => {
+      safeSetInterval(vi.fn(), 1000);
+      expect(getActiveTimerCount()).toBe(1);
+    });
+
+    it('R-06：safeSetTimeout 触发后应自动从注册表移除', () => {
+      safeSetTimeout(vi.fn(), 100);
+      expect(getActiveTimerCount()).toBe(1);
+      vi.advanceTimersByTime(100);
+      // 触发后应自动从注册表移除（设计：callback 内 activeTimers.delete(id)）
+      expect(getActiveTimerCount()).toBe(0);
+    });
+
+    it('R-06：clearSafeTimeout 应立即从注册表移除', () => {
+      const id = safeSetTimeout(vi.fn(), 1000);
+      expect(getActiveTimerCount()).toBe(1);
+      clearSafeTimeout(id);
+      // clear 后应立即从注册表移除，无需等待时间推进
+      expect(getActiveTimerCount()).toBe(0);
+    });
+
+    it('R-06：clearSafeInterval 应立即从注册表移除', () => {
+      const id = safeSetInterval(vi.fn(), 1000);
+      expect(getActiveTimerCount()).toBe(1);
+      clearSafeInterval(id);
+      // clear 后应立即从注册表移除
+      expect(getActiveTimerCount()).toBe(0);
+    });
+
+    it('R-06：safeSetInterval 多次触发后仍保留在注册表（设计正确）', () => {
+      const id = safeSetInterval(vi.fn(), 100);
+      expect(getActiveTimerCount()).toBe(1);
+      vi.advanceTimersByTime(300);
+      // interval 持续触发，不应从注册表移除（只有 clear 才移除）
+      expect(getActiveTimerCount()).toBe(1);
+      clearSafeInterval(id);
+      expect(getActiveTimerCount()).toBe(0);
+    });
+
+    it('R-06：多个定时器并行时注册表计数准确', () => {
+      safeSetTimeout(vi.fn(), 100);
+      safeSetTimeout(vi.fn(), 200);
+      safeSetInterval(vi.fn(), 100);
+      expect(getActiveTimerCount()).toBe(3);
+
+      vi.advanceTimersByTime(150);
+      // 100ms timeout 触发后移除，剩 200ms timeout + interval = 2
+      expect(getActiveTimerCount()).toBe(2);
+
+      vi.advanceTimersByTime(100);
+      // 200ms timeout 触发后移除，剩 interval = 1
+      expect(getActiveTimerCount()).toBe(1);
+    });
+  });
+
+  // ─── R-06：clearAllSafeTimers 兜底清理 ──────────────────
+
+  describe('R-06 · clearAllSafeTimers 兜底清理', () => {
+    it('应清理所有活跃的 timeout 定时器', () => {
+      const cb1 = vi.fn();
+      const cb2 = vi.fn();
+      safeSetTimeout(cb1, 1000);
+      safeSetTimeout(cb2, 2000);
+      expect(getActiveTimerCount()).toBe(2);
+
+      clearAllSafeTimers();
+      expect(getActiveTimerCount()).toBe(0);
+
+      // 推进时间后，被清理的定时器不应触发
+      vi.advanceTimersByTime(3000);
+      expect(cb1).not.toHaveBeenCalled();
+      expect(cb2).not.toHaveBeenCalled();
+    });
+
+    it('应清理所有活跃的 interval 定时器', () => {
+      const cb1 = vi.fn();
+      const cb2 = vi.fn();
+      safeSetInterval(cb1, 100);
+      safeSetInterval(cb2, 200);
+      expect(getActiveTimerCount()).toBe(2);
+
+      clearAllSafeTimers();
+      expect(getActiveTimerCount()).toBe(0);
+
+      vi.advanceTimersByTime(1000);
+      expect(cb1).not.toHaveBeenCalled();
+      expect(cb2).not.toHaveBeenCalled();
+    });
+
+    it('应同时清理 timeout + interval 混合定时器', () => {
+      safeSetTimeout(vi.fn(), 100);
+      safeSetInterval(vi.fn(), 200);
+      safeSetTimeout(vi.fn(), 300);
+      expect(getActiveTimerCount()).toBe(3);
+
+      clearAllSafeTimers();
+      expect(getActiveTimerCount()).toBe(0);
+    });
+
+    it('无活跃定时器时调用不应抛错', () => {
+      expect(() => clearAllSafeTimers()).not.toThrow();
+      expect(getActiveTimerCount()).toBe(0);
     });
   });
 });

@@ -11,13 +11,17 @@ import { homedir } from 'node:os';
 /**
  * 提取路径的 basename（最后一段）
  *
+ * R-04：重命名为 getBaseName，避免与 node:path.basename 同名冲突。
+ * 差异：node:path.basename 按平台分隔符处理 + 支持 ext 参数；
+ *       本函数跨平台（同时处理 / 和 \），单参数。
+ *
  * 跨平台兼容：同时处理 Unix `/` 和 Windows `\` 分隔符。
  * 空路径或纯分隔符路径返回空字符串。
  *
  * @param filePath 文件路径
  * @returns basename，如 "/a/b/c.txt" → "c.txt"
  */
-export function basename(filePath: string): string {
+export function getBaseName(filePath: string): string {
   return filePath.split(/[/\\]/).pop() ?? '';
 }
 
