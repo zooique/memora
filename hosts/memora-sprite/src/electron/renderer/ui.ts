@@ -59,6 +59,9 @@ import { ClipboardManager } from './panels/clipboardManager.js';
 import { DateNavManager } from './panels/dateNavManager.js';
 // C-5-4：技能拖入安装拆分为独立 Manager
 import { SkillDropManager } from './panels/skillDropManager.js';
+// QC-R2-05：输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
+import { InputAreaManager } from './panels/inputAreaManager.js';
+import type { InputAreaHost } from './panels/inputAreaManager.js';
 // 精灵公共常量（Toast 时长已迁移至各 Manager；UIManager 不再直接使用时长常量）
 // C-5-4：TOAST_*_MS 已迁移到 ClipboardManager / SkillDropManager
 // 类型导入（仅用于类型注解，不引入运行时依赖）
@@ -243,8 +246,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private badge: HTMLElement | null;
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
-  /** P2-UI-2.1：输入区 ResizeObserver，监听 #input-area 高度变化动态更新 --input-area-height CSS 变量 */
-  private inputAreaResizeObserver: ResizeObserver | null = null;
+  /** QC-R2-05：输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver，从 UIManager 拆分） */
+  private inputAreaManager: InputAreaManager;
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -340,6 +343,13 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager = new DateNavManager();
     // C-5-4：技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
+    // QC-R2-05：输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
+    this.inputAreaManager = new InputAreaManager(
+      this.inputEl,
+      this.btnSend,
+      new EventTracker(),
+      this as InputAreaHost,
+    );
 
     // 初始化 UI
     this.initEventListeners();
@@ -357,24 +367,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatPanel.initEmptyStateListeners();
     this.chatPanel.initScrollToBottomButton();
     this.initScrollListener();
-    // P2-UI-2.1：监听 #input-area 高度变化，动态更新 --input-area-height CSS 变量
-    // 避免输入区长文本撑高时遮挡最后一条消息（原静态 140px 在 textarea 多行时不足）
-    this.initInputAreaResizeObserver();
+    // QC-R2-05：输入区域事件 + ResizeObserver 初始化（委托到 InputAreaManager）
+    // 替代原 initInputAreaResizeObserver + 输入框事件绑定
+    this.inputAreaManager.init();
   }
 
   // ─── 事件监听器管理 ─────────────────────────────────────
 
   /** 初始化事件监听器 */
   private initEventListeners(): void {
-    // 输入框事件
-    this.events.addEventListener(this.inputEl, 'keydown', this.handleInputKeydown.bind(this));
-    this.events.addEventListener(this.inputEl, 'input', this.handleInputChange.bind(this));
-
-    // 初始化输入框高度和发送按钮状态
-    this.handleInputChange();
-
-    // B2：发送按钮仅负责发送（停止功能已拆分到 #btn-stop 独立按钮）
-    this.events.addEventListener(this.btnSend, 'click', this.handleSendClick.bind(this));
+    // QC-R2-05：输入框 keydown/input + 发送按钮 click 事件已委托到 InputAreaManager.init()
     // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
 
@@ -579,11 +581,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   cleanup(): void {
     // 清理所有事件监听器（通过 EventTracker 统一管理）
     this.events.cleanup();
-    // P2-UI-2.1：断开输入区 ResizeObserver，避免回调在 DOM 销毁后触发
-    if (this.inputAreaResizeObserver) {
-      this.inputAreaResizeObserver.disconnect();
-      this.inputAreaResizeObserver = null;
-    }
+    // QC-R2-05：输入区域管理器清理（ResizeObserver + 事件监听器，委托到 InputAreaManager）
+    this.inputAreaManager.cleanup();
     // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、ProactiveBanner 监听器、SettingsPanel 监听器）
     this.toastManager.cleanup();
     this.modalManager.cleanup();
@@ -819,37 +818,19 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.panelSwitchCallback?.(panel);
   }
 
-  // ─── 输入处理 ─────────────────────────────────────────
-
-  /** 获取并清理用户输入 */
-  getUserInput(): string | null {
-    const rawText = this.inputEl.value.trim();
-    if (!rawText) return null;
-
-    // 验证并清理用户输入
-    const text = this.sanitizeInput(rawText);
-    if (!text) return null;
-
-    // 清空输入框并重置状态（高度 + 发送按钮视觉）
-    this.inputEl.value = '';
-    this.handleInputChange();
-
-    return text;
-  }
+  // ─── 输入处理（QC-R2-05：委托到 InputAreaManager） ────
 
   /**
-   * 验证并清理用户输入
+   * 获取并清理用户输入（委托到 InputAreaManager）
    *
-   * 设计原则：渲染层使用 textContent 设置消息内容，已天然防 XSS。
-   * 此处仅做长度限制和首尾空白清理，保留合法的 `<>` 字符——
- * 用户可能输入代码片段、数学符号等合法内容，过度过滤会破坏体验。
-   *
-   * 真正的 XSS 防护由 textContent 保证（不使用 innerHTML）。
+   * 返回 trim + 长度限制后的文本，同时清空输入框。
+   * 空输入返回 null。
    */
-  private sanitizeInput(input: string): string {
-    const MAX_INPUT_LENGTH = 10000;
-    const trimmed = input.trim();
-    return trimmed.length > MAX_INPUT_LENGTH ? trimmed.substring(0, MAX_INPUT_LENGTH) : trimmed;
+  getUserInput(): string | null {
+    const text = this.inputAreaManager.getValue();
+    if (!text) return null;
+    this.inputAreaManager.clearInput();
+    return text;
   }
 
   // ─── 未读计数 ─────────────────────────────────────────
@@ -908,97 +889,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     });
   }
 
-  /**
-   * P2-UI-2.1：初始化输入区 ResizeObserver
-   *
-   * 监听 #input-area 高度变化，动态更新 :root 的 --input-area-height CSS 变量。
-   * 替代原静态 140px，避免 textarea 多行撑高时遮挡最后一条消息。
-   *
-   * 设计要点：
-   * - 使用 ResizeObserver 而非 input 事件，覆盖所有高度变化来源（窗口缩放、内容变化、主题切换）
-   * - 写入 documentElement.style 确保所有引用 --input-area-height 的样式（chat.css:958, chat.css:1867）同步更新
-   * - 元素缺失时静默降级（保持原静态 140px 回退值）
-   */
-  private initInputAreaResizeObserver(): void {
-    const inputArea = document.getElementById('input-area');
-    if (!inputArea) return;
-    // P2-2.1：防御性检查——ResizeObserver 是浏览器 API，jsdom 测试环境不提供
-    // 缺失时静默降级（保持原静态 140px 回退值），不阻断 UIManager 初始化
-    if (typeof ResizeObserver === 'undefined') return;
-    // 创建 ResizeObserver 监听输入区高度变化
-    this.inputAreaResizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        // 获取输入区实际高度（含 padding + border）
-        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
-        if (height > 0) {
-          // 更新 CSS 变量，chat.css 中 padding-bottom 和浮动按钮 bottom 都引用此变量
-          document.documentElement.style.setProperty('--input-area-height', `${Math.ceil(height)}px`);
-        }
-      }
-    });
-    this.inputAreaResizeObserver.observe(inputArea);
-  }
-
-  // ─── 事件处理器 ─────────────────────────────────────
-
-  /**
-   * 输入框键盘事件处理
-   *
-   * - Enter（非 Shift）：发送消息或停止流式输出
-   * - Escape：清空输入（有内容时）或失焦（无内容时），交互参考终端/聊天应用惯例
-   */
-  private handleInputKeydown(e: Event): void {
-    if (!(e instanceof KeyboardEvent)) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      // B2：流式态时 Enter 触发停止（键盘快捷键，对齐 #btn-stop 鼠标点击），空闲态触发发送
-      if (this.state.isStreaming) {
-        this.emitStopMessage();
-      } else {
-        this.emitSendMessage();
-      }
-    } else if (e.key === 'Escape') {
-      // Esc：有内容则清空，无内容则失焦
-      if (this.inputEl.value.trim().length > 0) {
-        this.inputEl.value = '';
-        this.handleInputChange();
-        this.updateSendButtonState();
-      } else {
-        this.inputEl.blur();
-      }
-    }
-  }
-
-  /**
-   * 输入框内容变化处理
-   *
-   * - 自适应高度：根据 scrollHeight 动态调整，最大 120px
-   * - 更新发送按钮视觉状态（空态弱化）
-   */
-  private handleInputChange(): void {
-    this.inputEl.style.height = 'auto';
-    this.inputEl.style.height = Math.min(this.inputEl.scrollHeight, 120) + 'px';
-    this.updateSendButtonState();
-  }
-
-  /**
-   * 根据输入内容和流式状态更新发送按钮视觉反馈
-   *
-   * - 流式态：始终可用（红色停止按钮）
-   * - 空闲态+有内容：可用（蓝色发送按钮）
-   * - 空闲态+无内容：弱化（灰色不可点击）
-   */
-  private updateSendButtonState(): void {
-    if (this.state.isStreaming) return; // 流式态由 updateSendButton 处理
-    const hasContent = this.inputEl.value.trim().length > 0;
-    this.btnSend.disabled = !hasContent;
-    this.btnSend.classList.toggle('empty', !hasContent);
-  }
-
-  private handleSendClick(): void {
-    // B2：发送按钮仅负责发送（停止功能由独立 #btn-stop 按钮承担）
-    this.emitSendMessage();
-  }
+  // ─── 事件处理器（QC-R2-05：输入框事件已迁移到 InputAreaManager） ─
 
   /**
    * 侧边栏导航按钮点击处理器
@@ -1354,7 +1245,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       // 恢复发送图标（防御性：避免被其他逻辑污染）
       this.btnSend.innerHTML = '<svg class="icon"><use href="#icon-send"/></svg>';
       this.btnSend.title = '发送（Enter）';
-      this.updateSendButtonState();
+      // QC-R2-05：委托到 InputAreaManager 刷新发送按钮状态（空态弱化）
+      this.inputAreaManager.refreshSendButtonState();
     }
   }
 
@@ -1959,9 +1851,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * @param text 预填的文本内容
    */
   prefillChatInput(text: string): void {
-    this.inputEl.value = text;
-    // 触发 input 事件，让 chatPanelManager 感知内容变化（如自动调整高度）
-    this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+    // QC-R2-05：委托到 InputAreaManager（设置值 + 触发 input 事件调整高度）
+    this.inputAreaManager.setValue(text);
   }
 
   // ─── 技能文件拖入安装（C-5-4：委托到 SkillDropManager） ───
