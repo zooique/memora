@@ -4,7 +4,7 @@
  * 覆盖范围：
  *   - security 校验（pctx.security=null 抛 MemoraError）
  *   - 4 阶段组装成功 + 返回值完整性（AssembleOutput 12 个字段）
- *   - systemPromptPrefix 组装（personaPrompt 非空 + 当前时间注入）
+ *   - systemPromptPrefix 组装（personaPrompt 内部非空 + 当前时间注入）
  *   - skillManager 复用（existingSkillManager 注入 vs 新建）
  *   - workProjection provider 选择（backgroundProvider vs provider 降级）
  *   - 配置透传（personaName / configDir / tracer / enableContextSummary / relationStore）
@@ -166,12 +166,12 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 13 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 12 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 13 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
+      // 12 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
       // workProjection/skillManager/insightExtractor/configManager/memoryInspector/autoConfigRefiner/
-      // sessionArchiver/personaPrompt）
+      // sessionArchiver）
       const expectedKeys = [
         'history',
         'loop',
@@ -185,16 +185,8 @@ describe('assembleComponents', () => {
         'memoryInspector',
         'autoConfigRefiner',
         'sessionArchiver',
-        'personaPrompt',
       ];
       expect(Object.keys(output).sort()).toEqual(expectedKeys.sort());
-    });
-
-    it('personaPrompt 是非空字符串（默认角色降级）', async () => {
-      // configDir=undefined 时 PersonaManager 走降级路径创建默认角色，personaPrompt 应非空
-      const output = await assembleComponents(createPctx(), createInput());
-      expect(typeof output.personaPrompt).toBe('string');
-      expect(output.personaPrompt.length).toBeGreaterThan(0);
     });
 
     it('所有组件实例均已创建（非 undefined/null）', async () => {
@@ -264,7 +256,9 @@ describe('assembleComponents', () => {
         createPctx(),
         createInput({ personaName: '不存在的角色' }),
       );
-      expect(output.personaPrompt.length).toBeGreaterThan(0);
+      // P3-14：personaPrompt 字段已从 AssembleOutput 移除（仅内部使用）
+      // 验证组装成功即可——personaPrompt 通过 systemPromptPrefix 间接消费
+      expect(output.personaManager).toBeDefined();
     });
 
     it('configDir=undefined 时组装成功（无 fileStore.write 注入）', async () => {

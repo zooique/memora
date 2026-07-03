@@ -1383,14 +1383,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this._sessionManager;
   }
 
-  /**
-   * 记忆存储（宿主可通过此 getter 访问 CRUD，如 delete/upsert）
-   *
-   * @deprecated 使用 `agent.memory` 替代。MemoryInspector 提供等价的
-   * CRUD 能力且符合分层规范。该 getter 保留仅为向后兼容，未来版本可能移除。
-   * （GAP-13 扫描确认：宿主已全部迁移到 agent.memory）
-   */
-  get storage(): IMemoryStorage | null {
-    return this.#config.storage ?? null;
-  }
+  // P3-15：storage getter 已删除（@deprecated 已确认宿主全部迁移到 agent.memory）
+  // GAP-13 扫描确认：hosts/memora-sprite 无 agent.storage 调用
+  // MemoryInspector 提供等价 CRUD 能力且符合分层规范
 }

@@ -74,8 +74,6 @@ export interface AssembleOutput {
   autoConfigRefiner: AutoConfigRefiner;
   /** GAP-2：会话内容归档器（content 类记忆） */
   sessionArchiver: SessionArchiver;
-  /** 角色激活后的 system prompt */
-  personaPrompt: string;
 }
 
 /**
@@ -222,6 +220,5 @@ export async function assembleComponents(
     memoryInspector,
     autoConfigRefiner,
     sessionArchiver,
-    personaPrompt,
   };
 }
