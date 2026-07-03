@@ -55,7 +55,10 @@ export interface ChatOptions {
    * - 'background'：后台通道，用于归档/投影/画像（中等质量、低成本）
    *
    * 不指定时使用默认 chat 通道。
-   * 多 Provider 路由功能处于设计阶段，当前所有消费者共用同一 Provider。
+   *
+   * @experimental 多 Provider 路由功能处于设计阶段，当前所有消费者共用
+   * 同一 Provider。该字段已声明但未被任何 LLM 调用路径读取（GAP-9 扫描确认），
+   * 待多通道路由真正实现时激活。
    * 详见接入指南 §九
    */
   channel?: 'chat' | 'background';
@@ -83,8 +86,15 @@ export abstract class LlmProvider {
   /**
    * 是否支持结构化输出（response_format json_schema）
    *
-   * 默认 false，子类可覆盖。AgentLoop 在构建工具调用时检查此标记，
-   * 不支持时自动降级为纯文本 tool_call 模式。
+   * 默认 false，子类可覆盖。用于非 tool_call 场景的结构化输出约束
+   * （如归档摘要强制 JSON、配置建议提取等）。调用方在构造 ChatOptions
+   * 时显式传入 response_format，Provider 应将其透传到请求 body。
+   *
+   * 注意：response_format 不能与 tools 同时使用（OpenAI 协议限制），
+   * tool_calls 走独立的 SSE delta 流式协议，无需此约束。
+   *
+   * 历史背景（GAP-8 清理）：曾用于"约束 tool_call 输出格式"，但该
+   * 设计与 OpenAI 协议不符，相关死代码已从 AgentLoop.buildChatOptions 移除。
    */
   readonly supportsStructuredOutput: boolean = false;
 

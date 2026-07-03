@@ -49,6 +49,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     if (opts.tools) body['tools'] = opts.tools;
     if (opts.maxTokens) body['max_tokens'] = opts.maxTokens;
+    // 结构化输出约束（GAP-8 能力触达）：透传 response_format 到请求 body
+    // 供未来非 tool_call 场景使用（如归档摘要强制 JSON、配置建议提取）
+    // 注意：不能与 tools 同时使用（OpenAI 协议限制），调用方需自行保证互斥
+    if (opts.response_format) body['response_format'] = opts.response_format;
 
     // 校验 API Key（M-103：缺失时给友好提示，不暴露 undefined 报错）
     if (!this.config.apiKey) {

@@ -658,20 +658,28 @@ export class AgentLoop {
   }
 
   /**
-   * 构建 LLM 调用选项（包含工具定义 + 结构化输出约束）
+   * 构建 LLM 调用选项（包含工具定义）
    *
    * 将 toolDefinitions 转换为 OpenAI Function Calling 格式，
    * 让 LLM 能通过标准协议发起 tool_call，而非文本模拟。
    *
-   * 当 Provider 支持 structured output 时，自动生成 json_schema
-   * 约束，强制 LLM 输出合法的 tool_call 格式，减少参数类型错误。
-   * 不支持的 Provider 静默降级为纯文本 tool_call 模式。
+   * 设计说明（GAP-8 清理）：
+   *   历史版本曾在此处根据 `provider.supportsStructuredOutput` 生成
+   *   `response_format: json_schema` 约束以"规范 tool_call 输出"，
+   *   但该设计前提与 OpenAI Chat Completions 协议不符——
+   *   `response_format` 约束的是最终响应体，而 `tool_calls` 是通过
+   *   `tools` 参数触发的独立流式协议（SSE delta），两者不能并存
+   *   （同时传入会导致 API 报错或行为未定义）。该路径已删除。
+   *
+   *   `supportsStructuredOutput` 字段 + `ChatOptions.response_format`
+   *   类型保留，供未来非 tool_call 场景的结构化输出使用（如归档摘要
+   *   强制 JSON、配置建议提取等），由调用方显式传入 response_format。
    */
   private buildChatOptions(): ChatOptions {
     const tools = this.opts.toolDefinitions;
     if (!tools || tools.length === 0) return {};
 
-    const opts: ChatOptions = {
+    return {
       tools: tools.map((t) => ({
         type: 'function' as const,
         function: {
@@ -681,40 +689,6 @@ export class AgentLoop {
         },
       })),
     };
-
-    // 如果 Provider 支持 structured output，生成 json_schema 约束
-    // 让 LLM 强制输出合法的 tool_call，从源头减少参数类型错误
-    if (this.opts.provider.supportsStructuredOutput) {
-      opts.response_format = {
-        type: 'json_schema',
-        json_schema: {
-          name: 'tool_call_response',
-          strict: true,
-          schema: {
-            type: 'object',
-            properties: {
-              content: {
-                type: 'string',
-                description: 'Assistant response text (may be empty if tool calls are needed)',
-              },
-              tool_calls: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    name: { type: 'string' },
-                    arguments: { type: 'object' },
-                  },
-                  required: ['name', 'arguments'],
-                },
-              },
-            },
-          },
-        },
-      };
-    }
-
-    return opts;
   }
 
   /**

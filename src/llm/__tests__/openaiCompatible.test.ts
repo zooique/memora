@@ -245,3 +245,63 @@ describe('OpenAICompatibleProvider · 错误处理', () => {
     }
   });
 });
+
+// ─── GAP-8：response_format 透传（结构化输出能力触达）──
+
+describe('OpenAICompatibleProvider · response_format 透传（GAP-8）', () => {
+  it('传入 response_format 时应透传到请求 body', async () => {
+    // 捕获请求 body 验证透传
+    let capturedBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/chat/completions', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return createSseResponse('ok');
+      }),
+    );
+
+    const provider = makeProvider();
+    // 模拟归档摘要场景的结构化输出约束
+    const responseFormat = {
+      type: 'json_schema' as const,
+      json_schema: {
+        name: 'summary',
+        strict: true,
+        schema: {
+          type: 'object',
+          properties: { summary: { type: 'string' } },
+          required: ['summary'],
+        },
+      },
+    };
+
+    for await (const chunk of provider.chat(
+      [{ role: 'user', content: 'summarize' }],
+      { response_format: responseFormat },
+    )) {
+      void chunk;
+    }
+
+    // 验证 response_format 完整透传到请求 body
+    expect(capturedBody).toBeDefined();
+    expect(capturedBody!.response_format).toEqual(responseFormat);
+  });
+
+  it('未传入 response_format 时请求 body 不应包含该字段', async () => {
+    let capturedBody: Record<string, unknown> | undefined;
+    server.use(
+      http.post('*/chat/completions', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>;
+        return createSseResponse('ok');
+      }),
+    );
+
+    const provider = makeProvider();
+    for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }])) {
+      void chunk;
+    }
+
+    // 未传入时不应透传 undefined，body 不应包含该字段
+    expect(capturedBody).toBeDefined();
+    expect(capturedBody!).not.toHaveProperty('response_format');
+  });
+});
