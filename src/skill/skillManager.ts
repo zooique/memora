@@ -55,7 +55,8 @@ export class SkillManager {
     );
 
     // 写入 SQLite 索引（遵循"万物皆记忆"——与 PersonaManager 一致）
-    await this.writeAllToIndex();
+    // L-01：writeAllToIndex 已改为同步函数
+    this.writeAllToIndex();
 
     return this.skills.length;
   }
@@ -157,7 +158,8 @@ export class SkillManager {
   async reload(): Promise<number> {
     const oldCount = this.skills.length;
     this.skills = await this.scanSkills();
-    await this.writeAllToIndex();
+    // L-01：writeAllToIndex 已改为同步函数
+    this.writeAllToIndex();
     logger.info(
       { oldCount, newCount: this.skills.length, names: this.skills.map((s) => s.name) },
       '技能已重载',
@@ -186,8 +188,11 @@ export class SkillManager {
 
   /**
    * 将所有技能写入 SQLite 索引
+   *
+   * L-01 修正：writeSkillToIndex 已为同步，本函数循环体内无 await，
+   * 改为同步函数避免 async 误导（与 personaManager.writeAllToIndex 同模式）。
    */
-  private async writeAllToIndex(): Promise<void> {
+  private writeAllToIndex(): void {
     if (!this.index) return;
     for (const skill of this.skills) {
       this.writeSkillToIndex(skill);

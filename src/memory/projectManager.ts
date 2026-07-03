@@ -249,6 +249,9 @@ export class ProjectManager {
    *
    * memora.db 是 Agent 级共享资源，不随项目切换重建。
    *
+   * M-02 拆分：原 92 行 6 职责混合 → 主体编排（关闭旧项目 + 锁 + 错误回滚）
+   *   + loadAllResources（两层加载）+ buildProjectContext（上下文构建）
+   *
    * @param projectPath 项目根目录
    * @param projectName 项目名称（可选，默认取目录名）
    * @param configDir Agent 级配置目录（personas/rules/skills/tools）
@@ -258,83 +261,36 @@ export class ProjectManager {
     projectName?: string,
     configDir?: string,
   ): Promise<ProjectContext> {
-    // 如果已有打开的项目，先关闭（释放旧项目锁，但不关 Agent 级 DB）
+    // 1) 关闭旧项目（释放旧项目锁，但不关 Agent 级 DB）
     if (this.currentProjectPath) {
       await this.closeProject();
     }
 
+    // 2) 解析 memoraDir + 获取项目级锁
     const memoraDir = this.resolveMemoraDir(projectPath);
-
-    // 获取锁文件（项目级锁，防止同项目并发）
     await this.acquireLock(memoraDir);
     this.currentProjectPath = projectPath;
     this.currentLockPath = join(memoraDir, '.lock');
 
     // FD-24: 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
     try {
-      // 确保项目 .memora/ 目录存在
+      // 3) 确保项目目录 + 加载两层资源
       await mkdir(memoraDir, { recursive: true });
-
-      // Agent 级共享资源（memora.db 只有一个）
-      const { index } = await this.ensureAgentResources();
-
-      // 合并加载结果（两层扫描汇总）
-      const loadResult: LoadResult = { loaded: 0, skipped: 0, errors: [] };
-
-      // 1) 项目级 FileStore：扫描 projectPath/.memora/ 下的 rules/ + skills/
-      const projectFileStore = new FileStore(memoraDir);
-      const projectLoader = new MemoryLoader(projectFileStore, index);
-      const projectResult = await projectLoader.loadAllToIndex();
-      loadResult.loaded += projectResult.loaded;
-      loadResult.skipped += projectResult.skipped;
-      loadResult.errors.push(...projectResult.errors);
-
-      // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/personas/tools）
-      if (configDir) {
-        const configFileStore = new FileStore(configDir);
-        const configLoader = new MemoryLoader(configFileStore, index);
-        const configResult = await configLoader.loadAllToIndex();
-        loadResult.loaded += configResult.loaded;
-        loadResult.skipped += configResult.skipped;
-        loadResult.errors.push(...configResult.errors);
-      }
-
-      // bootstrap 过滤：按 source 获取 rule + skill 必召记忆（跳过 persona，由 PersonaManager 管理）
-      const rules = index.getBySource(SOURCE_LABELS.RULE);
-      const skills = index.getBySource(SOURCE_LABELS.SKILL);
-      const bootstrapMemories = [...rules, ...skills];
-
-      // A-004: 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
-      const security = this.createSecurityGuard
-        ? this.createSecurityGuard(projectPath, memoraDir, configDir, this.agentDataDir)
-        : null;
-
-      // 注册到项目表
-      const name = projectName || this.inferProjectName(projectPath);
-      this.registerProject(projectPath, name);
-
-      logger.info(
-        {
-          projectPath,
-          projectName: name,
-          memoraDir,
-          loaded: loadResult.loaded,
-          bootstrapCount: bootstrapMemories.length,
-        },
-        '项目初始化完成',
+      const { index, loadResult, projectFileStore } = await this.loadAllResources(
+        memoraDir,
+        configDir,
       );
 
-      return {
+      // 4) 构建并返回项目上下文
+      return this.buildProjectContext(
         projectPath,
-        projectName: name,
+        projectName,
         memoraDir,
-        dbPath: join(this.agentDataDir, 'memora.db'),
-        fileStore: projectFileStore,
         index,
-        security,
-        bootstrapMemories,
+        projectFileStore,
         loadResult,
-      };
+        configDir,
+      );
     } catch (err) {
       // FD-24: 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
       await this.releaseLock().catch((releaseErr: unknown) => {
@@ -344,6 +300,111 @@ export class ProjectManager {
       this.currentLockPath = null;
       throw err;
     }
+  }
+
+  /**
+   * 加载两层记忆资源（M-02 从 initProject 拆出）
+   *
+   * 职责：确保 Agent 级存储 + 扫描项目级 + 扫描 Agent 级配置，合并加载结果。
+   *
+   * @param memoraDir 项目 .memora/ 目录
+   * @param configDir Agent 级配置目录（可选）
+   * @returns index 存储实例 + loadResult 合并加载结果 + projectFileStore 项目级 FileStore
+   */
+  private async loadAllResources(
+    memoraDir: string,
+    configDir?: string,
+  ): Promise<{
+    index: IMemoryStorage;
+    loadResult: LoadResult;
+    projectFileStore: FileStore;
+  }> {
+    // Agent 级共享资源（memora.db 只有一个）
+    const { index } = await this.ensureAgentResources();
+
+    // 合并加载结果（两层扫描汇总）
+    const loadResult: LoadResult = { loaded: 0, skipped: 0, errors: [] };
+
+    // 1) 项目级 FileStore：扫描 projectPath/.memora/ 下的 rules/ + skills/
+    const projectFileStore = new FileStore(memoraDir);
+    const projectLoader = new MemoryLoader(projectFileStore, index);
+    const projectResult = await projectLoader.loadAllToIndex();
+    loadResult.loaded += projectResult.loaded;
+    loadResult.skipped += projectResult.skipped;
+    loadResult.errors.push(...projectResult.errors);
+
+    // 2) Agent 级 FileStore：扫描 configDir 下的所有配置（rules/skills/personas/tools）
+    if (configDir) {
+      const configFileStore = new FileStore(configDir);
+      const configLoader = new MemoryLoader(configFileStore, index);
+      const configResult = await configLoader.loadAllToIndex();
+      loadResult.loaded += configResult.loaded;
+      loadResult.skipped += configResult.skipped;
+      loadResult.errors.push(...configResult.errors);
+    }
+
+    return { index, loadResult, projectFileStore };
+  }
+
+  /**
+   * 构建项目上下文（M-02 从 initProject 拆出）
+   *
+   * 职责：bootstrap 过滤 + 安全守卫创建 + 项目注册 + 日志 + 返回上下文。
+   *
+   * @param projectPath 项目根目录
+   * @param projectName 项目名称（可选，默认取目录名）
+   * @param memoraDir 项目 .memora/ 目录
+   * @param index 存储实例
+   * @param projectFileStore 项目级 FileStore
+   * @param loadResult 加载结果
+   * @param configDir Agent 级配置目录（用于安全守卫创建）
+   * @returns 完整的项目上下文
+   */
+  private buildProjectContext(
+    projectPath: string,
+    projectName: string | undefined,
+    memoraDir: string,
+    index: IMemoryStorage,
+    projectFileStore: FileStore,
+    loadResult: LoadResult,
+    configDir: string | undefined,
+  ): ProjectContext {
+    // bootstrap 过滤：按 source 获取 rule + skill 必召记忆（跳过 persona，由 PersonaManager 管理）
+    const rules = index.getBySource(SOURCE_LABELS.RULE);
+    const skills = index.getBySource(SOURCE_LABELS.SKILL);
+    const bootstrapMemories = [...rules, ...skills];
+
+    // A-004: 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
+    const security = this.createSecurityGuard
+      ? this.createSecurityGuard(projectPath, memoraDir, configDir, this.agentDataDir)
+      : null;
+
+    // 注册到项目表
+    const name = projectName || this.inferProjectName(projectPath);
+    this.registerProject(projectPath, name);
+
+    logger.info(
+      {
+        projectPath,
+        projectName: name,
+        memoraDir,
+        loaded: loadResult.loaded,
+        bootstrapCount: bootstrapMemories.length,
+      },
+      '项目初始化完成',
+    );
+
+    return {
+      projectPath,
+      projectName: name,
+      memoraDir,
+      dbPath: join(this.agentDataDir, 'memora.db'),
+      fileStore: projectFileStore,
+      index,
+      security,
+      bootstrapMemories,
+      loadResult,
+    };
   }
 
   /**

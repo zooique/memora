@@ -46,7 +46,13 @@ export interface ChatOptions {
       schema: Record<string, unknown>;
     };
   };
-  // 强制不使用流式
+  /**
+   * 强制不使用流式（L-02：预留字段，当前无消费者）
+   *
+   * openaiCompatible 始终以 stream:true 发起请求（chat() 返回 AsyncIterable）。
+   * 本字段保留用于未来"非流式回退"场景（如低延迟短回复或 Provider 不支持 SSE 时）。
+   * 保留在公共 API 中以维持 ChatOptions 契约稳定（同 R-03 判例）。
+   */
   stream?: boolean;
   /**
    * LLM 通道选择（多 Provider 路由预留）
