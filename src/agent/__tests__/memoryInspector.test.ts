@@ -155,6 +155,21 @@ describe('MemoryInspector', () => {
       expect(inspector.getById('nonexistent')).toBeNull();
     });
 
+    it('SEC-GAP6-02 getDeletedById 应透传 index.getDeletedById（软删除态返回记忆，活跃态返回 null）', () => {
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
+      inspector.upsert(mem);
+      // 活跃态 → null
+      expect(inspector.getDeletedById('rule:1')).toBeNull();
+      // 软删除后 → 返回记忆（含 deletedAt）
+      inspector.delete('rule:1');
+      const deleted = inspector.getDeletedById('rule:1');
+      expect(deleted).not.toBeNull();
+      expect(deleted!.id).toBe('rule:1');
+      expect(deleted!.deletedAt).toBeTruthy();
+      // 不存在的 id → null
+      expect(inspector.getDeletedById('not:exist')).toBeNull();
+    });
+
     it('getBySource 应按来源标签过滤', () => {
       inspector.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
       inspector.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2' }));

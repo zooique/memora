@@ -218,6 +218,19 @@ export class MemoryInspector {
   }
 
   /**
+   * 按 ID 获取单条软删除记忆（SEC-GAP6-02）
+   *
+   * 用于 restore/purge 操作前的存在性校验，避免 listDeleted 默认 50 上限
+   * 导致回收站超量时操作失效。
+   *
+   * @param id 记忆唯一标识
+   * @returns 软删除记忆，不存在或未软删除时返回 null
+   */
+  getDeletedById(id: string): Memory | null {
+    return this.index.getDeletedById(id);
+  }
+
+  /**
    * 清理过期的软删除记忆（GAP-6）
    *
    * @param before 时间阈值，deletedAt 早于此值的记忆将被物理删除

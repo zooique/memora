@@ -533,6 +533,60 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
+  describe('GAP-6 软删除：getDeletedById（SEC-GAP6-02 单点查询）', () => {
+    it('软删除态记忆 → 返回该记忆（含 deletedAt）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+
+      const mem = storage.getDeletedById('rule:1');
+      expect(mem).not.toBeNull();
+      expect(mem!.id).toBe('rule:1');
+      // deletedAt 应为非空 ISO 字符串（由 delete 写入）
+      expect(mem!.deletedAt).toBeTruthy();
+      expect(typeof mem!.deletedAt).toBe('string');
+    });
+
+    it('活跃态记忆 → 返回 null（未软删除）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      // 未调用 delete，记忆仍为活跃态
+      expect(storage.getDeletedById('rule:1')).toBeNull();
+    });
+
+    it('不存在的 id → 返回 null', () => {
+      expect(storage.getDeletedById('not:exist')).toBeNull();
+    });
+
+    it('应返回浅拷贝（修改不影响内部存储）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+
+      const mem = storage.getDeletedById('rule:1');
+      mem!.content = '被篡改';
+
+      // 再次查询应返回原始内容（未被外部修改污染）
+      const again = storage.getDeletedById('rule:1');
+      expect(again!.content).toBe('内容-rule:1');
+    });
+
+    it('restore 后 → 返回 null（已恢复为活跃态）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      storage.restore('rule:1');
+
+      // 恢复后记忆不再属于回收站
+      expect(storage.getDeletedById('rule:1')).toBeNull();
+    });
+
+    it('purge 后 → 返回 null（已彻底删除）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      storage.purge('rule:1');
+
+      // 物理删除后记忆从 Map 移除
+      expect(storage.getDeletedById('rule:1')).toBeNull();
+    });
+  });
+
   describe('GAP-6 软删除：purgeExpired（过期清理）', () => {
     it('应清理 deletedAt 早于阈值的记忆', () => {
       storage.upsert(makeMemory('m1', 'insight'));

@@ -281,10 +281,9 @@ export class MemoryController {
   restore(id: string): boolean {
     const inspector = this.agent.memory;
     if (!inspector) return false;
-    // 通过 listDeleted 检查是否存在已软删除的记忆
-    const deletedList = inspector.listDeleted();
-    const isDeleted = deletedList.some((m) => m.id === id);
-    if (!isDeleted) return false;
+    // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
+    const deleted = inspector.getDeletedById(id);
+    if (!deleted) return false;
     inspector.restore(id);
     return true;
   }
@@ -305,10 +304,9 @@ export class MemoryController {
   purge(id: string): boolean {
     const inspector = this.agent.memory;
     if (!inspector) return false;
-    // 仅允许物理删除已软删除的记忆（活跃记忆须先软删除到回收站）
-    const deletedList = inspector.listDeleted();
-    const isDeleted = deletedList.some((m) => m.id === id);
-    if (!isDeleted) return false;
+    // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
+    const deleted = inspector.getDeletedById(id);
+    if (!deleted) return false;
     inspector.purge(id);
     // 物理删除时同步清理向量索引（QC-MEM-01：对齐 upsert 错误处理）
     if (this.vectorStore) {

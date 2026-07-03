@@ -84,6 +84,17 @@ export interface IMemoryStorage {
   listDeleted(limit?: number): Memory[];
 
   /**
+   * 按 ID 获取单条软删除记忆（GAP-6 / SEC-GAP6-02）
+   *
+   * 用于 restore/purge 操作前的存在性校验，避免 listDeleted() 默认 50 上限
+   * 导致回收站超量时第 51 条之后的记忆无法 restore/purge。
+   *
+   * @param id - 记忆 ID
+   * @returns 软删除记忆（浅拷贝），不存在或未软删除时返回 null
+   */
+  getDeletedById(id: string): Memory | null;
+
+  /**
    * 清理过期的软删除记忆（GAP-6）
    *
    * 物理删除所有 deletedAt 早于 before 的记忆。
