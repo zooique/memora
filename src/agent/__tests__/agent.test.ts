@@ -28,6 +28,8 @@ import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
+// P3-04：使用 todayDate() 替代 new Date().toISOString().slice(0,10)，与源码 HC-05 修复一致
+import { todayDate } from '@/utils/time.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Mock LLM Provider（模拟 LLM 响应，不依赖真实 API）
@@ -969,7 +971,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   });
 
   it('有会话时应恢复消息并返回消息数', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayDate();
     const sessionKey = `${today}-main`;
     const messages = [
       { role: 'user' as const, content: '你好', timestamp: new Date().toISOString() },
@@ -995,7 +997,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   });
 
   it('preferredSession 不匹配时取最后一个会话', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayDate();
     const sessionKey = `${today}-other`;
     const messages = [
       { role: 'user' as const, content: '旧消息', timestamp: new Date().toISOString() },
@@ -1041,7 +1043,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   });
 
   it('会话消息为空时应返回 0', async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayDate();
     const sessionKey = `${today}-main`;
     const sessionStore = createMockSessionStore(
       [sessionKey],

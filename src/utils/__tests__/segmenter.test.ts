@@ -2,9 +2,11 @@
  * 单元测试：中文分词器
  *
  * 详见 M-202：Intl.Segmenter 中文分词
+ *
+ * P3-02：tokenizeKeywords 已降为模块私有，其行为通过 scoreByKeywords 间接验证。
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText, tokenizeKeywords, scoreByKeywords } from '@/utils/segmenter.js';
+import { segmentText, scoreByKeywords } from '@/utils/segmenter.js';
 
 describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
@@ -51,64 +53,7 @@ describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
   });
 });
 
-describe('tokenizeKeywords · 关键词分词', () => {
-  it('应提取中文连续段（≥2字）', () => {
-    const tokens = tokenizeKeywords('我想学习编程技巧');
-    expect(tokens).toContain('我想学习编程技巧');
-  });
-
-  it('应提取英文词', () => {
-    const tokens = tokenizeKeywords('learn TypeScript');
-    expect(tokens).toContain('learn');
-    expect(tokens).toContain('TypeScript');
-  });
-
-  it('应处理中英混合', () => {
-    const tokens = tokenizeKeywords('学习 TypeScript 编程');
-    expect(tokens).toContain('学习');
-    expect(tokens).toContain('TypeScript');
-    expect(tokens).toContain('编程');
-  });
-
-  it('应过滤空字符串', () => {
-    expect(tokenizeKeywords('')).toEqual([]);
-    expect(tokenizeKeywords('   ')).toEqual([]);
-  });
-
-  it('应过滤单字中文（<2字的连续段）', () => {
-    const tokens = tokenizeKeywords('a b c');
-    expect(tokens).toContain('a');
-    expect(tokens).toContain('b');
-    expect(tokens).toContain('c');
-  });
-
-  it('R-01：应去重重复 token（兑现 JSDoc 契约）', () => {
-    // 英文重复：hello hello → 仅保留一个
-    const englishTokens = tokenizeKeywords('hello hello world world');
-    const helloCount = englishTokens.filter((t) => t === 'hello').length;
-    const worldCount = englishTokens.filter((t) => t === 'world').length;
-    expect(helloCount).toBe(1);
-    expect(worldCount).toBe(1);
-
-    // 中文重复：学习 学习 编程 编程 → 仅保留一个
-    const chineseTokens = tokenizeKeywords('学习 学习 编程 编程');
-    const learnCount = chineseTokens.filter((t) => t === '学习').length;
-    const codeCount = chineseTokens.filter((t) => t === '编程').length;
-    expect(learnCount).toBe(1);
-    expect(codeCount).toBe(1);
-  });
-
-  it('R-01：中英混合重复应跨语言去重', () => {
-    // 中文段与英文段都重复时，各自去重
-    const tokens = tokenizeKeywords('TypeScript TypeScript 编程 编程');
-    const tsCount = tokens.filter((t) => t === 'TypeScript').length;
-    const codeCount = tokens.filter((t) => t === '编程').length;
-    expect(tsCount).toBe(1);
-    expect(codeCount).toBe(1);
-  });
-});
-
-describe('scoreByKeywords · 关键词匹配评分', () => {
+describe('scoreByKeywords · 关键词匹配评分（间接覆盖 tokenizeKeywords）', () => {
   it('空关键词列表应返回 0', () => {
     expect(scoreByKeywords('任何输入', [])).toBe(0);
   });
