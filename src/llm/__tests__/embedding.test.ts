@@ -1,10 +1,12 @@
 /**
  * Embedding Provider 测试
- * 覆盖缓存 / 批量嵌入 / 余弦相似度 / 错误处理
+ * 覆盖缓存 / 批量嵌入 / LRU 淘汰 / 错误处理
+ *
+ * P3-01：cosineSimilarity 6 个重复测试已删除（math.test.ts 是单一真理源，11 个测试更完整）
+ * L-04：新增 LRU 缓存淘汰 + cacheSize/clearCache + batchEmbed 边界 + embed 空结果测试
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EmbeddingProvider } from '@/llm/embedding.js';
-import { cosineSimilarity } from '@/utils/math.js';
 
 /**
  * 创建模拟 fetch 的辅助函数
@@ -18,43 +20,6 @@ function mockFetchSuccess(vectors: number[][]) {
   };
   vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(mockResponse as Response);
 }
-
-describe('cosineSimilarity · utils/math.ts', () => {
-  it('相同向量应该返回 1.0', () => {
-    const v = [1, 0, 0];
-    expect(cosineSimilarity(v, v)).toBeCloseTo(1.0);
-  });
-
-  it('正交向量应该返回 0', () => {
-    const a = [1, 0, 0];
-    const b = [0, 1, 0];
-    expect(cosineSimilarity(a, b)).toBeCloseTo(0);
-  });
-
-  it('相反向量应该返回 -1', () => {
-    const a = [1, 0, 0];
-    const b = [-1, 0, 0];
-    expect(cosineSimilarity(a, b)).toBeCloseTo(-1);
-  });
-
-  it('不同维度应该返回 0', () => {
-    const a = [1, 0];
-    const b = [1, 0, 0];
-    expect(cosineSimilarity(a, b)).toBe(0);
-  });
-
-  it('零向量应该返回 0', () => {
-    const a = [0, 0, 0];
-    const b = [1, 0, 0];
-    expect(cosineSimilarity(a, b)).toBe(0);
-  });
-
-  it('45 度角应该返回约 0.707', () => {
-    const a = [1, 0];
-    const b = [1, 1];
-    expect(cosineSimilarity(a, b)).toBeCloseTo(Math.SQRT1_2, 5);
-  });
-});
 
 describe('EmbeddingProvider · embed 单条嵌入', () => {
   let provider: EmbeddingProvider;
@@ -174,5 +139,126 @@ describe('EmbeddingProvider · 错误处理', () => {
     } as Response);
 
     await expect(provider.embed('测试')).rejects.toThrow('Embedding 请求失败');
+  });
+});
+
+// ─── L-04：LRU 缓存机制 ──────────────────────────────────────
+
+describe('EmbeddingProvider · L-04 LRU 缓存', () => {
+  let provider: EmbeddingProvider;
+
+  beforeEach(() => {
+    provider = new EmbeddingProvider({
+      baseUrl: 'http://localhost:9999',
+      apiKey: 'test-key',
+      model: 'text-embedding-3-small',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('cacheSize 应反映缓存条目数', async () => {
+    mockFetchSuccess([[0.1]]);
+    await provider.embed('文本1');
+    expect(provider.cacheSize).toBe(1);
+
+    mockFetchSuccess([[0.2]]);
+    await provider.embed('文本2');
+    expect(provider.cacheSize).toBe(2);
+  });
+
+  it('clearCache 应清空所有缓存', async () => {
+    mockFetchSuccess([[0.1]]);
+    await provider.embed('文本1');
+    expect(provider.cacheSize).toBe(1);
+
+    provider.clearCache();
+    expect(provider.cacheSize).toBe(0);
+  });
+
+  it('缓存命中不应增加 cacheSize', async () => {
+    mockFetchSuccess([[0.1]]);
+    await provider.embed('文本');
+    await provider.embed('文本'); // 缓存命中
+    expect(provider.cacheSize).toBe(1);
+  });
+
+  it('LRU 淘汰：超过 CACHE_MAX_SIZE 时应删除最旧条目', async () => {
+    // 嵌入 1001 个不同文本，触发 LRU 淘汰
+    for (let i = 0; i < 1001; i++) {
+      mockFetchSuccess([[i / 1000]]);
+      await provider.embed(`文本${i}`);
+    }
+    // 缓存应保持在 MAX_SIZE=1000
+    expect(provider.cacheSize).toBe(1000);
+  });
+});
+
+// ─── L-04：batchEmbed 边界 ────────────────────────────────────
+
+describe('EmbeddingProvider · L-04 batchEmbed 边界', () => {
+  let provider: EmbeddingProvider;
+
+  beforeEach(() => {
+    provider = new EmbeddingProvider({
+      baseUrl: 'http://localhost:9999',
+      apiKey: 'test-key',
+      model: 'text-embedding-3-small',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('空数组应返回空结果（不调用 API）', async () => {
+    // 先 spyOn fetch 创建 spy（不 mock 返回值），用于验证未调用
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const results = await provider.batchEmbed([]);
+    expect(results).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('全部命中缓存不应调用 API', async () => {
+    // 先缓存文本
+    mockFetchSuccess([[0.1]]);
+    await provider.embed('缓存文本');
+    vi.clearAllMocks();
+
+    // 批量嵌入仅缓存文本
+    const results = await provider.batchEmbed(['缓存文本']);
+    expect(results).toHaveLength(1);
+    expect(results[0]!.vector).toEqual([0.1]);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('部分缓存部分新文本应只嵌入新文本', async () => {
+    // 先缓存文本1
+    mockFetchSuccess([[0.1]]);
+    await provider.embed('文本1');
+
+    // 批量嵌入：文本1（缓存）+ 文本2（新）
+    mockFetchSuccess([[0.2]]);
+    const results = await provider.batchEmbed(['文本1', '文本2']);
+    expect(results).toHaveLength(2);
+    expect(results[0]!.vector).toEqual([0.1]); // 缓存
+    expect(results[1]!.vector).toEqual([0.2]); // 新嵌入
+  });
+
+  it('API 返回缺失向量时应跳过（warn 不抛错）', async () => {
+    // API 返回空 data 数组
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response);
+
+    const results = await provider.batchEmbed(['文本']);
+    expect(results).toEqual([]);
+  });
+
+  it('embed 空结果应抛错（batchEmbed 返回空）', async () => {
+    // API 返回空 data
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [] }),
+    } as Response);
+
+    await expect(provider.embed('文本')).rejects.toThrow('嵌入结果为空');
   });
 });
