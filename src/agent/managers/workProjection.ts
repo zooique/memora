@@ -30,6 +30,7 @@ import { slugify } from '@/utils/strings.js';
 import { basename } from '@/utils/path.js';
 import { toError } from '@/utils/errors.js';
 import { parseLlmJson } from '@/utils/json.js';
+import { nowIso } from '@/utils/time.js';
 
 /** 作品投影生成时内容截断长度（字符），控制 LLM token 消耗 */
 const CONTENT_TRUNCATE_CHARS = 3000;
@@ -142,7 +143,7 @@ export class WorkProjectionManager {
         summary: projection.summary,
         structure: projection.structure,
         keyDecisions: projection.keyDecisions,
-        updatedAt: new Date().toISOString(),
+        updatedAt: nowIso(),
       };
 
       // 写入存储（source = 'work-projection'，语义独立）
@@ -268,7 +269,7 @@ export class WorkProjectionManager {
    * summary 保持为可见内容。source = 'work-projection'。
    */
   private toMemory(entry: WorkProjectionEntry, hash: string): Memory {
-    const now = new Date().toISOString();
+    const now = nowIso();
     const fileName = basename(entry.sourcePath);
     return {
       id: entry.id,

@@ -19,6 +19,7 @@ import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
 import { toError } from '@/utils/errors.js';
+import { nowIso } from '@/utils/time.js';
 
 /** 用户画像子分类 */
 export type ProfileCategory = 'identity' | 'preference' | 'expertise' | 'habit' | 'history';
@@ -234,7 +235,7 @@ export class UserProfile {
       source: fact.sourceTurn,
       weight: 1.0,
       confirmed: fact.confidence >= 0.8, // 高置信度直接确认
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso(),
     };
 
     try {
@@ -326,7 +327,7 @@ export class UserProfile {
    * 确认状态：仅已确认条目调用此方法（待确认条目不写入存储）
    */
   private toMemory(entry: UserProfileEntry): Memory {
-    const now = new Date().toISOString();
+    const now = nowIso();
     return {
       id: entry.id,
       content: JSON.stringify({ category: entry.category, value: entry.value }),

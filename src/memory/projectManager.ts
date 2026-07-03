@@ -40,6 +40,7 @@ import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/errors.js';
 import { expandHome } from '@/utils/path.js';
 import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
+import { nowIso } from '@/utils/time.js';
 
 /**
  * 项目上下文：打开一个项目后产出的一组组件
@@ -400,7 +401,7 @@ export class ProjectManager {
     const entry: ProjectEntry = {
       path: projectPath,
       name,
-      lastOpened: new Date().toISOString(),
+      lastOpened: nowIso(),
     };
 
     if (existing >= 0) {
@@ -470,7 +471,7 @@ export class ProjectManager {
     // 写入新锁
     const lockInfo: LockInfo = {
       pid: process.pid,
-      acquiredAt: new Date().toISOString(),
+      acquiredAt: nowIso(),
       hostname: hostname(),
     };
 

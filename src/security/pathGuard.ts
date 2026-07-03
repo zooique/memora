@@ -13,6 +13,7 @@ import { stdin, stdout } from 'node:process';
 import { logger } from '@/logging/logger.js';
 import { securityError, toError } from '@/utils/errors.js';
 import { expandHome } from '@/utils/path.js';
+import { nowIso } from '@/utils/time.js';
 
 /**
  * 解析路径的真实绝对路径（解析符号链接链）
@@ -261,7 +262,7 @@ export class SecurityGuard {
           tool,
           source,
           reason: `命中黑名单规则 (${pattern})`,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(),
         });
         throw securityError(
           '禁止访问：路径命中黑名单',
@@ -279,7 +280,7 @@ export class SecurityGuard {
           path: resolved,
           tool,
           source,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(),
         });
         return;
       }
@@ -291,7 +292,7 @@ export class SecurityGuard {
       tool,
       source,
       reason: '路径越界，不在白名单内',
-      timestamp: new Date().toISOString(),
+      timestamp: nowIso(),
     });
     throw securityError('路径越界', `${resolved} 不在白名单内`, [
       '检查路径是否在项目目录内',
@@ -327,7 +328,7 @@ export class SecurityGuard {
         path: targetPath,
         tool,
         decision: 'auto-approved',
-        timestamp: new Date().toISOString(),
+        timestamp: nowIso(),
       });
       return true;
     }
@@ -351,7 +352,7 @@ export class SecurityGuard {
           path: targetPath,
           tool,
           decision: ok ? 'confirmed' : 'declined',
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(),
         });
         return ok;
       } catch (err) {
@@ -363,7 +364,7 @@ export class SecurityGuard {
           tool,
           decision: 'declined',
           reason: `回调异常：${toError(err).message}`,
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(),
         });
         return false;
       }
@@ -387,7 +388,7 @@ export class SecurityGuard {
           path: targetPath,
           tool,
           decision: 'confirmed',
-          timestamp: new Date().toISOString(),
+          timestamp: nowIso(),
         });
         return true;
       }
@@ -397,7 +398,7 @@ export class SecurityGuard {
         path: targetPath,
         tool,
         decision: 'declined',
-        timestamp: new Date().toISOString(),
+        timestamp: nowIso(),
       });
       return false;
     } finally {

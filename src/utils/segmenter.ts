@@ -15,6 +15,9 @@ const ZH_SEGMENTER = new Intl.Segmenter('zh-CN', { granularity: 'word' });
 /**
  * 轻量关键词分词（用于关键词匹配场景）
  *
+ * HC-10：内部函数，不在 index.ts 公共 API 导出。
+ * 仅供 scoreByKeywords 内部调用 + 同模块测试导入。
+ *
  * 与 segmentText() 的区别：
  *   - segmentText：精确分词（Intl.Segmenter ICU 词典切分），用于 LLM 输出切分 + recall 关键词提取
  *   - tokenizeKeywords：轻量分词，用于 persona/skill 关键词匹配

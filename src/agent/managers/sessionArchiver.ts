@@ -31,6 +31,7 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import { nowIso } from '@/utils/time.js';
 
 /** 会话归档结果 */
 export interface SessionArchiveResult {
@@ -196,7 +197,7 @@ ${dialogueText}
     }
 
     // 构造 content 类记忆条目（Memory 类型无 tags 字段，关键词通过摘要文本本身被召回）
-    const now = new Date().toISOString();
+    const now = nowIso();
     const memory: Memory = {
       id: `content-${sessionLabel}-${Date.now()}`,
       source: 'content',

@@ -16,6 +16,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import { configError, toError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
+import { nowIso } from '@/utils/time.js';
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ export class ConfigManager {
 
     // 构造记忆对象并写入配置文件（真理源）
     // 不写入 SQLite——遵守"配置文件是真理源"约束
-    const now = new Date().toISOString();
+    const now = nowIso();
     const memory: Memory = {
       id: `${source}:${suggestion.name}`,
       content: suggestion.content,
@@ -201,7 +202,7 @@ export class ConfigManager {
    * 内部自动填充 id / source / createdAt / accessedAt / score 等字段。
    */
   async addSimpleRule(name: string, content: string): Promise<void> {
-    const now = new Date().toISOString();
+    const now = nowIso();
     const memory: Memory = {
       id: `rule:${name}`,
       content,
@@ -262,7 +263,7 @@ export class ConfigManager {
    */
   async addSimpleSkill(name: string, content: string, keywords: string[] = []): Promise<void> {
     void keywords; // 基元驱动模型下关键词暂不存储到 Memory，由 SkillManager 管理
-    const now = new Date().toISOString();
+    const now = nowIso();
     const memory: Memory = {
       id: `skill:${name}`,
       content,

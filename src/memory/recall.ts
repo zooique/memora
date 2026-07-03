@@ -13,6 +13,7 @@ import type { VectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
 import { STOPWORDS, SOURCE_LABELS } from '@/memory/types.js';
 import { segmentText } from '@/utils/segmenter.js';
+import { nowIso } from '@/utils/time.js';
 
 // ─── 召回与衰减常量 ─────────────────────────────────────
 
@@ -160,7 +161,7 @@ export async function recall(
 
   // ── 召回时提升 score ──
   // 在副本上操作避免污染调用方持有的对象，boost 后写回存储
-  const now = new Date().toISOString();
+  const now = nowIso();
   const result: Memory[] = [];
   for (const { memory } of sorted.slice(0, limit)) {
     const copy = { ...memory };
@@ -184,7 +185,7 @@ export async function recall(
  */
 export function boostScore(memory: Memory, now?: string): void {
   memory.score = Math.min(SCORE_CEILING, memory.score + BOOST_INCREMENT);
-  memory.accessedAt = now ?? new Date().toISOString();
+  memory.accessedAt = now ?? nowIso();
 }
 
 /**

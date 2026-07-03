@@ -56,6 +56,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
+import { nowIso } from '@/utils/time.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
@@ -1102,7 +1103,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // R-103 衰减指标统计：累计执行次数和衰减记忆数
       this.metricDecayRunCount++;
       this.metricTotalDecayedCount += decayedCount;
-      this.metricLastDecayAt = new Date().toISOString();
+      this.metricLastDecayAt = nowIso();
       decaySpan.setAttribute('decayedCount', decayedCount);
       decaySpan.setAttribute('totalRuns', this.metricDecayRunCount);
 

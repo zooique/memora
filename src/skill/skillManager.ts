@@ -23,6 +23,7 @@ import type { Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import type { SkillEntry, SkillMatch } from '@/skill/types.js';
+import { nowIso } from '@/utils/time.js';
 import { scanMarkdownDir, parseKeywords, parseTrigger, resolveSubdir } from '@/utils/scanner.js';
 
 /**
@@ -199,7 +200,7 @@ export class SkillManager {
    */
   private writeSkillToIndex(skill: SkillEntry): void {
     if (!this.index) return;
-    const now = new Date().toISOString();
+    const now = nowIso();
     const memory: Memory = {
       id: `skill:${skill.name}`,
       content: skill.content,

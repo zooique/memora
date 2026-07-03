@@ -13,6 +13,7 @@ import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { ONE_DAY_MS } from '@/memory/recall.js';
+import { nowIso } from '@/utils/time.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -183,7 +184,7 @@ export class MemoryAdvisor {
     return {
       sources: entries.sort((a, b) => statusPriority[b.status] - statusPriority[a.status]),
       overallStatus,
-      diagnosedAt: new Date().toISOString(),
+      diagnosedAt: nowIso(),
     };
   }
 

@@ -16,6 +16,7 @@ import { segmentText } from '@/utils/segmenter.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { applyDecayToMemory } from '@/memory/recall.js';
+import { nowIso } from '@/utils/time.js';
 
 /**
  * 内存存储实现
@@ -90,7 +91,7 @@ export class InMemoryStorage implements IMemoryStorage {
     // 不存在或已软删除：no-op
     if (!existing || existing.deletedAt !== undefined) return;
     // 写入 deletedAt，标记为软删除
-    const softDeleted: Memory = { ...existing, deletedAt: new Date().toISOString() };
+    const softDeleted: Memory = { ...existing, deletedAt: nowIso() };
     this.memories.set(id, softDeleted);
     // 活跃 → 软删除：source 计数 -1
     this.decrementSourceCount(existing.source);

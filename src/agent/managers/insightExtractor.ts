@@ -20,6 +20,7 @@ import { logger } from '@/logging/logger.js';
 import { parseLlmJson } from '@/utils/json.js';
 import { segmentText } from '@/utils/segmenter.js';
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
+import { nowIso } from '@/utils/time.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -317,7 +318,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
       if (existingMemory) {
         // 已有相似记忆，更新 accessedAt 和 score（取较高值）
         existingMemory.score = Math.min(1.0, Math.max(existingMemory.score, score) + DEDUP_SCORE_BOOST);
-        existingMemory.accessedAt = new Date().toISOString();
+        existingMemory.accessedAt = nowIso();
         this.index.upsert(existingMemory);
         logger.debug({ id: existingMemory.id }, 'extractInsight: 更新已有记忆');
         // ADR-014：即使命中去重，也尝试构建关系（新 insight 与已有记忆可能存在关系）
@@ -329,7 +330,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
       }
 
       // Step 3: 写入 SQLite（score 根据质量分级设置）
-      const now = new Date().toISOString();
+      const now = nowIso();
       const insightId = randomUUID(); // 使用 UUID 避免高并发冲突
       const memory: Memory = {
         id: `insight:${insightId}`,
@@ -477,7 +478,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
 
     const candidateIds = new Set(candidates.map((m) => m.id));
     const candidateMap = new Map(candidates.map((m) => [m.id, m]));
-    const now = new Date().toISOString();
+    const now = nowIso();
     let built = 0;
 
     for (const rel of relations) {

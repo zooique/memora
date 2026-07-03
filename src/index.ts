@@ -92,7 +92,7 @@ export { setLogger, logger } from '@/logging/logger.js';
 // ─── 工具导出 ────────────────────────────────────────────
 // 分词工具：宿主项目（如 SqliteStorage）依赖
 // 工具导出
-export { segmentText, tokenizeKeywords } from '@/utils/segmenter.js';
+export { segmentText } from '@/utils/segmenter.js';
 // Frontmatter 解析/序列化：宿主项目（如 skillInstaller）依赖
 export { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
 // 安全定时器：宿主主进程统一使用 safeSetTimeout/safeSetInterval 跟踪清理

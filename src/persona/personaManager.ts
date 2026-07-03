@@ -26,6 +26,7 @@ import { configError } from '@/utils/errors.js';
 import type { Persona, PersonaMode } from '@/persona/types.js';
 import { scanMarkdownDir, parseKeywords, resolveSubdir } from '@/utils/scanner.js';
 import { safeSetTimeout, clearSafeTimeout } from '@/utils/safeTimer.js';
+import { nowIso } from '@/utils/time.js';
 
 /**
  * 从 frontmatter 解析 traits.* 键值对
@@ -388,7 +389,7 @@ export class PersonaManager {
    */
   private async writePersonaToIndex(persona: Persona): Promise<void> {
     if (!this.index) return;
-    const now = new Date().toISOString();
+    const now = nowIso();
     const memory: Memory = {
       id: persona.id,
       content: persona.content,
