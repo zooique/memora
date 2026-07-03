@@ -13,6 +13,7 @@
  *   - 通过构造注入的 emitter 回调发射事件，不直接依赖 SpriteEventMap 类型
  *   - 读路径（getSnapshot）无副作用，写路径（refreshBeforeChat）有副作用
  */
+import { logger, toError } from 'memora';
 import type { Agent, Memory } from 'memora';
 import { AffectController } from './affectController.js';
 import type { AffectState } from './affectController.js';
@@ -117,21 +118,46 @@ export class PerceptionCoordinator {
     const prompts: string[] = [];
 
     // 1-4. 情感基调 + 默契度 + 对话上下文 + 用户模式（链式推导）
-    const perceptionPrompt = this.deriveAndInjectAffect();
-    if (perceptionPrompt) {
-      prompts.push(perceptionPrompt);
+    // BUG-PC-01 修复：每个推导步骤独立 try/catch，单点抛错不阻塞其他推导
+    try {
+      const perceptionPrompt = this.deriveAndInjectAffect();
+      if (perceptionPrompt) {
+        prompts.push(perceptionPrompt);
+      }
+    } catch (err) {
+      // 情感/默契/上下文推导失败不阻塞里程碑和跨会话上下文注入
+      logger.warn(
+        { error: toError(err).message },
+        'perceptionCoordinator.deriveAndInjectAffect 失败，跳过感知提示注入',
+      );
     }
 
     // 5. 里程碑信号（若有待处理的里程碑事件）
-    const milestonePrompt = this.getMilestonePrompt();
-    if (milestonePrompt) {
-      prompts.push(milestonePrompt);
+    try {
+      const milestonePrompt = this.getMilestonePrompt();
+      if (milestonePrompt) {
+        prompts.push(milestonePrompt);
+      }
+    } catch (err) {
+      // 里程碑读取失败不阻塞其他注入
+      logger.warn(
+        { error: toError(err).message },
+        'perceptionCoordinator.getMilestonePrompt 失败，跳过里程碑提示注入',
+      );
     }
 
     // 6. 跨会话上下文（检测到长时间间隔时注入上次对话摘要）
-    const crossSessionPrompt = this.getCrossSessionContext();
-    if (crossSessionPrompt) {
-      prompts.push(crossSessionPrompt);
+    try {
+      const crossSessionPrompt = this.getCrossSessionContext();
+      if (crossSessionPrompt) {
+        prompts.push(crossSessionPrompt);
+      }
+    } catch (err) {
+      // 跨会话上下文读取失败不阻塞其他注入
+      logger.warn(
+        { error: toError(err).message },
+        'perceptionCoordinator.getCrossSessionContext 失败，跳过跨会话上下文注入',
+      );
     }
 
     // 一次性注入所有提示，避免相互覆盖
@@ -140,17 +166,17 @@ export class PerceptionCoordinator {
     }
   }
 
-  // ─── 读路径：感知快照（无副作用） ────────────────────────
+  // ─── 读路径：感知快照 ──────────────────────────────────
 
   /**
-   * 获取感知快照（无副作用，供 UI 仪表盘读取）
+   * 获取感知快照（不修改 Coordinator 自身状态，但会刷新子控制器配置）
    *
    * 与 refreshBeforeChat 的区别：
-   *   - refreshBeforeChat：写路径，有副作用（更新缓存 + 发射事件 + 注入 prompt）
-   *   - getSnapshot：读路径，纯计算，不修改状态
+   *   - refreshBeforeChat：写路径，有副作用（更新 lastAffect/lastRapport 缓存 + 发射事件 + 注入 prompt）
+   *   - getSnapshot：读路径，不修改 PerceptionCoordinator 自身状态，不发射事件，不注入 prompt
    *
-   * 注意：此方法会调用各 controller 的 updateOptions（修改 controller 配置），
-   * 但不修改 PerceptionCoordinator 自身状态。
+   * BUG-PC-02 修复：header 注释原声称"无副作用"，但实际调用 affectController.updateOptions /
+   * rapportController.updateOptions 修改了子控制器配置。现修正注释为"不修改 Coordinator 自身状态"。
    *
    * @returns 感知快照，Agent 未就绪或无记忆时返回 null
    */

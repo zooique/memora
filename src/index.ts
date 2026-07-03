@@ -37,6 +37,8 @@ export type {
 } from '@/agent/managers/memoryInspector.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
+// GAP-2：会话内容归档器类型
+export type { SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 // H3：作品投影管理器类型
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
 export { loadConfig } from '@/config/loader.js';

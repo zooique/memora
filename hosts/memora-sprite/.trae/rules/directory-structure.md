@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-14 全部完成，目录形态已对齐最终目标。
-> **版本**：v1.1（2026-07-01）
+> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试）。目录形态已对齐最终目标。
+> **版本**：v1.2（2026-07-03）
 
 ---
 
@@ -66,6 +66,7 @@ src/
 │       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作）
 │       │   ├── errorHelpers.ts # 错误处理辅助（IPC 错误处理器工厂）
 │       │   ├── eventTracker.ts # 事件追踪（埋点/用户行为记录）
+│       │   ├── memoryPanelEvents.ts # 记忆面板事件监听辅助（AUTO-HEALTH-05 从 memoryPanelManager 提取）
 │       │   ├── messageDecorations.ts # 消息装饰辅助函数（系统消息/错误消息样式）
 │       │   ├── toolCallCard.ts # 工具调用卡片辅助（工具执行状态展示）
 │       │   └── safeTimer.ts    # 安全定时器辅助（自动清理/防泄漏）
@@ -153,6 +154,23 @@ src/
 │   ├── sqliteStorage.ts        # SQLite 存储实现（IMemoryStorage 接口）
 │   └── sqliteRelationStore.ts  # 记忆关系侧车存储实现（IMemoryRelationStore）
 │
+├── shared/                     # 宿主上下文共享层（DWM-01 双模式 Web 调试）
+│   └── hostContext.ts          # HostContext 接口（Electron + Web 共用核心依赖容器）
+│
+├── web/                        # Web 模式（HTTP 调试通道，与 Electron 模式并行）
+│   ├── server.ts               # HTTP 服务器入口（Express + 静态资源 + 路由挂载）
+│   ├── static.ts               # 静态资源服务（渲染进程 HTML/CSS/JS）
+│   ├── webContext.ts           # Web 模式上下文构造（注入 HostContext 核心字段）
+│   ├── preloadWeb.ts           # Web 预加载脚本（替代 Electron preload，注入 window.api）
+│   └── routes/                 # HTTP 路由（与 IPC handler 平行，消费同一 HostContext）
+│       ├── index.ts            # 路由聚合导出
+│       ├── types.ts            # 路由类型定义
+│       ├── chatStreamRoutes.ts # 对话流式路由（SSE）
+│       ├── configRoutes.ts     # 配置管理路由
+│       ├── memoryRoutes.ts     # 记忆管理路由
+│       ├── sessionRoutes.ts    # 会话管理路由
+│       └── systemRoutes.ts     # 系统信息路由
+│
 └── __tests__/                  # 测试文件（镜像源码目录结构）
     ├── electron/               # Electron 层测试
     │   ├── ipc/                # IPC 处理器测试（镜像 src/electron/ipc/）
@@ -177,10 +195,17 @@ src/
     │   │   └── ...（7 个 controller 测试）
     │   ├── sprite.test.ts      # 精灵根级测试
     │   └── ...（6 个 sprite 根级测试）
-    └── storage/                # 存储层测试
-        ├── nodeSqliteDatabase.ts  # 测试用 SQLite 数据库工厂（node:sqlite 适配器）
-        ├── sessionStore.test.ts
-        └── sqliteStorage.test.ts
+    ├── storage/                # 存储层测试
+    │   ├── nodeSqliteDatabase.ts  # 测试用 SQLite 数据库工厂（node:sqlite 适配器）
+    │   ├── sessionStore.test.ts
+    │   └── sqliteStorage.test.ts
+    └── web/                    # Web 模式测试（镜像 src/web/）
+        ├── webContext.test.ts     # Web 上下文构造测试
+        ├── preloadWeb.test.ts     # Web 预加载脚本测试
+        └── routes/               # 路由测试（镜像 src/web/routes/）
+            ├── chatStreamRoutes.test.ts
+            ├── memoryRoutes.test.ts
+            └── types.test.ts
 ```
 
 ---
@@ -200,6 +225,8 @@ src/
 | `sprite/audit/` | 审计日志写入/读取 | 精灵业务逻辑 |
 | `sprite/controllers/` | Agent 能力扩展控制器 | 渲染进程 UI 代码 |
 | `storage/` | 持久化实现 | 业务逻辑 |
+| `shared/` | 宿主上下文共享类型（Electron + Web 共用） | 任何业务实现逻辑（仅定义接口/类型） |
+| `web/` | Web 模式 HTTP 调试通道（与 Electron 模式并行） | 直接操作 Electron API；包含业务逻辑（应委托 sprite/storage） |
 
 ### 2.2 命名冲突解决
 
@@ -239,7 +266,7 @@ src/
 
 ### 延后（非目录结构）
 
-- [ ] S-02: 缺少 shared 模块（需评估方案）
+- [x] S-02: shared 模块已落地（DWM-01 双模式 Web 调试，2026-07-03 v1.2 纳入文档）
 - [ ] S-03: 类型定义分散（需统一方案）
 - [ ] Q-01/Q-03: prettier/eslint 配置（低优先级）
 

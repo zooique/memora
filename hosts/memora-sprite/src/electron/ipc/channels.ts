@@ -34,8 +34,14 @@ export const IPC_CHANNELS = {
   MEMORIES_SEARCH: 'memories-search',
   /** 查看单条记忆详情 */
   MEMORIES_SHOW: 'memories-show',
-  /** 删除记忆 */
+  /** 删除记忆（GAP-6：软删除，移入回收站） */
   MEMORIES_DELETE: 'memories-delete',
+  /** 恢复软删除记忆（GAP-6：从回收站恢复） */
+  MEMORIES_RESTORE: 'memories-restore',
+  /** 物理删除记忆（GAP-6：回收站彻底删除） */
+  MEMORIES_PURGE: 'memories-purge',
+  /** 列出回收站记忆（GAP-6） */
+  MEMORIES_LIST_DELETED: 'memories-list-deleted',
   /** 添加/更新记忆 */
   MEMORIES_ADD: 'memories-add',
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */

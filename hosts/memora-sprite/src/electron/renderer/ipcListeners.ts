@@ -117,6 +117,26 @@ export function isProactivePromptPayload(value: unknown): value is ProactiveProm
   );
 }
 
+/**
+ * GAP-4：校验冲突检测 payload 结构
+ *
+ * 确保冲突通知的字段类型正确，避免运行时错误。
+ */
+export function isConflictDetectedPayload(value: unknown): value is {
+  newMemoryId: string;
+  newInsight: string;
+  targetId: string;
+  targetContent: string;
+} {
+  if (!isObject(value)) return false;
+  return (
+    typeof value.newMemoryId === 'string' &&
+    typeof value.newInsight === 'string' &&
+    typeof value.targetId === 'string' &&
+    typeof value.targetContent === 'string'
+  );
+}
+
 /** 校验项目切换 payload 结构（替代 as 断言，确保字段类型安全） */
 export function isProjectSwitchedPayload(value: unknown): value is { projectName: string } {
   return isObject(value) && typeof value.projectName === 'string';
@@ -251,6 +271,33 @@ function handleProactivePrompt(
 }
 
 /**
+ * GAP-4：处理冲突检测事件
+ *
+ * 当 InsightExtractor 检测到 contradicts 关系时，通过 ProactiveBanner 通知用户。
+ * 冲突通知是事实性通知（非主动行为），不受静默模式控制。
+ *
+ * 展示策略：复用 ProactiveBanner 组件，通知文本包含新洞察和矛盾目标的摘要。
+ * 用户点击"查看"可切换到记忆面板查看关系图详情。
+ */
+function handleConflictDetected(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  if (!isConflictDetectedPayload(msg.payload)) {
+    reportError('handleConflictDetected', msg.payload);
+    return;
+  }
+
+  // 截断过长内容，避免 banner 文本溢出
+  const MAX_BANNER_TEXT = 60;
+  const truncate = (s: string) => (s.length > MAX_BANNER_TEXT ? s.slice(0, MAX_BANNER_TEXT) + '…' : s);
+
+  // 构造通知文本：突出"矛盾"语义，引导用户查看关系图
+  const text = `检测到记忆冲突：「${truncate(msg.payload.newInsight)}」与已有记忆矛盾`;
+  uiManager.showProactiveBanner(text, false);
+}
+
+/**
  * L5：精灵事件处理器 — 4 种新增事件的 UI 展示逻辑
  *
  * 噪音控制策略（与用户约定）：
@@ -358,6 +405,8 @@ function createSpriteEventHandlers(
   return {
     memoryNoticed: () => callbacks.onMemoryNoticed(),
     insightGained: () => callbacks.onInsightGained(),
+    // GAP-4：冲突检测 → ProactiveBanner 通知用户
+    conflictDetected: (msg) => handleConflictDetected(uiManager, msg),
     proactivePrompt: (msg) => handleProactivePrompt(uiManager, msg),
     projectSwitched: (msg) => handleProjectSwitched(uiManager, msg),
     skillMatched: (msg) => handleSkillMatched(uiManager, msg),

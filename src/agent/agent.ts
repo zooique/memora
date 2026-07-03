@@ -36,6 +36,7 @@ import type { PersonaManager } from '@/persona/personaManager.js';
 import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
+import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
@@ -208,6 +209,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private workProjection: WorkProjectionManager | null = null;
   /** V-201: AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
+  /** GAP-2: SessionArchiver（会话内容归档器，content 类记忆） */
+  private sessionArchiver: SessionArchiver | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
 
@@ -764,6 +767,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.memoryInspector = result.memoryInspector;
     this.autoConfigRefiner = result.autoConfigRefiner;
     this.workProjection = result.workProjection;
+    this.sessionArchiver = result.sessionArchiver;
+    // GAP-4：绑定冲突检测回调，InsightExtractor 检测到 contradicts 时 emit('conflictDetected')
+    // 与 bindGetRecentHistory 同模式：解决 Agent 晚于 InsightExtractor 创建的时序循环依赖
+    this.insightExtractor.bindOnConflict((info) => {
+      this.emit('conflictDetected', info);
+    });
     // V-101：注入 VectorStore 到 MemoryInspector，启用混合搜索
     if (this.memoryInspector && this.#config.vectorStore) {
       this.memoryInspector.setVectorStore(this.#config.vectorStore);
@@ -917,6 +926,29 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.emit('insightExtracted', { source: memory.source, insight: memory.content });
     }
     return memories;
+  }
+
+  /**
+   * GAP-2：手动归档会话内容（content 类记忆）
+   *
+   * 适用于 `insights-only` / `manual` 模式下用户手动触发会话内容归档。
+   * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
+   *
+   * @param date 会话日期 YYYY-MM-DD
+   * @param session 会话标识（不含日期前缀）
+   * @returns 归档结果（memories 可能为空，表示无归档价值或 LLM 失败）
+   */
+  async archiveSessionContent(date: string, session: string): Promise<SessionArchiveResult> {
+    this.assertInitialized('archiveSessionContent');
+    if (!this.sessionArchiver) {
+      return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
+    }
+    const result = await this.sessionArchiver.archiveSessionContent(date, session);
+    // 发射 memoryAdded 事件：与 insight 自动归档路径一致，宿主可据此刷新记忆面板
+    for (const memory of result.memories) {
+      this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
+    }
+    return result;
   }
 
   // ─── 配置重载（GAP-5 事件驱动） ───────────────────────
@@ -1126,6 +1158,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.configManager = null;
     this.memoryInspector = null;
     this.autoConfigRefiner = null;
+    this.sessionArchiver = null;
     this.pctx = null;
   }
 

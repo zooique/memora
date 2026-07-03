@@ -5,7 +5,7 @@ description: 记忆统一为"source 开放字符串"基元驱动模型
 
 # ADR-004 · 记忆统一为"source 开放字符串"基元驱动模型
 
-> **状态**：✅ 已接受 **日期**：2026-06-11（v2.0 重构）
+> **状态**：✅ 已接受 **日期**：2026-06-11（v2.0 重构）/ 2026-07-03（GAP-6 软删除扩展）
 > **前身**：v1.0 "类型 + 永久性标记"模型（2026-06-02）
 > **来源**：(历史设计文档已归档：记忆系统重构方案_排雷炼化版.md)
 
@@ -31,9 +31,9 @@ v1.0 模型使用 `memory_type`（6 种枚举）× `permanence`（4 级枚举）
 | `weight` 0-1 | `score` 0-1 | 改名 |
 | `updatedAt` ISO 8601 | `accessedAt` ISO 8601 | 语义更精确 |
 | `filePath` 文件路径 | 移除 | id 中已包含来源 |
-| Memory 接口 9 字段 | Memory 接口 7 字段 | 精简 |
+| Memory 接口 9 字段 | Memory 接口 7 字段 | 精简（v2.0）/ 8 字段（v2.1 GAP-6 软删除） |
 
-**新 Memory 接口：**
+**新 Memory 接口（v2.1，GAP-6 软删除扩展）：**
 
 ```typescript
 interface Memory {
@@ -44,8 +44,17 @@ interface Memory {
   createdAt: string;   // 创建时间（ISO 8601）
   accessedAt: string;  // 最后访问时间（每次召回时刷新）
   score: number;        // 权重（0-1，召回时用于排序）
+  deletedAt?: string;  // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天）
 }
 ```
+
+> **GAP-6 软删除扩展（2026-07-03）**：新增可选字段 `deletedAt`，实现"删除即软删除"语义。
+> - `deletedAt` 为 `undefined` 表示活跃记忆（默认）
+> - `deletedAt` 为 ISO 8601 时间戳表示已软删除，回收站可恢复
+> - 召回/搜索/列表/统计自动过滤 `deletedAt != undefined` 的记忆
+> - `delete(id)` 语义改为软删除（写入 deletedAt），新增 `purge(id)` 物理删除
+> - 软删除不删除向量索引（restore 时无需重新嵌入）
+> - 回收站保留 30 天（`sprite.json` 的 `recycleBinRetentionDays` 可配，设为 0 禁用自动清理），超期由宿主 Sprite 启动的 6 小时定时器自动物理清理（`purgeExpired(before: Date)`，启动时立即执行一次，`unref()` 不阻止进程退出）
 
 **source 标签约定（开放，非枚举）：**
 
@@ -132,3 +141,4 @@ Layer 6: 工具描述（tools）      — 每次注入（如果有工具）
 - 当 source 标签增长到 20+ 种时，考虑引入 source 分类层级
 - 当 LIKE 查询性能不足时，引入 FTS5 全文索引
 - 当需要跨会话记忆持久化时，实现 sessions/*.md 写入逻辑
+- 当回收站数据量显著影响存储性能时，考虑分表存储软删除记忆

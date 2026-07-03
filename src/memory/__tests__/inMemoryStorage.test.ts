@@ -7,6 +7,7 @@
  *   - search 的分词匹配与空查询降级
  *   - decayScores 的时间衰减
  *   - source 校验失败抛 configError
+ *   - GAP-6 软删除机制：delete/restore/purge/listDeleted/purgeExpired
  *
  * 与 store.test.ts 的区别：store.test.ts 测 FileStore（文件级），
  * 本文件测 InMemoryStorage（内存级），聚焦 sourceCountCache 与衰减逻辑。
@@ -289,6 +290,314 @@ describe('InMemoryStorage · 内存存储契约', () => {
     it('严重非法 source（block 级别）应抛 configError', () => {
       // validateSource 对空字符串/纯空格返回 block 级别
       expect(() => storage.upsert(makeMemory('m1', ''))).toThrow(MemoraError);
+    });
+  });
+
+  // ─── GAP-6 软删除机制 ─────────────────────────────────
+
+  describe('GAP-6 软删除：delete（软删除）', () => {
+    it('软删除后应写入 deletedAt 时间戳', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+
+      // getById 返回 null（活跃态过滤），但 listDeleted 应包含该记忆
+      expect(storage.getById('rule:1')).toBeNull();
+      const deleted = storage.listDeleted();
+      expect(deleted).toHaveLength(1);
+      expect(deleted[0]!.id).toBe('rule:1');
+      expect(deleted[0]!.deletedAt).toBeDefined();
+      // deletedAt 应为合法 ISO 8601 时间戳
+      expect(new Date(deleted[0]!.deletedAt!).getTime()).not.toBeNaN();
+    });
+
+    it('软删除后 countBySource 应减 1（不计入活跃计数）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE));
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(2);
+
+      storage.delete('rule:1');
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(1);
+    });
+
+    it('软删除后 count() 应不含已软删除的', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE));
+      expect(storage.count()).toBe(2);
+
+      storage.delete('rule:1');
+      expect(storage.count()).toBe(1);
+    });
+
+    it('软删除后 getAllSources 应不含该记忆的计数', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+
+      // source 计数减至 0 时应从 getAllSources 移除该键
+      expect(storage.getAllSources().has(SOURCE_LABELS.RULE)).toBe(false);
+    });
+
+    it('软删除后 getBySource 应过滤已软删除的', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+
+      const list = storage.getBySource(SOURCE_LABELS.RULE);
+      expect(list).toHaveLength(1);
+      expect(list[0]!.id).toBe('rule:2');
+    });
+
+    it('软删除后 search 应过滤已软删除的', () => {
+      storage.upsert({ ...makeMemory('m1', 'insight'), content: 'TypeScript 内容' });
+      storage.upsert({ ...makeMemory('m2', 'insight'), content: 'TypeScript 其他' });
+      storage.delete('m1');
+
+      const results = storage.search('TypeScript');
+      expect(results).toHaveLength(1);
+      expect(results[0]!.id).toBe('m2');
+    });
+
+    it('软删除后 getById 应返回 null', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      expect(storage.getById('rule:1')).toBeNull();
+    });
+
+    it('对已软删除的记忆再次 delete 应为 no-op（不更新 deletedAt）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      const firstDeletedAt = storage.listDeleted()[0]!.deletedAt;
+
+      // 再次 delete 不应改变 deletedAt
+      storage.delete('rule:1');
+      expect(storage.listDeleted()[0]!.deletedAt).toBe(firstDeletedAt);
+    });
+
+    it('对不存在的 id delete 应为 no-op', () => {
+      expect(() => storage.delete('nonexistent')).not.toThrow();
+      expect(storage.listDeleted()).toHaveLength(0);
+    });
+
+    it('软删除后 decayScores 应跳过已软删除的', () => {
+      const now = new Date();
+      const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
+      storage.upsert({ ...makeMemory('m1', 'insight', 0.8), accessedAt: oldDate.toISOString() });
+      storage.upsert({ ...makeMemory('m2', 'insight', 0.8), accessedAt: oldDate.toISOString() });
+      storage.delete('m1');
+
+      const decayed = storage.decayScores(['insight'], now);
+      // 只有 m2 被衰减，m1 已软删除跳过
+      expect(decayed).toBe(1);
+    });
+  });
+
+  describe('GAP-6 软删除：restore（恢复）', () => {
+    it('restore 应清除 deletedAt 并重新计入活跃计数', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      expect(storage.count()).toBe(0);
+
+      storage.restore('rule:1');
+      expect(storage.count()).toBe(1);
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(1);
+      // getById 应能取到，且 deletedAt 为 undefined
+      const restored = storage.getById('rule:1');
+      expect(restored).not.toBeNull();
+      expect(restored!.deletedAt).toBeUndefined();
+    });
+
+    it('restore 后记忆应重新出现在 getBySource 和 search 中', () => {
+      storage.upsert({ ...makeMemory('m1', 'insight'), content: 'TypeScript 内容' });
+      storage.delete('m1');
+      expect(storage.search('TypeScript')).toHaveLength(0);
+
+      storage.restore('m1');
+      expect(storage.search('TypeScript')).toHaveLength(1);
+      expect(storage.getBySource('insight')).toHaveLength(1);
+    });
+
+    it('restore 后 listDeleted 应不再包含该记忆', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      expect(storage.listDeleted()).toHaveLength(1);
+
+      storage.restore('rule:1');
+      expect(storage.listDeleted()).toHaveLength(0);
+    });
+
+    it('对活跃记忆 restore 应为 no-op', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      expect(storage.count()).toBe(1);
+
+      storage.restore('rule:1');
+      // 计数不变
+      expect(storage.count()).toBe(1);
+    });
+
+    it('对不存在的 id restore 应为 no-op', () => {
+      expect(() => storage.restore('nonexistent')).not.toThrow();
+      expect(storage.count()).toBe(0);
+    });
+  });
+
+  describe('GAP-6 软删除：purge（物理删除）', () => {
+    it('purge 软删除记忆后应从 Map 彻底移除', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      expect(storage.listDeleted()).toHaveLength(1);
+
+      storage.purge('rule:1');
+      expect(storage.listDeleted()).toHaveLength(0);
+      expect(storage.count()).toBe(0);
+    });
+
+    it('purge 软删除记忆不应重复扣除计数', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(1);
+
+      storage.purge('rule:1');
+      // 计数不变（delete 时已扣除）
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(1);
+    });
+
+    it('purge 活跃记忆应扣除计数', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE));
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(2);
+
+      storage.purge('rule:1');
+      expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(1);
+    });
+
+    it('对不存在的 id purge 应为 no-op', () => {
+      expect(() => storage.purge('nonexistent')).not.toThrow();
+    });
+  });
+
+  describe('GAP-6 软删除：listDeleted（回收站列表）', () => {
+    it('应只列出已软删除的记忆', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+
+      const deleted = storage.listDeleted();
+      expect(deleted).toHaveLength(1);
+      expect(deleted[0]!.id).toBe('rule:1');
+    });
+
+    it('应按 deletedAt 降序排列（最近删除的在前）', () => {
+      storage.upsert(makeMemory('m1', 'insight'));
+      storage.upsert(makeMemory('m2', 'insight'));
+      storage.upsert(makeMemory('m3', 'insight'));
+
+      // 依次软删除并手动设置不同的 deletedAt（避免同毫秒时间戳导致排序不稳定）
+      // m1 最早（10 天前），m2 居中（5 天前），m3 最近（刚刚）
+      storage.delete('m1');
+      storage.upsert({ ...storage.listDeleted().find((m) => m.id === 'm1')!, deletedAt: new Date(Date.now() - 10 * ONE_DAY_MS).toISOString() });
+      storage.delete('m2');
+      storage.upsert({ ...storage.listDeleted().find((m) => m.id === 'm2')!, deletedAt: new Date(Date.now() - 5 * ONE_DAY_MS).toISOString() });
+      storage.delete('m3');
+      // m3 保持当前时间（最近）
+
+      const deleted = storage.listDeleted();
+      expect(deleted[0]!.id).toBe('m3');
+      expect(deleted[1]!.id).toBe('m2');
+      expect(deleted[2]!.id).toBe('m1');
+    });
+
+    it('应尊重 limit 参数', () => {
+      for (let i = 0; i < 5; i++) {
+        storage.upsert(makeMemory(`m${i}`, 'insight'));
+        storage.delete(`m${i}`);
+      }
+
+      const deleted = storage.listDeleted(2);
+      expect(deleted).toHaveLength(2);
+    });
+
+    it('应返回浅拷贝（修改不影响内部存储）', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      storage.delete('rule:1');
+
+      const deleted = storage.listDeleted();
+      deleted[0]!.content = '被篡改';
+
+      const again = storage.listDeleted();
+      expect(again[0]!.content).toBe('内容-rule:1');
+    });
+
+    it('无软删除记忆时应返回空数组', () => {
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
+      expect(storage.listDeleted()).toHaveLength(0);
+    });
+  });
+
+  describe('GAP-6 软删除：purgeExpired（过期清理）', () => {
+    it('应清理 deletedAt 早于阈值的记忆', () => {
+      storage.upsert(makeMemory('m1', 'insight'));
+      storage.upsert(makeMemory('m2', 'insight'));
+      storage.delete('m1');
+      storage.delete('m2');
+
+      // 手动篡改 deletedAt 为 31 天前（模拟过期）
+      const list = storage.listDeleted();
+      const expiredDate = new Date(Date.now() - 31 * ONE_DAY_MS).toISOString();
+      // 通过 upsert 覆盖 deletedAt（delta 方式会正确处理计数）
+      storage.upsert({ ...list[0]!, deletedAt: expiredDate });
+
+      // 阈值设为 30 天前：31 天前的应被清理
+      const threshold = new Date(Date.now() - 30 * ONE_DAY_MS);
+      const purged = storage.purgeExpired(threshold);
+
+      expect(purged).toBe(1);
+      expect(storage.listDeleted()).toHaveLength(1);
+    });
+
+    it('应保留 deletedAt 晚于阈值的记忆', () => {
+      storage.upsert(makeMemory('m1', 'insight'));
+      storage.delete('m1');
+
+      // 阈值设为 60 天前：刚刚删除的应保留
+      const threshold = new Date(Date.now() - 60 * ONE_DAY_MS);
+      const purged = storage.purgeExpired(threshold);
+
+      expect(purged).toBe(0);
+      expect(storage.listDeleted()).toHaveLength(1);
+    });
+
+    it('不应清理活跃记忆', () => {
+      storage.upsert(makeMemory('m1', 'insight'));
+      storage.upsert(makeMemory('m2', 'insight'));
+
+      // 即便阈值很早，活跃记忆也不受影响
+      const threshold = new Date(Date.now() - 365 * ONE_DAY_MS);
+      const purged = storage.purgeExpired(threshold);
+
+      expect(purged).toBe(0);
+      expect(storage.count()).toBe(2);
+    });
+
+    it('应返回被清理的记忆数量', () => {
+      storage.upsert(makeMemory('m1', 'insight'));
+      storage.upsert(makeMemory('m2', 'insight'));
+      storage.upsert(makeMemory('m3', 'insight'));
+      storage.delete('m1');
+      storage.delete('m2');
+      storage.delete('m3');
+
+      // 全部篡改为 100 天前过期
+      const expiredDate = new Date(Date.now() - 100 * ONE_DAY_MS).toISOString();
+      const list = storage.listDeleted();
+      for (const m of list) {
+        storage.upsert({ ...m, deletedAt: expiredDate });
+      }
+
+      const threshold = new Date(Date.now() - 30 * ONE_DAY_MS);
+      const purged = storage.purgeExpired(threshold);
+
+      expect(purged).toBe(3);
+      expect(storage.listDeleted()).toHaveLength(0);
     });
   });
 

@@ -88,6 +88,8 @@ function createMockAgent(overrides?: {
   sessionManager?: {
     switchSession?: ReturnType<typeof vi.fn>;
     restoreSession?: ReturnType<typeof vi.fn>;
+    /** GAP-2：会话切换前用于查询当前会话标识（决定是否触发自动归档） */
+    getCurrentSessionInfo?: ReturnType<typeof vi.fn>;
   } | null;
   agentHistory?: {
     currentDateValue?: string;
@@ -108,8 +110,12 @@ function createMockAgent(overrides?: {
       : {
           switchSession: vi.fn(),
           restoreSession: vi.fn().mockResolvedValue(0),
+          getCurrentSessionInfo: vi.fn(() => null),
         },
     agentLoop: hasAgentLoop ? overrides!.agentLoop : { restoreHistory: vi.fn() },
+    // GAP-2：归档模式默认 full（自动归档），archiveSessionContent 默认返回空结果
+    getArchiveMode: vi.fn(() => 'full'),
+    archiveSessionContent: vi.fn().mockResolvedValue({ memories: [], sessionLabel: '', messageCount: 0 }),
   } as unknown as IpcContext['agent'];
 }
 
@@ -364,9 +370,11 @@ describe('sessionHandlers', () => {
     });
 
     it('正常切换应更新 Agent 状态并返回消息列表', async () => {
+      // GAP-2：sessionManager 需提供 getCurrentSessionInfo（full 模式下切换前会调用以决定是否归档）
       const sessionManager = {
         switchSession: vi.fn(),
         restoreSession: vi.fn().mockResolvedValue(3),
+        getCurrentSessionInfo: vi.fn(() => null),
       };
       const messages = [makeMsg('user', '历史消息')];
       const sessionStore = createMockSessionStore({ loadMessages: messages });
@@ -387,9 +395,11 @@ describe('sessionHandlers', () => {
     });
 
     it('切换失败应降级返回错误信息', async () => {
+      // GAP-2：sessionManager 需提供 getCurrentSessionInfo（归档分支会先于 restoreSession 调用）
       const sessionManager = {
         switchSession: vi.fn(),
         restoreSession: vi.fn().mockRejectedValue(new Error('恢复失败')),
+        getCurrentSessionInfo: vi.fn(() => null),
       };
       const ctx = createMockCtx({
         agent: createMockAgent({ sessionManager }),

@@ -209,6 +209,13 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   forwardSimpleEvent(deps, 'memoryNoticed', () => ({}));
   // 洞察提取 → 仪表盘计数 +1
   forwardSimpleEvent(deps, 'insightGained', () => ({}));
+  // GAP-4：记忆冲突检测 → ProactiveBanner 通知用户
+  forwardSimpleEvent(deps, 'conflictDetected', (e) => ({
+    newMemoryId: e.newMemoryId,
+    newInsight: e.newInsight,
+    targetId: e.targetId,
+    targetContent: e.targetContent,
+  }));
   // 角色切换 → 顶栏角色标签更新
   forwardSimpleEvent(deps, 'personaChanged', (e) => ({ from: e.from, to: e.to }));
   // 项目切换 → 渲染层通知

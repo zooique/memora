@@ -1501,6 +1501,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   clearGraphHighlights(): void { this.memoryPanel.clearGraphHighlights(); }
   /** 注册更多菜单项点击回调（委托到 MemoryPanelManager） */
   onMoreMenuAction(cb: (action: string) => void): void { this.memoryPanel.onMoreMenuAction(cb); }
+  /** GAP-6 注册回收站操作回调（恢复/彻底删除，委托到 MemoryPanelManager） */
+  onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void { this.memoryPanel.onRecycleBinAction(cb); }
+  /** GAP-6 渲染回收站列表（委托到 MemoryPanelManager） */
+  renderRecycleBinList(memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void { this.memoryPanel.renderRecycleBinList(memories); }
   /** 注册排序变更回调（委托到 MemoryPanelManager） */
   onSortChange(cb: () => void): void { this.memoryPanel.onSortChange(cb); }
   /** 注册时间范围变更回调（委托到 MemoryPanelManager） */

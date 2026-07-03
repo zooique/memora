@@ -111,6 +111,21 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       if (!ctx.agent.sessionManager) {
         return { success: false, messages: [], error: 'SessionManager 未初始化' };
       }
+
+      // GAP-2：会话切换前归档当前会话内容（仅 full 模式自动触发）
+      // insights-only / manual 模式下用户需通过 UI 手动调用 archiveSessionContent
+      // best-effort：归档失败不阻塞会话切换（LLM 不可用/消息过少等场景静默跳过）
+      if (ctx.agent.getArchiveMode() === 'full') {
+        const currentInfo = ctx.agent.sessionManager.getCurrentSessionInfo();
+        if (currentInfo && (currentInfo.date !== query.date || currentInfo.session !== query.session)) {
+          // 异步归档，不阻塞切换（归档写入 memory storage，与 sessionStore 独立）
+          ctx.agent.archiveSessionContent(currentInfo.date, currentInfo.session).catch((err) => {
+            // 归档失败仅记录日志，不影响会话切换
+            console.warn('[sessionHandlers] 会话内容归档失败:', err);
+          });
+        }
+      }
+
       // 1. 切换 Agent 内部会话标识（更新 currentSession，后续 chat() 写入新会话）
       ctx.agent.sessionManager.switchSession(query.session);
       // 2. 恢复目标会话的历史消息到 AgentLoop 工作记忆（供 LLM 上下文使用）

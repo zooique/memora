@@ -16,11 +16,14 @@
  * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 290 行。
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
+import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
+// AUTO-HEALTH-05：事件监听器注册逻辑提取到独立 helper（降低本文件体量）
+import { initMemoryPanelListeners as initMemoryPanelListenersImpl } from '../helpers/memoryPanelEvents.js';
+import type { MemoryPanelEventContext } from '../helpers/memoryPanelEvents.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -130,6 +133,8 @@ export class MemoryPanelManager {
   private relationDeleteCallback: ((sourceId: string, targetId: string, type: string) => void) | null = null;
   /** 关系创建回调 */
   private relationCreateCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
+  /** GAP-6 回收站操作回调：action='restore' 恢复 / action='purge' 彻底删除 */
+  private recycleBinActionCallback: ((action: 'restore' | 'purge', id: string) => void) | null = null;
 // ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
   private pendingCleanupIds: string[] = [];
@@ -170,379 +175,52 @@ export class MemoryPanelManager {
 
   /** 初始化记忆面板事件监听 */
   initMemoryPanelListeners(): void {
-    // 记忆面板元素缺失时静默降级（不阻塞其他功能）
-    if (!this.memorySearchEl || !this.memoryFilterSourceEl) return;
-
-    // 提取局部常量，避免闭包内控制流分析断裂导致的非空断言
-    const searchEl = this.memorySearchEl;
-    const filterSourceEl = this.memoryFilterSourceEl;
-
-    // QC-22 记忆列表事件委托：在 list 容器上注册统一 click 监听器，
-    // 通过 data-action="view-memory" + data-memory-id 分发，
-    // 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理
-    if (this.memoryListEl) {
-      this.events.addEventListener(this.memoryListEl, 'click', (e: Event) => {
-        const target = e.target as HTMLElement;
-        const item = target.closest<HTMLElement>('[data-action="view-memory"]');
-        if (item) {
-          const memoryId = item.dataset.memoryId ?? '';
-          this.memoryClickCallback?.(memoryId);
-        }
-      });
-    }
-
-    // 搜索框：输入时触发搜索（带防抖）
-    this.events.addEventListener(searchEl, 'input', () => {
-      if (this.searchTimer) clearTimeout(this.searchTimer);
-      this.searchTimer = setTimeout(() => {
-        this.memorySearchCallback?.(searchEl.value.trim());
-      }, 300);
-    });
-
-    // source 筛选变更
-    this.events.addEventListener(filterSourceEl, 'change', () => {
-      this.memoryFilterCallback?.(filterSourceEl.value);
-    });
-
-    // 排序下拉（高级搜索栏 #memory-sort-order）
-    const sortOrder = document.getElementById('memory-sort-order');
-    if (sortOrder) {
-      this.events.addEventListener(sortOrder, 'change', () => {
-        this.sortChangeCallback?.();
-      });
-    }
-
-    // 时间范围下拉（高级搜索栏 #memory-time-range）
-    const timeRange = document.getElementById('memory-time-range');
-    if (timeRange) {
-      this.events.addEventListener(timeRange, 'change', () => {
-        this.timeRangeChangeCallback?.();
-      });
-    }
-
-    // 添加按钮（可选）
-    const btnAdd = getOptionalElement('btn-add-memory', 'button');
-    if (btnAdd) {
-      this.events.addEventListener(btnAdd, 'click', () => {
-        this.host.showModal('memory-add-modal');
-      });
-    }
-
-    // 添加确认按钮（可选）
-    const btnAddConfirm = getOptionalElement('btn-memory-add-confirm', 'button');
-    if (btnAddConfirm) {
-      this.events.addEventListener(btnAddConfirm, 'click', () => {
-        const data = this.getAddMemoryFormData();
-        if (data) {
-          this.memoryAddCallback?.(data);
-        } else {
-          // 表单校验失败时给出反馈（之前静默跳过，用户以为按钮失灵）
-          this.host.showToast('请填写完整：来源、名称和内容', 'warning');
-        }
-      });
-    }
-
-    // FD-ADD-CTRL-ENTER：textarea 支持 Ctrl+Enter 快捷提交（与 confirm/prompt 弹窗的 Enter 确认行为对齐）
-    // textarea 中 Enter 是换行，故用 Ctrl+Enter 触发提交
-    const addContentEl = getOptionalElement('memory-add-content', 'textarea');
-    if (addContentEl) {
-      this.events.addEventListener(addContentEl, 'keydown', ((e: KeyboardEvent) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-          e.preventDefault();
-          const data = this.getAddMemoryFormData();
-          if (data) {
-            this.memoryAddCallback?.(data);
-          } else {
-            // Ctrl+Enter 提交校验失败时同样给出反馈
-            this.host.showToast('请填写完整：来源、名称和内容', 'warning');
-          }
-        }
-      }) as EventListener);
-    }
-
-    // 删除按钮（可选，带确认对话框，防止误删不可恢复数据）
-    const btnDelete = getOptionalElement('btn-memory-delete', 'button');
-    if (btnDelete) {
-      this.events.addEventListener(btnDelete, 'click', async () => {
-        // 确认删除：记忆是持久化数据，删除后不可恢复，需二次确认
-        const confirmed = await this.host.showConfirmDialog({
-          title: '删除记忆',
-          message: '确定要删除这条记忆吗？此操作不可撤销。',
-          confirmText: '删除',
-          danger: true,
-        });
-        if (!confirmed) return;
-        this.memoryDeleteCallback?.();
-      });
-    }
-
-    // P2-FLOW-08 编辑按钮：进入编辑模式，将 content 区域变为可编辑
-    const btnEdit = getOptionalElement('btn-memory-edit', 'button');
-    if (btnEdit) {
-      this.events.addEventListener(btnEdit, 'click', () => {
-        this.enterEditMode();
-      });
-    }
-
-    // P2-FLOW-08 编辑保存按钮：保存编辑内容
-    const btnEditSave = getOptionalElement('btn-memory-edit-save', 'button');
-    if (btnEditSave) {
-      this.events.addEventListener(btnEditSave, 'click', () => {
-        this.saveEdit();
-      });
-    }
-
-    // P2-FLOW-08 编辑取消按钮：退出编辑模式，恢复原始内容
-    const btnEditCancel = getOptionalElement('btn-memory-edit-cancel', 'button');
-    if (btnEditCancel) {
-      this.events.addEventListener(btnEditCancel, 'click', () => {
-        this.exitEditMode();
-      });
-    }
-
-    // FD-ADD-MEMORY-DISCUSS 讨论按钮：关闭详情弹窗，切换到对话面板预填讨论提示
-    const btnDiscuss = getOptionalElement('btn-memory-discuss', 'button');
-    if (btnDiscuss) {
-      this.events.addEventListener(btnDiscuss, 'click', () => {
-        const memoryName = this.memoryDetailModal?.dataset.memoryName ?? '';
-        if (memoryName) {
-          this.memoryDiscussCallback?.(memoryName);
-        }
-      });
-    }
-
-    // ─── 高级筛选按钮（独立图标按钮，切换筛选栏显示） ────
-    const advFilterBtn = document.getElementById('btn-advanced-filter');
-    const advSearchBar = document.getElementById('advanced-search-bar');
-    if (advFilterBtn && advSearchBar) {
-      this.events.addEventListener(advFilterBtn, 'click', () => {
-        advSearchBar.classList.toggle('hidden');
-        advFilterBtn.classList.toggle('active', !advSearchBar.classList.contains('hidden'));
-      });
-    }
-
-    // ─── 更多菜单（统计洞察/健康度诊断） ──────────────
-    const moreBtn = document.getElementById('btn-memory-more');
-    const moreMenu = document.getElementById('memory-more-menu');
-
-    /** 切换更多菜单的显示/隐藏 */
-    const toggleMoreMenu = (show?: boolean): void => {
-      if (!moreMenu || !moreBtn) return;
-      const shouldShow = show ?? moreMenu.classList.contains('hidden');
-      if (shouldShow) {
-        // 动态计算弹出框位置，默认靠左展开（符合用户期望），
-        // 若右侧空间不足则降级为靠右展开，避免超出窗口被 panel overflow:hidden 裁剪
-        const btnRect = moreBtn.getBoundingClientRect();
-        const menuMinWidth = 150; // 与 CSS .more-menu min-width 一致
-        const wouldOverflowRight = btnRect.left + menuMinWidth > window.innerWidth;
-        if (wouldOverflowRight) {
-          // 右侧空间不足，靠右展开（向左）
-          moreMenu.style.left = 'auto';
-          moreMenu.style.right = '0';
-        } else {
-          // 右侧空间充足，靠左展开（向右）
-          moreMenu.style.left = '0';
-          moreMenu.style.right = 'auto';
-        }
-      }
-      moreMenu.classList.toggle('hidden', !shouldShow);
-      moreBtn.setAttribute('aria-expanded', String(shouldShow));
+    // AUTO-HEALTH-05：事件监听器注册逻辑提取到 helpers/memoryPanelEvents.ts
+    // 此处构建上下文并委托，降低本文件体量（原 375 行单方法 → ~50 行薄委托层）
+    const ctx: MemoryPanelEventContext = {
+      // ─── DOM 元素（构造函数注入的可选元素） ───
+      memoryListEl: this.memoryListEl,
+      memorySearchEl: this.memorySearchEl,
+      memoryFilterSourceEl: this.memoryFilterSourceEl,
+      memoryDetailModal: this.memoryDetailModal,
+      // ─── 事件跟踪器 + 宿主能力 ───
+      events: this.events,
+      host: this.host,
+      // ─── 状态访问器（searchTimer 防抖定时器，cleanup 时需清理） ───
+      getSearchTimer: () => this.searchTimer,
+      setSearchTimer: (timer) => {
+        this.searchTimer = timer;
+      },
+      // ─── 清理对话框状态（待清理 ID 列表） ───
+      getPendingCleanupIds: () => this.pendingCleanupIds,
+      setPendingCleanupIds: (ids) => {
+        this.pendingCleanupIds = ids;
+      },
+      // ─── 实例方法引用（箭头函数绑定 this，覆盖 public/private 方法） ───
+      getAddMemoryFormData: () => this.getAddMemoryFormData(),
+      enterEditMode: () => this.enterEditMode(),
+      exitEditMode: () => this.exitEditMode(),
+      saveEdit: () => this.saveEdit(),
+      toggleAnalysisPanel: (panel) => this.toggleAnalysisPanel(panel),
+      hideAnalysisPanel: () => this.hideAnalysisPanel(),
+      switchView: (mode) => this.switchView(mode),
+      showCleanupDialog: (message, ids) => this.showCleanupDialog(message, ids),
+      // ─── 回调读取器（onXxx 注册晚于 init，用 getter 读取最新值） ───
+      getMemorySearchCallback: () => this.memorySearchCallback,
+      getMemoryFilterCallback: () => this.memoryFilterCallback,
+      getMemoryClickCallback: () => this.memoryClickCallback,
+      getMemoryDeleteCallback: () => this.memoryDeleteCallback,
+      getMemoryAddCallback: () => this.memoryAddCallback,
+      getMemoryDiscussCallback: () => this.memoryDiscussCallback,
+      getSortChangeCallback: () => this.sortChangeCallback,
+      getTimeRangeChangeCallback: () => this.timeRangeChangeCallback,
+      getCleanupRequestCallback: () => this.cleanupRequestCallback,
+      getCleanupConfirmCallback: () => this.cleanupConfirmCallback,
+      getViewSwitchCallback: () => this.viewSwitchCallback,
+      // GAP-6：回收站操作回调读取器
+      getRecycleBinActionCallback: () => this.recycleBinActionCallback,
     };
-
-    if (moreBtn) {
-      this.events.addEventListener(moreBtn, 'click', (e) => {
-        (e as Event).stopPropagation();
-        toggleMoreMenu();
-      });
-    }
-
-    // 点击外部关闭更多菜单（注册到 document）
-    this.events.addEventListener(document, 'click', (e) => {
-      if (moreMenu && !moreMenu.classList.contains('hidden')) {
-        const target = (e as Event).target as HTMLElement;
-        if (!moreMenu.contains(target) && target !== moreBtn) {
-          toggleMoreMenu(false);
-        }
-      }
-    });
-
-    // 更多菜单项事件委托（仅保留统计洞察和健康度诊断）
-    if (moreMenu) {
-      this.events.addEventListener(moreMenu, 'click', async (e) => {
-        const item = ((e as Event).target as HTMLElement).closest('.more-menu-item') as HTMLElement | null;
-        if (!item) return;
-        const action = item.getAttribute('data-action');
-        toggleMoreMenu(false);
-
-        if (action === 'insights') {
-          this.toggleAnalysisPanel('insights');
-        } else if (action === 'health') {
-          this.toggleAnalysisPanel('health');
-        }
-      });
-    }
-
-    // ─── 分析面板关闭按钮 ──────────────────────────
-    const closeInsightsBtn = document.getElementById('btn-close-insights');
-    if (closeInsightsBtn) {
-      this.events.addEventListener(closeInsightsBtn, 'click', () => {
-        this.hideAnalysisPanel();
-      });
-    }
-    const closeHealthBtn = document.getElementById('btn-close-health');
-    if (closeHealthBtn) {
-      this.events.addEventListener(closeHealthBtn, 'click', () => {
-        this.hideAnalysisPanel();
-      });
-    }
-
-    // ─── 视图切换按钮（列表 ↔ 图谱 segmented control） ──
-    const listBtn = document.getElementById('btn-list-view');
-    const graphBtn = document.getElementById('btn-graph-view');
-
-    /** 更新视图切换按钮的 active 状态 */
-    const updateViewSwitchBtns = (view: 'list' | 'timeline' | 'graph'): void => {
-      if (listBtn) {
-        listBtn.classList.toggle('active', view === 'list');
-        listBtn.setAttribute('aria-selected', String(view === 'list'));
-      }
-      const timelineBtn = document.getElementById('btn-timeline-view');
-      if (timelineBtn) {
-        timelineBtn.classList.toggle('active', view === 'timeline');
-        timelineBtn.setAttribute('aria-selected', String(view === 'timeline'));
-      }
-      if (graphBtn) {
-        graphBtn.classList.toggle('active', view === 'graph');
-        graphBtn.setAttribute('aria-selected', String(view === 'graph'));
-      }
-    };
-
-    // 默认列表视图active
-    updateViewSwitchBtns('list');
-
-    if (listBtn) {
-      this.events.addEventListener(listBtn, 'click', () => {
-        updateViewSwitchBtns('list');
-        this.switchView('list');
-        this.viewSwitchCallback?.('list');
-      });
-    }
-
-    if (graphBtn) {
-      this.events.addEventListener(graphBtn, 'click', () => {
-        const graphContainer = document.getElementById('memory-graph-container');
-        // B2: 统一用 .hidden 类判断可见性（替代 style.display 内联样式）
-        const isGraphView = graphContainer && !graphContainer.classList.contains('hidden');
-
-        if (isGraphView) {
-          updateViewSwitchBtns('list');
-          this.switchView('list');
-          this.viewSwitchCallback?.('list');
-        } else {
-          updateViewSwitchBtns('graph');
-          this.switchView('graph');
-          this.viewSwitchCallback?.('graph');
-        }
-      });
-    }
-
-    // 时间线视图按钮
-    const timelineBtn = document.getElementById('btn-timeline-view');
-    if (timelineBtn) {
-      this.events.addEventListener(timelineBtn, 'click', () => {
-        const timelineContainer = document.getElementById('memory-timeline-container');
-        // B2: 统一用 .hidden 类判断可见性（替代 style.display 内联样式）
-        const isTimelineView = timelineContainer && !timelineContainer.classList.contains('hidden');
-
-        if (isTimelineView) {
-          updateViewSwitchBtns('list');
-          this.switchView('list');
-          this.viewSwitchCallback?.('list');
-        } else {
-          updateViewSwitchBtns('timeline');
-          this.switchView('timeline');
-          this.viewSwitchCallback?.('timeline');
-        }
-      });
-    }
-
-    // ─── 排序方式变更 ──────────────────────────────────
-    const sortEl = document.getElementById('memory-sort-order') as HTMLSelectElement | null;
-    if (sortEl) {
-      this.events.addEventListener(sortEl, 'change', () => {
-        this.sortChangeCallback?.();
-      });
-    }
-
-    // ─── 时间范围变更 ──────────────────────────────────
-    const timeRangeEl = document.getElementById('memory-time-range') as HTMLSelectElement | null;
-    if (timeRangeEl) {
-      this.events.addEventListener(timeRangeEl, 'change', () => {
-        this.timeRangeChangeCallback?.();
-      });
-    }
-
-    // ─── 清理按钮（Phase 3：智能清理） ─────────────────
-    const cleanupDupBtn = document.getElementById('health-cleanup-duplicates');
-    const cleanupStaleBtn = document.getElementById('health-cleanup-stale');
-    const cleanupAllBtn = document.getElementById('health-cleanup-all');
-    const cleanupDialog = document.getElementById('cleanup-confirm-dialog');
-    const cleanupCancelBtn = document.getElementById('cleanup-confirm-cancel');
-    const cleanupConfirmBtn = document.getElementById('cleanup-confirm-confirm');
-
-    if (cleanupDupBtn) {
-      this.events.addEventListener(cleanupDupBtn, 'click', () => {
-        const ids = this.cleanupRequestCallback?.('duplicates') ?? [];
-        if (ids.length === 0) {
-          this.host.showToast('没有可清理的重复记忆', 'info');
-          return;
-        }
-        this.showCleanupDialog(`确定要清理 ${ids.length} 条重复记忆吗？每组将保留分数最高的一条。`, ids);
-      });
-    }
-
-    if (cleanupStaleBtn) {
-      this.events.addEventListener(cleanupStaleBtn, 'click', () => {
-        const ids = this.cleanupRequestCallback?.('stale') ?? [];
-        if (ids.length === 0) {
-          this.host.showToast('没有可清理的过期记忆', 'info');
-          return;
-        }
-        this.showCleanupDialog(`确定要清理 ${ids.length} 条过期记忆吗？这些记忆长期未访问或得分较低。`, ids);
-      });
-    }
-
-    if (cleanupAllBtn) {
-      this.events.addEventListener(cleanupAllBtn, 'click', () => {
-        const ids = this.cleanupRequestCallback?.('all') ?? [];
-        if (ids.length === 0) {
-          this.host.showToast('没有可清理的问题记忆', 'info');
-          return;
-        }
-        this.showCleanupDialog(`确定要清理 ${ids.length} 条问题记忆吗？`, ids);
-      });
-    }
-
-    if (cleanupCancelBtn && cleanupDialog) {
-      this.events.addEventListener(cleanupCancelBtn, 'click', () => {
-        cleanupDialog.classList.add('hidden');
-        this.pendingCleanupIds = [];
-      });
-    }
-
-    if (cleanupConfirmBtn && cleanupDialog) {
-      this.events.addEventListener(cleanupConfirmBtn, 'click', async () => {
-        cleanupDialog.classList.add('hidden');
-        if (this.pendingCleanupIds.length === 0) return;
-        const ids = [...this.pendingCleanupIds];
-        this.pendingCleanupIds = [];
-        try {
-          await this.cleanupConfirmCallback?.(ids);
-        } catch {
-          // cleanupConfirmCallback 由 Controller 实现，Controller 内部会报告错误和显示 toast
-        }
-      });
-    }
+    initMemoryPanelListenersImpl(ctx);
   }
 
   /**
@@ -1625,6 +1303,91 @@ export class MemoryPanelManager {
   /** 注册关系创建回调 */
   onRelationCreate(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void {
     this.relationCreateCallback = cb;
+  }
+
+  /** GAP-6 注册回收站操作回调（恢复/彻底删除） */
+  onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void {
+    this.recycleBinActionCallback = cb;
+  }
+
+  // ─── GAP-6 回收站列表渲染 ───────────────────────────────
+
+  /**
+   * GAP-6 渲染回收站列表
+   *
+   * 每项结构：header(名称 + 操作按钮) + meta(来源 + 删除时间) + preview(内容预览)
+   * 操作按钮通过 data-action + data-memory-id 委托，由 initRecycleBinActions 统一处理
+   *
+   * @param memories 回收站记忆列表项（已由控制器截断 contentPreview）
+   */
+  renderRecycleBinList(memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void {
+    const listEl = document.getElementById('recycle-bin-list');
+    if (!listEl) return;
+    // 统一使用 replaceChildren 清空（遵循渲染器统一操作模式，不直接操作 innerHTML）
+    listEl.replaceChildren();
+
+    if (memories.length === 0) {
+      // 空状态由 CSS :empty::after 显示"回收站为空"，无需额外 DOM
+      return;
+    }
+
+    for (const mem of memories) {
+      const item = document.createElement('div');
+      item.className = 'recycle-bin-item';
+
+      // 头部：名称 + 操作按钮组
+      const header = document.createElement('div');
+      header.className = 'recycle-bin-item-header';
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'recycle-bin-item-name';
+      nameEl.textContent = mem.name; // textContent 防 XSS
+
+      const actions = document.createElement('div');
+      actions.className = 'recycle-bin-item-actions';
+
+      // 恢复按钮（绿色强调，对应 .health-action-btn 无 danger 类）
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'health-action-btn';
+      restoreBtn.textContent = '恢复';
+      restoreBtn.setAttribute('data-action', 'restore-memory');
+      restoreBtn.setAttribute('data-memory-id', mem.id);
+      restoreBtn.setAttribute('title', '恢复此记忆到活跃列表');
+
+      // 彻底删除按钮（红色 danger 样式）
+      const purgeBtn = document.createElement('button');
+      purgeBtn.className = 'health-action-btn danger';
+      purgeBtn.textContent = '彻底删除';
+      purgeBtn.setAttribute('data-action', 'purge-memory');
+      purgeBtn.setAttribute('data-memory-id', mem.id);
+      purgeBtn.setAttribute('title', '永久删除此记忆，不可恢复');
+
+      actions.append(restoreBtn, purgeBtn);
+      header.append(nameEl, actions);
+
+      // 元信息：来源 + 删除时间
+      const meta = document.createElement('div');
+      meta.className = 'recycle-bin-item-meta';
+
+      const sourceEl = document.createElement('span');
+      sourceEl.className = 'recycle-bin-item-source';
+      sourceEl.textContent = `来源: ${mem.source}`;
+
+      const deletedAtEl = document.createElement('span');
+      deletedAtEl.className = 'recycle-bin-item-deleted-at';
+      // 格式化删除时间为本地可读日期（复用 formatTimestamp：当天 HH:MM / 昨天 HH:MM / MM-DD HH:MM）
+      deletedAtEl.textContent = `删除于: ${formatTimestamp(mem.deletedAt)}`;
+
+      meta.append(sourceEl, deletedAtEl);
+
+      // 内容预览
+      const previewEl = document.createElement('div');
+      previewEl.className = 'recycle-bin-item-preview';
+      previewEl.textContent = mem.contentPreview; // textContent 防 XSS
+
+      item.append(header, meta, previewEl);
+      listEl.append(item);
+    }
   }
 
   // ─── 图谱上下文菜单 ─────────────────────────────────────────

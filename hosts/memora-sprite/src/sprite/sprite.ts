@@ -49,6 +49,8 @@ export interface SpriteEventMap {
   personaChanged: { from: string | null; to: string };
   /** 精灵注意到洞察提取 */
   insightGained: { source: string; insight: string };
+  /** GAP-4：记忆冲突被检测到（contradicts 关系写入时通知宿主 UI） */
+  conflictDetected: { newMemoryId: string; newInsight: string; targetId: string; targetContent: string };
   /** 精灵主动提示（累积事件后生成） */
   proactivePrompt: { prompt: string; triggers: string[]; silent: boolean; isMilestone?: boolean };
   // L5：迭代 9 补齐的 4 种未订阅 Agent 事件
@@ -107,6 +109,8 @@ export class Sprite {
     memoryAdded?: (e: AgentEventMap['memoryAdded']) => void;
     personaSwitched?: (e: AgentEventMap['personaSwitched']) => void;
     insightExtracted?: (e: AgentEventMap['insightExtracted']) => void;
+    // GAP-4：冲突检测事件（contradicts 关系写入时触发）
+    conflictDetected?: (e: AgentEventMap['conflictDetected']) => void;
     // L5：迭代 9 补齐的 4 种事件
     projectSwitched?: (e: AgentEventMap['projectSwitched']) => void;
     skillMatched?: (e: AgentEventMap['skillMatched']) => void;
@@ -147,6 +151,12 @@ export class Sprite {
   private patternDetector: PatternDetector;
   /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
+
+  // ─── GAP-6 回收站自动清理 ──────────────────────────────
+  /** 回收站自动清理定时器句柄（start 时启动，stop 时清除） */
+  private recycleBinCleanupTimer: ReturnType<typeof setInterval> | null = null;
+  /** 回收站自动清理间隔（毫秒，默认 6 小时检查一次） */
+  private static readonly RECYCLE_BIN_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
   // ─── 感知数据缓存（Phase 1+2：注入 ProactiveEngine 用） ───
   /** 感知推导协调器（Phase 2+3+4，统一编排 affect/rapport/context/pattern 四个控制器链路） */
@@ -317,6 +327,9 @@ export class Sprite {
     // refreshBeforeChat 内部完成 affect/rapport/context/pattern 全链路推导 + injectAffect 统一注入
     this.perceptionCoordinator.refreshBeforeChat();
 
+    // GAP-6：启动回收站自动清理定时器
+    this.startRecycleBinCleanup();
+
     logger.info('精灵已启动，等待唤醒...');
   }
 
@@ -327,8 +340,88 @@ export class Sprite {
     this.unsubscribeAgentEvents();
     // QC-SPRITE-01：停止在场状态控制器，取消注册事件监听器，防止 reinitAgent 后泄漏
     this.presenceController?.stop();
+    // GAP-6：停止回收站自动清理定时器，防止 reinitAgent 后泄漏
+    this.stopRecycleBinCleanup();
     this.spriteHandlers.clear();
     this.state = 'idle';
+  }
+
+  // ─── GAP-6 回收站自动清理 ──────────────────────────────
+
+  /**
+   * 启动回收站自动清理定时器
+   *
+   * 每 6 小时检查一次，清理 deletedAt 早于 (now - retentionDays) 的记忆。
+   * retentionDays=0 时跳过自动清理（仅手动 purge）。
+   * 启动时立即执行一次（清理上次运行期间累积的过期记忆）。
+   */
+  private startRecycleBinCleanup(): void {
+    // 已存在定时器时先清理（防止 reinitAgent 重复启动）
+    this.stopRecycleBinCleanup();
+
+    const retentionDays = this.config.recycleBinRetentionDays;
+    // retentionDays=0 表示禁用自动清理
+    if (retentionDays <= 0) {
+      logger.info({ retentionDays }, 'GAP-6 回收站自动清理已禁用（retentionDays=0）');
+      return;
+    }
+
+    // 启动时立即执行一次（清理上次运行期间累积的过期记忆）
+    this.purgeExpiredMemories();
+
+    // 注册周期性清理定时器
+    this.recycleBinCleanupTimer = setInterval(
+      () => this.purgeExpiredMemories(),
+      Sprite.RECYCLE_BIN_CLEANUP_INTERVAL_MS,
+    );
+    // unref：定时器不阻止进程退出（Node.js 最佳实践，与 decayScores 定时器一致）
+    if (this.recycleBinCleanupTimer.unref) {
+      this.recycleBinCleanupTimer.unref();
+    }
+    logger.info(
+      { retentionDays, intervalHours: Sprite.RECYCLE_BIN_CLEANUP_INTERVAL_MS / (60 * 60 * 1000) },
+      'GAP-6 回收站自动清理定时器已启动',
+    );
+  }
+
+  /** 停止回收站自动清理定时器 */
+  private stopRecycleBinCleanup(): void {
+    if (this.recycleBinCleanupTimer) {
+      clearInterval(this.recycleBinCleanupTimer);
+      this.recycleBinCleanupTimer = null;
+    }
+  }
+
+  /**
+   * 执行一次过期记忆清理
+   *
+   * 计算 (now - retentionDays) 作为阈值，调用 inspector.purgeExpired 物理删除。
+   * 清理后如有记忆被删除，记录日志便于运维追踪。
+   */
+  private purgeExpiredMemories(): void {
+    const inspector = this.agent.memory;
+    if (!inspector) return;
+
+    const retentionDays = this.config.recycleBinRetentionDays;
+    if (retentionDays <= 0) return;
+
+    // 阈值：now - retentionDays 天
+    const threshold = new Date(Date.now() - retentionDays * MS_PER_DAY);
+    try {
+      const purgedCount = inspector.purgeExpired(threshold);
+      if (purgedCount > 0) {
+        logger.info(
+          { purgedCount, retentionDays, threshold: threshold.toISOString() },
+          'GAP-6 回收站自动清理完成',
+        );
+      }
+    } catch (err) {
+      // 清理失败不阻断主流程，下次定时器会重试
+      logger.warn(
+        { err: toError(err).message, threshold: threshold.toISOString() },
+        'GAP-6 回收站自动清理失败',
+      );
+    }
   }
 
   /**
@@ -508,13 +601,43 @@ export class Sprite {
   }
 
   /**
-   * 删除记忆
+   * 删除记忆（GAP-6：软删除，移入回收站）
+   *
+   * @param id 记忆唯一标识
+   * @returns 是否成功软删除
+   */
+  deleteMemory(id: string): boolean {
+    return this.memoryController.delete(id);
+  }
+
+  /**
+   * 恢复软删除的记忆（GAP-6：从回收站恢复）
+   *
+   * @param id 记忆唯一标识
+   * @returns 是否成功恢复
+   */
+  restoreMemory(id: string): boolean {
+    return this.memoryController.restore(id);
+  }
+
+  /**
+   * 物理删除记忆（GAP-6：回收站彻底删除，不可恢复）
    *
    * @param id 记忆唯一标识
    * @returns 是否成功删除
    */
-  deleteMemory(id: string): boolean {
-    return this.memoryController.delete(id);
+  purgeMemory(id: string): boolean {
+    return this.memoryController.purge(id);
+  }
+
+  /**
+   * 列出回收站中的软删除记忆（GAP-6）
+   *
+   * @param limit 返回数量上限，默认 50
+   * @returns 回收站记忆列表项数组
+   */
+  listDeletedMemories(limit = 50): { id: string; name: string; source: string; contentPreview: string; deletedAt: string }[] {
+    return this.memoryController.listDeleted(limit);
   }
 
   /**
@@ -1143,6 +1266,23 @@ export class Sprite {
     this.agentHandlers.insightExtracted = onInsightExtracted;
     this.agent.on('insightExtracted', onInsightExtracted);
 
+    // GAP-4：conflictDetected → conflictDetected（直接转发，不经过 ProactiveEngine）
+    // 冲突检测是事实通知（非主动行为），不受静默模式和冷却控制
+    const onConflictDetected = (e: AgentEventMap['conflictDetected']) => {
+      this.emitSprite('conflictDetected', {
+        newMemoryId: e.newMemoryId,
+        newInsight: e.newInsight,
+        targetId: e.targetId,
+        targetContent: e.targetContent,
+      });
+      logger.info(
+        { newMemoryId: e.newMemoryId, targetId: e.targetId },
+        '检测到记忆冲突',
+      );
+    };
+    this.agentHandlers.conflictDetected = onConflictDetected;
+    this.agent.on('conflictDetected', onConflictDetected);
+
     // L5：项目切换 → projectSwitched
     // 用户在专注模式切换项目时，UI 可显示"已切换到 XXX 项目"通知
     const onProjectSwitched = (e: AgentEventMap['projectSwitched']) => {
@@ -1196,6 +1336,10 @@ export class Sprite {
     }
     if (this.agentHandlers.insightExtracted) {
       this.agent.off('insightExtracted', this.agentHandlers.insightExtracted);
+    }
+    // GAP-4：冲突检测事件清理
+    if (this.agentHandlers.conflictDetected) {
+      this.agent.off('conflictDetected', this.agentHandlers.conflictDetected);
     }
     // L5：迭代 9 补齐的 4 种事件清理
     if (this.agentHandlers.projectSwitched) {

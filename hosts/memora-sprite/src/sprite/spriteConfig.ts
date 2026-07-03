@@ -96,6 +96,14 @@ export interface SpriteConfig {
    * 每次累加同步持久化到 sprite.json（用户消息频率低，writeFileSync 开销可忽略）。
    */
   dailyMessageCount?: Record<string, number>;
+  /**
+   * GAP-6 回收站保留天数，默认 30
+   *
+   * 软删除记忆超过此天数后，由定时器自动调用 purgeExpired 彻底清理。
+   * 设为 0 表示禁用自动清理（仅手动 purge）。
+   * 持久化到 sprite.json，用户可在设置面板调整。
+   */
+  recycleBinRetentionDays?: number;
 }
 
 /**
@@ -150,6 +158,8 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   shortcuts: 'object',
   archiveMode: 'enum:full|insights-only|manual',
   dailyMessageCount: 'object',
+  // GAP-6：回收站保留天数（number，0 禁用自动清理）
+  recycleBinRetentionDays: 'number',
 };
 
 /** 内置默认值 */
@@ -183,6 +193,8 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   archiveMode: 'full',
   // 缺口 3.4：默认空对象，由 Sprite.incrementDailyMessageCount 累加填充
   dailyMessageCount: {},
+  // GAP-6：回收站默认保留 30 天，超过后定时器自动彻底清理
+  recycleBinRetentionDays: 30,
 };
 
 /** 配置文件名 */

@@ -11,14 +11,11 @@
     "build": "tsc",
     "build:electron": "npm run check-ipc && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "build:web": "tsc -p tsconfig.web.json",
-
     "start:electron": "chcp 65001 >nul && set NODE_ENV=production&& npm run build:electron && set NODE_ENV=production&& electron ./dist-electron/electron/main.js",
     "dev:electron": "chcp 65001 >nul && set NODE_ENV=development&& npm run build:electron && node scripts/dev-watch.mjs",
     "dev:web": "set NODE_ENV=development&& npm run build:electron && tsx src/web/server.ts",
-
     "start": "tsx src/cli.ts",
     "start:web": "set NODE_ENV=production&& npm run build:web && node dist-web/web/server.js",
-
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "npm run check-configs && eslint . --ext .ts",
@@ -43,7 +40,7 @@
     "memora": "npm:@zooique/memora@^0.1.0"
   },
   "devDependencies": {
-    "@electron/rebuild": "^3.6.0",
+    "@electron/rebuild": "^4.1.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.9.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",

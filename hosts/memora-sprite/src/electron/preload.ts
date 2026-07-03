@@ -32,6 +32,8 @@ import type {
   MemoryDetail,
   MemoryRelationItem,
   MemorySearchResult as MemorySearchHit,
+  // GAP-6：回收站列表项契约类型，从业务层真理源导入
+  DeletedMemoryListItem,
 } from '../sprite/controllers/memoryController.js';
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
 import type { SpriteConfig } from '../sprite/spriteConfig.js';
@@ -57,6 +59,12 @@ export const IPC_CHANNELS = {
   MEMORIES_SEARCH: 'memories-search',
   MEMORIES_SHOW: 'memories-show',
   MEMORIES_DELETE: 'memories-delete',
+  /** GAP-6：恢复软删除记忆 */
+  MEMORIES_RESTORE: 'memories-restore',
+  /** GAP-6：物理删除记忆（回收站彻底删除） */
+  MEMORIES_PURGE: 'memories-purge',
+  /** GAP-6：列出回收站记忆 */
+  MEMORIES_LIST_DELETED: 'memories-list-deleted',
   MEMORIES_ADD: 'memories-add',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
@@ -162,7 +170,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
-export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit };
+// GAP-6：补齐 DeletedMemoryListItem 导出，供 UI 渲染回收站列表使用
+export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem };
 
 // ─── H1/H2 共享类型定义 ───────────────────────────────────
 
@@ -377,6 +386,23 @@ export interface ElectronAPI {
   searchMemories: (query: string) => Promise<{ hits: MemorySearchHit[] }>;
   showMemory: (id: string) => Promise<{ memory: MemoryDetail | null }>;
   deleteMemory: (id: string) => Promise<{ deleted: boolean }>;
+  /**
+   * GAP-6：恢复软删除记忆（从回收站还原）
+   * @param id 记忆 ID
+   * @returns restored=true 表示恢复成功
+   */
+  restoreMemory: (id: string) => Promise<{ restored: boolean }>;
+  /**
+   * GAP-6：物理删除记忆（回收站彻底删除，不可恢复）
+   * @param id 记忆 ID
+   * @returns purged=true 表示已彻底删除
+   */
+  purgeMemory: (id: string) => Promise<{ purged: boolean }>;
+  /**
+   * GAP-6：列出回收站记忆（按 deletedAt 降序，最近删除在前）
+   * @returns 回收站记忆列表（仅暴露必要字段，content 已截断预览）
+   */
+  listDeletedMemories: () => Promise<{ memories: DeletedMemoryListItem[] }>;
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   getRelationGraph: () => Promise<{ nodes: MemoryListItem[]; edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }> }>;
@@ -694,6 +720,10 @@ const electronAPI: ElectronAPI = {
   searchMemories: (q) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SEARCH, q),
   showMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
   deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),
+  // GAP-6：回收站操作（restore/purge/listDeleted）
+  restoreMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RESTORE, id),
+  purgeMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_PURGE, id),
+  listDeletedMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_LIST_DELETED),
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
   getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),
   /** 添加记忆关系（手动创建，关系图交互） */

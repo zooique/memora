@@ -39,8 +39,9 @@ import type { ILogger } from 'memora';
  * vi.hoisted 与 vi.mock 配合使用：vi.hoisted 创建的变量会被提升到 vi.mock 之前，
  * 使得工厂函数可以访问这些变量。
  */
-/** 精灵事件总数（1 个主动提示 + 12 个简单转发事件 + 1 个 presenceChanged，含 memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated） */
-const SPRITE_EVENT_COUNT = 14;
+/** 精灵事件总数（1 个主动提示 + 13 个简单转发事件 + 1 个 presenceChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated） */
+// GAP-4：新增 conflictDetected 事件，总数从 14 → 15
+const SPRITE_EVENT_COUNT = 15;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
@@ -556,7 +557,7 @@ describe('SpriteEventBridge', () => {
       // 取消订阅
       unsubscribeSpriteEvents();
 
-      // sprite.off 应被调用 SPRITE_EVENT_COUNT 次（每个事件取消一次，共 14 次）
+      // sprite.off 应被调用 SPRITE_EVENT_COUNT 次（每个事件取消一次，共 15 次）
       expect(deps.sprite.off).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
     });
 

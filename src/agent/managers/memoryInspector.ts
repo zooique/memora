@@ -181,7 +181,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 删除记忆
+   * 删除记忆（GAP-6：软删除，写入 deletedAt）
    *
    * @param id 记忆唯一标识（${source}:${name} 格式）
    */
@@ -190,10 +190,48 @@ export class MemoryInspector {
   }
 
   /**
-   * 按 ID 获取单条记忆
+   * 恢复软删除的记忆（GAP-6：清除 deletedAt）
    *
    * @param id 记忆唯一标识
-   * @returns 记忆对象，不存在时返回 null
+   */
+  restore(id: string): void {
+    this.index.restore(id);
+  }
+
+  /**
+   * 物理删除记忆（GAP-6：不可恢复，用于回收站彻底删除）
+   *
+   * @param id 记忆唯一标识
+   */
+  purge(id: string): void {
+    this.index.purge(id);
+  }
+
+  /**
+   * 列出回收站中的软删除记忆（GAP-6）
+   *
+   * @param limit 返回数量上限（默认 50）
+   * @returns 软删除记忆列表（按 deletedAt 降序）
+   */
+  listDeleted(limit = 50): Memory[] {
+    return this.index.listDeleted(limit);
+  }
+
+  /**
+   * 清理过期的软删除记忆（GAP-6）
+   *
+   * @param before 时间阈值，deletedAt 早于此值的记忆将被物理删除
+   * @returns 被清理的记忆数量
+   */
+  purgeExpired(before: Date): number {
+    return this.index.purgeExpired(before);
+  }
+
+  /**
+   * 按 ID 获取单条活跃记忆（GAP-6：已软删除的返回 null）
+   *
+   * @param id 记忆唯一标识
+   * @returns 记忆对象，不存在或已软删除时返回 null
    */
   getById(id: string): Memory | null {
     return this.index.getById(id);

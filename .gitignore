@@ -5,6 +5,7 @@ node_modules/
 dist/
 build/
 coverage/
+*.tgz
 
 # 日志
 *.log

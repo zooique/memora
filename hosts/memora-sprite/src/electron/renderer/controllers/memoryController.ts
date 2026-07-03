@@ -121,6 +121,57 @@ export function createMemoryController(uiManager: UIManager) {
         await loadInsights();
       } else if (action === 'health') {
         await loadHealthDashboard();
+      } else if (action === 'recycle-bin') {
+        // GAP-6：打开回收站弹窗并加载列表
+        await loadRecycleBinList();
+        uiManager.showModal('recycle-bin-modal');
+      }
+    });
+
+    // ─── GAP-6 回收站操作回调：恢复 / 彻底删除 ─────────────
+    uiManager.onRecycleBinAction(async (recycleAction, id) => {
+      if (recycleAction === 'restore') {
+        // 恢复操作：二次确认（避免误点击）
+        const confirmed = await uiManager.showConfirmDialog({
+          title: '恢复记忆',
+          message: '确定要将此记忆从回收站恢复到活跃列表吗？',
+          confirmText: '恢复',
+        });
+        if (!confirmed) return;
+        try {
+          const result = await window.electronAPI.restoreMemory(id);
+          if (result.restored) {
+            uiManager.showToast('记忆已恢复', 'success');
+            // 刷新回收站列表（移除已恢复项）+ 主列表（显示恢复的记忆）
+            await loadRecycleBinList();
+            await loadMemoryList();
+          } else {
+            uiManager.showToast('恢复失败：记忆可能已被处理', 'error');
+          }
+        } catch (error) {
+          handleIpcError('restoreMemory', error, '恢复记忆失败');
+        }
+      } else if (recycleAction === 'purge') {
+        // 彻底删除：不可恢复操作，danger 确认
+        const confirmed = await uiManager.showConfirmDialog({
+          title: '彻底删除',
+          message: '确定要彻底删除此记忆吗？此操作不可恢复。',
+          confirmText: '彻底删除',
+          danger: true,
+        });
+        if (!confirmed) return;
+        try {
+          const result = await window.electronAPI.purgeMemory(id);
+          if (result.purged) {
+            uiManager.showToast('记忆已彻底删除', 'success');
+            // 刷新回收站列表（移除已删除项）
+            await loadRecycleBinList();
+          } else {
+            uiManager.showToast('删除失败：记忆可能已被处理', 'error');
+          }
+        } catch (error) {
+          handleIpcError('purgeMemory', error, '彻底删除记忆失败');
+        }
       }
     });
 
@@ -247,11 +298,17 @@ export function createMemoryController(uiManager: UIManager) {
       // 删除是不可恢复操作，需防重复点击（与 onMemoryAdd/onMemoryEdit 一致）
       setButtonLoading('btn-memory-delete', true, '删除中...');
       try {
-        await window.electronAPI.deleteMemory(id);
+        // GAP-6：deleteMemory 现为软删除（移入回收站），检查返回值避免假成功
+        const result = await window.electronAPI.deleteMemory(id);
+        if (!result.deleted) {
+          // 主进程返回 deleted=false（如 ID 不存在或已软删除），提示用户
+          uiManager.showToast('删除失败：记忆不存在或已被处理', 'error');
+          return;
+        }
         uiManager.hideModal('memory-detail-modal');
         await loadMemoryList();
-        // IX-06 操作反馈走 toast
-        uiManager.showToast('记忆已删除', 'success');
+        // IX-06 操作反馈走 toast（GAP-6：措辞调整为"已移入回收站"，体现软删除语义）
+        uiManager.showToast('记忆已移入回收站', 'success');
       } catch (error) {
         handleIpcError('onMemoryDelete', error, '删除记忆失败');
       } finally {
@@ -462,6 +519,21 @@ export function createMemoryController(uiManager: UIManager) {
       // C-8-EXT：通过 UIManager 门面显示错误状态（内部查找 #memory-list）
       uiManager.setMemoryListState('error');
       uiManager.showPanelError('memory', '加载记忆列表失败，请检查连接后重试', () => loadMemoryList());
+    }
+  }
+
+  /**
+   * GAP-6 加载回收站列表
+   *
+   * 调用 listDeletedMemories IPC 获取软删除记忆，委托 PanelManager 渲染。
+   * 失败时显示 toast 错误提示（回收站弹窗内不显示错误态，避免弹窗闪烁）。
+   */
+  async function loadRecycleBinList(): Promise<void> {
+    try {
+      const { memories } = await window.electronAPI.listDeletedMemories();
+      uiManager.renderRecycleBinList(memories);
+    } catch (error) {
+      handleIpcError('loadRecycleBinList', error, '加载回收站列表失败');
     }
   }
 

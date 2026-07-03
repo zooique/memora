@@ -13,6 +13,14 @@
  *
  * 方法签名保持同步语义（与 better-sqlite3 一致），
  * 调用方已有的 `await` 调用仍然安全（await 同步值 = 立即返回）。
+ *
+ * GAP-6 软删除语义（2026-07-03）：
+ *   - delete(id) 为软删除，写入 deletedAt，不物理移除
+ *   - 所有查询方法（getById/getBySource/search/count/countBySource/decayScores/getAllSources）
+ *     自动过滤 deletedAt != undefined 的记忆
+ *   - restore(id) 恢复软删除记忆，purge(id) 物理删除
+ *   - listDeleted(limit) 列出回收站，purgeExpired(before) 清理过期回收站
+ *   - 详见 ADR-004 v2.1 GAP-6 软删除扩展
  */
 import type { Memory } from '@/memory/types.js';
 
@@ -32,25 +40,78 @@ export interface IMemoryStorage {
   upsert(memory: Memory): void;
 
   /**
-   * 删除记忆
+   * 删除记忆（软删除，GAP-6）
+   *
+   * 语义为"移入回收站"：写入 deletedAt 时间戳，不物理移除。
+   * - 召回/搜索/列表/统计自动过滤已软删除的记忆
+   * - 可通过 restore(id) 恢复
+   * - 回收站保留期过后由 purgeExpired(before) 物理清理
+   *
+   * 对已软删除的记忆调用为 no-op。
+   *
+   * @param id - 记忆 ID
    */
   delete(id: string): void;
 
   /**
-   * 按 ID 获取单条记忆
+   * 恢复软删除的记忆（GAP-6）
+   *
+   * 将 deletedAt 字段清除，使记忆重新出现在召回/搜索/列表中。
+   * 对活跃记忆调用为 no-op。
+   *
+   * @param id - 记忆 ID
+   */
+  restore(id: string): void;
+
+  /**
+   * 物理删除记忆（GAP-6）
+   *
+   * 从存储中彻底移除，不可恢复。
+   * 用于回收站的"彻底删除"操作，或测试环境的强制清理。
+   *
+   * @param id - 记忆 ID
+   */
+  purge(id: string): void;
+
+  /**
+   * 列出回收站中的软删除记忆（GAP-6）
+   *
+   * 按 deletedAt 降序（最近删除的在前），便于回收站 UI 展示。
+   *
+   * @param limit - 返回数量上限（默认 50）
+   * @returns 软删除记忆列表（浅拷贝）
+   */
+  listDeleted(limit?: number): Memory[];
+
+  /**
+   * 清理过期的软删除记忆（GAP-6）
+   *
+   * 物理删除所有 deletedAt 早于 before 的记忆。
+   * 由宿主项目的定时器调用（默认 30 天保留期）。
+   *
+   * @param before - 时间阈值，deletedAt 早于此值的记忆将被物理删除
+   * @returns 被清理的记忆数量
+   */
+  purgeExpired(before: Date): number;
+
+  /**
+   * 按 ID 获取单条活跃记忆
+   *
+   * 已软删除的记忆（deletedAt != undefined）返回 null。
+   * 如需获取软删除记忆，请使用 listDeleted()。
    */
   getById(id: string): Memory | null;
 
   /**
-   * 按来源标签获取记忆
+   * 按来源标签获取活跃记忆（GAP-6：自动过滤已软删除的）
    *
    * @param source - 来源标签（如 'persona'、'rule'、'insight'）
-   * @returns 该来源的所有记忆
+   * @returns 该来源的所有活跃记忆
    */
   getBySource(source: string): Memory[];
 
   /**
-   * 关键词搜索记忆
+   * 关键词搜索活跃记忆（GAP-6：自动过滤已软删除的）
    *
    * 搜索逻辑（宿主实现）：
    * 1. 从 query 中提取关键词（推荐使用 Intl.Segmenter 分词 + 停用词过滤）
@@ -62,28 +123,28 @@ export interface IMemoryStorage {
    *
    * @param query - 搜索查询文本
    * @param limit - 返回数量上限（默认 10）
-   * @returns 匹配的记忆列表
+   * @returns 匹配的活跃记忆列表
    */
   search(query: string, limit?: number): Memory[];
 
   /**
-   * 统计记忆总数
+   * 统计活跃记忆总数（GAP-6：不含已软删除的）
    *
    * 比 search('', largeLimit).length 更高效，避免全量加载数据。
-   * 宿主实现应使用 COUNT(*) 等数据库原生计数。
+   * 宿主实现应使用 COUNT(*) WHERE deleted_at IS NULL。
    */
   count(): number;
 
   /**
-   * 按来源标签统计记忆数量
+   * 按来源标签统计活跃记忆数量（GAP-6：不含已软删除的）
    *
    * 比 getBySource(source).length 更高效，避免全量加载对象。
-   * 宿主实现应使用 COUNT(*) WHERE source = ? 等数据库原生计数。
+   * 宿主实现应使用 COUNT(*) WHERE source = ? AND deleted_at IS NULL。
    */
   countBySource(source: string): number;
 
   /**
-   * 衰减指定来源的记忆 score（自然遗忘机制）
+   * 衰减指定来源的活跃记忆 score（自然遗忘机制，GAP-6：跳过已软删除的）
    *
    * 长时间未访问的记忆 score 逐渐降低。
    * 宿主实现（SqliteStorage）可用一条 SQL UPDATE 批量完成，
@@ -96,10 +157,10 @@ export interface IMemoryStorage {
   decayScores(sources: string[], now: Date): number;
 
   /**
-   * 获取所有 source 标签及其记忆数量
+   * 获取所有 source 标签及其活跃记忆数量（GAP-6：不含已软删除的）
    *
    * P2-2 优化：替代 stats()/sourceHealth() 中的全量 search + 逐条遍历，
-   * 宿主实现应使用 SQL `SELECT source, COUNT(*) FROM memories GROUP BY source`，
+   * 宿主实现应使用 SQL `SELECT source, COUNT(*) FROM memories WHERE deleted_at IS NULL GROUP BY source`，
    * InMemoryStorage 维护增量更新的 source→count 缓存。
    *
    * @returns source 标签到数量的映射（如 { persona: 3, insight: 12, ... }）

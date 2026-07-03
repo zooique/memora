@@ -11,7 +11,9 @@ import { z } from 'zod';
 /**
  * 记忆基元 schema
  *
- * 7 个核心字段，无封闭枚举，无额外元数据
+ * 8 个核心字段（v2.1 GAP-6 软删除扩展），无封闭枚举
+ * - 7 个基础字段：id/content/source/name/createdAt/accessedAt/score
+ * - 1 个可选字段：deletedAt（软删除时间，undefined 表示活跃记忆）
  */
 export const MemorySchema = z.object({
   /** 唯一标识（source:name，如 'rule:core'、'insight:1718083200000'） */
@@ -28,6 +30,8 @@ export const MemorySchema = z.object({
   accessedAt: z.string().datetime(),
   /** 权重（0-1，召回时用于排序） */
   score: z.number().min(0).max(1).default(0.5),
+  /** 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理） */
+  deletedAt: z.string().datetime().optional(),
 });
 
 export type Memory = z.infer<typeof MemorySchema>;

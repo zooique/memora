@@ -20,6 +20,7 @@ import { SkillManager } from '@/skill/skillManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { InsightExtractor } from '@/agent/managers/insightExtractor.js';
+import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
@@ -69,6 +70,8 @@ export interface AssembleOutput {
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
   autoConfigRefiner: AutoConfigRefiner;
+  /** GAP-2：会话内容归档器（content 类记忆） */
+  sessionArchiver: SessionArchiver;
   /** 角色激活后的 system prompt */
   personaPrompt: string;
 }
@@ -165,6 +168,10 @@ export async function assembleComponents(
   // ADR-014：relationStore 可选注入，未注入时 InsightExtractor 跳过关系构建
   const insightExtractor = new InsightExtractor(provider, pctx.index, relationStore ?? null);
 
+  // GAP-2：SessionArchiver（会话内容归档器，content 类记忆）
+  // 与 InsightExtractor 同模式：构造时注入 provider + storage + sessionStore
+  const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
+
   const loop = new AgentLoop({
     provider,
     bootstrapMemories: pctx.bootstrapMemories,
@@ -210,6 +217,7 @@ export async function assembleComponents(
     configManager,
     memoryInspector,
     autoConfigRefiner,
+    sessionArchiver,
     personaPrompt,
   };
 }

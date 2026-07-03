@@ -78,6 +78,24 @@ export class SessionManager {
   }
 
   /**
+   * GAP-2：获取当前会话的日期和会话名
+   *
+   * 供宿主在 switchSession 前获取当前会话标识，用于触发 content 类归档。
+   * 返回 null 表示 history 未初始化。
+   */
+  getCurrentSessionInfo(): { date: string; session: string } | null {
+    try {
+      const history = this.getHistory();
+      return {
+        date: history.currentDateValue,
+        session: history.currentSessionValue,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 分叉当前会话：复制完整消息历史到新分支，切换到新分支继续对话
    *
    * 分叉后：

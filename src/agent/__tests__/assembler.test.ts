@@ -165,11 +165,12 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 12 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 13 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 12 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
-      // workProjection/skillManager/insightExtractor/configManager/memoryInspector/autoConfigRefiner/personaPrompt）
+      // 13 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
+      // workProjection/skillManager/insightExtractor/configManager/memoryInspector/autoConfigRefiner/
+      // sessionArchiver/personaPrompt）
       const expectedKeys = [
         'history',
         'loop',
@@ -182,6 +183,7 @@ describe('assembleComponents', () => {
         'configManager',
         'memoryInspector',
         'autoConfigRefiner',
+        'sessionArchiver',
         'personaPrompt',
       ];
       expect(Object.keys(output).sort()).toEqual(expectedKeys.sort());

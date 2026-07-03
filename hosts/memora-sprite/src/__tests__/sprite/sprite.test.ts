@@ -18,6 +18,8 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_SPRITE_CONFIG, saveSpriteConfig } from '../../sprite/spriteConfig.js';
 import type { SpriteConfig } from '../../sprite/spriteConfig.js';
+// GAP-6：回收站自动清理测试需要 MS_PER_DAY 计算 30 天阈值
+import { MS_PER_DAY } from '../../sprite/constants.js';
 
 // ─── Mock spriteConfig 模块（测试隔离） ──────────────────
 // 重构后 loadSpriteConfig/saveSpriteConfig 固定读写 ~/.memora-sprite/sprite.json，
@@ -62,6 +64,9 @@ const mockAgent = {
     suggest: vi.fn().mockReturnValue([]),
     // Phase 2.1：情感基调推导需要 list 方法获取所有记忆
     list: vi.fn().mockReturnValue([]),
+    // GAP-6：回收站自动清理定时器调用 purgeExpired
+    purgeExpired: vi.fn().mockReturnValue(0),
+    listDeleted: vi.fn().mockReturnValue([]),
   },
   persona: null,
 } as unknown as Agent;
@@ -101,6 +106,47 @@ describe('Sprite', () => {
     sprite.start();
     sprite.stop();
     expect(sprite.getState()).toBe('idle');
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('GAP-6 start 时调用 purgeExpiredMemories 清理过期记忆（启动即清理）', () => {
+    const tmpDir = createTmpDir();
+    // 清理前置测试累积的调用计数（mockAgent 为模块级共享）
+    vi.mocked(mockAgent.memory.purgeExpired).mockClear();
+    const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+    // 启动时立即执行一次清理（retentionDays=30 默认值）
+    expect(mockAgent.memory.purgeExpired).toHaveBeenCalledTimes(1);
+    // 传入的阈值应为 30 天前
+    const threshold = (mockAgent.memory.purgeExpired as ReturnType<typeof vi.fn>).mock.calls[0][0] as Date;
+    const expectedThreshold = Date.now() - 30 * MS_PER_DAY;
+    // 允许 1 秒误差（测试执行耗时）
+    expect(Math.abs(threshold.getTime() - expectedThreshold)).toBeLessThan(1000);
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('GAP-6 recycleBinRetentionDays=0 时禁用自动清理（不调用 purgeExpired）', () => {
+    const tmpDir = createTmpDir();
+    // 通过 updateConfigBatch 设置 retentionDays=0
+    const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.updateConfigBatch({ recycleBinRetentionDays: 0 });
+    vi.mocked(mockAgent.memory.purgeExpired).mockClear();
+    sprite.start();
+    // retentionDays=0 时不应调用 purgeExpired
+    expect(mockAgent.memory.purgeExpired).not.toHaveBeenCalled();
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('GAP-6 stop 后定时器被清理（reinitAgent 安全）', () => {
+    const tmpDir = createTmpDir();
+    const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+    sprite.stop();
+    // 再次 start 不应抛错（定时器已清理，可重复启动）
+    expect(() => sprite.start()).not.toThrow();
+    sprite.stop();
     rmSync(tmpDir, { recursive: true, force: true });
   });
 });

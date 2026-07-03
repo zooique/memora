@@ -77,6 +77,20 @@ export interface MemoryListItem {
   createdAt?: string;
 }
 
+/** GAP-6 回收站记忆列表项 */
+export interface DeletedMemoryListItem {
+  /** 记忆唯一标识 */
+  id: string;
+  /** 记忆名称 */
+  name: string;
+  /** 来源标签 */
+  source: string;
+  /** 内容预览（截断到 100 字符） */
+  contentPreview: string;
+  /** 软删除时间（ISO 8601，用于回收站展示删除时间） */
+  deletedAt: string;
+}
+
 /** 记忆详情中的关联记忆条目 */
 export interface MemoryRelationItem {
   /** 关联的记忆 ID */
@@ -237,25 +251,66 @@ export class MemoryController {
   }
 
   /**
-   * 删除记忆
+   * 软删除记忆（GAP-6：移入回收站，保留向量索引以便恢复）
    *
-   * 同步删除向量索引中对应的向量条目。
-   * QC-MEM-01 修复：对齐 upsert 的错误处理模式——向量索引操作失败时记录警告而非静默吞没。
-   *
-   * 注：VectorStore.delete 为同步方法（无 Promise 返回值），用 try/catch 捕获；
-   * 与 upsert 的 .catch() 形式不同但语义对齐（统一为"失败降级 + 记录警告"）。
+   * 软删除后记忆不再出现在召回/搜索/列表中，但可通过 restore() 恢复。
+   * 向量索引条目保留（recall 通过 getById 过滤已软删除的，不会误召回）。
    *
    * @param id 记忆唯一标识
-   * @returns 是否成功删除
+   * @returns 是否成功软删除（不存在或已软删除时返回 false）
    */
   delete(id: string): boolean {
-    // P2-DESIGN-6 修复：统一通过 agent.memory 访问
     const inspector = this.agent.memory;
     if (!inspector) return false;
+    // getById 返回 null 表示不存在或已软删除
     const exists = inspector.getById(id);
     if (!exists) return false;
     inspector.delete(id);
-    // 同步删除向量索引（QC-MEM-01：对齐 upsert 错误处理，失败时记录警告而非静默吞没）
+    // GAP-6：软删除不删除向量索引，restore 时无需重新嵌入
+    return true;
+  }
+
+  /**
+   * 恢复软删除的记忆（GAP-6）
+   *
+   * 将记忆从回收站恢复为活跃态。向量索引无需操作（软删除时未删除）。
+   *
+   * @param id 记忆唯一标识
+   * @returns 是否成功恢复（不存在或未软删除时返回 false）
+   */
+  restore(id: string): boolean {
+    const inspector = this.agent.memory;
+    if (!inspector) return false;
+    // 通过 listDeleted 检查是否存在已软删除的记忆
+    const deletedList = inspector.listDeleted();
+    const isDeleted = deletedList.some((m) => m.id === id);
+    if (!isDeleted) return false;
+    inspector.restore(id);
+    return true;
+  }
+
+  /**
+   * 物理删除记忆（GAP-6：彻底删除，不可恢复）
+   *
+   * 从存储中永久删除，同时清理向量索引。
+   * 仅用于回收站的"彻底删除"操作——只允许物理删除已软删除的记忆，
+   * 活跃记忆必须先通过 delete() 软删除进入回收站，再从此处彻底删除。
+   *
+   * 安全约束（SEC-GAP6-01）：防止被攻陷的渲染进程通过 IPC 直接 purge
+   * 活跃记忆绕过软删除保护，造成不可恢复的数据丢失。
+   *
+   * @param id 记忆唯一标识
+   * @returns 是否成功删除（记忆不在回收站时返回 false）
+   */
+  purge(id: string): boolean {
+    const inspector = this.agent.memory;
+    if (!inspector) return false;
+    // 仅允许物理删除已软删除的记忆（活跃记忆须先软删除到回收站）
+    const deletedList = inspector.listDeleted();
+    const isDeleted = deletedList.some((m) => m.id === id);
+    if (!isDeleted) return false;
+    inspector.purge(id);
+    // 物理删除时同步清理向量索引（QC-MEM-01：对齐 upsert 错误处理）
     if (this.vectorStore) {
       try {
         this.vectorStore.delete(id);
@@ -264,6 +319,26 @@ export class MemoryController {
       }
     }
     return true;
+  }
+
+  /**
+   * 列出回收站中的软删除记忆（GAP-6）
+   *
+   * @param limit 返回数量上限，默认 50
+   * @returns 回收站记忆列表项数组
+   */
+  listDeleted(limit = 50): DeletedMemoryListItem[] {
+    const inspector = this.agent.memory;
+    if (!inspector) return [];
+    const deleted = inspector.listDeleted(limit);
+    return deleted.map((m) => ({
+      id: m.id,
+      name: m.name,
+      source: m.source,
+      contentPreview: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
+      // deletedAt 非 undefined 已由 listDeleted 保证
+      deletedAt: m.deletedAt!,
+    }));
   }
 
   /**

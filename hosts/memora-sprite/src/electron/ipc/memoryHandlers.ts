@@ -56,7 +56,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
-  /** 删除记忆 */
+  /** 删除记忆（GAP-6：软删除，移入回收站） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE, async (_event, id: string) =>
     safeHandle('删除记忆失败', { deleted: false }, () => {
       // FOUNDATION-SEAL Phase 3：校验记忆 ID 类型和长度，防止非字符串或超长值传入内核
@@ -64,6 +64,33 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
         return { deleted: false };
       }
       return { deleted: ctx.sprite.deleteMemory(id) };
+    }),
+  );
+
+  /** 恢复软删除记忆（GAP-6：从回收站恢复） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_RESTORE, async (_event, id: string) =>
+    safeHandle('恢复记忆失败', { restored: false }, () => {
+      if (!isValidId(id)) {
+        return { restored: false };
+      }
+      return { restored: ctx.sprite.restoreMemory(id) };
+    }),
+  );
+
+  /** 物理删除记忆（GAP-6：回收站彻底删除） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_PURGE, async (_event, id: string) =>
+    safeHandle('彻底删除记忆失败', { purged: false }, () => {
+      if (!isValidId(id)) {
+        return { purged: false };
+      }
+      return { purged: ctx.sprite.purgeMemory(id) };
+    }),
+  );
+
+  /** 列出回收站记忆（GAP-6） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST_DELETED, async () =>
+    safeHandle('列出回收站记忆失败', { memories: [] }, () => {
+      return { memories: ctx.sprite.listDeletedMemories() };
     }),
   );
 
