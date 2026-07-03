@@ -322,6 +322,7 @@ export class SecurityGuard {
   ): Promise<boolean> {
     const needConfirm = this.permission === 'guest' || this.confirmWrites;
 
+    // 无需确认：直接放行并记录审计
     if (!needConfirm) {
       this.emitAudit({
         type: 'write-auto',
@@ -333,44 +334,77 @@ export class SecurityGuard {
       return true;
     }
 
+    // 构建确认信息（透传 diff 内容，供宿主 UI 展示变更预览）
     const info: WriteConfirmationInfo = {
       targetPath,
       tool,
       description,
       permission: this.permission,
       needsConfirm: needConfirm,
-      // 透传 diff 内容（截断后），供宿主 UI 展示变更预览
       beforeContent: truncateForDiff(options?.beforeContent),
       afterContent: truncateForDiff(options?.afterContent),
     };
 
+    // 优先走宿主注入的 confirmationHandler，未注册时回退到 CLI readline
     if (this.confirmationHandler) {
-      try {
-        const ok = await this.confirmationHandler(info);
-        this.emitAudit({
-          type: ok ? 'write-confirm' : 'write-decline',
-          path: targetPath,
-          tool,
-          decision: ok ? 'confirmed' : 'declined',
-          timestamp: nowIso(),
-        });
-        return ok;
-      } catch (err) {
-        // 抛错视为拒绝（fail-closed 安全优先）
-        logger.warn({ err, targetPath }, '写入确认回调异常，视为拒绝');
-        this.emitAudit({
-          type: 'write-decline',
-          path: targetPath,
-          tool,
-          decision: 'declined',
-          reason: `回调异常：${toError(err).message}`,
-          timestamp: nowIso(),
-        });
-        return false;
-      }
+      return this.confirmViaHandler(info, targetPath, tool);
     }
 
-    // 回退：CLI 场景直接走终端 readline
+    return this.confirmViaReadline(info, targetPath, tool, description);
+  }
+
+  /**
+   * 通过宿主注入的 confirmationHandler 进行写入确认
+   *
+   * HC-09：从 requestWriteConfirmation 拆分。抛错视为拒绝（fail-closed 安全优先）。
+   *
+   * @param info 确认信息（含 diff 内容）
+   * @returns true 确认通过；false 用户拒绝或回调异常
+   */
+  private async confirmViaHandler(
+    info: WriteConfirmationInfo,
+    targetPath: string,
+    tool: string,
+  ): Promise<boolean> {
+    try {
+      const ok = await this.confirmationHandler!(info);
+      this.emitAudit({
+        type: ok ? 'write-confirm' : 'write-decline',
+        path: targetPath,
+        tool,
+        decision: ok ? 'confirmed' : 'declined',
+        timestamp: nowIso(),
+      });
+      return ok;
+    } catch (err) {
+      // 抛错视为拒绝（fail-closed 安全优先）
+      logger.warn({ err, targetPath }, '写入确认回调异常，视为拒绝');
+      this.emitAudit({
+        type: 'write-decline',
+        path: targetPath,
+        tool,
+        decision: 'declined',
+        reason: `回调异常：${toError(err).message}`,
+        timestamp: nowIso(),
+      });
+      return false;
+    }
+  }
+
+  /**
+   * 通过 CLI readline 进行写入确认（宿主未注入 confirmationHandler 时的回退路径）
+   *
+   * HC-09：从 requestWriteConfirmation 拆分。直接走终端交互。
+   *
+   * @param info 确认信息（当前未使用，保留供未来扩展）
+   * @returns true 确认通过；false 用户拒绝
+   */
+  private async confirmViaReadline(
+    _info: WriteConfirmationInfo,
+    targetPath: string,
+    tool: string,
+    description?: string,
+  ): Promise<boolean> {
     const rl = createInterface({ input: stdin, output: stdout });
     try {
       const lines = [

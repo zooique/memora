@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
-version: v0.6
-date: 2026-06-25
+version: v0.7
+date: 2026-07-03
 ---
 
 # 后端分层规范
@@ -57,7 +57,7 @@ date: 2026-06-25
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`（宿主） | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
-| `agent/`    | Agent 门面 + AgentLoop + 工具执行 + 专职 Manager（Insight/Config/MemoryInspector/AutoConfigRefiner）+ 对话快照 + 作品投影 + 用户事实提取 | 直接调 LLM HTTP（通过 provider 接口）           |
+| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager（Insight/Config/MemoryInspector/AutoConfigRefiner/MemoryAdvisor/Session/SessionArchiver/WorkProjection/UserFactExtractor）+ 对话快照 + 作品投影 + 用户事实提取 | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选）+ 关系图谱侧车（IMemoryRelationStore 接口，独立于 IMemoryStorage） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入、写入 SQLite 索引 | 直接调 LLM、操作记忆索引                        |
@@ -65,6 +65,7 @@ date: 2026-06-25
 | `security/` | 路径白名单、写入确认、Prompt 注入防御              | 业务逻辑                                        |
 | `config/`   | 配置加载、环境变量展开                             | 业务逻辑                                        |
 | `logging/`  | 日志输出                                           | 业务逻辑                                        |
+| `eval/`     | Agent 行为评估场景定义（EvalScenario 类型 + 工具函数，仅测试用，不参与运行时） | 业务逻辑、运行时调用                             |
 
 ## 依赖方向
 
@@ -108,8 +109,10 @@ agent/
 ├── assembler.ts          # 组件组装器（Agent init 时组装各 Manager）
 ├── constants.ts          # Agent/Loop 常量集合（AGENT_CONSTANTS + LOOP_CONSTANTS）
 ├── loop.ts               # AgentLoop 主循环
-├── toolExecutor.ts       # 工具执行器（registerTool + execute）
-├── builtinTools.ts       # 内置工具定义（BUILTIN_TOOLS）
+├── toolExecutor.ts       # 工具执行器（registerTool + execute + 校验分发）
+├── builtinTools.ts       # 内置工具定义（BUILTIN_TOOLS 声明）
+├── builtinToolHandlers.ts # 内置工具处理器（read_file/write_file/list_dir/search_memories 实现，从 ToolExecutor 提取）
+├── contextManager.ts     # 上下文窗口管理器（token 估算 + 消息截断 + 关键消息提取 + 摘要生成，从 AgentLoop 提取）
 ├── messageHistory.ts     # 消息持久化 + 会话归档
 ├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
 ├── types.ts              # Agent 类型定义
@@ -119,7 +122,8 @@ agent/
 │   ├── insightExtractor.ts   # Insight 提取器（输入分类 + 记忆提取）
 │   ├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计 + 关联推荐）
 │   ├── memoryAdvisor.ts      # 记忆顾问（记忆质量评估 + 归档价值判断）
-│   ├── sessionManager.ts     # 会话管理器（fork/switch/restore)
+│   ├── sessionManager.ts     # 会话管理器（fork/switch/restore）
+│   ├── sessionArchiver.ts    # 会话归档器（content 类记忆归档，会话级摘要，区别于 InsightExtractor 的洞察提取）
 │   ├── workProjection.ts     # 作品投影管理器
 │   └── userFactExtractor.ts  # 用户事实提取器（正则规则，从 userProfile 迁入）
 └── __tests__/            # 单元测试

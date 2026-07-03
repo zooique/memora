@@ -21,10 +21,25 @@ export default [
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
       // 通用规则
-      'no-console': 'off', // CLI 工具允许 console
+      'no-console': 'off', // 宿主 CLI 工具允许 console（hosts/ 已被 ignore，此处兜底）
       'prefer-const': 'error',
       'no-var': 'error',
       eqeqeq: ['error', 'always'],
+    },
+  },
+  // HC-12：内核纯逻辑库 src/ 禁止直接使用 console（应走 logger）
+  // 覆盖上面的 'off'，强制 src/ 生产代码通过 logging/logger.ts 统一日志
+  {
+    files: ['src/**/*.ts'],
+    rules: {
+      'no-console': 'error',
+    },
+  },
+  // 例外：logging/ 是 logger 底层实现（console fallback）；__tests__/ 测试 mock console 合理
+  {
+    files: ['src/logging/**/*.ts', 'src/**/__tests__/**/*.ts'],
+    rules: {
+      'no-console': 'off',
     },
   },
   {

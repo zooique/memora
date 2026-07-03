@@ -13,7 +13,8 @@
  * mock fileStore + configDir=undefined 走降级路径，聚焦组装逻辑而非各组件自身行为（各组件已有独立测试）。
  *
  * 设计约束：
- * - 禁止 @ts-ignore / as any / as unknown as（使用 Partial<T> as T 单层断言）
+ * - 生产代码禁止 @ts-ignore / as any / as unknown as（零例外）
+ * - 测试 mock 允许 as unknown as（构造部分实现的 mock 对象，TS 社区惯例）
  * - 类型导入使用 import type
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
