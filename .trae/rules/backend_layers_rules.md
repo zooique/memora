@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
-version: v0.7
+version: v0.8
 date: 2026-07-03
 ---
 
@@ -62,7 +62,7 @@ date: 2026-07-03
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入、写入 SQLite 索引 | 直接调 LLM、操作记忆索引                        |
 | `llm/`      | LLM 适配、协议解析、流式处理                       | 读写文件                                        |
-| `security/` | 路径白名单、写入确认、Prompt 注入防御              | 业务逻辑                                        |
+| `security/` | 路径白名单、写入确认（fail-closed，未注入 handler 时拒绝，HC-03）、Prompt 注入防御 | 业务逻辑、交互式终端 I/O（readline 由宿主注入） |
 | `config/`   | 配置加载、环境变量展开                             | 业务逻辑                                        |
 | `logging/`  | 日志输出                                           | 业务逻辑                                        |
 | `eval/`     | Agent 行为评估场景定义（EvalScenario 类型 + 工具函数，仅测试用，不参与运行时） | 业务逻辑、运行时调用                             |

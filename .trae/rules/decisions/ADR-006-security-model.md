@@ -137,3 +137,49 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 - 当 Web 模式被废弃时（CSP 严格度可放宽）
 - 当 Electron 也开始严格执行 CSP 时（需进一步收紧约束）
 - 当引入需要内联样式的第三方库时（评估 nonce 或 hash 白名单方案）
+
+## 补充说明（2026-07-03 · HC-03 写入确认 fail-closed 决策）
+
+### 背景
+
+`SecurityGuard.requestWriteConfirmation()` 原设计包含两条确认路径：
+1. **主路径**：宿主通过 `onWriteConfirmation()` 注入 `confirmationHandler`（Electron/Web/CLI 各自实现 UI）
+2. **回退路径**：未注入 handler 时，内核直接调用 `node:readline/promises` + `node:process` 从 stdin 读取用户输入
+
+回退路径存在三个问题：
+1. **违反纯逻辑约束**：`security/` 模块作为内核纯逻辑库，硬依赖交互式终端 I/O 模块（与 ADR-002 零依赖内核原则精神不符）
+2. **测试死角**：`pathGuard.test.ts` 注释明说"暂无法稳定 mock readline/promises 内部 stdin"，回退路径**无单元测试覆盖**
+3. **生产环境零消费者**：
+   - Sprite Electron 宿主：`agentListeners.ts:117` **无条件注入** confirmationHandler
+   - Sprite CLI 宿主：`cli.ts:133` 配置 `confirmWrites=false`（自动批准，不走确认路径）
+   - Web 宿主：`preloadWeb.ts:763` 已有桩函数
+
+### 决策
+
+**完全移除 readline 回退路径，采用 fail-closed 语义**：
+
+| 场景 | 原行为 | 新行为（HC-03）|
+|------|--------|----------------|
+| `needConfirm=true` + 已注入 handler | 调用 handler | 调用 handler（不变）|
+| `needConfirm=true` + **未注入 handler** | 回退到 readline + stdin | **直接拒绝（return false）+ warn 日志 + 审计记录** |
+| `needConfirm=false`（owner + confirmWrites=false）| 自动批准 | 自动批准（不变）|
+
+### 理由
+
+- **YAGNI 原则**：生产环境零消费者，保留死代码增加维护负担
+- **fail-closed 是正确语义**：未配置确认机制 = 拒绝写入，避免无意识放行（安全优先）
+- **符合 ADR-002 注入模式**：宿主负责提供确认 UI（与 `IMemoryStorage` / `LlmProvider` 同模式），内核不提供终端 I/O 默认实现
+- **消除测试死角**：fail-closed 路径可完全 mock 测试，无需模拟 stdin
+- **宿主已有 readline**：`hosts/memora-sprite/src/sprite/cli/interaction.ts` 提供 `CliInteraction`，未来若 CLI 宿主需要确认 UI，应自行实现 `confirmationHandler` 并注入
+
+### 影响
+
+- 内核 `security/pathGuard.ts` 删除 `node:readline/promises` + `node:process` 两个顶层 import + `confirmViaReadline()` 方法（约 48 行）
+- `requestWriteConfirmation()` 新增 fail-closed 分支：未注入 handler 时 `logger.warn` + `emitAudit({type:'write-decline', reason:'未注入 confirmationHandler（fail-closed）'})` + `return false`
+- **破坏性变更**：若有宿主依赖 readline 回退（当前无），升级后需要确认的写入将被拒绝。宿主必须显式注入 `confirmationHandler`
+- 测试新增 3 个用例：owner+confirmWrites=true fail-closed / guest fail-closed / owner+confirmWrites=false 不受影响
+
+### 何时回顾
+
+- 当新宿主类型出现且需要 readline 确认能力时（评估是否提供官方 `createReadlineConfirmation()` 工厂函数供宿主使用）
+- 当 fail-closed 语义导致实际使用阻塞时（评估是否提供配置项允许 owner 模式降级为 auto-approved）

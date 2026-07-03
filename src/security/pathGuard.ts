@@ -5,11 +5,12 @@
  * 详见 ADR-006 · 安全模型
  * 阶段二新增：M-101 写入二次确认 + M-105 审计日志
  * SEC-06（自动安全）：补全 Windows/Linux 系统目录 + 包管理器凭证 + 符号链接逃逸防护
+ * HC-03：移除 readline 回退路径，未注入 confirmationHandler 时 fail-closed 拒绝写入。
+ *        内核纯逻辑库不应依赖交互式终端 I/O（node:readline/promises + node:process），
+ *        宿主程序应通过 onWriteConfirmation() 注入自己的确认 UI（Electron/Web/CLI 各自实现）。
  */
 import { resolve, sep, dirname, basename, join } from 'node:path';
 import { realpathSync } from 'node:fs';
-import { createInterface } from 'node:readline/promises';
-import { stdin, stdout } from 'node:process';
 import { logger } from '@/logging/logger.js';
 import { securityError, toError } from '@/utils/errors.js';
 import { expandHome } from '@/utils/path.js';
@@ -308,10 +309,13 @@ export class SecurityGuard {
    *   - owner + confirmWrites=true：要求确认
    *   - owner + confirmWrites=false：自动批准
    *
-   * 优先走 confirmationHandler 注入式回调（宿主程序），
-   * 未注册时回退到 readline + stdin（CLI 场景）。
+   * HC-03 决策（fail-closed）：
+   *   - 需要确认时，必须通过 onWriteConfirmation() 注入 confirmationHandler
+   *   - 未注入 handler 时，**直接拒绝写入**（返回 false），而非走 readline 回退
+   *   - 理由：内核纯逻辑库不应依赖交互式终端 I/O；宿主程序负责提供确认 UI
+   *   - 安全优先：未配置 = 拒绝，避免无意识放行
    *
-   * @returns true 确认通过；false 用户拒绝
+   * @returns true 确认通过；false 用户拒绝或未注入 handler（fail-closed）
    */
   async requestWriteConfirmation(
     targetPath: string,
@@ -345,18 +349,32 @@ export class SecurityGuard {
       afterContent: truncateForDiff(options?.afterContent),
     };
 
-    // 优先走宿主注入的 confirmationHandler，未注册时回退到 CLI readline
-    if (this.confirmationHandler) {
-      return this.confirmViaHandler(info, targetPath, tool);
+    // HC-03：未注入 confirmationHandler 时 fail-closed 拒绝（不再回退到 readline）
+    if (!this.confirmationHandler) {
+      logger.warn(
+        { targetPath, tool, permission: this.permission },
+        '写入确认失败：未注入 confirmationHandler，fail-closed 拒绝写入',
+      );
+      this.emitAudit({
+        type: 'write-decline',
+        path: targetPath,
+        tool,
+        decision: 'declined',
+        reason: '未注入 confirmationHandler（fail-closed）',
+        timestamp: nowIso(),
+      });
+      return false;
     }
 
-    return this.confirmViaReadline(info, targetPath, tool, description);
+    // 走宿主注入的 confirmationHandler（此处 handler 必非空，上方已 fail-closed 拦截）
+    return this.confirmViaHandler(info, targetPath, tool);
   }
 
   /**
    * 通过宿主注入的 confirmationHandler 进行写入确认
    *
    * HC-09：从 requestWriteConfirmation 拆分。抛错视为拒绝（fail-closed 安全优先）。
+   * HC-03：confirmViaReadline 回退路径已移除，此方法是唯一的确认执行路径。
    *
    * @param info 确认信息（含 diff 内容）
    * @returns true 确认通过；false 用户拒绝或回调异常
@@ -388,55 +406,6 @@ export class SecurityGuard {
         timestamp: nowIso(),
       });
       return false;
-    }
-  }
-
-  /**
-   * 通过 CLI readline 进行写入确认（宿主未注入 confirmationHandler 时的回退路径）
-   *
-   * HC-09：从 requestWriteConfirmation 拆分。直接走终端交互。
-   *
-   * @param info 确认信息（当前未使用，保留供未来扩展）
-   * @returns true 确认通过；false 用户拒绝
-   */
-  private async confirmViaReadline(
-    _info: WriteConfirmationInfo,
-    targetPath: string,
-    tool: string,
-    description?: string,
-  ): Promise<boolean> {
-    const rl = createInterface({ input: stdin, output: stdout });
-    try {
-      const lines = [
-        `\n🔒 写入二次确认 [${this.permission}]`,
-        `   工具: ${tool}`,
-        `   路径: ${targetPath}`,
-        ...(description ? [`   说明: ${description}`] : []),
-        `   确认写入？(y/N) `,
-      ];
-      const answer = (await rl.question(lines.join('\n'))).trim().toLowerCase();
-
-      if (answer === 'y' || answer === 'yes') {
-        this.emitAudit({
-          type: 'write-confirm',
-          path: targetPath,
-          tool,
-          decision: 'confirmed',
-          timestamp: nowIso(),
-        });
-        return true;
-      }
-
-      this.emitAudit({
-        type: 'write-decline',
-        path: targetPath,
-        tool,
-        decision: 'declined',
-        timestamp: nowIso(),
-      });
-      return false;
-    } finally {
-      rl.close();
     }
   }
 

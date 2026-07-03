@@ -326,19 +326,38 @@ describe('SecurityGuard · 写入二次确认（M-101）', () => {
     expect(last.decision).toBe('auto-approved');
   });
 
-  it('owner + confirmWrites=true 应该要求确认（mock stdin = y）', async () => {
+  it('owner + confirmWrites=true + 未注入 handler 应 fail-closed 拒绝（HC-03）', async () => {
+    // HC-03：移除 readline 回退后，未注入 confirmationHandler 时应直接拒绝写入
     const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
-    // 暂无法稳定 mock readline/promises 内部 stdin，这里只验证决策类型
-    // 集成场景：E2E 测用户输入 y/N 时的交互
+    const ok = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
+    expect(ok).toBe(false);
+
+    // 审计应记录拒绝事件，reason 标注 fail-closed
     const audits = guard.getRecentAudits();
-    expect(audits).toEqual([]);
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('write-decline');
+    expect(last.decision).toBe('declined');
+    expect(last.reason).toContain('fail-closed');
   });
 
-  it('guest 模式应始终要求确认（与 confirmWrites 无关）', async () => {
+  it('guest 模式 + 未注入 handler 应 fail-closed 拒绝（HC-03）', async () => {
+    // guest 强制需要确认，未注入 handler 时同样 fail-closed
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'guest');
-    // 同样：交互场景留给 E2E
-    // 此处只验证构造正确
     expect(guard.permission).toBe('guest');
+    const ok = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
+    expect(ok).toBe(false);
+
+    const audits = guard.getRecentAudits();
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('write-decline');
+    expect(last.decision).toBe('declined');
+  });
+
+  it('owner + confirmWrites=false 不受 fail-closed 影响（自动批准）', async () => {
+    // 无需确认路径不依赖 confirmationHandler，fail-closed 不应误伤
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner');
+    const ok = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
+    expect(ok).toBe(true);
   });
 
   // ─── GAP-3：beforeContent/afterContent diff 透传 ──────────
