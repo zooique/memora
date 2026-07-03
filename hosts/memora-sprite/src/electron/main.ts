@@ -66,20 +66,67 @@ const TRAY_ICON_PATH = path.join(RESOURCES_DIR, 'tray-icon.png');
 
 // ─── 主进程状态 ──────────────────────────────────────────────
 
-let windowStateManager: WindowStateManager;
-let windowManager: WindowManager;
-let interaction: ElectronInteraction;
-let trayManager: TrayManager | null = null;
+/**
+ * 主进程核心状态（QC-R2-06：集中管理，对齐 renderer.ts State 先例）
+ *
+ * 17 个可变状态集中到一个对象，提升状态可见性，消除 minimalIpcState 代理层
+ * （appState 结构兼容 MinimalIpcState 接口，直接作为 MinimalIpcState 传入 minimalHandlers）。
+ *
+ * 初始化时序：
+ *   - windowStateManager/windowManager/interaction 在 initializeApp 阶段 1 赋值（null! 表示使用前必定赋值）
+ *   - trayManager/shortcutManager 在阶段 1 赋值（可能为 null：无托盘环境降级）
+ *   - agent/sprite/sessionStore/closeSprite 由 setAppRuntime 集中赋值（阶段 2 / reinitAgent）
+ *   - auditManager/clipboardHandler 在 setupAgentReady / 阶段 2 赋值
+ *   - currentAbortController/agentReady/initErrorDetail/unreadCount/currentDataDir 运行时可变
+ *   - pendingWriteConfirmations 为 const Map 引用（M1 写入确认映射表）
+ *   - isQuitting 防止 before-quit 重复清理
+ */
+const appState = {
+  // ─── 窗口/托盘基础设施（阶段 1 初始化） ───
+  /** 窗口状态管理器（三态切换 + 持久化） */
+  windowStateManager: null! as WindowStateManager,
+  /** 窗口管理器（完整窗口 + 浮动窗口） */
+  windowManager: null! as WindowManager,
+  /** 交互层（ElectronInteraction，注入主窗口引用） */
+  interaction: null! as ElectronInteraction,
+  /** 系统托盘管理器（无托盘环境降级为 null） */
+  trayManager: null as TrayManager | null,
 
-/** Agent 运行时状态（4 个变量总是一起变化，通过 setAppRuntime 集中管理） */
-// S-03 修复：AppRuntime 类型从 ipc/minimalHandlers.ts 导入，消除重复定义
+  // ─── Agent 运行时（setAppRuntime 集中管理：4 个变量总是一起变化） ───
+  // S-03 修复：AppRuntime 类型从 ipc/minimalHandlers.ts 导入，消除重复定义
+  /** Agent + Sprite 实例（由 startSprite 初始化，可能为 null——配置缺失时） */
+  agent: null as Agent | null,
+  sprite: null as Sprite | null,
+  sessionStore: null as SqliteSessionStore | null,
+  /** 关闭函数（清理 Agent + Sprite 资源） */
+  closeSprite: null as (() => Promise<void>) | null,
 
-/** Agent + Sprite 实例（由 startSprite 初始化，可能为 null——配置缺失时） */
-let agent: Agent | null = null;
-let sprite: Sprite | null = null;
-let sessionStore: SqliteSessionStore | null = null;
-/** 关闭函数（清理 Agent + Sprite 资源） */
-let closeSprite: (() => Promise<void>) | null = null;
+  // ─── 流式/状态 ───
+  /** 当前对话的 AbortController（用于中断流式输出） */
+  currentAbortController: null as AbortController | null,
+  /** Agent 是否已就绪 */
+  agentReady: false as boolean,
+  /** 初始化失败的具体错误信息（agentReady=false 时有效，区分配置缺失 vs 其他错误） */
+  initErrorDetail: null as string | null,
+
+  // ─── 功能模块 ───
+  /** M1 写入确认：等待渲染进程响应的 Promise resolver 映射表（requestId → resolve） */
+  pendingWriteConfirmations: new Map<string, (confirmed: boolean) => void>(),
+  /** M2 审计日志：宿主单例（在 setupAgentReady 中创建） */
+  auditManager: null as AuditManager | null,
+  /** Phase 3.3 全局快捷键管理器（在 initializeApp 阶段 1 创建） */
+  shortcutManager: null as ShortcutManager | null,
+  /** Phase 3.1 剪贴板处理器（在 setupAgentReady 后创建，注入 emit 回调转发到渲染进程） */
+  clipboardHandler: null as ClipboardHandler | null,
+
+  // ─── 其他 ───
+  /** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
+  currentDataDir: DEFAULT_DATA_DIR as string,
+  /** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
+  unreadCount: 0 as number,
+  /** 防止 before-quit 重复触发清理 */
+  isQuitting: false as boolean,
+};
 
 // ─── 全局异常兜底 ──────────────────────────────────────────
 // P2-GLOBAL-01 注册全局未捕获异常处理器，防止异步错误导致进程静默崩溃
@@ -103,58 +150,31 @@ process.on('uncaughtException', (error) => {
  */
 function setAppRuntime(runtime: AppRuntime | null): void {
   if (runtime) {
-    agent = runtime.agent;
-    sprite = runtime.sprite;
-    sessionStore = runtime.sessionStore;
-    closeSprite = runtime.close;
+    appState.agent = runtime.agent;
+    appState.sprite = runtime.sprite;
+    appState.sessionStore = runtime.sessionStore;
+    appState.closeSprite = runtime.close;
   } else {
-    agent = null;
-    sprite = null;
-    sessionStore = null;
-    closeSprite = null;
+    appState.agent = null;
+    appState.sprite = null;
+    appState.sessionStore = null;
+    appState.closeSprite = null;
   }
 }
 
-/** 当前对话的 AbortController（用于中断流式输出） */
-let currentAbortController: AbortController | null = null;
-
-/** Agent 是否已就绪 */
-let agentReady = false;
-
-/** 初始化失败的具体错误信息（agentReady=false 时有效，用于区分配置缺失 vs 其他初始化错误） */
-let initErrorDetail: string | null = null;
-
-/** M1 写入确认：等待渲染进程响应的 Promise resolver 映射表（requestId → resolve） */
-const pendingWriteConfirmations = new Map<string, (confirmed: boolean) => void>();
-
-/** M2 审计日志：宿主单例（在 initializeApp 中创建） */
-let auditManager: AuditManager | null = null;
-
-/** Phase 3.3 全局快捷键管理器（在 initializeApp 中创建） */
-let shortcutManager: ShortcutManager | null = null;
-
-/** Phase 3.1 剪贴板处理器（在 setupAgentReady 后创建，注入 emit 回调转发到渲染进程） */
-let clipboardHandler: ClipboardHandler | null = null;
-
 // P2-DESIGN-4 修复：精灵事件订阅管理已移至 spriteEventBridge.ts
-
-/** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
-let currentDataDir: string = DEFAULT_DATA_DIR;
-
-/** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
-let unreadCount = 0;
 
 /** 增加未读计数并推送到浮动窗口 */
 function incrementUnreadCount(): void {
-  unreadCount++;
-  windowManager?.getFloatWindow()?.setUnreadCount(unreadCount);
+  appState.unreadCount++;
+  appState.windowManager?.getFloatWindow()?.setUnreadCount(appState.unreadCount);
 }
 
 /** 清零未读计数并推送到浮动窗口 + 完整窗口 */
 function resetUnreadCount(): void {
-  unreadCount = 0;
-  windowManager?.getFloatWindow()?.setUnreadCount(0);
-  const fullWindow = windowManager?.getFullWindow();
+  appState.unreadCount = 0;
+  appState.windowManager?.getFloatWindow()?.setUnreadCount(0);
+  const fullWindow = appState.windowManager?.getFullWindow();
   if (fullWindow && !fullWindow.isDestroyed()) {
     fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, 0);
   }
@@ -212,9 +232,9 @@ function createSilentModeCallbacks(activeSprite: Sprite): {
     onToggleSilent: (newSilent: boolean) => {
       activeSprite.updateConfig('silentMode', newSilent);
       // 同步托盘状态（与 ipcHandlers.ts config-update 逻辑一致）
-      trayManager?.setState(newSilent ? 'sleeping' : 'idle');
+      appState.trayManager?.setState(newSilent ? 'sleeping' : 'idle');
       // 重建托盘菜单以反映静默模式勾选状态
-      trayManager?.updateMenu();
+      appState.trayManager?.updateMenu();
     },
     isSilentMode: () => activeSprite.getConfig().silentMode,
   };
@@ -240,18 +260,18 @@ function createIpcContext(
     agent: activeAgent,
     sprite: activeSprite,
     sessionStore: activeSessionStore,
-    windowStateManager,
-    windowManager,
-    trayManager,
+    windowStateManager: appState.windowStateManager,
+    windowManager: appState.windowManager,
+    trayManager: appState.trayManager,
     // Phase 3.3：注入快捷键管理器供 configHandlers 触发热更新（可能为 null）
-    shortcutManager,
-    getAbortController: () => currentAbortController,
+    shortcutManager: appState.shortcutManager,
+    getAbortController: () => appState.currentAbortController,
     setAbortController: (ctrl: AbortController | null) => {
-      currentAbortController = ctrl;
+      appState.currentAbortController = ctrl;
     },
     // 暴露 agentReady 状态，handleUserInput 据此拒绝 reinitAgent 失败后的对话请求
-    isAgentReady: () => agentReady,
-    getUnreadCount: () => unreadCount,
+    isAgentReady: () => appState.agentReady,
+    getUnreadCount: () => appState.unreadCount,
     incrementUnreadCount,
     resetUnreadCount,
   };
@@ -304,38 +324,38 @@ function setupAgentReady(
   // 3. 订阅精灵事件（主动提示分发）
   const spriteEventDeps: SpriteEventBridgeDeps = {
     sprite: activeSprite,
-    windowManager,
-    windowStateManager,
-    trayManager,
+    windowManager: appState.windowManager,
+    windowStateManager: appState.windowStateManager,
+    trayManager: appState.trayManager,
     incrementUnreadCount,
   };
   setupSpriteEventListeners(spriteEventDeps);
 
   // 4. 注册配置建议 + 写入确认 + 审计日志监听器
   const agentListenerDeps: AgentListenerDeps = {
-    windowManager,
-    pendingWriteConfirmations,
+    windowManager: appState.windowManager,
+    pendingWriteConfirmations: appState.pendingWriteConfirmations,
   };
   setupConfigSuggestionListener(activeAgent, agentListenerDeps);
   setupWriteConfirmationListener(activeAgent, agentListenerDeps);
-  auditManager = new AuditManager(dataDir);
-  setupAuditListener(activeAgent, auditManager);
+  appState.auditManager = new AuditManager(dataDir);
+  setupAuditListener(activeAgent, appState.auditManager);
 
   // 5. 补充注入浮动窗口 + 托盘右键菜单回调（需要 Agent 就绪后才能查询静默模式）
-  windowManager.updateFloatCallbacks({
+  appState.windowManager.updateFloatCallbacks({
     onHideToTray: () => {
-      windowStateManager.setShowFloatBubble(false);
+      appState.windowStateManager.setShowFloatBubble(false);
       saveSpriteConfig({ showFloatBubble: false });
-      trayManager?.updateMenu();
+      appState.trayManager?.updateMenu();
     },
     onQuit: () => {
-      windowManager.setQuitting(true);
-      windowManager.closeAll();
+      appState.windowManager.setQuitting(true);
+      appState.windowManager.closeAll();
       app.quit();
     },
     ...createSilentModeCallbacks(activeSprite),
   });
-  trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
+  appState.trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
 
   // 6. 绑定在场状态控制器（QC-SPRITE-01：移入 setupAgentReady 确保 reinitAgent 后也重新绑定）
   // powerMonitor 和 app 是 Electron 内置模块，在 main 进程可用
@@ -352,8 +372,8 @@ function setupAgentReady(
       // 已过期：立即关闭静默模式
       activeSprite.updateConfig('silentMode', false);
       activeSprite.updateConfig('silentModeExpiresAt', null);
-      trayManager?.setState('idle');
-      trayManager?.updateMenu();
+      appState.trayManager?.setState('idle');
+      appState.trayManager?.updateMenu();
     } else {
       // 未过期：启动主进程定时器，到期后自动恢复
       scheduleSilentRecovery(ipcContext);
@@ -361,9 +381,9 @@ function setupAgentReady(
   }
 
   // 7. 标记就绪 + 通知渲染进程
-  agentReady = true;
-  initErrorDetail = null;
-  const readyWindow = windowManager.getFullWindow();
+  appState.agentReady = true;
+  appState.initErrorDetail = null;
+  const readyWindow = appState.windowManager.getFullWindow();
   readyWindow?.webContents.send(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, { ready: true });
 }
 
@@ -375,7 +395,7 @@ async function initializeApp(): Promise<void> {
     return;
   }
   app.on('second-instance', () => {
-    const fullWindow = windowManager?.getFullWindow();
+    const fullWindow = appState.windowManager?.getFullWindow();
     if (fullWindow && !fullWindow.isDestroyed()) {
       if (fullWindow.isMinimized()) fullWindow.restore();
       fullWindow.focus();
@@ -385,7 +405,7 @@ async function initializeApp(): Promise<void> {
   // ── 阶段 1：创建窗口（始终成功） ──
   try {
     // 1. 加载精灵配置（从 dataDir/sprite.json，首次启动使用默认值）
-    currentDataDir = DEFAULT_DATA_DIR;
+    appState.currentDataDir = DEFAULT_DATA_DIR;
     const spriteConfig = loadSpriteConfig();
 
     // 2. 初始化窗口状态管理器
@@ -397,7 +417,7 @@ async function initializeApp(): Promise<void> {
     // 多显示器断开外接时，持久化的位置可能位于已不存在的显示器区域内
     // 校验位置是否在某个显示器的工作区内，越界则复位到主显示器默认位置
     const floatPosition = clampFloatPositionToDisplay(rawFloatPosition);
-    windowStateManager = new WindowStateManager({
+    appState.windowStateManager = new WindowStateManager({
       defaultState: spriteConfig.windowState,
       floatPosition,
       showFloatBubble: spriteConfig.showFloatBubble,
@@ -412,17 +432,17 @@ async function initializeApp(): Promise<void> {
     });
 
     // 3. 创建窗口管理器并创建所有窗口
-    windowManager = new WindowManager(windowStateManager, {
+    appState.windowManager = new WindowManager(appState.windowStateManager, {
       onExpandToFull: resetUnreadCount,
     });
 
-    // D-04 修复：最小化 IPC 处理器已在模块加载时注册（见上文 minimalIpcState 定义处）
+    // D-04 修复：最小化 IPC 处理器已在模块加载时注册（见上文 appState 定义处）
     // 不需要在此处再次调用 registerMinimalIpcHandlers()
 
-    await windowManager.createWindows();
+    await appState.windowManager.createWindows();
 
     // FD-05 恢复窗口边界（上次关闭时的位置和大小）
-    const fullWindow = windowManager.getFullWindow();
+    const fullWindow = appState.windowManager.getFullWindow();
     if (fullWindow && spriteConfig.windowBounds) {
       const { x, y, width, height } = spriteConfig.windowBounds;
       fullWindow.setBounds({ x, y, width, height });
@@ -464,23 +484,23 @@ async function initializeApp(): Promise<void> {
       .then(() => TRAY_ICON_PATH)
       .catch(() => '');
     try {
-      trayManager = new TrayManager(iconPath, {
+      appState.trayManager = new TrayManager(iconPath, {
         onShowFull: () => {
-          windowStateManager.transition('full');
+          appState.windowStateManager.transition('full');
           // 从托盘展开完整窗口时清零未读计数
           resetUnreadCount();
         },
         onToggleFloatBubble: (checked: boolean) => {
-          windowStateManager.setShowFloatBubble(checked);
+          appState.windowStateManager.setShowFloatBubble(checked);
           // 同步持久化到 spriteConfig
           saveSpriteConfig({ showFloatBubble: checked });
           // 重建托盘菜单以反映勾选状态
-          trayManager?.updateMenu();
+          appState.trayManager?.updateMenu();
         },
-        isFloatBubbleVisible: () => windowStateManager.getShowFloatBubble(),
-        onHideToTray: () => windowStateManager.transition('tray'),
+        isFloatBubbleVisible: () => appState.windowStateManager.getShowFloatBubble(),
+        onHideToTray: () => appState.windowStateManager.transition('tray'),
         onQuit: () => {
-          windowManager.closeAll();
+          appState.windowManager.closeAll();
           app.quit();
         },
       });
@@ -490,35 +510,35 @@ async function initializeApp(): Promise<void> {
         code: ErrorCode.UNKNOWN,
         context: '托盘创建失败，降级为无托盘模式',
       });
-      trayManager = null;
+      appState.trayManager = null;
     }
 
     // 5. 初始化交互层
-    interaction = new ElectronInteraction();
-    const mainWindowForInteraction = windowManager.getFullWindow();
+    appState.interaction = new ElectronInteraction();
+    const mainWindowForInteraction = appState.windowManager.getFullWindow();
     if (mainWindowForInteraction) {
-      interaction.setMainWindow(mainWindowForInteraction);
+      appState.interaction.setMainWindow(mainWindowForInteraction);
     }
 
     // 6. 窗口创建完成，显示初始状态对应的窗口
     // 使用 showInitial() 而非 transition()——transition 在 state 已等于 target 时早返回，
     // 会导致首次启动窗口不显示（构造函数已设置 defaultState）
-    windowStateManager.showInitial();
+    appState.windowStateManager.showInitial();
 
     // 7. Phase 3.3 初始化全局快捷键
     // 在窗口创建后、Agent 初始化前注册，确保快捷键尽早可用
     // toggle-window 动作委托给 windowManager.toggleWindow()
     // quick-record / recall-memory 动作：先确保完整窗口可见，再推送触发事件到渲染进程
-    shortcutManager = new ShortcutManager(globalShortcut, {
+    appState.shortcutManager = new ShortcutManager(globalShortcut, {
       config: spriteConfig.shortcuts ?? DEFAULT_SHORTCUT_CONFIG,
       handlers: {
         [SHORTCUT_ACTIONS.TOGGLE_WINDOW]: () => {
-          windowManager.toggleWindow();
+          appState.windowManager.toggleWindow();
         },
         [SHORTCUT_ACTIONS.QUICK_RECORD]: () => {
           // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
-          windowManager.showFullWindow();
-          const fullWindow = windowManager.getFullWindow();
+          appState.windowManager.showFullWindow();
+          const fullWindow = appState.windowManager.getFullWindow();
           if (fullWindow && !fullWindow.isDestroyed()) {
             fullWindow.focus();
             // 推送触发事件到渲染进程（聚焦输入框进入快速记录模式）
@@ -527,8 +547,8 @@ async function initializeApp(): Promise<void> {
         },
         [SHORTCUT_ACTIONS.RECALL_MEMORY]: () => {
           // 确保完整窗口可见（从托盘/浮动切换到完整窗口）
-          windowManager.showFullWindow();
-          const fullWindow = windowManager.getFullWindow();
+          appState.windowManager.showFullWindow();
+          const fullWindow = appState.windowManager.getFullWindow();
           if (fullWindow && !fullWindow.isDestroyed()) {
             fullWindow.focus();
             // 推送触发事件到渲染进程（切换到记忆面板）
@@ -537,7 +557,7 @@ async function initializeApp(): Promise<void> {
         },
       },
     });
-    shortcutManager.registerAll();
+    appState.shortcutManager.registerAll();
   } catch (error) {
     // 窗口创建失败是致命错误
     errorHandler.handle(error, {
@@ -554,7 +574,7 @@ async function initializeApp(): Promise<void> {
     // Electron 模式：阶段 1 已注册 registerMinimalIpcHandlers，
     // 阶段 2 失败后渲染进程可显示设置面板引导用户配置
     const spriteResult = await startSprite();
-    currentDataDir = spriteResult.dataDir;
+    appState.currentDataDir = spriteResult.dataDir;
     // 第三季：集中赋值 agent/sprite/sessionStore/closeSprite
     setAppRuntime({
       agent: spriteResult.agent,
@@ -565,14 +585,14 @@ async function initializeApp(): Promise<void> {
 
     // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
     // QC-SPRITE-01：bindPresence 已移入 setupAgentReady，确保 reinitAgent 后也重新绑定
-    setupAgentReady(agent!, sprite!, sessionStore!, currentDataDir);
+    setupAgentReady(appState.agent!, appState.sprite!, appState.sessionStore!, appState.currentDataDir);
 
     // Phase 3.1：集成剪贴板三重保护
     // ClipboardHandler 依赖注入 clipboard 模块，emit 回调将事件转发到渲染进程
     // 轮询检测剪贴板变化（仅哈希比较，不读取内容），用户主动调用 analyze() 时才读取内容
-    clipboardHandler = new ClipboardHandler(clipboard, {
+    appState.clipboardHandler = new ClipboardHandler(clipboard, {
       emit: (event: ClipboardEventType, payload?: unknown) => {
-        const fullWindow = windowManager.getFullWindow();
+        const fullWindow = appState.windowManager.getFullWindow();
         if (!fullWindow || fullWindow.isDestroyed()) return;
         // 将 ClipboardHandler 事件映射到 IPC 推送通道
         switch (event) {
@@ -606,10 +626,10 @@ async function initializeApp(): Promise<void> {
     });
     // 注册 IPC 处理器：渲染进程调用 clipboard-analyze 触发主动分析
     ipcMain.handle(IPC_CHANNELS.CLIPBOARD_ANALYZE, () => {
-      return clipboardHandler?.analyze() ?? false;
+      return appState.clipboardHandler?.analyze() ?? false;
     });
     // 启动剪贴板变化检测轮询
-    clipboardHandler.startPolling();
+    appState.clipboardHandler.startPolling();
 
     // Phase 4.3：注册技能文件安装 IPC handler
     // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
@@ -619,9 +639,9 @@ async function initializeApp(): Promise<void> {
       const configDir = DEFAULT_CONFIG_DIR;
       const result = await installSkill(content, fileName, configDir);
       // GAP-5 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
-      if (result.success && agent) {
+      if (result.success && appState.agent) {
         try {
-          await agent.reloadConfig('skill');
+          await appState.agent.reloadConfig('skill');
         } catch (err) {
           // 重载失败不阻塞安装结果返回，用户可手动重启 Agent 生效
           errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '技能热重载失败' });
@@ -634,7 +654,7 @@ async function initializeApp(): Promise<void> {
     // 最小化 IPC 处理器已在阶段 1 注册，此处无需重复注册
     const errMessage = toError(error).message;
     // 使用统一分类函数，确保与 reinitAgent 逻辑一致
-    initErrorDetail = classifyInitError(errMessage, '初始化失败');
+    appState.initErrorDetail = classifyInitError(errMessage, '初始化失败');
     errorHandler.handle(error, {
       code: ErrorCode.INITIALIZATION_FAILED,
       context: 'Agent 初始化失败',
@@ -645,36 +665,12 @@ async function initializeApp(): Promise<void> {
 // ─── 最小化 IPC 处理器 ──────────────────────────────────────
 
 // D-04 修复：最小化 IPC 处理器提取到 ipc/minimalHandlers.ts
-// 通过 MinimalIpcState 代理对象链接 main.ts 模块级变量与 IPC 处理器
-
-/** 最小化 IPC 状态代理（getter/setter 链接到 main.ts 模块级 let 变量） */
-const minimalIpcState: MinimalIpcState = {
-  get agentReady(): boolean { return agentReady; },
-  set agentReady(v: boolean) { agentReady = v; },
-  get initErrorDetail(): string | null { return initErrorDetail; },
-  set initErrorDetail(v: string | null) { initErrorDetail = v; },
-  get currentAbortController(): AbortController | null { return currentAbortController; },
-  set currentAbortController(v: AbortController | null) { currentAbortController = v; },
-  get currentDataDir(): string { return currentDataDir; },
-  set currentDataDir(v: string) { currentDataDir = v; },
-  get pendingWriteConfirmations(): Map<string, (confirmed: boolean) => void> {
-    return pendingWriteConfirmations;
-  },
-  set pendingWriteConfirmations(v: Map<string, (confirmed: boolean) => void>) {
-    // 注意：pendingWriteConfirmations 是 const Map，不替换引用，仅支持 getter
-    // setter 为满足 MinimalIpcState 接口而存在，实际不会调用
-    void v;
-  },
-  get closeSprite(): (() => Promise<void>) | null { return closeSprite; },
-  set closeSprite(v: (() => Promise<void>) | null) { closeSprite = v; },
-  get auditManager(): AuditManager | null { return auditManager; },
-  set auditManager(v: AuditManager | null) { auditManager = v; },
-  get windowManager(): WindowManager { return windowManager; },
-  set windowManager(v: WindowManager) { windowManager = v; },
-};
+// QC-R2-06：消除 MinimalIpcState 代理层，appState 结构兼容 MinimalIpcState 接口，
+// 直接传入即可（结构子类型：appState 是 MinimalIpcState 的超集，TS 自动兼容）。
+// minimalHandlers 通过 state.xxx 读写直接作用于 appState，无需 getter/setter 代理。
 
 // 调用提取后的函数（在 initializeApp 阶段 1 中调用）
-registerMinimalIpcHandlers(minimalIpcState, {
+registerMinimalIpcHandlers(appState, {
   setAppRuntime,
   setupAgentReady,
   classifyInitError,
@@ -696,19 +692,16 @@ app.on('window-all-closed', () => {
 });
 
 app.on('activate', () => {
-  windowStateManager?.transition('full');
+  appState.windowStateManager?.transition('full');
 });
-
-/** 防止 before-quit 重复触发清理 */
-let isQuitting = false;
 
 app.on('before-quit', async (e) => {
   // 防止重复清理
-  if (isQuitting) return;
-  isQuitting = true;
+  if (appState.isQuitting) return;
+  appState.isQuitting = true;
 
   // 标记窗口管理器正在退出，允许窗口真正关闭（而非 preventDefault 转为浮动）
-  windowManager?.setQuitting(true);
+  appState.windowManager?.setQuitting(true);
 
   // 阻止立即退出，先清理资源
   e.preventDefault();
@@ -716,21 +709,21 @@ app.on('before-quit', async (e) => {
   try {
     // 先中断进行中的对话，避免 agent.close() 在对话进行中调用
     // 导致 AsyncGenerator 未正常退出、资源泄漏或状态不一致
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
+    if (appState.currentAbortController) {
+      appState.currentAbortController.abort();
+      appState.currentAbortController = null;
     }
     // Phase 3.3：注销全局快捷键，避免退出后残留占用
-    shortcutManager?.unregisterAll();
-    shortcutManager = null;
+    appState.shortcutManager?.unregisterAll();
+    appState.shortcutManager = null;
     // Phase 3.1：停止剪贴板轮询，清理定时器
-    clipboardHandler?.stopPolling();
-    clipboardHandler = null;
-    if (closeSprite) {
-      await closeSprite();
+    appState.clipboardHandler?.stopPolling();
+    appState.clipboardHandler = null;
+    if (appState.closeSprite) {
+      await appState.closeSprite();
     }
     // P2-E1 修复：显式销毁托盘，清理 pulseTimer（setInterval）避免退出前再触发 setToolTip
-    trayManager?.destroy();
+    appState.trayManager?.destroy();
   } catch (error) {
     errorHandler.handle(error, {
       code: ErrorCode.UNKNOWN,
