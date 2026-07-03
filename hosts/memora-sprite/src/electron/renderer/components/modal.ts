@@ -279,6 +279,10 @@ export class ModalManager {
     tool: string;
     targetPath: string;
     description?: string;
+    /** 文件当前内容预览（null 表示新文件，undefined 表示未提供） */
+    beforeContent?: string | null;
+    /** 写入后内容预览（undefined 表示未提供） */
+    afterContent?: string;
   }): Promise<boolean> {
     // P1-4 使用 DOM API 构建富文本消息，所有动态值通过 textContent 设置天然防 XSS
     const container = document.createElement('div');
@@ -307,6 +311,47 @@ export class ModalManager {
       const descP = document.createElement('p');
       descP.textContent = info.description;
       container.appendChild(descP);
+    }
+
+    // 变更内容预览（可选，仅当携带 beforeContent/afterContent 时展示）
+    // 使用 <details> 折叠区，默认折叠避免弹窗过高
+    if (info.beforeContent !== undefined || info.afterContent !== undefined) {
+      const diffSection = document.createElement('details');
+      diffSection.className = 'write-confirm-diff';
+
+      const summary = document.createElement('summary');
+      summary.textContent = '查看变更内容';
+      diffSection.appendChild(summary);
+
+      // 变更前内容（null 表示新文件，无原有内容）
+      if (info.beforeContent !== undefined) {
+        const beforeLabel = document.createElement('p');
+        beforeLabel.className = 'write-confirm-diff-label';
+        beforeLabel.textContent = info.beforeContent === null ? '变更前（新文件）' : '变更前';
+        diffSection.appendChild(beforeLabel);
+
+        if (info.beforeContent !== null) {
+          const beforePre = document.createElement('pre');
+          beforePre.className = 'write-confirm-diff-content';
+          beforePre.textContent = info.beforeContent;
+          diffSection.appendChild(beforePre);
+        }
+      }
+
+      // 变更后内容
+      if (info.afterContent !== undefined) {
+        const afterLabel = document.createElement('p');
+        afterLabel.className = 'write-confirm-diff-label';
+        afterLabel.textContent = '变更后';
+        diffSection.appendChild(afterLabel);
+
+        const afterPre = document.createElement('pre');
+        afterPre.className = 'write-confirm-diff-content';
+        afterPre.textContent = info.afterContent;
+        diffSection.appendChild(afterPre);
+      }
+
+      container.appendChild(diffSection);
     }
 
     return this.showConfirmDialog({

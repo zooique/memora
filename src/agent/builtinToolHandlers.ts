@@ -265,6 +265,8 @@ export class BuiltinToolHandlers {
           absolutePath,
           'write_file',
           description,
+          // 透传 diff 内容，供宿主 UI 在确认弹窗中展示变更预览
+          { beforeContent, afterContent: finalContent },
         );
       } catch (err) {
         const e = toError(err);

@@ -328,3 +328,42 @@ kbd {
 .shortcuts-table tr:last-child td {
   border-bottom: none;
 }
+
+/* ─── 写入确认 diff 预览 ──────────────────────────────── */
+.write-confirm-info {
+  font-size: var(--font-sm);
+  line-height: 1.5;
+}
+
+.write-confirm-diff {
+  margin-top: 8px;
+  border-top: 1px solid var(--surface2);
+  padding-top: 8px;
+}
+
+.write-confirm-diff summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-2);
+  user-select: none;
+}
+
+.write-confirm-diff-label {
+  margin: 8px 0 4px;
+  font-size: var(--font-sm);
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.write-confirm-diff-content {
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px;
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: 4px;
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}

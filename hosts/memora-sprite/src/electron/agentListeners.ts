@@ -145,7 +145,7 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
         resolve(result);
       });
 
-      // 推送到渲染进程
+      // 推送到渲染进程（透传 diff 内容，供确认弹窗展示变更预览）
       fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION, {
         requestId,
         targetPath: info.targetPath,
@@ -153,6 +153,8 @@ export function setupWriteConfirmationListener(activeAgent: Agent, deps: AgentLi
         description: info.description,
         permission: info.permission,
         needsConfirm: info.needsConfirm,
+        beforeContent: info.beforeContent,
+        afterContent: info.afterContent,
       });
     });
 

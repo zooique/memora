@@ -4,7 +4,7 @@
  * SEC-06（自动安全）：补充符号链接逃逸 + 包管理器凭证 + 系统目录覆盖测试
  */
 import { describe, expect, it, beforeEach } from 'vitest';
-import { SecurityGuard } from '@/security/pathGuard.js';
+import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -339,5 +339,84 @@ describe('SecurityGuard · 写入二次确认（M-101）', () => {
     // 同样：交互场景留给 E2E
     // 此处只验证构造正确
     expect(guard.permission).toBe('guest');
+  });
+
+  // ─── GAP-3：beforeContent/afterContent diff 透传 ──────────
+
+  it('onWriteConfirmation 回调应接收 beforeContent/afterContent', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
+    const received: WriteConfirmationInfo[] = [];
+    guard.onWriteConfirmation(async (info) => {
+      received.push(info);
+      return true;
+    });
+    await guard.requestWriteConfirmation(
+      join(projectPath, 'out.txt'),
+      'write_file',
+      '测试描述',
+      { beforeContent: '旧内容', afterContent: '新内容' },
+    );
+    expect(received).toHaveLength(1);
+    expect(received[0]!.beforeContent).toBe('旧内容');
+    expect(received[0]!.afterContent).toBe('新内容');
+  });
+
+  it('beforeContent=null 时回调应接收 null（新文件语义）', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
+    const received: WriteConfirmationInfo[] = [];
+    guard.onWriteConfirmation(async (info) => {
+      received.push(info);
+      return true;
+    });
+    await guard.requestWriteConfirmation(
+      join(projectPath, 'new.txt'),
+      'write_file',
+      undefined,
+      { beforeContent: null, afterContent: '新文件内容' },
+    );
+    expect(received[0]!.beforeContent).toBeNull();
+    expect(received[0]!.afterContent).toBe('新文件内容');
+  });
+
+  it('超大内容应被截断到 10KB 并追加截断标记', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
+    const received: WriteConfirmationInfo[] = [];
+    guard.onWriteConfirmation(async (info) => {
+      received.push(info);
+      return true;
+    });
+    // 构造 20KB 内容（超过 10KB 上限）
+    const bigContent = 'A'.repeat(20_000);
+    await guard.requestWriteConfirmation(
+      join(projectPath, 'big.txt'),
+      'write_file',
+      undefined,
+      { beforeContent: bigContent, afterContent: bigContent },
+    );
+    const before = received[0]!.beforeContent!;
+    const after = received[0]!.afterContent!;
+    // 截断后应小于原始 20KB
+    expect(before.length).toBeLessThan(bigContent.length);
+    expect(after.length).toBeLessThan(bigContent.length);
+    // 应包含截断标记
+    expect(before).toContain('已截断');
+    expect(after).toContain('已截断');
+    expect(before).toContain('20000');
+  });
+
+  it('未传 options 时 beforeContent/afterContent 应为 undefined', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
+    const received: WriteConfirmationInfo[] = [];
+    guard.onWriteConfirmation(async (info) => {
+      received.push(info);
+      return true;
+    });
+    await guard.requestWriteConfirmation(
+      join(projectPath, 'out.txt'),
+      'write_file',
+      '描述',
+    );
+    expect(received[0]!.beforeContent).toBeUndefined();
+    expect(received[0]!.afterContent).toBeUndefined();
   });
 });

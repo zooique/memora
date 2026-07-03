@@ -16,7 +16,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
-import { SecurityGuard } from '@/security/pathGuard.js';
+import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import type { Memory } from '@/memory/types.js';
@@ -300,6 +300,57 @@ describe('BuiltinToolHandlers.writeFile', () => {
       // 默认 security confirmWrites=false，requestWriteConfirmation 返回 true
       const result = await handlers.writeFile('test.txt', '内容');
       expect(result).toContain('已写入');
+    });
+
+    // ─── GAP-3：beforeContent/afterContent diff 透传 ──────────
+
+    it('writeFile 应将 beforeContent/afterContent 透传给 requestWriteConfirmation', async () => {
+      // 创建 confirmWrites=true 的 SecurityGuard，捕获 confirmationHandler 收到的 info
+      const confirmGuard = new SecurityGuard(projectPath, projectPath, [], true, 'owner');
+      const received: WriteConfirmationInfo[] = [];
+      confirmGuard.onWriteConfirmation(async (info) => {
+        received.push(info);
+        return true;
+      });
+      const confirmHandlers = new BuiltinToolHandlers(
+        projectPath,
+        confirmGuard,
+        storage,
+        workProjection as unknown as WorkProjectionManager,
+      );
+
+      // 先创建已有文件（beforeContent 非 null）
+      await createFileInProject('exist.txt', '旧内容');
+
+      // 写入新内容
+      await confirmHandlers.writeFile('exist.txt', '新内容');
+
+      // 验证 confirmationHandler 收到了正确的 beforeContent/afterContent
+      expect(received).toHaveLength(1);
+      expect(received[0]!.beforeContent).toBe('旧内容');
+      expect(received[0]!.afterContent).toBe('新内容');
+    });
+
+    it('writeFile 新文件时 beforeContent 应为 null', async () => {
+      const confirmGuard = new SecurityGuard(projectPath, projectPath, [], true, 'owner');
+      const received: WriteConfirmationInfo[] = [];
+      confirmGuard.onWriteConfirmation(async (info) => {
+        received.push(info);
+        return true;
+      });
+      const confirmHandlers = new BuiltinToolHandlers(
+        projectPath,
+        confirmGuard,
+        storage,
+        workProjection as unknown as WorkProjectionManager,
+      );
+
+      // 写入新文件（不存在 → beforeContent = null）
+      await confirmHandlers.writeFile('new.txt', '新文件内容');
+
+      expect(received).toHaveLength(1);
+      expect(received[0]!.beforeContent).toBeNull();
+      expect(received[0]!.afterContent).toBe('新文件内容');
     });
   });
 

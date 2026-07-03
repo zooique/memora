@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 模态框管理器测试
  *
  * @vitest-environment jsdom
@@ -582,6 +582,64 @@ describe('showWriteConfirmation · DOM 节点构建', () => {
       targetPath: '/x',
     });
     expect(document.getElementById('btn-confirm-ok')!.textContent).toBe('允许写入');
+    click(document.getElementById('btn-confirm-cancel')!);
+    await promise;
+  });
+
+  // ─── GAP-3：diff 折叠区展示 ─────────────────────────────
+
+  it('携带 beforeContent/afterContent 时应渲染 diff 折叠区', async () => {
+    const manager = createManager();
+    const promise = manager.showWriteConfirmation({
+      tool: 'write_file',
+      targetPath: '/x.ts',
+      beforeContent: '旧内容',
+      afterContent: '新内容',
+    });
+    const messageEl = document.getElementById('confirm-message')!;
+    // 应包含 details 折叠区
+    const details = messageEl.querySelector('details.write-confirm-diff');
+    expect(details).not.toBeNull();
+    // summary 文本
+    expect(details!.querySelector('summary')!.textContent).toBe('查看变更内容');
+    // 应包含变更前和变更后的 pre 块
+    const preBlocks = details!.querySelectorAll('pre.write-confirm-diff-content');
+    expect(preBlocks.length).toBe(2);
+    expect(preBlocks[0]!.textContent).toBe('旧内容');
+    expect(preBlocks[1]!.textContent).toBe('新内容');
+    click(document.getElementById('btn-confirm-cancel')!);
+    await promise;
+  });
+
+  it('beforeContent=null 时应显示"新文件"标签且无变更前内容', async () => {
+    const manager = createManager();
+    const promise = manager.showWriteConfirmation({
+      tool: 'write_file',
+      targetPath: '/new.ts',
+      beforeContent: null,
+      afterContent: '新文件内容',
+    });
+    const messageEl = document.getElementById('confirm-message')!;
+    const details = messageEl.querySelector('details.write-confirm-diff')!;
+    // 应包含"新文件"标签
+    expect(details.textContent).toContain('新文件');
+    // 变更前不应有 pre 块（null → 不渲染内容），只有变更后的 pre
+    const preBlocks = details.querySelectorAll('pre.write-confirm-diff-content');
+    expect(preBlocks.length).toBe(1);
+    expect(preBlocks[0]!.textContent).toBe('新文件内容');
+    click(document.getElementById('btn-confirm-cancel')!);
+    await promise;
+  });
+
+  it('未提供 beforeContent/afterContent 时不应渲染 diff 区', async () => {
+    const manager = createManager();
+    const promise = manager.showWriteConfirmation({
+      tool: 'write_file',
+      targetPath: '/x.ts',
+    });
+    const messageEl = document.getElementById('confirm-message')!;
+    // 不应有 details 折叠区
+    expect(messageEl.querySelector('details.write-confirm-diff')).toBeNull();
     click(document.getElementById('btn-confirm-cancel')!);
     await promise;
   });

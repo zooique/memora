@@ -134,6 +134,30 @@ export interface WriteConfirmationInfo {
   permission: Permission;
   /** 是否需要确认（owner + confirmWrites=false 时为 false，宿主可跳过弹窗） */
   needsConfirm: boolean;
+  /** 文件当前内容预览（截断到 10KB，null 表示新文件）—— 供宿主 UI 展示 diff */
+  beforeContent?: string | null;
+  /** 写入后内容预览（截断到 10KB）—— 供宿主 UI 展示 diff */
+  afterContent?: string;
+}
+
+/** diff 内容最大长度（10KB），防止大文件内容撑爆 IPC 传输和 UI 渲染 */
+const MAX_DIFF_CONTENT_LENGTH = 10240;
+
+/**
+ * 截断 diff 内容到 MAX_DIFF_CONTENT_LENGTH，超出时追加截断标记
+ *
+ * 重载签名确保返回类型与输入类型的 null/undefined 语义一致：
+ * - beforeContent（string | null）→ 返回 string | null
+ * - afterContent（string | undefined）→ 返回 string | undefined
+ */
+function truncateForDiff(content: string | null): string | null;
+function truncateForDiff(content: string | undefined): string | undefined;
+function truncateForDiff(content: string | null | undefined): string | null | undefined;
+function truncateForDiff(content: string | null | undefined): string | null | undefined {
+  if (content === null || content === undefined) return content;
+  if (content.length <= MAX_DIFF_CONTENT_LENGTH) return content;
+  // 超过上限时截断并追加标记，让用户知道内容被裁剪
+  return content.slice(0, MAX_DIFF_CONTENT_LENGTH) + `\n...（已截断，共 ${content.length} 字符）`;
 }
 
 export class SecurityGuard {
@@ -292,6 +316,8 @@ export class SecurityGuard {
     targetPath: string,
     tool: string,
     description?: string,
+    /** diff 内容选项（供宿主 UI 展示变更预览，自动截断到 10KB） */
+    options?: { beforeContent?: string | null; afterContent?: string },
   ): Promise<boolean> {
     const needConfirm = this.permission === 'guest' || this.confirmWrites;
 
@@ -312,6 +338,9 @@ export class SecurityGuard {
       description,
       permission: this.permission,
       needsConfirm: needConfirm,
+      // 透传 diff 内容（截断后），供宿主 UI 展示变更预览
+      beforeContent: truncateForDiff(options?.beforeContent),
+      afterContent: truncateForDiff(options?.afterContent),
     };
 
     if (this.confirmationHandler) {

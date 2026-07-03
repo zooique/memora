@@ -238,6 +238,10 @@ export interface WriteConfirmationPayload {
   permission: string;
   /** 是否需要确认（owner + confirmWrites=false 时为 false，宿主可跳过弹窗） */
   needsConfirm: boolean;
+  /** 文件当前内容预览（截断到 10KB，null 表示新文件）—— 用于 diff 展示 */
+  beforeContent?: string | null;
+  /** 写入后内容预览（截断到 10KB）—— 用于 diff 展示 */
+  afterContent?: string;
 }
 
 /** 记忆健康度仪表盘 IPC 传输形态（Phase 1：健康度诊断） */

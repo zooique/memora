@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent 监听器测试
  *
  * 覆盖范围：
@@ -182,6 +182,9 @@ const WRITE_INFO: WriteConfirmationInfo = {
   description: '写入 100 字符到 file.ts',
   permission: 'owner',
   needsConfirm: true,
+  // GAP-3：diff 内容预览
+  beforeContent: '旧内容',
+  afterContent: '新内容',
 };
 
 /** 测试用审计事件 */
@@ -419,6 +422,32 @@ describe('setupWriteConfirmationListener', () => {
     expect(pendingWriteConfirmations.size).toBe(1);
 
     // 清理：resolve promise 避免未处理 Promise 警告
+    const sendCalls = mockWindow.webContents.send.mock.calls;
+    const payload = sendCalls[0]![1] as { requestId: string };
+    pendingWriteConfirmations.get(payload.requestId)!(true);
+    await promise;
+  });
+
+  it('IPC payload 应包含 beforeContent/afterContent（diff 透传）', async () => {
+    const bundle = createMockAgent();
+    const mockWindow = createMockWindow();
+    const { deps, pendingWriteConfirmations } = createMockDeps(mockWindow);
+
+    setupWriteConfirmationListener(bundle.agent, deps);
+    const handler = bundle.getWriteHandler()!;
+
+    const promise = handler(WRITE_INFO);
+
+    // 验证 IPC payload 包含 diff 内容
+    expect(mockWindow.webContents.send).toHaveBeenCalledWith(
+      MAIN_TO_RENDERER_CHANNELS.WRITE_CONFIRMATION,
+      expect.objectContaining({
+        beforeContent: '旧内容',
+        afterContent: '新内容',
+      }),
+    );
+
+    // 清理
     const sendCalls = mockWindow.webContents.send.mock.calls;
     const payload = sendCalls[0]![1] as { requestId: string };
     pendingWriteConfirmations.get(payload.requestId)!(true);
