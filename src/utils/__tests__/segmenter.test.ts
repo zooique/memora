@@ -81,6 +81,31 @@ describe('tokenizeKeywords · 关键词分词', () => {
     expect(tokens).toContain('b');
     expect(tokens).toContain('c');
   });
+
+  it('R-01：应去重重复 token（兑现 JSDoc 契约）', () => {
+    // 英文重复：hello hello → 仅保留一个
+    const englishTokens = tokenizeKeywords('hello hello world world');
+    const helloCount = englishTokens.filter((t) => t === 'hello').length;
+    const worldCount = englishTokens.filter((t) => t === 'world').length;
+    expect(helloCount).toBe(1);
+    expect(worldCount).toBe(1);
+
+    // 中文重复：学习 学习 编程 编程 → 仅保留一个
+    const chineseTokens = tokenizeKeywords('学习 学习 编程 编程');
+    const learnCount = chineseTokens.filter((t) => t === '学习').length;
+    const codeCount = chineseTokens.filter((t) => t === '编程').length;
+    expect(learnCount).toBe(1);
+    expect(codeCount).toBe(1);
+  });
+
+  it('R-01：中英混合重复应跨语言去重', () => {
+    // 中文段与英文段都重复时，各自去重
+    const tokens = tokenizeKeywords('TypeScript TypeScript 编程 编程');
+    const tsCount = tokens.filter((t) => t === 'TypeScript').length;
+    const codeCount = tokens.filter((t) => t === '编程').length;
+    expect(tsCount).toBe(1);
+    expect(codeCount).toBe(1);
+  });
 });
 
 describe('scoreByKeywords · 关键词匹配评分', () => {

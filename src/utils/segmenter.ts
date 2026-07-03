@@ -34,7 +34,8 @@ export function tokenizeKeywords(input: string): string[] {
   // 提取英文词
   const englishSegments = input.match(/[a-zA-Z0-9]+/g) ?? [];
   tokens.push(...englishSegments);
-  return tokens;
+  // 去重（R-01：兑现 JSDoc "去重" 契约，避免重复 token 干扰关键词匹配评分）
+  return [...new Set(tokens)];
 }
 
 /**
