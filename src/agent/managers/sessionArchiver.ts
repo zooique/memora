@@ -208,7 +208,7 @@ ${dialogueText}
       accessedAt: now,
     };
 
-    // 写入记忆存储（upsert 语义：相同 name 的 content 记忆会被覆盖）
+    // 写入记忆存储（upsert 语义：按 id 覆盖；id 含 Date.now()，同毫秒重复归档会覆盖）
     this.index.upsert(memory);
 
     return memory;

@@ -12,7 +12,7 @@
  *   - hash 未变（重复读取）→ 跳过
  *
  * 设计原则：
- *   - 作品 = 用户的产出物（小说、代码），不归 Agent 管
+ *   - 作品 = 用户的产出物（文档、代码等），不归 Agent 管
  *   - 作品投影 = Agent 记住"作品的形象"，source = 'work-projection'
  *   - 文件变化由用户负责
  *
@@ -45,7 +45,7 @@ export interface WorkProjectionEntry {
   fileHash: string;
   /** 概要 */
   summary: string;
-  /** 结构（章节/模块列表） */
+  /** 结构（章节/模块/段落等结构化列表） */
   structure: string[];
   /** 关键决策 */
   keyDecisions: string[];

@@ -83,7 +83,7 @@ export interface ConflictInfo {
  * 用于判断用户输入是否值得提取记忆。
  */
 export interface MemoryKeywords {
-  /** 领域关键词（如小说创作：['主角', '角色', '情节', '设定']） */
+  /** 领域关键词（如项目相关：['架构', '接口', '性能', '测试']） */
   domain: string[];
   /** 用户专属关键词（如：['我', '我的', '记住', '帮我']） */
   personal: string[];
