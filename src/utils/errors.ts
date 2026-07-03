@@ -15,8 +15,11 @@
  *   2. 详情（原文）—— 排查用
  *   3. 建议（下一步）—— 怎么修复
  */
-import { getLogger } from '@/utils/loggerHolder.js';
-// 纯逻辑 toError，浏览器端可直接 import 此文件而不引入 logger 依赖
+// P3-08：re-export toError 供混合 import 场景使用（如 import { securityError, toError }）
+// 注：原注释"纯逻辑 toError，浏览器端可直接 import 此文件而不引入 logger 依赖"已删除——
+// P3-05 删除 MemoraError.log() 后 errors.ts 不再 import loggerHolder，但 errors.ts
+// 仍通过 MemoraError 的 formatWithSuggestions 等方法间接依赖运行时 logger（通过 index.ts 的 setLogger）。
+// 单独需要 toError 的场景应直接 import from '@/utils/toError.js'（零 logger 依赖，浏览器友好）。
 export { toError } from '@/utils/toError.js';
 
 export type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
@@ -123,24 +126,6 @@ export class MemoraError extends Error {
       }
     }
     return lines.join('\n');
-  }
-
-  /**
-   * 记录到日志（结构化）
-   */
-  log(): void {
-    getLogger().error(
-      {
-        err: this,
-        category: this.category,
-        title: this.title,
-        detail: this.detail,
-        suggestions: this.suggestions,
-        cause: this.cause?.message,
-        stack: this.stack,
-      },
-      this.title,
-    );
   }
 }
 

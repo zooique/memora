@@ -28,7 +28,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
 import { getBaseName } from '@/utils/path.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { parseLlmJson } from '@/utils/json.js';
 import { nowIso } from '@/utils/time.js';
 

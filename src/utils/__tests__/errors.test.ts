@@ -34,11 +34,6 @@ describe('MemoraError · M-103 错误信息友好化', () => {
     expect(formatted).toContain('重试');
   });
 
-  it('log 应该不抛出（仅记录到 pino）', () => {
-    const err = llmError('5xx', 'service unavailable', ['稍后重试']);
-    expect(() => err.log()).not.toThrow();
-  });
-
   it('4 大类错误应该正确分类', () => {
     expect(configError('a', 'b', []).category).toBe('config');
     expect(networkError('a', 'b', []).category).toBe('network');
@@ -164,11 +159,6 @@ describe('securityError · R-02 安全错误工厂', () => {
     expect(formatted).toContain('❌ 禁止访问');
     expect(formatted).toContain('原因：命中黑名单');
     expect(formatted).toContain('联系管理员');
-  });
-
-  it('log 应不抛出（仅记录到 pino）', () => {
-    const err = securityError('权限不足', 'guest 模式', ['切换 owner']);
-    expect(() => err.log()).not.toThrow();
   });
 
   it('应保留 cause 用于调试', () => {

@@ -9,7 +9,7 @@
  *   agent.off('memoryAdded', handler);
  */
 import { getLogger } from '@/utils/loggerHolder.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 
 /** Agent 事件映射表（事件名 → 事件载荷类型） */
 export interface AgentEventMap {

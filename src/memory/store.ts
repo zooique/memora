@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { SOURCE_LABELS, inferSource, type Memory } from '@/memory/types.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from '@/utils/frontmatter.js';
 import { logger } from '@/logging/logger.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 
 /**
  * 已知 source 到文件系统目录的映射

@@ -9,7 +9,7 @@
 import type { FileStore } from '@/memory/store.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 
 /**
  * 启动时全量扫描的 source 列表

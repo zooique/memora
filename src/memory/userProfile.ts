@@ -18,7 +18,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { nowIso } from '@/utils/time.js';
 
 /** 用户画像子分类 */

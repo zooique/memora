@@ -183,7 +183,8 @@ export async function recall(
  * @param memory - 被召回的记忆
  * @param now - 当前时间戳（ISO 8601）
  */
-export function boostScore(memory: Memory, now?: string): void {
+// P3-06：从 export 降为模块私有（0 外部消费者，仅 recall.ts 内部调用，与 tokenizeKeywords 同模式）
+function boostScore(memory: Memory, now?: string): void {
   memory.score = Math.min(SCORE_CEILING, memory.score + BOOST_INCREMENT);
   memory.accessedAt = now ?? nowIso();
 }

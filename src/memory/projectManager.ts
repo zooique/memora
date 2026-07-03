@@ -37,7 +37,7 @@ import { MemoryLoader } from '@/memory/loader.js';
 import type { LoadResult } from '@/memory/loader.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
-import { toError } from '@/utils/errors.js';
+import { toError } from '@/utils/toError.js';
 import { expandHome } from '@/utils/path.js';
 import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 import { nowIso } from '@/utils/time.js';

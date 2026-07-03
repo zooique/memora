@@ -59,9 +59,6 @@ export const LOOP_CONSTANTS = {
   /** 粗略 token 估算：每 token 约 3 字符（非精确 tokenizer）。 */
   CHARS_PER_TOKEN: 3,
 
-  /** 召回记忆注入到上下文的最大字符数。超出会截断。 */
-  RECALL_CONTEXT_MAX_CHARS: 2000,
-
   /** LLM 调用最大重试次数（不含首次调用）。 */
   MAX_LLM_RETRIES: 2,
 
