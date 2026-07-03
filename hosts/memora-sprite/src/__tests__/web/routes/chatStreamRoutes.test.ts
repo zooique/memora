@@ -151,6 +151,11 @@ function createMockReq(method: string, url: string, body?: unknown): IncomingMes
     async *[Symbol.asyncIterator]() {
       if (bodyBuffer) yield bodyBuffer;
     },
+    /**
+     * EventEmitter.on 桩实现（handleChatStart 注册 req 'close' 事件检测客户端断开）
+     * 测试不模拟客户端断开场景，仅注册回调不触发，保持签名兼容
+     */
+    on: vi.fn(),
   } as unknown as IncomingMessage;
   return req;
 }
@@ -742,7 +747,8 @@ describe('handleChatStreamRoute', () => {
       // 非用户中断应发送 error 事件
       const errorEvent = events.find((e) => e.event === 'error');
       expect(errorEvent).toBeDefined();
-      expect((errorEvent!.data as { message: string }).message).toContain('LLM 服务不可用');
+      // SEC-WEB-02：非网络错误返回通用友好消息，不回传原始 error.message
+      expect((errorEvent!.data as { message: string }).message).toBe('对话出错，请重试');
       // 非用户中断不应发送 aborted 事件
       const abortedEvent = events.find((e) => e.event === 'aborted');
       expect(abortedEvent).toBeUndefined();
@@ -806,7 +812,8 @@ describe('handleChatStreamRoute', () => {
       await handleChatStreamRoute(req, res, ctx);
 
       expect(res.statusCode).toBe(404);
-      expect(JSON.parse(res.body).error).toContain('未找到对话路由');
+      // SEC-WEB-05：404 不回显 path，返回固定文案
+      expect(JSON.parse(res.body).error).toBe('404 Not Found');
     });
 
     it('POST /api/chat/unknown 应返回 404', async () => {
@@ -817,7 +824,8 @@ describe('handleChatStreamRoute', () => {
       await handleChatStreamRoute(req, res, ctx);
 
       expect(res.statusCode).toBe(404);
-      expect(JSON.parse(res.body).error).toContain('未找到对话路由');
+      // SEC-WEB-05：404 不回显 path，返回固定文案
+      expect(JSON.parse(res.body).error).toBe('404 Not Found');
     });
   });
 

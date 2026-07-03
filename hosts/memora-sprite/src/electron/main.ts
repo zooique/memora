@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Memora Sprite — Electron 主进程
  *
  * 职责：
@@ -618,6 +618,15 @@ async function initializeApp(): Promise<void> {
       // configDir 默认为 ~/.memora-sprite/config/，与 Agent 初始化时一致
       const configDir = DEFAULT_CONFIG_DIR;
       const result = await installSkill(content, fileName, configDir);
+      // GAP-5 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
+      if (result.success && agent) {
+        try {
+          await agent.reloadConfig('skill');
+        } catch (err) {
+          // 重载失败不阻塞安装结果返回，用户可手动重启 Agent 生效
+          errorHandler.handle(err, { code: ErrorCode.UNKNOWN, context: '技能热重载失败' });
+        }
+      }
       return result;
     });
   } catch (error) {

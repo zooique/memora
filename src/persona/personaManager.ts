@@ -268,6 +268,46 @@ export class PersonaManager {
   }
 
   /**
+   * 重载角色：清空内存缓存 + 重新扫描目录 + 同步 SQLite 索引 + 保持当前激活角色
+   *
+   * GAP-5 事件驱动重载：confirmConfigSuggestion 写入 persona 文件后或用户手动编辑
+   * personas/ 目录后，调用此方法使当前会话立即生效，无需重启 Agent。
+   *
+   * 激活角色保持策略：
+   * - 若当前激活角色在重载后仍存在 → 更新为重载后的版本（内容可能已变更）
+   * - 若当前激活角色已被删除 → 回退到列表第一个角色（与 load() 默认行为一致）
+   *
+   * @returns 重载后的角色数量
+   */
+  async reload(): Promise<number> {
+    const oldActiveName = this.activePersona?.name;
+    this.personaList = await this.scanPersonas();
+    await this.writeAllToIndex();
+
+    // 保持当前激活角色（若仍存在），否则回退到第一个
+    if (oldActiveName) {
+      const found = this.personaList.find((p) => p.name === oldActiveName);
+      if (found) {
+        this.activePersona = found;
+      } else {
+        this.activePersona = this.personaList[0] ?? this.createDefaultPersona();
+        logger.warn(
+          { oldActive: oldActiveName, newActive: this.activePersona.name },
+          '激活角色已被删除，回退到默认',
+        );
+      }
+    } else {
+      this.activePersona = this.personaList[0] ?? this.createDefaultPersona();
+    }
+
+    logger.info(
+      { count: this.personaList.length, active: this.activePersona.name },
+      '角色已重载',
+    );
+    return this.personaList.length;
+  }
+
+  /**
    * 构建 system prompt 中的角色段
    */
   buildSystemPrompt(name?: string): string {

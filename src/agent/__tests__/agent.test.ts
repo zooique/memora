@@ -19,6 +19,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
+import type { AgentChunk } from '@/agent/types.js';
 import { LlmProvider } from '@/llm/provider.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
@@ -1391,6 +1392,105 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：reloadConfig()（GAP-5 事件驱动配置热重载）
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · reloadConfig()（GAP-5 配置热重载）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-reload-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-reload-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-reload-cfg-'));
+    seedProjectWithPersonasAndSkills(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('reloadConfig(skill) 应重载技能并反映新增技能', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    // 初始 1 个技能（seedProjectWithPersonasAndSkills 创建的 code-review）
+    expect(agent['skillManager']!.list).toHaveLength(1);
+
+    // 新增第 2 个技能文件
+    writeFileSync(
+      join(tmpConfig, 'skills', 'writing.md'),
+      '---\nsource: skill\nname: 写作技能\nkeywords: 写作,文章\n---\n\n写作技能内容',
+      'utf-8',
+    );
+
+    const result = await agent.reloadConfig('skill');
+    expect(result.skill).toBe(2);
+    expect(agent['skillManager']!.list).toHaveLength(2);
+  });
+
+  it('reloadConfig(persona) 应重载角色并保持激活角色', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const initialActive = agent['personaManager']!.activeName;
+
+    // 新增角色文件
+    writeFileSync(
+      join(tmpConfig, 'personas', 'reviewer.md'),
+      '---\nsource: persona\nname: 审查员\nkeywords: 审查\n---\n\n你是审查专家',
+      'utf-8',
+    );
+
+    const result = await agent.reloadConfig('persona');
+    expect(result.persona).toBe(4); // 3 个初始 + 1 个新增
+    // 激活角色应保持不变
+    expect(agent['personaManager']!.activeName).toBe(initialActive);
+  });
+
+  it('reloadConfig(rule) 应跳过重载（rule 已由 addRule 即时注入）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const result = await agent.reloadConfig('rule');
+    expect(result.skill).toBe(0);
+    expect(result.persona).toBe(0);
+  });
+
+  it('reloadConfig(guardrail) 应抛错（不支持热重载）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    await expect(agent.reloadConfig('guardrail')).rejects.toThrow(/guardrail 不支持热重载/);
+  });
+
+  it('reloadConfig() 无参数应全量重载 skill + persona', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    const result = await agent.reloadConfig();
+    expect(result.skill).toBeGreaterThan(0);
+    expect(result.persona).toBeGreaterThan(0);
+  });
+
+  it('reloadConfig 对话繁忙时应抛错', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 模拟对话繁忙
+    agent['_chatBusy'] = true;
+    await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
+    agent['_chatBusy'] = false;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：chat 输入过长时抛错
 // ═══════════════════════════════════════════════════════════════
 
@@ -1744,4 +1844,170 @@ describe('Agent · memory 关系查询（ADR-014）', () => {
     const both = agent.memory!.getRelations('insight:a', 'both');
     expect(both.length).toBe(2);
   });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：chat() 中断保留文本（GAP-3）
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 可中断 Mock LLM Provider（GAP-3 测试专用）
+ *
+ * 与 MockProvider 区别：
+ * - 分多个 chunk 输出（模拟真实 LLM 流式）
+ * - chunk 之间有延迟（让外部有机会在 chunk 之间触发 abort）
+ * - 不主动检查 signal（让 loop.ts 的 callLlmWithRetry 在 chunk 之间检测 abort）
+ *
+ * 时序：provider yield chunk → loop 检查 signal → yield text → 外部收到 → abort →
+ *       provider 延迟结束 yield 下一个 chunk → loop 检测 signal.aborted → break
+ */
+class AbortableMockProvider extends LlmProvider {
+  readonly name = 'abortable-mock';
+  /** 分块输出的文本片段 */
+  private readonly chunks: string[];
+  /** chunk 间延迟（ms），让外部有机会在 chunk 之间触发 abort */
+  private readonly delayMs: number;
+
+  constructor(chunks: string[], delayMs = 30) {
+    super();
+    this.chunks = chunks;
+    this.delayMs = delayMs;
+  }
+
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    for (const chunk of this.chunks) {
+      yield { content: chunk };
+      // 延迟让外部有机会 abort（不检查 signal，让 loop 自己检测）
+      await new Promise((r) => setTimeout(r, this.delayMs));
+    }
+    yield { finishReason: 'stop' };
+  }
+}
+
+describe('Agent · chat() 中断保留文本（GAP-3）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-abort-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-abort-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-abort-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('中断时有已生成文本 → 应保留到 history 并追加 [已中断] 标记', async () => {
+    // 分两个 chunk 输出，30ms 延迟让外部在第一个 chunk 后触发 abort
+    const provider = new AbortableMockProvider(['你好', '我是助手'], 30);
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    const ctrl = new AbortController();
+    // 收集 chunk，第一个 text 到达后触发 abort
+    for await (const chunk of agent.chat('测试', ctrl.signal)) {
+      if (chunk.type === 'text') {
+        // 第一个 text chunk 到达后立即 abort
+        ctrl.abort();
+        // 继续消费剩余 chunk 直到 generator 自然结束（loop 检测到 abort 后 yield aborted）
+      }
+    }
+
+    // 验证 history 中最后一条 assistant 消息包含已生成文本 + [已中断] 标记
+    const messages = agent.agentLoop!.getMessages();
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    expect(lastAssistant).toBeDefined();
+    expect(lastAssistant!.content).toContain('你好');
+    expect(lastAssistant!.content).toContain('[已中断]');
+  }, 15000);
+
+  it('中断时无文本 → 不写入空消息', async () => {
+    // 提前 abort：在 chat() 进入主流程前 signal 已 aborted
+    const provider = new AbortableMockProvider(['不应到达的文本'], 30);
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    const ctrl = new AbortController();
+    ctrl.abort(); // 提前 abort，chat() 启动时即检测到
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of agent.chat('测试', ctrl.signal)) {
+      chunks.push(chunk);
+    }
+
+    // 期望只收到 aborted chunk，不应有 text chunk
+    expect(chunks.some((c) => c.type === 'text')).toBe(false);
+    // 验证 history 中没有 assistant 消息（assistantContent 为空，跳过 appendAssistant）
+    const messages = agent.agentLoop!.getMessages();
+    const hasAssistant = messages.some((m) => m.role === 'assistant');
+    expect(hasAssistant).toBe(false);
+  }, 15000);
+
+  it('自定义 interrupted 配置 → 应使用自定义文案', async () => {
+    const provider = new AbortableMockProvider(['部分内容'], 30);
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      messages: {
+        abortedByUser: '用户取消了对话',
+        maxIterationsReached: '\n\n[已达到最大迭代次数]',
+        // GAP-3：自定义中断标记文案
+        interrupted: '\n\n[自定义中断标记]',
+        recentConversationLabel: '[最近对话]',
+        userLabel: '用户',
+        assistantLabel: '助手',
+        inputBlockedByGuard: (rule) => `输入被护栏规则"${rule}"阻止`,
+        guardrailWarningPrefix: '[护栏警告]',
+        outputBlockedByGuard: (rule) => `输出被护栏规则"${rule}"阻止`,
+      },
+    });
+    await agent.init();
+
+    const ctrl = new AbortController();
+    for await (const chunk of agent.chat('测试', ctrl.signal)) {
+      if (chunk.type === 'text') {
+        ctrl.abort();
+      }
+    }
+
+    // 验证 history 中使用自定义中断文案，而非默认的 [已中断]
+    const messages = agent.agentLoop!.getMessages();
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    expect(lastAssistant).toBeDefined();
+    expect(lastAssistant!.content).toContain('部分内容');
+    expect(lastAssistant!.content).toContain('[自定义中断标记]');
+    expect(lastAssistant!.content).not.toContain('[已中断]');
+  }, 15000);
 });

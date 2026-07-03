@@ -21,3 +21,6 @@ export type { ContextState, ContextAwarenessOptions, RhythmType, CoherenceLevel,
 
 export { PatternDetector } from './patternDetector.js';
 export type { DetectedPattern, PatternType, PatternDetectorOptions } from './patternDetector.js';
+
+export { PerceptionCoordinator } from './perceptionCoordinator.js';
+export type { PerceptionEmitter, PerceptionCoordinatorOptions } from './perceptionCoordinator.js';

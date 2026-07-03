@@ -142,6 +142,29 @@ export class SkillManager {
   }
 
   /**
+   * 重载技能：清空内存缓存 + 重新扫描目录 + 同步 SQLite 索引
+   *
+   * GAP-5 事件驱动重载：installSkill 写入文件后或用户手动编辑 skills/ 目录后，
+   * 调用此方法使当前会话立即生效，无需重启 Agent。
+   *
+   * 与 load() 的区别：
+   * - load() → 启动时首次加载（冷启动）
+   * - reload() → 运行时增量重载（热更新），保留运行时 register() 注入的技能会被覆盖
+   *
+   * @returns 重载后的技能数量
+   */
+  async reload(): Promise<number> {
+    const oldCount = this.skills.length;
+    this.skills = await this.scanSkills();
+    await this.writeAllToIndex();
+    logger.info(
+      { oldCount, newCount: this.skills.length, names: this.skills.map((s) => s.name) },
+      '技能已重载',
+    );
+    return this.skills.length;
+  }
+
+  /**
    * 构建 system prompt 中的技能段
    *
    * 格式：

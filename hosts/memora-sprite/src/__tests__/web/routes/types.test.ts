@@ -205,6 +205,10 @@ describe('Web 路由工具函数', () => {
       expect(res.writeHead).toHaveBeenCalledWith(200, {
         'Content-Type': 'application/json; charset=utf-8',
         'Content-Length': Buffer.byteLength(JSON.stringify(data)),
+        // SEC-WEB-04：安全响应头统一注入（nosniff / DENY / no-referrer）
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
       });
     });
 

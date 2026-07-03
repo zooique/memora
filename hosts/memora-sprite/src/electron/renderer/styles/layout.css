@@ -88,7 +88,7 @@
   background: var(--surface2);
   color: var(--muted);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--surface2);
   margin-left: 2px;
 }
@@ -518,14 +518,14 @@
   flex: 1;
   height: 6px;
   background: var(--bg-hover);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
 }
 
 .affect-fill {
   width: 0;
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   /* 色调渐变：低→蓝色 中→绿色 高→橙色（由 JS 动态设置 background） */
   transition: width 0.5s ease, background 0.5s ease;
 }
@@ -542,7 +542,7 @@
 .rapport-level-badge {
   display: inline-block;
   padding: 2px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: var(--font-xs);
   font-weight: 600;
   color: var(--white);
@@ -591,7 +591,7 @@
   align-items: flex-start;
   gap: 6px;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--bg-hover);
   font-size: var(--font-xs);
   line-height: 1.5;
@@ -628,7 +628,7 @@
   align-items: center;
   gap: 4px;
   padding: 4px 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   font-size: var(--font-xs);
   font-weight: 500;
   background: var(--milestone-badge-grad);
@@ -728,8 +728,7 @@
   color: var(--muted);
 }
 
-/* .suggestion-list 系列已删除（死代码，TS 实际使用 #recommendation-list） */
-/* 修复：#recommendation-list 及其子元素样式（原 .suggestion-list 设计意图迁移至此） */
+/* 推荐列表：TS 实际使用 #recommendation-list */
 #recommendation-list {
   list-style: none;
   padding: 0;

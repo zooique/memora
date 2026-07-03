@@ -372,7 +372,6 @@ async function handleChatStart(
         // SEC-WEB-02：对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
         // - 网络类错误（DNS 失败/连接拒绝/超时等）→ 提示检查网络或 LLM 配置
         // - 其他错误（如内核异常）→ 通用"对话出错，请重试"
-        // 原始 error.message 仅在下方 logger.error 中记录到服务端日志
         const friendlyMessage = isNetworkError(error)
           ? '对话服务暂不可用，请检查网络或 LLM 配置'
           : '对话出错，请重试';

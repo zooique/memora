@@ -480,7 +480,7 @@
 #memory-timeline-container::-webkit-scrollbar-thumb,
 #memory-detail-content::-webkit-scrollbar-thumb {
   background: var(--surface2);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 #memory-list::-webkit-scrollbar-thumb:hover,
@@ -1265,7 +1265,7 @@
 /* 分布填充条：复用 source-* 颜色类 */
 .distribution-fill {
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   min-width: 2px;
   transition: width var(--transition-fast);
 }
@@ -1643,7 +1643,7 @@
   flex: 1;
   height: 6px;
   background: var(--surface0);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
 }
 
@@ -1651,7 +1651,7 @@
 .health-metric-fill {
   width: 100%;
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   transition: width 0.5s ease;
   background: var(--accent);
 }

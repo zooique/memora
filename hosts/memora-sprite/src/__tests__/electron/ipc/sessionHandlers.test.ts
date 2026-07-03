@@ -1,4 +1,4 @@
-﻿/**
+/**
  * sessionHandlers IPC 处理器测试（QC-TEST-SESSION）
  *
  * 覆盖范围：
@@ -139,8 +139,14 @@ function createMockCtx(overrides?: {
 
 describe('sessionHandlers', () => {
   beforeEach(() => {
+    // 固定系统时间为 MOCK_TODAY（2026-06-26），保证依赖 new Date() 的测试与 mock 数据一致
+    vi.useFakeTimers({ now: new Date('2026-06-26T12:00:00Z') });
     vi.clearAllMocks();
     handleCallbacks.clear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   // ─── SESSION_LOAD ──────────────────────────────────────
@@ -189,7 +195,7 @@ describe('sessionHandlers', () => {
       expect(result.loadedSessionId).toBe('2026-06-26-main');
     });
 
-    it('无参数 + 当天无消息时应加载最近的会话', async () => {
+    it('无参数 + 当天无消息时应始终加载今天的 main 会话', async () => {
       const sessionStore = createMockSessionStore({
         listSessions: ['2026-06-24-main', '2026-06-25-main'], // 当天 06-26 不在列表
         countMessages: 0, // 当天 main 无消息
@@ -201,8 +207,8 @@ describe('sessionHandlers', () => {
       const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_LOAD)!;
       const result = await callback({}, {});
 
-      // 应加载最后一个（最新的）会话：2026-06-25-main
-      expect(result.loadedSessionId).toBe('2026-06-25-main');
+      // 实现行为：无参数时始终加载今天的 main 会话（不看历史列表）
+      expect(result.loadedSessionId).toBe('2026-06-26-main');
     });
 
     it('无参数 + 无任何历史会话时应返回当天空会话', async () => {

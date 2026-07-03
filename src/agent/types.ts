@@ -65,6 +65,14 @@ export interface UIMessages {
   /** 达到最大迭代次数提示（默认 "\n\n[Max iterations reached]"） */
   maxIterationsReached?: string;
   /**
+   * 流式中断标记（默认 "\n\n[已中断]"）
+   *
+   * GAP-3：流式输出被用户中断时，已生成的部分文本仍会写入历史，
+   * 此标记追加到文本末尾，让下一轮 LLM 上下文和历史归档能识别中断响应。
+   * 与 maxIterationsReached 性质相同（对话末尾状态标记）。
+   */
+  interrupted?: string;
+  /**
    * 上下文窗口截断提示生成函数
    * @param skipped 被裁剪的消息数
    * @param kept 保留的消息数

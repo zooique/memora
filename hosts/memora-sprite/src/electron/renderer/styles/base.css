@@ -559,7 +559,7 @@ button:active,
   max-height: 60vh;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   display: flex;
@@ -629,7 +629,7 @@ button:active,
 
 .command-palette-results::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .command-palette-section {
@@ -784,7 +784,7 @@ select:active {
   align-items: center;
   gap: 3px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: var(--font-xs);
   font-weight: 500;
   line-height: 1.5;

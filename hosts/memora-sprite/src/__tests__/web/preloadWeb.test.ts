@@ -36,13 +36,17 @@ import { webElectronAPI, injectWebElectronAPI } from '../../web/preloadWeb.js';
 /**
  * 创建 fetch mock
  *
- * 返回 vi.fn，默认 resolve 为 { json: async () => ({ ok: true }) }。
+ * 返回 vi.fn，默认 resolve 为模拟标准 Response 对象（含 ok/status/json）。
+ * parseJsonResponse 检查 response.ok 判断请求成败，mock 必须提供该属性，
+ * 否则会走错误分支抛出 "HTTP undefined"。
  * 测试可通过 fetchMock.mockResolvedValueOnce 覆盖单次返回值。
  *
  * @returns fetch mock 函数
  */
 function createFetchMock(): ReturnType<typeof vi.fn> {
   return vi.fn(async () => ({
+    ok: true,
+    status: 200,
     json: async () => ({ ok: true }),
   }));
 }

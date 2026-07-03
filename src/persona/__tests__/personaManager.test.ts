@@ -534,4 +534,54 @@ keywords: 有效
       expect(result).toBeTruthy();
     });
   });
+
+  // ════════════════════════════════════════════════════════
+  // reload（GAP-5 事件驱动热重载）
+  // ════════════════════════════════════════════════════════
+
+  describe('reload', () => {
+    it('重载应反映目录变更（新增角色）且保持激活角色', async () => {
+      createPersonaFile(personasDir, 'default.md', '---\nname: default\n---\n默认角色内容');
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('default');
+      expect(personaManager.list).toHaveLength(1);
+      expect(personaManager.activeName).toBe('default');
+
+      // 新增第 2 个角色
+      createPersonaFile(personasDir, 'coder.md', '---\nname: coder\nkeywords: 代码\n---\n程序员角色');
+      const count = await personaManager.reload();
+
+      expect(count).toBe(2);
+      expect(personaManager.list).toHaveLength(2);
+      // 激活角色应保持为 default
+      expect(personaManager.activeName).toBe('default');
+    });
+
+    it('重载后激活角色被删除应回退到第一个', async () => {
+      createPersonaFile(personasDir, 'default.md', '---\nname: default\n---\n默认角色');
+      createPersonaFile(personasDir, 'coder.md', '---\nname: coder\n---\n程序员角色');
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('coder');
+      expect(personaManager.activeName).toBe('coder');
+
+      // 删除激活的 coder 角色文件
+      rmSync(join(personasDir, 'coder.md'));
+      await personaManager.reload();
+
+      // 激活角色应回退到列表第一个（default）
+      expect(personaManager.activeName).toBe('default');
+    });
+
+    it('重载应反映内容变更', async () => {
+      createPersonaFile(personasDir, 'default.md', '---\nname: default\n---\n旧内容');
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('default');
+      expect(personaManager.getActive()?.content).toBe('旧内容');
+
+      // 修改角色文件内容
+      createPersonaFile(personasDir, 'default.md', '---\nname: default\n---\n新内容');
+      await personaManager.reload();
+      expect(personaManager.getActive()?.content).toBe('新内容');
+    });
+  });
 });

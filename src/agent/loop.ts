@@ -131,6 +131,8 @@ export class AgentLoop {
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
+      // GAP-3：流式中断标记，追加到中断时已生成的部分文本末尾
+      interrupted: opts.messages?.interrupted ?? '\n\n[已中断]',
       contextTruncated:
         opts.messages?.contextTruncated ??
         ((skipped, kept) =>
@@ -273,6 +275,16 @@ export class AgentLoop {
         const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
 
         if (llmResult.aborted) {
+          // GAP-3：LLM 调用中断时仍保留已生成的部分文本到上下文消息列表
+          // 让下一轮 LLM 能看到中断响应（追加 interrupted 标记让 LLM 识别非完整回复）
+          // 注意：工具调用中断（execResult.aborted）不在此处理，因 executeToolCalls
+          // 已 push assistant（含 toolCalls），追加文本标记会破坏工具调用结构
+          if (llmResult.fullContent.trim()) {
+            this.messages.push({
+              role: 'assistant',
+              content: llmResult.fullContent + this.ui.interrupted,
+            });
+          }
           yield { type: 'aborted', reason: this.ui.abortedByUser };
           return;
         }

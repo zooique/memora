@@ -209,4 +209,54 @@ keywords: 文件,读取
       expect(prompt).toBeFalsy();
     });
   });
+
+  // ─── reload（GAP-5 事件驱动热重载） ─────────────────────
+
+  describe('reload', () => {
+    it('重载应反映目录变更（新增技能）', async () => {
+      // 初始加载 1 个技能
+      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 技能 A\n内容 A');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      expect(skillManager.list).toHaveLength(1);
+
+      // 新增第 2 个技能文件
+      createSkillFile(skillsDir, 'skill-b.md', '---\nkeywords: b\n---\n# 技能 B\n内容 B');
+
+      // 重载后应看到 2 个技能
+      const count = await skillManager.reload();
+      expect(count).toBe(2);
+      expect(skillManager.list).toHaveLength(2);
+      expect(skillManager.list.map((s) => s.name).sort()).toEqual(['skill-a', 'skill-b']);
+    });
+
+    it('重载应反映目录变更（删除技能）', async () => {
+      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 技能 A\n内容 A');
+      createSkillFile(skillsDir, 'skill-b.md', '---\nkeywords: b\n---\n# 技能 B\n内容 B');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      expect(skillManager.list).toHaveLength(2);
+
+      // 删除一个技能文件
+      rmSync(join(skillsDir, 'skill-b.md'));
+
+      // 重载后应只剩 1 个技能
+      const count = await skillManager.reload();
+      expect(count).toBe(1);
+      expect(skillManager.list).toHaveLength(1);
+      expect(skillManager.list[0]!.name).toBe('skill-a');
+    });
+
+    it('重载应反映内容变更', async () => {
+      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: old\n---\n# 旧内容');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      expect(skillManager.get('skill-a')?.content).toBe('# 旧内容');
+
+      // 修改技能文件内容
+      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: new\n---\n# 新内容');
+      await skillManager.reload();
+      expect(skillManager.get('skill-a')?.content).toBe('# 新内容');
+    });
+  });
 });

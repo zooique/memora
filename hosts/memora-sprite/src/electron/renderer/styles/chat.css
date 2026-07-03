@@ -328,7 +328,7 @@
   }
 }
 
-/* 情感基调 2×2 紧凑网格（原 affect-bars 纵向堆叠改为网格） */
+/* 情感基调 2×2 紧凑网格 */
 .affect-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1699,8 +1699,7 @@
 
 
 /* ─── 输入区（嵌入占位 + 视觉浮动效果） ──────────────────────── */
-/* 从 absolute 悬浮改为 flex 流占位，通过 margin/border-radius/box-shadow */
-/* 模拟视觉上的浮动卡片效果，不再遮挡对话消息                      */
+/* flex 流占位，通过 margin/border-radius/box-shadow 模拟视觉上的浮动卡片效果 */
 #input-area {
   flex-shrink: 0;
   display: flex;

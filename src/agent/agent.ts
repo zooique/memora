@@ -448,6 +448,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
 
       if (wasAborted) {
+        // GAP-3：流式中断时仍保留已生成的部分文本到历史，避免下一轮上下文丢失
+        // 追加 interrupted 标记让下一轮 LLM 和历史归档能识别这是中断响应（非完整回复）
+        // 与下方正常路径一致采用 best-effort 写入（失败不影响中断流程）
+        if (assistantContent.trim()) {
+          const interruptedMark = this.#config.messages?.interrupted ?? '\n\n[已中断]';
+          try {
+            await this.requireNonNull(this.history, 'history').appendAssistant(
+              assistantContent + interruptedMark,
+            );
+          } catch (err) {
+            logger.warn({ err }, '中断消息历史写入失败');
+          }
+        }
         return;
       }
 
@@ -904,6 +917,70 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.emit('insightExtracted', { source: memory.source, insight: memory.content });
     }
     return memories;
+  }
+
+  // ─── 配置重载（GAP-5 事件驱动） ───────────────────────
+
+  /**
+   * 重载配置类记忆：从 configDir 重新扫描指定 source 的配置文件并更新内存缓存 + SQLite 索引
+   *
+   * GAP-5 解决方案：installSkill 写入文件后或 confirmConfigSuggestion 写入配置文件后，
+   * 调用此方法使当前会话立即生效，无需重启 Agent。
+   *
+   * 支持的 source：
+   * - 'skill' → SkillManager.reload() 清空缓存重新扫描 skills/ 目录
+   * - 'persona' → PersonaManager.reload() 清空缓存重新扫描 personas/ 目录（保持激活角色）
+   * - 'rule' → 无操作（rule 类型已由 ConfigManager.addRule() 即时注入 system prompt）
+   * - 'guardrail' → 抛错（guardrail 是 AgentLoop 的 readonly 数组，需 rebuildComponents 才能重载）
+   * - undefined → 重载 skill + persona（全量重载，不含 guardrail）
+   *
+   * @param source 配置类型，缺省时重载全部可热更新的配置
+   * @returns 重载结果统计
+   */
+  async reloadConfig(source?: string): Promise<{ skill: number; persona: number }> {
+    this.assertInitialized('reloadConfig');
+    if (this._chatBusy) {
+      throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再重载配置', [
+        '等待上一轮 chat() 的 AsyncGenerator 耗尽',
+      ]);
+    }
+
+    // guardrail 需重建 AgentLoop，不属于热重载范畴
+    if (source === 'guardrail') {
+      throw configError(
+        'guardrail 不支持热重载',
+        'guardrail 规则是 AgentLoop 的 readonly 数组，需调用 rebuildComponents() 重建',
+        ['使用 rebuildComponents() 重建组件（代价较高）'],
+      );
+    }
+
+    // rule 类型已由 ConfigManager.addRule() 即时注入，无需重载
+    if (source === 'rule') {
+      logger.info('rule 类型已由 addRule() 即时注入，reloadConfig 跳过');
+      return { skill: 0, persona: 0 };
+    }
+
+    const result = { skill: 0, persona: 0 };
+
+    // 按需重载：source 缺省时全量重载，否则只重载指定类型
+    const shouldReloadSkill = !source || source === 'skill';
+    const shouldReloadPersona = !source || source === 'persona';
+
+    if (shouldReloadSkill && this.skillManager) {
+      result.skill = await this.skillManager.reload();
+    }
+
+    if (shouldReloadPersona && this.personaManager) {
+      result.persona = await this.personaManager.reload();
+      // 角色重载后，刷新 AgentLoop 的角色前缀（使新角色内容立即注入 system prompt）
+      if (this.loop) {
+        const newPrefix = this.personaManager.buildSystemPrompt();
+        this.loop.refreshPersonaPrefix(newPrefix);
+      }
+    }
+
+    logger.info({ source, ...result }, '配置已热重载');
+    return result;
   }
 
   // ─── 组件访问 ─────────────────────────────────────────
