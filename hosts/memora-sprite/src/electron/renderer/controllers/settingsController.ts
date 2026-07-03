@@ -19,18 +19,10 @@ import type { UIManager } from '../ui.js';
 import type { SpriteConfigForm } from '../types.js';
 import { createIpcErrorHandler, toError, reportError } from '../helpers/errorHelpers.js';
 import { setButtonLoading } from '../helpers/domHelpers.js';
+// HC-02：从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
+import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
 
 /** QC-STATE-01 silentRecoveryCallback 位于 createSettingsController 闭包内 */
-
-/** 默认快捷键配置（cfg.shortcuts 缺失时的 fallback，与 DEFAULT_SPRITE_CONFIG.shortcuts 对齐） */
-const DEFAULT_SHORTCUTS = {
-  enabled: true,
-  accelerators: {
-    'toggle-window': 'Ctrl+Shift+Space',
-    'quick-record': 'Ctrl+Shift+M',
-    'recall-memory': 'Ctrl+Shift+R',
-  },
-};
 
 /**
  * 创建设置控制器

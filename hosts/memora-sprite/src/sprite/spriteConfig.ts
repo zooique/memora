@@ -22,6 +22,9 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { logger, toError } from 'memora';
 // P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME } from './constants.js';
+// HC-02：从 shared/ 导入 DEFAULT_SHORTCUTS 和 ShortcutConfig（单一真理源，消除与 settingsController.ts 的重复）
+import { DEFAULT_SHORTCUTS } from '../shared/shortcutDefaults.js';
+import type { ShortcutConfig } from '../shared/shortcutDefaults.js';
 
 /** 精灵持久化配置 */
 export interface SpriteConfig {
@@ -111,13 +114,12 @@ export interface SpriteConfig {
  *
  * 持久化到 sprite.json，支持热更新（不重启应用即可修改快捷键）。
  * accelerators 是 action → accelerator 映射，action 为开放字符串（遵循 ADR-004）。
+ *
+ * HC-02：ShortcutConfig 接口和 DEFAULT_SHORTCUTS 常量已迁移到
+ * shared/shortcutDefaults.ts（纯类型+纯数据，无 Node 依赖），
+ * 此处重新导出保持向后兼容（shortcuts.ts / configHandlers.ts 等仍从此处导入）。
  */
-export interface ShortcutConfig {
-  /** 是否启用全局快捷键（总开关） */
-  enabled: boolean;
-  /** 动作 → 加速器字符串映射（如 { 'toggle-window': 'Ctrl+Shift+Space' }） */
-  accelerators: Record<string, string>;
-}
+export type { ShortcutConfig } from '../shared/shortcutDefaults.js';
 
 /** 配置键名联合类型 */
 export type SpriteConfigKey = keyof SpriteConfig;
@@ -182,14 +184,8 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   windowBounds: null,
   silentModeExpiresAt: null,
   theme: 'light',
-  shortcuts: {
-    enabled: true,
-    accelerators: {
-      'toggle-window': 'Ctrl+Shift+Space',
-      'quick-record': 'Ctrl+Shift+M',
-      'recall-memory': 'Ctrl+Shift+R',
-    },
-  },
+  // HC-02：引用 shared/shortcutDefaults.ts 的 DEFAULT_SHORTCUTS（单一真理源）
+  shortcuts: DEFAULT_SHORTCUTS,
   archiveMode: 'full',
   // 缺口 3.4：默认空对象，由 Sprite.incrementDailyMessageCount 累加填充
   dailyMessageCount: {},
