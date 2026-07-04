@@ -42,9 +42,11 @@ import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
-import { configError, toError } from '@/utils/errors.js';
-import { safeSetTimeout, clearSafeTimeout, safeSetInterval, clearSafeInterval } from '@/utils/safeTimer.js';
+import { configError } from '@/utils/errors.js';
+import { safeSetTimeout, clearSafeTimeout, clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
+import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
+import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
@@ -52,11 +54,8 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
-import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
-import { nowIso } from '@/utils/time.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
@@ -246,20 +245,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private chatLockTimer: ReturnType<typeof setTimeout> | null = null;
   /** chat() 内部 AbortController（超时时中断 generator，防止并发） */
   private chatAbortController: AbortController | null = null;
-  /** 记忆衰减定时器 */
+  /** 记忆衰减定时器（HC-18：已迁移至 MemoryDecayScheduler，此字段保留用于 close 时引用判断） */
   private decayTimer: ReturnType<typeof setInterval> | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
 
-  // ─── R-103 衰减指标统计字段 ──────────────────────────
-  // 累计值，从 Agent.init() 起累加，close() 后随实例销毁。
-
-  /** 衰减执行次数（每次 runMemoryDecay 实际执行 +1） */
-  private metricDecayRunCount: number = 0;
-  /** 累计衰减记忆数（score 被调低的记忆条数总和） */
-  private metricTotalDecayedCount: number = 0;
-  /** 上次衰减时间（ISO 8601，null 表示从未执行过） */
-  private metricLastDecayAt: string | null = null;
+  // ─── HC-18：衰减职责已拆分至 MemoryDecayScheduler ──────────
+  // 原 metricDecayRunCount / metricTotalDecayedCount / metricLastDecayAt 字段
+  // 已迁移至 MemoryDecayScheduler 内部，Agent 通过 memoryDecayScheduler.getMetrics() 读取
+  /** 记忆衰减调度器（init 时创建，close 时销毁） */
+  private memoryDecayScheduler: MemoryDecayScheduler | null = null;
+  /** 归档协调器（HC-18：归档操作委托给 ArchiveCoordinator） */
+  private archiveCoordinator: ArchiveCoordinator | null = null;
 
   constructor(opts: AgentOptions) {
     super();
@@ -357,11 +354,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     this._initialized = true;
 
-    // 启动时记忆衰减（insight/archive 来源）
-    this.runMemoryDecay();
+    // HC-18：归档操作委托给 ArchiveCoordinator
+    // 使用 getter 回调注入依赖，close 时 null 化字段后 getter 自然返回 null
+    this.archiveCoordinator = new ArchiveCoordinator({
+      getUserProfile: () => this.#userProfile,
+      getInsightExtractor: () => this.insightExtractor,
+      getSessionArchiver: () => this.sessionArchiver,
+      emit: (event, payload) => this.emit(event, payload as never),
+    });
 
-    // 定期记忆衰减（每小时）
-    this.decayTimer = safeSetInterval(() => this.runMemoryDecay(), AGENT_CONSTANTS.DECAY_INTERVAL_MS);
+    // HC-18：记忆衰减职责委托给 MemoryDecayScheduler
+    this.memoryDecayScheduler = new MemoryDecayScheduler({
+      tracer: this.#config.tracer,
+      onDecayCompleted: (payload) => this.emit('decayCompleted', payload),
+    });
+    this.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
+    // 保留 decayTimer 引用用于 close 时序兼容（实际定时器由 MemoryDecayScheduler 管理）
+    this.decayTimer = null;
 
     return pctx;
   }
@@ -916,22 +925,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
    * full / insights-only 模式下也可调用（会重复归档，但不推荐）。
    *
+   * HC-18：归档逻辑已委托给 ArchiveCoordinator
+   *
    * @param input 本轮用户输入
    * @returns 写入/更新的 UserProfileEntry 列表
    */
   async archiveProfileFacts(input: string): Promise<UserProfileEntry[]> {
     this.assertInitialized('archiveProfileFacts');
-    if (!this.#userProfile) return [];
-    const turnIndex = `turn-${Date.now()}`;
-    const facts = extractUserFacts(input, turnIndex);
-    const entries = await this.#userProfile.archiveFacts(facts);
-    // 发射 memoryAdded 事件：与自动归档路径一致，保持宿主 UI 行为统一
-    for (const entry of entries) {
-      if (entry.confirmed) {
-        this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
-      }
-    }
-    return entries;
+    return this.archiveCoordinator!.archiveProfileFacts(input);
   }
 
   /**
@@ -940,23 +941,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
    * 内部仍走 classify 判断（避免无价值输入浪费 LLM 调用）。
    *
+   * HC-18：归档逻辑已委托给 ArchiveCoordinator
+   *
    * @param input 本轮用户输入
    * @param assistantContent 本轮助手回复内容
    * @returns 写入/更新的 Memory 列表
    */
   async archiveInsight(input: string, assistantContent: string): Promise<Memory[]> {
     this.assertInitialized('archiveInsight');
-    if (!this.insightExtractor) return [];
-    // 内部仍走 classify 判断，避免无价值输入浪费 LLM 调用
-    const shouldExtract = this.insightExtractor.classify(input);
-    if (shouldExtract !== 'extract') return [];
-    const memories = await this.insightExtractor.extract(input, assistantContent);
-    // 发射 memoryAdded + insightExtracted 事件：与自动归档路径一致
-    for (const memory of memories) {
-      this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
-      this.emit('insightExtracted', { source: memory.source, insight: memory.content });
-    }
-    return memories;
+    return this.archiveCoordinator!.archiveInsight(input, assistantContent);
   }
 
   /**
@@ -965,21 +958,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 适用于 `insights-only` / `manual` 模式下用户手动触发会话内容归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
    *
+   * HC-18：归档逻辑已委托给 ArchiveCoordinator
+   *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
    * @returns 归档结果（memories 可能为空，表示无归档价值或 LLM 失败）
    */
   async archiveSessionContent(date: string, session: string): Promise<SessionArchiveResult> {
     this.assertInitialized('archiveSessionContent');
-    if (!this.sessionArchiver) {
-      return { memories: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
-    }
-    const result = await this.sessionArchiver.archiveSessionContent(date, session);
-    // 发射 memoryAdded 事件：与 insight 自动归档路径一致，宿主可据此刷新记忆面板
-    for (const memory of result.memories) {
-      this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
-    }
-    return result;
+    return this.archiveCoordinator!.archiveSessionContent(date, session);
   }
 
   // ─── 配置重载（GAP-5 事件驱动） ───────────────────────
@@ -1112,39 +1099,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── 记忆生命周期 ───────────────────────────────────────
 
-  /**
-   * 对 insight/profile/work-projection 记忆执行 score 衰减
-   *
-   * 长期未访问的记忆 score 逐渐降低，体现"自然遗忘"
-   * 不影响 persona/rule/skill（这些是配置型记忆，不应衰减）
-   *
-   * 衰减逻辑委派给 IMemoryStorage.decayScores()，
-   * 宿主（SqliteStorage）可用一条 SQL UPDATE 批量完成，避免 O(n) 全量加载。
-   */
-  private runMemoryDecay(): void {
-    if (!this.pctx) return;
-    // R-103 衰减 Span：记录衰减执行过程，补全衰减可观测性缺口
-    const decaySpan = this.#config.tracer?.startSpan(TRACE_SPANS.DECAY) ?? NOOP_TRACER.startSpan(TRACE_SPANS.DECAY);
-    try {
-      const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
-      const decayedCount = this.pctx.index.decayScores(sources, new Date());
-      logger.debug({ decayedCount }, '记忆衰减完成');
-
-      // R-103 衰减指标统计：累计执行次数和衰减记忆数
-      this.metricDecayRunCount++;
-      this.metricTotalDecayedCount += decayedCount;
-      this.metricLastDecayAt = nowIso();
-      decaySpan.setAttribute('decayedCount', decayedCount);
-      decaySpan.setAttribute('totalRuns', this.metricDecayRunCount);
-
-      this.emit('decayCompleted', { decayedCount });
-    } catch (err) {
-      logger.warn({ err }, '记忆衰减异常，跳过本轮');
-      decaySpan.recordException(toError(err));
-    } finally {
-      decaySpan.end();
-    }
-  }
+  // ─── HC-18：runMemoryDecay 已迁移至 MemoryDecayScheduler.runOnce ─────
 
   // ─── 关闭 ─────────────────────────────────────────────
 
@@ -1155,6 +1110,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // P1-13：递增 token，使任何进行中的 chat() generator 的 finally 块
     // 检测到 token 变化后跳过资源清理（close 已接管清理职责）
     this._chatLockToken++;
+    // HC-18：清理 MemoryDecayScheduler（含定时器和 storage 引用）
+    if (this.memoryDecayScheduler) {
+      this.memoryDecayScheduler.stop();
+      this.memoryDecayScheduler = null;
+    }
+    // HC-18：清理 ArchiveCoordinator（无定时器，只需释放引用）
+    this.archiveCoordinator = null;
     // 清理定时器
     if (this.decayTimer) {
       clearSafeInterval(this.decayTimer);
@@ -1204,10 +1166,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // P3-11：清理次要状态字段，防止 re-init 后残留上一会话状态
     this.activeSkill = null;
     this._lastInteractionAt = null;
-    // P3-11：重置衰减指标，与注释承诺"close() 后随实例销毁"一致（见字段声明处注释）
-    this.metricDecayRunCount = 0;
-    this.metricTotalDecayedCount = 0;
-    this.metricLastDecayAt = null;
+    // HC-18：衰减指标已迁移至 MemoryDecayScheduler，close 时通过 stop() 销毁实例
   }
 
   // ─── 只读访问器 ───────────────────────────────────────
@@ -1270,6 +1229,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @returns AgentMetrics 完整快照（含衰减指标）
    */
   getMetrics(): AgentMetrics {
+    // HC-18：衰减指标从 MemoryDecayScheduler 读取
+    const decayMetrics = this.memoryDecayScheduler?.getMetrics() ?? {
+      runCount: 0,
+      totalDecayedCount: 0,
+      lastRunAt: null,
+    };
     // 未初始化时返回全零指标，避免调用方需要判空
     if (!this.loop) {
       return {
@@ -1277,11 +1242,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         recall: { totalCount: 0, hitCount: 0, hitRate: 0 },
         tools: { callCount: 0, failureCount: 0 },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
-        decay: {
-          runCount: this.metricDecayRunCount,
-          totalDecayedCount: this.metricTotalDecayedCount,
-          lastRunAt: this.metricLastDecayAt,
-        },
+        decay: decayMetrics,
       };
     }
 
@@ -1289,11 +1250,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const loopMetrics = this.loop.getMetrics();
     return {
       ...loopMetrics,
-      decay: {
-        runCount: this.metricDecayRunCount,
-        totalDecayedCount: this.metricTotalDecayedCount,
-        lastRunAt: this.metricLastDecayAt,
-      },
+      decay: decayMetrics,
     };
   }
 
