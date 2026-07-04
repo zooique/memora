@@ -31,7 +31,7 @@ import type { BrowserWindow } from 'electron';
  * 则判定为 generator 挂起（LLM 卡死 / postProcess 阻塞 / abort 未响应等），
  * 强制清理宿主状态并通知渲染进程解锁，避免 AbortController 泄漏导致后续对话被竞态保护拒绝。
  *
- * 时长取舍：晚于渲染进程 30s 兜底（留出 abort 响应窗口），早于内核 5 分钟锁超时。
+ * 时长取舍：晚于渲染进程 30s 兜底（留出 abort 响应窗口），早于内核 3 分钟锁超时（CHAT_LOCK_TIMEOUT_MS = 180_000）。
  */
 const STREAM_NO_PROGRESS_TIMEOUT_MS = 60_000;
 
@@ -142,6 +142,12 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       streamTimeoutTimer = null;
       // 强制中断内核 generator（若 generator 响应 abort 会抛 AbortError 退出）
       abortController.abort(new DOMException('流式输出无进展超时', 'TimeoutError'));
+      // 强制释放内核对话锁
+      // 仅靠 abortController.abort() 无法中断不响应 signal 的 await 点（如第三方库），
+      // generator 仍卡住时 _chatBusy 锁未释放，用户再发消息会被 agent.chat() 竞态保护拒绝。
+      // forceReleaseChatLock 递增 token + 清理锁，让用户能立即发起新对话；
+      // 原 generator 的 finally 块通过 token 校验跳过清理，不影响新调用。
+      ctx.agent.forceReleaseChatLock();
       // 兜底清理宿主状态：即使 generator 不响应 abort，也确保渲染进程解锁 + AbortController 释放
       if (!fullWindow.isDestroyed()) {
         emitStreamError(fullWindow, '对话超时（长时间无响应），已自动停止。可点击重试或检查 LLM 配置', '流式输出无进展超时');

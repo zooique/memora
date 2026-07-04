@@ -115,6 +115,7 @@ function createMockAgent(overrides?: {
   agentLoop?: { restoreHistory: ReturnType<typeof vi.fn> } | null;
   chat?: ReturnType<typeof vi.fn>;
   getMetrics?: ReturnType<typeof vi.fn>;
+  forceReleaseChatLock?: ReturnType<typeof vi.fn>;
 }) {
   return {
     agentHistory: overrides?.agentHistory ?? null,
@@ -122,6 +123,8 @@ function createMockAgent(overrides?: {
     agentLoop: overrides?.agentLoop ?? null,
     chat: overrides?.chat ?? vi.fn(),
     getMetrics: overrides?.getMetrics ?? vi.fn(() => ({ context: { truncationCount: 0 } })),
+    // 超时兜底强制释放内核锁的 mock（默认 no-op，测试可覆盖验证调用）
+    forceReleaseChatLock: overrides?.forceReleaseChatLock ?? vi.fn(),
   } as unknown as IpcContext['agent'];
 }
 
@@ -859,6 +862,8 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
     expect(abortControllerRef.current).toBeNull();
     // 托盘应切回 idle
     expect(traySetState).toHaveBeenCalledWith('idle');
+    // 应调用 forceReleaseChatLock 强制释放内核锁（防止 generator 挂起导致锁泄漏）
+    expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalled();
     // loggerWarn 应被调用（emitStreamError 内部）
     expect(loggerWarn).toHaveBeenCalled();
     vi.useRealTimers();
@@ -979,6 +984,8 @@ describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
     // 超时路径在定时器内发过一次 STREAM_END，finally 块因 streamTimedOut=true 跳过
     const ends = sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
     expect(ends).toHaveLength(1);
+    // 超时路径应调用 forceReleaseChatLock（与上一个超时测试一致）
+    expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalled();
     vi.useRealTimers();
   });
 

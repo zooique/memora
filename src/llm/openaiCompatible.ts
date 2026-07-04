@@ -25,6 +25,23 @@ export interface OpenAICompatibleConfig {
 const MAX_ERROR_BODY_LEN = 200;
 
 /**
+ * chunk 级读超时区分首 chunk 与 chunk 间（reasoning 模型适配）
+ *
+ * 背景：原统一 30s 超时对 reasoning 模型（DeepSeek-R1/o1/QwQ 等）过短——
+ *   首 chunk 前 LLM 需要完成思维链推理，可能耗时 30-90s；
+ *   chunk 间正常停顿 < 10s，但复杂推理节点可能短暂停顿。
+ *
+ * 策略：
+ *   - 首 chunk 超时 120s：与请求级超时一致，给 reasoning 模型足够思考时间
+ *   - chunk 间超时 60s：首 chunk 已到说明连接正常，60s 足以覆盖正常停顿
+ *     （原 30s 在网络抖动或 reasoning 模型推理节点会误判超时）
+ *
+ * 判定依据：firstChunkReceived 标志位区分两种阶段
+ */
+const FIRST_CHUNK_TIMEOUT_MS = 120_000;
+const INTER_CHUNK_TIMEOUT_MS = 60_000;
+
+/**
  * 通用 OpenAI 兼容 Provider
  * 通过 baseUrl 适配不同厂商
  */
@@ -267,11 +284,15 @@ export class OpenAICompatibleProvider extends LlmProvider {
     // OpenAI 协议：同一个 tool_call 的 name/arguments 可能跨多个 delta 分片到达
     const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 
-    // 修复 P1-C：chunk 级读超时
+    // chunk 级读超时区分首 chunk 与 chunk 间
     // 原实现 reader.read() 阻塞时无超时，连接半挂（NAT/代理/服务端慢响应不关 TCP）会永久等待
     // abort signal 也只能在新 chunk 到达后检查，无法中断正在 await 的 read()
     // 改用 setTimeout + reader.cancel：超时则 cancel reader 让 read() reject 退出
-    const CHUNK_READ_TIMEOUT_MS = 30_000;
+    //
+    // 区分首 chunk 与 chunk 间（reasoning 模型适配）：
+    //   - 首 chunk 前 LLM 可能思考数十秒（reasoning 模型），用 FIRST_CHUNK_TIMEOUT_MS(120s)
+    //   - 首 chunk 到达后连接已正常，chunk 间停顿用 INTER_CHUNK_TIMEOUT_MS(60s)
+    let firstChunkReceived = false;
 
     try {
       while (true) {
@@ -280,12 +301,18 @@ export class OpenAICompatibleProvider extends LlmProvider {
           throw new DOMException('LLM 流读取被中止', signal.reason?.name ?? 'AbortError');
         }
 
-        // chunk 级读超时：超时则 cancel reader，让正在 await 的 read() 立即 reject
+        // chunk 级读超时：根据是否收到首 chunk 选择不同超时阈值
         // reader.cancel() 会让 pending 的 reader.read() 抛 AbortError（DOMException）
+        const chunkTimeoutMs = firstChunkReceived
+          ? INTER_CHUNK_TIMEOUT_MS
+          : FIRST_CHUNK_TIMEOUT_MS;
         const chunkTimer = setTimeout(() => {
-          // cancel 失败也不影响（reader 可能已 done 或被其他路径 cancel）
-          reader.cancel(new DOMException('LLM chunk 读取超时', 'TimeoutError')).catch(() => {});
-        }, CHUNK_READ_TIMEOUT_MS);
+          // cancel 失败也不影响（reader 可能已 done 或被其他路径 cancel），记日志便于排查偶发连接泄漏
+          const reason = firstChunkReceived ? 'LLM chunk 间读取超时' : 'LLM 首 chunk 读取超时';
+          reader.cancel(new DOMException(reason, 'TimeoutError')).catch((err: unknown) => {
+            logger.debug({ err: toError(err).message }, 'reader.cancel 失败（超时清理路径）');
+          });
+        }, chunkTimeoutMs);
 
         let readResult;
         try {
@@ -297,6 +324,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
         const { done, value } = readResult;
         if (done) break;
+
+        // 成功读到数据后标记首 chunk 已到，后续 read() 用 chunk 间超时
+        if (!firstChunkReceived) {
+          firstChunkReceived = true;
+        }
 
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
@@ -370,14 +402,15 @@ export class OpenAICompatibleProvider extends LlmProvider {
         }
       }
     } finally {
-      // 修复 P1-C：releaseLock 不会取消流，只是释放锁让其他 reader 能 getReader()
+      // releaseLock 不会取消流，只是释放锁让其他 reader 能 getReader()
       // 改用 reader.cancel() 彻底释放底层 TCP 连接，避免 generator 提前 break 时
       // 底层连接悬挂（CallLlmWithRetry 无 finally 触发 abort 时的兜底）
       // 已 done/cancel 的 reader 调 cancel 是 no-op，安全
       try {
         await reader.cancel();
-      } catch {
-        // cancel 失败不阻塞，reader 会被 GC 回收
+      } catch (err) {
+        // cancel 失败不阻塞，reader 会被 GC 回收；记日志便于排查偶发连接泄漏
+        logger.debug({ err: toError(err).message }, 'reader.cancel 失败（finally 清理路径）');
       }
     }
   }

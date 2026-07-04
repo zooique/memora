@@ -343,10 +343,14 @@ export class ContextManager {
    * 缓存 TTL：消息数增长超过 SUMMARY_CACHE_TTL_MSGS 时缓存过期，需重新生成。
    * 首次调用时生成摘要并缓存，后续调用复用缓存直到过期。
    *
+   * signal 参数让摘要生成可被用户取消中断，
+   * 避免摘要 LLM 调用卡住时 generator 永久挂起（与 executeToolCalls 同源问题）。
+   *
    * @param messages 当前消息数组（用于生成摘要和判断缓存过期）
-   * @returns 摘要字符串（失败时返回空字符串，降级为无摘要）
+   * @param signal 可选的 AbortSignal，中断摘要生成
+   * @returns 摘要字符串（失败/中断时返回空字符串，降级为无摘要）
    */
-  async getOrCreateSummary(messages: readonly Message[]): Promise<string> {
+  async getOrCreateSummary(messages: readonly Message[], signal?: AbortSignal): Promise<string> {
     // 检查缓存是否有效
     const summaryExpired =
       this.contextSummary !== null &&
@@ -356,8 +360,8 @@ export class ContextManager {
       return this.contextSummary;
     }
 
-    // 生成新摘要
-    const summary = await this.generateContextSummary(messages);
+    // 生成新摘要（传入 signal 支持中断）
+    const summary = await this.generateContextSummary(messages, signal);
     this.contextSummary = summary;
     this.contextSummaryMsgCount = messages.length;
     return summary;
@@ -372,10 +376,18 @@ export class ContextManager {
    * P1-16：新增 tracer span 埋点（TRACE_SPANS.CONTEXT_SUMMARY），
    * 让宿主监控面板能观察截断频率、摘要生成耗时与失败率。
    *
+   * signal 参数传入 provider.chat 的 ChatOptions，
+   * 让 fetch 请求和 SSE 流读取都能被 abort 中断；
+   * for await 循环中也检查 signal.aborted 提前退出。
+   *
    * @param messages 当前消息数组
-   * @returns 摘要字符串（失败时返回空字符串，降级为无摘要）
+   * @param signal 可选的 AbortSignal
+   * @returns 摘要字符串（失败/中断时返回空字符串，降级为无摘要）
    */
-  private async generateContextSummary(messages: readonly Message[]): Promise<string> {
+  private async generateContextSummary(
+    messages: readonly Message[],
+    signal?: AbortSignal,
+  ): Promise<string> {
     // P1-16：启动 CONTEXT_SUMMARY span，记录摘要生成的耗时与异常
     const summarySpan = this.tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY, {
       messageCount: messages.length,
@@ -383,6 +395,12 @@ export class ContextManager {
     });
 
     try {
+      // signal 已 abort 时直接返回空，不发起 LLM 调用
+      if (signal?.aborted) {
+        summarySpan.setAttribute('aborted', true);
+        return '';
+      }
+
       const messagesToSummarize = messages.slice(1);
       const recentMessages = messagesToSummarize
         .filter((m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
@@ -398,6 +416,7 @@ export class ContextManager {
         return '';
       }
 
+      // 将 signal 注入 ChatOptions，让 provider 的 fetch/SSE 能被 abort 中断
       const stream = this.provider.chat(
         [
           {
@@ -407,16 +426,36 @@ export class ContextManager {
           },
           { role: 'user', content: recentMessages },
         ],
-        { maxTokens: LOOP_CONSTANTS.SUMMARY_MAX_TOKENS, temperature: 0 },
+        {
+          maxTokens: LOOP_CONSTANTS.SUMMARY_MAX_TOKENS,
+          temperature: 0,
+          signal,
+        },
       );
       let summary = '';
       for await (const chunk of stream) {
+        // 流读取过程中检查 abort，提前退出（provider 收到 abort 会抛 AbortError 进入 catch）
+        if (signal?.aborted) {
+          summarySpan.setAttribute('aborted', true);
+          break;
+        }
         if (chunk.content) summary += chunk.content;
+      }
+      // 被中断时返回空字符串（降级为无摘要），不缓存
+      if (signal?.aborted) {
+        return '';
       }
       summarySpan.setAttribute('summaryLength', summary.length);
       logger.info({ summaryLength: summary.length }, '上下文摘要已生成');
       return `[Context summary of earlier conversation]\n${summary}`;
     } catch (err) {
+      // AbortError 是用户主动取消，降级为无摘要，不当作错误
+      const isAbort = err instanceof Error && err.name === 'AbortError';
+      if (isAbort) {
+        summarySpan.setAttribute('aborted', true);
+        logger.debug('上下文摘要生成被中断，降级为无摘要');
+        return '';
+      }
       // P1-16：记录异常到 span（不中断 span，标记错误状态）
       summarySpan.recordException(err instanceof Error ? err : new Error(String(err)));
       logger.warn({ err }, '上下文摘要生成失败，降级为无摘要');

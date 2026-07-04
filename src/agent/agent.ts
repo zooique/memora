@@ -529,6 +529,49 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 强制释放对话锁
+   *
+   * 场景：宿主主进程"无进展超时"兜底后，generator 可能仍卡在不可中断的 await 点
+   *   （executeToolCalls 和 generateContextSummary 已覆盖 signal 响应，但其他
+   *   第三方库或未来新增的 await 点仍可能不响应 signal）。
+   *   此时 _chatBusy 锁未释放，用户再发消息会被 chat() 的竞态保护拒绝，
+   *   表现为"UI 能操作但发不出消息"，需等到 3 分钟锁超时才能恢复。
+   *
+   * 本方法让宿主在确认 generator 挂起后强制释放锁，让用户能立即发起新对话。
+   *
+   * 安全机制：
+   *   - 递增 _chatLockToken，让原 chat() 的 finally 块检测到 token 不匹配后
+   *     跳过资源清理（避免误清新调用者的 _chatBusy/chatAbortController）
+   *   - abort chatAbortController，让响应 signal 的 await 点（如 fetch）退出
+   *   - 原 generator 仍可能在后台运行（无法真正中断不响应 signal 的 await），
+   *     但其 finally 块的 token 校验会阻止它影响新调用
+   *
+   * 幂等性：_chatBusy 已 false 时 no-op（多次调用安全）
+   *
+   * 使用约束：
+   *   - 仅在宿主确认 generator 挂起（如无进展超时）后调用
+   *   - 不应在常规 abort 路径调用（常规 abort 走 signal，generator 自然退出）
+   *   - 调用后不应再消费原 chat() generator 的后续 chunk（token 已变，chunk 无意义）
+   */
+  forceReleaseChatLock(): void {
+    if (!this._chatBusy) return;
+    // 递增 token 让原 chat() 的 finally 块跳过清理（避免误清新调用者的资源）
+    this._chatLockToken++;
+    // abort 当前 generator（响应 signal 的 await 点会 throw AbortError 退出）
+    if (this.chatAbortController) {
+      this.chatAbortController.abort();
+      this.chatAbortController = null;
+    }
+    // 清理锁超时定时器（避免后续触发重复清理）
+    if (this.chatLockTimer) {
+      clearSafeTimeout(this.chatLockTimer);
+      this.chatLockTimer = null;
+    }
+    this._chatBusy = false;
+    logger.warn('对话锁被强制释放（宿主无进展超时兜底）');
+  }
+
+  /**
    * 召回记忆 + 注入最近对话上下文
    *
    * 从 chat() 中提取，职责：

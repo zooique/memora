@@ -265,7 +265,8 @@ export class AgentLoop {
           this.contextManager.shouldTruncate(this.messages)
         ) {
           // QC-R2-08：摘要缓存管理已移至 ContextManager.getOrCreateSummary
-          contextSummary = await this.contextManager.getOrCreateSummary(this.messages);
+          // 传入 signal，让摘要生成可被用户取消中断（避免 generator 挂起）
+          contextSummary = await this.contextManager.getOrCreateSummary(this.messages, signal);
         }
         const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
         // SEC-01: 截断后同步替换工作记忆，防止 messages 数组无限增长
@@ -564,7 +565,9 @@ export class AgentLoop {
       // 错误结果包含 [ERR:TOOL:code] 前缀，供 Reflection 逻辑解析
       let result: string;
       try {
-        result = await this.opts.toolExecutor(tc.function.name, tc.function.arguments);
+        // 工具执行包裹 signal 中断，避免 abort 无法中断卡住的 generator
+        // 原 await toolExecutor 不响应 signal，工具卡住时 generator 挂起、_chatBusy 泄漏
+        result = await this.raceToolWithSignal(tc.function.name, tc.function.arguments, signal);
       } catch (err) {
         const e = toError(err);
         toolSpan.recordException(e);
@@ -600,7 +603,66 @@ export class AgentLoop {
       };
     }
 
+    // 循环结束后再次检查 abort 状态
+    // 场景：最后一个工具执行期间 signal 被 abort，raceToolWithSignal 返回 [ERR:TOOL:ABORTED]，
+    // 循环自然结束，但若不检查则会返回 aborted:false，导致 processUserInput 进入下一轮 LLM 调用（浪费资源）
+    if (signal?.aborted) {
+      return { aborted: true };
+    }
     return { aborted: false };
+  }
+
+  /**
+   * 工具执行与 signal abort 的竞争包裹
+   *
+   * 背景：toolExecutor 签名 (name, args) => Promise<string> 不接受 signal 参数，
+   *   无法真正中断正在执行的工具。原代码直接 await toolExecutor(...)，
+   *   工具卡住时 generator 永久挂起，导致 _chatBusy 锁泄漏、UI 全阻塞。
+   *
+   * 方案：用 Promise.race 让 toolExecutor 与 signal abort 监听竞争
+   *   - 工具先完成：返回工具结果字符串（原行为）
+   *   - signal 先 abort：返回 [ERR:TOOL:ABORTED] 错误字符串，
+   *     让 executeToolCalls 不再 await 工具（工具仍在后台运行，但 generator 解除阻塞）
+   *
+   * 设计权衡：
+   *   - 不改 toolExecutor 签名（82 处测试用例依赖此签名，保持向后兼容）
+   *   - 不抛 AbortError（避免破坏 executeToolCalls 的 try/catch 错误回传 LLM 契约）
+   *   - 返回错误字符串符合现有"工具失败回传 LLM"契约（[ERR:TOOL:code] 前缀）
+   *   - ABORTED 不进入 ToolErrorCode 体系（用户主动取消非工具失败，不触发 Reflection）
+   *
+   * @param name 工具名称
+   * @param args 工具参数 JSON 字符串
+   * @param signal 可选的 AbortSignal
+   * @returns 工具结果字符串，或 [ERR:TOOL:ABORTED] 表示被中断
+   */
+  private async raceToolWithSignal(
+    name: string,
+    args: string,
+    signal: AbortSignal | undefined,
+  ): Promise<string> {
+    // 无 signal 时直接执行工具（保持原行为，测试场景常用）
+    if (!signal) {
+      return this.opts.toolExecutor(name, args);
+    }
+
+    // signal 已 abort：直接返回中断错误，不发起工具调用
+    if (signal.aborted) {
+      return '[ERR:TOOL:ABORTED] 错误：工具执行被中断';
+    }
+
+    // 创建 abort 监听 Promise（signal abort 时 resolve 错误字符串）
+    // 注意：工具先完成时，abort 监听器会残留在 signal 上直到 signal 触发或被 GC，
+    //   但 { once: true } 保证只触发一次，且无副作用，可接受。
+    const abortPromise = new Promise<string>((resolve) => {
+      const onAbort = () => resolve('[ERR:TOOL:ABORTED] 错误：工具执行被中断');
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+    // Promise.race 竞争：工具先完成返回结果，signal 先 abort 返回错误字符串
+    return Promise.race([
+      this.opts.toolExecutor(name, args),
+      abortPromise,
+    ]);
   }
 
   /**

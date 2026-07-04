@@ -234,6 +234,116 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
   });
 });
 
+describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
+  /**
+   * 测试目标：raceToolWithSignal 在 signal abort 时让 executeToolCalls 解除阻塞
+   * 覆盖分支：无 signal / signal 已 abort / 工具先完成 / signal 先 abort / 循环结束后 abort 检查
+   */
+  it('无 signal 时工具正常执行（保持原行为）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('工具结果');
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    const toolResults = chunks.filter((c) => c.type === 'tool_result');
+    expect(toolResults).toHaveLength(1);
+    if (toolResults[0]!.type === 'tool_result') {
+      expect(toolResults[0]!.ok).toBe(true);
+      expect(toolResults[0]!.summary).toBe('工具结果'.slice(0, 100));
+    }
+  });
+
+  it('signal 已 abort 时工具调用应返回 ABORTED 错误', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('不应执行到这里');
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    // 预先 abort 的 signal
+    const ac = new AbortController();
+    ac.abort();
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+      chunks.push(chunk);
+    }
+
+    // 应有 aborted chunk（executeToolCalls 循环结束后 signal.aborted 检查触发）
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(aborted.length).toBeGreaterThan(0);
+    // toolExecutor 不应被调用（signal 已 abort，raceToolWithSignal 直接返回 ABORTED）
+    expect(toolExecutor).not.toHaveBeenCalled();
+  });
+
+  it('signal 在工具执行中 abort 时应解除 generator 阻塞', async () => {
+    // 工具执行耗时 100ms，signal 在 10ms 时 abort
+    // raceToolWithSignal 应在 abort 时立即返回 ABORTED，不等工具完成
+    const toolExecutor = vi.fn().mockImplementation(
+      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+    );
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const ac = new AbortController();
+    // 10ms 后 abort
+    setTimeout(() => ac.abort(), 10);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+      chunks.push(chunk);
+    }
+
+    // 应有 aborted chunk（raceToolWithSignal 检测到 abort 返回 ABORTED → 循环结束后 abort 检查触发）
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(aborted.length).toBeGreaterThan(0);
+    // tool_result 应标记为失败（ABORTED 错误）
+    const toolResults = chunks.filter((c) => c.type === 'tool_result');
+    if (toolResults.length > 0 && toolResults[0]!.type === 'tool_result') {
+      expect(toolResults[0]!.ok).toBe(false);
+    }
+  });
+});
+
 describe('AgentLoop · processUserInput 最大迭代限制', () => {
   it('达到 maxIterations 后应该停止', async () => {
     // 每轮都返回 toolCalls，迫使循环直到上限
