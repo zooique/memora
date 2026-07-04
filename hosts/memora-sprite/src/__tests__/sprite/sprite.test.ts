@@ -1027,3 +1027,126 @@ describe('Sprite Agent 事件转发（B2：6 个未测事件）', () => {
     expect(forkEvents[0]!.messageCount).toBe(15);
   });
 });
+
+// ─── B3：感知面板 + 用户反馈（getPerceptionSnapshot / recordProactiveAccept / recordProactiveReject） ──
+//
+// 覆盖目标：
+//   - getPerceptionSnapshot：UI 感知面板打开时主动拉取的读路径
+//     · 无记忆时返回 null（perceptionCoordinator.getSnapshot 返回 null）
+//     · 有记忆时返回 5 字段快照（affect/rapport/context/patterns/proactiveStats）
+//     · 读路径无副作用（不发射 affectUpdated 事件）
+//   - recordProactiveAccept：用户点击"查看"时调用
+//     · 触发 proactiveEngine.recordAccept（acceptCount +1）
+//     · 触发 perceptionCoordinator.refreshBeforeChat（发射 affectUpdated 事件）
+//   - recordProactiveReject：用户点击"稍后"时调用
+//     · 触发 proactiveEngine.recordReject（consecutiveRejects +1）
+//     · 不触发 refreshBeforeChat（不发射 affectUpdated 事件）
+
+describe('Sprite 感知面板 + 用户反馈（B3：getPerceptionSnapshot / recordProactiveAccept / recordProactiveReject）', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+  /** 收集 affectUpdated 事件（用于验证 refreshBeforeChat 是否被调用） */
+  let affectEvents: unknown[] = [];
+
+  beforeEach(() => {
+    agentListeners.clear();
+    affectEvents = [];
+    // 默认配置即可，无需短间隔（B3 不依赖 TimerTrigger）
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
+    tmpDir = createTmpDir();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+    // 订阅 affectUpdated（start 已触发一次 refreshBeforeChat，可能在 memory.list 为空时不发射）
+    sprite.on('affectUpdated', (payload) => affectEvents.push(payload));
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('getPerceptionSnapshot 在无记忆时返回 null（perceptionCoordinator.getSnapshot 返回 null）', () => {
+    // 默认 mockAgent.memory.list 返回 []，getSnapshot 内部检测到空记忆返回 null
+    vi.mocked(mockAgent.memory.list).mockReturnValue([]);
+    expect(sprite.getPerceptionSnapshot()).toBeNull();
+  });
+
+  it('getPerceptionSnapshot 在有记忆时返回完整快照（5 字段：affect/rapport/context/patterns/proactiveStats）', () => {
+    // mock 单条记忆，让 getSnapshot 走非 null 路径
+    const now = Date.now();
+    vi.mocked(mockAgent.memory.list).mockReturnValue([
+      { id: '1', name: '测试记忆', source: 'insight', content: '内容', score: 0.5, createdAt: now } as never,
+    ]);
+    const snapshot = sprite.getPerceptionSnapshot();
+    expect(snapshot).not.toBeNull();
+    // 验证 5 个字段全部存在
+    expect(snapshot).toHaveProperty('affect');
+    expect(snapshot).toHaveProperty('rapport');
+    expect(snapshot).toHaveProperty('context');
+    expect(snapshot).toHaveProperty('patterns');
+    expect(snapshot).toHaveProperty('proactiveStats');
+    // proactiveStats 应包含接受率等统计字段
+    expect(snapshot!.proactiveStats).toHaveProperty('acceptanceRate');
+    expect(snapshot!.proactiveStats).toHaveProperty('acceptCount');
+    expect(snapshot!.proactiveStats).toHaveProperty('consecutiveRejects');
+  });
+
+  it('getPerceptionSnapshot 是读路径，不发射 affectUpdated 事件（无副作用）', () => {
+    // mock 单条记忆让 getSnapshot 返回非 null
+    const now = Date.now();
+    vi.mocked(mockAgent.memory.list).mockReturnValue([
+      { id: '1', name: '测试记忆', source: 'insight', content: '内容', score: 0.5, createdAt: now } as never,
+    ]);
+    // 清空 start 阶段可能累积的 affectUpdated 事件
+    affectEvents.length = 0;
+    // 调用 getPerceptionSnapshot（读路径，不应发射事件）
+    sprite.getPerceptionSnapshot();
+    sprite.getPerceptionSnapshot();
+    expect(affectEvents).toHaveLength(0);
+  });
+
+  it('recordProactiveAccept 触发 refreshBeforeChat（发射 affectUpdated 事件）', () => {
+    // mock 单条记忆，让 refreshBeforeChat 能完成推导并发射 affectUpdated
+    const now = Date.now();
+    vi.mocked(mockAgent.memory.list).mockReturnValue([
+      { id: '1', name: '测试记忆', source: 'insight', content: '内容', score: 0.5, createdAt: now } as never,
+    ]);
+    // 清空 start 阶段累积的事件
+    affectEvents.length = 0;
+    sprite.recordProactiveAccept();
+    // refreshBeforeChat 被调用 → 推导 affect → 发射 affectUpdated
+    expect(affectEvents.length).toBeGreaterThan(0);
+  });
+
+  it('recordProactiveReject 不触发 refreshBeforeChat（不发射 affectUpdated 事件）', () => {
+    // 清空 start 阶段累积的事件
+    affectEvents.length = 0;
+    sprite.recordProactiveReject();
+    // recordReject 只更新 proactiveEngine 计数，不调用 refreshBeforeChat
+    expect(affectEvents).toHaveLength(0);
+  });
+
+  it('recordProactiveAccept 后 proactiveStats.acceptCount 递增', () => {
+    // mock 单条记忆，让 getPerceptionSnapshot 能返回非 null
+    const now = Date.now();
+    vi.mocked(mockAgent.memory.list).mockReturnValue([
+      { id: '1', name: '测试记忆', source: 'insight', content: '内容', score: 0.5, createdAt: now } as never,
+    ]);
+    const before = sprite.getPerceptionSnapshot()!.proactiveStats.acceptCount;
+    sprite.recordProactiveAccept();
+    const after = sprite.getPerceptionSnapshot()!.proactiveStats.acceptCount;
+    expect(after).toBe(before + 1);
+  });
+
+  it('recordProactiveReject 后 proactiveStats.consecutiveRejects 递增', () => {
+    // mock 单条记忆，让 getPerceptionSnapshot 能返回非 null
+    const now = Date.now();
+    vi.mocked(mockAgent.memory.list).mockReturnValue([
+      { id: '1', name: '测试记忆', source: 'insight', content: '内容', score: 0.5, createdAt: now } as never,
+    ]);
+    const before = sprite.getPerceptionSnapshot()!.proactiveStats.consecutiveRejects;
+    sprite.recordProactiveReject();
+    const after = sprite.getPerceptionSnapshot()!.proactiveStats.consecutiveRejects;
+    expect(after).toBe(before + 1);
+  });
+});
