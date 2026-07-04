@@ -1,7 +1,7 @@
 ---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
-version: v0.7
+version: v0.8
 date: 2026-07-04
 ---
 
@@ -156,3 +156,59 @@ chore: 升级 dependencies
 ### 8.5 决策记录类（decisions/ 目录，按需读取）
 
 > 详见 [decisions/README.md](./decisions/README.md)。共 24 个 ADR：内核 ADR-001~015 + 精灵 ADR-SP-001~008 + ADR-SP-015。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
+
+## 9. AI 行为 DO/DON'T 速查表
+
+> 本节集中列出 AI 在编写/修改 memora 内核代码时的实施级 DO/DON'T 规则。
+> §1 硬约束是原则级，本节是实施级补充。sprite 专属规则见 [sprite-project-rules.md](./sprite-project-rules.md)。
+
+### 9.1 代码质量
+
+| 类型 | 规则 |
+| ---- | ---- |
+| DON'T | 使用 `@ts-ignore` 或 `as any`（零容忍） |
+| DON'T | 在生产文件中保留死代码 |
+| DON'T | 使用空 catch 块或裸 throw（统一 MemoraError 体系） |
+| DO | 核心模块保持 1:1 测试覆盖率（`__tests__/` 镜像 `src/`） |
+| DO | 提交前通过 pre-commit lint + typecheck + commitlint |
+
+### 9.2 内核独立性（补充 §1.6）
+
+| 类型 | 规则 |
+| ---- | ---- |
+| DON'T | 在 `src/` 下 import better-sqlite3 / electron / commander 等 native 模块 |
+| DON'T | 在 `src/` 下 import 任何 web 框架（Express / HTML / CSS） |
+| DON'T | 工具函数绑定特定环境依赖（如 pino） |
+| DO | memora `dependencies` 仅允许纯 JS 工具库（当前仅 zod） |
+
+### 9.3 记忆与存储（补充 §1.3/§1.4）
+
+| 类型 | 规则 |
+| ---- | ---- |
+| DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要） |
+| DON'T | 混合技能定义与内存存储（技能通过 `skills/` 文件夹管理） |
+| DON'T | 直接修改 config schema（配置文件是真理源，§1.5） |
+| DON'T | 多 Agent 并发（单 Agent 模型，`memora.db` 跨项目共享） |
+| DO | 工作内容通过宿主工具访问，内核仅保留投影 |
+| DO | 切换项目用 `close()`，完全终止用 `shutdown()` |
+
+### 9.4 Agent 门面约束
+
+| 类型 | 规则 |
+| ---- | ---- |
+| DON'T | Agent 管理 LLM API keys 或 provider 配置（宿主负责） |
+| DON'T | Agent 含 CLI/REPL 逻辑（CLI 由宿主提供） |
+| DON'T | Agent 直接输出到终端（UI 由宿主处理） |
+| DON'T | Agent 直接修改用户配置文件（通过宿主回调中介） |
+| DO | LlmProvider 通过构造函数注入（`provider` 必填，`backgroundProvider` 可选） |
+| DO | 工具注册通过 `registerTool()` 机制 |
+
+### 9.5 功能开发流程
+
+| 类型 | 规则 |
+| ---- | ---- |
+| DO | 功能开发先进行方案设计，不能直接编写代码 |
+| DO | 底层问题优先修复（架构/基础设施层面，避免积重难返） |
+| DO | 代码修复独立可回滚（每次修复独立提交） |
+| DO | 自动归档根据 `archiveMode` 执行（full / insights-only / manual 三态） |
+| DO | LLM 工具调用传递 `tools` 参数，SSE 流正确解析 `tool_calls` delta |
