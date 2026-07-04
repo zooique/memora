@@ -77,6 +77,8 @@ import { registerChatHandlers } from '../../../electron/ipc/chatHandlers.js';
 import { handleUserInput } from '../../../electron/ipc/chatStreamHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../../electron/ipc/channels.js';
 import type { IpcContext } from '../../../electron/ipc/types.js';
+// C2 错误降级测试需要验证 errorHandler.handle 调用
+import { errorHandler } from '../../../electron/errorHandler.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -752,5 +754,272 @@ describe('chatStreamHandler C1 流式主路径', () => {
 
     expect(prepareForChat).toHaveBeenCalledWith('测试文本');
     expect(incrementDaily).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── C2：chatStreamHandler 超时 + 中断 + 错误降级 ──
+//
+// 覆盖目标：
+//   - 60s 无进展超时兜底：定时器触发 → abort + 推送 SPRITE_ERROR + STREAM_END + 清理 AbortController
+//   - aborted chunk：内核主动 yield aborted → 推送 SPRITE_STREAM_ABORTED + break + finally 发 END
+//   - error chunk：内核 yield error → 推送 SPRITE_STREAM_ABORTED + break + 不发 SPRITE_ERROR
+//   - AbortError（用户中断）：generator throw AbortError → 推送 SPRITE_STREAM_ABORTED（reason=用户手动停止）+ 不上报 errorHandler
+//   - 其他异常（LLM 错误）：generator throw Error → 推送 SPRITE_ERROR + 上报 errorHandler
+//   - 超时路径不重复发 STREAM_END（幂等保护）
+//   - 窗口销毁时 break 退出循环
+
+describe('chatStreamHandler C2 超时 + 中断 + 错误降级', () => {
+  /**
+   * 创建流式测试专用 mock ctx（C2 版本）
+   *
+   * 与 C1 的区别：
+   * - chat mock 接收 (text, signal) 参数，让 generator 能响应 abort
+   * - setAbortController 真实写入 ref，让 catch 块能读取 signal.reason
+   */
+  function createStreamMockCtxV2(chatGenFactory: (signal: AbortSignal) => AsyncGenerator): {
+    ctx: IpcContext;
+    sends: { channel: string; data: unknown }[];
+    traySetState: ReturnType<typeof vi.fn>;
+    abortControllerRef: { current: AbortController | null };
+    incrementDaily: ReturnType<typeof vi.fn>;
+    prepareForChat: ReturnType<typeof vi.fn>;
+    getMetrics: ReturnType<typeof vi.fn>;
+  } {
+    const sends: { channel: string; data: unknown }[] = [];
+    const traySetState = vi.fn();
+    const incrementDaily = vi.fn();
+    const prepareForChat = vi.fn();
+    const getMetrics = vi.fn(() => ({ context: { truncationCount: 0 } }));
+    // 真实存储 AbortController，让 catch 块能读取 signal.reason
+    const abortControllerRef: { current: AbortController | null } = { current: null };
+
+    const wm = createMockWindowManager(createMockWebContents({ visible: true, destroyed: false }));
+    const ctx = createMockCtx({
+      windowManager: wm,
+      isAgentReady: vi.fn(() => true),
+      getAbortController: vi.fn(() => abortControllerRef.current),
+      trayManager: { setState: traySetState },
+      agent: createMockAgent({
+        // chat mock 接收 (text, signal)，传给 factory 创建 generator
+        chat: vi.fn((_text: string, signal: AbortSignal) => chatGenFactory(signal)),
+        getMetrics,
+      }),
+    });
+    (ctx as unknown as { sprite: unknown }).sprite = {
+      incrementDailyMessageCount: incrementDaily,
+      prepareForChat,
+    };
+    // setAbortController 真实写入 ref，让 getAbortController 能读到
+    (ctx as unknown as { setAbortController: unknown }).setAbortController = vi.fn(
+      (ctrl: AbortController | null) => {
+        abortControllerRef.current = ctrl;
+      },
+    );
+    const fullWindow = wm.getFullWindow();
+    (fullWindow.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(
+      (channel: string, data: unknown) => {
+        sends.push({ channel, data });
+      },
+    );
+
+    return { ctx, sends, traySetState, abortControllerRef, incrementDaily, prepareForChat, getMetrics };
+  }
+
+  it('60s 无进展超时应触发 abort + 推送 SPRITE_ERROR + STREAM_END + 清理 AbortController', async () => {
+    vi.useFakeTimers();
+    // generator yield 一个 chunk 后等待 abort 信号（模拟 LLM 卡死，超时后 abort 触发 reject）
+    const { ctx, sends, traySetState, abortControllerRef } = createStreamMockCtxV2((signal) => {
+      return (async function* () {
+        yield { type: 'text' as const, content: '第一条' };
+        // 等待 abort 信号：超时触发 abort 时 reject AbortError，让 generator 退出
+        await new Promise<void>((_, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('流式输出无进展超时', 'TimeoutError')),
+            { once: true },
+          );
+        });
+      })();
+    });
+
+    // 启动 handleUserInput（不 await，让定时器可推进）
+    const promise = handleUserInput('测试', ctx);
+    // 推进 60s + 1ms 触发超时
+    await vi.advanceTimersByTimeAsync(60_001);
+    await promise;
+
+    // 应推送 SPRITE_ERROR（含超时提示）
+    const errorSend = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR);
+    expect(errorSend).toBeDefined();
+    expect((errorSend!.data as { text: string }).text).toContain('超时');
+    // 应推送 STREAM_END（超时路径在定时器内发送）
+    const end = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
+    expect(end).toBeDefined();
+    // 应清理 AbortController
+    expect(abortControllerRef.current).toBeNull();
+    // 托盘应切回 idle
+    expect(traySetState).toHaveBeenCalledWith('idle');
+    // loggerWarn 应被调用（emitStreamError 内部）
+    expect(loggerWarn).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('aborted chunk 应推送 SPRITE_STREAM_ABORTED + finally 发 END（单点路由）', async () => {
+    const { ctx, sends } = createStreamMockCtxV2(() => {
+      return (async function* () {
+        yield { type: 'aborted' as const, reason: '用户手动停止' };
+      })();
+    });
+
+    await handleUserInput('测试', ctx);
+
+    // 应推送 SPRITE_STREAM_ABORTED（含 reason）
+    const aborted = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED);
+    expect(aborted).toBeDefined();
+    expect((aborted!.data as { reason: string }).reason).toBe('用户手动停止');
+    // finally 应发 STREAM_END
+    const end = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
+    expect(end).toBeDefined();
+  });
+
+  it('error chunk 应推送 SPRITE_STREAM_ABORTED（复用通道）+ break + finally 发 END', async () => {
+    const { ctx, sends } = createStreamMockCtxV2(() => {
+      return (async function* () {
+        yield { type: 'error' as const, message: 'LLM 连接断开' };
+      })();
+    });
+
+    await handleUserInput('测试', ctx);
+
+    // error chunk 复用 SPRITE_STREAM_ABORTED 通道
+    const aborted = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED);
+    expect(aborted).toBeDefined();
+    expect((aborted!.data as { reason: string }).reason).toBe('LLM 连接断开');
+    // finally 应发 STREAM_END
+    const end = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
+    expect(end).toBeDefined();
+    // error chunk 不应触发 SPRITE_ERROR（用 SPRITE_STREAM_ABORTED 替代）
+    const errorSend = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR);
+    expect(errorSend).toBeUndefined();
+  });
+
+  it('AbortError（用户中断）应推送 SPRITE_STREAM_ABORTED + 不上报 errorHandler', async () => {
+    // 构造 AbortError：generator throw DOMException(name='AbortError')
+    const { ctx, sends, abortControllerRef } = createStreamMockCtxV2(() => {
+      return (async function* () {
+        throw new DOMException('用户中断', 'AbortError');
+      })();
+    });
+
+    // 在 handleUserInput 创建 AbortController 后（setAbortController 回调内），
+    // 立即 abort 它，让 catch 块能读到 AbortError reason
+    const originalSetAbort = (ctx.setAbortController as ReturnType<typeof vi.fn>);
+    originalSetAbort.mockImplementation((ctrl: AbortController | null) => {
+      abortControllerRef.current = ctrl;
+      // 模拟用户中断：在 controller 创建后立即 abort
+      if (ctrl) {
+        ctrl.abort(new DOMException('用户中断', 'AbortError'));
+      }
+    });
+
+    await handleUserInput('测试', ctx);
+
+    // 应推送 SPRITE_STREAM_ABORTED（reason=用户手动停止）
+    const aborted = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED);
+    expect(aborted).toBeDefined();
+    expect((aborted!.data as { reason: string }).reason).toBe('用户手动停止');
+    // 不应推送 SPRITE_ERROR（用户中断不是错误）
+    const errorSend = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR);
+    expect(errorSend).toBeUndefined();
+    // 不应上报 errorHandler（用户中断不记录为错误）
+    expect(errorHandler.handle).not.toHaveBeenCalled();
+  });
+
+  it('其他异常（LLM 错误）应推送 SPRITE_ERROR + 上报 errorHandler', async () => {
+    const llmError = new Error('LLM 服务不可用');
+    const { ctx, sends } = createStreamMockCtxV2(() => {
+      return (async function* () {
+        throw llmError;
+      })();
+    });
+
+    await handleUserInput('测试', ctx);
+
+    // 应推送 SPRITE_ERROR（含错误信息）
+    const errorSend = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR);
+    expect(errorSend).toBeDefined();
+    expect((errorSend!.data as { text: string }).text).toContain('LLM 服务不可用');
+    // 应上报 errorHandler
+    expect(errorHandler.handle).toHaveBeenCalled();
+    // 不应推送 SPRITE_STREAM_ABORTED（非中断场景）
+    const aborted = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED);
+    expect(aborted).toBeUndefined();
+  });
+
+  it('超时路径不应重复发 STREAM_END（幂等保护）', async () => {
+    vi.useFakeTimers();
+    // generator yield 一个 chunk 后等待 abort 信号
+    const { ctx, sends } = createStreamMockCtxV2((signal) => {
+      return (async function* () {
+        yield { type: 'text' as const, content: '第一条' };
+        await new Promise<void>((_, reject) => {
+          signal.addEventListener(
+            'abort',
+            () => reject(new DOMException('流式输出无进展超时', 'TimeoutError')),
+            { once: true },
+          );
+        });
+      })();
+    });
+
+    const promise = handleUserInput('测试', ctx);
+    await vi.advanceTimersByTimeAsync(60_001);
+    await promise;
+
+    // 超时路径在定时器内发过一次 STREAM_END，finally 块因 streamTimedOut=true 跳过
+    const ends = sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
+    expect(ends).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  it('窗口销毁时应 break 退出循环（不抛错）', async () => {
+    // 构造窗口在第一个 chunk 后销毁
+    const sends: { channel: string; data: unknown }[] = [];
+    const wm = createMockWindowManager(createMockWebContents({ visible: true, destroyed: false }));
+    const ctx = createMockCtx({
+      windowManager: wm,
+      isAgentReady: vi.fn(() => true),
+      getAbortController: vi.fn(() => null),
+      agent: createMockAgent({
+        chat: vi.fn(() => {
+          return (async function* () {
+            yield { type: 'text' as const, content: '第一条' };
+            yield { type: 'text' as const, content: '第二条' };
+            yield { type: 'done' as const };
+          })();
+        }),
+      }),
+    });
+    (ctx as unknown as { sprite: unknown }).sprite = {
+      incrementDailyMessageCount: vi.fn(),
+      prepareForChat: vi.fn(),
+    };
+    const fullWindow = wm.getFullWindow();
+    // 第一个 chunk 发送后标记窗口为已销毁（下次循环检查 isDestroyed 时 break）
+    (fullWindow.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(
+      (channel: string, data: unknown) => {
+        sends.push({ channel, data });
+        // 第一次 send 是 SPRITE_STREAM_START，第二次是 CHUNK，之后标记销毁
+        if (sends.length >= 2) {
+          (fullWindow.isDestroyed as ReturnType<typeof vi.fn>).mockReturnValue(true);
+        }
+      },
+    );
+
+    await handleUserInput('测试', ctx);
+
+    // 应只发送 1 个 CHUNK（第一个 chunk 后窗口销毁，break 退出，第二个 chunk 不发送）
+    const chunks = sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
+    expect(chunks).toHaveLength(1);
   });
 });
