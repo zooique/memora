@@ -23,6 +23,17 @@ date: 2026-07-01
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
+### 1.1 文档分工（双 .trae / 双 tasks）
+
+| 位置 | 用途 |
+|------|------|
+| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 24 个 ADR（内核 15 + 精灵 9） |
+| `hosts/memora-sprite/.trae/rules/` | **宿主实现文档**：仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（描述 src/ 目录树） |
+| `memora/tasks/` | **内核任务**：内核健康度快照 + 待完成/已完成 |
+| `hosts/memora-sprite/tasks/` | **宿主任务**：宿主健康度快照 + 待完成/已完成 + 方案文档 |
+
+> 决策在外层（ADR 集中原则），实现文档跟宿主项目走（monorepo 最佳实践）。任务 ID 命名空间不同（内核用 V-xxx/P-xxx，宿主用 SEC-P2-xx/UX-xx/QC-xx），不合并。
+
 ## 2. 内核更新工作流（npm alias 模式）
 
 > 内核已发布至 npm（`@zooique/memora`），精灵通过 npm alias 引用：`"memora": "npm:@zooique/memora@^0.1.0"`。  

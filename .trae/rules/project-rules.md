@@ -153,6 +153,8 @@ chore: 升级 dependencies
 | [sprite-project-rules.md](./sprite-project-rules.md) | 精灵宿主项目总则、技术栈、目录结构、与内核关系 |
 | [sprite-感知层规范.md](./sprite-感知层规范.md) | 精灵感知层规范（上下文感知而非内容感知，唤醒触发器设计约束） |
 
+> **宿主实现文档**位于 `hosts/memora-sprite/.trae/rules/`（仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)，描述 src/ 目录树），跟宿主项目走。宿主任务追踪在 `hosts/memora-sprite/tasks/`，与内核 `tasks/` 独立。详见 [sprite-project-rules.md §1.1](./sprite-project-rules.md)。
+
 ### 8.5 决策记录类（decisions/ 目录，按需读取）
 
 > 详见 [decisions/README.md](./decisions/README.md)。共 24 个 ADR：内核 ADR-001~015 + 精灵 ADR-SP-001~008 + ADR-SP-015。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
