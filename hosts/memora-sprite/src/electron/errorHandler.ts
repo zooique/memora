@@ -83,7 +83,7 @@ export class ErrorHandler {
    * @deprecated 新增错误应使用 `throw new MemoraError(ErrorCode.XXX, msg)` 显式指定 code。
    *             此方法仅作为未携带 code 的遗留错误降级路径保留。
    *
-   * P2-6：本降级路径仅覆盖遗留错误的关键词推断，STORAGE_ERROR / VALIDATION_ERROR
+   * 本降级路径仅覆盖遗留错误的关键词推断，STORAGE_ERROR / VALIDATION_ERROR
    * 等新错误码必须通过 MemoraError 显式携带，不在此降级路径中追加关键词。
    * 新增 throw 一律使用 `throw new MemoraError(ErrorCode.XXX, msg)`，
    * normalizeError 会优先读取 error.code，仅在未携带 code 时才回退到此方法。

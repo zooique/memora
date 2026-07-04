@@ -32,7 +32,7 @@ import type {
   MemoryDetail,
   MemoryRelationItem,
   MemorySearchResult as MemorySearchHit,
-  // GAP-6：回收站列表项契约类型，从业务层真理源导入
+  // 回收站列表项契约类型，从业务层真理源导入
   DeletedMemoryListItem,
 } from '../sprite/controllers/memoryController.js';
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
@@ -61,11 +61,11 @@ export const IPC_CHANNELS = {
   MEMORIES_SEARCH: 'memories-search',
   MEMORIES_SHOW: 'memories-show',
   MEMORIES_DELETE: 'memories-delete',
-  /** GAP-6：恢复软删除记忆 */
+  /** 恢复软删除记忆 */
   MEMORIES_RESTORE: 'memories-restore',
-  /** GAP-6：物理删除记忆（回收站彻底删除） */
+  /** 物理删除记忆（回收站彻底删除） */
   MEMORIES_PURGE: 'memories-purge',
-  /** GAP-6：列出回收站记忆 */
+  /** 列出回收站记忆 */
   MEMORIES_LIST_DELETED: 'memories-list-deleted',
   MEMORIES_ADD: 'memories-add',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
@@ -169,7 +169,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
-// GAP-6：补齐 DeletedMemoryListItem 导出，供 UI 渲染回收站列表使用
+// 补齐 DeletedMemoryListItem 导出，供 UI 渲染回收站列表使用
 export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem };
 
 // ─── H1/H2 共享类型定义 ───────────────────────────────────
@@ -267,7 +267,7 @@ export interface ReviewDataPayload {
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
-  /** UX-P2-06 消息原始时间戳（ISO 8601），用于历史消息显示正确时间 */
+  /** 消息原始时间戳（ISO 8601），用于历史消息显示正确时间 */
   timestamp?: string;
 }
 
@@ -308,7 +308,7 @@ export interface ElectronAPI {
   loadSession: (query: { date?: string; session?: string; limit?: number; offset?: number }) => Promise<{ messages: ChatMessage[]; loadedSessionId: string; total: number; hasMore: boolean }>;
   /** FD-A1 列出所有会话 */
   listSessions: () => Promise<{ sessions: Array<{ id: string; date: string; name: string; preview?: string; messageCount?: number }> }>;
-  /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
+  /** 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   switchSession: (query: { date: string; session: string }) => Promise<{ success: boolean; messages: ChatMessage[]; error?: string }>;
   /** FD-09 删除会话（不可恢复，调用方需自行确认） */
   deleteSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
@@ -331,13 +331,13 @@ export interface ElectronAPI {
    * 在 text chunk 之前触发，携带本次对话召回的记忆摘要列表
    */
   onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => void) => void;
-  /** UX-P1-02 工具调用开始监听（携带工具名和参数） */
+  /** 工具调用开始监听（携带工具名和参数） */
   onStreamToolStart: (cb: (msg: { messageId: string; toolCallId: string; name: string; args?: string }) => void) => void;
-  /** UX-P1-02 工具调用结果监听（携带工具名、成功状态和摘要） */
+  /** 工具调用结果监听（携带工具名、成功状态和摘要） */
   onStreamToolResult: (cb: (msg: { messageId: string; toolCallId: string; name: string; ok: boolean; summary?: string }) => void) => void;
-  /** UX-P2-01 思考阶段监听（recalling/processing/archiving） */
+  /** 思考阶段监听（recalling/processing/archiving） */
   onStreamThinking: (cb: (msg: { messageId: string; phase: string }) => void) => void;
-  /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
+  /** 上下文截断通知：对话中发生截断时触发，携带截断次数 */
   onContextTruncated: (cb: (msg: { messageId: string; count: number }) => void) => void;
   /**
    * UX-PP-10 流式对话被中断监听
@@ -397,19 +397,19 @@ export interface ElectronAPI {
   showMemory: (id: string) => Promise<{ memory: MemoryDetail | null }>;
   deleteMemory: (id: string) => Promise<{ deleted: boolean }>;
   /**
-   * GAP-6：恢复软删除记忆（从回收站还原）
+   * 恢复软删除记忆（从回收站还原）
    * @param id 记忆 ID
    * @returns restored=true 表示恢复成功
    */
   restoreMemory: (id: string) => Promise<{ restored: boolean }>;
   /**
-   * GAP-6：物理删除记忆（回收站彻底删除，不可恢复）
+   * 物理删除记忆（回收站彻底删除，不可恢复）
    * @param id 记忆 ID
    * @returns purged=true 表示已彻底删除
    */
   purgeMemory: (id: string) => Promise<{ purged: boolean }>;
   /**
-   * GAP-6：列出回收站记忆（按 deletedAt 降序，最近删除在前）
+   * 列出回收站记忆（按 deletedAt 降序，最近删除在前）
    * @returns 回收站记忆列表（仅暴露必要字段，content 已截断预览）
    */
   listDeletedMemories: () => Promise<{ memories: DeletedMemoryListItem[] }>;
@@ -477,7 +477,7 @@ export interface ElectronAPI {
       overallStatus: 'healthy' | 'warning' | 'critical';
       diagnosedAt: string;
     } | null;
-    /** OBS-01 Agent 运行时指标（null 表示不可用） */
+    /** Agent 运行时指标（null 表示不可用） */
     metrics: {
       llm: {
         callCount: number;
@@ -504,7 +504,7 @@ export interface ElectronAPI {
         lastRunAt: string | null;
       } | null;
     } | null;
-    /** GAP-1 已加载技能列表（空数组表示无技能或不可用） */
+    /** 已加载技能列表（空数组表示无技能或不可用） */
     skills: Array<{
       name: string;
       keywords: string[];
@@ -550,11 +550,11 @@ export interface ElectronAPI {
   /** 移除窗口状态变更监听器 */
   removeWindowStateChangedListener: () => void;
 
-  /** UX-P2-10 通知主进程主题已变更（需同步到浮动窗口） */
+  /** 通知主进程主题已变更（需同步到浮动窗口） */
   notifyThemeChanged: (theme: 'light' | 'dark') => void;
-  /** UX-P2-10 监听主进程广播的主题变更（浮动窗口使用） */
+  /** 监听主进程广播的主题变更（浮动窗口使用） */
   onThemeBroadcast: (cb: (theme: 'light' | 'dark') => void) => void;
-  /** UX-P2-10 移除主题广播监听器 */
+  /** 移除主题广播监听器 */
   removeThemeBroadcastListener: () => void;
 
   // ─── H1：配置建议（AutoConfigRefiner 闭环） ──────────
@@ -663,7 +663,7 @@ const electronAPI: ElectronAPI = {
   onStreamToolStart: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, (_: IpcRendererEvent, msg: { messageId: string; toolCallId: string; name: string; args?: string }) => cb(msg)),
   onStreamToolResult: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, (_: IpcRendererEvent, msg: { messageId: string; toolCallId: string; name: string; ok: boolean; summary?: string }) => cb(msg)),
   onStreamThinking: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, (_: IpcRendererEvent, msg: { messageId: string; phase: string }) => cb(msg)),
-  /** OBS-02 上下文截断通知：对话中发生截断时触发，携带截断次数 */
+  /** 上下文截断通知：对话中发生截断时触发，携带截断次数 */
   onContextTruncated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, (_: IpcRendererEvent, msg: { messageId: string; count: number }) => cb(msg)),
   /** UX-PP-10 流式对话被中断监听 */
   onStreamAborted: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, (_: IpcRendererEvent, msg: { messageId: string; reason: string }) => cb(msg)),
@@ -722,7 +722,7 @@ const electronAPI: ElectronAPI = {
   searchMemories: (q) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SEARCH, q),
   showMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
   deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),
-  // GAP-6：回收站操作（restore/purge/listDeleted）
+  // 回收站操作（restore/purge/listDeleted）
   restoreMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RESTORE, id),
   purgeMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_PURGE, id),
   listDeletedMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_LIST_DELETED),
@@ -762,7 +762,7 @@ const electronAPI: ElectronAPI = {
 
   // FD-A1 列出所有会话
   listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST),
-  // UX-P1-04 切换到已有会话（更新 Agent 内部状态）
+  // 切换到已有会话（更新 Agent 内部状态）
   switchSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, query),
   deleteSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId),
   renameSession: (sessionId, newName) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RENAME, sessionId, newName),
@@ -800,7 +800,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.WINDOW_STATE_CHANGED);
   },
 
-  // UX-P2-10 主题变更同步（完整窗口 → 主进程 → 浮动窗口）
+  // 主题变更同步（完整窗口 → 主进程 → 浮动窗口）
   notifyThemeChanged: (theme) => ipcRenderer.send(IPC_CHANNELS.THEME_CHANGED, theme),
   onThemeBroadcast: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST, (_: IpcRendererEvent, theme: 'light' | 'dark') => cb(theme)),
   removeThemeBroadcastListener: () => {

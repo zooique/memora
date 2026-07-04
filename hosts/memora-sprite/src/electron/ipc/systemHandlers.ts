@@ -67,8 +67,8 @@ export function registerSystemHandlers(ctx: IpcContext): void {
    * - 已注册触发器列表
    * - 关联推荐记忆
    * - 记忆源健康诊断
-   * - Agent 运行时指标（OBS-01：LLM/召回/工具/上下文/衰减）
-   * - GAP-1 已加载技能列表（消费内核 agent.skills.list）
+   * - Agent 运行时指标（LLM/召回/工具/上下文/衰减）
+   * - 已加载技能列表（消费内核 agent.skills.list）
    */
   ipcMain.handle(IPC_CHANNELS.DASHBOARD_GET, () => {
     try {
@@ -81,7 +81,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         // 降级：sourceHealth 不可用时仪表盘仍正常返回，debug 级别避免日志噪音
         logger.debug({ err: toError(err).message }, 'sourceHealth 获取失败，降级为 null');
       }
-      // OBS-01：Agent 运行时指标（消费内核 agent.getMetrics()）
+      // Agent 运行时指标（消费内核 agent.getMetrics()）
       let metrics = null;
       try {
         metrics = ctx.sprite.getMetrics();
@@ -89,7 +89,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
         // 降级：metrics 不可用时仪表盘仍正常返回，debug 级别避免日志噪音
         logger.debug({ err: toError(err).message }, 'metrics 获取失败，降级为 null');
       }
-      // GAP-1 已加载技能列表（消费内核 agent.skills.list）
+      // 已加载技能列表（消费内核 agent.skills.list）
       // 修复 TS18047：agent.skills 可能为 null，使用可选链 + 空数组降级
       const skills = ctx.agent.skills?.list.map((s) => ({
         name: s.name,
@@ -142,7 +142,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
   // ─── 主题变更 ────────────────────────────────────────────
 
   /**
-   * UX-P2-10 主题变更通知
+   * 主题变更通知
    *
    * 完整窗口切换主题后通知主进程，主进程广播到浮动窗口，
    * 确保两个窗口主题一致。

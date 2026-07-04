@@ -39,11 +39,11 @@
   background: var(--bg);
   border-bottom: none;  /* v8：顶部栏与侧边栏同色，无边界 */
   flex-shrink: 0;
-  -webkit-app-region: drag;  /* P1-1：整体设为可拖动区域 */
+  -webkit-app-region: drag;  /* 整体设为可拖动区域 */
 }
 
 /* v8：顶部栏拖拽占位区（继承父级 drag，无需重复声明） */
-/* ADR-NAV-001 移除 padding-left（导航标签已有独立间距） */
+/* ADR-NAV-001：导航标签已有独立间距 */
 /* flex 子元素，高度由父级 align-items: center 控制 */
 #titlebar-drag {
   flex: 1;
@@ -93,7 +93,7 @@
   margin-left: 2px;
 }
 
-/* UX-P2-24 #app-title 已从 HTML 移除，此处不再需要空规则 */
+/* #app-title 已从 HTML 移除，此处不再需要空规则 */
 
 #titlebar-controls {
   display: flex;
@@ -768,7 +768,7 @@
 /* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
   grid-area: window;
-  /* UX-P2-15 修正 margin 不对称问题，四周留边距形成完整悬浮感（原 0 6px 6px 0 缺少左侧边距） */
+  /* 修正 margin 不对称问题，四周留边距形成完整悬浮感 */
   margin: 0 6px 6px 6px;
   background: var(--window-bg);
   border-radius: var(--radius-window);
@@ -852,7 +852,7 @@
 /* .empty-state 统一由 base.css 定义（flex 布局 + padding 48px 24px + empty-icon/title/desc 子元素） */
 /* 此处不再重复定义，避免 padding 覆盖破坏 base.css 的完整空状态设计 */
 
-/* UX-P2-27 空状态引导按钮复用 .btn-secondary 样式（modal.css），消除重复定义 */
+/* 空状态引导按钮复用 .btn-secondary 样式（modal.css），消除重复定义 */
 /* 保留 .empty-action-btn 类名作为语义别名，HTML 中同时添加 .btn-secondary 类即可 */
 .empty-action-btn {
   display: block;
@@ -893,7 +893,7 @@
     display: none;
   }
 
-  /* ADR-NAV-001 小屏下导航标签保持显示，拖拽区左 padding 归零 */
+  /* ADR-NAV-001：小屏下导航标签保持显示，拖拽区左 padding 归零 */
   #titlebar-drag {
     padding-left: 0;
   }

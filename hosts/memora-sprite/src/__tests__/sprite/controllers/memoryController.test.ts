@@ -4,7 +4,7 @@
  * 覆盖范围：
  * - 构造函数：依赖注入 + agent.memory 为 null 时降级
  * - list：列表查询（source 过滤 / limit 透传 / contentPreview 截断 / score 格式化 / createdAt 透传）
- * - show：详情查询（含 #toIso 合法/非法日期降级，P1-3 修复验证）
+ * - show：详情查询（含 #toIso 合法/非法日期降级验证）
  * - delete：删除（含 QC-MEM-01 向量索引错误降级 + logger.warn）
  * - upsert：添加/更新（含 QC-MEM-01 向量索引异步降级 + 默认 score/时间戳）
  * - search：混合搜索 + searchHybrid 失败降级纯关键词
@@ -59,7 +59,7 @@ function createMockInspector(): Inspector {
     searchHybrid: vi.fn().mockResolvedValue([]),
     search: vi.fn().mockReturnValue([]),
     getAllRelations: vi.fn().mockReturnValue([]),
-    // GAP-6：回收站操作 mock（restore/purge 同步 void，listDeleted 返回 Memory[]）
+    // 回收站操作 mock（restore/purge 同步 void，listDeleted 返回 Memory[]）
     restore: vi.fn(),
     purge: vi.fn(),
     listDeleted: vi.fn().mockReturnValue([]),
@@ -305,7 +305,7 @@ describe('MemoryController', () => {
       expect(controller.show('missing:id')).toBeNull();
     });
 
-    it('#toIso 非法日期降级返回原始字符串（P1-3 修复：避免 RangeError 崩溃）', () => {
+    it('#toIso 非法日期降级返回原始字符串（避免 RangeError 崩溃）', () => {
       const mem = makeMemory({ createdAt: 'invalid', accessedAt: 'also-invalid' });
       vi.mocked(mockInspector.getById).mockReturnValue(mem);
       const controller = new MemoryController(mockAgent);
@@ -324,13 +324,13 @@ describe('MemoryController', () => {
   // ─── 4. delete 删除（5 测试） ────────────────────────
 
   describe('delete', () => {
-    it('GAP-6 软删除：getById 确认存在 → inspector.delete → 不碰 vectorStore（保留索引以便恢复） → 返回 true', () => {
+    it('软删除：getById 确认存在 → inspector.delete → 不碰 vectorStore（保留索引以便恢复） → 返回 true', () => {
       vi.mocked(mockInspector.getById).mockReturnValue(makeMemory({ id: 'test:1' }));
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.delete('test:1');
       expect(result).toBe(true);
       expect(mockInspector.delete).toHaveBeenCalledWith('test:1');
-      // GAP-6：软删除不删除向量索引，restore 时无需重新嵌入
+      // 软删除不删除向量索引，restore 时无需重新嵌入
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
 
@@ -348,14 +348,14 @@ describe('MemoryController', () => {
       expect(controller.delete('any:id')).toBe(false);
     });
 
-    it('GAP-6 软删除：即使 vectorStore 存在也不调用其 delete（保留索引以便 restore）', () => {
+    it('软删除：即使 vectorStore 存在也不调用其 delete（保留索引以便 restore）', () => {
       vi.mocked(mockInspector.getById).mockReturnValue(makeMemory({ id: 'test:1' }));
       const controller = new MemoryController(mockAgent, mockVectorStore);
       const result = controller.delete('test:1');
       // 软删除成功
       expect(result).toBe(true);
       expect(mockInspector.delete).toHaveBeenCalledWith('test:1');
-      // GAP-6：软删除保留向量索引，restore 时无需重新嵌入
+      // 软删除保留向量索引，restore 时无需重新嵌入
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
       // 无降级日志（未触发向量索引操作）
       expect(mockLogger.warn).not.toHaveBeenCalled();
@@ -371,7 +371,7 @@ describe('MemoryController', () => {
     });
   });
 
-  // ─── 4b. purge 物理删除（GAP-6，6 测试） ───────────
+  // ─── 4b. purge 物理删除（6 测试） ───────────
 
   describe('purge', () => {
     it('SEC-GAP6-01 拒绝物理删除活跃态记忆：仅活跃（未软删除）→ 返回 false，不调用 inspector.purge', () => {
@@ -385,7 +385,7 @@ describe('MemoryController', () => {
       expect(mockVectorStore.delete).not.toHaveBeenCalled();
     });
 
-    it('GAP-6 物理删除软删除态记忆：getDeletedById 命中 → inspector.purge → vectorStore.delete → 返回 true', () => {
+    it('物理删除软删除态记忆：getDeletedById 命中 → inspector.purge → vectorStore.delete → 返回 true', () => {
       // SEC-GAP6-02：getDeletedById 返回软删除态记忆（避免 listDeleted 50 条上限）
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(
         makeMemory({ id: 'test:1', deletedAt: '2024-01-01T00:00:00.000Z' }),
@@ -446,10 +446,10 @@ describe('MemoryController', () => {
     });
   });
 
-  // ─── 4c. restore 恢复（GAP-6，4 测试） ─────────────
+  // ─── 4c. restore 恢复（4 测试） ─────────────
 
   describe('restore', () => {
-    it('GAP-6 正常恢复：getDeletedById 命中 → inspector.restore → 返回 true', () => {
+    it('正常恢复：getDeletedById 命中 → inspector.restore → 返回 true', () => {
       // SEC-GAP6-02：getDeletedById 返回软删除态记忆（避免 listDeleted 50 条上限）
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(
         makeMemory({ id: 'test:1', deletedAt: '2024-01-01T00:00:00.000Z' }),
@@ -474,7 +474,7 @@ describe('MemoryController', () => {
       expect(controller.restore('any:id')).toBe(false);
     });
 
-    it('GAP-6 恢复时不碰 vectorStore（软删除时索引未删除，无需重新嵌入）', () => {
+    it('恢复时不碰 vectorStore（软删除时索引未删除，无需重新嵌入）', () => {
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(
         makeMemory({ id: 'test:1', deletedAt: '2024-01-01T00:00:00.000Z' }),
       );
@@ -488,10 +488,10 @@ describe('MemoryController', () => {
     });
   });
 
-  // ─── 4d. listDeleted 列出回收站（GAP-6，4 测试） ───
+  // ─── 4d. listDeleted 列出回收站（4 测试） ───
 
   describe('listDeleted', () => {
-    it('GAP-6 正常返回回收站列表：映射为 DeletedMemoryListItem（id/name/source/contentPreview/deletedAt）', () => {
+    it('正常返回回收站列表：映射为 DeletedMemoryListItem（id/name/source/contentPreview/deletedAt）', () => {
       vi.mocked(mockInspector.listDeleted).mockReturnValue([
         makeMemory({ id: 'test:1', name: 'item1', source: 'insight', content: 'short content', deletedAt: '2024-01-01T00:00:00.000Z' }),
         makeMemory({ id: 'test:2', name: 'item2', source: 'profile', content: 'another content', deletedAt: '2024-01-02T00:00:00.000Z' }),
@@ -515,7 +515,7 @@ describe('MemoryController', () => {
       });
     });
 
-    it('GAP-6 content > 100 字符时截断为前 100 字符 + "..."', () => {
+    it('content > 100 字符时截断为前 100 字符 + "..."', () => {
       const longContent = 'x'.repeat(150);
       vi.mocked(mockInspector.listDeleted).mockReturnValue([
         makeMemory({ id: 'test:1', content: longContent, deletedAt: '2024-01-01T00:00:00.000Z' }),
@@ -526,7 +526,7 @@ describe('MemoryController', () => {
       expect(result[0].contentPreview).toHaveLength(103);
     });
 
-    it('GAP-6 content 恰好 100 字符时不截断（边界条件）', () => {
+    it('content 恰好 100 字符时不截断（边界条件）', () => {
       const exactContent = 'y'.repeat(100);
       vi.mocked(mockInspector.listDeleted).mockReturnValue([
         makeMemory({ id: 'test:1', content: exactContent, deletedAt: '2024-01-01T00:00:00.000Z' }),

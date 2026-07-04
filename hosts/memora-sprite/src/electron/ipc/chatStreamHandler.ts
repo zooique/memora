@@ -1,5 +1,5 @@
 /**
- * 对话流式输出处理器（QC-R2-04 从 chatHandlers.ts 提取）
+ * 对话流式输出处理器（从 chatHandlers.ts 提取）
  *
  * 职责：
  *   消费 agent.chat() AsyncGenerator，将流式 chunk 通过 IPC 推送到渲染进程。
@@ -160,7 +160,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   // 启动首次计时
   resetStreamTimeout();
 
-  // OBS-02：记录对话开始前的截断次数，对话结束后对比检测截断事件
+  // 记录对话开始前的截断次数，对话结束后对比检测截断事件
   const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
 
   /**
@@ -198,7 +198,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           memories: chunk.memories,
         });
       } else if (chunk.type === 'tool_start') {
-        // UX-P1-02 工具调用开始：推送工具名和参数，UI 渲染工具调用卡片
+        // 工具调用开始：推送工具名和参数，UI 渲染工具调用卡片
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START, {
           messageId,
           toolCallId: chunk.toolCallId,
@@ -206,7 +206,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           args: chunk.args,
         });
       } else if (chunk.type === 'tool_result') {
-        // UX-P1-02 工具调用结果：推送工具名、成功状态和摘要，UI 更新工具卡片状态
+        // 工具调用结果：推送工具名、成功状态和摘要，UI 更新工具卡片状态
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT, {
           messageId,
           toolCallId: chunk.toolCallId,
@@ -215,13 +215,13 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
           summary: chunk.summary,
         });
       } else if (chunk.type === 'thinking') {
-        // UX-P2-01 思考阶段指示：推送阶段名称，UI 显示"正在回忆.../处理.../归档..."
+        // 思考阶段指示：推送阶段名称，UI 显示"正在回忆.../处理.../归档..."
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, {
           messageId,
           phase: chunk.phase,
         });
       } else if (chunk.type === 'done') {
-        // OBS-02：对话正常结束时检测截断次数是否增加
+        // 对话正常结束时检测截断次数是否增加
         const truncationAfter = ctx.agent.getMetrics().context.truncationCount;
         if (truncationAfter > truncationBefore) {
           fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, {

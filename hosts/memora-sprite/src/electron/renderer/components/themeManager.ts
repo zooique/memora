@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 主题管理模块
  *
  * 职责：
@@ -216,7 +216,7 @@ export class ThemeManager {
   /**
    * 清理系统主题变化监听器（UIManager.cleanup 时调用）
    *
-   * P2-6 'auto' 模式下注册的 mediaQueryListener 若不清理，
+   * 'auto' 模式下注册的 mediaQueryListener 若不清理，
    * 页面卸载后仍会监听系统主题变化，在已销毁的 DOM 上执行引发异常。
    */
   cleanup(): void {

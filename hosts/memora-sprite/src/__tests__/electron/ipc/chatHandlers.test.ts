@@ -72,7 +72,7 @@ vi.mock('../../../sprite/constants.js', () => ({
   getLocalDate: vi.fn(() => MOCK_TODAY),
 }));
 
-// QC-R2-04：handleUserInput 已迁移到 chatStreamHandler.ts，registerChatHandlers 留在 chatHandlers.ts
+// handleUserInput 已迁移到 chatStreamHandler.ts，registerChatHandlers 留在 chatHandlers.ts
 import { registerChatHandlers } from '../../../electron/ipc/chatHandlers.js';
 import { handleUserInput } from '../../../electron/ipc/chatStreamHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../../../electron/ipc/channels.js';

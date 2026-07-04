@@ -1,5 +1,5 @@
 /**
- * Web 模式 HTML 适配器（DWM-01：双模式 Web 调试）
+ * Web 模式 HTML 适配器
  *
  * 职责：
  *   1. 在 renderer/index.html 中注入 Web 版 preload 脚本

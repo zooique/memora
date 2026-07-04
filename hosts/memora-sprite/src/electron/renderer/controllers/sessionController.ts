@@ -277,8 +277,8 @@ export function createSessionController(uiManager: UIManager) {
    * 保留 LLM 工作记忆一致性：用户在查看历史日期时发送消息，
    * 自动切换到今天的 main 会话，确保新消息持久化到正确的会话。
    *
-   * UX-P2-04 检查流式状态，避免流式输出期间切换导致状态混乱。
-   * UX-P2-08 失败时显示 toast 和错误横幅，提供重试。
+   * 检查流式状态，避免流式输出期间切换导致状态混乱。
+   * 失败时显示 toast 和错误横幅，提供重试。
    * 会话 ID 格式：YYYY-MM-DD-sessionName，需解析为 date + session 参数。
    *
    * 注意：方案 B 移除了会话切换 UI，此方法仅用于跨日自动切换。

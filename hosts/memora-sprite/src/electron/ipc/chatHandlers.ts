@@ -1,11 +1,11 @@
-﻿/**
+/**
  * 对话相关 IPC 处理器（薄层）
  *
  * 职责：
  *   1. 注册 USER_INPUT 通道（委托到 chatStreamHandler.handleUserInput）
  *   2. 注册 CHAT_ABORT 通道（AbortController + reason 携带中断原因）
  *
- * QC-R2-04 重构：流式输出业务逻辑（handleUserInput ~240 行）已提取到
+ * 流式输出业务逻辑（handleUserInput ~240 行）已提取到
  * chatStreamHandler.ts，本文件回归"IPC 通道注册"的薄层职责。
  *
  * 流式输出架构（方案 §6.2 排雷修正）：

@@ -10,7 +10,7 @@
  *
  * 返回 cleanup 函数供调用方在窗口关闭时清理事件监听器和定时器。
  *
- * P1-2 浮动窗口拖动方案说明（浮动窗口是 80x80 的
+ * 浮动窗口拖动方案说明（浮动窗口是 80x80 的
  * alwaysOnTop + frame:false 窗口，鼠标移出窗口范围后 mousemove 停止触发，
  * 导致拖动失效。改用 PointerEvent + setPointerCapture 后，指针捕获确保
  * 鼠标移出窗口仍能持续接收 pointermove 事件，拖动可跨屏幕范围。
@@ -26,7 +26,7 @@ import '../types.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
 // DOM 助手，提供带 tagName 校验的类型安全访问
 import { getOptionalElement } from '../helpers/domHelpers.js';
-// 事件监听器跟踪器（S-02 统一事件管理范式，与 modal/suggestionCard 等模块对齐）
+// 事件监听器跟踪器（统一事件管理范式，与 modal/suggestionCard 等模块对齐）
 import { EventTracker } from '../helpers/eventTracker.js';
 
 /**
@@ -109,7 +109,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
 
   // 定时器跟踪器（共享工具，cleanup 时统一清理所有定时器）
   const timers = new SafeTimerTracker();
-  // 事件监听器跟踪器（S-02 统一事件管理范式，替代手写 addEventListener/removeEventListener）
+  // 事件监听器跟踪器（统一事件管理范式，替代手写 addEventListener/removeEventListener）
   const events = new EventTracker();
 
   // ─── 缺口 1.2：在场状态视觉反馈 ─────────────────────
@@ -214,11 +214,11 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   };
 
-  // S-02 使用 EventTracker 统一管理事件监听器，替代手写 addEventListener
+  // 使用 EventTracker 统一管理事件监听器，替代手写 addEventListener
   events.addEventListener(sphere, 'mouseenter', showDragHintIfFirstTime);
   events.addEventListener(sphere, 'mouseleave', onSphereMouseLeave);
 
-  // ─── 拖动检测（P1-2 PointerEvent + setPointerCapture） ───
+  // ─── 拖动检测（PointerEvent + setPointerCapture） ───
   // 原方案使用 document mousemove，但浮动窗口是 80x80 alwaysOnTop + frame:false
   // 窗口，鼠标移出窗口范围后 mousemove 停止触发，导致拖动失效。
   // 改用 PointerEvent + setPointerCapture：在 pointerdown 时将指针捕获到 sphere 元素，
@@ -309,7 +309,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   };
 
   // 事件绑定到 sphere（而非 document），配合 setPointerCapture 确保事件不丢失
-  // S-02 统一使用 EventTracker 管理，cleanup 时一次性移除全部监听器
+  // 统一使用 EventTracker 管理，cleanup 时一次性移除全部监听器
   // 注：EventTracker.addEventListener 签名为 EventListener (e: Event)，
   // 此处用包装函数将 Event 断言为具体事件类型，保持类型安全的同时兼容接口。
   events.addEventListener(sphere, 'pointerdown', (e) => onPointerDown(e as PointerEvent));
@@ -331,7 +331,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // ─── 精灵事件监听（统一注册，避免重复触发） ────────────
   // 注意：onSpriteEvent 在同一通道上多次注册会导致同一事件触发多次。
   // 此处合并主动提示弹跳 + 阶段三形态进化预留为一个监听器，按 type 分发。
-  // P2-003 ElectronAPI.onSpriteEvent 的 payload 是 unknown（不同事件类型有不同结构），
+  // ElectronAPI.onSpriteEvent 的 payload 是 unknown（不同事件类型有不同结构），
   // 此处使用类型守卫 hasImageUrl 安全地访问 formUpdate 事件的 imageUrl 字段。
   electronAPI.onSpriteEvent((event) => {
     // 主动提示：球体弹跳动画 + 状态点切换
@@ -359,7 +359,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   });
 
-  // ─── UX-P2-10 主题变更监听 ────────────────────────────
+  // ─── 主题变更监听 ────────────────────────────
   // 完整窗口切换主题后，主进程通过 THEME_BROADCAST 通道通知浮动窗口，
   // 浮动窗口同步切换 data-theme 属性，确保两个窗口主题一致。
   electronAPI.onThemeBroadcast((theme) => {
@@ -378,9 +378,9 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
     activePointerId = null;
 
-    // S-02 EventTracker 统一清理全部 DOM 事件监听器（7 个 sphere 监听器）
+    // EventTracker 统一清理全部 DOM 事件监听器（7 个 sphere 监听器）
     events.cleanup();
-    // UX-P2-10 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM
+    // 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM
     electronAPI.removeThemeBroadcastListener();
     if (dragHintTimer) timers.clearSafeTimeout(dragHintTimer);
     // 缺口 1.2：清理离开时长小标签定时器
@@ -390,7 +390,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
 }
 
 // 在 Electron 渲染进程中自动初始化
-// P2-002 直接使用 window.electronAPI（types.ts 已声明全局类型），
+// 直接使用 window.electronAPI（types.ts 已声明全局类型），
 // 替代原方案的双重类型断言 (window as unknown as Record<string, unknown>).electronAPI。
 // electronAPI 由 preload.ts 通过 contextBridge 注入到 window 对象。
 if (window.electronAPI) {

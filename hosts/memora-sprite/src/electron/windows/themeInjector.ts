@@ -1,8 +1,6 @@
 /**
  * 主题初始化脚本注入器
  *
- * P2-3 修复：从 windowManager.ts 和 floatWindow.ts 提取的重复主题注入逻辑。
- *
  * 在页面 did-start-loading 时同步读取 localStorage 并设置 data-theme 属性，
  * 避免页面加载初期的 FOUC（Flash of Unstyled Content）闪烁。
  * 注入失败时静默降级为默认浅色主题（不影响功能可用性）。

@@ -1,11 +1,11 @@
-﻿/**
+/**
  * CLI 格式化器 — 纯文本展示逻辑
  *
  * 从 Sprite 核心类提取的 CLI 专用格式化方法。
  * Electron 模式下不使用这些方法（UI 直接消费结构化数据），
  * 仅 CLI 模式下需要。
  *
- * 提取理由（P2-5）：
+ * 提取理由：
  *   - formatConfig / formatDashboard / formatPersonas 是 CLI 专用的文本格式化
  *   - 耦合在 Sprite 核心类中违反职责单一
  *   - 提取后 Sprite 只提供结构化数据，格式化由消费方决定
@@ -16,7 +16,7 @@ import type { DashboardData, PersonaInfo } from '../controllers/index.js';
 import { DEFAULT_SPRITE_CONFIG } from '../spriteConfig.js';
 import { MS_PER_MINUTE } from '../constants.js';
 
-// S-03 修复：PersonaEntry 改为导入 PersonaInfo（sprite 层真理源），消除重复定义
+// PersonaEntry 改为导入 PersonaInfo（sprite 层真理源），消除重复定义
 
 /**
  * 格式化精灵配置为 CLI 可读文本
@@ -26,7 +26,7 @@ import { MS_PER_MINUTE } from '../constants.js';
  */
 export function formatConfig(config: SpriteConfig): string {
   const lines: string[] = ['── 精灵配置 ──'];
-  // P1-4 修复：兜底默认值引用 DEFAULT_SPRITE_CONFIG，避免与实际默认值不一致
+  // 兜底默认值引用 DEFAULT_SPRITE_CONFIG，避免与实际默认值不一致
   lines.push(`  触发器间隔：${(config.triggerIntervalMs ?? DEFAULT_SPRITE_CONFIG.triggerIntervalMs) / MS_PER_MINUTE} 分钟`);
   lines.push(`  默认角色：${config.defaultPersona || '(未设置)'}`);
   lines.push(`  静默模式：${config.silentMode ? '开启' : '关闭'}`);

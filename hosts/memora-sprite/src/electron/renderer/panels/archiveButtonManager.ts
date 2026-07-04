@@ -1,12 +1,12 @@
 /**
- * 归档按钮管理器（QC-R2-12 从 chatPanelManager.ts 拆分）
+ * 归档按钮管理器（从 chatPanelManager.ts 拆分）
  *
  * 职责：
  * - 在 manual 归档模式下为已完成的 assistant 消息追加"归档"按钮
  * - 处理归档按钮点击：查找前一条 user 消息 → 提取文本 → 触发归档 → 反馈结果
  *
  * 提取原因：
- *   chatPanelManager.ts 1576 行超标（QC-R2-12），归档按钮相关逻辑
+ *   chatPanelManager.ts 1576 行超标，归档按钮相关逻辑
  *   _addArchiveButtonToMessage / _handleArchiveClick / _findPreviousUserMessage
  *   约 130 行是 manual 模式专用子功能，与核心消息渲染/流式输出逻辑耦合度低，
  *   提取为独立 Manager 降低 chatPanelManager 体量。

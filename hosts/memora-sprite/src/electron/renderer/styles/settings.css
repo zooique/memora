@@ -135,7 +135,7 @@
   flex-shrink: 0;
 }
 
-/* UX-P2-40 .settings-row input 的公共样式由 .settings-group input 统一提供，此处仅声明布局差异 */
+/* .settings-row input 的公共样式由 .settings-group input 统一提供，此处仅声明布局差异 */
 .settings-row input[type="text"],
 .settings-row input[type="password"],
 .settings-row input[type="number"],
@@ -144,7 +144,7 @@
 }
 
 /* 兼容旧版垂直堆叠 label（未包裹在 settings-row 中的） */
-/* UX-P2-19 使用直接子选择器 > label，避免匹配 .settings-row 内的 label（原 .settings-group label 会匹配所有层级） */
+/* 使用直接子选择器 > label，避免匹配 .settings-row 内的 label */
 .settings-group > label {
   display: block;
   margin-bottom: 6px;
@@ -152,9 +152,9 @@
   color: var(--text-2);
 }
 
-/* UX-P2-40 合并 .settings-group input 和 .settings-row input 的公共样式，消除重复定义 */
+/* 合并 .settings-group input 和 .settings-row input 的公共样式，消除重复定义 */
 /* 公共输入框样式：适用于设置面板内所有文本/密码/数字输入框和下拉框 */
-/* 使用 :is() 伪类简化选择器，避免重复声明（P3-5） */
+/* 使用 :is() 伪类简化选择器，避免重复声明 */
 .settings-group :is(input[type="text"], input[type="password"], input[type="number"], select) {
   padding: var(--input-padding);
   background: var(--window-bg);
@@ -255,7 +255,7 @@
 }
 
 /* ─── 设置面板扩展（v8） ─────────────────────────────────── */
-/* 基础提示类：合并原 259-264 与 330-335 两处重复定义，保留全部属性 */
+/* 基础提示类：合并两处重复定义，保留全部属性 */
 .settings-hint {
   display: block;
   font-size: var(--font-xs);

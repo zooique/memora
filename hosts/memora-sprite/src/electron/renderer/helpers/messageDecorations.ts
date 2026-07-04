@@ -1,12 +1,12 @@
 /**
- * 消息装饰器（QC-R2-12 从 chatPanelManager.ts 提取）
+ * 消息装饰器（从 chatPanelManager.ts 提取）
  *
  * 职责：
  *   在消息气泡内渲染装饰性元素：召回记忆容器、思考阶段指示器、上下文截断提示。
  *   这些元素在流式输出过程中动态插入/更新，让用户感知精灵的工作状态。
  *
  * 提取原因：
- *   chatPanelManager.ts 1015 行超标（QC-R2-12），三段装饰器 DOM 逻辑 ~131 行
+ *   chatPanelManager.ts 1015 行超标，三段装饰器 DOM 逻辑 ~131 行
  *   是相对独立的子功能，提取为纯函数模块降低 chatPanelManager 体量。
  *   同时消除 createRecallContainer 在 appendMessage 和 setMemoryRecall 两处的重复调用。
  *
@@ -33,7 +33,7 @@ export interface MemoryRecallItem {
  * 思考阶段中文映射（Phase 3：增强文案，更具体）
  *
  * 将内核 yield 的 thinking phase 标识符映射为用户可读的中文文案。
- * 从 chatPanelManager.THINKING_PHASE_LABELS 迁移（QC-R2-12）。
+ * 从 chatPanelManager.THINKING_PHASE_LABELS 迁移。
  */
 const THINKING_PHASE_LABELS: Record<string, string> = {
   recalling: '正在回忆相关记忆...',
@@ -110,7 +110,7 @@ export function renderMemoryRecall(bubble: Element, memories: MemoryRecallItem[]
 }
 
 /**
- * UX-P2-01 显示思考阶段指示器
+ * 显示思考阶段指示器
  *
  * 在消息气泡内显示"正在回忆.../处理.../归档..."提示，
  * 让用户在等待首个 text chunk 时知道精灵正在工作。
@@ -135,7 +135,7 @@ export function showThinkingPhase(bubble: Element, phase: string): void {
 }
 
 /**
- * OBS-02 在消息气泡顶部显示上下文截断提示条
+ * 在消息气泡顶部显示上下文截断提示条
  *
  * 当对话中发生上下文截断时，在消息气泡顶部插入持久提示条，
  * 告知用户部分历史消息已被省略。遵循"主动可见"原则，非 hover 显示。

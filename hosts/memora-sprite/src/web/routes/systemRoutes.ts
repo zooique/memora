@@ -1,5 +1,5 @@
 /**
- * 系统级 HTTP 路由（DWM-01：双模式 Web 调试）
+ * 系统级 HTTP 路由
  *
  * 与 electron/ipc/systemHandlers.ts 镜像，复用 sprite 核心层。
  *

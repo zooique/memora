@@ -19,7 +19,7 @@ import type { UIManager } from '../ui.js';
 import type { SpriteConfigForm } from '../types.js';
 import { createIpcErrorHandler, toError, reportError } from '../helpers/errorHelpers.js';
 import { setButtonLoading } from '../helpers/domHelpers.js';
-// HC-02：从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
+// 从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
 
 /** QC-STATE-01 silentRecoveryCallback 位于 createSettingsController 闭包内 */

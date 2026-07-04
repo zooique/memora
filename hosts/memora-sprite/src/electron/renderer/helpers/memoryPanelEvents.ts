@@ -92,7 +92,7 @@ export interface MemoryPanelEventContext {
   getCleanupRequestCallback(): ((type: 'duplicates' | 'stale' | 'all') => string[]) | null;
   getCleanupConfirmCallback(): ((ids: string[]) => Promise<void>) | null;
   getViewSwitchCallback(): ((mode: 'list' | 'timeline' | 'graph') => void) | null;
-  /** GAP-6 回收站操作回调（恢复/彻底删除） */
+  /** 回收站操作回调（恢复/彻底删除） */
   getRecycleBinActionCallback(): ((action: 'restore' | 'purge', id: string) => void) | null;
 }
 
@@ -123,7 +123,7 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
   initAnalysisPanelClose(ctx);
   initViewSwitchButtons(ctx);
   initCleanupDialog(ctx);
-  // GAP-6：回收站列表事件委托（恢复/彻底删除按钮）
+  // 回收站列表事件委托（恢复/彻底删除按钮）
   initRecycleBinActions(ctx);
 }
 
@@ -550,7 +550,7 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
   }
 }
 
-// ─── 11. GAP-6 回收站列表事件委托 ─────────────────────────
+// ─── 11. 回收站列表事件委托 ─────────────────────────
 
 /**
  * 回收站列表事件委托：恢复 / 彻底删除

@@ -1,7 +1,7 @@
 /**
- * IPC 输入验证工具（P1-10 重构）
+ * IPC 输入验证工具
  *
- * P1-10 修正：实现已迁移到 shared/inputValidation.ts，本模块仅作重新导出。
+ * 实现已迁移到 shared/inputValidation.ts，本模块仅作重新导出。
  *
  * 迁移原因：
  *   原实现位于 electron/ipc/ 层，Web 路由层（web/routes/*）为了避免反向依赖

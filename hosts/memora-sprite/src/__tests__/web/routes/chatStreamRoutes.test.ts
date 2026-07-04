@@ -1,5 +1,5 @@
 /**
- * 对话流式 SSE 路由测试（DWM-01 Phase 2：Web 模式 SSE 流式对话）
+ * 对话流式 SSE 路由测试
  *
  * 覆盖范围：
  * - POST /api/chat/abort：有/无进行中对话时的中断行为

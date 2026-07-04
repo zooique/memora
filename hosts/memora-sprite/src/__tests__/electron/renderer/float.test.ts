@@ -50,7 +50,7 @@ function createMockFloatAPI(): FloatElectronAPI {
     showFloatContextMenu: vi.fn(),
     onFloatUnread: vi.fn(),
     onSpriteEvent: vi.fn(),
-    // UX-P2-10 新增主题广播监听 mock
+    // 新增主题广播监听 mock
     onThemeBroadcast: vi.fn(),
     removeThemeBroadcastListener: vi.fn(),
   };
@@ -468,7 +468,7 @@ describe('清理函数', () => {
     expect(dragHint.classList.contains('visible')).toBe(false);
   });
 
-  // S-02 修复：EventTracker 接入后，补全 keydown + mouseleave 的 cleanup 验证
+  // EventTracker 接入后，补全 keydown + mouseleave 的 cleanup 验证
 
   it('调用 cleanup 后 keydown 键盘事件被移除（Enter/Space 不再展开）', () => {
     const cleanup = setupFloat(mockAPI);

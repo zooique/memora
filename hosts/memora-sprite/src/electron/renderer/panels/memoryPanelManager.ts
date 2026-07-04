@@ -12,8 +12,6 @@
  * - 遵循 SettingsPanelManager 的组合模式，UIManager 持有实例并委托
  * - 自管理事件监听器，通过注入的 EventTracker 统一管理
  * - 跨模块关注点（showModal / showConfirmDialog）通过 host 回调注入
- *
- * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 290 行。
  */
 
 import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp } from '../helpers/domHelpers.js';
@@ -133,7 +131,7 @@ export class MemoryPanelManager {
   private relationDeleteCallback: ((sourceId: string, targetId: string, type: string) => void) | null = null;
   /** 关系创建回调 */
   private relationCreateCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
-  /** GAP-6 回收站操作回调：action='restore' 恢复 / action='purge' 彻底删除 */
+  /** 回收站操作回调：action='restore' 恢复 / action='purge' 彻底删除 */
   private recycleBinActionCallback: ((action: 'restore' | 'purge', id: string) => void) | null = null;
 // ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
@@ -217,7 +215,7 @@ export class MemoryPanelManager {
       getCleanupRequestCallback: () => this.cleanupRequestCallback,
       getCleanupConfirmCallback: () => this.cleanupConfirmCallback,
       getViewSwitchCallback: () => this.viewSwitchCallback,
-      // GAP-6：回收站操作回调读取器
+      // 回收站操作回调读取器
       getRecycleBinActionCallback: () => this.recycleBinActionCallback,
     };
     initMemoryPanelListenersImpl(ctx);
@@ -311,7 +309,7 @@ export class MemoryPanelManager {
 
       // 空状态引导：提供"添加第一条记忆"按钮，避免用户不知道下一步
       const hintBtn = document.createElement('button');
-      // UX-P2-27 同时添加 .btn-secondary 类复用通用按钮样式
+      // 同时添加 .btn-secondary 类复用通用按钮样式
       hintBtn.className = 'empty-action-btn btn-secondary';
       hintBtn.textContent = '+ 添加第一条记忆';
       this.events.addEventListener(hintBtn, 'click', () => {
@@ -609,7 +607,7 @@ export class MemoryPanelManager {
     if (relationsEl && relationsListEl) {
       if (memory.relations.length > 0) {
         relationsEl.classList.remove('hidden');
-        // HC-23：使用 clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
+        // 使用 clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
         clearElement(relationsListEl);
         for (const rel of memory.relations) {
           const item = document.createElement('div');
@@ -1306,15 +1304,15 @@ export class MemoryPanelManager {
     this.relationCreateCallback = cb;
   }
 
-  /** GAP-6 注册回收站操作回调（恢复/彻底删除） */
+  /** 注册回收站操作回调（恢复/彻底删除） */
   onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void {
     this.recycleBinActionCallback = cb;
   }
 
-  // ─── GAP-6 回收站列表渲染 ───────────────────────────────
+  // ─── 回收站列表渲染 ───────────────────────────────
 
   /**
-   * GAP-6 渲染回收站列表
+   * 渲染回收站列表
    *
    * 每项结构：header(名称 + 操作按钮) + meta(来源 + 删除时间) + preview(内容预览)
    * 操作按钮通过 data-action + data-memory-id 委托，由 initRecycleBinActions 统一处理

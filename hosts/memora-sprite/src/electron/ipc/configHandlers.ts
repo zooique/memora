@@ -7,7 +7,7 @@
  *
  * CONFIG_UPDATE 含副作用：静默模式切换时同步托盘状态 + 重建菜单。
  *
- * QC-SPRITE-02 修复：静默模式恢复定时器从渲染层移至主进程。
+ * 静默模式恢复定时器从渲染层移至主进程。
  * 原实现依赖渲染层 setTimeout，托盘模式下（完整窗口未加载）定时器丢失，
  * 导致精灵永久静默。现在主进程在 silentModeExpiresAt 变更时管理定时器，
  * 确保无论渲染层是否运行都能自动恢复。
@@ -23,7 +23,7 @@ import { isValidPersonaName } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
 /**
- * 主进程静默模式恢复定时器（QC-SPRITE-02）
+ * 主进程静默模式恢复定时器
  *
  * 替代渲染层的 silentRecoveryTimer，确保托盘模式下也能自动恢复。
  * 当 silentModeExpiresAt 变更时启动/重置此定时器。
@@ -31,7 +31,7 @@ import type { IpcContext } from './types.js';
 let silentRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
- * 安排静默模式自动恢复（QC-SPRITE-02）
+ * 安排静默模式自动恢复
  *
  * 根据 silentModeExpiresAt 计算剩余时间并设置主进程定时器。
  * 到期后自动关闭 silentMode 并清理相关状态。
@@ -80,7 +80,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 获取精灵配置 */
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () =>
-    // P2-010 修复：使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象类型断言。
+    // 使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象类型断言。
     safeHandle('获取配置失败', { config: DEFAULT_SPRITE_CONFIG }, () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
   );
 
@@ -129,7 +129,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
         ctx.trayManager?.updateMenu();
       }
 
-      // QC-SPRITE-02：silentModeExpiresAt 变更时管理主进程恢复定时器
+      // silentModeExpiresAt 变更时管理主进程恢复定时器
       if (key === 'silentModeExpiresAt') {
         scheduleSilentRecovery(ctx);
       }
@@ -182,7 +182,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
           ctx.trayManager?.updateMenu();
         }
 
-        // silentModeExpiresAt 变更时管理主进程恢复定时器（QC-SPRITE-02）
+        // silentModeExpiresAt 变更时管理主进程恢复定时器
         if ('silentModeExpiresAt' in updates) {
           scheduleSilentRecovery(ctx);
         }
@@ -224,7 +224,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   /** 设置角色匹配模式 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE, async (_event, mode: 'auto' | 'manual') =>
     safeHandle('设置角色模式失败', { set: false }, () => {
-      // SEC-P2-002：运行期校验（TS 类型在编译期擦除，恶意渲染进程可传任意值）
+      // 运行期校验（TS 类型在编译期擦除，恶意渲染进程可传任意值）
       // 仅允许 'auto' / 'manual'，其他值一律拒绝
       if (mode !== 'auto' && mode !== 'manual') {
         return { set: false };

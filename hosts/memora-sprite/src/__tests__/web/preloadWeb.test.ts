@@ -1,5 +1,5 @@
 /**
- * Web 版 preload 接口契约测试（DWM-01：双模式 Web 调试）
+ * Web 版 preload 接口契约测试
  *
  * 覆盖范围：
  * - webElectronAPI 各方法正确调用 fetch 并返回 Promise

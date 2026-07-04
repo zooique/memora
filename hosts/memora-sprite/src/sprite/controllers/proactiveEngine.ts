@@ -6,7 +6,7 @@
  *   2. 冷却保护
  *   3. 上下文感知提示生成
  *
- * P2-DESIGN-5 修复：移除 interaction 双通道输出，仅通过 emitSprite 发射 proactivePrompt 事件，
+ * 移除 interaction 双通道输出，仅通过 emitSprite 发射 proactivePrompt 事件，
  * 宿主（main.ts 的事件监听器）负责接收事件并决定是否展示为 banner。
  */
 import { logger } from 'memora';
@@ -71,14 +71,14 @@ export interface MilestoneTrigger {
 
 /** 主动提示引擎 */
 export class ProactiveEngine {
-  /** P1-7 修复：pendingNotices 最大累积上限，防止长时间静默或 cooldown 期间内存泄漏 */
+  /** pendingNotices 最大累积上限，防止长时间静默或 cooldown 期间内存泄漏 */
   private static readonly MAX_PENDING_NOTICES = 100;
 
   /** Phase 2.3：已通知的记忆量级（幂等保护，重启重置符合"自然遗忘"） */
   private noticedMagnitudes: Set<number> = new Set();
   /** Phase 2.3：已知的 source 类型（首次出现时触发里程碑） */
   private knownSources: Set<string> = new Set();
-  /** QC-SPRITE-06：首次 checkMilestones 仅初始化已知状态，不触发通知（避免冷启动首发提示） */
+  /** 首次 checkMilestones 仅初始化已知状态，不触发通知（避免冷启动首发提示） */
   private milestoneInitialized = false;
 
   /** Phase 2.1：主动提示次数（供 AffectController 计算接受率） */
@@ -280,7 +280,7 @@ export class ProactiveEngine {
    * 累积待提示事件
    *
    * 当事件数量达到阈值时自动触发 tryEmit。
-   * P2-CODE-1 修复：MAX_PENDING_NOTICES 上限保护应用于所有模式（非仅 silentMode），
+   * MAX_PENDING_NOTICES 上限保护应用于所有模式（非仅 silentMode），
    * 防止 cooldown 期间事件持续累积导致内存增长。
    *
    * @param type 事件类型（memory/insight/persona/file/milestone）
@@ -341,7 +341,7 @@ export class ProactiveEngine {
     // Phase 2.3：检测本次提示是否包含里程碑事件
     const hasMilestone = notices.some(n => n.isMilestone);
 
-    // P1-8 修复：silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
+    // silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
     this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false, isMilestone: hasMilestone });
     // Phase 2.1：记录一次主动提示（供 AffectController 计算接受率）
     this.suggestCount++;
@@ -530,7 +530,7 @@ export class ProactiveEngine {
   checkMilestones(dashboard: DashboardData): MilestoneTrigger[] {
     const triggers: MilestoneTrigger[] = [];
 
-    // QC-SPRITE-06：首次调用仅初始化已知状态（knownSources + noticedMagnitudes），
+    // 首次调用仅初始化已知状态（knownSources + noticedMagnitudes），
     // 不触发 addNotice，避免冷启动时用户毫无操作就弹出"积累了上百条记忆"的困惑提示。
     // 后续调用才正常检测新增的里程碑。
     if (!this.milestoneInitialized) {

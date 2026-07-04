@@ -22,7 +22,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { logger, toError } from 'memora';
 // P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME } from './constants.js';
-// HC-02：从 shared/ 导入 DEFAULT_SHORTCUTS 和 ShortcutConfig（单一真理源，消除与 settingsController.ts 的重复）
+// 从 shared/ 导入 DEFAULT_SHORTCUTS 和 ShortcutConfig（单一真理源，消除与 settingsController.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../shared/shortcutDefaults.js';
 import type { ShortcutConfig } from '../shared/shortcutDefaults.js';
 
@@ -90,7 +90,7 @@ export interface SpriteConfig {
    */
   archiveMode?: 'full' | 'insights-only' | 'manual';
   /**
-   * 每日用户消息计数（缺口 3.4 修复：补齐 ReviewData.today.messageCount 数据断点）
+   * 每日用户消息计数（补齐 ReviewData.today.messageCount 数据断点）
    *
    * - key：本地日期 YYYY-MM-DD（使用 getLocalDate()，避免东八区凌晨错位）
    * - value：当日用户发送的消息条数
@@ -100,7 +100,7 @@ export interface SpriteConfig {
    */
   dailyMessageCount?: Record<string, number>;
   /**
-   * GAP-6 回收站保留天数，默认 30
+   * 回收站保留天数，默认 30
    *
    * 软删除记忆超过此天数后，由定时器自动调用 purgeExpired 彻底清理。
    * 设为 0 表示禁用自动清理（仅手动 purge）。
@@ -115,7 +115,7 @@ export interface SpriteConfig {
  * 持久化到 sprite.json，支持热更新（不重启应用即可修改快捷键）。
  * accelerators 是 action → accelerator 映射，action 为开放字符串（遵循 ADR-004）。
  *
- * HC-02：ShortcutConfig 接口和 DEFAULT_SHORTCUTS 常量已迁移到
+ * ShortcutConfig 接口和 DEFAULT_SHORTCUTS 常量已迁移到
  * shared/shortcutDefaults.ts（纯类型+纯数据，无 Node 依赖），
  * 此处重新导出保持向后兼容（shortcuts.ts / configHandlers.ts 等仍从此处导入）。
  */
@@ -160,7 +160,7 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   shortcuts: 'object',
   archiveMode: 'enum:full|insights-only|manual',
   dailyMessageCount: 'object',
-  // GAP-6：回收站保留天数（number，0 禁用自动清理）
+  // 回收站保留天数（number，0 禁用自动清理）
   recycleBinRetentionDays: 'number',
 };
 
@@ -184,12 +184,12 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   windowBounds: null,
   silentModeExpiresAt: null,
   theme: 'light',
-  // HC-02：引用 shared/shortcutDefaults.ts 的 DEFAULT_SHORTCUTS（单一真理源）
+  // 引用 shared/shortcutDefaults.ts 的 DEFAULT_SHORTCUTS（单一真理源）
   shortcuts: DEFAULT_SHORTCUTS,
   archiveMode: 'full',
   // 缺口 3.4：默认空对象，由 Sprite.incrementDailyMessageCount 累加填充
   dailyMessageCount: {},
-  // GAP-6：回收站默认保留 30 天，超过后定时器自动彻底清理
+  // 回收站默认保留 30 天，超过后定时器自动彻底清理
   recycleBinRetentionDays: 30,
 };
 
@@ -422,7 +422,7 @@ export function applyConfigField(
 
   // 对象类型（需额外校验子字段）
   if (schema === 'object') {
-    // P1-5 修复：windowBounds 允许设为 null（清除窗口边界）
+    // windowBounds 允许设为 null（清除窗口边界）
     if (value === null && (key === 'windowBounds' || key === 'silentModeExpiresAt')) {
       target[key] = null;
       return true;

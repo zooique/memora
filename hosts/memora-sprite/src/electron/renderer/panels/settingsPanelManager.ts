@@ -11,8 +11,6 @@
  * - 遵循 ToastManager / ModalManager 的组合模式，UIManager 持有实例并委托
  * - 自管理事件监听器，提供 cleanup() 清理
  * - 跨模块关注点（setTheme / updatePersonaModeBadge / showConfirmDialog）通过 host 回调注入
- *
- * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 450 行。
  */
 
 import { getOptionalElement } from '../helpers/domHelpers.js';
@@ -109,7 +107,7 @@ export class SettingsPanelManager {
   /** FD-07 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
   /**
-   * UX-P2-11 LLM 表单是否有未保存修改
+   * LLM 表单是否有未保存修改
    *
    * 独立于 settingsFormDirty，用于判断是否需要触发 LLM 配置保存。
    * 避免用户仅修改精灵配置时，因 LLM 字段未配置而弹出误导性 warning。
@@ -292,7 +290,7 @@ export class SettingsPanelManager {
       });
     }
 
-    // UX-P2-11 监听 LLM 表单字段变更，独立标记 llmFormDirty
+    // 监听 LLM 表单字段变更，独立标记 llmFormDirty
     // 避免用户仅修改精灵配置时，LLM 保存逻辑被误触发导致误导性 warning
     const llmFields = [
       this.cfgLlmPreset,
@@ -326,7 +324,7 @@ export class SettingsPanelManager {
         this.settingsFormDirty = false;
         const spriteConfig = this.collectConfigFromForm();
         this.configSaveCallback?.(spriteConfig);
-        // UX-P2-11 仅在 LLM 表单有修改时触发保存，避免未配置 LLM 时弹出误导性 warning
+        // 仅在 LLM 表单有修改时触发保存，避免未配置 LLM 时弹出误导性 warning
         if (this.llmFormDirty) {
           const llmConfig = this.collectLlmConfigFromForm();
           this.llmConfigSaveCallback?.(llmConfig);
@@ -768,7 +766,7 @@ export class SettingsPanelManager {
    */
   resetFormDirty(): void {
     this.settingsFormDirty = false;
-    // UX-P2-11 同步重置 LLM 表单 dirty 标志
+    // 同步重置 LLM 表单 dirty 标志
     this.llmFormDirty = false;
   }
 

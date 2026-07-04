@@ -41,7 +41,7 @@
 }
 
 .chat-toolbar-title {
-  /* UX-P2-33 缩小标题字号，与副标题差距更协调（原 15px vs 11px 差距过大） */
+  /* 缩小标题字号，与副标题差距更协调 */
   font-size: var(--font-base);
   font-weight: 600;
   color: var(--text);
@@ -49,7 +49,7 @@
 }
 
 .chat-toolbar-subtitle {
-  /* UX-P2-33 副标题字号略增，与标题差距缩小（原 11px → 12px） */
+  /* 副标题字号略增，与标题差距缩小 */
   font-size: var(--font-sm);
   color: var(--text-3);
   white-space: nowrap;
@@ -147,7 +147,7 @@
   border-bottom: 1px solid var(--surface2);
   box-shadow: var(--shadow-window);
   border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-  /* 紧凑布局：减小 padding，从 16px 24px → 12px 20px */
+  /* 紧凑布局：减小 padding */
   padding: 12px 20px;
   /* 增大 max-height 确保运行指标完整显示 */
   max-height: 480px;
@@ -217,7 +217,7 @@
   /* 无额外样式，由 .perception-panel 的 overflow-y: auto 统一管理滚动 */
 }
 
-/* 感知面板分节（紧凑布局：margin 14px → 8px） */
+/* 感知面板分节（紧凑布局） */
 .perception-section {
   margin-bottom: 8px;
 }
@@ -232,7 +232,7 @@
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  /* 紧凑布局：标题下间距 8px → 4px */
+  /* 紧凑布局：收紧标题下间距 */
   margin: 0 0 4px 0;
   display: flex;
   align-items: center;
@@ -357,7 +357,7 @@
   font-size: var(--font-xs);
 }
 
-/* 紧凑布局：标签宽度 44px → 28px（"信任"/"熟悉"两字） */
+/* 紧凑布局：标签宽度收紧（"信任"/"熟悉"两字） */
 .rapport-bar-label {
   width: 28px;
   color: var(--muted);
@@ -905,7 +905,7 @@
   z-index: 10;
   flex-shrink: 0;
   overflow: hidden;
-  /* UX-P2-34 增大 max-height，避免较长提示文案被裁剪（原 60px → 80px） */
+  /* 增大 max-height，避免较长提示文案被裁剪 */
   max-height: 80px;
   font-size: var(--font-sm);
   color: var(--text);
@@ -1141,7 +1141,7 @@
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
   padding: 12px 14px;
-  box-shadow: var(--shadow-sm); /* P2-10 使用令牌替代硬编码 rgba，深色主题自动适配 */
+  box-shadow: var(--shadow-sm);
 }
 
 /* 卡片头部：图标 + 类型标签 + 置信度 + 关闭按钮 */
@@ -1392,11 +1392,11 @@
   max-width: 80%;
   /* contain: 布局/样式/绘制隔离，保留性能优化但不延迟渲染 */
   contain: layout style paint;
-  /* UX-PP-11 合并 slideIn/fadeIn 为统一的 fadeIn 动画 */
+  /* 合并 slideIn/fadeIn 为统一的 fadeIn 动画 */
   animation: fadeIn var(--transition-base) ease-out;
 }
 
-/* UX-PP-11 统一消息进入动画（原 slideIn + fadeIn 合并） */
+/* 统一消息进入动画 */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -1485,7 +1485,7 @@
   padding: 10px 14px;
   border-radius: var(--radius-lg);
   line-height: 1.6;
-  /* UX-P2-32 统一消息字号为 14px，与 #input 字号一致（原 13px 与输入框 14px 不协调） */
+  /* 统一消息字号为 14px，与 #input 字号一致 */
   font-size: var(--font-base);
   position: relative;
   word-break: break-word;
@@ -1494,8 +1494,8 @@
 .message.user .message-bubble {
   background: var(--accent);
   color: var(--accent-fg);  /* 使用主题感知前景色，保证深色主题下浅蓝背景+深字对比度达标 */
-  border-bottom-right-radius: 4px;  /* UX-PP-16 尖角从 2px 增大到 4px，视觉更清晰 */
-  /* UX-P2-17 用户消息统一使用系统字体（原继承 body 系统字体，保持不变） */
+  border-bottom-right-radius: 4px;  /* 尖角，视觉更清晰 */
+  /* 用户消息统一使用系统字体 */
 }
 
 .message.assistant .message-bubble {
@@ -1957,11 +1957,11 @@
   color: var(--text-2);
   min-height: 280px;
   gap: 12px;
-  /* UX-PP-11 空状态使用统一 fadeIn 动画 */
+  /* 空状态使用统一 fadeIn 动画 */
   animation: fadeIn var(--transition-slow) ease-out;
 }
 
-/* UX-PP-11 空状态额外样式：更大 padding 和居中布局 */
+/* 空状态额外样式：更大 padding 和居中布局 */
 
 /* 精灵头像：v8 56px 渐变圆形（brand-grad） */
 .chat-empty-state .empty-avatar {
@@ -2028,7 +2028,7 @@
   transform: translateY(0);
 }
 
-/* ─── UX-P2-01 思考阶段指示器 ─────────────────────────────── */
+/* ─── 思考阶段指示器 ─────────────────────────────── */
 /* 精灵在等待首个 text chunk 时显示"⚙️ 正在回忆/处理/归档..."    */
 /* 让用户知道精灵正在工作，避免误以为卡死                        */
 /* 当 text chunk 到达后，ui.ts 会移除该元素                     */
@@ -2059,7 +2059,7 @@
   50%      { opacity: 1; }
 }
 
-/* ─── OBS-02 上下文截断提示条 ─────────────────────────────── */
+/* ─── 上下文截断提示条 ─────────────────────────────── */
 /* 对话中发生上下文截断时，在消息气泡顶部显示持久提示条         */
 /* 告知用户部分历史消息已被省略，遵循"主动可见"原则             */
 
@@ -2073,7 +2073,7 @@
   border-left: 3px solid var(--yellow);
 }
 
-/* ─── UX-P1-02 工具调用卡片 ───────────────────────────────── */
+/* ─── 工具调用卡片 ───────────────────────────────── */
 /* 精灵执行工具（read_file/search_memories 等）时显示调用卡片   */
 /* 让用户感知精灵正在执行具体动作，而非黑盒等待                  */
 /* 三种状态：running（执行中）/ success（成功）/ failed（失败） */
@@ -2174,7 +2174,7 @@
   font-weight: 500;
 }
 
-/* UX-PP-12 执行中 spinner：旋转圆环动画，替代静态"执行中..."文本的视觉单薄 */
+/* 执行中 spinner：旋转圆环动画，替代静态"执行中..."文本的视觉单薄 */
 /* 仅在 .tool-call-running 状态下显示，结果到达后被移除 */
 .tool-call-spinner {
   display: inline-block;
@@ -2295,7 +2295,7 @@
   border-color: var(--accent);
 }
 
-/* ─── UX-PP-10 流式中断标记 ─────────────────────────────── */
+/* ─── 流式中断标记 ─────────────────────────────── */
 /* 用户主动中断对话时嵌入到消息气泡底部的中断提示 */
 /* 灰色虚线风格，与错误指示器（红色）区分：中断是用户主动行为，非错误 */
 
@@ -2313,7 +2313,7 @@
   animation: fadeIn var(--transition-base) ease-out;
 }
 
-/* ─── UX-PP-01 流式错误指示器 ─────────────────────────────── */
+/* ─── 流式错误指示器 ─────────────────────────────── */
 /* 流式输出出错时注入到消息气泡底部的错误提示 */
 /* 红色调 + 左侧红色边框，与工具调用失败卡片风格一致 */
 
@@ -2331,7 +2331,7 @@
   animation: fadeIn var(--transition-base) ease-out;
 }
 
-/* UX-PP-05 错误气泡内的"重试"按钮 */
+/* 错误气泡内的"重试"按钮 */
 /* 与 .stream-error 同容器，主动可见（不依赖 hover） */
 .stream-error-retry {
   display: inline-block;

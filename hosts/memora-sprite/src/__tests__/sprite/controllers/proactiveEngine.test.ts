@@ -1,15 +1,15 @@
-﻿/**
+/**
  * ProactiveEngine 单元测试
  *
  * 覆盖范围：
  * - 构造与配置：构造函数 / setEmitter / updateConfig
- * - addNotice 事件累积：累积 / 阈值触发 / FIFO 上限保护（P1-7/P2-CODE-1）
+ * - addNotice 事件累积：累积 / 阈值触发 / FIFO 上限保护
  * - tryEmit 冷却保护：空队列 / 静默模式 / cooldownMs 内/外 / 发射后清空
  * - checkPending 主动检查：有事件触发 / 无事件静默
  * - buildPrompt 提示生成：6 种事件类型（单/多）+ 混合 + 空摘要 + 未知类型降级
- * - checkMilestones 里程碑检测（Phase 2.3）：QC-SPRITE-06 首次初始化 / 量级突破 / 新 source / 幂等
+ * - checkMilestones 里程碑检测（Phase 2.3）：首次初始化 / 量级突破 / 新 source / 幂等
  * - magnitudeLabel 量级标签：known magnitude / 未知降级 10^N
- * - emitSprite 事件格式：proactivePrompt 参数 + P1-8 silent 恒为 false
+ * - emitSprite 事件格式：proactivePrompt 参数 + silent 恒为 false
  *
  * 测试策略（对齐 memoryController.test.ts 范式）：
  * - mock SpriteEmitter（vi.fn()）
@@ -152,7 +152,7 @@ describe('ProactiveEngine', () => {
       expect(mockEmit).toHaveBeenCalledTimes(1); // 第 3 条触发
     });
 
-    it('P1-7/P2-CODE-1：pendingNotices 达到 MAX_PENDING_NOTICES=100 时 FIFO 淘汰最旧', () => {
+    it('pendingNotices 达到 MAX_PENDING_NOTICES=100 时 FIFO 淘汰最旧', () => {
       const { engine } = createEngine({ threshold: 200 }); // threshold 设高，避免自动触发
       // 先添加 100 条（达到上限）
       for (let i = 0; i < 100; i++) {
@@ -403,7 +403,7 @@ describe('ProactiveEngine', () => {
   // ─── 6. checkMilestones 里程碑检测（Phase 2.3，6 测试） ─
 
   describe('checkMilestones 里程碑检测', () => {
-    it('QC-SPRITE-06：首次调用仅初始化不触发 addNotice（返回空数组）', () => {
+    it('首次调用仅初始化不触发 addNotice（返回空数组）', () => {
       const { engine, mockEmit } = createEngine({ threshold: 1, cooldownMs: 0 });
       const dashboard = makeDashboard({
         total: 100,
@@ -579,7 +579,7 @@ describe('ProactiveEngine', () => {
       });
     });
 
-    it('P1-8：silent 字段恒为 false（tryEmit 已在 silentMode 时提前 return）', () => {
+    it('silent 字段恒为 false（tryEmit 已在 silentMode 时提前 return）', () => {
       const { engine, mockEmit } = createEngine({ threshold: 1, cooldownMs: 0 });
       engine.addNotice('memory', 'test');
       // silent 字段恒为 false，无论 config.silentMode 是什么

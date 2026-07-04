@@ -1,5 +1,5 @@
 /**
- * 会话管理 HTTP 路由测试（DWM-01：双模式 Web 调试）
+ * 会话管理 HTTP 路由测试
  *
  * 覆盖范围：
  * - GET /api/sessions：列出所有会话（按日期聚合 + 预览 + 消息数 + 非法格式过滤）
@@ -662,9 +662,6 @@ describe('handleSessionRoute', () => {
   });
 
   it('POST /api/sessions/switch 非法 session 名（含路径分隔符等）应被拒绝', async () => {
-    // P1-10：改用 shared/inputValidation 的白名单模式后，
-    // 所有非 [a-zA-Z0-9_-] 字符都会被拒绝（比原黑名单更严格）
-    // 这里仍逐一测试原黑名单字符，确保白名单覆盖
     const forbiddenChars = ['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
     for (const ch of forbiddenChars) {
       const ctx = createMockCtx();
@@ -684,7 +681,7 @@ describe('handleSessionRoute', () => {
   });
 
   it('POST /api/sessions/switch session 名超长（> 200）应被拒绝', async () => {
-    // P1-10：长度上限统一为 200（与 IPC 层 isValidSessionName 一致，
+    // 长度上限 200（与 IPC 层 isValidSessionName 一致，
     // 原 Web 层本地实现的 100 上限已废弃，避免两层行为分歧）
     const ctx = createMockCtx();
     /** 构造长度 201 的会话名（超过 200 限制） */
@@ -876,7 +873,7 @@ describe('handleSessionRoute', () => {
   });
 
   it('PUT /api/sessions/:id/rename newName 超长（> 200）应被拒绝', async () => {
-    // P1-10：长度上限统一为 200（与 IPC 层 isValidSessionName 一致，
+    // 长度上限 200（与 IPC 层 isValidSessionName 一致，
     // 原 Web 层本地实现的 100 上限已废弃，避免两层行为分歧）
     const sessionStore = createMockSessionStore();
     const ctx = createMockCtx({ sessionStore });

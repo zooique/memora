@@ -649,9 +649,9 @@ describe('流式消息管理', () => {
   });
 });
 
-// ─── UX-P1-02 工具调用卡片 ─────────────────────────────────
+// ─── 工具调用卡片 ─────────────────────────────────
 
-describe('工具调用卡片（UX-P1-02）', () => {
+describe('工具调用卡片', () => {
   it('showToolStart: 在流式消息气泡内渲染工具调用卡片', () => {
     uiManager.startStreaming('msg-tool-1');
     uiManager.showToolStart('msg-tool-1', 'call-1', 'read_file', '{"path":"test.txt"}');
@@ -719,9 +719,9 @@ describe('工具调用卡片（UX-P1-02）', () => {
   });
 });
 
-// ─── UX-P2-01 思考阶段指示器 ───────────────────────────────
+// ─── 思考阶段指示器 ───────────────────────────────
 
-describe('思考阶段指示器（UX-P2-01）', () => {
+describe('思考阶段指示器', () => {
   it('showThinkingPhase: 在气泡内渲染思考阶段指示器', () => {
     uiManager.startStreaming('msg-think-1');
     uiManager.showThinkingPhase('msg-think-1', 'recalling');
@@ -759,9 +759,9 @@ describe('思考阶段指示器（UX-P2-01）', () => {
   });
 });
 
-// ─── UX-P2-03 Agent 就绪状态 ───────────────────────────────
+// ─── Agent 就绪状态 ───────────────────────────────
 
-describe('Agent 就绪状态（UX-P2-03）', () => {
+describe('Agent 就绪状态', () => {
   it('初始状态 isAgentReady 为 false', () => {
     expect(uiManager.getState().isAgentReady).toBe(false);
   });
@@ -800,9 +800,9 @@ describe('Agent 就绪状态（UX-P2-03）', () => {
   });
 });
 
-// ─── UX-P2-02 流式状态发送拦截 ─────────────────────────────
+// ─── 流式状态发送拦截 ─────────────────────────────
 
-describe('流式状态发送拦截（UX-P2-02）', () => {
+describe('流式状态发送拦截', () => {
   it('流式输出中按 Enter 触发停止而非发送', () => {
     uiManager.setAgentReady(true);
     uiManager.startStreaming('msg-block-1');
@@ -1098,7 +1098,7 @@ describe('事件回调注册', () => {
     const cb = vi.fn();
     uiManager.onSendMessage(cb);
 
-    // UX-P2-03 设置 Agent 就绪状态，否则 emitSendMessage 会拦截发送
+    // 设置 Agent 就绪状态，否则 emitSendMessage 会拦截发送
     uiManager.setAgentReady(true);
 
     // 设置输入内容，避免空输入时发送按钮 disabled

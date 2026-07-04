@@ -77,7 +77,7 @@ export interface MemoryListItem {
   createdAt?: string;
 }
 
-/** GAP-6 回收站记忆列表项 */
+/** 回收站记忆列表项 */
 export interface DeletedMemoryListItem {
   /** 记忆唯一标识 */
   id: string;
@@ -197,7 +197,7 @@ export class MemoryController {
    * @returns 记忆详情（含关联记忆列表），不存在时返回 null
    */
   show(id: string): MemoryDetail | null {
-    // P2-DESIGN-6 修复：统一通过 agent.memory 访问
+    // 统一通过 agent.memory 访问
     const inspector = this.agent.memory;
     if (!inspector) return null;
     const m = inspector.getById(id);
@@ -232,7 +232,7 @@ export class MemoryController {
       score: this.#formatScore(m.score),
       content: m.content,
       // R5 日期返回 ISO 8601 原始字符串，由 UI 层根据 locale 格式化
-      // P1-3 修复：非法日期字符串会导致 new Date(...).toISOString() 抛 RangeError，加 try/catch 降级
+      // 非法日期字符串会导致 new Date(...).toISOString() 抛 RangeError，加 try/catch 降级
       createdAt: this.#toIso(m.createdAt),
       accessedAt: this.#toIso(m.accessedAt),
       relations,
@@ -251,7 +251,7 @@ export class MemoryController {
   }
 
   /**
-   * 软删除记忆（GAP-6：移入回收站，保留向量索引以便恢复）
+   * 软删除记忆（移入回收站，保留向量索引以便恢复）
    *
    * 软删除后记忆不再出现在召回/搜索/列表中，但可通过 restore() 恢复。
    * 向量索引条目保留（recall 通过 getById 过滤已软删除的，不会误召回）。
@@ -266,12 +266,12 @@ export class MemoryController {
     const exists = inspector.getById(id);
     if (!exists) return false;
     inspector.delete(id);
-    // GAP-6：软删除不删除向量索引，restore 时无需重新嵌入
+    // 软删除不删除向量索引，restore 时无需重新嵌入
     return true;
   }
 
   /**
-   * 恢复软删除的记忆（GAP-6）
+   * 恢复软删除的记忆
    *
    * 将记忆从回收站恢复为活跃态。向量索引无需操作（软删除时未删除）。
    *
@@ -289,7 +289,7 @@ export class MemoryController {
   }
 
   /**
-   * 物理删除记忆（GAP-6：彻底删除，不可恢复）
+   * 物理删除记忆（彻底删除，不可恢复）
    *
    * 从存储中永久删除，同时清理向量索引。
    * 仅用于回收站的"彻底删除"操作——只允许物理删除已软删除的记忆，
@@ -320,7 +320,7 @@ export class MemoryController {
   }
 
   /**
-   * 列出回收站中的软删除记忆（GAP-6）
+   * 列出回收站中的软删除记忆
    *
    * @param limit 返回数量上限，默认 50
    * @returns 回收站记忆列表项数组
@@ -351,7 +351,7 @@ export class MemoryController {
    * @returns 记忆唯一标识（${source}:${name} 格式）
    */
   upsert(source: string, name: string, content: string, score = 0.5): string {
-    // P2-DESIGN-6 修复：统一通过 agent.memory 访问
+    // 统一通过 agent.memory 访问
     const inspector = this.agent.memory;
     if (!inspector) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
     const now = new Date().toISOString();

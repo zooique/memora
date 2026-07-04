@@ -56,7 +56,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
-  /** 删除记忆（GAP-6：软删除，移入回收站） */
+  /** 删除记忆（软删除，移入回收站） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_DELETE, async (_event, id: string) =>
     safeHandle('删除记忆失败', { deleted: false }, () => {
       // FOUNDATION-SEAL Phase 3：校验记忆 ID 类型和长度，防止非字符串或超长值传入内核
@@ -67,7 +67,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
-  /** 恢复软删除记忆（GAP-6：从回收站恢复） */
+  /** 恢复软删除记忆（从回收站恢复） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RESTORE, async (_event, id: string) =>
     safeHandle('恢复记忆失败', { restored: false }, () => {
       if (!isValidId(id)) {
@@ -77,7 +77,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
-  /** 物理删除记忆（GAP-6：回收站彻底删除） */
+  /** 物理删除记忆（回收站彻底删除） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_PURGE, async (_event, id: string) =>
     safeHandle('彻底删除记忆失败', { purged: false }, () => {
       if (!isValidId(id)) {
@@ -87,7 +87,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
-  /** 列出回收站记忆（GAP-6） */
+  /** 列出回收站记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST_DELETED, async () =>
     safeHandle('列出回收站记忆失败', { memories: [] }, () => {
       return { memories: ctx.sprite.listDeletedMemories() };
@@ -101,7 +101,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidContent(data.content)) {
         return { id: '' };
       }
-      // SEC-P1-001：source/name 校验（与 MEMORIES_SHOW/DELETE 的 isValidId 风格一致）
+      // source/name 校验（与 MEMORIES_SHOW/DELETE 的 isValidId 风格一致）
       // 防止恶意渲染进程传入空字符串/超长字符串/非字符串导致内核异常
       if (!isValidId(data.source) || !isValidId(data.name)) {
         return { id: '' };

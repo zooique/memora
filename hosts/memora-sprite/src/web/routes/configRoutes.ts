@@ -1,5 +1,5 @@
 /**
- * 配置与角色 HTTP 路由（DWM-01：双模式 Web 调试）
+ * 配置与角色 HTTP 路由
  *
  * 与 electron/ipc/configHandlers.ts 镜像，复用 sprite 核心层。
  *
@@ -12,15 +12,13 @@
  *   POST   /api/personas/mode     → 设置角色匹配模式
  *   GET    /api/personas/mode     → 查询当前角色匹配模式
  *
- * 注意：Web 模式不处理静默模式恢复定时器（QC-SPRITE-02），
+ * 注意：Web 模式不处理静默模式恢复定时器，
  * 该定时器是 Electron 主进程专属（托盘模式兜底）。
  * Web 模式下渲染进程始终运行，由渲染层 setTimeout 处理恢复。
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HostContext } from '../../shared/hostContext.js';
-// P1-10：移除内联正则 /^[a-zA-Z0-9._-]+$/（与 IPC 层 isValidPersonaName 重复定义），
-// 改用 shared/inputValidation 的统一实现，确保两层行为一致
 import { isValidPersonaName } from '../../shared/inputValidation.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
@@ -122,7 +120,7 @@ export async function handleConfigRoute(
         sendError(res, 400, 'name 必填');
         return;
       }
-      // P1-10：校验角色名，使用 shared/inputValidation 的统一 isValidPersonaName
+      // 校验角色名，使用 shared/inputValidation 的统一 isValidPersonaName
       // （移除内联正则，避免与 IPC 层行为不一致）
       if (!isValidPersonaName(body.name)) {
         sendError(res, 400, '无效的角色名');

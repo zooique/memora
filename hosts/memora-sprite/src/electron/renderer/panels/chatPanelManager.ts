@@ -18,8 +18,6 @@
  * - 遵循 SettingsPanelManager 的组合模式，UIManager 持有实例并委托
  * - 跨模块关注点（showToast / scrollToBottom / updateSendButton 等）通过 host 回调注入
  * - 自管理内部状态（流式消息映射、RAF 状态、回调引用），提供 cleanup() 清理
- *
- * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 500 行。
  */
 
 import { clearElement, formatTimestamp } from '../helpers/domHelpers.js';
@@ -27,16 +25,16 @@ import { renderMarkdown } from '../components/markdown.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 共享常量：时间换算与 Toast 时长，避免硬编码（对齐 sprite/constants.ts）
 import { MS_PER_MINUTE, TOAST_SHORT_MS } from '../../../sprite/constants.js';
-// QC-R2-12：工具调用卡片 DOM 逻辑提取到独立 helper
+// 工具调用卡片 DOM 逻辑提取到独立 helper
 import { showToolStart as renderToolStart, updateToolResult as updateToolCardResult } from '../helpers/toolCallCard.js';
-// QC-R2-12：消息装饰器（召回记忆 + 思考阶段 + 截断提示）提取到独立 helper
+// 消息装饰器（召回记忆 + 思考阶段 + 截断提示）提取到独立 helper
 import {
   createRecallContainer as buildRecallContainer,
   renderMemoryRecall,
   showThinkingPhase as renderThinkingPhase,
   showTruncationNotice as renderTruncationNotice,
 } from '../helpers/messageDecorations.js';
-// QC-R2-12：归档按钮逻辑（manual 模式专用）提取到独立 Manager
+// 归档按钮逻辑（manual 模式专用）提取到独立 Manager
 import { ArchiveButtonManager } from './archiveButtonManager.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { Message, ToastType } from '../types.js';
@@ -187,7 +185,7 @@ export class ChatPanelManager {
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events: EventTracker;
 
-  // ─── 子管理器（QC-R2-12 拆分） ──────────────────────────
+  // ─── 子管理器 ──────────────────────────
 
   /**
    * 归档按钮管理器（manual 模式专用）
@@ -218,7 +216,7 @@ export class ChatPanelManager {
     this.events = events;
     this.streamingMessages = streamingMessages;
 
-    // QC-R2-12：归档按钮管理器（注入 host 能力，复用 ChatPanelHost 中已定义的归档契约）
+    // 归档按钮管理器（注入 host 能力，复用 ChatPanelHost 中已定义的归档契约）
     this.archiveButtonManager = new ArchiveButtonManager(this.host);
 
     // QC-11 事件委托：在 messagesEl 上注册统一的 click 监听器，
@@ -330,7 +328,7 @@ export class ChatPanelManager {
         return;
       }
       // 缺口 J：归档按钮 data-action="archive"（manual 模式下触发手动归档）
-      // QC-R2-12：委托到 ArchiveButtonManager.handleClick
+      // 委托到 ArchiveButtonManager.handleClick
       const archiveBtn = target.closest<HTMLElement>('[data-action="archive"]');
       if (archiveBtn) {
         void this.archiveButtonManager.handleClick(archiveBtn);
@@ -378,7 +376,7 @@ export class ChatPanelManager {
     }
     // 清除超时兜底定时器
     this._clearStreamSafetyTimer();
-    // QC-R2-12：归档按钮管理器清理（无事件监听器，空实现，保持统一生命周期接口）
+    // 归档按钮管理器清理（无事件监听器，空实现，保持统一生命周期接口）
     this.archiveButtonManager.cleanup();
     this.events.cleanup();
   }
@@ -656,7 +654,7 @@ export class ChatPanelManager {
     // 召回记忆提示（仅精灵消息）
     const memoryRecall = message.memoryRecall;
     if (message.role === 'assistant' && memoryRecall && memoryRecall.length > 0) {
-      // QC-R2-12：委托到 messageDecorations helper 构建召回记忆容器
+      // 委托到 messageDecorations helper 构建召回记忆容器
       const recallContainer = buildRecallContainer(memoryRecall);
       bubble.appendChild(recallContainer);
     }
@@ -695,7 +693,7 @@ export class ChatPanelManager {
     // UX-PP-02 保留元素在 rAF 回调中重新查询，此处不再维护同步变量
     // 保留 cursor、memory-recall-container 和 tool-call 元素，在 rAF 回调中重新查询
 
-    // UX-P2-01 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
+    // 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
     const thinkingIndicator = bubble.querySelector('.thinking-phase');
     if (thinkingIndicator) {
       thinkingIndicator.remove();
@@ -867,14 +865,14 @@ export class ChatPanelManager {
 
     // 缺口 J：manual 模式下为 assistant 消息追加"归档"按钮
     // manual 模式内核跳过自动归档，用户需手动触发 profile facts + insight 归档
-    // QC-R2-12：委托到 ArchiveButtonManager.maybeAddArchiveButton
+    // 委托到 ArchiveButtonManager.maybeAddArchiveButton
     this.archiveButtonManager.maybeAddArchiveButton(el, copyBtn, metaRow);
   }
 
   /**
    * MS-12 设置流式消息的召回记忆摘要
    *
-   * 委托到 messageDecorations.ts 的 renderMemoryRecall 纯函数（QC-R2-12 提取）。
+   * 委托到 messageDecorations.ts 的 renderMemoryRecall 纯函数。
    * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * Phase 3：同时更新思考阶段指示器，显示具体召回数量。
@@ -902,12 +900,12 @@ export class ChatPanelManager {
     }
   }
 
-  // ─── UX-P2-01 思考阶段指示器 ──────────────────────────────
+  // ─── 思考阶段指示器 ──────────────────────────────
 
   /**
-   * UX-P2-01 显示思考阶段指示器
+   * 显示思考阶段指示器
    *
-   * 委托到 messageDecorations.ts 的 renderThinkingPhase 纯函数（QC-R2-12 提取）。
+   * 委托到 messageDecorations.ts 的 renderThinkingPhase 纯函数。
    * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * @param messageId 流式消息 ID
@@ -925,12 +923,12 @@ export class ChatPanelManager {
     renderThinkingPhase(bubble, phase);
   }
 
-  // ─── OBS-02 上下文截断提示 ────────────────────────────────
+  // ─── 上下文截断提示 ────────────────────────────────
 
   /**
-   * OBS-02 在消息气泡顶部显示上下文截断提示条
+   * 在消息气泡顶部显示上下文截断提示条
    *
-   * 委托到 messageDecorations.ts 的 renderTruncationNotice 纯函数（QC-R2-12 提取）。
+   * 委托到 messageDecorations.ts 的 renderTruncationNotice 纯函数。
    * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * @param messageId 流式消息 ID
@@ -948,12 +946,12 @@ export class ChatPanelManager {
     renderTruncationNotice(bubble, count);
   }
 
-  // ─── UX-P1-02 工具调用卡片 ────────────────────────────────
+  // ─── 工具调用卡片 ────────────────────────────────
 
   /**
-   * UX-P1-02 显示工具调用开始卡片
+   * 显示工具调用开始卡片
    *
-   * 委托到 toolCallCard.ts 的 renderToolStart 纯函数（QC-R2-12 提取）。
+   * 委托到 toolCallCard.ts 的 renderToolStart 纯函数。
    * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * @param messageId 流式消息 ID
@@ -974,9 +972,9 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-P1-02 更新工具调用结果
+   * 更新工具调用结果
    *
-   * 委托到 toolCallCard.ts 的 updateToolCardResult 纯函数（QC-R2-12 提取）。
+   * 委托到 toolCallCard.ts 的 updateToolCardResult 纯函数。
    * 本方法仅负责查找消息元素 + 重置安全定时器。
    *
    * @param messageId 流式消息 ID
@@ -1078,7 +1076,7 @@ export class ChatPanelManager {
     this.streamingMessages.clear();
     this.host.setStreaming(false);
     this.host.updateSendButton();
-    // UX-P2-05 清空消息时重置计数器，避免跨会话累加导致显示错误
+    // 清空消息时重置计数器，避免跨会话累加导致显示错误
     this.host.resetMessageCount();
     this.host.refreshMessageCountDisplay();
     // 清空后重新显示空状态引导

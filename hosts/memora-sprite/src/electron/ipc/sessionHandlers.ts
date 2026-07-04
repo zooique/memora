@@ -67,7 +67,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       const offset = query.offset ?? 0;
       const total = ctx.sessionStore.countMessages(match[1], match[2]);
       const messages = ctx.sessionStore.loadMessagesPaginated(match[1], match[2], pageSize, offset);
-      // UX-P2-06 保留 timestamp 字段，UX-P2-07 返回 loadedSessionId 供渲染进程正确高亮当前会话
+      // 保留 timestamp 字段，返回 loadedSessionId 供渲染进程正确高亮当前会话
       return {
         messages: messages.map((msg) => ({ role: msg.role, content: msg.content, timestamp: msg.timestamp })),
         loadedSessionId: target,
@@ -81,7 +81,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
+  /** 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, query: { date: string; session: string }) => {
     try {
       // FOUNDATION-SEAL Phase 3 轮3：query 对象类型校验，防止 null/undefined 或非对象传入

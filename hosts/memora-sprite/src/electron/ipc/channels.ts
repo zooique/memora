@@ -20,7 +20,7 @@ export const IPC_CHANNELS = {
   SESSION_LOAD: 'session-load',
   /** FD-A1 列出所有会话 */
   SESSION_LIST: 'session-list',
-  /** UX-P1-04 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
+  /** 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   SESSION_SWITCH: 'session-switch',
   /** FD-09 删除会话（含确认对话框） */
   SESSION_DELETE: 'session-delete',
@@ -41,13 +41,13 @@ export const IPC_CHANNELS = {
   MEMORIES_SEARCH: 'memories-search',
   /** 查看单条记忆详情 */
   MEMORIES_SHOW: 'memories-show',
-  /** 删除记忆（GAP-6：软删除，移入回收站） */
+  /** 删除记忆（软删除，移入回收站） */
   MEMORIES_DELETE: 'memories-delete',
-  /** 恢复软删除记忆（GAP-6：从回收站恢复） */
+  /** 恢复软删除记忆（从回收站恢复） */
   MEMORIES_RESTORE: 'memories-restore',
-  /** 物理删除记忆（GAP-6：回收站彻底删除） */
+  /** 物理删除记忆（回收站彻底删除） */
   MEMORIES_PURGE: 'memories-purge',
-  /** 列出回收站记忆（GAP-6） */
+  /** 列出回收站记忆 */
   MEMORIES_LIST_DELETED: 'memories-list-deleted',
   /** 添加/更新记忆 */
   MEMORIES_ADD: 'memories-add',
@@ -142,7 +142,7 @@ export const IPC_CHANNELS = {
   WINDOW_MAXIMIZE: 'window-maximize',
   /** 关闭完整窗口（实际切换到浮动态） */
   WINDOW_CLOSE: 'window-close',
-  /** UX-P2-10 通知主进程主题已变更（需同步到浮动窗口） */
+  /** 通知主进程主题已变更（需同步到浮动窗口） */
   THEME_CHANGED: 'theme-changed',
 
   // ─── 写入确认（M1：安全写入确认 UI） ──────────────────
@@ -199,15 +199,15 @@ export const MAIN_TO_RENDERER_CHANNELS = {
    * 供渲染层在消息底部展示"💡 召回记忆：xxx（score: 0.xx）"
    */
   SPRITE_STREAM_RECALL: 'sprite-stream-recall',
-  /** UX-P1-02 工具调用开始（携带工具名和参数） */
+  /** 工具调用开始（携带工具名和参数） */
   SPRITE_STREAM_TOOL_START: 'sprite-stream-tool-start',
-  /** UX-P1-02 工具调用结果（携带工具名、成功状态和摘要） */
+  /** 工具调用结果（携带工具名、成功状态和摘要） */
   SPRITE_STREAM_TOOL_RESULT: 'sprite-stream-tool-result',
-  /** UX-P2-01 思考阶段指示（recalling/processing/archiving） */
+  /** 思考阶段指示（recalling/processing/archiving） */
   SPRITE_STREAM_THINKING: 'sprite-stream-thinking',
 
   /**
-   * OBS-02 上下文截断通知
+   * 上下文截断通知
    * 对话中检测到 metrics.context.truncationCount 增加时推送，
    * 携带被裁剪的消息数，渲染层在消息气泡顶部显示持久提示条。
    */
@@ -244,7 +244,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   // ─── 窗口状态 ─────────────────────────────────────────
   /** 窗口最大化/还原状态变更 */
   WINDOW_STATE_CHANGED: 'window-state-changed',
-  /** UX-P2-10 主题变更通知（主进程广播到浮动窗口） */
+  /** 主题变更通知（主进程广播到浮动窗口） */
   THEME_BROADCAST: 'theme-broadcast',
 
   // ─── 配置建议推送（H1：AutoConfigRefiner 闭环） ──────

@@ -1,5 +1,5 @@
 /**
- * Web 路由共享工具函数测试（DWM-01：双模式 Web 调试）
+ * Web 路由共享工具函数测试
  *
  * 覆盖范围：
  * - parseJsonBody：GET/DELETE 跳过、POST 解析、空 body 降级、超 10MB 抛错

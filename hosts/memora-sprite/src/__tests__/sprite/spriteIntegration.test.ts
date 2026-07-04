@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sprite 端到端集成测试
  *
  * 验证完整生命周期：Agent + InMemoryStorage + Sprite + 事件订阅
@@ -363,7 +363,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
       score: 0.5,
     });
 
-    // QC-SPRITE-06：首次 dashboard 仅初始化已知状态（不触发通知），第二次才检测里程碑
+    // 首次 dashboard 仅初始化已知状态（不触发通知），第二次才检测里程碑
     sprite.dashboard();
     // 再写入一条不同 source 的记忆，第二次 dashboard 检测到新 source
     agent.memory!.upsert({
@@ -404,7 +404,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
       });
     }
 
-    // QC-SPRITE-06：首次 dashboard 仅初始化已知状态（magnitude=2 已记录，不触发通知）
+    // 首次 dashboard 仅初始化已知状态（magnitude=2 已记录，不触发通知）
     sprite.dashboard();
     // 再写入 900 条记忆使总量达到 1000（触发 magnitude=3 里程碑）
     for (let i = 100; i < 1000; i++) {
@@ -422,7 +422,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
     // 第二次调用 dashboard 检测到 magnitude=3（新量级突破）
     sprite.dashboard();
 
-    // QC-SPRITE-06：dashboard 仅 addNotice 不自动触发（1 < threshold=3），
+    // dashboard 仅 addNotice 不自动触发（1 < threshold=3），
     // 需外部主动调用 checkPending 触发发射（模拟"用户回来时检查"场景）
     sprite.checkPending();
 
@@ -455,7 +455,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
       });
     }
 
-    // QC-SPRITE-06：首次 dashboard 仅初始化（不触发通知）
+    // 首次 dashboard 仅初始化（不触发通知）
     sprite.dashboard();
 
     // 写入 900 条记忆使总量达到 1000（magnitude=3）

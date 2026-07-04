@@ -70,7 +70,7 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     onMemoryDiscuss: vi.fn(),
     onGraphToggle: vi.fn(),
     onMoreMenuAction: vi.fn(),
-    // GAP-6：回收站操作回调 + 渲染方法 + 弹窗显示 + 确认对话框
+    // 回收站操作回调 + 渲染方法 + 弹窗显示 + 确认对话框
     onRecycleBinAction: vi.fn(),
     renderRecycleBinList: vi.fn(),
     showModal: vi.fn(),
@@ -128,7 +128,7 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     updateNarrative: vi.fn(),
     // C-8：控制器通过 UIManager 门面读取搜索参数，不再直接访问 DOM
     getMemorySearchParams: vi.fn(() => ({ query: '', source: '', sort: 'relevance', timeRange: '' })),
-    // ARCH-P2-1：memoryController 通过 UIManager 门面调用 renderSourceHealth/setMemoryListState
+    // memoryController 通过 UIManager 门面调用 renderSourceHealth/setMemoryListState
     renderSourceHealth: vi.fn(),
     setMemoryListState: vi.fn(),
   };
@@ -234,9 +234,9 @@ describe('FD-FIX-DELETE-LOADING 删除按钮 loading 保护', () => {
         skills: [],
       }),
       listMemories: vi.fn().mockResolvedValue({ memories: [] }),
-      // GAP-6：deleteMemory 现返回 { deleted: boolean }，默认成功
+      // deleteMemory 现返回 { deleted: boolean }，默认成功
       deleteMemory: vi.fn().mockResolvedValue({ deleted: true }),
-      // GAP-6：回收站 IPC mock（默认空列表 + 操作成功）
+      // 回收站 IPC mock（默认空列表 + 操作成功）
       listDeletedMemories: vi.fn().mockResolvedValue({ memories: [] }),
       restoreMemory: vi.fn().mockResolvedValue({ restored: true }),
       purgeMemory: vi.fn().mockResolvedValue({ purged: true }),

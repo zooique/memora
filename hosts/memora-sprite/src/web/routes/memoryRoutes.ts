@@ -1,5 +1,5 @@
 /**
- * 记忆 CRUD HTTP 路由（DWM-01：双模式 Web 调试）
+ * 记忆 CRUD HTTP 路由
  *
  * 与 electron/ipc/memoryHandlers.ts 镜像，复用 sprite 核心层。
  *

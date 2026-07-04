@@ -4,8 +4,8 @@
  * 覆盖范围：
  * - setupSpriteEventListeners 注册（3 测试）：unsubscribe 先执行 + 8 个事件订阅 + sprite.on 调用次数
  * - proactivePrompt 事件处理（10 测试）：
- *   - 始终执行部分（3 测试）：silent=true 仅 trayManager.setState / silent=false+Notification.isSupported=false 跳过通知 / QC-SPRITE-04 try/catch 保护
- *   - 托盘复位定时器（2 测试）：QC-SPRITE-05 30 秒定时器到期 / 定时器防重
+ *   - 始终执行部分（3 测试）：silent=true 仅 trayManager.setState / silent=false+Notification.isSupported=false 跳过通知 / try/catch 保护
+ *   - 托盘复位定时器（2 测试）：30 秒定时器到期 / 定时器防重
  *   - 系统通知（2 测试）：silent=false+isSupported=true 创建 Notification / silent=true 不创建
  *   - 窗口内提示（2 测试）：窗口可见时发送 IPC / 窗口不可见时 incrementUnreadCount
  *   - 窗口状态检查（1 测试）：窗口已销毁时不调用 isVisible
@@ -40,7 +40,6 @@ import type { ILogger } from 'memora';
  * 使得工厂函数可以访问这些变量。
  */
 /** 精灵事件总数（1 个主动提示 + 14 个简单转发事件 + 1 个 presenceChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked） */
-// GAP-4：新增 conflictDetected 事件，总数从 14 → 15
 // 会话生命周期完善：新增 sessionForked 事件，总数从 15 → 16
 const SPRITE_EVENT_COUNT = 16;
 
@@ -308,7 +307,7 @@ describe('SpriteEventBridge', () => {
         expect(sendCall).toBeDefined();
       });
 
-      it('QC-SPRITE-04：trayManager.setState 抛错时 logger.warn 记录，不影响后续逻辑', () => {
+      it('trayManager.setState 抛错时 logger.warn 记录，不影响后续逻辑', () => {
         const deps = createTestDeps();
         // 让 trayManager.setState 抛出错误
         (deps.trayManager as { setState: ReturnType<typeof vi.fn> }).setState.mockImplementationOnce(() => {
@@ -327,7 +326,7 @@ describe('SpriteEventBridge', () => {
 
     // ─── 2.2 托盘复位定时器（2 测试） ─────────────────
 
-    describe('托盘复位定时器（QC-SPRITE-05）', () => {
+    describe('托盘复位定时器', () => {
       it('proactivePrompt 触发后启动 30 秒定时器，到期后 trayManager.setState("idle")', () => {
         const deps = createTestDeps();
         setupSpriteEventListeners(deps);
@@ -575,7 +574,7 @@ describe('SpriteEventBridge', () => {
       expect(deps.sprite.off).toHaveBeenCalledTimes(SPRITE_EVENT_COUNT);
     });
 
-    it('QC-R2-01：某个 unsubscribe 抛错时 logger.warn 记录，不影响其他 unsubscribe 执行', () => {
+    it('某个 unsubscribe 抛错时 logger.warn 记录，不影响其他 unsubscribe 执行', () => {
       const deps = createTestDeps();
       setupSpriteEventListeners(deps);
 

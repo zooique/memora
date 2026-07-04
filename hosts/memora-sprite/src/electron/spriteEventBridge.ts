@@ -74,10 +74,7 @@ function forwardSimpleEvent<K extends keyof SpriteEventMap>(
  *
  * 仅在完整窗口存在且可见时发送，避免窗口隐藏或销毁时调用 webContents.send 抛错。
  *
- * QC-SPRITE-03 修复：silent 默认值从 true 改为 false。
- * 原设计意图是简单事件"默认静默"（不弹系统通知），但渲染层 handler 误用
- * msg.silent 作为"是否显示 toast"的开关，导致 projectSwitched/skillMatched/
- * memoryRecalled 的 toast 逻辑成为死代码。实际 silent 应仅控制系统通知，
+ * silent 默认值为 false。silent 仅控制系统通知（是否弹系统通知），
  * 渲染层 toast 显示由各 handler 自行决定（基于业务逻辑，非 silent 标志）。
  *
  * @param deps 依赖
@@ -108,7 +105,7 @@ function sendSpriteEventIfVisible(
 }
 
 /**
- * QC-R2-01 通用精灵事件注册 helper
+ * 通用精灵事件注册 helper
  *
  * 统一"定义回调 → sprite.on 注册 → 推送取消订阅"模式。
  *
@@ -144,7 +141,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   unsubscribeSpriteEvents();
 
   /**
-   * QC-SPRITE-05：主动提示托盘状态自动复位定时器
+   * 主动提示托盘状态自动复位定时器
    *
    * proactivePrompt 将托盘设为 active 后，若渲染进程不发送 PROACTIVE_PROMPT_SHOWN
    * （窗口不可见/崩溃/逻辑遗漏），托盘会永久卡在 active 状态（脉冲动画持续运行）。
@@ -156,12 +153,12 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示（保留显式处理，含复杂副作用）
   registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, triggers, silent, isMilestone }) => {
-    // QC-SPRITE-04：整个 handler 用 try/catch 分段保护，防止单个副作用抛错中断后续逻辑
+    // 整个 handler 用 try/catch 分段保护，防止单个副作用抛错中断后续逻辑
     try {
       // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
       deps.trayManager?.setState('active');
 
-      // QC-SPRITE-05：启动托盘状态自动复位定时器（兜底）
+      // 启动托盘状态自动复位定时器（兜底）
       if (proactiveTrayResetTimer !== null) {
         clearTimeout(proactiveTrayResetTimer);
       }
@@ -192,7 +189,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
 
         // P2-FLOW-12 浮动窗口主动提示未读徽章
         // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
-        // QC-SPRITE-04：补充 isDestroyed() 检查，防止窗口销毁后调用 isVisible() 抛错
+        // 补充 isDestroyed() 检查，防止窗口销毁后调用 isVisible() 抛错
         const fullWindow = deps.windowManager?.getFullWindow();
         if (fullWindow && !fullWindow.isDestroyed() && !fullWindow.isVisible()) {
           deps.incrementUnreadCount();
@@ -209,7 +206,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   forwardSimpleEvent(deps, 'memoryNoticed', () => ({}));
   // 洞察提取 → 仪表盘计数 +1
   forwardSimpleEvent(deps, 'insightGained', () => ({}));
-  // GAP-4：记忆冲突检测 → ProactiveBanner 通知用户
+  // 记忆冲突检测 → ProactiveBanner 通知用户
   forwardSimpleEvent(deps, 'conflictDetected', (e) => ({
     newMemoryId: e.newMemoryId,
     newInsight: e.newInsight,

@@ -39,7 +39,7 @@ interface ProactivePromptPayload {
   isMilestone?: boolean;
 }
 
-// ─── P2-2：感知数据 Payload 类型声明（前置，便于类型守卫引用） ─────
+// ─── 感知数据 Payload 类型声明（前置，便于类型守卫引用） ─────
 
 /** 情感基调载荷 */
 export interface AffectPayload {
@@ -93,7 +93,7 @@ export interface PatternsPayload {
 }
 
 /**
- * P2-006 类型守卫：检查值是否为非 null 对象
+ * 类型守卫：检查值是否为非 null 对象
  *
  * 替代 `as Record<string, unknown>` 类型断言，通过类型谓词正确收窄类型。
  * 可复用于所有需要将 unknown 安全转为对象访问的场景。
@@ -118,7 +118,7 @@ export function isProactivePromptPayload(value: unknown): value is ProactiveProm
 }
 
 /**
- * GAP-4：校验冲突检测 payload 结构
+ * 校验冲突检测 payload 结构
  *
  * 确保冲突通知的字段类型正确，避免运行时错误。
  */
@@ -288,7 +288,7 @@ function handleProactivePrompt(
 }
 
 /**
- * GAP-4：处理冲突检测事件
+ * 处理冲突检测事件
  *
  * 当 InsightExtractor 检测到 contradicts 关系时，通过 ProactiveBanner 通知用户。
  * 冲突通知是事实性通知（非主动行为），不受静默模式控制。
@@ -422,7 +422,7 @@ function createSpriteEventHandlers(
   return {
     memoryNoticed: () => callbacks.onMemoryNoticed(),
     insightGained: () => callbacks.onInsightGained(),
-    // GAP-4：冲突检测 → ProactiveBanner 通知用户
+    // 冲突检测 → ProactiveBanner 通知用户
     conflictDetected: (msg) => handleConflictDetected(uiManager, msg),
     proactivePrompt: (msg) => handleProactivePrompt(uiManager, msg),
     projectSwitched: (msg) => handleProjectSwitched(uiManager, msg),
@@ -532,22 +532,22 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.setMemoryRecall(msg.messageId, msg.memories);
   });
 
-  // UX-P2-01 思考阶段指示：在 text chunk 之前到达，显示"正在回忆.../处理.../归档..."
+  // 思考阶段指示：在 text chunk 之前到达，显示"正在回忆.../处理.../归档..."
   window.electronAPI.onStreamThinking((msg) => {
     uiManager.showThinkingPhase(msg.messageId, msg.phase);
   });
 
-  // OBS-02 上下文截断通知：对话中发生截断时，在消息气泡顶部显示持久提示条
+  // 上下文截断通知：对话中发生截断时，在消息气泡顶部显示持久提示条
   window.electronAPI.onContextTruncated((msg) => {
     uiManager.showTruncationNotice(msg.messageId, msg.count);
   });
 
-  // UX-P1-02 工具调用开始：在消息气泡内渲染工具调用卡片
+  // 工具调用开始：在消息气泡内渲染工具调用卡片
   window.electronAPI.onStreamToolStart((msg) => {
     uiManager.showToolStart(msg.messageId, msg.toolCallId, msg.name, msg.args);
   });
 
-  // UX-P1-02 工具调用结果：更新工具调用卡片状态（成功/失败 + 摘要）
+  // 工具调用结果：更新工具调用卡片状态（成功/失败 + 摘要）
   window.electronAPI.onStreamToolResult((msg) => {
     uiManager.updateToolResult(msg.messageId, msg.toolCallId, msg.name, msg.ok, msg.summary);
   });

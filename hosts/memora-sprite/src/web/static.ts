@@ -1,5 +1,5 @@
 /**
- * 静态文件服务（DWM-01：双模式 Web 调试）
+ * 静态文件服务
  *
  * 为 Web 模式提供 renderer/ 目录的静态文件服务。
  * 复用 Electron 的 renderer/ 目录（HTML/CSS/JS），零 duplication。

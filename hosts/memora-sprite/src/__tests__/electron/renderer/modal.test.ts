@@ -586,7 +586,7 @@ describe('showWriteConfirmation · DOM 节点构建', () => {
     await promise;
   });
 
-  // ─── GAP-3：diff 折叠区展示 ─────────────────────────────
+  // ─── diff 折叠区展示 ─────────────────────────────
 
   it('携带 beforeContent/afterContent 时应渲染 diff 折叠区', async () => {
     const manager = createManager();

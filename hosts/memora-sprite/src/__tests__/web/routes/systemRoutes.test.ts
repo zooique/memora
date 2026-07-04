@@ -1,5 +1,5 @@
 /**
- * 系统级 HTTP 路由测试（DWM-01：双模式 Web 调试）
+ * 系统级 HTTP 路由测试
  *
  * 覆盖范围：
  * - GET /api/agent-status：Agent 就绪状态查询（不需要 Agent 就绪，本身用于检查状态）

@@ -25,7 +25,7 @@ describe('IPC_CHANNELS', () => {
     expect(IPC_CHANNELS.MEMORIES_LIST).toBe('memories-list');
     expect(IPC_CHANNELS.MEMORIES_SEARCH).toBe('memories-search');
     expect(IPC_CHANNELS.MEMORIES_DELETE).toBe('memories-delete');
-    // SEC-P2-01：缺口 J 新增的手动归档通道
+    // 新增的手动归档通道
     expect(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE).toBe('memories-archive-profile');
     expect(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT).toBe('memories-archive-insight');
   });

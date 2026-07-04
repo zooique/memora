@@ -182,7 +182,7 @@ const WRITE_INFO: WriteConfirmationInfo = {
   description: '写入 100 字符到 file.ts',
   permission: 'owner',
   needsConfirm: true,
-  // GAP-3：diff 内容预览
+  // diff 内容预览
   beforeContent: '旧内容',
   afterContent: '新内容',
 };

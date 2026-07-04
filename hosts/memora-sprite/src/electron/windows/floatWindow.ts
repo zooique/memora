@@ -74,8 +74,7 @@ export class FloatWindow {
 
     this.windowStateManager.attachFloatWindow(this.win);
 
-    // P2-11 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
-    // P2-3 修复：提取为公共函数 themeInjector.ts，与 windowManager.ts 复用
+    // 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
     injectThemeScript(this.win.webContents);
 
     // 加载浮动窗口 HTML
@@ -199,7 +198,7 @@ export class FloatWindow {
   }
 
   show(): void {
-    // QC-WIN-03 修复：添加 isDestroyed 守卫，防止 create() 前或销毁后调用抛错
+    // 添加 isDestroyed 守卫，防止 create() 前或销毁后调用抛错
     // 对齐 setUnreadCount/broadcastTheme 的守卫模式
     if (!this.win.isDestroyed()) {
       this.win.show();
@@ -233,7 +232,7 @@ export class FloatWindow {
   }
 
   /**
-   * UX-P2-10 广播主题变更到浮动窗口
+   * 广播主题变更到浮动窗口
    *
    * 完整窗口切换主题时，主进程通过此方法将主题同步到浮动窗口，
    * 避免两个窗口主题不一致。

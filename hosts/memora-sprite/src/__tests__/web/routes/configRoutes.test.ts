@@ -1,5 +1,5 @@
 /**
- * 配置与角色 HTTP 路由测试（DWM-01：双模式 Web 调试）
+ * 配置与角色 HTTP 路由测试
  *
  * 覆盖范围：
  * - GET /api/config：获取精灵配置（SpriteConfig 不含 apiKey，明文密钥由 systemRoutes 的 /api/llm-config 脱敏）

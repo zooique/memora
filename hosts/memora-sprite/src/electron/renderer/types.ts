@@ -18,7 +18,7 @@ import type {
   MemoryRelationItem,
   SpriteConfigForm,
 } from '../preload.js';
-// S-03 PersonaInfo 从 sprite 层导入（真理源），消除 renderer 层 PersonaItem 重复定义
+// PersonaInfo 从 sprite 层导入（真理源），消除 renderer 层 PersonaItem 重复定义
 import type { PersonaInfo } from '../../sprite/controllers/index.js';
 
 // 重新导出 preload.ts 的类型，保持 ui.ts 公共 API 不变（其他模块从 ui.ts 导入这些类型）
@@ -45,11 +45,11 @@ export interface UIState {
   currentPanel: string;
   unreadCount: number;
   isStreaming: boolean;
-  /** UX-P2-03 Agent 是否就绪（LLM 配置保存成功后置 true，未就绪时禁止发送消息） */
+  /** Agent 是否就绪（LLM 配置保存成功后置 true，未就绪时禁止发送消息） */
   isAgentReady: boolean;
 }
 
-// S-03 PersonaItem re-export PersonaInfo（sprite 层是真理源），保持向后兼容
+// PersonaItem re-export PersonaInfo（sprite 层是真理源），保持向后兼容
 export type { PersonaInfo as PersonaItem };
 
 /**

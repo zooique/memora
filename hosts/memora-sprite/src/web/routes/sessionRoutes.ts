@@ -1,5 +1,5 @@
 /**
- * 会话管理 HTTP 路由（DWM-01：双模式 Web 调试）
+ * 会话管理 HTTP 路由
  *
  * 与 electron/ipc/sessionHandlers.ts 镜像，复用 sprite 核心层。
  *
@@ -14,8 +14,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
-// P1-10：移除本地 isValidSessionName（黑名单模式，与 IPC 层白名单行为不一致——安全 BUG），
-// 改用 shared/inputValidation 的统一实现（白名单模式，与 IPC 层完全一致）
 import { isValidSessionName } from '../../shared/inputValidation.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';

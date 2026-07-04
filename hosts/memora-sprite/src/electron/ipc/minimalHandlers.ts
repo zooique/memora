@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 最小化 IPC 处理器
  *
  * 职责：Agent 未就绪时提供最小化的 IPC 通道，仅支持：
@@ -104,7 +104,7 @@ export function registerMinimalIpcHandlers(
     try {
       return { config: loadSpriteConfig() };
     } catch (err) {
-      // P2-011 修复：使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象
+      // 使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象
       logger.warn({ err: toError(err).message }, '精灵配置加载失败，返回默认配置');
       return { config: { ...DEFAULT_SPRITE_CONFIG } };
     }
@@ -285,7 +285,7 @@ export function registerMinimalIpcHandlers(
     return { projects: [] };
   });
 
-  // P2-9 渲染进程通知主进程主题已变更，动态设置窗口背景色
+  // 渲染进程通知主进程主题已变更，动态设置窗口背景色
   ipcMain.on(IPC_CHANNELS.THEME_CHANGED, (_event, theme: 'light' | 'dark') => {
     const bgColor = theme === 'dark' ? '#1e1e2e' : '#f0f0f2';
     state.windowManager?.updateBackgroundColor(bgColor);

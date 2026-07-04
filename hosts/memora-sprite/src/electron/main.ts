@@ -67,7 +67,7 @@ const TRAY_ICON_PATH = path.join(RESOURCES_DIR, 'tray-icon.png');
 // ─── 主进程状态 ──────────────────────────────────────────────
 
 /**
- * 主进程核心状态（QC-R2-06：集中管理，对齐 renderer.ts State 先例）
+ * 主进程核心状态（集中管理，对齐 renderer.ts State 先例）
  *
  * 17 个可变状态集中到一个对象，提升状态可见性，消除 minimalIpcState 代理层
  * （appState 结构兼容 MinimalIpcState 接口，直接作为 MinimalIpcState 传入 minimalHandlers）。
@@ -93,7 +93,7 @@ const appState = {
   trayManager: null as TrayManager | null,
 
   // ─── Agent 运行时（setAppRuntime 集中管理：4 个变量总是一起变化） ───
-  // S-03 修复：AppRuntime 类型从 ipc/minimalHandlers.ts 导入，消除重复定义
+  // AppRuntime 类型从 ipc/minimalHandlers.ts 导入，消除重复定义
   /** Agent + Sprite 实例（由 startSprite 初始化，可能为 null——配置缺失时） */
   agent: null as Agent | null,
   sprite: null as Sprite | null,
@@ -357,13 +357,13 @@ function setupAgentReady(
   });
   appState.trayManager?.updateCallbacks(createSilentModeCallbacks(activeSprite));
 
-  // 6. 绑定在场状态控制器（QC-SPRITE-01：移入 setupAgentReady 确保 reinitAgent 后也重新绑定）
+  // 6. 绑定在场状态控制器（移入 setupAgentReady 确保 reinitAgent 后也重新绑定）
   // powerMonitor 和 app 是 Electron 内置模块，在 main 进程可用
   // PresenceController 监听锁屏/挂起/解锁/恢复 + 窗口焦点变化
   // 用户回来时触发 ProactiveEngine.checkPending() 检查累积事件
   activeSprite.bindPresence(powerMonitor, app);
 
-  // QC-SPRITE-02：启动时检查静默模式是否已过期 + 启动主进程恢复定时器
+  // 启动时检查静默模式是否已过期 + 启动主进程恢复定时器
   // 主进程兜底：托盘模式下渲染层不运行，原渲染层 setTimeout 会丢失
   const startConfig = activeSprite.getConfig();
   if (startConfig.silentMode && startConfig.silentModeExpiresAt) {
@@ -584,7 +584,7 @@ async function initializeApp(): Promise<void> {
     });
 
     // 第一季：Agent 就绪后初始化（共享函数，reinitAgent 路径复用）
-    // QC-SPRITE-01：bindPresence 已移入 setupAgentReady，确保 reinitAgent 后也重新绑定
+    // bindPresence 已移入 setupAgentReady，确保 reinitAgent 后也重新绑定
     setupAgentReady(appState.agent!, appState.sprite!, appState.sessionStore!, appState.currentDataDir);
 
     // Phase 3.1：集成剪贴板三重保护
@@ -638,7 +638,7 @@ async function initializeApp(): Promise<void> {
       // configDir 默认为 ~/.memora-sprite/config/，与 Agent 初始化时一致
       const configDir = DEFAULT_CONFIG_DIR;
       const result = await installSkill(content, fileName, configDir);
-      // GAP-5 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
+      // 事件驱动重载：技能文件写入后立即热重载，当前会话生效（无需重启 Agent）
       if (result.success && appState.agent) {
         try {
           await appState.agent.reloadConfig('skill');
@@ -665,7 +665,7 @@ async function initializeApp(): Promise<void> {
 // ─── 最小化 IPC 处理器 ──────────────────────────────────────
 
 // D-04 修复：最小化 IPC 处理器提取到 ipc/minimalHandlers.ts
-// QC-R2-06：消除 MinimalIpcState 代理层，appState 结构兼容 MinimalIpcState 接口，
+// 消除 MinimalIpcState 代理层，appState 结构兼容 MinimalIpcState 接口，
 // 直接传入即可（结构子类型：appState 是 MinimalIpcState 的超集，TS 自动兼容）。
 // minimalHandlers 通过 state.xxx 读写直接作用于 appState，无需 getter/setter 代理。
 

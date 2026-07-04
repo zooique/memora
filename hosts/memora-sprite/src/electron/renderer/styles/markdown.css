@@ -34,7 +34,7 @@
 .message-bubble .md-h-5 { font-size: var(--font-sm); color: var(--text); }
 .message-bubble .md-h-6 { font-size: var(--font-sm); color: var(--subtext); }
 
-/* 代码块容器：UX-PP-11 改为 div.md-code-block 包裹 header + pre */
+/* 代码块容器：div.md-code-block 包裹 header + pre */
 /* 深色背景 + 等宽字体 + 圆角边框，header 与 pre 共享背景 */
 .message-bubble .md-code-block {
   margin: 8px 0;

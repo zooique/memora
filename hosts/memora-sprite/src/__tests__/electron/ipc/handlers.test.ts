@@ -2,9 +2,9 @@
  * IPC 处理器测试 — IPC handler 注册/清理回归测试
  *
  * 覆盖范围：
- * - P1-1: registerIpcHandlers 幂等性（reinitAgent 重复调用不抛错）
- * - P1-2: handleUserInput 在 Agent 未就绪时拒绝（reinitAgent 失败保护）
- * - P1-3: handleUserInput 竞态保护（进行中对话时拒绝新请求）
+ * - registerIpcHandlers 幂等性（reinitAgent 重复调用不抛错）
+ * - handleUserInput 在 Agent 未就绪时拒绝（reinitAgent 失败保护）
+ * - handleUserInput 竞态保护（进行中对话时拒绝新请求）
  *
  * Mock 策略：
  * - electron.ipcMain：使用 vi.fn() 捕获 handle/on/removeHandler/removeAllListeners 调用
@@ -119,9 +119,9 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     vi.clearAllMocks();
   });
 
-  // ─── P1-1: registerIpcHandlers 幂等性 ──────────────────
+  // ─── registerIpcHandlers 幂等性 ──────────────────
 
-  describe('P1-1: registerIpcHandlers 幂等性（reinitAgent 重复调用）', () => {
+  describe('registerIpcHandlers 幂等性（reinitAgent 重复调用）', () => {
     it('重复调用 registerIpcHandlers 不抛错', { timeout: 15000 }, async () => {
       // 动态导入，确保 vi.mock('electron') 已生效
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
@@ -193,9 +193,9 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     });
   });
 
-  // ─── P1-2: Agent 未就绪时拒绝对话 ──────────────────────
+  // ─── Agent 未就绪时拒绝对话 ──────────────────────
 
-  describe('P1-2: handleUserInput 在 Agent 未就绪时拒绝', () => {
+  describe('handleUserInput 在 Agent 未就绪时拒绝', () => {
     it('isAgentReady()=false 时发送 SPRITE_ERROR 并提前返回', async () => {
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       const { ctx, sentMessages } = createMockIpcContext({
@@ -259,9 +259,9 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     });
   });
 
-  // ─── P1-3: 竞态保护 ────────────────────────────────────
+  // ─── 竞态保护 ────────────────────────────────────
 
-  describe('P1-3: handleUserInput 竞态保护（进行中对话时拒绝）', () => {
+  describe('handleUserInput 竞态保护（进行中对话时拒绝）', () => {
     it('getAbortController() 非空时发送 SPRITE_ERROR 并提前返回', async () => {
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       // 模拟进行中的对话：abortController 非空

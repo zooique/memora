@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 窗口管理器模块
  *
  * 职责：
@@ -82,7 +82,7 @@ export class WindowManager {
         errorHandler.setMainWindow(this.fullWindow);
       }
     } catch (error) {
-      // QC-WIN-05 修复：部分失败时清理已创建的资源
+      // 部分失败时清理已创建的资源
       // 场景：createFloatWindow 成功但 createFullWindow 失败，
       // floatWindow 已创建并注册 IPC 监听器，若不清理会泄漏
       this.closeAll();
@@ -125,8 +125,7 @@ export class WindowManager {
 
     this.windowStateManager.attachFullWindow(this.fullWindow);
 
-    // P2-11 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
-    // P2-3 修复：提取为公共函数 themeInjector.ts，与 floatWindow.ts 复用
+    // 主进程注入主题初始化脚本（替代内联 <script>，不受 CSP 约束）
     injectThemeScript(this.fullWindow.webContents);
 
     // 加载 HTML 文件
@@ -201,7 +200,7 @@ export class WindowManager {
   }
 
   /**
-   * P2-9 动态更新窗口背景色
+   * 动态更新窗口背景色
    *
    * 渲染进程主题切换时，通过 IPC 通知主进程调用此方法，
    * 使 BrowserWindow 的 backgroundColor 与当前主题一致。
@@ -217,7 +216,7 @@ export class WindowManager {
 
   /** 关闭所有窗口 */
   closeAll(): void {
-    // QC-WIN-01 修复：清理窗口控制 IPC 监听器，避免 reinitAgent 或窗口重建时累积
+    // 清理窗口控制 IPC 监听器，避免 reinitAgent 或窗口重建时累积
     // 对比 FloatWindow.close() 已正确清理自己的 5 个监听器，WindowManager 此前遗漏
     ipcMain.removeAllListeners(IPC_CHANNELS.WINDOW_MINIMIZE);
     ipcMain.removeAllListeners(IPC_CHANNELS.WINDOW_MAXIMIZE);

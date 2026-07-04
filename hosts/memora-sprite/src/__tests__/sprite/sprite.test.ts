@@ -18,7 +18,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_SPRITE_CONFIG, saveSpriteConfig } from '../../sprite/spriteConfig.js';
 import type { SpriteConfig } from '../../sprite/spriteConfig.js';
-// GAP-6：回收站自动清理测试需要 MS_PER_DAY 计算 30 天阈值
+// 回收站自动清理测试需要 MS_PER_DAY 计算 30 天阈值
 import { MS_PER_DAY } from '../../sprite/constants.js';
 // presence 相关 mock 类型（避免内联 import() 类型注解，符合 consistent-type-imports 规则）
 import type { PresenceController, IPowerMonitor, IApp } from '../../sprite/controllers/presenceController.js';
@@ -68,7 +68,7 @@ const mockAgent = {
     suggest: vi.fn().mockReturnValue([]),
     // Phase 2.1：情感基调推导需要 list 方法获取所有记忆
     list: vi.fn().mockReturnValue([]),
-    // GAP-6：回收站自动清理定时器调用 purgeExpired
+    // 回收站自动清理定时器调用 purgeExpired
     purgeExpired: vi.fn().mockReturnValue(0),
     listDeleted: vi.fn().mockReturnValue([]),
     // B1：dashboard() 调用 getAllRelations 统计冲突关系数
@@ -115,7 +115,7 @@ describe('Sprite', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('GAP-6 start 时调用 purgeExpiredMemories 清理过期记忆（启动即清理）', () => {
+  it('start 时调用 purgeExpiredMemories 清理过期记忆（启动即清理）', () => {
     const tmpDir = createTmpDir();
     // 清理前置测试累积的调用计数（mockAgent 为模块级共享）
     vi.mocked(mockAgent.memory.purgeExpired).mockClear();
@@ -132,7 +132,7 @@ describe('Sprite', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('GAP-6 recycleBinRetentionDays=0 时禁用自动清理（不调用 purgeExpired）', () => {
+  it('recycleBinRetentionDays=0 时禁用自动清理（不调用 purgeExpired）', () => {
     const tmpDir = createTmpDir();
     // 通过 updateConfigBatch 设置 retentionDays=0
     const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
@@ -145,7 +145,7 @@ describe('Sprite', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('GAP-6 stop 后定时器被清理（reinitAgent 安全）', () => {
+  it('stop 后定时器被清理（reinitAgent 安全）', () => {
     const tmpDir = createTmpDir();
     const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
@@ -892,7 +892,7 @@ describe('Sprite 触发器主路径（B1：handleTrigger + generateSmartSuggesti
 // ─── B2：Agent 事件转发补测（6 个未测事件） ──────────────
 //
 // 测试目标：覆盖 subscribeAgentEvents 中 6 个未测事件的转发链路：
-//   - conflictDetected → conflictDetected（GAP-4 关键功能，不经过 ProactiveEngine）
+//   - conflictDetected → conflictDetected（关键功能，不经过 ProactiveEngine）
 //   - projectSwitched → projectSwitched（FD-04 专注模式 UI 通知）
 //   - skillMatched → skillMatched（技能匹配提示）
 //   - memoryRecalled → memoryRecalled（记忆召回提示）
@@ -923,7 +923,7 @@ describe('Sprite Agent 事件转发（B2：6 个未测事件）', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('conflictDetected 事件应直接转发（GAP-4：不经过 ProactiveEngine）', () => {
+  it('conflictDetected 事件应直接转发（不经过 ProactiveEngine）', () => {
     const conflictEvents: Array<{
       newMemoryId: string; newInsight: string; targetId: string; targetContent: string;
     }> = [];
@@ -1161,7 +1161,7 @@ describe('Sprite 感知面板 + 用户反馈（B3：getPerceptionSnapshot / reco
 //   - setPresenceController：注入 PresenceController，running=true 时自动 start
 //   - bindPresence：便捷方法，内部创建 PresenceController 并注入
 //     · presenceChanged 事件能正常发射（powerMonitor → sprite 事件转发）
-//     · sprite.stop() 后 presenceController.stop() 被调用（防泄漏，QC-SPRITE-01）
+//     · sprite.stop() 后 presenceController.stop() 被调用（防泄漏）
 //   - applyProjectMode（通过 updateConfigBatch 间接触发）：
 //     · projectMode='focus' + focusProjectPath 非空 → 调用 agent.switchProject
 //     · projectMode='focus' + focusProjectPath 为空 → 不调用（仅 warn）
@@ -1245,7 +1245,7 @@ describe('Sprite 在场状态 + 项目模式（B4：setPresenceController / bind
     sprite.bindPresence(mockPowerMonitor, mockApp);
     sprite.stop();
 
-    // stop 后应调用 removeListener 取消注册（QC-SPRITE-01 防泄漏）
+    // stop 后应调用 removeListener 取消注册（防泄漏）
     // powerMonitor 注册了 4 个事件（lock-screen/suspend/unlock-screen/resume），stop 时全部取消
     expect(mockPowerMonitor.removeListener).toHaveBeenCalled();
     expect(mockApp.removeListener).toHaveBeenCalled();

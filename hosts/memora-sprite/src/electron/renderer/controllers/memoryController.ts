@@ -122,13 +122,13 @@ export function createMemoryController(uiManager: UIManager) {
       } else if (action === 'health') {
         await loadHealthDashboard();
       } else if (action === 'recycle-bin') {
-        // GAP-6：打开回收站弹窗并加载列表
+        // 打开回收站弹窗并加载列表
         await loadRecycleBinList();
         uiManager.showModal('recycle-bin-modal');
       }
     });
 
-    // ─── GAP-6 回收站操作回调：恢复 / 彻底删除 ─────────────
+    // ─── 回收站操作回调：恢复 / 彻底删除 ─────────────
     uiManager.onRecycleBinAction(async (recycleAction, id) => {
       if (recycleAction === 'restore') {
         // 恢复操作：二次确认（避免误点击）
@@ -298,7 +298,7 @@ export function createMemoryController(uiManager: UIManager) {
       // 删除是不可恢复操作，需防重复点击（与 onMemoryAdd/onMemoryEdit 一致）
       setButtonLoading('btn-memory-delete', true, '删除中...');
       try {
-        // GAP-6：deleteMemory 现为软删除（移入回收站），检查返回值避免假成功
+        // deleteMemory 现为软删除（移入回收站），检查返回值避免假成功
         const result = await window.electronAPI.deleteMemory(id);
         if (!result.deleted) {
           // 主进程返回 deleted=false（如 ID 不存在或已软删除），提示用户
@@ -307,7 +307,7 @@ export function createMemoryController(uiManager: UIManager) {
         }
         uiManager.hideModal('memory-detail-modal');
         await loadMemoryList();
-        // IX-06 操作反馈走 toast（GAP-6：措辞调整为"已移入回收站"，体现软删除语义）
+        // 操作反馈走 toast（措辞调整为"已移入回收站"，体现软删除语义）
         uiManager.showToast('记忆已移入回收站', 'success');
       } catch (error) {
         handleIpcError('onMemoryDelete', error, '删除记忆失败');
@@ -523,7 +523,7 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
-   * GAP-6 加载回收站列表
+   * 加载回收站列表
    *
    * 调用 listDeletedMemories IPC 获取软删除记忆，委托 PanelManager 渲染。
    * 失败时显示 toast 错误提示（回收站弹窗内不显示错误态，避免弹窗闪烁）。
@@ -563,13 +563,13 @@ export function createMemoryController(uiManager: UIManager) {
       // 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
       uiManager.renderDashboardStats(data);
 
-      // OBS-01 Agent 运行时指标渲染（消费内核 agent.getMetrics()）
+      // Agent 运行时指标渲染（消费内核 agent.getMetrics()）
       uiManager.renderAgentMetrics(data.metrics);
 
       // 缺口 E：记忆源健康诊断渲染（消费内核 sourceHealth()，展示每个 source 的质量维度）
       uiManager.renderSourceHealth(data.sourceHealth);
 
-      // GAP-1 已加载技能列表渲染（消费内核 agent.skills.list）
+      // 已加载技能列表渲染（消费内核 agent.skills.list）
       uiManager.renderSkills(data.skills);
 
       // 里程碑成就展示（从仪表盘数据实时推导）

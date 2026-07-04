@@ -14,7 +14,7 @@ import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
 // P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from '../sprite/errors.js';
 
-/** 建表 SQL（GAP-6：新增 deleted_at 列支持软删除） */
+/** 建表 SQL（含 deleted_at 列支持软删除） */
 const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS memories (
   id         TEXT PRIMARY KEY,
@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_memories_score ON memories(score DESC);
  * 旧版 schema 可能只有 id/content 等少量列，逐个 ALTER TABLE ADD COLUMN
  * 需要多轮迭代。直接建新表、拷数据、删旧表、重命名，可一次性对齐 schema。
  * 默认值：source='unknown'（来源不可考），score=0.5，createdAt/accessedAt 为当前时间。
- * GAP-6：新增 deleted_at 列（默认 NULL，表示活跃记忆）。
+ * 新增 deleted_at 列（默认 NULL，表示活跃记忆）。
  */
 const REBUILD_TABLE_SQL = `
 BEGIN TRANSACTION;
@@ -83,7 +83,7 @@ export class SqliteStorage implements IMemoryStorage {
    *
    * 通过 PRAGMA table_info 检测列是否存在，若核心列缺失则重建表一次性对齐 schema。
    * 旧数据仅保留 id/content，其余字段使用默认值填充。
-   * GAP-6：若仅缺失 deleted_at 列，使用轻量 ALTER TABLE ADD COLUMN 避免全表重建。
+   * 若仅缺失 deleted_at 列，使用轻量 ALTER TABLE ADD COLUMN 避免全表重建。
    *
    * @private
    */
@@ -104,15 +104,15 @@ export class SqliteStorage implements IMemoryStorage {
       return;
     }
 
-    // GAP-6：若核心列齐全但缺失 deleted_at，轻量 ALTER TABLE 补齐
+    // 若核心列齐全但缺失 deleted_at，轻量 ALTER TABLE 补齐
     if (!existingColumns.has('deleted_at')) {
-      logger.warn('[SqliteStorage] 补齐 deleted_at 列（GAP-6 软删除支持）');
+      logger.warn('[SqliteStorage] 补齐 deleted_at 列（软删除支持）');
       this.db.exec('ALTER TABLE memories ADD COLUMN deleted_at TEXT');
     }
   }
 
   /**
-   * 插入或更新记忆（IMemoryStorage 接口实现，GAP-6：含 deletedAt 字段）
+   * 插入或更新记忆（IMemoryStorage 接口实现，含 deletedAt 字段）
    *
    * 写入前校验 source 合法性，被阻止的 source 抛出异常。
    * deletedAt 为 undefined 时写入 NULL（活跃态），为 ISO 8601 字符串时写入对应值（软删除态）。
@@ -143,7 +143,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 软删除记忆（GAP-6：UPDATE deleted_at，不物理删除）
+   * 软删除记忆（UPDATE deleted_at，不物理删除）
    *
    * 对已软删除或不存在记忆为 no-op。
    *
@@ -157,7 +157,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 恢复软删除的记忆（GAP-6：清除 deleted_at）
+   * 恢复软删除的记忆（清除 deleted_at）
    *
    * 对活跃记忆或不存在记忆为 no-op。
    *
@@ -171,7 +171,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 物理删除记忆（GAP-6：DELETE FROM，不可恢复）
+   * 物理删除记忆（DELETE FROM，不可恢复）
    *
    * 用于回收站的"彻底删除"操作，或测试环境的强制清理。
    *
@@ -182,7 +182,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 列出回收站中的软删除记忆（GAP-6）
+   * 列出回收站中的软删除记忆
    *
    * 按 deleted_at 降序排列（最近删除的在前），便于回收站 UI 展示。
    *
@@ -213,7 +213,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 清理过期的软删除记忆（GAP-6）
+   * 清理过期的软删除记忆
    *
    * 物理删除所有 deleted_at 早于 before 的记忆。
    *
@@ -228,7 +228,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 按 ID 获取单条活跃记忆（GAP-6：已软删除的返回 null）
+   * 按 ID 获取单条活跃记忆（已软删除的返回 null）
    *
    * @param id 记忆唯一标识
    * @returns 记忆对象，不存在或已软删除时返回 null
@@ -241,7 +241,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 按 source 获取活跃记忆列表（GAP-6：过滤已软删除的）
+   * 按 source 获取活跃记忆列表（过滤已软删除的）
    *
    * @param source 记忆来源标识
    * @returns 按权重降序排列的活跃记忆列表
@@ -254,7 +254,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 关键词搜索活跃记忆（GAP-6：过滤已软删除的）
+   * 关键词搜索活跃记忆（过滤已软删除的）
    *
    * 使用 LIKE 关键词匹配，与 InMemoryStorage 行为一致。
    * 空查询返回按权重降序的全部活跃记忆。
@@ -283,7 +283,7 @@ export class SqliteStorage implements IMemoryStorage {
       return rows.map(r => this.rowToMemory(r));
     }
 
-    // LIKE 关键词匹配：任一 token 命中即可（GAP-6：附加 deleted_at IS NULL 过滤）
+    // LIKE 关键词匹配：任一 token 命中即可（附加 deleted_at IS NULL 过滤）
     // 安全说明：conditions 数组只包含硬编码的 '(content LIKE ? OR name LIKE ?)' 模板，
     // 用户输入通过 ? 占位符参数化传入，不存在 SQL 注入风险。
     // 如需修改 conditions 模板，务必保持参数化查询，禁止拼接用户输入。
@@ -304,7 +304,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 活跃记忆总数（GAP-6：不含已软删除的）
+   * 活跃记忆总数（不含已软删除的）
    *
    * @returns 数据库中活跃记忆总数
    */
@@ -314,7 +314,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 按 source 统计活跃记忆数（GAP-6：不含已软删除的）
+   * 按 source 统计活跃记忆数（不含已软删除的）
    *
    * @param source 记忆来源标识
    * @returns 该 source 下的活跃记忆总数
@@ -327,7 +327,7 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 衰减活跃记忆 score（GAP-6：跳过已软删除的）
+   * 衰减活跃记忆 score（跳过已软删除的）
    *
    * 衰减公式与 InMemoryStorage 对齐：
    * daysSinceAccess > 7 时，score -= 0.02 * floor(daysSinceAccess / 7)，下限 0.1。
@@ -343,7 +343,7 @@ export class SqliteStorage implements IMemoryStorage {
     // 衰减公式与 InMemoryStorage 对齐：
     //   daysSinceAccess > 7 时，score -= 0.02 * floor(daysSinceAccess / 7)
     //   score 下限 0.1
-    // GAP-6：附加 deleted_at IS NULL 过滤，跳过软删除记忆
+    // 附加 deleted_at IS NULL 过滤，跳过软删除记忆
     const sql = `
       UPDATE memories
       SET score = MAX(0.1, score - 0.02 * CAST((julianday(?) - julianday(accessedAt)) / 7 AS INTEGER))
@@ -357,9 +357,9 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   /**
-   * 获取所有 source 标签及其活跃记忆数量（GAP-6：不含已软删除的）
+   * 获取所有 source 标签及其活跃记忆数量（不含已软删除的）
    *
-   * P2-2 优化：使用 SQL GROUP BY 一次查询获取所有 source 分布，
+   * 使用 SQL GROUP BY 一次查询获取所有 source 分布，
    * 替代 stats()/sourceHealth() 中的多次 countBySource + 全量 search。
    *
    * @returns source 标签到数量的映射
@@ -399,13 +399,13 @@ export class SqliteStorage implements IMemoryStorage {
       createdAt: row.createdAt,
       accessedAt: row.accessedAt,
       score: row.score,
-      // GAP-6：deleted_at 为 NULL 时映射为 undefined（活跃态），非 NULL 时为 ISO 8601 字符串（软删除态）
+      // deleted_at 为 NULL 时映射为 undefined（活跃态），非 NULL 时为 ISO 8601 字符串（软删除态）
       deletedAt: row.deleted_at ?? undefined,
     };
   }
 }
 
-/** 数据库行类型（GAP-6：含 deleted_at 列） */
+/** 数据库行类型（含 deleted_at 列） */
 interface MemoryRow {
   id: string;
   content: string;

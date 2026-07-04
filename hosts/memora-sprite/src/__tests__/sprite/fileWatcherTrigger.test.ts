@@ -1,4 +1,4 @@
-﻿/**
+/**
  * FileWatcherTrigger 单元测试
  *
  * 覆盖范围：
@@ -9,7 +9,7 @@
  * - stop 停止监听：watcher.close + clearSafeTimeout / callback 置 null
  * - createWatcher 回调：filename null 静默 / 忽略模式静默 / 正常触发 debouncedEmit
  * - debouncedEmit 防抖：首次注册 + 参数格式 / 同文件去重 / 不同文件独立
- * - error 事件处理（P1-6）：logger.error + 不抛未捕获异常 + on('error') 注册
+ * - error 事件处理：logger.error + 不抛未捕获异常 + on('error') 注册
  *
  * 测试策略（对齐 triggers.test.ts / errorHandler.test.ts 范式）：
  * - mock node:fs 的 watch（vi.hoisted 持有 calls 数组，便于捕获回调与 watcher）
@@ -518,9 +518,9 @@ describe('FileWatcherTrigger', () => {
     });
   });
 
-  // ─── 8. error 事件处理（P1-6）（1） ─────────────────
+  // ─── 8. error 事件处理（1） ─────────────────
 
-  describe('error 事件处理（P1-6）', () => {
+  describe('error 事件处理', () => {
     it("watcher.on('error') 已注册；触发 error 时 logger.error 记录且不抛未捕获异常", () => {
       const trigger = createTrigger();
       const call = startAndCapture(trigger, vi.fn());
@@ -536,7 +536,7 @@ describe('FileWatcherTrigger', () => {
       const errorHandler = onErrorCall[1];
 
       const boom = new Error('监听目录被删除');
-      // 不应抛出未捕获异常（P1-6 修复的核心目标）
+      // 不应抛出未捕获异常（修复的核心目标）
       expect(() => errorHandler(boom)).not.toThrow();
       expect(logger.error).toHaveBeenCalledWith(
         expect.objectContaining({ err: expect.any(Error), watchPath: ALLOWED_ROOT }),

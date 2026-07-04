@@ -28,7 +28,7 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  /* UI-P3-04 改用 border-left 实现左侧色条：
+  /* 改用 border-left 实现左侧色条：
    * - 与 tool-call 卡片设计语言一致（chat.css 用 border-left）
    * 高 DPI 屏幕下更清晰（inset box-shadow 可能模糊）
    * 左侧 3px 色条 + 其他三边 1px 边框，形成视觉强调
@@ -59,7 +59,7 @@
   word-break: break-word;
 }
 
-/* UX-PP-03 Toast 内容体：文本 + 重试按钮横向排列 */
+/* Toast 内容体：文本 + 重试按钮横向排列 */
 .toast-body {
   display: flex;
   flex-direction: column;
@@ -67,7 +67,7 @@
   flex: 1;
 }
 
-/* UX-PP-03 重试按钮：小号胶囊，accent 色调 */
+/* 重试按钮：小号胶囊，accent 色调 */
 .toast-retry {
   align-self: flex-start;
   padding: 2px 10px;

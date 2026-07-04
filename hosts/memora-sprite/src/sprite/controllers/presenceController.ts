@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 在场状态控制器 — 用户离开/回来检测
  *
  * 职责（Phase 3.2 第一批）：
@@ -27,7 +27,7 @@ import type { ProactiveEngine } from './proactiveEngine.js';
  * Electron 的 PowerMonitor 模块自动满足此接口（结构子类型）。
  * 测试时可注入 mock 实现而无需引入 electron。
  *
- * QC-SPRITE-01 修复：新增 removeListener 方法，支持 stop() 时取消注册，
+ * 新增 removeListener 方法，支持 stop() 时取消注册，
  * 防止 reinitAgent 后旧 PresenceController 监听器泄漏。
  */
 export interface IPowerMonitor {
@@ -39,7 +39,7 @@ export interface IPowerMonitor {
   on(event: 'unlock-screen', listener: () => void): void;
   /** 系统从挂起恢复时触发 */
   on(event: 'resume', listener: () => void): void;
-  /** 取消注册事件监听器（QC-SPRITE-01） */
+  /** 取消注册事件监听器 */
   removeListener(event: 'lock-screen' | 'suspend' | 'unlock-screen' | 'resume', listener: () => void): void;
 }
 
@@ -49,14 +49,14 @@ export interface IPowerMonitor {
  * Electron 的 App 模块自动满足此接口（结构子类型）。
  * 测试时可注入 mock 实现而无需引入 electron。
  *
- * QC-SPRITE-01 修复：新增 removeListener 方法，支持 stop() 时取消注册。
+ * 新增 removeListener 方法，支持 stop() 时取消注册。
  */
 export interface IApp {
   /** 浏览器窗口失焦时触发 */
   on(event: 'browser-window-blur', listener: () => void): void;
   /** 浏览器窗口聚焦时触发 */
   on(event: 'browser-window-focus', listener: () => void): void;
-  /** 取消注册事件监听器（QC-SPRITE-01） */
+  /** 取消注册事件监听器 */
   removeListener(event: 'browser-window-blur' | 'browser-window-focus', listener: () => void): void;
 }
 
@@ -80,7 +80,7 @@ export interface PresenceControllerOptions {
   /**
    * ProactiveEngine 引用（用户回来时触发 checkPending）
    *
-   * QC-SPRITE-LINT 修复：类型从 ProactiveEngine 收窄为 Pick<'checkPending'>，
+   * 类型从 ProactiveEngine 收窄为 Pick<'checkPending'>，
    * 应用接口隔离原则——PresenceController 仅依赖 checkPending 方法，
    * 测试可注入仅含 checkPending 的 mock 而无需 as any 断言。
    */
@@ -109,7 +109,7 @@ export class PresenceController {
   /** 是否已启动（避免重复注册事件） */
   private started = false;
 
-  // ── QC-SPRITE-01：保存监听器引用，stop() 时可取消注册 ──
+  // ── 保存监听器引用，stop() 时可取消注册 ──
   /** lock-screen 监听器引用 */
   private lockScreenHandler: (() => void) | null = null;
   /** suspend 监听器引用 */
@@ -169,7 +169,7 @@ export class PresenceController {
   }
 
   /**
-   * 停止在场状态监听（QC-SPRITE-01 修复）
+   * 停止在场状态监听
    *
    * 取消注册所有事件监听器，防止 reinitAgent 后旧实例泄漏。
    * 幂等保护：未启动时调用无副作用。
@@ -263,7 +263,7 @@ export class PresenceController {
     // 幂等保护：已在场则不重复触发
     if (this.state === 'present') return;
 
-    // QC-SPRITE-06：单次 Date.now() 调用，避免两次调用间毫秒级差异导致 awayDurationMs 与 timestamp 不一致
+    // 单次 Date.now() 调用，避免两次调用间毫秒级差异导致 awayDurationMs 与 timestamp 不一致
     const now = Date.now();
     const awayDurationMs = this.awaySince ? now - this.awaySince : 0;
 

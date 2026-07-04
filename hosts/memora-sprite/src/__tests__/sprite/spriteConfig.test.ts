@@ -132,7 +132,6 @@ describe('spriteConfig', () => {
 
     it('CONFIG_FIELD_SCHEMA 包含所有 22 个字段的类型映射', () => {
       const keys = Object.keys(CONFIG_FIELD_SCHEMA); // 全部字段名
-      // GAP-6：新增 recycleBinRetentionDays，字段数 21 → 22
       expect(keys).toHaveLength(22);
       // 逐一验证关键类型映射存在
       expect(CONFIG_FIELD_SCHEMA.configVersion).toBe('number');
@@ -273,9 +272,9 @@ describe('spriteConfig', () => {
         expect(config.windowBounds).toEqual({ x: 0, y: 0, width: 800, height: 600 });
       });
 
-      it('windowBounds 设为 null（清除窗口边界，P1-5 修复）→ 返回 true + config.windowBounds = null', () => {
+      it('windowBounds 设为 null（清除窗口边界）→ 返回 true + config.windowBounds = null', () => {
         const config = makeConfig();
-        // 先设为有效边界，再清除为 null，验证 P1-5 修复允许 null 值
+        // 先设为有效边界，再清除为 null，验证允许 null 值
         config.windowBounds = { x: 0, y: 0, width: 800, height: 600 };
         const result = applyConfigField(config, 'windowBounds', null);
         expect(result).toBe(true);

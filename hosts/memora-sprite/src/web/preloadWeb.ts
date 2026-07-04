@@ -1,5 +1,5 @@
 /**
- * Web 版 preload（DWM-01：双模式 Web 调试）
+ * Web 版 preload
  *
  * 实现 ElectronAPI 接口，用 fetch 替代 ipcRenderer.invoke，
  * 用 EventSource 替代 ipcRenderer.on（SSE 流式，Phase 2 完善）。

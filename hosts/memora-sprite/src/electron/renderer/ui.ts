@@ -40,7 +40,7 @@ import type {
   AgentMetrics,
   SourceHealth,
 } from './panels/dashboardPanelManager.js';
-// P2-5：Payload 类型直接从 ipcListeners（IPC 契约真理源）导入，消除中转
+// Payload 类型直接从 ipcListeners（IPC 契约真理源）导入
 import type {
   AffectPayload,
   RapportPayload,
@@ -59,10 +59,10 @@ import { ClipboardManager } from './panels/clipboardManager.js';
 import { DateNavManager } from './panels/dateNavManager.js';
 // C-5-4：技能拖入安装拆分为独立 Manager
 import { SkillDropManager } from './panels/skillDropManager.js';
-// HC-19：感知面板控制器拆分（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击）
+// 感知面板控制器拆分（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击）
 import { PerceptionPanelController } from './panels/perceptionPanelController.js';
 import type { PerceptionPanelHost } from './panels/perceptionPanelController.js';
-// QC-R2-05：输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
+// 输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
 // 精灵公共常量（Toast 时长已迁移至各 Manager；UIManager 不再直接使用时长常量）
@@ -196,47 +196,39 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /**
    * C-2：快捷命令面板管理器（Ctrl+K）
    *
-   * 原先在 renderer.ts 中 new + init，未纳入 UIManager 持有，cleanup() 不会
-   * 清理其全局 keydown 监听器，页面重新加载后监听器累积导致 Ctrl+K 触发多次。
-   * 纳入组合体系后，与其他 14 个子管理器同模式：构造函数创建、cleanup 统一清理。
+   * 纳入 UIManager 组合体系，与其他子管理器同模式：
+   * 构造函数创建、cleanup() 统一清理全局 keydown 监听器（避免页面重载后累积）。
    */
   private commandPaletteManager: CommandPaletteManager;
   /**
    * C-5：面板错误横幅管理器
    *
-   * 从 UIManager 拆分，统一管理 settings / memory / chat 三个面板的错误横幅。
-   * 原先 panelErrorRetryCallbacks Map + initPanelErrorRetryButtons + show/hide 方法
-   * 都内联在 UIManager 中（约 70 行），拆分后 UIManager 仅保留薄委托。
+   * 统一管理 settings / memory / chat 三个面板的错误横幅。
+   * UIManager 仅保留薄委托。
    */
   private panelErrorBannerManager: PanelErrorBannerManager;
   /**
    * C-5-2：剪贴板三重保护面板管理器
    *
-   * 从 UIManager 拆分，统一管理"剪贴板三重保护"的 UI 联动。
-   * 原先 showClipboardChangedToast + showClipboardConfirmDialog 两个方法
-   * 内联在 UIManager 中（约 61 行），拆分后 UIManager 仅保留薄委托。
+   * 统一管理"剪贴板三重保护"的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager / ModalManager 实例，与 UIManager 共享同一引用。
    */
   private clipboardManager: ClipboardManager;
   /**
    * C-5-3：日期导航面板管理器
    *
-   * 从 UIManager 拆分，统一管理"日期导航"功能的 UI 联动。
-   * 原先 dateNavJumpCallback/dateNavLoadCallback 字段 + 5 个方法 + 3 个事件监听器
-   * 内联在 UIManager 中（约 99 行），拆分后 UIManager 仅保留薄委托。
+   * 统一管理"日期导航"功能的 UI 联动。UIManager 仅保留薄委托。
    * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
    */
   private dateNavManager: DateNavManager;
   /**
    * C-5-4：技能拖入安装面板管理器
    *
-   * 从 UIManager 拆分，统一管理"技能文件拖入安装"功能的 UI 联动。
-   * 原先 skillInstalledCallback 字段 + 3 个公共方法 + 3 个私有方法
-   * 内联在 UIManager 中（约 150 行），拆分后 UIManager 仅保留薄委托。
+   * 统一管理"技能文件拖入安装"功能的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
    */
   private skillDropManager: SkillDropManager;
-  /** HC-19：感知面板控制器（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击） */
+  /** 感知面板控制器（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击） */
   private perceptionPanelController: PerceptionPanelController;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
@@ -251,14 +243,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private badge: HTMLElement | null;
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
-  /** QC-R2-05：输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver，从 UIManager 拆分） */
+  /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver） */
   private inputAreaManager: InputAreaManager;
 
   private state: UIState = {
     currentPanel: 'chat',
     unreadCount: 0,
     isStreaming: false,
-    // UX-P2-03 初始为 false，onAgentReady 回调中置 true
+    // 初始为 false，onAgentReady 回调中置 true
     isAgentReady: false,
   };
 
@@ -271,7 +263,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // C-5：panelErrorRetryCallbacks 已移至 PanelErrorBannerManager
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
-  /** 非系统消息计数（显示在对话工具栏副标题，P2-009：移至 state 字段区） */
+  /** 非系统消息计数（显示在对话工具栏副标题） */
   private messageCount = 0;
 
   constructor() {
@@ -348,9 +340,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager = new DateNavManager();
     // C-5-4：技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
-    // HC-19：感知面板控制器（依赖注入 Host 接口，init 在事件绑定后调用）
+    // 感知面板控制器（依赖注入 Host 接口，init 在事件绑定后调用）
     this.perceptionPanelController = new PerceptionPanelController(this);
-    // QC-R2-05：输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
+    // 输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
     this.inputAreaManager = new InputAreaManager(
       this.inputEl,
       this.btnSend,
@@ -369,15 +361,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.panelErrorBannerManager.init();
     // C-5-3：日期导航事件初始化（委托到 DateNavManager）
     this.dateNavManager.init();
-    // HC-19：感知面板事件初始化（委托到 PerceptionPanelController）
+    // 感知面板事件初始化（委托到 PerceptionPanelController）
     this.perceptionPanelController.init();
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
     this.chatPanel.initScrollToBottomButton();
     this.initScrollListener();
-    // QC-R2-05：输入区域事件 + ResizeObserver 初始化（委托到 InputAreaManager）
-    // 替代原 initInputAreaResizeObserver + 输入框事件绑定
+    // 输入区域事件 + ResizeObserver 初始化（委托到 InputAreaManager）
     this.inputAreaManager.init();
   }
 
@@ -385,11 +376,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   /** 初始化事件监听器 */
   private initEventListeners(): void {
-    // QC-R2-05：输入框 keydown/input + 发送按钮 click 事件已委托到 InputAreaManager.init()
+    // 输入框 keydown/input + 发送按钮 click 事件已委托到 InputAreaManager.init()
     // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
 
-    // HC-19：感知面板相关事件（推荐记忆点击 + 状态条 + 关闭按钮 + 三块折叠区）
+    // 感知面板相关事件（推荐记忆点击 + 状态条 + 关闭按钮 + 三块折叠区）
     // 已委托到 PerceptionPanelController.init()
 
     // 导航事件（侧边栏 .nav-btn 按钮，复用 switchPanel 逻辑）
@@ -524,7 +515,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   cleanup(): void {
     // 清理所有事件监听器（通过 EventTracker 统一管理）
     this.events.cleanup();
-    // QC-R2-05：输入区域管理器清理（ResizeObserver + 事件监听器，委托到 InputAreaManager）
+    // 输入区域管理器清理（ResizeObserver + 事件监听器，委托到 InputAreaManager）
     this.inputAreaManager.cleanup();
     // 委托子模块清理各自的资源（Toast 定时器、Modal 监听器、ProactiveBanner 监听器、SettingsPanel 监听器）
     this.toastManager.cleanup();
@@ -550,9 +541,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager.cleanup();
     // C-5-4：清理技能拖入安装管理器的回调引用
     this.skillDropManager.cleanup();
-    // HC-19：清理感知面板控制器的事件监听器
+    // 清理感知面板控制器的事件监听器
     this.perceptionPanelController.cleanup();
-    // P2-6 清理 ThemeManager 的系统主题变化监听器
+    // 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
   }
 
@@ -588,7 +579,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   setMemoryRecall(messageId: string, memories: Array<{ id: string; name: string; score: number; source: string }>): void { this.chatPanel.setMemoryRecall(messageId, memories); }
   /** 显示思考阶段指示器（委托到 ChatPanelManager） */
   showThinkingPhase(messageId: string, phase: string): void { this.chatPanel.showThinkingPhase(messageId, phase); }
-  /** OBS-02 显示上下文截断提示条 */
+  /** 显示上下文截断提示条 */
   showTruncationNotice(messageId: string, count: number): void { this.chatPanel.showTruncationNotice(messageId, count); }
   /** 显示工具调用开始卡片（委托到 ChatPanelManager） */
   showToolStart(messageId: string, toolCallId: string, name: string, args?: string): void { this.chatPanel.showToolStart(messageId, toolCallId, name, args); }
@@ -763,7 +754,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.panelSwitchCallback?.(panel);
   }
 
-  // ─── 输入处理（QC-R2-05：委托到 InputAreaManager） ────
+  // ─── 输入处理（委托到 InputAreaManager） ────
 
   /**
    * 获取并清理用户输入（委托到 InputAreaManager）
@@ -834,7 +825,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     });
   }
 
-  // ─── 事件处理器（QC-R2-05：输入框事件已迁移到 InputAreaManager） ─
+  // ─── 事件处理器 ─
 
   /**
    * 侧边栏导航按钮点击处理器
@@ -856,7 +847,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     }
   }
 
-  // HC-19：togglePerceptionPanel / closePerceptionPanel 已迁移至 PerceptionPanelController
+  // togglePerceptionPanel / closePerceptionPanel 已迁移至 PerceptionPanelController
 
   private handleMinimize(): void {
     window.electronAPI.windowMinimize();
@@ -1099,7 +1090,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitSendMessage() 调用）
   emitSendMessage(): void {
-    // UX-P2-03 Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败）
+    // Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败）
     if (!this.state.isAgentReady) {
       this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
       return;
@@ -1137,7 +1128,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       // 恢复发送图标（防御性：避免被其他逻辑污染）
       this.btnSend.innerHTML = '<svg class="icon"><use href="#icon-send"/></svg>';
       this.btnSend.title = '发送（Enter）';
-      // QC-R2-05：委托到 InputAreaManager 刷新发送按钮状态（空态弱化）
+      // 委托到 InputAreaManager 刷新发送按钮状态（空态弱化）
       this.inputAreaManager.refreshSendButtonState();
     }
   }
@@ -1171,7 +1162,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * UX-P2-03 设置 Agent 就绪状态
+   * 设置 Agent 就绪状态
    *
    * 由 renderer.ts 在 onAgentReady 回调中调用，
    * 设置为 true 后用户才能发送消息。
@@ -1202,9 +1193,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /**
    * C-8：获取当前记忆搜索参数
    *
-   * 原先 memoryController.getSearchParams 直接访问 4 个 DOM 元素，
-   * 违反"控制器不直接访问 DOM"的分层原则。改为通过 UIManager 门面读取，
-   * 控制器层不再耦合具体 DOM 结构。
+   * 通过 UIManager 门面读取，避免控制器直接访问 DOM（分层原则）。
    * DOM 元素缺失时返回默认值，兼容测试环境。
    */
   getMemorySearchParams(): { query: string; source: string; sort: string; timeRange: string } {
@@ -1300,9 +1289,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   clearGraphHighlights(): void { this.memoryPanel.clearGraphHighlights(); }
   /** 注册更多菜单项点击回调（委托到 MemoryPanelManager） */
   onMoreMenuAction(cb: (action: string) => void): void { this.memoryPanel.onMoreMenuAction(cb); }
-  /** GAP-6 注册回收站操作回调（恢复/彻底删除，委托到 MemoryPanelManager） */
+  /** 注册回收站操作回调（恢复/彻底删除，委托到 MemoryPanelManager） */
   onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void { this.memoryPanel.onRecycleBinAction(cb); }
-  /** GAP-6 渲染回收站列表（委托到 MemoryPanelManager） */
+  /** 渲染回收站列表（委托到 MemoryPanelManager） */
   renderRecycleBinList(memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void { this.memoryPanel.renderRecycleBinList(memories); }
   /** 注册排序变更回调（委托到 MemoryPanelManager） */
   onSortChange(cb: () => void): void { this.memoryPanel.onSortChange(cb); }
@@ -1747,7 +1736,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * @param text 预填的文本内容
    */
   prefillChatInput(text: string): void {
-    // QC-R2-05：委托到 InputAreaManager（设置值 + 触发 input 事件调整高度）
+    // 委托到 InputAreaManager（设置值 + 触发 input 事件调整高度）
     this.inputAreaManager.setValue(text);
   }
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 二态窗口状态管理器
  *
  * 状态：tray（托盘态）/ full（完整态）
@@ -78,10 +78,8 @@ export class WindowStateManager {
    *
    * 仅管理二态切换。float 的显示/隐藏由 setShowFloatBubble 控制。
    *
-   * QC-WIN-02 修复：原声明为 `async transition(): Promise<void>` 但函数体无 await，
-   * 属于"类型欺诈"——所有调用方被迫无意义 await 或忽略 Promise。
-   * 改为同步方法，调用方无需 await。内部 hideCurrentWindow/showTargetWindow/persistState
-   * 均为同步操作（BrowserWindow.show/hide 是同步的，持久化回调也是同步的）。
+   * 同步方法：内部 hideCurrentWindow/showTargetWindow/persistState 均为同步操作
+   * （BrowserWindow.show/hide 是同步的，持久化回调也是同步的），调用方无需 await。
    */
   transition(target: WindowState): void {
     if (this.state === target) return;
@@ -101,7 +99,7 @@ export class WindowStateManager {
    * 与 transition 的区别：不隐藏其他窗口（创建后均为 hidden），
    * 仅根据当前 state 和 showFloatBubble 显示对应窗口。
    *
-   * QC-WIN-07 修复：添加 isDestroyed 守卫，对齐 transition 的 showTargetWindow 守卫模式。
+   * 添加 isDestroyed 守卫，对齐 transition 的 showTargetWindow 守卫模式。
    */
   showInitial(): void {
     if (this.state === 'full' && this.fullWindow && !this.fullWindow.isDestroyed()) {
@@ -200,12 +198,12 @@ export class WindowStateManager {
     return this.state;
   }
 
-  /** 获取浮动窗口尺寸（QC-WIN-04：显式返回类型注解） */
+  /** 获取浮动窗口尺寸（显式返回类型注解） */
   getFloatSize(): { width: number; height: number } {
     return this.floatSize;
   }
 
-  /** 获取完整窗口尺寸（QC-WIN-04：显式返回类型注解） */
+  /** 获取完整窗口尺寸（显式返回类型注解） */
   getFullSize(): { width: number; height: number } {
     return this.fullSize;
   }

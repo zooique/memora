@@ -25,7 +25,7 @@
  * 持久化到 sprite.json，支持热更新（不重启应用即可修改快捷键）。
  * accelerators 是 action → accelerator 映射，action 为开放字符串（遵循 ADR-004）。
  *
- * 从 sprite/spriteConfig.ts 迁移到 shared/（HC-02），spriteConfig.ts 重新导出
+ * 从 sprite/spriteConfig.ts 迁移到 shared/，spriteConfig.ts 重新导出
  * 保持向后兼容（shortcuts.ts / configHandlers.ts 等仍从 spriteConfig 导入）。
  */
 export interface ShortcutConfig {
@@ -39,7 +39,7 @@ export interface ShortcutConfig {
  * 默认快捷键配置（单一真理源）
  *
  * 被 DEFAULT_SPRITE_CONFIG.shortcuts 和 settingsController.ts 的 fallback 共同引用，
- * 消除原先两处重复定义的"对齐"注释和静默漂移风险。
+ * 消除两处重复定义的"对齐"注释和静默漂移风险。
  *
  * 包含 3 个默认快捷键：
  * - toggle-window: Ctrl+Shift+Space（切换窗口显示）

@@ -163,7 +163,7 @@ export class ModalManager {
 
       // 设置弹窗内容
       titleEl.textContent = options.title ?? '确认';
-      // P1-4 移除 html 选项，统一走 textContent 或 DOM 节点构建，杜绝 XSS 风险点
+      // 移除 html 选项，统一走 textContent 或 DOM 节点构建，杜绝 XSS 风险点
       messageEl.replaceChildren();
       if (options.messageNodes && options.messageNodes.length > 0) {
         // 调用方通过 createElement + textContent 构建节点，天然防 XSS
@@ -284,7 +284,7 @@ export class ModalManager {
     /** 写入后内容预览（undefined 表示未提供） */
     afterContent?: string;
   }): Promise<boolean> {
-    // P1-4 使用 DOM API 构建富文本消息，所有动态值通过 textContent 设置天然防 XSS
+    // 使用 DOM API 构建富文本消息，所有动态值通过 textContent 设置天然防 XSS
     const container = document.createElement('div');
     container.className = 'write-confirm-info';
 

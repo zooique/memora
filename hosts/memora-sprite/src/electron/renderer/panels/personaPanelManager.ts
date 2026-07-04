@@ -12,8 +12,6 @@
  * - 遵循 SettingsPanelManager / ProfilePanelManager 的组合模式，UIManager 持有实例并委托
  * - 自管理事件监听器，提供 cleanup() 清理
  * - DOM 元素由构造函数注入，不自行查找
- *
- * 提取自 ui.ts（P2-008：ui.ts 体积过大拆分），减少约 220 行。
  */
 
 import { clearElement } from '../helpers/domHelpers.js';

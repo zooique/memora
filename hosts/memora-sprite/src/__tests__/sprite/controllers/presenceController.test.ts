@@ -1,4 +1,4 @@
-﻿/**
+/**
  * PresenceController 单元测试
  *
  * 验证用户离开/回来检测、幂等保护、ProactiveEngine 集成。
@@ -19,7 +19,7 @@ class MockEventEmitter {
     this.listeners.get(event)!.push(listener);
   }
 
-  /** 取消注册事件监听器（QC-SPRITE-01：模拟 Electron removeListener） */
+  /** 取消注册事件监听器（模拟 Electron removeListener） */
   removeListener(event: string, listener: (...args: unknown[]) => void): void {
     const handlers = this.listeners.get(event);
     if (!handlers) return;
@@ -53,7 +53,7 @@ class MockEventEmitter {
 /**
  * Mock PowerMonitor 类型（IPowerMonitor + 测试辅助方法）
  *
- * QC-SPRITE-LINT 修复：工厂返回类型显式标注为 IPowerMonitor + 辅助方法，
+ * 工厂返回类型显式标注为 IPowerMonitor + 辅助方法，
  * 调用处无需 as any 断言。vi.fn() 的 Mock 类型与重载函数签名不完全兼容，
  * 故工厂内部用 as unknown as 集中断言（比散落的 as any 更安全、更清晰）。
  */
@@ -147,7 +147,7 @@ describe('PresenceController', () => {
       expect(mockApp.on).toHaveBeenCalledTimes(2);
     });
 
-    it('stop 后取消注册所有事件监听器（QC-SPRITE-01）', () => {
+    it('stop 后取消注册所有事件监听器（防泄漏）', () => {
       const controller = new PresenceController(
         mockPowerMonitor,
         mockApp,

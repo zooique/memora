@@ -1,5 +1,5 @@
-﻿/**
- * Electron 主进程类型 barrel（S-03 阶段 2）
+/**
+ * Electron 主进程类型 barrel
  *
  * 集中导出 electron 主进程分散在各模块的类型定义，提供统一入口。
  * 消费方可从此 barrel 统一 import 类型，避免从分散文件 import。

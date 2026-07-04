@@ -180,9 +180,9 @@ async function createStorage(dataDir: string): Promise<{
  *   - 部分打包器（webpack）会预加载 native 模块，Node.js 环境下立即报 ABI 错误
  *   - 动态 import 延迟到 Electron 环境实际调用时才加载，确保 Node.js 环境零 native 依赖
  *
- * P1-11：错误处理友好化——包裹 try/catch，抛出带上下文的 MemoraError
+ * 错误处理友好化：包裹 try/catch，抛出带上下文的 MemoraError
  *   - 原始错误信息不含 dbPath、运行时类型，难以定位 ABI 冲突 vs 文件权限 vs 路径无效
- *   - 修复后错误信息包含：dbPath / electron 版本 / node 版本 / 原始错误 message
+ *   - 错误信息包含：dbPath / electron 版本 / node 版本 / 原始错误 message
  *   - ErrorCode.STORAGE_ERROR 与其他存储层错误一致，便于 ErrorHandler 统一分类
  *
  * @param dbPath 数据库文件路径
@@ -197,7 +197,7 @@ async function createBetterSqliteDb(dbPath: string): Promise<ISqliteDatabase> {
     // 使用类型断言将 Database.Database 映射到 ISqliteDatabase 接口
     return new Database(dbPath) as unknown as ISqliteDatabase;
   } catch (err) {
-    // P1-11：包裹结构化上下文，区分 ABI 冲突 / 文件权限 / 路径无效等场景
+    // 包裹结构化上下文，区分 ABI 冲突 / 文件权限 / 路径无效等场景
     // - err.code === 'NODE_MODULE_VERSION' 或类似 → ABI 不匹配（Electron electron-rebuild 失败）
     // - err.code === 'EACCES' / 'EPERM' → 文件权限问题
     // - err.code === 'ENOENT' → 父目录不存在

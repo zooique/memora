@@ -7,8 +7,8 @@
  * - MEMORIES_SHOW：查看记忆详情 + 失败降级 + 输入验证（空/非字符串/超长 ID 拒绝）
  * - MEMORIES_DELETE：删除记忆 + 失败降级 + 输入验证（空/非字符串/超长 ID 拒绝）
  * - MEMORIES_ADD：添加记忆 + 输入验证（超大内容拒绝）+ 失败降级
- * - MEMORIES_ARCHIVE_PROFILE：手动归档个人偏好 + 失败降级 + 输入验证（SEC-P2-01）
- * - MEMORIES_ARCHIVE_INSIGHT：手动归档洞察 + 失败降级 + 输入验证（SEC-P2-01）
+ * - MEMORIES_ARCHIVE_PROFILE：手动归档个人偏好 + 失败降级 + 输入验证
+ * - MEMORIES_ARCHIVE_INSIGHT：手动归档洞察 + 失败降级 + 输入验证
  *
  * Mock 策略：
  * - electron.ipcMain：vi.mock + handleCallbacks Map 捕获注册的回调
@@ -58,7 +58,7 @@ function createMockCtx(overrides?: {
       showMemory: overrides?.showMemory ?? vi.fn(() => null),
       deleteMemory: overrides?.deleteMemory ?? vi.fn(() => false),
       upsertMemory: overrides?.upsertMemory ?? vi.fn(() => 'new-id'),
-      // SEC-P2-01：缺口 J 新增的归档委托方法
+      // 新增的归档委托方法
       archiveProfileFacts: overrides?.archiveProfileFacts ?? vi.fn(async () => []),
       archiveInsight: overrides?.archiveInsight ?? vi.fn(async () => []),
     } as unknown as IpcContext['sprite'],
@@ -357,7 +357,7 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ id: '' });
   });
 
-  // ─── MEMORIES_ARCHIVE_PROFILE（SEC-P2-01：缺口 J 手动归档） ─────
+  // ─── MEMORIES_ARCHIVE_PROFILE（手动归档） ─────
 
   it('MEMORIES_ARCHIVE_PROFILE 合法输入应返回归档条目数', async () => {
     // 模拟内核归档出 3 条 profile 事实
@@ -441,7 +441,7 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ count: 0 });
   });
 
-  // ─── MEMORIES_ARCHIVE_INSIGHT（SEC-P2-01：缺口 J 手动归档） ─────
+  // ─── MEMORIES_ARCHIVE_INSIGHT（手动归档） ─────
 
   it('MEMORIES_ARCHIVE_INSIGHT 合法输入应返回归档条目数', async () => {
     // 模拟内核归档出 2 条洞察记忆

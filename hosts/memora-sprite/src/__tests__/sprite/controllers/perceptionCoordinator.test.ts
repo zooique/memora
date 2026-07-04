@@ -490,7 +490,7 @@ describe('PerceptionCoordinator', () => {
       expect(proactiveEngine.setPatterns).toHaveBeenCalledWith(mockPatterns);
     });
 
-    // BUG-PC-01 已修复：refreshBeforeChat 三个推导步骤独立 try/catch，单点抛错不阻塞其他推导
+    // refreshBeforeChat 三个推导步骤独立 try/catch，单点抛错不阻塞其他推导
     it('deriveAndInjectAffect 抛错时应降级（不抛出，不阻塞里程碑和跨会话上下文）', () => {
       const { coordinator, subControllers, agent } = createCoordinator({
         memoryList: [makeMemory()],
@@ -499,7 +499,7 @@ describe('PerceptionCoordinator', () => {
         throw new Error('mock 情感推导失败');
       });
 
-      // 修复后行为：错误被捕获，不向上传播
+      // 错误被捕获，不向上传播
       expect(() => coordinator.refreshBeforeChat()).not.toThrow();
       // 情感推导失败，但 injectAffect 仍应被调用（可能注入里程碑或跨会话上下文）
       // 此处无里程碑无跨会话，prompts 为空，injectAffect 不调用
@@ -601,7 +601,7 @@ describe('PerceptionCoordinator', () => {
       expect(result!.patterns).toEqual(mockPatterns);
     });
 
-    // BUG-PC-02 已修复：header 注释从"无副作用"改为"不修改 Coordinator 自身状态"
+    // header 注释从"无副作用"改为"不修改 Coordinator 自身状态"
     // getSnapshot 会调用 affectController.updateOptions / rapportController.updateOptions
     // 修改子控制器配置（这是有意设计，让快照反映最新配置参数）
     it('调用 affectController.updateOptions（刷新子控制器配置）', () => {

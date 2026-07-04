@@ -49,7 +49,7 @@ export interface SpriteEventMap {
   personaChanged: { from: string | null; to: string };
   /** 精灵注意到洞察提取 */
   insightGained: { source: string; insight: string };
-  /** GAP-4：记忆冲突被检测到（contradicts 关系写入时通知宿主 UI） */
+  /** 记忆冲突被检测到（contradicts 关系写入时通知宿主 UI） */
   conflictDetected: { newMemoryId: string; newInsight: string; targetId: string; targetContent: string };
   /** 精灵主动提示（累积事件后生成） */
   proactivePrompt: { prompt: string; triggers: string[]; silent: boolean; isMilestone?: boolean };
@@ -115,7 +115,7 @@ export class Sprite {
     memoryAdded?: (e: AgentEventMap['memoryAdded']) => void;
     personaSwitched?: (e: AgentEventMap['personaSwitched']) => void;
     insightExtracted?: (e: AgentEventMap['insightExtracted']) => void;
-    // GAP-4：冲突检测事件（contradicts 关系写入时触发）
+    // 冲突检测事件（contradicts 关系写入时触发）
     conflictDetected?: (e: AgentEventMap['conflictDetected']) => void;
     // L5：迭代 9 补齐的 4 种事件
     projectSwitched?: (e: AgentEventMap['projectSwitched']) => void;
@@ -135,7 +135,7 @@ export class Sprite {
   private config: Required<SpriteConfig>;
 
   /**
-   * 每日用户消息计数（缺口 3.4 修复：补齐 ReviewData.today.messageCount 数据断点）
+   * 每日用户消息计数（补齐 ReviewData.today.messageCount 数据断点）
    *
    * 内存态 Map（key=YYYY-MM-DD），构造时从 spriteConfig.dailyMessageCount 加载。
    * 仅保留最近 7 天，更早日数在累加时自动剔除（防止无限增长）。
@@ -160,7 +160,7 @@ export class Sprite {
   /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
 
-  // ─── GAP-6 回收站自动清理 ──────────────────────────────
+  // ─── 回收站自动清理 ──────────────────────────────
   /** 回收站自动清理定时器句柄（start 时启动，stop 时清除） */
   private recycleBinCleanupTimer: ReturnType<typeof setInterval> | null = null;
   /** 回收站自动清理间隔（毫秒，默认 6 小时检查一次） */
@@ -335,7 +335,7 @@ export class Sprite {
     // refreshBeforeChat 内部完成 affect/rapport/context/pattern 全链路推导 + injectAffect 统一注入
     this.perceptionCoordinator.refreshBeforeChat();
 
-    // GAP-6：启动回收站自动清理定时器
+    // 启动回收站自动清理定时器
     this.startRecycleBinCleanup();
 
     logger.info('精灵已启动，等待唤醒...');
@@ -346,15 +346,15 @@ export class Sprite {
     this.running = false;
     this.triggerBus.stop();
     this.unsubscribeAgentEvents();
-    // QC-SPRITE-01：停止在场状态控制器，取消注册事件监听器，防止 reinitAgent 后泄漏
+    // 停止在场状态控制器，取消注册事件监听器，防止 reinitAgent 后泄漏
     this.presenceController?.stop();
-    // GAP-6：停止回收站自动清理定时器，防止 reinitAgent 后泄漏
+    // 停止回收站自动清理定时器，防止 reinitAgent 后泄漏
     this.stopRecycleBinCleanup();
     this.spriteHandlers.clear();
     this.state = 'idle';
   }
 
-  // ─── GAP-6 回收站自动清理 ──────────────────────────────
+  // ─── 回收站自动清理 ──────────────────────────────
 
   /**
    * 启动回收站自动清理定时器
@@ -370,7 +370,7 @@ export class Sprite {
     const retentionDays = this.config.recycleBinRetentionDays;
     // retentionDays=0 表示禁用自动清理
     if (retentionDays <= 0) {
-      logger.info({ retentionDays }, 'GAP-6 回收站自动清理已禁用（retentionDays=0）');
+      logger.info({ retentionDays }, '回收站自动清理已禁用（retentionDays=0）');
       return;
     }
 
@@ -388,7 +388,7 @@ export class Sprite {
     }
     logger.info(
       { retentionDays, intervalHours: Sprite.RECYCLE_BIN_CLEANUP_INTERVAL_MS / (60 * 60 * 1000) },
-      'GAP-6 回收站自动清理定时器已启动',
+      '回收站自动清理定时器已启动',
     );
   }
 
@@ -420,14 +420,14 @@ export class Sprite {
       if (purgedCount > 0) {
         logger.info(
           { purgedCount, retentionDays, threshold: threshold.toISOString() },
-          'GAP-6 回收站自动清理完成',
+          '回收站自动清理完成',
         );
       }
     } catch (err) {
       // 清理失败不阻断主流程，下次定时器会重试
       logger.warn(
         { err: toError(err).message, threshold: threshold.toISOString() },
-        'GAP-6 回收站自动清理失败',
+        '回收站自动清理失败',
       );
     }
   }
@@ -609,7 +609,7 @@ export class Sprite {
   }
 
   /**
-   * 删除记忆（GAP-6：软删除，移入回收站）
+   * 删除记忆（软删除，移入回收站）
    *
    * @param id 记忆唯一标识
    * @returns 是否成功软删除
@@ -619,7 +619,7 @@ export class Sprite {
   }
 
   /**
-   * 恢复软删除的记忆（GAP-6：从回收站恢复）
+   * 恢复软删除的记忆（从回收站恢复）
    *
    * @param id 记忆唯一标识
    * @returns 是否成功恢复
@@ -629,7 +629,7 @@ export class Sprite {
   }
 
   /**
-   * 物理删除记忆（GAP-6：回收站彻底删除，不可恢复）
+   * 物理删除记忆（回收站彻底删除，不可恢复）
    *
    * @param id 记忆唯一标识
    * @returns 是否成功删除
@@ -639,7 +639,7 @@ export class Sprite {
   }
 
   /**
-   * 列出回收站中的软删除记忆（GAP-6）
+   * 列出回收站中的软删除记忆
    *
    * @param limit 返回数量上限，默认 50
    * @returns 回收站记忆列表项数组
@@ -1105,7 +1105,7 @@ export class Sprite {
   }
 
   /**
-   * 主动检查待提示事件并尝试发射（QC-SPRITE-06）
+   * 主动检查待提示事件并尝试发射
    *
    * 委托至 ProactiveEngine.checkPending()，用于外部主动触发"用户回来时检查"。
    * 与 addNotice 内部的自动触发（累积达阈值时）不同，此方法无视阈值，
@@ -1148,7 +1148,7 @@ export class Sprite {
   }
 
   /**
-   * 获取 Agent 运行时指标快照（OBS-01 可观测性对齐）
+   * 获取 Agent 运行时指标快照（可观测性对齐）
    *
    * 委托至 Agent.getMetrics()，返回 5 维度指标（llm/recall/tools/context/decay）。
    * 供宿主项目仪表盘展示 LLM 调用次数、token 数、召回命中率、工具失败率等。
@@ -1274,7 +1274,7 @@ export class Sprite {
     this.agentHandlers.insightExtracted = onInsightExtracted;
     this.agent.on('insightExtracted', onInsightExtracted);
 
-    // GAP-4：conflictDetected → conflictDetected（直接转发，不经过 ProactiveEngine）
+    // conflictDetected → conflictDetected（直接转发，不经过 ProactiveEngine）
     // 冲突检测是事实通知（非主动行为），不受静默模式和冷却控制
     const onConflictDetected = (e: AgentEventMap['conflictDetected']) => {
       this.emitSprite('conflictDetected', {
@@ -1346,7 +1346,7 @@ export class Sprite {
 
   /** 取消订阅 Agent 事件 */
   private unsubscribeAgentEvents(): void {
-    // P2-004 修复：直接枚举每个事件，避免 Object.entries + as never 的类型安全问题。
+    // 直接枚举每个事件，避免 Object.entries + as never 的类型安全问题。
     // Object.entries 会丢失 key-value 类型关联，导致 agent.off 的参数类型不匹配需要 as never。
     // 显式枚举每个事件，TypeScript 可为每个 agent.off 调用精确推断事件名和 handler 的对应类型。
     if (this.agentHandlers.memoryAdded) {
@@ -1358,7 +1358,7 @@ export class Sprite {
     if (this.agentHandlers.insightExtracted) {
       this.agent.off('insightExtracted', this.agentHandlers.insightExtracted);
     }
-    // GAP-4：冲突检测事件清理
+    // 冲突检测事件清理
     if (this.agentHandlers.conflictDetected) {
       this.agent.off('conflictDetected', this.agentHandlers.conflictDetected);
     }
@@ -1452,7 +1452,7 @@ export class Sprite {
       }
 
       // 触发时检查是否有待提示的累积事件（由 ProactiveEngine 内部处理）
-      // P1-9 修复：移除全量 dashboard 计算 debug 日志——logger 不支持惰性求值，
+      // 移除全量 dashboard 计算 debug 日志——logger 不支持惰性求值，
       // 每次触发都计算 dashboard（含 memory.stats + suggest）是性能热点。
       // 触发事件已由上方 logger.info 记录，dashboard 可通过 sprite.formatDashboard() 主动查询。
 

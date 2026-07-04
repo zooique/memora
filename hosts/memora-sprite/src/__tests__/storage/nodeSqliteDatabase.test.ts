@@ -1,5 +1,5 @@
 /**
- * NodeSqliteDatabase 单元测试（P1-09 补齐）
+ * NodeSqliteDatabase 单元测试
  *
  * 覆盖范围：
  *   - constructor：默认 :memory: + 显式路径

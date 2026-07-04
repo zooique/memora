@@ -50,7 +50,7 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
             return { success: false, error: '配置管理器未就绪' };
           }
           await config.confirmConfigSuggestion(suggestion);
-          // GAP-5 事件驱动重载：配置文件写入后立即热重载，当前会话生效（无需重启 Agent）
+          // 事件驱动重载：配置文件写入后立即热重载，当前会话生效（无需重启 Agent）
           // rule 类型已由 confirmConfigSuggestion 内部即时注入 system prompt，无需重载
           if (suggestion.type === 'skill' || suggestion.type === 'persona') {
             try {

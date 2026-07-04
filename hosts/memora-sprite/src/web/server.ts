@@ -1,5 +1,5 @@
 /**
- * Web 模式服务入口（DWM-01：双模式 Web 调试）
+ * Web 模式服务入口
  *
  * 职责：
  *   1. 复用 startSprite() 初始化 Agent + Sprite + Storage（与 Electron 模式完全相同）
@@ -37,7 +37,7 @@ import { startSprite } from '../index.js';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 import type { HostContext } from '../shared/hostContext.js';
-// P1-07：导入 setWebCloseSprite，把 startSprite 返回的 close 函数注入 systemRoutes 模块，
+// 导入 setWebCloseSprite，把 startSprite 返回的 close 函数注入 systemRoutes 模块，
 // 否则 systemRoutes.reinitAgent(webCloseSprite) 时 webCloseSprite 永远为 null，旧实例资源泄漏
 import { setWebCloseSprite } from './routes/systemRoutes.js';
 import { registerRoutes } from './routes/index.js';
@@ -53,7 +53,7 @@ const WEB_PORT = 3721;
 const WEB_HOST = '127.0.0.1';
 
 /**
- * P1-08：优雅关闭各阶段超时上限（毫秒）
+ * 优雅关闭各阶段超时上限（毫秒）
  *
  * 设计目的：
  *   - server.close() 是异步的，正在处理的请求需要时间收尾，但不能无限等待
@@ -65,7 +65,7 @@ const WEB_HOST = '127.0.0.1';
  */
 const SHUTDOWN_STAGE_TIMEOUT_MS = 5_000;
 
-/** P1-08：优雅关闭总体超时上限（毫秒），超时后强制退出 */
+/** 优雅关闭总体超时上限（毫秒），超时后强制退出 */
 const SHUTDOWN_TOTAL_TIMEOUT_MS = 15_000;
 
 /** 当前模块所在目录（用于定位 renderer 静态文件） */
@@ -247,7 +247,7 @@ async function handleRequest(
 // ─── 工具函数 ──────────────────────────────────────────────
 
 /**
- * P1-08：为 Promise 添加超时兜底
+ * 为 Promise 添加超时兜底
  *
  * 用于优雅关闭流程，防止 server.close() / closeSprite() 卡住导致进程永不退出。
  * 超时后 reject，调用方用 try/catch 降级处理（继续下一阶段或强制退出）。
@@ -301,7 +301,7 @@ async function startWebServer(): Promise<void> {
     sprite = result.sprite;
     sessionStore = result.sessionStore;
     closeSprite = result.close;
-    // P1-07：把 close 函数注入 systemRoutes 模块，
+    // 把 close 函数注入 systemRoutes 模块，
     // 供 POST /api/llm-config 调用 reinitAgent(webCloseSprite) 时清理旧实例
     // （systemRoutes 持有独立的 webCloseSprite 模块级变量，不与 server.ts 的 closeSprite 共享）
     setWebCloseSprite(closeSprite);
@@ -352,14 +352,14 @@ async function startWebServer(): Promise<void> {
   });
 
   // 阶段 4：注册优雅关闭钩子
-  // P1-08：修复 server.close() 未 await + 无超时兜底的问题
+  // 修复 server.close() 未 await + 无超时兜底的问题
   //   - server.close() 是异步的，不 await 会被 process.exit 截断正在处理的请求
   //   - closeSprite() 内部 agent.close/vectorStore.save 可能卡住，需超时兜底
   //   - 总体超时后强制 process.exit(1)，让 OS 回收资源
   const gracefulShutdown = async (signal: string) => {
     logger.info(`[Web] 收到 ${signal}，正在关闭...`);
 
-    // P1-08：总体超时兜底——即使关闭各阶段都卡住，15s 后强制退出
+    // 总体超时兜底——即使关闭各阶段都卡住，15s 后强制退出
     // 必须在 gracefulShutdown 被调用时才注册，而非启动时注册（否则正常运行 15s 后会自杀）
     const forceExitTimer = setTimeout(() => {
       logger.error(`[Web] 优雅关闭总体超时 ${SHUTDOWN_TOTAL_TIMEOUT_MS}ms，强制退出`);
@@ -396,7 +396,7 @@ async function startWebServer(): Promise<void> {
       } catch (err) {
         logger.warn(`[Web] 资源清理超时或失败: ${toError(err).message}`);
       }
-      // P1-07：同步重置 systemRoutes 持有的 webCloseSprite 引用，
+      // 同步重置 systemRoutes 持有的 webCloseSprite 引用，
       // 防止 close 函数被重复调用（旧实例已清理，再调用会抛错或无效操作）
       setWebCloseSprite(null);
       closeSprite = null;

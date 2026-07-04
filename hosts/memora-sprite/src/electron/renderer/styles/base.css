@@ -23,7 +23,7 @@
 
   /* 核心悬浮窗口（v8 新增语义） */
   --window-bg:   #ffffff;  /* 核心窗口背景 */
-  --window-bg-2: #efeff1;  /* A2: 调深,与 --window-bg(#ffffff) 拉开层次(原 #f7f7f9 对比度仅3%) */  /* 核心窗口次级背景（输入框、卡片等） */
+  --window-bg-2: #efeff1;  /* A2: 调深,与 --window-bg(#ffffff) 拉开层次 */  /* 核心窗口次级背景（输入框、卡片等） */
 
   /* 文字层级 */
   --text:        #1d1d1f;  /* 主文字 */
@@ -36,7 +36,7 @@
   /* 强调色 */
   --accent:        #0066ff;  /* 主强调色（v8 --accent） */
   --blue:          #0066ff;  /* 语义化别名，= --accent */
-  /* UX-P2-39 统一 --accent-soft 为 rgba 策略（原浅色用 hex，深色用 rgba，策略不一致） */
+  /* 统一 --accent-soft 为 rgba 策略 */
   --accent-soft:   rgba(0, 102, 255, 0.08);  /* 强调色浅底（v8 --accent-soft） */
   --accent-hover:  #0052cc;  /* 强调色 hover（v8 --accent-hover） */
 
@@ -78,16 +78,16 @@
   --shadow:           0 4px 12px rgba(0, 0, 0, 0.06);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.08);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.06);
-  /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用，合并到 --shadow） */
+  /* 移除 --shadow-md（与 --shadow 完全相同且未被引用，合并到 --shadow） */
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
-  /* P2-10 小型元素阴影令牌（nav-btn active / suggestion-card 等），深色主题下加重以保证可见性 */
+  /* 小型元素阴影令牌（nav-btn active / suggestion-card 等），深色主题下加重以保证可见性 */
   --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.04);
-  /* P2-10 emoji 文字阴影令牌（brand-grad 背景上 emoji 可读性），深色主题下加重 */
+  /* emoji 文字阴影令牌（brand-grad 背景上 emoji 可读性），深色主题下加重 */
   --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.25);
 
-  /* UX-PP-10 统一动画时长变量 */
+  /* 统一动画时长变量 */
   --transition-fast: 0.12s;  /* 微交互（hover/active/按钮） */
   --transition-base: 0.2s;   /* 标准过渡（动画/滑入/淡入） */
   --transition-slow: 0.3s;   /* 大型过渡（面板展开/脉冲） */
@@ -265,16 +265,16 @@
   --shadow:           0 4px 16px rgba(0, 0, 0, 0.4);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.5);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.4);
-  /* UX-P2-23 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
+  /* 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
   --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
-  /* P2-10 小型元素阴影令牌（深色主题加重以保证可见性） */
+  /* 小型元素阴影令牌（深色主题加重以保证可见性） */
   --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.3);
-  /* P2-10 emoji 文字阴影令牌（深色主题加重以保证可读性） */
+  /* emoji 文字阴影令牌（深色主题加重以保证可读性） */
   --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.4);
 
-  /* UX-PP-10 统一动画时长变量（深色主题与浅色一致） */
+  /* 统一动画时长变量（深色主题与浅色一致） */
   --transition-fast: 0.12s;
   --transition-base: 0.2s;
   --transition-slow: 0.3s;
@@ -398,7 +398,7 @@ html, body {
 }
 
 /* ─── 滚动条 ───────────────────────────────────────────────── */
-/* UI-P3-03 统一滚动条样式：同时定义垂直和水平方向，避免水平滚动条显示默认粗样式 */
+/* 统一滚动条样式：同时定义垂直和水平方向，避免水平滚动条显示默认粗样式 */
 ::-webkit-scrollbar {
   width: 6px;   /* 垂直滚动条宽度 */
   height: 6px;  /* 水平滚动条高度（原缺失，导致水平滚动条显示默认粗样式） */
@@ -493,7 +493,7 @@ html, body {
   line-height: 1.5;
 }
 
-/* UX-P2-27 .error-retry-btn 复用 .btn-secondary 样式（modal.css），消除重复定义 */
+/* .error-retry-btn 复用 .btn-secondary 样式（modal.css），消除重复定义 */
 /* 保留 .error-retry-btn 类名作为语义别名，HTML 中同时添加 .btn-secondary 类即可 */
 .error-state .error-retry-btn {
   margin-top: 8px;

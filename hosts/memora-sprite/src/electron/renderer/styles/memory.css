@@ -206,7 +206,7 @@
 }
 
 /* ─── 记忆面板筛选下拉（v8） ───────────────────────────────── */
-/* UX-P2-38 复用 settings.css 的通用 select 样式，此处仅声明布局差异 */
+/* 复用 settings.css 的通用 select 样式，此处仅声明布局差异 */
 #memory-filter-source {
   padding: var(--input-padding-md);
   background: var(--window-bg-2);
@@ -253,7 +253,7 @@
   overflow-wrap: break-word;
   max-width: 100%;
   color: var(--text);
-  /* UX-P2-18 记忆详情可能包含技术内容（JSON/代码片段），改用系统字体提升可读性（原 var(--font-sprite) 霞鹜文楷不适合技术内容） */
+  /* 记忆详情可能包含技术内容（JSON/代码片段），改用系统字体提升可读性 */
   font-family: ui-monospace, "SF Mono", Consolas, "Cascadia Code", monospace;
   /* 长内容时内容区可滚动，避免撑破弹窗 */
   max-height: 50vh;
@@ -281,9 +281,9 @@
   box-sizing: border-box;
 }
 
-/* UX-P2-26 移除重复的滚动条样式（base.css 已全局定义 ::-webkit-scrollbar，此处无需重复） */
+/* 移除重复的滚动条样式（base.css 已全局定义 ::-webkit-scrollbar，此处无需重复） */
 
-/* GAP-1 技能列表样式（设置面板"技能"选项卡） */
+/* 技能列表样式（设置面板"技能"选项卡） */
 .skills-list {
   list-style: none;
   padding: 0;
@@ -1949,7 +1949,7 @@
   line-height: 1.4;
 }
 
-/* ─── GAP-6 回收站弹窗 ───────────────────────────── */
+/* ─── 回收站弹窗 ───────────────────────────── */
 
 /* 回收站说明文字（顶部提示条） */
 .recycle-bin-hint {

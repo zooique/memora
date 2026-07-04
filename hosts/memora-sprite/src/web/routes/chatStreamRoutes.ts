@@ -1,5 +1,5 @@
 /**
- * 对话流式 SSE 路由（DWM-01 Phase 2：Web 模式 SSE 流式对话）
+ * 对话流式 SSE 路由
  *
  * 与 electron/ipc/chatStreamHandler.ts 镜像，复用 agent.chat() AsyncGenerator。
  *
@@ -22,7 +22,7 @@
  * 关键设计（与 chatStreamHandler.ts 一致）：
  *   1. 无进展超时兜底（STREAM_NO_PROGRESS_TIMEOUT_MS = 60s）
  *   2. abortedNotified 单点路由（避免重复发送 aborted 事件）
- *   3. OBS-02 截断检测（done 时对比 truncationCount）
+ *   3. 截断检测（done 时对比 truncationCount）
  *   4. 跨日/跨会话自动重置（确保新消息归当天 main 会话）
  *   5. AbortController.reason 区分用户中断 vs 异常
  *
@@ -289,7 +289,7 @@ async function handleChatStart(
   // 启动首次计时
   resetStreamTimeout();
 
-  // OBS-02：记录对话开始前的截断次数，对话结束后对比检测截断事件
+  // 记录对话开始前的截断次数，对话结束后对比检测截断事件
   const truncationBefore = ctx.agent.getMetrics().context.truncationCount;
 
   // 中断事件已发送标志（单点路由，避免重复发送 aborted 事件）
@@ -335,7 +335,7 @@ async function handleChatStart(
         // 思考阶段指示
         writeSSE(res, SSE_EVENTS.THINKING, { messageId, phase: chunk.phase });
       } else if (chunk.type === 'done') {
-        // OBS-02：对话正常结束时检测截断次数是否增加
+        // 对话正常结束时检测截断次数是否增加
         const truncationAfter = ctx.agent.getMetrics().context.truncationCount;
         if (truncationAfter > truncationBefore) {
           writeSSE(res, SSE_EVENTS.TRUNCATED, {

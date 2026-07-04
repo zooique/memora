@@ -1,5 +1,5 @@
 /**
- * 记忆 CRUD HTTP 路由测试（DWM-01：双模式 Web 调试）
+ * 记忆 CRUD HTTP 路由测试
  *
  * 覆盖范围：
  * - GET /api/memories：列出记忆（含 source 过滤）

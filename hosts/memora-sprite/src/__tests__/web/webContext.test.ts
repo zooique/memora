@@ -1,5 +1,5 @@
 /**
- * Web 模式 HTML 适配器测试（DWM-01：双模式 Web 调试）
+ * Web 模式 HTML 适配器测试
  *
  * 覆盖范围：
  * - adaptHtmlForWeb：在 </head> 前注入 preload 脚本；无 </head> 时原样返回

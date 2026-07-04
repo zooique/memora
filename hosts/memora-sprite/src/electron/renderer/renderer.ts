@@ -27,7 +27,6 @@ import {
   showWelcomeMessage,
 } from './initHelpers.js';
 
-// P2-001 删除重复的 declare global 和未使用的 ElectronAPI 导入。
 // types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
 
 // ─── 状态（QC-01 质量收敛：模块级变量封装为 State 对象） ───
@@ -120,7 +119,7 @@ async function bootstrapRenderer(): Promise<void> {
     // 幂等保护，防止 IPC 事件与重试定时器竞态导致重复加载
     if (State.agentReadyHandled) return;
     State.agentReadyHandled = true;
-    // UX-P2-03 标记 Agent 就绪，解除发送消息限制
+    // 标记 Agent 就绪，解除发送消息限制
     State.uiManager.setAgentReady(true);
     // P3-FLOW-10 同步设置面板状态指示器
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
@@ -241,7 +240,7 @@ async function bootstrapRenderer(): Promise<void> {
     if (source === 'user') {
       window.electronAPI.updateConfig('theme', theme);
     }
-    // UX-P2-10 两种场景都需要通知主进程同步到浮动窗口，避免两个窗口主题不一致
+    // 两种场景都需要通知主进程同步到浮动窗口，避免两个窗口主题不一致
     window.electronAPI.notifyThemeChanged(theme);
     // 主题切换后重绘 Canvas 图表（Canvas 2D 不自动响应 CSS 变量变化）
     State.uiManager.repaintCanvasOnThemeChange();

@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMemoryDatabase } from '../../storage/nodeSqliteDatabase.js';
 import { SqliteStorage } from '../../storage/sqliteStorage.js';
 import type { Memory } from 'memora';
-// P2-4：导入 ErrorCode，用于断言 source 校验阻断路径的错误码
+// 导入 ErrorCode，用于断言 source 校验阻断路径的错误码
 import { ErrorCode } from '../../sprite/errors.js';
 
 function makeMemory(overrides: Partial<Memory> = {}): Memory {
@@ -130,7 +130,7 @@ describe('SqliteStorage', () => {
     expect(d3!.score).toBe(0.9);
   });
 
-  // ─── P2-4：source 校验阻断路径测试 ──────────────────────
+  // ─── source 校验阻断路径测试 ──────────────────────
 
   it('upsert() 空 source 应抛出 MemoraError(VALIDATION_ERROR)', () => {
     const memory = makeMemory({ source: '' });
