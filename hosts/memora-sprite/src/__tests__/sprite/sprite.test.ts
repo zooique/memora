@@ -67,6 +67,8 @@ const mockAgent = {
     // GAP-6：回收站自动清理定时器调用 purgeExpired
     purgeExpired: vi.fn().mockReturnValue(0),
     listDeleted: vi.fn().mockReturnValue([]),
+    // B1：dashboard() 调用 getAllRelations 统计冲突关系数
+    getAllRelations: vi.fn().mockReturnValue([]),
   },
   persona: null,
 } as unknown as Agent;
@@ -711,5 +713,174 @@ describe('FileWatcherTrigger', () => {
       debounceMs: 500,
     });
     expect(trigger.name).toBe('fileWatcher');
+  });
+});
+
+// ─── B1：触发器主路径（handleTrigger + generateSmartSuggestions） ──
+//
+// 测试目标：覆盖 sprite.ts 的三个 private 方法：
+//   - handleTrigger：触发器事件分发（state 守卫 + fileWatcher/timer 分支）
+//   - generateSmartSuggestions：基于健康度数据生成智能建议（3 个检测分支 + 异常静默）
+//   - tryUpdateWorkProjection：文件变化→作品投影更新（在 B1 中仅覆盖异常安全性）
+//
+// 测试策略：
+//   - 使用 vi.useFakeTimers() 控制 TimerTrigger 的 setInterval
+//   - 通过 mockPersistedConfig.triggerIntervalMs 设置短间隔（100ms）
+//   - 通过 mockPersistedConfig.proactiveThreshold=1 让单条 notice 即可触发 proactivePrompt
+//   - 通过 mock agent.memory.list 返回特定 Memory[] 控制健康度数据
+//   - 通过 sprite.on('proactivePrompt') 观察 generateSmartSuggestions 的副作用
+
+describe('Sprite 触发器主路径（B1：handleTrigger + generateSmartSuggestions）', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+  /** 收集 proactivePrompt 事件，用于验证 generateSmartSuggestions 的副作用 */
+  let proactiveEvents: { prompt: string; triggers: string[] }[];
+  /** 控制 wakeup 的 chatSync Promise，用于测试 state 守卫 */
+  let resolveChatSync: ((value: string) => void) | null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    agentListeners.clear();
+    // 短间隔 + 低阈值：让 TimerTrigger 100ms 后触发，单条 notice 即可发射 proactivePrompt
+    mockPersistedConfig = {
+      ...DEFAULT_SPRITE_CONFIG,
+      triggerIntervalMs: 100,
+      proactiveThreshold: 1,
+    };
+    // 重置 memory mock 到空数据（默认安全状态）
+    vi.mocked(mockAgent.memory.list).mockReturnValue([]);
+    vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 0, bySource: {} });
+    // 重置 chatSync 为可控 Promise（用于 state 守卫测试）
+    resolveChatSync = null;
+    vi.mocked(mockAgent.chatSync).mockImplementation(() =>
+      new Promise<string>((resolve) => {
+        resolveChatSync = resolve;
+      }),
+    );
+    tmpDir = createTmpDir();
+    proactiveEvents = [];
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.on('proactivePrompt', (payload: { prompt: string; triggers: string[] }) => {
+      proactiveEvents.push(payload);
+    });
+    sprite.start();
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    // 如果有未完成的 chatSync Promise，resolve 它避免 Promise 泄漏
+    if (resolveChatSync) resolveChatSync('cleanup');
+    vi.useRealTimers();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('TimerTrigger 触发时 handleTrigger 正常执行（空记忆库不抛错、不产生建议）', () => {
+    // 空数据：generateSmartSuggestions 三个分支都不触发
+    expect(() => vi.advanceTimersByTime(110)).not.toThrow();
+    expect(proactiveEvents).toHaveLength(0);
+  });
+
+  it('state 非 idle 时 handleTrigger 跳过执行（不调用 generateSmartSuggestions）', async () => {
+    // 启动 wakeup 让 state='active'（chatSync 不 resolve，state 保持 active）
+    const wakeupPromise = sprite.wakeup('test');
+    // 确认 state 已变为 active
+    expect(sprite.getState()).toBe('active');
+
+    // 触发 TimerTrigger——handleTrigger 应直接 return（state !== 'idle'）
+    vi.advanceTimersByTime(110);
+
+    // 无 proactive 事件产生（generateSmartSuggestions 未被调用）
+    expect(proactiveEvents).toHaveLength(0);
+
+    // 完成 wakeup 恢复 state=idle
+    resolveChatSync!('response');
+    await wakeupPromise;
+    expect(sprite.getState()).toBe('idle');
+  });
+
+  it('generateSmartSuggestions 检测到重复记忆时触发建议', () => {
+    // 构造两条同名记忆（DUPLICATE_NAME_THRESHOLD=1，同名 >=2 条即重复）
+    const now = new Date().toISOString();
+    vi.mocked(mockAgent.memory.list).mockReturnValue([
+      { id: '1', name: '重复记忆', source: 'insight', content: '内容A', score: 0.5, createdAt: now } as never,
+      { id: '2', name: '重复记忆', source: 'insight', content: '内容B', score: 0.5, createdAt: now } as never,
+    ]);
+
+    vi.advanceTimersByTime(110);
+
+    // generateSmartSuggestions 应检测到 dupCount=2 > 0，触发 suggestion → proactivePrompt
+    expect(proactiveEvents.length).toBeGreaterThan(0);
+    expect(proactiveEvents[0]!.prompt).toContain('重复');
+  });
+
+  it('generateSmartSuggestions 检测到过期记忆时触发建议', () => {
+    // 构造 6 条过期记忆（staleMemories.length > 5 才触发建议）
+    // STALE_AGE_DAYS=30，createdAt 设为 40 天前
+    const oldDate = new Date(Date.now() - 40 * MS_PER_DAY).toISOString();
+    const staleMemories = Array.from({ length: 6 }, (_, i) => ({
+      id: `stale-${i}`,
+      name: `过期记忆${i}`,
+      source: 'insight',
+      content: `这是过期记忆的内容编号${i}`,
+      score: 0.5,
+      createdAt: oldDate,
+    }));
+    vi.mocked(mockAgent.memory.list).mockReturnValue(staleMemories as never);
+
+    vi.advanceTimersByTime(110);
+
+    // generateSmartSuggestions 应检测到 staleMemories.length=6 > 5，触发建议
+    expect(proactiveEvents.length).toBeGreaterThan(0);
+    expect(proactiveEvents[0]!.prompt).toContain('过时');
+  });
+
+  it('generateSmartSuggestions 在 profile 缺失时触发建议', () => {
+    // 构造 11 条非 profile 记忆（totalMemories > 10 且 bySource['profile'] 缺失）
+    const now = new Date().toISOString();
+    const noProfileMemories = Array.from({ length: 11 }, (_, i) => ({
+      id: `m-${i}`,
+      name: `记忆${i}`,
+      source: 'insight',
+      content: `内容${i}`,
+      score: 0.5,
+      createdAt: now,
+    }));
+    vi.mocked(mockAgent.memory.list).mockReturnValue(noProfileMemories as never);
+    // dashboard() 调用 stats()，返回 total=11 且 bySource 无 profile
+    vi.mocked(mockAgent.memory.stats).mockReturnValue({
+      total: 11,
+      bySource: { insight: 11 },
+    });
+
+    vi.advanceTimersByTime(110);
+
+    // generateSmartSuggestions 应检测到 profileCount=0 && totalMemories=11 > 10，触发建议
+    expect(proactiveEvents.length).toBeGreaterThan(0);
+    expect(proactiveEvents[0]!.prompt).toContain('画像');
+  });
+
+  it('generateSmartSuggestions 在 memory.list 抛错时静默处理（不崩溃、不抛出）', () => {
+    // mock memory.list 抛错——generateSmartSuggestions 应 catch 并记录日志，不抛出
+    vi.mocked(mockAgent.memory.list).mockImplementation(() => {
+      throw new Error('mock: memory.list 失败');
+    });
+
+    // handleTrigger 不应抛错（generateSmartSuggestions 的 catch 兜底）
+    expect(() => vi.advanceTimersByTime(110)).not.toThrow();
+    // 无 proactive 事件产生（异常导致建议未生成）
+    expect(proactiveEvents).toHaveLength(0);
+  });
+
+  it('handleTrigger 在 generateSmartSuggestions 异常时不影响主流程（异常不重抛）', () => {
+    // 同时 mock memory.list 抛错 + memory.stats 抛错，确保多个异常源都不影响 handleTrigger
+    vi.mocked(mockAgent.memory.list).mockImplementation(() => {
+      throw new Error('mock: list 失败');
+    });
+    vi.mocked(mockAgent.memory.stats).mockImplementation(() => {
+      throw new Error('mock: stats 失败');
+    });
+
+    // handleTrigger 应捕获所有异常，不抛出
+    expect(() => vi.advanceTimersByTime(110)).not.toThrow();
   });
 });
