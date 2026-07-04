@@ -4,11 +4,23 @@
  * 覆盖 loadConfig / expandEnvVars / mergeWithDefaults
  * 未覆盖分支：expandEnvVars 空值分支、默认配置降级
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadConfig } from '@/config/loader.js';
+
+// ─── Mock node:os 模块（ESM 无法 spy 具名导出，改用 vi.mock） ──
+// hoisted 变量让每个测试可动态设置 homedir 返回值
+const { mockHomedir } = vi.hoisted(() => ({ mockHomedir: { value: '' } }));
+vi.mock('node:os', async (importOriginal) => {
+  // 显式类型断言避免 spread types 报错（不用 as any，符合零容忍规则）
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    homedir: () => mockHomedir.value,
+  };
+});
 
 describe('config/loader · loadConfig', () => {
   let tmpHome: string;
@@ -129,5 +141,296 @@ describe('config/loader · 项目级/用户级配置回退', () => {
     const config = await loadConfig();
     expect(config.llm.provider).toBe('project-level');
     expect(config.llm.model).toBe('pro-model');
+  });
+});
+
+// ─── K3：多 Provider + background + embedding + schema 校验 + 回退降级 ──
+
+describe('config/loader · K3 多 Provider 与高级配置', () => {
+  let tmpHome: string;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), 'memora-config-k3-'));
+  });
+
+  afterEach(() => {
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  /** 辅助：写入配置文件并返回路径 */
+  function writeConfigFile(overrides: Record<string, unknown> = {}): string {
+    const configPath = join(tmpHome, 'config.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        llm: { provider: 'deepseek', model: 'deepseek-chat' },
+        ...overrides,
+      }),
+      'utf-8',
+    );
+    return configPath;
+  }
+
+  describe('多 Provider 映射表', () => {
+    it('配置 providers + active 时应正确解析', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-ds' },
+            openai: { provider: 'openai', model: 'gpt-4', apiKey: 'sk-oai' },
+          },
+          active: 'openai',
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.providers).toBeDefined();
+      expect(config.llm.providers!.deepseek!.model).toBe('deepseek-chat');
+      expect(config.llm.providers!.openai!.model).toBe('gpt-4');
+      expect(config.llm.active).toBe('openai');
+    });
+
+    it('providers 中 apiKey 为 ${ENV} 格式时应展开', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: {
+            deepseek: {
+              provider: 'deepseek',
+              model: 'deepseek-chat',
+              apiKey: '${K3_PROVIDER_API_KEY}',
+            },
+          },
+        },
+      });
+      process.env.K3_PROVIDER_API_KEY = 'env-provider-key';
+      try {
+        const config = await loadConfig(configPath);
+        expect(config.llm.providers!.deepseek!.apiKey).toBe('env-provider-key');
+      } finally {
+        delete process.env.K3_PROVIDER_API_KEY;
+      }
+    });
+
+    it('providers 中 baseUrl 为 ${ENV} 格式时应展开', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: {
+            custom: {
+              provider: 'custom',
+              model: 'mimo',
+              baseUrl: '${K3_BASE_URL}',
+            },
+          },
+        },
+      });
+      process.env.K3_BASE_URL = 'https://api.custom.com/v1';
+      try {
+        const config = await loadConfig(configPath);
+        expect(config.llm.providers!.custom!.baseUrl).toBe('https://api.custom.com/v1');
+      } finally {
+        delete process.env.K3_BASE_URL;
+      }
+    });
+
+    it('不配置 providers 时应回退到旧扁平字段（向后兼容）', async () => {
+      const configPath = writeConfigFile({
+        llm: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-flat' },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.providers).toBeUndefined();
+      expect(config.llm.provider).toBe('deepseek');
+      expect(config.llm.apiKey).toBe('sk-flat');
+    });
+  });
+
+  describe('background 后台通道配置', () => {
+    it('配置 background 时应正确解析', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          background: {
+            provider: 'doubao',
+            model: 'doubao-pro',
+            apiKey: 'sk-bg',
+            temperature: 0.3,
+          },
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.background).toBeDefined();
+      expect(config.llm.background!.provider).toBe('doubao');
+      expect(config.llm.background!.model).toBe('doubao-pro');
+      expect(config.llm.background!.temperature).toBe(0.3);
+    });
+
+    it('不配置 background 时应为 undefined（向后兼容）', async () => {
+      const configPath = writeConfigFile();
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.background).toBeUndefined();
+    });
+
+    it('background.temperature 默认值应为 0.5', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          background: { provider: 'doubao', model: 'doubao-pro' },
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.background!.temperature).toBe(0.5);
+    });
+  });
+
+  describe('embedding 配置', () => {
+    it('配置 embedding 时应正确解析', async () => {
+      const configPath = writeConfigFile({
+        embedding: { model: 'text-embedding-3-small', apiKey: 'sk-emb' },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.embedding).toBeDefined();
+      expect(config.embedding!.model).toBe('text-embedding-3-small');
+    });
+
+    it('不配置 embedding 时应为 undefined（降级为关键词召回）', async () => {
+      const configPath = writeConfigFile();
+
+      const config = await loadConfig(configPath);
+
+      expect(config.embedding).toBeUndefined();
+    });
+  });
+
+  describe('schema 校验', () => {
+    it('temperature=0 应通过（边界值）', async () => {
+      const configPath = writeConfigFile({
+        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: 0 },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.temperature).toBe(0);
+    });
+
+    it('temperature=2 应通过（边界值）', async () => {
+      const configPath = writeConfigFile({
+        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: 2 },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.temperature).toBe(2);
+    });
+
+    it('temperature>2 时应抛错（zod 校验失败）', async () => {
+      const configPath = writeConfigFile({
+        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: 3 },
+      });
+
+      await expect(loadConfig(configPath)).rejects.toThrow();
+    });
+
+    it('temperature<0 时应抛错（zod 校验失败）', async () => {
+      const configPath = writeConfigFile({
+        llm: { provider: 'deepseek', model: 'deepseek-chat', temperature: -0.5 },
+      });
+
+      await expect(loadConfig(configPath)).rejects.toThrow();
+    });
+
+    it('permission 非 owner/guest 时应抛错', async () => {
+      const configPath = writeConfigFile({
+        security: { permission: 'admin' },
+      });
+
+      await expect(loadConfig(configPath)).rejects.toThrow();
+    });
+
+    it('默认 temperature 应为 0.7', async () => {
+      const configPath = writeConfigFile({
+        llm: { provider: 'deepseek', model: 'deepseek-chat' },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.temperature).toBe(0.7);
+    });
+
+    it('默认 maxContextTokens 应为 120000', async () => {
+      const configPath = writeConfigFile();
+
+      const config = await loadConfig(configPath);
+
+      expect(config.memory.maxContextTokens).toBe(120_000);
+    });
+  });
+});
+
+describe('config/loader · K3 用户级回退与默认降级', () => {
+  let tmpHome: string;
+  let originalCwd: () => string;
+
+  beforeEach(() => {
+    tmpHome = mkdtempSync(join(tmpdir(), 'memora-fallback-k3-'));
+    originalCwd = process.cwd;
+    // Mock process.cwd 让项目级配置查找失败（指向空目录）
+    process.cwd = () => join(tmpHome, 'empty-project');
+  });
+
+  afterEach(() => {
+    process.cwd = originalCwd;
+    // 重置 homedir mock
+    mockHomedir.value = '';
+    rmSync(tmpHome, { recursive: true, force: true });
+  });
+
+  it('项目级不存在时应回退到用户级配置', async () => {
+    // 写入用户级配置到 user-home/.memora/config.json
+    const userDir = join(tmpHome, 'user-home');
+    mkdirSync(join(userDir, '.memora'), { recursive: true });
+    writeFileSync(
+      join(userDir, '.memora', 'config.json'),
+      JSON.stringify({
+        llm: { provider: 'user-level', model: 'user-model' },
+      }),
+      'utf-8',
+    );
+
+    // 通过 hoisted 变量设置 homedir 返回值
+    mockHomedir.value = userDir;
+
+    const config = await loadConfig();
+    expect(config.llm.provider).toBe('user-level');
+    expect(config.llm.model).toBe('user-model');
+  });
+
+  it('项目级和用户级都不存在时应返回内置默认值', async () => {
+    // homedir 指向空目录（无 .memora/config.json）
+    const emptyHome = join(tmpHome, 'empty-home');
+    mkdirSync(emptyHome, { recursive: true });
+    mockHomedir.value = emptyHome;
+
+    const config = await loadConfig();
+    // 默认值断言
+    expect(config.llm.provider).toBe('mock');
+    expect(config.llm.model).toBe('mock-model');
+    expect(config.llm.temperature).toBe(0.7);
+    expect(config.memory.dataDir).toBe('~/.memora');
+    expect(config.memory.maxContextTokens).toBe(120_000);
+    expect(config.security.permission).toBe('owner');
+    expect(config.security.confirmWrites).toBe(false);
+    expect(config.allowedPaths).toEqual([]);
   });
 });
