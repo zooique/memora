@@ -1392,6 +1392,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   updatePatternsDisplay(payload: PatternsPayload): void {
     this.dashboardPanel.updatePatternsDisplay(payload);
   }
+  /** 更新主动提示统计展示（委托到 DashboardPanelManager，PerceptionPanelHost 接口要求） */
+  updateProactiveStatsDisplay(stats: unknown): void {
+    this.dashboardPanel.updateProactiveStatsDisplay(stats as Parameters<typeof this.dashboardPanel.updateProactiveStatsDisplay>[0]);
+  }
   /** 更新在场状态展示（委托到 DashboardPanelManager） */
   updatePresenceDisplay(payload: PresencePayload): void {
     this.dashboardPanel.updatePresenceDisplay(payload);

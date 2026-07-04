@@ -189,9 +189,9 @@ async function handleRequest(
   }
 
   // ─── 跨目录 import 分发 ──────────────────────────────────
-  // renderer 代码 import '../../sprite/constants.js' 等，
-  // 浏览器解析为 /sprite/*、/storage/* 等 URL，需从 DIST_ROOT 提供服务。
-  if (url.startsWith('/sprite/') || url.startsWith('/storage/')) {
+  // renderer 代码 import '../../sprite/constants.js'、'../../../shared/shortcutDefaults.js' 等，
+  // 浏览器解析为 /sprite/*、/storage/*、/shared/* 等 URL，需从 DIST_ROOT 提供服务。
+  if (url.startsWith('/sprite/') || url.startsWith('/storage/') || url.startsWith('/shared/')) {
     const distPath = join(DIST_ROOT, url);
     // 安全：防止路径穿越（.. 访问 dist-electron 目录外）
     const normalizedDistRoot = resolve(DIST_ROOT);
@@ -359,6 +359,15 @@ async function startWebServer(): Promise<void> {
   const gracefulShutdown = async (signal: string) => {
     logger.info(`[Web] 收到 ${signal}，正在关闭...`);
 
+    // P1-08：总体超时兜底——即使关闭各阶段都卡住，15s 后强制退出
+    // 必须在 gracefulShutdown 被调用时才注册，而非启动时注册（否则正常运行 15s 后会自杀）
+    const forceExitTimer = setTimeout(() => {
+      logger.error(`[Web] 优雅关闭总体超时 ${SHUTDOWN_TOTAL_TIMEOUT_MS}ms，强制退出`);
+      process.exit(1);
+    }, SHUTDOWN_TOTAL_TIMEOUT_MS);
+    // unref：定时器不阻止进程退出（正常 process.exit 会直接终止）
+    forceExitTimer.unref();
+
     // 先中断进行中的对话（让流式输出立即停止，释放 AbortController）
     if (currentAbortController) {
       currentAbortController.abort();
@@ -393,15 +402,10 @@ async function startWebServer(): Promise<void> {
       closeSprite = null;
     }
 
+    // 正常清理完成，清除强制退出定时器
+    clearTimeout(forceExitTimer);
     process.exit(0);
   };
-
-  // P1-08：总体超时兜底——即使上述各阶段都卡住，15s 后强制退出
-  // 用一次性 setTimeout，正常退出时 process.exit 会直接终止，无需手动 clear
-  setTimeout(() => {
-    logger.error(`[Web] 优雅关闭总体超时 ${SHUTDOWN_TOTAL_TIMEOUT_MS}ms，强制退出`);
-    process.exit(1);
-  }, SHUTDOWN_TOTAL_TIMEOUT_MS).unref();
 
   process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
   process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));

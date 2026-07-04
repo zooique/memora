@@ -234,14 +234,22 @@ let streamListenersRegistry: SseListeners = {};
  * @param listeners SSE 事件回调表
  */
 async function startSseStream(text: string, listeners: SseListeners): Promise<void> {
-  activeSseAbortController = new AbortController();
+  // 保存本流的 controller 引用，用于 finally 中的安全清理（竞态保护）。
+  // 场景：用户在流式中发送新消息 → sendUserInput abort 旧流后立即启动新流 →
+  // 旧流 finally 执行时若直接 activeSseAbortController = null 会清掉新流的 controller，
+  // 导致新流无法被停止（🔴 阻塞级 bug）。通过比对引用只清理自己的 controller。
+  const thisController = new AbortController();
+  activeSseAbortController = thisController;
+  // 跟踪当前流式消息 ID，用于 abort/error 时定位消息
+  // 声明在 try 块外部，确保 catch 块能访问（catch 是 try 的兄弟作用域，看不到 try 内的 let）
+  let currentMessageId = '';
 
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
-      signal: activeSseAbortController.signal,
+      signal: thisController.signal,
     });
 
     // 非 2xx 响应：读取错误信息并通知 error 回调
@@ -278,6 +286,7 @@ async function startSseStream(text: string, listeners: SseListeners): Promise<vo
         const { event, data } = parsed;
         switch (event) {
           case 'start':
+            currentMessageId = (data as { messageId: string }).messageId;
             listeners.start?.(data as { messageId: string });
             break;
           case 'chunk':
@@ -317,17 +326,23 @@ async function startSseStream(text: string, listeners: SseListeners): Promise<vo
       }
     }
   } catch (error) {
-    // 客户端主动取消（abortChat）时不通知 error，由 aborted 回调处理
+    // 客户端主动取消（abortChat）时：需要通知 aborted 回调确保 UI 状态重置，
+    // 因为客户端 abort fetch 后无法再接收服务端通过 SSE 发送的 aborted/end 事件，
+    // 若不通知会导致 isStreaming 卡死、发送按钮无法恢复（🔴 阻塞级 bug）
     if (error instanceof DOMException && error.name === 'AbortError') {
+      listeners.aborted?.({ messageId: currentMessageId, reason: '用户手动停止' });
       return;
     }
     // 其他错误通知 error 回调和 spriteErrorCallback（确保 UI 状态重置）
     const errorMsg = `SSE 流式接收失败：${error instanceof Error ? error.message : String(error)}`;
-    listeners.error?.({ messageId: '', message: errorMsg });
+    listeners.error?.({ messageId: currentMessageId, message: errorMsg });
     spriteErrorCallback?.({ text: errorMsg });
   } finally {
-    // 清理全局引用（流式接收结束）
-    activeSseAbortController = null;
+    // 清理全局引用：只有当全局 controller 仍然是本流的 controller 时才置 null。
+    // 这是竞态保护：防止新流已启动时旧流 finally 错误地清理新流的 controller。
+    if (activeSseAbortController === thisController) {
+      activeSseAbortController = null;
+    }
   }
 }
 
@@ -479,7 +494,9 @@ export const webElectronAPI: WebElectronAPI = {
     // 否则服务端 AgentLoop 仍在运行，可能导致状态泄漏（isStreaming 卡死、竞态保护拒绝新请求）
     if (activeSseAbortController) {
       activeSseAbortController.abort();
-      activeSseAbortController = null;
+      // 注意：不要在这里手动设置 activeSseAbortController = null，
+      // 让旧流的 finally 块通过 thisController 引用比对安全地清理自己，
+      // 避免竞态条件下清掉新流的 controller。
       // 通知服务端中断上一轮对话（fire-and-forget，不阻塞新消息发送）
       void postJson('/api/chat/abort').catch(() => { /* 网络错误时静默失败 */ });
     }

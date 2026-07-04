@@ -74,6 +74,11 @@ const SSE_EVENTS = {
 function writeSSE(res: ServerResponse, eventName: string, data: unknown): void {
   res.write(`event: ${eventName}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+  // 强制刷新响应缓冲区，确保 SSE 事件立即发送到客户端
+  // 防止 Node.js 缓冲小数据包导致客户端长时间收不到 start/thinking 事件
+  if (typeof (res as unknown as { flush?: () => void }).flush === 'function') {
+    (res as unknown as { flush: () => void }).flush();
+  }
 }
 
 /**
