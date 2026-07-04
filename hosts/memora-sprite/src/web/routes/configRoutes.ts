@@ -19,6 +19,9 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HostContext } from '../../shared/hostContext.js';
+// P1-10：移除内联正则 /^[a-zA-Z0-9._-]+$/（与 IPC 层 isValidPersonaName 重复定义），
+// 改用 shared/inputValidation 的统一实现，确保两层行为一致
+import { isValidPersonaName } from '../../shared/inputValidation.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
 import type { SpriteConfigKey } from '../../sprite/spriteConfig.js';
@@ -119,8 +122,9 @@ export async function handleConfigRoute(
         sendError(res, 400, 'name 必填');
         return;
       }
-      // 校验角色名（与 IPC 层 isValidPersonaName 对齐：ASCII 白名单 + 长度限制）
-      if (!/^[a-zA-Z0-9._-]+$/.test(body.name) || body.name.length > 100) {
+      // P1-10：校验角色名，使用 shared/inputValidation 的统一 isValidPersonaName
+      // （移除内联正则，避免与 IPC 层行为不一致）
+      if (!isValidPersonaName(body.name)) {
         sendError(res, 400, '无效的角色名');
         return;
       }

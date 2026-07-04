@@ -37,6 +37,9 @@ import { startSprite } from '../index.js';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 import type { HostContext } from '../shared/hostContext.js';
+// P1-07：导入 setWebCloseSprite，把 startSprite 返回的 close 函数注入 systemRoutes 模块，
+// 否则 systemRoutes.reinitAgent(webCloseSprite) 时 webCloseSprite 永远为 null，旧实例资源泄漏
+import { setWebCloseSprite } from './routes/systemRoutes.js';
 import { registerRoutes } from './routes/index.js';
 import { serveStaticFile, SECURITY_HEADERS } from './static.js';
 import { buildPreloadScript, adaptHtmlForWeb } from './webContext.js';
@@ -48,6 +51,22 @@ const WEB_PORT = 3721;
 
 /** Web 服务监听地址（仅本机，安全隔离） */
 const WEB_HOST = '127.0.0.1';
+
+/**
+ * P1-08：优雅关闭各阶段超时上限（毫秒）
+ *
+ * 设计目的：
+ *   - server.close() 是异步的，正在处理的请求需要时间收尾，但不能无限等待
+ *   - closeSprite() 内部执行 agent.close() + vectorStore.save() + storage.close()，
+ *     任一阶段卡住（如 vectorStore 串行化 save 链阻塞）会导致进程永不退出
+ *   - 超时后强制 process.exit(1)，让 OS 回收资源（db 句柄、网络连接）
+ *
+ * 取值依据：单阶段 5s 足够覆盖正常清理，总体 15s 兜底防卡死
+ */
+const SHUTDOWN_STAGE_TIMEOUT_MS = 5_000;
+
+/** P1-08：优雅关闭总体超时上限（毫秒），超时后强制退出 */
+const SHUTDOWN_TOTAL_TIMEOUT_MS = 15_000;
 
 /** 当前模块所在目录（用于定位 renderer 静态文件） */
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -225,6 +244,34 @@ async function handleRequest(
   await serveStaticFile(res, normalizedFull);
 }
 
+// ─── 工具函数 ──────────────────────────────────────────────
+
+/**
+ * P1-08：为 Promise 添加超时兜底
+ *
+ * 用于优雅关闭流程，防止 server.close() / closeSprite() 卡住导致进程永不退出。
+ * 超时后 reject，调用方用 try/catch 降级处理（继续下一阶段或强制退出）。
+ *
+ * @param promise 待添加超时的 Promise
+ * @param timeoutMs 超时毫秒数
+ * @param label 阶段标签（用于错误日志识别卡住的具体阶段）
+ * @returns 原 Promise 的结果，或超时后 reject 的 Promise
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`${label} 超时 ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+    // unref：定时器不阻止进程退出（正常 resolve 后 process.exit 会直接终止）
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
+
 // ─── 应用启动 ──────────────────────────────────────────────
 
 /**
@@ -254,6 +301,10 @@ async function startWebServer(): Promise<void> {
     sprite = result.sprite;
     sessionStore = result.sessionStore;
     closeSprite = result.close;
+    // P1-07：把 close 函数注入 systemRoutes 模块，
+    // 供 POST /api/llm-config 调用 reinitAgent(webCloseSprite) 时清理旧实例
+    // （systemRoutes 持有独立的 webCloseSprite 模块级变量，不与 server.ts 的 closeSprite 共享）
+    setWebCloseSprite(closeSprite);
     agentReady = true;
 
     logger.info(`[Web] Agent 初始化成功，dataDir=${result.dataDir}`);
@@ -301,31 +352,56 @@ async function startWebServer(): Promise<void> {
   });
 
   // 阶段 4：注册优雅关闭钩子
+  // P1-08：修复 server.close() 未 await + 无超时兜底的问题
+  //   - server.close() 是异步的，不 await 会被 process.exit 截断正在处理的请求
+  //   - closeSprite() 内部 agent.close/vectorStore.save 可能卡住，需超时兜底
+  //   - 总体超时后强制 process.exit(1)，让 OS 回收资源
   const gracefulShutdown = async (signal: string) => {
     logger.info(`[Web] 收到 ${signal}，正在关闭...`);
 
-    // 先中断进行中的对话
+    // 先中断进行中的对话（让流式输出立即停止，释放 AbortController）
     if (currentAbortController) {
       currentAbortController.abort();
       currentAbortController = null;
     }
 
-    // 关闭 HTTP 服务（拒绝新请求）
+    // 阶段 1：关闭 HTTP 服务（拒绝新请求，等待正在处理的请求完成）
+    // server.close() 是异步的，必须 await；同时加超时兜底防止长请求卡住退出
     if (server) {
-      server.close();
+      try {
+        await withTimeout(
+          new Promise<void>((resolveClose) => server!.close(() => resolveClose())),
+          SHUTDOWN_STAGE_TIMEOUT_MS,
+          'server.close()',
+        );
+      } catch (err) {
+        // 超时不算致命错误，继续清理后续资源（进程退出时 OS 会强制关闭 socket）
+        logger.warn(`[Web] server.close() 超时或失败: ${toError(err).message}`);
+      }
     }
 
-    // 清理 Agent + Sprite 资源
+    // 阶段 2：清理 Agent + Sprite 资源（agent.close → vectorStore.save → storage.close）
     if (closeSprite) {
       try {
-        await closeSprite();
-      } catch (error) {
-        logger.warn(`[Web] 资源清理失败: ${toError(error).message}`);
+        await withTimeout(closeSprite(), SHUTDOWN_STAGE_TIMEOUT_MS, 'closeSprite()');
+      } catch (err) {
+        logger.warn(`[Web] 资源清理超时或失败: ${toError(err).message}`);
       }
+      // P1-07：同步重置 systemRoutes 持有的 webCloseSprite 引用，
+      // 防止 close 函数被重复调用（旧实例已清理，再调用会抛错或无效操作）
+      setWebCloseSprite(null);
+      closeSprite = null;
     }
 
     process.exit(0);
   };
+
+  // P1-08：总体超时兜底——即使上述各阶段都卡住，15s 后强制退出
+  // 用一次性 setTimeout，正常退出时 process.exit 会直接终止，无需手动 clear
+  setTimeout(() => {
+    logger.error(`[Web] 优雅关闭总体超时 ${SHUTDOWN_TOTAL_TIMEOUT_MS}ms，强制退出`);
+    process.exit(1);
+  }, SHUTDOWN_TOTAL_TIMEOUT_MS).unref();
 
   process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
   process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));

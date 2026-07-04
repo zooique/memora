@@ -14,27 +14,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { logger } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
+// P1-10：移除本地 isValidSessionName（黑名单模式，与 IPC 层白名单行为不一致——安全 BUG），
+// 改用 shared/inputValidation 的统一实现（白名单模式，与 IPC 层完全一致）
+import { isValidSessionName } from '../../shared/inputValidation.js';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
 import { getLocalDate } from '../../sprite/constants.js';
-
-/**
- * 校验会话名合法性（与 IPC 层 isValidSessionName 对齐）
- *
- * 拒绝含路径分隔符的会话名，防止路径遍历攻击。
- *
- * @param session 会话名
- * @returns true 表示合法
- */
-function isValidSessionName(session: string): boolean {
-  if (typeof session !== 'string' || session.length === 0 || session.length > 100) {
-    return false;
-  }
-  // 拒绝路径分隔符和危险字符
-  if (/[\/\\:\*\?"<>\|]/.test(session)) {
-    return false;
-  }
-  return true;
-}
 
 /**
  * 处理会话管理 HTTP 路由
