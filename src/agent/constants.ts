@@ -56,8 +56,26 @@ export const AGENT_CONSTANTS = {
  * 这里只提取与 UI/重试/估算相关的纯常量。
  */
 export const LOOP_CONSTANTS = {
-  /** 粗略 token 估算：每 token 约 3 字符（非精确 tokenizer）。 */
+  /**
+   * 粗略 token 估算：每 token 约 3 字符（非精确 tokenizer）。
+   *
+   * 用于非 CJK 字符（英文/数字/符号）的 token 估算。
+   * CJK 字符（中文/日文/韩文）使用 CJK_CHARS_PER_TOKEN 单独估算。
+   */
   CHARS_PER_TOKEN: 3,
+
+  /**
+   * CJK 字符 token 估算密度（P1-15 中文适配）
+   *
+   * CJK 字符在主流 LLM tokenizer 中约 1 字符 ≈ 1-2 tokens，
+   * 取 1.5 作为保守中间值（偏高估算，避免上下文溢出）。
+   *
+   * 修复前：统一用 CHARS_PER_TOKEN=3 估算，中文 4 字符 ≈ 1.3 token（严重低估）
+   * 修复后：中文 4 字符 ≈ 2.7 token（接近真实值 4-8 token）
+   *
+   * CJK 范围：U+3400-U+9FFF（统一表意文字 + 扩展A）+ U+3040-U+30FF（日文）+ U+AC00-U+D7AF（韩文）
+   */
+  CJK_CHARS_PER_TOKEN: 1.5,
 
   /** LLM 调用最大重试次数（不含首次调用）。 */
   MAX_LLM_RETRIES: 2,

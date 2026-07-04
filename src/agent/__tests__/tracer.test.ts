@@ -91,8 +91,8 @@ describe('NOOP_TRACER 单例', () => {
 // ─── TRACE_SPANS 预定义 Span 名称 ─────────────────────────
 
 describe('TRACE_SPANS 预定义 Span 名称常量', () => {
-  it('包含 5 个 AgentLoop 关键节点 Span 名称', () => {
-    expect(Object.keys(TRACE_SPANS)).toHaveLength(5);
+  it('包含 6 个 AgentLoop 关键节点 Span 名称（P1-16 新增 CONTEXT_SUMMARY）', () => {
+    expect(Object.keys(TRACE_SPANS)).toHaveLength(6);
   });
 
   it('RECALL = "recall.recall"（记忆召回阶段）', () => {
@@ -113,6 +113,10 @@ describe('TRACE_SPANS 预定义 Span 名称常量', () => {
 
   it('DECAY = "memory.decay"（R-103 记忆衰减执行）', () => {
     expect(TRACE_SPANS.DECAY).toBe('memory.decay');
+  });
+
+  it('CONTEXT_SUMMARY = "context.summary"（P1-16：上下文摘要生成）', () => {
+    expect(TRACE_SPANS.CONTEXT_SUMMARY).toBe('context.summary');
   });
 
   it('所有 Span 名称采用 dot.notation 命名约定', () => {

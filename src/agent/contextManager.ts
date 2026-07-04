@@ -18,6 +18,7 @@
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
+import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
 
 /** ContextManager 构造选项（P3-12：从 export 降为模块私有，0 外部 import） */
 interface ContextManagerOptions {
@@ -27,6 +28,59 @@ interface ContextManagerOptions {
   readonly provider: LlmProvider;
   /** 截断时生成占位消息的文案函数（来自 UIMessages.contextTruncated） */
   readonly contextTruncatedFn: (skipped: number, kept: number) => string;
+  /**
+   * 可观测性 Tracer（P1-16 新增，用于 generateContextSummary span 埋点）
+   *
+   * 未注入时降级为 NOOP_TRACER（静默丢弃所有 span，零开销）。
+   */
+  readonly tracer?: ITracer;
+}
+
+/**
+ * 判断字符是否为 CJK 字符（P1-15 中文适配）
+ *
+ * CJK 字符在 LLM tokenizer 中 token 密度更高（约 1-2 token/字符），
+ * 需要与英文/数字/符号分开估算。
+ *
+ * 覆盖范围：
+ *   - U+3400-U+4DBF：CJK 统一表意文字扩展A
+ *   - U+4E00-U+9FFF：CJK 统一表意文字（常用中文）
+ *   - U+3040-U+30FF：日文平假名 + 片假名
+ *   - U+AC00-U+D7AF：韩文音节
+ *
+ * @param code 字符的 Unicode code point
+ * @returns 是否为 CJK 字符
+ */
+function isCjkChar(code: number): boolean {
+  return (
+    (code >= 0x4e00 && code <= 0x9fff) || // CJK 统一表意文字
+    (code >= 0x3400 && code <= 0x4dbf) || // CJK 扩展A
+    (code >= 0x3040 && code <= 0x30ff) || // 日文平假名 + 片假名
+    (code >= 0xac00 && code <= 0xd7af)    // 韩文音节
+  );
+}
+
+/**
+ * 统计字符串中 CJK 与非 CJK 字符数（P1-15 中文适配）
+ *
+ * 用 for...of 遍历字符串以正确处理代理对（emoji 等），
+ * codePointAt(0) 获取首个 code point。
+ *
+ * @param str 待统计的字符串
+ * @returns { cjkChars, otherChars } CJK 字符数与非 CJK 字符数
+ */
+function countCjkAndOther(str: string): { cjkChars: number; otherChars: number } {
+  let cjkChars = 0;
+  let otherChars = 0;
+  for (const ch of str) {
+    const code = ch.codePointAt(0);
+    if (code !== undefined && isCjkChar(code)) {
+      cjkChars++;
+    } else {
+      otherChars++;
+    }
+  }
+  return { cjkChars, otherChars };
 }
 
 /**
@@ -42,6 +96,8 @@ export class ContextManager {
   private readonly provider: LlmProvider;
   /** 截断占位消息文案函数 */
   private readonly contextTruncatedFn: (skipped: number, kept: number) => string;
+  /** 可观测性 Tracer（P1-16：用于 generateContextSummary span 埋点，默认 NOOP） */
+  private readonly tracer: ITracer;
 
   /** 上下文摘要缓存（首次截断后生成，后续截断复用） */
   private contextSummary: string | null = null;
@@ -54,6 +110,8 @@ export class ContextManager {
     this.maxContextTokens = opts.maxContextTokens;
     this.provider = opts.provider;
     this.contextTruncatedFn = opts.contextTruncatedFn;
+    // P1-16：未注入 tracer 时降级为 NOOP_TRACER（零开销）
+    this.tracer = opts.tracer ?? NOOP_TRACER;
   }
 
   /** 截断次数（供 AgentLoop.getMetrics 读取） */
@@ -62,25 +120,40 @@ export class ContextManager {
   }
 
   /**
-   * 估算消息数组的 token 数
+   * 估算消息数组的 token 数（P1-15：CJK 中文适配）
    *
-   * 粗略估算：总字符数 / CHARS_PER_TOKEN（默认 3）。
-   * toolCalls 的 JSON 序列化字符数也计入。
+   * 修复前：统一用 totalChars / CHARS_PER_TOKEN 估算，
+   *   中文 4 字符 ≈ 1.3 token（严重低估，实际约 4-8 token）。
+   *
+   * 修复后：区分 CJK 与非 CJK 字符分别估算：
+   *   - CJK 字符（中文/日文/韩文）：cjkChars / CJK_CHARS_PER_TOKEN（1.5）
+   *   - 非 CJK 字符（英文/数字/符号）：otherChars / CHARS_PER_TOKEN（3）
+   *
+   * toolCalls 的 JSON 序列化字符数也计入（同样区分 CJK/非 CJK）。
    *
    * @param messages 消息数组
    * @returns 估算的 token 数
    */
   estimateTokens(messages: readonly Message[]): number {
-    let totalChars = 0;
+    let cjkChars = 0;
+    let otherChars = 0;
     for (const m of messages) {
-      // 消息本身的内容字符数
-      totalChars += m.content.length;
-      // toolCalls 的 JSON 序列化字符数
+      // 消息内容：区分 CJK 与非 CJK 字符
+      const contentCounts = countCjkAndOther(m.content);
+      cjkChars += contentCounts.cjkChars;
+      otherChars += contentCounts.otherChars;
+      // toolCalls 的 JSON 序列化字符数（同样区分 CJK/非 CJK）
       if (m.toolCalls) {
-        totalChars += JSON.stringify(m.toolCalls).length;
+        const toolCallsCounts = countCjkAndOther(JSON.stringify(m.toolCalls));
+        cjkChars += toolCallsCounts.cjkChars;
+        otherChars += toolCallsCounts.otherChars;
       }
     }
-    return Math.ceil(totalChars / LOOP_CONSTANTS.CHARS_PER_TOKEN);
+    // CJK 与非 CJK 分别按各自密度估算后求和
+    return Math.ceil(
+      cjkChars / LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN +
+      otherChars / LOOP_CONSTANTS.CHARS_PER_TOKEN,
+    );
   }
 
   /**
@@ -296,23 +369,35 @@ export class ContextManager {
    * 在首次截断时，提取即将被裁剪的消息中最近几条用户/助手对话，
    * 调用 provider 生成一句摘要，作为"遗忘补偿"注入到 system prompt 中。
    *
+   * P1-16：新增 tracer span 埋点（TRACE_SPANS.CONTEXT_SUMMARY），
+   * 让宿主监控面板能观察截断频率、摘要生成耗时与失败率。
+   *
    * @param messages 当前消息数组
    * @returns 摘要字符串（失败时返回空字符串，降级为无摘要）
    */
   private async generateContextSummary(messages: readonly Message[]): Promise<string> {
-    const messagesToSummarize = messages.slice(1);
-    const recentMessages = messagesToSummarize
-      .filter((m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
-      .slice(-LOOP_CONSTANTS.SUMMARY_MSG_COUNT)
-      .map(
-        (m) =>
-          `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, LOOP_CONSTANTS.SUMMARY_CONTENT_SLICE) : '[tool]'}`,
-      )
-      .join('\n');
-
-    if (!recentMessages) return '';
+    // P1-16：启动 CONTEXT_SUMMARY span，记录摘要生成的耗时与异常
+    const summarySpan = this.tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY, {
+      messageCount: messages.length,
+      summarizingMessages: Math.min(messages.length - 1, LOOP_CONSTANTS.SUMMARY_MSG_COUNT),
+    });
 
     try {
+      const messagesToSummarize = messages.slice(1);
+      const recentMessages = messagesToSummarize
+        .filter((m) => m.role === 'user' || (m.role === 'assistant' && typeof m.content === 'string'))
+        .slice(-LOOP_CONSTANTS.SUMMARY_MSG_COUNT)
+        .map(
+          (m) =>
+            `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, LOOP_CONSTANTS.SUMMARY_CONTENT_SLICE) : '[tool]'}`,
+        )
+        .join('\n');
+
+      if (!recentMessages) {
+        summarySpan.setAttribute('skipped', true);
+        return '';
+      }
+
       const stream = this.provider.chat(
         [
           {
@@ -328,11 +413,17 @@ export class ContextManager {
       for await (const chunk of stream) {
         if (chunk.content) summary += chunk.content;
       }
+      summarySpan.setAttribute('summaryLength', summary.length);
       logger.info({ summaryLength: summary.length }, '上下文摘要已生成');
       return `[Context summary of earlier conversation]\n${summary}`;
     } catch (err) {
+      // P1-16：记录异常到 span（不中断 span，标记错误状态）
+      summarySpan.recordException(err instanceof Error ? err : new Error(String(err)));
       logger.warn({ err }, '上下文摘要生成失败，降级为无摘要');
       return '';
+    } finally {
+      // P1-16：无论成功/失败都结束 span
+      summarySpan.end();
     }
   }
 }

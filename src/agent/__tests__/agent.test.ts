@@ -14,7 +14,7 @@
  * 基元驱动记忆模型：
  * - MemoryType/Permanence 枚举 → source 开放字符串
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -2012,4 +2012,260 @@ describe('Agent · chat() 中断保留文本（GAP-3）', () => {
     expect(lastAssistant!.content).toContain('[自定义中断标记]');
     expect(lastAssistant!.content).not.toContain('[已中断]');
   }, 15000);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：chat() 锁超时机制（P1-13/P1-17 race condition 修复）
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 永不主动返回的 Provider，用于模拟卡死的 LLM
+ *
+ * 立即 yield 第一个 chunk 让 chat() 进入 busy 状态，
+ * 然后卡在 outerPromise 等待外部 resolve。
+ * 不依赖 setTimeout，避免与 fake timers 冲突。
+ */
+class HungProvider extends LlmProvider {
+  readonly name = 'hung';
+  /** 外部控制 resolve 的 Promise */
+  outerPromise: Promise<void>;
+  /** resolve 函数，测试中调用以解除阻塞 */
+  outerResolve: () => void = () => {};
+
+  constructor() {
+    super();
+    this.outerPromise = new Promise<void>((resolve) => {
+      this.outerResolve = resolve;
+    });
+  }
+
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    // 立即 yield 第一个 chunk，让 chat() 进入 busy 状态并设置 chatLockTimer
+    yield { content: '开始' };
+    // 卡在这里，等待外部 resolve（模拟 LLM 卡死）
+    await this.outerPromise;
+    yield { content: '结束' };
+    yield { finishReason: 'stop' };
+  }
+}
+
+/**
+ * P1-17：chat() 锁超时机制测试
+ *
+ * 覆盖 P1-13 race condition 修复：
+ *   - 超时回调校验 token 后才释放锁
+ *   - finally 块校验 token 后才清理资源
+ *   - close() 递增 token 接管清理职责
+ *
+ * 测试策略：
+ *   - 用 HungProvider 模拟卡死的 LLM（不依赖 setTimeout，兼容 fake timers）
+ *   - 用 vi.useFakeTimers + advanceTimersByTime 推进 CHAT_LOCK_TIMEOUT_MS 触发超时
+ *   - 通过行为断言（isBusy、新调用是否抛错）验证 token 校验逻辑
+ */
+describe('Agent · chat() 锁超时机制（P1-13/P1-17）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-lockto-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-lockto-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-lockto-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    // 恢复真实定时器，确保 close() 内部的 await 正常工作
+    vi.useRealTimers();
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误（测试中可能已部分清理）
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  /**
+   * 辅助：推进 fake timers 直到 chatLockTimer 触发
+   *
+   * CHAT_LOCK_TIMEOUT_MS = 180_000，推进此时间后超时回调执行。
+   * 用 advanceTimersByTimeAsync 让 microtask 也完成。
+   */
+  async function advanceToLockTimeout(): Promise<void> {
+    // CHAT_LOCK_TIMEOUT_MS 在 constants.ts 中为 180_000
+    // 这里直接用字面量避免导入常量（测试隔离）
+    await vi.advanceTimersByTimeAsync(180_000);
+  }
+
+  it('锁超时后应释放锁（isBusy=false）', async () => {
+    const provider = new HungProvider();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 启动 chat，消费第一个 chunk（'开始'）让其进入 busy 状态
+    const gen = agent.chat('测试超时');
+    const firstChunk = await gen.next();
+    expect(firstChunk.done).toBe(false);
+
+    // 此时 isBusy 应为 true
+    expect(agent.isBusy).toBe(true);
+
+    // 推进时间触发超时回调
+    await advanceToLockTimeout();
+
+    // 超时后 isBusy 应为 false（锁已释放）
+    expect(agent.isBusy).toBe(false);
+
+    // 清理：解除 HungProvider 阻塞，消费剩余 chunk
+    provider.outerResolve();
+    try {
+      for await (const {} of gen) {
+        // drain
+      }
+    } catch {
+      // 超时后 generator 可能抛 AbortError，忽略
+    }
+  }, 30000);
+
+  it('锁超时后新调用应能获取锁（不抛"对话繁忙"）', async () => {
+    const provider = new HungProvider();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 启动第一轮 chat，消费第一个 chunk
+    const gen1 = agent.chat('第一轮');
+    await gen1.next();
+    expect(agent.isBusy).toBe(true);
+
+    // 推进时间触发超时
+    await advanceToLockTimeout();
+    expect(agent.isBusy).toBe(false);
+
+    // 第二轮 chat 应能成功获取锁（不抛"对话繁忙"）
+    const gen2 = agent.chat('第二轮');
+    const chunk2 = await gen2.next();
+    expect(chunk2.done).toBe(false);
+    expect(agent.isBusy).toBe(true);
+
+    // 清理：解除两个 generator
+    provider.outerResolve();
+    try {
+      for await (const {} of gen1) {
+      }
+    } catch {
+    }
+    try {
+      for await (const {} of gen2) {
+      }
+    } catch {
+    }
+  }, 30000);
+
+  it('race condition：超时后新调用获取锁，旧 generator 完成时不应误清新调用者的锁', async () => {
+    const provider = new HungProvider();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 启动 chat A，消费第一个 chunk
+    const genA = agent.chat('chat A');
+    await genA.next();
+    expect(agent.isBusy).toBe(true);
+
+    // 推进时间触发超时（chat A 的锁被释放）
+    await advanceToLockTimeout();
+    expect(agent.isBusy).toBe(false);
+
+    // 启动 chat B（获取新锁，token 递增）
+    const genB = agent.chat('chat B');
+    await genB.next();
+    expect(agent.isBusy).toBe(true);
+
+    // 解除 chat A 的阻塞，让其 generator 完成
+    // P1-13 修复点：chat A 的 finally 块校验 token，发现 token 已变（被 chat B 递增），
+    // 跳过清理，避免误清 chat B 的锁/计时器/controller
+    provider.outerResolve();
+    try {
+      for await (const {} of genA) {
+        // drain chat A
+      }
+    } catch {
+      // chat A 可能因超时 abort 而抛错，忽略
+    }
+
+    // 关键断言：chat B 的锁应仍然存在（未被 chat A 的 finally 误清）
+    expect(agent.isBusy).toBe(true);
+
+    // 清理 chat B
+    try {
+      for await (const {} of genB) {
+      }
+    } catch {
+    }
+  }, 30000);
+
+  it('close() 递增 token，旧 chat generator 完成时不应清理已关闭的状态', async () => {
+    const provider = new HungProvider();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 启动 chat，消费第一个 chunk
+    const gen = agent.chat('chat');
+    await gen.next();
+    expect(agent.isBusy).toBe(true);
+
+    // close() 递增 token，接管清理职责
+    await agent.close();
+    // close 后 agent 已销毁，isBusy 应为 false
+    expect(agent.isBusy).toBe(false);
+
+    // 解除 chat 的阻塞，让其 generator 完成
+    // P1-13 修复点：chat 的 finally 块校验 token，发现 token 已变（被 close 递增），
+    // 跳过清理，避免对已关闭的 agent 重复清理
+    provider.outerResolve();
+    try {
+      for await (const {} of gen) {
+      }
+    } catch {
+      // close 已 abort，generator 可能抛错，忽略
+    }
+
+    // agent 已关闭，不应因旧 generator 的 finally 产生副作用
+    // （如果 finally 误清，可能抛 null reference 或重复清理日志）
+    // 这里主要验证不抛错
+  }, 30000);
 });

@@ -98,6 +98,13 @@ export const TRACE_SPANS = {
   RESPONSE: 'response.generate',
   /** 记忆衰减执行（R-103 新增，补全衰减可观测性缺口） */
   DECAY: 'memory.decay',
+  /**
+   * 上下文摘要生成（P1-16 新增，补全 generateContextSummary 可观测性缺口）
+   *
+   * 触发条件：消息超 maxContextTokens 触发截断时，调用 LLM 生成"遗忘补偿"摘要。
+   * 监控此 span 可观察截断频率、摘要生成耗时与失败率。
+   */
+  CONTEXT_SUMMARY: 'context.summary',
 } as const;
 
 // ─── 运行时指标快照类型（R-103 可观测性增强）────────

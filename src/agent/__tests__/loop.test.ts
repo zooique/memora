@@ -312,3 +312,306 @@ describe('AgentLoop · processUserInput recall 事件', () => {
     expect(recalls).toHaveLength(0);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：callLlmWithRetry · LLM 调用重试机制（P1-14）
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 可配置重试行为的 Mock Provider
+ *
+ * 每次调用 chat() 按顺序消费 turns 中的一个行为：
+ *   - throw Error：模拟网络错误/超时
+ *   - chunks：正常返回 LLM chunks
+ *   - streamThenThrow：先 yield chunks 再抛错（模拟流式开始后失败）
+ *
+ * 不依赖 setTimeout，兼容 fake timers。
+ */
+interface RetryTurn {
+  /** 正常返回的 chunks（与 throw/streamThenThrow 互斥） */
+  chunks?: ChunkItem[];
+  /** 调用立即抛错（流式开始前） */
+  throw?: Error;
+  /** 先 yield chunks 再抛错（流式开始后失败） */
+  streamThenThrow?: { chunks: ChunkItem[]; error: Error };
+}
+
+function mockRetryProvider(turns: RetryTurn[]): LlmProvider & { callCount: number } {
+  let callCount = 0;
+  return {
+    name: 'retry-mock',
+    callCount,
+    async *chat() {
+      const turn = turns[Math.min(callCount, turns.length - 1)];
+      (this as { callCount: number }).callCount = ++callCount;
+      if (!turn) return;
+      if (turn.throw) {
+        throw turn.throw;
+      }
+      if (turn.streamThenThrow) {
+        for (const chunk of turn.streamThenThrow.chunks) {
+          yield chunk;
+        }
+        throw turn.streamThenThrow.error;
+      }
+      for (const chunk of turn.chunks ?? []) {
+        yield chunk;
+      }
+    },
+  } as unknown as LlmProvider & { callCount: number };
+}
+
+describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制（P1-14）', () => {
+  it('网络错误后重试应成功（流式开始前失败可重试）', async () => {
+    // 第一次抛网络错误，第二次成功返回文本
+    const provider = mockRetryProvider([
+      { throw: new Error('network error') },
+      { chunks: [{ content: '重试成功' }] },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试重试')) {
+      chunks.push(chunk);
+    }
+
+    // 应有 retry chunk（attempt=1）
+    const retries = chunks.filter((c) => c.type === 'retry');
+    expect(retries).toHaveLength(1);
+    if (retries[0]!.type === 'retry') {
+      expect(retries[0]!.attempt).toBe(1);
+      expect(retries[0]!.error).toBe('network error');
+    }
+
+    // 应有 text chunk '重试成功'
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('重试成功');
+
+    // provider 应被调用 2 次
+    expect(provider.callCount).toBe(2);
+  }, 15000);
+
+  it('retry chunk 应携带 attempt/maxRetries/delayMs/error 字段', async () => {
+    const provider = mockRetryProvider([
+      { throw: new Error('timeout') },
+      { chunks: [{ content: 'ok' }] },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    const retries = chunks.filter((c) => c.type === 'retry');
+    expect(retries).toHaveLength(1);
+    if (retries[0]!.type === 'retry') {
+      // MAX_LLM_RETRIES = 2，attempt = 1（第一次重试）
+      expect(retries[0]!.attempt).toBe(1);
+      expect(retries[0]!.maxRetries).toBe(2);
+      // RETRY_BASE_DELAY_MS = 1000，attempt=1 时 delay = 1000 * 2^0 = 1000
+      expect(retries[0]!.delayMs).toBe(1000);
+      expect(retries[0]!.error).toBe('timeout');
+    }
+  }, 15000);
+
+  it('流式开始后失败不应重试（用户已看到部分结果）', async () => {
+    // 先 yield 一个 chunk（流式开始），再抛错
+    const provider = mockRetryProvider([
+      {
+        streamThenThrow: {
+          chunks: [{ content: '部分内容' }],
+          error: new Error('stream broken'),
+        },
+      },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 流式开始后抛错应向上传播为 error chunk（agent.chat 层捕获），
+    // loop.processUserInput 层会将 provider 异常包装后向上抛
+    // 这里验证 provider 只被调用 1 次（无重试）
+    const chunks: AgentChunk[] = [];
+    try {
+      for await (const chunk of loop.processUserInput('测试')) {
+        chunks.push(chunk);
+      }
+    } catch {
+      // loop 可能直接抛错，忽略
+    }
+
+    // provider 应只被调用 1 次（流式开始后不重试）
+    expect(provider.callCount).toBe(1);
+
+    // 应已收到部分文本
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('部分内容');
+
+    // 不应有 retry chunk
+    const retries = chunks.filter((c) => c.type === 'retry');
+    expect(retries).toHaveLength(0);
+  }, 15000);
+
+  it('AbortError 不应重试（用户主动取消）', async () => {
+    const provider = mockRetryProvider([
+      { throw: new DOMException('aborted', 'AbortError') },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      chunks.push(chunk);
+    }
+
+    // provider 应只被调用 1 次（AbortError 不重试）
+    expect(provider.callCount).toBe(1);
+
+    // 不应有 retry chunk
+    const retries = chunks.filter((c) => c.type === 'retry');
+    expect(retries).toHaveLength(0);
+
+    // 应有 aborted chunk
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(aborted.length).toBeGreaterThan(0);
+  }, 15000);
+
+  it('重试次数耗尽后应向上抛错', async () => {
+    // 始终抛错，MAX_LLM_RETRIES=2，所以总共 3 次调用（1 + 2 重试）
+    const provider = mockRetryProvider([
+      { throw: new Error('fail') },
+      { throw: new Error('fail') },
+      { throw: new Error('fail') },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 重试耗尽后应抛错
+    await expect(async () => {
+      for await (const {} of loop.processUserInput('测试')) {
+        // drain
+      }
+    }).rejects.toThrow('fail');
+
+    // provider 应被调用 3 次（1 首次 + 2 重试）
+    expect(provider.callCount).toBe(3);
+  }, 15000);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：Reflection · 工具错误反思机制（P1-14）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · Reflection · 工具错误反思机制（P1-14）', () => {
+  /**
+   * 辅助：统计 messages 中 [REFLECTION_HINT] 开头的 system 消息数
+   */
+  function countReflectionHints(messages: readonly Message[]): number {
+    return messages.filter(
+      (m) => m.role === 'system' && m.content.startsWith('[REFLECTION_HINT]'),
+    ).length;
+  }
+
+  it('工具返回可重试错误码时应推送 REFLECTION_HINT', async () => {
+    // FILE_NOT_FOUND 是可重试错误码
+    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:FILE_NOT_FOUND] 文件不存在');
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 第一轮：触发工具调用
+        [{
+          toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+          ],
+        }],
+        // 第二轮：工具失败后 LLM 给出文本回复
+        [{ content: '文件读取失败，请检查路径' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const {} of loop.processUserInput('读取文件')) {
+      // drain
+    }
+
+    // 应推送 1 条 REFLECTION_HINT system 消息
+    const hints = countReflectionHints(loop.getMessages());
+    expect(hints).toBe(1);
+  }, 15000);
+
+  it('工具返回不可重试错误码时不应推送 REFLECTION_HINT', async () => {
+    // PERMISSION_DENIED 是不可重试错误码
+    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:PERMISSION_DENIED] 权限不足');
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{
+          toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{}' } },
+          ],
+        }],
+        [{ content: '权限不足，无法写入' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const {} of loop.processUserInput('写入文件')) {
+      // drain
+    }
+
+    // 不应推送 REFLECTION_HINT
+    const hints = countReflectionHints(loop.getMessages());
+    expect(hints).toBe(0);
+  }, 15000);
+
+  it('达到 maxReflectionRetries 后不应再推送 REFLECTION_HINT', async () => {
+    // 始终返回可重试错误，迫使 Reflection 达到上限
+    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:ARGUMENT_ERROR] 参数错误');
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 多轮工具调用，每轮都失败
+        [{ toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        [{ toolCalls: [{ id: 'c2', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        [{ toolCalls: [{ id: 'c3', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        [{ content: '多次失败，放弃' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      // 设置 maxReflectionRetries=1，第 2 次失败后不应再推送
+      maxReflectionRetries: 1,
+    });
+
+    for await (const {} of loop.processUserInput('测试反思上限')) {
+      // drain
+    }
+
+    // 应只推送 1 条 REFLECTION_HINT（maxReflectionRetries=1）
+    const hints = countReflectionHints(loop.getMessages());
+    expect(hints).toBe(1);
+  }, 15000);
+});

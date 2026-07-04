@@ -225,6 +225,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /** chat() 并发锁 */
   private _chatBusy = false;
+  /**
+   * chat() 锁持有者 token（P1-13 race condition 修复）
+   *
+   * 设计目的：
+   *   原锁是简单布尔值 `_chatBusy`，无 owner 校验。超时回调与 finally 块无差别清理，
+   *   导致 race condition：T=0 A 获取锁 → T=180s 超时释放 → T=181s B 获取锁
+   *   → T=182s A 的 finally 误清 B 的锁/计时器/controller。
+   *
+   * 修复方案：
+   *   - 获取锁时 token 递增：`const myToken = ++this._chatLockToken`
+   *   - 超时回调校验 `this._chatLockToken === myToken` 后才释放
+   *   - finally 块校验 `this._chatLockToken === myToken` 后才清理
+   *   - 不匹配时跳过清理，避免误清新调用者的资源
+   *
+   * 选择 number 而非 Symbol：递增计数器可序列化、零依赖、足够唯一（同一 Agent 实例内）
+   */
+  private _chatLockToken: number = 0;
   /** 聊天锁超时计时器（防止 LLM 卡死时锁永久持有） */
   private chatLockTimer: ReturnType<typeof setTimeout> | null = null;
   /** chat() 内部 AbortController（超时时中断 generator，防止并发） */
@@ -370,6 +387,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
     this._chatBusy = true;
+    // P1-13：分配本调用的 token，超时回调和 finally 块据此判断是否仍是当前持有者
+    // 避免 race condition：超时释放后新调用获取锁，旧 finally 误清新调用者的资源
+    const myToken = ++this._chatLockToken;
     // SEC-02: 内部 AbortController，超时时中断 generator 而非仅释放锁
     const internalAbort = new AbortController();
     this.chatAbortController = internalAbort;
@@ -384,7 +404,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const combinedSignal = internalAbort.signal;
 
     // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
+    // P1-13：超时回调校验 token 后才清理，避免误清新调用者的资源
     this.chatLockTimer = safeSetTimeout(() => {
+      // 令牌不匹配：锁已被新调用者获取（或本调用已正常退出），跳过清理
+      if (this._chatLockToken !== myToken) {
+        return;
+      }
       logger.warn(
         { timeoutMs: AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS },
         'chat() 锁超时，中断 generator 并释放锁',
@@ -480,11 +505,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'archiving' };
       await this.postProcess(input, assistantContent);
     } finally {
-      this._chatBusy = false;
-      this.chatAbortController = null;
-      if (this.chatLockTimer) {
-        clearSafeTimeout(this.chatLockTimer);
-        this.chatLockTimer = null;
+      // P1-13：仅当本调用仍是当前锁持有者时才清理资源
+      // 若 token 已变（超时释放后被新调用者获取），跳过清理避免误清新调用者的状态
+      if (this._chatLockToken === myToken) {
+        this._chatBusy = false;
+        this.chatAbortController = null;
+        if (this.chatLockTimer) {
+          clearSafeTimeout(this.chatLockTimer);
+          this.chatLockTimer = null;
+        }
       }
       signal?.removeEventListener('abort', onExternalAbort);
     }
@@ -1123,6 +1152,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 关闭 Agent，释放 SQLite 连接等资源
    */
   async close(): Promise<void> {
+    // P1-13：递增 token，使任何进行中的 chat() generator 的 finally 块
+    // 检测到 token 变化后跳过资源清理（close 已接管清理职责）
+    this._chatLockToken++;
     // 清理定时器
     if (this.decayTimer) {
       clearSafeInterval(this.decayTimer);

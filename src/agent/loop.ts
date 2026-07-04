@@ -151,10 +151,12 @@ export class AgentLoop {
     this.enableContextSummary = opts.enableContextSummary ?? true;
 
     // QC-R2-08：上下文管理器（token 估算 + 截断 + 摘要）
+    // P1-16：注入 tracer，让 generateContextSummary 有 span 埋点
     this.contextManager = new ContextManager({
       maxContextTokens: this.maxContextTokens,
       provider: opts.provider,
       contextTruncatedFn: this.ui.contextTruncated,
+      tracer: this.tracer,
     });
 
     // 初始化 system prompt（基于永驻记忆，加前缀）

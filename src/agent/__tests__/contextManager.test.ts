@@ -13,6 +13,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { ContextManager } from '@/agent/contextManager.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
+import { TRACE_SPANS, type ITracer, type ISpan } from '@/agent/tracer.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 
@@ -20,6 +21,9 @@ import type { LlmChunk } from '@/llm/types.js';
 
 /** CHARS_PER_TOKEN 常量本地引用（与 LOOP_CONSTANTS.CHARS_PER_TOKEN=3 一致） */
 const CHARS_PER_TOKEN = LOOP_CONSTANTS.CHARS_PER_TOKEN;
+
+/** CJK_CHARS_PER_TOKEN 常量本地引用（P1-15：CJK 字符 token 估算密度） */
+const CJK_CHARS_PER_TOKEN = LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN;
 
 /**
  * 构造 Message（默认 role=user）
@@ -504,5 +508,199 @@ describe('ContextManager.getOrCreateSummary()', () => {
     const first = await manager.getOrCreateSummary(messages);
     const second = await manager.getOrCreateSummary(messages);
     expect(second).toBe(first);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：estimateTokens() · CJK 中文适配（P1-15）
+// ═══════════════════════════════════════════════════════════════
+
+describe('ContextManager.estimateTokens() · CJK 中文适配（P1-15）', () => {
+  /**
+   * 辅助：构造带 tracer 注入的 ContextManager
+   *
+   * P1-16 测试需要注入 mock tracer 观察 span 调用，
+   * 此工厂避免每个测试重复构造逻辑。
+   */
+  function createContextManagerWithTracer(tracer: ITracer): ContextManager {
+    return new ContextManager({
+      maxContextTokens: 1000,
+      provider: createMockProvider(),
+      contextTruncatedFn: (skipped, kept) => `[截断] 跳过 ${skipped}，保留 ${kept}`,
+      tracer,
+    });
+  }
+
+  it('纯 CJK 字符：按 CJK_CHARS_PER_TOKEN 估算（1.5 字符/token）', () => {
+    const content = '你好世界测试'; // 6 个中文字符
+    const messages = [createMessage(content)];
+    // 6 / 1.5 = 4 tokens
+    expect(manager.estimateTokens(messages)).toBe(Math.ceil(6 / CJK_CHARS_PER_TOKEN));
+  });
+
+  it('纯 ASCII 字符：按 CHARS_PER_TOKEN 估算（3 字符/token，与修复前一致）', () => {
+    const content = 'abcdef'; // 6 个 ASCII 字符
+    const messages = [createMessage(content)];
+    // 6 / 3 = 2 tokens（与修复前一致，向后兼容）
+    expect(manager.estimateTokens(messages)).toBe(Math.ceil(6 / CHARS_PER_TOKEN));
+  });
+
+  it('混合 CJK + ASCII：分别按各自密度估算后求和', () => {
+    // 4 个中文 + 6 个 ASCII
+    const content = '你好世界abcdef';
+    const messages = [createMessage(content)];
+    // 4 / 1.5 + 6 / 3 = 2.67 + 2 = 4.67 → ceil = 5
+    const expected = Math.ceil(4 / CJK_CHARS_PER_TOKEN + 6 / CHARS_PER_TOKEN);
+    expect(manager.estimateTokens(messages)).toBe(expected);
+  });
+
+  it('CJK 估算应高于修复前（避免上下文溢出）', () => {
+    // 6 个中文字符
+    const content = '你好世界测试';
+    const messages = [createMessage(content)];
+    const actual = manager.estimateTokens(messages);
+    // 修复前：6 / 3 = 2 tokens（低估）
+    // 修复后：6 / 1.5 = 4 tokens（接近真实值）
+    expect(actual).toBeGreaterThan(Math.ceil(6 / CHARS_PER_TOKEN));
+    expect(actual).toBe(4);
+  });
+
+  it('日文/韩文字符同样按 CJK 密度估算', () => {
+    // 日文平假名 + 韩文音节
+    const content = 'こんにちは안녕하세요'; // 5 日文 + 5 韩文 = 10 CJK 字符
+    const messages = [createMessage(content)];
+    // 10 / 1.5 = 6.67 → ceil = 7
+    expect(manager.estimateTokens(messages)).toBe(Math.ceil(10 / CJK_CHARS_PER_TOKEN));
+  });
+
+  it('emoji 不算 CJK 字符（按非 CJK 密度估算）', () => {
+    // emoji 🎉 是代理对，codePointAt 返回 U+1F389，不在 CJK 范围
+    const content = '🎉🎉🎉'; // 3 个 emoji
+    const messages = [createMessage(content)];
+    // for...of 遍历代理对，3 个字符，全非 CJK
+    // 3 / 3 = 1 token
+    expect(manager.estimateTokens(messages)).toBe(Math.ceil(3 / CHARS_PER_TOKEN));
+  });
+
+  it('toolCalls 含 CJK 字符：JSON 序列化后同样区分 CJK/非 CJK', () => {
+    const toolCalls = [
+      { id: 'call_1', type: 'function' as const, function: { name: 'test', arguments: '{"path":"文件.txt"}' } },
+    ];
+    const messages: Message[] = [
+      { role: 'assistant', content: '你好', toolCalls }, // 2 CJK + toolCalls JSON
+    ];
+    // 手动计算期望值
+    const contentCounts = { cjk: 2, other: 0 }; // '你好' = 2 CJK
+    const toolCallsJson = JSON.stringify(toolCalls);
+    let toolCallsCjk = 0;
+    let toolCallsOther = 0;
+    for (const ch of toolCallsJson) {
+      const code = ch.codePointAt(0)!;
+      const isCjk =
+        (code >= 0x4e00 && code <= 0x9fff) ||
+        (code >= 0x3400 && code <= 0x4dbf) ||
+        (code >= 0x3040 && code <= 0x30ff) ||
+        (code >= 0xac00 && code <= 0xd7af);
+      if (isCjk) toolCallsCjk++;
+      else toolCallsOther++;
+    }
+    const expected = Math.ceil(
+      (contentCounts.cjk + toolCallsCjk) / CJK_CHARS_PER_TOKEN +
+      (contentCounts.other + toolCallsOther) / CHARS_PER_TOKEN,
+    );
+    expect(manager.estimateTokens(messages)).toBe(expected);
+  });
+
+  // ─── P1-16: generateContextSummary tracer span 测试 ─────
+
+  it('P1-16：generateContextSummary 应启动 CONTEXT_SUMMARY span 并在成功时 end', async () => {
+    /** 记录 span 调用的 mock tracer */
+    const spanCalls: { name: string; ended: boolean; exceptions: Error[]; attributes: Record<string, string | number | boolean> }[] = [];
+    const mockTracer: ITracer = {
+      startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {
+        const record = { name, ended: false, exceptions: [] as Error[], attributes: { ...attributes } };
+        spanCalls.push(record);
+        return {
+          setAttribute(key: string, value: string | number | boolean): void {
+            record.attributes[key] = value;
+          },
+          end(): void {
+            record.ended = true;
+          },
+          recordException(error: Error): void {
+            record.exceptions.push(error);
+          },
+        };
+      },
+    };
+
+    const cm = createContextManagerWithTracer(mockTracer);
+    // 构造超长消息触发截断 + 摘要生成（显式声明 Message[] 避免 role 推断为 string）
+    const messages: Message[] = [
+      { role: 'system', content: 'S'.repeat(100) },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: `消息${i}`.repeat(30),
+      })),
+    ];
+
+    await cm.getOrCreateSummary(messages);
+
+    // 应启动 CONTEXT_SUMMARY span
+    expect(spanCalls.length).toBeGreaterThan(0);
+    const summarySpan = spanCalls.find((s) => s.name === TRACE_SPANS.CONTEXT_SUMMARY);
+    expect(summarySpan).toBeDefined();
+    expect(summarySpan!.ended).toBe(true);
+    expect(summarySpan!.exceptions).toHaveLength(0);
+    // 应记录 summaryLength 属性
+    expect(summarySpan!.attributes.summaryLength).toBeDefined();
+  });
+
+  it('P1-16：generateContextSummary 失败时应 recordException 并 end span', async () => {
+    const spanCalls: { name: string; ended: boolean; exceptions: Error[]; attributes: Record<string, string | number | boolean> }[] = [];
+    const mockTracer: ITracer = {
+      startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {
+        const record = { name, ended: false, exceptions: [] as Error[], attributes: { ...attributes } };
+        spanCalls.push(record);
+        return {
+          setAttribute(key: string, value: string | number | boolean): void {
+            record.attributes[key] = value;
+          },
+          end(): void {
+            record.ended = true;
+          },
+          recordException(error: Error): void {
+            record.exceptions.push(error);
+          },
+        };
+      },
+    };
+
+    // provider 抛错的 ContextManager
+    const failingProvider = createMockProvider([], true);
+    const cm = new ContextManager({
+      maxContextTokens: 1000,
+      provider: failingProvider,
+      contextTruncatedFn: (skipped, kept) => `[截断] 跳过 ${skipped}，保留 ${kept}`,
+      tracer: mockTracer,
+    });
+
+    const messages: Message[] = [
+      { role: 'system', content: 'S'.repeat(100) },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: `消息${i}`.repeat(30),
+      })),
+    ];
+
+    const summary = await cm.getOrCreateSummary(messages);
+
+    // 失败时应返回空字符串
+    expect(summary).toBe('');
+    // span 应记录异常并 end
+    const summarySpan = spanCalls.find((s) => s.name === TRACE_SPANS.CONTEXT_SUMMARY);
+    expect(summarySpan).toBeDefined();
+    expect(summarySpan!.exceptions.length).toBeGreaterThan(0);
+    expect(summarySpan!.ended).toBe(true);
   });
 });
