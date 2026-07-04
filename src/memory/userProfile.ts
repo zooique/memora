@@ -306,6 +306,9 @@ export class UserProfile {
           const parsed = this.parseContentField(m.content, m.name);
           if (parsed.value !== fact.value) {
             this.index.delete(m.id);
+            // BUGFIX: 同步删除内存缓存中的旧条目，避免"只删 storage 不删 cache"
+            // 导致 getConfirmed() 仍返回已被替换的旧值（如"我叫张三"→"我叫李四"后张三仍在）
+            this.cache.delete(m.id);
             logger.info(
               { oldId: m.id, oldValue: parsed.value, newValue: fact.value },
               '用户画像冲突已解决',
