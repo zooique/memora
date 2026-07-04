@@ -314,4 +314,255 @@ describe('sessionController', () => {
       expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
     });
   });
+
+  // ─── S1：补测 loadDateList / jumpToDate / renameSession / forkSession ──
+
+  describe('loadDateList（S1 补测）', () => {
+    it('应返回按日期降序排列的日期列表，始终包含今天', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      // mock listSessions 返回特定日期+消息数
+      (mockApi.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessions: [
+          { id: '2026-06-19-chat', date: '2026-06-19', name: 'chat', messageCount: 3 },
+          { id: '2026-06-21-main', date: '2026-06-21', name: 'main', messageCount: 5 },
+          { id: '2026-06-20-chat', date: '2026-06-20', name: 'chat', messageCount: 2 },
+        ],
+      });
+
+      const dates = await controller.loadDateList();
+
+      // 今天会自动加入列表（即使无会话），应在最前面
+      const today = new Date().toISOString().slice(0, 10);
+      // 应按日期降序排列
+      expect(dates.map((d) => d.date)).toEqual([today, '2026-06-21', '2026-06-20', '2026-06-19']);
+      // 今天标记为 isToday
+      expect(dates[0]).toMatchObject({ date: today, messageCount: 0, isToday: true });
+      // 其他日期的 isToday 为 false
+      expect(dates[1]).toMatchObject({ date: '2026-06-21', messageCount: 5, isToday: false });
+      expect(dates[2]).toMatchObject({ date: '2026-06-20', messageCount: 2, isToday: false });
+      expect(dates[3]).toMatchObject({ date: '2026-06-19', messageCount: 3, isToday: false });
+    });
+
+    it('同一天多个会话应聚合消息数', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessions: [
+          { id: '2026-06-21-main', date: '2026-06-21', name: 'main', messageCount: 5 },
+          { id: '2026-06-21-chat', date: '2026-06-21', name: 'chat', messageCount: 3 },
+        ],
+      });
+
+      const dates = await controller.loadDateList();
+
+      // 同一天应聚合为一条（另加今天的空记录）
+      expect(dates).toHaveLength(2);
+      const target = dates.find((d) => d.date === '2026-06-21')!;
+      expect(target.messageCount).toBe(8);
+    });
+
+    it('今天无会话时应包含今天（messageCount=0）', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessions: [
+          { id: '2026-06-20-main', date: '2026-06-20', name: 'main', messageCount: 2 },
+        ],
+      });
+
+      const dates = await controller.loadDateList();
+
+      // 今天应在列表中（即使无会话）
+      const today = dates.find((d) => d.isToday);
+      expect(today).toBeDefined();
+      expect(today!.messageCount).toBe(0);
+    });
+
+    it('listSessions 异常时应返回空数组（不抛错）', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('网络错误'));
+
+      const dates = await controller.loadDateList();
+
+      expect(dates).toEqual([]);
+    });
+  });
+
+  describe('jumpToDate（S1 补测）', () => {
+    it('应加载指定日期的会话消息并设置 currentSessionId', async () => {
+      const controller = createSessionController(uiManager);
+      // 先加载默认历史
+      await controller.loadSessionHistory();
+      expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
+
+      // 跳转到 2026-06-20
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        messages: [
+          { role: 'user', content: '昨天的话', timestamp: '2026-06-20T10:00:00.000Z' },
+        ],
+        loadedSessionId: '2026-06-20-chat',
+        total: 1,
+        hasMore: false,
+      });
+
+      await controller.jumpToDate('2026-06-20');
+
+      // currentSessionId 应更新
+      expect(controller.getCurrentSessionId()).toBe('2026-06-20-chat');
+      // 消息区应只有 1 条消息
+      expect(dom.window.document.querySelectorAll('.message').length).toBe(1);
+    });
+
+    it('流式输出期间应阻止跳转并显示 warning toast', async () => {
+      const controller = createSessionController(uiManager);
+      await controller.loadSessionHistory();
+
+      // mock isStreaming 返回 true
+      vi.spyOn(uiManager, 'isStreaming').mockReturnValue(true);
+      const toastSpy = vi.spyOn(uiManager, 'showToast');
+
+      await controller.jumpToDate('2026-06-20');
+
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.stringContaining('正在回复中'),
+        'warning',
+      );
+      // 不应调用 loadSession
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      expect(mockApi.loadSession as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1); // 只有初始 loadSessionHistory 的调用
+    });
+
+    it('loadSession 异常时应显示错误 toast（不抛错）', async () => {
+      const controller = createSessionController(uiManager);
+      await controller.loadSessionHistory();
+
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi.loadSession as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('加载失败'));
+
+      await controller.jumpToDate('2026-06-20');
+
+      // 不应抛错，currentSessionId 不变
+      expect(controller.getCurrentSessionId()).toBe('2026-06-21-main');
+    });
+  });
+
+  describe('renameSession（S1 补测）', () => {
+    it('应成功重命名并显示 success toast', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi as { renameSession: ReturnType<typeof vi.fn> }).renameSession = vi.fn().mockResolvedValue({ success: true });
+      const toastSpy = vi.spyOn(uiManager, 'showToast');
+
+      const result = await controller.renameSession('2026-06-21-main', '新名称');
+
+      expect(result).toBe(true);
+      expect(mockApi.renameSession).toHaveBeenCalledWith('2026-06-21-main', '新名称');
+      expect(toastSpy).toHaveBeenCalledWith('已重命名为 新名称', 'success');
+    });
+
+    it('流式输出期间应阻止重命名', async () => {
+      const controller = createSessionController(uiManager);
+      vi.spyOn(uiManager, 'isStreaming').mockReturnValue(true);
+
+      const result = await controller.renameSession('2026-06-21-main', '新名称');
+
+      expect(result).toBe(false);
+    });
+
+    it('renameSession 返回失败应显示 error toast 并返回 false', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi as { renameSession: ReturnType<typeof vi.fn> }).renameSession = vi.fn().mockResolvedValue({
+        success: false,
+        error: '会话不存在',
+      });
+      const toastSpy = vi.spyOn(uiManager, 'showToast');
+
+      const result = await controller.renameSession('2026-06-21-main', '新名称');
+
+      expect(result).toBe(false);
+      expect(toastSpy).toHaveBeenCalledWith('重命名会话失败，请重试', 'error');
+    });
+
+    it('renameSession 异常应显示 error toast 并返回 false', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi as { renameSession: ReturnType<typeof vi.fn> }).renameSession = vi.fn().mockRejectedValue(new Error('网络错误'));
+
+      const result = await controller.renameSession('2026-06-21-main', '新名称');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('forkSession（S1 补测）', () => {
+    it('应成功分叉并显示 success toast（含消息数）', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockResolvedValue({
+        success: true,
+        newSession: '2026-06-21-fork-1',
+        messageCount: 5,
+      });
+      const toastSpy = vi.spyOn(uiManager, 'showToast');
+
+      const result = await controller.forkSession();
+
+      expect(result).toBe(true);
+      expect(mockApi.forkSession).toHaveBeenCalledWith(undefined);
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.stringContaining('5 条消息'),
+        'success',
+      );
+    });
+
+    it('指定 targetSession 时应传递给 IPC', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockResolvedValue({
+        success: true,
+        newSession: 'new-session',
+        messageCount: 3,
+      });
+
+      await controller.forkSession('custom-name');
+
+      expect(mockApi.forkSession).toHaveBeenCalledWith('custom-name');
+    });
+
+    it('流式输出期间应阻止分叉', async () => {
+      const controller = createSessionController(uiManager);
+      vi.spyOn(uiManager, 'isStreaming').mockReturnValue(true);
+
+      const result = await controller.forkSession();
+
+      expect(result).toBe(false);
+    });
+
+    it('forkSession 返回失败应显示 error toast 并返回 false', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockResolvedValue({
+        success: false,
+        error: '分叉失败',
+      });
+
+      const result = await controller.forkSession();
+
+      expect(result).toBe(false);
+    });
+
+    it('forkSession 异常应显示 error toast 并返回 false', async () => {
+      const controller = createSessionController(uiManager);
+      const mockApi = dom.window.electronAPI as Record<string, unknown>;
+      (mockApi as { forkSession: ReturnType<typeof vi.fn> }).forkSession = vi.fn().mockRejectedValue(new Error('网络错误'));
+
+      const result = await controller.forkSession();
+
+      expect(result).toBe(false);
+    });
+  });
 });
