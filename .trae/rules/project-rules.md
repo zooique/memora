@@ -102,7 +102,7 @@ chore: 升级 dependencies
 - ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
 - ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）
 - ✅ LLM 调用韧性（AgentLoop 指数退避重试，流式输出前可重试）
-- ✅ chat() 并发锁超时保护（5 分钟自动释放）
+- ✅ chat() 并发锁超时保护（3 分钟自动释放，CHAT_LOCK_TIMEOUT_MS = 180_000）
 - ✅ 可观测性（ITracer/ISpan 接口 + NoopTracer 默认实现 + 4 个关键 Span 埋点）
 - ✅ 结构化输出（ChatOptions.response_format + LlmProvider.supportsStructuredOutput 能力声明）
 - ✅ 内容护栏（source:guardrail 记忆 + 输入/输出护栏 + 降级优先）
