@@ -884,3 +884,146 @@ describe('Sprite 触发器主路径（B1：handleTrigger + generateSmartSuggesti
     expect(() => vi.advanceTimersByTime(110)).not.toThrow();
   });
 });
+
+// ─── B2：Agent 事件转发补测（6 个未测事件） ──────────────
+//
+// 测试目标：覆盖 subscribeAgentEvents 中 6 个未测事件的转发链路：
+//   - conflictDetected → conflictDetected（GAP-4 关键功能，不经过 ProactiveEngine）
+//   - projectSwitched → projectSwitched（FD-04 专注模式 UI 通知）
+//   - skillMatched → skillMatched（技能匹配提示）
+//   - memoryRecalled → memoryRecalled（记忆召回提示）
+//   - decayCompleted → decayCompleted（衰减完成通知）
+//   - sessionForked → sessionForked（会话分叉通知）
+//
+// 测试策略：
+//   - 每个事件验证"emit Agent 事件 → sprite 发射对应事件 + payload 正确"
+//   - conflictDetected 额外验证不经过 ProactiveEngine（不触发 proactivePrompt）
+//   - skillMatched 额外验证不触发 proactivePrompt（仅 debug 日志）
+
+describe('Sprite Agent 事件转发（B2：6 个未测事件）', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    agentListeners.clear();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG, proactiveThreshold: 1 };
+    vi.mocked(mockAgent.memory.list).mockReturnValue([]);
+    vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 0, bySource: {} });
+    tmpDir = createTmpDir();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('conflictDetected 事件应直接转发（GAP-4：不经过 ProactiveEngine）', () => {
+    const conflictEvents: Array<{
+      newMemoryId: string; newInsight: string; targetId: string; targetContent: string;
+    }> = [];
+    sprite.on('conflictDetected', (payload) => conflictEvents.push(payload));
+
+    // 发射 Agent conflictDetected 事件
+    emitAgentEvent('conflictDetected', {
+      newMemoryId: 'mem-1',
+      newInsight: '新洞察内容',
+      targetId: 'mem-2',
+      targetContent: '冲突目标内容',
+    });
+
+    // 验证 sprite 发射了 conflictDetected 事件，payload 完整转发
+    expect(conflictEvents).toHaveLength(1);
+    expect(conflictEvents[0]!.newMemoryId).toBe('mem-1');
+    expect(conflictEvents[0]!.newInsight).toBe('新洞察内容');
+    expect(conflictEvents[0]!.targetId).toBe('mem-2');
+    expect(conflictEvents[0]!.targetContent).toBe('冲突目标内容');
+  });
+
+  it('conflictDetected 不触发 proactivePrompt（事实通知，非主动行为）', () => {
+    const proactiveEvents: { prompt: string }[] = [];
+    sprite.on('proactivePrompt', (payload) => proactiveEvents.push(payload));
+
+    // 连续发射多个 conflictDetected 事件
+    for (let i = 0; i < 5; i++) {
+      emitAgentEvent('conflictDetected', {
+        newMemoryId: `mem-${i}`,
+        newInsight: `洞察${i}`,
+        targetId: `target-${i}`,
+        targetContent: `内容${i}`,
+      });
+    }
+
+    // conflictDetected 不经过 ProactiveEngine.addNotice，不会累积触发 proactivePrompt
+    expect(proactiveEvents).toHaveLength(0);
+  });
+
+  it('projectSwitched 事件应转发 from/to/projectName', () => {
+    const projectEvents: Array<{ from: string | null; to: string; projectName: string }> = [];
+    sprite.on('projectSwitched', (payload) => projectEvents.push(payload));
+
+    emitAgentEvent('projectSwitched', {
+      from: '/old/project',
+      to: '/new/project',
+      projectName: '新项目',
+    });
+
+    expect(projectEvents).toHaveLength(1);
+    expect(projectEvents[0]!.from).toBe('/old/project');
+    expect(projectEvents[0]!.to).toBe('/new/project');
+    expect(projectEvents[0]!.projectName).toBe('新项目');
+  });
+
+  it('skillMatched 事件应转发 skill/score（不触发 proactivePrompt）', () => {
+    const skillEvents: Array<{ skill: string; score: number }> = [];
+    sprite.on('skillMatched', (payload) => skillEvents.push(payload));
+    const proactiveEvents: { prompt: string }[] = [];
+    sprite.on('proactivePrompt', (payload) => proactiveEvents.push(payload));
+
+    emitAgentEvent('skillMatched', { skill: 'code-review', score: 0.85 });
+
+    expect(skillEvents).toHaveLength(1);
+    expect(skillEvents[0]!.skill).toBe('code-review');
+    expect(skillEvents[0]!.score).toBe(0.85);
+    // skillMatched 不调用 proactiveEngine.addNotice，不触发 proactivePrompt
+    expect(proactiveEvents).toHaveLength(0);
+  });
+
+  it('memoryRecalled 事件应转发 count/query', () => {
+    const recallEvents: Array<{ count: number; query: string }> = [];
+    sprite.on('memoryRecalled', (payload) => recallEvents.push(payload));
+
+    emitAgentEvent('memoryRecalled', { count: 5, query: '用户问的问题' });
+
+    expect(recallEvents).toHaveLength(1);
+    expect(recallEvents[0]!.count).toBe(5);
+    expect(recallEvents[0]!.query).toBe('用户问的问题');
+  });
+
+  it('decayCompleted 事件应转发 decayedCount', () => {
+    const decayEvents: Array<{ decayedCount: number }> = [];
+    sprite.on('decayCompleted', (payload) => decayEvents.push(payload));
+
+    emitAgentEvent('decayCompleted', { decayedCount: 12 });
+
+    expect(decayEvents).toHaveLength(1);
+    expect(decayEvents[0]!.decayedCount).toBe(12);
+  });
+
+  it('sessionForked 事件应转发 from/to/messageCount', () => {
+    const forkEvents: Array<{ from: string; to: string; messageCount: number }> = [];
+    sprite.on('sessionForked', (payload) => forkEvents.push(payload));
+
+    emitAgentEvent('sessionForked', {
+      from: '2026-07-04-main',
+      to: '2026-07-04-main-b1',
+      messageCount: 15,
+    });
+
+    expect(forkEvents).toHaveLength(1);
+    expect(forkEvents[0]!.from).toBe('2026-07-04-main');
+    expect(forkEvents[0]!.to).toBe('2026-07-04-main-b1');
+    expect(forkEvents[0]!.messageCount).toBe(15);
+  });
+});
