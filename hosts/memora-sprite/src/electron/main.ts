@@ -39,7 +39,7 @@ import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import { ELECTRON_DIR } from './esmShim.js';
 // D-04 修复：最小化 IPC 处理器提取到独立模块
-import { registerMinimalIpcHandlers, type MinimalIpcState, type AppRuntime } from './ipc/minimalHandlers.js';
+import { registerMinimalIpcHandlers, type AppRuntime } from './ipc/minimalHandlers.js';
 // P2-DESIGN-4 修复：精灵事件桥 + Agent 监听器提取到独立模块
 import { setupSpriteEventListeners } from './spriteEventBridge.js';
 import { setupConfigSuggestionListener, setupWriteConfirmationListener, setupAuditListener } from './agentListeners.js';

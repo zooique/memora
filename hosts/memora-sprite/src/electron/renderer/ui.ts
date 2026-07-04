@@ -1207,7 +1207,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.forkSessionCallback = callback;
   }
 
-  private emitSendMessage(): void {
+  // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitSendMessage() 调用）
+  emitSendMessage(): void {
     // UX-P2-03 Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败）
     if (!this.state.isAgentReady) {
       this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
@@ -1218,7 +1219,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.sendMessageCallback?.();
   }
 
-  private emitStopMessage(): void {
+  // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitStopMessage() 调用）
+  emitStopMessage(): void {
     this.stopMessageCallback?.();
   }
 
