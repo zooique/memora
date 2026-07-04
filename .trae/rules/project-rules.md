@@ -44,7 +44,7 @@ date: 2026-07-04
 ```
 src/
 ├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（8 个专职 Manager）+ 对话快照 + 作品投影 + 关联推荐
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（10 个专职 Manager）+ 对话快照 + 作品投影 + 关联推荐
 ├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）
@@ -97,7 +97,7 @@ chore: 升级 dependencies
 - ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
 - ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
 - ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
-- ✅ 测试 992 全量通过（InMemoryStorage，零 IO）
+- ✅ 测试全量通过（InMemoryStorage，零 IO，持续增长）
 - ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，9 事件类型：memoryAdded / personaSwitched / decayCompleted / memoryRecalled / sessionForked / insightExtracted / conflictDetected / projectSwitched / skillMatched）
 - ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
 - ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）

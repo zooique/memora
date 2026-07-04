@@ -43,6 +43,12 @@ description: Memora 关键决策年轮
 | [ADR-SP-008](./ADR-SP-008-v8-ui-refactor.md)       | v8 UI 重构：双主题 CSS 变量 + 悬浮核心窗口         | ✅ 已接受 | 前端   |
 | [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) | PanelManager 组合模式约定（阶段 C 架构演进沉淀） | ✅ 已接受 | 架构   |
 
+### 历史归档（已被替代，保留作年轮参考）
+
+| ID | 标题 | 状态 | 被替代 |
+| -- | ---- | ---- | ------ |
+| [ADR-002-storage-layer-original](./ADR-002-storage-layer-original.md) | better-sqlite3 + sqlite-vec 统一索引表（理论最优方案存档） | ❌ 已废弃 | ADR-002 |
+
 ---
 
 ## 类别分布

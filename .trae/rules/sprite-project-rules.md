@@ -68,7 +68,7 @@ npm run build          # 在 memora 根目录编译，精灵立即生效
 
 ```bash
 # 在 memora 根目录
-npm test              # 924 测试全绿
+npm test              # 测试全绿（用例数持续增长）
 npm run typecheck     # 零错误
 npm run build         # 生成 dist/
 npm version patch     # 或 minor / major
