@@ -17,7 +17,7 @@
  *   - toolMatch 触发词：我用/使用/的环境是 —— !prefMatch 条件使其在与 prefMatch 冲突时不输出
  */
 import { describe, expect, it } from 'vitest';
-import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
+import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import type { ExtractedFact } from '@/memory/userProfile.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

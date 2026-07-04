@@ -26,7 +26,7 @@ import type { Memory } from '@/memory/types.js';
 import type { UserProfile, UserProfileEntry } from '@/memory/userProfile.js';
 import type { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
-import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
+import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import type { AgentEventMap } from '@/utils/eventEmitter.js';
 
 /** 事件发射回调类型（Agent 注入 this.emit） */

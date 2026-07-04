@@ -40,7 +40,7 @@ import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/ses
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-import { extractUserFacts } from '@/agent/managers/userFactExtractor.js';
+import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { configError } from '@/utils/errors.js';
 import { safeSetTimeout, clearSafeTimeout, clearSafeInterval } from '@/utils/safeTimer.js';
