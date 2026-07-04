@@ -500,3 +500,257 @@ describe('chatHandlers', () => {
     });
   });
 });
+
+// ─── C1：chatStreamHandler 流式主路径补测（chunk 类型分发） ──
+//
+// 覆盖目标：
+//   - text chunk：累积 delta + 推送 SPRITE_STREAM_CHUNK（完整文本，非增量）
+//   - recall chunk：推送 SPRITE_STREAM_RECALL（召回记忆摘要）
+//   - tool_start chunk：推送 SPRITE_STREAM_TOOL_START（工具名 + 参数）
+//   - tool_result chunk：推送 SPRITE_STREAM_TOOL_RESULT（工具名 + 成功状态 + 摘要）
+//   - thinking chunk：推送 SPRITE_STREAM_THINKING（阶段名称）
+//   - done chunk：截断检测（truncationCount 增加时推送 SPRITE_CONTEXT_TRUNCATED）+ 发送 archiving keepalive
+//   - 完整窗口不可见时累加未读计数 + 托盘切换 active 状态
+//   - 正常结束发送 SPRITE_STREAM_START + SPRITE_STREAM_END + 托盘切回 idle
+
+describe('chatStreamHandler C1 流式主路径', () => {
+  /** 创建流式测试专用 mock ctx（含可见窗口 + 就绪 Agent） */
+  function createStreamMockCtx(chatGen: AsyncGenerator): {
+    ctx: IpcContext;
+    sends: { channel: string; data: unknown }[];
+    traySetState: ReturnType<typeof vi.fn>;
+    setAbortController: ReturnType<typeof vi.fn>;
+    incrementUnread: ReturnType<typeof vi.fn>;
+    incrementDaily: ReturnType<typeof vi.fn>;
+    prepareForChat: ReturnType<typeof vi.fn>;
+    getMetrics: ReturnType<typeof vi.fn>;
+  } {
+    const sends: { channel: string; data: unknown }[] = [];
+    const traySetState = vi.fn();
+    const setAbortController = vi.fn();
+    const incrementUnread = vi.fn();
+    const incrementDaily = vi.fn();
+    const prepareForChat = vi.fn();
+    // getMetrics 默认返回 truncationCount=0，测试可后续 mockReturnValue
+    const getMetrics = vi.fn(() => ({ context: { truncationCount: 0 } }));
+
+    const wm = createMockWindowManager(createMockWebContents({ visible: true, destroyed: false }));
+    const ctx = createMockCtx({
+      windowManager: wm,
+      isAgentReady: vi.fn(() => true),
+      getAbortController: vi.fn(() => null),
+      trayManager: { setState: traySetState },
+      agent: createMockAgent({
+        chat: vi.fn(() => chatGen),
+        getMetrics,
+      }),
+    });
+    // 覆盖 sprite mock（createMockCtx 内 sprite 是新建的，需重新指向）
+    (ctx as unknown as { sprite: unknown }).sprite = {
+      incrementDailyMessageCount: incrementDaily,
+      prepareForChat,
+    };
+    (ctx as unknown as { setAbortController: unknown }).setAbortController = setAbortController;
+    (ctx as unknown as { incrementUnreadCount: unknown }).incrementUnreadCount = incrementUnread;
+    // 拦截 webContents.send 到 sends 数组
+    const fullWindow = wm.getFullWindow();
+    (fullWindow.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(
+      (channel: string, data: unknown) => {
+        sends.push({ channel, data });
+      },
+    );
+
+    return { ctx, sends, traySetState, setAbortController, incrementUnread, incrementDaily, prepareForChat, getMetrics };
+  }
+
+  it('text chunk 应累积 delta 并推送 SPRITE_STREAM_CHUNK（完整文本）', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'text' as const, content: '你好' };
+      yield { type: 'text' as const, content: '，世界' };
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    // 应推送两次 CHUNK，第二次为完整文本"你好，世界"
+    const chunks = sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_CHUNK);
+    expect(chunks).toHaveLength(2);
+    expect((chunks[0]!.data as { text: string }).text).toBe('你好');
+    expect((chunks[1]!.data as { text: string }).text).toBe('你好，世界');
+  });
+
+  it('recall chunk 应推送 SPRITE_STREAM_RECALL（含 memories 数组）', async () => {
+    const memories = [{ id: '1', name: '记忆A', content: '内容A' }];
+    const chatGen = (async function* () {
+      yield { type: 'recall' as const, memories };
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    const recall = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_RECALL);
+    expect(recall).toBeDefined();
+    expect((recall!.data as { memories: unknown[] }).memories).toEqual(memories);
+  });
+
+  it('tool_start chunk 应推送 SPRITE_STREAM_TOOL_START（工具名 + 参数）', async () => {
+    const chatGen = (async function* () {
+      yield {
+        type: 'tool_start' as const,
+        toolCallId: 'tc-1',
+        name: 'read_file',
+        args: { path: '/test.md' },
+      };
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    const toolStart = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_START);
+    expect(toolStart).toBeDefined();
+    expect((toolStart!.data as { name: string; args: unknown }).name).toBe('read_file');
+    expect((toolStart!.data as { toolCallId: string }).toolCallId).toBe('tc-1');
+  });
+
+  it('tool_result chunk 应推送 SPRITE_STREAM_TOOL_RESULT（成功状态 + 摘要）', async () => {
+    const chatGen = (async function* () {
+      yield {
+        type: 'tool_result' as const,
+        toolCallId: 'tc-1',
+        name: 'read_file',
+        ok: true,
+        summary: '文件内容摘要',
+      };
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    const toolResult = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_TOOL_RESULT);
+    expect(toolResult).toBeDefined();
+    expect((toolResult!.data as { ok: boolean; summary: string }).ok).toBe(true);
+    expect((toolResult!.data as { summary: string }).summary).toBe('文件内容摘要');
+  });
+
+  it('thinking chunk 应推送 SPRITE_STREAM_THINKING（阶段名称）', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'thinking' as const, phase: '回忆中' };
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    const thinking = sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING);
+    // done 也会发一个 thinking（phase=archiving keepalive）
+    expect(thinking.length).toBeGreaterThanOrEqual(1);
+    expect((thinking[0]!.data as { phase: string }).phase).toBe('回忆中');
+  });
+
+  it('done chunk 应推送 archiving keepalive thinking（覆盖 postProcess 窗口期）', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    const thinking = sends.filter((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING);
+    // done 后应发一个 phase=archiving 的 thinking keepalive
+    const archiving = thinking.find((s) => (s.data as { phase: string }).phase === 'archiving');
+    expect(archiving).toBeDefined();
+  });
+
+  it('done chunk 检测到截断次数增加时应推送 SPRITE_CONTEXT_TRUNCATED', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends, getMetrics } = createStreamMockCtx(chatGen);
+    // 第一次调用返回 truncationCount=0（对话开始前），第二次返回 2（对话结束后）
+    getMetrics
+      .mockReturnValueOnce({ context: { truncationCount: 0 } })
+      .mockReturnValueOnce({ context: { truncationCount: 2 } });
+
+    await handleUserInput('测试', ctx);
+
+    const truncated = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED);
+    expect(truncated).toBeDefined();
+    expect((truncated!.data as { count: number }).count).toBe(2);
+  });
+
+  it('done chunk 截断次数未变时不应推送 SPRITE_CONTEXT_TRUNCATED', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    const truncated = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED);
+    expect(truncated).toBeUndefined();
+  });
+
+  it('完整窗口不可见时应累加未读计数', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'done' as const };
+    })();
+    // 构造不可见窗口
+    const sends: { channel: string; data: unknown }[] = [];
+    const wm = createMockWindowManager(createMockWebContents({ visible: false, destroyed: false }));
+    const incrementUnread = vi.fn();
+    const ctx = createMockCtx({
+      windowManager: wm,
+      isAgentReady: vi.fn(() => true),
+      getAbortController: vi.fn(() => null),
+      agent: createMockAgent({ chat: vi.fn(() => chatGen) }),
+    });
+    (ctx as unknown as { sprite: unknown }).sprite = {
+      incrementDailyMessageCount: vi.fn(),
+      prepareForChat: vi.fn(),
+    };
+    (ctx as unknown as { incrementUnreadCount: unknown }).incrementUnreadCount = incrementUnread;
+    const fullWindow = wm.getFullWindow();
+    (fullWindow.webContents.send as ReturnType<typeof vi.fn>).mockImplementation(
+      (channel: string, data: unknown) => sends.push({ channel, data }),
+    );
+
+    await handleUserInput('测试', ctx);
+
+    expect(incrementUnread).toHaveBeenCalledTimes(1);
+  });
+
+  it('正常结束应发送 SPRITE_STREAM_START + SPRITE_STREAM_END + 托盘切回 idle', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'text' as const, content: '回复' };
+      yield { type: 'done' as const };
+    })();
+    const { ctx, sends, traySetState } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试', ctx);
+
+    // 应发送 START 和 END
+    const start = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
+    const end = sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END);
+    expect(start).toBeDefined();
+    expect(end).toBeDefined();
+    // 托盘应先切 active 再切 idle
+    expect(traySetState).toHaveBeenCalledWith('active');
+    expect(traySetState).toHaveBeenCalledWith('idle');
+  });
+
+  it('应调用 sprite.prepareForChat + sprite.incrementDailyMessageCount（对话前感知刷新 + 消息计数）', async () => {
+    const chatGen = (async function* () {
+      yield { type: 'done' as const };
+    })();
+    const { ctx, incrementDaily, prepareForChat } = createStreamMockCtx(chatGen);
+
+    await handleUserInput('测试文本', ctx);
+
+    expect(prepareForChat).toHaveBeenCalledWith('测试文本');
+    expect(incrementDaily).toHaveBeenCalledTimes(1);
+  });
+});
