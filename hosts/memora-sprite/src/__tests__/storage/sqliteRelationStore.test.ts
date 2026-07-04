@@ -13,7 +13,8 @@
  * - 持久化（建表+索引）
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createMemoryDatabase } from './nodeSqliteDatabase.js';
+// nodeSqliteDatabase 已迁移到 src/storage/（生产可用，供 Web/CLI 模式使用）
+import { createMemoryDatabase } from '../../storage/nodeSqliteDatabase.js';
 import { SqliteRelationStore } from '../../storage/sqliteRelationStore.js';
 import { RELATION_TYPES, RELATION_WEIGHTS } from 'memora';
 import type { MemoryRelation } from 'memora';

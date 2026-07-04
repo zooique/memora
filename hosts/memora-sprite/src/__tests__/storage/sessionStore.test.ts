@@ -5,7 +5,8 @@
  * 避免 Electron 项目中 better-sqlite3 ABI 与 Node.js 测试环境不匹配的问题。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createMemoryDatabase, type NodeSqliteDatabase } from './nodeSqliteDatabase.js';
+// nodeSqliteDatabase 已迁移到 src/storage/（生产可用，供 Web/CLI 模式使用）
+import { createMemoryDatabase, type NodeSqliteDatabase } from '../../storage/nodeSqliteDatabase.js';
 import { SqliteSessionStore } from '../../storage/sessionStore.js';
 import type { SessionMessage } from 'memora';
 

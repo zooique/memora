@@ -16,13 +16,16 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import Database from 'better-sqlite3';
 import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, VectorStore, EmbeddingProvider } from 'memora';
 import type { UIMessages, Config, ITracer, AgentSearchHit } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 // ADR-014 记忆关系图谱：侧车存储，与 SqliteStorage 共享同一 db 实例
 import { SqliteRelationStore } from './storage/sqliteRelationStore.js';
+// SQLite 数据库抽象接口 + node:sqlite 适配器（用于 Web/CLI 模式，避免 better-sqlite3 ABI 冲突）
+// 注意：better-sqlite3 改为动态 import（见 createBetterSqliteDb），避免 Node.js 环境加载 native 模块
+import type { ISqliteDatabase } from './storage/sqliteDatabaseTypes.js';
+import { NodeSqliteDatabase } from './storage/nodeSqliteDatabase.js';
 import { SpriteConfigStore, DEFAULT_CONFIG_PATH } from './storage/spriteConfigStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
@@ -112,29 +115,80 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
 // ─── 启动精灵 ──────────────────────────────────────────
 
 /**
+ * 检测当前是否运行在 Electron 环境中
+ *
+ * Electron 运行时会在 process.versions 上挂载 electron 字段。
+ * 用于 createStorage 选择 SQLite 实现：
+ *   - Electron 环境：用 better-sqlite3（已为 Electron ABI 编译）
+ *   - Node.js 环境：用 node:sqlite（Node 内置，零 native 依赖，避免 ABI 冲突）
+ *
+ * @returns true 表示当前运行在 Electron 进程中
+ */
+function isElectronRuntime(): boolean {
+  return typeof process.versions.electron === 'string';
+}
+
+/**
  * 创建存储层（SQLite DB + SqliteStorage + SqliteSessionStore + SqliteRelationStore）
  *
  * 确保 dataDir 目录存在，打开 memora.db（WAL 模式），
  * 创建存储实现、会话存储和关系存储实例。
  * 四者共享同一 db 实例，db.close() 时统一释放。
  *
+ * 运行时自适应 SQLite 实现（解决 better-sqlite3 双 ABI 冲突）：
+ *   - Electron 模式：动态 import better-sqlite3（postinstall 已 electron-rebuild 为 Electron ABI）
+ *   - Web/CLI 模式：使用 node:sqlite（Node.js 22+ 内置，零 native 依赖）
+ *   两者均实现 ISqliteDatabase 接口，存储类无感知。
+ *
+ * 注意：better-sqlite3 必须动态 import，否则在 Node.js 环境下静态 import
+ * 会被打包器/转译器提前加载 native 模块，触发 ABI 错误。
+ *
  * @param dataDir 数据目录路径
- * @returns 存储层实例
+ * @returns 存储层实例（含 ISqliteDatabase 接口实例）
  */
-function createStorage(dataDir: string): {
+async function createStorage(dataDir: string): Promise<{
   storage: SqliteStorage;
   sessionStore: SqliteSessionStore;
   relationStore: SqliteRelationStore;
-  db: Database.Database;
-} {
+  db: ISqliteDatabase;
+}> {
   const dbPath = resolve(dataDir, 'memora.db');
-  const db = new Database(dbPath);
-  db.pragma('journal_mode = WAL');
+  // 运行时分支：Electron 用 better-sqlite3，Node.js 用 node:sqlite
+  // 两条路径均返回 ISqliteDatabase 接口实现，下游存储类无感知
+  const db: ISqliteDatabase = isElectronRuntime()
+    ? await createBetterSqliteDb(dbPath)
+    : new NodeSqliteDatabase(dbPath);
+  // WAL 模式提升并发读写性能（两种实现均支持 PRAGMA 语句）
+  // 统一用 exec('PRAGMA ...')，避免在 ISqliteDatabase 接口上加 pragma() 方法
+  // （ISqliteDatabase 文档原则：仅包含存储类实际使用的方法）
+  db.exec('PRAGMA journal_mode = WAL');
   const storage = new SqliteStorage(db);
   const sessionStore = new SqliteSessionStore(db);
   // ADR-014 侧车模型：关系存储独立建表，不侵入 memories 表
   const relationStore = new SqliteRelationStore(db);
   return { storage, sessionStore, relationStore, db };
+}
+
+/**
+ * 创建 better-sqlite3 数据库实例（Electron 模式专用）
+ *
+ * 封装 better-sqlite3 的动态 import + 实例化逻辑，与 NodeSqliteDatabase 平行。
+ * 仅在 Electron 运行时调用，避免在 Node.js 环境加载 native 模块触发 ABI 错误。
+ *
+ * 为什么用动态 import：
+ *   - 静态 import 在文件加载时即触发 better-sqlite3 的 JS 入口执行
+ *   - 部分打包器（webpack）会预加载 native 模块，Node.js 环境下立即报 ABI 错误
+ *   - 动态 import 延迟到 Electron 环境实际调用时才加载，确保 Node.js 环境零 native 依赖
+ *
+ * @param dbPath 数据库文件路径
+ * @returns 实现 ISqliteDatabase 接口的 better-sqlite3 实例
+ */
+async function createBetterSqliteDb(dbPath: string): Promise<ISqliteDatabase> {
+  // 动态 import：仅在 Electron 运行时执行，避免 Node.js 环境加载 native 模块
+  const Database = (await import('better-sqlite3')).default;
+  // better-sqlite3 的 Database 天然满足 ISqliteDatabase 接口（结构兼容）
+  // 使用类型断言将 Database.Database 映射到 ISqliteDatabase 接口
+  return new Database(dbPath) as unknown as ISqliteDatabase;
 }
 
 /**
@@ -211,7 +265,8 @@ async function createAgentInstance(
   }
 
   // 创建存储层（含关系存储侧车）
-  const { storage, sessionStore, relationStore } = createStorage(dataDir);
+  // createStorage 是 async 函数（Electron 模式需动态 import better-sqlite3）
+  const { storage, sessionStore, relationStore } = await createStorage(dataDir);
 
   // 创建 LLM Provider
   const provider = createLlmProvider(config);
