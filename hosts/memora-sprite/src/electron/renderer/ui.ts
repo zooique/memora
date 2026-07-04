@@ -59,6 +59,9 @@ import { ClipboardManager } from './panels/clipboardManager.js';
 import { DateNavManager } from './panels/dateNavManager.js';
 // C-5-4：技能拖入安装拆分为独立 Manager
 import { SkillDropManager } from './panels/skillDropManager.js';
+// HC-19：感知面板控制器拆分（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击）
+import { PerceptionPanelController } from './panels/perceptionPanelController.js';
+import type { PerceptionPanelHost } from './panels/perceptionPanelController.js';
 // QC-R2-05：输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
@@ -152,7 +155,7 @@ function renderInitFailureToBody(err: unknown): void {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost {
+export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PerceptionPanelHost {
   // ─── 静态常量 ───────────────────────────────────────────
   /** 判断"底部附近"的阈值（像素） */
   private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
@@ -233,6 +236,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
    */
   private skillDropManager: SkillDropManager;
+  /** HC-19：感知面板控制器（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击） */
+  private perceptionPanelController: PerceptionPanelController;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -343,6 +348,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager = new DateNavManager();
     // C-5-4：技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
+    // HC-19：感知面板控制器（依赖注入 Host 接口，init 在事件绑定后调用）
+    this.perceptionPanelController = new PerceptionPanelController(this);
     // QC-R2-05：输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
     this.inputAreaManager = new InputAreaManager(
       this.inputEl,
@@ -362,6 +369,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.panelErrorBannerManager.init();
     // C-5-3：日期导航事件初始化（委托到 DateNavManager）
     this.dateNavManager.init();
+    // HC-19：感知面板事件初始化（委托到 PerceptionPanelController）
+    this.perceptionPanelController.init();
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
@@ -380,74 +389,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
 
-    // C-5-3：日期导航事件绑定已委托到 DateNavManager.init()
-    // FD-ADD-REC-CLICK 仪表盘推荐记忆点击：事件委托，复用 triggerMemoryRecall 跳转到记忆面板显示详情
-    const recList = document.getElementById('recommendation-list');
-    if (recList) {
-      this.events.addEventListener(recList, 'click', (e) => {
-        const target = e.target as HTMLElement;
-        const item = target.closest<HTMLElement>('[data-action="view-recommendation"]');
-        if (item) {
-          const memoryId = item.dataset.memoryId ?? '';
-          if (memoryId) {
-            this.triggerMemoryRecall(memoryId);
-          }
-        }
-      });
-    }
-
-    // 精灵状态条点击事件（展开/收起感知面板）
-    const spriteStatusBar = document.getElementById('sprite-status-bar');
-    if (spriteStatusBar) {
-      this.events.addEventListener(spriteStatusBar, 'click', this.togglePerceptionPanel.bind(this));
-      // 键盘可访问性：Enter/Space 触发展开/收起
-      this.events.addEventListener(spriteStatusBar, 'keydown', (e: Event) => {
-        if (e instanceof KeyboardEvent && (e.key === 'Enter' || e.key === ' ')) {
-          e.preventDefault();
-          this.togglePerceptionPanel();
-        }
-      });
-    }
-
-    // 感知面板关闭按钮
-    const panelClose = document.querySelector('.perception-panel-close');
-    if (panelClose) {
-      this.events.addEventListener(panelClose as HTMLElement, 'click', this.closePerceptionPanel.bind(this));
-    }
-    // 感知面板已改为单页滚动布局，不再需要选项卡绑定（tabs 结构已从 HTML 移除）
-
-    // 运行指标折叠/展开
-    const metricsToggle = document.getElementById('perception-metrics-toggle');
-    if (metricsToggle) {
-      this.events.addEventListener(metricsToggle, 'click', () => {
-        const grid = document.getElementById('perception-metrics-grid');
-        const arrow = document.getElementById('perception-metrics-arrow');
-        if (grid) grid.classList.toggle('hidden');
-        if (arrow) arrow.classList.toggle('expanded');
-      });
-    }
-
-    // 对话回顾折叠/展开（与运行指标拆分为独立折叠区）
-    const reviewToggle = document.getElementById('perception-review-toggle');
-    if (reviewToggle) {
-      this.events.addEventListener(reviewToggle, 'click', () => {
-        const review = document.getElementById('perception-review');
-        const arrow = document.getElementById('perception-review-arrow');
-        if (review) review.classList.toggle('hidden');
-        if (arrow) arrow.classList.toggle('expanded');
-      });
-    }
-
-    // 记忆源健康折叠/展开（缺口 E：与运行指标/对话回顾一致的折叠交互）
-    const sourceHealthToggle = document.getElementById('source-health-toggle');
-    if (sourceHealthToggle) {
-      this.events.addEventListener(sourceHealthToggle, 'click', () => {
-        const list = document.getElementById('source-health-list');
-        const arrow = document.getElementById('source-health-arrow');
-        if (list) list.classList.toggle('hidden');
-        if (arrow) arrow.classList.toggle('expanded');
-      });
-    }
+    // HC-19：感知面板相关事件（推荐记忆点击 + 状态条 + 关闭按钮 + 三块折叠区）
+    // 已委托到 PerceptionPanelController.init()
 
     // 导航事件（侧边栏 .nav-btn 按钮，复用 switchPanel 逻辑）
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
@@ -519,7 +462,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       // 优先关闭感知面板（感知面板打开时 Escape 关闭面板）
       const panel = document.getElementById('perception-panel');
       if (panel?.classList.contains('visible')) {
-        this.closePerceptionPanel();
+        this.perceptionPanelController.close();
         e.preventDefault();
         return;
       }
@@ -607,6 +550,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager.cleanup();
     // C-5-4：清理技能拖入安装管理器的回调引用
     this.skillDropManager.cleanup();
+    // HC-19：清理感知面板控制器的事件监听器
+    this.perceptionPanelController.cleanup();
     // P2-6 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
   }
@@ -911,62 +856,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     }
   }
 
-  /**
-   * 切换感知面板的展开/收起状态
-   * 点击精灵状态条触发，overlay 方式显示在消息区顶部
-   *
-   * 打开时主动拉取感知快照（感知数据采用无状态实时派生模型，
-   * 没有事件主动推送，必须显式调用 getPerceptionSnapshot 获取最新值），
-   * 并分发到 dashboardPanelManager 的四个 update 方法。
-   */
-  private togglePerceptionPanel(): void {
-    const panel = document.getElementById('perception-panel');
-    if (!panel) return;
-
-    if (panel.classList.contains('visible')) {
-      // 关闭面板（先播放动画再隐藏）
-      panel.classList.add('hiding');
-      panel.classList.remove('visible');
-      setTimeout(() => {
-        panel.classList.add('hidden');
-        panel.classList.remove('hiding');
-      }, 150);
-    } else {
-      // 打开面板
-      panel.classList.remove('hidden', 'hiding');
-      panel.classList.add('visible');
-      // 主动拉取感知快照并刷新四块感知展示
-      // 静默失败：拉取异常时保留 DOM 默认占位值，不阻塞面板展开
-      void window.electronAPI
-        .getPerceptionSnapshot()
-        .then((snapshot) => {
-          if (!snapshot) return;
-          if (snapshot.affect) this.dashboardPanel.updateAffectDisplay(snapshot.affect);
-          if (snapshot.rapport) this.dashboardPanel.updateRapportDisplay(snapshot.rapport);
-          if (snapshot.context) this.dashboardPanel.updateContextDisplay(snapshot.context);
-          if (snapshot.patterns) this.dashboardPanel.updatePatternsDisplay({ patterns: snapshot.patterns });
-          // 缺口 G+H：主动提示统计（接受率 + 生效冷却，与 affect/rapport 同源推导）
-          this.dashboardPanel.updateProactiveStatsDisplay(snapshot.proactiveStats ?? null);
-        })
-        .catch(() => {
-          /* silent fail：保持默认值 */
-        });
-    }
-  }
-
-  /**
-   * 关闭感知面板
-   */
-  private closePerceptionPanel(): void {
-    const panel = document.getElementById('perception-panel');
-    if (!panel) return;
-    panel.classList.add('hiding');
-    panel.classList.remove('visible');
-    setTimeout(() => {
-      panel.classList.add('hidden');
-      panel.classList.remove('hiding');
-    }, 150);
-  }
+  // HC-19：togglePerceptionPanel / closePerceptionPanel 已迁移至 PerceptionPanelController
 
   private handleMinimize(): void {
     window.electronAPI.windowMinimize();
