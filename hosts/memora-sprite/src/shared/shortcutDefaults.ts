@@ -1,21 +1,15 @@
 /**
- * 快捷键默认配置共享模块（HC-02 去重）
+ * 快捷键默认配置共享模块
  *
  * 职责：
  *   提供 ShortcutConfig 类型定义和 DEFAULT_SHORTCUTS 默认值常量，
  *   作为 sprite/ 主进程层和 electron/renderer/ 渲染进程层的单一真理源。
  *
- * 提取原因：
- *   原先 DEFAULT_SHORTCUTS 在两处重复定义：
- *   - sprite/spriteConfig.ts: DEFAULT_SPRITE_CONFIG.shortcuts 内联
- *   - electron/renderer/controllers/settingsController.ts: 本地 fallback 常量
- *   注释标注"对齐"但无自动化校验，存在静默漂移风险。
- *
+ * 设计理由：
  *   直接让 renderer 导入 spriteConfig.ts 不可行——该模块顶部导入
  *   node:path/node:os/node:fs/memora 等 Node 运行时依赖，会污染
  *   renderer bundle 并违反 Electron sandbox 限制。
- *
- *   提取到 shared/ 目录的纯类型+纯数据模块，无 Node 依赖，
+ *   因此提取到 shared/ 目录的纯类型+纯数据模块，无 Node 依赖，
  *   可被主进程和渲染进程安全导入。
  *
  * 设计原则：

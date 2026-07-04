@@ -106,13 +106,13 @@
 .memory-item:hover {
   background: var(--surface0);
   border-color: var(--muted);
-  /* Phase 4：hover 时轻微上浮 + 阴影 */
+  /* hover 时轻微上浮 + 阴影 */
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow);
 }
 
 .memory-item:active {
-  /* Phase 4：active 时下沉反馈 */
+  /* active 时下沉反馈 */
   transform: translateY(0);
 }
 
@@ -673,7 +673,7 @@
 .view-switch-btn.active {
   background: var(--window-bg);
   color: var(--accent);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
 }
 
 /* ─── 工具栏更多菜单（下拉） ───────────────────────────────── */
@@ -889,7 +889,7 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-window);
   padding: 4px 0;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -959,7 +959,7 @@
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--modal-backdrop);
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
 }
@@ -971,7 +971,7 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-window);
   overflow: hidden;
 }
 
@@ -1040,7 +1040,7 @@
   background: var(--accent);
   cursor: pointer;
   border: 2px solid var(--window-bg);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow);
 }
 
 .relation-edit-weight-value {
@@ -1890,7 +1890,7 @@
   background: var(--surface0);
   border-color: var(--muted);
   transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 /* 时间线节点圆点 */

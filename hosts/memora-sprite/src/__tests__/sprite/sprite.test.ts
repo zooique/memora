@@ -20,6 +20,8 @@ import { DEFAULT_SPRITE_CONFIG, saveSpriteConfig } from '../../sprite/spriteConf
 import type { SpriteConfig } from '../../sprite/spriteConfig.js';
 // GAP-6：回收站自动清理测试需要 MS_PER_DAY 计算 30 天阈值
 import { MS_PER_DAY } from '../../sprite/constants.js';
+// presence 相关 mock 类型（避免内联 import() 类型注解，符合 consistent-type-imports 规则）
+import type { PresenceController, IPowerMonitor, IApp } from '../../sprite/controllers/presenceController.js';
 
 // ─── Mock spriteConfig 模块（测试隔离） ──────────────────
 // 重构后 loadSpriteConfig/saveSpriteConfig 固定读写 ~/.memora-sprite/sprite.json，
@@ -1186,7 +1188,7 @@ describe('Sprite 在场状态 + 项目模式（B4：setPresenceController / bind
 
   it('setPresenceController 在 Sprite 未启动时不调用 controller.start()（向后兼容）', () => {
     // Sprite 未调用 start()，running=false
-    const mockController = { start: vi.fn(), stop: vi.fn() } as unknown as import('../../sprite/controllers/presenceController.js').PresenceController;
+    const mockController = { start: vi.fn(), stop: vi.fn() } as unknown as PresenceController;
     sprite.setPresenceController(mockController);
     // 未启动时不应调用 controller.start()
     expect(mockController.start).not.toHaveBeenCalled();
@@ -1194,7 +1196,7 @@ describe('Sprite 在场状态 + 项目模式（B4：setPresenceController / bind
 
   it('setPresenceController 在 Sprite 已启动时自动调用 controller.start()', () => {
     sprite.start();
-    const mockController = { start: vi.fn(), stop: vi.fn() } as unknown as import('../../sprite/controllers/presenceController.js').PresenceController;
+    const mockController = { start: vi.fn(), stop: vi.fn() } as unknown as PresenceController;
     sprite.setPresenceController(mockController);
     // 已启动时应自动调用 controller.start()
     expect(mockController.start).toHaveBeenCalledTimes(1);
@@ -1212,11 +1214,11 @@ describe('Sprite 在场状态 + 项目模式（B4：setPresenceController / bind
         if (event === 'lock-screen') lockScreenListeners.push(listener);
       }),
       removeListener: vi.fn(),
-    } as unknown as import('../../sprite/controllers/presenceController.js').IPowerMonitor;
+    } as unknown as IPowerMonitor;
     const mockApp = {
       on: vi.fn(),
       removeListener: vi.fn(),
-    } as unknown as import('../../sprite/controllers/presenceController.js').IApp;
+    } as unknown as IApp;
 
     sprite.bindPresence(mockPowerMonitor, mockApp);
 
@@ -1234,11 +1236,11 @@ describe('Sprite 在场状态 + 项目模式（B4：setPresenceController / bind
     const mockPowerMonitor = {
       on: vi.fn(),
       removeListener: vi.fn(),
-    } as unknown as import('../../sprite/controllers/presenceController.js').IPowerMonitor;
+    } as unknown as IPowerMonitor;
     const mockApp = {
       on: vi.fn(),
       removeListener: vi.fn(),
-    } as unknown as import('../../sprite/controllers/presenceController.js').IApp;
+    } as unknown as IApp;
 
     sprite.bindPresence(mockPowerMonitor, mockApp);
     sprite.stop();

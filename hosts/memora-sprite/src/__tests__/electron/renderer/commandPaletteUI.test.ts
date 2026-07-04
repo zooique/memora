@@ -331,7 +331,8 @@ describe('handleKeydown · 键盘导航', () => {
 
 describe('handleGlobalKeydown · Ctrl+K 全局快捷键', () => {
   it('Ctrl+K 应打开命令面板', () => {
-    const mgr = createManager();
+    // createManager() 有副作用（初始化并绑定全局快捷键），保留调用
+    createManager();
     const palette = document.getElementById('command-palette')!;
     expect(palette.classList.contains('hidden')).toBe(true);
 
@@ -341,7 +342,8 @@ describe('handleGlobalKeydown · Ctrl+K 全局快捷键', () => {
   });
 
   it('Cmd+K（metaKey）应打开命令面板', () => {
-    const mgr = createManager();
+    // createManager() 有副作用（初始化并绑定全局快捷键），保留调用
+    createManager();
     const palette = document.getElementById('command-palette')!;
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }));
@@ -361,7 +363,8 @@ describe('handleGlobalKeydown · Ctrl+K 全局快捷键', () => {
   });
 
   it('非 Ctrl+K 的全局快捷键不应打开面板', () => {
-    const mgr = createManager();
+    // createManager() 有副作用（初始化并绑定全局快捷键），保留调用
+    createManager();
     const palette = document.getElementById('command-palette')!;
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', ctrlKey: true }));
@@ -370,7 +373,8 @@ describe('handleGlobalKeydown · Ctrl+K 全局快捷键', () => {
   });
 
   it('Ctrl+K 应阻止默认行为（preventDefault）', () => {
-    const mgr = createManager();
+    // createManager() 有副作用（初始化并绑定全局快捷键），保留调用
+    createManager();
     const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true });
     const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
 

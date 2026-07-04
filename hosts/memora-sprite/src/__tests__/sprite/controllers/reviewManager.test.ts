@@ -38,13 +38,6 @@ function makeItem(overrides: Partial<MemoryListItem> = {}): MemoryListItem {
   };
 }
 
-/** 创建距今 N 天前的 ISO 时间字符串（基于 MOCK_NOW） */
-function daysAgo(days: number): string {
-  const d = new Date(MOCK_NOW);
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
-}
-
 /** 创建距今 N 天前当天 00:00 的 ISO 时间（确保 groupByDate 落到正确日期） */
 function daysAgoStartOfDay(days: number): string {
   const d = new Date(MOCK_NOW);

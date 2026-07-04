@@ -14,7 +14,7 @@
  * - JSDOM 提供真实 DOM API
  * - 使用真实 EventTracker（验证事件注册与清理的完整生命周期）
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { InsightsRenderer } from '../../../electron/renderer/panels/insightsRenderer.js';
 import type { InsightsDashboardData } from '../../../electron/renderer/panels/insightsRenderer.js';
 import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';

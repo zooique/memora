@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试）。目录形态已对齐最终目标。
-> **版本**：v1.2（2026-07-03）
+> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）。目录形态已对齐最终目标。
+> **版本**：v1.3（2026-07-04）
 
 ---
 
@@ -154,8 +154,10 @@ src/
 │   ├── sqliteStorage.ts        # SQLite 存储实现（IMemoryStorage 接口）
 │   └── sqliteRelationStore.ts  # 记忆关系侧车存储实现（IMemoryRelationStore）
 │
-├── shared/                     # 宿主上下文共享层（DWM-01 双模式 Web 调试）
-│   └── hostContext.ts          # HostContext 接口（Electron + Web 共用核心依赖容器）
+├── shared/                     # 宿主上下文共享层（纯类型+纯数据，无 Node 依赖，主进程/渲染进程/Web 安全共用）
+│   ├── hostContext.ts          # HostContext 接口（Electron + Web 共用核心依赖容器）
+│   ├── inputValidation.ts      # 跨进程输入验证（IPC + Web 路由白名单真理源，防路径遍历/注入）
+│   └── shortcutDefaults.ts     # 快捷键默认配置（ShortcutConfig 类型 + DEFAULT_SHORTCUTS 常量，主进程+渲染进程共用）
 │
 ├── web/                        # Web 模式（HTTP 调试通道，与 Electron 模式并行）
 │   ├── server.ts               # HTTP 服务器入口（Express + 静态资源 + 路由挂载）
@@ -225,7 +227,7 @@ src/
 | `sprite/audit/` | 审计日志写入/读取 | 精灵业务逻辑 |
 | `sprite/controllers/` | Agent 能力扩展控制器 | 渲染进程 UI 代码 |
 | `storage/` | 持久化实现 | 业务逻辑 |
-| `shared/` | 宿主上下文共享类型（Electron + Web 共用） | 任何业务实现逻辑（仅定义接口/类型） |
+| `shared/` | 宿主上下文共享层（接口/类型 + 纯数据常量 + 纯函数，无 Node 依赖，主进程/渲染进程/Web 共用） | Node 运行时依赖（node:fs 等）；有副作用的业务逻辑 |
 | `web/` | Web 模式 HTTP 调试通道（与 Electron 模式并行） | 直接操作 Electron API；包含业务逻辑（应委托 sprite/storage） |
 
 ### 2.2 命名冲突解决
@@ -266,7 +268,7 @@ src/
 
 ### 延后（非目录结构）
 
-- [x] S-02: shared 模块已落地（DWM-01 双模式 Web 调试，2026-07-03 v1.2 纳入文档）
+- [x] S-02: shared 模块已落地（DWM-01 双模式 Web 调试，2026-07-03 v1.2 纳入文档；2026-07-04 v1.3 补充 inputValidation/shortcutDefaults 描述）
 - [ ] S-03: 类型定义分散（需统一方案）
 - [ ] Q-01/Q-03: prettier/eslint 配置（低优先级）
 

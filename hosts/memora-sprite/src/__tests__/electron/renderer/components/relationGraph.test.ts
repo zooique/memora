@@ -573,8 +573,8 @@ describe('RelationGraphRenderer R2 命中检测 + loadData + 空状态', () => {
       };
       renderer.loadData(data);
 
-      // 点击 (0, 0)，远离任意边
-      const found = (renderer as unknown as {
+      // 点击 (0, 0)，远离任意边（保留调用以表达测试意图，返回值由后续 found2 覆盖）
+      (renderer as unknown as {
         findEdgeAt: (x: number, y: number) => GraphEdge | null;
       }).findEdgeAt(0, 0);
       // (0,0) 可能在某条边的 8px 内（取决于布局结果）

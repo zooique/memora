@@ -560,7 +560,7 @@ button:active,
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-window);
   overflow: hidden;
   display: flex;
   flex-direction: column;

@@ -258,7 +258,7 @@ describe('PerceptionCoordinator', () => {
 
   describe('pushUserMessage', () => {
     it('null 输入应跳过（不加入缓存）', () => {
-      const { coordinator, subControllers } = createCoordinator();
+      const { coordinator } = createCoordinator();
       coordinator.pushUserMessage(null);
 
       // 通过 refreshBeforeChat 间接验证：recentUserMessages 为空时不调用 deriveAffectFromMessages

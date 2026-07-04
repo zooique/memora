@@ -19,7 +19,7 @@
  *   InputAreaManager 仅负责 UI 联动，不重复守卫逻辑
  */
 
-import { EventTracker } from '../helpers/eventTracker.js';
+import type { EventTracker } from '../helpers/eventTracker.js';
 
 /**
  * 输入区域宿主接口
