@@ -384,8 +384,8 @@ export class MemoryInspector {
    * 当 VectorStore 可用时，启用语义搜索通道，补强关键词召回的语义缺口。
    * 向量搜索失败时静默降级到纯关键词（降级优先原则）。
    *
-   * 融合排序算法已提取到 hybridMerge.ts，与 recall() 共享同一实现。
-   * 消除原先与本模块的算法重复 + 跨模块常量依赖。
+   * 融合排序算法已提取到 hybridMerge.ts，与 recall() 共享同一实现，
+   * 避免跨模块常量依赖。
    *
    * @returns 混合排序后的搜索结果（含相似度分数）
    */

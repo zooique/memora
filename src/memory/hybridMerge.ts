@@ -2,15 +2,15 @@
  * 双通道融合排序 — 共享给 recall() 和 searchHybrid()
  *
  * 设计动机：
- * 原先 recall.ts 和 memoryInspector.ts 各自实现一份"向量通道 + 关键词通道合并排序"逻辑，
- * 算法逐行重复，且 memoryInspector 跨模块从 recall.ts 导入 3 个常量
- * （RECALL_LIMIT_MULTIPLIER / VECTOR_SCORE_WEIGHT / MEMORY_SCORE_WEIGHT），
- * 违反"agent 不依赖 memory 内部常量"分层原则。
+ * recall.ts 和 memoryInspector.ts 共用"向量通道 + 关键词通道合并排序"逻辑，
+ * 集中到此模块实现单点维护。常量（RECALL_LIMIT_MULTIPLIER /
+ * VECTOR_SCORE_WEIGHT / MEMORY_SCORE_WEIGHT）与算法同源，
+ * agent 直接从本模块导入，不再绕道 recall.ts，遵守"agent 不依赖 memory
+ * 内部常量"分层原则。
  *
- * 提取到独立模块后：
+ * 收益：
  *   - 算法单点维护（排序权重调整只需改一处）
  *   - 常量与算法同源，agent 直接从 hybridMerge 导入，不再绕道 recall.ts
- *   - recall.ts 仍 re-export 这 3 个常量，保持向后兼容（测试文件已引用）
  *
  * 详见 ADR-004 · 记忆统一模型 + architecture_philosophy_rules.md §6 增量召回
  */
