@@ -15,14 +15,11 @@
  *   2. 详情（原文）—— 排查用
  *   3. 建议（下一步）—— 怎么修复
  */
-// P3-08：re-export toError 供混合 import 场景使用（如 import { securityError, toError }）
-// 注：原注释"纯逻辑 toError，浏览器端可直接 import 此文件而不引入 logger 依赖"已删除——
-// P3-05 删除 MemoraError.log() 后 errors.ts 不再 import loggerHolder，但 errors.ts
-// 仍通过 MemoraError 的 formatWithSuggestions 等方法间接依赖运行时 logger（通过 index.ts 的 setLogger）。
-// 单独需要 toError 的场景应直接 import from '@/utils/toError.js'（零 logger 依赖，浏览器友好）。
+// re-export toError 供混合 import 场景使用（如 import { securityError, toError }）
+// 单独需要零 logger 依赖的 toError 时应直接 import from '@/utils/toError.js'（浏览器友好）。
 export { toError } from '@/utils/toError.js';
 
-// P3-12：从 export 降为模块私有（0 外部 import，仅 errors.ts 内部使用）
+// 模块私有（0 外部 import，仅 errors.ts 内部使用）
 type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';
 
 /**
@@ -44,7 +41,7 @@ export const ToolErrorCode = {
   /**
    * 工具执行超时（可重试）
    *
-   * R-03：预留错误码，当前无业务代码抛出。
+   * 预留错误码，当前无业务代码抛出。
    * 待 toolExecutor 实现工具执行超时机制后启用（如 Promise.race + AbortSignal）。
    * 保留在 RETRYABLE_ERROR_CODES 中以维持公共 API 契约稳定。
    */
@@ -78,7 +75,7 @@ export function isRetryableErrorCode(code: ToolErrorCodeValue): boolean {
   return RETRYABLE_ERROR_CODES.has(code);
 }
 
-// P3-12：从 export 降为模块私有（0 外部 import，仅 MemoraError 构造函数参数使用）
+// 模块私有（0 外部 import，仅 MemoraError 构造函数参数使用）
 interface FriendlyErrorOptions {
   /** 用户能看懂的简短标题（中文） */
   title: string;
@@ -192,4 +189,4 @@ export function securityError(
   return new MemoraError({ title, detail, suggestions, category: 'security', cause });
 }
 
-// toError 已移至 ./toError.ts（纯逻辑，零依赖），此处 re-export 保持向后兼容
+// toError 实现位于 ./toError.ts（纯逻辑，零依赖），此处 re-export 保持向后兼容

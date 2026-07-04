@@ -302,7 +302,7 @@ describe('BuiltinToolHandlers.writeFile', () => {
       expect(result).toContain('已写入');
     });
 
-    // ─── GAP-3：beforeContent/afterContent diff 透传 ──────────
+    // ─── beforeContent/afterContent diff 透传 ──────────
 
     it('writeFile 应将 beforeContent/afterContent 透传给 requestWriteConfirmation', async () => {
       // 创建 confirmWrites=true 的 SecurityGuard，捕获 confirmationHandler 收到的 info

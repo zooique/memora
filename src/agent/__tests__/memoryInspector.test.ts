@@ -102,7 +102,7 @@ describe('MemoryInspector', () => {
     storage = new InMemoryStorage();
     loop = createMockLoop();
     history = createMockHistory();
-    // HC-21：advisor 改为必填，测试中显式构造（与 assembler.ts 行为一致）
+    // advisor 必填，测试中显式构造（与 assembler.ts 行为一致）
     advisor = new MemoryAdvisor(storage);
     inspector = new MemoryInspector(storage, loop, history, advisor, null);
   });
@@ -159,7 +159,7 @@ describe('MemoryInspector', () => {
       expect(inspector.getById('nonexistent')).toBeNull();
     });
 
-    it('SEC-GAP6-02 getDeletedById 应透传 index.getDeletedById（软删除态返回记忆，活跃态返回 null）', () => {
+    it('getDeletedById 应透传 index.getDeletedById（软删除态返回记忆，活跃态返回 null）', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       inspector.upsert(mem);
       // 活跃态 → null

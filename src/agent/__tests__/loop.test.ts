@@ -424,7 +424,7 @@ describe('AgentLoop · processUserInput recall 事件', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：callLlmWithRetry · LLM 调用重试机制（P1-14）
+// 测试：callLlmWithRetry · LLM 调用重试机制
 // ═══════════════════════════════════════════════════════════════
 
 /**
@@ -471,7 +471,7 @@ function mockRetryProvider(turns: RetryTurn[]): LlmProvider & { callCount: numbe
   } as unknown as LlmProvider & { callCount: number };
 }
 
-describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制（P1-14）', () => {
+describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
   it('网络错误后重试应成功（流式开始前失败可重试）', async () => {
     // 第一次抛网络错误，第二次成功返回文本
     const provider = mockRetryProvider([
@@ -631,10 +631,10 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制（P1-14）', (
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：Reflection · 工具错误反思机制（P1-14）
+// 测试：Reflection · 工具错误反思机制
 // ═══════════════════════════════════════════════════════════════
 
-describe('AgentLoop · Reflection · 工具错误反思机制（P1-14）', () => {
+describe('AgentLoop · Reflection · 工具错误反思机制', () => {
   /**
    * 辅助：统计 messages 中 [REFLECTION_HINT] 开头的 system 消息数
    */

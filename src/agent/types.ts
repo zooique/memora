@@ -67,7 +67,7 @@ export interface UIMessages {
   /**
    * 流式中断标记（默认 "\n\n[已中断]"）
    *
-   * GAP-3：流式输出被用户中断时，已生成的部分文本仍会写入历史，
+   * 流式输出被用户中断时，已生成的部分文本仍会写入历史，
    * 此标记追加到文本末尾，让下一轮 LLM 上下文和历史归档能识别中断响应。
    * 与 maxIterationsReached 性质相同（对话末尾状态标记）。
    */
@@ -100,7 +100,7 @@ export interface UIMessages {
  *
  * 详见 ADR-015-archive-mode.md。
  *
- * - `full`（默认）：profile facts + insight + 对话原始内容（GAP-2 预留）全部自动归档
+ * - `full`（默认）：profile facts + insight + 对话原始内容（会话归档预留）全部自动归档
  * - `insights-only`：profile facts + insight 自动归档，对话原始内容需手动归档
  * - `manual`：所有归档都需手动触发，postProcess 跳过所有自动归档分支
  *

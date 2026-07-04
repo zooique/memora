@@ -6,7 +6,7 @@
  * - 中文按 ICU 词典（Node 18+ 内建）
  * - 数字、emoji、英文单词保留为整体
  *
- * 详见 M-202：避免引入 nodejieba（C++ 扩展，Windows + Node 24 prebuilt 不可靠）
+ * 避免引入 nodejieba（C++ 扩展，Windows + Node 24 prebuilt 不可靠）
  *
  * 性能：~10 万字/秒（Intl.Segmenter 是 ICU C++ 实现，比纯 JS 快 10 倍+）
  */
@@ -15,9 +15,8 @@ const ZH_SEGMENTER = new Intl.Segmenter('zh-CN', { granularity: 'word' });
 /**
  * 轻量关键词分词（用于关键词匹配场景）
  *
- * HC-10：内部函数，不在 index.ts 公共 API 导出。
- * P3-02：从 export 降为模块私有（0 外部消费者，仅 scoreByKeywords 内部调用）。
- * 测试通过 @/utils/segmenter.js 内部路径访问已不再可行——
+ * 内部函数，不在 index.ts 公共 API 导出。
+ * 模块私有（0 外部消费者，仅 scoreByKeywords 内部调用）。
  * tokenizeKeywords 的行为通过 scoreByKeywords 间接验证（segmenter.test.ts 已覆盖）。
  *
  * 与 segmentText() 的区别：
@@ -36,7 +35,7 @@ function tokenizeKeywords(input: string): string[] {
   // 提取英文词
   const englishSegments = input.match(/[a-zA-Z0-9]+/g) ?? [];
   tokens.push(...englishSegments);
-  // 去重（R-01：兑现 JSDoc "去重" 契约，避免重复 token 干扰关键词匹配评分）
+  // 去重（兑现 JSDoc "去重" 契约，避免重复 token 干扰关键词匹配评分）
   return [...new Set(tokens)];
 }
 

@@ -7,7 +7,7 @@
  *   - expandHome 仅展开开头 ~，不处理 ~otheruser
  *   - expandHome 不含 ~ 原样返回
  *
- * R-04：basename 重命名为 getBaseName，避免与 node:path.basename 同名冲突
+ * getBaseName 命名避免与 node:path.basename 同名冲突
  */
 import { describe, expect, it } from 'vitest';
 import { getBaseName, expandHome } from '@/utils/path.js';

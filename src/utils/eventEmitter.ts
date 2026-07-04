@@ -25,11 +25,11 @@ export interface AgentEventMap {
   sessionForked: { from: string; to: string; messageCount: number };
   /** 洞察被提取 */
   insightExtracted: { source: string; insight: string };
-  /** GAP-4：记忆冲突被检测到（contradicts 关系写入时触发，宿主可通知用户） */
+  /** 记忆冲突被检测到（contradicts 关系写入时触发，宿主可通知用户） */
   conflictDetected: { newMemoryId: string; newInsight: string; targetId: string; targetContent: string };
-  /** 项目被切换（A-003：宿主 UI 可据此刷新项目相关界面） */
+  /** 项目被切换（宿主 UI 可据此刷新项目相关界面） */
   projectSwitched: { from: string | null; to: string; projectName: string };
-  /** 技能被匹配（A-003：宿主 UI 可据此展示当前激活技能） */
+  /** 技能被匹配（宿主 UI 可据此展示当前激活技能） */
   skillMatched: { skill: string; score: number };
 }
 

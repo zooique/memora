@@ -1,5 +1,5 @@
 /**
- * 记忆衰减调度器（HC-18 拆分自 agent.ts）
+ * 记忆衰减调度器（从 agent.ts 拆分）
  *
  * 职责：
  *   1. 定期执行记忆 score 衰减（体现"自然遗忘"）
@@ -124,14 +124,14 @@ export class MemoryDecayScheduler {
    */
   runOnce(): void {
     if (!this.storage) return;
-    // R-103 衰减 Span：记录衰减执行过程，补全衰减可观测性缺口
+    // 衰减 Span：记录衰减执行过程，补全衰减可观测性缺口
     const decaySpan = this.tracer.startSpan(TRACE_SPANS.DECAY);
     try {
       const sources = [SOURCE_LABELS.INSIGHT, SOURCE_LABELS.PROFILE, SOURCE_LABELS.WORK_PROJECTION];
       const decayedCount = this.storage.decayScores(sources, new Date());
       logger.debug({ decayedCount }, '记忆衰减完成');
 
-      // R-103 衰减指标统计：累计执行次数和衰减记忆数
+      // 衰减指标统计：累计执行次数和衰减记忆数
       this.metricDecayRunCount++;
       this.metricTotalDecayedCount += decayedCount;
       this.metricLastDecayAt = nowIso();

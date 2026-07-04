@@ -47,11 +47,11 @@ export interface ChatOptions {
     };
   };
   /**
-   * 强制不使用流式（L-02：预留字段，当前无消费者）
+   * 强制不使用流式（预留字段，当前无消费者）
    *
    * openaiCompatible 始终以 stream:true 发起请求（chat() 返回 AsyncIterable）。
    * 本字段保留用于未来"非流式回退"场景（如低延迟短回复或 Provider 不支持 SSE 时）。
-   * 保留在公共 API 中以维持 ChatOptions 契约稳定（同 R-03 判例）。
+   * 保留在公共 API 中以维持 ChatOptions 契约稳定。
    */
   stream?: boolean;
   /**
@@ -63,7 +63,7 @@ export interface ChatOptions {
    * 不指定时使用默认 chat 通道。
    *
    * @experimental 多 Provider 路由功能处于设计阶段，当前所有消费者共用
-   * 同一 Provider。该字段已声明但未被任何 LLM 调用路径读取（GAP-9 扫描确认），
+   * 同一 Provider。该字段已声明但未被任何 LLM 调用路径读取，
    * 待多通道路由真正实现时激活。
    * 详见接入指南 §九
    */
@@ -98,9 +98,6 @@ export abstract class LlmProvider {
    *
    * 注意：response_format 不能与 tools 同时使用（OpenAI 协议限制），
    * tool_calls 走独立的 SSE delta 流式协议，无需此约束。
-   *
-   * 历史背景（GAP-8 清理）：曾用于"约束 tool_call 输出格式"，但该
-   * 设计与 OpenAI 协议不符，相关死代码已从 AgentLoop.buildChatOptions 移除。
    */
   readonly supportsStructuredOutput: boolean = false;
 

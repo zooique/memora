@@ -1,7 +1,7 @@
 /**
  * 双通道融合排序 — 共享给 recall() 和 searchHybrid()
  *
- * P1-05 提取（2026-07）：
+ * 设计动机：
  * 原先 recall.ts 和 memoryInspector.ts 各自实现一份"向量通道 + 关键词通道合并排序"逻辑，
  * 算法逐行重复，且 memoryInspector 跨模块从 recall.ts 导入 3 个常量
  * （RECALL_LIMIT_MULTIPLIER / VECTOR_SCORE_WEIGHT / MEMORY_SCORE_WEIGHT），

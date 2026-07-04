@@ -318,9 +318,9 @@ describe('Logging · 环境变量展开 (~ → homedir)', () => {
   });
 });
 
-// ─── P1-04 竞态守卫测试 ──────────────────────────────────
+// ─── 竞态守卫测试 ──────────────────────────────────
 
-describe('Logging · P1-04 setLogger 与 pino 异步加载竞态守卫', () => {
+describe('Logging · setLogger 与 pino 异步加载竞态守卫', () => {
   afterEach(() => {
     setLogger(undefined);
   });

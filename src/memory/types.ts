@@ -11,7 +11,7 @@ import { z } from 'zod';
 /**
  * 记忆基元 schema
  *
- * 8 个核心字段（v2.1 GAP-6 软删除扩展），无封闭枚举
+ * 8 个核心字段（v2.1 软删除扩展），无封闭枚举
  * - 7 个基础字段：id/content/source/name/createdAt/accessedAt/score
  * - 1 个可选字段：deletedAt（软删除时间，undefined 表示活跃记忆）
  */

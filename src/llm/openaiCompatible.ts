@@ -17,7 +17,7 @@ export interface OpenAICompatibleConfig {
 }
 
 /**
- * P3-09：错误响应体截断长度（字符数）。
+ * 错误响应体截断长度（字符数）。
  *
  * handleResponseError 中 4 处 errorText.slice(0, 200) 的统一常量，
  * 避免魔法数字散落，便于后续调整截断策略。
@@ -27,14 +27,12 @@ const MAX_ERROR_BODY_LEN = 200;
 /**
  * chunk 级读超时区分首 chunk 与 chunk 间（reasoning 模型适配）
  *
- * 背景：原统一 30s 超时对 reasoning 模型（DeepSeek-R1/o1/QwQ 等）过短——
- *   首 chunk 前 LLM 需要完成思维链推理，可能耗时 30-90s；
- *   chunk 间正常停顿 < 10s，但复杂推理节点可能短暂停顿。
+ * 背景：reasoning 模型（DeepSeek-R1/o1/QwQ 等）首 chunk 前需完成思维链推理，
+ *   可能耗时 30-90s；chunk 间正常停顿 < 10s，但复杂推理节点可能短暂停顿。
  *
  * 策略：
  *   - 首 chunk 超时 120s：与请求级超时一致，给 reasoning 模型足够思考时间
  *   - chunk 间超时 60s：首 chunk 已到说明连接正常，60s 足以覆盖正常停顿
- *     （原 30s 在网络抖动或 reasoning 模型推理节点会误判超时）
  *
  * 判定依据：firstChunkReceived 标志位区分两种阶段
  */
@@ -74,12 +72,12 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     if (opts.tools) body['tools'] = opts.tools;
     if (opts.maxTokens) body['max_tokens'] = opts.maxTokens;
-    // 结构化输出约束（GAP-8 能力触达）：透传 response_format 到请求 body
+    // 结构化输出约束：透传 response_format 到请求 body
     // 供未来非 tool_call 场景使用（如归档摘要强制 JSON、配置建议提取）
     // 注意：不能与 tools 同时使用（OpenAI 协议限制），调用方需自行保证互斥
     if (opts.response_format) body['response_format'] = opts.response_format;
 
-    // 校验 API Key（M-103：缺失时给友好提示，不暴露 undefined 报错）
+    // 校验 API Key（缺失时给友好提示，不暴露 undefined 报错）
     if (!this.config.apiKey) {
       throw configError(
         'API Key 未配置',
@@ -174,8 +172,6 @@ export class OpenAICompatibleProvider extends LlmProvider {
       }
     } finally {
       // 统一清理：覆盖 HTTP 错误、空 body、SSE 异常、正常完成所有路径
-      // 修复 LLM-01：原实现仅在 fetch 网络异常 catch 移除监听器，
-      // handleResponseError/空body/SSE 抛错路径均泄漏监听器与定时器
       clearTimeout(timeoutId);
       if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
     }
@@ -222,7 +218,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
   }
 
   /**
-   * P3-09：安全取消 response.body（2 处重复 try/catch 提取的 helper）
+   * 安全取消 response.body
    *
    * 在 SSE 异常和 HTTP 错误处理路径中均需 cancel response.body 释放底层连接，
    * cancel 本身失败不应阻塞后续错误抛出，仅 debug 记录。
@@ -285,9 +281,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
     const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 
     // chunk 级读超时区分首 chunk 与 chunk 间
-    // 原实现 reader.read() 阻塞时无超时，连接半挂（NAT/代理/服务端慢响应不关 TCP）会永久等待
-    // abort signal 也只能在新 chunk 到达后检查，无法中断正在 await 的 read()
-    // 改用 setTimeout + reader.cancel：超时则 cancel reader 让 read() reject 退出
+    // reader.read() 阻塞时若无超时，连接半挂（NAT/代理/服务端慢响应不关 TCP）会永久等待
+    // 采用 setTimeout + reader.cancel：超时则 cancel reader 让 read() reject 退出
     //
     // 区分首 chunk 与 chunk 间（reasoning 模型适配）：
     //   - 首 chunk 前 LLM 可能思考数十秒（reasoning 模型），用 FIRST_CHUNK_TIMEOUT_MS(120s)
@@ -402,9 +397,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
         }
       }
     } finally {
-      // releaseLock 不会取消流，只是释放锁让其他 reader 能 getReader()
-      // 改用 reader.cancel() 彻底释放底层 TCP 连接，避免 generator 提前 break 时
-      // 底层连接悬挂（CallLlmWithRetry 无 finally 触发 abort 时的兜底）
+      // reader.cancel() 彻底释放底层 TCP 连接（releaseLock 仅释放锁不取消流，
+      // 无法避免 generator 提前 break 时底层连接悬挂；也是 CallLlmWithRetry
+      // 无 finally 触发 abort 时的兜底）
       // 已 done/cancel 的 reader 调 cancel 是 no-op，安全
       try {
         await reader.cancel();

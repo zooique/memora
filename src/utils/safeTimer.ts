@@ -59,7 +59,7 @@ export function clearSafeInterval(id: ReturnType<typeof setInterval> | null): vo
 }
 
 /**
- * 获取活跃定时器数量（R-06：仅供测试 + 调试用，验证 activeTimers 注册表清理）
+ * 获取活跃定时器数量（仅供测试 + 调试用，验证 activeTimers 注册表清理）
  *
  * 场景：safeSetTimeout 触发后应自动从注册表移除；clearSafeTimeout/clearSafeInterval
  * 应立即从注册表移除。此函数用于直接断言注册表状态，而非仅通过回调触发间接验证。
@@ -71,13 +71,10 @@ export function getActiveTimerCount(): number {
 }
 
 /**
- * 清理所有活跃定时器（R-06：兜底清理机制）
+ * 清理所有活跃定时器（兜底清理机制）
  *
  * 场景：
  *   - 测试隔离：每个测试 beforeEach 调用，确保 activeTimers 注册表无残留
- *
- * P3-13 注释订正：原注释提及"Agent.close() 兜底"场景，但 Agent.close() 实际
- * 逐个调用 clearSafeInterval/clearSafeTimeout，未调用此函数。此函数当前仅供测试使用。
  *
  * 注意：此函数会清理所有通过 safeSetTimeout/safeSetInterval 创建的定时器，
  *       包括尚未触发的 timeout 和正在重复的 interval。

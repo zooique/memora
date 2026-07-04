@@ -5,10 +5,7 @@
  * 基于基元驱动模型，通过 source 开放字符串区分记忆来源，
  * 通过双通道（语义 + 关键词）召回，无需独立管理器
  *
- * P1-05 重构（2026-07）：
- * 双通道融合排序算法已提取到 hybridMerge.ts，与 memoryInspector.searchHybrid() 共享。
- * 本模块仍 re-export 三个常量（RECALL_LIMIT_MULTIPLIER / VECTOR_SCORE_WEIGHT /
- * MEMORY_SCORE_WEIGHT）保持向后兼容，但实际定义已迁移到 hybridMerge.ts。
+ * 双通道融合排序算法在 hybridMerge.ts 中实现，与 memoryInspector.searchHybrid() 共享。
  *
  * 详见 ADR-004 · 记忆统一模型 + architecture_philosophy_rules.md §6 增量召回
  */
@@ -19,13 +16,7 @@ import { logger } from '@/logging/logger.js';
 import { STOPWORDS, SOURCE_LABELS } from '@/memory/types.js';
 import { segmentText } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
-// P1-05：双通道融合排序算法从 hybridMerge 导入（常量通过 re-export 暴露给历史消费者）
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
-
-// ─── 向后兼容 re-export（P1-05：常量定义已迁移到 hybridMerge.ts） ───
-// 测试文件和历史代码可能通过 recall.ts 导入这些常量，保持 re-export 避免破坏
-// 直接从 hybridMerge.ts 重新导出，本模块不再定义这些常量
-export { RECALL_LIMIT_MULTIPLIER, VECTOR_SCORE_WEIGHT, MEMORY_SCORE_WEIGHT } from '@/memory/hybridMerge.js';
 
 // ─── 召回与衰减常量 ─────────────────────────────────────
 
@@ -97,7 +88,7 @@ export interface RecallOptions {
  * 4. 排除已单独注入的记忆（persona、rule、skill）
  * 5. 返回 top N
  *
- * P1-05：融合排序算法已提取到 hybridMerge.ts，与 searchHybrid() 共享同一实现
+ * 融合排序算法已提取到 hybridMerge.ts，与 searchHybrid() 共享同一实现
  *
  * @param storage - 记忆存储实例
  * @param query - 搜索查询文本
@@ -157,7 +148,7 @@ export async function recall(
   // ── 无任何结果 ──
   if (merged.size === 0) return [];
 
-  // ── 综合排序：委托给 hybridMerge 纯函数（P1-05 提取） ──
+  // ── 综合排序：委托给 hybridMerge 纯函数 ──
   const sorted = hybridMerge(merged.values(), limit);
 
   // ── 召回时提升 score ──
@@ -184,7 +175,7 @@ export async function recall(
  * @param memory - 被召回的记忆
  * @param now - 当前时间戳（ISO 8601）
  */
-// P3-06：从 export 降为模块私有（0 外部消费者，仅 recall.ts 内部调用，与 tokenizeKeywords 同模式）
+// 模块私有（0 外部消费者，仅 recall.ts 内部调用，与 tokenizeKeywords 同模式）
 function boostScore(memory: Memory, now?: string): void {
   memory.score = Math.min(SCORE_CEILING, memory.score + BOOST_INCREMENT);
   memory.accessedAt = now ?? nowIso();

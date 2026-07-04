@@ -19,9 +19,9 @@ export interface SkillEntry {
   /**
    * 来源层（agent / project）
    *
-   * L-03：预留字段，当前仅写入无读取消费者（skillManager + configManager 标注来源层）。
+   * 预留字段，当前仅写入无读取消费者（skillManager + configManager 标注来源层）。
    * 保留用于未来"按层禁用"（如宿主临时屏蔽 project 层技能）或"UI 显示来源"场景。
-   * 保留在 SkillEntry 契约中以维持类型稳定（同 R-03 判例）。
+   * 保留在 SkillEntry 契约中以维持类型稳定。
    */
   layer: 'agent' | 'project';
 }

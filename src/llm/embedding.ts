@@ -1,7 +1,7 @@
 /**
  * Embedding Provider — 调用 OpenAI 兼容的 /embeddings 端点
  *
- * M-206：语义检索的核心能力
+ * 语义检索的核心能力：
  * - 将文本转为向量（embedding）
  * - 支持批量嵌入（减少 API 调用次数）
  * - 向量维度由模型决定（如 text-embedding-3-small: 1536 维）
@@ -87,7 +87,7 @@ export class EmbeddingProvider {
     const results = await this.batchEmbed([text]);
     const first = results[0];
     if (!first) {
-      // 裸 throw 改用 llmError 工厂（Iter-1：错误处理统一）
+      // 错误处理统一：使用 llmError 工厂
       throw llmError(
         '嵌入结果为空',
         'batchEmbed 返回空结果',
@@ -168,7 +168,7 @@ export class EmbeddingProvider {
 
     // 填充结果 + 更新缓存
     for (let i = 0; i < uncached.length; i++) {
-      // QC-17 移除非空断言：循环条件保证索引有效，null 检查兜底
+      // 循环条件保证索引有效，null 检查兜底
       const text = uncached[i];
       if (!text) continue;
       const vector = sorted[i]?.embedding;
@@ -177,7 +177,7 @@ export class EmbeddingProvider {
         continue;
       }
       this.setCache(text, vector);
-      // QC-17 移除非空断言：null 检查兜底
+      // null 检查兜底
       const idx = uncachedIndices[i];
       if (idx !== undefined) results[idx] = { text, vector };
     }

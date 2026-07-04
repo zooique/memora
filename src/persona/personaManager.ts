@@ -97,7 +97,6 @@ export class PersonaManager {
     if (this.personaList.length === 0) {
       logger.warn({ personaCount: 0 }, '未找到任何角色文件，将使用默认角色');
       this.activePersona = this.createDefaultPersona();
-      // L-01：writePersonaToIndex 已改为同步函数
       this.writePersonaToIndex(this.activePersona);
       return this.buildSystemPrompt();
     }
@@ -108,7 +107,6 @@ export class PersonaManager {
     );
 
     // 写入 SQLite 索引（persona 遵循万物皆记忆）
-    // L-01：writeAllToIndex 已改为同步函数
     this.writeAllToIndex();
 
     // 激活指定角色
@@ -266,7 +264,7 @@ export class PersonaManager {
   /**
    * 重载角色：清空内存缓存 + 重新扫描目录 + 同步 SQLite 索引 + 保持当前激活角色
    *
-   * GAP-5 事件驱动重载：confirmConfigSuggestion 写入 persona 文件后或用户手动编辑
+   * 事件驱动重载：confirmConfigSuggestion 写入 persona 文件后或用户手动编辑
    * personas/ 目录后，调用此方法使当前会话立即生效，无需重启 Agent。
    *
    * 激活角色保持策略：
@@ -278,7 +276,6 @@ export class PersonaManager {
   async reload(): Promise<number> {
     const oldActiveName = this.activePersona?.name;
     this.personaList = await this.scanPersonas();
-    // L-01：writeAllToIndex 已改为同步函数
     this.writeAllToIndex();
 
     // 保持当前激活角色（若仍存在），否则回退到第一个
@@ -372,8 +369,7 @@ export class PersonaManager {
   /**
    * 将所有角色写入 SQLite 索引
    *
-   * L-01 修正：writePersonaToIndex 已为同步，本函数循环体内无 await，
-   * 改为同步函数避免 async 误导扩散。
+   * 本函数循环体内无 await，作为同步函数实现。
    */
   private writeAllToIndex(): void {
     if (!this.index) return;
@@ -386,8 +382,7 @@ export class PersonaManager {
   /**
    * 将单个角色写入 SQLite 索引
    *
-   * L-01 修正：函数体无 await，原 async 标注误导（让调用方以为有异步 I/O）。
-   * 改为同步函数，调用方相应删除 await。index.upsert 是同步方法。
+   * 函数体无 await，作为同步函数实现。index.upsert 是同步方法。
    */
   private writePersonaToIndex(persona: Persona): void {
     if (!this.index) return;

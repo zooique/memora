@@ -8,7 +8,7 @@
  *   4. 上下文摘要生成（generateContextSummary）—— LLM 生成"遗忘补偿"
  *   5. 摘要缓存管理（getOrCreateSummary）—— 缓存 TTL + 过期重生成
  *
- * 设计理由（QC-R2-08）：AgentLoop 1151 行超阈值，上下文管理是独立职责，
+ * 设计理由：AgentLoop 1151 行超阈值，上下文管理是独立职责，
  * 拆分后 AgentLoop 聚焦对话循环，ContextManager 聚焦上下文窗口管理。
  *
  * 自然生长原则：ContextManager 不持有 messages 引用（避免与 AgentLoop 状态耦合），
@@ -20,7 +20,7 @@ import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { NOOP_TRACER, TRACE_SPANS, type ITracer } from '@/agent/tracer.js';
 
-/** ContextManager 构造选项（P3-12：从 export 降为模块私有，0 外部 import） */
+/** ContextManager 构造选项（模块私有，0 外部 import） */
 interface ContextManagerOptions {
   /** 上下文窗口 token 上限 */
   readonly maxContextTokens: number;
@@ -29,7 +29,7 @@ interface ContextManagerOptions {
   /** 截断时生成占位消息的文案函数（来自 UIMessages.contextTruncated） */
   readonly contextTruncatedFn: (skipped: number, kept: number) => string;
   /**
-   * 可观测性 Tracer（P1-16 新增，用于 generateContextSummary span 埋点）
+   * 可观测性 Tracer（用于 generateContextSummary span 埋点）
    *
    * 未注入时降级为 NOOP_TRACER（静默丢弃所有 span，零开销）。
    */
@@ -37,7 +37,7 @@ interface ContextManagerOptions {
 }
 
 /**
- * 判断字符是否为 CJK 字符（P1-15 中文适配）
+ * 判断字符是否为 CJK 字符（中文适配）
  *
  * CJK 字符在 LLM tokenizer 中 token 密度更高（约 1-2 token/字符），
  * 需要与英文/数字/符号分开估算。
@@ -61,7 +61,7 @@ function isCjkChar(code: number): boolean {
 }
 
 /**
- * 统计字符串中 CJK 与非 CJK 字符数（P1-15 中文适配）
+ * 统计字符串中 CJK 与非 CJK 字符数（中文适配）
  *
  * 用 for...of 遍历字符串以正确处理代理对（emoji 等），
  * codePointAt(0) 获取首个 code point。
@@ -96,7 +96,7 @@ export class ContextManager {
   private readonly provider: LlmProvider;
   /** 截断占位消息文案函数 */
   private readonly contextTruncatedFn: (skipped: number, kept: number) => string;
-  /** 可观测性 Tracer（P1-16：用于 generateContextSummary span 埋点，默认 NOOP） */
+  /** 可观测性 Tracer（用于 generateContextSummary span 埋点，默认 NOOP） */
   private readonly tracer: ITracer;
 
   /** 上下文摘要缓存（首次截断后生成，后续截断复用） */
@@ -110,7 +110,7 @@ export class ContextManager {
     this.maxContextTokens = opts.maxContextTokens;
     this.provider = opts.provider;
     this.contextTruncatedFn = opts.contextTruncatedFn;
-    // P1-16：未注入 tracer 时降级为 NOOP_TRACER（零开销）
+    // 未注入 tracer 时降级为 NOOP_TRACER（零开销）
     this.tracer = opts.tracer ?? NOOP_TRACER;
   }
 
@@ -120,14 +120,12 @@ export class ContextManager {
   }
 
   /**
-   * 估算消息数组的 token 数（P1-15：CJK 中文适配）
+   * 估算消息数组的 token 数（CJK 中文适配）
    *
-   * 修复前：统一用 totalChars / CHARS_PER_TOKEN 估算，
-   *   中文 4 字符 ≈ 1.3 token（严重低估，实际约 4-8 token）。
-   *
-   * 修复后：区分 CJK 与非 CJK 字符分别估算：
+   * 区分 CJK 与非 CJK 字符分别估算：
    *   - CJK 字符（中文/日文/韩文）：cjkChars / CJK_CHARS_PER_TOKEN（1.5）
    *   - 非 CJK 字符（英文/数字/符号）：otherChars / CHARS_PER_TOKEN（3）
+   * 统一字符估算会严重低估中文（4 字符 ≈ 1.3 token，实际约 4-8 token）。
    *
    * toolCalls 的 JSON 序列化字符数也计入（同样区分 CJK/非 CJK）。
    *
@@ -373,7 +371,7 @@ export class ContextManager {
    * 在首次截断时，提取即将被裁剪的消息中最近几条用户/助手对话，
    * 调用 provider 生成一句摘要，作为"遗忘补偿"注入到 system prompt 中。
    *
-   * P1-16：新增 tracer span 埋点（TRACE_SPANS.CONTEXT_SUMMARY），
+   * 通过 tracer span 埋点（TRACE_SPANS.CONTEXT_SUMMARY），
    * 让宿主监控面板能观察截断频率、摘要生成耗时与失败率。
    *
    * signal 参数传入 provider.chat 的 ChatOptions，
@@ -388,7 +386,7 @@ export class ContextManager {
     messages: readonly Message[],
     signal?: AbortSignal,
   ): Promise<string> {
-    // P1-16：启动 CONTEXT_SUMMARY span，记录摘要生成的耗时与异常
+    // 启动 CONTEXT_SUMMARY span，记录摘要生成的耗时与异常
     const summarySpan = this.tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY, {
       messageCount: messages.length,
       summarizingMessages: Math.min(messages.length - 1, LOOP_CONSTANTS.SUMMARY_MSG_COUNT),
@@ -456,12 +454,12 @@ export class ContextManager {
         logger.debug('上下文摘要生成被中断，降级为无摘要');
         return '';
       }
-      // P1-16：记录异常到 span（不中断 span，标记错误状态）
+      // 记录异常到 span（不中断 span，标记错误状态）
       summarySpan.recordException(err instanceof Error ? err : new Error(String(err)));
       logger.warn({ err }, '上下文摘要生成失败，降级为无摘要');
       return '';
     } finally {
-      // P1-16：无论成功/失败都结束 span
+      // 无论成功/失败都结束 span
       summarySpan.end();
     }
   }

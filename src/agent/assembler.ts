@@ -23,7 +23,7 @@ import { InsightExtractor } from '@/agent/managers/insightExtractor.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
-// HC-21：MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
+// MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
 import type { LlmProvider } from '@/llm/provider.js';
@@ -72,7 +72,7 @@ export interface AssembleOutput {
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
   autoConfigRefiner: AutoConfigRefiner;
-  /** GAP-2：会话内容归档器（content 类记忆） */
+  /** 会话内容归档器（content 类记忆） */
   sessionArchiver: SessionArchiver;
 }
 
@@ -111,7 +111,7 @@ export async function assembleComponents(
 
   // ── Phase 1: 无依赖组件 ──
 
-  // A-004: Agent 层总是注入 createSecurityGuard，此处显式校验并收窄类型
+  // Agent 层总是注入 createSecurityGuard，此处显式校验并收窄类型
   if (!pctx.security) {
     throw configError('security guard 未注入', undefined, ['检查 AgentOptions.permission 或 createSecurityGuard 配置']);
   }
@@ -168,7 +168,7 @@ export async function assembleComponents(
   // ADR-014：relationStore 可选注入，未注入时 InsightExtractor 跳过关系构建
   const insightExtractor = new InsightExtractor(provider, pctx.index, relationStore ?? null);
 
-  // GAP-2：SessionArchiver（会话内容归档器，content 类记忆）
+  // SessionArchiver（会话内容归档器，content 类记忆）
   // 与 InsightExtractor 同模式：构造时注入 provider + storage + sessionStore
   const sessionArchiver = new SessionArchiver(provider, pctx.index, sessionStore);
 
@@ -197,12 +197,12 @@ export async function assembleComponents(
     configDir ? (memory: Memory) => fileStore.write(memory) : undefined,
   );
 
-  // HC-21：MemoryAdvisor 在组合根装配，显式注入 MemoryInspector（组合根一致性）
-  // G-2：advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
+  // MemoryAdvisor 在组合根装配，显式注入 MemoryInspector（组合根一致性）
+  // advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
   const memoryAdvisor = new MemoryAdvisor(pctx.index);
   const memoryInspector = new MemoryInspector(pctx.index, loop, history, memoryAdvisor, relationStore ?? null);
 
-  // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
+  // AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
     configManager.suggestionCallback?.(suggestion),
   );

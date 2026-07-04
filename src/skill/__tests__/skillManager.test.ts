@@ -210,7 +210,7 @@ keywords: 文件,读取
     });
   });
 
-  // ─── reload（GAP-5 事件驱动热重载） ─────────────────────
+  // ─── reload（事件驱动热重载） ─────────────────────
 
   describe('reload', () => {
     it('重载应反映目录变更（新增技能）', async () => {
@@ -260,9 +260,9 @@ keywords: 文件,读取
     });
   });
 
-  // ─── L-05：register / get / list 公共 API ─────────────────
+  // ─── register / get / list 公共 API ─────────────────
 
-  describe('L-05 · register 运行时注入', () => {
+  describe('register 运行时注入', () => {
     it('应注册新技能并出现在 list 中', async () => {
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
@@ -322,7 +322,7 @@ keywords: 文件,读取
     });
   });
 
-  describe('L-05 · get / list 公共 API', () => {
+  describe('get / list 公共 API', () => {
     it('get 不存在的技能应返回 null', async () => {
       const skillManager = new SkillManager(testDir);
       await skillManager.load();

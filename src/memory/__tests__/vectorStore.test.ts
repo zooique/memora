@@ -2,7 +2,7 @@
  * 向量存储测试
  * 覆盖 upsert / search / delete / 持久化 / 批量操作
  *
- * P1-02 加固补充测试：
+ * 加固测试：
  * - schema 校验（损坏文件 / 维度不一致 / 缺字段 / version 不匹配）
  * - 维度一致性校验（upsert / batchUpsert 抛错）
  * - save 并发串行化（多次 save 不互相覆盖）
@@ -166,7 +166,7 @@ describe('VectorStore · 持久化', () => {
   });
 });
 
-// ─── P1-02 加固测试 ───────────────────────────────────────
+// ─── 加固测试 ───────────────────────────────────────
 
 /**
  * 创建可配置维度的 mock EmbeddingService
@@ -204,7 +204,7 @@ function createSwitchableEmbeddingService(initialDim: number) {
   };
 }
 
-describe('VectorStore · P1-02 schema 校验', () => {
+describe('VectorStore · schema 校验', () => {
   let tmpDir: string;
   let storePath: string;
 
@@ -317,7 +317,7 @@ describe('VectorStore · P1-02 schema 校验', () => {
   });
 });
 
-describe('VectorStore · P1-02 维度一致性校验', () => {
+describe('VectorStore · 维度一致性校验', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -366,7 +366,7 @@ describe('VectorStore · P1-02 维度一致性校验', () => {
   });
 });
 
-describe('VectorStore · P1-02 save 串行化', () => {
+describe('VectorStore · save 串行化', () => {
   let tmpDir: string;
   let storePath: string;
 

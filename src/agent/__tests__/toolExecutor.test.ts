@@ -1,5 +1,5 @@
 /**
- * 工具执行器单元测试（M-204）
+ * 工具执行器单元测试
  *
  * 覆盖：
  *   - read_file：成功 / 路径越界 / 黑名单
@@ -17,7 +17,7 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { MemoraError, toolError } from '@/utils/errors.js';
 
-describe('M-204 · 工具执行器（4 个工具）', () => {
+describe('工具执行器（4 个工具）', () => {
   let tmpProject: string;
   let tmpData: string;
   let index: IMemoryStorage;
@@ -127,7 +127,7 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     });
   });
 
-  describe('write_file（M-204 新工具）', () => {
+  describe('write_file', () => {
     const testFile = 'src/new-file.ts';
 
     it('应能写入新文件（owner + confirmWrites=false 自动批准）', async () => {
@@ -192,7 +192,7 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     });
   });
 
-  describe('list_dir（M-204 新工具）', () => {
+  describe('list_dir', () => {
     it('默认应列出项目根的非忽略条目', async () => {
       const result = await executor.execute('list_dir', JSON.stringify({}));
       expect(result).toContain('src/');
@@ -261,7 +261,7 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     });
   });
 
-  describe('search_memories（M-204 新工具）', () => {
+  describe('search_memories', () => {
     it('match 模式：单 token 应能匹配', async () => {
       const result = await executor.execute('search_memories', JSON.stringify({ query: 'Memora' }));
       expect(result).toContain('core-rule');
@@ -370,7 +370,7 @@ describe('M-204 · 工具执行器（4 个工具）', () => {
     });
   });
 
-  describe('R-501 · 自定义工具注册', () => {
+  describe('自定义工具注册', () => {
     /** 测试用自定义工具定义 */
     const customDef = {
       name: 'echo_tool',

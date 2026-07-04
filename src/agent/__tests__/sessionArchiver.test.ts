@@ -1,5 +1,5 @@
 /**
- * SessionArchiver 单元测试（HC-06 补测）
+ * SessionArchiver 单元测试
  *
  * 覆盖：
  * - archiveSessionContent 主流程（正常归档、空会话、消息过少）

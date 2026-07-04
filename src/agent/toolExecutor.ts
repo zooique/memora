@@ -1,11 +1,10 @@
 /**
  * 工具执行器
  *
- * 阶段一：1 个工具（read_file）
- * 阶段二（M-204）：扩展为 4 个工具（read_file / write_file / list_dir / search_memories）
+ * 4 个内置工具：read_file / write_file / list_dir / search_memories
  * 详见 ADR-006 · 安全采用两级权限 + 工具白名单 + 路径白名单
  *
- * QC-R2-10 拆分：内置工具实现 + 路径安全已提取到 BuiltinToolHandlers，
+ * 内置工具实现 + 路径安全已提取到 BuiltinToolHandlers，
  * ToolExecutor 聚焦工具注册 / 分发 / 参数校验。
  */
 import type { SecurityGuard } from '@/security/pathGuard.js';
@@ -75,7 +74,7 @@ export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => P
  * 将工具定义与处理器绑定在一起，
  * 存入 ToolExecutor 的 customTools Map 中。
  */
-// P3-12：从 export 降为模块私有（0 外部 import，仅 toolExecutor.ts 内部 customTools Map 使用）
+// 模块私有（0 外部 import，仅 toolExecutor.ts 内部 customTools Map 使用）
 interface CustomToolEntry {
   /** 工具定义（名称、描述、参数 schema） */
   definition: ToolDefinition;
@@ -87,12 +86,12 @@ interface CustomToolEntry {
  * 工具执行器
  *
  * 职责：工具注册 + 分发 + 参数校验。
- * 内置工具实现委托给 BuiltinToolHandlers（QC-R2-10）。
+ * 内置工具实现委托给 BuiltinToolHandlers。
  */
 export class ToolExecutor {
   /** 自定义工具注册表（宿主项目通过 registerTool 注册领域工具） */
   private readonly customTools = new Map<string, CustomToolEntry>();
-  /** 内置工具处理器（路径安全 + 内置工具实现，QC-R2-10 提取） */
+  /** 内置工具处理器（路径安全 + 内置工具实现） */
   private readonly builtinHandlers: BuiltinToolHandlers;
 
   constructor(
@@ -102,7 +101,7 @@ export class ToolExecutor {
     /** 作品投影管理器（可选，读取文件时自动生成投影） */
     workProjection?: WorkProjectionManager,
   ) {
-    // QC-R2-10：内置工具实现 + 路径安全委托给 BuiltinToolHandlers
+    // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
     // 构造参数仅用于初始化 BuiltinToolHandlers，ToolExecutor 自身不再持有这些引用
     this.builtinHandlers = new BuiltinToolHandlers(
       projectPath,
@@ -205,7 +204,7 @@ export class ToolExecutor {
       return typeof val === 'string' ? val : (fallback ?? '');
     };
 
-    // QC-R2-10：内置工具调用委托给 BuiltinToolHandlers
+    // 内置工具调用委托给 BuiltinToolHandlers
     switch (name) {
       case 'read_file':
         return this.builtinHandlers.readFile(strArg('path'));
@@ -233,8 +232,8 @@ export class ToolExecutor {
         // 自定义工具 fallback：查找 customTools Map
         const custom = this.customTools.get(name);
         if (custom) {
-          // S-01: 传入 ToolContext，提供 guardPath 安全校验方法
-          // QC-R2-10: 路径安全委托给 BuiltinToolHandlers
+          // 传入 ToolContext，提供 guardPath 安全校验方法
+          // 路径安全委托给 BuiltinToolHandlers
           const ctx: ToolContext = {
             guardPath: (path: string) => {
               const absolutePath = this.builtinHandlers.resolveSafePath(path);

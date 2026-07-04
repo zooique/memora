@@ -1,5 +1,5 @@
 /**
- * ArchiveCoordinator 单元测试（HC-18 拆分自 agent.ts）
+ * ArchiveCoordinator 单元测试
  *
  * 覆盖范围：
  *   - archiveProfileFacts：null 降级 + 事实提取 + 事件发射（confirmed/unconfirmed 分支）

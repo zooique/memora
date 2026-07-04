@@ -3,11 +3,10 @@
  *
  * 4 类允许根 + 27 类禁止规则
  * 详见 ADR-006 · 安全模型
- * 阶段二新增：M-101 写入二次确认 + M-105 审计日志
- * SEC-06（自动安全）：补全 Windows/Linux 系统目录 + 包管理器凭证 + 符号链接逃逸防护
- * HC-03：移除 readline 回退路径，未注入 confirmationHandler 时 fail-closed 拒绝写入。
- *        内核纯逻辑库不应依赖交互式终端 I/O（node:readline/promises + node:process），
- *        宿主程序应通过 onWriteConfirmation() 注入自己的确认 UI（Electron/Web/CLI 各自实现）。
+ *
+ * 写入二次确认 + 审计日志：未注入 confirmationHandler 时 fail-closed 拒绝写入。
+ * 内核纯逻辑库不应依赖交互式终端 I/O（node:readline/promises + node:process），
+ * 宿主程序应通过 onWriteConfirmation() 注入自己的确认 UI（Electron/Web/CLI 各自实现）。
  */
 import { resolve, sep, dirname, basename, join } from 'node:path';
 import { realpathSync } from 'node:fs';
@@ -55,7 +54,7 @@ const BLOCKED_PATTERNS = [
   /(^|[\\/])\.gnupg([\\/]|$)/i,
   /(^|[\\/])\.netrc$/i,
   /(^|[\\/])\.pgpass$/i,
-  // ─── 包管理器凭证（SEC-06 补全）───
+  // ─── 包管理器凭证 ───
   /(^|[\\/])\.gitconfig$/i, // Git 配置（可能含 credential helper token）
   /(^|[\\/])\.git-credentials$/i, // Git credential store 明文存储
   /(^|[\\/])\.npmrc$/i, // npm authToken
@@ -73,10 +72,10 @@ const BLOCKED_PATTERNS = [
   /(^|[\\/])\.azure([\\/]|$)/i,
   /(^|[\\/])\.docker([\\/]|$)/i,
   /(^|[\\/])\.kube([\\/]|$)/i,
-  /(^|[\\/])\.config[\\/]gcloud([\\/]|$)/i, // gcloud 配置（SEC-06 修正：加 .config 前缀边界，避免误拦用户 gcloud-tools 目录）
+  /(^|[\\/])\.config[\\/]gcloud([\\/]|$)/i, // gcloud 配置（加 .config 前缀边界，避免误拦用户 gcloud-tools 目录）
   // ─── 环境变量文件（.env / .env.local / .env.production.local 等多段后缀）───
   /(^|[\\/])\.env(\.[^\\/]+)?$/i,
-  // ─── Windows 系统目录（SEC-06 补全：从仅 system32 扩展到完整系统目录）───
+  // ─── Windows 系统目录 ───
   /[\\/]Windows([\\/]|$)/i, // C:\Windows（含 System、System32 等子目录）
   /[\\/]Program Files([\\/]|$)/i, // C:\Program Files
   /[\\/]Program Files \(x86\)([\\/]|$)/i, // C:\Program Files (x86)
@@ -97,7 +96,7 @@ export interface AuditEvent {
   path: string;
   /** 工具名（read_file / write_file / 自定义工具名） */
   tool?: string;
-  /** S-02: 调用链来源（builtin / custom / system），标记安全检查的触发方 */
+  /** 调用链来源（builtin / custom / system），标记安全检查的触发方 */
   source?: 'builtin' | 'custom' | 'system';
   /** 用户决策（写入二次确认场景） */
   decision?: WriteDecision;
@@ -190,8 +189,8 @@ export class SecurityGuard {
     /** Agent 级数据目录（memora.db/vectors 所在目录） */
     agentDataDir?: string,
   ) {
-    // 构建白名单根目录列表（SEC-06：使用 resolveRealpath 解析符号链接，
-    // 确保白名单基准是真实路径，与 assertPathAllowed 中的 resolveRealpath 对齐）
+    // 构建白名单根目录列表：使用 resolveRealpath 解析符号链接，
+    // 确保白名单基准是真实路径，与 assertPathAllowed 中的 resolveRealpath 对齐
     this.allowedRoots = [
       resolveRealpath(expandHome(projectPath)),
       resolveRealpath(expandHome(memoraDir)),
@@ -246,12 +245,12 @@ export class SecurityGuard {
   /**
    * 断言路径允许访问
    * @throws Error 不在白名单时
-   * @param source S-02: 调用链来源标记
+   * @param source 调用链来源标记
    */
   assertPathAllowed(absolutePath: string, tool?: string, source?: 'builtin' | 'custom' | 'system'): void {
-    // SEC-05: NFKC 规范化，防止全角字符（如 ．．/）绕过黑名单正则
+    // NFKC 规范化，防止全角字符（如 ．．/）绕过黑名单正则
     const normalized = absolutePath.normalize('NFKC');
-    // SEC-06: resolveRealpath 解析符号链接，防止通过项目内符号链接逃逸到系统目录
+    // resolveRealpath 解析符号链接，防止通过项目内符号链接逃逸到系统目录
     const resolved = resolveRealpath(normalized);
 
     // 1. 黑名单优先
@@ -302,16 +301,16 @@ export class SecurityGuard {
   }
 
   /**
-   * 写入操作前请求用户确认（M-101）
+   * 写入操作前请求用户确认
    *
    * 规则：
    *   - guest 模式：始终要求确认
    *   - owner + confirmWrites=true：要求确认
    *   - owner + confirmWrites=false：自动批准
    *
-   * HC-03 决策（fail-closed）：
+   * 决策（fail-closed）：
    *   - 需要确认时，必须通过 onWriteConfirmation() 注入 confirmationHandler
-   *   - 未注入 handler 时，**直接拒绝写入**（返回 false），而非走 readline 回退
+   *   - 未注入 handler 时，**直接拒绝写入**（返回 false）
    *   - 理由：内核纯逻辑库不应依赖交互式终端 I/O；宿主程序负责提供确认 UI
    *   - 安全优先：未配置 = 拒绝，避免无意识放行
    *
@@ -349,7 +348,7 @@ export class SecurityGuard {
       afterContent: truncateForDiff(options?.afterContent),
     };
 
-    // HC-03：未注入 confirmationHandler 时 fail-closed 拒绝（不再回退到 readline）
+    // 未注入 confirmationHandler 时 fail-closed 拒绝
     if (!this.confirmationHandler) {
       logger.warn(
         { targetPath, tool, permission: this.permission },
@@ -373,8 +372,8 @@ export class SecurityGuard {
   /**
    * 通过宿主注入的 confirmationHandler 进行写入确认
    *
-   * HC-09：从 requestWriteConfirmation 拆分。抛错视为拒绝（fail-closed 安全优先）。
-   * HC-03：confirmViaReadline 回退路径已移除，此方法是唯一的确认执行路径。
+   * 从 requestWriteConfirmation 拆分。抛错视为拒绝（fail-closed 安全优先）。
+   * 此方法是唯一的确认执行路径。
    *
    * @param info 确认信息（含 diff 内容）
    * @returns true 确认通过；false 用户拒绝或回调异常

@@ -99,10 +99,10 @@ export class AgentLoop {
   private readonly ui: Required<UIMessages>;
   /** 上下文超限时是否自动生成摘要 */
   private readonly enableContextSummary: boolean;
-  /** 上下文管理器（QC-R2-08：从 loop 提取的 token 估算 + 截断 + 摘要职责） */
+  /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
   private readonly contextManager: ContextManager;
 
-  // ─── R-103 运行时指标统计字段 ──────────────────────────
+  // ─── 运行时指标统计字段 ──────────────────────────
   // 累计值，从 AgentLoop 构造起累加，供 getMetrics() 返回快照。
   // 设计为私有字段而非外部注入，保持 AgentLoop 自洽。
 
@@ -120,7 +120,7 @@ export class AgentLoop {
   private metricToolCallCount: number = 0;
   /** 工具调用失败次数（结果以 [ERR 开头） */
   private metricToolFailureCount: number = 0;
-  // metricTruncationCount 已移至 ContextManager.truncationCount（QC-R2-08）
+  // metricTruncationCount 已移至 ContextManager.truncationCount
 
   constructor(private readonly opts: AgentLoopOptions) {
     this.maxIterations = opts.maxIterations ?? 20;
@@ -131,7 +131,7 @@ export class AgentLoop {
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
-      // GAP-3：流式中断标记，追加到中断时已生成的部分文本末尾
+      // 流式中断标记，追加到中断时已生成的部分文本末尾
       interrupted: opts.messages?.interrupted ?? '\n\n[已中断]',
       contextTruncated:
         opts.messages?.contextTruncated ??
@@ -150,8 +150,8 @@ export class AgentLoop {
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
 
-    // QC-R2-08：上下文管理器（token 估算 + 截断 + 摘要）
-    // P1-16：注入 tracer，让 generateContextSummary 有 span 埋点
+    // 上下文管理器（token 估算 + 截断 + 摘要）
+    // 注入 tracer，让 generateContextSummary 有 span 埋点
     this.contextManager = new ContextManager({
       maxContextTokens: this.maxContextTokens,
       provider: opts.provider,
@@ -173,7 +173,7 @@ export class AgentLoop {
    * @param userInput - 用户原始输入
    * @param recalledMemories - 记忆召回结果（Agent.memory.search() 产出），
    *   可选。传入时自动注入到上下文，实现"Agent 记忆召回结果"层
-   * @param signal - 可选的 AbortSignal，用于取消正在进行的对话（V-105）
+   * @param signal - 可选的 AbortSignal，用于取消正在进行的对话
    *   泊文等宿主 UI 传入 AbortController.signal，用户点击"取消"时触发 abort
    */
   async *processUserInput(
@@ -196,12 +196,11 @@ export class AgentLoop {
       if (recalledMemories?.length) {
         this.injectRecallAsSystem(recalledMemories);
       }
-      const userInputClean = userInput; // 保留变量名便于未来扩展输入清洗逻辑
-      // R-103 补充 span 属性：让宿主监控面板能按命中/未命中过滤
+      // 补充 span 属性：让宿主监控面板能按命中/未命中过滤
       recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
       recallSpan.end();
 
-      // R-103 召回命中率统计：每轮对话算一次召回，结果非空算命中
+      // 召回命中率统计：每轮对话算一次召回，结果非空算命中
       this.metricRecallTotalCount++;
       if (recalledMemories && recalledMemories.length > 0) {
         this.metricRecallHitCount++;
@@ -242,14 +241,14 @@ export class AgentLoop {
       }
 
       // 安全规范 §6：用户输入用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力
-      this.messages.push({ role: 'user', content: `<user_input>${userInputClean}</user_input>` });
+      this.messages.push({ role: 'user', content: `<user_input>${userInput}</user_input>` });
 
       let iteration = 0;
       while (iteration < this.maxIterations) {
         iteration++;
         logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
 
-        // V-105：每次迭代前检查是否已被取消
+        // 每次迭代前检查是否已被取消
         if (signal?.aborted) {
           yield { type: 'aborted', reason: this.ui.abortedByUser };
           return;
@@ -264,12 +263,12 @@ export class AgentLoop {
           this.enableContextSummary &&
           this.contextManager.shouldTruncate(this.messages)
         ) {
-          // QC-R2-08：摘要缓存管理已移至 ContextManager.getOrCreateSummary
+          // 摘要缓存管理已移至 ContextManager.getOrCreateSummary
           // 传入 signal，让摘要生成可被用户取消中断（避免 generator 挂起）
           contextSummary = await this.contextManager.getOrCreateSummary(this.messages, signal);
         }
         const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
-        // SEC-01: 截断后同步替换工作记忆，防止 messages 数组无限增长
+        // 截断后同步替换工作记忆，防止 messages 数组无限增长
         // 持久化由 MessageHistory 负责，工作记忆只需保留当前上下文窗口内的消息
         if (safeMessages !== this.messages) {
           this.messages = [...safeMessages];
@@ -278,7 +277,7 @@ export class AgentLoop {
         const llmResult: LlmCallResult = yield* this.callLlmWithRetry(safeMessages, chatOpts, signal, iteration);
 
         if (llmResult.aborted) {
-          // GAP-3：LLM 调用中断时仍保留已生成的部分文本到上下文消息列表
+          // LLM 调用中断时仍保留已生成的部分文本到上下文消息列表
           // 让下一轮 LLM 能看到中断响应（追加 interrupted 标记让 LLM 识别非完整回复）
           // 注意：工具调用中断（execResult.aborted）不在此处理，因 executeToolCalls
           // 已 push assistant（含 toolCalls），追加文本标记会破坏工具调用结构
@@ -409,11 +408,11 @@ export class AgentLoop {
       messageCount: safeMessages.length,
       iteration,
     });
-    // R-103 补充 span 属性：让宿主监控面板能按 token 消耗过滤
+    // 补充 span 属性：让宿主监控面板能按 token 消耗过滤
     llmSpan.setAttribute('inputTokens', this.contextManager.estimateTokens(safeMessages));
 
     for (let attempt = 0; attempt <= LOOP_CONSTANTS.MAX_LLM_RETRIES; attempt++) {
-      // V-105：每次重试前检查是否已被取消（用户点击停止）
+      // 每次重试前检查是否已被取消（用户点击停止）
       if (signal?.aborted) {
         aborted = true;
         break;
@@ -457,7 +456,7 @@ export class AgentLoop {
       }
 
       try {
-        // R-103 LLM 指标统计：每次 provider.chat 调用 +1，输入 token 累计
+        // LLM 指标统计：每次 provider.chat 调用 +1，输入 token 累计
         this.metricLlmCallCount++;
         this.metricTotalInputTokens += this.contextManager.estimateTokens(safeMessages);
 
@@ -477,7 +476,7 @@ export class AgentLoop {
             toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
           }
         }
-        // R-103 输出 token 统计：成功时累计输出 token
+        // 输出 token 统计：成功时累计输出 token
         this.metricTotalOutputTokens += this.contextManager.estimateTokens([
           { role: 'assistant', content: fullContent },
         ]);
@@ -486,7 +485,7 @@ export class AgentLoop {
         const e = toError(err);
         lastError = e;
 
-        // V-105：AbortError 表示用户主动取消或超时中断，不重试，直接标记 aborted 退出
+        // AbortError 表示用户主动取消或超时中断，不重试，直接标记 aborted 退出
         // 避免用户点击停止后仍继续发起 LLM 请求，防止 UI 卡在"停止生成"状态
         if (e.name === 'AbortError' || (err instanceof DOMException && err.name === 'AbortError')) {
           aborted = true;
@@ -545,11 +544,11 @@ export class AgentLoop {
 
     // 执行工具
     for (const tc of toolCalls) {
-      // V-105：工具执行前检查取消
+      // 工具执行前检查取消
       if (signal?.aborted) {
         return { aborted: true };
       }
-      // R-103 工具调用统计：每次工具执行 +1
+      // 工具调用统计：每次工具执行 +1
       this.metricToolCallCount++;
 
       yield { type: 'tool_start', toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments };
@@ -590,7 +589,7 @@ export class AgentLoop {
         content: result,
         toolCallId: tc.id,
       });
-      // R-103 工具失败统计：结果以 [ERR 开头算失败
+      // 工具失败统计：结果以 [ERR 开头算失败
       if (result.startsWith('[ERR')) {
         this.metricToolFailureCount++;
       }
@@ -727,13 +726,11 @@ export class AgentLoop {
    * 将 toolDefinitions 转换为 OpenAI Function Calling 格式，
    * 让 LLM 能通过标准协议发起 tool_call，而非文本模拟。
    *
-   * 设计说明（GAP-8 清理）：
-   *   历史版本曾在此处根据 `provider.supportsStructuredOutput` 生成
-   *   `response_format: json_schema` 约束以"规范 tool_call 输出"，
-   *   但该设计前提与 OpenAI Chat Completions 协议不符——
+   * 设计说明：
    *   `response_format` 约束的是最终响应体，而 `tool_calls` 是通过
    *   `tools` 参数触发的独立流式协议（SSE delta），两者不能并存
-   *   （同时传入会导致 API 报错或行为未定义）。该路径已删除。
+   *   （同时传入会导致 API 报错或行为未定义）。因此本方法只透传 tools
+   *   参数，不生成 `response_format: json_schema`。
    *
    *   `supportsStructuredOutput` 字段 + `ChatOptions.response_format`
    *   类型保留，供未来非 tool_call 场景的结构化输出使用（如归档摘要
@@ -836,7 +833,7 @@ export class AgentLoop {
   }
 
   /**
-   * 获取 AgentLoop 运行时指标快照（R-103 可观测性增强）
+   * 获取 AgentLoop 运行时指标快照（可观测性增强）
    *
    * 返回 LLM 调用、记忆召回、工具调用、上下文管理四个维度的累计指标。
    * 衰减指标（decay）由 Agent 层填充，此处返回 null。

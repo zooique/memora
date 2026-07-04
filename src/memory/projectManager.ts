@@ -1,5 +1,5 @@
 /**
- * 项目管理器 — M-207 多项目并发
+ * 项目管理器 — 多项目并发
  *
  * 核心职责：
  *   - 管理项目注册表（~/.memora/projects.json）
@@ -59,7 +59,7 @@ export interface ProjectContext {
   fileStore: FileStore;
   /** SQLite 索引（通过 IMemoryStorage 接口访问） */
   index: IMemoryStorage;
-  /** 安全守卫（A-004: 可空，由 Agent 层注入工厂函数创建） */
+  /** 安全守卫（可空，由 Agent 层注入工厂函数创建） */
   security: SecurityGuard | null;
   /** 启动时加载的必召记忆 */
   bootstrapMemories: Memory[];
@@ -158,7 +158,7 @@ export interface ProjectManagerOptions {
   /** 注册表目录（可选，默认与 dataDir 相同） */
   registryDir?: string;
   /**
-   * A-004: SecurityGuard 工厂函数（由 Agent 层注入，解除 memory→security 反向依赖）
+   * SecurityGuard 工厂函数（由 Agent 层注入，解除 memory→security 反向依赖）
    *
    * 在项目切换时调用，传入项目路径、.memora/ 目录、Agent 级配置目录和数据目录，
    * 返回一个配置好的 SecurityGuard 实例。
@@ -193,7 +193,7 @@ export class ProjectManager {
   private currentLockPath: string | null = null;
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
-  /** A-004: SecurityGuard 工厂函数（由 Agent 层注入） */
+  /** SecurityGuard 工厂函数（由 Agent 层注入） */
   private readonly createSecurityGuard?: (
     projectPath: string,
     memoraDir: string,
@@ -210,7 +210,7 @@ export class ProjectManager {
     this.registryPath = join(registryHome, 'projects.json');
     // 保存外部注入的存储实例（宿主项目注入时使用）
     this.externalStorage = storage ?? null;
-    // A-004: 保存 SecurityGuard 工厂函数
+    // 保存 SecurityGuard 工厂函数
     this.createSecurityGuard = createSecurityGuard;
   }
 
@@ -249,8 +249,8 @@ export class ProjectManager {
    *
    * memora.db 是 Agent 级共享资源，不随项目切换重建。
    *
-   * M-02 拆分：原 92 行 6 职责混合 → 主体编排（关闭旧项目 + 锁 + 错误回滚）
-   *   + loadAllResources（两层加载）+ buildProjectContext（上下文构建）
+   * 主体编排（关闭旧项目 + 锁 + 错误回滚）+ loadAllResources（两层加载）
+   * + buildProjectContext（上下文构建）三个子方法分工。
    *
    * @param projectPath 项目根目录
    * @param projectName 项目名称（可选，默认取目录名）
@@ -303,7 +303,7 @@ export class ProjectManager {
   }
 
   /**
-   * 加载两层记忆资源（M-02 从 initProject 拆出）
+   * 加载两层记忆资源
    *
    * 职责：确保 Agent 级存储 + 扫描项目级 + 扫描 Agent 级配置，合并加载结果。
    *
@@ -347,7 +347,7 @@ export class ProjectManager {
   }
 
   /**
-   * 构建项目上下文（M-02 从 initProject 拆出）
+   * 构建项目上下文
    *
    * 职责：bootstrap 过滤 + 安全守卫创建 + 项目注册 + 日志 + 返回上下文。
    *
@@ -374,7 +374,7 @@ export class ProjectManager {
     const skills = index.getBySource(SOURCE_LABELS.SKILL);
     const bootstrapMemories = [...rules, ...skills];
 
-    // A-004: 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
+    // 安全守卫由 Agent 层注入的工厂函数创建，解除 memory→security 反向依赖
     const security = this.createSecurityGuard
       ? this.createSecurityGuard(projectPath, memoraDir, configDir, this.agentDataDir)
       : null;
@@ -563,8 +563,8 @@ export class ProjectManager {
   /**
    * 检查进程是否存活
    *
-   * P3-13 注释订正：跨平台统一使用 process.kill(pid, 0) 探测进程存活
-   * （原注释提及 Windows tasklist 策略未实际实现，Windows 上 process.kill 同样有效）
+   * 跨平台统一使用 process.kill(pid, 0) 探测进程存活
+   * （Windows 上 process.kill(pid, 0) 同样有效）
    */
   private isProcessAlive(pid: number): boolean {
     try {

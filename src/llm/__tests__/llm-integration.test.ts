@@ -34,8 +34,6 @@ describe('真实 LLM 集成测试', () => {
       return;
     }
 
-    console.log(`[集成测试] 使用 Provider: ${config.llm.provider} / Model: ${config.llm.model}`);
-
     // 创建临时目录
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-llm-'));
     tmpHome = mkdtempSync(join(tmpdir(), 'memora-llm-home-'));
@@ -87,7 +85,6 @@ keywords:
     });
 
     await agent.init();
-    console.log('[集成测试] Agent 初始化完成');
   });
 
   afterAll(async () => {
@@ -119,7 +116,6 @@ keywords:
     }
 
     expect(response1.length).toBeGreaterThan(0);
-    console.log('\n[第一轮] 响应长度:', response1.length);
 
     // 等待后处理完成（归档 + insight 提取）
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -135,11 +131,6 @@ keywords:
     }
 
     expect(response2.length).toBeGreaterThan(0);
-    console.log('\n[第二轮] 响应:', response2.slice(0, 200));
-
-    // 检查工作记忆（通过 context 获取）
-    const ctx = agent.context;
-    console.log('[记忆统计] Agent 已初始化:', !!ctx);
   }, 60_000);
 
   it('应该支持角色切换', async () => {
@@ -163,7 +154,6 @@ keywords:
     }
 
     expect(response.length).toBeGreaterThan(0);
-    console.log('\n[角色切换] 程序员角色响应长度:', response.length);
   }, 30_000);
 
   it('应该支持角色自动匹配', async () => {
@@ -172,14 +162,8 @@ keywords:
       return;
     }
 
-    // 先切回默认角色
+    // 先切回默认角色，避免上一轮测试残留角色干扰本轮自动匹配
     agent.persona?.switchPersona('默认助手');
-
-    // 监听角色切换事件
-    let switchedName: string | null = null;
-    agent.on('personaSwitched', (event: { from: string | null; to: string }) => {
-      switchedName = event.to;
-    });
 
     const input = '帮我写一个 TypeScript 工具函数来深拷贝对象。请简短。';
     let response = '';
@@ -192,9 +176,7 @@ keywords:
 
     expect(response.length).toBeGreaterThan(0);
 
-    // 等待后处理完成（角色自动匹配）
+    // 等待后处理完成（角色自动匹配在 chat 结束后异步触发）
     await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    console.log(`\n[自动匹配] 切换到: ${switchedName ?? '(未切换)'}`);
   }, 60_000);
 });

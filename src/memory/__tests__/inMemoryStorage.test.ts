@@ -7,7 +7,7 @@
  *   - search 的分词匹配与空查询降级
  *   - decayScores 的时间衰减
  *   - source 校验失败抛 configError
- *   - GAP-6 软删除机制：delete/restore/purge/listDeleted/purgeExpired
+ *   - 软删除机制：delete/restore/purge/listDeleted/purgeExpired
  *
  * 与 store.test.ts 的区别：store.test.ts 测 FileStore（文件级），
  * 本文件测 InMemoryStorage（内存级），聚焦 sourceCountCache 与衰减逻辑。
@@ -293,9 +293,9 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  // ─── GAP-6 软删除机制 ─────────────────────────────────
+  // ─── 软删除机制 ─────────────────────────────────
 
-  describe('GAP-6 软删除：delete（软删除）', () => {
+  describe('软删除：delete（软删除）', () => {
     it('软删除后应写入 deletedAt 时间戳', () => {
       storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
       storage.delete('rule:1');
@@ -390,7 +390,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  describe('GAP-6 软删除：restore（恢复）', () => {
+  describe('软删除：restore（恢复）', () => {
     it('restore 应清除 deletedAt 并重新计入活跃计数', () => {
       storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
       storage.delete('rule:1');
@@ -439,7 +439,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  describe('GAP-6 软删除：purge（物理删除）', () => {
+  describe('软删除：purge（物理删除）', () => {
     it('purge 软删除记忆后应从 Map 彻底移除', () => {
       storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
       storage.delete('rule:1');
@@ -475,7 +475,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  describe('GAP-6 软删除：listDeleted（回收站列表）', () => {
+  describe('软删除：listDeleted（回收站列表）', () => {
     it('应只列出已软删除的记忆', () => {
       storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
       storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE));
@@ -533,7 +533,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  describe('GAP-6 软删除：getDeletedById（SEC-GAP6-02 单点查询）', () => {
+  describe('软删除：getDeletedById（单点查询）', () => {
     it('软删除态记忆 → 返回该记忆（含 deletedAt）', () => {
       storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
       storage.delete('rule:1');
@@ -587,7 +587,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  describe('GAP-6 软删除：purgeExpired（过期清理）', () => {
+  describe('软删除：purgeExpired（过期清理）', () => {
     it('应清理 deletedAt 早于阈值的记忆', () => {
       storage.upsert(makeMemory('m1', 'insight'));
       storage.upsert(makeMemory('m2', 'insight'));
@@ -669,9 +669,9 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  // ─── P1-03 软删除校验：阻止 upsert 复活 ──────────────
+  // ─── 软删除校验：阻止 upsert 复活 ──────────────
 
-  describe('P1-03 软删除校验：upsert 复活防护', () => {
+  describe('软删除校验：upsert 复活防护', () => {
     it('对软删除记忆以活跃态 upsert 应抛 configError', () => {
       storage.upsert(makeMemory('m1', SOURCE_LABELS.RULE));
       storage.delete('m1');
@@ -718,7 +718,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(storage.count()).toBe(0);
     });
 
-    it('对活跃记忆 upsert 不受影响（无 P1-03 限制）', () => {
+    it('对活跃记忆 upsert 不受影响', () => {
       storage.upsert(makeMemory('m1', SOURCE_LABELS.RULE));
       // 活跃记忆的常规 upsert 应正常工作
       storage.upsert({ ...makeMemory('m1', SOURCE_LABELS.RULE), content: '更新内容' });
@@ -727,7 +727,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(got!.content).toBe('更新内容');
     });
 
-    it('对不存在的 id upsert 不受影响（无 P1-03 限制）', () => {
+    it('对不存在的 id upsert 不受影响', () => {
       // 新增记忆应正常工作
       storage.upsert(makeMemory('new-id', SOURCE_LABELS.RULE));
       expect(storage.count()).toBe(1);

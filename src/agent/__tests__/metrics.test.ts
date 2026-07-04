@@ -1,5 +1,5 @@
 /**
- * R-103 可观测性增强 — 运行时指标测试
+ * 可观测性 — 运行时指标测试
  *
  * 覆盖 AgentLoop.getMetrics() 和 Agent.getMetrics() 的指标统计正确性：
  *   - LLM 调用指标（callCount、totalInputTokens、totalOutputTokens）

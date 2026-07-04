@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 /**
  * 提取路径的 basename（最后一段）
  *
- * R-04：重命名为 getBaseName，避免与 node:path.basename 同名冲突。
+ * 命名为 getBaseName 以避免与 node:path.basename 同名冲突。
  * 差异：node:path.basename 按平台分隔符处理 + 支持 ext 参数；
  *       本函数跨平台（同时处理 / 和 \），单参数。
  *

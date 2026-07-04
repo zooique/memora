@@ -185,7 +185,7 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
     }
 
     // 文件流（结构化 JSON，方便后续分析）
-    // SEC-06: 日志轮转保护——超过 10MB 时截断重写，防止长期运行生成巨大文件
+    // 日志轮转保护——超过 10MB 时截断重写，防止长期运行生成巨大文件
     if (fileEnabled) {
       try {
         const logsDir = resolve(resolvedDataDir, 'logs');
@@ -245,7 +245,7 @@ let _loggerInjected = false;
 setUtilsLogger(_logger);
 
 // 模块加载时异步尝试升级到 pino（不阻塞模块导入）
-// P1-04 竞态守卫：then 回调内检查 _loggerInjected，避免覆盖宿主已注入的 logger
+// 竞态守卫：then 回调内检查 _loggerInjected，避免覆盖宿主已注入的 logger
 // 场景：模块加载 → setLogger(custom) 同步执行 → tryCreatePinoLogger 异步 resolve
 // 此时若不加守卫，pino 会覆盖 custom，宿主 logger 静默丢失
 void tryCreatePinoLogger().then((pinoLogger) => {
@@ -318,7 +318,7 @@ export function setLogger(newLogger: ILogger | undefined): void {
     _loggerInjected = false;
     _logger = createConsoleLogger();
     setUtilsLogger(_logger);
-    // P1-04 竞态守卫：若回调执行前宿主再次调用 setLogger(custom)，
+    // 竞态守卫：若回调执行前宿主再次调用 setLogger(custom)，
     // _loggerInjected 会被置为 true，此时不应覆盖
     void tryCreatePinoLogger().then((pinoLogger) => {
       // 守卫：恢复过程中宿主又注入了新 logger，不再覆盖

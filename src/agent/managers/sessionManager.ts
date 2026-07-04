@@ -10,7 +10,7 @@
 
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
-// HC-05：使用 todayDate() 替代 new Date().toISOString().slice(0,10)，修复 UTC 跨天 bug
+// 使用 todayDate() 替代 new Date().toISOString().slice(0,10)，修复 UTC 跨天 bug
 import { todayDate } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
@@ -80,7 +80,7 @@ export class SessionManager {
   }
 
   /**
-   * GAP-2：获取当前会话的日期和会话名
+   * 获取当前会话的日期和会话名
    *
    * 供宿主在 switchSession 前获取当前会话标识，用于触发 content 类归档。
    * 返回 null 表示 history 未初始化。
@@ -170,7 +170,7 @@ export class SessionManager {
     }
 
     // 优先匹配 preferredSession，否则取最后一个
-    // HC-05：使用 todayDate()（本地时区），避免 UTC 跨天将会话写入"昨天"
+    // 使用 todayDate()（本地时区），避免 UTC 跨天将会话写入"昨天"
     const today = todayDate();
     const preferred =
       sessions.find((s) => s === `${today}-${preferredSession}`) ?? sessions[sessions.length - 1];

@@ -1,9 +1,6 @@
 /**
  * Embedding Provider 测试
  * 覆盖缓存 / 批量嵌入 / LRU 淘汰 / 错误处理
- *
- * P3-01：cosineSimilarity 6 个重复测试已删除（math.test.ts 是单一真理源，11 个测试更完整）
- * L-04：新增 LRU 缓存淘汰 + cacheSize/clearCache + batchEmbed 边界 + embed 空结果测试
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EmbeddingProvider } from '@/llm/embedding.js';
@@ -142,9 +139,9 @@ describe('EmbeddingProvider · 错误处理', () => {
   });
 });
 
-// ─── L-04：LRU 缓存机制 ──────────────────────────────────────
+// ─── LRU 缓存机制 ──────────────────────────────────────
 
-describe('EmbeddingProvider · L-04 LRU 缓存', () => {
+describe('EmbeddingProvider · LRU 缓存', () => {
   let provider: EmbeddingProvider;
 
   beforeEach(() => {
@@ -193,9 +190,9 @@ describe('EmbeddingProvider · L-04 LRU 缓存', () => {
   });
 });
 
-// ─── L-04：batchEmbed 边界 ────────────────────────────────────
+// ─── batchEmbed 边界 ────────────────────────────────────
 
-describe('EmbeddingProvider · L-04 batchEmbed 边界', () => {
+describe('EmbeddingProvider · batchEmbed 边界', () => {
   let provider: EmbeddingProvider;
 
   beforeEach(() => {

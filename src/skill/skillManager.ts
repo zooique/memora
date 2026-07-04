@@ -55,7 +55,6 @@ export class SkillManager {
     );
 
     // 写入 SQLite 索引（遵循"万物皆记忆"——与 PersonaManager 一致）
-    // L-01：writeAllToIndex 已改为同步函数
     this.writeAllToIndex();
 
     return this.skills.length;
@@ -146,7 +145,7 @@ export class SkillManager {
   /**
    * 重载技能：清空内存缓存 + 重新扫描目录 + 同步 SQLite 索引
    *
-   * GAP-5 事件驱动重载：installSkill 写入文件后或用户手动编辑 skills/ 目录后，
+   * 事件驱动重载：installSkill 写入文件后或用户手动编辑 skills/ 目录后，
    * 调用此方法使当前会话立即生效，无需重启 Agent。
    *
    * 与 load() 的区别：
@@ -158,7 +157,6 @@ export class SkillManager {
   async reload(): Promise<number> {
     const oldCount = this.skills.length;
     this.skills = await this.scanSkills();
-    // L-01：writeAllToIndex 已改为同步函数
     this.writeAllToIndex();
     logger.info(
       { oldCount, newCount: this.skills.length, names: this.skills.map((s) => s.name) },
@@ -189,8 +187,7 @@ export class SkillManager {
   /**
    * 将所有技能写入 SQLite 索引
    *
-   * L-01 修正：writeSkillToIndex 已为同步，本函数循环体内无 await，
-   * 改为同步函数避免 async 误导（与 personaManager.writeAllToIndex 同模式）。
+   * 本函数循环体内无 await，作为同步函数实现（与 personaManager.writeAllToIndex 同模式）。
    */
   private writeAllToIndex(): void {
     if (!this.index) return;

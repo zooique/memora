@@ -60,7 +60,7 @@ const RELATION_CANDIDATE_CONTENT_LIMIT = 100;
 // ─── 类型 ────────────────────────────────────────────────
 
 /**
- * GAP-4：冲突信息（contradicts 关系检测到时传递给宿主）
+ * 冲突信息（contradicts 关系检测到时传递给宿主）
  *
  * 由 InsightExtractor 在 buildRelations 中检测到 contradicts 关系时构造，
  * 通过 onConflict 回调传递给 Agent，Agent emit('conflictDetected') 通知宿主。
@@ -98,7 +98,7 @@ export class InsightExtractor {
   /** 写入扩展回调（宿主注入 diff 对比确认逻辑） */
   public writeExtensions: WriteExtensions | null = null;
 
-  /** GAP-4：冲突检测回调（由 Agent 通过 bindOnConflict 注入，检测到 contradicts 时触发） */
+  /** 冲突检测回调（由 Agent 通过 bindOnConflict 注入，检测到 contradicts 时触发） */
   private onConflict: ((info: ConflictInfo) => void) | null = null;
 
   /**
@@ -129,7 +129,7 @@ export class InsightExtractor {
   }
 
   /**
-   * GAP-4：绑定冲突检测回调
+   * 绑定冲突检测回调
    *
    * 由 Agent.init() 在创建 InsightExtractor 后调用（与 bindGetRecentHistory 同模式），
    * 解决 Agent 实例晚于 InsightExtractor 创建的时序循环依赖。
@@ -460,7 +460,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
    * 解析 LLM 输出的 relations 字段，验证 targetId 在候选列表中，写入关系存储。
    * 降级策略：relationStore 未注入/relations 为空/targetId 无效 → 跳过，不阻塞主流程。
    *
-   * GAP-4：检测到 contradicts 关系时，通过 onConflict 回调通知 Agent，
+   * 检测到 contradicts 关系时，通过 onConflict 回调通知 Agent，
    * Agent emit('conflictDetected') 触发宿主消费链路（ProactiveBanner 通知用户）。
    *
    * @param insightId 新写入的 insight ID
@@ -496,7 +496,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
       });
       built++;
 
-      // GAP-4：contradicts 关系写入时，通过 onConflict 回调通知宿主
+      // contradicts 关系写入时，通过 onConflict 回调通知宿主
       if (rel.type === 'contradicts' && this.onConflict) {
         const targetMemory = candidateMap.get(rel.targetId);
         if (targetMemory) {

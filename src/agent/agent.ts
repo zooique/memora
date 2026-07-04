@@ -112,7 +112,7 @@ export interface AgentOptions {
   /**
    * 归档模式（ADR-015，默认 'full'）
    *
-   * - 'full'：profile facts + insight 自动归档（对话原始内容待 GAP-2 实现后自动）
+   * - 'full'：profile facts + insight 自动归档（对话原始内容待会话归档实现后自动）
    * - 'insights-only'：profile facts + insight 自动归档，对话原始内容需手动
    * - 'manual'：所有归档都需手动触发
    */
@@ -208,9 +208,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
   private workProjection: WorkProjectionManager | null = null;
-  /** V-201: AutoConfigRefiner（模式 3：Agent 智能总结） */
+  /** AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
-  /** GAP-2: SessionArchiver（会话内容归档器，content 类记忆） */
+  /** SessionArchiver（会话内容归档器，content 类记忆） */
   private sessionArchiver: SessionArchiver | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
@@ -225,14 +225,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** chat() 并发锁 */
   private _chatBusy = false;
   /**
-   * chat() 锁持有者 token（P1-13 race condition 修复）
+   * chat() 锁持有者 token（race condition 防护）
    *
    * 设计目的：
    *   原锁是简单布尔值 `_chatBusy`，无 owner 校验。超时回调与 finally 块无差别清理，
    *   导致 race condition：T=0 A 获取锁 → T=180s 超时释放 → T=181s B 获取锁
    *   → T=182s A 的 finally 误清 B 的锁/计时器/controller。
    *
-   * 修复方案：
+   * 防护方案：
    *   - 获取锁时 token 递增：`const myToken = ++this._chatLockToken`
    *   - 超时回调校验 `this._chatLockToken === myToken` 后才释放
    *   - finally 块校验 `this._chatLockToken === myToken` 后才清理
@@ -245,17 +245,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private chatLockTimer: ReturnType<typeof setTimeout> | null = null;
   /** chat() 内部 AbortController（超时时中断 generator，防止并发） */
   private chatAbortController: AbortController | null = null;
-  /** 记忆衰减定时器（HC-18：已迁移至 MemoryDecayScheduler，此字段保留用于 close 时引用判断） */
+  /** 记忆衰减定时器（已迁移至 MemoryDecayScheduler，此字段保留用于 close 时引用判断） */
   private decayTimer: ReturnType<typeof setInterval> | null = null;
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
 
-  // ─── HC-18：衰减职责已拆分至 MemoryDecayScheduler ──────────
-  // 原 metricDecayRunCount / metricTotalDecayedCount / metricLastDecayAt 字段
-  // 已迁移至 MemoryDecayScheduler 内部，Agent 通过 memoryDecayScheduler.getMetrics() 读取
+  // ─── 衰减职责已拆分至 MemoryDecayScheduler ──────────
+  // metricDecayRunCount / metricTotalDecayedCount / metricLastDecayAt 字段
+  // 位于 MemoryDecayScheduler 内部，Agent 通过 memoryDecayScheduler.getMetrics() 读取
   /** 记忆衰减调度器（init 时创建，close 时销毁） */
   private memoryDecayScheduler: MemoryDecayScheduler | null = null;
-  /** 归档协调器（HC-18：归档操作委托给 ArchiveCoordinator） */
+  /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
   private archiveCoordinator: ArchiveCoordinator | null = null;
 
   constructor(opts: AgentOptions) {
@@ -312,7 +312,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       dataDir: this.#config.dataDir,
       storage: this.#config.storage,
       registryDir: this.#config.registryDir,
-      // A-004: SecurityGuard 由 Agent 层创建，解除 memory→security 反向依赖
+      // SecurityGuard 由 Agent 层创建，解除 memory→security 反向依赖
       createSecurityGuard: (
         projectPath: string,
         memoraDir: string,
@@ -354,7 +354,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     this._initialized = true;
 
-    // HC-18：归档操作委托给 ArchiveCoordinator
+    // 归档操作委托给 ArchiveCoordinator
     // 使用 getter 回调注入依赖，close 时 null 化字段后 getter 自然返回 null
     this.archiveCoordinator = new ArchiveCoordinator({
       getUserProfile: () => this.#userProfile,
@@ -363,7 +363,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       emit: (event, payload) => this.emit(event, payload as never),
     });
 
-    // HC-18：记忆衰减职责委托给 MemoryDecayScheduler
+    // 记忆衰减职责委托给 MemoryDecayScheduler
     this.memoryDecayScheduler = new MemoryDecayScheduler({
       tracer: this.#config.tracer,
       onDecayCompleted: (payload) => this.emit('decayCompleted', payload),
@@ -396,10 +396,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
     this._chatBusy = true;
-    // P1-13：分配本调用的 token，超时回调和 finally 块据此判断是否仍是当前持有者
+    // 分配本调用的 token，超时回调和 finally 块据此判断是否仍是当前持有者
     // 避免 race condition：超时释放后新调用获取锁，旧 finally 误清新调用者的资源
     const myToken = ++this._chatLockToken;
-    // SEC-02: 内部 AbortController，超时时中断 generator 而非仅释放锁
+    // 内部 AbortController，超时时中断 generator 而非仅释放锁
     const internalAbort = new AbortController();
     this.chatAbortController = internalAbort;
     // 合并外部 signal：外部 abort 时也触发内部
@@ -413,7 +413,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const combinedSignal = internalAbort.signal;
 
     // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
-    // P1-13：超时回调校验 token 后才清理，避免误清新调用者的资源
+    // 超时回调校验 token 后才清理，避免误清新调用者的资源
     this.chatLockTimer = safeSetTimeout(() => {
       // 令牌不匹配：锁已被新调用者获取（或本调用已正常退出），跳过清理
       if (this._chatLockToken !== myToken) {
@@ -455,9 +455,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       let assistantContent = '';
       let wasAborted = false;
-      // 修复 P1-D：原实现 generator 抛错直接传到宿主，宿主未 catch 会变未处理 rejection
-      // （表现为"几个字就卡住、无错误日志"——流式输出已开始但错误没机会展示）
-      // 改为 try/catch：把 provider 异常转为 yield error chunk，让宿主能优雅展示并清理 UI
+      // 把 provider 异常转为 yield error chunk，让宿主能优雅展示并清理 UI
+      // （裸 throw 会导致未处理 rejection，UI 收不到错误展示机会）
       try {
         for await (const chunk of this.requireNonNull(this.loop, 'loop').processUserInput(
           input,
@@ -476,8 +475,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // （如 LLM 超时、连接断开、AbortError 未被 loop 拦截等）
         // 转为 error chunk 通知宿主，避免裸 throw 导致 UI 卡死
         if (err instanceof DOMException && err.name === 'AbortError') {
-          // 翠幕天罗 P1 修复：必须 yield aborted chunk 让宿主能展示中断标记
-          // （原仅设置 wasAborted 会导致 chatHandlers catch 不触发，渲染层收不到 ABORTED）
+          // 必须 yield aborted chunk 让宿主能展示中断标记
+          // （仅设置 wasAborted 会导致 chatHandlers catch 不触发，渲染层收不到 ABORTED）
           yield { type: 'aborted', reason: 'User cancelled the conversation' };
           return;
         } else {
@@ -487,7 +486,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
 
       if (wasAborted) {
-        // GAP-3：流式中断时仍保留已生成的部分文本到历史，避免下一轮上下文丢失
+        // 流式中断时仍保留已生成的部分文本到历史，避免下一轮上下文丢失
         // 追加 interrupted 标记让下一轮 LLM 和历史归档能识别这是中断响应（非完整回复）
         // 与下方正常路径一致采用 best-effort 写入（失败不影响中断流程）
         if (assistantContent.trim()) {
@@ -514,7 +513,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'archiving' };
       await this.postProcess(input, assistantContent);
     } finally {
-      // P1-13：仅当本调用仍是当前锁持有者时才清理资源
+      // 仅当本调用仍是当前锁持有者时才清理资源
       // 若 token 已变（超时释放后被新调用者获取），跳过清理避免误清新调用者的状态
       if (this._chatLockToken === myToken) {
         this._chatBusy = false;
@@ -640,7 +639,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * - `manual` 模式跳过所有自动归档（profile + insight），需用户手动调用
    *   archiveProfileFacts() / archiveInsight() 触发
    * - `full` / `insights-only` 模式下 profile + insight 都自动归档
-   *   （GAP-2 会话归档实现后，`insights-only` 将跳过对话原始内容自动归档）
+   *   （会话归档实现后，`insights-only` 将跳过对话原始内容自动归档）
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
     // 角色自动匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
@@ -734,7 +733,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
+    // AutoConfigRefiner（模式 3：Agent 智能总结）
     if (this.autoConfigRefiner) {
       try {
         // FD-22: 注册到 pendingArchives，确保 close() 时等待后台分析完成，避免写入已关闭的存储
@@ -802,13 +801,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     const newPctx = await pm.initProject(projectPath, projectName, this.#config.configDir);
 
-    // A-003: 记录源项目路径（用于事件），切换前 pctx 可能不存在（首次初始化）
+    // 记录源项目路径（用于事件），切换前 pctx 可能不存在（首次初始化）
     const fromProjectPath = this.pctx?.projectPath ?? null;
 
     this.pctx = newPctx;
     await this.rebuildComponentsWithCurrentCtx();
 
-    // A-003: 发射项目切换事件（供宿主 UI 刷新项目相关界面）
+    // 发射项目切换事件（供宿主 UI 刷新项目相关界面）
     this.emit('projectSwitched', {
       from: fromProjectPath,
       to: projectPath,
@@ -851,16 +850,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.autoConfigRefiner = result.autoConfigRefiner;
     this.workProjection = result.workProjection;
     this.sessionArchiver = result.sessionArchiver;
-    // GAP-4：绑定冲突检测回调，InsightExtractor 检测到 contradicts 时 emit('conflictDetected')
+    // 绑定冲突检测回调，InsightExtractor 检测到 contradicts 时 emit('conflictDetected')
     // 与 bindGetRecentHistory 同模式：解决 Agent 晚于 InsightExtractor 创建的时序循环依赖
     this.insightExtractor.bindOnConflict((info) => {
       this.emit('conflictDetected', info);
     });
-    // V-101：注入 VectorStore 到 MemoryInspector，启用混合搜索
+    // 注入 VectorStore 到 MemoryInspector，启用混合搜索
     if (this.memoryInspector && this.#config.vectorStore) {
       this.memoryInspector.setVectorStore(this.#config.vectorStore);
     }
-    // 创建会话管理器（HC-22：提取 createSessionManager 辅助方法，消除重复）
+    // 创建会话管理器（提取 createSessionManager 辅助方法，消除重复）
     this._sessionManager = this.createSessionManager();
   }
 
@@ -870,12 +869,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private async rebuildComponentsWithCurrentCtx(): Promise<void> {
     if (!this.pctx) return;
     await this.assembleComponents(this.pctx);
-    // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例（HC-22：复用 createSessionManager）
+    // 重建会话管理器：assembleComponents 创建了新的 history/loop 实例（复用 createSessionManager）
     this._sessionManager = this.createSessionManager();
   }
 
   /**
-   * 创建会话管理器（HC-22：提取重复的 forwardEvent + SessionManager 构造逻辑）
+   * 创建会话管理器（提取重复的 forwardEvent + SessionManager 构造逻辑）
    *
    * assembleComponents 和 rebuildComponentsWithCurrentCtx 共享同一套构造逻辑：
    * - 通过回调访问当前组件（支持 rebuild 后自动获取最新引用）
@@ -925,7 +924,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       ]);
     }
     this.#backgroundProvider = provider;
-    // V-201: 同步更新 AutoConfigRefiner 的后台 Provider
+    // 同步更新 AutoConfigRefiner 的后台 Provider
     if (this.autoConfigRefiner) {
       this.autoConfigRefiner.setBackgroundProvider(provider);
     }
@@ -968,7 +967,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
    * full / insights-only 模式下也可调用（会重复归档，但不推荐）。
    *
-   * HC-18：归档逻辑已委托给 ArchiveCoordinator
+   * 归档逻辑已委托给 ArchiveCoordinator
    *
    * @param input 本轮用户输入
    * @returns 写入/更新的 UserProfileEntry 列表
@@ -984,7 +983,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * manual 模式下 postProcess 跳过自动归档，用户需通过此 API 主动归档。
    * 内部仍走 classify 判断（避免无价值输入浪费 LLM 调用）。
    *
-   * HC-18：归档逻辑已委托给 ArchiveCoordinator
+   * 归档逻辑已委托给 ArchiveCoordinator
    *
    * @param input 本轮用户输入
    * @param assistantContent 本轮助手回复内容
@@ -996,12 +995,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * GAP-2：手动归档会话内容（content 类记忆）
+   * 手动归档会话内容（content 类记忆）
    *
    * 适用于 `insights-only` / `manual` 模式下用户手动触发会话内容归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。
    *
-   * HC-18：归档逻辑已委托给 ArchiveCoordinator
+   * 归档逻辑已委托给 ArchiveCoordinator
    *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识（不含日期前缀）
@@ -1012,12 +1011,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.archiveCoordinator!.archiveSessionContent(date, session);
   }
 
-  // ─── 配置重载（GAP-5 事件驱动） ───────────────────────
+  // ─── 配置重载（事件驱动） ───────────────────────
 
   /**
    * 重载配置类记忆：从 configDir 重新扫描指定 source 的配置文件并更新内存缓存 + SQLite 索引
    *
-   * GAP-5 解决方案：installSkill 写入文件后或 confirmConfigSuggestion 写入配置文件后，
+   * 解决方案：installSkill 写入文件后或 confirmConfigSuggestion 写入配置文件后，
    * 调用此方法使当前会话立即生效，无需重启 Agent。
    *
    * 支持的 source：
@@ -1142,7 +1141,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   // ─── 记忆生命周期 ───────────────────────────────────────
 
-  // ─── HC-18：runMemoryDecay 已迁移至 MemoryDecayScheduler.runOnce ─────
+  // ─── runMemoryDecay 已迁移至 MemoryDecayScheduler.runOnce ─────
 
   // ─── 关闭 ─────────────────────────────────────────────
 
@@ -1150,15 +1149,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 关闭 Agent，释放 SQLite 连接等资源
    */
   async close(): Promise<void> {
-    // P1-13：递增 token，使任何进行中的 chat() generator 的 finally 块
+    // 递增 token，使任何进行中的 chat() generator 的 finally 块
     // 检测到 token 变化后跳过资源清理（close 已接管清理职责）
     this._chatLockToken++;
-    // HC-18：清理 MemoryDecayScheduler（含定时器和 storage 引用）
+    // 清理 MemoryDecayScheduler（含定时器和 storage 引用）
     if (this.memoryDecayScheduler) {
       this.memoryDecayScheduler.stop();
       this.memoryDecayScheduler = null;
     }
-    // HC-18：清理 ArchiveCoordinator（无定时器，只需释放引用）
+    // 清理 ArchiveCoordinator（无定时器，只需释放引用）
     this.archiveCoordinator = null;
     // 清理定时器
     if (this.decayTimer) {
@@ -1173,7 +1172,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.chatAbortController.abort();
       this.chatAbortController = null;
     }
-    // P2-1 清理 PersonaManager 的角色切换防抖锁计时器，防止关闭后回调触发
+    // 清理 PersonaManager 的角色切换防抖锁计时器，防止关闭后回调触发
     if (this.personaManager) {
       this.personaManager.close();
     }
@@ -1199,17 +1198,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
     this.pctx = null;
-    // P3-11：补全剩余 manager 字段 null 化，与上述字段处理方式一致
+    // 补全剩余 manager 字段 null 化，与上述字段处理方式一致
     // （原实现仅 null 化部分 manager，toolExec/personaManager/#userProfile/skillManager/workProjection 遗漏）
     this.toolExec = null;
     this.personaManager = null;
     this.#userProfile = null;
     this.skillManager = null;
     this.workProjection = null;
-    // P3-11：清理次要状态字段，防止 re-init 后残留上一会话状态
+    // 清理次要状态字段，防止 re-init 后残留上一会话状态
     this.activeSkill = null;
     this._lastInteractionAt = null;
-    // HC-18：衰减指标已迁移至 MemoryDecayScheduler，close 时通过 stop() 销毁实例
+    // 衰减指标已迁移至 MemoryDecayScheduler，close 时通过 stop() 销毁实例
   }
 
   // ─── 只读访问器 ───────────────────────────────────────
@@ -1254,10 +1253,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this._lastInteractionAt;
   }
 
-  // ─── R-103 运行时指标 ────────────────────────────────
+  // ─── 运行时指标 ────────────────────────────────
 
   /**
-   * 获取 Agent 运行时指标快照（R-103 可观测性增强）
+   * 获取 Agent 运行时指标快照（可观测性增强）
    *
    * 聚合 AgentLoop 指标（LLM 调用、记忆召回、工具调用、上下文管理）
    * 与 Agent 层指标（记忆衰减），返回完整的 AgentMetrics 快照。
@@ -1272,7 +1271,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @returns AgentMetrics 完整快照（含衰减指标）
    */
   getMetrics(): AgentMetrics {
-    // HC-18：衰减指标从 MemoryDecayScheduler 读取
+    // 衰减指标从 MemoryDecayScheduler 读取
     const decayMetrics = this.memoryDecayScheduler?.getMetrics() ?? {
       runCount: 0,
       totalDecayedCount: 0,
@@ -1415,7 +1414,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this._sessionManager;
   }
 
-  // P3-15：storage getter 已删除（@deprecated 已确认宿主全部迁移到 agent.memory）
-  // GAP-13 扫描确认：hosts/memora-sprite 无 agent.storage 调用
+  // storage getter 已删除（@deprecated 已确认宿主全部迁移到 agent.memory）
+  // 扫描确认：hosts/memora-sprite 无 agent.storage 调用
   // MemoryInspector 提供等价 CRUD 能力且符合分层规范
 }

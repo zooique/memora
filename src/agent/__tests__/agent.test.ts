@@ -28,7 +28,6 @@ import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-// P3-04：使用 todayDate() 替代 new Date().toISOString().slice(0,10)，与源码 HC-05 修复一致
 import { todayDate } from '@/utils/time.js';
 
 // ═══════════════════════════════════════════════════════════════
@@ -1286,7 +1285,7 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
     agent.off('memoryAdded', () => {});
   });
 
-  // ─── insights-only 模式（当前与 full 等价，GAP-2 后差异化） ──
+  // ─── insights-only 模式（当前与 full 等价） ──
 
   it('insights-only 模式：profile + insight 自动归档（与 full 等价）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData, undefined, 'insights-only');
@@ -1394,10 +1393,10 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：reloadConfig()（GAP-5 事件驱动配置热重载）
+// 测试：reloadConfig()（事件驱动配置热重载）
 // ═══════════════════════════════════════════════════════════════
 
-describe('Agent · reloadConfig()（GAP-5 配置热重载）', () => {
+describe('Agent · reloadConfig()（配置热重载）', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -1849,11 +1848,11 @@ describe('Agent · memory 关系查询（ADR-014）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：chat() 中断保留文本（GAP-3）
+// 测试：chat() 中断保留文本
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * 可中断 Mock LLM Provider（GAP-3 测试专用）
+ * 可中断 Mock LLM Provider（测试专用）
  *
  * 与 MockProvider 区别：
  * - 分多个 chunk 输出（模拟真实 LLM 流式）
@@ -1886,7 +1885,7 @@ class AbortableMockProvider extends LlmProvider {
   }
 }
 
-describe('Agent · chat() 中断保留文本（GAP-3）', () => {
+describe('Agent · chat() 中断保留文本', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -1985,7 +1984,7 @@ describe('Agent · chat() 中断保留文本（GAP-3）', () => {
       messages: {
         abortedByUser: '用户取消了对话',
         maxIterationsReached: '\n\n[已达到最大迭代次数]',
-        // GAP-3：自定义中断标记文案
+        // 自定义中断标记文案
         interrupted: '\n\n[自定义中断标记]',
         recentConversationLabel: '[最近对话]',
         userLabel: '用户',
@@ -2015,7 +2014,7 @@ describe('Agent · chat() 中断保留文本（GAP-3）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：chat() 锁超时机制（P1-13/P1-17 race condition 修复）
+// 测试：chat() 锁超时机制
 // ═══════════════════════════════════════════════════════════════
 
 /**
@@ -2050,9 +2049,9 @@ class HungProvider extends LlmProvider {
 }
 
 /**
- * P1-17：chat() 锁超时机制测试
+ * chat() 锁超时机制测试
  *
- * 覆盖 P1-13 race condition 修复：
+ * 覆盖场景：
  *   - 超时回调校验 token 后才释放锁
  *   - finally 块校验 token 后才清理资源
  *   - close() 递增 token 接管清理职责
@@ -2062,7 +2061,7 @@ class HungProvider extends LlmProvider {
  *   - 用 vi.useFakeTimers + advanceTimersByTime 推进 CHAT_LOCK_TIMEOUT_MS 触发超时
  *   - 通过行为断言（isBusy、新调用是否抛错）验证 token 校验逻辑
  */
-describe('Agent · chat() 锁超时机制（P1-13/P1-17）', () => {
+describe('Agent · chat() 锁超时机制', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -2209,7 +2208,7 @@ describe('Agent · chat() 锁超时机制（P1-13/P1-17）', () => {
     expect(agent.isBusy).toBe(true);
 
     // 解除 chat A 的阻塞，让其 generator 完成
-    // P1-13 修复点：chat A 的 finally 块校验 token，发现 token 已变（被 chat B 递增），
+    // chat A 的 finally 块校验 token，发现 token 已变（被 chat B 递增），
     // 跳过清理，避免误清 chat B 的锁/计时器/controller
     provider.outerResolve();
     try {
@@ -2254,7 +2253,7 @@ describe('Agent · chat() 锁超时机制（P1-13/P1-17）', () => {
     expect(agent.isBusy).toBe(false);
 
     // 解除 chat 的阻塞，让其 generator 完成
-    // P1-13 修复点：chat 的 finally 块校验 token，发现 token 已变（被 close 递增），
+    // chat 的 finally 块校验 token，发现 token 已变（被 close 递增），
     // 跳过清理，避免对已关闭的 agent 重复清理
     provider.outerResolve();
     try {

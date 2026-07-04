@@ -22,7 +22,7 @@ import type { LlmChunk } from '@/llm/types.js';
 /** CHARS_PER_TOKEN 常量本地引用（与 LOOP_CONSTANTS.CHARS_PER_TOKEN=3 一致） */
 const CHARS_PER_TOKEN = LOOP_CONSTANTS.CHARS_PER_TOKEN;
 
-/** CJK_CHARS_PER_TOKEN 常量本地引用（P1-15：CJK 字符 token 估算密度） */
+/** CJK_CHARS_PER_TOKEN 常量本地引用（CJK 字符 token 估算密度） */
 const CJK_CHARS_PER_TOKEN = LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN;
 
 /**
@@ -575,14 +575,14 @@ describe('ContextManager.getOrCreateSummary()', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：estimateTokens() · CJK 中文适配（P1-15）
+// 测试：estimateTokens() · CJK 中文适配
 // ═══════════════════════════════════════════════════════════════
 
-describe('ContextManager.estimateTokens() · CJK 中文适配（P1-15）', () => {
+describe('ContextManager.estimateTokens() · CJK 中文适配', () => {
   /**
    * 辅助：构造带 tracer 注入的 ContextManager
    *
-   * P1-16 测试需要注入 mock tracer 观察 span 调用，
+   * 测试需要注入 mock tracer 观察 span 调用，
    * 此工厂避免每个测试重复构造逻辑。
    */
   function createContextManagerWithTracer(tracer: ITracer): ContextManager {
@@ -601,10 +601,10 @@ describe('ContextManager.estimateTokens() · CJK 中文适配（P1-15）', () =>
     expect(manager.estimateTokens(messages)).toBe(Math.ceil(6 / CJK_CHARS_PER_TOKEN));
   });
 
-  it('纯 ASCII 字符：按 CHARS_PER_TOKEN 估算（3 字符/token，与修复前一致）', () => {
+  it('纯 ASCII 字符：按 CHARS_PER_TOKEN 估算（3 字符/token）', () => {
     const content = 'abcdef'; // 6 个 ASCII 字符
     const messages = [createMessage(content)];
-    // 6 / 3 = 2 tokens（与修复前一致，向后兼容）
+    // 6 / 3 = 2 tokens（向后兼容）
     expect(manager.estimateTokens(messages)).toBe(Math.ceil(6 / CHARS_PER_TOKEN));
   });
 
@@ -617,13 +617,12 @@ describe('ContextManager.estimateTokens() · CJK 中文适配（P1-15）', () =>
     expect(manager.estimateTokens(messages)).toBe(expected);
   });
 
-  it('CJK 估算应高于修复前（避免上下文溢出）', () => {
+  it('CJK 估算应充分（避免上下文溢出）', () => {
     // 6 个中文字符
     const content = '你好世界测试';
     const messages = [createMessage(content)];
     const actual = manager.estimateTokens(messages);
-    // 修复前：6 / 3 = 2 tokens（低估）
-    // 修复后：6 / 1.5 = 4 tokens（接近真实值）
+    // 6 / 1.5 = 4 tokens（接近真实值）
     expect(actual).toBeGreaterThan(Math.ceil(6 / CHARS_PER_TOKEN));
     expect(actual).toBe(4);
   });
@@ -674,9 +673,9 @@ describe('ContextManager.estimateTokens() · CJK 中文适配（P1-15）', () =>
     expect(manager.estimateTokens(messages)).toBe(expected);
   });
 
-  // ─── P1-16: generateContextSummary tracer span 测试 ─────
+  // ─── generateContextSummary tracer span 测试 ─────
 
-  it('P1-16：generateContextSummary 应启动 CONTEXT_SUMMARY span 并在成功时 end', async () => {
+  it('generateContextSummary 应启动 CONTEXT_SUMMARY span 并在成功时 end', async () => {
     /** 记录 span 调用的 mock tracer */
     const spanCalls: { name: string; ended: boolean; exceptions: Error[]; attributes: Record<string, string | number | boolean> }[] = [];
     const mockTracer: ITracer = {
@@ -719,7 +718,7 @@ describe('ContextManager.estimateTokens() · CJK 中文适配（P1-15）', () =>
     expect(summarySpan!.attributes.summaryLength).toBeDefined();
   });
 
-  it('P1-16：generateContextSummary 失败时应 recordException 并 end span', async () => {
+  it('generateContextSummary 失败时应 recordException 并 end span', async () => {
     const spanCalls: { name: string; ended: boolean; exceptions: Error[]; attributes: Record<string, string | number | boolean> }[] = [];
     const mockTracer: ITracer = {
       startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {

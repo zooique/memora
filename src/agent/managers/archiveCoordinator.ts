@@ -1,5 +1,5 @@
 /**
- * 归档协调器（HC-18 拆分自 agent.ts）
+ * 归档协调器（从 agent.ts 拆分）
  *
  * 职责：
  *   1. 手动归档用户画像事实（archiveProfileFacts）
@@ -128,7 +128,7 @@ export class ArchiveCoordinator {
   }
 
   /**
-   * GAP-2：手动归档会话内容（content 类记忆）
+   * 手动归档会话内容（content 类记忆）
    *
    * 适用于 `insights-only` / `manual` 模式下用户手动触发会话内容归档。
    * `full` 模式下由宿主在会话切换前自动调用，无需用户干预。

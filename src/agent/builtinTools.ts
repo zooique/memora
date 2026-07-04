@@ -24,7 +24,7 @@ export interface ToolDefinition {
 
 /**
  * 工具注册表
- * 阶段二（M-204）：4 个工具
+ * 4 个内置工具：
  * - read_file：读取文件
  * - write_file：写入/创建文件（受写入二次确认保护）
  * - list_dir：列出目录内容

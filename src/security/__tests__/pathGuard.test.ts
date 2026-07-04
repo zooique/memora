@@ -1,7 +1,7 @@
 /**
  * 单元测试：路径白名单
  * 验证安全模块的拒绝/允许逻辑
- * SEC-06（自动安全）：补充符号链接逃逸 + 包管理器凭证 + 系统目录覆盖测试
+ * 覆盖：符号链接逃逸 + 包管理器凭证 + 系统目录覆盖
  */
 import { describe, expect, it, beforeEach } from 'vitest';
 import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
@@ -100,12 +100,11 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
   });
 
-  // ─── 兄弟目录绕过防护（P1 安全漏洞修复验证）──
+  // ─── 兄弟目录绕过防护 ──
 
   it('应该拒绝项目目录的兄弟目录（前缀匹配绕过防护）', () => {
     // 场景：projectPath = /tmp/memora-test-xxx
     // 攻击路径：/tmp/memora-test-xxx-evil/secret.txt
-    // 旧的 startsWith(projectPath) 会误判为允许，新的 startsWith(projectPath + sep) 正确拒绝
     const evilPath = `${projectPath}-evil`;
     const filePath = join(evilPath, 'secret.txt');
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
@@ -132,7 +131,7 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard2.assertPathAllowed(filePath)).not.toThrow();
   });
 
-  // ─── SEC-06：包管理器凭证文件拦截 ──────────────────────
+  // ─── 包管理器凭证文件拦截 ──────────────────────
 
   it('应该拒绝 .gitconfig 文件', () => {
     const filePath = join(projectPath, '.gitconfig');
@@ -159,7 +158,7 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
   });
 
-  // ─── SEC-06：环境变量文件多段后缀拦截 ──────────────────
+  // ─── 环境变量文件多段后缀拦截 ──────────────────
 
   it('应该拒绝 .env.production.local 等多段后缀文件', () => {
     // 旧正则 [^\\/.]+ 不允许后缀含 .，导致 .env.production.local 被绕过
@@ -172,7 +171,7 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
   });
 
-  // ─── SEC-06：Windows 系统目录覆盖 ──────────────────────
+  // ─── Windows 系统目录覆盖 ──────────────────────
 
   it('应该拒绝 C:\\Windows 直接子文件（非仅 System32）', () => {
     const filePath = 'C:\\Windows\\win.ini';
@@ -194,7 +193,7 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
   });
 
-  // ─── SEC-06：Linux/macOS 系统目录覆盖（根目录锚定）───
+  // ─── Linux/macOS 系统目录覆盖（根目录锚定）───
   // 跨平台兼容：Linux 上 ^/ 黑名单拦截，Windows 上被白名单越界拦截（C:\usr 不是系统目录）
   // 两种拒绝都验证了路径被正确阻止
 
@@ -223,11 +222,10 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单|越界/);
   });
 
-  // ─── SEC-06：符号链接逃逸防护（P0 安全漏洞）────────────
+  // ─── 符号链接逃逸防护（P0 安全漏洞）────────────
 
   it('应该拒绝通过项目内符号链接逃逸到项目外目录', () => {
     // 攻击场景：项目内存在指向项目外的符号链接，read_file 通过该链接读取敏感文件
-    // 旧实现 resolve() 不解析符号链接，白名单前缀匹配会误判为允许
     const evilDir = mkdtempSync(join(tmpdir(), 'memora-evil-'));
     // 在 evilDir 中放置一个文件（确保 realpath 有解析目标）
     writeFileSync(join(evilDir, 'secret.txt'), 'stolen');
@@ -247,7 +245,7 @@ describe('SecurityGuard · 路径白名单', () => {
   });
 });
 
-describe('SecurityGuard · 审计日志（M-105）', () => {
+describe('SecurityGuard · 审计日志', () => {
   let projectPath: string;
   let dataDir: string;
 
@@ -306,7 +304,7 @@ describe('SecurityGuard · 审计日志（M-105）', () => {
   });
 });
 
-describe('SecurityGuard · 写入二次确认（M-101）', () => {
+describe('SecurityGuard · 写入二次确认', () => {
   let projectPath: string;
   let dataDir: string;
 
@@ -326,8 +324,8 @@ describe('SecurityGuard · 写入二次确认（M-101）', () => {
     expect(last.decision).toBe('auto-approved');
   });
 
-  it('owner + confirmWrites=true + 未注入 handler 应 fail-closed 拒绝（HC-03）', async () => {
-    // HC-03：移除 readline 回退后，未注入 confirmationHandler 时应直接拒绝写入
+  it('owner + confirmWrites=true + 未注入 handler 应 fail-closed 拒绝', async () => {
+    // 未注入 confirmationHandler 时直接拒绝写入
     const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
     const ok = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
     expect(ok).toBe(false);
@@ -340,7 +338,7 @@ describe('SecurityGuard · 写入二次确认（M-101）', () => {
     expect(last.reason).toContain('fail-closed');
   });
 
-  it('guest 模式 + 未注入 handler 应 fail-closed 拒绝（HC-03）', async () => {
+  it('guest 模式 + 未注入 handler 应 fail-closed 拒绝', async () => {
     // guest 强制需要确认，未注入 handler 时同样 fail-closed
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'guest');
     expect(guard.permission).toBe('guest');
@@ -360,7 +358,7 @@ describe('SecurityGuard · 写入二次确认（M-101）', () => {
     expect(ok).toBe(true);
   });
 
-  // ─── GAP-3：beforeContent/afterContent diff 透传 ──────────
+  // ─── beforeContent/afterContent diff 透传 ──────────
 
   it('onWriteConfirmation 回调应接收 beforeContent/afterContent', async () => {
     const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');

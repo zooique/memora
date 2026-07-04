@@ -1,5 +1,5 @@
 /**
- * MemoryDecayScheduler 单元测试（HC-18 拆分自 agent.ts）
+ * MemoryDecayScheduler 单元测试
  *
  * 覆盖范围：
  *   - runOnce()：衰减执行 + 指标统计 + 事件发射 + 异常处理

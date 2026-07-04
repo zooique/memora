@@ -7,7 +7,7 @@
  *   - clear 传入 null 不抛错
  *   - 内部 activeTimers 注册表正确跟踪
  *
- * R-06：新增 activeTimers 注册表清理的直接验证（通过 getActiveTimerCount）
+ * activeTimers 注册表清理的直接验证（通过 getActiveTimerCount）
  *
  * 使用 vi.useFakeTimers 控制时间推进。
  */
@@ -24,7 +24,7 @@ import {
 describe('utils/safeTimer', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    // R-06：清理前序测试残留的定时器，确保 activeTimers 注册表隔离
+    // 清理前序测试残留的定时器，确保 activeTimers 注册表隔离
     clearAllSafeTimers();
   });
 
@@ -141,9 +141,9 @@ describe('utils/safeTimer', () => {
     });
   });
 
-  // ─── R-06：activeTimers 注册表直接验证 ──────────────────
+  // ─── activeTimers 注册表直接验证 ──────────────────
 
-  describe('R-06 · activeTimers 注册表直接验证', () => {
+  describe('activeTimers 注册表直接验证', () => {
     it('初始状态活跃定时器应为 0（无残留）', () => {
       // 每个测试开始前应无残留定时器
       expect(getActiveTimerCount()).toBe(0);
@@ -159,7 +159,7 @@ describe('utils/safeTimer', () => {
       expect(getActiveTimerCount()).toBe(1);
     });
 
-    it('R-06：safeSetTimeout 触发后应自动从注册表移除', () => {
+    it('safeSetTimeout 触发后应自动从注册表移除', () => {
       safeSetTimeout(vi.fn(), 100);
       expect(getActiveTimerCount()).toBe(1);
       vi.advanceTimersByTime(100);
@@ -167,7 +167,7 @@ describe('utils/safeTimer', () => {
       expect(getActiveTimerCount()).toBe(0);
     });
 
-    it('R-06：clearSafeTimeout 应立即从注册表移除', () => {
+    it('clearSafeTimeout 应立即从注册表移除', () => {
       const id = safeSetTimeout(vi.fn(), 1000);
       expect(getActiveTimerCount()).toBe(1);
       clearSafeTimeout(id);
@@ -175,7 +175,7 @@ describe('utils/safeTimer', () => {
       expect(getActiveTimerCount()).toBe(0);
     });
 
-    it('R-06：clearSafeInterval 应立即从注册表移除', () => {
+    it('clearSafeInterval 应立即从注册表移除', () => {
       const id = safeSetInterval(vi.fn(), 1000);
       expect(getActiveTimerCount()).toBe(1);
       clearSafeInterval(id);
@@ -183,7 +183,7 @@ describe('utils/safeTimer', () => {
       expect(getActiveTimerCount()).toBe(0);
     });
 
-    it('R-06：safeSetInterval 多次触发后仍保留在注册表（设计正确）', () => {
+    it('safeSetInterval 多次触发后仍保留在注册表（设计正确）', () => {
       const id = safeSetInterval(vi.fn(), 100);
       expect(getActiveTimerCount()).toBe(1);
       vi.advanceTimersByTime(300);
@@ -193,7 +193,7 @@ describe('utils/safeTimer', () => {
       expect(getActiveTimerCount()).toBe(0);
     });
 
-    it('R-06：多个定时器并行时注册表计数准确', () => {
+    it('多个定时器并行时注册表计数准确', () => {
       safeSetTimeout(vi.fn(), 100);
       safeSetTimeout(vi.fn(), 200);
       safeSetInterval(vi.fn(), 100);
@@ -209,9 +209,9 @@ describe('utils/safeTimer', () => {
     });
   });
 
-  // ─── R-06：clearAllSafeTimers 兜底清理 ──────────────────
+  // ─── clearAllSafeTimers 兜底清理 ──────────────────
 
-  describe('R-06 · clearAllSafeTimers 兜底清理', () => {
+  describe('clearAllSafeTimers 兜底清理', () => {
     it('应清理所有活跃的 timeout 定时器', () => {
       const cb1 = vi.fn();
       const cb2 = vi.fn();

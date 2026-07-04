@@ -246,9 +246,9 @@ describe('OpenAICompatibleProvider · 错误处理', () => {
   });
 });
 
-// ─── GAP-8：response_format 透传（结构化输出能力触达）──
+// ─── response_format 透传（结构化输出能力触达）──
 
-describe('OpenAICompatibleProvider · response_format 透传（GAP-8）', () => {
+describe('OpenAICompatibleProvider · response_format 透传', () => {
   it('传入 response_format 时应透传到请求 body', async () => {
     // 捕获请求 body 验证透传
     let capturedBody: Record<string, unknown> | undefined;

@@ -4,7 +4,7 @@
  * 集中管理 agent.ts 与 loop.ts 中的 magic numbers，便于统一调整与审查。
  * 按模块分两个命名空间，不创建全局 constants（避免垃圾桶反模式）。
  *
- * 触发提取的决策记录：A-006（原"暂缓"判断已失效——10 个 magic number 分布在 2 文件，已达提取阈值）。
+ * 10 个 magic number 分布在 2 文件，已达提取阈值，故集中提取。
  */
 
 /**
@@ -16,11 +16,10 @@ export const AGENT_CONSTANTS = {
   /**
    * chat() 并发锁超时（毫秒）。超时后中断 generator 并释放锁。
    *
-   * BUG-STREAM-05 修复：原值 300_000（5 分钟）与超时体系不匹配：
+   * 取 180s（LLM 120s + 60s 缓冲），与超时体系匹配，作为所有超时失败后的最后兜底：
    * - chunk 级读超时 30s（openaiCompatible parseSseStream）
    * - LLM 请求超时 120s（LLM_TIMEOUT_MS）
    * - 宿主层无进展兜底 60s（chatHandlers STREAM_NO_PROGRESS_TIMEOUT_MS）
-   * 现调整为 180s（LLM 120s + 60s 缓冲），作为所有超时失败后的最后兜底。
    */
   CHAT_LOCK_TIMEOUT_MS: 180_000,
 
@@ -65,13 +64,13 @@ export const LOOP_CONSTANTS = {
   CHARS_PER_TOKEN: 3,
 
   /**
-   * CJK 字符 token 估算密度（P1-15 中文适配）
+   * CJK 字符 token 估算密度（中文适配）
    *
    * CJK 字符在主流 LLM tokenizer 中约 1 字符 ≈ 1-2 tokens，
    * 取 1.5 作为保守中间值（偏高估算，避免上下文溢出）。
    *
-   * 修复前：统一用 CHARS_PER_TOKEN=3 估算，中文 4 字符 ≈ 1.3 token（严重低估）
-   * 修复后：中文 4 字符 ≈ 2.7 token（接近真实值 4-8 token）
+   * 中文 4 字符 ≈ 2.7 token（接近真实值 4-8 token），
+   * 统一用 CHARS_PER_TOKEN=3 估算会严重低估（4 字符 ≈ 1.3 token）。
    *
    * CJK 范围：U+3400-U+9FFF（统一表意文字 + 扩展A）+ U+3040-U+30FF（日文）+ U+AC00-U+D7AF（韩文）
    */

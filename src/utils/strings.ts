@@ -4,7 +4,7 @@
  * 从各模块提取的公共字符串处理函数，消除跨模块重复代码。
  */
 
-/** slug 最大长度（R-05：从 magic number 40 提取为常量） */
+/** slug 最大长度 */
 const MAX_SLUG_LENGTH = 40;
 
 /**

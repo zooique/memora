@@ -1,7 +1,7 @@
 /**
  * 记忆顾问 — 健康诊断 + 关联推荐
  *
- * QC-R2-11 拆分：从 MemoryInspector 提取 sourceHealth() + suggest() 为独立模块。
+ * 从 MemoryInspector 提取 sourceHealth() + suggest() 为独立模块。
  * 两者均为纯只读分析计算，仅依赖 IMemoryStorage，不修改任何状态。
  *
  * 设计原则（延续 MemoryInspector）：
@@ -95,7 +95,7 @@ export interface SuggestHit {
 /**
  * 记忆顾问
  *
- * 从 MemoryInspector 拆分（QC-R2-11），负责基于记忆数据的分析计算：
+ * 从 MemoryInspector 拆分，负责基于记忆数据的分析计算：
  *   - sourceHealth()：记忆源健康诊断（数量、score、新鲜度）
  *   - suggest()：关联推荐（基于 score + 时效性 + 多样性）
  *
@@ -123,12 +123,12 @@ export class MemoryAdvisor {
    * - critical：avgScore < 0.2 或 30 天以上未访问
    *
    * 纯只读、同步、不调 LLM，与 stats() 互补（stats 只有数量，本方法有质量指标）。
-   * P2-2 优化：使用 getAllSources() 发现所有 source 标签，替代全量 search。
+   * 使用 getAllSources() 发现所有 source 标签，替代全量 search。
    */
   sourceHealth(): SourceHealthReport {
     const now = Date.now();
 
-    // P2-2 使用 getAllSources() 获取所有有数据的 source 标签
+    // 使用 getAllSources() 获取所有有数据的 source 标签
     const sourceMap = this.index.getAllSources();
     const sourceSet = new Set<string>();
     for (const [source, count] of sourceMap) {

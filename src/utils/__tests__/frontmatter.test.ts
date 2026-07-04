@@ -93,7 +93,7 @@ id: test-003
       expect(body).toBe('第一行\n第二行\n第三行');
     });
 
-    // ─── 边界：空 body / 空 frontmatter 块（P1-01 修复）─────────
+    // ─── 边界：空 body / 空 frontmatter 块 ─────────
     it('空 body（纯元数据文件）应返回 frontmatter 和空 body', () => {
       // 纯元数据文件：末尾就是 ---\n，无正文内容
       const raw = '---\nid: test-empty-body\nsource: rule\n---\n';

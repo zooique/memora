@@ -142,7 +142,7 @@ function createMockRelationStore(): IMemoryRelationStore {
 
 describe('assembleComponents', () => {
   describe('security 校验', () => {
-    it('pctx.security=null 抛 MemoraError（A-004 显式校验）', async () => {
+    it('pctx.security=null 抛 MemoraError（显式校验）', async () => {
       // 安全守卫未注入时，组装器应在 Phase 1 起点抛错，避免后续组件拿到 null security
       const pctx = createPctx({ security: null });
       await expect(assembleComponents(pctx, createInput())).rejects.toThrow(MemoraError);
@@ -256,8 +256,7 @@ describe('assembleComponents', () => {
         createPctx(),
         createInput({ personaName: '不存在的角色' }),
       );
-      // P3-14：personaPrompt 字段已从 AssembleOutput 移除（仅内部使用）
-      // 验证组装成功即可——personaPrompt 通过 systemPromptPrefix 间接消费
+      // personaPrompt 仅内部使用，通过 systemPromptPrefix 间接消费
       expect(output.personaManager).toBeDefined();
     });
 

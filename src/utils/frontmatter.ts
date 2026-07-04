@@ -1,7 +1,7 @@
 /**
  * Frontmatter 通用解析/序列化工具
  *
- * P3-13 注释订正：直接消费者为 memory/store.ts 和 utils/scanner.ts
+ * 直接消费者为 memory/store.ts 和 utils/scanner.ts
  * （scanner 间接供 personaManager / skillManager 使用），非 persona/skill 直接 import。
  * 详见 ADR-004 · 记忆统一为"类型 + 永久性标记"模型
  */

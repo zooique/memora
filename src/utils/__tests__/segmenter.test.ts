@@ -1,14 +1,14 @@
 /**
  * 单元测试：中文分词器
  *
- * 详见 M-202：Intl.Segmenter 中文分词
+ * 详见 Intl.Segmenter 中文分词
  *
- * P3-02：tokenizeKeywords 已降为模块私有，其行为通过 scoreByKeywords 间接验证。
+ * tokenizeKeywords 为模块私有，其行为通过 scoreByKeywords 间接验证。
  */
 import { describe, expect, it } from 'vitest';
 import { segmentText, scoreByKeywords } from '@/utils/segmenter.js';
 
-describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
+describe('中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
     it('应能切出中文词（Intl.Segmenter zh-CN 按 ICU 词典切）', () => {
       // Intl.Segmenter zh-CN：把"我是 Memora"切成"我是"+"Memora"
@@ -20,7 +20,7 @@ describe('M-202 · 中文分词器（Intl.Segmenter）', () => {
     });
 
     it('应能识别 Memora 哲学关键词', () => {
-      // 这是 M-001 烟测中 LLM 回应的关键短语
+      // 这是烟测中 LLM 回应的关键短语
       const tokens = segmentText('万物皆记忆');
       // Intl.Segmenter 会识别"万物"和"皆"为独立 token
       expect(tokens).toContain('万物');

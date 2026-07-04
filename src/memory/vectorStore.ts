@@ -1,7 +1,7 @@
 /**
  * 向量存储 — 纯 JS 实现，内存 + JSON 持久化
  *
- * M-206：语义检索的向量索引层
+ * 语义检索的向量索引层：
  * - 存储记忆 ID → 向量的映射
  * - 支持余弦相似度搜索（topK）
  * - 持久化到 JSON 文件（冷启动时加载）
@@ -11,7 +11,7 @@
  * - 单用户本地场景，5k 条记录内纯 JS 余弦相似度 < 10ms
  * - 向量维度由 embedding 模型决定，存储层不关心
  *
- * P1-02 加固（2026-07）：
+ * 加固点：
  * - load() 增加 schema 校验（防止损坏文件污染内存索引）
  * - upsert/batchUpsert 增加维度一致性校验（防止维度错位导致相似度计算崩溃）
  * - save() 串行化（防止并发 save 互相覆盖丢失数据）
@@ -125,7 +125,7 @@ export class VectorStore {
   /**
    * 从 JSON 文件加载向量索引（冷启动）
    *
-   * P1-02 加固：增加 schema 校验，损坏文件视为"从空开始"
+   * 加固：增加 schema 校验，损坏文件视为"从空开始"
    * 防止部分写入 / 手动编辑错误 / 版本不匹配的文件污染内存索引
    */
   async load(): Promise<void> {
@@ -153,7 +153,7 @@ export class VectorStore {
   /**
    * 持久化向量索引到 JSON 文件
    *
-   * P1-02 加固：串行化并发 save，防止互相覆盖丢失数据。
+   * 加固：串行化并发 save，防止互相覆盖丢失数据。
    * 调用方可在并发场景下安全地多次调用 save，每次都会等待前一次完成。
    *
    * @returns 等待所有挂起 save 完成的 Promise
@@ -194,7 +194,7 @@ export class VectorStore {
   /**
    * 为文本生成向量并存储
    *
-   * P1-02 加固：维度一致性校验，防止维度错位导致 cosineSimilarity 计算崩溃
+   * 加固：维度一致性校验，防止维度错位导致 cosineSimilarity 计算崩溃
    *
    * @param id 记忆 ID
    * @param text 待嵌入的文本
@@ -221,7 +221,7 @@ export class VectorStore {
   /**
    * 批量嵌入并存储
    *
-   * P1-02 加固：维度一致性校验，与 upsert 同契约
+   * 加固：维度一致性校验，与 upsert 同契约
    *
    * @param items ID + 文本对
    * @throws {MemoraError} 当 embedding 返回的向量维度与已存维度不一致时抛出 configError

@@ -6,8 +6,6 @@
  *   - abstract chat() 方法编译期约束（子类必须实现）
  *   - name 抽象属性编译期约束
  *   - Message / ChatOptions 类型契约（可选字段组合）
- *
- * P3-17：补全 provider.ts 无直接测试的缺口（健康度快照 2026-07-03 R3 标注）
  */
 import { describe, it, expect } from 'vitest';
 import { LlmProvider } from '@/llm/provider.js';

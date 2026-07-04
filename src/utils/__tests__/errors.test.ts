@@ -1,7 +1,7 @@
 /**
  * 错误类型测试
- * 覆盖 M-103：4 大类错误工厂 + format + log
- * R-02：补全 ToolErrorCode + isRetryableErrorCode + securityError + errorCode 字段测试
+ * 覆盖 4 大类错误工厂 + format + log
+ * ToolErrorCode + isRetryableErrorCode + securityError + errorCode 字段测试
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -15,7 +15,7 @@ import {
   isRetryableErrorCode,
 } from '@/utils/errors.js';
 
-describe('MemoraError · M-103 错误信息友好化', () => {
+describe('MemoraError · 错误信息友好化', () => {
   it('应该构造带标题/详情/建议的错误', () => {
     const err = configError('API Key 缺失', 'MEMORA_LLM_API_KEY 未设置', ['设置环境变量']);
     expect(err.title).toBe('API Key 缺失');
@@ -65,9 +65,9 @@ describe('MemoraError · M-103 错误信息友好化', () => {
   });
 });
 
-// ─── R-02：ToolErrorCode 错误码值定义 ──────────────────────
+// ─── ToolErrorCode 错误码值定义 ──────────────────────
 
-describe('ToolErrorCode · R-02 错误码值定义', () => {
+describe('ToolErrorCode · 错误码值定义', () => {
   it('应定义 10 种错误码', () => {
     // 验证 ToolErrorCode 对象包含 10 个键
     const codes = Object.keys(ToolErrorCode);
@@ -89,9 +89,9 @@ describe('ToolErrorCode · R-02 错误码值定义', () => {
   });
 });
 
-// ─── R-02：isRetryableErrorCode 可重试判断 ────────────────
+// ─── isRetryableErrorCode 可重试判断 ────────────────
 
-describe('isRetryableErrorCode · R-02 AgentLoop Reflection 核心', () => {
+describe('isRetryableErrorCode · AgentLoop Reflection 核心', () => {
   it('FILE_NOT_FOUND 应可重试（LLM 可能用错路径）', () => {
     expect(isRetryableErrorCode(ToolErrorCode.FILE_NOT_FOUND)).toBe(true);
   });
@@ -142,9 +142,9 @@ describe('isRetryableErrorCode · R-02 AgentLoop Reflection 核心', () => {
   });
 });
 
-// ─── R-02：securityError 工厂函数 ─────────────────────────
+// ─── securityError 工厂函数 ─────────────────────────
 
-describe('securityError · R-02 安全错误工厂', () => {
+describe('securityError · 安全错误工厂', () => {
   it('应构造 category=security 的错误', () => {
     const err = securityError('路径越界', '/etc/passwd 不在白名单', ['检查路径']);
     expect(err.category).toBe('security');
@@ -168,9 +168,9 @@ describe('securityError · R-02 安全错误工厂', () => {
   });
 });
 
-// ─── R-02：MemoraError.errorCode 字段 ─────────────────────
+// ─── MemoraError.errorCode 字段 ─────────────────────
 
-describe('MemoraError.errorCode · R-02 工具错误码字段', () => {
+describe('MemoraError.errorCode · 工具错误码字段', () => {
   it('toolError 透传 errorCode 到 MemoraError', () => {
     const err = toolError('文件不存在', '/tmp/foo', ['检查路径'], undefined, ToolErrorCode.FILE_NOT_FOUND);
     expect(err.errorCode).toBe(ToolErrorCode.FILE_NOT_FOUND);
@@ -191,7 +191,7 @@ describe('MemoraError.errorCode · R-02 工具错误码字段', () => {
   });
 
   it('直接构造 MemoraError 可指定 errorCode + unknown 分类', () => {
-    // 测试 ErrorCategory 的 unknown 分类（R-02 补全）
+    // 测试 ErrorCategory 的 unknown 分类
     const err = new MemoraError({
       title: '未知错误',
       detail: '未分类',

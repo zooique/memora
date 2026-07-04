@@ -19,14 +19,14 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
-// P1-05：双通道融合排序算法 + 常量从 hybridMerge 导入（不再绕道 recall.ts）
+// 双通道融合排序算法 + 常量从 hybridMerge 导入（不再绕道 recall.ts）
 // 消除"agent 模块依赖 memory/recall.ts 内部常量"的分层违规
 import {
   hybridMerge,
   RECALL_LIMIT_MULTIPLIER,
 } from '@/memory/hybridMerge.js';
-// QC-R2-11：sourceHealth() + suggest() 已提取到 MemoryAdvisor
-// HC-21：删除兜底分支后 MemoryAdvisor 仅用于类型注解，改用 import type
+// sourceHealth() + suggest() 已提取到 MemoryAdvisor
+// 删除兜底分支后 MemoryAdvisor 仅用于类型注解，改用 import type
 import type {
   MemoryAdvisor,
   SourceHealthReport,
@@ -34,7 +34,7 @@ import type {
   SuggestHit,
 } from '@/agent/managers/memoryAdvisor.js';
 
-// QC-R2-11：类型再导出，保持公共 API 不变（src/index.ts 通过本文件再导出这些类型）
+// 类型再导出，保持公共 API 不变（src/index.ts 通过本文件再导出这些类型）
 export type {
   SourceHealthStatus,
   SourceHealthEntry,
@@ -141,14 +141,14 @@ export class MemoryInspector {
   private vectorStore: VectorStore | null = null;
   /** 关系存储（可选，ADR-014 侧车，未注入时跳过关系查询） */
   private readonly relationStore: IMemoryRelationStore | null;
-  /** 记忆顾问（QC-R2-11：sourceHealth + suggest 委托） */
+  /** 记忆顾问（sourceHealth + suggest 委托） */
   private readonly advisor: MemoryAdvisor;
 
   /**
    * @param index - 记忆存储（用于搜索 + 统计）
    * @param loop - AgentLoop（用于获取工作记忆）
    * @param history - MessageHistory（用于获取当前会话信息）
-   * @param advisor - 记忆顾问（HC-21：组合根一致性，由 assembler.ts 显式注入，必填）
+   * @param advisor - 记忆顾问（组合根一致性，由 assembler.ts 显式注入，必填）
    * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系相关方法降级返回空）
    */
   constructor(
@@ -158,7 +158,7 @@ export class MemoryInspector {
     advisor: MemoryAdvisor,
     relationStore: IMemoryRelationStore | null = null,
   ) {
-    // HC-21：组合根一致性——advisor 由 assembler.ts 显式注入（必填，不再内部创建）
+    // 组合根一致性——advisor 由 assembler.ts 显式注入（必填，不再内部创建）
     this.advisor = advisor;
     this.relationStore = relationStore;
   }
@@ -185,7 +185,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 删除记忆（GAP-6：软删除，写入 deletedAt）
+   * 删除记忆（软删除，写入 deletedAt）
    *
    * @param id 记忆唯一标识（${source}:${name} 格式）
    */
@@ -194,7 +194,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 恢复软删除的记忆（GAP-6：清除 deletedAt）
+   * 恢复软删除的记忆（清除 deletedAt）
    *
    * @param id 记忆唯一标识
    */
@@ -203,7 +203,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 物理删除记忆（GAP-6：不可恢复，用于回收站彻底删除）
+   * 物理删除记忆（不可恢复，用于回收站彻底删除）
    *
    * @param id 记忆唯一标识
    */
@@ -212,7 +212,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 列出回收站中的软删除记忆（GAP-6）
+   * 列出回收站中的软删除记忆
    *
    * @param limit 返回数量上限（默认 50）
    * @returns 软删除记忆列表（按 deletedAt 降序）
@@ -222,7 +222,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 按 ID 获取单条软删除记忆（SEC-GAP6-02）
+   * 按 ID 获取单条软删除记忆
    *
    * 用于 restore/purge 操作前的存在性校验，避免 listDeleted 默认 50 上限
    * 导致回收站超量时操作失效。
@@ -235,7 +235,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 清理过期的软删除记忆（GAP-6）
+   * 清理过期的软删除记忆
    *
    * @param before 时间阈值，deletedAt 早于此值的记忆将被物理删除
    * @returns 被清理的记忆数量
@@ -245,7 +245,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 按 ID 获取单条活跃记忆（GAP-6：已软删除的返回 null）
+   * 按 ID 获取单条活跃记忆（已软删除的返回 null）
    *
    * @param id 记忆唯一标识
    * @returns 记忆对象，不存在或已软删除时返回 null
@@ -381,10 +381,10 @@ export class MemoryInspector {
   /**
    * 混合搜索记忆（语义 + 关键词双通道）
    *
-   * V-101：当 VectorStore 可用时，启用语义搜索通道，补强关键词召回的语义缺口。
+   * 当 VectorStore 可用时，启用语义搜索通道，补强关键词召回的语义缺口。
    * 向量搜索失败时静默降级到纯关键词（降级优先原则）。
    *
-   * P1-05：融合排序算法已提取到 hybridMerge.ts，与 recall() 共享同一实现。
+   * 融合排序算法已提取到 hybridMerge.ts，与 recall() 共享同一实现。
    * 消除原先与本模块的算法重复 + 跨模块常量依赖。
    *
    * @returns 混合排序后的搜索结果（含相似度分数）
@@ -426,7 +426,7 @@ export class MemoryInspector {
       }
     }
 
-    // ── 综合排序：委托给 hybridMerge 纯函数（P1-05 提取，与 recall() 共享） ──
+    // ── 综合排序：委托给 hybridMerge 纯函数（与 recall() 共享） ──
     const sorted = hybridMerge(merged.values(), limit);
 
     return sorted.map(({ memory, vectorScore }) => ({
@@ -446,13 +446,13 @@ export class MemoryInspector {
    * 记忆库统计
    *
    * 返回记忆来源分布、数据库大小等关键指标。
-   * P2-2 优化：使用 getAllSources() 一次查询替代多次 countBySource + 全量 search，
+   * 优化：使用 getAllSources() 一次查询替代多次 countBySource + 全量 search，
    * 复杂度从 O(n*knownSources + n) 降为 O(distinctSources)。
    */
   stats(): AgentStats {
     const total = this.index.count();
 
-    // P2-2 直接使用 getAllSources() 获取所有 source 分布（含宿主自定义标签）
+    // 直接使用 getAllSources() 获取所有 source 分布（含宿主自定义标签）
     const sourceMap = this.index.getAllSources();
     const bySource: Record<string, number> = {};
     for (const [source, count] of sourceMap) {
@@ -531,13 +531,13 @@ export class MemoryInspector {
     return this.relationStore.getAllRelations().length;
   }
 
-  // ─── 源健康诊断 + 关联推荐（QC-R2-11：委托给 MemoryAdvisor） ───
+  // ─── 源健康诊断 + 关联推荐（委托给 MemoryAdvisor） ───
 
   /**
    * 记忆源健康诊断（委托给 MemoryAdvisor）
    *
    * 为每个 source 计算健康指标（数量、平均 score、新鲜度、状态）。
-   * 实现已迁移至 MemoryAdvisor（QC-R2-11），此处保留委托以维持 API 契约。
+   * 实现已迁移至 MemoryAdvisor，此处保留委托以维持 API 契约。
    */
   sourceHealth(): SourceHealthReport {
     return this.advisor.sourceHealth();
@@ -547,7 +547,7 @@ export class MemoryInspector {
    * 关联推荐（委托给 MemoryAdvisor）
    *
    * 基于 score + 时效性 + source 多样性推荐记忆。
-   * 实现已迁移至 MemoryAdvisor（QC-R2-11），此处保留委托以维持 API 契约。
+   * 实现已迁移至 MemoryAdvisor，此处保留委托以维持 API 契约。
    *
    * @param query - 可选的搜索关键词（提供时结合搜索结果推荐，省略时基于全局热度推荐）
    * @param options - 推荐选项

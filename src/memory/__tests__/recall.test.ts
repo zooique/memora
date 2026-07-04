@@ -161,9 +161,9 @@ describe('recall · 记忆召回', () => {
   });
 });
 
-// ─── M-01：语义搜索通道（双通道召回） ──────────────────────
+// ─── 语义搜索通道（双通道召回） ──────────────────────
 
-describe('recall · M-01 语义搜索通道（双通道召回）', () => {
+describe('recall · 语义搜索通道（双通道召回）', () => {
   let mockStorage: IMemoryStorage;
   /** Mock VectorStore（size + search） */
   let mockVectorStore: { size: number; search: ReturnType<typeof vi.fn> };
@@ -186,7 +186,7 @@ describe('recall · M-01 语义搜索通道（双通道召回）', () => {
     };
   });
 
-  it('M-01：vectorStore 有结果时应走语义搜索通道', async () => {
+  it('vectorStore 有结果时应走语义搜索通道', async () => {
     // 语义搜索返回 1 条结果，关键词搜索返回 0 条
     vi.mocked(mockVectorStore.search).mockResolvedValue([
       { id: 'insight:semantic-1', similarity: 0.9 },
@@ -204,7 +204,7 @@ describe('recall · M-01 语义搜索通道（双通道召回）', () => {
     expect(mockVectorStore.search).toHaveBeenCalledWith('测试查询', 10, 0.3);
   });
 
-  it('M-01：vectorStore.size=0 时跳过语义搜索', async () => {
+  it('vectorStore.size=0 时跳过语义搜索', async () => {
     // size=0 时不应调用 vectorStore.search
     mockVectorStore.size = 0;
     vi.mocked(mockStorage.search).mockReturnValue([
@@ -217,7 +217,7 @@ describe('recall · M-01 语义搜索通道（双通道召回）', () => {
     expect(memories).toHaveLength(1);
   });
 
-  it('M-01：excludeSources 对语义搜索结果也生效', async () => {
+  it('excludeSources 对语义搜索结果也生效', async () => {
     // 语义搜索返回 persona source，应被排除
     vi.mocked(mockVectorStore.search).mockResolvedValue([
       { id: 'persona:1', similarity: 0.9 },
@@ -232,7 +232,7 @@ describe('recall · M-01 语义搜索通道（双通道召回）', () => {
     expect(memories).toHaveLength(0);
   });
 
-  it('M-01：双通道融合去重（同一 id 不重复返回）', async () => {
+  it('双通道融合去重（同一 id 不重复返回）', async () => {
     // 语义搜索 + 关键词搜索都返回同一 id，应去重为 1 条
     vi.mocked(mockVectorStore.search).mockResolvedValue([
       { id: 'insight:dup', similarity: 0.9 },
@@ -252,9 +252,9 @@ describe('recall · M-01 语义搜索通道（双通道召回）', () => {
   });
 });
 
-// ─── M-01：双通道融合排序 ─────────────────────────────────
+// ─── 双通道融合排序 ─────────────────────────────────
 
-describe('recall · M-01 双通道融合排序', () => {
+describe('recall · 双通道融合排序', () => {
   let mockStorage: IMemoryStorage;
 
   beforeEach(() => {
@@ -270,7 +270,7 @@ describe('recall · M-01 双通道融合排序', () => {
     } as unknown as IMemoryStorage;
   });
 
-  it('M-01：高 similarity + 中等 score 应排在低 similarity + 高 score 前面', async () => {
+  it('高 similarity + 中等 score 应排在低 similarity + 高 score 前面', async () => {
     // 综合分公式：vectorScore * 0.6 + memory.score * 0.4
     // memory A：similarity=0.9, score=0.5 → 0.54 + 0.20 = 0.74
     // memory B：similarity=0（关键词命中），score=0.9 → 0 + 0.36 = 0.36
@@ -294,7 +294,7 @@ describe('recall · M-01 双通道融合排序', () => {
     expect(memories[1]!.id).toBe('insight:B');
   });
 
-  it('M-01：高 score 记忆可在融合排序中超越低 similarity 记忆', async () => {
+  it('高 score 记忆可在融合排序中超越低 similarity 记忆', async () => {
     // memory A：similarity=0.4, score=0.3 → 0.24 + 0.12 = 0.36
     // memory B：similarity=0（关键词命中），score=0.95 → 0 + 0.38 = 0.38
     // 期望 B 排在 A 前面（高 score 弥补了无 similarity）
@@ -317,7 +317,7 @@ describe('recall · M-01 双通道融合排序', () => {
     expect(memories[1]!.id).toBe('insight:A');
   });
 
-  it('M-01：limit 应在融合排序后截断', async () => {
+  it('limit 应在融合排序后截断', async () => {
     // 语义搜索返回 3 条，关键词搜索返回 3 条，limit=2 应截断到 2 条
     const mockVectorStore = {
       size: 10,
@@ -345,9 +345,9 @@ describe('recall · M-01 双通道融合排序', () => {
   });
 });
 
-// ─── M-01：降级策略 ───────────────────────────────────────
+// ─── 降级策略 ───────────────────────────────────────
 
-describe('recall · M-01 降级策略', () => {
+describe('recall · 降级策略', () => {
   let mockStorage: IMemoryStorage;
 
   beforeEach(() => {
@@ -363,7 +363,7 @@ describe('recall · M-01 降级策略', () => {
     } as unknown as IMemoryStorage;
   });
 
-  it('M-01：语义搜索抛错时应降级到关键词搜索', async () => {
+  it('语义搜索抛错时应降级到关键词搜索', async () => {
     // vectorStore.search 抛错，应降级到关键词搜索并返回结果
     const mockVectorStore = {
       size: 10,
@@ -382,7 +382,7 @@ describe('recall · M-01 降级策略', () => {
     expect(mockStorage.search).toHaveBeenCalled();
   });
 
-  it('M-01：关键词搜索抛错时应仅返回语义搜索结果', async () => {
+  it('关键词搜索抛错时应仅返回语义搜索结果', async () => {
     // storage.search 抛错，应仅返回语义搜索结果
     const mockVectorStore = {
       size: 10,
@@ -402,7 +402,7 @@ describe('recall · M-01 降级策略', () => {
     expect(memories[0]!.id).toBe('insight:semantic');
   });
 
-  it('M-01：双通道都失败时应返回空数组', async () => {
+  it('双通道都失败时应返回空数组', async () => {
     // 语义搜索抛错 + 关键词搜索抛错，应返回空数组而非抛出
     const mockVectorStore = {
       size: 10,
@@ -417,7 +417,7 @@ describe('recall · M-01 降级策略', () => {
     expect(memories).toEqual([]);
   });
 
-  it('M-01：minSimilarity 选项应透传到 vectorStore.search', async () => {
+  it('minSimilarity 选项应透传到 vectorStore.search', async () => {
     // 验证自定义 minSimilarity 透传
     const mockVectorStore = {
       size: 10,

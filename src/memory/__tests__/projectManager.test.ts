@@ -38,7 +38,7 @@ describe('ProjectManager · initProject', () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager({
       dataDir: config.memory.dataDir,
-      // A-004: 注入 SecurityGuard 工厂函数
+      // 注入 SecurityGuard 工厂函数
       createSecurityGuard: (projectPath, memoraDir) =>
         new SecurityGuard(projectPath, memoraDir, [], false, 'owner'),
     });

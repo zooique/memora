@@ -22,28 +22,28 @@ import { nowIso } from '@/utils/time.js';
  * 内存存储实现
  *
  * 使用 Map 存储记忆，核心操作 O(1)~O(log n)。
- * P2-2 优化：维护 source→count 增量缓存，stats()/sourceHealth() 无需全量遍历。
+ * 优化：维护 source→count 增量缓存，stats()/sourceHealth() 无需全量遍历。
  */
 export class InMemoryStorage implements IMemoryStorage {
   /** 记忆存储（id → Memory） */
   private memories: Map<string, Memory> = new Map();
 
-  /** P2-2 source→count 增量缓存（upsert/delete 时维护，getAllSources 时直接读取） */
+  /** source→count 增量缓存（upsert/delete 时维护，getAllSources 时直接读取） */
   private sourceCountCache: Map<string, number> = new Map();
 
   /**
    * 插入或更新记忆
    *
    * 自动校验 source 字段，对疑似 typo 发出警告日志。
-   * P2-2 增量维护 sourceCountCache（仅统计活跃记忆）：
+   * 增量维护 sourceCountCache（仅统计活跃记忆）：
    *   - 新增活跃记忆：source 计数 +1
    *   - 更新同 source 同活跃态：计数不变
    *   - 更新换 source：旧 source -1、新 source +1
-   * GAP-6 软删除状态转换维护：
+   * 软删除状态转换维护：
    *   - 活跃 → 软删除：source 计数 -1
    *   - 软删除 → 活跃：source 计数 +1
    *
-   * P1-03 软删除校验（2026-07）：
+   * 软删除校验：
    *   若 existing 已软删除（deletedAt !== undefined）且 newMemory 为活跃态
    *   （deletedAt === undefined），抛出错误阻止"通过 upsert 复活软删除记忆"。
    *   调用方必须先显式 restore(id) 恢复记忆后再 upsert。
@@ -69,7 +69,7 @@ export class InMemoryStorage implements IMemoryStorage {
         'source 校验警告',
       );
     }
-    // P1-03 软删除校验：阻止"通过 upsert 静默复活软删除记忆"
+    // 软删除校验：阻止"通过 upsert 静默复活软删除记忆"
     const existing = this.memories.get(memory.id);
     if (existing && existing.deletedAt !== undefined && memory.deletedAt === undefined) {
       // existing 已软删除，但 newMemory 试图以活跃态覆盖 → 拒绝
@@ -80,11 +80,11 @@ export class InMemoryStorage implements IMemoryStorage {
         [
           '若需恢复：先调用 restore(id)，再 upsert',
           '若需覆盖软删除态：在 newMemory 中显式传入 deletedAt 字段',
-          '参考 GAP-6 软删除机制设计',
+          '参考软删除机制设计',
         ],
       );
     }
-    // GAP-6 delta 方式维护 sourceCountCache（仅统计活跃记忆）
+    // delta 方式维护 sourceCountCache（仅统计活跃记忆）
     // 先扣除 existing 的活跃贡献（若 existing 存在且为活跃态）
     if (existing && existing.deletedAt === undefined) {
       this.decrementSourceCount(existing.source);
@@ -97,7 +97,7 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 软删除记忆（GAP-6）
+   * 软删除记忆
    *
    * 写入 deletedAt 时间戳，不物理移除 Map 条目。
    * - 召回/搜索/列表/统计自动过滤已软删除的记忆
@@ -105,7 +105,7 @@ export class InMemoryStorage implements IMemoryStorage {
    * - 回收站保留期过后由 purgeExpired(before) 物理清理
    *
    * 对已软删除的记忆调用为 no-op。
-   * P2-2 增量维护 sourceCountCache：软删除时对应 source 减 1。
+   * 增量维护 sourceCountCache：软删除时对应 source 减 1。
    */
   delete(id: string): void {
     const existing = this.memories.get(id);
@@ -119,11 +119,11 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 恢复软删除的记忆（GAP-6）
+   * 恢复软删除的记忆
    *
    * 清除 deletedAt 字段，使记忆重新出现在召回/搜索/列表中。
    * 对活跃记忆调用为 no-op。
-   * P2-2 增量维护 sourceCountCache：恢复时对应 source 加 1。
+   * 增量维护 sourceCountCache：恢复时对应 source 加 1。
    */
   restore(id: string): void {
     const existing = this.memories.get(id);
@@ -137,7 +137,7 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 物理删除记忆（GAP-6）
+   * 物理删除记忆
    *
    * 从 Map 中彻底移除，不可恢复。
    * 用于回收站的"彻底删除"操作，或测试环境的强制清理。
@@ -156,7 +156,7 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 列出回收站中的软删除记忆（GAP-6）
+   * 列出回收站中的软删除记忆
    *
    * 按 deletedAt 降序（最近删除的在前），便于回收站 UI 展示。
    * 返回浅拷贝，避免调用方修改污染存储内部对象。
@@ -176,7 +176,7 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 按 ID 获取单条软删除记忆（SEC-GAP6-02）
+   * 按 ID 获取单条软删除记忆
    *
    * 用于 restore/purge 操作前的存在性校验，避免 listDeleted 默认 50 上限
    * 导致回收站超量时操作失效。
@@ -192,7 +192,7 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 清理过期的软删除记忆（GAP-6）
+   * 清理过期的软删除记忆
    *
    * 物理删除所有 deletedAt 早于 before 的记忆。
    * 由宿主项目的定时器调用（默认 30 天保留期）。
@@ -214,19 +214,19 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 按 ID 获取单条活跃记忆（GAP-6：已软删除的返回 null）
+   * 按 ID 获取单条活跃记忆（已软删除的返回 null）
    *
    * 返回浅拷贝，避免调用方修改污染存储内部对象（接口契约：读取隔离）
    */
   getById(id: string): Memory | null {
     const m = this.memories.get(id);
-    // GAP-6：已软删除的记忆返回 null（活跃态过滤）
+    // 已软删除的记忆返回 null（活跃态过滤）
     if (!m || m.deletedAt !== undefined) return null;
     return { ...m };
   }
 
   /**
-   * 按来源标签获取活跃记忆（GAP-6：自动过滤已软删除的）
+   * 按来源标签获取活跃记忆（自动过滤已软删除的）
    *
    * 返回浅拷贝数组，避免调用方修改污染存储内部对象。
    *
@@ -241,7 +241,7 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 文本搜索活跃记忆（GAP-6：自动过滤已软删除的，内存版）
+   * 文本搜索活跃记忆（自动过滤已软删除的，内存版）
    *
    * 使用 segmentText() 规范分词，与 SqliteStorage 行为一致。
    * 搜索 content 和 name 字段，按 score 降序排列。
@@ -251,7 +251,7 @@ export class InMemoryStorage implements IMemoryStorage {
    * @returns 匹配的活跃记忆列表
    */
   search(query: string, limit = 10): Memory[] {
-    // GAP-6：仅搜索活跃记忆（deletedAt === undefined）
+    // 仅搜索活跃记忆（deletedAt === undefined）
     const activeMemories = Array.from(this.memories.values()).filter((m) => m.deletedAt === undefined);
 
     // 空查询：按 score 降序返回（浅拷贝，读取隔离）
@@ -287,9 +287,9 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 统计活跃记忆总数（GAP-6：不含已软删除的）
+   * 统计活跃记忆总数（不含已软删除的）
    *
-   * P2-2 优化：直接累加 sourceCountCache 的所有值，O(sources) 复杂度。
+   * 优化：直接累加 sourceCountCache 的所有值，O(sources) 复杂度。
    * 因 sourceCountCache 仅维护活跃记忆计数，求和即为活跃总数。
    */
   count(): number {
@@ -301,7 +301,7 @@ export class InMemoryStorage implements IMemoryStorage {
   /**
    * 按来源标签统计记忆数量
    *
-   * P2-2 优化：直接读取 sourceCountCache，O(1) 复杂度
+   * 优化：直接读取 sourceCountCache，O(1) 复杂度
    * （getAllSources 为 O(sources)，因需拷贝 Map，二者复杂度不同）
    * 原实现 O(n) 遍历所有记忆，与增量缓存设计不一致
    */
@@ -310,7 +310,7 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   /**
-   * 衰减指定来源的活跃记忆 score（GAP-6：跳过已软删除的）
+   * 衰减指定来源的活跃记忆 score（跳过已软删除的）
    *
    * 遍历所有匹配 source 的活跃记忆，按时间衰减。
    * 生产环境宿主（SqliteStorage）应重写为 SQL UPDATE 批量操作。
@@ -318,7 +318,7 @@ export class InMemoryStorage implements IMemoryStorage {
   decayScores(sources: string[], now: Date): number {
     let count = 0;
     for (const m of this.memories.values()) {
-      // GAP-6：跳过已软删除的记忆
+      // 跳过已软删除的记忆
       if (m.deletedAt !== undefined) continue;
       if (!sources.includes(m.source)) continue;
       if (applyDecayToMemory(m, now)) {
@@ -331,8 +331,8 @@ export class InMemoryStorage implements IMemoryStorage {
   /**
    * 获取所有 source 标签及其记忆数量
    *
-   * P2-2 优化：直接读取增量维护的 sourceCountCache。
-   * P3-13 注释订正：复杂度为 O(sources)（拷贝 Map），相比原全量遍历 O(n) 仍有显著优化。
+   * 优化：直接读取增量维护的 sourceCountCache。
+   * 复杂度为 O(sources)（拷贝 Map），相比全量遍历 O(n) 仍有显著优化。
    */
   getAllSources(): Map<string, number> {
     return new Map(this.sourceCountCache);
@@ -347,7 +347,7 @@ export class InMemoryStorage implements IMemoryStorage {
     this.sourceCountCache.clear();
   }
 
-  // ─── P2-2 source 缓存辅助方法 ─────────────────────────────
+  // ─── source 缓存辅助方法 ─────────────────────────────
 
   /** source 计数 +1 */
   private incrementSourceCount(source: string): void {
