@@ -26,8 +26,9 @@ import {
   RECALL_LIMIT_MULTIPLIER,
 } from '@/memory/hybridMerge.js';
 // QC-R2-11：sourceHealth() + suggest() 已提取到 MemoryAdvisor
-import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
+// HC-21：删除兜底分支后 MemoryAdvisor 仅用于类型注解，改用 import type
 import type {
+  MemoryAdvisor,
   SourceHealthReport,
   SuggestOptions,
   SuggestHit,
@@ -148,18 +149,18 @@ export class MemoryInspector {
    * @param loop - AgentLoop（用于获取工作记忆）
    * @param history - MessageHistory（用于获取当前会话信息）
    * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系相关方法降级返回空）
-   * @param advisor - 记忆顾问（HC-21：组合根一致性，由 assembler.ts 显式注入；未注入时内部创建以兼容测试）
+   * @param advisor - 记忆顾问（HC-21：组合根一致性，由 assembler.ts 显式注入，必填）
    */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly loop: AgentLoop,
     private readonly history: MessageHistory,
     relationStore: IMemoryRelationStore | null = null,
-    advisor?: MemoryAdvisor,
+    advisor: MemoryAdvisor,
   ) {
     this.relationStore = relationStore;
-    // HC-21：组合根一致性——优先使用 assembler 注入的 advisor，未注入时内部创建（兼容测试）
-    this.advisor = advisor ?? new MemoryAdvisor(index);
+    // HC-21：组合根一致性——advisor 由 assembler.ts 显式注入（必填，不再内部创建）
+    this.advisor = advisor;
   }
 
   /**
