@@ -509,6 +509,69 @@ describe('ContextManager.getOrCreateSummary()', () => {
     const second = await manager.getOrCreateSummary(messages);
     expect(second).toBe(first);
   });
+
+  // ─── signal 参数（中断/降级）────────────────────────────
+
+  it('signal 已 abort 时直接返回空字符串，不调用 LLM', async () => {
+    const messages = [
+      createMessage('SYS', { role: 'system' }),
+      createMessage('用户问题'),
+    ];
+    const ac = new AbortController();
+    ac.abort();
+
+    const summary = await manager.getOrCreateSummary(messages, ac.signal);
+    expect(summary).toBe('');
+    expect(provider.chat).not.toHaveBeenCalled();
+  });
+
+  it('AbortError 降级为空字符串（不当作错误）', async () => {
+    // provider.chat 抛 AbortError
+    const abortProvider: LlmProvider = {
+      name: 'mock-abort',
+      chat: vi.fn().mockImplementation(() => {
+        return (async function* () {
+          throw new DOMException('aborted', 'AbortError');
+        })();
+      }),
+    } as unknown as LlmProvider;
+    const abortManager = createContextManager(1000, abortProvider);
+
+    const messages = [
+      createMessage('SYS', { role: 'system' }),
+      createMessage('用户问题'),
+    ];
+    const summary = await abortManager.getOrCreateSummary(messages);
+    expect(summary).toBe('');
+  });
+
+  it('signal 在流读取中 abort 时返回空字符串', async () => {
+    // provider 返回多个 chunk，第二个 chunk 前 abort
+    const slowProvider: LlmProvider = {
+      name: 'mock-slow',
+      chat: vi.fn().mockImplementation((_msgs: unknown, _opts: unknown) => {
+        return (async function* () {
+          yield { content: '第一部分' };
+          // 模拟流读取延迟，让外部有机会 abort
+          await new Promise((r) => setTimeout(r, 10));
+          yield { content: '第二部分' };
+        })();
+      }),
+    } as unknown as LlmProvider;
+    const slowManager = createContextManager(1000, slowProvider);
+
+    const messages = [
+      createMessage('SYS', { role: 'system' }),
+      createMessage('用户问题'),
+    ];
+    const ac = new AbortController();
+    // 5ms 后 abort（在第一个 chunk 之后，第二个 chunk 之前）
+    setTimeout(() => ac.abort(), 5);
+
+    const summary = await slowManager.getOrCreateSummary(messages, ac.signal);
+    // 被 abort 后应返回空字符串（降级为无摘要）
+    expect(summary).toBe('');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
