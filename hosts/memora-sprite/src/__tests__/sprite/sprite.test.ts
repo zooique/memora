@@ -59,6 +59,8 @@ const mockAgent = {
   injectAffect: vi.fn(),
   // ADR-015 归档模式：Sprite 构造时调用 agent.setArchiveMode，mock 需提供方法
   setArchiveMode: vi.fn(),
+  // B4：applyProjectMode 调用 agent.switchProject 切换专注项目（异步）
+  switchProject: vi.fn().mockResolvedValue(undefined),
   memory: {
     stats: vi.fn().mockReturnValue({ total: 0, bySource: {} }),
     suggest: vi.fn().mockReturnValue([]),
@@ -1148,5 +1150,133 @@ describe('Sprite 感知面板 + 用户反馈（B3：getPerceptionSnapshot / reco
     sprite.recordProactiveReject();
     const after = sprite.getPerceptionSnapshot()!.proactiveStats.consecutiveRejects;
     expect(after).toBe(before + 1);
+  });
+});
+
+// ─── B4：在场状态 + 项目模式（setPresenceController / bindPresence / applyProjectMode） ──
+//
+// 覆盖目标：
+//   - setPresenceController：注入 PresenceController，running=true 时自动 start
+//   - bindPresence：便捷方法，内部创建 PresenceController 并注入
+//     · presenceChanged 事件能正常发射（powerMonitor → sprite 事件转发）
+//     · sprite.stop() 后 presenceController.stop() 被调用（防泄漏，QC-SPRITE-01）
+//   - applyProjectMode（通过 updateConfigBatch 间接触发）：
+//     · projectMode='focus' + focusProjectPath 非空 → 调用 agent.switchProject
+//     · projectMode='focus' + focusProjectPath 为空 → 不调用（仅 warn）
+//     · projectMode='normal' → 不调用
+
+describe('Sprite 在场状态 + 项目模式（B4：setPresenceController / bindPresence / applyProjectMode）', () => {
+  let sprite: Sprite;
+  let tmpDir: string;
+
+  beforeEach(() => {
+    agentListeners.clear();
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG };
+    vi.mocked(mockAgent.memory.list).mockReturnValue([]);
+    vi.mocked(mockAgent.memory.stats).mockReturnValue({ total: 0, bySource: {} });
+    vi.mocked(mockAgent.switchProject).mockClear();
+    tmpDir = createTmpDir();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+  });
+
+  afterEach(() => {
+    sprite.stop();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('setPresenceController 在 Sprite 未启动时不调用 controller.start()（向后兼容）', () => {
+    // Sprite 未调用 start()，running=false
+    const mockController = { start: vi.fn(), stop: vi.fn() } as unknown as import('../../sprite/controllers/presenceController.js').PresenceController;
+    sprite.setPresenceController(mockController);
+    // 未启动时不应调用 controller.start()
+    expect(mockController.start).not.toHaveBeenCalled();
+  });
+
+  it('setPresenceController 在 Sprite 已启动时自动调用 controller.start()', () => {
+    sprite.start();
+    const mockController = { start: vi.fn(), stop: vi.fn() } as unknown as import('../../sprite/controllers/presenceController.js').PresenceController;
+    sprite.setPresenceController(mockController);
+    // 已启动时应自动调用 controller.start()
+    expect(mockController.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('bindPresence 创建 PresenceController 并转发 presenceChanged 事件', () => {
+    sprite.start();
+    const presenceEvents: Array<{ state: string; reason: string }> = [];
+    sprite.on('presenceChanged', (payload) => presenceEvents.push(payload));
+
+    // 构造 mock IPowerMonitor + IApp，记录注册的 listener 以便手动触发
+    const lockScreenListeners: Array<() => void> = [];
+    const mockPowerMonitor = {
+      on: vi.fn((event: string, listener: () => void) => {
+        if (event === 'lock-screen') lockScreenListeners.push(listener);
+      }),
+      removeListener: vi.fn(),
+    } as unknown as import('../../sprite/controllers/presenceController.js').IPowerMonitor;
+    const mockApp = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as import('../../sprite/controllers/presenceController.js').IApp;
+
+    sprite.bindPresence(mockPowerMonitor, mockApp);
+
+    // 触发 lock-screen 事件，PresenceController 应发射 presenceChanged
+    expect(lockScreenListeners.length).toBeGreaterThan(0);
+    lockScreenListeners[0]!();
+    expect(presenceEvents).toHaveLength(1);
+    expect(presenceEvents[0]!.state).toBe('away');
+    expect(presenceEvents[0]!.reason).toContain('lock-screen');
+  });
+
+  it('bindPresence 注入后 sprite.stop() 调用 presenceController.stop()（防泄漏）', () => {
+    sprite.start();
+    // 构造 mock IPowerMonitor + IApp，spy removeListener 验证 stop 被调用
+    const mockPowerMonitor = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as import('../../sprite/controllers/presenceController.js').IPowerMonitor;
+    const mockApp = {
+      on: vi.fn(),
+      removeListener: vi.fn(),
+    } as unknown as import('../../sprite/controllers/presenceController.js').IApp;
+
+    sprite.bindPresence(mockPowerMonitor, mockApp);
+    sprite.stop();
+
+    // stop 后应调用 removeListener 取消注册（QC-SPRITE-01 防泄漏）
+    // powerMonitor 注册了 4 个事件（lock-screen/suspend/unlock-screen/resume），stop 时全部取消
+    expect(mockPowerMonitor.removeListener).toHaveBeenCalled();
+    expect(mockApp.removeListener).toHaveBeenCalled();
+  });
+
+  it('updateConfigBatch 设置 projectMode=focus + focusProjectPath 时调用 agent.switchProject', async () => {
+    // 禁用 fileWatcher 避免 rebuildFileWatcher 副作用
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG, fileWatcherEnabled: false };
+    // 重新创建 sprite 使配置生效
+    sprite.stop();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+
+    sprite.updateConfigBatch({ projectMode: 'focus', focusProjectPath: '/test/project' });
+
+    // switchProject 是异步的，等待 Promise resolve
+    await vi.waitFor(() => {
+      expect(mockAgent.switchProject).toHaveBeenCalledWith('/test/project');
+    });
+  });
+
+  it('updateConfigBatch 设置 projectMode=focus 但 focusProjectPath 为空时不调用 agent.switchProject', () => {
+    sprite.start();
+    // focusProjectPath 默认为 ''（DEFAULT_SPRITE_CONFIG）
+    sprite.updateConfigBatch({ projectMode: 'focus' });
+    // 同步检查：未设置 focusProjectPath 时不调用 switchProject
+    expect(mockAgent.switchProject).not.toHaveBeenCalled();
+  });
+
+  it('updateConfigBatch 设置 projectMode=smart 时不调用 agent.switchProject', () => {
+    sprite.start();
+    // projectMode=smart（非 focus）时 applyProjectMode 直接 return
+    sprite.updateConfigBatch({ projectMode: 'smart' });
+    expect(mockAgent.switchProject).not.toHaveBeenCalled();
   });
 });
