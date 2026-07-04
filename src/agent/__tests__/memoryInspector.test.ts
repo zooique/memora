@@ -104,7 +104,7 @@ describe('MemoryInspector', () => {
     history = createMockHistory();
     // HC-21：advisor 改为必填，测试中显式构造（与 assembler.ts 行为一致）
     advisor = new MemoryAdvisor(storage);
-    inspector = new MemoryInspector(storage, loop, history, null, advisor);
+    inspector = new MemoryInspector(storage, loop, history, advisor, null);
   });
 
   // ════════════════════════════════════════════════════════
@@ -211,7 +211,7 @@ describe('MemoryInspector', () => {
         { role: 'user', content: longContent },
       ];
       loop = createMockLoop(messages);
-      inspector = new MemoryInspector(storage, loop, history, null, advisor);
+      inspector = new MemoryInspector(storage, loop, history, advisor, null);
       const snap = inspector.snapshot();
       // total 是全部消息数
       expect(snap.working.total).toBe(7);
@@ -265,7 +265,7 @@ describe('MemoryInspector', () => {
         weight: 0.5,
         createdAt: '2026-06-27T10:00:00.000Z',
       });
-      inspector = new MemoryInspector(storage, loop, history, relationStore, advisor);
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
       const snap = inspector.snapshot();
       expect(snap.archive.relationCount).toBe(1);
     });
@@ -273,7 +273,7 @@ describe('MemoryInspector', () => {
     it('currentSession/currentSessionName：null 时降级为 "(none)"', () => {
       loop = createMockLoop();
       history = createMockHistory(null, null);
-      inspector = new MemoryInspector(storage, loop, history, null, advisor);
+      inspector = new MemoryInspector(storage, loop, history, advisor, null);
       const snap = inspector.snapshot();
       expect(snap.archive.currentSession).toBe('(none)');
       expect(snap.archive.currentSessionName).toBe('(none)');
@@ -447,7 +447,7 @@ describe('MemoryInspector', () => {
         weight: 0.3,
         createdAt: '2026-06-27T11:00:00.000Z',
       });
-      inspector = new MemoryInspector(storage, loop, history, relationStore, advisor);
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
       const stats = inspector.stats();
       expect(stats.relationCount).toBe(2);
     });
@@ -471,7 +471,7 @@ describe('MemoryInspector', () => {
         weight: 0.5,
         createdAt: '2026-06-27T10:00:00.000Z',
       });
-      inspector = new MemoryInspector(storage, loop, history, relationStore, advisor);
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
       // direction='outgoing' 只查 sourceId='a' 的关系
       const outgoing = inspector.getRelations('a', 'outgoing');
       expect(outgoing).toHaveLength(1);
@@ -502,7 +502,7 @@ describe('MemoryInspector', () => {
         weight: 0.7,
         createdAt: '2026-06-27T11:00:00.000Z',
       });
-      inspector = new MemoryInspector(storage, loop, history, relationStore, advisor);
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
       const all = inspector.getAllRelations();
       expect(all).toHaveLength(2);
     });

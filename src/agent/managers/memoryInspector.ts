@@ -148,19 +148,19 @@ export class MemoryInspector {
    * @param index - 记忆存储（用于搜索 + 统计）
    * @param loop - AgentLoop（用于获取工作记忆）
    * @param history - MessageHistory（用于获取当前会话信息）
-   * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系相关方法降级返回空）
    * @param advisor - 记忆顾问（HC-21：组合根一致性，由 assembler.ts 显式注入，必填）
+   * @param relationStore - 关系存储侧车（可选，ADR-014，未注入时关系相关方法降级返回空）
    */
   constructor(
     private readonly index: IMemoryStorage,
     private readonly loop: AgentLoop,
     private readonly history: MessageHistory,
-    relationStore: IMemoryRelationStore | null = null,
     advisor: MemoryAdvisor,
+    relationStore: IMemoryRelationStore | null = null,
   ) {
-    this.relationStore = relationStore;
     // HC-21：组合根一致性——advisor 由 assembler.ts 显式注入（必填，不再内部创建）
     this.advisor = advisor;
+    this.relationStore = relationStore;
   }
 
   /**

@@ -23,6 +23,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
+import { configError } from '@/utils/errors.js';
 import { cosineSimilarity } from '@/utils/math.js';
 
 /**
@@ -197,7 +198,7 @@ export class VectorStore {
    *
    * @param id 记忆 ID
    * @param text 待嵌入的文本
-   * @throws 当 embedding 返回的向量维度与已存维度不一致时抛出 Error
+   * @throws {MemoraError} 当 embedding 返回的向量维度与已存维度不一致时抛出 configError
    */
   async upsert(id: string, text: string): Promise<void> {
     const vector = await this.embeddingProvider.embed(text);
@@ -206,9 +207,11 @@ export class VectorStore {
     } else if (vector.length !== this.dimension) {
       // 维度不一致会破坏 cosineSimilarity 计算（长度不匹配返回 0）
       // 此处主动报错，让调用方感知模型切换或配置错误
-      throw new Error(
-        `向量维度不一致：期望 ${this.dimension}，实际 ${vector.length}（id=${id}）。` +
-          `可能是 embedding 模型切换导致，请清空 vectors.json 后重试`,
+      // G-1：统一 MemoraError 体系，提供中文标题 + 排查建议
+      throw configError(
+        '向量维度不一致',
+        `期望 ${this.dimension}，实际 ${vector.length}（id=${id}）。可能是 embedding 模型切换导致。`,
+        ['清空 vectors.json 后重试', '检查 embedding 模型是否切换'],
       );
     }
     this.entries.set(id, vector);
@@ -221,7 +224,7 @@ export class VectorStore {
    * P1-02 加固：维度一致性校验，与 upsert 同契约
    *
    * @param items ID + 文本对
-   * @throws 当 embedding 返回的向量维度与已存维度不一致时抛出 Error
+   * @throws {MemoraError} 当 embedding 返回的向量维度与已存维度不一致时抛出 configError
    */
   async batchUpsert(items: Array<{ id: string; text: string }>): Promise<void> {
     const texts = items.map((item) => item.text);
@@ -235,8 +238,11 @@ export class VectorStore {
         this.dimension = result.vector.length;
       } else if (result.vector.length !== this.dimension) {
         // 维度不一致会破坏 cosineSimilarity 计算
-        throw new Error(
-          `批量插入向量维度不一致：期望 ${this.dimension}，实际 ${result.vector.length}（id=${item.id}）`,
+        // G-1：统一 MemoraError 体系，提供中文标题 + 排查建议
+        throw configError(
+          '批量插入向量维度不一致',
+          `期望 ${this.dimension}，实际 ${result.vector.length}（id=${item.id}）`,
+          ['清空 vectors.json 后重试', '检查 embedding 模型是否切换'],
         );
       }
       this.entries.set(item.id, result.vector);

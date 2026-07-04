@@ -198,8 +198,9 @@ export async function assembleComponents(
   );
 
   // HC-21：MemoryAdvisor 在组合根装配，显式注入 MemoryInspector（组合根一致性）
+  // G-2：advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
   const memoryAdvisor = new MemoryAdvisor(pctx.index);
-  const memoryInspector = new MemoryInspector(pctx.index, loop, history, relationStore ?? null, memoryAdvisor);
+  const memoryInspector = new MemoryInspector(pctx.index, loop, history, memoryAdvisor, relationStore ?? null);
 
   // V-201: AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
