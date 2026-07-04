@@ -11,6 +11,12 @@
  * - 单用户本地场景，5k 条记录内纯 JS 余弦相似度 < 10ms
  * - 向量维度由 embedding 模型决定，存储层不关心
  *
+ * P1-02 加固（2026-07）：
+ * - load() 增加 schema 校验（防止损坏文件污染内存索引）
+ * - upsert/batchUpsert 增加维度一致性校验（防止维度错位导致相似度计算崩溃）
+ * - save() 串行化（防止并发 save 互相覆盖丢失数据）
+ * - delete() JSDoc 明确"需显式 save"约定
+ *
  * 详见 ADR-002 · 存储层抽象（向量检索备选方案）
  * 详见 ADR-013 · 记忆归档三步价值过滤
  */
@@ -52,6 +58,39 @@ interface VectorStoreFile {
 }
 
 /**
+ * 校验持久化文件是否符合 VectorStoreFile schema
+ *
+ * 防止损坏文件 / 旧版格式 / 手动编辑错误污染内存索引。
+ * 校验项：
+ *   - 顶层为对象
+ *   - version === 1（未来版本需迁移逻辑）
+ *   - dimension 为非负整数
+ *   - entries 为数组，每个条目含字符串 id 和数字数组 vector
+ *   - 所有 vector 长度等于 dimension
+ *
+ * @param data 已 JSON.parse 的对象
+ * @returns true 表示通过校验
+ */
+function isValidVectorStoreFile(data: unknown): data is VectorStoreFile {
+  if (typeof data !== 'object' || data === null) return false;
+  const obj = data as Record<string, unknown>;
+  if (obj.version !== 1) return false;
+  if (typeof obj.dimension !== 'number' || !Number.isInteger(obj.dimension) || obj.dimension < 0) {
+    return false;
+  }
+  if (!Array.isArray(obj.entries)) return false;
+  for (const entry of obj.entries) {
+    if (typeof entry !== 'object' || entry === null) return false;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.id !== 'string' || e.id.length === 0) return false;
+    if (!Array.isArray(e.vector)) return false;
+    if (!e.vector.every((v) => typeof v === 'number' && Number.isFinite(v))) return false;
+    if (e.vector.length !== obj.dimension) return false;
+  }
+  return true;
+}
+
+/**
  * 向量存储
  *
  * 纯 JS 实现，内存中维护向量索引，定期持久化到 JSON 文件
@@ -69,6 +108,14 @@ export class VectorStore {
   /** 是否有未持久化的变更 */
   private dirty = false;
 
+  /**
+   * 串行化 save 调用的 Promise 链
+   *
+   * 防止并发 save 互相覆盖：每个 save 等待前一个完成后再执行。
+   * 无并发时为 null，有并发时为正在执行的 Promise。
+   */
+  private savePromise: Promise<void> | null = null;
+
   constructor(
     private readonly storePath: string,
     private readonly embeddingProvider: EmbeddingService,
@@ -76,11 +123,19 @@ export class VectorStore {
 
   /**
    * 从 JSON 文件加载向量索引（冷启动）
+   *
+   * P1-02 加固：增加 schema 校验，损坏文件视为"从空开始"
+   * 防止部分写入 / 手动编辑错误 / 版本不匹配的文件污染内存索引
    */
   async load(): Promise<void> {
     try {
       const content = await readFile(this.storePath, 'utf-8');
-      const data = JSON.parse(content) as VectorStoreFile;
+      const data: unknown = JSON.parse(content);
+      // schema 校验：损坏 / 格式错误的文件视为"从空开始"，避免污染内存索引
+      if (!isValidVectorStoreFile(data)) {
+        logger.warn({ path: this.storePath }, '向量索引文件格式无效，从空开始');
+        return;
+      }
       this.dimension = data.dimension;
       this.entries.clear();
       for (const entry of data.entries) {
@@ -89,15 +144,38 @@ export class VectorStore {
       this.dirty = false;
       logger.info({ count: this.entries.size, dimension: this.dimension }, '向量索引加载完成');
     } catch {
-      // 文件不存在或格式错误，从空开始
+      // 文件不存在或 JSON 解析失败，从空开始
       logger.info({ path: this.storePath }, '向量索引文件不存在，从空开始');
     }
   }
 
   /**
    * 持久化向量索引到 JSON 文件
+   *
+   * P1-02 加固：串行化并发 save，防止互相覆盖丢失数据。
+   * 调用方可在并发场景下安全地多次调用 save，每次都会等待前一次完成。
+   *
+   * @returns 等待所有挂起 save 完成的 Promise
    */
   async save(): Promise<void> {
+    // 串行化：若已有 save 在执行，将本次调用追加到链尾
+    if (this.savePromise !== null) {
+      this.savePromise = this.savePromise.then(() => this.doSave());
+      return this.savePromise;
+    }
+    this.savePromise = this.doSave().finally(() => {
+      // 当前链路完成，清空引用以允许下次独立 save
+      this.savePromise = null;
+    });
+    return this.savePromise;
+  }
+
+  /**
+   * 实际执行持久化的内部方法
+   *
+   * 由 save() 串行化调度，外部不应直接调用
+   */
+  private async doSave(): Promise<void> {
     if (!this.dirty) return;
 
     const data: VectorStoreFile = {
@@ -114,13 +192,24 @@ export class VectorStore {
 
   /**
    * 为文本生成向量并存储
+   *
+   * P1-02 加固：维度一致性校验，防止维度错位导致 cosineSimilarity 计算崩溃
+   *
    * @param id 记忆 ID
    * @param text 待嵌入的文本
+   * @throws 当 embedding 返回的向量维度与已存维度不一致时抛出 Error
    */
   async upsert(id: string, text: string): Promise<void> {
     const vector = await this.embeddingProvider.embed(text);
     if (this.dimension === 0) {
       this.dimension = vector.length;
+    } else if (vector.length !== this.dimension) {
+      // 维度不一致会破坏 cosineSimilarity 计算（长度不匹配返回 0）
+      // 此处主动报错，让调用方感知模型切换或配置错误
+      throw new Error(
+        `向量维度不一致：期望 ${this.dimension}，实际 ${vector.length}（id=${id}）。` +
+          `可能是 embedding 模型切换导致，请清空 vectors.json 后重试`,
+      );
     }
     this.entries.set(id, vector);
     this.dirty = true;
@@ -128,7 +217,11 @@ export class VectorStore {
 
   /**
    * 批量嵌入并存储
+   *
+   * P1-02 加固：维度一致性校验，与 upsert 同契约
+   *
    * @param items ID + 文本对
+   * @throws 当 embedding 返回的向量维度与已存维度不一致时抛出 Error
    */
   async batchUpsert(items: Array<{ id: string; text: string }>): Promise<void> {
     const texts = items.map((item) => item.text);
@@ -140,6 +233,11 @@ export class VectorStore {
       if (!result || !item) continue;
       if (this.dimension === 0) {
         this.dimension = result.vector.length;
+      } else if (result.vector.length !== this.dimension) {
+        // 维度不一致会破坏 cosineSimilarity 计算
+        throw new Error(
+          `批量插入向量维度不一致：期望 ${this.dimension}，实际 ${result.vector.length}（id=${item.id}）`,
+        );
       }
       this.entries.set(item.id, result.vector);
     }
@@ -148,6 +246,12 @@ export class VectorStore {
 
   /**
    * 删除向量
+   *
+   * 注意：此方法仅标记 dirty=true，不会自动调用 save。
+   * 调用方需在合适的时机显式调用 save() 持久化删除操作，
+   * 否则下次冷启动会重新加载已删除的向量。
+   *
+   * @param id 待删除的记忆 ID
    */
   delete(id: string): void {
     this.entries.delete(id);

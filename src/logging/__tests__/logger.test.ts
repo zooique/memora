@@ -317,3 +317,92 @@ describe('Logging · 环境变量展开 (~ → homedir)', () => {
     expect(resolvedDataDir).toContain('memora');
   });
 });
+
+// ─── P1-04 竞态守卫测试 ──────────────────────────────────
+
+describe('Logging · P1-04 setLogger 与 pino 异步加载竞态守卫', () => {
+  afterEach(() => {
+    setLogger(undefined);
+  });
+
+  it('setLogger(custom) 后异步 pino 加载不应覆盖 custom', async () => {
+    // 模拟场景：模块加载触发 tryCreatePinoLogger（已 resolve），
+    // 之后宿主调用 setLogger(custom)，再触发 setLogger(undefined) 的异步 pino 加载，
+    // 在 pino resolve 之前再次 setLogger(custom2)
+    const custom1: ILogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+    const custom2: ILogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    // Step 1: 注入 custom1
+    setLogger(custom1);
+    // Step 2: 触发异步 pino 加载（恢复默认）
+    setLogger(undefined);
+    // Step 3: 在 pino resolve 之前再次注入 custom2
+    setLogger(custom2);
+
+    // Step 4: 等待足够时间让 pino 异步加载完成
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // 验证：custom2 仍是当前 logger，未被 pino 覆盖
+    logger.info('守卫验证');
+    expect(custom2.info).toHaveBeenCalledWith('守卫验证');
+    // custom1 不应被调用（已被 custom2 覆盖）
+    expect(custom1.info).not.toHaveBeenCalled();
+  });
+
+  it('setLogger(undefined) 后异步 pino 加载期间再次 setLogger 应保留新注入', async () => {
+    // 模拟场景：恢复默认 → pino 异步加载中 → 宿主注入 custom
+    // pino resolve 时应跳过覆盖（_loggerInjected=true）
+    const custom: ILogger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+
+    // 先注入一个 logger 让 _loggerInjected=true
+    setLogger(custom);
+    // 恢复默认（触发异步 pino 加载）
+    setLogger(undefined);
+    // 立即再次注入 custom（在 pino resolve 之前）
+    setLogger(custom);
+
+    // 等待异步 pino 加载完成
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // 验证：custom 仍是当前 logger，未被 pino 覆盖
+    logger.info('二次守卫验证');
+    expect(custom.info).toHaveBeenCalledWith('二次守卫验证');
+  });
+
+  it('连续多次 setLogger 应保留最后一次注入的 logger', async () => {
+    // 模拟连续多次注入，最终保留最后一个
+    const loggers: ILogger[] = Array.from({ length: 3 }, () => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    }));
+
+    for (const l of loggers) setLogger(l);
+
+    // 等待任何挂起的异步 pino 加载完成
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // 验证：最后一个 logger 仍是当前 logger
+    logger.info('连续注入验证');
+    expect(loggers[2]!.info).toHaveBeenCalledWith('连续注入验证');
+    // 前两个不应被调用
+    expect(loggers[0]!.info).not.toHaveBeenCalled();
+    expect(loggers[1]!.info).not.toHaveBeenCalled();
+  });
+});

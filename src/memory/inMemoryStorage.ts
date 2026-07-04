@@ -43,6 +43,13 @@ export class InMemoryStorage implements IMemoryStorage {
    *   - 活跃 → 软删除：source 计数 -1
    *   - 软删除 → 活跃：source 计数 +1
    *
+   * P1-03 软删除校验（2026-07）：
+   *   若 existing 已软删除（deletedAt !== undefined）且 newMemory 为活跃态
+   *   （deletedAt === undefined），抛出错误阻止"通过 upsert 复活软删除记忆"。
+   *   调用方必须先显式 restore(id) 恢复记忆后再 upsert。
+   *   例外：newMemory 显式带 deletedAt（如测试场景篡改 deletedAt）允许通过，
+   *   因为此时调用方明确意图是覆盖软删除状态而非"复活"。
+   *
    * 采用 delta 方式：先扣除 existing 的活跃贡献，再加回 newMemory 的活跃贡献。
    * 该方式可统一处理 source 变更 + 软删除状态变更的所有组合，避免分支爆炸。
    */
@@ -62,8 +69,22 @@ export class InMemoryStorage implements IMemoryStorage {
         'source 校验警告',
       );
     }
-    // GAP-6 delta 方式维护 sourceCountCache（仅统计活跃记忆）
+    // P1-03 软删除校验：阻止"通过 upsert 静默复活软删除记忆"
     const existing = this.memories.get(memory.id);
+    if (existing && existing.deletedAt !== undefined && memory.deletedAt === undefined) {
+      // existing 已软删除，但 newMemory 试图以活跃态覆盖 → 拒绝
+      // 调用方应先 restore(id) 再 upsert，或显式在 newMemory 中带 deletedAt
+      throw configError(
+        '不允许通过 upsert 复活软删除记忆',
+        `id=${memory.id} 已被软删除（deletedAt=${existing.deletedAt}）`,
+        [
+          '若需恢复：先调用 restore(id)，再 upsert',
+          '若需覆盖软删除态：在 newMemory 中显式传入 deletedAt 字段',
+          '参考 GAP-6 软删除机制设计',
+        ],
+      );
+    }
+    // GAP-6 delta 方式维护 sourceCountCache（仅统计活跃记忆）
     // 先扣除 existing 的活跃贡献（若 existing 存在且为活跃态）
     if (existing && existing.deletedAt === undefined) {
       this.decrementSourceCount(existing.source);

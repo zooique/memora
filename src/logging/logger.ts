@@ -245,7 +245,16 @@ let _loggerInjected = false;
 setUtilsLogger(_logger);
 
 // 模块加载时异步尝试升级到 pino（不阻塞模块导入）
+// P1-04 竞态守卫：then 回调内检查 _loggerInjected，避免覆盖宿主已注入的 logger
+// 场景：模块加载 → setLogger(custom) 同步执行 → tryCreatePinoLogger 异步 resolve
+// 此时若不加守卫，pino 会覆盖 custom，宿主 logger 静默丢失
 void tryCreatePinoLogger().then((pinoLogger) => {
+  // 守卫：宿主已通过 setLogger 注入自定义 logger，不再覆盖
+  if (_loggerInjected) {
+    // 仍同步桥接到 utils 层（utils 可能尚未收到宿主 logger）
+    setUtilsLogger(_logger);
+    return;
+  }
   if (pinoLogger) {
     _logger = pinoLogger;
     _logger.info(
@@ -309,7 +318,11 @@ export function setLogger(newLogger: ILogger | undefined): void {
     _loggerInjected = false;
     _logger = createConsoleLogger();
     setUtilsLogger(_logger);
+    // P1-04 竞态守卫：若回调执行前宿主再次调用 setLogger(custom)，
+    // _loggerInjected 会被置为 true，此时不应覆盖
     void tryCreatePinoLogger().then((pinoLogger) => {
+      // 守卫：恢复过程中宿主又注入了新 logger，不再覆盖
+      if (_loggerInjected) return;
       if (pinoLogger) {
         _logger = pinoLogger;
         // 桥接注入到 utils 层

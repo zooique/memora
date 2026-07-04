@@ -9,6 +9,12 @@
 /**
  * 解析 frontmatter 块为键值对
  *
+ * 合法性约定：
+ *   - 空 frontmatter 块（`---\n\n---\nbody`）合法，返回 `{ frontmatter: {}, body }`
+ *   - 空 body（`---\nkey: val\n---\n`，纯元数据文件）合法，返回 `{ frontmatter, body: '' }`
+ *   - 两者都空（`---\n---\n`）合法，返回 `{ frontmatter: {}, body: '' }`
+ *   - 仅当输入不匹配 `^---\n...\n---\n...$` 结构时，才返回 fallback `{ frontmatter: {}, body: raw }`
+ *
  * @param raw 完整 markdown 内容（含 `---` 包围的 frontmatter）
  * @returns `{ frontmatter, body }`——frontmatter 为键值对对象，body 为 frontmatter 之后的内容
  */
@@ -18,11 +24,15 @@ export function parseFrontmatter(raw: string): {
 } {
   const normalized = raw.replace(/\r\n/g, '\n');
   const match = normalized.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-  if (!match || !match[1] || !match[2]) {
+  // 仅当结构不匹配时返回 fallback；空 frontmatter 块和空 body 块为合法输入
+  if (!match) {
     return { frontmatter: {}, body: raw };
   }
 
-  const [, fmBlock, body] = match;
+  // match[1] / match[2] 类型为 string | undefined，但 regex 已确保结构匹配时两者必有值
+  // 使用显式非空断言告诉 TS 这两个捕获组在通过 !match 检查后必为 string
+  const fmBlock = match[1] ?? '';
+  const body = match[2] ?? '';
   const frontmatter: Record<string, string> = {};
   for (const line of fmBlock.split('\n')) {
     const idx = line.indexOf(':');

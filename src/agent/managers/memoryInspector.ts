@@ -19,11 +19,12 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
+// P1-05：双通道融合排序算法 + 常量从 hybridMerge 导入（不再绕道 recall.ts）
+// 消除"agent 模块依赖 memory/recall.ts 内部常量"的分层违规
 import {
+  hybridMerge,
   RECALL_LIMIT_MULTIPLIER,
-  VECTOR_SCORE_WEIGHT,
-  MEMORY_SCORE_WEIGHT,
-} from '@/memory/recall.js';
+} from '@/memory/hybridMerge.js';
 // QC-R2-11：sourceHealth() + suggest() 已提取到 MemoryAdvisor
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import type {
@@ -382,6 +383,9 @@ export class MemoryInspector {
    * V-101：当 VectorStore 可用时，启用语义搜索通道，补强关键词召回的语义缺口。
    * 向量搜索失败时静默降级到纯关键词（降级优先原则）。
    *
+   * P1-05：融合排序算法已提取到 hybridMerge.ts，与 recall() 共享同一实现。
+   * 消除原先与本模块的算法重复 + 跨模块常量依赖。
+   *
    * @returns 混合排序后的搜索结果（含相似度分数）
    */
   async searchHybrid(query: string, limit = 10): Promise<AgentSearchHit[]> {
@@ -421,14 +425,10 @@ export class MemoryInspector {
       }
     }
 
-    // ── 综合排序：vectorScore（语义相关度）+ memory.score（权重） ──
-    const sorted = [...merged.values()].sort((a, b) => {
-      const scoreA = a.vectorScore * VECTOR_SCORE_WEIGHT + a.memory.score * MEMORY_SCORE_WEIGHT;
-      const scoreB = b.vectorScore * VECTOR_SCORE_WEIGHT + b.memory.score * MEMORY_SCORE_WEIGHT;
-      return scoreB - scoreA;
-    });
+    // ── 综合排序：委托给 hybridMerge 纯函数（P1-05 提取，与 recall() 共享） ──
+    const sorted = hybridMerge(merged.values(), limit);
 
-    return sorted.slice(0, limit).map(({ memory, vectorScore }) => ({
+    return sorted.map(({ memory, vectorScore }) => ({
       id: memory.id,
       name: memory.name,
       source: memory.source,

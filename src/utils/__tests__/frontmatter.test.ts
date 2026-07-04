@@ -92,6 +92,24 @@ id: test-003
       const { body } = parseFrontmatter(raw);
       expect(body).toBe('第一行\n第二行\n第三行');
     });
+
+    // ─── 边界：空 body / 空 frontmatter 块（P1-01 修复）─────────
+    it('空 body（纯元数据文件）应返回 frontmatter 和空 body', () => {
+      // 纯元数据文件：末尾就是 ---\n，无正文内容
+      const raw = '---\nid: test-empty-body\nsource: rule\n---\n';
+      const { frontmatter, body } = parseFrontmatter(raw);
+      expect(frontmatter.id).toBe('test-empty-body');
+      expect(frontmatter.source).toBe('rule');
+      expect(body).toBe('');
+    });
+
+    it('空 frontmatter 块应返回空对象和原始 body', () => {
+      // frontmatter 块内容为空（标准格式：---\n\n---\nbody，块内含空行）
+      const raw = '---\n\n---\n正文内容';
+      const { frontmatter, body } = parseFrontmatter(raw);
+      expect(frontmatter).toEqual({});
+      expect(body).toBe('正文内容');
+    });
   });
 
   // ─── serializeFrontmatter ──────────────────────────────

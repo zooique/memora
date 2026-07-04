@@ -668,4 +668,69 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(storage.getAllSources().size).toBe(0);
     });
   });
+
+  // ─── P1-03 软删除校验：阻止 upsert 复活 ──────────────
+
+  describe('P1-03 软删除校验：upsert 复活防护', () => {
+    it('对软删除记忆以活跃态 upsert 应抛 configError', () => {
+      storage.upsert(makeMemory('m1', SOURCE_LABELS.RULE));
+      storage.delete('m1');
+      // 此时 m1 处于软删除态
+
+      // 直接 upsert 活跃态（无 deletedAt）应被拒绝
+      expect(() => storage.upsert(makeMemory('m1', SOURCE_LABELS.RULE))).toThrow(MemoraError);
+      // 计数不应变化（m1 仍是软删除态）
+      expect(storage.count()).toBe(0);
+      expect(storage.listDeleted()).toHaveLength(1);
+    });
+
+    it('restore + upsert 显式恢复路径应正常工作', () => {
+      storage.upsert(makeMemory('m1', SOURCE_LABELS.RULE));
+      storage.delete('m1');
+      expect(storage.count()).toBe(0);
+
+      // 显式 restore 后再 upsert
+      storage.restore('m1');
+      storage.upsert({ ...makeMemory('m1', SOURCE_LABELS.RULE), content: '更新后的内容' });
+
+      // 记忆已恢复为活跃态，且内容已更新
+      expect(storage.count()).toBe(1);
+      const got = storage.getById('m1');
+      expect(got).not.toBeNull();
+      expect(got!.content).toBe('更新后的内容');
+      expect(got!.deletedAt).toBeUndefined();
+    });
+
+    it('对软删除记忆显式带 deletedAt 的 upsert 应允许（覆盖软删除态）', () => {
+      storage.upsert(makeMemory('m1', SOURCE_LABELS.RULE));
+      storage.delete('m1');
+      const originalDeletedAt = storage.listDeleted()[0]!.deletedAt;
+
+      // 显式带 deletedAt 的 upsert（如测试场景篡改 deletedAt）应允许
+      const newDeletedAt = new Date(Date.now() - 10 * ONE_DAY_MS).toISOString();
+      storage.upsert({ ...makeMemory('m1', SOURCE_LABELS.RULE), deletedAt: newDeletedAt });
+
+      // deletedAt 应被覆盖为新值
+      const deleted = storage.listDeleted()[0];
+      expect(deleted!.deletedAt).toBe(newDeletedAt);
+      expect(deleted!.deletedAt).not.toBe(originalDeletedAt);
+      // 计数仍为 0（仍是软删除态）
+      expect(storage.count()).toBe(0);
+    });
+
+    it('对活跃记忆 upsert 不受影响（无 P1-03 限制）', () => {
+      storage.upsert(makeMemory('m1', SOURCE_LABELS.RULE));
+      // 活跃记忆的常规 upsert 应正常工作
+      storage.upsert({ ...makeMemory('m1', SOURCE_LABELS.RULE), content: '更新内容' });
+
+      const got = storage.getById('m1');
+      expect(got!.content).toBe('更新内容');
+    });
+
+    it('对不存在的 id upsert 不受影响（无 P1-03 限制）', () => {
+      // 新增记忆应正常工作
+      storage.upsert(makeMemory('new-id', SOURCE_LABELS.RULE));
+      expect(storage.count()).toBe(1);
+    });
+  });
 });

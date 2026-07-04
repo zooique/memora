@@ -5,6 +5,11 @@
  * 基于基元驱动模型，通过 source 开放字符串区分记忆来源，
  * 通过双通道（语义 + 关键词）召回，无需独立管理器
  *
+ * P1-05 重构（2026-07）：
+ * 双通道融合排序算法已提取到 hybridMerge.ts，与 memoryInspector.searchHybrid() 共享。
+ * 本模块仍 re-export 三个常量（RECALL_LIMIT_MULTIPLIER / VECTOR_SCORE_WEIGHT /
+ * MEMORY_SCORE_WEIGHT）保持向后兼容，但实际定义已迁移到 hybridMerge.ts。
+ *
  * 详见 ADR-004 · 记忆统一模型 + architecture_philosophy_rules.md §6 增量召回
  */
 import type { Memory } from '@/memory/types.js';
@@ -14,20 +19,18 @@ import { logger } from '@/logging/logger.js';
 import { STOPWORDS, SOURCE_LABELS } from '@/memory/types.js';
 import { segmentText } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
+// P1-05：双通道融合排序算法从 hybridMerge 导入（常量通过 re-export 暴露给历史消费者）
+import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
+
+// ─── 向后兼容 re-export（P1-05：常量定义已迁移到 hybridMerge.ts） ───
+// 测试文件和历史代码可能通过 recall.ts 导入这些常量，保持 re-export 避免破坏
+// 直接从 hybridMerge.ts 重新导出，本模块不再定义这些常量
+export { RECALL_LIMIT_MULTIPLIER, VECTOR_SCORE_WEIGHT, MEMORY_SCORE_WEIGHT } from '@/memory/hybridMerge.js';
 
 // ─── 召回与衰减常量 ─────────────────────────────────────
 
 /** 语义搜索默认相似度阈值 */
 const DEFAULT_MIN_SIMILARITY = 0.3;
-
-/** 语义搜索召回倍率（在最终 limit 基础上多召回一些，供后续融合排序） */
-export const RECALL_LIMIT_MULTIPLIER = 2;
-
-/** 综合排序时语义相似度权重 */
-export const VECTOR_SCORE_WEIGHT = 0.6;
-
-/** 综合排序时记忆 score 权重 */
-export const MEMORY_SCORE_WEIGHT = 0.4;
 
 /** 每次召回时 score 提升量 */
 const BOOST_INCREMENT = 0.05;
@@ -90,9 +93,11 @@ export interface RecallOptions {
  * 双通道召回策略：
  * 1. 语义搜索（VectorStore 可用时）：向量余弦相似度
  * 2. 关键词搜索（兜底）：LIKE 匹配
- * 3. 两路结果合并去重，按 score + similarity 综合排序
+ * 3. 两路结果合并去重，按 score + similarity 综合排序（委托给 hybridMerge）
  * 4. 排除已单独注入的记忆（persona、rule、skill）
  * 5. 返回 top N
+ *
+ * P1-05：融合排序算法已提取到 hybridMerge.ts，与 searchHybrid() 共享同一实现
  *
  * @param storage - 记忆存储实例
  * @param query - 搜索查询文本
@@ -152,18 +157,14 @@ export async function recall(
   // ── 无任何结果 ──
   if (merged.size === 0) return [];
 
-  // ── 综合排序：vectorScore（语义相关度）+ memory.score（权重） ──
-  const sorted = [...merged.values()].sort((a, b) => {
-    const scoreA = a.vectorScore * VECTOR_SCORE_WEIGHT + a.memory.score * MEMORY_SCORE_WEIGHT;
-    const scoreB = b.vectorScore * VECTOR_SCORE_WEIGHT + b.memory.score * MEMORY_SCORE_WEIGHT;
-    return scoreB - scoreA;
-  });
+  // ── 综合排序：委托给 hybridMerge 纯函数（P1-05 提取） ──
+  const sorted = hybridMerge(merged.values(), limit);
 
   // ── 召回时提升 score ──
   // 在副本上操作避免污染调用方持有的对象，boost 后写回存储
   const now = nowIso();
   const result: Memory[] = [];
-  for (const { memory } of sorted.slice(0, limit)) {
+  for (const { memory } of sorted) {
     const copy = { ...memory };
     boostScore(copy, now);
     storage.upsert(copy); // 写回存储，持久化 score 提升
