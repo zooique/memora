@@ -33,11 +33,22 @@ function createMockHost(): InputAreaHost {
   };
 }
 
-/** 创建 Mock EventTracker */
+/** 创建 Mock EventTracker（实际绑定事件监听器） */
 function createMockEventTracker(): EventTracker {
+  const listeners: Array<{ target: EventTarget; type: string; listener: EventListener }> = [];
   return {
-    addEventListener: vi.fn(),
-    cleanup: vi.fn(),
+    addEventListener: vi.fn((target: EventTarget, type: string, listener: EventListener) => {
+      // 实际绑定事件监听器，确保 dispatchEvent 能触发 handler
+      target.addEventListener(type, listener);
+      listeners.push({ target, type, listener });
+    }),
+    cleanup: vi.fn(() => {
+      // 清理时移除所有监听器
+      for (const { target, type, listener } of listeners) {
+        target.removeEventListener(type, listener);
+      }
+      listeners.length = 0;
+    }),
   } as unknown as EventTracker;
 }
 
@@ -117,7 +128,8 @@ describe('setValue · 预填输入', () => {
 
 describe('handleKeydown · 键盘事件', () => {
   it('Enter 键（非 Shift）应触发 emitSendMessage', () => {
-    const { host, inputEl } = createManager();
+    const { manager, host, inputEl } = createManager();
+    manager.init(); // 绑定事件监听器
     inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: false }));
     expect(host.emitSendMessage).toHaveBeenCalledTimes(1);
   });
@@ -125,7 +137,8 @@ describe('handleKeydown · 键盘事件', () => {
   it('流式态下 Enter 应触发 emitStopMessage', () => {
     const host = createMockHost();
     (host.isStreaming as ReturnType<typeof vi.fn>).mockReturnValue(true);
-    const { inputEl } = createManager(host);
+    const { manager, inputEl } = createManager(host);
+    manager.init(); // 绑定事件监听器
     inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: false }));
     expect(host.emitStopMessage).toHaveBeenCalledTimes(1);
   });
@@ -138,7 +151,8 @@ describe('handleKeydown · 键盘事件', () => {
   });
 
   it('Escape 有内容时清空输入', () => {
-    const { inputEl } = createManager();
+    const { manager, inputEl } = createManager();
+    manager.init(); // 绑定事件监听器
     inputEl.value = '测试内容';
     inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(inputEl.value).toBe('');

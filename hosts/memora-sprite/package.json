@@ -1,6 +1,6 @@
 {
   "name": "memora-sprite",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Memora 精灵桌面伴侣——能自我进化的本地 AI Agent",
   "type": "module",
   "main": "./dist-electron/electron/main.js",
@@ -9,7 +9,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:electron": "npm run check-ipc && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
+    "generate-icons": "node scripts/generate-icons.mjs",
+    "build:electron": "npm run check-ipc && npm run generate-icons && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
     "build:web": "tsc -p tsconfig.web.json",
     "start:electron": "chcp 65001 >nul && set NODE_ENV=production&& npm run build:electron && set NODE_ENV=production&& electron ./dist-electron/electron/main.js",
     "dev:electron": "chcp 65001 >nul && set NODE_ENV=development&& npm run build:electron && node scripts/dev-watch.mjs",
@@ -29,6 +30,10 @@
     "check-cli-keys": "npx tsx scripts/check-cli-config-keys.ts",
     "check-configs": "npm run check-ipc && npm run check-cli-keys",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "package:win": "npm run build:electron && electron-builder --win --x64",
+    "package:mac": "npm run build:electron && electron-builder --mac",
+    "package:linux": "npm run build:electron && electron-builder --linux",
+    "package:all": "npm run build:electron && electron-builder --win --mac --linux",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "engines": {
@@ -36,7 +41,6 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
-    "electron": "^40.0.0",
     "memora": "npm:@zooique/memora@^0.2.1"
   },
   "devDependencies": {
@@ -45,17 +49,72 @@
     "@types/node": "^24.9.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.0.0",
     "eslint": "^9.12.0",
     "jsdom": "^29.1.1",
     "prettier": "^3.3.0",
+    "sharp": "^0.35.3",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^4.1.8"
+  },
+  "build": {
+    "appId": "com.memora.sprite",
+    "productName": "Memora Sprite",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "dist-electron/electron/main.js"
+    },
+    "asar": true,
+    "icon": "build/icons/icon.png",
+    "win": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility"
+    }
   },
   "license": "MIT",
   "allowScripts": {
     "better-sqlite3@12.11.1": true,
     "electron@40.10.5": true,
-    "esbuild@0.28.1": true
+    "esbuild@0.28.1": true,
+    "sharp@0.35.3": true
   }
 }

@@ -54,14 +54,16 @@ export class TrayManager {
   private state: TrayState = 'idle';
   /** 脉冲动画定时器（active 状态下使用） */
   private pulseTimer: ReturnType<typeof setInterval> | null = null;
-  /** 预渲染的三态图标缓存（避免重复创建） */
+  /** 预渲染的三态图标缓存（避免重复创建，仅在无自定义图标时使用） */
   private icons: Record<TrayState, NativeImage>;
+  /** 是否使用自定义品牌图标（true时不切换三态图标，仅通过tooltip反映状态） */
+  private useCustomIcon: boolean;
   /** 回调集合（由 main.ts 注入，支持延迟注入静默模式回调） */
   private callbacks: TrayCallbacks;
 
   constructor(iconPath: string | NativeImage, callbacks: TrayCallbacks) {
     this.callbacks = callbacks;
-    // 预渲染三态图标
+    // 预渲染三态图标（fallback使用）
     this.icons = {
       idle: this.createStateIcon('idle'),
       active: this.createStateIcon('active'),
@@ -71,8 +73,10 @@ export class TrayManager {
     // 优先使用外部图标，无则用状态图标
     let trayIcon: NativeImage;
     if (typeof iconPath === 'string') {
+      this.useCustomIcon = !!iconPath;
       trayIcon = iconPath ? nativeImage.createFromPath(iconPath) : this.icons.idle;
     } else {
+      this.useCustomIcon = !iconPath.isEmpty();
       trayIcon = iconPath.isEmpty() ? this.icons.idle : iconPath;
     }
 
@@ -153,9 +157,12 @@ export class TrayManager {
    * 切换托盘状态
    *
    * 对齐 HTML 预览 §6.3 .float-status-dot：
-   * - idle：绿色静态图标
-   * - active：蓝色图标 + 脉冲动画（tooltip 闪烁）
-   * - sleeping：黄色静态图标
+   * - idle：默认状态
+   * - active：思考/处理中 + 脉冲动画（tooltip 闪烁）
+   * - sleeping：静默模式
+   *
+   * 使用自定义品牌图标时，不切换图标颜色（保持品牌一致性），
+   * 仅通过 tooltip 文字反映状态；无自定义图标时使用三态颜色图标。
    */
   setState(state: TrayState): void {
     if (this.state === state) return;
@@ -164,10 +171,12 @@ export class TrayManager {
     // 停止之前的脉冲动画
     this.stopPulse();
 
-    // 更新图标
-    this.tray.setImage(this.icons[state].resize({ width: 16, height: 16 }));
+    // 仅在无自定义图标时切换到三态颜色图标
+    if (!this.useCustomIcon) {
+      this.tray.setImage(this.icons[state].resize({ width: 16, height: 16 }));
+    }
 
-    // active 状态启动脉冲
+    // active 状态启动脉冲（tooltip 文字动画）
     if (state === 'active') {
       this.startPulse();
     } else {

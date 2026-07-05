@@ -60,8 +60,11 @@ import type { ClipboardEventType } from './clipboardHandler.js';
 
 // ─── 应用路径 ──────────────────────────────────────────────
 
-const RESOURCES_DIR = path.join(ELECTRON_DIR, '../../resources');
-const TRAY_ICON_PATH = path.join(RESOURCES_DIR, 'tray-icon.png');
+/**
+ * 托盘图标路径（16x16 简洁圆形设计，品牌色渐变）
+ * 使用专门为系统托盘优化的小图标，避免复杂细节在 16x16 下糊成一团
+ */
+const TRAY_ICON_PATH = path.join(ELECTRON_DIR, '..', 'build', 'icons', 'tray.png');
 
 // ─── 主进程状态 ──────────────────────────────────────────────
 

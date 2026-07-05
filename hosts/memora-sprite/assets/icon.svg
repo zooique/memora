@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    Memora Sprite Logo
+    设计理念：记忆节点网络构成的精灵轮廓
+    - 圆形外框：完整、包容
+    - 内部节点网络：记忆的关联性
+    - 中心光点：精灵的核心意识
+    - 品牌渐变：#89b4fa → #f5c2e7
+  -->
+  <defs>
+    <!-- 品牌渐变：蓝到粉紫 -->
+    <linearGradient id="brandGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#89b4fa"/>
+      <stop offset="100%" stop-color="#f5c2e7"/>
+    </linearGradient>
+    <!-- 中心光点渐变 -->
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="40%" stop-color="#89b4fa" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#89b4fa" stop-opacity="0"/>
+    </radialGradient>
+    <!-- 节点光晕 -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 背景圆形：微妙的品牌渐变底色 -->
+  <circle cx="256" cy="256" r="240" fill="url(#brandGrad)" opacity="0.12"/>
+
+  <!-- 连接线：记忆网络 -->
+  <g stroke="url(#brandGrad)" stroke-width="2.5" stroke-linecap="round" opacity="0.5">
+    <!-- 从中心向外辐射的主要连接 -->
+    <line x1="256" y1="256" x2="128" y2="180"/>
+    <line x1="256" y1="256" x2="384" y2="180"/>
+    <line x1="256" y1="256" x2="140" y2="320"/>
+    <line x1="256" y1="256" x2="372" y2="320"/>
+    <line x1="256" y1="256" x2="200" y2="130"/>
+    <line x1="256" y1="256" x2="312" y2="130"/>
+    <line x1="256" y1="256" x2="256" y2="112"/>
+    <line x1="256" y1="256" x2="100" y2="256"/>
+    <line x1="256" y1="256" x2="412" y2="256"/>
+    <line x1="256" y1="256" x2="180" y2="380"/>
+    <line x1="256" y1="256" x2="332" y2="380"/>
+
+    <!-- 节点间的次级连接，形成网络结构 -->
+    <line x1="128" y1="180" x2="200" y2="130"/>
+    <line x1="200" y1="130" x2="256" y2="112"/>
+    <line x1="256" y1="112" x2="312" y2="130"/>
+    <line x1="312" y1="130" x2="384" y2="180"/>
+    <line x1="384" y1="180" x2="412" y2="256"/>
+    <line x1="412" y1="256" x2="372" y2="320"/>
+    <line x1="372" y1="320" x2="332" y2="380"/>
+    <line x1="332" y1="380" x2="256" y2="400"/>
+    <line x1="256" y1="400" x2="180" y2="380"/>
+    <line x1="180" y1="380" x2="140" y2="320"/>
+    <line x1="140" y1="320" x2="100" y2="256"/>
+    <line x1="100" y1="256" x2="128" y2="180"/>
+
+    <!-- 横向连接 -->
+    <line x1="128" y1="180" x2="140" y2="320"/>
+    <line x1="384" y1="180" x2="372" y2="320"/>
+  </g>
+
+  <!-- 外轮廓记忆节点 -->
+  <g fill="url(#brandGrad)" filter="url(#glow)">
+    <!-- 顶部 -->
+    <circle cx="256" cy="112" r="10"/>
+    <circle cx="200" cy="130" r="8"/>
+    <circle cx="312" cy="130" r="8"/>
+    <!-- 右上 -->
+    <circle cx="384" cy="180" r="10"/>
+    <!-- 右中 -->
+    <circle cx="412" cy="256" r="11"/>
+    <!-- 右下 -->
+    <circle cx="372" cy="320" r="10"/>
+    <circle cx="332" cy="380" r="9"/>
+    <!-- 底部 -->
+    <circle cx="256" cy="400" r="10"/>
+    <!-- 左下 -->
+    <circle cx="180" cy="380" r="9"/>
+    <circle cx="140" cy="320" r="10"/>
+    <!-- 左中 -->
+    <circle cx="100" cy="256" r="11"/>
+    <!-- 左上 -->
+    <circle cx="128" cy="180" r="10"/>
+  </g>
+
+  <!-- 内部辅助节点 -->
+  <g fill="url(#brandGrad)" opacity="0.7">
+    <circle cx="200" cy="220" r="5"/>
+    <circle cx="312" cy="220" r="5"/>
+    <circle cx="180" cy="290" r="5"/>
+    <circle cx="332" cy="290" r="5"/>
+    <circle cx="256" cy="340" r="5"/>
+  </g>
+
+  <!-- 中心核心：精灵的意识光点 -->
+  <circle cx="256" cy="256" r="60" fill="url(#coreGlow)"/>
+  <circle cx="256" cy="256" r="18" fill="#ffffff" filter="url(#glow)"/>
+  <circle cx="256" cy="256" r="12" fill="url(#brandGrad)"/>
+</svg>

@@ -1,8 +1,8 @@
 ---
 alwaysApply: true
 description: Memora 项目总则、技术栈清单、目录结构
-version: v0.8
-date: 2026-07-04
+version: v0.9
+date: 2026-07-05
 ---
 
 # Memora · 项目总则
@@ -38,6 +38,41 @@ date: 2026-07-04
 | 安全   | 两级权限 + 路径白名单                        | [ADR-006](./decisions/ADR-006-security-model.md)      |
 | 测试   | Vitest + MSW Mock LLM + InMemoryStorage      | [ADR-007](./decisions/ADR-007-testing-strategy.md)    |
 | 目录   | 按职责分层                                   | [ADR-008](./decisions/ADR-008-directory-structure.md) |
+
+## 2.5 同仓库多 Package 结构（Monorepo）
+
+本仓库包含两个独立的 npm package，共享同一个 Git 仓库但各自有独立的 `package.json`、`tsconfig`、测试和构建流程：
+
+```
+memora/                          # Git 仓库根目录
+├── .gitignore                   # 统一管理所有 package 的忽略规则（单一真理源）
+├── .trae/rules/                 # 仓库级规则（本文件所在目录）
+├── package.json                 # memora 内核（纯逻辑库）
+├── tsconfig.json
+├── src/                         # memora 内核源码（§3 目录结构）
+├── tasks/                       # 内核任务追踪
+│
+└── hosts/
+    └── memora-sprite/           # 精灵宿主项目（独立 package）
+        ├── .trae/rules/         # 精灵专属规则（仅 directory-structure.md）
+        ├── package.json         # 精灵独立 package（name: "memora-sprite"）
+        ├── tsconfig.json        # 精灵独立 tsconfig（含 electron 多配置）
+        ├── src/                 # 精灵源码（electron + sprite + storage + web）
+        ├── assets/              # 精灵静态资源（icon.svg 是真理源，PNG 由脚本生成）
+        ├── scripts/             # 精灵构建脚本（含 generate-icons.mjs）
+        └── tasks/               # 精灵任务追踪（与内核 tasks/ 独立）
+```
+
+**关键约束**：
+
+| 规则 | 说明 |
+|------|------|
+| 独立 package | 两个 package 各自 `npm install`、`npm test`、`npm run build`，互不依赖对方的 devDependencies |
+| 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，不允许子目录存在独立 `.gitignore` |
+| 内核零依赖 | memora 内核不依赖任何 native 模块（better-sqlite3、electron 等），所有 native 能力由精灵宿主注入 |
+| 精灵依赖内核 | 精灵通过 `"memora": "npm:@zooique/memora@^0.2.1"` 引用内核（npm 包形式，非 workspace） |
+| 规则分层 | 仓库级规则在 `.trae/rules/`，精灵专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束精灵宿主 |
+| 任务独立 | 内核 `tasks/` 和精灵 `hosts/memora-sprite/tasks/` 各自独立追踪 |
 
 ## 3. 目录结构（不允许修改）
 

@@ -25,7 +25,7 @@ import { PerceptionRenderer } from './perceptionRenderer.js';
 // 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
 import { getSourceColorClass } from './memoryPanelManager.js';
 import type { ToastType } from '../types.js';
-import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js';
+import type { HealthDashboardPayload } from '../../preload.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // 感知数据 Payload 类型从 ipcListeners（IPC 契约真理源）导入
 import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
@@ -149,12 +149,7 @@ export interface DashboardViewModel {
 /** 累积事件接近阈值的百分比（>=80% 显示黄色高亮） */
 const NEAR_THRESHOLD_RATIO = 0.8;
 
-/** 对话趋势方向 → 箭头符号映射 */
-const TREND_ARROW_MAP: Record<string, string> = {
-  growing: '↑',
-  stable: '→',
-  declining: '↓',
-};
+
 
 /** 记忆量级里程碑 → 中文标签映射（key = Math.floor(Math.log10(total))） */
 const MAGNITUDE_LABELS: Record<number, string> = {

@@ -199,8 +199,10 @@ describe('推荐记忆点击事件委托', () => {
     expect(mockUiManager.renderAgentMetrics).toHaveBeenCalledWith(null);
     expect(mockUiManager.renderSkills).toHaveBeenCalledWith([]);
     expect(mockUiManager.renderMilestones).toHaveBeenCalledTimes(1);
-    // v3: renderReviewData DOM 已恢复到感知面板
-    expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
+    // v3: renderReviewData 方法已从 MemoryController 中移除（DashboardPanelManager 也不再包含此方法）。
+    // 感知面板的回顾数据渲染由 PerceptionRenderer 内部处理，不再通过 UiManager 代理。
+    // expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
+    expect(mockUiManager.renderReviewData).not.toHaveBeenCalled();
     expect(mockUiManager.updateLearningProgress).toHaveBeenCalledTimes(1);
   });
 });

@@ -329,7 +329,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     );
 
     // 快捷命令面板管理器（与其他面板管理器同模式：构造函数创建 + init 调用）
-    this.commandPaletteManager = new CommandPaletteManager();
+    this.commandPaletteManager = new CommandPaletteManager(this);
     // 面板错误横幅管理器（自包含，无依赖，直接创建）
     this.panelErrorBannerManager = new PanelErrorBannerManager();
     // 剪贴板保护管理器（依赖注入 toastManager + modalManager，与 UIManager 共享同一引用）
@@ -1641,7 +1641,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     perception: { warmth: number; rapportLevel: string; rapportDescription: string } | null;
     healthStatus: 'healthy' | 'warning' | 'critical' | null;
   }): void {
-    this.chatPanelManager.showStartupSummary(summary);
+    this.chatPanel.showStartupSummary(summary);
   }
 
   /**

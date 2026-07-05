@@ -1109,7 +1109,7 @@ export class SettingsPanelManager {
     const alias = this.providerAliasInput?.value.trim();
     const provider = this.providerProviderInput?.value.trim();
     const model = this.providerModelInput?.value.trim();
-    const baseUrl = this.providerBaseUrlInput?.value.trim();
+    const baseUrl = this.providerBaseUrlInput?.value.trim() || '';
     const apiKey = this.providerApiKeyInput?.value.trim();
     // 读取 temperature：空值表示使用默认值，不传 temperature 字段
     const tempRaw = this.providerTemperatureInput?.value.trim();
@@ -1141,7 +1141,8 @@ export class SettingsPanelManager {
       }
     }
 
-    const result = await window.electronAPI.saveLlmProvider(alias, { provider, model, baseUrl, apiKey, temperature });
+    // 必填字段校验后 alias 已确保非空，此处类型收窄
+    const result = await window.electronAPI.saveLlmProvider(alias as string, { provider, model, baseUrl, apiKey, temperature });
     if (result.success) {
       this.host.showToast('Provider 保存成功');
       this.hideProviderForm();
@@ -1160,7 +1161,7 @@ export class SettingsPanelManager {
   private async testProviderConnection(): Promise<void> {
     const provider = this.providerProviderInput?.value.trim();
     const model = this.providerModelInput?.value.trim();
-    const baseUrl = this.providerBaseUrlInput?.value.trim();
+    const baseUrl = this.providerBaseUrlInput?.value.trim() || '';
     const apiKey = this.providerApiKeyInput?.value.trim();
 
     if (!provider || !model || !apiKey) {
@@ -1243,22 +1244,31 @@ export class SettingsPanelManager {
    * 初始化 Provider 管理事件监听器
    */
   private initProviderListeners(): void {
-    this.events.addEventListener(this.btnAddProvider, 'click', () => {
-      this.showProviderForm('');
-    });
-
-    this.events.addEventListener(this.btnProviderSave, 'click', async () => {
-      await this.saveProvider();
-    });
-
-    this.events.addEventListener(this.btnProviderCancel, 'click', () => {
-      this.hideProviderForm();
-    });
-
+    // 所有 Provider 管理按钮均为可选元素，若缺失则静默降级
+    if (!this.btnAddProvider && !this.btnProviderSave && !this.btnProviderCancel && !this.btnProviderTest) {
+      return;
+    }
+    if (this.btnAddProvider) {
+      this.events.addEventListener(this.btnAddProvider, 'click', () => {
+        this.showProviderForm('');
+      });
+    }
+    if (this.btnProviderSave) {
+      this.events.addEventListener(this.btnProviderSave, 'click', async () => {
+        await this.saveProvider();
+      });
+    }
+    if (this.btnProviderCancel) {
+      this.events.addEventListener(this.btnProviderCancel, 'click', () => {
+        this.hideProviderForm();
+      });
+    }
     // Provider 连接测试：从表单读取当前配置，调用 testLlmConfig 验证
-    this.events.addEventListener(this.btnProviderTest, 'click', async () => {
-      await this.testProviderConnection();
-    });
+    if (this.btnProviderTest) {
+      this.events.addEventListener(this.btnProviderTest, 'click', async () => {
+        await this.testProviderConnection();
+      });
+    }
   }
 
   /** 加载配置到表单 */

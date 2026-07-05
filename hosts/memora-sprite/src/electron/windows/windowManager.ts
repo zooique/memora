@@ -13,6 +13,7 @@
  */
 
 import * as path from 'node:path';
+import { existsSync } from 'node:fs';
 import { BrowserWindow, ipcMain } from 'electron';
 import type { WindowStateManager } from './windowState.js';
 import { FloatWindow } from './floatWindow.js';
@@ -25,6 +26,22 @@ import { ELECTRON_DIR } from '../esmShim.js';
 /** 完整窗口最小尺寸：侧边栏 240px + 主内容区至少 400px = 640px；高度 480px 保证核心内容可见 */
 const FULL_WINDOW_MIN_WIDTH = 640;
 const FULL_WINDOW_MIN_HEIGHT = 480;
+
+/**
+ * 解析应用图标路径
+ *
+ * 运行时代码位于 dist-electron/electron/，图标位于 dist-electron/build/icons/。
+ *
+ * @returns 图标文件绝对路径，不存在时返回空字符串
+ */
+function resolveAppIconPath(): string {
+  // 从 ELECTRON_DIR（dist-electron/electron/）往上一级到 dist-electron/，再找 build/icons
+  const iconPath = path.join(ELECTRON_DIR, '..', 'build', 'icons', 'icon.png');
+  return existsSync(iconPath) ? iconPath : '';
+}
+
+/** 应用图标路径（模块加载时解析一次，缓存结果） */
+const APP_ICON_PATH = resolveAppIconPath();
 
 // ─── 窗口管理器类 ─────────────────────────────────────────
 
@@ -114,6 +131,8 @@ export class WindowManager {
       // ADR-SP-008：浅色主题为默认，窗口背景色对齐大底板色（--bg: #f0f0f2）
       // 避免启动时闪深色（旧值为深色主题的 #1e1e2e）
       backgroundColor: '#f0f0f2',
+      // 应用图标（任务栏、窗口切换器显示）
+      icon: APP_ICON_PATH || undefined,
       webPreferences: {
         // preload 使用 .cjs（CommonJS 格式），兼容 sandbox: true；ESM 格式与 sandbox 不兼容
         preload: path.join(ELECTRON_DIR, 'preload.cjs'),
