@@ -29,7 +29,7 @@ import type { AuditManager } from '../../sprite/audit/auditManager.js';
 import type { WindowManager } from '../windows/windowManager.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import { spriteConfigStore } from '../../storage/spriteConfigStore.js';
-import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS } from '../../index.js';
+import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
 import { isValidContent } from './inputValidation.js';
 
 /**
@@ -247,6 +247,69 @@ export function registerMinimalIpcHandlers(
           context: '保存 LLM 配置并重新初始化 Agent 失败',
         });
         return { success: false, error: toError(error).message };
+      }
+    },
+  );
+
+  // ─── 多 Provider 管理 IPC ──────────────────────────────
+
+  // Provider 列表
+  ipcMain.handle(IPC_CHANNELS.LLM_PROVIDER_LIST, async () => {
+    try {
+      return await getLlmProviders();
+    } catch {
+      return { active: '', providers: [] };
+    }
+  });
+
+  // Provider 保存（新增/更新）
+  ipcMain.handle(
+    IPC_CHANNELS.LLM_PROVIDER_SAVE,
+    async (
+      _event,
+      key: string,
+      config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
+    ) => {
+      if (!key || typeof key !== 'string' || !config?.apiKey) {
+        return { success: false, error: '参数无效' };
+      }
+      try {
+        await saveLlmProvider(key, config);
+        return { success: true, error: null };
+      } catch (err) {
+        return { success: false, error: toError(err).message };
+      }
+    },
+  );
+
+  // Provider 删除
+  ipcMain.handle(
+    IPC_CHANNELS.LLM_PROVIDER_DELETE,
+    async (_event, key: string) => {
+      if (!key || typeof key !== 'string') {
+        return { success: false, error: '参数无效' };
+      }
+      try {
+        await deleteLlmProvider(key);
+        return { success: true, error: null };
+      } catch (err) {
+        return { success: false, error: toError(err).message };
+      }
+    },
+  );
+
+  // 切换激活 Provider
+  ipcMain.handle(
+    IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE,
+    async (_event, key: string) => {
+      if (!key || typeof key !== 'string') {
+        return { success: false, error: '参数无效' };
+      }
+      try {
+        await setActiveLlmProvider(key);
+        return { success: true, error: null };
+      } catch (err) {
+        return { success: false, error: toError(err).message };
       }
     },
   );

@@ -52,6 +52,11 @@ export class InputAreaManager {
   /** 输入区 ResizeObserver（监听 #input-area 高度变化），null 表示元素缺失或环境不支持 */
   private resizeObserver: ResizeObserver | null = null;
 
+  /** Provider 选择器 DOM 元素 */
+  private providerSelector: HTMLElement | null = null;
+  private providerNameEl: HTMLElement | null = null;
+  private providerDropdown: HTMLElement | null = null;
+
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
    *
@@ -65,7 +70,12 @@ export class InputAreaManager {
     private readonly btnSend: HTMLButtonElement,
     private readonly events: EventTracker,
     private readonly host: InputAreaHost,
-  ) {}
+  ) {
+    // 延迟获取 Provider 选择器 DOM（可能尚未渲染到 DOM 中）
+    this.providerSelector = document.getElementById('provider-selector');
+    this.providerNameEl = document.getElementById('provider-name');
+    this.providerDropdown = document.getElementById('provider-dropdown');
+  }
 
   /**
    * 初始化：绑定事件 + 启动 ResizeObserver
@@ -85,6 +95,9 @@ export class InputAreaManager {
 
     // 启动输入区 ResizeObserver
     this.initResizeObserver();
+
+    // 初始化 Provider 选择器
+    this.initProviderSelector();
   }
 
   /**
@@ -228,5 +241,78 @@ export class InputAreaManager {
       }
     });
     this.resizeObserver.observe(inputArea);
+  }
+
+  // ─── Provider 选择器 ────────────────────────────────────
+
+  /**
+   * 初始化 Provider 选择器
+   *
+   * 加载 Provider 列表，渲染下拉菜单，绑定切换事件。
+   */
+  private async initProviderSelector(): Promise<void> {
+    if (!this.providerSelector || !this.providerDropdown) return;
+
+    // 点击 provider 按钮切换下拉
+    this.events.addEventListener(this.providerSelector, 'click', (e) => {
+      e.stopPropagation();
+      this.providerDropdown!.classList.toggle('hidden');
+    });
+
+    // 点击页面其他区域关闭下拉
+    this.events.addEventListener(document, 'click', () => {
+      this.providerDropdown?.classList.add('hidden');
+    });
+
+    // 加载并渲染 Provider 列表
+    await this.loadProviderSelector();
+  }
+
+  /**
+   * 加载 Provider 选择器内容
+   *
+   * 从主进程获取 Provider 列表，更新当前显示名称和下拉菜单。
+   */
+  async loadProviderSelector(): Promise<void> {
+    if (!this.providerNameEl || !this.providerDropdown) return;
+
+    try {
+      const data = await window.electronAPI.listLlmProviders();
+      const { active, providers } = data;
+
+      if (providers.length === 0) {
+        this.providerNameEl.textContent = '未配置';
+        this.providerSelector?.classList.remove('configured');
+        this.providerDropdown.innerHTML = '<div class="dropdown-item" style="color:var(--text-3);font-size:var(--font-xs)">请在设置中添加 API</div>';
+        return;
+      }
+
+      // 更新当前显示名称
+      const activeProvider = providers.find((p) => p.key === active) ?? providers[0]!;
+      this.providerNameEl.textContent = activeProvider.name;
+      this.providerSelector?.classList.add('configured');
+
+      // 渲染下拉菜单
+      this.providerDropdown.innerHTML = providers
+        .map((p) => {
+          const isActive = p.key === active;
+          return `<div class="dropdown-item${isActive ? ' active' : ''}" data-provider-key="${p.key}">${p.name}</div>`;
+        })
+        .join('');
+
+      // 绑定下拉项点击事件
+      this.providerDropdown.querySelectorAll('.dropdown-item').forEach((item) => {
+        this.events.addEventListener(item as HTMLElement, 'click', async () => {
+          const key = (item as HTMLElement).dataset.providerKey;
+          if (key) {
+            await window.electronAPI.setActiveLlmProvider(key);
+            this.providerDropdown!.classList.add('hidden');
+            await this.loadProviderSelector();
+          }
+        });
+      });
+    } catch {
+      this.providerNameEl.textContent = '加载失败';
+    }
   }
 }

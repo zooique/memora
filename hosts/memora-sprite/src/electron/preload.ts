@@ -99,6 +99,14 @@ export const IPC_CHANNELS = {
   LLM_CONFIG_GET: 'llm-config-get',
   LLM_CONFIG_SAVE: 'llm-config-save',
   LLM_CONFIG_TEST: 'llm-config-test',
+  /** 获取 Provider 列表 */
+  LLM_PROVIDER_LIST: 'llm-provider-list',
+  /** 保存 Provider 配置（新增/更新） */
+  LLM_PROVIDER_SAVE: 'llm-provider-save',
+  /** 删除 Provider */
+  LLM_PROVIDER_DELETE: 'llm-provider-delete',
+  /** 切换激活 Provider */
+  LLM_PROVIDER_SET_ACTIVE: 'llm-provider-set-active',
   AGENT_STATUS: 'agent-status',
   PROACTIVE_PROMPT_SHOWN: 'proactive-prompt-shown',
   /** Phase 2.1：用户接受了主动提示（点击"查看"） */
@@ -385,6 +393,16 @@ export interface ElectronAPI {
 
   /** 测试 LLM 连接（保存前验证配置是否可用） */
   testLlmConfig: (llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ success: boolean; error: string | null }>;
+
+  // ─── 多 Provider 管理 ──────────────────────────────────
+  /** 获取 Provider 列表 */
+  listLlmProviders: () => Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> }>;
+  /** 保存 Provider（新增/更新） */
+  saveLlmProvider: (key: string, config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number }) => Promise<{ success: boolean; error: string | null }>;
+  /** 删除 Provider */
+  deleteLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
+  /** 切换激活 Provider */
+  setActiveLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
 
   // Agent 就绪通知（主进程 → 渲染进程）
   onAgentReady: (cb: () => void) => void;
@@ -710,6 +728,12 @@ const electronAPI: ElectronAPI = {
   getLlmConfig: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_GET),
   saveLlmConfig: (llmConfig, embeddingConfig) => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_SAVE, llmConfig, embeddingConfig),
   testLlmConfig: (llmConfig) => ipcRenderer.invoke(IPC_CHANNELS.LLM_CONFIG_TEST, llmConfig),
+
+  // 多 Provider 管理
+  listLlmProviders: () => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_LIST),
+  saveLlmProvider: (key, config) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SAVE, key, config),
+  deleteLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_DELETE, key),
+  setActiveLlmProvider: (key) => ipcRenderer.invoke(IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE, key),
 
   // Agent 就绪通知
   onAgentReady: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.AGENT_READY, () => cb()),

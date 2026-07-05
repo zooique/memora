@@ -96,6 +96,39 @@ export interface LlmConfigSavePayload {
   embedding: EmbeddingConfigForm | null;
 }
 
+/**
+ * 多 Provider 配置项（UI 层）
+ *
+ * 与 memora 内核的 ProviderConfig 对齐，但增加 UI 专属字段（name、isDefault）。
+ * key 为 Provider 别名（如 "deepseek-v3"、"openai-gpt4o"），用于 providers 映射表。
+ */
+export interface LlmProviderConfig {
+  /** Provider 别名（唯一标识，如 "deepseek-v3"） */
+  key: string;
+  /** 显示名称（如 "DeepSeek V3"） */
+  name: string;
+  /** 提供商标识（如 "deepseek"、"openai"） */
+  provider: string;
+  /** 模型名称（如 "deepseek-chat"） */
+  model: string;
+  /** API 地址 */
+  baseUrl: string;
+  /** API Key（脱敏后返回，仅显示前4后4位） */
+  apiKey: string;
+  /** 温度参数（0-2） */
+  temperature: number;
+  /** 是否为默认 Provider */
+  isDefault?: boolean;
+}
+
+/** Provider 列表响应 */
+export interface LlmProviderListPayload {
+  /** 当前激活的 Provider 别名 */
+  active: string;
+  /** 所有 Provider 列表 */
+  providers: LlmProviderConfig[];
+}
+
 /** Toast 通知类型 */
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 

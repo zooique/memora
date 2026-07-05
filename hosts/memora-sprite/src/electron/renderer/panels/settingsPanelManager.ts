@@ -103,6 +103,19 @@ export class SettingsPanelManager {
   /** 召回记忆快捷键（捕获式输入） */
   private cfgShortcutRecallMemory: HTMLInputElement | null;
 
+  // ─── 设置面板 DOM 元素 - 多 Provider 管理 ─────────────
+  private providerListEl: HTMLElement | null;
+  private providerFormEl: HTMLElement | null;
+  private providerAliasInput: HTMLInputElement | null;
+  private providerDisplayInput: HTMLInputElement | null;
+  private providerProviderInput: HTMLInputElement | null;
+  private providerModelInput: HTMLInputElement | null;
+  private providerBaseUrlInput: HTMLInputElement | null;
+  private providerApiKeyInput: HTMLInputElement | null;
+  private btnAddProvider: HTMLButtonElement | null;
+  private btnProviderSave: HTMLButtonElement | null;
+  private btnProviderCancel: HTMLButtonElement | null;
+
   // ─── 缓存 DOM 元素 - radio 按钮组（loadConfigToForm / collectConfigFromForm 中重复查询） ─
   /** 项目模式单选按钮组（NodeList 静态快照，构造时获取一次） */
   private projectModeRadios: NodeListOf<HTMLInputElement>;
@@ -200,6 +213,19 @@ export class SettingsPanelManager {
     // 缓存重复查询的独立元素
     this.agentStatusEl = document.getElementById('agent-status-indicator');
     this.llmTestResultEl = document.getElementById('llm-test-result');
+
+    // 多 Provider 管理元素
+    this.providerListEl = document.getElementById('provider-list');
+    this.providerFormEl = document.getElementById('provider-form');
+    this.providerAliasInput = getOptionalElement('cfg-provider-alias', 'input');
+    this.providerDisplayInput = getOptionalElement('cfg-provider-display', 'input');
+    this.providerProviderInput = getOptionalElement('cfg-provider-provider', 'input');
+    this.providerModelInput = getOptionalElement('cfg-provider-model', 'input');
+    this.providerBaseUrlInput = getOptionalElement('cfg-provider-base-url', 'input');
+    this.providerApiKeyInput = getOptionalElement('cfg-provider-api-key', 'input');
+    this.btnAddProvider = getOptionalElement('btn-add-provider', 'button');
+    this.btnProviderSave = getOptionalElement('btn-provider-save', 'button');
+    this.btnProviderCancel = getOptionalElement('btn-provider-cancel', 'button');
 
     // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 console.error 报告
     // 避免静默降级导致用户配置静默失效（保存时表单值为 undefined，主进程收到空配置）
@@ -485,6 +511,10 @@ export class SettingsPanelManager {
 
     // Phase 3.3：初始化快捷键捕获式输入（三个动作 + 冲突检测）
     this.initShortcutCapture();
+
+    // 多 Provider 管理：事件监听器 + 初始加载列表
+    this.initProviderListeners();
+    this.loadProviderList();
   }
 
   // ─── 私有辅助方法 ───────────────────────────────────────
@@ -939,6 +969,196 @@ export class SettingsPanelManager {
     }
     // 限制到 HTML input 声明的 [0, 2] 范围内
     return Math.max(0, Math.min(2, parsed));
+  }
+
+  // ─── 多 Provider 管理 ────────────────────────────────────
+
+  /**
+   * 加载 Provider 列表并渲染
+   *
+   * 从主进程获取所有 Provider 配置，渲染为卡片列表。
+   * 设置面板初次显示时调用。
+   */
+  async loadProviderList(): Promise<void> {
+    if (!this.providerListEl) return;
+    try {
+      const data = await window.electronAPI.listLlmProviders();
+      this.renderProviderList(data.active, data.providers);
+    } catch {
+      this.providerListEl.innerHTML = '';
+    }
+  }
+
+  /**
+   * 渲染 Provider 卡片列表
+   */
+  private renderProviderList(active: string, providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>): void {
+    if (!this.providerListEl) return;
+
+    if (providers.length === 0) {
+      this.providerListEl.innerHTML = '<p class="settings-hint">暂未配置任何 API，点击下方按钮添加。</p>';
+      return;
+    }
+
+    this.providerListEl.innerHTML = providers
+      .map((p) => {
+        const isActive = p.key === active;
+        return `
+          <div class="provider-card${isActive ? ' active' : ''}" data-provider-key="${p.key}">
+            <div class="provider-info">
+              <span class="provider-name">${p.name}</span>
+              <span class="provider-detail">${p.provider} · ${p.model} · ${p.baseUrl || '未设置'}</span>
+            </div>
+            ${isActive ? '<span class="provider-active-badge">当前</span>' : ''}
+            <div class="provider-actions">
+              ${!isActive ? `<button class="provider-btn" data-action="activate" data-key="${p.key}">设为当前</button>` : ''}
+              <button class="provider-btn" data-action="edit" data-key="${p.key}">编辑</button>
+              <button class="provider-btn provider-btn-delete" data-action="delete" data-key="${p.key}">删除</button>
+            </div>
+          </div>`;
+      })
+      .join('');
+
+    this.bindProviderCardActions();
+  }
+
+  /**
+   * 绑定 Provider 卡片操作事件（事件委托）
+   */
+  private bindProviderCardActions(): void {
+    if (!this.providerListEl) return;
+
+    this.providerListEl.addEventListener('click', async (e) => {
+      const target = e.target as HTMLElement;
+      const btn = target.closest('button[data-action]') as HTMLButtonElement | null;
+      if (!btn) return;
+
+      const action = btn.dataset.action;
+      const key = btn.dataset.key;
+
+      if (!key) return;
+
+      if (action === 'activate') {
+        await this.setActiveProvider(key);
+      } else if (action === 'edit') {
+        this.showProviderForm(key);
+      } else if (action === 'delete') {
+        await this.deleteProvider(key);
+      }
+    });
+  }
+
+  /**
+   * 显示 Provider 编辑表单
+   */
+  private showProviderForm(key: string = ''): void {
+    if (!this.providerFormEl) return;
+
+    if (key) {
+      const card = this.providerListEl?.querySelector(`[data-provider-key="${key}"]`);
+      const detailEl = card?.querySelector('.provider-detail');
+      const detail = detailEl?.textContent ?? '';
+      const parts = detail.split(' · ');
+
+      if (this.providerAliasInput) {
+        this.providerAliasInput.value = key;
+        this.providerAliasInput.disabled = true;
+      }
+      if (this.providerDisplayInput) this.providerDisplayInput.value = card?.querySelector('.provider-name')?.textContent ?? key;
+      if (this.providerProviderInput) this.providerProviderInput.value = parts[0] ?? '';
+      if (this.providerModelInput) this.providerModelInput.value = parts[1] ?? '';
+      if (this.providerBaseUrlInput) this.providerBaseUrlInput.value = parts[2] !== '未设置' ? (parts[2] ?? '') : '';
+    } else {
+      if (this.providerAliasInput) { this.providerAliasInput.value = ''; this.providerAliasInput.disabled = false; }
+      if (this.providerDisplayInput) this.providerDisplayInput.value = '';
+      if (this.providerProviderInput) this.providerProviderInput.value = '';
+      if (this.providerModelInput) this.providerModelInput.value = '';
+      if (this.providerBaseUrlInput) this.providerBaseUrlInput.value = '';
+    }
+    if (this.providerApiKeyInput) this.providerApiKeyInput.value = '';
+
+    this.providerFormEl.classList.remove('hidden');
+    this.providerFormEl.dataset.editKey = key;
+  }
+
+  /**
+   * 隐藏 Provider 编辑表单
+   */
+  private hideProviderForm(): void {
+    if (!this.providerFormEl) return;
+    this.providerFormEl.classList.add('hidden');
+    this.providerFormEl.dataset.editKey = '';
+  }
+
+  /**
+   * 保存 Provider（新增/更新）
+   */
+  private async saveProvider(): Promise<void> {
+    const alias = this.providerAliasInput?.value.trim();
+    const provider = this.providerProviderInput?.value.trim();
+    const model = this.providerModelInput?.value.trim();
+    const baseUrl = this.providerBaseUrlInput?.value.trim();
+    const apiKey = this.providerApiKeyInput?.value.trim();
+
+    if (!alias || !provider || !model || !apiKey) {
+      this.host.showToast('请填写所有必填字段（别名、模型、API Key）', 'error');
+      return;
+    }
+
+    const result = await window.electronAPI.saveLlmProvider(alias, { provider, model, baseUrl, apiKey });
+    if (result.success) {
+      this.host.showToast('Provider 保存成功');
+      this.hideProviderForm();
+      await this.loadProviderList();
+    } else {
+      this.host.showToast(result.error ?? '保存失败', 'error');
+    }
+  }
+
+  /**
+   * 删除 Provider
+   */
+  private async deleteProvider(key: string): Promise<void> {
+    const confirmed = confirm(`确定删除 Provider "${key}"？`);
+    if (!confirmed) return;
+
+    const result = await window.electronAPI.deleteLlmProvider(key);
+    if (result.success) {
+      this.host.showToast('Provider 已删除');
+      await this.loadProviderList();
+    } else {
+      this.host.showToast(result.error ?? '删除失败', 'error');
+    }
+  }
+
+  /**
+   * 切换激活 Provider
+   */
+  private async setActiveProvider(key: string): Promise<void> {
+    const result = await window.electronAPI.setActiveLlmProvider(key);
+    if (result.success) {
+      this.host.showToast('已切换 Provider');
+      await this.loadProviderList();
+    } else {
+      this.host.showToast(result.error ?? '切换失败', 'error');
+    }
+  }
+
+  /**
+   * 初始化 Provider 管理事件监听器
+   */
+  private initProviderListeners(): void {
+    this.events.addEventListener(this.btnAddProvider, 'click', () => {
+      this.showProviderForm('');
+    });
+
+    this.events.addEventListener(this.btnProviderSave, 'click', async () => {
+      await this.saveProvider();
+    });
+
+    this.events.addEventListener(this.btnProviderCancel, 'click', () => {
+      this.hideProviderForm();
+    });
   }
 
   /** 加载配置到表单 */

@@ -712,3 +712,120 @@
   line-height: 1.4;
   word-break: break-word;
 }
+
+/* ═══ 多 Provider 管理（设置面板 LLM 配置 tab） ═══ */
+
+/* 区域分隔线 */
+.settings-section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--pad-card) 0;
+}
+
+/* Provider 列表容器 */
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-compact);
+  margin-bottom: var(--pad-card);
+}
+
+/* Provider 卡片 */
+.provider-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--pad-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface1);
+  transition: border-color 0.15s;
+}
+
+/* 当前激活的 Provider 高亮 */
+.provider-card.active {
+  border-color: var(--green);
+  background: var(--green-10);
+}
+
+/* Provider 信息区 */
+.provider-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.provider-name {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.provider-detail {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+}
+
+/* 激活标签 */
+.provider-active-badge {
+  font-size: var(--font-3xs);
+  color: var(--green);
+  font-weight: 600;
+  padding: 1px 6px;
+  border: 1px solid var(--green);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  margin-left: var(--gap-compact);
+}
+
+/* Provider 操作按钮 */
+.provider-actions {
+  display: flex;
+  gap: var(--gap-compact);
+  flex-shrink: 0;
+}
+
+.provider-btn {
+  font-size: var(--font-xs);
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.provider-btn:hover {
+  background: var(--hover);
+}
+
+/* 删除按钮特殊样式 */
+.provider-btn.provider-btn-delete {
+  color: var(--red);
+  border-color: transparent;
+}
+
+.provider-btn.provider-btn-delete:hover {
+  background: var(--red-10);
+}
+
+/* Provider 表单 */
+.provider-form {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--pad-card);
+  margin-bottom: var(--pad-card);
+  background: var(--surface1);
+}
+
+.provider-form.hidden {
+  display: none;
+}
+
+/* 表单操作按钮 */
+.provider-form-actions {
+  display: flex;
+  gap: var(--gap-compact);
+}

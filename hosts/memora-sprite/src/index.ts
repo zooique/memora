@@ -112,6 +112,126 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
   return store.isConfigured();
 }
 
+/**
+ * 获取所有 Provider 配置列表
+ *
+ * 从 config.json 读取 providers 映射表，转换为 UI 层格式。
+ * 未配置 providers 时返回空列表 + 旧单 provider 的降级信息。
+ *
+ * @param configPath 配置文件路径
+ * @returns Provider 列表 + 当前激活的 alias
+ */
+export async function getLlmProviders(
+  configPath?: string,
+): Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> }> {
+  const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
+  const config = await store.load();
+  const providers = config.llm.providers ?? {};
+
+  // 脱敏 apiKey：仅显示前4后4位
+  const maskKey = (key: string | undefined): string => {
+    if (!key || key.length <= 8) return key ? '****' : '';
+    return key.slice(0, 4) + '****' + key.slice(-4);
+  };
+
+  const providerList = Object.entries(providers).map(([key, p]) => ({
+    key,
+    name: key, // 默认名称 = key，UI 可编辑
+    provider: p.provider,
+    model: p.model,
+    baseUrl: p.baseUrl ?? '',
+    apiKey: maskKey(p.apiKey),
+    temperature: 0.7, // 默认值，后续可扩展
+  }));
+
+  return {
+    active: config.llm.active ?? Object.keys(providers)[0] ?? '',
+    providers: providerList,
+  };
+}
+
+/**
+ * 保存 Provider 配置（新增/更新）
+ *
+ * 合并到 config.json 的 llm.providers 映射表。
+ * 首次添加时自动设为 active（如果此前无 active）。
+ *
+ * @param key Provider 别名
+ * @param providerConfig Provider 配置（含 apiKey 明文）
+ * @param configPath 配置文件路径
+ */
+export async function saveLlmProvider(
+  key: string,
+  providerConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
+  configPath?: string,
+): Promise<void> {
+  const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
+  const config = await store.load();
+
+  const providers = { ...(config.llm.providers ?? {}) };
+  providers[key] = {
+    provider: providerConfig.provider,
+    model: providerConfig.model,
+    baseUrl: providerConfig.baseUrl || undefined,
+    apiKey: providerConfig.apiKey || undefined,
+  };
+
+  // 首次添加时自动设为 active
+  const active = config.llm.active ?? key;
+
+  await store.saveProviders(providers, active, config);
+}
+
+/**
+ * 删除 Provider
+ *
+ * 从 providers 映射表中移除指定 key。
+ * 如果删除的是当前 active，自动切换到第一个剩余 provider。
+ *
+ * @param key 要删除的 Provider 别名
+ * @param configPath 配置文件路径
+ */
+export async function deleteLlmProvider(
+  key: string,
+  configPath?: string,
+): Promise<void> {
+  const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
+  const config = await store.load();
+
+  const providers = { ...(config.llm.providers ?? {}) };
+  delete providers[key];
+
+  // 如果删除的是当前 active，切换到第一个剩余 provider
+  let active: string = config.llm.active ?? '';
+  if (active === key) {
+    active = Object.keys(providers)[0] ?? '';
+  }
+
+  await store.saveProviders(providers, active, config);
+}
+
+/**
+ * 切换激活 Provider
+ *
+ * 更新 config.json 的 llm.active 字段。
+ *
+ * @param key 要激活的 Provider 别名
+ * @param configPath 配置文件路径
+ */
+export async function setActiveLlmProvider(
+  key: string,
+  configPath?: string,
+): Promise<void> {
+  const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
+  const config = await store.load();
+
+  if (!config.llm.providers?.[key]) {
+    throw new Error(`Provider "${key}" 不存在`);
+  }
+
+  await store.saveProviders(config.llm.providers, key, config);
+}
+
 // ─── 启动精灵 ──────────────────────────────────────────
 
 /**

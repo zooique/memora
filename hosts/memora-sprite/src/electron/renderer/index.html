@@ -141,6 +141,9 @@
       <!-- 沙漏（时间线空状态） -->
       <symbol id="icon-hourglass" viewBox="0 0 24 24"><path d="M6 2h12M6 22h12M6 2v4l6 6-6 6v4M18 2v4l-6 6 6 6v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
 
+      <!-- 链接（Provider 选择器图标） -->
+      <symbol id="icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+
       <!-- ═══ 文件类型图标（作品投影面板，统一"文档+文字标签"风格） ═══ -->
       <!-- 文档基础形状：折叠角文档轮廓，24x24 viewBox，居中文字标识 -->
       <!-- TypeScript -->
@@ -435,6 +438,15 @@
               <button class="input-action" id="btn-fork-session" title="分叉会话（从当前位置开新分支）"><svg class="icon"><use href="#icon-branch"/></svg></button>
             </div>
             <div class="input-send-area">
+              <!-- Provider 选择器（输入框左侧，切换 LLM API） -->
+              <div id="input-provider-container" class="input-provider-container">
+                <div id="provider-selector" role="button" tabindex="0" aria-label="切换 LLM Provider" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="provider-icon"><svg class="icon"><use href="#icon-link"/></svg></span>
+                  <span id="provider-name">未配置</span>
+                  <span id="provider-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
+                </div>
+                <div id="provider-dropdown" class="dropdown hidden"></div>
+              </div>
               <!-- 紧凑版角色选择器（输入区发送按钮旁，输入时可快速切换角色） -->
               <div id="input-persona-container" class="input-persona-container">
                 <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
@@ -841,6 +853,57 @@
                 <span id="llm-test-result" class="settings-hint"></span>
               </div>
             </div>
+
+            <!-- 多 Provider 管理 -->
+            <div class="settings-section-divider"></div>
+            <h3>API 管理</h3>
+            <p class="settings-hint">管理多个 LLM Provider，在输入框中随时切换。</p>
+
+            <!-- Provider 列表 -->
+            <div id="provider-list" class="provider-list">
+              <!-- 动态渲染：每个 Provider 一个卡片 -->
+            </div>
+
+            <!-- 添加 Provider 表单（默认隐藏） -->
+            <div id="provider-form" class="provider-form hidden">
+              <div class="settings-row">
+                <label for="cfg-provider-alias">别名（唯一标识）</label>
+                <input type="text" id="cfg-provider-alias" placeholder="deepseek-v3" autocomplete="off" />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-provider-display">显示名称</label>
+                <input type="text" id="cfg-provider-display" placeholder="DeepSeek V3" autocomplete="off" />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-provider-provider">提供商（provider）</label>
+                <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-provider-model">模型（model）</label>
+                <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-provider-base-url">API 地址（baseUrl）</label>
+                <input type="text" id="cfg-provider-base-url" placeholder="https://api.deepseek.com" autocomplete="off" />
+              </div>
+              <div class="settings-row">
+                <label for="cfg-provider-api-key">API Key</label>
+                <div class="input-with-action">
+                  <input type="password" id="cfg-provider-api-key" placeholder="sk-****" />
+                  <button type="button" id="btn-toggle-provider-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Provider API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
+                </div>
+              </div>
+              <div class="settings-row">
+                <label></label>
+                <div class="provider-form-actions">
+                  <button id="btn-provider-save" class="btn-primary" type="button">保存</button>
+                  <button id="btn-provider-cancel" class="btn-secondary" type="button">取消</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 添加按钮 -->
+            <button id="btn-add-provider" class="btn-secondary" type="button">+ 添加 API</button>
           </div>
         </div>
 

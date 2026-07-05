@@ -188,6 +188,46 @@ export class SpriteConfigStore {
       mode: 0o600,
     });
   }
+
+  /**
+   * 保存 Provider 映射表（多 Provider 管理专用）
+   *
+   * 合并写入：读取现有配置，更新 llm.providers 和 llm.active，
+   * 保留其他字段不变。注意：providers 配置后，旧扁平字段仍保留用于降级。
+   *
+   * @param providers Provider 映射表（key → ProviderConfig）
+   * @param active 当前激活的 Provider 别名
+   * @param existing 现有的完整配置（避免重复读取，由调用方传入）
+   */
+  async saveProviders(
+    providers: Record<string, { provider: string; model: string; baseUrl?: string; apiKey?: string }>,
+    active: string,
+    existing?: Config,
+  ): Promise<void> {
+    const dir = resolve(this.configPath, '..');
+    await mkdir(dir, { recursive: true });
+
+    const base = existing ?? await this.load().catch(() => ({
+      llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
+      memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
+      security: { permission: 'owner' as const, confirmWrites: false },
+      allowedPaths: [],
+    }));
+
+    const config: Config = {
+      ...base,
+      llm: {
+        ...base.llm,
+        providers,
+        active,
+      },
+    };
+
+    await writeFile(this.configPath, JSON.stringify(config, null, 2), {
+      encoding: 'utf-8',
+      mode: 0o600,
+    });
+  }
 }
 
 /** 默认配置存储器实例（单例，供 main.ts 直接使用） */

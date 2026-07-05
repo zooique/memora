@@ -108,6 +108,14 @@ export const IPC_CHANNELS = {
   LLM_CONFIG_SAVE: 'llm-config-save',
   /** 测试 LLM 连接 */
   LLM_CONFIG_TEST: 'llm-config-test',
+  /** 获取 Provider 列表 */
+  LLM_PROVIDER_LIST: 'llm-provider-list',
+  /** 保存 Provider 配置（新增/更新） */
+  LLM_PROVIDER_SAVE: 'llm-provider-save',
+  /** 删除 Provider */
+  LLM_PROVIDER_DELETE: 'llm-provider-delete',
+  /** 切换激活 Provider */
+  LLM_PROVIDER_SET_ACTIVE: 'llm-provider-set-active',
 
   // ─── Agent 状态 ───────────────────────────────────────
   /** 查询 Agent 是否就绪 */
