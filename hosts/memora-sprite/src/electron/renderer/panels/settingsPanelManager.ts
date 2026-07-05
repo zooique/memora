@@ -115,6 +115,7 @@ export class SettingsPanelManager {
   private btnAddProvider: HTMLButtonElement | null;
   private btnProviderSave: HTMLButtonElement | null;
   private btnProviderCancel: HTMLButtonElement | null;
+  private btnProviderTest: HTMLButtonElement | null;
 
   // ─── 缓存 DOM 元素 - radio 按钮组（loadConfigToForm / collectConfigFromForm 中重复查询） ─
   /** 项目模式单选按钮组（NodeList 静态快照，构造时获取一次） */
@@ -226,6 +227,7 @@ export class SettingsPanelManager {
     this.btnAddProvider = getOptionalElement('btn-add-provider', 'button');
     this.btnProviderSave = getOptionalElement('btn-provider-save', 'button');
     this.btnProviderCancel = getOptionalElement('btn-provider-cancel', 'button');
+    this.btnProviderTest = getOptionalElement('btn-provider-test', 'button');
 
     // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 console.error 报告
     // 避免静默降级导致用户配置静默失效（保存时表单值为 undefined，主进程收到空配置）
@@ -1013,7 +1015,7 @@ export class SettingsPanelManager {
             <div class="provider-actions">
               ${!isActive ? `<button class="provider-btn" data-action="activate" data-key="${p.key}">设为当前</button>` : ''}
               <button class="provider-btn" data-action="edit" data-key="${p.key}">编辑</button>
-              <button class="provider-btn provider-btn-delete" data-action="delete" data-key="${p.key}">删除</button>
+              ${!isActive ? `<button class="provider-btn provider-btn-delete" data-action="delete" data-key="${p.key}">删除</button>` : ''}
             </div>
           </div>`;
       })
@@ -1092,6 +1094,8 @@ export class SettingsPanelManager {
 
   /**
    * 保存 Provider（新增/更新）
+   *
+   * 校验：必填字段 + 别名格式（仅允许字母数字.-_） + 重复 key 检测
    */
   private async saveProvider(): Promise<void> {
     const alias = this.providerAliasInput?.value.trim();
@@ -1100,9 +1104,30 @@ export class SettingsPanelManager {
     const baseUrl = this.providerBaseUrlInput?.value.trim();
     const apiKey = this.providerApiKeyInput?.value.trim();
 
+    // 必填字段校验
     if (!alias || !provider || !model || !apiKey) {
-      this.host.showToast('请填写所有必填字段（别名、模型、API Key）', 'error');
+      this.host.showToast('请填写所有必填字段（别名、提供商、模型、API Key）', 'error');
       return;
+    }
+
+    // 别名格式校验：仅允许 ASCII 字母数字 . - _，长度 ≤ 50
+    if (!/^[a-zA-Z0-9._-]{1,50}$/.test(alias)) {
+      this.host.showToast('别名仅支持英文、数字、点、短横线、下划线，最长50字符', 'error');
+      return;
+    }
+
+    // 重复 key 检测：新增时检查别名是否已存在
+    const isEditing = (this.providerFormEl?.dataset.editKey ?? '') !== '';
+    if (!isEditing) {
+      try {
+        const data = await window.electronAPI.listLlmProviders();
+        if (data.providers.some((p) => p.key === alias)) {
+          this.host.showToast(`别名 "${alias}" 已存在，请更换`, 'error');
+          return;
+        }
+      } catch {
+        // 获取列表失败不阻塞保存，由主进程处理重复
+      }
     }
 
     const result = await window.electronAPI.saveLlmProvider(alias, { provider, model, baseUrl, apiKey });
@@ -1116,9 +1141,68 @@ export class SettingsPanelManager {
   }
 
   /**
+   * 测试 Provider 连接——从表单读取配置，调用 testLlmConfig 验证
+   *
+   * 复用已有 LLM_CONFIG_TEST 通道，无需新增 IPC。
+   * 测试时禁用按钮防止重复点击，完成后恢复。
+   */
+  private async testProviderConnection(): Promise<void> {
+    const provider = this.providerProviderInput?.value.trim();
+    const model = this.providerModelInput?.value.trim();
+    const baseUrl = this.providerBaseUrlInput?.value.trim();
+    const apiKey = this.providerApiKeyInput?.value.trim();
+
+    if (!provider || !model || !apiKey) {
+      this.host.showToast('请填写提供商、模型和 API Key', 'error');
+      return;
+    }
+
+    const btn = this.btnProviderTest;
+    if (!btn) return;
+
+    // 禁用按钮防止重复点击
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = '测试中...';
+
+    try {
+      const result = await window.electronAPI.testLlmConfig({
+        provider,
+        model,
+        baseUrl: baseUrl || '',
+        apiKey,
+      });
+
+      if (result.success) {
+        this.host.showToast('连接成功', 'success');
+      } else {
+        this.host.showToast(result.error ?? '连接失败', 'error');
+      }
+    } catch {
+      this.host.showToast('测试异常，请检查网络', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  /**
    * 删除 Provider
+   *
+   * 前端保护：已隐藏激活 Provider 的删除按钮，此方法作为运行时兜底。
    */
   private async deleteProvider(key: string): Promise<void> {
+    // 运行时兜底：禁止删除当前激活的 Provider
+    try {
+      const data = await window.electronAPI.listLlmProviders();
+      if (data.active === key) {
+        this.host.showToast('不能删除当前激活的 Provider，请先切换到其他 Provider', 'error');
+        return;
+      }
+    } catch {
+      // 获取列表失败不阻塞删除，由主进程处理
+    }
+
     const confirmed = confirm(`确定删除 Provider "${key}"？`);
     if (!confirmed) return;
 
@@ -1158,6 +1242,11 @@ export class SettingsPanelManager {
 
     this.events.addEventListener(this.btnProviderCancel, 'click', () => {
       this.hideProviderForm();
+    });
+
+    // Provider 连接测试：从表单读取当前配置，调用 testLlmConfig 验证
+    this.events.addEventListener(this.btnProviderTest, 'click', async () => {
+      await this.testProviderConnection();
     });
   }
 

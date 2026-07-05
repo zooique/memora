@@ -298,7 +298,7 @@ export function registerMinimalIpcHandlers(
     },
   );
 
-  // 切换激活 Provider
+  // 切换激活 Provider + 即时生效（重新初始化 Agent）
   ipcMain.handle(
     IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE,
     async (_event, key: string) => {
@@ -306,9 +306,37 @@ export function registerMinimalIpcHandlers(
         return { success: false, error: '参数无效' };
       }
       try {
+        // 1. 持久化 active 到 config.json
         await setActiveLlmProvider(key);
+
+        // 2. 中断进行中的对话（避免旧 Provider 流式输出残留）
+        if (state.currentAbortController) {
+          state.currentAbortController.abort();
+          state.currentAbortController = null;
+        }
+
+        // 3. 用新配置重新初始化 Agent（新 Provider 即时生效）
+        const result = await reinitAgent(state.closeSprite);
+        state.currentDataDir = result.dataDir;
+        callbacks.setAppRuntime({
+          agent: result.agent,
+          sprite: result.sprite,
+          sessionStore: result.sessionStore,
+          close: result.close,
+        });
+
+        // 4. Agent 就绪后初始化（注册完整 IPC + 订阅事件 + 通知渲染进程）
+        callbacks.setupAgentReady(result.agent, result.sprite, result.sessionStore, state.currentDataDir);
+
         return { success: true, error: null };
       } catch (err) {
+        state.agentReady = false;
+        callbacks.setAppRuntime(null);
+        state.initErrorDetail = callbacks.classifyInitError(toError(err).message, '切换 Provider 失败');
+        errorHandler.handle(err, {
+          code: ErrorCode.INITIALIZATION_FAILED,
+          context: '切换激活 Provider 并重新初始化 Agent 失败',
+        });
         return { success: false, error: toError(err).message };
       }
     },
