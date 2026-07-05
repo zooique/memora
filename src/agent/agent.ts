@@ -694,7 +694,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       try {
         const turnIndex = `turn-${Date.now()}`;
         const facts = extractUserFacts(input, turnIndex);
-        // FD-22: 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
+        // 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
         const archiveFactsPromise = this.#userProfile.archiveFacts(facts).then((entries) => {
           // 发射 memoryAdded 事件：仅对已确认且写入存储的条目（confirmed=true）
           for (const entry of entries) {
@@ -736,7 +736,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // AutoConfigRefiner（模式 3：Agent 智能总结）
     if (this.autoConfigRefiner) {
       try {
-        // FD-22: 注册到 pendingArchives，确保 close() 时等待后台分析完成，避免写入已关闭的存储
+        // 注册到 pendingArchives，确保 close() 时等待后台分析完成，避免写入已关闭的存储
         const analyzePromise = this.autoConfigRefiner.analyze(input, assistantContent).catch((err) => {
           logger.warn({ err }, 'AutoConfigRefiner 分析失败');
         });
@@ -780,7 +780,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   async switchProject(nameOrPath: string): Promise<AgentContext> {
     this.assertInitialized('switchProject', ['projectManager', 'provider']);
 
-    // FD-21: 对话进行中切换项目会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
+    // 对话进行中切换项目会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换项目', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
@@ -902,7 +902,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── Provider 管理 ────────────────────────────────────
 
   setProvider(provider: LlmProvider): void {
-    // FD-21: 对话进行中切换 Provider 会导致同一 processUserInput 循环内前后两次 LLM 调用命中不同 Provider
+    // 对话进行中切换 Provider 会导致同一 processUserInput 循环内前后两次 LLM 调用命中不同 Provider
     // （模型上下文窗口假设不一致 → 可能导致上下文截断逻辑误判或 tool_call 格式不兼容）
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换 Provider', [
@@ -917,7 +917,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   setBackgroundProvider(provider: LlmProvider | null): void {
-    // FD-21: 与 setProvider 一致，对话进行中禁止切换后台 Provider
+    // 与 setProvider 一致，对话进行中禁止切换后台 Provider
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换后台 Provider', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
@@ -1084,7 +1084,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 仅在宿主项目需要强制刷新组件时使用（如热更新配置后）。
    */
   async rebuildComponents(): Promise<void> {
-    // FD-21: 对话进行中重建组件会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
+    // 对话进行中重建组件会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
     if (this._chatBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再重建组件', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',

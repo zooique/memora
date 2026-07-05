@@ -131,7 +131,7 @@ export async function recall(
   // ── 通道 2：关键词搜索 ──
   const keywords = extractKeywords(query);
   if (keywords.length > 0) {
-    // FD-23: 关键词搜索失败时降级返回已收集的语义结果，与通道 1 降级策略对称
+    // 关键词搜索失败时降级返回已收集的语义结果，与通道 1 降级策略对称
     try {
       // 使用提取后的关键词组合搜索，避免原始 query 中的停用词/噪声影响匹配
       const keywordResults = storage.search(keywords.join(' '), limit * RECALL_LIMIT_MULTIPLIER);

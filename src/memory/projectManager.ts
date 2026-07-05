@@ -272,7 +272,7 @@ export class ProjectManager {
     this.currentProjectPath = projectPath;
     this.currentLockPath = join(memoraDir, '.lock');
 
-    // FD-24: 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
+    // 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
     try {
       // 3) 确保项目目录 + 加载两层资源
       await mkdir(memoraDir, { recursive: true });
@@ -292,7 +292,7 @@ export class ProjectManager {
         configDir,
       );
     } catch (err) {
-      // FD-24: 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
+      // 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
       await this.releaseLock().catch((releaseErr: unknown) => {
         logger.warn({ err: releaseErr }, '释放项目锁失败');
       });

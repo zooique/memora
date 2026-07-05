@@ -308,7 +308,7 @@ keywords: 通用
       const personaManager = new PersonaManager(testDir);
       await personaManager.load('默认助手');
 
-      // IX-03 统一错误策略：找不到角色时抛错，与 switchProject 一致
+      // 统一错误策略：找不到角色时抛错，与 switchProject 一致
       expect(() => personaManager.switchPersona('nonexistent')).toThrow('角色切换失败');
       expect(personaManager.getActive()?.name).toBe('默认助手');
     });

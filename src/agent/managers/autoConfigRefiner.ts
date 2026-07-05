@@ -91,7 +91,7 @@ export class AutoConfigRefiner {
         'AutoConfigRefiner: 提取到配置建议',
       );
 
-      // FD-25: 单条建议回调失败时记日志并继续处理下一条，避免一条失败导致后续全部丢失
+      // 单条建议回调失败时记日志并继续处理下一条，避免一条失败导致后续全部丢失
       try {
         this.onConfigSuggestion(suggestion);
       } catch (err) {

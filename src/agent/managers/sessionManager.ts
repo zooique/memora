@@ -69,7 +69,7 @@ export class SessionManager {
    * Agent 层不引入无意义的 async 包装。返回新会话名。
    */
   switchSession(newSession: string): string {
-    // FD-31: 对话进行中切换会话会导致消息持久化分散
+    // 对话进行中切换会话会导致消息持久化分散
     if (this.isChatBusy()) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换会话', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
@@ -150,7 +150,7 @@ export class SessionManager {
    * 宿主项目需注入 ISessionStore 实现，否则返回 0。
    */
   async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
-    // FD-21: 对话进行中恢复会话会导致 loop 工作记忆被替换
+    // 对话进行中恢复会话会导致 loop 工作记忆被替换
     if (this.isChatBusy()) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再恢复会话', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
@@ -203,7 +203,7 @@ export class SessionManager {
    * 恢复指定会话的对话
    */
   async restoreSession(date: string, session: string): Promise<number> {
-    // FD-21: 对话进行中恢复会话会导致 loop 工作记忆被替换
+    // 对话进行中恢复会话会导致 loop 工作记忆被替换
     if (this.isChatBusy()) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再恢复会话', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
@@ -227,7 +227,7 @@ export class SessionManager {
    * 加载后，下一次 chat() 的消息会写入被加载的会话。
    */
   async loadSessionMessages(date: string, session: string): Promise<SessionMessage[]> {
-    // FD-34: 对话进行中加载会话会切换 currentDate/currentSession，导致消息持久化分散
+    // 对话进行中加载会话会切换 currentDate/currentSession，导致消息持久化分散
     if (this.isChatBusy()) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再加载会话', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',

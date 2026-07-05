@@ -413,7 +413,7 @@ const agent = new Agent({
 
 以下方法直接挂在 Agent 上：
 
-> **switch* 返回值约定**（FD-27）：各 switch 操作返回与其操作语义最匹配的值 ——
+> **switch* 返回值约定**：各 switch 操作返回与其操作语义最匹配的值 ——
 > `switchSession` 返回新会话名（string）、`switchProject` 返回完整项目上下文（AgentContext，含 bootstrap 记忆等）、
 > `personaManager.switchPersona` 返回 system prompt 文本（string）。这是设计性差异，非 bug。
 
