@@ -57,7 +57,7 @@ date: 2026-07-03
 | 层          | 职责                                               | 不该做什么                                      |
 | ----------- | -------------------------------------------------- | ----------------------------------------------- |
 | `cli/`（宿主） | 解析命令、REPL 循环、用户交互                      | 直接调数据库                                    |
-| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager（10 个：Archive/AutoConfig/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/Session/SessionArchiver/UserFact/WorkProjection）+ 对话快照 + 作品投影 + 用户事实提取 | 直接调 LLM HTTP（通过 provider 接口）           |
+| `agent/`    | Agent 门面 + AgentLoop + 上下文窗口管理（ContextManager）+ 工具执行 + 内置工具处理器（BuiltinToolHandlers）+ 专职 Manager（9 个：Archive/AutoConfig/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/Session/SessionArchiver/WorkProjection）+ 对话快照 + 作品投影 + 用户事实提取（userFactExtractor，纯函数模块，位于 agent/ 根级） | 直接调 LLM HTTP（通过 provider 接口）           |
 | `memory/`   | 记忆存储、索引、召回（语义 + 关键词双通道，向量搜索可选）+ 关系图谱侧车（IMemoryRelationStore 接口，独立于 IMemoryStorage） | 调 LLM（通过 EmbeddingService 接口注入除外）    |
 | `persona/`  | 角色管理、关键词匹配、system prompt 组装、写入 SQLite 索引 | 直接调 LLM                                      |
 | `skill/`    | 技能文件扫描、关键词匹配、prompt 注入、写入 SQLite 索引 | 直接调 LLM、操作记忆索引                        |
@@ -116,7 +116,8 @@ agent/
 ├── messageHistory.ts     # 消息持久化 + 会话归档
 ├── tracer.ts             # 可观测性（ITracer/ISpan 接口 + NoopTracer）
 ├── types.ts              # Agent 类型定义
-├── managers/             # 专职 Manager 子目录（10 个）
+├── userFactExtractor.ts  # 用户事实提取器（正则规则，纯函数模块，从 userProfile 迁入）
+├── managers/             # 专职 Manager 子目录（9 个）
 │   ├── archiveCoordinator.ts # 归档协调器（archiveMode 三态控制 + 归档流程编排）
 │   ├── autoConfigRefiner.ts  # 智能配置提炼器（模式 3：Agent 智能总结）
 │   ├── configManager.ts      # 配置管理器（规则/技能注入 + 配置建议）
@@ -126,7 +127,6 @@ agent/
 │   ├── memoryInspector.ts    # 记忆查看器（快照 + 搜索 + 统计 + 关联推荐）
 │   ├── sessionArchiver.ts    # 会话归档器（content 类记忆归档，会话级摘要，区别于 InsightExtractor 的洞察提取）
 │   ├── sessionManager.ts     # 会话管理器（fork/switch/restore）
-│   ├── userFactExtractor.ts  # 用户事实提取器（正则规则，从 userProfile 迁入）
 │   └── workProjection.ts     # 作品投影管理器
 └── __tests__/            # 单元测试
 

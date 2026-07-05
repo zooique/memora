@@ -27,7 +27,7 @@ date: 2026-07-01
 
 | 位置 | 用途 |
 |------|------|
-| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 24 个 ADR（内核 15 + 精灵 9） |
+| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 25 个 ADR（内核 15 + 精灵 10） |
 | `hosts/memora-sprite/.trae/rules/` | **宿主实现文档**：仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（描述 src/ 目录树） |
 | `memora/tasks/` | **内核任务**：内核健康度快照 + 待完成/已完成 |
 | `hosts/memora-sprite/tasks/` | **宿主任务**：宿主健康度快照 + 待完成/已完成 + 方案文档 |
