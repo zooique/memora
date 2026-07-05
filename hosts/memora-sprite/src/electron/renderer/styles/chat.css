@@ -298,7 +298,7 @@
 /* 用户在场：绿色脉冲点 */
 .presence-dot.present {
   background: var(--green);
-  box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4);
+  box-shadow: 0 0 0 0 var(--presence-pulse);
   animation: presencePulse 2s infinite;
 }
 
@@ -318,13 +318,13 @@
 /* 在场状态脉冲动画 */
 @keyframes presencePulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(52, 199, 89, 0.4);
+    box-shadow: 0 0 0 0 var(--presence-pulse);
   }
   70% {
-    box-shadow: 0 0 0 6px rgba(52, 199, 89, 0);
+    box-shadow: 0 0 0 6px transparent;
   }
   100% {
-    box-shadow: 0 0 0 0 rgba(52, 199, 89, 0);
+    box-shadow: 0 0 0 0 transparent;
   }
 }
 

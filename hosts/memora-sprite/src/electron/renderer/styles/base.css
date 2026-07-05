@@ -42,6 +42,7 @@
 
   /* 语义色 */
   --green:       #34c759;
+  --presence-pulse: rgba(52, 199, 89, 0.4); /* 在场状态脉冲动画色（浅色主题） */
   --yellow:      #ff9f0a;
   --pink:        #ad1457;  /* 浅色主题下使用深玫红色，保证 source-guardrail 标签文字对比度（WCAG AA） */
   --red:         #ff3b30;
@@ -232,6 +233,7 @@
 
   /* 语义色 */
   --green:       #a6e3a1;
+  --presence-pulse: rgba(166, 227, 161, 0.4); /* 在场状态脉冲动画色（深色主题） */
   --yellow:      #f9e2af;
   --pink:        #f5c2e7;
   --red:         #f38ba8;
