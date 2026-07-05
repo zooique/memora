@@ -103,6 +103,22 @@ export class SettingsPanelManager {
   /** 召回记忆快捷键（捕获式输入） */
   private cfgShortcutRecallMemory: HTMLInputElement | null;
 
+  // ─── 缓存 DOM 元素 - radio 按钮组（loadConfigToForm / collectConfigFromForm 中重复查询） ─
+  /** 项目模式单选按钮组（NodeList 静态快照，构造时获取一次） */
+  private projectModeRadios: NodeListOf<HTMLInputElement>;
+  /** 角色匹配模式单选按钮组 */
+  private personaModeRadios: NodeListOf<HTMLInputElement>;
+  /** 主题模式单选按钮组 */
+  private themeModeRadios: NodeListOf<HTMLInputElement>;
+  /** 归档模式单选按钮组 */
+  private archiveModeRadios: NodeListOf<HTMLInputElement>;
+
+  // ─── 缓存 DOM 元素 - 重复查询的独立元素 ─
+  /** Agent 状态指示器元素（updateAgentStatusIndicator 中查询） */
+  private agentStatusEl: HTMLElement | null;
+  /** LLM 连接测试结果元素（showLlmTestResult / clearLlmTestResult 中查询） */
+  private llmTestResultEl: HTMLElement | null;
+
   // ─── 状态 ────────────────────────────────────────────────
   /** 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
@@ -174,6 +190,16 @@ export class SettingsPanelManager {
     this.cfgShortcutToggleWindow = getOptionalElement('cfg-shortcut-toggle-window', 'input');
     this.cfgShortcutQuickRecord = getOptionalElement('cfg-shortcut-quick-record', 'input');
     this.cfgShortcutRecallMemory = getOptionalElement('cfg-shortcut-recall-memory', 'input');
+
+    // 缓存 radio 按钮组（loadConfigToForm / collectConfigFromForm / initListeners 中重复查询）
+    this.projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
+    this.personaModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="persona-mode"]');
+    this.themeModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
+    this.archiveModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="archive-mode"]');
+
+    // 缓存重复查询的独立元素
+    this.agentStatusEl = document.getElementById('agent-status-indicator');
+    this.llmTestResultEl = document.getElementById('llm-test-result');
 
     // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 console.error 报告
     // 避免静默降级导致用户配置静默失效（保存时表单值为 undefined，主进程收到空配置）
@@ -414,8 +440,7 @@ export class SettingsPanelManager {
     }
 
     // 项目模式单选按钮：切换时启用/禁用专注项目下拉框
-    const projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
-    projectModeRadios.forEach((radio) => {
+    this.projectModeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
         if (this.cfgFocusProject) {
           this.cfgFocusProject.disabled = radio.value !== 'focus';
@@ -424,8 +449,7 @@ export class SettingsPanelManager {
     });
 
     // 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
-    const personaModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="persona-mode"]');
-    personaModeRadios.forEach((radio) => {
+    this.personaModeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
         const selectedMode = radio.value;
         this.currentPersonaMode = selectedMode;
@@ -435,8 +459,7 @@ export class SettingsPanelManager {
     });
 
     // ADR-SP-008 主题切换单选按钮：切换时立即应用主题（无需等待保存按钮）
-    const themeRadios = document.querySelectorAll<HTMLInputElement>('input[name="theme-mode"]');
-    themeRadios.forEach((radio) => {
+    this.themeModeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
         if (radio.checked) {
           // 支持 'auto' 跟随系统主题
@@ -449,8 +472,7 @@ export class SettingsPanelManager {
     });
 
     // ADR-015 归档模式切换：切换时即时应用（与主题一样即时生效，无需等保存按钮）
-    const archiveModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="archive-mode"]');
-    archiveModeRadios.forEach((radio) => {
+    this.archiveModeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
         if (radio.checked) {
           const value = radio.value;
@@ -793,7 +815,7 @@ export class SettingsPanelManager {
    * @param message 可选的状态描述文本（未提供时使用默认文案）
    */
   updateAgentStatusIndicator(status: 'ready' | 'error' | 'unknown', message?: string): void {
-    const indicator = document.getElementById('agent-status-indicator');
+    const indicator = this.agentStatusEl;
     if (!indicator) return;
 
     // 更新状态类名（移除旧状态类，添加新状态类）
@@ -933,22 +955,21 @@ export class SettingsPanelManager {
     if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
 
     // 角色匹配模式（单选按钮）
-    const modeRadio = document.querySelector<HTMLInputElement>(
-      `input[name="persona-mode"][value="${this.currentPersonaMode}"]`,
+    const modeRadio = Array.from(this.personaModeRadios).find(
+      (r) => r.value === this.currentPersonaMode,
     );
     if (modeRadio) {
       modeRadio.checked = true;
     }
 
     // ADR-015 同步归档模式 radio（即时生效字段，仅回显选中状态）
-    const archiveRadios = document.querySelectorAll<HTMLInputElement>('input[name="archive-mode"]');
-    archiveRadios.forEach((radio) => {
+    this.archiveModeRadios.forEach((radio) => {
       radio.checked = radio.value === config.archiveMode;
     });
 
     // 项目模式（单选按钮 + 专注项目下拉框）
-    const projectModeRadio = document.querySelector<HTMLInputElement>(
-      `input[name="project-mode"][value="${config.projectMode}"]`,
+    const projectModeRadio = Array.from(this.projectModeRadios).find(
+      (r) => r.value === config.projectMode,
     );
     if (projectModeRadio) {
       projectModeRadio.checked = true;
@@ -993,8 +1014,8 @@ export class SettingsPanelManager {
   /** 设置角色匹配模式（供 renderer.ts 调用） */
   setPersonaMode(mode: string): void {
     this.currentPersonaMode = mode;
-    const radio = document.querySelector<HTMLInputElement>(
-      `input[name="persona-mode"][value="${mode}"]`,
+    const radio = Array.from(this.personaModeRadios).find(
+      (r) => r.value === mode,
     );
     if (radio) {
       radio.checked = true;
@@ -1003,25 +1024,19 @@ export class SettingsPanelManager {
 
   /** 收集表单中的配置 */
   collectConfigFromForm(): SpriteConfigForm {
-    const modeRadio = document.querySelector<HTMLInputElement>(
-      'input[name="persona-mode"]:checked',
-    );
+    const modeRadio = Array.from(this.personaModeRadios).find((r) => r.checked);
     this.currentPersonaMode = modeRadio?.value ?? 'auto';
 
     // 收集项目模式
-    const projectModeRadio = document.querySelector<HTMLInputElement>(
-      'input[name="project-mode"]:checked',
-    );
+    const projectModeRadio = Array.from(this.projectModeRadios).find((r) => r.checked);
     const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
 
     // 收集主题（主题即时生效，onConfigSave 不保存 theme，此处仅满足类型契约）
-    const themeRadio = document.querySelector<HTMLInputElement>(
-      'input[name="theme-mode"]:checked',
-    );
+    const themeRadio = Array.from(this.themeModeRadios).find((r) => r.checked);
     const theme = themeRadio?.value === 'dark' ? 'dark' : 'light';
 
     // ADR-015 收集归档模式（即时生效，此处仅满足类型契约，实际持久化在 onArchiveModeChange）
-    const archiveModeChecked = document.querySelector<HTMLInputElement>('input[name="archive-mode"]:checked');
+    const archiveModeChecked = Array.from(this.archiveModeRadios).find((r) => r.checked);
     const archiveMode = (archiveModeChecked?.value as 'full' | 'insights-only' | 'manual') ?? 'full';
 
     return {
@@ -1064,7 +1079,7 @@ export class SettingsPanelManager {
    * @param elapsedMs 测试耗时（毫秒），用于展示响应速度
    */
   showLlmTestResult(result: { success: boolean; error: string | null }, elapsedMs?: number): void {
-    const resultEl = document.getElementById('llm-test-result');
+    const resultEl = this.llmTestResultEl;
     if (!resultEl) return;
 
     if (result.success) {
@@ -1085,7 +1100,7 @@ export class SettingsPanelManager {
    * 用户修改任一 LLM 字段时调用，避免旧测试结果误导用户认为当前配置已验证。
    */
   clearLlmTestResult(): void {
-    const resultEl = document.getElementById('llm-test-result');
+    const resultEl = this.llmTestResultEl;
     if (resultEl) {
       resultEl.textContent = '';
       resultEl.style.color = '';

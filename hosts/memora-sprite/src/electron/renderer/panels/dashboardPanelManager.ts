@@ -215,6 +215,34 @@ export class DashboardPanelManager {
   /** 感知渲染器（组合模式：委托 perception 子区域渲染 + 叙事合成） */
   private perception = new PerceptionRenderer();
 
+  // ─── 缓存 DOM 元素（渲染方法中重复查询，构造时获取一次） ─
+  /** 感知面板 - 待处理事件计数元素 */
+  private perceptionPendingCountEl: HTMLElement | null;
+  /** 感知面板 - 推荐列表容器 */
+  private recommendationListEl: HTMLElement | null;
+  /** Agent 指标 - LLM 调用次数元素 */
+  private perceptionLlmCallsEl: HTMLElement | null;
+  /** Agent 指标 - Token 消耗元素 */
+  private perceptionTokensEl: HTMLElement | null;
+  /** 健康度 - 列表容器 */
+  private sourceHealthListEl: HTMLElement | null;
+  /** 健康度 - 区域容器 */
+  private sourceHealthSectionEl: HTMLElement | null;
+  /** 健康度 - 总体评分元素 */
+  private sourceHealthOverallEl: HTMLElement | null;
+  /** 技能 - 计数元素 */
+  private perceptionSkillCountEl: HTMLElement | null;
+  /** 技能 - 列表容器 */
+  private skillsListEl: HTMLElement | null;
+  /** 技能 - 区域容器 */
+  private skillsSectionEl: HTMLElement | null;
+  /** 技能 - 空状态元素 */
+  private skillsEmptyEl: HTMLElement | null;
+  /** 里程碑 - 展示区域 */
+  private milestonesDisplayEl: HTMLElement | null;
+  /** 里程碑 - 列表容器 */
+  private milestonesListEl: HTMLElement | null;
+
   // ─── 回调（由 Controller 注册，用于重试按钮触发数据重新加载） ──
   /** 重试加载记忆列表回调 */
   private reloadMemoryListCallback: (() => void) | null = null;
@@ -222,7 +250,22 @@ export class DashboardPanelManager {
   constructor(
     /** 事件监听器跟踪器（统一管理重试按钮事件，避免内存泄漏） */
     private events: EventTracker,
-  ) {}
+  ) {
+    // 缓存渲染方法中重复查询的 DOM 元素（仪表盘 HTML 模板在页面加载时已存在）
+    this.perceptionPendingCountEl = document.getElementById('perception-pending-count');
+    this.recommendationListEl = document.getElementById('recommendation-list');
+    this.perceptionLlmCallsEl = document.getElementById('perception-llm-calls');
+    this.perceptionTokensEl = document.getElementById('perception-tokens');
+    this.sourceHealthListEl = document.getElementById('source-health-list');
+    this.sourceHealthSectionEl = document.getElementById('source-health-section');
+    this.sourceHealthOverallEl = document.getElementById('source-health-overall');
+    this.perceptionSkillCountEl = document.getElementById('perception-skill-count');
+    this.skillsListEl = document.getElementById('skills-list');
+    this.skillsSectionEl = document.getElementById('skills-section');
+    this.skillsEmptyEl = document.getElementById('skills-empty');
+    this.milestonesDisplayEl = document.getElementById('milestones-display');
+    this.milestonesListEl = document.getElementById('milestones-list');
+  }
 
   // ─── 资源清理 ──────────────────────────────────────────
 
@@ -279,7 +322,7 @@ export class DashboardPanelManager {
    */
   renderDashboardStats(data: DashboardViewModel): void {
     // ─── 累积事件数 / 阈值（高亮状态：接近阈值黄色，达到阈值粉色） ──
-    const pendingEl = document.getElementById('perception-pending-count');
+    const pendingEl = this.perceptionPendingCountEl;
     if (pendingEl) {
       pendingEl.textContent = `${data.pendingNotices}/${data.proactiveThreshold}`;
       pendingEl.classList.remove('near-threshold', 'at-threshold');
@@ -301,7 +344,7 @@ export class DashboardPanelManager {
     }
 
     // ─── 渲染推荐记忆列表（合并到学习与回顾节） ──────────
-    const recList = document.getElementById('recommendation-list');
+    const recList = this.recommendationListEl;
     const learningSection = document.getElementById('learning-progress');
     if (recList && learningSection) {
       if (data.suggestions && data.suggestions.length > 0) {
@@ -356,13 +399,13 @@ export class DashboardPanelManager {
     if (!metrics) return;
 
     // ─── 感知面板 LLM 调用次数 ──────────────────────────
-    const llmCallsEl = document.getElementById('perception-llm-calls');
+    const llmCallsEl = this.perceptionLlmCallsEl;
     if (llmCallsEl) {
       llmCallsEl.textContent = String(metrics.llm.callCount);
     }
 
     // ─── 感知面板 Token 数（输入 + 输出，超过 1000 显示 k 格式） ──
-    const tokensEl = document.getElementById('perception-tokens');
+    const tokensEl = this.perceptionTokensEl;
     if (tokensEl) {
       const totalTokens = metrics.llm.totalInputTokens + metrics.llm.totalOutputTokens;
       tokensEl.textContent = formatTokenCount(totalTokens);
@@ -411,9 +454,9 @@ export class DashboardPanelManager {
    * @param sourceHealth 记忆源健康诊断数据（null 表示不可用）
    */
   renderSourceHealth(sourceHealth: SourceHealth | null): void {
-    const listEl = document.getElementById('source-health-list');
-    const sectionEl = document.getElementById('source-health-section');
-    const overallEl = document.getElementById('source-health-overall');
+    const listEl = this.sourceHealthListEl;
+    const sectionEl = this.sourceHealthSectionEl;
+    const overallEl = this.sourceHealthOverallEl;
     if (!listEl || !sectionEl) return;
 
     // 无数据时隐藏整个 section（内核降级返回 null 时不展示）
@@ -504,14 +547,14 @@ export class DashboardPanelManager {
     }>,
   ): void {
     // 更新仪表盘技能计数（感知面板运行指标区）
-    const countEl = document.getElementById('perception-skill-count');
+    const countEl = this.perceptionSkillCountEl;
     if (countEl) {
       countEl.textContent = String(skills.length);
     }
 
-    const listEl = document.getElementById('skills-list');
-    const sectionEl = document.getElementById('skills-section');
-    const emptyEl = document.getElementById('skills-empty');
+    const listEl = this.skillsListEl;
+    const sectionEl = this.skillsSectionEl;
+    const emptyEl = this.skillsEmptyEl;
     if (!listEl || !sectionEl) return;
 
     if (!skills || skills.length === 0) {
@@ -576,8 +619,8 @@ export class DashboardPanelManager {
    * @param data 仪表盘数据
    */
   renderMilestones(data: { total: number; bySource: Record<string, number> }): void {
-    const milestonesDisplay = document.getElementById('milestones-display');
-    const milestonesList = document.getElementById('milestones-list');
+    const milestonesDisplay = this.milestonesDisplayEl;
+    const milestonesList = this.milestonesListEl;
     if (!milestonesDisplay || !milestonesList) return;
 
     // 收集已达成的里程碑
