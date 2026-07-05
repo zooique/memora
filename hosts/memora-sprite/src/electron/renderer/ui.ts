@@ -59,9 +59,9 @@ import { ClipboardManager } from './panels/clipboardManager.js';
 import { DateNavManager } from './panels/dateNavManager.js';
 // 技能拖入安装拆分为独立 Manager
 import { SkillDropManager } from './panels/skillDropManager.js';
-// 感知面板控制器拆分（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击）
-import { PerceptionPanelController } from './panels/perceptionPanelController.js';
-import type { PerceptionPanelHost } from './panels/perceptionPanelController.js';
+// 感知面板管理器拆分（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击）
+import { PerceptionPanelManager } from './panels/perceptionPanelManager.js';
+import type { PerceptionPanelHost } from './panels/perceptionPanelManager.js';
 // 输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
@@ -228,8 +228,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
    */
   private skillDropManager: SkillDropManager;
-  /** 感知面板控制器（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击） */
-  private perceptionPanelController: PerceptionPanelController;
+  /** 感知面板管理器（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击） */
+  private perceptionPanelManager: PerceptionPanelManager;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -340,8 +340,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager = new DateNavManager();
     // 技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
-    // 感知面板控制器（依赖注入 Host 接口，init 在事件绑定后调用）
-    this.perceptionPanelController = new PerceptionPanelController(this);
+    // 感知面板管理器（依赖注入 Host 接口，init 在事件绑定后调用）
+    this.perceptionPanelManager = new PerceptionPanelManager(this);
     // 输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
     this.inputAreaManager = new InputAreaManager(
       this.inputEl,
@@ -361,8 +361,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.panelErrorBannerManager.init();
     // 日期导航事件初始化（委托到 DateNavManager）
     this.dateNavManager.init();
-    // 感知面板事件初始化（委托到 PerceptionPanelController）
-    this.perceptionPanelController.init();
+    // 感知面板事件初始化（委托到 PerceptionPanelManager）
+    this.perceptionPanelManager.init();
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
@@ -381,7 +381,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
 
     // 感知面板相关事件（推荐记忆点击 + 状态条 + 关闭按钮 + 三块折叠区）
-    // 已委托到 PerceptionPanelController.init()
+    // 已委托到 PerceptionPanelManager.init()
 
     // 导航事件（侧边栏 .nav-btn 按钮，复用 switchPanel 逻辑）
     document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
@@ -453,7 +453,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       // 优先关闭感知面板（感知面板打开时 Escape 关闭面板）
       const panel = document.getElementById('perception-panel');
       if (panel?.classList.contains('visible')) {
-        this.perceptionPanelController.close();
+        this.perceptionPanelManager.close();
         e.preventDefault();
         return;
       }
@@ -541,8 +541,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager.cleanup();
     // 清理技能拖入安装管理器的回调引用
     this.skillDropManager.cleanup();
-    // 清理感知面板控制器的事件监听器
-    this.perceptionPanelController.cleanup();
+    // 清理感知面板管理器的事件监听器
+    this.perceptionPanelManager.cleanup();
     // 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
   }
@@ -847,7 +847,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     }
   }
 
-  // togglePerceptionPanel / closePerceptionPanel 已迁移至 PerceptionPanelController
+  // togglePerceptionPanel / closePerceptionPanel 已迁移至 PerceptionPanelManager
 
   private handleMinimize(): void {
     window.electronAPI.windowMinimize();

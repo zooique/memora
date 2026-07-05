@@ -1,5 +1,5 @@
 /**
- * 跨进程输入验证工具
+ * 跨进程输入验证工具（纯函数，无 Node 依赖）
  *
  * 职责：为 IPC 处理器和 Web HTTP 路由提供统一的输入校验，
  * 防止路径遍历、注入等安全风险。
@@ -7,14 +7,16 @@
  * 设计原则：白名单优先，拒绝一切含路径分隔符或特殊字符的输入。
  *
  * 架构位置：
- *   - 本模块位于 shared/ 层，是输入校验的真理源
- *   - electron/ipc/inputValidation.ts 重新导出本模块（向后兼容现有 IPC 消费者）
+ *   - 本模块位于 shared/ 层，是输入校验的真理源（纯函数，无 Node 依赖）
+ *   - electron/ipc/inputValidation.ts 重新导出本模块，并额外实现 isPathAllowed（依赖 node:path）
  *   - web/routes/* 直接从本模块导入（避免重复定义导致行为不一致）
  *
  * 安全约束：Web 层和 IPC 层必须共用本模块的白名单实现，行为完全一致，
  * 否则宽松层会成为路径遍历绕过的入口。
+ *
+ * 注意：isPathAllowed 因依赖 node:path，已迁移到 electron/ipc/inputValidation.ts，
+ * 不在本模块中实现（保持 shared/ 无 Node 依赖的架构约束）。
  */
-import path from 'node:path';
 
 /** 会话名/配置名白名单：仅允许字母、数字、连字符、下划线 */
 const NAME_PATTERN = /^[\w-]+$/;
@@ -146,29 +148,6 @@ export function isValidFilePath(filePath: string): boolean {
     return false;
   }
   return true;
-}
-
-/**
- * 验证文件路径是否在允许的目录白名单内
- *
- * 防止路径遍历攻击：解析路径后检查是否以某个允许的目录为前缀。
- *
- * @param filePath 待验证的文件路径
- * @param allowedDirs 允许的目录白名单（绝对路径）
- * @returns 验证通过返回 true，否则 false
- */
-export function isPathAllowed(filePath: string, allowedDirs: string[]): boolean {
-  if (!filePath || typeof filePath !== 'string') {
-    return false;
-  }
-  // 解析为绝对路径，消除 ../ 和 ./ 等相对路径
-  const resolved = path.resolve(filePath);
-  return allowedDirs.some((dir) => {
-    const resolvedDir = path.resolve(dir);
-    // 确保路径在允许目录内（使用 path.relative 防止前缀匹配绕过）
-    const relative = path.relative(resolvedDir, resolved);
-    return !relative.startsWith('..') && !path.isAbsolute(relative);
-  });
 }
 
 /** 关系类型白名单：ADR-014 定义的 6 种语义关系 */

@@ -1,5 +1,5 @@
 /**
- * 感知面板控制器
+ * 感知面板管理器
  *
  * 从 UIManager 拆分，统一管理"感知面板"的 UI 联动。
  *
@@ -43,13 +43,13 @@ export interface PerceptionPanelHost {
 }
 
 /**
- * 感知面板控制器类
+ * 感知面板管理器类
  *
  * 职责：感知面板展开/收起 + 感知快照拉取 + 三块折叠区域 + 推荐记忆点击
  * 依赖：EventTracker（事件监听器管理）+ PerceptionPanelHost（回调 UIManager）
  * 生命周期：init() 绑定事件 → cleanup() 清理事件
  */
-export class PerceptionPanelController {
+export class PerceptionPanelManager {
   /** 事件监听器统一管理（自包含，不依赖 UIManager.events） */
   private events = new EventTracker();
 

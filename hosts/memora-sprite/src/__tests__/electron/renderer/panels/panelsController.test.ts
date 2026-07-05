@@ -2,7 +2,7 @@
  * 面板控制器组合测试（P1）
  *
  * 覆盖目标：
- *   - PerceptionPanelController（218 行/0 测试）：toggle/close + 6 个 init 子绑定 + cleanup
+ *   - PerceptionPanelManager（218 行/0 测试）：toggle/close + 6 个 init 子绑定 + cleanup
  *   - InputAreaManager（214 行/0 测试）：键盘事件 + 自适应高度 + ResizeObserver + getValue/setValue/clearInput
  *
  * Mock 策略：
@@ -14,8 +14,8 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { PerceptionPanelController } from '../../../../electron/renderer/panels/perceptionPanelController.js';
-import type { PerceptionPanelHost } from '../../../../electron/renderer/panels/perceptionPanelController.js';
+import { PerceptionPanelManager } from '../../../../electron/renderer/panels/perceptionPanelManager.js';
+import type { PerceptionPanelHost } from '../../../../electron/renderer/panels/perceptionPanelManager.js';
 import { InputAreaManager } from '../../../../electron/renderer/panels/inputAreaManager.js';
 import type { InputAreaHost } from '../../../../electron/renderer/panels/inputAreaManager.js';
 import { EventTracker } from '../../../../electron/renderer/helpers/eventTracker.js';
@@ -28,7 +28,7 @@ class MockResizeObserver {
 }
 globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
-// ─── Mock window.electronAPI（PerceptionPanelController.toggle 拉取快照） ──
+// ─── Mock window.electronAPI（PerceptionPanelManager.toggle 拉取快照） ──
 const mockGetPerceptionSnapshot = vi.fn();
 vi.stubGlobal('electronAPI', {
   getPerceptionSnapshot: mockGetPerceptionSnapshot,
@@ -36,7 +36,7 @@ vi.stubGlobal('electronAPI', {
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
-/** 设置 PerceptionPanelController 所需的完整 DOM */
+/** 设置 PerceptionPanelManager 所需的完整 DOM */
 function setupPerceptionDOM(): void {
   document.body.innerHTML = `
     <div id="sprite-status-bar" tabindex="0">状态条</div>
@@ -113,17 +113,17 @@ function createMockInputHost(streaming = false): InputAreaHost & {
   };
 }
 
-// ─── PerceptionPanelController 测试 ─────────────────────
+// ─── PerceptionPanelManager 测试 ─────────────────────
 
-describe('PerceptionPanelController', () => {
-  let controller: PerceptionPanelController;
+describe('PerceptionPanelManager', () => {
+  let controller: PerceptionPanelManager;
   let host: ReturnType<typeof createMockPerceptionHost>;
 
   beforeEach(() => {
     vi.useFakeTimers();
     setupPerceptionDOM();
     host = createMockPerceptionHost();
-    controller = new PerceptionPanelController(host);
+    controller = new PerceptionPanelManager(host);
     mockGetPerceptionSnapshot.mockReset();
   });
 
