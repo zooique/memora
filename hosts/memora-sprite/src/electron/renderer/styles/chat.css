@@ -648,6 +648,11 @@
   gap: 2px 10px;
   margin-top: 4px;
   font-size: var(--font-2xs);
+  /* 折叠动画（迭代二）：max-height + opacity 过渡替代 display:none 硬切 */
+  max-height: 300px;  /* 足够容纳 6 行 */
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height var(--transition-slow) ease, opacity var(--transition-base) ease, margin-top var(--transition-base) ease;
 }
 
 .perception-metrics-grid .dash-item {
@@ -672,8 +677,12 @@
   color: var(--subtext);
 }
 
-.perception-metrics-grid.hidden {
-  display: none;
+/* 感知面板指标折叠动画（迭代二）：替代 .hidden 的 display:none 硬切 */
+.perception-metrics-grid.collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-top: 0;
 }
 
 /* 里程碑成就：紧跟在内联指标后 */
@@ -1753,6 +1762,21 @@
   gap: 6px;
 }
 
+/* 输入区更多操作下拉容器（relative 定位锚点） */
+.input-actions-more {
+  position: relative;
+}
+
+/* 输入区更多操作下拉菜单：向上展开，避免被窗口底部截断 */
+/* 复用 .more-menu 的视觉样式（memory.css），仅覆盖定位方向 */
+#input-more-dropdown {
+  position: absolute;
+  bottom: calc(100% + 6px);  /* 向上展开，在按钮上方 */
+  top: auto;                 /* 覆盖 .more-menu 的 top: calc(100% + 4px) */
+  left: 0;
+  min-width: 130px;
+}
+
 /* Token 用量指示器（输入工具栏中部，流式结束后自动更新） */
 .token-usage {
   display: flex;
@@ -1763,6 +1787,7 @@
   cursor: pointer;
   padding: 0 4px;
   flex-shrink: 0;
+  position: relative;  /* 为 ::after tooltip 提供定位锚点 */
 }
 .token-usage:hover {
   color: var(--text-2);
@@ -1780,6 +1805,28 @@
   background: var(--accent);
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+/* Token tooltip：CSS ::after 伪元素，与侧边栏 tooltip 风格一致 */
+.token-usage::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  background: var(--surface1);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  z-index: 50;
+  box-shadow: var(--shadow-sm);
+}
+.token-usage:hover::after {
+  opacity: 1;
 }
 
 /* 工具按钮：圆形，对齐 demo .input-action */
@@ -2622,5 +2669,118 @@
   #scroll-to-bottom-btn {
     animation: none;
   }
+}
+
+/* ─── 启动摘要卡片（迭代一：Welcome Back Digest） ────────────────── */
+/* Agent 就绪后展示在对话区顶部，告知用户精灵当前状态和记忆概况 */
+/* 与消息气泡不同的视觉风格：卡片式，左对齐，无头像，special 底色 */
+
+.startup-summary-card {
+  align-self: center;
+  max-width: 520px;
+  width: 100%;
+  padding: 16px 18px;
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  margin-bottom: 4px;
+  /* 进入动画：淡入 + 轻微上移 */
+  animation: fadeIn var(--transition-slow) ease-out;
+}
+
+/* 卡片标题行：图标 + 欢迎语 */
+.startup-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 卡片标题内的 SVG 图标 */
+.startup-summary-header .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* 数据网格：2 列布局，紧凑展示各维度 */
+.startup-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+}
+
+/* 单个数据项 */
+.startup-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-xs);
+  color: var(--text-2);
+}
+
+/* 数据项图标 */
+.startup-summary-item .icon {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+/* 数据值：强调色 */
+.startup-summary-value {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 健康状态标签：healthy / warning / critical */
+.startup-summary-badge {
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.startup-summary-badge.healthy {
+  background: var(--green-20);
+  color: var(--green);
+}
+
+.startup-summary-badge.warning {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.startup-summary-badge.critical {
+  background: var(--red-20);
+  color: var(--red);
+}
+
+/* 卡片底部操作：关闭按钮 */
+.startup-summary-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.startup-summary-close {
+  padding: 4px 12px;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  background: var(--window-bg);
+  color: var(--text-2);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.startup-summary-close:hover {
+  background: var(--surface2);
+  color: var(--text);
 }
 

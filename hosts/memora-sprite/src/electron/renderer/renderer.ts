@@ -127,6 +127,8 @@ async function bootstrapRenderer(): Promise<void> {
     void memoryController.loadMemoryList();
     void personaController.loadPersonaList();
     void memoryController.loadDashboard();
+    // 启动摘要（迭代一：Welcome Back Digest）
+    void loadStartupSummary();
     // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
     void State.uiManager.switchPanel('chat');
     // 首次配置完成后检查是否需要显示三态引导
@@ -134,6 +136,23 @@ async function bootstrapRenderer(): Promise<void> {
       State.uiManager.showOnboardingDialog();
     }
   };
+
+  /**
+   * 加载启动摘要（迭代一：Welcome Back Digest）
+   *
+   * 调用 Sprite.getStartupSummary() IPC 获取聚合数据，
+   * 在对话区顶部展示摘要卡片。
+   */
+  async function loadStartupSummary(): Promise<void> {
+    try {
+      const summary = await window.electronAPI.getStartupSummary();
+      if (summary) {
+        State.uiManager.showStartupSummary(summary);
+      }
+    } catch {
+      // 摘要加载失败静默降级，不影响主流程
+    }
+  }
 
   // IPC 监听器提前注册——在 controllers 创建 + onAgentReadyCallback 赋值后立即注册，
   // 避免主进程在 DOMContentLoaded 中段（主题读取/回调注册期间）推送的事件丢失。

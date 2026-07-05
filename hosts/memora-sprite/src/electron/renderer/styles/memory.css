@@ -72,7 +72,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  /* A1: 次级表面层,修复白色遮罩 */
+  /* 有意的凹陷效果：var(--surface0) 比 var(--window-bg) 略深，形成记忆列表区域的层级感 */
+  /* 与对话面板平坦的 var(--window-bg) 形成对比，暗示「浏览」与「对话」的不同模式 */
   background: var(--surface0);
 }
 

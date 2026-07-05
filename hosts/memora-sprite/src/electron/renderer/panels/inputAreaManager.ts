@@ -359,6 +359,15 @@ export class InputAreaManager {
       // 进度条：基于上下文窗口大小计算填充比例（截断到 100%）
       const ratio = Math.min(total / InputAreaManager.DEFAULT_CONTEXT_TOKENS, 1);
       this.tokenUsageFill.style.width = `${Math.round(ratio * 100)}%`;
+
+      // 缺口 C：hover 时展示输入/输出 token 分解（CSS ::after tooltip，与侧边栏风格统一）
+      const windowK = formatTokens(InputAreaManager.DEFAULT_CONTEXT_TOKENS);
+      if (this.tokenUsageEl) {
+        this.tokenUsageEl.setAttribute(
+          'data-tooltip',
+          `输入 ${formatTokens(totalInputTokens)} / 输出 ${formatTokens(totalOutputTokens)} / 窗口 ${windowK}`
+        );
+      }
     } catch {
       this.tokenUsageText.textContent = '--';
     }

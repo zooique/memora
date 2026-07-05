@@ -341,11 +341,13 @@
               运行指标
               <svg class="icon narrative-toggle" id="perception-metrics-arrow"><use href="#icon-chevron"/></svg>
             </h4>
-            <div class="perception-metrics-grid hidden" id="perception-metrics-grid">
+            <div class="perception-metrics-grid collapsed" id="perception-metrics-grid">
               <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="perception-llm-calls">0</span></div>
               <div class="dash-item"><span class="dash-label">Token</span><span class="dash-value" id="perception-tokens">0</span></div>
               <div class="dash-item"><span class="dash-label">召回</span><span class="dash-value" id="perception-recall-rate">0%</span></div>
               <div class="dash-item"><span class="dash-label">失败</span><span class="dash-value" id="perception-tool-failures">0</span></div>
+              <div class="dash-item" title="上下文截断次数（超出窗口上限触发截断的累计次数）"><span class="dash-label">截断</span><span class="dash-value" id="perception-truncation-count">—</span></div>
+              <div class="dash-item" title="当前工作记忆消息数"><span class="dash-label">消息</span><span class="dash-value" id="perception-message-count">—</span></div>
               <div class="dash-item" title="Agent 记忆总数"><span class="dash-label">记忆</span><span class="dash-value" id="perception-memory-count">0</span></div>
               <div class="dash-item" title="AI 提取的洞察数"><span class="dash-label">洞察</span><span class="dash-value" id="perception-insight-count">0</span></div>
               <div class="dash-item" title="累积待处理事件/阈值"><span class="dash-label">事件</span><span class="dash-value" id="perception-pending-count">0/0</span></div>
@@ -432,13 +434,21 @@
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
             <div class="input-actions-left">
-              <!-- 快速添加记忆：与记忆面板的"添加"按钮行为一致，打开添加记忆弹窗 -->
-              <button class="input-action" id="btn-add-memory-quick" title="添加记忆（快速）"><svg class="icon"><use href="#icon-plus"/></svg></button>
-              <!-- 会话分叉：从当前对话分叉出独立分支，保留全部历史消息 -->
-              <button class="input-action" id="btn-fork-session" title="分叉会话（从当前位置开新分支）"><svg class="icon"><use href="#icon-branch"/></svg></button>
+              <!-- 更多操作下拉菜单：合并快速添加记忆和分叉会话，减少输入区视觉元素 -->
+              <div class="input-actions-more" id="input-actions-more">
+                <button class="input-action" id="btn-input-more" title="更多操作"><svg class="icon"><use href="#icon-more"/></svg></button>
+                <div class="dropdown more-dropdown hidden" id="input-more-dropdown">
+                  <button class="more-menu-item" data-action="add-memory">
+                    <svg class="icon"><use href="#icon-plus"/></svg> 添加记忆
+                  </button>
+                  <button class="more-menu-item" data-action="fork-session">
+                    <svg class="icon"><use href="#icon-branch"/></svg> 分叉会话
+                  </button>
+                </div>
+              </div>
             </div>
             <!-- Token 用量指示器（消费内核 agent.getMetrics()，流式结束后自动更新） -->
-            <div id="token-usage" class="token-usage" title="当前对话 Token 用量（点击刷新）">
+            <div id="token-usage" class="token-usage">
               <span id="token-usage-text">--</span>
               <div class="token-usage-bar"><div id="token-usage-fill" class="token-usage-fill"></div></div>
             </div>
@@ -764,18 +774,18 @@
           <div class="settings-panel-body">
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
         <div class="settings-tabs">
-          <button class="settings-tab active" data-settings-tab="llm">大模型</button>
-          <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
-          <button class="settings-tab" data-settings-tab="sprite">精灵</button>
-          <button class="settings-tab" data-settings-tab="project">项目</button>
+          <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
+          <button class="settings-tab" data-settings-tab="embedding"><svg class="icon"><use href="#icon-hash"/></svg>嵌入</button>
+          <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
+          <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
           <!-- 用户画像 tab：管理已确认/待确认的画像条目 -->
-          <button class="settings-tab" data-settings-tab="profile">画像</button>
+          <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像</button>
           <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
-          <button class="settings-tab" data-settings-tab="audit">审计</button>
+          <button class="settings-tab" data-settings-tab="audit"><svg class="icon"><use href="#icon-eye"/></svg>审计</button>
           <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
-          <button class="settings-tab" data-settings-tab="skill">技能</button>
+          <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
           <!-- 作品投影 tab：展示精灵对用户工作文件的理解 -->
-          <button class="settings-tab" data-settings-tab="work">作品</button>
+          <button class="settings-tab" data-settings-tab="work"><svg class="icon"><use href="#icon-books"/></svg>作品</button>
         </div>
 
         <!-- 设置面板加载失败状态：默认隐藏，加载失败时显示 -->

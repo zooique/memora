@@ -199,7 +199,7 @@ export class PerceptionPanelManager {
     this.events.addEventListener(metricsToggle, 'click', () => {
       const grid = document.getElementById('perception-metrics-grid');
       const arrow = document.getElementById('perception-metrics-arrow');
-      if (grid) grid.classList.toggle('hidden');
+      if (grid) grid.classList.toggle('collapsed');
       if (arrow) arrow.classList.toggle('expanded');
     });
   }

@@ -391,19 +391,33 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 导航事件、窗口控制按钮、全局键盘快捷键 → 委托到 PanelRouter.init()
     this.panelRouter.init();
 
-    // 快速添加记忆按钮（输入工具栏）：打开记忆添加弹窗
-    const btnAddMemoryQuick = getOptionalElement('btn-add-memory-quick', 'button');
-    if (btnAddMemoryQuick) {
-      this.events.addEventListener(btnAddMemoryQuick, 'click', () => {
-        this.showModal('memory-add-modal');
+    // 输入区更多操作下拉菜单（迭代三：合并快速记忆/分叉为单一入口）
+    const btnInputMore = getOptionalElement('btn-input-more', 'button');
+    const inputMoreDropdown = getOptionalElement('input-more-dropdown', 'div');
+    if (btnInputMore && inputMoreDropdown) {
+      // 切换下拉菜单显示/隐藏
+      this.events.addEventListener(btnInputMore, 'click', (e) => {
+        e.stopPropagation(); // 阻止冒泡到 document，避免立即被关闭
+        inputMoreDropdown.classList.toggle('hidden');
       });
-    }
-
-    // 会话分叉按钮（输入工具栏）：触发 forkSessionCallback
-    const btnForkSession = getOptionalElement('btn-fork-session', 'button');
-    if (btnForkSession) {
-      this.events.addEventListener(btnForkSession, 'click', () => {
-        this.forkSessionCallback?.();
+      // 下拉菜单项点击（事件委托，通过 data-action 区分操作）
+      this.events.addEventListener(inputMoreDropdown, 'click', (e) => {
+        const target = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
+        if (!target) return;
+        const action = target.dataset.action;
+        inputMoreDropdown.classList.add('hidden'); // 操作后关闭菜单
+        if (action === 'add-memory') {
+          this.showModal('memory-add-modal');
+        } else if (action === 'fork-session') {
+          this.forkSessionCallback?.();
+        }
+      });
+      // 点击菜单外部时关闭下拉
+      this.events.addEventListener(document, 'click', (e) => {
+        const container = document.getElementById('input-actions-more');
+        if (container && !container.contains(e.target as Node)) {
+          inputMoreDropdown.classList.add('hidden');
+        }
       });
     }
 
@@ -1619,6 +1633,25 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   shouldShowOnboarding(): boolean {
     return this.onboardingManager.shouldShowOnboarding();
+  }
+
+  // ─── 启动摘要（迭代一：Welcome Back Digest） ──────────
+
+  /**
+   * 展示启动摘要卡片（委托到 ChatPanelManager）
+   *
+   * Agent 就绪后调用，在对话区顶部展示聚合数据卡片。
+   * 卡片可关闭，本次会话仅展示一次。
+   */
+  showStartupSummary(summary: {
+    totalMemories: number;
+    totalInsights: number;
+    skillCount: number;
+    decay: { runCount: number; totalDecayedCount: number } | null;
+    perception: { warmth: number; rapportLevel: string; rapportDescription: string } | null;
+    healthStatus: 'healthy' | 'warning' | 'critical' | null;
+  }): void {
+    this.chatPanelManager.showStartupSummary(summary);
   }
 
   /**

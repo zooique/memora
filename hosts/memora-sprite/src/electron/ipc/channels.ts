@@ -100,6 +100,8 @@ export const IPC_CHANNELS = {
   DASHBOARD_GET: 'dashboard-get',
   /** 获取感知数据快照（情感基调/默契度/对话上下文/模式洞察） */
   PERCEPTION_GET: 'perception-get',
+  /** 获取启动摘要（Welcome Back Digest，迭代一） */
+  STARTUP_SUMMARY_GET: 'startup-summary-get',
 
   // ─── LLM 配置相关 ─────────────────────────────────────
   /** 获取 LLM 配置 */

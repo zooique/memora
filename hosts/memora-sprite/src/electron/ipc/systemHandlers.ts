@@ -139,6 +139,23 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     }
   });
 
+  // ─── 启动摘要（迭代一：Welcome Back Digest） ────────────────
+
+  /**
+   * 获取启动摘要
+   *
+   * 聚合记忆/洞察/感知/衰减/健康数据，用于 Agent 就绪后展示欢迎卡片。
+   * 返回 null 表示 Agent 未就绪，UI 应跳过摘要展示。
+   */
+  ipcMain.handle(IPC_CHANNELS.STARTUP_SUMMARY_GET, () => {
+    try {
+      return ctx.sprite.getStartupSummary();
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取启动摘要失败' });
+      return null;
+    }
+  });
+
   // ─── 主题变更 ────────────────────────────────────────────
 
   /**

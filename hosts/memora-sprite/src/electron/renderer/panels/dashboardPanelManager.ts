@@ -230,6 +230,10 @@ export class DashboardPanelManager {
   private sourceHealthSectionEl: HTMLElement | null;
   /** 健康度 - 总体评分元素 */
   private sourceHealthOverallEl: HTMLElement | null;
+  /** 上下文 - 截断次数元素 */
+  private perceptionTruncationCountEl: HTMLElement | null;
+  /** 上下文 - 当前消息数元素 */
+  private perceptionMessageCountEl: HTMLElement | null;
   /** 技能 - 计数元素 */
   private perceptionSkillCountEl: HTMLElement | null;
   /** 技能 - 列表容器 */
@@ -256,6 +260,8 @@ export class DashboardPanelManager {
     this.recommendationListEl = document.getElementById('recommendation-list');
     this.perceptionLlmCallsEl = document.getElementById('perception-llm-calls');
     this.perceptionTokensEl = document.getElementById('perception-tokens');
+    this.perceptionTruncationCountEl = document.getElementById('perception-truncation-count');
+    this.perceptionMessageCountEl = document.getElementById('perception-message-count');
     this.sourceHealthListEl = document.getElementById('source-health-list');
     this.sourceHealthSectionEl = document.getElementById('source-health-section');
     this.sourceHealthOverallEl = document.getElementById('source-health-overall');
@@ -437,6 +443,14 @@ export class DashboardPanelManager {
     }
     if (decayTotalEl) {
       decayTotalEl.textContent = metrics.decay ? String(metrics.decay.totalDecayedCount) : '—';
+    }
+
+    // ─── 缺口 A：上下文截断指标（消费 metrics.context，补全感知面板遗漏的 context 维度） ──
+    if (this.perceptionTruncationCountEl) {
+      this.perceptionTruncationCountEl.textContent = String(metrics.context.truncationCount);
+    }
+    if (this.perceptionMessageCountEl) {
+      this.perceptionMessageCountEl.textContent = String(metrics.context.messageCount);
     }
   }
 

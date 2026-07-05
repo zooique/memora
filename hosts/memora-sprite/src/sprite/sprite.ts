@@ -39,6 +39,40 @@ import { SpriteLifecycleManager } from './spriteLifecycleManager.js';
 /** 精灵主控状态：idle 空闲等待触发 / active 唤醒中（对话进行中） */
 export type SpriteState = 'idle' | 'active';
 
+/**
+ * 启动摘要（迭代一：Welcome Back Digest）
+ *
+ * 精灵启动/恢复时聚合已采集数据，生成一张摘要卡片展示给用户。
+ * 所有数据均来自已有采集通路（memoryController / perceptionCoordinator / AgentMetrics），
+ * 零新增采集开销。
+ */
+export interface StartupSummary {
+  /** 记忆总数 */
+  totalMemories: number;
+  /** 洞察总数 */
+  totalInsights: number;
+  /** 技能总数 */
+  skillCount: number;
+  /** 衰减统计 */
+  decay: {
+    /** 衰减运行次数 */
+    runCount: number;
+    /** 累计衰减记忆数 */
+    totalDecayedCount: number;
+  } | null;
+  /** 感知快照 */
+  perception: {
+    /** 温暖度 0-1 */
+    warmth: number;
+    /** 默契度等级（stranger/acquaintance/familiar/close） */
+    rapportLevel: string;
+    /** 默契度自然语言描述 */
+    rapportDescription: string;
+  } | null;
+  /** 记忆源健康状态 */
+  healthStatus: 'healthy' | 'warning' | 'critical' | null;
+}
+
 /** 精灵事件载荷 — 宿主 UI 可订阅 */
 export interface SpriteEventMap {
   /** 精灵注意到新记忆（insight/profile/guardrail 等） */
@@ -545,6 +579,40 @@ export class Sprite {
     if (!snapshot) return null;
     const proactiveStats = this.proactiveEngine.getStats();
     return { ...snapshot, proactiveStats };
+  }
+
+  /**
+   * 获取启动摘要（迭代一：Welcome Back Digest）
+   *
+   * 聚合记忆/洞察/感知/衰减/健康数据，生成一张摘要卡片。
+   * 所有数据均来自已有采集通路，零新增采集开销。
+   * 返回 null 表示 Agent 未就绪，UI 应跳过摘要展示。
+   */
+  getStartupSummary(): StartupSummary | null {
+    if (!this.agent) return null;
+
+    const dashboard = this.memoryController.dashboard();
+    const metrics = this.agent.getMetrics();
+    const snapshot = this.perceptionCoordinator.getSnapshot();
+    const sourceHealth = this.agent.memory?.sourceHealth();
+    const skillCount = this.agent.skills?.list.length ?? 0;
+
+    return {
+      totalMemories: dashboard.total,
+      totalInsights: dashboard.bySource?.['llm:insight'] ?? 0,
+      skillCount,
+      decay: metrics.decay
+        ? { runCount: metrics.decay.runCount, totalDecayedCount: metrics.decay.totalDecayedCount }
+        : null,
+      perception: snapshot
+        ? {
+            warmth: snapshot.affect?.warmth ?? 0.5,
+            rapportLevel: snapshot.rapport?.level ?? 'stranger',
+            rapportDescription: snapshot.rapport?.description ?? '',
+          }
+        : null,
+      healthStatus: sourceHealth?.overallStatus ?? null,
+    };
   }
 
   get pendingCount(): number {

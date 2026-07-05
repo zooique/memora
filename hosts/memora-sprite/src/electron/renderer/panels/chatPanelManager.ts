@@ -1454,6 +1454,103 @@ export class ChatPanelManager {
     document.getElementById('chat-empty-state')?.classList.add('hidden');
   }
 
+  // ─── 启动摘要卡片（迭代一：Welcome Back Digest） ──────────
+
+  /**
+   * 在对话区顶部展示启动摘要卡片
+   *
+   * 聚合记忆/洞察/感知/衰减/健康数据，以卡片形式告知用户精灵当前状态。
+   * 卡片可关闭，关闭后不再显示（本次会话内）。
+   *
+   * @param summary 启动摘要数据（来自 Sprite.getStartupSummary()）
+   */
+  showStartupSummary(summary: {
+    totalMemories: number;
+    totalInsights: number;
+    skillCount: number;
+    decay: { runCount: number; totalDecayedCount: number } | null;
+    perception: { warmth: number; rapportLevel: string; rapportDescription: string } | null;
+    healthStatus: 'healthy' | 'warning' | 'critical' | null;
+  }): void {
+    // 空状态时摘要卡片无意义（无数据可展示）
+    if (summary.totalMemories === 0 && summary.totalInsights === 0) return;
+
+    // 避免重复展示（本次会话仅展示一次）
+    if (this.messagesEl.querySelector('.startup-summary-card')) return;
+
+    // 构建卡片 DOM
+    const card = document.createElement('div');
+    card.className = 'startup-summary-card';
+
+    // 标题行
+    const header = document.createElement('div');
+    header.className = 'startup-summary-header';
+    header.innerHTML = '<svg class="icon"><use href="#icon-fairy"/></svg> 欢迎回来';
+    card.appendChild(header);
+
+    // 数据网格
+    const grid = document.createElement('div');
+    grid.className = 'startup-summary-grid';
+
+    // 记忆总数
+    grid.appendChild(this._buildSummaryItem('记忆', String(summary.totalMemories)));
+    // 洞察总数
+    grid.appendChild(this._buildSummaryItem('洞察', String(summary.totalInsights)));
+    // 技能数
+    grid.appendChild(this._buildSummaryItem('技能', `${summary.skillCount} 个`));
+    // 衰减统计
+    if (summary.decay && summary.decay.totalDecayedCount > 0) {
+      grid.appendChild(this._buildSummaryItem('衰减', `${summary.decay.totalDecayedCount} 条`));
+    } else {
+      grid.appendChild(this._buildSummaryItem('衰减', '—'));
+    }
+    // 感知：温暖度
+    if (summary.perception) {
+      grid.appendChild(this._buildSummaryItem('温暖度', `${Math.round(summary.perception.warmth * 100)}%`));
+      grid.appendChild(this._buildSummaryItem('默契度', summary.perception.rapportDescription));
+    }
+    // 健康状态
+    if (summary.healthStatus) {
+      const healthItem = this._buildSummaryItem('健康', '');
+      const badge = document.createElement('span');
+      badge.className = `startup-summary-badge ${summary.healthStatus}`;
+      badge.textContent = summary.healthStatus === 'healthy' ? '良好' : summary.healthStatus === 'warning' ? '警告' : '严重';
+      healthItem.appendChild(badge);
+      grid.appendChild(healthItem);
+    }
+
+    card.appendChild(grid);
+
+    // 关闭按钮
+    const actions = document.createElement('div');
+    actions.className = 'startup-summary-actions';
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'startup-summary-close';
+    closeBtn.textContent = '知道了';
+    closeBtn.addEventListener('click', () => {
+      card.remove();
+    });
+    actions.appendChild(closeBtn);
+    card.appendChild(actions);
+
+    // 插入到消息区顶部
+    this.messagesEl.insertBefore(card, this.messagesEl.firstChild);
+  }
+
+  /**
+   * 构建启动摘要卡片中的单个数据项
+   *
+   * @param label 标签文本
+   * @param value 值文本
+   * @returns 数据项 DOM 元素
+   */
+  private _buildSummaryItem(label: string, value: string): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'startup-summary-item';
+    item.innerHTML = `<span>${label}</span><span class="startup-summary-value">${value}</span>`;
+    return item;
+  }
+
   // ─── 回调注册 ───────────────────────────────────────────
 
   /** 注册示例问题点击回调 */

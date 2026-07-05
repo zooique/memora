@@ -96,6 +96,7 @@ export const IPC_CHANNELS = {
   PROJECTS_LIST: 'projects-list',
   DASHBOARD_GET: 'dashboard-get',
   PERCEPTION_GET: 'perception-get',
+  STARTUP_SUMMARY_GET: 'startup-summary-get',
   LLM_CONFIG_GET: 'llm-config-get',
   LLM_CONFIG_SAVE: 'llm-config-save',
   LLM_CONFIG_TEST: 'llm-config-test',
@@ -541,6 +542,16 @@ export interface ElectronAPI {
     proactiveStats?: ProactiveStats;
   } | null>;
 
+  /** 获取启动摘要（Welcome Back Digest，迭代一） */
+  getStartupSummary: () => Promise<{
+    totalMemories: number;
+    totalInsights: number;
+    skillCount: number;
+    decay: { runCount: number; totalDecayedCount: number } | null;
+    perception: { warmth: number; rapportLevel: string; rapportDescription: string } | null;
+    healthStatus: 'healthy' | 'warning' | 'critical' | null;
+  } | null>;
+
   // 窗口控制
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -797,6 +808,8 @@ const electronAPI: ElectronAPI = {
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),
   // 感知数据快照（精灵感知面板打开时调用）
   getPerceptionSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.PERCEPTION_GET),
+  // 启动摘要（Welcome Back Digest，迭代一）
+  getStartupSummary: () => ipcRenderer.invoke(IPC_CHANNELS.STARTUP_SUMMARY_GET),
 
   // 窗口
   windowMinimize: () => ipcRenderer.send(IPC_CHANNELS.WINDOW_MINIMIZE),

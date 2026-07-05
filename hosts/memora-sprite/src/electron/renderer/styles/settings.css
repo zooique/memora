@@ -82,7 +82,16 @@
   transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
   display: flex;
   align-items: center;
+  gap: 8px;  /* 图标与文字间距 */
   text-align: left;
+  width: 100%;
+}
+/* 标签页图标：统一尺寸，继承文字颜色 */
+.settings-tab .icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: inherit;
 }
 
 .settings-tab:hover {
