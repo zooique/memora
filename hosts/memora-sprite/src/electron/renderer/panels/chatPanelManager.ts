@@ -1307,32 +1307,7 @@ export class ChatPanelManager {
     }
 
     for (const [, el] of this.streamingMessages) {
-      const bubble = el.querySelector('.message-bubble');
-      if (!bubble) continue;
-
-      // 移除光标和思考指示器（流式已结束）
-      const cursor = bubble.querySelector('.cursor');
-      if (cursor) cursor.remove();
-      const thinkingIndicator = bubble.querySelector('.thinking-phase');
-      if (thinkingIndicator) thinkingIndicator.remove();
-
-      // 添加错误指示器到气泡底部
-      const errorDiv = document.createElement('div');
-      errorDiv.className = 'stream-error';
-      errorDiv.textContent = `⚠️ ${errorText}`;
-      bubble.appendChild(errorDiv);
-
-      // 错误气泡内的"重试"按钮
-      // 对齐大厂对话体验：错误文本下方直接提供重试按钮，与 Toast 重试形成双通道。
-      // 通过 data-action="retry" 标识，由构造函数的事件委托统一处理。
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'stream-error-retry';
-      retryBtn.textContent = '重试';
-      retryBtn.dataset.action = 'retry';
-      bubble.appendChild(retryBtn);
-
-      // 停止流式状态
-      el.classList.remove('streaming');
+      this.injectErrorToMessage(el, errorText);
     }
 
     // 清理流式消息映射和 UI 状态
@@ -1343,6 +1318,41 @@ export class ChatPanelManager {
     this.host.updateSendButton();
     // 错误注入后滚动到底部，确保用户看到错误提示和重试按钮
     this.host.scrollToBottom();
+  }
+
+  /**
+   * 向单个消息元素注入错误指示器（injectErrorToStreamingMessages 的辅助方法）
+   *
+   * 移除光标和思考指示器，在气泡底部添加错误提示和重试按钮。
+   *
+   * @param el 消息容器元素
+   * @param errorText 错误提示文本
+   */
+  private injectErrorToMessage(el: HTMLElement, errorText: string): void {
+    const bubble = el.querySelector('.message-bubble');
+    if (!bubble) return;
+
+    // 移除光标和思考指示器（流式已结束）
+    const cursor = bubble.querySelector('.cursor');
+    if (cursor) cursor.remove();
+    const thinkingIndicator = bubble.querySelector('.thinking-phase');
+    if (thinkingIndicator) thinkingIndicator.remove();
+
+    // 添加错误指示器到气泡底部
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'stream-error';
+    errorDiv.textContent = `⚠️ ${errorText}`;
+    bubble.appendChild(errorDiv);
+
+    // 错误气泡内的"重试"按钮
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'stream-error-retry';
+    retryBtn.textContent = '重试';
+    retryBtn.dataset.action = 'retry';
+    bubble.appendChild(retryBtn);
+
+    // 停止流式状态
+    el.classList.remove('streaming');
   }
 
   // ─── 安全兜底定时器 ─────────────────────────────────────

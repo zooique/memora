@@ -343,57 +343,7 @@ export class MemoryPanelManager {
     clearElement(this.memoryListEl);
 
     for (const mem of pageItems) {
-      const item = document.createElement('div');
-      item.className = 'memory-item';
-      item.dataset.id = mem.id;
-      // Phase 4：staggered fade-in 延迟（每项延迟 30ms，上限 300ms 避免长列表卡顿）
-      const staggerIndex = this.memoryListEl.children.length;
-      const delay = Math.min(staggerIndex * 30, 300);
-      item.style.animationDelay = `${delay}ms`;
-
-      // 名称（Phase 2：搜索结果高亮）
-      const nameEl = document.createElement('div');
-      nameEl.className = 'name';
-      nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
-      item.appendChild(nameEl);
-
-      // 元数据（source 标签 + score + 创建时间）
-      const metaEl = document.createElement('div');
-      metaEl.className = 'meta';
-
-      const sourceTag = document.createElement('span');
-      // source 标签颜色区分：不同 source 类型用不同颜色，提升视觉识别度
-      // 颜色映射：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙)
-      sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
-      sourceTag.textContent = mem.source;
-      metaEl.appendChild(sourceTag);
-
-      const scoreEl = document.createElement('span');
-      scoreEl.className = 'score';
-      scoreEl.textContent = `score: ${mem.score.toFixed(2)}`;
-      metaEl.appendChild(scoreEl);
-
-      // 显示创建时间（仅当存在时）
-      if (mem.createdAt) {
-        const timeEl = document.createElement('span');
-        timeEl.className = 'memory-time';
-        timeEl.title = `创建于 ${mem.createdAt}`;
-        timeEl.textContent = formatTimeAgo(mem.createdAt);
-        metaEl.appendChild(timeEl);
-      }
-
-      item.appendChild(metaEl);
-
-      // 预览（2 行截断，Phase 2：搜索结果高亮）
-      const previewEl = document.createElement('div');
-      previewEl.className = 'preview';
-      previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
-      item.appendChild(previewEl);
-
-      // 事件委托：用 data-action + data-memory-id 替代直接 addEventListener
-      item.setAttribute('data-action', 'view-memory');
-      item.setAttribute('data-memory-id', mem.id);
-
+      const item = this.createMemoryItemElement(mem, this.memoryListEl.children.length);
       this.memoryListEl.appendChild(item);
     }
 
@@ -408,6 +358,67 @@ export class MemoryPanelManager {
       });
       this.memoryListEl.appendChild(loadMoreBtn);
     }
+  }
+
+  /**
+   * 创建单个记忆列表项 DOM 元素（renderMemoryPage 的辅助方法）
+   *
+   * 提取自 renderMemoryPage 的 54 行内联 DOM 创建逻辑，
+   * 包含名称、source 标签、score、时间、预览和事件委托属性。
+   *
+   * @param mem 记忆列表项数据
+   * @param staggerIndex 交错动画索引（用于 staggered fade-in）
+   * @returns 完整的记忆项 DOM 元素
+   */
+  private createMemoryItemElement(mem: MemoryListItem, staggerIndex: number): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'memory-item';
+    item.dataset.id = mem.id;
+    // Phase 4：staggered fade-in 延迟（每项延迟 30ms，上限 300ms 避免长列表卡顿）
+    const delay = Math.min(staggerIndex * 30, 300);
+    item.style.animationDelay = `${delay}ms`;
+
+    // 名称（Phase 2：搜索结果高亮）
+    const nameEl = document.createElement('div');
+    nameEl.className = 'name';
+    nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
+    item.appendChild(nameEl);
+
+    // 元数据（source 标签 + score + 创建时间）
+    const metaEl = document.createElement('div');
+    metaEl.className = 'meta';
+
+    const sourceTag = document.createElement('span');
+    sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
+    sourceTag.textContent = mem.source;
+    metaEl.appendChild(sourceTag);
+
+    const scoreEl = document.createElement('span');
+    scoreEl.className = 'score';
+    scoreEl.textContent = `score: ${mem.score.toFixed(2)}`;
+    metaEl.appendChild(scoreEl);
+
+    if (mem.createdAt) {
+      const timeEl = document.createElement('span');
+      timeEl.className = 'memory-time';
+      timeEl.title = `创建于 ${mem.createdAt}`;
+      timeEl.textContent = formatTimeAgo(mem.createdAt);
+      metaEl.appendChild(timeEl);
+    }
+
+    item.appendChild(metaEl);
+
+    // 预览（2 行截断，Phase 2：搜索结果高亮）
+    const previewEl = document.createElement('div');
+    previewEl.className = 'preview';
+    previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
+    item.appendChild(previewEl);
+
+    // 事件委托：用 data-action + data-memory-id 替代直接 addEventListener
+    item.setAttribute('data-action', 'view-memory');
+    item.setAttribute('data-memory-id', mem.id);
+
+    return item;
   }
 
   /**
@@ -487,50 +498,7 @@ export class MemoryPanelManager {
       itemList.className = 'timeline-items';
 
       for (const mem of items) {
-        const item = document.createElement('div');
-        item.className = 'timeline-item';
-        item.dataset.id = mem.id;
-        item.setAttribute('data-action', 'view-memory');
-        item.setAttribute('data-memory-id', mem.id);
-
-        // 时间点
-        const timeDot = document.createElement('div');
-        timeDot.className = 'timeline-item-dot';
-        item.appendChild(timeDot);
-
-        // 记忆内容
-        const content = document.createElement('div');
-        content.className = 'timeline-item-content';
-
-        const nameEl = document.createElement('div');
-        nameEl.className = 'timeline-item-name';
-        nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
-        content.appendChild(nameEl);
-
-        const metaEl = document.createElement('div');
-        metaEl.className = 'timeline-item-meta';
-        const sourceTag = document.createElement('span');
-        sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
-        sourceTag.textContent = mem.source;
-        metaEl.appendChild(sourceTag);
-
-        if (mem.createdAt) {
-          const timeEl = document.createElement('span');
-          timeEl.className = 'timeline-item-time';
-          timeEl.textContent = new Date(mem.createdAt).toLocaleTimeString('zh-CN', {
-            hour: '2-digit',
-            minute: '2-digit',
-          });
-          metaEl.appendChild(timeEl);
-        }
-        content.appendChild(metaEl);
-
-        const previewEl = document.createElement('div');
-        previewEl.className = 'timeline-item-preview';
-        previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
-        content.appendChild(previewEl);
-
-        item.appendChild(content);
+        const item = this.createTimelineItem(mem);
         itemList.appendChild(item);
       }
 
@@ -539,6 +507,63 @@ export class MemoryPanelManager {
     }
 
     container.appendChild(timeline);
+  }
+
+  /**
+   * 创建单个时间线记忆项 DOM 元素（renderTimeline 的辅助方法）
+   *
+   * 提取自 renderTimeline 的 38 行内联 DOM 创建逻辑，
+   * 包含时间点圆点、名称、source 标签、时间和预览。
+   *
+   * @param mem 记忆列表项数据
+   * @returns 完整的时间线项 DOM 元素
+   */
+  private createTimelineItem(mem: MemoryListItem): HTMLElement {
+    const item = document.createElement('div');
+    item.className = 'timeline-item';
+    item.dataset.id = mem.id;
+    item.setAttribute('data-action', 'view-memory');
+    item.setAttribute('data-memory-id', mem.id);
+
+    // 时间点
+    const timeDot = document.createElement('div');
+    timeDot.className = 'timeline-item-dot';
+    item.appendChild(timeDot);
+
+    // 记忆内容
+    const content = document.createElement('div');
+    content.className = 'timeline-item-content';
+
+    const nameEl = document.createElement('div');
+    nameEl.className = 'timeline-item-name';
+    nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
+    content.appendChild(nameEl);
+
+    const metaEl = document.createElement('div');
+    metaEl.className = 'timeline-item-meta';
+    const sourceTag = document.createElement('span');
+    sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
+    sourceTag.textContent = mem.source;
+    metaEl.appendChild(sourceTag);
+
+    if (mem.createdAt) {
+      const timeEl = document.createElement('span');
+      timeEl.className = 'timeline-item-time';
+      timeEl.textContent = new Date(mem.createdAt).toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      metaEl.appendChild(timeEl);
+    }
+    content.appendChild(metaEl);
+
+    const previewEl = document.createElement('div');
+    previewEl.className = 'timeline-item-preview';
+    previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
+    content.appendChild(previewEl);
+
+    item.appendChild(content);
+    return item;
   }
 
   /**
