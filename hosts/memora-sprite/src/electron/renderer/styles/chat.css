@@ -1753,6 +1753,35 @@
   gap: 6px;
 }
 
+/* Token 用量指示器（输入工具栏中部，流式结束后自动更新） */
+.token-usage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 0 4px;
+  flex-shrink: 0;
+}
+.token-usage:hover {
+  color: var(--text-2);
+}
+/* Token 进度条（细线，填充色反映用量比例） */
+.token-usage-bar {
+  width: 40px;
+  height: 3px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.token-usage-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
 /* 工具按钮：圆形，对齐 demo .input-action */
 .input-action {
   width: 30px;

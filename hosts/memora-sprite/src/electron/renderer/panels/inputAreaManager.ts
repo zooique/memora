@@ -56,6 +56,12 @@ export class InputAreaManager {
   private providerSelector: HTMLElement | null = null;
   private providerNameEl: HTMLElement | null = null;
   private providerDropdown: HTMLElement | null = null;
+  /** Token 用量指示器 DOM 引用 */
+  private tokenUsageEl: HTMLElement | null = null;
+  private tokenUsageText: HTMLElement | null = null;
+  private tokenUsageFill: HTMLElement | null = null;
+  /** 上下文窗口大小（token 数，不同模型不同，默认 32K） */
+  private static readonly DEFAULT_CONTEXT_TOKENS = 32768;
 
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
@@ -75,6 +81,10 @@ export class InputAreaManager {
     this.providerSelector = document.getElementById('provider-selector');
     this.providerNameEl = document.getElementById('provider-name');
     this.providerDropdown = document.getElementById('provider-dropdown');
+    // Token 用量指示器
+    this.tokenUsageEl = document.getElementById('token-usage');
+    this.tokenUsageText = document.getElementById('token-usage-text');
+    this.tokenUsageFill = document.getElementById('token-usage-fill');
   }
 
   /**
@@ -313,6 +323,44 @@ export class InputAreaManager {
       });
     } catch {
       this.providerNameEl.textContent = '加载失败';
+    }
+  }
+
+  /**
+   * 刷新 Token 用量指示器
+   *
+   * 消费内核 agent.getMetrics()（通过 getDashboard IPC），
+   * 显示当前对话累计输入/输出 token 数 + 进度条。
+   * 流式结束后由外部调用（renderer.ts 的 SPRITE_STREAM_END 处理）。
+   */
+  async refreshTokenUsage(): Promise<void> {
+    if (!this.tokenUsageText || !this.tokenUsageFill) return;
+
+    try {
+      const dashboard = await window.electronAPI.getDashboard();
+      const metrics = dashboard?.metrics;
+      if (!metrics?.llm) {
+        this.tokenUsageText.textContent = '--';
+        this.tokenUsageFill.style.width = '0%';
+        return;
+      }
+
+      const { totalInputTokens, totalOutputTokens } = metrics.llm;
+      const total = totalInputTokens + totalOutputTokens;
+
+      // 格式化数字（< 1K 显示原值，>= 1K 显示 X.XK）
+      const formatTokens = (n: number): string => {
+        if (n < 1000) return String(n);
+        return `${(n / 1000).toFixed(1)}K`;
+      };
+
+      this.tokenUsageText.textContent = `${formatTokens(total)} tokens`;
+
+      // 进度条：基于上下文窗口大小计算填充比例（截断到 100%）
+      const ratio = Math.min(total / InputAreaManager.DEFAULT_CONTEXT_TOKENS, 1);
+      this.tokenUsageFill.style.width = `${Math.round(ratio * 100)}%`;
+    } catch {
+      this.tokenUsageText.textContent = '--';
     }
   }
 }

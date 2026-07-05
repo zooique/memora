@@ -482,6 +482,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   updateStreamingMessage(messageId: string, text: string): void { this.chatPanel.updateStreamingMessage(messageId, text); }
   /** 完成流式消息（委托到 ChatPanelManager） */
   finishStreamingMessage(messageId: string): void { this.chatPanel.finishStreamingMessage(messageId); }
+  /** 刷新 Token 用量指示器（委托到 InputAreaManager） */
+  refreshTokenUsage(): void { void this.inputAreaManager.refreshTokenUsage(); }
   /** 设置流式消息的召回记忆摘要（委托到 ChatPanelManager） */
   setMemoryRecall(messageId: string, memories: Array<{ id: string; name: string; score: number; source: string }>): void { this.chatPanel.setMemoryRecall(messageId, memories); }
   /** 显示思考阶段指示器（委托到 ChatPanelManager） */

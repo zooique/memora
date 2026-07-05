@@ -163,6 +163,8 @@ async function bootstrapRenderer(): Promise<void> {
     onConversationEnd: () => {
       // 立即刷新：LLM 调用次数、token 数、工具使用等指标在对话结束时已确定
       void memoryController.loadDashboard();
+      // Token 用量指示器（输入区中部，流式结束后自动刷新）
+      State.uiManager.refreshTokenUsage();
       // 延迟 1s 二次刷新：postProcess 中的记忆归档是异步 fire-and-forget 的，
       // 等待用户画像归档、Insight 提取等后台任务完成后再刷新一次
       window.setTimeout(() => {
