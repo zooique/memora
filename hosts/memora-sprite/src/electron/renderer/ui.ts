@@ -72,8 +72,6 @@ import type {
   Message,
   UIState,
   PersonaItem,
-  LlmConfigForm,
-  LlmConfigSavePayload,
   MemoryListItem,
   MemoryDetail,
   SpriteConfigForm,
@@ -99,8 +97,6 @@ export type {
   Message,
   UIState,
   PersonaItem,
-  LlmConfigForm,
-  LlmConfigSavePayload,
   ToastType,
 } from './types.js';
 
@@ -838,6 +834,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
+   * Provider 列表变更回调（实现 SettingsPanelHost.onProviderChanged）
+   *
+   * 由 SettingsPanelManager 在 Provider 新增/编辑/删除/切换后调用，
+   * 通知 InputAreaManager 刷新输入框的 Provider 选择器，
+   * 确保输入框显示的当前 Provider 与设置面板一致。
+   */
+  onProviderChanged(): void {
+    void this.inputAreaManager.loadProviderSelector();
+  }
+
+  /**
    * 更新学习进度卡片
    *
    * 聚合侧边栏"学习进度"卡片的四项指标：
@@ -1402,19 +1409,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager.renderDateNavList(dates, currentDate);
   }
 
-  /** 加载 LLM 配置到表单（委托到 SettingsPanelManager） */
-  loadLlmConfigToForm(data: {
-    configured: boolean;
-    config: LlmConfigForm | null;
+  /** 加载 Embedding 配置到表单（委托到 SettingsPanelManager） */
+  loadEmbeddingConfig(data: {
     embedding: { model: string; baseUrl: string; apiKey: string } | null;
-    presets: Record<string, { provider: string; model: string; baseUrl: string }>;
   }): void {
-    this.settingsPanelManager.loadLlmConfigToForm(data);
-  }
-
-  /** 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
-  collectLlmConfigFromForm(): LlmConfigSavePayload {
-    return this.settingsPanelManager.collectLlmConfigFromForm();
+    this.settingsPanelManager.loadEmbeddingConfig(data);
   }
 
   /** 加载配置到表单（委托到 SettingsPanelManager） */
@@ -1446,24 +1445,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 设置面板取消回调（委托到 SettingsPanelManager） */
   onConfigCancel(cb: () => void): void {
     this.settingsPanelManager.onConfigCancel(cb);
-  }
-  /** LLM 配置保存回调（委托到 SettingsPanelManager） */
-  onLlmConfigSave(cb: (payload: LlmConfigSavePayload) => void): void {
-    this.settingsPanelManager.onLlmConfigSave(cb);
-  }
-  /** LLM 连接测试回调（委托到 SettingsPanelManager） */
-  onLlmTest(cb: () => void): void {
-    this.settingsPanelManager.onLlmTest(cb);
-  }
-
-  /** 显示 LLM 测试连接结果（委托到 SettingsPanelManager） */
-  showLlmTestResult(result: { success: boolean; error: string | null }, elapsedMs?: number): void {
-    this.settingsPanelManager.showLlmTestResult(result, elapsedMs);
-  }
-
-  /** 收集表单中的 LLM 配置（委托到 SettingsPanelManager） */
-  getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
-    return this.settingsPanelManager.getLlmConfigFromForm();
   }
 
   /** 重置设置表单 dirty 标志（委托到 SettingsPanelManager） */

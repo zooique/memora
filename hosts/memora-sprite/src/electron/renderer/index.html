@@ -653,92 +653,18 @@
           <button id="settings-error-retry" class="panel-error-btn">重试</button>
         </div>
 
-        <!-- LLM 配置 -->
+        <!-- LLM 配置（记录列表模式：卡片只显示名称，点击编辑才展开配置表单） -->
         <div class="settings-tab-content active" data-settings-tab="llm">
           <div class="settings-group">
-            <h3>LLM 配置</h3>
-            <div class="settings-row">
-              <label for="cfg-llm-preset">提供商预设</label>
-              <select id="cfg-llm-preset">
-                <option value="">自定义</option>
-                <option value="1">DeepSeek（推荐，性价比高）</option>
-                <option value="2">OpenAI GPT-4o</option>
-                <option value="3">OpenAI GPT-4o-mini</option>
-              </select>
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-provider">提供商（provider）</label>
-              <input type="text" id="cfg-llm-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" />
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-model">模型（model）</label>
-              <input type="text" id="cfg-llm-model" placeholder="deepseek-chat" autocomplete="off" />
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-base-url">API 地址（baseUrl）</label>
-              <input type="text" id="cfg-llm-base-url" placeholder="https://api.deepseek.com" autocomplete="off" />
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-api-key">API Key</label>
-              <div class="input-with-action">
-                <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
-                <!-- 图标按钮补齐 aria-label，与 btn-minimize/btn-close 等图标按钮标准一致 -->
-                <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏主 LLM API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
-              </div>
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-temperature">温度（temperature）</label>
-              <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
-            </div>
-            <!-- 后台 Provider 配置（可选，用于 Insight 提取/配置分析等后台任务，不阻塞前台对话） -->
-            <div class="settings-section">
-              <div class="settings-row">
-                <label for="cfg-bg-enabled">后台 Provider</label>
-                <div>
-                  <input type="checkbox" id="cfg-bg-enabled" />
-                  <span class="settings-hint settings-hint-inline">启用后，Insight 提取和配置分析使用独立 Provider，不阻塞前台对话</span>
-                </div>
-              </div>
-              <div class="settings-row">
-                <label for="cfg-bg-provider">提供商（provider）</label>
-                <input type="text" id="cfg-bg-provider" placeholder="deepseek / openai / 自定义" disabled autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-bg-model">模型（model）</label>
-                <input type="text" id="cfg-bg-model" placeholder="deepseek-chat" disabled autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-bg-base-url">API 地址（baseUrl）</label>
-                <input type="text" id="cfg-bg-base-url" placeholder="https://api.deepseek.com" disabled autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-bg-api-key">API Key</label>
-                <div class="input-with-action">
-                  <input type="password" id="cfg-bg-api-key" placeholder="sk-****" disabled />
-                  <button type="button" id="btn-toggle-bg-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏后台 LLM API Key" disabled><svg class="icon"><use href="#icon-eye"/></svg></button>
-                </div>
-              </div>
-            </div>
-            <!-- 测试连接按钮：保存前验证 LLM 配置是否可用，避免无效配置导致 Agent 初始化失败 -->
-            <div class="settings-row">
-              <label></label>
-              <div>
-                <button id="btn-llm-test" class="btn-secondary" type="button">测试连接</button>
-                <span id="llm-test-result" class="settings-hint"></span>
-              </div>
-            </div>
-
-            <!-- 多 Provider 管理 -->
-            <div class="settings-section-divider"></div>
             <h3>API 管理</h3>
-            <p class="settings-hint">管理多个 LLM Provider，在输入框中随时切换。</p>
+            <p class="settings-hint">管理多个 LLM Provider，在输入框中随时切换。点击「编辑」查看或修改具体配置。</p>
 
-            <!-- Provider 列表 -->
+            <!-- Provider 列表（记录卡片，只显示名称和概要信息） -->
             <div id="provider-list" class="provider-list">
               <!-- 动态渲染：每个 Provider 一个卡片 -->
             </div>
 
-            <!-- 添加 Provider 表单（默认隐藏） -->
+            <!-- 添加/编辑 Provider 表单（默认隐藏，点击「添加」或「编辑」时展开） -->
             <div id="provider-form" class="provider-form hidden">
               <div class="settings-row">
                 <label for="cfg-provider-alias">别名（唯一标识）</label>

@@ -3,11 +3,9 @@
  *
  * 覆盖范围：
  * - onConfigSave：批量更新成功/事务失败/IPC 异常/字段透传（事务性保护）
- * - onLlmConfigSave：必填校验/成功/失败+agentStatus 同步
- * - onLlmTest：必填校验/成功/异常
- * - onConfigCancel：重新加载配置
+ * - onConfigCancel：重新加载精灵配置
  * - loadConfig：正常/静默恢复（未过期/已过期）/加载失败
- * - loadLlmConfig：加载失败错误横幅
+ * - loadLlmConfig：加载 Embedding 配置/加载失败错误横幅
  *
  * 测试策略：
  * - 轻量 mock：vi.mock domHelpers/errorHelpers，避免 JSDOM 重依赖
@@ -40,16 +38,14 @@ vi.mock('../../../electron/renderer/helpers/errorHelpers.js', () => ({
 // 导入被测模块（在 mock 之后导入，确保 mock 生效）
 import { createSettingsController } from '../../../electron/renderer/controllers/settingsController.js';
 import type { UIManager } from '../../../electron/renderer/ui.js';
-import type { SpriteConfigForm, LlmConfigForm } from '../../../electron/renderer/types.js';
+import type { SpriteConfigForm } from '../../../electron/renderer/types.js';
 
 // ─── Mock UIManager 工厂 ─────────────────────────────────
 
-/** 回调注册表：记录 onConfigSave/onLlmConfigSave/onConfigCancel/onLlmTest 注册的回调 */
+/** 回调注册表：记录 onConfigSave/onConfigCancel 注册的回调 */
 interface RegisteredCallbacks {
   onConfigSave?: (config: SpriteConfigForm) => Promise<void>;
-  onLlmConfigSave?: (payload: { llm: LlmConfigForm; embedding: { enabled: boolean; model: string; baseUrl: string; apiKey: string } | null }) => Promise<void>;
   onConfigCancel?: () => void;
-  onLlmTest?: () => Promise<void>;
 }
 
 /**
@@ -61,17 +57,13 @@ interface RegisteredCallbacks {
 function createMockUiManager(callbacks: RegisteredCallbacks = {}): UIManager {
   return {
     onConfigSave: vi.fn((cb) => { callbacks.onConfigSave = cb; }),
-    onLlmConfigSave: vi.fn((cb) => { callbacks.onLlmConfigSave = cb; }),
     onConfigCancel: vi.fn((cb) => { callbacks.onConfigCancel = cb; }),
-    onLlmTest: vi.fn((cb) => { callbacks.onLlmTest = cb; }),
     // ADR-015 归档模式变更回调（setupSettingsPanel 中注册，mock 需提供方法）
     onArchiveModeChange: vi.fn(),
     showToast: vi.fn(),
-    showLlmTestResult: vi.fn(),
-    getLlmConfigFromForm: vi.fn(() => ({ provider: '', model: '', baseUrl: '', apiKey: '', temperature: 0.7 })),
     loadConfigToForm: vi.fn(),
     loadProjectsToForm: vi.fn(),
-    loadLlmConfigToForm: vi.fn(),
+    loadEmbeddingConfig: vi.fn(),
     hideSettingsError: vi.fn(),
     showSettingsError: vi.fn(),
     resetSettingsFormDirty: vi.fn(),
@@ -99,18 +91,6 @@ function makeFormConfig(overrides: Partial<SpriteConfigForm> = {}): SpriteConfig
     focusProjectPath: '',
     ...overrides,
   } as SpriteConfigForm;
-}
-
-/** 默认 LLM 表单配置（全字段填充） */
-function makeLlmForm(overrides: Partial<LlmConfigForm> = {}): LlmConfigForm {
-  return {
-    provider: 'openai',
-    model: 'gpt-4',
-    baseUrl: '',
-    apiKey: 'sk-test-key',
-    temperature: 0.7,
-    ...overrides,
-  };
 }
 
 describe('settingsController', () => {
@@ -189,114 +169,17 @@ describe('settingsController', () => {
     expect(calls[calls.length - 1]).toEqual(['btn-settings-save', false]);
   });
 
-  // ─── onLlmConfigSave ───────────────────────────────────
-
-  it('LLM 配置缺 provider 应显示 warning 不调用 saveLlmConfig', async () => {
-    await callbacks.onLlmConfigSave!({
-      llm: makeLlmForm({ provider: '' }),
-      embedding: null,
-    });
-
-    const saveLlmConfig = (globalThis as { electronAPI: { saveLlmConfig: { mock: { calls: unknown[][] } } } }).electronAPI.saveLlmConfig;
-    expect(saveLlmConfig.mock.calls).toHaveLength(0);
-    const showToast = uiManager.showToast as unknown as { mock: { calls: unknown[][] } };
-    expect(showToast.mock.calls[0]![1]).toBe('warning');
-  });
-
-  it('LLM 配置缺 apiKey 应显示 warning 不调用 saveLlmConfig', async () => {
-    await callbacks.onLlmConfigSave!({
-      llm: makeLlmForm({ apiKey: '' }),
-      embedding: null,
-    });
-
-    const saveLlmConfig = (globalThis as { electronAPI: { saveLlmConfig: { mock: { calls: unknown[][] } } } }).electronAPI.saveLlmConfig;
-    expect(saveLlmConfig.mock.calls).toHaveLength(0);
-  });
-
-  it('LLM 配置保存成功应显示 success toast', async () => {
-    await callbacks.onLlmConfigSave!({
-      llm: makeLlmForm(),
-      embedding: null,
-    });
-
-    const showToast = uiManager.showToast as unknown as { mock: { calls: unknown[][] } };
-    // 第一次 toast 是"正在保存..."info，第二次是"已保存"success
-    const successCall = showToast.mock.calls.find((c) => c[1] === 'success');
-    expect(successCall).toBeDefined();
-    expect(successCall![0]).toContain('Agent 已就绪');
-  });
-
-  it('LLM 配置保存失败应同步 agentStatus', async () => {
-    const saveLlmConfig = (globalThis as { electronAPI: { saveLlmConfig: vi.Mock } }).electronAPI.saveLlmConfig;
-    saveLlmConfig.mockResolvedValueOnce({ success: false, error: 'API Key 无效' });
-    const getAgentStatus = (globalThis as { electronAPI: { getAgentStatus: vi.Mock } }).electronAPI.getAgentStatus;
-    getAgentStatus.mockResolvedValueOnce({ ready: false, error: 'Agent 未就绪' });
-
-    await callbacks.onLlmConfigSave!({
-      llm: makeLlmForm(),
-      embedding: null,
-    });
-
-    // 失败时应查询 agentStatus 并同步
-    expect(getAgentStatus).toHaveBeenCalled();
-    const setAgentReady = uiManager.setAgentReady as unknown as { mock: { calls: unknown[][] } };
-    expect(setAgentReady.mock.calls[0]![0]).toBe(false);
-    const updateIndicator = uiManager.updateAgentStatusIndicator as unknown as { mock: { calls: unknown[][] } };
-    expect(updateIndicator.mock.calls[0]![0]).toBe('error');
-  });
-
-  // ─── onLlmTest ─────────────────────────────────────────
-
-  it('LLM 测试缺必填字段应显示错误不调用 testLlmConfig', async () => {
-    // getLlmConfigFromForm 默认返回空 provider
-    await callbacks.onLlmTest!();
-
-    const testLlmConfig = (globalThis as { electronAPI: { testLlmConfig: { mock: { calls: unknown[][] } } } }).electronAPI.testLlmConfig;
-    expect(testLlmConfig.mock.calls).toHaveLength(0);
-    const showLlmTestResult = uiManager.showLlmTestResult as unknown as { mock: { calls: unknown[][] } };
-    expect(showLlmTestResult.mock.calls[0]![0]).toEqual({ success: false, error: '提供商、模型、API Key 为必填项' });
-  });
-
-  it('LLM 测试成功应显示结果含耗时', async () => {
-    // 让 getLlmConfigFromForm 返回完整配置
-    (uiManager.getLlmConfigFromForm as unknown as { mockReturnValue: (v: unknown) => void }).mockReturnValue(makeLlmForm());
-
-    await callbacks.onLlmTest!();
-
-    const showLlmTestResult = uiManager.showLlmTestResult as unknown as { mock: { calls: unknown[][] } };
-    // 第一次是"测试中..."，第二次是真实结果
-    expect(showLlmTestResult.mock.calls.length).toBeGreaterThanOrEqual(2);
-    const resultCall = showLlmTestResult.mock.calls[showLlmTestResult.mock.calls.length - 1]!;
-    expect(resultCall[0]).toEqual({ success: true, latencyMs: 150 });
-    expect(typeof resultCall[1]).toBe('number'); // elapsed
-  });
-
-  it('LLM 测试异常应显示错误消息', async () => {
-    (uiManager.getLlmConfigFromForm as unknown as { mockReturnValue: (v: unknown) => void }).mockReturnValue(makeLlmForm());
-    const testLlmConfig = (globalThis as { electronAPI: { testLlmConfig: vi.Mock } }).electronAPI.testLlmConfig;
-    testLlmConfig.mockRejectedValueOnce(new Error('连接超时'));
-
-    await callbacks.onLlmTest!();
-
-    const showLlmTestResult = uiManager.showLlmTestResult as unknown as { mock: { calls: unknown[][] } };
-    const lastCall = showLlmTestResult.mock.calls[showLlmTestResult.mock.calls.length - 1]!;
-    expect(lastCall[0]).toEqual({ success: false, error: '连接超时' });
-  });
-
   // ─── onConfigCancel ────────────────────────────────────
 
-  it('取消应重新加载配置（loadConfig + loadLlmConfig）', async () => {
+  it('取消应重新加载精灵配置（loadConfig）', async () => {
     const getConfig = (globalThis as { electronAPI: { getConfig: vi.Mock } }).electronAPI.getConfig;
-    const getLlmConfig = (globalThis as { electronAPI: { getLlmConfig: vi.Mock } }).electronAPI.getLlmConfig;
     getConfig.mockClear();
-    getLlmConfig.mockClear();
 
     callbacks.onConfigCancel!();
-    // onConfigCancel 内部 void loadConfig() + void loadLlmConfig()，异步需等待微任务
+    // onConfigCancel 内部 void loadConfig()，异步需等待微任务
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(getConfig).toHaveBeenCalled();
-    expect(getLlmConfig).toHaveBeenCalled();
   });
 
   // ─── loadConfig ────────────────────────────────────────

@@ -17,7 +17,7 @@
 
 import type { UIManager } from '../ui.js';
 import type { SpriteConfigForm } from '../types.js';
-import { createIpcErrorHandler, toError, reportError } from '../helpers/errorHelpers.js';
+import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
 import { setButtonLoading } from '../helpers/domHelpers.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
@@ -83,69 +83,9 @@ export function createSettingsController(uiManager: UIManager) {
       }
     });
 
-    // LLM 配置保存：调用 saveLlmConfig 触发主进程重新初始化 Agent
-    uiManager.onLlmConfigSave(async (payload) => {
-      // 校验必填字段
-      if (!payload.llm.provider || !payload.llm.model || !payload.llm.apiKey) {
-        uiManager.showToast('LLM 配置不完整：提供商、模型、API Key 为必填项', 'warning');
-        return;
-      }
-
-      // 进行中反馈：禁用保存按钮防止重复点击
-      setButtonLoading('btn-settings-save', true, '初始化中...');
-      try {
-        // 进行中反馈走 toast（不自动消失，等结果出来后由成功/失败 toast 替换）
-        // 优化文案：明确告知用户正在初始化（耗时操作），避免用户以为卡住
-        uiManager.showToast('正在保存配置并初始化 Agent（可能需要数秒）...', 'info', 0);
-
-        const embeddingConfig = payload.embedding?.enabled
-          ? {
-              model: payload.embedding.model,
-              baseUrl: payload.embedding.baseUrl || undefined,
-              apiKey: payload.embedding.apiKey || undefined,
-            }
-          : undefined;
-
-        const { success, error } = await window.electronAPI.saveLlmConfig(
-          {
-            provider: payload.llm.provider,
-            model: payload.llm.model,
-            baseUrl: payload.llm.baseUrl,
-            apiKey: payload.llm.apiKey,
-            temperature: payload.llm.temperature,
-          },
-          embeddingConfig,
-        );
-
-        if (success) {
-          uiManager.showToast('LLM 配置已保存，Agent 已就绪', 'success');
-        } else {
-          uiManager.showToast(`初始化失败：${error}`, 'error');
-          // 重新初始化失败后，主进程 agentReady=false，但渲染进程 isAgentReady 可能仍为 true
-          // 主动查询 Agent 状态并同步，避免用户尝试对话时调用已关闭的 Agent
-          try {
-            const { ready, error: statusError } = await window.electronAPI.getAgentStatus();
-            uiManager.setAgentReady(ready);
-            updateAgentStatus(ready ? 'ready' : 'error', statusError ?? error ?? undefined);
-          } catch (statusErr) {
-            // 查询状态失败时也标记为未就绪，记录错误便于排查
-            reportError('settingsController/agentStatus', statusErr);
-            uiManager.setAgentReady(false);
-            updateAgentStatus('error', error ?? undefined);
-          }
-        }
-      } catch (error) {
-        handleIpcError('onLlmConfigSave', error, '保存 LLM 配置失败');
-      } finally {
-        // 恢复按钮状态
-        setButtonLoading('btn-settings-save', false);
-      }
-    });
-
     uiManager.onConfigCancel(() => {
       // 取消时重新加载配置
       void loadConfig();
-      void loadLlmConfig();
     });
 
     // ADR-015 归档模式即时切换：radio change 时立即持久化 + 应用到 Agent
@@ -159,38 +99,6 @@ export function createSettingsController(uiManager: UIManager) {
         uiManager.showToast('切换归档模式失败，请重试', 'error');
         // 失败时重新加载表单，恢复 radio 到实际状态
         void loadConfig();
-      }
-    });
-
-    // LLM 连接测试：调用主进程验证配置，显示结果
-    uiManager.onLlmTest(async () => {
-      const config = uiManager.getLlmConfigFromForm();
-      if (!config.provider || !config.model || !config.apiKey) {
-        uiManager.showLlmTestResult({
-          success: false,
-          error: '提供商、模型、API Key 为必填项',
-        });
-        return;
-      }
-
-      // 进行中反馈：禁用测试按钮防止重复点击
-      setButtonLoading('btn-llm-test', true, '测试中...');
-      // 显示"测试中..."状态
-      uiManager.showLlmTestResult({ success: false, error: '测试中...' });
-      const startTime = Date.now();
-
-      try {
-        const result = await window.electronAPI.testLlmConfig(config);
-        const elapsed = Date.now() - startTime;
-        uiManager.showLlmTestResult(result, elapsed);
-      } catch (error) {
-        uiManager.showLlmTestResult({
-          success: false,
-          error: toError(error).message,
-        });
-      } finally {
-        // 恢复按钮状态
-        setButtonLoading('btn-llm-test', false);
       }
     });
   }
@@ -265,18 +173,21 @@ export function createSettingsController(uiManager: UIManager) {
     }
   }
 
-  /** 加载 LLM 配置到表单 */
+  /**
+   * 加载 LLM 配置（Provider 列表 + Embedding 配置）
+   *
+   * Provider 列表由 SettingsPanelManager.loadProviderList 内部在 initListeners 时加载，
+   * 此处仅负责加载 Embedding 配置到表单。
+   */
   async function loadLlmConfig(): Promise<void> {
     try {
       const data = await window.electronAPI.getLlmConfig();
-      uiManager.loadLlmConfigToForm(data);
-      // 加载成功时隐藏之前的错误横幅
+      // Provider 列表由 SettingsPanelManager 自行加载，此处仅加载 Embedding 配置
+      uiManager.loadEmbeddingConfig(data);
       uiManager.hideSettingsError();
-      // 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
       uiManager.resetSettingsFormDirty();
     } catch (error) {
       reportError('loadLlmConfig', error);
-      // 显示错误状态，用户可点击重试
       uiManager.showSettingsError('加载 LLM 配置失败，请检查日志或点击重试', () => {
         void loadLlmConfig();
       });

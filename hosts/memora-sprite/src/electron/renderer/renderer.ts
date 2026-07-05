@@ -365,10 +365,8 @@ async function bootstrapRenderer(): Promise<void> {
   // 初始化 dropzone 事件监听（dragover/drop/click/change）
   setupSkillDropzone(State.uiManager);
 
-  // loadLlmConfig 与 getAgentStatus 无依赖关系，并行执行减少首屏阻塞
-  // loadLlmConfig 加载 LLM 配置到设置面板表单；getAgentStatus 查询 Agent 是否就绪
-  // 两者并行完成后，getAgentStatus 的后续逻辑根据 ready/error 分支处理
-  // 两者均在 try 内，getAgentStatus 通道异常由 catch 统一降级为首次使用引导
+  // loadLlmConfig（加载 Embedding 配置）与 getAgentStatus 无依赖关系，并行执行减少首屏阻塞
+  // Provider 列表由 SettingsPanelManager.initListeners 内部调用 loadProviderList 自行加载
   try {
     const [, agentStatusResult] = await Promise.all([
       settingsController.loadLlmConfig(),

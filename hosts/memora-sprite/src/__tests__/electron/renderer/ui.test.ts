@@ -6,7 +6,7 @@
  * 覆盖范围：
  * - 消息渲染（appendMessage / updateStreamingMessage / finishStreamingMessage）
  * - 面板切换（switchPanel）
- * - 表单收集（collectConfigFromForm / collectLlmConfigFromForm / getAddMemoryFormData）
+ * - 表单收集（collectConfigFromForm / getAddMemoryFormData）
  * - 事件回调注册（onSendMessage / onStopMessage / onMemorySearch 等）
  * - 流式消息管理（startStreaming / stopAllStreaming / clearMessages）
  * - Toast 通知（showToast）
@@ -152,40 +152,9 @@ const TEST_HTML = `<!DOCTYPE html>
         </div>
         <div class="settings-tab-content active" data-settings-tab="llm">
           <div class="settings-group">
-            <div class="settings-row">
-              <label for="cfg-llm-preset">提供商预设</label>
-              <select id="cfg-llm-preset"><option value="">自定义</option></select>
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-provider">提供商</label>
-              <input type="text" id="cfg-llm-provider" />
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-model">模型</label>
-              <input type="text" id="cfg-llm-model" />
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-base-url">API 地址</label>
-              <input type="text" id="cfg-llm-base-url" />
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-api-key">API Key</label>
-              <div class="input-with-action">
-                <input type="password" id="cfg-llm-api-key" />
-                <button type="button" id="btn-toggle-llm-key" class="toggle-visibility">👁</button>
-              </div>
-            </div>
-            <div class="settings-row">
-              <label for="cfg-llm-temperature">温度</label>
-              <input type="number" id="cfg-llm-temperature" value="0.7" />
-            </div>
-            <div class="settings-row">
-              <label></label>
-              <div>
-                <button id="btn-llm-test" class="btn-secondary" type="button">测试连接</button>
-                <span id="llm-test-result" class="settings-hint"></span>
-              </div>
-            </div>
+            <!-- Provider 列表与编辑表单容器（卡片由 settingsPanelManager 动态渲染） -->
+            <div id="provider-list" class="provider-list"></div>
+            <div id="provider-form" class="provider-form hidden"></div>
           </div>
         </div>
         <div class="settings-tab-content" data-settings-tab="embedding">
@@ -1105,23 +1074,6 @@ describe('表单收集', () => {
     const config = uiManager.collectConfigFromForm();
 
     expect(config.projectMode).toBe('focus');
-  });
-
-  it('collectLlmConfigFromForm: 收集 LLM 配置', () => {
-    const providerEl = document.getElementById('cfg-llm-provider') as HTMLInputElement;
-    const modelEl = document.getElementById('cfg-llm-model') as HTMLInputElement;
-    const apiKeyEl = document.getElementById('cfg-llm-api-key') as HTMLInputElement;
-
-    providerEl.value = 'openai';
-    modelEl.value = 'gpt-4o';
-    apiKeyEl.value = 'sk-test123';
-
-    const payload = uiManager.collectLlmConfigFromForm();
-
-    expect(payload.llm.provider).toBe('openai');
-    expect(payload.llm.model).toBe('gpt-4o');
-    expect(payload.llm.apiKey).toBe('sk-test123');
-    expect(payload.embedding).toBeNull(); // 未启用 embedding
   });
 
   it('getAddMemoryFormData: 收集添加记忆表单', () => {

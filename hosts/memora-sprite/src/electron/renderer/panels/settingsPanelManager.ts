@@ -18,9 +18,6 @@ import { EventTracker } from '../helpers/eventTracker.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import type {
-  LlmConfigForm,
-  EmbeddingConfigForm,
-  LlmConfigSavePayload,
   SpriteConfigForm,
   ConfirmDialogOptions,
   ToastType,
@@ -52,27 +49,19 @@ export interface SettingsPanelHost {
    * 让宿主调用对应 PanelManager 的 load() 刷新数据。
    */
   onSettingsTabSwitch?(tab: string): void;
+  /**
+   * Provider 列表变更回调
+   *
+   * 当用户在设置面板中新增/编辑/删除/切换 Provider 后触发，
+   * 让宿主通知 InputAreaManager 刷新输入框的 Provider 选择器，
+   * 确保输入框显示的当前 Provider 与设置面板一致。
+   */
+  onProviderChanged?(): void;
 }
 
 // ─── 设置面板管理器类 ─────────────────────────────────────
 
 export class SettingsPanelManager {
-  // ─── 设置面板 DOM 元素 - LLM 配置 ───────────────────────
-  private cfgLlmPreset: HTMLSelectElement | null;
-  private cfgLlmProvider: HTMLInputElement | null;
-  private cfgLlmModel: HTMLInputElement | null;
-  private cfgLlmBaseUrl: HTMLInputElement | null;
-  private cfgLlmApiKey: HTMLInputElement | null;
-  private cfgLlmTemperature: HTMLInputElement | null;
-
-  // ─── 设置面板 DOM 元素 - 后台 Provider 配置 ────────
-  private cfgBgEnabled: HTMLInputElement | null;
-  private cfgBgProvider: HTMLInputElement | null;
-  private cfgBgModel: HTMLInputElement | null;
-  private cfgBgBaseUrl: HTMLInputElement | null;
-  private cfgBgApiKey: HTMLInputElement | null;
-  private cfgBgToggleKey: HTMLButtonElement | null;
-
   // ─── 设置面板 DOM 元素 - Embedding 配置 ─────────────────
   private cfgEmbEnabled: HTMLInputElement | null;
   private cfgEmbModel: HTMLInputElement | null;
@@ -133,30 +122,16 @@ export class SettingsPanelManager {
   // ─── 缓存 DOM 元素 - 重复查询的独立元素 ─
   /** Agent 状态指示器元素（updateAgentStatusIndicator 中查询） */
   private agentStatusEl: HTMLElement | null;
-  /** LLM 连接测试结果元素（showLlmTestResult / clearLlmTestResult 中查询） */
-  private llmTestResultEl: HTMLElement | null;
 
   // ─── 状态 ────────────────────────────────────────────────
   /** 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
-  /**
-   * LLM 表单是否有未保存修改
-   *
-   * 独立于 settingsFormDirty，用于判断是否需要触发 LLM 配置保存。
-   * 避免用户仅修改精灵配置时，因 LLM 字段未配置而弹出误导性 warning。
-   */
-  private llmFormDirty = false;
-  /** LLM 预设（从主进程加载，避免硬编码） */
-  private llmPresets: Record<string, { provider: string; model: string; baseUrl: string }> = {};
   /** 当前角色匹配模式（由 UIManager 同步） */
   private currentPersonaMode = 'auto';
 
   // ─── 回调 ────────────────────────────────────────────────
   private configSaveCallback: ((config: SpriteConfigForm) => void) | null = null;
   private configCancelCallback: (() => void) | null = null;
-  private llmConfigSaveCallback: ((payload: LlmConfigSavePayload) => void) | null = null;
-  /** LLM 连接测试回调 */
-  private llmTestCallback: (() => void) | null = null;
   /** 角色匹配模式变更回调 */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
   /** ADR-015 归档模式变更回调（radio change 时即时触发，与主题一样即时生效） */
@@ -167,22 +142,6 @@ export class SettingsPanelManager {
   private events = new EventTracker();
 
   constructor(private host: SettingsPanelHost) {
-    // 设置面板 - LLM 配置
-    this.cfgLlmPreset = getOptionalElement('cfg-llm-preset', 'select');
-    this.cfgLlmProvider = getOptionalElement('cfg-llm-provider', 'input');
-    this.cfgLlmModel = getOptionalElement('cfg-llm-model', 'input');
-    this.cfgLlmBaseUrl = getOptionalElement('cfg-llm-base-url', 'input');
-    this.cfgLlmApiKey = getOptionalElement('cfg-llm-api-key', 'input');
-    this.cfgLlmTemperature = getOptionalElement('cfg-llm-temperature', 'input');
-
-    // 设置面板 - 后台 Provider 配置
-    this.cfgBgEnabled = getOptionalElement('cfg-bg-enabled', 'input');
-    this.cfgBgProvider = getOptionalElement('cfg-bg-provider', 'input');
-    this.cfgBgModel = getOptionalElement('cfg-bg-model', 'input');
-    this.cfgBgBaseUrl = getOptionalElement('cfg-bg-base-url', 'input');
-    this.cfgBgApiKey = getOptionalElement('cfg-bg-api-key', 'input');
-    this.cfgBgToggleKey = getOptionalElement('btn-toggle-bg-key', 'button');
-
     // 设置面板 - Embedding 配置
     this.cfgEmbEnabled = getOptionalElement('cfg-emb-enabled', 'input');
     this.cfgEmbModel = getOptionalElement('cfg-emb-model', 'input');
@@ -216,7 +175,6 @@ export class SettingsPanelManager {
 
     // 缓存重复查询的独立元素
     this.agentStatusEl = document.getElementById('agent-status-indicator');
-    this.llmTestResultEl = document.getElementById('llm-test-result');
 
     // 多 Provider 管理元素
     this.providerListEl = document.getElementById('provider-list');
@@ -250,18 +208,6 @@ export class SettingsPanelManager {
   private validateSettingsElements(): void {
     // 字段映射：[字段名, 元素引用, 期望 ID]
     const fields: Array<[string, HTMLElement | null, string]> = [
-      ['cfgLlmPreset', this.cfgLlmPreset, 'cfg-llm-preset'],
-      ['cfgLlmProvider', this.cfgLlmProvider, 'cfg-llm-provider'],
-      ['cfgLlmModel', this.cfgLlmModel, 'cfg-llm-model'],
-      ['cfgLlmBaseUrl', this.cfgLlmBaseUrl, 'cfg-llm-base-url'],
-      ['cfgLlmApiKey', this.cfgLlmApiKey, 'cfg-llm-api-key'],
-      ['cfgLlmTemperature', this.cfgLlmTemperature, 'cfg-llm-temperature'],
-      ['cfgBgEnabled', this.cfgBgEnabled, 'cfg-bg-enabled'],
-      ['cfgBgProvider', this.cfgBgProvider, 'cfg-bg-provider'],
-      ['cfgBgModel', this.cfgBgModel, 'cfg-bg-model'],
-      ['cfgBgBaseUrl', this.cfgBgBaseUrl, 'cfg-bg-base-url'],
-      ['cfgBgApiKey', this.cfgBgApiKey, 'cfg-bg-api-key'],
-      ['cfgBgToggleKey', this.cfgBgToggleKey, 'btn-toggle-bg-key'],
       ['cfgEmbEnabled', this.cfgEmbEnabled, 'cfg-emb-enabled'],
       ['cfgEmbModel', this.cfgEmbModel, 'cfg-emb-model'],
       ['cfgEmbBaseUrl', this.cfgEmbBaseUrl, 'cfg-emb-base-url'],
@@ -314,7 +260,6 @@ export class SettingsPanelManager {
     const btnSave = getOptionalElement('btn-settings-save', 'button');
     const btnCancel = getOptionalElement('btn-settings-cancel', 'button');
     const btnReset = getOptionalElement('btn-settings-reset', 'button');
-    const btnLlmTest = document.getElementById('btn-llm-test');
 
     // "稍后配置"按钮：首次配置时提供退出路径
     const btnSkip = getOptionalElement('btn-settings-skip', 'button');
@@ -329,13 +274,9 @@ export class SettingsPanelManager {
     // 设置面板核心元素缺失时静默降级
     if (!btnSave && !btnCancel) return;
 
-    // API Key 显示/隐藏切换：LLM + Embedding
-    this.initApiKeyToggle('btn-toggle-llm-key', 'cfg-llm-api-key');
-    this.initApiKeyToggle('btn-toggle-bg-key', 'cfg-bg-api-key');
+    // API Key 显示/隐藏切换：Provider 表单 + Embedding
+    this.initApiKeyToggle('btn-toggle-provider-key', 'cfg-provider-api-key');
     this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
-
-    // 后台 Provider 启用/禁用复选框联动
-    this.initBackgroundProviderToggle();
 
     // 监听设置面板所有表单元素的变更，标记 dirty
     const settingsPanel = document.getElementById('panel-settings');
@@ -348,46 +289,12 @@ export class SettingsPanelManager {
       });
     }
 
-    // 监听 LLM 表单字段变更，独立标记 llmFormDirty
-    // 避免用户仅修改精灵配置时，LLM 保存逻辑被误触发导致误导性 warning
-    const llmFields = [
-      this.cfgLlmPreset,
-      this.cfgLlmProvider,
-      this.cfgLlmModel,
-      this.cfgLlmBaseUrl,
-      this.cfgLlmApiKey,
-      this.cfgLlmTemperature,
-      this.cfgEmbEnabled,
-      this.cfgEmbModel,
-      this.cfgEmbBaseUrl,
-      this.cfgEmbApiKey,
-    ];
-    for (const field of llmFields) {
-      if (field) {
-        this.events.addEventListener(field, 'input', () => {
-          this.llmFormDirty = true;
-          // 字段变更时清除旧的测试结果，避免误导用户认为旧结果仍有效
-          this.clearLlmTestResult();
-        });
-        this.events.addEventListener(field, 'change', () => {
-          this.llmFormDirty = true;
-          this.clearLlmTestResult();
-        });
-      }
-    }
-
-    // 保存按钮：同时收集精灵配置和 LLM 配置
+    // 保存按钮：收集精灵配置（Provider 配置通过自身「保存」按钮独立保存）
     if (btnSave) {
       this.events.addEventListener(btnSave, 'click', () => {
         this.settingsFormDirty = false;
         const spriteConfig = this.collectConfigFromForm();
         this.configSaveCallback?.(spriteConfig);
-        // 仅在 LLM 表单有修改时触发保存，避免未配置 LLM 时弹出误导性 warning
-        if (this.llmFormDirty) {
-          const llmConfig = this.collectLlmConfigFromForm();
-          this.llmConfigSaveCallback?.(llmConfig);
-          this.llmFormDirty = false;
-        }
       });
     }
 
@@ -449,25 +356,6 @@ export class SettingsPanelManager {
           this.settingsFormDirty = true;
           this.host.showToast('已恢复默认设置，点击「保存」生效', 'info');
         })();
-      });
-    }
-
-    // LLM 预设切换：自动填充 provider/model/baseUrl
-    if (this.cfgLlmPreset) {
-      // 提取局部常量，避免闭包内控制流分析断裂导致的非空断言
-      const presetEl = this.cfgLlmPreset;
-      this.events.addEventListener(presetEl, 'change', () => {
-        const presetKey = presetEl.value;
-        if (presetKey) {
-          this.applyLlmPreset(presetKey);
-        }
-      });
-    }
-
-    // LLM 连接测试按钮：调用主进程验证配置
-    if (btnLlmTest) {
-      this.events.addEventListener(btnLlmTest, 'click', () => {
-        this.llmTestCallback?.();
       });
     }
 
@@ -769,50 +657,6 @@ export class SettingsPanelManager {
     });
   }
 
-  /**
-   * 后台 Provider 启用/禁用复选框联动
-   *
-   * 当用户勾选/取消"后台 Provider"复选框时，联动启用/禁用后台 Provider 的表单字段。
-   * 未启用时字段保持 disabled，避免用户误填。
-   */
-  private initBackgroundProviderToggle(): void {
-    if (!this.cfgBgEnabled) return;
-
-    const bgEnabledEl = this.cfgBgEnabled;
-    const bgFields = [this.cfgBgProvider, this.cfgBgModel, this.cfgBgBaseUrl, this.cfgBgApiKey, this.cfgBgToggleKey];
-    const applyState = (enabled: boolean) => {
-      for (const field of bgFields) {
-        if (field) field.disabled = !enabled;
-      }
-    };
-
-    this.events.addEventListener(bgEnabledEl, 'change', () => {
-      applyState(bgEnabledEl.checked);
-    });
-  }
-
-  /**
-   * 应用后台 Provider 字段启用/禁用状态
-   *
-   * 与 initBackgroundProviderToggle 的联动逻辑一致，但用于程序化设置（如 loadLlmConfigToForm）。
-   */
-  private applyBackgroundProviderState(enabled: boolean): void {
-    const bgFields = [this.cfgBgProvider, this.cfgBgModel, this.cfgBgBaseUrl, this.cfgBgApiKey, this.cfgBgToggleKey];
-    for (const field of bgFields) {
-      if (field) field.disabled = !enabled;
-    }
-  }
-
-  /** 应用 LLM 预设到表单 */
-  private applyLlmPreset(key: string): void {
-    const preset = this.llmPresets[key];
-    if (preset && this.cfgLlmProvider && this.cfgLlmModel && this.cfgLlmBaseUrl) {
-      this.cfgLlmProvider.value = preset.provider;
-      this.cfgLlmModel.value = preset.model;
-      this.cfgLlmBaseUrl.value = preset.baseUrl;
-    }
-  }
-
   // ─── 公共 API ───────────────────────────────────────────
 
   /**
@@ -824,8 +668,6 @@ export class SettingsPanelManager {
    */
   resetFormDirty(): void {
     this.settingsFormDirty = false;
-    // 同步重置 LLM 表单 dirty 标志
-    this.llmFormDirty = false;
   }
 
   /**
@@ -835,7 +677,7 @@ export class SettingsPanelManager {
    * 避免用户修改设置后点击导航离开导致修改丢失。
    */
   isDirty(): boolean {
-    return this.settingsFormDirty || this.llmFormDirty;
+    return this.settingsFormDirty;
   }
 
   /**
@@ -866,47 +708,30 @@ export class SettingsPanelManager {
     }
   }
 
-  /** 加载 LLM 配置到表单 */
-  loadLlmConfigToForm(data: {
-    configured: boolean;
-    config: LlmConfigForm | null;
-    /** 主进程返回的 embedding（无 enabled 字段，由 configured 推断） */
+  /** @deprecated 已移除单模型表单，保留方法签名供渐进迁移 */
+  loadLlmConfigToForm(_data: unknown): void {
+    // no-op: 单模型表单已移除，Provider 配置由 loadProviderList 管理
+  }
+
+  /** @deprecated 已移除单模型表单 */
+  collectLlmConfigFromForm(): unknown {
+    return null;
+  }
+
+  /** @deprecated 已移除单模型表单 */
+  getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
+    return { provider: '', model: '', baseUrl: '', apiKey: '' };
+  }
+
+  /**
+   * 加载 Embedding 配置到表单
+   *
+   * 从主进程返回的 LLM 配置数据中提取 Embedding 部分，填充到 Embedding 表单字段。
+   * Provider 配置由 loadProviderList 独立管理，此方法仅处理 Embedding。
+   */
+  loadEmbeddingConfig(data: {
     embedding: { model: string; baseUrl: string; apiKey: string } | null;
-    presets: Record<string, { provider: string; model: string; baseUrl: string }>;
   }): void {
-    // 保存预设供 applyLlmPreset 使用（避免硬编码）
-    this.llmPresets = data.presets ?? {};
-
-    if (data.config) {
-      if (this.cfgLlmProvider) this.cfgLlmProvider.value = data.config.provider;
-      if (this.cfgLlmModel) this.cfgLlmModel.value = data.config.model;
-      if (this.cfgLlmBaseUrl) this.cfgLlmBaseUrl.value = data.config.baseUrl;
-      if (this.cfgLlmApiKey) this.cfgLlmApiKey.value = data.config.apiKey;
-      if (this.cfgLlmTemperature) this.cfgLlmTemperature.value = String(data.config.temperature);
-
-      // 加载后台 Provider 配置
-      if (data.config.background?.enabled) {
-        if (this.cfgBgEnabled) this.cfgBgEnabled.checked = true;
-        if (this.cfgBgProvider) this.cfgBgProvider.value = data.config.background.provider;
-        if (this.cfgBgModel) this.cfgBgModel.value = data.config.background.model;
-        if (this.cfgBgBaseUrl) this.cfgBgBaseUrl.value = data.config.background.baseUrl;
-        if (this.cfgBgApiKey) this.cfgBgApiKey.value = data.config.background.apiKey;
-        // 启用后台 Provider 字段（联动复选框状态）
-        this.applyBackgroundProviderState(true);
-      } else {
-        if (this.cfgBgEnabled) this.cfgBgEnabled.checked = false;
-        this.applyBackgroundProviderState(false);
-      }
-
-      // 反向匹配预设
-      if (this.cfgLlmPreset) {
-        const presetKey = Object.entries(data.presets).find(
-          ([, p]) => p.provider === data.config?.provider && p.model === data.config.model,
-        )?.[0];
-        this.cfgLlmPreset.value = presetKey ?? '';
-      }
-    }
-
     if (data.embedding) {
       if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = true;
       if (this.cfgEmbModel) this.cfgEmbModel.value = data.embedding.model;
@@ -915,66 +740,6 @@ export class SettingsPanelManager {
     } else {
       if (this.cfgEmbEnabled) this.cfgEmbEnabled.checked = false;
     }
-  }
-
-  /** 收集表单中的 LLM 配置 */
-  collectLlmConfigFromForm(): LlmConfigSavePayload {
-    const llm: LlmConfigForm = {
-      provider: this.cfgLlmProvider?.value.trim() ?? '',
-      model: this.cfgLlmModel?.value.trim() ?? '',
-      baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
-      apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
-      // temperature=0 是合法值（确定性输出），不能用 || 0.7（会把 0 视为 falsy）
-      // 仅当字段为空或解析为 NaN 时才回退到默认值 0.7
-      temperature: this.parseTemperature(this.cfgLlmTemperature?.value),
-    };
-
-    // 收集后台 Provider 配置
-    if (this.cfgBgEnabled?.checked) {
-      llm.background = {
-        enabled: true,
-        provider: this.cfgBgProvider?.value.trim() ?? '',
-        model: this.cfgBgModel?.value.trim() ?? '',
-        baseUrl: this.cfgBgBaseUrl?.value.trim() ?? '',
-        apiKey: this.cfgBgApiKey?.value.trim() ?? '',
-      };
-    } else {
-      llm.background = { enabled: false, provider: '', model: '', baseUrl: '', apiKey: '' };
-    }
-
-    let embedding: EmbeddingConfigForm | null = null;
-    if (this.cfgEmbEnabled?.checked) {
-      embedding = {
-        enabled: true,
-        model: this.cfgEmbModel?.value.trim() ?? '',
-        baseUrl: this.cfgEmbBaseUrl?.value.trim() ?? '',
-        apiKey: this.cfgEmbApiKey?.value.trim() ?? '',
-      };
-    }
-
-    return { llm, embedding };
-  }
-
-  /**
-   * 解析 temperature 输入值
-   *
-   * temperature=0 是合法值（用于 LLM 确定性输出），不能用 `|| 0.7` 短路，
-   * 否则 0 会被视为 falsy 静默替换为 0.7，用户意图丢失。
-   * 仅当字段为空或解析为 NaN 时回退到默认值 0.7。
-   *
-   * @param value 表单输入值（可能为 undefined/空字符串/"0"/"1.5" 等）
-   * @returns 解析后的 temperature，范围 [0, 2]
-   */
-  private parseTemperature(value: string | undefined): number {
-    if (value === undefined || value.trim() === '') {
-      return 0.7; // 空值回退到默认
-    }
-    const parsed = parseFloat(value);
-    if (Number.isNaN(parsed)) {
-      return 0.7; // 非数字回退到默认
-    }
-    // 限制到 HTML input 声明的 [0, 2] 范围内
-    return Math.max(0, Math.min(2, parsed));
   }
 
   // ─── 多 Provider 管理 ────────────────────────────────────
@@ -991,6 +756,8 @@ export class SettingsPanelManager {
       const data = await window.electronAPI.listLlmProviders();
       this.cachedProviders = data.providers; // 缓存供编辑时使用
       this.renderProviderList(data.active, data.providers);
+      // 通知宿主 Provider 列表已变更，让 InputAreaManager 刷新输入框选择器
+      this.host.onProviderChanged?.();
     } catch {
       this.providerListEl.innerHTML = '';
     }
@@ -1014,7 +781,7 @@ export class SettingsPanelManager {
           <div class="provider-card${isActive ? ' active' : ''}" data-provider-key="${p.key}">
             <div class="provider-info">
               <span class="provider-name">${p.name}</span>
-              <span class="provider-detail">${p.provider} · ${p.model} · ${p.baseUrl || '未设置'}</span>
+              <span class="provider-detail">${p.provider} · ${p.model}</span>
             </div>
             ${isActive ? '<span class="provider-active-badge">当前</span>' : ''}
             <div class="provider-actions">
@@ -1402,55 +1169,6 @@ export class SettingsPanelManager {
     };
   }
 
-  /**
-   * 显示 LLM 测试连接结果
-   *
-   * @param result 测试结果（success + error）
-   * @param elapsedMs 测试耗时（毫秒），用于展示响应速度
-   */
-  showLlmTestResult(result: { success: boolean; error: string | null }, elapsedMs?: number): void {
-    const resultEl = this.llmTestResultEl;
-    if (!resultEl) return;
-
-    if (result.success) {
-      const timeHint = elapsedMs !== undefined ? `（${elapsedMs}ms）` : '';
-      // SVG 图标（静态常量）+ 动态文本（createTextNode 转义，防止 error 文本注入）
-      resultEl.innerHTML = '<svg class="icon"><use href="#icon-check"/></svg>';
-      resultEl.appendChild(document.createTextNode(` 连接成功${timeHint}`));
-      resultEl.style.color = 'var(--green)';
-    } else {
-      // 失败时补充排查建议，引导用户修复而非仅显示错误
-      const hint = '\n排查建议：检查 API Key 是否正确 / baseUrl 是否可达 / model 名称是否支持';
-      // SVG 图标（静态常量）+ 动态文本（createTextNode 转义，防止 error 文本注入）
-      resultEl.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
-      resultEl.appendChild(document.createTextNode(` 失败：${result.error ?? '未知错误'}${hint}`));
-      resultEl.style.color = 'var(--red)';
-    }
-  }
-
-  /**
-   * 清除 LLM 测试结果显示
-   *
-   * 用户修改任一 LLM 字段时调用，避免旧测试结果误导用户认为当前配置已验证。
-   */
-  clearLlmTestResult(): void {
-    const resultEl = this.llmTestResultEl;
-    if (resultEl) {
-      resultEl.textContent = '';
-      resultEl.style.color = '';
-    }
-  }
-
-  /** 收集表单中的 LLM 配置（供测试连接复用） */
-  getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
-    return {
-      provider: this.cfgLlmProvider?.value.trim() ?? '',
-      model: this.cfgLlmModel?.value.trim() ?? '',
-      baseUrl: this.cfgLlmBaseUrl?.value.trim() ?? '',
-      apiKey: this.cfgLlmApiKey?.value.trim() ?? '',
-    };
-  }
-
   // ─── 回调注册 ───────────────────────────────────────────
 
   onConfigSave(cb: (config: SpriteConfigForm) => void): void {
@@ -1458,13 +1176,6 @@ export class SettingsPanelManager {
   }
   onConfigCancel(cb: () => void): void {
     this.configCancelCallback = cb;
-  }
-  onLlmConfigSave(cb: (payload: LlmConfigSavePayload) => void): void {
-    this.llmConfigSaveCallback = cb;
-  }
-  /** 注册 LLM 连接测试回调 */
-  onLlmTest(cb: () => void): void {
-    this.llmTestCallback = cb;
   }
   /** 注册角色匹配模式变更回调 */
   onPersonaModeChange(cb: (mode: string) => void): void {
