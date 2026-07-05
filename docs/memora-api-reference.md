@@ -1,10 +1,12 @@
-# Memora 内核 API 参考手册（v3.2）
+# Memora 内核 API 参考手册（v3.3）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v3.2（最后更新：2026-06-25）
+> **版本**：v3.3（最后更新：2026-07-05，对应内核 v0.2.0）
+>
+> **v3.3 变更**：内核发布 v0.2.0（npm 正式包）。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具（parseFrontmatter/serializeFrontmatter）、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（collectAgentChunks/evaluateResult）。
 >
 > **v3.2 变更**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
 >
@@ -109,6 +111,8 @@ v3.0 起，Agent 通过 8 个 getter 暴露专职 Manager。详见后续章节�
 | `agent.config` | `ConfigManager \| null` | 规则/技能注入 + 配置建议 |
 | `agent.insight` | `InsightExtractor \| null` | 输入分类 + 记忆提取 |
 | `agent.memory` | `MemoryInspector \| null` | 记忆快照 + 搜索 + 统计 |
+| `agent.userProfile` | `UserProfileManager \| null` | 用户画像管理（事实提取 + 确认/拒绝） |
+| `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
 
 ### 2.5 内部组件访问器（高级）
 
@@ -149,6 +153,9 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 | `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
 | `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
 | `insightExtracted` | `{ source: string; insight: string }` | 洞察被提取 |
+| `conflictDetected` | `{ memoryId, conflictingId, relationType }` | 记忆冲突被检测到（关系图谱） |
+| `projectSwitched` | `{ from, to }` | 项目切换 |
+| `skillMatched` | `{ skillName, keywords }` | 技能被匹配激活 |
 
 ```typescript
 // 使用示例
@@ -801,9 +808,9 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.projects` | `.list` / `.switchProject()` / `.listProjects()` / `.rebuildComponents()` |
 | Provider | `setProvider()` / `setBackgroundProvider()` |
 
-### Agent 面类只读访问器（8 个）
+### Agent 面类只读访问器（10 个）
 
-`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory`
+`initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager`
 
 ### Manager 访问器（8 个）
 
@@ -818,7 +825,9 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.skills` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.config` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onConfigSuggestion()` / `.confirmConfigSuggestion()` |
 | `agent.insight` | `.classify(input)` / `.extract(userInput, assistantContent)` / `.setKeywords(keywords)` / `.setWriteExtensions(ext)` |
-| `agent.memory` | `.snapshot()` / `.search()` / `.stats()` |
+| `agent.memory` | `.snapshot()` / `.search()` / `.stats()` / `.suggest()` / `.sourceHealth()` |
+| `agent.userProfile` | `.list()` / `.confirm(id)` / `.reject(id)` / `.pending()` |
+| `agent.works` | `.list()` / `.add(projection)` |
 
 ---
 
@@ -932,8 +941,24 @@ export { Agent } from 'memora';
 export type {
   AgentChunk,
   ThinkingPhase,
+  UIMessages,
   AgentOptions,
-  AgentContext,           // = ProjectContext 的别名
+  AgentContext,
+  AgentProjectEntry,
+  AgentForkResult,
+  AgentMetrics,
+  AgentSearchHit,
+  AgentStats,
+  ArchiveMode,
+  SuggestOptions,
+  SuggestHit,
+  SourceHealthStatus,
+  SourceHealthEntry,
+  SourceHealthReport,
+  ForkResult,
+  SessionArchiveResult,
+  WorkProjectionEntry,
+  AutoConfigRefinerOptions,
 } from 'memora';
 
 // 记忆快照与搜索
@@ -942,12 +967,11 @@ export type {
   WorkingMemorySnapshot,
   BootstrapSnapshot,
   ArchiveSnapshot,
-  AgentSearchHit,
-  AgentStats,
 } from 'memora';
+export { AGENT_CONSTANTS, LOOP_CONSTANTS } from 'memora';
 
 // 工具
-export type { ToolDefinition, ToolHandler, WriteExtensions } from 'memora';
+export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from 'memora';
 
 // 配置建议
 export type { ConfigSuggestion, ConfigSuggestionHandler } from 'memora';
@@ -959,10 +983,24 @@ export type { MemoryKeywords } from 'memora';
 export type { Memory } from 'memora';
 export type { IMemoryStorage, ISessionStore, SessionMessage } from 'memora';
 export { InMemoryStorage } from 'memora';
+
+// 记忆关系
+export type {
+  IMemoryRelationStore,
+  MemoryRelation,
+  RelationDirection,
+} from 'memora';
+export { InMemoryRelationStore, RELATION_TYPES, RELATION_WEIGHTS } from 'memora';
+
+// 用户画像
+export type { UserProfileEntry, ProfileCategory, ExtractedFact } from 'memora';
+
 // 向量存储
-export { VectorStore } from 'memora';
-export type { EmbeddingService } from 'memora';
+export { VectorStore, EmbeddingProvider } from 'memora';
+export type { EmbeddingService, EmbeddingConfig, EmbeddingResult } from 'memora';
+
 // 事件系统
+export { TypedEventEmitter } from 'memora';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from 'memora';
 
 // 可观测性
@@ -970,7 +1008,7 @@ export type { ITracer, ISpan } from 'memora';
 export { NOOP_TRACER, TRACE_SPANS } from 'memora';
 
 // 错误码
-export { ToolErrorCode, isRetryableErrorCode, MemoraError } from 'memora';
+export { ToolErrorCode, isRetryableErrorCode, MemoraError, toError } from 'memora';
 export type { ToolErrorCodeValue } from 'memora';
 
 // 日志
@@ -982,24 +1020,48 @@ export { recall, extractKeywords } from 'memora';
 export type { RecallOptions } from 'memora';
 
 // 角色
-export type { PersonaMode } from 'memora';
-
-// 消息历史
-export type { ForkResult } from 'memora';
+export type { PersonaMode, Persona } from 'memora';
 
 // 技能
 export type { SkillEntry, SkillMatch } from 'memora';
 
 // LLM
-export { createLlmProvider, createProviderFromConfig } from 'memora';
-export type { ProviderConfig, LlmProvider } from 'memora';
+export { createLlmProvider, createProviderFromConfig, OpenAICompatibleProvider } from 'memora';
+export type { ProviderConfig, LlmProvider, LlmChunk, ChatOptions, OpenAICompatibleConfig } from 'memora';
 
 // 配置
 export { loadConfig } from 'memora';
 export type { Config } from 'memora';
 
 // 工具函数
-export { segmentText, tokenizeKeywords, SOURCE_LABELS, inferSource, escapeLike, validateSource } from 'memora';
+export {
+  segmentText,
+  SOURCE_LABELS,
+  inferSource,
+  escapeLike,
+  validateSource,
+  safeSetTimeout,
+  safeSetInterval,
+  clearSafeTimeout,
+  clearSafeInterval,
+  parseFrontmatter,
+  serializeFrontmatter,
+} from 'memora';
+export type { SourceValidationSeverity } from 'memora';
+
+// 安全
+export type {
+  AuditEvent,
+  AuditListener,
+  Permission,
+  WriteDecision,
+  WriteConfirmationInfo,
+  WriteConfirmationRequest,
+} from 'memora';
+
+// 评估
+export { collectAgentChunks, evaluateResult } from 'memora';
+export type { EvalScenario, EvalExpectation, EvalResult } from 'memora';
 ```
 
 ---
@@ -1021,6 +1083,6 @@ Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁�
 
 ---
 
-**版本**：v3.2
-**最后更新**：2026-06-25
-**配套文档**：[memora-接入指南-v1.0.md](./memora-接入指南-v1.0.md)（步骤式教程）
+**版本**：v3.3
+**最后更新**：2026-07-05
+**配套文档**：[memora-接入指南.md](./memora-接入指南.md)（步骤式教程）

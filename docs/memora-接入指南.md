@@ -1,14 +1,16 @@
-# Memora · 接入指南 v3.2
+# Memora · 接入指南 v3.3
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v3.2（最后更新：2026-06-25）
+> **版本**：v3.3（最后更新：2026-07-05）
+>
+> **v3.3 变更**：内核发布 v0.2.0（npm 正式包），精灵切换至 npm alias 依赖。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（EvalScenario/collectAgentChunks/evaluateResult）。
 >
 > **v3.2 变更**：新增 ADR-014 记忆关系图谱（IMemoryRelationStore 侧车接口）、UserProfile 用户画像管理、WorkProjectionManager 作品投影、AutoConfigRefiner 自进化配置建议。
 >
 > **v3.1 变更**：新增可观测性（ITracer）、内容护栏（Guardrails）、工具错误反思（Reflection）、评估体系（Eval）支持。
 >
-> **v3.0 重大变更**：Agent God Object 拆分。记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference-v1.0.md)。
+> **v3.0 重大变更**：Agent God Object 拆分。记忆查询、规则注入、工具注册等方法迁移到专职 Manager，通过 `agent.<manager>.xxx()` 访问。详见 [API 参考手册](./memora-api-reference.md)。
 
 ---
 
@@ -365,7 +367,7 @@ agent.on('sessionForked', (event) => {
 
 ## 五、API 速查
 
-> 完整定义见 [memora-api-reference-v1.0.md](./memora-api-reference-v1.0.md)。
+> 完整定义见 [memora-api-reference.md](./memora-api-reference.md)。
 
 ### 构造选项 `AgentOptions`
 
@@ -455,57 +457,110 @@ import {
   createProviderFromConfig,
   loadConfig,
   InMemoryStorage,
+  InMemoryRelationStore,
   VectorStore,
+  EmbeddingProvider,
   setLogger,
   logger,
   segmentText,
+  parseFrontmatter,
+  serializeFrontmatter,
+  safeSetTimeout,
+  safeSetInterval,
+  clearSafeTimeout,
+  clearSafeInterval,
   recall,
   extractKeywords,
-  decayScores,
   SOURCE_LABELS,
+  RELATION_TYPES,
+  RELATION_WEIGHTS,
   inferSource,
   escapeLike,
   validateSource,
-  tokenizeKeywords,
+  MemoraError,
+  toError,
   NOOP_TRACER,
   TRACE_SPANS,
   ToolErrorCode,
   isRetryableErrorCode,
+  TypedEventEmitter,
+  collectAgentChunks,
+  evaluateResult,
 } from 'memora';
 import type {
   ProviderConfig,
   Config,
   IMemoryStorage,
+  IMemoryRelationStore,
+  MemoryRelation,
+  RelationDirection,
   ILogger,
   ISessionStore,
   SessionMessage,
   Memory,
+  SourceValidationSeverity,
   LlmProvider,
+  LlmChunk,
+  ChatOptions,
   AgentChunk,
+  ThinkingPhase,
+  UIMessages,
+  ArchiveMode,
   AgentOptions,
   AgentContext,
-  AgentBuildCtx,
+  AgentProjectEntry,
+  AgentForkResult,
   ToolDefinition,
   ToolHandler,
+  ToolContext,
   WriteExtensions,
   MemoryKeywords,
   MemorySnapshot,
+  WorkingMemorySnapshot,
+  BootstrapSnapshot,
+  ArchiveSnapshot,
   AgentSearchHit,
   AgentStats,
+  SuggestOptions,
+  SuggestHit,
+  SourceHealthStatus,
+  SourceHealthEntry,
+  SourceHealthReport,
   ConfigSuggestion,
   ConfigSuggestionHandler,
+  AutoConfigRefinerOptions,
+  SessionArchiveResult,
+  WorkProjectionEntry,
+  UserProfileEntry,
+  ProfileCategory,
+  ExtractedFact,
   PersonaMode,
   Persona,
   SkillEntry,
+  SkillMatch,
   RecallOptions,
   EmbeddingService,
+  EmbeddingConfig,
+  EmbeddingResult,
   AgentEventMap,
   AgentEventName,
   AgentEventHandler,
   ForkResult,
   ITracer,
   ISpan,
+  AgentMetrics,
   ToolErrorCodeValue,
+  EvalScenario,
+  EvalExpectation,
+  EvalResult,
+  AuditEvent,
+  AuditListener,
+  Permission,
+  WriteDecision,
+  WriteConfirmationInfo,
+  WriteConfirmationRequest,
+  OpenAICompatibleProvider,
+  OpenAICompatibleConfig,
 } from 'memora';
 ```
 
@@ -515,26 +570,39 @@ import type {
 | `createProviderFromConfig(name, config)` | 从命名配置创建 LlmProvider 实例 |
 | `loadConfig(path?)` | 加载 memora.json 配置文件 |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
+| `InMemoryRelationStore` | IMemoryRelationStore 的纯内存实现（测试用） |
 | `VectorStore` | 向量存储类（宿主注入 EmbeddingService 后创建，启用语义搜索） |
+| `EmbeddingProvider` | OpenAI 兼容 Embedding 端点实现（满足 EmbeddingService 接口） |
 | `setLogger(logger)` | 替换全局日志实现 |
 | `logger` | 全局日志实例 |
 | `segmentText(text)` | 中文分词工具 |
+| `parseFrontmatter(text)` | 解析 Markdown frontmatter |
+| `serializeFrontmatter(fm, body)` | 序列化 frontmatter + body 为 Markdown |
+| `safeSetTimeout(fn, ms)` | 安全定时器（可跟踪清理） |
+| `safeSetInterval(fn, ms)` | 安全间隔器（可跟踪清理） |
+| `clearSafeTimeout(id)` | 清除安全定时器 |
+| `clearSafeInterval(id)` | 清除安全间隔器 |
 | `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
-| `decayScores(memories, now?)` | 记忆衰减（>7天未访问 score 降 0.02/周，下限 0.1） |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / INSIGHT / PROFILE / WORK_PROJECTION / GUARDRAIL） |
+| `RELATION_TYPES` | 记忆关系类型常量（CONTRADICTS / SUPPORTS / FOLLOWS / REFINES / CAUSED / RELATED） |
+| `RELATION_WEIGHTS` | 关系强度常量（NONE / WEAK / UNDEFINED / STRONG / CERTAIN） |
 | `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
-| `tokenizeKeywords(text)` | 中英文混合分词（中文字 ≥2 连字 + 英文单词），供宿主 FTS5 使用 |
+| `MemoraError` | 统一错误类型（结构化错误码 + 上下文） |
+| `toError(err)` | 将任意值转为 Error（浏览器端安全，不引入 pino） |
 | `NOOP_TRACER` | ITracer 的空实现（静默丢弃所有 span，零开销） |
 | `TRACE_SPANS` | AgentLoop 预定义 Span 名称常量（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE） |
 | `ToolErrorCode` | 工具错误码枚举（10 种，含 PATH_NOT_ALLOWED / FILE_NOT_FOUND 等） |
 | `isRetryableErrorCode(code)` | 判断错误码是否可重试（5 种 retryable） |
+| `TypedEventEmitter` | 类型安全的事件发射器（Agent 继承此类） |
+| `collectAgentChunks(gen)` | 从 AgentChunk 流收集行为数据（Mock Eval 用） |
+| `evaluateResult(name, collected, expected)` | 比对期望与结果（Mock Eval 用） |
 
 **注意**：`SqliteStorage` 已移出到宿主项目，不再从 memora 导出。宿主需自行实现 `IMemoryStorage` 接口。
 
-`IMemoryStorage` 接口要求实现 `count()` 和 `countBySource(source)` 方法，用于高效统计记忆数量（避免全量加载数据）。详见 [API 参考手册](./memora-api-reference-v1.0.md#52-imemorystorage-接口)。
+`IMemoryStorage` 接口要求实现 `count()` 和 `countBySource(source)` 方法，用于高效统计记忆数量（避免全量加载数据）。详见 [API 参考手册](./memora-api-reference.md)。
 
 ---
 
@@ -731,4 +799,4 @@ for (const chapter of chapters) {
 
 ---
 
-> 更多细节参见 [memora-api-reference-v1.0.md](./memora-api-reference-v1.0.md)（完整 API 参考）
+> 更多细节参见 [memora-api-reference.md](./memora-api-reference.md)（完整 API 参考）

@@ -36,7 +36,7 @@ date: 2026-07-01
 
 ## 2. 内核更新工作流（npm alias 模式）
 
-> 内核已发布至 npm（`@zooique/memora`），精灵通过 npm alias 引用：`"memora": "npm:@zooique/memora@^0.1.0"`。  
+> 内核已发布至 npm（`@zooique/memora`），精灵通过 npm alias 引用：`"memora": "npm:@zooique/memora@^0.2.0"`。  
 > 源码中 import 保持 `from 'memora'`，包管理层自动完成 `@zooique/memora` → `memora` 的映射。
 
 ### 2.1 本地开发工作流（推荐日常迭代使用）
@@ -57,7 +57,7 @@ npm run build          # 在 memora 根目录编译，精灵立即生效
 ```
 
 > **注意**：`npm link` 仅影响本地开发环境，不修改 package.json 或 package-lock.json。  
-> 提交代码前需确保精灵的 package.json 中 `memora` 依赖仍指向 `npm:@zooique/memora@^0.1.0`（而非 `file:` 协议）。  
+> 提交代码前需确保精灵的 package.json 中 `memora` 依赖仍指向 `npm:@zooique/memora@^0.2.0`（而非 `file:` 协议）。  
 > 发布正式版本前，在精灵目录执行 `npm unlink memora && npm install` 切回 npm 正式包。
 
 ### 2.2 正式发布工作流（用于发布 npm 版本）
@@ -84,7 +84,7 @@ npm run typecheck     # 验证类型兼容
 npm run build         # 验证构建通过
 ```
 
-> **注意**：`npm update memora` 更新的是 alias 指向的实际包（`@zooique/memora`），而非 alias 本身。alias 声明 `"memora": "npm:@zooique/memora@^0.1.0"` 中的版本约束（`^0.1.0`）决定可更新的范围。
+> **注意**：`npm update memora` 更新的是 alias 指向的实际包（`@zooique/memora`），而非 alias 本身。alias 声明 `"memora": "npm:@zooique/memora@^0.2.0"` 中的版本约束（`^0.2.0`）决定可更新的范围。
 
 ## 3. 技术栈清单
 
@@ -165,6 +165,17 @@ hosts/memora-sprite/
     ├── storage/              ← 持久化层
     │   ├── sessionStore.ts / sqliteStorage.ts
     │   ├── spriteConfigStore.ts / sqliteDatabaseTypes.ts
+    │
+    ├── web/                  ← Web 调试通道（Phase 4 交付）
+    │   ├── server.ts         ← 原生 HTTP 服务端（零 Express 依赖）
+    │   ├── static.ts         ← 静态文件服务
+    │   ├── preloadWeb.ts     ← Web 端预加载（API 暴露）
+    │   ├── webContext.ts     ← Web 端上下文管理
+    │   └── routes/           ← REST API 路由
+    │       ├── index.ts / types.ts
+    │       ├── chatStreamRoutes.ts / configRoutes.ts
+    │       ├── memoryRoutes.ts / sessionRoutes.ts
+    │       └── systemRoutes.ts
     │
     └── __tests__/            ← 测试文件（按模块分组）
         ├── electron/         ← ipcHandlers.test.ts / ui.test.ts
@@ -262,6 +273,22 @@ export class ClipboardManager { ... }
 | 变量/函数 | 小驼峰 |
 | 常量 | 全大写下划线 |
 | 类型/接口 | 大驼峰 |
+
+### 4.3 Web 调试通道（Phase 4 交付）
+
+> **定位**：精灵的平行部署模式——与 Electron 共享同一内核，通过原生 HTTP 提供 REST API + 静态前端。
+> **设计原则**：零框架依赖（仅 `node:http`），安全隔离（127.0.0.1 绑定 + 路径穿越防护 + Security Headers）。
+
+| 维度 | 说明 |
+|------|------|
+| 入口 | `npm run start:web` / `npm run dev:web`（tsx watch） |
+| 服务端 | 372 行 `server.ts`，原生 `http.createServer`，三阶段优雅关闭 |
+| 路由 | 7 个 REST 路由文件（chat/config/memory/session/system + types + index） |
+| 安全 | 路径穿越防护 + CSP/X-Content-Type-Options 等 Headers + 127.0.0.1 隔离 |
+| 测试 | 6 个路由测试文件（chatStream/config/memory/session/system + types），全量通过 |
+| 与 Electron 关系 | 平行模式，共享 `sprite/` 核心层和 `storage/` 持久化层，不共享 `electron/` 进程管理 |
+
+> **历史**：web/ 最初作为"临时开发辅助"创建，经 2026-07-05 根须审查正式接纳为 Phase 4 交付物。
 
 ## 6. 不做清单
 
