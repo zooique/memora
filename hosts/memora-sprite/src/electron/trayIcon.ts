@@ -7,10 +7,10 @@
  * - 三态图标切换（idle/active/sleeping），对齐 HTML 预览 §6.3
  *
  * 图标策略（ADR-TRAY-001）：
- * 1. 优先使用外部图标文件 resources/tray-icon.png（支持后续替换为专业设计图标）
- * 2. 外部图标不存在时，使用程序化生成的 fallback 图标
- * 3. fallback 图标为圆形背景 + 中心星形图案，三态不同颜色
- * 4. 替换方式：将 16x16（或 32x32）PNG 放到 resources/tray-icon.png 即可自动生效
+ * 1. 优先使用内置品牌图标 build/icons/tray.png（由 assets/icon.svg 生成）
+ * 2. 品牌图标存在时，不切换三态颜色（保持品牌一致性，仅通过 tooltip 反映状态）
+ * 3. 品牌图标不存在时，使用程序化生成的 fallback 三态图标（圆形+星形，不同颜色）
+ * 4. 图标源文件：assets/icon.svg（真理源），生成脚本：scripts/generate-icons.mjs
  *
  * 三态语义：
  * - idle（默认）：绿色 #a6e3a1，精灵空闲
@@ -227,11 +227,11 @@ export class TrayManager {
   }
 
   /**
-   * ADR-TRAY-001 程序化生成状态图标（fallback）
+   * 程序化生成状态图标（fallback）
    *
-   * 当 resources/tray-icon.png 不存在时使用。
+   * 当品牌图标 build/icons/tray.png 不存在时使用。
    * 生成 16x16 图标：圆形背景 + 中心四角星图案，三态不同颜色。
-   * 后续替换：只需在 resources/ 目录放置 tray-icon.png 即可自动生效。
+   * 品牌图标由 assets/icon.svg 通过 scripts/generate-icons.mjs 自动生成。
    *
    * @param state 托盘状态（idle/active/sleeping）
    * @returns NativeImage 16x16 像素图标

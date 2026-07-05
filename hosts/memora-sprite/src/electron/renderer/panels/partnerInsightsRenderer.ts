@@ -117,7 +117,7 @@ export class PartnerInsightsRenderer {
     }
 
     // 知识缺口检测
-    const gapsContainer = panel.querySelector('.partner-gaps');
+    const gapsContainer = panel.querySelector('.partner-knowledge-gaps');
     if (gapsContainer) {
       this.renderKnowledgeGaps(memories, gapsContainer as HTMLElement);
     }

@@ -1191,10 +1191,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
     this.dashboardPanel.renderSkills(skills);
   }
-  /** 渲染里程碑成就展示（委托到 DashboardPanelManager） */
-  renderMilestones(data: { total: number; bySource: Record<string, number> }): void {
-    this.dashboardPanel.renderMilestones(data);
-  }
   /** 显示洞察面板加载态（委托到 DashboardPanelManager） */
   showInsightsLoading(): void { this.dashboardPanel.showInsightsLoading(); }
   /** 渲染记忆洞察数据（委托到 DashboardPanelManager） */

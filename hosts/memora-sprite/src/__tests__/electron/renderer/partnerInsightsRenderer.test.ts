@@ -25,7 +25,7 @@ import { PartnerInsightsRenderer, type PartnerMemory } from '../../../electron/r
 const PARTNER_HTML = `
   <div id="partner-insights" class="hidden">
     <div class="partner-profile-cards"></div>
-    <div class="partner-gaps"></div>
+    <div class="partner-knowledge-gaps"></div>
     <canvas id="partner-growth-chart"></canvas>
     <span id="partner-growth-total"></span>
   </div>
@@ -244,7 +244,7 @@ describe('renderGrowthChart · 趋势图', () => {
   });
 
   it('Canvas 不存在时应安全降级（不抛错）', () => {
-    document.body.innerHTML = '<div id="partner-insights"><div class="partner-profile-cards"></div><div class="partner-gaps"></div></div>';
+    document.body.innerHTML = '<div id="partner-insights"><div class="partner-profile-cards"></div><div class="partner-knowledge-gaps"></div></div>';
     const renderer = new PartnerInsightsRenderer();
     expect(() => renderer.render(createMemories({ count: 1 }))).not.toThrow();
   });

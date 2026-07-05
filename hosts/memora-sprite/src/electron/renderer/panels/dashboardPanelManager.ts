@@ -146,19 +146,6 @@ export interface DashboardViewModel {
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** 累积事件接近阈值的百分比（>=80% 显示黄色高亮） */
-const NEAR_THRESHOLD_RATIO = 0.8;
-
-
-
-/** 记忆量级里程碑 → 中文标签映射（key = Math.floor(Math.log10(total))） */
-const MAGNITUDE_LABELS: Record<number, string> = {
-  2: '百条记忆',
-  3: '千条记忆',
-  4: '万条记忆',
-  5: '十万记忆',
-};
-
 // ─── 导出的纯函数（保持向后兼容） ─────────────────────────
 
 /**
@@ -211,36 +198,12 @@ export class DashboardPanelManager {
   private perception = new PerceptionRenderer();
 
   // ─── 缓存 DOM 元素（渲染方法中重复查询，构造时获取一次） ─
-  /** 感知面板 - 待处理事件计数元素 */
-  private perceptionPendingCountEl: HTMLElement | null;
-  /** 感知面板 - 推荐列表容器 */
-  private recommendationListEl: HTMLElement | null;
-  /** Agent 指标 - LLM 调用次数元素 */
-  private perceptionLlmCallsEl: HTMLElement | null;
-  /** Agent 指标 - Token 消耗元素 */
-  private perceptionTokensEl: HTMLElement | null;
-  /** 健康度 - 列表容器 */
-  private sourceHealthListEl: HTMLElement | null;
-  /** 健康度 - 区域容器 */
-  private sourceHealthSectionEl: HTMLElement | null;
-  /** 健康度 - 总体评分元素 */
-  private sourceHealthOverallEl: HTMLElement | null;
-  /** 上下文 - 截断次数元素 */
-  private perceptionTruncationCountEl: HTMLElement | null;
-  /** 上下文 - 当前消息数元素 */
-  private perceptionMessageCountEl: HTMLElement | null;
-  /** 技能 - 计数元素 */
-  private perceptionSkillCountEl: HTMLElement | null;
   /** 技能 - 列表容器 */
   private skillsListEl: HTMLElement | null;
   /** 技能 - 区域容器 */
   private skillsSectionEl: HTMLElement | null;
   /** 技能 - 空状态元素 */
   private skillsEmptyEl: HTMLElement | null;
-  /** 里程碑 - 展示区域 */
-  private milestonesDisplayEl: HTMLElement | null;
-  /** 里程碑 - 列表容器 */
-  private milestonesListEl: HTMLElement | null;
 
   // ─── 回调（由 Controller 注册，用于重试按钮触发数据重新加载） ──
   /** 重试加载记忆列表回调 */
@@ -251,21 +214,9 @@ export class DashboardPanelManager {
     private events: EventTracker,
   ) {
     // 缓存渲染方法中重复查询的 DOM 元素（仪表盘 HTML 模板在页面加载时已存在）
-    this.perceptionPendingCountEl = document.getElementById('perception-pending-count');
-    this.recommendationListEl = document.getElementById('recommendation-list');
-    this.perceptionLlmCallsEl = document.getElementById('perception-llm-calls');
-    this.perceptionTokensEl = document.getElementById('perception-tokens');
-    this.perceptionTruncationCountEl = document.getElementById('perception-truncation-count');
-    this.perceptionMessageCountEl = document.getElementById('perception-message-count');
-    this.sourceHealthListEl = document.getElementById('source-health-list');
-    this.sourceHealthSectionEl = document.getElementById('source-health-section');
-    this.sourceHealthOverallEl = document.getElementById('source-health-overall');
-    this.perceptionSkillCountEl = document.getElementById('perception-skill-count');
     this.skillsListEl = document.getElementById('skills-list');
     this.skillsSectionEl = document.getElementById('skills-section');
     this.skillsEmptyEl = document.getElementById('skills-empty');
-    this.milestonesDisplayEl = document.getElementById('milestones-display');
-    this.milestonesListEl = document.getElementById('milestones-list');
   }
 
   // ─── 资源清理 ──────────────────────────────────────────
@@ -322,70 +273,14 @@ export class DashboardPanelManager {
    * @param data 仪表盘数据
    */
   renderDashboardStats(data: DashboardViewModel): void {
-    // ─── 累积事件数 / 阈值（高亮状态：接近阈值黄色，达到阈值粉色） ──
-    const pendingEl = this.perceptionPendingCountEl;
-    if (pendingEl) {
-      pendingEl.textContent = `${data.pendingNotices}/${data.proactiveThreshold}`;
-      pendingEl.classList.remove('near-threshold', 'at-threshold');
-      if (data.pendingNotices >= data.proactiveThreshold) {
-        pendingEl.classList.add('at-threshold');
-      } else if (
-        data.proactiveThreshold > 0 &&
-        data.pendingNotices / data.proactiveThreshold >= NEAR_THRESHOLD_RATIO
-      ) {
-        pendingEl.classList.add('near-threshold');
-      }
-    }
-
-    // ─── 已注册触发器数量（更新事件卡片 title 附加信息） ────
-    const triggerList =
-      data.registeredTriggers.length > 0 ? data.registeredTriggers.join(', ') : '无触发器';
-    if (pendingEl) {
-      pendingEl.title = `累积待处理事件/阈值 · 触发器：${triggerList}`;
-    }
-
-    // ─── 渲染推荐记忆列表（合并到学习与回顾节） ──────────
-    const recList = this.recommendationListEl;
-    const learningSection = document.getElementById('learning-progress');
-    if (recList && learningSection) {
-      if (data.suggestions && data.suggestions.length > 0) {
-        clearElement(recList);
-        for (const s of data.suggestions) {
-          const li = document.createElement('li');
-          li.title = `${s.contentPreview}\n\n${s.reason}`;
-          li.dataset.action = 'view-recommendation';
-          li.dataset.memoryId = s.id;
-          li.dataset.memoryName = s.name;
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = s.name;
-          const scoreSpan = document.createElement('span');
-          scoreSpan.className = 'suggestion-score';
-          scoreSpan.textContent = s.relevance.toFixed(2);
-          li.appendChild(nameSpan);
-          li.appendChild(scoreSpan);
-          recList.appendChild(li);
-        }
-        learningSection.classList.remove('hidden');
-      }
-    }
-
-    // ─── 更新记忆总数（data.total 为全量记忆数，不受筛选影响） ──
-    const memoryCountEl = document.getElementById('perception-memory-count');
-    if (memoryCountEl) memoryCountEl.textContent = String(data.total);
-    // 仪表盘面板：记忆统计卡片
+    // ─── 更新仪表盘记忆统计卡片 ──
     const dashboardMemoryCount = document.getElementById('dashboard-total-memories');
     if (dashboardMemoryCount) dashboardMemoryCount.textContent = String(data.total);
 
     // ─── 更新洞察计数（bySource 中 source='insight' 的记忆数） ──
     const insightCount = data.bySource['insight'] ?? 0;
-    const insightCountEl = document.getElementById('perception-insight-count');
-    if (insightCountEl) insightCountEl.textContent = String(insightCount);
     const dashboardInsightCount = document.getElementById('dashboard-total-insights');
     if (dashboardInsightCount) dashboardInsightCount.textContent = String(insightCount);
-
-    // ─── 更新建议计数（suggestions 数组长度，供 updateLearningProgress 读取） ──
-    const suggestionCountEl = document.getElementById('perception-suggestion-count');
-    if (suggestionCountEl) suggestionCountEl.textContent = String(data.suggestions.length);
   }
 
   /**
@@ -401,55 +296,6 @@ export class DashboardPanelManager {
   renderAgentMetrics(metrics: AgentMetrics | null): void {
     // 无数据时静默跳过
     if (!metrics) return;
-
-    // ─── 感知面板 LLM 调用次数 ──────────────────────────
-    const llmCallsEl = this.perceptionLlmCallsEl;
-    if (llmCallsEl) {
-      llmCallsEl.textContent = String(metrics.llm.callCount);
-    }
-
-    // ─── 感知面板 Token 数（输入 + 输出，超过 1000 显示 k 格式） ──
-    const tokensEl = this.perceptionTokensEl;
-    if (tokensEl) {
-      const totalTokens = metrics.llm.totalInputTokens + metrics.llm.totalOutputTokens;
-      tokensEl.textContent = formatTokenCount(totalTokens);
-    }
-
-    // ─── 感知面板召回命中率（百分比，保留 0 位小数） ────────
-    const recallRateEl = document.getElementById('perception-recall-rate');
-    if (recallRateEl) {
-      recallRateEl.textContent = `${Math.round(metrics.recall.hitRate * 100)}%`;
-    }
-
-    // ─── 感知面板工具失败率（callCount=0 时显示 "—"，避免 0/0 误显示为 0%） ──
-    const toolFailuresEl = document.getElementById('perception-tool-failures');
-    if (toolFailuresEl) {
-      if (metrics.tools.callCount > 0) {
-        const failRate = metrics.tools.failureCount / metrics.tools.callCount;
-        toolFailuresEl.textContent = `${Math.round(failRate * 100)}%`;
-      } else {
-        toolFailuresEl.textContent = '—';
-      }
-    }
-
-    // ─── 缺口 F：衰减历史指标（消费 metrics.decay，与 decayCompleted toast 互补） ──
-    // decay 为 null 表示从未运行过衰减，此时显示 "—" 占位
-    const decayRunsEl = document.getElementById('perception-decay-runs');
-    const decayTotalEl = document.getElementById('perception-decay-total');
-    if (decayRunsEl) {
-      decayRunsEl.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
-    }
-    if (decayTotalEl) {
-      decayTotalEl.textContent = metrics.decay ? String(metrics.decay.totalDecayedCount) : '—';
-    }
-
-    // ─── 缺口 A：上下文截断指标（消费 metrics.context，补全感知面板遗漏的 context 维度） ──
-    if (this.perceptionTruncationCountEl) {
-      this.perceptionTruncationCountEl.textContent = String(metrics.context.truncationCount);
-    }
-    if (this.perceptionMessageCountEl) {
-      this.perceptionMessageCountEl.textContent = String(metrics.context.messageCount);
-    }
 
     // ─── 仪表盘面板：运行指标（LLM/Token/召回/失败/截断/消息/衰减） ──
     const dashboardLlmCalls = document.getElementById('dashboard-llm-calls');
@@ -517,115 +363,55 @@ export class DashboardPanelManager {
    * @param sourceHealth 记忆源健康诊断数据（null 表示不可用）
    */
   renderSourceHealth(sourceHealth: SourceHealth | null): void {
-    const listEl = this.sourceHealthListEl;
-    const sectionEl = this.sourceHealthSectionEl;
-    const overallEl = this.sourceHealthOverallEl;
-    if (!listEl || !sectionEl) return;
+    const dashboardListEl = document.getElementById('dashboard-source-health-list');
+    if (!dashboardListEl) return;
 
     // 无数据时隐藏整个 section（内核降级返回 null 时不展示）
     if (!sourceHealth || sourceHealth.sources.length === 0) {
-      sectionEl.classList.add('hidden');
+      dashboardListEl.classList.add('hidden');
       return;
     }
 
-    sectionEl.classList.remove('hidden');
-
-    // 总体健康状态徽章
-    if (overallEl) {
-      overallEl.textContent = this.getSourceHealthStatusLabel(sourceHealth.overallStatus);
-      overallEl.className = `source-health-overall-badge ${sourceHealth.overallStatus}`;
-    }
-
-    // 清空并重建列表（遵循项目规范：while + removeChild）
-    while (listEl.firstChild) {
-      listEl.removeChild(listEl.firstChild);
-    }
+    dashboardListEl.classList.remove('hidden');
 
     // 按 status 严重度排序：critical(0) → warning(1) → healthy(2)
-    // 让需要关注的 source 优先出现在列表顶部
     const statusOrder: Record<string, number> = { critical: 0, warning: 1, healthy: 2 };
     const sortedSources = [...sourceHealth.sources].sort(
       (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9),
     );
 
+    // 清空并重建（遵循项目规范：while + removeChild）
+    while (dashboardListEl.firstChild) {
+      dashboardListEl.removeChild(dashboardListEl.firstChild);
+    }
     for (const s of sortedSources) {
       const item = document.createElement('div');
       item.className = `source-health-item ${s.status}`;
-
-      // source 标签（中文化 + 复用 InsightsRenderer 的颜色类）
       const labelSpan = document.createElement('span');
       labelSpan.className = `source-health-label source-${getSourceColorClass(s.source)}`;
       labelSpan.textContent = this.getSourceLabel(s.source);
-
-      // 计数（该 source 记忆数）
       const countSpan = document.createElement('span');
       countSpan.className = 'source-health-count';
       countSpan.textContent = `${s.count} 条`;
-
-      // 平均分（百分比，反映记忆整体质量）
       const scoreSpan = document.createElement('span');
       scoreSpan.className = 'source-health-score';
       scoreSpan.textContent = `均分 ${Math.round(s.avgScore * 100)}`;
       scoreSpan.title = '该 source 所有记忆的平均分（0-100）';
-
-      // 距上次访问天数（反映活跃度，0=今天访问过）
       const accessSpan = document.createElement('span');
       accessSpan.className = 'source-health-access';
       accessSpan.textContent = s.daysSinceLastAccess === 0
         ? '今日访问'
         : `${s.daysSinceLastAccess} 天未访`;
       accessSpan.title = '距上次访问该 source 的天数';
-
-      // 健康状态徽章
       const statusSpan = document.createElement('span');
       statusSpan.className = `source-health-status ${s.status}`;
       statusSpan.textContent = this.getSourceHealthStatusLabel(s.status);
-
       item.appendChild(labelSpan);
       item.appendChild(countSpan);
       item.appendChild(scoreSpan);
       item.appendChild(accessSpan);
       item.appendChild(statusSpan);
-
-      listEl.appendChild(item);
-    }
-
-    // ─── 仪表盘面板：记忆源健康列表（复用同一数据源，不同 DOM 容器） ──
-    const dashboardListEl = document.getElementById('dashboard-source-health-list');
-    if (dashboardListEl) {
-      // 清空并重建（遵循项目规范：while + removeChild）
-      while (dashboardListEl.firstChild) {
-        dashboardListEl.removeChild(dashboardListEl.firstChild);
-      }
-      for (const s of sortedSources) {
-        const item = document.createElement('div');
-        item.className = `source-health-item ${s.status}`;
-        const labelSpan = document.createElement('span');
-        labelSpan.className = `source-health-label source-${getSourceColorClass(s.source)}`;
-        labelSpan.textContent = this.getSourceLabel(s.source);
-        const countSpan = document.createElement('span');
-        countSpan.className = 'source-health-count';
-        countSpan.textContent = `${s.count} 条`;
-        const scoreSpan = document.createElement('span');
-        scoreSpan.className = 'source-health-score';
-        scoreSpan.textContent = `均分 ${Math.round(s.avgScore * 100)}`;
-        scoreSpan.title = '该 source 所有记忆的平均分（0-100）';
-        const accessSpan = document.createElement('span');
-        accessSpan.className = 'source-health-access';
-        accessSpan.textContent = s.daysSinceLastAccess === 0
-          ? '今日访问'
-          : `${s.daysSinceLastAccess} 天未访`;
-        accessSpan.title = '距上次访问该 source 的天数';
-        const statusSpan = document.createElement('span');
-        statusSpan.className = `source-health-status ${s.status}`;
-        statusSpan.textContent = this.getSourceHealthStatusLabel(s.status);
-        item.appendChild(labelSpan);
-        item.appendChild(countSpan);
-        item.appendChild(scoreSpan);
-        item.appendChild(accessSpan);
-        item.appendChild(statusSpan);
-        dashboardListEl.appendChild(item);
-      }
+      dashboardListEl.appendChild(item);
     }
   }
 
@@ -647,11 +433,6 @@ export class DashboardPanelManager {
       layer: string;
     }>,
   ): void {
-    // 更新仪表盘技能计数（感知面板运行指标区）
-    const countEl = this.perceptionSkillCountEl;
-    if (countEl) {
-      countEl.textContent = String(skills.length);
-    }
     // 仪表盘面板：记忆统计卡片中的技能计数
     const dashboardSkillCount = document.getElementById('dashboard-total-skills');
     if (dashboardSkillCount) {
@@ -710,84 +491,6 @@ export class DashboardPanelManager {
     sectionEl.classList.remove('hidden');
     // 隐藏空状态占位（有技能时）
     if (emptyEl) emptyEl.classList.add('hidden');
-  }
-
-  /**
-   * 渲染里程碑成就展示（安全降级）
-   *
-   * 从仪表盘数据实时推导已达成的里程碑，不持久化（符合"自然遗忘"原则）。
-   * 检测类型：
-   *   1. 记忆量级：100/1000/10000 条
-   *   2. 记忆源多样性：已探索的 source 类型数量
-   *   3. 关键记忆类型（洞察、画像）
-   * 原 DOM 位置可能已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
-   *
-   * @param data 仪表盘数据
-   */
-  renderMilestones(data: { total: number; bySource: Record<string, number> }): void {
-    const milestonesDisplay = this.milestonesDisplayEl;
-    const milestonesList = this.milestonesListEl;
-    if (!milestonesDisplay || !milestonesList) return;
-
-    // 收集已达成的里程碑（icon 字段存储 SVG sprite 引用字符串，渲染时通过 innerHTML 注入）
-    const milestones: Array<{ label: string; icon: string }> = [];
-
-    // 记忆量级里程碑（百/千/万/十万）
-    if (data.total >= 100) {
-      const magnitude = Math.floor(Math.log10(data.total));
-      milestones.push({
-        label: MAGNITUDE_LABELS[magnitude] ?? `${Math.pow(10, magnitude)}+ 条`,
-        icon: '<svg class="icon"><use href="#icon-books"/></svg>',
-      });
-    }
-
-    // 记忆源多样性里程碑
-    const sourceCount = Object.keys(data.bySource).length;
-    if (sourceCount >= 3) {
-      milestones.push({
-        label: `${sourceCount} 种记忆源`,
-        icon: '<svg class="icon"><use href="#icon-branch"/></svg>',
-      });
-    }
-
-    // 洞察记忆存在里程碑
-    if (data.bySource['insight'] && data.bySource['insight'] > 0) {
-      milestones.push({
-        label: '首个洞察',
-        icon: '<svg class="icon"><use href="#icon-lightbulb"/></svg>',
-      });
-    }
-
-    // 画像记忆存在里程碑
-    if (data.bySource['profile'] && data.bySource['profile'] > 0) {
-      milestones.push({
-        label: '建立画像',
-        icon: '<svg class="icon"><use href="#icon-person"/></svg>',
-      });
-    }
-
-    // 无里程碑时隐藏区域
-    if (milestones.length === 0) {
-      milestonesDisplay.classList.add('hidden');
-      return;
-    }
-
-    // 显示里程碑区域
-    milestonesDisplay.classList.remove('hidden');
-
-    // 清空并重建列表（遵循项目规范：while + removeChild，不用 innerHTML）
-    while (milestonesList.firstChild) {
-      milestonesList.removeChild(milestonesList.firstChild);
-    }
-
-    for (const milestone of milestones) {
-      const badge = document.createElement('span');
-      badge.className = 'milestone-badge';
-      // SVG 图标（静态常量）+ 动态文本（createTextNode 转义，防止 label 注入）
-      badge.innerHTML = milestone.icon;
-      badge.appendChild(document.createTextNode(` ${milestone.label}`));
-      milestonesList.appendChild(badge);
-    }
   }
 
   // ─── 记忆洞察面板渲染（委托到 InsightsRenderer） ────────

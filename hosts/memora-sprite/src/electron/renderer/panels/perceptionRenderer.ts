@@ -90,10 +90,10 @@ export class PerceptionRenderer {
   // ─── 感知数据渲染入口 ──────────────────────────────────
 
   /**
-   * 更新情感基调展示（感知面板四维进度条 + 状态条指示）
+   * 更新情感基调展示（仪表盘四维进度条 + 状态条指示）
    *
    * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
-   * 渲染到感知面板 (#perception-{dim}-fill / #perception-{dim}-level)。
+   * 渲染到仪表盘感知区 (#dashboard-{dim}-fill / #dashboard-{dim}-level)。
    * 同时更新精灵状态条 (#sprite-status-text-bar / #sprite-status-dot-bar)。
    * 同时保存状态供叙事摘要合成。
    *
@@ -111,10 +111,10 @@ export class PerceptionRenderer {
       { id: 'playfulness', value: affect.playfulness },
     ];
 
-    // ─── 感知面板情感进度条 ──────────────────────────
+    // ─── 仪表盘情感进度条 ──────────────────────────
     for (const dim of dimensions) {
-      const fillEl = document.getElementById(`perception-${dim.id}-fill`);
-      const levelEl = document.getElementById(`perception-${dim.id}-level`);
+      const fillEl = document.getElementById(`dashboard-${dim.id}-fill`);
+      const levelEl = document.getElementById(`dashboard-${dim.id}-level`);
       if (fillEl) {
         fillEl.style.width = `${Math.round(dim.value * 100)}%`;
         fillEl.style.background = this.getAffectColor(dim.value);
@@ -144,11 +144,11 @@ export class PerceptionRenderer {
   }
 
   /**
-   * 更新默契度展示（感知面板等级徽章 + 双进度条 + 描述）
+   * 更新默契度展示（仪表盘等级徽章 + 双进度条 + 描述）
    *
-   * 渲染到感知面板：等级徽章 (#perception-rapport-badge)、信任度进度条
-   * (#perception-trust-fill)、熟悉度进度条 (#perception-familiarity-fill)、
-   * 描述文本 (#perception-rapport-desc)。
+   * 渲染到仪表盘感知区：等级徽章 (#dashboard-rapport-badge)、信任度进度条
+   * (#dashboard-trust-fill)、熟悉度进度条 (#dashboard-familiarity-fill)、
+   * 描述文本 (#dashboard-rapport-desc)。
    * 由 rapportUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
    * 同时保存状态供叙事摘要合成。
    *
@@ -188,10 +188,10 @@ export class PerceptionRenderer {
   }
 
   /**
-   * 更新对话上下文展示（感知面板三列指标）
+   * 更新对话上下文展示（仪表盘三列指标）
    *
-   * 渲染到感知面板：节奏 (#perception-pace-value)、话题 (#perception-topic-value)、
-   * 深度 (#perception-depth-value)。
+   * 渲染到仪表盘感知区：节奏 (#dashboard-pace-value)、话题 (#dashboard-topic-value)、
+   * 深度 (#dashboard-depth-value)。
    * 由 contextUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
    * 同时保存状态供叙事摘要合成。
    *
@@ -243,7 +243,7 @@ export class PerceptionRenderer {
    * 更新模式洞察面板（PatternDetector 检测结果）
    *
    * 由 patternsUpdated 事件驱动，纯 DOM 操作，不触发 IPC。
-   * 渲染到感知面板 #perception-patterns-list 容器中，每个 pattern 包含
+   * 渲染到仪表盘 #dashboard-patterns-list 容器中，每个 pattern 包含
    * 类型标签（repeat/gap/drift）和摘要文本。
    * 同时保存状态供叙事摘要合成。
    *
@@ -508,8 +508,7 @@ export class PerceptionRenderer {
   /**
    * 更新叙事摘要 DOM
    *
-   * 每次感知数据更新时调用，渲染到感知面板 #perception-narrative-text。
-   * 同时更新精灵状态条 #sprite-status-text-bar。
+   * 每次感知数据更新时调用，更新精灵状态条 #sprite-status-text-bar。
    * 内部从闭包级状态变量合成叙事文本。
    */
   updateNarrative(): void {

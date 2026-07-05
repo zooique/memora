@@ -572,14 +572,11 @@ export function createMemoryController(uiManager: UIManager) {
       // 已加载技能列表渲染（消费内核 agent.skills.list）
       uiManager.renderSkills(data.skills);
 
-      // 里程碑成就展示（从仪表盘数据实时推导）
-      uiManager.renderMilestones(data);
-
       // 仪表盘加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadDashboard', error);
-      // 仪表盘涉及多子区域（统计/指标/技能/里程碑/回顾），整体失败时用 toast 兜底提示
+      // 仪表盘涉及多子区域（统计/指标/技能/回顾），整体失败时用 toast 兜底提示
       uiManager.showToast('仪表盘加载失败，请稍后重试', 'error');
     }
   }

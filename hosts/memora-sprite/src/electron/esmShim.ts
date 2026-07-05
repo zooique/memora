@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 
 /**
  * Electron 主进程代码目录的绝对路径（src/electron/）
- * 用于定位 preload.js、renderer/index.html、resources/ 等静态资源
+ * 用于定位 preload.js、renderer/index.html 等静态资源
  */
 export const ELECTRON_DIR = dirname(fileURLToPath(import.meta.url));
 

@@ -32,14 +32,14 @@ import type {
 /** 感知面板完整 DOM 结构 */
 const PERCEPTION_HTML = `
   <!-- 情感维度 -->
-  <div id="perception-warmth-fill" style="width:0%"></div>
-  <span id="perception-warmth-level"></span>
-  <div id="perception-directness-fill" style="width:0%"></div>
-  <span id="perception-directness-level"></span>
-  <div id="perception-initiative-fill" style="width:0%"></div>
-  <span id="perception-initiative-level"></span>
-  <div id="perception-playfulness-fill" style="width:0%"></div>
-  <span id="perception-playfulness-level"></span>
+  <div id="dashboard-warmth-fill" style="width:0%"></div>
+  <span id="dashboard-warmth-level"></span>
+  <div id="dashboard-directness-fill" style="width:0%"></div>
+  <span id="dashboard-directness-level"></span>
+  <div id="dashboard-initiative-fill" style="width:0%"></div>
+  <span id="dashboard-initiative-level"></span>
+  <div id="dashboard-playfulness-fill" style="width:0%"></div>
+  <span id="dashboard-playfulness-level"></span>
   <span id="sprite-status-text-bar"></span>
   <span id="sprite-status-dot-bar"></span>
 
@@ -139,16 +139,16 @@ describe('updateAffectDisplay() · 情感基调', () => {
   it('应更新四维进度条宽度（按百分比）', () => {
     const renderer = createRenderer();
     renderer.updateAffectDisplay(createAffect({ warmth: 0.8, directness: 0.4 }));
-    expect(document.getElementById('perception-warmth-fill')!.style.width).toBe('80%');
-    expect(document.getElementById('perception-directness-fill')!.style.width).toBe('40%');
+    expect(document.getElementById('dashboard-warmth-fill')!.style.width).toBe('80%');
+    expect(document.getElementById('dashboard-directness-fill')!.style.width).toBe('40%');
   });
 
   it('应更新四维等级文本（低/中/高）', () => {
     const renderer = createRenderer();
     renderer.updateAffectDisplay(createAffect({ warmth: 0.2, directness: 0.5, initiative: 0.9 }));
-    expect(document.getElementById('perception-warmth-level')!.textContent).toBe('低');
-    expect(document.getElementById('perception-directness-level')!.textContent).toBe('中');
-    expect(document.getElementById('perception-initiative-level')!.textContent).toBe('高');
+    expect(document.getElementById('dashboard-warmth-level')!.textContent).toBe('低');
+    expect(document.getElementById('dashboard-directness-level')!.textContent).toBe('中');
+    expect(document.getElementById('dashboard-initiative-level')!.textContent).toBe('高');
   });
 
   it('应更新精灵状态条文字（主导维度 + 等级）', () => {

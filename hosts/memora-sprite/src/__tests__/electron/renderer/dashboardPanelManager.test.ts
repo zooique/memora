@@ -45,20 +45,21 @@ import type { AffectPayload } from '../../../electron/renderer/ipcListeners.js';
 
 /** 仪表盘面板完整 DOM 结构（覆盖所有渲染方法所需元素） */
 const DASHBOARD_HTML = `
-  <!-- 仪表盘统计 -->
-  <span id="perception-pending-count"></span>
-  <span id="perception-memory-count"></span>
-  <span id="perception-insight-count"></span>
-  <span id="perception-suggestion-count"></span>
-  <ul id="recommendation-list"></ul>
-  <section id="learning-progress" class="hidden"></section>
+  <!-- 仪表盘统计卡片 -->
+  <span id="dashboard-total-memories"></span>
+  <span id="dashboard-total-insights"></span>
 
   <!-- Agent 运行时指标 -->
-  <span id="perception-llm-calls"></span>
-  <span id="perception-tokens"></span>
-  <span id="perception-recall-rate"></span>
-  <span id="perception-tool-failures"></span>
-  <span id="perception-skill-count"></span>
+  <span id="dashboard-llm-calls"></span>
+  <span id="dashboard-tokens"></span>
+  <span id="dashboard-recall-rate"></span>
+  <span id="dashboard-tool-failures"></span>
+  <span id="dashboard-truncation-count"></span>
+  <span id="dashboard-message-count"></span>
+  <span id="dashboard-decay-count"></span>
+  <span id="dashboard-decay-total"></span>
+  <span id="dashboard-decay-runs"></span>
+  <span id="dashboard-total-skills"></span>
 
   <!-- 技能列表 -->
   <section id="skills-section" class="hidden">
@@ -109,14 +110,14 @@ const DASHBOARD_HTML = `
   </div>
 
   <!-- 感知面板 · 情感 -->
-  <div id="perception-warmth-fill" style="width:0%"></div>
-  <span id="perception-warmth-level"></span>
-  <div id="perception-directness-fill" style="width:0%"></div>
-  <span id="perception-directness-level"></span>
-  <div id="perception-initiative-fill" style="width:0%"></div>
-  <span id="perception-initiative-level"></span>
-  <div id="perception-playfulness-fill" style="width:0%"></div>
-  <span id="perception-playfulness-level"></span>
+  <div id="dashboard-warmth-fill" style="width:0%"></div>
+  <span id="dashboard-warmth-level"></span>
+  <div id="dashboard-directness-fill" style="width:0%"></div>
+  <span id="dashboard-directness-level"></span>
+  <div id="dashboard-initiative-fill" style="width:0%"></div>
+  <span id="dashboard-initiative-level"></span>
+  <div id="dashboard-playfulness-fill" style="width:0%"></div>
+  <span id="dashboard-playfulness-level"></span>
   <span id="sprite-status-text-bar"></span>
   <span id="sprite-status-dot-bar"></span>
 
@@ -140,7 +141,7 @@ const DASHBOARD_HTML = `
   <!-- 伙伴洞察面板 -->
   <div id="partner-insights" class="hidden">
     <div class="partner-profile-cards"></div>
-    <div class="partner-gaps"></div>
+    <div class="partner-knowledge-gaps"></div>
     <canvas id="partner-growth-chart"></canvas>
     <span id="partner-growth-total"></span>
   </div>
@@ -209,73 +210,19 @@ describe('formatTokenCount · 纯函数', () => {
 // ─── renderDashboardStats ────────────────────────────────
 
 describe('renderDashboardStats', () => {
-  it('应更新累积事件数（pending/threshold 格式）', () => {
+  it('应更新仪表盘记忆总数', () => {
     const { manager } = createManager();
-    manager.renderDashboardStats(createViewModel({ pendingNotices: 3, proactiveThreshold: 10 }));
-    expect(document.getElementById('perception-pending-count')!.textContent).toBe('3/10');
+    manager.renderDashboardStats(createViewModel({ total: 200 }));
+    expect(document.getElementById('dashboard-total-memories')!.textContent).toBe('200');
   });
 
-  it('达到阈值应添加 at-threshold 类', () => {
-    const { manager } = createManager();
-    manager.renderDashboardStats(createViewModel({ pendingNotices: 5, proactiveThreshold: 5 }));
-    expect(document.getElementById('perception-pending-count')!.classList.contains('at-threshold')).toBe(true);
-  });
-
-  it('接近阈值（>=80%）应添加 near-threshold 类', () => {
-    const { manager } = createManager();
-    manager.renderDashboardStats(createViewModel({ pendingNotices: 4, proactiveThreshold: 5 }));
-    expect(document.getElementById('perception-pending-count')!.classList.contains('near-threshold')).toBe(true);
-  });
-
-  it('远离阈值不应添加高亮类', () => {
-    const { manager } = createManager();
-    manager.renderDashboardStats(createViewModel({ pendingNotices: 1, proactiveThreshold: 10 }));
-    const el = document.getElementById('perception-pending-count')!;
-    expect(el.classList.contains('at-threshold')).toBe(false);
-    expect(el.classList.contains('near-threshold')).toBe(false);
-  });
-
-  it('应更新 pendingEl.title 含触发器列表', () => {
-    const { manager } = createManager();
-    manager.renderDashboardStats(createViewModel({ registeredTriggers: ['timer', 'fileWatcher'] }));
-    expect(document.getElementById('perception-pending-count')!.title).toContain('timer');
-    expect(document.getElementById('perception-pending-count')!.title).toContain('fileWatcher');
-  });
-
-  it('应渲染推荐记忆列表', () => {
-    const { manager } = createManager();
-    manager.renderDashboardStats(createViewModel({
-      suggestions: [
-        { id: 's1', name: '推荐 1', source: 'test', reason: 'r1', relevance: 0.9, contentPreview: 'p1' },
-        { id: 's2', name: '推荐 2', source: 'test', reason: 'r2', relevance: 0.8, contentPreview: 'p2' },
-      ],
-    }));
-    const items = document.querySelectorAll('#recommendation-list li');
-    expect(items.length).toBe(2);
-    expect(items[0]!.dataset.memoryId).toBe('s1');
-    expect(items[0]!.querySelector('.suggestion-score')!.textContent).toBe('0.90');
-  });
-
-  it('应更新记忆总数和洞察计数', () => {
+  it('应更新洞察计数（bySource 中 insight 源记忆数）', () => {
     const { manager } = createManager();
     manager.renderDashboardStats(createViewModel({
       total: 200,
       bySource: { test: 100, insight: 50, profile: 50 },
     }));
-    expect(document.getElementById('perception-memory-count')!.textContent).toBe('200');
-    expect(document.getElementById('perception-insight-count')!.textContent).toBe('50');
-  });
-
-  it('应更新建议计数', () => {
-    const { manager } = createManager();
-    manager.renderDashboardStats(createViewModel({
-      suggestions: [
-        { id: 's1', name: 'n1', source: 't', reason: 'r', relevance: 0.5, contentPreview: 'p' },
-        { id: 's2', name: 'n2', source: 't', reason: 'r', relevance: 0.5, contentPreview: 'p' },
-        { id: 's3', name: 'n3', source: 't', reason: 'r', relevance: 0.5, contentPreview: 'p' },
-      ],
-    }));
-    expect(document.getElementById('perception-suggestion-count')!.textContent).toBe('3');
+    expect(document.getElementById('dashboard-total-insights')!.textContent).toBe('50');
   });
 });
 
@@ -285,13 +232,13 @@ describe('renderAgentMetrics', () => {
   it('null 入参应静默退出', () => {
     const { manager } = createManager();
     manager.renderAgentMetrics(null);
-    expect(document.getElementById('perception-llm-calls')!.textContent).toBe('');
+    expect(document.getElementById('dashboard-llm-calls')!.textContent).toBe('');
   });
 
   it('应渲染 LLM 调用次数', () => {
     const { manager } = createManager();
     manager.renderAgentMetrics(createMetrics({ llm: { callCount: 42, totalInputTokens: 0, totalOutputTokens: 0 } }));
-    expect(document.getElementById('perception-llm-calls')!.textContent).toBe('42');
+    expect(document.getElementById('dashboard-llm-calls')!.textContent).toBe('42');
   });
 
   it('应渲染 Token 数（输入+输出，>= 1000 显示 k）', () => {
@@ -299,7 +246,7 @@ describe('renderAgentMetrics', () => {
     manager.renderAgentMetrics(createMetrics({
       llm: { callCount: 1, totalInputTokens: 800, totalOutputTokens: 400 },
     }));
-    expect(document.getElementById('perception-tokens')!.textContent).toBe('1.2k');
+    expect(document.getElementById('dashboard-tokens')!.textContent).toBe('1.2k');
   });
 
   it('应渲染召回命中率（百分比，四舍五入）', () => {
@@ -307,7 +254,7 @@ describe('renderAgentMetrics', () => {
     manager.renderAgentMetrics(createMetrics({
       recall: { totalCount: 20, hitCount: 15, hitRate: 0.75 },
     }));
-    expect(document.getElementById('perception-recall-rate')!.textContent).toBe('75%');
+    expect(document.getElementById('dashboard-recall-rate')!.textContent).toBe('75%');
   });
 
   it('工具失败率 0/0 应显示 — （避免 NaN）', () => {
@@ -315,7 +262,7 @@ describe('renderAgentMetrics', () => {
     manager.renderAgentMetrics(createMetrics({
       tools: { callCount: 0, failureCount: 0 },
     }));
-    expect(document.getElementById('perception-tool-failures')!.textContent).toBe('—');
+    expect(document.getElementById('dashboard-tool-failures')!.textContent).toBe('—');
   });
 
   it('工具失败率应显示百分比', () => {
@@ -323,7 +270,7 @@ describe('renderAgentMetrics', () => {
     manager.renderAgentMetrics(createMetrics({
       tools: { callCount: 10, failureCount: 3 },
     }));
-    expect(document.getElementById('perception-tool-failures')!.textContent).toBe('30%');
+    expect(document.getElementById('dashboard-tool-failures')!.textContent).toBe('30%');
   });
 });
 
@@ -343,7 +290,7 @@ describe('renderSkills', () => {
       { name: 's1', keywords: [], description: '', layer: 'project' },
       { name: 's2', keywords: [], description: '', layer: 'agent' },
     ]);
-    expect(document.getElementById('perception-skill-count')!.textContent).toBe('2');
+    expect(document.getElementById('dashboard-total-skills')!.textContent).toBe('2');
   });
 
   it('应渲染技能列表项（名称 + 层级 + 关键词）', () => {
@@ -379,52 +326,6 @@ describe('renderSkills', () => {
     ]);
     const kw = document.querySelector('.skill-keywords')!.textContent!;
     expect(kw.split(' · ').length).toBe(5);
-  });
-});
-
-// ─── renderMilestones ────────────────────────────────────
-
-describe('renderMilestones', () => {
-  it('无里程碑时应隐藏区域', () => {
-    const { manager } = createManager();
-    manager.renderMilestones({ total: 10, bySource: { test: 10 } });
-    expect(document.getElementById('milestones-display')!.classList.contains('hidden')).toBe(true);
-  });
-
-  it('total >= 100 应添加量级里程碑', () => {
-    const { manager } = createManager();
-    manager.renderMilestones({ total: 150, bySource: { test: 150 } });
-    const badges = document.querySelectorAll('#milestones-list .milestone-badge');
-    expect(badges.length).toBeGreaterThan(0);
-    expect(badges[0]!.textContent).toContain('百条记忆');
-  });
-
-  it('total >= 1000 应添加千条里程碑', () => {
-    const { manager } = createManager();
-    manager.renderMilestones({ total: 1500, bySource: { test: 1500 } });
-    expect(document.querySelector('.milestone-badge')!.textContent).toContain('千条记忆');
-  });
-
-  it('source 种类 >= 3 应添加多样性里程碑', () => {
-    const { manager } = createManager();
-    manager.renderMilestones({ total: 50, bySource: { a: 20, b: 15, c: 15 } });
-    const badges = document.querySelectorAll('.milestone-badge');
-    const texts = Array.from(badges).map((b) => b.textContent);
-    expect(texts.some((t) => t!.includes('3 种记忆源'))).toBe(true);
-  });
-
-  it('含 insight source 应添加首个洞察里程碑', () => {
-    const { manager } = createManager();
-    manager.renderMilestones({ total: 50, bySource: { test: 40, insight: 10 } });
-    const texts = Array.from(document.querySelectorAll('.milestone-badge')).map((b) => b.textContent);
-    expect(texts.some((t) => t!.includes('首个洞察'))).toBe(true);
-  });
-
-  it('含 profile source 应添加建立画像里程碑', () => {
-    const { manager } = createManager();
-    manager.renderMilestones({ total: 50, bySource: { test: 40, profile: 10 } });
-    const texts = Array.from(document.querySelectorAll('.milestone-badge')).map((b) => b.textContent);
-    expect(texts.some((t) => t!.includes('建立画像'))).toBe(true);
   });
 });
 
@@ -766,11 +667,11 @@ describe('updateAffectDisplay · 情感基调', () => {
     const { manager } = createManager();
     const affect: AffectPayload = { warmth: 0.8, directness: 0.5, initiative: 0.2, playfulness: 0.9 };
     manager.updateAffectDisplay(affect);
-    expect(document.getElementById('perception-warmth-fill')!.style.width).toBe('80%');
-    expect(document.getElementById('perception-warmth-level')!.textContent).toBe('高');
-    expect(document.getElementById('perception-directness-level')!.textContent).toBe('中');
-    expect(document.getElementById('perception-initiative-level')!.textContent).toBe('低');
-    expect(document.getElementById('perception-playfulness-level')!.textContent).toBe('高');
+    expect(document.getElementById('dashboard-warmth-fill')!.style.width).toBe('80%');
+    expect(document.getElementById('dashboard-warmth-level')!.textContent).toBe('高');
+    expect(document.getElementById('dashboard-directness-level')!.textContent).toBe('中');
+    expect(document.getElementById('dashboard-initiative-level')!.textContent).toBe('低');
+    expect(document.getElementById('dashboard-playfulness-level')!.textContent).toBe('高');
   });
 
   it('应更新精灵状态条文字（含主导维度）', () => {

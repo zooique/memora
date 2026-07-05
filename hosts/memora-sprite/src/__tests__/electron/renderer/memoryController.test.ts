@@ -111,7 +111,6 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     renderDashboardStats: vi.fn(),
     renderAgentMetrics: vi.fn(),
     renderSkills: vi.fn(),
-    renderMilestones: vi.fn(),
     renderReviewData: vi.fn(),
     showInsightsLoading: vi.fn(),
     renderInsights: vi.fn(),
@@ -160,7 +159,7 @@ describe('推荐记忆点击事件委托', () => {
           { name: '推荐记忆A', source: 'insight', reason: '相关度高', relevance: 0.95, contentPreview: '预览A' },
           { name: '推荐记忆B', source: 'profile', reason: '近期访问', relevance: 0.80, contentPreview: '预览B' },
         ],
-        // Phase 2 重构后 loadDashboard 调用 renderDashboardStats/renderMilestones 需要这两个字段
+        // loadDashboard 调用 renderDashboardStats 需要这两个字段
         total: 2,
         bySource: { insight: 1, profile: 1 },
         sourceHealth: null,
@@ -198,7 +197,6 @@ describe('推荐记忆点击事件委托', () => {
     // 同时验证其他委托方法被调用
     expect(mockUiManager.renderAgentMetrics).toHaveBeenCalledWith(null);
     expect(mockUiManager.renderSkills).toHaveBeenCalledWith([]);
-    expect(mockUiManager.renderMilestones).toHaveBeenCalledTimes(1);
     // v3: renderReviewData 方法已从 MemoryController 中移除（DashboardPanelManager 也不再包含此方法）。
     // 感知面板的回顾数据渲染由 PerceptionRenderer 内部处理，不再通过 UiManager 代理。
     // expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
