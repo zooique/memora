@@ -59,9 +59,6 @@ import { ClipboardManager } from './panels/clipboardManager.js';
 import { DateNavManager } from './panels/dateNavManager.js';
 // 技能拖入安装拆分为独立 Manager
 import { SkillDropManager } from './panels/skillDropManager.js';
-// 感知面板管理器拆分（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击）
-import { PerceptionPanelManager } from './panels/perceptionPanelManager.js';
-import type { PerceptionPanelHost } from './panels/perceptionPanelManager.js';
 // 输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
@@ -90,8 +87,6 @@ import type { ConfigSuggestionPayload } from '../preload.js';
 import type { WriteConfirmationPayload } from '../preload.js';
 // 健康度仪表盘 payload 类型（从 preload 导入，供 renderHealthDashboard 代理方法使用）
 import type { HealthDashboardPayload } from '../preload.js';
-// 对话回顾数据 payload 类型（从 preload 导入，供 renderReviewData 代理方法使用）
-import type { ReviewDataPayload } from '../preload.js';
 // 图谱数据类型（供 MemoryPanelManager 委托方法使用）
 import type { RelationGraphData } from './components/relationGraph.js';
 
@@ -158,7 +153,7 @@ function renderInitFailureToBody(err: unknown): void {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PerceptionPanelHost, PanelRouterHost {
+export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost {
   // ─── 静态常量 ───────────────────────────────────────────
   /** 判断"底部附近"的阈值（像素） */
   private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
@@ -231,8 +226,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
    */
   private skillDropManager: SkillDropManager;
-  /** 感知面板管理器（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击） */
-  private perceptionPanelManager: PerceptionPanelManager;
   /** 面板路由器（面板切换 + 导航 + 键盘快捷键 + 窗口控制） */
   private panelRouter: PanelRouter;
 
@@ -345,8 +338,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager = new DateNavManager();
     // 技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
-    // 感知面板管理器（依赖注入 Host 接口，init 在事件绑定后调用）
-    this.perceptionPanelManager = new PerceptionPanelManager(this);
     // 输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
     this.inputAreaManager = new InputAreaManager(
       this.inputEl,
@@ -367,10 +358,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.commandPaletteManager.init();
     // 面板错误横幅重试按钮初始化（委托到 PanelErrorBannerManager）
     this.panelErrorBannerManager.init();
+    // 精灵状态条点击：切换到仪表盘面板（替代旧的感知面板 overlay）
+    this.initSpriteStatusBarClick();
     // 日期导航事件初始化（委托到 DateNavManager）
     this.dateNavManager.init();
-    // 感知面板事件初始化（委托到 PerceptionPanelManager）
-    this.perceptionPanelManager.init();
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
@@ -460,8 +451,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager.cleanup();
     // 清理技能拖入安装管理器的回调引用
     this.skillDropManager.cleanup();
-    // 清理感知面板管理器的事件监听器
-    this.perceptionPanelManager.cleanup();
     // 清理面板路由器的事件监听器
     this.panelRouter.cleanup();
     // 清理 ThemeManager 的系统主题变化监听器
@@ -616,9 +605,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.memoryPanel.dismissAnalysisPanels();
   }
 
-  /** 关闭感知面板（PanelRouterHost 接口） */
-  closePerceptionPanel(): void {
-    this.perceptionPanelManager.close();
+  /** 添加精灵状态条点击：切换到仪表盘面板（感知面板已升级为独立 .panel） */
+  initSpriteStatusBarClick(): void {
+    const spriteStatusBar = document.getElementById('sprite-status-bar');
+    if (spriteStatusBar) {
+      this.events.addEventListener(spriteStatusBar, 'click', () => {
+        this.panelRouter.switchPanel('dashboard');
+      });
+    }
   }
 
   // ─── 输入处理（委托到 InputAreaManager） ────
@@ -1200,10 +1194,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 渲染里程碑成就展示（委托到 DashboardPanelManager） */
   renderMilestones(data: { total: number; bySource: Record<string, number> }): void {
     this.dashboardPanel.renderMilestones(data);
-  }
-  /** 渲染对话回顾数据（委托到 DashboardPanelManager） */
-  renderReviewData(data: ReviewDataPayload): void {
-    this.dashboardPanel.renderReviewData(data);
   }
   /** 显示洞察面板加载态（委托到 DashboardPanelManager） */
   showInsightsLoading(): void { this.dashboardPanel.showInsightsLoading(); }

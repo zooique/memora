@@ -156,28 +156,28 @@ export class PerceptionRenderer {
    */
   updateRapportDisplay(rapport: RapportPayload): void {
     // ─── 感知面板等级徽章 ────────────────────────────
-    const rapportBadge = document.getElementById('perception-rapport-badge');
+    const rapportBadge = document.getElementById('dashboard-rapport-badge');
     if (rapportBadge) {
       rapportBadge.textContent = this.getRapportLevelLabel(rapport.level);
       rapportBadge.setAttribute('data-level', rapport.level);
     }
 
     // ─── 感知面板信任度进度条 ──────────────────────────
-    const trustFill = document.getElementById('perception-trust-fill');
+    const trustFill = document.getElementById('dashboard-trust-fill');
     if (trustFill) {
       trustFill.style.width = `${Math.round(rapport.trust * 100)}%`;
       trustFill.style.background = this.getAffectColor(rapport.trust);
     }
 
     // ─── 感知面板熟悉度进度条 ──────────────────────────
-    const familiarityFill = document.getElementById('perception-familiarity-fill');
+    const familiarityFill = document.getElementById('dashboard-familiarity-fill');
     if (familiarityFill) {
       familiarityFill.style.width = `${Math.round(rapport.familiarity * 100)}%`;
       familiarityFill.style.background = this.getAffectColor(rapport.familiarity);
     }
 
     // ─── 感知面板描述文本 ──────────────────────────────
-    const rapportDesc = document.getElementById('perception-rapport-desc');
+    const rapportDesc = document.getElementById('dashboard-rapport-desc');
     if (rapportDesc) {
       rapportDesc.textContent = rapport.description;
     }
@@ -199,19 +199,19 @@ export class PerceptionRenderer {
    */
   updateContextDisplay(context: ContextPayload): void {
     // ─── 感知面板节奏指标 ────────────────────────────
-    const paceEl = document.getElementById('perception-pace-value');
+    const paceEl = document.getElementById('dashboard-pace-value');
     if (paceEl) {
       paceEl.textContent = this.describeRhythm(context.rhythm);
     }
 
     // ─── 感知面板话题连贯性指标 ────────────────────────
-    const topicEl = document.getElementById('perception-topic-value');
+    const topicEl = document.getElementById('dashboard-topic-value');
     if (topicEl) {
       topicEl.textContent = this.describeCoherence(context.coherence);
     }
 
     // ─── 感知面板深度指标 ────────────────────────────
-    const depthEl = document.getElementById('perception-depth-value');
+    const depthEl = document.getElementById('dashboard-depth-value');
     if (depthEl) {
       depthEl.textContent = this.describeDepth(context.depth);
     }
@@ -257,9 +257,9 @@ export class PerceptionRenderer {
     }));
 
     // 渲染到感知面板模式洞察容器
-    const patternsList = document.getElementById('perception-patterns-list');
+    const patternsList = document.getElementById('dashboard-patterns-list');
     // 紧凑布局：空列表时隐藏整个 section，避免占用空间
-    const patternsSection = document.getElementById('perception-patterns');
+    const patternsSection = document.getElementById('dashboard-patterns');
     if (!patternsList) {
       this.updateNarrative();
       return;
@@ -394,13 +394,13 @@ export class PerceptionRenderer {
     if (!stats) return;
 
     // ─── 历史反馈：建议数 / 接受数 ──────────────────────
-    const suggestEl = document.getElementById('perception-proactive-suggest');
-    const acceptEl = document.getElementById('perception-proactive-accept');
+    const suggestEl = document.getElementById('dashboard-proactive-suggest');
+    const acceptEl = document.getElementById('dashboard-proactive-accept');
     if (suggestEl) suggestEl.textContent = String(stats.suggestCount);
     if (acceptEl) acceptEl.textContent = String(stats.acceptCount);
 
     // ─── 接受率徽章（高/中/低 三色，与 PatternDetector confidence 徽章一致） ──
-    const rateEl = document.getElementById('perception-proactive-rate');
+    const rateEl = document.getElementById('dashboard-proactive-rate');
     if (rateEl) {
       rateEl.textContent = `${Math.round(stats.acceptanceRate * 100)}%`;
       rateEl.classList.remove('high', 'mid', 'low');
@@ -418,7 +418,7 @@ export class PerceptionRenderer {
     }
 
     // ─── 连续拒绝数（>0 时高亮，提示用户精灵正在延长冷却） ──
-    const rejectsEl = document.getElementById('perception-proactive-rejects');
+    const rejectsEl = document.getElementById('dashboard-proactive-rejects');
     if (rejectsEl) {
       rejectsEl.textContent = String(stats.consecutiveRejects);
       rejectsEl.classList.toggle('warning', stats.consecutiveRejects > 0);
@@ -428,7 +428,7 @@ export class PerceptionRenderer {
     }
 
     // ─── 生效冷却时长（与基础冷却对比，体现默契度 + 拒绝惩罚双调节） ──
-    const cooldownEl = document.getElementById('perception-proactive-cooldown');
+    const cooldownEl = document.getElementById('dashboard-proactive-cooldown');
     if (cooldownEl) {
       cooldownEl.textContent = this.formatCooldownMinutes(stats.effectiveCooldownMs);
       // 生效冷却 > 基础冷却时高亮，提示用户当前处于惩罚状态
@@ -478,8 +478,8 @@ export class PerceptionRenderer {
     }
 
     // 更新感知面板在场状态指示器 DOM
-    const presenceDot = document.getElementById('perception-presence-dot');
-    const presenceText = document.getElementById('perception-presence-text');
+    const presenceDot = document.getElementById('dashboard-presence-dot');
+    const presenceText = document.getElementById('dashboard-presence-text');
     if (presenceDot && presenceText) {
       if (payload.state === 'present') {
         presenceDot.className = 'presence-dot present';
@@ -514,12 +514,6 @@ export class PerceptionRenderer {
    */
   updateNarrative(): void {
     const narrative = this.generateNarrative();
-
-    // ─── 感知面板叙事文本 ──────────────────────────────
-    const perceptionNarrativeText = document.getElementById('perception-narrative-text');
-    if (perceptionNarrativeText) {
-      perceptionNarrativeText.textContent = narrative;
-    }
 
     // ─── 精灵状态条文字（非 idle 状态时更新） ────────────
     const isIdle = this.lastNarrativeContext?.rhythm === 'idle' || !this.lastNarrativeContext;

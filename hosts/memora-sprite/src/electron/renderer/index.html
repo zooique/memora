@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="styles/modal.css" />
   <link rel="stylesheet" href="styles/toast.css" />
   <link rel="stylesheet" href="styles/markdown.css" />
+  <link rel="stylesheet" href="styles/dashboard.css" />
 </head>
 <body>
   <!-- SVG 图标精灵：替换页面内 emoji，统一视觉风格 -->
@@ -199,6 +200,9 @@
         <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-label="设置面板">
           <svg class="icon"><use href="#icon-gear"/></svg>
         </button>
+        <button class="nav-btn" data-panel="dashboard" data-tooltip="仪表盘" aria-label="仪表盘面板">
+          <svg class="icon"><use href="#icon-chart"/></svg>
+        </button>
       </nav>
 
     </aside>
@@ -247,148 +251,6 @@
               <div class="date-nav-header">历史对话</div>
               <ul id="date-nav-list" class="date-nav-list"></ul>
             </div>
-          </div>
-        </div>
-
-        <!-- 感知面板（overlay，点击精灵状态条展开，紧凑单页布局） -->
-        <div id="perception-panel" class="perception-panel hidden" aria-label="精灵感知面板">
-          <div class="perception-panel-header">
-            <span class="perception-panel-title">精灵感知状态</span>
-            <button class="perception-panel-close" aria-label="关闭感知面板"><svg class="icon"><use href="#icon-close"/></svg></button>
-          </div>
-          <!-- 感知面板内容区（紧凑单页布局：概览 + 2×2 网格 + 内联行 + 折叠区） -->
-          <div class="perception-panel-body">
-          <!-- 叙事概览行（替代原"叙事摘要"独立分节，无边框无标题，作为一眼可见的摘要） -->
-          <p class="perception-overview-text" id="perception-narrative-text">精灵正在感知中...</p>
-
-          <!-- 在场状态（用户在场/离开，紧跟叙事摘要，一眼可见） -->
-          <div class="perception-section" id="perception-presence">
-            <div class="presence-indicator" id="perception-presence-indicator">
-              <span class="presence-dot present" id="perception-presence-dot"></span>
-              <span class="presence-text" id="perception-presence-text">用户在场</span>
-            </div>
-          </div>
-
-          <!-- 情感基调（2×2 紧凑网格，四维进度条横向排布） -->
-          <div class="perception-section" id="perception-affect">
-            <h4 class="perception-section-title">情感基调</h4>
-            <div class="affect-grid" id="perception-affect-bars">
-              <div class="affect-bar"><span class="affect-label">温暖</span><div class="affect-track"><div class="affect-fill" id="perception-warmth-fill"></div></div><span class="affect-level" id="perception-warmth-level">—</span></div>
-              <div class="affect-bar"><span class="affect-label">直接</span><div class="affect-track"><div class="affect-fill" id="perception-directness-fill"></div></div><span class="affect-level" id="perception-directness-level">—</span></div>
-              <div class="affect-bar"><span class="affect-label">主动</span><div class="affect-track"><div class="affect-fill" id="perception-initiative-fill"></div></div><span class="affect-level" id="perception-initiative-level">—</span></div>
-              <div class="affect-bar"><span class="affect-label">调皮</span><div class="affect-track"><div class="affect-fill" id="perception-playfulness-fill"></div></div><span class="affect-level" id="perception-playfulness-level">—</span></div>
-            </div>
-          </div>
-          <!-- 默契度（徽章 + 双进度条合并到同一行，描述紧随其后） -->
-          <div class="perception-section" id="perception-rapport">
-            <h4 class="perception-section-title">默契度</h4>
-            <div class="rapport-row">
-              <div class="rapport-level-badge" id="perception-rapport-badge" data-level="stranger">初识</div>
-              <div class="rapport-bars">
-                <div class="rapport-bar"><span class="rapport-bar-label">信任</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-trust-fill"></div></div></div>
-                <div class="rapport-bar"><span class="rapport-bar-label">熟悉</span><div class="affect-track"><div class="affect-fill rapport-fill" id="perception-familiarity-fill"></div></div></div>
-              </div>
-            </div>
-            <p class="rapport-description" id="perception-rapport-desc">刚开始了解彼此</p>
-          </div>
-
-          <!-- 对话上下文（三指标单行内联，最紧凑呈现） -->
-          <div class="perception-section" id="perception-context">
-            <h4 class="perception-section-title">对话上下文</h4>
-            <div class="context-inline">
-              <span class="context-item"><span class="context-label">节奏</span><span class="context-value" id="perception-pace-value">—</span></span>
-              <span class="context-sep">·</span>
-              <span class="context-item"><span class="context-label">话题</span><span class="context-value" id="perception-topic-value">—</span></span>
-              <span class="context-sep">·</span>
-              <span class="context-item"><span class="context-label">深度</span><span class="context-value" id="perception-depth-value">—</span></span>
-            </div>
-          </div>
-
-          <!-- 模式洞察（空列表时整个 section 由 JS 隐藏） -->
-          <div class="perception-section hidden" id="perception-patterns">
-            <h4 class="perception-section-title">模式洞察</h4>
-            <div id="perception-patterns-list" class="perception-patterns-list"></div>
-          </div>
-          <!-- 主动提示统计（缺口 G+H：接受率 + 生效冷却，展示与精灵的互动反馈） -->
-          <div class="perception-section" id="perception-proactive">
-            <h4 class="perception-section-title">主动提示</h4>
-            <div class="perception-proactive-grid">
-              <div class="dash-item" title="历史主动提示总次数">
-                <span class="dash-label">建议</span>
-                <span class="dash-value" id="perception-proactive-suggest">0</span>
-              </div>
-              <div class="dash-item" title="用户接受次数">
-                <span class="dash-label">接受</span>
-                <span class="dash-value" id="perception-proactive-accept">0</span>
-              </div>
-              <div class="dash-item" title="接受率（高/中/低 三色徽章）">
-                <span class="dash-label">接受率</span>
-                <span class="dash-value perception-proactive-rate" id="perception-proactive-rate">50%</span>
-              </div>
-              <div class="dash-item" title="当前连续拒绝次数（>0 时冷却延长）">
-                <span class="dash-label">连续拒绝</span>
-                <span class="dash-value" id="perception-proactive-rejects">0</span>
-              </div>
-              <div class="dash-item" title="当前生效冷却（受默契度 + 拒绝惩罚双调节）">
-                <span class="dash-label">生效冷却</span>
-                <span class="dash-value" id="perception-proactive-cooldown">—</span>
-              </div>
-            </div>
-          </div>
-          <!-- 运行指标（独立折叠区，默认折叠，核心感知数据已在上方展示） -->
-          <div class="perception-section collapsible" id="perception-metrics">
-            <h4 class="perception-section-title clickable" id="perception-metrics-toggle">
-              运行指标
-              <svg class="icon narrative-toggle" id="perception-metrics-arrow"><use href="#icon-chevron"/></svg>
-            </h4>
-            <div class="perception-metrics-grid collapsed" id="perception-metrics-grid">
-              <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="perception-llm-calls">0</span></div>
-              <div class="dash-item"><span class="dash-label">Token</span><span class="dash-value" id="perception-tokens">0</span></div>
-              <div class="dash-item"><span class="dash-label">召回</span><span class="dash-value" id="perception-recall-rate">0%</span></div>
-              <div class="dash-item"><span class="dash-label">失败</span><span class="dash-value" id="perception-tool-failures">0</span></div>
-              <div class="dash-item" title="上下文截断次数（超出窗口上限触发截断的累计次数）"><span class="dash-label">截断</span><span class="dash-value" id="perception-truncation-count">—</span></div>
-              <div class="dash-item" title="当前工作记忆消息数"><span class="dash-label">消息</span><span class="dash-value" id="perception-message-count">—</span></div>
-              <div class="dash-item" title="Agent 记忆总数"><span class="dash-label">记忆</span><span class="dash-value" id="perception-memory-count">0</span></div>
-              <div class="dash-item" title="AI 提取的洞察数"><span class="dash-label">洞察</span><span class="dash-value" id="perception-insight-count">0</span></div>
-              <div class="dash-item" title="累积待处理事件/阈值"><span class="dash-label">事件</span><span class="dash-value" id="perception-pending-count">0/0</span></div>
-              <div class="dash-item" title="已安装技能数"><span class="dash-label">技能</span><span class="dash-value" id="perception-skill-count">0</span></div>
-              <div class="dash-item" title="待处理配置建议数"><span class="dash-label">建议</span><span class="dash-value" id="perception-suggestion-count">0</span></div>
-              <div class="dash-item" title="记忆衰减已运行次数（缺口 F）"><span class="dash-label">衰减</span><span class="dash-value" id="perception-decay-runs">—</span></div>
-              <div class="dash-item" title="累计衰减记忆数（缺口 F）"><span class="dash-label">已衰</span><span class="dash-value" id="perception-decay-total">—</span></div>
-            </div>
-            <!-- 里程碑成就 -->
-            <div id="milestones-display">
-              <div id="milestones-list"></div>
-            </div>
-          </div>
-
-          <!-- 记忆源健康诊断（缺口 E：消费内核 sourceHealth()，展示每个 source 的质量维度） -->
-          <div class="perception-section collapsible hidden" id="source-health-section">
-            <h4 class="perception-section-title clickable" id="source-health-toggle">
-              记忆源健康
-              <span class="source-health-overall-badge healthy" id="source-health-overall">健康</span>
-              <svg class="icon narrative-toggle" id="source-health-arrow"><use href="#icon-chevron"/></svg>
-            </h4>
-            <div class="source-health-list hidden" id="source-health-list"></div>
-          </div>
-
-          <!-- 对话回顾（独立折叠区，与运行指标拆分） -->
-          <div class="perception-section collapsible" id="perception-review-section">
-            <h4 class="perception-section-title clickable" id="perception-review-toggle">
-              对话回顾
-              <svg class="icon narrative-toggle" id="perception-review-arrow"><use href="#icon-chevron"/></svg>
-            </h4>
-            <div class="perception-review hidden" id="perception-review">
-              <div class="review-today">
-                今日：<span id="review-today-memories">0</span> 记忆 · <span id="review-today-insights">0</span> 洞察
-              </div>
-              <div class="review-trend">
-                <span id="review-trend-dir" class="review-trend-direction stable">—</span>
-              </div>
-              <div id="review-trend-bars" class="review-trend-bars"></div>
-              <ul id="recent-insights-list" class="recent-insights-list"></ul>
-            </div>
-          </div>
           </div>
         </div>
 
@@ -510,7 +372,7 @@
           </button>
           <!-- 主操作：添加记忆 -->
           <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
-          <!-- 更多工具（统计洞察/健康度诊断） -->
+          <!-- 更多工具 -->
           <div class="toolbar-more">
             <button id="btn-memory-more" class="icon-btn" title="更多工具" aria-haspopup="true" aria-expanded="false">
               <svg class="icon"><use href="#icon-more"/></svg>
@@ -518,9 +380,6 @@
             <div id="memory-more-menu" class="dropdown more-menu hidden">
               <button class="more-menu-item" data-action="insights">
                 <svg class="icon"><use href="#icon-chart"/></svg> 统计洞察
-              </button>
-              <button class="more-menu-item" data-action="health">
-                <svg class="icon"><use href="#icon-health"/></svg> 健康度诊断
               </button>
               <!-- 回收站入口（软删除记忆恢复/彻底删除） -->
               <button class="more-menu-item" data-action="recycle-bin">
@@ -1191,6 +1050,109 @@
           <button id="btn-settings-cancel" class="btn-secondary">取消</button>
           <button id="btn-settings-save" class="btn-primary">保存</button>
           </div>
+        </div>
+      </div>
+
+      <!-- 仪表盘面板（迭代：感知面板从 overlay 升级为独立 .panel，整合健康诊断 + 感知 + 运行指标） -->
+      <div id="panel-dashboard" class="panel" aria-hidden="true" aria-label="仪表盘">
+        <div class="panel-header">
+          <span class="panel-title">仪表盘</span>
+          <button id="btn-refresh-dashboard" class="icon-btn" title="刷新数据">
+            <svg class="icon"><use href="#icon-refresh"/></svg>
+          </button>
+        </div>
+        <div class="dashboard-body">
+          <!-- 分区一：概览卡片（健康分 + 记忆统计 + 默契等级） -->
+          <section class="dashboard-section" id="dashboard-overview">
+            <h4 class="dashboard-section-title">概览</h4>
+            <div class="dashboard-cards" id="dashboard-cards">
+              <!-- 记忆健康卡片：大号分数 + 等级徽章 + 三维度迷你进度条 -->
+              <div class="dashboard-card" id="health-score-card">
+                <div class="card-header">记忆健康</div>
+                <div class="card-value" id="dashboard-health-score">—</div>
+                <div class="card-badge" id="dashboard-health-badge">—</div>
+                <div class="card-dims" id="dashboard-health-dims"></div>
+              </div>
+              <!-- 记忆统计卡片：总数 / 洞察 / 技能 / 衰减 -->
+              <div class="dashboard-card" id="memory-stats-card">
+                <div class="card-header">记忆统计</div>
+                <div class="card-stat-row"><span>记忆</span><span class="stat-value" id="dashboard-total-memories">0</span></div>
+                <div class="card-stat-row"><span>洞察</span><span class="stat-value" id="dashboard-total-insights">0</span></div>
+                <div class="card-stat-row"><span>技能</span><span class="stat-value" id="dashboard-total-skills">0</span></div>
+                <div class="card-stat-row"><span>衰减运行</span><span class="stat-value" id="dashboard-decay-runs">—</span></div>
+              </div>
+              <!-- 默契度卡片：等级徽章 + 信任/熟悉度双进度条 -->
+              <div class="dashboard-card" id="rapport-card">
+                <div class="card-header">默契度</div>
+                <div class="card-badge" id="dashboard-rapport-badge" data-level="stranger">初识</div>
+                <div class="card-bar"><span class="bar-label">信任</span><div class="progress-track"><div class="progress-fill" id="dashboard-trust-fill"></div></div></div>
+                <div class="card-bar"><span class="bar-label">熟悉</span><div class="progress-track"><div class="progress-fill" id="dashboard-familiarity-fill"></div></div></div>
+                <p class="card-desc" id="dashboard-rapport-desc">—</p>
+              </div>
+            </div>
+          </section>
+
+          <!-- 分区二：感知（情感基调 2×2 + 上下文 + 在场 + 模式 + 主动提示） -->
+          <section class="dashboard-section" id="dashboard-perception">
+            <h4 class="dashboard-section-title">感知</h4>
+            <!-- 在场状态 -->
+            <div class="dashboard-presence" id="dashboard-presence">
+              <span class="presence-dot present" id="dashboard-presence-dot"></span>
+              <span class="presence-text" id="dashboard-presence-text">用户在场</span>
+            </div>
+            <!-- 情感基调 2×2 网格 -->
+            <div class="affect-grid" id="dashboard-affect-bars">
+              <div class="affect-bar"><span class="affect-label">温暖</span><div class="affect-track"><div class="affect-fill" id="dashboard-warmth-fill"></div></div><span class="affect-level" id="dashboard-warmth-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">直接</span><div class="affect-track"><div class="affect-fill" id="dashboard-directness-fill"></div></div><span class="affect-level" id="dashboard-directness-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">主动</span><div class="affect-track"><div class="affect-fill" id="dashboard-initiative-fill"></div></div><span class="affect-level" id="dashboard-initiative-level">—</span></div>
+              <div class="affect-bar"><span class="affect-label">调皮</span><div class="affect-track"><div class="affect-fill" id="dashboard-playfulness-fill"></div></div><span class="affect-level" id="dashboard-playfulness-level">—</span></div>
+            </div>
+            <!-- 对话上下文三指标 -->
+            <div class="context-inline" id="dashboard-context">
+              <span class="context-item"><span class="context-label">节奏</span><span class="context-value" id="dashboard-pace-value">—</span></span>
+              <span class="context-sep">·</span>
+              <span class="context-item"><span class="context-label">话题</span><span class="context-value" id="dashboard-topic-value">—</span></span>
+              <span class="context-sep">·</span>
+              <span class="context-item"><span class="context-label">深度</span><span class="context-value" id="dashboard-depth-value">—</span></span>
+            </div>
+            <!-- 模式洞察 -->
+            <div class="dashboard-patterns hidden" id="dashboard-patterns">
+              <h5 class="dashboard-subtitle">模式洞察</h5>
+              <div id="dashboard-patterns-list" class="perception-patterns-list"></div>
+            </div>
+            <!-- 主动提示统计 -->
+            <div class="dashboard-proactive" id="dashboard-proactive">
+              <h5 class="dashboard-subtitle">主动提示</h5>
+              <div class="dash-item-grid" id="dashboard-proactive-grid">
+                <div class="dash-item" title="历史主动提示总次数"><span class="dash-label">建议</span><span class="dash-value" id="dashboard-proactive-suggest">0</span></div>
+                <div class="dash-item" title="用户接受次数"><span class="dash-label">接受</span><span class="dash-value" id="dashboard-proactive-accept">0</span></div>
+                <div class="dash-item" title="接受率"><span class="dash-label">接受率</span><span class="dash-value" id="dashboard-proactive-rate">50%</span></div>
+                <div class="dash-item" title="当前连续拒绝次数"><span class="dash-label">连续拒绝</span><span class="dash-value" id="dashboard-proactive-rejects">0</span></div>
+                <div class="dash-item" title="当前生效冷却"><span class="dash-label">生效冷却</span><span class="dash-value" id="dashboard-proactive-cooldown">—</span></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 分区三：运行指标（LLM + Token + 召回 + 失败 + 截断 + 消息 + 衰减） -->
+          <section class="dashboard-section" id="dashboard-runtime">
+            <h4 class="dashboard-section-title">运行</h4>
+            <div class="dash-item-grid" id="dashboard-metrics-grid">
+              <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="dashboard-llm-calls">0</span></div>
+              <div class="dash-item"><span class="dash-label">Token</span><span class="dash-value" id="dashboard-tokens">0</span></div>
+              <div class="dash-item"><span class="dash-label">召回</span><span class="dash-value" id="dashboard-recall-rate">0%</span></div>
+              <div class="dash-item"><span class="dash-label">失败</span><span class="dash-value" id="dashboard-tool-failures">0</span></div>
+              <div class="dash-item" title="上下文截断次数"><span class="dash-label">截断</span><span class="dash-value" id="dashboard-truncation-count">—</span></div>
+              <div class="dash-item" title="当前工作记忆消息数"><span class="dash-label">消息</span><span class="dash-value" id="dashboard-message-count">—</span></div>
+              <div class="dash-item" title="衰减已运行次数"><span class="dash-label">衰减</span><span class="dash-value" id="dashboard-decay-count">—</span></div>
+              <div class="dash-item" title="累计衰减记忆数"><span class="dash-label">已衰</span><span class="dash-value" id="dashboard-decay-total">—</span></div>
+            </div>
+          </section>
+
+          <!-- 分区四：记忆源健康（按 source 分组的质量诊断列表） -->
+          <section class="dashboard-section" id="dashboard-source-health">
+            <h4 class="dashboard-section-title">记忆源健康</h4>
+            <div class="source-health-list" id="dashboard-source-health-list"></div>
+          </section>
         </div>
       </div>
     </main>

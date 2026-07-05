@@ -577,10 +577,6 @@ export function createMemoryController(uiManager: UIManager) {
 
       // 仪表盘加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
-
-      // ─── 对话回顾数据（感知面板内） ──────────────
-      const reviewData = await window.electronAPI.getReviewData();
-      uiManager.renderReviewData(reviewData);
     } catch (error) {
       reportError('loadDashboard', error);
       // 仪表盘涉及多子区域（统计/指标/技能/里程碑/回顾），整体失败时用 toast 兜底提示

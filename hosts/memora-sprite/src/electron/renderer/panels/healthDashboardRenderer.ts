@@ -108,7 +108,47 @@ export class HealthDashboardRenderer {
       miniScore.classList.remove('hidden');
     }
 
-    // ─── 健康度评分 ────────────────────────────────────
+    // ─── 仪表盘面板：健康分卡片（大号数值 + 等级徽章 + 三维度进度条） ──
+    const dashboardScore = document.getElementById('dashboard-health-score');
+    if (dashboardScore) {
+      dashboardScore.textContent = String(data.scores.overall);
+    }
+    const dashboardBadge = document.getElementById('dashboard-health-badge');
+    if (dashboardBadge) {
+      dashboardBadge.textContent = HEALTH_LABEL_MAP[data.healthLabel] || data.healthLabel;
+      dashboardBadge.setAttribute('data-level', data.healthLabel);
+    }
+    // 三维度进度条渲染到仪表盘健康卡片的 .card-dims 容器
+    const dashboardDims = document.getElementById('dashboard-health-dims');
+    if (dashboardDims) {
+      const dims: DimensionConfig[] = [
+        { id: 'uniqueness', value: data.scores.uniqueness, cssClass: 'uniqueness' },
+        { id: 'freshness', value: data.scores.freshness, cssClass: 'freshness' },
+        { id: 'completeness', value: data.scores.completeness, cssClass: 'completeness' },
+      ];
+      // 清空并重建（遵循项目规范：while + removeChild）
+      while (dashboardDims.firstChild) {
+        dashboardDims.removeChild(dashboardDims.firstChild);
+      }
+      for (const dim of dims) {
+        const row = document.createElement('div');
+        row.className = 'card-bar';
+        const label = document.createElement('span');
+        label.className = 'bar-label';
+        label.textContent = { uniqueness: '唯一性', freshness: '新鲜度', completeness: '完整度' }[dim.id] ?? dim.id;
+        const track = document.createElement('div');
+        track.className = 'progress-track';
+        const fill = document.createElement('div');
+        fill.className = `progress-fill health-metric-fill ${dim.cssClass}`;
+        fill.style.width = `${dim.value}%`;
+        track.appendChild(fill);
+        row.appendChild(label);
+        row.appendChild(track);
+        dashboardDims.appendChild(row);
+      }
+    }
+
+    // ─── 健康度评分（旧：记忆面板 health-bar） ──────────
     const scoreEl = document.getElementById('health-score');
     if (scoreEl) scoreEl.textContent = String(data.scores.overall);
 

@@ -1,0 +1,244 @@
+/**
+ * 仪表盘面板样式
+ *
+ * 仪表盘从 overlay 感知面板升级为独立 .panel，
+ * 整合健康诊断 + 感知指标 + 运行指标 + 记忆源健康四大分区。
+ *
+ * 设计原则：
+ * - 遵循现有 CSS 变量体系（base.css 定义的设计令牌）
+ * - 卡片式布局，分区之间有明确视觉分隔
+ * - 复用 .dash-item / .affect-bar / .progress-track 等已有组件样式
+ * - 响应式网格，卡片自适应宽度
+ */
+
+/* ─── 仪表盘主体滚动容器 ──────────────────────────── */
+.dashboard-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ─── 分区（section） ──────────────────────────────── */
+.dashboard-section {
+  /* 无额外容器样式，由标题 + 内容的 gap 构成自然分隔 */
+}
+
+.dashboard-section-title {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--subtext);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px 0;
+  padding: 0;
+}
+
+.dashboard-subtitle {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--subtext);
+  margin: 12px 0 8px 0;
+  padding: 0;
+}
+
+/* ─── 概览卡片网格 ──────────────────────────────────── */
+.dashboard-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+/* ─── 卡片容器 ──────────────────────────────────────── */
+.dashboard-card {
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card-header {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--subtext);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* 大号数值（健康分） */
+.card-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+/* 徽章（健康等级 / 默契等级） */
+.card-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  align-self: flex-start;
+}
+
+/* 健康等级徽章颜色（映射到 base.css 已有的设计令牌） */
+.card-badge[data-level="excellent"],
+.card-badge[data-level="good"] {
+  background: var(--green-20);
+  color: var(--green);
+}
+.card-badge[data-level="fair"] {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+.card-badge[data-level="poor"] {
+  background: var(--red-20);
+  color: var(--red);
+}
+
+/* 默契等级徽章颜色（映射到 base.css 已有的设计令牌） */
+.card-badge[data-level="close"] {
+  background: var(--mauve-20);
+  color: var(--mauve);
+}
+.card-badge[data-level="familiar"] {
+  background: var(--green-20);
+  color: var(--green);
+}
+.card-badge[data-level="acquaintance"] {
+  background: var(--accent-20);
+  color: var(--blue);
+}
+.card-badge[data-level="stranger"] {
+  background: var(--surface2);
+  color: var(--subtext);
+}
+
+/* 三维度迷你进度条容器 */
+.card-dims {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* 统计行（记忆统计卡片内） */
+.card-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+.card-stat-row .stat-value {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 进度条行（默契度卡片内） */
+.card-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-xs);
+}
+
+.card-bar .bar-label {
+  width: 32px;
+  color: var(--subtext);
+  flex-shrink: 0;
+}
+
+.card-desc {
+  font-size: var(--font-xs);
+  color: var(--subtext);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ─── 通用进度条（复用自 affect-bar 模式） ──────────── */
+.progress-track {
+  flex: 1;
+  height: 6px;
+  background: var(--surface2);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  transition: width var(--transition-base) ease;
+  min-width: 2px;
+}
+
+/* ─── 在场状态 ──────────────────────────────────────── */
+.dashboard-presence {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+}
+
+/* ─── 情感基调网格（复用 affect-bar 模式） ──────────── */
+.dashboard-section .affect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+
+/* ─── 对话上下文行内 ────────────────────────────────── */
+.dashboard-section .context-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  margin-bottom: 8px;
+}
+
+/* ─── 模式洞察列表 ────────────────────────────────── */
+.dashboard-patterns {
+  margin-bottom: 8px;
+}
+
+/* ─── 主动提示网格 ────────────────────────────────── */
+.dashboard-proactive {
+  margin-top: 8px;
+}
+
+/* ─── dash-item 网格（运行指标 / 主动提示） ──────────── */
+.dash-item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 8px;
+}
+
+/* ─── 记忆源健康列表 ──────────────────────────────── */
+.source-health-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 空状态 */
+.source-health-list:empty::after {
+  content: '暂无诊断数据';
+  color: var(--muted);
+  font-size: var(--font-sm);
+  padding: 12px;
+  text-align: center;
+}

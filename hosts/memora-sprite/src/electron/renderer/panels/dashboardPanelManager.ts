@@ -370,20 +370,23 @@ export class DashboardPanelManager {
           li.appendChild(scoreSpan);
           recList.appendChild(li);
         }
-        // 确保学习与回顾节可见
         learningSection.classList.remove('hidden');
       }
-      // 无推荐时保持列表为空，不隐藏整个节（因为还有回顾数据）
     }
 
     // ─── 更新记忆总数（data.total 为全量记忆数，不受筛选影响） ──
     const memoryCountEl = document.getElementById('perception-memory-count');
     if (memoryCountEl) memoryCountEl.textContent = String(data.total);
+    // 仪表盘面板：记忆统计卡片
+    const dashboardMemoryCount = document.getElementById('dashboard-total-memories');
+    if (dashboardMemoryCount) dashboardMemoryCount.textContent = String(data.total);
 
     // ─── 更新洞察计数（bySource 中 source='insight' 的记忆数） ──
     const insightCount = data.bySource['insight'] ?? 0;
     const insightCountEl = document.getElementById('perception-insight-count');
     if (insightCountEl) insightCountEl.textContent = String(insightCount);
+    const dashboardInsightCount = document.getElementById('dashboard-total-insights');
+    if (dashboardInsightCount) dashboardInsightCount.textContent = String(insightCount);
 
     // ─── 更新建议计数（suggestions 数组长度，供 updateLearningProgress 读取） ──
     const suggestionCountEl = document.getElementById('perception-suggestion-count');
@@ -451,6 +454,57 @@ export class DashboardPanelManager {
     }
     if (this.perceptionMessageCountEl) {
       this.perceptionMessageCountEl.textContent = String(metrics.context.messageCount);
+    }
+
+    // ─── 仪表盘面板：运行指标（LLM/Token/召回/失败/截断/消息/衰减） ──
+    const dashboardLlmCalls = document.getElementById('dashboard-llm-calls');
+    if (dashboardLlmCalls) dashboardLlmCalls.textContent = String(metrics.llm.callCount);
+
+    const dashboardTokens = document.getElementById('dashboard-tokens');
+    if (dashboardTokens) {
+      const totalTokens = metrics.llm.totalInputTokens + metrics.llm.totalOutputTokens;
+      dashboardTokens.textContent = formatTokenCount(totalTokens);
+    }
+
+    const dashboardRecallRate = document.getElementById('dashboard-recall-rate');
+    if (dashboardRecallRate) {
+      dashboardRecallRate.textContent = `${Math.round(metrics.recall.hitRate * 100)}%`;
+    }
+
+    const dashboardToolFailures = document.getElementById('dashboard-tool-failures');
+    if (dashboardToolFailures) {
+      if (metrics.tools.callCount > 0) {
+        const failRate = metrics.tools.failureCount / metrics.tools.callCount;
+        dashboardToolFailures.textContent = `${Math.round(failRate * 100)}%`;
+      } else {
+        dashboardToolFailures.textContent = '—';
+      }
+    }
+
+    const dashboardTruncation = document.getElementById('dashboard-truncation-count');
+    if (dashboardTruncation) {
+      dashboardTruncation.textContent = String(metrics.context.truncationCount);
+    }
+
+    const dashboardMessageCount = document.getElementById('dashboard-message-count');
+    if (dashboardMessageCount) {
+      dashboardMessageCount.textContent = String(metrics.context.messageCount);
+    }
+
+    const dashboardDecayCount = document.getElementById('dashboard-decay-count');
+    if (dashboardDecayCount) {
+      dashboardDecayCount.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
+    }
+
+    const dashboardDecayTotal = document.getElementById('dashboard-decay-total');
+    if (dashboardDecayTotal) {
+      dashboardDecayTotal.textContent = metrics.decay ? String(metrics.decay.totalDecayedCount) : '—';
+    }
+
+    // 仪表盘记忆统计卡片中的衰减运行次数
+    const dashboardDecayRuns = document.getElementById('dashboard-decay-runs');
+    if (dashboardDecayRuns) {
+      dashboardDecayRuns.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
     }
   }
 
@@ -540,6 +594,44 @@ export class DashboardPanelManager {
 
       listEl.appendChild(item);
     }
+
+    // ─── 仪表盘面板：记忆源健康列表（复用同一数据源，不同 DOM 容器） ──
+    const dashboardListEl = document.getElementById('dashboard-source-health-list');
+    if (dashboardListEl) {
+      // 清空并重建（遵循项目规范：while + removeChild）
+      while (dashboardListEl.firstChild) {
+        dashboardListEl.removeChild(dashboardListEl.firstChild);
+      }
+      for (const s of sortedSources) {
+        const item = document.createElement('div');
+        item.className = `source-health-item ${s.status}`;
+        const labelSpan = document.createElement('span');
+        labelSpan.className = `source-health-label source-${getSourceColorClass(s.source)}`;
+        labelSpan.textContent = this.getSourceLabel(s.source);
+        const countSpan = document.createElement('span');
+        countSpan.className = 'source-health-count';
+        countSpan.textContent = `${s.count} 条`;
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'source-health-score';
+        scoreSpan.textContent = `均分 ${Math.round(s.avgScore * 100)}`;
+        scoreSpan.title = '该 source 所有记忆的平均分（0-100）';
+        const accessSpan = document.createElement('span');
+        accessSpan.className = 'source-health-access';
+        accessSpan.textContent = s.daysSinceLastAccess === 0
+          ? '今日访问'
+          : `${s.daysSinceLastAccess} 天未访`;
+        accessSpan.title = '距上次访问该 source 的天数';
+        const statusSpan = document.createElement('span');
+        statusSpan.className = `source-health-status ${s.status}`;
+        statusSpan.textContent = this.getSourceHealthStatusLabel(s.status);
+        item.appendChild(labelSpan);
+        item.appendChild(countSpan);
+        item.appendChild(scoreSpan);
+        item.appendChild(accessSpan);
+        item.appendChild(statusSpan);
+        dashboardListEl.appendChild(item);
+      }
+    }
   }
 
   /**
@@ -564,6 +656,11 @@ export class DashboardPanelManager {
     const countEl = this.perceptionSkillCountEl;
     if (countEl) {
       countEl.textContent = String(skills.length);
+    }
+    // 仪表盘面板：记忆统计卡片中的技能计数
+    const dashboardSkillCount = document.getElementById('dashboard-total-skills');
+    if (dashboardSkillCount) {
+      dashboardSkillCount.textContent = String(skills.length);
     }
 
     const listEl = this.skillsListEl;
@@ -695,65 +792,6 @@ export class DashboardPanelManager {
       badge.innerHTML = milestone.icon;
       badge.appendChild(document.createTextNode(` ${milestone.label}`));
       milestonesList.appendChild(badge);
-    }
-  }
-
-  /**
-   * 渲染对话回顾数据（安全降级，合并到学习与回顾节）
-   *
-   * 渲染到 #learning-progress 内的今日回顾行和趋势柱状图。
-   * 原 DOM 位置可能已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
-   *
-   * @param data 对话回顾数据
-   */
-  renderReviewData(data: ReviewDataPayload): void {
-    // ─── 今日概况 ──────────────────────────────────────
-    const todayMemories = document.getElementById('review-today-memories');
-    const todayInsights = document.getElementById('review-today-insights');
-    if (todayMemories) todayMemories.textContent = String(data.today.newMemories);
-    if (todayInsights) todayInsights.textContent = String(data.today.newInsights);
-
-    // ─── 增长趋势 ──────────────────────────────────────
-    const trendDir = document.getElementById('review-trend-dir');
-    if (trendDir) {
-      trendDir.textContent = TREND_ARROW_MAP[data.trend.direction] || '—';
-      trendDir.className = `review-trend-direction ${data.trend.direction}`;
-    }
-
-    // ─── 趋势柱状图（7 天） ────────────────────────────
-    const barsEl = document.getElementById('review-trend-bars');
-    if (barsEl) {
-      clearElement(barsEl);
-      const maxCount = Math.max(1, ...data.trend.daily.map((d) => d.newMemories));
-      const today = new Date().toISOString().slice(0, 10);
-      for (const day of data.trend.daily) {
-        const bar = document.createElement('div');
-        bar.className = 'review-trend-bar';
-        const height = Math.max(4, Math.round((day.newMemories / maxCount) * 36));
-        bar.style.height = `${height}px`;
-        if (day.date === today) bar.classList.add('today');
-        bar.title = `${day.date}: ${day.newMemories} 条记忆`;
-        barsEl.appendChild(bar);
-      }
-    }
-
-    // ─── 最近洞察列表（渲染 ReviewData.insights.recent） ─
-    // 隐藏内部 insight.name（如 insight-xxxxx），展示用户可读的 contentPreview
-    const insightsListEl = document.getElementById('recent-insights-list');
-    if (insightsListEl) {
-      clearElement(insightsListEl);
-      for (const insight of data.insights.recent) {
-        const li = document.createElement('li');
-        li.className = 'recent-insight-item';
-        // 截断前60字符作为预览，避免内部 ID 泄露
-        const previewEl = document.createElement('span');
-        previewEl.className = 'recent-insight-preview';
-        const preview = insight.contentPreview || '(空洞察)';
-        previewEl.textContent = preview.length > 60 ? preview.slice(0, 60) + '…' : preview;
-        previewEl.title = preview; // 完整内容放在 title 中，鼠标悬停可查看
-        li.appendChild(previewEl);
-        insightsListEl.appendChild(li);
-      }
     }
   }
 

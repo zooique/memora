@@ -86,12 +86,11 @@ async function bootstrapRenderer(): Promise<void> {
       void memoryController.loadMemoryList();
     } else if (panel === 'settings') {
       // 切换到设置面板时重新加载配置表单，确保与主进程数据一致
-      // 场景：用户在 chat 通过命令面板/角色切换等途径变更了配置，切回 settings
-      //       时表单仍显示旧数据，保存会覆盖主进程的最新配置。
-      // 安全性：switchPanel 已在切走 settings 时检查 dirty（有未保存修改会提示用户），
-      //         切到 settings 时 dirty 必为 false，此处刷新不会覆盖用户编辑。
       void settingsController.loadConfig();
       void settingsController.loadLlmConfig();
+    } else if (panel === 'dashboard') {
+      // 切换到仪表盘面板时刷新仪表盘数据（健康诊断 + 感知 + 运行指标）
+      void memoryController.loadDashboard();
     }
   });
 

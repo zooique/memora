@@ -50,8 +50,6 @@ export interface PanelRouterHost {
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
   /** 关闭记忆面板的分析面板 */
   dismissMemoryAnalysisPanels(): void;
-  /** 关闭感知面板 */
-  closePerceptionPanel(): void;
   /** 显示弹窗 */
   showModal(modalId: string): void;
   /** 隐藏弹窗 */
@@ -229,18 +227,11 @@ export class PanelRouter {
     if (!(e instanceof KeyboardEvent)) return;
     const isMod = e.ctrlKey || e.metaKey;
 
-    // Esc：关闭感知面板/下拉菜单；设置或记忆面板激活时切回对话
+    // Esc：关闭下拉菜单；设置/记忆/仪表盘面板激活时切回对话
     if (e.key === 'Escape') {
-      // 优先关闭感知面板
-      const panel = document.getElementById('perception-panel');
-      if (panel?.classList.contains('visible')) {
-        this.host.closePerceptionPanel();
-        e.preventDefault();
-        return;
-      }
-      // 设置或记忆面板激活时，Escape 切回对话面板
+      // 设置或记忆或仪表盘面板激活时，Escape 切回对话面板
       const state = this.host.getState();
-      if (state.currentPanel === 'settings' || state.currentPanel === 'memories') {
+      if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard') {
         void this.switchPanel('chat');
         e.preventDefault();
         return;
@@ -254,11 +245,12 @@ export class PanelRouter {
     }
 
     // Ctrl/Cmd + 数字：切换面板
-    if (isMod && ['1', '2', '3'].includes(e.key)) {
+    if (isMod && ['1', '2', '3', '4'].includes(e.key)) {
       const panelMap: Record<string, string> = {
         '1': 'chat',
         '2': 'memories',
         '3': 'settings',
+        '4': 'dashboard',
       };
       const panel = panelMap[e.key];
       if (panel) {
