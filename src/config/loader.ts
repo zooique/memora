@@ -35,6 +35,8 @@ const ProviderConfigSchema = z.object({
   model: z.string(),
   baseUrl: z.string().optional(),
   apiKey: z.string().optional(),
+  /** 该 Provider 的 temperature，未配置时回退到全局 llm.temperature */
+  temperature: z.number().min(0).max(2).optional(),
 });
 
 // 配置 schema（运行时校验）

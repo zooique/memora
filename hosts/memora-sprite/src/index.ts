@@ -141,7 +141,9 @@ export async function getLlmProviders(
     model: p.model,
     baseUrl: p.baseUrl ?? '',
     apiKey: maskKey(p.apiKey),
-    temperature: 0.7, // 默认值，后续可扩展
+    // 读取每个 Provider 的 temperature，未配置时回退到全局默认值
+    // temperature 是 ProviderConfig 的扩展字段（内核 v0.2.1+），这里用类型断言兼容
+    temperature: (p as Record<string, unknown>).temperature as number | undefined ?? config.llm.temperature,
   }));
 
   return {
@@ -174,6 +176,8 @@ export async function saveLlmProvider(
     model: providerConfig.model,
     baseUrl: providerConfig.baseUrl || undefined,
     apiKey: providerConfig.apiKey || undefined,
+    // 传递 temperature（可选，未传时回退到全局默认值）
+    ...(providerConfig.temperature !== undefined ? { temperature: providerConfig.temperature } : {}),
   };
 
   // 首次添加时自动设为 active
@@ -225,11 +229,22 @@ export async function setActiveLlmProvider(
   const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
   const config = await store.load();
 
-  if (!config.llm.providers?.[key]) {
+  const provider = config.llm.providers?.[key];
+  if (!provider) {
     throw new Error(`Provider "${key}" 不存在`);
   }
 
-  await store.saveProviders(config.llm.providers, key, config);
+  // 同步全局 temperature 到激活 Provider 的值（内核 createLlmProvider 读取 config.llm.temperature）
+  const providerTemp = (provider as Record<string, unknown>).temperature as number | undefined;
+  const configWithTemp = {
+    ...config,
+    llm: {
+      ...config.llm,
+      temperature: providerTemp ?? config.llm.temperature,
+    },
+  };
+
+  await store.saveProviders(configWithTemp.llm.providers!, key, configWithTemp);
 }
 
 // ─── 启动精灵 ──────────────────────────────────────────

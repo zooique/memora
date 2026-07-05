@@ -200,7 +200,7 @@ export class SpriteConfigStore {
    * @param existing 现有的完整配置（避免重复读取，由调用方传入）
    */
   async saveProviders(
-    providers: Record<string, { provider: string; model: string; baseUrl?: string; apiKey?: string }>,
+    providers: Record<string, { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number }>,
     active: string,
     existing?: Config,
   ): Promise<void> {

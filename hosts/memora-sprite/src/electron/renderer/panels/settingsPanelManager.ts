@@ -112,7 +112,10 @@ export class SettingsPanelManager {
   private providerModelInput: HTMLInputElement | null;
   private providerBaseUrlInput: HTMLInputElement | null;
   private providerApiKeyInput: HTMLInputElement | null;
+  private providerTemperatureInput: HTMLInputElement | null;
   private btnAddProvider: HTMLButtonElement | null;
+  // 缓存 Provider 列表数据（编辑时用于填充表单字段，避免 DOM 解析丢失 temperature/apiKey）
+  private cachedProviders: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> = [];
   private btnProviderSave: HTMLButtonElement | null;
   private btnProviderCancel: HTMLButtonElement | null;
   private btnProviderTest: HTMLButtonElement | null;
@@ -224,6 +227,7 @@ export class SettingsPanelManager {
     this.providerModelInput = getOptionalElement('cfg-provider-model', 'input');
     this.providerBaseUrlInput = getOptionalElement('cfg-provider-base-url', 'input');
     this.providerApiKeyInput = getOptionalElement('cfg-provider-api-key', 'input');
+    this.providerTemperatureInput = getOptionalElement('cfg-provider-temperature', 'input');
     this.btnAddProvider = getOptionalElement('btn-add-provider', 'button');
     this.btnProviderSave = getOptionalElement('btn-provider-save', 'button');
     this.btnProviderCancel = getOptionalElement('btn-provider-cancel', 'button');
@@ -985,6 +989,7 @@ export class SettingsPanelManager {
     if (!this.providerListEl) return;
     try {
       const data = await window.electronAPI.listLlmProviders();
+      this.cachedProviders = data.providers; // 缓存供编辑时使用
       this.renderProviderList(data.active, data.providers);
     } catch {
       this.providerListEl.innerHTML = '';
@@ -1057,27 +1062,30 @@ export class SettingsPanelManager {
     if (!this.providerFormEl) return;
 
     if (key) {
-      const card = this.providerListEl?.querySelector(`[data-provider-key="${key}"]`);
-      const detailEl = card?.querySelector('.provider-detail');
-      const detail = detailEl?.textContent ?? '';
-      const parts = detail.split(' · ');
+      // 编辑模式：从缓存中查找 Provider 数据（含 temperature 和脱敏 apiKey）
+      const cached = this.cachedProviders.find((p) => p.key === key);
 
       if (this.providerAliasInput) {
         this.providerAliasInput.value = key;
         this.providerAliasInput.disabled = true;
       }
-      if (this.providerDisplayInput) this.providerDisplayInput.value = card?.querySelector('.provider-name')?.textContent ?? key;
-      if (this.providerProviderInput) this.providerProviderInput.value = parts[0] ?? '';
-      if (this.providerModelInput) this.providerModelInput.value = parts[1] ?? '';
-      if (this.providerBaseUrlInput) this.providerBaseUrlInput.value = parts[2] !== '未设置' ? (parts[2] ?? '') : '';
+      if (this.providerDisplayInput) this.providerDisplayInput.value = cached?.name ?? key;
+      if (this.providerProviderInput) this.providerProviderInput.value = cached?.provider ?? '';
+      if (this.providerModelInput) this.providerModelInput.value = cached?.model ?? '';
+      if (this.providerBaseUrlInput) this.providerBaseUrlInput.value = cached?.baseUrl ?? '';
+      // 编辑时显示脱敏后的 API Key（前4后4），而非清空
+      if (this.providerApiKeyInput) this.providerApiKeyInput.value = cached?.apiKey ?? '';
+      if (this.providerTemperatureInput) this.providerTemperatureInput.value = String(cached?.temperature ?? 0.7);
     } else {
+      // 新增模式：清空所有字段
       if (this.providerAliasInput) { this.providerAliasInput.value = ''; this.providerAliasInput.disabled = false; }
       if (this.providerDisplayInput) this.providerDisplayInput.value = '';
       if (this.providerProviderInput) this.providerProviderInput.value = '';
       if (this.providerModelInput) this.providerModelInput.value = '';
       if (this.providerBaseUrlInput) this.providerBaseUrlInput.value = '';
+      if (this.providerApiKeyInput) this.providerApiKeyInput.value = '';
+      if (this.providerTemperatureInput) this.providerTemperatureInput.value = '';
     }
-    if (this.providerApiKeyInput) this.providerApiKeyInput.value = '';
 
     this.providerFormEl.classList.remove('hidden');
     this.providerFormEl.dataset.editKey = key;
@@ -1103,6 +1111,9 @@ export class SettingsPanelManager {
     const model = this.providerModelInput?.value.trim();
     const baseUrl = this.providerBaseUrlInput?.value.trim();
     const apiKey = this.providerApiKeyInput?.value.trim();
+    // 读取 temperature：空值表示使用默认值，不传 temperature 字段
+    const tempRaw = this.providerTemperatureInput?.value.trim();
+    const temperature = tempRaw ? parseFloat(tempRaw) : undefined;
 
     // 必填字段校验
     if (!alias || !provider || !model || !apiKey) {
@@ -1130,7 +1141,7 @@ export class SettingsPanelManager {
       }
     }
 
-    const result = await window.electronAPI.saveLlmProvider(alias, { provider, model, baseUrl, apiKey });
+    const result = await window.electronAPI.saveLlmProvider(alias, { provider, model, baseUrl, apiKey, temperature });
     if (result.success) {
       this.host.showToast('Provider 保存成功');
       this.hideProviderForm();
