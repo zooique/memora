@@ -2,7 +2,7 @@
  * 设置控制器 — 设置面板业务逻辑
  *
  * 职责：
- * - 设置精灵配置保存回调（QC-CONFIG-01：批量事务性更新）
+ * - 设置精灵配置保存回调（批量事务性更新）
  * - 设置 LLM 配置保存回调（触发主进程重新初始化 Agent）
  * - 设置 LLM 连接测试回调
  * - 设置取消回调（重新加载配置）
@@ -10,9 +10,9 @@
  *
  * 设计原则：
  * - 接收 UIManager 实例，不持有模块级状态
- * - FD-08 进行中反馈：保存/测试时禁用按钮防止重复点击
- * - FD-A2 加载失败时显示错误横幅，提供重试按钮
- * - FD-07 程序化设置表单值后重置 dirty 标志
+ * - 进行中反馈：保存/测试时禁用按钮防止重复点击
+ * - 加载失败时显示错误横幅，提供重试按钮
+ * - 程序化设置表单值后重置 dirty 标志
  */
 
 import type { UIManager } from '../ui.js';
@@ -22,7 +22,7 @@ import { setButtonLoading } from '../helpers/domHelpers.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
 
-/** QC-STATE-01 silentRecoveryCallback 位于 createSettingsController 闭包内 */
+/** silentRecoveryCallback 位于 createSettingsController 闭包内 */
 
 /**
  * 创建设置控制器
@@ -34,10 +34,10 @@ export function createSettingsController(uiManager: UIManager) {
   /** IPC 错误处理函数（绑定 uiManager） */
   const handleIpcError = createIpcErrorHandler(uiManager);
 
-  /** QC-STATE-01 静默恢复回调位于闭包内，避免模块级状态违反"不持有模块级状态"原则 */
+  /** 静默恢复回调位于闭包内，避免模块级状态违反"不持有模块级状态"原则 */
   let silentRecoveryCallback: ((remainingMs: number) => void) | null = null;
 
-  /** FD-10 注册静默恢复回调（由 renderer.ts 调用） */
+  /** 注册静默恢复回调（由 renderer.ts 调用） */
   function setSilentRecoveryCallback(cb: (remainingMs: number) => void): void {
     silentRecoveryCallback = cb;
   }
@@ -49,10 +49,10 @@ export function createSettingsController(uiManager: UIManager) {
    */
   function setupSettingsPanel(): void {
     uiManager.onConfigSave(async (config: SpriteConfigForm) => {
-      // FD-08 进行中反馈：禁用保存按钮防止重复点击
+      // 进行中反馈：禁用保存按钮防止重复点击
       setButtonLoading('btn-settings-save', true, '保存中...');
       try {
-        // QC-CONFIG-01：单次 IPC 批量更新（事务性：原子性 + 单次持久化 + 副作用去重）
+        // 单次 IPC 批量更新（事务性：原子性 + 单次持久化 + 副作用去重）
         // 替代原 10 次串行 updateConfig 调用，避免半更新状态和 N 次 writeFileSync
         const result = await window.electronAPI.updateConfigBatch({
           silentMode: config.silentMode,
@@ -63,13 +63,13 @@ export function createSettingsController(uiManager: UIManager) {
           fileWatcherPaths: config.fileWatcherPaths,
           fileWatcherDebounceMs: config.fileWatcherDebounceMs,
           defaultPersona: config.defaultPersona,
-          // FD-04 项目模式：路径与模式在同一事务内更新，避免中间态
+          // 项目模式：路径与模式在同一事务内更新，避免中间态
           focusProjectPath: config.focusProjectPath,
           projectMode: config.projectMode,
         });
 
         if (result.updated) {
-          // IX-06 操作反馈走 toast，不污染对话历史
+          // 操作反馈走 toast，不污染对话历史
           uiManager.showToast('精灵配置已保存', 'success');
         } else {
           // 事务回滚：主进程未应用任何更新，提示具体错误
@@ -78,7 +78,7 @@ export function createSettingsController(uiManager: UIManager) {
       } catch (error) {
         handleIpcError('onConfigSave', error, '保存精灵配置失败');
       } finally {
-        // FD-08 恢复按钮状态
+        // 恢复按钮状态
         setButtonLoading('btn-settings-save', false);
       }
     });
@@ -91,11 +91,11 @@ export function createSettingsController(uiManager: UIManager) {
         return;
       }
 
-      // FD-08 进行中反馈：禁用保存按钮防止重复点击
+      // 进行中反馈：禁用保存按钮防止重复点击
       setButtonLoading('btn-settings-save', true, '初始化中...');
       try {
-        // IX-06 进行中反馈走 toast（不自动消失，等结果出来后由成功/失败 toast 替换）
-        // P2-FLOW-11 优化文案：明确告知用户正在初始化（耗时操作），避免用户以为卡住
+        // 进行中反馈走 toast（不自动消失，等结果出来后由成功/失败 toast 替换）
+        // 优化文案：明确告知用户正在初始化（耗时操作），避免用户以为卡住
         uiManager.showToast('正在保存配置并初始化 Agent（可能需要数秒）...', 'info', 0);
 
         const embeddingConfig = payload.embedding?.enabled
@@ -137,7 +137,7 @@ export function createSettingsController(uiManager: UIManager) {
       } catch (error) {
         handleIpcError('onLlmConfigSave', error, '保存 LLM 配置失败');
       } finally {
-        // FD-08 恢复按钮状态
+        // 恢复按钮状态
         setButtonLoading('btn-settings-save', false);
       }
     });
@@ -173,7 +173,7 @@ export function createSettingsController(uiManager: UIManager) {
         return;
       }
 
-      // FD-08 进行中反馈：禁用测试按钮防止重复点击
+      // 进行中反馈：禁用测试按钮防止重复点击
       setButtonLoading('btn-llm-test', true, '测试中...');
       // 显示"测试中..."状态
       uiManager.showLlmTestResult({ success: false, error: '测试中...' });
@@ -189,7 +189,7 @@ export function createSettingsController(uiManager: UIManager) {
           error: toError(error).message,
         });
       } finally {
-        // FD-08 恢复按钮状态
+        // 恢复按钮状态
         setButtonLoading('btn-llm-test', false);
       }
     });
@@ -205,7 +205,7 @@ export function createSettingsController(uiManager: UIManager) {
       const safeCfg = cfg ?? {};
 
       const formConfig: SpriteConfigForm = {
-        // UX-FD-12 主题字段：safeCfg.theme 可选（SpriteConfig），fallback 到 'light'。
+        // 主题字段：safeCfg.theme 可选（SpriteConfig），fallback 到 'light'。
         // 主题即时生效（renderer.ts onThemeChange 单独持久化），此处仅回显到表单单选按钮
         theme: safeCfg.theme === 'dark' ? 'dark' : 'light',
         // ADR-015 归档模式：safeCfg.archiveMode 可选（SpriteConfig），fallback 到 'full'。
@@ -221,7 +221,7 @@ export function createSettingsController(uiManager: UIManager) {
         /** 缺口 II：文件监听忽略模式（glob 列表，可选） */
         fileWatcherIgnore: Array.isArray(safeCfg.fileWatcherIgnore) ? safeCfg.fileWatcherIgnore : ['**/node_modules/**', '**/.git/**'],
         defaultPersona: String(safeCfg.defaultPersona ?? ''),
-        // FD-04 项目模式字段
+        // 项目模式字段
         projectMode: safeCfg.projectMode === 'focus' ? 'focus' : 'smart',
         focusProjectPath: String(safeCfg.focusProjectPath ?? ''),
         // Phase 3.3 快捷键配置：safeCfg.shortcuts 已由主进程保证完整（SpriteConfigForm 必填）
@@ -229,10 +229,10 @@ export function createSettingsController(uiManager: UIManager) {
       };
 
       uiManager.loadConfigToForm(formConfig);
-      // FD-A2 加载成功时隐藏之前的错误横幅
+      // 加载成功时隐藏之前的错误横幅
       uiManager.hideSettingsError();
 
-      // FD-10 静默模式恢复检查：若 expiresAt 已过期，自动关闭静默模式
+      // 静默模式恢复检查：若 expiresAt 已过期，自动关闭静默模式
       if (safeCfg.silentMode && safeCfg.silentModeExpiresAt) {
         const expiresAt = new Date(safeCfg.silentModeExpiresAt).getTime();
         // 无效日期（NaN）时视为已过期，避免 setTimeout(fn, NaN) 立即触发错误关闭静默模式
@@ -246,7 +246,7 @@ export function createSettingsController(uiManager: UIManager) {
         }
       }
 
-      // FD-04 加载项目列表到专注项目下拉框
+      // 加载项目列表到专注项目下拉框
       try {
         const { projects } = await window.electronAPI.listProjects();
         uiManager.loadProjectsToForm(projects, formConfig.focusProjectPath);
@@ -254,11 +254,11 @@ export function createSettingsController(uiManager: UIManager) {
         reportError('loadConfig-projects', error);
       }
 
-      // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
+      // 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
       uiManager.resetSettingsFormDirty();
     } catch (error) {
       reportError('loadConfig', error);
-      // FD-A2 显示错误状态，用户可点击重试
+      // 显示错误状态，用户可点击重试
       uiManager.showSettingsError('加载精灵配置失败，请检查日志或点击重试', () => {
         void loadConfig();
       });
@@ -270,13 +270,13 @@ export function createSettingsController(uiManager: UIManager) {
     try {
       const data = await window.electronAPI.getLlmConfig();
       uiManager.loadLlmConfigToForm(data);
-      // FD-A2 加载成功时隐藏之前的错误横幅
+      // 加载成功时隐藏之前的错误横幅
       uiManager.hideSettingsError();
-      // FD-07 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
+      // 程序化设置表单值会触发 input/change 事件，重置 dirty 标志
       uiManager.resetSettingsFormDirty();
     } catch (error) {
       reportError('loadLlmConfig', error);
-      // FD-A2 显示错误状态，用户可点击重试
+      // 显示错误状态，用户可点击重试
       uiManager.showSettingsError('加载 LLM 配置失败，请检查日志或点击重试', () => {
         void loadLlmConfig();
       });
@@ -284,7 +284,7 @@ export function createSettingsController(uiManager: UIManager) {
   }
 
   /**
-   * H2 加载用户画像到设置面板
+   * 加载用户画像到设置面板
    *
    * 调用 uiManager.loadUserProfile 代理到 ProfilePanelManager，
    * 从主进程拉取已确认 + 待确认画像条目并渲染到"画像"tab。
@@ -293,7 +293,7 @@ export function createSettingsController(uiManager: UIManager) {
   async function loadUserProfile(): Promise<void> {
     try {
       await uiManager.loadUserProfile();
-      // H3 画像加载完成后更新学习进度卡片
+      // 画像加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadUserProfile', error);
@@ -301,7 +301,7 @@ export function createSettingsController(uiManager: UIManager) {
   }
 
   /**
-   * H3 加载作品投影数据到设置面板
+   * 加载作品投影数据到设置面板
    *
    * 调用 uiManager.loadWorkProjections 代理到 WorkProjectionPanelManager，
    * 从主进程拉取所有作品投影条目并渲染到"作品"tab。
@@ -310,7 +310,7 @@ export function createSettingsController(uiManager: UIManager) {
   async function loadWorkProjections(): Promise<void> {
     try {
       await uiManager.loadWorkProjections();
-      // H3 作品投影加载完成后更新学习进度卡片
+      // 作品投影加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadWorkProjections', error);
@@ -333,7 +333,7 @@ export function createSettingsController(uiManager: UIManager) {
   }
 
   /**
-   * P3-FLOW-10 更新 Agent 连接状态指示器
+   * 更新 Agent 连接状态指示器
    *
    * 委托给 SettingsPanelManager 更新设置面板顶部的状态指示器。
    *
@@ -352,7 +352,7 @@ export function createSettingsController(uiManager: UIManager) {
     loadWorkProjections,
     loadAuditLog,
     updateAgentStatus,
-    /** QC-STATE-01 暴露静默恢复回调注册方法，替代原模块级导出函数 */
+    /** 暴露静默恢复回调注册方法，替代原模块级导出函数 */
     setSilentRecoveryCallback,
   };
 }

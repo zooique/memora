@@ -5,12 +5,12 @@
  * - 构造函数：依赖注入 + agent.memory 为 null 时降级
  * - list：列表查询（source 过滤 / limit 透传 / contentPreview 截断 / score 格式化 / createdAt 透传）
  * - show：详情查询（含 #toIso 合法/非法日期降级验证）
- * - delete：删除（含 QC-MEM-01 向量索引错误降级 + logger.warn）
- * - upsert：添加/更新（含 QC-MEM-01 向量索引异步降级 + 默认 score/时间戳）
+ * - delete：删除（含向量索引错误降级 + logger.warn）
+ * - upsert：添加/更新（含向量索引异步降级 + 默认 score/时间戳）
  * - search：混合搜索 + searchHybrid 失败降级纯关键词
  * - dashboard：仪表盘数据聚合（stats + suggest）
  * - rapportLevel：默契度等级推导（Phase 2.2，纯代码推导，4 等级 + 边界值）
- * - getRelationGraph：关系图谱（ADR-014，QC-MEM-02 节点上限 200）
+ * - getRelationGraph：关系图谱（ADR-014，节点上限 200）
  *
  * 测试策略（对齐 auditManager.test.ts / presenceController.test.ts 范式）：
  * - mock Agent.memory（MemoryInspector 子集）+ VectorStore，使用 vi.fn() 创建方法
@@ -412,7 +412,7 @@ describe('MemoryController', () => {
       expect(controller.purge('any:id')).toBe(false);
     });
 
-    it('QC-MEM-01：vectorStore.delete 抛错时捕获 + logger.warn，仍返回 true（不阻断主流程）', () => {
+    it('vectorStore.delete 抛错时捕获 + logger.warn，仍返回 true（不阻断主流程）', () => {
       // 软删除态记忆（getDeletedById 命中），物理删除时向量索引抛错
       vi.mocked(mockInspector.getDeletedById).mockReturnValue(
         makeMemory({ id: 'test:1', deletedAt: '2024-01-01T00:00:00.000Z' }),
@@ -426,7 +426,7 @@ describe('MemoryController', () => {
       // 主流程不受影响：记忆已物理删除，返回 true
       expect(result).toBe(true);
       expect(mockInspector.purge).toHaveBeenCalledWith('test:1');
-      // 降级日志已记录（QC-MEM-01：对齐 upsert 错误处理模式）
+      // 降级日志已记录（对齐 upsert 错误处理模式）
       expect(mockLogger.warn).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'test:1' }),
         '向量索引删除失败，可能残留孤儿向量',
@@ -583,7 +583,7 @@ describe('MemoryController', () => {
       expect(upsertedArg.createdAt <= after).toBe(true);
     });
 
-    it('QC-MEM-01：vectorStore.upsert 返回 rejected Promise 时 logger.warn，不影响返回值（异步降级）', async () => {
+    it('vectorStore.upsert 返回 rejected Promise 时 logger.warn，不影响返回值（异步降级）', async () => {
       vi.mocked(mockVectorStore.upsert).mockRejectedValue(new Error('embedding service down'));
       const controller = new MemoryController(mockAgent, mockVectorStore);
       // upsert 同步返回，不等待向量索引更新
@@ -809,7 +809,7 @@ describe('MemoryController', () => {
       expect(result.edges[0]!.targetId).toBe('a:2');
     });
 
-    it('QC-MEM-02：nodes 限制 200 节点（list 传 limit=RELATION_GRAPH_MAX_NODES）', () => {
+    it('nodes 限制 200 节点（list 传 limit=RELATION_GRAPH_MAX_NODES）', () => {
       vi.mocked(mockInspector.list).mockReturnValue([]);
       vi.mocked(mockInspector.getAllRelations).mockReturnValue([]);
       const controller = new MemoryController(mockAgent);

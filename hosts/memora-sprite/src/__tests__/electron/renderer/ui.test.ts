@@ -612,7 +612,7 @@ describe('流式消息管理', () => {
     uiManager.startStreaming('msg-stream-2');
     uiManager.updateStreamingMessage('msg-stream-2', 'Hello World');
 
-    // UX-PP-02 rAF 节流：渲染在下一帧执行，需等待 rAF 回调
+    // rAF 节流：渲染在下一帧执行，需等待 rAF 回调
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
     const bubble = document.querySelector('.message.assistant.streaming .message-bubble');
@@ -956,7 +956,7 @@ describe('handleRecallMemoryTrigger', () => {
   });
 });
 
-// FD-ADD-REC-CLICK ─── triggerMemoryRecall ──────────────
+// ─── triggerMemoryRecall ──────────────
 
 describe('triggerMemoryRecall', () => {
   it('已注册 onMemoryRecallClick 回调时应触发该回调', () => {
@@ -983,9 +983,9 @@ describe('triggerMemoryRecall', () => {
   });
 });
 
-// ─── FD-ADD-REC-CLICK 推荐记忆点击事件委托（EventTracker 路径） ─
+// ─── 推荐记忆点击事件委托（EventTracker 路径） ─
 
-describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
+describe('推荐记忆点击事件委托', () => {
   /**
    * 验证仪表盘推荐记忆列表的点击事件委托。
    * 事件通过 UIManager.initEventListeners → EventTracker 注册（与 dateNavList 同模式），
@@ -1307,7 +1307,7 @@ describe('角色面板', () => {
     const dropdown = document.getElementById('persona-dropdown')!;
     expect(dropdown.children.length).toBe(2);
     const activeItem = dropdown.querySelector('.dropdown-item.active');
-    // UX-04：角色项现在包含名称 + 描述，textContent 包含两者
+    // 角色项现在包含名称 + 描述，textContent 包含两者
     expect(activeItem?.textContent).toContain('代码助手');
     expect(activeItem?.textContent).toContain('编程助手');
     // 验证名称和描述分别在各自的子元素中
@@ -1392,7 +1392,7 @@ describe('标题栏窗口控制按钮', () => {
   });
 });
 
-// FD-ADD-MEMORY-DISCUSS ─── prefillChatInput ──────────────
+// ─── prefillChatInput ──────────────
 
 describe('prefillChatInput', () => {
   it('应设置输入框的值', () => {
@@ -1572,11 +1572,11 @@ describe('KBD-CONVERGE-P1：shortcuts-modal 内容同步', () => {
   });
 });
 
-// ─── 感知面板选项卡化（UX-PERP-01） ─────────────────────────
+// ─── 感知面板选项卡化 ─────────────────────────
 
 // 感知面板已重构为单页紧凑布局，选项卡结构已移除
 // 旧测试已废弃，后续迭代需编写新的单页布局测试
-describe.skip('感知面板选项卡化（UX-PERP-01）- 已废弃：选项卡已移除', () => {
+describe.skip('感知面板选项卡化 - 已废弃：选项卡已移除', () => {
   /** 读取当前选中选项卡的 data-tab 值 */
   const getActiveTab = (): string | null => {
     const el = document.querySelector('.perception-tab.active');

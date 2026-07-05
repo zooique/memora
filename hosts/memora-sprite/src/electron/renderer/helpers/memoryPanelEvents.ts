@@ -65,7 +65,7 @@ export interface MemoryPanelEventContext {
   // ─── 实例方法引用（事件触发时调用，需绑定 this） ───
   /** 获取添加记忆表单数据（校验通过返回对象，否则 null） */
   getAddMemoryFormData(): { source: string; name: string; content: string } | null;
-  /** 进入编辑模式（P2-FLOW-08） */
+  /** 进入编辑模式 */
   enterEditMode(): void;
   /** 退出编辑模式，恢复原始内容 */
   exitEditMode(): void;
@@ -130,7 +130,7 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
 // ─── 1. 列表点击事件委托 ──────────────────────────────────
 
 /**
- * QC-22 记忆列表事件委托：在 list 容器上注册统一 click 监听器，
+ * 记忆列表事件委托：在 list 容器上注册统一 click 监听器，
  * 通过 data-action="view-memory" + data-memory-id 分发，
  * 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理。
  */
@@ -201,7 +201,7 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // FD-ADD-CTRL-ENTER：textarea 支持 Ctrl+Enter 快捷提交（与 confirm/prompt 弹窗的 Enter 确认行为对齐）
+  // textarea 支持 Ctrl+Enter 快捷提交（与 confirm/prompt 弹窗的 Enter 确认行为对齐）
   // textarea 中 Enter 是换行，故用 Ctrl+Enter 触发提交
   const addContentEl = getOptionalElement('memory-add-content', 'textarea');
   if (addContentEl) {
@@ -223,7 +223,7 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
 // ─── 4. 详情操作按钮（删除/编辑/讨论） ────────────────────
 
 /**
- * 删除（带确认对话框）、编辑/保存/取消（P2-FLOW-08）、讨论（FD-ADD-MEMORY-DISCUSS）。
+ * 删除（带确认对话框）、编辑/保存/取消、讨论。
  */
 function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
   // 删除按钮（可选，带确认对话框，防止误删不可恢复数据）
@@ -242,7 +242,7 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // P2-FLOW-08 编辑按钮：进入编辑模式，将 content 区域变为可编辑
+  // 编辑按钮：进入编辑模式，将 content 区域变为可编辑
   const btnEdit = getOptionalElement('btn-memory-edit', 'button');
   if (btnEdit) {
     ctx.events.addEventListener(btnEdit, 'click', () => {
@@ -250,7 +250,7 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // P2-FLOW-08 编辑保存按钮：保存编辑内容
+  // 编辑保存按钮：保存编辑内容
   const btnEditSave = getOptionalElement('btn-memory-edit-save', 'button');
   if (btnEditSave) {
     ctx.events.addEventListener(btnEditSave, 'click', () => {
@@ -258,7 +258,7 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // P2-FLOW-08 编辑取消按钮：退出编辑模式，恢复原始内容
+  // 编辑取消按钮：退出编辑模式，恢复原始内容
   const btnEditCancel = getOptionalElement('btn-memory-edit-cancel', 'button');
   if (btnEditCancel) {
     ctx.events.addEventListener(btnEditCancel, 'click', () => {
@@ -266,7 +266,7 @@ function initDetailActionButtons(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // FD-ADD-MEMORY-DISCUSS 讨论按钮：关闭详情弹窗，切换到对话面板预填讨论提示
+  // 讨论按钮：关闭详情弹窗，切换到对话面板预填讨论提示
   const btnDiscuss = getOptionalElement('btn-memory-discuss', 'button');
   if (btnDiscuss) {
     ctx.events.addEventListener(btnDiscuss, 'click', () => {

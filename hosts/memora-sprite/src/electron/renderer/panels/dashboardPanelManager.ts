@@ -523,7 +523,7 @@ export class DashboardPanelManager {
 
     clearElement(listEl);
 
-    // QC-PERF-02：使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
+    // 使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
     const fragment = document.createDocumentFragment();
 
     for (const skill of skills) {
@@ -784,7 +784,7 @@ export class DashboardPanelManager {
     if (!el) return;
     el.textContent = String(parseInt(el.textContent ?? '0') + 1);
     el.classList.add('pulse');
-    // IX-03 跟踪定时器句柄，支持 cleanup 时统一清理
+    // 跟踪定时器句柄，支持 cleanup 时统一清理
     const timer = window.setTimeout(() => {
       el.classList.remove('pulse');
       // 从跟踪数组中移除已完成的定时器

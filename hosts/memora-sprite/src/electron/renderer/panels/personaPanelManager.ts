@@ -122,7 +122,7 @@ export class PersonaPanelManager {
       this.closePersonaDropdown();
     });
 
-    // QC-22 角色下拉菜单事件委托：在 dropdown 容器上注册统一 click 监听器，
+    // 角色下拉菜单事件委托：在 dropdown 容器上注册统一 click 监听器，
     // 通过 data-action="switch-persona" + data-persona-name 分发，
     // 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理
     this.events.addEventListener(this.personaDropdownEl, 'click', (e: Event) => {
@@ -209,7 +209,7 @@ export class PersonaPanelManager {
     for (const p of personas) {
       const item = document.createElement('div');
       item.className = 'dropdown-item' + (p.active ? ' active' : '');
-      // UX-04：角色名称作为主标题，描述作为副标题直接可见
+      // 角色名称作为主标题，描述作为副标题直接可见
       const nameEl = document.createElement('div');
       nameEl.className = 'dropdown-item-name';
       nameEl.textContent = this.formatDisplayName(p.name);
@@ -223,7 +223,7 @@ export class PersonaPanelManager {
       item.setAttribute('tabindex', '-1');
       item.setAttribute('role', 'option');
       item.setAttribute('aria-selected', p.active ? 'true' : 'false');
-      // QC-22 事件委托：用 data-action + data-persona-name 替代直接 addEventListener
+      // 事件委托：用 data-action + data-persona-name 替代直接 addEventListener
       item.setAttribute('data-action', 'switch-persona');
       item.setAttribute('data-persona-name', p.name);
 
@@ -246,7 +246,7 @@ export class PersonaPanelManager {
   }
 
   /**
-   * IX-07 更新角色匹配模式标签
+   * 更新角色匹配模式标签
    *
    * 在角色选择器旁显示当前模式（auto/manual），
    * 对齐 CLI /mode 查询能力，让 UI 用户也能一眼看到当前模式。

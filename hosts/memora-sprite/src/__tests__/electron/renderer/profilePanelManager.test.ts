@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 用户画像面板管理器测试
  *
  * @vitest-environment jsdom
@@ -342,7 +342,7 @@ describe('确认流程 · 待确认条目', () => {
     expect(document.querySelectorAll('#profile-pending-list .profile-card').length).toBe(0);
   });
 
-  // FD-CONVERGE-LOADING：验证 loading 中状态（disabled + 文案）
+  // 验证 loading 中状态（disabled + 文案）
   it('click 确认按钮时应显示 loading 状态（disabled + "处理中..."）', async () => {
     const entries = [createEntry({ confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });

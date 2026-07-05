@@ -41,7 +41,7 @@ export interface DashboardData {
 }
 
 /**
- * 关系图谱节点数上限（QC-MEM-02）
+ * 关系图谱节点数上限
  *
  * 用于 getRelationGraph() 的节点截断，避免大规模记忆库（>200 条）返回过多节点
  * 导致渲染层性能问题。后续可由调用方配置，当前硬编码为经验值。
@@ -73,7 +73,7 @@ export interface MemoryListItem {
   source: string;
   score: number;
   contentPreview: string;
-  /** P3-FLOW-14 创建时间（ISO 8601 字符串），用于列表项展示 */
+  /** 创建时间（ISO 8601 字符串），用于列表项展示 */
   createdAt?: string;
 }
 
@@ -185,7 +185,7 @@ export class MemoryController {
       source: m.source,
       score: this.#formatScore(m.score),
       contentPreview: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
-      // P3-FLOW-14 携带创建时间用于列表项展示（m.createdAt 为 ISO 8601 字符串）
+      // 携带创建时间用于列表项展示（m.createdAt 为 ISO 8601 字符串）
       createdAt: m.createdAt,
     }));
   }
@@ -308,7 +308,7 @@ export class MemoryController {
     const deleted = inspector.getDeletedById(id);
     if (!deleted) return false;
     inspector.purge(id);
-    // 物理删除时同步清理向量索引（QC-MEM-01：对齐 upsert 错误处理）
+    // 物理删除时同步清理向量索引（对齐 upsert 错误处理）
     if (this.vectorStore) {
       try {
         this.vectorStore.delete(id);
@@ -504,7 +504,7 @@ export class MemoryController {
     if (!memory) {
       return { nodes: [], edges: [] };
     }
-    // 节点：复用 list() 获取记忆（QC-MEM-02：上限提取为常量 RELATION_GRAPH_MAX_NODES）
+    // 节点：复用 list() 获取记忆（上限提取为常量 RELATION_GRAPH_MAX_NODES）
     const nodes = this.list(undefined, RELATION_GRAPH_MAX_NODES);
     // 边：通过 MemoryInspector.getAllRelations() 获取全量关系
     const edges = memory.getAllRelations();

@@ -76,7 +76,7 @@ export interface SpriteEventMap {
   rapportUpdated: RapportState;
   /** Phase 4：对话上下文更新（推导完成后触发，与 affectUpdated 同时发射） */
   contextUpdated: ContextState;
-  /** H3：作品投影更新（文件变化触发投影重新生成后发射） */
+  /** 作品投影更新（文件变化触发投影重新生成后发射） */
   workProjectionUpdated: { sourcePath: string; summary: string };
   /** Phase 2+：用户模式更新（PatternDetector 检测到新模式后发射） */
   patternsUpdated: { patterns: DetectedPattern[] };
@@ -85,7 +85,7 @@ export interface SpriteEventMap {
 // 重新导出 DashboardData 和 AffectState 供外部使用
 export type { DashboardData, AffectState };
 
-/** 精灵主控构造选项（P3-DESIGN-1：位置参数 → options 对象） */
+/** 精灵主控构造选项（位置参数 → options 对象） */
 export interface SpriteOptions {
   /** Agent 实例（必填，由宿主项目创建并注入） */
   agent: Agent;
@@ -157,7 +157,7 @@ export class Sprite {
   private contextAwareness: ContextAwareness;
   /** Phase 2+：记忆模式检测器 */
   private patternDetector: PatternDetector;
-  /** P2-S6: 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
+  /** 可观测性 tracer，可选注入，为关键路径提供 span 埋点 */
   private readonly tracer: ITracer | null;
 
   // ─── 回收站自动清理 ──────────────────────────────
@@ -482,7 +482,7 @@ export class Sprite {
    */
   async wakeup(input?: string): Promise<string> {
     this.state = 'active';
-    // P2-S6: 唤醒是 LLM 调用主路径，记录 span 用于性能追踪
+    // 唤醒是 LLM 调用主路径，记录 span 用于性能追踪
     const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.WAKEUP, input ? { hasInput: true } : { hasInput: false });
     try {
       // 缺口 I：抽取对话前感知刷新为公共方法，供流式路径复用
@@ -556,12 +556,12 @@ export class Sprite {
     return this.personaController.currentMode;
   }
 
-  // ─── 项目管理（FD-04 项目模式） ────────────────────────
+  // ─── 项目管理（项目模式） ────────────────────────
 
   /**
    * 列出已注册项目（供 UI 项目模式选择器使用）
    *
-   * FD-04 专注模式需要用户选择锁定项目，此方法返回 Agent 注册表中的项目列表。
+   * 专注模式需要用户选择锁定项目，此方法返回 Agent 注册表中的项目列表。
    */
   listProjects(): Array<{ name: string; path: string }> {
     return this.agent.projects?.list.map((p: { name: string; path: string }) => ({ name: p.name, path: p.path })) ?? [];
@@ -897,7 +897,7 @@ export class Sprite {
       });
     }
 
-    // FD-04 特殊处理：专注模式切换时调用 agent.switchProject 切换 Agent 上下文
+    // 特殊处理：专注模式切换时调用 agent.switchProject 切换 Agent 上下文
     // 专注模式锁定特定项目，其他项目的文件变化被忽略
     if (key === 'projectMode' || key === 'focusProjectPath') {
       this.applyProjectMode();
@@ -911,7 +911,7 @@ export class Sprite {
   }
 
   /**
-   * 批量更新配置并持久化（QC-CONFIG-01：事务性保证）
+   * 批量更新配置并持久化（事务性保证）
    *
    * 相比逐项调用 updateConfig，本方法保证：
    *   1. 原子性：任一 key 非法或 value 类型校验失败时，全部更新不应用，config 状态不变
@@ -995,7 +995,7 @@ export class Sprite {
     }
 
     // projectMode/focusProjectPath → applyProjectMode（一次）
-    // FD-04：专注模式切换时调用 agent.switchProject 切换 Agent 上下文
+    // 专注模式切换时调用 agent.switchProject 切换 Agent 上下文
     if (keySet.has('projectMode') || keySet.has('focusProjectPath')) {
       this.applyProjectMode();
     }
@@ -1033,7 +1033,7 @@ export class Sprite {
   }
 
   /**
-   * FD-04 应用项目模式
+   * 应用项目模式
    *
    * - smart 模式：保持当前 projectPath（启动时设定），不切换
    * - focus 模式：调用 agent.switchProject 切换到 focusProjectPath，
@@ -1049,7 +1049,7 @@ export class Sprite {
       logger.warn('专注模式未设置 focusProjectPath，保持当前项目');
       return;
     }
-    // P2-S6: 项目切换含 fileWatcher 重建，记录 span 用于追踪切换耗时与失败率
+    // 项目切换含 fileWatcher 重建，记录 span 用于追踪切换耗时与失败率
     const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.PROJECT_MODE, { focusPath });
     // 异步切换，不阻塞配置更新
     this.agent.switchProject(focusPath).then(() => {
@@ -1188,17 +1188,17 @@ export class Sprite {
     return { ...snapshot, proactiveStats };
   }
 
-  /** FD-03 累积事件数（供 UI 仪表盘显示） */
+  /** 累积事件数（供 UI 仪表盘显示） */
   get pendingCount(): number {
     return this.proactiveEngine.pendingCount;
   }
 
-  /** FD-03 主动提示阈值（供 UI 仪表盘显示） */
+  /** 主动提示阈值（供 UI 仪表盘显示） */
   get proactiveThreshold(): number {
     return this.config.proactiveThreshold;
   }
 
-  /** FD-03 已注册触发器列表（供 UI 仪表盘显示） */
+  /** 已注册触发器列表（供 UI 仪表盘显示） */
   get registeredTriggers(): string[] {
     return this.triggerBus.registeredTriggers;
   }
@@ -1432,7 +1432,7 @@ export class Sprite {
   private handleTrigger(payload: TriggerPayload): void {
     if (this.state !== 'idle') return;
 
-    // P2-S6: 触发器响应是精灵主路径，记录 span 用于触发频率与耗时追踪
+    // 触发器响应是精灵主路径，记录 span 用于触发频率与耗时追踪
     const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.TRIGGER, {
       source: payload.source,
       reason: payload.reason,
@@ -1443,7 +1443,7 @@ export class Sprite {
         this.proactiveEngine.addNotice('file', payload.reason);
         logger.info({ reason: payload.reason, source: payload.source }, '文件变化触发');
 
-        // H3：文件变化→作品投影更新
+        // 文件变化→作品投影更新
         // 从 reason 中提取文件名，检查是否有已存在的投影，有则触发生成
         this.tryUpdateWorkProjection(payload.reason);
       } else {
@@ -1460,7 +1460,7 @@ export class Sprite {
       this.generateSmartSuggestions();
     } catch (err) {
       span?.recordException(err instanceof Error ? err : new Error(String(err)));
-      // P2-ERR-02 移除 rethrow：事件处理器中 rethrow 是反模式
+      // 移除 rethrow：事件处理器中 rethrow 是反模式
       // emit() 已有 try/catch 兜底，此处仅记录异常即可
       const msg = err instanceof Error ? err.message : String(err);
       logger.error({ err: msg, source: payload.source }, '触发器处理异常');
@@ -1470,7 +1470,7 @@ export class Sprite {
   }
 
   /**
-   * H3 尝试更新作品投影（文件变化触发）
+   * 尝试更新作品投影（文件变化触发）
    *
    * 从 FileWatcher 的 reason 中提取文件名，检查该文件是否已有投影记录。
    * 如果已有投影，则读取最新文件内容，调用 ensureProjection 触发 hash 比对和

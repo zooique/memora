@@ -1,5 +1,5 @@
-﻿/**
- * 用户画像面板管理器（H2：用户画像闭环）
+/**
+ * 用户画像面板管理器（用户画像闭环）
  *
  * 职责：
  *   - 加载用户画像条目（已确认 + 待确认）并渲染到设置面板的"画像"tab
@@ -217,7 +217,7 @@ export class ProfilePanelManager {
       confirmBtn.className = 'profile-btn accept';
       confirmBtn.textContent = '确认';
       this.events.addEventListener(confirmBtn, 'click', async () => {
-        // FD-CONVERGE-LOADING：复用 setButtonLoadingEl，与全项目 loading 模式一致
+        // 复用 setButtonLoadingEl，与全项目 loading 模式一致
         setButtonLoadingEl(confirmBtn, true, '处理中...');
         const rejectBtn = actions.querySelector<HTMLButtonElement>('.reject');
         if (rejectBtn) rejectBtn.disabled = true;
@@ -237,7 +237,7 @@ export class ProfilePanelManager {
       rejectBtn.className = 'profile-btn reject';
       rejectBtn.textContent = '拒绝';
       this.events.addEventListener(rejectBtn, 'click', async () => {
-        // FD-CONVERGE-LOADING：复用 setButtonLoadingEl
+        // 复用 setButtonLoadingEl
         setButtonLoadingEl(rejectBtn, true, '处理中...');
         confirmBtn.disabled = true;
         try {
@@ -256,7 +256,7 @@ export class ProfilePanelManager {
       deleteBtn.className = 'profile-btn reject';
       deleteBtn.textContent = '删除';
       this.events.addEventListener(deleteBtn, 'click', async () => {
-        // FD-CONVERGE-LOADING：复用 setButtonLoadingEl
+        // 复用 setButtonLoadingEl
         setButtonLoadingEl(deleteBtn, true, '删除中...');
         try {
           await window.electronAPI.rejectUserProfile(entry.id);

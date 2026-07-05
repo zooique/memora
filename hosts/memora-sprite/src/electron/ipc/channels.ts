@@ -18,13 +18,13 @@ export const IPC_CHANNELS = {
   CHAT_ABORT: 'chat-abort',
   /** 加载历史会话消息 */
   SESSION_LOAD: 'session-load',
-  /** FD-A1 列出所有会话 */
+  /** 列出所有会话 */
   SESSION_LIST: 'session-list',
   /** 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   SESSION_SWITCH: 'session-switch',
-  /** FD-09 删除会话（含确认对话框） */
+  /** 删除会话（含确认对话框） */
   SESSION_DELETE: 'session-delete',
-  /** FD-09 重命名会话 */
+  /** 重命名会话 */
   SESSION_RENAME: 'session-rename',
   /**
    * 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
@@ -76,7 +76,7 @@ export const IPC_CHANNELS = {
   /** 更新精灵配置项 */
   CONFIG_UPDATE: 'config-update',
   /**
-   * QC-CONFIG-01 批量更新精灵配置（事务性）
+   * 批量更新精灵配置（事务性）
    *
    * 替代 onConfigSave 中 10 次串行 CONFIG_UPDATE 调用，主进程在单个事务内
    * 完成全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
@@ -121,13 +121,13 @@ export const IPC_CHANNELS = {
   /** Phase 2.1：用户拒绝/忽略了主动提示（点击"稍后"/关闭） */
   PROACTIVE_REJECT: 'proactive-reject',
 
-  // ─── 配置建议（H1：AutoConfigRefiner 闭环） ──────────
+  // ─── 配置建议（AutoConfigRefiner 闭环） ──────────
   /** 接受配置建议（调用 confirmConfigSuggestion 持久化） */
   SUGGESTION_ACCEPT: 'suggestion-accept',
   /** 拒绝配置建议（仅记录日志，不持久化） */
   SUGGESTION_REJECT: 'suggestion-reject',
 
-  // ─── 用户画像（H2：UserProfile 闭环） ────────────────
+  // ─── 用户画像（UserProfile 闭环） ────────────────
   /** 列出画像条目（含已确认 + 待确认） */
   USER_PROFILE_LIST: 'user-profile-list',
   /** 确认待确认画像条目 */
@@ -155,7 +155,7 @@ export const IPC_CHANNELS = {
   /** M2：清空审计日志 */
   AUDIT_LOG_CLEAR: 'audit-log-clear',
 
-  // ─── 作品投影（H3：WorkProjectionManager 查看） ──────
+  // ─── 作品投影（WorkProjectionManager 查看） ──────
   /** 列出所有作品投影（agent.works.loadAll()） */
   WORK_PROJECTION_LIST: 'work-projection-list',
   /** 查看单个作品投影详情（agent.works.getProjection()） */
@@ -194,7 +194,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   /** 流式消息结束 */
   SPRITE_STREAM_END: 'sprite-stream-end',
   /**
-   * 流式消息召回透明度（MS-12）
+   * 流式消息召回透明度
    * 在 text chunk 之前推送，携带本次对话召回的记忆摘要列表，
    * 供渲染层在消息底部展示"💡 召回记忆：xxx（score: 0.xx）"
    */
@@ -214,7 +214,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   SPRITE_CONTEXT_TRUNCATED: 'sprite-context-truncated',
 
   /**
-   * UX-PP-10 流式对话被中断通知
+   * 流式对话被中断通知
    *
    * 用户主动中断（点击停止按钮）或内核 yield aborted chunk 时推送，
    * 携带 messageId 和中断原因。渲染层在原助手气泡内嵌入中断标记，
@@ -247,7 +247,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   /** 主题变更通知（主进程广播到浮动窗口） */
   THEME_BROADCAST: 'theme-broadcast',
 
-  // ─── 配置建议推送（H1：AutoConfigRefiner 闭环） ──────
+  // ─── 配置建议推送（AutoConfigRefiner 闭环） ──────
   /**
    * 主进程推送配置建议到渲染进程（来自 AutoConfigRefiner 分析）
    * 携带 ConfigSuggestion payload，渲染层显示建议卡片供用户确认/拒绝
@@ -297,7 +297,7 @@ export interface SerializedAppError {
 }
 
 /**
- * 作品投影 IPC 传输形态（H3：WorkProjectionManager 查看）
+ * 作品投影 IPC 传输形态（WorkProjectionManager 查看）
  *
  * 内核 WorkProjectionEntry 的 sourcePath 为服务端绝对路径，
  * 通过 IPC 传输后渲染进程仅用于展示，不反解析。

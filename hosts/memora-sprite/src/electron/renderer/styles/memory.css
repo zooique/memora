@@ -175,14 +175,14 @@
   font-weight: 500;
 }
 
-/* P3-FLOW-14 记忆列表项创建时间 */
+/* 记忆列表项创建时间 */
 .memory-item .meta .memory-time {
   color: var(--text-3, var(--text-2));
   font-size: var(--font-xs);
   margin-left: auto;
 }
 
-/* P3-FLOW-13 记忆列表"加载更多"按钮 */
+/* 记忆列表"加载更多"按钮 */
 .memory-load-more {
   display: block;
   width: 100%;
@@ -260,7 +260,7 @@
   overflow-y: auto;
 }
 
-/* P2-FLOW-08 编辑模式 textarea 样式（与只读 pre 保持视觉一致） */
+/* 编辑模式 textarea 样式（与只读 pre 保持视觉一致） */
 .memory-edit-textarea {
   background: var(--window-bg-2);
   padding: 12px;

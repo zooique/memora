@@ -1,5 +1,5 @@
 /**
- * C-1：IPC 通道一致性测试
+ * IPC 通道一致性测试
  *
  * 断言 preload.ts 的内联通道副本与 ipc/channels.ts 的真理源完全一致。
  *
@@ -13,7 +13,7 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 
-// C-1：mock electron 模块——preload.ts 顶层 import { contextBridge, ipcRenderer } from 'electron'
+// mock electron 模块——preload.ts 顶层 import { contextBridge, ipcRenderer } from 'electron'
 // vitest 环境无 electron，不 mock 会直接报错
 vi.mock('electron', () => ({
   contextBridge: {

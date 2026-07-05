@@ -2,7 +2,7 @@
  * settingsController 单元测试（QC-TEST-SETTINGS）
  *
  * 覆盖范围：
- * - onConfigSave：批量更新成功/事务失败/IPC 异常/字段透传（QC-CONFIG-01 事务性保护）
+ * - onConfigSave：批量更新成功/事务失败/IPC 异常/字段透传（事务性保护）
  * - onLlmConfigSave：必填校验/成功/失败+agentStatus 同步
  * - onLlmTest：必填校验/成功/异常
  * - onConfigCancel：重新加载配置
@@ -140,7 +140,7 @@ describe('settingsController', () => {
     (globalThis as { window: { electronAPI: unknown } }).window = { electronAPI: (globalThis as { electronAPI: unknown }).electronAPI };
   });
 
-  // ─── onConfigSave（QC-CONFIG-01 事务性保护） ───────────
+  // ─── onConfigSave（事务性保护） ───────────
 
   it('批量更新成功应显示 success toast', async () => {
     const config = makeFormConfig();

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 渲染进程初始化辅助函数测试
  *
  * @vitest-environment jsdom
@@ -328,7 +328,7 @@ describe('initHelpers', () => {
       expect(call.content).toContain('欢迎使用 Memora Sprite');
     });
 
-    it('欢迎文案应包含"稍后配置"引导（P2-FLOW-10）', () => {
+    it('欢迎文案应包含"稍后配置"引导', () => {
       const { uiManager, spies } = createMockUiManager();
 
       showWelcomeMessage(uiManager);

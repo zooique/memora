@@ -42,7 +42,7 @@ const THINKING_PHASE_LABELS: Record<string, string> = {
 };
 
 /**
- * MS-12 构建召回记忆容器
+ * 构建召回记忆容器
  *
  * 每条召回记忆独立可点击，点击触发 memoryRecallClickCallback 跳转记忆详情。
  * 使用 createElement 替代 innerHTML，避免 XSS 风险（UX-08）。
@@ -57,7 +57,7 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
   for (const recall of memories) {
     const recallItem = document.createElement('div');
     recallItem.className = 'memory-recall';
-    // 使用 SVG 图标替代 emoji（UX-FD-03）
+    // 使用 SVG 图标替代 emoji
     const iconSpan = document.createElement('span');
     iconSpan.className = 'memory-recall-icon';
     iconSpan.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
@@ -65,7 +65,7 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
     const recallText = document.createElement('span');
     recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
     recallItem.appendChild(recallText);
-    // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+    // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
     recallItem.dataset.action = 'recall';
     // 使用完整记忆ID（source:name格式），确保同名记忆跨source时也能精准跳转
     recallItem.dataset.memoryId = recall.id;
@@ -78,7 +78,7 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
 }
 
 /**
- * MS-12 设置流式消息的召回记忆摘要
+ * 设置流式消息的召回记忆摘要
  *
  * 在 startStreaming 之后、text chunk 之前调用，
  * 将召回记忆摘要注入到消息气泡底部，用户可点击跳转记忆详情。

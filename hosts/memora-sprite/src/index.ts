@@ -9,7 +9,7 @@
  * 设计原则（ADR-SP-004）：
  *   上下文感知而非内容感知——精灵知道用户在做什么，不知道用户在打什么
  *
- * D-01 修复：CLI 逻辑（setupWizard、命令路由、REPL 循环）已拆分至 src/cli.ts。
+ * CLI 逻辑（setupWizard、命令路由、REPL 循环）已拆分至 src/cli.ts。
  * 本文件仅保留纯库导出，可被 Electron 宿主和 CLI 同时引用，无循环依赖。
  */
 import { resolve } from 'node:path';
@@ -33,7 +33,7 @@ import { SpriteTracer } from './sprite/spriteTracer.js';
 import { MemoraError, ErrorCode } from './sprite/errors.js';
 // P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
-// H4：宿主自定义工具（web_search + memory_search）
+// 宿主自定义工具（web_search + memory_search）
 import {
   WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
@@ -366,7 +366,7 @@ async function setupAgentPostInit(
     }
   }
 
-  // H3：最小作品投影生成 — 启动时读取项目关键文件
+  // 最小作品投影生成 — 启动时读取项目关键文件
   if (agent.works) {
     const keyFiles = ['README.md', 'package.json'];
     for (const filename of keyFiles) {
@@ -377,12 +377,12 @@ async function setupAgentPostInit(
           await agent.works.ensureProjection(fullPath, content, filename);
         }
       } catch {
-        console.warn(`[H3] 作品投影生成失败: ${filename}`);
+        console.warn(`作品投影生成失败: ${filename}`);
       }
     }
   }
 
-  // H4：注册宿主自定义工具（web_search + memory_search）
+  // 注册宿主自定义工具（web_search + memory_search）
   if (agent.tools) {
     setMemorySearcher(async (query, limit) => {
       // 添加 memory null 检查
@@ -427,7 +427,7 @@ function createSpriteAndClose(
 
   const close = async () => {
     sprite.stop();
-    // P2-S1 修复：每个清理步骤独立 try/catch，确保 storage.close() 必执行
+    // 每个清理步骤独立 try/catch，确保 storage.close() 必执行
     try {
       await agent.close();
     } catch (err) {
@@ -488,7 +488,7 @@ export async function reinitAgent(
     try {
       await prevClose();
     } catch (err) {
-      // P2-S2 修复：旧实例清理失败不阻塞重新初始化，但需记录日志辅助排查资源泄漏
+      // 旧实例清理失败不阻塞重新初始化，但需记录日志辅助排查资源泄漏
       console.warn('[reinitAgent] 旧实例清理失败:', err);
     }
   }
@@ -509,7 +509,7 @@ export async function reinitAgent(
  *   3. .memora/config.json（项目级配置）
  *   4. 内置默认值
  *
- * D-01 修复：不再内部调用 setupWizard（已移至 CLI）。
+ * 不再内部调用 setupWizard（已移至 CLI）。
  * 配置缺失时直接抛出错误，由调用方（CLI / Electron）自行处理引导流程。
  *
  * @param opts - 启动选项（可选，覆盖配置文件）

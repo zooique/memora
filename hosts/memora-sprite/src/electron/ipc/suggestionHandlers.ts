@@ -37,11 +37,11 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
         'SUGGESTION_ACCEPT',
         { success: false, error: '未知错误' },
         async () => {
-          // P1-SEC-01 输入验证：拒绝含路径分隔符的配置名，防止路径遍历写入
+          // 输入验证：拒绝含路径分隔符的配置名，防止路径遍历写入
           if (!isValidConfigName(suggestion.name)) {
             return { success: false, error: '无效的配置名称' };
           }
-          // P1-SEC-01 输入验证：拒绝超大内容，防止内存耗尽
+          // 输入验证：拒绝超大内容，防止内存耗尽
           if (!isValidContent(suggestion.content)) {
             return { success: false, error: '内容过长' };
           }

@@ -47,7 +47,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
 
       let target: string;
       if (query.date && query.session) {
-        // UX-PP-08 有明确查询参数时直接构造目标
+        // 有明确查询参数时直接构造目标
         target = `${query.date}-${query.session}`;
       } else {
         // 无查询参数时：始终加载今天的 main 会话
@@ -62,7 +62,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
       }
 
-      // UX-FD-07 分页加载：limit 和 offset 来自 query（默认 50 条）
+      // 分页加载：limit 和 offset 来自 query（默认 50 条）
       const pageSize = query.limit ?? 50;
       const offset = query.offset ?? 0;
       const total = ctx.sessionStore.countMessages(match[1], match[2]);
@@ -71,7 +71,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
       return {
         messages: messages.map((msg) => ({ role: msg.role, content: msg.content, timestamp: msg.timestamp })),
         loadedSessionId: target,
-        // UX-FD-07 分页信息
+        // 分页信息
         total,
         hasMore: offset + messages.length < total,
       };
@@ -97,7 +97,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, messages: [], error: 'Agent 未初始化' };
       }
 
-      // P1-SEC-01 输入验证：拒绝含路径分隔符的会话名，防止路径遍历
+      // 输入验证：拒绝含路径分隔符的会话名，防止路径遍历
       if (!isValidSessionName(query.session)) {
         return { success: false, messages: [], error: '无效的会话名' };
       }
@@ -147,14 +147,14 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  // FD-09 删除会话（如传入日期前缀则删除当天全部子会话）
+  // 删除会话（如传入日期前缀则删除当天全部子会话）
   ipcMain.handle(IPC_CHANNELS.SESSION_DELETE, async (_event, sessionId: string) => {
     try {
       if (!ctx.agent) {
         return { success: false, error: 'Agent 未初始化' };
       }
 
-      // P1-SEC-01 输入验证：拒绝含路径分隔符的会话 ID
+      // 输入验证：拒绝含路径分隔符的会话 ID
       if (!isValidSessionName(sessionId)) {
         return { success: false, error: '无效的会话 ID' };
       }
@@ -193,14 +193,14 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  // FD-09 重命名会话
+  // 重命名会话
   ipcMain.handle(IPC_CHANNELS.SESSION_RENAME, async (_event, sessionId: string, newName: string) => {
     try {
       if (!ctx.agent) {
         return { success: false, error: 'Agent 未初始化' };
       }
 
-      // P1-SEC-01 输入验证：拒绝含路径分隔符的会话名和新名称
+      // 输入验证：拒绝含路径分隔符的会话名和新名称
       if (!isValidSessionName(sessionId) || !isValidSessionName(newName.trim())) {
         return { success: false, error: '无效的会话名' };
       }
@@ -250,7 +250,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
-  // FD-A1 列出所有会话（按日期聚合，每日期最多一条）
+  // 列出所有会话（按日期聚合，每日期最多一条）
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {
     try {
       const sessions = ctx.sessionStore.listSessions(); // 返回 ['YYYY-MM-DD-name', ...]

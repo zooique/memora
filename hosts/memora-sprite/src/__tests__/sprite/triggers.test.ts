@@ -365,7 +365,7 @@ describe('TriggerBus', () => {
   // ─── 4. emit 异常隔离（2 测试） ───────────────────────
 
   describe('emit 异常隔离', () => {
-    it('P2-ERR-01：单个 handler 抛异常不中断其他 handler 分发', () => {
+    it('单个 handler 抛异常不中断其他 handler 分发', () => {
       const trigger = createMockTrigger('test');
       bus.register(trigger);
       bus.start();

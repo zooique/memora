@@ -9,13 +9,13 @@
  * - 精灵状态条点击/键盘触发（Enter/Space 可访问性）
  * - 感知面板关闭按钮
  * - 三块折叠区域（运行指标 / 对话回顾 / 记忆源健康）的展开收起
- * - 仪表盘推荐记忆点击 → 跳转记忆面板显示详情（FD-ADD-REC-CLICK）
+ * - 仪表盘推荐记忆点击 → 跳转记忆面板显示详情
  *
  * 设计原则：
  * - 自包含事件监听器管理（EventTracker），与 UIManager 解耦
  * - 通过 PerceptionPanelHost 接口回调 UIManager，避免反向依赖
  * - init() 在 UIManager 构造完成后绑定事件，cleanup() 统一清理
- * - 与 C-5-1~C-5-4 拆分模式一致（ClipboardManager/DateNavManager 等）
+ * - 与 ClipboardManager/DateNavManager 等拆分模式一致
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
@@ -28,7 +28,7 @@ import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload } f
  * 设计为最小化接口，避免新 Manager 直接依赖整个 UIManager。
  */
 export interface PerceptionPanelHost {
-  /** 触发记忆召回跳转（FD-ADD-REC-CLICK：推荐记忆点击复用） */
+  /** 触发记忆召回跳转（推荐记忆点击复用） */
   triggerMemoryRecall(memoryId: string): void;
   /** 更新情感基调展示（委托 DashboardPanelManager） */
   updateAffectDisplay(affect: AffectPayload): void;
@@ -145,7 +145,7 @@ export class PerceptionPanelController {
   // ─── 私有方法：事件绑定 ─────────────────────────────────
 
   /**
-   * 绑定仪表盘推荐记忆点击事件（FD-ADD-REC-CLICK）
+   * 绑定仪表盘推荐记忆点击事件
    *
    * 事件委托，复用 host.triggerMemoryRecall 跳转到记忆面板显示详情。
    */

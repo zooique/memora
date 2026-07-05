@@ -111,7 +111,7 @@ export interface ToastOptions {
 }
 
 /**
- * 确认弹窗选项（H1 剪枝：提取统一类型，消除 4 处内联重复定义）
+ * 确认弹窗选项（提取统一类型，消除 4 处内联重复定义）
  *
  * 被 modal.ts / ui.ts / ChatPanelHost / SettingsPanelHost / MemoryPanelHost 共享。
  */

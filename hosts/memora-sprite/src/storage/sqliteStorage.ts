@@ -49,7 +49,7 @@ CREATE TABLE memories_new (
   content    TEXT NOT NULL,
   source     TEXT NOT NULL DEFAULT 'unknown',
   name       TEXT NOT NULL DEFAULT '',
-  -- P2-ISO-01 使用 strftime 产出 ISO 8601 格式，与 Memory schema 的 z.string().datetime() 对齐
+  -- 使用 strftime 产出 ISO 8601 格式，与 Memory schema 的 z.string().datetime() 对齐
   -- datetime('now') 产出 'YYYY-MM-DD HH:MM:SS'（非 ISO 8601），会导致时区解析偏差
   createdAt  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   accessedAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -68,7 +68,7 @@ COMMIT;
  */
 export class SqliteStorage implements IMemoryStorage {
   private db: ISqliteDatabase;
-  /** QC-STORE-01：close 幂等保护标志，避免重复关闭抛异常 */
+  /** close 幂等保护标志，避免重复关闭抛异常 */
   private closed = false;
 
   constructor(db: ISqliteDatabase) {
@@ -378,7 +378,7 @@ export class SqliteStorage implements IMemoryStorage {
   /**
    * 关闭数据库连接（IMemoryStorage 接口实现）
    *
-   * QC-STORE-01 修复：添加 closed 标志实现幂等保护。
+   * 添加 closed 标志实现幂等保护。
    * 重复调用 close（如 agent.close() + app.before-quit 竞态）时跳过，
    * 避免 better-sqlite3 的 "database is not open" 异常。
    */

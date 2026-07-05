@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 /**
  * Memora Sprite CLI 入口
  *
@@ -7,7 +7,7 @@
  * - CLI 命令路由（/memories、/config、/dashboard 等）
  * - REPL 主循环
  *
- * D-01 修复：从 src/index.ts 拆分，CLI 逻辑与库导出完全分离。
+ * 从 src/index.ts 拆分，CLI 逻辑与库导出完全分离。
  * 非 CLI 场景（如 Electron 宿主）直接 import src/index.ts 的导出函数，
  * 不会加载 CLI 代码。
  */

@@ -9,7 +9,7 @@
  * 这些监听器在 Agent 初始化完成后注册，Agent 重新初始化时需重新注册
  * （旧 Agent 已 close，回调自动失效）。
  *
- * QC-AGENT-01 设计说明：
+ * 设计说明：
  *   onConfigSuggestion / onWriteConfirmation 返回 void（内核未提供取消订阅机制），
  *   onAudit 返回 unsubscribe 函数但需 main.ts 协调 reinitAgent 时调用。
  *   当前设计依赖 Agent.close() 清理内部状态——close 后 security/config 实例失效，
@@ -39,7 +39,7 @@ export interface AgentListenerDeps {
 }
 
 /**
- * H1：注册配置建议回调
+ * 注册配置建议回调
  *
  * 当 AutoConfigRefiner 从对话中提取到配置建议时，内核通过 onConfigSuggestion 回调推送。
  * 此函数将建议通过 SUGGESTION_PUSH 通道转发到渲染进程，由 SuggestionCard 组件展示。

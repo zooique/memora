@@ -40,7 +40,7 @@ export function registerChatHandlers(ctx: IpcContext): void {
 
   /** 中断当前对话 */
   ipcMain.handle(IPC_CHANNELS.CHAT_ABORT, async () => {
-    // P2-DESIGN-7 修复：使用 AbortController.reason 携带中断原因，替代共享布尔标志
+    // 使用 AbortController.reason 携带中断原因，替代共享布尔标志
     const ctrl = ctx.getAbortController();
     if (ctrl) {
       // 使用 DOMException 模拟标准 AbortController.abort(reason) 行为

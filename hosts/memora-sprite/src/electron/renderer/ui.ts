@@ -49,15 +49,15 @@ import type {
   PresencePayload,
 } from './ipcListeners.js';
 import { PersonaPanelManager } from './panels/personaPanelManager.js';
-// C-2：CommandPaletteManager 纳入 UIManager 组合体系，统一生命周期管理
+// CommandPaletteManager 纳入 UIManager 组合体系，统一生命周期管理
 import { CommandPaletteManager } from './panels/commandPaletteManager.js';
-// C-5：面板错误横幅拆分为独立 Manager
+// 面板错误横幅拆分为独立 Manager
 import { PanelErrorBannerManager } from './panels/panelErrorBannerManager.js';
-// C-5-2：剪贴板三重保护 UI 联动拆分为独立 Manager
+// 剪贴板三重保护 UI 联动拆分为独立 Manager
 import { ClipboardManager } from './panels/clipboardManager.js';
-// C-5-3：日期导航拆分为独立 Manager
+// 日期导航拆分为独立 Manager
 import { DateNavManager } from './panels/dateNavManager.js';
-// C-5-4：技能拖入安装拆分为独立 Manager
+// 技能拖入安装拆分为独立 Manager
 import { SkillDropManager } from './panels/skillDropManager.js';
 // 感知面板控制器拆分（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击）
 import { PerceptionPanelController } from './panels/perceptionPanelController.js';
@@ -66,7 +66,7 @@ import type { PerceptionPanelHost } from './panels/perceptionPanelController.js'
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
 // 精灵公共常量（Toast 时长已迁移至各 Manager；UIManager 不再直接使用时长常量）
-// C-5-4：TOAST_*_MS 已迁移到 ClipboardManager / SkillDropManager
+// TOAST_*_MS 已迁移到 ClipboardManager / SkillDropManager
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
   Message,
@@ -81,7 +81,7 @@ import type {
   ToastOptions,
   ConfirmDialogOptions,
 } from './types.js';
-// H1：配置建议 payload 类型（从 preload 导入，供 showSuggestion 代理方法使用）
+// 配置建议 payload 类型（从 preload 导入，供 showSuggestion 代理方法使用）
 import type { ConfigSuggestionPayload } from '../preload.js';
 // M1：写入确认 payload 类型（从 preload 导入，供 showWriteConfirmation 方法使用）
 import type { WriteConfirmationPayload } from '../preload.js';
@@ -171,11 +171,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private themeManager = new ThemeManager();
   /** 主动提示横幅管理器（独立管理横幅按钮事件） */
   private proactiveBanner = new ProactiveBanner();
-  /** H1 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式） */
+  /** 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式） */
   private suggestionCard = new SuggestionCardManager();
-  /** H2 用户画像面板管理器（独立管理画像 tab 的加载/确认/拒绝） */
+  /** 用户画像面板管理器（独立管理画像 tab 的加载/确认/拒绝） */
   private profilePanel = new ProfilePanelManager();
-  /** H3 作品投影面板管理器（独立管理作品 tab 的加载/渲染/展开） */
+  /** 作品投影面板管理器（独立管理作品 tab 的加载/渲染/展开） */
   private workProjectionPanel = new WorkProjectionPanelManager();
   /** M2 审计日志面板管理器（独立管理审计 tab 的加载/渲染/清空） */
   private auditPanel = new AuditPanelManager();
@@ -194,35 +194,35 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
   private personaPanel: PersonaPanelManager;
   /**
-   * C-2：快捷命令面板管理器（Ctrl+K）
+   * 快捷命令面板管理器（Ctrl+K）
    *
    * 纳入 UIManager 组合体系，与其他子管理器同模式：
    * 构造函数创建、cleanup() 统一清理全局 keydown 监听器（避免页面重载后累积）。
    */
   private commandPaletteManager: CommandPaletteManager;
   /**
-   * C-5：面板错误横幅管理器
+   * 面板错误横幅管理器
    *
    * 统一管理 settings / memory / chat 三个面板的错误横幅。
    * UIManager 仅保留薄委托。
    */
   private panelErrorBannerManager: PanelErrorBannerManager;
   /**
-   * C-5-2：剪贴板三重保护面板管理器
+   * 剪贴板三重保护面板管理器
    *
    * 统一管理"剪贴板三重保护"的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager / ModalManager 实例，与 UIManager 共享同一引用。
    */
   private clipboardManager: ClipboardManager;
   /**
-   * C-5-3：日期导航面板管理器
+   * 日期导航面板管理器
    *
    * 统一管理"日期导航"功能的 UI 联动。UIManager 仅保留薄委托。
    * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
    */
   private dateNavManager: DateNavManager;
   /**
-   * C-5-4：技能拖入安装面板管理器
+   * 技能拖入安装面板管理器
    *
    * 统一管理"技能文件拖入安装"功能的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
@@ -260,7 +260,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private events = new EventTracker();
 
   // ─── UI 状态字段 ────────────────────────────────────────
-  // C-5：panelErrorRetryCallbacks 已移至 PanelErrorBannerManager
+  // panelErrorRetryCallbacks 已移至 PanelErrorBannerManager
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
   /** 非系统消息计数（显示在对话工具栏副标题） */
@@ -288,18 +288,18 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
     this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
 
-    // H1 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
-    this.suggestionCard.init();
-    // H2 初始化用户画像面板（绑定刷新按钮事件）
-    this.profilePanel.init();
-    // H3 初始化作品投影面板（绑定刷新按钮事件）
-    this.workProjectionPanel.init();
+    // 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
+  this.suggestionCard.init();
+  // 初始化用户画像面板（绑定刷新按钮事件）
+  this.profilePanel.init();
+  // 初始化作品投影面板（绑定刷新按钮事件）
+  this.workProjectionPanel.init();
     // M2 初始化审计日志面板（绑定刷新/清空按钮事件）
     this.auditPanel.init();
 
     // ─── 面板管理器初始化 ───
 
-    // P1-ET-01 每个面板持有独立的 EventTracker，避免 cleanup 时互相干扰
+    // 每个面板持有独立的 EventTracker，避免 cleanup 时互相干扰
     // 聊天面板管理器
     // 通过 host.setStreaming/isStreaming 封装流式状态
     this.chatPanel = new ChatPanelManager(
@@ -330,15 +330,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       new EventTracker(),
     );
 
-    // C-2：快捷命令面板管理器（与其他面板管理器同模式：构造函数创建 + init 调用）
-    this.commandPaletteManager = new CommandPaletteManager(this);
-    // C-5：面板错误横幅管理器（自包含，无依赖，直接创建）
+    // 快捷命令面板管理器（与其他面板管理器同模式：构造函数创建 + init 调用）
+    this.commandPaletteManager = new CommandPaletteManager();
+    // 面板错误横幅管理器（自包含，无依赖，直接创建）
     this.panelErrorBannerManager = new PanelErrorBannerManager();
-    // C-5-2：剪贴板保护管理器（依赖注入 toastManager + modalManager，与 UIManager 共享同一引用）
+    // 剪贴板保护管理器（依赖注入 toastManager + modalManager，与 UIManager 共享同一引用）
     this.clipboardManager = new ClipboardManager(this.toastManager, this.modalManager);
-    // C-5-3：日期导航管理器（自包含，无依赖，直接创建）
+    // 日期导航管理器（自包含，无依赖，直接创建）
     this.dateNavManager = new DateNavManager();
-    // C-5-4：技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
+    // 技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
     // 感知面板控制器（依赖注入 Host 接口，init 在事件绑定后调用）
     this.perceptionPanelController = new PerceptionPanelController(this);
@@ -355,11 +355,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.memoryPanel.initMemoryPanelListeners();
     this.personaPanel.initPersonaSelectorListeners();
     this.settingsPanelManager.initListeners();
-    // C-2：init 需在 initEventListeners 之后（cmdk 按钮监听在 initEventListeners 中注册）
+    // init 需在 initEventListeners 之后（cmdk 按钮监听在 initEventListeners 中注册）
     this.commandPaletteManager.init();
-    // C-5：面板错误横幅重试按钮初始化（委托到 PanelErrorBannerManager）
+    // 面板错误横幅重试按钮初始化（委托到 PanelErrorBannerManager）
     this.panelErrorBannerManager.init();
-    // C-5-3：日期导航事件初始化（委托到 DateNavManager）
+    // 日期导航事件初始化（委托到 DateNavManager）
     this.dateNavManager.init();
     // 感知面板事件初始化（委托到 PerceptionPanelController）
     this.perceptionPanelController.init();
@@ -427,7 +427,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       });
     }
 
-    // C-2：标题栏命令面板入口按钮（Ctrl+K 的鼠标入口，与键盘快捷键等效）
+    // 标题栏命令面板入口按钮（Ctrl+K 的鼠标入口，与键盘快捷键等效）
     const btnCmdk = getOptionalElement('titlebar-cmdk', 'button');
     if (btnCmdk) {
       this.events.addEventListener(btnCmdk, 'click', () => {
@@ -486,7 +486,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       return;
     }
 
-    // P2-FLOW-07 Ctrl/Cmd + .：停止生成（流式输出期间可用键盘快速中断）
+    // Ctrl/Cmd + .：停止生成（流式输出期间可用键盘快速中断）
     if (isMod && e.key === '.') {
       if (this.state.isStreaming) {
         this.emitStopMessage();
@@ -521,9 +521,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.toastManager.cleanup();
     this.modalManager.cleanup();
     this.proactiveBanner.cleanup();
-    this.suggestionCard.cleanup(); // H1 清理配置建议卡片事件监听器和 DOM
-    this.profilePanel.cleanup(); // H2 清理用户画像面板事件监听器
-    this.workProjectionPanel.cleanup(); // H3 清理作品投影面板事件监听器
+    this.suggestionCard.cleanup(); // 清理配置建议卡片事件监听器和 DOM
+    this.profilePanel.cleanup(); // 清理用户画像面板事件监听器
+    this.workProjectionPanel.cleanup(); // 清理作品投影面板事件监听器
     this.auditPanel.cleanup(); // M2 清理审计日志面板事件监听器
     this.settingsPanelManager.cleanup();
     // 清理面板管理器
@@ -531,15 +531,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.dashboardPanel.cleanup(); // 清理仪表盘脉冲定时器与重试按钮事件
     this.personaPanel.cleanup();
-    // C-2：清理命令面板的全局 keydown 监听器，避免页面重载后累积
+    // 清理命令面板的全局 keydown 监听器，避免页面重载后累积
     this.commandPaletteManager.cleanup();
-    // C-5：清理面板错误横幅的重试按钮监听器和回调映射
+    // 清理面板错误横幅的重试按钮监听器和回调映射
     this.panelErrorBannerManager.cleanup();
-    // C-5-2：清理剪贴板保护管理器（空实现，保持统一生命周期接口）
+    // 清理剪贴板保护管理器（空实现，保持统一生命周期接口）
     this.clipboardManager.cleanup();
-    // C-5-3：清理日期导航管理器的事件监听器和回调
+    // 清理日期导航管理器的事件监听器和回调
     this.dateNavManager.cleanup();
-    // C-5-4：清理技能拖入安装管理器的回调引用
+    // 清理技能拖入安装管理器的回调引用
     this.skillDropManager.cleanup();
     // 清理感知面板控制器的事件监听器
     this.perceptionPanelController.cleanup();
@@ -548,7 +548,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * C-2：打开命令面板（Ctrl+K 的程序化入口）
+   * 打开命令面板（Ctrl+K 的程序化入口）
    *
    * 供 renderer.ts 在需要时调用（如未来扩展的其他入口按钮），
    * 当前 cmdk 按钮已内置在 initEventListeners 中。
@@ -597,11 +597,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   showLoadMore(remaining: number, onClick: () => void): void { this.chatPanel.showLoadMore(remaining, onClick); }
   /** 隐藏"加载更多"按钮（委托到 ChatPanelManager） */
   hideLoadMore(): void { this.chatPanel.hideLoadMore(); }
-  /** UX-FD-07 方案 B 显示"加载更早的对话"按钮（委托到 ChatPanelManager） */
+  /** 显示"加载更早的对话"按钮（委托到 ChatPanelManager） */
   showLoadEarlierDay(onClick: () => void): void { this.chatPanel.showLoadEarlierDay(onClick); }
   /** 向流式消息气泡注入错误提示（委托到 ChatPanelManager） */
   injectErrorToStreamingMessages(errorText: string): void { this.chatPanel.injectErrorToStreamingMessages(errorText); }
-  /** UX-PP-10 在流式消息气泡内嵌入中断标记（委托到 ChatPanelManager） */
+  /** 在流式消息气泡内嵌入中断标记（委托到 ChatPanelManager） */
   markStreamingAborted(messageId: string, reason: string): void { this.chatPanel.markStreamingAborted(messageId, reason); }
   /** 显示空状态引导（委托到 ChatPanelManager） */
   showEmptyState(): void { this.chatPanel.showEmptyState(); }
@@ -622,7 +622,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
   /** 注册示例问题点击回调（委托到 ChatPanelManager） */
   onSuggestionClick(cb: (text: string) => void): void { this.chatPanel.onSuggestionClick(cb); }
-  /** UX-PP-05 注册错误重试回调（委托到 ChatPanelManager） */
+  /** 注册错误重试回调（委托到 ChatPanelManager） */
   onErrorRetry(cb: () => void): void { this.chatPanel.onErrorRetry(cb); }
 
   // ─── 消息计数（ChatPanelHost 回调：供 ChatPanelManager 调用） ──
@@ -634,7 +634,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * UX-FD-07 方案 B 直接设置消息计数（不累加）
+   * 直接设置消息计数（不累加）
    *
    * 用于会话历史加载后，根据加载的会话是否当天 main 设置今日消息数。
    * 加载昨天对话时设为 0（今天还没对话），加载今天 main 时设为该会话的消息数。
@@ -682,14 +682,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /**
    * 切换面板
    *
-   * P2-FLOW-06：切换前检查当前面板是否有未保存修改，
+   * 切换前检查当前面板是否有未保存修改，
    * 有则弹出确认对话框，用户取消则中止切换。
    *
    * chat/memories/settings 三个面板均通过 .panel.active 控制显隐，
    * 替换核心区域内容。切换到 chat 自动聚焦输入框，切换到 memories 聚焦搜索框。
    */
   async switchPanel(panel: string): Promise<void> {
-    // P2-FLOW-06：当前在设置面板且有未保存修改时，确认后再切换
+    // 当前在设置面板且有未保存修改时，确认后再切换
     if (this.state.currentPanel === 'settings' && this.settingsPanelManager.isDirty()) {
       const confirmed = await this.showConfirmDialog({
         title: '离开设置',
@@ -922,10 +922,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.proactiveBanner.initProactiveBannerButtons(handlers);
   }
 
-  // ─── H1 配置建议卡片（代理到 SuggestionCardManager） ────
+  // ─── 配置建议卡片（代理到 SuggestionCardManager） ────
 
   /**
-   * H1 显示配置建议卡片（代理到 SuggestionCardManager）
+   * 显示配置建议卡片（代理到 SuggestionCardManager）
    *
    * 由 ipcListeners.ts 在收到 SUGGESTION_PUSH 事件时调用。
    * 卡片插入位置：#proactive-banner 之后、#messages 之前（顶部提示区）。
@@ -937,10 +937,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.suggestionCard.showSuggestion(suggestion);
   }
 
-  // ─── H2 用户画像面板（代理到 ProfilePanelManager） ──────
+  // ─── 用户画像面板（代理到 ProfilePanelManager） ──────
 
   /**
-   * H2 加载用户画像数据（代理到 ProfilePanelManager）
+   * 加载用户画像数据（代理到 ProfilePanelManager）
    *
    * 由 settingsController.ts 在以下场景调用：
    * - 设置面板初始化时预加载
@@ -954,7 +954,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * H3 加载作品投影数据（代理到 WorkProjectionPanelManager）
+   * 加载作品投影数据（代理到 WorkProjectionPanelManager）
    *
    * 由 settingsController.ts 在以下场景调用：
    * - 应用启动时预加载
@@ -1009,7 +1009,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * H3 更新学习进度卡片
+   * 更新学习进度卡片
    *
    * 聚合侧边栏"学习进度"卡片的四项指标：
    * - 建议数：来自配置建议卡片（suggestionCard）
@@ -1155,7 +1155,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   setStreaming(streaming: boolean): void {
     this.state.isStreaming = streaming;
-    // P2-UI-2.3：流式态时通过 inline style 强制显示停止按钮
+    // 流式态时通过 inline style 强制显示停止按钮
     // 兜底机制——即使 updateSendButton 因状态机异常未被调用，
     // setStreaming(true) 也会覆盖 CSS 的 display:none，确保用户始终能中断流式输出
     this.btnStop.style.display = streaming ? 'flex' : '';
@@ -1191,7 +1191,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 获取当前查看的记忆 ID（委托到 MemoryPanelManager） */
   getCurrentMemoryId(): string | null { return this.memoryPanel.getCurrentMemoryId(); }
   /**
-   * C-8：获取当前记忆搜索参数
+   * 获取当前记忆搜索参数
    *
    * 通过 UIManager 门面读取，避免控制器直接访问 DOM（分层原则）。
    * DOM 元素缺失时返回默认值，兼容测试环境。
@@ -1210,7 +1210,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * C-8-EXT：触发记忆搜索框 input 事件（排序/时间范围变更时重新搜索）
+   * 触发记忆搜索框 input 事件（排序/时间范围变更时重新搜索）
    *
    * 控制器不直接操作 DOM，通过此门面方法委托 UIManager 触发搜索框的 input 事件，
    * 让已注册的 onMemorySearch 回调重新执行搜索逻辑。
@@ -1223,7 +1223,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * C-8-EXT：读取记忆详情弹窗的 dataset（source/name）
+   * 读取记忆详情弹窗的 dataset（source/name）
    *
    * 编辑记忆时需要从详情弹窗的 dataset 获取 source 和 name 字段。
    * 控制器不直接访问 DOM，通过此门面方法委托 UIManager 读取。
@@ -1237,7 +1237,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * C-8-EXT：显示记忆列表加载/错误状态
+   * 显示记忆列表加载/错误状态
    *
    * 控制器不直接传递 DOM 元素给 UIManager，通过此门面方法委托 UIManager
    * 在内部查找 #memory-list 元素并显示对应状态。
@@ -1271,9 +1271,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onMemoryDelete(cb: () => void): void { this.memoryPanel.onMemoryDelete(cb); }
   /** 注册记忆添加回调（委托到 MemoryPanelManager） */
   onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void { this.memoryPanel.onMemoryAdd(cb); }
-  /** P2-FLOW-08 注册记忆编辑回调（委托到 MemoryPanelManager） */
+  /** 注册记忆编辑回调（委托到 MemoryPanelManager） */
   onMemoryEdit(cb: (id: string, content: string) => void): void { this.memoryPanel.onMemoryEdit(cb); }
-  /** FD-ADD-MEMORY-DISCUSS 注册记忆讨论回调（委托到 MemoryPanelManager） */
+  /** 注册记忆讨论回调（委托到 MemoryPanelManager） */
   onMemoryDiscuss(cb: (memoryName: string) => void): void { this.memoryPanel.onMemoryDiscuss(cb); }
   /** 加载图谱数据到渲染器（委托到 MemoryPanelManager） */
   loadGraphData(data: RelationGraphData): void { this.memoryPanel.loadGraphData(data); }
@@ -1421,10 +1421,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.personaPanel.onMemoryRecallClick(cb);
     this.chatPanel.setMemoryRecallClickCallback(cb);
   }
-  /** FD-ADD-REC-CLICK 触发召回记忆点击（委托到 PersonaPanelManager，供仪表盘推荐记忆点击复用） */
+  /** 触发召回记忆点击（委托到 PersonaPanelManager，供仪表盘推荐记忆点击复用） */
   triggerMemoryRecall(memoryId: string): void { this.personaPanel.triggerMemoryRecallClick(memoryId); }
 
-  /** IX-07 注册角色匹配模式变更回调（委托到 SettingsPanelManager） */
+  /** 注册角色匹配模式变更回调（委托到 SettingsPanelManager） */
   onPersonaModeChange(cb: (mode: string) => void): void {
     this.settingsPanelManager.onPersonaModeChange(cb);
   }
@@ -1446,7 +1446,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 当用户在设置面板切换主题时触发，renderer.ts 可借此执行额外同步逻辑。
    * 主题本身的持久化（localStorage）已在 setTheme 内完成，回调仅用于通知。
    *
-   * QC-THEME-01：source 参数区分"用户主动切换"与"系统主题变化"，
+   * source 参数区分"用户主动切换"与"系统主题变化"，
    * renderer.ts 据此决定是否持久化到 sprite.json。
    *
    * @param cb 主题变更回调函数
@@ -1456,7 +1456,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * P3-FLOW-12 获取当前主题模式（代理到 ThemeManager）
+   * 获取当前主题模式（代理到 ThemeManager）
    *
    * @returns 当前主题模式（'light' | 'dark' | 'auto'）
    */
@@ -1482,7 +1482,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * ADR-SP-008 同步设置面板主题单选按钮状态（代理到 ThemeManager）
    *
    * 在外部修改主题后（如初始化加载），调用此方法确保单选按钮选中状态与实际主题一致。
-   * P3-FLOW-12 支持三态主题模式：light / dark / auto
+   * 支持三态主题模式：light / dark / auto
    *
    * @param theme 当前主题模式
    */
@@ -1492,29 +1492,29 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // ─── 设置面板（委托到 SettingsPanelManager） ──
 
-  // ─── FD-A2 统一面板错误横幅（C-5：委托到 PanelErrorBannerManager） ───
+  // ─── 统一面板错误横幅（委托到 PanelErrorBannerManager） ───
 
-  /** FD-A2 显示面板错误横幅（委托到 PanelErrorBannerManager） */
+  /** 显示面板错误横幅（委托到 PanelErrorBannerManager） */
   showPanelError(panelId: string, message: string, retryCallback?: () => void): void {
     this.panelErrorBannerManager.showPanelError(panelId, message, retryCallback);
   }
 
-  /** FD-A2 隐藏面板错误横幅（委托到 PanelErrorBannerManager） */
+  /** 隐藏面板错误横幅（委托到 PanelErrorBannerManager） */
   hidePanelError(panelId: string): void {
     this.panelErrorBannerManager.hidePanelError(panelId);
   }
 
-  /** FD-A2 显示设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
+  /** 显示设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
   showSettingsError(message: string, retryCallback?: () => void): void {
     this.panelErrorBannerManager.showPanelError('settings', message, retryCallback);
   }
 
-  /** FD-A2 隐藏设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
+  /** 隐藏设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
   hideSettingsError(): void {
     this.panelErrorBannerManager.hidePanelError('settings');
   }
 
-  // ─── UX-FD-07 日期导航（C-5-3：委托到 DateNavManager） ───
+  // ─── 日期导航（委托到 DateNavManager） ───
 
   /** 注册日期导航跳转回调（委托到 DateNavManager） */
   onDateNavJump(cb: (date: string) => void): void {
@@ -1626,7 +1626,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
-   * P3-FLOW-10 更新 Agent 连接状态指示器（委托到 SettingsPanelManager）
+   * 更新 Agent 连接状态指示器（委托到 SettingsPanelManager）
    *
    * @param status Agent 连接状态（ready/error/unknown）
    * @param message 可选的状态描述文本
@@ -1681,7 +1681,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     await window.electronAPI.responseWriteConfirmation(info.requestId, confirmed);
   }
 
-  // ─── Phase 3.1：剪贴板三重保护 UI 联动（C-5-2：委托到 ClipboardManager） ───
+  // ─── 剪贴板三重保护 UI 联动（委托到 ClipboardManager） ───
 
   /** 显示剪贴板变化 Toast（委托到 ClipboardManager） */
   showClipboardChangedToast(): void {
@@ -1720,14 +1720,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 选中已有文本，方便用户直接输入新搜索词替换
     const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
     if (searchInput) {
-      // FD-ADD-RECALL-FOCUS：选中已有文本，方便用户直接输入新搜索词替换
+      // 选中已有文本，方便用户直接输入新搜索词替换
       // 不选中时用户需要手动删除或覆盖，降低操作效率
       searchInput.select();
     }
   }
 
   /**
-   * FD-ADD-MEMORY-DISCUSS 预填对话输入框
+   * 预填对话输入框
    *
    * 供记忆详情弹窗的「在对话中讨论」功能使用：
    * 将指定文本预填到对话输入框，用户可直接编辑或按 Enter 发送。
@@ -1740,7 +1740,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.inputAreaManager.setValue(text);
   }
 
-  // ─── 技能文件拖入安装（C-5-4：委托到 SkillDropManager） ───
+  // ─── 技能文件拖入安装（委托到 SkillDropManager） ───
 
   /** 注册技能安装成功回调（委托到 SkillDropManager） */
   onSkillInstalled(callback: () => void): void {
@@ -1797,12 +1797,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.onboardingManager.showOnboardingDialog();
   }
 
-  // ─── IX-06 Toast 通知（代理到 ToastManager） ──────────
+  // ─── Toast 通知（代理到 ToastManager） ──────────
 
   /**
    * 显示 Toast 通知（代理到 ToastManager）
    *
-   * IX-06 设计原则：
+   * 设计原则：
    * - 独立于对话历史（#messages），避免污染上下文
    * - 操作反馈（保存成功/失败/警告）走 toast，对话内容走 #messages
    * - error 类型不自动消失，需用户手动关闭，确保错误被看到

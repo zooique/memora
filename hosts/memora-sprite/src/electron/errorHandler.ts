@@ -58,7 +58,7 @@ export class ErrorHandler {
    * 标准化错误对象
    *
    * 复用内核 toError 完成 unknown → Error 转换。
-   * code 优先级（P1-CODE-1 修复）：
+   * code 优先级：
    *   1. 调用方显式传入 explicitCode
    *   2. MemoraError 携带的 error.code（结构化错误）
    *   3. 从 error.message 字符串推断（降级 fallback，已废弃，新增错误应使用 MemoraError）

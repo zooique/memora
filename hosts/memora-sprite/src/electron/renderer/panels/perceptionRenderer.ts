@@ -57,7 +57,7 @@ const AFFECT_TONE_THRESHOLD = 0.6;
  * 由 DashboardPanelManager 持有，通过外观方法委托调用。
  */
 export class PerceptionRenderer {
-  // ─── FD-01 叙事摘要：闭包级状态（跨事件累积，供 generateNarrative 合成） ──
+  // ─── 叙事摘要：闭包级状态（跨事件累积，供 generateNarrative 合成） ──
   /** 最近一次上下文状态（从 ContextPayload 派生，消除内联重复） */
   private lastNarrativeContext: Pick<ContextPayload, 'rhythm' | 'coherence' | 'depth' | 'dominantSource'> | null = null;
   /** 最近一次情感基调 */
@@ -100,7 +100,7 @@ export class PerceptionRenderer {
    * @param affect 四维情感基调数值
    */
   updateAffectDisplay(affect: AffectPayload): void {
-    // FD-01：保存状态供叙事摘要合成
+    // 保存状态供叙事摘要合成
     this.lastNarrativeAffect = affect;
 
     // 定义四维映射：id 前缀 → 数值
@@ -182,7 +182,7 @@ export class PerceptionRenderer {
       rapportDesc.textContent = rapport.description;
     }
 
-    // FD-01：保存状态供叙事摘要合成
+    // 保存状态供叙事摘要合成
     this.lastNarrativeRapport = { level: rapport.level, trust: rapport.trust };
     this.updateNarrative();
   }
@@ -216,7 +216,7 @@ export class PerceptionRenderer {
       depthEl.textContent = this.describeDepth(context.depth);
     }
 
-    // FD-01：保存状态供叙事摘要合成
+    // 保存状态供叙事摘要合成
     this.lastNarrativeContext = {
       rhythm: context.rhythm,
       coherence: context.coherence,
@@ -250,7 +250,7 @@ export class PerceptionRenderer {
    * @param payload 模式洞察 payload
    */
   updatePatternsDisplay(payload: PatternsPayload): void {
-    // FD-01：保存状态供叙事摘要合成
+    // 保存状态供叙事摘要合成
     this.lastNarrativePatterns = payload.patterns.map((p) => ({
       type: p.type,
       summary: p.summary,
@@ -506,7 +506,7 @@ export class PerceptionRenderer {
   // ─── 叙事合成 ──────────────────────────────────────────
 
   /**
-   * FD-01 更新叙事摘要 DOM
+   * 更新叙事摘要 DOM
    *
    * 每次感知数据更新时调用，渲染到感知面板 #perception-narrative-text。
    * 同时更新精灵状态条 #sprite-status-text-bar。
@@ -645,7 +645,7 @@ export class PerceptionRenderer {
   }
 
   /**
-   * FD-01 综合感知系统输出，生成一句话叙事摘要
+   * 综合感知系统输出，生成一句话叙事摘要
    *
    * 数据来源：ContextAwareness + AffectController + RapportController + PatternDetector
    * 纯客户端合成，不触发 IPC，不依赖 LLM。

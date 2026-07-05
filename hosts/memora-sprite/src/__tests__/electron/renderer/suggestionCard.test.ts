@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 建议卡片管理器测试
  *
  * @vitest-environment jsdom
@@ -244,7 +244,7 @@ describe('createCardElement · 按钮', () => {
     manager.showSuggestion(createSuggestion());
     const closeBtn = document.querySelector('.suggestion-card-close') as HTMLButtonElement;
     expect(closeBtn).not.toBeNull();
-    // 关闭按钮已从 emoji ✕ 改为 SVG 图标（UX-FD-03）
+    // 关闭按钮已从 emoji ✕ 改为 SVG 图标
     expect(closeBtn.innerHTML).toContain('icon-close');
     expect(closeBtn.title).toBe('关闭');
   });

@@ -69,7 +69,7 @@ export interface ChatPanelHost {
   /** 非系统消息计数 +1（appendMessage 中调用） */
   updateMessageCount(): void;
   /**
-   * UX-FD-07 方案 B 直接设置消息计数（不累加）
+   * 直接设置消息计数（不累加）
    *
    * 用于会话历史加载后，根据加载的会话是否当天 main 设置今日消息数。
    */
@@ -125,15 +125,15 @@ export class ChatPanelManager {
   // ─── 内部状态 ──────────────────────────────────────────
 
   /**
-   * UX-PP-02 流式渲染 RAF 节流状态
+   * 流式渲染 RAF 节流状态
    * 避免高频 chunk 导致重复 Markdown 渲染，使用 requestAnimationFrame 合并
    */
   private _pendingRaF = false;
-  /** P1-RAF-01 requestAnimationFrame 句柄，cleanup 时取消挂起的回调 */
+  /** requestAnimationFrame 句柄，cleanup 时取消挂起的回调 */
   private _rafHandle: number | null = null;
-  /** UX-PP-02 最新流式文本内容（RAF 回调中使用） */
+  /** 最新流式文本内容（RAF 回调中使用） */
   private _latestStreamText = '';
-  /** UX-PP-02 最新流式消息 ID（RAF 回调中使用） */
+  /** 最新流式消息 ID（RAF 回调中使用） */
   private _latestStreamMessageId = '';
 
   // ─── 回调引用 ──────────────────────────────────────────
@@ -143,9 +143,9 @@ export class ChatPanelManager {
   private memoryRecallClickCallback: ((memoryId: string) => void) | null = null;
   /** 示例问题点击回调（填入输入框并触发发送） */
   private suggestionClickCallback: ((text: string) => void) | null = null;
-  /** QC-11 加载更多按钮回调（事件委托模式） */
+  /** 加载更多按钮回调（事件委托模式） */
   private loadMoreCallback: (() => void) | null = null;
-  /** UX-FD-07 方案 B 加载更早日期按钮回调（事件委托模式） */
+  /** 加载更早日期按钮回调（事件委托模式） */
   private loadEarlierDayCallback: (() => void) | null = null;
   /** 错误重试回调（重新发送上一条用户消息） */
   private errorRetryCallback: (() => void) | null = null;
@@ -219,7 +219,7 @@ export class ChatPanelManager {
     // 归档按钮管理器（注入 host 能力，复用 ChatPanelHost 中已定义的归档契约）
     this.archiveButtonManager = new ArchiveButtonManager(this.host);
 
-    // QC-11 事件委托：在 messagesEl 上注册统一的 click 监听器，
+    // 事件委托：在 messagesEl 上注册统一的 click 监听器，
     // 通过 data-action 属性分发，替代动态元素各自的 addEventListener，
     // 统一纳入 EventTracker 管理，消除监听器泄漏风险
     this.events.addEventListener(this.messagesEl, 'click', (e: Event) => {
@@ -243,7 +243,7 @@ export class ChatPanelManager {
         );
         return;
       }
-      // UX-PP-11 代码块独立复制按钮：data-action="copy-code" data-content="..."
+      // 代码块独立复制按钮：data-action="copy-code" data-content="..."
       // 与消息级复制按钮（data-action="copy"）区分，复用同一剪贴板逻辑
       const copyCodeBtn = target.closest<HTMLElement>('[data-action="copy-code"]');
       if (copyCodeBtn) {
@@ -288,7 +288,7 @@ export class ChatPanelManager {
         this.loadMoreCallback();
         return;
       }
-      // UX-FD-07 方案 B 加载更早日期按钮：data-action="load-earlier-day"
+      // 加载更早日期按钮：data-action="load-earlier-day"
       const loadEarlierBtn = target.closest<HTMLElement>('[data-action="load-earlier-day"]');
       if (loadEarlierBtn && this.loadEarlierDayCallback) {
         loadEarlierBtn.setAttribute('disabled', '');
@@ -296,14 +296,14 @@ export class ChatPanelManager {
         this.loadEarlierDayCallback();
         return;
       }
-      // UX-PP-05 错误重试按钮：data-action="retry"
+      // 错误重试按钮：data-action="retry"
       // 流式出错时在气泡内显示的重试按钮，触发 host 注入的 errorRetryCallback
       const retryBtn = target.closest<HTMLElement>('[data-action="retry"]');
       if (retryBtn) {
         // 禁用按钮防止重复点击
         retryBtn.setAttribute('disabled', '');
         retryBtn.textContent = '重试中...';
-        // FD-FIX-RETRY-RECOVER：回调执行后恢复按钮状态
+        // 回调执行后恢复按钮状态
         // errorRetryCallback 可能在 isStreaming() 检查时提前返回（toast 提示），
         // 此时按钮必须恢复，否则用户无法再次点击重试
         void (async () => {
@@ -368,7 +368,7 @@ export class ChatPanelManager {
 
   /** 清理所有事件监听器和挂起的 RAF 回调 */
   cleanup(): void {
-    // P1-RAF-01 取消挂起的 requestAnimationFrame，防止 cleanup 后访问已销毁 DOM
+    // 取消挂起的 requestAnimationFrame，防止 cleanup 后访问已销毁 DOM
     if (this._rafHandle !== null) {
       cancelAnimationFrame(this._rafHandle);
       this._rafHandle = null;
@@ -574,7 +574,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-FD-07 构建消息 DOM 元素（纯函数，无副作用）
+   * 构建消息 DOM 元素（纯函数，无副作用）
    *
    * 从 appendMessage 中提取 DOM 构建逻辑，供 appendMessages 批量插入复用。
    * 不处理 DOM 挂载、滚动、计数等副作用，仅返回完整元素。
@@ -599,7 +599,7 @@ export class ChatPanelManager {
     if (!grouped) {
       const avatar = document.createElement('div');
       avatar.className = 'message-avatar';
-      // 使用 SVG 图标替代 emoji，统一视觉风格（UX-FD-03 SVG图标精灵）
+      // 使用 SVG 图标替代 emoji，统一视觉风格
       const iconId = message.role === 'user' ? '#icon-person' : '#icon-fairy';
       avatar.innerHTML = `<svg class="icon"><use href="${iconId}"/></svg>`;
       el.appendChild(avatar);
@@ -625,15 +625,15 @@ export class ChatPanelManager {
     const metaRow = document.createElement('div');
     metaRow.className = 'message-meta';
 
-    // P3-FLOW-07 用户/精灵消息均添加复制按钮（hover 时显示）
+    // 用户/精灵消息均添加复制按钮（hover 时显示）
     // 原仅精灵消息有复制按钮，用户消息需手动选择文本，体验不一致
     if (!message.streaming) {
       const copyBtn = document.createElement('button');
       copyBtn.className = 'message-copy-btn';
       copyBtn.title = '复制';
-      // 使用 SVG 图标替代 emoji（UX-FD-03）
+      // 使用 SVG 图标替代 emoji
       copyBtn.innerHTML = '<svg class="icon"><use href="#icon-copy"/></svg>';
-      // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+      // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
       copyBtn.dataset.action = 'copy';
       copyBtn.dataset.content = message.content;
       metaRow.appendChild(copyBtn);
@@ -643,7 +643,7 @@ export class ChatPanelManager {
     const timestamp = message.timestamp ?? new Date().toISOString();
     const timeEl = document.createElement('div');
     timeEl.className = 'message-time';
-    // H3 剪枝：复用 domHelpers.formatTimestamp
+    // 剪枝：复用 domHelpers.formatTimestamp
     timeEl.textContent = formatTimestamp(timestamp);
     metaRow.appendChild(timeEl);
 
@@ -690,7 +690,7 @@ export class ChatPanelManager {
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // UX-PP-02 保留元素在 rAF 回调中重新查询，此处不再维护同步变量
+    // 保留元素在 rAF 回调中重新查询，此处不再维护同步变量
     // 保留 cursor、memory-recall-container 和 tool-call 元素，在 rAF 回调中重新查询
 
     // 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
@@ -699,13 +699,13 @@ export class ChatPanelManager {
       thinkingIndicator.remove();
     }
 
-    // UX-PP-02 使用 rAF 节流 Markdown 渲染，避免高频 chunk 导致重复渲染
+    // 使用 rAF 节流 Markdown 渲染，避免高频 chunk 导致重复渲染
     // 存储最新文本，rAF 回调中统一执行 clear + render + 保留元素追加
     this._latestStreamText = text;
     this._latestStreamMessageId = messageId;
     if (!this._pendingRaF) {
       this._pendingRaF = true;
-      // P1-RAF-01 保存句柄，cleanup 时可取消挂起的回调
+      // 保存句柄，cleanup 时可取消挂起的回调
       this._rafHandle = requestAnimationFrame(() => {
         this._pendingRaF = false;
         this._rafHandle = null;
@@ -730,7 +730,7 @@ export class ChatPanelManager {
         }
         if (latestCursor) latestBubble.appendChild(latestCursor);
 
-        // QC-FLOW-05：DOM 更新完成后再滚动，确保滚动位置准确
+        // DOM 更新完成后再滚动，确保滚动位置准确
         // 原实现在 rAF 外调用 scrollToBottom，此时 DOM 尚未更新（还在等 rAF），
         // 滚动到的是旧高度位置，rAF 回调更新 DOM 后内容增高但已不再滚动，
         // 导致用户看到的位置不是最底部。
@@ -797,7 +797,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * QC-FLOW 为已完成的助手消息添加复制按钮
+   * 为已完成的助手消息添加复制按钮
    *
    * 抽取为私有方法以复用：finishStreamingMessage（正常结束）和
    * markStreamingAborted（用户中断）都需要添加复制按钮，
@@ -815,8 +815,8 @@ export class ChatPanelManager {
 
     // 提取纯文本内容（排除 UI 元信息元素）
     // - memory-recall：召回记忆提示
-    // - stream-aborted：中断标记（UX-PP-10）
-    // - md-code-header：代码块头部（语言标签 + 复制按钮文本，UX-PP-11）
+    // - stream-aborted：中断标记
+    // - md-code-header：代码块头部（语言标签 + 复制按钮文本）
     // - stream-error：错误指示器（QC-FLOW 错误注入路径）
     // - thinking-phase：思考阶段指示器
     const clone = bubble.cloneNode(true);
@@ -836,9 +836,9 @@ export class ChatPanelManager {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-copy-btn';
     copyBtn.title = '复制';
-    // 使用 SVG 图标替代 emoji（UX-FD-03）
+    // 使用 SVG 图标替代 emoji
     copyBtn.innerHTML = '<svg class="icon"><use href="#icon-copy"/></svg>';
-    // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+    // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
     copyBtn.dataset.action = 'copy';
     copyBtn.dataset.content = finalText;
 
@@ -870,7 +870,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * MS-12 设置流式消息的召回记忆摘要
+   * 设置流式消息的召回记忆摘要
    *
    * 委托到 messageDecorations.ts 的 renderMemoryRecall 纯函数。
    * 本方法仅负责查找消息元素 + 重置安全定时器。
@@ -1006,7 +1006,7 @@ export class ChatPanelManager {
     this.streamingMessages.set(messageId, el);
     this.host.setStreaming(true);
 
-    // UX-PP-04 首字节前的"正在思考"占位
+    // 首字节前的"正在思考"占位
     // 从 SPRITE_STREAM_START 到首个 chunk 之间，用户原本只看到空气泡+光标，
     // 对齐大厂对话体验：立即显示"⚙️ 正在思考..."占位，消除空白期感知。
     // showThinkingPhase 会复用此元素更新为"正在回忆/处理/归档..."（查找或创建模式）；
@@ -1015,7 +1015,7 @@ export class ChatPanelManager {
     if (bubble) {
       const placeholder = document.createElement('div');
       placeholder.className = 'thinking-phase';
-      // 使用 SVG 图标替代 emoji（UX-FD-03）
+      // 使用 SVG 图标替代 emoji
       placeholder.innerHTML = '<svg class="icon"><use href="#icon-gear"/></svg><span>正在思考...</span>';
       // 插入到光标之前（若存在），否则追加到气泡末尾
       const cursor = bubble.querySelector('.cursor');
@@ -1071,7 +1071,7 @@ export class ChatPanelManager {
     // 只移除 .message 和 .message-group 和 .date-separator 和 .milestone-banner 元素，保留 chat-empty-state
     // B1：新增 .milestone-banner 选择器，避免清空会话时里程碑 banner 残留
     this.messagesEl.querySelectorAll('.message, .message-group, .date-separator, .milestone-banner').forEach((msg) => msg.remove());
-    // UX-FD-07 移除加载更多按钮（切换会话时重置）
+    // 移除加载更多按钮（切换会话时重置）
     this.hideLoadMore();
     this.streamingMessages.clear();
     this.host.setStreaming(false);
@@ -1090,7 +1090,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-FD-07 批量插入消息（DocumentFragment 优化）
+   * 批量插入消息（DocumentFragment 优化）
    *
    * 一次性插入多条消息到 DOM，使用 DocumentFragment 批量操作，
    * 避免逐条 appendMessage 导致的大量回流和重绘。
@@ -1133,7 +1133,7 @@ export class ChatPanelManager {
       this.messagesEl.appendChild(fragment);
     }
 
-    // UX-FD-07 方案 B：历史消息加载不累加今日消息计数
+    // 方案 B：历史消息加载不累加今日消息计数
     this.host.refreshMessageCountDisplay();
     // 非 prepend 模式才滚动到底部（prepend 模式已恢复滚动位置）
     if (!prepend) {
@@ -1142,7 +1142,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-FD-07 显示"加载更多"按钮
+   * 显示"加载更多"按钮
    *
    * 在消息区顶部插入加载更多容器，包含按钮和剩余消息数提示。
    *
@@ -1153,7 +1153,7 @@ export class ChatPanelManager {
     // 移除旧按钮（避免重复）
     this.hideLoadMore();
 
-    // QC-11 保存回调引用，由构造函数中的事件委托统一处理
+    // 保存回调引用，由构造函数中的事件委托统一处理
     this.loadMoreCallback = onClick;
 
     const container = document.createElement('div');
@@ -1163,7 +1163,7 @@ export class ChatPanelManager {
     const btn = document.createElement('button');
     btn.className = 'load-more-btn';
     btn.textContent = `加载更多消息（剩余 ${remaining} 条）`;
-    // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+    // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
     btn.dataset.action = 'load-more';
     container.appendChild(btn);
 
@@ -1172,7 +1172,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-FD-07 隐藏"加载更多"按钮
+   * 隐藏"加载更多"按钮
    *
    * 方案 B：同时适用于"加载更多"和"加载更早的对话"按钮（共用 #load-more-container）。
    */
@@ -1182,7 +1182,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-FD-07 方案 B 显示"加载更早的对话"按钮
+   * 方案 B 显示"加载更早的对话"按钮
    *
    * 在消息区顶部插入加载更早日期的容器，点击后加载前一天的对话。
    * 与 showLoadMore 共用 #load-more-container（互斥显示），通过 data-action 区分回调。
@@ -1212,13 +1212,13 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-PP-10 在流式消息气泡内嵌入中断标记
+   * 在流式消息气泡内嵌入中断标记
    *
    * 用户主动中断对话时，在原助手气泡底部嵌入中断标记，
    * 保留已生成的部分内容（对齐 Claude Code 的 partial response 保留理念）。
    * 替代旧的居中系统消息方案——居中消息与原气泡内容脱节，体验割裂。
    *
-   * QC-FLOW-02 完整清理流式状态（从 streamingMessages 删除、重置 isStreaming、
+   * 完整清理流式状态（从 streamingMessages 删除、重置 isStreaming、
    * 更新发送按钮、清除安全定时器），与 finishStreamingMessage / injectErrorToStreamingMessages
    * 保持一致。原实现只移除了 streaming 类但未清理 Map 和状态，导致 isStreaming 泄漏、
    * 用户无法发送新消息、后续 SPRITE_STREAM_END 到达时 finishStreamingMessage 重复处理。
@@ -1270,7 +1270,7 @@ export class ChatPanelManager {
     // 添加复制按钮，允许用户复制已生成的部分内容
     this._addCopyButtonToMessage(el);
 
-    // 完整清理流式状态（QC-FLOW-02）
+    // 完整清理流式状态
     el.classList.remove('streaming');
     this.streamingMessages.delete(messageId);
 
@@ -1286,7 +1286,7 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-PP-01 向流式消息气泡注入错误提示
+   * 向流式消息气泡注入错误提示
    *
    * 当流式输出出错时（如网络中断、LLM 返回错误），
    * 将错误文本注入到所有活跃的流式消息气泡中，
@@ -1322,9 +1322,9 @@ export class ChatPanelManager {
       errorDiv.textContent = `⚠️ ${errorText}`;
       bubble.appendChild(errorDiv);
 
-      // UX-PP-05 错误气泡内的"重试"按钮
+      // 错误气泡内的"重试"按钮
       // 对齐大厂对话体验：错误文本下方直接提供重试按钮，与 Toast 重试形成双通道。
-      // 通过 data-action="retry" 标识，由构造函数的事件委托统一处理（QC-11 模式）。
+      // 通过 data-action="retry" 标识，由构造函数的事件委托统一处理。
       const retryBtn = document.createElement('button');
       retryBtn.className = 'stream-error-retry';
       retryBtn.textContent = '重试';
@@ -1453,11 +1453,11 @@ export class ChatPanelManager {
   }
 
   /**
-   * UX-PP-05 注册错误重试回调
+   * 注册错误重试回调
    *
    * 流式出错时，气泡内的"重试"按钮被点击后触发此回调。
    * 由 renderer.ts 注入 retryLastUserInput（重新发送上一条用户消息）。
-   * UX-PP-13 后此为唯一重试通道（Toast 不再携带重试按钮）。
+   * 此为唯一重试通道（Toast 不再携带重试按钮）。
    *
    * @param cb 重试回调（无参数，由宿主自行获取 lastUserInput）
    */

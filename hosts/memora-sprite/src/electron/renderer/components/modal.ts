@@ -26,7 +26,7 @@ export class ModalManager {
   /**
    * UI-AR-02 弹窗焦点栈（支持嵌套弹窗）
    *
-   * P2-UI-6.4：原 previousFocusEl 是单例字段，嵌套弹窗场景下内层弹窗的
+   * 嵌套弹窗场景：原 previousFocusEl 是单例字段，内层弹窗的
    * pushFocus 会覆盖外层保存的焦点，导致关闭外层时恢复到内层已隐藏的元素。
    * 改为栈结构后，每个弹窗关闭时只 pop 自己对应的焦点，栈自然平衡。
    *
@@ -42,7 +42,7 @@ export class ModalManager {
   private events = new EventTracker();
 
   /**
-   * P2-UI-6.4：保存当前焦点到栈顶（在打开弹窗前调用）
+   * 保存当前焦点到栈顶（在打开弹窗前调用）
    *
    * 使用栈结构支持嵌套弹窗：A 弹窗 push 焦点 X，B 弹窗 push 焦点 Y，
    * 关闭 B 恢复 Y，关闭 A 恢复 X。
@@ -52,7 +52,7 @@ export class ModalManager {
   }
 
   /**
-   * P2-UI-6.4：从栈顶弹出焦点并恢复（在关闭弹窗时调用）
+   * 从栈顶弹出焦点并恢复（在关闭弹窗时调用）
    *
    * 若栈为空或栈顶元素不可聚焦，静默跳过（防御性编程）。
    */
@@ -83,7 +83,7 @@ export class ModalManager {
     });
 
     // UI-AR-01 全局 Escape 键关闭弹窗
-    // P2-UI-6.2：排除 #confirm-modal 和 #prompt-modal——两者均注册了独立的 onKeydown
+    // 排除 #confirm-modal 和 #prompt-modal——两者均注册了独立的 onKeydown
     // 处理 Escape（含 e.preventDefault），若全局监听同时触发会导致 onCancel 被调用两次，
     // 造成 resolve 重复或监听器叠加。
     this.events.addEventListener(document, 'keydown', (e: Event) => {
@@ -108,7 +108,7 @@ export class ModalManager {
     if (!modal) return;
 
     // UI-AR-02 保存当前焦点元素到栈，关闭弹窗时恢复
-    // P2-UI-6.4：使用栈结构支持嵌套弹窗
+    // 使用栈结构支持嵌套弹窗
     this.pushFocus();
 
     modal.classList.remove('hidden');
@@ -130,7 +130,7 @@ export class ModalManager {
     modal.classList.add('hidden');
 
     // UI-AR-02 恢复焦点到触发弹窗的元素（从栈顶弹出）
-    // P2-UI-6.4：使用栈结构，嵌套弹窗场景下恢复到正确的触发元素
+    // 使用栈结构，嵌套弹窗场景下恢复到正确的触发元素
     this.popFocus();
   }
 
@@ -208,7 +208,7 @@ export class ModalManager {
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) closeBtn.removeEventListener('click', onCancel);
         this.activeConfirmCleanup = null;
-        // P2-UI-6.4：恢复焦点到触发弹窗的元素（从栈顶弹出）
+        // 恢复焦点到触发弹窗的元素（从栈顶弹出）
         // 原 cleanup 未恢复焦点，关闭确认弹窗后焦点丢失到 body
         this.popFocus();
       };
@@ -237,7 +237,7 @@ export class ModalManager {
       modal.classList.remove('hidden');
 
       // UI-AR-02 保存当前焦点到栈 + 将焦点移到确认弹窗
-      // P2-UI-6.4：使用栈结构支持嵌套弹窗
+      // 使用栈结构支持嵌套弹窗
       // 危险操作：焦点放在取消按钮上（防止误操作）；普通操作：焦点放在确认按钮上
       this.pushFocus();
       if (options.danger) {
@@ -439,7 +439,7 @@ export class ModalManager {
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) closeBtn.removeEventListener('click', onCancel);
         this.activePromptCleanup = null;
-        // P2-UI-6.4：恢复焦点到触发弹窗的元素（从栈顶弹出）
+        // 恢复焦点到触发弹窗的元素（从栈顶弹出）
         // 原 cleanup 未恢复焦点，关闭输入弹窗后焦点丢失到 body
         this.popFocus();
       };
@@ -480,7 +480,7 @@ export class ModalManager {
       modal.classList.remove('hidden');
 
       // 保存当前焦点到栈，将焦点移到输入框并选中全部文本（方便快速替换）
-      // P2-UI-6.4：使用栈结构支持嵌套弹窗
+      // 使用栈结构支持嵌套弹窗
       this.pushFocus();
       inputEl.focus();
       inputEl.select();

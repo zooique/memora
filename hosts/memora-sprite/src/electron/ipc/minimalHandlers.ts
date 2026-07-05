@@ -11,7 +11,6 @@
  * - 项目列表降级（PROJECTS_LIST）
  * - 主题变更回调（THEME_CHANGED）
  *
- * D-04 修复：从 main.ts 提取，减少主文件行数（776 → ~560 行）。
  * 通过 MinimalIpcState 对象共享可变状态，通过 MinimalIpcCallbacks 回调主进程函数。
  *
  * 不支持：对话、记忆、角色等需要 Agent 的功能。
@@ -280,7 +279,7 @@ export function registerMinimalIpcHandlers(
     }
   });
 
-  // FD-04 项目列表：Agent 未就绪时返回空数组
+  // 项目列表：Agent 未就绪时返回空数组
   ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () => {
     return { projects: [] };
   });

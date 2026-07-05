@@ -11,7 +11,7 @@
  * 测试策略（对齐 memoryController.test.ts 范式）：
  * - vi.mock 拦截 node:fs（readFileSync/writeFileSync/existsSync/mkdirSync）+ node:os（homedir）
  * - 通过 setLogger() 注入 mock logger，验证 warn 降级日志（logger 为 getter-only 单例，无法 spyOn）
- * - vi.spyOn(console, 'error') 验证迁移持久化失败日志（P2-CFG-01）
+ * - vi.spyOn(console, 'error') 验证迁移持久化失败日志
  * - applyConfigField 为纯函数，直接构造 Required<SpriteConfig> 验证原地修改
  * - 类型导入使用 import type，禁止 @ts-ignore / as any / as unknown as
  */
@@ -434,7 +434,7 @@ describe('spriteConfig', () => {
       expect(config.configVersion).toBe(2);
     });
 
-    it('迁移后立即持久化（saveSpriteConfig 被调用，UX-PP-19）', () => {
+    it('迁移后立即持久化（saveSpriteConfig 被调用）', () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ configVersion: 1 }));
       loadSpriteConfig();
@@ -442,7 +442,7 @@ describe('spriteConfig', () => {
       expect(writeFileSync).toHaveBeenCalled();
     });
 
-    it('迁移持久化失败时 logger.error 记录但已迁移配置仍可用（P2-CFG-01）', () => {
+    it('迁移持久化失败时 logger.error 记录但已迁移配置仍可用', () => {
       vi.mocked(existsSync).mockReturnValue(true);
       vi.mocked(readFileSync).mockReturnValue(JSON.stringify({ configVersion: 1 }));
       // 模拟持久化写入失败

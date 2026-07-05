@@ -1,7 +1,7 @@
 /**
  * 面板错误横幅管理器
  *
- * C-5：从 UIManager 拆分而来，统一管理 settings / memory / chat 三个面板的
+ * 从 UIManager 拆分而来，统一管理 settings / memory / chat 三个面板的
  * 错误横幅显示、隐藏和重试按钮事件。
  *
  * 职责：

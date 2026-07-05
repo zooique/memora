@@ -171,7 +171,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   };
 
-  // ─── FD-06 首次使用拖动引导 ───────────────────────────
+  // ─── 首次使用拖动引导 ───────────────────────────
   // 新用户不知道浮动窗口可以拖动，首次悬停时显示引导提示。
   // 使用 localStorage 标记是否已引导过，避免重复打扰老用户。
   // 引导提示在首次拖动或单击后自动消失，不再显示。
@@ -182,7 +182,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   function showDragHintIfFirstTime(): void {
     if (hasShownDragHint || !dragHint) return;
     dragHint.classList.add('visible');
-    // P3-FLOW-09 延长到 8 秒，确保用户有足够时间阅读引导文案
+    // 延长到 8 秒，确保用户有足够时间阅读引导文案
     dragHintTimer = timers.setTimeout(() => {
       dragHint?.classList.remove('visible');
     }, 8000);
@@ -255,7 +255,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     if (!isDragging && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
       isDragging = true;
       sphere.classList.add('dragging');
-      // FD-06 首次拖动后标记已见过引导，不再显示
+      // 首次拖动后标记已见过引导，不再显示
       markDragHintSeen();
     }
 
@@ -286,7 +286,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
       electronAPI.saveFloatPosition();
     } else {
       // 非拖动 → 单击 → 展开为完整窗口
-      // FD-06 首次单击后标记已见过引导，不再显示
+      // 首次单击后标记已见过引导，不再显示
       markDragHintSeen();
       electronAPI.expandToFull();
     }

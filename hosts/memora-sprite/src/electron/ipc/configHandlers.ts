@@ -142,7 +142,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
       return { updated: true };
     } catch (error) {
-      // QC-CFG-03 修复：错误返回包含 error 字段，与非法配置键路径返回结构一致
+      // 错误返回包含 error 字段，与非法配置键路径返回结构一致
       // 原实现仅返回 { updated: false }，调用方无法区分"配置键非法"与"更新失败"
       const message = error instanceof Error ? error.message : '更新配置失败';
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: message });
@@ -151,7 +151,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
   });
 
   /**
-   * QC-CONFIG-01 批量更新配置（事务性）
+   * 批量更新配置（事务性）
    *
    * 替代 onConfigSave 中 10 次串行 CONFIG_UPDATE 调用。主进程在单个事务内
    * 完成全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
@@ -233,7 +233,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
     }),
   );
 
-  /** IX-07 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */
+  /** 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE_GET, async () =>
     safeHandle('查询角色模式失败', { mode: 'auto' }, () => ({ mode: ctx.sprite.personaMode })),
   );

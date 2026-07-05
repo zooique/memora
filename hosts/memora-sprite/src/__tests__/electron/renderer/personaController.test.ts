@@ -243,7 +243,7 @@ describe('createPersonaController', () => {
       await captured.personaModeChangeCb!('manual');
 
       expect(spies.showToast).toHaveBeenCalledWith('角色匹配模式已切换为：手动', 'success');
-      // C-4：成功后应主动同步 badge + 单选按钮状态
+      // 成功后应主动同步 badge + 单选按钮状态
       expect(spies.updatePersonaModeBadge).toHaveBeenCalledWith('manual');
       expect(spies.setPersonaMode).toHaveBeenCalledWith('manual');
     });
@@ -257,7 +257,7 @@ describe('createPersonaController', () => {
       await captured.personaModeChangeCb!('manual');
 
       expect(spies.showToast).toHaveBeenCalledWith('角色匹配模式切换失败', 'error');
-      // C-4：IPC 拒绝切换时应回滚 UI 到旧模式（manual → 旧模式 auto）
+      // IPC 拒绝切换时应回滚 UI 到旧模式（manual → 旧模式 auto）
       expect(spies.updatePersonaModeBadge).toHaveBeenCalledWith('auto');
       expect(spies.setPersonaMode).toHaveBeenCalledWith('auto');
     });
@@ -273,7 +273,7 @@ describe('createPersonaController', () => {
       await captured.personaModeChangeCb!('auto');
 
       expect(spies.showToast).toHaveBeenCalledWith('设置角色模式失败：IPC 失败', 'error');
-      // C-4：IPC 异常时应回滚 UI 到旧模式（auto → 旧模式 manual）
+      // IPC 异常时应回滚 UI 到旧模式（auto → 旧模式 manual）
       expect(spies.updatePersonaModeBadge).toHaveBeenCalledWith('manual');
       expect(spies.setPersonaMode).toHaveBeenCalledWith('manual');
     });

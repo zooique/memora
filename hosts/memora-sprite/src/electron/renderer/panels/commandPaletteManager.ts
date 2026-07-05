@@ -15,7 +15,7 @@
 import type { UIManager } from '../ui.js';
 // Toast 时长常量（第一轮 P1-B 遗漏 import 修复）
 import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
-// C-2：事件监听器纳入 EventTracker 统一管理，cleanup 时统一移除，避免内存泄漏
+// 事件监听器纳入 EventTracker 统一管理，cleanup 时统一移除，避免内存泄漏
 import { EventTracker } from '../helpers/eventTracker.js';
 // 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
 import { clearElement } from '../helpers/domHelpers.js';
@@ -342,7 +342,7 @@ export class CommandPaletteManager {
   /** 搜索结果容器 */
   private resultsEl: HTMLElement | null = null;
   /**
-   * C-2：事件监听器跟踪器
+   * 事件监听器跟踪器
    *
    * 原先 init() 中用裸 addEventListener 注册了 4 个监听器（遮罩点击、输入、
    * 键盘导航、全局 Ctrl+K），均未纳入统一管理。beforeunload 触发 UIManager.cleanup()
@@ -390,7 +390,7 @@ export class CommandPaletteManager {
   }
 
   /**
-   * C-2：清理所有事件监听器
+   * 清理所有事件监听器
    *
    * 由 UIManager.cleanup() 统一调用，确保 beforeunload 时移除全局 keydown
    * 监听器，避免页面重新加载后监听器累积导致同一事件触发多次。

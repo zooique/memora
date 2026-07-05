@@ -95,7 +95,6 @@ describe('SqliteSessionStore', () => {
     expect(target).toHaveLength(0);
   });
 
-  // UX-PP-05 测试
   describe('getFirstUserMessage', () => {
     it('should return the first user message content', () => {
       store.appendMessage('2026-06-16', 'main', makeMessage({ role: 'user', content: '你好，今天天气怎么样？' }));
@@ -128,7 +127,6 @@ describe('SqliteSessionStore', () => {
     });
   });
 
-  // FD-09 测试
   describe('deleteSession', () => {
     it('should delete a session and its messages', () => {
       store.appendMessage('2026-06-16', 'main', makeMessage({ content: 'test' }));

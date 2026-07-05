@@ -97,7 +97,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   /** 添加记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_ADD, async (_event, data: { source: string; name: string; content: string }) =>
     safeHandle('添加记忆失败', { id: '' }, () => {
-      // P1-SEC-01 输入验证：拒绝超大内容，防止内存耗尽
+      // 输入验证：拒绝超大内容，防止内存耗尽
       if (!isValidContent(data.content)) {
         return { id: '' };
       }

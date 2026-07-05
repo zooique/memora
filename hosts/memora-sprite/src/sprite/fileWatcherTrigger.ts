@@ -56,7 +56,7 @@ export class FileWatcherTrigger implements SpriteTrigger {
   private config: Required<FileWatcherConfig>;
   /** 防抖计时器 */
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** P3-CODE-3 预编译的忽略模式正则缓存（构造函数中一次性编译，避免 shouldIgnore 每次重新编译） */
+  /** 预编译的忽略模式正则缓存（构造函数中一次性编译，避免 shouldIgnore 每次重新编译） */
   private ignoreRegexes: RegExp[];
 
   constructor(config: FileWatcherConfig) {

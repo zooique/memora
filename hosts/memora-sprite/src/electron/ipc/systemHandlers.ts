@@ -49,14 +49,14 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     ctx.sprite.recordProactiveReject();
   });
 
-  // ─── 项目管理（FD-04 项目模式） ──────────────────────────
+  // ─── 项目管理（项目模式） ──────────────────────────
 
   /** 列出已注册项目（供 UI 专注模式选择器使用） */
   ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () =>
     safeHandle('获取项目列表失败', { projects: [] }, () => ({ projects: ctx.sprite.listProjects() })),
   );
 
-  // ─── 仪表盘（FD-03 UI 完整仪表盘） ──────────────────────
+  // ─── 仪表盘（UI 完整仪表盘） ──────────────────────
 
   /**
    * 获取完整仪表盘数据

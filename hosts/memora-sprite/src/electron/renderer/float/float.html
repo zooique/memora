@@ -4,17 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <!-- CSP：浮动窗口为独立小窗口，style-src 保留 'unsafe-inline'（内联 CSS 变量定义） -->
-  <!-- P2-11 script-src 限制为 self，主题初始化由主进程 executeJavaScript 注入 -->
+  <!-- script-src 限制为 self，主题初始化由主进程 executeJavaScript 注入 -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;" />
   <title>Memora 精灵</title>
   <!--
-    P2-11 主题初始化已从内联脚本迁移至主进程 executeJavaScript 注入：
+    主题初始化已从内联脚本迁移至主进程 executeJavaScript 注入：
     详见 floatWindow.ts 中的 did-start-loading 事件处理。
   -->
   <style>
     /* ===== 主题变量（从 base.css 提取浮动窗口所需的最小集） ===== */
-    /* UX-P2-12 同步 base.css 的变量值，确保两个窗口主题一致
-     * UI-P3-02 补齐缺失的语义色变量（--red/--pink 等），与 base.css 保持 1:1 对齐
+    /* 同步 base.css 的变量值，确保两个窗口主题一致
+     * 补齐缺失的语义色变量（--red/--pink 等），与 base.css 保持 1:1 对齐
      *
      * ⚠️ 同步维护提醒：
      * 修改 base.css 变量时，必须同步更新此处！
@@ -37,8 +37,8 @@
       --accent: #0066ff;
       --accent-20: rgba(0, 102, 255, 0.1);
       --yellow: #ff9f0a;
-      --red: #ff3b30;       /* UI-P3-02 补齐：badge 背景色，原缺失导致 badge 无红色背景 */
-      --pink: #ad1457;       /* UI-P3-02 补齐：与 base.css 浅色主题一致 */
+      --red: #ff3b30;       /* badge 背景色 */
+      --pink: #ad1457;       /* 与 base.css 浅色主题一致 */
 
       /* 引导提示 */
       --hint-bg: rgba(30, 30, 46, 0.95);
@@ -80,8 +80,8 @@
       --accent: #89b4fa;
       --accent-20: rgba(137, 180, 250, 0.2);
       --yellow: #f9e2af;
-      --red: #f38ba8;        /* UI-P3-02 补齐：深色主题红色 */
-      --pink: #f5c2e7;       /* UI-P3-02 补齐：深色主题粉色 */
+      --red: #f38ba8;        /* 深色主题红色 */
+      --pink: #f5c2e7;       /* 深色主题粉色 */
 
       /* 引导提示 */
       --hint-bg: rgba(205, 214, 244, 0.95);
@@ -115,7 +115,7 @@
       width: 80px;
       height: 80px;
       background: transparent;
-      /* UI-P3-01 浮动窗口禁止滚动条：badge 和 drag-hint 通过 overflow:visible 溢出显示，
+      /* 浮动窗口禁止滚动条：badge 和 drag-hint 通过 overflow:visible 溢出显示，
          但 html 层必须隐藏溢出，否则会出现丑陋的滚动条 */
       overflow: hidden;
     }
@@ -129,7 +129,7 @@
 
     /* ===== 浮动窗口主体（80x80 透明背景） ===== */
     body {
-      /* UX-PP-14 body 层允许 badge 和 drag-hint 超出版心显示
+      /* body 层允许 badge 和 drag-hint 超出版心显示
          （html 层已 overflow:hidden，不会产生滚动条） */
       overflow: visible;
       display: flex;
@@ -152,7 +152,7 @@
       font-size: 32px;
       position: relative;
       transition: transform var(--transition-base) ease, box-shadow var(--transition-slow) ease;
-      /* UI-P3-06 使用主题感知阴影变量，与 base.css 设计系统保持一致 */
+      /* 使用主题感知阴影变量，与 base.css 设计系统保持一致 */
       box-shadow: var(--shadow-float);
     }
 
@@ -200,7 +200,7 @@
     /* active 状态：蓝色 + 脉冲动画 */
     #status-dot.active {
       background: var(--accent);
-      /* UI-P3-05 脉冲动画改用伪元素 + transform 实现：
+      /* 脉冲动画改用伪元素 + transform 实现：
        * - box-shadow 动画会触发每帧重绘，性能差
        * - ::before 伪元素 + transform:scale + opacity 可 GPU 加速，性能更优
        * - 视觉效果与原方案一致：向外扩散的半透明圆环
@@ -294,7 +294,7 @@
       display: none;  /* 阶段二不显示图片，仅预留接口 */
     }
 
-    /* ===== FD-06 拖动引导提示（首次使用） ===== */
+    /* ===== 拖动引导提示（首次使用） ===== */
     /* 新用户不知道浮动窗口可以拖动，首次悬停时显示引导提示 */
     #drag-hint {
       position: absolute;
@@ -368,7 +368,7 @@
 </head>
 <body>
   <!-- 精灵球体：包含形态容器 + 状态点 + 未读徽章 -->
-  <!-- FD-06 title 属性提供原生 tooltip，作为拖动提示的基础层 -->
+  <!-- title 属性提供原生 tooltip，作为拖动提示的基础层 -->
   <div id="sphere" role="button" tabindex="0" aria-label="Memora 精灵，单击展开对话，拖动移动位置" title="拖动移动位置 · 单击展开对话">
     <div id="sphere-form">
       <!-- 阶段二：emoji 占位；阶段三：替换为 <img src="生成的形态图片"> -->
@@ -380,7 +380,7 @@
     <div id="status-dot" aria-hidden="true"></div>
     <!-- 未读计数徽章 -->
     <div id="badge" aria-label="未读消息计数">0</div>
-    <!-- FD-06 拖动引导提示（首次使用时显示） -->
+    <!-- 拖动引导提示（首次使用时显示） -->
     <div id="drag-hint" role="status">💡 拖动移动 · 单击展开</div>
     <!-- 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示） -->
     <div id="away-label" role="status"></div>

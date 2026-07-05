@@ -4,7 +4,7 @@
  * 覆盖范围：
  * - 构造与配置：watchPaths / ignore / debounceMs / allowedPaths 透传 + name 属性
  * - isPathAllowed 路径白名单：空拒绝 / 根目录 / 子目录 / 兄弟目录防绕过 / 多白名单
- * - shouldIgnore 忽略模式：默认 4 项 / 不匹配 / 自定义（含 P3-CODE-3 预编译）
+ * - shouldIgnore 忽略模式：默认 4 项 / 不匹配 / 自定义（含预编译）
  * - start 启动监听：越界 warn / watch 抛错继续 / 成功 info
  * - stop 停止监听：watcher.close + clearSafeTimeout / callback 置 null
  * - createWatcher 回调：filename null 静默 / 忽略模式静默 / 正常触发 debouncedEmit
@@ -272,7 +272,7 @@ describe('FileWatcherTrigger', () => {
   // ─── 3. shouldIgnore 忽略模式（3） ─────────────────
 
   describe('shouldIgnore 忽略模式', () => {
-    it('默认 ignore 匹配 node_modules / .git / dist / .memora（P3-CODE-3 预编译生效）', () => {
+    it('默认 ignore 匹配 node_modules / .git / dist / .memora（预编译生效）', () => {
       const trigger = createTrigger();
       const call = startAndCapture(trigger, vi.fn());
 

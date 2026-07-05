@@ -242,7 +242,7 @@
   transform: rotate(180deg);
 }
 
-/* IX-07 角色匹配模式标签（角色选择器旁，显示当前模式） */
+/* 角色匹配模式标签（角色选择器旁，显示当前模式） */
 .mode-badge {
   font-size: var(--font-2xs);
   padding: 1px 6px;
@@ -817,7 +817,7 @@
   transition: background var(--transition-fast);
 }
 
-/* UX-04：角色下拉项名称 + 描述双层布局 */
+/* 角色下拉项名称 + 描述双层布局 */
 .dropdown-item-name {
   font-size: var(--font-sm);
   font-weight: 500;

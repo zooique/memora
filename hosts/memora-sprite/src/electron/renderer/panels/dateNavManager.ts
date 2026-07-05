@@ -1,13 +1,13 @@
 /**
  * 日期导航面板管理器
  *
- * C-5-3：从 UIManager 拆分（约 99 行），统一管理"日期导航"功能的 UI 联动。
+ * 从 UIManager 拆分（约 99 行），统一管理"日期导航"功能的 UI 联动。
  *
  * 职责：
  * - 绑定日期导航按钮（#date-nav-btn）、列表（#date-nav-list）、文档点击事件
  * - 下拉打开时触发列表加载回调，让控制器拉取最新日期列表
  * - 列表项点击时触发跳转回调，让控制器切换到对应日期的对话
- * - 列表项删除按钮点击时触发删除回调（FD-09 删除对话记录）
+ * - 列表项删除按钮点击时触发删除回调（删除对话记录）
  * - 渲染日期列表（今天/昨天/前天/完整日期，含消息数 + 删除按钮）
  *
  * 设计原则：
@@ -53,7 +53,7 @@ export class DateNavManager {
    * document click：点击外部关闭下拉
    */
   init(): void {
-    // UX-FD-07 日期导航按钮：点击切换下拉显示/隐藏
+    // 日期导航按钮：点击切换下拉显示/隐藏
     const dateNavBtn = document.getElementById('date-nav-btn');
     if (dateNavBtn) {
       this.events.addEventListener(dateNavBtn, 'click', (e) => {
@@ -66,7 +66,7 @@ export class DateNavManager {
     if (dateNavList) {
       this.events.addEventListener(dateNavList, 'click', (e) => {
         const target = e.target as HTMLElement;
-        // FD-09 删除按钮点击：优先处理（避免触发父级跳转）
+        // 删除按钮点击：优先处理（避免触发父级跳转）
         const deleteBtn = target.closest<HTMLElement>('[data-action="delete-date"]');
         if (deleteBtn) {
           e.stopPropagation();
@@ -106,7 +106,7 @@ export class DateNavManager {
   }
 
   /**
-   * 注册日期导航删除回调（FD-09 删除对话记录）
+   * 注册日期导航删除回调（删除对话记录）
    *
    * @param cb 删除回调（接收日期字符串 YYYY-MM-DD）
    */
@@ -202,7 +202,7 @@ export class DateNavManager {
       countEl.className = 'date-nav-item-count';
       countEl.textContent = `${item.messageCount} 条`;
 
-      // FD-09 删除按钮：今天不显示删除（避免删除当天进行中的对话）
+      // 删除按钮：今天不显示删除（避免删除当天进行中的对话）
       if (!item.isToday) {
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'date-nav-item-delete';

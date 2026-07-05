@@ -47,7 +47,7 @@ export enum ErrorCode {
 // ─── 结构化错误类 ───────────────────────────────────────
 
 /**
- * 结构化错误类（P1-CODE-1 修复）
+ * 结构化错误类
  *
  * 携带显式 ErrorCode 字段，替代基于中文字符串匹配的 extractErrorCode 推断。
  * 调用方通过 `throw new MemoraError(ErrorCode.FILE_READ_FAILED, '...')` 显式指定错误类型，

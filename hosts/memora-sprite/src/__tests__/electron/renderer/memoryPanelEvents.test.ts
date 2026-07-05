@@ -1,5 +1,5 @@
 /**
- * memoryPanelEvents 事件接线测试（M1-M2）
+ * memoryPanelEvents 事件接线测试
  *
  * 覆盖目标：initMemoryPanelListeners 提取出的 10 个 init 子函数中
  * 现有 memoryPanelManagerInstance.test.ts 未直接覆盖的 6 个：

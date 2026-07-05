@@ -1,4 +1,4 @@
-﻿/**
+/**
  * DOM 工具函数模块测试 — 时间格式化纯函数部分
  *
  * 覆盖范围：
@@ -143,7 +143,7 @@ describe('formatTimestamp', () => {
   });
 
   it('无效日期字符串应降级返回原始字符串（Invalid Date 检测）', () => {
-    // QC-FIX-DOMHELPERS 修复后：Number.isNaN(date.getTime()) 检测 Invalid Date，
+    // Number.isNaN(date.getTime()) 检测 Invalid Date，
     // 降级分支可达，返回原始字符串而非 'NaN-NaN NaN:NaN'
     const invalid = 'not-a-date';
     expect(formatTimestamp(invalid)).toBe('not-a-date');
@@ -185,7 +185,7 @@ describe('formatClock', () => {
   });
 
   it('无效日期字符串应降级返回原始字符串（Invalid Date 检测）', () => {
-    // QC-FIX-DOMHELPERS 修复后：降级分支可达，返回原始字符串而非 'NaN:NaN'
+    // 降级分支可达，返回原始字符串而非 'NaN:NaN'
     const invalid = 'invalid-time';
     expect(formatClock(invalid)).toBe('invalid-time');
   });

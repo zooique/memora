@@ -6,11 +6,11 @@
   <!-- theme-color 让任务栏/标题栏颜色跟随主题，默认浅色 -->
   <meta name="theme-color" content="#f0f0f2" />
   <!-- CSP：仅允许 self 资源，支持离线使用 + 安全加固 -->
-  <!-- P2-11 style-src 限制为 self，主题初始化由主进程 executeJavaScript 注入 -->
+  <!-- style-src 限制为 self，主题初始化由主进程 executeJavaScript 注入 -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'" />
   <title>Memora 精灵</title>
   <!--
-    P2-11 主题初始化由主进程 executeJavaScript 注入：
+    主题初始化由主进程 executeJavaScript 注入：
     主进程的 webContents.executeJavaScript() 不受 CSP 约束，
     可在页面加载前同步读取 localStorage 并设置 data-theme 属性，
     避免 FOUC（Flash of Unstyled Content）闪烁。
@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="styles/markdown.css" />
 </head>
 <body>
-  <!-- UX-FD-03 SVG 图标精灵：替换页面内 emoji，统一视觉风格 -->
+  <!-- SVG 图标精灵：替换页面内 emoji，统一视觉风格 -->
   <!-- 使用 class="svg-sprite" + CSS 隐藏，而非内联 style="display:none"（CSP style-src 'self' 会阻止内联样式） -->
   <svg xmlns="http://www.w3.org/2000/svg" class="svg-sprite" aria-hidden="true">
     <defs>
@@ -171,7 +171,7 @@
       <div id="titlebar-controls">
         <button id="btn-minimize" title="最小化" aria-label="最小化窗口"><svg class="icon"><use href="#icon-minimize"/></svg></button>
         <button id="btn-maximize" title="最大化" aria-label="最大化窗口"><svg class="icon"><use href="#icon-maximize"/></svg></button>
-        <!-- UX-P2-21 调整 title 文案与关闭图标语义一致（原"隐藏到浮动窗口"与关闭图标不符） -->
+        <!-- 调整 title 文案与关闭图标语义一致 -->
         <button id="btn-close" title="关闭" aria-label="关闭窗口"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
     </header>
@@ -192,7 +192,7 @@
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
           <!-- 角色选择器已迁移到输入区发送按钮旁（input-persona-container） -->
-          <!-- UX-FD-07 日期导航按钮：快速跳转到指定日期的历史对话 -->
+          <!-- 日期导航按钮：快速跳转到指定日期的历史对话 -->
           <div id="date-navigator" class="date-navigator">
             <button id="date-nav-btn" class="date-nav-btn" title="按日期查找历史对话" aria-label="按日期查找历史对话">
               <span class="date-nav-icon"><svg class="icon"><use href="#icon-calendar"/></svg></span>
@@ -344,7 +344,7 @@
           </div>
         </div>
 
-        <!-- FD-A2 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->
+        <!-- 对话面板加载失败状态：默认隐藏，加载会话历史失败时显示 -->
         <div id="chat-error" class="panel-error hidden">
           <span id="chat-error-msg"></span>
           <button id="chat-error-retry" class="panel-error-btn">重试</button>
@@ -358,7 +358,7 @@
             <button class="banner-btn" data-action="view">查看</button>
             <button class="banner-btn" data-action="later">稍后</button>
             <button class="banner-btn" data-action="silent">静默 1 小时</button>
-            <!-- P3-FLOW-08 关闭主动提示选项，直接进入静默模式并提示去设置调整阈值 -->
+            <!-- 关闭主动提示选项，直接进入静默模式并提示去设置调整阈值 -->
             <button class="banner-btn" data-action="disable">不再提醒</button>
           </div>
           <!-- UI-UX-02 关闭按钮：手动关闭 banner，与 actions 独立 -->
@@ -452,7 +452,7 @@
               <button class="more-menu-item" data-action="health">
                 <svg class="icon"><use href="#icon-health"/></svg> 健康度诊断
               </button>
-              <!-- GAP-6：回收站入口（软删除记忆恢复/彻底删除） -->
+              <!-- 回收站入口（软删除记忆恢复/彻底删除） -->
               <button class="more-menu-item" data-action="recycle-bin">
                 <svg class="icon"><use href="#icon-inbox"/></svg> 回收站
               </button>
@@ -576,7 +576,7 @@
             <button class="health-action-btn danger" id="health-cleanup-all" title="清理所有问题记忆">一键清理</button>
           </div>
         </div>
-        <!-- FD-A2 记忆面板加载失败状态：默认隐藏，加载失败时显示 -->
+        <!-- 记忆面板加载失败状态：默认隐藏，加载失败时显示 -->
         <div id="memory-error" class="panel-error hidden">
           <span id="memory-error-msg"></span>
           <button id="memory-error-retry" class="panel-error-btn">重试</button>
@@ -708,17 +708,17 @@
           <button class="settings-tab" data-settings-tab="embedding">嵌入</button>
           <button class="settings-tab" data-settings-tab="sprite">精灵</button>
           <button class="settings-tab" data-settings-tab="project">项目</button>
-          <!-- H2 用户画像 tab：管理已确认/待确认的画像条目 -->
+          <!-- 用户画像 tab：管理已确认/待确认的画像条目 -->
           <button class="settings-tab" data-settings-tab="profile">画像</button>
-          <!-- M2 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
+          <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit">审计</button>
           <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
           <button class="settings-tab" data-settings-tab="skill">技能</button>
-          <!-- H3 作品投影 tab：展示精灵对用户工作文件的理解 -->
+          <!-- 作品投影 tab：展示精灵对用户工作文件的理解 -->
           <button class="settings-tab" data-settings-tab="work">作品</button>
         </div>
 
-        <!-- FD-A2 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
+        <!-- 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
         <div id="settings-error" class="panel-error hidden">
           <span id="settings-error-msg"></span>
           <button id="settings-error-retry" class="panel-error-btn">重试</button>
@@ -753,7 +753,7 @@
               <label for="cfg-llm-api-key">API Key</label>
               <div class="input-with-action">
                 <input type="password" id="cfg-llm-api-key" placeholder="sk-****" />
-                <!-- FD-A11Y-LABEL：图标按钮补齐 aria-label，与 btn-minimize/btn-close 等图标按钮标准一致 -->
+                <!-- 图标按钮补齐 aria-label，与 btn-minimize/btn-close 等图标按钮标准一致 -->
                 <button type="button" id="btn-toggle-llm-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏主 LLM API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
               </div>
             </div>
@@ -761,7 +761,7 @@
               <label for="cfg-llm-temperature">温度（temperature）</label>
               <input type="number" id="cfg-llm-temperature" min="0" max="2" step="0.1" value="0.7" />
             </div>
-            <!-- H6 后台 Provider 配置（可选，用于 Insight 提取/配置分析等后台任务，不阻塞前台对话） -->
+            <!-- 后台 Provider 配置（可选，用于 Insight 提取/配置分析等后台任务，不阻塞前台对话） -->
             <div class="settings-section">
               <div class="settings-row">
                 <label for="cfg-bg-enabled">后台 Provider</label>
@@ -832,16 +832,16 @@
         <div class="settings-tab-content" data-settings-tab="sprite">
           <div class="settings-group">
             <h3>精灵配置</h3>
-            <!-- ADR-SP-008 界面主题切换：浅色（默认）/ 深色（备选）/ 跟随系统（P3-FLOW-12） -->
+            <!-- ADR-SP-008 界面主题切换：浅色（默认）/ 深色（备选）/ 跟随系统 -->
             <div class="settings-row">
               <label for="cfg-theme">界面主题</label>
               <div class="radio-group">
                 <label><input type="radio" name="theme-mode" value="light" checked /> 浅色（默认）</label>
                 <label><input type="radio" name="theme-mode" value="dark" /> 深色</label>
-                <!-- P3-FLOW-12 跟随系统选项，自动跟随操作系统主题 -->
+                <!-- 跟随系统选项，自动跟随操作系统主题 -->
                 <label><input type="radio" name="theme-mode" value="auto" /> 跟随系统</label>
               </div>
-              <!-- UX-PP-21 主题即时生效说明：从顶部栏降级到主题设置行内注释 -->
+              <!-- 主题即时生效说明：从顶部栏降级到主题设置行内注释 -->
               <span class="settings-hint">主题即时生效，其余设置需点击保存</span>
             </div>
             <!-- ADR-015 归档模式切换：full（默认）/ insights-only / manual，切换即时生效 -->
@@ -927,7 +927,7 @@
           </div>
         </div>
 
-        <!-- FD-04 项目模式配置 -->
+        <!-- 项目模式配置 -->
         <div class="settings-tab-content" data-settings-tab="project">
           <div class="settings-group">
             <h3>项目模式</h3>
@@ -947,7 +947,7 @@
           </div>
         </div>
 
-        <!-- H2 用户画像管理：查看/确认/拒绝画像条目 -->
+        <!-- 用户画像管理：查看/确认/拒绝画像条目 -->
         <div class="settings-tab-content" data-settings-tab="profile">
           <div class="settings-group">
             <div class="profile-header">
@@ -975,7 +975,7 @@
           </div>
         </div>
 
-        <!-- M2 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
+        <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
         <div class="settings-tab-content" data-settings-tab="audit">
           <div class="settings-group">
             <div class="profile-header">
@@ -1004,7 +1004,7 @@
               技能文件存放在 configDir/skills/ 目录，Agent 启动时自动加载。
               技能通过 frontmatter 中的 keywords 或 trigger 字段匹配对话上下文。
             </p>
-            <!-- GAP-1 已加载技能列表（消费内核 agent.skills.list） -->
+            <!-- 已加载技能列表（消费内核 agent.skills.list） -->
             <!-- 由 loadDashboard() 动态填充，无技能时隐藏 -->
             <div id="skills-section" class="skill-section hidden">
               <ul id="skills-list" class="skills-list"></ul>
@@ -1030,7 +1030,7 @@
           </div>
         </div>
 
-        <!-- H3 作品投影 tab：展示精灵对用户工作文件的理解 -->
+        <!-- 作品投影 tab：展示精灵对用户工作文件的理解 -->
         <div class="settings-tab-content" data-settings-tab="work">
           <div class="settings-group">
             <div class="settings-group-header">
@@ -1052,15 +1052,15 @@
 
         <!-- 面板底部：Agent 状态 + 操作按钮（保存/取消/恢复默认/稍后配置） -->
         <div class="settings-actions">
-          <!-- P3-FLOW-10 Agent 连接状态指示器（底部按钮行左侧） -->
+          <!-- Agent 连接状态指示器（底部按钮行左侧） -->
           <div id="agent-status-indicator" class="agent-status-indicator unknown">
             <span class="agent-status-dot"></span>
             <span class="agent-status-text">检测中…</span>
           </div>
           <div class="settings-actions-buttons">
-          <!-- P3-FLOW-06 恢复默认按钮，用户配置出错时可一键恢复 -->
+          <!-- 恢复默认按钮，用户配置出错时可一键恢复 -->
           <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
-          <!-- P2-FLOW-10 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->
+          <!-- 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->
           <button id="btn-settings-skip" class="btn-secondary">稍后配置</button>
           <button id="btn-settings-cancel" class="btn-secondary">取消</button>
           <button id="btn-settings-save" class="btn-primary">保存</button>
@@ -1092,20 +1092,20 @@
         </div>
       </div>
       <div class="modal-footer">
-        <!-- P2-FLOW-08 编辑模式按钮：保存/取消（默认隐藏，编辑时显示） -->
+        <!-- 编辑模式按钮：保存/取消（默认隐藏，编辑时显示） -->
         <button id="btn-memory-edit-save" class="btn-primary hidden">保存</button>
         <button id="btn-memory-edit-cancel" class="btn-secondary hidden">取消</button>
-        <!-- P2-FLOW-08 只读模式按钮：编辑/删除（默认显示，编辑时隐藏） -->
+        <!-- 只读模式按钮：编辑/删除（默认显示，编辑时隐藏） -->
         <button id="btn-memory-edit" class="btn-secondary">编辑</button>
         <button id="btn-memory-delete" class="btn-danger">删除</button>
-        <!-- FD-ADD-MEMORY-DISCUSS：记忆→对话双向流动，关闭弹窗并切换到对话面板预填讨论提示 -->
+        <!-- 记忆→对话双向流动，关闭弹窗并切换到对话面板预填讨论提示 -->
         <button id="btn-memory-discuss" class="btn-primary">在对话中讨论</button>
         <button class="btn-secondary" data-modal="memory-detail-modal">关闭</button>
       </div>
     </div>
   </div>
 
-  <!-- GAP-6 回收站弹窗：列出软删除记忆，支持恢复/彻底删除 -->
+  <!-- 回收站弹窗：列出软删除记忆，支持恢复/彻底删除 -->
   <div id="recycle-bin-modal" class="modal hidden">
     <div class="modal-content">
       <div class="modal-header">
@@ -1113,7 +1113,7 @@
         <button class="modal-close" data-modal="recycle-bin-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
       </div>
       <div class="modal-body">
-        <!-- GAP-6 回收站说明：软删除记忆保留 30 天后自动清理 -->
+        <!-- 回收站说明：软删除记忆保留 30 天后自动清理 -->
         <div class="recycle-bin-hint">已删除的记忆将保留 30 天，过期后自动彻底清理。可在此期间恢复或彻底删除。</div>
         <!-- 回收站列表容器（JS 动态渲染，每项含名称/来源/预览/删除时间 + 恢复/彻底删除按钮） -->
         <div id="recycle-bin-list" class="recycle-bin-list"></div>
@@ -1184,7 +1184,7 @@
       </div>
       <div class="modal-body">
         <p id="prompt-message" class="confirm-message"></p>
-        <!-- FD-A11Y-LABEL：补齐 aria-labelledby 关联提示文本 + placeholder 兜底（无 label for 关联） -->
+        <!-- 补齐 aria-labelledby 关联提示文本 + placeholder 兜底（无 label for 关联） -->
         <input id="prompt-input" type="text" class="prompt-input" maxlength="100" aria-labelledby="prompt-message" placeholder="请输入..." />
         <p id="prompt-error" class="prompt-error hidden"></p>
       </div>
@@ -1271,7 +1271,7 @@
     </div>
   </div>
 
-  <!-- IX-06 Toast 通知区域（独立于对话历史，避免污染 #messages） -->
+  <!-- Toast 通知区域（独立于对话历史，避免污染 #messages） -->
   <!-- 用于显示操作反馈（成功/失败/警告），自动消失，不持久化 -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 

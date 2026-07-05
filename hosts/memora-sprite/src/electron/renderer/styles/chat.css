@@ -765,7 +765,7 @@
 }
 
 /**
- * UX-FD-07 日期导航按钮：快速跳转到指定日期的历史对话
+ * 日期导航按钮：快速跳转到指定日期的历史对话
  * 位于 chat-toolbar 右侧，点击弹出日期列表下拉
  */
 .date-navigator {
@@ -855,7 +855,7 @@
   color: var(--accent);
 }
 
-/* FD-09 删除按钮：主动可见（无需 hover 即显示），hover 红色反馈危险操作 */
+/* 删除按钮：主动可见（无需 hover 即显示），hover 红色反馈危险操作 */
 .date-nav-item-delete {
   display: inline-flex;
   align-items: center;
@@ -1117,7 +1117,7 @@
   height: 10px;
 }
 
-/* ─── H1 配置建议卡片（AutoConfigRefiner 闭环） ────────────── */
+/* ─── 配置建议卡片（AutoConfigRefiner 闭环） ────────────── */
 /* 卡片容器：位于 #proactive-banner 之后、#messages 之前，顶部提示区 */
 .suggestion-container {
   display: flex;
@@ -1502,7 +1502,7 @@
   background: var(--window-bg-2);
   color: var(--text);
   border-bottom-left-radius: 4px;  /* 尖角与用户消息统一为 4px，视觉平衡 */
-  /* UX-FD-01 精灵消息使用系统字体栈（--font-sprite 已改为系统字体），保持与输入框一致的阅读体验 */
+  /* 精灵消息使用系统字体栈（--font-sprite 已改为系统字体），保持与输入框一致的阅读体验 */
   font-family: var(--font-sprite);
 }
 
@@ -1542,7 +1542,7 @@
 /**
  * 消息复制按钮：与时间戳同行显示
  * 仅精灵消息（非流式）显示，点击复制原始内容到剪贴板
- * UX-02：遵循"主动可见"原则，不依赖 hover 才显示
+ * 遵循"主动可见"原则，不依赖 hover 才显示
  */
 .message-copy-btn {
   /* 行内元素：由 .message-meta flex 容器排列 */
@@ -2222,7 +2222,7 @@
   overflow-y: auto;
 }
 
-/* ─── UX-FD-07 加载更多历史消息按钮 ──────────────────────── */
+/* ─── 加载更多历史消息按钮 ──────────────────────── */
 /* 位于消息区顶部，点击后加载更早的消息并插入到按钮之前 */
 
 .load-more-container {

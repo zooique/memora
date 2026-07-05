@@ -132,7 +132,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-// ─── initListeners · 稍后配置（P2-FLOW-10） ─────────────
+// ─── initListeners · 稍后配置 ─────────────
 
 describe('initListeners · 稍后配置按钮', () => {
   it('click 稍后配置应清除 dirty + 切换到 chat 面板', () => {

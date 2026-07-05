@@ -5,7 +5,7 @@
  * - scheduleSilentRecovery：未启用静默/已过期立即关闭/未来到期设定时器（vi.useFakeTimers）
  * - CONFIG_GET：获取配置 + 失败降级
  * - CONFIG_UPDATE：合法键更新 + 非法键拒绝 + silentMode 同步托盘 + silentModeExpiresAt 触发定时器 + 抛错降级
- * - CONFIG_UPDATE_BATCH（QC-CONFIG-01）：委托 updateConfigBatch + 失败不触发副作用 + silentMode 批量同步托盘 + 抛错降级
+ * - CONFIG_UPDATE_BATCH：委托 updateConfigBatch + 失败不触发副作用 + silentMode 批量同步托盘 + 抛错降级
  * - PERSONA_LIST：列出角色 + 失败降级
  * - PERSONA_SWITCH：切换角色 + 失败降级
  * - PERSONA_MODE：设置模式 + 失败降级
@@ -66,7 +66,7 @@ function createMockCtx(overrides?: {
         silentModeExpiresAt: null,
       })),
       updateConfig: vi.fn(),
-      // QC-CONFIG-01：默认 batch 成功，单个测试可覆盖为失败以验证事务回滚
+      // 默认 batch 成功，单个测试可覆盖为失败以验证事务回滚
       updateConfigBatch: vi.fn(() => ({ updated: true })),
       listPersonas: vi.fn(() => ['default', 'coder']),
       switchPersona: vi.fn(() => 'coder'),
@@ -299,7 +299,7 @@ describe('registerConfigHandlers', () => {
     expect(() => callback({}, 'silentMode', true)).not.toThrow();
   });
 
-  // ─── CONFIG_UPDATE_BATCH（QC-CONFIG-01） ───────────────
+  // ─── CONFIG_UPDATE_BATCH ───────────────
 
   it('CONFIG_UPDATE_BATCH 成功应委托 updateConfigBatch 并返回结果', async () => {
     const updateConfigBatch = vi.fn(() => ({ updated: true }));

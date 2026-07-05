@@ -46,11 +46,11 @@ export class PersonaController {
   /**
    * 切换角色
    *
-   * IX-03 统一错误策略后，switchPersona 找不到角色时抛 MemoraError。
+   * 统一错误策略后，switchPersona 找不到角色时抛 MemoraError。
    * 此处捕获异常返回 null，保持宿主门面的"失败返回 null"契约，
    * 让 IPC 层通过 switched=false 告知 UI。
    *
-   * BUG-PC-03 修复：JSDoc 原标注 @returns 角色名称，实际返回的是
+   * JSDoc 注释订正：原标注 @returns 角色名称，实际返回的是
    * PersonaManager.buildSystemPrompt 生成的角色系统提示文本。现修正注释。
    *
    * @param name 角色名称

@@ -55,20 +55,20 @@ export interface SpriteConfig {
   /** 是否显示浮动气泡（桌面小部件），默认 true。仅当 windowState === 'tray' 时生效 */
   showFloatBubble?: boolean;
   /**
-   * 项目模式（FD-04）：
+   * 项目模式：
    * - 'smart'（默认）：智能模式，监听启动时的 projectPath，未来可扩展多项目自动识别
    * - 'focus'：专注模式，锁定 focusProjectPath 指定的项目，其他项目的文件变化被忽略
    */
   projectMode?: 'smart' | 'focus';
   /** 专注模式锁定的项目路径（绝对路径），仅 projectMode='focus' 时生效 */
   focusProjectPath?: string;
-  /** FD-05 完整窗口的边界（屏幕坐标 + 尺寸），启动时恢复。null 表示使用默认大小并居中 */
+  /** 完整窗口的边界（屏幕坐标 + 尺寸），启动时恢复。null 表示使用默认大小并居中 */
   windowBounds?: { x: number; y: number; width: number; height: number } | null;
-  /** FD-10 静默模式恢复时间（ISO 8601），过期后自动关闭静默模式。null 表示无定时恢复 */
+  /** 静默模式恢复时间（ISO 8601），过期后自动关闭静默模式。null 表示无定时恢复 */
   silentModeExpiresAt?: string | null;
   /**
-   * UX-FD-12 界面主题，默认 'light'。持久化到 sprite.json，localStorage 仅作为内联脚本缓存
-   * P3-FLOW-12 新增 'auto' 跟随系统主题
+   * 界面主题，默认 'light'。持久化到 sprite.json，localStorage 仅作为内联脚本缓存
+   * 新增 'auto' 跟随系统主题
    */
   theme?: 'light' | 'dark' | 'auto';
   /**
@@ -214,7 +214,7 @@ const CURRENT_CONFIG_VERSION = 2;
  *   - 示例见下方注释中的 v1→v2 模板
  */
 const MIGRATIONS: Record<number, (config: Required<SpriteConfig>) => SpriteConfig> = {
-  // UX-FD-12 v1→v2：新增 theme 字段，默认 'light'
+  // v1→v2：新增 theme 字段，默认 'light'
   1: (config) => {
     return { ...config, theme: 'light' };
   },
@@ -281,11 +281,11 @@ export function loadSpriteConfig(): Required<SpriteConfig> {
       }
     }
 
-    // FD-11 执行配置版本迁移链（v1→v2→...→CURRENT）
+    // 执行配置版本迁移链（v1→v2→...→CURRENT）
     const migrated = runMigrations(merged);
 
-    // UX-PP-19 迁移后立即持久化，避免下次启动重复执行迁移
-    // P2-CFG-01 迁移持久化单独 try/catch，写入失败不影响已迁移配置的使用
+    // 迁移后立即持久化，避免下次启动重复执行迁移
+    // 迁移持久化单独 try/catch，写入失败不影响已迁移配置的使用
     if (migrated.configVersion !== merged.configVersion) {
       try {
         saveSpriteConfig(migrated);

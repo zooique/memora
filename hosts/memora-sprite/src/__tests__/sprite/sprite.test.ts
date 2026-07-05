@@ -424,8 +424,8 @@ describe('Sprite 配置持久化', () => {
   });
 });
 
-// ─── QC-CONFIG-01: updateConfigBatch 事务性测试 ──────────────
-describe('Sprite updateConfigBatch（QC-CONFIG-01 事务性）', () => {
+// ─── updateConfigBatch 事务性测试 ──────────────
+describe('Sprite updateConfigBatch（事务性）', () => {
   let sprite: Sprite;
   let tmpDir: string;
 
@@ -893,7 +893,7 @@ describe('Sprite 触发器主路径（B1：handleTrigger + generateSmartSuggesti
 //
 // 测试目标：覆盖 subscribeAgentEvents 中 6 个未测事件的转发链路：
 //   - conflictDetected → conflictDetected（关键功能，不经过 ProactiveEngine）
-//   - projectSwitched → projectSwitched（FD-04 专注模式 UI 通知）
+//   - projectSwitched → projectSwitched（专注模式 UI 通知）
 //   - skillMatched → skillMatched（技能匹配提示）
 //   - memoryRecalled → memoryRecalled（记忆召回提示）
 //   - decayCompleted → decayCompleted（衰减完成通知）

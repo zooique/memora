@@ -13,7 +13,7 @@
  *   - 纯函数模块，不持有状态，接收 bubble 元素作为参数
  *   - 创建卡片 DOM 结构（header + chevron + icon + name + spinner + status）
  *   - 支持按 toolCallId 精确定位 + 按 name 降级匹配
- *   - P1-SEC-02 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
+ *   - 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
  */
 
 /**
@@ -47,7 +47,7 @@ export function showToolStart(
   chevron.className = 'tool-call-chevron';
   chevron.innerHTML = '<svg class="icon"><use href="#icon-chevron"/></svg>';
   header.appendChild(chevron);
-  // 工具图标：使用 SVG 替代 emoji（UX-FD-03）
+  // 工具图标：使用 SVG 替代 emoji
   const icon = document.createElement('span');
   icon.className = 'tool-call-icon';
   icon.innerHTML = '<svg class="icon"><use href="#icon-tools"/></svg>';
@@ -56,7 +56,7 @@ export function showToolStart(
   nameSpan.className = 'tool-call-name';
   nameSpan.textContent = name;
   header.appendChild(nameSpan);
-  // UX-PP-12 执行中 spinner：旋转动画替代静态"执行中..."文本，增强视觉反馈
+  // 执行中 spinner：旋转动画替代静态"执行中..."文本，增强视觉反馈
   const spinner = document.createElement('span');
   spinner.className = 'tool-call-spinner';
   header.appendChild(spinner);
@@ -66,7 +66,7 @@ export function showToolStart(
   header.appendChild(status);
 
   // 点击表头折叠/展开参数和结果
-  // QC-11 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+  // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
   header.dataset.action = 'toggle-collapse';
   // P3 键盘可访问性：tabindex 使工具调用折叠头可通过键盘聚焦并 Enter/Space 触发
   header.setAttribute('tabindex', '0');
@@ -110,11 +110,11 @@ export function updateToolResult(
   summary?: string,
 ): void {
   // 查找对应工具的卡片（按 data-tool-call-id 精确定位）
-  // P1-SEC-02 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
+  // 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
   const allCards = bubble.querySelectorAll('.tool-call-card');
   const cards = Array.from(allCards).filter((card) => card.getAttribute('data-tool-call-id') === toolCallId);
   // 精确匹配失败时降级为按 name 匹配（兼容旧格式）
-  // QC-TC-02 noUncheckedIndexedAccess 模式下 cards[0] 类型为 Element | undefined，需 ?? null 收窄
+  // noUncheckedIndexedAccess 模式下 cards[0] 类型为 Element | undefined，需 ?? null 收窄
   let targetCard: Element | null = cards.length > 0 ? (cards[0] ?? null) : null;
   if (!targetCard) {
     // 降级：按 data-tool-name 匹配，取最后一个未完成的
@@ -132,7 +132,7 @@ export function updateToolResult(
   targetCard.classList.remove('tool-call-running');
   targetCard.classList.add(ok ? 'tool-call-success' : 'tool-call-failed');
 
-  // UX-PP-12 移除 spinner（执行结束，不再需要旋转动画）
+  // 移除 spinner（执行结束，不再需要旋转动画）
   const spinner = targetCard.querySelector('.tool-call-spinner');
   if (spinner) spinner.remove();
 

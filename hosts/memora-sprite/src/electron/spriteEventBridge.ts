@@ -6,7 +6,7 @@
  *   2. 将事件通过 IPC 推送到渲染进程（MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT）
  *   3. 处理主动提示的特殊逻辑（托盘脉冲 + 系统通知 + 未读计数）
  *
- * 设计原则（P2-DESIGN-4）：
+ * 设计原则：
  *   7 个简单转发事件（memoryNoticed / insightGained / personaChanged /
  *   projectSwitched / skillMatched / memoryRecalled / decayCompleted）
  *   通过类型安全的 forwardSimpleEvent 泛型函数逐个注册，
@@ -187,7 +187,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
         // Phase 2.3：传递 isMilestone 标志到渲染层
         sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone }, silent);
 
-        // P2-FLOW-12 浮动窗口主动提示未读徽章
+        // 浮动窗口主动提示未读徽章
         // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
         // 补充 isDestroyed() 检查，防止窗口销毁后调用 isVisible() 抛错
         const fullWindow = deps.windowManager?.getFullWindow();
@@ -255,7 +255,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     dominantSource: e.dominantSource,
     description: e.description,
   }));
-  // H3：作品投影更新 → 渲染层刷新作品投影面板
+  // 作品投影更新 → 渲染层刷新作品投影面板
   forwardSimpleEvent(deps, 'workProjectionUpdated', (e) => ({
     sourcePath: e.sourcePath,
     summary: e.summary,

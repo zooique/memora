@@ -206,7 +206,7 @@ export class ClipboardHandler {
   /**
    * 计算剪贴板内容的哈希（内部方法）
    *
-   * QC-CLIP-02 澄清：Electron clipboard API 未提供"只检测变化不读取内容"的接口，
+   * Electron clipboard API 未提供"只检测变化不读取内容"的接口，
    * readText() 是获取剪贴板文本的唯一方式。此处的隐私保护体现在：
    *   1. 读取后立即哈希化（djb2 算法），不存储原文
    *   2. 哈希不可逆推内容

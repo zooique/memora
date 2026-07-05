@@ -43,7 +43,7 @@ import type { AffectState, RapportState, ContextState, DetectedPattern, Proactiv
 // ─── 内联 IPC 通道常量（sandbox 兼容性：不能运行时导入 ipcChannels.ts） ─────
 // ⚠️ 与 ipcChannels.ts 保持同步：修改 ipcChannels.ts 时需同步更新此处的内联副本。
 // 主进程使用 ipcChannels.ts（真理源），preload 使用此内联副本（sandbox 限制）。
-// C-1：export 这两个常量，供 channelParity.test.ts 断言键集与真理源一致，
+// export 这两个常量，供 channelParity.test.ts 断言键集与真理源一致，
 // 防止 sandbox 限制下的手动复制静默失配（UI 按钮无响应等全链路失效）。
 export const IPC_CHANNELS = {
   USER_INPUT: 'user-input',
@@ -51,9 +51,9 @@ export const IPC_CHANNELS = {
   SESSION_LOAD: 'session-load',
   SESSION_LIST: 'session-list',
   SESSION_SWITCH: 'session-switch',
-  /** FD-09 删除会话（含确认对话框） */
+  /** 删除会话（含确认对话框） */
   SESSION_DELETE: 'session-delete',
-  /** FD-09 重命名会话 */
+  /** 重命名会话 */
   SESSION_RENAME: 'session-rename',
   /** 会话分叉（内核 forkSession 已实现，发射 sessionForked 事件） */
   SESSION_FORK: 'session-fork',
@@ -87,7 +87,7 @@ export const IPC_CHANNELS = {
   MEMORIES_ARCHIVE_INSIGHT: 'memories-archive-insight',
   CONFIG_GET: 'config-get',
   CONFIG_UPDATE: 'config-update',
-  // QC-CONFIG-01：批量事务性更新配置（必须与 ipc/channels.ts 保持同步）
+  // 批量事务性更新配置（必须与 ipc/channels.ts 保持同步）
   CONFIG_UPDATE_BATCH: 'config-update-batch',
   PERSONA_LIST: 'persona-list',
   PERSONA_SWITCH: 'persona-switch',
@@ -105,10 +105,10 @@ export const IPC_CHANNELS = {
   PROACTIVE_ACCEPT: 'proactive-accept',
   /** Phase 2.1：用户拒绝/忽略了主动提示（点击"稍后"/关闭） */
   PROACTIVE_REJECT: 'proactive-reject',
-  // H1：配置建议（接受/拒绝）
+  // 配置建议（接受/拒绝）
   SUGGESTION_ACCEPT: 'suggestion-accept',
   SUGGESTION_REJECT: 'suggestion-reject',
-  // H2：用户画像管理
+  // 用户画像管理
   USER_PROFILE_LIST: 'user-profile-list',
   USER_PROFILE_CONFIRM: 'user-profile-confirm',
   USER_PROFILE_REJECT: 'user-profile-reject',
@@ -122,7 +122,7 @@ export const IPC_CHANNELS = {
   FLOAT_CONTEXT_MENU: 'float-context-menu',
   // M1：写入确认响应（渲染进程 → 主进程）
   WRITE_CONFIRMATION_RESPONSE: 'write-confirmation-response',
-  // H3：作品投影查看
+  // 作品投影查看
   WORK_PROJECTION_LIST: 'work-projection-list',
   WORK_PROJECTION_SHOW: 'work-projection-show',
   // M2：审计日志查看/清除
@@ -154,7 +154,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   FLOAT_UNREAD: 'float-unread',
   WINDOW_STATE_CHANGED: 'window-state-changed',
   THEME_BROADCAST: 'theme-broadcast',
-  // H1：主进程推送配置建议到渲染进程
+  // 主进程推送配置建议到渲染进程
   SUGGESTION_PUSH: 'suggestion-push',
   // M1：主进程推送写入确认请求到渲染进程
   WRITE_CONFIRMATION: 'write-confirmation',
@@ -172,10 +172,10 @@ export const MAIN_TO_RENDERER_CHANNELS = {
 // 补齐 DeletedMemoryListItem 导出，供 UI 渲染回收站列表使用
 export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem };
 
-// ─── H1/H2 共享类型定义 ───────────────────────────────────
+// ─── 配置建议/用户画像共享类型定义 ───────────────────────────────────
 
 /**
- * H1：配置建议（与内核 ConfigSuggestion 对齐）
+ * 配置建议（与内核 ConfigSuggestion 对齐）
  *
  * 来自 AutoConfigRefiner 分析对话后提取的建议，
  * 渲染层展示建议卡片供用户接受/拒绝。
@@ -194,7 +194,7 @@ export interface ConfigSuggestionPayload {
 }
 
 /**
- * H2：用户画像条目（与内核 UserProfileEntry 对齐）
+ * 用户画像条目（与内核 UserProfileEntry 对齐）
  *
  * 已确认条目持久化在 SQLite（source='profile'），
  * 待确认条目仅存内存缓存，进程重启后丢失。
@@ -293,9 +293,9 @@ type SpriteConfigFormBase = Required<Pick<SpriteConfig,
 >>;
 
 export interface SpriteConfigForm extends SpriteConfigFormBase {
-  /** FD-10 静默模式恢复时间（ISO 8601），null 表示无定时恢复 */
+  /** 静默模式恢复时间（ISO 8601），null 表示无定时恢复 */
   silentModeExpiresAt?: string | null;
-  /** UX-FD-12 界面主题（窄化版：'auto' 不暴露到表单，由 onThemeChange 即时处理） */
+  /** 界面主题（窄化版：'auto' 不暴露到表单，由 onThemeChange 即时处理） */
   theme: 'light' | 'dark';
   /** 缺口 II：文件监听忽略模式（glob 列表，可选，与 SpriteConfig 一致） */
   fileWatcherIgnore?: string[];
@@ -306,13 +306,13 @@ export interface ElectronAPI {
   sendUserInput: (text: string) => void;
   abortChat: () => Promise<void>;
   loadSession: (query: { date?: string; session?: string; limit?: number; offset?: number }) => Promise<{ messages: ChatMessage[]; loadedSessionId: string; total: number; hasMore: boolean }>;
-  /** FD-A1 列出所有会话 */
+  /** 列出所有会话 */
   listSessions: () => Promise<{ sessions: Array<{ id: string; date: string; name: string; preview?: string; messageCount?: number }> }>;
   /** 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   switchSession: (query: { date: string; session: string }) => Promise<{ success: boolean; messages: ChatMessage[]; error?: string }>;
-  /** FD-09 删除会话（不可恢复，调用方需自行确认） */
+  /** 删除会话（不可恢复，调用方需自行确认） */
   deleteSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
-  /** FD-09 重命名会话 */
+  /** 重命名会话 */
   renameSession: (sessionId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
   /**
    * 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
@@ -327,7 +327,7 @@ export interface ElectronAPI {
   onStreamChunk: (cb: (msg: { messageId: string; text: string }) => void) => void;
   onStreamEnd: (cb: (msg: { messageId: string }) => void) => void;
   /**
-   * MS-12 召回透明度监听
+   * 召回透明度监听
    * 在 text chunk 之前触发，携带本次对话召回的记忆摘要列表
    */
   onStreamRecall: (cb: (msg: { messageId: string; memories: Array<{ id: string; name: string; score: number; source: string }> }) => void) => void;
@@ -340,7 +340,7 @@ export interface ElectronAPI {
   /** 上下文截断通知：对话中发生截断时触发，携带截断次数 */
   onContextTruncated: (cb: (msg: { messageId: string; count: number }) => void) => void;
   /**
-   * UX-PP-10 流式对话被中断监听
+   * 流式对话被中断监听
    * 用户主动中断或内核 yield aborted chunk 时触发，携带 messageId 和中断原因。
    * 渲染层在原助手气泡内嵌入中断标记，保留已生成的部分内容。
    */
@@ -435,10 +435,10 @@ export interface ElectronAPI {
 
   // 配置
   getConfig: () => Promise<{ config: SpriteConfigForm }>;
-  /** QC-CFG-03：返回类型新增 error 字段（更新失败时包含错误信息） */
+  /** 返回类型新增 error 字段（更新失败时包含错误信息） */
   updateConfig: (key: string, value: unknown) => Promise<{ updated: boolean; error?: string }>;
   /**
-   * QC-CONFIG-01 批量更新配置（事务性）
+   * 批量更新配置（事务性）
    *
    * 替代 onConfigSave 中 N 次串行 updateConfig 调用。主进程在单个事务内完成
    * 全部更新（原子性 + 单次持久化 + 副作用去重），避免半更新状态。
@@ -450,14 +450,14 @@ export interface ElectronAPI {
   listPersonas: () => Promise<{ personas: Array<{ name: string; description: string; active: boolean }> }>;
   switchPersona: (name: string) => Promise<{ switched: boolean; name: string | null }>;
   setPersonaMode: (mode: 'auto' | 'manual') => Promise<{ set: boolean }>;
-  /** IX-07 查询当前角色匹配模式 */
+  /** 查询当前角色匹配模式 */
   getPersonaMode: () => Promise<{ mode: string }>;
 
-  // 项目（FD-04 项目模式）
+  // 项目（项目模式）
   /** 列出已注册项目（供专注模式选择器使用） */
   listProjects: () => Promise<{ projects: Array<{ name: string; path: string }> }>;
 
-  // 仪表盘（FD-03）
+  // 仪表盘
   getDashboard: () => Promise<{
     total: number;
     bySource: Record<string, number>;
@@ -557,7 +557,7 @@ export interface ElectronAPI {
   /** 移除主题广播监听器 */
   removeThemeBroadcastListener: () => void;
 
-  // ─── H1：配置建议（AutoConfigRefiner 闭环） ──────────
+  // ─── 配置建议（AutoConfigRefiner 闭环） ──────────
   /** 监听主进程推送的配置建议 */
   onSuggestionPush: (cb: (suggestion: ConfigSuggestionPayload) => void) => void;
   /** 移除配置建议推送监听器 */
@@ -567,7 +567,7 @@ export interface ElectronAPI {
   /** 拒绝配置建议（仅记录日志，不持久化） */
   rejectSuggestion: (suggestion: ConfigSuggestionPayload) => Promise<{ success: boolean }>;
 
-  // ─── H2：用户画像（UserProfile 闭环） ────────────────
+  // ─── 用户画像（UserProfile 闭环） ────────────────
   /** 列出所有画像条目（含已确认 + 待确认） */
   listUserProfile: () => Promise<{ entries: UserProfileEntryPayload[] }>;
   /** 确认待确认画像条目（写入存储 + 标记 confirmed） */
@@ -630,7 +630,7 @@ export interface ElectronAPI {
   /** 清空审计日志 */
   clearAuditLog: () => Promise<void>;
 
-  // H3：作品投影（WorkProjectionManager 查看）
+  // 作品投影（WorkProjectionManager 查看）
   /** 列出所有作品投影 */
   listWorkProjections: () => Promise<WorkProjectionPayload[]>;
   /** 查看单个作品投影详情（API 已就绪，UI 暂用内联展开替代，供未来宿主集成使用） */
@@ -665,7 +665,7 @@ const electronAPI: ElectronAPI = {
   onStreamThinking: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_THINKING, (_: IpcRendererEvent, msg: { messageId: string; phase: string }) => cb(msg)),
   /** 上下文截断通知：对话中发生截断时触发，携带截断次数 */
   onContextTruncated: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_CONTEXT_TRUNCATED, (_: IpcRendererEvent, msg: { messageId: string; count: number }) => cb(msg)),
-  /** UX-PP-10 流式对话被中断监听 */
+  /** 流式对话被中断监听 */
   onStreamAborted: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_ABORTED, (_: IpcRendererEvent, msg: { messageId: string; reason: string }) => cb(msg)),
   removeStreamListeners: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_START);
@@ -754,13 +754,13 @@ const electronAPI: ElectronAPI = {
   listPersonas: () => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_LIST),
   switchPersona: (name) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_SWITCH, name),
   setPersonaMode: (mode) => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_MODE, mode),
-  /** IX-07 查询当前角色匹配模式 */
+  /** 查询当前角色匹配模式 */
   getPersonaMode: () => ipcRenderer.invoke(IPC_CHANNELS.PERSONA_MODE_GET),
 
-  // 项目（FD-04）
+  // 项目
   listProjects: () => ipcRenderer.invoke(IPC_CHANNELS.PROJECTS_LIST),
 
-  // FD-A1 列出所有会话
+  // 列出所有会话
   listSessions: () => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LIST),
   // 切换到已有会话（更新 Agent 内部状态）
   switchSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, query),
@@ -769,7 +769,7 @@ const electronAPI: ElectronAPI = {
   // 会话分叉：调用内核 Agent.forkSession()，返回新会话名和消息数
   forkSession: (targetSession?: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, targetSession),
 
-  // 仪表盘（FD-03）
+  // 仪表盘
   getDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.DASHBOARD_GET),
   // 感知数据快照（精灵感知面板打开时调用）
   getPerceptionSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.PERCEPTION_GET),
@@ -807,7 +807,7 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.THEME_BROADCAST);
   },
 
-  // H1：配置建议（AutoConfigRefiner 闭环）
+  // 配置建议（AutoConfigRefiner 闭环）
   onSuggestionPush: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH, (_: IpcRendererEvent, suggestion: ConfigSuggestionPayload) => cb(suggestion)),
   removeSuggestionPushListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.SUGGESTION_PUSH);
@@ -815,7 +815,7 @@ const electronAPI: ElectronAPI = {
   acceptSuggestion: (suggestion) => ipcRenderer.invoke(IPC_CHANNELS.SUGGESTION_ACCEPT, suggestion),
   rejectSuggestion: (suggestion) => ipcRenderer.invoke(IPC_CHANNELS.SUGGESTION_REJECT, suggestion),
 
-  // H2：用户画像（UserProfile 闭环）
+  // 用户画像（UserProfile 闭环）
   listUserProfile: () => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_LIST),
   confirmUserProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_CONFIRM, id),
   rejectUserProfile: (id) => ipcRenderer.invoke(IPC_CHANNELS.USER_PROFILE_REJECT, id),
@@ -863,7 +863,7 @@ const electronAPI: ElectronAPI = {
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),
   clearAuditLog: () => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_CLEAR),
 
-  // H3：作品投影（WorkProjectionManager 查看）
+  // 作品投影（WorkProjectionManager 查看）
   listWorkProjections: () => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_LIST),
   showWorkProjection: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_SHOW, filePath),
 
@@ -871,7 +871,7 @@ const electronAPI: ElectronAPI = {
   rendererLog: (level, context, message) => ipcRenderer.send(IPC_CHANNELS.RENDERER_LOG, { level, context, message }),
 };
 
-// C-1：条件保护——测试环境（vitest）无 contextBridge，直接调用会抛错阻断测试
+// 条件保护——测试环境（vitest）无 contextBridge，直接调用会抛错阻断测试
 // sandbox 环境下 contextBridge 始终存在，此条件不影响生产运行
 if (typeof contextBridge !== 'undefined' && contextBridge.exposeInMainWorld) {
   contextBridge.exposeInMainWorld('electronAPI', electronAPI);

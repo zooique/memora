@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Electron 交互层 — 实现 IInteraction
  *
  * 职责：
@@ -36,7 +36,7 @@ export class ElectronInteraction implements IInteraction {
   /**
    * 输出 system 类型消息到渲染进程对话区
    *
-   * QC-INTERACT-01 修复：添加 isDestroyed 守卫，与 errorHandler/windowManager 的守卫模式一致。
+   * 添加 isDestroyed 守卫，与 errorHandler/windowManager 的守卫模式一致。
    * 原实现 `this.mainWindow?.webContents.send()` 仅检查 mainWindow 是否为 null，
    * 但窗口销毁后 mainWindow 引用仍存在（setMainWindow 未清空），webContents.send 会抛错。
    */

@@ -91,7 +91,7 @@ export function clearElement(el: Element): void {
 // ─── 面板加载态 ─────────────────────────────────────────
 
 /**
- * FD-02 在指定容器中显示加载态
+ * 在指定容器中显示加载态
  *
  * 创建居中旋转圆环 + 文字提示，清空容器后插入加载元素。
  * 使用 clearElement 统一清空模式，避免 DOM 操作不一致。
@@ -153,7 +153,7 @@ export function formatTimeAgo(dateStr: string): string {
 }
 
 /**
- * H3 剪枝：统一时间戳格式化（当天 HH:MM / 昨天 HH:MM / 非当天 MM-DD HH:MM）
+ * 剪枝：统一时间戳格式化（当天 HH:MM / 昨天 HH:MM / 非当天 MM-DD HH:MM）
  *
  * 合并 chatPanelManager.formatTimestamp 和 ipcListeners 中的手写时间格式化。
  * 解析失败时返回原始字符串（防御性降级）。
@@ -195,7 +195,7 @@ export function formatTimestamp(isoString: string): string {
 }
 
 /**
- * H3 剪枝：统一时钟格式化（HH:MM）
+ * 剪枝：统一时钟格式化（HH:MM）
  *
  * 合并 ipcListeners 中审计日志的手写 getHours/getMinutes + padStart 逻辑。
  *
@@ -234,7 +234,7 @@ export function setButtonLoading(buttonId: string, loading: boolean, loadingText
 }
 
 /**
- * FD-CONVERGE-LOADING 基于元素引用的按钮 loading 状态设置
+ * 基于元素引用的按钮 loading 状态设置
  *
  * 与 setButtonLoading 功能相同，但接受元素引用而非 ID，
  * 适用于动态创建的按钮（如 profilePanelManager 中的 confirm/reject/delete 按钮）。

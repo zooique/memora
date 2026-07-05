@@ -29,13 +29,13 @@ import {
 
 // types.ts 已声明 window.electronAPI 全局类型，通过 ui.ts → types.js 间接加载。
 
-// ─── 状态（QC-01 质量收敛：模块级变量封装为 State 对象） ───
+// ─── 状态（模块级变量封装为 State 对象） ───
 
 /** 渲染进程核心状态（集中管理，避免全局作用域污染） */
 const State = {
   /** UI 管理器实例（DOMContentLoaded 中初始化，beforeunload 前始终可用） */
   uiManager: null! as UIManager,
-  /** UX-PP-03 最后一条用户输入文本（用于流式错误重试） */
+  /** 最后一条用户输入文本（用于流式错误重试） */
   lastUserInput: '' as string,
   /** 静默模式定时恢复句柄 */
   silentRecoveryTimer: null as number | null,
@@ -45,7 +45,7 @@ const State = {
   onAgentReadyCallback: null as (() => void) | null,
   /** Agent 就绪流程幂等标志 */
   agentReadyHandled: false as boolean,
-  /** IX-03 记忆控制器实例 */
+  /** 记忆控制器实例 */
   memoryController: null as ReturnType<typeof createMemoryController> | null,
 };
 
@@ -55,7 +55,7 @@ const SILENT_RECOVERY_MS = MS_PER_HOUR;
 // ─── 初始化 ────────────────────────────────────────────────
 
 /**
- * P1-UI-8.2：渲染进程启动主流程（提取为独立 async 函数，便于统一捕获异常）
+ * 渲染进程启动主流程（提取为独立 async 函数，便于统一捕获异常）
  *
  * 原内联在 DOMContentLoaded async 回调中，异常会变成 unhandled rejection 导致 UI 空白。
  * 提取后由 DOMContentLoaded 监听器调用，并通过 .catch() 兜底显示错误提示。
@@ -75,7 +75,7 @@ async function bootstrapRenderer(): Promise<void> {
   setupBusinessLogic(State.uiManager, sessionController);
   memoryController.setupMemoryPanel();
   personaController.setupPersonaSelector();
-  // P1-UI-4.2：设置面板 setup 提前到与其他面板同一位置，避免前置异常导致设置面板无事件监听
+  // 设置面板 setup 提前到与其他面板同一位置，避免前置异常导致设置面板无事件监听
   // setupSettingsPanel 仅注册 UI 事件回调（onConfigSave 等），不依赖 setSilentRecoveryCallback
   settingsController.setupSettingsPanel();
 
@@ -85,7 +85,7 @@ async function bootstrapRenderer(): Promise<void> {
       // 切换到记忆面板时刷新记忆列表
       void memoryController.loadMemoryList();
     } else if (panel === 'settings') {
-      // P2-UI-1.2：切换到设置面板时重新加载配置表单，确保与主进程数据一致
+      // 切换到设置面板时重新加载配置表单，确保与主进程数据一致
       // 场景：用户在 chat 通过命令面板/角色切换等途径变更了配置，切回 settings
       //       时表单仍显示旧数据，保存会覆盖主进程的最新配置。
       // 安全性：switchPanel 已在切走 settings 时检查 dirty（有未保存修改会提示用户），
@@ -95,7 +95,7 @@ async function bootstrapRenderer(): Promise<void> {
     }
   });
 
-  // C-2：CommandPaletteManager 已纳入 UIManager 组合体系（构造函数创建 + init + cleanup）
+  // CommandPaletteManager 已纳入 UIManager 组合体系（构造函数创建 + init + cleanup）
   // 不再在 renderer.ts 中单独 new，避免生命周期脱管导致的全局 keydown 监听器泄漏
 
   // ─── 初始化辅助函数（从 initHelpers.ts 导入，闭包访问 State.uiManager/controllers） ───
@@ -108,11 +108,11 @@ async function bootstrapRenderer(): Promise<void> {
   const originalSchedule = scheduleSilentRecovery;
   const wrappedSchedule = (ms: number) => { originalSchedule(ms); syncTimerRef(); };
 
-  // FD-10 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
-  // QC-STATE-01 改用控制器方法替代原模块级导出函数
+  // 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
+  // 改用控制器方法替代原模块级导出函数
   settingsController.setSilentRecoveryCallback(wrappedSchedule);
 
-  // P1-UI-4.2：setupSettingsPanel 已提前到第 82 行与其他面板 setup 同一位置
+  // setupSettingsPanel 已提前到第 82 行与其他面板 setup 同一位置
 
   // 提前赋值 State.onAgentReadyCallback，确保 Agent 在渲染进程启动前就已就绪时也能正确调用
   State.onAgentReadyCallback = () => {
@@ -121,7 +121,7 @@ async function bootstrapRenderer(): Promise<void> {
     State.agentReadyHandled = true;
     // 标记 Agent 就绪，解除发送消息限制
     State.uiManager.setAgentReady(true);
-    // P3-FLOW-10 同步设置面板状态指示器
+    // 同步设置面板状态指示器
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
     void sessionController.loadSessionHistory();
     void memoryController.loadMemoryList();
@@ -135,12 +135,12 @@ async function bootstrapRenderer(): Promise<void> {
     }
   };
 
-  // P1-UI-7.1：IPC 监听器提前注册——在 controllers 创建 + onAgentReadyCallback 赋值后立即注册，
+  // IPC 监听器提前注册——在 controllers 创建 + onAgentReadyCallback 赋值后立即注册，
   // 避免主进程在 DOMContentLoaded 中段（主题读取/回调注册期间）推送的事件丢失。
   // 所有回调依赖（memoryController/settingsController/sessionController）均已在上文创建。
   initIpcListeners(State.uiManager, {
     // 精灵事件：记忆被注意 / 洞察获得 → 仪表盘计数 +1 动画 + 刷新仪表盘
-    // QC-PERF-01：事件密集触发时使用防抖版 loadDashboard，避免频繁 IPC + DOM 操作
+    // 事件密集触发时使用防抖版 loadDashboard，避免频繁 IPC + DOM 操作
     onMemoryNoticed: () => {
       memoryController.pulseCounter('memory-count');
       void memoryController.loadDashboardDebounced();
@@ -189,7 +189,7 @@ async function bootstrapRenderer(): Promise<void> {
     onPresenceChanged: (payload) => {
       memoryController.updatePresenceDisplay(payload);
     },
-    // H3：作品投影更新 → 刷新作品投影面板
+    // 作品投影更新 → 刷新作品投影面板
     onWorkProjectionUpdated: (_payload) => {
       void settingsController.loadWorkProjections();
     },
@@ -200,7 +200,7 @@ async function bootstrapRenderer(): Promise<void> {
     },
   });
 
-  // UX-FD-12 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存
+  // 从 IPC 读取主题配置（真理源为 sprite.json），localStorage 仅作为内联脚本缓存
   // 内联脚本（index.html / float.html）已通过 localStorage 设置了 data-theme 属性（避免页面闪烁），
   // 此处以 sprite.json 为准进行修正，并处理首次迁移（localStorage → sprite.json）
   try {
@@ -208,7 +208,7 @@ async function bootstrapRenderer(): Promise<void> {
     // 防御性检查：config 为 null/undefined 时跳过主题初始化（Agent 未就绪等场景）
     if (config && config.theme) {
       // sprite.json 中有主题配置，以它为准（覆盖 localStorage 缓存，确保一致性）
-      // P3-FLOW-12 config.theme 可能为 'auto'，由 ThemeManager 处理实际主题选择
+      // config.theme 可能为 'auto'，由 ThemeManager 处理实际主题选择
       const currentMode = State.uiManager.getThemeMode();
       if (config.theme !== currentMode) {
         State.uiManager.setTheme(config.theme);
@@ -230,11 +230,11 @@ async function bootstrapRenderer(): Promise<void> {
   }
 
   // ADR-SP-008 同步设置面板单选按钮状态
-  // P3-FLOW-12 使用 getThemeMode 同步三态单选按钮（light/dark/auto）
+  // 使用 getThemeMode 同步三态单选按钮（light/dark/auto）
   State.uiManager.syncThemeRadios(State.uiManager.getThemeMode());
 
   State.uiManager.onThemeChange((theme, source) => {
-    // QC-THEME-01 区分"用户主动切换"与"系统主题变化"
+    // 区分"用户主动切换"与"系统主题变化"
     // source='user'：用户在设置面板主动切换，需持久化到 sprite.json（真理源）
     // source='system'：auto 模式下系统主题变化，仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
     if (source === 'user') {
@@ -246,8 +246,8 @@ async function bootstrapRenderer(): Promise<void> {
     State.uiManager.repaintCanvasOnThemeChange();
   });
 
-  // UX-PP-05 流式错误重试：重新发送上一条用户消息
-  // 提取为独立函数，供气泡内 onErrorRetry 复用（UX-PP-13 后 Toast 不再携带重试按钮）
+  // 流式错误重试：重新发送上一条用户消息
+  // 提取为独立函数，供气泡内 onErrorRetry 复用（Toast 不再携带重试按钮）
   const retryLastUserInput = (): void => {
     if (!State.lastUserInput) return;
     // 重试前检查流式状态，避免流式输出中重复发送
@@ -263,10 +263,10 @@ async function bootstrapRenderer(): Promise<void> {
     window.electronAPI.sendUserInput(State.lastUserInput);
   };
 
-  // P1-UI-7.1：IPC 监听器已提前到 onAgentReadyCallback 赋值后注册（见上文），此处无需重复注册
+  // IPC 监听器已提前到 onAgentReadyCallback 赋值后注册（见上文），此处无需重复注册
 
-  // UX-PP-05 注册气泡内错误重试回调（复用 retryLastUserInput，供错误气泡内"重试"按钮调用）
-  // UX-PP-13 后 Toast 不再携带重试按钮，气泡内重试为唯一主通道
+  // 注册气泡内错误重试回调（复用 retryLastUserInput，供错误气泡内"重试"按钮调用）
+  // Toast 不再携带重试按钮，气泡内重试为唯一主通道
   State.uiManager.onErrorRetry(retryLastUserInput);
 
   // 初始化主动提示 banner 按钮（查看/稍后/静默）
@@ -287,15 +287,15 @@ async function bootstrapRenderer(): Promise<void> {
       window.electronAPI.proactiveReject();
       // 通知主进程进入静默模式
       void window.electronAPI.updateConfig('silentMode', true);
-      // FD-10 持久化恢复时间，页面刷新后也能正确恢复
+      // 持久化恢复时间，页面刷新后也能正确恢复
       const expiresAt = new Date(Date.now() + SILENT_RECOVERY_MS).toISOString();
       void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
-      // IX-06 操作反馈走 toast（静默模式是用户主动触发的状态变更）
+      // 操作反馈走 toast（静默模式是用户主动触发的状态变更）
       State.uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）', 'info');
       // 设置本地定时器：1 小时后自动关闭静默模式（复用 wrappedSchedule 统一逻辑）
       wrappedSchedule(SILENT_RECOVERY_MS);
     },
-    // P3-FLOW-08 不再提醒：进入静默模式并提示用户去设置调整阈值
+    // 不再提醒：进入静默模式并提示用户去设置调整阈值
     onDisable: () => {
       // 用户点击"不再提醒"→ 记录拒绝事件
       window.electronAPI.proactiveReject();
@@ -329,7 +329,7 @@ async function bootstrapRenderer(): Promise<void> {
     }
   });
 
-  // FD-ADD-MEMORY-DISCUSS 记忆→对话双向流动：关闭详情弹窗 → 切换到对话面板 → 预填讨论提示
+  // 记忆→对话双向流动：关闭详情弹窗 → 切换到对话面板 → 预填讨论提示
   State.uiManager.onMemoryDiscuss((memoryName) => {
     State.uiManager.hideModal('memory-detail-modal');
     // 先预填输入框，再切换面板（switchPanel('chat') 会自动聚焦输入框）
@@ -345,7 +345,7 @@ async function bootstrapRenderer(): Promise<void> {
   // 初始化 dropzone 事件监听（dragover/drop/click/change）
   setupSkillDropzone(State.uiManager);
 
-  // C-7：loadLlmConfig 与 getAgentStatus 无依赖关系，并行执行减少首屏阻塞
+  // loadLlmConfig 与 getAgentStatus 无依赖关系，并行执行减少首屏阻塞
   // loadLlmConfig 加载 LLM 配置到设置面板表单；getAgentStatus 查询 Agent 是否就绪
   // 两者并行完成后，getAgentStatus 的后续逻辑根据 ready/error 分支处理
   // 两者均在 try 内，getAgentStatus 通道异常由 catch 统一降级为首次使用引导
@@ -356,7 +356,7 @@ async function bootstrapRenderer(): Promise<void> {
     ]);
     const { ready, error } = agentStatusResult;
 
-    // P3-FLOW-10 更新设置面板 Agent 连接状态指示器
+    // 更新设置面板 Agent 连接状态指示器
     settingsController.updateAgentStatus(ready ? 'ready' : 'error', error ?? undefined);
     if (!ready) {
       // 三种状态：配置缺失 / 初始化失败 / 初始化中
@@ -418,7 +418,7 @@ async function bootstrapRenderer(): Promise<void> {
   } catch (err) {
     // agent-status 通道异常（主进程未就绪或网络错误），降级为首次使用引导
     reportError('init/agent-status', err);
-    // P3-FLOW-10 异常时状态指示器显示 unknown
+    // 异常时状态指示器显示 unknown
     settingsController.updateAgentStatus('unknown', '检测中...');
     showWelcomeMessage(State.uiManager);
     void State.uiManager.switchPanel('settings');
@@ -431,14 +431,14 @@ async function bootstrapRenderer(): Promise<void> {
   State.onAgentReadyCallback();
   void settingsController.loadConfig();
   void memoryController.loadDashboard();
-  // H2 预加载用户画像数据（用户切换到"画像"tab 时即可见）
+  // 预加载用户画像数据（用户切换到"画像"tab 时即可见）
   void settingsController.loadUserProfile();
-  // H3 预加载作品投影数据（用户切换到"作品"tab 时即可见）
+  // 预加载作品投影数据（用户切换到"作品"tab 时即可见）
   void settingsController.loadWorkProjections();
   // M2 预加载审计日志数据（用户切换到"审计"tab 时即可见）
   void settingsController.loadAuditLog();
 
-  // H3 延迟更新学习进度卡片（等待上述异步加载完成后聚合数据）
+  // 延迟更新学习进度卡片（等待上述异步加载完成后聚合数据）
   setTimeout(() => State.uiManager.updateLearningProgress(), 500);
 
   // 三态首次引导：Agent 就绪且首次使用时显示（介绍三态窗口模型 + 快捷键）
@@ -448,7 +448,7 @@ async function bootstrapRenderer(): Promise<void> {
   }
 }
 
-// P1-UI-8.2：DOMContentLoaded 调用 bootstrapRenderer，统一捕获初始化异常避免 UI 空白
+// DOMContentLoaded 调用 bootstrapRenderer，统一捕获初始化异常避免 UI 空白
 document.addEventListener('DOMContentLoaded', () => {
   bootstrapRenderer().catch((err: unknown) => {
     reportError('bootstrapRenderer', err);
@@ -487,7 +487,7 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
     window.clearTimeout(State.initRetryTimer);
     State.initRetryTimer = null;
   }
-  // IX-03 清理脉冲动画定时器（避免操作已销毁的 DOM）
+  // 清理脉冲动画定时器（避免操作已销毁的 DOM）
   State.memoryController?.cleanup();
   State.memoryController = null;
   // 清理 IPC 监听器（防止内存泄漏与重复触发）
@@ -499,7 +499,7 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   window.electronAPI?.removeAgentReadyListener();
   window.electronAPI?.removeFloatUnreadListener();
   window.electronAPI?.removeWindowStateChangedListener();
-  // H1 清理配置建议推送监听器
+  // 清理配置建议推送监听器
   window.electronAPI?.removeSuggestionPushListener();
   // 剪枝：补充清理写入确认监听器（原遗漏，防止内存泄漏）
   window.electronAPI?.removeWriteConfirmationListener();
@@ -530,10 +530,10 @@ function setupBusinessLogic(
     const text = State.uiManager.getUserInput();
     if (!text) return;
 
-    // UX-PP-03 存储最后用户输入，用于流式错误重试
+    // 存储最后用户输入，用于流式错误重试
     State.lastUserInput = text;
 
-    // P2-FLOW-09 跨天检测：当前查看的是历史日期时，自动静默切换到今天的 main 会话
+    // 跨天检测：当前查看的是历史日期时，自动静默切换到今天的 main 会话
     // 设计决策：跨天只是存储层细节，无需打扰用户确认，直接切换即可
     const currentId = sessionController.getCurrentSessionId();
     if (currentId) {
@@ -557,15 +557,15 @@ function setupBusinessLogic(
 
   // 空状态示例问题回调：点击示例问题等同于用户输入并发送
   State.uiManager.onSuggestionClick(async (text) => {
-    // IX-01 流式防护：流式输出中点击示例问题等同于重复发送，应阻止
+    // 流式防护：流式输出中点击示例问题等同于重复发送，应阻止
     if (State.uiManager.isStreaming()) {
       State.uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
       return;
     }
-    // UX-PP-03 存储最后用户输入，用于流式错误重试
+    // 存储最后用户输入，用于流式错误重试
     State.lastUserInput = text;
 
-    // P2-FLOW-09 跨天检测：查看历史日期时静默切换到今天 main 会话
+    // 跨天检测：查看历史日期时静默切换到今天 main 会话
     const currentId = sessionController.getCurrentSessionId();
     if (currentId) {
       const todayPrefix = getLocalDate();
@@ -586,7 +586,7 @@ function setupBusinessLogic(
   });
 
   // 设置停止消息回调
-  // QC-FLOW-04 不调用 stopAllStreaming()——它会同步清空 streamingMessages Map，
+  // 不调用 stopAllStreaming()——它会同步清空 streamingMessages Map，
   // 导致主进程 abort 后异步发送的 SPRITE_STREAM_ABORTED 找不到消息元素，
   // 中断标记无法嵌入气泡。正确流程：abortChat() → 主进程中断 generator →
   // SPRITE_STREAM_ABORTED → markStreamingAborted（正确嵌入标记 + 清理状态）→
@@ -602,7 +602,7 @@ function setupBusinessLogic(
     await sessionController.forkSession();
   });
 
-  // UX-FD-07 日期导航跳转回调：点击日期项后跳转到该日期的对话
+  // 日期导航跳转回调：点击日期项后跳转到该日期的对话
   State.uiManager.onDateNavJump(async (date: string) => {
     try {
       await sessionController.jumpToDate(date);
@@ -611,13 +611,13 @@ function setupBusinessLogic(
       const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
       State.uiManager.renderDateNavList(dates, currentDate);
     } catch (error) {
-      // FD-CONVERGE-01 日期跳转失败时 toast 提示并保持当前视图，避免静默破坏 UI 状态
+      // 日期跳转失败时 toast 提示并保持当前视图，避免静默破坏 UI 状态
       reportError('dateNavJump', error);
       State.uiManager.showToast('日期跳转失败，请稍后重试', 'error');
     }
   });
 
-  // FD-09 日期导航删除回调：删除指定日期的对话记录（二次确认 + 删除后刷新列表）
+  // 日期导航删除回调：删除指定日期的对话记录（二次确认 + 删除后刷新列表）
   State.uiManager.onDateNavDelete(async (date: string) => {
     try {
       // 二次确认（危险操作，避免误删）
@@ -639,20 +639,20 @@ function setupBusinessLogic(
         State.uiManager.renderDateNavList(dates, currentDate);
       }
     } catch (error) {
-      // FD-CONVERGE-01 删除失败时 toast 提示，保持下拉打开供用户重试
+      // 删除失败时 toast 提示，保持下拉打开供用户重试
       reportError('dateNavDelete', error);
       State.uiManager.showToast('删除对话记录失败，请稍后重试', 'error');
     }
   });
 
-  // UX-FD-07 日期导航下拉打开时加载日期列表
+  // 日期导航下拉打开时加载日期列表
   State.uiManager.onDateNavOpen(async () => {
     try {
       const dates = await sessionController.loadDateList();
       const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
       State.uiManager.renderDateNavList(dates, currentDate);
     } catch (error) {
-      // FD-CONVERGE-01 日期列表加载失败时静默降级，不阻塞用户继续对话
+      // 日期列表加载失败时静默降级，不阻塞用户继续对话
       reportError('dateNavOpen', error);
     }
   });

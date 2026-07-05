@@ -61,7 +61,7 @@ export function createSessionController(uiManager: UIManager) {
   /** 当前会话 ID（用于跨日检测和 LLM 工作记忆同步） */
   let currentSessionId = '';
 
-  // UX-FD-07 分页状态
+  // 分页状态
   const PAGE_SIZE = 50;
   /** 当前已加载的消息偏移量（用于当前会话内的分页加载） */
   let currentOffset = 0;
@@ -70,7 +70,7 @@ export function createSessionController(uiManager: UIManager) {
   /** 当前会话的 date + session 参数（用于当前会话内的分页加载） */
   let currentSessionParams: { date: string; session: string } | null = null;
 
-  // UX-FD-07 方案 B 时间流状态
+  // 时间流状态
   /** 已加载的日期集合（避免重复加载同一天的消息） */
   const loadedDates = new Set<string>();
   /** 最早已加载的日期（用于查询更早的日期，null 表示尚未初始化） */
@@ -79,7 +79,7 @@ export function createSessionController(uiManager: UIManager) {
   /**
    * 加载当前会话历史消息（初始加载，最近 PAGE_SIZE 条）
    *
-   * UX-FD-07 使用分页加载 + DocumentFragment 批量插入，
+   * 使用分页加载 + DocumentFragment 批量插入，
    * 首次加载最近 PAGE_SIZE 条消息，有更多时显示"加载更多"按钮，
    * 当前会话无更多消息时检查是否有更早日期，有则显示"加载更早的对话"按钮。
    */
@@ -110,7 +110,7 @@ export function createSessionController(uiManager: UIManager) {
       // 更新分页状态
       currentOffset = messages.length;
       currentTotal = total;
-      // UX-FD-07 方案 B：今日消息数只统计今天 main 会话的消息
+      // 今日消息数只统计今天 main 会话的消息
       // 加载昨天对话时今日消息数为 0，加载今天 main 时为该会话的消息数
       const today = getLocalDate();
       const isTodayMain = loadedSessionId === `${today}-main`;
@@ -126,7 +126,7 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * UX-FD-07 加载更多历史消息（当前会话内分页）
+   * 加载更多历史消息（当前会话内分页）
    *
    * 从当前已加载位置继续加载更早的消息，插入到消息区顶部。
    * 加载完成后更新分页状态，无更多消息时切换为"加载更早的对话"按钮。
@@ -162,7 +162,7 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * UX-FD-07 方案 B 加载更早日期的对话
+   * 加载更早日期的对话
    *
    * 查询比当前最早日期更早的最近一个日期，加载该日期代表会话的全部消息，
    * prepend 到消息区顶部。加载完成后更新 earliestDate，并检查是否还有更早的日期。
@@ -234,7 +234,7 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * UX-FD-07 方案 B 根据分页和日期状态更新加载按钮
+   * 根据分页和日期状态更新加载按钮
    *
    * 优先级：
    * 1. 当前会话还有更多消息 → 显示"加载更多消息"按钮
@@ -320,7 +320,7 @@ export function createSessionController(uiManager: UIManager) {
       currentSessionParams = { date, session: name };
       currentOffset = result.messages.length;
       currentTotal = result.messages.length; // switchSession 返回全部消息，无分页
-      // UX-FD-07 方案 B：今日消息数只统计今天 main 会话的消息
+      // 今日消息数只统计今天 main 会话的消息
       const today = getLocalDate();
       const isTodayMain = date === today && name === 'main';
       uiManager.setMessageCount(isTodayMain ? result.messages.filter((m) => m.role !== 'system').length : 0);
@@ -340,7 +340,7 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * UX-FD-07 加载日期列表（供日期导航下拉使用）
+   * 加载日期列表（供日期导航下拉使用）
    *
    * 查询所有有对话记录的日期，按日期降序排列（最新的在最前）。
    * 始终包含今天日期（即使 0 条消息），确保用户可以跳转到今天的对话。
@@ -381,7 +381,7 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * UX-FD-07 跳转到指定日期的对话
+   * 跳转到指定日期的对话
    *
    * 加载指定日期的代表会话消息，替换当前消息区。
    * 跳转后重置时间流状态，以该日期为起点。
@@ -446,7 +446,7 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * FD-09 删除指定日期的对话记录
+   * 删除指定日期的对话记录
    *
    * 调用主进程 SESSION_DELETE 删除该日期所有子会话，
    * 删除成功后刷新日期导航列表并重置 UI：
@@ -495,7 +495,7 @@ export function createSessionController(uiManager: UIManager) {
   }
 
   /**
-   * FD-09 重命名会话
+   * 重命名会话
    *
    * 调用主进程 SESSION_RENAME 重命名指定会话（文件层面操作，不影响 Agent 内部状态）。
    * 重命名成功后显示 toast 提示，不切换当前视图。

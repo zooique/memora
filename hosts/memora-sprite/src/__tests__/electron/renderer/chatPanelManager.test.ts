@@ -387,7 +387,7 @@ describe('updateStreamingMessage · rAF 节流', () => {
     const el = streamingMessages.get('s1') as HTMLElement;
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
     expect(bubble.querySelector('.mock-markdown')?.textContent).toBe('final text');
-    // scrollToBottom 应在 rAF 回调中调用（QC-FLOW-05）
+    // scrollToBottom 应在 rAF 回调中调用
     expect(host.scrollToBottom).toHaveBeenCalled();
     // 验证保留元素顺序：markdown, recall, tool-call, cursor
     const children = Array.from(bubble.children);
@@ -1076,7 +1076,7 @@ describe('回调注册', () => {
     expect(cb).toHaveBeenCalled();
   });
 
-  // FD-FIX-RETRY-RECOVER：回调执行后按钮应恢复可点击状态
+  // 回调执行后按钮应恢复可点击状态
   it('retry 回调执行后应恢复按钮状态（disabled 移除 + 文案恢复）', async () => {
     const { manager, messagesEl } = createManager();
     const retryCb = vi.fn();
@@ -1103,7 +1103,7 @@ describe('回调注册', () => {
     expect(retryCb).toHaveBeenCalled();
   });
 
-  // FD-FIX-RETRY-RECOVER：async 回调 reject 时按钮也应恢复
+  // async 回调 reject 时按钮也应恢复
   it('retry 回调抛错时按钮也应恢复（finally 兜底）', async () => {
     const { manager, messagesEl } = createManager();
     const retryCb = vi.fn().mockRejectedValue(new Error('重试失败'));

@@ -1,5 +1,5 @@
-﻿/**
- * 建议卡片模块（H1：配置建议闭环）
+/**
+ * 建议卡片模块（配置建议闭环）
  *
  * 职责：
  *   - 显示 AutoConfigRefiner 从对话中提取的配置建议
@@ -128,7 +128,7 @@ export class SuggestionCardManager {
 
     const iconSpan = document.createElement('span');
     iconSpan.className = 'suggestion-card-icon';
-    // 使用 SVG 图标替代 emoji（UX-FD-03）
+    // 使用 SVG 图标替代 emoji
     iconSpan.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
     header.appendChild(iconSpan);
 
@@ -145,7 +145,7 @@ export class SuggestionCardManager {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'suggestion-card-close';
     closeBtn.title = '关闭';
-    // 使用 SVG 图标替代 Unicode 符号（UX-FD-03）
+    // 使用 SVG 图标替代 Unicode 符号
     closeBtn.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
     header.appendChild(closeBtn);
 

@@ -6,7 +6,7 @@
  * - 独立于对话历史，避免污染上下文
  * - 管理 Toast 自动消失定时器，cleanup 时统一清理
  *
- * 设计原则（IX-06）：
+ * 设计原则：
  * - error 类型不自动消失，需用户手动关闭，确保错误被看到
  * - 同时最多显示 5 条，超出时移除最早的，避免堆积
  * - 定时器纳入跟踪集合，cleanup 时统一清理，避免回调在 DOM 销毁后触发
@@ -82,7 +82,7 @@ export class ToastManager {
     content.textContent = message;
     body.appendChild(content);
 
-    // UX-PP-03 重试按钮（仅在提供 onRetry 回调时显示）
+    // 重试按钮（仅在提供 onRetry 回调时显示）
     if (options?.onRetry) {
       // 提取局部常量，避免闭包内控制流分析断裂导致的非空断言
       const onRetry = options.onRetry;
@@ -117,7 +117,7 @@ export class ToastManager {
     // 关闭按钮
     const closeBtn = document.createElement('button');
     closeBtn.className = 'toast-close';
-    // 使用 SVG 图标替代 Unicode 符号（UX-FD-03）
+    // 使用 SVG 图标替代 Unicode 符号
     closeBtn.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
     closeBtn.title = '关闭';
     closeBtn.addEventListener('click', () => this.removeToast(toast));

@@ -348,9 +348,9 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
     });
   });
 
-  // ─── P2-AI-03: SESSION_SWITCH 竞态保护 ─────────────────
+  // ─── SESSION_SWITCH 竞态保护 ─────────────────
 
-  describe('P2-AI-03: SESSION_SWITCH 进行中对话时拒绝', () => {
+  describe('SESSION_SWITCH 进行中对话时拒绝', () => {
     it('有进行中对话时切换会话返回失败', async () => {
       const { registerIpcHandlers } = await import('../../../electron/ipc/handlers.js');
       // 模拟进行中的对话：abortController 非空

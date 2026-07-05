@@ -1,4 +1,4 @@
-﻿/**
+/**
  * JsonlAppender 单元测试（QC-TEST-AUDIT）
  *
  * 覆盖范围：
@@ -164,7 +164,7 @@ describe('JsonlAppender', () => {
     for (let i = 1; i <= 10; i++) {
       appender.append({ idx: i });
       // fire-and-forget 异步：需等待 appendFile + truncateIfNeeded 全部完成
-      // QC-FLAKY-JSONL-V2：用 flush() 精确等待 writeChain 排空
+      // 用 flush() 精确等待 writeChain 排空
       await appender.flush();
     }
     await appender.flush(); // 最终等待，确保最后一次截断完成
@@ -204,10 +204,10 @@ describe('JsonlAppender', () => {
     expect(lines).toHaveLength(5);
   });
 
-  // ─── 串行化写入顺序（QC-FLAKY-JSONL 修复验证） ──────────
+  // ─── 串行化写入顺序 ──────────
 
   it('快速连续 append 应保持写入顺序（串行化写入队列）', async () => {
-    // QC-FLAKY-JSONL：验证 writeChain 串行化后，快速连续 append 不会乱序或丢失
+    // 验证 writeChain 串行化后，快速连续 append 不会乱序或丢失
     const appender = new JsonlAppender({ filePath, maxEntries: 0 });
     // 不等待地连续 append 20 条（模拟高并发写入场景）
     for (let i = 1; i <= 20; i++) {
@@ -227,7 +227,7 @@ describe('JsonlAppender', () => {
   });
 
   it('并发 append + truncate 应无行丢失（串行化修复核心验证）', async () => {
-    // QC-FLAKY-JSONL 核心验证：maxEntries=5 + truncateCheckInterval=1
+    // 核心验证：maxEntries=5 + truncateCheckInterval=1
     // 每次 append 都触发 truncateIfNeeded，串行化前会因 read-modify-write
     // 竞态丢失行，串行化后应完整保留最近 5 条
     const appender = new JsonlAppender({ filePath, maxEntries: 5, truncateCheckInterval: 1 });
@@ -256,7 +256,7 @@ describe('JsonlAppender', () => {
     appender.append({ c: 3 });
 
     expect(appender.getWriteCount()).toBe(3);
-    // QC-FLAKY-JSONL：串行化后需等待 writeChain 排空，避免 afterEach 删除目录后 pending 操作报错
+    // 串行化后需等待 writeChain 排空，避免 afterEach 删除目录后 pending 操作报错
     await appender.flush();
   });
 

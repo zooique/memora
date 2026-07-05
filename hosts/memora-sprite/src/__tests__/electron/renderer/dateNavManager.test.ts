@@ -338,7 +338,7 @@ describe('renderDateNavList · 列表项点击跳转', () => {
 
 // ─── renderDateNavList · 删除按钮 ──────────────────────
 
-describe('renderDateNavList · 删除按钮（FD-09）', () => {
+describe('renderDateNavList · 删除按钮', () => {
   it('非今天日期应渲染删除按钮', () => {
     const manager = createManager();
     manager.renderDateNavList([

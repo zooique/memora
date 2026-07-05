@@ -336,7 +336,7 @@
   margin-left: 4px;
 }
 
-/* ─── H2 用户画像面板 ───────────────────────────────────── */
+/* ─── 用户画像面板 ───────────────────────────────────── */
 /* 画像 tab 内容区：待确认 + 已确认两个分区 */
 
 /* 头部：标题 + 刷新按钮 */
@@ -488,7 +488,7 @@
   cursor: not-allowed;
 }
 
-/* FD-A2 面板加载失败状态（统一错误横幅，记忆/对话/设置面板共享） */
+/* 面板加载失败状态（统一错误横幅，记忆/对话/设置面板共享） */
 .panel-error {
   display: flex;
   align-items: center;
@@ -547,7 +547,7 @@
   color: var(--text-3);
 }
 
-/* ─── H3 作品投影面板 ─── */
+/* ─── 作品投影面板 ─── */
 .work-projection-list-container {
   display: flex;
   flex-direction: column;
@@ -680,7 +680,7 @@
   color: var(--blue);
 }
 
-/* ─── H4 审计日志条目（独立于画像卡片，采用日志条目式紧凑布局） ─── */
+/* ─── 审计日志条目（独立于画像卡片，采用日志条目式紧凑布局） ─── */
 /* audit-item 与 profile-card 视觉区分：审计是只读日志，画像是可操作卡片 */
 .audit-item {
   background: var(--window-bg, var(--bg));

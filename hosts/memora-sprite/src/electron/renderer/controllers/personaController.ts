@@ -36,7 +36,7 @@ export function createPersonaController(uiManager: UIManager) {
         const { switched, name: activeName } = await window.electronAPI.switchPersona(name);
         if (switched && activeName) {
           uiManager.updateActivePersona(activeName);
-          // IX-06 操作反馈走 toast
+          // 操作反馈走 toast
           uiManager.showToast(`已切换到角色：${activeName}`, 'success');
         }
       } catch (error) {
@@ -44,8 +44,8 @@ export function createPersonaController(uiManager: UIManager) {
       }
     });
 
-    // IX-07 角色匹配模式变更：实时持久化 + 更新标签
-    // C-4：IPC 成功后主动同步 badge + 单选按钮状态，确保 UI 与主进程一致；
+    // 角色匹配模式变更：实时持久化 + 更新标签
+    // IPC 成功后主动同步 badge + 单选按钮状态，确保 UI 与主进程一致；
     //       IPC 失败时回滚到旧模式，避免 UI 显示新模式但主进程仍为旧模式
     uiManager.onPersonaModeChange(async (mode: string) => {
       // 回调触发时 settingsPanelManager 已更新 currentPersonaMode 为新模式，
@@ -55,18 +55,18 @@ export function createPersonaController(uiManager: UIManager) {
         const validMode = mode === 'manual' ? 'manual' : 'auto';
         const { set } = await window.electronAPI.setPersonaMode(validMode);
         if (set) {
-          // C-4：防御性同步——确认 badge + 单选按钮状态与持久化值一致
+          // 防御性同步——确认 badge + 单选按钮状态与持久化值一致
           uiManager.updatePersonaModeBadge(validMode);
           uiManager.setPersonaMode(validMode);
           uiManager.showToast(`角色匹配模式已切换为：${mode === 'auto' ? '自动' : '手动'}`, 'success');
         } else {
-          // C-4：IPC 拒绝切换，回滚 UI 到旧模式
+          // IPC 拒绝切换，回滚 UI 到旧模式
           uiManager.updatePersonaModeBadge(previousMode);
           uiManager.setPersonaMode(previousMode);
           uiManager.showToast('角色匹配模式切换失败', 'error');
         }
       } catch (error) {
-        // C-4：IPC 异常，回滚 UI 到旧模式
+        // IPC 异常，回滚 UI 到旧模式
         uiManager.updatePersonaModeBadge(previousMode);
         uiManager.setPersonaMode(previousMode);
         handleIpcError('onPersonaModeChange', error, '设置角色模式失败');
@@ -91,7 +91,7 @@ export function createPersonaController(uiManager: UIManager) {
         uiManager.updateActivePersona(active.name);
       }
 
-      // IX-07 加载当前角色匹配模式并更新标签
+      // 加载当前角色匹配模式并更新标签
       try {
         const { mode } = await window.electronAPI.getPersonaMode();
         uiManager.updatePersonaModeBadge(mode);

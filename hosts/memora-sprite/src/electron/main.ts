@@ -38,9 +38,8 @@ import { scheduleSilentRecovery } from './ipc/configHandlers.js';
 import { errorHandler, ErrorCode } from './errorHandler.js';
 import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import { ELECTRON_DIR } from './esmShim.js';
-// D-04 修复：最小化 IPC 处理器提取到独立模块
 import { registerMinimalIpcHandlers, type AppRuntime } from './ipc/minimalHandlers.js';
-// P2-DESIGN-4 修复：精灵事件桥 + Agent 监听器提取到独立模块
+// 精灵事件桥 + Agent 监听器提取到独立模块
 import { setupSpriteEventListeners } from './spriteEventBridge.js';
 import { setupConfigSuggestionListener, setupWriteConfirmationListener, setupAuditListener } from './agentListeners.js';
 import type { AgentListenerDeps } from './agentListeners.js';
@@ -129,7 +128,7 @@ const appState = {
 };
 
 // ─── 全局异常兜底 ──────────────────────────────────────────
-// P2-GLOBAL-01 注册全局未捕获异常处理器，防止异步错误导致进程静默崩溃
+// 注册全局未捕获异常处理器，防止异步错误导致进程静默崩溃
 // 场景：fire-and-forget 的 Promise（如 void handleUserInput）、
 //       async 回调（如 security.onWriteConfirmation）中的未捕获异常
 process.on('unhandledRejection', (reason) => {
@@ -162,7 +161,7 @@ function setAppRuntime(runtime: AppRuntime | null): void {
   }
 }
 
-// P2-DESIGN-4 修复：精灵事件订阅管理已移至 spriteEventBridge.ts
+// 精灵事件订阅管理已移至 spriteEventBridge.ts
 
 /** 增加未读计数并推送到浮动窗口 */
 function incrementUnreadCount(): void {
@@ -181,7 +180,7 @@ function resetUnreadCount(): void {
 }
 
 /**
- * P2-HIS-01 浮动窗口位置显示器边界校验
+ * 浮动窗口位置显示器边界校验
  *
  * 多显示器场景下，用户可能在扩展显示器上使用浮动窗口，关闭应用后断开外接显示器，
  * 下次启动时持久化的位置已不在任何显示器的工作区内，导致浮动窗口不可见。
@@ -211,7 +210,7 @@ function clampFloatPositionToDisplay(position: { x: number; y: number }): { x: n
   }
 
   // 越界：复位到主显示器默认位置
-  logger.warn(`[P2-HIS-01] 浮动窗口位置越界 (${position.x}, ${position.y})，复位到默认位置`);
+  logger.warn(`浮动窗口位置越界 (${position.x}, ${position.y})，复位到默认位置`);
   return { ...DEFAULT_FLOAT_POSITION };
 }
 
@@ -303,7 +302,7 @@ function classifyInitError(errMessage: string, prefix: string): string {
  * initializeApp 阶段 2 和 reinitAgent 成功后都需要执行相同的初始化步骤：
  * 注入交互层 → 注册完整 IPC → 订阅事件 → 注册监听器 → 更新回调 → 通知渲染进程。
  *
- * 提取为共享函数避免两处 ~40 行重复逻辑漂移（P2-DESIGN-1 第一季）。
+ * 提取为共享函数避免两处 ~40 行重复逻辑漂移。
  *
  * @param activeAgent 已就绪的 Agent 实例
  * @param activeSprite 已就绪的 Sprite 实例
@@ -413,7 +412,7 @@ async function initializeApp(): Promise<void> {
       spriteConfig.floatIconPosition.x === -1
         ? DEFAULT_FLOAT_POSITION // 首次启动使用默认位置
         : spriteConfig.floatIconPosition;
-    // P2-HIS-01 浮动窗口位置显示器边界校验
+    // 浮动窗口位置显示器边界校验
     // 多显示器断开外接时，持久化的位置可能位于已不存在的显示器区域内
     // 校验位置是否在某个显示器的工作区内，越界则复位到主显示器默认位置
     const floatPosition = clampFloatPositionToDisplay(rawFloatPosition);
@@ -436,23 +435,22 @@ async function initializeApp(): Promise<void> {
       onExpandToFull: resetUnreadCount,
     });
 
-    // D-04 修复：最小化 IPC 处理器已在模块加载时注册（见上文 appState 定义处）
     // 不需要在此处再次调用 registerMinimalIpcHandlers()
 
     await appState.windowManager.createWindows();
 
-    // FD-05 恢复窗口边界（上次关闭时的位置和大小）
+    // 恢复窗口边界（上次关闭时的位置和大小）
     const fullWindow = appState.windowManager.getFullWindow();
     if (fullWindow && spriteConfig.windowBounds) {
       const { x, y, width, height } = spriteConfig.windowBounds;
       fullWindow.setBounds({ x, y, width, height });
     }
 
-    // FD-05 监听窗口 resize/move 事件，持久化边界（防抖 500ms）
+    // 监听窗口 resize/move 事件，持久化边界（防抖 500ms）
     if (fullWindow) {
       let boundsSaveTimer: ReturnType<typeof setTimeout> | null = null;
       const saveBounds = () => {
-        // P2-CODE-2 修复：窗口可能已销毁，getBounds 前检查 isDestroyed
+        // 窗口可能已销毁，getBounds 前检查 isDestroyed
         if (fullWindow.isDestroyed()) return;
         const bounds = fullWindow.getBounds();
         saveSpriteConfig({
@@ -467,7 +465,7 @@ async function initializeApp(): Promise<void> {
         if (boundsSaveTimer) clearSafeTimeout(boundsSaveTimer);
         boundsSaveTimer = safeSetTimeout(saveBounds, 500);
       });
-      // P2-CODE-2 修复：窗口销毁时清理防抖定时器，避免定时器触发时操作已销毁窗口
+      // 窗口销毁时清理防抖定时器，避免定时器触发时操作已销毁窗口
       fullWindow.on('closed', () => {
         if (boundsSaveTimer) {
           clearSafeTimeout(boundsSaveTimer);
@@ -477,7 +475,7 @@ async function initializeApp(): Promise<void> {
     }
 
     // 4. 创建托盘
-    // QC-TRAY-01 修复：包裹 try/catch，无系统托盘环境（headless Linux/某些 Wayland 会话/远程桌面）
+    // 包裹 try/catch，无系统托盘环境（headless Linux/某些 Wayland 会话/远程桌面）
     // 下 new Tray() 会抛异常，此处降级为 null（无托盘模式），应用仍可正常运行窗口模式
     const iconPath = await fs
       .access(TRAY_ICON_PATH)
@@ -664,7 +662,6 @@ async function initializeApp(): Promise<void> {
 
 // ─── 最小化 IPC 处理器 ──────────────────────────────────────
 
-// D-04 修复：最小化 IPC 处理器提取到 ipc/minimalHandlers.ts
 // 消除 MinimalIpcState 代理层，appState 结构兼容 MinimalIpcState 接口，
 // 直接传入即可（结构子类型：appState 是 MinimalIpcState 的超集，TS 自动兼容）。
 // minimalHandlers 通过 state.xxx 读写直接作用于 appState，无需 getter/setter 代理。
@@ -722,7 +719,7 @@ app.on('before-quit', async (e) => {
     if (appState.closeSprite) {
       await appState.closeSprite();
     }
-    // P2-E1 修复：显式销毁托盘，清理 pulseTimer（setInterval）避免退出前再触发 setToolTip
+    // 显式销毁托盘，清理 pulseTimer（setInterval）避免退出前再触发 setToolTip
     appState.trayManager?.destroy();
   } catch (error) {
     errorHandler.handle(error, {

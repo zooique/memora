@@ -237,13 +237,13 @@ export function isPatternsPayload(value: unknown): value is PatternsPayload {
   );
 }
 
-/** H3：作品投影更新载荷 */
+/** 作品投影更新载荷 */
 export interface WorkProjectionUpdatedPayload {
   sourcePath: string;
   summary: string;
 }
 
-/** H3：作品投影更新载荷类型守卫 */
+/** 作品投影更新载荷类型守卫 */
 export function isWorkProjectionUpdatedPayload(value: unknown): value is WorkProjectionUpdatedPayload {
   return isObject(value) && typeof value.sourcePath === 'string' && typeof value.summary === 'string';
 }
@@ -477,7 +477,7 @@ function createSpriteEventHandlers(
       }
       callbacks.onPatternsUpdated?.(msg.payload);
     },
-    // H3：作品投影更新 → 刷新作品投影面板
+    // 作品投影更新 → 刷新作品投影面板
     workProjectionUpdated: (msg) => {
       if (!isWorkProjectionUpdatedPayload(msg.payload)) {
         reportError('handleWorkProjectionUpdated', msg.payload);
@@ -504,7 +504,7 @@ export interface IpcListenerCallbacks {
   onRapportUpdated?: (payload: RapportPayload) => void;
   /** Phase 4：对话上下文更新时回调（更新仪表盘上下文卡片） */
   onContextUpdated?: (payload: ContextPayload) => void;
-  /** H3：作品投影更新时回调（刷新作品投影面板） */
+  /** 作品投影更新时回调（刷新作品投影面板） */
   onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
   /** 用户模式更新时回调（刷新洞察面板） */
   onPatternsUpdated?: (payload: PatternsPayload) => void;
@@ -527,7 +527,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     uiManager.startStreaming(msg.messageId);
   });
 
-  // MS-12 召回透明度：在 text chunk 之前到达，注入召回记忆摘要到消息气泡
+  // 召回透明度：在 text chunk 之前到达，注入召回记忆摘要到消息气泡
   window.electronAPI.onStreamRecall((msg) => {
     uiManager.setMemoryRecall(msg.messageId, msg.memories);
   });
@@ -562,7 +562,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
     callbacks.onConversationEnd?.();
   });
 
-  // UX-PP-10 流式对话被中断：在原助手气泡内嵌入中断标记，保留已生成的部分内容
+  // 流式对话被中断：在原助手气泡内嵌入中断标记，保留已生成的部分内容
   // 替代旧的居中系统消息方案（体验割裂，与原气泡内容脱节）
   window.electronAPI.onStreamAborted((msg) => {
     uiManager.markStreamingAborted(msg.messageId, msg.reason);
@@ -603,7 +603,7 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
 
   // ─── 应用错误处理 ─────────────────────────────────────
   window.electronAPI.onAppError((error: SerializedAppError) => {
-    // IX-06 应用级错误走 toast，不污染对话历史
+    // 应用级错误走 toast，不污染对话历史
     uiManager.showToast(error.message, 'error');
     reportError(error.code, error);
   });
@@ -613,13 +613,13 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
    * 监听主进程推送的精灵对话级错误（ipcHandlers.ts 在对话流式输出出错时发送）。
    * 与 app-error（应用级错误）区分：sprite-error 是对话级错误。
    *
-   * UX-PP-13 错误反馈去重：气泡内错误指示器 + 重试按钮为主通道（主动可见），
+   * 错误反馈去重：气泡内错误指示器 + 重试按钮为主通道（主动可见），
    * Toast 仅作辅助提示（无重试按钮，避免与气泡内重试按钮重复）。
    * 控制台日志保留用于排查。原方案同时触发气泡 + Toast（含重试）+ 控制台，
    * 重试入口冗余，用户注意力被分散。
    */
   window.electronAPI.onSpriteError((msg: { text: string }) => {
-    // 主通道：将错误注入到流式消息气泡中，含重试按钮（UX-PP-01 + UX-PP-05）
+    // 主通道：将错误注入到流式消息气泡中，含重试按钮
     uiManager.injectErrorToStreamingMessages(msg.text);
     // 辅助通道：Toast 仅作短暂提示，不携带重试按钮（避免与气泡内重试按钮重复）
     uiManager.showToast(msg.text, 'error');
@@ -639,12 +639,12 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   // ─── Agent 就绪监听 ───────────────────────────────────
   /** 监听主进程 Agent 就绪通知（LLM 配置保存成功后触发） */
   window.electronAPI.onAgentReady(() => {
-    // IX-06 Agent 就绪是操作反馈（LLM 配置保存后触发），走 toast
+    // Agent 就绪是操作反馈（LLM 配置保存后触发），走 toast
     uiManager.showToast('Agent 已就绪，可以开始对话了', 'success');
     callbacks.onAgentReady();
   });
 
-  // ─── H1 配置建议推送（AutoConfigRefiner 闭环） ─────────
+  // ─── 配置建议推送（AutoConfigRefiner 闭环） ─────────
   /**
    * 监听主进程推送的配置建议（来自 AutoConfigRefiner.onConfigSuggestion 回调）
    *

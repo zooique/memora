@@ -118,7 +118,7 @@ export class PerceptionCoordinator {
     const prompts: string[] = [];
 
     // 1-4. 情感基调 + 默契度 + 对话上下文 + 用户模式（链式推导）
-    // BUG-PC-01 修复：每个推导步骤独立 try/catch，单点抛错不阻塞其他推导
+    // 每个推导步骤独立 try/catch，单点抛错不阻塞其他推导
     try {
       const perceptionPrompt = this.deriveAndInjectAffect();
       if (perceptionPrompt) {
@@ -175,7 +175,7 @@ export class PerceptionCoordinator {
    *   - refreshBeforeChat：写路径，有副作用（更新 lastAffect/lastRapport 缓存 + 发射事件 + 注入 prompt）
    *   - getSnapshot：读路径，不修改 PerceptionCoordinator 自身状态，不发射事件，不注入 prompt
    *
-   * BUG-PC-02 修复：header 注释原声称"无副作用"，但实际调用 affectController.updateOptions /
+   * header 注释订正：原声称"无副作用"，但实际调用 affectController.updateOptions /
    * rapportController.updateOptions 修改了子控制器配置。现修正注释为"不修改 Coordinator 自身状态"。
    *
    * @returns 感知快照，Agent 未就绪或无记忆时返回 null

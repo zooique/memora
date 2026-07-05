@@ -15,6 +15,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { createSessionController } from '../../../electron/renderer/controllers/sessionController.js';
 import { UIManager } from '../../../electron/renderer/ui.js';
+// 与源码同源 getLocalDate()，避免 UTC 跨天不一致（同 HC-05/P3-04 修复模式）
+import { getLocalDate } from '../../../sprite/constants.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -333,7 +335,8 @@ describe('sessionController', () => {
       const dates = await controller.loadDateList();
 
       // 今天会自动加入列表（即使无会话），应在最前面
-      const today = new Date().toISOString().slice(0, 10);
+      // 使用本地时区日期（与源码 getLocalDate() 一致），避免 UTC 跨天不一致
+      const today = getLocalDate();
       // 应按日期降序排列
       expect(dates.map((d) => d.date)).toEqual([today, '2026-06-21', '2026-06-20', '2026-06-19']);
       // 今天标记为 isToday

@@ -5,7 +5,7 @@
  *
  * 覆盖范围：
  * - formatTokenCount：token 数格式化（< 1000 直显 / >= 1000 显示为 "X.Xk"）
- * - FD-ADD-REC-CLICK 推荐记忆点击事件委托：
+ * - 推荐记忆点击事件委托：
  *   - 点击推荐记忆项应调用 uiManager.triggerMemoryRecall
  *   - 点击非推荐记忆区域不应触发
  *   - 空 memoryName 不应触发
@@ -56,7 +56,7 @@ describe('formatTokenCount', () => {
   });
 });
 
-// ─── FD-ADD-REC-CLICK 推荐记忆点击事件委托 ────────────────
+// ─── 推荐记忆点击事件委托 ────────────────
 
 /** 创建 mock uiManager（仅包含 createMemoryController 用到的方法） */
 function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<typeof vi.fn> } {
@@ -126,7 +126,7 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     updateContextDisplay: vi.fn(),
     updatePatternsDisplay: vi.fn(),
     updateNarrative: vi.fn(),
-    // C-8：控制器通过 UIManager 门面读取搜索参数，不再直接访问 DOM
+    // 控制器通过 UIManager 门面读取搜索参数，不再直接访问 DOM
     getMemorySearchParams: vi.fn(() => ({ query: '', source: '', sort: 'relevance', timeRange: '' })),
     // memoryController 通过 UIManager 门面调用 renderSourceHealth/setMemoryListState
     renderSourceHealth: vi.fn(),
@@ -136,7 +136,7 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
   return spies as unknown as UIManager & { triggerMemoryRecall: ReturnType<typeof vi.fn> };
 }
 
-describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
+describe('推荐记忆点击事件委托', () => {
   let mockUiManager: ReturnType<typeof createMockUiManager>;
 
   beforeEach(() => {
@@ -149,7 +149,7 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
     `;
 
     // mock window.electronAPI.getDashboard 返回含 suggestions 的数据
-    // FD-ADD-REC-CLICK：suggestions 包含 name 字段，用于跳转
+    // suggestions 包含 name 字段，用于跳转
     window.electronAPI = {
       ...window.electronAPI,
       getDashboard: vi.fn().mockResolvedValue({
@@ -181,8 +181,8 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
     mockUiManager = createMockUiManager();
   });
 
-  // FD-ADD-REC-CLICK 点击事件委托已迁移到 UIManager.initEventListeners（通过 EventTracker 统一管理）
-  // 点击行为测试见 ui.test.ts 的 "FD-ADD-REC-CLICK 推荐记忆点击事件委托" 描述块
+  // 点击事件委托已迁移到 UIManager.initEventListeners（通过 EventTracker 统一管理）
+  // 点击行为测试见 ui.test.ts 的 "推荐记忆点击事件委托" 描述块
 
   it('loadDashboard 应将仪表盘数据委托给 renderDashboardStats 渲染（推荐记忆数据由 Manager 渲染为 li[data-action]）', async () => {
     const controller = createMemoryController(mockUiManager);
@@ -205,9 +205,9 @@ describe('FD-ADD-REC-CLICK 推荐记忆点击事件委托', () => {
   });
 });
 
-// ─── FD-FIX-DELETE-LOADING 删除按钮 loading 保护 ───────
+// ─── 删除按钮 loading 保护 ───────
 
-describe('FD-FIX-DELETE-LOADING 删除按钮 loading 保护', () => {
+describe('删除按钮 loading 保护', () => {
   let mockUiManager: ReturnType<typeof createMockUiManager>;
   /** 捕获 onMemoryDelete 注册的回调，测试中手动触发 */
   let deleteCallback: (() => Promise<void>) | null = null;

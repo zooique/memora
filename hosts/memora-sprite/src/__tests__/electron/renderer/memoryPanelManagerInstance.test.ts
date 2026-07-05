@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 记忆面板管理器实例方法测试（QC-TEST-MEMORY-PANEL）
  *
  * 覆盖范围：
@@ -303,13 +303,13 @@ describe('showMemoryDetail', () => {
 
     expect(document.getElementById('btn-memory-edit')?.classList.contains('hidden')).toBe(false);
     expect(document.getElementById('btn-memory-delete')?.classList.contains('hidden')).toBe(false);
-    // FD-ADD-MEMORY-DISCUSS：讨论按钮在只读模式下可见
+    // 讨论按钮在只读模式下可见
     expect(document.getElementById('btn-memory-discuss')?.classList.contains('hidden')).toBe(false);
     expect(document.getElementById('btn-memory-edit-save')?.classList.contains('hidden')).toBe(true);
     expect(document.getElementById('btn-memory-edit-cancel')?.classList.contains('hidden')).toBe(true);
   });
 
-  // FD-ADD-MEMORY-DISCUSS 讨论按钮在编辑模式下隐藏
+  // 讨论按钮在编辑模式下隐藏
   it('编辑模式应隐藏讨论按钮（与编辑/删除同步）', () => {
     const host = createMockHost();
     const events = new EventTracker();
@@ -524,7 +524,7 @@ describe('回调注册', () => {
     expect(cb).toHaveBeenCalledWith({ source: 'rule', name: '规则', content: '内容' });
   });
 
-  // FD-ADD-CTRL-ENTER：textarea Ctrl+Enter 快捷提交
+  // textarea Ctrl+Enter 快捷提交
   it('textarea 中 Ctrl+Enter 应触发 memoryAddCallback', () => {
     const host = createMockHost();
     const events = new EventTracker();
@@ -612,7 +612,7 @@ describe('回调注册', () => {
     expect(cb).toHaveBeenCalledWith('mem-1', '新内容');
   });
 
-  // FD-ADD-MEMORY-DISCUSS 讨论回调注册
+  // 讨论回调注册
   it('onMemoryDiscuss 应注册讨论回调', () => {
     const host = createMockHost();
     const events = new EventTracker();
@@ -626,7 +626,7 @@ describe('回调注册', () => {
   });
 });
 
-// FD-ADD-MEMORY-DISCUSS ─── 讨论按钮点击 ───────────────────
+// ─── 讨论按钮点击 ───────────────────
 
 describe('讨论按钮点击', () => {
   it('点击讨论按钮应触发 onMemoryDiscuss 回调，携带记忆名称', () => {

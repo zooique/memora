@@ -26,7 +26,7 @@ import { getDuplicateRemovalIds } from '../../../sprite/controllers/memoryHealth
 // 复用 sprite 共享时间常量，避免硬编码 24*60*60*1000
 import { MS_PER_DAY, DASHBOARD_DEBOUNCE_MS } from '../../../sprite/constants.js';
 
-// C-8：getSearchParams 已移至 UIManager.getMemorySearchParams()
+// getSearchParams 已移至 UIManager.getMemorySearchParams()
 // 控制器层不再直接访问 DOM，通过 UIManager 门面读取搜索参数
 
 /**
@@ -177,7 +177,7 @@ export function createMemoryController(uiManager: UIManager) {
 
     // ─── 排序/时间范围变更：触发重新搜索或加载列表 ────────
     const triggerSearchOrReload = () => {
-      // C-8-EXT：通过 UIManager 门面触发搜索框 input 事件，控制器不直接操作 DOM
+      // 通过 UIManager 门面触发搜索框 input 事件，控制器不直接操作 DOM
       const params = uiManager.getMemorySearchParams();
       if (params.query) {
         uiManager.triggerMemorySearchInput();
@@ -265,7 +265,7 @@ export function createMemoryController(uiManager: UIManager) {
         // 图谱联动：搜索命中节点高亮，非命中节点淡化
         uiManager.highlightGraphNodes(items.map((item) => item.id));
       } catch (error) {
-        // IX-02 搜索失败时保持原列表，但给用户可见反馈
+        // 搜索失败时保持原列表，但给用户可见反馈
         if (seq !== searchSeq) return;
         reportError('onMemorySearch', error);
         uiManager.showToast('搜索记忆失败，请重试', 'error');
@@ -319,27 +319,27 @@ export function createMemoryController(uiManager: UIManager) {
 
     // 添加记忆
     uiManager.onMemoryAdd(async (data) => {
-      // FD-08 进行中反馈：禁用按钮防止重复点击
+      // 进行中反馈：禁用按钮防止重复点击
       setButtonLoading('btn-memory-add-confirm', true, '添加中...');
       try {
         await window.electronAPI.addMemory(data);
         uiManager.clearAddMemoryForm();
         uiManager.hideModal('memory-add-modal');
         await loadMemoryList();
-        // IX-06 操作反馈走 toast
+        // 操作反馈走 toast
         uiManager.showToast('记忆已添加', 'success');
       } catch (error) {
         handleIpcError('onMemoryAdd', error, '添加记忆失败');
       } finally {
-        // FD-08 恢复按钮状态
+        // 恢复按钮状态
         setButtonLoading('btn-memory-add-confirm', false);
       }
     });
 
-    // P2-FLOW-08 编辑记忆：复用 MEMORIES_ADD 通道（底层 upsert 语义）
+    // 编辑记忆：复用 MEMORIES_ADD 通道（底层 upsert 语义）
     // id 参数未使用（编辑时通过 dataset 获取 source/name），加下划线前缀
     uiManager.onMemoryEdit(async (_id: string, content: string) => {
-      // C-8-EXT：通过 UIManager 门面读取详情弹窗 dataset，控制器不直接访问 DOM
+      // 通过 UIManager 门面读取详情弹窗 dataset，控制器不直接访问 DOM
       const source = uiManager.getMemoryDetailMeta('memorySource');
       const name = uiManager.getMemoryDetailMeta('memoryName');
       if (!source || !name) return;
@@ -441,7 +441,7 @@ export function createMemoryController(uiManager: UIManager) {
    * 纯代码计算，不增加 LLM 调用。
    */
   async function loadInsights(): Promise<void> {
-    // FD-02 加载态：在 IPC 调用前显示加载指示器（委托 DashboardPanelManager）
+    // 加载态：在 IPC 调用前显示加载指示器（委托 DashboardPanelManager）
     uiManager.showInsightsLoading();
 
     try {
@@ -476,7 +476,7 @@ export function createMemoryController(uiManager: UIManager) {
    * 纯 DOM 操作，不依赖 LLM。
    */
   async function loadHealthDashboard(): Promise<void> {
-    // FD-02 加载态：在 IPC 调用前显示加载指示器（委托 DashboardPanelManager）
+    // 加载态：在 IPC 调用前显示加载指示器（委托 DashboardPanelManager）
     uiManager.showHealthLoading();
 
     try {
@@ -499,7 +499,7 @@ export function createMemoryController(uiManager: UIManager) {
 
   /** 加载记忆列表（支持组合筛选 + 客户端排序/时间过滤） */
   async function loadMemoryList(): Promise<void> {
-    // C-8-EXT：通过 UIManager 门面显示加载态，控制器不直接操作 DOM
+    // 通过 UIManager 门面显示加载态，控制器不直接操作 DOM
     uiManager.setMemoryListState('loading');
 
     try {
@@ -516,7 +516,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.highlightGraphNodes(null);
     } catch (error) {
       reportError('loadMemoryList', error);
-      // C-8-EXT：通过 UIManager 门面显示错误状态（内部查找 #memory-list）
+      // 通过 UIManager 门面显示错误状态（内部查找 #memory-list）
       uiManager.setMemoryListState('error');
       uiManager.showPanelError('memory', '加载记忆列表失败，请检查连接后重试', () => loadMemoryList());
     }
@@ -538,7 +538,7 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
-   * QC-PERF-01 防抖定时器句柄（loadDashboard 高频调用时合并为单次执行）
+   * 防抖定时器句柄（loadDashboard 高频调用时合并为单次执行）
    *
    * memoryNoticed/insightGained 事件密集触发时，避免每次都发起 IPC + DOM 操作，
    * 300ms 内的多次调用合并为一次。
@@ -546,7 +546,7 @@ export function createMemoryController(uiManager: UIManager) {
   let dashboardDebounceTimer: number | null = null;
 
   /**
-   * FD-03 加载完整仪表盘数据
+   * 加载完整仪表盘数据
    *
    * 对齐 CLI /dashboard 命令，在侧边栏仪表盘显示：
    * - 累积事件数 / 主动提示阈值（接近阈值黄色，达到阈值粉色）
@@ -575,7 +575,7 @@ export function createMemoryController(uiManager: UIManager) {
       // 里程碑成就展示（从仪表盘数据实时推导）
       uiManager.renderMilestones(data);
 
-      // H3 仪表盘加载完成后更新学习进度卡片
+      // 仪表盘加载完成后更新学习进度卡片
       uiManager.updateLearningProgress();
 
       // ─── 对话回顾数据（感知面板内） ──────────────
@@ -589,7 +589,7 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
-   * QC-PERF-01 防抖版 loadDashboard
+   * 防抖版 loadDashboard
    *
    * 在事件密集触发时（memoryNoticed/insightGained），300ms 内的多次调用合并为一次。
    * 首次调用（如 Agent 就绪后初始化）立即执行，后续调用延迟合并。
@@ -609,7 +609,7 @@ export function createMemoryController(uiManager: UIManager) {
     loadMemoryList,
     loadDashboard,
     loadHealthDashboard,
-    /** QC-PERF-01 防抖版 loadDashboard（事件密集触发时使用） */
+    /** 防抖版 loadDashboard（事件密集触发时使用） */
     loadDashboardDebounced,
     /** 仪表盘计数 +1 并触发脉冲动画（委托 DashboardPanelManager） */
     pulseCounter: (id: string) => uiManager.pulseCounter(id),
@@ -654,14 +654,14 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updatePresenceDisplay(payload);
     },
     /**
-     * FD-01 更新叙事摘要（委托 DashboardPanelManager）
+     * 更新叙事摘要（委托 DashboardPanelManager）
      *
      * 由渲染器在每次感知数据更新后调用，不需要额外参数。
      */
     updateNarrative: () => {
       uiManager.updateNarrative();
     },
-    /** IX-03 清理防抖定时器（由 renderer.ts beforeunload 调用） */
+    /** 清理防抖定时器（由 renderer.ts beforeunload 调用） */
     cleanup: () => {
       if (dashboardDebounceTimer !== null) {
         window.clearTimeout(dashboardDebounceTimer);

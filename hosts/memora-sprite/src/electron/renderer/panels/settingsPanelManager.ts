@@ -32,17 +32,17 @@ import type {
 export interface SettingsPanelHost {
   /**
    * 设置主题（ADR-SP-008 主题切换）
-   * P3-FLOW-12 支持 'auto' 跟随系统主题
+   * 支持 'auto' 跟随系统主题
    */
   setTheme(theme: 'light' | 'dark' | 'auto'): void;
-  /** 更新角色匹配模式标签（IX-07） */
+  /** 更新角色匹配模式标签 */
   updatePersonaModeBadge(mode: string): void;
-  /** 显示确认对话框（FD-07 取消按钮） */
+  /** 显示确认对话框（取消按钮） */
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
-  /** 显示 toast 通知（P3-FLOW-06 恢复默认按钮反馈） */
+  /** 显示 toast 通知（恢复默认按钮反馈） */
   showToast(message: string, type?: ToastType, duration?: number): void;
   /**
-   * 切换到指定面板（P2-FLOW-10 "稍后配置"按钮使用）
+   * 切换到指定面板（"稍后配置"按钮使用）
    */
   switchPanel(panel: 'chat' | 'memories' | 'settings'): void;
   /**
@@ -65,7 +65,7 @@ export class SettingsPanelManager {
   private cfgLlmApiKey: HTMLInputElement | null;
   private cfgLlmTemperature: HTMLInputElement | null;
 
-  // ─── 设置面板 DOM 元素 - 后台 Provider 配置（H6） ────────
+  // ─── 设置面板 DOM 元素 - 后台 Provider 配置 ────────
   private cfgBgEnabled: HTMLInputElement | null;
   private cfgBgProvider: HTMLInputElement | null;
   private cfgBgModel: HTMLInputElement | null;
@@ -90,7 +90,7 @@ export class SettingsPanelManager {
   /** 缺口 II：文件监听忽略模式（glob 列表，逗号分隔输入） */
   private cfgWatcherIgnore: HTMLInputElement | null;
   private cfgDefaultPersona: HTMLInputElement | null;
-  /** FD-04 项目模式：专注项目选择下拉框 */
+  /** 项目模式：专注项目选择下拉框 */
   private cfgFocusProject: HTMLSelectElement | null;
 
   // ─── 设置面板 DOM 元素 - 快捷键配置（Phase 3.3） ─────────
@@ -104,7 +104,7 @@ export class SettingsPanelManager {
   private cfgShortcutRecallMemory: HTMLInputElement | null;
 
   // ─── 状态 ────────────────────────────────────────────────
-  /** FD-07 设置表单是否有未保存修改（dirty 标志） */
+  /** 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
   /**
    * LLM 表单是否有未保存修改
@@ -124,7 +124,7 @@ export class SettingsPanelManager {
   private llmConfigSaveCallback: ((payload: LlmConfigSavePayload) => void) | null = null;
   /** LLM 连接测试回调 */
   private llmTestCallback: (() => void) | null = null;
-  /** IX-07 角色匹配模式变更回调 */
+  /** 角色匹配模式变更回调 */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
   /** ADR-015 归档模式变更回调（radio change 时即时触发，与主题一样即时生效） */
   private archiveModeChangeCallback: ((mode: 'full' | 'insights-only' | 'manual') => void) | null = null;
@@ -142,7 +142,7 @@ export class SettingsPanelManager {
     this.cfgLlmApiKey = getOptionalElement('cfg-llm-api-key', 'input');
     this.cfgLlmTemperature = getOptionalElement('cfg-llm-temperature', 'input');
 
-    // 设置面板 - 后台 Provider 配置（H6）
+    // 设置面板 - 后台 Provider 配置
     this.cfgBgEnabled = getOptionalElement('cfg-bg-enabled', 'input');
     this.cfgBgProvider = getOptionalElement('cfg-bg-provider', 'input');
     this.cfgBgModel = getOptionalElement('cfg-bg-model', 'input');
@@ -175,13 +175,13 @@ export class SettingsPanelManager {
     this.cfgShortcutQuickRecord = getOptionalElement('cfg-shortcut-quick-record', 'input');
     this.cfgShortcutRecallMemory = getOptionalElement('cfg-shortcut-recall-memory', 'input');
 
-    // P2-UI-4.4：构造完成后统一校验所有字段，HTML ID 拼错时一次性 console.error 报告
+    // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 console.error 报告
     // 避免静默降级导致用户配置静默失效（保存时表单值为 undefined，主进程收到空配置）
     this.validateSettingsElements();
   }
 
   /**
-   * P2-UI-4.4：校验设置面板所有可选元素是否成功获取
+   * 校验设置面板所有可选元素是否成功获取
    *
    * 收集所有 null 字段，统一 console.error 报告（包含字段名和期望 ID），
    * 让开发者快速定位 HTML 与 TS 不同步问题。
@@ -258,7 +258,7 @@ export class SettingsPanelManager {
     const btnReset = getOptionalElement('btn-settings-reset', 'button');
     const btnLlmTest = document.getElementById('btn-llm-test');
 
-    // P2-FLOW-10 "稍后配置"按钮：首次配置时提供退出路径
+    // "稍后配置"按钮：首次配置时提供退出路径
     const btnSkip = getOptionalElement('btn-settings-skip', 'button');
     if (btnSkip) {
       this.events.addEventListener(btnSkip, 'click', () => {
@@ -276,10 +276,10 @@ export class SettingsPanelManager {
     this.initApiKeyToggle('btn-toggle-bg-key', 'cfg-bg-api-key');
     this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
 
-    // H6 后台 Provider 启用/禁用复选框联动
+    // 后台 Provider 启用/禁用复选框联动
     this.initBackgroundProviderToggle();
 
-    // FD-07 监听设置面板所有表单元素的变更，标记 dirty
+    // 监听设置面板所有表单元素的变更，标记 dirty
     const settingsPanel = document.getElementById('panel-settings');
     if (settingsPanel) {
       this.events.addEventListener(settingsPanel, 'input', () => {
@@ -308,7 +308,7 @@ export class SettingsPanelManager {
       if (field) {
         this.events.addEventListener(field, 'input', () => {
           this.llmFormDirty = true;
-          // P3-FLOW-11 字段变更时清除旧的测试结果，避免误导用户认为旧结果仍有效
+          // 字段变更时清除旧的测试结果，避免误导用户认为旧结果仍有效
           this.clearLlmTestResult();
         });
         this.events.addEventListener(field, 'change', () => {
@@ -333,7 +333,7 @@ export class SettingsPanelManager {
       });
     }
 
-    // FD-07 取消按钮：有未保存修改时确认，避免误点丢失修改
+    // 取消按钮：有未保存修改时确认，避免误点丢失修改
     if (btnCancel) {
       this.events.addEventListener(btnCancel, 'click', async () => {
         if (this.settingsFormDirty) {
@@ -352,7 +352,7 @@ export class SettingsPanelManager {
       });
     }
 
-    // P3-FLOW-06 恢复默认按钮：将精灵配置重置为默认值（不影响 LLM 配置）
+    // 恢复默认按钮：将精灵配置重置为默认值（不影响 LLM 配置）
     if (btnReset) {
       this.events.addEventListener(btnReset, 'click', () => {
         void (async () => {
@@ -413,7 +413,7 @@ export class SettingsPanelManager {
       });
     }
 
-    // FD-04 项目模式单选按钮：切换时启用/禁用专注项目下拉框
+    // 项目模式单选按钮：切换时启用/禁用专注项目下拉框
     const projectModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="project-mode"]');
     projectModeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
@@ -423,7 +423,7 @@ export class SettingsPanelManager {
       });
     });
 
-    // IX-07 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
+    // 角色匹配模式单选按钮：切换时实时更新标签 + 触发回调持久化
     const personaModeRadios = document.querySelectorAll<HTMLInputElement>('input[name="persona-mode"]');
     personaModeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
@@ -439,7 +439,7 @@ export class SettingsPanelManager {
     themeRadios.forEach((radio) => {
       this.events.addEventListener(radio, 'change', () => {
         if (radio.checked) {
-          // P3-FLOW-12 支持 'auto' 跟随系统主题
+          // 支持 'auto' 跟随系统主题
           const value = radio.value;
           if (value === 'light' || value === 'dark' || value === 'auto') {
             this.host.setTheme(value);
@@ -691,7 +691,7 @@ export class SettingsPanelManager {
     const input = document.getElementById(inputId);
     if (!(btn instanceof HTMLButtonElement) || !(input instanceof HTMLInputElement)) return;
 
-    // 使用 SVG 图标替代 emoji（UX-FD-03），颜色状态由 data-visible 属性 + CSS 控制
+    // 使用 SVG 图标替代 emoji，颜色状态由 data-visible 属性 + CSS 控制
     const renderIcon = (visible: boolean) => {
       btn.dataset.visible = visible ? 'true' : 'false';
       btn.innerHTML = '<svg class="icon icon-sm"><use href="#icon-eye"/></svg>';
@@ -712,7 +712,7 @@ export class SettingsPanelManager {
   }
 
   /**
-   * H6 后台 Provider 启用/禁用复选框联动
+   * 后台 Provider 启用/禁用复选框联动
    *
    * 当用户勾选/取消"后台 Provider"复选框时，联动启用/禁用后台 Provider 的表单字段。
    * 未启用时字段保持 disabled，避免用户误填。
@@ -734,7 +734,7 @@ export class SettingsPanelManager {
   }
 
   /**
-   * H6 应用后台 Provider 字段启用/禁用状态
+   * 应用后台 Provider 字段启用/禁用状态
    *
    * 与 initBackgroundProviderToggle 的联动逻辑一致，但用于程序化设置（如 loadLlmConfigToForm）。
    */
@@ -758,7 +758,7 @@ export class SettingsPanelManager {
   // ─── 公共 API ───────────────────────────────────────────
 
   /**
-   * FD-07 重置 dirty 标志
+   * 重置 dirty 标志
    *
    * 在 loadConfigToForm / loadLlmConfigToForm 后由 renderer.ts 调用，
    * 因为程序化设置表单值会触发 input/change 事件，需要重置 dirty 标志
@@ -771,7 +771,7 @@ export class SettingsPanelManager {
   }
 
   /**
-   * P2-FLOW-06 检查设置面板是否有未保存修改
+   * 检查设置面板是否有未保存修改
    *
    * 供 UIManager.switchPanel() 在面板切换前调用，
    * 避免用户修改设置后点击导航离开导致修改丢失。
@@ -781,7 +781,7 @@ export class SettingsPanelManager {
   }
 
   /**
-   * P3-FLOW-10 更新 Agent 连接状态指示器
+   * 更新 Agent 连接状态指示器
    *
    * 在设置面板顶部显示 Agent 当前连接状态，帮助用户快速识别配置是否生效。
    * 三种状态：
@@ -826,7 +826,7 @@ export class SettingsPanelManager {
       if (this.cfgLlmApiKey) this.cfgLlmApiKey.value = data.config.apiKey;
       if (this.cfgLlmTemperature) this.cfgLlmTemperature.value = String(data.config.temperature);
 
-      // H6 加载后台 Provider 配置
+      // 加载后台 Provider 配置
       if (data.config.background?.enabled) {
         if (this.cfgBgEnabled) this.cfgBgEnabled.checked = true;
         if (this.cfgBgProvider) this.cfgBgProvider.value = data.config.background.provider;
@@ -871,7 +871,7 @@ export class SettingsPanelManager {
       temperature: this.parseTemperature(this.cfgLlmTemperature?.value),
     };
 
-    // H6 收集后台 Provider 配置
+    // 收集后台 Provider 配置
     if (this.cfgBgEnabled?.checked) {
       llm.background = {
         enabled: true,
@@ -946,7 +946,7 @@ export class SettingsPanelManager {
       radio.checked = radio.value === config.archiveMode;
     });
 
-    // FD-04 项目模式（单选按钮 + 专注项目下拉框）
+    // 项目模式（单选按钮 + 专注项目下拉框）
     const projectModeRadio = document.querySelector<HTMLInputElement>(
       `input[name="project-mode"][value="${config.projectMode}"]`,
     );
@@ -973,7 +973,7 @@ export class SettingsPanelManager {
     }
   }
 
-  /** FD-04 加载项目列表到专注项目下拉框 */
+  /** 加载项目列表到专注项目下拉框 */
   loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void {
     if (!this.cfgFocusProject) return;
 
@@ -1008,13 +1008,13 @@ export class SettingsPanelManager {
     );
     this.currentPersonaMode = modeRadio?.value ?? 'auto';
 
-    // FD-04 收集项目模式
+    // 收集项目模式
     const projectModeRadio = document.querySelector<HTMLInputElement>(
       'input[name="project-mode"]:checked',
     );
     const projectMode = projectModeRadio?.value === 'focus' ? 'focus' : 'smart';
 
-    // UX-FD-12 收集主题（主题即时生效，onConfigSave 不保存 theme，此处仅满足类型契约）
+    // 收集主题（主题即时生效，onConfigSave 不保存 theme，此处仅满足类型契约）
     const themeRadio = document.querySelector<HTMLInputElement>(
       'input[name="theme-mode"]:checked',
     );
@@ -1080,7 +1080,7 @@ export class SettingsPanelManager {
   }
 
   /**
-   * P3-FLOW-11 清除 LLM 测试结果显示
+   * 清除 LLM 测试结果显示
    *
    * 用户修改任一 LLM 字段时调用，避免旧测试结果误导用户认为当前配置已验证。
    */
@@ -1117,7 +1117,7 @@ export class SettingsPanelManager {
   onLlmTest(cb: () => void): void {
     this.llmTestCallback = cb;
   }
-  /** IX-07 注册角色匹配模式变更回调 */
+  /** 注册角色匹配模式变更回调 */
   onPersonaModeChange(cb: (mode: string) => void): void {
     this.personaModeChangeCallback = cb;
   }

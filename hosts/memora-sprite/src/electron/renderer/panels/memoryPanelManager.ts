@@ -31,7 +31,7 @@ export interface MemoryPanelHost {
   showModal(modalId: string): void;
   /** 隐藏模态框 */
   hideModal(modalId: string): void;
-  /** 显示确认对话框（FD-07 取消按钮） */
+  /** 显示确认对话框（取消按钮） */
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
   /** 显示 toast 通知（添加记忆表单校验失败时反馈） */
   showToast(message: string, type?: ToastType, duration?: number): void;
@@ -64,15 +64,15 @@ export function getSourceColorClass(source: string): string {
 export class MemoryPanelManager {
   // ─── 静态常量 ───────────────────────────────────────────
   /**
-   * P3-FLOW-13 记忆列表分页每页大小
+   * 记忆列表分页每页大小
    * 50 条平衡了首屏渲染性能和用户浏览体验，超过时显示"加载更多"按钮
    */
   static readonly MEMORY_PAGE_SIZE = 50;
 
   // ─── 内部状态 ────────────────────────────────────────────
-  /** P3-FLOW-13 完整记忆列表缓存（供分页使用） */
+  /** 完整记忆列表缓存（供分页使用） */
   private allMemories: MemoryListItem[] = [];
-  /** P3-FLOW-13 当前记忆列表页码（从 1 开始） */
+  /** 当前记忆列表页码（从 1 开始） */
   private memoryPage = 1;
   /** 当前搜索关键词（Phase 2：搜索结果高亮，空字符串表示不高亮） */
   private currentSearchQuery = '';
@@ -103,11 +103,11 @@ export class MemoryPanelManager {
   private memoryAddCallback:
     | ((data: { source: string; name: string; content: string }) => void)
     | null = null;
-  /** P2-FLOW-08 记忆编辑回调：携带记忆 ID 和新内容 */
+  /** 记忆编辑回调：携带记忆 ID 和新内容 */
   private memoryEditCallback: ((id: string, content: string) => void) | null = null;
-  /** FD-ADD-MEMORY-DISCUSS 记忆讨论回调：携带记忆名称，切换到对话面板预填讨论提示 */
+  /** 记忆讨论回调：携带记忆名称，切换到对话面板预填讨论提示 */
   private memoryDiscussCallback: ((memoryName: string) => void) | null = null;
-  /** P2-FLOW-08 编辑模式状态：true 时显示保存/取消按钮，隐藏编辑/删除按钮 */
+  /** 编辑模式状态：true 时显示保存/取消按钮，隐藏编辑/删除按钮 */
   private isEditing = false;
 
   // ─── 工具栏/面板交互回调 ────────────────────────────────
@@ -136,7 +136,7 @@ export class MemoryPanelManager {
 // ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
   private pendingCleanupIds: string[] = [];
-  /** P2-UI-3.2：视图切换令牌，防止快速切换时 setTimeout 回调竞态导致空白 */
+  /** 视图切换令牌，防止快速切换时 setTimeout 回调竞态导致空白 */
   private viewSwitchToken = 0;
 
   constructor(
@@ -269,7 +269,7 @@ export class MemoryPanelManager {
     // 记忆面板元素缺失时静默降级
     if (!this.memoryListEl) return;
 
-    // P3-FLOW-13 缓存完整列表供分页使用
+    // 缓存完整列表供分页使用
     this.allMemories = memories;
     this.memoryPage = 1;
 
@@ -321,12 +321,12 @@ export class MemoryPanelManager {
       return;
     }
 
-    // P3-FLOW-13 渲染第一页
+    // 渲染第一页
     this.renderMemoryPage();
   }
 
   /**
-   * P3-FLOW-13 渲染当前页的记忆列表项
+   * 渲染当前页的记忆列表项
    *
    * 分页策略：每页 MEMORY_PAGE_SIZE 条，超出部分通过"加载更多"按钮加载。
    * 避免大量记忆一次性渲染导致 DOM 性能下降。
@@ -357,7 +357,7 @@ export class MemoryPanelManager {
       nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
       item.appendChild(nameEl);
 
-      // 元数据（source 标签 + score + P3-FLOW-14 创建时间）
+      // 元数据（source 标签 + score + 创建时间）
       const metaEl = document.createElement('div');
       metaEl.className = 'meta';
 
@@ -373,7 +373,7 @@ export class MemoryPanelManager {
       scoreEl.textContent = `score: ${mem.score.toFixed(2)}`;
       metaEl.appendChild(scoreEl);
 
-      // P3-FLOW-14 显示创建时间（仅当存在时）
+      // 显示创建时间（仅当存在时）
       if (mem.createdAt) {
         const timeEl = document.createElement('span');
         timeEl.className = 'memory-time';
@@ -390,14 +390,14 @@ export class MemoryPanelManager {
       previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
       item.appendChild(previewEl);
 
-      // QC-22 事件委托：用 data-action + data-memory-id 替代直接 addEventListener
+      // 事件委托：用 data-action + data-memory-id 替代直接 addEventListener
       item.setAttribute('data-action', 'view-memory');
       item.setAttribute('data-memory-id', mem.id);
 
       this.memoryListEl.appendChild(item);
     }
 
-    // P3-FLOW-13 如果还有更多记忆，添加"加载更多"按钮
+    // 如果还有更多记忆，添加"加载更多"按钮
     if (this.allMemories.length > end) {
       const loadMoreBtn = document.createElement('button');
       loadMoreBtn.className = 'memory-load-more btn-secondary';
@@ -576,7 +576,7 @@ export class MemoryPanelManager {
   showMemoryDetail(memory: MemoryDetail): void {
     if (!this.memoryDetailModal) return;
 
-    // P2-FLOW-08 打开详情时退出编辑模式，恢复只读状态
+    // 打开详情时退出编辑模式，恢复只读状态
     this.isEditing = false;
 
     const nameEl = getOptionalElement('memory-detail-name', 'h3');
@@ -600,7 +600,7 @@ export class MemoryPanelManager {
     if (accessedEl) accessedEl.textContent = formatTimeAgo(memory.accessedAt);
     if (contentEl) contentEl.textContent = memory.content;
 
-    // P2-FLOW-08 保存原始内容到 dataset，供编辑取消时恢复
+    // 保存原始内容到 dataset，供编辑取消时恢复
     if (contentEl) contentEl.dataset.originalContent = memory.content;
 
     // 渲染关联记忆列表
@@ -655,11 +655,11 @@ export class MemoryPanelManager {
 
     // 记录当前查看的记忆 ID（供删除/编辑按钮使用）
     this.memoryDetailModal.dataset.memoryId = memory.id;
-    // P2-FLOW-08 保存 source 和 name 到 dataset，供编辑保存时使用
+    // 保存 source 和 name 到 dataset，供编辑保存时使用
     this.memoryDetailModal.dataset.memorySource = memory.source;
     this.memoryDetailModal.dataset.memoryName = memory.name;
 
-    // P2-FLOW-08 切换按钮可见性：只读模式显示编辑/删除，隐藏保存/取消
+    // 切换按钮可见性：只读模式显示编辑/删除，隐藏保存/取消
     this.updateDetailButtons();
     this.host.showModal('memory-detail-modal');
   }
@@ -668,7 +668,7 @@ export class MemoryPanelManager {
 
   // getSourceColorClass 已提取到模块顶层（对齐 formatTokenCount 模式，支持纯函数测试）
 
-  // ─── P2-FLOW-08 记忆编辑模式 ────────────────────────────
+  // ─── 记忆编辑模式 ────────────────────────────
 
   /**
    * 进入编辑模式
@@ -1036,7 +1036,7 @@ export class MemoryPanelManager {
    */
   switchView(mode: 'list' | 'timeline' | 'graph'): void {
     this.viewMode = mode;
-    // P2-UI-3.2：递增视图切换令牌，过期 setTimeout 回调会被忽略
+    // 递增视图切换令牌，过期 setTimeout 回调会被忽略
     const token = ++this.viewSwitchToken;
 
     // 切换视图时隐藏 insights/health，避免显示类型平铺污染
@@ -1061,7 +1061,7 @@ export class MemoryPanelManager {
     // 延迟切换视图（等待退出动画完成）
     const TRANSITION_DURATION = 150; // 与 CSS --transition-base (0.15s) 一致
     setTimeout(() => {
-      // P2-UI-3.2：令牌检查——若期间有新 switchView 调用，本回调作废
+      // 令牌检查——若期间有新 switchView 调用，本回调作废
       if (token !== this.viewSwitchToken) return;
       // 移除所有视图的退出态
       allViews.forEach(v => v.classList.remove('memory-view-exit'));
@@ -1098,7 +1098,7 @@ export class MemoryPanelManager {
 
       // 动画完成后移除进入类
       setTimeout(() => {
-        // P2-UI-3.2：内层回调同样检查令牌
+        // 内层回调同样检查令牌
         if (token !== this.viewSwitchToken) return;
         allViews.forEach(v => v.classList.remove('memory-view-enter'));
       }, TRANSITION_DURATION);
@@ -1251,11 +1251,11 @@ export class MemoryPanelManager {
   onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void {
     this.memoryAddCallback = cb;
   }
-  /** P2-FLOW-08 注册记忆编辑回调 */
+  /** 注册记忆编辑回调 */
   onMemoryEdit(cb: (id: string, content: string) => void): void {
     this.memoryEditCallback = cb;
   }
-  /** FD-ADD-MEMORY-DISCUSS 注册记忆讨论回调（记忆名称 → 切换到对话面板预填讨论提示） */
+  /** 注册记忆讨论回调（记忆名称 → 切换到对话面板预填讨论提示） */
   onMemoryDiscuss(cb: (memoryName: string) => void): void {
     this.memoryDiscussCallback = cb;
   }

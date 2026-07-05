@@ -59,7 +59,7 @@ export class JsonlAppender {
     this.filePath = options.filePath;
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
     this.truncateCheckInterval = options.truncateCheckInterval ?? 100;
-    // P2-INIT-01 构造函数中确保目录存在，防止首次 append 时 ENOENT 静默失败
+    // 构造函数中确保目录存在，防止首次 append 时 ENOENT 静默失败
     // 同步执行：仅在初始化时执行一次，mkdirSync recursive 是幂等的
     mkdirSync(dirname(this.filePath), { recursive: true });
   }
@@ -77,7 +77,7 @@ export class JsonlAppender {
     this.writeCount += 1;
     const shouldCheckTruncate = this.writeCount % this.truncateCheckInterval === 0;
 
-    // QC-FLAKY-JSONL：将 append + truncate 链接到 writeChain 末尾，串行化执行
+    // 将 append + truncate 链接到 writeChain 末尾，串行化执行
     this.writeChain = this.writeChain
       .then(async () => {
         await appendFile(this.filePath, `${JSON.stringify(record)}\n`);

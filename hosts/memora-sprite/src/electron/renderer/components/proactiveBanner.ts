@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 主动提示横幅模块
  *
  * 职责：
@@ -80,7 +80,7 @@ export class ProactiveBanner {
    * - 查看：切换到对话面板（banner 已在对话面板内，仅隐藏 banner）
    * - 稍后：隐藏 banner，等待下次触发
    * - 静默 1 小时：通知主进程进入静默模式
-   * - 不再提醒：进入静默模式并提示用户去设置调整阈值（P3-FLOW-08）
+   * - 不再提醒：进入静默模式并提示用户去设置调整阈值
    *
    * 由 renderer.ts 调用以注册回调。
    */
@@ -100,7 +100,7 @@ export class ProactiveBanner {
         if (action === 'view') handlers.onView();
         else if (action === 'later') handlers.onLater();
         else if (action === 'silent') handlers.onSilent();
-        // P3-FLOW-08 不再提醒：触发 onDisable 回调
+        // 不再提醒：触发 onDisable 回调
         else if (action === 'disable') handlers.onDisable?.();
       });
     });
