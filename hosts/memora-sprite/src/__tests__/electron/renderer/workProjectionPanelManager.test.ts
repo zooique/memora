@@ -156,40 +156,40 @@ describe('render · 计数更新', () => {
 // ─── createProjectionCard · 图标映射 ─────────────────────
 
 describe('createProjectionCard · 文件图标映射', () => {
-  it('.ts 文件应映射为 📘', async () => {
+  it('.ts 文件应映射为 icon-file-ts SVG', async () => {
     window.electronAPI.listWorkProjections = vi.fn().mockResolvedValue([
       createEntry({ sourcePath: '/a/b/c.ts' }),
     ]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.work-projection-icon')!.textContent).toBe('📘');
+    expect(document.querySelector('.work-projection-icon')!.innerHTML).toContain('icon-file-ts');
   });
 
-  it('.py 文件应映射为 🐍', async () => {
+  it('.py 文件应映射为 icon-file-py SVG', async () => {
     window.electronAPI.listWorkProjections = vi.fn().mockResolvedValue([
       createEntry({ sourcePath: '/a/b/c.py' }),
     ]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.work-projection-icon')!.textContent).toBe('🐍');
+    expect(document.querySelector('.work-projection-icon')!.innerHTML).toContain('icon-file-py');
   });
 
-  it('.md 文件应映射为 📝', async () => {
+  it('.md 文件应映射为 icon-file-md SVG', async () => {
     window.electronAPI.listWorkProjections = vi.fn().mockResolvedValue([
       createEntry({ sourcePath: '/a/b/README.md' }),
     ]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.work-projection-icon')!.textContent).toBe('📝');
+    expect(document.querySelector('.work-projection-icon')!.innerHTML).toContain('icon-file-md');
   });
 
-  it('未知扩展名应降级为 📄', async () => {
+  it('未知扩展名应降级为 icon-file-default SVG', async () => {
     window.electronAPI.listWorkProjections = vi.fn().mockResolvedValue([
       createEntry({ sourcePath: '/a/b/c.unknown' }),
     ]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.work-projection-icon')!.textContent).toBe('📄');
+    expect(document.querySelector('.work-projection-icon')!.innerHTML).toContain('icon-file-default');
   });
 });
 

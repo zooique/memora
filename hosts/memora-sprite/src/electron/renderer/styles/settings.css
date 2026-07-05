@@ -599,6 +599,7 @@
 .work-projection-icon {
   font-size: var(--font-lg);
   flex-shrink: 0;
+  line-height: 0; /* SVG 图标消除 inline 元素额外行高 */
 }
 
 .work-projection-filename {

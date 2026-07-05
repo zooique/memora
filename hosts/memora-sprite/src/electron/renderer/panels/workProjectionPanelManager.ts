@@ -10,7 +10,8 @@
  * 设计原则：
  *   - 独立子模块，UIManager 通过组合持有（与 ProfilePanelManager 同模式）
  *   - 事件监听器纳入 EventTracker 跟踪集合，cleanup 时统一清理
- *   - 渲染使用 textContent（防 XSS），不使用 innerHTML
+ *   - 图标使用 innerHTML 赋值静态 SVG 常量（编译期硬编码，无 XSS 风险）
+ *   - 其余动态文本使用 textContent（防 XSS）
  *   - 投影数据来自内核 WorkProjectionManager，通过 IPC 获取
  */
 
@@ -42,32 +43,32 @@ export class WorkProjectionPanelManager {
   /** 是否已初始化（避免重复绑定事件） */
   private initialized = false;
 
-  /** 文件扩展名 → 图标映射（用于卡片头部图标） */
+  /** 文件扩展名 → SVG 图标映射（用于卡片头部图标，统一"文档+文字标签"风格） */
   private static readonly FILE_ICONS: Record<string, string> = {
-    '.ts': '📘',
-    '.tsx': '📘',
-    '.js': '📒',
-    '.jsx': '📒',
-    '.json': '📋',
-    '.md': '📝',
-    '.html': '🌐',
-    '.css': '🎨',
-    '.py': '🐍',
-    '.rs': '🦀',
-    '.go': '🔵',
-    '.sql': '🗄️',
-    '.yaml': '⚙️',
-    '.yml': '⚙️',
-    '.toml': '⚙️',
-    '.gitignore': '🙈',
-    '.env': '🔒',
+    '.ts': '<svg class="icon"><use href="#icon-file-ts"/></svg>',
+    '.tsx': '<svg class="icon"><use href="#icon-file-ts"/></svg>',
+    '.js': '<svg class="icon"><use href="#icon-file-js"/></svg>',
+    '.jsx': '<svg class="icon"><use href="#icon-file-js"/></svg>',
+    '.json': '<svg class="icon"><use href="#icon-file-json"/></svg>',
+    '.md': '<svg class="icon"><use href="#icon-file-md"/></svg>',
+    '.html': '<svg class="icon"><use href="#icon-file-html"/></svg>',
+    '.css': '<svg class="icon"><use href="#icon-file-css"/></svg>',
+    '.py': '<svg class="icon"><use href="#icon-file-py"/></svg>',
+    '.rs': '<svg class="icon"><use href="#icon-file-rs"/></svg>',
+    '.go': '<svg class="icon"><use href="#icon-file-go"/></svg>',
+    '.sql': '<svg class="icon"><use href="#icon-file-sql"/></svg>',
+    '.yaml': '<svg class="icon"><use href="#icon-file-config"/></svg>',
+    '.yml': '<svg class="icon"><use href="#icon-file-config"/></svg>',
+    '.toml': '<svg class="icon"><use href="#icon-file-config"/></svg>',
+    '.gitignore': '<svg class="icon"><use href="#icon-file-git"/></svg>',
+    '.env': '<svg class="icon"><use href="#icon-file-env"/></svg>',
   };
 
   /**
-   * 根据文件路径获取展示图标
+   * 根据文件路径获取展示图标（SVG 字符串）
    *
    * @param filePath 文件路径
-   * @returns 图标字符，兜底返回 📄
+   * @returns SVG 图标字符串，兜底返回默认文件图标
    */
   private static getFileIcon(filePath: string): string {
     for (const ext of Object.keys(WorkProjectionPanelManager.FILE_ICONS)) {
@@ -75,7 +76,8 @@ export class WorkProjectionPanelManager {
         return WorkProjectionPanelManager.FILE_ICONS[ext]!;
       }
     }
-    return '📄';
+    // 兜底：无文字标签的默认文件图标
+    return '<svg class="icon"><use href="#icon-file-default"/></svg>';
   }
 
   /**
@@ -199,7 +201,8 @@ export class WorkProjectionPanelManager {
 
     const icon = document.createElement('span');
     icon.className = 'work-projection-icon';
-    icon.textContent = WorkProjectionPanelManager.getFileIcon(entry.sourcePath);
+    // SVG 字符串来自编译期静态常量 FILE_ICONS，无 XSS 风险
+    icon.innerHTML = WorkProjectionPanelManager.getFileIcon(entry.sourcePath);
     header.appendChild(icon);
 
     // 提取文件名（从完整路径中截取最后一部分）
