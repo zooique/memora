@@ -65,6 +65,9 @@ import type { PerceptionPanelHost } from './panels/perceptionPanelManager.js';
 // 输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
 import { InputAreaManager } from './panels/inputAreaManager.js';
 import type { InputAreaHost } from './panels/inputAreaManager.js';
+// 面板路由器拆分（面板切换 + 导航 + 键盘快捷键 + 窗口控制）
+import { PanelRouter } from './panels/panelRouter.js';
+import type { PanelRouterHost } from './panels/panelRouter.js';
 // 精灵公共常量（Toast 时长已迁移至各 Manager；UIManager 不再直接使用时长常量）
 // TOAST_*_MS 已迁移到 ClipboardManager / SkillDropManager
 // 类型导入（仅用于类型注解，不引入运行时依赖）
@@ -155,7 +158,7 @@ function renderInitFailureToBody(err: unknown): void {
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
-export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PerceptionPanelHost {
+export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PerceptionPanelHost, PanelRouterHost {
   // ─── 静态常量 ───────────────────────────────────────────
   /** 判断"底部附近"的阈值（像素） */
   private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
@@ -230,6 +233,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private skillDropManager: SkillDropManager;
   /** 感知面板管理器（展开/收起 + 快照拉取 + 三块折叠区 + 推荐记忆点击） */
   private perceptionPanelManager: PerceptionPanelManager;
+  /** 面板路由器（面板切换 + 导航 + 键盘快捷键 + 窗口控制） */
+  private panelRouter: PanelRouter;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -350,6 +355,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       this as InputAreaHost,
     );
 
+    // 面板路由器（面板切换 + 导航 + 键盘快捷键 + 窗口控制）
+    this.panelRouter = new PanelRouter(this);
+
     // 初始化 UI
     this.initEventListeners();
     this.memoryPanel.initMemoryPanelListeners();
@@ -374,42 +382,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // ─── 事件监听器管理 ─────────────────────────────────────
 
-  /** 初始化事件监听器 */
+  /** 初始化事件监听器（非路由事件） */
   private initEventListeners(): void {
     // 输入框 keydown/input + 发送按钮 click 事件已委托到 InputAreaManager.init()
     // B2：停止生成按钮（流式态时可见，触发 emitStopMessage）
     this.events.addEventListener(this.btnStop, 'click', this.emitStopMessage.bind(this));
 
-    // 感知面板相关事件（推荐记忆点击 + 状态条 + 关闭按钮 + 三块折叠区）
-    // 已委托到 PerceptionPanelManager.init()
-
-    // 导航事件（侧边栏 .nav-btn 按钮，复用 switchPanel 逻辑）
-    document.querySelectorAll<HTMLElement>('.nav-btn').forEach((btn) => {
-      this.events.addEventListener(btn, 'click', this.handleNavClick.bind(this));
-    });
-
-    // 记忆面板已改为标准 .panel 显示在核心区（与设置面板对齐），不再需要遮罩层和关闭按钮
-
-    // 标题栏按钮（可选，部分布局可能不提供）
-    const btnMinimize = getOptionalElement('btn-minimize', 'button');
-    const btnClose = getOptionalElement('btn-close', 'button');
-    if (btnMinimize) {
-      this.events.addEventListener(btnMinimize, 'click', this.handleMinimize.bind(this));
-    }
-    if (this.btnMaximize) {
-      this.events.addEventListener(this.btnMaximize, 'click', this.handleMaximize.bind(this));
-    }
-    if (btnClose) {
-      this.events.addEventListener(btnClose, 'click', this.handleClose.bind(this));
-    }
-
-    // 窗口状态变更监听（最大化按钮图标切换）
-    window.electronAPI.onWindowStateChanged((msg) => {
-      this.updateMaximizeButton(msg.maximized);
-    });
-
-    // 全局键盘快捷键
-    this.events.addEventListener(document, 'keydown', this.handleGlobalKeydown.bind(this));
+    // 导航事件、窗口控制按钮、全局键盘快捷键 → 委托到 PanelRouter.init()
+    this.panelRouter.init();
 
     // 快速添加记忆按钮（输入工具栏）：打开记忆添加弹窗
     const btnAddMemoryQuick = getOptionalElement('btn-add-memory-quick', 'button');
@@ -419,7 +399,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       });
     }
 
-    // 会话分叉按钮（输入工具栏）：触发 forkSessionCallback（由 renderer.ts 注册调用 sessionController.forkSession）
+    // 会话分叉按钮（输入工具栏）：触发 forkSessionCallback
     const btnForkSession = getOptionalElement('btn-fork-session', 'button');
     if (btnForkSession) {
       this.events.addEventListener(btnForkSession, 'click', () => {
@@ -427,87 +407,12 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       });
     }
 
-    // 标题栏命令面板入口按钮（Ctrl+K 的鼠标入口，与键盘快捷键等效）
+    // 标题栏命令面板入口按钮（Ctrl+K 的鼠标入口）
     const btnCmdk = getOptionalElement('titlebar-cmdk', 'button');
     if (btnCmdk) {
       this.events.addEventListener(btnCmdk, 'click', () => {
         this.commandPaletteManager.open();
       });
-    }
-  }
-
-  /**
-   * 全局键盘快捷键处理
-   *
-   * - Esc：关闭展开的下拉菜单（弹窗由 ModalManager 统一处理，见 modal.ts）
-   * - Ctrl/Cmd + 1/2/3：切换面板（对话/记忆/设置）
-   * - Ctrl/Cmd + .：停止生成（仅流式输出期间）
-   * - Ctrl/Cmd + /：显示快捷键帮助弹窗
-   */
-  private handleGlobalKeydown(e: Event): void {
-    if (!(e instanceof KeyboardEvent)) return;
-    const isMod = e.ctrlKey || e.metaKey;
-
-    // Esc：关闭感知面板/下拉菜单；设置或记忆面板激活时切回对话（弹窗由 ModalManager 统一处理）
-    if (e.key === 'Escape') {
-      // 优先关闭感知面板（感知面板打开时 Escape 关闭面板）
-      const panel = document.getElementById('perception-panel');
-      if (panel?.classList.contains('visible')) {
-        this.perceptionPanelManager.close();
-        e.preventDefault();
-        return;
-      }
-      // 设置或记忆面板激活时，Escape 切回对话面板
-      if (this.state.currentPanel === 'settings' || this.state.currentPanel === 'memories') {
-        void this.switchPanel('chat');
-        e.preventDefault();
-        return;
-      }
-      const openDropdowns = document.querySelectorAll('.dropdown:not(.hidden)');
-      if (openDropdowns.length > 0) {
-        openDropdowns.forEach((dropdown) => dropdown.classList.add('hidden'));
-        e.preventDefault();
-      }
-      return;
-    }
-
-    // Ctrl/Cmd + 数字：切换面板（chat/memories/settings 均走 switchPanel 统一切换）
-    if (isMod && ['1', '2', '3'].includes(e.key)) {
-      const panelMap: Record<string, string> = {
-        '1': 'chat',
-        '2': 'memories',
-        '3': 'settings',
-      };
-      const panel = panelMap[e.key];
-      if (panel) {
-        void this.switchPanel(panel);
-        e.preventDefault();
-      }
-      return;
-    }
-
-    // Ctrl/Cmd + .：停止生成（流式输出期间可用键盘快速中断）
-    if (isMod && e.key === '.') {
-      if (this.state.isStreaming) {
-        this.emitStopMessage();
-        e.preventDefault();
-      }
-      return;
-    }
-
-    // Ctrl/Cmd + /：显示快捷键帮助弹窗
-    // KBD-CONVERGE-P1：走统一 showModal/hideModal 路径，获得 UI-AR-02 焦点保存/恢复
-    if (isMod && e.key === '/') {
-      const modal = document.getElementById('shortcuts-modal');
-      if (modal) {
-        if (modal.classList.contains('hidden')) {
-          this.showModal('shortcuts-modal');
-        } else {
-          this.hideModal('shortcuts-modal');
-        }
-        e.preventDefault();
-      }
-      return;
     }
   }
 
@@ -543,6 +448,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.skillDropManager.cleanup();
     // 清理感知面板管理器的事件监听器
     this.perceptionPanelManager.cleanup();
+    // 清理面板路由器的事件监听器
+    this.panelRouter.cleanup();
     // 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
   }
@@ -680,78 +587,22 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // ─── 面板管理 ─────────────────────────────────────────
 
   /**
-   * 切换面板
+   * 切换面板（委托到 PanelRouter）
    *
-   * 切换前检查当前面板是否有未保存修改，
-   * 有则弹出确认对话框，用户取消则中止切换。
-   *
-   * chat/memories/settings 三个面板均通过 .panel.active 控制显隐，
-   * 替换核心区域内容。切换到 chat 自动聚焦输入框，切换到 memories 聚焦搜索框。
+   * chat/memories/settings 三个面板均通过 .panel.active 控制显隐。
    */
   async switchPanel(panel: string): Promise<void> {
-    // 当前在设置面板且有未保存修改时，确认后再切换
-    if (this.state.currentPanel === 'settings' && this.settingsPanelManager.isDirty()) {
-      const confirmed = await this.showConfirmDialog({
-        title: '离开设置',
-        message: '有未保存的修改，离开后将丢失。确定要离开吗？',
-        confirmText: '离开',
-        danger: true,
-      });
-      if (!confirmed) return;
-      // 用户选择离开，重置 dirty 状态避免后续切换重复提示
-      this.settingsPanelManager.resetFormDirty();
-    }
+    await this.panelRouter.switchPanel(panel);
+  }
 
-    // 记忆面板已改为标准 .panel，与 chat/settings 走统一的面板切换逻辑
+  /** 关闭记忆面板的分析面板（PanelRouterHost 接口） */
+  dismissMemoryAnalysisPanels(): void {
+    this.memoryPanel.dismissAnalysisPanels();
+  }
 
-    // 移除所有面板活动状态
-    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
-
-    // 激活目标面板
-    const panelEl = document.getElementById(`panel-${panel}`);
-    const navBtn = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
-
-    panelEl?.classList.add('active');
-    panelEl?.setAttribute('aria-hidden', 'false');
-    navBtn?.classList.add('active');
-
-    // 将之前激活的面板设为 aria-hidden=true
-    if (this.state.currentPanel && this.state.currentPanel !== panel) {
-      const prevPanel = document.getElementById(`panel-${this.state.currentPanel}`);
-      prevPanel?.setAttribute('aria-hidden', 'true');
-      // 离开记忆面板时，关闭所有分析面板（统计洞察/健康度诊断），
-      // 避免切回记忆时分析面板仍遮挡视图
-      if (this.state.currentPanel === 'memories') {
-        this.memoryPanel.dismissAnalysisPanels();
-      }
-    }
-
-    this.state.currentPanel = panel;
-
-    // 切换面板后重置滚动位置到顶部，避免新面板显示在中间位置
-    // web模式下滚动容器是 documentElement/body，Electron模式下是 main-content
-    requestAnimationFrame(() => {
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
-      const mainContent = document.getElementById('main-content');
-      if (mainContent) mainContent.scrollTop = 0;
-      // 各面板自身也滚动到顶部
-      panelEl?.scrollTo?.(0, 0);
-    });
-
-    // 切换到对话面板时自动聚焦输入框，减少多余点击步骤
-    if (panel === 'chat') {
-      this.inputEl.focus();
-    }
-    // 切换到记忆面板时聚焦搜索框
-    if (panel === 'memories') {
-      const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-      searchInput?.focus();
-    }
-
-    // 面板切换回调：通知外部控制器刷新数据
-    this.panelSwitchCallback?.(panel);
+  /** 关闭感知面板（PanelRouterHost 接口） */
+  closePerceptionPanel(): void {
+    this.perceptionPanelManager.close();
   }
 
   // ─── 输入处理（委托到 InputAreaManager） ────
@@ -827,39 +678,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // ─── 事件处理器 ─
 
-  /**
-   * 侧边栏导航按钮点击处理器
-   *
-   * 点击侧边栏图标切换到对应面板（chat / memory / settings）。
-   * 设计原则（对齐 user_rules "主动可见"）：
-   * - 导航按钮始终可见，不依赖 hover
-   * - 触发回调由 renderer.ts 注册，切换面板状态
-   */
-
-  private handleNavClick(e: Event): void {
-    const target = e.currentTarget;
-    if (!(target instanceof HTMLElement)) return;
-    const panel = target.dataset.panel;
-    if (panel) {
-      // 记忆面板已改为标准 .panel，与 chat/settings 统一走 switchPanel
-      // switchPanel 为 async，void 显式忽略 Promise
-      void this.switchPanel(panel);
-    }
-  }
-
-  // togglePerceptionPanel / closePerceptionPanel 已迁移至 PerceptionPanelManager
-
-  private handleMinimize(): void {
-    window.electronAPI.windowMinimize();
-  }
-
-  private handleMaximize(): void {
-    window.electronAPI.windowMaximize();
-  }
-
-  private handleClose(): void {
-    window.electronAPI.windowClose();
-  }
+  // handleNavClick / handleGlobalKeydown / handleMinimize / handleMaximize / handleClose 已迁移至 PanelRouter
 
   /**
    * 更新最大化按钮图标
@@ -1088,6 +907,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.forkSessionCallback = callback;
   }
 
+  /** 获取面板切换回调（PanelRouterHost 接口） */
+  getPanelSwitchCallback(): ((panel: string) => void) | null {
+    return this.panelSwitchCallback;
+  }
+
+  /** 获取会话分叉回调（PanelRouterHost 接口） */
+  getForkSessionCallback(): (() => void) | null {
+    return this.forkSessionCallback;
+  }
+
   // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitSendMessage() 调用）
   emitSendMessage(): void {
     // Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败）
@@ -1174,6 +1003,26 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 获取当前面板 */
   getCurrentPanel(): string {
     return this.state.currentPanel;
+  }
+
+  /** 设置当前面板（PanelRouterHost 接口） */
+  setCurrentPanel(panel: string): void {
+    this.state.currentPanel = panel;
+  }
+
+  /** 获取输入框元素（PanelRouterHost 接口） */
+  getInputEl(): HTMLTextAreaElement {
+    return this.inputEl;
+  }
+
+  /** 获取停止按钮元素（PanelRouterHost 接口） */
+  getBtnStop(): HTMLButtonElement {
+    return this.btnStop;
+  }
+
+  /** 获取最大化按钮元素（PanelRouterHost 接口） */
+  getBtnMaximize(): HTMLButtonElement | null {
+    return this.btnMaximize;
   }
 
   // ─── 记忆面板 ─ 委托到 MemoryPanelManager ─────────────────
@@ -1696,34 +1545,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // ─── Phase 3.3 第二批：全局快捷键触发处理 ──────────────
 
   /**
-   * 处理 quick-record 快捷键触发
-   *
-   * 用户按下 Ctrl+Shift+M 时调用。
-   * 切换到对话面板并聚焦输入框，让用户立即开始输入。
-   * 主进程已确保完整窗口可见，此处只需聚焦输入框。
+   * 处理 quick-record 快捷键触发（委托到 PanelRouter）
    */
   async handleQuickRecordTrigger(): Promise<void> {
-    await this.switchPanel('chat');
-    // switchPanel 已自动聚焦输入框，此处无需重复
+    await this.panelRouter.handleQuickRecordTrigger();
   }
 
   /**
-   * 处理 recall-memory 快捷键触发
-   *
-   * 用户按下 Ctrl+Shift+R 时调用。
-   * 切换到记忆面板（标准 .panel 切换）并聚焦搜索框，让用户立即开始搜索记忆。
-   * 主进程已确保完整窗口可见，此处只需切换面板并聚焦搜索框。
+   * 处理 recall-memory 快捷键触发（委托到 PanelRouter）
    */
   async handleRecallMemoryTrigger(): Promise<void> {
-    // 通过 switchPanel 走设置面板未保存修改检查，再切换到记忆面板
-    await this.switchPanel('memories');
-    // 选中已有文本，方便用户直接输入新搜索词替换
-    const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-    if (searchInput) {
-      // 选中已有文本，方便用户直接输入新搜索词替换
-      // 不选中时用户需要手动删除或覆盖，降低操作效率
-      searchInput.select();
-    }
+    await this.panelRouter.handleRecallMemoryTrigger();
   }
 
   /**
