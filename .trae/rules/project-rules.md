@@ -115,10 +115,10 @@ chore: 升级 dependencies
 
 | Phase | 目标 | 关键交付物 | 状态 |
 |-------|------|-----------|------|
-| Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 可观测性 + 拓扑可视化 | ✅ 核心完成（拓扑可视化延后） |
+| Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 可观测性 + 拓扑可视化 | ✅ 核心完成（拓扑可视化已由精灵宿主实现：RelationGraphRenderer + 图谱上下文菜单 + 关系编辑弹窗） |
 | Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | ✅ 核心完成（AffectController + RapportController + ContextAwareness + PatternDetector 全链路实现） |
-| Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | ✅ 核心完成（全局快捷键 + 在场状态检测 + 剪贴板三重保护，两项延后） |
-| Phase 4 | 生态准备 | 接入文档 + Web 调试通道 + 技能拖入安装 | ✅ 核心完成（接入文档 v3.2 + Web 调试通道 7 路由 + 技能拖入安装） |
+| Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | ✅ 核心完成（全局快捷键含 quick-record/recall-memory + 在场状态检测 + 剪贴板三重保护；Phase 3.2 第二批 idle detection 延后） |
+| Phase 4 | 生态准备 | 接入文档 + Web 调试通道 + 技能拖入安装 | ✅ 核心完成（接入文档 v3.3 + Web 调试通道 7 路由 + 技能拖入安装） |
 
 ## 8. 规则文件索引
 
