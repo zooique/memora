@@ -246,7 +246,8 @@ export class PartnerInsightsRenderer {
 
       const icon = document.createElement('span');
       icon.className = 'partner-gap-icon';
-      icon.textContent = '💡';
+      // SVG 图标（替代原 emoji 💡，跨平台渲染一致）
+      icon.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
 
       const text = document.createElement('span');
       text.className = 'partner-gap-text';

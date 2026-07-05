@@ -94,6 +94,8 @@
 
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.25);
+  /* 命令面板遮罩（比 modal 更重，强调聚焦） */
+  --palette-backdrop: rgba(0, 0, 0, 0.4);
 
   /* 输入区域高度：chat.css 引用，定义到 base.css 便于统一维护 */
   --input-area-height: 140px;
@@ -281,6 +283,8 @@
 
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.6);
+  /* 命令面板遮罩（深色主题下加重，保证聚焦浮层对比度） */
+  --palette-backdrop: rgba(0, 0, 0, 0.7);
 
   /* 输入区域高度（深色主题与浅色主题一致） */
   --input-area-height: 140px;
@@ -539,7 +543,7 @@ button:active,
   justify-content: center;
   padding-top: 15vh;
   /* 半透明遮罩层 */
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--palette-backdrop);
   backdrop-filter: blur(4px);
   animation: palette-fade-in 0.15s ease;
 }

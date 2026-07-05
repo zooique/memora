@@ -1096,7 +1096,7 @@
   height: 20px;
   border: none;
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--milestone-btn-bg);
   color: var(--milestone-text);
   cursor: pointer;
   display: flex;
@@ -1108,7 +1108,7 @@
 }
 
 .milestone-banner .milestone-close:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--milestone-btn-hover);
 }
 
 /* 关闭按钮内的 SVG 图标尺寸 */

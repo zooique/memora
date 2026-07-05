@@ -669,19 +669,22 @@ describe('loadConfigToForm + collectConfigFromForm', () => {
 // ─── showLlmTestResult ──────────────────────────────────
 
 describe('showLlmTestResult', () => {
-  it('成功应显示 ✓ 连接成功 + 绿色', () => {
+  it('成功应显示 check 图标 + 连接成功 + 绿色', () => {
     const { manager } = createManager();
     manager.showLlmTestResult({ success: true, error: null }, 150);
     const el = document.getElementById('llm-test-result')!;
-    expect(el.textContent).toBe('✓ 连接成功（150ms）');
+    // SVG 图标 + 文本分离：textContent 不含图标
+    expect(el.querySelector('use')?.getAttribute('href')).toBe('#icon-check');
+    expect(el.textContent).toBe(' 连接成功（150ms）');
     expect(el.style.color).toBe('var(--green)');
   });
 
-  it('失败应显示 ✗ 失败 + 排查建议 + 红色', () => {
+  it('失败应显示 close 图标 + 失败 + 排查建议 + 红色', () => {
     const { manager } = createManager();
     manager.showLlmTestResult({ success: false, error: 'API Key 无效' });
     const el = document.getElementById('llm-test-result')!;
-    expect(el.textContent).toContain('✗ 失败：API Key 无效');
+    expect(el.querySelector('use')?.getAttribute('href')).toBe('#icon-close');
+    expect(el.textContent).toContain('失败：API Key 无效');
     expect(el.textContent).toContain('排查建议');
     expect(el.style.color).toBe('var(--red)');
   });

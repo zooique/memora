@@ -16,12 +16,15 @@ import type { ToastType, ToastOptions } from '../types.js';
 // 复用 sprite 层共享常量，避免多处硬编码 Toast 时长导致口径不一致
 import { TOAST_LONG_MS } from '../../../sprite/constants.js';
 
-/** Toast 类型与图标映射 */
+/**
+ * Toast 类型与图标映射
+ * 使用 SVG sprite 引用，跨平台渲染一致（替代原 Unicode 符号 ✓✗⚠ℹ）
+ */
 const TOAST_ICONS: Record<ToastType, string> = {
-  success: '✓',
-  error: '✗',
-  warning: '⚠',
-  info: 'ℹ',
+  success: '<svg class="icon"><use href="#icon-check"/></svg>',
+  error: '<svg class="icon"><use href="#icon-close"/></svg>',
+  warning: '<svg class="icon"><use href="#icon-warning"/></svg>',
+  info: '<svg class="icon"><use href="#icon-info"/></svg>',
 };
 
 /**
@@ -66,10 +69,10 @@ export class ToastManager {
     toast.className = `toast ${type}`;
     toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
 
-    // 图标
+    // 图标（SVG sprite，跨平台一致）
     const icon = document.createElement('span');
     icon.className = 'toast-icon';
-    icon.textContent = TOAST_ICONS[type];
+    icon.innerHTML = TOAST_ICONS[type];
     toast.appendChild(icon);
 
     // 内容 + 操作按钮容器

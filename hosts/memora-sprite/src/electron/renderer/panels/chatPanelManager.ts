@@ -1264,7 +1264,9 @@ export class ChatPanelManager {
     // 嵌入中断标记到气泡底部
     const abortedDiv = document.createElement('div');
     abortedDiv.className = 'stream-aborted';
-    abortedDiv.textContent = `⏹ 已中断：${reason}（已保留上方生成内容）`;
+    // SVG 图标 + 文本（使用 createTextNode 避免 reason 中潜在特殊字符的 XSS 风险）
+    abortedDiv.innerHTML = '<svg class="icon"><use href="#icon-stop"/></svg>';
+    abortedDiv.appendChild(document.createTextNode(` 已中断：${reason}（已保留上方生成内容）`));
     bubble.appendChild(abortedDiv);
 
     // 添加复制按钮，允许用户复制已生成的部分内容
@@ -1341,7 +1343,9 @@ export class ChatPanelManager {
     // 添加错误指示器到气泡底部
     const errorDiv = document.createElement('div');
     errorDiv.className = 'stream-error';
-    errorDiv.textContent = `⚠️ ${errorText}`;
+    // SVG 图标 + 文本（使用 createTextNode 避免 errorText 中潜在特殊字符的 XSS 风险）
+    errorDiv.innerHTML = '<svg class="icon"><use href="#icon-warning"/></svg>';
+    errorDiv.appendChild(document.createTextNode(` ${errorText}`));
     bubble.appendChild(errorDiv);
 
     // 错误气泡内的"重试"按钮

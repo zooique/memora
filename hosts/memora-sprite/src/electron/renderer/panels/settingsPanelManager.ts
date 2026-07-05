@@ -1084,12 +1084,16 @@ export class SettingsPanelManager {
 
     if (result.success) {
       const timeHint = elapsedMs !== undefined ? `（${elapsedMs}ms）` : '';
-      resultEl.textContent = `✓ 连接成功${timeHint}`;
+      // SVG 图标（静态常量）+ 动态文本（createTextNode 转义，防止 error 文本注入）
+      resultEl.innerHTML = '<svg class="icon"><use href="#icon-check"/></svg>';
+      resultEl.appendChild(document.createTextNode(` 连接成功${timeHint}`));
       resultEl.style.color = 'var(--green)';
     } else {
       // 失败时补充排查建议，引导用户修复而非仅显示错误
       const hint = '\n排查建议：检查 API Key 是否正确 / baseUrl 是否可达 / model 名称是否支持';
-      resultEl.textContent = `✗ 失败：${result.error ?? '未知错误'}${hint}`;
+      // SVG 图标（静态常量）+ 动态文本（createTextNode 转义，防止 error 文本注入）
+      resultEl.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
+      resultEl.appendChild(document.createTextNode(` 失败：${result.error ?? '未知错误'}${hint}`));
       resultEl.style.color = 'var(--red)';
     }
   }

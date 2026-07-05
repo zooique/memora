@@ -440,7 +440,7 @@ export class MemoryPanelManager {
       const empty = document.createElement('div');
       empty.className = 'timeline-empty';
       empty.innerHTML = `
-        <span class="empty-icon">⏳</span>
+        <span class="empty-icon"><svg class="icon"><use href="#icon-hourglass"/></svg></span>
         <span class="empty-title">暂无时间线数据</span>
         <span class="empty-subtitle">开始对话后，记忆将按时间自动组织</span>
       `;

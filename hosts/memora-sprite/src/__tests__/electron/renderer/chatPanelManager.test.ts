@@ -555,7 +555,9 @@ describe('showTruncationNotice', () => {
     const el = streamingMessages.get('s1') as HTMLElement;
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
     const notice = bubble.querySelector('.truncation-notice');
-    expect(notice?.textContent).toBe('⚠️ 上下文已截断，部分历史已省略');
+    // SVG 图标 + 文本分离：textContent 不含图标，仅含文本部分
+    expect(notice?.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
+    expect(notice?.textContent).toBe(' 上下文已截断，部分历史已省略');
     // 应插入到 bubble 顶部（firstChild）
     expect(bubble.firstChild).toBe(notice);
   });
@@ -569,7 +571,8 @@ describe('showTruncationNotice', () => {
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
     const notices = bubble.querySelectorAll('.truncation-notice');
     expect(notices.length).toBe(1);
-    expect(notices[0]?.textContent).toBe('⚠️ 上下文已截断 3 次，部分历史已省略');
+    expect(notices[0]?.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
+    expect(notices[0]?.textContent).toBe(' 上下文已截断 3 次，部分历史已省略');
   });
 });
 
@@ -815,7 +818,9 @@ describe('markStreamingAborted', () => {
     expect(msg.querySelector('.cursor')).toBeNull();
     expect(msg.querySelector('.thinking-phase')).toBeNull();
     const aborted = msg.querySelector('.stream-aborted');
-    expect(aborted?.textContent).toBe('⏹ 已中断：用户手动停止（已保留上方生成内容）');
+    // SVG 图标 + 文本分离：textContent 不含图标
+    expect(aborted?.querySelector('use')?.getAttribute('href')).toBe('#icon-stop');
+    expect(aborted?.textContent).toBe(' 已中断：用户手动停止（已保留上方生成内容）');
     // 复制按钮应被添加（_addCopyButtonToMessage）
     expect(msg.querySelector('[data-action="copy"]')).toBeTruthy();
   });
@@ -841,7 +846,7 @@ describe('markStreamingAborted', () => {
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
     const prior = document.createElement('div');
     prior.className = 'stream-aborted';
-    prior.textContent = '⏹ 已中断：prior（已保留上方生成内容）';
+    prior.textContent = '已中断：prior（已保留上方生成内容）';
     bubble.appendChild(prior);
     manager.markStreamingAborted('s1', '第二次停止');
     // 不应重复嵌入
@@ -868,7 +873,9 @@ describe('injectErrorToStreamingMessages', () => {
     manager.injectErrorToStreamingMessages('网络中断');
     const msg = messagesEl.querySelector('.message') as HTMLElement;
     const error = msg.querySelector('.stream-error');
-    expect(error?.textContent).toBe('⚠️ 网络中断');
+    // SVG 图标 + 文本分离：textContent 不含图标
+    expect(error?.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
+    expect(error?.textContent).toBe(' 网络中断');
     const retryBtn = msg.querySelector('.stream-error-retry');
     expect(retryBtn?.getAttribute('data-action')).toBe('retry');
     expect(retryBtn?.textContent).toBe('重试');

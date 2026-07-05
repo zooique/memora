@@ -104,28 +104,29 @@ describe('showToast · FIFO 限制', () => {
 // ─── showToast · 4 类型图标 ─────────────────────────────
 
 describe('showToast · 类型图标', () => {
-  it('success 应显示 ✓ 图标', () => {
+  // SVG sprite 替代原 Unicode 符号（✓✗⚠ℹ），通过 use href 断言图标引用
+  it('success 应显示 check 图标', () => {
     const manager = createManager();
     manager.showToast('成功', 'success');
-    expect(getLastToast().querySelector('.toast-icon')!.textContent).toBe('✓');
+    expect(getLastToast().querySelector('.toast-icon use')!.getAttribute('href')).toBe('#icon-check');
   });
 
-  it('error 应显示 ✗ 图标', () => {
+  it('error 应显示 close 图标', () => {
     const manager = createManager();
     manager.showToast('错误', 'error');
-    expect(getLastToast().querySelector('.toast-icon')!.textContent).toBe('✗');
+    expect(getLastToast().querySelector('.toast-icon use')!.getAttribute('href')).toBe('#icon-close');
   });
 
-  it('warning 应显示 ⚠ 图标', () => {
+  it('warning 应显示 warning 图标', () => {
     const manager = createManager();
     manager.showToast('警告', 'warning');
-    expect(getLastToast().querySelector('.toast-icon')!.textContent).toBe('⚠');
+    expect(getLastToast().querySelector('.toast-icon use')!.getAttribute('href')).toBe('#icon-warning');
   });
 
-  it('info（默认）应显示 ℹ 图标', () => {
+  it('info（默认）应显示 info 图标', () => {
     const manager = createManager();
     manager.showToast('提示'); // 默认 info
-    expect(getLastToast().querySelector('.toast-icon')!.textContent).toBe('ℹ');
+    expect(getLastToast().querySelector('.toast-icon use')!.getAttribute('href')).toBe('#icon-info');
   });
 });
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 消息装饰器模块测试（QC-TEST-EXTRACTED）
  *
  * 覆盖范围：
@@ -254,14 +254,17 @@ describe('showTruncationNotice', () => {
     const bubble = createBubble();
     showTruncationNotice(bubble, 1);
     const notice = bubble.querySelector('.truncation-notice');
-    expect(notice!.textContent).toBe('⚠️ 上下文已截断，部分历史已省略');
+    // SVG 图标 + 文本分离：textContent 不含图标
+    expect(notice!.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
+    expect(notice!.textContent).toBe(' 上下文已截断，部分历史已省略');
   });
 
   it('count>1 时应显示具体次数', () => {
     const bubble = createBubble();
     showTruncationNotice(bubble, 3);
     const notice = bubble.querySelector('.truncation-notice');
-    expect(notice!.textContent).toBe('⚠️ 上下文已截断 3 次，部分历史已省略');
+    expect(notice!.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
+    expect(notice!.textContent).toBe(' 上下文已截断 3 次，部分历史已省略');
   });
 
   it('count=2 时应显示次数', () => {

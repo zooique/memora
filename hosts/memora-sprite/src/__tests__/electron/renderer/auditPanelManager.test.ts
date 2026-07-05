@@ -183,39 +183,40 @@ describe('render · 计数更新', () => {
 });
 
 describe('render · 事件类型符号映射', () => {
-  it('path-allow 应映射为 ✓', async () => {
+  // SVG sprite 替代原 Unicode 符号（✓✗⚑◯↩），通过 use href 断言图标引用
+  it('path-allow 应映射为 check 图标', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'path-allow' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.audit-item-name')!.textContent).toContain('✓');
+    expect(document.querySelector('.audit-item-name use')!.getAttribute('href')).toBe('#icon-check');
   });
 
-  it('path-deny 应映射为 ✗', async () => {
+  it('path-deny 应映射为 close 图标', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'path-deny' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.audit-item-name')!.textContent).toContain('✗');
+    expect(document.querySelector('.audit-item-name use')!.getAttribute('href')).toBe('#icon-close');
   });
 
-  it('write-confirm 应映射为 ⚑', async () => {
+  it('write-confirm 应映射为 flag 图标', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'write-confirm' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.audit-item-name')!.textContent).toContain('⚑');
+    expect(document.querySelector('.audit-item-name use')!.getAttribute('href')).toBe('#icon-flag');
   });
 
-  it('write-auto 应映射为 ◯', async () => {
+  it('write-auto 应映射为 circle 图标', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'write-auto' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.audit-item-name')!.textContent).toContain('◯');
+    expect(document.querySelector('.audit-item-name use')!.getAttribute('href')).toBe('#icon-circle');
   });
 
-  it('write-decline 应映射为 ↩', async () => {
+  it('write-decline 应映射为 undo 图标', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'write-decline' })]);
     const manager = createManager();
     await manager.load();
-    expect(document.querySelector('.audit-item-name')!.textContent).toContain('↩');
+    expect(document.querySelector('.audit-item-name use')!.getAttribute('href')).toBe('#icon-undo');
   });
 
   it('未知类型应降级为 ?', async () => {
@@ -249,7 +250,7 @@ describe('render · 元信息拼接', () => {
     expect(document.querySelector('.audit-item-content')!.textContent).toBe('—');
   });
 
-  it('应使用 textContent 防 XSS', async () => {
+  it('应使用 createTextNode 防 XSS（SVG 图标 + 动态文本分离）', async () => {
     const malicious = '<img src=x onerror=alert(1)>';
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([
       createEntry({ type: malicious, path: malicious }),
@@ -257,6 +258,7 @@ describe('render · 元信息拼接', () => {
     const manager = createManager();
     await manager.load();
     const nameEl = document.querySelector('.audit-item-name')!;
+    // SVG 通过 innerHTML 注入（静态常量），动态文本通过 createTextNode 转义，恶意 HTML 不会被渲染为元素
     expect(nameEl.querySelector('img')).toBeNull();
   });
 });

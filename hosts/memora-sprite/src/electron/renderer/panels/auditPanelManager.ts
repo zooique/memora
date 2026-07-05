@@ -159,7 +159,9 @@ export class AuditPanelManager {
 
       const nameEl = document.createElement('div');
       nameEl.className = 'audit-item-name';
-      nameEl.textContent = `${typeSymbol} ${entry.type} · ${timeStr}`;
+      // SVG 图标（静态常量，无 XSS 风险）+ 动态文本（通过 createTextNode 转义，防止 entry.type/timeStr 注入）
+      nameEl.innerHTML = typeSymbol;
+      nameEl.appendChild(document.createTextNode(` ${entry.type} · ${timeStr}`));
 
       const contentEl = document.createElement('div');
       contentEl.className = 'audit-item-content';
@@ -189,18 +191,18 @@ export class AuditPanelManager {
   }
 
   /**
-   * 将审计事件类型映射为展示符号
+   * 将审计事件类型映射为展示符号（SVG sprite 引用，跨平台一致）
    *
    * @param type 事件类型
-   * @returns 对应的符号字符
+   * @returns 对应的 SVG 图标字符串（含 <svg><use> 结构）
    */
   private getTypeSymbol(type: string): string {
     switch (type) {
-      case 'path-allow': return '✓';
-      case 'path-deny': return '✗';
-      case 'write-confirm': return '⚑';
-      case 'write-auto': return '◯';
-      case 'write-decline': return '↩';
+      case 'path-allow': return '<svg class="icon"><use href="#icon-check"/></svg>';
+      case 'path-deny': return '<svg class="icon"><use href="#icon-close"/></svg>';
+      case 'write-confirm': return '<svg class="icon"><use href="#icon-flag"/></svg>';
+      case 'write-auto': return '<svg class="icon"><use href="#icon-circle"/></svg>';
+      case 'write-decline': return '<svg class="icon"><use href="#icon-undo"/></svg>';
       default: return '?';
     }
   }

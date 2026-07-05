@@ -154,7 +154,10 @@ export function showTruncationNotice(bubble: Element, count: number): void {
   }
 
   // 更新提示文案（count > 1 时显示次数）
-  notice.textContent = count > 1
-    ? `⚠️ 上下文已截断 ${count} 次，部分历史已省略`
-    : '⚠️ 上下文已截断，部分历史已省略';
+  // SVG 图标 + 文本（替代原 emoji ⚠️，跨平台渲染一致）
+  const text = count > 1
+    ? ` 上下文已截断 ${count} 次，部分历史已省略`
+    : ' 上下文已截断，部分历史已省略';
+  notice.innerHTML = '<svg class="icon"><use href="#icon-warning"/></svg>';
+  notice.appendChild(document.createTextNode(text));
 }

@@ -623,7 +623,7 @@ export class DashboardPanelManager {
     const milestonesList = this.milestonesListEl;
     if (!milestonesDisplay || !milestonesList) return;
 
-    // 收集已达成的里程碑
+    // 收集已达成的里程碑（icon 字段存储 SVG sprite 引用字符串，渲染时通过 innerHTML 注入）
     const milestones: Array<{ label: string; icon: string }> = [];
 
     // 记忆量级里程碑（百/千/万/十万）
@@ -631,7 +631,7 @@ export class DashboardPanelManager {
       const magnitude = Math.floor(Math.log10(data.total));
       milestones.push({
         label: MAGNITUDE_LABELS[magnitude] ?? `${Math.pow(10, magnitude)}+ 条`,
-        icon: '📚',
+        icon: '<svg class="icon"><use href="#icon-books"/></svg>',
       });
     }
 
@@ -640,7 +640,7 @@ export class DashboardPanelManager {
     if (sourceCount >= 3) {
       milestones.push({
         label: `${sourceCount} 种记忆源`,
-        icon: '🔗',
+        icon: '<svg class="icon"><use href="#icon-branch"/></svg>',
       });
     }
 
@@ -648,7 +648,7 @@ export class DashboardPanelManager {
     if (data.bySource['insight'] && data.bySource['insight'] > 0) {
       milestones.push({
         label: '首个洞察',
-        icon: '💡',
+        icon: '<svg class="icon"><use href="#icon-lightbulb"/></svg>',
       });
     }
 
@@ -656,7 +656,7 @@ export class DashboardPanelManager {
     if (data.bySource['profile'] && data.bySource['profile'] > 0) {
       milestones.push({
         label: '建立画像',
-        icon: '👤',
+        icon: '<svg class="icon"><use href="#icon-person"/></svg>',
       });
     }
 
@@ -677,8 +677,9 @@ export class DashboardPanelManager {
     for (const milestone of milestones) {
       const badge = document.createElement('span');
       badge.className = 'milestone-badge';
-      // 里程碑徽章为静态展示文本，使用 textContent 拼接图标和标签
-      badge.textContent = `${milestone.icon} ${milestone.label}`;
+      // SVG 图标（静态常量）+ 动态文本（createTextNode 转义，防止 label 注入）
+      badge.innerHTML = milestone.icon;
+      badge.appendChild(document.createTextNode(` ${milestone.label}`));
       milestonesList.appendChild(badge);
     }
   }
