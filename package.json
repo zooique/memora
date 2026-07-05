@@ -1,6 +1,6 @@
 {
   "name": "@zooique/memora",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "通用 Agent 架构（纯逻辑库）— 本地、私有、领域无关，万物皆记忆",
   "type": "module",
   "main": "./dist/index.js",

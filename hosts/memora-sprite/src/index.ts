@@ -142,8 +142,7 @@ export async function getLlmProviders(
     baseUrl: p.baseUrl ?? '',
     apiKey: maskKey(p.apiKey),
     // 读取每个 Provider 的 temperature，未配置时回退到全局默认值
-    // temperature 是 ProviderConfig 的扩展字段（内核 v0.2.1+），这里用类型断言兼容
-    temperature: (p as Record<string, unknown>).temperature as number | undefined ?? config.llm.temperature,
+    temperature: p.temperature ?? config.llm.temperature,
   }));
 
   return {
@@ -235,12 +234,11 @@ export async function setActiveLlmProvider(
   }
 
   // 同步全局 temperature 到激活 Provider 的值（内核 createLlmProvider 读取 config.llm.temperature）
-  const providerTemp = (provider as Record<string, unknown>).temperature as number | undefined;
   const configWithTemp = {
     ...config,
     llm: {
       ...config.llm,
-      temperature: providerTemp ?? config.llm.temperature,
+      temperature: provider.temperature ?? config.llm.temperature,
     },
   };
 
