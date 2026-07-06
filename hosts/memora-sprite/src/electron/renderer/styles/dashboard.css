@@ -590,3 +590,102 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
     transform: scale(1);
   }
 }
+
+/* ─── 增长趋势区块（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） ─── */
+
+/* 趋势方向描述行：箭头 + description 文案，单行紧凑 */
+.growth-trend-desc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: var(--font-sm);
+  color: var(--subtext);
+}
+
+/* 趋势箭头：方向颜色区分（green/yellow/muted，与感知面板 confidence 徽章一致） */
+.growth-trend-arrow {
+  font-size: var(--font-md);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.growth-trend-growing {
+  color: var(--green);
+}
+
+.growth-trend-stable {
+  color: var(--muted);
+}
+
+.growth-trend-declining {
+  color: var(--yellow);
+}
+
+/* 趋势描述文案 */
+.growth-trend-desc {
+  color: var(--subtext);
+}
+
+/* 3 张对比卡片：横向 grid 布局（今日 / 7 天 / 30 天） */
+.growth-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* 单张卡片：label 上 + value 下，垂直居中 */
+.growth-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.growth-card-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.growth-card-value {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.growth-card-sub {
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+}
+
+/* 7 天每日柱状图 Canvas */
+.growth-canvas {
+  width: 100%;
+  height: 100px;
+  display: block;
+}
+
+.growth-canvas.hidden {
+  display: none;
+}
+
+/* 空状态：daily 全 0 时显示 */
+.growth-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+}
+
+.growth-empty.hidden {
+  display: none;
+}

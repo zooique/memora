@@ -1084,6 +1084,19 @@
             </div>
           </section>
 
+          <!-- 分区一·补：增长趋势（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） -->
+          <section class="dashboard-section hidden" id="dashboard-growth">
+            <h4 class="dashboard-section-title">增长趋势</h4>
+            <!-- 趋势方向描述行：箭头 + description 文案 -->
+            <div class="growth-trend-desc-row" id="dashboard-growth-desc"></div>
+            <!-- 3 张对比卡片：今日 / 7 天 / 30 天 -->
+            <div class="growth-cards" id="dashboard-growth-cards"></div>
+            <!-- 7 天每日柱状图（Canvas 2D，主题色适配） -->
+            <canvas id="dashboard-growth-canvas" class="growth-canvas hidden"></canvas>
+            <!-- 空状态（daily 全 0 时显示） -->
+            <div class="growth-empty hidden" id="dashboard-growth-empty"></div>
+          </section>
+
           <!-- 分区二：感知（情感基调 + 上下文 + 在场状态） -->
           <section class="dashboard-section" id="dashboard-perception">
             <h4 class="dashboard-section-title">感知</h4>

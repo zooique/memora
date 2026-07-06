@@ -88,7 +88,7 @@ import type { ConfigSuggestionPayload } from '../preload.js';
 // M1：写入确认 payload 类型（从 preload 导入，供 showWriteConfirmation 方法使用）
 import type { WriteConfirmationPayload } from '../preload.js';
 // 健康度仪表盘 payload 类型（从 preload 导入，供 renderHealthDashboard 代理方法使用）
-import type { HealthDashboardPayload } from '../preload.js';
+import type { HealthDashboardPayload, ReviewDataPayload } from '../preload.js';
 // 图谱数据类型（供 MemoryPanelManager 委托方法使用）
 import type { RelationGraphData } from './components/relationGraph.js';
 
@@ -1163,6 +1163,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 渲染记忆源健康诊断（委托到 DashboardPanelManager，消费内核 sourceHealth()） */
   renderSourceHealth(sourceHealth: SourceHealth | null): void {
     this.dashboardPanel.renderSourceHealth(sourceHealth);
+  }
+  /**
+   * 渲染增长趋势区块（委托到 DashboardPanelManager，Phase 6.2）
+   *
+   * 消费 reviewManager.buildReviewData 已计算的趋势数据（today/7天/30天/daily/direction），
+   * 在仪表盘"概览"和"感知"之间展示增长趋势区块。
+   */
+  renderReviewData(review: ReviewDataPayload): void {
+    this.dashboardPanel.renderReviewData(review);
   }
   /** 渲染已加载技能列表（委托到 DashboardPanelManager） */
   renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {

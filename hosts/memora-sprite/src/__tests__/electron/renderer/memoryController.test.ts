@@ -195,10 +195,8 @@ describe('推荐记忆点击事件委托', () => {
     // 同时验证其他委托方法被调用
     expect(mockUiManager.renderAgentMetrics).toHaveBeenCalledWith(null);
     expect(mockUiManager.renderSkills).toHaveBeenCalledWith([]);
-    // v3: renderReviewData 方法已从 MemoryController 中移除（DashboardPanelManager 也不再包含此方法）。
-    // 感知面板的回顾数据渲染由 PerceptionRenderer 内部处理，不再通过 UiManager 代理。
-    // expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
-    expect(mockUiManager.renderReviewData).not.toHaveBeenCalled();
+    // Phase 6.2：loadDashboard 现在并发拉取 reviewData 并委托 renderReviewData 渲染增长趋势区块
+    expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
     // G6: updateLearningProgress 已移除（死代码清理），不应再被调用
     expect(mockUiManager.updateLearningProgress).not.toHaveBeenCalled();
   });

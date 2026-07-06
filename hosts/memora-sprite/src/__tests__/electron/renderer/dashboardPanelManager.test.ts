@@ -36,6 +36,7 @@ import type { EventTracker } from '../../../electron/renderer/helpers/eventTrack
 import { EventTracker as EventTrackerImpl } from '../../../electron/renderer/helpers/eventTracker.js';
 import type {
   HealthDashboardPayload,
+  ReviewDataPayload,
 } from '../../../electron/preload.js';
 import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';
 import type { AffectPayload } from '../../../electron/renderer/ipcListeners.js';
@@ -142,6 +143,15 @@ const DASHBOARD_HTML = `
     <span id="dashboard-error-msg"></span>
     <button id="dashboard-error-retry" class="panel-error-btn">重试</button>
   </div>
+
+  <!-- Phase 6.2：增长趋势区块（暴露 reviewManager 7/30 天趋势数据） -->
+  <section class="dashboard-section hidden" id="dashboard-growth">
+    <h4 class="dashboard-section-title">增长趋势</h4>
+    <div class="growth-trend-desc-row" id="dashboard-growth-desc"></div>
+    <div class="growth-cards" id="dashboard-growth-cards"></div>
+    <canvas id="dashboard-growth-canvas" class="growth-canvas hidden"></canvas>
+    <div class="growth-empty hidden" id="dashboard-growth-empty"></div>
+  </section>
 `;
 
 /** 创建 DashboardPanelManager 实例（默认已设置 DOM） */
@@ -815,6 +825,177 @@ describe('renderPartnerInsights · 伙伴洞察面板', () => {
     );
     manager.renderPartnerInsights(memories);
     expect(document.querySelector('.partner-empty-hint')!.textContent).toContain('全面');
+  });
+});
+
+// ─── renderReviewData · 增长趋势（Phase 6.2） ─────────────
+
+describe('renderReviewData · 增长趋势', () => {
+  /** 创建测试用 ReviewDataPayload */
+  function createReviewData(overrides?: Partial<ReviewDataPayload>): ReviewDataPayload {
+    return {
+      today: { date: '2026-07-06', messageCount: 5, newMemories: 3, newInsights: 1 },
+      trend: {
+        last7Days: 12,
+        last30Days: 45,
+        daily: [
+          { date: '2026-06-30', messageCount: 2, newMemories: 1, newInsights: 0 },
+          { date: '2026-07-01', messageCount: 3, newMemories: 2, newInsights: 1 },
+          { date: '2026-07-02', messageCount: 1, newMemories: 0, newInsights: 0 },
+          { date: '2026-07-03', messageCount: 4, newMemories: 3, newInsights: 1 },
+          { date: '2026-07-04', messageCount: 2, newMemories: 1, newInsights: 0 },
+          { date: '2026-07-05', messageCount: 3, newMemories: 2, newInsights: 1 },
+          { date: '2026-07-06', messageCount: 5, newMemories: 3, newInsights: 1 },
+        ],
+        direction: 'growing',
+        description: '记忆增长正在加速',
+      },
+      insights: {
+        total: 8,
+        recent: [],
+        bySource: { insight: 8 },
+      },
+      totalMemories: 100,
+      generatedAt: '2026-07-06T12:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('有数据时应显示增长趋势区块（移除 hidden）', () => {
+    const { manager } = createManager();
+    manager.renderReviewData(createReviewData());
+    const section = document.getElementById('dashboard-growth');
+    expect(section).not.toBeNull();
+    expect(section!.classList.contains('hidden')).toBe(false);
+  });
+
+  it('趋势方向描述行应渲染箭头 + description 文案', () => {
+    const { manager } = createManager();
+    manager.renderReviewData(createReviewData({
+      trend: {
+        last7Days: 12,
+        last30Days: 45,
+        daily: [],
+        direction: 'growing',
+        description: '记忆增长正在加速',
+      },
+    }));
+    const descRow = document.getElementById('dashboard-growth-desc');
+    expect(descRow).not.toBeNull();
+    const arrow = descRow!.querySelector('.growth-trend-arrow');
+    expect(arrow).not.toBeNull();
+    expect(arrow!.textContent).toBe('↗');
+    expect(arrow!.classList.contains('growth-trend-growing')).toBe(true);
+    const desc = descRow!.querySelector('.growth-trend-desc');
+    expect(desc!.textContent).toBe('记忆增长正在加速');
+  });
+
+  it('declining 趋势应渲染 ↘ 箭头 + declining 样式', () => {
+    const { manager } = createManager();
+    manager.renderReviewData(createReviewData({
+      trend: {
+        last7Days: 5,
+        last30Days: 20,
+        daily: [{ date: '2026-07-06', messageCount: 1, newMemories: 1, newInsights: 0 }],
+        direction: 'declining',
+        description: '记忆增长有所放缓',
+      },
+    }));
+    const arrow = document.querySelector('#dashboard-growth-desc .growth-trend-arrow');
+    expect(arrow!.textContent).toBe('↘');
+    expect(arrow!.classList.contains('growth-trend-declining')).toBe(true);
+  });
+
+  it('stable 趋势应渲染 → 箭头 + stable 样式', () => {
+    const { manager } = createManager();
+    manager.renderReviewData(createReviewData({
+      trend: {
+        last7Days: 5,
+        last30Days: 20,
+        daily: [{ date: '2026-07-06', messageCount: 1, newMemories: 1, newInsights: 0 }],
+        direction: 'stable',
+        description: '记忆增长保持稳定',
+      },
+    }));
+    const arrow = document.querySelector('#dashboard-growth-desc .growth-trend-arrow');
+    expect(arrow!.textContent).toBe('→');
+    expect(arrow!.classList.contains('growth-trend-stable')).toBe(true);
+  });
+
+  it('应渲染 3 张对比卡片（今日 / 7 天 / 30 天）', () => {
+    const { manager } = createManager();
+    manager.renderReviewData(createReviewData({
+      today: { date: '2026-07-06', messageCount: 5, newMemories: 3, newInsights: 1 },
+      trend: {
+        last7Days: 12,
+        last30Days: 45,
+        daily: [{ date: '2026-07-06', messageCount: 1, newMemories: 1, newInsights: 0 }],
+        direction: 'growing',
+        description: '加速',
+      },
+    }));
+    const cards = document.querySelectorAll('#dashboard-growth-cards .growth-card');
+    expect(cards.length).toBe(3);
+    // 今日卡片：label=今日，value=+3，含洞察行（newInsights=1>0）
+    const todayCard = cards[0];
+    expect(todayCard!.querySelector('.growth-card-label')!.textContent).toBe('今日');
+    expect(todayCard!.querySelector('.growth-card-value')!.textContent).toBe('+3');
+    expect(todayCard!.querySelector('.growth-card-sub')!.textContent).toBe('+1 洞察');
+    // 7 天卡片：label=7 天，value=+12，无洞察行（newInsights=0 不展示）
+    const weekCard = cards[1];
+    expect(weekCard!.querySelector('.growth-card-label')!.textContent).toBe('7 天');
+    expect(weekCard!.querySelector('.growth-card-value')!.textContent).toBe('+12');
+    expect(weekCard!.querySelector('.growth-card-sub')).toBeNull();
+    // 30 天卡片
+    const monthCard = cards[2];
+    expect(monthCard!.querySelector('.growth-card-label')!.textContent).toBe('30 天');
+    expect(monthCard!.querySelector('.growth-card-value')!.textContent).toBe('+45');
+  });
+
+  it('daily 全 0 时应显示空状态，不渲染柱状图', () => {
+    const { manager } = createManager();
+    manager.renderReviewData(createReviewData({
+      trend: {
+        last7Days: 0,
+        last30Days: 0,
+        daily: [
+          { date: '2026-06-30', messageCount: 0, newMemories: 0, newInsights: 0 },
+          { date: '2026-07-01', messageCount: 0, newMemories: 0, newInsights: 0 },
+          { date: '2026-07-02', messageCount: 0, newMemories: 0, newInsights: 0 },
+          { date: '2026-07-03', messageCount: 0, newMemories: 0, newInsights: 0 },
+          { date: '2026-07-04', messageCount: 0, newMemories: 0, newInsights: 0 },
+          { date: '2026-07-05', messageCount: 0, newMemories: 0, newInsights: 0 },
+          { date: '2026-07-06', messageCount: 0, newMemories: 0, newInsights: 0 },
+        ],
+        direction: 'stable',
+        description: '暂无趋势数据',
+      },
+    }));
+    const canvas = document.getElementById('dashboard-growth-canvas');
+    const empty = document.getElementById('dashboard-growth-empty');
+    expect(canvas!.classList.contains('hidden')).toBe(true);
+    expect(empty!.classList.contains('hidden')).toBe(false);
+    expect(empty!.textContent).toBe('暂无增长数据，开始对话后将统计');
+  });
+
+  it('有 daily 数据时应显示柱状图，隐藏空状态', () => {
+    const { manager } = createManager();
+    manager.renderReviewData(createReviewData());
+    const canvas = document.getElementById('dashboard-growth-canvas') as HTMLCanvasElement;
+    const empty = document.getElementById('dashboard-growth-empty');
+    // Canvas 应可见（移除 hidden），空状态应隐藏
+    expect(canvas.classList.contains('hidden')).toBe(false);
+    expect(empty!.classList.contains('hidden')).toBe(true);
+    // 注：jsdom 中 getBoundingClientRect 返回 0，无法真正绘制像素，
+    // 此处仅验证可见性状态，Canvas 实际绘制由真实浏览器布局驱动
+  });
+
+  it('DOM 容器缺失时应静默跳过（不抛错）', () => {
+    document.body.innerHTML = '';
+    const events = new EventTrackerImpl();
+    const manager = new DashboardPanelManager(events);
+    // 不应抛错
+    expect(() => manager.renderReviewData(createReviewData())).not.toThrow();
   });
 });
 

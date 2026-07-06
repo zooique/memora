@@ -25,7 +25,7 @@ import { PerceptionRenderer } from './perceptionRenderer.js';
 // 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
 import { getSourceColorClass } from './memoryPanelManager.js';
 import type { ToastType } from '../types.js';
-import type { HealthDashboardPayload } from '../../preload.js';
+import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // 感知数据 Payload 类型从 ipcListeners（IPC 契约真理源）导入
 import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
@@ -204,6 +204,16 @@ export class DashboardPanelManager {
   private skillsSectionEl: HTMLElement | null;
   /** 技能 - 空状态元素 */
   private skillsEmptyEl: HTMLElement | null;
+  /** 增长趋势 - 区域容器（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） */
+  private growthSectionEl: HTMLElement | null;
+  /** 增长趋势 - 趋势描述行（direction 箭头 + description 文案） */
+  private growthDescEl: HTMLElement | null;
+  /** 增长趋势 - 3 张对比卡片容器（今日 / 7 天 / 30 天） */
+  private growthCardsEl: HTMLElement | null;
+  /** 增长趋势 - 7 天每日柱状图 Canvas */
+  private growthCanvasEl: HTMLCanvasElement | null;
+  /** 增长趋势 - 空状态元素（daily 全 0 时显示） */
+  private growthEmptyEl: HTMLElement | null;
 
   // ─── 回调（由 Controller 注册，用于重试按钮触发数据重新加载） ──
   /** 重试加载记忆列表回调 */
@@ -217,6 +227,12 @@ export class DashboardPanelManager {
     this.skillsListEl = document.getElementById('skills-list');
     this.skillsSectionEl = document.getElementById('skills-section');
     this.skillsEmptyEl = document.getElementById('skills-empty');
+    // 增长趋势区块 DOM 元素缓存（Phase 6.2：新增）
+    this.growthSectionEl = document.getElementById('dashboard-growth');
+    this.growthDescEl = document.getElementById('dashboard-growth-desc');
+    this.growthCardsEl = document.getElementById('dashboard-growth-cards');
+    this.growthCanvasEl = document.getElementById('dashboard-growth-canvas') as HTMLCanvasElement | null;
+    this.growthEmptyEl = document.getElementById('dashboard-growth-empty');
   }
 
   // ─── 资源清理 ──────────────────────────────────────────
@@ -439,6 +455,241 @@ export class DashboardPanelManager {
       dashboardListEl.appendChild(item);
     }
   }
+
+  // ─── 增长趋势渲染（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） ──
+
+  /**
+   * 渲染增长趋势区块（今日 / 7 天 / 30 天对比 + 趋势方向描述）
+   *
+   * 消费 sprite 层 reviewManager.buildReviewData() 已计算的趋势数据：
+   * - today：今日新增记忆数 / 洞察数
+   * - trend：7 天/30 天累计 + 每日明细 + direction（growing/stable/declining）+ description
+   * - daily：最近 7 天每日明细（含 newMemories，由 renderGrowthChart 绘制为柱状图）
+   *
+   * 设计原则：
+   * - 数据已就绪，仅做 UI 暴露，零额外 IPC 调用
+   * - 空数据态（daily 全 0）显示空状态文案，不渲染柱状图
+   * - 主题色通过 CSS 变量解析（与 partnerInsightsRenderer 一致）
+   *
+   * @param review 对话回顾数据（由 IPC MEMORIES_REVIEW_DATA 返回）
+   */
+  renderReviewData(review: ReviewDataPayload): void {
+    // 缺少 DOM 容器时静默跳过（与 renderSourceHealth 一致的降级策略）
+    if (!this.growthSectionEl) return;
+
+    // ─── 1. 趋势方向描述行：箭头 + description 文案 ──
+    if (this.growthDescEl) {
+      const arrow = this.getTrendArrow(review.trend.direction);
+      this.growthDescEl.innerHTML = '';
+      const arrowEl = document.createElement('span');
+      arrowEl.className = `growth-trend-arrow growth-trend-${review.trend.direction}`;
+      arrowEl.textContent = arrow;
+      const descEl = document.createElement('span');
+      descEl.className = 'growth-trend-desc';
+      descEl.textContent = review.trend.description;
+      this.growthDescEl.appendChild(arrowEl);
+      this.growthDescEl.appendChild(descEl);
+    }
+
+    // ─── 2. 3 张对比卡片：今日 / 7 天 / 30 天 ──
+    if (this.growthCardsEl) {
+      clearElement(this.growthCardsEl);
+      // 今日卡片
+      const todayCard = this.createGrowthCard('今日', review.today.newMemories, review.today.newInsights);
+      this.growthCardsEl.appendChild(todayCard);
+      // 7 天卡片
+      const weekCard = this.createGrowthCard('7 天', review.trend.last7Days, 0);
+      this.growthCardsEl.appendChild(weekCard);
+      // 30 天卡片
+      const monthCard = this.createGrowthCard('30 天', review.trend.last30Days, 0);
+      this.growthCardsEl.appendChild(monthCard);
+    }
+
+    // ─── 3. 柱状图 / 空状态 ──
+    const hasDailyData = review.trend.daily.some((d) => d.newMemories > 0 || d.newInsights > 0);
+    if (hasDailyData) {
+      // 有数据：渲染柱状图，隐藏空状态
+      this.growthEmptyEl?.classList.add('hidden');
+      this.growthCanvasEl?.classList.remove('hidden');
+      // 缓存 daily 供主题切换时重绘
+      this.lastGrowthDaily = review.trend.daily;
+      this.renderGrowthChart(review.trend.daily);
+    } else {
+      // 空数据：隐藏柱状图，显示空状态文案
+      this.growthCanvasEl?.classList.add('hidden');
+      this.lastGrowthDaily = null;
+      if (this.growthEmptyEl) {
+        this.growthEmptyEl.classList.remove('hidden');
+        this.growthEmptyEl.textContent = '暂无增长数据，开始对话后将统计';
+      }
+    }
+
+    // 显示整个区块
+    this.growthSectionEl.classList.remove('hidden');
+  }
+
+  /**
+   * 创建增长对比卡片（label + newMemories + newInsights 两行）
+   *
+   * @param label 卡片标签（今日 / 7 天 / 30 天）
+   * @param newMemories 新增记忆数
+   * @param newInsights 新增洞察数（仅今日卡片展示，7/30 天仅展示记忆数）
+   * @returns 卡片 DOM 元素
+   */
+  private createGrowthCard(label: string, newMemories: number, newInsights: number): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'growth-card';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'growth-card-label';
+    labelEl.textContent = label;
+
+    const memEl = document.createElement('span');
+    memEl.className = 'growth-card-value';
+    memEl.textContent = `+${newMemories}`;
+    memEl.title = `${label}新增记忆数`;
+
+    card.appendChild(labelEl);
+    card.appendChild(memEl);
+
+    // 仅当 newInsights > 0 时显示洞察行（避免 7/30 天卡片多一行无意义 0）
+    if (newInsights > 0) {
+      const insightEl = document.createElement('span');
+      insightEl.className = 'growth-card-sub';
+      insightEl.textContent = `+${newInsights} 洞察`;
+      card.appendChild(insightEl);
+    }
+
+    return card;
+  }
+
+  /**
+   * 将趋势方向映射为箭头符号
+   *
+   * @param direction 趋势方向（growing/stable/declining）
+   * @returns 箭头符号
+   */
+  private getTrendArrow(direction: 'growing' | 'stable' | 'declining'): string {
+    switch (direction) {
+      case 'growing':
+        return '↗';
+      case 'declining':
+        return '↘';
+      case 'stable':
+      default:
+        return '→';
+    }
+  }
+
+  /**
+   * 渲染 7 天每日柱状图（Canvas 2D，主题色适配）
+   *
+   * @param daily 最近 7 天每日明细数组
+   */
+  private renderGrowthChart(
+    daily: Array<{ date: string; newMemories: number; newInsights: number }>,
+  ): void {
+    if (!this.growthCanvasEl) return;
+
+    const canvas = this.growthCanvasEl;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = 100; // 柱状图高度比折线图紧凑（100px，节省垂直空间）
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = `${w}px`;
+    canvas.style.height = `${h}px`;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.scale(dpr, dpr);
+
+    // 从 CSS 变量读取主题色（与 partnerInsightsRenderer.renderGrowthChart 一致）
+    const rootStyle = getComputedStyle(document.documentElement);
+    const cssVar = (name: string, fallback: string): string =>
+      rootStyle.getPropertyValue(name).trim() || fallback;
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const accentColor = cssVar('--accent', '#0066ff');
+    const textColor = cssVar('--text-3', isDark ? '#a1a1a6' : '#6e6e73');
+    const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+
+    // 背景透明（让 dashboard-body 背景透出，视觉融入）
+    // 边距：底部留空给标签，顶部留少量空间
+    const padding = { top: 8, right: 8, bottom: 20, left: 8 };
+    const chartW = w - padding.left - padding.right;
+    const chartH = h - padding.top - padding.bottom;
+
+    // 计算 Y 轴最大值（newMemories + newInsights 的最大值，至少为 1 避免除零）
+    const maxVal = Math.max(
+      ...daily.map((d) => d.newMemories + d.newInsights),
+      1,
+    );
+    const yMax = maxVal * 1.15; // 顶部留 15% 空间
+
+    // 绘制基线网格（3 条横线，提供视觉参考）
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 2; i++) {
+      const y = padding.top + (chartH * i / 2);
+      ctx.beginPath();
+      ctx.moveTo(padding.left, y);
+      ctx.lineTo(w - padding.right, y);
+      ctx.stroke();
+    }
+
+    // 绘制 7 个柱子（每个柱子含 newMemories 底部 + newInsights 顶部堆叠）
+    const barWidth = chartW / daily.length;
+    const barInnerWidth = barWidth * 0.6; // 柱子实际宽度（留间距）
+    const barGap = (barWidth - barInnerWidth) / 2;
+
+    daily.forEach((d, idx) => {
+      const x = padding.left + idx * barWidth + barGap;
+      const memHeight = (d.newMemories / yMax) * chartH;
+      const insightHeight = (d.newInsights / yMax) * chartH;
+
+      // 底部：newMemories 柱（accent 色）
+      if (d.newMemories > 0) {
+        ctx.fillStyle = accentColor;
+        ctx.fillRect(x, padding.top + chartH - memHeight, barInnerWidth, memHeight);
+      }
+
+      // 顶部：newInsights 柱（accent 半透明，堆叠在 newMemories 上方）
+      if (d.newInsights > 0) {
+        ctx.fillStyle = isDark ? 'rgba(0, 102, 255, 0.45)' : 'rgba(0, 102, 255, 0.35)';
+        const baseY = padding.top + chartH - memHeight - insightHeight;
+        ctx.fillRect(x, baseY, barInnerWidth, insightHeight);
+      }
+
+      // X 轴标签：星期几（取日期的 getDay，转为 周X）
+      const date = new Date(d.date);
+      if (!isNaN(date.getTime())) {
+        const dayNames = ['日', '一', '二', '三', '四', '五', '六'];
+        const dayLabel = `周${dayNames[date.getDay()]}`;
+        ctx.fillStyle = textColor;
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(dayLabel, x + barInnerWidth / 2, h - 4);
+      }
+    });
+  }
+
+  /**
+   * 主题切换时重绘柱状图（与 partnerInsightsRenderer.repaintOnThemeChange 一致）
+   *
+   * 主题切换后 CSS 变量值改变，需重新解析颜色并重绘 Canvas。
+   * 由 UIManager 在 data-theme 变更时调用。
+   */
+  repaintGrowthChart(): void {
+    // 缓存最近一次的 daily 数据用于重绘
+    if (this.lastGrowthDaily && this.growthCanvasEl && !this.growthCanvasEl.classList.contains('hidden')) {
+      this.renderGrowthChart(this.lastGrowthDaily);
+    }
+  }
+
+  /** 缓存最近一次渲染的 daily 数据（主题切换时重绘用） */
+  private lastGrowthDaily: Array<{ date: string; newMemories: number; newInsights: number }> | null = null;
 
   /**
    * 渲染已加载技能列表（安全降级）
