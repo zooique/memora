@@ -176,6 +176,8 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   dailyMessageCount: 'object',
   // 回收站保留天数（number，0 禁用自动清理）
   recycleBinRetentionDays: 'number',
+  // 引导流程步骤（number，0 未开始或已完成）
+  onboardingStep: 'number',
 };
 
 /** 内置默认值 */
@@ -205,6 +207,8 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   dailyMessageCount: {},
   // 回收站默认保留 30 天，超过后定时器自动彻底清理
   recycleBinRetentionDays: 30,
+  // 引导流程步骤，0 表示未开始或已完成
+  onboardingStep: 0,
 };
 
 /** 配置文件名 */

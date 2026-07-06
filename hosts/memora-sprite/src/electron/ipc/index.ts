@@ -54,6 +54,8 @@ const HANDLE_CHANNELS = [
   // 缺口 J：manual 模式手动归档（reinitAgent 时需清理，避免重复注册抛错）
   IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE,
   IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT,
+  // 会话归档（reinitAgent 时需清理，避免重复注册抛错）
+  IPC_CHANNELS.ARCHIVE_SESSION,
   IPC_CHANNELS.CONFIG_GET,
   IPC_CHANNELS.CONFIG_UPDATE,
   // 批量配置通道也需在 reinitAgent 时清理，避免重复注册抛错

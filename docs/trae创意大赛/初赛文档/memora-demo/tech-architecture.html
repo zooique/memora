@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memora · 技术架构</title>
+  <style>
+    :root {
+      --bg: #f8f9fa;
+      --window-bg: #ffffff;
+      --text: #1a1a2e;
+      --muted: #6b7280;
+      --accent: #6366f1;
+      --accent-20: rgba(99, 102, 241, 0.2);
+      --accent-fg: #ffffff;
+      --surface1: #f3f4f6;
+      --surface2: #e5e7eb;
+      --border: #e5e7eb;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+      --transition-fast: 0.15s ease;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f0f1a;
+      --window-bg: #1a1a2e;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #818cf8;
+      --accent-20: rgba(129, 140, 248, 0.2);
+      --surface1: #1e1e36;
+      --surface2: #2a2a44;
+      --border: #2a2a44;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* 顶部导航 */
+    .top-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 32px;
+      background: var(--window-bg);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .top-nav .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .top-nav .nav-links {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .nav-link {
+      padding: 6px 14px;
+      border-radius: var(--radius-sm);
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all var(--transition-fast);
+    }
+    .nav-link:hover { color: var(--text); background: var(--surface1); }
+    .nav-link.active { color: var(--accent); background: var(--accent-20); }
+    .theme-btn {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--window-bg);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 14px;
+      transition: all var(--transition-fast);
+    }
+    .theme-btn:hover { background: var(--surface1); }
+
+    /* 主内容 */
+    .main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 48px 32px;
+    }
+
+    .page-title {
+      font-size: 28px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .page-subtitle {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 40px;
+    }
+
+    /* 架构图 */
+    .section {
+      margin-bottom: 48px;
+    }
+    .section-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid var(--accent-20);
+    }
+
+    .arch-diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .arch-layer {
+      background: var(--window-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      transition: transform var(--transition-fast);
+    }
+    .arch-layer:hover { transform: translateX(4px); }
+    .arch-layer .layer-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .layer-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .layer-icon.renderer { background: #dbeafe; color: #3b82f6; }
+    .layer-icon.electron { background: #dcfce7; color: #22c55e; }
+    .layer-icon.sprite { background: #fef3c7; color: #f59e0b; }
+    .layer-icon.kernel { background: #fce7f3; color: #ec4899; }
+    .layer-name { font-weight: 700; font-size: 15px; }
+    .layer-desc { font-size: 13px; color: var(--muted); }
+    .layer-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .layer-tag {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--surface1);
+      color: var(--muted);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    /* 数据卡片 */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .stat-card {
+      background: var(--window-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* 目录结构 */
+    .dir-tree {
+      background: var(--window-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px 24px;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+    .dir-tree .dir { color: var(--accent); font-weight: 600; }
+    .dir-tree .file { color: var(--text); }
+    .dir-tree .comment { color: var(--muted); margin-left: 8px; font-style: italic; }
+
+    /* ADR 列表 */
+    .adr-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .adr-item {
+      background: var(--window-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .adr-id {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--accent-20);
+      color: var(--accent);
+      font-weight: 600;
+      font-family: 'SF Mono', monospace;
+      white-space: nowrap;
+    }
+
+    /* 技术栈 */
+    .tech-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .tech-item {
+      background: var(--window-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .tech-icon {
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+    .tech-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .tech-desc {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* 底部 */
+    .footer {
+      text-align: center;
+      padding: 32px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      margin-top: 48px;
+    }
+
+    @media (max-width: 640px) {
+      .adr-grid { grid-template-columns: 1fr; }
+      .main { padding: 32px 16px; }
+    }
+  </style>
+</head>
+<body data-theme="light">
+
+  <!-- 顶部导航 -->
+  <nav class="top-nav">
+    <a class="logo" href="index.html">
+      <span style="font-size:20px;">🧠</span> Memora
+    </a>
+    <div class="nav-links">
+      <a class="nav-link" href="index.html">首页</a>
+      <a class="nav-link" href="app-demo.html">交互 Demo</a>
+      <a class="nav-link active" href="tech-architecture.html">技术架构</a>
+      <button class="theme-btn" onclick="toggleTheme()" title="切换主题">🌓</button>
+    </div>
+  </nav>
+
+  <!-- 主内容 -->
+  <div class="main">
+    <h1 class="page-title">技术架构</h1>
+    <p class="page-subtitle">描摹层 · 精灵层 · 内核层 —— 三层分离，各司其职</p>
+
+    <!-- 数据概览 -->
+    <div class="section">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">4</div>
+          <div class="stat-label">架构层</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">25</div>
+          <div class="stat-label">ADR 决策记录</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">445+</div>
+          <div class="stat-label">测试用例</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">0</div>
+          <div class="stat-label">native 依赖（内核）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 三层架构图 -->
+    <div class="section">
+      <h2 class="section-title">三层架构</h2>
+      <div class="arch-diagram">
+        <div class="arch-layer">
+          <div class="layer-header">
+            <div class="layer-icon renderer">🎨</div>
+            <div>
+              <div class="layer-name">描摹层 · Renderer</div>
+              <div class="layer-desc">用户界面，HTML/CSS/JS，主题感知，CSS 变量驱动</div>
+            </div>
+          </div>
+          <div class="layer-tags">
+            <span class="layer-tag">chatPanelManager</span>
+            <span class="layer-tag">memoryPanelManager</span>
+            <span class="layer-tag">settingsPanelManager</span>
+            <span class="layer-tag">floatWindow</span>
+            <span class="layer-tag">onboarding</span>
+          </div>
+        </div>
+        <div class="arch-layer">
+          <div class="layer-header">
+            <div class="layer-icon electron">⚡</div>
+            <div>
+              <div class="layer-name">精灵层 · Electron Main</div>
+              <div class="layer-desc">IPC 桥接，窗口管理，全局快捷键，系统托盘</div>
+            </div>
+          </div>
+          <div class="layer-tags">
+            <span class="layer-tag">preload.ts</span>
+            <span class="layer-tag">chatStreamHandler</span>
+            <span class="layer-tag">memoryHandlers</span>
+            <span class="layer-tag">floatWindow</span>
+            <span class="layer-tag">spriteEventBridge</span>
+          </div>
+        </div>
+        <div class="arch-layer">
+          <div class="layer-header">
+            <div class="layer-icon sprite">🪄</div>
+            <div>
+              <div class="layer-name">精灵核心层 · Sprite Core</div>
+              <div class="layer-desc">配置管理，感知系统，情感引擎，触发器，零 Electron 依赖</div>
+            </div>
+          </div>
+          <div class="layer-tags">
+            <span class="layer-tag">spriteConfig</span>
+            <span class="layer-tag">spriteLifecycleManager</span>
+            <span class="layer-tag">fileWatcherTrigger</span>
+            <span class="layer-tag">affectController</span>
+            <span class="layer-tag">rapportController</span>
+          </div>
+        </div>
+        <div class="arch-layer">
+          <div class="layer-header">
+            <div class="layer-icon kernel">🧠</div>
+            <div>
+              <div class="layer-name">内核层 · Memora Kernel</div>
+              <div class="layer-desc">纯逻辑库，零 native 依赖，Agent 门面 + 记忆引擎 + LLM 适配</div>
+            </div>
+          </div>
+          <div class="layer-tags">
+            <span class="layer-tag">agent</span>
+            <span class="layer-tag">memory</span>
+            <span class="layer-tag">persona</span>
+            <span class="layer-tag">skill</span>
+            <span class="layer-tag">llm</span>
+            <span class="layer-tag">security</span>
+            <span class="layer-tag">eval</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 技术栈 -->
+    <div class="section">
+      <h2 class="section-title">技术栈</h2>
+      <div class="tech-grid">
+        <div class="tech-item">
+          <span class="tech-icon">📘</span>
+          <div>
+            <div class="tech-name">TypeScript 5 + ESM</div>
+            <div class="tech-desc">strict 模式，全类型安全</div>
+          </div>
+        </div>
+        <div class="tech-item">
+          <span class="tech-icon">⚡</span>
+          <div>
+            <div class="tech-name">Node.js ≥ 22 LTS</div>
+            <div class="tech-desc">内核运行时（精灵宿主要求 24 LTS）</div>
+          </div>
+        </div>
+        <div class="tech-item">
+          <span class="tech-icon">🖥️</span>
+          <div>
+            <div class="tech-name">Electron 34</div>
+            <div class="tech-desc">精灵宿主桌面应用</div>
+          </div>
+        </div>
+        <div class="tech-item">
+          <span class="tech-icon">🧪</span>
+          <div>
+            <div class="tech-name">Vitest + MSW</div>
+            <div class="tech-desc">Mock LLM，零 IO 测试</div>
+          </div>
+        </div>
+        <div class="tech-item">
+          <span class="tech-icon">🗄️</span>
+          <div>
+            <div class="tech-name">IMemoryStorage</div>
+            <div class="tech-desc">存储接口抽象，宿主注入实现</div>
+          </div>
+        </div>
+        <div class="tech-item">
+          <span class="tech-icon">🔌</span>
+          <div>
+            <div class="tech-name">OpenAI 兼容协议</div>
+            <div class="tech-desc">LLM Provider 适配层</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 目录结构 -->
+    <div class="section">
+      <h2 class="section-title">内核目录结构</h2>
+      <div class="dir-tree">
+        <span class="dir">src/</span><br>
+        &nbsp;&nbsp;<span class="file">index.ts</span><span class="comment">库导出入口</span><br>
+        &nbsp;&nbsp;<span class="dir">agent/</span><span class="comment">Agent 门面 + 工具执行 + 9 个 Manager</span><br>
+        &nbsp;&nbsp;<span class="dir">memory/</span><span class="comment">记忆引擎（接口 + 召回 + 关系侧车）</span><br>
+        &nbsp;&nbsp;<span class="dir">persona/</span><span class="comment">角色管理（配置 + 自动匹配）</span><br>
+        &nbsp;&nbsp;<span class="dir">skill/</span><span class="comment">技能管理（文件夹扫描 + 关键词匹配）</span><br>
+        &nbsp;&nbsp;<span class="dir">llm/</span><span class="comment">LLM 适配层（OpenAI 兼容协议）</span><br>
+        &nbsp;&nbsp;<span class="dir">security/</span><span class="comment">安全策略（两级权限 + 路径白名单）</span><br>
+        &nbsp;&nbsp;<span class="dir">config/</span><span class="comment">配置加载（配置文件是真理源）</span><br>
+        &nbsp;&nbsp;<span class="dir">eval/</span><span class="comment">评估框架</span><br>
+        &nbsp;&nbsp;<span class="dir">utils/</span><span class="comment">工具函数 + 事件系统</span>
+      </div>
+    </div>
+
+    <!-- ADR 索引 -->
+    <div class="section">
+      <h2 class="section-title">ADR 决策记录（25 项）</h2>
+      <div class="adr-grid">
+        <div class="adr-item"><span class="adr-id">ADR-001</span> 运行时栈：Node.js 22 LTS + TS 5 + ESM</div>
+        <div class="adr-item"><span class="adr-id">ADR-002</span> 存储层：IMemoryStorage 接口 + 零 native 依赖</div>
+        <div class="adr-item"><span class="adr-id">ADR-003</span> LLM 适配：OpenAI Chat Completions 兼容协议</div>
+        <div class="adr-item"><span class="adr-id">ADR-004</span> 记忆统一：source 开放字符串基元模型</div>
+        <div class="adr-item"><span class="adr-id">ADR-005</span> CLI 移出：CLI 由宿主项目提供</div>
+        <div class="adr-item"><span class="adr-id">ADR-006</span> 安全模型：两级权限 + 工具白名单 + 路径白名单</div>
+        <div class="adr-item"><span class="adr-id">ADR-007</span> 测试策略：Vitest + MSW Mock LLM</div>
+        <div class="adr-item"><span class="adr-id">ADR-008</span> 目录结构：按职责分层</div>
+        <div class="adr-item"><span class="adr-id">ADR-009</span> 专注模式：应无所住而生其心</div>
+        <div class="adr-item"><span class="adr-id">ADR-014</span> 记忆关系：IMemoryRelationStore 侧车接口</div>
+        <div class="adr-item"><span class="adr-id">ADR-015</span> 归档模式：三态控制（full/insights-only/manual）</div>
+        <div class="adr-item"><span class="adr-id">ADR-SP-*</span> 精灵宿主 9 项 ADR（SP-001~008 + SP-015）</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Memora · 万物皆是记忆 · 应无所住，而生其心
+  </div>
+
+  <script>
+    // 主题切换
+    function toggleTheme() {
+      const current = document.body.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', next);
+      localStorage.setItem('memora-theme', next);
+    }
+    // 初始化主题
+    const saved = localStorage.getItem('memora-theme');
+    if (saved) document.body.setAttribute('data-theme', saved);
+    else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.body.setAttribute('data-theme', 'dark');
+    }
+  </script>
+
+</body>
+</html>

@@ -7,9 +7,24 @@
 1. 进入 [TRAE 社区初赛专区](https://forum.trae.cn/c/38-category/40-category) 点击发帖
 2. **标签** 选择：`学习工作`
 3. **标题** 填写：`学习工作 | Memora · 桌面精灵 —— 万物皆记忆，越用越进化的 AI 伴侣`
-4. **正文** 复制下方 Markdown 内容
-5. **附件** 上传 memora-demo 文件夹打包的 zip 文件（交互式 HTML Demo）
-6. **注意**：正文中标记 `【截图位置】` 的位置请插入对应截图；标记 `【用户补充】` 的位置请替换为实际内容
+4. **正文** 复制下方 Markdown 内容（注意替换 `【TODO】` 标记的占位符）
+5. **附件** 上传 `memora-demo.zip`（交互式 HTML Demo，打包方式见下方）
+6. **截图** 共 10 张，按下方编号插入对应位置。截图文件命名规则：`screenshot-XX-name.png`
+
+### 截图清单
+
+| 编号 | 文件名 | 内容 | 如何截取 |
+|------|--------|------|---------|
+| 01 | `screenshot-01-landing.png` | 首页完整展示 | 打开 `index.html`，截取全页 |
+| 02 | `screenshot-02-chat-memory.png` | 对话 + 记忆召回 | 打开 `app-demo.html`，发送"我叫小明，前端开发者"后截图 |
+| 03 | `screenshot-03-memory-list.png` | 记忆列表视图 | 点击「🧠记忆」→「📋列表」截图 |
+| 04 | `screenshot-04-memory-graph.png` | 记忆关系图谱 | 点击「🧠记忆」→「🕸️图谱」截图 |
+| 05 | `screenshot-05-memory-timeline.png` | 记忆时间线 | 点击「🧠记忆」→「🕐时间线」截图 |
+| 06 | `screenshot-06-rapport-panel.png` | 左侧默契度 + 情感基调面板 | 在对话视图下截图左侧侧边栏 |
+| 07 | `screenshot-07-float-state.png` | 浮动图标状态 | 点击三态切换器「💫浮动图标」截图 |
+| 08 | `screenshot-08-settings.png` | 配置面板（隐私设置） | 点击「⚙️设置」截图 |
+| 09 | `screenshot-09-dark-theme.png` | 深色主题 | 切换深色主题后截图 |
+| 10 | `screenshot-10-vitest-terminal.png` | 终端测试通过截图 | 运行 `npm test` 截图 |
 
 ---
 
@@ -42,12 +57,12 @@
 **① 每轮记忆闭环（核心创新）**
 对话结束自动提取关键信息（身份画像 / 偏好洞察 / 作品投影），下一轮通过「关键词匹配 + 语义向量」双通道召回最相关的记忆。每条记忆有置信度评分，不常用的记忆随时间自然衰减。这不是简单的历史记录持久化——这是一个有生命周期的记忆引擎。
 
-【截图：04-memory-list-view.png + 05-memory-graph-view.png】
+【截图：screenshot-03-memory-list.png + screenshot-04-memory-graph.png】
 
 **② 三态自然交互**
 不打断工作流的桌面精灵设计：完整窗口深度对话 / 浮动图标热键召唤 / 系统托盘后台静默。会话历史按天自动管理，微信/QQ 式时间流向上滚动加载，跨天无缝衔接。
 
-【截图：07-float-bubble-state.png + 06-memory-timeline-view.png】
+【截图：screenshot-07-float-state.png + screenshot-05-memory-timeline.png】
 
 **③ 从"工具"到"伙伴"的进化**
 精灵不止于问答工具——它真实感知你的状态并持续成长：
@@ -55,21 +70,21 @@
 - **情感基调**：温暖度 / 直接度 / 主动度 / 稳定度四维实时推导
 - **行为模式**：自动发现你的工作习惯和偏好模式
 
-【截图：03-chat-with-memories.png 左侧侧边栏默契度 + 情感基调面板】
+【截图：screenshot-02-chat-memory.png 左侧侧边栏默契度 + 情感基调面板】
 
 **④ 流式对话与透明召回**
 - 真正的流式输出，带思考阶段指示器（recalling → processing → archiving）
 - 召回透明度：回复前展示"想起 X 条记忆"，点击可跳转详情
 - 同角色连续消息自动分组，减少视觉噪音
 
-【截图：03-chat-with-memories.png 对话区域展示召回标签和闭环提示】
+【截图：screenshot-02-chat-memory.png 对话区域展示召回标签和闭环提示】
 
 **⑤ 隐私本地优先**
 - 不监听键盘、不读剪贴板、不截屏、不监听网络
 - 剪贴板三重保护：被动检测（仅哈希）→ 主动触发（用户确认）→ 敏感过滤
 - 两级权限 + 路径白名单，所有记忆 100% 本地存储
 
-【截图：11-sprite-config-panel.png 精灵配置面板展示隐私相关设置】
+【截图：screenshot-08-settings.png 精灵配置面板展示隐私相关设置】
 
 ---
 
@@ -141,7 +156,7 @@
 - 支持浅色/深色主题切换
 - 无后端依赖，纯 HTML/CSS/JS 即可运行
 
-【用户补充：如有在线部署版本，可在此补充在线 Demo 链接】
+【TODO：如有在线部署版本，可在此补充在线 Demo 链接】
 
 ---
 
@@ -153,7 +168,7 @@
 - 22 份 ADR（Architecture Decision Record）决策记录（内核 14 + 精灵 8），每个架构选择都有理由和追溯
 - 项目 Rules 框架，确立了零依赖内核、三层架构、单 Agent 模型等硬约束
 
-【截图：13-project-structure.png 项目结构 + .trae/rules/ 目录】
+【截图：screenshot-01-landing.png 项目结构 + .trae/rules/ 目录】
 
 **阶段二：记忆内核开发——992 个测试全通过**
 - IMemoryStorage 接口抽象 + InMemoryStorage 实现
@@ -170,7 +185,7 @@
 
 最终测试结果：**992 个测试用例全部通过**（Vitest + MSW Mock LLM，InMemoryStorage 零 IO）
 
-【截图：12-vitest-terminal.png 终端测试 992 个用例全部通过】
+【截图：screenshot-10-vitest-terminal.png 终端测试用例全部通过】
 
 **阶段三：Sprite 宿主与感知系统——从"工具"到"伙伴"**
 
@@ -180,7 +195,7 @@
 - **Phase 3**：全局快捷键 + 在场状态检测 + 剪贴板三重保护 + 浮动气泡窗口
 - **Phase 4**：配置建议闭环 + 用户画像闭环 + 作品投影 + 技能拖入安装 + 审计日志
 
-【截图：03-chat-with-memories.png Demo 完整窗口态展示】
+【截图：screenshot-02-chat-memory.png Demo 完整窗口态展示】
 
 **阶段四：Demo 迭代与质量收敛——踩坑与修复**
 
@@ -197,15 +212,18 @@
 9. **Canvas 图谱主题切换后颜色错误** → 统一使用 getComputedStyle 解析 CSS 变量，移除硬编码颜色
 10. **会话历史下拉切换导致对话流断裂** → 改为微信/QQ 式时间流，按天向上滚动加载
 
-【截图：10-dark-theme-chat.png 深色主题 + 03-chat-with-memories.png 浅色主题】
+【截图：screenshot-09-dark-theme.png 深色主题 + screenshot-02-chat-memory.png 浅色主题】
 
-**关键任务对话 Session ID**（在 Trae 中双击对应对话标题即可复制 ID）：
-1. 【用户补充：Session ID 1 - 项目初始化 / 架构设计 / ADR 记录阶段】
-2. 【用户补充：Session ID 2 - 记忆内核开发 / 测试编写阶段】
-3. 【用户补充：Session ID 3 - Sprite 宿主开发 / 感知系统 / Phase 2-4 迭代阶段】
-4. 【用户补充：Session ID 4 - Demo 原型迭代 / 质量审查 / UI 收敛阶段】
+**关键任务对话 Session ID**（在 Trae 中双击对应对话标题即可复制 ID，粘贴到下方）：
 
-**社区报名帖链接**：【用户补充：报名审核通过后的帖子链接】
+| 编号 | 阶段 | Session ID |
+|------|------|-----------|
+| 1 | 项目初始化 / 架构设计 / ADR 记录 | 【TODO：复制粘贴】 |
+| 2 | 记忆内核开发 / 测试编写 | 【TODO：复制粘贴】 |
+| 3 | Sprite 宿主开发 / 感知系统 / Phase 2-4 迭代 | 【TODO：复制粘贴】 |
+| 4 | Demo 原型迭代 / 质量审查 / UI 收敛 | 【TODO：复制粘贴】 |
+
+**社区报名帖链接**：【TODO：报名审核通过后填写】
 
 ---
 

@@ -539,11 +539,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     ]);
     return profileResult.count + insightResult.count;
   }
-  /** 一键归档：批量归档当前会话的全部记忆（调用 agent.archiveSessionContent） */
-  async archiveSession(date: string, session: string): Promise<number> {
-    const result = await window.electronAPI.archiveSession(date, session);
-    return result.archivedCount;
-  }
   /** 注册示例问题点击回调（委托到 ChatPanelManager） */
   onSuggestionClick(cb: (text: string) => void): void { this.chatPanel.onSuggestionClick(cb); }
   /** 注册错误重试回调（委托到 ChatPanelManager） */

@@ -2,7 +2,7 @@
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
 > **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）。目录形态已对齐最终目标。
-> **版本**：v1.3（2026-07-04）
+> **版本**：v1.4（2026-07-06）
 
 ---
 
@@ -99,7 +99,10 @@ src/
 │       │   ├── panelErrorBannerManager.ts # 面板错误横幅（C-5-1 拆分，自包含 EventTracker）
 │       │   ├── clipboardManager.ts       # 剪贴板保护（C-5-2 拆分，依赖注入 ToastManager + ModalManager）
 │       │   ├── dateNavManager.ts         # 日期导航（C-5-3 拆分，自包含 EventTracker）
-│       │   └── skillDropManager.ts       # 技能拖入安装（C-5-4 拆分，依赖注入 ToastManager）
+│       │   ├── skillDropManager.ts       # 技能拖入安装（C-5-4 拆分，依赖注入 ToastManager）
+│       │   ├── archiveButtonManager.ts   # 归档按钮管理（manual 模式消息归档按钮，从 chatPanelManager 拆分）
+│       │   ├── inputAreaManager.ts       # 输入区域管理（键盘事件/自适应高度/发送按钮，从 UIManager 拆分）
+│       │   └── panelRouter.ts            # 面板路由器（面板切换/导航/全局快捷键/窗口控制）
 │       │
 │       ├── float/              # 浮动窗口
 │       │   ├── float.ts        # 浮动窗口渲染进程逻辑
@@ -113,7 +116,8 @@ src/
 │           ├── memory.css      # 记忆面板样式
 │           ├── modal.css       # 模态弹窗样式
 │           ├── settings.css    # 设置面板样式
-│           └── toast.css       # Toast 通知样式
+│           ├── toast.css       # Toast 通知样式
+│           └── dashboard.css   # 仪表盘面板样式
 │
 ├── sprite/                     # 精灵核心层（纯逻辑，零 Electron 依赖）
 │   ├── sprite.ts               # 精灵核心类（启动/关闭/事件/主动行为）
@@ -125,6 +129,8 @@ src/
 │   ├── fileWatcherTrigger.ts   # 文件监听触发器
 │   ├── interaction.ts          # IInteraction 接口定义
 │   ├── skillInstaller.ts       # 技能安装器（拖入安装，Phase 4.3）
+│   ├── errors.ts               # 宿主层共享错误类型（ErrorCode 枚举 + MemoraError 类，零 Electron 依赖）
+│   ├── spriteConfigManager.ts  # 精灵配置管理器（配置 CRUD + 每日消息计数，从 sprite.ts 拆分）
 │   │
 │   ├── cli/                    # CLI 专属模块
 │   │   ├── formatter.ts        # CLI 输出格式化（颜色/表格/进度条）
@@ -152,7 +158,8 @@ src/
 │   ├── spriteConfigStore.ts    # 精灵配置持久化（~/.memora-sprite/config.json）
 │   ├── sqliteDatabaseTypes.ts  # SQLite 数据库类型定义
 │   ├── sqliteStorage.ts        # SQLite 存储实现（IMemoryStorage 接口）
-│   └── sqliteRelationStore.ts  # 记忆关系侧车存储实现（IMemoryRelationStore）
+│   ├── sqliteRelationStore.ts  # 记忆关系侧车存储实现（IMemoryRelationStore）
+│   └── nodeSqliteDatabase.ts   # node:sqlite 适配器（零 native 依赖，Web/CLI 模式 SQLite 实现）
 │
 ├── shared/                     # 宿主上下文共享层（纯类型+纯数据，无 Node 依赖，主进程/渲染进程/Web 安全共用）
 │   ├── hostContext.ts          # HostContext 接口（Electron + Web 共用核心依赖容器）

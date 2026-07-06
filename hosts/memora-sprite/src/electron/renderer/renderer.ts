@@ -484,7 +484,7 @@ async function bootstrapRenderer(): Promise<void> {
 
   // 三态首次引导：Agent 就绪且首次使用时显示（介绍三态窗口模型 + 快捷键）
   // 使用 localStorage 标记，老用户不再显示
-  if (State.uiManager.shouldShowOnboarding()) {
+  if (State.uiManager.shouldShowOnboarding(false)) {
     State.uiManager.showOnboardingDialog();
   }
 }

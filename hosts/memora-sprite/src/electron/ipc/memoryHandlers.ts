@@ -126,7 +126,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
           return { archivedCount: 0 };
         }
         const result = await ctx.agent.archiveSessionContent(params.date, params.session);
-        return { archivedCount: result.archivedCount };
+        return { archivedCount: result.memories.length };
       }),
   );
 

@@ -356,11 +356,11 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   });
 
   // 悬停球体时显示预览
-  events.addEventListener(sphere, 'mouseenter', (e) => {
+  events.addEventListener(sphere, 'mouseenter', (_e) => {
     showDragHintIfFirstTime();
     showMessagePreview();
   });
-  events.addEventListener(sphere, 'mouseleave', (e) => {
+  events.addEventListener(sphere, 'mouseleave', (_e) => {
     onSphereMouseLeave();
     hideMessagePreview();
   });

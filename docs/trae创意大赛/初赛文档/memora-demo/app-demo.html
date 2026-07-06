@@ -189,6 +189,12 @@
         "sidebar titlebar"
         "sidebar window";
       background: var(--bg);
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    #app.fading {
+      opacity: 0;
+      transform: scale(0.98);
+      pointer-events: none;
     }
 
     /* ============================================
@@ -388,6 +394,71 @@
     #persona-arrow {
       font-size: 10px;
       color: var(--muted);
+    }
+
+    /* 角色下拉菜单 */
+    .persona-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 8px;
+      right: 8px;
+      margin-top: 4px;
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-window);
+      z-index: 100;
+      overflow: hidden;
+      transition: opacity var(--transition-fast), transform var(--transition-fast);
+    }
+    .persona-dropdown.hidden {
+      opacity: 0;
+      transform: translateY(-4px);
+      pointer-events: none;
+    }
+    .persona-dropdown-title {
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--surface1);
+    }
+    .persona-dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: background var(--transition-fast);
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+      font-family: inherit;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .persona-dropdown-item:hover {
+      background: var(--accent-20);
+    }
+    .persona-dropdown-item.active {
+      background: var(--accent-20);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .persona-dropdown-item .pdi-icon {
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .persona-dropdown-item .pdi-name {
+      font-weight: 500;
+    }
+    .persona-dropdown-item .pdi-desc {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 1px;
     }
 
     /* 侧边栏内容区 */
@@ -597,16 +668,28 @@
 
     /* 面板 */
     .panel {
-      display: none;
+      display: flex;
       flex: 1;
       flex-direction: column;
       height: 100%;
       overflow: hidden;
-      position: relative;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.25s ease, visibility 0s linear 0.25s;
     }
 
     .panel.active {
-      display: flex;
+      position: relative;
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+      transition: opacity 0.25s ease, visibility 0s linear 0s;
     }
 
     /* ============================================
@@ -842,6 +925,7 @@
       display: flex;
       flex-direction: column;
       gap: 16px;
+      scroll-behavior: smooth;
     }
 
     /* 空状态 */
@@ -1275,6 +1359,16 @@
     #btn-send:disabled {
       opacity: 0.4;
       cursor: not-allowed;
+    }
+
+    /* 发送按钮加载态：脉冲动画 */
+    #btn-send.loading {
+      animation: sendPulse 1.2s ease-in-out infinite;
+    }
+
+    @keyframes sendPulse {
+      0%, 100% { opacity: 0.5; }
+      50%      { opacity: 1; }
     }
 
     /* ============================================
@@ -1983,6 +2077,45 @@
       color: var(--green);
     }
 
+    /* ─── Toast 通知 ───────────────── */
+    .toast-container {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+
+    .toast {
+      padding: 10px 20px;
+      border-radius: var(--radius-md);
+      font-size: 13px;
+      font-weight: 500;
+      color: #fff;
+      background: var(--accent);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+      animation: toastIn 0.3s ease, toastOut 0.3s ease 2.2s forwards;
+      pointer-events: auto;
+      max-width: 320px;
+    }
+
+    .toast.success { background: var(--green); }
+    .toast.warning { background: var(--peach); }
+    .toast.error { background: var(--red); }
+
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(40px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes toastOut {
+      from { opacity: 1; transform: translateX(0); }
+      to   { opacity: 0; transform: translateX(40px); }
+    }
+
     /* ============================================
        返回链接
        ============================================ */
@@ -2066,6 +2199,90 @@
     @keyframes fadeIn {
       from { opacity: 0; }
       to { opacity: 1; }
+    }
+
+    /* 主题切换过渡：关键元素添加颜色过渡 */
+    #app, #sidebar, #messages, .panel, .message-bubble, .stat-card,
+    #input-area, .top-bar, .nav-tab, .settings-tabs, .date-nav-item {
+      transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+    }
+
+    /* 移动端 480px 断点：手机适配 */
+    @media (max-width: 480px) {
+      #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: 44px 1fr;
+        grid-template-areas:
+          "titlebar"
+          "window";
+      }
+      #sidebar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        padding: 8px;
+        z-index: 50;
+        background: var(--window-bg);
+        border-top: 1px solid var(--border);
+      }
+      #sidebar-header { display: none; }
+      .sidebar-section { display: none; }
+      #sidebar-footer {
+        flex-direction: row;
+        gap: 8px;
+        padding: 0;
+      }
+      #sidebar-footer > * {
+        flex: 1;
+        justify-content: center;
+        padding: 8px;
+      }
+
+      /* 消息区适配 */
+      #messages {
+        padding: 12px 8px;
+        padding-bottom: 160px;
+      }
+      .message-bubble { max-width: 92%; font-size: 13px; }
+      .message-avatar { width: 28px; height: 28px; font-size: 14px; }
+
+      /* 输入区适配 */
+      #input-area {
+        padding: 8px;
+        gap: 6px;
+      }
+      #msg-input {
+        font-size: 16px; /* 防止 iOS 缩放 */
+        min-height: 40px;
+      }
+      #btn-send, #btn-stop {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+      }
+
+      /* 三态切换器适配 */
+      .state-switcher {
+        gap: 4px;
+        padding: 4px;
+      }
+      .state-btn {
+        min-width: 40px;
+        min-height: 40px;
+        font-size: 11px;
+        padding: 4px 8px;
+      }
+
+      /* 面板适配 */
+      .memory-list { grid-template-columns: 1fr; }
+      .settings-tabs { gap: 4px; overflow-x: auto; }
+      .settings-tab { font-size: 11px; padding: 6px 10px; white-space: nowrap; }
+
+      .onboarding-container { max-width: 100%; margin: 16px; }
     }
 
     /* 工具调用卡片 */
@@ -2781,13 +2998,18 @@
 
       <!-- 角色选择器 -->
       <div id="sidebar-header">
-        <div id="persona-selector" role="button" tabindex="0">
+        <div id="persona-selector" role="button" tabindex="0" onclick="togglePersonaDropdown()">
           <span id="persona-icon">🧚</span>
           <div style="flex: 1; min-width: 0;">
             <div id="persona-name">精灵</div>
           </div>
           <span id="persona-mode-badge">自动</span>
           <span id="persona-arrow">▾</span>
+        </div>
+        <!-- 角色下拉菜单 -->
+        <div id="persona-dropdown" class="persona-dropdown hidden">
+          <div class="persona-dropdown-title">选择角色</div>
+          <div id="persona-dropdown-list"></div>
         </div>
       </div>
 
@@ -3111,7 +3333,7 @@
             <div class="settings-row" style="margin-top: 16px;">
               <label></label>
               <div>
-                <button class="btn-secondary">测试连接</button>
+                <button class="btn-secondary" id="btn-test-connection">测试连接</button>
               </div>
             </div>
           </div>
@@ -3421,6 +3643,9 @@
       </div>
 
     </main>
+
+    <!-- Toast 通知容器 -->
+    <div id="toast-container" class="toast-container"></div>
   </div>
 
   <!-- ============================================
@@ -3440,6 +3665,39 @@
     let isProcessing = false;
     let messages = []; // 消息历史记录
     let pendingProfiles = []; // 待确认的用户画像条目
+    let currentPersona = 'sprite'; // 当前激活的角色ID
+
+    // ─── 角色数据（演示用） ─────────────────
+    const demoPersonas = [
+      {
+        id: 'sprite',
+        icon: '🧚',
+        name: '精灵',
+        desc: '默认通用助手，友好专业',
+        style: '专业、友好的态度，默认使用中文，给出简洁实用的回答'
+      },
+      {
+        id: 'coder',
+        icon: '💻',
+        name: '程序员助手',
+        desc: '技术导向，代码优先',
+        style: '使用技术术语，优先给出代码示例和架构建议，回答简洁直接，关注性能和最佳实践'
+      },
+      {
+        id: 'writer',
+        icon: '✍️',
+        name: '写作伙伴',
+        desc: '创意激发，润色建议',
+        style: '关注表达和创意，提供写作建议和润色方案，注意语气和节奏，给出具体的修辞和结构建议'
+      },
+      {
+        id: 'tutor',
+        icon: '📚',
+        name: '学习顾问',
+        desc: '耐心讲解，循序渐进',
+        style: '用通俗易懂的语言解释复杂概念，循序渐进地引导学习，使用类比和举例帮助理解，鼓励提问和探索'
+      }
+    ];
 
     // 预设记忆数据：展示 Memora 多层记忆结构
     const demoMemories = [
@@ -3561,6 +3819,33 @@
         document.querySelector(`.settings-tab-content[data-settings-tab="${tabName}"]`).classList.add('active');
       });
     });
+
+    // ─── 设置面板底部按钮 ─────────────────
+    document.querySelector('.settings-actions .btn-primary').addEventListener('click', () => {
+      showToast('设置已保存', 'success');
+    });
+    document.querySelectorAll('.settings-actions .btn-secondary').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const text = btn.textContent.trim();
+        showToast(text === '恢复默认' ? '已恢复默认设置' : text === '稍后配置' ? '可随时在设置中完成配置' : '已取消', 'warning');
+      });
+    });
+
+    // ─── 测试连接按钮 ─────────────────
+    const btnTestConnection = document.getElementById('btn-test-connection');
+    if (btnTestConnection) {
+      btnTestConnection.addEventListener('click', () => {
+        const origText = btnTestConnection.textContent;
+        btnTestConnection.disabled = true;
+        btnTestConnection.textContent = '连接中…';
+        // 模拟连接测试：1秒后返回成功
+        setTimeout(() => {
+          btnTestConnection.disabled = false;
+          btnTestConnection.textContent = origText;
+          showToast('连接成功 ✓', 'success');
+        }, 1200);
+      });
+    }
 
     // ========================================
     // 主动提示 Banner
@@ -3696,6 +3981,7 @@
 
       isProcessing = true;
       btnSend.disabled = true;
+      btnSend.classList.add('loading');
       document.getElementById('btn-stop').classList.add('visible');
       inputEl.value = '';
       inputEl.style.height = 'auto';
@@ -3811,7 +4097,7 @@
 
         // 真实召回：根据用户输入搜索匹配的记忆
         const recalled = recallMemories(text);
-        let reply = generateReply(text, recalled, toolCall);
+        let reply = generateReply(text, recalled, toolCall, currentPersona);
 
         // 如果有待确认画像，在回复中提示
         if (pendingAdded) {
@@ -3826,6 +4112,7 @@
             updateRapport();
             isProcessing = false;
             btnSend.disabled = false;
+            btnSend.classList.remove('loading');
             document.getElementById('btn-stop').classList.remove('visible');
             inputEl.focus();
           }, 600);
@@ -3834,6 +4121,7 @@
           updateRapport();
           isProcessing = false;
           btnSend.disabled = false;
+          btnSend.classList.remove('loading');
           document.getElementById('btn-stop').classList.remove('visible');
           inputEl.focus();
         }
@@ -3850,10 +4138,14 @@
 
     btnSend.addEventListener('click', sendMessage);
 
-    // 停止按钮点击：中断生成（Demo 中模拟立即停止）
+    // 停止按钮点击：中断生成（Demo 中模拟立即停止），添加防抖防止重复点击
+    let stopDebounceTimer = null;
     document.getElementById('btn-stop').addEventListener('click', () => {
+      if (stopDebounceTimer) return; // 防抖：300ms 内忽略重复点击
+      stopDebounceTimer = setTimeout(() => { stopDebounceTimer = null; }, 300);
       isProcessing = false;
       btnSend.disabled = false;
+      btnSend.classList.remove('loading');
       document.getElementById('btn-stop').classList.remove('visible');
       removeTypingIndicator();
     });
@@ -3969,6 +4261,26 @@
       updateDashboardCounters();
     }
 
+    // 添加系统消息（角色切换、状态变更等非对话消息）
+    function addSystemMessage(text) {
+      const div = document.createElement('div');
+      div.className = 'message system';
+      const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      div.innerHTML = `
+        <div class="message-content" style="width:100%;text-align:center;">
+          <div class="message-bubble" style="background:var(--accent-20);color:var(--muted);font-size:12px;padding:6px 14px;display:inline-block;border-radius:12px;">
+            ${escapeHtml(text)}
+          </div>
+          <div class="message-meta" style="justify-content:center;">
+            <span class="message-time">${time}</span>
+          </div>
+        </div>
+      `;
+      messagesEl.appendChild(div);
+      messages.push({ role: 'system', content: text, time });
+      scrollToBottom();
+    }
+
     function showTypingIndicator() {
       const div = document.createElement('div');
       div.className = 'message assistant';
@@ -4003,7 +4315,7 @@
     // ========================================
     // 回复生成（基于真实召回的模拟）
     // ========================================
-    function generateReply(text, recalled = [], toolCall = null) {
+    function generateReply(text, recalled = [], toolCall = null, personaId = 'sprite') {
       // 工具调用回复
       if (toolCall) {
         if (toolCall.name === 'write_file') {
@@ -4069,7 +4381,7 @@
 
       // 角色相关
       if (text.includes('切换角色') || text.includes('角色')) {
-        return '🎭 当前支持自动角色匹配模式：\n\n精灵会根据对话内容自动判断最适合的角色（程序员助手/写作伙伴/学习顾问等），你也可以点击侧边栏角色选择器手动切换。\n\n不同角色会影响我的回答风格、专业术语使用和主动建议方向。角色配置也作为记忆持久化保存。';
+        return '🎭 当前支持 4 个角色：\n\n• 🧚 **精灵**（默认）——友好专业的通用助手\n• 💻 **程序员助手**——技术导向，代码优先\n• ✍️ **写作伙伴**——创意激发，润色建议\n• 📚 **学习顾问**——耐心讲解，循序渐进\n\n点击左侧侧边栏顶部的角色选择器即可切换，不同角色会影响我的回答风格。角色配置也作为记忆持久化保存。';
       }
 
       // 问候
@@ -4094,8 +4406,14 @@
         return `收到！我注意到你之前提到过「${recallHint}」——这些记忆已经在我脑海中（score: ${recalled[0].score.toFixed(2)}）。\n\n继续聊吧，每条新信息都会被提取为记忆，不常用的记忆会自然衰减。`;
       }
 
-      // 默认回复
-      return '收到！继续体验 Memora Sprite：\n\n• 💬 和我对话，观察右侧记忆自动积累\n• 🧠 点击顶部「记忆」标签，查看列表/图谱双视图\n• 🪟 使用顶部三态切换器，体验浮动/托盘形态\n• ⚙️ 点击「设置」查看 LLM/精灵/项目配置项\n• 💕 留意左侧「默契度」随对话成长\n\n提示：试试发送「我喜欢简洁的回答」或「我是开发者」看看记忆提取效果~';
+      // 默认回复（角色感知）
+      const personaStyles = {
+        sprite: '收到！继续体验 Memora Sprite：\n\n• 💬 和我对话，观察右侧记忆自动积累\n• 🧠 点击顶部「记忆」标签，查看列表/图谱双视图\n• 🪟 使用顶部三态切换器，体验浮动/托盘形态\n• ⚙️ 点击「设置」查看 LLM/精灵/项目配置项\n• 💕 留意左侧「默契度」随对话成长\n\n提示：试试发送「我喜欢简洁的回答」或「我是开发者」看看记忆提取效果~',
+        coder: '收到！从技术角度看：\n\n• 记忆引擎采用 source 开放字符串模型，支持 7 核心字段\n• 工具调用遵循最小权限原则 + 路径白名单安全策略\n• 测试覆盖 445+ 用例，Vitest + MSW Mock LLM\n• 零 native 依赖内核，纯 TypeScript 实现\n\n想了解哪个模块的架构？我可以展开技术细节。',
+        writer: '感谢你的分享！作为一个创意伙伴，我想说：\n\n• 记忆系统让灵感不会丢失——每次对话的关键信息会自动沉淀\n• 不同角色会以不同风格回应你的需求\n• 你可以试试描述一个创作想法，我会帮你延展和润色\n\n写作的乐趣在于，每一次对话都是一次新的灵感碰撞 ✨',
+        tutor: '好的！让我来帮你梳理一下：\n\n• Memora 的核心概念是「万物皆是记忆」——用统一的 source 字段区分不同来源\n• 记忆系统有三个关键环节：存储 → 召回 → 组装\n• 每次对话结束，关键信息会自动提取并结构化保存\n\n有什么概念想深入了解的？我可以循序渐进地讲解~'
+      };
+      return personaStyles[personaId] || personaStyles.sprite;
     }
 
     // ========================================
@@ -4433,6 +4751,14 @@
       renderDateNavList();
       dateNavDropdown.classList.toggle('hidden');
     });
+    // 键盘支持：Enter/Space 展开，Escape 关闭
+    dateNavBtn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        renderDateNavList();
+        dateNavDropdown.classList.toggle('hidden');
+      }
+    });
     // 点击其他区域关闭下拉
     document.addEventListener('click', () => {
       dateNavDropdown.classList.add('hidden');
@@ -4601,7 +4927,7 @@
       stateBtns.forEach(b => b.classList.remove('active'));
       document.querySelector('[data-state="window"]').classList.add('active');
       statePreview.classList.remove('active');
-      appEl.style.display = '';
+      appEl.classList.remove('fading'); // 移除 fade 动画类
       stateSwitcher.style.opacity = '1';
       stateSwitcher.style.pointerEvents = 'auto';
       // 引导完成后或自动演示运行中不显示引导栏
@@ -4617,7 +4943,8 @@
       if (state === 'window') {
         showWindowState();
       } else {
-        appEl.style.display = 'none';
+        // 使用 fade 动画替代 display:none
+        appEl.classList.add('fading');
         statePreview.classList.add('active');
         guideBarEl.classList.add('hidden');
         if (state === 'float') {
@@ -4674,13 +5001,43 @@
       const canvas = document.getElementById('graph-canvas');
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
-      const w = canvas.width;
-      const h = canvas.height;
+
+      // Retina 高清适配：使用 devicePixelRatio 缩放 Canvas
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+      // 设置 Canvas 实际像素尺寸
+      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        ctx.scale(dpr, dpr);
+      }
 
       // 清空画布
       ctx.clearRect(0, 0, w, h);
 
       // 从实际记忆数据动态生成节点
+      const userMemories = demoMemories.filter(m =>
+        m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
+      );
+      const systemMemories = demoMemories.filter(m =>
+        m.source === 'persona' || m.source === 'guardrail' || m.source === 'rule'
+      );
+
+      // 空状态：无用户记忆时显示引导文字
+      if (userMemories.length === 0 && systemMemories.length === 0) {
+        const textColor = getCssVar('--muted', '#6b7280');
+        ctx.fillStyle = textColor;
+        ctx.font = '14px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('🧠 暂无记忆数据', w / 2, h / 2 - 12);
+        ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillText('在对话中会自动提取关键信息形成记忆节点', w / 2, h / 2 + 16);
+        return;
+      }
+
+      // 来源颜色映射
       const sourceColors = {
         'profile': getCssVar('--green', '#40a02b'),
         'insight': getCssVar('--accent', '#1e66f5'),
@@ -4691,14 +5048,6 @@
         'session': getCssVar('--yellow', '#df8e1d'),
       };
       const defaultColor = getCssVar('--overlay1', '#8c8fa1');
-
-      // 按来源分组，圆形布局
-      const userMemories = demoMemories.filter(m =>
-        m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
-      );
-      const systemMemories = demoMemories.filter(m =>
-        m.source === 'persona' || m.source === 'guardrail' || m.source === 'rule'
-      );
 
       // 动态计算节点位置：用户记忆在中心区域，系统记忆在外围
       const centerX = w / 2;
@@ -4920,6 +5269,9 @@
       memoryListEl.innerHTML = filtered.length === 0
         ? `<div style="padding: 40px; text-align: center; color: var(--text-3); font-size: 13px;">
              🔍 没有找到匹配的记忆
+             <div style="margin-top: 8px; font-size: 12px; color: var(--muted);">
+               ${searchText ? '尝试其他关键词，或<a href="#" onclick="document.getElementById(\'memory-search\').value=\'\';renderFilteredMemoryList(\'\',document.getElementById(\'memory-filter-source\').value);return false;" style="color:var(--accent);">清除搜索</a>' : '尝试切换来源筛选器'}
+             </div>
            </div>`
         : filtered.map(m => {
             const sc = scoreClass(m.score);
@@ -5314,6 +5666,180 @@
         }
       });
     }
+    // ========================================
+    // 角色切换（新增）
+    // ========================================
+    // 渲染角色下拉菜单
+    function renderPersonaDropdown() {
+      const list = document.getElementById('persona-dropdown-list');
+      if (!list) return;
+      let html = '';
+      demoPersonas.forEach(p => {
+        const activeClass = p.id === currentPersona ? ' active' : '';
+        html += `
+          <div class="persona-dropdown-item${activeClass}" onclick="switchPersona('${p.id}')">
+            <span class="pdi-icon">${p.icon}</span>
+            <div>
+              <div class="pdi-name">${p.name}</div>
+              <div class="pdi-desc">${p.desc}</div>
+            </div>
+          </div>`;
+      });
+      list.innerHTML = html;
+    }
+
+    // 展开/收起角色下拉菜单
+    // 当前键盘导航高亮的角色索引
+    let personaNavIndex = -1;
+
+    function togglePersonaDropdown() {
+      const dropdown = document.getElementById('persona-dropdown');
+      if (!dropdown) return;
+      const isHidden = dropdown.classList.contains('hidden');
+      if (isHidden) {
+        renderPersonaDropdown();
+        dropdown.classList.remove('hidden');
+        personaNavIndex = -1;
+      } else {
+        dropdown.classList.add('hidden');
+        document.removeEventListener('click', closePersonaDropdown);
+      }
+      // 点击外部关闭
+      if (isHidden) {
+        setTimeout(() => {
+          document.addEventListener('click', closePersonaDropdown);
+        }, 0);
+      }
+    }
+    window.togglePersonaDropdown = togglePersonaDropdown;
+
+    // 关闭角色下拉菜单
+    function closePersonaDropdown(e) {
+      const dropdown = document.getElementById('persona-dropdown');
+      const selector = document.getElementById('persona-selector');
+      if (!dropdown || !selector) return;
+      if (!selector.contains(e.target)) {
+        dropdown.classList.add('hidden');
+        document.removeEventListener('click', closePersonaDropdown);
+        personaNavIndex = -1;
+      }
+    }
+
+    // 键盘导航角色下拉菜单
+    function handlePersonaDropdownKeydown(e) {
+      const dropdown = document.getElementById('persona-dropdown');
+      if (!dropdown || dropdown.classList.contains('hidden')) return;
+      const items = dropdown.querySelectorAll('.persona-dropdown-item');
+      if (items.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        personaNavIndex = Math.min(personaNavIndex + 1, items.length - 1);
+        highlightPersonaItem(items, personaNavIndex);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        personaNavIndex = Math.max(personaNavIndex - 1, 0);
+        highlightPersonaItem(items, personaNavIndex);
+      } else if (e.key === 'Enter' && personaNavIndex >= 0) {
+        e.preventDefault();
+        items[personaNavIndex].click();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        dropdown.classList.add('hidden');
+        document.removeEventListener('click', closePersonaDropdown);
+        personaNavIndex = -1;
+        // 焦点回到选择器
+        document.getElementById('persona-selector')?.focus();
+      }
+    }
+
+    // 高亮指定角色项
+    function highlightPersonaItem(items, index) {
+      items.forEach((item, i) => {
+        if (i === index) {
+          item.style.background = 'var(--accent-20)';
+          item.scrollIntoView({ block: 'nearest' });
+        } else {
+          item.style.background = '';
+        }
+      });
+    }
+
+    // 全局 Escape 键关闭所有弹窗
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        // 关闭角色下拉菜单
+        const personaDropdown = document.getElementById('persona-dropdown');
+        if (personaDropdown && !personaDropdown.classList.contains('hidden')) {
+          handlePersonaDropdownKeydown(e);
+          return;
+        }
+        // 关闭日期导航下拉菜单
+        const dateDropdown = document.getElementById('date-nav-dropdown');
+        if (dateDropdown && !dateDropdown.classList.contains('hidden')) {
+          dateDropdown.classList.add('hidden');
+          return;
+        }
+        // 关闭引导弹窗
+        const onboarding = document.getElementById('onboarding-overlay');
+        if (onboarding && !onboarding.classList.contains('hidden')) {
+          closeOnboarding();
+          return;
+        }
+      }
+    });
+
+    // 角色下拉菜单键盘导航监听
+    document.addEventListener('keydown', (e) => {
+      handlePersonaDropdownKeydown(e);
+    });
+
+    // 角色选择器键盘触发（Enter/Space 展开下拉菜单）
+    document.getElementById('persona-selector')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        togglePersonaDropdown();
+      }
+    });
+
+    // 输入区角色选择器点击展开侧边栏角色下拉
+    const inputPersonaSelector = document.getElementById('input-persona-selector');
+    if (inputPersonaSelector) {
+      inputPersonaSelector.style.cursor = 'pointer';
+      inputPersonaSelector.addEventListener('click', () => togglePersonaDropdown());
+    }
+
+    // 切换角色
+    function switchPersona(personaId) {
+      const persona = demoPersonas.find(p => p.id === personaId);
+      if (!persona) return;
+      currentPersona = personaId;
+      // 更新侧边栏 UI 显示
+      document.getElementById('persona-icon').textContent = persona.icon;
+      document.getElementById('persona-name').textContent = persona.name;
+      // 更新输入区角色选择器
+      if (inputPersonaSelector) {
+        inputPersonaSelector.querySelector('.input-persona-icon').textContent = persona.icon;
+        inputPersonaSelector.querySelector('.input-persona-name').textContent = persona.name;
+      }
+      // 关闭下拉菜单
+      const dropdown = document.getElementById('persona-dropdown');
+      if (dropdown) dropdown.classList.add('hidden');
+      document.removeEventListener('click', closePersonaDropdown);
+      personaNavIndex = -1;
+      // 重新渲染下拉菜单（更新 active 状态）
+      renderPersonaDropdown();
+      // 添加角色切换提示消息
+      addSystemMessage('已切换角色为「' + persona.name + '」——' + persona.desc);
+    }
+    window.switchPersona = switchPersona;
+
+    // 获取当前角色的回答风格提示
+    function getCurrentPersonaStyle() {
+      const persona = demoPersonas.find(p => p.id === currentPersona);
+      return persona ? persona.style : '专业、友好的态度，默认使用中文';
+    }
+
     initTheme();
 
     // 在原有 updateDashboardCounters 中追加情感基调更新
@@ -5322,6 +5848,28 @@
       origUpdateDashboardCounters();
       updateAffect();
     };
+
+    // ========================================
+    // Toast 通知工具
+    // ========================================
+    /**
+     * 显示 toast 通知，2.5 秒后自动消失
+     * @param {string} message - 通知内容
+     * @param {'success'|'warning'|'error'} [type='success'] - 通知类型
+     */
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      // 动画结束后移除 DOM 节点
+      toast.addEventListener('animationend', (e) => {
+        if (e.animationName === 'toastOut') {
+          toast.remove();
+        }
+      });
+    }
 
     </script>
 
