@@ -62,7 +62,7 @@ export { SOURCE_LABELS, inferSource, escapeLike, validateSource } from '@/memory
 export type { Memory, SourceValidationSeverity } from '@/memory/types.js';
 // 记忆关系图谱（ADR-014 侧车模型）
 export { RELATION_TYPES, RELATION_WEIGHTS } from '@/memory/types.js';
-export type { MemoryRelation, RelationDirection } from '@/memory/types.js';
+export type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor } from '@/memory/types.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';

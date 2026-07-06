@@ -306,3 +306,51 @@ export const RELATION_TYPES = {
   /** 泛相关（双向对称） */
   RELATED: 'related',
 } as const;
+
+// ─── 关系查询结果类型（ADR-014 扩展，Phase 5.1/5.2） ─────
+
+/**
+ * 关系路径节点 — 路径追溯查询结果
+ *
+ * 独立于 Memory 和 MemoryRelation，仅作为查询结果投影类型存在。
+ * 不侵入 Memory 7 字段基元（ADR-004），不扩展 MemoryRelation 侧车结构（ADR-014）。
+ *
+ * 用于宿主 UI 展示记忆的演化脉络（如 insight-a → refines → insight-b → follows → insight-c）
+ */
+export interface RelationPath {
+  /** 当前节点记忆 ID */
+  memoryId: string;
+  /** 当前节点记忆名称（用于 UI 展示） */
+  memoryName: string;
+  /** 当前节点记忆来源标签（用于 UI 颜色区分） */
+  memorySource: string;
+  /** 与上一节点的关系类型（起点节点此字段为 null） */
+  relationType: string | null;
+  /** 与上一节点的关系权重（起点节点此字段为 null） */
+  relationWeight: number | null;
+  /** 距离起点的步数（起点为 0，每跳一步 +1） */
+  depth: number;
+}
+
+/**
+ * 关系邻居 — 直接关联的记忆查询结果
+ *
+ * 独立于 Memory 和 MemoryRelation，仅作为查询结果投影类型存在。
+ * 用于宿主 UI 展示某记忆的直接关联记忆（如冲突记忆、支持记忆、后续记忆等）
+ */
+export interface RelationNeighbor {
+  /** 邻居记忆 ID */
+  memoryId: string;
+  /** 邻居记忆名称 */
+  memoryName: string;
+  /** 邻居记忆来源标签 */
+  memorySource: string;
+  /** 邻居记忆权重（0-1，用于 UI 节点大小） */
+  memoryScore: number;
+  /** 关系类型 */
+  relationType: string;
+  /** 关系权重 */
+  relationWeight: number;
+  /** 关系方向：'incoming'（邻居是 sourceId）或 'outgoing'（邻居是 targetId） */
+  direction: 'incoming' | 'outgoing';
+}

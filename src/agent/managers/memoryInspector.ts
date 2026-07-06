@@ -13,7 +13,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 // ADR-014 记忆关系图谱：可选注入，未注入时跳过关系查询
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
-import type { MemoryRelation, RelationDirection } from '@/memory/types.js';
+import type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor } from '@/memory/types.js';
 import type { VectorStore } from '@/memory/vectorStore.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -518,6 +518,138 @@ export class MemoryInspector {
   removeRelation(sourceId: string, targetId: string, type: string): void {
     if (!this.relationStore) return;
     this.relationStore.removeRelation(sourceId, targetId, type);
+  }
+
+  /**
+   * 记忆关系路径追溯（ADR-014 扩展，Phase 5.1）
+   *
+   * 从指定记忆出发，沿关系边追溯来源或去向，返回完整路径。
+   * 用于宿主 UI 展示记忆的演化脉络（如 insight-a → refines → insight-b → follows → insight-c）。
+   *
+   * 防环设计：使用 visited Set 记录已访问节点，防止环导致无限递归。
+   * 深度限制：maxDepth 控制最大追溯步数，防止路径过长。
+   *
+   * relationStore 未注入时返回仅含起点节点的数组（向后兼容，ADR-014 降级优先）。
+   *
+   * @param memoryId - 起点记忆 ID
+   * @param maxDepth - 最大追溯深度（默认 5，防止路径过长）
+   * @param direction - 追溯方向：'incoming'（追溯来源，默认）/ 'outgoing'（追溯去向） / 'both'
+   * @returns 路径节点列表，按 depth 升序（起点在前）
+   */
+  getRelationPath(
+    memoryId: string,
+    maxDepth = 5,
+    direction: RelationDirection = 'incoming',
+  ): RelationPath[] {
+    // 起点节点（无论 relationStore 是否注入都返回）
+    const startMemory = this.index.getById(memoryId);
+    const path: RelationPath[] = [
+      {
+        memoryId,
+        memoryName: startMemory?.name ?? '(unknown)',
+        memorySource: startMemory?.source ?? '(unknown)',
+        relationType: null,
+        relationWeight: null,
+        depth: 0,
+      },
+    ];
+
+    // relationStore 未注入时仅返回起点（降级优先，ADR-014）
+    if (!this.relationStore) return path;
+
+    // BFS 遍历，visited 防环
+    const visited = new Set<string>([memoryId]);
+    const queue: Array<{ id: string; depth: number; relationType: string; relationWeight: number }> = [
+      { id: memoryId, depth: 0, relationType: '', relationWeight: 0 },
+    ];
+
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (current.depth >= maxDepth) continue;
+
+      const relations = this.relationStore.getRelations(current.id, direction);
+      for (const rel of relations) {
+        // direction='incoming' 时邻居是 sourceId；'outgoing' 时邻居是 targetId
+        const neighborId = direction === 'incoming' ? rel.sourceId : rel.targetId;
+        if (visited.has(neighborId)) continue;
+        visited.add(neighborId);
+
+        const neighborMemory = this.index.getById(neighborId);
+        path.push({
+          memoryId: neighborId,
+          memoryName: neighborMemory?.name ?? '(unknown)',
+          memorySource: neighborMemory?.source ?? '(unknown)',
+          relationType: rel.type,
+          relationWeight: rel.weight,
+          depth: current.depth + 1,
+        });
+
+        queue.push({
+          id: neighborId,
+          depth: current.depth + 1,
+          relationType: rel.type,
+          relationWeight: rel.weight,
+        });
+      }
+    }
+
+    return path;
+  }
+
+  /**
+   * 记忆关系邻居查询（ADR-014 扩展，Phase 5.2）
+   *
+   * 返回与指定记忆直接关联的记忆列表，含关系类型和方向。
+   * 用于宿主 UI 展示某记忆的直接关联记忆（如冲突记忆、支持记忆、后续记忆等）。
+   *
+   * relationStore 未注入时返回空数组（向后兼容，ADR-014 降级优先）。
+   *
+   * @param memoryId - 基准记忆 ID
+   * @param limit - 返回数量上限（默认 10，防止过多邻居导致 UI 拥挤）
+   * @returns 邻居记忆列表，含关系类型/权重/方向
+   */
+  getRelationNeighbors(memoryId: string, limit = 10): RelationNeighbor[] {
+    // relationStore 未注入时返回空数组（降级优先，ADR-014）
+    if (!this.relationStore) return [];
+
+    const neighbors: RelationNeighbor[] = [];
+    const seen = new Set<string>(); // 去重（同一邻居可能有多条关系）
+
+    // outgoing：memoryId 是 sourceId，邻居是 targetId
+    const outgoing = this.relationStore.getRelations(memoryId, 'outgoing');
+    for (const rel of outgoing) {
+      if (seen.has(rel.targetId)) continue;
+      seen.add(rel.targetId);
+      const neighborMemory = this.index.getById(rel.targetId);
+      neighbors.push({
+        memoryId: rel.targetId,
+        memoryName: neighborMemory?.name ?? '(unknown)',
+        memorySource: neighborMemory?.source ?? '(unknown)',
+        memoryScore: neighborMemory?.score ?? 0,
+        relationType: rel.type,
+        relationWeight: rel.weight,
+        direction: 'outgoing',
+      });
+    }
+
+    // incoming：memoryId 是 targetId，邻居是 sourceId
+    const incoming = this.relationStore.getRelations(memoryId, 'incoming');
+    for (const rel of incoming) {
+      if (seen.has(rel.sourceId)) continue;
+      seen.add(rel.sourceId);
+      const neighborMemory = this.index.getById(rel.sourceId);
+      neighbors.push({
+        memoryId: rel.sourceId,
+        memoryName: neighborMemory?.name ?? '(unknown)',
+        memorySource: neighborMemory?.source ?? '(unknown)',
+        memoryScore: neighborMemory?.score ?? 0,
+        relationType: rel.type,
+        relationWeight: rel.weight,
+        direction: 'incoming',
+      });
+    }
+
+    return neighbors.slice(0, limit);
   }
 
   /**

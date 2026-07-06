@@ -509,6 +509,157 @@ describe('MemoryInspector', () => {
   });
 
   // ════════════════════════════════════════════════════════
+  // 7.1 关系路径追溯 getRelationPath（5 测试）
+  // ════════════════════════════════════════════════════════
+
+  describe('getRelationPath 路径追溯', () => {
+    it('relationStore 未注入时仅返回起点节点', () => {
+      const path = inspector.getRelationPath('insight:start');
+      expect(path).toHaveLength(1);
+      expect(path[0]!.memoryId).toBe('insight:start');
+      expect(path[0]!.depth).toBe(0);
+      expect(path[0]!.relationType).toBeNull();
+    });
+
+    it('direction=incoming 时沿 sourceId 方向追溯来源', () => {
+      // 构建链：a → b → c（a refines b, b refines c）
+      // 从 c 追溯来源，应得到 [c(0), b(1), a(2)]
+      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:c', name: 'c', source: 'insight' }));
+
+      const relationStore = new InMemoryRelationStore();
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'refines', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
+      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:c', type: 'refines', weight: 0.7, createdAt: '2026-06-27T11:00:00.000Z' });
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
+
+      const path = inspector.getRelationPath('insight:c', 5, 'incoming');
+      expect(path).toHaveLength(3);
+      expect(path[0]!.memoryId).toBe('insight:c');
+      expect(path[0]!.depth).toBe(0);
+      expect(path[1]!.memoryId).toBe('insight:b');
+      expect(path[1]!.depth).toBe(1);
+      expect(path[1]!.relationType).toBe('refines');
+      expect(path[2]!.memoryId).toBe('insight:a');
+      expect(path[2]!.depth).toBe(2);
+    });
+
+    it('direction=outgoing 时沿 targetId 方向追溯去向', () => {
+      // 从 a 追溯去向，应得到 [a(0), b(1), c(2)]
+      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:c', name: 'c', source: 'insight' }));
+
+      const relationStore = new InMemoryRelationStore();
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'refines', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
+      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:c', type: 'refines', weight: 0.7, createdAt: '2026-06-27T11:00:00.000Z' });
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
+
+      const path = inspector.getRelationPath('insight:a', 5, 'outgoing');
+      expect(path).toHaveLength(3);
+      expect(path[0]!.memoryId).toBe('insight:a');
+      expect(path[2]!.memoryId).toBe('insight:c');
+    });
+
+    it('maxDepth 限制路径深度，超出部分不返回', () => {
+      // 链：a → b → c → d → e
+      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:c', name: 'c', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:d', name: 'd', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:e', name: 'e', source: 'insight' }));
+
+      const relationStore = new InMemoryRelationStore();
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'refines', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
+      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:c', type: 'refines', weight: 0.7, createdAt: '2026-06-27T11:00:00.000Z' });
+      relationStore.addRelation({ sourceId: 'insight:c', targetId: 'insight:d', type: 'refines', weight: 0.7, createdAt: '2026-06-27T12:00:00.000Z' });
+      relationStore.addRelation({ sourceId: 'insight:d', targetId: 'insight:e', type: 'refines', weight: 0.7, createdAt: '2026-06-27T13:00:00.000Z' });
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
+
+      // maxDepth=2，从 e 追溯，应只到 depth=2（c）
+      const path = inspector.getRelationPath('insight:e', 2, 'incoming');
+      expect(path).toHaveLength(3); // e(0), d(1), c(2)
+      expect(path[2]!.depth).toBe(2);
+      expect(path[2]!.memoryId).toBe('insight:c');
+    });
+
+    it('环关系不导致无限递归（visited 防环）', () => {
+      // 构建环：a → b → a
+      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
+
+      const relationStore = new InMemoryRelationStore();
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'related', weight: 0.5, createdAt: '2026-06-27T10:00:00.000Z' });
+      relationStore.addRelation({ sourceId: 'insight:b', targetId: 'insight:a', type: 'related', weight: 0.5, createdAt: '2026-06-27T11:00:00.000Z' });
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
+
+      const path = inspector.getRelationPath('insight:a', 10, 'outgoing');
+      // 环应被 visited 阻断：a(0) → b(1)，a 已访问不再入队
+      expect(path).toHaveLength(2);
+      expect(path[0]!.memoryId).toBe('insight:a');
+      expect(path[1]!.memoryId).toBe('insight:b');
+    });
+  });
+
+  // ════════════════════════════════════════════════════════
+  // 7.2 关系邻居查询 getRelationNeighbors（4 测试）
+  // ════════════════════════════════════════════════════════
+
+  describe('getRelationNeighbors 邻居查询', () => {
+    it('relationStore 未注入时返回空数组', () => {
+      expect(inspector.getRelationNeighbors('any-id')).toEqual([]);
+    });
+
+    it('outgoing 关系：memoryId 是 sourceId，邻居是 targetId', () => {
+      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight', score: 0.8 }));
+      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight', score: 0.6 }));
+
+      const relationStore = new InMemoryRelationStore();
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'supports', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
+
+      const neighbors = inspector.getRelationNeighbors('insight:a');
+      expect(neighbors).toHaveLength(1);
+      expect(neighbors[0]!.memoryId).toBe('insight:b');
+      expect(neighbors[0]!.direction).toBe('outgoing');
+      expect(neighbors[0]!.relationType).toBe('supports');
+      expect(neighbors[0]!.memoryScore).toBe(0.6);
+    });
+
+    it('incoming 关系：memoryId 是 targetId，邻居是 sourceId', () => {
+      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight', score: 0.8 }));
+      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight', score: 0.6 }));
+
+      const relationStore = new InMemoryRelationStore();
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'supports', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
+
+      // 从 b 视角看，a 是 incoming 邻居
+      const neighbors = inspector.getRelationNeighbors('insight:b');
+      expect(neighbors).toHaveLength(1);
+      expect(neighbors[0]!.memoryId).toBe('insight:a');
+      expect(neighbors[0]!.direction).toBe('incoming');
+      expect(neighbors[0]!.memoryScore).toBe(0.8);
+    });
+
+    it('同一邻居有多条关系时去重（seen Set）', () => {
+      storage.upsert(createMemory({ id: 'insight:a', name: 'a', source: 'insight' }));
+      storage.upsert(createMemory({ id: 'insight:b', name: 'b', source: 'insight' }));
+
+      const relationStore = new InMemoryRelationStore();
+      // a→b 两条关系（supports + related）
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'supports', weight: 0.7, createdAt: '2026-06-27T10:00:00.000Z' });
+      relationStore.addRelation({ sourceId: 'insight:a', targetId: 'insight:b', type: 'related', weight: 0.3, createdAt: '2026-06-27T11:00:00.000Z' });
+      inspector = new MemoryInspector(storage, loop, history, advisor, relationStore);
+
+      // 从 a 看，b 只出现一次（第一条关系 supports）
+      const neighbors = inspector.getRelationNeighbors('insight:a');
+      expect(neighbors).toHaveLength(1);
+      expect(neighbors[0]!.relationType).toBe('supports');
+    });
+  });
+
+  // ════════════════════════════════════════════════════════
   // 8. sourceHealth + suggest 委托（3 测试）
   // ════════════════════════════════════════════════════════
 
