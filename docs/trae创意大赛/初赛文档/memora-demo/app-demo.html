@@ -3173,11 +3173,11 @@
             <div class="empty-title">你好，我是 Memora 精灵</div>
             <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
             <div class="empty-suggestions">
-              <button class="suggestion-btn" data-text="我叫小明，是一名前端开发者">📝 自我介绍</button>
-              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
-              <button class="suggestion-btn" data-text="我最近在做一个 Vue 项目">🎨 作品投影</button>
-              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
-              <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
+              <button class="suggestion-btn" data-text="我在成都做前端开发，平时喜欢喝咖啡">☕ 聊聊日常</button>
+              <button class="suggestion-btn" data-text="最近工作好累，压力有点大">😮‍💨 吐槽一下</button>
+              <button class="suggestion-btn" data-text="我家有只猫，叫团子">🐱 说点私事</button>
+              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">🧠 怎么记住我的</button>
+              <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私安全吗</button>
             </div>
           </div>
         </div>
@@ -4010,60 +4010,268 @@
       messageCount++;
       updateMessageCount();
 
-      // 检测是否需要添加记忆：识别多种用户信息类型
+      // 检测是否需要添加记忆：从自然对话中默默提取（核心价值体现）
+      // 设计原则：不直白告知"我记住了"，让用户事后发现"你居然记得"
       let newMemory = null;
       let memName = '';
       let memContent = '';
       let memSource = 'profile';
+      // 记忆提取模式：explicit(用户主动告知，弹确认) / implicit(自然流露，静默入库)
+      let extractMode = 'implicit';
+      // 是否需要用户确认后才入库：明确告知的信息（如"我叫XX"）直接入库，推断的信息待确认
+      let needsConfirmation = false;
 
-      // 身份信息识别（扩展更多自然语言句式）
-      // 疑问句检测：句尾有问号则不提取身份（"我是谁？""记得我是谁吗？"等）
+      // 疑问句检测：句尾有问号时跳过身份类提取（防止"我是谁？"被误提取）
       const endsWithQuestion = /[？?]\s*$/.test(text.trim());
-      // 用正则确保"我是/我叫/我的名字是"出现在句首或标点/空格后，防止"记得我是X"这类中间匹配
+      // 疑问词黑名单：用于过滤疑问句式中的提取
+      const questionWords = /谁|什么|哪|怎|几|多|吗|呢|为什|为啥|难道|是不是|对不对|有没有/;
+
+      // ============================================
+      // 1. 身份信息：我是/我叫/我的名字是
+      // ============================================
       const identityMatch = text.match(/(?:^|[，。,.\s！!？?])(我叫|我的名字是|我是)([^，。！!？?\s]+)/);
-      // 疑问词/语气词黑名单，防止"谁吗""什么"被误识别为名字
       const invalidNamePattern = /^(谁|什么|哪|怎|几|多|吗|呢|为什|为啥|难道|是不是|对不对|有没有|这个|那个|这里|那里|一个|一|在|有|和|的|了|也|就|都|不|没|很|会|要|去|到|说|看|听|想|能|可以|知道|觉得|认为|希望)$/;
 
       if (identityMatch && !endsWithQuestion) {
-        const extracted = identityMatch[2]; // 提取到的名称部分
+        const extracted = identityMatch[2];
+        const isExplicitName = identityMatch[1] === '我叫' || identityMatch[1] === '我的名字是';
         if (text.includes('中国')) {
           memName = '用户画像-国籍';
           memContent = '国籍：中国，偏好中文交流';
+          extractMode = 'explicit';
+          needsConfirmation = !isExplicitName;
         } else if (text.includes('程序员') || text.includes('开发') || text.includes('编程')) {
           memName = '用户画像-职业';
           memContent = '职业：开发者/程序员，使用 IDE 进行编码工作';
+          extractMode = 'explicit';
+          needsConfirmation = !isExplicitName;
         } else if (text.includes('学生')) {
           memName = '用户画像-身份';
           memContent = '身份：学生，有学习和研究需求';
+          extractMode = 'explicit';
+          needsConfirmation = !isExplicitName;
         } else if (text.includes('作家') || text.includes('写作') || text.includes('写小说')) {
           memName = '用户画像-职业';
           memContent = '职业：创作者/作家，需要长时间深度对话';
+          extractMode = 'explicit';
+          needsConfirmation = !isExplicitName;
+        } else if (text.includes('设计师') || text.includes('设计')) {
+          memName = '用户画像-职业';
+          memContent = '职业：设计师，关注审美和用户体验';
+          extractMode = 'explicit';
+          needsConfirmation = !isExplicitName;
+        } else if (text.includes('产品经理') || text.includes('PM') || text.includes('产品')) {
+          memName = '用户画像-职业';
+          memContent = '职业：产品经理，关注需求和用户价值';
+          extractMode = 'explicit';
+          needsConfirmation = !isExplicitName;
         } else if (extracted && !invalidNamePattern.test(extracted) && extracted.length >= 1 && extracted.length <= 20) {
-          // 通用姓名识别：过滤疑问词/语气词/常用虚词，确保名称合理
           memName = '用户画像-称呼';
           memContent = `称呼：${extracted}`;
+          extractMode = 'explicit';
+          // 称呼是用户明确告知的（我叫XX/我的名字是XX），直接入库，不需要确认
+          needsConfirmation = false;
         }
       }
-      // 偏好识别（扩展更多表达方式）
-      else if (text.includes('我喜欢') || text.includes('我偏好') || text.includes('我希望') || text.includes('我爱') || text.includes('我习惯')) {
-        memName = '用户偏好';
-        memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
-        memSource = 'insight';
-      }
-      // 项目信息识别（扩展更多表达方式）
-      else if (text.includes('我在做') || text.includes('我的项目') || text.includes('正在开发') || text.includes('最近在') || text.includes('在做')) {
-        memName = '当前项目';
-        memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
-        memSource = 'work-projection';
+
+      // ============================================
+      // 2. 地理位置/城市
+      // ============================================
+      if (!memName) {
+        const cityPatterns = [
+          { pattern: /(?:在|来自|是|住)(北京|上海|广州|深圳|杭州|成都|武汉|西安|南京|苏州|重庆|天津|长沙|郑州|青岛|大连|厦门|合肥|福州|济南|哈尔滨|长春|沈阳|石家庄|太原|南昌|南宁|昆明|贵阳|兰州|乌鲁木齐|呼和浩特|拉萨|海口|三亚|宁波|无锡|温州|佛山|东莞|珠海)/, key: '城市' },
+          { pattern: /(?:在|去|到过)(东京|首尔|新加坡|纽约|伦敦|巴黎|柏林|悉尼|多伦多|温哥华)/, key: '城市' },
+        ];
+        for (const cp of cityPatterns) {
+          const m = text.match(cp.pattern);
+          if (m && !endsWithQuestion && !questionWords.test(m[1])) {
+            memName = '用户画像-城市';
+            memContent = `所在城市：${m[1]}`;
+            extractMode = 'implicit';
+            break;
+          }
+        }
       }
 
-      if (memName && memContent) {
+      // ============================================
+      // 3. 作息习惯
+      // ============================================
+      if (!memName) {
+        // 早起型
+        if ((text.includes('早起') || text.includes('早睡') || text.includes('早上') || text.includes('早晨')) &&
+            (text.includes('习惯') || text.includes('一般') || text.includes('通常') || text.includes('每天') || text.includes('我都'))) {
+          memName = '生活习惯-作息';
+          memContent = '作息规律：早起型，习惯早睡早起';
+          memSource = 'insight';
+          extractMode = 'implicit';
+        }
+        // 夜猫子型
+        else if ((text.includes('熬夜') || text.includes('晚睡') || text.includes('凌晨') || text.includes('夜猫子')) &&
+                 (text.includes('习惯') || text.includes('一般') || text.includes('通常') || text.includes('经常') || text.includes('我都'))) {
+          memName = '生活习惯-作息';
+          memContent = '作息规律：夜猫子型，习惯晚睡';
+          memSource = 'insight';
+          extractMode = 'implicit';
+        }
+        // 咖啡/茶
+        else if (text.includes('喝咖啡') || (text.includes('喝') && text.includes('咖啡'))) {
+          memName = '生活习惯-饮品';
+          memContent = '饮品偏好：喜欢喝咖啡';
+          memSource = 'insight';
+          extractMode = 'implicit';
+        } else if (text.includes('喝茶') || (text.includes('喝') && text.includes('茶'))) {
+          memName = '生活习惯-饮品';
+          memContent = '饮品偏好：喜欢喝茶';
+          memSource = 'insight';
+          extractMode = 'implicit';
+        }
+      }
+
+      // ============================================
+      // 4. 口味/饮食偏好
+      // ============================================
+      if (!memName) {
+        const tastePatterns = [
+          { match: () => (text.includes('吃') || text.includes('口味') || text.includes('喜欢')) && (text.includes('辣') || text.includes('麻辣') || text.includes('川菜') || text.includes('湘菜')), name: '饮食偏好-口味', content: '口味偏好：喜欢吃辣' },
+          { match: () => (text.includes('吃') || text.includes('口味') || text.includes('喜欢')) && (text.includes('甜') || text.includes('甜食') || text.includes('奶茶')), name: '饮食偏好-口味', content: '口味偏好：喜欢甜食' },
+          { match: () => text.includes('素食') || text.includes('吃素') || text.includes('不吃肉'), name: '饮食偏好-饮食', content: '饮食习惯：素食主义' },
+          { match: () => text.includes('不吃') && (text.includes('香菜') || text.includes('葱') || text.includes('姜') || text.includes('蒜')), name: '饮食偏好-忌口', content: '饮食忌口：不吃香菜/葱姜蒜' },
+        ];
+        for (const tp of tastePatterns) {
+          if (tp.match() && !endsWithQuestion) {
+            memName = tp.name;
+            memContent = tp.content;
+            memSource = 'insight';
+            extractMode = 'implicit';
+            break;
+          }
+        }
+      }
+
+      // ============================================
+      // 5. 宠物
+      // ============================================
+      if (!memName) {
+        if ((text.includes('养') || text.includes('有一只') || text.includes('我家')) &&
+            (text.includes('猫') || text.includes('狗') || text.includes('宠物'))) {
+          const petType = text.includes('猫') ? '猫' : (text.includes('狗') ? '狗' : '宠物');
+          memName = '生活-宠物';
+          memContent = `养有${petType}，是宠物爱好者`;
+          memSource = 'insight';
+          extractMode = 'implicit';
+        }
+      }
+
+      // ============================================
+      // 6. 兴趣爱好
+      // ============================================
+      if (!memName) {
+        const hobbyPatterns = [
+          { test: () => text.includes('打游戏') || text.includes('玩游戏') || (text.includes('游戏') && (text.includes('喜欢') || text.includes('经常'))), name: '兴趣爱好', content: '兴趣：玩游戏' },
+          { test: () => text.includes('看书') || text.includes('读书') || (text.includes('书') && (text.includes('喜欢') || text.includes('经常'))), name: '兴趣爱好', content: '兴趣：阅读/看书' },
+          { test: () => text.includes('听音乐') || text.includes('音乐') && (text.includes('喜欢') || text.includes('常听')), name: '兴趣爱好', content: '兴趣：听音乐' },
+          { test: () => text.includes('看电影') || text.includes('电影') && (text.includes('喜欢') || text.includes('常看')), name: '兴趣爱好', content: '兴趣：看电影' },
+          { test: () => text.includes('健身') || text.includes('跑步') || text.includes('运动') && (text.includes('喜欢') || text.includes('经常')), name: '兴趣爱好', content: '兴趣：运动/健身' },
+          { test: () => text.includes('旅行') || text.includes('旅游') && (text.includes('喜欢') || text.includes('经常')), name: '兴趣爱好', content: '兴趣：旅行' },
+          { test: () => text.includes('摄影') && (text.includes('喜欢') || text.includes('玩')), name: '兴趣爱好', content: '兴趣：摄影' },
+        ];
+        for (const hp of hobbyPatterns) {
+          if (hp.test() && !endsWithQuestion) {
+            memName = hp.name;
+            memContent = hp.content;
+            memSource = 'insight';
+            extractMode = 'implicit';
+            break;
+          }
+        }
+      }
+
+      // ============================================
+      // 7. 编程语言/技术栈（从闲聊中自然感知）
+      // ============================================
+      if (!memName) {
+        const langPatterns = [
+          { keys: ['TypeScript', 'TypeScript', 'TS'], name: '技术栈-语言', content: '技术栈：TypeScript' },
+          { keys: ['JavaScript', 'JS', ' js '], name: '技术栈-语言', content: '技术栈：JavaScript' },
+          { keys: ['Python', 'python'], name: '技术栈-语言', content: '技术栈：Python' },
+          { keys: ['React', 'react'], name: '技术栈-前端', content: '技术栈：React' },
+          { keys: ['Vue', 'vue'], name: '技术栈-前端', content: '技术栈：Vue.js' },
+          { keys: ['Go', ' Golang', ' golang'], name: '技术栈-语言', content: '技术栈：Go' },
+          { keys: ['Rust', 'rust'], name: '技术栈-语言', content: '技术栈：Rust' },
+        ];
+        for (const lp of langPatterns) {
+          if (lp.keys.some(k => text.includes(k)) && !endsWithQuestion) {
+            memName = lp.name;
+            memContent = lp.content;
+            memSource = 'insight';
+            extractMode = 'implicit';
+            break;
+          }
+        }
+      }
+
+      // ============================================
+      // 8. 情绪/状态（短期记忆，高衰减）
+      // ============================================
+      if (!memName) {
+        const moodPatterns = [
+          { test: () => (text.includes('今天') || text.includes('最近')) && (text.includes('累') || text.includes('疲惫') || text.includes('压力')), name: '状态-近期', content: '近期状态：比较累/有压力，需要安慰和鼓励', score: 0.7 },
+          { test: () => (text.includes('今天') || text.includes('现在')) && (text.includes('开心') || text.includes('高兴') || text.includes('愉快')), name: '状态-近期', content: '近期状态：心情不错', score: 0.7 },
+        ];
+        for (const mp of moodPatterns) {
+          if (mp.test() && !endsWithQuestion) {
+            memName = mp.name;
+            memContent = mp.content;
+            memSource = 'insight';
+            extractMode = 'implicit';
+            // 情绪类记忆衰减更快
+            const baseScore = mp.score || 0.7;
+            newMemory = {
+              id: 'mem-' + Date.now(),
+              source: memSource,
+              name: memName,
+              content: memContent,
+              score: baseScore,
+              time: '刚刚'
+            };
+            break;
+          }
+        }
+      }
+
+      // ============================================
+      // 9. 直白的偏好陈述（我喜欢/我希望/我习惯）
+      //    放在最后，优先级低于更具体的分类
+      // ============================================
+      if (!memName) {
+        if (text.includes('我喜欢') || text.includes('我偏好') || text.includes('我希望') || text.includes('我爱') || text.includes('我习惯')) {
+          memName = '用户偏好';
+          memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
+          memSource = 'insight';
+          extractMode = 'explicit';
+        }
+      }
+
+      // ============================================
+      // 10. 项目/工作信息
+      // ============================================
+      if (!memName) {
+        if (text.includes('我在做') || text.includes('我的项目') || text.includes('正在开发') || text.includes('最近在做') || text.includes('在做一个')) {
+          memName = '当前项目';
+          memContent = text.length > 60 ? text.substring(0, 60) + '...' : text;
+          memSource = 'work-projection';
+          extractMode = 'explicit';
+        }
+      }
+
+      // 构造记忆对象
+      if (memName && memContent && !newMemory) {
         newMemory = {
           id: 'mem-' + Date.now(),
           source: memSource,
           name: memName,
           content: memContent,
-          score: 0.95,
+          score: extractMode === 'implicit' ? 0.85 : 0.95,
           time: '刚刚'
         };
       }
@@ -4093,13 +4301,22 @@
           if (autoDemoRunning) {
             demoMemories.push(newMemory);
             addedMemory = newMemory;
-          } else if (newMemory.source === 'profile') {
-            // profile 类型先放入待确认列表
+          }
+          // 自然提取的记忆（implicit）：直接静默入库，不弹确认，不告知用户
+          // 这是Memora的核心价值——默默记住，事后让用户惊喜
+          else if (extractMode === 'implicit') {
+            demoMemories.push(newMemory);
+            addedMemory = newMemory;
+          }
+          // 用户主动告知但需要确认的画像信息（如通过"我是XX"推断的职业）：放入待确认列表
+          else if (newMemory.source === 'profile' && needsConfirmation) {
             pendingProfiles.push(newMemory);
             pendingAdded = true;
             renderPendingProfiles();
             updateProfileSettings();
-          } else {
+          }
+          // 其他明确告知的信息（如"我叫XX"的称呼）：直接入库
+          else {
             demoMemories.push(newMemory);
             addedMemory = newMemory;
           }
@@ -4108,7 +4325,12 @@
 
         // 真实召回：根据用户输入搜索匹配的记忆
         const recalled = recallMemories(text);
-        let reply = generateReply(text, recalled, toolCall, currentPersona);
+        let reply = generateReply(text, recalled, toolCall, currentPersona, {
+          hasNewMemory: !!addedMemory,
+          isImplicitMemory: extractMode === 'implicit' && !!addedMemory,
+          isExplicitMemory: extractMode === 'explicit' && !!addedMemory,
+          pendingAdded: pendingAdded,
+        });
 
         // 如果有待确认画像，在回复中提示
         if (pendingAdded) {
@@ -4119,7 +4341,7 @@
         if (toolCall) {
           setTimeout(() => {
             showToolCallResult(toolCall);
-            addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled });
+            addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled, memoryMode: extractMode });
             updateRapport();
             isProcessing = false;
             btnSend.disabled = false;
@@ -4128,7 +4350,7 @@
             inputEl.focus();
           }, 600);
         } else {
-          addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled });
+          addAssistantMessage(reply, { newMemory: addedMemory, recalledMemories: recalled, memoryMode: extractMode });
           updateRapport();
           isProcessing = false;
           btnSend.disabled = false;
@@ -4242,8 +4464,10 @@
       }
 
       // 记忆提取提示（如果有新记忆产生）
+      // 设计原则：只有用户主动告知的明确记忆(explicit)才显示提取提示
+      // 自然流露的信息(implicit)静默入库，不告知用户——这才是"越用越懂你"的感觉
       let extractHtml = '';
-      if (options.newMemory) {
+      if (options.newMemory && options.memoryMode !== 'implicit') {
         extractHtml = `
           <div style="margin-top: 6px; padding: 6px 10px; background: var(--green-20, rgba(64, 160, 43, 0.1)); border-radius: var(--radius-sm); font-size: 11px; color: var(--green, #40a02b); display: flex; align-items: center; gap: 6px;">
             <span>✨</span>
@@ -4326,7 +4550,14 @@
     // ========================================
     // 回复生成（基于真实召回的模拟）
     // ========================================
-    function generateReply(text, recalled = [], toolCall = null, personaId = 'sprite') {
+    function generateReply(text, recalled = [], toolCall = null, personaId = 'sprite', opts = {}) {
+      const {
+        hasNewMemory = false,     // 本轮是否提取到了新记忆
+        isImplicitMemory = false, // 是否为自然提取（implicit）——回复中完全不提及
+        isExplicitMemory = false, // 是否为用户主动告知（explicit）——可以适当提及
+        pendingAdded = false,     // 是否有待确认的画像
+      } = opts;
+
       // 工具调用回复
       if (toolCall) {
         if (toolCall.name === 'write_file') {
@@ -4343,50 +4574,68 @@
         }
       }
 
-      // 身份信息记录
+      // 身份信息记录（用户主动说"我是XX"）
       if (text.includes('我是') || text.includes('我叫')) {
-        let identity = '你的个人信息';
-        if (text.includes('中国')) identity = '国籍：中国（偏好中文交流）';
-        else if (text.includes('程序员') || text.includes('开发') || text.includes('编程')) identity = '职业：开发者（使用 Trae IDE）';
-        else if (text.includes('学生')) identity = '身份：学生';
-        else if (text.includes('作家') || text.includes('写作')) identity = '职业：创作者/作家';
-        return `好的！我已经将「${identity}」记录到你的记忆档案中了。\n\n✅ 本轮对话闭环完成\n\n和传统 AI 不同，我不会把所有对话历史都堆在上下文里——而是提取关键信息结构化存储，下次对话时动态召回最相关的记忆。这样既不会「失忆」，也不会因为上下文太长而「记混」。\n\n点击顶部「🧠 记忆」标签可以查看所有已保存的记忆，我们的默契度也会随着交流慢慢提升~`;
+        // 只有明确的身份陈述才走这个分支，疑问句式已经在提取层过滤
+        let identityLabel = '你的个人信息';
+        if (text.includes('中国')) identityLabel = '国籍：中国';
+        else if (text.includes('程序员') || text.includes('开发') || text.includes('编程')) identityLabel = '职业：开发者';
+        else if (text.includes('学生')) identityLabel = '身份：学生';
+        else if (text.includes('作家') || text.includes('写作')) identityLabel = '职业：创作者/作家';
+        else if (text.includes('设计师')) identityLabel = '职业：设计师';
+        else if (text.includes('产品经理') || text.includes('PM')) identityLabel = '职业：产品经理';
+
+        // 针对不同内容给出更自然的回应，不像机器人
+        if (text.includes('程序员') || text.includes('开发') || text.includes('编程')) {
+          return `好呀，开发者同行！ 👩‍💻\n\n用 Trae 写代码应该很顺手吧？有什么技术问题随时可以找我聊，不管是架构讨论、代码 review 还是 debug 都行。\n\n对了，你主要用什么技术栈？`;
+        } else if (text.includes('学生')) {
+          return `学生党你好呀 📚\n\n在学什么方向呢？不管是课业问题还是想聊兴趣方向，都可以找我。学习路上有个伴儿效率更高~`;
+        } else if (text.includes('作家') || text.includes('写作')) {
+          return `创作型选手！✍️\n\n最近在写什么？卡住的时候可以找我 brainstorm，说不定能碰撞出不一样的火花。写作最需要的就是有个人能接住你的想法~`;
+        } else {
+          // 通用身份回应：自然、友好，不提"我记住了"
+          const nameMatch = text.match(/(?:我叫|我的名字是|我是)([^，。！!？?\s]+)/);
+          const name = nameMatch ? nameMatch[1] : '';
+          if (name && !/^(谁|什么|哪|怎|几|多|吗|呢|为什)/.test(name)) {
+            return `${name}，你好呀 👋\n\n很高兴认识你！以后有什么想聊的随时找我，不管是工作、学习还是生活，我都在~`;
+          }
+          return `好的，收到~ 👋\n\n以后慢慢聊，我会越来越了解你的。有什么想聊的都可以说~`;
+        }
       }
 
-      // 隐私问题
+      // 隐私/安全问题
       if (text.includes('隐私') || text.includes('安全') || text.includes('监听')) {
         return `🔒 **隐私保护是 Memora 的底线设计**：\n\n1. **上下文感知而非内容感知**：我只通过文件变化、窗口标题等元数据感知工作状态\n2. **剪贴板三重保护**：被动检测（仅哈希比较）→ 主动触发（用户点击才读取）→ 敏感过滤（密码/Token/密钥自动忽略）\n3. **不监听键盘、不截屏、不监听网络流量**：最小化信息收集\n4. **纯本地优先**：所有记忆数据完全存储在你的本地设备，数据不出本机\n5. **两级权限 + 路径白名单**：文件操作严格受限\n\n你可以在「⚙️ 设置 → 审计」中查看所有文件操作记录。`;
       }
 
-      // 偏好设置
-      if (text.includes('喜欢') || text.includes('偏好') || text.includes('希望')) {
-        return `收到！我已经记住你的偏好了 ✨\n\n这会作为 insight 类型的记忆保存，影响我后续的回答风格。你可以在记忆面板中看到这条记录，不常用的偏好会随时间自然衰减。`;
-      }
-
       // 记忆系统介绍
-      if (text.includes('记忆系统') || text.includes('记忆闭环') || text.includes('介绍')) {
+      if (text.includes('记忆系统') || text.includes('记忆闭环') || text.includes('工作原理')) {
         return `🧠 **Memora 记忆引擎核心机制**\n\n**对比传统 AI：**\n| 维度 | 传统 AI | Memora |\n|------|---------|--------|\n| 上下文 | 线性累积，越长越混乱 | 每轮闭环，永远精简 |\n| Token 消耗 | 随对话增长 | 固定预算 |\n| 跨会话记忆 | 无或有限 | 全局持久化 |\n\n**核心四步闭环：**\n1. **存储**：对话结束自动提取关键信息（profile/insight/work-projection）\n2. **衰减**：不常用记忆 score 逐渐降低，避免记忆库膨胀\n3. **召回**：下轮对话通过「关键词+语义向量」双通道动态召回相关记忆\n4. **组装**：将召回的记忆注入系统提示，上下文永远相关\n\n这就是「应无所住，而生其心」——启动时无所挂碍，开口时记忆自然浮现。`;
       }
 
-      // 查询记忆——基于真实召回结果回复
-      if (text.includes('记得') || text.includes('之前说') || text.includes('你知道') || text.includes('我是谁')) {
+      // 查询记忆——用户主动问"你记得吗"
+      if (text.includes('记得') || text.includes('之前说') || text.includes('你知道我') || text.includes('我是谁')) {
         if (recalled.length > 0) {
-          const memoryDetails = recalled.map(m =>
-            `• **${m.name}**（${m.source}，score: ${m.score.toFixed(2)}）\n  ${m.content}`
-          ).join('\n');
-          return `当然记得！我从记忆库中召回了 ${recalled.length} 条相关记忆：\n\n${memoryDetails}\n\n💡 注意看每条记忆的 score 值——不常用的记忆会随时间自然衰减。你可以在「🧠 记忆」面板中观察衰减过程。`;
+          // 有召回时，用更自然的方式表达"我记得"
+          const firstMem = recalled[0];
+          const otherCount = recalled.length - 1;
+          let reply = `当然记得~ 🧠\n\n你说过「${firstMem.content}」`;
+          if (otherCount > 0) {
+            const otherNames = recalled.slice(1, 3).map(m => m.name).join('、');
+            reply += `\n还有${otherNames}这些，我都记着呢。`;
+          }
+          reply += `\n\n怎么样，我没记错吧？😉`;
+          return reply;
         } else {
-          // 没有匹配结果时，直接列出所有用户记忆（而非提示"没找到"）
+          // 没有匹配但有其他记忆时
           const userMemories = demoMemories.filter(m =>
             m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
           );
           if (userMemories.length === 0) {
-            return `目前还没有关于你的记忆呢~\n\n试试告诉我一些关于你的信息，比如：\n• 「我是开发者」\n• 「我喜欢简洁的回答」\n• 「我在做一个 Vue 项目」\n\n每条信息都会被提取为结构化记忆，下次对话时自动召回。`;
+            return `嗯……这个我还真没印象呢 🤔\n\n可能是我们聊得还不够多？没关系，慢慢来——\n\n你可以先跟我说说你自己，比如你是做什么的、平时喜欢什么。聊着聊着我就越来越了解你啦 ✨`;
           }
-          const allMemDetails = userMemories.map(m =>
-            `• **${m.name}**（${m.source}，score: ${m.score.toFixed(2)}）\n  ${m.content}`
-          ).join('\n');
-          return `我搜索了记忆库，没有找到和「${text}」直接匹配的记忆。不过，这是我目前保存的所有关于你的记忆：\n\n${allMemDetails}\n\n💡 你可以点击「🧠 记忆」标签查看完整列表和图谱视图。`;
+          const sample = userMemories[0];
+          return `这个我还真不确定……不过我记得一些关于你的事：\n\n• ${sample.content}\n\n你可以翻翻「🧠 记忆」面板看看我都记住了些什么~`;
         }
       }
 
@@ -4397,32 +4646,74 @@
 
       // 问候
       if (text.includes('你好') || text.includes('hi') || text.includes('hello') || text.includes('嗨')) {
-        // 如果有已积累的记忆，在问候中体现"我记得你"
         const userMemCount = demoMemories.filter(m =>
           m.source !== 'persona' && m.source !== 'guardrail' && m.source !== 'rule'
         ).length;
         if (userMemCount > 0) {
-          const topMemories = demoMemories.filter(m =>
-            m.source === 'profile' || m.source === 'insight' || m.source === 'work-projection'
-          ).slice(-3);
-          const memHint = topMemories.map(m => m.name).join('、');
-          return `你好！很高兴又见到你 👋\n\n我记得你——${memHint}。这就是 Memora 的核心能力：跨会话记忆。\n\n继续聊吧，我会越来越懂你 ✨`;
+          // 有记忆时的问候：体现"我记得你"但不生硬
+          const topMem = demoMemories.find(m => m.source === 'profile' || m.source === 'insight');
+          if (topMem) {
+            return `又见面啦 👋\n\n${topMem.content.replace(/^[^：]+：/, '').replace(/^[^:]+:/, '')}——我都记着呢。\n\n今天想聊点什么？`;
+          }
+          return `你好！很高兴又见到你 👋\n\n我们已经聊过 ${userMemCount} 轮啦，默契度正在提升中 ✨\n\n今天想聊点什么？`;
         }
-        return '你好！很高兴认识你 👋 我是 Memora 精灵——你的本地 AI 伙伴。\n\n**我和普通 AI 最大的不同：**\n我会记住你告诉我的事情，不会每次对话都从零开始。试试下面这些：\n\n• 告诉我你的职业或身份\n• 说说你的偏好和习惯\n• 聊聊你正在做的项目\n\n每一次交流，都会让我们更有默契 ✨';
+        return '你好呀 👋 我是 Memora 精灵——你的桌面 AI 伙伴。\n\n**我和普通 AI 不一样的地方：**\n我会慢慢记住关于你的事情，不会每次对话都从零开始。不用特意告诉我什么，我们随便聊聊，聊着聊着我就越来越懂你啦 ✨';
       }
 
-      // 通用回复——如果有召回的记忆，体现"AI 知道你是谁"
+      // 有自然提取的新记忆时——回复完全不提记忆，就像正常聊天
+      // 这是Memora的核心体验：默默记住，事后惊喜
+      if (isImplicitMemory) {
+        // 根据记忆类型给出不同的自然回应
+        if (text.includes('咖啡') || text.includes('喝茶')) {
+          return `哈哈，同道中人 ☕\n\n我也觉得有杯好喝的饮品在旁边，工作效率都高不少。你平时喜欢喝什么咖啡/茶？`;
+        } else if (text.includes('游戏')) {
+          return `玩游戏放松一下挺好的 🎮\n\n最近在玩什么？打游戏的时候最解压了，对吧？`;
+        } else if (text.includes('猫') || text.includes('狗') || text.includes('宠物')) {
+          return `有毛孩子陪伴真的很治愈 🐱\n\n叫什么名字呀？一定超可爱吧~`;
+        } else if (text.includes('累') || text.includes('疲惫') || text.includes('压力')) {
+          return `辛苦啦 🫂\n\n累了就休息一下，别太勉强自己。想吐槽或者想聊点别的分散注意力，我都陪着你~`;
+        } else if (text.includes('开心') || text.includes('高兴')) {
+          return `听你这么说我也开心 ✨\n\n好事要分享才更有意义嘛~是遇到什么好事了吗？`;
+        } else if (text.includes('成都') || text.includes('杭州') || text.includes('北京') || text.includes('上海') || text.includes('深圳')) {
+          const cityMatch = text.match(/(北京|上海|广州|深圳|杭州|成都|武汉|西安|南京|苏州|重庆|天津|长沙|青岛)/);
+          const city = cityMatch ? cityMatch[1] : '';
+          return `${city}是个好地方！ 🏙️\n\n${city === '成都' ? '慢节奏、美食多，太适合生活了～' : city === '杭州' ? '互联网氛围好，西湖也美～' : city === '北京' ? '机会多节奏快，挺能锻炼人的～' : city === '上海' ? '国际化大都市，什么都有～' : '城市挺有特色的～'}\n\n你在那里多久了？`;
+        } else if (text.includes('早起') || text.includes('早睡')) {
+          return `作息规律真的很重要 💪\n\n早起的人一天感觉都更长一些。你一般几点起呀？`;
+        } else if (text.includes('熬夜') || text.includes('晚睡') || text.includes('凌晨')) {
+          return `熬夜党+1 🌙\n\n不过还是要注意身体哦，偶尔熬一下还行，天天熬可不行～`;
+        } else if (text.includes('辣') || text.includes('川菜') || text.includes('湘菜')) {
+          return `无辣不欢党握手！🌶️\n\n我也觉得辣的东西特别下饭，越吃越上头。你能吃多辣？`;
+        } else if (text.includes('甜') || text.includes('奶茶') || text.includes('甜食')) {
+          return `甜食治愈一切 🧋\n\n不开心的时候来一口，瞬间满血复活～你最喜欢什么甜品？`;
+        } else if (text.includes('看书') || text.includes('读书') || text.includes('阅读')) {
+          return `喜欢阅读的人都很有深度 📚\n\n最近在读什么书？有好推荐吗？`;
+        } else if (text.includes('音乐')) {
+          return `音乐是生活的调味剂 🎵\n\n最近在听什么风格？推荐几首给我呀~`;
+        } else if (text.includes('电影')) {
+          return `看电影太爽了 🎬\n\n最近有什么好看的？我来种种草~`;
+        } else if (text.includes('健身') || text.includes('跑步') || text.includes('运动')) {
+          return `运动达人！💪\n\n坚持运动真的很不容易，给你点个赞~ 你一般做什么运动？`;
+        } else if (text.includes('旅行') || text.includes('旅游')) {
+          return `旅行太赞了 ✈️\n\n最近有计划去哪里吗？我最喜欢探索新的地方了~`;
+        } else {
+          // 通用implicit回复：自然接话，不提记忆
+          return `嗯嗯，收到~ 😊\n\n继续说呀，我在听呢。`;
+        }
+      }
+
+      // 有召回记忆时——在回复中自然融入，体现"我懂你"
       if (recalled.length > 0) {
-        const recallHint = recalled.slice(0, 2).map(m => m.name).join('和');
-        return `收到！我注意到你之前提到过「${recallHint}」——这些记忆已经在我脑海中（score: ${recalled[0].score.toFixed(2)}）。\n\n继续聊吧，每条新信息都会被提取为记忆，不常用的记忆会自然衰减。`;
+        const recallName = recalled[0].name;
+        return `好的呀~ 😊\n\n（顺便想起你之前提过${recallName}，感觉我们越来越有默契了 ✨）\n\n继续聊？`;
       }
 
-      // 默认回复（角色感知）
+      // 默认回复（角色感知）——更自然，不像使用说明
       const personaStyles = {
-        sprite: '收到！继续体验 Memora Sprite：\n\n• 💬 和我对话，观察右侧记忆自动积累\n• 🧠 点击顶部「记忆」标签，查看列表/图谱双视图\n• 🪟 使用顶部三态切换器，体验浮动/托盘形态\n• ⚙️ 点击「设置」查看 LLM/精灵/项目配置项\n• 💕 留意左侧「默契度」随对话成长\n\n提示：试试发送「我喜欢简洁的回答」或「我是开发者」看看记忆提取效果~',
-        coder: '收到！从技术角度看：\n\n• 记忆引擎采用 source 开放字符串模型，支持 7 核心字段\n• 工具调用遵循最小权限原则 + 路径白名单安全策略\n• 测试覆盖 445+ 用例，Vitest + MSW Mock LLM\n• 零 native 依赖内核，纯 TypeScript 实现\n\n想了解哪个模块的架构？我可以展开技术细节。',
-        writer: '感谢你的分享！作为一个创意伙伴，我想说：\n\n• 记忆系统让灵感不会丢失——每次对话的关键信息会自动沉淀\n• 不同角色会以不同风格回应你的需求\n• 你可以试试描述一个创作想法，我会帮你延展和润色\n\n写作的乐趣在于，每一次对话都是一次新的灵感碰撞 ✨',
-        tutor: '好的！让我来帮你梳理一下：\n\n• Memora 的核心概念是「万物皆是记忆」——用统一的 source 字段区分不同来源\n• 记忆系统有三个关键环节：存储 → 召回 → 组装\n• 每次对话结束，关键信息会自动提取并结构化保存\n\n有什么概念想深入了解的？我可以循序渐进地讲解~'
+        sprite: '嗯嗯，我在听~ 😊\n\n想说什么都可以，工作、学习、生活，随便聊。聊着聊着我们就越来越有默契啦 ✨',
+        coder: '收到！技术相关的都可以聊 💻\n\n不管是架构设计、代码优化、还是技术选型，随时来找我。想深入哪个方向？',
+        writer: '好呀，我们来聊聊创作吧 ✍️\n\n不管是想 brainstorm 灵感、还是想润色文字，我都在。你现在在写什么？',
+        tutor: '好的！学习路上有什么问题随时问我 📚\n\n概念不懂？思路卡住？我来帮你梳理清楚。今天想学点什么？'
       };
       return personaStyles[personaId] || personaStyles.sprite;
     }
@@ -4700,11 +4991,11 @@
             <div class="empty-title">你好，我是 Memora 精灵</div>
             <div class="empty-subtitle">你的本地 AI 伙伴，拥有跨会话记忆能力</div>
             <div class="empty-suggestions">
-              <button class="suggestion-btn" data-text="我叫小明，是一名前端开发者">📝 自我介绍</button>
-              <button class="suggestion-btn" data-text="我喜欢简洁直接的回答">⚡ 偏好设置</button>
-              <button class="suggestion-btn" data-text="我最近在做一个 Vue 项目">🎨 作品投影</button>
-              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">💡 了解记忆闭环</button>
-              <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私保护</button>
+              <button class="suggestion-btn" data-text="我在成都做前端开发，平时喜欢喝咖啡">☕ 聊聊日常</button>
+              <button class="suggestion-btn" data-text="最近工作好累，压力有点大">😮‍💨 吐槽一下</button>
+              <button class="suggestion-btn" data-text="我家有只猫，叫团子">🐱 说点私事</button>
+              <button class="suggestion-btn" data-text="介绍一下你的记忆系统">🧠 怎么记住我的</button>
+              <button class="suggestion-btn" data-text="你怎么保护我的隐私？">🔒 隐私安全吗</button>
             </div>
           </div>`;
         bindSuggestionButtons();
@@ -5373,48 +5664,57 @@
     let autoDemoRunning = false;
     let autoDemoCancelled = false;
 
-    /** 预设演示脚本：展示记忆闭环全流程（约45秒完整体验） */
+    /** 预设演示脚本：展示记忆闭环全流程（约60秒完整体验）
+     *  核心叙事：不是"用户主动说我要告诉你"，而是"日常聊天中，精灵默默记住了"
+     *  步骤1-4：日常对话（工作、吐槽、猫、咖啡）→ 精灵默默提取记忆（用户看不见）
+     *  步骤5-7：查看记忆面板 → 发现精灵默默记住了很多东西（惊喜感）
+     *  步骤8-10：三态切换 + 日期导航
+     *  步骤11：回到对话，问"你还记得我吗？" → 精灵说出很多细节（记忆召回的震撼）
+     */
     const autoDemoScript = [
-      // 步骤1：自我介绍 → 触发记忆提取+待确认画像
-      { delay: 800,  action: 'type', text: '我叫小明，是一名前端开发者' },
-      { delay: 4000, action: 'wait' },
-      // 步骤2：设置偏好 → insight记忆
-      { delay: 800, action: 'type', text: '我喜欢简洁直接的回答' },
-      { delay: 4000, action: 'wait' },
-      // 步骤3：项目信息 → work-projection记忆
-      { delay: 800, action: 'type', text: '我最近在做一个 Vue 项目' },
-      { delay: 4000, action: 'wait' },
-      // 步骤4：切换到记忆面板 - 列表视图（展示记忆列表+score衰减条）
+      // 步骤1：聊日常工作 → 默默提取城市、职业、作息
+      { delay: 800,  action: 'type', text: '最近在成都做一个前端项目，天天加班到好晚' },
+      { delay: 4500, action: 'wait' },
+      // 步骤2：聊猫 → 默默提取宠物信息、名字
+      { delay: 800, action: 'type', text: '还好回家有我家团子陪着，一只橘猫，特别治愈' },
+      { delay: 4500, action: 'wait' },
+      // 步骤3：聊咖啡爱好 → 默默提取饮食习惯
+      { delay: 800, action: 'type', text: '每天早上都得来一杯美式，不然一天都没精神' },
+      { delay: 4500, action: 'wait' },
+      // 步骤4：聊最近状态 → 默默提取情绪
+      { delay: 800, action: 'type', text: '不过最近压力确实有点大，感觉有点累' },
+      { delay: 4500, action: 'wait' },
+      // 步骤5：切换到记忆面板 - 列表视图（展示精灵默默记住了多少东西——惊喜感）
       { delay: 1200, action: 'click', selector: '[data-panel="memories"]' },
-      { delay: 2500, action: 'wait' },
-      // 步骤5：切换到图谱视图（展示记忆关系网络）
+      { delay: 3000, action: 'wait' },
+      // 步骤6：切换到图谱视图（展示记忆关系网络）
       { delay: 800,  action: 'click', selector: '[data-memory-view="graph"]' },
       { delay: 3000, action: 'wait' },
-      // 步骤6：切换到时间线视图（展示按时间积累的记忆）
+      // 步骤7：切换到时间线视图（展示按时间积累的记忆）
       { delay: 800,  action: 'click', selector: '[data-memory-view="timeline"]' },
       { delay: 2500, action: 'wait' },
-      // 步骤7：演示三态切换 - 浮动图标
+      // 步骤8：演示三态切换 - 浮动图标
       { delay: 800,  action: 'click', selector: '[data-state="float"]' },
       { delay: 2500, action: 'wait' },
-      // 步骤8：返回完整窗口
+      // 步骤9：返回完整窗口
       { delay: 500,  action: 'click', selector: '#state-back' },
       { delay: 1500, action: 'wait' },
-      // 步骤9：演示日期导航（查看历史对话）
+      // 步骤10：演示日期导航（查看历史对话）
       { delay: 800,  action: 'click', selector: '#date-nav-btn' },
       { delay: 1000, action: 'wait' },
       { delay: 500,  action: 'click', selector: '.date-nav-item:nth-child(2)' },
       { delay: 2500, action: 'wait' },
-      // 步骤10：回到今天
+      // 步骤11：回到今天
       { delay: 800,  action: 'click', selector: '#date-nav-btn' },
       { delay: 800, action: 'wait' },
       { delay: 500,  action: 'click', selector: '.date-nav-item:first-child' },
       { delay: 1500, action: 'wait' },
-      // 步骤11：回到对话面板，测试记忆召回
+      // 步骤12：回到对话面板，测试记忆召回（精灵说出所有细节——记忆闭环的震撼）
       { delay: 800,  action: 'click', selector: '[data-panel="chat"]' },
       { delay: 1000, action: 'wait' },
-      { delay: 800, action: 'type', text: '你还记得我是谁吗？' },
-      { delay: 4000, action: 'wait' },
-      // 步骤12：完成提示
+      { delay: 800, action: 'type', text: '你还记得我吗？' },
+      { delay: 5000, action: 'wait' },
+      // 步骤13：完成提示
       { delay: 0, action: 'end' },
     ];
 
