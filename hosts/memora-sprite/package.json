@@ -29,12 +29,12 @@
     "check-ipc": "npx tsx scripts/check-ipc-channels.ts",
     "check-cli-keys": "npx tsx scripts/check-cli-config-keys.ts",
     "check-configs": "npm run check-ipc && npm run check-cli-keys",
-    "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "package:win": "npm run build:electron && electron-builder --win --x64",
-    "package:mac": "npm run build:electron && electron-builder --mac",
-    "package:linux": "npm run build:electron && electron-builder --linux",
-    "package:all": "npm run build:electron && electron-builder --win --mac --linux",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "rebuild": "electron-builder install-app-deps",
+    "package:win": "npm run build:electron && node scripts/clean-release.mjs && node scripts/package.mjs --win --x64",
+    "package:mac": "npm run build:electron && node scripts/clean-release.mjs && node scripts/package.mjs --mac",
+    "package:linux": "npm run build:electron && node scripts/clean-release.mjs && node scripts/package.mjs --linux",
+    "package:all": "npm run build:electron && node scripts/clean-release.mjs && node scripts/package.mjs --win --mac --linux",
+    "postinstall": "electron-builder install-app-deps"
   },
   "engines": {
     "node": ">=24.0.0"
@@ -44,7 +44,6 @@
     "memora": "npm:@zooique/memora@^0.2.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.1.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.9.0",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
@@ -68,7 +67,6 @@
     },
     "files": [
       "dist-electron/**/*",
-      "node_modules/**/*",
       "package.json"
     ],
     "extraMetadata": {
@@ -83,21 +81,8 @@
           "arch": [
             "x64"
           ]
-        },
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
         }
       ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
     },
     "mac": {
       "target": [

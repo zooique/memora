@@ -1,0 +1,212 @@
+# Memora Sprite 自动化构建流水线
+#
+# 触发条件：
+#   1. 推送 v* 格式的 tag（正式发布）
+#   2. 手动触发（workflow_dispatch）
+#
+# 产物：
+#   - Windows: Memora-Sprite-win-x64.zip + NSIS 安装包
+#   - macOS:   Memora-Sprite-mac-x64.zip + DMG
+#   - Linux:   Memora-Sprite-linux-x64.zip
+#
+# 缓存策略：
+#   - npm 缓存（按 package-lock.json 哈希）
+#   - electron 二进制缓存（按 electron 版本）
+#   - electron-builder 缓存
+
+name: Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: '目标平台（all/win/mac/linux）'
+        required: false
+        default: 'all'
+
+jobs:
+  # ─── Windows 构建 ──────────────────────────────────────────
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'win' || github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: hosts/memora-sprite
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: hosts/memora-sprite/package-lock.json
+
+      - name: 缓存 Electron 二进制
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\electron\Cache
+            ~\AppData\Local\electron-builder\Cache
+          key: ${{ runner.os }}-electron-${{ hashFiles('hosts/memora-sprite/package.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npx tsc -p tsconfig.electron.json --noEmit
+
+      - name: 单元测试
+        run: npx vitest run
+
+      - name: 打包 Windows
+        run: npm run package:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_CACHE: ~\AppData\Local\electron\Cache
+          ELECTRON_BUILDER_CACHE: ~\AppData\Local\electron-builder\Cache
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: memora-sprite-win-x64
+          path: |
+            hosts/memora-sprite/release/*.zip
+            hosts/memora-sprite/release/*.exe
+          retention-days: 30
+
+  # ─── macOS 构建 ────────────────────────────────────────────
+  build-macos:
+    name: Build macOS (x64 + arm64)
+    runs-on: macos-latest
+    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'mac' || github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: hosts/memora-sprite
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: hosts/memora-sprite/package-lock.json
+
+      - name: 缓存 Electron 二进制
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('hosts/memora-sprite/package.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npx tsc -p tsconfig.electron.json --noEmit
+
+      - name: 单元测试
+        run: npx vitest run
+
+      - name: 打包 macOS
+        run: npm run package:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_CACHE: ~/Library/Caches/electron
+          ELECTRON_BUILDER_CACHE: ~/Library/Caches/electron-builder
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: memora-sprite-mac
+          path: |
+            hosts/memora-sprite/release/*.zip
+            hosts/memora-sprite/release/*.dmg
+          retention-days: 30
+
+  # ─── Linux 构建 ────────────────────────────────────────────
+  build-linux:
+    name: Build Linux x64
+    runs-on: ubuntu-latest
+    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'linux' || github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: hosts/memora-sprite
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: hosts/memora-sprite/package-lock.json
+
+      - name: 缓存 Electron 二进制
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+          key: ${{ runner.os }}-electron-${{ hashFiles('hosts/memora-sprite/package.json') }}
+          restore-keys: ${{ runner.os }}-electron-
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 类型检查
+        run: npx tsc -p tsconfig.electron.json --noEmit
+
+      - name: 单元测试
+        run: npx vitest run
+
+      - name: 打包 Linux
+        run: npm run package:linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_CACHE: ~/.cache/electron
+          ELECTRON_BUILDER_CACHE: ~/.cache/electron-builder
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: memora-sprite-linux-x64
+          path: hosts/memora-sprite/release/*.zip
+          retention-days: 30
+
+  # ─── 发布 Release ──────────────────────────────────────────
+  release:
+    name: Publish Release
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+      - name: 下载所有产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 发布 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
