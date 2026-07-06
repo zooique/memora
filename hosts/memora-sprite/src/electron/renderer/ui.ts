@@ -1144,8 +1144,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onRelationDelete(cb: (sourceId: string, targetId: string, type: string) => void): void { this.memoryPanel.onRelationDelete(cb); }
   /** 注册关系创建回调（委托到 MemoryPanelManager） */
   onRelationCreate(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void { this.memoryPanel.onRelationCreate(cb); }
-  /** 触发叙事卡片脉冲（委托到 MemoryPanelManager） */
-  pulseNarrativeCard(): void { this.memoryPanel.pulseNarrativeCard(); }
 
   // ─── 仪表盘面板 ─ 委托到 DashboardPanelManager ───────────
 

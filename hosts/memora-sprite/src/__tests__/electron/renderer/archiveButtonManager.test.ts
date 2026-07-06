@@ -233,23 +233,7 @@ describe('findPreviousUserMessage · 向前查找', () => {
 
   // TODO: 此测试场景不成立——assistant 消息所在 group 内已有 user 消息时，
   // findPreviousUserMessage 应返回同组内的 user 消息（正确行为），而非跨组查找。
-  // 待重新设计测试场景后取消 skip。
-  it.skip('跨组应找到前一个 group 的 user 消息', () => {
-    const { manager } = createManager();
-    // 前一个 group（含 user 消息）
-    const prevGroup = document.createElement('div');
-    prevGroup.className = 'message-group';
-    const prevUser = document.createElement('div');
-    prevUser.className = 'message user';
-    prevGroup.appendChild(prevUser);
-    document.body.appendChild(prevGroup);
-    // 当前 group（含 assistant 消息）
-    const { assistantEl } = buildMessageGroup();
-    const result = (manager as unknown as {
-      findPreviousUserMessage(el: HTMLElement): HTMLElement | null;
-    }).findPreviousUserMessage(assistantEl);
-    expect(result).toBe(prevUser);
-  });
+  // 已移除错误场景测试，待重新设计后补充。
 
   it('无匹配时应返回 null', () => {
     const { manager } = createManager();

@@ -10,7 +10,6 @@
  * - showMemoryDetail 关联记忆渲染：relations 列表 + 点击触发 memoryClickCallback
  * - renderRecycleBinList：回收站列表 + restore/purge 按钮 + 降级
  * - enterEditMode/exitEditMode/saveEdit（private）：pre↔textarea 切换 + 回调触发
- * - pulseNarrativeCard：脉冲效果 + 1500ms 后移除
  *
  * 与 memoryPanelManagerInstance.test.ts 互补，避免重复覆盖 renderMemoryList 基础渲染、
  * showMemoryDetail 字段填充、getAddMemoryFormData/clearAddMemoryForm、回调注册等已测内容。
@@ -798,34 +797,4 @@ describe('编辑模式 (private)', () => {
 
 // ─── pulseNarrativeCard ───────────────────────────────────
 
-// TODO: pulseNarrativeCard() 方法保留以兼容接口，但不再执行任何 DOM 操作。
-// 叙事卡片脉冲动画功能已迁移或移除，待恢复后取消 skip。
-describe.skip('pulseNarrativeCard', () => {
-  beforeEach(() => {
-    setupDOM();
-    vi.useFakeTimers();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('元素存在时应添加 narrative-pulse 类', () => {
-    const mgr = new MemoryPanelManager(createMockHost(), null, null, null, null, new EventTracker());
-    mgr.pulseNarrativeCard();
-    expect(document.getElementById('perception-narrative-text')?.classList.contains('narrative-pulse')).toBe(true);
-  });
-
-  it('1500ms 后应自动移除 narrative-pulse 类', () => {
-    const mgr = new MemoryPanelManager(createMockHost(), null, null, null, null, new EventTracker());
-    mgr.pulseNarrativeCard();
-    vi.advanceTimersByTime(1500);
-    expect(document.getElementById('perception-narrative-text')?.classList.contains('narrative-pulse')).toBe(false);
-  });
-
-  it('元素缺失时应静默降级（不抛错）', () => {
-    document.getElementById('perception-narrative-text')?.remove();
-    const mgr = new MemoryPanelManager(createMockHost(), null, null, null, null, new EventTracker());
-    expect(() => mgr.pulseNarrativeCard()).not.toThrow();
-  });
-});
+// TODO: pulseNarrativeCard() 已移除，感知面板升级为独立 panel 后不再需要脉冲动画

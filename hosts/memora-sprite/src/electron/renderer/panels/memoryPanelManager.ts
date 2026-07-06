@@ -240,10 +240,6 @@ export class MemoryPanelManager {
    *
    * 由 Controller 在 chatNarrative 点击时调用（跨面板交互）。
    */
-  /** 脉冲感知面板中的叙事摘要（已废弃：感知面板升级为独立 panel，DOM 元素已删除） */
-  pulseNarrativeCard(): void {
-    // 方法保留以兼容接口，但不再执行任何 DOM 操作
-  }
 
   // ─── 记忆列表渲染 ───────────────────────────────────────
 

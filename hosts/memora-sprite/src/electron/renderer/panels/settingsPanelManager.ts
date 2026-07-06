@@ -708,21 +708,6 @@ export class SettingsPanelManager {
     }
   }
 
-  /** @deprecated 已移除单模型表单，保留方法签名供渐进迁移 */
-  loadLlmConfigToForm(_data: unknown): void {
-    // no-op: 单模型表单已移除，Provider 配置由 loadProviderList 管理
-  }
-
-  /** @deprecated 已移除单模型表单 */
-  collectLlmConfigFromForm(): unknown {
-    return null;
-  }
-
-  /** @deprecated 已移除单模型表单 */
-  getLlmConfigFromForm(): { provider: string; model: string; baseUrl: string; apiKey: string } {
-    return { provider: '', model: '', baseUrl: '', apiKey: '' };
-  }
-
   /**
    * 加载 Embedding 配置到表单
    *

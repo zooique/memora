@@ -97,7 +97,6 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     highlightGraphNodes: vi.fn(),
     selectGraphNode: vi.fn(),
     clearGraphHighlights: vi.fn(),
-    pulseNarrativeCard: vi.fn(),
     triggerMemoryRecall: vi.fn(),
     renderMemoryList: vi.fn(),
     showMemoryDetail: vi.fn(),
