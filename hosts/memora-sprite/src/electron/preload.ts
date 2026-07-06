@@ -34,6 +34,9 @@ import type {
   MemorySearchResult as MemorySearchHit,
   // 回收站列表项契约类型，从业务层真理源导入
   DeletedMemoryListItem,
+  // Phase 5.1/5.2：路径追溯 + 邻居查询结果类型（精灵层 re-export 内核纯数据形态）
+  RelationPath,
+  RelationNeighbor,
 } from '../sprite/controllers/memoryController.js';
 // P3：从 sprite 层导入 SpriteConfig（真理源），用于派生 SpriteConfigForm（消除手写平行结构）
 import type { SpriteConfig } from '../sprite/spriteConfig.js';
@@ -71,6 +74,10 @@ export const IPC_CHANNELS = {
   ARCHIVE_SESSION: 'archive-session',
   MEMORIES_ADD: 'memories-add',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
+  /** 获取记忆关系路径（Phase 5.1：路径追溯） */
+  MEMORIES_RELATION_PATH: 'memories-relation-path',
+  /** 获取记忆关系邻居（Phase 5.2：邻居查询） */
+  MEMORIES_RELATION_NEIGHBORS: 'memories-relation-neighbors',
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
   MEMORIES_HEALTH_DASHBOARD: 'memories-health-dashboard',
   /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
@@ -445,6 +452,10 @@ export interface ElectronAPI {
   removeRelation: (data: { sourceId: string; targetId: string; type: string }) => Promise<{ success: boolean }>;
   /** 更新记忆关系（关系图交互） */
   updateRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) => Promise<{ success: boolean }>;
+  /** 获取记忆关系路径（Phase 5.1：路径追溯，展示记忆演化脉络） */
+  getRelationPath: (data: { memoryId: string; maxDepth?: number; direction?: 'incoming' | 'outgoing' | 'both' }) => Promise<RelationPath[]>;
+  /** 获取记忆关系邻居（Phase 5.2：邻居查询，展示直接关联记忆） */
+  getRelationNeighbors: (data: { memoryId: string; limit?: number }) => Promise<RelationNeighbor[]>;
   /** 手动归档 profile facts（缺口 J：manual 模式下供 UI 调用，返回归档条目数） */
   archiveProfileFacts: (input: string) => Promise<{ count: number }>;
   /** 手动归档 insight（缺口 J：manual 模式下供 UI 调用，返回归档记忆数） */
@@ -773,6 +784,12 @@ const electronAPI: ElectronAPI = {
   listDeletedMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_LIST_DELETED),
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
   getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),
+  /** 获取记忆关系路径（Phase 5.1：路径追溯，展示记忆演化脉络） */
+  getRelationPath: (data: { memoryId: string; maxDepth?: number; direction?: 'incoming' | 'outgoing' | 'both' }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_PATH, data),
+  /** 获取记忆关系邻居（Phase 5.2：邻居查询，展示直接关联记忆） */
+  getRelationNeighbors: (data: { memoryId: string; limit?: number }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS, data),
   /** 添加记忆关系（手动创建，关系图交互） */
   addRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD_RELATION, data),

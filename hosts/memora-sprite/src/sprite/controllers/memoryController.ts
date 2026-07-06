@@ -7,7 +7,7 @@
  *   3. 仪表盘数据聚合
  */
 import type { Agent, SuggestHit, VectorStore, Memory } from 'memora';
-import type { MemoryRelation } from 'memora';
+import type { MemoryRelation, RelationPath, RelationNeighbor } from 'memora';
 import { logger } from 'memora';
 import { DEFAULT_LIST_LIMIT } from '../constants.js';
 // P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
@@ -16,6 +16,11 @@ import { buildHealthDashboard } from './memoryHealth.js';
 import type { HealthDashboard } from './memoryHealth.js';
 import { buildReviewData } from './reviewManager.js';
 import type { ReviewData } from './reviewManager.js';
+
+// ─── 内核类型 re-export（Phase 5.1/5.2：路径追溯 + 邻居查询） ──────
+// 精灵层不重新定义平行结构，直接复用内核 RelationPath/RelationNeighbor（纯数据形态，
+// 无 Date 等不可序列化字段）。preload 通过此 re-export 导入，保持"sprite 层是真理源"依赖方向。
+export type { RelationPath, RelationNeighbor } from 'memora';
 
 // ─── 默契度阈值常量（Phase 2.2） ─────────────────────────
 // 经验值，后续基于真实数据校准
@@ -203,27 +208,14 @@ export class MemoryController {
     const m = inspector.getById(id);
     if (!m) return null;
 
-    // 查询与该记忆相关的所有关系（作为 source 或 target 的边）
-    const relations: MemoryRelationItem[] = [];
-    const allRelations = inspector.getAllRelations();
-    for (const rel of allRelations) {
-      let targetId: string | null = null;
-      if (rel.sourceId === id) {
-        targetId = rel.targetId;
-      } else if (rel.targetId === id) {
-        targetId = rel.sourceId;
-      }
-      if (targetId) {
-        // 查找关联记忆的名称
-        const targetMem = inspector.getById(targetId);
-        relations.push({
-          targetId,
-          targetName: targetMem?.name ?? targetId,
-          type: rel.type,
-          weight: rel.weight,
-        });
-      }
-    }
+    // 查询与该记忆直接关联的邻居（复用内核 getRelationNeighbors，替代手动遍历）
+    const neighbors = inspector.getRelationNeighbors(id);
+    const relations: MemoryRelationItem[] = neighbors.map((n) => ({
+      targetId: n.memoryId,
+      targetName: n.memoryName,
+      type: n.relationType,
+      weight: n.relationWeight,
+    }));
 
     return {
       id: m.id,
@@ -564,6 +556,47 @@ export class MemoryController {
   updateRelation(sourceId: string, targetId: string, type: string, weight: number): void {
     // 复用 addRelation 的 UPSERT 语义（sourceId+targetId+type 三元组唯一）
     this.addRelation(sourceId, targetId, type, weight);
+  }
+
+  // ─── 记忆关系路径追溯与邻居查询（Phase 5.1/5.2 内核能力透传） ───
+
+  /**
+   * 获取记忆的关系路径（追溯来源或去向）
+   *
+   * 从指定记忆出发，沿关系边追溯完整路径，用于 UI 展示记忆的演化脉络。
+   * 内核已实现 BFS 遍历 + visited 防环 + maxDepth 深度限制。
+   * relationStore 未注入时仅返回起点节点（降级优先，ADR-014）。
+   *
+   * @param memoryId - 起点记忆 ID
+   * @param maxDepth - 最大追溯深度（默认 5）
+   * @param direction - 追溯方向：'incoming'（追溯来源，默认）/ 'outgoing' / 'both'
+   * @returns 路径节点列表，按 depth 升序
+   */
+  getRelationPath(
+    memoryId: string,
+    maxDepth = 5,
+    direction: 'incoming' | 'outgoing' | 'both' = 'incoming',
+  ): RelationPath[] {
+    const memory = this.agent.memory;
+    if (!memory) return [];
+    return memory.getRelationPath(memoryId, maxDepth, direction);
+  }
+
+  /**
+   * 获取记忆的关系邻居（直接关联的记忆）
+   *
+   * 返回与指定记忆直接关联的记忆列表，含关系类型和方向。
+   * 用于 UI 展示某记忆的直接关联记忆（如冲突记忆、支持记忆等）。
+   * relationStore 未注入时返回空数组（降级优先，ADR-014）。
+   *
+   * @param memoryId - 基准记忆 ID
+   * @param limit - 返回数量上限（默认 10）
+   * @returns 邻居记忆列表，含关系类型/权重/方向
+   */
+  getRelationNeighbors(memoryId: string, limit = 10): RelationNeighbor[] {
+    const memory = this.agent.memory;
+    if (!memory) return [];
+    return memory.getRelationNeighbors(memoryId, limit);
   }
 
   // ─── 记忆健康度（Phase 1：健康度诊断） ──────────────────

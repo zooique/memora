@@ -17,6 +17,8 @@
  */
 import type { Agent, AgentMetrics, Memory, UserProfileEntry } from 'memora';
 import type { VectorStore, ITracer } from 'memora';
+// Phase 5.1/5.2：路径追溯 + 邻居查询返回类型（内核纯数据形态，IPC 传输可序列化）
+import type { RelationPath, RelationNeighbor } from 'memora';
 import { logger, toError } from 'memora';
 import { TriggerBus, TimerTrigger } from './triggers.js';
 import { loadSpriteConfig, type SpriteConfig, type SpriteConfigKey } from './spriteConfig.js';
@@ -513,6 +515,16 @@ export class Sprite {
     edges: Array<{ sourceId: string; targetId: string; type: string; weight: number; createdAt: string }>;
   } {
     return this.memoryController.getRelationGraph();
+  }
+
+  /** 获取记忆关系路径（Phase 5.1：路径追溯，用于展示记忆演化脉络） */
+  getRelationPath(memoryId: string, maxDepth = 5, direction: 'incoming' | 'outgoing' | 'both' = 'incoming'): RelationPath[] {
+    return this.memoryController.getRelationPath(memoryId, maxDepth, direction);
+  }
+
+  /** 获取记忆关系邻居（Phase 5.2：邻居查询，用于展示直接关联记忆） */
+  getRelationNeighbors(memoryId: string, limit = 10): RelationNeighbor[] {
+    return this.memoryController.getRelationNeighbors(memoryId, limit);
   }
 
   addRelation(sourceId: string, targetId: string, type: string, weight: number): void {

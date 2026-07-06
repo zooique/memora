@@ -10,6 +10,8 @@
  *   DELETE /api/memories/:id          → 删除记忆
  *   POST   /api/memories              → 添加记忆
  *   GET    /api/memories/graph        → 获取记忆关系图谱
+ *   GET    /api/memories/relation-path    → 获取记忆关系路径（Phase 5.1）
+ *   GET    /api/memories/relation-neighbors → 获取记忆关系邻居（Phase 5.2）
  *   GET    /api/memories/health       → 获取记忆健康度仪表盘
  *   GET    /api/memories/review       → 获取对话回顾数据
  *   POST   /api/memories/batch-delete → 批量删除记忆
@@ -77,6 +79,39 @@ export async function handleMemoryRoute(
     if (method === 'GET' && subPath === '/graph') {
       const graph = ctx.sprite.getRelationGraph();
       sendJson(res, 200, graph);
+      return;
+    }
+
+    // GET /api/memories/relation-path — 获取记忆关系路径（Phase 5.1：路径追溯）
+    // query: memoryId（必填）、maxDepth（默认 5）、direction（默认 incoming）
+    if (method === 'GET' && subPath === '/relation-path') {
+      const memoryId = queryParams.get('memoryId') ?? '';
+      // 参数校验：memoryId 非空且长度 ≤ 500（与 IPC handler isValidId 一致）
+      if (!memoryId || memoryId.length > 500) {
+        sendJson(res, 200, []);
+        return;
+      }
+      const maxDepth = Math.min(parseInt(queryParams.get('maxDepth') ?? '5', 10) || 5, 10);
+      // direction 运行时校验：非法值降级为 'incoming'（避免 as 断言绕过类型检查）
+      const rawDirection = queryParams.get('direction') ?? 'incoming';
+      const direction: 'incoming' | 'outgoing' | 'both' =
+        rawDirection === 'outgoing' || rawDirection === 'both' ? rawDirection : 'incoming';
+      const path = ctx.sprite.getRelationPath(memoryId, maxDepth, direction);
+      sendJson(res, 200, path);
+      return;
+    }
+
+    // GET /api/memories/relation-neighbors — 获取记忆关系邻居（Phase 5.2：邻居查询）
+    // query: memoryId（必填）、limit（默认 10）
+    if (method === 'GET' && subPath === '/relation-neighbors') {
+      const memoryId = queryParams.get('memoryId') ?? '';
+      if (!memoryId || memoryId.length > 500) {
+        sendJson(res, 200, []);
+        return;
+      }
+      const limit = Math.min(parseInt(queryParams.get('limit') ?? '10', 10) || 10, 50);
+      const neighbors = ctx.sprite.getRelationNeighbors(memoryId, limit);
+      sendJson(res, 200, neighbors);
       return;
     }
 

@@ -189,6 +189,23 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
+  /** 获取记忆关系路径（Phase 5.1：路径追溯，用于展示记忆演化脉络） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_PATH, async (_event, data: { memoryId: string; maxDepth?: number; direction?: 'incoming' | 'outgoing' | 'both' }) =>
+    safeHandle('获取关系路径失败', [], () => {
+      // 参数校验：memoryId 必须 isValidId
+      if (!isValidId(data?.memoryId)) return [];
+      return ctx.sprite.getRelationPath(data.memoryId, data.maxDepth ?? 5, data.direction ?? 'incoming');
+    }),
+  );
+
+  /** 获取记忆关系邻居（Phase 5.2：邻居查询，用于展示直接关联记忆） */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS, async (_event, data: { memoryId: string; limit?: number }) =>
+    safeHandle('获取关系邻居失败', [], () => {
+      if (!isValidId(data?.memoryId)) return [];
+      return ctx.sprite.getRelationNeighbors(data.memoryId, data.limit ?? 10);
+    }),
+  );
+
   /**
    * 手动归档 profile facts（缺口 J：archiveMode='manual' 模式下供 UI 调用）
    *

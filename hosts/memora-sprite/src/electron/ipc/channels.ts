@@ -67,6 +67,10 @@ export const IPC_CHANNELS = {
   MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
   /** 更新记忆关系（关系图交互） */
   MEMORIES_UPDATE_RELATION: 'memories-update-relation',
+  /** 获取记忆关系路径（Phase 5.1：路径追溯） */
+  MEMORIES_RELATION_PATH: 'memories-relation-path',
+  /** 获取记忆关系邻居（Phase 5.2：邻居查询） */
+  MEMORIES_RELATION_NEIGHBORS: 'memories-relation-neighbors',
   /** 手动归档 profile facts（缺口 J：archiveMode='manual' 模式下供 UI 调用） */
   MEMORIES_ARCHIVE_PROFILE: 'memories-archive-profile',
   /** 手动归档 insight（缺口 J：archiveMode='manual' 模式下供 UI 调用） */

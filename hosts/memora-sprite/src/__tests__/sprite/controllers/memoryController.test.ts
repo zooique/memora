@@ -43,8 +43,10 @@ type Inspector = NonNullable<Agent['memory']>;
 /**
  * 创建 Mock MemoryInspector
  *
- * 含 MemoryController 用到的全部 10 个方法：
+ * 含 MemoryController 用到的全部方法：
  * list / getById / getBySource / delete / upsert / stats / suggest / searchHybrid / search / getAllRelations
+ * + 回收站：restore / purge / listDeleted / getDeletedById
+ * + Phase 5.1/5.2：getRelationPath / getRelationNeighbors（路径追溯 + 邻居查询）
  * 通过 Partial<Inspector> 中间类型实现单层 as 断言（无需 as unknown as）
  */
 function createMockInspector(): Inspector {
@@ -65,6 +67,9 @@ function createMockInspector(): Inspector {
     listDeleted: vi.fn().mockReturnValue([]),
     // SEC-GAP6-02：getDeletedById 返回 Memory | null（替代 listDeleted().some() 全量遍历）
     getDeletedById: vi.fn().mockReturnValue(null),
+    // Phase 5.1/5.2：路径追溯 + 邻居查询（show() 用 getRelationNeighbors 替代手动遍历）
+    getRelationPath: vi.fn().mockReturnValue([]),
+    getRelationNeighbors: vi.fn().mockReturnValue([]),
   };
   return inspector as Inspector;
 }
