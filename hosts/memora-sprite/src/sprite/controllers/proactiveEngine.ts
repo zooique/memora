@@ -93,6 +93,9 @@ export class ProactiveEngine {
   private pendingNotices: PendingNotice[] = [];
   private lastProactiveAt = 0;
 
+  /** 连续拒绝次数上限（防止冷却时间无限增长，上限约 6x 基础冷却） */
+  private static readonly MAX_CONSECUTIVE_REJECTS = 10;
+
   // ─── Phase 1：智能触发时机（感知系统整合） ──────────────
   /** 当前对话上下文状态（ContextAwareness 推导） */
   private contextState: ContextState | null = null;
@@ -202,7 +205,10 @@ export class ProactiveEngine {
    * 每次拒绝递增计数器，使冷却时间逐步延长，避免频繁打扰。
    */
   recordReject(): void {
-    this.consecutiveRejects++;
+    // 连续拒绝次数有上限，防止冷却时间无限增长（MAX_CONSECUTIVE_REJECTS = 10 → 最大 6x）
+    if (this.consecutiveRejects < ProactiveEngine.MAX_CONSECUTIVE_REJECTS) {
+      this.consecutiveRejects++;
+    }
   }
 
   /**
@@ -367,11 +373,8 @@ export class ProactiveEngine {
       .slice(0, 3);
 
     for (const pattern of newPatterns) {
-      this.pendingNotices.push({
-        type: 'pattern',
-        summary: pattern.suggestion ?? pattern.summary,
-        timestamp: Date.now(),
-      });
+      // 通过 addNotice 注入，保证 MAX_PENDING_NOTICES 上限保护生效
+      this.addNotice('pattern', pattern.suggestion ?? pattern.summary);
       // 标记为已提示（幂等保护）
       this.promptedPatterns.add(pattern.summary);
     }

@@ -63,6 +63,8 @@ export class TimerTrigger implements SpriteTrigger {
   }
 
   start(cb: TriggerCallback): void {
+    // 防止重复 start 导致旧定时器未停止而泄漏（场景：TriggerBus.restart 后重复调用）
+    this.stop();
     this.callback = cb;
     // 使用 safeSetInterval 替代原生 setInterval，便于统一追踪定时器生命周期
     this.timer = safeSetInterval(() => {

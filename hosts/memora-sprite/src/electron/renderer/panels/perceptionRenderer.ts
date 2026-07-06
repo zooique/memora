@@ -31,6 +31,7 @@ import type {
 } from '../ipcListeners.js';
 // 缺口 G+H：主动提示统计类型从 sprite controllers（真理源）导入（preload 仅内部使用，不 re-export）
 import type { ProactiveStats } from '../../../sprite/controllers/index.js';
+import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -41,9 +42,6 @@ const AFFECT_MID_THRESHOLD = 0.67;
 /** 接受率等级划分阈值：< 0.4 为低，< 0.7 为中，否则为高（与 confidence 徽章一致） */
 const ACCEPTANCE_LOW_THRESHOLD = 0.4;
 const ACCEPTANCE_MID_THRESHOLD = 0.7;
-
-/** 毫秒/分钟转换常量（用于格式化冷却时间显示） */
-const MS_PER_MINUTE = 60 * 1000;
 
 /** 叙事基调判定阈值：warmth/directness/initiative 超过此值时计入基调描述 */
 const AFFECT_TONE_THRESHOLD = 0.6;

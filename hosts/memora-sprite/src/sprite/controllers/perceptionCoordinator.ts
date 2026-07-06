@@ -239,7 +239,7 @@ export class PerceptionCoordinator {
       currentPersona: this.opts.agent.persona?.getActive() ?? null,
     });
 
-    // 获取所有记忆用于推导（上限 1000 条，MemoryInspector.list 按 score 降序）
+    // 获取所有记忆用于推导（上限 1000 条，一次查询供后续所有推导复用）
     const memories = this.opts.agent.memory?.list(1000) ?? [];
     let affect = this.opts.affectController.deriveAffect(memories);
 
@@ -257,11 +257,11 @@ export class PerceptionCoordinator {
     // 生成情感描述文本（不再直接注入，由调用方统一注入）
     const affectPrompt = this.opts.affectController.buildAffectPrompt(affect);
 
-    // Phase 3：同时推导默契度（返回 prompt 文本）
-    const rapportPrompt = this.deriveAndInjectRapport();
+    // Phase 3：同时推导默契度（复用同一批 memories，避免重复 DB 查询）
+    const rapportPrompt = this.deriveAndInjectRapport(memories);
 
-    // Phase 4：同时推导对话上下文（返回 prompt 文本）
-    const contextPrompt = this.deriveAndInjectContext();
+    // Phase 4：同时推导对话上下文（复用同一批 memories）
+    const contextPrompt = this.deriveAndInjectContext(memories);
 
     // 累积所有提示文本，用空行分隔
     return [affectPrompt, rapportPrompt, contextPrompt].filter(Boolean).join('\n\n');
@@ -270,12 +270,10 @@ export class PerceptionCoordinator {
   /**
    * 推导默契度，返回 prompt 文本（不再直接注入，由 refreshBeforeChat 统一注入）
    *
+   * @param memories 由调用方一次性获取的记忆列表（避免重复 DB 查询）
    * 副作用：更新 lastRapport 缓存、发射 rapportUpdated 事件
    */
-  private deriveAndInjectRapport(): string {
-    // 获取所有记忆用于推导
-    const memories = this.opts.agent.memory?.list(DEFAULT_LIST_LIMIT) ?? [];
-
+  private deriveAndInjectRapport(memories: Memory[]): string {
     // 计算交互天数（从最早记忆的创建时间推算）
     const interactionDays = this.calculateInteractionDays(memories);
 
@@ -315,12 +313,10 @@ export class PerceptionCoordinator {
   /**
    * 推导对话上下文，返回 prompt 文本（不再直接注入，由 refreshBeforeChat 统一注入）
    *
+   * @param memories 由调用方一次性获取的记忆列表（避免重复 DB 查询）
    * 副作用：发射 contextUpdated 事件、注入 ProactiveEngine、检测模式
    */
-  private deriveAndInjectContext(): string {
-    // 获取所有记忆用于推导
-    const memories = this.opts.agent.memory?.list(1000) ?? [];
-
+  private deriveAndInjectContext(memories: Memory[]): string {
     const context = this.opts.contextAwareness.deriveContext(memories);
 
     // 发射对话上下文更新事件（供 UI 仪表盘展示）
