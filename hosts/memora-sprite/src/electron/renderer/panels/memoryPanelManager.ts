@@ -16,7 +16,7 @@
 
 import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
-import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType } from '../types.js';
+import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // AUTO-HEALTH-05：事件监听器注册逻辑提取到独立 helper（降低本文件体量）
@@ -595,6 +595,10 @@ export class MemoryPanelManager {
     // 打开详情时退出编辑模式，恢复只读状态
     this.isEditing = false;
 
+    // Phase 5.1：重置演化脉络区域（避免显示上一次详情的残留数据）
+    // 实际脉络数据由 controller 异步加载完成后调用 showMemoryLineage 注入
+    this.resetLineage();
+
     const nameEl = getOptionalElement('memory-detail-name', 'h3');
     const sourceEl = getOptionalElement('memory-detail-source', 'code');
     const scoreEl = getOptionalElement('memory-detail-score', 'span');
@@ -678,6 +682,104 @@ export class MemoryPanelManager {
     // 切换按钮可见性：只读模式显示编辑/删除，隐藏保存/取消
     this.updateDetailButtons();
     this.host.showModal('memory-detail-modal');
+  }
+
+  // ─── 演化脉络（Phase 5.1：路径追溯） ────────────────────
+
+  /**
+   * 重置演化脉络区域
+   *
+   * 在 showMemoryDetail 开头调用，清空上一次的脉络数据并隐藏区域。
+   * 实际脉络数据由 controller 异步加载完成后调用 showMemoryLineage 注入。
+   */
+  resetLineage(): void {
+    const lineageEl = document.getElementById('memory-detail-lineage');
+    const lineageListEl = document.getElementById('memory-lineage-list');
+    if (lineageEl) lineageEl.classList.add('hidden');
+    if (lineageListEl) clearElement(lineageListEl);
+  }
+
+  /**
+   * 渲染演化脉络（异步加载完成后注入）
+   *
+   * 将 RelationPath[]（BFS 扁平数组 + depth 字段）渲染为按 depth 分组的缩进列表，
+   * 展示当前记忆的来源演化链（incoming 方向，多跳追溯）。
+   *
+   * 设计：
+   * - path[0] 是当前记忆（depth=0），高亮标记
+   * - 后续节点按 depth 递增缩进，呈现"从哪来"的纵向演化链
+   * - 点击节点复用 memoryClickCallback 跳转（与关联列表行为一致）
+   * - 空数组静默隐藏区域（不显示错误提示）
+   *
+   * @param path 内核 BFS 返回的路径节点数组
+   */
+  showMemoryLineage(path: RelationPath[]): void {
+    const lineageEl = document.getElementById('memory-detail-lineage');
+    const lineageListEl = document.getElementById('memory-lineage-list');
+    if (!lineageEl || !lineageListEl) return;
+
+    // 空数据或仅起点节点（无上游来源）：静默隐藏
+    if (!path || path.length <= 1) {
+      this.resetLineage();
+      return;
+    }
+
+    clearElement(lineageListEl);
+    for (const node of path) {
+      const item = document.createElement('div');
+      // depth 驱动缩进：通过 CSS 变量 --lineage-depth 传递层级，CSS 中 calc 计算实际 padding-left
+      // （遵循"UI 组件通过 CSS 变量驱动"规则，避免 inline style 硬编码）
+      item.className = 'lineage-item';
+      item.style.setProperty('--lineage-depth', String(node.depth));
+      item.dataset.memoryId = node.memoryId;
+      item.setAttribute('tabindex', '0');
+      item.setAttribute('role', 'button');
+
+      // depth 标签：起点显示"当前"，其他显示层级数字
+      const depthTag = document.createElement('span');
+      depthTag.className = 'lineage-depth-tag';
+      depthTag.textContent = node.depth === 0 ? '当前' : `L${node.depth}`;
+
+      // source 标签：颜色区分（复用列表项 source 配色）
+      const sourceTag = document.createElement('span');
+      sourceTag.className = `lineage-source-tag source-${getSourceColorClass(node.memorySource)}`;
+      sourceTag.textContent = node.memorySource;
+
+      // 关系类型标签（起点节点 relationType 为 null，不显示）
+      if (node.relationType) {
+        const relTag = document.createElement('span');
+        relTag.className = `lineage-relation-tag relation-type-${node.relationType}`;
+        relTag.textContent = node.relationType;
+        item.appendChild(relTag);
+      }
+
+      // 记忆名称
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'lineage-name';
+      nameSpan.textContent = node.memoryName;
+
+      item.appendChild(depthTag);
+      item.appendChild(sourceTag);
+      item.appendChild(nameSpan);
+
+      // 点击节点 → 触发 memoryClickCallback 跳转查看该记忆详情
+      const openNode = () => {
+        if (this.memoryClickCallback) {
+          this.memoryClickCallback(node.memoryId);
+        }
+      };
+      item.addEventListener('click', openNode);
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openNode();
+        }
+      });
+
+      lineageListEl.appendChild(item);
+    }
+
+    lineageEl.classList.remove('hidden');
   }
 
   // ─── 辅助方法 ───────────────────────────────────────────

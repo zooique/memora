@@ -1397,6 +1397,86 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ─── 记忆详情弹窗：演化脉络区域（Phase 5.1：路径追溯） ──── */
+
+.lineage-section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.lineage-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 8px;
+}
+
+.lineage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* 单条脉络节点：flex 布局，padding-left 由 --lineage-depth 驱动缩进 */
+.lineage-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--input-padding);
+  /* depth * 16px：起点 depth=0 不缩进，逐层递进呈现演化链层级 */
+  padding-left: calc(var(--lineage-depth, 0) * 16px + var(--input-padding));
+  border-radius: var(--radius-sm);
+  background: var(--surface0);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  font-size: var(--font-sm);
+}
+
+.lineage-item:hover {
+  background: var(--surface1);
+}
+
+.lineage-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* depth 标签：层级指示（"当前"/"L1"/"L2"...） */
+.lineage-depth-tag {
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 32px;
+}
+
+/* source 标签：复用 .source-* 颜色类（与列表项配色一致） */
+.lineage-source-tag {
+  font-size: var(--font-2xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+/* 关系类型标签：复用 .relation-type-* 类（与关联列表配色一致） */
+.lineage-relation-tag {
+  font-size: var(--font-2xs);
+  color: var(--text-2);
+  background: var(--surface2);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.lineage-name {
+  flex: 1;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ─── Phase 4：空状态插画 + 微交互 ─────────────────────────── */
 
 /* 记忆空状态：居中布局 + 图标 + 标题 + 副标题 + CTA */

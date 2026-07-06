@@ -76,6 +76,8 @@ import type {
   PersonaItem,
   MemoryListItem,
   MemoryDetail,
+  // Phase 5.1：演化脉络渲染所需的路径类型（与内核/sprite 层结构对齐）
+  RelationPath,
   SpriteConfigForm,
   ToastType,
   ToastOptions,
@@ -1016,6 +1018,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void { this.memoryPanel.renderMemoryList(memories, searchQuery); }
   /** 显示记忆详情（委托到 MemoryPanelManager） */
   showMemoryDetail(memory: MemoryDetail): void { this.memoryPanel.showMemoryDetail(memory); }
+  /** Phase 5.1：渲染演化脉络（异步加载完成后注入，可空降） */
+  showMemoryLineage(path: RelationPath[]): void { this.memoryPanel.showMemoryLineage(path); }
   /** 清空添加记忆表单（委托到 MemoryPanelManager） */
   clearAddMemoryForm(): void { this.memoryPanel.clearAddMemoryForm(); }
   /** 获取添加记忆表单数据（空字段返回 null，委托到 MemoryPanelManager） */

@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MemoryPanelManager } from '../../../electron/renderer/panels/memoryPanelManager.js';
 import { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
-import type { MemoryListItem, MemoryDetail } from '../../../electron/renderer/types.js';
+import type { MemoryListItem, MemoryDetail, RelationPath } from '../../../electron/renderer/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -48,6 +48,8 @@ function makeDetail(overrides: Partial<MemoryDetail> = {}): MemoryDetail {
     content: '完整内容',
     createdAt: '2026-06-27T10:00:00Z',
     accessedAt: '2026-06-27T12:00:00Z',
+    // 默认空关联列表（showMemoryDetail 会访问 .length，需初始化）
+    relations: [],
     ...overrides,
   };
 }
@@ -68,6 +70,12 @@ function setupDOM(): void {
       <span id="memory-detail-created"></span>
       <span id="memory-detail-accessed"></span>
       <pre id="memory-detail-content"></pre>
+      <div id="memory-detail-relations" class="hidden">
+        <div id="memory-relations-list"></div>
+      </div>
+      <div id="memory-detail-lineage" class="hidden">
+        <div id="memory-lineage-list"></div>
+      </div>
       <button id="btn-memory-edit">编辑</button>
       <button id="btn-memory-delete">删除</button>
       <button id="btn-memory-discuss">在对话中讨论</button>
@@ -694,6 +702,135 @@ describe('讨论按钮点击', () => {
 
     expect(cb1).not.toHaveBeenCalled();
     expect(cb2).toHaveBeenCalledWith('记忆B');
+  });
+});
+
+// ─── showMemoryLineage（Phase 5.1：演化脉络） ──────────────
+
+describe('showMemoryLineage', () => {
+  /** 创建脉络节点（RelationPath） */
+  function makePath(overrides: Partial<RelationPath> = {}): RelationPath {
+    return {
+      memoryId: 'mem-1',
+      memoryName: '节点1',
+      memorySource: 'insight',
+      relationType: null,
+      relationWeight: null,
+      depth: 0,
+      ...overrides,
+    };
+  }
+
+  it('空数组应保持脉络区域隐藏（静默降级）', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const detailModal = document.getElementById('memory-detail-modal')!;
+    const mgr = new MemoryPanelManager(host, null, null, null, detailModal, events);
+
+    mgr.showMemoryLineage([]);
+
+    const lineageEl = document.getElementById('memory-detail-lineage')!;
+    expect(lineageEl.classList.contains('hidden')).toBe(true);
+    expect(document.querySelectorAll('.lineage-item').length).toBe(0);
+  });
+
+  it('仅起点节点（length=1）应保持隐藏（无上游来源）', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const detailModal = document.getElementById('memory-detail-modal')!;
+    const mgr = new MemoryPanelManager(host, null, null, null, detailModal, events);
+
+    mgr.showMemoryLineage([makePath({ depth: 0 })]);
+
+    const lineageEl = document.getElementById('memory-detail-lineage')!;
+    expect(lineageEl.classList.contains('hidden')).toBe(true);
+  });
+
+  it('多节点路径应渲染多个 .lineage-item 并显示脉络区域', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const detailModal = document.getElementById('memory-detail-modal')!;
+    const mgr = new MemoryPanelManager(host, null, null, null, detailModal, events);
+
+    const path: RelationPath[] = [
+      makePath({ memoryId: 'current', memoryName: '当前记忆', memorySource: 'profile', depth: 0, relationType: null }),
+      makePath({ memoryId: 'src1', memoryName: '上游洞察', memorySource: 'insight', depth: 1, relationType: 'supports' }),
+      makePath({ memoryId: 'src2', memoryName: '原始输入', memorySource: 'session', depth: 2, relationType: 'derived-from' }),
+    ];
+
+    mgr.showMemoryLineage(path);
+
+    const lineageEl = document.getElementById('memory-detail-lineage')!;
+    expect(lineageEl.classList.contains('hidden')).toBe(false);
+
+    const items = document.querySelectorAll('.lineage-item');
+    expect(items.length).toBe(3);
+    // 验证 depth 通过 CSS 变量传递（不直接操作 padding-left）
+    expect(items[0].getAttribute('style')).toContain('--lineage-depth: 0');
+    expect(items[1].getAttribute('style')).toContain('--lineage-depth: 1');
+    expect(items[2].getAttribute('style')).toContain('--lineage-depth: 2');
+  });
+
+  it('起点节点不渲染 relation-tag（relationType 为 null）', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const detailModal = document.getElementById('memory-detail-modal')!;
+    const mgr = new MemoryPanelManager(host, null, null, null, detailModal, events);
+
+    const path: RelationPath[] = [
+      makePath({ depth: 0, relationType: null }),
+      makePath({ depth: 1, relationType: 'supports' }),
+    ];
+
+    mgr.showMemoryLineage(path);
+
+    const items = document.querySelectorAll('.lineage-item');
+    // 起点节点不应有 .lineage-relation-tag
+    expect(items[0].querySelector('.lineage-relation-tag')).toBeNull();
+    // 上游节点应有 .lineage-relation-tag
+    expect(items[1].querySelector('.lineage-relation-tag')).not.toBeNull();
+  });
+
+  it('点击脉络节点应触发 memoryClickCallback', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const detailModal = document.getElementById('memory-detail-modal')!;
+    const mgr = new MemoryPanelManager(host, null, null, null, detailModal, events);
+
+    const clickCb = vi.fn();
+    mgr.onMemoryClick(clickCb);
+
+    const path: RelationPath[] = [
+      makePath({ memoryId: 'current', depth: 0 }),
+      makePath({ memoryId: 'src1', depth: 1, relationType: 'supports' }),
+    ];
+    mgr.showMemoryLineage(path);
+
+    const items = document.querySelectorAll('.lineage-item');
+    (items[1] as HTMLElement).click();
+
+    expect(clickCb).toHaveBeenCalledWith('src1');
+  });
+
+  it('detailModal 为 null 时应静默降级', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const mgr = new MemoryPanelManager(host, null, null, null, null, events);
+
+    expect(() => mgr.showMemoryLineage([makePath()])).not.toThrow();
+  });
+
+  it('showMemoryDetail 后未调用 showMemoryLineage 时脉络区域应隐藏', () => {
+    const host = createMockHost();
+    const events = new EventTracker();
+    const detailModal = document.getElementById('memory-detail-modal')!;
+    const mgr = new MemoryPanelManager(host, null, null, null, detailModal, events);
+
+    // showMemoryDetail 内部会调用 resetLineage，确保脉络区域隐藏
+    mgr.showMemoryDetail(makeDetail());
+
+    const lineageEl = document.getElementById('memory-detail-lineage')!;
+    expect(lineageEl.classList.contains('hidden')).toBe(true);
   });
 });
 

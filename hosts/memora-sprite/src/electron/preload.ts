@@ -190,7 +190,7 @@ export const MAIN_TO_RENDERER_CHANNELS = {
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
 // 补齐 DeletedMemoryListItem 导出，供 UI 渲染回收站列表使用
-export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem };
+export type { MemoryListItem, MemoryDetail, MemoryRelationItem, MemorySearchHit, DeletedMemoryListItem, RelationPath, RelationNeighbor };
 
 // ─── 配置建议/用户画像共享类型定义 ───────────────────────────────────
 

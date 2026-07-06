@@ -289,6 +289,18 @@ export function createMemoryController(uiManager: UIManager) {
         const { memory } = await window.electronAPI.showMemory(id);
         if (memory) {
           uiManager.showMemoryDetail(memory);
+          // Phase 5.1：异步加载演化脉络（不阻塞详情弹窗显示，失败静默降级）
+          // incoming 方向追溯来源链，maxDepth=3 足够覆盖典型演化深度
+          try {
+            const path = await window.electronAPI.getRelationPath({
+              memoryId: id,
+              maxDepth: 3,
+              direction: 'incoming',
+            });
+            uiManager.showMemoryLineage(path);
+          } catch {
+            // 脉络加载失败不影响详情查看，resetLineage 已在 showMemoryDetail 中调用
+          }
         }
       } catch (error) {
         reportError('onMemoryClick', error);
