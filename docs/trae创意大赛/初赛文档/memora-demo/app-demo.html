@@ -2174,6 +2174,10 @@
       #titlebar-nav .nav-btn { padding: 4px 10px; gap: 0; }
       #titlebar-nav .nav-label { display: none; }
       .message { max-width: 90%; }
+      /* 三态切换器适配：sidebar缩为64px，居中于剩余区域 */
+      .state-switcher {
+        left: calc(64px + (100vw - 64px) / 2);
+      }
     }
 
     /* ============================================
@@ -2267,6 +2271,7 @@
 
       /* 三态切换器适配 */
       .state-switcher {
+        left: 50%;
         gap: 4px;
         padding: 4px;
       }
@@ -2519,7 +2524,8 @@
     .state-switcher {
       position: fixed;
       top: 12px;
-      left: 50%;
+      /* 默认居中于sidebar右侧区域（sidebar宽240px），避免遮挡标题栏导航按钮 */
+      left: calc(240px + (100vw - 240px) / 2);
       transform: translateX(-50%);
       z-index: 9998;
       display: flex;
