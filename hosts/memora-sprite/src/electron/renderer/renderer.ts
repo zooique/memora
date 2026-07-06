@@ -644,10 +644,17 @@ function setupBusinessLogic(
   State.uiManager.onDateNavJump(async (date: string) => {
     try {
       await sessionController.jumpToDate(date);
+      // 跳转成功后设置日期选择器显示当前日期
+      State.uiManager.setDateNavCurrentDate(date);
     } catch (error) {
       reportError('dateNavJump', error);
       State.uiManager.showToast('日期跳转失败，请稍后重试', 'error');
     }
+  });
+
+  // 无效日期回调：用户选择了没有对话记录的日期
+  State.uiManager.onDateNavInvalidDate(() => {
+    State.uiManager.showToast('该日期没有对话记录', 'warning');
   });
 }
 

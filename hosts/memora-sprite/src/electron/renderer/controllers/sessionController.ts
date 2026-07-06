@@ -118,6 +118,11 @@ export function createSessionController(uiManager: UIManager) {
       // 根据分页和日期状态显示对应的加载按钮
       await updateLoadMoreButton(hasMore);
 
+      // 设置日期选择器显示当前日期
+      if (currentSessionParams) {
+        uiManager.setDateNavCurrentDate(currentSessionParams.date);
+      }
+
       uiManager.hidePanelError('chat');
     } catch (error) {
       reportError('loadSessionHistory', error);
@@ -324,6 +329,8 @@ export function createSessionController(uiManager: UIManager) {
       const today = getLocalDate();
       const isTodayMain = date === today && name === 'main';
       uiManager.setMessageCount(isTodayMain ? result.messages.filter((m) => m.role !== 'system').length : 0);
+      // 更新日期选择器显示当前日期
+      uiManager.setDateNavCurrentDate(date);
       // 切换成功后隐藏错误横幅
       uiManager.hidePanelError('chat');
     } catch (error) {
@@ -344,6 +351,7 @@ export function createSessionController(uiManager: UIManager) {
    *
    * 查询所有有对话记录的日期，按日期降序排列（最新的在最前）。
    * 始终包含今天日期（即使 0 条消息），确保用户可以跳转到今天的对话。
+   * 同时更新日期导航管理器的可用日期集合（用于验证用户选择的日期是否有效）。
    *
    * @returns 日期列表，每项包含日期、消息数、是否今天
    */
@@ -373,6 +381,10 @@ export function createSessionController(uiManager: UIManager) {
         }))
         .sort((a, b) => b.date.localeCompare(a.date));
 
+      // 更新日期导航管理器的可用日期集合（仅包含有消息记录的日期 + 今天）
+      const availableDates = result.filter((item) => item.messageCount > 0 || item.isToday).map((item) => item.date);
+      uiManager.updateDateNavAvailableDates(availableDates);
+
       return result;
     } catch (error) {
       reportError('loadDateList', error);
@@ -386,6 +398,12 @@ export function createSessionController(uiManager: UIManager) {
    * 加载指定日期的代表会话消息，替换当前消息区。
    * 跳转后重置时间流状态，以该日期为起点。
    *
+   * 日期与分叉会话的处理策略：
+   * - 优先选择 `main` 会话（标准会话）
+   * - 如果 `main` 不存在，选择第一个可用会话（可能是分叉会话）
+   * - 如果同一天有多个会话（main + fork-1 + fork-2），日期导航默认跳转到 main，
+   *   用户可通过对话分叉功能切换到其他会话
+   *
    * @param date 目标日期（YYYY-MM-DD）
    */
   async function jumpToDate(date: string): Promise<void> {
@@ -396,10 +414,25 @@ export function createSessionController(uiManager: UIManager) {
     }
 
     try {
-      // 查询该日期的代表会话
+      // 查询该日期的所有会话
       const { sessions } = await window.electronAPI.listSessions();
-      const targetSession = sessions.find((s) => s.date === date);
-      const sessionName = targetSession?.name ?? 'main';
+      const dateSessions = sessions.filter((s) => s.date === date);
+
+      // 如果该日期没有任何会话，提示用户
+      if (dateSessions.length === 0) {
+        uiManager.showToast('该日期没有对话记录', 'warning');
+        return;
+      }
+
+      // 优先选择 main 会话，其次选择第一个可用会话
+      const mainSession = dateSessions.find((s) => s.name === 'main');
+      const targetSession = mainSession ?? dateSessions[0]!; // dateSessions.length > 0 已在前面对齐
+      const sessionName = targetSession.name;
+
+      // 如果同一天有多个会话，提示用户当前选择的是哪个会话
+      if (dateSessions.length > 1 && sessionName !== 'main') {
+        uiManager.showToast(`已跳转到 ${date} 的 ${sessionName} 会话`, 'info');
+      }
 
       // 清空当前消息区
       uiManager.clearMessages();

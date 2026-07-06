@@ -1347,6 +1347,21 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager.onDateNavJump(cb);
   }
 
+  /** 更新有对话记录的日期集合（用于验证选择的日期是否有效） */
+  updateDateNavAvailableDates(dates: string[]): void {
+    this.dateNavManager.updateAvailableDates(dates);
+  }
+
+  /** 设置日期选择器显示的当前日期 */
+  setDateNavCurrentDate(date: string): void {
+    this.dateNavManager.setCurrentDate(date);
+  }
+
+  /** 注册无效日期回调（选择了无记录的日期时触发） */
+  onDateNavInvalidDate(cb: () => void): void {
+    this.dateNavManager.onInvalidDate(cb);
+  }
+
   /** 加载 Embedding 配置到表单（委托到 SettingsPanelManager） */
   loadEmbeddingConfig(data: {
     embedding: { model: string; baseUrl: string; apiKey: string } | null;
