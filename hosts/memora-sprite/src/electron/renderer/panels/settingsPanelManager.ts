@@ -94,7 +94,8 @@ export class SettingsPanelManager {
 
   // ─── 设置面板 DOM 元素 - 多 Provider 管理 ─────────────
   private providerListEl: HTMLElement | null;
-  private providerFormEl: HTMLElement | null;
+  private providerModalEl: HTMLElement | null;
+  private providerModalTitleEl: HTMLElement | null;
   private providerAliasInput: HTMLInputElement | null;
   private providerDisplayInput: HTMLInputElement | null;
   private providerProviderInput: HTMLInputElement | null;
@@ -103,6 +104,8 @@ export class SettingsPanelManager {
   private providerApiKeyInput: HTMLInputElement | null;
   private providerTemperatureInput: HTMLInputElement | null;
   private btnAddProvider: HTMLButtonElement | null;
+  // 后台归档 Provider 选择框
+  private backgroundProviderSelect: HTMLSelectElement | null;
   // 缓存 Provider 列表数据（编辑时用于填充表单字段，避免 DOM 解析丢失 temperature/apiKey）
   private cachedProviders: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> = [];
   private btnProviderSave: HTMLButtonElement | null;
@@ -178,7 +181,8 @@ export class SettingsPanelManager {
 
     // 多 Provider 管理元素
     this.providerListEl = document.getElementById('provider-list');
-    this.providerFormEl = document.getElementById('provider-form');
+    this.providerModalEl = document.getElementById('provider-modal');
+    this.providerModalTitleEl = document.getElementById('provider-modal-title');
     this.providerAliasInput = getOptionalElement('cfg-provider-alias', 'input');
     this.providerDisplayInput = getOptionalElement('cfg-provider-display', 'input');
     this.providerProviderInput = getOptionalElement('cfg-provider-provider', 'input');
@@ -187,6 +191,7 @@ export class SettingsPanelManager {
     this.providerApiKeyInput = getOptionalElement('cfg-provider-api-key', 'input');
     this.providerTemperatureInput = getOptionalElement('cfg-provider-temperature', 'input');
     this.btnAddProvider = getOptionalElement('btn-add-provider', 'button');
+    this.backgroundProviderSelect = getOptionalElement('cfg-background-provider', 'select');
     this.btnProviderSave = getOptionalElement('btn-provider-save', 'button');
     this.btnProviderCancel = getOptionalElement('btn-provider-cancel', 'button');
     this.btnProviderTest = getOptionalElement('btn-provider-test', 'button');
@@ -741,10 +746,30 @@ export class SettingsPanelManager {
       const data = await window.electronAPI.listLlmProviders();
       this.cachedProviders = data.providers; // 缓存供编辑时使用
       this.renderProviderList(data.active, data.providers);
+      this.renderBackgroundProviderSelect(data.providers);
       // 通知宿主 Provider 列表已变更，让 InputAreaManager 刷新输入框选择器
       this.host.onProviderChanged?.();
     } catch {
       this.providerListEl.innerHTML = '';
+    }
+  }
+
+  /**
+   * 渲染后台归档 Provider 选择框
+   * 根据已有的 Provider 列表动态生成选项
+   */
+  private renderBackgroundProviderSelect(providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>): void {
+    if (!this.backgroundProviderSelect) return;
+
+    const currentValue = this.backgroundProviderSelect.value;
+
+    this.backgroundProviderSelect.innerHTML = '<option value="">与实时对话相同</option>' +
+      providers.map(p =>
+        `<option value="${p.key}">${p.name} (${p.provider} · ${p.model})</option>`
+      ).join('');
+
+    if (providers.some(p => p.key === currentValue)) {
+      this.backgroundProviderSelect.value = currentValue;
     }
   }
 
@@ -808,14 +833,15 @@ export class SettingsPanelManager {
   }
 
   /**
-   * 显示 Provider 编辑表单
+   * 显示 Provider 编辑弹窗
    */
   private showProviderForm(key: string = ''): void {
-    if (!this.providerFormEl) return;
+    if (!this.providerModalEl) return;
 
     if (key) {
       // 编辑模式：从缓存中查找 Provider 数据（含 temperature 和脱敏 apiKey）
       const cached = this.cachedProviders.find((p) => p.key === key);
+      if (this.providerModalTitleEl) this.providerModalTitleEl.textContent = '编辑 API';
 
       if (this.providerAliasInput) {
         this.providerAliasInput.value = key;
@@ -830,6 +856,7 @@ export class SettingsPanelManager {
       if (this.providerTemperatureInput) this.providerTemperatureInput.value = String(cached?.temperature ?? 0.7);
     } else {
       // 新增模式：清空所有字段
+      if (this.providerModalTitleEl) this.providerModalTitleEl.textContent = '添加 API';
       if (this.providerAliasInput) { this.providerAliasInput.value = ''; this.providerAliasInput.disabled = false; }
       if (this.providerDisplayInput) this.providerDisplayInput.value = '';
       if (this.providerProviderInput) this.providerProviderInput.value = '';
@@ -839,17 +866,17 @@ export class SettingsPanelManager {
       if (this.providerTemperatureInput) this.providerTemperatureInput.value = '';
     }
 
-    this.providerFormEl.classList.remove('hidden');
-    this.providerFormEl.dataset.editKey = key;
+    this.providerModalEl.classList.remove('hidden');
+    this.providerModalEl.dataset.editKey = key;
   }
 
   /**
-   * 隐藏 Provider 编辑表单
+   * 隐藏 Provider 编辑弹窗
    */
   private hideProviderForm(): void {
-    if (!this.providerFormEl) return;
-    this.providerFormEl.classList.add('hidden');
-    this.providerFormEl.dataset.editKey = '';
+    if (!this.providerModalEl) return;
+    this.providerModalEl.classList.add('hidden');
+    this.providerModalEl.dataset.editKey = '';
   }
 
   /**
@@ -880,7 +907,7 @@ export class SettingsPanelManager {
     }
 
     // 重复 key 检测：新增时检查别名是否已存在
-    const isEditing = (this.providerFormEl?.dataset.editKey ?? '') !== '';
+    const isEditing = (this.providerModalEl?.dataset.editKey ?? '') !== '';
     if (!isEditing) {
       try {
         const data = await window.electronAPI.listLlmProviders();

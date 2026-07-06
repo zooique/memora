@@ -664,62 +664,32 @@
           <button id="settings-error-retry" class="panel-error-btn">重试</button>
         </div>
 
-        <!-- LLM 配置（记录列表模式：卡片只显示名称，点击编辑才展开配置表单） -->
+        <!-- LLM 配置（记录列表模式：卡片只显示名称，点击编辑弹出配置弹窗） -->
         <div class="settings-tab-content active" data-settings-tab="llm">
           <div class="settings-group">
-            <h3>API 管理</h3>
+            <div class="settings-group-header">
+              <h3>API 管理</h3>
+              <button id="btn-add-provider" class="btn-secondary btn-sm" type="button">+ 添加 API</button>
+            </div>
             <p class="settings-hint">管理多个 LLM Provider，在输入框中随时切换。点击「编辑」查看或修改具体配置。</p>
 
             <!-- Provider 列表（记录卡片，只显示名称和概要信息） -->
             <div id="provider-list" class="provider-list">
               <!-- 动态渲染：每个 Provider 一个卡片 -->
             </div>
+          </div>
 
-            <!-- 添加/编辑 Provider 表单（默认隐藏，点击「添加」或「编辑」时展开） -->
-            <div id="provider-form" class="provider-form hidden">
-              <div class="settings-row">
-                <label for="cfg-provider-alias">别名（唯一标识）</label>
-                <input type="text" id="cfg-provider-alias" placeholder="deepseek-v3" autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-provider-display">显示名称</label>
-                <input type="text" id="cfg-provider-display" placeholder="DeepSeek V3" autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-provider-provider">提供商（provider）</label>
-                <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-provider-model">模型（model）</label>
-                <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-provider-base-url">API 地址（baseUrl）</label>
-                <input type="text" id="cfg-provider-base-url" placeholder="https://api.deepseek.com" autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label for="cfg-provider-api-key">API Key</label>
-                <div class="input-with-action">
-                  <input type="password" id="cfg-provider-api-key" placeholder="sk-****" />
-                  <button type="button" id="btn-toggle-provider-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Provider API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
-                </div>
-              </div>
-              <div class="settings-row">
-                <label for="cfg-provider-temperature">Temperature <span class="settings-hint">(0–2，默认 0.7)</span></label>
-                <input type="number" id="cfg-provider-temperature" placeholder="0.7" min="0" max="2" step="0.1" autocomplete="off" />
-              </div>
-              <div class="settings-row">
-                <label></label>
-                <div class="provider-form-actions">
-                  <button id="btn-provider-test" class="btn-secondary" type="button">测试连接</button>
-                  <button id="btn-provider-save" class="btn-primary" type="button">保存</button>
-                  <button id="btn-provider-cancel" class="btn-secondary" type="button">取消</button>
-                </div>
-              </div>
+          <!-- 后台归档设置（独立区域） -->
+          <div class="settings-group">
+            <h3>后台归档</h3>
+            <p class="settings-hint">选择用于后台记忆归档任务的 API，可选择与实时对话不同的 Provider（如使用更便宜的模型）。</p>
+
+            <div class="settings-row">
+              <label for="cfg-background-provider">归档 Provider</label>
+              <select id="cfg-background-provider">
+                <option value="">与实时对话相同</option>
+              </select>
             </div>
-
-            <!-- 添加按钮 -->
-            <button id="btn-add-provider" class="btn-secondary" type="button">+ 添加 API</button>
           </div>
         </div>
 
@@ -1186,6 +1156,46 @@
         <!-- 记忆→对话双向流动，关闭弹窗并切换到对话面板预填讨论提示 -->
         <button id="btn-memory-discuss" class="btn-primary">在对话中讨论</button>
         <button class="btn-secondary" data-modal="memory-detail-modal">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Provider 配置弹窗 -->
+  <div id="provider-modal" class="modal hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="provider-modal-title">添加 API</h3>
+        <button class="modal-close" data-modal="provider-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+      </div>
+      <div class="modal-body">
+        <label for="cfg-provider-alias">别名（唯一标识）</label>
+        <input type="text" id="cfg-provider-alias" placeholder="deepseek-v3" autocomplete="off" />
+
+        <label for="cfg-provider-display">显示名称</label>
+        <input type="text" id="cfg-provider-display" placeholder="DeepSeek V3" autocomplete="off" />
+
+        <label for="cfg-provider-provider">提供商（provider）</label>
+        <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" />
+
+        <label for="cfg-provider-model">模型（model）</label>
+        <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" />
+
+        <label for="cfg-provider-base-url">API 地址（baseUrl）</label>
+        <input type="text" id="cfg-provider-base-url" placeholder="https://api.deepseek.com" autocomplete="off" />
+
+        <label for="cfg-provider-api-key">API Key</label>
+        <div class="input-with-action">
+          <input type="password" id="cfg-provider-api-key" placeholder="sk-****" />
+          <button type="button" id="btn-toggle-provider-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Provider API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
+        </div>
+
+        <label for="cfg-provider-temperature">Temperature <span class="settings-hint">(0–2，默认 0.7)</span></label>
+        <input type="number" id="cfg-provider-temperature" placeholder="0.7" min="0" max="2" step="0.1" autocomplete="off" />
+      </div>
+      <div class="modal-footer">
+        <button id="btn-provider-test" class="btn-secondary" type="button">测试连接</button>
+        <button id="btn-provider-cancel" class="btn-secondary" type="button">取消</button>
+        <button id="btn-provider-save" class="btn-primary" type="button">保存</button>
       </div>
     </div>
   </div>

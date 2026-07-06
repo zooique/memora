@@ -122,6 +122,20 @@
   margin-bottom: 24px;
 }
 
+.settings-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.settings-group-header h3 {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
 .settings-group h3 {
   font-size: var(--font-sm);
   font-weight: 600;
@@ -756,6 +770,8 @@
   border-color: var(--green);
   background: var(--green-10);
 }
+
+
 
 /* Provider 信息区 */
 .provider-info {

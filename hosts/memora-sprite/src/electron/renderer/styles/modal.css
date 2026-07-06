@@ -447,6 +447,8 @@ kbd {
 }
 
 .modal-body input[type="text"],
+.modal-body input[type="number"],
+.modal-body input[type="password"],
 .modal-body textarea,
 .modal-body select {
   width: 100%;
@@ -511,6 +513,11 @@ kbd {
 .btn-secondary:hover {
   background: var(--window-bg-2);
   color: var(--text);
+}
+
+.btn-sm {
+  padding: 4px 12px;
+  font-size: var(--font-xs);
 }
 
 .btn-danger {

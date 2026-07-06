@@ -24,6 +24,10 @@ import {
   isLlmConfigured,
   PROVIDER_PRESETS,
   reinitAgent,
+  getLlmProviders,
+  saveLlmProvider,
+  deleteLlmProvider,
+  setActiveLlmProvider,
 } from '../../index.js';
 import { DEFAULT_CONFIG_PATH } from '../../storage/spriteConfigStore.js';
 import { loadConfig } from 'memora';
@@ -174,6 +178,66 @@ export async function handleSystemRoute(
         sendJson(res, 200, { success: false, error: toError(error).message });
       }
       return;
+    }
+
+    // ─── 多 Provider 管理路由 ─────────────────────────────────
+
+    // GET /api/llm-providers — 获取所有 Provider 列表（脱敏）
+    if (method === 'GET' && (path === '/api/llm-providers' || path === '/api/llm-providers/')) {
+      try {
+        const data = await getLlmProviders();
+        sendJson(res, 200, data);
+      } catch (error) {
+        sendJson(res, 200, { active: '', providers: [] });
+      }
+      return;
+    }
+
+    // POST /api/llm-providers — 保存 Provider（新增/更新）
+    if (method === 'POST' && (path === '/api/llm-providers' || path === '/api/llm-providers/')) {
+      const body = await parseJsonBody<{ key: string; config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number } }>(req);
+      if (!body?.key || !body?.config?.provider || !body?.config?.model) {
+        sendError(res, 400, 'key、provider、model 必填');
+        return;
+      }
+      try {
+        await saveLlmProvider(body.key, body.config);
+        sendJson(res, 200, { success: true, error: null });
+      } catch (error) {
+        sendJson(res, 200, { success: false, error: toError(error).message });
+      }
+      return;
+    }
+
+    // DELETE /api/llm-providers/:key — 删除 Provider
+    if (method === 'DELETE' && path.startsWith('/api/llm-providers/')) {
+      const key = path.split('/').pop();
+      if (!key) {
+        sendError(res, 400, 'key 必填');
+        return;
+      }
+      try {
+        await deleteLlmProvider(key);
+        sendJson(res, 200, { success: true, error: null });
+      } catch (error) {
+        sendJson(res, 200, { success: false, error: toError(error).message });
+      }
+      return;
+    }
+
+    // POST /api/llm-providers/:key/active — 切换激活 Provider
+    if (method === 'POST' && path.startsWith('/api/llm-providers/')) {
+      const parts = path.split('/');
+      const key = parts[3];
+      if (parts[4] === 'active' && key) {
+        try {
+          await setActiveLlmProvider(key);
+          sendJson(res, 200, { success: true, error: null });
+        } catch (error) {
+          sendJson(res, 200, { success: false, error: toError(error).message });
+        }
+        return;
+      }
     }
 
     // 以下路由需要 Agent 就绪

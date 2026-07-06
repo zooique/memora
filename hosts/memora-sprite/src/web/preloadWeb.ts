@@ -72,6 +72,12 @@ export interface WebElectronAPI {
   saveLlmConfig: (llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number }, embeddingConfig?: { model: string; baseUrl?: string; apiKey?: string }) => Promise<{ success: boolean; error: string | null }>;
   testLlmConfig: (llmConfig: { provider: string; model: string; baseUrl: string; apiKey: string }) => Promise<{ success: boolean; error: string | null }>;
 
+  // 多 Provider 管理
+  listLlmProviders: () => Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> }>;
+  saveLlmProvider: (key: string, config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number }) => Promise<{ success: boolean; error: string | null }>;
+  deleteLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
+  setActiveLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
+
   // 记忆
   listMemories: (query?: { source?: string }) => Promise<{ memories: unknown[] }>;
   searchMemories: (query: string) => Promise<{ hits: unknown[] }>;
@@ -656,6 +662,16 @@ export const webElectronAPI: WebElectronAPI = {
   saveLlmConfig: (llmConfig, _embeddingConfig) => postJson('/api/llm-config', llmConfig),
 
   testLlmConfig: (llmConfig) => postJson('/api/llm-config/test', llmConfig),
+
+  // ─── 多 Provider 管理 ──────────────────────────────────
+
+  listLlmProviders: () => getJson('/api/llm-providers'),
+
+  saveLlmProvider: (key, config) => postJson('/api/llm-providers', { key, config }),
+
+  deleteLlmProvider: (key) => deleteJson(`/api/llm-providers/${encodeURIComponent(key)}`),
+
+  setActiveLlmProvider: (key) => postJson(`/api/llm-providers/${encodeURIComponent(key)}/active`),
 
   // ─── 记忆 ───────────────────────────────────────────────
 

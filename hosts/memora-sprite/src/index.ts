@@ -116,7 +116,7 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
  * 获取所有 Provider 配置列表
  *
  * 从 config.json 读取 providers 映射表，转换为 UI 层格式。
- * 未配置 providers 时返回空列表 + 旧单 provider 的降级信息。
+ * 向后兼容：当 providers 为空但存在旧的扁平配置时，自动迁移为单 provider 条目。
  *
  * @param configPath 配置文件路径
  * @returns Provider 列表 + 当前激活的 alias
@@ -134,19 +134,42 @@ export async function getLlmProviders(
     return key.slice(0, 4) + '****' + key.slice(-4);
   };
 
-  const providerList = Object.entries(providers).map(([key, p]) => ({
-    key,
-    name: key, // 默认名称 = key，UI 可编辑
-    provider: p.provider,
-    model: p.model,
-    baseUrl: p.baseUrl ?? '',
-    apiKey: maskKey(p.apiKey),
-    // 读取每个 Provider 的 temperature，未配置时回退到全局默认值
-    temperature: p.temperature ?? config.llm.temperature,
-  }));
+  let providerList: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>;
+  let active: string;
+
+  // 向后兼容：当 providers 为空但存在旧的扁平配置时，自动迁移为单 provider 条目
+  // 旧格式：config.llm.provider / model / baseUrl / apiKey / temperature
+  // 新格式：config.llm.providers = { "default": { provider, model, baseUrl, apiKey, temperature } }
+  if (Object.keys(providers).length === 0 && config.llm.provider && config.llm.provider !== 'mock') {
+    // 使用旧配置创建一个默认 provider
+    const defaultKey = 'default';
+    providerList = [{
+      key: defaultKey,
+      name: defaultKey,
+      provider: config.llm.provider,
+      model: config.llm.model ?? '',
+      baseUrl: config.llm.baseUrl ?? '',
+      apiKey: maskKey(config.llm.apiKey),
+      temperature: config.llm.temperature ?? 0.7,
+    }];
+    active = config.llm.active ?? defaultKey;
+  } else {
+    // 使用新的 providers 映射表
+    providerList = Object.entries(providers).map(([key, p]) => ({
+      key,
+      name: key, // 默认名称 = key，UI 可编辑
+      provider: p.provider,
+      model: p.model,
+      baseUrl: p.baseUrl ?? '',
+      apiKey: maskKey(p.apiKey),
+      // 读取每个 Provider 的 temperature，未配置时回退到全局默认值
+      temperature: p.temperature ?? config.llm.temperature,
+    }));
+    active = config.llm.active ?? Object.keys(providers)[0] ?? '';
+  }
 
   return {
-    active: config.llm.active ?? Object.keys(providers)[0] ?? '',
+    active,
     providers: providerList,
   };
 }
