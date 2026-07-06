@@ -654,17 +654,15 @@
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
         <div class="settings-tabs">
           <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
-          <button class="settings-tab" data-settings-tab="embedding"><svg class="icon"><use href="#icon-hash"/></svg>嵌入</button>
+          <!-- P1-1：嵌入 tab 已合并到大模型 tab（嵌入是 LLM 子配置） -->
           <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
           <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
-          <!-- 用户画像 tab：管理已确认/待确认的画像条目 -->
-          <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像</button>
+          <!-- P1-1：画像 tab 重命名为"画像与作品"（作品 tab 已合并） -->
+          <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像与作品</button>
           <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit"><svg class="icon"><use href="#icon-eye"/></svg>审计</button>
           <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
           <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
-          <!-- 作品投影 tab：展示精灵对用户工作文件的理解 -->
-          <button class="settings-tab" data-settings-tab="work"><svg class="icon"><use href="#icon-books"/></svg>作品</button>
           <!-- P2-3：内置帮助页面 -->
           <button class="settings-tab" data-settings-tab="help"><svg class="icon"><use href="#icon-question"/></svg>帮助</button>
         </div>
@@ -702,10 +700,8 @@
               </select>
             </div>
           </div>
-        </div>
 
-        <!-- Embedding 配置（可选） -->
-        <div class="settings-tab-content" data-settings-tab="embedding">
+          <!-- P1-1：Embedding 配置（从原嵌入 tab 迁移，嵌入是 LLM 子配置） -->
           <div class="settings-group">
             <h3>Embedding 配置（可选）</h3>
             <p class="settings-hint">配置后启用语义搜索（向量召回），让记忆搜索更智能。</p>
@@ -876,6 +872,22 @@
               </div>
             </div>
           </div>
+
+          <!-- P1-1：作品投影（从原作品 tab 迁移，与画像同属"精灵对用户的理解"） -->
+          <div class="settings-group">
+            <div class="settings-group-header">
+              <h3>作品投影</h3>
+              <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
+              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+            </div>
+            <p class="settings-hint">
+              精灵读取你的代码文件后，自动生成作品投影摘要。
+              包含文件概要、内部结构和关键设计决策。
+            </p>
+            <div id="work-projection-list" class="work-projection-list-container">
+              <!-- 由 WorkProjectionPanelManager 动态填充 -->
+            </div>
+          </div>
         </div>
 
         <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
@@ -933,23 +945,7 @@
           </div>
         </div>
 
-        <!-- 作品投影 tab：展示精灵对用户工作文件的理解 -->
-        <div class="settings-tab-content" data-settings-tab="work">
-          <div class="settings-group">
-            <div class="settings-group-header">
-              <h3>作品投影</h3>
-              <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
-              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新"><svg class="icon"><use href="#icon-refresh"/></svg></button>
-            </div>
-            <p class="settings-hint">
-              精灵读取你的代码文件后，自动生成作品投影摘要。
-              包含文件概要、内部结构和关键设计决策。
-            </p>
-            <div id="work-projection-list" class="work-projection-list-container">
-              <!-- 由 WorkProjectionPanelManager 动态填充 -->
-            </div>
-          </div>
-        </div>
+        <!-- P1-1：作品 tab 已合并到画像与作品 tab（原 data-settings-tab="work" 容器已删除） -->
 
         <!-- P2-3：内置帮助页面（离线可用，不依赖外部链接） -->
         <div class="settings-tab-content" data-settings-tab="help">
@@ -1148,8 +1144,8 @@
             </div>
           </section>
 
-          <!-- 分区四：运行指标（默认展开） -->
-          <details class="dashboard-section" id="dashboard-runtime" open>
+          <!-- 分区四：运行指标（P1-3：默认折叠，技术用户按需展开） -->
+          <details class="dashboard-section" id="dashboard-runtime">
             <summary class="dashboard-section-title">运行</summary>
             <div class="dash-item-grid" id="dashboard-metrics-grid">
               <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="dashboard-llm-calls">0</span></div>

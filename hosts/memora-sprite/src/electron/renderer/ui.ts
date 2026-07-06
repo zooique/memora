@@ -829,17 +829,15 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    *
    * 由 SettingsPanelManager 在 tab 切换时调用，
    * 根据目标 tab 刷新对应 PanelManager 的数据：
-   * - profile → 刷新用户画像
-   * - work → 刷新作品投影
+   * - profile → 刷新用户画像 + 作品投影（P1-1：作品 tab 已合并）
    * - audit → 刷新审计日志
    * - skill → 刷新技能列表（通过 loadDashboard 间接刷新）
    */
   onSettingsTabSwitch(tab: string): void {
     switch (tab) {
       case 'profile':
+        // P1-1：作品 tab 已合并到画像与作品 tab，切换时同时刷新画像和作品数据
         void this.profilePanel.load();
-        break;
-      case 'work':
         void this.workProjectionPanel.load();
         break;
       case 'audit':

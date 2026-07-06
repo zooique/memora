@@ -584,34 +584,38 @@
 /**
  * 日期导航按钮：快速跳转到指定日期的历史对话
  * 位于 chat-toolbar 右侧，点击弹出日期列表下拉
+ * P1-2：视觉降权（缩小宽度 + 灰化默认态），对齐"对话面板核心是当前对话"心智
  */
 .date-navigator {
   position: relative;
   margin-left: auto;
 }
 
-/* 日历选择器：紧凑的 date input，快速跳转到指定日期 */
+/* 日历选择器：P1-2 视觉降权（灰化默认态 + 缩小宽度，hover/focus 时恢复强调） */
 .date-nav-picker {
-  background: var(--surface0);
-  border: 1px solid var(--border);
+  background: transparent;                 /* P1-2：surface0 → transparent，融入工具栏 */
+  border: 1px solid transparent;           /* P1-2：border → transparent，默认无边框 */
   border-radius: var(--radius-sm);
   padding: 2px 6px;
   font-size: var(--font-xs);
-  color: var(--text);
+  color: var(--text-3);                    /* P1-2：text → text-3，灰化默认态 */
   cursor: pointer;
-  transition: border-color var(--transition-fast);
-  /* 隐藏默认的日历图标，使用更紧凑的布局 */
-  width: 120px;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  width: 110px;                            /* P1-2：120px → 110px，进一步紧凑 */
   height: 24px;
 }
 
 .date-nav-picker:hover {
-  border-color: var(--accent);
+  border-color: var(--border);             /* P1-2：accent → border，hover 才显示边框 */
+  background: var(--surface0);
+  color: var(--text);                      /* P1-2：hover 恢复 text 强调色 */
 }
 
 .date-nav-picker:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+  background: var(--surface0);
+  color: var(--text);
 }
 
 /* 暗色主题下日历图标的颜色反转 */
