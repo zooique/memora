@@ -2,27 +2,33 @@
  * 仪表盘面板样式
  *
  * 仪表盘从 overlay 感知面板升级为独立 .panel，
- * 整合健康诊断 + 感知指标 + 运行指标 + 记忆源健康四大分区。
+ * 整合概览 + 感知 + 运行 + 记忆源健康四大分区。
  *
  * 设计原则：
  * - 遵循现有 CSS 变量体系（base.css 定义的设计令牌）
- * - 卡片式布局，分区之间有明确视觉分隔
+ * - 信息密度优先：紧凑布局，关键指标一目了然
+ * - 清晰的视觉层级：分区 → 子标题 → 内容三级结构
  * - 复用 .dash-item / .affect-bar / .progress-track 等已有组件样式
- * - 响应式网格，卡片自适应宽度
+ * - 响应式网格，自适应宽度
  */
 
 /* ─── 仪表盘主体滚动容器 ──────────────────────────── */
 .dashboard-body {
-  padding: 20px;
+  padding: 16px 20px 20px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
 }
 
 /* ─── 分区（section） ──────────────────────────────── */
 .dashboard-section {
   /* 无额外容器样式，由标题 + 内容的 gap 构成自然分隔 */
+}
+
+/* 分区无数据时整体隐藏（避免空标题占用空间） */
+.dashboard-section.hidden {
+  display: none;
 }
 
 .dashboard-section-title {
@@ -31,12 +37,12 @@
   color: var(--subtext);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin: 0 0 12px 0;
+  margin: 0 0 10px 0;
   padding: 0;
 }
 
 /* ─── 折叠式分区（details/summary） ─────────────────── */
-/* 运行指标等分区默认折叠，点击展开 */
+/* 折叠式分区（details/summary），默认展开 */
 details.dashboard-section > .dashboard-section-title {
   display: block;
   cursor: pointer;
@@ -61,22 +67,114 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   display: none;
 }
 
+/* 子标题（分区内二级标题，如"主动提示"、"模式洞察"） */
 .dashboard-subtitle {
-  font-size: var(--font-xs);
+  font-size: var(--font-2xs);
   font-weight: 600;
-  color: var(--subtext);
-  margin: 12px 0 8px 0;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0 0 6px 0;
   padding: 0;
 }
 
-/* ─── 概览卡片网格 ──────────────────────────────────── */
+/* ─── 概览区：紧凑指标网格 ─────────────────────────────── */
+.dashboard-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+/* 概览指标项：标签在上，数值在下 */
+.overview-item {
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.overview-item .overview-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.overview-item .overview-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+/* 默契度概览项：徽章 + 进度条组合 */
+.overview-item.overview-rapport {
+  grid-column: span 2;
+  gap: 6px;
+}
+
+.overview-rapport-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.overview-rapport-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-2xs);
+  font-weight: 600;
+}
+
+.overview-rapport-badge[data-level="close"] {
+  background: var(--mauve-20);
+  color: var(--mauve);
+}
+.overview-rapport-badge[data-level="familiar"] {
+  background: var(--green-20);
+  color: var(--green);
+}
+.overview-rapport-badge[data-level="acquaintance"] {
+  background: var(--accent-20);
+  color: var(--blue);
+}
+.overview-rapport-badge[data-level="stranger"] {
+  background: var(--surface2);
+  color: var(--subtext);
+}
+
+.overview-rapport-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.overview-rapport-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-2xs);
+}
+
+.overview-rapport-bar .bar-label {
+  width: 28px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.overview-rapport-bar .progress-track {
+  height: 4px;
+}
+
+/* ─── 卡片样式 ──────────────────────────────────── */
 .dashboard-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 12px;
 }
 
-/* ─── 卡片容器 ──────────────────────────────────────── */
 .dashboard-card {
   background: var(--surface0);
   border-radius: var(--radius-sm);
@@ -94,7 +192,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   letter-spacing: 0.04em;
 }
 
-/* 大号数值（健康分） */
 .card-value {
   font-size: 2rem;
   font-weight: 700;
@@ -102,7 +199,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   line-height: 1;
 }
 
-/* 徽章（健康等级 / 默契等级） */
 .card-badge {
   display: inline-block;
   padding: 2px 10px;
@@ -112,7 +208,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   align-self: flex-start;
 }
 
-/* 健康等级徽章颜色（映射到 base.css 已有的设计令牌） */
 .card-badge[data-level="excellent"],
 .card-badge[data-level="good"] {
   background: var(--green-20);
@@ -127,7 +222,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--red);
 }
 
-/* 默契等级徽章颜色（映射到 base.css 已有的设计令牌） */
 .card-badge[data-level="close"] {
   background: var(--mauve-20);
   color: var(--mauve);
@@ -145,7 +239,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--subtext);
 }
 
-/* 三维度迷你进度条容器 */
 .card-dims {
   display: flex;
   flex-direction: column;
@@ -153,7 +246,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   margin-top: 4px;
 }
 
-/* 统计行（记忆统计卡片内） */
 .card-stat-row {
   display: flex;
   justify-content: space-between;
@@ -167,7 +259,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--text);
 }
 
-/* 进度条行（默契度卡片内） */
 .card-bar {
   display: flex;
   align-items: center;
@@ -188,7 +279,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   line-height: 1.4;
 }
 
-/* ─── 通用进度条（复用自 affect-bar 模式） ──────────── */
+/* ─── 通用进度条 ──────────────────────────────────── */
 .progress-track {
   flex: 1;
   height: 6px;
@@ -205,23 +296,57 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   min-width: 2px;
 }
 
+/* ─── 感知分区：分组卡片式布局 ──────────────────────── */
+/* 将感知内容分为"状态"和"指标"两组，用卡片视觉区分 */
+.perception-group {
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.perception-group:last-child {
+  margin-bottom: 0;
+}
+
 /* ─── 在场状态 ──────────────────────────────────────── */
 .dashboard-presence {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
   padding: 8px 12px;
   background: var(--surface0);
   border-radius: var(--radius-sm);
+  margin-bottom: 8px;
 }
 
-/* ─── 情感基调网格（复用 affect-bar 模式） ──────────── */
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.presence-dot.present {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+
+.presence-dot.away {
+  background: var(--muted);
+}
+
+.presence-text {
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+/* ─── 情感基调网格 ──────────────────────────────── */
 .dashboard-section .affect-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px 16px;
-  margin-bottom: 12px;
+  gap: 6px 16px;
+  margin-bottom: 8px;
 }
 
 /* ─── 对话上下文行内 ────────────────────────────────── */
@@ -236,6 +361,27 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   margin-bottom: 8px;
 }
 
+.context-item {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.context-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+.context-value {
+  font-weight: 500;
+  color: var(--text);
+}
+
+.context-sep {
+  color: var(--surface2);
+  font-size: var(--font-xs);
+}
+
 /* ─── 模式洞察列表 ────────────────────────────────── */
 .dashboard-patterns {
   margin-bottom: 8px;
@@ -243,28 +389,192 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 /* ─── 主动提示网格 ────────────────────────────────── */
 .dashboard-proactive {
-  margin-top: 8px;
+  margin-top: 4px;
+}
+
+/* 主动提示空状态：全0时的友好提示 */
+.dashboard-proactive-empty {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  text-align: center;
+  padding: 8px;
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
 }
 
 /* ─── dash-item 网格（运行指标 / 主动提示） ──────────── */
 .dash-item-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px;
+}
+
+.dash-item {
+  background: var(--surface0);
+  border-radius: var(--radius-xs);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+
+.dash-item .dash-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.dash-item .dash-value {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 接受率高/中/低 颜色（与 PatternDetector confidence 徽章一致） */
+.dash-item .dash-value.high {
+  color: var(--green);
+}
+.dash-item .dash-value.mid {
+  color: var(--yellow);
+}
+.dash-item .dash-value.low {
+  color: var(--muted);
+}
+
+/* 警告态（连续拒绝 > 0 时高亮） */
+.dash-item .dash-value.warning {
+  color: var(--yellow);
 }
 
 /* ─── 记忆源健康列表 ──────────────────────────────── */
 .source-health-list {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+}
+
+/* 单个 source 健康条目：主行 + 次行双层结构 */
+.source-health-item {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface0);
+  border-left: 3px solid transparent;
+  flex-wrap: nowrap;
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+/* 按 status 区分左边框颜色，让异常项视觉突出 */
+.source-health-item.warning {
+  border-left-color: var(--yellow);
+}
+
+.source-health-item.critical {
+  border-left-color: var(--red);
+}
+
+.source-health-item.healthy {
+  border-left-color: var(--green);
+}
+
+/* 主行：source 标签 + 状态徽章 */
+.source-health-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
 }
+
+.source-health-label {
+  font-weight: 600;
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+.source-health-status {
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-2xs);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.source-health-status.healthy {
+  background: var(--green-20);
+  color: var(--green);
+}
+
+.source-health-status.warning {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.source-health-status.critical {
+  background: var(--red-20);
+  color: var(--red);
+}
+
+/* 次行：计数 / 均分 / 访问天数 三个指标 */
+.source-health-meta {
+  display: flex;
+  gap: 12px;
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+.source-health-meta span {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* source 颜色类（复用 InsightsRenderer 的 source-{name} 颜色类） */
+.source-profile { color: var(--mauve); }
+.source-insight { color: var(--yellow); }
+.source-rule { color: var(--red); }
+.source-skill { color: var(--green); }
+.source-guardrail { color: var(--red); }
+.source-chat { color: var(--blue); }
+.source-file { color: var(--peach); }
+.source-work { color: var(--mauve); }
+.source-memory { color: var(--blue); }
+.source-summary { color: var(--green); }
+.source-note { color: var(--yellow); }
+.source-persona { color: var(--pink); }
+.source-session { color: var(--teal); }
 
 /* 空状态 */
 .source-health-list:empty::after {
   content: '暂无诊断数据';
   color: var(--muted);
   font-size: var(--font-sm);
-  padding: 12px;
+  padding: 16px;
   text-align: center;
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+/* ─── 脉冲动画（计数变化时的高亮效果） ──────────────── */
+.stat-value.pulse,
+.overview-value.pulse,
+.dash-value.pulse {
+  animation: pulse-highlight 0.6s ease-out;
+}
+
+@keyframes pulse-highlight {
+  0% {
+    color: var(--accent);
+    transform: scale(1.1);
+  }
+  100% {
+    color: inherit;
+    transform: scale(1);
+  }
 }

@@ -562,7 +562,16 @@ export function createMemoryController(uiManager: UIManager) {
    */
   async function loadDashboard(): Promise<void> {
     try {
-      const data = await window.electronAPI.getDashboard();
+      // 并发加载仪表盘数据和感知快照，减少总等待时间
+      // 注意：getPerceptionSnapshot 可能不存在（如 Web 调试模式），需用 Promise.resolve + catch 确保安全
+      const perceptionPromise = Promise.resolve()
+        .then(() => window.electronAPI.getPerceptionSnapshot?.())
+        .catch(() => null);
+
+      const [data, perceptionSnapshot] = await Promise.all([
+        window.electronAPI.getDashboard(),
+        perceptionPromise,
+      ]);
 
       // 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
       uiManager.renderDashboardStats(data);
@@ -575,9 +584,15 @@ export function createMemoryController(uiManager: UIManager) {
 
       // 已加载技能列表渲染（消费内核 agent.skills.list）
       uiManager.renderSkills(data.skills);
+
+      // 感知快照渲染（情感/默契度/上下文/模式/主动提示统计）
+      // 确保仪表盘首次加载时就能显示真实数据，而非占位值
+      if (perceptionSnapshot && Object.keys(perceptionSnapshot).length > 0) {
+        uiManager.renderPerceptionSnapshot(perceptionSnapshot);
+      }
     } catch (error) {
       reportError('loadDashboard', error);
-      // 仪表盘涉及多子区域（统计/指标/技能/回顾），整体失败时用 toast 兜底提示
+      // 仪表盘涉及多子区域（统计/指标/技能/回顾/感知），整体失败时用 toast 兜底提示
       uiManager.showToast('仪表盘加载失败，请稍后重试', 'error');
     }
   }

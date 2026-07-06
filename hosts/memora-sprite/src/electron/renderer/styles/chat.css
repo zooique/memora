@@ -525,73 +525,6 @@
   color: var(--red);
 }
 
-/* 健康明细列表容器 */
-.source-health-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-/* 单个 source 健康条目：横向排列 标签|计数|均分|访问|状态 */
-.source-health-item {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--window-bg-2);
-  font-size: var(--font-2xs);
-  color: var(--subtext);
-  border-left: 3px solid transparent;
-}
-
-/* 按 status 区分左边框颜色，让异常项视觉突出 */
-.source-health-item.warning {
-  border-left-color: var(--yellow);
-}
-
-.source-health-item.critical {
-  border-left-color: var(--red);
-}
-
-/* source 标签：复用 InsightsRenderer 的 source-{name} 颜色类 */
-.source-health-label {
-  font-weight: 600;
-  color: var(--text);
-}
-
-/* 计数 / 均分 / 访问天数：弱化色，辅助信息 */
-.source-health-count,
-.source-health-score,
-.source-health-access {
-  color: var(--muted);
-}
-
-/* 健康状态徽章（条目右侧） */
-.source-health-status {
-  margin-left: auto;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  font-weight: 500;
-}
-
-.source-health-status.healthy {
-  background: var(--green-20);
-  color: var(--green);
-}
-
-.source-health-status.warning {
-  background: var(--yellow-20);
-  color: var(--yellow);
-}
-
-.source-health-status.critical {
-  background: var(--red-20);
-  color: var(--red);
-}
-
 /* 运行指标：单行内联紧凑布局，标签:值 形式 */
 .perception-metrics-grid {
   display: flex;
@@ -2462,61 +2395,75 @@
   }
 }
 
-/* ─── 启动摘要卡片（迭代一：Welcome Back Digest） ────────────────── */
-/* Agent 就绪后展示在对话区顶部，告知用户精灵当前状态和记忆概况 */
-/* 与消息气泡不同的视觉风格：卡片式，左对齐，无头像，special 底色 */
+/* ─── 启动摘要横幅 ────────────────── */
+/* Agent 就绪后展示在对话区顶部，与 proactive-banner 同级，横幅形态 */
+/* 横向布局：左侧精灵图标 + 中间内容区（标题 + 数据网格）+ 右侧关闭按钮 */
 
-.startup-summary-card {
-  align-self: center;
-  max-width: 520px;
-  width: 100%;
-  padding: 16px 18px;
-  background: var(--surface0);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-md);
-  margin-bottom: 4px;
-  /* 进入动画：淡入 + 轻微上移 */
-  animation: fadeIn var(--transition-slow) ease-out;
-}
-
-/* 卡片标题行：图标 + 欢迎语 */
-.startup-summary-header {
+#startup-banner {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-size: var(--font-sm);
-  font-weight: 600;
-  color: var(--text);
+  gap: 12px;
+  padding: var(--padding-sm) var(--padding-base);
+  margin-bottom: 4px;
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
 }
 
-/* 卡片标题内的 SVG 图标 */
-.startup-summary-header .icon {
-  width: 18px;
-  height: 18px;
+#startup-banner:not(.hidden) {
+  animation: bannerSlideDown var(--transition-base) ease-out;
+}
+
+/* 横幅图标 */
+.startup-banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-20);
   color: var(--accent);
   flex-shrink: 0;
 }
 
-/* 数据网格：2 列布局，紧凑展示各维度 */
-.startup-summary-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 16px;
-  margin-bottom: 12px;
+.startup-banner-icon .icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* 横幅内容区（标题 + 数据网格） */
+.startup-banner-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 横幅标题 */
+.startup-banner-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* 数据网格：横向排列，紧凑展示各维度 */
+.startup-banner-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 /* 单个数据项 */
-.startup-summary-item {
+.startup-banner-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   font-size: var(--font-xs);
   color: var(--text-2);
 }
 
 /* 数据项图标 */
-.startup-summary-item .icon {
+.startup-banner-item .icon {
   width: 14px;
   height: 14px;
   color: var(--text-3);
@@ -2524,55 +2471,55 @@
 }
 
 /* 数据值：强调色 */
-.startup-summary-value {
+.startup-banner-value {
   font-weight: 600;
   color: var(--text);
 }
 
 /* 健康状态标签：healthy / warning / critical */
-.startup-summary-badge {
+.startup-banner-badge {
   font-size: var(--font-2xs);
   font-weight: 600;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
 }
 
-.startup-summary-badge.healthy {
+/* 健康状态标签颜色 */
+.startup-banner-badge.healthy {
   background: var(--green-20);
   color: var(--green);
 }
 
-.startup-summary-badge.warning {
+.startup-banner-badge.warning {
   background: var(--yellow-20);
   color: var(--yellow);
 }
 
-.startup-summary-badge.critical {
+.startup-banner-badge.critical {
   background: var(--red-20);
   color: var(--red);
 }
 
-/* 卡片底部操作：关闭按钮 */
-.startup-summary-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.startup-summary-close {
-  padding: 4px 12px;
-  border: 1px solid var(--surface2);
+/* 横幅关闭按钮 */
+.startup-banner-close {
+  padding: 4px;
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--window-bg);
-  color: var(--text-2);
-  font-size: var(--font-xs);
-  font-family: inherit;
+  background: transparent;
+  color: var(--text-3);
   cursor: pointer;
+  flex-shrink: 0;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.startup-summary-close:hover {
+.startup-banner-close:hover {
   background: var(--surface2);
   color: var(--text);
+}
+
+.startup-banner-close .icon {
+  width: 16px;
+  height: 16px;
 }
 
 /* ─── 一键归档按钮 ─── */

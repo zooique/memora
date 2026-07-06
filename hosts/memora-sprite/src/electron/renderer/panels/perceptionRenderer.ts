@@ -88,6 +88,60 @@ export class PerceptionRenderer {
   // ─── 感知数据渲染入口 ──────────────────────────────────
 
   /**
+   * 从感知快照一次性渲染所有感知数据（仪表盘首次加载时调用）
+   *
+   * 设计背景：原感知数据依赖事件推送（affectUpdated/rapportUpdated 等），
+   * 但仪表盘首次加载时若事件尚未触发，则显示全0占位值，用户体验差。
+   * 此方法通过 getPerceptionSnapshot() 获取的快照一次性初始化所有感知显示。
+   *
+   * 处理内容：
+   * - 情感基调（四维进度条）
+   * - 默契度（等级徽章 + 信任/熟悉进度条）
+   * - 对话上下文（节奏/连贯性/深度）
+   * - 模式洞察（检测结果列表）
+   * - 主动提示统计（接受率/冷却等）
+   *
+   * 各子数据可选存在，仅渲染快照中包含的字段，缺失字段保持原状态。
+   *
+   * @param snapshot 感知快照（来自 getPerceptionSnapshot()）
+   */
+  renderPerceptionSnapshot(snapshot: {
+    affect?: { warmth: number; playfulness: number; directness: number; initiative: number };
+    rapport?: { trust: number; familiarity: number; level: string; description: string };
+    context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
+    patterns?: Array<{ type: string; summary: string; confidence: number; suggestion?: string }>;
+    proactiveStats?: ProactiveStats;
+  }): void {
+    // ─── 情感基调 ──────────────────────────────────
+    if (snapshot.affect) {
+      this.updateAffectDisplay(snapshot.affect as AffectPayload);
+    }
+
+    // ─── 默契度 ────────────────────────────────────
+    if (snapshot.rapport) {
+      this.updateRapportDisplay(snapshot.rapport as RapportPayload);
+    }
+
+    // ─── 对话上下文 ────────────────────────────────
+    if (snapshot.context) {
+      this.updateContextDisplay(snapshot.context as ContextPayload);
+    }
+
+    // ─── 模式洞察 ──────────────────────────────────
+    if (snapshot.patterns) {
+      this.updatePatternsDisplay({ patterns: snapshot.patterns } as PatternsPayload);
+    }
+
+    // ─── 主动提示统计 ──────────────────────────────
+    if (snapshot.proactiveStats) {
+      this.updateProactiveStatsDisplay(snapshot.proactiveStats);
+    }
+
+    // 数据更新后重新生成叙事摘要
+    this.updateNarrative();
+  }
+
+  /**
    * 更新情感基调展示（仪表盘四维进度条 + 状态条指示）
    *
    * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
@@ -385,11 +439,28 @@ export class PerceptionRenderer {
    * 设计意图：让用户看到"我与精灵的互动累计"以及"为什么连续拒绝后精灵变安静"，
    * 与 pendingNotices/proactiveThreshold 形成"当前累积 + 历史反馈 + 生效参数"三位一体的主动度视图。
    *
+   * 空状态处理：suggestCount=0 时隐藏网格，显示友好提示文案，
+   * 避免用户看到全0数据产生"功能是否正常"的困惑。
+   *
    * @param stats 主动提示统计快照（null 时静默跳过，保持 DOM 默认值）
    */
   updateProactiveStatsDisplay(stats: ProactiveStats | null): void {
     // 无数据时静默跳过（保持 DOM 默认占位值，不阻塞面板渲染）
     if (!stats) return;
+
+    const gridEl = document.getElementById('dashboard-proactive-grid');
+    const emptyEl = document.getElementById('dashboard-proactive-empty');
+
+    // 空状态：suggestCount=0 时显示友好提示
+    if (stats.suggestCount === 0) {
+      if (gridEl) gridEl.classList.add('hidden');
+      if (emptyEl) emptyEl.classList.remove('hidden');
+      return;
+    }
+
+    // 有数据时显示网格，隐藏空状态
+    if (gridEl) gridEl.classList.remove('hidden');
+    if (emptyEl) emptyEl.classList.add('hidden');
 
     // ─── 历史反馈：建议数 / 接受数 ──────────────────────
     const suggestEl = document.getElementById('dashboard-proactive-suggest');
@@ -409,10 +480,7 @@ export class PerceptionRenderer {
       } else {
         rateEl.classList.add('low');
       }
-      // suggestCount=0 时 acceptanceRate 为默认值 0.5，标注 tooltip 提示无实际数据
-      rateEl.title = stats.suggestCount === 0
-        ? '暂无互动数据（默认 50%）'
-        : `接受率 ${Math.round(stats.acceptanceRate * 100)}%（${stats.acceptCount}/${stats.suggestCount}）`;
+      rateEl.title = `接受率 ${Math.round(stats.acceptanceRate * 100)}%（${stats.acceptCount}/${stats.suggestCount}）`;
     }
 
     // ─── 连续拒绝数（>0 时高亮，提示用户精灵正在延长冷却） ──

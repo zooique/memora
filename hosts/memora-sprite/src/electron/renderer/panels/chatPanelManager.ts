@@ -1454,13 +1454,15 @@ export class ChatPanelManager {
     document.getElementById('chat-empty-state')?.classList.add('hidden');
   }
 
-  // ─── 启动摘要卡片（迭代一：Welcome Back Digest） ──────────
+  // ─── 启动摘要横幅 ──────────
 
   /**
-   * 在对话区顶部展示启动摘要卡片
+   * 在对话区顶部展示启动摘要横幅
    *
-   * 聚合记忆/洞察/感知/衰减/健康数据，以卡片形式告知用户精灵当前状态。
-   * 卡片可关闭，关闭后不再显示（本次会话内）。
+   * 聚合记忆/洞察/感知/衰减/健康数据，以横幅形态告知用户精灵当前状态。
+   * 横幅位于 proactive-banner 下方、消息区上方，可关闭（本次会话内不再显示）。
+   *
+   * 布局：左侧精灵图标 + 中间内容区（标题 + 横向数据网格）+ 右侧关闭按钮
    *
    * @param summary 启动摘要数据（来自 Sprite.getStartupSummary()）
    */
@@ -1472,69 +1474,57 @@ export class ChatPanelManager {
     perception: { warmth: number; rapportLevel: string; rapportDescription: string } | null;
     healthStatus: 'healthy' | 'warning' | 'critical' | null;
   }): void {
-    // 空状态时摘要卡片无意义（无数据可展示）
+    // 空状态时摘要无意义（无数据可展示）
     if (summary.totalMemories === 0 && summary.totalInsights === 0) return;
 
+    // 获取横幅元素
+    const banner = document.getElementById('startup-banner');
+    const gridEl = document.getElementById('startup-banner-grid');
+    if (!banner || !gridEl) return;
+
     // 避免重复展示（本次会话仅展示一次）
-    if (this.messagesEl.querySelector('.startup-summary-card')) return;
+    if (!banner.classList.contains('hidden')) return;
 
-    // 构建卡片 DOM
-    const card = document.createElement('div');
-    card.className = 'startup-summary-card';
-
-    // 标题行
-    const header = document.createElement('div');
-    header.className = 'startup-summary-header';
-    header.innerHTML = '<svg class="icon"><use href="#icon-fairy"/></svg> 欢迎回来';
-    card.appendChild(header);
-
-    // 数据网格
-    const grid = document.createElement('div');
-    grid.className = 'startup-summary-grid';
+    // 清空网格内容
+    gridEl.innerHTML = '';
 
     // 记忆总数
-    grid.appendChild(this._buildSummaryItem('记忆', String(summary.totalMemories)));
+    gridEl.appendChild(this._buildSummaryItem('记忆', String(summary.totalMemories)));
     // 洞察总数
-    grid.appendChild(this._buildSummaryItem('洞察', String(summary.totalInsights)));
+    gridEl.appendChild(this._buildSummaryItem('洞察', String(summary.totalInsights)));
     // 技能数
-    grid.appendChild(this._buildSummaryItem('技能', `${summary.skillCount} 个`));
+    gridEl.appendChild(this._buildSummaryItem('技能', `${summary.skillCount} 个`));
     // 衰减统计
     if (summary.decay && summary.decay.totalDecayedCount > 0) {
-      grid.appendChild(this._buildSummaryItem('衰减', `${summary.decay.totalDecayedCount} 条`));
+      gridEl.appendChild(this._buildSummaryItem('衰减', `${summary.decay.totalDecayedCount} 条`));
     } else {
-      grid.appendChild(this._buildSummaryItem('衰减', '—'));
+      gridEl.appendChild(this._buildSummaryItem('衰减', '—'));
     }
     // 感知：温暖度
     if (summary.perception) {
-      grid.appendChild(this._buildSummaryItem('温暖度', `${Math.round(summary.perception.warmth * 100)}%`));
-      grid.appendChild(this._buildSummaryItem('默契度', summary.perception.rapportDescription));
+      gridEl.appendChild(this._buildSummaryItem('温暖度', `${Math.round(summary.perception.warmth * 100)}%`));
+      gridEl.appendChild(this._buildSummaryItem('默契度', summary.perception.rapportDescription));
     }
     // 健康状态
     if (summary.healthStatus) {
       const healthItem = this._buildSummaryItem('健康', '');
       const badge = document.createElement('span');
-      badge.className = `startup-summary-badge ${summary.healthStatus}`;
+      badge.className = `startup-banner-badge ${summary.healthStatus}`;
       badge.textContent = summary.healthStatus === 'healthy' ? '良好' : summary.healthStatus === 'warning' ? '警告' : '严重';
       healthItem.appendChild(badge);
-      grid.appendChild(healthItem);
+      gridEl.appendChild(healthItem);
     }
 
-    card.appendChild(grid);
+    // 绑定关闭按钮事件
+    const closeBtn = banner.querySelector('.startup-banner-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', () => {
+        banner.classList.add('hidden');
+      });
+    }
 
-    // 关闭按钮
-    const actions = document.createElement('div');
-    actions.className = 'startup-summary-actions';
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'startup-summary-close';
-    closeBtn.textContent = '知道了';
-    closeBtn.addEventListener('click', () => {
-      card.remove();
-    });
-    actions.appendChild(closeBtn);
-    card.appendChild(actions);
-
-    // 插入到消息区顶部
-    this.messagesEl.insertBefore(card, this.messagesEl.firstChild);
+    // 显示横幅（移除 hidden 类，触发 slideDown 动画）
+    banner.classList.remove('hidden');
   }
 
   /**
@@ -1588,8 +1578,8 @@ export class ChatPanelManager {
    */
   private _buildSummaryItem(label: string, value: string): HTMLElement {
     const item = document.createElement('div');
-    item.className = 'startup-summary-item';
-    item.innerHTML = `<span>${label}</span><span class="startup-summary-value">${value}</span>`;
+    item.className = 'startup-banner-item';
+    item.innerHTML = `<span>${label}</span><span class="startup-banner-value">${value}</span>`;
     return item;
   }
 

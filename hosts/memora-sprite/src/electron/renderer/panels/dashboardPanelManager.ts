@@ -353,26 +353,28 @@ export class DashboardPanelManager {
    * 渲染记忆源健康诊断（缺口 E：消费内核 sourceHealth()）
    *
    * 在仪表盘展示每个 source 的质量维度：计数 / 平均分 / 距上次访问天数 / 健康状态徽章。
+   * 采用主行+次行双层布局：主行展示 source 名称和状态徽章，次行展示详细指标。
    * 与 InsightsRenderer 的 source 分布条形图互补：
    * - InsightsRenderer 展示"每个 source 有多少条"（数量维度）
    * - 本方法展示"每个 source 质量如何"（健康维度）
    *
-   * 无数据时隐藏整个 section，避免占用空间。有数据时按 status 严重度排序
-   * （critical → warning → healthy），让用户优先看到需要关注的 source。
+   * 无数据时隐藏整个 section（包括标题），避免空标题占用空间。
+   * 有数据时按 status 严重度排序（critical → warning → healthy），让用户优先看到需要关注的 source。
    *
    * @param sourceHealth 记忆源健康诊断数据（null 表示不可用）
    */
   renderSourceHealth(sourceHealth: SourceHealth | null): void {
     const dashboardListEl = document.getElementById('dashboard-source-health-list');
-    if (!dashboardListEl) return;
+    const dashboardSectionEl = document.getElementById('dashboard-source-health');
+    if (!dashboardListEl || !dashboardSectionEl) return;
 
-    // 无数据时隐藏整个 section（内核降级返回 null 时不展示）
+    // 无数据时隐藏整个 section（包括标题，避免空标题占用空间）
     if (!sourceHealth || sourceHealth.sources.length === 0) {
-      dashboardListEl.classList.add('hidden');
+      dashboardSectionEl.classList.add('hidden');
       return;
     }
 
-    dashboardListEl.classList.remove('hidden');
+    dashboardSectionEl.classList.remove('hidden');
 
     // 按 status 严重度排序：critical(0) → warning(1) → healthy(2)
     const statusOrder: Record<string, number> = { critical: 0, warning: 1, healthy: 2 };
@@ -385,32 +387,49 @@ export class DashboardPanelManager {
       dashboardListEl.removeChild(dashboardListEl.firstChild);
     }
     for (const s of sortedSources) {
+      // 主容器
       const item = document.createElement('div');
       item.className = `source-health-item ${s.status}`;
+
+      // 主行：source 标签 + 状态徽章
+      const mainRow = document.createElement('div');
+      mainRow.className = 'source-health-main';
+
       const labelSpan = document.createElement('span');
       labelSpan.className = `source-health-label source-${getSourceColorClass(s.source)}`;
       labelSpan.textContent = this.getSourceLabel(s.source);
+
+      const statusSpan = document.createElement('span');
+      statusSpan.className = `source-health-status ${s.status}`;
+      statusSpan.textContent = this.getSourceHealthStatusLabel(s.status);
+
+      mainRow.appendChild(labelSpan);
+      mainRow.appendChild(statusSpan);
+
+      // 次行：计数 / 均分 / 访问天数 三个指标
+      const metaRow = document.createElement('div');
+      metaRow.className = 'source-health-meta';
+
       const countSpan = document.createElement('span');
-      countSpan.className = 'source-health-count';
       countSpan.textContent = `${s.count} 条`;
+      countSpan.title = '该 source 的记忆总数';
+
       const scoreSpan = document.createElement('span');
-      scoreSpan.className = 'source-health-score';
       scoreSpan.textContent = `均分 ${Math.round(s.avgScore * 100)}`;
       scoreSpan.title = '该 source 所有记忆的平均分（0-100）';
+
       const accessSpan = document.createElement('span');
-      accessSpan.className = 'source-health-access';
       accessSpan.textContent = s.daysSinceLastAccess === 0
         ? '今日访问'
         : `${s.daysSinceLastAccess} 天未访`;
       accessSpan.title = '距上次访问该 source 的天数';
-      const statusSpan = document.createElement('span');
-      statusSpan.className = `source-health-status ${s.status}`;
-      statusSpan.textContent = this.getSourceHealthStatusLabel(s.status);
-      item.appendChild(labelSpan);
-      item.appendChild(countSpan);
-      item.appendChild(scoreSpan);
-      item.appendChild(accessSpan);
-      item.appendChild(statusSpan);
+
+      metaRow.appendChild(countSpan);
+      metaRow.appendChild(scoreSpan);
+      metaRow.appendChild(accessSpan);
+
+      item.appendChild(mainRow);
+      item.appendChild(metaRow);
       dashboardListEl.appendChild(item);
     }
   }
@@ -653,6 +672,21 @@ export class DashboardPanelManager {
   /** 更新模式洞察面板（委托到 PerceptionRenderer） */
   updatePatternsDisplay(payload: PatternsPayload): void {
     this.perception.updatePatternsDisplay(payload);
+  }
+
+  /**
+   * 从感知快照一次性渲染所有感知数据（委托到 PerceptionRenderer）
+   *
+   * 仪表盘首次加载时调用，确保感知区显示真实数据而非占位值。
+   */
+  renderPerceptionSnapshot(snapshot: {
+    affect?: { warmth: number; playfulness: number; directness: number; initiative: number };
+    rapport?: { trust: number; familiarity: number; level: string; description: string };
+    context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
+    patterns?: Array<{ type: string; summary: string; confidence: number; suggestion?: string }>;
+    proactiveStats?: ProactiveStats;
+  }): void {
+    this.perception.renderPerceptionSnapshot(snapshot);
   }
 
   /** 更新主动提示统计展示（委托到 PerceptionRenderer，缺口 G+H） */

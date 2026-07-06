@@ -284,6 +284,16 @@
           <button class="banner-close" data-action="close" title="关闭" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
         </div>
 
+        <!-- 启动摘要横幅（欢迎回来 + 状态概览，与 proactive-banner 同级，横幅形态展示） -->
+        <div id="startup-banner" class="hidden">
+          <span class="startup-banner-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
+          <div class="startup-banner-content">
+            <div class="startup-banner-title">欢迎回来</div>
+            <div class="startup-banner-grid" id="startup-banner-grid"></div>
+          </div>
+          <button class="startup-banner-close" title="关闭" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+        </div>
+
         <div id="messages">
           <!-- 对话区空状态引导：无消息时显示欢迎语 + 示例问题，有消息后自动隐藏 -->
           <div id="chat-empty-state" class="chat-empty-state">
@@ -1036,30 +1046,40 @@
           </button>
         </div>
         <div class="dashboard-body">
-          <!-- 分区一：概览卡片（记忆统计 + 默契等级） -->
-          <!-- 记忆健康诊断已迁入记忆面板 #memory-health-bar，仪表盘不再重复展示 -->
+          <!-- 分区一：概览（紧凑指标网格） -->
           <section class="dashboard-section" id="dashboard-overview">
             <h4 class="dashboard-section-title">概览</h4>
-            <div class="dashboard-cards" id="dashboard-cards">
-              <!-- 记忆统计卡片：总数 / 洞察 / 衰减 -->
-              <div class="dashboard-card" id="memory-stats-card">
-                <div class="card-header">记忆统计</div>
-                <div class="card-stat-row"><span>记忆</span><span class="stat-value" id="dashboard-total-memories">0</span></div>
-                <div class="card-stat-row"><span>洞察</span><span class="stat-value" id="dashboard-total-insights">0</span></div>
-                <div class="card-stat-row"><span>衰减运行</span><span class="stat-value" id="dashboard-decay-runs">—</span></div>
+            <div class="dashboard-overview-grid" id="dashboard-overview-grid">
+              <!-- 记忆总数 -->
+              <div class="overview-item">
+                <span class="overview-label">记忆</span>
+                <span class="overview-value" id="dashboard-total-memories">0</span>
               </div>
-              <!-- 默契度卡片：等级徽章 + 信任/熟悉度双进度条 -->
-              <div class="dashboard-card" id="rapport-card">
-                <div class="card-header">默契度</div>
-                <div class="card-badge" id="dashboard-rapport-badge" data-level="stranger">初识</div>
-                <div class="card-bar"><span class="bar-label">信任</span><div class="progress-track"><div class="progress-fill" id="dashboard-trust-fill"></div></div></div>
-                <div class="card-bar"><span class="bar-label">熟悉</span><div class="progress-track"><div class="progress-fill" id="dashboard-familiarity-fill"></div></div></div>
-                <p class="card-desc" id="dashboard-rapport-desc">—</p>
+              <!-- 洞察数 -->
+              <div class="overview-item">
+                <span class="overview-label">洞察</span>
+                <span class="overview-value" id="dashboard-total-insights">0</span>
+              </div>
+              <!-- 衰减运行次数 -->
+              <div class="overview-item">
+                <span class="overview-label">衰减</span>
+                <span class="overview-value" id="dashboard-decay-runs">—</span>
+              </div>
+              <!-- 默契度（占两格：徽章 + 双进度条） -->
+              <div class="overview-item overview-rapport">
+                <div class="overview-rapport-header">
+                  <span class="overview-label">默契度</span>
+                  <span class="overview-rapport-badge" id="dashboard-rapport-badge" data-level="stranger">初识</span>
+                </div>
+                <div class="overview-rapport-bars">
+                  <div class="overview-rapport-bar"><span class="bar-label">信任</span><div class="progress-track"><div class="progress-fill" id="dashboard-trust-fill"></div></div></div>
+                  <div class="overview-rapport-bar"><span class="bar-label">熟悉</span><div class="progress-track"><div class="progress-fill" id="dashboard-familiarity-fill"></div></div></div>
+                </div>
               </div>
             </div>
           </section>
 
-          <!-- 分区二：感知（情感基调 2×2 + 上下文 + 在场 + 模式 + 主动提示） -->
+          <!-- 分区二：感知（情感基调 + 上下文 + 在场状态） -->
           <section class="dashboard-section" id="dashboard-perception">
             <h4 class="dashboard-section-title">感知</h4>
             <!-- 在场状态 -->
@@ -1087,21 +1107,29 @@
               <h5 class="dashboard-subtitle">模式洞察</h5>
               <div id="dashboard-patterns-list" class="perception-patterns-list"></div>
             </div>
-            <!-- 主动提示统计 -->
+          </section>
+
+          <!-- 分区三：主动提示 -->
+          <section class="dashboard-section" id="dashboard-proactive-section">
+            <h4 class="dashboard-section-title">主动提示</h4>
             <div class="dashboard-proactive" id="dashboard-proactive">
-              <h5 class="dashboard-subtitle">主动提示</h5>
-              <div class="dash-item-grid" id="dashboard-proactive-grid">
+              <!-- 主动提示统计网格（有互动数据时显示，默认隐藏） -->
+              <div class="dash-item-grid hidden" id="dashboard-proactive-grid">
                 <div class="dash-item" title="历史主动提示总次数"><span class="dash-label">建议</span><span class="dash-value" id="dashboard-proactive-suggest">0</span></div>
                 <div class="dash-item" title="用户接受次数"><span class="dash-label">接受</span><span class="dash-value" id="dashboard-proactive-accept">0</span></div>
                 <div class="dash-item" title="接受率"><span class="dash-label">接受率</span><span class="dash-value" id="dashboard-proactive-rate">50%</span></div>
                 <div class="dash-item" title="当前连续拒绝次数"><span class="dash-label">连续拒绝</span><span class="dash-value" id="dashboard-proactive-rejects">0</span></div>
                 <div class="dash-item" title="当前生效冷却"><span class="dash-label">生效冷却</span><span class="dash-value" id="dashboard-proactive-cooldown">—</span></div>
               </div>
+              <!-- 空状态提示（无互动数据时显示，默认显示） -->
+              <div class="dashboard-proactive-empty" id="dashboard-proactive-empty">
+                暂无互动数据，开始对话后将统计
+              </div>
             </div>
           </section>
 
-          <!-- 分区三：运行指标（LLM + Token + 召回 + 失败 + 截断 + 消息 + 衰减）默认折叠 -->
-          <details class="dashboard-section" id="dashboard-runtime">
+          <!-- 分区四：运行指标（默认展开） -->
+          <details class="dashboard-section" id="dashboard-runtime" open>
             <summary class="dashboard-section-title">运行</summary>
             <div class="dash-item-grid" id="dashboard-metrics-grid">
               <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="dashboard-llm-calls">0</span></div>
@@ -1115,7 +1143,7 @@
             </div>
           </details>
 
-          <!-- 分区四：记忆源健康（按 source 分组的质量诊断列表） -->
+          <!-- 分区五：记忆源健康（按 source 分组的质量诊断列表） -->
           <section class="dashboard-section" id="dashboard-source-health">
             <h4 class="dashboard-section-title">记忆源健康</h4>
             <div class="source-health-list" id="dashboard-source-health-list"></div>

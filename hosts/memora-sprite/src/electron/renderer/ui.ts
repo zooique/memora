@@ -1207,6 +1207,20 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   updatePatternsDisplay(payload: PatternsPayload): void {
     this.dashboardPanel.updatePatternsDisplay(payload);
   }
+  /**
+   * 从感知快照一次性渲染所有感知数据（委托到 DashboardPanelManager）
+   *
+   * 仪表盘首次加载时调用，确保感知区显示真实数据而非占位值。
+   */
+  renderPerceptionSnapshot(snapshot: {
+    affect?: { warmth: number; playfulness: number; directness: number; initiative: number };
+    rapport?: { trust: number; familiarity: number; level: string; description: string };
+    context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
+    patterns?: Array<{ type: string; summary: string; confidence: number; suggestion?: string }>;
+    proactiveStats?: unknown;
+  }): void {
+    this.dashboardPanel.renderPerceptionSnapshot(snapshot);
+  }
   /** 更新主动提示统计展示（委托到 DashboardPanelManager，PerceptionPanelHost 接口要求） */
   updateProactiveStatsDisplay(stats: unknown): void {
     this.dashboardPanel.updateProactiveStatsDisplay(stats as Parameters<typeof this.dashboardPanel.updateProactiveStatsDisplay>[0]);
