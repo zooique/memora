@@ -2057,3 +2057,18 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ─── P3-2：恢复后跳转高亮动画 ─────────────────────────────── */
+
+/* 记忆项恢复后的闪烁高亮效果 */
+@keyframes highlight-pulse {
+  0% { background-color: transparent; }
+  25% { background-color: var(--accent-20); }
+  50% { background-color: transparent; }
+  75% { background-color: var(--accent-20); }
+  100% { background-color: transparent; }
+}
+
+.memory-item.highlight-pulse {
+  animation: highlight-pulse 1.5s ease;
+}

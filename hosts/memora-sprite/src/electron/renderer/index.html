@@ -645,6 +645,8 @@
           <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
           <!-- 作品投影 tab：展示精灵对用户工作文件的理解 -->
           <button class="settings-tab" data-settings-tab="work"><svg class="icon"><use href="#icon-books"/></svg>作品</button>
+          <!-- P2-3：内置帮助页面 -->
+          <button class="settings-tab" data-settings-tab="help"><svg class="icon"><use href="#icon-question"/></svg>帮助</button>
         </div>
 
         <!-- 设置面板加载失败状态：默认隐藏，加载失败时显示 -->
@@ -959,6 +961,73 @@
           </div>
         </div>
 
+        <!-- P2-3：内置帮助页面（离线可用，不依赖外部链接） -->
+        <div class="settings-tab-content" data-settings-tab="help">
+          <div class="settings-group">
+            <div class="settings-group-header">
+              <h3>使用帮助</h3>
+            </div>
+            <div class="help-content">
+              <!-- 功能简介 -->
+              <div class="help-section">
+                <h4>功能简介</h4>
+                <p>Memora 精灵是一个本地 AI 伙伴，拥有跨会话记忆能力。它能在你工作时自动归档关键信息，在后续对话中主动回忆上下文。</p>
+                <ul>
+                  <li><strong>对话</strong>：与 AI 自由对话，精灵会记住你的偏好和上下文。</li>
+                  <li><strong>记忆</strong>：自动归档关键信息，支持搜索、筛选、关系图谱。</li>
+                  <li><strong>角色</strong>：切换不同 AI 角色，适配不同工作场景。</li>
+                  <li><strong>仪表盘</strong>：查看记忆健康度、感知状态、运行指标。</li>
+                </ul>
+              </div>
+
+              <!-- 三种形态 -->
+              <div class="help-section">
+                <h4>三种窗口形态</h4>
+                <ul>
+                  <li><strong>完整窗口</strong>：完整对话体验，包含记忆/角色/设置面板。快捷键 <kbd>Ctrl+1</kbd> 对话、<kbd>Ctrl+2</kbd> 记忆、<kbd>Ctrl+3</kbd> 设置。</li>
+                  <li><strong>浮动图标</strong>：桌面悬浮球，单击展开迷你对话。可拖动移动位置。</li>
+                  <li><strong>系统托盘</strong>：最小化到任务栏托盘，右键菜单操作，后台常驻。</li>
+                </ul>
+              </div>
+
+              <!-- 配置指引 -->
+              <div class="help-section">
+                <h4>配置指引</h4>
+                <ol>
+                  <li>在<strong>大模型</strong>标签页中点击「添加」，选择服务商并输入 API Key。</li>
+                  <li>推荐使用 DeepSeek（国内可直接注册，性价比高）。</li>
+                  <li>在<strong>精灵</strong>标签页中可调整主动提示频率、静默模式等。</li>
+                  <li>在<strong>项目</strong>标签页中可切换专注模式，锁定特定项目。</li>
+                </ol>
+              </div>
+
+              <!-- 常见问题 -->
+              <div class="help-section">
+                <h4>常见问题</h4>
+                <dl class="help-faq">
+                  <dt>如何获取 API Key？</dt>
+                  <dd>在<strong>大模型</strong>标签页点击「添加」，选择服务商后点击「获取 API Key」链接，跳转到对应平台注册并获取。</dd>
+
+                  <dt>对话没有响应？</dt>
+                  <dd>检查底部状态栏 Provider 是否显示「未配置」，确保已正确配置 API Key。点击状态栏可快速跳转到设置。</dd>
+
+                  <dt>记忆如何归档？</dt>
+                  <dd>默认使用<strong>全自动归档</strong>模式。可在<strong>精灵</strong>标签页中切换为「仅洞察自动」或「全手动」模式。</dd>
+
+                  <dt>如何切换项目？</dt>
+                  <dd>在<strong>项目</strong>标签页中切换专注模式，或拖入项目文件夹到对话区。</dd>
+
+                  <dt>快捷键有哪些？</dt>
+                  <dd>按 <kbd>Ctrl+/</kbd> 查看完整快捷键列表。常用：<kbd>Ctrl+.</kbd> 停止生成、<kbd>Esc</kbd> 关闭弹窗。</dd>
+
+                  <dt>数据存储在哪里？</dt>
+                  <dd>所有数据存储在本地 <code>~/.memora-sprite/</code> 目录下，不上传到任何云端服务器。</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </div>
+
           </div><!-- /.settings-panel-body -->
 
         <!-- 面板底部：Agent 状态 + 操作按钮（保存/取消/恢复默认/稍后配置） -->
@@ -1209,48 +1278,114 @@
     </div>
   </div>
 
-  <!-- 三态首次引导弹窗：首次打开完整窗口时显示，介绍三态切换方式 + 快捷键 -->
-  <!-- 使用 localStorage 标记是否已引导过，避免重复打扰老用户 -->
+  <!-- 多步骤引导向导（欢迎 → API Key → 开始） -->
+  <!-- 使用 localStorage 标记是否已引导过，已配置 Provider 的用户跳过 -->
+  <!-- 步骤进度持久化到 sprite.json 的 onboardingStep 字段 -->
   <div id="onboarding-modal" class="modal hidden">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3><svg class="icon"><use href="#icon-fairy"/></svg> 欢迎使用 Memora 精灵</h3>
-        <button class="modal-close" data-modal="onboarding-modal" aria-label="关闭"><svg class="icon"><use href="#icon-close"/></svg></button>
+    <div class="modal-content onboarding-wizard">
+      <!-- 步骤指示器 -->
+      <div class="onboarding-steps">
+        <div class="onboarding-step-dot active" data-step="1"></div>
+        <div class="onboarding-step-line"></div>
+        <div class="onboarding-step-dot" data-step="2"></div>
+        <div class="onboarding-step-line"></div>
+        <div class="onboarding-step-dot" data-step="3"></div>
       </div>
-      <div class="modal-body">
-        <p class="onboarding-intro">你的本地 AI 伙伴，拥有跨会话记忆能力。精灵有三种存在形态：</p>
-        <div class="onboarding-states">
-          <div class="onboarding-state-item">
-            <div class="onboarding-state-icon"><svg class="icon"><use href="#icon-desktop"/></svg></div>
-            <div class="onboarding-state-text">
-              <strong>完整窗口</strong>
-              <span>完整对话体验，记忆/角色/设置面板</span>
+
+      <!-- 步骤 1：欢迎 -->
+      <div class="onboarding-step-content active" data-step="1">
+        <div class="onboarding-welcome-icon">
+          <svg class="icon" width="64" height="64"><use href="#icon-fairy"/></svg>
+        </div>
+        <h3>欢迎使用 Memora 精灵</h3>
+        <p class="onboarding-intro">你的本地 AI 伙伴，拥有跨会话记忆能力。</p>
+        <div class="onboarding-features">
+          <div class="onboarding-feature-item">
+            <div class="onboarding-feature-icon"><svg class="icon"><use href="#icon-brain"/></svg></div>
+            <div class="onboarding-feature-text">
+              <strong>持久记忆</strong>
+              <span>跨会话记住你的偏好和上下文</span>
             </div>
           </div>
-          <div class="onboarding-state-item">
-            <div class="onboarding-state-icon"><svg class="icon"><use href="#icon-float-badge"/></svg></div>
-            <div class="onboarding-state-text">
-              <strong>浮动图标</strong>
-              <span>单击展开 · 拖动移动 · 右键菜单</span>
+          <div class="onboarding-feature-item">
+            <div class="onboarding-feature-icon"><svg class="icon"><use href="#icon-desktop"/></svg></div>
+            <div class="onboarding-feature-text">
+              <strong>三态形态</strong>
+              <span>完整窗口 · 浮动图标 · 系统托盘</span>
             </div>
           </div>
-          <div class="onboarding-state-item">
-            <div class="onboarding-state-icon"><svg class="icon"><use href="#icon-tray-badge"/></svg></div>
-            <div class="onboarding-state-text">
-              <strong>系统托盘</strong>
-              <span>右键菜单 · 双击展开 · 后台常驻</span>
+          <div class="onboarding-feature-item">
+            <div class="onboarding-feature-icon"><svg class="icon"><use href="#icon-lock"/></svg></div>
+            <div class="onboarding-feature-text">
+              <strong>本地优先</strong>
+              <span>数据本地存储，API Key 可自选</span>
             </div>
           </div>
         </div>
-        <div class="onboarding-shortcuts">
-          <div class="onboarding-shortcut-title"><svg class="icon"><use href="#icon-keyboard"/></svg> 快捷键</div>
-          <div class="onboarding-shortcut-list">
-            <kbd>Ctrl+1</kbd> 对话 <kbd>Ctrl+2</kbd> 记忆 <kbd>Ctrl+3</kbd> 设置 <kbd>Ctrl+.</kbd> 停止 <kbd>Esc</kbd> 关闭弹窗
-          </div>
+        <div class="modal-footer">
+          <button class="btn-primary onboarding-next" data-next="2">下一步：配置 API</button>
+          <button class="btn-text onboarding-skip" data-skip="3">跳过，直接开始</button>
         </div>
       </div>
-      <div class="modal-footer">
-        <button id="btn-onboarding-ok" class="btn-primary">开始使用</button>
+
+      <!-- 步骤 2：API Key 配置 -->
+      <div class="onboarding-step-content" data-step="2">
+        <h3>配置 AI 服务</h3>
+        <p class="onboarding-intro">选择 AI 服务商并输入 API Key，即可开始使用。</p>
+
+        <!-- 常用 Provider 列表 + 注册链接 -->
+        <div class="onboarding-provider-list" id="onboarding-provider-list">
+          <!-- 动态渲染 -->
+        </div>
+
+        <!-- 手动输入 API Key -->
+        <div class="onboarding-api-form">
+          <div class="settings-row">
+            <label for="onboarding-provider-type">服务商</label>
+            <select id="onboarding-provider-type">
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek（推荐）</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="dashscope">阿里通义千问</option>
+              <option value="zhipu">智谱 GLM</option>
+              <option value="moonshot">Moonshot</option>
+              <option value="siliconflow">SiliconFlow</option>
+              <option value="custom">自定义</option>
+            </select>
+          </div>
+          <div class="settings-row">
+            <label for="onboarding-api-key">API Key</label>
+            <input type="password" id="onboarding-api-key" placeholder="粘贴你的 API Key" autocomplete="off" />
+            <a class="onboarding-signup-link" id="onboarding-signup-link" href="#" target="_blank">获取 API Key →</a>
+          </div>
+          <div id="onboarding-api-error" class="onboarding-error hidden"></div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-secondary onboarding-prev" data-prev="1">上一步</button>
+          <button class="btn-primary onboarding-next" data-next="3" id="btn-onboarding-save-key">保存并继续</button>
+          <button class="btn-text onboarding-skip" data-skip="3">跳过，稍后配置</button>
+        </div>
+      </div>
+
+      <!-- 步骤 3：完成 -->
+      <div class="onboarding-step-content" data-step="3">
+        <div class="onboarding-done-icon">
+          <svg class="icon" width="64" height="64"><use href="#icon-check"/></svg>
+        </div>
+        <h3>一切就绪！</h3>
+        <p class="onboarding-intro" id="onboarding-done-message">AI 服务已配置，开始你的第一段对话吧。</p>
+        <div class="onboarding-quick-tips">
+          <div class="onboarding-tip">
+            <kbd>Ctrl+1</kbd> 对话 <kbd>Ctrl+2</kbd> 记忆 <kbd>Ctrl+3</kbd> 设置
+          </div>
+          <div class="onboarding-tip">
+            <kbd>Ctrl+.</kbd> 停止生成 <kbd>Esc</kbd> 关闭弹窗
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-primary" id="btn-onboarding-done">开始使用</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1265,7 +1400,7 @@
       <div class="modal-body">
         <table class="shortcuts-table">
           <tbody>
-            <!-- KBD-CONVERGE-P1：同步实际实现的快捷键，按使用场景分组 -->
+            <!-- 快捷键，按使用场景分组 -->
             <tr><td><kbd>Ctrl+1</kbd></td><td>切换到对话面板</td></tr>
             <tr><td><kbd>Ctrl+2</kbd></td><td>切换到记忆面板</td></tr>
             <tr><td><kbd>Ctrl+3</kbd></td><td>切换到设置面板</td></tr>
@@ -1291,8 +1426,7 @@
 
   <script type="module" src="renderer.js"></script>
 <!-- 清理确认对话框（Phase 3：智能清理，默认隐藏） -->
-<!-- B3: 复用通用 .modal 类（modal.css），享受主题感知背景 + 滚动穿透保护 + 淡入动画 -->
-    <div id="cleanup-confirm-dialog" class="modal hidden">
+<div id="cleanup-confirm-dialog" class="modal hidden">
       <div class="confirm-dialog-content">
         <h3 class="confirm-dialog-title">确认清理记忆</h3>
         <p id="cleanup-confirm-msg"></p>

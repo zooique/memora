@@ -264,6 +264,8 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   forwardSimpleEvent(deps, 'patternsUpdated', (e) => ({
     patterns: e.patterns,
   }));
+  // 回收站自动清理完成 → 渲染层 toast 通知
+  forwardSimpleEvent(deps, 'trashPurged', (e) => ({ purgedCount: e.purgedCount }));
 
   // 缺口 1.2：在场状态变化 → 完整窗口感知面板 + 浮动窗口视觉反馈
   // 此前 presenceChanged 事件未在桥接层转发，渲染层 handler 从未触发（流断点修复）

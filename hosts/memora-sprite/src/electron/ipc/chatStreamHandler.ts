@@ -175,9 +175,12 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
    */
   let abortedNotified = false;
 
+  // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
+  // 提升到 try 外部，finally 块需要访问以推送到浮动窗口
+  let accumulatedText = '';
+
   try {
     // 每次 chunk 发送累积完整文本（非 delta），保证渲染层拼接完整
-    let accumulatedText = '';
     for await (const chunk of ctx.agent.chat(text, abortController.signal)) {
       // 超时已被强制清理，或窗口销毁，则退出循环（break 会触发 generator return()）
       if (streamTimedOut || fullWindow.isDestroyed()) break;
@@ -309,6 +312,13 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
       // 保证错误/中断通知先于 END 到达渲染层。
       if (!fullWindow.isDestroyed()) {
         fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_STREAM_END, { messageId });
+      }
+      // P4-1：推送最后一条助手消息到浮动窗口（非空且非错误时）
+      if (accumulatedText && !abortedNotified) {
+        const floatWin = ctx.windowManager.getFloatWindow();
+        if (floatWin) {
+          floatWin.send(MAIN_TO_RENDERER_CHANNELS.FLOAT_LAST_MESSAGE, accumulatedText);
+        }
       }
       ctx.setAbortController(null);
       // 流式结束：托盘切回 idle 状态（绿色静态）

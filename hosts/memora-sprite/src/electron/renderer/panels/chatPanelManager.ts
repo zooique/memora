@@ -96,6 +96,10 @@ export interface ChatPanelHost {
    * @returns 归档总条目数（profile + insight）
    */
   archiveConversation(input: string, assistantContent: string): Promise<number>;
+  /** 一键归档：批量归档当前会话 */
+  archiveSession(date: string, session: string): Promise<number>;
+  /** 获取当前会话 ID（格式：YYYY-MM-DD-sessionName） */
+  getCurrentSessionId(): string;
   /** 隐藏空状态引导（有消息时） */
   hideEmptyState(): void;
   /** 未读计数 +1（完整窗口隐藏时，新精灵消息到达） */
@@ -862,11 +866,6 @@ export class ChatPanelManager {
     } else {
       contentWrapper.appendChild(copyBtn);
     }
-
-    // 缺口 J：manual 模式下为 assistant 消息追加"归档"按钮
-    // manual 模式内核跳过自动归档，用户需手动触发 profile facts + insight 归档
-    // 委托到 ArchiveButtonManager.maybeAddArchiveButton
-    this.archiveButtonManager.maybeAddArchiveButton(el, copyBtn, metaRow);
   }
 
   /**
@@ -1070,7 +1069,8 @@ export class ChatPanelManager {
   clearMessages(): void {
     // 只移除 .message 和 .message-group 和 .date-separator 和 .milestone-banner 元素，保留 chat-empty-state
     // B1：新增 .milestone-banner 选择器，避免清空会话时里程碑 banner 残留
-    this.messagesEl.querySelectorAll('.message, .message-group, .date-separator, .milestone-banner').forEach((msg) => msg.remove());
+    // P3-1：新增 .archive-session-btn 选择器，避免清空会话时归档按钮残留
+    this.messagesEl.querySelectorAll('.message, .message-group, .date-separator, .milestone-banner, .archive-session-btn').forEach((msg) => msg.remove());
     // 移除加载更多按钮（切换会话时重置）
     this.hideLoadMore();
     this.streamingMessages.clear();
@@ -1535,6 +1535,48 @@ export class ChatPanelManager {
 
     // 插入到消息区顶部
     this.messagesEl.insertBefore(card, this.messagesEl.firstChild);
+  }
+
+  /**
+   * 显示"一键归档当前对话"按钮
+   *
+   * 在消息区顶部插入归档按钮，仅在 manual 或 insights-only 模式下显示。
+   * 点击后调用 agent.archiveSessionContent 批量归档当前会话的全部记忆。
+   */
+  showArchiveButton(): void {
+    // 仅非 full 模式显示归档按钮
+    const mode = this.host.getArchiveMode();
+    if (mode === 'full') return;
+
+    // 移除已存在的归档按钮（避免重复）
+    this.messagesEl.querySelector('.archive-session-btn')?.remove();
+
+    const sessionId = this.host.getCurrentSessionId();
+    // 会话 ID 格式：YYYY-MM-DD-sessionName
+    const lastDash = sessionId.lastIndexOf('-');
+    const date = sessionId.slice(0, lastDash);
+    const session = sessionId.slice(lastDash + 1);
+
+    const btn = document.createElement('button');
+    btn.className = 'archive-session-btn';
+    btn.textContent = '归档当前对话';
+    btn.title = '一键归档当前会话的全部记忆';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = '归档中...';
+      try {
+        const count = await this.host.archiveSession(date, session);
+        btn.textContent = `已归档 ${count} 条记忆`;
+        this.host.showToast(`已归档 ${count} 条记忆`, 'success');
+        // 1.5 秒后移除按钮
+        setTimeout(() => btn.remove(), 1500);
+      } catch {
+        btn.disabled = false;
+        btn.textContent = '归档失败，重试';
+      }
+    });
+
+    this.messagesEl.insertBefore(btn, this.messagesEl.firstChild);
   }
 
   /**

@@ -50,6 +50,9 @@ function createMockFloatAPI(): FloatElectronAPI {
     showFloatContextMenu: vi.fn(),
     onFloatUnread: vi.fn(),
     onSpriteEvent: vi.fn(),
+    // P4-1：消息预览监听
+    onLastMessage: vi.fn(),
+    removeLastMessageListener: vi.fn(),
     // 新增主题广播监听 mock
     onThemeBroadcast: vi.fn(),
     removeThemeBroadcastListener: vi.fn(),

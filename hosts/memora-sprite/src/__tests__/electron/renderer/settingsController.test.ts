@@ -128,9 +128,9 @@ describe('settingsController', () => {
 
     const api = (globalThis as { window: { electronAPI: { updateConfigBatch: { mock: { calls: unknown[][] } } } } }).window.electronAPI.updateConfigBatch;
     expect(api.mock.calls).toHaveLength(1);
-    // 传入的 updates 应包含全部 10 个字段
+    // SEC-P2-02：fileWatcherIgnore 纳入批量更新后，字段数从 10 增至 11
     const updates = api.mock.calls[0]![0] as Record<string, unknown>;
-    expect(Object.keys(updates)).toHaveLength(10);
+    expect(Object.keys(updates)).toHaveLength(11);
     expect(updates.silentMode).toBe(false);
     expect(updates.projectMode).toBe('smart');
 

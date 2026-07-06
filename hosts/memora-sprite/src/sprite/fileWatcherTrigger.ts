@@ -66,8 +66,15 @@ export class FileWatcherTrigger implements SpriteTrigger {
       debounceMs: config.debounceMs ?? DEFAULT_DEBOUNCE_MS,
       allowedPaths: config.allowedPaths ?? [],
     };
-    // 预编译所有忽略模式为正则（构造函数中一次性编译，避免 matchGlob 每次重新编译）
-    this.ignoreRegexes = this.config.ignore.map(pattern => this.compileGlob(pattern));
+    // 校验并预编译所有忽略模式为正则
+    this.ignoreRegexes = [];
+    for (const pattern of this.config.ignore) {
+      if (!validateGlob(pattern)) {
+        logger.warn({ pattern }, '无效的 fileWatcherIgnore glob 模式，已跳过');
+        continue;
+      }
+      this.ignoreRegexes.push(this.compileGlob(pattern));
+    }
   }
 
   start(cb: TriggerCallback): void {
@@ -156,12 +163,21 @@ export class FileWatcherTrigger implements SpriteTrigger {
 
   /** 简易 glob 编译为正则（仅支持 ** 和 *） */
   private compileGlob(pattern: string): RegExp {
-    const regexStr = pattern
-      .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // 转义正则特殊字符
-      .replace(/\*\*/g, '§§')  // 临时标记 **
-      .replace(/\*/g, '[^/]*')  // * 匹配非路径分隔符
-      .replace(/§§/g, '.*');    // ** 匹配任意
+    const regexStr = compileGlobToRegex(pattern);
     return new RegExp(regexStr);
+  }
+
+  /**
+   * 校验 glob 模式是否合法（能否编译为有效正则）
+   *
+   * 用于配置保存前的静态校验（如 applyConfigField），
+   * 避免无效模式在 FileWatcherTrigger 构造时抛错。
+   *
+   * @param pattern - glob 模式字符串
+   * @returns 可编译为有效正则时返回 true，否则返回 false
+   */
+  static validateGlob(pattern: string): boolean {
+    return validateGlob(pattern);
   }
 
   /** 防抖发射触发事件 */
@@ -179,5 +195,43 @@ export class FileWatcherTrigger implements SpriteTrigger {
     }, this.config.debounceMs);
 
     this.debounceTimers.set(filename, timer);
+  }
+}
+
+/**
+ * 将 glob 模式编译为正则字符串
+ *
+ * 仅支持 **（匹配任意路径段）和 *（匹配单层路径段内任意字符）。
+ * 不支持的 glob 语法（如 {}、[]、?）会被转义为字面量匹配。
+ *
+ * @param pattern - glob 模式字符串
+ * @returns 正则表达式字符串
+ */
+function compileGlobToRegex(pattern: string): string {
+  return pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // 转义正则特殊字符
+    .replace(/\*\*/g, '§§')  // 临时标记 **
+    .replace(/\*/g, '[^/]*')  // * 匹配非路径分隔符
+    .replace(/§§/g, '.*');    // ** 匹配任意
+}
+
+/**
+ * 校验 glob 模式是否合法（能否编译为有效正则）
+ *
+ * 用于配置保存前的静态校验，避免无效模式在 FileWatcherTrigger 构造时抛错。
+ * 也导出一个模块级函数供 spriteConfig.applyConfigField 等非类上下文使用。
+ *
+ * @param pattern - glob 模式字符串
+ * @returns 可编译为有效正则时返回 true，否则返回 false
+ */
+export function validateGlob(pattern: string): boolean {
+  // 空字符串不是合法模式
+  if (!pattern || pattern.trim().length === 0) return false;
+  try {
+    const regexStr = compileGlobToRegex(pattern);
+    new RegExp(regexStr);
+    return true;
+  } catch {
+    return false;
   }
 }

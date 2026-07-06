@@ -235,6 +235,43 @@ describe('spriteConfig', () => {
         expect(result).toBe(false);
         expect(config.fileWatcherPaths).toEqual(['.']);
       });
+
+      // SEC-P2-02：fileWatcherIgnore glob 合法性校验
+      it('fileWatcherIgnore 设为有效 glob 模式 → 返回 true', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'fileWatcherIgnore', ['**/node_modules/**', '*.log']);
+        expect(result).toBe(true);
+        expect(config.fileWatcherIgnore).toEqual(['**/node_modules/**', '*.log']);
+      });
+
+      it('fileWatcherIgnore 含空字符串 → 返回 false（glob 非法）', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'fileWatcherIgnore', ['**/valid/**', '']);
+        expect(result).toBe(false);
+        // 默认值未被覆盖
+        expect(config.fileWatcherIgnore).toEqual(DEFAULT_SPRITE_CONFIG.fileWatcherIgnore);
+      });
+
+      it('fileWatcherIgnore 含纯空白字符串 → 返回 false', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'fileWatcherIgnore', ['**/valid/**', '   ']);
+        expect(result).toBe(false);
+        expect(config.fileWatcherIgnore).toEqual(DEFAULT_SPRITE_CONFIG.fileWatcherIgnore);
+      });
+
+      it('fileWatcherIgnore 所有模式合法 → 返回 true', () => {
+        const config = makeConfig();
+        const result = applyConfigField(config, 'fileWatcherIgnore', [
+          '**/node_modules/**',
+          '**/.git/**',
+          '**/dist/**',
+          '**/.memora/**',
+          '*.log',
+          'src/**/*.ts',
+        ]);
+        expect(result).toBe(true);
+        expect(config.fileWatcherIgnore).toHaveLength(6);
+      });
     });
 
     describe('object 类型', () => {

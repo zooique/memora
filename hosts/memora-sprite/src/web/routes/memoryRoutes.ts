@@ -16,6 +16,12 @@
  *   POST   /api/memories/relation     → 添加记忆关系
  *   DELETE /api/memories/relation     → 删除记忆关系
  *   PUT    /api/memories/relation     → 更新记忆关系
+ *   GET    /api/memories/trash        → 列出回收站记忆
+ *   POST   /api/memories/trash/restore → 恢复回收站记忆
+ *   POST   /api/memories/trash/purge  → 清空回收站过期记忆
+ *   POST   /api/memories/archive      → 手动归档会话
+ *   GET    /api/memories/profile      → 用户画像
+ *   POST   /api/memories/fork         → 会话分叉
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -175,6 +181,82 @@ export async function handleMemoryRoute(
       }
       const deleted = ctx.sprite.deleteMemory(id);
       sendJson(res, 200, { deleted });
+      return;
+    }
+
+    // ─── 回收站路由 ────────────────────────────────
+
+    // GET /api/memories/trash — 列出回收站记忆
+    if (method === 'GET' && subPath === '/trash') {
+      const limit = parseInt(queryParams.get('limit') ?? '50', 10);
+      const items = ctx.sprite.listDeletedMemories(Math.min(limit, 200));
+      sendJson(res, 200, { items });
+      return;
+    }
+
+    // POST /api/memories/trash/restore — 恢复回收站记忆
+    if (method === 'POST' && subPath === '/trash/restore') {
+      const body = await parseJsonBody<{ id: string }>(req);
+      if (!body?.id || body.id.length > 500) {
+        sendError(res, 400, 'id 必填且长度不超过 500');
+        return;
+      }
+      const restored = ctx.sprite.restoreMemory(body.id);
+      sendJson(res, 200, { restored, id: body.id });
+      return;
+    }
+
+    // POST /api/memories/trash/purge — 清空回收站过期记忆
+    if (method === 'POST' && subPath === '/trash/purge') {
+      const body = await parseJsonBody<{ retentionDays?: number }>(req);
+      const retentionDays = body?.retentionDays ?? 30;
+      const before = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const purgedCount = ctx.agent.memory?.purgeExpired(before) ?? 0;
+      sendJson(res, 200, { purgedCount });
+      return;
+    }
+
+    // ─── 手动归档会话 ──────────────────────────────
+
+    // POST /api/memories/archive — 手动归档当前会话
+    if (method === 'POST' && subPath === '/archive') {
+      const body = await parseJsonBody<{ date: string; session: string }>(req);
+      if (!body?.date || !body?.session) {
+        sendError(res, 400, 'date 和 session 必填');
+        return;
+      }
+      const result = await ctx.agent.archiveSessionContent(body.date, body.session);
+      sendJson(res, 200, result);
+      return;
+    }
+
+    // ─── 用户画像 + 会话分叉 ────────────────────────
+
+    // GET /api/memories/profile — 获取用户画像
+    if (method === 'GET' && subPath === '/profile') {
+      const up = ctx.agent.userProfile;
+      if (!up) {
+        sendJson(res, 200, { profile: { confirmed: [], pending: [] } });
+        return;
+      }
+      sendJson(res, 200, {
+        profile: {
+          confirmed: up.getConfirmed(),
+          pending: up.getPending(),
+        },
+      });
+      return;
+    }
+
+    // POST /api/memories/fork — 会话分叉
+    if (method === 'POST' && subPath === '/fork') {
+      const body = await parseJsonBody<{ session: string }>(req);
+      if (!body?.session) {
+        sendError(res, 400, 'session 必填');
+        return;
+      }
+      const newSession = ctx.agent.forkSession(body.session);
+      sendJson(res, 200, { session: newSession });
       return;
     }
 

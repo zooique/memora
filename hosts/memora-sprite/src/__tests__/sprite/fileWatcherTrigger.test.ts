@@ -76,7 +76,7 @@ vi.mock('memora', () => ({
 }));
 
 // 被测模块与 mock 引用（必须在 vi.mock 之后导入）
-import { FileWatcherTrigger } from '../../sprite/fileWatcherTrigger.js';
+import { FileWatcherTrigger, validateGlob } from '../../sprite/fileWatcherTrigger.js';
 import type { FileWatcherConfig } from '../../sprite/fileWatcherTrigger.js';
 import type { TriggerCallback, TriggerPayload } from '../../sprite/triggers.js';
 import { logger, safeSetTimeout, clearSafeTimeout } from 'memora';
@@ -542,6 +542,92 @@ describe('FileWatcherTrigger', () => {
         expect.objectContaining({ err: expect.any(Error), watchPath: ALLOWED_ROOT }),
         '文件监听器错误，停止该路径监听',
       );
+
+      trigger.stop();
+    });
+  });
+
+  // ─── 9. validateGlob 全局校验（5） ─────────────────
+
+  describe('validateGlob 全局校验', () => {
+    it('合法 glob 模式返回 true（**、*、字面量路径）', () => {
+      expect(validateGlob('**/node_modules/**')).toBe(true);
+      expect(validateGlob('*.log')).toBe(true);
+      expect(validateGlob('src/**/*.ts')).toBe(true);
+      expect(validateGlob('dist')).toBe(true);
+      expect(validateGlob('**/.git/**')).toBe(true);
+    });
+
+    it('空字符串或纯空白返回 false', () => {
+      expect(validateGlob('')).toBe(false);
+      expect(validateGlob('   ')).toBe(false);
+    });
+
+    it('仅含特殊字符的模式（如 \\ 或 / 开头）仍合法', () => {
+      // 这些模式在 compileGlobToRegex 中转义后仍可生成合法正则
+      expect(validateGlob('src/[test]/file.ts')).toBe(true);
+      expect(validateGlob('src/(test)/file.ts')).toBe(true);
+    });
+
+    it('glob 模式中的 * 和 ** 混合使用合法', () => {
+      expect(validateGlob('**/tmp/*.tmp')).toBe(true);
+      expect(validateGlob('a/**/b/*/c')).toBe(true);
+    });
+  });
+
+  // ─── 10. 构造函数降级（SEC-P2-02） ─────────────────
+
+  describe('构造函数降级（无效 glob 模式）', () => {
+    it('无效 glob 模式被过滤并记录警告，有效模式正常编译', () => {
+      // 空字符串是无效模式
+      const trigger = new FileWatcherTrigger({
+        watchPaths: [ALLOWED_ROOT],
+        ignore: ['**/valid/**', '', '  ', '*.log'],
+        allowedPaths: [ALLOWED_ROOT],
+      });
+
+      trigger.start(vi.fn());
+
+      // 空字符串和纯空白被过滤，记录两次警告
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+      expect(logger.warn).toHaveBeenCalledWith(
+        { pattern: '' },
+        '无效的 fileWatcherIgnore glob 模式，已跳过',
+      );
+      expect(logger.warn).toHaveBeenCalledWith(
+        { pattern: '  ' },
+        '无效的 fileWatcherIgnore glob 模式，已跳过',
+      );
+
+      // 有效模式仍正常工作：触发时应匹配忽略
+      const call = mockFs.calls[0];
+      // valid 模式匹配 → 忽略
+      call.callback('change', 'src/valid/foo.ts');
+      expect(safeSetTimeout).not.toHaveBeenCalled();
+
+      // log 模式匹配 → 忽略
+      call.callback('change', 'error.log');
+      expect(safeSetTimeout).not.toHaveBeenCalled();
+
+      trigger.stop();
+    });
+
+    it('全部无效时 ignoreRegexes 为空，不触发任何忽略', () => {
+      const trigger = new FileWatcherTrigger({
+        watchPaths: [ALLOWED_ROOT],
+        ignore: ['', '  '],
+        allowedPaths: [ALLOWED_ROOT],
+      });
+
+      trigger.start(vi.fn());
+
+      // 两次警告
+      expect(logger.warn).toHaveBeenCalledTimes(2);
+
+      // 即使 node_modules 路径也不应被忽略（ignoreRegexes 为空）
+      const call = mockFs.calls[0];
+      call.callback('change', 'src/node_modules/pkg/index.js');
+      expect(safeSetTimeout).toHaveBeenCalledTimes(1);
 
       trigger.stop();
     });

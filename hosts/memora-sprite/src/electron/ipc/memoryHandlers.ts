@@ -73,7 +73,8 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(id)) {
         return { restored: false };
       }
-      return { restored: ctx.sprite.restoreMemory(id) };
+      // P3-2：返回 id 供渲染层定位恢复的记忆
+      return { restored: ctx.sprite.restoreMemory(id), id };
     }),
   );
 
@@ -113,6 +114,20 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
   /** 获取记忆关系图谱（ADR-014：拓扑可视化） */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_RELATION_GRAPH, async () =>
     safeHandle('获取关系图谱失败', { nodes: [], edges: [] }, () => ctx.sprite.getRelationGraph()),
+  );
+
+  /** 批量归档当前会话（一键归档） */
+  ipcMain.handle(
+    IPC_CHANNELS.ARCHIVE_SESSION,
+    async (_event, params: { date: string; session: string }) =>
+      safeHandle('归档会话失败', { archivedCount: 0 }, async () => {
+        // 校验日期和会话名
+        if (typeof params.date !== 'string' || typeof params.session !== 'string') {
+          return { archivedCount: 0 };
+        }
+        const result = await ctx.agent.archiveSessionContent(params.date, params.session);
+        return { archivedCount: result.archivedCount };
+      }),
   );
 
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */

@@ -2603,3 +2603,29 @@
   color: var(--text);
 }
 
+/* ─── 一键归档按钮 ─── */
+.archive-session-btn {
+  display: block;
+  margin: 8px 16px;
+  padding: 8px 16px;
+  background: var(--surface1);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.archive-session-btn:hover {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.archive-session-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+

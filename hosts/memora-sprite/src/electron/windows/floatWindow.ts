@@ -232,6 +232,18 @@ export class FloatWindow {
   }
 
   /**
+   * 向浮动窗口发送 IPC 消息（P4-1：消息预览 + 通用扩展点）
+   *
+   * 封装 webContents.send，带窗口销毁防护。
+   * 供 chatStreamHandler 等主进程模块向浮动窗口推送数据。
+   */
+  send(channel: string, ...args: unknown[]): void {
+    if (!this.win.isDestroyed()) {
+      this.win.webContents.send(channel, ...args);
+    }
+  }
+
+  /**
    * 广播主题变更到浮动窗口
    *
    * 完整窗口切换主题时，主进程通过此方法将主题同步到浮动窗口，

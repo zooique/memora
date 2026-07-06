@@ -20,11 +20,13 @@ import { resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { logger, toError } from 'memora';
-// P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
+// 导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME } from './constants.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS 和 ShortcutConfig（单一真理源，消除与 settingsController.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../shared/shortcutDefaults.js';
 import type { ShortcutConfig } from '../shared/shortcutDefaults.js';
+// 导入 glob 校验函数，用于 fileWatcherIgnore 配置保存前校验
+import { validateGlob } from './fileWatcherTrigger.js';
 
 /** 精灵持久化配置 */
 export interface SpriteConfig {
@@ -107,6 +109,18 @@ export interface SpriteConfig {
    * 持久化到 sprite.json，用户可在设置面板调整。
    */
   recycleBinRetentionDays?: number;
+  /**
+   * 引导流程步骤（P2-1：引导流程重构）
+   *
+   * 记录用户完成的引导步骤，用于跨会话恢复进度。
+   * - 0：未开始或已完成（默认）
+   * - 1：已完成欢迎步骤
+   * - 2：已完成 API Key 配置步骤
+   * - 3：已完成全部引导（等同于 0，不再显示）
+   *
+   * 持久化到 sprite.json，避免重复打扰已配置用户。
+   */
+  onboardingStep?: number;
 }
 
 /**
@@ -414,6 +428,13 @@ export function applyConfigField(
   // 字符串数组类型
   if (schema === 'string[]') {
     if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
+      // fileWatcherIgnore 额外校验每个 glob 模式合法性
+      if (key === 'fileWatcherIgnore') {
+        const strArr = value as string[];
+        if (strArr.length > 0 && !strArr.every((p) => validateGlob(p))) {
+          return false;
+        }
+      }
       target[key] = value;
       return true;
     }

@@ -232,6 +232,8 @@ export class SpriteLifecycleManager {
           { purgedCount, retentionDays, threshold: threshold.toISOString() },
           '回收站自动清理完成',
         );
+        // 通知 UI 显示清理数量（首次启动时 bridge 可能尚未注册，事件静默丢失不影响功能）
+        this.deps.emit('trashPurged', { purgedCount });
       }
     } catch (err) {
       logger.warn(

@@ -32,6 +32,9 @@
       /* 品牌渐变：与 base.css 一致（球体背景 + 头像等） */
       --brand-grad: linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
 
+      /* 文字色 */
+      --text: #1e1e2e;
+
       /* 语义色（与 base.css 完全对齐） */
       --green: #34c759;
       --accent: #0066ff;
@@ -74,6 +77,9 @@
 
       /* 品牌渐变：与浅色一致（两主题共享） */
       --brand-grad: linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+
+      /* 文字色 */
+      --text: #cdd6f4;
 
       /* 语义色（与 base.css 完全对齐） */
       --green: #a6e3a1;
@@ -364,6 +370,51 @@
       border-right: 4px solid transparent;
       border-top: 4px solid var(--hint-bg);
     }
+
+    /* ─── P4-1：消息预览卡片 ─────────────────────────── */
+    /* 悬停球体时在右侧显示最后一条助手消息预览 */
+    #message-preview {
+      position: absolute;
+      left: 88px;   /* 球体右侧 8px 间隙 */
+      top: 50%;
+      transform: translateY(-50%);
+      width: 200px;
+      max-height: 120px;
+      background: var(--window-bg);
+      border: 1px solid var(--surface2);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-float);
+      padding: 10px 12px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity var(--transition-slow);
+      z-index: 20;
+      overflow: hidden;
+    }
+
+    #message-preview.visible {
+      opacity: 1;
+    }
+
+    .message-preview-header {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .message-preview-text {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text);
+      /* 最多显示 4 行，超出省略 */
+      display: -webkit-box;
+      -webkit-line-clamp: 4;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
   </style>
 </head>
 <body>
@@ -384,6 +435,11 @@
     <div id="drag-hint" role="status">💡 拖动移动 · 单击展开</div>
     <!-- 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示） -->
     <div id="away-label" role="status"></div>
+    <!-- P4-1：消息预览卡片（悬停球体时显示最后一条助手消息） -->
+    <div id="message-preview" role="tooltip" aria-label="最后一条助手消息预览">
+      <div class="message-preview-header">最新回复</div>
+      <div class="message-preview-text"></div>
+    </div>
   </div>
 
   <script type="module" src="float.js"></script>

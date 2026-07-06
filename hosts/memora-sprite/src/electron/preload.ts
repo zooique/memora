@@ -67,6 +67,8 @@ export const IPC_CHANNELS = {
   MEMORIES_PURGE: 'memories-purge',
   /** 列出回收站记忆 */
   MEMORIES_LIST_DELETED: 'memories-list-deleted',
+  /** 手动归档会话内容（P3-1：一键归档） */
+  ARCHIVE_SESSION: 'archive-session',
   MEMORIES_ADD: 'memories-add',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
@@ -161,6 +163,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   APP_ERROR: 'app-error',
   AGENT_READY: 'agent-ready',
   FLOAT_UNREAD: 'float-unread',
+  /** P4-1：浮动窗口最后一条助手消息预览 */
+  FLOAT_LAST_MESSAGE: 'float-last-message',
   WINDOW_STATE_CHANGED: 'window-state-changed',
   THEME_BROADCAST: 'theme-broadcast',
   // 主进程推送配置建议到渲染进程
@@ -420,7 +424,7 @@ export interface ElectronAPI {
    * @param id 记忆 ID
    * @returns restored=true 表示恢复成功
    */
-  restoreMemory: (id: string) => Promise<{ restored: boolean }>;
+  restoreMemory: (id: string) => Promise<{ restored: boolean; id: string }>;
   /**
    * 物理删除记忆（回收站彻底删除，不可恢复）
    * @param id 记忆 ID
@@ -445,6 +449,8 @@ export interface ElectronAPI {
   archiveProfileFacts: (input: string) => Promise<{ count: number }>;
   /** 手动归档 insight（缺口 J：manual 模式下供 UI 调用，返回归档记忆数） */
   archiveInsight: (input: string, assistantContent: string) => Promise<{ count: number }>;
+  /** 批量归档当前会话（一键归档） */
+  archiveSession: (date: string, session: string) => Promise<{ archivedCount: number }>;
   /** 获取记忆健康度仪表盘数据（Phase 1：健康度诊断） */
   getHealthDashboard: () => Promise<HealthDashboardPayload>;
   /** 获取对话回顾数据（Phase 2：对话回顾与摘要） */
@@ -561,6 +567,10 @@ export interface ElectronAPI {
   onFloatUnread: (cb: (count: number) => void) => void;
   /** 移除浮动窗口未读计数监听器 */
   removeFloatUnreadListener: () => void;
+  /** P4-1：监听最后一条助手消息推送（浮动窗口 hover 预览） */
+  onLastMessage: (cb: (text: string) => void) => void;
+  /** 移除最后一条消息监听器 */
+  removeLastMessageListener: () => void;
   moveFloatWindow: (dx: number, dy: number) => void;
   saveFloatPosition: () => void;
   expandToFull: () => void;
@@ -776,6 +786,8 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE, { input }),
   archiveInsight: (input: string, assistantContent: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT, { input, assistantContent }),
+  archiveSession: (date: string, session: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.ARCHIVE_SESSION, { date, session }),
   getHealthDashboard: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD),
   getReviewData: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_REVIEW_DATA),
   deleteMemoriesBatch: (ids) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE_BATCH, ids),
@@ -820,6 +832,11 @@ const electronAPI: ElectronAPI = {
   onFloatUnread: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD, (_: IpcRendererEvent, count: number) => cb(count)),
   removeFloatUnreadListener: () => {
     ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_UNREAD);
+  },
+  // P4-1：最后一条助手消息推送（浮动窗口 hover 预览）
+  onLastMessage: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.FLOAT_LAST_MESSAGE, (_: IpcRendererEvent, text: string) => cb(text)),
+  removeLastMessageListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.FLOAT_LAST_MESSAGE);
   },
   moveFloatWindow: (dx, dy) => ipcRenderer.send(IPC_CHANNELS.MOVE_FLOAT_WINDOW, dx, dy),
   saveFloatPosition: () => ipcRenderer.send(IPC_CHANNELS.SAVE_FLOAT_POSITION),

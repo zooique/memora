@@ -409,6 +409,38 @@ function handleDecayCompleted(
     TOAST_LONG_MS,
   );
 }
+
+/**
+ * 处理回收站自动清理完成事件
+ * 静默模式下不显示通知（清理是后台行为，与用户操作解耦）
+ */
+function handleTrashPurged(
+  uiManager: UIManager,
+  msg: { type: string; payload: unknown; silent: boolean },
+): void {
+  if (!isTrashPurgedPayload(msg.payload)) {
+    reportError('handleTrashPurged', msg.payload);
+    return;
+  }
+  if (msg.silent) return;
+  if (msg.payload.purgedCount <= 0) return;
+  uiManager.showToast(
+    `已自动清理 ${msg.payload.purgedCount} 条过期记忆`,
+    'info',
+    TOAST_SHORT_MS,
+  );
+}
+
+/** 类型守卫：回收站清理完成事件载荷 */
+function isTrashPurgedPayload(
+  payload: unknown,
+): payload is { purgedCount: number } {
+  return (
+    typeof payload === 'object' &&
+    payload !== null &&
+    typeof (payload as Record<string, unknown>).purgedCount === 'number'
+  );
+}
 /**
  * U4 精灵事件处理器映射表
  *
@@ -429,6 +461,7 @@ function createSpriteEventHandlers(
     skillMatched: (msg) => handleSkillMatched(uiManager, msg),
     memoryRecalled: (msg) => handleMemoryRecalled(uiManager, msg),
     decayCompleted: (msg) => handleDecayCompleted(uiManager, msg),
+    trashPurged: (msg) => handleTrashPurged(uiManager, msg),
     // 会话分叉完成 → 切换到新会话（由 renderer.ts 注册的 onSessionForked 回调处理）
     sessionForked: (msg) => {
       if (!isSessionForkedPayload(msg.payload)) {

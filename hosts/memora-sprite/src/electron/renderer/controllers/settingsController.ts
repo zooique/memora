@@ -61,6 +61,8 @@ export function createSettingsController(uiManager: UIManager) {
           triggerIntervalMs: config.triggerIntervalMs,
           fileWatcherEnabled: config.fileWatcherEnabled,
           fileWatcherPaths: config.fileWatcherPaths,
+          // fileWatcherIgnore 纳入批量更新
+          fileWatcherIgnore: config.fileWatcherIgnore,
           fileWatcherDebounceMs: config.fileWatcherDebounceMs,
           defaultPersona: config.defaultPersona,
           // 项目模式：路径与模式在同一事务内更新，避免中间态

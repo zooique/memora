@@ -66,6 +66,8 @@ async function bootstrapRenderer(): Promise<void> {
 
   // 创建各业务控制器（接收 State.uiManager 实例，通过闭包绑定）
   const sessionController = createSessionController(State.uiManager);
+  // 注入会话 ID 提供者，供 ChatPanelManager 的一键归档按钮使用
+  State.uiManager.setCurrentSessionIdProvider(() => sessionController.getCurrentSessionId());
   const memoryController = createMemoryController(State.uiManager);
   State.memoryController = memoryController;
   const personaController = createPersonaController(State.uiManager);
@@ -123,6 +125,9 @@ async function bootstrapRenderer(): Promise<void> {
     // 同步设置面板状态指示器
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
     void sessionController.loadSessionHistory();
+
+    // 会话加载完成后，显示一键归档按钮（非 full 模式）
+    State.uiManager.showArchiveButton();
     void memoryController.loadMemoryList();
     void personaController.loadPersonaList();
     void memoryController.loadDashboard();
@@ -130,11 +135,29 @@ async function bootstrapRenderer(): Promise<void> {
     void loadStartupSummary();
     // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
     void State.uiManager.switchPanel('chat');
-    // 首次配置完成后检查是否需要显示三态引导
-    if (State.uiManager.shouldShowOnboarding()) {
-      State.uiManager.showOnboardingDialog();
-    }
+    // P2-1：检查是否需要显示多步骤引导（未配置 Provider 的新用户）
+    void checkAndShowOnboarding();
   };
+
+  /**
+   * 检查是否需要显示引导并显示（P2-1：已配置用户跳过）
+   *
+   * 先查询 Provider 列表，若已有配置则跳过引导。
+   */
+  async function checkAndShowOnboarding(): Promise<void> {
+    try {
+      const { providers } = await window.electronAPI.listLlmProviders();
+      const hasProviders = providers && providers.length > 0;
+      if (State.uiManager.shouldShowOnboarding(hasProviders)) {
+        State.uiManager.showOnboardingDialog();
+      }
+    } catch {
+      // 查询失败时仍显示引导（不阻塞用户）
+      if (State.uiManager.shouldShowOnboarding(false)) {
+        State.uiManager.showOnboardingDialog();
+      }
+    }
+  }
 
   /**
    * 加载启动摘要（迭代一：Welcome Back Digest）

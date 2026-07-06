@@ -97,13 +97,17 @@ function createMockWebContents(options?: { visible?: boolean; destroyed?: boolea
   };
 }
 
-/** 创建 mock windowManager（getFullWindow 返回 mock 窗口） */
+/** 创建 mock windowManager（getFullWindow + getFloatWindow 返回 mock 窗口） */
 function createMockWindowManager(webContents: ReturnType<typeof createMockWebContents>) {
   return {
     getFullWindow: vi.fn(() => ({
       webContents: webContents.webContents,
       isVisible: webContents.webContents.isVisible,
       isDestroyed: webContents.webContents.isDestroyed,
+    })),
+    // P4-1：浮动窗口消息预览需要 getFloatWindow mock
+    getFloatWindow: vi.fn(() => ({
+      send: vi.fn(),
     })),
   };
 }

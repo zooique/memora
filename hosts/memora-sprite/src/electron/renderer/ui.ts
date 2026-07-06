@@ -519,6 +519,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   getArchiveMode(): 'full' | 'insights-only' | 'manual' {
     return this.currentConfig?.archiveMode ?? 'full';
   }
+  /** 一键归档：批量归档当前会话（委托 preload 调用 agent.archiveSessionContent） */
+  async archiveSession(date: string, session: string): Promise<number> {
+    const result = await window.electronAPI.archiveSession(date, session);
+    return result.archivedCount;
+  }
+  /** 获取当前会话 ID（由 renderer.ts 注入 sessionController.getCurrentSessionId） */
+  private _getCurrentSessionId: (() => string) | null = null;
+  setCurrentSessionIdProvider(fn: () => string): void { this._getCurrentSessionId = fn; }
+  getCurrentSessionId(): string {
+    return this._getCurrentSessionId?.() ?? new Date().toISOString().slice(0, 10) + '-main';
+  }
   /** 缺口 J：手动归档对话（调用 preload 暴露的 archiveProfileFacts + archiveInsight IPC） */
   async archiveConversation(input: string, assistantContent: string): Promise<number> {
     // 同时触发 profile facts + insight 归档，返回总条目数
@@ -527,6 +538,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       window.electronAPI.archiveInsight(input, assistantContent),
     ]);
     return profileResult.count + insightResult.count;
+  }
+  /** 一键归档：批量归档当前会话的全部记忆（调用 agent.archiveSessionContent） */
+  async archiveSession(date: string, session: string): Promise<number> {
+    const result = await window.electronAPI.archiveSession(date, session);
+    return result.archivedCount;
   }
   /** 注册示例问题点击回调（委托到 ChatPanelManager） */
   onSuggestionClick(cb: (text: string) => void): void { this.chatPanel.onSuggestionClick(cb); }
@@ -1593,13 +1609,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // ─── 三态首次引导（代理到 OnboardingManager） ──────────
 
   /**
-   * 检查是否需要显示三态首次引导（代理到 OnboardingManager）
+   * 检查是否需要显示多步骤引导（代理到 OnboardingManager）
    *
-   * 使用 localStorage 标记，首次使用（未标记）时返回 true。
-   * 老用户（已标记）不再显示，避免重复打扰。
+   * 检查逻辑：
+   * 1. localStorage 标记已见过 → 跳过
+   * 2. 已有 Provider 配置 → 跳过（已配置用户）
+   *
+   * @param hasProviders 是否已有 Provider 配置
    */
-  shouldShowOnboarding(): boolean {
-    return this.onboardingManager.shouldShowOnboarding();
+  shouldShowOnboarding(hasProviders: boolean): boolean {
+    return this.onboardingManager.shouldShowOnboarding(hasProviders);
   }
 
   // ─── 启动摘要（迭代一：Welcome Back Digest） ──────────
@@ -1619,6 +1638,27 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     healthStatus: 'healthy' | 'warning' | 'critical' | null;
   }): void {
     this.chatPanel.showStartupSummary(summary);
+  }
+
+  // ─── 记忆导航（P3-2：恢复后跳转定位） ──────────
+
+  /**
+   * 滚动到指定记忆项并高亮（委托到 MemoryPanelManager）
+   *
+   * 从回收站恢复记忆后调用，定位到目标记忆卡片。
+   */
+  scrollToMemory(id: string): void { this.memoryPanel.scrollToMemory(id); }
+
+  // ─── 一键归档（迭代一：批量归档当前会话） ──────────
+
+  /**
+   * 显示一键归档按钮（委托到 ChatPanelManager）
+   *
+   * 在消息区顶部插入归档按钮，仅在 manual 或 insights-only 模式下显示。
+   * 点击后调用 agent.archiveSessionContent 批量归档当前会话的全部记忆。
+   */
+  showArchiveButton(): void {
+    this.chatPanel.showArchiveButton();
   }
 
   /**

@@ -838,3 +838,86 @@
   display: flex;
   gap: var(--gap-compact);
 }
+
+/* ─── P2-3：内置帮助页面 ─────────────────────────────── */
+
+.help-content {
+  max-width: 600px;
+  padding: 0 4px;
+}
+
+.help-section {
+  margin-bottom: 20px;
+}
+
+.help-section h4 {
+  font-size: var(--font-sm);
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--surface2);
+}
+
+.help-section p {
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+
+.help-section ul,
+.help-section ol {
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  line-height: 1.7;
+  padding-left: 18px;
+  margin: 0;
+}
+
+.help-section li {
+  margin-bottom: 4px;
+}
+
+.help-section li strong {
+  color: var(--text);
+}
+
+/* FAQ 定义列表 */
+.help-faq {
+  margin: 0;
+}
+
+.help-faq dt {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+  margin: 12px 0 4px;
+}
+
+.help-faq dt::before {
+  content: 'Q: ';
+  color: var(--accent);
+}
+
+.help-faq dd {
+  font-size: var(--font-sm);
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--surface1);
+}
+
+.help-faq dd:last-child {
+  border-bottom: none;
+}
+
+.help-section code {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  background: var(--surface1);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--accent);
+}

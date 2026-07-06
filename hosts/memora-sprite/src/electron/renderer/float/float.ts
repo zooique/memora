@@ -42,6 +42,8 @@ export type FloatElectronAPI = Pick<
   | 'expandToFull'
   | 'showFloatContextMenu'
   | 'onFloatUnread'
+  | 'onLastMessage'
+  | 'removeLastMessageListener'
   | 'onSpriteEvent'
   | 'onThemeBroadcast'
   | 'removeThemeBroadcastListener'
@@ -214,10 +216,6 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   };
 
-  // 使用 EventTracker 统一管理事件监听器，替代手写 addEventListener
-  events.addEventListener(sphere, 'mouseenter', showDragHintIfFirstTime);
-  events.addEventListener(sphere, 'mouseleave', onSphereMouseLeave);
-
   // ─── 拖动检测（PointerEvent + setPointerCapture） ───
   // 原方案使用 document mousemove，但浮动窗口是 80x80 alwaysOnTop + frame:false
   // 窗口，鼠标移出窗口范围后 mousemove 停止触发，导致拖动失效。
@@ -328,6 +326,45 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     }
   });
 
+  // ─── 最后一条助手消息预览 ──────────────────────
+  // 主窗口流式输出结束后，推送最后一条助手消息到此。
+  // 鼠标悬停球体时显示预览卡片，单击展开完整窗口。
+  let lastMessageText = '';
+  const messagePreview = document.getElementById('message-preview');
+  const messagePreviewText = messagePreview?.querySelector('.message-preview-text');
+
+  /** 显示消息预览卡片（悬停时调用） */
+  const showMessagePreview = (): void => {
+    if (!messagePreview || !messagePreviewText || !lastMessageText) return;
+    // 截断长文本，最多显示 120 字
+    const preview = lastMessageText.length > 120
+      ? lastMessageText.slice(0, 120) + '...'
+      : lastMessageText;
+    messagePreviewText.textContent = preview;
+    messagePreview.classList.add('visible');
+  };
+
+  /** 隐藏消息预览卡片（鼠标离开时调用） */
+  const hideMessagePreview = (): void => {
+    if (!messagePreview) return;
+    messagePreview.classList.remove('visible');
+  };
+
+  // 监听主窗口推送的最后一条助手消息
+  electronAPI.onLastMessage((text: string) => {
+    lastMessageText = text;
+  });
+
+  // 悬停球体时显示预览
+  events.addEventListener(sphere, 'mouseenter', (e) => {
+    showDragHintIfFirstTime();
+    showMessagePreview();
+  });
+  events.addEventListener(sphere, 'mouseleave', (e) => {
+    onSphereMouseLeave();
+    hideMessagePreview();
+  });
+
   // ─── 精灵事件监听（统一注册，避免重复触发） ────────────
   // 注意：onSpriteEvent 在同一通道上多次注册会导致同一事件触发多次。
   // 此处合并主动提示弹跳 + 阶段三形态进化预留为一个监听器，按 type 分发。
@@ -382,6 +419,8 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     events.cleanup();
     // 清理主题广播监听器，避免窗口关闭后回调触发到已销毁 DOM
     electronAPI.removeThemeBroadcastListener();
+    // 清理最后一条消息监听器
+    electronAPI.removeLastMessageListener();
     if (dragHintTimer) timers.clearSafeTimeout(dragHintTimer);
     // 缺口 1.2：清理离开时长小标签定时器
     stopAwayLabelTimer();

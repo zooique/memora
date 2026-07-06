@@ -1609,4 +1609,32 @@ export class MemoryPanelManager {
     if (deleteBtn) deleteBtn.classList.remove('hidden');
     if (titleEl) titleEl.textContent = '编辑关系';
   }
+
+  /**
+   * 滚动到指定记忆项并高亮（P3-2：恢复后跳转定位）
+   *
+   * 从回收站恢复记忆后调用：找到目标记忆卡片，平滑滚动到视图中央，
+   * 添加 highlight-pulse 闪烁动画，动画结束后自动移除高亮类。
+   * 如果目标元素不存在（如分页未加载），静默降级。
+   *
+   * @param id 记忆项 ID（对应 DOM 中的 data-id 属性）
+   */
+  scrollToMemory(id: string): void {
+    if (!this.memoryListEl) return;
+
+    // 通过 data-id 属性查找目标记忆卡片
+    const target = this.memoryListEl.querySelector(`[data-id="${id}"]`) as HTMLElement | null;
+    if (!target) return;
+
+    // 平滑滚动到目标元素，居中显示
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    // 添加高亮闪烁动画
+    target.classList.add('highlight-pulse');
+
+    // 动画结束后自动移除高亮类（CSS animation 时长 1.5s）
+    target.addEventListener('animationend', () => {
+      target.classList.remove('highlight-pulse');
+    }, { once: true });
+  }
 }

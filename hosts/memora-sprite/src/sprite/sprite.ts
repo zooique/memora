@@ -111,6 +111,8 @@ export interface SpriteEventMap {
   workProjectionUpdated: { sourcePath: string; summary: string };
   /** Phase 2+：用户模式更新（PatternDetector 检测到新模式后发射） */
   patternsUpdated: { patterns: DetectedPattern[] };
+  /** 回收站自动清理完成（定时器触发，通知 UI 显示清理数量） */
+  trashPurged: { purgedCount: number };
 }
 
 // 重新导出 DashboardData 和 AffectState 供外部使用

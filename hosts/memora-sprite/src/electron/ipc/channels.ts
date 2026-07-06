@@ -45,6 +45,8 @@ export const IPC_CHANNELS = {
   MEMORIES_DELETE: 'memories-delete',
   /** 恢复软删除记忆（从回收站恢复） */
   MEMORIES_RESTORE: 'memories-restore',
+  /** 批量归档当前会话（一键归档） */
+  ARCHIVE_SESSION: 'archive-session',
   /** 物理删除记忆（回收站彻底删除） */
   MEMORIES_PURGE: 'memories-purge',
   /** 列出回收站记忆 */
@@ -250,6 +252,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   // ─── 浮动窗口事件 ─────────────────────────────────────
   /** 浮动窗口未读计数 */
   FLOAT_UNREAD: 'float-unread',
+  /** P4-1：推送最后一条助手消息到浮动窗口（hover 预览） */
+  FLOAT_LAST_MESSAGE: 'float-last-message',
 
   // ─── 窗口状态 ─────────────────────────────────────────
   /** 窗口最大化/还原状态变更 */

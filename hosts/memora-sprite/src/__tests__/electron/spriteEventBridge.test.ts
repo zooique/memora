@@ -41,7 +41,7 @@ import type { ILogger } from 'memora';
  */
 /** 精灵事件总数（1 个主动提示 + 14 个简单转发事件 + 1 个 presenceChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked） */
 // 会话生命周期完善：新增 sessionForked 事件，总数从 15 → 16
-const SPRITE_EVENT_COUNT = 16;
+const SPRITE_EVENT_COUNT = 17;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{

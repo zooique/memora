@@ -1,75 +1,382 @@
-﻿/**
- * 三态首次引导模块
+/**
+ * 多步骤引导模块
  *
  * 职责：
- * - 检测是否需要显示首次引导
- * - 显示三态窗口模型介绍弹窗（完整/浮动/托盘 + 快捷键）
- * - 用户点击"开始使用"或关闭弹窗后标记为已见过
+ * - 检测是否需要显示引导（未配置 Provider 的新用户）
+ * - 管理三步引导向导：欢迎 → API Key 配置 → 开始使用
+ * - 为每个预设 Provider 提供注册链接
+ * - 保存 API Key 配置（通过 updateConfig IPC）
+ * - 引导进度持久化到 sprite.json 的 onboardingStep 字段
  *
  * 设计原则：
- * - 使用 localStorage 标记，老用户不再显示，避免重复打扰
- * - 独立于 UIManager，无 this 依赖，纯 DOM + localStorage 操作
+ * - 独立于 UIManager，无 this 依赖，纯 DOM + localStorage + IPC 操作
+ * - 已配置 Provider 的用户跳过引导（检查 provider 列表）
+ * - 支持跳过 API Key 步骤（降级路径）
  */
 
-/** localStorage 键名：标记是否已显示过三态引导 */
+// ─── Provider 注册链接映射 ──────────────────────────────
+
+/** 常用 Provider 的注册/获取 API Key 页面链接 */
+const PROVIDER_SIGNUP_URLS: Record<string, string> = {
+  openai: 'https://platform.openai.com/api-keys',
+  deepseek: 'https://platform.deepseek.com/api_keys',
+  anthropic: 'https://console.anthropic.com/keys',
+  dashscope: 'https://dashscope.console.aliyun.com/apiKey',
+  zhipu: 'https://open.bigmodel.cn/usercenter/apikeys',
+  moonshot: 'https://platform.moonshot.cn/console/api-keys',
+  siliconflow: 'https://cloud.siliconflow.cn/account/ak',
+};
+
+/** Provider 默认模型映射（自动填充，减少用户配置负担） */
+const PROVIDER_DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4o',
+  deepseek: 'deepseek-chat',
+  anthropic: 'claude-sonnet-4-20250514',
+  dashscope: 'qwen-plus',
+  zhipu: 'glm-4',
+  moonshot: 'moonshot-v1-8k',
+  siliconflow: 'deepseek-ai/DeepSeek-V3',
+};
+
+/** Provider 默认 Base URL 映射 */
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  openai: 'https://api.openai.com/v1',
+  deepseek: 'https://api.deepseek.com/v1',
+  anthropic: 'https://api.anthropic.com/v1',
+  dashscope: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
+  moonshot: 'https://api.moonshot.cn/v1',
+  siliconflow: 'https://api.siliconflow.cn/v1',
+};
+
+// ─── localStorage 键 ────────────────────────────────────
+
+/** 标记引导是否已完成（老用户跳过） */
 const ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
 
+// ─── OnboardingManager ──────────────────────────────────
+
 /**
- * 三态首次引导管理器
+ * 多步骤引导管理器
  *
- * 独立管理引导弹窗的显示和标记逻辑，UIManager 通过组合持有。
+ * 独立管理三步引导向导的显示、步骤切换、API Key 保存和进度持久化。
+ * UIManager 通过组合持有。
  */
 export class OnboardingManager {
+  /** 当前步骤（1-3） */
+  private currentStep = 1;
+  /** 是否已关闭（防止重复关闭） */
+  private closed = false;
+  /** 用户是否已跳过 API Key 配置 */
+  private skippedApiKey = false;
+
   /**
-   * 检查是否需要显示三态首次引导
+   * 检查是否需要显示引导
    *
-   * 使用 localStorage 标记，首次使用（未标记）时返回 true。
-   * 老用户（已标记）不再显示，避免重复打扰。
+   * 检查逻辑：
+   * 1. localStorage 标记已见过 → 跳过
+   * 2. 已有 Provider 配置 → 跳过（已配置用户）
+   *
+   * @param hasProviders 是否已有 Provider 配置
    */
-  shouldShowOnboarding(): boolean {
-    return localStorage.getItem(ONBOARDING_SEEN_KEY) !== '1';
+  shouldShowOnboarding(hasProviders: boolean): boolean {
+    // 已标记过引导 → 不再显示
+    if (localStorage.getItem(ONBOARDING_SEEN_KEY) === '1') return false;
+    // 已有 Provider 配置 → 跳过引导
+    if (hasProviders) return false;
+    return true;
   }
 
   /**
-   * 显示三态首次引导弹窗
+   * 显示多步骤引导向导
    *
-   * 介绍三态窗口模型（完整/浮动/托盘）+ 快捷键。
-   * 用户点击"开始使用"或关闭弹窗后标记为已见过。
+   * 绑定步骤导航、API Key 保存、完成收尾等事件。
    */
   showOnboardingDialog(): void {
     const modal = document.getElementById('onboarding-modal');
-    const btnOk = document.getElementById('btn-onboarding-ok');
-    if (!modal || !btnOk) return;
+    if (!modal) return;
 
-    // 标记已见过引导（无论用户点击确定还是关闭）
-    const markSeen = () => {
-      localStorage.setItem(ONBOARDING_SEEN_KEY, '1');
-    };
+    this.closed = false;
+    this.currentStep = 1;
+    this.skippedApiKey = false;
 
-    let closed = false;
-    const close = () => {
-      if (closed) return;
-      closed = true;
-      markSeen();
-      modal.classList.add('hidden');
-      btnOk.removeEventListener('click', onOk);
-      modal.removeEventListener('click', onBackdrop);
-      const closeBtn = modal.querySelector('.modal-close');
-      if (closeBtn) closeBtn.removeEventListener('click', onClose);
-    };
+    // 绑定关闭处理
+    this.bindClose(modal);
+    // 绑定步骤导航
+    this.bindStepNavigation(modal);
+    // 绑定 API Key 保存
+    this.bindApiKeySave(modal);
+    // 绑定完成按钮
+    this.bindDone(modal);
+    // 绑定 Provider 选择变化（更新注册链接）
+    this.bindProviderSelect(modal);
+    // 初始化注册链接
+    this.updateSignupLink(modal);
 
-    const onOk = () => close();
-    const onClose = () => close();
-    const onBackdrop = (e: MouseEvent) => {
-      if (e.target === modal) close();
-    };
-
-    btnOk.addEventListener('click', onOk);
-    modal.addEventListener('click', onBackdrop);
-    const closeBtn = modal.querySelector('.modal-close');
-    if (closeBtn) closeBtn.addEventListener('click', onClose);
+    // 显示第一步
+    this.showStep(modal, 1);
 
     // 显示弹窗
     modal.classList.remove('hidden');
+  }
+
+  // ─── 关闭处理 ──────────────────────────────────────
+
+  /**
+   * 标记引导已完成并关闭弹窗
+   */
+  private markSeen(): void {
+    localStorage.setItem(ONBOARDING_SEEN_KEY, '1');
+    // 持久化到 sprite.json（Fire-and-forget，不阻塞关闭）
+    this.persistStep(3);
+  }
+
+  /**
+   * 关闭弹窗
+   */
+  private closeModal(modal: HTMLElement): void {
+    if (this.closed) return;
+    this.closed = true;
+    this.markSeen();
+    modal.classList.add('hidden');
+  }
+
+  /**
+   * 绑定关闭事件（Esc 键 + 点击遮罩）
+   */
+  private bindClose(modal: HTMLElement): void {
+    // Esc 键关闭
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') this.closeModal(modal);
+    };
+    document.addEventListener('keydown', onKey, { once: false });
+
+    // 点击遮罩关闭
+    const onBackdrop = (e: MouseEvent) => {
+      if (e.target === modal) this.closeModal(modal);
+    };
+    modal.addEventListener('click', onBackdrop);
+
+    // 清理：关闭时移除事件监听
+    const cleanup = () => {
+      document.removeEventListener('keydown', onKey);
+      modal.removeEventListener('click', onBackdrop);
+    };
+    // 利用 MutationObserver 或直接在 closeModal 后清理
+    // 使用 once 的 animationend 或直接在关闭时清理
+    const doneBtn = modal.querySelector('#btn-onboarding-done');
+    if (doneBtn) {
+      doneBtn.addEventListener('click', cleanup, { once: true });
+    }
+  }
+
+  // ─── 步骤导航 ──────────────────────────────────────
+
+  /**
+   * 绑定步骤导航按钮事件
+   */
+  private bindStepNavigation(modal: HTMLElement): void {
+    // 下一步按钮
+    modal.querySelectorAll('.onboarding-next').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = parseInt(btn.getAttribute('data-next') || '2', 10);
+        this.showStep(modal, next);
+        this.persistStep(next);
+      });
+    });
+
+    // 上一步按钮
+    modal.querySelectorAll('.onboarding-prev').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const prev = parseInt(btn.getAttribute('data-prev') || '1', 10);
+        this.showStep(modal, prev);
+        this.persistStep(prev);
+      });
+    });
+
+    // 跳过按钮
+    modal.querySelectorAll('.onboarding-skip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const skipTo = parseInt(btn.getAttribute('data-skip') || '3', 10);
+        if (skipTo === 3 && this.currentStep === 2) {
+          this.skippedApiKey = true;
+        }
+        this.showStep(modal, skipTo);
+        this.persistStep(skipTo);
+      });
+    });
+  }
+
+  /**
+   * 切换到指定步骤
+   */
+  private showStep(modal: HTMLElement, step: number): void {
+    this.currentStep = step;
+
+    // 更新步骤内容显隐
+    modal.querySelectorAll('.onboarding-step-content').forEach((el) => {
+      const elStep = parseInt((el as HTMLElement).dataset.step || '0', 10);
+      el.classList.toggle('active', elStep === step);
+    });
+
+    // 更新步骤指示器圆点
+    modal.querySelectorAll('.onboarding-step-dot').forEach((el) => {
+      const elStep = parseInt((el as HTMLElement).dataset.step || '0', 10);
+      el.classList.toggle('active', elStep === step);
+      el.classList.toggle('done', elStep < step);
+    });
+
+    // 更新步骤指示器连线
+    modal.querySelectorAll('.onboarding-step-line').forEach((el, index) => {
+      el.classList.toggle('done', index + 1 < step);
+    });
+
+    // 步骤 3：更新完成消息
+    if (step === 3) {
+      const msgEl = modal.querySelector('#onboarding-done-message');
+      if (msgEl) {
+        msgEl.textContent = this.skippedApiKey
+          ? '你可以稍后在设置面板中配置 AI 服务。现在开始对话吧。'
+          : 'AI 服务已配置，开始你的第一段对话吧。';
+      }
+    }
+  }
+
+  /**
+   * 持久化引导步骤到 sprite.json
+   *
+   * Fire-and-forget 模式，失败不阻塞用户操作。
+   */
+  private async persistStep(step: number): Promise<void> {
+    try {
+      await window.electronAPI.updateConfig('onboardingStep', step);
+    } catch {
+      // 静默忽略持久化失败（不影响用户体验）
+    }
+  }
+
+  // ─── API Key 保存 ──────────────────────────────────
+
+  /**
+   * 绑定 API Key 保存按钮事件
+   */
+  private bindApiKeySave(modal: HTMLElement): void {
+    const saveBtn = modal.querySelector('#btn-onboarding-save-key') as HTMLButtonElement | null;
+    if (!saveBtn) return;
+
+    saveBtn.addEventListener('click', async () => {
+      const providerSelect = modal.querySelector('#onboarding-provider-type') as HTMLSelectElement | null;
+      const apiKeyInput = modal.querySelector('#onboarding-api-key') as HTMLInputElement | null;
+      const errorEl = modal.querySelector('#onboarding-api-error') as HTMLElement | null;
+
+      if (!providerSelect || !apiKeyInput) return;
+
+      const providerType = providerSelect.value;
+      const apiKey = apiKeyInput.value.trim();
+
+      // 校验
+      if (!apiKey) {
+        if (errorEl) {
+          errorEl.textContent = '请输入 API Key';
+          errorEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      // 禁用按钮，显示加载状态
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+      if (errorEl) errorEl.classList.add('hidden');
+
+      try {
+        // 自动填充默认值和模型
+        const alias = providerType === 'custom' ? 'custom' : providerType;
+        const model = PROVIDER_DEFAULT_MODELS[providerType] || '';
+        const baseUrl = PROVIDER_BASE_URLS[providerType] || '';
+
+        // 通过 IPC 保存 Provider（使用 saveLlmProvider API）
+        const result = await window.electronAPI.saveLlmProvider(alias, {
+          provider: providerType,
+          model,
+          baseUrl,
+          apiKey,
+          temperature: 0.7,
+        });
+
+        if (!result.success) {
+          throw new Error(result.error || '保存失败');
+        }
+
+        this.skippedApiKey = false;
+        // 前进到步骤 3
+        this.showStep(modal, 3);
+        this.persistStep(3);
+      } catch (err) {
+        if (errorEl) {
+          errorEl.textContent = `保存失败：${err instanceof Error ? err.message : '未知错误'}`;
+          errorEl.classList.remove('hidden');
+        }
+        saveBtn.disabled = false;
+        saveBtn.textContent = '保存并继续';
+      }
+    });
+
+    // Enter 键提交
+    const apiKeyInput = modal.querySelector('#onboarding-api-key') as HTMLInputElement | null;
+    if (apiKeyInput) {
+      apiKeyInput.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter') saveBtn.click();
+      });
+    }
+  }
+
+  // ─── Provider 选择 ─────────────────────────────────
+
+  /**
+   * 绑定 Provider 下拉选择变化事件
+   *
+   * 切换 Provider 时更新注册链接和输入框提示。
+   */
+  private bindProviderSelect(modal: HTMLElement): void {
+    const select = modal.querySelector('#onboarding-provider-type') as HTMLSelectElement | null;
+    if (!select) return;
+
+    select.addEventListener('change', () => {
+      this.updateSignupLink(modal);
+    });
+  }
+
+  /**
+   * 更新注册链接的 href 和文本
+   */
+  private updateSignupLink(modal: HTMLElement): void {
+    const select = modal.querySelector('#onboarding-provider-type') as HTMLSelectElement | null;
+    const link = modal.querySelector('#onboarding-signup-link') as HTMLAnchorElement | null;
+    if (!select || !link) return;
+
+    const providerType = select.value;
+    const url = PROVIDER_SIGNUP_URLS[providerType];
+
+    if (url) {
+      link.href = url;
+      link.textContent = '获取 API Key →';
+      link.classList.remove('hidden');
+    } else {
+      link.classList.add('hidden');
+    }
+  }
+
+  // ─── 完成 ──────────────────────────────────────────
+
+  /**
+   * 绑定完成按钮事件
+   */
+  private bindDone(modal: HTMLElement): void {
+    const doneBtn = modal.querySelector('#btn-onboarding-done') as HTMLButtonElement | null;
+    if (!doneBtn) return;
+
+    doneBtn.addEventListener('click', () => {
+      this.closeModal(modal);
+    });
   }
 }
