@@ -92,13 +92,25 @@ export class ProfilePanelManager {
       this.render(entries);
     } catch (err) {
       reportError('ProfilePanel', `加载用户画像失败: ${toError(err).message}`);
-      // 在待确认区显示错误提示
+      // P2-07/P2-06：统一用 .error-state 结构（图标 + 文字 + 重试按钮），替代 .profile-empty.profile-error
       if (this.pendingListEl) {
-        // Q9 使用 clearElement 工具函数替代手写 while+removeChild
         clearElement(this.pendingListEl);
         const errorEl = document.createElement('div');
-        errorEl.className = 'profile-empty profile-error';
-        errorEl.textContent = '加载失败，请点击刷新重试';
+        errorEl.className = 'error-state';
+        const icon = document.createElement('div');
+        icon.className = 'error-icon';
+        icon.textContent = '⚠';
+        const msg = document.createElement('div');
+        msg.className = 'error-message';
+        msg.textContent = '加载用户画像失败';
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-secondary error-retry-btn';
+        retryBtn.textContent = '重试';
+        // 重试按钮触发重新加载（与 refreshBtn 同语义，但内嵌在错误态内便于发现）
+        this.events.addEventListener(retryBtn, 'click', () => this.load());
+        errorEl.appendChild(icon);
+        errorEl.appendChild(msg);
+        errorEl.appendChild(retryBtn);
         this.pendingListEl.appendChild(errorEl);
       }
     }

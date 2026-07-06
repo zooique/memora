@@ -368,9 +368,15 @@ export class DashboardPanelManager {
     const dashboardSectionEl = document.getElementById('dashboard-source-health');
     if (!dashboardListEl || !dashboardSectionEl) return;
 
-    // 无数据时隐藏整个 section（包括标题，避免空标题占用空间）
+    // P1-01：无数据时保留 section 标题，仅在列表区显示空状态文案
+    // （遵循"主动可见"原则——用户能区分"功能未加载"与"确实无数据"）
     if (!sourceHealth || sourceHealth.sources.length === 0) {
-      dashboardSectionEl.classList.add('hidden');
+      dashboardSectionEl.classList.remove('hidden');
+      clearElement(dashboardListEl);
+      const emptyEl = document.createElement('div');
+      emptyEl.className = 'empty-state';
+      emptyEl.textContent = '暂无记忆源健康数据';
+      dashboardListEl.appendChild(emptyEl);
       return;
     }
 
@@ -559,23 +565,28 @@ export class DashboardPanelManager {
   /**
    * 显示记忆列表加载失败状态（带重试按钮）
    *
-   * 用户点击重试按钮时触发 onReloadMemoryList 回调，由 Controller 重新拉取数据。
+   * P1-04：改用统一错误横幅体系（与 settings/memory/chat 对齐），
+   * 不再自建 .error-state DOM。重试按钮用 onclick 覆盖式绑定（避免累积监听器）。
    *
-   * @param listEl 记忆列表容器元素
+   * @param listEl 记忆列表容器元素（保留参数兼容，实际错误显示在面板级横幅）
    */
   showMemoryListError(listEl: HTMLElement): void {
+    // 清空列表区域，避免残留旧数据
     clearElement(listEl);
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-state';
-    errorDiv.textContent = '加载记忆列表失败';
-    const retryBtn = document.createElement('button');
-    retryBtn.className = 'panel-error-btn inline-retry-btn';
-    retryBtn.textContent = '重试';
-    this.events.addEventListener(retryBtn, 'click', () => {
-      this.reloadMemoryListCallback?.();
-    });
-    errorDiv.appendChild(retryBtn);
-    listEl.appendChild(errorDiv);
+    // 通过 dashboard-error 横幅显示错误（P1-03 新增的统一错误横幅）
+    const errorEl = document.getElementById('dashboard-error');
+    const msgEl = document.getElementById('dashboard-error-msg');
+    if (errorEl && msgEl) {
+      msgEl.textContent = '加载记忆列表失败';
+      errorEl.classList.remove('hidden');
+    }
+    // 重试按钮：用 onclick 覆盖式绑定（每次调用覆盖前一次，无累积）
+    const retryBtn = document.getElementById('dashboard-error-retry') as HTMLButtonElement | null;
+    if (retryBtn) {
+      retryBtn.onclick = () => {
+        this.reloadMemoryListCallback?.();
+      };
+    }
   }
 
   // ─── 脉冲计数 ──────────────────────────────────────────

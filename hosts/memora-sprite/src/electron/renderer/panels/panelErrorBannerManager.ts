@@ -1,7 +1,7 @@
 /**
  * 面板错误横幅管理器
  *
- * 从 UIManager 拆分而来，统一管理 settings / memory / chat 三个面板的
+ * 从 UIManager 拆分而来，统一管理 settings / memory / chat / dashboard 四个面板的
  * 错误横幅显示、隐藏和重试按钮事件。
  *
  * 职责：
@@ -11,13 +11,13 @@
  *
  * 设计原则：
  * - 自包含：仅依赖 EventTracker + DOM，不依赖 UIManager
- * - 统一接口：3 个面板共用同一套 show/hide 逻辑，通过 panelId 区分
+ * - 统一接口：4 个面板共用同一套 show/hide 逻辑，通过 panelId 区分
  */
 
 import { EventTracker } from '../helpers/eventTracker.js';
 
-/** 支持错误横幅的面板 ID 列表 */
-const PANEL_IDS = ['settings', 'memory', 'chat'] as const;
+/** 支持错误横幅的面板 ID 列表（P1-03：dashboard 纳入统一错误横幅体系） */
+const PANEL_IDS = ['settings', 'memory', 'chat', 'dashboard'] as const;
 
 /**
  * 面板错误横幅管理器

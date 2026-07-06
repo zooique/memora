@@ -154,7 +154,8 @@ describe('load · 成功与失败', () => {
     window.electronAPI.listAuditLog = vi.fn().mockRejectedValue(new Error('网络错误'));
     const manager = createManager();
     await manager.load();
-    const errorEl = document.querySelector('#audit-list .profile-empty');
+    // P2-07：错误态统一用 .error-state（替代 .profile-empty）
+    const errorEl = document.querySelector('#audit-list .error-state');
     expect(errorEl).not.toBeNull();
     expect(errorEl!.textContent).toContain('加载失败');
   });
@@ -289,9 +290,10 @@ describe('clear 流程', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    const errorEl = document.querySelector('#audit-list .profile-empty');
+    // P2-07：清空失败错误态统一用 .error-state（含图标 + 文字，用 toContain 匹配）
+    const errorEl = document.querySelector('#audit-list .error-state');
     expect(errorEl).not.toBeNull();
-    expect(errorEl!.textContent).toBe('清空审计日志失败');
+    expect(errorEl!.textContent).toContain('清空审计日志失败');
   });
 });
 

@@ -136,6 +136,12 @@ const DASHBOARD_HTML = `
     <canvas id="partner-growth-chart"></canvas>
     <span id="partner-growth-total"></span>
   </div>
+
+  <!-- P1-04：dashboard 错误横幅（PanelErrorBannerManager 体系） -->
+  <div id="dashboard-error" class="panel-error hidden">
+    <span id="dashboard-error-msg"></span>
+    <button id="dashboard-error-retry" class="panel-error-btn">重试</button>
+  </div>
 `;
 
 /** 创建 DashboardPanelManager 实例（默认已设置 DOM） */
@@ -542,14 +548,20 @@ describe('错误状态与重试回调', () => {
     expect(cb).toHaveBeenCalled();
   });
 
-  it('showMemoryListError 应在传入容器内渲染重试按钮', () => {
+  it('showMemoryListError 应显示 dashboard 错误横幅并支持重试', () => {
+    // P1-04：showMemoryListError 改用 PanelErrorBannerManager，重试按钮在 #dashboard-error 横幅中
     const { manager } = createManager();
     const cb = vi.fn();
     manager.onReloadMemoryList(cb);
     document.body.innerHTML += '<div id="test-list"></div>';
     const listEl = document.getElementById('test-list')!;
     manager.showMemoryListError(listEl);
-    const retryBtn = listEl.querySelector('.inline-retry-btn') as HTMLButtonElement;
+    // 验证 dashboard 错误横幅显示
+    const errorBanner = document.getElementById('dashboard-error');
+    expect(errorBanner).not.toBeNull();
+    expect(errorBanner!.classList.contains('hidden')).toBe(false);
+    // 验证重试按钮点击触发回调
+    const retryBtn = document.getElementById('dashboard-error-retry') as HTMLButtonElement;
     expect(retryBtn).not.toBeNull();
     retryBtn.click();
     expect(cb).toHaveBeenCalled();
