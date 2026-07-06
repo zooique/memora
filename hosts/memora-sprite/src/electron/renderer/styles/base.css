@@ -832,85 +832,8 @@ select:active {
   height: 16px;
 }
 
-/* ─── 徽章/标签基类 .badge ───────────────────────────────── */
-/* 统一 source-tag / profile-tag / milestone-tag 等的基础样式 */
-/* 用法：<span class="badge badge-[color]">标签文本</span> */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 8px;
-  border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-medium);
-  line-height: 1.5;
-  white-space: nowrap;
-}
-
-/* 徽章颜色变体（语义色，统一使用设计令牌，避免硬编码） */
-.badge-accent  { background: var(--accent-10);  color: var(--accent); }
-.badge-success { background: var(--green-20);   color: var(--green); }
-.badge-warning { background: var(--yellow-20);  color: var(--yellow); }
-.badge-danger  { background: var(--red-20);     color: var(--red); }
-.badge-muted   { background: var(--bg-hover);   color: var(--text-2); }
-.badge-info    { background: var(--accent-20);  color: var(--blue); }
-
-/* ─── 卡片基类 .card ─────────────────────────────────────── */
-/* 统一各面板卡片容器的基础样式 */
-.card {
-  background: var(--window-bg);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-md);
-  padding: 16px;
-}
-
-.card.card-hoverable {
-  cursor: pointer;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform 0.12s ease;
-}
-
-.card.card-hoverable:hover {
-  border-color: var(--border-hover);
-  box-shadow: var(--shadow-float);
-}
-
-/* ─── 关闭按钮基类 .close-btn ────────────────────────────── */
-/* 统一模态框/banner/卡片右上角 × 按钮 */
-.close-btn {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.close-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.close-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* ─── 分割线 .divider ────────────────────────────────────── */
-.divider {
-  height: 1px;
-  background: var(--surface2);
-  border: none;
-  margin: 8px 0;
-}
+/* P3-3：.badge / .card / .close-btn / .divider 四大基类已删除（0 使用死代码，派生类均独立定义） */
+/* 保留 .empty-state 基类（memoryPanelManager.ts:276 在用） */
 
 /* ─── 空状态 .empty-state ───────────────────────────────── */
 .empty-state {
@@ -937,8 +860,4 @@ select:active {
   margin-bottom: 4px;
 }
 
-.empty-state .empty-desc {
-  font-size: var(--font-xs);
-  color: var(--muted);
-  line-height: 1.5;
-}
+/* P3-3：.empty-state .empty-desc 已删除（0 使用，无任何元素创建 .empty-desc 子元素） */

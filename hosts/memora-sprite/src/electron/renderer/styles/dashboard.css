@@ -181,79 +181,8 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   gap: 8px;
 }
 
-.card-header {
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-  color: var(--subtext);
-  /* P2-4：移除 uppercase + letter-spacing（注：此基类已架空，详见 P3-3 死代码清理） */
-}
-
-.card-value {
-  font-size: 2rem;
-  font-weight: var(--weight-bold);
-  color: var(--text);
-  line-height: 1;
-}
-
-.card-badge {
-  display: inline-block;
-  padding: 2px 10px;
-  border-radius: var(--radius-pill);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
-  align-self: flex-start;
-}
-
-.card-badge[data-level="excellent"],
-.card-badge[data-level="good"] {
-  background: var(--green-20);
-  color: var(--green);
-}
-.card-badge[data-level="fair"] {
-  background: var(--yellow-20);
-  color: var(--yellow);
-}
-.card-badge[data-level="poor"] {
-  background: var(--red-20);
-  color: var(--red);
-}
-
-.card-badge[data-level="close"] {
-  background: var(--mauve-20);
-  color: var(--mauve);
-}
-.card-badge[data-level="familiar"] {
-  background: var(--green-20);
-  color: var(--green);
-}
-.card-badge[data-level="acquaintance"] {
-  background: var(--accent-20);
-  color: var(--blue);
-}
-.card-badge[data-level="stranger"] {
-  background: var(--surface2);
-  color: var(--subtext);
-}
-
-.card-dims {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.card-stat-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: var(--font-sm);
-  color: var(--text);
-}
-
-.card-stat-row .stat-value {
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-}
+/* P3-3：.card-header / .card-value / .card-badge(含 8 data-level 变体) / .card-dims / .card-stat-row 已删除（0 使用死代码） */
+/* 保留 .card-bar + .card-bar .bar-label（healthDashboardRenderer.ts:135,137 在用） */
 
 .card-bar {
   display: flex;
@@ -268,12 +197,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   flex-shrink: 0;
 }
 
-.card-desc {
-  font-size: var(--font-xs);
-  color: var(--subtext);
-  margin: 0;
-  line-height: 1.4;
-}
+/* P3-3：.card-desc 已删除（0 使用死代码） */
 
 /* ─── 通用进度条 ──────────────────────────────────── */
 .progress-track {

@@ -395,14 +395,7 @@
 
 /* ─── 空状态统一（Phase 4：视觉统一） ────────────────────────── */
 
-/* 搜索无结果空状态：与全局空状态一致，但显示不同文案 */
-.memory-search-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 40px 16px;
-}
+/* P3-3：.memory-search-empty 已删除（0 使用死代码，搜索无结果时复用 .empty-state 基类） */
 
 /* 时间线空状态：与列表空状态保持一致 */
 .timeline-empty {
