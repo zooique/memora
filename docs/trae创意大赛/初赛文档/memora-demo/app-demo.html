@@ -4011,7 +4011,15 @@
       let memSource = 'profile';
 
       // 身份信息识别（扩展更多自然语言句式）
-      if (text.includes('我是') || text.includes('我叫') || text.includes('我的名字是')) {
+      // 疑问句检测：句尾有问号则不提取身份（"我是谁？""记得我是谁吗？"等）
+      const endsWithQuestion = /[？?]\s*$/.test(text.trim());
+      // 用正则确保"我是/我叫/我的名字是"出现在句首或标点/空格后，防止"记得我是X"这类中间匹配
+      const identityMatch = text.match(/(?:^|[，。,.\s！!？?])(我叫|我的名字是|我是)([^，。！!？?\s]+)/);
+      // 疑问词/语气词黑名单，防止"谁吗""什么"被误识别为名字
+      const invalidNamePattern = /^(谁|什么|哪|怎|几|多|吗|呢|为什|为啥|难道|是不是|对不对|有没有|这个|那个|这里|那里|一个|一|在|有|和|的|了|也|就|都|不|没|很|会|要|去|到|说|看|听|想|能|可以|知道|觉得|认为|希望)$/;
+
+      if (identityMatch && !endsWithQuestion) {
+        const extracted = identityMatch[2]; // 提取到的名称部分
         if (text.includes('中国')) {
           memName = '用户画像-国籍';
           memContent = '国籍：中国，偏好中文交流';
@@ -4024,13 +4032,10 @@
         } else if (text.includes('作家') || text.includes('写作') || text.includes('写小说')) {
           memName = '用户画像-职业';
           memContent = '职业：创作者/作家，需要长时间深度对话';
-        } else {
-          // 通用姓名识别：支持"我叫XX"、"我的名字是XX"、"我是XX"
-          const nameMatch = text.match(/(?:我叫|我的名字是|我是)(.+?)(?:[，。,.\s！!？?]|$)/);
-          if (nameMatch) {
-            memName = '用户画像-称呼';
-            memContent = `称呼：${nameMatch[1]}`;
-          }
+        } else if (extracted && !invalidNamePattern.test(extracted) && extracted.length >= 1 && extracted.length <= 20) {
+          // 通用姓名识别：过滤疑问词/语气词/常用虚词，确保名称合理
+          memName = '用户画像-称呼';
+          memContent = `称呼：${extracted}`;
         }
       }
       // 偏好识别（扩展更多表达方式）

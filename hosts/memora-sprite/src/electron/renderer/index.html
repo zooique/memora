@@ -233,11 +233,26 @@
         <!-- 对话工具栏（左侧精灵状态条+消息统计，中间角色选择器，右侧日期导航） -->
         <div id="chat-toolbar">
           <div class="chat-toolbar-info">
-            <!-- 精灵状态条（点击展开感知面板） -->
+            <!-- 精灵状态条（点击展开感知面板，hover 时弹出感知摘要浮层） -->
             <div id="sprite-status-bar" class="sprite-status-bar" role="button" tabindex="0" title="点击查看精灵感知状态" aria-label="精灵状态：就绪">
               <svg class="sprite-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-fairy"/></svg>
               <span id="sprite-status-text-bar">就绪</span>
               <span class="sprite-status-dot" id="sprite-status-dot-bar"></span>
+            </div>
+            <!-- 精灵感知浮层：hover 时弹出，展示情感/默契度/上下文摘要 -->
+            <div id="sprite-status-popover" class="sprite-status-popover hidden" role="tooltip" aria-hidden="true">
+              <div class="popover-section">
+                <span class="popover-label">默契度</span>
+                <span class="popover-value" id="popover-rapport">—</span>
+              </div>
+              <div class="popover-section">
+                <span class="popover-label">情感基调</span>
+                <span class="popover-value" id="popover-affect">—</span>
+              </div>
+              <div class="popover-section">
+                <span class="popover-label">对话节奏</span>
+                <span class="popover-value" id="popover-context">—</span>
+              </div>
             </div>
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
@@ -1057,23 +1072,16 @@
           </button>
         </div>
         <div class="dashboard-body">
-          <!-- 分区一：概览卡片（健康分 + 记忆统计 + 默契等级） -->
+          <!-- 分区一：概览卡片（记忆统计 + 默契等级） -->
+          <!-- 记忆健康诊断已迁入记忆面板 #memory-health-bar，仪表盘不再重复展示 -->
           <section class="dashboard-section" id="dashboard-overview">
             <h4 class="dashboard-section-title">概览</h4>
             <div class="dashboard-cards" id="dashboard-cards">
-              <!-- 记忆健康卡片：大号分数 + 等级徽章 + 三维度迷你进度条 -->
-              <div class="dashboard-card" id="health-score-card">
-                <div class="card-header">记忆健康</div>
-                <div class="card-value" id="dashboard-health-score">—</div>
-                <div class="card-badge" id="dashboard-health-badge">—</div>
-                <div class="card-dims" id="dashboard-health-dims"></div>
-              </div>
-              <!-- 记忆统计卡片：总数 / 洞察 / 技能 / 衰减 -->
+              <!-- 记忆统计卡片：总数 / 洞察 / 衰减 -->
               <div class="dashboard-card" id="memory-stats-card">
                 <div class="card-header">记忆统计</div>
                 <div class="card-stat-row"><span>记忆</span><span class="stat-value" id="dashboard-total-memories">0</span></div>
                 <div class="card-stat-row"><span>洞察</span><span class="stat-value" id="dashboard-total-insights">0</span></div>
-                <div class="card-stat-row"><span>技能</span><span class="stat-value" id="dashboard-total-skills">0</span></div>
                 <div class="card-stat-row"><span>衰减运行</span><span class="stat-value" id="dashboard-decay-runs">—</span></div>
               </div>
               <!-- 默契度卡片：等级徽章 + 信任/熟悉度双进度条 -->
@@ -1128,9 +1136,9 @@
             </div>
           </section>
 
-          <!-- 分区三：运行指标（LLM + Token + 召回 + 失败 + 截断 + 消息 + 衰减） -->
-          <section class="dashboard-section" id="dashboard-runtime">
-            <h4 class="dashboard-section-title">运行</h4>
+          <!-- 分区三：运行指标（LLM + Token + 召回 + 失败 + 截断 + 消息 + 衰减）默认折叠 -->
+          <details class="dashboard-section" id="dashboard-runtime">
+            <summary class="dashboard-section-title">运行</summary>
             <div class="dash-item-grid" id="dashboard-metrics-grid">
               <div class="dash-item"><span class="dash-label">LLM</span><span class="dash-value" id="dashboard-llm-calls">0</span></div>
               <div class="dash-item"><span class="dash-label">Token</span><span class="dash-value" id="dashboard-tokens">0</span></div>
@@ -1141,7 +1149,7 @@
               <div class="dash-item" title="衰减已运行次数"><span class="dash-label">衰减</span><span class="dash-value" id="dashboard-decay-count">—</span></div>
               <div class="dash-item" title="累计衰减记忆数"><span class="dash-label">已衰</span><span class="dash-value" id="dashboard-decay-total">—</span></div>
             </div>
-          </section>
+          </details>
 
           <!-- 分区四：记忆源健康（按 source 分组的质量诊断列表） -->
           <section class="dashboard-section" id="dashboard-source-health">

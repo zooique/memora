@@ -35,6 +35,7 @@ import { MemoryPanelManager } from './panels/memoryPanelManager.js';
 import type { MemoryPanelHost } from './panels/memoryPanelManager.js';
 import { DashboardPanelManager } from './panels/dashboardPanelManager.js';
 import type { DashboardPanelHost } from './panels/dashboardPanelManager.js';
+import { SpriteStatusPopover } from './panels/spriteStatusPopover.js';
 import type {
   DashboardViewModel,
   AgentMetrics,
@@ -185,6 +186,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private memoryPanel: MemoryPanelManager;
   /** 仪表盘面板管理器（感知系统 + 仪表盘渲染） */
   private dashboardPanel: DashboardPanelManager;
+  /** 精灵状态浮层（hover 弹出轻量感知摘要，与 PerceptionRenderer 共享数据源） */
+  private spriteStatusPopover: SpriteStatusPopover;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
   private personaPanel: PersonaPanelManager;
   /**
@@ -316,6 +319,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 仪表盘面板管理器（感知系统 + 仪表盘渲染）
     this.dashboardPanel = new DashboardPanelManager(new EventTracker());
 
+    // 精灵状态浮层（hover 弹出轻量感知摘要）
+    this.spriteStatusPopover = new SpriteStatusPopover();
+
     // 角色选择器面板管理器
     this.personaPanel = new PersonaPanelManager(
       getOptionalElement('persona-selector', 'div'),
@@ -436,6 +442,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.dashboardPanel.cleanup(); // 清理仪表盘脉冲定时器与重试按钮事件
+    this.spriteStatusPopover.cleanup(); // 清理精灵状态浮层 hover 事件和定时器
     this.personaPanel.cleanup();
     // 清理命令面板的全局 keydown 监听器，避免页面重载后累积
     this.commandPaletteManager.cleanup();
@@ -1237,14 +1244,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 更新情感基调展示（委托到 DashboardPanelManager） */
   updateAffectDisplay(affect: AffectPayload): void {
     this.dashboardPanel.updateAffectDisplay(affect);
+    this.spriteStatusPopover.updateAffect(affect);
   }
-  /** 更新默契度展示（委托到 DashboardPanelManager） */
+  /** 更新默契度展示（委托到 DashboardPanelManager + SpriteStatusPopover） */
   updateRapportDisplay(rapport: RapportPayload): void {
     this.dashboardPanel.updateRapportDisplay(rapport);
+    this.spriteStatusPopover.updateRapport(rapport);
   }
-  /** 更新对话上下文展示（委托到 DashboardPanelManager） */
+  /** 更新对话上下文展示（委托到 DashboardPanelManager + SpriteStatusPopover） */
   updateContextDisplay(context: ContextPayload): void {
     this.dashboardPanel.updateContextDisplay(context);
+    this.spriteStatusPopover.updateContext(context);
   }
   /** 更新模式洞察面板（委托到 DashboardPanelManager） */
   updatePatternsDisplay(payload: PatternsPayload): void {

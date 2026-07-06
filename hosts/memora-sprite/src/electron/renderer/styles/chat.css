@@ -38,6 +38,7 @@
   align-items: baseline;
   gap: 8px;
   min-width: 0;
+  position: relative; /* 为精灵感知浮层提供定位参考 */
 }
 
 .chat-toolbar-title {
@@ -133,6 +134,62 @@
   .sprite-status-dot {
     animation: none;
   }
+}
+
+/* ─── 精灵感知浮层（hover 时弹出，轻量感知摘要） ──── */
+/* 浮层定位：相对于 chat-toolbar-info 容器，在状态条下方弹出 */
+.sprite-status-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 100;
+  min-width: 200px;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sprite-status-popover.hidden {
+  display: none;
+}
+
+/* 浮层内分节 */
+.popover-section {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.popover-label {
+  font-size: var(--font-xs);
+  color: var(--subtext);
+  white-space: nowrap;
+  min-width: 48px;
+}
+
+.popover-value {
+  font-size: var(--font-xs);
+  color: var(--text);
+  flex: 1;
+}
+
+/* 浮层小三角箭头 */
+.sprite-status-popover::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 16px;
+  width: 10px;
+  height: 10px;
+  background: var(--window-bg);
+  border-left: 1px solid var(--surface2);
+  border-top: 1px solid var(--surface2);
+  transform: rotate(45deg);
 }
 
 /* ─── 感知面板分节（紧凑布局，仪表盘面板复用） ──── */

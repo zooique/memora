@@ -35,6 +35,32 @@
   padding: 0;
 }
 
+/* ─── 折叠式分区（details/summary） ─────────────────── */
+/* 运行指标等分区默认折叠，点击展开 */
+details.dashboard-section > .dashboard-section-title {
+  display: block;
+  cursor: pointer;
+  user-select: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+details.dashboard-section > .dashboard-section-title::before {
+  content: '▸ ';
+  display: inline-block;
+  transition: transform var(--transition-fast);
+  font-size: 10px;
+  vertical-align: 1px;
+}
+
+details.dashboard-section[open] > .dashboard-section-title::before {
+  transform: rotate(90deg);
+}
+
+details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
+  display: none;
+}
+
 .dashboard-subtitle {
   font-size: var(--font-xs);
   font-weight: 600;

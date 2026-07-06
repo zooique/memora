@@ -433,11 +433,7 @@ export class DashboardPanelManager {
       layer: string;
     }>,
   ): void {
-    // 仪表盘面板：记忆统计卡片中的技能计数
-    const dashboardSkillCount = document.getElementById('dashboard-total-skills');
-    if (dashboardSkillCount) {
-      dashboardSkillCount.textContent = String(skills.length);
-    }
+    // 技能计数已迁入设置面板的"技能"tab，仪表盘不再重复展示
 
     const listEl = this.skillsListEl;
     const sectionEl = this.skillsSectionEl;
