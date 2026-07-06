@@ -513,15 +513,17 @@
 }
 
 /* 面板加载失败状态（统一错误横幅，记忆/对话/设置面板共享） */
+/* P2-3：对标 Arco Alert error 级别 — 浅红填充 + 左边框替代透明背景 + 底边框 */
 .panel-error {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 24px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);  /* P2-3：8px 24px → 12px 20px，4px 基线 */
   margin: 0;
-  background: transparent;
-  border-bottom: 1px solid var(--red);
+  background: var(--red-10);              /* P2-3：transparent → 浅红填充 */
+  border-bottom: none;                    /* P2-3：移除底边框 */
+  border-left: 4px solid var(--red);      /* P2-3：新增左边框，与 critical 健康项一致 */
   color: var(--red);
   font-size: var(--font-sm);
   flex-shrink: 0;

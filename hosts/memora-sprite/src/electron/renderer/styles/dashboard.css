@@ -35,8 +35,7 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--subtext);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  /* P2-4：移除 text-transform: uppercase + letter-spacing，中文场景无效果且破坏阅读节奏 */
   margin: 0 0 10px 0;
   padding: 0;
 }
@@ -72,8 +71,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  /* P2-4：移除 uppercase + letter-spacing（中文场景失效且破坏字距） */
   margin: 0 0 6px 0;
   padding: 0;
 }
@@ -98,13 +96,12 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .overview-item .overview-label {
   font-size: var(--font-2xs);
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  /* P2-4：移除 uppercase + letter-spacing */
 }
 
 .overview-item .overview-value {
-  font-size: var(--font-score);  /* P1-3：1.25rem 硬编码 → 令牌引用（值等价） */
-  font-weight: var(--weight-bold);
+  font-size: var(--font-h2);  /* P2-1：--font-score(20px) → --font-h2(24px)，对标 Arco KPI 数值 */
+  font-weight: var(--weight-semibold);  /* P2-1：bold(700) → semibold(600)，对齐 Arco/Semi 大数值惯例 */
   color: var(--text);
   line-height: 1.2;
 }
@@ -188,8 +185,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--subtext);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  /* P2-4：移除 uppercase + letter-spacing（注：此基类已架空，详见 P3-3 死代码清理） */
 }
 
 .card-value {
@@ -434,12 +430,11 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dash-item .dash-label {
   font-size: var(--font-2xs);
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  /* P2-4：移除 uppercase + letter-spacing */
 }
 
 .dash-item .dash-value {
-  font-size: var(--font-sm);
+  font-size: var(--font-md);  /* P2-1：--font-sm(12px) → --font-md(15px)，KPI 数值不再被弱化 */
   font-weight: var(--weight-semibold);
   color: var(--text);
 }
@@ -482,13 +477,15 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--text);
 }
 
-/* 按 status 区分左边框颜色，让异常项视觉突出 */
+/* 按 status 区分左边框颜色 + 背景填充，让异常项视觉突出（P2-2：对标 Arco Alert） */
 .source-health-item.warning {
-  border-left-color: var(--yellow);
+  border-left: 4px solid var(--yellow);  /* P2-2：3px → 4px */
+  background: var(--yellow-20);          /* P2-2：新增浅黄填充 */
 }
 
 .source-health-item.critical {
-  border-left-color: var(--red);
+  border-left: 4px solid var(--red);     /* P2-2：3px → 4px */
+  background: var(--red-20);             /* P2-2：新增浅红填充 */
 }
 
 .source-health-item.healthy {
@@ -652,12 +649,11 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .growth-card-label {
   font-size: var(--font-2xs);
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  /* P2-4：移除 uppercase + letter-spacing */
 }
 
 .growth-card-value {
-  font-size: var(--font-md);
+  font-size: var(--font-h1);  /* P2-1：--font-md(15px) → --font-h1(18px)，中间过渡档 */
   font-weight: var(--weight-semibold);
   color: var(--accent);
 }

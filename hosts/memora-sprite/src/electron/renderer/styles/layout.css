@@ -493,8 +493,7 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  /* P2-4：移除 uppercase + letter-spacing（中文场景失效且破坏字距） */
   padding: 0 4px 0 10px;
   margin-bottom: 8px;
   /* 左侧3px宽accent色条，作为视觉分组锚点，扫视时可快速定位section */

@@ -205,8 +205,7 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
+  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
   /* 紧凑布局：收紧标题下间距 */
   margin: 0 0 4px 0;
   display: flex;

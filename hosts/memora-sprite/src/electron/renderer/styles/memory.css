@@ -805,8 +805,7 @@
   font-weight: var(--weight-semibold);
   font-size: var(--font-xs);
   color: var(--graph-overlay-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
   margin-bottom: 4px;
 }
 
@@ -1270,8 +1269,7 @@
 .insights-stat-label {
   font-size: var(--font-2xs);
   color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
 }
 
 /* source 分布容器：占满剩余空间 */
@@ -1324,8 +1322,7 @@
 .insights-section-title {
   font-size: var(--font-xs);
   color: var(--text-2);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
   margin-bottom: 4px;
 }
 

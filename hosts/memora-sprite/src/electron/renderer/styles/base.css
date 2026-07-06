@@ -694,8 +694,7 @@ button:active,
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  /* P2-4：移除 uppercase + letter-spacing（中文命令场景失效） */
   /* 粘性标题：滚动时固定在顶部 */
   position: sticky;
   top: 0;
