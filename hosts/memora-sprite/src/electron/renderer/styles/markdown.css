@@ -18,7 +18,7 @@
 /* 标题：层级递减，颜色用 accent 强调 */
 .message-bubble .md-h {
   margin: 12px 0 6px;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   line-height: 1.3;
   color: var(--text);
 }
@@ -61,7 +61,7 @@
   color: var(--text-3);
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', monospace;
   font-size: var(--font-2xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   text-transform: lowercase;
 }
 
@@ -173,7 +173,7 @@
   padding: var(--input-padding);
   background: var(--surface1);
   border: 1px solid var(--surface2);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   text-align: left;
 }
@@ -191,7 +191,7 @@
 
 /* 加粗：使用更粗的字重 */
 .message-bubble .md-bold {
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
 }
 

@@ -22,7 +22,7 @@
 /* 面板标题（"记忆"），与对话面板.toolbar-title风格一致 */
 .panel-header .panel-title {
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   flex-shrink: 0;
   white-space: nowrap;
@@ -56,7 +56,7 @@
   border-radius: var(--radius-md);
   font-family: inherit;
   font-size: var(--font-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   cursor: pointer;
   transition: background var(--transition-fast);
 }
@@ -125,7 +125,7 @@
 
 .memory-item .name {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-bottom: 6px;
   display: flex;
   align-items: center;
@@ -150,7 +150,7 @@
   padding: 2px 8px;
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /**
@@ -179,7 +179,7 @@
 
 .memory-item .meta .score {
   color: var(--accent);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 记忆列表项创建时间 */
@@ -329,7 +329,7 @@
 }
 
 .skill-name {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   flex-shrink: 0;
 }
@@ -424,7 +424,7 @@
 
 .timeline-empty .empty-title {
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
@@ -468,7 +468,7 @@
 
 .graph-empty-title {
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
@@ -529,7 +529,7 @@
 
 .partner-insights-title {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
 }
 
@@ -558,7 +558,7 @@
 
 .partner-profile-card-title {
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   margin-bottom: 4px;
   line-height: 1.4;
@@ -616,7 +616,7 @@
 
 .partner-growth-title {
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
 }
 
@@ -754,7 +754,7 @@
 .more-menu-item.active {
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .more-menu-item .icon {
@@ -802,7 +802,7 @@
 
 /* 图例分区标题 */
 .legend-title {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--font-xs);
   color: var(--graph-overlay-muted);
   text-transform: uppercase;
@@ -884,7 +884,7 @@
 
 /* tooltip 记忆名称 */
 .graph-tooltip-name {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--font-sm);
   margin-bottom: 2px;
   white-space: nowrap;
@@ -1019,7 +1019,7 @@
 
 .relation-edit-title {
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
@@ -1033,7 +1033,7 @@
 .relation-edit-label {
   font-size: var(--font-sm);
   color: var(--text-2);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .relation-edit-type-select {
@@ -1106,7 +1106,7 @@
   border: none;
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   cursor: pointer;
   transition: background var(--transition-fast), opacity var(--transition-fast);
 }
@@ -1231,7 +1231,7 @@
 
 .insights-title {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   display: flex;
   align-items: center;
@@ -1257,7 +1257,7 @@
 
 .insights-stat-value {
   font-size: var(--font-h1);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   line-height: 1.2;
 }
@@ -1343,7 +1343,7 @@
   padding: 1px 6px;
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   background: var(--surface0);
   color: var(--text-2);
@@ -1375,7 +1375,7 @@
 
 .relations-title {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
   margin-bottom: 8px;
 }
@@ -1443,7 +1443,7 @@
 
 .lineage-title {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
   margin-bottom: 8px;
 }
@@ -1493,7 +1493,7 @@
   font-size: var(--font-2xs);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 关系类型标签：复用 .relation-type-* 类（与关联列表配色一致） */
@@ -1538,7 +1538,7 @@
 
 .empty-title {
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
@@ -1606,7 +1606,7 @@
 
 .health-title {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   display: flex;
   align-items: center;
@@ -1617,7 +1617,7 @@
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-size: var(--font-xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 健康等级徽章颜色（使用 CSS 变量适配双主题） */
@@ -1628,7 +1628,7 @@
 
 .health-score {
   font-size: var(--font-score);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
   font-variant-numeric: tabular-nums;
 }
@@ -1781,7 +1781,7 @@
 .health-metric-value {
   width: 28px;
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -1802,12 +1802,12 @@
 /* 有问题的项目高亮（使用 CSS 变量适配双主题） */
 .health-detail-item.warning {
   color: var(--yellow);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .health-detail-item.danger {
   color: var(--red);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 健康度描述文字 */
@@ -1871,7 +1871,7 @@
 
 .confirm-dialog-title {
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin: 0 0 8px;
   color: var(--text);
 }
@@ -1886,7 +1886,7 @@
 /* 健康度迷你分数徽章（工具栏内） */
 .health-mini-score {
   font-size: var(--font-sm);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
   padding: 1px 5px;
   border-radius: var(--radius-pill);
@@ -1967,7 +1967,7 @@
 /* 日期文字 */
 .timeline-date-text {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   margin-left: 4px;
 }
@@ -2038,7 +2038,7 @@
 /* 记忆名称 */
 .timeline-item-name {
   font-size: var(--font-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -2131,7 +2131,7 @@
 
 .recycle-bin-item-name {
   font-size: var(--font-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;

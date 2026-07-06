@@ -44,7 +44,7 @@
 .chat-toolbar-title {
   /* 缩小标题字号，与副标题差距更协调 */
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   flex-shrink: 0;
 }
@@ -203,7 +203,7 @@
 
 .perception-section-title {
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -269,7 +269,7 @@
 .presence-text {
   color: var(--subtext);
   transition: color 0.3s ease;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 在场状态脉冲动画 */
@@ -344,13 +344,13 @@
 .context-label {
   color: var(--muted);
   font-size: var(--font-2xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .context-value {
   color: var(--text);
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .context-sep {
@@ -390,7 +390,7 @@
   padding: 1px 6px;
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .perception-pattern-type.repeat {
@@ -414,7 +414,7 @@
   padding: 1px 6px;
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 .perception-pattern-confidence.high {
@@ -479,23 +479,23 @@
 /* 接受率徽章：高/中/低 三色（与 PatternDetector confidence 徽章一致） */
 .perception-proactive-rate.high {
   color: var(--green);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .perception-proactive-rate.mid {
   color: var(--yellow);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .perception-proactive-rate.low {
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 /* 连续拒绝 / 生效冷却：>0 或 >基础值时高亮警告色 */
 .dash-value.warning {
   color: var(--yellow);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 /* ─── 记忆源健康诊断（缺口 E） ─────────────────────────── */
@@ -506,7 +506,7 @@
   padding: 1px 8px;
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-left: 6px;
 }
 
@@ -553,12 +553,12 @@
 .perception-metrics-grid .dash-label {
   font-size: var(--font-2xs);
   color: var(--muted);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
 }
 
 .perception-metrics-grid .dash-value {
   font-size: var(--font-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--subtext);
 }
 
@@ -671,7 +671,7 @@
   flex: 1;
   font-size: var(--font-sm);
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   line-height: 1.4;
   /* 为绝对定位的关闭按钮留出空间，避免与 actions 重叠 */
   margin-right: 30px;
@@ -690,7 +690,7 @@
   padding: var(--btn-padding-sm);
   color: var(--text-2);
   font-size: var(--font-xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   font-family: inherit;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
@@ -747,7 +747,7 @@
 
 #proactive-banner.is-milestone .banner-text {
   color: var(--milestone-text);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 #proactive-banner.is-milestone .banner-btn {
@@ -816,7 +816,7 @@
 /* 里程碑文本：粗体，flex:1 占据中间空间 */
 .milestone-banner .milestone-text {
   flex: 1;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   /* 覆盖父级 ellipsis，文本本身允许换行避免信息丢失 */
   white-space: normal;
   overflow: visible;
@@ -900,7 +900,7 @@
 
 .suggestion-card-type {
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--accent);
   background: var(--accent-soft);
   padding: 2px 8px;
@@ -942,7 +942,7 @@
 /* 建议名称 */
 .suggestion-card-name {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   margin-bottom: 4px;
 }
@@ -970,7 +970,7 @@
   padding: 4px 14px;
   border-radius: var(--radius-sm);
   font-size: var(--font-sm);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   font-family: inherit;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
@@ -1506,7 +1506,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--font-xs);  /* P1-3：11px 硬编码 → 令牌引用 */
   color: var(--text-3);
   cursor: pointer;
   padding: 0 4px;
@@ -1761,7 +1761,7 @@
 /* Provider 下拉项：当前激活的高亮 */
 .input-provider-container #provider-dropdown .dropdown-item.active {
   color: var(--green);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .input-provider-container #provider-dropdown .dropdown-item.active::after {
@@ -1819,7 +1819,7 @@
   border-radius: var(--radius-pill);
   color: var(--text-2);
   font-size: var(--font-xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   font-family: inherit;
   cursor: pointer;
   display: none; /* 默认隐藏，流式态时通过 .visible 类显示 */
@@ -1882,7 +1882,7 @@
 /* 欢迎标题：主色调强调 */
 .chat-empty-state .empty-title {
   font-size: var(--font-lg);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   /* 标题不使用霞鹜文楷，保持系统字体清晰度 */
   font-family: system-ui, -apple-system, sans-serif;
@@ -2063,7 +2063,7 @@
 
 /* 工具名：等宽字体强调"代码感" */
 .tool-call-name {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: var(--font-xs);
@@ -2074,7 +2074,7 @@
   margin-left: auto;
   font-size: var(--font-2xs);
   color: var(--text-2);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 执行中 spinner：旋转圆环动画，替代静态"执行中..."文本的视觉单薄 */
@@ -2453,7 +2453,7 @@
 /* 横幅标题 */
 .startup-banner-title {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
   margin-bottom: 4px;
 }
@@ -2484,14 +2484,14 @@
 
 /* 数据值：强调色 */
 .startup-banner-value {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
 /* 健康状态标签：healthy / warning / critical */
 .startup-banner-badge {
   font-size: var(--font-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
 }
@@ -2543,7 +2543,7 @@
   border: 1px dashed var(--border);
   border-radius: 8px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--font-md-2);  /* P1-3：13px 孤儿值 → 新增 --font-md-2 令牌 */
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: center;

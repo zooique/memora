@@ -117,7 +117,7 @@
   align-items: center;
   justify-content: center;
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-3);
   transition: background var(--transition-fast), color var(--transition-fast);
   flex-shrink: 0;
@@ -163,7 +163,7 @@
 
 .onboarding-step-content h3 {
   font-size: var(--font-lg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
   margin: 12px 0 8px;
 }
@@ -217,7 +217,7 @@
 .onboarding-feature-text strong {
   font-size: var(--font-sm);
   color: var(--text);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .onboarding-feature-text span {
@@ -248,7 +248,7 @@
 .onboarding-api-form label {
   display: block;
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
   margin-bottom: 4px;
 }
@@ -399,7 +399,7 @@ kbd {
 
 .modal-header h3 {
   font-size: var(--font-base);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
@@ -505,7 +505,7 @@ kbd {
   padding: 6px 18px;
   background: var(--accent);
   color: var(--accent-fg);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .btn-primary:hover {
@@ -574,7 +574,7 @@ kbd {
 
 .write-confirm-diff summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
   user-select: none;
 }
@@ -583,7 +583,7 @@ kbd {
   margin: 8px 0 4px;
   font-size: var(--font-sm);
   color: var(--text-3);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .write-confirm-diff-content {

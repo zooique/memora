@@ -33,7 +33,7 @@
 
 .dashboard-section-title {
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--subtext);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -55,7 +55,7 @@ details.dashboard-section > .dashboard-section-title::before {
   content: '▸ ';
   display: inline-block;
   transition: transform var(--transition-fast);
-  font-size: 10px;
+  font-size: var(--font-2xs);  /* P1-3：10px 硬编码 → 令牌引用 */
   vertical-align: 1px;
 }
 
@@ -70,7 +70,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 /* 子标题（分区内二级标题，如"主动提示"、"模式洞察"） */
 .dashboard-subtitle {
   font-size: var(--font-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -103,8 +103,8 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .overview-item .overview-value {
-  font-size: 1.25rem;
-  font-weight: 700;
+  font-size: var(--font-score);  /* P1-3：1.25rem 硬编码 → 令牌引用（值等价） */
+  font-weight: var(--weight-bold);
   color: var(--text);
   line-height: 1.2;
 }
@@ -125,7 +125,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-size: var(--font-2xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 
 .overview-rapport-badge[data-level="close"] {
@@ -186,7 +186,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 .card-header {
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--subtext);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -194,7 +194,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 .card-value {
   font-size: 2rem;
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   color: var(--text);
   line-height: 1;
 }
@@ -204,7 +204,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   padding: 2px 10px;
   border-radius: var(--radius-pill);
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   align-self: flex-start;
 }
 
@@ -255,7 +255,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .card-stat-row .stat-value {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
@@ -373,7 +373,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .context-value {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 
@@ -440,7 +440,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 .dash-item .dash-value {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text);
 }
 
@@ -504,7 +504,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .source-health-label {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--font-sm);
   color: var(--text);
 }
@@ -513,7 +513,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   padding: 2px 8px;
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   flex-shrink: 0;
 }
 
@@ -608,7 +608,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 /* 趋势箭头：方向颜色区分（green/yellow/muted，与感知面板 confidence 徽章一致） */
 .growth-trend-arrow {
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   line-height: 1;
 }
 
@@ -658,7 +658,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 .growth-card-value {
   font-size: var(--font-md);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--accent);
 }
 

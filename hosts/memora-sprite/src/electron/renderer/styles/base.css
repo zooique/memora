@@ -137,6 +137,25 @@
   --font-3xs: 0.5625rem; /* 9px / 16 = 0.5625（最低置信度、超窄屏降级） */
   --font-h1:  1.125rem;  /* 18px / 16 = 1.125（标题 h1、洞察面板数值） */
   --font-score:1.25rem;   /* 20px / 16 = 1.25（健康度评分） */
+  /* P1-3：填补字号梯度缺口 */
+  --font-md-2: 0.8125rem; /* 13px / 16 = 0.8125（填补 sm 12px 与 base 14px 之间） */
+  --font-h2:   1.5rem;     /* 24px / 16 = 1.5（填补 h1 18px 与 2xl 28px 之间，大数值） */
+
+  /* ─── 设计系统：字重层级（P1-1 令牌化，4 级覆盖全部场景） ─── */
+  --weight-regular:  400;  /* 正文默认 */
+  --weight-medium:   500;  /* 次级强调（标签值/辅助文本） */
+  --weight-semibold: 600;  /* 标题/数值（默认强调，最常用） */
+  --weight-bold:     700;  /* 大数值（仅 KPI 顶级，慎用） */
+
+  /* ─── 设计系统：间距 4px 基线栅格（P1-2，对标 Arco/Semi） ─── */
+  /* 8 级间距覆盖全部场景，所有 gap/margin/padding 应优先使用这些令牌 */
+  --space-1: 4px;   /* 极小间距（图标与文字间隙） */
+  --space-2: 8px;   /* 紧凑间距（卡片内元素 gap） */
+  --space-3: 12px;  /* 标准间距（卡片 padding、分区 gap） */
+  --space-4: 16px;  /* 宽松间距（面板 padding、分区之间） */
+  --space-5: 20px;  /* 大间距（面板左右 padding） */
+  --space-6: 24px;  /* 超大间距（弹窗 padding） */
+  --space-8: 32px;  /* 最大间距（空状态 padding） */
 
   /* ─── 设计系统：按钮规范 ─── */
   --btn-height-sm: 28px;  /* 小按钮高度（工具按钮、图标按钮） */
@@ -673,7 +692,7 @@ button:active,
 .command-palette-section {
   padding: 6px 16px 2px;
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -824,7 +843,7 @@ select:active {
   padding: 2px 8px;
   border-radius: var(--radius-pill);
   font-size: var(--font-xs);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -914,7 +933,7 @@ select:active {
 
 .empty-state .empty-title {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--text-2);
   margin-bottom: 4px;
 }
