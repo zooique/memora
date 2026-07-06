@@ -144,6 +144,19 @@ function initListClickDelegation(ctx: MemoryPanelEventContext): void {
       ctx.getMemoryClickCallback()?.(memoryId);
     }
   });
+  // P1-06：键盘可访问性——Enter/Space 触发与 click 等效的查看动作
+  // handler 签名用 Event（与 EventTracker 签名一致），内部断言为 KeyboardEvent 访问 key 属性
+  ctx.events.addEventListener(ctx.memoryListEl, 'keydown', (e: Event) => {
+    const ke = e as KeyboardEvent;
+    if (ke.key !== 'Enter' && ke.key !== ' ') return;
+    const target = ke.target as HTMLElement;
+    const item = target.closest<HTMLElement>('[data-action="view-memory"]');
+    if (item) {
+      ke.preventDefault();
+      const memoryId = item.dataset.memoryId ?? '';
+      ctx.getMemoryClickCallback()?.(memoryId);
+    }
+  });
 }
 
 // ─── 2. 搜索框 + source 筛选 ──────────────────────────────

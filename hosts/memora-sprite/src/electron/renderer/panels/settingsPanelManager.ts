@@ -429,14 +429,28 @@ export class SettingsPanelManager {
     const tabButtons = document.querySelectorAll<HTMLElement>('.settings-tab');
     const tabContents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
 
+    // P2-08：补全 ARIA tab 语义（button 已具备原生语义，叠加 role="tab" + aria-selected）
+    // 让屏幕阅读器在 tablist 上下文中正确朗读"已选/未选"状态
+    tabButtons.forEach((btn) => {
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', btn.classList.contains('active') ? 'true' : 'false');
+    });
+    tabContents.forEach((content) => {
+      content.setAttribute('role', 'tabpanel');
+    });
+
     tabButtons.forEach((btn) => {
       this.events.addEventListener(btn, 'click', () => {
         const targetTab = btn.dataset.settingsTab;
         if (!targetTab) return;
 
-        // 切换 tab 按钮 active 状态
-        tabButtons.forEach((b) => b.classList.remove('active'));
+        // 切换 tab 按钮 active 状态 + 同步 aria-selected
+        tabButtons.forEach((b) => {
+          b.classList.remove('active');
+          b.setAttribute('aria-selected', 'false');
+        });
         btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
 
         // 切换内容区显示
         tabContents.forEach((content) => {
@@ -994,7 +1008,13 @@ export class SettingsPanelManager {
       // 获取列表失败不阻塞删除，由主进程处理
     }
 
-    const confirmed = confirm(`确定删除 Provider "${key}"？`);
+    // P1-02：使用项目统一的 showConfirmDialog（支持主题/焦点/键盘），替代原生 confirm()
+    const confirmed = await this.host.showConfirmDialog({
+      title: '删除 Provider',
+      message: `确定删除 Provider "${key}"？`,
+      confirmText: '删除',
+      danger: true,
+    });
     if (!confirmed) return;
 
     const result = await window.electronAPI.deleteLlmProvider(key);

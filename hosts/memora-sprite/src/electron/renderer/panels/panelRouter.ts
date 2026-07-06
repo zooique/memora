@@ -152,7 +152,11 @@ export class PanelRouter {
 
     // 移除所有面板活动状态
     document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach((b) => {
+      b.classList.remove('active');
+      // P2-08：清除其他导航的 aria-current，避免屏幕阅读器误读多个"当前页"
+      b.removeAttribute('aria-current');
+    });
 
     // 激活目标面板
     const panelEl = document.getElementById(`panel-${panel}`);
@@ -161,6 +165,8 @@ export class PanelRouter {
     panelEl?.classList.add('active');
     panelEl?.setAttribute('aria-hidden', 'false');
     navBtn?.classList.add('active');
+    // P2-08：标记当前所在面板，辅助屏幕阅读器识别"当前页"位置
+    navBtn?.setAttribute('aria-current', 'page');
 
     // 将之前激活的面板设为 aria-hidden=true
     if (state.currentPanel && state.currentPanel !== panel) {

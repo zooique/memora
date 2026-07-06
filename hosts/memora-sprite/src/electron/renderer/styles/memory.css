@@ -117,6 +117,12 @@
   transform: translateY(0);
 }
 
+/* P1-06：键盘聚焦可见样式（与 .relation-item:focus-visible 对齐） */
+.memory-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .memory-item .name {
   font-size: var(--font-sm);
   font-weight: 600;
@@ -192,6 +198,18 @@
   font-size: var(--font-sm);
   text-align: center;
   cursor: pointer;
+}
+
+/* P2-09：加载中/无更多数据时 disabled 样式（对齐 chat.css .load-more-btn:disabled） */
+.memory-load-more:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* P2-09：键盘聚焦可见样式 */
+.memory-load-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .memory-item .preview {
@@ -671,6 +689,12 @@
   background: var(--surface0);
 }
 
+/* P1-09：视图切换按钮键盘聚焦可见样式 */
+.view-switch-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .view-switch-btn.active {
   background: var(--window-bg);
   color: var(--accent);
@@ -718,6 +742,12 @@
 .more-menu-item:hover {
   background: var(--accent-10);
   color: var(--accent);
+}
+
+/* P1-09：更多菜单项键盘聚焦可见样式 */
+.more-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* 当前视图对应的菜单项 active 状态，让用户感知当前视图模式 */
@@ -914,6 +944,12 @@
 
 .graph-context-menu-item:hover {
   background: var(--surface1);
+}
+
+/* P1-09：图谱右键菜单项键盘聚焦可见样式 */
+.graph-context-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .graph-context-menu-icon {
@@ -1516,7 +1552,7 @@
   transition: flex var(--transition-base), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-#memory-search:focus {
+#memory-search:focus-visible {
   flex: 1.5; /* 聚焦时占据更多空间，视觉引导注意力 */
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-20);
@@ -1972,6 +2008,12 @@
   border-color: var(--muted);
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
+}
+
+/* P1-06：键盘聚焦可见样式（与 .memory-item:focus-visible 对齐） */
+.timeline-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* 时间线节点圆点 */

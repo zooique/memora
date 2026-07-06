@@ -610,7 +610,7 @@
   border-color: var(--accent);
 }
 
-.date-nav-picker:focus {
+.date-nav-picker:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -1575,6 +1575,12 @@
   color: var(--text);
 }
 
+/* P2-10：输入框操作按钮键盘聚焦可见样式 */
+.input-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* 右侧发送按钮区域 */
 .input-send-area {
   display: flex;
@@ -2190,6 +2196,12 @@
   background: var(--accent-soft);
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* P2-10：滚动到底部按钮键盘聚焦可见样式 */
+.scroll-to-bottom-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* ─── 流式中断标记 ─────────────────────────────── */

@@ -365,6 +365,10 @@ export class MemoryPanelManager {
     const item = document.createElement('div');
     item.className = 'memory-item';
     item.dataset.id = mem.id;
+    // P1-06：键盘可访问性（tabindex + role + aria-label），让键盘用户能 Tab 聚焦并回车查看
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('role', 'button');
+    item.setAttribute('aria-label', `查看记忆：${mem.name}`);
     // Phase 4：staggered fade-in 延迟（每项延迟 30ms，上限 300ms 避免长列表卡顿）
     const delay = Math.min(staggerIndex * 30, 300);
     item.style.animationDelay = `${delay}ms`;
@@ -515,6 +519,10 @@ export class MemoryPanelManager {
     item.dataset.id = mem.id;
     item.setAttribute('data-action', 'view-memory');
     item.setAttribute('data-memory-id', mem.id);
+    // P1-06：键盘可访问性（与 memory-item 一致，支持 Tab 聚焦 + 回车查看）
+    item.setAttribute('tabindex', '0');
+    item.setAttribute('role', 'button');
+    item.setAttribute('aria-label', `查看记忆：${mem.name}`);
 
     // 时间点
     const timeDot = document.createElement('div');
