@@ -573,12 +573,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.refreshMessageCountDisplay();
   }
 
-  /** 刷新消息计数显示（不累加计数，仅更新 DOM） */
+  /** 刷新消息计数显示（P0-3：chat-message-count DOM 已移除，方法保留为空操作以兼容现有调用方） */
   refreshMessageCountDisplay(): void {
-    const countEl = document.getElementById('chat-message-count');
-    if (countEl) {
-      countEl.textContent = `今日已交流 ${this.messageCount} 条消息`;
-    }
+    // no-op：感知信息统一入口为仪表盘，对话工具栏不再显示消息计数
   }
 
   /** 重置消息计数为 0（ChatPanelHost 回调：供 ChatPanelManager.clearMessages 调用） */

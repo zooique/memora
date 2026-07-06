@@ -1873,26 +1873,7 @@
   margin-top: 16px;
 }
 
-/* 健康度迷你分数徽章（工具栏内） */
-.health-mini-score {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-bold);
-  font-variant-numeric: tabular-nums;
-  padding: 1px 5px;
-  border-radius: var(--radius-pill);
-  color: var(--text);
-  line-height: 1.4;
-}
-
-.health-mini-score.hidden {
-  display: none;
-}
-
-/* 分数颜色（使用 CSS 变量适配双主题） */
-.health-mini-score.excellent { color: var(--green); }
-.health-mini-score.good { color: var(--accent); }
-.health-mini-score.fair { color: var(--yellow); }
-.health-mini-score.poor { color: var(--red); }
+/* P0-2：.health-mini-score 系列样式已移除（DOM 已删除，感知信息统一入口为仪表盘"记忆源健康"分区） */
 
 /* ─── A2：时间线视图 ────────────────────────────────────────── */
 

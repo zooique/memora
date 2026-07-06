@@ -100,13 +100,7 @@ export class HealthDashboardRenderer {
    * @param data 健康度数据
    */
   render(data: HealthDashboardPayload): void {
-    // ─── 迷你健康分徽章（工具栏内） ────────────────────
-    const miniScore = document.getElementById('health-mini-score');
-    if (miniScore) {
-      miniScore.textContent = String(data.scores.overall);
-      miniScore.className = `health-mini-score ${data.healthLabel}`;
-      miniScore.classList.remove('hidden');
-    }
+    // P0-2：迷你健康分徽章已移除（health-mini-score DOM 删除，感知信息统一入口为仪表盘）
 
     // ─── 仪表盘面板：健康分卡片（大号数值 + 等级徽章 + 三维度进度条） ──
     const dashboardScore = document.getElementById('dashboard-health-score');

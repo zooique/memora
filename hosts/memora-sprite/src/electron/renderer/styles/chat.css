@@ -1500,7 +1500,7 @@
   min-width: 130px;
 }
 
-/* Token 用量指示器（输入工具栏中部，流式结束后自动更新） */
+/* Token 用量指示器（P0-1：从输入工具栏移到对话工具栏右侧，作为只读状态信息） */
 .token-usage {
   display: flex;
   align-items: center;

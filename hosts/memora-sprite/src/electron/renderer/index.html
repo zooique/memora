@@ -254,12 +254,17 @@
                 <span class="popover-value" id="popover-context">—</span>
               </div>
             </div>
-            <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
+            <!-- P0-3：移除"今日已交流 N 条消息"（与仪表盘运行指标重复，感知信息统一入口为仪表盘） -->
           </div>
           <!-- 角色选择器已迁移到输入区发送按钮旁（input-persona-container） -->
           <!-- 日期导航：日历选择器，快速跳转到指定日期（时间流滚动加载已覆盖顺序浏览） -->
           <div id="date-navigator" class="date-navigator">
             <input type="date" id="date-nav-picker" class="date-nav-picker" title="跳转到指定日期" aria-label="跳转到指定日期" />
+          </div>
+          <!-- P0-1：Token 用量从输入区移到对话工具栏右侧（与日期导航并列，作为只读状态信息） -->
+          <div id="token-usage" class="token-usage">
+            <span id="token-usage-text">--</span>
+            <div class="token-usage-bar"><div id="token-usage-fill" class="token-usage-fill"></div></div>
           </div>
         </div>
 
@@ -328,11 +333,7 @@
                 </div>
               </div>
             </div>
-            <!-- Token 用量指示器（消费内核 agent.getMetrics()，流式结束后自动更新） -->
-            <div id="token-usage" class="token-usage">
-              <span id="token-usage-text">--</span>
-              <div class="token-usage-bar"><div id="token-usage-fill" class="token-usage-fill"></div></div>
-            </div>
+            <!-- P0-1：Token 用量已移到对话工具栏右侧，输入区不再显示 -->
             <div class="input-send-area">
               <!-- Provider 选择器（输入框左侧，切换 LLM API） -->
               <div id="input-provider-container" class="input-provider-container">
@@ -406,7 +407,7 @@
               </button>
             </div>
           </div>
-          <span id="health-mini-score" class="health-mini-score hidden">100</span>
+          <!-- P0-2：health-mini-score 已移除（与仪表盘"记忆源健康"分区重复，感知信息统一入口为仪表盘） -->
         </div>
         <!-- 高级搜索栏（搜索增强，默认折叠） -->
         <div id="advanced-search-bar" class="advanced-search-bar hidden">

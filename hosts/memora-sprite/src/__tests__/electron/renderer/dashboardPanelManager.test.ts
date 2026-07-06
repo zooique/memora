@@ -429,14 +429,7 @@ describe('renderHealthDashboard', () => {
     };
   }
 
-  it('应更新迷你健康分徽章', () => {
-    const { manager } = createManager();
-    manager.renderHealthDashboard(createHealth({ scores: { overall: 85, uniqueness: 90, freshness: 80, completeness: 85 }, healthLabel: 'good' }));
-    const mini = document.getElementById('health-mini-score')!;
-    expect(mini.textContent).toBe('85');
-    expect(mini.classList.contains('hidden')).toBe(false);
-    expect(mini.classList.contains('good')).toBe(true);
-  });
+  // P0-2：迷你健康分徽章测试已移除（health-mini-score DOM 已删除，感知信息统一入口为仪表盘）
 
   it('应更新健康度评分和徽章', () => {
     const { manager } = createManager();

@@ -97,14 +97,7 @@ describe('showLoading() · 加载态', () => {
 // ─── render() · 健康度数据渲染 ───────────────────────────
 
 describe('render() · 健康度数据', () => {
-  it('应更新迷你健康分徽章（移除 hidden + 设置等级类）', () => {
-    const renderer = createRenderer();
-    renderer.render(createHealth({ scores: { overall: 85, uniqueness: 90, freshness: 80, completeness: 85 }, healthLabel: 'good' }));
-    const mini = document.getElementById('health-mini-score')!;
-    expect(mini.textContent).toBe('85');
-    expect(mini.classList.contains('hidden')).toBe(false);
-    expect(mini.classList.contains('good')).toBe(true);
-  });
+  // P0-2：迷你健康分徽章测试已移除（health-mini-score DOM 已删除，感知信息统一入口为仪表盘）
 
   it('应更新健康度评分和等级徽章', () => {
     const renderer = createRenderer();
