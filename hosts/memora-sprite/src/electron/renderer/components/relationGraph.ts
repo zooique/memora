@@ -775,18 +775,18 @@ export class RelationGraphRenderer {
   private getNodeColor(node: GraphNode): string {
     const varName = SOURCE_COLOR_VARS[node.source];
     if (varName) {
-      return this.resolveCssVar(varName, '#a1a1a6');
+      return this.resolveCssVar(varName, '#7a7a82');
     }
-    return this.resolveCssVar('--muted', '#a1a1a6');
+    return this.resolveCssVar('--muted', '#7a7a82');
   }
 
   /** 根据边类型获取边颜色（从 CSS 变量解析，支持双主题自动切换） */
   private getEdgeColor(edgeType: string): string {
     const varName = EDGE_COLOR_VARS[edgeType];
     if (varName) {
-      return this.resolveCssVar(varName, '#a1a1a6');
+      return this.resolveCssVar(varName, '#7a7a82');
     }
-    return this.resolveCssVar('--muted', '#a1a1a6');
+    return this.resolveCssVar('--muted', '#7a7a82');
   }
 
   /** 将十六进制颜色转换为 rgba 字符串（用于光晕/渐变等需要透明度的场景） */

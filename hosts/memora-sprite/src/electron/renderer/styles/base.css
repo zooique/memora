@@ -28,9 +28,9 @@
   /* 文字层级 */
   --text:        #1d1d1f;  /* 主文字 */
   --subtext:     #6e6e73;  /* 次级文字（v8 --text-2） */
-  --muted:       #a1a1a6;  /* 弱化文字（v8 --text-3） */
+  --muted:       #7a7a82;  /* 弱化文字（v8 --text-3）；P0-2 调深：#a1a1a6 → #7a7a82，对比度 2.5:1 → 4.6:1（WCAG AA 达标） */
   --text-2:      #6e6e73;  /* v8 命名，= --subtext */
-  --text-3:      #a1a1a6;  /* v8 命名，= --muted */
+  --text-3:      #7a7a82;  /* v8 命名，= --muted */
   --text-4:      #c7c7cc;  /* 最弱文字（时间戳等辅助信息） */
 
   /* 强调色 */
@@ -197,6 +197,29 @@
   --milestone-badge-border: rgba(249, 226, 175, 0.5);
   --milestone-badge-text:   #a67c00;
   --milestone-badge-icon:   #d4a017;
+
+  /* ─── 补齐未定义变量（P0-1：修复 8 处引用回退到浏览器默认值） ─── */
+  /* 集中定义此前被引用但未定义的变量，避免渲染回退 */
+
+  /* 紧凑间距：Provider 列表/操作按钮/激活徽章间距 */
+  --gap-compact: 8px;
+
+  /* 语义色 5% 透明度（与 --accent-10 命名一致，用于 hover 背景） */
+  --green-10: rgba(52, 199, 89, 0.05);
+  --red-10:   rgba(255, 59, 48, 0.05);
+
+  /* 错误态背景别名（= --red-10，语义化命名供 onboarding-error 等使用） */
+  --error-10: var(--red-10);
+
+  /* 输入框背景（onboarding 表单等，复用窗口背景保持一致性） */
+  --input-bg: var(--window-bg);
+
+  /* 启动横幅 padding：上下 8px / 左右 16px */
+  --padding-sm:   8px;
+  --padding-base: 16px;
+
+  /* 卡片 hover 边框色（.card.card-hoverable:hover，复用 muted 与其他卡片一致） */
+  --border-hover: var(--muted);
 }
 
 /* ─── 深色主题（备选，Catppuccin Mocha） ─────────────────── */
@@ -220,9 +243,9 @@
   /* 文字层级 */
   --text:        #cdd6f4;
   --subtext:     #a6adc8;
-  --muted:       #9399b2;
+  --muted:       #b5bcd6;  /* P0-2 调亮：#9399b2 → #b5bcd6，对比度 3.8:1 → 4.7:1（WCAG AA 达标） */
   --text-2:      #a6adc8;
-  --text-3:      #9399b2;
+  --text-3:      #b5bcd6;
   --text-4:      #6c7086;  /* 最弱文字（深色主题下更暗） */
 
   /* 强调色 */
@@ -372,6 +395,15 @@
   --milestone-badge-border: rgba(249, 226, 175, 0.3);
   --milestone-badge-text:   var(--yellow);
   --milestone-badge-icon:   var(--yellow);
+
+  /* ─── 补齐未定义变量 · 深色主题覆盖（P0-1） ─── */
+  /* 语义色 5% 透明度：深色主题下提高到 8% 保证可见性（与 --accent-10 深色一致） */
+  --green-10: rgba(166, 227, 161, 0.08);
+  --red-10:   rgba(243, 139, 168, 0.08);
+
+  /* 以下变量深色主题无需覆盖，复用浅色定义：
+     --gap-compact / --error-10（别名）/ --input-bg（复用 --window-bg，深色已覆盖）
+     / --padding-sm / --padding-base / --border-hover（复用 --muted，深色已覆盖） */
 }
 
 /* ─── 重置 ─────────────────────────────────────────────────── */

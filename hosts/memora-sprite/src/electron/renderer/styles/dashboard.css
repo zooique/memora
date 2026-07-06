@@ -546,20 +546,22 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   gap: 2px;
 }
 
-/* source 颜色类（复用 InsightsRenderer 的 source-{name} 颜色类） */
-.source-profile { color: var(--mauve); }
-.source-insight { color: var(--yellow); }
-.source-rule { color: var(--red); }
-.source-skill { color: var(--green); }
-.source-guardrail { color: var(--red); }
-.source-chat { color: var(--blue); }
-.source-file { color: var(--peach); }
-.source-work { color: var(--mauve); }
-.source-memory { color: var(--blue); }
-.source-summary { color: var(--green); }
-.source-note { color: var(--yellow); }
-.source-persona { color: var(--pink); }
-.source-session { color: var(--teal); }
+/* source 颜色类（P0-3：对齐真理源 memory.css + relationGraph.ts SOURCE_COLOR_VARS） */
+/* 核心 7 source 颜色映射：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙) */
+.source-profile   { color: var(--green); }
+.source-insight   { color: var(--accent); }
+.source-rule       { color: var(--mauve); }
+.source-skill      { color: var(--yellow); }
+.source-guardrail  { color: var(--pink); }
+.source-persona    { color: var(--teal); }
+.source-session    { color: var(--peach); }
+/* 以下 source 为仪表盘特有，无 memory.css 对应，保留原有映射 */
+.source-chat       { color: var(--blue); }
+.source-file       { color: var(--peach); }
+.source-work       { color: var(--mauve); }
+.source-memory     { color: var(--blue); }
+.source-summary    { color: var(--green); }
+.source-note       { color: var(--yellow); }
 
 /* 空状态 */
 .source-health-list:empty::after {
