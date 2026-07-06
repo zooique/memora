@@ -257,15 +257,9 @@
             <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
           <!-- 角色选择器已迁移到输入区发送按钮旁（input-persona-container） -->
-          <!-- 日期导航按钮：快速跳转到指定日期的历史对话 -->
+          <!-- 日期导航：日历选择器，快速跳转到指定日期（时间流滚动加载已覆盖顺序浏览） -->
           <div id="date-navigator" class="date-navigator">
-            <button id="date-nav-btn" class="date-nav-btn" title="按日期查找历史对话" aria-label="按日期查找历史对话">
-              <span class="date-nav-icon"><svg class="icon"><use href="#icon-calendar"/></svg></span>
-            </button>
-            <div id="date-nav-dropdown" class="dropdown date-nav-dropdown hidden">
-              <div class="date-nav-header">历史对话</div>
-              <ul id="date-nav-list" class="date-nav-list"></ul>
-            </div>
+            <input type="date" id="date-nav-picker" class="date-nav-picker" title="跳转到指定日期" aria-label="跳转到指定日期" />
           </div>
         </div>
 

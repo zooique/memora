@@ -862,57 +862,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     void this.inputAreaManager.loadProviderSelector();
   }
 
-  /**
-   * 更新学习进度卡片
-   *
-   * 聚合侧边栏"学习进度"卡片的四项指标：
-   * - 建议数：来自配置建议卡片（suggestionCard）
-   * - 画像数：来自用户画像面板（profilePanel）
-   * - 作品数：来自作品投影面板（workProjectionPanel）
-   * - 洞察数：来自仪表盘已有的洞察计数
-   *
-   * 在以下场景调用：
-   * - 仪表盘加载完成后
-   * - 画像加载完成后
-   * - 作品投影加载完成后
-   * - 配置建议推送后
-   */
-  updateLearningProgress(): void {
-    const section = document.getElementById('learning-progress');
-    if (!section) return;
-
-    // 聚合各数据源的计数（使用已有的 DOM 元素值作为数据源）
-    const suggestions = parseInt(document.getElementById('suggestion-count')?.textContent ?? '0', 10) || 0;
-    const profile = this.getProfileCount();
-    const works = parseInt(document.getElementById('work-projection-count')?.textContent ?? '0', 10) || 0;
-    const insights = parseInt(document.getElementById('insight-count')?.textContent ?? '0', 10) || 0;
-
-    // 更新四项指标
-    const setVal = (id: string, val: number) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = String(val);
-    };
-    setVal('learn-suggestions', suggestions);
-    setVal('learn-profile', profile);
-    setVal('learn-works', works);
-    setVal('learn-insights', insights);
-
-    // 有数据时显示卡片，无数据时隐藏
-    const hasData = suggestions > 0 || profile > 0 || works > 0 || insights > 0;
-    section.classList.toggle('hidden', !hasData);
-  }
-
-  /**
-   * 获取已确认画像条目数
-   *
-   * 从 #profile-confirmed-count 元素读取（由 ProfilePanelManager 渲染时更新）。
-   * 兜底返回 0。
-   */
-  private getProfileCount(): number {
-    const el = document.getElementById('profile-confirmed-count');
-    return el ? (parseInt(el.textContent ?? '0', 10) || 0) : 0;
-  }
-
   // ─── 事件发射 ─────────────────────────────────────────
 
   private sendMessageCallback: (() => void) | null = null;
@@ -1395,39 +1344,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // ─── 日期导航（委托到 DateNavManager） ───
 
-  /** 注册日期导航跳转回调（委托到 DateNavManager） */
+  /** 注册日期跳转回调（日历选择器 change 事件 → sessionController.jumpToDate） */
   onDateNavJump(cb: (date: string) => void): void {
     this.dateNavManager.onDateNavJump(cb);
-  }
-
-  /** 注册日期导航删除回调（委托到 DateNavManager） */
-  onDateNavDelete(cb: (date: string) => void): void {
-    this.dateNavManager.onDateNavDelete(cb);
-  }
-
-  /** 注册日期导航列表加载回调（委托到 DateNavManager） */
-  onDateNavOpen(cb: () => void): void {
-    this.dateNavManager.onDateNavOpen(cb);
-  }
-
-  /** 切换日期导航下拉的显示/隐藏（委托到 DateNavManager） */
-  toggleDateNavDropdown(): void {
-    this.dateNavManager.toggleDateNavDropdown();
-  }
-
-  /** 关闭日期导航下拉（委托到 DateNavManager） */
-  closeDateNavDropdown(): void {
-    this.dateNavManager.closeDateNavDropdown();
-  }
-
-  /**
-   * 渲染日期列表到日期导航下拉（委托到 DateNavManager）
-   *
-   * @param dates 日期列表（每项包含日期、消息数、是否今天）
-   * @param currentDate 当前查看的日期（用于高亮 active 项）
-   */
-  renderDateNavList(dates: Array<{ date: string; messageCount: number; isToday: boolean }>, currentDate: string): void {
-    this.dateNavManager.renderDateNavList(dates, currentDate);
   }
 
   /** 加载 Embedding 配置到表单（委托到 SettingsPanelManager） */

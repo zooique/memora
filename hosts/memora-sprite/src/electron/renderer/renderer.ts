@@ -479,9 +479,6 @@ async function bootstrapRenderer(): Promise<void> {
   // M2 预加载审计日志数据（用户切换到"审计"tab 时即可见）
   void settingsController.loadAuditLog();
 
-  // 延迟更新学习进度卡片（等待上述异步加载完成后聚合数据）
-  setTimeout(() => State.uiManager.updateLearningProgress(), 500);
-
   // 三态首次引导：Agent 就绪且首次使用时显示（介绍三态窗口模型 + 快捷键）
   // 使用 localStorage 标记，老用户不再显示
   if (State.uiManager.shouldShowOnboarding(false)) {
@@ -643,58 +640,13 @@ function setupBusinessLogic(
     await sessionController.forkSession();
   });
 
-  // 日期导航跳转回调：点击日期项后跳转到该日期的对话
+  // 日期导航跳转回调：日历选择器选中日期后跳转
   State.uiManager.onDateNavJump(async (date: string) => {
     try {
       await sessionController.jumpToDate(date);
-      // 跳转后刷新日期列表（更新 active 高亮）
-      const dates = await sessionController.loadDateList();
-      const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
-      State.uiManager.renderDateNavList(dates, currentDate);
     } catch (error) {
-      // 日期跳转失败时 toast 提示并保持当前视图，避免静默破坏 UI 状态
       reportError('dateNavJump', error);
       State.uiManager.showToast('日期跳转失败，请稍后重试', 'error');
-    }
-  });
-
-  // 日期导航删除回调：删除指定日期的对话记录（二次确认 + 删除后刷新列表）
-  State.uiManager.onDateNavDelete(async (date: string) => {
-    try {
-      // 二次确认（危险操作，避免误删）
-      const confirmed = await State.uiManager.showConfirmDialog({
-        title: '删除对话记录',
-        message: `确定删除 ${date} 的全部对话记录吗？此操作不可恢复。`,
-        confirmText: '删除',
-        cancelText: '取消',
-        danger: true,
-      });
-      if (!confirmed) return;
-
-      // 调用控制器执行删除（含 Agent 状态同步 + UI 重置）
-      const ok = await sessionController.deleteSession(date);
-      if (ok) {
-        // 删除成功后刷新日期列表（移除已删除项）
-        const dates = await sessionController.loadDateList();
-        const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
-        State.uiManager.renderDateNavList(dates, currentDate);
-      }
-    } catch (error) {
-      // 删除失败时 toast 提示，保持下拉打开供用户重试
-      reportError('dateNavDelete', error);
-      State.uiManager.showToast('删除对话记录失败，请稍后重试', 'error');
-    }
-  });
-
-  // 日期导航下拉打开时加载日期列表
-  State.uiManager.onDateNavOpen(async () => {
-    try {
-      const dates = await sessionController.loadDateList();
-      const currentDate = sessionController.getCurrentSessionId().split('-').slice(0, 3).join('-');
-      State.uiManager.renderDateNavList(dates, currentDate);
-    } catch (error) {
-      // 日期列表加载失败时静默降级，不阻塞用户继续对话
-      reportError('dateNavOpen', error);
     }
   });
 }

@@ -51,6 +51,15 @@ function createMockUIManager(): UIManager & {
   } as unknown as UIManager & { mocks: typeof mocks };
 }
 
+/** 设置 window.electronAPI mock（支持动态命令加载） */
+function setupElectronAPIMock(personas: Array<{ name: string; description: string; active: boolean }> = []): void {
+  (window as unknown as Record<string, unknown>).electronAPI = {
+    listPersonas: vi.fn().mockResolvedValue({ personas }),
+    listProjects: vi.fn().mockResolvedValue({ projects: [] }),
+    switchPersona: vi.fn().mockResolvedValue({ switched: true, name: null }),
+  };
+}
+
 /** 创建 CommandPaletteManager 实例（已 init） */
 function createManager(uiManager?: UIManager): CommandPaletteManager {
   document.body.innerHTML = PALETTE_HTML;
@@ -63,11 +72,15 @@ function createManager(uiManager?: UIManager): CommandPaletteManager {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // 设置 window.electronAPI mock，支持 reloadCommands 中动态命令加载
+  setupElectronAPIMock();
 });
 
 afterEach(() => {
   vi.useRealTimers();
   document.body.innerHTML = '';
+  // 清理 electronAPI mock
+  delete (window as unknown as Record<string, unknown>).electronAPI;
 });
 
 // ─── init · DOM 绑定与降级 ─────────────────────────────
@@ -186,21 +199,21 @@ describe('open/close · 面板显隐', () => {
 // ─── reloadCommands · 重新加载命令 ─────────────────────
 
 describe('reloadCommands · 重新加载', () => {
-  it('reloadCommands 不应抛错（重新加载命令列表）', () => {
+  it('reloadCommands 不应抛错（重新加载命令列表）', async () => {
     const mgr = createManager();
-    expect(() => mgr.reloadCommands()).not.toThrow();
+    await expect(mgr.reloadCommands()).resolves.not.toThrow();
   });
 
-  it('面板打开中 reloadCommands 应刷新搜索结果', () => {
+  it('面板打开中 reloadCommands 应刷新搜索结果', async () => {
     const mgr = createManager();
-    mgr.open();
+    await mgr.open();
     const input = document.getElementById('command-palette-input') as HTMLInputElement;
     input.value = '记忆';
     // 触发 input 事件搜索
     input.dispatchEvent(new Event('input'));
 
     // reloadCommands 应重新搜索
-    mgr.reloadCommands();
+    await mgr.reloadCommands();
 
     // 结果区应有内容（命令列表非空）
     const items = document.querySelectorAll('.command-palette-item');

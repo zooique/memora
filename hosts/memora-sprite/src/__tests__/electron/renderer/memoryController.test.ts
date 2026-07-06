@@ -142,7 +142,6 @@ describe('推荐记忆点击事件委托', () => {
     // 设置 DOM：仪表盘推荐记忆列表容器（合并到学习与回顾节）
     document.body.innerHTML = `
       <ul id="recommendation-list"></ul>
-      <section id="learning-progress"></section>
       <input id="memory-search" type="text" />
       <select id="memory-filter-source"><option value="">全部</option></select>
     `;
@@ -201,7 +200,8 @@ describe('推荐记忆点击事件委托', () => {
     // 感知面板的回顾数据渲染由 PerceptionRenderer 内部处理，不再通过 UiManager 代理。
     // expect(mockUiManager.renderReviewData).toHaveBeenCalledTimes(1);
     expect(mockUiManager.renderReviewData).not.toHaveBeenCalled();
-    expect(mockUiManager.updateLearningProgress).toHaveBeenCalledTimes(1);
+    // G6: updateLearningProgress 已移除（死代码清理），不应再被调用
+    expect(mockUiManager.updateLearningProgress).not.toHaveBeenCalled();
   });
 });
 

@@ -206,8 +206,6 @@ export function createSettingsController(uiManager: UIManager) {
   async function loadUserProfile(): Promise<void> {
     try {
       await uiManager.loadUserProfile();
-      // 画像加载完成后更新学习进度卡片
-      uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadUserProfile', error);
     }
@@ -223,8 +221,6 @@ export function createSettingsController(uiManager: UIManager) {
   async function loadWorkProjections(): Promise<void> {
     try {
       await uiManager.loadWorkProjections();
-      // 作品投影加载完成后更新学习进度卡片
-      uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadWorkProjections', error);
     }

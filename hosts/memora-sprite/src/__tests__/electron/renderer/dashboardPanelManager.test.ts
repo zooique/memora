@@ -36,7 +36,6 @@ import type { EventTracker } from '../../../electron/renderer/helpers/eventTrack
 import { EventTracker as EventTrackerImpl } from '../../../electron/renderer/helpers/eventTracker.js';
 import type {
   HealthDashboardPayload,
-  ReviewDataPayload,
 } from '../../../electron/preload.js';
 import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';
 import type { AffectPayload } from '../../../electron/renderer/ipcListeners.js';
@@ -59,7 +58,6 @@ const DASHBOARD_HTML = `
   <span id="dashboard-decay-count"></span>
   <span id="dashboard-decay-total"></span>
   <span id="dashboard-decay-runs"></span>
-  <span id="dashboard-total-skills"></span>
 
   <!-- 技能列表 -->
   <section id="skills-section" class="hidden">
@@ -71,13 +69,6 @@ const DASHBOARD_HTML = `
   <div id="milestones-display" class="hidden">
     <div id="milestones-list"></div>
   </div>
-
-  <!-- 对话回顾 -->
-  <span id="review-today-memories"></span>
-  <span id="review-today-insights"></span>
-  <span id="review-trend-dir"></span>
-  <div id="review-trend-bars"></div>
-  <ul id="recent-insights-list"></ul>
 
   <!-- 洞察面板 -->
   <span id="insights-total"></span>
@@ -284,13 +275,14 @@ describe('renderSkills', () => {
     expect(document.getElementById('skills-empty')!.classList.contains('hidden')).toBe(false);
   });
 
-  it('应更新技能计数', () => {
+  it('技能计数已迁入设置面板，仪表盘不再重复展示', () => {
     const { manager } = createManager();
     manager.renderSkills([
       { name: 's1', keywords: [], description: '', layer: 'project' },
       { name: 's2', keywords: [], description: '', layer: 'agent' },
     ]);
-    expect(document.getElementById('dashboard-total-skills')!.textContent).toBe('2');
+    // dashboard-total-skills 元素已从仪表盘 HTML 中移除，不应存在
+    expect(document.getElementById('dashboard-total-skills')).toBeNull();
   });
 
   it('应渲染技能列表项（名称 + 层级 + 关键词）', () => {
@@ -326,95 +318,6 @@ describe('renderSkills', () => {
     ]);
     const kw = document.querySelector('.skill-keywords')!.textContent!;
     expect(kw.split(' · ').length).toBe(5);
-  });
-});
-
-// ─── renderReviewData ────────────────────────────────────
-
-// TODO: renderReviewData 方法已从 DashboardPanelManager 中移除。
-// 待功能恢复后取消 skip。
-describe.skip('renderReviewData', () => {
-  /** 创建测试用 ReviewDataPayload */
-  function createReviewData(overrides?: Partial<ReviewDataPayload>): ReviewDataPayload {
-    return {
-      today: { date: '2026-07-01', messageCount: 10, newMemories: 3, newInsights: 1 },
-      trend: {
-        last7Days: 20,
-        last30Days: 80,
-        daily: [
-          { date: '2026-06-25', messageCount: 5, newMemories: 2, newInsights: 0 },
-          { date: '2026-06-26', messageCount: 8, newMemories: 4, newInsights: 1 },
-          { date: '2026-06-27', messageCount: 3, newMemories: 1, newInsights: 0 },
-          { date: '2026-06-28', messageCount: 0, newMemories: 0, newInsights: 0 },
-          { date: '2026-06-29', messageCount: 6, newMemories: 3, newInsights: 2 },
-          { date: '2026-06-30', messageCount: 4, newMemories: 2, newInsights: 1 },
-          { date: '2026-07-01', messageCount: 10, newMemories: 3, newInsights: 1 },
-        ],
-        direction: 'growing',
-        description: '增长趋势',
-      },
-      insights: {
-        total: 15,
-        recent: [
-          { name: 'insight-1', contentPreview: '这是洞察内容预览', createdAt: '2026-07-01T00:00:00.000Z' },
-        ],
-        bySource: { insight: 15 },
-      },
-      totalMemories: 100,
-      generatedAt: '2026-07-01T10:00:00.000Z',
-      ...overrides,
-    };
-  }
-
-  it('应更新今日记忆和洞察计数', () => {
-    const { manager } = createManager();
-    manager.renderReviewData(createReviewData({ today: { date: '2026-07-01', messageCount: 10, newMemories: 5, newInsights: 2 } }));
-    expect(document.getElementById('review-today-memories')!.textContent).toBe('5');
-    expect(document.getElementById('review-today-insights')!.textContent).toBe('2');
-  });
-
-  it('应渲染趋势方向箭头', () => {
-    const { manager } = createManager();
-    manager.renderReviewData(createReviewData({ trend: { last7Days: 1, last30Days: 1, daily: [], direction: 'growing', description: '' } }));
-    expect(document.getElementById('review-trend-dir')!.textContent).toBe('↑');
-    expect(document.getElementById('review-trend-dir')!.className).toContain('growing');
-  });
-
-  it('应渲染趋势柱状图（7 天）', () => {
-    const { manager } = createManager();
-    const data = createReviewData();
-    manager.renderReviewData(data);
-    const bars = document.querySelectorAll('#review-trend-bars .review-trend-bar');
-    expect(bars.length).toBe(7);
-  });
-
-  it('应渲染最近洞察列表', () => {
-    const { manager } = createManager();
-    manager.renderReviewData(createReviewData({
-      insights: {
-        total: 3,
-        recent: [
-          { name: 'i1', contentPreview: '洞察 A', createdAt: '2026-07-01T00:00:00.000Z' },
-          { name: 'i2', contentPreview: '洞察 B', createdAt: '2026-07-01T00:00:00.000Z' },
-        ],
-        bySource: { insight: 3 },
-      },
-    }));
-    const items = document.querySelectorAll('#recent-insights-list .recent-insight-item');
-    expect(items.length).toBe(2);
-    expect(items[0]!.querySelector('.recent-insight-preview')!.textContent).toBe('洞察 A');
-  });
-
-  it('洞察预览超过 60 字符应截断并加 …', () => {
-    const { manager } = createManager();
-    // 70 个字符（超过 60 阈值，触发截断）
-    const longText = '一二三四五六七八九十'.repeat(7);
-    manager.renderReviewData(createReviewData({
-      insights: { total: 1, recent: [{ name: 'i1', contentPreview: longText, createdAt: '' }], bySource: {} },
-    }));
-    const preview = document.querySelector('.recent-insight-preview')!.textContent!;
-    expect(preview.length).toBeLessThanOrEqual(61); // 60 + …
-    expect(preview.endsWith('…')).toBe(true);
   });
 });
 

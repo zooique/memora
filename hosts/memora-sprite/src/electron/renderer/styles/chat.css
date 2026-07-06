@@ -658,119 +658,34 @@
   margin-left: auto;
 }
 
-.date-nav-btn {
-  background: none;
+/* 日历选择器：紧凑的 date input，快速跳转到指定日期 */
+.date-nav-picker {
+  background: var(--surface0);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 4px 8px;
-  cursor: pointer;
-  font-size: var(--font-base);
-  line-height: 1;
+  padding: 2px 6px;
+  font-size: var(--font-xs);
   color: var(--text);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+  /* 隐藏默认的日历图标，使用更紧凑的布局 */
+  width: 120px;
+  height: 24px;
 }
 
-.date-nav-btn:hover {
-  background: var(--hover);
+.date-nav-picker:hover {
   border-color: var(--accent);
 }
 
-/* 日期导航下拉复用 .dropdown 通用类（layout.css），此处仅声明差异 */
-.date-nav-dropdown {
-  /* 覆盖 .dropdown 的定位，改为右对齐 */
-  top: 100%;
-  right: 0;
-  left: auto;
-  margin-top: 4px;
-  min-width: 200px;
-  max-height: 320px;
-  overflow-y: auto;
+.date-nav-picker:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
-.date-nav-dropdown.hidden {
-  display: none;
-}
-
-.date-nav-header {
-  padding: var(--input-padding-md);
-  font-size: var(--font-sm);
-  font-weight: 600;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border);
-}
-
-.date-nav-list {
-  list-style: none;
-  margin: 0;
-  padding: 4px 0;
-}
-
-.date-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: var(--input-padding-md);
+/* 暗色主题下日历图标的颜色反转 */
+.date-nav-picker::-webkit-calendar-picker-indicator {
   cursor: pointer;
-  font-size: var(--font-sm);
-  color: var(--text);
-  transition: background var(--transition-fast);
-}
-
-.date-nav-item:hover {
-  background: var(--hover);
-}
-
-.date-nav-item.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.date-nav-item-date {
-  font-variant-numeric: tabular-nums;
-}
-
-.date-nav-item-count {
-  margin-left: auto;
-  font-size: var(--font-xs);
-  color: var(--muted);
-}
-
-.date-nav-item.active .date-nav-item-count {
-  color: var(--accent);
-}
-
-/* 删除按钮：主动可见（无需 hover 即显示），hover 红色反馈危险操作 */
-.date-nav-item-delete {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.date-nav-item-delete .icon {
-  width: 14px;
-  height: 14px;
-}
-
-.date-nav-item-delete:hover {
-  background: var(--red);
-  color: var(--text-on-red);
-}
-
-.date-nav-empty {
-  padding: 16px 12px;
-  text-align: center;
-  font-size: var(--font-sm);
-  color: var(--muted);
+  filter: var(--calendar-icon-filter, none);
 }
 
 /**

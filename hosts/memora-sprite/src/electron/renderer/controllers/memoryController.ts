@@ -575,9 +575,6 @@ export function createMemoryController(uiManager: UIManager) {
 
       // 已加载技能列表渲染（消费内核 agent.skills.list）
       uiManager.renderSkills(data.skills);
-
-      // 仪表盘加载完成后更新学习进度卡片
-      uiManager.updateLearningProgress();
     } catch (error) {
       reportError('loadDashboard', error);
       // 仪表盘涉及多子区域（统计/指标/技能/回顾），整体失败时用 toast 兜底提示

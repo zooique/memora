@@ -404,9 +404,30 @@ export class CommandPaletteManager {
     }
   }
 
-  /** 重新加载命令列表（角色列表变化时调用） */
-  reloadCommands(): void {
+  /** 重新加载命令列表（角色列表变化时调用，含动态命令） */
+  async reloadCommands(): Promise<void> {
+    // 静态命令（面板导航、记忆操作、设置 tab、动作）
     this.commands = createStaticCommands(this.uiManager);
+
+    // 动态命令：角色切换（从 preload API 获取角色列表）
+    try {
+      const { personas } = await window.electronAPI.listPersonas();
+      for (const persona of personas) {
+        this.commands.push({
+          id: `persona-${persona.name}`,
+          label: `切换角色：${persona.name}`,
+          keywords: `角色 persona ${persona.name} ${persona.description} 切换`,
+          section: '角色',
+          action: () => {
+            void window.electronAPI.switchPersona(persona.name);
+            this.uiManager.showToast(`已切换到角色：${persona.name}`, 'info', TOAST_SHORT_MS);
+          },
+        });
+      }
+    } catch {
+      // 角色列表获取失败时静默降级，不影响静态命令
+    }
+
     // 如果面板打开中，刷新搜索结果
     if (this.isOpen && this.inputEl) {
       this.search(this.inputEl.value);
@@ -417,8 +438,8 @@ export class CommandPaletteManager {
   open(): void {
     if (!this.paletteEl || !this.inputEl) return;
 
-    // 确保命令列表是最新的（角色可能已切换）
-    this.reloadCommands();
+    // 先同步加载静态命令，确保面板立即显示
+    this.commands = createStaticCommands(this.uiManager);
 
     this.paletteEl.classList.remove('hidden');
     this.isOpen = true;
@@ -431,6 +452,9 @@ export class CommandPaletteManager {
 
     // 阻止背景滚动
     document.body.style.overflow = 'hidden';
+
+    // 异步加载动态命令（角色列表），不阻塞面板打开
+    void this.reloadCommands();
   }
 
   /** 关闭命令面板 */
