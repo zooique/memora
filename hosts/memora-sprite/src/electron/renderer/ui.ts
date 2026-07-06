@@ -41,6 +41,7 @@ import type {
   AgentMetrics,
   SourceHealth,
 } from './panels/dashboardPanelManager.js';
+import type { ProactiveStats } from '../../sprite/controllers/index.js';
 // Payload 类型直接从 ipcListeners（IPC 契约真理源）导入
 import type {
   AffectPayload,
@@ -1217,7 +1218,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     rapport?: { trust: number; familiarity: number; level: string; description: string };
     context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
     patterns?: Array<{ type: string; summary: string; confidence: number; suggestion?: string }>;
-    proactiveStats?: unknown;
+    proactiveStats?: ProactiveStats;
   }): void {
     this.dashboardPanel.renderPerceptionSnapshot(snapshot);
   }

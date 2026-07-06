@@ -392,14 +392,26 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   margin-top: 4px;
 }
 
-/* 主动提示空状态：全0时的友好提示 */
+/* 主动提示空状态：全0时的友好提示（铃铛图标 + 文案） */
 .dashboard-proactive-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-size: var(--font-2xs);
   color: var(--muted);
   text-align: center;
   padding: 8px;
   background: var(--surface0);
   border-radius: var(--radius-sm);
+}
+
+/* 空状态铃铛图标尺寸 */
+.dashboard-proactive-empty .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.6;
 }
 
 /* ─── dash-item 网格（运行指标 / 主动提示） ──────────── */
