@@ -16,6 +16,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { join } from 'node:path';
 import { logger, toError } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute } from './types.js';
@@ -240,9 +241,114 @@ export async function handleSystemRoute(
       }
     }
 
+    // ─── 审计日志路由（不依赖 Agent 就绪，auditManager 独立可用） ───
+    // 与 Electron IPC 的 AUDIT_LOG_LIST / AUDIT_LOG_CLEAR 平行
+
+    // GET /api/audit-logs — 列出审计日志（支持 ?limit=50 参数）
+    if (method === 'GET' && (path === '/api/audit-logs' || path === '/api/audit-logs/')) {
+      if (!ctx.auditManager) {
+        sendJson(res, 200, []);
+        return;
+      }
+      const queryStr = url.split('?')[1] ?? '';
+      const queryParams = new URLSearchParams(queryStr);
+      const limit = Math.min(parseInt(queryParams.get('limit') ?? '50', 10) || 50, 200);
+      const logs = await ctx.auditManager.readRecent(limit);
+      sendJson(res, 200, logs);
+      return;
+    }
+
+    // DELETE /api/audit-logs — 清空审计日志
+    if (method === 'DELETE' && (path === '/api/audit-logs' || path === '/api/audit-logs/')) {
+      if (ctx.auditManager) {
+        await ctx.auditManager.clear();
+      }
+      sendJson(res, 200, { success: true });
+      return;
+    }
+
+    // ─── 技能安装路由（不依赖 Agent 就绪，installSkill 是纯函数） ───
+    // 与 Electron IPC 的 SKILL_INSTALL 平行
+
+    // POST /api/skill-install — 安装技能文件
+    if (method === 'POST' && (path === '/api/skill-install' || path === '/api/skill-install/')) {
+      const body = await parseJsonBody<{ fileName: string; content: string }>(req);
+      if (!body?.fileName || !body?.content) {
+        sendError(res, 400, 'fileName 和 content 必填');
+        return;
+      }
+      if (!ctx.installSkill) {
+        sendError(res, 501, '技能安装功能未启用');
+        return;
+      }
+      // 与 Electron IPC 的 SKILL_INSTALL 一致，使用默认 configDir
+      const DEFAULT_CONFIG_DIR = join(process.env.HOME ?? process.env.USERPROFILE ?? '.', '.memora-sprite', 'config');
+      // 动态导入确保 configDir 路径一致性
+      const { defaultConfigDir } = await import('../../index.js');
+      // 城堡层默认 configDir 由 index.ts 统一管理
+      const configDir = defaultConfigDir ?? DEFAULT_CONFIG_DIR;
+      const result = await ctx.installSkill(body.content, body.fileName, configDir);
+      sendJson(res, 200, result);
+      return;
+    }
+
     // 以下路由需要 Agent 就绪
     if (!ctx.isAgentReady()) {
       sendError(res, 503, 'Agent 未就绪，请先配置 LLM 提供商和 API Key');
+      return;
+    }
+
+    // ─── 作品投影路由（依赖 Agent 就绪） ───
+    // 与 Electron IPC 的 WORK_PROJECTION_LIST / WORK_PROJECTION_SHOW 平行
+
+    // GET /api/works — 列出所有作品投影
+    if (method === 'GET' && (path === '/api/works' || path === '/api/works/')) {
+      const works = ctx.agent.works;
+      if (!works) {
+        sendJson(res, 200, []);
+        return;
+      }
+      const entries = await works.loadAll();
+      sendJson(res, 200, entries.map((e) => ({
+        id: e.id,
+        sourcePath: e.sourcePath,
+        fileHash: e.fileHash,
+        summary: e.summary,
+        structure: e.structure,
+        keyDecisions: e.keyDecisions,
+        updatedAt: e.updatedAt,
+      })));
+      return;
+    }
+
+    // GET /api/works/detail — 查看单个作品投影详情（query: filePath）
+    if (method === 'GET' && path === '/api/works/detail') {
+      const queryStr = url.split('?')[1] ?? '';
+      const queryParams = new URLSearchParams(queryStr);
+      const filePath = queryParams.get('filePath') ?? '';
+      if (!filePath || filePath.length > 1000) {
+        sendJson(res, 200, null);
+        return;
+      }
+      const works = ctx.agent.works;
+      if (!works) {
+        sendJson(res, 200, null);
+        return;
+      }
+      const entry = await works.getProjection(filePath);
+      if (!entry) {
+        sendJson(res, 200, null);
+        return;
+      }
+      sendJson(res, 200, {
+        id: entry.id,
+        sourcePath: entry.sourcePath,
+        fileHash: entry.fileHash,
+        summary: entry.summary,
+        structure: entry.structure,
+        keyDecisions: entry.keyDecisions,
+        updatedAt: entry.updatedAt,
+      });
       return;
     }
 

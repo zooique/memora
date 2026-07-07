@@ -77,14 +77,17 @@ export async function registerRoutes(
     return;
   }
 
-  // 系统级：/api/dashboard、/api/perception、/api/projects、/api/agent-status、/api/llm-config/*、/api/llm-providers/*
+  // 系统级：/api/dashboard、/api/perception、/api/projects、/api/agent-status、/api/llm-config/*、/api/llm-providers/*、/api/works、/api/audit-logs、/api/skill-install
   if (
     path === '/api/dashboard' ||
     path === '/api/perception' ||
     path === '/api/projects' ||
     path === '/api/agent-status' ||
     path.startsWith('/api/llm-config') ||
-    path.startsWith('/api/llm-providers')
+    path.startsWith('/api/llm-providers') ||
+    path.startsWith('/api/works') ||
+    path.startsWith('/api/audit-logs') ||
+    path.startsWith('/api/skill-install')
   ) {
     await handleSystemRoute(req, res, ctx);
     return;

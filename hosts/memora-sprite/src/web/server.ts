@@ -36,6 +36,9 @@ import type { Agent } from 'memora';
 import { startSprite } from '../index.js';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
+import { AuditManager } from '../sprite/audit/auditManager.js';
+import { installSkill } from '../sprite/skillInstaller.js';
+import type { SkillInstallResult } from '../sprite/skillInstaller.js';
 import type { HostContext } from '../shared/hostContext.js';
 // 导入 setWebCloseSprite，把 startSprite 返回的 close 函数注入 systemRoutes 模块，
 // 否则 systemRoutes.reinitAgent(webCloseSprite) 时 webCloseSprite 永远为 null，旧实例资源泄漏
@@ -119,6 +122,9 @@ let agentReady = false;
 /** HTTP 服务实例（用于优雅关闭） */
 let server: Server | null = null;
 
+/** 审计日志管理器（Web 调试通道使用，与 Electron IPC 的 AUDIT_LOG_LIST / AUDIT_LOG_CLEAR 平行） */
+let auditManager: AuditManager | null = null;
+
 // ─── HostContext 装配 ──────────────────────────────────────
 
 /**
@@ -130,12 +136,16 @@ let server: Server | null = null;
  * @param activeAgent 已就绪的 Agent 实例
  * @param activeSprite 已就绪的 Sprite 实例
  * @param activeSessionStore 已就绪的会话存储
+ * @param activeAuditManager 审计日志管理器（可选，Web 调试通道）
+ * @param activeInstallSkill 技能安装回调（可选，Web 调试通道）
  * @returns HostContext 实例
  */
 function createHostContext(
   activeAgent: Agent,
   activeSprite: Sprite,
   activeSessionStore: SqliteSessionStore,
+  activeAuditManager: AuditManager | null,
+  activeInstallSkill: (content: string, fileName: string, configDir: string) => Promise<SkillInstallResult>,
 ): HostContext {
   return {
     agent: activeAgent,
@@ -146,6 +156,8 @@ function createHostContext(
       currentAbortController = ctrl;
     },
     isAgentReady: () => agentReady,
+    auditManager: activeAuditManager,
+    installSkill: activeInstallSkill,
   };
 }
 
@@ -317,8 +329,13 @@ async function startWebServer(): Promise<void> {
 
   // 阶段 2：构造 HostContext（Agent 未就绪时使用降级值）
   // 注意：agentReady=false 时路由层会拒绝业务请求，但仍提供静态文件服务
+  // 审计日志管理器：阶段 1 初始化后创建，复用 dataDir
+  if (result?.dataDir) {
+    auditManager = new AuditManager(result.dataDir);
+  }
+  // 技能安装回调：直接引用 installSkill（纯函数，无需额外初始化）
   const ctx: HostContext = agent && sprite && sessionStore
-    ? createHostContext(agent, sprite, sessionStore)
+    ? createHostContext(agent, sprite, sessionStore, auditManager, installSkill)
     : {
         // 降级 HostContext：Agent 未就绪时路由层返回 503
         agent: null as unknown as Agent,
@@ -327,6 +344,9 @@ async function startWebServer(): Promise<void> {
         getAbortController: () => null,
         setAbortController: () => {},
         isAgentReady: () => false,
+        // 降级模式下审计日志和技能安装不可用，设为 null
+        auditManager: null,
+        installSkill: undefined,
       };
 
   // 阶段 2.5：转译 preloadWeb.ts 为浏览器 JS（启动时一次，缓存到内存）

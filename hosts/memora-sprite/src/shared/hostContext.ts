@@ -14,12 +14,17 @@
 import type { Agent } from 'memora';
 import type { Sprite } from '../sprite/sprite.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
+import type { AuditManager } from '../sprite/audit/auditManager.js';
+import type { SkillInstallResult } from '../sprite/skillInstaller.js';
 
 /**
  * 宿主上下文（核心依赖容器）
  *
  * Electron 模式和 Web 模式都构造此上下文，注入到各自的传输层
  * （IPC handler / HTTP 路由）。核心层（sprite/storage/agent）对宿主模式无感知。
+ *
+ * 自然生长原则：auditManager 和 installSkill 为可选字段，
+ * 仅在 Web 调试通道需要时由 server.ts 注入。
  */
 export interface HostContext {
   /** Agent 实例（对话 + 记忆引擎） */
@@ -38,4 +43,17 @@ export interface HostContext {
    * 配置缺失或 reinitAgent 失败后为 false，拒绝新对话请求。
    */
   isAgentReady: () => boolean;
+  /**
+   * 审计日志管理器（可选，Web 调试通道使用）
+   *
+   * 提供审计日志的读取和清理能力，与 Electron IPC 的 AUDIT_LOG_LIST / AUDIT_LOG_CLEAR 平行。
+   */
+  auditManager?: AuditManager | null;
+  /**
+   * 技能安装回调（可选，Web 调试通道使用）
+   *
+   * 接收技能文件内容和文件名，安装到 configDir/skills/。
+   * 与 Electron IPC 的 SKILL_INSTALL 平行。
+   */
+  installSkill?: (content: string, fileName: string, configDir: string) => Promise<SkillInstallResult>;
 }
