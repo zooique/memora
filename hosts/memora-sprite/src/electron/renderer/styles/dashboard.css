@@ -103,7 +103,14 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   line-height: 1.2;
 }
 
-/* 默契度概览项：徽章 + 进度条组合 */
+.overview-item .overview-mini {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-medium);
+  color: var(--accent);
+  margin-top: 2px;
+}
+
+/* 默契度占两格 */
 .overview-item.overview-rapport {
   grid-column: span 2;
   gap: var(--space-1-5);
@@ -477,17 +484,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .source-summary    { color: var(--green); }
 .source-note       { color: var(--yellow); }
 
-/* 空状态 */
-.source-health-list:empty::after {
-  content: '暂无诊断数据';
-  color: var(--muted);
-  font-size: var(--font-sm);
-  padding: 16px;
-  text-align: center;
-  background: var(--surface0);
-  border-radius: var(--radius-sm);
-  display: block;
-}
+/* 空状态：由 JS 创建 .empty-state 元素，此处无额外样式 */
 
 /* ─── 脉冲动画（计数变化时的高亮效果） ──────────────── */
 .stat-value.pulse,
@@ -576,7 +573,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .growth-card-value {
-  font-size: var(--font-h1);
+  font-size: var(--font-h2);
   font-weight: var(--weight-semibold);
   color: var(--accent);
 }

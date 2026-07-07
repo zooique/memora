@@ -129,6 +129,8 @@ export interface DashboardViewModel {
   total: number;
   /** source → 计数映射 */
   bySource: Record<string, number>;
+  /** 今日新增记忆数（用于概览区微型指标） */
+  todayNewMemories?: number;
   /** 记忆源健康诊断（null 表示不可用，消费内核 sourceHealth()） */
   sourceHealth: SourceHealth | null;
   /** Agent 运行时指标（null 表示不可用） */
@@ -292,6 +294,12 @@ export class DashboardPanelManager {
     // ─── 更新仪表盘记忆统计卡片 ──
     const dashboardMemoryCount = document.getElementById('dashboard-total-memories');
     if (dashboardMemoryCount) dashboardMemoryCount.textContent = String(data.total);
+
+    // ─── 更新今日新增记忆微型指标 ──
+    const dashboardTodayCount = document.getElementById('dashboard-today-memories');
+    if (dashboardTodayCount) {
+      dashboardTodayCount.textContent = data.todayNewMemories != null ? `+${data.todayNewMemories}` : '—';
+    }
 
     // ─── 更新洞察计数（bySource 中 source='insight' 的记忆数） ──
     const insightCount = data.bySource['insight'] ?? 0;
@@ -618,8 +626,8 @@ export class DashboardPanelManager {
     const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
     // 背景透明（让 dashboard-body 背景透出，视觉融入）
-    // 边距：底部留空给标签，顶部留少量空间
-    const padding = { top: 8, right: 8, bottom: 20, left: 8 };
+    // 边距：左侧留空给 Y 轴数值标签，底部留空给 X 轴标签，顶部留少量空间
+    const padding = { top: 8, right: 8, bottom: 20, left: 28 };
     const chartW = w - padding.left - padding.right;
     const chartH = h - padding.top - padding.bottom;
 
@@ -630,15 +638,26 @@ export class DashboardPanelManager {
     );
     const yMax = maxVal * 1.15; // 顶部留 15% 空间
 
-    // 绘制基线网格（3 条横线，提供视觉参考）
+    // 绘制基线网格（3 条横线，提供视觉参考）+ Y 轴数值标签
     ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
+    ctx.fillStyle = textColor;
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
     for (let i = 0; i <= 2; i++) {
       const y = padding.top + (chartH * i / 2);
       ctx.beginPath();
       ctx.moveTo(padding.left, y);
       ctx.lineTo(w - padding.right, y);
       ctx.stroke();
+
+      // Y 轴数值标签：顶部标签显示 yMax（取整），底部标签显示 0
+      if (i === 0) {
+        ctx.fillText(Math.round(yMax).toString(), padding.left - 4, y);
+      } else if (i === 2) {
+        ctx.fillText('0', padding.left - 4, y);
+      }
     }
 
     // 绘制 7 个柱子（每个柱子含 newMemories 底部 + newInsights 顶部堆叠）

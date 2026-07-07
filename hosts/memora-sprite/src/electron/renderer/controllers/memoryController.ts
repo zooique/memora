@@ -590,6 +590,11 @@ export function createMemoryController(uiManager: UIManager) {
         reviewPromise,
       ]);
 
+      // 将今日新增记忆数注入仪表盘数据（用于概览区微型指标）
+      if (reviewData && reviewData.today) {
+        data.todayNewMemories = reviewData.today.newMemories;
+      }
+
       // 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
       uiManager.renderDashboardStats(data);
 
