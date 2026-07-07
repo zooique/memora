@@ -12,7 +12,7 @@
  * 使用 vi.useFakeTimers + 固定时间锚点，确保格式化结果可断言。
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { formatTimeAgo, formatTimestamp, formatClock } from '../../../electron/renderer/helpers/domHelpers.js';
+import { formatTimeAgo, formatTimestamp, formatClock, escapeHtml } from '../../../electron/renderer/helpers/domHelpers.js';
 
 /** 锚定时间：2026-06-26 12:00:00（本地时区） */
 const ANCHOR_NOW = new Date(2026, 5, 26, 12, 0, 0).getTime();
@@ -196,5 +196,61 @@ describe('formatClock', () => {
 
   it('纯空格字符串应降级返回原始字符串', () => {
     expect(formatClock('   ')).toBe('   ');
+  });
+});
+
+// ─── escapeHtml ────────────────────────────────────────────
+
+describe('escapeHtml', () => {
+  it('空字符串应返回空字符串', () => {
+    expect(escapeHtml('')).toBe('');
+  });
+
+  it('无特殊字符的文本应原样返回', () => {
+    expect(escapeHtml('hello world')).toBe('hello world');
+    expect(escapeHtml('中文文本')).toBe('中文文本');
+  });
+
+  it('应转义 & 为 &amp;', () => {
+    expect(escapeHtml('a&b')).toBe('a&amp;b');
+  });
+
+  it('应转义 < 为 &lt;', () => {
+    expect(escapeHtml('a<b')).toBe('a&lt;b');
+  });
+
+  it('应转义 > 为 &gt;', () => {
+    expect(escapeHtml('a>b')).toBe('a&gt;b');
+  });
+
+  it('应转义 " 为 &quot;', () => {
+    expect(escapeHtml('a"b')).toBe('a&quot;b');
+  });
+
+  it('应转义所有 4 类特殊字符', () => {
+    expect(escapeHtml('<script>alert("x&y")</script>')).toBe(
+      '&lt;script&gt;alert(&quot;x&amp;y&quot;)&lt;/script&gt;',
+    );
+  });
+
+  it('应优先转义 & 避免二次转义', () => {
+    // & 必须先转义，否则后续转义产生的 &amp; 中的 & 会被再次转义
+    expect(escapeHtml('<&>')).toBe('&lt;&amp;&gt;');
+  });
+
+  it('单引号不应被转义', () => {
+    expect(escapeHtml("a'b")).toBe("a'b");
+  });
+
+  it('应转义 HTML 标签注入载荷', () => {
+    // 转义后 < > 变为 &lt; &gt;，浏览器不会解析为标签
+    const payload = '<img src=x onerror=alert(1)>';
+    expect(escapeHtml(payload)).toBe('&lt;img src=x onerror=alert(1)&gt;');
+  });
+
+  it('应处理混合特殊字符与普通文本', () => {
+    expect(escapeHtml('用户输入：<b>加粗</b> & "引号"')).toBe(
+      '用户输入：&lt;b&gt;加粗&lt;/b&gt; &amp; &quot;引号&quot;',
+    );
   });
 });

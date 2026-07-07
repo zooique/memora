@@ -88,6 +88,25 @@ export function clearElement(el: Element): void {
   }
 }
 
+// ─── HTML 转义 ─────────────────────────────────────────
+
+/**
+ * HTML 特殊字符转义（防 XSS）
+ *
+ * 将 4 类 HTML 特殊字符（& < > "）替换为对应实体，用于 innerHTML 拼接前的文本预处理。
+ * 单引号（'）不转义：HTML 实体转义主要防标签注入，单引号在属性值中若已用双引号包裹则无需转义。
+ *
+ * @param text 原始文本
+ * @returns 转义后的安全文本（可安全用于 innerHTML 拼接）
+ */
+export function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // ─── 面板加载态 ─────────────────────────────────────────
 
 /**

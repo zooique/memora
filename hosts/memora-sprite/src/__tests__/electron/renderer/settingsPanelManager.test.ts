@@ -356,6 +356,102 @@ describe('initListeners · tab 切换', () => {
   });
 });
 
+// ─── initListeners · tab 合并（7 tab 完整结构）───────────
+
+describe('initListeners · tab 合并', () => {
+  // 7 tab 完整 DOM（对齐 index.html：嵌入已合并到大模型、作品已合并到画像与作品）
+  const TABS_HTML = `
+    <div id="panel-settings">
+      <div class="settings-tabs">
+        <button class="settings-tab active" data-settings-tab="llm">大模型</button>
+        <button class="settings-tab" data-settings-tab="sprite">精灵</button>
+        <button class="settings-tab" data-settings-tab="project">项目</button>
+        <button class="settings-tab" data-settings-tab="profile">画像与作品</button>
+        <button class="settings-tab" data-settings-tab="audit">审计</button>
+        <button class="settings-tab" data-settings-tab="skill">技能</button>
+        <button class="settings-tab" data-settings-tab="help">帮助</button>
+      </div>
+      <div class="settings-tab-content active" data-settings-tab="llm"></div>
+      <div class="settings-tab-content" data-settings-tab="sprite"></div>
+      <div class="settings-tab-content" data-settings-tab="project"></div>
+      <div class="settings-tab-content" data-settings-tab="profile"></div>
+      <div class="settings-tab-content" data-settings-tab="audit"></div>
+      <div class="settings-tab-content" data-settings-tab="skill"></div>
+      <div class="settings-tab-content" data-settings-tab="help"></div>
+    </div>
+  `;
+
+  it('7 tab 完整结构下应能正确切换任意 tab', () => {
+    createManager({ html: TABS_HTML });
+    const tabs = document.querySelectorAll<HTMLElement>('.settings-tab');
+    const contents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
+    expect(tabs.length).toBe(7);
+    expect(contents.length).toBe(7);
+
+    // 依次点击每个 tab，验证 active 状态切换
+    tabs.forEach((tab, idx) => {
+      tab.click();
+      expect(tab.classList.contains('active')).toBe(true);
+      expect(contents[idx].classList.contains('active')).toBe(true);
+      // 其他 tab 应取消 active
+      tabs.forEach((other, otherIdx) => {
+        if (otherIdx !== idx) {
+          expect(other.classList.contains('active')).toBe(false);
+          expect(contents[otherIdx].classList.contains('active')).toBe(false);
+        }
+      });
+    });
+  });
+
+  it('切换到画像与作品 tab 应触发 onSettingsTabSwitch("profile") 回调', () => {
+    const onSettingsTabSwitch = vi.fn();
+    const host = createMockHost({ onSettingsTabSwitch });
+    createManager({ host, html: TABS_HTML });
+
+    const profileTab = document.querySelector<HTMLElement>('.settings-tab[data-settings-tab="profile"]')!;
+    profileTab.click();
+
+    expect(onSettingsTabSwitch).toHaveBeenCalledWith('profile');
+  });
+
+  it('切换到审计 tab 应触发 onSettingsTabSwitch("audit") 回调', () => {
+    const onSettingsTabSwitch = vi.fn();
+    const host = createMockHost({ onSettingsTabSwitch });
+    createManager({ host, html: TABS_HTML });
+
+    const auditTab = document.querySelector<HTMLElement>('.settings-tab[data-settings-tab="audit"]')!;
+    auditTab.click();
+
+    expect(onSettingsTabSwitch).toHaveBeenCalledWith('audit');
+  });
+
+  it('切换 tab 应同步 aria-selected 属性', () => {
+    createManager({ html: TABS_HTML });
+    const tabs = document.querySelectorAll<HTMLElement>('.settings-tab');
+
+    // 初始第一个 tab aria-selected=true
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true');
+
+    // 点击画像与作品 tab
+    tabs[3].click();
+    expect(tabs[3].getAttribute('aria-selected')).toBe('true');
+    expect(tabs[0].getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('切换 tab 应同步 role=tab 和 role=tabpanel 属性', () => {
+    createManager({ html: TABS_HTML });
+    const tabs = document.querySelectorAll<HTMLElement>('.settings-tab');
+    const contents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
+
+    tabs.forEach((tab) => {
+      expect(tab.getAttribute('role')).toBe('tab');
+    });
+    contents.forEach((content) => {
+      expect(content.getAttribute('role')).toBe('tabpanel');
+    });
+  });
+});
+
 // ─── updateAgentStatusIndicator ─────────────────────────
 
 describe('updateAgentStatusIndicator', () => {

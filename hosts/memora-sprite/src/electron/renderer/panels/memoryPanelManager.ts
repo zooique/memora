@@ -14,7 +14,7 @@
  * - 跨模块关注点（showModal / showConfirmDialog）通过 host 回调注入
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp } from '../helpers/domHelpers.js';
+import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
@@ -933,12 +933,7 @@ export class MemoryPanelManager {
    * @returns 带 <mark> 高亮的 HTML 字符串
    */
   private highlightText(text: string, query: string): string {
-    // 转义 HTML 特殊字符，防止 XSS
-    const escaped = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+    const escaped = escapeHtml(text);
 
     if (!query) return escaped;
 
