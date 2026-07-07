@@ -110,11 +110,6 @@ export function createSessionController(uiManager: UIManager) {
       // 更新分页状态
       currentOffset = messages.length;
       currentTotal = total;
-      // 今日消息数只统计今天 main 会话的消息
-      // 加载昨天对话时今日消息数为 0，加载今天 main 时为该会话的消息数
-      const today = getLocalDate();
-      const isTodayMain = loadedSessionId === `${today}-main`;
-      uiManager.setMessageCount(isTodayMain ? messages.filter((m) => m.role !== 'system').length : 0);
       // 根据分页和日期状态显示对应的加载按钮
       await updateLoadMoreButton(hasMore);
 
@@ -325,10 +320,6 @@ export function createSessionController(uiManager: UIManager) {
       currentSessionParams = { date, session: name };
       currentOffset = result.messages.length;
       currentTotal = result.messages.length; // switchSession 返回全部消息，无分页
-      // 今日消息数只统计今天 main 会话的消息
-      const today = getLocalDate();
-      const isTodayMain = date === today && name === 'main';
-      uiManager.setMessageCount(isTodayMain ? result.messages.filter((m) => m.role !== 'system').length : 0);
       // 更新日期选择器显示当前日期
       uiManager.setDateNavCurrentDate(date);
       // 切换成功后隐藏错误横幅
@@ -462,11 +453,6 @@ export function createSessionController(uiManager: UIManager) {
       currentTotal = total;
       loadedDates.add(date);
       earliestDate = date;
-
-      // 今日消息数只统计今天 main 会话的消息
-      const today = getLocalDate();
-      const isTodayMain = date === today && sessionName === 'main';
-      uiManager.setMessageCount(isTodayMain ? messages.filter((m) => m.role !== 'system').length : 0);
 
       // 更新加载按钮状态
       await updateLoadMoreButton(hasMore);

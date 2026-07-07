@@ -66,18 +66,6 @@ export interface ChatPanelHost {
    * @returns 当前是否正在流式输出
    */
   isStreaming(): boolean;
-  /** 非系统消息计数 +1（appendMessage 中调用） */
-  updateMessageCount(): void;
-  /**
-   * 直接设置消息计数（不累加）
-   *
-   * 用于会话历史加载后，根据加载的会话是否当天 main 设置今日消息数。
-   */
-  setMessageCount(count: number): void;
-  /** 刷新消息计数显示 */
-  refreshMessageCountDisplay(): void;
-  /** 重置消息计数为 0（clearMessages 中调用） */
-  resetMessageCount(): void;
   /** 更新未读标记（完整窗口隐藏时，新精灵消息到达） */
   updateBadge(): void;
   /** 显示空状态引导（无消息时） */
@@ -505,11 +493,6 @@ export class ChatPanelManager {
 
     this.host.scrollToBottom();
 
-    // 更新消息计数（非系统消息）
-    if (message.role !== 'system') {
-      this.host.updateMessageCount();
-    }
-
     // 更新未读计数
     if (message.role === 'assistant' && document.hidden) {
       this.host.updateUnreadCount();
@@ -543,7 +526,6 @@ export class ChatPanelManager {
    * 设计要点：
    * - align-self: center 使其居中显示（不与用户/精灵消息对齐到某一侧）
    * - 不参与消息分组（lastMessageRole 等状态不变）
-   * - 不计入消息计数（updateMessageCount 不调用）
    * - 关闭按钮通过事件委托（messagesEl click 监听器，data-action="close-milestone"）
    *
    * @param text 里程碑文本（如"达成里程碑：首次完成 UI 布局重构方案"）
@@ -1076,9 +1058,6 @@ export class ChatPanelManager {
     this.streamingMessages.clear();
     this.host.setStreaming(false);
     this.host.updateSendButton();
-    // 清空消息时重置计数器，避免跨会话累加导致显示错误
-    this.host.resetMessageCount();
-    this.host.refreshMessageCountDisplay();
     // 清空后重新显示空状态引导
     this.host.showEmptyState();
     // 清空后重置滚动状态，确保新消息能自动滚动
@@ -1133,8 +1112,6 @@ export class ChatPanelManager {
       this.messagesEl.appendChild(fragment);
     }
 
-    // 方案 B：历史消息加载不累加今日消息计数
-    this.host.refreshMessageCountDisplay();
     // 非 prepend 模式才滚动到底部（prepend 模式已恢复滚动位置）
     if (!prepend) {
       this.host.forceScrollToBottom();

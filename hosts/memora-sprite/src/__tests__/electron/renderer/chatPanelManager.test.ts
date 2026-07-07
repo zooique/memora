@@ -65,10 +65,6 @@ function createMockHost(overrides?: Partial<ChatPanelHost>): ChatPanelHost {
     updateSendButton: vi.fn(),
     setStreaming: vi.fn((s: boolean) => { streamingState = s; }),
     isStreaming: vi.fn(() => streamingState),
-    updateMessageCount: vi.fn(),
-    setMessageCount: vi.fn(),
-    refreshMessageCountDisplay: vi.fn(),
-    resetMessageCount: vi.fn(),
     updateBadge: vi.fn(),
     showEmptyState: vi.fn(),
     hideEmptyState: vi.fn(),
@@ -254,7 +250,6 @@ describe('appendMessage · 消息渲染', () => {
     // 触发 host 回调
     expect(host.hideEmptyState).toHaveBeenCalled();
     expect(host.scrollToBottom).toHaveBeenCalled();
-    expect(host.updateMessageCount).toHaveBeenCalled();
   });
 
   it('assistant 消息应包含 🧚 头像 + renderMarkdown 渲染', () => {
@@ -274,8 +269,6 @@ describe('appendMessage · 消息渲染', () => {
     expect(msg.textContent).toBe('系统提示');
     expect(msg.querySelector('.message-avatar')).toBeNull();
     expect(msg.querySelector('.message-bubble')).toBeNull();
-    // 系统消息不触发 updateMessageCount
-    expect(host.updateMessageCount).not.toHaveBeenCalled();
   });
 
   it('streaming 消息应添加 streaming 类 + 光标元素 + 无复制按钮', () => {
@@ -720,8 +713,6 @@ describe('clearMessages', () => {
     expect(streamingMessages.size).toBe(0);
     expect(host.setStreaming).toHaveBeenCalledWith(false);
     expect(host.updateSendButton).toHaveBeenCalled();
-    expect(host.resetMessageCount).toHaveBeenCalled();
-    expect(host.refreshMessageCountDisplay).toHaveBeenCalled();
     expect(host.showEmptyState).toHaveBeenCalled();
     expect(host.forceScrollToBottom).toHaveBeenCalled();
   });
@@ -742,7 +733,6 @@ describe('appendMessages', () => {
     manager.appendMessages([userMsg('a', 'u1'), assistantMsg('b', 'a1')]);
     expect(messagesEl.querySelectorAll('.message').length).toBe(2);
     expect(host.hideEmptyState).toHaveBeenCalled();
-    expect(host.refreshMessageCountDisplay).toHaveBeenCalled();
     expect(host.forceScrollToBottom).toHaveBeenCalled();
   });
 
@@ -1195,13 +1185,6 @@ describe('appendMilestoneBanner · 对话区内联里程碑 banner', () => {
     expect(host.hideEmptyState).toHaveBeenCalled();
     // host.scrollToBottom 应被调用（确保用户看到新里程碑）
     expect(host.scrollToBottom).toHaveBeenCalled();
-  });
-
-  it('不应计入消息计数（不调用 updateMessageCount）', () => {
-    const { manager, host } = createManager();
-    manager.appendMilestoneBanner('达成里程碑');
-    // 里程碑是独立元素，不是消息，不应累加消息计数
-    expect(host.updateMessageCount).not.toHaveBeenCalled();
   });
 
   it('不应参与消息分组（lastMessageRole 不变，前后同角色消息仍应分组）', () => {

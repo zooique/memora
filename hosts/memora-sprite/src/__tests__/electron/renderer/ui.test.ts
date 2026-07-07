@@ -57,7 +57,6 @@ const TEST_HTML = `<!DOCTYPE html>
               <span id="sprite-status-text-bar">就绪</span>
               <span class="sprite-status-dot" id="sprite-status-dot-bar"></span>
             </div>
-            <span class="chat-toolbar-subtitle" id="chat-message-count">今日已交流 0 条消息</span>
           </div>
           <!-- v3: 角色选择器（工具栏内） -->
           <div id="toolbar-persona-container" class="toolbar-persona-container">

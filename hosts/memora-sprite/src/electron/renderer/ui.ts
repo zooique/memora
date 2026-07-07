@@ -263,8 +263,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // panelErrorRetryCallbacks 已移至 PanelErrorBannerManager
   /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
   private isNearBottom = true;
-  /** 非系统消息计数（显示在对话工具栏副标题） */
-  private messageCount = 0;
 
   constructor() {
     // 核心元素预检——缺失时先渲染错误提示到 document.body，再 rethrow。
@@ -553,35 +551,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onSuggestionClick(cb: (text: string) => void): void { this.chatPanel.onSuggestionClick(cb); }
   /** 注册错误重试回调（委托到 ChatPanelManager） */
   onErrorRetry(cb: () => void): void { this.chatPanel.onErrorRetry(cb); }
-
-  // ─── 消息计数（ChatPanelHost 回调：供 ChatPanelManager 调用） ──
-
-  /** 更新消息计数（ChatPanelHost 回调：供 ChatPanelManager.appendMessage 调用） */
-  updateMessageCount(): void {
-    this.messageCount++;
-    this.refreshMessageCountDisplay();
-  }
-
-  /**
-   * 直接设置消息计数（不累加）
-   *
-   * 用于会话历史加载后，根据加载的会话是否当天 main 设置今日消息数。
-   * 加载昨天对话时设为 0（今天还没对话），加载今天 main 时设为该会话的消息数。
-   */
-  setMessageCount(count: number): void {
-    this.messageCount = count;
-    this.refreshMessageCountDisplay();
-  }
-
-  /** 刷新消息计数显示（空操作：感知信息统一入口为仪表盘，对话工具栏不再显示消息计数） */
-  refreshMessageCountDisplay(): void {
-    // no-op：感知信息统一入口为仪表盘，对话工具栏不再显示消息计数
-  }
-
-  /** 重置消息计数为 0（ChatPanelHost 回调：供 ChatPanelManager.clearMessages 调用） */
-  resetMessageCount(): void {
-    this.messageCount = 0;
-  }
 
   /** 未读计数 +1（ChatPanelHost 回调：完整窗口隐藏时新精灵消息到达） */
   updateUnreadCount(): void {
