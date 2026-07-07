@@ -135,6 +135,8 @@ export class DateNavManager {
       item.className = 'date-nav-item';
       item.setAttribute('role', 'option');
       item.setAttribute('data-date', date);
+      // 补全 ARIA 可访问性：标记当前选中项（屏幕阅读器用户需感知）
+      item.setAttribute('aria-selected', date === this.currentDate ? 'true' : 'false');
 
       if (date === this.currentDate) {
         item.classList.add('active');

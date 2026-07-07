@@ -1127,7 +1127,7 @@
 
 /* 卡片入场动画：从顶部滑入 + 淡入 */
 .suggestion-card-enter {
-  animation: suggestionCardSlideIn 0.3s ease-out;
+  animation: suggestionCardSlideIn var(--transition-slow) ease-out;
 }
 
 @keyframes suggestionCardSlideIn {
@@ -1143,7 +1143,7 @@
 
 /* 卡片出场动画：淡出 + 缩小 */
 .suggestion-card-leave {
-  animation: suggestionCardFadeOut 0.25s ease-out forwards;
+  animation: suggestionCardFadeOut var(--transition-base) ease-out forwards;
 }
 
 @keyframes suggestionCardFadeOut {
@@ -1244,25 +1244,39 @@
   max-width: 80%;
   /* contain: 布局/样式/绘制隔离，保留性能优化但不延迟渲染 */
   contain: layout style paint;
-  /* 合并 slideIn/fadeIn 为统一的 fadeIn 动画 */
+  /* 默认淡入动画（system消息复用），方向性动画由 user/assistant 覆盖 */
   animation: fadeIn var(--transition-base) ease-out;
 }
 
-/* 统一消息进入动画 */
+/* 统一消息淡入动画（system消息使用） */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* 用户消息：右对齐，头像在右 */
+/* 用户消息方向性动画：从右滑入（视觉上从用户侧进入） */
 .message.user {
   align-self: flex-end;
   flex-direction: row-reverse;
+  animation: slideInRight var(--transition-base) ease-out;
 }
 
-/* 精灵消息：左对齐，头像在左 */
+/* 精灵消息方向性动画：从左滑入（视觉上从精灵侧进入） */
 .message.assistant {
   align-self: flex-start;
+  animation: slideInLeft var(--transition-base) ease-out;
+}
+
+/* 用户消息从右滑入动画 */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* 精灵消息从左滑入动画 */
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 /* 系统消息：居中，无头像 */
