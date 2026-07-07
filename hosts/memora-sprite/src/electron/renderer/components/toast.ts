@@ -15,6 +15,7 @@
 import type { ToastType, ToastOptions } from '../types.js';
 // 复用 sprite 层共享常量，避免多处硬编码 Toast 时长导致口径不一致
 import { TOAST_LONG_MS } from '../../../sprite/constants.js';
+import { setIcon } from '../helpers/icon.js';
 
 /**
  * Toast 类型与图标映射
@@ -121,7 +122,7 @@ export class ToastManager {
     const closeBtn = document.createElement('button');
     closeBtn.className = 'toast-close';
     // 使用 SVG 图标替代 Unicode 符号
-    closeBtn.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
+    setIcon(closeBtn, 'icon-close');
     closeBtn.title = '关闭';
     closeBtn.addEventListener('click', () => this.removeToast(toast));
     toast.appendChild(closeBtn);

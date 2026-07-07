@@ -17,6 +17,8 @@
  *   - 截断提示：支持复用已存在的 .truncation-notice 元素
  */
 
+import { setIcon, setIconWithLabel } from './icon.js';
+
 /** 召回记忆摘要条目（与 Message.memoryRecall 一致） */
 export interface MemoryRecallItem {
   /** 记忆唯一标识（source:name 格式，用于点击跳转详情） */
@@ -60,7 +62,7 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
     // 使用 SVG 图标替代 emoji
     const iconSpan = document.createElement('span');
     iconSpan.className = 'memory-recall-icon';
-    iconSpan.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
+    setIcon(iconSpan, 'icon-lightbulb');
     recallItem.appendChild(iconSpan);
     const recallText = document.createElement('span');
     recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
@@ -131,7 +133,7 @@ export function showThinkingPhase(bubble: Element, phase: string): void {
 
   // 更新阶段文案（使用 SVG 图标替代 emoji）
   const label = THINKING_PHASE_LABELS[phase] ?? phase;
-  indicator.innerHTML = `<svg class="icon"><use href="#icon-gear"/></svg><span>${label}</span>`;
+  setIconWithLabel(indicator, 'icon-gear', label);
 }
 
 /**
@@ -158,6 +160,6 @@ export function showTruncationNotice(bubble: Element, count: number): void {
   const text = count > 1
     ? ` 上下文已截断 ${count} 次，部分历史已省略`
     : ' 上下文已截断，部分历史已省略';
-  notice.innerHTML = '<svg class="icon"><use href="#icon-warning"/></svg>';
+  setIcon(notice, 'icon-warning');
   notice.appendChild(document.createTextNode(text));
 }

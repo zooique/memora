@@ -19,6 +19,7 @@ import type { ConfigSuggestionPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement } from '../helpers/domHelpers.js';
+import { setIcon } from '../helpers/icon.js';
 
 /**
  * 建议卡片管理器
@@ -129,7 +130,7 @@ export class SuggestionCardManager {
     const iconSpan = document.createElement('span');
     iconSpan.className = 'suggestion-card-icon';
     // 使用 SVG 图标替代 emoji
-    iconSpan.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
+    setIcon(iconSpan, 'icon-lightbulb');
     header.appendChild(iconSpan);
 
     const typeSpan = document.createElement('span');
@@ -146,7 +147,7 @@ export class SuggestionCardManager {
     closeBtn.className = 'suggestion-card-close';
     closeBtn.title = '关闭';
     // 使用 SVG 图标替代 Unicode 符号
-    closeBtn.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
+    setIcon(closeBtn, 'icon-close');
     header.appendChild(closeBtn);
 
     card.appendChild(header);

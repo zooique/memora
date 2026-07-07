@@ -13,6 +13,8 @@
  * - 由 DashboardPanelManager 持有实例，外观方法委托调用
  */
 
+import { setIcon } from '../helpers/icon.js';
+
 // ─── 类型定义 ────────────────────────────────────────────
 
 /** 伙伴洞察渲染所需的记忆数据（DashboardViewModel 的子集） */
@@ -247,7 +249,7 @@ export class PartnerInsightsRenderer {
       const icon = document.createElement('span');
       icon.className = 'partner-gap-icon';
       // SVG 图标（替代原 emoji 💡，跨平台渲染一致）
-      icon.innerHTML = '<svg class="icon"><use href="#icon-lightbulb"/></svg>';
+      setIcon(icon, 'icon-lightbulb');
 
       const text = document.createElement('span');
       text.className = 'partner-gap-text';

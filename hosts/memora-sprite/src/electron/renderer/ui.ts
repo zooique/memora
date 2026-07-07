@@ -17,6 +17,7 @@
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
 import { getRequiredElement, getOptionalElement } from './helpers/domHelpers.js';
+import { setIcon } from './helpers/icon.js';
 import { EventTracker } from './helpers/eventTracker.js';
 import { ToastManager } from './components/toast.js';
 import { ModalManager } from './components/modal.js';
@@ -684,8 +685,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   updateMaximizeButton(maximized: boolean): void {
     if (!this.btnMaximize) return;
-    const iconId = maximized ? '#icon-restore' : '#icon-maximize';
-    this.btnMaximize.innerHTML = `<svg class="icon"><use href="${iconId}"/></svg>`;
+    const iconId = maximized ? 'icon-restore' : 'icon-maximize';
+    setIcon(this.btnMaximize, iconId);
     this.btnMaximize.title = maximized ? '还原' : '最大化';
   }
 
@@ -906,7 +907,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       this.btnStop.classList.remove('visible');
       this.btnSend.classList.remove('hidden');
       // 恢复发送图标（防御性：避免被其他逻辑污染）
-      this.btnSend.innerHTML = '<svg class="icon"><use href="#icon-send"/></svg>';
+      setIcon(this.btnSend, 'icon-send');
       this.btnSend.title = '发送（Enter）';
       // 委托到 InputAreaManager 刷新发送按钮状态（空态弱化）
       this.inputAreaManager.refreshSendButtonState();

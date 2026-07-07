@@ -19,6 +19,7 @@
  */
 
 import type { ToastType } from '../types.js';
+import { setIcon } from '../helpers/icon.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -95,7 +96,7 @@ export class ArchiveButtonManager {
     const archiveBtn = document.createElement('button');
     archiveBtn.className = 'message-archive-btn';
     archiveBtn.title = '归档到记忆（manual 模式）';
-    archiveBtn.innerHTML = '<svg class="icon"><use href="#icon-bookmark"/></svg>';
+    setIcon(archiveBtn, 'icon-bookmark');
     // 事件委托模式：通过 data-action 统一分发到 handleClick
     archiveBtn.dataset.action = 'archive';
 

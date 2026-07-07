@@ -14,6 +14,7 @@
  */
 
 import { getOptionalElement } from '../helpers/domHelpers.js';
+import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
@@ -659,7 +660,7 @@ export class SettingsPanelManager {
     // 使用 SVG 图标替代 emoji，颜色状态由 data-visible 属性 + CSS 控制
     const renderIcon = (visible: boolean) => {
       btn.dataset.visible = visible ? 'true' : 'false';
-      btn.innerHTML = '<svg class="icon icon-sm"><use href="#icon-eye"/></svg>';
+      setIcon(btn, 'icon-eye', 'icon-sm');
     };
     renderIcon(false);
 

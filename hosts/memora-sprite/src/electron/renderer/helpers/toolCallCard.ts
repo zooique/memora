@@ -16,6 +16,8 @@
  *   - 使用 getAttribute + filter 匹配，避免 CSS 选择器注入风险
  */
 
+import { setIcon } from './icon.js';
+
 /**
  * 显示工具调用开始卡片
  *
@@ -45,12 +47,12 @@ export function showToolStart(
   // 折叠/展开箭头（SVG chevron，用 CSS transform 控制旋转方向）
   const chevron = document.createElement('span');
   chevron.className = 'tool-call-chevron';
-  chevron.innerHTML = '<svg class="icon"><use href="#icon-chevron"/></svg>';
+  setIcon(chevron, 'icon-chevron');
   header.appendChild(chevron);
   // 工具图标：使用 SVG 替代 emoji
   const icon = document.createElement('span');
   icon.className = 'tool-call-icon';
-  icon.innerHTML = '<svg class="icon"><use href="#icon-tools"/></svg>';
+  setIcon(icon, 'icon-tools');
   header.appendChild(icon);
   const nameSpan = document.createElement('span');
   nameSpan.className = 'tool-call-name';

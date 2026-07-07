@@ -21,6 +21,7 @@
  */
 
 import { clearElement, formatTimestamp } from '../helpers/domHelpers.js';
+import { setIcon, setIconWithLabel } from '../helpers/icon.js';
 import { renderMarkdown } from '../components/markdown.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 共享常量：时间换算与 Toast 时长，避免硬编码（对齐 sprite/constants.ts）
@@ -224,10 +225,10 @@ export class ChatPanelManager {
           () => {
             this.host.showToast('已复制到剪贴板', 'success', 1500);
             // 短暂内联反馈：切换为勾选图标，1s 后恢复复制图标
-            copyBtn.innerHTML = '<svg class="icon"><use href="#icon-check"/></svg>';
+            setIcon(copyBtn, 'icon-check');
             copyBtn.classList.add('copied');
             window.setTimeout(() => {
-              copyBtn.innerHTML = '<svg class="icon"><use href="#icon-copy"/></svg>';
+              setIcon(copyBtn, 'icon-copy');
               copyBtn.classList.remove('copied');
             }, 1000);
           },
@@ -586,8 +587,8 @@ export class ChatPanelManager {
       const avatar = document.createElement('div');
       avatar.className = 'message-avatar';
       // 使用 SVG 图标替代 emoji，统一视觉风格
-      const iconId = message.role === 'user' ? '#icon-person' : '#icon-fairy';
-      avatar.innerHTML = `<svg class="icon"><use href="${iconId}"/></svg>`;
+      const iconId = message.role === 'user' ? 'icon-person' : 'icon-fairy';
+      setIcon(avatar, iconId);
       el.appendChild(avatar);
     }
 
@@ -618,7 +619,7 @@ export class ChatPanelManager {
       copyBtn.className = 'message-copy-btn';
       copyBtn.title = '复制';
       // 使用 SVG 图标替代 emoji
-      copyBtn.innerHTML = '<svg class="icon"><use href="#icon-copy"/></svg>';
+      setIcon(copyBtn, 'icon-copy');
       // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
       copyBtn.dataset.action = 'copy';
       copyBtn.dataset.content = message.content;
@@ -823,7 +824,7 @@ export class ChatPanelManager {
     copyBtn.className = 'message-copy-btn';
     copyBtn.title = '复制';
     // 使用 SVG 图标替代 emoji
-    copyBtn.innerHTML = '<svg class="icon"><use href="#icon-copy"/></svg>';
+    setIcon(copyBtn, 'icon-copy');
     // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
     copyBtn.dataset.action = 'copy';
     copyBtn.dataset.content = finalText;
@@ -876,7 +877,7 @@ export class ChatPanelManager {
     if (memories.length > 0) {
       const indicator = bubble.querySelector('.thinking-phase') as HTMLDivElement | null;
       if (indicator) {
-        indicator.innerHTML = `<svg class="icon"><use href="#icon-gear"/></svg><span>正在回忆 ${memories.length} 条相关记忆...</span>`;
+        setIconWithLabel(indicator, 'icon-gear', `正在回忆 ${memories.length} 条相关记忆...`);
       }
     }
   }
@@ -997,7 +998,7 @@ export class ChatPanelManager {
       const placeholder = document.createElement('div');
       placeholder.className = 'thinking-phase';
       // 使用 SVG 图标替代 emoji
-      placeholder.innerHTML = '<svg class="icon"><use href="#icon-gear"/></svg><span>正在思考...</span>';
+      setIconWithLabel(placeholder, 'icon-gear', '正在思考...');
       // 插入到光标之前（若存在），否则追加到气泡末尾
       const cursor = bubble.querySelector('.cursor');
       if (cursor) {
@@ -1242,7 +1243,7 @@ export class ChatPanelManager {
     const abortedDiv = document.createElement('div');
     abortedDiv.className = 'stream-aborted';
     // SVG 图标 + 文本（使用 createTextNode 避免 reason 中潜在特殊字符的 XSS 风险）
-    abortedDiv.innerHTML = '<svg class="icon"><use href="#icon-stop"/></svg>';
+    setIcon(abortedDiv, 'icon-stop');
     abortedDiv.appendChild(document.createTextNode(` 已中断：${reason}（已保留上方生成内容）`));
     bubble.appendChild(abortedDiv);
 
@@ -1321,7 +1322,7 @@ export class ChatPanelManager {
     const errorDiv = document.createElement('div');
     errorDiv.className = 'stream-error';
     // SVG 图标 + 文本（使用 createTextNode 避免 errorText 中潜在特殊字符的 XSS 风险）
-    errorDiv.innerHTML = '<svg class="icon"><use href="#icon-warning"/></svg>';
+    setIcon(errorDiv, 'icon-warning');
     errorDiv.appendChild(document.createTextNode(` ${errorText}`));
     bubble.appendChild(errorDiv);
 
