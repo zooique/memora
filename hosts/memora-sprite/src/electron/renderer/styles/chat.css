@@ -1511,7 +1511,7 @@
   animation: typingDot 1.4s infinite ease-in-out;
 }
 
-.typing-indicator span:nth-child(2) { animation-delay: var(--transition-base); }
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
 .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes typingDot {
@@ -1751,12 +1751,12 @@
 
 /* 紧凑版角色图标缩小（覆盖 layout.css 中 #persona-icon 的 28px 圆形渐变背景） */
 .input-persona-container #persona-icon {
-  width: 16px !important;
-  height: 16px !important;
+  width: 16px;
+  height: 16px;
   font-size: var(--font-xs);
   flex-shrink: 0;
-  border-radius: 0 !important;
-  background: transparent !important;
+  border-radius: 0;
+  background: transparent;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2444,8 +2444,8 @@
 /* 增强：添加 accent 色微脉冲，让用户感知输入区已激活            */
 
 #input-area:focus-within {
-  /* 在原有阴影基础上叠加一层 accent 色脉冲动画 */
-  animation: input-focus-pulse 2s ease-in-out infinite;
+  /* 在原有阴影基础上叠加一层 accent 色脉冲动画（单次播放，避免持续干扰） */
+  animation: input-focus-pulse 0.6s ease-out forwards;
 }
 
 @keyframes input-focus-pulse {
@@ -2673,7 +2673,7 @@
   padding: 8px 16px;
   background: var(--surface1);
   border: 1px dashed var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: var(--font-md-2);
   cursor: pointer;

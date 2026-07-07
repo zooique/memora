@@ -331,7 +331,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 /* ─── dash-item 网格（运行指标 / 主动提示） ──────────── */
 .dash-item-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: var(--space-1-5);
 }
 
@@ -549,6 +549,13 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   grid-template-columns: repeat(3, 1fr);
   gap: var(--gap-compact);
   margin-bottom: 6px;
+}
+
+/* 小屏下改为 2 列，避免卡片过于拥挤 */
+@media (max-width: 750px) {
+  .growth-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 /* 单张卡片：label 上 + value 下，垂直居中 */
