@@ -146,7 +146,7 @@
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 6px;
   font-size: var(--font-md);
   font-weight: var(--weight-bold);
@@ -507,7 +507,7 @@
 .affect-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   font-size: var(--font-xs);
 }
 
@@ -745,7 +745,7 @@
 #recommendation-list li {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: var(--input-padding);
   font-size: var(--font-sm);
   color: var(--subtext);

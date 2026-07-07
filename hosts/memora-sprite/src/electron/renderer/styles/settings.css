@@ -82,7 +82,7 @@
   transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
   display: flex;
   align-items: center;
-  gap: 8px;  /* 图标与文字间距 */
+  gap: var(--gap-compact);  /* 图标与文字间距 */
   text-align: left;
   width: 100%;
 }
@@ -343,7 +343,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between; /* 左侧 agent 状态，右侧按钮组 */
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 12px 24px;
   border-top: 1px solid var(--surface2);
   flex-shrink: 0;
@@ -353,7 +353,7 @@
 .settings-actions-buttons {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-left: auto; /* 推到右侧 */
 }
 
@@ -398,7 +398,7 @@
 .profile-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 /* 空状态提示（错误态统一使用 base.css 的 .error-state） */
@@ -423,7 +423,7 @@
 .profile-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-bottom: 6px;
   font-size: var(--font-xs);
 }
@@ -469,7 +469,7 @@
 /* 操作按钮区 */
 .profile-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .profile-btn {
@@ -560,7 +560,7 @@
 .settings-group-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-bottom: 8px;
 }
 
@@ -618,7 +618,7 @@
 .work-projection-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-bottom: 8px;
 }
 

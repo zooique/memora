@@ -36,7 +36,7 @@
 .chat-toolbar-info {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--gap-compact);
   min-width: 0;
   position: relative; /* 为精灵感知浮层提供定位参考 */
 }
@@ -151,7 +151,7 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .sprite-status-popover.hidden {
@@ -162,7 +162,7 @@
 .popover-section {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .popover-label {
@@ -857,7 +857,7 @@
 .suggestion-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 8px 24px;
   background: var(--surface1);
   border-bottom: 1px solid var(--surface2);
@@ -883,7 +883,7 @@
 .suggestion-card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-bottom: 8px;
 }
 
@@ -965,7 +965,7 @@
 /* 操作按钮区 */
 .suggestion-card-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .suggestion-card-btn {
@@ -1479,7 +1479,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 /* 左侧工具按钮组 */

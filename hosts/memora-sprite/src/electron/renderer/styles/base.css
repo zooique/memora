@@ -168,9 +168,9 @@
 
   /* ─── 设计系统：语义内边距（扩展，高频模式提取） ─── */
   /* 自然生长原则：3+ 次重复的 padding 模式提取为语义令牌，避免硬编码散落 */
-  --pad-card:      12px 16px;  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
+  --pad-card:      var(--space-3) var(--space-4);  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
   --pad-section:   10px 16px;  /* 面板区块内边距（面板头部、引导项等） */
-  --input-padding-md: 8px 12px;  /* 中等输入框内边距（prompt-input、filter 下拉等） */
+  --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距（prompt-input、filter 下拉等） */
 
   /* 语义化背景变量（hover/次级背景） */
   --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
@@ -233,9 +233,9 @@
   /* 输入框背景（onboarding 表单等，复用窗口背景保持一致性） */
   --input-bg: var(--window-bg);
 
-  /* 启动横幅 padding：上下 8px / 左右 16px */
-  --padding-sm:   8px;
-  --padding-base: 16px;
+  /* 启动横幅 padding：上下 8px / 左右 16px（复用 --space-* 令牌保持单一真理源） */
+  --padding-sm:   var(--space-2);
+  --padding-base: var(--space-4);
 
   /* 卡片 hover 边框色（.card.card-hoverable:hover，复用 muted 与其他卡片一致） */
   --border-hover: var(--muted);
@@ -365,10 +365,10 @@
   /* ─── 设计系统：输入框规范（与浅色主题一致） ─── */
   --input-padding: 6px 10px;
 
-  /* ─── 设计系统：语义内边距（与浅色主题一致） ─── */
-  --pad-card:      12px 16px;
-  --pad-section:   10px 16px;
-  --input-padding-md: 8px 12px;
+  /* ─── 设计系统：语义内边距（与浅色主题一致，复用 --space-* 令牌） ─── */
+  --pad-card:      var(--space-3) var(--space-4);  /* 卡片/列表项内边距 */
+  --pad-section:   10px 16px;  /* 面板区块内边距（10px 无令牌，保留） */
+  --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距 */
 
   /* 语义化背景变量（深色主题下复用 surface1） */
   --bg-hover:     var(--surface1);
@@ -536,7 +536,7 @@ html, body {
   text-align: center;
   color: var(--muted);
   font-size: var(--font-sm);
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .error-state .error-icon {
@@ -632,7 +632,7 @@ button:active,
 .command-palette-input-wrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: var(--pad-card);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
@@ -705,7 +705,7 @@ button:active,
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  padding: var(--space-2) var(--space-4);
   cursor: pointer;
   transition: background 0.1s ease;
   border-left: 3px solid transparent;

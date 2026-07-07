@@ -71,7 +71,7 @@
   padding: 12px 24px 24px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-compact);
   /* 有意的凹陷效果：var(--surface0) 比 var(--window-bg) 略深，形成记忆列表区域的层级感 */
   /* 与对话面板平坦的 var(--window-bg) 形成对比，暗示「浏览」与「对话」的不同模式 */
   background: var(--surface0);
@@ -129,7 +129,7 @@
   margin-bottom: 6px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   color: var(--text);
 }
 
@@ -400,7 +400,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 40px 16px;
   color: var(--text-2);
   font-size: var(--font-sm);
@@ -514,7 +514,7 @@
 .partner-insights-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 8px 16px 6px;
 }
 
@@ -573,7 +573,7 @@
 .partner-gap-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: var(--input-padding);
   background: var(--surface0);
   border: 1px dashed var(--surface2);
@@ -714,7 +714,7 @@
 .more-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   width: 100%;
   padding: var(--input-padding-md);
   background: transparent;
@@ -785,7 +785,7 @@
   color: var(--graph-overlay-fg);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-compact);
   max-width: 220px;
   z-index: 10;
   border: 1px solid var(--graph-overlay-border);
@@ -922,7 +922,7 @@
 .graph-context-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: var(--input-padding-md);
   font-size: var(--font-sm);
   color: var(--text);
@@ -1086,7 +1086,7 @@
 
 .relation-edit-footer-right {
   display: flex;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-left: auto;
 }
 
@@ -1156,7 +1156,7 @@
 .advanced-search-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   flex-wrap: wrap;
 }
 
@@ -1318,7 +1318,7 @@
 .insights-relation-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   font-size: var(--font-sm);
   padding: 3px 0;
 }
@@ -1376,7 +1376,7 @@
 .relation-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: var(--input-padding);
   border-radius: var(--radius-sm);
   background: var(--surface0);
@@ -1445,7 +1445,7 @@
 .lineage-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: var(--input-padding);
   /* depth * 16px：起点 depth=0 不缩进，逐层递进呈现演化链层级 */
   padding-left: calc(var(--lineage-depth, 0) * 16px + var(--input-padding));
@@ -1505,7 +1505,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 40px 16px;
 }
 
@@ -1585,7 +1585,7 @@
 .health-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-bottom: 10px;
 }
 
@@ -1730,7 +1730,7 @@
 .health-metric {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .health-metric-label {
@@ -1864,7 +1864,7 @@
 .confirm-dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-top: 16px;
 }
 
@@ -1909,7 +1909,7 @@
 .timeline-date-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-bottom: 8px;
   position: relative;
 }
@@ -2054,7 +2054,7 @@
 .recycle-bin-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-compact);
   max-height: 50vh;
   overflow-y: auto;
 }
@@ -2090,7 +2090,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .recycle-bin-item-name {

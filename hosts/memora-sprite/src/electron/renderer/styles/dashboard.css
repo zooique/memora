@@ -78,7 +78,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dashboard-overview-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 /* 概览指标项：标签在上，数值在下 */
@@ -175,7 +175,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 /* 保留 .card-bar + .card-bar .bar-label（healthDashboardRenderer.ts:135,137 在用） */
@@ -183,7 +183,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .card-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   font-size: var(--font-xs);
 }
 
@@ -227,7 +227,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dashboard-presence {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 8px 12px;
   background: var(--surface0);
   border-radius: var(--radius-sm);
@@ -267,7 +267,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dashboard-section .context-inline {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
   padding: 8px 12px;
   background: var(--surface0);
   border-radius: var(--radius-sm);
@@ -315,7 +315,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   font-size: var(--font-2xs);
   color: var(--muted);
   text-align: center;
-  padding: 8px;
+  padding: var(--space-2);
   background: var(--surface0);
   border-radius: var(--radius-sm);
 }
@@ -414,7 +414,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: var(--gap-compact);
 }
 
 .source-health-label {
@@ -547,7 +547,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .growth-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: var(--gap-compact);
   margin-bottom: 8px;
 }
 
