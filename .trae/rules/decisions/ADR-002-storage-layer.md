@@ -31,7 +31,7 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 | v0.6 | 2026-06-10 | **移除全局路径硬编码**                   | 内核零硬编码路径，全局配置由宿主通过 configDir 管理 |
 | v0.7 | 2026-06-11 | **SqliteStorage 移出内核 + CLI 移出**    | 零 native 依赖，测试全量 InMemoryStorage         |
 
-> 详见 [原 ADR-002 v0.1](./ADR-002-storage-layer-original.md)（v0.2 记录已合并到本文版本历史）。
+> v0.1 版本（better-sqlite3 + sqlite-vec 统一索引表）已被本文替代，v0.2 记录已合并到本文版本历史。
 
 ## 决策
 
@@ -163,10 +163,8 @@ setLogger(myLogger);
 
 ## 相关历史
 
-- [ADR-002 v0.1 · better-sqlite3 + sqlite-vec](./ADR-002-storage-layer-original.md)
-  — 初始方案
-- [ADR-002 v0.2 · sqlite3 (mapbox)](./ADR-002-storage-layer-original.md)
-  — 已废弃（2026-06-02 ~ 2026-06-05），记录见 original 文件
+- ADR-002 v0.1 · better-sqlite3 + sqlite-vec — 初始方案（已废弃，被本文替代）
+- ADR-002 v0.2 · sqlite3 (mapbox) — 已废弃（2026-06-02 ~ 2026-06-05）
 - ADR-002 v0.3 · better-sqlite3
   — 已废弃（2026-06-05 ~ 2026-06-10）
 - ADR-002 v0.4 ~ v0.6 · IMemoryStorage 逐步独立

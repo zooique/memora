@@ -111,7 +111,7 @@ export interface LlmProvider {
 
 ### CLI 命令
 
-> CLI 已移出至宿主项目（详见 [ADR-005](./ADR-005-cli-first.md)）。以下命令由宿主项目（如 `hosts/memora-sprite/`）实现。
+> CLI 已移出至宿主项目（详见 ADR-005，已迁移）。以下命令由宿主项目（如 `hosts/memora-sprite/`）实现。
 
 ```bash
 memora config-llm list          # 列出 Provider（宿主实现）

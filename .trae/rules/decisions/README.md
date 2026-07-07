@@ -5,7 +5,7 @@ description: Memora 关键决策年轮
 
 # ADR 索引 · Memora 关键决策年轮
 
-> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：25（内核 15 + 精灵 10）
+> **创建日期**：2026-06-02 **播种批次**：模式 A v1 **总决策数**：23（内核 13 + 精灵 10）
 
 ---
 
@@ -17,7 +17,6 @@ description: Memora 关键决策年轮
 | [ADR-002](./ADR-002-storage-layer.md)       | 存储层抽象：IMemoryStorage 接口 + 可插拔实现 | ✅ 已接受 | 数据层 |
 | [ADR-003](./ADR-003-llm-adapter.md)         | LLM 适配层使用 OpenAI Chat Completions 兼容协议           | ✅ 已接受 | 集成层 |
 | [ADR-004](./ADR-004-memory-unification.md)  | 记忆统一为"source 开放字符串"基元驱动模型                  | ✅ 已接受 | 架构   |
-| [ADR-005](./ADR-005-cli-first.md)           | CLI 优先于 Web 形态（阶段一交付）                         | 🔄 已迁移 | 形态   |
 | [ADR-006](./ADR-006-security-model.md)      | 安全采用两级权限 + 工具白名单 + 路径白名单                | ✅ 已接受 | 安全   |
 | [ADR-007](./ADR-007-testing-strategy.md)    | 测试使用 Vitest + MSW（Mock LLM）                         | ✅ 已接受 | 质量   |
 | [ADR-008](./ADR-008-directory-structure.md) | 目录结构按"职责分层"而非"按类型分层"                      | ✅ 已接受 | 工程   |
@@ -43,12 +42,6 @@ description: Memora 关键决策年轮
 | [ADR-SP-008](./ADR-SP-008-v8-ui-refactor.md)       | v8 UI 重构：双主题 CSS 变量 + 悬浮核心窗口         | ✅ 已接受 | 前端   |
 | [ADR-SP-015](./ADR-SP-015-panel-manager-composition.md) | PanelManager 组合模式约定（阶段 C 架构演进沉淀） | ✅ 已接受 | 架构   |
 
-### 历史归档（已被替代，保留作年轮参考）
-
-| ID | 标题 | 状态 | 被替代 |
-| -- | ---- | ---- | ------ |
-| [ADR-002-storage-layer-original](./ADR-002-storage-layer-original.md) | better-sqlite3 + sqlite-vec 统一索引表（理论最优方案存档） | ❌ 已废弃 | ADR-002 |
-
 ---
 
 ## 类别分布
@@ -58,8 +51,7 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001              |
 | 数据层 | 1    | ADR-002              |
 | 集成层 | 1    | ADR-003              |
-| 架构   | 7    | ADR-004, ADR-009~015 |
-| 形态   | 1    | ADR-005              |
+| 架构   | 8    | ADR-004, ADR-009~015 |
 | 安全   | 1    | ADR-006              |
 | 质量   | 1    | ADR-007              |
 | 工程   | 1    | ADR-008              |

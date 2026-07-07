@@ -75,7 +75,7 @@ export function createProviderFromConfig(
     throw configError('LLM API Key 未配置', `provider "${name}" (${provider}) 缺少 apiKey`, [
       `设置环境变量 MEMORA_LLM_API_KEY`,
       '或在配置文件中配置 apiKey（支持 ${ENV_VAR} 占位符）',
-      '详见 config.example.md',
+      '详见 config.example.json',
     ]);
   }
 

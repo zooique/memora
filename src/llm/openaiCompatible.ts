@@ -85,7 +85,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
         [
           '检查 ~/.memora/config.json 的 llm.apiKey 字段',
           '确认已设置环境变量 MEMORA_LLM_API_KEY',
-          '查看文档：config.example.md',
+          '查看文档：config.example.json',
         ],
       );
     }

@@ -6,7 +6,7 @@ description: "memora-sprite 宿主：桌面壳分阶段策略"
 # ADR-SP-003 · 桌面壳
 
 > **状态**：✅ 已接受（2026-06-16）
-> **依赖**：[ADR-005](./ADR-005-cli-first.md)（CLI 优先策略）
+> **依赖**：ADR-005（CLI 优先策略，已迁移——CLI 移出至宿主项目 `hosts/memora-sprite/`）
 
 ## 背景
 
