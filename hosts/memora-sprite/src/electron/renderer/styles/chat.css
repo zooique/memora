@@ -209,7 +209,7 @@
   margin: 0 0 4px 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .perception-section-title.clickable {
@@ -234,7 +234,7 @@
 .presence-indicator {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   padding: 3px 8px;
   background: var(--surface1);
   border-radius: var(--radius-sm);
@@ -308,7 +308,7 @@
 .rapport-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-xs);
 }
 
@@ -361,7 +361,7 @@
 .perception-patterns-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .perception-pattern-item {
@@ -380,7 +380,7 @@
 .perception-pattern-main {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .perception-pattern-type {
@@ -470,7 +470,7 @@
 .perception-proactive-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1-5);
   margin-top: 4px;
 }
 
@@ -1485,7 +1485,7 @@
 /* 左侧工具按钮组 */
 .input-actions-left {
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 /* 输入区更多操作下拉容器（relative 定位锚点） */
@@ -1507,7 +1507,7 @@
 .token-usage {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-xs);
   color: var(--text-3);
   cursor: pointer;
@@ -1587,7 +1587,7 @@
 .input-send-area {
   display: flex;
   align-items: center;
-  gap: 6px; /* 角色选择器与发送按钮之间留间距 */
+  gap: var(--space-1-5); /* 角色选择器与发送按钮之间留间距 */
 }
 
 /* 输入区紧凑版角色选择器容器 */
@@ -1904,7 +1904,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   width: 100%;
   max-width: 480px;
   margin-top: 6px;
@@ -1941,7 +1941,7 @@
 .thinking-phase {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   margin-top: 4px;
   padding: 4px 10px;
   font-size: var(--font-sm);
@@ -2022,7 +2022,7 @@
 .tool-call-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   /* 可点击折叠/展开 */
   cursor: pointer;
   user-select: none;

@@ -231,7 +231,7 @@
 .onboarding-provider-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1-5);
   justify-content: center;
   margin-bottom: 14px;
 }
@@ -313,7 +313,7 @@
 .onboarding-quick-tips {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   margin-bottom: 20px;
   padding: 10px 14px;
   background: var(--window-bg-2);

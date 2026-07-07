@@ -148,14 +148,15 @@
   --weight-bold:     700;  /* 大数值（仅 KPI 顶级，慎用） */
 
   /* ─── 设计系统：间距 4px 基线栅格（对标 Arco/Semi） ─── */
-  /* 8 级间距覆盖全部场景，所有 gap/margin/padding 应优先使用这些令牌 */
-  --space-1: 4px;   /* 极小间距（图标与文字间隙） */
-  --space-2: 8px;   /* 紧凑间距（卡片内元素 gap） */
-  --space-3: 12px;  /* 标准间距（卡片 padding、分区 gap） */
-  --space-4: 16px;  /* 宽松间距（面板 padding、分区之间） */
-  --space-5: 20px;  /* 大间距（面板左右 padding） */
-  --space-6: 24px;  /* 超大间距（弹窗 padding） */
-  --space-8: 32px;  /* 最大间距（空状态 padding） */
+  /* 覆盖 4/6/8/12/16/20/24/32，所有 gap/margin/padding 应优先使用这些令牌 */
+  --space-1:    4px;   /* 极小间距（图标与文字间隙） */
+  --space-1-5:  6px;   /* 半级间距（卡片内元素紧凑 gap，对标 Arco padding-xs） */
+  --space-2:    8px;   /* 紧凑间距（卡片内元素 gap） */
+  --space-3:   12px;   /* 标准间距（卡片 padding、分区 gap） */
+  --space-4:   16px;   /* 宽松间距（面板 padding、分区之间） */
+  --space-5:   20px;   /* 大间距（面板左右 padding） */
+  --space-6:   24px;   /* 超大间距（弹窗 padding） */
+  --space-8:   32px;   /* 最大间距（空状态 padding） */
 
   /* ─── 设计系统：按钮规范 ─── */
   --btn-height-sm: 28px;  /* 小按钮高度（工具按钮、图标按钮） */
@@ -674,7 +675,7 @@ button:active,
 .command-palette-results {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 0;
+  padding: var(--space-1-5) 0;
   /* 自定义滚动条：窄、半透明 */
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -690,7 +691,7 @@ button:active,
 }
 
 .command-palette-section {
-  padding: 6px 16px 2px;
+  padding: var(--space-1-5) var(--space-4) 2px;
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--accent);

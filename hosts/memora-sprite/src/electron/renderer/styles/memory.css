@@ -309,13 +309,13 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .skill-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   background: var(--window-bg-2);
@@ -528,7 +528,7 @@
 .partner-profile-cards {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: var(--space-1-5);
   padding: 0 12px 8px;
 }
 
@@ -1224,7 +1224,7 @@
   color: var(--text);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 /* 洞察行：统计卡片 + 分布图水平排列 */
@@ -1274,7 +1274,7 @@
 .insights-distribution-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-xs);
 }
 
@@ -1368,7 +1368,7 @@
 .relations-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   max-height: 200px;
   overflow-y: auto;
 }
@@ -1595,7 +1595,7 @@
   color: var(--text);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .health-badge {
@@ -1723,7 +1723,7 @@
 .health-metrics {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
   margin-bottom: 10px;
 }
 
@@ -1806,7 +1806,7 @@
 /* 健康度操作按钮 */
 .health-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
   margin-top: 8px;
 }
 
@@ -2014,7 +2014,7 @@
 .timeline-item-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-xs);
   color: var(--text-3);
   margin-bottom: 2px;
@@ -2106,7 +2106,7 @@
 /* 列表项操作按钮组 */
 .recycle-bin-item-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
   flex-shrink: 0;
 }
 

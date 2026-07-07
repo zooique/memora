@@ -18,7 +18,7 @@
 .agent-status-indicator {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-sm);
 }
 
@@ -238,7 +238,7 @@
   position: relative;
   flex: 1;
   display: flex;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .input-with-action input {

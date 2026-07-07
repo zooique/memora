@@ -57,7 +57,7 @@
 .cmdk-hint {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   height: 28px;
   padding: 0 10px;
   background: var(--window-bg-2);
@@ -147,7 +147,7 @@
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
-  padding: 6px;
+  padding: var(--space-1-5);
   font-size: var(--font-md);
   font-weight: var(--weight-bold);
   color: var(--text);
@@ -278,7 +278,7 @@
   border-radius: var(--radius-pill);
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-sm);
 }
 
@@ -500,7 +500,7 @@
   line-height: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 /* ─── 情感基调展示（四维进度条，容器布局已移至 chat.css .affect-grid） ──── */
@@ -587,13 +587,13 @@
 .patterns-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .pattern-item {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--space-1-5);
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
@@ -624,7 +624,7 @@
 .milestones-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .milestone-badge {
@@ -661,7 +661,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   padding: 14px 10px;
   border: 1.5px dashed var(--surface2);
   border-radius: var(--radius-md);

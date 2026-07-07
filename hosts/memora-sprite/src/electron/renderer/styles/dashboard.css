@@ -106,7 +106,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 /* 默契度概览项：徽章 + 进度条组合 */
 .overview-item.overview-rapport {
   grid-column: span 2;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .overview-rapport-header {
@@ -148,7 +148,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .overview-rapport-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-2xs);
 }
 
@@ -259,7 +259,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dashboard-section .affect-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px 16px;
+  gap: var(--space-1-5) var(--space-4);
   margin-bottom: 8px;
 }
 
@@ -311,7 +311,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   font-size: var(--font-2xs);
   color: var(--muted);
   text-align: center;
@@ -332,7 +332,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dash-item-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 .dash-item {
@@ -376,7 +376,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .source-health-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-1-5);
 }
 
 /* 单个 source 健康条目：主行 + 次行双层结构 */
@@ -384,7 +384,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
+  gap: var(--space-1-5);
   padding: 10px 12px;
   border-radius: var(--radius-sm);
   background: var(--surface0);
@@ -513,7 +513,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .growth-trend-desc-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-1-5);
   margin-bottom: 8px;
   font-size: var(--font-sm);
   color: var(--subtext);
