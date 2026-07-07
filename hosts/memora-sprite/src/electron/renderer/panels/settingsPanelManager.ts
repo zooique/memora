@@ -429,7 +429,7 @@ export class SettingsPanelManager {
     const tabButtons = document.querySelectorAll<HTMLElement>('.settings-tab');
     const tabContents = document.querySelectorAll<HTMLElement>('.settings-tab-content');
 
-    // P2-08：补全 ARIA tab 语义（button 已具备原生语义，叠加 role="tab" + aria-selected）
+    // 补全 ARIA tab 语义（button 已具备原生语义，叠加 role="tab" + aria-selected）
     // 让屏幕阅读器在 tablist 上下文中正确朗读"已选/未选"状态
     tabButtons.forEach((btn) => {
       btn.setAttribute('role', 'tab');
@@ -1008,7 +1008,7 @@ export class SettingsPanelManager {
       // 获取列表失败不阻塞删除，由主进程处理
     }
 
-    // P1-02：使用项目统一的 showConfirmDialog（支持主题/焦点/键盘），替代原生 confirm()
+    // 使用项目统一的 showConfirmDialog（支持主题/焦点/键盘），替代原生 confirm()
     const confirmed = await this.host.showConfirmDialog({
       title: '删除 Provider',
       message: `确定删除 Provider "${key}"？`,

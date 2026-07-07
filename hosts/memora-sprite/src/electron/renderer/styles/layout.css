@@ -473,7 +473,7 @@
 }
 .nav-btn:hover::after { opacity: 1; }
 
-/* P1-07：导航按钮键盘聚焦可见样式 */
+/* 导航按钮键盘聚焦可见样式 */
 .nav-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -493,7 +493,6 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  /* P2-4：移除 uppercase + letter-spacing（中文场景失效且破坏字距） */
   padding: 0 4px 0 10px;
   margin-bottom: 8px;
   /* 左侧3px宽accent色条，作为视觉分组锚点，扫视时可快速定位section */
@@ -832,6 +831,13 @@
   color: var(--text);
   cursor: pointer;
   transition: background var(--transition-fast);
+}
+
+/* 下拉项提示态（空态文案，降权显示） */
+.dropdown-item.dropdown-item-hint {
+  color: var(--text-3);
+  font-size: var(--font-xs);
+  cursor: default;
 }
 
 /* 角色下拉项名称 + 描述双层布局 */

@@ -35,7 +35,6 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--subtext);
-  /* P2-4：移除 text-transform: uppercase + letter-spacing，中文场景无效果且破坏阅读节奏 */
   margin: 0 0 10px 0;
   padding: 0;
 }
@@ -54,7 +53,7 @@ details.dashboard-section > .dashboard-section-title::before {
   content: '▸ ';
   display: inline-block;
   transition: transform var(--transition-fast);
-  font-size: var(--font-2xs);  /* P1-3：10px 硬编码 → 令牌引用 */
+  font-size: var(--font-2xs);
   vertical-align: 1px;
 }
 
@@ -71,7 +70,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  /* P2-4：移除 uppercase + letter-spacing（中文场景失效且破坏字距） */
   margin: 0 0 6px 0;
   padding: 0;
 }
@@ -96,12 +94,11 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .overview-item .overview-label {
   font-size: var(--font-2xs);
   color: var(--muted);
-  /* P2-4：移除 uppercase + letter-spacing */
 }
 
 .overview-item .overview-value {
-  font-size: var(--font-h2);  /* P2-1：--font-score(20px) → --font-h2(24px)，对标 Arco KPI 数值 */
-  font-weight: var(--weight-semibold);  /* P2-1：bold(700) → semibold(600)，对齐 Arco/Semi 大数值惯例 */
+  font-size: var(--font-h2);
+  font-weight: var(--weight-semibold);
   color: var(--text);
   line-height: 1.2;
 }
@@ -181,7 +178,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   gap: 8px;
 }
 
-/* P3-3：.card-header / .card-value / .card-badge(含 8 data-level 变体) / .card-dims / .card-stat-row 已删除（0 使用死代码） */
 /* 保留 .card-bar + .card-bar .bar-label（healthDashboardRenderer.ts:135,137 在用） */
 
 .card-bar {
@@ -196,8 +192,6 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--subtext);
   flex-shrink: 0;
 }
-
-/* P3-3：.card-desc 已删除（0 使用死代码） */
 
 /* ─── 通用进度条 ──────────────────────────────────── */
 .progress-track {
@@ -354,11 +348,10 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dash-item .dash-label {
   font-size: var(--font-2xs);
   color: var(--muted);
-  /* P2-4：移除 uppercase + letter-spacing */
 }
 
 .dash-item .dash-value {
-  font-size: var(--font-md);  /* P2-1：--font-sm(12px) → --font-md(15px)，KPI 数值不再被弱化 */
+  font-size: var(--font-md);
   font-weight: var(--weight-semibold);
   color: var(--text);
 }
@@ -401,15 +394,15 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--text);
 }
 
-/* 按 status 区分左边框颜色 + 背景填充，让异常项视觉突出（P2-2：对标 Arco Alert） */
+/* 按 status 区分左边框颜色 + 背景填充，让异常项视觉突出 */
 .source-health-item.warning {
-  border-left: 4px solid var(--yellow);  /* P2-2：3px → 4px */
-  background: var(--yellow-20);          /* P2-2：新增浅黄填充 */
+  border-left: 4px solid var(--yellow);
+  background: var(--yellow-20);
 }
 
 .source-health-item.critical {
-  border-left: 4px solid var(--red);     /* P2-2：3px → 4px */
-  background: var(--red-20);             /* P2-2：新增浅红填充 */
+  border-left: 4px solid var(--red);
+  background: var(--red-20);
 }
 
 .source-health-item.healthy {
@@ -467,7 +460,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   gap: 2px;
 }
 
-/* source 颜色类（P0-3：对齐真理源 memory.css + relationGraph.ts SOURCE_COLOR_VARS） */
+/* source 颜色类：对齐真理源 memory.css + relationGraph.ts SOURCE_COLOR_VARS */
 /* 核心 7 source 颜色映射：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙) */
 .source-profile   { color: var(--green); }
 .source-insight   { color: var(--accent); }
@@ -573,11 +566,10 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .growth-card-label {
   font-size: var(--font-2xs);
   color: var(--muted);
-  /* P2-4：移除 uppercase + letter-spacing */
 }
 
 .growth-card-value {
-  font-size: var(--font-h1);  /* P2-1：--font-md(15px) → --font-h1(18px)，中间过渡档 */
+  font-size: var(--font-h1);
   font-weight: var(--weight-semibold);
   color: var(--accent);
 }

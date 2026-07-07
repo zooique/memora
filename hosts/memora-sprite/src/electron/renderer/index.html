@@ -254,14 +254,12 @@
                 <span class="popover-value" id="popover-context">—</span>
               </div>
             </div>
-            <!-- P0-3：移除"今日已交流 N 条消息"（与仪表盘运行指标重复，感知信息统一入口为仪表盘） -->
           </div>
           <!-- 角色选择器已迁移到输入区发送按钮旁（input-persona-container） -->
           <!-- 日期导航：日历选择器，快速跳转到指定日期（时间流滚动加载已覆盖顺序浏览） -->
           <div id="date-navigator" class="date-navigator">
             <input type="date" id="date-nav-picker" class="date-nav-picker" title="跳转到指定日期" aria-label="跳转到指定日期" />
           </div>
-          <!-- P0-1：Token 用量从输入区移到对话工具栏右侧（与日期导航并列，作为只读状态信息） -->
           <div id="token-usage" class="token-usage">
             <span id="token-usage-text">--</span>
             <div class="token-usage-bar"><div id="token-usage-fill" class="token-usage-fill"></div></div>
@@ -333,7 +331,6 @@
                 </div>
               </div>
             </div>
-            <!-- P0-1：Token 用量已移到对话工具栏右侧，输入区不再显示 -->
             <div class="input-send-area">
               <!-- Provider 选择器（输入框左侧，切换 LLM API） -->
               <div id="input-provider-container" class="input-provider-container">
@@ -407,7 +404,6 @@
               </button>
             </div>
           </div>
-          <!-- P0-2：health-mini-score 已移除（与仪表盘"记忆源健康"分区重复，感知信息统一入口为仪表盘） -->
         </div>
         <!-- 高级搜索栏（搜索增强，默认折叠） -->
         <div id="advanced-search-bar" class="advanced-search-bar hidden">
@@ -603,7 +599,7 @@
             </div>
           </div>
 
-          <!-- 关系编辑弹窗（P0-UI-6.1：补齐 .modal 类，使 modal.ts 的 Escape 全局监听生效） -->
+          <!-- 关系编辑弹窗（补齐 .modal 类，使 modal.ts 的 Escape 全局监听生效） -->
           <div id="relation-edit-dialog" class="modal relation-edit-dialog hidden">
             <div class="relation-edit-dialog-overlay"></div>
             <div class="relation-edit-dialog-content">
@@ -654,16 +650,14 @@
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
         <div class="settings-tabs">
           <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
-          <!-- P1-1：嵌入 tab 已合并到大模型 tab（嵌入是 LLM 子配置） -->
           <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
           <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
-          <!-- P1-1：画像 tab 重命名为"画像与作品"（作品 tab 已合并） -->
           <button class="settings-tab" data-settings-tab="profile"><svg class="icon"><use href="#icon-person"/></svg>画像与作品</button>
           <!-- 审计日志 tab：显示 SecurityGuard.onAudit 记录的文件操作事件 -->
           <button class="settings-tab" data-settings-tab="audit"><svg class="icon"><use href="#icon-eye"/></svg>审计</button>
           <!-- 技能管理 tab：已安装技能列表 + 拖入安装 -->
           <button class="settings-tab" data-settings-tab="skill"><svg class="icon"><use href="#icon-tools"/></svg>技能</button>
-          <!-- P2-3：内置帮助页面 -->
+          <!-- 内置帮助页面 -->
           <button class="settings-tab" data-settings-tab="help"><svg class="icon"><use href="#icon-question"/></svg>帮助</button>
         </div>
 
@@ -701,7 +695,6 @@
             </div>
           </div>
 
-          <!-- P1-1：Embedding 配置（从原嵌入 tab 迁移，嵌入是 LLM 子配置） -->
           <div class="settings-group">
             <h3>Embedding 配置（可选）</h3>
             <p class="settings-hint">配置后启用语义搜索（向量召回），让记忆搜索更智能。</p>
@@ -873,7 +866,6 @@
             </div>
           </div>
 
-          <!-- P1-1：作品投影（从原作品 tab 迁移，与画像同属"精灵对用户的理解"） -->
           <div class="settings-group">
             <div class="settings-group-header">
               <h3>作品投影</h3>
@@ -945,9 +937,7 @@
           </div>
         </div>
 
-        <!-- P1-1：作品 tab 已合并到画像与作品 tab（原 data-settings-tab="work" 容器已删除） -->
-
-        <!-- P2-3：内置帮助页面（离线可用，不依赖外部链接） -->
+        <!-- 内置帮助页面（离线可用，不依赖外部链接） -->
         <div class="settings-tab-content" data-settings-tab="help">
           <div class="settings-group">
             <div class="settings-group-header">
@@ -1042,7 +1032,7 @@
             <svg class="icon"><use href="#icon-refresh"/></svg>
           </button>
         </div>
-        <!-- P1-03：仪表盘错误横幅（与 settings/memory/chat 统一错误反馈体系） -->
+        <!-- 仪表盘错误横幅（与 settings/memory/chat 统一错误反馈体系） -->
         <div id="dashboard-error" class="panel-error hidden">
           <span id="dashboard-error-msg"></span>
           <button id="dashboard-error-retry" class="panel-error-btn">重试</button>
@@ -1144,7 +1134,7 @@
             </div>
           </section>
 
-          <!-- 分区四：运行指标（P1-3：默认折叠，技术用户按需展开） -->
+          <!-- 分区四：运行指标（默认折叠，技术用户按需展开） -->
           <details class="dashboard-section" id="dashboard-runtime">
             <summary class="dashboard-section-title">运行</summary>
             <div class="dash-item-grid" id="dashboard-metrics-grid">

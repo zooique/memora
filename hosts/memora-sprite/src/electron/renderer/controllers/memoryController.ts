@@ -142,7 +142,7 @@ export function createMemoryController(uiManager: UIManager) {
           const result = await window.electronAPI.restoreMemory(id);
           if (result.restored) {
             uiManager.showToast('记忆已恢复', 'success');
-            // P3-2：切换到记忆面板，刷新列表后定位到恢复的记忆
+            // 切换到记忆面板，刷新列表后定位到恢复的记忆
             await uiManager.switchPanel('memory');
             // 刷新回收站列表（移除已恢复项）+ 主列表（显示恢复的记忆）
             await loadRecycleBinList();

@@ -293,7 +293,7 @@ export class InputAreaManager {
       if (providers.length === 0) {
         this.providerNameEl.textContent = '未配置';
         this.providerSelector?.classList.remove('configured');
-        this.providerDropdown.innerHTML = '<div class="dropdown-item" style="color:var(--text-3);font-size:var(--font-xs)">请在设置中添加 API</div>';
+        this.providerDropdown.innerHTML = '<div class="dropdown-item dropdown-item-hint">请在设置中添加 API</div>';
         return;
       }
 

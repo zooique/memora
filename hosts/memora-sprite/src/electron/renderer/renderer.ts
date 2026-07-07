@@ -135,12 +135,12 @@ async function bootstrapRenderer(): Promise<void> {
     void loadStartupSummary();
     // 首次使用流程：Agent 就绪后自动切换到对话面板，让用户立即开始对话
     void State.uiManager.switchPanel('chat');
-    // P2-1：检查是否需要显示多步骤引导（未配置 Provider 的新用户）
+    // 检查是否需要显示多步骤引导（未配置 Provider 的新用户）
     void checkAndShowOnboarding();
   };
 
   /**
-   * 检查是否需要显示引导并显示（P2-1：已配置用户跳过）
+   * 检查是否需要显示引导并显示（已配置用户跳过）
    *
    * 先查询 Provider 列表，若已有配置则跳过引导。
    */
@@ -488,12 +488,12 @@ async function bootstrapRenderer(): Promise<void> {
 document.addEventListener('DOMContentLoaded', () => {
   bootstrapRenderer().catch((err: unknown) => {
     reportError('bootstrapRenderer', err);
-    // UIManager 已构造时用其 toast 展示；未构造时 P0-8.1 已渲染错误卡片到 document.body
+    // UIManager 已构造时用其 toast 展示；未构造时已渲染错误卡片到 document.body
     if (State.uiManager) {
       try {
         State.uiManager.showToast('应用初始化失败，请重启或查看日志', 'error', TOAST_LONG_MS);
       } catch {
-        // UIManager 半初始化，忽略二次错误（P0-8.1 错误卡片已显示）
+        // UIManager 半初始化，忽略二次错误（错误卡片已显示）
       }
     }
   });

@@ -384,7 +384,7 @@ export class DashboardPanelManager {
     const dashboardSectionEl = document.getElementById('dashboard-source-health');
     if (!dashboardListEl || !dashboardSectionEl) return;
 
-    // P1-01：无数据时保留 section 标题，仅在列表区显示空状态文案
+    // 无数据时保留 section 标题，仅在列表区显示空状态文案
     // （遵循"主动可见"原则——用户能区分"功能未加载"与"确实无数据"）
     if (!sourceHealth || sourceHealth.sources.length === 0) {
       dashboardSectionEl.classList.remove('hidden');
@@ -816,7 +816,7 @@ export class DashboardPanelManager {
   /**
    * 显示记忆列表加载失败状态（带重试按钮）
    *
-   * P1-04：改用统一错误横幅体系（与 settings/memory/chat 对齐），
+   * 改用统一错误横幅体系（与 settings/memory/chat 对齐），
    * 不再自建 .error-state DOM。重试按钮用 onclick 覆盖式绑定（避免累积监听器）。
    *
    * @param listEl 记忆列表容器元素（保留参数兼容，实际错误显示在面板级横幅）
@@ -824,7 +824,7 @@ export class DashboardPanelManager {
   showMemoryListError(listEl: HTMLElement): void {
     // 清空列表区域，避免残留旧数据
     clearElement(listEl);
-    // 通过 dashboard-error 横幅显示错误（P1-03 新增的统一错误横幅）
+    // 通过 dashboard-error 横幅显示错误（统一错误横幅）
     const errorEl = document.getElementById('dashboard-error');
     const msgEl = document.getElementById('dashboard-error-msg');
     if (errorEl && msgEl) {

@@ -107,7 +107,7 @@ export type {
 // ─── 工具函数（formatTimeAgo、setButtonLoading）见 domHelpers.ts ───
 
 /**
- * P0-UI-8.1：渲染 UIManager 初始化失败错误提示到 document.body
+ * 渲染 UIManager 初始化失败错误提示到 document.body
  *
  * 在 UIManager 构造函数预检核心元素失败时调用，独立于 UIManager 自身，
  * 避免半初始化状态下访问 null 引发的二次错误。
@@ -267,7 +267,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private messageCount = 0;
 
   constructor() {
-    // P0-UI-8.1：核心元素预检——缺失时先渲染错误提示到 document.body，再 rethrow。
+    // 核心元素预检——缺失时先渲染错误提示到 document.body，再 rethrow。
     // 保留 fast-fail 设计意图（不进入半初始化状态），同时避免用户看到空白无提示。
     try {
       // ─── 核心交互元素：必需，缺失时抛出（UI 无法工作） ────
@@ -573,7 +573,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.refreshMessageCountDisplay();
   }
 
-  /** 刷新消息计数显示（P0-3：chat-message-count DOM 已移除，方法保留为空操作以兼容现有调用方） */
+  /** 刷新消息计数显示（空操作：感知信息统一入口为仪表盘，对话工具栏不再显示消息计数） */
   refreshMessageCountDisplay(): void {
     // no-op：感知信息统一入口为仪表盘，对话工具栏不再显示消息计数
   }
@@ -829,14 +829,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    *
    * 由 SettingsPanelManager 在 tab 切换时调用，
    * 根据目标 tab 刷新对应 PanelManager 的数据：
-   * - profile → 刷新用户画像 + 作品投影（P1-1：作品 tab 已合并）
+   * - profile → 刷新用户画像 + 作品投影（作品 tab 已合并）
    * - audit → 刷新审计日志
    * - skill → 刷新技能列表（通过 loadDashboard 间接刷新）
    */
   onSettingsTabSwitch(tab: string): void {
     switch (tab) {
       case 'profile':
-        // P1-1：作品 tab 已合并到画像与作品 tab，切换时同时刷新画像和作品数据
+        // 作品 tab 已合并到画像与作品 tab，切换时同时刷新画像和作品数据
         void this.profilePanel.load();
         void this.workProjectionPanel.load();
         break;
@@ -1600,7 +1600,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatPanel.showStartupSummary(summary);
   }
 
-  // ─── 记忆导航（P3-2：恢复后跳转定位） ──────────
+  // ─── 记忆导航（恢复后跳转定位） ──────────
 
   /**
    * 滚动到指定记忆项并高亮（委托到 MemoryPanelManager）

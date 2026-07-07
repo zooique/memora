@@ -1069,7 +1069,7 @@ export class ChatPanelManager {
   clearMessages(): void {
     // 只移除 .message 和 .message-group 和 .date-separator 和 .milestone-banner 元素，保留 chat-empty-state
     // B1：新增 .milestone-banner 选择器，避免清空会话时里程碑 banner 残留
-    // P3-1：新增 .archive-session-btn 选择器，避免清空会话时归档按钮残留
+    // 新增 .archive-session-btn 选择器，避免清空会话时归档按钮残留
     this.messagesEl.querySelectorAll('.message, .message-group, .date-separator, .milestone-banner, .archive-session-btn').forEach((msg) => msg.remove());
     // 移除加载更多按钮（切换会话时重置）
     this.hideLoadMore();

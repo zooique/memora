@@ -28,7 +28,7 @@
   /* 文字层级 */
   --text:        #1d1d1f;  /* 主文字 */
   --subtext:     #6e6e73;  /* 次级文字（v8 --text-2） */
-  --muted:       #7a7a82;  /* 弱化文字（v8 --text-3）；P0-2 调深：#a1a1a6 → #7a7a82，对比度 2.5:1 → 4.6:1（WCAG AA 达标） */
+  --muted:       #7a7a82;  /* 弱化文字（v8 --text-3）；WCAG AA 达标 */
   --text-2:      #6e6e73;  /* v8 命名，= --subtext */
   --text-3:      #7a7a82;  /* v8 命名，= --muted */
   --text-4:      #c7c7cc;  /* 最弱文字（时间戳等辅助信息） */
@@ -137,17 +137,17 @@
   --font-3xs: 0.5625rem; /* 9px / 16 = 0.5625（最低置信度、超窄屏降级） */
   --font-h1:  1.125rem;  /* 18px / 16 = 1.125（标题 h1、洞察面板数值） */
   --font-score:1.25rem;   /* 20px / 16 = 1.25（健康度评分） */
-  /* P1-3：填补字号梯度缺口 */
+  /* 填补字号梯度缺口 */
   --font-md-2: 0.8125rem; /* 13px / 16 = 0.8125（填补 sm 12px 与 base 14px 之间） */
   --font-h2:   1.5rem;     /* 24px / 16 = 1.5（填补 h1 18px 与 2xl 28px 之间，大数值） */
 
-  /* ─── 设计系统：字重层级（P1-1 令牌化，4 级覆盖全部场景） ─── */
+  /* ─── 设计系统：字重层级（4 级覆盖全部场景） ─── */
   --weight-regular:  400;  /* 正文默认 */
   --weight-medium:   500;  /* 次级强调（标签值/辅助文本） */
   --weight-semibold: 600;  /* 标题/数值（默认强调，最常用） */
   --weight-bold:     700;  /* 大数值（仅 KPI 顶级，慎用） */
 
-  /* ─── 设计系统：间距 4px 基线栅格（P1-2，对标 Arco/Semi） ─── */
+  /* ─── 设计系统：间距 4px 基线栅格（对标 Arco/Semi） ─── */
   /* 8 级间距覆盖全部场景，所有 gap/margin/padding 应优先使用这些令牌 */
   --space-1: 4px;   /* 极小间距（图标与文字间隙） */
   --space-2: 8px;   /* 紧凑间距（卡片内元素 gap） */
@@ -217,7 +217,7 @@
   --milestone-badge-text:   #a67c00;
   --milestone-badge-icon:   #d4a017;
 
-  /* ─── 补齐未定义变量（P0-1：修复 8 处引用回退到浏览器默认值） ─── */
+  /* ─── 补齐未定义变量 ─── */
   /* 集中定义此前被引用但未定义的变量，避免渲染回退 */
 
   /* 紧凑间距：Provider 列表/操作按钮/激活徽章间距 */
@@ -262,7 +262,7 @@
   /* 文字层级 */
   --text:        #cdd6f4;
   --subtext:     #a6adc8;
-  --muted:       #b5bcd6;  /* P0-2 调亮：#9399b2 → #b5bcd6，对比度 3.8:1 → 4.7:1（WCAG AA 达标） */
+  --muted:       #b5bcd6;  /* 弱化文字（v8 --text-3）；WCAG AA 达标 */
   --text-2:      #a6adc8;
   --text-3:      #b5bcd6;
   --text-4:      #6c7086;  /* 最弱文字（深色主题下更暗） */
@@ -415,7 +415,7 @@
   --milestone-badge-text:   var(--yellow);
   --milestone-badge-icon:   var(--yellow);
 
-  /* ─── 补齐未定义变量 · 深色主题覆盖（P0-1） ─── */
+  /* ─── 补齐未定义变量 · 深色主题覆盖 ─── */
   /* 语义色 5% 透明度：深色主题下提高到 8% 保证可见性（与 --accent-10 深色一致） */
   --green-10: rgba(166, 227, 161, 0.08);
   --red-10:   rgba(243, 139, 168, 0.08);
@@ -694,7 +694,6 @@ button:active,
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--accent);
-  /* P2-4：移除 uppercase + letter-spacing（中文命令场景失效） */
   /* 粘性标题：滚动时固定在顶部 */
   position: sticky;
   top: 0;
@@ -832,7 +831,6 @@ select:active {
   height: 16px;
 }
 
-/* P3-3：.badge / .card / .close-btn / .divider 四大基类已删除（0 使用死代码，派生类均独立定义） */
 /* 保留 .empty-state 基类（memoryPanelManager.ts:276 在用） */
 
 /* ─── 空状态 .empty-state ───────────────────────────────── */
@@ -853,11 +851,9 @@ select:active {
   opacity: 0.5;
 }
 
-.empty-state .empty-title {
+.empty-state .empty-title .empty-state-title {
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-2);
   margin-bottom: 4px;
 }
-
-/* P3-3：.empty-state .empty-desc 已删除（0 使用，无任何元素创建 .empty-desc 子元素） */

@@ -205,7 +205,6 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
   /* 紧凑布局：收紧标题下间距 */
   margin: 0 0 4px 0;
   display: flex;
@@ -584,31 +583,31 @@
 /**
  * 日期导航按钮：快速跳转到指定日期的历史对话
  * 位于 chat-toolbar 右侧，点击弹出日期列表下拉
- * P1-2：视觉降权（缩小宽度 + 灰化默认态），对齐"对话面板核心是当前对话"心智
+ * 视觉降权（缩小宽度 + 灰化默认态），对齐"对话面板核心是当前对话"心智
  */
 .date-navigator {
   position: relative;
   margin-left: auto;
 }
 
-/* 日历选择器：P1-2 视觉降权（灰化默认态 + 缩小宽度，hover/focus 时恢复强调） */
+/* 日历选择器：视觉降权（灰化默认态 + 缩小宽度，hover/focus 时恢复强调） */
 .date-nav-picker {
-  background: transparent;                 /* P1-2：surface0 → transparent，融入工具栏 */
-  border: 1px solid transparent;           /* P1-2：border → transparent，默认无边框 */
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   padding: 2px 6px;
   font-size: var(--font-xs);
-  color: var(--text-3);                    /* P1-2：text → text-3，灰化默认态 */
+  color: var(--text-3);
   cursor: pointer;
   transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-  width: 110px;                            /* P1-2：120px → 110px，进一步紧凑 */
+  width: 110px;
   height: 24px;
 }
 
 .date-nav-picker:hover {
-  border-color: var(--border);             /* P1-2：accent → border，hover 才显示边框 */
+  border-color: var(--border);
   background: var(--surface0);
-  color: var(--text);                      /* P1-2：hover 恢复 text 强调色 */
+  color: var(--text);
 }
 
 .date-nav-picker:focus-visible {
@@ -1504,12 +1503,12 @@
   min-width: 130px;
 }
 
-/* Token 用量指示器（P0-1：从输入工具栏移到对话工具栏右侧，作为只读状态信息） */
+/* Token 用量指示器（只读状态信息） */
 .token-usage {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--font-xs);  /* P1-3：11px 硬编码 → 令牌引用 */
+  font-size: var(--font-xs);
   color: var(--text-3);
   cursor: pointer;
   padding: 0 4px;
@@ -1578,7 +1577,7 @@
   color: var(--text);
 }
 
-/* P2-10：输入框操作按钮键盘聚焦可见样式 */
+/* 输入框操作按钮键盘聚焦可见样式 */
 .input-action:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -2201,7 +2200,7 @@
   border-color: var(--accent);
 }
 
-/* P2-10：滚动到底部按钮键盘聚焦可见样式 */
+/* 滚动到底部按钮键盘聚焦可见样式 */
 .scroll-to-bottom-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -2546,7 +2545,7 @@
   border: 1px dashed var(--border);
   border-radius: 8px;
   color: var(--text-secondary);
-  font-size: var(--font-md-2);  /* P1-3：13px 孤儿值 → 新增 --font-md-2 令牌 */
+  font-size: var(--font-md-2);
   cursor: pointer;
   transition: all 0.2s ease;
   text-align: center;

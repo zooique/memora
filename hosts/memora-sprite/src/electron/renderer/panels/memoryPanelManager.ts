@@ -365,7 +365,7 @@ export class MemoryPanelManager {
     const item = document.createElement('div');
     item.className = 'memory-item';
     item.dataset.id = mem.id;
-    // P1-06：键盘可访问性（tabindex + role + aria-label），让键盘用户能 Tab 聚焦并回车查看
+    // 键盘可访问性（tabindex + role + aria-label），让键盘用户能 Tab 聚焦并回车查看
     item.setAttribute('tabindex', '0');
     item.setAttribute('role', 'button');
     item.setAttribute('aria-label', `查看记忆：${mem.name}`);
@@ -519,7 +519,7 @@ export class MemoryPanelManager {
     item.dataset.id = mem.id;
     item.setAttribute('data-action', 'view-memory');
     item.setAttribute('data-memory-id', mem.id);
-    // P1-06：键盘可访问性（与 memory-item 一致，支持 Tab 聚焦 + 回车查看）
+    // 键盘可访问性（与 memory-item 一致，支持 Tab 聚焦 + 回车查看）
     item.setAttribute('tabindex', '0');
     item.setAttribute('role', 'button');
     item.setAttribute('aria-label', `查看记忆：${mem.name}`);
@@ -1585,7 +1585,7 @@ export class MemoryPanelManager {
     const dialog = document.getElementById('relation-edit-dialog');
     if (!dialog) return;
 
-    // P0-UI-6.1：重置 UI 状态（防御性，处理 Escape 走 modal.ts hideModal 路径留下的残留）
+    // 重置 UI 状态（防御性，处理 Escape 走 modal.ts hideModal 路径留下的残留）
     const deleteBtnReset = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
     const titleElReset = dialog.querySelector('.relation-edit-title') as HTMLElement | null;
     if (deleteBtnReset) deleteBtnReset.classList.remove('hidden');
@@ -1628,7 +1628,7 @@ export class MemoryPanelManager {
       cancelBtn.onclick = () => this.hideRelationEditDialog();
     }
 
-    // P0-UI-6.1：背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
+    // 背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
     const overlay = dialog.querySelector('.relation-edit-dialog-overlay') as HTMLElement | null;
     if (overlay) {
       overlay.onclick = () => this.hideRelationEditDialog();
@@ -1687,7 +1687,7 @@ export class MemoryPanelManager {
       cancelBtn.onclick = () => this.hideRelationEditDialog();
     }
 
-    // P0-UI-6.1：背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
+    // 背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
     const overlay = dialog.querySelector('.relation-edit-dialog-overlay') as HTMLElement | null;
     if (overlay) {
       overlay.onclick = () => this.hideRelationEditDialog();
@@ -1717,7 +1717,7 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 滚动到指定记忆项并高亮（P3-2：恢复后跳转定位）
+   * 滚动到指定记忆项并高亮（恢复后跳转定位）
    *
    * 从回收站恢复记忆后调用：找到目标记忆卡片，平滑滚动到视图中央，
    * 添加 highlight-pulse 闪烁动画，动画结束后自动移除高亮类。

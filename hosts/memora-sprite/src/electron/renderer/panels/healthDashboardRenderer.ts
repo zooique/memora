@@ -90,7 +90,6 @@ export class HealthDashboardRenderer {
    * 渲染记忆健康度仪表盘数据（Phase 1：健康度诊断）
    *
    * 接收 Controller 拉取的健康度数据，渲染：
-   * - 迷你健康分徽章（工具栏内）
    * - 健康度评分（总分）+ 健康等级徽章
    * - 三维度进度条（uniqueness/freshness/completeness）
    * - 详情计数（重复/过期/低质量）
@@ -100,49 +99,7 @@ export class HealthDashboardRenderer {
    * @param data 健康度数据
    */
   render(data: HealthDashboardPayload): void {
-    // P0-2：迷你健康分徽章已移除（health-mini-score DOM 删除，感知信息统一入口为仪表盘）
-
-    // ─── 仪表盘面板：健康分卡片（大号数值 + 等级徽章 + 三维度进度条） ──
-    const dashboardScore = document.getElementById('dashboard-health-score');
-    if (dashboardScore) {
-      dashboardScore.textContent = String(data.scores.overall);
-    }
-    const dashboardBadge = document.getElementById('dashboard-health-badge');
-    if (dashboardBadge) {
-      dashboardBadge.textContent = HEALTH_LABEL_MAP[data.healthLabel] || data.healthLabel;
-      dashboardBadge.setAttribute('data-level', data.healthLabel);
-    }
-    // 三维度进度条渲染到仪表盘健康卡片的 .card-dims 容器
-    const dashboardDims = document.getElementById('dashboard-health-dims');
-    if (dashboardDims) {
-      const dims: DimensionConfig[] = [
-        { id: 'uniqueness', value: data.scores.uniqueness, cssClass: 'uniqueness' },
-        { id: 'freshness', value: data.scores.freshness, cssClass: 'freshness' },
-        { id: 'completeness', value: data.scores.completeness, cssClass: 'completeness' },
-      ];
-      // 清空并重建（遵循项目规范：while + removeChild）
-      while (dashboardDims.firstChild) {
-        dashboardDims.removeChild(dashboardDims.firstChild);
-      }
-      for (const dim of dims) {
-        const row = document.createElement('div');
-        row.className = 'card-bar';
-        const label = document.createElement('span');
-        label.className = 'bar-label';
-        label.textContent = { uniqueness: '唯一性', freshness: '新鲜度', completeness: '完整度' }[dim.id] ?? dim.id;
-        const track = document.createElement('div');
-        track.className = 'progress-track';
-        const fill = document.createElement('div');
-        fill.className = `progress-fill health-metric-fill ${dim.cssClass}`;
-        fill.style.width = `${dim.value}%`;
-        track.appendChild(fill);
-        row.appendChild(label);
-        row.appendChild(track);
-        dashboardDims.appendChild(row);
-      }
-    }
-
-    // ─── 健康度评分（旧：记忆面板 health-bar） ──────────
+    // ─── 健康度评分（记忆面板 health-bar） ──────────────
     const scoreEl = document.getElementById('health-score');
     if (scoreEl) scoreEl.textContent = String(data.scores.overall);
 

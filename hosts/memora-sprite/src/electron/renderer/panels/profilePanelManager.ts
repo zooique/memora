@@ -92,7 +92,7 @@ export class ProfilePanelManager {
       this.render(entries);
     } catch (err) {
       reportError('ProfilePanel', `加载用户画像失败: ${toError(err).message}`);
-      // P2-07/P2-06：统一用 .error-state 结构（图标 + 文字 + 重试按钮），替代 .profile-empty.profile-error
+      // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），替代 .profile-empty.profile-error
       if (this.pendingListEl) {
         clearElement(this.pendingListEl);
         const errorEl = document.createElement('div');

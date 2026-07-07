@@ -16,7 +16,7 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 
-/** 支持错误横幅的面板 ID 列表（P1-03：dashboard 纳入统一错误横幅体系） */
+/** 支持错误横幅的面板 ID 列表（dashboard 纳入统一错误横幅体系） */
 const PANEL_IDS = ['settings', 'memory', 'chat', 'dashboard'] as const;
 
 /**

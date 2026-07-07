@@ -117,7 +117,7 @@
   transform: translateY(0);
 }
 
-/* P1-06：键盘聚焦可见样式（与 .relation-item:focus-visible 对齐） */
+/* 键盘聚焦可见样式（与 .relation-item:focus-visible 对齐） */
 .memory-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -200,13 +200,13 @@
   cursor: pointer;
 }
 
-/* P2-09：加载中/无更多数据时 disabled 样式（对齐 chat.css .load-more-btn:disabled） */
+/* 加载中/无更多数据时 disabled 样式（对齐 chat.css .load-more-btn:disabled） */
 .memory-load-more:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* P2-09：键盘聚焦可见样式 */
+/* 键盘聚焦可见样式 */
 .memory-load-more:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -395,8 +395,6 @@
 
 /* ─── 空状态统一（Phase 4：视觉统一） ────────────────────────── */
 
-/* P3-3：.memory-search-empty 已删除（0 使用死代码，搜索无结果时复用 .empty-state 基类） */
-
 /* 时间线空状态：与列表空状态保持一致 */
 .timeline-empty {
   display: flex;
@@ -558,7 +556,7 @@
 }
 
 .partner-profile-card-preview {
-  font-size: var(--font-xs);  /* 11px → 设计系统变量 */
+  font-size: var(--font-xs);
   color: var(--text-3);
   line-height: 1.4;
   display: -webkit-box;
@@ -682,7 +680,7 @@
   background: var(--surface0);
 }
 
-/* P1-09：视图切换按钮键盘聚焦可见样式 */
+/* 视图切换按钮键盘聚焦可见样式 */
 .view-switch-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -737,7 +735,7 @@
   color: var(--accent);
 }
 
-/* P1-09：更多菜单项键盘聚焦可见样式 */
+/* 更多菜单项键盘聚焦可见样式 */
 .more-menu-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -798,7 +796,6 @@
   font-weight: var(--weight-semibold);
   font-size: var(--font-xs);
   color: var(--graph-overlay-muted);
-  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
   margin-bottom: 4px;
 }
 
@@ -938,7 +935,7 @@
   background: var(--surface1);
 }
 
-/* P1-09：图谱右键菜单项键盘聚焦可见样式 */
+/* 图谱右键菜单项键盘聚焦可见样式 */
 .graph-context-menu-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
@@ -1262,7 +1259,6 @@
 .insights-stat-label {
   font-size: var(--font-2xs);
   color: var(--text-2);
-  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
 }
 
 /* source 分布容器：占满剩余空间 */
@@ -1315,7 +1311,6 @@
 .insights-section-title {
   font-size: var(--font-xs);
   color: var(--text-2);
-  /* P2-4：移除 uppercase + letter-spacing（中文场景失效） */
   margin-bottom: 4px;
 }
 
@@ -1873,8 +1868,6 @@
   margin-top: 16px;
 }
 
-/* P0-2：.health-mini-score 系列样式已移除（DOM 已删除，感知信息统一入口为仪表盘"记忆源健康"分区） */
-
 /* ─── A2：时间线视图 ────────────────────────────────────────── */
 
 /* 时间线容器：垂直滚动，用左边线串联 */
@@ -1981,7 +1974,7 @@
   box-shadow: var(--shadow-sm);
 }
 
-/* P1-06：键盘聚焦可见样式（与 .memory-item:focus-visible 对齐） */
+/* 键盘聚焦可见样式（与 .memory-item:focus-visible 对齐） */
 .timeline-item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -2151,7 +2144,7 @@
   overflow: hidden;
 }
 
-/* ─── P3-2：恢复后跳转高亮动画 ─────────────────────────────── */
+/* ─── 恢复后跳转高亮动画 ─────────────────────────────── */
 
 /* 记忆项恢复后的闪烁高亮效果 */
 @keyframes highlight-pulse {

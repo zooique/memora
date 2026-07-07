@@ -427,7 +427,7 @@ kbd {
   color: var(--text);
 }
 
-/* P1-08：弹窗按钮键盘聚焦可见样式（统一 modal 内所有可交互元素） */
+/* 弹窗按钮键盘聚焦可见样式（统一 modal 内所有可交互元素） */
 .modal-close:focus-visible,
 .btn-primary:focus-visible,
 .btn-secondary:focus-visible,

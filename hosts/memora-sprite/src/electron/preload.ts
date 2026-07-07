@@ -70,7 +70,7 @@ export const IPC_CHANNELS = {
   MEMORIES_PURGE: 'memories-purge',
   /** 列出回收站记忆 */
   MEMORIES_LIST_DELETED: 'memories-list-deleted',
-  /** 手动归档会话内容（P3-1：一键归档） */
+  /** 手动归档会话内容（一键归档） */
   ARCHIVE_SESSION: 'archive-session',
   MEMORIES_ADD: 'memories-add',
   MEMORIES_RELATION_GRAPH: 'memories-relation-graph',

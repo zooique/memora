@@ -25,7 +25,6 @@ const HEALTH_HTML = `
   <div id="memory-health-bar">
     <div class="health-metrics"></div>
   </div>
-  <span id="health-mini-score" class="hidden"></span>
   <span id="health-score"></span>
   <span id="health-badge" class="health-badge"></span>
   <div id="health-uniqueness" class="health-metric-fill uniqueness" style="width: 0%"></div>

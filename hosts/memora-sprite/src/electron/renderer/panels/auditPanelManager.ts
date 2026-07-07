@@ -81,7 +81,7 @@ export class AuditPanelManager {
           await this.load();
         } catch (error) {
           reportError('clearAuditLog', error);
-          // P2-07：清空失败时通过 .error-state 显示错误（与 renderError 一致）
+          // 清空失败时通过 .error-state 显示错误（与 renderError 一致）
           if (this.listEl) {
             clearElement(this.listEl);
             const errorDiv = document.createElement('div');
@@ -191,7 +191,7 @@ export class AuditPanelManager {
   private renderError(message: string): void {
     if (!this.listEl) return;
     clearElement(this.listEl);
-    // P2-07：统一用 .error-state 结构（图标 + 文字），替代 .profile-empty
+    // 统一用 .error-state 结构（图标 + 文字），替代 .profile-empty
     const errorDiv = document.createElement('div');
     errorDiv.className = 'error-state';
     const icon = document.createElement('div');
