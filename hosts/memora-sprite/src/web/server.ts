@@ -307,8 +307,9 @@ async function startWebServer(): Promise<void> {
   }
 
   // 阶段 1：初始化 Agent + Sprite（复用 startSprite）
+  let result: Awaited<ReturnType<typeof startSprite>> | undefined;
   try {
-    const result = await startSprite();
+    result = await startSprite();
     agent = result.agent;
     sprite = result.sprite;
     sessionStore = result.sessionStore;
