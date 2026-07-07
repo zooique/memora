@@ -20,6 +20,30 @@ import { logger, toError } from 'memora';
 import type { ToolDefinition, ToolHandler, ToolContext } from 'memora';
 
 /**
+ * Agent 引用（由 index.ts 在 initAgentFromConfig 中注入）
+ * 
+ * 用于工具处理器中调用 config.confirmConfigSuggestion 和 agent.reloadConfig。
+ * 采用延迟注入模式，避免循环依赖。
+ */
+type AgentRef = {
+  config: {
+    confirmConfigSuggestion: (suggestion: { type: string; name: string; content: string; confidence: number }) => Promise<void>;
+  };
+  reloadConfig: (source?: string) => Promise<{ skill: number; persona: number }>;
+};
+let agentRef: AgentRef | null = null;
+
+/** 注入 Agent 引用（在 Agent 初始化完成后调用） */
+export function setAgentRef(agent: AgentRef): void {
+  agentRef = agent;
+}
+
+/** 获取当前 Agent 引用（handler 调用时使用） */
+function getAgentRef(): AgentRef | null {
+  return agentRef;
+}
+
+/**
  * 构建跨平台"打开浏览器搜索"命令
  *
  * 提取自 index.ts 原 /web 命令实现：使用 execFile 而非 exec，
@@ -147,3 +171,149 @@ export function setMemorySearcher(searcher: MemorySearcher): void {
 function getMemorySearcher(): MemorySearcher | null {
   return memorySearcher;
 }
+
+// ─── 创建角色和技能工具 ─────────────────────────────────────────
+
+/** create_persona 工具定义 */
+export const CREATE_PERSONA_TOOL: ToolDefinition = {
+  name: 'create_persona',
+  description: '创建一个新的角色（Persona）。当用户说"创建一个XX角色"、"制作一个XX角色"或"我想要一个XX助手"时调用。角色会持久化到配置文件，重启后依然生效。',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: {
+        type: 'string',
+        description: '角色名称，简短描述（2-6字），例如"写作助手"、"代码专家"',
+      },
+      description: {
+        type: 'string',
+        description: '角色描述，说明这个角色的特点和用途',
+      },
+      content: {
+        type: 'string',
+        description: '角色的详细指令（system prompt），描述角色的行为方式、专业知识和对话风格',
+      },
+      keywords: {
+        type: 'string',
+        description: '关键词列表（逗号分隔），用于自动匹配该角色，例如"写作,文案,编辑"',
+      },
+    },
+    required: ['name', 'content'],
+  },
+};
+
+/** create_persona 工具处理器 */
+export const createPersonaHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
+  const agent = getAgentRef();
+  if (!agent) {
+    return '错误：Agent 引用未初始化';
+  }
+
+  const name = String(args.name ?? '').trim();
+  const description = String(args.description ?? '').trim();
+  const content = String(args.content ?? '').trim();
+  const keywords = String(args.keywords ?? '').trim();
+
+  if (!name) {
+    return '错误：角色名称不能为空';
+  }
+  if (!content) {
+    return '错误：角色内容不能为空';
+  }
+
+  try {
+    let personaContent = content;
+    if (description) {
+      personaContent = `描述：${description}\n\n${content}`;
+    }
+    if (keywords) {
+      personaContent = `关键词：${keywords}\n\n${personaContent}`;
+    }
+
+    await agent.config.confirmConfigSuggestion({
+      type: 'persona',
+      name,
+      content: personaContent,
+      confidence: 0.95,
+    });
+
+    await agent.reloadConfig('persona');
+
+    return `角色 "${name}" 创建成功！已持久化到配置文件，重启后依然生效。\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
+  } catch (err) {
+    logger.warn({ err: toError(err).message, name }, '创建角色失败');
+    return `错误：创建角色失败：${err instanceof Error ? err.message : String(err)}`;
+  }
+};
+
+/** create_skill 工具定义 */
+export const CREATE_SKILL_TOOL: ToolDefinition = {
+  name: 'create_skill',
+  description: '创建一个新的技能（Skill）。当用户说"创建一个XX技能"、"制作一个XX技能"或"我需要一个XX能力"时调用。技能会持久化到配置文件，重启后依然生效。',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: {
+        type: 'string',
+        description: '技能名称，简短描述（2-6字），例如"去AI味"、"审视角"',
+      },
+      description: {
+        type: 'string',
+        description: '技能描述，说明这个技能的作用和使用场景',
+      },
+      content: {
+        type: 'string',
+        description: '技能的详细指令（system prompt），描述技能的执行方式和输出格式',
+      },
+      keywords: {
+        type: 'string',
+        description: '关键词列表（逗号分隔），用于自动匹配该技能，例如"优化,精简,去除"',
+      },
+    },
+    required: ['name', 'content'],
+  },
+};
+
+/** create_skill 工具处理器 */
+export const createSkillHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
+  const agent = getAgentRef();
+  if (!agent) {
+    return '错误：Agent 引用未初始化';
+  }
+
+  const name = String(args.name ?? '').trim();
+  const description = String(args.description ?? '').trim();
+  const content = String(args.content ?? '').trim();
+  const keywords = String(args.keywords ?? '').trim();
+
+  if (!name) {
+    return '错误：技能名称不能为空';
+  }
+  if (!content) {
+    return '错误：技能内容不能为空';
+  }
+
+  try {
+    let skillContent = content;
+    if (description) {
+      skillContent = `描述：${description}\n\n${content}`;
+    }
+    if (keywords) {
+      skillContent = `关键词：${keywords}\n\n${skillContent}`;
+    }
+
+    await agent.config.confirmConfigSuggestion({
+      type: 'skill',
+      name,
+      content: skillContent,
+      confidence: 0.95,
+    });
+
+    await agent.reloadConfig('skill');
+
+    return `技能 "${name}" 创建成功！已持久化到配置文件，重启后依然生效。\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
+  } catch (err) {
+    logger.warn({ err: toError(err).message, name }, '创建技能失败');
+    return `错误：创建技能失败：${err instanceof Error ? err.message : String(err)}`;
+  }
+};

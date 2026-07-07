@@ -33,13 +33,18 @@ import { SpriteTracer } from './sprite/spriteTracer.js';
 import { MemoraError, ErrorCode } from './sprite/errors.js';
 // P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
-// 宿主自定义工具（web_search + memory_search）
+// 宿主自定义工具（web_search + memory_search + create_persona + create_skill）
 import {
   WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
+  CREATE_PERSONA_TOOL,
+  CREATE_SKILL_TOOL,
   webSearchHandler,
   memorySearchHandler,
+  createPersonaHandler,
+  createSkillHandler,
   setMemorySearcher,
+  setAgentRef,
 } from './sprite/tools.js';
 export type { DashboardData, SpriteEventMap } from './sprite/sprite.js';
 export { Sprite } from './sprite/sprite.js';
@@ -558,6 +563,15 @@ async function setupAgentPostInit(
     });
     agent.tools.registerTool(WEB_SEARCH_TOOL, webSearchHandler);
     agent.tools.registerTool(MEMORY_SEARCH_TOOL, memorySearchHandler);
+    agent.tools.registerTool(CREATE_PERSONA_TOOL, createPersonaHandler);
+    agent.tools.registerTool(CREATE_SKILL_TOOL, createSkillHandler);
+
+    if (agent.config) {
+      setAgentRef({
+        config: agent.config,
+        reloadConfig: (source?: string) => agent.reloadConfig(source),
+      });
+    }
   }
 }
 
