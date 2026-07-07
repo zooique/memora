@@ -94,6 +94,8 @@ export interface MemoryPanelEventContext {
   getViewSwitchCallback(): ((mode: 'list' | 'timeline' | 'graph') => void) | null;
   /** 回收站操作回调（恢复/彻底删除） */
   getRecycleBinActionCallback(): ((action: 'restore' | 'purge', id: string) => void) | null;
+  /** 更多菜单操作回调（insights/health/recycle-bin） */
+  getMoreMenuActionCallback(): ((action: string) => void) | null;
 }
 
 // ─── 事件监听器初始化主函数 ────────────────────────────────
@@ -379,7 +381,7 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
     }
   });
 
-  // 更多菜单项事件委托（仅保留统计洞察和健康度诊断）
+  // 更多菜单项事件委托（insights/health/recycle-bin）
   if (moreMenu) {
     ctx.events.addEventListener(moreMenu, 'click', async (e) => {
       const item = ((e as Event).target as HTMLElement).closest('.more-menu-item') as HTMLElement | null;
@@ -389,8 +391,12 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
 
       if (action === 'insights') {
         ctx.toggleAnalysisPanel('insights');
+        ctx.getMoreMenuActionCallback()?.(action);
       } else if (action === 'health') {
         ctx.toggleAnalysisPanel('health');
+        ctx.getMoreMenuActionCallback()?.(action);
+      } else if (action === 'recycle-bin') {
+        ctx.getMoreMenuActionCallback()?.(action);
       }
     });
   }

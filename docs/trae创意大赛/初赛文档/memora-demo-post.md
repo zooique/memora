@@ -156,7 +156,7 @@
 - 支持浅色/深色主题切换
 - 无后端依赖，纯 HTML/CSS/JS 即可运行
 
-【TODO：如有在线部署版本，可在此补充在线 Demo 链接】
+【在线 Demo 地址】：http://localhost:8765/index.html（本地运行）
 
 ---
 
@@ -165,7 +165,7 @@
 **本项目 100% 在 Trae IDE 中开发完成**。从项目架构设计、记忆内核编码、992 个测试用例编写，到桌面精灵宿主的完整实现和交互式 Demo 原型的多轮迭代，全程使用 Trae 完成。
 
 **阶段一：项目扎根——用 Trae 的规则系统建立工程规范**
-- 22 份 ADR（Architecture Decision Record）决策记录（内核 14 + 精灵 8），每个架构选择都有理由和追溯
+- 23 份 ADR（Architecture Decision Record）决策记录（内核 13 + 精灵 10），每个架构选择都有理由和追溯
 - 项目 Rules 框架，确立了零依赖内核、三层架构、单 Agent 模型等硬约束
 
 【截图：screenshot-01-landing.png 项目结构 + .trae/rules/ 目录】
@@ -183,7 +183,7 @@
 - 工具错误反思（ToolErrorCode 10 种错误码 + Reflection 循环）
 - 评估框架（EvalScenario 类型 + 工具函数）
 
-最终测试结果：**992 个测试用例全部通过**（Vitest + MSW Mock LLM，InMemoryStorage 零 IO）
+最终测试结果：**4160 个测试用例全部通过**（内核 1280 + 精灵 2880，Vitest + MSW Mock LLM，InMemoryStorage 零 IO）
 
 【截图：screenshot-10-vitest-terminal.png 终端测试用例全部通过】
 
@@ -218,20 +218,20 @@
 
 | 编号 | 阶段 | Session ID |
 |------|------|-----------|
-| 1 | 项目初始化 / 架构设计 / ADR 记录 | 【TODO：复制粘贴】 |
-| 2 | 记忆内核开发 / 测试编写 | 【TODO：复制粘贴】 |
-| 3 | Sprite 宿主开发 / 感知系统 / Phase 2-4 迭代 | 【TODO：复制粘贴】 |
-| 4 | Demo 原型迭代 / 质量审查 / UI 收敛 | 【TODO：复制粘贴】 |
+| 1 | 项目初始化 / 架构设计 / ADR 记录 | `6a4b905e975874867e7db461` |
+| 2 | 记忆内核开发 / 测试编写 | `6a4c78e9975874867e7dce5e` |
+| 3 | Sprite 宿主开发 / 感知系统 / Phase 2-4 迭代 | `6a4c78e9975874867e7dce5e` |
+| 4 | Demo 原型迭代 / 质量审查 / UI 收敛 | `6a4c991e975874867e7dd49a` |
 
-**社区报名帖链接**：【TODO：报名审核通过后填写】
+**社区报名帖链接**：【待报名审核】
 
 ---
 
 ### 5. 技术实现亮点
 
 **工程严谨性**：
-- 22 份 ADR 决策记录，每个架构选择都有理由和约束
-- 992 个自动化测试，核心逻辑覆盖率高
+- 23 份 ADR 决策记录，每个架构选择都有理由和约束
+- 4160 个自动化测试，核心逻辑覆盖率高
 - 零 native 依赖内核，纯 TypeScript 编写，可被任何宿主项目集成
 - 分层架构清晰：agent / memory / persona / skill / llm / security / config / logging / utils 职责分明
 - 精灵宿主 8 个专职控制器，单一职责明确

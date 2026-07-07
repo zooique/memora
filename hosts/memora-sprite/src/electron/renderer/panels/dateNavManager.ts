@@ -45,7 +45,8 @@ export class DateNavManager {
   init(): void {
     const btn = document.getElementById('date-nav-btn') as HTMLButtonElement | null;
     const dropdown = document.getElementById('date-nav-dropdown');
-    if (!btn || !dropdown) return;
+    const listEl = document.getElementById('date-nav-list');
+    if (!btn || !dropdown || !listEl) return;
 
     // 点击按钮切换下拉
     this.events.addEventListener(btn, 'click', (e) => {
@@ -70,6 +71,83 @@ export class DateNavManager {
     this.events.addEventListener(document, 'keydown', (e) => {
       if (e instanceof KeyboardEvent && e.key === 'Escape') {
         this.closeDropdown();
+      }
+    });
+
+    // 键盘支持：Enter/Space 展开下拉（按钮上）
+    this.events.addEventListener(btn, 'keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter' || ke.key === ' ') {
+        ke.preventDefault();
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        if (expanded) {
+          this.closeDropdown();
+        } else {
+          this.openDropdown();
+        }
+      }
+    });
+
+    // 键盘导航：在下拉菜单内用方向键移动焦点，Enter 选择
+    this.events.addEventListener(dropdown, 'keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      const items = dropdown.querySelectorAll<HTMLElement>('.date-nav-item[data-date]');
+      if (items.length === 0) return;
+
+      const currentIdx = Array.from(items).findIndex(
+        (item) => item === document.activeElement,
+      );
+
+      if (ke.key === 'ArrowDown') {
+        ke.preventDefault();
+        const nextIdx = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
+        items[nextIdx]?.focus();
+      } else if (ke.key === 'ArrowUp') {
+        ke.preventDefault();
+        const prevIdx = currentIdx < 0 ? items.length - 1 : Math.max(currentIdx - 1, 0);
+        items[prevIdx]?.focus();
+      } else if (ke.key === 'Enter') {
+        ke.preventDefault();
+        if (currentIdx >= 0) {
+          const date = items[currentIdx].dataset.date;
+          if (date) {
+            this.selectDate(date);
+          }
+        }
+      } else if (ke.key === 'Escape') {
+        this.closeDropdown();
+        btn.focus();
+      }
+    });
+
+    // 事件委托：日期列表项点击（跳转）
+    // 避免每次 renderDateList 重建 DOM 时重复绑定事件监听器
+    this.events.addEventListener(listEl, 'click', (e) => {
+      const target = e.target as HTMLElement;
+      // 排除删除按钮的点击（删除按钮已单独处理）
+      if (target.closest('.date-nav-item-delete')) return;
+      // 找到日期项
+      const item = target.closest<HTMLElement>('.date-nav-item[data-date]');
+      if (item) {
+        const date = item.dataset.date;
+        if (date) {
+          this.selectDate(date);
+        }
+      }
+    });
+
+    // 事件委托：删除按钮点击
+    this.events.addEventListener(listEl, 'click', (e) => {
+      const target = e.target as HTMLElement;
+      const deleteBtn = target.closest<HTMLElement>('.date-nav-item-delete');
+      if (deleteBtn) {
+        const item = deleteBtn.closest<HTMLElement>('.date-nav-item[data-date]');
+        if (item) {
+          const date = item.dataset.date;
+          if (date && this.deleteCallback) {
+            this.deleteCallback(date);
+          }
+        }
       }
     });
   }
@@ -135,6 +213,8 @@ export class DateNavManager {
       item.className = 'date-nav-item';
       item.setAttribute('role', 'option');
       item.setAttribute('data-date', date);
+      // 添加 tabindex="-1" 支持键盘导航（由父容器事件委托处理）
+      item.setAttribute('tabindex', '-1');
       // 补全 ARIA 可访问性：标记当前选中项（屏幕阅读器用户需感知）
       item.setAttribute('aria-selected', date === this.currentDate ? 'true' : 'false');
 
@@ -168,22 +248,12 @@ export class DateNavManager {
         deleteBtn.className = 'date-nav-item-delete';
         deleteBtn.title = '删除该日期的对话记录';
         deleteBtn.setAttribute('aria-label', `删除 ${date} 的对话记录`);
-        // 阻止点击删除按钮时触发父级跳转
-        deleteBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          if (this.deleteCallback) {
-            this.deleteCallback(date);
-          }
-        });
+        // 事件委托已处理删除按钮点击，此处无需绑定
         deleteBtn.innerHTML = '<svg class="icon"><use href="#icon-trash"/></svg>';
         item.appendChild(deleteBtn);
       }
 
-      // 点击跳转
-      item.addEventListener('click', () => {
-        this.selectDate(date);
-      });
-
+      // 事件委托已处理日期项点击，此处无需绑定
       listEl.appendChild(item);
     }
   }

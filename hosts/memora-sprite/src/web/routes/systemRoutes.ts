@@ -188,7 +188,7 @@ export async function handleSystemRoute(
       try {
         const data = await getLlmProviders();
         sendJson(res, 200, data);
-      } catch (error) {
+      } catch {
         sendJson(res, 200, { active: '', providers: [] });
       }
       return;

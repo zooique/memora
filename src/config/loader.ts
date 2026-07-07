@@ -37,6 +37,8 @@ const ProviderConfigSchema = z.object({
   apiKey: z.string().optional(),
   /** 该 Provider 的 temperature，未配置时回退到全局 llm.temperature */
   temperature: z.number().min(0).max(2).optional(),
+  /** 该 Provider 的上下文窗口大小（token 数），未配置时回退到 memory.maxContextTokens */
+  contextWindow: z.number().optional(),
 });
 
 // 配置 schema（运行时校验）

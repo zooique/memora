@@ -715,7 +715,20 @@ export class ChatPanelManager {
         for (const tc of Array.from(latestToolCalls)) {
           latestBubble.appendChild(tc);
         }
-        if (latestCursor) latestBubble.appendChild(latestCursor);
+        // 确保光标始终在文本末尾，不受 Markdown 渲染结构影响
+        if (latestCursor) {
+          // 查找最后一个文本容器（p、div、span、li 等块级元素），将光标插入其中
+          // 只在最后一个子元素是 markdown 内容时才插入到内部，避免插入到 recall/tool-call 等 UI 容器中
+          const lastChild = latestBubble.lastElementChild;
+          if (lastChild && 
+              ['P', 'DIV', 'SPAN', 'LI'].includes(lastChild.tagName) &&
+              !lastChild.classList.contains('memory-recall-container') &&
+              !lastChild.classList.contains('tool-call-card')) {
+            lastChild.appendChild(latestCursor);
+          } else {
+            latestBubble.appendChild(latestCursor);
+          }
+        }
 
         // DOM 更新完成后再滚动，确保滚动位置准确
         // 原实现在 rAF 外调用 scrollToBottom，此时 DOM 尚未更新（还在等 rAF），

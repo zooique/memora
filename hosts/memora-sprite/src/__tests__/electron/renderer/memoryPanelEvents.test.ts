@@ -108,6 +108,7 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     cleanupConfirm: ReturnType<typeof vi.fn>;
     viewSwitch: ReturnType<typeof vi.fn>;
     recycleBinAction: ReturnType<typeof vi.fn>;
+    moreMenuAction: ReturnType<typeof vi.fn>;
   };
   host: ReturnType<typeof createMockHost>;
   events: EventTracker;
@@ -125,6 +126,7 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     cleanupConfirm: vi.fn().mockResolvedValue(undefined),
     viewSwitch: vi.fn(),
     recycleBinAction: vi.fn(),
+    moreMenuAction: vi.fn(),
   };
   const host = createMockHost();
   const events = new EventTracker();
@@ -164,6 +166,7 @@ function createMockCtx(overrides?: Partial<MemoryPanelEventContext>): {
     getCleanupConfirmCallback: () => callbacks.cleanupConfirm,
     getViewSwitchCallback: () => callbacks.viewSwitch,
     getRecycleBinActionCallback: () => callbacks.recycleBinAction,
+    getMoreMenuActionCallback: () => callbacks.moreMenuAction,
     ...overrides,
   };
 

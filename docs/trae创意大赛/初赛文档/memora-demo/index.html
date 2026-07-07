@@ -61,6 +61,23 @@
       --dur-slow: 400ms;
     }
 
+    [data-theme="dark"] {
+      --bg: #1e1e2e;
+      --bg-card: #2a2a3e;
+      --text-primary: #cdd6f4;
+      --text-secondary: #bac2de;
+      --text-muted: #6c7086;
+      --border: #313244;
+      --accent: #89b4fa;
+      --accent-2: #cba6f7;
+      --brand-grad: linear-gradient(135deg, #89b4fa 0%, #cba6f7 100%);
+      --success: #a6e3a1;
+      --warning: #fab387;
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
+      --shadow-md: 0 8px 24px rgba(0,0,0,0.4);
+      --shadow-lg: 0 16px 48px rgba(0,0,0,0.5);
+    }
+
     *, *::before, *::after {
       margin: 0;
       padding: 0;
@@ -693,7 +710,7 @@
     }
   </style>
 </head>
-<body>
+<body data-theme="light">
   <div class="bg-decor">
     <div class="bg-blob bg-blob-1"></div>
     <div class="bg-blob bg-blob-2"></div>
@@ -730,6 +747,9 @@
       <a href="#quickstart" class="btn btn-secondary">
         📋 3分钟体验指南
       </a>
+      <button class="btn btn-secondary theme-toggle" onclick="toggleTheme()" title="切换主题">
+        🌓
+      </button>
     </div>
 
     <!-- 评审快速体验路径 -->
@@ -898,8 +918,8 @@
       <div class="tech-item">
         <div class="tech-badge">🧪</div>
         <div class="tech-content">
-          <h4>992 个测试全通过</h4>
-          <p>Vitest + MSW Mock LLM，InMemoryStorage 零 IO 测试覆盖核心逻辑</p>
+          <h4>4160 个测试全通过</h4>
+          <p>Vitest + MSW Mock LLM，内核 1280 + 精灵 2880，零 IO 测试覆盖核心逻辑</p>
         </div>
       </div>
       <div class="tech-item">
@@ -912,8 +932,8 @@
       <div class="tech-item">
         <div class="tech-badge">📐</div>
         <div class="tech-content">
-          <h4>22 份 ADR 决策记录</h4>
-          <p>内核 14 + 精灵 8，从运行时栈到感知系统，每个架构决策都有文档追溯</p>
+          <h4>23 份 ADR 决策记录</h4>
+          <p>内核 13 + 精灵 10，从运行时栈到感知系统，每个架构决策都有文档追溯</p>
         </div>
       </div>
       <div class="tech-item">
@@ -945,5 +965,19 @@
       <span>进入完整 Demo，内置引导步骤和自动演示</span>
     </div>
   </main>
+
+  <script>
+    function toggleTheme() {
+      const current = document.body.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', next);
+      localStorage.setItem('memora-theme', next);
+    }
+    const saved = localStorage.getItem('memora-theme');
+    if (saved) document.body.setAttribute('data-theme', saved);
+    else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      document.body.setAttribute('data-theme', 'dark');
+    }
+  </script>
 </body>
 </html>

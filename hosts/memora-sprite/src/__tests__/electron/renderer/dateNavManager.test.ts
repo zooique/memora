@@ -145,7 +145,7 @@ describe('init · 事件绑定', () => {
   });
 
   it('选择日期后应自动关闭下拉', () => {
-    const manager = createManager();
+    createManager();
     clickNavBtn();
     clickDateItem('2026-07-01');
 
@@ -215,7 +215,7 @@ describe('updateAvailableDates · 可用日期更新', () => {
   });
 
   it('日期应按倒序排列（最新在前）', () => {
-    const manager = createManager({ dates: ['2026-06-25', '2026-07-01', '2026-06-30'] });
+    createManager({ dates: ['2026-06-25', '2026-07-01', '2026-06-30'] });
     clickNavBtn();
 
     const items = document.querySelectorAll('.date-nav-item');
@@ -235,7 +235,7 @@ describe('updateAvailableDates · 可用日期更新', () => {
   });
 
   it('空日期列表应显示空状态', () => {
-    const manager = createManager({ dates: [] });
+    createManager({ dates: [] });
     clickNavBtn();
 
     const empty = document.querySelector('.date-nav-empty');
@@ -296,7 +296,7 @@ describe('列表渲染 · 细节验证', () => {
   });
 
   it('每个日期项应显示会话数', () => {
-    const manager = createManager({ dates: ['2026-07-01'] });
+    createManager({ dates: ['2026-07-01'] });
     clickNavBtn();
 
     const count = document.querySelector('.date-nav-item-count');

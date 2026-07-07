@@ -123,7 +123,7 @@ export async function isLlmConfigured(configPath?: string): Promise<boolean> {
  */
 export async function getLlmProviders(
   configPath?: string,
-): Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> }> {
+): Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number; contextWindow?: number }> }> {
   const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
   const config = await store.load();
   const providers = config.llm.providers ?? {};
@@ -134,7 +134,7 @@ export async function getLlmProviders(
     return key.slice(0, 4) + '****' + key.slice(-4);
   };
 
-  let providerList: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>;
+  let providerList: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number; contextWindow?: number }>;
   let active: string;
 
   // 向后兼容：当 providers 为空但存在旧的扁平配置时，自动迁移为单 provider 条目
@@ -151,20 +151,24 @@ export async function getLlmProviders(
       baseUrl: config.llm.baseUrl ?? '',
       apiKey: maskKey(config.llm.apiKey),
       temperature: config.llm.temperature ?? 0.7,
+      // 旧配置无 contextWindow，不返回
     }];
     active = config.llm.active ?? defaultKey;
   } else {
     // 使用新的 providers 映射表
-    providerList = Object.entries(providers).map(([key, p]) => ({
-      key,
-      name: key, // 默认名称 = key，UI 可编辑
-      provider: p.provider,
-      model: p.model,
-      baseUrl: p.baseUrl ?? '',
-      apiKey: maskKey(p.apiKey),
-      // 读取每个 Provider 的 temperature，未配置时回退到全局默认值
-      temperature: p.temperature ?? config.llm.temperature,
-    }));
+    providerList = Object.entries(providers).map(([key, p]) => {
+      const providerData = p as { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number; contextWindow?: number };
+      return {
+        key,
+        name: key,
+        provider: providerData.provider,
+        model: providerData.model,
+        baseUrl: providerData.baseUrl ?? '',
+        apiKey: maskKey(providerData.apiKey),
+        temperature: providerData.temperature ?? config.llm.temperature,
+        contextWindow: providerData.contextWindow,
+      };
+    });
     active = config.llm.active ?? Object.keys(providers)[0] ?? '';
   }
 
@@ -186,7 +190,7 @@ export async function getLlmProviders(
  */
 export async function saveLlmProvider(
   key: string,
-  providerConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
+  providerConfig: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number; contextWindow?: number },
   configPath?: string,
 ): Promise<void> {
   const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
@@ -200,6 +204,8 @@ export async function saveLlmProvider(
     apiKey: providerConfig.apiKey || undefined,
     // 传递 temperature（可选，未传时回退到全局默认值）
     ...(providerConfig.temperature !== undefined ? { temperature: providerConfig.temperature } : {}),
+    // 传递 contextWindow（可选，未传时回退到 memory.maxContextTokens）
+    ...(providerConfig.contextWindow !== undefined ? { contextWindow: providerConfig.contextWindow } : {}),
   };
 
   // 首次添加时自动设为 active

@@ -121,6 +121,8 @@ export interface LlmProviderConfig {
   temperature: number;
   /** 是否为默认 Provider */
   isDefault?: boolean;
+  /** 上下文窗口大小（token 数，不同模型不同） */
+  contextWindow?: number;
 }
 
 /** Provider 列表响应 */

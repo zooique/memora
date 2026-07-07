@@ -1339,6 +1339,11 @@
   align-items: flex-end;
 }
 
+/* 用户消息元信息行：反转顺序，让复制按钮靠近气泡 */
+.message.user .message-meta {
+  flex-direction: row-reverse;
+}
+
 /* 精灵消息内容容器：左对齐 */
 .message.assistant .message-content {
   align-items: flex-start;
@@ -1362,6 +1367,11 @@
   color: var(--accent-fg);  /* 使用主题感知前景色，保证深色主题下浅蓝背景+深字对比度达标 */
   border-bottom-right-radius: 4px;  /* 尖角，视觉更清晰 */
   /* 用户消息统一使用系统字体 */
+  transition: box-shadow var(--transition-fast);
+}
+
+.message.user:hover .message-bubble {
+  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.15);
 }
 
 .message.assistant .message-bubble {
@@ -1370,6 +1380,11 @@
   border-bottom-left-radius: 4px;  /* 尖角与用户消息统一为 4px，视觉平衡 */
   /* 精灵消息使用系统字体栈（--font-sprite 已改为系统字体），保持与输入框一致的阅读体验 */
   font-family: var(--font-sprite);
+  transition: box-shadow var(--transition-fast);
+}
+
+.message.assistant:hover .message-bubble {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .message .meta {
@@ -1677,10 +1692,12 @@
   background: var(--red);
 }
 /* Token tooltip：CSS ::after 伪元素，与侧边栏 tooltip 风格一致 */
+/* 输入区在窗口底部，改为向下展开，避免被窗口顶部截断 */
 .token-usage::after {
   content: attr(data-tooltip);
   position: absolute;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
+  bottom: auto;
   left: 50%;
   transform: translateX(-50%);
   padding: 4px 10px;
@@ -1803,14 +1820,14 @@
   height: 10px;
 }
 
-/* 输入区角色下拉菜单（右对齐，避免超出输入框右边缘；向上展开，避免被窗口底部截断） */
+/* 输入区角色下拉菜单（右对齐，避免超出输入框右边缘；向下展开，输入区在窗口底部，向下更合理） */
 .input-persona-container #persona-dropdown {
   position: absolute;
-  bottom: calc(100% + 4px); /* 向上展开（在按钮上方） */
-  top: auto; /* 覆盖 .dropdown 默认的 top:100%，防止双向定位冲突 */
+  top: calc(100% + 4px); /* 向下展开（在按钮下方） */
+  bottom: auto;
   right: 0;
   left: auto;
-  width: 200px;
+  width: 220px;
   z-index: 100;
 }
 
@@ -2066,6 +2083,16 @@
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast);
   text-align: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 空状态建议按钮内的 SVG 图标尺寸统一 */
+.chat-empty-state .suggestion-btn .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .chat-empty-state .suggestion-btn:hover {
@@ -2202,9 +2229,20 @@
   transform: rotate(-90deg);
 }
 
+/* 工具调用参数和结果：默认展开，支持平滑折叠过渡 */
+.tool-call-args,
+.tool-call-result {
+  max-height: 200px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height var(--transition-base) ease, opacity var(--transition-fast) ease;
+}
+
+/* 折叠状态：箭头向右，参数和结果平滑收起 */
 .tool-call-card.collapsed .tool-call-args,
 .tool-call-card.collapsed .tool-call-result {
-  display: none;
+  max-height: 0;
+  opacity: 0;
 }
 
 /* 工具名：等宽字体强调"代码感" */
@@ -2342,6 +2380,13 @@
   background: var(--accent-soft);
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* 点击反馈：缩放 + 背景加深 */
+.scroll-to-bottom-btn:active {
+  transform: scale(0.92);
+  background: var(--accent);
+  color: var(--accent-fg);
 }
 
 /* 滚动到底部按钮键盘聚焦可见样式 */

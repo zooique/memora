@@ -262,7 +262,7 @@ describe('appendMessage · 消息渲染', () => {
   });
 
   it('system 消息应为简单 textContent 无头像无气泡', () => {
-    const { manager, host, messagesEl } = createManager();
+    const { manager, messagesEl } = createManager();
     manager.appendMessage({ role: 'system', content: '系统提示' });
     const msg = messagesEl.querySelector('.message.system') as HTMLElement;
     expect(msg).toBeTruthy();

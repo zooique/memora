@@ -217,6 +217,8 @@ export class MemoryPanelManager {
       getViewSwitchCallback: () => this.viewSwitchCallback,
       // 回收站操作回调读取器
       getRecycleBinActionCallback: () => this.recycleBinActionCallback,
+      // 更多菜单操作回调读取器（insights/health/recycle-bin）
+      getMoreMenuActionCallback: () => this.moreMenuActionCallback,
     };
     initMemoryPanelListenersImpl(ctx);
   }

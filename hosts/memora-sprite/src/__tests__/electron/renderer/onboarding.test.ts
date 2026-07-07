@@ -15,7 +15,7 @@
  * - localStorage 由 JSDOM 默认提供，测试间通过 beforeEach 清理
  * - window.electronAPI 由 vi.mock 模拟（persistStep 调用 updateConfig）
  */
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { OnboardingManager } from '../../../electron/renderer/components/onboarding.js';
 
 // ─── 全局 mock ────────────────────────────────────────
@@ -23,7 +23,7 @@ import { OnboardingManager } from '../../../electron/renderer/components/onboard
 beforeEach(() => {
   localStorage.clear();
   // 模拟 window.electronAPI（persistStep + saveLlmProvider 需要）
-  (window as any).electronAPI = {
+  (window as Window & { electronAPI?: { updateConfig: typeof vi.fn; saveLlmProvider: typeof vi.fn } }).electronAPI = {
     updateConfig: vi.fn().mockResolvedValue(undefined),
     saveLlmProvider: vi.fn().mockResolvedValue({ success: true }),
   };

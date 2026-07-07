@@ -298,7 +298,7 @@ export class DashboardPanelManager {
     // ─── 更新今日新增记忆微型指标 ──
     const dashboardTodayCount = document.getElementById('dashboard-today-memories');
     if (dashboardTodayCount) {
-      dashboardTodayCount.textContent = data.todayNewMemories != null ? `+${data.todayNewMemories}` : '—';
+      dashboardTodayCount.textContent = data.todayNewMemories !== null ? `+${data.todayNewMemories}` : '—';
     }
 
     // ─── 更新洞察计数（bySource 中 source='insight' 的记忆数） ──

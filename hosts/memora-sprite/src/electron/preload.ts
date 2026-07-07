@@ -408,9 +408,9 @@ export interface ElectronAPI {
 
   // ─── 多 Provider 管理 ──────────────────────────────────
   /** 获取 Provider 列表 */
-  listLlmProviders: () => Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> }>;
+  listLlmProviders: () => Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number; contextWindow?: number }> }>;
   /** 保存 Provider（新增/更新） */
-  saveLlmProvider: (key: string, config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number }) => Promise<{ success: boolean; error: string | null }>;
+  saveLlmProvider: (key: string, config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number; contextWindow?: number }) => Promise<{ success: boolean; error: string | null }>;
   /** 删除 Provider */
   deleteLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
   /** 切换激活 Provider */

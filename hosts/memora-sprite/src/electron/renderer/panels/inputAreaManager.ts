@@ -278,6 +278,69 @@ export class InputAreaManager {
       this.providerDropdown?.classList.add('hidden');
     });
 
+    // 事件委托：在 dropdown 容器上绑定一次点击事件，通过 data-provider-key 区分项
+    // 避免每次 loadProviderSelector 重建 DOM 时重复绑定事件监听器
+    this.events.addEventListener(this.providerDropdown, 'click', async (e) => {
+      const target = e.target as HTMLElement;
+      const item = target.closest<HTMLElement>('.dropdown-item[data-provider-key]');
+      if (item) {
+        const key = item.dataset.providerKey;
+        if (key) {
+          await window.electronAPI.setActiveLlmProvider(key);
+          this.providerDropdown!.classList.add('hidden');
+          await this.loadProviderSelector();
+        }
+      }
+    });
+
+    // 键盘支持：Enter/Space 展开下拉，Escape 关闭
+    this.events.addEventListener(this.providerSelector, 'keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      if (ke.key === 'Enter' || ke.key === ' ') {
+        ke.preventDefault();
+        this.providerDropdown!.classList.toggle('hidden');
+      } else if (ke.key === 'Escape') {
+        this.providerDropdown?.classList.add('hidden');
+        this.providerSelector!.focus();
+      }
+    });
+
+    // 键盘导航：在下拉菜单内用方向键移动焦点，Enter 选择
+    this.events.addEventListener(this.providerDropdown, 'keydown', (e) => {
+      const ke = e as KeyboardEvent;
+      const items = this.providerDropdown!.querySelectorAll<HTMLElement>('.dropdown-item[data-provider-key]');
+      if (items.length === 0) return;
+
+      const currentIdx = Array.from(items).findIndex(
+        (item) => item === document.activeElement,
+      );
+
+      if (ke.key === 'ArrowDown') {
+        ke.preventDefault();
+        const nextIdx = currentIdx < 0 ? 0 : Math.min(currentIdx + 1, items.length - 1);
+        items[nextIdx]?.focus();
+      } else if (ke.key === 'ArrowUp') {
+        ke.preventDefault();
+        const prevIdx = currentIdx < 0 ? items.length - 1 : Math.max(currentIdx - 1, 0);
+        items[prevIdx]?.focus();
+      } else if (ke.key === 'Enter') {
+        ke.preventDefault();
+        if (currentIdx >= 0) {
+          const key = items[currentIdx].dataset.providerKey;
+          if (key) {
+            void (async () => {
+              await window.electronAPI.setActiveLlmProvider(key);
+              this.providerDropdown!.classList.add('hidden');
+              await this.loadProviderSelector();
+            })();
+          }
+        }
+      } else if (ke.key === 'Escape') {
+        this.providerDropdown?.classList.add('hidden');
+        this.providerSelector!.focus();
+      }
+    });
+
     // 加载并渲染 Provider 列表
     await this.loadProviderSelector();
   }
@@ -306,25 +369,15 @@ export class InputAreaManager {
       this.providerNameEl.textContent = activeProvider.name;
       this.providerSelector?.classList.add('configured');
 
-      // 渲染下拉菜单
+      // 渲染下拉菜单（为每个项添加 tabindex="-1" 和 role="option" 支持键盘导航）
       this.providerDropdown.innerHTML = providers
         .map((p) => {
           const isActive = p.key === active;
-          return `<div class="dropdown-item${isActive ? ' active' : ''}" data-provider-key="${p.key}">${p.name}</div>`;
+          return `<div class="dropdown-item${isActive ? ' active' : ''}" data-provider-key="${p.key}" tabindex="-1" role="option" aria-selected="${isActive ? 'true' : 'false'}">${p.name}</div>`;
         })
         .join('');
 
-      // 绑定下拉项点击事件
-      this.providerDropdown.querySelectorAll('.dropdown-item').forEach((item) => {
-        this.events.addEventListener(item as HTMLElement, 'click', async () => {
-          const key = (item as HTMLElement).dataset.providerKey;
-          if (key) {
-            await window.electronAPI.setActiveLlmProvider(key);
-            this.providerDropdown!.classList.add('hidden');
-            await this.loadProviderSelector();
-          }
-        });
-      });
+      // 下拉项点击事件已通过 initProviderSelector 中的事件委托处理，此处无需重复绑定
     } catch {
       this.providerNameEl.textContent = '加载失败';
     }
@@ -341,7 +394,12 @@ export class InputAreaManager {
     if (!this.tokenUsageText || !this.tokenUsageFill) return;
 
     try {
-      const dashboard = await window.electronAPI.getDashboard();
+      // 并行获取仪表盘数据和当前 Provider 配置（减少 IPC 往返）
+      const [dashboard, providerList] = await Promise.all([
+        window.electronAPI.getDashboard(),
+        window.electronAPI.listLlmProviders(),
+      ]);
+
       const metrics = dashboard?.metrics;
       if (!metrics?.llm) {
         this.tokenUsageText.textContent = '--';
@@ -352,6 +410,12 @@ export class InputAreaManager {
       const { totalInputTokens, totalOutputTokens } = metrics.llm;
       const total = totalInputTokens + totalOutputTokens;
 
+      // 获取当前 Provider 的上下文窗口大小（动态，不同模型不同）
+      const activeProvider = providerList.providers.find(
+        (p) => p.key === providerList.active,
+      );
+      const contextWindow = activeProvider?.contextWindow ?? InputAreaManager.DEFAULT_CONTEXT_TOKENS;
+
       // 格式化数字（< 1K 显示原值，>= 1K 显示 X.XK）
       const formatTokens = (n: number): string => {
         if (n < 1000) return String(n);
@@ -359,11 +423,11 @@ export class InputAreaManager {
       };
 
       // 显示为「已用/总量」格式，比单独数字更有语义
-      const windowK = formatTokens(InputAreaManager.DEFAULT_CONTEXT_TOKENS);
+      const windowK = formatTokens(contextWindow);
       this.tokenUsageText.textContent = `${formatTokens(total)}/${windowK}`;
 
       // 进度条：基于上下文窗口大小计算填充比例（截断到 100%）
-      const ratio = Math.min(total / InputAreaManager.DEFAULT_CONTEXT_TOKENS, 1);
+      const ratio = Math.min(total / contextWindow, 1);
       this.tokenUsageFill.style.width = `${Math.round(ratio * 100)}%`;
 
       // 用量颜色分级：正常(0-70%)/警告(70-90%)/危险(90-100%)
