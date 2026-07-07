@@ -374,7 +374,14 @@ export function createSessionController(uiManager: UIManager) {
 
       // 更新日期导航管理器的可用日期集合（仅包含有消息记录的日期 + 今天）
       const availableDates = result.filter((item) => item.messageCount > 0 || item.isToday).map((item) => item.date);
-      uiManager.updateDateNavAvailableDates(availableDates);
+      // 传递每个日期的会话数（用于下拉列表显示）
+      const dateCounts = new Map<string, number>();
+      for (const item of result) {
+        if (item.messageCount > 0 || item.isToday) {
+          dateCounts.set(item.date, item.messageCount);
+        }
+      }
+      uiManager.updateDateNavAvailableDates(availableDates, dateCounts);
 
       return result;
     } catch (error) {

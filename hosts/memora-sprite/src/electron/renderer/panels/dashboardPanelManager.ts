@@ -595,7 +595,9 @@ export class DashboardPanelManager {
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     const w = rect.width;
-    const h = 100; // 柱状图高度比折线图紧凑（100px，节省垂直空间）
+    // 从 CSS 获取高度（由 .growth-canvas 类控制，避免硬编码）
+    const computedHeight = parseInt(getComputedStyle(canvas).height) || 70;
+    const h = computedHeight;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = `${w}px`;

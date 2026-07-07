@@ -1,20 +1,21 @@
 /**
- * 日期导航管理器 — 日历选择器，快速跳转到指定日期
+ * 日期导航管理器 — 有记录日期下拉列表
  *
- * 从下拉列表重构为原生 <input type="date"> 日历选择器。
- * 时间流滚动加载（loadEarlierDay）已覆盖顺序浏览历史对话，
- * 日历选择器提供随机访问——用户选择日期后直接跳转。
+ * 从原生 <input type="date"> 重构为自定义下拉列表。
+ * 只显示有对话记录的日期，无记录日期不显示，避免用户困惑。
+ * 日期按倒序排列（最新在前），每个日期显示会话数。
  *
  * 职责：
- * - 绑定 #date-nav-picker 的 change 事件
- * - 加载有对话记录的日期列表，验证选择的日期是否有效
- * - 日期变更时触发跳转回调（仅对有记录的日期）
- * - 显示当前查看的日期（不再清空选择器值）
+ * - 绑定 #date-nav-btn 点击事件，展开/收起下拉列表
+ * - 接收 availableDates，渲染日期列表项
+ * - 点击日期项触发跳转回调
+ * - 点击外部区域关闭下拉
+ * - 显示当前查看的日期（按钮文字）
  *
  * 设计原则：
  * - 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理
  * - 与 UIManager 解耦，通过回调接口通信
- * - 没有对话记录的日期禁用（选择后验证，原生 input[type="date"] 不支持直接禁用特定日期）
+ * - 日期数据来自 updateAvailableDates()，由外部（sessionController）提供
  */
 import { EventTracker } from '../helpers/eventTracker.js';
 
@@ -28,66 +29,246 @@ export class DateNavManager {
   private events = new EventTracker();
   /** 日期跳转回调（由 renderer.ts 注册，调用 sessionController.jumpToDate） */
   private jumpCallback: ((date: string) => void) | null = null;
-  /** 日期无效回调（选择了无记录的日期时通知 UI 显示提示） */
-  private invalidDateCallback: (() => void) | null = null;
-  /** 有对话记录的日期集合（用于验证选择的日期是否有效） */
-  private availableDates = new Set<string>();
-  /** 当前有效的日期值（用于无效日期时恢复） */
-  private currentValidDate = '';
+  /** 有对话记录的日期集合（用于渲染下拉列表） */
+  private availableDates = new Map<string, number>();
+  /** 当前选中的日期 */
+  private currentDate = '';
+  /** 日期删除回调（由 renderer.ts 注册，调用 sessionController.deleteSession） */
+  private deleteCallback: ((date: string) => void) | null = null;
 
   /**
    * 初始化事件监听器
    *
-   * 绑定 #date-nav-picker 的 change 事件。
+   * 绑定日期按钮点击展开/收起，点击外部关闭。
    * 在 UIManager 构造完成后调用。
    */
   init(): void {
-    const picker = document.getElementById('date-nav-picker') as HTMLInputElement | null;
-    if (!picker) return;
+    const btn = document.getElementById('date-nav-btn') as HTMLButtonElement | null;
+    const dropdown = document.getElementById('date-nav-dropdown');
+    if (!btn || !dropdown) return;
 
-    this.events.addEventListener(picker, 'change', () => {
-      const date = picker.value; // YYYY-MM-DD 格式
-      if (!date) return;
-
-      // 验证日期是否有对话记录
-      if (!this.availableDates.has(date)) {
-        // 日期无效：恢复到之前的有效值，触发回调通知 UI
-        picker.value = this.currentValidDate;
-        this.invalidDateCallback?.();
-        return;
-      }
-
-      // 日期有效：更新当前有效日期记录
-      this.currentValidDate = date;
-
-      if (this.jumpCallback) {
-        this.jumpCallback(date);
-        // 不再清空选择器值，保持显示当前日期
+    // 点击按钮切换下拉
+    this.events.addEventListener(btn, 'click', (e) => {
+      e.stopPropagation();
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      if (expanded) {
+        this.closeDropdown();
+      } else {
+        this.openDropdown();
       }
     });
+
+    // 点击外部关闭
+    this.events.addEventListener(document, 'click', (e) => {
+      const target = e.target as Node;
+      if (!dropdown.contains(target) && !btn.contains(target)) {
+        this.closeDropdown();
+      }
+    });
+
+    // Esc 关闭
+    this.events.addEventListener(document, 'keydown', (e) => {
+      if (e instanceof KeyboardEvent && e.key === 'Escape') {
+        this.closeDropdown();
+      }
+    });
+  }
+
+  /**
+   * 展开下拉列表
+   */
+  private openDropdown(): void {
+    const btn = document.getElementById('date-nav-btn');
+    const dropdown = document.getElementById('date-nav-dropdown');
+    if (!btn || !dropdown) return;
+
+    btn.setAttribute('aria-expanded', 'true');
+    dropdown.classList.remove('hidden');
+    this.renderDateList();
+  }
+
+  /**
+   * 收起下拉列表
+   */
+  private closeDropdown(): void {
+    const btn = document.getElementById('date-nav-btn');
+    const dropdown = document.getElementById('date-nav-dropdown');
+    if (!btn || !dropdown) return;
+
+    btn.setAttribute('aria-expanded', 'false');
+    dropdown.classList.add('hidden');
+  }
+
+  /**
+   * 渲染日期列表
+   *
+   * 按日期倒序排列，每个项显示日期 + 当天会话数。
+   * 当前选中日期高亮。
+   */
+  private renderDateList(): void {
+    const listEl = document.getElementById('date-nav-list');
+    if (!listEl) return;
+
+    listEl.innerHTML = '';
+
+    // 无数据时显示空状态
+    if (this.availableDates.size === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'date-nav-empty';
+      empty.textContent = '暂无对话记录';
+      listEl.appendChild(empty);
+      return;
+    }
+
+    // 按日期倒序排列（最新在前）
+    const sortedDates = Array.from(this.availableDates.entries()).sort((a, b) =>
+      b[0].localeCompare(a[0]),
+    );
+
+    const today = this.formatDate(new Date());
+    const yesterday = this.formatDate(
+      new Date(Date.now() - 24 * 60 * 60 * 1000),
+    );
+
+    for (const [date, count] of sortedDates) {
+      const item = document.createElement('div');
+      item.className = 'date-nav-item';
+      item.setAttribute('role', 'option');
+      item.setAttribute('data-date', date);
+
+      if (date === this.currentDate) {
+        item.classList.add('active');
+      }
+
+      // 日期显示：今天/昨天 + 日期
+      let label = date;
+      if (date === today) {
+        label = `今天 · ${date}`;
+      } else if (date === yesterday) {
+        label = `昨天 · ${date}`;
+      }
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'date-nav-item-label';
+      labelEl.textContent = label;
+
+      const countEl = document.createElement('span');
+      countEl.className = 'date-nav-item-count';
+      countEl.textContent = `${count} 条`;
+
+      item.appendChild(labelEl);
+      item.appendChild(countEl);
+
+      // 删除按钮：今天不显示删除（避免删除当天进行中的对话）
+      const isToday = date === today;
+      if (!isToday) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'date-nav-item-delete';
+        deleteBtn.title = '删除该日期的对话记录';
+        deleteBtn.setAttribute('aria-label', `删除 ${date} 的对话记录`);
+        // 阻止点击删除按钮时触发父级跳转
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (this.deleteCallback) {
+            this.deleteCallback(date);
+          }
+        });
+        deleteBtn.innerHTML = '<svg class="icon"><use href="#icon-trash"/></svg>';
+        item.appendChild(deleteBtn);
+      }
+
+      // 点击跳转
+      item.addEventListener('click', () => {
+        this.selectDate(date);
+      });
+
+      listEl.appendChild(item);
+    }
+  }
+
+  /**
+   * 选择日期并跳转
+   *
+   * @param date 日期字符串（YYYY-MM-DD）
+   */
+  private selectDate(date: string): void {
+    this.currentDate = date;
+    this.updateButtonLabel();
+    this.closeDropdown();
+
+    if (this.jumpCallback) {
+      this.jumpCallback(date);
+    }
+  }
+
+  /**
+   * 更新按钮显示的日期文字
+   */
+  private updateButtonLabel(): void {
+    const labelEl = document.getElementById('date-nav-label');
+    if (!labelEl) return;
+
+    if (!this.currentDate) {
+      labelEl.textContent = '选择日期';
+      return;
+    }
+
+    const today = this.formatDate(new Date());
+    const yesterday = this.formatDate(
+      new Date(Date.now() - 24 * 60 * 60 * 1000),
+    );
+
+    if (this.currentDate === today) {
+      labelEl.textContent = '今天';
+    } else if (this.currentDate === yesterday) {
+      labelEl.textContent = '昨天';
+    } else {
+      // 只显示月/日，节省空间
+      const parts = this.currentDate.split('-');
+      labelEl.textContent = `${parts[1]}/${parts[2]}`;
+    }
+  }
+
+  /**
+   * 格式化日期为 YYYY-MM-DD
+   *
+   * @param date Date 对象
+   * @returns YYYY-MM-DD 字符串
+   */
+  private formatDate(date: Date): string {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   /**
    * 更新有对话记录的日期集合
    *
    * @param dates 日期列表（YYYY-MM-DD 格式）
+   * @param counts 每个日期的会话数（可选，默认 1）
    */
-  updateAvailableDates(dates: string[]): void {
+  updateAvailableDates(dates: string[], counts?: Map<string, number>): void {
     this.availableDates.clear();
-    dates.forEach((d) => this.availableDates.add(d));
+    dates.forEach((d) => {
+      this.availableDates.set(d, counts?.get(d) ?? 1);
+    });
+    // 如果当前选中日期不在列表中，回退到最近的有记录日期
+    if (this.currentDate && !this.availableDates.has(this.currentDate)) {
+      const sorted = dates.sort((a, b) => b.localeCompare(a));
+      this.currentDate = sorted[0] ?? '';
+    }
+    this.updateButtonLabel();
   }
 
   /**
-   * 设置日期选择器显示的当前日期
+   * 设置当前显示的日期
    *
-   * @param date 日期字符串（YYYY-MM-DD 格式），为空则清空选择器
+   * @param date 日期字符串（YYYY-MM-DD 格式），为空则清空
    */
   setCurrentDate(date: string): void {
-    const picker = document.getElementById('date-nav-picker') as HTMLInputElement | null;
-    if (!picker) return;
-    picker.value = date;
-    // 更新当前有效日期记录
-    this.currentValidDate = date;
+    this.currentDate = date;
+    this.updateButtonLabel();
   }
 
   /**
@@ -100,20 +281,20 @@ export class DateNavManager {
   }
 
   /**
-   * 注册日期无效回调
+   * 注册日期删除回调（删除指定日期的对话记录）
    *
-   * @param cb 无效日期回调（选择了无记录的日期时触发）
+   * @param cb 删除回调（接收日期字符串 YYYY-MM-DD）
    */
-  onInvalidDate(cb: () => void): void {
-    this.invalidDateCallback = cb;
+  onDateNavDelete(cb: (date: string) => void): void {
+    this.deleteCallback = cb;
   }
 
   /** 清理事件监听器 */
   cleanup(): void {
     this.events.cleanup();
     this.jumpCallback = null;
-    this.invalidDateCallback = null;
+    this.deleteCallback = null;
     this.availableDates.clear();
-    this.currentValidDate = '';
+    this.currentDate = '';
   }
 }

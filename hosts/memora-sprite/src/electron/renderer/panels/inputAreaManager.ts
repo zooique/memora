@@ -259,9 +259,13 @@ export class InputAreaManager {
    * 初始化 Provider 选择器
    *
    * 加载 Provider 列表，渲染下拉菜单，绑定切换事件。
+   * 初始状态下拉为隐藏（添加 hidden 类），点击按钮切换显示/隐藏。
    */
   private async initProviderSelector(): Promise<void> {
     if (!this.providerSelector || !this.providerDropdown) return;
+
+    // 初始隐藏下拉菜单（HTML 中可能未带 hidden 类，确保初始态统一）
+    this.providerDropdown.classList.add('hidden');
 
     // 点击 provider 按钮切换下拉
     this.events.addEventListener(this.providerSelector, 'click', (e) => {
@@ -354,18 +358,27 @@ export class InputAreaManager {
         return `${(n / 1000).toFixed(1)}K`;
       };
 
-      this.tokenUsageText.textContent = `${formatTokens(total)} tokens`;
+      // 显示为「已用/总量」格式，比单独数字更有语义
+      const windowK = formatTokens(InputAreaManager.DEFAULT_CONTEXT_TOKENS);
+      this.tokenUsageText.textContent = `${formatTokens(total)}/${windowK}`;
 
       // 进度条：基于上下文窗口大小计算填充比例（截断到 100%）
       const ratio = Math.min(total / InputAreaManager.DEFAULT_CONTEXT_TOKENS, 1);
       this.tokenUsageFill.style.width = `${Math.round(ratio * 100)}%`;
 
-      // 缺口 C：hover 时展示输入/输出 token 分解（CSS ::after tooltip，与侧边栏风格统一）
-      const windowK = formatTokens(InputAreaManager.DEFAULT_CONTEXT_TOKENS);
+      // 用量颜色分级：正常(0-70%)/警告(70-90%)/危险(90-100%)
+      this.tokenUsageFill.classList.remove('level-warning', 'level-danger');
+      if (ratio >= 0.9) {
+        this.tokenUsageFill.classList.add('level-danger');
+      } else if (ratio >= 0.7) {
+        this.tokenUsageFill.classList.add('level-warning');
+      }
+
+      // hover 时展示输入/输出 token 分解（CSS ::after tooltip，与侧边栏风格统一）
       if (this.tokenUsageEl) {
         this.tokenUsageEl.setAttribute(
           'data-tooltip',
-          `输入 ${formatTokens(totalInputTokens)} / 输出 ${formatTokens(totalOutputTokens)} / 窗口 ${windowK}`
+          `输入 ${formatTokens(totalInputTokens)} / 输出 ${formatTokens(totalOutputTokens)} / 上下文窗口 ${windowK}`
         );
       }
     } catch {

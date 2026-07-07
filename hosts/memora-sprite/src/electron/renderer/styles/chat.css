@@ -590,37 +590,154 @@
   margin-left: auto;
 }
 
-/* 日历选择器：视觉降权（灰化默认态 + 缩小宽度，hover/focus 时恢复强调） */
-.date-nav-picker {
+/* 日期选择按钮：图标 + 文字 + 下拉箭头，胶囊样式 */
+.date-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  padding: 2px 6px;
+  padding: 2px 8px 2px 6px;
   font-size: var(--font-xs);
   color: var(--text-3);
   cursor: pointer;
   transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-  width: 110px;
   height: 24px;
+  font-family: inherit;
+  white-space: nowrap;
 }
 
-.date-nav-picker:hover {
+.date-nav-btn:hover {
   border-color: var(--border);
   background: var(--surface0);
   color: var(--text);
 }
 
-.date-nav-picker:focus-visible {
+.date-nav-btn:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   background: var(--surface0);
   color: var(--text);
 }
 
-/* 暗色主题下日历图标的颜色反转 */
-.date-nav-picker::-webkit-calendar-picker-indicator {
+.date-nav-btn .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.date-nav-chevron {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--transition-fast);
+}
+
+.date-nav-btn[aria-expanded="true"] .date-nav-chevron {
+  transform: rotate(180deg);
+}
+
+/* 日期下拉面板 */
+.date-nav-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--window-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  z-index: 100;
+  padding: 4px;
+}
+
+.date-nav-dropdown.hidden {
+  display: none;
+}
+
+.date-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 单个日期选项 */
+.date-nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-xs);
+  color: var(--text-2);
   cursor: pointer;
-  filter: var(--calendar-icon-filter, none);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.date-nav-item:hover {
+  background: var(--surface0);
+  color: var(--text);
+}
+
+.date-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.date-nav-item-count {
+  font-size: 11px;
+  color: var(--text-4);
+  background: var(--surface1);
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.date-nav-item.active .date-nav-item-count {
+  background: rgba(0, 102, 255, 0.15);
+  color: var(--accent);
+}
+
+/* 日期项删除按钮：默认隐藏，hover 时显示 */
+.date-nav-item-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-4);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.date-nav-item-delete .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.date-nav-item:hover .date-nav-item-delete {
+  opacity: 1;
+}
+
+.date-nav-item-delete:hover {
+  color: var(--red);
+  background: rgba(224, 60, 60, 0.1);
+}
+
+/* 空状态 */
+.date-nav-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: var(--font-xs);
+  color: var(--text-4);
 }
 
 /**
@@ -1504,19 +1621,25 @@
 }
 
 /* Token 用量指示器（只读状态信息） */
+/* 上下文用量指示器：显示 token 用量占上下文窗口比例（图标 + 文字 + 进度条） */
 .token-usage {
   display: flex;
   align-items: center;
-  gap: var(--space-1-5);
+  gap: 6px;
   font-size: var(--font-xs);
   color: var(--text-3);
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0 6px;
   flex-shrink: 0;
   position: relative;  /* 为 ::after tooltip 提供定位锚点 */
 }
 .token-usage:hover {
   color: var(--text-2);
+}
+.token-usage-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 /* Token 进度条（细线，填充色反映用量比例） */
 .token-usage-bar {
@@ -1530,7 +1653,14 @@
   height: 100%;
   background: var(--accent);
   border-radius: 2px;
-  transition: width 0.3s ease;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+/* 用量分级颜色：正常(0-70%)/警告(70-90%)/危险(90-100%) */
+.token-usage-fill.level-warning {
+  background: var(--yellow);
+}
+.token-usage-fill.level-danger {
+  background: var(--red);
 }
 /* Token tooltip：CSS ::after 伪元素，与侧边栏 tooltip 风格一致 */
 .token-usage::after {

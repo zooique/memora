@@ -414,6 +414,11 @@
   flex-shrink: 0;
 }
 
+/* 底部低频区：自动推到底部（设置入口） */
+.sidebar-nav-bottom {
+  margin-top: auto;
+}
+
 /* 导航按钮：图标模式仅显示图标 */
 .nav-btn {
   display: flex;
@@ -485,8 +490,7 @@
 }
 
 .dashboard-section + .dashboard-section {
-  /* section间（非第一个）增加顶部间距，帮助视觉分组 */
-  margin-top: 12px;
+  /* 间距由 .dashboard-body 的 flex gap 控制 */
 }
 
 .dashboard-section h3 {

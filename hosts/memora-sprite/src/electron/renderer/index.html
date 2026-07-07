@@ -40,7 +40,9 @@
       <!-- 图表 -->
       <symbol id="icon-chart" viewBox="0 0 24 24"><rect x="3" y="14" width="4" height="6" rx="0.5" fill="currentColor"/><rect x="10" y="8" width="4" height="12" rx="0.5" fill="currentColor"/><rect x="17" y="4" width="4" height="16" rx="0.5" fill="currentColor"/></symbol>
       <!-- 设置 / 齿轮 -->
-      <symbol id="icon-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 1l-2 3.5H7.5L5.5 2l-3 3 2 2.5V10l-2 3 3 3 2-2.5h2.5L12 16l2-2.5h2.5L19 16l3-3-2-3V7.5L22 4.5l-3-3-2 2.5H14.5L12 1z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+      <symbol id="icon-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M12 2v2.5M12 19.5V22M4.93 4.93l1.77 1.77M17.3 17.3l1.77 1.77M2 12h2.5M19.5 12H22M4.93 19.07l1.77-1.77M17.3 6.7l1.77-1.77" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+      <!-- 问号（帮助） -->
+      <symbol id="icon-question" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 9a2.5 2.5 0 015 0c0 1.5-2.5 2-2.5 3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></symbol>
       <!-- 搜索 -->
       <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="15.5" y1="15.5" x2="21" y2="21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
       <!-- 眼睛 / 可见性 -->
@@ -190,18 +192,23 @@
       </div>
 
       <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
-      <nav class="sidebar-nav" aria-label="主导航">
+      <!-- 顶部高频区：对话 / 记忆 / 仪表盘 -->
+      <nav class="sidebar-nav sidebar-nav-top" aria-label="主导航">
         <button class="nav-btn active" data-panel="chat" data-tooltip="对话" aria-label="对话面板">
           <svg class="icon"><use href="#icon-chat"/></svg>
         </button>
         <button class="nav-btn" data-panel="memories" data-tooltip="记忆" aria-label="记忆面板">
           <svg class="icon"><use href="#icon-brain"/></svg>
         </button>
-        <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-label="设置面板">
-          <svg class="icon"><use href="#icon-gear"/></svg>
-        </button>
         <button class="nav-btn" data-panel="dashboard" data-tooltip="仪表盘" aria-label="仪表盘面板">
           <svg class="icon"><use href="#icon-chart"/></svg>
+        </button>
+      </nav>
+
+      <!-- 底部低频区：设置 -->
+      <nav class="sidebar-nav sidebar-nav-bottom" aria-label="设置">
+        <button class="nav-btn" data-panel="settings" data-tooltip="设置" aria-label="设置面板">
+          <svg class="icon"><use href="#icon-gear"/></svg>
         </button>
       </nav>
 
@@ -256,11 +263,20 @@
             </div>
           </div>
           <!-- 角色选择器已迁移到输入区发送按钮旁（input-persona-container） -->
-          <!-- 日期导航：日历选择器，快速跳转到指定日期（时间流滚动加载已覆盖顺序浏览） -->
+          <!-- 日期导航：有记录日期下拉列表，快速跳转（无记录日期不显示，避免困惑） -->
           <div id="date-navigator" class="date-navigator">
-            <input type="date" id="date-nav-picker" class="date-nav-picker" title="跳转到指定日期" aria-label="跳转到指定日期" />
+            <button id="date-nav-btn" class="date-nav-btn" aria-haspopup="listbox" aria-expanded="false" title="跳转到有记录的日期">
+              <svg class="icon"><use href="#icon-calendar"/></svg>
+              <span id="date-nav-label">今天</span>
+              <svg class="icon date-nav-chevron"><use href="#icon-chevron"/></svg>
+            </button>
+            <div id="date-nav-dropdown" class="date-nav-dropdown hidden" role="listbox" aria-label="有记录的日期">
+              <div id="date-nav-list" class="date-nav-list"></div>
+            </div>
           </div>
-          <div id="token-usage" class="token-usage">
+          <!-- 上下文用量指示器：显示当前对话 token 用量占上下文窗口的比例 -->
+          <div id="token-usage" class="token-usage" data-tooltip="">
+            <svg class="token-usage-icon"><use href="#icon-memo"/></svg>
             <span id="token-usage-text">--</span>
             <div class="token-usage-bar"><div id="token-usage-fill" class="token-usage-fill"></div></div>
           </div>

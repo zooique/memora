@@ -1341,8 +1341,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /** 更新有对话记录的日期集合（用于验证选择的日期是否有效） */
-  updateDateNavAvailableDates(dates: string[]): void {
-    this.dateNavManager.updateAvailableDates(dates);
+  updateDateNavAvailableDates(dates: string[], counts?: Map<string, number>): void {
+    this.dateNavManager.updateAvailableDates(dates, counts);
   }
 
   /** 设置日期选择器显示的当前日期 */
@@ -1350,9 +1350,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.dateNavManager.setCurrentDate(date);
   }
 
-  /** 注册无效日期回调（选择了无记录的日期时触发） */
-  onDateNavInvalidDate(cb: () => void): void {
-    this.dateNavManager.onInvalidDate(cb);
+  /** 注册日期删除回调（删除指定日期的对话记录） */
+  onDateNavDelete(cb: (date: string) => void): void {
+    this.dateNavManager.onDateNavDelete(cb);
   }
 
   /** 加载 Embedding 配置到表单（委托到 SettingsPanelManager） */

@@ -125,6 +125,8 @@ async function bootstrapRenderer(): Promise<void> {
     // 同步设置面板状态指示器
     settingsController.updateAgentStatus('ready', 'Agent 已就绪');
     void sessionController.loadSessionHistory();
+    // 加载有对话记录的日期列表（供日期导航下拉列表使用）
+    void sessionController.loadDateList();
 
     // 会话加载完成后，显示一键归档按钮（非 full 模式）
     State.uiManager.showArchiveButton();
@@ -650,9 +652,32 @@ function setupBusinessLogic(
     }
   });
 
-  // 无效日期回调：用户选择了没有对话记录的日期
-  State.uiManager.onDateNavInvalidDate(() => {
-    State.uiManager.showToast('该日期没有对话记录', 'warning');
+  // 日期导航删除回调：删除指定日期的对话记录（需二次确认）
+  State.uiManager.onDateNavDelete(async (date: string) => {
+    // 流式输出期间禁止删除
+    if (State.uiManager.isStreaming()) {
+      State.uiManager.showToast('精灵正在回复中，请等待完成后再删除', 'warning');
+      return;
+    }
+    // 二次确认弹窗（danger 样式，红色确认按钮）
+    const confirmed = await State.uiManager.showConfirmDialog({
+      title: '删除对话记录',
+      message: `确定要删除 ${date} 的全部对话记录吗？此操作不可撤销。`,
+      confirmText: '删除',
+      cancelText: '取消',
+      danger: true,
+    });
+    if (!confirmed) return;
+    try {
+      const success = await sessionController.deleteSession(date);
+      // 删除成功后刷新日期列表
+      if (success) {
+        await sessionController.loadDateList();
+      }
+    } catch (error) {
+      reportError('dateNavDelete', error);
+      State.uiManager.showToast('删除对话记录失败，请重试', 'error');
+    }
   });
 }
 

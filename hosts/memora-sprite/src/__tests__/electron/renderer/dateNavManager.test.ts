@@ -1,23 +1,18 @@
 /**
- * 日期导航日历选择器测试
+ * 日期导航下拉列表测试
  *
  * @vitest-environment jsdom
  *
  * 覆盖范围：
- * - init：change 事件绑定
+ * - init：按钮点击展开/收起，外部点击关闭
  * - onDateNavJump：回调注册
  * - updateAvailableDates：更新可用日期集合
  * - setCurrentDate：设置当前显示日期
- * - onInvalidDate：无效日期回调
+ * - renderDateList：日期列表渲染（倒序、高亮、计数）
  * - cleanup：事件清理 + 回调清空
  *
- * 日历选择器（<input type="date">）替代了旧的下拉列表，
- * 时间流滚动加载已覆盖顺序浏览，日历选择器提供随机访问。
- *
- * 设计变更：
- * - 选择有记录的日期后不再清空 picker 值，保持显示当前日期
- * - 需要先调用 updateAvailableDates 设置可用日期集合
- * - 选择无记录的日期触发 invalidDateCallback
+ * 从原生 <input type="date"> 重构为自定义下拉列表。
+ * 只显示有对话记录的日期，无记录日期不显示。
  *
  * Mock 策略：
  * - 使用真实 EventTracker（验证事件注册与清理）
@@ -28,10 +23,15 @@ import { DateNavManager } from '../../../electron/renderer/panels/dateNavManager
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
-/** 日历选择器 DOM 结构 */
-const CALENDAR_HTML = `
+/** 日期导航 DOM 结构（按钮 + 下拉列表） */
+const NAV_HTML = `
   <div id="date-navigator">
-    <input type="date" id="date-nav-picker" />
+    <button id="date-nav-btn" aria-expanded="false">
+      <span id="date-nav-label">选择日期</span>
+    </button>
+    <div id="date-nav-dropdown" class="hidden">
+      <div id="date-nav-list"></div>
+    </div>
   </div>
 `;
 
@@ -43,7 +43,7 @@ let activeManager: DateNavManager | null = null;
 
 /** 创建 DateNavManager 实例（默认已 init 并设置可用日期） */
 function createManager(opts?: { init?: boolean; html?: string; dates?: string[] }): DateNavManager {
-  document.body.innerHTML = opts?.html ?? CALENDAR_HTML;
+  document.body.innerHTML = opts?.html ?? NAV_HTML;
   const manager = new DateNavManager();
   if (opts?.init !== false) {
     manager.init();
@@ -54,12 +54,23 @@ function createManager(opts?: { init?: boolean; html?: string; dates?: string[] 
   return manager;
 }
 
-/** 在日历选择器上触发 change 事件（模拟用户选择日期） */
-function dispatchCalendarChange(date: string): void {
-  const picker = document.getElementById('date-nav-picker') as HTMLInputElement;
-  if (!picker) return;
-  picker.value = date;
-  picker.dispatchEvent(new Event('change', { bubbles: true }));
+/** 点击日期按钮（展开下拉） */
+function clickNavBtn(): void {
+  const btn = document.getElementById('date-nav-btn');
+  if (!btn) return;
+  btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+/** 点击日期列表中的某一项 */
+function clickDateItem(date: string): void {
+  const item = document.querySelector(`.date-nav-item[data-date="${date}"]`);
+  if (!item) return;
+  item.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+}
+
+/** 点击外部区域（关闭下拉） */
+function clickOutside(): void {
+  document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 }
 
 // ─── 全局设置 ─────────────────────────────────────────────
@@ -80,53 +91,72 @@ afterEach(() => {
 // ─── init · 事件绑定 ─────────────────────────────────────
 
 describe('init · 事件绑定', () => {
-  it('选择有记录的日期后应触发 jumpCallback 并保持显示', () => {
+  it('点击按钮应展开下拉列表', () => {
+    createManager();
+    const dropdown = document.getElementById('date-nav-dropdown');
+    const btn = document.getElementById('date-nav-btn');
+    expect(dropdown?.classList.contains('hidden')).toBe(true);
+    expect(btn?.getAttribute('aria-expanded')).toBe('false');
+
+    clickNavBtn();
+
+    expect(dropdown?.classList.contains('hidden')).toBe(false);
+    expect(btn?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('再次点击按钮应收起下拉列表', () => {
+    createManager();
+    clickNavBtn(); // 展开
+    clickNavBtn(); // 收起
+
+    const dropdown = document.getElementById('date-nav-dropdown');
+    expect(dropdown?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('点击外部区域应关闭下拉', () => {
+    createManager();
+    clickNavBtn(); // 展开
+
+    clickOutside();
+
+    const dropdown = document.getElementById('date-nav-dropdown');
+    expect(dropdown?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('按 Esc 应关闭下拉', () => {
+    createManager();
+    clickNavBtn(); // 展开
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+
+    const dropdown = document.getElementById('date-nav-dropdown');
+    expect(dropdown?.classList.contains('hidden')).toBe(true);
+  });
+
+  it('选择有记录的日期应触发 jumpCallback', () => {
     const manager = createManager();
     const callback = vi.fn();
     manager.onDateNavJump(callback);
 
-    dispatchCalendarChange('2026-07-01');
+    clickNavBtn();
+    clickDateItem('2026-07-01');
 
     expect(callback).toHaveBeenCalledWith('2026-07-01');
-    // 跳转后 picker.value 应保持显示当前日期（不再清空）
-    const picker = document.getElementById('date-nav-picker') as HTMLInputElement;
-    expect(picker.value).toBe('2026-07-01');
   });
 
-  it('选择无记录的日期应触发 invalidDateCallback', () => {
+  it('选择日期后应自动关闭下拉', () => {
     const manager = createManager();
-    const jumpCallback = vi.fn();
-    const invalidCallback = vi.fn();
-    manager.onDateNavJump(jumpCallback);
-    manager.onInvalidDate(invalidCallback);
+    clickNavBtn();
+    clickDateItem('2026-07-01');
 
-    dispatchCalendarChange('2026-08-01');
-
-    expect(jumpCallback).not.toHaveBeenCalled();
-    expect(invalidCallback).toHaveBeenCalled();
+    const dropdown = document.getElementById('date-nav-dropdown');
+    expect(dropdown?.classList.contains('hidden')).toBe(true);
   });
 
-  it('选择日期后若未注册 jumpCallback 不应抛错', () => {
-    createManager();
-    expect(() => dispatchCalendarChange('2026-07-01')).not.toThrow();
-  });
-
-  it('picker 元素缺失时 init 不应抛错', () => {
+  it('按钮元素缺失时 init 不应抛错', () => {
     document.body.innerHTML = '';
     const manager = new DateNavManager();
     expect(() => manager.init()).not.toThrow();
-  });
-
-  it('选择空日期（picker.value=""）不应触发回调', () => {
-    const manager = createManager();
-    const callback = vi.fn();
-    manager.onDateNavJump(callback);
-
-    const picker = document.getElementById('date-nav-picker') as HTMLInputElement;
-    picker.value = '';
-    picker.dispatchEvent(new Event('change', { bubbles: true }));
-
-    expect(callback).not.toHaveBeenCalled();
   });
 });
 
@@ -138,7 +168,8 @@ describe('onDateNavJump · 回调注册', () => {
     const callback = vi.fn();
     manager.onDateNavJump(callback);
 
-    dispatchCalendarChange('2026-06-30');
+    clickNavBtn();
+    clickDateItem('2026-06-30');
 
     expect(callback).toHaveBeenCalledWith('2026-06-30');
   });
@@ -150,88 +181,157 @@ describe('onDateNavJump · 回调注册', () => {
     manager.onDateNavJump(oldCallback);
     manager.onDateNavJump(newCallback);
 
-    dispatchCalendarChange('2026-07-01');
+    clickNavBtn();
+    clickDateItem('2026-07-01');
 
     expect(oldCallback).not.toHaveBeenCalled();
     expect(newCallback).toHaveBeenCalledWith('2026-07-01');
+  });
+
+  it('未注册回调时选择日期不应抛错', () => {
+    createManager();
+    clickNavBtn();
+    expect(() => clickDateItem('2026-07-01')).not.toThrow();
   });
 });
 
 // ─── updateAvailableDates · 可用日期更新 ──────────────────
 
 describe('updateAvailableDates · 可用日期更新', () => {
-  it('应更新可用日期集合', () => {
+  it('应更新可用日期集合并重新渲染列表', () => {
     const manager = createManager({ dates: ['2026-07-01'] });
-    const jumpCallback = vi.fn();
-    const invalidCallback = vi.fn();
-    manager.onDateNavJump(jumpCallback);
-    manager.onInvalidDate(invalidCallback);
+    clickNavBtn();
 
-    // 有效日期
-    dispatchCalendarChange('2026-07-01');
-    expect(jumpCallback).toHaveBeenCalled();
+    let items = document.querySelectorAll('.date-nav-item');
+    expect(items.length).toBe(1);
 
-    // 无效日期
-    dispatchCalendarChange('2026-07-02');
-    expect(invalidCallback).toHaveBeenCalled();
+    manager.updateAvailableDates(['2026-07-01', '2026-07-02', '2026-07-03']);
+    // 关闭后重新打开以触发渲染
+    clickNavBtn();
+    clickNavBtn();
+
+    items = document.querySelectorAll('.date-nav-item');
+    expect(items.length).toBe(3);
   });
 
-  it('更新后旧日期不再可用', () => {
+  it('日期应按倒序排列（最新在前）', () => {
+    const manager = createManager({ dates: ['2026-06-25', '2026-07-01', '2026-06-30'] });
+    clickNavBtn();
+
+    const items = document.querySelectorAll('.date-nav-item');
+    expect(items[0]?.getAttribute('data-date')).toBe('2026-07-01');
+    expect(items[1]?.getAttribute('data-date')).toBe('2026-06-30');
+    expect(items[2]?.getAttribute('data-date')).toBe('2026-06-25');
+  });
+
+  it('当前选中日期不在新列表中时应回退到最近日期', () => {
     const manager = createManager({ dates: ['2026-07-01', '2026-07-02'] });
-    const invalidCallback = vi.fn();
-    manager.onInvalidDate(invalidCallback);
+    manager.setCurrentDate('2026-07-02');
 
-    // 更新前有效
-    dispatchCalendarChange('2026-07-01');
+    manager.updateAvailableDates(['2026-06-30']);
 
-    // 更新可用日期
-    manager.updateAvailableDates(['2026-07-03']);
+    const label = document.getElementById('date-nav-label');
+    expect(label?.textContent).toBe('06/30');
+  });
 
-    // 更新后无效
-    dispatchCalendarChange('2026-07-01');
-    expect(invalidCallback).toHaveBeenCalled();
+  it('空日期列表应显示空状态', () => {
+    const manager = createManager({ dates: [] });
+    clickNavBtn();
+
+    const empty = document.querySelector('.date-nav-empty');
+    expect(empty).not.toBeNull();
+    expect(empty?.textContent).toContain('暂无');
   });
 });
 
 // ─── setCurrentDate · 设置显示日期 ────────────────────────
 
 describe('setCurrentDate · 设置显示日期', () => {
-  it('应设置 picker 的 value', () => {
+  it('应更新按钮标签文字（非今天/昨天的日期显示月/日）', () => {
     const manager = createManager();
-    manager.setCurrentDate('2026-07-06');
+    // 选一个肯定不是今天或昨天的日期
+    manager.setCurrentDate('2026-01-15');
 
-    const picker = document.getElementById('date-nav-picker') as HTMLInputElement;
-    expect(picker.value).toBe('2026-07-06');
+    const label = document.getElementById('date-nav-label');
+    expect(label?.textContent).toBe('01/15');
   });
 
-  it('传入空字符串应清空 picker', () => {
+  it('今天的日期应显示「今天」', () => {
+    const manager = createManager();
+    const today = new Date().toISOString().split('T')[0];
+    manager.setCurrentDate(today);
+
+    const label = document.getElementById('date-nav-label');
+    expect(label?.textContent).toBe('今天');
+  });
+
+  it('传入空字符串应显示默认文字', () => {
     const manager = createManager();
     manager.setCurrentDate('2026-07-06');
     manager.setCurrentDate('');
 
-    const picker = document.getElementById('date-nav-picker') as HTMLInputElement;
-    expect(picker.value).toBe('');
+    const label = document.getElementById('date-nav-label');
+    expect(label?.textContent).toBe('选择日期');
   });
 
-  it('picker 元素缺失时不应抛错', () => {
-    document.body.innerHTML = '';
+  it('label 元素缺失时不应抛错', () => {
+    document.body.innerHTML = '<div id="date-navigator"></div>';
     const manager = new DateNavManager();
+    manager.init();
     expect(() => manager.setCurrentDate('2026-07-06')).not.toThrow();
+  });
+});
+
+// ─── 列表项渲染细节 ──────────────────────────────────────
+
+describe('列表渲染 · 细节验证', () => {
+  it('当前选中日期应有 active 类', () => {
+    const manager = createManager();
+    manager.setCurrentDate('2026-07-01');
+    clickNavBtn();
+
+    const activeItem = document.querySelector('.date-nav-item.active');
+    expect(activeItem).not.toBeNull();
+    expect(activeItem?.getAttribute('data-date')).toBe('2026-07-01');
+  });
+
+  it('每个日期项应显示会话数', () => {
+    const manager = createManager({ dates: ['2026-07-01'] });
+    clickNavBtn();
+
+    const count = document.querySelector('.date-nav-item-count');
+    expect(count).not.toBeNull();
+    expect(count?.textContent).toContain('条');
+  });
+
+  it('自定义 counts Map 应显示正确的会话数', () => {
+    const manager = createManager({ dates: [] });
+    const counts = new Map<string, number>();
+    counts.set('2026-07-01', 5);
+    counts.set('2026-07-02', 12);
+    manager.updateAvailableDates(['2026-07-01', '2026-07-02'], counts);
+    clickNavBtn();
+
+    const items = document.querySelectorAll('.date-nav-item');
+    const countsText = Array.from(items).map((item) =>
+      item.querySelector('.date-nav-item-count')?.textContent,
+    );
+    expect(countsText).toContain('12 条');
+    expect(countsText).toContain('5 条');
   });
 });
 
 // ─── cleanup ─────────────────────────────────────────────
 
 describe('cleanup · 事件与回调清理', () => {
-  it('cleanup 后选择日期不应触发 jumpCallback', () => {
+  it('cleanup 后点击按钮不应展开下拉', () => {
     const manager = createManager();
-    const callback = vi.fn();
-    manager.onDateNavJump(callback);
     manager.cleanup();
 
-    dispatchCalendarChange('2026-07-01');
+    clickNavBtn();
 
-    expect(callback).not.toHaveBeenCalled();
+    const dropdown = document.getElementById('date-nav-dropdown');
+    expect(dropdown?.classList.contains('hidden')).toBe(true);
   });
 
   it('cleanup 应清空回调引用', () => {
@@ -244,18 +344,9 @@ describe('cleanup · 事件与回调清理', () => {
     manager.onDateNavJump(newCallback);
     manager.updateAvailableDates(TEST_DATES);
     manager.init();
-    dispatchCalendarChange('2026-07-01');
+    clickNavBtn();
+    clickDateItem('2026-07-01');
     expect(newCallback).toHaveBeenCalledWith('2026-07-01');
-  });
-
-  it('cleanup 后 onDateNavJump 应覆盖为 null', () => {
-    const manager = createManager();
-    manager.onDateNavJump(vi.fn());
-    manager.cleanup();
-
-    // 未重新注册回调时，选择日期不应抛错
-    dispatchCalendarChange('2026-07-01');
-    // 不应抛错（jumpCallback 为 null）
   });
 
   it('cleanup 应清空可用日期集合', () => {
@@ -264,8 +355,10 @@ describe('cleanup · 事件与回调清理', () => {
     manager.onDateNavJump(jumpCallback);
     manager.cleanup();
 
-    // cleanup 后所有日期都无效，jumpCallback 不应被调用
-    dispatchCalendarChange('2026-07-01');
-    expect(jumpCallback).not.toHaveBeenCalled();
+    // cleanup 后再 init 并点击按钮，下拉应为空
+    manager.init();
+    clickNavBtn();
+    const items = document.querySelectorAll('.date-nav-item');
+    expect(items.length).toBe(0);
   });
 });
