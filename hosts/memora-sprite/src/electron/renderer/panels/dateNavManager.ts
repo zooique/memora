@@ -18,6 +18,7 @@
  * - 日期数据来自 updateAvailableDates()，由外部（sessionController）提供
  */
 import { EventTracker } from '../helpers/eventTracker.js';
+import { formatDateKey } from '../helpers/domHelpers.js';
 
 /**
  * 日期导航管理器类
@@ -203,8 +204,8 @@ export class DateNavManager {
       b[0].localeCompare(a[0]),
     );
 
-    const today = this.formatDate(new Date());
-    const yesterday = this.formatDate(
+    const today = formatDateKey(new Date());
+    const yesterday = formatDateKey(
       new Date(Date.now() - 24 * 60 * 60 * 1000),
     );
 
@@ -285,8 +286,8 @@ export class DateNavManager {
       return;
     }
 
-    const today = this.formatDate(new Date());
-    const yesterday = this.formatDate(
+    const today = formatDateKey(new Date());
+    const yesterday = formatDateKey(
       new Date(Date.now() - 24 * 60 * 60 * 1000),
     );
 
@@ -299,19 +300,6 @@ export class DateNavManager {
       const parts = this.currentDate.split('-');
       labelEl.textContent = `${parts[1]}/${parts[2]}`;
     }
-  }
-
-  /**
-   * 格式化日期为 YYYY-MM-DD
-   *
-   * @param date Date 对象
-   * @returns YYYY-MM-DD 字符串
-   */
-  private formatDate(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
   }
 
   /**

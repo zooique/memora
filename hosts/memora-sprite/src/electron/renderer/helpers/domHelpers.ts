@@ -234,6 +234,24 @@ export function formatClock(isoString: string): string {
   }
 }
 
+/**
+ * 格式化日期为 YYYY-MM-DD 键（本地日期）
+ *
+ * 从 dateNavManager.formatDate / memoryPanelManager.formatDateKey
+ * 等 3 处重复实现中提取的通用工具。
+ * 与 getLocalDate() 的区别：getLocalDate 返回"今天"的日期，
+ * 本函数接受任意 Date 对象。
+ *
+ * @param date Date 对象
+ * @returns YYYY-MM-DD 字符串（本地日期）
+ */
+export function formatDateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 // ─── 按钮状态管理 ─────────────────────────────────────────
 
 /**

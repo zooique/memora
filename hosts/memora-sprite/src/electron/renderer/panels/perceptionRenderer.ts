@@ -32,6 +32,7 @@ import type {
 // 缺口 G+H：主动提示统计类型从 sprite controllers（真理源）导入（preload 仅内部使用，不 re-export）
 import type { ProactiveStats } from '../../../sprite/controllers/index.js';
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
+import { NarrativeGenerator } from '../helpers/narrativeGenerator.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -43,9 +44,6 @@ const AFFECT_MID_THRESHOLD = 0.67;
 const ACCEPTANCE_LOW_THRESHOLD = 0.4;
 const ACCEPTANCE_MID_THRESHOLD = 0.7;
 
-/** 叙事基调判定阈值：warmth/directness/initiative 超过此值时计入基调描述 */
-const AFFECT_TONE_THRESHOLD = 0.6;
-
 // ─── 感知渲染器 ────────────────────────────────────────────
 
 /**
@@ -55,20 +53,9 @@ const AFFECT_TONE_THRESHOLD = 0.6;
  * 由 DashboardPanelManager 持有，通过外观方法委托调用。
  */
 export class PerceptionRenderer {
-  // ─── 叙事摘要：闭包级状态（跨事件累积，供 generateNarrative 合成） ──
-  /** 最近一次上下文状态（从 ContextPayload 派生，消除内联重复） */
-  private lastNarrativeContext: Pick<ContextPayload, 'rhythm' | 'coherence' | 'depth' | 'dominantSource'> | null = null;
-  /** 最近一次情感基调 */
-  private lastNarrativeAffect: AffectPayload | null = null;
-  /** 最近一次默契度（从 RapportPayload 派生，消除内联重复） */
-  private lastNarrativeRapport: Pick<RapportPayload, 'level' | 'trust'> | null = null;
-  /** 最近一次检测到的模式 */
-  private lastNarrativePatterns: Array<{ type: string; summary: string }> = [];
-  /**
-   * Phase 3.2：最近一次在场状态（首屏查询 + 事件累积统一入口）
-   * awaySince 为 null 表示用户在场；非 null 为离开起始时间戳（毫秒）。
-   */
-  private lastNarrativePresence: { state: 'present' | 'away'; awaySince: number | null } | null = null;
+  // ─── 叙事摘要生成器（统一管理 5 类感知数据累积 + 叙事合成） ──
+  /** 叙事摘要生成器实例，替代原 5 个 lastNarrative* 字段 + generateNarrative 方法 */
+  private narrativeGenerator = new NarrativeGenerator();
 
   // ─── 资源清理 ──────────────────────────────────────────
 
@@ -152,8 +139,8 @@ export class PerceptionRenderer {
    * @param affect 四维情感基调数值
    */
   updateAffectDisplay(affect: AffectPayload): void {
-    // 保存状态供叙事摘要合成
-    this.lastNarrativeAffect = affect;
+    // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
+    this.narrativeGenerator.updateAffect(affect);
 
     // 定义四维映射：id 前缀 → 数值
     const dimensions: Array<{ id: string; value: number }> = [
@@ -234,8 +221,8 @@ export class PerceptionRenderer {
       rapportDesc.textContent = rapport.description;
     }
 
-    // 保存状态供叙事摘要合成
-    this.lastNarrativeRapport = { level: rapport.level, trust: rapport.trust };
+    // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
+    this.narrativeGenerator.updateRapport(rapport);
     this.updateNarrative();
   }
 
@@ -268,13 +255,8 @@ export class PerceptionRenderer {
       depthEl.textContent = this.describeDepth(context.depth);
     }
 
-    // 保存状态供叙事摘要合成
-    this.lastNarrativeContext = {
-      rhythm: context.rhythm,
-      coherence: context.coherence,
-      depth: context.depth,
-      dominantSource: context.dominantSource,
-    };
+    // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
+    this.narrativeGenerator.updateContext(context);
     this.updateNarrative();
   }
 
@@ -302,11 +284,8 @@ export class PerceptionRenderer {
    * @param payload 模式洞察 payload
    */
   updatePatternsDisplay(payload: PatternsPayload): void {
-    // 保存状态供叙事摘要合成
-    this.lastNarrativePatterns = payload.patterns.map((p) => ({
-      type: p.type,
-      summary: p.summary,
-    }));
+    // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
+    this.narrativeGenerator.updatePatterns(payload);
 
     // 渲染到感知面板模式洞察容器
     const patternsList = document.getElementById('dashboard-patterns-list');
@@ -533,15 +512,8 @@ export class PerceptionRenderer {
     // 从事件载荷派生 awaySince：
     // - state='present' 时 awaySince=null（用户在场）
     // - state='away' 且有 awayDurationMs 时，awaySince = Date.now() - awayDurationMs
-    // - state='away' 且无 awayDurationMs 时，awaySince = Date.now()（兜底，避免 null 歧义）
-    if (payload.state === 'present') {
-      this.lastNarrativePresence = { state: 'present', awaySince: null };
-    } else {
-      const awaySince = payload.awayDurationMs !== null && payload.awayDurationMs !== undefined
-        ? Date.now() - payload.awayDurationMs
-        : Date.now();
-      this.lastNarrativePresence = { state: 'away', awaySince };
-    }
+    // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
+    this.narrativeGenerator.updatePresence(payload);
 
     // 更新感知面板在场状态指示器 DOM
     const presenceDot = document.getElementById('dashboard-presence-dot');
@@ -578,11 +550,10 @@ export class PerceptionRenderer {
    * 内部从闭包级状态变量合成叙事文本。
    */
   updateNarrative(): void {
-    const narrative = this.generateNarrative();
+    const narrative = this.narrativeGenerator.generateNarrative();
 
     // ─── 精灵状态条文字（非 idle 状态时更新） ────────────
-    const isIdle = this.lastNarrativeContext?.rhythm === 'idle' || !this.lastNarrativeContext;
-    if (!isIdle) {
+    if (!this.narrativeGenerator.isIdle()) {
       const statusTextBar = document.getElementById('sprite-status-text-bar');
       if (statusTextBar) {
         statusTextBar.textContent = narrative;
@@ -701,79 +672,5 @@ export class PerceptionRenderer {
       default:
         return depth;
     }
-  }
-
-  /**
-   * 综合感知系统输出，生成一句话叙事摘要
-   *
-   * 数据来源：ContextAwareness + AffectController + RapportController + PatternDetector
-   * 纯客户端合成，不触发 IPC，不依赖 LLM。
-   *
-   * @returns 叙事摘要文本
-   */
-  private generateNarrative(): string {
-    const parts: string[] = [];
-
-    // Phase 3.2：在场状态（用户离开时优先展示，覆盖其他叙事）
-    if (this.lastNarrativePresence?.state === 'away' && this.lastNarrativePresence.awaySince !== null) {
-      const awayMinutes = Math.max(1, Math.floor((Date.now() - this.lastNarrativePresence.awaySince) / 60000));
-      parts.push(`用户已离开 ${awayMinutes} 分钟`);
-    }
-
-    // 对话上下文
-    if (this.lastNarrativeContext && this.lastNarrativeContext.rhythm !== 'idle') {
-      const rhythmLabel = this.describeRhythm(this.lastNarrativeContext.rhythm);
-      parts.push(`对话节奏${rhythmLabel}`);
-    }
-    if (
-      this.lastNarrativeContext &&
-      this.lastNarrativeContext.coherence === 'focused' &&
-      this.lastNarrativeContext.dominantSource
-    ) {
-      parts.push(`正在专注讨论${this.lastNarrativeContext.dominantSource}相关话题`);
-    } else if (this.lastNarrativeContext && this.lastNarrativeContext.coherence === 'scattered') {
-      parts.push('话题较为分散');
-    }
-
-    // 互动基调
-    if (this.lastNarrativeAffect) {
-      const tones: string[] = [];
-      if (this.lastNarrativeAffect.warmth > AFFECT_TONE_THRESHOLD) tones.push('温暖');
-      if (this.lastNarrativeAffect.directness > AFFECT_TONE_THRESHOLD) tones.push('直接');
-      if (this.lastNarrativeAffect.initiative > AFFECT_TONE_THRESHOLD) tones.push('主动');
-      if (tones.length > 0) {
-        parts.push(`基调${tones.join('、')}`);
-      }
-    }
-
-    // 默契度
-    if (this.lastNarrativeRapport) {
-      const levelLabel = this.getRapportLevelLabel(this.lastNarrativeRapport.level);
-      if (levelLabel !== '初识') {
-        parts.push(`默契度：${levelLabel}`);
-      }
-    }
-
-    // 模式洞察
-    if (this.lastNarrativePatterns.length > 0) {
-      const recurringCount = this.lastNarrativePatterns.filter(
-        (p) => p.type === 'recurring_topic',
-      ).length;
-      const gapCount = this.lastNarrativePatterns.filter(
-        (p) => p.type === 'knowledge_gap',
-      ).length;
-      const patternDescs: string[] = [];
-      if (recurringCount > 0) patternDescs.push(`${recurringCount} 个重复主题`);
-      if (gapCount > 0) patternDescs.push(`${gapCount} 个知识缺口`);
-      if (patternDescs.length > 0) {
-        parts.push(`检测到${patternDescs.join('、')}`);
-      }
-    }
-
-    if (parts.length === 0) {
-      return '精灵正在感知中...';
-    }
-
-    return parts.join('，') + '。';
   }
 }

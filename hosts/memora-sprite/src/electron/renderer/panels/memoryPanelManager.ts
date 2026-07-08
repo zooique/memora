@@ -14,7 +14,7 @@
  * - 跨模块关注点（showModal / showConfirmDialog）通过 host 回调注入
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml } from '../helpers/domHelpers.js';
+import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, formatDateKey, escapeHtml } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
@@ -458,7 +458,7 @@ export class MemoryPanelManager {
 
     for (const mem of this.allMemories) {
       const date = mem.createdAt ? new Date(mem.createdAt) : new Date();
-      const dateKey = this.formatDateKey(date);
+      const dateKey = formatDateKey(date);
       const existing = groups.get(dateKey);
       if (existing) {
         existing.push(mem);
@@ -568,22 +568,12 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 格式化日期为 YYYY-MM-DD 键
-   */
-  private formatDateKey(date: Date): string {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  /**
    * 格式化日期标签（今天/昨天/具体日期）
    */
   private formatDateLabel(date: Date, today: Date, yesterday: Date): string {
-    const dateKey = this.formatDateKey(date);
-    const todayKey = this.formatDateKey(today);
-    const yesterdayKey = this.formatDateKey(yesterday);
+    const dateKey = formatDateKey(date);
+    const todayKey = formatDateKey(today);
+    const yesterdayKey = formatDateKey(yesterday);
 
     if (dateKey === todayKey) return '今天';
     if (dateKey === yesterdayKey) return '昨天';
