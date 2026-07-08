@@ -45,6 +45,7 @@
 }
 
 /* 代码块头部：语言标签 + 复制按钮 横向排列 */
+/* 默认隐藏，hover 时显示，减少视觉干扰 */
 .message-bubble .md-code-header {
   display: flex;
   align-items: center;
@@ -54,6 +55,21 @@
   border-bottom: 1px solid var(--surface1);
   font-family: system-ui, -apple-system, sans-serif;
   font-size: var(--font-xs);
+  /* 默认隐藏：高度为0，溢出隐藏 */
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height var(--transition-fast), padding var(--transition-fast), opacity var(--transition-fast);
+}
+
+/* hover 时展开头部 */
+.message-bubble .md-code-block:hover .md-code-header {
+  max-height: 40px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  opacity: 1;
 }
 
 /* 语言标签：等宽字体 + 弱化颜色 */
@@ -241,8 +257,9 @@
 /* ─── 增强 2：代码块 header 背景层次 ───────────────────────── */
 /* 原始 header 与代码主体背景区分不够，语言标签区域不够突出       */
 /* 增强：header 使用 accent-soft 浅底，强化"这是代码头部"的语义   */
+/* 仅在 hover 展开时应用背景色 */
 
-.message-bubble .md-code-header {
+.message-bubble .md-code-block:hover .md-code-header {
   background: var(--accent-10);
 }
 

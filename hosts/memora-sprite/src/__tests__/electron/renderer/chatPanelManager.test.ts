@@ -291,13 +291,20 @@ describe('appendMessage · 消息渲染', () => {
     const msg = messagesEl.querySelector('.message.assistant') as HTMLElement;
     const container = msg.querySelector('.memory-recall-container');
     expect(container).toBeTruthy();
+    // 极简模式：默认显示折叠头，记忆项隐藏
+    const header = container?.querySelector('.memory-recall-header');
+    expect(header).toBeTruthy();
+    expect(header?.textContent).toContain('记忆');
+    expect(header?.textContent).toContain('1');
+    // 记忆项在列表中（默认隐藏）
     const recallItem = container?.querySelector('.memory-recall');
     expect(recallItem).toBeTruthy();
     expect(recallItem?.getAttribute('data-action')).toBe('recall');
     expect(recallItem?.getAttribute('data-name')).toBe('记忆A');
-    expect(recallItem?.querySelector('.memory-recall-icon')?.innerHTML).toContain('icon-lightbulb');
+    expect(recallItem?.querySelector('.memory-recall-item-icon')?.innerHTML).toContain('icon-lightbulb');
     expect(recallItem?.textContent).toContain('记忆A');
-    expect(recallItem?.textContent).toContain('0.95');
+    // score 不再显示（极简模式）
+    expect(recallItem?.textContent).not.toContain('0.95');
   });
 
   it('document.hidden=true 时 assistant 消息应触发 updateUnreadCount', () => {
@@ -367,7 +374,7 @@ describe('updateStreamingMessage · rAF 节流', () => {
     expect(manager['_latestStreamText']).toBe('chunk2');
   });
 
-  it('rAF 回调应清空 bubble + renderMarkdown + 保留 cursor/recall/tool-call + scrollToBottom', () => {
+  it('rAF 回调应清空 bubble + 纯文本显示 + 保留 cursor/recall/tool-call + scrollToBottom', () => {
     const { manager, host, streamingMessages } = createManager();
     manager.startStreaming('s1');
     // 添加召回容器和工具卡片（验证 rAF 回调保留这些元素）
@@ -376,18 +383,19 @@ describe('updateStreamingMessage · rAF 节流', () => {
     host.scrollToBottom.mockClear();
     manager.updateStreamingMessage('s1', 'final text');
     flushRaF();
-    // renderMarkdown 以最新文本渲染
+    // 流式期间使用纯文本显示（不调用 renderMarkdown）
     const el = streamingMessages.get('s1') as HTMLElement;
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
-    expect(bubble.querySelector('.mock-markdown')?.textContent).toBe('final text');
+    expect(bubble.querySelector('.streaming-text')?.textContent).toBe('final text');
     // scrollToBottom 应在 rAF 回调中调用
     expect(host.scrollToBottom).toHaveBeenCalled();
-    // 验证保留元素顺序：markdown, recall, tool-call, cursor
+    // 验证保留元素顺序：streaming-text, recall, tool-call, cursor（cursor 在 streaming-text 内部）
     const children = Array.from(bubble.children);
-    expect(children[0]?.className).toBe('mock-markdown');
+    expect(children[0]?.className).toBe('streaming-text');
     expect(children[1]?.className).toContain('memory-recall-container');
     expect(children[2]?.className).toContain('tool-call');
-    expect(children[3]?.className).toBe('cursor');
+    // cursor 应在 streaming-text 内部
+    expect(children[0]?.querySelector('.cursor')).toBeTruthy();
   });
 
   it('应重置安全定时器 + 移除 thinking-phase 指示器', () => {

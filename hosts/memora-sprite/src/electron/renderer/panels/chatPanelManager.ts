@@ -257,6 +257,17 @@ export class ChatPanelManager {
         );
         return;
       }
+      // 召回记忆折叠按钮：data-action="toggle-recall"
+      const toggleRecall = target.closest<HTMLElement>('[data-action="toggle-recall"]');
+      if (toggleRecall) {
+        const container = toggleRecall.closest<HTMLElement>('.memory-recall-container');
+        if (container) {
+          container.classList.toggle('expanded');
+          const isExpanded = container.classList.contains('expanded');
+          toggleRecall.setAttribute('aria-expanded', isExpanded.toString());
+        }
+        return;
+      }
       // 召回记忆项：data-action="recall" data-memory-id="..."
       const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
       if (recallItem) {
@@ -346,6 +357,18 @@ export class ChatPanelManager {
         }
         return;
       }
+      // 召回记忆折叠按钮
+      const toggleRecall = target.closest<HTMLElement>('[data-action="toggle-recall"]');
+      if (toggleRecall) {
+        ke.preventDefault(); // 防止 Space 滚动页面
+        const container = toggleRecall.closest<HTMLElement>('.memory-recall-container');
+        if (container) {
+          container.classList.toggle('expanded');
+          const isExpanded = container.classList.contains('expanded');
+          toggleRecall.setAttribute('aria-expanded', isExpanded.toString());
+        }
+        return;
+      }
       // 工具调用折叠头
       const collapseHeader = target.closest<HTMLElement>('[data-action="toggle-collapse"]');
       if (collapseHeader) {
@@ -385,11 +408,18 @@ export class ChatPanelManager {
     if (!btn) return;
 
     // 滚动监听：距离底部超过一屏时显示按钮
+    // CHAT-A05 优化：rAF 节流避免高频 scroll 事件触发强制 reflow
+    let scrollRafPending = false;
     this.events.addEventListener(this.messagesEl, 'scroll', () => {
-      const distanceFromBottom = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight;
-      const shouldShow = distanceFromBottom > this.messagesEl.clientHeight;
-      btn.classList.toggle('hidden', !shouldShow);
-    });
+      if (scrollRafPending) return;
+      scrollRafPending = true;
+      requestAnimationFrame(() => {
+        scrollRafPending = false;
+        const distanceFromBottom = this.messagesEl.scrollHeight - this.messagesEl.scrollTop - this.messagesEl.clientHeight;
+        const shouldShow = distanceFromBottom > this.messagesEl.clientHeight;
+        btn.classList.toggle('hidden', !shouldShow);
+      });
+    }, { passive: true });
 
     // 点击回到底部
     this.events.addEventListener(btn, 'click', () => {
@@ -659,12 +689,13 @@ export class ChatPanelManager {
   /**
    * 更新流式消息内容
    *
-   * 流式过程中每次 chunk 都重新渲染 Markdown（text 是累积的完整文本）。
-   * 保留 cursor 元素和 memory-recall 元素，仅替换 Markdown 内容区域。
+   * 性能优化策略（CHAT-A01）：
+   * 流式期间使用 textContent 纯文本显示 + 光标，不调用 renderMarkdown。
+   * 原因：每次 chunk 对累积完整文本做全量 Markdown 渲染是 O(n²) 复杂度，
+   * 复杂问答（5000+字、N 个 chunk）会直接卡死 UI。
+   * 流式结束后由 finishStreamingMessage 一次性渲染完整 Markdown。
    *
-   * 性能考虑：
-   * - LLM 输出通常在几百到几千字，同步 DOM 渲染性能可接受
-   * - 若后续发现卡顿，可加 requestAnimationFrame 节流
+   * 保留 cursor 元素和 memory-recall 元素。
    */
   updateStreamingMessage(messageId: string, text: string): void {
     const el = this.streamingMessages.get(messageId);
@@ -677,17 +708,13 @@ export class ChatPanelManager {
     const bubble = el.querySelector('.message-bubble');
     if (!bubble) return;
 
-    // 保留元素在 rAF 回调中重新查询，此处不再维护同步变量
-    // 保留 cursor、memory-recall-container 和 tool-call 元素，在 rAF 回调中重新查询
-
     // 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
     const thinkingIndicator = bubble.querySelector('.thinking-phase');
     if (thinkingIndicator) {
       thinkingIndicator.remove();
     }
 
-    // 使用 rAF 节流 Markdown 渲染，避免高频 chunk 导致重复渲染
-    // 存储最新文本，rAF 回调中统一执行 clear + render + 保留元素追加
+    // 存储最新文本，rAF 回调中统一执行纯文本更新
     this._latestStreamText = text;
     this._latestStreamMessageId = messageId;
     if (!this._pendingRaF) {
@@ -706,34 +733,28 @@ export class ChatPanelManager {
         const latestRecall = latestBubble.querySelector('.memory-recall-container');
         const latestToolCalls = latestBubble.querySelectorAll('.tool-call-card');
 
-        // 安全清空并重新渲染 Markdown
+        // 流式期间使用纯文本显示（O(1) 操作），不调用 renderMarkdown
+        // 创建一个临时容器存放纯文本，避免破坏保留元素
+        const textContainer = document.createElement('div');
+        textContainer.className = 'streaming-text';
+        textContainer.textContent = this._latestStreamText;
+        // 白空格保留：代码块等格式在流式期间需要正确的换行显示
+        textContainer.style.whiteSpace = 'pre-wrap';
+
         clearElement(latestBubble);
-        latestBubble.appendChild(renderMarkdown(this._latestStreamText));
+        latestBubble.appendChild(textContainer);
 
         // 重新追加保留元素（recall 和 tool-call 在前，cursor 在最后）
         if (latestRecall) latestBubble.appendChild(latestRecall);
         for (const tc of Array.from(latestToolCalls)) {
           latestBubble.appendChild(tc);
         }
-        // 确保光标始终在文本末尾，不受 Markdown 渲染结构影响
+        // 光标始终在文本末尾
         if (latestCursor) {
-          // 查找最后一个文本容器（p、div、span、li 等块级元素），将光标插入其中
-          // 只在最后一个子元素是 markdown 内容时才插入到内部，避免插入到 recall/tool-call 等 UI 容器中
-          const lastChild = latestBubble.lastElementChild;
-          if (lastChild && 
-              ['P', 'DIV', 'SPAN', 'LI'].includes(lastChild.tagName) &&
-              !lastChild.classList.contains('memory-recall-container') &&
-              !lastChild.classList.contains('tool-call-card')) {
-            lastChild.appendChild(latestCursor);
-          } else {
-            latestBubble.appendChild(latestCursor);
-          }
+          textContainer.appendChild(latestCursor);
         }
 
         // DOM 更新完成后再滚动，确保滚动位置准确
-        // 原实现在 rAF 外调用 scrollToBottom，此时 DOM 尚未更新（还在等 rAF），
-        // 滚动到的是旧高度位置，rAF 回调更新 DOM 后内容增高但已不再滚动，
-        // 导致用户看到的位置不是最底部。
         this.host.scrollToBottom();
       });
     }
@@ -742,35 +763,42 @@ export class ChatPanelManager {
   /**
    * 完成流式消息
    *
+   * 性能优化策略（CHAT-A02）：
+   * 流式期间使用纯文本显示，结束时一次性渲染完整 Markdown。
+   * 如果 rAF 还在 pending，取消它（避免纯文本和 Markdown 两次渲染竞争），
+   * 然后同步执行一次完整 Markdown 渲染。
+   *
    * 移除 streaming 类和光标元素，添加复制按钮。
-   * 流式文本由主进程逐 chunk 拼接，渲染层不做尾部标记清理。
    */
   finishStreamingMessage(messageId: string): void {
     const el = this.streamingMessages.get(messageId);
     if (!el) return;
 
-    // 修复 P1-A：rAF 还在 pending 时直接 cancel 会丢失最后一批 chunk
-    // 必须先同步 flush 一次渲染，把 _latestStreamText 落到 DOM，再 cancel 后续 rAF
-    // 否则最后一批 chunk 与 END 同事件循环到达时，rAF 还没触发就被 cancel，永久丢失
-    if (this._rafHandle !== null && this._latestStreamMessageId === messageId) {
-      const bubbleToFlush = el.querySelector('.message-bubble');
-      if (bubbleToFlush && this._latestStreamText) {
-        try {
-          // 保留 cursor/recall/tool-call 元素（与正常 rAF 回调一致）
-          const flushRecall = bubbleToFlush.querySelector('.memory-recall-container');
-          const flushToolCalls = bubbleToFlush.querySelectorAll('.tool-call-card');
-          clearElement(bubbleToFlush);
-          bubbleToFlush.appendChild(renderMarkdown(this._latestStreamText));
-          if (flushRecall) bubbleToFlush.appendChild(flushRecall);
-          flushToolCalls.forEach((tc) => bubbleToFlush.appendChild(tc));
-        } catch (err) {
-          // 渲染异常时不阻塞收尾流程，保留旧 DOM
-          reportError('finishStreamingMessage', err);
-        }
-      }
+    // 取消挂起的 rAF（无论是否 pending），避免纯文本渲染与最终 Markdown 渲染竞争
+    if (this._rafHandle !== null) {
       cancelAnimationFrame(this._rafHandle);
       this._rafHandle = null;
       this._pendingRaF = false;
+    }
+
+    const bubble = el.querySelector('.message-bubble');
+    if (bubble && this._latestStreamText) {
+      try {
+        // 保留 recall/tool-call 元素
+        const flushRecall = bubble.querySelector('.memory-recall-container');
+        const flushToolCalls = bubble.querySelectorAll('.tool-call-card');
+
+        // 一次性渲染完整 Markdown（从纯文本切换到格式化输出）
+        clearElement(bubble);
+        bubble.appendChild(renderMarkdown(this._latestStreamText));
+
+        // 重新追加保留元素
+        if (flushRecall) bubble.appendChild(flushRecall);
+        flushToolCalls.forEach((tc) => bubble.appendChild(tc));
+      } catch (err) {
+        // 渲染异常时不阻塞收尾流程，保留旧 DOM
+        reportError('finishStreamingMessage', err);
+      }
     }
 
     el.classList.remove('streaming');
@@ -782,7 +810,7 @@ export class ChatPanelManager {
     const thinkingPhase = el.querySelector('.thinking-phase');
     if (thinkingPhase) thinkingPhase.remove();
 
-    // 流式完成后添加复制按钮（从 bubble 提取最终文本）
+    // 流式完成后添加复制按钮（复用缓存的文本，无需 cloneNode）
     this._addCopyButtonToMessage(el);
 
     this.streamingMessages.delete(messageId);
@@ -799,9 +827,10 @@ export class ChatPanelManager {
   /**
    * 为已完成的助手消息添加复制按钮
    *
-   * 抽取为私有方法以复用：finishStreamingMessage（正常结束）和
-   * markStreamingAborted（用户中断）都需要添加复制按钮，
-   * 允许用户复制已生成的部分内容。
+   * 性能优化（CHAT-A04）：
+   * 原实现使用 cloneNode(true) 深克隆整个气泡 + textContent 全树遍历提取文本，
+   * 长消息（DOM 节点上千）各为 O(n)。
+   * 改为优先复用 _latestStreamText（流式期间缓存的累积文本），避免 DOM 反向提取。
    *
    * @param el 消息 DOM 元素（.message 容器）
    */
@@ -813,25 +842,26 @@ export class ChatPanelManager {
     // 避免重复添加（幂等保护）
     if (contentWrapper.querySelector('.message-copy-btn')) return;
 
-    // 提取纯文本内容（排除 UI 元信息元素）
-    // - memory-recall：召回记忆提示
-    // - stream-aborted：中断标记
-    // - md-code-header：代码块头部（语言标签 + 复制按钮文本）
-    // - stream-error：错误指示器（QC-FLOW 错误注入路径）
-    // - thinking-phase：思考阶段指示器
-    const clone = bubble.cloneNode(true);
-    if (!(clone instanceof HTMLElement)) return;
-    const recallInClone = clone.querySelector('.memory-recall');
-    if (recallInClone) recallInClone.remove();
-    const abortedInClone = clone.querySelector('.stream-aborted');
-    if (abortedInClone) abortedInClone.remove();
-    const errorInClone = clone.querySelector('.stream-error');
-    if (errorInClone) errorInClone.remove();
-    const thinkingInClone = clone.querySelector('.thinking-phase');
-    if (thinkingInClone) thinkingInClone.remove();
-    // 移除所有代码块头部（语言标签 + 复制按钮文本不应包含在复制内容中）
-    clone.querySelectorAll('.md-code-header').forEach((h) => h.remove());
-    const finalText = clone.textContent ?? '';
+    // 优先复用流式期间缓存的文本（O(1)），避免 cloneNode + textContent 的 O(n) 操作
+    // 仅在缓存不可用时回退到 DOM 提取（如非流式消息的历史加载场景）
+    let finalText: string;
+    if (this._latestStreamText && this._latestStreamMessageId) {
+      finalText = this._latestStreamText;
+    } else {
+      // 回退路径：从 DOM 提取纯文本（排除 UI 元信息元素）
+      const clone = bubble.cloneNode(true);
+      if (!(clone instanceof HTMLElement)) return;
+      const recallInClone = clone.querySelector('.memory-recall');
+      if (recallInClone) recallInClone.remove();
+      const abortedInClone = clone.querySelector('.stream-aborted');
+      if (abortedInClone) abortedInClone.remove();
+      const errorInClone = clone.querySelector('.stream-error');
+      if (errorInClone) errorInClone.remove();
+      const thinkingInClone = clone.querySelector('.thinking-phase');
+      if (thinkingInClone) thinkingInClone.remove();
+      clone.querySelectorAll('.md-code-header').forEach((h) => h.remove());
+      finalText = clone.textContent ?? '';
+    }
 
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-copy-btn';

@@ -35,9 +35,9 @@ export function showToolStart(
   name: string,
   args?: string,
 ): void {
-  // 创建工具调用卡片
+  // 创建工具调用卡片（默认折叠，减少视觉干扰）
   const toolCard = document.createElement('div');
-  toolCard.className = 'tool-call-card tool-call-running';
+  toolCard.className = 'tool-call-card tool-call-running collapsed';
   toolCard.setAttribute('data-tool-call-id', toolCallId);
   toolCard.setAttribute('data-tool-name', name);
 

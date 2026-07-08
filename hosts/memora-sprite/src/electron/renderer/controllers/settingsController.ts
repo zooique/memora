@@ -49,8 +49,6 @@ export function createSettingsController(uiManager: UIManager) {
    */
   function setupSettingsPanel(): void {
     uiManager.onConfigSave(async (config: SpriteConfigForm) => {
-      // 进行中反馈：禁用保存按钮防止重复点击
-      setButtonLoading('btn-settings-save', true, '保存中...');
       try {
         // 单次 IPC 批量更新（事务性：原子性 + 单次持久化 + 副作用去重）
         // 替代原 10 次串行 updateConfig 调用，避免半更新状态和 N 次 writeFileSync
@@ -70,18 +68,14 @@ export function createSettingsController(uiManager: UIManager) {
           projectMode: config.projectMode,
         });
 
-        if (result.updated) {
-          // 操作反馈走 toast，不污染对话历史
-          uiManager.showToast('精灵配置已保存', 'success');
-        } else {
+        if (!result.updated) {
           // 事务回滚：主进程未应用任何更新，提示具体错误
           uiManager.showToast(`保存失败：${result.error ?? '未知错误'}`, 'error');
+        } else {
+          uiManager.showToast('精灵配置已保存', 'success');
         }
       } catch (error) {
         handleIpcError('onConfigSave', error, '保存精灵配置失败');
-      } finally {
-        // 恢复按钮状态
-        setButtonLoading('btn-settings-save', false);
       }
     });
 

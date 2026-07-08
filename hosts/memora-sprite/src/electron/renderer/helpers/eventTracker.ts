@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 事件监听器跟踪器 — 统一管理事件监听器的注册与清理
  *
  * 职责：
@@ -45,12 +45,13 @@ export class EventTracker {
    * @param element 事件目标元素（HTMLElement 或 Document）
    * @param event 事件名称（如 'click'、'keydown'）
    * @param handler 事件处理函数
+   * @param options 事件监听选项（如 { passive: true } 用于 scroll 事件性能优化）
    */
-  addEventListener(element: EventTarget, event: string, handler: EventListener): void {
-    element.addEventListener(event, handler);
+  addEventListener(element: EventTarget, event: string, handler: EventListener, options?: boolean | AddEventListenerOptions): void {
+    element.addEventListener(event, handler, options);
     // 记录清理函数，cleanup 时移除监听器
     this.cleanupFunctions.push(() => {
-      element.removeEventListener(event, handler);
+      element.removeEventListener(event, handler, options);
     });
   }
 

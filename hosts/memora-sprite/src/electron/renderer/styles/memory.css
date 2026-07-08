@@ -667,7 +667,7 @@
   color: var(--muted);
   cursor: pointer;
   padding: 0;
-  transition: all var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 .view-switch-btn .icon {

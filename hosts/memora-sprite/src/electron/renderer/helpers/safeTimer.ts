@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 安全定时器工具 — 提供可追踪的生命周期管理
  *
  * 原生 setTimeout / setInterval 不跟踪定时器 ID，
@@ -93,6 +93,32 @@ export class SafeTimerTracker {
       clearInterval(id);
       this.activeTimers.delete(id);
     }
+  }
+
+  /**
+   * 创建防抖函数
+   *
+   * @param callback 回调函数
+   * @param delay 延迟毫秒数
+   * @returns 防抖后的函数
+   */
+  debounce<T extends (...args: unknown[]) => void>(callback: T, delay: number): T {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    return ((...args: unknown[]) => {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        this.activeTimers.delete(timerId);
+      }
+      timerId = setTimeout(() => {
+        if (timerId !== null) {
+          this.activeTimers.delete(timerId);
+        }
+        timerId = null;
+        callback(...args);
+      }, delay);
+      this.activeTimers.add(timerId);
+    }) as T;
   }
 
   /**

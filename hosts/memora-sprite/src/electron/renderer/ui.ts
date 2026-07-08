@@ -646,12 +646,20 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   /**
    * 监听消息区滚动，更新 isNearBottom 状态
+   *
+   * CHAT-A05 优化：rAF 节流避免高频 scroll 事件触发强制 reflow
    */
   private initScrollListener(): void {
+    let scrollRafPending = false;
     this.events.addEventListener(this.messagesEl, 'scroll', () => {
-      const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
-      this.isNearBottom = scrollHeight - scrollTop - clientHeight < UIManager.SCROLL_BOTTOM_THRESHOLD;
-    });
+      if (scrollRafPending) return;
+      scrollRafPending = true;
+      requestAnimationFrame(() => {
+        scrollRafPending = false;
+        const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
+        this.isNearBottom = scrollHeight - scrollTop - clientHeight < UIManager.SCROLL_BOTTOM_THRESHOLD;
+      });
+    }, { passive: true });
   }
 
   // ─── 事件处理器 ─

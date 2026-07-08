@@ -1026,13 +1026,16 @@
             <span class="agent-status-dot"></span>
             <span class="agent-status-text">检测中…</span>
           </div>
+          <!-- 保存状态指示器 -->
+          <div id="save-status-indicator" class="save-status-indicator" aria-label="保存状态">
+            <span class="save-status-icon"></span>
+            <span class="save-status-text"></span>
+          </div>
           <div class="settings-actions-buttons">
           <!-- 恢复默认按钮，用户配置出错时可一键恢复 -->
           <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
           <!-- 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->
           <button id="btn-settings-skip" class="btn-secondary">稍后配置</button>
-          <button id="btn-settings-cancel" class="btn-secondary">取消</button>
-          <button id="btn-settings-save" class="btn-primary">保存</button>
           </div>
         </div>
       </div>

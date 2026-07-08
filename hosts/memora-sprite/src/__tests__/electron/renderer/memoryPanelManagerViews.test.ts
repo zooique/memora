@@ -794,7 +794,3 @@ describe('编辑模式 (private)', () => {
     expect(textarea1).toBe(textarea2);
   });
 });
-
-// ─── pulseNarrativeCard ───────────────────────────────────
-
-// TODO: pulseNarrativeCard() 已移除，感知面板升级为独立 panel 后不再需要脉冲动画

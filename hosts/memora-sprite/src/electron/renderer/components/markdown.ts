@@ -504,6 +504,18 @@ function appendInlineContent(target: HTMLElement, text: string): void {
 }
 
 /**
+ * 行内格式正则常量（CHAT-A03 性能优化）
+ *
+ * 原实现在 appendFormattedText 函数内每次调用都创建 4 个新 RegExp 对象，
+ * 递归调用时指数级创建，GC 压力巨大。
+ * 改为模块级常量，collectMatches 内部通过 lastIndex=0 重置，避免重复创建。
+ */
+const LINK_REGEX = /\[([^\]]+)\]\(([^)]+)\)/g;
+const BOLD_REGEX = /\*\*([^*]+)\*\*/g;
+const ITALIC_REGEX = /(?<!\*)\*([^*]+)\*(?!\*)/g;
+const STRIKETHROUGH_REGEX = /~~([^~]+)~~/g;
+
+/**
  * 解析加粗、斜体、链接、删除线等格式化文本
  *
  * 使用递归下降解析，按优先级处理：
@@ -514,29 +526,20 @@ function appendInlineContent(target: HTMLElement, text: string): void {
  * 5. 普通文本
  */
 function appendFormattedText(target: HTMLElement, text: string): void {
-  // 链接正则：[text](url)
-  const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-  // 加粗正则：**text**
-  const boldRegex = /\*\*([^*]+)\*\*/g;
-  // 斜体正则：*text*（避免与加粗冲突）
-  const italicRegex = /(?<!\*)\*([^*]+)\*(?!\*)/g;
-  // 删除线正则：~~text~~
-  const strikethroughRegex = /~~([^~]+)~~/g;
-
   // 合并所有匹配项，按位置排序
   type InlineMatch = { start: number; end: number; type: 'link' | 'bold' | 'italic' | 'strike'; text: string; url?: string };
   const matches: InlineMatch[] = [];
 
-  collectMatches(linkRegex, text, (m) => {
+  collectMatches(LINK_REGEX, text, (m) => {
     matches.push({ start: m.index, end: m.index + m[0].length, type: 'link', text: m[1]!, url: m[2]! });
   });
-  collectMatches(boldRegex, text, (m) => {
+  collectMatches(BOLD_REGEX, text, (m) => {
     matches.push({ start: m.index, end: m.index + m[0].length, type: 'bold', text: m[1]! });
   });
-  collectMatches(italicRegex, text, (m) => {
+  collectMatches(ITALIC_REGEX, text, (m) => {
     matches.push({ start: m.index, end: m.index + m[0].length, type: 'italic', text: m[1]! });
   });
-  collectMatches(strikethroughRegex, text, (m) => {
+  collectMatches(STRIKETHROUGH_REGEX, text, (m) => {
     matches.push({ start: m.index, end: m.index + m[0].length, type: 'strike', text: m[1]! });
   });
 
@@ -610,15 +613,16 @@ function appendFormattedText(target: HTMLElement, text: string): void {
   }
 }
 
-/** 收集正则匹配项的辅助函数 */
+/** 收集正则匹配项的辅助函数（CHAT-A03 优化：重置 lastIndex 替代 new RegExp） */
 export function collectMatches(
   regex: RegExp,
   text: string,
   callback: (m: RegExpExecArray) => void,
 ): void {
-  const localRegex = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
+  // 重置 lastIndex 而非创建新 RegExp，避免 GC 压力
+  regex.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = localRegex.exec(text)) !== null) {
+  while ((m = regex.exec(text)) !== null) {
     callback(m);
   }
 }

@@ -44,8 +44,9 @@ const THINKING_PHASE_LABELS: Record<string, string> = {
 };
 
 /**
- * 构建召回记忆容器
+ * 构建召回记忆容器（极简折叠模式）
  *
+ * 默认仅显示一个小标签"记忆"，点击展开显示具体记忆列表。
  * 每条召回记忆独立可点击，点击触发 memoryRecallClickCallback 跳转记忆详情。
  * 使用 createElement 替代 innerHTML，避免 XSS 风险（UX-08）。
  * 使用 data-action 属性替代直接 addEventListener，由事件委托统一处理（QC-11）。
@@ -56,26 +57,54 @@ const THINKING_PHASE_LABELS: Record<string, string> = {
 export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElement {
   const recallContainer = document.createElement('div');
   recallContainer.className = 'memory-recall-container';
+
+  // 头部标签：默认显示"记忆"，点击展开/折叠
+  const header = document.createElement('button');
+  header.className = 'memory-recall-header';
+  header.type = 'button';
+  header.dataset.action = 'toggle-recall';
+  header.setAttribute('aria-expanded', 'false');
+  header.setAttribute('aria-label', `查看${memories.length}条召回记忆`);
+
+  const headerIcon = document.createElement('span');
+  headerIcon.className = 'memory-recall-icon';
+  setIcon(headerIcon, 'icon-lightbulb');
+  header.appendChild(headerIcon);
+
+  const headerText = document.createElement('span');
+  headerText.className = 'memory-recall-header-text';
+  headerText.textContent = '记忆';
+  header.appendChild(headerText);
+
+  const countBadge = document.createElement('span');
+  countBadge.className = 'memory-recall-count';
+  countBadge.textContent = memories.length.toString();
+  header.appendChild(countBadge);
+
+  recallContainer.appendChild(header);
+
+  // 记忆列表：默认隐藏
+  const list = document.createElement('div');
+  list.className = 'memory-recall-list';
+
   for (const recall of memories) {
     const recallItem = document.createElement('div');
     recallItem.className = 'memory-recall';
-    // 使用 SVG 图标替代 emoji
     const iconSpan = document.createElement('span');
-    iconSpan.className = 'memory-recall-icon';
+    iconSpan.className = 'memory-recall-item-icon';
     setIcon(iconSpan, 'icon-lightbulb');
     recallItem.appendChild(iconSpan);
     const recallText = document.createElement('span');
-    recallText.textContent = `召回记忆：${recall.name}（score: ${recall.score.toFixed(2)}）`;
+    recallText.textContent = recall.name;
     recallItem.appendChild(recallText);
-    // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
     recallItem.dataset.action = 'recall';
-    // 使用完整记忆ID（source:name格式），确保同名记忆跨source时也能精准跳转
     recallItem.dataset.memoryId = recall.id;
     recallItem.dataset.name = recall.name;
-    // P3 键盘可访问性：tabindex 使召回记忆项可通过键盘聚焦并 Enter/Space 触发
     recallItem.setAttribute('tabindex', '0');
-    recallContainer.appendChild(recallItem);
+    list.appendChild(recallItem);
   }
+
+  recallContainer.appendChild(list);
   return recallContainer;
 }
 

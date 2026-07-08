@@ -16,6 +16,7 @@
 import { getOptionalElement } from '../helpers/domHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
+import { SafeTimerTracker } from '../helpers/safeTimer.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import type {
@@ -126,12 +127,20 @@ export class SettingsPanelManager {
   // ─── 缓存 DOM 元素 - 重复查询的独立元素 ─
   /** Agent 状态指示器元素（updateAgentStatusIndicator 中查询） */
   private agentStatusEl: HTMLElement | null;
+  /** 保存状态指示器元素（显示"保存中..."、"已保存"等状态） */
+  private saveStatusEl: HTMLElement | null;
 
   // ─── 状态 ────────────────────────────────────────────────
   /** 设置表单是否有未保存修改（dirty 标志） */
   private settingsFormDirty = false;
   /** 当前角色匹配模式（由 UIManager 同步） */
   private currentPersonaMode = 'auto';
+  /** 定时器跟踪器（用于防抖自动保存） */
+  private timers = new SafeTimerTracker();
+  /** 是否正在自动保存中 */
+  private isAutoSaving = false;
+  /** 是否正在程序化设置表单值（用于避免 loadConfigToForm 触发 dirty 标志） */
+  private isLoadingConfig = false;
 
   // ─── 回调 ────────────────────────────────────────────────
   private configSaveCallback: ((config: SpriteConfigForm) => void) | null = null;
@@ -144,6 +153,8 @@ export class SettingsPanelManager {
   // ─── 事件清理 ────────────────────────────────────────────
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events = new EventTracker();
+  /** 防抖后的自动保存函数 */
+  private debouncedAutoSave: (() => void) | null = null;
 
   constructor(private host: SettingsPanelHost) {
     // 设置面板 - Embedding 配置
@@ -179,6 +190,8 @@ export class SettingsPanelManager {
 
     // 缓存重复查询的独立元素
     this.agentStatusEl = document.getElementById('agent-status-indicator');
+    /** 保存状态指示器元素 */
+    this.saveStatusEl = document.getElementById('save-status-indicator');
 
     // 多 Provider 管理元素
     this.providerListEl = document.getElementById('provider-list');
@@ -249,6 +262,8 @@ export class SettingsPanelManager {
   cleanup(): void {
     // 清理所有事件监听器（通过 EventTracker 统一管理）
     this.events.cleanup();
+    // 清理所有定时器（包括防抖自动保存）
+    this.timers.cleanup();
   }
 
   // ─── 初始化 ─────────────────────────────────────────────
@@ -277,49 +292,27 @@ export class SettingsPanelManager {
       });
     }
 
-    // 设置面板核心元素缺失时静默降级
-    if (!btnSave && !btnCancel) return;
-
     // API Key 显示/隐藏切换：Provider 表单 + Embedding
     this.initApiKeyToggle('btn-toggle-provider-key', 'cfg-provider-api-key');
     this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
 
-    // 监听设置面板所有表单元素的变更，标记 dirty
+    // 创建防抖自动保存函数（500ms 延迟，避免频繁 IPC 调用）
+    this.debouncedAutoSave = this.timers.debounce(() => {
+      this.autoSaveConfig();
+    }, 500);
+
+    // 监听设置面板所有表单元素的变更，触发自动保存
     const settingsPanel = document.getElementById('panel-settings');
     if (settingsPanel) {
       this.events.addEventListener(settingsPanel, 'input', () => {
+        if (this.isLoadingConfig) return;
         this.settingsFormDirty = true;
+        this.debouncedAutoSave?.();
       });
       this.events.addEventListener(settingsPanel, 'change', () => {
+        if (this.isLoadingConfig) return;
         this.settingsFormDirty = true;
-      });
-    }
-
-    // 保存按钮：收集精灵配置（Provider 配置通过自身「保存」按钮独立保存）
-    if (btnSave) {
-      this.events.addEventListener(btnSave, 'click', () => {
-        this.settingsFormDirty = false;
-        const spriteConfig = this.collectConfigFromForm();
-        this.configSaveCallback?.(spriteConfig);
-      });
-    }
-
-    // 取消按钮：有未保存修改时确认，避免误点丢失修改
-    if (btnCancel) {
-      this.events.addEventListener(btnCancel, 'click', async () => {
-        if (this.settingsFormDirty) {
-          const confirmed = await this.host.showConfirmDialog({
-            title: '放弃修改',
-            message: '有未保存的修改，确定要放弃吗？',
-            confirmText: '放弃',
-            danger: true,
-          });
-          if (!confirmed) {
-            return;
-          }
-        }
-        this.settingsFormDirty = false;
-        this.configCancelCallback?.();
+        this.debouncedAutoSave?.();
       });
     }
 
@@ -360,7 +353,7 @@ export class SettingsPanelManager {
             },
           });
           this.settingsFormDirty = true;
-          this.host.showToast('已恢复默认设置，点击「保存」生效', 'info');
+          this.host.showToast('已恢复默认设置，将自动保存', 'info');
         })();
       });
     }
@@ -533,6 +526,8 @@ export class SettingsPanelManager {
         if (result === '__clear__') {
           input.value = '';
           input.blur();
+          this.settingsFormDirty = true;
+          this.debouncedAutoSave?.();
           return;
         }
 
@@ -545,6 +540,8 @@ export class SettingsPanelManager {
         // 捕获成功：填入并退出捕获状态
         input.value = result;
         input.blur();
+        this.settingsFormDirty = true;
+        this.debouncedAutoSave?.();
       });
     }
   }
@@ -1073,7 +1070,9 @@ export class SettingsPanelManager {
 
   /** 加载配置到表单 */
   loadConfigToForm(config: SpriteConfigForm): void {
-    if (this.cfgSilent) this.cfgSilent.checked = config.silentMode;
+    this.isLoadingConfig = true;
+    try {
+      if (this.cfgSilent) this.cfgSilent.checked = config.silentMode;
     if (this.cfgThreshold) this.cfgThreshold.value = String(config.proactiveThreshold);
     if (this.cfgCooldown) this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
     if (this.cfgInterval) this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
@@ -1121,6 +1120,9 @@ export class SettingsPanelManager {
     }
     if (this.cfgShortcutRecallMemory) {
       this.cfgShortcutRecallMemory.value = config.shortcuts.accelerators['recall-memory'] ?? '';
+    }
+    } finally {
+      this.isLoadingConfig = false;
     }
   }
 
@@ -1222,5 +1224,120 @@ export class SettingsPanelManager {
   /** 获取当前角色匹配模式（供 UIManager 同步到 persona badge） */
   getCurrentPersonaMode(): string {
     return this.currentPersonaMode;
+  }
+
+  /**
+   * 自动保存配置
+   *
+   * 用户修改设置后，500ms 内无操作则自动保存到主进程。
+   * 已排除的字段：theme（主题即时生效，单独持久化）、archiveMode（即时生效，单独持久化）、
+   * personaMode（即时生效，单独持久化）。
+   */
+  private async autoSaveConfig(): Promise<void> {
+    if (this.isAutoSaving) return;
+    this.isAutoSaving = true;
+
+    try {
+      const spriteConfig = this.collectConfigFromForm();
+      const validationError = this.validateConfig(spriteConfig);
+      if (validationError) {
+        this.host.showToast(validationError, 'error');
+        this.updateSaveStatus('error');
+        return;
+      }
+
+      this.updateSaveStatus('saving');
+      this.configSaveCallback?.(spriteConfig);
+      this.settingsFormDirty = false;
+      this.updateSaveStatus('saved');
+    } catch (error) {
+      console.error('[SettingsPanelManager] 自动保存配置失败:', error);
+      this.host.showToast('保存失败，请重试', 'error');
+      this.updateSaveStatus('error');
+    } finally {
+      this.isAutoSaving = false;
+      // 如果在保存期间用户继续修改了设置，触发新一轮保存
+      if (this.settingsFormDirty) {
+        this.debouncedAutoSave?.();
+      }
+    }
+  }
+
+  /**
+   * 验证配置表单值是否合法
+   *
+   * @param config 表单配置
+   * @returns 验证错误信息，如果验证通过返回 null
+   */
+  private validateConfig(config: SpriteConfigForm): string | null {
+    // 主动提示阈值：1-10 之间的正整数
+    if (!Number.isInteger(config.proactiveThreshold) || config.proactiveThreshold < 1 || config.proactiveThreshold > 10) {
+      return '主动提示阈值必须是 1-10 之间的整数';
+    }
+
+    // 冷却时间：1-60 分钟
+    const cooldownMinutes = config.proactiveCooldownMs / MS_PER_MINUTE;
+    if (!Number.isInteger(cooldownMinutes) || cooldownMinutes < 1 || cooldownMinutes > 60) {
+      return '冷却时间必须是 1-60 之间的整数（分钟）';
+    }
+
+    // 触发间隔：1-1440 分钟（24小时）
+    const intervalMinutes = config.triggerIntervalMs / MS_PER_MINUTE;
+    if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 1440) {
+      return '触发间隔必须是 1-1440 之间的整数（分钟）';
+    }
+
+    // 文件监听防抖：100-60000 毫秒
+    if (!Number.isInteger(config.fileWatcherDebounceMs) || config.fileWatcherDebounceMs < 100 || config.fileWatcherDebounceMs > 60000) {
+      return '文件监听防抖必须是 100-60000 之间的整数（毫秒）';
+    }
+
+    return null;
+  }
+
+  /**
+   * 更新保存状态指示器显示
+   *
+   * @param status 保存状态：idle（空闲）、saving（保存中）、saved（已保存）、error（出错）
+   */
+  private updateSaveStatus(status: 'idle' | 'saving' | 'saved' | 'error'): void {
+    if (!this.saveStatusEl) return;
+
+    const iconEl = this.saveStatusEl.querySelector('.save-status-icon');
+    const textEl = this.saveStatusEl.querySelector('.save-status-text');
+    if (!iconEl || !textEl) return;
+
+    // 移除所有状态类
+    this.saveStatusEl.classList.remove('saving', 'saved', 'error', 'idle');
+
+    switch (status) {
+      case 'saving':
+        this.saveStatusEl.classList.add('saving');
+        iconEl.textContent = '⏳';
+        textEl.textContent = '保存中…';
+        break;
+      case 'saved':
+        this.saveStatusEl.classList.add('saved');
+        iconEl.textContent = '✓';
+        textEl.textContent = '已保存';
+        // 3秒后恢复为空闲状态
+        this.timers.setTimeout(() => {
+          this.updateSaveStatus('idle');
+        }, 3000);
+        break;
+      case 'error':
+        this.saveStatusEl.classList.add('error');
+        iconEl.textContent = '✗';
+        textEl.textContent = '保存失败';
+        // 3秒后恢复为空闲状态
+        this.timers.setTimeout(() => {
+          this.updateSaveStatus('idle');
+        }, 3000);
+        break;
+      default:
+        this.saveStatusEl.classList.add('idle');
+        iconEl.textContent = '';
+        textEl.textContent = '';
+    }
   }
 }

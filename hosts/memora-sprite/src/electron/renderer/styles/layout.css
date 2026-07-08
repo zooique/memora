@@ -1085,7 +1085,7 @@ body.web-mode #btn-send {
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-fg);
-  transition: all var(--transition-fast) ease;
+  transition: background var(--transition-fast) ease;
 }
 
 body.web-mode #btn-send:hover:not(:disabled) {
@@ -1140,7 +1140,7 @@ body.web-mode .suggestion-btn {
   padding: 10px 18px;
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
-  transition: all var(--transition-fast) ease;
+  transition: background var(--transition-fast) ease, box-shadow var(--transition-fast) ease;
 }
 
 body.web-mode .suggestion-btn:hover {

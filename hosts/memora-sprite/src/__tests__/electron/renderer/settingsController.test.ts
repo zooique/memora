@@ -159,14 +159,11 @@ describe('settingsController', () => {
     expect(mockHandleIpcError).toHaveBeenCalledWith('onConfigSave', expect.any(Error), '保存精灵配置失败');
   });
 
-  it('无论成功失败都应恢复按钮状态（finally）', async () => {
-    const { setButtonLoading } = await import('../../../electron/renderer/helpers/domHelpers.js');
+  it('自动保存成功应显示成功提示', async () => {
     await callbacks.onConfigSave!(makeFormConfig());
 
-    // setButtonLoading(true, ...) + setButtonLoading(false)
-    const calls = (setButtonLoading as unknown as { mock: { calls: unknown[][] } }).mock.calls;
-    expect(calls[0]).toEqual(['btn-settings-save', true, '保存中...']);
-    expect(calls[calls.length - 1]).toEqual(['btn-settings-save', false]);
+    const showToast = uiManager.showToast as unknown as { mock: { calls: unknown[][] } };
+    expect(showToast.mock.calls[0]).toEqual(['精灵配置已保存', 'success']);
   });
 
   // ─── onConfigCancel ────────────────────────────────────

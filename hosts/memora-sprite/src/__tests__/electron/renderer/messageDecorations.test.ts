@@ -47,47 +47,57 @@ beforeEach(() => {
 // ─── createRecallContainer ────────────────────────────────
 
 describe('createRecallContainer', () => {
-  it('空数组应返回空容器（无子元素）', () => {
+  it('空数组应返回容器（包含 header 和空 list）', () => {
     const container = createRecallContainer([]);
     expect(container.className).toBe('memory-recall-container');
-    expect(container.children.length).toBe(0);
+    // 新结构：header + list
+    expect(container.children.length).toBe(2);
+    expect(container.children[0].className).toBe('memory-recall-header');
+    expect(container.children[1].className).toBe('memory-recall-list');
+    // list 为空
+    expect((container.children[1] as HTMLDivElement).children.length).toBe(0);
   });
 
-  it('单条记忆应创建一条 recall 条目', () => {
+  it('单条记忆应创建 header + list 结构', () => {
     const container = createRecallContainer([makeRecall('用户偏好')]);
-    expect(container.children.length).toBe(1);
-    const item = container.children[0] as HTMLDivElement;
+    expect(container.className).toBe('memory-recall-container');
+    // 新结构：header + list
+    expect(container.children.length).toBe(2);
+    const header = container.children[0] as HTMLDivElement;
+    const list = container.children[1] as HTMLDivElement;
+    expect(header.className).toBe('memory-recall-header');
+    expect(list.className).toBe('memory-recall-list');
+    // list 包含一条记忆
+    expect(list.children.length).toBe(1);
+    const item = list.children[0] as HTMLDivElement;
     expect(item.className).toBe('memory-recall');
     expect(item.dataset.action).toBe('recall');
     expect(item.dataset.name).toBe('用户偏好');
   });
 
-  it('多条记忆应创建对应数量的条目', () => {
+  it('多条记忆应创建对应数量的条目在 list 中', () => {
     const memories = [
       makeRecall('记忆A', 0.9),
       makeRecall('记忆B', 0.7),
       makeRecall('记忆C', 0.5),
     ];
     const container = createRecallContainer(memories);
-    expect(container.children.length).toBe(3);
+    // 新结构：header + list
+    expect(container.children.length).toBe(2);
+    const list = container.children[1] as HTMLDivElement;
+    expect(list.children.length).toBe(3);
   });
 
   it('每条条目应包含图标和名称文本', () => {
     const container = createRecallContainer([makeRecall('测试记忆', 0.85)]);
-    const item = container.children[0] as HTMLDivElement;
+    const list = container.children[1] as HTMLDivElement;
+    const item = list.children[0] as HTMLDivElement;
     // 图标 span
     const iconSpan = item.children[0] as HTMLSpanElement;
     expect(iconSpan.innerHTML).toContain('icon-lightbulb');
-    // 名称 span
+    // 名称 span（新结构中不再显示 score）
     const textSpan = item.children[1] as HTMLSpanElement;
     expect(textSpan.textContent).toContain('测试记忆');
-    expect(textSpan.textContent).toContain('0.85');
-  });
-
-  it('score 应格式化为两位小数', () => {
-    const container = createRecallContainer([makeRecall('精确分', 0.123456)]);
-    const textSpan = container.children[0].children[1] as HTMLSpanElement;
-    expect(textSpan.textContent).toContain('0.12');
   });
 
   it('每条条目应设置 data-action="recall" 用于事件委托', () => {
@@ -95,7 +105,8 @@ describe('createRecallContainer', () => {
       makeRecall('A'),
       makeRecall('B'),
     ]);
-    for (const item of Array.from(container.children)) {
+    const list = container.children[1] as HTMLDivElement;
+    for (const item of Array.from(list.children)) {
       const el = item as HTMLElement;
       expect(el.dataset.action).toBe('recall');
     }
@@ -106,7 +117,8 @@ describe('createRecallContainer', () => {
       makeRecall('name1'),
       makeRecall('name2'),
     ]);
-    const names = Array.from(container.children).map(
+    const list = container.children[1] as HTMLDivElement;
+    const names = Array.from(list.children).map(
       (c) => (c as HTMLElement).dataset.name,
     );
     expect(names).toEqual(['name1', 'name2']);
@@ -127,7 +139,8 @@ describe('renderMemoryRecall', () => {
     renderMemoryRecall(bubble, [makeRecall('测试')]);
     const container = bubble.querySelector('.memory-recall-container');
     expect(container).not.toBeNull();
-    expect(container!.children.length).toBe(1);
+    // 新结构：header + list
+    expect(container!.children.length).toBe(2);
   });
 
   it('重复调用应先移除旧容器再重建', () => {
@@ -138,7 +151,11 @@ describe('renderMemoryRecall', () => {
     renderMemoryRecall(bubble, [makeRecall('B'), makeRecall('C')]);
     const containers = bubble.querySelectorAll('.memory-recall-container');
     expect(containers.length).toBe(1);
+    // 新结构：header + list（始终是 2 个子元素）
     expect(containers[0].children.length).toBe(2);
+    // list 中应有 2 条记忆
+    const list = containers[0].children[1] as HTMLDivElement;
+    expect(list.children.length).toBe(2);
   });
 
   it('光标存在时容器应插入到光标之前', () => {

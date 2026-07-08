@@ -582,13 +582,12 @@ describe('消息渲染', () => {
       memoryRecall: [{ name: '用户偏好', score: 0.85, source: 'profile' }],
     });
 
-    // 多条召回记忆渲染在 container 内，每条独立可点击
+    // 召回记忆渲染在 container 内（折叠模式：header + list）
     const container = el.querySelector('.memory-recall-container');
     expect(container).not.toBeNull();
     const recall = el.querySelector('.memory-recall');
     expect(recall).not.toBeNull();
     expect(recall?.textContent).toContain('用户偏好');
-    expect(recall?.textContent).toContain('0.85');
   });
 
   it('appendMessage: 消息包含时间戳', () => {

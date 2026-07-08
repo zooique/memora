@@ -78,8 +78,6 @@ const SETTINGS_HTML = `
     <input id="cfg-shortcut-recall-memory" type="text" />
 
     <!-- 按钮 -->
-    <button id="btn-settings-save">保存</button>
-    <button id="btn-settings-cancel">取消</button>
     <button id="btn-settings-reset">恢复默认</button>
     <button id="btn-settings-skip">稍后配置</button>
 
@@ -199,54 +197,22 @@ describe('initListeners · dirty 追踪', () => {
 
 // ─── initListeners · 保存按钮 ────────────────────────────
 
-describe('initListeners · 保存按钮', () => {
-  it('click 保存应触发 configSaveCallback + 清除 dirty', () => {
+describe('initListeners · 自动保存', () => {
+  it('表单输入应触发自动保存 + 清除 dirty', async () => {
     const { manager } = createManager();
     const cb = vi.fn();
     manager.onConfigSave(cb);
     // 先标记 dirty
     manager['settingsFormDirty'] = true;
-    document.getElementById('btn-settings-save')!.click();
+    const input = document.getElementById('cfg-threshold') as HTMLInputElement;
+    input.value = '5';
+    // 事件需要冒泡到父元素 #panel-settings
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 600));
     expect(cb).toHaveBeenCalledTimes(1);
     expect(cb).toHaveBeenCalledWith(expect.objectContaining({ silentMode: expect.any(Boolean) }));
     // dirty 应被清除
     expect(manager.isDirty()).toBe(false);
-  });
-});
-
-// ─── initListeners · 取消按钮 ────────────────────────────
-
-describe('initListeners · 取消按钮', () => {
-  it('dirty=false 时 click 取消应直接触发 configCancelCallback', async () => {
-    const { manager, host } = createManager();
-    const cb = vi.fn();
-    manager.onConfigCancel(cb);
-    document.getElementById('btn-settings-cancel')!.click();
-    await Promise.resolve();
-    expect(cb).toHaveBeenCalledTimes(1);
-    expect(host.showConfirmDialog).not.toHaveBeenCalled();
-  });
-
-  it('dirty=true 时 click 取消应先确认，确认后触发 configCancelCallback', async () => {
-    const { manager, host } = createManager();
-    const cb = vi.fn();
-    manager.onConfigCancel(cb);
-    manager['settingsFormDirty'] = true;
-    document.getElementById('btn-settings-cancel')!.click();
-    await Promise.resolve();
-    expect(host.showConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({ title: '放弃修改' }));
-    expect(cb).toHaveBeenCalledTimes(1);
-  });
-
-  it('dirty=true 且用户取消确认时不应触发 configCancelCallback', async () => {
-    const host = createMockHost({ showConfirmDialog: vi.fn().mockResolvedValue(false) });
-    const { manager } = createManager({ host });
-    const cb = vi.fn();
-    manager.onConfigCancel(cb);
-    manager['settingsFormDirty'] = true;
-    document.getElementById('btn-settings-cancel')!.click();
-    await Promise.resolve();
-    expect(cb).not.toHaveBeenCalled();
   });
 });
 
@@ -260,7 +226,7 @@ describe('initListeners · 恢复默认按钮', () => {
     // 应显示确认对话框
     expect(host.showConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({ title: '恢复默认设置' }));
     // 应显示 toast
-    expect(host.showToast).toHaveBeenCalledWith('已恢复默认设置，点击「保存」生效', 'info');
+    expect(host.showToast).toHaveBeenCalledWith('已恢复默认设置，将自动保存', 'info');
     // 应标记 dirty
     expect(manager.isDirty()).toBe(true);
     // 应加载默认值（threshold=3）
@@ -569,11 +535,15 @@ describe('loadConfigToForm + collectConfigFromForm', () => {
 // ─── 回调注册 ────────────────────────────────────────────
 
 describe('回调注册', () => {
-  it('onConfigSave 应注册回调', () => {
+  it('onConfigSave 应注册回调（表单输入触发自动保存）', async () => {
     const { manager } = createManager();
     const cb = vi.fn();
     manager.onConfigSave(cb);
-    document.getElementById('btn-settings-save')!.click();
+    const input = document.getElementById('cfg-threshold') as HTMLInputElement;
+    input.value = '5';
+    // 事件需要冒泡到父元素 #panel-settings
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 600));
     expect(cb).toHaveBeenCalled();
   });
 
@@ -591,12 +561,16 @@ describe('回调注册', () => {
 // ─── cleanup ─────────────────────────────────────────────
 
 describe('cleanup', () => {
-  it('cleanup 后按钮 click 不应触发回调', () => {
+  it('cleanup 后表单输入不应触发自动保存', async () => {
     const { manager } = createManager();
     const cb = vi.fn();
     manager.onConfigSave(cb);
     manager.cleanup();
-    document.getElementById('btn-settings-save')!.click();
+    const input = document.getElementById('cfg-threshold') as HTMLInputElement;
+    input.value = '5';
+    // 事件需要冒泡到父元素 #panel-settings
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(resolve => setTimeout(resolve, 600));
     expect(cb).not.toHaveBeenCalled();
   });
 

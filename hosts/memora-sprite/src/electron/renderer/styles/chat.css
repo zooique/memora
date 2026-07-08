@@ -1214,11 +1214,11 @@
 
 /* 分组消息：缩小间距，去掉动画延迟 */
 .message.grouped {
-  margin-top: 2px;
+  margin-top: -4px;
   animation: none;
 }
 
-/* 分组消息的气泡：缩小圆角使其与上方消息视觉连接 */
+/* 分组消息气泡：紧凑圆角，视觉上连接在一起 */
 .message.grouped .message-bubble {
   /* 同一分组内后续消息的气泡圆角更小，视觉上连续 */
   border-radius: var(--radius-sm);
@@ -1360,6 +1360,8 @@
   font-size: var(--font-base);
   position: relative;
   word-break: break-word;
+  /* CHAT-CSS 优化：contain 隔离子树布局变化，避免流式渲染时向上触发父容器 reflow */
+  contain: layout style paint;
 }
 
 .message.user .message-bubble {
@@ -1407,6 +1409,12 @@
   gap: 4px;
   margin-top: 4px;
   padding: 0 4px;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.message-content:hover .message-meta {
+  opacity: 1;
 }
 
 /**
@@ -1513,7 +1521,7 @@
   height: 1em;
   background: var(--accent);
   margin-left: 2px;
-  animation: blink 1s step-end infinite;
+  animation: chat-cursor-blink 1s step-end infinite;
   vertical-align: text-bottom;
 }
 
@@ -1549,16 +1557,25 @@
 }
 
 /**
- * 召回记忆提示：v8 pill 风格（accent-soft 背景 + accent 文字）
- * 由 ui.ts 在精灵消息气泡末尾追加，点击可跳转到记忆详情
+ * 召回记忆提示：极简折叠模式（默认仅显示小标签）
+ *
+ * 设计原则：
+ * - 默认只显示一个小标签"记忆"，减少视觉干扰
+ * - 点击标签展开具体记忆列表
+ * - 记忆项仅显示名称，隐藏 score 等技术细节
  */
-.memory-recall {
+.memory-recall-container {
+  margin-top: 6px;
+}
+
+/* 折叠按钮：小标签样式 */
+.memory-recall-header {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: 6px;
   padding: 2px 8px;
   background: var(--accent-soft);
+  border: none;
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
   color: var(--accent);
@@ -1566,16 +1583,77 @@
   transition: background var(--transition-fast);
 }
 
-/* 召回记忆项内的 SVG 图标 */
-.memory-recall .icon {
+.memory-recall-header:hover {
+  background: var(--accent-soft-hover);
+}
+
+.memory-recall-header .memory-recall-icon {
   width: 12px;
   height: 12px;
   flex-shrink: 0;
 }
 
+.memory-recall-header-text {
+  font-weight: 500;
+}
+
+/* 数量徽章 */
+.memory-recall-count {
+  min-width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+/* 记忆列表：默认隐藏 */
+.memory-recall-list {
+  display: none;
+  margin-top: 4px;
+  padding-left: 4px;
+}
+
+/* 展开状态 */
+.memory-recall-container.expanded .memory-recall-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.memory-recall-container.expanded .memory-recall-header {
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+}
+
+/* 记忆项：展开后显示 */
+.memory-recall {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.memory-recall-item-icon {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
 .memory-recall:hover {
-  color: var(--accent-hover);
-  text-decoration: underline;
+  background: var(--surface1);
+  color: var(--accent);
 }
 
 
@@ -2120,18 +2198,35 @@
   50%      { opacity: 1; }
 }
 
-/* ─── 上下文截断提示条 ─────────────────────────────── */
-/* 对话中发生上下文截断时，在消息气泡顶部显示持久提示条         */
-/* 告知用户部分历史消息已被省略，遵循"主动可见"原则             */
+/* ─── 上下文截断提示条（小标签模式） ─────────────────────────────── */
+/* 对话中发生上下文截断时，在消息气泡顶部显示小标签提示         */
+/* 告知用户部分历史消息已被省略，但视觉上尽量低调               */
+/* 默认显示小标签，hover 时展开完整提示文本                    */
 
 .truncation-notice {
-  margin-bottom: 6px;
-  padding: 4px 10px;
-  font-size: var(--font-xs);
+  margin-bottom: 4px;
+  padding: 2px 6px;
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  background: transparent;
+  border-radius: var(--radius-xs);
+  border: 1px dashed var(--surface2);
+  /* 默认只显示图标，文本截断 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60px;
+  cursor: default;
+  transition: max-width var(--transition-fast), padding var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.truncation-notice:hover {
+  /* hover 时展开完整宽度 */
+  max-width: 100%;
+  padding: 3px 8px;
+  background: var(--yellow-10);
+  border-color: var(--yellow);
   color: var(--yellow);
-  background: var(--yellow-20);
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--yellow);
 }
 
 /* ─── 工具调用卡片 ───────────────────────────────── */
@@ -2721,7 +2816,7 @@
   color: var(--text-secondary);
   font-size: var(--font-md-2);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   text-align: center;
 }
 
