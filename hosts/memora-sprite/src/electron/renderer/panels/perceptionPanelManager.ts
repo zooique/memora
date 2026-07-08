@@ -37,6 +37,15 @@ import type {
 import type { ProactiveStats } from '../../../sprite/controllers/index.js';
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import { NarrativeGenerator } from '../helpers/narrativeGenerator.js';
+// 感知标签映射（统一真理源，消除 6 个私有方法的重复实现）
+import {
+  getAffectLevel,
+  getAffectColor,
+  getRapportLevelLabel,
+  describeRhythm,
+  describeCoherence,
+  describeDepth,
+} from '../helpers/perceptionLabels.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -47,10 +56,6 @@ export interface PerceptionPanelHost {
 }
 
 // ─── 常量 ────────────────────────────────────────────────
-
-/** 情感维度等级划分阈值：< AFFECT_LOW_THRESHOLD 为"低"，< AFFECT_MID_THRESHOLD 为"中"，否则为"高" */
-const AFFECT_LOW_THRESHOLD = 0.33;
-const AFFECT_MID_THRESHOLD = 0.67;
 
 /** 接受率等级划分阈值：< 0.4 为低，< 0.7 为中，否则为高（与 confidence 徽章一致） */
 const ACCEPTANCE_LOW_THRESHOLD = 0.4;
@@ -198,10 +203,10 @@ export class PerceptionPanelManager {
       const levelEl = document.getElementById(`perception-${dim.id}-level`);
       if (fillEl) {
         fillEl.style.width = `${Math.round(dim.value * 100)}%`;
-        fillEl.style.background = this.getAffectColor(dim.value);
+        fillEl.style.background = getAffectColor(dim.value);
       }
       if (levelEl) {
-        levelEl.textContent = this.getAffectLevel(dim.value);
+        levelEl.textContent = getAffectLevel(dim.value);
       }
     }
 
@@ -224,7 +229,7 @@ export class PerceptionPanelManager {
     // ─── 感知面板等级徽章 ────────────────────────────
     const rapportBadge = document.getElementById('perception-rapport-badge');
     if (rapportBadge) {
-      rapportBadge.textContent = this.getRapportLevelLabel(rapport.level);
+      rapportBadge.textContent = getRapportLevelLabel(rapport.level);
       rapportBadge.setAttribute('data-level', rapport.level);
     }
 
@@ -232,14 +237,14 @@ export class PerceptionPanelManager {
     const trustFill = document.getElementById('perception-trust-fill');
     if (trustFill) {
       trustFill.style.width = `${Math.round(rapport.trust * 100)}%`;
-      trustFill.style.background = this.getAffectColor(rapport.trust);
+      trustFill.style.background = getAffectColor(rapport.trust);
     }
 
     // ─── 感知面板熟悉度进度条 ──────────────────────────
     const familiarityFill = document.getElementById('perception-familiarity-fill');
     if (familiarityFill) {
       familiarityFill.style.width = `${Math.round(rapport.familiarity * 100)}%`;
-      familiarityFill.style.background = this.getAffectColor(rapport.familiarity);
+      familiarityFill.style.background = getAffectColor(rapport.familiarity);
     }
 
     // ─── 感知面板描述文本 ──────────────────────────────
@@ -267,19 +272,19 @@ export class PerceptionPanelManager {
     // ─── 感知面板节奏指标 ────────────────────────────
     const paceEl = document.getElementById('perception-pace-value');
     if (paceEl) {
-      paceEl.textContent = this.describeRhythm(context.rhythm);
+      paceEl.textContent = describeRhythm(context.rhythm);
     }
 
     // ─── 感知面板话题连贯性指标 ────────────────────────
     const topicEl = document.getElementById('perception-topic-value');
     if (topicEl) {
-      topicEl.textContent = this.describeCoherence(context.coherence);
+      topicEl.textContent = describeCoherence(context.coherence);
     }
 
     // ─── 感知面板深度指标 ────────────────────────────
     const depthEl = document.getElementById('perception-depth-value');
     if (depthEl) {
-      depthEl.textContent = this.describeDepth(context.depth);
+      depthEl.textContent = describeDepth(context.depth);
     }
 
     // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
@@ -527,34 +532,7 @@ export class PerceptionPanelManager {
     }
   }
 
-  // ─── 私有辅助方法（感知数据映射） ──────────────────────
-
-  /**
-   * 将 0-1 数值映射为中文等级描述
-   *
-   * @param value 0-1 之间的数值
-   * @returns 中文等级（低/中/高）
-   */
-  private getAffectLevel(value: number): string {
-    if (value < AFFECT_LOW_THRESHOLD) return '低';
-    if (value < AFFECT_MID_THRESHOLD) return '中';
-    return '高';
-  }
-
-  /**
-   * 将 0-1 数值映射为进度条颜色（CSS 变量引用）
-   *
-   * 低→var(--affect-low) 中→var(--affect-mid) 高→var(--affect-high)
-   * 使用 CSS 变量支持主题切换。
-   *
-   * @param value 0-1 之间的数值
-   * @returns CSS 变量引用字符串
-   */
-  private getAffectColor(value: number): string {
-    if (value < AFFECT_LOW_THRESHOLD) return 'var(--affect-low)';
-    if (value < AFFECT_MID_THRESHOLD) return 'var(--affect-mid)';
-    return 'var(--affect-high)';
-  }
+  // ─── 私有辅助方法 ──────────────────────────────────────
 
   /**
    * 将毫秒冷却时长格式化为人类可读的分钟/小时字符串
@@ -571,89 +549,5 @@ export class PerceptionPanelManager {
     if (minutes < 60) return `${minutes} 分钟`;
     const hours = Math.round((minutes / 60) * 10) / 10;
     return `${hours} 小时`;
-  }
-
-  /**
-   * 将默契度等级映射为中文标签
-   *
-   * @param level 等级标识符（stranger/acquaintance/familiar/close）
-   * @returns 中文标签
-   */
-  private getRapportLevelLabel(level: string): string {
-    switch (level) {
-      case 'stranger':
-        return '初识';
-      case 'acquaintance':
-        return '相识';
-      case 'familiar':
-        return '熟悉';
-      case 'close':
-        return '亲密';
-      default:
-        return level;
-    }
-  }
-
-  /**
-   * 将对话节奏映射为中文标签
-   *
-   * @param rhythm 节奏标识符
-   * @returns 中文标签
-   */
-  private describeRhythm(rhythm: string): string {
-    switch (rhythm) {
-      case 'rapid':
-        return '快节奏';
-      case 'normal':
-        return '正常';
-      case 'slow':
-        return '慢节奏';
-      case 'idle':
-        return '空闲';
-      default:
-        return rhythm;
-    }
-  }
-
-  /**
-   * 将话题连贯性映射为中文标签
-   *
-   * @param coherence 连贯性标识符
-   * @returns 中文标签
-   */
-  private describeCoherence(coherence: string): string {
-    switch (coherence) {
-      case 'focused':
-        return '专注';
-      case 'moderate':
-        return '中等';
-      case 'scattered':
-        return '分散';
-      case 'none':
-        return '无';
-      default:
-        return coherence;
-    }
-  }
-
-  /**
-   * 将对话深度映射为中文标签
-   *
-   * @param depth 深度标识符
-   * @returns 中文标签
-   */
-  private describeDepth(depth: string): string {
-    switch (depth) {
-      case 'deep':
-        return '深度讨论';
-      case 'moderate':
-        return '一般讨论';
-      case 'shallow':
-        return '浅层问答';
-      case 'none':
-        return '无';
-      default:
-        return depth;
-    }
   }
 }

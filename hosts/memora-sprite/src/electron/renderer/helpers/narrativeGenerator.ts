@@ -20,6 +20,8 @@ import type {
   PatternsPayload,
   PresencePayload,
 } from './ipcListeners.js';
+// 感知标签映射（统一真理源，消除 2 个私有方法的重复实现）
+import { getRapportLevelLabel, describeRhythm } from './perceptionLabels.js';
 
 /** 情感基调阈值：超过此值认为该维度显著 */
 const AFFECT_TONE_THRESHOLD = 0.6;
@@ -128,7 +130,7 @@ export class NarrativeGenerator {
 
     // 对话上下文
     if (this.lastNarrativeContext && this.lastNarrativeContext.rhythm !== 'idle') {
-      const rhythmLabel = this.describeRhythm(this.lastNarrativeContext.rhythm);
+      const rhythmLabel = describeRhythm(this.lastNarrativeContext.rhythm);
       parts.push(`对话节奏${rhythmLabel}`);
     }
     if (
@@ -154,7 +156,7 @@ export class NarrativeGenerator {
 
     // 默契度
     if (this.lastNarrativeRapport) {
-      const levelLabel = this.getRapportLevelLabel(this.lastNarrativeRapport.level);
+      const levelLabel = getRapportLevelLabel(this.lastNarrativeRapport.level);
       if (levelLabel !== '初识') {
         parts.push(`默契度：${levelLabel}`);
       }
@@ -181,44 +183,6 @@ export class NarrativeGenerator {
     }
 
     return parts.join('，') + '。';
-  }
-
-  // ─── 私有辅助方法 ─────────────────────────────────────────
-
-  /**
-   * 默契度等级 → 中文标签映射
-   *
-   * 与 RapportLevel 真理源（stranger/acquaintance/familiar/close）保持一致。
-   *
-   * @param level 默契度等级字符串
-   * @returns 中文标签（初识/相识/熟悉/亲密）
-   */
-  private getRapportLevelLabel(level: string): string {
-    const labelMap: Record<string, string> = {
-      stranger: '初识',
-      acquaintance: '相识',
-      familiar: '熟悉',
-      close: '亲密',
-    };
-    return labelMap[level] ?? level;
-  }
-
-  /**
-   * 对话节奏 → 中文标签映射
-   *
-   * 与 ContextAwareness.describeRhythm 真理源保持一致（rapid/normal/slow/idle）。
-   *
-   * @param rhythm 节奏类型
-   * @returns 中文标签（快节奏/正常/慢节奏/空闲）
-   */
-  private describeRhythm(rhythm: string): string {
-    const rhythmMap: Record<string, string> = {
-      rapid: '快节奏',
-      normal: '正常',
-      slow: '慢节奏',
-      idle: '空闲',
-    };
-    return rhythmMap[rhythm] ?? rhythm;
   }
 
   // ─── 状态查询（供外部判断是否 idle 等） ─────────────────

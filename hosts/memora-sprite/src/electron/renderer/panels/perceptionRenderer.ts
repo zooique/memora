@@ -33,12 +33,17 @@ import type {
 import type { ProactiveStats } from '../../../sprite/controllers/index.js';
 import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 import { NarrativeGenerator } from '../helpers/narrativeGenerator.js';
+// 感知标签映射（统一真理源，消除 6 个私有方法的重复实现）
+import {
+  getAffectLevel,
+  getAffectColor,
+  getRapportLevelLabel,
+  describeRhythm,
+  describeCoherence,
+  describeDepth,
+} from '../helpers/perceptionLabels.js';
 
 // ─── 常量 ────────────────────────────────────────────────
-
-/** 情感维度等级划分阈值：< AFFECT_LOW_THRESHOLD 为"低"，< AFFECT_MID_THRESHOLD 为"中"，否则为"高" */
-const AFFECT_LOW_THRESHOLD = 0.33;
-const AFFECT_MID_THRESHOLD = 0.67;
 
 /** 接受率等级划分阈值：< 0.4 为低，< 0.7 为中，否则为高（与 confidence 徽章一致） */
 const ACCEPTANCE_LOW_THRESHOLD = 0.4;
@@ -156,10 +161,10 @@ export class PerceptionRenderer {
       const levelEl = document.getElementById(`dashboard-${dim.id}-level`);
       if (fillEl) {
         fillEl.style.width = `${Math.round(dim.value * 100)}%`;
-        fillEl.style.background = this.getAffectColor(dim.value);
+        fillEl.style.background = getAffectColor(dim.value);
       }
       if (levelEl) {
-        levelEl.textContent = this.getAffectLevel(dim.value);
+        levelEl.textContent = getAffectLevel(dim.value);
       }
     }
 
@@ -168,14 +173,14 @@ export class PerceptionRenderer {
     if (statusTextBar) {
       const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
       const dominantLabel = { warmth: '温暖', directness: '直接', initiative: '主动', playfulness: '活泼' }[dominant.id] ?? dominant.id;
-      statusTextBar.textContent = `基调：${dominantLabel}（${this.getAffectLevel(dominant.value)}）`;
+      statusTextBar.textContent = `基调：${dominantLabel}（${getAffectLevel(dominant.value)}）`;
     }
 
     // ─── 精灵状态脉冲点（颜色随主导情感维度变化） ────
     const statusDotBar = document.getElementById('sprite-status-dot-bar');
     if (statusDotBar) {
       const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
-      statusDotBar.style.background = this.getAffectColor(dominant.value);
+      statusDotBar.style.background = getAffectColor(dominant.value);
     }
 
     // 感知数据变化后更新叙事摘要
@@ -197,7 +202,7 @@ export class PerceptionRenderer {
     // ─── 感知面板等级徽章 ────────────────────────────
     const rapportBadge = document.getElementById('dashboard-rapport-badge');
     if (rapportBadge) {
-      rapportBadge.textContent = this.getRapportLevelLabel(rapport.level);
+      rapportBadge.textContent = getRapportLevelLabel(rapport.level);
       rapportBadge.setAttribute('data-level', rapport.level);
     }
 
@@ -205,14 +210,14 @@ export class PerceptionRenderer {
     const trustFill = document.getElementById('dashboard-trust-fill');
     if (trustFill) {
       trustFill.style.width = `${Math.round(rapport.trust * 100)}%`;
-      trustFill.style.background = this.getAffectColor(rapport.trust);
+      trustFill.style.background = getAffectColor(rapport.trust);
     }
 
     // ─── 感知面板熟悉度进度条 ──────────────────────────
     const familiarityFill = document.getElementById('dashboard-familiarity-fill');
     if (familiarityFill) {
       familiarityFill.style.width = `${Math.round(rapport.familiarity * 100)}%`;
-      familiarityFill.style.background = this.getAffectColor(rapport.familiarity);
+      familiarityFill.style.background = getAffectColor(rapport.familiarity);
     }
 
     // ─── 感知面板描述文本 ──────────────────────────────
@@ -240,19 +245,19 @@ export class PerceptionRenderer {
     // ─── 感知面板节奏指标 ────────────────────────────
     const paceEl = document.getElementById('dashboard-pace-value');
     if (paceEl) {
-      paceEl.textContent = this.describeRhythm(context.rhythm);
+      paceEl.textContent = describeRhythm(context.rhythm);
     }
 
     // ─── 感知面板话题连贯性指标 ────────────────────────
     const topicEl = document.getElementById('dashboard-topic-value');
     if (topicEl) {
-      topicEl.textContent = this.describeCoherence(context.coherence);
+      topicEl.textContent = describeCoherence(context.coherence);
     }
 
     // ─── 感知面板深度指标 ────────────────────────────
     const depthEl = document.getElementById('dashboard-depth-value');
     if (depthEl) {
-      depthEl.textContent = this.describeDepth(context.depth);
+      depthEl.textContent = describeDepth(context.depth);
     }
 
     // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
@@ -558,119 +563,6 @@ export class PerceptionRenderer {
       if (statusTextBar) {
         statusTextBar.textContent = narrative;
       }
-    }
-  }
-
-  // ─── 私有辅助方法（感知数据映射） ──────────────────────
-
-  /**
-   * 将 0-1 数值映射为中文等级描述
-   *
-   * @param value 0-1 之间的数值
-   * @returns 中文等级（低/中/高）
-   */
-  private getAffectLevel(value: number): string {
-    if (value < AFFECT_LOW_THRESHOLD) return '低';
-    if (value < AFFECT_MID_THRESHOLD) return '中';
-    return '高';
-  }
-
-  /**
-   * 将 0-1 数值映射为进度条颜色（CSS 变量引用）
-   *
-   * 低→var(--affect-low) 中→var(--affect-mid) 高→var(--affect-high)
-   * 使用 CSS 变量支持主题切换。
-   *
-   * @param value 0-1 之间的数值
-   * @returns CSS 变量引用字符串
-   */
-  private getAffectColor(value: number): string {
-    if (value < AFFECT_LOW_THRESHOLD) return 'var(--affect-low)';
-    if (value < AFFECT_MID_THRESHOLD) return 'var(--affect-mid)';
-    return 'var(--affect-high)';
-  }
-
-  /**
-   * 将默契度等级映射为中文标签（Phase 3）
-   *
-   * @param level 等级标识符（stranger/acquaintance/familiar/close）
-   * @returns 中文标签
-   */
-  private getRapportLevelLabel(level: string): string {
-    switch (level) {
-      case 'stranger':
-        return '初识';
-      case 'acquaintance':
-        return '相识';
-      case 'familiar':
-        return '熟悉';
-      case 'close':
-        return '亲密';
-      default:
-        return level;
-    }
-  }
-
-  /**
-   * 将对话节奏映射为中文标签（Phase 4，与 ContextAwareness.describeRhythm 一致）
-   *
-   * @param rhythm 节奏标识符
-   * @returns 中文标签
-   */
-  private describeRhythm(rhythm: string): string {
-    switch (rhythm) {
-      case 'rapid':
-        return '快节奏';
-      case 'normal':
-        return '正常';
-      case 'slow':
-        return '慢节奏';
-      case 'idle':
-        return '空闲';
-      default:
-        return rhythm;
-    }
-  }
-
-  /**
-   * 将话题连贯性映射为中文标签（Phase 4，与 ContextAwareness.describeCoherence 一致）
-   *
-   * @param coherence 连贯性标识符
-   * @returns 中文标签
-   */
-  private describeCoherence(coherence: string): string {
-    switch (coherence) {
-      case 'focused':
-        return '专注';
-      case 'moderate':
-        return '中等';
-      case 'scattered':
-        return '分散';
-      case 'none':
-        return '无';
-      default:
-        return coherence;
-    }
-  }
-
-  /**
-   * 将对话深度映射为中文标签（Phase 4，与 ContextAwareness.describeDepth 一致）
-   *
-   * @param depth 深度标识符
-   * @returns 中文标签
-   */
-  private describeDepth(depth: string): string {
-    switch (depth) {
-      case 'deep':
-        return '深度讨论';
-      case 'moderate':
-        return '一般讨论';
-      case 'shallow':
-        return '浅层问答';
-      case 'none':
-        return '无';
-      default:
-        return depth;
     }
   }
 }

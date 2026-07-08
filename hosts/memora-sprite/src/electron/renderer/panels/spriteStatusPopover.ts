@@ -15,6 +15,8 @@
  * 由 ipcListeners 中的感知事件处理器同时更新 popover 和 dashboard。
  */
 import type { AffectPayload, RapportPayload, ContextPayload } from '../ipcListeners.js';
+// 感知标签映射（统一真理源，修复文案不一致问题）
+import { getRapportLevelLabel, describeRhythm, describeCoherence } from '../helpers/perceptionLabels.js';
 
 /**
  * 精灵状态浮层
@@ -188,7 +190,7 @@ export class SpriteStatusPopover {
    * 格式：等级名称 · 信任 XX% · 熟悉 XX%
    */
   private formatRapportSummary(r: RapportPayload): string {
-    const levelLabel = this.getRapportLevelLabel(r.level);
+    const levelLabel = getRapportLevelLabel(r.level);
     const trustPct = Math.round(r.trust * 100);
     const familiarityPct = Math.round(r.familiarity * 100);
     return `${levelLabel} · 信任 ${trustPct}% · 熟悉 ${familiarityPct}%`;
@@ -212,31 +214,14 @@ export class SpriteStatusPopover {
   }
 
   /**
-   * 格式化对话节奏摘要
+   * 格式化对话上下文摘要
    *
-   * 展示节奏 + 连贯性，简洁描述对话状态
-   * rhythm/coherence 是字符串枚举（'rapid'/'normal'/'slow'/'idle' / 'focused'/'moderate'/'scattered'/'none'）
+   * 展示节奏 + 连贯性，简洁描述对话状态。
+   * 使用 perceptionLabels 统一标签映射，确保全应用文案一致。
    */
   private formatContextSummary(c: ContextPayload): string {
-    const rhythmLabels: Record<string, string> = { rapid: '快', normal: '适中', slow: '慢', idle: '空闲' };
-    const coherenceLabels: Record<string, string> = { focused: '连贯', moderate: '正常', scattered: '跳跃', none: '无' };
-    const rhythmLabel = rhythmLabels[c.rhythm] ?? c.rhythm;
-    const coherenceLabel = coherenceLabels[c.coherence] ?? c.coherence;
-    return `节奏${rhythmLabel} · ${coherenceLabel}`;
-  }
-
-  /**
-   * 将默契度等级字符串映射为中文标签
-   *
-   * 与 PerceptionRenderer.getRapportLevelLabel 保持一致
-   */
-  private getRapportLevelLabel(level: string): string {
-    const labels: Record<string, string> = {
-      close: '挚友',
-      familiar: '熟悉',
-      acquaintance: '认识',
-      stranger: '陌生人',
-    };
-    return labels[level] ?? level;
+    const rhythmLabel = describeRhythm(c.rhythm);
+    const coherenceLabel = describeCoherence(c.coherence);
+    return `${rhythmLabel} · ${coherenceLabel}`;
   }
 }
