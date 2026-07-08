@@ -122,6 +122,42 @@ export class SafeTimerTracker {
   }
 
   /**
+   * 创建带守卫条件的防抖函数
+   *
+   * 当守卫函数返回 false 时，跳过定时器创建，由外部机制（如 finally 块）处理后续调用。
+   * 适用于需要避免竞态条件的场景（如设置自动保存）。
+   *
+   * @param callback 回调函数
+   * @param delay 延迟毫秒数
+   * @param guard 守卫函数，返回 true 时允许创建定时器，返回 false 时跳过
+   * @returns 带守卫的防抖函数
+   */
+  debounceWithGuard<T extends (...args: unknown[]) => void>(callback: T, delay: number, guard: () => boolean): T {
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    return ((...args: unknown[]) => {
+      if (timerId !== null) {
+        clearTimeout(timerId);
+        this.activeTimers.delete(timerId);
+        timerId = null;
+      }
+
+      if (!guard()) {
+        return;
+      }
+
+      timerId = setTimeout(() => {
+        if (timerId !== null) {
+          this.activeTimers.delete(timerId);
+        }
+        timerId = null;
+        callback(...args);
+      }, delay);
+      this.activeTimers.add(timerId);
+    }) as T;
+  }
+
+  /**
    * 清理所有活跃定时器
    *
    * 用于组件销毁或窗口关闭时统一清理，避免定时器回调在已销毁的 DOM 上执行

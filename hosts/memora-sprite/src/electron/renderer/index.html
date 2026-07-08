@@ -37,6 +37,8 @@
       <symbol id="icon-brain" viewBox="0 0 24 24"><path d="M9.5 2C6.5 2 4 4.5 4 7.5c0 1.5.5 3 1.5 4C4 12.5 2.5 14 2.5 16c0 2.5 2 4.5 4.5 4.5 1.5 0 2.5-.5 3.5-1.5v1.5h3V19c1 1 2 1.5 3.5 1.5 2.5 0 4.5-2 4.5-4.5 0-2-1.5-3.5-3-4.5 1-1 1.5-2.5 1.5-4C20 4.5 17.5 2 14.5 2 13 2 11.5 2.5 10.5 4 9.5 2.5 8 2 6.5 2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
       <!-- 洞察 / 灵感 -->
       <symbol id="icon-lightbulb" viewBox="0 0 24 24"><path d="M10 17h4v3a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3z" fill="currentColor"/><path d="M9 8.5C9 6 10.5 4 12 3s3 3 3 5.5c0 1.5-.5 2.5-1 3.5h-4c-.5-1-1-2-1-3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><line x1="10" y1="14" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+      <!-- 心 / 感知 -->
+      <symbol id="icon-heart" viewBox="0 0 24 24"><path d="M12 21s-7-4.5-9.5-9C.5 8.5 2 4 6 4c2 0 3.5 1 4 2.5C10.5 5 12 4 14 4c4 0 5.5 4.5 3.5 8-2.5 4.5-5.5 7-5.5 7z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
       <!-- 图表 -->
       <symbol id="icon-chart" viewBox="0 0 24 24"><rect x="3" y="14" width="4" height="6" rx="0.5" fill="currentColor"/><rect x="10" y="8" width="4" height="12" rx="0.5" fill="currentColor"/><rect x="17" y="4" width="4" height="16" rx="0.5" fill="currentColor"/></symbol>
       <!-- 设置 / 齿轮 -->
@@ -194,13 +196,16 @@
       </div>
 
       <!-- 导航图标区（复用 .nav-btn 类 + data-panel 属性，自动接入 switchPanel 逻辑） -->
-      <!-- 顶部高频区：对话 / 记忆 / 仪表盘 -->
+      <!-- 顶部高频区：对话 / 记忆 / 感知 / 仪表盘 -->
       <nav class="sidebar-nav sidebar-nav-top" aria-label="主导航">
         <button class="nav-btn active" data-panel="chat" data-tooltip="对话" aria-label="对话面板">
           <svg class="icon"><use href="#icon-chat"/></svg>
         </button>
         <button class="nav-btn" data-panel="memories" data-tooltip="记忆" aria-label="记忆面板">
           <svg class="icon"><use href="#icon-brain"/></svg>
+        </button>
+        <button class="nav-btn" data-panel="perception" data-tooltip="感知" aria-label="感知面板">
+          <svg class="icon"><use href="#icon-heart"/></svg>
         </button>
         <button class="nav-btn" data-panel="dashboard" data-tooltip="仪表盘" aria-label="仪表盘面板">
           <svg class="icon"><use href="#icon-chart"/></svg>
@@ -1040,6 +1045,123 @@
         </div>
       </div>
 
+      <!-- 感知面板（独立面板，详细展示情感/默契/上下文/模式/在场状态） -->
+      <div id="panel-perception" class="panel" aria-hidden="true" aria-label="感知">
+        <div class="panel-header">
+          <span class="panel-title">感知</span>
+        </div>
+        <div class="perception-panel-body">
+          <!-- 叙事摘要区（一句话总结当前感知状态） -->
+          <section class="perception-narrative-section">
+            <div class="perception-narrative" id="perception-narrative-text">
+              精灵正在感知中...
+            </div>
+          </section>
+
+          <!-- 在场状态 -->
+          <section class="perception-section">
+            <h4 class="perception-section-title">在场状态</h4>
+            <div class="perception-presence">
+              <span class="presence-dot present" id="perception-presence-dot"></span>
+              <span class="presence-text" id="perception-presence-text">用户在场</span>
+            </div>
+          </section>
+
+          <!-- 情感基调 -->
+          <section class="perception-section">
+            <h4 class="perception-section-title">情感基调</h4>
+            <div class="perception-affect-grid">
+              <div class="affect-item">
+                <div class="affect-item-header">
+                  <span class="affect-label">温暖</span>
+                  <span class="affect-level" id="perception-warmth-level">—</span>
+                </div>
+                <div class="affect-track"><div class="affect-fill" id="perception-warmth-fill"></div></div>
+              </div>
+              <div class="affect-item">
+                <div class="affect-item-header">
+                  <span class="affect-label">直接</span>
+                  <span class="affect-level" id="perception-directness-level">—</span>
+                </div>
+                <div class="affect-track"><div class="affect-fill" id="perception-directness-fill"></div></div>
+              </div>
+              <div class="affect-item">
+                <div class="affect-item-header">
+                  <span class="affect-label">主动</span>
+                  <span class="affect-level" id="perception-initiative-level">—</span>
+                </div>
+                <div class="affect-track"><div class="affect-fill" id="perception-initiative-fill"></div></div>
+              </div>
+              <div class="affect-item">
+                <div class="affect-item-header">
+                  <span class="affect-label">活泼</span>
+                  <span class="affect-level" id="perception-playfulness-level">—</span>
+                </div>
+                <div class="affect-track"><div class="affect-fill" id="perception-playfulness-fill"></div></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 默契度 -->
+          <section class="perception-section">
+            <h4 class="perception-section-title">默契度</h4>
+            <div class="perception-rapport">
+              <div class="perception-rapport-header">
+                <span class="rapport-badge" id="perception-rapport-badge" data-level="stranger">初识</span>
+                <span class="rapport-desc" id="perception-rapport-desc"></span>
+              </div>
+              <div class="perception-rapport-bars">
+                <div class="rapport-bar"><span class="bar-label">信任</span><div class="progress-track"><div class="progress-fill" id="perception-trust-fill"></div></div></div>
+                <div class="rapport-bar"><span class="bar-label">熟悉</span><div class="progress-track"><div class="progress-fill" id="perception-familiarity-fill"></div></div></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 对话上下文 -->
+          <section class="perception-section">
+            <h4 class="perception-section-title">对话上下文</h4>
+            <div class="perception-context-grid">
+              <div class="context-card">
+                <span class="context-label">节奏</span>
+                <span class="context-value" id="perception-pace-value">—</span>
+              </div>
+              <div class="context-card">
+                <span class="context-label">话题</span>
+                <span class="context-value" id="perception-topic-value">—</span>
+              </div>
+              <div class="context-card">
+                <span class="context-label">深度</span>
+                <span class="context-value" id="perception-depth-value">—</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 主动提示统计 -->
+          <section class="perception-section">
+            <h4 class="perception-section-title">主动提示</h4>
+            <div class="perception-proactive" id="perception-proactive">
+              <div class="proactive-grid hidden" id="perception-proactive-grid">
+                <div class="proactive-item"><span class="proactive-label">建议</span><span class="proactive-value" id="perception-proactive-suggest">0</span></div>
+                <div class="proactive-item"><span class="proactive-label">接受</span><span class="proactive-value" id="perception-proactive-accept">0</span></div>
+                <div class="proactive-item"><span class="proactive-label">接受率</span><span class="proactive-value" id="perception-proactive-rate">—</span></div>
+                <div class="proactive-item"><span class="proactive-label">连续拒绝</span><span class="proactive-value" id="perception-proactive-rejects">0</span></div>
+                <div class="proactive-item"><span class="proactive-label">生效冷却</span><span class="proactive-value" id="perception-proactive-cooldown">—</span></div>
+              </div>
+              <div class="proactive-empty" id="perception-proactive-empty">
+                <svg class="icon"><use href="#icon-bell"/></svg>
+                <span>暂无互动数据，开始对话后将统计</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- 模式洞察 -->
+          <section class="perception-section perception-patterns-section hidden" id="perception-patterns-section">
+            <h4 class="perception-section-title">模式洞察</h4>
+            <div id="perception-patterns-list" class="perception-patterns-list"></div>
+          </section>
+        </div>
+      </div>
+
       <!-- 仪表盘面板（迭代：感知面板从 overlay 升级为独立 .panel，整合健康诊断 + 感知 + 运行指标） -->
       <div id="panel-dashboard" class="panel" aria-hidden="true" aria-label="仪表盘">
         <div class="panel-header">
@@ -1491,6 +1613,22 @@
   <!-- Toast 通知区域（独立于对话历史，避免污染 #messages） -->
   <!-- 用于显示操作反馈（成功/失败/警告），自动消失，不持久化 -->
   <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- 消息右键菜单（消息气泡上右键触发，全局唯一实例） -->
+  <div id="message-context-menu" class="context-menu hidden" role="menu">
+    <button class="context-menu-item" data-action="copy" role="menuitem" aria-label="复制消息">
+      <svg class="icon"><use href="#icon-copy"/></svg>
+      <span>复制</span>
+    </button>
+    <button class="context-menu-item" data-action="regenerate" role="menuitem" aria-label="重新生成" aria-disabled="false">
+      <svg class="icon"><use href="#icon-refresh"/></svg>
+      <span>重新生成</span>
+    </button>
+    <button class="context-menu-item" data-action="forget" role="menuitem" aria-label="忘记此条消息" aria-disabled="false">
+      <svg class="icon"><use href="#icon-trash"/></svg>
+      <span>忘记</span>
+    </button>
+  </div>
 
   <script type="module" src="renderer.js"></script>
 <!-- 清理确认对话框（Phase 3：智能清理，默认隐藏） -->

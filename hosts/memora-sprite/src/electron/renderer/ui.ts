@@ -36,6 +36,8 @@ import { MemoryPanelManager } from './panels/memoryPanelManager.js';
 import type { MemoryPanelHost } from './panels/memoryPanelManager.js';
 import { DashboardPanelManager } from './panels/dashboardPanelManager.js';
 import type { DashboardPanelHost } from './panels/dashboardPanelManager.js';
+import { PerceptionPanelManager } from './panels/perceptionPanelManager.js';
+import type { PerceptionPanelHost } from './panels/perceptionPanelManager.js';
 import { SpriteStatusPopover } from './panels/spriteStatusPopover.js';
 import type {
   DashboardViewModel,
@@ -190,6 +192,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private memoryPanel: MemoryPanelManager;
   /** 仪表盘面板管理器（感知系统 + 仪表盘渲染） */
   private dashboardPanel: DashboardPanelManager;
+  /** 感知面板管理器（独立感知面板，完整版感知数据展示 + 叙事摘要） */
+  private perceptionPanel: PerceptionPanelManager;
   /** 精灵状态浮层（hover 弹出轻量感知摘要，与 PerceptionRenderer 共享数据源） */
   private spriteStatusPopover: SpriteStatusPopover;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
@@ -321,6 +325,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 仪表盘面板管理器（感知系统 + 仪表盘渲染）
     this.dashboardPanel = new DashboardPanelManager(new EventTracker());
 
+    // 感知面板管理器（独立感知面板，完整版感知数据展示）
+    this.perceptionPanel = new PerceptionPanelManager(this as PerceptionPanelHost);
+
     // 精灵状态浮层（hover 弹出轻量感知摘要）
     this.spriteStatusPopover = new SpriteStatusPopover();
 
@@ -428,6 +435,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatPanel.cleanup();
     this.memoryPanel.cleanup(); // Q1 清理记忆面板防抖定时器
     this.dashboardPanel.cleanup(); // 清理仪表盘脉冲定时器与重试按钮事件
+    this.perceptionPanel.cleanup(); // 清理感知面板资源
     this.spriteStatusPopover.cleanup(); // 清理精灵状态浮层 hover 事件和定时器
     this.personaPanel.cleanup();
     // 清理命令面板的全局 keydown 监听器，避免页面重载后累积
@@ -553,6 +561,24 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onStreamStuck(): void {
     // 通知主进程中断当前对话（清理 AbortController + 发送 SPRITE_STREAM_END）
     void window.electronAPI.abortChat();
+  }
+
+  /**
+   * 重新生成上一条精灵消息（ChatPanelHost 回调：右键菜单"重新生成"触发）
+   *
+   * 委托到 sendMessageCallback，由 renderer.ts 层实现实际的重新发送逻辑，
+   * 使用 State.lastUserInput 重新发送。
+   */
+  regenerateLastMessage(): void {
+    if (!this.state.isAgentReady) {
+      this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
+      return;
+    }
+    if (this.state.isStreaming) {
+      this.showToast('精灵正在回复中，请等待完成或点击停止', 'warning');
+      return;
+    }
+    this.sendMessageCallback?.();
   }
 
   // setButtonLoading 见 domHelpers.ts，UIManager 不持有此方法
@@ -1160,29 +1186,34 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   showMemoryListError(listEl: HTMLElement): void { this.dashboardPanel.showMemoryListError(listEl); }
   /** 仪表盘计数 +1 并触发脉冲动画（委托到 DashboardPanelManager） */
   pulseCounter(id: string): void { this.dashboardPanel.pulseCounter(id); }
-  /** 更新情感基调展示（委托到 DashboardPanelManager） */
+  /** 更新情感基调展示（委托到 DashboardPanelManager + PerceptionPanelManager + SpriteStatusPopover） */
   updateAffectDisplay(affect: AffectPayload): void {
     this.dashboardPanel.updateAffectDisplay(affect);
+    this.perceptionPanel.updateAffectDisplay(affect);
     this.spriteStatusPopover.updateAffect(affect);
   }
-  /** 更新默契度展示（委托到 DashboardPanelManager + SpriteStatusPopover） */
+  /** 更新默契度展示（委托到 DashboardPanelManager + PerceptionPanelManager + SpriteStatusPopover） */
   updateRapportDisplay(rapport: RapportPayload): void {
     this.dashboardPanel.updateRapportDisplay(rapport);
+    this.perceptionPanel.updateRapportDisplay(rapport);
     this.spriteStatusPopover.updateRapport(rapport);
   }
-  /** 更新对话上下文展示（委托到 DashboardPanelManager + SpriteStatusPopover） */
+  /** 更新对话上下文展示（委托到 DashboardPanelManager + PerceptionPanelManager + SpriteStatusPopover） */
   updateContextDisplay(context: ContextPayload): void {
     this.dashboardPanel.updateContextDisplay(context);
+    this.perceptionPanel.updateContextDisplay(context);
     this.spriteStatusPopover.updateContext(context);
   }
-  /** 更新模式洞察面板（委托到 DashboardPanelManager） */
+  /** 更新模式洞察面板（委托到 DashboardPanelManager + PerceptionPanelManager） */
   updatePatternsDisplay(payload: PatternsPayload): void {
     this.dashboardPanel.updatePatternsDisplay(payload);
+    this.perceptionPanel.updatePatternsDisplay(payload);
   }
   /**
-   * 从感知快照一次性渲染所有感知数据（委托到 DashboardPanelManager）
+   * 从感知快照一次性渲染所有感知数据（委托到 DashboardPanelManager + PerceptionPanelManager）
    *
-   * 仪表盘首次加载时调用，确保感知区显示真实数据而非占位值。
+   * 首次加载时调用，确保感知区显示真实数据而非占位值。
+   * 同时推送到仪表盘（精简版）和感知面板（完整版）。
    */
   renderPerceptionSnapshot(snapshot: {
     affect?: { warmth: number; playfulness: number; directness: number; initiative: number };
@@ -1190,19 +1221,27 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
     patterns?: Array<{ type: string; summary: string; confidence: number; suggestion?: string }>;
     proactiveStats?: ProactiveStats;
+    presence?: { state: 'present' | 'away'; awayDurationMs?: number };
   }): void {
     this.dashboardPanel.renderPerceptionSnapshot(snapshot);
+    this.perceptionPanel.renderPerceptionSnapshot(snapshot);
   }
-  /** 更新主动提示统计展示（委托到 DashboardPanelManager，PerceptionPanelHost 接口要求） */
+  /** 更新主动提示统计展示（委托到 DashboardPanelManager + PerceptionPanelManager） */
   updateProactiveStatsDisplay(stats: unknown): void {
-    this.dashboardPanel.updateProactiveStatsDisplay(stats as Parameters<typeof this.dashboardPanel.updateProactiveStatsDisplay>[0]);
+    const typedStats = stats as Parameters<typeof this.dashboardPanel.updateProactiveStatsDisplay>[0];
+    this.dashboardPanel.updateProactiveStatsDisplay(typedStats);
+    this.perceptionPanel.updateProactiveStatsDisplay(typedStats);
   }
-  /** 更新在场状态展示（委托到 DashboardPanelManager） */
+  /** 更新在场状态展示（委托到 DashboardPanelManager + PerceptionPanelManager） */
   updatePresenceDisplay(payload: PresencePayload): void {
     this.dashboardPanel.updatePresenceDisplay(payload);
+    this.perceptionPanel.updatePresenceDisplay(payload);
   }
-  /** 更新叙事摘要 DOM（委托到 DashboardPanelManager） */
-  updateNarrative(): void { this.dashboardPanel.updateNarrative(); }
+  /** 更新叙事摘要 DOM（委托到 DashboardPanelManager + PerceptionPanelManager） */
+  updateNarrative(): void {
+    this.dashboardPanel.updateNarrative();
+    this.perceptionPanel.updateNarrative();
+  }
   /** 注册重试加载洞察数据回调（委托到 DashboardPanelManager） */
   onReloadInsights(cb: () => void): void { this.dashboardPanel.onReloadInsights(cb); }
   /** 注册重试加载健康度数据回调（委托到 DashboardPanelManager） */

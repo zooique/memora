@@ -2831,3 +2831,52 @@
   cursor: not-allowed;
 }
 
+/* ─── 消息右键菜单 ─── */
+.context-menu {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  min-width: 140px;
+}
+
+.context-menu.hidden {
+  display: none;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  text-align: left;
+}
+
+.context-menu-item:hover {
+  background: var(--surface2);
+}
+
+.context-menu-item .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.context-menu-item[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

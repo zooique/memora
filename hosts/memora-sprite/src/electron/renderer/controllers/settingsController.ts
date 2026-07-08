@@ -18,7 +18,6 @@
 import type { UIManager } from '../ui.js';
 import type { SpriteConfigForm } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
-import { setButtonLoading } from '../helpers/domHelpers.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
 

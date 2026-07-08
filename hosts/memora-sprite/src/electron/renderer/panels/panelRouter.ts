@@ -233,11 +233,11 @@ export class PanelRouter {
     if (!(e instanceof KeyboardEvent)) return;
     const isMod = e.ctrlKey || e.metaKey;
 
-    // Esc：关闭下拉菜单；设置/记忆/仪表盘面板激活时切回对话
+    // Esc：关闭下拉菜单；设置/记忆/仪表盘/感知面板激活时切回对话
     if (e.key === 'Escape') {
-      // 设置或记忆或仪表盘面板激活时，Escape 切回对话面板
+      // 设置或记忆或仪表盘或感知面板激活时，Escape 切回对话面板
       const state = this.host.getState();
-      if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard') {
+      if (state.currentPanel === 'settings' || state.currentPanel === 'memories' || state.currentPanel === 'dashboard' || state.currentPanel === 'perception') {
         void this.switchPanel('chat');
         e.preventDefault();
         return;
@@ -251,12 +251,13 @@ export class PanelRouter {
     }
 
     // Ctrl/Cmd + 数字：切换面板
-    if (isMod && ['1', '2', '3', '4'].includes(e.key)) {
+    if (isMod && ['1', '2', '3', '4', '5'].includes(e.key)) {
       const panelMap: Record<string, string> = {
         '1': 'chat',
         '2': 'memories',
         '3': 'settings',
         '4': 'dashboard',
+        '5': 'perception',
       };
       const panel = panelMap[e.key];
       if (panel) {

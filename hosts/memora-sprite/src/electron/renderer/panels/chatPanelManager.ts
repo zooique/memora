@@ -100,6 +100,13 @@ export interface ChatPanelHost {
    * 导致下次发送被竞态保护拒绝。宿主通过此回调通知主进程 abort 当前对话，联动清理。
    */
   onStreamStuck(): void;
+  /**
+   * 重新生成上一条精灵消息（右键菜单"重新生成"触发）
+   *
+   * 通过宿主回调机制，由 renderer.ts 层实现实际的重新发送逻辑，
+   * 避免 ChatPanelManager 直接访问 sessionController 或 electronAPI。
+   */
+  regenerateLastMessage(): void;
 }
 
 // ─── 聊天面板管理器类 ─────────────────────────────────────
@@ -332,13 +339,109 @@ export class ChatPanelManager {
         return;
       }
       // 缺口 J：归档按钮 data-action="archive"（manual 模式下触发手动归档）
-      // 委托到 ArchiveButtonManager.handleClick
-      const archiveBtn = target.closest<HTMLElement>('[data-action="archive"]');
-      if (archiveBtn) {
-        void this.archiveButtonManager.handleClick(archiveBtn);
-        return;
-      }
-    });
+    // 委托到 ArchiveButtonManager.handleClick
+    const archiveBtn = target.closest<HTMLElement>('[data-action="archive"]');
+    if (archiveBtn) {
+      void this.archiveButtonManager.handleClick(archiveBtn);
+      return;
+    }
+  });
+
+  // 右键菜单：消息气泡上右键触发上下文菜单
+  this.events.addEventListener(this.messagesEl, 'contextmenu', (e: Event) => {
+    const me = e as MouseEvent;
+    const target = e.target as HTMLElement;
+    const messageEl = target.closest<HTMLElement>('.message');
+    if (!messageEl || messageEl.classList.contains('system')) {
+      return;
+    }
+
+    e.preventDefault();
+
+    const menu = document.getElementById('message-context-menu');
+    if (!menu) return;
+
+    const messageRole = messageEl.classList.contains('user') ? 'user' : 'assistant';
+    const bubble = messageEl.querySelector('.message-bubble');
+    const content = bubble?.textContent ?? '';
+    const messageId = messageEl.dataset.messageId ?? '';
+
+    menu.dataset.role = messageRole;
+    menu.dataset.content = content;
+    menu.dataset.messageId = messageId;
+
+    const regenerateBtn = menu.querySelector<HTMLElement>('[data-action="regenerate"]');
+    const forgetBtn = menu.querySelector<HTMLElement>('[data-action="forget"]');
+
+    if (regenerateBtn) {
+      regenerateBtn.setAttribute('aria-disabled', messageRole === 'user' ? 'true' : 'false');
+    }
+    if (forgetBtn) {
+      forgetBtn.setAttribute('aria-disabled', messageId ? 'false' : 'true');
+    }
+
+    const rect = menu.getBoundingClientRect();
+    let x = me.clientX;
+    let y = me.clientY;
+
+    if (x + rect.width > window.innerWidth) {
+      x = window.innerWidth - rect.width - 8;
+    }
+    if (y + rect.height > window.innerHeight) {
+      y = window.innerHeight - rect.height - 8;
+    }
+
+    menu.style.left = `${x}px`;
+    menu.style.top = `${y}px`;
+    menu.classList.remove('hidden');
+  });
+
+  // 点击外部关闭右键菜单
+  this.events.addEventListener(document, 'click', () => {
+    const menu = document.getElementById('message-context-menu');
+    if (menu && !menu.classList.contains('hidden')) {
+      menu.classList.add('hidden');
+    }
+  });
+
+  // 右键菜单项点击处理
+  this.events.addEventListener(document, 'click', (e: Event) => {
+    const target = e.target as HTMLElement;
+    const menuItem = target.closest<HTMLElement>('.context-menu-item');
+    if (!menuItem) return;
+
+    const menu = document.getElementById('message-context-menu');
+    if (!menu) return;
+
+    const action = menuItem.dataset.action;
+    const content = menu.dataset.content ?? '';
+    const role = menu.dataset.role ?? '';
+    const messageId = menu.dataset.messageId ?? '';
+
+    menu.classList.add('hidden');
+
+    switch (action) {
+      case 'copy':
+        navigator.clipboard.writeText(content).then(
+          () => this.host.showToast('已复制到剪贴板', 'success', TOAST_SHORT_MS),
+          () => this.host.showToast('复制失败', 'error'),
+        );
+        break;
+      case 'regenerate':
+        if (role === 'assistant') {
+          const messageEl = messageId ? this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`) : null;
+          if (messageEl) {
+            this._handleRegenerate(messageEl);
+          }
+        }
+        break;
+      case 'forget':
+        if (messageId) {
+          this._handleForget(messageId);
+        }
+        break;
+    }
+  });
 
     // 键盘可访问性：在 messagesEl 上注册 keydown 委托，
     // 处理 Enter/Space 键触发 data-action="recall" 和 data-action="toggle-collapse" 元素
@@ -605,6 +708,9 @@ export class ChatPanelManager {
   private buildMessageElement(message: Message, grouped: boolean = false): HTMLElement {
     const el = document.createElement('div');
     el.className = `message ${message.role}${message.streaming ? ' streaming' : ''}${grouped ? ' grouped' : ''}`;
+    if (message.messageId) {
+      el.dataset.messageId = message.messageId;
+    }
 
     if (message.role === 'system') {
       // 系统消息：简单文本，居中无头像
@@ -891,6 +997,39 @@ export class ChatPanelManager {
       metaRow.appendChild(timeEl);
     } else {
       contentWrapper.appendChild(copyBtn);
+    }
+  }
+
+  /**
+   * 处理重新生成操作（右键菜单"重新生成"触发）
+   *
+   * 删除当前精灵消息，然后调用宿主回调重新发送上一条用户消息。
+   *
+   * @param messageEl 被右键点击的精灵消息 DOM 元素
+   */
+  private _handleRegenerate(messageEl: HTMLElement): void {
+    if (this.host.isStreaming()) {
+      this.host.showToast('精灵正在回复中，请等待完成或点击停止', 'warning');
+      return;
+    }
+
+    messageEl.remove();
+    this.host.regenerateLastMessage();
+  }
+
+  /**
+   * 处理忘记操作（右键菜单"忘记"触发）
+   *
+   * 删除消息从 UI（本地忘记）。
+   * 注意：这不是删除记忆，而是删除对话中的消息显示。
+   *
+   * @param messageId 消息 ID
+   */
+  private _handleForget(messageId: string): void {
+    const messageEl = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`);
+    if (messageEl) {
+      messageEl.remove();
+      this.host.showToast('消息已忘记', 'success', TOAST_SHORT_MS);
     }
   }
 

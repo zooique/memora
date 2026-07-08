@@ -278,8 +278,6 @@ export class SettingsPanelManager {
     // UI-UX-01 设置面板 tab 切换
     this.initSettingsTabListeners();
 
-    const btnSave = getOptionalElement('btn-settings-save', 'button');
-    const btnCancel = getOptionalElement('btn-settings-cancel', 'button');
     const btnReset = getOptionalElement('btn-settings-reset', 'button');
 
     // "稍后配置"按钮：首次配置时提供退出路径
@@ -297,9 +295,11 @@ export class SettingsPanelManager {
     this.initApiKeyToggle('btn-toggle-emb-key', 'cfg-emb-api-key');
 
     // 创建防抖自动保存函数（500ms 延迟，避免频繁 IPC 调用）
-    this.debouncedAutoSave = this.timers.debounce(() => {
+    // 使用 debounceWithGuard 避免竞态条件：当 isAutoSaving 为 true 时跳过定时器创建，
+    // 由 autoSaveConfig 的 finally 块检查 settingsFormDirty 并触发后续保存
+    this.debouncedAutoSave = this.timers.debounceWithGuard(() => {
       this.autoSaveConfig();
-    }, 500);
+    }, 500, () => !this.isAutoSaving);
 
     // 监听设置面板所有表单元素的变更，触发自动保存
     const settingsPanel = document.getElementById('panel-settings');
