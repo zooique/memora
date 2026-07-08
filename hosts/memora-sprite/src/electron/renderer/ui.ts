@@ -566,10 +566,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /**
    * 重新生成上一条精灵消息（ChatPanelHost 回调：右键菜单"重新生成"触发）
    *
-   * 委托到 sendMessageCallback，由 renderer.ts 层实现实际的重新发送逻辑，
-   * 使用 State.lastUserInput 重新发送。
+   * 将用户消息内容填入输入框并触发发送，复用现有 sendMessageCallback 链路。
+   *
+   * @param userMessage 用户消息内容（从 DOM 中提取，用于重新发送）
    */
-  regenerateLastMessage(): void {
+  regenerateLastMessage(userMessage: string): void {
     if (!this.state.isAgentReady) {
       this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
       return;
@@ -578,6 +579,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       this.showToast('精灵正在回复中，请等待完成或点击停止', 'warning');
       return;
     }
+    // 预填用户消息内容（自动调整输入框高度）
+    this.inputAreaManager.setValue(userMessage);
     this.sendMessageCallback?.();
   }
 

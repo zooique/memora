@@ -105,8 +105,10 @@ export interface ChatPanelHost {
    *
    * 通过宿主回调机制，由 renderer.ts 层实现实际的重新发送逻辑，
    * 避免 ChatPanelManager 直接访问 sessionController 或 electronAPI。
+   *
+   * @param userMessage 对应用户消息内容（从 DOM 中提取，用于重新发送）
    */
-  regenerateLastMessage(): void;
+  regenerateLastMessage(userMessage: string): void;
 }
 
 // ─── 聊天面板管理器类 ─────────────────────────────────────
@@ -437,7 +439,10 @@ export class ChatPanelManager {
         break;
       case 'forget':
         if (messageId) {
-          this._handleForget(messageId);
+          const messageEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+          if (messageEl) {
+            this._handleForget(messageId, messageEl);
+          }
         }
         break;
     }
@@ -1003,7 +1008,9 @@ export class ChatPanelManager {
   /**
    * 处理重新生成操作（右键菜单"重新生成"触发）
    *
-   * 删除当前精灵消息，然后调用宿主回调重新发送上一条用户消息。
+   * 找到当前精灵消息对应的上一条用户消息，删除精灵消息，
+   * 然后用用户消息内容重新发送。支持任意位置的重新生成，
+   * 而非只能重新生成最后一条。
    *
    * @param messageEl 被右键点击的精灵消息 DOM 元素
    */
@@ -1013,24 +1020,77 @@ export class ChatPanelManager {
       return;
     }
 
+    const userMessageEl = this._findPreviousUserMessage(messageEl);
+    if (!userMessageEl) {
+      this.host.showToast('找不到对应的用户消息', 'error');
+      return;
+    }
+
+    const userBubble = userMessageEl.querySelector('.message-bubble');
+    const userContent = userBubble?.textContent ?? '';
+    if (!userContent.trim()) {
+      this.host.showToast('用户消息内容为空', 'error');
+      return;
+    }
+
     messageEl.remove();
-    this.host.regenerateLastMessage();
+    this.host.regenerateLastMessage(userContent);
+  }
+
+  /**
+   * 查找指定精灵消息的上一条用户消息
+   *
+   * 从当前精灵消息向前遍历，找到第一条 .message.user 元素。
+   * 用于重新生成功能：找到对应的用户输入并重发。
+   *
+   * @param assistantMessageEl 精灵消息元素
+   * @returns 上一条用户消息元素，找不到返回 null
+   */
+  private _findPreviousUserMessage(assistantMessageEl: HTMLElement): HTMLElement | null {
+    let prev: HTMLElement | null = assistantMessageEl.previousElementSibling as HTMLElement | null;
+    while (prev) {
+      if (prev.classList.contains('message') && prev.classList.contains('user')) {
+        return prev;
+      }
+      prev = prev.previousElementSibling as HTMLElement | null;
+    }
+    return null;
   }
 
   /**
    * 处理忘记操作（右键菜单"忘记"触发）
    *
-   * 删除消息从 UI（本地忘记）。
-   * 注意：这不是删除记忆，而是删除对话中的消息显示。
+   * 从 UI 中移除消息对（用户消息 + 对应的精灵回复）。
+   * 注意：这是 UI 层的软删除，刷新或重启后消息会重新出现，
+   * 符合"忘记"的语义——暂时从视野中移除，而非永久删除。
    *
-   * @param messageId 消息 ID
+   * 如果右键的是精灵消息：删除精灵消息 + 上一条用户消息
+   * 如果右键的是用户消息：删除用户消息 + 下一条精灵消息
+   *
+   * @param messageId 消息 ID（当前未使用，未来持久化时使用）
+   * @param messageEl 被右键点击的消息 DOM 元素
    */
-  private _handleForget(messageId: string): void {
-    const messageEl = this.messagesEl.querySelector(`[data-message-id="${messageId}"]`);
-    if (messageEl) {
+  private _handleForget(messageId: string, messageEl: HTMLElement): void {
+    const isUser = messageEl.classList.contains('user');
+    const isAssistant = messageEl.classList.contains('assistant');
+
+    if (isUser) {
+      // 用户消息：删除当前用户消息 + 下一条精灵消息
+      const nextAssistant = messageEl.nextElementSibling;
+      if (nextAssistant && nextAssistant.classList.contains('message') && nextAssistant.classList.contains('assistant')) {
+        nextAssistant.remove();
+      }
       messageEl.remove();
-      this.host.showToast('消息已忘记', 'success', TOAST_SHORT_MS);
+    } else if (isAssistant) {
+      // 精灵消息：删除上一条用户消息 + 当前精灵消息
+      const prevUser = this._findPreviousUserMessage(messageEl);
+      if (prevUser) {
+        prevUser.remove();
+      }
+      messageEl.remove();
     }
+
+    this.host.showToast('已从对话中移除', 'success', TOAST_SHORT_MS);
   }
 
   /**
