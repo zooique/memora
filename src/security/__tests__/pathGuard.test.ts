@@ -171,6 +171,12 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
   });
 
+  // P2-2 修复：.envrc 不在 .env.* 后缀模式覆盖范围内，需独立拦截
+  it('应该拒绝 .envrc 文件（direnv 配置）', () => {
+    const filePath = join(projectPath, '.envrc');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
   // ─── Windows 系统目录覆盖 ──────────────────────
 
   it('应该拒绝 C:\\Windows 直接子文件（非仅 System32）', () => {

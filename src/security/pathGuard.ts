@@ -1,7 +1,7 @@
 /**
  * 路径白名单 + 审计日志
  *
- * 4 类允许根 + 27 类禁止规则
+ * 4 类允许根 + 28 类禁止规则
  * 详见 ADR-006 · 安全模型
  *
  * 写入二次确认 + 审计日志：未注入 confirmationHandler 时 fail-closed 拒绝写入。
@@ -75,6 +75,8 @@ const BLOCKED_PATTERNS = [
   /(^|[\\/])\.config[\\/]gcloud([\\/]|$)/i, // gcloud 配置（加 .config 前缀边界，避免误拦用户 gcloud-tools 目录）
   // ─── 环境变量文件（.env / .env.local / .env.production.local 等多段后缀）───
   /(^|[\\/])\.env(\.[^\\/]+)?$/i,
+  // .envrc（direnv 配置，可含环境变量和密钥，独立于 .env.* 后缀模式）
+  /(^|[\\/])\.envrc$/i,
   // ─── Windows 系统目录 ───
   /[\\/]Windows([\\/]|$)/i, // C:\Windows（含 System、System32 等子目录）
   /[\\/]Program Files([\\/]|$)/i, // C:\Program Files

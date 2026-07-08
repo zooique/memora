@@ -8,7 +8,7 @@
 # 检查项：
 #   - TypeScript 类型检查（tsc --noEmit）
 #   - ESLint 代码规范检查
-#   - Vitest 单元测试（1281+ 用例）
+#   - Vitest 单元测试（1372 用例）
 #   - 生产构建（tsc + tsc-alias）
 #
 # 说明：内核是纯逻辑库，零 native 依赖，
