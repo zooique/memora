@@ -729,7 +729,7 @@
 
 .date-nav-item-delete:hover {
   color: var(--red);
-  background: rgba(224, 60, 60, 0.1);
+  background: var(--red-20);
 }
 
 /* 空状态 */
@@ -1384,7 +1384,7 @@
 }
 
 .message.assistant:hover .message-bubble {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .message .meta {

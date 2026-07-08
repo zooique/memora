@@ -5,7 +5,7 @@
 #   2. 手动触发（workflow_dispatch）
 #
 # 产物：
-#   - Windows: Memora-Sprite-win-x64.zip + NSIS 安装包
+#   - Windows: Memora-Sprite-win-x64.zip + NSIS 安装包（.exe）
 #   - macOS:   Memora-Sprite-mac-x64.zip + DMG
 #   - Linux:   Memora-Sprite-linux-x64.zip
 #
@@ -63,6 +63,12 @@ jobs:
       - name: 类型检查
         run: npx tsc -p tsconfig.electron.json --noEmit
 
+      - name: 类型检查（Web 模式）
+        run: npx tsc -p tsconfig.web.json --noEmit
+
+      - name: Lint 检查
+        run: npm run lint
+
       - name: 单元测试
         run: npx vitest run
 
@@ -117,6 +123,12 @@ jobs:
       - name: 类型检查
         run: npx tsc -p tsconfig.electron.json --noEmit
 
+      - name: 类型检查（Web 模式）
+        run: npx tsc -p tsconfig.web.json --noEmit
+
+      - name: Lint 检查
+        run: npm run lint
+
       - name: 单元测试
         run: npx vitest run
 
@@ -170,6 +182,12 @@ jobs:
 
       - name: 类型检查
         run: npx tsc -p tsconfig.electron.json --noEmit
+
+      - name: 类型检查（Web 模式）
+        run: npx tsc -p tsconfig.web.json --noEmit
+
+      - name: Lint 检查
+        run: npm run lint
 
       - name: 单元测试
         run: npx vitest run

@@ -41,6 +41,65 @@ export class ModalManager {
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events = new EventTracker();
 
+  /** 焦点陷阱清理函数栈（支持嵌套弹窗，每个活跃模态对应一个清理函数） */
+  private focusTrapCleanups: (() => void)[] = [];
+
+  /**
+   * 为指定模态元素启用焦点陷阱（focus trap）
+   *
+   * 模态打开后，Tab/Shift+Tab 焦点被限制在模态内部循环，不会逃逸到背景元素。
+   * 使用 keydown 监听器拦截 Tab 键，在首/末可聚焦元素之间循环。
+   *
+   * @param modal 需要启用焦点陷阱的模态元素
+   */
+  private enableFocusTrap(modal: HTMLElement): void {
+    // 可聚焦元素选择器（与 showModal 的 firstFocusable 保持一致）
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      // 每次实时查询可聚焦元素（模态内容可能动态变化）
+      const focusables = modal.querySelectorAll<HTMLElement>(focusableSelector);
+      if (focusables.length === 0) {
+        // 无可聚焦元素时阻止 Tab 逃逸
+        e.preventDefault();
+        return;
+      }
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      const activeEl = document.activeElement;
+
+      if (e.shiftKey) {
+        // Shift+Tab：从首元素跳到末元素
+        if (activeEl === first || !modal.contains(activeEl)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        // Tab：从末元素跳到首元素
+        if (activeEl === last || !modal.contains(activeEl)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    modal.addEventListener('keydown', onKeydown);
+    // 记录清理函数，hideModal 时调用
+    this.focusTrapCleanups.push(() => {
+      modal.removeEventListener('keydown', onKeydown);
+    });
+  }
+
+  /**
+   * 禁用最顶层模态的焦点陷阱（关闭模态时调用）
+   */
+  private disableTopFocusTrap(): void {
+    const cleanup = this.focusTrapCleanups.pop();
+    if (cleanup) cleanup();
+  }
+
   /**
    * 保存当前焦点到栈顶（在打开弹窗前调用）
    *
@@ -113,6 +172,9 @@ export class ModalManager {
 
     modal.classList.remove('hidden');
 
+    // 启用焦点陷阱：Tab/Shift+Tab 限制在模态内循环
+    this.enableFocusTrap(modal);
+
     // UI-AR-02 将焦点移到弹窗内第一个可交互元素
     const firstFocusable = modal.querySelector<HTMLElement>(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
@@ -128,6 +190,9 @@ export class ModalManager {
     if (!modal) return;
 
     modal.classList.add('hidden');
+
+    // 禁用此模态的焦点陷阱
+    this.disableTopFocusTrap();
 
     // UI-AR-02 恢复焦点到触发弹窗的元素（从栈顶弹出）
     // 使用栈结构，嵌套弹窗场景下恢复到正确的触发元素
@@ -208,6 +273,8 @@ export class ModalManager {
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) closeBtn.removeEventListener('click', onCancel);
         this.activeConfirmCleanup = null;
+        // 禁用焦点陷阱
+        this.disableTopFocusTrap();
         // 恢复焦点到触发弹窗的元素（从栈顶弹出）
         // 原 cleanup 未恢复焦点，关闭确认弹窗后焦点丢失到 body
         this.popFocus();
@@ -235,6 +302,9 @@ export class ModalManager {
 
       // 显示弹窗
       modal.classList.remove('hidden');
+
+      // 启用焦点陷阱：Tab/Shift+Tab 限制在确认弹窗内循环
+      this.enableFocusTrap(modal);
 
       // UI-AR-02 保存当前焦点到栈 + 将焦点移到确认弹窗
       // 使用栈结构支持嵌套弹窗
@@ -439,6 +509,8 @@ export class ModalManager {
         const closeBtn = modal.querySelector('.modal-close');
         if (closeBtn) closeBtn.removeEventListener('click', onCancel);
         this.activePromptCleanup = null;
+        // 禁用焦点陷阱
+        this.disableTopFocusTrap();
         // 恢复焦点到触发弹窗的元素（从栈顶弹出）
         // 原 cleanup 未恢复焦点，关闭输入弹窗后焦点丢失到 body
         this.popFocus();
@@ -478,6 +550,9 @@ export class ModalManager {
 
       // 显示弹窗
       modal.classList.remove('hidden');
+
+      // 启用焦点陷阱：Tab/Shift+Tab 限制在输入弹窗内循环
+      this.enableFocusTrap(modal);
 
       // 保存当前焦点到栈，将焦点移到输入框并选中全部文本（方便快速替换）
       // 使用栈结构支持嵌套弹窗

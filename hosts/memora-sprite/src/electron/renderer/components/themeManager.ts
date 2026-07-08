@@ -184,17 +184,19 @@ export class ThemeManager {
   /**
    * 同步更新 <meta name="theme-color"> 标签内容
    *
-   * 让操作系统任务栏/标题栏颜色跟随当前主题：
-   * - 浅色主题：#f0f0f2（大底板色）
-   * - 深色主题：#1e1e2e（大底板色）
+   * 让操作系统任务栏/标题栏颜色跟随当前主题。
+   * 通过 getComputedStyle 运行时读取 --bg CSS 变量，避免硬编码十六进制值。
+   * 当变量不可用时降级到默认值（浅色 #f0f0f2 / 深色 #1e1e2e）。
    *
-   * @param effectiveTheme 当前实际生效的主题（'light' | 'dark'）
+   * @param effectiveTheme 当前实际生效的主题（'light' | 'dark'），仅用于降级 fallback
    */
   private syncThemeColorMeta(effectiveTheme: 'light' | 'dark'): void {
     const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
-    if (meta) {
-      meta.content = effectiveTheme === 'dark' ? '#1e1e2e' : '#f0f0f2';
-    }
+    if (!meta) return;
+    // 运行时从 :root 读取 --bg 变量值，保持与 base.css 真理源同步
+    const bgValue = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+    // 变量可用时使用运行时值，否则降级到主题对应的默认值
+    meta.content = bgValue || (effectiveTheme === 'dark' ? '#1e1e2e' : '#f0f0f2');
   }
 
   /**
