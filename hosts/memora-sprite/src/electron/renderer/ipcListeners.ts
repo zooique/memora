@@ -280,7 +280,7 @@ function handleProactivePrompt(
   if (msg.payload.isMilestone) {
     uiManager.appendMilestoneBanner(msg.payload.prompt);
   } else {
-    uiManager.showProactiveBanner(msg.payload.prompt, false);
+    uiManager.showProactiveBanner(msg.payload.prompt, false, msg.payload.triggers ?? []);
   }
 
   // 通知主进程：主动提示已显示（用于清除未读计数）

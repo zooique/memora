@@ -1634,21 +1634,6 @@
   gap: var(--space-1-5);
 }
 
-/* 输入区更多操作下拉容器（relative 定位锚点） */
-.input-actions-more {
-  position: relative;
-}
-
-/* 输入区更多操作下拉菜单：向上展开，避免被窗口底部截断 */
-/* 复用 .more-menu 的视觉样式（memory.css），仅覆盖定位方向 */
-#input-more-dropdown {
-  position: absolute;
-  bottom: calc(100% + 6px);  /* 向上展开，在按钮上方 */
-  top: auto;                 /* 覆盖 .more-menu 的 top: calc(100% + 4px) */
-  left: 0;
-  min-width: 130px;
-}
-
 /* Token 用量指示器（只读状态信息） */
 /* 上下文用量指示器：显示 token 用量占上下文窗口比例（图标 + 文字 + 进度条） */
 .token-usage {

@@ -124,6 +124,11 @@ const appState = {
   // ─── 其他 ───
   /** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
   currentDataDir: DEFAULT_DATA_DIR as string,
+  /** LLM 配置缓存（用于判断是否需要重新初始化 Agent） */
+  lastProvider: null as string | null,
+  lastModel: null as string | null,
+  lastBaseUrl: null as string | null,
+  lastApiKey: null as string | null,
   /** 未读消息计数（完整窗口隐藏时累积，展开完整窗口时清零） */
   unreadCount: 0 as number,
   /** 防止 before-quit 重复触发清理 */
@@ -674,6 +679,8 @@ registerMinimalIpcHandlers(appState, {
   setAppRuntime,
   setupAgentReady,
   classifyInitError,
+  getCurrentAgent: () => appState.agent ?? null,
+  getCurrentSprite: () => appState.sprite ?? null,
 });
 
 // ─── 应用生命周期 ─────────────────────────────────────────

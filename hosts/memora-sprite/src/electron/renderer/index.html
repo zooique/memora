@@ -336,18 +336,13 @@
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
             <div class="input-actions-left">
-              <!-- 更多操作下拉菜单：合并快速添加记忆和分叉会话，减少输入区视觉元素 -->
-              <div class="input-actions-more" id="input-actions-more">
-                <button class="input-action" id="btn-input-more" title="更多操作"><svg class="icon"><use href="#icon-more"/></svg></button>
-                <div class="dropdown more-dropdown hidden" id="input-more-dropdown">
-                  <button class="more-menu-item" data-action="add-memory">
-                    <svg class="icon"><use href="#icon-plus"/></svg> 添加记忆
-                  </button>
-                  <button class="more-menu-item" data-action="fork-session">
-                    <svg class="icon"><use href="#icon-branch"/></svg> 分叉会话
-                  </button>
-                </div>
-              </div>
+              <!-- 平铺工具按钮：添加记忆 + 分叉会话，直接可见方便点击 -->
+              <button class="input-action" id="btn-input-add-memory" title="添加记忆">
+                <svg class="icon"><use href="#icon-plus"/></svg>
+              </button>
+              <button class="input-action" id="btn-fork-session" title="分叉会话">
+                <svg class="icon"><use href="#icon-branch"/></svg>
+              </button>
             </div>
             <div class="input-send-area">
               <!-- Provider 选择器（输入框左侧，切换 LLM API） -->

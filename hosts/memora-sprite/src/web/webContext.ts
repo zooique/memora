@@ -16,6 +16,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { logger } from 'memora';
 
 /** 当前模块所在目录 */
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -66,15 +67,15 @@ export async function buildPreloadScript(): Promise<string> {
         },
       });
       cachedPreloadScript = result.code;
-      console.log('[Web] preloadWeb.ts 转译成功（esbuild）');
+      logger.info('[Web] preloadWeb.ts 转译成功（esbuild）');
     } else {
       // esbuild 不可用：降级为简单正则去除类型注解
       // 注意：正则转译不完美，仅作为 Phase 1 降级方案
       cachedPreloadScript = stripTypeAnnotations(sourceCode);
-      console.warn('[Web] esbuild 不可用，降级为正则转译（可能不完美）');
+      logger.warn('[Web] esbuild 不可用，降级为正则转译（可能不完美）');
     }
   } catch (error) {
-    console.warn(`[Web] preloadWeb.ts 转译失败: ${error instanceof Error ? error.message : String(error)}`);
+    logger.warn({ error }, '[Web] preloadWeb.ts 转译失败');
     cachedPreloadScript = '';
   }
 

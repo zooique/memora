@@ -285,6 +285,77 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
       floatWindow.broadcastPresence(e.state, e.awayDurationMs);
     }
   });
+
+  // 推送初始感知数据（时序修复：sprite.start() 在监听器注册前就发射了感知事件）
+  // 必须在所有监听器注册完成后执行，确保渲染层能收到初始状态
+  pushInitialPerceptionData(deps);
+}
+
+/**
+ * 推送初始感知数据到渲染层
+ *
+ * 时序问题修复：sprite.start() → perceptionCoordinator.refreshBeforeChat() → 发射事件
+ * 此时 setupSpriteEventListeners() 还未调用，事件永久丢失。
+ * 解决方案：在监听器注册完成后，主动获取感知快照并推送初始数据。
+ *
+ * @param deps 依赖
+ */
+function pushInitialPerceptionData(deps: SpriteEventBridgeDeps): void {
+  try {
+    const snapshot = deps.sprite.getPerceptionSnapshot();
+    const presenceSnapshot = deps.sprite.getPresenceSnapshot?.();
+
+    // 强制推送（不检查窗口可见性）：初始化阶段窗口可能还不可见，
+    // 但数据需要预送到渲染层缓存，窗口显示时直接展示
+    const fullWindow = deps.windowManager.getFullWindow();
+    if (fullWindow && !fullWindow.isDestroyed()) {
+      if (snapshot) {
+        // 推送初始情感基调
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+          type: 'affectUpdated',
+          payload: {
+            warmth: snapshot.affect.warmth,
+            playfulness: snapshot.affect.playfulness,
+            directness: snapshot.affect.directness,
+            initiative: snapshot.affect.initiative,
+          },
+        });
+
+        // 推送初始默契度
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+          type: 'rapportUpdated',
+          payload: {
+            trust: snapshot.rapport.trust,
+            familiarity: snapshot.rapport.familiarity,
+            level: snapshot.rapport.level,
+            description: snapshot.rapport.description,
+          },
+        });
+
+        // 推送初始对话上下文
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+          type: 'contextUpdated',
+          payload: {
+            rhythm: snapshot.context.rhythm,
+            coherence: snapshot.context.coherence,
+            depth: snapshot.context.depth,
+            dominantSource: snapshot.context.dominantSource,
+            description: snapshot.context.description,
+          },
+        });
+      }
+
+      // 推送初始在场状态（时序修复：presenceController.start() 后可能不发射初始事件）
+      if (presenceSnapshot) {
+        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+          type: 'presenceChanged',
+          payload: presenceSnapshot,
+        });
+      }
+    }
+  } catch (error) {
+    logger.warn({ error: toError(error) }, '[pushInitialPerceptionData] 推送初始感知数据失败');
+  }
 }
 
 /** 取消所有精灵事件订阅（Agent 重新初始化前调用） */

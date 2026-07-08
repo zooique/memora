@@ -21,6 +21,8 @@ import { EventTracker } from '../helpers/eventTracker.js';
 export class ProactiveBanner {
   /** 事件监听器跟踪器（统一管理事件监听器的注册与清理，避免内存泄漏） */
   private events = new EventTracker();
+  /** 当前提示的触发类型列表（用于点击"查看"时决定跳转哪个面板） */
+  private currentTriggers: string[] = [];
 
   /**
    * 显示主动提示 banner
@@ -31,8 +33,9 @@ export class ProactiveBanner {
    *
    * @param text 提示文本
    * @param isMilestone 是否为里程碑事件
+   * @param triggers 触发类型列表（memory/insight/persona/file/milestone/suggestion/pattern）
    */
-  showProactiveBanner(text: string, isMilestone = false): void {
+  showProactiveBanner(text: string, isMilestone = false, triggers: string[] = []): void {
     const banner = document.getElementById('proactive-banner');
     const textEl = document.getElementById('proactive-banner-text');
     const iconEl = banner?.querySelector<SVGElement>('.banner-icon');
@@ -48,6 +51,8 @@ export class ProactiveBanner {
         useEl.setAttribute('href', isMilestone ? '#icon-trophy' : '#icon-fairy');
       }
     }
+    // 保存当前提示的 triggers，供点击"查看"时使用
+    this.currentTriggers = triggers;
     banner.classList.remove('hidden');
   }
 
@@ -71,13 +76,15 @@ export class ProactiveBanner {
         useEl.setAttribute('href', '#icon-fairy');
       }
     }
+    // 清空 triggers 缓存
+    this.currentTriggers = [];
   }
 
   /**
    * 初始化主动提示 banner 按钮事件
    *
    * 四个按钮的语义：
-   * - 查看：切换到对话面板（banner 已在对话面板内，仅隐藏 banner）
+   * - 查看：根据 triggers 类型跳转到相应面板展示详情
    * - 稍后：隐藏 banner，等待下次触发
    * - 静默 1 小时：通知主进程进入静默模式
    * - 不再提醒：进入静默模式并提示用户去设置调整阈值
@@ -85,7 +92,7 @@ export class ProactiveBanner {
    * 由 renderer.ts 调用以注册回调。
    */
   initProactiveBannerButtons(handlers: {
-    onView: () => void;
+    onView: (triggers: string[]) => void;
     onLater: () => void;
     onSilent: () => void;
     onDisable?: () => void;
@@ -97,7 +104,7 @@ export class ProactiveBanner {
       const action = btn.dataset.action;
       this.events.addEventListener(btn, 'click', () => {
         this.hideProactiveBanner();
-        if (action === 'view') handlers.onView();
+        if (action === 'view') handlers.onView(this.currentTriggers);
         else if (action === 'later') handlers.onLater();
         else if (action === 'silent') handlers.onSilent();
         // 不再提醒：触发 onDisable 回调

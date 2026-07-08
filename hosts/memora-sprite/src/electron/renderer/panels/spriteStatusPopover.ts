@@ -151,9 +151,15 @@ export class SpriteStatusPopover {
 
   // ─── 摘要合成 ──────────────────────────────────────────
 
-  /** 刷新 popover 内的摘要文字（从缓存数据合成） */
+  /**
+   * 刷新 popover 内的摘要文字（从缓存数据合成）
+   *
+   * 注意：不要在这里判断 hidden 状态 —— IPC 数据可能在 popover 隐藏时到达，
+   * 此时应直接更新 DOM（textContent 对 hidden 元素也有效，show() 时已就绪）。
+   * show() 会在移除 hidden 之前再次调用本方法作为双保险。
+   */
   private refreshPopover(): void {
-    if (!this.popoverEl || this.popoverEl.classList.contains('hidden')) return;
+    if (!this.popoverEl) return;
 
     // 默契度摘要
     const rapportEl = this.popoverEl.querySelector('#popover-rapport');

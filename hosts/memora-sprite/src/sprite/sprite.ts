@@ -252,7 +252,7 @@ export class Sprite {
         this.proactiveEngine.updateConfig({ threshold, cooldownMs, silentMode });
       },
       onProjectModeChanged: () => {
-        this.applyProjectMode();
+        return this.applyProjectMode();
       },
       onArchiveModeChanged: (mode) => {
         // ADR-015: 归档模式变更时应用到 Agent
@@ -394,7 +394,7 @@ export class Sprite {
    * 应用项目模式
    * 专注模式切换时调用 agent.switchProject 切换 Agent 上下文。
    */
-  private applyProjectMode(): void {
+  private async applyProjectMode(): Promise<void> {
     const config = this.getConfig();
     if (config.projectMode !== 'focus') return;
     const focusPath = config.focusProjectPath;
@@ -403,17 +403,19 @@ export class Sprite {
       return;
     }
     const span = this.tracer?.startSpan(SPRITE_TRACE_SPANS.PROJECT_MODE, { focusPath });
-    this.agent.switchProject(focusPath).then(() => {
+    try {
+      await this.agent.switchProject(focusPath);
       logger.info({ focusPath }, '已切换到专注项目');
       if (config.fileWatcherEnabled) {
         this.lifecycleManager.rebuildFileWatcher();
       }
-      span?.end();
-    }).catch((err: unknown) => {
+    } catch (err: unknown) {
       logger.warn({ focusPath, err: toError(err).message }, '专注项目切换失败');
       span?.recordException(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    } finally {
       span?.end();
-    });
+    }
   }
 
   // ─── 唤醒调度 ──────────────────────────────────────────
@@ -593,6 +595,34 @@ export class Sprite {
     if (!snapshot) return null;
     const proactiveStats = this.proactiveEngine.getStats();
     return { ...snapshot, proactiveStats };
+  }
+
+  /**
+   * 获取在场状态快照（供初始推送使用）
+   *
+   * 返回当前在场状态，包括离开时长和原因。
+   * 用于时序修复：presenceController.start() 后可能不发射初始事件（幂等保护），
+   * 需要主动推送初始状态到渲染层。
+   *
+   * @returns 在场状态快照，presenceController 未注入时返回 null
+   */
+  getPresenceSnapshot(): {
+    state: 'present' | 'away';
+    timestamp: string;
+    awayDurationMs?: number;
+    reason?: string;
+  } | null {
+    if (!this.presenceController) return null;
+
+    const state = this.presenceController.getState();
+    const awaySince = this.presenceController.getAwaySince();
+    const now = Date.now();
+
+    return {
+      state,
+      timestamp: new Date().toISOString(),
+      ...(state === 'away' && awaySince !== null ? { awayDurationMs: now - awaySince } : {}),
+    };
   }
 
   /**

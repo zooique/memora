@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 最小化 IPC 处理器测试（FOUNDATION-SEAL Phase 5 迭代 A）
  *
  * 覆盖范围：Agent 未就绪时的 11 个最小化 IPC handler
@@ -130,6 +130,7 @@ function createCallbacks(overrides?: Partial<MinimalIpcCallbacks>): MinimalIpcCa
     setAppRuntime: vi.fn(),
     setupAgentReady: vi.fn(),
     classifyInitError: vi.fn((msg: string) => msg),
+    getCurrentAgent: vi.fn(() => null),
     ...overrides,
   };
 }
@@ -390,7 +391,7 @@ describe('registerMinimalIpcHandlers', () => {
         reinitResult.sessionStore,
         '/tmp/new-data',
       );
-      expect(result).toEqual({ success: true, error: null });
+      expect(result).toEqual({ success: true, error: null, reinit: true });
     });
 
     it('有进行中对话时应先中断再重新初始化', async () => {

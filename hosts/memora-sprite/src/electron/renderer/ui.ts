@@ -386,33 +386,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 导航事件、窗口控制按钮、全局键盘快捷键 → 委托到 PanelRouter.init()
     this.panelRouter.init();
 
-    // 输入区更多操作下拉菜单（迭代三：合并快速记忆/分叉为单一入口）
-    const btnInputMore = getOptionalElement('btn-input-more', 'button');
-    const inputMoreDropdown = getOptionalElement('input-more-dropdown', 'div');
-    if (btnInputMore && inputMoreDropdown) {
-      // 切换下拉菜单显示/隐藏
-      this.events.addEventListener(btnInputMore, 'click', (e) => {
-        e.stopPropagation(); // 阻止冒泡到 document，避免立即被关闭
-        inputMoreDropdown.classList.toggle('hidden');
+    // 输入区平铺工具按钮：添加记忆 + 分叉会话（直接可见，方便点击）
+    const btnInputAddMemory = getOptionalElement('btn-input-add-memory', 'button');
+    if (btnInputAddMemory) {
+      this.events.addEventListener(btnInputAddMemory, 'click', () => {
+        this.showModal('memory-add-modal');
       });
-      // 下拉菜单项点击（事件委托，通过 data-action 区分操作）
-      this.events.addEventListener(inputMoreDropdown, 'click', (e) => {
-        const target = (e.target as HTMLElement).closest('[data-action]') as HTMLElement | null;
-        if (!target) return;
-        const action = target.dataset.action;
-        inputMoreDropdown.classList.add('hidden'); // 操作后关闭菜单
-        if (action === 'add-memory') {
-          this.showModal('memory-add-modal');
-        } else if (action === 'fork-session') {
-          this.forkSessionCallback?.();
-        }
-      });
-      // 点击菜单外部时关闭下拉
-      this.events.addEventListener(document, 'click', (e) => {
-        const container = document.getElementById('input-actions-more');
-        if (container && !container.contains(e.target as Node)) {
-          inputMoreDropdown.classList.add('hidden');
-        }
+    }
+    const btnForkSession = getOptionalElement('btn-fork-session', 'button');
+    if (btnForkSession) {
+      this.events.addEventListener(btnForkSession, 'click', () => {
+        this.forkSessionCallback?.();
       });
     }
 
@@ -702,9 +686,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    *
    * @param text 提示文本
    * @param isMilestone 是否为里程碑事件
+   * @param triggers 触发类型列表（memory/insight/persona/file/milestone/suggestion/pattern）
    */
-  showProactiveBanner(text: string, isMilestone = false): void {
-    this.proactiveBanner.showProactiveBanner(text, isMilestone);
+  showProactiveBanner(text: string, isMilestone = false, triggers: string[] = []): void {
+    this.proactiveBanner.showProactiveBanner(text, isMilestone, triggers);
   }
 
   /**
@@ -727,7 +712,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * 由 renderer.ts 调用以注册回调。
    */
   initProactiveBannerButtons(handlers: {
-    onView: () => void;
+    onView: (triggers: string[]) => void;
     onLater: () => void;
     onSilent: () => void;
     onDisable?: () => void;

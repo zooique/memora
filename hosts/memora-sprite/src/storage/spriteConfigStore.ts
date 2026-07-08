@@ -131,6 +131,7 @@ export class SpriteConfigStore {
    *
    * 合并写入：读取现有配置，合并新配置，写回文件。
    * 保留其他字段（如 memory/security/allowedPaths），仅更新 llm 和 embedding。
+   * 同时保留 providers/active 字段（多 Provider 管理专用），避免互相覆盖。
    *
    * @param llmConfig LLM 配置表单数据
    * @param embeddingConfig 可选的 Embedding 配置
@@ -158,7 +159,7 @@ export class SpriteConfigStore {
       };
     }
 
-    // 合并新配置
+    // 合并新配置：保留 providers/active 字段（多 Provider 管理用），避免互相覆盖
     const config: Config = {
       ...existing,
       llm: {
@@ -168,6 +169,10 @@ export class SpriteConfigStore {
         baseUrl: llmConfig.baseUrl,
         apiKey: llmConfig.apiKey,
         temperature: llmConfig.temperature ?? existing.llm.temperature ?? 0.7,
+        // 保留 providers 映射表（多 Provider 管理专用）
+        ...(existing.llm.providers ? { providers: existing.llm.providers } : {}),
+        // 保留 active Provider 别名
+        ...(existing.llm.active ? { active: existing.llm.active } : {}),
         // 保存后台 Provider 配置（仅当 enabled 时写入）
         ...(llmConfig.background?.enabled ? {
           background: {
@@ -193,7 +198,7 @@ export class SpriteConfigStore {
    * 保存 Provider 映射表（多 Provider 管理专用）
    *
    * 合并写入：读取现有配置，更新 llm.providers 和 llm.active，
-   * 保留其他字段不变。注意：providers 配置后，旧扁平字段仍保留用于降级。
+   * 同时同步更新扁平字段（provider/model/baseUrl/apiKey/temperature）用于向后兼容。
    *
    * @param providers Provider 映射表（key → ProviderConfig）
    * @param active 当前激活的 Provider 别名
@@ -214,12 +219,23 @@ export class SpriteConfigStore {
       allowedPaths: [],
     }));
 
+    // 获取当前激活的 Provider 配置，同步更新扁平字段用于向后兼容
+    const activeProvider = providers[active];
+
     const config: Config = {
       ...base,
       llm: {
         ...base.llm,
         providers,
         active,
+        // 同步更新扁平字段，确保新旧格式一致
+        ...(activeProvider ? {
+          provider: activeProvider.provider,
+          model: activeProvider.model,
+          baseUrl: activeProvider.baseUrl ?? '',
+          apiKey: activeProvider.apiKey ?? '',
+          temperature: activeProvider.temperature ?? base.llm.temperature ?? 0.7,
+        } : {}),
       },
     };
 
@@ -232,3 +248,41 @@ export class SpriteConfigStore {
 
 /** 默认配置存储器实例（单例，供 main.ts 直接使用） */
 export const spriteConfigStore = new SpriteConfigStore();
+
+/**
+ * 从配置中解析 Provider 配置（向后兼容）
+ *
+ * 支持两种配置格式：
+ * - 新格式：config.llm.providers = { "key": { provider, model, baseUrl, apiKey, temperature } }
+ * - 旧格式：config.llm.provider / model / baseUrl / apiKey / temperature
+ *
+ * 当新格式中找不到指定 key 时，会尝试从旧格式读取（仅 key='default' 且 providers 为空时）。
+ *
+ * @param config 完整配置对象
+ * @param key Provider 别名
+ * @returns Provider 配置（含 apiKey 明文），找不到时返回 undefined
+ */
+export function resolveProviderConfig(
+  config: Config,
+  key: string,
+): { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number } | undefined {
+  const providers = config.llm.providers ?? {};
+
+  if (providers[key]) {
+    // 新格式：从 providers 映射表读取
+    return providers[key] as { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number };
+  }
+
+  // 旧格式：从扁平配置读取（仅当 providers 为空且存在旧配置时）
+  if (key === 'default' && !Object.keys(providers).length && config.llm.provider && config.llm.provider !== 'mock') {
+    return {
+      provider: config.llm.provider,
+      model: config.llm.model ?? '',
+      baseUrl: config.llm.baseUrl ?? undefined,
+      apiKey: config.llm.apiKey ?? '',
+      temperature: config.llm.temperature,
+    };
+  }
+
+  return undefined;
+}

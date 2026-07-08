@@ -29,7 +29,7 @@ export interface ConfigSideEffects {
   /** 主动提示配置变更 */
   onProactiveConfigChanged: (threshold: number, cooldownMs: number, silentMode: boolean) => void;
   /** 项目模式变更 */
-  onProjectModeChanged: () => void;
+  onProjectModeChanged: () => Promise<void>;
   /** 归档模式变更 */
   onArchiveModeChanged: (mode: string) => void;
 }
@@ -172,7 +172,7 @@ export class SpriteConfigManager {
     }
 
     if (keySet.has('projectMode') || keySet.has('focusProjectPath')) {
-      this.sideEffects.onProjectModeChanged();
+      void this.sideEffects.onProjectModeChanged();
     }
 
     return { updated: true };

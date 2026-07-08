@@ -17,6 +17,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { logger, toError } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute } from './types.js';
@@ -30,8 +31,9 @@ import {
   deleteLlmProvider,
   setActiveLlmProvider,
 } from '../../index.js';
-import { DEFAULT_CONFIG_PATH } from '../../storage/spriteConfigStore.js';
-import { loadConfig } from 'memora';
+import { DEFAULT_CONFIG_PATH, resolveProviderConfig } from '../../storage/spriteConfigStore.js';
+import { loadConfig, createProviderFromConfig } from 'memora';
+import type { Config } from 'memora';
 
 /**
  * 全局状态：Agent 重新初始化的 close 函数
@@ -226,14 +228,47 @@ export async function handleSystemRoute(
       return;
     }
 
-    // POST /api/llm-providers/:key/active — 切换激活 Provider
+    // POST /api/llm-providers/:key/active — 切换激活 Provider（运行时切换，不重新初始化 Agent）
     if (method === 'POST' && path.startsWith('/api/llm-providers/')) {
       const parts = path.split('/');
       const key = parts[3];
       if (parts[4] === 'active' && key) {
         try {
+          // 1. 持久化 active 到 config.json
           await setActiveLlmProvider(key);
-          sendJson(res, 200, { success: true, error: null });
+
+          // 2. 从配置读取新 Provider 的完整配置（含 apiKey）
+          const config: Config = await loadConfig(DEFAULT_CONFIG_PATH);
+          const providerConfig = resolveProviderConfig(config, key);
+
+          if (!providerConfig) {
+            sendJson(res, 200, { success: false, error: `Provider "${key}" 不存在` });
+            return;
+          }
+
+          // 3. 创建新的前台 Provider 实例
+          const newProvider = createProviderFromConfig(key, {
+            provider: providerConfig.provider,
+            model: providerConfig.model,
+            baseUrl: providerConfig.baseUrl || undefined,
+            apiKey: providerConfig.apiKey || '',
+          });
+
+          // 4. 运行时切换 Provider（不重新初始化 Agent）
+          // 内核 Agent 已支持 setProvider() 运行时切换，只需替换 API 出口
+          if (ctx.agent) {
+            ctx.agent.setProvider(newProvider);
+
+            // 同步切换后台 Provider（如果配置了）
+            if (config.llm.background) {
+              const bgProvider = createProviderFromConfig('background', config.llm.background);
+              ctx.agent.setBackgroundProvider(bgProvider);
+            } else {
+              ctx.agent.setBackgroundProvider(null);
+            }
+          }
+
+          sendJson(res, 200, { success: true, error: null, message: 'Provider 已切换，立即生效' });
         } catch (error) {
           sendJson(res, 200, { success: false, error: toError(error).message });
         }
@@ -282,7 +317,7 @@ export async function handleSystemRoute(
         return;
       }
       // 与 Electron IPC 的 SKILL_INSTALL 一致，使用默认 configDir
-      const DEFAULT_CONFIG_DIR = join(process.env.HOME ?? process.env.USERPROFILE ?? '.', '.memora-sprite', 'config');
+      const DEFAULT_CONFIG_DIR = join(homedir(), '.memora-sprite', 'config');
       // 动态导入确保 configDir 路径一致性
       const { defaultConfigDir } = await import('../../index.js');
       // 城堡层默认 configDir 由 index.ts 统一管理

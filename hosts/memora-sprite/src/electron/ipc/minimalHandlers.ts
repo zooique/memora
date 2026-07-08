@@ -28,7 +28,7 @@ import type { Sprite } from '../../sprite/sprite.js';
 import type { AuditManager } from '../../sprite/audit/auditManager.js';
 import type { WindowManager } from '../windows/windowManager.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
-import { spriteConfigStore } from '../../storage/spriteConfigStore.js';
+import { spriteConfigStore, resolveProviderConfig } from '../../storage/spriteConfigStore.js';
 import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
 import { isValidContent } from './inputValidation.js';
 
@@ -70,6 +70,11 @@ export interface MinimalIpcState {
   closeSprite: (() => Promise<void>) | null;
   auditManager: AuditManager | null;
   windowManager: WindowManager | undefined;
+  /** LLM 配置缓存（用于判断是否需要重新初始化 Agent） */
+  lastProvider: string | null;
+  lastModel: string | null;
+  lastBaseUrl: string | null;
+  lastApiKey: string | null;
 }
 
 /**
@@ -84,6 +89,10 @@ export interface MinimalIpcCallbacks {
   setupAgentReady: (agent: Agent, sprite: Sprite, sessionStore: SqliteSessionStore, dataDir: string) => void;
   /** 统一错误分类 */
   classifyInitError: (errMessage: string, prefix: string) => string;
+  /** 获取当前 Agent 实例（用于运行时切换 Provider） */
+  getCurrentAgent: () => Agent | null;
+  /** 获取当前 Sprite 实例（用于运行时切换 Provider） */
+  getCurrentSprite: () => Sprite | null;
 }
 
 // ─── 注册函数 ──────────────────────────────────────────────
@@ -196,7 +205,7 @@ export function registerMinimalIpcHandlers(
     }
   });
 
-  // LLM 配置保存 + 重新初始化 Agent
+  // LLM 配置保存 + 条件性重新初始化 Agent
   ipcMain.handle(
     IPC_CHANNELS.LLM_CONFIG_SAVE,
     async (
@@ -218,26 +227,42 @@ export function registerMinimalIpcHandlers(
         // 1. 保存配置到文件
         await saveLlmConfig(llmConfig, embeddingConfig);
 
-        // 2. 中断进行中的对话
-        if (state.currentAbortController) {
-          state.currentAbortController.abort();
-          state.currentAbortController = null;
+        // 2. 判断是否需要重新初始化 Agent
+        // 仅当 provider/model/apiKey/baseUrl 变化时才重建，temperature 变化不需要
+        const currentAgent = callbacks.getCurrentAgent();
+        const needsReinit = !currentAgent ||
+          llmConfig.provider !== (state.lastProvider ?? '') ||
+          llmConfig.model !== (state.lastModel ?? '') ||
+          llmConfig.baseUrl !== (state.lastBaseUrl ?? '') ||
+          llmConfig.apiKey !== (state.lastApiKey ?? '');
+
+        if (needsReinit) {
+          // 2.1 中断进行中的对话
+          if (state.currentAbortController) {
+            state.currentAbortController.abort();
+            state.currentAbortController = null;
+          }
+
+          // 2.2 重新初始化 Agent
+          const result = await reinitAgent(state.closeSprite);
+          state.currentDataDir = result.dataDir;
+          // 更新配置缓存，用于下次比较
+          state.lastProvider = llmConfig.provider;
+          state.lastModel = llmConfig.model;
+          state.lastBaseUrl = llmConfig.baseUrl;
+          state.lastApiKey = llmConfig.apiKey;
+          callbacks.setAppRuntime({
+            agent: result.agent,
+            sprite: result.sprite,
+            sessionStore: result.sessionStore,
+            close: result.close,
+          });
+
+          // 2.3 Agent 就绪后初始化
+          callbacks.setupAgentReady(result.agent, result.sprite, result.sessionStore, state.currentDataDir);
         }
 
-        // 3. 重新初始化 Agent
-        const result = await reinitAgent(state.closeSprite);
-        state.currentDataDir = result.dataDir;
-        callbacks.setAppRuntime({
-          agent: result.agent,
-          sprite: result.sprite,
-          sessionStore: result.sessionStore,
-          close: result.close,
-        });
-
-        // 4. Agent 就绪后初始化
-        callbacks.setupAgentReady(result.agent, result.sprite, result.sessionStore, state.currentDataDir);
-
-        return { success: true, error: null };
+        return { success: true, error: null, reinit: needsReinit };
       } catch (error) {
         state.agentReady = false;
         callbacks.setAppRuntime(null);
@@ -298,7 +323,7 @@ export function registerMinimalIpcHandlers(
     },
   );
 
-  // 切换激活 Provider + 即时生效（重新初始化 Agent）
+  // 切换激活 Provider + 即时生效（运行时切换，不重新初始化 Agent）
   ipcMain.handle(
     IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE,
     async (_event, key: string) => {
@@ -315,18 +340,38 @@ export function registerMinimalIpcHandlers(
           state.currentAbortController = null;
         }
 
-        // 3. 用新配置重新初始化 Agent（新 Provider 即时生效）
-        const result = await reinitAgent(state.closeSprite);
-        state.currentDataDir = result.dataDir;
-        callbacks.setAppRuntime({
-          agent: result.agent,
-          sprite: result.sprite,
-          sessionStore: result.sessionStore,
-          close: result.close,
+        // 3. 从配置读取新 Provider 的完整配置（含 apiKey）
+        const config: Config = await spriteConfigStore.load();
+
+        // 使用统一的向后兼容工具函数解析 Provider 配置
+        const providerConfig = resolveProviderConfig(config, key);
+
+        if (!providerConfig) {
+          return { success: false, error: `Provider "${key}" 不存在` };
+        }
+
+        // 4. 创建新的前台 Provider 实例
+        const newProvider = createProviderFromConfig(key, {
+          provider: providerConfig.provider,
+          model: providerConfig.model,
+          baseUrl: providerConfig.baseUrl || undefined,
+          apiKey: providerConfig.apiKey || '',
         });
 
-        // 4. Agent 就绪后初始化（注册完整 IPC + 订阅事件 + 通知渲染进程）
-        callbacks.setupAgentReady(result.agent, result.sprite, result.sessionStore, state.currentDataDir);
+        // 5. 运行时切换 Provider（不重新初始化 Agent）
+        // 内核 Agent 已支持 setProvider() 运行时切换，只需替换 API 出口
+        const currentAgent = callbacks.getCurrentAgent?.();
+        if (currentAgent) {
+          currentAgent.setProvider(newProvider);
+
+          // 同步切换后台 Provider（如果配置了）
+          if (config.llm.background) {
+            const bgProvider = createProviderFromConfig('background', config.llm.background);
+            currentAgent.setBackgroundProvider(bgProvider);
+          } else {
+            currentAgent.setBackgroundProvider(null);
+          }
+        }
 
         return { success: true, error: null };
       } catch (err) {
@@ -335,7 +380,7 @@ export function registerMinimalIpcHandlers(
         state.initErrorDetail = callbacks.classifyInitError(toError(err).message, '切换 Provider 失败');
         errorHandler.handle(err, {
           code: ErrorCode.INITIALIZATION_FAILED,
-          context: '切换激活 Provider 并重新初始化 Agent 失败',
+          context: '切换激活 Provider 失败',
         });
         return { success: false, error: toError(err).message };
       }

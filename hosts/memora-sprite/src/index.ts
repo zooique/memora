@@ -26,7 +26,7 @@ import { SqliteRelationStore } from './storage/sqliteRelationStore.js';
 // 注意：better-sqlite3 改为动态 import（见 createBetterSqliteDb），避免 Node.js 环境加载 native 模块
 import type { ISqliteDatabase } from './storage/sqliteDatabaseTypes.js';
 import { NodeSqliteDatabase } from './storage/nodeSqliteDatabase.js';
-import { SpriteConfigStore, DEFAULT_CONFIG_PATH } from './storage/spriteConfigStore.js';
+import { SpriteConfigStore, DEFAULT_CONFIG_PATH, resolveProviderConfig } from './storage/spriteConfigStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
 // P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
@@ -262,9 +262,19 @@ export async function setActiveLlmProvider(
   const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
   const config = await store.load();
 
-  const provider = config.llm.providers?.[key];
+  // 使用统一的向后兼容工具函数解析 Provider 配置
+  const provider = resolveProviderConfig(config, key);
+
   if (!provider) {
-    throw new Error(`Provider "${key}" 不存在`);
+    throw new MemoraError(
+      ErrorCode.INITIALIZATION_FAILED,
+      `Provider "${key}" 不存在`,
+      {
+        context: {
+          configuredProviders: Object.keys(config.llm.providers || {}),
+        },
+      },
+    );
   }
 
   // 同步全局 temperature 到激活 Provider 的值（内核 createLlmProvider 读取 config.llm.temperature）
@@ -276,7 +286,17 @@ export async function setActiveLlmProvider(
     },
   };
 
-  await store.saveProviders(configWithTemp.llm.providers!, key, configWithTemp);
+  // 获取当前 providers 映射表（用于判断是否需要转换格式）
+  const providers = config.llm.providers ?? {};
+
+  // 如果是旧格式（providers 为空），先将扁平配置转换为 providers 映射
+  const targetProviders = Object.keys(providers).length > 0
+    ? providers
+    : {
+        [key]: provider,
+      };
+
+  await store.saveProviders(targetProviders, key, configWithTemp);
 }
 
 // ─── 启动精灵 ──────────────────────────────────────────

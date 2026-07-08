@@ -316,11 +316,28 @@ async function bootstrapRenderer(): Promise<void> {
 
   // 初始化主动提示 banner 按钮（查看/稍后/静默）
   State.uiManager.initProactiveBannerButtons({
-    onView: () => {
+    onView: (triggers) => {
       // 用户点击"查看"→ 记录接受事件，接受率提升影响主动度
       window.electronAPI.proactiveAccept();
-      // 已在对话面板内，仅确保面板可见
-      void State.uiManager.switchPanel('chat');
+
+      // 根据 triggers 类型跳转到相应面板展示详情
+      // 优先级：洞察 > 记忆 > 仪表盘 > 对话
+      if (triggers.includes('insight')) {
+        // 有新洞察 → 跳转到记忆面板查看洞察
+        void State.uiManager.switchPanel('memory');
+      } else if (triggers.includes('memory')) {
+        // 有新记忆 → 跳转到记忆面板查看
+        void State.uiManager.switchPanel('memory');
+      } else if (triggers.includes('milestone')) {
+        // 里程碑 → 跳转到仪表盘查看成就
+        void State.uiManager.switchPanel('dashboard');
+      } else if (triggers.includes('pattern')) {
+        // 模式检测 → 跳转到仪表盘查看模式
+        void State.uiManager.switchPanel('dashboard');
+      } else {
+        // 默认：确保对话面板可见
+        void State.uiManager.switchPanel('chat');
+      }
     },
     onLater: () => {
       // 用户点击"稍后"→ 记录拒绝事件，触发自适应冷却
