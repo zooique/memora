@@ -3,7 +3,9 @@
  * 验证基元驱动模型的 schema 有效性
  */
 import { describe, expect, it } from 'vitest';
-import { MemorySchema, SOURCE_LABELS, inferSource, escapeLike, STOPWORDS, validateSource } from '@/memory/types.js';
+import { MemorySchema, SOURCE_LABELS } from '@/memory/types.js';
+import { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';
+import { STOPWORDS } from '@/utils/segmenter.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { Memory } from '@/memory/types.js';
 

@@ -5,7 +5,7 @@ description: 存储层抽象：IMemoryStorage 接口 + 零 native 依赖内核
 
 # ADR-002 · 存储层抽象：IMemoryStorage 接口 + 零 native 依赖内核
 
-> **状态**：✅ 已实施 **日期**：2026-06-11 **版本**：v0.7
+> **状态**：✅ 已实施 **日期**：2026-06-11 **版本**：v0.7（2026-07-08 补充 Logger 懒初始化）
 > **变更原因**：memora 定位为纯逻辑库——零 native 依赖，SqliteStorage/CLI 移出至宿主项目
 > **播种批次**：Memora 模式 A v1
 > **来源**：项目决策表 §二（历史文档已归档）
@@ -153,6 +153,65 @@ const agent = new Agent({
 import { setLogger } from 'memora';
 setLogger(myLogger);
 ```
+
+## 补充：Logger 懒初始化（2026-07-08，1.0 接口稳定化）
+
+> **来源**：1.0 审查报告 P0-4 · Logger 模块加载时异步触发 fs 副作用
+
+### 问题
+
+v0.3 的 `src/logging/logger.ts` 在模块顶层执行 `void tryCreatePinoLogger().then(...)`，导致：
+
+1. **import 即触发 fs 副作用**——`import { logger } from 'memora'` 会立即异步调用 `mkdir` + `createWriteStream`，违反"内核零副作用"原则
+2. **测试环境污染**——单元测试 import 内核模块时会创建日志目录/文件，污染测试工作区
+3. **浏览器环境报错**——浏览器无 `node:fs`，import 即抛异常
+
+### 决策
+
+改为**懒初始化模式**（lazy initialization）：
+
+```typescript
+// 新增：懒触发函数
+let _pinoUpgradeStarted = false;  // 守卫，确保只触发一次
+
+function maybeUpgradeToPino(): void {
+  if (_pinoUpgradeStarted) return;
+  _pinoUpgradeStarted = true;
+  // 异步触发 pino 升级（不阻塞首次日志调用）
+  void tryCreatePinoLogger().then(/* ... */);
+}
+
+// logger getter 在首次调用时触发懒初始化
+export const logger: ILogger = new Proxy(/* ... */, {
+  get(target, prop) {
+    maybeUpgradeToPino();  // 首次日志调用时触发
+    return target[prop];
+  },
+});
+
+// setLogger(undefined) 重置守卫，允许下次懒触发
+export function setLogger(custom: ILogger | undefined): void {
+  if (custom === undefined) {
+    _pinoUpgradeStarted = false;  // 重置，允许下次懒触发
+  }
+  // ...
+}
+```
+
+### 设计原则
+
+1. **import 零副作用**——`import { logger }` 不触发任何 fs 操作，仅声明变量
+2. **首次日志调用触发**——`logger.info(...)` 首次调用时异步触发 pino 升级，console fallback 同步可用
+3. **守卫确保只触发一次**——`_pinoUpgradeStarted` 标志位防止重复触发
+4. **setLogger(undefined) 可重置**——允许测试环境重置状态，下次懒触发重新执行
+5. **console fallback 同步可用**——pino 升级完成前，所有日志走 console，不丢失日志
+
+### 影响
+
+- `src/logging/logger.ts`：移除模块顶层 `void tryCreatePinoLogger().then(...)`；新增 `maybeUpgradeToPino()` + `_pinoUpgradeStarted` 守卫
+- import 内核模块零 fs 副作用
+- 测试环境不再因 import 产生日志文件
+- 浏览器端 import 不再抛异常（pino 动态 import 失败时降级 console）
 
 ## 何时回顾
 

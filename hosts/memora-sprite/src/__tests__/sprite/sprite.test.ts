@@ -68,11 +68,14 @@ const mockAgent = {
     suggest: vi.fn().mockReturnValue([]),
     // Phase 2.1：情感基调推导需要 list 方法获取所有记忆
     list: vi.fn().mockReturnValue([]),
-    // 回收站自动清理定时器调用 purgeExpired
-    purgeExpired: vi.fn().mockReturnValue(0),
     listDeleted: vi.fn().mockReturnValue([]),
     // B1：dashboard() 调用 getAllRelations 统计冲突关系数
     getAllRelations: vi.fn().mockReturnValue([]),
+  },
+  // P1-2 拆分：写操作已迁移至 agent.memoryMutator
+  memoryMutator: {
+    // 回收站自动清理定时器调用 purgeExpired
+    purgeExpired: vi.fn().mockReturnValue(0),
   },
   persona: null,
 } as unknown as Agent;
@@ -118,13 +121,14 @@ describe('Sprite', () => {
   it('start 时调用 purgeExpiredMemories 清理过期记忆（启动即清理）', () => {
     const tmpDir = createTmpDir();
     // 清理前置测试累积的调用计数（mockAgent 为模块级共享）
-    vi.mocked(mockAgent.memory.purgeExpired).mockClear();
+    // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator
+    vi.mocked(mockAgent.memoryMutator.purgeExpired).mockClear();
     const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
     // 启动时立即执行一次清理（retentionDays=30 默认值）
-    expect(mockAgent.memory.purgeExpired).toHaveBeenCalledTimes(1);
+    expect(mockAgent.memoryMutator.purgeExpired).toHaveBeenCalledTimes(1);
     // 传入的阈值应为 30 天前
-    const threshold = (mockAgent.memory.purgeExpired as ReturnType<typeof vi.fn>).mock.calls[0][0] as Date;
+    const threshold = (mockAgent.memoryMutator.purgeExpired as ReturnType<typeof vi.fn>).mock.calls[0][0] as Date;
     const expectedThreshold = Date.now() - 30 * MS_PER_DAY;
     // 允许 1 秒误差（测试执行耗时）
     expect(Math.abs(threshold.getTime() - expectedThreshold)).toBeLessThan(1000);
@@ -137,10 +141,10 @@ describe('Sprite', () => {
     // 通过 updateConfigBatch 设置 retentionDays=0
     const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.updateConfigBatch({ recycleBinRetentionDays: 0 });
-    vi.mocked(mockAgent.memory.purgeExpired).mockClear();
+    vi.mocked(mockAgent.memoryMutator.purgeExpired).mockClear();
     sprite.start();
     // retentionDays=0 时不应调用 purgeExpired
-    expect(mockAgent.memory.purgeExpired).not.toHaveBeenCalled();
+    expect(mockAgent.memoryMutator.purgeExpired).not.toHaveBeenCalled();
     sprite.stop();
     rmSync(tmpDir, { recursive: true, force: true });
   });

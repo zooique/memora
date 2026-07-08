@@ -423,9 +423,11 @@ describe('config/loader · K3 用户级回退与默认降级', () => {
     mockHomedir.value = emptyHome;
 
     const config = await loadConfig();
-    // 默认值断言
+    // 默认值断言（单一真理源：schema default）
+    // provider='mock'：无 API Key 时不调用真实 API
+    // model='deepseek-chat'：合理默认值，用户配 apiKey 后切换 provider 即可用
     expect(config.llm.provider).toBe('mock');
-    expect(config.llm.model).toBe('mock-model');
+    expect(config.llm.model).toBe('deepseek-chat');
     expect(config.llm.temperature).toBe(0.7);
     expect(config.memory.dataDir).toBe('~/.memora');
     expect(config.memory.maxContextTokens).toBe(120_000);

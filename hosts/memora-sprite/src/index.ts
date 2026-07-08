@@ -16,8 +16,8 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, VectorStore, EmbeddingProvider } from 'memora';
-import type { UIMessages, Config, ITracer, AgentSearchHit } from 'memora';
+import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider } from 'memora';
+import type { UIMessages, Config, ITracer, AgentSearchHit, IVectorStore } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
 // ADR-014 记忆关系图谱：侧车存储，与 SqliteStorage 共享同一 db 实例
@@ -388,16 +388,18 @@ async function createBetterSqliteDb(dbPath: string): Promise<ISqliteDatabase> {
 }
 
 /**
- * 创建 VectorStore（可选，配置了 embedding 时启用语义召回）
+ * 创建向量存储（可选，配置了 embedding 时启用语义召回）
+ *
+ * 返回 IVectorStore 接口实例（具体实现为 JsonVectorStore），供 Agent 注入启用语义搜索。
  *
  * @param config 应用配置
  * @param dataDir 数据目录路径
- * @returns VectorStore 实例，未配置 embedding 时返回 undefined
+ * @returns 向量存储实例，未配置 embedding 时返回 undefined
  */
 async function createVectorStoreIfNeeded(
   config: Config,
   dataDir: string,
-): Promise<VectorStore | undefined> {
+): Promise<IVectorStore | undefined> {
   if (!config.embedding?.model) return undefined;
 
   const embeddingProvider = new EmbeddingProvider({
@@ -405,7 +407,8 @@ async function createVectorStoreIfNeeded(
     apiKey: config.embedding.apiKey ?? config.llm.apiKey ?? '',
     model: config.embedding.model,
   });
-  const vectorStore = new VectorStore(
+  // 内核内置 JsonVectorStore（文件系统 JSON 实现），宿主也可替换为自定义 IVectorStore
+  const vectorStore = new JsonVectorStore(
     resolve(dataDir, 'vectors.json'),
     embeddingProvider,
   );
@@ -431,7 +434,7 @@ async function createAgentInstance(
   sessionStore: SqliteSessionStore;
   storage: SqliteStorage;
   relationStore: SqliteRelationStore;
-  vectorStore: VectorStore | undefined;
+  vectorStore: IVectorStore | undefined;
   tracer: ITracer;
   dataDir: string;
   projectPath: string;
@@ -593,7 +596,7 @@ function createSpriteAndClose(
   agent: Agent,
   dataDir: string,
   projectPath: string,
-  vectorStore: VectorStore | undefined,
+  vectorStore: IVectorStore | undefined,
   config: Config,
   tracer: ITracer,
   storage: SqliteStorage,

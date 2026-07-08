@@ -5,7 +5,7 @@ description: 记忆统一为"source 开放字符串"基元驱动模型
 
 # ADR-004 · 记忆统一为"source 开放字符串"基元驱动模型
 
-> **状态**：✅ 已接受 **日期**：2026-06-11（v2.0 重构）/ 2026-07-03（GAP-6 软删除扩展）
+> **状态**：✅ 已接受 **日期**：2026-06-11（v2.0 重构）/ 2026-07-03（GAP-6 软删除扩展）/ 2026-07-07（GAP-7 content 多用途）
 > **前身**：v1.0 "类型 + 永久性标记"模型（2026-06-02）
 > **来源**：(历史设计文档已归档：记忆系统重构方案_排雷炼化版.md)
 
@@ -55,6 +55,13 @@ interface Memory {
 > - `delete(id)` 语义改为软删除（写入 deletedAt），新增 `purge(id)` 物理删除
 > - 软删除不删除向量索引（restore 时无需重新嵌入）
 > - 回收站保留 30 天（`sprite.json` 的 `recycleBinRetentionDays` 可配，设为 0 禁用自动清理），超期由宿主 Sprite 启动的 6 小时定时器自动物理清理（`purgeExpired(before: Date)`，启动时立即执行一次，`unref()` 不阻止进程退出）
+
+> **GAP-7 content 字段多用途约定（2026-07-07）**：`content` 字段虽默认为 Markdown 文本，但对部分 source 允许结构化 JSON 编码，以承载元数据。
+> - `source: 'profile'`：`content` 为 `JSON.stringify({ category, value })`，由 `UserProfile.parseContentField()` 解码，兼容旧格式 `name` 字段降级
+> - `source: 'work-projection'`：`content` 为 JSON 编码的概要+结构+决策投影
+> - 其他 source（persona/rule/skill/insight/guardrail）：`content` 保持 Markdown 文本
+> - 设计理由：profile/work-projection 需要在 content 中携带结构化元数据（分类、投影字段），若为每类设计独立侧车（如 MemoryRelation）会过度工程化；统一在 content 中 JSON 编码 + parseContentField 降级是更轻量的方案
+> - 约束：使用 JSON 编码的 source 必须实现对应的 parseContentField 方法，并兼容旧格式降级
 
 **source 标签约定（开放，非枚举）：**
 

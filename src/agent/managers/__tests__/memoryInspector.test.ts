@@ -1,27 +1,29 @@
 /**
- * 单元测试：MemoryInspector 记忆查看器
+ * 单元测试：MemoryInspector 记忆查看器（只读查询）
  *
- * 覆盖 MemoryInspector 全部 14 个公开方法：
+ * P1-2 拆分后 MemoryInspector 仅负责只读查询，写操作已迁移至 MemoryMutator
+ * （见 memoryMutator.test.ts）。本测试覆盖 MemoryInspector 全部公开方法：
  *   - constructor + setVectorStore：依赖注入
- *   - 写操作代理：upsert / delete / getById / getBySource / list
+ *   - 只读查询：getById / getDeletedById / listDeleted / getBySource / list
  *   - snapshot：3 层快照（工作记忆 + Bootstrap + 归档）
  *   - search：关键词搜索（空 query 抛错 + limit 校验 + 内容截断）
  *   - searchHybrid：混合搜索（语义 + 关键词双通道 + 降级）
  *   - stats：记忆库统计
- *   - getRelations / getAllRelations：关系查询（relationStore 未注入降级）
+ *   - getRelations / getAllRelations / getRelationPath / getRelationNeighbors：关系查询
  *   - sourceHealth / suggest：委托 MemoryAdvisor
  *
  * Mock 策略：
  *   - InMemoryStorage / InMemoryRelationStore 用真实实现（测试夹具，已被 store.test.ts 验证）
  *   - loop / history 用 Partial<T> as T 单层断言（仅实现被测方法）
  *   - VectorStore 用 mock 对象（search 返回固定结果）
+ *   - 测试数据通过 storage.upsert/storage.delete 直接写入（不再经由 inspector 写方法）
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
-import type { VectorStore } from '@/memory/vectorStore.js';
+import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { Memory } from '@/memory/types.js';
 import type { Message } from '@/llm/provider.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -84,11 +86,11 @@ function createMockHistory(
 function createMockVectorStore(
   searchResults: Array<{ id: string; similarity: number }> = [],
   size = 10,
-): VectorStore {
+): IVectorStore {
   return {
     size,
     search: vi.fn().mockResolvedValue(searchResults),
-  } as unknown as VectorStore;
+  } as unknown as IVectorStore;
 }
 
 describe('MemoryInspector', () => {
@@ -138,34 +140,25 @@ describe('MemoryInspector', () => {
   });
 
   // ════════════════════════════════════════════════════════
-  // 2. 写操作代理（5 测试）
+  // 2. 只读查询（6 测试）
+  // 写操作已迁移至 MemoryMutator（P1-2 拆分），本组通过 storage 直接写入测试数据
   // ════════════════════════════════════════════════════════
 
-  describe('写操作代理', () => {
-    it('upsert 应委托 index.upsert', () => {
+  describe('只读查询', () => {
+    it('getById 存在时返回记忆，不存在时返回 null', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
-      inspector.upsert(mem);
+      storage.upsert(mem);
       expect(inspector.getById('rule:1')).toEqual(mem);
-    });
-
-    it('delete 应委托 index.delete', () => {
-      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
-      inspector.upsert(mem);
-      inspector.delete('rule:1');
-      expect(inspector.getById('rule:1')).toBeNull();
-    });
-
-    it('getById 不存在时返回 null', () => {
       expect(inspector.getById('nonexistent')).toBeNull();
     });
 
     it('getDeletedById 应透传 index.getDeletedById（软删除态返回记忆，活跃态返回 null）', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
-      inspector.upsert(mem);
+      storage.upsert(mem);
       // 活跃态 → null
       expect(inspector.getDeletedById('rule:1')).toBeNull();
       // 软删除后 → 返回记忆（含 deletedAt）
-      inspector.delete('rule:1');
+      storage.delete('rule:1');
       const deleted = inspector.getDeletedById('rule:1');
       expect(deleted).not.toBeNull();
       expect(deleted!.id).toBe('rule:1');
@@ -174,10 +167,19 @@ describe('MemoryInspector', () => {
       expect(inspector.getDeletedById('not:exist')).toBeNull();
     });
 
+    it('listDeleted 应返回软删除记忆列表', () => {
+      storage.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
+      storage.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2' }));
+      storage.delete('rule:1');
+      const deleted = inspector.listDeleted(10);
+      expect(deleted).toHaveLength(1);
+      expect(deleted[0]!.id).toBe('rule:1');
+    });
+
     it('getBySource 应按来源标签过滤', () => {
-      inspector.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
-      inspector.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2' }));
-      inspector.upsert(createMemory({ id: 'persona:1', source: 'persona', name: 'p1' }));
+      storage.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
+      storage.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2' }));
+      storage.upsert(createMemory({ id: 'persona:1', source: 'persona', name: 'p1' }));
       const rules = inspector.getBySource('rule');
       expect(rules).toHaveLength(2);
       expect(rules.map((m) => m.id)).toContain('rule:1');
@@ -185,8 +187,8 @@ describe('MemoryInspector', () => {
     });
 
     it('list 应委托 index.search("", limit) 返回按 score 降序', () => {
-      inspector.upsert(createMemory({ id: 'insight:low', source: 'insight', name: 'low', score: 0.3 }));
-      inspector.upsert(createMemory({ id: 'insight:high', source: 'insight', name: 'high', score: 0.9 }));
+      storage.upsert(createMemory({ id: 'insight:low', source: 'insight', name: 'low', score: 0.3 }));
+      storage.upsert(createMemory({ id: 'insight:high', source: 'insight', name: 'high', score: 0.9 }));
       const list = inspector.list(10);
       expect(list).toHaveLength(2);
       // 按 score 降序（InMemoryStorage.search 默认行为）
@@ -225,10 +227,10 @@ describe('MemoryInspector', () => {
     });
 
     it('Bootstrap 层：聚合 rule + persona + skill 三类来源', () => {
-      inspector.upsert(createMemory({ id: 'rule:r1', source: 'rule', name: 'r1' }));
-      inspector.upsert(createMemory({ id: 'persona:p1', source: 'persona', name: 'p1' }));
-      inspector.upsert(createMemory({ id: 'skill:s1', source: 'skill', name: 's1' }));
-      inspector.upsert(createMemory({ id: 'insight:i1', source: 'insight', name: 'i1' }));
+      storage.upsert(createMemory({ id: 'rule:r1', source: 'rule', name: 'r1' }));
+      storage.upsert(createMemory({ id: 'persona:p1', source: 'persona', name: 'p1' }));
+      storage.upsert(createMemory({ id: 'skill:s1', source: 'skill', name: 's1' }));
+      storage.upsert(createMemory({ id: 'insight:i1', source: 'insight', name: 'i1' }));
       const snap = inspector.snapshot();
       // bootstrap 只含 rule + persona + skill，不含 insight
       expect(snap.bootstrap.total).toBe(3);
@@ -240,10 +242,10 @@ describe('MemoryInspector', () => {
     });
 
     it('归档层：insight + profile + work-projection 计数', () => {
-      inspector.upsert(createMemory({ id: 'insight:i1', source: 'insight', name: 'i1' }));
-      inspector.upsert(createMemory({ id: 'insight:i2', source: 'insight', name: 'i2' }));
-      inspector.upsert(createMemory({ id: 'profile:p1', source: 'profile', name: 'p1' }));
-      inspector.upsert(createMemory({ id: 'work-projection:w1', source: 'work-projection', name: 'w1' }));
+      storage.upsert(createMemory({ id: 'insight:i1', source: 'insight', name: 'i1' }));
+      storage.upsert(createMemory({ id: 'insight:i2', source: 'insight', name: 'i2' }));
+      storage.upsert(createMemory({ id: 'profile:p1', source: 'profile', name: 'p1' }));
+      storage.upsert(createMemory({ id: 'work-projection:w1', source: 'work-projection', name: 'w1' }));
       const snap = inspector.snapshot();
       expect(snap.archive.archiveCount).toBe(4);
       expect(snap.archive.stats.insight).toBe(2);
@@ -305,8 +307,8 @@ describe('MemoryInspector', () => {
 
     it('正常搜索：长内容截断到 120 字符 + "..."，短内容不截断', () => {
       const longContent = 'B'.repeat(150);
-      inspector.upsert(createMemory({ id: 'insight:long', source: 'insight', name: 'long', content: longContent }));
-      inspector.upsert(createMemory({ id: 'insight:short', source: 'insight', name: 'short', content: 'short' }));
+      storage.upsert(createMemory({ id: 'insight:long', source: 'insight', name: 'long', content: longContent }));
+      storage.upsert(createMemory({ id: 'insight:short', source: 'insight', name: 'short', content: 'short' }));
       const hits = inspector.search('B', 10);
       // InMemoryStorage.search 按关键词匹配
       const longHit = hits.find((h) => h.name === 'long');
@@ -337,7 +339,7 @@ describe('MemoryInspector', () => {
     });
 
     it('vectorStore 未注入时：纯关键词搜索', async () => {
-      inspector.upsert(createMemory({ id: 'insight:k1', source: 'insight', name: 'k1', content: 'keyword test' }));
+      storage.upsert(createMemory({ id: 'insight:k1', source: 'insight', name: 'k1', content: 'keyword test' }));
       const hits = await inspector.searchHybrid('keyword');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('k1');
@@ -348,7 +350,7 @@ describe('MemoryInspector', () => {
     it('vectorStore size=0 时：跳过语义搜索（纯关键词）', async () => {
       const vs = createMockVectorStore([], 0);
       inspector.setVectorStore(vs);
-      inspector.upsert(createMemory({ id: 'insight:k1', source: 'insight', name: 'k1', content: 'keyword' }));
+      storage.upsert(createMemory({ id: 'insight:k1', source: 'insight', name: 'k1', content: 'keyword' }));
       const hits = await inspector.searchHybrid('keyword');
       expect(hits).toHaveLength(1);
       // size=0 不调用 vectorStore.search
@@ -359,8 +361,8 @@ describe('MemoryInspector', () => {
       // 语义搜索返回 insight:vec，关键词搜索返回 insight:kw
       const vs = createMockVectorStore([{ id: 'insight:vec', similarity: 0.8 }]);
       inspector.setVectorStore(vs);
-      inspector.upsert(createMemory({ id: 'insight:vec', source: 'insight', name: 'vec', content: 'shared' }));
-      inspector.upsert(createMemory({ id: 'insight:kw', source: 'insight', name: 'kw', content: 'shared' }));
+      storage.upsert(createMemory({ id: 'insight:vec', source: 'insight', name: 'vec', content: 'shared' }));
+      storage.upsert(createMemory({ id: 'insight:kw', source: 'insight', name: 'kw', content: 'shared' }));
       const hits = await inspector.searchHybrid('shared');
       expect(hits).toHaveLength(2);
       // 两条都应返回（语义 + 关键词各贡献一条）
@@ -373,7 +375,7 @@ describe('MemoryInspector', () => {
       const vs = createMockVectorStore();
       vs.search = vi.fn().mockRejectedValue(new Error('vector error'));
       inspector.setVectorStore(vs);
-      inspector.upsert(createMemory({ id: 'insight:k1', source: 'insight', name: 'k1', content: 'keyword' }));
+      storage.upsert(createMemory({ id: 'insight:k1', source: 'insight', name: 'k1', content: 'keyword' }));
       const hits = await inspector.searchHybrid('keyword');
       // 降级后仍返回关键词结果
       expect(hits).toHaveLength(1);
@@ -384,8 +386,8 @@ describe('MemoryInspector', () => {
       // vec 高语义分数 + 低 memory.score；kw 低语义分数 + 高 memory.score
       const vs = createMockVectorStore([{ id: 'insight:vec', similarity: 0.9 }]);
       inspector.setVectorStore(vs);
-      inspector.upsert(createMemory({ id: 'insight:vec', source: 'insight', name: 'vec', content: 'shared', score: 0.1 }));
-      inspector.upsert(createMemory({ id: 'insight:kw', source: 'insight', name: 'kw', content: 'shared', score: 0.95 }));
+      storage.upsert(createMemory({ id: 'insight:vec', source: 'insight', name: 'vec', content: 'shared', score: 0.1 }));
+      storage.upsert(createMemory({ id: 'insight:kw', source: 'insight', name: 'kw', content: 'shared', score: 0.95 }));
       const hits = await inspector.searchHybrid('shared');
       // vec 综合分 = 0.9*0.6 + 0.1*0.4 = 0.58
       // kw 综合分 = 0*0.6 + 0.95*0.4 = 0.38
@@ -398,7 +400,7 @@ describe('MemoryInspector', () => {
       const longContent = 'C'.repeat(150);
       const vs = createMockVectorStore([{ id: 'insight:long', similarity: 0.7 }]);
       inspector.setVectorStore(vs);
-      inspector.upsert(createMemory({ id: 'insight:long', source: 'insight', name: 'long', content: longContent }));
+      storage.upsert(createMemory({ id: 'insight:long', source: 'insight', name: 'long', content: longContent }));
       const hits = await inspector.searchHybrid('C');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.similarity).toBe(0.7);
@@ -413,9 +415,9 @@ describe('MemoryInspector', () => {
 
   describe('stats', () => {
     it('应返回 total + bySource + relationCount', () => {
-      inspector.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
-      inspector.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2' }));
-      inspector.upsert(createMemory({ id: 'persona:1', source: 'persona', name: 'p1' }));
+      storage.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
+      storage.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2' }));
+      storage.upsert(createMemory({ id: 'persona:1', source: 'persona', name: 'p1' }));
       const stats = inspector.stats();
       expect(stats.total).toBe(3);
       expect(stats.bySource.rule).toBe(2);
@@ -424,7 +426,7 @@ describe('MemoryInspector', () => {
     });
 
     it('bySource 应过滤 count=0 的来源', () => {
-      inspector.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
+      storage.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1' }));
       const stats = inspector.stats();
       expect(stats.bySource.rule).toBe(1);
       // 未出现的来源不在 bySource 中
@@ -665,8 +667,8 @@ describe('MemoryInspector', () => {
 
   describe('sourceHealth + suggest 委托 MemoryAdvisor', () => {
     it('sourceHealth 应委托 MemoryAdvisor 返回健康报告', () => {
-      inspector.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1', score: 0.8 }));
-      inspector.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2', score: 0.6 }));
+      storage.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1', score: 0.8 }));
+      storage.upsert(createMemory({ id: 'rule:2', source: 'rule', name: 'r2', score: 0.6 }));
       const report = inspector.sourceHealth();
       // SourceHealthReport 含 sources 数组 + 总体指标
       expect(report).toBeDefined();
@@ -678,8 +680,8 @@ describe('MemoryInspector', () => {
     });
 
     it('suggest 无参时委托 MemoryAdvisor 基于全局热度推荐', () => {
-      inspector.upsert(createMemory({ id: 'insight:1', source: 'insight', name: 'i1', score: 0.9 }));
-      inspector.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1', score: 0.5 }));
+      storage.upsert(createMemory({ id: 'insight:1', source: 'insight', name: 'i1', score: 0.9 }));
+      storage.upsert(createMemory({ id: 'rule:1', source: 'rule', name: 'r1', score: 0.5 }));
       const hits = inspector.suggest();
       expect(Array.isArray(hits)).toBe(true);
       // 应返回推荐结果（按 score 降序）
@@ -689,7 +691,7 @@ describe('MemoryInspector', () => {
     });
 
     it('suggest 带参时委托 MemoryAdvisor 结合搜索结果推荐', () => {
-      inspector.upsert(createMemory({ id: 'insight:1', source: 'insight', name: 'test', content: 'test content', score: 0.9 }));
+      storage.upsert(createMemory({ id: 'insight:1', source: 'insight', name: 'test', content: 'test content', score: 0.9 }));
       const hits = inspector.suggest('test', { limit: 5 });
       expect(Array.isArray(hits)).toBe(true);
       // limit 选项应被尊重

@@ -351,7 +351,7 @@ export class ClipboardManager { ... }
 
 **沉淀时机**：迭代 7-8 引入后台 Provider（`agent.setBackgroundProvider`）。  
 **配置入口**：`ConfigSchema.llm.background`（独立块，温度 0.5 默认）。  
-**路由策略**：`ChatOptions.channel: 'chat' | 'background'`。
+**路由策略**：`AgentOptions.backgroundProvider` 注入独立 LlmProvider 实例，workProjection / autoConfigRefiner 直接调用 `backgroundProvider.chat()`，不通过 `ChatOptions` 字段路由。
 
 ### 7.4 写入确认闭环
 

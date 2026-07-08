@@ -246,7 +246,8 @@ export async function handleMemoryRoute(
       const body = await parseJsonBody<{ retentionDays?: number }>(req);
       const retentionDays = body?.retentionDays ?? 30;
       const before = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
-      const purgedCount = ctx.agent.memory?.purgeExpired(before) ?? 0;
+      // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator
+      const purgedCount = ctx.agent.memoryMutator?.purgeExpired(before) ?? 0;
       sendJson(res, 200, { purgedCount });
       return;
     }

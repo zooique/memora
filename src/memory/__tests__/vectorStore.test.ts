@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { VectorStore, type EmbeddingService } from '@/memory/vectorStore.js';
+import { JsonVectorStore, type EmbeddingService } from '@/memory/vectorStore.js';
 
 /**
  * 创建模拟的 EmbeddingService
@@ -33,14 +33,14 @@ function mockEmbeddingService() {
   };
 }
 
-describe('VectorStore · upsert + search', () => {
+describe('JsonVectorStore · upsert + search', () => {
   let tmpDir: string;
-  let store: VectorStore;
+  let store: JsonVectorStore;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
     const provider = mockEmbeddingService();
-    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as unknown as EmbeddingService);
+    store = new JsonVectorStore(join(tmpDir, 'vectors.json'), provider as unknown as EmbeddingService);
   });
 
   afterEach(() => {
@@ -89,14 +89,14 @@ describe('VectorStore · upsert + search', () => {
   });
 });
 
-describe('VectorStore · batchUpsert', () => {
+describe('JsonVectorStore · batchUpsert', () => {
   let tmpDir: string;
-  let store: VectorStore;
+  let store: JsonVectorStore;
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'memora-vector-'));
     const provider = mockEmbeddingService();
-    store = new VectorStore(join(tmpDir, 'vectors.json'), provider as unknown as EmbeddingService);
+    store = new JsonVectorStore(join(tmpDir, 'vectors.json'), provider as unknown as EmbeddingService);
   });
 
   afterEach(() => {
@@ -114,7 +114,7 @@ describe('VectorStore · batchUpsert', () => {
   });
 });
 
-describe('VectorStore · 持久化', () => {
+describe('JsonVectorStore · 持久化', () => {
   let tmpDir: string;
   let storePath: string;
 
@@ -129,7 +129,7 @@ describe('VectorStore · 持久化', () => {
 
   it('save 后应该写入 JSON 文件', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.upsert('mem:1', '文本A');
     await store.save();
@@ -143,13 +143,13 @@ describe('VectorStore · 持久化', () => {
 
   it('load 后应该恢复向量索引', async () => {
     const provider1 = mockEmbeddingService();
-    const store1 = new VectorStore(storePath, provider1 as unknown as EmbeddingService);
+    const store1 = new JsonVectorStore(storePath, provider1 as unknown as EmbeddingService);
     await store1.upsert('mem:1', '文本A');
     await store1.save();
 
     // 新实例加载
     const provider2 = mockEmbeddingService();
-    const store2 = new VectorStore(storePath, provider2 as unknown as EmbeddingService);
+    const store2 = new JsonVectorStore(storePath, provider2 as unknown as EmbeddingService);
     await store2.load();
 
     expect(store2.size).toBe(1);
@@ -157,7 +157,7 @@ describe('VectorStore · 持久化', () => {
 
   it('无变更时 save 不应写文件', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.save();
 
@@ -187,7 +187,7 @@ function mockEmbeddingServiceWithDimension(dim: number) {
  * 创建可切换维度的 stateful mock EmbeddingService
  *
  * 用于维度一致性测试：先返回 dim1，调用 switchDimension() 后返回 dim2，
- * 避免修改 VectorStore 的 readonly embeddingProvider 属性
+ * 避免修改 JsonVectorStore 的 readonly embeddingProvider 属性
  */
 function createSwitchableEmbeddingService(initialDim: number) {
   let currentDim = initialDim;
@@ -204,7 +204,7 @@ function createSwitchableEmbeddingService(initialDim: number) {
   };
 }
 
-describe('VectorStore · schema 校验', () => {
+describe('JsonVectorStore · schema 校验', () => {
   let tmpDir: string;
   let storePath: string;
 
@@ -220,7 +220,7 @@ describe('VectorStore · schema 校验', () => {
   it('损坏的 JSON 应视为"从空开始"，不抛错', async () => {
     writeFileSync(storePath, '{ not valid json', 'utf-8');
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await expect(store.load()).resolves.toBeUndefined();
     expect(store.size).toBe(0);
@@ -233,7 +233,7 @@ describe('VectorStore · schema 校验', () => {
       'utf-8',
     );
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.load();
     expect(store.size).toBe(0);
@@ -246,7 +246,7 @@ describe('VectorStore · schema 校验', () => {
       'utf-8',
     );
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.load();
     expect(store.size).toBe(0);
@@ -259,7 +259,7 @@ describe('VectorStore · schema 校验', () => {
       'utf-8',
     );
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.load();
     expect(store.size).toBe(0);
@@ -276,7 +276,7 @@ describe('VectorStore · schema 校验', () => {
       'utf-8',
     );
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.load();
     expect(store.size).toBe(0);
@@ -293,7 +293,7 @@ describe('VectorStore · schema 校验', () => {
       'utf-8',
     );
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.load();
     expect(store.size).toBe(0);
@@ -310,14 +310,14 @@ describe('VectorStore · schema 校验', () => {
       'utf-8',
     );
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.load();
     expect(store.size).toBe(1);
   });
 });
 
-describe('VectorStore · 维度一致性校验', () => {
+describe('JsonVectorStore · 维度一致性校验', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -331,7 +331,7 @@ describe('VectorStore · 维度一致性校验', () => {
   it('upsert 维度不一致应抛错', async () => {
     // 用可切换维度的 service：先用 dim=3 插入首条，再切到 dim=4 触发不一致
     const service = createSwitchableEmbeddingService(3);
-    const store = new VectorStore(join(tmpDir, 'v.json'), service as unknown as EmbeddingService);
+    const store = new JsonVectorStore(join(tmpDir, 'v.json'), service as unknown as EmbeddingService);
     await store.upsert('m1', 'first');
 
     // 切换到 dim=4，再次 upsert 应抛错
@@ -343,7 +343,7 @@ describe('VectorStore · 维度一致性校验', () => {
   it('batchUpsert 维度不一致应抛错', async () => {
     // 用可切换维度的 service：先用 dim=2 锁定 dimension，再切到 dim=3 触发不一致
     const service = createSwitchableEmbeddingService(2);
-    const store = new VectorStore(join(tmpDir, 'v.json'), service as unknown as EmbeddingService);
+    const store = new JsonVectorStore(join(tmpDir, 'v.json'), service as unknown as EmbeddingService);
     await store.upsert('m1', 'init');
 
     // 切换到 dim=3，batchUpsert 应抛错
@@ -359,14 +359,14 @@ describe('VectorStore · 维度一致性校验', () => {
 
   it('首条向量应锁定 dimension，不抛错', async () => {
     const provider = mockEmbeddingServiceWithDimension(5);
-    const store = new VectorStore(join(tmpDir, 'v.json'), provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(join(tmpDir, 'v.json'), provider as unknown as EmbeddingService);
 
     await expect(store.upsert('m1', 'first')).resolves.toBeUndefined();
     expect(store.size).toBe(1);
   });
 });
 
-describe('VectorStore · save 串行化', () => {
+describe('JsonVectorStore · save 串行化', () => {
   let tmpDir: string;
   let storePath: string;
 
@@ -381,7 +381,7 @@ describe('VectorStore · save 串行化', () => {
 
   it('并发 save 应串行执行，最终文件包含所有变更', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     // 第一次 upsert 后并发触发 3 次 save
     await store.upsert('m1', '文本A');
@@ -399,7 +399,7 @@ describe('VectorStore · save 串行化', () => {
 
   it('delete 后需显式 save 才持久化', async () => {
     const provider = mockEmbeddingService();
-    const store = new VectorStore(storePath, provider as unknown as EmbeddingService);
+    const store = new JsonVectorStore(storePath, provider as unknown as EmbeddingService);
 
     await store.upsert('m1', '文本A');
     await store.save();

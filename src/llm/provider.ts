@@ -55,20 +55,6 @@ export interface ChatOptions {
    */
   stream?: boolean;
   /**
-   * LLM 通道选择（多 Provider 路由预留）
-   *
-   * - 'chat'：前台通道，用于用户对话（高质量、低延迟）
-   * - 'background'：后台通道，用于归档/投影/画像（中等质量、低成本）
-   *
-   * 不指定时使用默认 chat 通道。
-   *
-   * @experimental 多 Provider 路由功能处于设计阶段，当前所有消费者共用
-   * 同一 Provider。该字段已声明但未被任何 LLM 调用路径读取，
-   * 待多通道路由真正实现时激活。
-   * 详见接入指南 §九
-   */
-  channel?: 'chat' | 'background';
-  /**
    * 中止信号：用于取消正在进行的 LLM 请求
    *
    * AgentLoop 在用户取消对话时传入 AbortSignal，

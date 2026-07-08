@@ -22,6 +22,9 @@ export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '
 export type { PersonaMode, Persona } from '@/persona/types.js';
 // 类型从专职模块导出
 export type { MemoryKeywords } from '@/agent/managers/insightExtractor.js';
+// P1-3 拆分：RelationBuilder 从 InsightExtractor 提取，封装 ADR-014 关系构建逻辑
+export { RelationBuilder } from '@/agent/managers/relationBuilder.js';
+export type { ConflictInfo } from '@/agent/managers/relationBuilder.js';
 export type {
   MemorySnapshot,
   WorkingMemorySnapshot,
@@ -35,6 +38,8 @@ export type {
   SourceHealthEntry,
   SourceHealthReport,
 } from '@/agent/managers/memoryInspector.js';
+// 记忆写入器（P1-2 拆分，与 MemoryInspector 严格分工：写操作代理）
+export type { MemoryMutator } from '@/agent/managers/memoryMutator.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
 // 会话内容归档器类型
@@ -58,8 +63,11 @@ export type { ITracer, ISpan, AgentMetrics } from '@/agent/tracer.js';
 export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
-export { SOURCE_LABELS, inferSource, escapeLike, validateSource } from '@/memory/types.js';
-export type { Memory, SourceValidationSeverity } from '@/memory/types.js';
+export { SOURCE_LABELS } from '@/memory/types.js';
+export type { Memory } from '@/memory/types.js';
+// Source 校验工具（从 types.ts 拆分到 sourceValidation.ts，公共 API 不变）
+export { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';
+export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 记忆关系图谱（ADR-014 侧车模型）
 export { RELATION_TYPES, RELATION_WEIGHTS } from '@/memory/types.js';
 export type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor } from '@/memory/types.js';
@@ -69,14 +77,20 @@ export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 // 记忆关系存储侧车：宿主项目可实现 IMemoryRelationStore 接口注入 Agent
 export type { IMemoryRelationStore } from '@/memory/relationStore.js';
 export { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
+// 项目注册表 + 锁文件管理（P1-4 拆分，从 ProjectManager 提取）
+// 宿主可直接使用 ProjectRegistry/LockManager 管理多项目，或通过 ProjectManager 间接委托
+export { ProjectRegistry } from '@/memory/projectRegistry.js';
+export type { ProjectEntry } from '@/memory/projectRegistry.js';
+export { LockManager } from '@/memory/lockManager.js';
 // 用户画像：宿主通过 agent.userProfile 访问，用于确认/拒绝待确认条目
 export type { UserProfileEntry, ProfileCategory, ExtractedFact } from '@/memory/userProfile.js';
-// 向量存储：宿主注入 EmbeddingService 后创建 VectorStore，传入 AgentOptions 启用语义搜索
-export { VectorStore } from '@/memory/vectorStore.js';
-export type { EmbeddingService } from '@/memory/vectorStore.js';
+// 向量存储：宿主注入 EmbeddingService 后创建 JsonVectorStore，传入 AgentOptions 启用语义搜索
+// 宿主也可实现 IVectorStore 接口注入自定义向量库（如 SqliteVectorStore / LanceDBVectorStore）
+export { JsonVectorStore } from '@/memory/vectorStore.js';
+export type { IVectorStore, EmbeddingService } from '@/memory/vectorStore.js';
 // Embedding Provider：OpenAI 兼容 /embeddings 端点实现（满足 EmbeddingService 接口）
 export { EmbeddingProvider } from '@/llm/embedding.js';
-export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
+export type { EmbeddingConfig, EmbeddingResult, EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 // 消息历史内部类型：MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）

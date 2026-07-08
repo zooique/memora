@@ -109,7 +109,7 @@ export class DateNavManager {
       } else if (ke.key === 'Enter') {
         ke.preventDefault();
         if (currentIdx >= 0) {
-          const date = items[currentIdx].dataset.date;
+          const date = items[currentIdx]?.dataset.date;
           if (date) {
             this.selectDate(date);
           }

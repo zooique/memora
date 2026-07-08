@@ -2,7 +2,7 @@
  * Logging 模块单元测试
  * 覆盖 console fallback logger、setLogger 切换、敏感数据脱敏、覆盖警告、环境变量展开
  *
- * 注意：pino 作为可选依赖已安装，模块加载时会异步替换 console fallback。
+ * 注意：pino 作为可选依赖已安装，首次日志调用时会懒触发异步升级（确保 import 零 fs 副作用）。
  * 脱敏测试通过 setLogger 注入自定义 logger 来验证，
  * console fallback 的脱敏行为通过直接构造 console logger 验证。
  */
@@ -130,10 +130,11 @@ describe('Logging · setLogger() 切换', () => {
     };
 
     setLogger(customLogger);
-    // 恢复默认（异步：tryCreatePinoLogger 或 console fallback）
+    // 恢复默认（同步恢复到 console fallback；pino 升级改为懒触发）
     setLogger(undefined);
 
-    // 等待异步恢复完成（tryCreatePinoLogger 是异步的）
+    // 懒初始化模式下，setLogger(undefined) 不主动触发 pino 升级
+    // 下一次 logger.info 调用才会懒触发，但触发后异步加载期间 _logger 仍是 console fallback
     await new Promise(resolve => setTimeout(resolve, 50));
 
     // 恢复后应不再调用 customLogger

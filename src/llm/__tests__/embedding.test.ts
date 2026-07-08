@@ -259,3 +259,106 @@ describe('EmbeddingProvider · batchEmbed 边界', () => {
     await expect(provider.embed('文本')).rejects.toThrow('嵌入结果为空');
   });
 });
+
+// ─── 韧性选项（P1-8：signal + timeoutMs） ─────────────────
+
+describe('EmbeddingProvider · 韧性选项（P1-8）', () => {
+  let provider: EmbeddingProvider;
+
+  beforeEach(() => {
+    provider = new EmbeddingProvider({
+      baseUrl: 'http://localhost:9999',
+      apiKey: 'test-key',
+      model: 'text-embedding-3-small',
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('预取消 signal 应立即抛出超时/取消错误', async () => {
+    // 创建已 abort 的 signal
+    const ac = new AbortController();
+    ac.abort(new DOMException('用户取消', 'AbortError'));
+
+    // 真实 fetch 收到已 abort 的 signal 会立即 reject（无需 mock 返回值）
+    vi.spyOn(globalThis, 'fetch');
+
+    // embed 应立即 reject，不挂起
+    await expect(provider.embed('测试', { signal: ac.signal })).rejects.toThrow();
+  });
+
+  it('fetch 期间 abort signal 应抛出错误', async () => {
+    // 模拟 fetch 在 abort 后 reject
+    const ac = new AbortController();
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = (init as RequestInit)?.signal;
+        if (signal) {
+          if (signal.aborted) {
+            reject(new DOMException('aborted', 'AbortError'));
+          } else {
+            signal.addEventListener('abort', () => {
+              reject(new DOMException('aborted', 'AbortError'));
+            });
+          }
+        }
+      });
+    });
+
+    // 在 fetch 发起后立即 abort
+    const promise = provider.embed('测试', { signal: ac.signal });
+    ac.abort();
+    await expect(promise).rejects.toThrow();
+  });
+
+  it('timeoutMs 超时应抛出"Embedding 请求超时"', async () => {
+    // timeoutMs=50 让超时在 50ms 后触发
+    // fetch mock 需要响应 signal abort（真实 fetch 会自动响应 signal）
+    vi.spyOn(globalThis, 'fetch').mockImplementationOnce((_url, init) => {
+      return new Promise((_resolve, reject) => {
+        const signal = (init as RequestInit)?.signal;
+        if (signal) {
+          if (signal.aborted) {
+            reject(new DOMException('aborted', 'AbortError'));
+          } else {
+            signal.addEventListener('abort', () => {
+              reject(new DOMException('aborted', 'AbortError'));
+            });
+          }
+        }
+      });
+    });
+
+    await expect(
+      provider.embed('测试', { timeoutMs: 50 }),
+    ).rejects.toThrow('Embedding 请求超时');
+  });
+
+  it('缓存命中时不应触发 timeoutMs 超时', async () => {
+    // 先缓存文本
+    mockFetchSuccess([[0.1, 0.2]]);
+    await provider.embed('缓存文本');
+
+    // 第二次调用（缓存命中），即使 timeoutMs=1 也不应超时
+    const result = await provider.embed('缓存文本', { timeoutMs: 1 });
+    expect(result).toEqual([0.1, 0.2]);
+  });
+
+  it('embed 应将 options 透传到 batchEmbed', async () => {
+    // 验证 embed 传 options 到 batchEmbed（通过 fetch 收到的 signal 间接验证）
+    const ac = new AbortController();
+    ac.abort(new DOMException('取消', 'AbortError'));
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(
+      provider.embed('新文本', { signal: ac.signal }),
+    ).rejects.toThrow();
+
+    // fetch 被调用时收到的 signal 应是已 abort 的（证明 options 从 embed 透传到 batchEmbed）
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const callArgs = fetchSpy.mock.calls[0]!;
+    const init = callArgs[1] as RequestInit;
+    expect(init.signal).toBeDefined();
+    expect((init.signal as AbortSignal).aborted).toBe(true);
+  });
+});

@@ -45,54 +45,64 @@ const ProviderConfigSchema = z.object({
 // provider 允许任意字符串：预设（mock/deepseek/doubao/openai）开箱即用，
 // 自定义 provider（如 mimo、自部署模型）只要显式配 baseUrl + model 即可
 // 详见 ADR-003
+//
+// 单一真理源：所有默认值由 .default() 声明，ConfigSchema.parse({}) 即可得到完整默认配置。
+// 嵌套对象（llm/memory/security）必须用 .default({}) 声明整体默认值，
+// 否则 zod 会在对象缺失时报 "Required" 而非使用内部字段的 default。
 const ConfigSchema = z.object({
-  llm: z.object({
-    // 旧格式：单一 provider 扁平字段（向后兼容，providers 未配置时生效）
-    provider: z.string().default('mock'),
-    model: z.string().default('deepseek-chat'),
-    baseUrl: z.string().optional(),
-    apiKey: z.string().optional(),
-    temperature: z.number().min(0).max(2).default(0.7),
-    /**
-     * 多 Provider 映射表
-     *
-     * key 为 Provider 别名（如 "deepseek"、"openai"），value 为 Provider 配置。
-     * 配置后，旧扁平字段（provider/model/baseUrl/apiKey）被忽略。
-     * 不配置时回退到旧的单 provider 行为——完全向后兼容。
-     */
-    providers: z.record(z.string(), ProviderConfigSchema).optional(),
-    /**
-     * 当前激活的 Provider 别名
-     *
-     * 必须与 providers 中的某个 key 一致。
-     * 不配置时默认使用 providers 的第一个 key。
-     */
-    active: z.string().optional(),
-    /**
-     * 后台通道配置（多 Provider 路由预留）
-     *
-     * 不配时所有消费者复用前台（llm）配置——零破坏性，完全向后兼容。
-     * 配置后，归档/投影/画像等后台操作使用此通道，降低成本。
-     * 详见接入指南 §九
-     */
-    background: z
-      .object({
-        provider: z.string(),
-        model: z.string(),
-        baseUrl: z.string().optional(),
-        apiKey: z.string().optional(),
-        temperature: z.number().min(0).max(2).default(0.5),
-      })
-      .optional(),
-  }),
-  memory: z.object({
-    dataDir: z.string().default('~/.memora'),
-    maxContextTokens: z.number().default(DEFAULT_MAX_CONTEXT_TOKENS),
-  }),
-  security: z.object({
-    permission: z.enum(['owner', 'guest']).default('owner'),
-    confirmWrites: z.boolean().default(false),
-  }),
+  llm: z
+    .object({
+      // 旧格式：单一 provider 扁平字段（向后兼容，providers 未配置时生效）
+      provider: z.string().default('mock'),
+      model: z.string().default('deepseek-chat'),
+      baseUrl: z.string().optional(),
+      apiKey: z.string().optional(),
+      temperature: z.number().min(0).max(2).default(0.7),
+      /**
+       * 多 Provider 映射表
+       *
+       * key 为 Provider 别名（如 "deepseek"、"openai"），value 为 Provider 配置。
+       * 配置后，旧扁平字段（provider/model/baseUrl/apiKey）被忽略。
+       * 不配置时回退到旧的单 provider 行为——完全向后兼容。
+       */
+      providers: z.record(z.string(), ProviderConfigSchema).optional(),
+      /**
+       * 当前激活的 Provider 别名
+       *
+       * 必须与 providers 中的某个 key 一致。
+       * 不配置时默认使用 providers 的第一个 key。
+       */
+      active: z.string().optional(),
+      /**
+       * 后台通道配置（多 Provider 路由预留）
+       *
+       * 不配时所有消费者复用前台（llm）配置——零破坏性，完全向后兼容。
+       * 配置后，归档/投影/画像等后台操作使用此通道，降低成本。
+       * 详见接入指南 §九
+       */
+      background: z
+        .object({
+          provider: z.string(),
+          model: z.string(),
+          baseUrl: z.string().optional(),
+          apiKey: z.string().optional(),
+          temperature: z.number().min(0).max(2).default(0.5),
+        })
+        .optional(),
+    })
+    .default({}),
+  memory: z
+    .object({
+      dataDir: z.string().default('~/.memora'),
+      maxContextTokens: z.number().default(DEFAULT_MAX_CONTEXT_TOKENS),
+    })
+    .default({}),
+  security: z
+    .object({
+      permission: z.enum(['owner', 'guest']).default('owner'),
+      confirmWrites: z.boolean().default(false),
+    })
+    .default({}),
   // 允许的路径白名单（绝对路径）
   allowedPaths: z.array(z.string()).default([]),
   // 默认角色名（对应 personas/*.md）
@@ -114,27 +124,12 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-const DEFAULT_CONFIG: Config = {
-  llm: {
-    provider: 'mock',
-    model: 'mock-model',
-    temperature: 0.7,
-  },
-  memory: {
-    dataDir: '~/.memora',
-    maxContextTokens: DEFAULT_MAX_CONTEXT_TOKENS,
-  },
-  security: {
-    permission: 'owner',
-    confirmWrites: false,
-  },
-  allowedPaths: [],
-  persona: undefined,
-  embedding: undefined,
-};
-
 /**
  * 加载配置
+ *
+ * 单一真理源：所有默认值由 ConfigSchema 的 .default() 声明，
+ * 不再维护独立的 DEFAULT_CONFIG 常量（避免两处真理源打架）。
+ *
  * @param configPath 显式指定的配置文件路径
  */
 export async function loadConfig(configPath?: string): Promise<Config> {
@@ -159,11 +154,11 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     const config = await readJsonFile(userPath);
     return expandEnvVars(mergeWithDefaults(config));
   } catch {
-    // 用户级不存在，使用默认值
+    // 用户级不存在，使用 schema 默认值（单一真理源）
   }
 
-  // 4. 内置默认
-  return expandEnvVars(DEFAULT_CONFIG);
+  // 4. 内置默认：ConfigSchema.parse({}) 让 zod 的 .default() 生效
+  return expandEnvVars(ConfigSchema.parse({}));
 }
 
 /**
@@ -176,12 +171,12 @@ async function readJsonFile(path: string): Promise<unknown> {
 
 /**
  * 合并用户配置与默认值
+ *
+ * 直接用 ConfigSchema.parse(userConfig)，让 zod 的 .default() 填充缺失字段。
+ * 不再 spread DEFAULT_CONFIG，避免覆盖 schema default。
  */
 function mergeWithDefaults(userConfig: unknown): Config {
-  return ConfigSchema.parse({
-    ...DEFAULT_CONFIG,
-    ...(userConfig as object),
-  });
+  return ConfigSchema.parse(userConfig);
 }
 
 /**

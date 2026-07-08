@@ -36,6 +36,19 @@ export interface EmbeddingResult {
 }
 
 /**
+ * Embedding 调用选项（P1-8 韧性补齐）
+ *
+ * 与 ChatOptions.signal/timeoutMs 同构，支持外部取消 + 超时中断。
+ * 宿主在用户取消对话时传入 AbortSignal，或设置 timeoutMs 覆盖默认超时。
+ */
+export interface EmbeddingOptions {
+  /** 外部取消信号（用户主动取消时传入） */
+  signal?: AbortSignal;
+  /** 超时毫秒数（超时自动 abort；默认 60s，可通过此字段覆盖） */
+  timeoutMs?: number;
+}
+
+/**
  * Embedding Provider
  *
  * 调用 /embeddings 端点将文本转为向量
@@ -44,6 +57,9 @@ export interface EmbeddingResult {
 export class EmbeddingProvider {
   /** 缓存最大条目数（LRU 上限，防止无界增长导致内存泄漏） */
   private static readonly CACHE_MAX_SIZE = 1000;
+
+  /** 默认请求超时：60 秒（embedding 无流式推理，比 chat 的 120s 更短） */
+  private static readonly DEFAULT_TIMEOUT_MS = 60_000;
 
   /** 本地缓存：text → vector（LRU，Map 迭代顺序 = 最近访问顺序） */
   private readonly cache = new Map<string, number[]>();
@@ -77,14 +93,15 @@ export class EmbeddingProvider {
   /**
    * 嵌入单条文本
    * @param text 待嵌入的文本
+   * @param options 调用选项（signal 外部取消 + timeoutMs 超时）
    * @returns 向量
    */
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, options?: EmbeddingOptions): Promise<number[]> {
     // 缓存命中
     const cached = this.getCached(text);
     if (cached) return cached;
 
-    const results = await this.batchEmbed([text]);
+    const results = await this.batchEmbed([text], options);
     const first = results[0];
     if (!first) {
       // 错误处理统一：使用 llmError 工厂
@@ -101,9 +118,10 @@ export class EmbeddingProvider {
    * 批量嵌入多条文本
    * OpenAI 兼容 API 支持一次请求嵌入多条文本，减少 API 调用
    * @param texts 待嵌入的文本数组
+   * @param options 调用选项（signal 外部取消 + timeoutMs 超时）
    * @returns 嵌入结果数组（顺序与输入一致）
    */
-  async batchEmbed(texts: string[]): Promise<EmbeddingResult[]> {
+  async batchEmbed(texts: string[], options?: EmbeddingOptions): Promise<EmbeddingResult[]> {
     // 过滤已缓存的
     const uncached: string[] = [];
     const uncachedIndices: number[] = [];
@@ -128,61 +146,96 @@ export class EmbeddingProvider {
     }
 
     const url = `${this.config.baseUrl}/embeddings`;
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.config.model,
-          input: uncached,
-        }),
-      });
-    } catch (err) {
-      const e = toError(err);
-      throw networkError(
-        'Embedding 服务连接失败',
-        `无法访问 ${url}：${e.message}`,
-        ['检查网络连接', '确认 baseUrl 配置正确'],
-        e,
-      );
-    }
 
-    if (!response.ok) {
-      const body = await response.text().catch(() => '');
-      throw networkError('Embedding 请求失败', `HTTP ${response.status}: ${body.slice(0, 200)}`, [
-        '检查 API Key 是否有效',
-        '确认 embedding 模型名称正确',
-      ]);
-    }
-
-    const data = (await response.json()) as {
-      data: Array<{ embedding: number[]; index: number }>;
-    };
-
-    // 按 index 排序（API 不保证顺序）
-    const sorted = data.data.sort((a, b) => a.index - b.index);
-
-    // 填充结果 + 更新缓存
-    for (let i = 0; i < uncached.length; i++) {
-      // 循环条件保证索引有效，null 检查兜底
-      const text = uncached[i];
-      if (!text) continue;
-      const vector = sorted[i]?.embedding;
-      if (!vector) {
-        logger.warn({ text: text.slice(0, 50), index: i }, 'Embedding 缺失，跳过');
-        continue;
+    // 合并 AbortSignal：外部取消信号 + 超时信号（与 openaiCompatible.ts 同构）
+    // 确保用户取消和请求超时都能中断 fetch
+    const timeoutMs = options?.timeoutMs ?? EmbeddingProvider.DEFAULT_TIMEOUT_MS;
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(
+      () => abortController.abort(new DOMException('Embedding 请求超时', 'TimeoutError')),
+      timeoutMs,
+    );
+    const optsSignal = options?.signal;
+    const onOptsAbort = () => abortController.abort(optsSignal?.reason);
+    if (optsSignal) {
+      if (optsSignal.aborted) {
+        abortController.abort(optsSignal.reason);
+      } else {
+        optsSignal.addEventListener('abort', onOptsAbort, { once: true });
       }
-      this.setCache(text, vector);
-      // null 检查兜底
-      const idx = uncachedIndices[i];
-      if (idx !== undefined) results[idx] = { text, vector };
     }
 
-    return results.filter((r): r is EmbeddingResult => r !== null);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.config.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.config.model,
+            input: uncached,
+          }),
+          signal: abortController.signal,
+        });
+      } catch (err) {
+        const e = toError(err);
+        // 区分超时错误和网络错误
+        if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+          throw networkError(
+            'Embedding 请求超时',
+            `${url} 请求超过 ${timeoutMs / 1000}s 未响应`,
+            ['检查网络连接稳定性', '如频繁超时，考虑调整 timeoutMs', '稍后重试'],
+            e,
+          );
+        }
+        throw networkError(
+          'Embedding 服务连接失败',
+          `无法访问 ${url}：${e.message}`,
+          ['检查网络连接', '确认 baseUrl 配置正确'],
+          e,
+        );
+      }
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => '');
+        throw networkError('Embedding 请求失败', `HTTP ${response.status}: ${body.slice(0, 200)}`, [
+          '检查 API Key 是否有效',
+          '确认 embedding 模型名称正确',
+        ]);
+      }
+
+      const data = (await response.json()) as {
+        data: Array<{ embedding: number[]; index: number }>;
+      };
+
+      // 按 index 排序（API 不保证顺序）
+      const sorted = data.data.sort((a, b) => a.index - b.index);
+
+      // 填充结果 + 更新缓存
+      for (let i = 0; i < uncached.length; i++) {
+        // 循环条件保证索引有效，null 检查兜底
+        const text = uncached[i];
+        if (!text) continue;
+        const vector = sorted[i]?.embedding;
+        if (!vector) {
+          logger.warn({ text: text.slice(0, 50), index: i }, 'Embedding 缺失，跳过');
+          continue;
+        }
+        this.setCache(text, vector);
+        // null 检查兜底
+        const idx = uncachedIndices[i];
+        if (idx !== undefined) results[idx] = { text, vector };
+      }
+
+      return results.filter((r): r is EmbeddingResult => r !== null);
+    } finally {
+      // 统一清理：覆盖 HTTP 错误、空 body、正常完成所有路径
+      clearTimeout(timeoutId);
+      if (optsSignal) optsSignal.removeEventListener('abort', onOptsAbort);
+    }
   }
 
   /**

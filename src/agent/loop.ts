@@ -15,6 +15,7 @@ import type { AgentChunk, UIMessages } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
+import { runGuardrails } from '@/agent/guardrail.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { MemoraError, isRetryableErrorCode, toError, type ToolErrorCodeValue } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
@@ -222,11 +223,16 @@ export class AgentLoop {
 
       // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
       // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
-      const inputGuardResult = this.runInputGuardrails(userInput);
+      const inputGuardResult = runGuardrails(this.guardrailRules, userInput, this.ui);
       if (inputGuardResult.blocked) {
         // P3: try/finally 确保 done 一定送达，即使 text yield 异常
+        // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
         try {
-          yield { type: 'text', content: inputGuardResult.message ?? 'Input blocked by guardrail' };
+          yield {
+            type: 'text',
+            content: inputGuardResult.message ?? 'Input blocked by guardrail',
+            guardrailBlocked: true,
+          };
         } finally {
           yield { type: 'done' };
         }
@@ -340,11 +346,16 @@ export class AgentLoop {
         }
 
         // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
-        const outputGuardResult = this.runOutputGuardrails(llmResult.fullContent);
+        const outputGuardResult = runGuardrails(this.guardrailRules, llmResult.fullContent, this.ui);
         if (outputGuardResult.blocked) {
           // P3: try/finally 确保 done 一定送达，即使 text yield 异常
+          // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
           try {
-            yield { type: 'text', content: outputGuardResult.message ?? 'Output blocked by guardrail' };
+            yield {
+              type: 'text',
+              content: outputGuardResult.message ?? 'Output blocked by guardrail',
+              guardrailBlocked: true,
+            };
           } finally {
             yield { type: 'done' };
           }
@@ -943,68 +954,7 @@ export class AgentLoop {
     }
   }
 
-  // ─── 护栏与 Reflection 辅助方法 ──────────────────────────
-
-  /**
-   * 输入护栏检查
-   *
-   * 在用户输入注入上下文之前运行，遍历所有 guardrail 规则，
-   * 用正则匹配用户输入。命中 block action 时返回 blocked=true。
-   *
-   * 护栏自身异常（正则编译失败等）降级为"放行 + 记日志"，
-   * 永远不阻断用户对话（降级优先原则）。
-   */
-  private runInputGuardrails(input: string): {
-    blocked: boolean;
-    message?: string;
-    warning?: string;
-  } {
-    if (this.guardrailRules.length === 0) return { blocked: false };
-
-    for (const rule of this.guardrailRules) {
-      try {
-        // 从记忆内容中提取 pattern（格式：pattern: /regex/ action: block|warn）
-        const patternMatch = rule.content.match(/pattern:\s*(.+)/);
-        const actionMatch = rule.content.match(/action:\s*(block|warn)/);
-        if (!patternMatch || !actionMatch) continue;
-
-        const pattern = patternMatch[1]?.trim();
-        const action = actionMatch[1]?.trim();
-        if (!pattern || !action) continue;
-        // 去掉正则定界符 //
-        const regexStr =
-          pattern.startsWith('/') && pattern.endsWith('/') ? pattern.slice(1, -1) : pattern;
-        const regex = new RegExp(regexStr, 'i');
-
-        if (regex.test(input)) {
-          if (action === 'block') {
-            logger.warn({ rule: rule.name, pattern: regexStr }, '输入护栏阻断');
-            return { blocked: true, message: this.ui.inputBlockedByGuard(rule.name) };
-          }
-          logger.warn({ rule: rule.name, pattern: regexStr }, '输入护栏警告');
-          return { blocked: false, warning: this.ui.inputBlockedByGuard(rule.name) };
-        }
-      } catch (err) {
-        // 护栏自身异常降级：放行 + 记日志
-        logger.error({ rule: rule.name, err }, '护栏规则执行异常，已降级放行');
-      }
-    }
-    return { blocked: false };
-  }
-
-  /**
-   * 输出护栏检查
-   *
-   * 在 LLM 响应返回给用户之前运行，防止敏感信息泄露。
-   * 输入/输出共享同一护栏规则集。
-   */
-  private runOutputGuardrails(output: string): {
-    blocked: boolean;
-    message?: string;
-    warning?: string;
-  } {
-    return this.runInputGuardrails(output);
-  }
+  // ─── Reflection 辅助方法 ────────────────────────────────
 
   /**
    * 判断工具错误结果是否可重试（Reflection 用）

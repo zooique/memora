@@ -40,6 +40,7 @@ import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/ses
 import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+import type { MemoryMutator } from '@/agent/managers/memoryMutator.js';
 import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { configError } from '@/utils/errors.js';
@@ -53,7 +54,7 @@ import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IMemoryRelationStore } from '@/memory/relationStore.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { VectorStore } from '@/memory/vectorStore.js';
+import type { IVectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 
@@ -93,8 +94,8 @@ export interface AgentOptions {
   allowedPaths?: string[];
   /** 写入确认 */
   confirmWrites?: boolean;
-  /** 向量存储（可选，提供时启用语义搜索召回） */
-  vectorStore?: VectorStore;
+  /** 向量存储（可选，提供时启用语义搜索召回；宿主可注入任意 IVectorStore 实现） */
+  vectorStore?: IVectorStore;
   /** 召回时排除的 source 标签（默认 ['persona', 'rule', 'skill']，这些已由 bootstrap 注入） */
   recallExcludeSources?: string[];
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
@@ -138,7 +139,7 @@ interface AgentConfig {
   permission: 'owner' | 'guest';
   allowedPaths: string[];
   confirmWrites: boolean;
-  vectorStore: VectorStore | undefined;
+  vectorStore: IVectorStore | undefined;
   recallExcludeSources: string[];
   storage: IMemoryStorage | undefined;
   relationStore: IMemoryRelationStore | undefined;
@@ -207,6 +208,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
+  /** 记忆写入器（P1-2 拆分，与 MemoryInspector 严格分工：写操作代理；ES 私有字段避免与 getter 重名递归） */
+  #memoryMutator: MemoryMutator | null = null;
   private workProjection: WorkProjectionManager | null = null;
   /** AutoConfigRefiner（模式 3：Agent 智能总结） */
   private autoConfigRefiner: AutoConfigRefiner | null = null;
@@ -847,6 +850,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = result.insightExtractor;
     this.configManager = result.configManager;
     this.memoryInspector = result.memoryInspector;
+    this.#memoryMutator = result.memoryMutator;
     this.autoConfigRefiner = result.autoConfigRefiner;
     this.workProjection = result.workProjection;
     this.sessionArchiver = result.sessionArchiver;
@@ -1195,6 +1199,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.insightExtractor = null;
     this.configManager = null;
     this.memoryInspector = null;
+    this.#memoryMutator = null;
     this.autoConfigRefiner = null;
     this.sessionArchiver = null;
     this.pctx = null;
@@ -1359,6 +1364,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   get memory(): MemoryInspector | null {
     return this.memoryInspector;
+  }
+
+  /**
+   * 记忆写入器（可能为 null）—— upsert / delete / restore / purge / purgeExpired /
+   * addRelation / removeRelation
+   *
+   * P1-2 拆分：从 MemoryInspector 拆出写操作代理，与 MemoryInspector 严格分工。
+   * 返回 null 时表示 Agent 未初始化或存储层未就绪。
+   * 宿主项目常用模式：`const m = agent.memoryMutator; if (!m) return; m.upsert(...)`
+   */
+  get memoryMutator(): MemoryMutator | null {
+    return this.#memoryMutator;
   }
 
   /**

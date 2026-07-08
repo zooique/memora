@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InsightExtractor, type MemoryKeywords } from '@/agent/managers/insightExtractor.js';
+import { RelationBuilder } from '@/agent/managers/relationBuilder.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
 import { LlmProvider } from '@/llm/provider.js';
@@ -536,8 +537,9 @@ describe('InsightExtractor · ADR-014 关系构建', () => {
     storage = new InMemoryStorage();
     relationStore = new InMemoryRelationStore();
     provider = new MockProvider();
-    // 注入 relationStore，启用关系构建
-    extractor = new InsightExtractor(provider, storage, relationStore);
+    // 注入 RelationBuilder（P1-3 拆分后替代直接 relationStore 注入），启用关系构建
+    const relationBuilder = new RelationBuilder(storage, relationStore);
+    extractor = new InsightExtractor(provider, storage, relationBuilder);
     extractor.bindGetRecentHistory(() => []);
   });
 

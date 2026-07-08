@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { recall, extractKeywords } from '@/memory/recall.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { VectorStore } from '@/memory/vectorStore.js';
+import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { Memory } from '@/memory/types.js';
 
 /**
@@ -196,7 +196,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
     );
     vi.mocked(mockStorage.search).mockReturnValue([]);
 
-    const memories = await recall(mockStorage, '测试查询', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试查询', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(1);
     expect(memories[0]!.id).toBe('insight:semantic-1');
@@ -211,7 +211,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
       makeMemory({ id: 'insight:1', source: 'insight', score: 0.5 }),
     ]);
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(mockVectorStore.search).not.toHaveBeenCalled();
     expect(memories).toHaveLength(1);
@@ -226,7 +226,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
       makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
     );
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     // persona 被默认排除，应返回空
     expect(memories).toHaveLength(0);
@@ -244,7 +244,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
       makeMemory({ id: 'insight:dup', source: 'insight', score: 0.8 }),
     ]);
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     // 同一 id 应去重，仅返回 1 条
     expect(memories).toHaveLength(1);
@@ -286,7 +286,7 @@ describe('recall · 双通道融合排序', () => {
       makeMemory({ id: 'insight:B', source: 'insight', score: 0.9 }),
     ]);
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(2);
     // A 的综合分(0.74) > B 的综合分(0.36)，A 应排在前面
@@ -309,7 +309,7 @@ describe('recall · 双通道融合排序', () => {
       makeMemory({ id: 'insight:B', source: 'insight', score: 0.95 }),
     ]);
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(2);
     // B 的综合分(0.38) > A 的综合分(0.36)，B 应排在前面
@@ -337,7 +337,7 @@ describe('recall · 双通道融合排序', () => {
     ]);
 
     const memories = await recall(mockStorage, '测试', {
-      vectorStore: mockVectorStore as unknown as VectorStore,
+      vectorStore: mockVectorStore as unknown as IVectorStore,
       limit: 2,
     });
 
@@ -373,7 +373,7 @@ describe('recall · 降级策略', () => {
       makeMemory({ id: 'insight:fallback', source: 'insight', score: 0.7 }),
     ]);
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     // 语义搜索失败，降级到关键词搜索，仍应返回结果
     expect(memories).toHaveLength(1);
@@ -395,7 +395,7 @@ describe('recall · 降级策略', () => {
       throw new Error('SQLite 锁定');
     });
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     // 关键词搜索失败，仅返回语义搜索结果
     expect(memories).toHaveLength(1);
@@ -412,7 +412,7 @@ describe('recall · 降级策略', () => {
       throw new Error('SQLite 锁定');
     });
 
-    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as VectorStore });
+    const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toEqual([]);
   });
@@ -425,7 +425,7 @@ describe('recall · 降级策略', () => {
     };
 
     await recall(mockStorage, '测试', {
-      vectorStore: mockVectorStore as unknown as VectorStore,
+      vectorStore: mockVectorStore as unknown as IVectorStore,
       minSimilarity: 0.5,
     });
 

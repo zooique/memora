@@ -6,7 +6,7 @@
  *   2. 记忆搜索（混合搜索 + 降级）
  *   3. 仪表盘数据聚合
  */
-import type { Agent, SuggestHit, VectorStore, Memory } from 'memora';
+import type { Agent, SuggestHit, IVectorStore, Memory } from 'memora';
 import type { MemoryRelation, RelationPath, RelationNeighbor } from 'memora';
 import { logger } from 'memora';
 import { DEFAULT_LIST_LIMIT } from '../constants.js';
@@ -139,7 +139,7 @@ export interface MemorySearchResult {
  */
 export class MemoryController {
   private agent: Agent;
-  private vectorStore: VectorStore | null;
+  private vectorStore: IVectorStore | null;
   /**
    * 每日消息计数提供者（缺口 3.4 修复）
    *
@@ -149,7 +149,7 @@ export class MemoryController {
    */
   private messageCountProvider: () => Record<string, number> = () => ({});
 
-  constructor(agent: Agent, vectorStore?: VectorStore) {
+  constructor(agent: Agent, vectorStore?: IVectorStore) {
     this.agent = agent;
     this.vectorStore = vectorStore ?? null;
   }
@@ -252,12 +252,14 @@ export class MemoryController {
    * @returns 是否成功软删除（不存在或已软删除时返回 false）
    */
   delete(id: string): boolean {
+    // P1-2 拆分：读检查走 MemoryInspector，写操作走 MemoryMutator
     const inspector = this.agent.memory;
-    if (!inspector) return false;
+    const mutator = this.agent.memoryMutator;
+    if (!inspector || !mutator) return false;
     // getById 返回 null 表示不存在或已软删除
     const exists = inspector.getById(id);
     if (!exists) return false;
-    inspector.delete(id);
+    mutator.delete(id);
     // 软删除不删除向量索引，restore 时无需重新嵌入
     return true;
   }
@@ -271,12 +273,14 @@ export class MemoryController {
    * @returns 是否成功恢复（不存在或未软删除时返回 false）
    */
   restore(id: string): boolean {
+    // P1-2 拆分：读检查走 MemoryInspector，写操作走 MemoryMutator
     const inspector = this.agent.memory;
-    if (!inspector) return false;
+    const mutator = this.agent.memoryMutator;
+    if (!inspector || !mutator) return false;
     // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
     const deleted = inspector.getDeletedById(id);
     if (!deleted) return false;
-    inspector.restore(id);
+    mutator.restore(id);
     return true;
   }
 
@@ -294,12 +298,14 @@ export class MemoryController {
    * @returns 是否成功删除（记忆不在回收站时返回 false）
    */
   purge(id: string): boolean {
+    // P1-2 拆分：读检查走 MemoryInspector，写操作走 MemoryMutator
     const inspector = this.agent.memory;
-    if (!inspector) return false;
+    const mutator = this.agent.memoryMutator;
+    if (!inspector || !mutator) return false;
     // SEC-GAP6-02：用 getDeletedById 替代 listDeleted().some()，避免 50 条上限
     const deleted = inspector.getDeletedById(id);
     if (!deleted) return false;
-    inspector.purge(id);
+    mutator.purge(id);
     // 物理删除时同步清理向量索引（对齐 upsert 错误处理）
     if (this.vectorStore) {
       try {
@@ -343,12 +349,12 @@ export class MemoryController {
    * @returns 记忆唯一标识（${source}:${name} 格式）
    */
   upsert(source: string, name: string, content: string, score = 0.5): string {
-    // 统一通过 agent.memory 访问
-    const inspector = this.agent.memory;
-    if (!inspector) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
+    // P1-2 拆分：写操作走 MemoryMutator（inspector 只读）
+    const mutator = this.agent.memoryMutator;
+    if (!mutator) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
     const now = new Date().toISOString();
     const id = `${source}:${name}`;
-    inspector.upsert({
+    mutator.upsert({
       id,
       source,
       name,
@@ -515,9 +521,10 @@ export class MemoryController {
    * @param weight 关系权重 0-1
    */
   addRelation(sourceId: string, targetId: string, type: string, weight: number): void {
-    const memory = this.agent.memory;
-    if (!memory) return;
-    memory.addRelation({
+    // P1-2 拆分：写操作已迁移至 agent.memoryMutator
+    const mutator = this.agent.memoryMutator;
+    if (!mutator) return;
+    mutator.addRelation({
       sourceId,
       targetId,
       type,
@@ -537,9 +544,10 @@ export class MemoryController {
    * @param type 关系类型
    */
   removeRelation(sourceId: string, targetId: string, type: string): void {
-    const memory = this.agent.memory;
-    if (!memory) return;
-    memory.removeRelation(sourceId, targetId, type);
+    // P1-2 拆分：写操作已迁移至 agent.memoryMutator
+    const mutator = this.agent.memoryMutator;
+    if (!mutator) return;
+    mutator.removeRelation(sourceId, targetId, type);
   }
 
   /**

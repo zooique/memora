@@ -218,15 +218,16 @@ export class SpriteLifecycleManager {
 
   /** 执行一次过期记忆清理 */
   private purgeExpiredMemories(): void {
-    const inspector = this.agent.memory;
-    if (!inspector) return;
+    // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator（写操作代理）
+    const mutator = this.agent.memoryMutator;
+    if (!mutator) return;
 
     const retentionDays = this.config.recycleBinRetentionDays;
     if (retentionDays <= 0) return;
 
     const threshold = new Date(Date.now() - retentionDays * MS_PER_DAY);
     try {
-      const purgedCount = inspector.purgeExpired(threshold);
+      const purgedCount = mutator.purgeExpired(threshold);
       if (purgedCount > 0) {
         logger.info(
           { purgedCount, retentionDays, threshold: threshold.toISOString() },

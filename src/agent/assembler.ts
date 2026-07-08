@@ -20,9 +20,12 @@ import { SkillManager } from '@/skill/skillManager.js';
 import { UserProfile } from '@/memory/userProfile.js';
 import { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { InsightExtractor } from '@/agent/managers/insightExtractor.js';
+import { RelationBuilder } from '@/agent/managers/relationBuilder.js';
 import { SessionArchiver } from '@/agent/managers/sessionArchiver.js';
 import { ConfigManager } from '@/agent/managers/configManager.js';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+// MemoryMutator（P1-2 拆分）：写操作代理，与 MemoryInspector 严格分工
+import { MemoryMutator } from '@/agent/managers/memoryMutator.js';
 // MemoryAdvisor 在组合根装配，注入 MemoryInspector（组合根一致性）
 import { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import { AutoConfigRefiner } from '@/agent/managers/autoConfigRefiner.js';
@@ -71,6 +74,8 @@ export interface AssembleOutput {
   insightExtractor: InsightExtractor;
   configManager: ConfigManager;
   memoryInspector: MemoryInspector;
+  /** 记忆写入器（P1-2 拆分，与 MemoryInspector 严格分工：写操作代理） */
+  memoryMutator: MemoryMutator;
   autoConfigRefiner: AutoConfigRefiner;
   /** 会话内容归档器（content 类记忆） */
   sessionArchiver: SessionArchiver;
@@ -165,8 +170,10 @@ export async function assembleComponents(
 
   // InsightExtractor 的 writeExtensions 在运行时由 Agent.chat() 设置
   // getRecentHistory 在 AgentLoop 创建后通过 bindGetRecentHistory 注入（消除 loopRef 闭包）
-  // ADR-014：relationStore 可选注入，未注入时 InsightExtractor 跳过关系构建
-  const insightExtractor = new InsightExtractor(provider, pctx.index, relationStore ?? null);
+  // P1-3 拆分：RelationBuilder 封装 ADR-014 关系构建逻辑，InsightExtractor 通过委托调用
+  // relationStore 可选注入 RelationBuilder，未注入时跳过关系构建（降级优先）
+  const relationBuilder = new RelationBuilder(pctx.index, relationStore ?? null);
+  const insightExtractor = new InsightExtractor(provider, pctx.index, relationBuilder);
 
   // SessionArchiver（会话内容归档器，content 类记忆）
   // 与 InsightExtractor 同模式：构造时注入 provider + storage + sessionStore
@@ -201,6 +208,9 @@ export async function assembleComponents(
   // advisor（必填）移到 relationStore（可选）之前，参数顺序符合"必填在前"惯例
   const memoryAdvisor = new MemoryAdvisor(pctx.index);
   const memoryInspector = new MemoryInspector(pctx.index, loop, history, memoryAdvisor, relationStore ?? null);
+  // MemoryMutator（P1-2 拆分）：写操作代理，与 MemoryInspector 共享同一 relationStore 实例
+  // 同一 relationStore 注入两者：MemoryInspector 用于查询，MemoryMutator 用于写入
+  const memoryMutator = new MemoryMutator(pctx.index, relationStore ?? null);
 
   // AutoConfigRefiner（模式 3：Agent 智能总结）
   const autoConfigRefiner = new AutoConfigRefiner((suggestion) =>
@@ -219,6 +229,7 @@ export async function assembleComponents(
     insightExtractor,
     configManager,
     memoryInspector,
+    memoryMutator,
     autoConfigRefiner,
     sessionArchiver,
   };

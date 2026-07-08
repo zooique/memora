@@ -1,35 +1,25 @@
 /**
- * 项目管理器 — 多项目并发
+ * 项目管理器 — 多项目生命周期编排（瘦身后）
  *
- * 核心职责：
- *   - 管理项目注册表（~/.memora/projects.json）
- *   - 锁文件机制（.memora/.lock）防止同项目并发写入导致数据损坏
+ * 核心职责（P1-4 拆分后聚焦编排）：
+ *   - 项目初始化编排（关闭旧项目 → 加锁 → 加载资源 → 构建上下文）
  *   - Agent 级资源管理（memora.db 全局共享，不随项目切换重建）
  *   - 两层记忆加载：项目级（projectPath/.memora/）→ Agent 级（configDir）
  *   - 项目切换（只更新 projectPath + security + 重新加载项目 rules/skills）
+ *
+ * 已拆分至专职模块（P1-4，1.0 接口稳定化）：
+ *   - ProjectRegistry（src/memory/projectRegistry.ts）：注册表读写 + 条目管理
+ *   - LockManager（src/memory/lockManager.ts）：锁文件获取/释放 + 残留锁检测
  *
  * 设计原则（单 Agent 模型）：
  *   - memora.db 只有一个（Agent 级），所有项目共享同一记忆数据库
  *   - 项目切换不重建数据库，只更新安全守卫 + 重新扫描项目规则
  *   - 项目级 .memora/ 仅存放 rules/ 和 skills/（无 memora.db）
  *
- * 锁文件策略：
- *   - 打开项目时创建 .lock 文件（含 PID + 时间戳 + 主机名）
- *   - 关闭/切换项目时删除 .lock 文件
- *   - 检测到残留锁时：判断进程是否存活 → 存活则警告 / 已死则清理
- *   - 不强制阻止并发（CLI-first，用户决定）
- *
- * 详见 ADR-008 · 目录结构按"职责分层"
+ * 详见 ADR-008 · 目录结构按"职责分层" + 迭代文档 P1-4
  */
 import { resolve, join } from 'node:path';
-import { hostname } from 'node:os';
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
-import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { FileStore } from '@/memory/store.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -37,10 +27,15 @@ import { MemoryLoader } from '@/memory/loader.js';
 import type { LoadResult } from '@/memory/loader.js';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { logger } from '@/logging/logger.js';
-import { toError } from '@/utils/toError.js';
 import { expandHome } from '@/utils/path.js';
 import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
-import { nowIso } from '@/utils/time.js';
+import { ProjectRegistry, type ProjectEntry } from '@/memory/projectRegistry.js';
+import { LockManager } from '@/memory/lockManager.js';
+
+// P1-4 拆分后 ProjectEntry 已迁移至 projectRegistry.ts，此处重导出保持公共 API 向后兼容
+export type { ProjectEntry } from '@/memory/projectRegistry.js';
+
+// ─── 类型 ────────────────────────────────────────────────
 
 /**
  * 项目上下文：打开一个项目后产出的一组组件
@@ -68,86 +63,6 @@ export interface ProjectContext {
 }
 
 /**
- * 锁文件内容
- */
-interface LockInfo {
-  /** 持有锁的进程 PID */
-  pid: number;
-  /** 获取锁的时间 */
-  acquiredAt: string;
-  /** 主机名 */
-  hostname: string;
-}
-
-/**
- * 项目注册表条目
- */
-export interface ProjectEntry {
-  /** 项目根目录的绝对路径 */
-  path: string;
-  /** 项目名称（用户自定义或目录名） */
-  name: string;
-  /** 最后打开时间 */
-  lastOpened: string;
-}
-
-// ─── QC-24 类型守卫 ─────────────────────────────────────
-// 对不可信磁盘文件 JSON.parse 结果进行运行时校验，替代 `as` 类型断言
-
-/**
- * 判断值是否为非数组对象（排除 null）
- *
- * @param value 待校验的值
- * @returns true 表示是普通对象
- */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/**
- * 判断值是否为 LockInfo（锁文件结构）
- *
- * @param value 待校验的值
- * @returns true 表示符合 LockInfo 结构
- */
-function isLockInfo(value: unknown): value is LockInfo {
-  if (!isPlainObject(value)) return false;
-  return (
-    typeof value['pid'] === 'number' &&
-    typeof value['acquiredAt'] === 'string' &&
-    typeof value['hostname'] === 'string'
-  );
-}
-
-/**
- * 判断值是否为 ProjectEntry（项目注册表条目）
- *
- * @param value 待校验的值
- * @returns true 表示符合 ProjectEntry 结构
- */
-function isProjectEntry(value: unknown): value is ProjectEntry {
-  if (!isPlainObject(value)) return false;
-  return (
-    typeof value['path'] === 'string' &&
-    typeof value['name'] === 'string' &&
-    typeof value['lastOpened'] === 'string'
-  );
-}
-
-/**
- * 判断值是否为 ProjectEntry 数组
- *
- * 过滤掉不符合结构的条目，仅保留合法条目
- *
- * @param value 待校验的值
- * @returns 解析后的合法条目数组（损坏时返回空数组）
- */
-function asProjectEntryArray(value: unknown): ProjectEntry[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter(isProjectEntry);
-}
-
-/**
  * ProjectManager 构造选项
  */
 export interface ProjectManagerOptions {
@@ -172,6 +87,8 @@ export interface ProjectManagerOptions {
   ) => SecurityGuard;
 }
 
+// ─── 类 ──────────────────────────────────────────────────
+
 /**
  * 项目管理器
  *
@@ -179,18 +96,17 @@ export interface ProjectManagerOptions {
  * 1. 初始化当前项目（加锁 + 加载两层配置）
  * 2. /project <name> 切换到新项目（解锁旧项目 + 加锁新项目）
  * 3. 退出时清理锁文件
+ *
+ * P1-4 拆分后：注册表/锁文件实现委托给 ProjectRegistry / LockManager，
+ * 本类聚焦生命周期编排。
  */
 export class ProjectManager {
-  /** 项目注册表路径 */
-  private readonly registryPath: string;
   /** Agent 级数据目录（memora.db 所在目录） */
   private readonly agentDataDir: string;
   /** Agent 级存储实例（全局共享，不随项目切换重建） */
   private agentIndex: IMemoryStorage | null = null;
   /** 当前打开的项目路径 */
   private currentProjectPath: string | null = null;
-  /** 当前持有的锁文件路径 */
-  private currentLockPath: string | null = null;
   /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage 兜底） */
   private externalStorage: IMemoryStorage | null;
   /** SecurityGuard 工厂函数（由 Agent 层注入） */
@@ -200,6 +116,10 @@ export class ProjectManager {
     configDir?: string,
     agentDataDir?: string,
   ) => SecurityGuard;
+  /** 项目注册表（P1-4 拆分，专职管理 projects.json） */
+  private readonly registry: ProjectRegistry;
+  /** 锁文件管理器（P1-4 拆分，专职管理 .memora/.lock） */
+  private readonly lockManager: LockManager;
 
   constructor(options: ProjectManagerOptions) {
     const { dataDir, storage, registryDir, createSecurityGuard } = options;
@@ -207,11 +127,13 @@ export class ProjectManager {
     this.agentDataDir = memoraHome;
     // 注册表目录：优先使用宿主指定的用户级路径，避免每项目重复存储
     const registryHome = registryDir ? resolve(expandHome(registryDir)) : memoraHome;
-    this.registryPath = join(registryHome, 'projects.json');
     // 保存外部注入的存储实例（宿主项目注入时使用）
     this.externalStorage = storage ?? null;
     // 保存 SecurityGuard 工厂函数
     this.createSecurityGuard = createSecurityGuard;
+    // P1-4 拆分：委托注册表/锁文件管理给专职模块
+    this.registry = new ProjectRegistry(join(registryHome, 'projects.json'));
+    this.lockManager = new LockManager();
   }
 
   /**
@@ -266,11 +188,10 @@ export class ProjectManager {
       await this.closeProject();
     }
 
-    // 2) 解析 memoraDir + 获取项目级锁
+    // 2) 解析 memoraDir + 获取项目级锁（P1-4 拆分后委托给 LockManager）
     const memoraDir = this.resolveMemoraDir(projectPath);
-    await this.acquireLock(memoraDir);
+    await this.lockManager.acquire(memoraDir);
     this.currentProjectPath = projectPath;
-    this.currentLockPath = join(memoraDir, '.lock');
 
     // 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
     try {
@@ -293,11 +214,10 @@ export class ProjectManager {
       );
     } catch (err) {
       // 后续步骤失败时释放锁并重置状态，避免锁文件残留导致下次启动检测失败
-      await this.releaseLock().catch((releaseErr: unknown) => {
+      await this.lockManager.release().catch((releaseErr: unknown) => {
         logger.warn({ err: releaseErr }, '释放项目锁失败');
       });
       this.currentProjectPath = null;
-      this.currentLockPath = null;
       throw err;
     }
   }
@@ -379,9 +299,9 @@ export class ProjectManager {
       ? this.createSecurityGuard(projectPath, memoraDir, configDir, this.agentDataDir)
       : null;
 
-    // 注册到项目表
-    const name = projectName || this.inferProjectName(projectPath);
-    this.registerProject(projectPath, name);
+    // 注册到项目表（P1-4 拆分后委托给 ProjectRegistry）
+    const name = projectName || ProjectRegistry.inferProjectName(projectPath);
+    this.registry.register(projectPath, name);
 
     logger.info(
       {
@@ -413,9 +333,8 @@ export class ProjectManager {
    */
   async closeProject(): Promise<void> {
     // Agent 级 index/sessionStore 不关闭——它们是共享的，在整个 Agent 生命周期内持久存在
-    await this.releaseLock();
+    await this.lockManager.release();
     this.currentProjectPath = null;
-    this.currentLockPath = null;
   }
 
   /**
@@ -438,9 +357,11 @@ export class ProjectManager {
 
   /**
    * 列出已注册的项目（IX-02：统一为 getter 风格，与 persona/skill 一致）
+   *
+   * P1-4 拆分后委托给 ProjectRegistry。
    */
   get list(): ProjectEntry[] {
-    return this.readRegistry();
+    return this.registry.list;
   }
 
   /**
@@ -448,40 +369,30 @@ export class ProjectManager {
    * @deprecated 请使用 `projectManager.list` getter 代替
    */
   listProjects(): ProjectEntry[] {
-    return this.readRegistry();
+    return this.registry.list;
   }
 
   /**
    * 注册项目到注册表
+   *
+   * P1-4 拆分后委托给 ProjectRegistry。
+   *
+   * @param projectPath 项目根目录
+   * @param name 项目名称
    */
   registerProject(projectPath: string, name: string): void {
-    const registry = this.readRegistry();
-    // Windows 文件系统不区分大小写，路径大小写不同视为同一项目
-    const existing = registry.findIndex((e) => e.path.toLowerCase() === projectPath.toLowerCase());
-
-    const entry: ProjectEntry = {
-      path: projectPath,
-      name,
-      lastOpened: nowIso(),
-    };
-
-    if (existing >= 0) {
-      registry[existing] = entry;
-    } else {
-      registry.push(entry);
-    }
-
-    this.writeRegistry(registry);
+    this.registry.register(projectPath, name);
   }
 
   /**
    * 从注册表移除项目
+   *
+   * P1-4 拆分后委托给 ProjectRegistry。
+   *
+   * @param projectPath 项目根目录
    */
   unregisterProject(projectPath: string): void {
-    const registry = this.readRegistry();
-    // Windows 文件系统不区分大小写，大小写不同视为同一项目
-    const filtered = registry.filter((e) => e.path.toLowerCase() !== projectPath.toLowerCase());
-    this.writeRegistry(filtered);
+    this.registry.unregister(projectPath);
   }
 
   /**
@@ -492,149 +403,11 @@ export class ProjectManager {
   }
 
   /**
-   * 获取锁文件
-   * 如果锁文件存在且进程存活，发出警告但不阻止
-   * 如果锁文件存在但进程已死，清理残留锁
-   */
-  private async acquireLock(memoraDir: string): Promise<void> {
-    const lockPath = join(memoraDir, '.lock');
-
-    try {
-      // 尝试读取锁文件（存在时）
-      const raw = await readFile(lockPath, 'utf-8');
-      // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as LockInfo` 类型断言
-      const parsed: unknown = JSON.parse(raw);
-      if (!isLockInfo(parsed)) {
-        // 锁文件结构损坏，清理后重新获取
-        logger.warn({ path: lockPath }, '锁文件结构损坏，清理残留');
-        await this.safeUnlink(lockPath);
-        return;
-      }
-      const info = parsed;
-
-      // 检查进程是否存活
-      if (this.isProcessAlive(info.pid)) {
-        logger.warn(
-          { pid: info.pid, acquiredAt: info.acquiredAt, hostname: info.hostname },
-          '项目已被其他进程打开（锁文件存在），继续操作可能导致数据冲突',
-        );
-      } else {
-        // 残留锁，清理
-        logger.info({ pid: info.pid }, '清理残留锁文件（进程已退出）');
-        await this.safeUnlink(lockPath);
-      }
-    } catch (err) {
-      // 锁文件不存在或损坏，清理：记录 debug 日志便于排查（不存在属正常首次启动）
-      logger.debug({ path: lockPath, err: toError(err).message }, '锁文件读取失败，清理残留');
-      await this.safeUnlink(lockPath);
-    }
-
-    // 写入新锁
-    const lockInfo: LockInfo = {
-      pid: process.pid,
-      acquiredAt: nowIso(),
-      hostname: hostname(),
-    };
-
-    await mkdir(memoraDir, { recursive: true });
-    await writeFile(lockPath, JSON.stringify(lockInfo, null, 2), 'utf-8');
-  }
-
-  /**
-   * 释放锁文件
-   */
-  private async releaseLock(): Promise<void> {
-    if (this.currentLockPath) {
-      await this.safeUnlink(this.currentLockPath);
-    }
-  }
-
-  /**
-   * 安全删除文件（忽略不存在的错误）
-   */
-  private async safeUnlink(filePath: string): Promise<void> {
-    try {
-      await unlink(filePath);
-    } catch (err) {
-      logger.debug({ path: filePath, err: toError(err).message }, 'safeUnlink 忽略删除失败');
-    }
-  }
-
-  /**
-   * 检查进程是否存活
-   *
-   * 跨平台统一使用 process.kill(pid, 0) 探测进程存活
-   * （Windows 上 process.kill(pid, 0) 同样有效）
-   */
-  private isProcessAlive(pid: number): boolean {
-    try {
-      // 发送信号 0 检查进程是否存在（POSIX 兼容）
-      // Windows 上 process.kill(pid, 0) 也会抛出错误如果进程不存在
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      logger.debug({ pid }, '进程不存在');
-      return false;
-    }
-  }
-
-  /**
    * 解析项目的 .memora/ 目录路径
    * 每个项目有独立的 .memora/ 目录（在项目根目录下）
    * 这与 config.memory.dataDir（用户级默认目录）不同
    */
   private resolveMemoraDir(projectPath: string): string {
     return resolve(projectPath, '.memora');
-  }
-
-  /**
-   * 从项目路径推断项目名称
-   * 取路径最后一段目录名
-   */
-  private inferProjectName(projectPath: string): string {
-    const parts = projectPath.replace(/[/\\]+$/, '').split(/[/\\]/);
-    return parts[parts.length - 1] || 'unnamed';
-  }
-
-  /**
-   * 读取项目注册表
-   *
-   * 同步读取：list getter 契约要求同步返回，注册表操作低频，同步 I/O 影响可控
-   * 损坏时返回空数组并记录警告日志，避免静默吞错掩盖磁盘故障
-   */
-  private readRegistry(): ProjectEntry[] {
-    if (!existsSync(this.registryPath)) {
-      return [];
-    }
-
-    try {
-      const raw = readFileSync(this.registryPath, 'utf-8');
-      // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as ProjectEntry[]` 类型断言
-      // 过滤掉不符合结构的条目，仅保留合法条目
-      const parsed: unknown = JSON.parse(raw);
-      const entries = asProjectEntryArray(parsed);
-      if (entries.length === 0 && Array.isArray(parsed) && parsed.length > 0) {
-        // 数组存在但所有条目都不合法，记录警告
-        logger.warn(
-          { path: this.registryPath, totalEntries: parsed.length },
-          '项目注册表所有条目结构不合法，返回空列表',
-        );
-      }
-      return entries;
-    } catch (err) {
-      // 注册表损坏：记录警告日志便于排查（不存在属正常首次启动，损坏需排查）
-      logger.warn({ path: this.registryPath, err: toError(err).message }, '项目注册表解析失败，返回空列表');
-      return [];
-    }
-  }
-
-  /**
-   * 写入项目注册表
-   */
-  private writeRegistry(entries: ProjectEntry[]): void {
-    // 确保目录存在
-    const dir = this.registryPath.replace(/[/\\][^/\\]+$/, '');
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(this.registryPath, JSON.stringify(entries, null, 2), 'utf-8');
   }
 }

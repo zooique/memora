@@ -16,7 +16,7 @@
  *   上下文感知而非内容感知——精灵通过文件变化、时间等上下文信号唤醒。
  */
 import type { Agent, AgentMetrics, Memory, UserProfileEntry } from 'memora';
-import type { VectorStore, ITracer } from 'memora';
+import type { IVectorStore, ITracer } from 'memora';
 // Phase 5.1/5.2：路径追溯 + 邻居查询返回类型（内核纯数据形态，IPC 传输可序列化）
 import type { RelationPath, RelationNeighbor } from 'memora';
 import { logger, toError } from 'memora';
@@ -129,7 +129,7 @@ export interface SpriteOptions {
   /** 项目路径（可选，默认取 dataDir。用于文件监听、项目规则加载等） */
   projectPath?: string;
   /** 向量存储（可选，注入后启用语义搜索） */
-  vectorStore?: VectorStore;
+  vectorStore?: IVectorStore;
   /** 路径白名单（可选，来自 Agent 的 allowedPaths，用于 fileWatcher 安全校验） */
   allowedPaths?: string[];
   /** 可观测性 tracer（可选，注入后关键路径会记录 span 到 trace.log） */

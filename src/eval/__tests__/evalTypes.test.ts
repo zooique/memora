@@ -65,27 +65,38 @@ describe('collectAgentChunks', () => {
     expect(collected.toolsCalled).toEqual(['read_file', 'search_memories']);
   });
 
-  it('应从 text chunk 检测输入护栏阻断', async () => {
+  it('应从 text chunk 结构化标志检测护栏阻断（输入护栏）', async () => {
+    // 通过 AgentChunk.text.guardrailBlocked 结构化字段判断，而非文案匹配
     const chunks: AgentChunk[] = [
-      { type: 'text', content: '输入被护栏规则阻断：检测到敏感内容' },
+      { type: 'text', content: '输入被护栏规则阻断：检测到敏感内容', guardrailBlocked: true },
     ];
 
     const collected = await collectAgentChunks(mockChunkStream(chunks));
     expect(collected.guardrailBlocked).toBe(true);
   });
 
-  it('应从 text chunk 检测输出护栏阻断', async () => {
+  it('应从 text chunk 结构化标志检测护栏阻断（输出护栏）', async () => {
     const chunks: AgentChunk[] = [
-      { type: 'text', content: '输出被护栏规则修正：移除了不安全内容' },
+      { type: 'text', content: '输出被护栏规则修正：移除了不安全内容', guardrailBlocked: true },
     ];
 
     const collected = await collectAgentChunks(mockChunkStream(chunks));
     expect(collected.guardrailBlocked).toBe(true);
   });
 
-  it('普通 text chunk 不应触发 guardrailBlocked', async () => {
+  it('普通 text chunk（无 guardrailBlocked 标志）不应触发阻断', async () => {
     const chunks: AgentChunk[] = [
       { type: 'text', content: '这是正常的助手回复' },
+    ];
+
+    const collected = await collectAgentChunks(mockChunkStream(chunks));
+    expect(collected.guardrailBlocked).toBe(false);
+  });
+
+  it('即使护栏文案出现但 guardrailBlocked 未置 true 也不应误判', async () => {
+    // 反向验证：结构化标志是唯一信号，文案包含关键词不再触发
+    const chunks: AgentChunk[] = [
+      { type: 'text', content: '提到了输入被护栏规则字样但实为讨论' },
     ];
 
     const collected = await collectAgentChunks(mockChunkStream(chunks));

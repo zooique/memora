@@ -6,7 +6,8 @@
  */
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { SOURCE_LABELS, inferSource, type Memory } from '@/memory/types.js';
+import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
+import { inferSource } from '@/memory/sourceValidation.js';
 import { parseFrontmatter, serializeFrontmatter as serializeFm } from '@/utils/frontmatter.js';
 import { logger } from '@/logging/logger.js';
 import { toError } from '@/utils/toError.js';

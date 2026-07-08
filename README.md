@@ -2,7 +2,7 @@
 
 > 通用 Agent 内核 — 本地、私有、领域无关，万物皆记忆
 
-[![npm](https://img.shields.io/npm/v/memora)](https://www.npmjs.com/package/memora)
+[![npm](https://img.shields.io/npm/v/@zooique/memora)](https://www.npmjs.com/package/@zooique/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
@@ -28,13 +28,13 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 ### 安装
 
 ```bash
-npm install memora
+npm install @zooique/memora
 ```
 
 ### 创建 Agent
 
 ```typescript
-import { Agent, createLlmProvider } from 'memora';
+import { Agent, createLlmProvider } from '@zooique/memora';
 
 // 宿主职责：创建 LLM Provider
 const provider = createLlmProvider({

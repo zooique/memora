@@ -233,61 +233,77 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
 /**
  * 全局日志单例
  *
- * 初始化为 console fallback，模块顶层异步尝试加载 pino。
- * 宿主通过 setLogger() 注入后自动替换。
+ * 初始化为 console fallback（同步可用，零 fs 副作用）。
+ * 首次日志调用时懒触发 pino 升级（确保模块 import 零 fs 副作用）。
+ * 宿主通过 setLogger() 注入后自动替换，并跳过 pino 升级。
  */
 let _logger: ILogger = createConsoleLogger();
 
-/** 标记 _logger 是否已被宿主注入（用于 setLogger 覆盖检测） */
+/** 标记 _logger 是否已被宿主注入（用于 setLogger 覆盖检测 + pino 升级跳过） */
 let _loggerInjected = false;
+
+/** pino 升级是否已启动（确保只触发一次，避免重复 fs 操作） */
+let _pinoUpgradeStarted = false;
 
 // 同步初始化 utils 层 logger 桥接（确保 utils 在 pino 异步加载前就有 console fallback）
 setUtilsLogger(_logger);
 
-// 模块加载时异步尝试升级到 pino（不阻塞模块导入）
-// 竞态守卫：then 回调内检查 _loggerInjected，避免覆盖宿主已注入的 logger
-// 场景：模块加载 → setLogger(custom) 同步执行 → tryCreatePinoLogger 异步 resolve
-// 此时若不加守卫，pino 会覆盖 custom，宿主 logger 静默丢失
-void tryCreatePinoLogger().then((pinoLogger) => {
-  // 守卫：宿主已通过 setLogger 注入自定义 logger，不再覆盖
-  if (_loggerInjected) {
-    // 仍同步桥接到 utils 层（utils 可能尚未收到宿主 logger）
+/**
+ * 懒触发 pino 升级
+ *
+ * 在首次日志调用时触发，确保模块 import 零 fs 副作用。
+ * - 宿主已注入 logger 时跳过升级（_loggerInjected 守卫）
+ * - 升级启动后不再重复触发（_pinoUpgradeStarted 守卫）
+ * - 竞态守卫：then 回调内再次检查 _loggerInjected，避免覆盖宿主在升级期间注入的 logger
+ */
+function maybeUpgradeToPino(): void {
+  if (_pinoUpgradeStarted || _loggerInjected) return;
+  _pinoUpgradeStarted = true;
+  void tryCreatePinoLogger().then((pinoLogger) => {
+    // 守卫：升级期间宿主可能已通过 setLogger 注入自定义 logger
+    if (_loggerInjected) {
+      setUtilsLogger(_logger);
+      return;
+    }
+    if (pinoLogger) {
+      _logger = pinoLogger;
+      _logger.info(
+        { level, prod: isProd, fileEnabled },
+        'logger 启动（pino）',
+      );
+    } else {
+      _logger.info(
+        { level, prod: isProd },
+        'logger 启动（console fallback，pino 未安装）',
+      );
+    }
+    // 桥接注入到 utils 层（utils 运行时不依赖 logging/）
     setUtilsLogger(_logger);
-    return;
-  }
-  if (pinoLogger) {
-    _logger = pinoLogger;
-    _logger.info(
-      { level, prod: isProd, fileEnabled },
-      'logger 启动（pino）',
-    );
-  } else {
-    _logger.info(
-      { level, prod: isProd },
-      'logger 启动（console fallback，pino 未安装）',
-    );
-  }
-  // 桥接注入到 utils 层（utils 运行时不依赖 logging/）
-  setUtilsLogger(_logger);
-});
+  });
+}
 
 /**
  * 全局日志访问器
  *
  * 20+ 个内核模块统一通过此变量输出日志。
+ * 首次访问任一方法时懒触发 pino 升级（确保 import 零 fs 副作用）。
  * 宿主注入自定义 logger 后，所有模块自动使用新实现。
  */
 export const logger: ILogger = {
   get info() {
+    maybeUpgradeToPino();
     return _logger.info.bind(_logger);
   },
   get warn() {
+    maybeUpgradeToPino();
     return _logger.warn.bind(_logger);
   },
   get error() {
+    maybeUpgradeToPino();
     return _logger.error.bind(_logger);
   },
   get debug() {
+    maybeUpgradeToPino();
     return _logger.debug.bind(_logger);
   },
 };
@@ -313,21 +329,12 @@ export function setLogger(newLogger: ILogger | undefined): void {
     _loggerInjected = true;
     _logger = newLogger;
   } else {
-    // 恢复默认：同步先恢复到 console fallback，异步再尝试升级到 pino
-    // 与模块加载时一致（先 console，再异步 pino），避免 setLogger(undefined) 后 _logger 仍指向旧实例
+    // 恢复默认：同步恢复到 console fallback
+    // pino 升级不主动触发——等下次日志调用时由 maybeUpgradeToPino() 懒触发
+    // 这样 setLogger(undefined) 零 fs 副作用，与模块加载时一致
     _loggerInjected = false;
+    _pinoUpgradeStarted = false; // 允许下次日志调用时重新触发升级
     _logger = createConsoleLogger();
     setUtilsLogger(_logger);
-    // 竞态守卫：若回调执行前宿主再次调用 setLogger(custom)，
-    // _loggerInjected 会被置为 true，此时不应覆盖
-    void tryCreatePinoLogger().then((pinoLogger) => {
-      // 守卫：恢复过程中宿主又注入了新 logger，不再覆盖
-      if (_loggerInjected) return;
-      if (pinoLogger) {
-        _logger = pinoLogger;
-        // 桥接注入到 utils 层
-        setUtilsLogger(_logger);
-      }
-    });
   }
 }

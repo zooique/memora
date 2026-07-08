@@ -1,8 +1,10 @@
-# Memora · 接入指南 v3.3
+# Memora · 接入指南 v1.0.0
 
 > 帮助宿主项目开发者快速理解 Memora 的设计理念和接入方法。
 >
-> **版本**：v3.3（最后更新：2026-07-05）
+> **版本**：v1.0.0（最后更新：2026-07-08）
+>
+> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：zod schema 单一真理源、IVectorStore 接口提取（JsonVectorStore 内置实现）、AbortSignal 合并工具、Logger 懒初始化（移除模块顶层副作用）、评估框架结构化信号（guardrailBlocked 替代文案匹配）、文档全量对齐（包名 @zooique/memora）。
 >
 > **v3.3 变更**：内核发布 v0.2.0（npm 正式包），精灵切换至 npm alias 依赖。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（EvalScenario/collectAgentChunks/evaluateResult）。
 >
@@ -93,8 +95,8 @@ npm install memora
 ### 2. 创建 Provider + Agent
 
 ```typescript
-import { Agent, createLlmProvider, VectorStore } from 'memora';
-import type { IMemoryStorage, ILogger, EmbeddingService } from 'memora';
+import { Agent, createLlmProvider, VectorStore } from '@zooique/memora';
+import type { IMemoryStorage, ILogger, EmbeddingService } from '@zooique/memora';
 
 // 宿主职责：创建 LLM Provider（Agent 不关心 API Key）
 const provider = createLlmProvider({
@@ -166,7 +168,7 @@ const reply = await agent.chatSync('你好');
 Agent 向宿主广播对话外事件（记忆变更、角色切换、衰减完成、会话分叉等）。
 
 ```typescript
-import type { AgentEventMap } from 'memora';
+import type { AgentEventMap } from '@zooique/memora';
 
 agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
 agent.on('personaSwitched', (e) => console.log(`角色: ${e.from} → ${e.to}`));
@@ -289,7 +291,7 @@ await agent.close(); // 释放项目锁 + 关闭数据库
 Memora 通过 `ISessionStore` 接口支持会话消息的持久化。宿主实现此接口，注入到 Agent。
 
 ```typescript
-import type { ISessionStore, SessionMessage } from 'memora';
+import type { ISessionStore, SessionMessage } from '@zooique/memora';
 
 // 宿主实现接口
 class FileSessionStore implements ISessionStore {
@@ -486,7 +488,7 @@ import {
   TypedEventEmitter,
   collectAgentChunks,
   evaluateResult,
-} from 'memora';
+} from '@zooique/memora';
 import type {
   ProviderConfig,
   Config,
@@ -561,7 +563,7 @@ import type {
   WriteConfirmationRequest,
   OpenAICompatibleProvider,
   OpenAICompatibleConfig,
-} from 'memora';
+} from '@zooique/memora';
 ```
 
 | 函数/类型 | 用途 |
@@ -571,7 +573,7 @@ import type {
 | `loadConfig(path?)` | 加载 memora.json 配置文件 |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
 | `InMemoryRelationStore` | IMemoryRelationStore 的纯内存实现（测试用） |
-| `VectorStore` | 向量存储类（宿主注入 EmbeddingService 后创建，启用语义搜索） |
+| `JsonVectorStore` | 向量存储内置实现（实现 IVectorStore 接口，宿主注入 EmbeddingService 后创建，启用语义搜索） |
 | `EmbeddingProvider` | OpenAI 兼容 Embedding 端点实现（满足 EmbeddingService 接口） |
 | `setLogger(logger)` | 替换全局日志实现 |
 | `logger` | 全局日志实例 |
@@ -637,7 +639,7 @@ interface ISpan {
 
 ```typescript
 import { trace } from '@opentelemetry/api';
-import type { ITracer, ISpan } from 'memora';
+import type { ITracer, ISpan } from '@zooique/memora';
 
 // 宿主实现 ITracer 接口（桥接 OpenTelemetry）
 class OtelTracer implements ITracer {
@@ -699,7 +701,7 @@ action: block
 当工具执行失败时，错误结果包含 `[ERR:TOOL:code]` 前缀。如果错误码标记为 retryable（如 `FILE_NOT_FOUND`、`ARGUMENT_ERROR`），AgentLoop 会自动注入 `[REFLECTION_HINT]` 系统消息，引导 LLM 修正参数后重试。
 
 ```typescript
-import { ToolErrorCode, isRetryableErrorCode } from 'memora';
+import { ToolErrorCode, isRetryableErrorCode } from '@zooique/memora';
 
 // 判断错误码是否可重试
 isRetryableErrorCode(ToolErrorCode.FILE_NOT_FOUND);  // true
@@ -717,7 +719,7 @@ Memora 提供了 Mock Eval 框架，用于 Agent 行为回归测试（不发起�
 ### 类型定义
 
 ```typescript
-import type { EvalScenario, EvalExpectation, EvalResult } from 'memora';
+import type { EvalScenario, EvalExpectation, EvalResult } from '@zooique/memora';
 // Eval 类型已从 memora 主包导出，宿主项目可直接 import
 ```
 
@@ -738,7 +740,7 @@ const scenario: EvalScenario = {
 ### 评估工具函数
 
 ```typescript
-import { collectAgentChunks, evaluateResult } from 'memora';
+import { collectAgentChunks, evaluateResult } from '@zooique/memora';
 
 // 从 AgentChunk 流中收集行为数据
 const collected = await collectAgentChunks(agent.chat('帮我看看第一章'));

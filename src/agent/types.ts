@@ -41,7 +41,18 @@ export interface RecalledMemorySummary {
 export type AgentChunk =
   | { type: 'recall'; memories: RecalledMemorySummary[] }
   | { type: 'thinking'; phase: ThinkingPhase }
-  | { type: 'text'; content: string }
+  | {
+      type: 'text';
+      content: string;
+      /**
+       * 护栏阻断标志（结构化信号）
+       *
+       * 当输入/输出被护栏规则阻断时为 true，让 eval 框架和宿主 UI
+       * 能通过结构化字段判断护栏触发，而非依赖文案子串匹配。
+       * 非护栏场景的普通 text chunk 不携带此字段（undefined 等同 false）。
+       */
+      guardrailBlocked?: boolean;
+    }
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
   | { type: 'aborted'; reason: string }

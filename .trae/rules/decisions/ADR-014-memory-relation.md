@@ -6,7 +6,7 @@ description: 记忆关系图谱——独立侧车模型，开放字符串关系�
 # ADR-014 · 记忆关系图谱（侧车模型）
 
 > **状态**：✅ 已接受
-> **日期**：2026-06-25
+> **日期**：2026-06-25（2026-07-08 补充关系查询归属 + RelationBuilder 拆分）
 > **来源**：阶段二 Phase 1.1 排雷优化方案（原迭代规划文档已废弃，规划内容现以本 ADR 为准）
 
 ## 背景
@@ -165,6 +165,86 @@ InsightExtractor.extract() 现有流程：
 |------|------|
 | `project-rules.md` | 技术栈清单加 MemoryRelation 行；目录结构加 `src/memory/relationStore.ts`；阶段一交付物追加关系图谱项 |
 | `backend_layers_rules.md` | 新增 relationStore 模块职责边界（侧车，不侵入 IMemoryStorage） |
+
+## 补充：关系查询归属 + RelationBuilder 拆分（2026-07-08，1.0 接口稳定化）
+
+> **来源**：1.0 审查报告 P1-10 · 架构选择无 ADR：path/neighbor 查询挂在 MemoryInspector
+
+### 决策 1：关系查询方法归属 MemoryInspector（只读）
+
+关系查询方法（`getRelationPath` / `getRelationNeighbors` / `getRelations`）挂在 `MemoryInspector` 而非 `IMemoryRelationStore`，理由：
+
+1. **读写职责分离**——MemoryInspector 专职只读查询（P1-2 拆分后写操作在 MemoryMutator），关系查询是只读操作，归属 MemoryInspector 与职责一致
+2. **查询编排层**——`getRelationPath(startId, endId)` 需要多次调用 `IMemoryRelationStore.getRelations()` 做 BFS/DFS 遍历，这是查询编排逻辑，不应放在存储接口
+3. **存储接口保持纯粹**——`IMemoryRelationStore` 只暴露原子操作（addRelation/getRelations/removeRelation），不包含图遍历逻辑
+4. **复用 MemoryInspector 的 Memory 缓存**——关系查询需要获取 Memory 详情（如 content 用于展示），MemoryInspector 已持有 index 引用，避免重复注入
+
+```typescript
+// MemoryInspector（只读查询编排层）
+class MemoryInspector {
+  constructor(
+    private readonly index: IMemoryStorage,
+    private readonly relationStore: IMemoryRelationStore | null,  // 可选注入
+  ) {}
+
+  // 关系查询方法（编排 IMemoryRelationStore 原子操作）
+  getRelationPath(startId: string, endId: string): RelationPath | null { /* BFS 遍历 */ }
+  getRelationNeighbors(memoryId: string, depth: number): RelationNeighbor[] { /* DFS 遍历 */ }
+  getRelations(memoryId: string, direction?: RelationDirection): MemoryRelation[] { /* 透传 */ }
+}
+
+// IMemoryRelationStore（原子操作接口）
+interface IMemoryRelationStore {
+  addRelation(relation: MemoryRelation): void;  // 写操作（MemoryMutator 调用）
+  getRelations(memoryId: string, direction?): MemoryRelation[];  // 原子读
+  removeRelation(sourceId: string, targetId: string, type: string): void;  // 写操作
+}
+```
+
+### 决策 2：关系构建逻辑提取为 RelationBuilder（P1-3 拆分）
+
+原 `InsightExtractor` 同时承担 insight 提取 + 关系构建两个职责（480 行）。P1-3 拆分后：
+
+| 模块 | 职责 | 行数 |
+|------|------|------|
+| `InsightExtractor` | insight 提取 + 去重 + 写入 + 输入分类 | ~330 行（瘦身后） |
+| `RelationBuilder` | 候选召回 + prompt 构建 + 关系写入 + 冲突检测 | ~180 行（新建） |
+
+**拆分原则**：
+- `InsightExtractor` 通过可选注入的 `RelationBuilder` 委托调用（未注入时静默降级，跳过关系构建）
+- `RelationBuilder` 独立于 `InsightExtractor` 生命周期，仅依赖 `IMemoryStorage` + `IMemoryRelationStore`
+- `RelationBuilder` 封装 ADR-014 关系构建全流程：`recallRelationCandidates` / `buildCandidatesPrompt` / `buildRelationsPrompt` / `buildRelations` / `bindOnConflict` / `weightByType`
+
+```typescript
+// assembler.ts 编排
+const relationBuilder = new RelationBuilder(pctx.index, relationStore ?? null);
+const insightExtractor = new InsightExtractor(provider, pctx.index, relationBuilder);
+
+// InsightExtractor 委托 RelationBuilder
+class InsightExtractor {
+  constructor(
+    private readonly provider: LlmProvider,
+    private readonly index: IMemoryStorage,
+    private readonly relationBuilder: RelationBuilder | null = null,  // 可选注入
+  ) {}
+
+  async extract(userInput: string, assistantContent: string): Promise<Memory[]> {
+    // ... insight 提取逻辑 ...
+    // 关系构建委托给 RelationBuilder（未注入时跳过）
+    const candidates = this.relationBuilder?.recallRelationCandidates(userInput) ?? [];
+    if (this.relationBuilder && parsed?.relations) {
+      this.relationBuilder.buildRelations(memory.id, memory.content, parsed.relations, candidates);
+    }
+  }
+}
+```
+
+### 设计原则
+
+1. **读写分离**——MemoryInspector（只读）+ MemoryMutator（写代理）+ RelationBuilder（关系构建）三角分工
+2. **存储接口纯粹**——IMemoryRelationStore 只暴露原子操作，图遍历逻辑在 MemoryInspector 编排层
+3. **可选注入降级**——RelationBuilder 未注入时 InsightExtractor 静默跳过关系构建（ADR-006 降级优先）
+4. **独立测试**——RelationBuilder 可脱离 InsightExtractor 独立单元测试
 
 ## 何时回顾
 

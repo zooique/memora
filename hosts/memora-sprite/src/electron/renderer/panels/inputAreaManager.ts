@@ -326,7 +326,7 @@ export class InputAreaManager {
       } else if (ke.key === 'Enter') {
         ke.preventDefault();
         if (currentIdx >= 0) {
-          const key = items[currentIdx].dataset.providerKey;
+          const key = items[currentIdx]?.dataset.providerKey;
           if (key) {
             void (async () => {
               await window.electronAPI.setActiveLlmProvider(key);

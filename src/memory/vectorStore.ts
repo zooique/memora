@@ -25,6 +25,7 @@ import { dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { cosineSimilarity } from '@/utils/math.js';
+import type { EmbeddingOptions } from '@/llm/embedding.js';
 
 /**
  * 嵌入服务接口
@@ -32,10 +33,66 @@ import { cosineSimilarity } from '@/utils/math.js';
  *
  * batchEmbed 返回向量数组，顺序与输入一致。
  * EmbeddingProvider（llm/embedding.ts）满足此接口（结构子类型）。
+ *
+ * P1-8 韧性补齐：embed/batchEmbed 接受 EmbeddingOptions（signal + timeoutMs），
+ * 宿主在用户取消对话时可透传 AbortSignal 中断 embedding 请求。
  */
 export interface EmbeddingService {
-   embed(text: string): Promise<number[]>;
-   batchEmbed(texts: string[]): Promise<Array<{ text: string; vector: number[] }>>;
+   embed(text: string, options?: EmbeddingOptions): Promise<number[]>;
+   batchEmbed(texts: string[], options?: EmbeddingOptions): Promise<Array<{ text: string; vector: number[] }>>;
+}
+
+/**
+ * 向量存储接口（依赖倒置）
+ *
+ * 抽出接口让宿主可注入自定义实现（如 SqliteVectorStore / LanceDBVectorStore），
+ * 内核消费者（recall.ts / memoryInspector.ts / agent.ts）只依赖此接口，
+ * 不耦合具体持久化方式（JSON / SQLite / 外部向量库）。
+ *
+ * 与 IMemoryStorage / IMemoryRelationStore / ILogger / ITracer 同属
+ * 内核六大注入接口，遵循 ADR-002 存储层抽象原则。
+ *
+ * 内核内置实现：JsonVectorStore（JSON 文件持久化，单用户本地场景）。
+ */
+export interface IVectorStore {
+  /** 从持久化介质加载向量索引（冷启动） */
+  load(): Promise<void>;
+  /** 持久化向量索引到介质 */
+  save(): Promise<void>;
+  /**
+   * 为文本生成向量并存储
+   * @param id 记忆 ID
+   * @param text 待嵌入的文本
+   * @param options embedding 调用选项（signal 外部取消 + timeoutMs 超时）
+   */
+  upsert(id: string, text: string, options?: EmbeddingOptions): Promise<void>;
+  /**
+   * 批量嵌入并存储
+   * @param items ID + 文本对
+   * @param options embedding 调用选项（signal 外部取消 + timeoutMs 超时）
+   */
+  batchUpsert(items: Array<{ id: string; text: string }>, options?: EmbeddingOptions): Promise<void>;
+  /**
+   * 删除向量（实现决定是否立即持久化）
+   * @param id 待删除的记忆 ID
+   */
+  delete(id: string): void;
+  /**
+   * 语义搜索：基于查询文本的向量，返回 topK 最相似的 ID
+   * @param query 查询文本
+   * @param topK 返回数量上限
+   * @param minSimilarity 最低相似度阈值（0~1）
+   * @param options embedding 调用选项（signal 外部取消 + timeoutMs 超时）
+   * @returns ID + 相似度 对的数组，按相似度降序排列
+   */
+  search(
+    query: string,
+    topK?: number,
+    minSimilarity?: number,
+    options?: EmbeddingOptions,
+  ): Promise<Array<{ id: string; similarity: number }>>;
+  /** 获取存储的向量数量 */
+  readonly size: number;
 }
 
 /**
@@ -92,14 +149,15 @@ function isValidVectorStoreFile(data: unknown): data is VectorStoreFile {
 }
 
 /**
- * 向量存储
+ * JSON 持久化向量存储（IVectorStore 内核内置实现）
  *
  * 纯 JS 实现，内存中维护向量索引，定期持久化到 JSON 文件
  * 适用于单用户本地场景（5k 条记录以内）
  *
  * 依赖 EmbeddingService 接口（依赖倒置，与 llm/ 层解耦）
+ * 实现 IVectorStore 接口，宿主可替换为其他实现（如 SqliteVectorStore）
  */
-export class VectorStore {
+export class JsonVectorStore implements IVectorStore {
   /** 内存中的向量索引 */
   private entries = new Map<string, number[]>();
 
@@ -198,10 +256,11 @@ export class VectorStore {
    *
    * @param id 记忆 ID
    * @param text 待嵌入的文本
+   * @param options embedding 调用选项（signal 外部取消 + timeoutMs 超时）
    * @throws {MemoraError} 当 embedding 返回的向量维度与已存维度不一致时抛出 configError
    */
-  async upsert(id: string, text: string): Promise<void> {
-    const vector = await this.embeddingProvider.embed(text);
+  async upsert(id: string, text: string, options?: EmbeddingOptions): Promise<void> {
+    const vector = await this.embeddingProvider.embed(text, options);
     if (this.dimension === 0) {
       this.dimension = vector.length;
     } else if (vector.length !== this.dimension) {
@@ -224,11 +283,12 @@ export class VectorStore {
    * 加固：维度一致性校验，与 upsert 同契约
    *
    * @param items ID + 文本对
+   * @param options embedding 调用选项（signal 外部取消 + timeoutMs 超时）
    * @throws {MemoraError} 当 embedding 返回的向量维度与已存维度不一致时抛出 configError
    */
-  async batchUpsert(items: Array<{ id: string; text: string }>): Promise<void> {
+  async batchUpsert(items: Array<{ id: string; text: string }>, options?: EmbeddingOptions): Promise<void> {
     const texts = items.map((item) => item.text);
-    const results = await this.embeddingProvider.batchEmbed(texts);
+    const results = await this.embeddingProvider.batchEmbed(texts, options);
 
     for (let i = 0; i < items.length; i++) {
       const result = results[i];
@@ -269,14 +329,16 @@ export class VectorStore {
    * @param query 查询文本
    * @param topK 返回数量上限
    * @param minSimilarity 最低相似度阈值（0~1）
+   * @param options embedding 调用选项（signal 外部取消 + timeoutMs 超时）
    * @returns ID + 相似度 对的数组，按相似度降序排列
    */
   async search(
     query: string,
     topK = 5,
     minSimilarity = 0.3,
+    options?: EmbeddingOptions,
   ): Promise<Array<{ id: string; similarity: number }>> {
-    const queryVector = await this.embeddingProvider.embed(query);
+    const queryVector = await this.embeddingProvider.embed(query, options);
 
     const scored: Array<{ id: string; similarity: number }> = [];
     for (const [id, vector] of this.entries) {

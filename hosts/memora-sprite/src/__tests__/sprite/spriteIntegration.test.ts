@@ -232,7 +232,7 @@ describe('Sprite · 默契度评估（Phase 2.2）', () => {
     // 写入 5 条非 profile 记忆（触发 total ≥ 5，但 profile < 10）
     const now = new Date().toISOString();
     for (let i = 0; i < 5; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `rule:test-${i}`,
         content: `测试规则 ${i}`,
         source: 'rule',
@@ -252,7 +252,7 @@ describe('Sprite · 默契度评估（Phase 2.2）', () => {
     // 写入 10 条 profile 记忆 + 1 条 rule 记忆（确保 total ≥ 5）
     const now = new Date().toISOString();
     for (let i = 0; i < 10; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `profile:user-${i}`,
         content: `用户偏好 ${i}`,
         source: 'profile',
@@ -272,7 +272,7 @@ describe('Sprite · 默契度评估（Phase 2.2）', () => {
     // 写入 50 条 insight + 10 条 profile（确保通过前两级阈值）
     const now = new Date().toISOString();
     for (let i = 0; i < 10; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `profile:user-${i}`,
         content: `用户偏好 ${i}`,
         source: 'profile',
@@ -283,7 +283,7 @@ describe('Sprite · 默契度评估（Phase 2.2）', () => {
       });
     }
     for (let i = 0; i < 50; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `insight:habit-${i}`,
         content: `用户习惯 ${i}`,
         source: 'insight',
@@ -353,7 +353,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
 
     // 写入一条 rule 记忆（触发新 source 里程碑）
     const now = new Date().toISOString();
-    agent.memory!.upsert({
+    agent.memoryMutator!.upsert({
       id: 'rule:first',
       content: '第一条规则',
       source: 'rule',
@@ -366,7 +366,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
     // 首次 dashboard 仅初始化已知状态（不触发通知），第二次才检测里程碑
     sprite.dashboard();
     // 再写入一条不同 source 的记忆，第二次 dashboard 检测到新 source
-    agent.memory!.upsert({
+    agent.memoryMutator!.upsert({
       id: 'insight:first',
       content: '第一条洞察',
       source: 'insight',
@@ -393,7 +393,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
     // 写入 100 条记忆（触发 magnitude=2 里程碑）
     const now = new Date().toISOString();
     for (let i = 0; i < 100; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `rule:bulk-${i}`,
         content: `规则 ${i}`,
         source: 'rule',
@@ -408,7 +408,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
     sprite.dashboard();
     // 再写入 900 条记忆使总量达到 1000（触发 magnitude=3 里程碑）
     for (let i = 100; i < 1000; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `rule:bulk-${i}`,
         content: `规则 ${i}`,
         source: 'rule',
@@ -444,7 +444,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
     // 写入 100 条记忆
     const now = new Date().toISOString();
     for (let i = 0; i < 100; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `rule:idem-${i}`,
         content: `规则 ${i}`,
         source: 'rule',
@@ -460,7 +460,7 @@ describe('Sprite · 里程碑模式检测（Phase 2.3）', () => {
 
     // 写入 900 条记忆使总量达到 1000（magnitude=3）
     for (let i = 100; i < 1000; i++) {
-      agent.memory!.upsert({
+      agent.memoryMutator!.upsert({
         id: `rule:idem-${i}`,
         content: `规则 ${i}`,
         source: 'rule',

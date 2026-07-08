@@ -67,20 +67,29 @@ export interface EvalExpectation {
    *
    * 验证召回管线是否排除了应排除的 source 类型。
    * 例如：{ 'rule': 0 } 表示不应召回 rule 类型的记忆
+   *
+   * 注意：当前 collectAgentChunks 只收集 recallCount（数量），
+   * 不收集 source 分布。此字段为未来扩展预留，当前 evaluateResult 不检查。
+   * 若需验证 source 分布，请在宿主层自行实现。
    */
   recallSources?: Record<string, number>;
-
-  /**
-   * 护栏阻断检查
-   *
-   * 如果为 true，期望输入被护栏规则阻断
-   */
-  guardrailBlocked?: boolean;
 
   /**
    * 工具调用次数范围
    */
   toolCallCount?: { min?: number; max?: number };
+
+  /**
+   * 期望护栏是否阻断
+   *
+   * true 表示期望护栏触发阻断（输入或输出被 block）；
+   * false 表示期望护栏不阻断；
+   * undefined 表示不检查（默认）。
+   *
+   * 与 collected.guardrailBlocked 比对，后者通过结构化标志
+   * AgentChunk.guardrailBlocked 收集，而非中文文案匹配。
+   */
+  guardrailBlocked?: boolean;
 }
 
 /**
@@ -133,8 +142,9 @@ export async function collectAgentChunks(
         }
         break;
       case 'text':
-        // 检查护栏阻断/警告消息
-        if (chunk.content.includes('输入被护栏规则') || chunk.content.includes('输出被护栏规则')) {
+        // 通过结构化标志判断护栏阻断（替代中文文案子串匹配）
+        // AgentChunk.text.guardrailBlocked 由 AgentLoop 在护栏 block 时显式置 true
+        if (chunk.guardrailBlocked) {
           collected.guardrailBlocked = true;
         }
         break;

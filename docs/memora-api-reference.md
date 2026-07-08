@@ -1,10 +1,12 @@
-# Memora 内核 API 参考手册（v3.3）
+# Memora 内核 API 参考手册（v1.0.0）
 
 > **核心定位**：Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 >
 > **本文件用途**：列出当前 Agent 对外暴露的**全部公开 API**。
 >
-> **版本**：v3.3（最后更新：2026-07-05，对应内核 v0.2.0）
+> **版本**：v1.0.0（最后更新：2026-07-08，对应内核 v1.0.0）
+>
+> **v1.0.0 变更**：1.0 正式发布。P0 阻塞修复全量收敛：zod schema 单一真理源（DEFAULT_CONFIG 由 `.default()` 声明驱动）、IVectorStore 接口提取（JsonVectorStore 为内置实现）、AbortSignal 合并工具（mergeSignals）、Logger 懒初始化（移除模块顶层 pino 副作用，改为首次日志调用时 maybeUpgradeToPino 懒触发）、评估框架结构化信号（AgentChunk.guardrailBlocked 替代中文文案匹配）、文档全量对齐（包名 @zooique/memora、config.example.json 补全 providers/embedding 段）。
 >
 > **v3.3 变更**：内核发布 v0.2.0（npm 正式包）。Phase 1-4 全部核心完成。新增 EmbeddingProvider、安全定时器（safeSetTimeout/safeSetInterval）、Frontmatter 工具（parseFrontmatter/serializeFrontmatter）、事件系统（TypedEventEmitter）、记忆关系常量（RELATION_TYPES/RELATION_WEIGHTS）、审计类型（AuditEvent 等）、评估框架（collectAgentChunks/evaluateResult）。
 >
@@ -72,7 +74,7 @@
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
-| `vectorStore` | `VectorStore` | ❌ | 向量存储（提供时启用语义搜索召回） |
+| `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索召回；内置实现 JsonVectorStore） |
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，引导记忆不被召回） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `relationStore` | `IMemoryRelationStore` | ❌ | 记忆关系存储（ADR-014 侧车，不传则跳过关系构建） |
@@ -395,8 +397,8 @@ interface IMemoryRelationStore {
 #### 注入方式
 
 ```typescript
-import { Agent, InMemoryRelationStore } from 'memora';
-import type { IMemoryRelationStore } from 'memora';
+import { Agent, InMemoryRelationStore } from '@zooique/memora';
+import type { IMemoryRelationStore } from '@zooique/memora';
 
 // 测试用：InMemoryRelationStore（纯内存，零 IO）
 const relationStore: IMemoryRelationStore = new InMemoryRelationStore();
@@ -856,7 +858,7 @@ interface ISpan {
 ### 15.3 NoopTracer（默认实现）
 
 ```typescript
-import { NOOP_TRACER } from 'memora';
+import { NOOP_TRACER } from '@zooique/memora';
 
 // 不注入 tracer 时自动使用 NOOP_TRACER，零运行时开销
 // NOOP_TRACER.startSpan() 返回共享的 NoopSpan 单例，所有方法为空操作
@@ -865,7 +867,7 @@ import { NOOP_TRACER } from 'memora';
 ### 15.4 TRACE_SPANS 常量
 
 ```typescript
-import { TRACE_SPANS } from 'memora';
+import { TRACE_SPANS } from '@zooique/memora';
 
 TRACE_SPANS.RECALL     // 'recall.recall'    — 记忆召回阶段
 TRACE_SPANS.LLM_CALL   // 'llm.call'         — LLM API 调用
@@ -897,7 +899,7 @@ TRACE_SPANS.RESPONSE   // 'response.generate' — 整轮响应
 ### 16.2 isRetryableErrorCode()
 
 ```typescript
-import { ToolErrorCode, isRetryableErrorCode } from 'memora';
+import { ToolErrorCode, isRetryableErrorCode } from '@zooique/memora';
 
 isRetryableErrorCode(ToolErrorCode.FILE_NOT_FOUND);   // true
 isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
@@ -937,7 +939,7 @@ action: block
 
 ```typescript
 // Agent 与流式事件
-export { Agent } from 'memora';
+export { Agent } from '@zooique/memora';
 export type {
   AgentChunk,
   ThinkingPhase,
@@ -959,7 +961,7 @@ export type {
   SessionArchiveResult,
   WorkProjectionEntry,
   AutoConfigRefinerOptions,
-} from 'memora';
+} from '@zooique/memora';
 
 // 记忆快照与搜索
 export type {
@@ -967,71 +969,71 @@ export type {
   WorkingMemorySnapshot,
   BootstrapSnapshot,
   ArchiveSnapshot,
-} from 'memora';
-export { AGENT_CONSTANTS, LOOP_CONSTANTS } from 'memora';
+} from '@zooique/memora';
+export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
 
 // 工具
-export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from 'memora';
+export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@zooique/memora';
 
 // 配置建议
-export type { ConfigSuggestion, ConfigSuggestionHandler } from 'memora';
+export type { ConfigSuggestion, ConfigSuggestionHandler } from '@zooique/memora';
 
 // Insight
-export type { MemoryKeywords } from 'memora';
+export type { MemoryKeywords } from '@zooique/memora';
 
 // 记忆
-export type { Memory } from 'memora';
-export type { IMemoryStorage, ISessionStore, SessionMessage } from 'memora';
-export { InMemoryStorage } from 'memora';
+export type { Memory } from '@zooique/memora';
+export type { IMemoryStorage, ISessionStore, SessionMessage } from '@zooique/memora';
+export { InMemoryStorage } from '@zooique/memora';
 
 // 记忆关系
 export type {
   IMemoryRelationStore,
   MemoryRelation,
   RelationDirection,
-} from 'memora';
-export { InMemoryRelationStore, RELATION_TYPES, RELATION_WEIGHTS } from 'memora';
+} from '@zooique/memora';
+export { InMemoryRelationStore, RELATION_TYPES, RELATION_WEIGHTS } from '@zooique/memora';
 
 // 用户画像
-export type { UserProfileEntry, ProfileCategory, ExtractedFact } from 'memora';
+export type { UserProfileEntry, ProfileCategory, ExtractedFact } from '@zooique/memora';
 
 // 向量存储
-export { VectorStore, EmbeddingProvider } from 'memora';
-export type { EmbeddingService, EmbeddingConfig, EmbeddingResult } from 'memora';
+export { JsonVectorStore, EmbeddingProvider } from '@zooique/memora';
+export type { IVectorStore, EmbeddingService, EmbeddingConfig, EmbeddingResult } from '@zooique/memora';
 
 // 事件系统
-export { TypedEventEmitter } from 'memora';
-export type { AgentEventMap, AgentEventName, AgentEventHandler } from 'memora';
+export { TypedEventEmitter } from '@zooique/memora';
+export type { AgentEventMap, AgentEventName, AgentEventHandler } from '@zooique/memora';
 
 // 可观测性
-export type { ITracer, ISpan } from 'memora';
-export { NOOP_TRACER, TRACE_SPANS } from 'memora';
+export type { ITracer, ISpan } from '@zooique/memora';
+export { NOOP_TRACER, TRACE_SPANS } from '@zooique/memora';
 
 // 错误码
-export { ToolErrorCode, isRetryableErrorCode, MemoraError, toError } from 'memora';
-export type { ToolErrorCodeValue } from 'memora';
+export { ToolErrorCode, isRetryableErrorCode, MemoraError, toError } from '@zooique/memora';
+export type { ToolErrorCodeValue } from '@zooique/memora';
 
 // 日志
-export type { ILogger } from 'memora';
-export { setLogger, logger } from 'memora';
+export type { ILogger } from '@zooique/memora';
+export { setLogger, logger } from '@zooique/memora';
 
 // 召回
-export { recall, extractKeywords } from 'memora';
-export type { RecallOptions } from 'memora';
+export { recall, extractKeywords } from '@zooique/memora';
+export type { RecallOptions } from '@zooique/memora';
 
 // 角色
-export type { PersonaMode, Persona } from 'memora';
+export type { PersonaMode, Persona } from '@zooique/memora';
 
 // 技能
-export type { SkillEntry, SkillMatch } from 'memora';
+export type { SkillEntry, SkillMatch } from '@zooique/memora';
 
 // LLM
-export { createLlmProvider, createProviderFromConfig, OpenAICompatibleProvider } from 'memora';
-export type { ProviderConfig, LlmProvider, LlmChunk, ChatOptions, OpenAICompatibleConfig } from 'memora';
+export { createLlmProvider, createProviderFromConfig, OpenAICompatibleProvider } from '@zooique/memora';
+export type { ProviderConfig, LlmProvider, LlmChunk, ChatOptions, OpenAICompatibleConfig } from '@zooique/memora';
 
 // 配置
-export { loadConfig } from 'memora';
-export type { Config } from 'memora';
+export { loadConfig } from '@zooique/memora';
+export type { Config } from '@zooique/memora';
 
 // 工具函数
 export {
@@ -1046,8 +1048,8 @@ export {
   clearSafeInterval,
   parseFrontmatter,
   serializeFrontmatter,
-} from 'memora';
-export type { SourceValidationSeverity } from 'memora';
+} from '@zooique/memora';
+export type { SourceValidationSeverity } from '@zooique/memora';
 
 // 安全
 export type {
@@ -1057,11 +1059,11 @@ export type {
   WriteDecision,
   WriteConfirmationInfo,
   WriteConfirmationRequest,
-} from 'memora';
+} from '@zooique/memora';
 
 // 评估
-export { collectAgentChunks, evaluateResult } from 'memora';
-export type { EvalScenario, EvalExpectation, EvalResult } from 'memora';
+export { collectAgentChunks, evaluateResult } from '@zooique/memora';
+export type { EvalScenario, EvalExpectation, EvalResult } from '@zooique/memora';
 ```
 
 ---
@@ -1083,6 +1085,6 @@ Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁�
 
 ---
 
-**版本**：v3.3
-**最后更新**：2026-07-05
+**版本**：v1.0.0
+**最后更新**：2026-07-08
 **配套文档**：[memora-接入指南.md](./memora-接入指南.md)（步骤式教程）

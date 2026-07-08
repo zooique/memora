@@ -11,10 +11,10 @@
  */
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { VectorStore } from '@/memory/vectorStore.js';
+import type { IVectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
-import { STOPWORDS, SOURCE_LABELS } from '@/memory/types.js';
-import { segmentText } from '@/utils/segmenter.js';
+import { SOURCE_LABELS } from '@/memory/types.js';
+import { segmentText, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 
@@ -72,8 +72,8 @@ export interface RecallOptions {
   limit?: number;
   /** 排除的 source 标签（默认排除 persona、rule、skill——已单独注入 system prompt 的记忆） */
   excludeSources?: string[];
-  /** 向量存储（可选，提供时启用语义搜索） */
-  vectorStore?: VectorStore;
+  /** 向量存储（可选，提供时启用语义搜索；接受任意 IVectorStore 实现） */
+  vectorStore?: IVectorStore;
   /** 语义搜索相似度阈值（默认 0.3） */
   minSimilarity?: number;
 }
