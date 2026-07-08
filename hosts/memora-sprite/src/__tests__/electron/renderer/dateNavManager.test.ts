@@ -258,7 +258,13 @@ describe('setCurrentDate · 设置显示日期', () => {
 
   it('今天的日期应显示「今天」', () => {
     const manager = createManager();
-    const today = new Date().toISOString().split('T')[0];
+    // 使用本地日期而非 UTC 日期，避免时区差异导致测试失败
+    // （dateNavManager 内部用 getFullYear/getMonth/getDate 本地日期计算）
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const today = `${y}-${m}-${d}`;
     manager.setCurrentDate(today);
 
     const label = document.getElementById('date-nav-label');
