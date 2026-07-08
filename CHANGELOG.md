@@ -4,6 +4,15 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.1] - 2026-07-08
+
+### Fixed（P2 遗留项修复）
+
+- coverage 阈值从 75/85/70/75 提升至 80/88/75/80
+- pathGuard 黑名单新增 `.envrc` 拦截规则（direnv 配置文件）
+- decisions/README.md ADR 索引补全 ADR-005 保留行
+- kernel-ci.yml 测试数量注释更新
+
 ## [1.0.0] - 2026-07-08
 
 从 0.3.0 到 1.0.0 的完整架构收敛版本。核心目标：接口稳定化、职责分离、韧性补齐、公共 API 收敛。
