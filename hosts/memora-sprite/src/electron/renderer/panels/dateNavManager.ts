@@ -317,6 +317,8 @@ export class DateNavManager {
   /**
    * 更新有对话记录的日期集合
    *
+   * 数据更新后立即重新渲染下拉列表，确保删除/新增会话后列表实时刷新。
+   *
    * @param dates 日期列表（YYYY-MM-DD 格式）
    * @param counts 每个日期的会话数（可选，默认 1）
    */
@@ -331,6 +333,8 @@ export class DateNavManager {
       this.currentDate = sorted[0] ?? '';
     }
     this.updateButtonLabel();
+    // 立即重新渲染下拉列表，避免数据已更新但DOM仍显示旧内容
+    this.renderDateList();
   }
 
   /**

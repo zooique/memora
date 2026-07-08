@@ -31,6 +31,8 @@ export interface WebElectronAPI {
   switchSession: (query: { date: string; session: string }) => Promise<{ success: boolean; messages: Array<{ role: string; content: string }>; error?: string }>;
   deleteSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   renameSession: (sessionId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
+  /** 会话分叉（与 Electron IPC SESSION_FORK 平行，调用内核 Agent.forkSession） */
+  forkSession: (targetSession?: string) => Promise<{ success: boolean; newSession?: string; messageCount?: number; error?: string }>;
 
   // 流式监听（Phase 2 用 SSE 实现，Phase 1 预留空实现）
   onStreamStart: (cb: (msg: { messageId: string }) => void) => void;
@@ -83,6 +85,12 @@ export interface WebElectronAPI {
   searchMemories: (query: string) => Promise<{ hits: unknown[] }>;
   showMemory: (id: string) => Promise<{ memory: unknown }>;
   deleteMemory: (id: string) => Promise<{ deleted: boolean }>;
+  /** 恢复软删除记忆（从回收站还原） */
+  restoreMemory: (id: string) => Promise<{ restored: boolean; id: string }>;
+  /** 物理删除记忆（回收站彻底删除，不可恢复） */
+  purgeMemory: (id: string) => Promise<{ purged: boolean }>;
+  /** 列出回收站记忆（按 deletedAt 降序） */
+  listDeletedMemories: () => Promise<{ memories: unknown[] }>;
   addMemory: (data: { source: string; name: string; content: string }) => Promise<{ id: string }>;
   getRelationGraph: () => Promise<{ nodes: unknown[]; edges: unknown[] }>;
   addRelation: (data: { sourceId: string; targetId: string; type: string; weight: number }) => Promise<{ success: boolean }>;
@@ -540,6 +548,10 @@ export const webElectronAPI: WebElectronAPI = {
 
   renameSession: (sessionId, newName) => putJson(`/api/sessions/${encodeURIComponent(sessionId)}/rename`, { newName }),
 
+  // 会话分叉：调用内核 Agent.forkSession()，返回新会话名和消息数
+  // 与 Electron IPC SESSION_FORK 平行，路由层 POST /api/memories/fork
+  forkSession: (targetSession?: string) => postJson('/api/memories/fork', targetSession ? { session: targetSession } : {}),
+
   // ─── 流式监听（Phase 2：注册回调到 streamListenersRegistry） ──────
 
   /**
@@ -685,6 +697,17 @@ export const webElectronAPI: WebElectronAPI = {
   showMemory: (id) => getJson(`/api/memories/${encodeURIComponent(id)}`),
 
   deleteMemory: (id) => deleteJson(`/api/memories/${encodeURIComponent(id)}`),
+
+  // 回收站 API（与 Electron IPC MEMORIES_RESTORE/MEMORIES_PURGE/MEMORIES_LIST_DELETED 平行）
+
+  /** 恢复软删除记忆 */
+  restoreMemory: (id) => postJson(`/api/memories/trash/restore`, { id }),
+
+  /** 物理删除记忆（不可恢复） */
+  purgeMemory: (id) => deleteJson(`/api/memories/trash/${encodeURIComponent(id)}`),
+
+  /** 列出回收站记忆 */
+  listDeletedMemories: () => getJson('/api/memories/trash'),
 
   addMemory: (data) => postJson('/api/memories', data),
 

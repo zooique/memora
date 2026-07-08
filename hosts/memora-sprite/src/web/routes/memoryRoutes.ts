@@ -20,7 +20,8 @@
  *   PUT    /api/memories/relation     → 更新记忆关系
  *   GET    /api/memories/trash        → 列出回收站记忆
  *   POST   /api/memories/trash/restore → 恢复回收站记忆
- *   POST   /api/memories/trash/purge  → 清空回收站过期记忆
+ *   POST   /api/memories/trash/purge  → 清空回收站过期记忆（批量清理）
+ *   DELETE /api/memories/trash/:id    → 单个记忆彻底删除（不可恢复）
  *   POST   /api/memories/archive      → 手动归档会话
  *   GET    /api/memories/profile      → 用户画像
  *   POST   /api/memories/fork         → 会话分叉
@@ -28,6 +29,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HostContext } from '../../shared/hostContext.js';
+import { toError } from 'memora';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
 
 /**
@@ -196,7 +198,12 @@ export async function handleMemoryRoute(
     }
 
     // GET /api/memories/:id — 查看记忆详情
-    if (method === 'GET' && subPath.startsWith('/') && subPath.length > 1) {
+    // 注意：必须排除 /trash、/graph、/search、/health、/review 等已知子路由
+    // 否则通用 :id 会先匹配到这些路径（如 /trash 被当成 id="trash"）
+    if (method === 'GET' && subPath.startsWith('/') && subPath.length > 1
+        && subPath !== '/trash' && subPath !== '/graph' && subPath !== '/search'
+        && subPath !== '/health' && subPath !== '/review'
+        && !subPath.startsWith('/relation')) {
       const id = subPath.slice(1); // 去除前导 /
       if (!id || id.length > 500) {
         sendJson(res, 200, { memory: null });
@@ -207,8 +214,9 @@ export async function handleMemoryRoute(
       return;
     }
 
-    // DELETE /api/memories/:id — 删除记忆
-    if (method === 'DELETE' && subPath.startsWith('/') && subPath.length > 1) {
+    // DELETE /api/memories/:id — 删除记忆（软删除，进入回收站）
+    // 注意：必须排除 /trash/ 前缀，否则会拦截回收站彻底删除路由
+    if (method === 'DELETE' && subPath.startsWith('/') && subPath.length > 1 && !subPath.startsWith('/trash/')) {
       const id = subPath.slice(1); // 去除前导 /
       if (!id || id.length > 500) {
         sendJson(res, 200, { deleted: false });
@@ -222,10 +230,11 @@ export async function handleMemoryRoute(
     // ─── 回收站路由 ────────────────────────────────
 
     // GET /api/memories/trash — 列出回收站记忆
+    // 返回格式与 Electron IPC MEMORIES_LIST_DELETED 一致：{ memories: [] }
     if (method === 'GET' && subPath === '/trash') {
       const limit = parseInt(queryParams.get('limit') ?? '50', 10);
-      const items = ctx.sprite.listDeletedMemories(Math.min(limit, 200));
-      sendJson(res, 200, { items });
+      const memories = ctx.sprite.listDeletedMemories(Math.min(limit, 200));
+      sendJson(res, 200, { memories });
       return;
     }
 
@@ -241,7 +250,7 @@ export async function handleMemoryRoute(
       return;
     }
 
-    // POST /api/memories/trash/purge — 清空回收站过期记忆
+    // POST /api/memories/trash/purge — 清空回收站过期记忆（批量清理）
     if (method === 'POST' && subPath === '/trash/purge') {
       const body = await parseJsonBody<{ retentionDays?: number }>(req);
       const retentionDays = body?.retentionDays ?? 30;
@@ -249,6 +258,19 @@ export async function handleMemoryRoute(
       // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator
       const purgedCount = ctx.agent.memoryMutator?.purgeExpired(before) ?? 0;
       sendJson(res, 200, { purgedCount });
+      return;
+    }
+
+    // DELETE /api/memories/trash/:id — 单个记忆彻底删除（不可恢复）
+    // 与 Electron IPC MEMORIES_PURGE 镜像，渲染层调用 purgeMemory(id)
+    if (method === 'DELETE' && subPath.startsWith('/trash/')) {
+      const id = decodeURIComponent(subPath.slice('/trash/'.length));
+      if (!id || id.length > 500) {
+        sendError(res, 400, 'id 必填且长度不超过 500');
+        return;
+      }
+      const purged = ctx.sprite.purgeMemory(id);
+      sendJson(res, 200, { purged });
       return;
     }
 
@@ -285,14 +307,22 @@ export async function handleMemoryRoute(
     }
 
     // POST /api/memories/fork — 会话分叉
+    // 返回格式与 Electron IPC SESSION_FORK 一致：{ success, newSession, messageCount }
+    // 渲染层 sessionController.forkSession 依赖此格式判断成功/失败
     if (method === 'POST' && subPath === '/fork') {
-      const body = await parseJsonBody<{ session: string }>(req);
-      if (!body?.session) {
-        sendError(res, 400, 'session 必填');
-        return;
+      // session 可选：不传时由内核自动生成分支名
+      const body = await parseJsonBody<{ session?: string }>(req);
+      try {
+        let result: { newSession: string; messageCount: number };
+        if (body?.session && body.session.trim()) {
+          result = ctx.agent.forkSession(body.session.trim());
+        } else {
+          result = ctx.agent.forkSession();
+        }
+        sendJson(res, 200, { success: true, newSession: result.newSession, messageCount: result.messageCount });
+      } catch (error) {
+        sendJson(res, 200, { success: false, error: toError(error).message });
       }
-      const newSession = ctx.agent.forkSession(body.session);
-      sendJson(res, 200, { session: newSession });
       return;
     }
 

@@ -1820,11 +1820,11 @@
   height: 10px;
 }
 
-/* 输入区角色下拉菜单（右对齐，避免超出输入框右边缘；向下展开，输入区在窗口底部，向下更合理） */
+/* 输入区角色下拉菜单（右对齐，避免超出输入框右边缘；向上展开，输入区在窗口底部） */
 .input-persona-container #persona-dropdown {
   position: absolute;
-  top: calc(100% + 4px); /* 向下展开（在按钮下方） */
-  bottom: auto;
+  bottom: calc(100% + 4px); /* 向上展开（在按钮上方），避免被窗口底部截断 */
+  top: auto;
   right: 0;
   left: auto;
   width: 220px;

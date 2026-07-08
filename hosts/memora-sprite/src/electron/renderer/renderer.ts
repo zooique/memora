@@ -208,6 +208,8 @@ async function bootstrapRenderer(): Promise<void> {
       void memoryController.loadDashboard();
       // Token 用量指示器（输入区中部，流式结束后自动刷新）
       State.uiManager.refreshTokenUsage();
+      // 刷新日期导航：新消息发送后，"今天"的消息数需要实时更新
+      void sessionController.loadDateList();
       // 延迟 1s 二次刷新：postProcess 中的记忆归档是异步 fire-and-forget 的，
       // 等待用户画像归档、Insight 提取等后台任务完成后再刷新一次
       window.setTimeout(() => {
