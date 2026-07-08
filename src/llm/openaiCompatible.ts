@@ -168,7 +168,17 @@ export class OpenAICompatibleProvider extends LlmProvider {
       } catch (err) {
         // SSE 解析异常时也要 cancel stream（Node 24 + undici 同上）
         await this.safeCancelBody(response);
-        throw err;
+        // DOMException（AbortError/TimeoutError）是 LLM 中断协议：
+        // 上游 AgentLoop/contextManager/agent.ts 按 err.name === 'AbortError' 识别，
+        // 必须原样传播，不能包装为 MemoraError（否则中断协议失效）
+        if (err instanceof DOMException) throw err;
+        // 其他未知流读取异常统一包装为 MemoraError（避免裸 throw 逃逸非 MemoraError）
+        throw networkError(
+          'LLM 流读取异常',
+          toError(err).message,
+          ['稍后重试', '如持续出现，检查网络稳定性或切换 provider'],
+          toError(err),
+        );
       }
     } finally {
       // 统一清理：覆盖 HTTP 错误、空 body、SSE 异常、正常完成所有路径
@@ -292,6 +302,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
     try {
       while (true) {
         // 检查中止信号：超时或用户取消时立即退出
+        // 注意：此处刻意抛 DOMException 而非 MemoraError——
+        // AbortError 是 LLM 中断协议，上游（AgentLoop/contextManager/agent.ts）按
+        // err.name === 'AbortError' 识别用户取消/超时，包装为 MemoraError 会破坏协议
         if (signal?.aborted) {
           throw new DOMException('LLM 流读取被中止', signal.reason?.name ?? 'AbortError');
         }

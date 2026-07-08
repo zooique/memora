@@ -107,23 +107,22 @@ export class LockManager {
       const raw = await readFile(lockPath, 'utf-8');
       // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as LockInfo` 类型断言
       const parsed: unknown = JSON.parse(raw);
-      if (!isLockInfo(parsed)) {
-        // 锁文件结构损坏，清理后重新获取
-        logger.warn({ path: lockPath }, '锁文件结构损坏，清理残留');
-        await this.safeUnlink(lockPath);
-        return;
-      }
-      const info = parsed;
-
-      // 检查进程是否存活
-      if (this.isProcessAlive(info.pid)) {
-        logger.warn(
-          { pid: info.pid, acquiredAt: info.acquiredAt, hostname: info.hostname },
-          '项目已被其他进程打开（锁文件存在），继续操作可能导致数据冲突',
-        );
+      if (isLockInfo(parsed)) {
+        // 合法锁文件：检查进程是否存活
+        const info = parsed;
+        if (this.isProcessAlive(info.pid)) {
+          logger.warn(
+            { pid: info.pid, acquiredAt: info.acquiredAt, hostname: info.hostname },
+            '项目已被其他进程打开（锁文件存在），继续操作可能导致数据冲突',
+          );
+        } else {
+          // 残留锁，清理
+          logger.info({ pid: info.pid }, '清理残留锁文件（进程已退出）');
+          await this.safeUnlink(lockPath);
+        }
       } else {
-        // 残留锁，清理
-        logger.info({ pid: info.pid }, '清理残留锁文件（进程已退出）');
+        // 锁文件结构损坏（合法 JSON 但非 LockInfo），清理后 fall through 到写入新锁
+        logger.warn({ path: lockPath }, '锁文件结构损坏，清理残留');
         await this.safeUnlink(lockPath);
       }
     } catch (err) {

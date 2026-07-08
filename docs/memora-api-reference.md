@@ -78,10 +78,12 @@
 | `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，引导记忆不被召回） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `relationStore` | `IMemoryRelationStore` | ❌ | 记忆关系存储（ADR-014 侧车，不传则跳过关系构建） |
-| `logger` | `ILogger` | ❌ | ⚠️ @deprecated 日志注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
-| `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 false，开启后首次截断时增加 ~1-2s 延迟） |
+| `enableContextSummary` | `boolean` | ❌ | 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） |
+| `archiveMode` | `ArchiveMode` | ❌ | 归档模式（ADR-015，默认 `'full'`）。`'full'`：profile+insight 自动归档；`'insights-only'`：仅 profile+insight 自动，内容需手动；`'manual'`：全部手动 |
+
+> **Logger 注入方式**：v1.0 起 `AgentOptions` 不再含 `logger` 字段。日志通过全局 `setLogger(customLogger)` 注入（详见 §十八 类型导出），pino 升级为懒初始化（首次日志调用时触发，import 零副作用）。
 
 ### 2.2 生命周期方法
 
@@ -103,7 +105,7 @@
 
 ### 2.4 Manager 访问器（委托模式）
 
-v3.0 起，Agent 通过 8 个 getter 暴露专职 Manager。详见后续章节。
+v3.0 起，Agent 通过 9 个 getter 暴露专职 Manager。详见后续章节。
 
 | 访问器 | 类型 | 职责 |
 |--------|------|------|
@@ -112,9 +114,12 @@ v3.0 起，Agent 通过 8 个 getter 暴露专职 Manager。详见后续章节�
 | `agent.skills` | `SkillManager \| null` | 技能匹配与注入 |
 | `agent.config` | `ConfigManager \| null` | 规则/技能注入 + 配置建议 |
 | `agent.insight` | `InsightExtractor \| null` | 输入分类 + 记忆提取 |
-| `agent.memory` | `MemoryInspector \| null` | 记忆快照 + 搜索 + 统计 |
+| `agent.memory` | `MemoryInspector \| null` | 记忆快照 + 搜索 + 统计（只读） |
+| `agent.memoryMutator` | `MemoryMutator \| null` | 记忆写入代理（upsert/delete/restore/purge，P1-2 拆分） |
 | `agent.userProfile` | `UserProfileManager \| null` | 用户画像管理（事实提取 + 确认/拒绝） |
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
+
+> **读写分离**（P1-2 拆分）：`agent.memory`（MemoryInspector）只暴露只读查询（snapshot/search/stats/suggest/sourceHealth），所有写操作（upsert/delete/restore/purge）通过 `agent.memoryMutator`（MemoryMutator）执行。
 
 ### 2.5 内部组件访问器（高级）
 
@@ -155,9 +160,9 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 | `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
 | `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
 | `insightExtracted` | `{ source: string; insight: string }` | 洞察被提取 |
-| `conflictDetected` | `{ memoryId, conflictingId, relationType }` | 记忆冲突被检测到（关系图谱） |
-| `projectSwitched` | `{ from, to }` | 项目切换 |
-| `skillMatched` | `{ skillName, keywords }` | 技能被匹配激活 |
+| `conflictDetected` | `{ newMemoryId, newInsight, targetId, targetContent }` | 记忆冲突被检测到（`contradicts` 关系写入时触发，宿主可通知用户） |
+| `projectSwitched` | `{ from: string \| null, to: string, projectName: string }` | 项目切换（宿主 UI 可据此刷新项目相关界面） |
+| `skillMatched` | `{ skill: string, score: number }` | 技能被匹配（宿主 UI 可据此展示当前激活技能） |
 
 ```typescript
 // 使用示例
@@ -189,16 +194,33 @@ async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, voi
 
 ```typescript
 type AgentChunk =
-  | { type: 'thinking'; phase: ThinkingPhase } // 推理阶段
-  | { type: 'recall'; count: number }           // 记忆召回
-  | { type: 'text'; content: string }           // LLM 文本片段
-  | { type: 'tool_start'; name: string; args?: string }
-  | { type: 'tool_result'; name: string; ok: boolean; summary?: string }
-  | { type: 'aborted'; reason: string }         // 对话被取消
-  | { type: 'done' };                           // 结束标记
+  | { type: 'recall'; memories: RecalledMemorySummary[] }  // 记忆召回（携带摘要列表）
+  | { type: 'thinking'; phase: ThinkingPhase }             // 推理阶段
+  | { type: 'text'; content: string; guardrailBlocked?: boolean }  // LLM 文本片段（护栏阻断时 guardrailBlocked=true）
+  | { type: 'tool_start'; toolCallId: string; name: string; args?: string }   // 工具调用开始
+  | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }  // 工具调用结果
+  | { type: 'aborted'; reason: string }                    // 对话被取消
+  | { type: 'error'; message: string }                     // 流式过程中发生错误（LLM 超时/连接断开）
+  | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }  // 指数退避重试
+  | { type: 'done' };                                      // 结束标记
 ```
 
 `ThinkingPhase` 取值：`'recalling' | 'processing' | 'archiving'`
+
+#### `RecalledMemorySummary` 类型（recall chunk 载荷）
+
+仅暴露 UI 展示所需字段，不包含 `content`（避免向 UI 层泄露完整记忆内容）：
+
+```typescript
+interface RecalledMemorySummary {
+  id: string;       // 记忆唯一标识（source:name 格式，用于前端精准跳转详情）
+  name: string;     // 记忆可读名称（点击跳转记忆详情用）
+  score: number;    // 相似度分数（0-1）
+  source: string;   // 来源标签（开放字符串，如 'rule'、'insight'、'profile'）
+}
+```
+
+> **guardrailBlocked 结构化信号**：v1.0 起用结构化字段替代中文文案匹配，eval 框架和宿主 UI 可通过 `chunk.guardrailBlocked === true` 判断护栏触发，无需依赖文案子串匹配。
 
 ### 3.2 `chatSync(input, signal?)` — 同步版（仅供测试用）
 
@@ -283,8 +305,11 @@ interface Memory {
   createdAt: string;  // 创建时间（ISO 8601）
   accessedAt: string; // 最后访问时间（每次召回时刷新）
   score: number;      // 权重（0-1，召回时用于排序）
+  deletedAt?: string; // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理）
 }
 ```
+
+> **8 字段基元**（v2.1 软删除扩展）：7 个基础字段 + 1 个可选 `deletedAt`。所有查询方法（getById/getBySource/search/count/countBySource/decayScores/getAllSources）自动过滤 `deletedAt != undefined` 的记忆。详见 ADR-004 GAP-6 + ADR-002 §IMemoryStorage。
 
 **常用 source 标签（`SOURCE_LABELS` 常量）：**
 
@@ -302,22 +327,36 @@ interface Memory {
 
 ### 5.2 `IMemoryStorage` 接口
 
-宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。
+宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **15 方法**（含可选 `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
 
 ```typescript
 interface IMemoryStorage {
+  // ─── 基础 CRUD（6 方法） ───
   upsert(memory: Memory): void;
-  delete(id: string): void;
   getById(id: string): Memory | null;
   getBySource(source: string): Memory[];
   search(query: string, limit?: number): Memory[];
-  count(): number;                    // 记忆总数（数据库原生计数）
-  countBySource(source: string): number; // 按来源标签计数
+  count(): number;
+  countBySource(source: string): number;
+
+  // ─── 软删除 / 回收站（6 方法，ADR-004 GAP-6 扩展） ───
+  delete(id: string): void;           // 软删除（写入 deletedAt，不物理移除；对已软删除的 no-op）
+  restore(id: string): void;          // 恢复软删除记忆（清除 deletedAt；对活跃记忆 no-op）
+  purge(id: string): void;            // 物理删除（不可恢复，用于回收站"彻底删除"）
+  listDeleted(limit?: number): Memory[];        // 列出回收站（按 deletedAt 降序，默认 50）
+  getDeletedById(id: string): Memory | null;    // 按 ID 获取单条软删除记忆（restore/purge 前存在性校验）
+  purgeExpired(before: Date): number;           // 清理过期回收站（物理删除 deletedAt 早于 before 的，返回清理数量）
+
+  // ─── 统计与维护（2 方法） ───
+  decayScores(sources: string[], now: Date): number;  // 批量衰减指定 source 的 score（宿主实现批量 SQL UPDATE）
+  getAllSources(): Map<string, number>;               // 获取所有 source 标签及其活跃记忆数量
+
+  // ─── 可选（1 方法） ───
   close?(): void;
 }
 ```
 
-> 宿主实现应使用 `COUNT(*)` 等数据库原生计数，避免全量加载数据。
+> 宿主实现应使用 `COUNT(*)` / `UPDATE ... WHERE` 等数据库原生操作，避免全量加载数据。`decayScores` 和 `getAllSources` 是性能优化方法，避免逐条遍历。详见 ADR-002 §IMemoryStorage 接口方法。
 
 ### 5.3 `ISessionStore` 接口
 
@@ -420,40 +459,60 @@ const agent = new Agent({
 
 ## 六、项目 / 会话管理
 
-以下方法直接挂在 Agent 上：
+> **方法归属**（v1.0 P1-4 拆分后）：项目相关方法在 `agent.projects`（ProjectManager），会话相关方法在 `agent.sessionManager`（SessionManager），仅 `switchProject` / `rebuildComponents` / `forkSession` 保留在 Agent 面类作为常用入口。
 
 > **switch* 返回值约定**：各 switch 操作返回与其操作语义最匹配的值 ——
 > `switchSession` 返回新会话名（string）、`switchProject` 返回完整项目上下文（AgentContext，含 bootstrap 记忆等）、
 > `personaManager.switchPersona` 返回 system prompt 文本（string）。这是设计性差异，非 bug。
 
+### 6.1 Agent 面类方法（项目/会话入口）
+
 | 方法 | 用途 |
 |------|------|
-| `listProjects()` → `AgentProjectEntry[]` | 列出所有已注册项目（@deprecated 请使用 `agent.projects.list`） |
 | `switchProject(nameOrPath)` → `Promise<AgentContext>` | 切换到指定项目（保留 Agent 级记忆，自动 rebuild） |
 | `rebuildComponents()` → `Promise<void>` | 重建 history / loop（通常不需要手动调用，switchProject 已自动执行） |
-| `switchSession(newName)` → `string` | 切换到指定会话（自动归档旧会话） |
-| `forkSession(targetSession?)` → `{ newSession: string; messageCount: number }` | 分叉当前会话（复制完整消息历史到新分支） |
-| `loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
-| `restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
-| `restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
+| `forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话（同步，复制完整消息历史到新分支） |
+
+### 6.2 `agent.projects` — ProjectManager
+
+| 方法 | 用途 |
+|------|------|
+| `projects.list` | 所有已注册项目（getter） |
+| `projects.listProjects()` → `ProjectEntry[]` | 列出所有已注册项目 |
+
+### 6.3 `agent.sessionManager` — SessionManager
+
+| 方法 | 用途 |
+|------|------|
+| `sessionManager.switchSession(newName)` → `string` | 切换到指定会话（chatBusy 时抛 configError） |
+| `sessionManager.forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话 |
+| `sessionManager.loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
+| `sessionManager.restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
+| `sessionManager.restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
 
 ```typescript
-// listAllSessions 通过 agentHistory 访问
-const sessions = await agent.agentHistory?.listAllSessions();
+// 项目列表
+const projects = agent.projects.list;
 
-// 会话分叉示例
-const forkResult = await agent.forkSession();
+// 会话分叉示例（Agent 面类入口，等价于 agent.sessionManager.forkSession()）
+const forkResult = agent.forkSession();
 console.log(`分叉到 ${forkResult.newSession}，复制了 ${forkResult.messageCount} 条消息`);
 
 // 自定义分支名
-const customFork = await agent.forkSession('experiment');
+const customFork = agent.forkSession('experiment');
+
+// listAllSessions 通过 agentHistory 访问
+const sessions = await agent.agentHistory?.listAllSessions();
 ```
 
-### `ForkResult` 类型
+### `AgentForkResult` / `ForkResult` 类型
 
 ```typescript
-// Agent.forkSession() 返回值
-{ newSession: string; messageCount: number }
+// Agent.forkSession() / sessionManager.forkSession() 返回值
+interface AgentForkResult {
+  newSession: string;
+  messageCount: number;
+}
 
 // MessageHistory.forkSession() 内部类型（从 memora 导出）
 export interface ForkResult {
@@ -507,7 +566,7 @@ console.log(agent.persona.currentMode);               // 当前模式
 | 方法 | 用途 |
 |------|------|
 | `tools.registerTool(definition, handler)` | 注册自定义工具（会话级） |
-| `tools.getToolDefinitions()` → `ToolDefinition[]` | 获取所有工具定义（@deprecated 请使用 `tools.list`） |
+| `tools.list` | 所有工具定义（getter，`ToolDefinition[]`） |
 | `tools.execute(name, argsJson, extensions?)` → `Promise<string>` | 执行工具调用 |
 
 ```typescript
@@ -794,42 +853,48 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 ## 十三、内部调试
 
-> 已移除 `getBuildCtx()` 方法。宿主项目如需调试内部状态，请使用 `agent.inspect()` 获取完整状态快照。
+> v1.0 起已移除 `getBuildCtx()` 和 `inspect()` 方法。宿主项目可通过以下渠道观察内核状态：
+>
+> - **事件系统**（§2.7）：订阅 `memoryAdded` / `memoryRecalled` / `skillMatched` 等事件获取运行时动态
+> - **可观测性 Tracer**（§十五）：注入 `ITracer` 实现获取 AgentLoop 关键 span（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE）
+> - **`agent.memory.snapshot()`**（§4.1）：获取 3 层记忆快照（working / bootstrap / archive）
+> - **`agent.agentLoop.getMessages()`**（§4.4）：获取工作记忆原始消息列表
 
 ---
 
 ## 十四、完整 API 一览
 
-### Agent 面类直接方法（17 个）
+### Agent 面类直接方法（12 个）
 
 | 分组 | 方法 |
 |------|------|
 | 生命周期 | `init()` / `close()` |
 | 对话 | `chat()` / `chatSync()` |
-| 事件 | `on()` / `off()` |
-| `agent.projects` | `.list` / `.switchProject()` / `.listProjects()` / `.rebuildComponents()` |
+| 事件 | `on()` / `off()` / `once()` |
+| 项目 / 会话 | `switchProject()` / `rebuildComponents()` / `forkSession()` |
 | Provider | `setProvider()` / `setBackgroundProvider()` |
 
 ### Agent 面类只读访问器（10 个）
 
 `initialized` / `context` / `provider` / `isBusy` / `lastInteractionAt` / `agentLoop` / `agentHistory` / `projects` / `security` / `sessionManager`
 
-### Manager 访问器（8 个）
+### Manager 访问器（9 个）
 
-`persona` / `tools` / `skills` / `config` / `insight` / `memory` / `userProfile` / `works`
+`persona` / `tools` / `skills` / `config` / `insight` / `memory` / `memoryMutator` / `userProfile` / `works`
 
 ### 各 Manager 公开成员
 
 | Manager | 公开成员 |
 |---------|---------|
 | `agent.persona` | `.list` / `.activeName` / `.currentMode` / `.active` / `.switchPersona()` / `.setMode()` |
-| `agent.tools` | `.list` / `.registerTool()` / `.getToolDefinitions()` / `.execute()` |
+| `agent.tools` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.config` | `.addRule()` / `.addSimpleRule()` / `.addSkill()` / `.addSimpleSkill()` / `.onConfigSuggestion()` / `.confirmConfigSuggestion()` |
 | `agent.insight` | `.classify(input)` / `.extract(userInput, assistantContent)` / `.setKeywords(keywords)` / `.setWriteExtensions(ext)` |
 | `agent.memory` | `.snapshot()` / `.search()` / `.stats()` / `.suggest()` / `.sourceHealth()` |
-| `agent.userProfile` | `.list()` / `.confirm(id)` / `.reject(id)` / `.pending()` |
-| `agent.works` | `.list()` / `.add(projection)` |
+| `agent.memoryMutator` | `.upsert()` / `.delete()` / `.restore()` / `.purge()`（写操作代理，P1-2 拆分） |
+| `agent.userProfile` | `.load()` / `.archiveFacts(facts)` / `.getConfirmed()` / `.getPending()` / `.buildSystemPrompt()` / `.confirm(id)` / `.reject(id)` |
+| `agent.works` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 
 ---
 
@@ -937,6 +1002,8 @@ action: block
 
 ## 十八、类型导出
 
+> 以下导出与 `src/index.ts` 完全对齐（v1.0.0）。`RecalledMemorySummary` 已在 P1-1 补齐导出。
+
 ```typescript
 // Agent 与流式事件
 export { Agent } from '@zooique/memora';
@@ -944,32 +1011,32 @@ export type {
   AgentChunk,
   ThinkingPhase,
   UIMessages,
+  ArchiveMode,
+} from '@zooique/memora';
+export type {
   AgentOptions,
   AgentContext,
   AgentProjectEntry,
-  AgentForkResult,
-  AgentMetrics,
-  AgentSearchHit,
-  AgentStats,
-  ArchiveMode,
-  SuggestOptions,
-  SuggestHit,
-  SourceHealthStatus,
-  SourceHealthEntry,
-  SourceHealthReport,
-  ForkResult,
-  SessionArchiveResult,
-  WorkProjectionEntry,
-  AutoConfigRefinerOptions,
 } from '@zooique/memora';
+export { type AgentForkResult } from '@zooique/memora';
+export type { RecalledMemorySummary } from '@zooique/memora';
 
-// 记忆快照与搜索
+// 记忆快照与搜索（MemoryInspector）
 export type {
   MemorySnapshot,
   WorkingMemorySnapshot,
   BootstrapSnapshot,
   ArchiveSnapshot,
+  AgentSearchHit,
+  AgentStats,
+  SuggestOptions,
+  SuggestHit,
+  SourceHealthStatus,
+  SourceHealthEntry,
+  SourceHealthReport,
 } from '@zooique/memora';
+// 记忆写入器（P1-2 拆分）
+export type { MemoryMutator } from '@zooique/memora';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@zooique/memora';
 
 // 工具
@@ -980,37 +1047,58 @@ export type { ConfigSuggestion, ConfigSuggestionHandler } from '@zooique/memora'
 
 // Insight
 export type { MemoryKeywords } from '@zooique/memora';
+// RelationBuilder（P1-3 拆分，封装 ADR-014 关系构建逻辑）
+export { RelationBuilder } from '@zooique/memora';
+export type { ConflictInfo } from '@zooique/memora';
+
+// 会话归档
+export type { SessionArchiveResult } from '@zooique/memora';
+// 作品投影
+export type { WorkProjectionEntry } from '@zooique/memora';
+// AutoConfigRefiner
+export type { AutoConfigRefinerOptions } from '@zooique/memora';
 
 // 记忆
+export { SOURCE_LABELS } from '@zooique/memora';
 export type { Memory } from '@zooique/memora';
-export type { IMemoryStorage, ISessionStore, SessionMessage } from '@zooique/memora';
+export { inferSource, escapeLike, validateSource } from '@zooique/memora';
+export type { SourceValidationSeverity } from '@zooique/memora';
+export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';
+export type { ISessionStore, SessionMessage } from '@zooique/memora';
+export type { ForkResult } from '@zooique/memora';
 
-// 记忆关系
-export type {
-  IMemoryRelationStore,
-  MemoryRelation,
-  RelationDirection,
-} from '@zooique/memora';
-export { InMemoryRelationStore, RELATION_TYPES, RELATION_WEIGHTS } from '@zooique/memora';
+// 记忆关系（ADR-014 侧车模型）
+export { RELATION_TYPES, RELATION_WEIGHTS } from '@zooique/memora';
+export type { MemoryRelation, RelationDirection, RelationPath, RelationNeighbor } from '@zooique/memora';
+export type { IMemoryRelationStore } from '@zooique/memora';
+export { InMemoryRelationStore } from '@zooique/memora';
+
+// 项目注册表 + 锁文件管理（P1-4 拆分）
+export { ProjectRegistry } from '@zooique/memora';
+export type { ProjectEntry } from '@zooique/memora';
+export { LockManager } from '@zooique/memora';
 
 // 用户画像
 export type { UserProfileEntry, ProfileCategory, ExtractedFact } from '@zooique/memora';
 
 // 向量存储
-export { JsonVectorStore, EmbeddingProvider } from '@zooique/memora';
-export type { IVectorStore, EmbeddingService, EmbeddingConfig, EmbeddingResult } from '@zooique/memora';
+export { JsonVectorStore } from '@zooique/memora';
+export type { IVectorStore, EmbeddingService } from '@zooique/memora';
+export { EmbeddingProvider } from '@zooique/memora';
+export type { EmbeddingConfig, EmbeddingResult, EmbeddingOptions } from '@zooique/memora';
 
 // 事件系统
 export { TypedEventEmitter } from '@zooique/memora';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from '@zooique/memora';
 
 // 可观测性
-export type { ITracer, ISpan } from '@zooique/memora';
+export type { ITracer, ISpan, AgentMetrics } from '@zooique/memora';
 export { NOOP_TRACER, TRACE_SPANS } from '@zooique/memora';
 
 // 错误码
-export { ToolErrorCode, isRetryableErrorCode, MemoraError, toError } from '@zooique/memora';
+export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@zooique/memora';
+export { toError } from '@zooique/memora';
 export type { ToolErrorCodeValue } from '@zooique/memora';
 
 // 日志
@@ -1028,28 +1116,21 @@ export type { PersonaMode, Persona } from '@zooique/memora';
 export type { SkillEntry, SkillMatch } from '@zooique/memora';
 
 // LLM
-export { createLlmProvider, createProviderFromConfig, OpenAICompatibleProvider } from '@zooique/memora';
-export type { ProviderConfig, LlmProvider, LlmChunk, ChatOptions, OpenAICompatibleConfig } from '@zooique/memora';
+export { createLlmProvider, createProviderFromConfig } from '@zooique/memora';
+export type { ProviderConfig } from '@zooique/memora';
+export type { LlmProvider, ChatOptions } from '@zooique/memora';
+export type { LlmChunk } from '@zooique/memora';
+export { OpenAICompatibleProvider } from '@zooique/memora';
+export type { OpenAICompatibleConfig } from '@zooique/memora';
 
 // 配置
 export { loadConfig } from '@zooique/memora';
 export type { Config } from '@zooique/memora';
 
 // 工具函数
-export {
-  segmentText,
-  SOURCE_LABELS,
-  inferSource,
-  escapeLike,
-  validateSource,
-  safeSetTimeout,
-  safeSetInterval,
-  clearSafeTimeout,
-  clearSafeInterval,
-  parseFrontmatter,
-  serializeFrontmatter,
-} from '@zooique/memora';
-export type { SourceValidationSeverity } from '@zooique/memora';
+export { segmentText } from '@zooique/memora';
+export { parseFrontmatter, serializeFrontmatter } from '@zooique/memora';
+export { safeSetTimeout, safeSetInterval, clearSafeTimeout, clearSafeInterval } from '@zooique/memora';
 
 // 安全
 export type {
@@ -1062,8 +1143,8 @@ export type {
 } from '@zooique/memora';
 
 // 评估
-export { collectAgentChunks, evaluateResult } from '@zooique/memora';
 export type { EvalScenario, EvalExpectation, EvalResult } from '@zooique/memora';
+export { collectAgentChunks, evaluateResult } from '@zooique/memora';
 ```
 
 ---

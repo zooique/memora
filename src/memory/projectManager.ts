@@ -366,7 +366,9 @@ export class ProjectManager {
 
   /**
    * 列出已注册的项目
-   * @deprecated 请使用 `projectManager.list` getter 代替
+   *
+   * v1.0 公共 API（CHANGELOG 迁移路径：`agent.listProjects()` → `agent.projects.listProjects()`）。
+   * 与 `.list` getter 等价，保留方法形式以兼容 0.3 迁移路径。
    */
   listProjects(): ProjectEntry[] {
     return this.registry.list;

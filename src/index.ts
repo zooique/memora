@@ -10,7 +10,8 @@
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from '@/agent/agent.js';
-export type { AgentChunk, ThinkingPhase, UIMessages, ArchiveMode } from '@/agent/types.js';
+// RecalledMemorySummary：recall chunk 载荷类型，宿主渲染召回记忆列表时需要（P1-1 补齐）
+export type { AgentChunk, ThinkingPhase, UIMessages, ArchiveMode, RecalledMemorySummary } from '@/agent/types.js';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 export type {
   AgentOptions,

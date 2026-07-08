@@ -43,6 +43,85 @@
 
 `ChatOptions.channel?: 'chat' | 'background'` 字段从未被任何 LLM 调用路径读取，已移除。多 Provider 路由通过 `AgentOptions.backgroundProvider` 注入独立 LlmProvider 实例实现，不通过 `ChatOptions` 字段路由。
 
+#### 4. `AgentChunk` 流式事件结构变化
+
+多个 chunk 类型的字段结构发生变化，宿主需更新 chunk 处理逻辑：
+
+| chunk 类型 | 0.3 结构 | 1.0 结构 |
+|---|---|---|
+| `recall` | `{ type: 'recall'; count: number }` | `{ type: 'recall'; memories: RecalledMemorySummary[] }`（携带记忆摘要列表，非计数） |
+| `text` | `{ type: 'text'; content: string }` | `{ type: 'text'; content: string; guardrailBlocked?: boolean }`（新增护栏阻断标志） |
+| `tool_start` | `{ type: 'tool_start'; name: string; args?: string }` | `{ type: 'tool_start'; toolCallId: string; name: string; args?: string }`（新增 toolCallId） |
+| `tool_result` | `{ type: 'tool_result'; name: string; ok: boolean; summary?: string }` | `{ type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }`（新增 toolCallId） |
+| `error` | 不存在 | `{ type: 'error'; message: string }`（新增，流式错误替代裸 throw） |
+| `retry` | 不存在 | `{ type: 'retry'; attempt; maxRetries; delayMs; error }`（新增，指数退避重试信号） |
+
+新增 `RecalledMemorySummary` 类型（`{ id, name, score, source }`），仅暴露 UI 展示所需字段，不含 `content`。
+
+#### 5. `Memory` 类型新增 `deletedAt` 字段（7→8 字段）
+
+`Memory` 接口新增可选字段 `deletedAt?: string`（ISO 8601），支持软删除/回收站机制（ADR-004 GAP-6 扩展）。所有查询方法自动过滤 `deletedAt != undefined` 的记忆。
+
+#### 6. `IMemoryStorage` 接口扩展（7→15 方法）
+
+新增 8 个方法，宿主实现的 `IMemoryStorage` 需补全：
+
+| 新增方法 | 用途 |
+|---|---|
+| `restore(id)` | 恢复软删除记忆 |
+| `purge(id)` | 物理删除（不可恢复） |
+| `listDeleted(limit?)` | 列出回收站 |
+| `getDeletedById(id)` | 按 ID 获取软删除记忆 |
+| `purgeExpired(before)` | 清理过期回收站 |
+| `decayScores(sources, now)` | 批量衰减 score |
+| `getAllSources()` | 获取 source→count 映射 |
+
+（`close?()` 已在 0.3 存在）
+
+#### 7. `AgentOptions` 字段变化
+
+| 变化 | 0.3 | 1.0 | 迁移路径 |
+|---|---|---|---|
+| `logger` 字段移除 | `AgentOptions.logger?: ILogger` | 移除 | 改用全局 `setLogger(customLogger)` 注入 |
+| `archiveMode` 新增 | 不存在 | `archiveMode?: ArchiveMode`（默认 `'full'`） | 可选，不传则默认 `'full'` 全自动归档 |
+| `enableContextSummary` 默认值 | `false` | `true` | 如需关闭显式传 `false` |
+
+#### 8. 事件载荷变化
+
+三个事件的载荷结构变化，宿主事件处理器需更新：
+
+| 事件 | 0.3 载荷 | 1.0 载荷 |
+|---|---|---|
+| `conflictDetected` | `{ memoryId, conflictingId, relationType }` | `{ newMemoryId, newInsight, targetId, targetContent }` |
+| `projectSwitched` | `{ from, to }` | `{ from: string \| null, to: string, projectName: string }` |
+| `skillMatched` | `{ skillName, keywords }` | `{ skill: string, score: number }` |
+
+#### 9. 会话/项目方法迁移到专职 Manager
+
+以下方法从 Agent 面类迁移到专职 Manager（P1-4 拆分）：
+
+| 0.3 调用方式 | 1.0 迁移路径 |
+|---|---|
+| `agent.switchSession(name)` | `agent.sessionManager.switchSession(name)` |
+| `agent.loadSessionMessages(date, session)` | `agent.sessionManager.loadSessionMessages(date, session)` |
+| `agent.restoreMostRecentSession(...)` | `agent.sessionManager.restoreMostRecentSession(...)` |
+| `agent.restoreSession(date, session)` | `agent.sessionManager.restoreSession(date, session)` |
+| `agent.listProjects()` | `agent.projects.listProjects()` |
+
+**保留在 Agent 面类**：`switchProject()` / `rebuildComponents()` / `forkSession()`（常用入口）。
+
+#### 10. `ToolExecutor` 移除 `getToolDefinitions()`
+
+`agent.tools.getToolDefinitions()` 已移除，改用 `agent.tools.list`（getter）。
+
+| 0.3 调用 | 1.0 迁移路径 |
+|---|---|
+| `agent.tools.getToolDefinitions()` | `agent.tools.list` |
+
+#### 11. Agent 移除 `inspect()` / `getBuildCtx()`
+
+`agent.inspect()` 和 `agent.getBuildCtx()` 已移除。宿主可通过事件系统、ITracer、`agent.memory.snapshot()` 观察内核状态。
+
 ### Added（新增功能）
 
 - **`MemoryMutator`**：记忆写入器，与 `MemoryInspector` 严格分工（读写分离）
@@ -51,10 +130,18 @@
 - **`IVectorStore`** 接口：向量存储抽象，宿主可注入自定义实现（ADR-016）
 - **`EmbeddingOptions`**：embedding 调用选项（`signal?: AbortSignal` + `timeoutMs?: number`），`EmbeddingProvider.embed/batchEmbed` 和 `IVectorStore` 方法支持外部取消 + 超时中断（P1-8）
 - **`ConflictInfo`** 类型：关系冲突信息，`RelationBuilder.bindOnConflict()` 回调参数
+- **`RecalledMemorySummary`** 类型：recall chunk 载荷，仅暴露 UI 展示所需字段（id/name/score/source），不含 content
+- **`archiveMode`** 选项：ADR-015 三态归档控制（`full` / `insights-only` / `manual`），默认 `full`
+- **AgentChunk 新增 `error` / `retry` 类型**：流式错误事件替代裸 throw，指数退避重试信号让宿主感知重试
+- **`mergeSignals`** 工具：AbortSignal 合并工具，将多个 signal 合并为一个（用于工具执行超时 + 用户取消合并）
 - **`guardrail.ts`** 独立模块：内容护栏纯函数 `runGuardrails()`，从 `AgentLoop` 提取（P1-1）
 - **`sourceValidation.ts`**：source 校验工具从 `types.ts` 拆分（P1-2）
 - **AgentChunk `guardrailBlocked`** 标志位：结构化护栏信号，替代中文字符串匹配（P0-7）
+- **`SessionArchiver`**：会话内容归档器，支持 content 类记忆归档
+- **`MemoryAdvisor`**：记忆建议器，提供 suggest / sourceHealth 查询
+- **`MemoryDecayScheduler`**：记忆衰减调度器，init 首次 + 每小时定时衰减
 - **ADR-016**：向量存储接口化决策记录
+- **ADR-015**：archiveMode 三态归档控制决策记录
 - **ADR-002/004/014 补充**：Logger 懒初始化、content 多用途、关系查询归属 + RelationBuilder 拆分
 
 ### Changed（改进）

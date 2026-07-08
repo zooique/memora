@@ -193,13 +193,20 @@ class MemoryInspector {
   getRelations(memoryId: string, direction?: RelationDirection): MemoryRelation[] { /* 透传 */ }
 }
 
-// IMemoryRelationStore（原子操作接口）
+// IMemoryRelationStore（原子操作接口，5 方法——与 §2 定义一致，未收窄）
 interface IMemoryRelationStore {
   addRelation(relation: MemoryRelation): void;  // 写操作（MemoryMutator 调用）
   getRelations(memoryId: string, direction?): MemoryRelation[];  // 原子读
+  getRelationsByType(type: string): MemoryRelation[];  // 按类型查询（冲突检测用）
+  getAllRelations(): MemoryRelation[];  // 全量查询（拓扑可视化用）
   removeRelation(sourceId: string, targetId: string, type: string): void;  // 写操作
 }
 ```
+
+> **澄清**：IMemoryRelationStore 接口保持 §2 定义的 5 方法不变。
+> 关系查询的**编排逻辑**（BFS/DFS 遍历、路径查找）归属 MemoryInspector，
+> 但 IMemoryRelationStore 本身的原子查询方法（getRelations/getRelationsByType/getAllRelations）不收窄——
+> 它们是宿主实现 SqliteRelationStore 时需要的基础查询能力。
 
 ### 决策 2：关系构建逻辑提取为 RelationBuilder（P1-3 拆分）
 

@@ -101,8 +101,8 @@ await agent.close();
 ```
 src/
 ├── index.ts        # 库导出入口（纯类型 + 接口导出，无 CLI）
-├── agent/          # Agent Loop + 工具执行 + 对话快照
-├── memory/         # 记忆引擎（IMemoryStorage 接口 + 召回）
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/（9 个专职 Manager）
+├── memory/         # 记忆引擎（IMemoryStorage + IMemoryRelationStore + 召回 + 向量存储）
 ├── persona/        # 角色管理
 ├── skill/          # 技能管理
 ├── llm/            # LLM 适配层

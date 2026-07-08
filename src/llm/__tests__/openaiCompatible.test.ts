@@ -6,6 +6,7 @@ import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
+import type { LlmChunk } from '@/llm/types.js';
 import { toError } from '@/utils/toError.js';
 
 let server: ReturnType<typeof setupServer>;
@@ -303,5 +304,232 @@ describe('OpenAICompatibleProvider · response_format 透传', () => {
     // 未传入时不应透传 undefined，body 不应包含该字段
     expect(capturedBody).toBeDefined();
     expect(capturedBody!).not.toHaveProperty('response_format');
+  });
+});
+
+// ─── tool_calls delta 累积（核心 OpenAI 协议解析，P0-6 补齐）──
+
+/**
+ * 创建模拟 SSE 流响应（tool_calls delta 分片版）
+ *
+ * OpenAI 协议：tool_calls 以 delta 形式分片传输，
+ * function.name 和 function.arguments 可能跨多个 chunk 到达，
+ * 需在接收端按 index 累积，在 finish_reason='tool_calls' 时输出完整 toolCalls。
+ *
+ * @param deltas delta 序列（每个元素是一个 SSE data 行的 choices[0].delta）
+ * @param finalFinishReason 最后一个 chunk 的 finish_reason（'tool_calls' / 'stop' / undefined）
+ */
+function createToolCallsSseResponse(
+  deltas: Array<Record<string, unknown>>,
+  finalFinishReason?: string,
+): HttpResponse<ReadableStream> {
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      for (let i = 0; i < deltas.length; i++) {
+        const isLast = i === deltas.length - 1;
+        const payload = {
+          id: 'mock-1',
+          object: 'chat.completion.chunk',
+          created: Date.now(),
+          model: 'mock-model',
+          choices: [{
+            index: 0,
+            delta: deltas[i],
+            finish_reason: isLast ? finalFinishReason ?? null : null,
+          }],
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      }
+      controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+  return new HttpResponse(stream, {
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+}
+
+/** 收集 provider.chat() 产出的所有 chunk */
+async function collectChunks(provider: OpenAICompatibleProvider): Promise<LlmChunk[]> {
+  const chunks: LlmChunk[] = [];
+  for await (const chunk of provider.chat([{ role: 'user', content: 'test' }])) {
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+
+describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
+  it('单个 tool_call：name 和 arguments 跨多 chunk 累积，finish_reason=tool_calls 时输出完整 toolCalls', async () => {
+    // 模拟 OpenAI 协议：tool_call 的 name 和 arguments 分片传输
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            // 第 1 片：tool_call id + name 开头
+            { tool_calls: [{ index: 0, id: 'call_abc', type: 'function', function: { name: 'read_', arguments: '' } }] },
+            // 第 2 片：name 续片 + arguments 开头
+            { tool_calls: [{ index: 0, function: { name: 'file', arguments: '{"pa' } }] },
+            // 第 3 片：arguments 续片
+            { tool_calls: [{ index: 0, function: { arguments: 'th":"main.ts"}' } }] },
+          ],
+          'tool_calls',
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+
+    // 找到携带 toolCalls 的 chunk（应在 finish_reason='tool_calls' 时输出）
+    const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
+    expect(toolCallChunk).toBeDefined();
+    expect(toolCallChunk!.toolCalls).toHaveLength(1);
+
+    const call = toolCallChunk!.toolCalls![0];
+    expect(call).toBeDefined();
+    // name 应累积为完整函数名：read_ + file = read_file
+    expect(call!.id).toBe('call_abc');
+    expect(call!.type).toBe('function');
+    expect(call!.function.name).toBe('read_file');
+    // arguments 应累积为完整 JSON 字符串
+    expect(call!.function.arguments).toBe('{"path":"main.ts"}');
+  });
+
+  it('多个 tool_call 并行累积：按 index 分别累积，finish_reason=tool_calls 时全部输出', async () => {
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            // tool_call 0 开始
+            { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } }] },
+            // tool_call 1 开始（不同 index）
+            { tool_calls: [{ index: 1, id: 'call_2', type: 'function', function: { name: 'write_', arguments: '' } }] },
+            // tool_call 1 续片
+            { tool_calls: [{ index: 1, function: { name: 'file', arguments: '{"path":"b.ts","content":"x"}' } }] },
+          ],
+          'tool_calls',
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
+
+    expect(toolCallChunk).toBeDefined();
+    expect(toolCallChunk!.toolCalls).toHaveLength(2);
+
+    // 按 index 顺序输出（index 0 在前，index 1 在后）
+    const [call0, call1] = toolCallChunk!.toolCalls!;
+    expect(call0).toBeDefined();
+    expect(call1).toBeDefined();
+    expect(call0!.id).toBe('call_1');
+    expect(call0!.function.name).toBe('read_file');
+    expect(call0!.function.arguments).toBe('{"path":"a.ts"}');
+
+    expect(call1!.id).toBe('call_2');
+    // name 跨片累积：write_ + file = write_file
+    expect(call1!.function.name).toBe('write_file');
+    expect(call1!.function.arguments).toBe('{"path":"b.ts","content":"x"}');
+  });
+
+  it('流结束 [DONE] 兜底：无 finish_reason=tool_calls 时在 [DONE] 输出累积的 toolCalls', async () => {
+    // 某些模型可能不在 chunk 中标 finish_reason='tool_calls'，直接 [DONE] 结束
+    // 此时应在 [DONE] 时兜底输出累积的 tool_calls
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            { tool_calls: [{ index: 0, id: 'call_x', type: 'function', function: { name: 'search', arguments: '{"q":"test"}' } }] },
+          ],
+          // finalFinishReason 不传（undefined），模拟模型不标 tool_calls 直接结束
+          undefined,
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    // 应在流结束时兜底输出 toolCalls
+    const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
+    expect(toolCallChunk).toBeDefined();
+    expect(toolCallChunk!.toolCalls).toHaveLength(1);
+    expect(toolCallChunk!.toolCalls![0]!.function.name).toBe('search');
+  });
+
+  it('finish_reason 非 tool_calls 时清空累积器：防止残留碎片污染下一次调用', async () => {
+    // 某些模型在 stop 时可能残留不完整的 tool_calls 碎片
+    // 应在 finish_reason='stop' 时清空累积器，不输出 toolCalls
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            // 残留的不完整 tool_call 碎片（无 arguments）
+            { tool_calls: [{ index: 0, id: 'call_frag', type: 'function', function: { name: 'incomplete' } }] },
+            // 文本内容
+            { content: '正常文本响应' },
+          ],
+          'stop',
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+
+    // finish_reason='stop' 时不应输出 toolCalls（累积器已被清空）
+    const toolCallChunks = chunks.filter((c) => c.toolCalls && c.toolCalls.length > 0);
+    expect(toolCallChunks).toHaveLength(0);
+
+    // 文本内容应正常输出
+    const textContent = chunks.filter((c) => c.content).map((c) => c.content).join('');
+    expect(textContent).toContain('正常文本响应');
+  });
+
+  it('tool_call id 缺失时兜底为 call_${index}', async () => {
+    // 某些模型可能不返回 tool_call id，应兜底为 call_0 / call_1
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            // 无 id 字段
+            { tool_calls: [{ index: 0, type: 'function', function: { name: 'no_id_func', arguments: '{}' } }] },
+          ],
+          'tool_calls',
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
+
+    expect(toolCallChunk).toBeDefined();
+    expect(toolCallChunk!.toolCalls![0]!.id).toBe('call_0');
+  });
+
+  it('tool_calls 与文本内容混合：文本 chunk 实时输出，tool_calls 累积后输出', async () => {
+    // LLM 可能先输出部分文本，再发起 tool_calls
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            // 先输出文本
+            { content: '让我读取文件' },
+            // 然后发起 tool_call
+            { tool_calls: [{ index: 0, id: 'call_mixed', type: 'function', function: { name: 'read_file', arguments: '{"path":"c.ts"}' } }] },
+          ],
+          'tool_calls',
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+
+    // 文本应实时输出（在 tool_calls 之前）
+    const textChunks = chunks.filter((c) => c.content);
+    expect(textChunks.length).toBeGreaterThanOrEqual(1);
+    expect(textChunks[0]!.content).toBe('让我读取文件');
+
+    // tool_calls 应在 finish_reason='tool_calls' 时输出
+    const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
+    expect(toolCallChunk).toBeDefined();
+    expect(toolCallChunk!.toolCalls![0]!.function.name).toBe('read_file');
   });
 });

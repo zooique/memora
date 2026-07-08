@@ -75,17 +75,44 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 
 ## IMemoryStorage 接口方法
 
+> 完整定义见 `src/memory/storageInterface.ts`。所有方法均为同步（与 better-sqlite3 API 对齐）。
+
+### 基础 CRUD（6 方法）
+
 | 方法 | 说明 |
 |------|------|
 | `upsert(memory)` | 插入或更新记忆 |
-| `delete(id)` | 删除记忆 |
-| `getById(id)` | 按 ID 获取单条 |
-| `getBySource(source)` | 按来源标签获取 |
-| `search(query, limit?)` | 关键词搜索记忆 |
-| `count()` | 统计记忆总数 |
-| `countBySource(source)` | 按来源标签统计数量 |
-| `decayScores(sources, now)` | 批量衰减指定 source 的记忆 score（宿主实现批量 SQL UPDATE） |
-| `close?()` | 关闭连接（可选） |
+| `getById(id)` | 按 ID 获取单条活跃记忆（已软删除的返回 null） |
+| `getBySource(source)` | 按来源标签获取活跃记忆（自动过滤已软删除的） |
+| `search(query, limit?)` | 关键词搜索活跃记忆（自动过滤已软删除的） |
+| `count()` | 统计活跃记忆总数（不含已软删除的） |
+| `countBySource(source)` | 按来源标签统计活跃记忆数量 |
+
+### 软删除 / 回收站（6 方法，ADR-004 GAP-6 扩展）
+
+| 方法 | 说明 |
+|------|------|
+| `delete(id)` | 软删除（写入 deletedAt，不物理移除；对已软删除的 no-op） |
+| `restore(id)` | 恢复软删除记忆（清除 deletedAt；对活跃记忆 no-op） |
+| `purge(id)` | 物理删除（不可恢复，用于回收站"彻底删除"） |
+| `listDeleted(limit?)` | 列出回收站中的软删除记忆（按 deletedAt 降序） |
+| `getDeletedById(id)` | 按 ID 获取单条软删除记忆（restore/purge 前的存在性校验） |
+| `purgeExpired(before)` | 清理过期的软删除记忆（物理删除 deletedAt 早于 before 的） |
+
+### 统计与维护（2 方法）
+
+| 方法 | 说明 |
+|------|------|
+| `decayScores(sources, now)` | 批量衰减指定 source 的活跃记忆 score（宿主实现批量 SQL UPDATE） |
+| `getAllSources()` | 获取所有 source 标签及其活跃记忆数量（Map<string, number>） |
+
+### 可选（1 方法）
+
+| 方法 | 说明 |
+|------|------|
+| `close?()` | 关闭连接（可选，宿主注入的实现可能不需要） |
+
+**合计 15 方法**（含可选 close）。所有查询方法自动过滤已软删除的记忆（deletedAt != undefined）。
 
 ## package.json 变更
 
@@ -128,8 +155,8 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 ## 宿主接入示例
 
 ```typescript
-import { Agent } from 'memora';
-import type { IMemoryStorage, ILogger } from 'memora';
+import { Agent } from '@zooique/memora';
+import type { IMemoryStorage, ILogger } from '@zooique/memora';
 
 // 泊文宿主持有 better-sqlite3
 const storage: IMemoryStorage = new BowenSqliteStorage(db);
@@ -142,15 +169,15 @@ const myLogger: ILogger = {
   debug: (obj, msg) => console.debug('[debug]', msg, obj),
 };
 
+// v1.0：logger 从 AgentOptions 移除，改用全局 setLogger() 注入（见 ADR-002 补充 · Logger 懒初始化）
 const agent = new Agent({
   projectPath: '/path/to/novel',
   provider: myProvider,
   storage,      // 注入存储
-  logger: myLogger,  // 注入日志（可选）
 });
 
-// 也可在构造前全局替换日志
-import { setLogger } from 'memora';
+// 在构造前全局替换日志（v1.0 唯一的 logger 注入方式）
+import { setLogger } from '@zooique/memora';
 setLogger(myLogger);
 ```
 
