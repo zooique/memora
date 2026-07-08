@@ -914,8 +914,8 @@
   border-radius: var(--radius-md);
   color: var(--milestone-text);
   font-size: var(--font-sm);
-  /* 进入动画：复用消息 fadeIn 动画，保持视觉一致 */
-  animation: fadeIn var(--transition-base) ease-out;
+  /* 进入动画：复用消息 chat-fade-in 动画，保持视觉一致 */
+  animation: chat-fade-in var(--transition-base) ease-out;
   /* 限宽，避免长对话中过度占宽 */
   max-width: 480px;
   /* 内容不换行：长文本通过 ellipsis 截断，保持单行紧凑 */
@@ -1183,7 +1183,7 @@
   font-family: system-ui, -apple-system, sans-serif;
   user-select: none;
   /* 进入动画：淡入 */
-  animation: fadeIn var(--transition-base) ease-out;
+  animation: chat-fade-in var(--transition-base) ease-out;
 }
 
 /* 两侧装饰线 */
@@ -1245,11 +1245,11 @@
   /* contain: 布局/样式/绘制隔离，保留性能优化但不延迟渲染 */
   contain: layout style paint;
   /* 默认淡入动画（system消息复用），方向性动画由 user/assistant 覆盖 */
-  animation: fadeIn var(--transition-base) ease-out;
+  animation: chat-fade-in var(--transition-base) ease-out;
 }
 
 /* 统一消息淡入动画（system消息使用） */
-@keyframes fadeIn {
+@keyframes chat-fade-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0); }
 }
@@ -1258,7 +1258,7 @@
 .message.user {
   align-self: flex-end;
   flex-direction: row-reverse;
-  animation: slideInRight var(--transition-base) ease-out;
+  animation: chat-slide-in-right var(--transition-base) ease-out;
 }
 
 /* 精灵消息方向性动画：从左滑入（视觉上从精灵侧进入） */
@@ -1517,7 +1517,7 @@
   vertical-align: text-bottom;
 }
 
-@keyframes blink {
+@keyframes chat-cursor-blink {
   50% { opacity: 0; }
 }
 
@@ -2023,8 +2023,8 @@
   color: var(--text-2);
   min-height: 280px;
   gap: 12px;
-  /* 空状态使用统一 fadeIn 动画 */
-  animation: fadeIn var(--transition-slow) ease-out;
+  /* 空状态使用统一 chat-fade-in 动画 */
+  animation: chat-fade-in var(--transition-slow) ease-out;
 }
 
 /* 空状态额外样式：更大 padding 和居中布局 */
@@ -2410,7 +2410,7 @@
   font-size: var(--font-xs);
   line-height: 1.5;
   /* 进入动画：淡入 */
-  animation: fadeIn var(--transition-base) ease-out;
+  animation: chat-fade-in var(--transition-base) ease-out;
 }
 
 /* ─── 流式错误指示器 ─────────────────────────────── */
@@ -2428,7 +2428,7 @@
   font-size: var(--font-sm);
   line-height: 1.5;
   /* 进入动画：淡入 */
-  animation: fadeIn var(--transition-base) ease-out;
+  animation: chat-fade-in var(--transition-base) ease-out;
 }
 
 /* 错误气泡内的"重试"按钮 */
@@ -2544,7 +2544,7 @@
   }
 }
 
-/* 仅对非分组消息应用方向性滑入（分组消息保持原 fadeIn 避免抖动） */
+/* 仅对非分组消息应用方向性滑入（分组消息保持原 chat-fade-in 避免抖动） */
 .message:not(.grouped).user {
   animation: messageSlideInUser var(--transition-base) ease-out;
 }

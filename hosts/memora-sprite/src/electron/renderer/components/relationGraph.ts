@@ -140,6 +140,32 @@ const EDGE_COLOR_VARS: Record<string, string> = {
 /** 连线模式预览线使用的 CSS 变量名 */
 const CONNECTION_LINE_VAR = '--yellow';
 
+/**
+ * Canvas CSS 变量 fallback 常量表
+ *
+ * Canvas 2D 不支持 CSS var() 语法，需通过 getComputedStyle 运行时解析。
+ * 当变量解析失败时使用此处的 fallback 值兜底。
+ *
+ * 深色主题 fallback 通过运行时检测 data-theme 属性动态选择，
+ * 确保 fallback 值与当前主题视觉一致。
+ */
+
+/** 检测当前是否为深色主题 */
+function isDarkTheme(): boolean {
+  return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+
+/** 深浅色双 fallback 常量表（与 base.css 变量值保持同步） */
+const CSS_VAR_FALLBACKS = {
+  '--accent': () => '#0066ff',
+  '--muted': () => '#7a7a82',
+  '--text': () => (isDarkTheme() ? '#cdd6f4' : '#1d1d1f'),
+  '--white': () => '#ffffff',
+  '--yellow': () => (isDarkTheme() ? '#f9e2af' : '#ff9f0a'),
+  '--text-3': () => (isDarkTheme() ? '#a1a1a6' : '#7a7a82'),
+  '--surface0': () => (isDarkTheme() ? '#1e1e2e' : '#ececee'),
+} as const;
+
 // ─── 力导向图谱渲染器 ────────────────────────────────────────
 
 export class RelationGraphRenderer {
@@ -671,7 +697,7 @@ export class RelationGraphRenderer {
       ctx.setLineDash(CONNECTION_LINE_DASH);
       ctx.moveTo(this.connectionSourceNode.x, this.connectionSourceNode.y);
       ctx.lineTo(this.connectionMouseX, this.connectionMouseY);
-      ctx.strokeStyle = this.resolveCssVar(CONNECTION_LINE_VAR, '#ff9f0a');
+      ctx.strokeStyle = this.resolveCssVar(CONNECTION_LINE_VAR);
       ctx.lineWidth = 2;
       ctx.globalAlpha = 0.8;
       ctx.stroke();
@@ -690,7 +716,7 @@ export class RelationGraphRenderer {
       // 选中节点外发光环（强调色脉冲效果，在最底层）
       if (isSelected) {
         const selectedGlowR = r * 2.2;
-        const accentColor = this.resolveCssVar('--accent', '#0066ff');
+        const accentColor = this.resolveCssVar('--accent');
         const gradient = ctx.createRadialGradient(node.x, node.y, r * 1.2, node.x, node.y, selectedGlowR);
         gradient.addColorStop(0, this.hexToRgba(accentColor, 0.4));
         gradient.addColorStop(1, this.hexToRgba(accentColor, 0));
@@ -727,12 +753,12 @@ export class RelationGraphRenderer {
 
       // 选中节点强调色描边（优先级最高）
       if (isSelected) {
-        ctx.strokeStyle = this.resolveCssVar('--accent', '#0066ff');
+        ctx.strokeStyle = this.resolveCssVar('--accent');
         ctx.lineWidth = 3;
         ctx.stroke();
       } else if (isHovered || isDragged) {
         // hover / drag 描边（强调色半透明）
-        const accentColor = this.resolveCssVar('--accent', '#0066ff');
+        const accentColor = this.resolveCssVar('--accent');
         ctx.strokeStyle = isDragged ? accentColor : this.hexToRgba(accentColor, 0.6);
         ctx.lineWidth = isDragged ? 2.5 : 2;
         ctx.stroke();
@@ -764,29 +790,33 @@ export class RelationGraphRenderer {
 
   /**
    * 从 CSS 变量解析当前主题色值
-   * Canvas 2D 无法直接使用 CSS var()，需在绘制时动态读取
+   * Canvas 2D 无法直接使用 CSS var()，需在绘制时动态读取。
+   * fallback 值从 CSS_VAR_FALLBACKS 常量表获取，支持深浅色双主题。
    */
-  private resolveCssVar(varName: string, fallback: string): string {
-    return getComputedStyle(document.documentElement)
-      .getPropertyValue(varName).trim() || fallback;
+  private resolveCssVar(varName: string, fallback?: string): string {
+    const resolved = getComputedStyle(document.documentElement)
+      .getPropertyValue(varName).trim();
+    if (resolved) return resolved;
+    // 优先使用显式传入的 fallback，其次查常量表
+    return fallback ?? CSS_VAR_FALLBACKS[varName as keyof typeof CSS_VAR_FALLBACKS]?.() ?? '#7a7a82';
   }
 
   /** 根据 source 获取节点颜色（从 CSS 变量解析，支持双主题自动切换） */
   private getNodeColor(node: GraphNode): string {
     const varName = SOURCE_COLOR_VARS[node.source];
     if (varName) {
-      return this.resolveCssVar(varName, '#7a7a82');
+      return this.resolveCssVar(varName);
     }
-    return this.resolveCssVar('--muted', '#7a7a82');
+    return this.resolveCssVar('--muted');
   }
 
   /** 根据边类型获取边颜色（从 CSS 变量解析，支持双主题自动切换） */
   private getEdgeColor(edgeType: string): string {
     const varName = EDGE_COLOR_VARS[edgeType];
     if (varName) {
-      return this.resolveCssVar(varName, '#7a7a82');
+      return this.resolveCssVar(varName);
     }
-    return this.resolveCssVar('--muted', '#7a7a82');
+    return this.resolveCssVar('--muted');
   }
 
   /** 将十六进制颜色转换为 rgba 字符串（用于光晕/渐变等需要透明度的场景） */
@@ -813,8 +843,8 @@ export class RelationGraphRenderer {
     const yiq = (r * 299 + g * 587 + b * 114) / 1000;
     // 亮色背景用深色文字，暗色背景用浅色文字（文字颜色跟随主题 --text）
     return yiq >= 128
-      ? this.resolveCssVar('--text', '#1d1d1f')
-      : this.resolveCssVar('--white', '#ffffff');
+      ? this.resolveCssVar('--text')
+      : this.resolveCssVar('--white');
   }
 
   /**

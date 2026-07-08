@@ -122,6 +122,7 @@ src/
 ├── sprite/                     # 精灵核心层（纯逻辑，零 Electron 依赖）
 │   ├── sprite.ts               # 精灵核心类（启动/关闭/事件/主动行为）
 │   ├── spriteConfig.ts         # 精灵配置管理（加载/保存/默认值）
+│   ├── spriteLifecycleManager.ts # 精灵生命周期管理器（从 sprite.ts 拆分：init/shutdown/定时任务）
 │   ├── spriteTracer.ts         # 精灵追踪（Span 埋点）
 │   ├── triggers.ts             # 触发条件定义（时间/事件/记忆量）
 │   ├── tools.ts                # 工具定义（注册给 Agent 的自定义工具）
@@ -150,6 +151,7 @@ src/
 │       ├── contextAwareness.ts   # 上下文感知控制器（场景识别/语境理解）
 │       ├── patternDetector.ts    # 模式检测器（用户行为模式识别）
 │       ├── affectController.ts   # 情感控制器（情绪感知/响应调节）
+│       ├── perceptionCoordinator.ts # 感知协调器（融合多控制器输出，统一感知叙事）
 │       ├── reviewManager.ts      # 回顾管理器（记忆定期回顾/总结）
 │       └── memoryHealth.ts       # 记忆健康度管理（质量评估/优化建议）
 │

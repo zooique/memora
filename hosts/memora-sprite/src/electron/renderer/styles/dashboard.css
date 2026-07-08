@@ -549,7 +549,8 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 /* 小屏下改为 2 列，避免卡片过于拥挤 */
-@media (max-width: 750px) {
+/* 断点对齐 layout.css 中屏断点（799px），避免组件在不同窗口宽度下错位跳跃 */
+@media (max-width: 799px) {
   .growth-cards {
     grid-template-columns: repeat(2, 1fr);
   }

@@ -31,7 +31,7 @@
   --muted:       #7a7a82;  /* 弱化文字（v8 --text-3）；WCAG AA 达标 */
   --text-2:      #6e6e73;  /* v8 命名，= --subtext */
   --text-3:      #7a7a82;  /* v8 命名，= --muted */
-  --text-4:      #c7c7cc;  /* 最弱文字（时间戳等辅助信息） */
+  --text-4:      #a8a8ae;  /* 最弱文字（时间戳等辅助信息）；WCAG AA 3:1 达标 */
 
   /* 强调色 */
   --accent:        #0066ff;  /* 主强调色（v8 --accent） */

@@ -344,7 +344,8 @@ export class PartnerInsightsRenderer {
     const bgColor = cssVar('--surface0', isDark ? '#1e1e2e' : '#ececee');
     const accentColor = cssVar('--accent', '#0066ff');
     const fillColor = isDark ? 'rgba(0, 102, 255, 0.1)' : 'rgba(0, 102, 255, 0.08)';
-    const textColor = cssVar('--text-3', '#a1a1a6');
+    // --text-3 fallback 与 base.css 保持一致：浅色 #7a7a82 / 深色 #a1a1a6
+    const textColor = cssVar('--text-3', isDark ? '#a1a1a6' : '#7a7a82');
     const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
     ctx.fillStyle = bgColor;

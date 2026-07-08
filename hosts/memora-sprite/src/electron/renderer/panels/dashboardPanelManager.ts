@@ -622,7 +622,8 @@ export class DashboardPanelManager {
       rootStyle.getPropertyValue(name).trim() || fallback;
     const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
     const accentColor = cssVar('--accent', '#0066ff');
-    const textColor = cssVar('--text-3', isDark ? '#a1a1a6' : '#6e6e73');
+    // --text-3 fallback 与 base.css 保持一致：浅色 #7a7a82 / 深色 #a1a1a6
+    const textColor = cssVar('--text-3', isDark ? '#a1a1a6' : '#7a7a82');
     const gridColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
     // 背景透明（让 dashboard-body 背景透出，视觉融入）
