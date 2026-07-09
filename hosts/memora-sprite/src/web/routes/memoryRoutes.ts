@@ -31,6 +31,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { HostContext } from '../../shared/hostContext.js';
 import { toError } from 'memora';
 import { parseJsonBody, sendJson, sendError, safeRoute, ensureAgentReady } from './types.js';
+import { MS_PER_DAY } from '../../sprite/constants.js';
 
 /**
  * 处理记忆相关 HTTP 路由
@@ -254,7 +255,7 @@ export async function handleMemoryRoute(
     if (method === 'POST' && subPath === '/trash/purge') {
       const body = await parseJsonBody<{ retentionDays?: number }>(req);
       const retentionDays = body?.retentionDays ?? 30;
-      const before = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+      const before = new Date(Date.now() - retentionDays * MS_PER_DAY);
       // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator
       const purgedCount = ctx.agent.memoryMutator?.purgeExpired(before) ?? 0;
       sendJson(res, 200, { purgedCount });

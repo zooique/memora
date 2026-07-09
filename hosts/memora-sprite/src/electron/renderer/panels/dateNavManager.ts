@@ -19,6 +19,7 @@
  */
 import { EventTracker } from '../helpers/eventTracker.js';
 import { formatDateKey } from '../helpers/domHelpers.js';
+import { MS_PER_DAY } from '../../../sprite/constants.js';
 
 /**
  * 日期导航管理器类
@@ -216,7 +217,7 @@ export class DateNavManager {
 
     const today = formatDateKey(new Date());
     const yesterday = formatDateKey(
-      new Date(Date.now() - 24 * 60 * 60 * 1000),
+      new Date(Date.now() - MS_PER_DAY),
     );
 
     for (const [date, count] of sortedDates) {
@@ -298,7 +299,7 @@ export class DateNavManager {
 
     const today = formatDateKey(new Date());
     const yesterday = formatDateKey(
-      new Date(Date.now() - 24 * 60 * 60 * 1000),
+      new Date(Date.now() - MS_PER_DAY),
     );
 
     if (this.currentDate === today) {

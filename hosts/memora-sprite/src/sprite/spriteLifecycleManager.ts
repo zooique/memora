@@ -24,10 +24,10 @@ import type { MemoryController } from './controllers/index.js';
 import type { ProactiveEngine } from './controllers/index.js';
 import type { PerceptionCoordinator } from './controllers/perceptionCoordinator.js';
 import { SPRITE_TRACE_SPANS } from './spriteTracer.js';
-import { MS_PER_DAY } from './constants.js';
+import { MS_PER_DAY, MS_PER_HOUR } from './constants.js';
 
 /** 回收站自动清理间隔（毫秒，默认 6 小时检查一次） */
-const RECYCLE_BIN_CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const RECYCLE_BIN_CLEANUP_INTERVAL_MS = MS_PER_HOUR * 6;
 
 /**
  * 精灵事件发射回调类型
@@ -203,7 +203,7 @@ export class SpriteLifecycleManager {
       this.recycleBinCleanupTimer.unref();
     }
     logger.info(
-      { retentionDays, intervalHours: RECYCLE_BIN_CLEANUP_INTERVAL_MS / (60 * 60 * 1000) },
+      { retentionDays, intervalHours: RECYCLE_BIN_CLEANUP_INTERVAL_MS / MS_PER_HOUR },
       '回收站自动清理定时器已启动',
     );
   }

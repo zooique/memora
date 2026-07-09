@@ -21,6 +21,7 @@
  */
 import { EventTracker } from '../helpers/eventTracker.js';
 import { clearElement, escapeHtml, formatClock, formatDateKey } from '../helpers/domHelpers.js';
+import { MS_PER_DAY } from '../../../sprite/constants.js';
 
 /** 输入防抖时长（毫秒）—— 避免每键入一个字符就触发一次 IPC 搜索 */
 const DEBOUNCE_MS = 300;
@@ -296,7 +297,7 @@ export class SearchMessagesManager {
     const sortedDates = Array.from(grouped.keys()).sort((a, b) => b.localeCompare(a));
     // 使用本地日期（formatDateKey）而非 UTC（toISOString），避免凌晨时区偏差
     const today = formatDateKey(new Date());
-    const yesterday = formatDateKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    const yesterday = formatDateKey(new Date(Date.now() - MS_PER_DAY));
 
     for (const date of sortedDates) {
       // 日期分组标题

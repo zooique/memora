@@ -14,7 +14,7 @@
 
 import type { UIManager } from '../ui.js';
 // Toast 时长常量（第一轮 P1-B 遗漏 import 修复）
-import { TOAST_SHORT_MS } from '../../../sprite/constants.js';
+import { TOAST_SHORT_MS, MS_PER_HOUR } from '../../../sprite/constants.js';
 // 事件监听器纳入 EventTracker 统一管理，cleanup 时统一移除，避免内存泄漏
 import { EventTracker } from '../helpers/eventTracker.js';
 // 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
@@ -263,7 +263,7 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         } else {
           // 进入静默模式（1 小时后自动恢复）
           void window.electronAPI.updateConfig('silentMode', true);
-          const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+          const expiresAt = new Date(Date.now() + MS_PER_HOUR).toISOString();
           void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
           if (checkbox) checkbox.checked = true;
           uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示', 'info', TOAST_SHORT_MS);

@@ -18,7 +18,7 @@ import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
-import { MS_PER_MINUTE } from '../../../sprite/constants.js';
+import { MS_PER_MINUTE, MS_PER_HOUR } from '../../../sprite/constants.js';
 import type {
   SpriteConfigForm,
   ConfirmDialogOptions,
@@ -342,7 +342,7 @@ export class SettingsPanelManager {
             silentMode: false,
             proactiveThreshold: 3,
             proactiveCooldownMs: 300_000,
-            triggerIntervalMs: 3_600_000,
+            triggerIntervalMs: MS_PER_HOUR,
             fileWatcherEnabled: false,
             fileWatcherPaths: ['.'],
             fileWatcherDebounceMs: 1000,

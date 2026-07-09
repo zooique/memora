@@ -18,6 +18,7 @@
 import type { UIManager } from '../ui.js';
 import type { SpriteConfigForm } from '../types.js';
 import { createIpcErrorHandler, reportError } from '../helpers/errorHelpers.js';
+import { MS_PER_HOUR } from '../../../sprite/constants.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS（单一真理源，消除与 spriteConfig.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../../../shared/shortcutDefaults.js';
 
@@ -112,7 +113,7 @@ export function createSettingsController(uiManager: UIManager) {
         silentMode: Boolean(safeCfg.silentMode),
         proactiveThreshold: Number(safeCfg.proactiveThreshold) || 3,
         proactiveCooldownMs: Number(safeCfg.proactiveCooldownMs) || 300_000,
-        triggerIntervalMs: Number(safeCfg.triggerIntervalMs) || 3_600_000,
+        triggerIntervalMs: Number(safeCfg.triggerIntervalMs) || MS_PER_HOUR,
         fileWatcherEnabled: Boolean(safeCfg.fileWatcherEnabled),
         fileWatcherPaths: Array.isArray(safeCfg.fileWatcherPaths) ? safeCfg.fileWatcherPaths : ['.'],
         fileWatcherDebounceMs: Number(safeCfg.fileWatcherDebounceMs) || 1000,

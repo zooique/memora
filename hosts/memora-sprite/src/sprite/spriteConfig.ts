@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { logger, toError } from 'memora';
 // 导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
-import { SPRITE_HOME_DIR_NAME } from './constants.js';
+import { SPRITE_HOME_DIR_NAME, MS_PER_HOUR } from './constants.js';
 // 从 shared/ 导入 DEFAULT_SHORTCUTS 和 ShortcutConfig（单一真理源，消除与 settingsController.ts 的重复）
 import { DEFAULT_SHORTCUTS } from '../shared/shortcutDefaults.js';
 import type { ShortcutConfig } from '../shared/shortcutDefaults.js';
@@ -183,7 +183,7 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
 /** 内置默认值 */
 export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   configVersion: 2,
-  triggerIntervalMs: 3_600_000,
+  triggerIntervalMs: MS_PER_HOUR,
   defaultPersona: '',
   silentMode: false,
   proactiveThreshold: 3,

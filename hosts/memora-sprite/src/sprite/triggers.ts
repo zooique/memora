@@ -12,6 +12,7 @@
 import { safeSetInterval, clearSafeInterval, logger } from 'memora';
 // P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from './errors.js';
+import { MS_PER_HOUR } from './constants.js';
 
 // ─── SpriteTrigger 接口 ──────────────────────────────────
 
@@ -56,7 +57,7 @@ export class TimerTrigger implements SpriteTrigger {
   private intervalMs: number;
 
   /** 默认间隔（1 小时） */
-  static readonly DEFAULT_INTERVAL_MS = 3_600_000;
+  static readonly DEFAULT_INTERVAL_MS = MS_PER_HOUR;
 
   constructor(intervalMs?: number) {
     this.intervalMs = intervalMs ?? TimerTrigger.DEFAULT_INTERVAL_MS;
