@@ -677,8 +677,7 @@ button:active,
   font-size: var(--font-base);
   font-family: var(--font-sprite);
   color: var(--text);
-  outline: none;
-  /* 移除默认搜索框样式 */
+  /* 移除默认搜索框样式，聚焦反馈由全局 :focus-visible 兜底提供 */
   -webkit-appearance: none;
 }
 

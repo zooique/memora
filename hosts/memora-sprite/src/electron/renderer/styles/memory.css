@@ -1067,7 +1067,7 @@
   height: 4px;
   background: var(--surface2);
   border-radius: 2px;
-  outline: none;
+  /* 聚焦反馈由全局 :focus-visible 兜底提供 */
   cursor: pointer;
 }
 
