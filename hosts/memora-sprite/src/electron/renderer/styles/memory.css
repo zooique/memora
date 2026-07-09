@@ -2166,6 +2166,20 @@
   overflow: hidden;
 }
 
+/* ─── 回收站批量操作按钮 ───────────────────────────── */
+
+.recycle-bin-batch-actions {
+  display: flex;
+  gap: var(--gap-compact);
+}
+
+/* 回收站弹窗底部：批量操作靠左，关闭按钮靠右 */
+#recycle-bin-modal .modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 /* ─── 恢复后跳转高亮动画 ─────────────────────────────── */
 
 /* 记忆项恢复后的闪烁高亮效果 */

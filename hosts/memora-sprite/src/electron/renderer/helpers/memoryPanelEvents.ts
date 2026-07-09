@@ -94,6 +94,8 @@ export interface MemoryPanelEventContext {
   getViewSwitchCallback(): ((mode: 'list' | 'timeline' | 'graph') => void) | null;
   /** 回收站操作回调（恢复/彻底删除） */
   getRecycleBinActionCallback(): ((action: 'restore' | 'purge', id: string) => void) | null;
+  /** 回收站批量操作回调（全部恢复/全部清空） */
+  getRecycleBinBatchActionCallback(): ((action: 'restore-all' | 'purge-all') => void) | null;
   /** 更多菜单操作回调（insights/health/recycle-bin） */
   getMoreMenuActionCallback(): ((action: string) => void) | null;
 }
@@ -122,11 +124,14 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
   initDetailActionButtons(ctx);
   initAdvancedFilterBar(ctx);
   initMoreMenu(ctx);
+  initRecycleBinButton(ctx);
   initAnalysisPanelClose(ctx);
   initViewSwitchButtons(ctx);
   initCleanupDialog(ctx);
   // 回收站列表事件委托（恢复/彻底删除按钮）
   initRecycleBinActions(ctx);
+  // 回收站批量操作（全部恢复/全部清空）
+  initRecycleBinBatchActions(ctx);
 }
 
 // ─── 1. 列表点击事件委托 ──────────────────────────────────
@@ -404,6 +409,22 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
 
 // ─── 7. 分析面板关闭按钮 ──────────────────────────────────
 
+// ─── 7.5 回收站按钮（常驻工具栏） ────────────────────────
+
+/**
+ * 回收站按钮（面板头部常驻可见），点击触发与 more-menu 中"回收站"相同的 action。
+ */
+function initRecycleBinButton(ctx: MemoryPanelEventContext): void {
+  const recycleBinBtn = document.getElementById('btn-memory-recycle-bin');
+  if (recycleBinBtn) {
+    ctx.events.addEventListener(recycleBinBtn, 'click', () => {
+      ctx.getMoreMenuActionCallback()?.('recycle-bin');
+    });
+  }
+}
+
+// ─── 8. 分析面板关闭按钮 ─────────────────────────────
+
 /**
  * 统计洞察/健康度分析面板的关闭按钮。
  */
@@ -602,4 +623,25 @@ function initRecycleBinActions(ctx: MemoryPanelEventContext): void {
       return;
     }
   });
+}
+
+/**
+ * 回收站批量操作事件：全部恢复 / 全部清空
+ *
+ * 通过 ID 选择器直接绑定按钮，操作前需二次确认（由 Controller 回调实现）。
+ */
+function initRecycleBinBatchActions(ctx: MemoryPanelEventContext): void {
+  const restoreAllBtn = document.getElementById('recycle-bin-restore-all');
+  const purgeAllBtn = document.getElementById('recycle-bin-purge-all');
+
+  if (restoreAllBtn) {
+    ctx.events.addEventListener(restoreAllBtn, 'click', () => {
+      ctx.getRecycleBinBatchActionCallback()?.('restore-all');
+    });
+  }
+  if (purgeAllBtn) {
+    ctx.events.addEventListener(purgeAllBtn, 'click', () => {
+      ctx.getRecycleBinBatchActionCallback()?.('purge-all');
+    });
+  }
 }

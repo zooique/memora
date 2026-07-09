@@ -338,6 +338,64 @@ export class MemoryController {
   }
 
   /**
+   * 批量恢复回收站中所有软删除记忆
+   *
+   * @returns 成功恢复的记忆数量
+   */
+  restoreAll(): { restored: number; failed: number } {
+    const inspector = this.agent.memory;
+    const mutator = this.agent.memoryMutator;
+    if (!inspector || !mutator) return { restored: 0, failed: 0 };
+    // 获取所有已删除记忆（不设上限）
+    const deleted = inspector.listDeleted(0);
+    let restored = 0;
+    let failed = 0;
+    for (const m of deleted) {
+      try {
+        mutator.restore(m.id);
+        restored++;
+      } catch (err) {
+        logger.warn({ err, id: m.id }, '批量恢复记忆失败');
+        failed++;
+      }
+    }
+    return { restored, failed };
+  }
+
+  /**
+   * 批量彻底删除回收站中所有记忆
+   *
+   * @returns 成功删除的记忆数量
+   */
+  purgeAll(): { purged: number; failed: number } {
+    const inspector = this.agent.memory;
+    const mutator = this.agent.memoryMutator;
+    if (!inspector || !mutator) return { purged: 0, failed: 0 };
+    // 获取所有已删除记忆（不设上限）
+    const deleted = inspector.listDeleted(0);
+    let purged = 0;
+    let failed = 0;
+    for (const m of deleted) {
+      try {
+        mutator.purge(m.id);
+        // 同步清理向量索引
+        if (this.vectorStore) {
+          try {
+            this.vectorStore.delete(m.id);
+          } catch (err) {
+            logger.warn({ err, id: m.id }, '批量清空时向量索引删除失败');
+          }
+        }
+        purged++;
+      } catch (err) {
+        logger.warn({ err, id: m.id }, '批量清空记忆失败');
+        failed++;
+      }
+    }
+    return { purged, failed };
+  }
+
+  /**
    * 添加或更新记忆
    *
    * 同时异步更新向量索引，失败时降级为纯关键词召回。

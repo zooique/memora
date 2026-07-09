@@ -430,6 +430,19 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   color: var(--subtext);
 }
 
+/* ─── 刷新按钮加载动画 ──────────────────────────── */
+
+/* 刷新按钮旋转动画：复用 base.css 的 panel-spin keyframes */
+#btn-refresh-dashboard.spinning .icon {
+  animation: panel-spin 0.8s linear infinite;
+}
+
+/* 加载中时禁用按钮防止重复点击 */
+#btn-refresh-dashboard.spinning {
+  pointer-events: none;
+  opacity: 0.7;
+}
+
 /* 3 张对比卡片：横向 grid 布局（今日 / 7 天 / 30 天） */
 .growth-cards {
   display: grid;

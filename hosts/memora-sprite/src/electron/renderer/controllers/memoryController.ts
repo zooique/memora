@@ -179,6 +179,49 @@ export function createMemoryController(uiManager: UIManager) {
       }
     });
 
+    // ─── 回收站批量操作回调：全部恢复 / 全部清空 ──
+    uiManager.onRecycleBinBatchAction(async (batchAction) => {
+      if (batchAction === 'restore-all') {
+        const confirmed = await uiManager.showConfirmDialog({
+          title: '全部恢复',
+          message: '确定要将回收站中所有记忆恢复到活跃列表吗？',
+          confirmText: '全部恢复',
+        });
+        if (!confirmed) return;
+        try {
+          const result = await window.electronAPI.restoreAllMemories();
+          if (result.restored > 0) {
+            uiManager.showToast(`已恢复 ${result.restored} 条记忆`, 'success');
+            await loadRecycleBinList();
+            await loadMemoryList();
+          } else {
+            uiManager.showToast('回收站中没有可恢复的记忆', 'info');
+          }
+        } catch (error) {
+          handleIpcError('restoreAllMemories', error, '批量恢复失败');
+        }
+      } else if (batchAction === 'purge-all') {
+        const confirmed = await uiManager.showConfirmDialog({
+          title: '全部清空',
+          message: '确定要彻底删除回收站中所有记忆吗？此操作不可恢复。',
+          confirmText: '全部清空',
+          danger: true,
+        });
+        if (!confirmed) return;
+        try {
+          const result = await window.electronAPI.purgeAllMemories();
+          if (result.purged > 0) {
+            uiManager.showToast(`已彻底删除 ${result.purged} 条记忆`, 'success');
+            await loadRecycleBinList();
+          } else {
+            uiManager.showToast('回收站中没有可删除的记忆', 'info');
+          }
+        } catch (error) {
+          handleIpcError('purgeAllMemories', error, '批量清空失败');
+        }
+      }
+    });
+
     // ─── 排序/时间范围变更：触发重新搜索或加载列表 ────────
     const triggerSearchOrReload = () => {
       // 通过 UIManager 门面触发搜索框 input 事件，控制器不直接操作 DOM

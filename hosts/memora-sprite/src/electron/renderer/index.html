@@ -344,7 +344,7 @@
               <button class="input-action" id="btn-input-add-memory" title="添加记忆">
                 <svg class="icon"><use href="#icon-plus"/></svg>
               </button>
-              <button class="input-action" id="btn-fork-session" title="分叉会话">
+              <button class="input-action" id="btn-fork-session" title="新建会话">
                 <svg class="icon"><use href="#icon-branch"/></svg>
               </button>
             </div>
@@ -406,6 +406,10 @@
           </button>
           <!-- 主操作：添加记忆 -->
           <button id="btn-add-memory" class="btn btn-primary btn-sm">添加</button>
+          <!-- 回收站入口（软删除记忆恢复/彻底删除，常驻可见） -->
+          <button id="btn-memory-recycle-bin" class="icon-btn" title="回收站">
+            <svg class="icon"><use href="#icon-inbox"/></svg>
+          </button>
           <!-- 更多工具 -->
           <div class="toolbar-more">
             <button id="btn-memory-more" class="icon-btn" title="更多工具" aria-haspopup="true" aria-expanded="false">
@@ -414,10 +418,6 @@
             <div id="memory-more-menu" class="dropdown more-menu hidden">
               <button class="more-menu-item" data-action="insights">
                 <svg class="icon"><use href="#icon-chart"/></svg> 统计洞察
-              </button>
-              <!-- 回收站入口（软删除记忆恢复/彻底删除） -->
-              <button class="more-menu-item" data-action="recycle-bin">
-                <svg class="icon"><use href="#icon-inbox"/></svg> 回收站
               </button>
             </div>
           </div>
@@ -1036,8 +1036,8 @@
             <span class="save-status-text"></span>
           </div>
           <div class="settings-actions-buttons">
-          <!-- 恢复默认按钮，用户配置出错时可一键恢复 -->
-          <button id="btn-settings-reset" class="btn-secondary">恢复默认</button>
+          <!-- 恢复默认按钮，重置所有配置（危险操作，使用 btn-danger 警示） -->
+          <button id="btn-settings-reset" class="btn-danger">恢复默认</button>
           <!-- 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->
           <button id="btn-settings-skip" class="btn-secondary">稍后配置</button>
           </div>
@@ -1070,28 +1070,28 @@
           <section class="perception-section">
             <h4 class="perception-section-title">情感基调</h4>
             <div class="perception-affect-grid">
-              <div class="affect-item">
+              <div class="affect-item" title="精灵回复的亲和力程度">
                 <div class="affect-item-header">
                   <span class="affect-label">温暖</span>
                   <span class="affect-level" id="perception-warmth-level">—</span>
                 </div>
                 <div class="affect-track"><div class="affect-fill" id="perception-warmth-fill"></div></div>
               </div>
-              <div class="affect-item">
+              <div class="affect-item" title="精灵回复的直接程度，高则简洁明了">
                 <div class="affect-item-header">
                   <span class="affect-label">直接</span>
                   <span class="affect-level" id="perception-directness-level">—</span>
                 </div>
                 <div class="affect-track"><div class="affect-fill" id="perception-directness-fill"></div></div>
               </div>
-              <div class="affect-item">
+              <div class="affect-item" title="精灵主动发起话题和建议的倾向">
                 <div class="affect-item-header">
                   <span class="affect-label">主动</span>
                   <span class="affect-level" id="perception-initiative-level">—</span>
                 </div>
                 <div class="affect-track"><div class="affect-fill" id="perception-initiative-fill"></div></div>
               </div>
-              <div class="affect-item">
+              <div class="affect-item" title="精灵回复的轻松活泼程度">
                 <div class="affect-item-header">
                   <span class="affect-label">活泼</span>
                   <span class="affect-level" id="perception-playfulness-level">—</span>
@@ -1281,7 +1281,7 @@
         <button id="btn-memory-edit" class="btn-secondary">编辑</button>
         <button id="btn-memory-delete" class="btn-danger">删除</button>
         <!-- 记忆→对话双向流动，关闭弹窗并切换到对话面板预填讨论提示 -->
-        <button id="btn-memory-discuss" class="btn-primary">在对话中讨论</button>
+        <button id="btn-memory-discuss" class="btn-primary">去对话中提问</button>
         <button class="btn-secondary" data-modal="memory-detail-modal">关闭</button>
       </div>
     </div>
@@ -1341,6 +1341,10 @@
         <div id="recycle-bin-list" class="recycle-bin-list"></div>
       </div>
       <div class="modal-footer">
+        <div class="recycle-bin-batch-actions">
+          <button id="recycle-bin-restore-all" class="btn-secondary">全部恢复</button>
+          <button id="recycle-bin-purge-all" class="btn-danger">全部清空</button>
+        </div>
         <button class="btn-secondary" data-modal="recycle-bin-modal">关闭</button>
       </div>
     </div>
@@ -1573,9 +1577,9 @@
       <svg class="icon"><use href="#icon-refresh"/></svg>
       <span>重新生成</span>
     </button>
-    <button class="context-menu-item" data-action="forget" role="menuitem" aria-label="忘记此条消息" aria-disabled="false" title="从当前视野移除（刷新后可恢复）">
+    <button class="context-menu-item" data-action="forget" role="menuitem" aria-label="隐藏此对话" aria-disabled="false" title="从当前视野移除（刷新后可恢复）">
       <svg class="icon"><use href="#icon-trash"/></svg>
-      <span>忘记</span>
+      <span>隐藏此对话</span>
     </button>
   </div>
 

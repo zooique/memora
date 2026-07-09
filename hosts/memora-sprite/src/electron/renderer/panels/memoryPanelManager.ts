@@ -133,6 +133,8 @@ export class MemoryPanelManager {
   private relationCreateCallback: ((sourceId: string, targetId: string, type: string, weight: number) => void) | null = null;
   /** 回收站操作回调：action='restore' 恢复 / action='purge' 彻底删除 */
   private recycleBinActionCallback: ((action: 'restore' | 'purge', id: string) => void) | null = null;
+  /** 回收站批量操作回调：action='restore-all' 全部恢复 / action='purge-all' 全部清空 */
+  private recycleBinBatchActionCallback: ((action: 'restore-all' | 'purge-all') => void) | null = null;
 // ─── 清理对话框状态 ────────────────────────────────────
   /** 待清理的记忆 ID 列表（确认对话框中使用） */
   private pendingCleanupIds: string[] = [];
@@ -219,6 +221,7 @@ export class MemoryPanelManager {
       getViewSwitchCallback: () => this.viewSwitchCallback,
       // 回收站操作回调读取器
       getRecycleBinActionCallback: () => this.recycleBinActionCallback,
+      getRecycleBinBatchActionCallback: () => this.recycleBinBatchActionCallback,
       // 更多菜单操作回调读取器（insights/health/recycle-bin）
       getMoreMenuActionCallback: () => this.moreMenuActionCallback,
     };
@@ -1445,6 +1448,11 @@ export class MemoryPanelManager {
   /** 注册回收站操作回调（恢复/彻底删除） */
   onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void {
     this.recycleBinActionCallback = cb;
+  }
+
+  /** 注册回收站批量操作回调（全部恢复/全部清空） */
+  onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => void): void {
+    this.recycleBinBatchActionCallback = cb;
   }
 
   // ─── 回收站列表渲染 ───────────────────────────────

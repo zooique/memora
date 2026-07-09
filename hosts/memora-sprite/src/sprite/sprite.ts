@@ -500,6 +500,14 @@ export class Sprite {
     return this.memoryController.purge(id);
   }
 
+  restoreAllMemories(): { restored: number; failed: number } {
+    return this.memoryController.restoreAll();
+  }
+
+  purgeAllMemories(): { purged: number; failed: number } {
+    return this.memoryController.purgeAll();
+  }
+
   listDeletedMemories(limit = 50): { id: string; name: string; source: string; contentPreview: string; deletedAt: string }[] {
     return this.memoryController.listDeleted(limit);
   }

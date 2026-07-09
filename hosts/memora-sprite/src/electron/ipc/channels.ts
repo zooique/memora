@@ -49,6 +49,10 @@ export const IPC_CHANNELS = {
   ARCHIVE_SESSION: 'archive-session',
   /** 物理删除记忆（回收站彻底删除） */
   MEMORIES_PURGE: 'memories-purge',
+  /** 批量恢复回收站所有记忆 */
+  MEMORIES_RESTORE_ALL: 'memories-restore-all',
+  /** 批量清空回收站所有记忆 */
+  MEMORIES_PURGE_ALL: 'memories-purge-all',
   /** 列出回收站记忆 */
   MEMORIES_LIST_DELETED: 'memories-list-deleted',
   /** 添加/更新记忆 */

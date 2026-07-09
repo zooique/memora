@@ -439,6 +439,16 @@ export interface ElectronAPI {
    */
   purgeMemory: (id: string) => Promise<{ purged: boolean }>;
   /**
+   * 批量恢复回收站所有记忆
+   * @returns restored 恢复成功的数量
+   */
+  restoreAllMemories: () => Promise<{ restored: number; failed: number }>;
+  /**
+   * 批量清空回收站所有记忆
+   * @returns purged 彻底删除的数量
+   */
+  purgeAllMemories: () => Promise<{ purged: number; failed: number }>;
+  /**
    * 列出回收站记忆（按 deletedAt 降序，最近删除在前）
    * @returns 回收站记忆列表（仅暴露必要字段，content 已截断预览）
    */
@@ -778,9 +788,11 @@ const electronAPI: ElectronAPI = {
   searchMemories: (q) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SEARCH, q),
   showMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_SHOW, id),
   deleteMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_DELETE, id),
-  // 回收站操作（restore/purge/listDeleted）
+  // 回收站操作（restore/purge/listDeleted + 批量）
   restoreMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RESTORE, id),
   purgeMemory: (id) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_PURGE, id),
+  restoreAllMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RESTORE_ALL),
+  purgeAllMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_PURGE_ALL),
   listDeletedMemories: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_LIST_DELETED),
   addMemory: (data) => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_ADD, data),
   getRelationGraph: () => ipcRenderer.invoke(IPC_CHANNELS.MEMORIES_RELATION_GRAPH),

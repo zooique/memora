@@ -1139,6 +1139,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onMoreMenuAction(cb: (action: string) => void): void { this.memoryPanel.onMoreMenuAction(cb); }
   /** 注册回收站操作回调（恢复/彻底删除，委托到 MemoryPanelManager） */
   onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void { this.memoryPanel.onRecycleBinAction(cb); }
+  /** 注册回收站批量操作回调（全部恢复/全部清空，委托到 MemoryPanelManager） */
+  onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => void): void { this.memoryPanel.onRecycleBinBatchAction(cb); }
   /** 渲染回收站列表（委托到 MemoryPanelManager） */
   renderRecycleBinList(memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void { this.memoryPanel.renderRecycleBinList(memories); }
   /** 注册排序变更回调（委托到 MemoryPanelManager） */

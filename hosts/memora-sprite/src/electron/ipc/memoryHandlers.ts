@@ -88,6 +88,20 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
     }),
   );
 
+  /** 批量恢复回收站所有记忆 */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_RESTORE_ALL, async () =>
+    safeHandle('批量恢复记忆失败', { restored: 0, failed: 0 }, () => {
+      return ctx.sprite.restoreAllMemories();
+    }),
+  );
+
+  /** 批量清空回收站所有记忆 */
+  ipcMain.handle(IPC_CHANNELS.MEMORIES_PURGE_ALL, async () =>
+    safeHandle('批量清空回收站失败', { purged: 0, failed: 0 }, () => {
+      return ctx.sprite.purgeAllMemories();
+    }),
+  );
+
   /** 列出回收站记忆 */
   ipcMain.handle(IPC_CHANNELS.MEMORIES_LIST_DELETED, async () =>
     safeHandle('列出回收站记忆失败', { memories: [] }, () => {
