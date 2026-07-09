@@ -640,6 +640,8 @@ export function createMemoryController(uiManager: UIManager) {
       }
     } catch (error) {
       reportError('loadPerception', error);
+      // 感知数据加载失败时用 toast 兜底提示（与 loadDashboard 错误反馈一致）
+      uiManager.showToast('感知数据加载失败，请稍后重试', 'error');
     }
   }
 

@@ -118,6 +118,8 @@ export class PerceptionPanelManager {
    */
   cleanup(): void {
     this.onMemoryClickCallback = null;
+    // 重置叙事生成器缓存，避免下次初始化时残留上个会话的感知数据
+    this.narrativeGenerator.reset();
   }
 
   // ─── 记忆跳转回调（从原仪表盘感知区迁移） ─────────

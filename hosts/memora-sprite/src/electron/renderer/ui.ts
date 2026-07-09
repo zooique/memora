@@ -1248,6 +1248,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     presence?: { state: 'present' | 'away'; awayDurationMs?: number };
   }): void {
     this.perceptionPanel.renderPerceptionSnapshot(snapshot);
+    // 同步更新精灵状态浮层：首次加载/切换面板时 popover 也需初始化数据，
+    // 否则 hover 状态条时摘要为空（popover 仅缓存 affect/rapport/context 三类）
+    if (snapshot.affect) this.spriteStatusPopover.updateAffect(snapshot.affect as AffectPayload);
+    if (snapshot.rapport) this.spriteStatusPopover.updateRapport(snapshot.rapport as RapportPayload);
+    if (snapshot.context) this.spriteStatusPopover.updateContext(snapshot.context as ContextPayload);
   }
   /** 更新主动提示统计展示（委托到 PerceptionPanelManager） */
   updateProactiveStatsDisplay(stats: unknown): void {

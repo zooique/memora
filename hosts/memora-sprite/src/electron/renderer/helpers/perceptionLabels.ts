@@ -19,6 +19,15 @@
 export const AFFECT_LOW_THRESHOLD = 0.33;
 export const AFFECT_MID_THRESHOLD = 0.67;
 
+/**
+ * 情感维度"显著"阈值：超过此值认为该维度突出
+ *
+ * 用于叙事摘要（NarrativeGenerator）和浮层摘要（SpriteStatusPopover）
+ * 合成"基调"描述时判断各维度是否显著。与等级阈值（LOW/MID）语义不同：
+ * 等级阈值划分低/中/高三档，显著阈值仅判断"是否突出"。
+ */
+export const AFFECT_TONE_THRESHOLD = 0.6;
+
 // ─── 默契度等级标签 ────────────────────────────────────────
 
 /**

@@ -15,8 +15,8 @@
  * 由 ipcListeners 中的感知事件处理器同时更新 popover 和感知面板。
  */
 import type { AffectPayload, RapportPayload, ContextPayload } from '../ipcListeners.js';
-// 感知标签映射（统一真理源，修复文案不一致问题）
-import { getRapportLevelLabel, describeRhythm, describeCoherence } from '../helpers/perceptionLabels.js';
+// 感知标签映射 + 阈值常量（统一真理源，修复文案不一致 + 阈值硬编码）
+import { getRapportLevelLabel, describeRhythm, describeCoherence, AFFECT_TONE_THRESHOLD } from '../helpers/perceptionLabels.js';
 
 /**
  * 精灵状态浮层
@@ -172,17 +172,20 @@ export class SpriteStatusPopover {
 
   // ─── 显示/隐藏 ─────────────────────────────────────────
 
-  /** 显示 popover（移除 hidden 类） */
+  /** 显示 popover（移除 hidden 类，同步 aria-hidden 供辅助技术访问） */
   private show(): void {
     if (!this.popoverEl) return;
     this.refreshPopover();
     this.popoverEl.classList.remove('hidden');
+    // 视觉可见时同步告知屏幕阅读器内容可访问（WCAG 2.1 SC 4.1.2）
+    this.popoverEl.setAttribute('aria-hidden', 'false');
   }
 
-  /** 隐藏 popover（添加 hidden 类） */
+  /** 隐藏 popover（添加 hidden 类，同步 aria-hidden） */
   private hide(): void {
     if (!this.popoverEl) return;
     this.popoverEl.classList.add('hidden');
+    this.popoverEl.setAttribute('aria-hidden', 'true');
   }
 
   // ─── 摘要合成 ──────────────────────────────────────────
@@ -237,12 +240,13 @@ export class SpriteStatusPopover {
    */
   private formatAffectSummary(a: AffectPayload): string {
     const parts: string[] = [];
-    if (a.warmth >= 0.6) parts.push('温暖');
+    // "显著"阈值统一用 AFFECT_TONE_THRESHOLD；0.3 是"低"对立词阈值，语义不同保持独立
+    if (a.warmth >= AFFECT_TONE_THRESHOLD) parts.push('温暖');
     else if (a.warmth <= 0.3) parts.push('冷静');
-    if (a.directness >= 0.6) parts.push('直接');
+    if (a.directness >= AFFECT_TONE_THRESHOLD) parts.push('直接');
     else if (a.directness <= 0.3) parts.push('委婉');
-    if (a.playfulness >= 0.6) parts.push('活泼');
-    if (a.initiative >= 0.6) parts.push('主动');
+    if (a.playfulness >= AFFECT_TONE_THRESHOLD) parts.push('活泼');
+    if (a.initiative >= AFFECT_TONE_THRESHOLD) parts.push('主动');
     if (parts.length === 0) parts.push('平稳');
     return parts.join(' · ');
   }

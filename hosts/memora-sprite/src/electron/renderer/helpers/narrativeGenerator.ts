@@ -20,11 +20,8 @@ import type {
   PatternsPayload,
   PresencePayload,
 } from '../ipcListeners.js';
-// 感知标签映射（统一真理源，消除 2 个私有方法的重复实现）
-import { getRapportLevelLabel, describeRhythm } from './perceptionLabels.js';
-
-/** 情感基调阈值：超过此值认为该维度显著 */
-const AFFECT_TONE_THRESHOLD = 0.6;
+// 感知标签映射 + 阈值常量（统一真理源，消除重复实现 + 阈值硬编码）
+import { getRapportLevelLabel, describeRhythm, AFFECT_TONE_THRESHOLD } from './perceptionLabels.js';
 
 /**
  * 叙事摘要生成器类
@@ -123,9 +120,15 @@ export class NarrativeGenerator {
     const parts: string[] = [];
 
     // 在场状态（用户离开时优先展示，覆盖其他叙事）
+    // 文案与 perceptionPanelManager.updatePresenceDisplay 对齐：
+    // < 1 分钟显示"刚刚离开"，>= 1 分钟显示"X 分钟"
     if (this.lastNarrativePresence?.state === 'away' && this.lastNarrativePresence.awaySince !== null) {
-      const awayMinutes = Math.max(1, Math.floor((Date.now() - this.lastNarrativePresence.awaySince) / 60000));
-      parts.push(`用户已离开 ${awayMinutes} 分钟`);
+      const awayMinutes = Math.floor((Date.now() - this.lastNarrativePresence.awaySince) / 60000);
+      if (awayMinutes >= 1) {
+        parts.push(`用户已离开 ${awayMinutes} 分钟`);
+      } else {
+        parts.push('用户刚刚离开');
+      }
     }
 
     // 对话上下文
@@ -143,26 +146,28 @@ export class NarrativeGenerator {
       parts.push('话题较为分散');
     }
 
-    // 互动基调
+    // 互动基调（四维：温暖/直接/主动/活泼，与 AffectController 维度对齐）
     if (this.lastNarrativeAffect) {
       const tones: string[] = [];
       if (this.lastNarrativeAffect.warmth > AFFECT_TONE_THRESHOLD) tones.push('温暖');
       if (this.lastNarrativeAffect.directness > AFFECT_TONE_THRESHOLD) tones.push('直接');
       if (this.lastNarrativeAffect.initiative > AFFECT_TONE_THRESHOLD) tones.push('主动');
+      if (this.lastNarrativeAffect.playfulness > AFFECT_TONE_THRESHOLD) tones.push('活泼');
       if (tones.length > 0) {
         parts.push(`基调${tones.join('、')}`);
       }
     }
 
-    // 默契度
+    // 默契度（stranger=初识时不展示，避免新用户刚开始就看到"初识"叙事）
     if (this.lastNarrativeRapport) {
       const levelLabel = getRapportLevelLabel(this.lastNarrativeRapport.level);
-      if (levelLabel !== '初识') {
+      // 用 level 标识符比较，避免依赖中文标签文案（标签可能调整）
+      if (this.lastNarrativeRapport.level !== 'stranger') {
         parts.push(`默契度：${levelLabel}`);
       }
     }
 
-    // 模式洞察
+    // 模式洞察（三类：重复主题/知识缺口/兴趣漂移，与 PatternDetector 输出对齐）
     if (this.lastNarrativePatterns.length > 0) {
       const recurringCount = this.lastNarrativePatterns.filter(
         (p) => p.type === 'recurring_topic',
@@ -170,9 +175,13 @@ export class NarrativeGenerator {
       const gapCount = this.lastNarrativePatterns.filter(
         (p) => p.type === 'knowledge_gap',
       ).length;
+      const driftCount = this.lastNarrativePatterns.filter(
+        (p) => p.type === 'interest_drift',
+      ).length;
       const patternDescs: string[] = [];
       if (recurringCount > 0) patternDescs.push(`${recurringCount} 个重复主题`);
       if (gapCount > 0) patternDescs.push(`${gapCount} 个知识缺口`);
+      if (driftCount > 0) patternDescs.push(`${driftCount} 个兴趣漂移`);
       if (patternDescs.length > 0) {
         parts.push(`检测到${patternDescs.join('、')}`);
       }
