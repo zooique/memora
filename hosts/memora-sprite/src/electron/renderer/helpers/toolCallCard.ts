@@ -139,11 +139,21 @@ export function updateToolResult(
   if (spinner) spinner.remove();
 
   // 更新状态文本（使用 SVG 图标替代 Unicode ✓/✗，视觉一致性）
+  // createElement + setIcon 替代 innerHTML 拼接，与 showToolStart 渲染模式一致
   const status = targetCard.querySelector('.tool-call-status');
   if (status) {
-    const iconId = ok ? '#icon-check' : '#icon-close';
-    const label = ok ? '成功' : '失败';
-    status.innerHTML = `<svg class="icon icon-xs"><use href="${iconId}"/></svg> ${label}`;
+    // 清空旧状态文本（"执行中..."）
+    while (status.firstChild) {
+      status.removeChild(status.firstChild);
+    }
+    // 图标（setIcon 使用 SVG sprite，跨平台一致）
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'icon-wrapper';
+    setIcon(iconSpan, ok ? 'icon-check' : 'icon-close');
+    status.appendChild(iconSpan);
+    // 状态文字
+    const label = document.createTextNode(` ${ok ? '成功' : '失败'}`);
+    status.appendChild(label);
   }
 
   // 追加结果摘要

@@ -619,9 +619,8 @@ export class RelationGraphRenderer {
 
   /** 渲染空状态 */
   private renderEmpty(): void {
-    // Canvas 2D 不支持 CSS var()，需通过 getComputedStyle 解析主题色
-    const textColor = getComputedStyle(document.documentElement)
-      .getPropertyValue('--text-3').trim() || '#a1a1a6';
+    // 复用 resolveCssVar 解析主题色（含 CSS_VAR_FALLBACKS 深浅色双 fallback，避免硬编码）
+    const textColor = this.resolveCssVar('--text-3');
     this.ctx.clearRect(0, 0, this.width, this.height);
     this.ctx.fillStyle = textColor;
     this.ctx.font = '14px -apple-system, BlinkMacSystemFont, sans-serif';
