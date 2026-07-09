@@ -18,7 +18,7 @@ import type { HealthDashboardPayload } from '../../preload.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
-/** 健康等级中文标签映射表（与 dashboardPanelManager.HEALTH_LABEL_MAP 同步） */
+/** 健康等级中文标签映射表（本渲染器的唯一真理源，已从 dashboardPanelManager 迁入） */
 const HEALTH_LABEL_MAP: Record<string, string> = {
   excellent: '优秀',
   good: '良好',

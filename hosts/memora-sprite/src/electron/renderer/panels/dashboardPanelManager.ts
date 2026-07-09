@@ -395,10 +395,8 @@ export class DashboardPanelManager {
       (a, b) => (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9),
     );
 
-    // 清空并重建（遵循项目规范：while + removeChild）
-    while (dashboardListEl.firstChild) {
-      dashboardListEl.removeChild(dashboardListEl.firstChild);
-    }
+    // 清空并重建（复用 clearElement 统一 DOM 操作模式）
+    clearElement(dashboardListEl);
     for (const s of sortedSources) {
       // 主容器
       const item = document.createElement('div');
@@ -471,7 +469,7 @@ export class DashboardPanelManager {
     // ─── 1. 趋势方向描述行：箭头 + description 文案 ──
     if (this.growthDescEl) {
       const arrow = this.getTrendArrow(review.trend.direction);
-      this.growthDescEl.innerHTML = '';
+      clearElement(this.growthDescEl);
       const arrowEl = document.createElement('span');
       arrowEl.className = `growth-trend-arrow growth-trend-${review.trend.direction}`;
       arrowEl.textContent = arrow;

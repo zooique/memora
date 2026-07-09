@@ -14,6 +14,7 @@
  */
 
 import { setIcon } from '../helpers/icon.js';
+import { clearElement } from '../helpers/domHelpers.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -159,10 +160,8 @@ export class PartnerInsightsRenderer {
    * 使用 CSS 变量适配主题色，与项目设计系统一致。
    */
   private renderProfileCards(profileMems: PartnerMemory[], container: HTMLElement): void {
-    // 清空容器（遵循项目规范：while + removeChild）
-    while (container.firstChild) {
-      container.removeChild(container.firstChild);
-    }
+    // 清空容器（复用 clearElement 统一 DOM 操作模式）
+    clearElement(container);
 
     if (profileMems.length === 0) {
       const empty = document.createElement('p');
@@ -209,10 +208,8 @@ export class PartnerInsightsRenderer {
    * 最多展示 3 条缺口。
    */
   private renderKnowledgeGaps(memories: PartnerMemory[], container: HTMLElement): void {
-    // 清空容器
-    while (container.firstChild) {
-      container.removeChild(container.firstChild);
-    }
+    // 清空容器（复用 clearElement 统一 DOM 操作模式）
+    clearElement(container);
 
     if (memories.length === 0) return;
 
