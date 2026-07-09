@@ -16,6 +16,8 @@
     避免 FOUC（Flash of Unstyled Content）闪烁。
     详见 main.ts createFullWindow() 中的 did-start-loading 事件处理。
   -->
+  <!-- 设计令牌（单一真理源）：所有主题变量集中于此，三窗口统一引入 -->
+  <link rel="stylesheet" href="styles/tokens.css" />
   <link rel="stylesheet" href="styles/base.css" />
   <link rel="stylesheet" href="styles/layout.css" />
   <link rel="stylesheet" href="styles/chat.css" />

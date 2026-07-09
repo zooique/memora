@@ -87,7 +87,7 @@
   font-size: var(--font-sm);
   /* 引用已定义的 --red 变量 */
   color: var(--red);
-  margin: 6px 0 0 0;
+  margin: var(--space-1-5) 0 0 0;
 }
 
 /* 三步向导：欢迎 → API Key → 开始使用 */
@@ -95,7 +95,7 @@
 /* 向导容器：限制宽度，居中 */
 .onboarding-wizard {
   max-width: 480px;
-  padding: 24px 28px 20px;
+  padding: var(--space-6) 28px var(--space-5);
 }
 
 /* ─── 步骤指示器 ────────────────────────────────── */
@@ -166,14 +166,14 @@
   font-size: var(--font-lg);
   font-weight: var(--weight-bold);
   color: var(--text);
-  margin: 12px 0 8px;
+  margin: var(--space-3) 0 var(--space-2);
 }
 
 .onboarding-intro {
   font-size: var(--font-sm);
   line-height: 1.6;
   color: var(--text-2);
-  margin: 0 0 20px 0;
+  margin: 0 0 var(--space-5) 0;
 }
 
 /* ─── 步骤 1：欢迎 ──────────────────────────────── */
@@ -194,8 +194,8 @@
 .onboarding-feature-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: var(--space-3);
+  padding: var(--space-2-5) var(--space-3);
   background: var(--window-bg-2);
   border-radius: var(--radius-md);
   border: none;
@@ -295,7 +295,7 @@
   font-size: var(--font-xs);
   color: var(--red);
   margin-top: 6px;
-  padding: 6px 10px;
+  padding: var(--space-1-5) var(--space-2-5);
   background: var(--error-10);
   border-radius: var(--radius-sm);
 }
@@ -316,7 +316,7 @@
   flex-direction: column;
   gap: var(--space-1-5);
   margin-bottom: 20px;
-  padding: 10px 14px;
+  padding: var(--space-2-5) 14px;
   background: var(--window-bg-2);
   border-radius: var(--radius-md);
 }
@@ -348,7 +348,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
+  padding: var(--space-1) var(--space-2);
 }
 
 .onboarding-step-content .modal-footer .btn-text:hover {
@@ -442,7 +442,7 @@ kbd {
 }
 
 .modal-body {
-  padding: 16px 18px;
+  padding: var(--space-4) 18px;
   overflow-y: auto;
   flex: 1;
   font-size: var(--font-sm);
@@ -488,7 +488,7 @@ kbd {
   display: flex;
   justify-content: flex-end;
   gap: var(--gap-compact);
-  padding: 12px 18px;
+  padding: var(--space-3) 18px;
   border-top: 1px solid var(--surface2);
 }
 
@@ -508,7 +508,7 @@ kbd {
 }
 
 .btn-primary {
-  padding: 6px 18px;
+  padding: var(--space-1-5) 18px;
   background: var(--accent);
   color: var(--accent-fg);
   font-weight: var(--weight-semibold);
@@ -549,7 +549,7 @@ kbd {
 }
 
 .btn-sm {
-  padding: 4px 12px;
+  padding: var(--space-1) var(--space-3);
   font-size: var(--font-xs);
 }
 
@@ -579,7 +579,7 @@ kbd {
 }
 
 .shortcuts-table td {
-  padding: 6px 8px;
+  padding: var(--space-1-5) var(--space-2);
   border-bottom: 1px solid var(--surface2);
   font-size: var(--font-sm);
 }
@@ -613,7 +613,7 @@ kbd {
 }
 
 .write-confirm-diff-label {
-  margin: 8px 0 4px;
+  margin: var(--space-2) 0 var(--space-1);
   font-size: var(--font-sm);
   color: var(--text-3);
   font-weight: var(--weight-semibold);

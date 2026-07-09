@@ -1,0 +1,311 @@
+/* chat-perception.css — 原 chat.css 第 287–596 行（P2 按功能拆分，顺序保持以保证层叠等价） */
+.affect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1) var(--space-3);
+}
+
+/* 默契度一行布局：徽章 + 双进度条横向并列 */
+.rapport-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+}
+
+/* 默契度双进度条（横向排列，紧跟徽章） */
+.rapport-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.rapport-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--font-xs);
+}
+
+/* 紧凑布局：标签宽度收紧（"信任"/"熟悉"两字） */
+.rapport-bar-label {
+  width: 28px;
+  color: var(--muted);
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.rapport-fill {
+  transition: width var(--transition-xl) ease;
+}
+
+/* 对话上下文单行内联（三指标用分隔符连接） */
+.context-inline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--font-xs);
+}
+
+.context-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.context-label {
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-medium);
+}
+
+.context-value {
+  color: var(--text);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.context-sep {
+  color: var(--muted);
+  opacity: 0.4;
+  font-size: var(--font-2xs);
+}
+
+/* 模式洞察列表 */
+.perception-patterns-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.perception-pattern-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--input-padding);
+  border-radius: var(--radius-sm);
+  background: var(--window-bg-2);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  color: var(--subtext);
+}
+
+/* 主行：类型徽章 + 置信度徽章 + 摘要文本 横向排列 */
+.perception-pattern-main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1-5);
+}
+
+.perception-pattern-type {
+  flex-shrink: 0;
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.perception-pattern-type.repeat {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.perception-pattern-type.gap {
+  background: var(--red-20);
+  color: var(--red);
+}
+
+.perception-pattern-type.drift {
+  background: var(--accent-20);
+  color: var(--accent);
+}
+
+/* 置信度徽章：高/中/低 三色，与类型徽章并列展示 */
+.perception-pattern-confidence {
+  flex-shrink: 0;
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-medium);
+}
+
+.perception-pattern-confidence.high {
+  background: var(--green-20);
+  color: var(--green);
+}
+
+.perception-pattern-confidence.mid {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.perception-pattern-confidence.low {
+  background: transparent;
+  color: var(--muted);
+  padding: 1px 0;
+}
+
+/* 摘要文本占据剩余宽度，自然换行 */
+.perception-pattern-text {
+  flex: 1;
+}
+
+/* 建议操作行：斜体灰色，左侧细边框作为视觉引导 */
+.perception-pattern-suggestion {
+  font-size: var(--font-2xs);
+  font-style: italic;
+  color: var(--muted);
+  padding-left: 6px;
+  border-left: 2px solid var(--surface2);
+}
+
+/* 缺口 K：相关记忆跳转按钮（manual 模式下点击跳转记忆详情） */
+.perception-pattern-related {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--font-2xs);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.perception-pattern-related:hover {
+  background: var(--accent-10);
+  color: var(--accent-hover);
+}
+
+/* ─── 主动提示统计（缺口 G+H） ─────────────────────────── */
+
+/* 主动提示统计网格：复用运行指标的 dash-item 布局 */
+.perception-proactive-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1-5);
+  margin-top: 4px;
+}
+
+/* 接受率徽章：高/中/低 三色（与 PatternDetector confidence 徽章一致） */
+.perception-proactive-rate.high {
+  color: var(--green);
+  font-weight: var(--weight-semibold);
+}
+
+.perception-proactive-rate.mid {
+  color: var(--yellow);
+  font-weight: var(--weight-semibold);
+}
+
+.perception-proactive-rate.low {
+  color: var(--muted);
+  font-weight: var(--weight-semibold);
+}
+
+/* 连续拒绝 / 生效冷却：>0 或 >基础值时高亮警告色 */
+.dash-value.warning {
+  color: var(--yellow);
+  font-weight: var(--weight-semibold);
+}
+
+/* ─── 记忆源健康诊断（缺口 E） ─────────────────────────── */
+
+/* 总体健康状态徽章（嵌在折叠标题右侧） */
+.source-health-overall-badge {
+  display: inline-block;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-xs);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+  margin-left: 6px;
+}
+
+.source-health-overall-badge.healthy {
+  background: var(--green-20);
+  color: var(--green);
+}
+
+.source-health-overall-badge.warning {
+  background: var(--yellow-20);
+  color: var(--yellow);
+}
+
+.source-health-overall-badge.critical {
+  background: var(--red-20);
+  color: var(--red);
+}
+
+/* 运行指标：单行内联紧凑布局，标签:值 形式 */
+.perception-metrics-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2-5);
+  margin-top: 4px;
+  font-size: var(--font-2xs);
+  /* 折叠动画（迭代二）：max-height + opacity 过渡替代 display:none 硬切 */
+  max-height: 300px;  /* 足够容纳 6 行 */
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height var(--transition-slow) ease, opacity var(--transition-base) ease, margin-top var(--transition-base) ease;
+}
+
+.perception-metrics-grid .dash-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  background: none;
+  border: none;
+  padding: 0;
+  flex-direction: row;
+}
+
+.perception-metrics-grid .dash-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  font-weight: var(--weight-regular);
+}
+
+.perception-metrics-grid .dash-value {
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--subtext);
+}
+
+/* 感知面板指标折叠动画（迭代二）：替代 .hidden 的 display:none 硬切 */
+.perception-metrics-grid.collapsed {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-top: 0;
+}
+
+/* 里程碑成就：紧跟在内联指标后 */
+#milestones-display {
+  display: inline;
+  margin-left: 4px;
+}
+
+#milestones-list {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/**
+ * 日期导航按钮：快速跳转到指定日期的历史对话
+ * 位于 chat-toolbar 右侧，点击弹出日期列表下拉
+ * 视觉降权（缩小宽度 + 灰化默认态），对齐"对话面板核心是当前对话"心智
+ */
+.date-navigator {
+  position: relative;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* 回到今天按钮：查看历史日期时出现，胶囊样式带强调色 */

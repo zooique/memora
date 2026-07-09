@@ -2,7 +2,7 @@
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
 > **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）。目录形态已对齐最终目标。
-> **版本**：v1.4（2026-07-06）
+> **版本**：v1.5（2026-07-09）
 
 ---
 
@@ -42,10 +42,11 @@ src/
 │   │   ├── systemHandlers.ts        # 系统相关 IPC handler
 │   │   └── workProjectionHandlers.ts # 作品投影 IPC handler
 │   │
-│   ├── windows/                # 窗口管理（浮动窗口 + 完整窗口 + 状态持久化）
+│   ├── windows/                # 窗口管理（浮动窗口 + 完整窗口 + 快速输入浮窗 + 状态持久化）
 │   │   ├── floatWindow.ts      # 浮动窗口（右键菜单/消息列表/输入框）
 │   │   ├── windowManager.ts    # 窗口管理器（浮动↔完整切换/生命周期）
 │   │   ├── windowState.ts      # 窗口状态持久化（位置/大小/显示器恢复）
+│   │   ├── quickInputWindow.ts # 快速输入浮窗（单例/懒创建/失焦延迟关闭/剪贴板写入）
 │   │   └── themeInjector.ts    # 主题注入器（CSS 变量动态注入）
 │   │
 │   └── renderer/               # 渲染进程（UI 层，不直接导入 electron）
@@ -106,14 +107,31 @@ src/
 │       │
 │       ├── float/              # 浮动窗口
 │       │   ├── float.ts        # 浮动窗口渲染进程逻辑
-│       │   └── float.html      # 浮动窗口 HTML 入口
+│       │   ├── float.html      # 浮动窗口 HTML 入口
+│       │   └── float.css       # 浮动窗口组件样式（令牌从 styles/tokens.css 共享引入）
 │       │
-│       └── styles/             # CSS 样式表
-│           ├── base.css        # 基础样式（变量/重置/排版）
-│           ├── chat.css        # 对话面板样式
-│           ├── layout.css      # 布局样式（侧边栏/主内容区）
+│       ├── quick-input/        # 快速输入补全浮窗（Phase 1-2）
+│       │   ├── quickInput.ts            # 快速输入渲染逻辑（输入框 + 补全交互）
+│       │   ├── quickInputCompletion.ts  # 补全候选管理器（记忆/历史搜索 + 去重排序）
+│       │   ├── quick-input.html         # 快速输入 HTML 入口
+│       │   └── quick-input.css          # 快速输入组件样式（令牌从 styles/tokens.css 共享引入）
+│       │
+│       └── styles/             # CSS 样式表（详见 §2.4 CSS 架构规则）
+│           ├── README.md       # CSS 架构文档（令牌所有权 + 聚合器模式 + 贡献约定）
+│           ├── tokens.css      # 设计令牌「单一真理源」（P0：双主题变量 + CJK 字体栈，三窗口共享）
+│           ├── base.css        # 全局重置 / 滚动条 / 动画 / focus-visible / 通用组件骨架
+│           ├── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
+│           ├── chat.css        # 聚合器（@import 4 个子模块，P2 拆分）
+│           ├── chat-toolbar.css      # 对话工具栏 / 状态条 / 在场脉冲浮层
+│           ├── chat-perception.css   # 感知面板：情感/默契度/上下文/模式/指标/里程碑
+│           ├── chat-datenav.css      # 回到今天 / 日期选择 / 下拉 / 空状态
+│           ├── chat-messages.css     # 消息气泡 / 输入框 / 打字指示 / 工具调用卡片
+│           ├── memory.css      # 聚合器（@import 4 个子模块，P2 拆分）
+│           ├── memory-list.css       # 面板头 / 搜索 / 记忆列表卡片 / 来源标签
+│           ├── memory-detail.css     # 记忆详情弹窗 / 技能列表 / 全局·项目色
+│           ├── memory-views.css      # 视图过渡 / 时间线 / Profile 卡片 / 知识缺口 / 成长趋势
+│           ├── memory-graph.css      # 更多菜单 / 关系图谱 Canvas / 图例 / tooltip
 │           ├── markdown.css    # Markdown 渲染样式
-│           ├── memory.css      # 记忆面板样式
 │           ├── modal.css       # 模态弹窗样式
 │           ├── settings.css    # 设置面板样式
 │           ├── toast.css       # Toast 通知样式
@@ -254,6 +272,15 @@ src/
 - 测试辅助工具与测试文件同目录（如 `storage/nodeSqliteDatabase.ts` 与 `storage/*.test.ts` 同级），仅服务于该模块测试
 - 不采用 co-location（测试与源文件同目录），保持 `__tests__/` 集中管理
 
+### 2.4 CSS 架构规则（2026-07-09 P0-P2 重构）
+
+1. **令牌单一真理源**：`tokens.css` 是唯一令牌定义处。`float.html` / `quick-input.html` 通过 `<link>` 共享引入，**禁止在任何窗口内联 `<style>` 块**。修改令牌只能改 `tokens.css`。
+2. **CSP 收紧**：主窗/浮窗/快速输入窗 `style-src` 均为 `'self'`（无 `'unsafe-inline'`），杜绝内联样式注入。
+3. **聚合器模式**：`chat.css` / `memory.css` 为纯 `@import` 聚合器，不包含任何直接样式规则。`@import` 顺序保持与原单体文件一致，层叠等价。
+4. **拆分切点**：按功能域切分，切点必须落在规则边界（大括号配平处），禁止在 CSS 规则中间切分。
+5. **间距/圆角令牌化**：组件 CSS 间距/圆角走 `--space-*` / `--radius-*` 令牌，禁止裸写 px（布局 width/height 等除外）。
+6. **贡献约定**：新增子模块在聚合器 `@import` 列表按层叠顺序追加；新组件样式放进对应功能 CSS。
+
 ---
 
 ## 3. 迁移步骤（从当前状态 → 最终形态）
@@ -274,6 +301,8 @@ src/
 - [x] D-12: `__tests__/` 镜像源码子目录——ipc/ 迁入 electron/ipc/、windows/ 迁入 electron/windows/、sprite/ 拆分 audit/ + controllers/
 - [x] D-13: `__tests__/` 镜像修复收尾——renderer/ 27 文件迁入 electron/renderer/、ui.test.ts 迁入 electron/renderer/、ipcHandlers.test.ts 重命名为 ipc/handlers.test.ts（2026-06-30，第八轮骨架修复）
 - [x] D-14: controllers/ 文件名对齐——memoryPanelController.ts → memoryController.ts、personaPanelController.ts → personaController.ts（C-3 重命名）；panels/ 补齐 4 个新 Manager——panelErrorBannerManager.ts/clipboardManager.ts/dateNavManager.ts/skillDropManager.ts（C-5-1~4 拆分，2026-07-01 阶段 C 架构演进）
+- [x] CSS-R1: P0 令牌统一——抽出 tokens.css 作为单一真理源，float.html/quick-input.html 移除内联 `<style>` 变量块，CSP 收紧为 `style-src 'self'`（2026-07-09）
+- [x] CSS-R2: P2 大文件拆分——chat.css(2960行)→4 子模块，memory.css(2197行)→4 子模块，原文件降级为 @import 聚合器（2026-07-09）
 
 ### 延后（非目录结构）
 

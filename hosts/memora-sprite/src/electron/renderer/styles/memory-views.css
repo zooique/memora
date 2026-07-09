@@ -1,0 +1,370 @@
+/* memory-views.css — 原 memory.css 第 376–744 行（P2 按功能拆分，顺序保持以保证层叠等价） */
+#memory-list,
+#memory-timeline-container,
+#memory-graph-container {
+  transition: opacity var(--transition-base), transform var(--transition-base);
+}
+
+/* 视图退出态：淡出 + 向左滑动 */
+.memory-view-exit {
+  opacity: 0;
+  transform: translateX(-12px);
+  pointer-events: none;
+}
+
+/* 视图进入态：淡入 + 从右侧滑入 */
+.memory-view-enter {
+  animation: memoryViewEnter var(--transition-base) ease both;
+}
+
+@keyframes memoryViewEnter {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* ─── 空状态统一（Phase 4：视觉统一） ────────────────────────── */
+
+/* 时间线空状态：与列表空状态保持一致 */
+.timeline-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap-compact);
+  padding: 40px var(--space-4);
+  color: var(--text-2);
+  font-size: var(--font-sm);
+}
+
+.timeline-empty .empty-icon {
+  font-size: 2rem;  /* 32px / 16 = 2rem（空状态大图标，超出 --font-2xl 范围，直接用 rem） */
+  color: var(--text-3);
+  animation: emptyIconFloat 3s ease-in-out infinite;
+  margin-bottom: 4px;
+}
+
+.timeline-empty .empty-title {
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.timeline-empty .empty-subtitle {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  text-align: center;
+  max-width: 240px;
+  line-height: 1.5;
+}
+
+/* 图谱空状态：与列表空状态一致 */
+.graph-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  z-index: var(--z-empty-state);
+  pointer-events: none;
+}
+
+.graph-empty-state.hidden {
+  display: none;
+}
+
+.graph-empty-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--text-3);
+  opacity: 0.6;
+  animation: emptyIconFloat 3s ease-in-out infinite;
+}
+
+.graph-empty-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.graph-empty-title {
+  font-size: var(--font-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.graph-empty-subtitle {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* ─── 抽屉面板滚动条（Phase 4：视觉统一） ────────────────────── */
+
+/* 记忆面板内滚动条：与 base.css 全局风格一致，但适配面板暗色背景 */
+#memory-list::-webkit-scrollbar,
+#memory-timeline-container::-webkit-scrollbar,
+#memory-detail-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+#memory-list::-webkit-scrollbar-track,
+#memory-timeline-container::-webkit-scrollbar-track,
+#memory-detail-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#memory-list::-webkit-scrollbar-thumb,
+#memory-timeline-container::-webkit-scrollbar-thumb,
+#memory-detail-content::-webkit-scrollbar-thumb {
+  background: var(--surface2);
+  border-radius: var(--radius-xs);
+}
+
+#memory-list::-webkit-scrollbar-thumb:hover,
+#memory-timeline-container::-webkit-scrollbar-thumb:hover,
+#memory-detail-content::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* ─── 伙伴洞察面板（Phase 4：从"仓库"到"理解"） ──────────────── */
+
+.partner-insights {
+  padding: 0 0 var(--space-3) 0;
+  border-bottom: 1px solid var(--surface2);
+  margin-bottom: 8px;
+}
+
+.partner-insights.hidden {
+  display: none;
+}
+
+.partner-insights-header {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  padding: var(--space-2) var(--space-4) var(--space-1-5);
+}
+
+.partner-insights-title {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-2);
+}
+
+/* Profile 记忆卡片（网格布局，最多 4 张） */
+.partner-profile-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1-5);
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.partner-profile-card {
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2-5);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.partner-profile-card:hover {
+  background: var(--surface1);
+  border-color: var(--muted);
+  transform: translateY(-1px);
+}
+
+.partner-profile-card-title {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+.partner-profile-card-preview {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 知识缺口提示 */
+.partner-knowledge-gaps {
+  padding: 0 var(--space-3) var(--space-2);
+}
+
+.partner-gap-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  padding: var(--input-padding);
+  background: var(--surface0);
+  border: 1px dashed var(--surface2);
+  border-radius: var(--radius-sm);
+  margin-bottom: 4px;
+  font-size: var(--font-xs);
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+.partner-gap-icon {
+  font-size: var(--font-sm);
+  flex-shrink: 0;
+}
+
+.partner-gap-text {
+  flex: 1;
+}
+
+/* 成长趋势 */
+.partner-growth-section {
+  padding: var(--space-2) var(--space-3) 0;
+}
+
+.partner-growth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.partner-growth-title {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-2);
+}
+
+.partner-growth-total {
+  font-size: var(--font-xs);
+  color: var(--text-3);
+}
+
+.partner-growth-chart {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  background: var(--surface0);
+  border: 1px solid var(--surface2);
+}
+
+/* ─── 记忆面板工具栏按钮（限定在记忆面板头部，避免污染全局 .icon-btn） ── */
+#panel-memories .panel-header .icon-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+}
+
+#panel-memories .panel-header .icon-btn:hover {
+  background: var(--surface0);
+  border-color: var(--muted);
+}
+
+/* 图标按钮 active 状态（筛选激活时高亮） */
+#panel-memories .panel-header .icon-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ─── 视图切换分段控件（列表/时间线/图谱） ───────────────── */
+.view-switch {
+  display: inline-flex;
+  background: var(--window-bg-2);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 0;
+}
+
+.view-switch-btn {
+  width: 32px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color var(--transition-fast);
+}
+
+.view-switch-btn .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.view-switch-btn:hover {
+  color: var(--subtext);
+  background: var(--surface0);
+}
+
+.view-switch-btn:active {
+  background: var(--surface1);
+}
+
+/* 视图切换按钮键盘聚焦可见样式 */
+.view-switch-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.view-switch-btn.active {
+  background: var(--window-bg);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ─── 工具栏更多菜单（下拉） ───────────────────────────────── */
+.toolbar-more {
+  position: relative;
+}
+
+.more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  /* 靠左定位（向右展开），避免向左展开时左部分被 panel overflow:hidden 裁剪 */
+  left: 0;
+  min-width: 150px;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  padding: var(--space-1);
+  z-index: var(--z-popover);
+}
+
+.more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  width: 100%;
+  padding: var(--input-padding-md);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+  /* 菜单项内容右对齐（图标在右，文字在左），与靠左定位视觉协调 */
+  flex-direction: row-reverse;
+  text-align: right;
+  transition: background var(--transition-fast);
+}

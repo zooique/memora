@@ -14,7 +14,7 @@
 
 /* ─── 仪表盘主体滚动容器 ──────────────────────────── */
 .dashboard-body {
-  padding: 12px 16px 16px;
+  padding: var(--space-3) var(--space-4) var(--space-4);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -35,7 +35,7 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--subtext);
-  margin: 0 0 6px 0;
+  margin: 0 0 var(--space-1-5) 0;
   padding: 0;
 }
 
@@ -46,7 +46,7 @@ details.dashboard-section > .dashboard-section-title {
   cursor: pointer;
   user-select: none;
   margin: 0;
-  padding: 4px 0;
+  padding: var(--space-1) 0;
 }
 
 details.dashboard-section > .dashboard-section-title::before {
@@ -70,7 +70,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  margin: 0 0 6px 0;
+  margin: 0 0 var(--space-1-5) 0;
   padding: 0;
 }
 
@@ -85,10 +85,10 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .overview-item {
   background: var(--surface0);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: var(--space-2-5) var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .overview-item .overview-label {
@@ -123,7 +123,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .overview-rapport-badge {
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
@@ -149,7 +149,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .overview-rapport-bars {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .overview-rapport-bar {
@@ -173,13 +173,13 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dashboard-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .dashboard-card {
   background: var(--surface0);
   border-radius: var(--radius-sm);
-  padding: 16px;
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--gap-compact);
@@ -235,7 +235,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .dash-item {
   background: var(--surface0);
   border-radius: var(--radius-xs);
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-2-5);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -282,7 +282,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   flex-direction: column;
   align-items: stretch;
   gap: var(--space-1-5);
-  padding: 10px 12px;
+  padding: var(--space-2-5) var(--space-3);
   border-radius: var(--radius-sm);
   background: var(--surface0);
   border-left: 3px solid transparent;
@@ -321,7 +321,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .source-health-status {
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
   font-weight: var(--weight-medium);
@@ -346,7 +346,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 /* 次行：计数 / 均分 / 访问天数 三个指标 */
 .source-health-meta {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   font-size: var(--font-2xs);
   color: var(--muted);
 }
@@ -465,7 +465,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  padding: 8px 4px;
+  padding: var(--space-2) var(--space-1);
   background: var(--surface0);
   border-radius: var(--radius-sm);
   text-align: center;
@@ -500,7 +500,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 /* 空状态：daily 全 0 时显示 */
 .growth-empty {
-  padding: 16px;
+  padding: var(--space-4);
   text-align: center;
   color: var(--muted);
   font-size: var(--font-sm);
@@ -572,7 +572,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .affect-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .affect-item-header {
@@ -621,7 +621,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 .rapport-badge {
   display: inline-block;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-xs);
   font-size: var(--font-2xs);
   font-weight: var(--weight-semibold);
@@ -759,7 +759,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .perception-pattern-item {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   padding: var(--space-1-5) var(--space-2);
   background: var(--surface0);
   border-radius: var(--radius-sm);
@@ -805,7 +805,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   background: transparent;
   border: 1px solid var(--surface2);
   border-radius: var(--radius-xs);
-  padding: 2px 6px;
+  padding: 2px var(--space-1-5);
   cursor: pointer;
   transition: background var(--transition-base) ease;
 }

@@ -240,7 +240,7 @@ export class InputAreaManager {
    *
    * 设计要点：
    * - 使用 ResizeObserver 而非 input 事件，覆盖所有高度变化来源（窗口缩放、内容变化、主题切换）
-   * - 写入 documentElement.style 确保所有引用 --input-area-height 的样式（chat.css:958, chat.css:1867）同步更新
+   * - 写入 documentElement.style 确保所有引用 --input-area-height 的样式（chat-messages.css，原 chat.css:958/1867）同步更新
    * - 元素缺失或环境不支持（jsdom 测试）时静默降级（保持原静态 140px 回退值）
    */
   private initResizeObserver(): void {
@@ -254,7 +254,7 @@ export class InputAreaManager {
         // 获取输入区实际高度（含 padding + border）
         const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
         if (height > 0) {
-          // 更新 CSS 变量，chat.css 中 padding-bottom 和浮动按钮 bottom 都引用此变量
+          // 更新 CSS 变量，chat-messages.css 中 padding-bottom 和浮动按钮 bottom 都引用此变量
           document.documentElement.style.setProperty('--input-area-height', `${Math.ceil(height)}px`);
         }
       }

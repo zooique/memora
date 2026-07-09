@@ -59,7 +59,7 @@
   align-items: center;
   gap: var(--space-1-5);
   height: 28px;
-  padding: 0 10px;
+  padding: 0 var(--space-2-5);
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
@@ -145,8 +145,8 @@
   border-right: none;  /* 侧边栏与大底板同色，无边界 */
   display: flex;
   flex-direction: column;
-  padding: 12px 8px;  /* 图标模式紧凑 padding */
-  gap: 12px;
+  padding: var(--space-3) var(--space-2);  /* 图标模式紧凑 padding */
+  gap: var(--space-3);
   flex-shrink: 0;
 }
 
@@ -199,9 +199,9 @@
 #persona-selector {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2-5);
   cursor: pointer;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-2-5);
   border-radius: var(--radius-md);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -253,7 +253,7 @@
 /* 角色匹配模式标签（角色选择器旁，显示当前模式） */
 .mode-badge {
   font-size: var(--font-2xs);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border-radius: var(--radius-sm);
   background: var(--surface1);
   color: var(--subtext);
@@ -282,7 +282,7 @@
 
 /* v3: 工具栏内角色选择器样式（紧凑版） */
 .toolbar-persona-container #persona-selector {
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-2-5);
   border-radius: var(--radius-pill);
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
@@ -326,7 +326,7 @@
 
 .toolbar-persona-container .mode-badge {
   font-size: var(--font-2xs);
-  padding: 0 4px;
+  padding: 0 var(--space-1);
   border-radius: var(--radius-xs);
 }
 
@@ -335,7 +335,7 @@
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  padding: 8px 6px;
+  padding: var(--space-2) var(--space-1-5);
   text-align: center;
   transition: background var(--transition-fast);
   display: flex;
@@ -418,7 +418,7 @@
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   flex-shrink: 0;
 }
 
@@ -433,7 +433,7 @@
   align-items: center;
   justify-content: center;
   position: relative; /* B4：为 ::after tooltip 提供定位锚点 */
-  padding: 10px;
+  padding: var(--space-2-5);
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
@@ -472,7 +472,7 @@
   left: calc(100% + 8px);
   top: 50%;
   transform: translateY(-50%);
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-2-5);
   background: var(--surface1);
   color: var(--text);
   border-radius: var(--radius-sm);
@@ -505,7 +505,7 @@
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
   color: var(--muted);
-  padding: 0 4px 0 10px;
+  padding: 0 var(--space-1) 0 var(--space-2-5);
   margin-bottom: 8px;
   /* 左侧3px宽accent色条，作为视觉分组锚点，扫视时可快速定位section */
   border-left: 3px solid var(--accent);
@@ -557,7 +557,7 @@
 /* ─── Phase 3：默契度展示（等级徽章 + 双进度条 + 描述） ──── */
 .rapport-level-badge {
   display: inline-block;
-  padding: 2px 10px;
+  padding: 2px var(--space-2-5);
   border-radius: var(--radius-md);
   font-size: var(--font-xs);
   font-weight: var(--weight-semibold);
@@ -574,7 +574,7 @@
 .rapport-level-badge[data-level="close"] { background: var(--red); }
 
 .rapport-description {
-  margin: 6px 0 0 0;
+  margin: var(--space-1-5) 0 0 0;
   color: var(--muted);
   font-size: var(--font-2xs);
   line-height: 1.4;
@@ -606,7 +606,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-1-5);
-  padding: 6px 8px;
+  padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--bg-hover);
   font-size: var(--font-xs);
@@ -642,8 +642,8 @@
 .milestone-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2-5);
   border-radius: var(--radius-lg);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
@@ -674,7 +674,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-1-5);
-  padding: 14px 10px;
+  padding: 14px var(--space-2-5);
   border: 1.5px dashed var(--surface2);
   border-radius: var(--radius-md);
   background: var(--window-bg-2);
@@ -785,7 +785,7 @@
 #main-content {
   grid-area: window;
   /* 修正 margin 不对称问题，四周留边距形成完整悬浮感 */
-  margin: 0 6px 6px 6px;
+  margin: 0 var(--space-1-5) var(--space-1-5) var(--space-1-5);
   background: var(--window-bg);
   border-radius: var(--radius-window);
   box-shadow: var(--shadow-window);
@@ -893,7 +893,7 @@
 /* 保留 .empty-action-btn 类名作为语义别名，HTML 中同时添加 .btn-secondary 类即可 */
 .empty-action-btn {
   display: block;
-  margin: 12px auto 0;
+  margin: var(--space-3) auto 0;
 }
 
 /* ============================================================
@@ -948,17 +948,17 @@
 .recent-insights-list {
   list-style: none;
   padding: 0;
-  margin: 4px 0 0 0;
+  margin: var(--space-1) 0 0 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .recent-insight-item {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 8px;
+  padding: var(--space-1-5) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--bg-secondary);
 }
@@ -1000,7 +1000,7 @@ body.web-mode #titlebar-drag {
 /* Web 模式：顶部栏高度调整，命令面板居中显示 */
 body.web-mode #titlebar {
   height: 52px;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
   background: transparent;
 }
 
@@ -1012,7 +1012,7 @@ body.web-mode #titlebar-drag {
 /* Web 模式：命令面板提示按钮更大更明显 */
 body.web-mode .cmdk-hint {
   height: 34px;
-  padding: 0 16px;
+  padding: 0 var(--space-4);
   font-size: var(--font-sm);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -1033,7 +1033,7 @@ body.web-mode .cmdk-hint .icon {
 
 body.web-mode .cmdk-hint kbd {
   font-size: var(--font-xs);
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
 }
 
 /* Web 模式：侧边栏品牌图标可点击（回到对话面板），增加视觉反馈 */
@@ -1062,7 +1062,7 @@ body.web-mode #sidebar {
 
 /* Web 模式：核心悬浮窗口增加边距和阴影，营造更好的悬浮感 */
 body.web-mode #main-content {
-  margin: 8px 16px 16px 0;
+  margin: var(--space-2) var(--space-4) var(--space-4) 0;
   border-radius: 20px;
   box-shadow: var(--shadow-window);
   overflow: hidden;
@@ -1070,19 +1070,19 @@ body.web-mode #main-content {
 
 /* Web 模式：对话面板顶部工具栏优化 */
 body.web-mode #chat-toolbar {
-  padding: 12px 20px;
+  padding: var(--space-3) var(--space-5);
   border-bottom: 1px solid var(--surface2);
 }
 
 /* Web 模式：输入区域优化（嵌入占位模式，margin 模拟浮动间距） */
 body.web-mode #input-area {
-  margin: 0 16px 16px;
+  margin: 0 var(--space-4) var(--space-4);
   padding: var(--pad-card);
 }
 
 body.web-mode #input {
   font-size: var(--font-base);
-  padding: 10px 14px;
+  padding: var(--space-2-5) 14px;
   border-radius: var(--radius-lg);
 }
 
@@ -1109,12 +1109,12 @@ body.web-mode #btn-send:disabled {
 
 /* Web 模式：消息区域优化，增加左右边距 */
 body.web-mode #messages {
-  padding: 16px 20px;
+  padding: var(--space-4) var(--space-5);
 }
 
 /* Web 模式：空状态引导优化，更温馨 */
 body.web-mode .chat-empty-state {
-  padding: 60px 24px;
+  padding: 60px var(--space-6);
 }
 
 body.web-mode .empty-avatar {
@@ -1141,11 +1141,11 @@ body.web-mode .empty-subtitle {
 }
 
 body.web-mode .empty-suggestions {
-  gap: 10px;
+  gap: var(--space-2-5);
 }
 
 body.web-mode .suggestion-btn {
-  padding: 10px 18px;
+  padding: var(--space-2-5) 18px;
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   transition: background var(--transition-fast) ease, box-shadow var(--transition-fast) ease;
@@ -1160,12 +1160,12 @@ body.web-mode .suggestion-btn:hover {
 
 /* Web 模式：面板头部优化 */
 body.web-mode .panel-header {
-  padding: 16px 20px;
+  padding: var(--space-4) var(--space-5);
 }
 
 /* Web 模式：记忆列表项优化 */
 body.web-mode #memory-list {
-  padding: 8px 20px 20px;
+  padding: var(--space-2) var(--space-5) var(--space-5);
 }
 
 /* Web 模式：设置面板优化 */
@@ -1191,6 +1191,6 @@ body.web-mode ::-webkit-scrollbar {
 /* Web 模式：响应式优化 - 中等窗口 */
 @media (min-width: 1024px) {
   body.web-mode #main-content {
-    margin: 0 24px 24px 0;
+    margin: 0 var(--space-6) var(--space-6) 0;
   }
 }

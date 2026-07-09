@@ -1,0 +1,287 @@
+/* chat-toolbar.css — 原 chat.css 第 1–286 行（P2 按功能拆分，顺序保持以保证层叠等价） */
+/**
+ * Memora 精灵 — 对话面板样式
+ *
+ * 包含：对话工具栏、主动提示 banner、消息气泡、输入区、打字指示器、
+ *       召回记忆提示、对话区空状态引导。
+ */
+
+/* ─── 对话面板（可见性由 .panel / .panel.active 统一控制） ─── */
+
+#chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+/**
+ * 对话工具栏：对齐 demo v8
+ * - 高度 44px（与顶部栏一致），左右 24px padding
+ * - 左侧标题+副标题，右侧日期导航按钮（space-between）
+ * - 取消背景色和分割线，融入核心窗口
+ */
+#chat-toolbar {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-6);
+  flex-shrink: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--surface2);
+}
+
+/* 工具栏左侧信息区：标题 + 副标题 */
+.chat-toolbar-info {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-compact);
+  min-width: 0;
+  position: relative; /* 为精灵感知浮层提供定位参考 */
+}
+
+.chat-toolbar-title {
+  /* 缩小标题字号，与副标题差距更协调 */
+  font-size: var(--font-base);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.chat-toolbar-subtitle {
+  /* 副标题字号略增，与标题差距缩小 */
+  font-size: var(--font-sm);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── v3：精灵状态条（对话工具栏内，替代原 chat-narrative） ── */
+/* 设计：紧凑胶囊形，font-xs，accent-soft 背景，点击展开感知面板 */
+.sprite-status-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--subtext);
+  font-size: var(--font-xs);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sprite-status-bar:hover {
+  background: var(--accent-10);
+  box-shadow: 0 0 0 1px var(--accent-20);
+}
+
+.sprite-status-bar:active {
+  background: var(--accent-20);
+}
+
+.sprite-status-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* 精灵状态条内图标 */
+.sprite-status-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* 脉冲动画点（事件累积状态指示） */
+.sprite-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: statusPulse 2s infinite;
+  flex-shrink: 0;
+}
+
+.sprite-status-dot.warning {
+  background: var(--yellow);
+  animation: statusPulse 1s infinite;
+}
+
+.sprite-status-dot.critical {
+  background: var(--red);
+  animation: statusPulse 0.6s infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* 状态文字 */
+#sprite-status-text-bar {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .sprite-status-dot {
+    animation: none;
+  }
+}
+
+/* ─── 精灵感知浮层（hover 时弹出，轻量感知摘要） ──── */
+/* 浮层定位：相对于 chat-toolbar-info 容器，在状态条下方弹出 */
+.sprite-status-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: var(--z-popover);
+  min-width: 200px;
+  background: var(--window-bg);
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-float);
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-compact);
+}
+
+.sprite-status-popover.hidden {
+  display: none;
+}
+
+/* 浮层内分节 */
+.popover-section {
+  display: flex;
+  align-items: baseline;
+  gap: var(--gap-compact);
+}
+
+.popover-label {
+  font-size: var(--font-xs);
+  color: var(--subtext);
+  white-space: nowrap;
+  min-width: 48px;
+}
+
+.popover-value {
+  font-size: var(--font-xs);
+  color: var(--text);
+  flex: 1;
+}
+
+/* 浮层小三角箭头 */
+.sprite-status-popover::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 16px;
+  width: 10px;
+  height: 10px;
+  background: var(--window-bg);
+  border-left: 1px solid var(--surface2);
+  border-top: 1px solid var(--surface2);
+  transform: rotate(45deg);
+}
+
+/* ─── 感知面板分节（紧凑布局，仪表盘面板复用） ──── */
+.perception-section {
+  margin-bottom: 8px;
+}
+
+.perception-section:last-child {
+  margin-bottom: 0;
+}
+
+.perception-section-title {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--muted);
+  /* 紧凑布局：收紧标题下间距 */
+  margin: 0 0 var(--space-1) 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.perception-section-title.clickable {
+  cursor: pointer;
+}
+
+.perception-section-title.clickable:hover {
+  color: var(--text);
+}
+
+/* 折叠箭头：默认朝右（折叠状态），expanded 时朝下（展开状态） */
+.narrative-toggle {
+  transition: transform var(--transition-base) ease;
+  transform: rotate(-90deg);
+}
+
+.narrative-toggle.expanded {
+  transform: rotate(0deg);
+}
+
+/* ─── 在场状态指示器（用户在场/离开，一眼可见） ──── */
+.presence-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: 3px var(--space-2);
+  background: var(--surface1);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-2xs);
+  margin-bottom: 6px;
+}
+
+.presence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: background var(--transition-slow) ease, box-shadow var(--transition-slow) ease;
+}
+
+/* 用户在场：绿色脉冲点 */
+.presence-dot.present {
+  background: var(--green);
+  box-shadow: 0 0 0 0 var(--presence-pulse);
+  animation: presencePulse 2s infinite;
+}
+
+/* 用户离开：灰色静态点 */
+.presence-dot.away {
+  background: var(--muted);
+  box-shadow: none;
+  animation: none;
+}
+
+.presence-text {
+  color: var(--subtext);
+  transition: color var(--transition-slow) ease;
+  font-weight: var(--weight-medium);
+}
+
+/* 在场状态脉冲动画 */
+@keyframes presencePulse {
+  0% {
+    box-shadow: 0 0 0 0 var(--presence-pulse);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+/* 情感基调 2×2 紧凑网格 */

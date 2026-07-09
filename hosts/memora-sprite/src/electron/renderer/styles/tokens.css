@@ -1,0 +1,444 @@
+/**
+ * Memora 精灵 — 设计令牌（单一真理源）
+ *
+ * 双主题 CSS 变量系统，由 index.html / float.html / quick-input.html
+ * 通过 <link rel="stylesheet"> 统一引入，彻底消除多窗口令牌漂移。
+ *
+ * 修改令牌只需改此处，三窗口自动同步。
+ * 浅色主题默认（:root），深色主题备选（[data-theme="dark"]）。
+ */
+
+:root {
+  /* 大底板色（左侧栏 + 顶部栏融为一体，v8 --shell-bg） */
+  --bg:          #f0f0f2;  /* 页面背景 = 大底板 */
+  /* 浅色主题 --surface0 略深于 --bg，保留层级语义 */
+  --surface0:    #ececee;  /* 侧边栏/顶部栏背景，略深于大底板 */
+  --surface1:    #e8e8ea;  /* 次级表面，hover 态（v8 --shell-bg-2） */
+  --surface2:    #dbdbdd;  /* 边框/分隔线（v8 --shell-border） */
+  --border:      #dbdbdd;  /* 语义化边框色，= --surface2 */
+
+  /* 核心悬浮窗口（v8 新增语义） */
+  --window-bg:   #ffffff;  /* 核心窗口背景 */
+  --window-bg-2: #efeff1;  /* A2: 调深,与 --window-bg(#ffffff) 拉开层次 */  /* 核心窗口次级背景（输入框、卡片等） */
+
+  /* 文字层级 */
+  --text:        #1d1d1f;  /* 主文字 */
+  --subtext:     #65656b;  /* 次级文字（v8 --text-2）；WCAG AA 4.7:1 达标（调深自 #6e6e73） */
+  --muted:       #6a6a72;  /* 弱化文字（v8 --text-3）；WCAG AA 4.6:1 达标（调深自 #7a7a82） */
+  --text-2:      #65656b;  /* v8 命名，= --subtext */
+  --text-3:      #6a6a72;  /* v8 命名，= --muted */
+  --text-4:      #83838b;  /* 最弱文字（时间戳等辅助信息）；WCAG AA 3:1 达标（实测 #fff 3.8:1 / #f0f0f2 3.3:1） */
+
+  /* 强调色 */
+  --accent:        #0066ff;  /* 主强调色（v8 --accent） */
+  --blue:          #0066ff;  /* 语义化别名，= --accent */
+  /* 统一 --accent-soft 为 rgba 策略 */
+  --accent-soft:   rgba(0, 102, 255, 0.06);  /* 强调色浅底（v8 --accent-soft）；降至 0.06 提升 --accent 文字对比度至 ~4.5:1 */
+  --accent-hover:  #0052cc;  /* 强调色 hover（v8 --accent-hover） */
+
+  /* 语义色 */
+  --green:       #34c759;
+  --presence-pulse: rgba(52, 199, 89, 0.4); /* 在场状态脉冲动画色（浅色主题） */
+  --yellow:      #ff9f0a;
+  --pink:        #ad1457;  /* 浅色主题下使用深玫红色，保证 source-guardrail 标签文字对比度（WCAG AA） */
+  --red:         #ff3b30;
+
+  /* 情感进度条颜色 */
+  --affect-low:  #5b8def;  /* 低值→蓝紫色 */
+  --affect-mid:  #4caf50;  /* 中值→绿色 */
+  --affect-high: #ff9800;  /* 高值→橙色 */
+
+  /* accent 背景上的前景色（用于按钮/气泡等 accent 背景场景） */
+  --accent-fg:   #ffffff;  /* 浅色主题：深蓝背景 + 白字，对比度达标 */
+
+  /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
+  --text-on-red: #ffffff;
+
+  /* source 标签专用颜色（浅色主题下使用深色文字以保证对比度） */
+  --mauve:       #7b1fa2;  /* 紫色：rule */
+  --teal:        #00838f;  /* 青色：persona */
+  --peach:       #e65100;  /* 橙色：session */
+
+  /* 品牌渐变：仅用于 logo/头像（浅色/深色主题通用） */
+  --brand-grad:  linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+
+  /* 圆角：v8 整体收敛，更紧凑 */
+  --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
+  --radius-sm:     6px;     /* 小型元素圆角（标签、按钮、卡片） */
+  --radius-md:     10px;
+  --radius-lg:     12px;
+  --radius-xl:     18px;
+  --radius-pill:   100px;   /* 胶囊形按钮/标签 */
+  --radius-window: 18px;    /* 核心窗口圆角 */
+
+  /* 阴影：浅色主题下更轻量，避免过度悬浮感 */
+  --shadow:           0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.08);
+  --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.06);
+  /* 移除 --shadow-md（与 --shadow 完全相同且未被引用，合并到 --shadow） */
+  --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
+  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
+  --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
+  /* 大型浮层阴影（context-menu / 右键菜单等，比 float 更强层次感） */
+  --shadow-lg:        0 8px 24px rgba(0, 0, 0, 0.1);
+  /* 小型元素阴影令牌（nav-btn active / suggestion-card 等），深色主题下加重以保证可见性 */
+  --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.04);
+  /* emoji 文字阴影令牌（brand-grad 背景上 emoji 可读性），深色主题下加重 */
+  --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.25);
+
+  /* 统一动画时长变量 */
+  --transition-fast: 0.12s;  /* 微交互（hover/active/按钮） */
+  --transition-base: 0.2s;   /* 标准过渡（动画/滑入/淡入） */
+  --transition-slow: 0.3s;   /* 大型过渡（面板展开/脉冲） */
+  --transition-xl:   0.5s;   /* 超长过渡（进度条填充/宽度变化） */
+
+  /* z-index 层级体系（从低到高，确保浮层叠放顺序统一） */
+  --z-base:             1;     /* 基础内容层（时间线节点等） */
+  --z-empty-state:      5;     /* 空状态覆盖层 */
+  --z-floating-action:  10;    /* 浮动操作元素（banner/legend/suggestion） */
+  --z-decoration:       20;    /* 装饰性伪元素（nav-btn::after 等，低于 tooltip） */
+  --z-tooltip:          50;    /* tooltip（高于装饰元素，低于 popover） */
+  --z-popover:          100;   /* popover/dropdown/menu（交互浮层） */
+  --z-modal:            1000;  /* 模态弹窗 */
+  --z-command-palette:  1100;  /* 命令面板（高于 modal，全局搜索浮层） */
+  --z-dialog-overlay:   1001;  /* 对话框覆盖层（高于 modal） */
+  --z-toast:            2000;  /* toast 通知（最高层） */
+
+  /* 字体遮罩 */
+  --modal-backdrop: rgba(0, 0, 0, 0.25);
+  /* 命令面板遮罩（比 modal 更重，强调聚焦） */
+  --palette-backdrop: rgba(0, 0, 0, 0.4);
+
+  /* 输入区域高度：chat.css 引用，定义到 base.css 便于统一维护 */
+  --input-area-height: 140px;
+
+  /* 主题色透明度（用于标签背景、badge 等；浅色主题下降低透明度避免过艳） */
+  --accent-20: rgba(0, 102, 255, 0.1);
+  /* 强调色 hover 背景（比 --accent-20 略深，用于 recall-header 等 hover 状态） */
+  --accent-soft-hover: rgba(0, 102, 255, 0.12);
+  --green-20:  rgba(52, 199, 89, 0.1);
+  --pink-20:   rgba(245, 194, 231, 0.2);
+  --yellow-20: rgba(255, 159, 10, 0.1);
+  --mauve-20:  rgba(123, 31, 162, 0.1);
+  --teal-20:   rgba(0, 131, 143, 0.1);
+  --peach-20:  rgba(230, 81, 0, 0.1);
+  --red-20:    rgba(255, 59, 48, 0.1);  /* 错误横幅背景色 */
+
+  /* source 标签配色（记忆系统 source-tag + 用户画像 profile-category 共享，避免两处重复定义） */
+  --tag-profile-bg:   var(--green-20);   /* 用户身份/画像：绿色 */
+  --tag-profile-fg:   var(--green);
+  --tag-insight-bg:   var(--accent-20);  /* 洞察/偏好：强调色 */
+  --tag-insight-fg:   var(--accent);
+  --tag-guardrail-bg: var(--pink-20);    /* 护栏：粉色 */
+  --tag-guardrail-fg: var(--pink);
+
+  /* 字体 */
+  /* 不打包字体文件，使用系统默认字体栈（跨平台一致性） */
+  --font-sprite: system-ui, -apple-system, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  --font-mono:   'Cascadia Code', 'Fira Code', 'Consolas', 'Source Code Pro', 'Monaco', monospace;
+
+  /* ─── 设计系统：字号层级（统一规范 + rem 改造） ─── */
+  /* 从 9px 到 28px 共 9 级，覆盖全部 UI 场景，基准 html { font-size: 16px } */
+  --font-2xl: 1.75rem;   /* 28px / 16 = 1.75（空状态头像图标） */
+  --font-xl:  1.375rem;  /* 22px / 16 = 1.375（dropzone 图标） */
+  --font-lg:  1rem;      /* 16px / 16 = 1（空状态标题、作品投影图标） */
+  --font-md:  0.9375rem; /* 15px / 16 = 0.9375（品牌名、仪表盘数值、banner 图标） */
+  --font-base:0.875rem;  /* 14px / 16 = 0.875（正文消息、输入框、标题栏） */
+  --font-sm:  0.75rem;   /* 12px / 16 = 0.75（辅助信息、标签文字、设置 label） */
+  --font-xs:  0.6875rem; /* 11px / 16 = 0.6875（元信息、提示文字、标签） */
+  --font-2xs: 0.625rem;  /* 10px / 16 = 0.625（时间戳、角标、数值） */
+  --font-3xs: 0.5625rem; /* 9px / 16 = 0.5625（最低置信度、超窄屏降级） */
+  --font-h1:  1.125rem;  /* 18px / 16 = 1.125（标题 h1、洞察面板数值） */
+  --font-score:1.25rem;   /* 20px / 16 = 1.25（健康度评分） */
+  /* 填补字号梯度缺口 */
+  --font-md-2: 0.8125rem; /* 13px / 16 = 0.8125（填补 sm 12px 与 base 14px 之间） */
+  --font-h2:   1.5rem;     /* 24px / 16 = 1.5（填补 h1 18px 与 2xl 28px 之间，大数值） */
+
+  /* ─── 设计系统：字重层级（4 级覆盖全部场景） ─── */
+  --weight-regular:  400;  /* 正文默认 */
+  --weight-medium:   500;  /* 次级强调（标签值/辅助文本） */
+  --weight-semibold: 600;  /* 标题/数值（默认强调，最常用） */
+  --weight-bold:     700;  /* 大数值（仅 KPI 顶级，慎用） */
+
+  /* ─── 设计系统：间距 4px 基线栅格（对标 Arco/Semi） ─── */
+  /* 覆盖 4/6/8/12/16/20/24/32，所有 gap/margin/padding 应优先使用这些令牌 */
+  --space-1:    4px;   /* 极小间距（图标与文字间隙） */
+  --space-1-5:  6px;   /* 半级间距（卡片内元素紧凑 gap，对标 Arco padding-xs） */
+  --space-2:    8px;   /* 紧凑间距（卡片内元素 gap） */
+  --space-2-5: 10px;  /* 半级间距（8→12 之间的档，卡片/列表次级 padding、gap） */
+  --space-3:   12px;   /* 标准间距（卡片 padding、分区 gap） */
+  --space-4:   16px;   /* 宽松间距（面板 padding、分区之间） */
+  --space-5:   20px;   /* 大间距（面板左右 padding） */
+  --space-6:   24px;   /* 超大间距（弹窗 padding） */
+  --space-8:   32px;   /* 最大间距（空状态 padding） */
+
+  /* ─── 设计系统：按钮规范 ─── */
+  --btn-height-sm: 28px;  /* 小按钮高度（工具按钮、图标按钮） */
+  --btn-height-md: 32px;  /* 中按钮高度（发送按钮、操作按钮） */
+  --btn-padding-sm: 4px 10px;   /* 小按钮内边距 */
+  --btn-padding-md: 6px 14px;   /* 中按钮内边距 */
+
+  /* ─── 设计系统：输入框规范 ─── */
+  --input-padding: 6px 10px;  /* 输入框统一内边距 */
+
+  /* ─── 设计系统：语义内边距（扩展，高频模式提取） ─── */
+  /* 自然生长原则：3+ 次重复的 padding 模式提取为语义令牌，避免硬编码散落 */
+  --pad-card:      var(--space-3) var(--space-4);  /* 卡片/列表项内边距（记忆卡片、profile 卡片等） */
+  --pad-section:   10px 16px;  /* 面板区块内边距（面板头部、引导项等） */
+  --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距（prompt-input、filter 下拉等） */
+
+  /* 语义化背景变量（hover/次级背景） */
+  --bg-hover:     var(--surface1);     /* hover 态背景（复用 surface1） */
+  --bg-secondary: var(--surface1);     /* 次级背景（复用 surface1） */
+  --hover:        var(--surface1);     /* hover 态背景简写别名（chat.css/layout.css 引用） */
+
+  /* 语义化文字颜色别名（供 layout.css 等引用，与 --text/--text-2 对齐） */
+  --text-primary:   var(--text);      /* 主文字色别名 */
+  --text-secondary: var(--text-2);    /* 次级文字色别名 */
+
+  /* 命令面板等浮层使用的变量（补全缺失定义，避免回退到浏览器默认值） */
+  --surface:        var(--window-bg); /* 浮层表面背景 = 核心窗口背景 */
+  --accent-10:      rgba(0, 102, 255, 0.05); /* 强调色 5% 透明度（hover 等更弱的强调场景） */
+  --white:          #ffffff;         /* 纯白（红色按钮 hover 等场景） */
+
+  /* ─── 图谱浮层变量（深色主题自动适配） ─── */
+  /* 记忆图谱 tooltip/legend 使用半透明深色浮层，浅色/深色主题均可读 */
+  --graph-overlay-bg:       rgba(0, 0, 0, 0.85);     /* 浮层背景 */
+  --graph-overlay-fg:       rgba(255, 255, 255, 0.9); /* 浮层文字 */
+  --graph-overlay-border:   rgba(255, 255, 255, 0.1); /* 浮层边框 */
+  --graph-overlay-muted:    rgba(255, 255, 255, 0.6); /* 浮层弱化文字 */
+  --graph-overlay-shadow:   0 4px 16px rgba(0, 0, 0, 0.3); /* 浮层阴影 */
+
+  /* 搜索高亮：黄色半透明背景，双主题通用 */
+  --search-highlight-bg:    rgba(255, 159, 10, 0.3);
+
+  /* 技能拖入错误态背景 */
+  --dropzone-error-bg:      rgba(255, 59, 48, 0.08);
+
+  /* 里程碑庆祝渐变：浅色主题金色调 */
+  --milestone-grad:         linear-gradient(135deg, #f9e2af 0%, #fab387 50%, #f5c2e7 100%);
+  --milestone-border:       #f9e2af;
+  --milestone-text:         #5c4a1a;
+  --milestone-icon:         #d4a017;
+  --milestone-btn-bg:       rgba(255, 255, 255, 0.6);
+  --milestone-btn-border:   rgba(212, 160, 23, 0.3);
+  --milestone-btn-hover:    rgba(255, 255, 255, 0.8);
+  --milestone-close:        #8b7355;
+  --milestone-close-hover-bg: rgba(255, 255, 255, 0.5);
+
+  /* 里程碑侧边栏徽章（小标签） */
+  --milestone-badge-grad:   linear-gradient(135deg, rgba(249, 226, 175, 0.2), rgba(250, 179, 135, 0.2));
+  --milestone-badge-border: rgba(249, 226, 175, 0.5);
+  --milestone-badge-text:   #a67c00;
+  --milestone-badge-icon:   #d4a017;
+
+  /* ─── 补齐未定义变量 ─── */
+  /* 集中定义此前被引用但未定义的变量，避免渲染回退 */
+
+  /* 紧凑间距：Provider 列表/操作按钮/激活徽章间距（复用 --space-2 栅格令牌保持单一真理源） */
+  --gap-compact: var(--space-2);
+
+  /* 语义色 5% 透明度（与 --accent-10 命名一致，用于 hover 背景） */
+  --green-10: rgba(52, 199, 89, 0.05);
+  --red-10:   rgba(255, 59, 48, 0.05);
+  --yellow-10: rgba(255, 159, 10, 0.05);  /* 警告态 hover 背景（对齐 --green-10/--red-10 透明度） */
+
+  /* 错误态背景别名（= --red-10，语义化命名供 onboarding-error 等使用） */
+  --error-10: var(--red-10);
+
+  /* 输入框背景（onboarding 表单等，复用窗口背景保持一致性） */
+  --input-bg: var(--window-bg);
+
+  /* 启动横幅 padding：上下 8px / 左右 16px（复用 --space-* 令牌保持单一真理源） */
+  --padding-sm:   var(--space-2);
+  --padding-base: var(--space-4);
+
+  /* 卡片 hover 边框色（.card.card-hoverable:hover，复用 muted 与其他卡片一致） */
+  --border-hover: var(--muted);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* 大底板色 */
+  --bg:          #1e1e2e;
+  --surface0:    #313244;  /* 侧边栏/顶部栏背景 */
+  --surface1:    #45475a;  /* 次级表面 */
+  --surface2:    #585b70;  /* 边框/分隔线 */
+  --border:      #585b70;  /* 语义化边框色，= --surface2 */
+
+  /* 核心悬浮窗口 */
+  --window-bg:   #313244;
+  --window-bg-2: #45475a;
+
+  /* 文字层级 */
+  --text:        #cdd6f4;
+  --subtext:     #a6adc8;
+  --muted:       #b5bcd6;  /* 弱化文字（v8 --text-3）；WCAG AA 达标 */
+  --text-2:      #a6adc8;
+  --text-3:      #b5bcd6;
+  --text-4:      #7f849c;  /* 最弱文字（深色主题）；WCAG AA 3:1 达标（实测 #313244 3.4:1） */
+
+  /* 强调色 */
+  --accent:        #89b4fa;
+  --blue:          #89b4fa;  /* 语义化别名，深色主题下 = #89b4fa */
+  --accent-soft:   rgba(137, 180, 250, 0.15);
+  --accent-hover:  #74a8fc;
+
+  /* 语义色 */
+  --green:       #a6e3a1;
+  --presence-pulse: rgba(166, 227, 161, 0.4); /* 在场状态脉冲动画色（深色主题） */
+  --yellow:      #f9e2af;
+  --pink:        #f5c2e7;
+  --red:         #f38ba8;
+
+  /* 情感进度条颜色（深色主题下提亮以保证对比度） */
+  --affect-low:  #89b4fa;  /* 低值→浅蓝（与深色主题 --blue 一致） */
+  --affect-mid:  #a6e3a1;  /* 中值→浅绿（与深色主题 --green 一致） */
+  --affect-high: #f9e2af;  /* 高值→浅橙（与深色主题 --yellow 一致） */
+
+  /* accent 背景上的前景色（深色主题：浅蓝背景 + 深字，对比度达标） */
+  --accent-fg:   #1e1e2e;
+
+  /* 红色背景上的前景色（关闭按钮/停止按钮/危险按钮，两主题均为白字） */
+  --text-on-red: #ffffff;
+
+  /* source 标签专用颜色 */
+  --mauve:       #cba6f7;
+  --teal:        #94e2d5;
+  --peach:       #fab387;
+
+  /* 品牌渐变（与浅色一致） */
+  --brand-grad:  linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
+
+  /* 圆角（与浅色一致） */
+  --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
+  --radius-sm:     6px;     /* 小型元素圆角（标签、按钮、卡片） */
+  --radius-md:     10px;
+  --radius-lg:     12px;
+  --radius-xl:     18px;
+  --radius-window: 18px;
+
+  /* 阴影：深色主题下阴影更重，以产生层次感 */
+  --shadow:           0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.5);
+  --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.4);
+  /* 移除 --shadow-md（与 --shadow 完全相同且未被引用） */
+  --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
+  --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
+  --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
+  /* 大型浮层阴影（深色主题加重以保证层次感可见性） */
+  --shadow-lg:        0 8px 24px rgba(0, 0, 0, 0.5);
+  /* 小型元素阴影令牌（深色主题加重以保证可见性） */
+  --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.3);
+  /* emoji 文字阴影令牌（深色主题加重以保证可读性） */
+  --text-shadow-emoji: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  /* 统一动画时长变量（深色主题与浅色一致） */
+  --transition-fast: 0.12s;
+  --transition-base: 0.2s;
+  --transition-slow: 0.3s;
+  --transition-xl:   0.5s;
+
+  /* 字体遮罩 */
+  --modal-backdrop: rgba(0, 0, 0, 0.6);
+  /* 命令面板遮罩（深色主题下加重，保证聚焦浮层对比度） */
+  --palette-backdrop: rgba(0, 0, 0, 0.7);
+
+  /* 输入区域高度（深色主题与浅色主题一致） */
+  --input-area-height: 140px;
+
+  /* 主题色透明度 */
+  --accent-20: rgba(137, 180, 250, 0.2);
+  /* 强调色 hover 背景（深色主题比 --accent-20 略深） */
+  --accent-soft-hover: rgba(137, 180, 250, 0.25);
+  --green-20:  rgba(166, 227, 161, 0.2);
+  --pink-20:   rgba(245, 194, 231, 0.2);
+  --yellow-20: rgba(249, 226, 175, 0.2);
+  --mauve-20:  rgba(203, 166, 247, 0.2);
+  --teal-20:   rgba(148, 226, 213, 0.2);
+  --peach-20:  rgba(250, 179, 135, 0.2);
+  --red-20:    rgba(243, 139, 168, 0.2);  /* 错误横幅背景色 */
+
+  /* ─── 设计系统：字号层级（与浅色主题一致） ─── */
+  --font-2xl: 1.75rem;
+  --font-xl:  1.375rem;
+  --font-lg:  1rem;
+  --font-md:  0.9375rem;
+  --font-base:0.875rem;
+  --font-sm:  0.75rem;
+  --font-xs:  0.6875rem;
+  --font-2xs: 0.625rem;
+  --font-3xs: 0.5625rem;
+  --font-h1:  1.125rem;
+  --font-score:1.25rem;
+
+  /* ─── 设计系统：按钮规范（与浅色主题一致） ─── */
+  --btn-height-sm: 28px;
+  --btn-height-md: 32px;
+  --btn-padding-sm: 4px 10px;
+  --btn-padding-md: 6px 14px;
+
+  /* ─── 设计系统：输入框规范（与浅色主题一致） ─── */
+  --input-padding: 6px 10px;
+
+  /* ─── 设计系统：语义内边距（与浅色主题一致，复用 --space-* 令牌） ─── */
+  --pad-card:      var(--space-3) var(--space-4);  /* 卡片/列表项内边距 */
+  --pad-section:   10px 16px;  /* 面板区块内边距（10px 无令牌，保留） */
+  --input-padding-md: var(--space-2) var(--space-3);  /* 中等输入框内边距 */
+
+  /* 语义化背景变量（深色主题下复用 surface1） */
+  --bg-hover:     var(--surface1);
+  --bg-secondary: var(--surface1);
+  --hover:        var(--surface1);
+
+  /* 语义化文字颜色别名 */
+  --text-primary:   var(--text);
+  --text-secondary: var(--text-2);
+
+  /* 命令面板等浮层使用的变量（深色主题同步定义） */
+  --surface:        var(--window-bg);
+  --accent-10:      rgba(137, 180, 250, 0.08);
+  --white:          #ffffff;
+
+  /* ─── 图谱浮层变量（深色主题适配） ─── */
+  /* 深色主题下浮层使用 Catppuccin 表面色，带透明度 */
+  --graph-overlay-bg:       rgba(49, 50, 68, 0.95);    /* Catppuccin surface0 */
+  --graph-overlay-fg:       var(--text);              /* 复用主文字色 */
+  --graph-overlay-border:   var(--surface2);          /* 复用边框色 */
+  --graph-overlay-muted:    var(--subtext);           /* 复用次级文字色 */
+  --graph-overlay-shadow:   0 4px 16px rgba(0, 0, 0, 0.5);
+
+  /* 搜索高亮：深色主题下提高对比度 */
+  --search-highlight-bg:    rgba(249, 226, 175, 0.3); /* Catppuccin yellow */
+
+  /* 技能拖入错误态背景（深色主题） */
+  --dropzone-error-bg:      rgba(243, 139, 168, 0.15); /* Catppuccin red */
+
+  /* 里程碑庆祝渐变：深色主题适配（低饱和金色调，适配Catppuccin） */
+  --milestone-grad:         linear-gradient(135deg, rgba(249, 226, 175, 0.3) 0%, rgba(250, 179, 135, 0.3) 50%, rgba(245, 194, 231, 0.3) 100%);
+  --milestone-border:       var(--yellow);
+  --milestone-text:         var(--text);
+  --milestone-icon:         var(--yellow);
+  --milestone-btn-bg:       var(--surface1);
+  --milestone-btn-border:   var(--surface2);
+  --milestone-btn-hover:    var(--surface2);
+  --milestone-close:        var(--subtext);
+  --milestone-close-hover-bg: var(--surface1);
+
+  /* 里程碑侧边栏徽章（深色主题适配：使用Catppuccin黄色系） */
+  --milestone-badge-grad:   linear-gradient(135deg, rgba(249, 226, 175, 0.15), rgba(250, 179, 135, 0.1));
+  --milestone-badge-border: rgba(249, 226, 175, 0.3);
+  --milestone-badge-text:   var(--yellow);
+  --milestone-badge-icon:   var(--yellow);
+
+  /* ─── 补齐未定义变量 · 深色主题覆盖 ─── */
+  /* 语义色 5% 透明度：深色主题下提高到 8% 保证可见性（与 --accent-10 深色一致） */
+  --green-10: rgba(166, 227, 161, 0.08);
+  --red-10:   rgba(243, 139, 168, 0.08);
+  --yellow-10: rgba(249, 226, 175, 0.08);  /* 警告态 hover 背景（深色主题提高到 8% 保证可见性） */
+
+  /* 以下变量深色主题无需覆盖，复用浅色定义：
+     --gap-compact / --error-10（别名）/ --input-bg（复用 --window-bg，深色已覆盖）
+     / --padding-sm / --padding-base / --border-hover（复用 --muted，深色已覆盖） */
+}

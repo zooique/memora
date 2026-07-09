@@ -59,7 +59,7 @@
   display: flex;
   flex-direction: column;  /* 垂直排列 */
   gap: 0;
-  padding: 8px 0;
+  padding: var(--space-2) 0;
   background: transparent;
   border-right: 1px solid var(--surface2);  /* 右侧分隔线 */
   border-bottom: none;
@@ -69,7 +69,7 @@
 }
 
 .settings-tab {
-  padding: 10px 20px;
+  padding: var(--space-2-5) var(--space-5);
   background: transparent;
   border: none;
   border-left: 2px solid transparent;  /* 左侧指示条 */
@@ -117,7 +117,7 @@
   display: none;
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: var(--space-5) var(--space-6);
 }
 
 .settings-tab-content.active {
@@ -154,7 +154,7 @@
   display: flex;
   align-items: center;
   margin-bottom: 12px;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .settings-row label {
@@ -243,7 +243,7 @@
 
 .input-with-action input {
   flex: 1;
-  padding: 6px 36px 6px 10px;
+  padding: var(--space-1-5) 36px var(--space-1-5) var(--space-2-5);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
   border-radius: var(--radius-sm);
@@ -269,7 +269,7 @@
   border: none;
   cursor: pointer;
   font-size: var(--font-base);
-  padding: 2px 4px;
+  padding: 2px var(--space-1);
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast);
   line-height: 1;
@@ -306,7 +306,7 @@
 
 .radio-group {
   display: flex;
-  gap: 16px;
+  gap: var(--space-4);
   font-size: var(--font-sm);
   color: var(--text-2);
 }
@@ -316,7 +316,7 @@
   width: auto;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   font-size: var(--font-sm);
   color: var(--text-2);
   margin-bottom: 0;
@@ -354,7 +354,7 @@
   align-items: center;
   justify-content: space-between; /* 左侧 agent 状态，右侧按钮组 */
   gap: var(--gap-compact);
-  padding: 12px 24px;
+  padding: var(--space-3) var(--space-6);
   border-top: 1px solid var(--surface2);
   flex-shrink: 0;
 }
@@ -377,7 +377,7 @@
 .save-status-indicator:not(.idle) {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   font-size: var(--font-xs);
   color: var(--text-3);
   margin-right: var(--gap-compact);
@@ -470,7 +470,7 @@
   font-size: var(--font-sm);
   color: var(--text-3);
   text-align: center;
-  padding: 16px 8px;
+  padding: var(--space-4) var(--space-2);
   background: var(--surface1);
   border-radius: var(--radius-sm);
 }
@@ -480,7 +480,7 @@
   background: var(--window-bg, var(--bg));
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
-  padding: 10px 12px;
+  padding: var(--space-2-5) var(--space-3);
 }
 
 /* 卡片头部：类别标签 + 来源 + 更新时间 */
@@ -494,7 +494,7 @@
 
 /* 类别标签：不同类别用不同颜色（复用记忆系统 source 配色） */
 .profile-category {
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
   font-weight: var(--weight-medium);
@@ -616,7 +616,7 @@
 /* 洞察/健康度子面板内联重试按钮（复用 panel-error-btn 样式，略缩小） */
 .inline-retry-btn {
   margin-left: 6px;
-  padding: 2px 8px;
+  padding: 2px var(--space-2);
   font-size: var(--font-xs);
 }
 
@@ -641,7 +641,7 @@
 .work-projection-list-container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   max-height: 420px;
   overflow-y: auto;
 }
@@ -651,7 +651,7 @@
   text-align: center;
   color: var(--text-3);
   font-size: var(--font-sm);
-  padding: 24px 0 8px;
+  padding: var(--space-6) 0 var(--space-2);
 }
 
 .work-projection-empty-hint {
@@ -670,7 +670,7 @@
   background: var(--surface0);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 12px;
+  padding: var(--space-3);
   transition: border-color var(--transition-fast);
 }
 
@@ -736,7 +736,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
   color: var(--text-3);
-  margin: 0 0 4px 0;
+  margin: 0 0 var(--space-1) 0;
 }
 
 .work-projection-list {
@@ -755,7 +755,7 @@
 .work-projection-expand-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   padding: var(--btn-padding-sm);
   background: transparent;
   border: 1px solid var(--border);
@@ -864,7 +864,7 @@
   font-size: var(--font-3xs);
   color: var(--green);
   font-weight: var(--weight-semibold);
-  padding: 1px 6px;
+  padding: 1px var(--space-1-5);
   border: 1px solid var(--green);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
@@ -880,7 +880,7 @@
 
 .provider-btn {
   font-size: var(--font-xs);
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-2-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface2);
@@ -935,7 +935,7 @@
 
 .help-content {
   max-width: 600px;
-  padding: 0 4px;
+  padding: 0 var(--space-1);
 }
 
 .help-section {
@@ -946,7 +946,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-bold);
   color: var(--text);
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   padding-bottom: 6px;
   border-bottom: 1px solid var(--surface2);
 }
@@ -955,7 +955,7 @@
   font-size: var(--font-sm);
   color: var(--text-2);
   line-height: 1.6;
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 
 .help-section ul,
@@ -984,7 +984,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text);
-  margin: 12px 0 4px;
+  margin: var(--space-3) 0 var(--space-1);
 }
 
 .help-faq dt::before {
@@ -996,7 +996,7 @@
   font-size: var(--font-sm);
   color: var(--text-2);
   line-height: 1.6;
-  margin: 0 0 0 12px;
+  margin: 0 0 0 var(--space-3);
   padding-bottom: 8px;
   border-bottom: 1px solid var(--surface1);
 }
@@ -1010,6 +1010,6 @@
   font-size: var(--font-xs);
   background: var(--surface1);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   color: var(--accent);
 }
