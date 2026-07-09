@@ -22,6 +22,7 @@
  */
 import { logger } from 'memora';
 import type { ProactiveEngine } from './proactiveEngine.js';
+import { MS_PER_HOUR, MS_PER_MINUTE } from '../constants.js';
 
 /**
  * powerMonitor 事件源抽象接口（解耦 sprite/ 与 electron）
@@ -69,7 +70,7 @@ export interface IApp {
  * 复用 getCrossSessionContext 的 1 小时间隔约定（perceptionCoordinator.ts），
  * 避免引入新阈值造成行为不一致。
  */
-const WELCOME_BACK_THRESHOLD_MS = 60 * 60 * 1000; // 1 小时
+const WELCOME_BACK_THRESHOLD_MS = MS_PER_HOUR; // 1 小时
 
 /**
  * 窗口失焦离开 debounce 时长（毫秒）
@@ -80,7 +81,7 @@ const WELCOME_BACK_THRESHOLD_MS = 60 * 60 * 1000; // 1 小时
  *
  * 仅适用于窗口失焦；系统级事件（lock-screen/suspend）立即判定，不走 debounce。
  */
-const AWAY_DEBOUNCE_MS = 120_000; // 2 分钟
+const AWAY_DEBOUNCE_MS = MS_PER_MINUTE * 2; // 2 分钟
 
 /** 用户在场状态 */
 export type PresenceState = 'present' | 'away';

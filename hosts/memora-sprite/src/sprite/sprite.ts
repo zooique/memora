@@ -25,6 +25,7 @@ import { loadSpriteConfig, type SpriteConfig, type SpriteConfigKey } from './spr
 import * as cliFormatter from './cli/formatter.js';
 import { MemoryController, PersonaController, ProactiveEngine, PresenceController } from './controllers/index.js';
 import { PerceptionCoordinator } from './controllers/perceptionCoordinator.js';
+import { MS_PER_MINUTE, MS_PER_HOUR, MS_PER_DAY } from './constants.js';
 import type { DashboardData, RapportAssessment, IPowerMonitor, IApp, ProactiveStats } from './controllers/index.js';
 import { AffectController } from './controllers/affectController.js';
 import type { AffectState } from './controllers/affectController.js';
@@ -437,13 +438,15 @@ export class Sprite {
         return;
       }
 
-      // 构造时长描述（分钟/小时/天）
-      const minutes = Math.round(awayDurationMs / 60_000);
-      const durationText = minutes < 60
+      // 构造时长描述（分钟/小时/天），复用 constants.ts 时间常量（DRY）
+      // [SYNC-PERCEPTION-COORDINATOR] perceptionCoordinator.getCrossSessionContext 有相似的时长格式化，
+      // 两处语义不同（此处是"离开时长"，彼处是"对话间隔"），不强行提取公共方法
+      const minutes = Math.round(awayDurationMs / MS_PER_MINUTE);
+      const durationText = awayDurationMs < MS_PER_HOUR
         ? `${minutes} 分钟`
-        : minutes < 1440
-          ? `${Math.round(minutes / 60)} 小时`
-          : `${Math.round(minutes / 1440)} 天`;
+        : awayDurationMs < MS_PER_DAY
+          ? `${Math.round(awayDurationMs / MS_PER_HOUR)} 小时`
+          : `${Math.round(awayDurationMs / MS_PER_DAY)} 天`;
 
       // 构造摘要：时长 + 数量 + 前 3 个 name（提升信息量）
       const names = recentMemories

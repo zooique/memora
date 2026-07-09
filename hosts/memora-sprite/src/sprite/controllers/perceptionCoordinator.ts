@@ -428,10 +428,12 @@ export class PerceptionCoordinator {
     if (keyMemories.length === 0) return '';
 
     // 生成时间间隔描述
+    // [SYNC-SPRITE-WELCOMEBACK] sprite.welcomeBackRecall 有相似的时长格式化，
+    // 两处语义不同（此处是"对话间隔"，彼处是"离开时长"），不强行提取公共方法
     const gapHours = Math.round(gapMs / MS_PER_HOUR);
-    const gapText = gapHours < 24
+    const gapText = gapMs < MS_PER_DAY
       ? `${gapHours} 小时`
-      : `${Math.round(gapHours / 24)} 天`;
+      : `${Math.round(gapMs / MS_PER_DAY)} 天`;
 
     const lines: string[] = [
       `【跨会话上下文】距离上次对话已经过了 ${gapText}。以下是上次对话中涉及的关键信息，你可能想自然地提及或追问：`,
