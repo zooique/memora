@@ -662,7 +662,8 @@ export class DashboardPanelManager {
 
       // 顶部：newInsights 柱（accent 半透明，堆叠在 newMemories 上方）
       if (d.newInsights > 0) {
-        ctx.fillStyle = isDark ? 'rgba(0, 102, 255, 0.45)' : 'rgba(0, 102, 255, 0.35)';
+        // 通过 hexToRgba 从 --accent 派生半透明色，确保深色主题下颜色正确
+        ctx.fillStyle = this.hexToRgba(accentColor, isDark ? 0.45 : 0.35);
         const baseY = padding.top + chartH - memHeight - insightHeight;
         ctx.fillRect(x, baseY, barInnerWidth, insightHeight);
       }
@@ -815,6 +816,25 @@ export class DashboardPanelManager {
       default:
         return status;
     }
+  }
+
+  /**
+   * 将十六进制颜色转换为 rgba 字符串（用于 Canvas 绘制需要透明度的场景）
+   *
+   * 从 CSS 变量 --accent 读取的 hex 值无法直接带透明度，需通过此方法转换。
+   * 与 relationGraph.ts 的 hexToRgba 实现保持一致，后续可提取为共享工具。
+   *
+   * @param hex 十六进制颜色值（如 "#0066ff" 或 "0066ff"）
+   * @param alpha 透明度（0-1）
+   * @returns rgba 字符串（如 "rgba(0, 102, 255, 0.45)"）
+   */
+  private hexToRgba(hex: string, alpha: number): string {
+    const h = hex.replace('#', '');
+    if (h.length !== 6) return `rgba(0,0,0,${alpha})`;
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   }
 
   /**
