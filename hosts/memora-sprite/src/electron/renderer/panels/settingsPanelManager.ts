@@ -770,87 +770,141 @@ export class SettingsPanelManager {
       this.renderBackgroundProviderSelect(data.providers);
       // 通知宿主 Provider 列表已变更，让 InputAreaManager 刷新输入框选择器
       this.host.onProviderChanged?.();
-    } catch {
-      this.providerListEl.innerHTML = '';
+    } catch (error) {
+      // 加载失败时清空列表并提示用户（避免用户误以为"没有 Provider"）
+      clearElement(this.providerListEl);
+      console.error('[SettingsPanelManager] 加载 Provider 列表失败:', error);
+      this.host.showToast('加载 Provider 列表失败，请稍后重试', 'error');
     }
   }
 
   /**
    * 渲染后台归档 Provider 选择框
-   * 根据已有的 Provider 列表动态生成选项
+   *
+   * 使用 createElement + textContent 构建 option，避免 innerHTML 拼接用户输入
+   * （provider name/model 来自用户表单输入，存在 XSS 风险）。
    */
   private renderBackgroundProviderSelect(providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>): void {
     if (!this.backgroundProviderSelect) return;
 
+    // 保存当前选中值，重建后恢复（避免列表刷新丢失用户选择）
     const currentValue = this.backgroundProviderSelect.value;
 
-    this.backgroundProviderSelect.innerHTML = '<option value="">与实时对话相同</option>' +
-      providers.map(p =>
-        `<option value="${p.key}">${p.name} (${p.provider} · ${p.model})</option>`
-      ).join('');
+    clearElement(this.backgroundProviderSelect);
 
-    if (providers.some(p => p.key === currentValue)) {
+    // 默认选项：与实时对话相同
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = '与实时对话相同';
+    this.backgroundProviderSelect.appendChild(defaultOption);
+
+    // Provider 选项（textContent 自动转义，无 XSS 风险）
+    for (const p of providers) {
+      const opt = document.createElement('option');
+      opt.value = p.key;
+      opt.textContent = `${p.name} (${p.provider} · ${p.model})`;
+      this.backgroundProviderSelect.appendChild(opt);
+    }
+
+    // 恢复用户之前的选择（若新列表中仍存在该 key）
+    if (providers.some((p) => p.key === currentValue)) {
       this.backgroundProviderSelect.value = currentValue;
     }
   }
 
   /**
    * 渲染 Provider 卡片列表
+   *
+   * 使用 createElement + textContent 构建卡片，避免 innerHTML 拼接用户输入
+   * （provider name/provider/model/key 来自用户表单输入，存在 XSS 风险）。
+   * 事件委托在 initProviderListeners 中一次性绑定，此方法仅负责渲染 DOM。
    */
   private renderProviderList(active: string, providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>): void {
     if (!this.providerListEl) return;
 
+    // 清空旧列表
+    clearElement(this.providerListEl);
+
+    // 空状态提示
     if (providers.length === 0) {
-      this.providerListEl.innerHTML = '<p class="settings-hint">暂未配置任何 API，点击下方按钮添加。</p>';
+      const hint = document.createElement('p');
+      hint.className = 'settings-hint';
+      hint.textContent = '暂未配置任何 API，点击下方按钮添加。';
+      this.providerListEl.appendChild(hint);
       return;
     }
 
-    this.providerListEl.innerHTML = providers
-      .map((p) => {
-        const isActive = p.key === active;
-        return `
-          <div class="provider-card${isActive ? ' active' : ''}" data-provider-key="${p.key}">
-            <div class="provider-info">
-              <span class="provider-name">${p.name}</span>
-              <span class="provider-detail">${p.provider} · ${p.model}</span>
-            </div>
-            ${isActive ? '<span class="provider-active-badge">当前</span>' : ''}
-            <div class="provider-actions">
-              ${!isActive ? `<button class="provider-btn" data-action="activate" data-key="${p.key}">设为当前</button>` : ''}
-              <button class="provider-btn" data-action="edit" data-key="${p.key}">编辑</button>
-              ${!isActive ? `<button class="provider-btn provider-btn-delete" data-action="delete" data-key="${p.key}">删除</button>` : ''}
-            </div>
-          </div>`;
-      })
-      .join('');
+    // 使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
+    const fragment = document.createDocumentFragment();
 
-    this.bindProviderCardActions();
-  }
+    for (const p of providers) {
+      const isActive = p.key === active;
 
-  /**
-   * 绑定 Provider 卡片操作事件（事件委托）
-   */
-  private bindProviderCardActions(): void {
-    if (!this.providerListEl) return;
+      const card = document.createElement('div');
+      card.className = `provider-card${isActive ? ' active' : ''}`;
+      card.dataset.providerKey = p.key;
 
-    this.providerListEl.addEventListener('click', async (e) => {
-      const target = e.target as HTMLElement;
-      const btn = target.closest('button[data-action]') as HTMLButtonElement | null;
-      if (!btn) return;
+      // ─── Provider 信息区（名称 + 详情） ──────────────
+      const info = document.createElement('div');
+      info.className = 'provider-info';
 
-      const action = btn.dataset.action;
-      const key = btn.dataset.key;
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'provider-name';
+      nameSpan.textContent = p.name;
+      info.appendChild(nameSpan);
 
-      if (!key) return;
+      const detailSpan = document.createElement('span');
+      detailSpan.className = 'provider-detail';
+      detailSpan.textContent = `${p.provider} · ${p.model}`;
+      info.appendChild(detailSpan);
 
-      if (action === 'activate') {
-        await this.setActiveProvider(key);
-      } else if (action === 'edit') {
-        this.showProviderForm(key);
-      } else if (action === 'delete') {
-        await this.deleteProvider(key);
+      card.appendChild(info);
+
+      // ─── 激活徽章（仅当前 Provider 显示） ────────────
+      if (isActive) {
+        const badge = document.createElement('span');
+        badge.className = 'provider-active-badge';
+        badge.textContent = '当前';
+        card.appendChild(badge);
       }
-    });
+
+      // ─── 操作按钮区 ──────────────────────────────────
+      const actions = document.createElement('div');
+      actions.className = 'provider-actions';
+
+      // 非激活 Provider 显示"设为当前"按钮
+      if (!isActive) {
+        const activateBtn = document.createElement('button');
+        activateBtn.className = 'provider-btn';
+        activateBtn.dataset.action = 'activate';
+        activateBtn.dataset.key = p.key;
+        activateBtn.textContent = '设为当前';
+        actions.appendChild(activateBtn);
+      }
+
+      // 编辑按钮（所有 Provider 都有）
+      const editBtn = document.createElement('button');
+      editBtn.className = 'provider-btn';
+      editBtn.dataset.action = 'edit';
+      editBtn.dataset.key = p.key;
+      editBtn.textContent = '编辑';
+      actions.appendChild(editBtn);
+
+      // 删除按钮（非激活 Provider 才显示，激活 Provider 不允许删除）
+      if (!isActive) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'provider-btn provider-btn-delete';
+        deleteBtn.dataset.action = 'delete';
+        deleteBtn.dataset.key = p.key;
+        deleteBtn.textContent = '删除';
+        actions.appendChild(deleteBtn);
+      }
+
+      card.appendChild(actions);
+      fragment.appendChild(card);
+    }
+
+    this.providerListEl.appendChild(fragment);
   }
 
   /**
@@ -922,8 +976,15 @@ export class SettingsPanelManager {
     }
 
     // 别名格式校验：仅允许 ASCII 字母数字 . - _，长度 ≤ 50
+    // Provider 别名作为持久化 key（文件名/IPC 标识），限制 ASCII 避免 path traversal
     if (!/^[a-zA-Z0-9._-]{1,50}$/.test(alias)) {
       this.host.showToast('别名仅支持英文、数字、点、短横线、下划线，最长50字符', 'error');
+      return;
+    }
+
+    // Temperature 范围校验：0-2（与 HTML input min/max 一致，防止绕过 HTML 校验）
+    if (temperature !== undefined && (Number.isNaN(temperature) || temperature < 0 || temperature > 2)) {
+      this.host.showToast('Temperature 必须在 0-2 之间', 'error');
       return;
     }
 
@@ -936,8 +997,9 @@ export class SettingsPanelManager {
           this.host.showToast(`别名 "${alias}" 已存在，请更换`, 'error');
           return;
         }
-      } catch {
-        // 获取列表失败不阻塞保存，由主进程处理重复
+      } catch (error) {
+        // 获取列表失败不阻塞保存，由主进程处理重复，但记录日志便于排查
+        console.error('[SettingsPanelManager] 保存前检查重复别名失败:', error);
       }
     }
 
@@ -1011,8 +1073,9 @@ export class SettingsPanelManager {
         this.host.showToast('不能删除当前激活的 Provider，请先切换到其他 Provider', 'error');
         return;
       }
-    } catch {
-      // 获取列表失败不阻塞删除，由主进程处理
+    } catch (error) {
+      // 获取激活状态失败时不阻塞删除，但记录日志便于排查（主进程仍有兜底校验）
+      console.error('[SettingsPanelManager] 删除前获取 Provider 列表失败:', error);
     }
 
     // 使用项目统一的 showConfirmDialog（支持主题/焦点/键盘），替代原生 confirm()
@@ -1048,6 +1111,13 @@ export class SettingsPanelManager {
 
   /**
    * 初始化 Provider 管理事件监听器
+   *
+   * 包含：
+   * - 添加/保存/取消/测试按钮的 click 监听
+   * - Provider 卡片列表的事件委托（activate/edit/delete）
+   *
+   * 事件委托一次性绑定到 providerListEl，避免每次 renderProviderList 重新绑定
+   * 导致监听器累积泄漏。通过 EventTracker 统一管理，cleanup 时自动清理。
    */
   private initProviderListeners(): void {
     // 所有 Provider 管理按钮均为可选元素，若缺失则静默降级
@@ -1075,6 +1145,28 @@ export class SettingsPanelManager {
         await this.testProviderConnection();
       });
     }
+
+    // Provider 卡片列表事件委托（一次性绑定，替代原 bindProviderCardActions 的每次渲染重绑）
+    // 通过 closest 定位点击的按钮，根据 data-action 分发到对应处理方法
+    if (this.providerListEl) {
+      this.events.addEventListener(this.providerListEl, 'click', async (e: Event) => {
+        const target = e.target as HTMLElement;
+        const btn = target.closest('button[data-action]') as HTMLButtonElement | null;
+        if (!btn) return;
+
+        const action = btn.dataset.action;
+        const key = btn.dataset.key;
+        if (!key) return;
+
+        if (action === 'activate') {
+          await this.setActiveProvider(key);
+        } else if (action === 'edit') {
+          this.showProviderForm(key);
+        } else if (action === 'delete') {
+          await this.deleteProvider(key);
+        }
+      });
+    }
   }
 
   /** 加载配置到表单 */
@@ -1082,54 +1174,54 @@ export class SettingsPanelManager {
     this.isLoadingConfig = true;
     try {
       if (this.cfgSilent) this.cfgSilent.checked = config.silentMode;
-    if (this.cfgThreshold) this.cfgThreshold.value = String(config.proactiveThreshold);
-    if (this.cfgCooldown) this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
-    if (this.cfgInterval) this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
-    if (this.cfgWatcherEnabled) this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
-    if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
-    if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
-    // 缺口 II：加载文件监听忽略模式（glob 列表 → 逗号分隔字符串）
-    if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
-    if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
+      if (this.cfgThreshold) this.cfgThreshold.value = String(config.proactiveThreshold);
+      if (this.cfgCooldown) this.cfgCooldown.value = String(Math.round(config.proactiveCooldownMs / MS_PER_MINUTE));
+      if (this.cfgInterval) this.cfgInterval.value = String(Math.round(config.triggerIntervalMs / MS_PER_MINUTE));
+      if (this.cfgWatcherEnabled) this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
+      if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
+      if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
+      // 缺口 II：加载文件监听忽略模式（glob 列表 → 逗号分隔字符串）
+      if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
+      if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
 
-    // 角色匹配模式（单选按钮）
-    const modeRadio = Array.from(this.personaModeRadios).find(
-      (r) => r.value === this.currentPersonaMode,
-    );
-    if (modeRadio) {
-      modeRadio.checked = true;
-    }
+      // 角色匹配模式（单选按钮）
+      const modeRadio = Array.from(this.personaModeRadios).find(
+        (r) => r.value === this.currentPersonaMode,
+      );
+      if (modeRadio) {
+        modeRadio.checked = true;
+      }
 
-    // ADR-015 同步归档模式 radio（即时生效字段，仅回显选中状态）
-    this.archiveModeRadios.forEach((radio) => {
-      radio.checked = radio.value === config.archiveMode;
-    });
+      // ADR-015 同步归档模式 radio（即时生效字段，仅回显选中状态）
+      this.archiveModeRadios.forEach((radio) => {
+        radio.checked = radio.value === config.archiveMode;
+      });
 
-    // 项目模式（单选按钮 + 专注项目下拉框）
-    const projectModeRadio = Array.from(this.projectModeRadios).find(
-      (r) => r.value === config.projectMode,
-    );
-    if (projectModeRadio) {
-      projectModeRadio.checked = true;
-    }
-    if (this.cfgFocusProject) {
-      this.cfgFocusProject.disabled = config.projectMode !== 'focus';
-    }
-    // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
+      // 项目模式（单选按钮 + 专注项目下拉框）
+      const projectModeRadio = Array.from(this.projectModeRadios).find(
+        (r) => r.value === config.projectMode,
+      );
+      if (projectModeRadio) {
+        projectModeRadio.checked = true;
+      }
+      if (this.cfgFocusProject) {
+        this.cfgFocusProject.disabled = config.projectMode !== 'focus';
+      }
+      // 专注项目路径在 loadProjects 后由 renderer.ts 设置选中项
 
-    // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
-    if (this.cfgShortcutsEnabled) {
-      this.cfgShortcutsEnabled.checked = config.shortcuts.enabled;
-    }
-    if (this.cfgShortcutToggleWindow) {
-      this.cfgShortcutToggleWindow.value = config.shortcuts.accelerators['toggle-window'] ?? '';
-    }
-    if (this.cfgShortcutQuickRecord) {
-      this.cfgShortcutQuickRecord.value = config.shortcuts.accelerators['quick-record'] ?? '';
-    }
-    if (this.cfgShortcutRecallMemory) {
-      this.cfgShortcutRecallMemory.value = config.shortcuts.accelerators['recall-memory'] ?? '';
-    }
+      // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
+      if (this.cfgShortcutsEnabled) {
+        this.cfgShortcutsEnabled.checked = config.shortcuts.enabled;
+      }
+      if (this.cfgShortcutToggleWindow) {
+        this.cfgShortcutToggleWindow.value = config.shortcuts.accelerators['toggle-window'] ?? '';
+      }
+      if (this.cfgShortcutQuickRecord) {
+        this.cfgShortcutQuickRecord.value = config.shortcuts.accelerators['quick-record'] ?? '';
+      }
+      if (this.cfgShortcutRecallMemory) {
+        this.cfgShortcutRecallMemory.value = config.shortcuts.accelerators['recall-memory'] ?? '';
+      }
     } finally {
       this.isLoadingConfig = false;
     }
