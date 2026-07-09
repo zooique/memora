@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ClipboardHandler 单元测试
  *
  * 验证三重保护流程：被动检测 + 主动触发 + 敏感过滤。
@@ -349,6 +349,78 @@ describe('ClipboardHandler', () => {
 
       // 500ms 后应触发（默认是 2000ms）
       vi.advanceTimersByTime(500);
+      expect(emitHandler).toHaveBeenCalledWith('changed');
+
+      handler.stopPolling();
+    });
+  });
+
+  describe('suppressNextChange 程序主动写入抑制', () => {
+    it('调用后下次哈希变化不触发 changed 事件', () => {
+      vi.useFakeTimers();
+      const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
+
+      handler.startPolling();
+      // 调用抑制标记，模拟程序主动写入剪贴板
+      handler.suppressNextChange();
+      mockClipboard.setText('programmatic write');
+
+      // 抑制窗口内（2000ms）变化应被静默跳过
+      vi.advanceTimersByTime(2000);
+      expect(emitHandler).not.toHaveBeenCalled();
+
+      handler.stopPolling();
+    });
+
+    it('抑制是一次次性的——之后的变化恢复正常触发', () => {
+      vi.useFakeTimers();
+      const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
+
+      handler.startPolling();
+      // 第一次：抑制程序写入
+      handler.suppressNextChange();
+      mockClipboard.setText('programmatic write');
+      vi.advanceTimersByTime(2000);
+      expect(emitHandler).not.toHaveBeenCalled();
+
+      // 第二次：用户手动复制，应正常触发
+      mockClipboard.setText('user copy');
+      vi.advanceTimersByTime(2000);
+      expect(emitHandler).toHaveBeenCalledWith('changed');
+
+      handler.stopPolling();
+    });
+
+    it('抑制后内容未变化时标记保持，不影响后续真实变化检测', () => {
+      vi.useFakeTimers();
+      const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
+
+      handler.startPolling();
+      // 调用抑制但内容未变化（哈希相同），标记保持
+      handler.suppressNextChange();
+      vi.advanceTimersByTime(2000);
+      expect(emitHandler).not.toHaveBeenCalled();
+
+      // 后续真实变化应被抑制标记消耗（因为标记仍在）
+      mockClipboard.setText('real change');
+      vi.advanceTimersByTime(2000);
+      expect(emitHandler).not.toHaveBeenCalled();
+
+      // 标记已消耗，后续变化恢复正常
+      mockClipboard.setText('another change');
+      vi.advanceTimersByTime(2000);
+      expect(emitHandler).toHaveBeenCalledWith('changed');
+
+      handler.stopPolling();
+    });
+
+    it('未调用 suppressNextChange 时正常触发 changed', () => {
+      vi.useFakeTimers();
+      const handler = new ClipboardHandler(mockClipboard, { emit: emitHandler });
+
+      handler.startPolling();
+      mockClipboard.setText('normal change');
+      vi.advanceTimersByTime(2000);
       expect(emitHandler).toHaveBeenCalledWith('changed');
 
       handler.stopPolling();

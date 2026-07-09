@@ -32,6 +32,8 @@ import type { Agent } from 'memora';
 import { WindowStateManager, DEFAULT_FLOAT_POSITION, FLOAT_SIZE } from './windows/windowState.js';
 import { TrayManager } from './trayIcon.js';
 import { WindowManager } from './windows/windowManager.js';
+// 快速输入浮窗（Phase 1 骨架）
+import { QuickInputWindow, createDefaultConfirmCallback } from './windows/quickInputWindow.js';
 import { ElectronInteraction } from './interaction.js';
 import { registerIpcHandlers, type IpcContext } from './ipc/handlers.js';
 import { scheduleSilentRecovery } from './ipc/configHandlers.js';
@@ -120,6 +122,8 @@ const appState = {
   shortcutManager: null as ShortcutManager | null,
   /** Phase 3.1 剪贴板处理器（在 setupAgentReady 后创建，注入 emit 回调转发到渲染进程） */
   clipboardHandler: null as ClipboardHandler | null,
+  /** 快速输入浮窗（Phase 1 骨架：懒创建，快捷键 Ctrl+Shift+I 触发显示） */
+  quickInputWindow: null as QuickInputWindow | null,
 
   // ─── 其他 ───
   /** 当前数据目录（initializeApp 初始化，reinitAgent 后更新） */
@@ -561,6 +565,13 @@ async function initializeApp(): Promise<void> {
             fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.RECALL_MEMORY_TRIGGER);
           }
         },
+        [SHORTCUT_ACTIONS.QUICK_INPUT]: () => {
+          // 显示快速输入浮窗（独立于完整窗口，不切换窗口状态机）
+          // quickInputWindow 在 setupAgentReady 后创建（依赖 clipboardHandler 注入确认回调）
+          if (appState.quickInputWindow) {
+            appState.quickInputWindow.show();
+          }
+        },
       },
     });
     appState.shortcutManager.registerAll();
@@ -636,6 +647,12 @@ async function initializeApp(): Promise<void> {
     });
     // 启动剪贴板变化检测轮询
     appState.clipboardHandler.startPolling();
+
+    // 快速输入浮窗：注入 clipboardHandler 用于确认时抑制三重保护
+    // 在 clipboardHandler 创建后实例化，确保 onConfirm 回调能调用 suppressNextChange()
+    appState.quickInputWindow = new QuickInputWindow({
+      onConfirm: createDefaultConfirmCallback(appState.clipboardHandler),
+    });
 
     // Phase 4.3：注册技能文件安装 IPC handler
     // 渲染进程拖入 .md 文件后调用，校验并写入 configDir/skills/
@@ -726,6 +743,9 @@ app.on('before-quit', async (e) => {
     // Phase 3.1：停止剪贴板轮询，清理定时器
     appState.clipboardHandler?.stopPolling();
     appState.clipboardHandler = null;
+    // 销毁快速输入浮窗，清理 IPC handler 和定时器
+    appState.quickInputWindow?.destroy();
+    appState.quickInputWindow = null;
     if (appState.closeSprite) {
       await appState.closeSprite();
     }

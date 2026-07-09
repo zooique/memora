@@ -142,6 +142,14 @@ export class ClipboardHandler {
   private lastHash: string = '';
   /** 是否正在轮询 */
   private polling = false;
+  /**
+   * 下次变化抑制标记（一次性）
+   *
+   * 程序主动写入剪贴板前调用 suppressNextChange() 置为 true，
+   * 下次 checkChange() 检测到哈希变化时静默跳过 emit 并重置标记。
+   * 用于避免快速输入补全等场景下程序写入触发 CLIPBOARD_CHANGED 干扰用户。
+   */
+  private suppressNext: boolean = false;
 
   constructor(clipboard: Clipboard, options: ClipboardHandlerOptions = {}) {
     this.clipboard = clipboard;
@@ -192,15 +200,36 @@ export class ClipboardHandler {
    *
    * 比较当前哈希与上次哈希，不同则触发 changed 事件。
    * 不读取内容，不存储原文。
+   * 若 suppressNext 标记为 true，则跳过本次 emit 并重置标记（程序主动写入抑制）。
    */
   private checkChange(): void {
     const currentHash = this.computeHash();
     if (currentHash !== this.lastHash) {
+      // 无论是否抑制，都更新 lastHash，避免下次轮询重复检测到同一变化
       this.lastHash = currentHash;
+      // 抑制模式：程序主动写入导致的哈希变化，静默跳过 emit
+      if (this.suppressNext) {
+        this.suppressNext = false;
+        logger.debug('剪贴板变化已抑制（程序主动写入）');
+        return;
+      }
       // 仅通知"剪贴板有变化"，不传递内容
       this.options.emit?.('changed');
       logger.debug('剪贴板内容已变化');
     }
+  }
+
+  /**
+   * 抑制下次剪贴板变化事件（一次性）
+   *
+   * 程序主动写入剪贴板前调用此方法。下次轮询检测到哈希变化时，
+   * 会静默跳过 emit（不触发 CLIPBOARD_CHANGED），之后自动恢复正常检测。
+   *
+   * 使用场景：快速输入补全确认后写入剪贴板、其他需要程序性写入剪贴板的操作。
+   * 注意：仅抑制一次，若程序连续多次写入，需在每次写入前调用。
+   */
+  suppressNextChange(): void {
+    this.suppressNext = true;
   }
 
   /**

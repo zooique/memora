@@ -38,6 +38,8 @@ export const SHORTCUT_ACTIONS = {
   QUICK_RECORD: 'quick-record',
   /** 召回记忆（搜索面板，Phase 3.3 第二批） */
   RECALL_MEMORY: 'recall-memory',
+  /** 快速输入补全浮窗（Phase 1 骨架：轻量浮窗 + 复制到剪贴板） */
+  QUICK_INPUT: 'quick-input',
 } as const;
 
 /** 快捷键管理器构造选项 */

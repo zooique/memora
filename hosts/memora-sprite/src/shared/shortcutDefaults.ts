@@ -41,10 +41,11 @@ export interface ShortcutConfig {
  * 被 DEFAULT_SPRITE_CONFIG.shortcuts 和 settingsController.ts 的 fallback 共同引用，
  * 消除两处重复定义的"对齐"注释和静默漂移风险。
  *
- * 包含 3 个默认快捷键：
+ * 包含 4 个默认快捷键：
  * - toggle-window: Ctrl+Shift+Space（切换窗口显示）
  * - quick-record: Ctrl+Shift+M（快速记录）
  * - recall-memory: Ctrl+Shift+R（召回记忆）
+ * - quick-input: Ctrl+Shift+I（快速输入补全浮窗）
  */
 export const DEFAULT_SHORTCUTS: ShortcutConfig = {
   enabled: true,
@@ -52,5 +53,6 @@ export const DEFAULT_SHORTCUTS: ShortcutConfig = {
     'toggle-window': 'Ctrl+Shift+Space',
     'quick-record': 'Ctrl+Shift+M',
     'recall-memory': 'Ctrl+Shift+R',
+    'quick-input': 'Ctrl+Shift+I',
   },
 };

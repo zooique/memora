@@ -201,6 +201,12 @@ export const IPC_CHANNELS = {
   /** 渲染进程 → 主进程：安装技能文件（携带文件名和内容） */
   SKILL_INSTALL: 'skill-install',
 
+  // ─── 快速输入补全（Phase 1 骨架） ─────────────────────
+  /** 渲染进程 → 主进程：确认输入（携带文本，主进程写入剪贴板 + 关闭浮窗） */
+  QUICK_INPUT_CONFIRM: 'quick-input-confirm',
+  /** 渲染进程 → 主进程：关闭浮窗（Esc / 取消按钮触发，不写入剪贴板） */
+  QUICK_INPUT_CLOSE: 'quick-input-close',
+
   // ─── 可观测性（FOUNDATION-SEAL Phase 4） ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
   RENDERER_LOG: 'renderer-log',

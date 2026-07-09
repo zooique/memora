@@ -156,6 +156,9 @@ export const IPC_CHANNELS = {
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
   // Phase 4.3：技能安装（渲染进程 → 主进程）
   SKILL_INSTALL: 'skill-install',
+  // 快速输入补全（Phase 1 骨架：确认 + 关闭）
+  QUICK_INPUT_CONFIRM: 'quick-input-confirm',
+  QUICK_INPUT_CLOSE: 'quick-input-close',
   // FOUNDATION-SEAL Phase 4：渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
 } as const;
@@ -692,6 +695,20 @@ export interface ElectronAPI {
   /** 安装技能文件到 configDir/skills/（携带文件名和内容） */
   installSkill: (fileName: string, content: string) => Promise<{ success: boolean; error?: string; skillName?: string }>;
 
+  // ─── 快速输入补全（Phase 1 骨架） ─────────────────────
+  /**
+   * 确认输入文本（主进程写入剪贴板 + 关闭浮窗）
+   *
+   * 主进程会先调用 clipboardHandler.suppressNextChange() 抑制三重保护，
+   * 再写入剪贴板，避免触发 CLIPBOARD_CHANGED 干扰用户。
+   *
+   * @param text 用户确认的文本
+   * @returns success 表示写入成功
+   */
+  confirmQuickInput: (text: string) => Promise<{ success: boolean }>;
+  /** 关闭快速输入浮窗（Esc / 取消按钮触发，不写入剪贴板） */
+  closeQuickInput: () => Promise<void>;
+
   // ─── M2：审计日志 ─────────────────────────────────────
   /** 列出最近 N 条审计日志 */
   listAuditLog: (limit?: number) => Promise<Array<{
@@ -958,6 +975,9 @@ const electronAPI: ElectronAPI = {
 
   // Phase 4.3：技能文件安装
   installSkill: (fileName, content) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_INSTALL, fileName, content),
+  // 快速输入补全：确认（写剪贴板+关闭）和关闭（仅关闭）
+  confirmQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text),
+  closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
 
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),
