@@ -317,7 +317,7 @@
   left: auto;
   width: 220px;
   margin-top: 4px;
-  z-index: 100;
+  z-index: var(--z-popover);
 }
 
 .toolbar-persona-container #persona-dropdown .dropdown-item {
@@ -481,7 +481,7 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--transition-fast);
-  z-index: 50;
+  z-index: var(--z-decoration);
   box-shadow: var(--shadow-sm);
 }
 .nav-btn:hover::after { opacity: 1; }
@@ -833,7 +833,7 @@
   border: 1px solid var(--surface2);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-float);
-  z-index: 100;
+  z-index: var(--z-popover);
   max-height: 240px;
   overflow-y: auto;
   margin-top: 4px;

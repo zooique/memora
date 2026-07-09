@@ -142,7 +142,7 @@
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
-  z-index: 100;
+  z-index: var(--z-popover);
   min-width: 200px;
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -649,7 +649,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-float);
-  z-index: 100;
+  z-index: var(--z-popover);
   padding: 4px;
 }
 
@@ -688,7 +688,7 @@
 }
 
 .date-nav-item-count {
-  font-size: 11px;
+  font-size: var(--font-xs);
   color: var(--text-4);
   background: var(--surface1);
   padding: 1px 6px;
@@ -754,7 +754,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  z-index: 10;
+  z-index: var(--z-floating-action);
   flex-shrink: 0;
   overflow: hidden;
   /* 增大 max-height，避免较长提示文案被裁剪 */
@@ -979,7 +979,7 @@
   background: var(--surface1);
   border-bottom: 1px solid var(--surface2);
   flex-shrink: 0;
-  z-index: 9; /* 低于 #proactive-banner 的 z-index:10，避免遮挡 */
+  z-index: calc(var(--z-floating-action) - 1); /* 低于 #proactive-banner，避免遮挡 */
 }
 
 /* 空容器自动隐藏：无建议卡片时不占空间，避免灰色粗条 */
@@ -1588,7 +1588,7 @@
 }
 
 .memory-recall-header-text {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* 数量徽章 */
@@ -1601,8 +1601,8 @@
   background: var(--accent);
   color: var(--accent-fg);
   border-radius: 8px;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
   padding: 0 4px;
 }
 
@@ -1766,7 +1766,7 @@
   pointer-events: none;
   opacity: 0;
   transition: opacity var(--transition-fast);
-  z-index: 50;
+  z-index: var(--z-decoration);
   box-shadow: var(--shadow-sm);
 }
 .token-usage:hover::after {
@@ -1885,7 +1885,7 @@
   right: 0;
   left: auto;
   width: 220px;
-  z-index: 100;
+  z-index: var(--z-popover);
 }
 
 .input-persona-container #persona-dropdown .dropdown-item {
@@ -1971,7 +1971,7 @@
   right: 0;
   left: auto;
   width: 220px;
-  z-index: 100;
+  z-index: var(--z-popover);
 }
 
 .input-provider-container #provider-dropdown .dropdown-item {
@@ -2425,7 +2425,7 @@
   position: absolute;
   bottom: 8px;
   right: 16px;
-  z-index: 11;
+  z-index: calc(var(--z-floating-action) + 1);
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -2834,7 +2834,7 @@
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   background: var(--surface0);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

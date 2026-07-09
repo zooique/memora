@@ -16,7 +16,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal);
   /* 阻止弹窗内容滚动穿透到背景页面 */
   overscroll-behavior: contain;
   animation: modalFadeIn var(--transition-fast) ease;

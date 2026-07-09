@@ -96,6 +96,18 @@
   --transition-slow: 0.3s;   /* 大型过渡（面板展开/脉冲） */
   --transition-xl:   0.5s;   /* 超长过渡（进度条填充/宽度变化） */
 
+  /* z-index 层级体系（从低到高，确保浮层叠放顺序统一） */
+  --z-base:             1;     /* 基础内容层（时间线节点等） */
+  --z-empty-state:      5;     /* 空状态覆盖层 */
+  --z-floating-action:  10;    /* 浮动操作元素（banner/legend/suggestion） */
+  --z-decoration:       50;    /* 装饰性伪元素（nav-btn::after 等） */
+  --z-tooltip:          20;    /* tooltip（低于 popover，避免遮挡交互） */
+  --z-popover:          100;   /* popover/dropdown/menu（交互浮层） */
+  --z-modal:            1000;  /* 模态弹窗 */
+  --z-command-palette:  1100;  /* 命令面板（高于 modal，全局搜索浮层） */
+  --z-dialog-overlay:   1001;  /* 对话框覆盖层（高于 modal） */
+  --z-toast:            2000;  /* toast 通知（最高层） */
+
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.25);
   /* 命令面板遮罩（比 modal 更重，强调聚焦） */
@@ -603,7 +615,7 @@ button:active,
 .command-palette {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-command-palette);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -711,7 +723,7 @@ button:active,
   position: sticky;
   top: 0;
   background: var(--surface);
-  z-index: 1;
+  z-index: var(--z-base);
 }
 
 .command-palette-item {
@@ -864,7 +876,7 @@ select:active {
   opacity: 0.5;
 }
 
-.empty-state .empty-title .empty-state-title {
+.empty-state .empty-title {
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text-2);
