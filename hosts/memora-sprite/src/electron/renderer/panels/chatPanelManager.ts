@@ -859,6 +859,8 @@ export class ChatPanelManager {
         const latestCursor = latestBubble.querySelector('.cursor');
         const latestRecall = latestBubble.querySelector('.memory-recall-container');
         const latestToolCalls = latestBubble.querySelectorAll('.tool-call-card');
+        // 截断提示需跨 chunk 保留（用户需持续可见截断状态）
+        const latestTruncation = latestBubble.querySelector('.truncation-notice');
 
         // 流式期间使用纯文本显示（O(1) 操作），不调用 renderMarkdown
         // 创建一个临时容器存放纯文本，避免破坏保留元素
@@ -869,9 +871,11 @@ export class ChatPanelManager {
         textContainer.style.whiteSpace = 'pre-wrap';
 
         clearElement(latestBubble);
+        // 截断提示在 bubble 顶部（文本之前）
+        if (latestTruncation) latestBubble.appendChild(latestTruncation);
         latestBubble.appendChild(textContainer);
 
-        // 重新追加保留元素（recall 和 tool-call 在前，cursor 在最后）
+        // 重新追加保留元素（recall 和 tool-call 在文本后，cursor 在最后）
         if (latestRecall) latestBubble.appendChild(latestRecall);
         for (const tc of Array.from(latestToolCalls)) {
           latestBubble.appendChild(tc);
@@ -911,12 +915,15 @@ export class ChatPanelManager {
     const bubble = el.querySelector('.message-bubble');
     if (bubble && this._latestStreamText) {
       try {
-        // 保留 recall/tool-call 元素
+        // 保留 recall/tool-call/truncation 元素
         const flushRecall = bubble.querySelector('.memory-recall-container');
         const flushToolCalls = bubble.querySelectorAll('.tool-call-card');
+        const flushTruncation = bubble.querySelector('.truncation-notice');
 
         // 一次性渲染完整 Markdown（从纯文本切换到格式化输出）
         clearElement(bubble);
+        // 截断提示在 bubble 顶部（Markdown 之前）
+        if (flushTruncation) bubble.appendChild(flushTruncation);
         bubble.appendChild(renderMarkdown(this._latestStreamText));
 
         // 重新追加保留元素
@@ -1054,23 +1061,75 @@ export class ChatPanelManager {
   }
 
   /**
-   * 查找指定精灵消息的上一条用户消息
+   * 查找指定精灵消息的上一条用户消息（跨 message-group 遍历）
    *
-   * 从当前精灵消息向前遍历，找到第一条 .message.user 元素。
-   * 用于重新生成功能：找到对应的用户输入并重发。
+   * Phase 1 消息分组后，user 和 assistant 分属不同 .message-group 容器，
+   * previousElementSibling 仅在同一 group 内遍历无法跨 group。
+   * 修复：先跳到父 group，再跨 group 向前遍历，在每个 group 内取最后一条 user。
    *
    * @param assistantMessageEl 精灵消息元素
    * @returns 上一条用户消息元素，找不到返回 null
    */
   private _findPreviousUserMessage(assistantMessageEl: HTMLElement): HTMLElement | null {
-    let prev: HTMLElement | null = assistantMessageEl.previousElementSibling as HTMLElement | null;
+    // 跳到所属 group（或自身就是顶层消息时直接遍历）
+    let searchFrom: HTMLElement = assistantMessageEl;
+    const ownGroup = assistantMessageEl.closest('.message-group') as HTMLElement | null;
+    if (ownGroup) searchFrom = ownGroup;
+
+    let prev = searchFrom.previousElementSibling as HTMLElement | null;
     while (prev) {
+      // 在 prev 中查找 user 消息（group 内可能有多条，取最后一条）
+      const userMsgs = prev.querySelectorAll('.message.user');
+      if (userMsgs.length > 0) {
+        return userMsgs[userMsgs.length - 1] as HTMLElement;
+      }
+      // 兜底：prev 本身就是 .message.user（非 group 场景）
       if (prev.classList.contains('message') && prev.classList.contains('user')) {
         return prev;
       }
       prev = prev.previousElementSibling as HTMLElement | null;
     }
     return null;
+  }
+
+  /**
+   * 查找指定用户消息的下一条精灵消息（跨 message-group 遍历）
+   *
+   * 与 _findPreviousUserMessage 对称，用于"忘记"操作删除 user 时找对应 assistant。
+   *
+   * @param userMessageEl 用户消息元素
+   * @returns 下一条精灵消息元素，找不到返回 null
+   */
+  private _findNextAssistantMessage(userMessageEl: HTMLElement): HTMLElement | null {
+    let searchFrom: HTMLElement = userMessageEl;
+    const ownGroup = userMessageEl.closest('.message-group') as HTMLElement | null;
+    if (ownGroup) searchFrom = ownGroup;
+
+    let next = searchFrom.nextElementSibling as HTMLElement | null;
+    while (next) {
+      const assistantMsgs = next.querySelectorAll('.message.assistant');
+      if (assistantMsgs.length > 0) {
+        return assistantMsgs[0] as HTMLElement;
+      }
+      if (next.classList.contains('message') && next.classList.contains('assistant')) {
+        return next;
+      }
+      next = next.nextElementSibling as HTMLElement | null;
+    }
+    return null;
+  }
+
+  /**
+   * 删除消息元素并清理空的 message-group 容器
+   *
+   * 消息删除后 group 可能变空，需移除空容器避免 DOM 残留影响后续遍历。
+   */
+  private _removeMessageAndCleanupGroup(messageEl: HTMLElement): void {
+    const group = messageEl.closest('.message-group');
+    messageEl.remove();
+    if (group && group.children.length === 0) {
+      group.remove();
+    }
   }
 
   /**
@@ -1104,19 +1163,19 @@ export class ChatPanelManager {
     const isAssistant = messageEl.classList.contains('assistant');
 
     if (isUser) {
-      // 用户消息：删除当前用户消息 + 下一条精灵消息
-      const nextAssistant = messageEl.nextElementSibling;
-      if (nextAssistant && nextAssistant.classList.contains('message') && nextAssistant.classList.contains('assistant')) {
-        nextAssistant.remove();
+      // 用户消息：删除当前用户消息 + 下一条精灵消息（跨 group 查找）
+      const nextAssistant = this._findNextAssistantMessage(messageEl);
+      if (nextAssistant) {
+        this._removeMessageAndCleanupGroup(nextAssistant);
       }
-      messageEl.remove();
+      this._removeMessageAndCleanupGroup(messageEl);
     } else if (isAssistant) {
-      // 精灵消息：删除上一条用户消息 + 当前精灵消息
+      // 精灵消息：删除上一条用户消息 + 当前精灵消息（跨 group 查找）
       const prevUser = this._findPreviousUserMessage(messageEl);
       if (prevUser) {
-        prevUser.remove();
+        this._removeMessageAndCleanupGroup(prevUser);
       }
-      messageEl.remove();
+      this._removeMessageAndCleanupGroup(messageEl);
     }
 
     this.host.showToast('已从本次对话移除，刷新后可恢复', 'success', TOAST_SHORT_MS);

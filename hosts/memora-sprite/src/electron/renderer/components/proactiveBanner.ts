@@ -3,10 +3,10 @@
  *
  * 职责：
  * - 显示/隐藏主动提示横幅（proactive banner）
- * - 初始化横幅按钮事件（查看/稍后/静默 1 小时/关闭）
+ * - 初始化横幅按钮事件（查看/静默 1 小时/不再提醒/关闭）
  *
  * 设计原则：
- * - 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作
+ * - 顶部滑入蓝粉渐变 banner，提供"查看/静默 1 小时/不再提醒"三个操作 + 关闭按钮
  * - 独立于 UIManager，通过组合方式持有
  * - 事件监听器纳入跟踪集合，cleanup 时统一清理
  */
@@ -28,7 +28,7 @@ export class ProactiveBanner {
    * 显示主动提示 banner
    *
    * 对齐设计契约 §6.6：
-   * 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作。
+   * 顶部滑入蓝粉渐变 banner，提供"查看/静默 1 小时/不再提醒"三个操作 + 关闭按钮。
    * 里程碑事件使用金色渐变庆祝样式+奖杯图标。
    *
    * @param text 提示文本
@@ -85,9 +85,9 @@ export class ProactiveBanner {
    *
    * 四个按钮的语义：
    * - 查看：根据 triggers 类型跳转到相应面板展示详情
-   * - 稍后：隐藏 banner，等待下次触发
    * - 静默 1 小时：通知主进程进入静默模式
    * - 不再提醒：进入静默模式并提示用户去设置调整阈值
+   * - 关闭(X)：隐藏 banner 并记录拒绝事件，触发自适应冷却
    *
    * 由 renderer.ts 调用以注册回调。
    */
@@ -105,7 +105,6 @@ export class ProactiveBanner {
       this.events.addEventListener(btn, 'click', () => {
         this.hideProactiveBanner();
         if (action === 'view') handlers.onView(this.currentTriggers);
-        else if (action === 'later') handlers.onLater();
         else if (action === 'silent') handlers.onSilent();
         // 不再提醒：触发 onDisable 回调
         else if (action === 'disable') handlers.onDisable?.();

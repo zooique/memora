@@ -104,8 +104,8 @@ const TEST_HTML = `<!DOCTYPE html>
           <span class="banner-text" id="proactive-banner-text"></span>
           <div class="banner-actions">
             <button class="banner-btn" data-action="view">查看</button>
-            <button class="banner-btn" data-action="later">稍后</button>
             <button class="banner-btn" data-action="silent">静默 1 小时</button>
+            <button class="banner-btn" data-action="disable">不再提醒</button>
           </div>
           <button class="banner-close" data-action="close" title="关闭">✕</button>
         </div>

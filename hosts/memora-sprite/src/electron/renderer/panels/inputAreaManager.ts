@@ -20,6 +20,8 @@
  */
 
 import type { EventTracker } from '../helpers/eventTracker.js';
+// clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
+import { clearElement } from '../helpers/domHelpers.js';
 
 /**
  * 输入区域宿主接口
@@ -186,6 +188,9 @@ export class InputAreaManager {
   private handleKeydown(e: Event): void {
     if (!(e instanceof KeyboardEvent)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
+      // IME 合成期（中文输入法选词时按 Enter 确认候选词）不触发发送
+      // isComposing 为 true 表示合成尚未提交，keyCode 229 是旧版浏览器兼容判断
+      if (e.isComposing || e.keyCode === 229) return;
       e.preventDefault();
       // B2：流式态时 Enter 触发停止（键盘快捷键，对齐 #btn-stop 鼠标点击），空闲态触发发送
       if (this.host.isStreaming()) {
@@ -381,13 +386,20 @@ export class InputAreaManager {
       this.providerNameEl.textContent = activeProvider.name;
       this.providerSelector?.classList.add('configured');
 
-      // 渲染下拉菜单（为每个项添加 tabindex="-1" 和 role="option" 支持键盘导航）
-      this.providerDropdown.innerHTML = providers
-        .map((p) => {
-          const isActive = p.key === active;
-          return `<div class="dropdown-item${isActive ? ' active' : ''}" data-provider-key="${p.key}" tabindex="-1" role="option" aria-selected="${isActive ? 'true' : 'false'}">${p.name}</div>`;
-        })
-        .join('');
+      // 渲染下拉菜单：使用 createElement 替代 innerHTML 拼接，防止 provider 名/key 含特殊字符导致 XSS
+      // 每个项添加 tabindex="-1" 和 role="option" 支持键盘导航
+      clearElement(this.providerDropdown);
+      for (const p of providers) {
+        const isActive = p.key === active;
+        const item = document.createElement('div');
+        item.className = `dropdown-item${isActive ? ' active' : ''}`;
+        item.dataset.providerKey = p.key; // dataset 自动转义，避免属性注入
+        item.tabIndex = -1;
+        item.setAttribute('role', 'option');
+        item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        item.textContent = p.name; // textContent 自动转义 HTML，防 XSS
+        this.providerDropdown.appendChild(item);
+      }
 
       // 下拉项点击事件已通过 initProviderSelector 中的事件委托处理，此处无需重复绑定
     } catch {
