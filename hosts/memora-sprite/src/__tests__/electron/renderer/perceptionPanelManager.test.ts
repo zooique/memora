@@ -145,12 +145,12 @@ describe('updateAffectDisplay() · 情感基调', () => {
     expect(document.getElementById('perception-directness-fill')!.style.width).toBe('40%');
   });
 
-  it('应更新四维等级文本（低/中/高）', () => {
+  it('应更新四维等级文本（低/中/高 + 精确百分比）', () => {
     const renderer = createRenderer();
     renderer.updateAffectDisplay(createAffect({ warmth: 0.2, directness: 0.5, initiative: 0.9 }));
-    expect(document.getElementById('perception-warmth-level')!.textContent).toBe('低');
-    expect(document.getElementById('perception-directness-level')!.textContent).toBe('中');
-    expect(document.getElementById('perception-initiative-level')!.textContent).toBe('高');
+    expect(document.getElementById('perception-warmth-level')!.textContent).toBe('低 · 20%');
+    expect(document.getElementById('perception-directness-level')!.textContent).toBe('中 · 50%');
+    expect(document.getElementById('perception-initiative-level')!.textContent).toBe('高 · 90%');
   });
 
   it('应更新精灵状态条文字（主导维度 + 等级）', () => {

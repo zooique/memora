@@ -93,6 +93,9 @@ async function bootstrapRenderer(): Promise<void> {
     } else if (panel === 'dashboard') {
       // 切换到仪表盘面板时刷新仪表盘数据（健康诊断 + 感知 + 运行指标）
       void memoryController.loadDashboard();
+    } else if (panel === 'perception') {
+      // 切换到感知面板时重新加载感知快照（确保显示最新情感/默契度/上下文数据）
+      void memoryController.loadPerception();
     }
   });
 

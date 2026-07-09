@@ -14,7 +14,7 @@
  * 设计原则（遵循 ADR-SP-015 组合模式）：
  * - 自包含状态（5 个 lastNarrative* 字段仅供 generateNarrative 消费）
  * - 通过 Host 接口与 UIManager 解耦
- * - 与 PerceptionRenderer 共享相同的数据模型但渲染到不同 DOM
+ * - 数据模型与精灵层控制器（AffectController/RapportController/ContextAwareness）保持一致
  * - 感知面板信息密度更高，是仪表盘感知区的"完整版"
  *
  * 与 DashboardPanelManager 的关系：
@@ -68,7 +68,7 @@ const ACCEPTANCE_MID_THRESHOLD = 0.7;
  *
  * 负责独立感知面板的全部渲染与交互逻辑。
  * 由 UIManager 持有，通过外观方法委托调用。
- * 数据模型与 PerceptionRenderer 一致，但 DOM 元素 ID 前缀为 perception-*
+ * 数据模型与精灵层控制器一致，DOM 元素 ID 前缀为 perception-*
  * （区别于仪表盘的 dashboard-* 前缀）。
  */
 export class PerceptionPanelManager {
@@ -120,7 +120,7 @@ export class PerceptionPanelManager {
     this.onMemoryClickCallback = null;
   }
 
-  // ─── 记忆跳转回调（从 PerceptionRenderer 迁移） ─────────
+  // ─── 记忆跳转回调（从原仪表盘感知区迁移） ─────────
 
   /** 记忆跳转回调：点击模式洞察的"关联记忆"按钮时触发 */
   private onMemoryClickCallback: ((memoryId: string) => void) | null = null;
@@ -213,11 +213,18 @@ export class PerceptionPanelManager {
       const fillEl = document.getElementById(`perception-${dim.id}-fill`);
       const levelEl = document.getElementById(`perception-${dim.id}-level`);
       if (fillEl) {
-        fillEl.style.width = `${Math.round(dim.value * 100)}%`;
+        const percent = Math.round(dim.value * 100);
+        // 低值时保证最小可见宽度（6%），避免 warmth=0.05 等低值时进度条视觉不可见
+        // 用户会误以为"未加载数据"，实际是数据值很低（如 profile 记忆不足导致 warmth 偏低）
+        const displayWidth = Math.max(6, percent);
+        fillEl.style.width = `${displayWidth}%`;
         fillEl.style.background = getAffectColor(dim.value);
+        // title 显示精确百分比，避免最小宽度误导用户对实际数值的判断
+        fillEl.title = `${dim.label}：${percent}%`;
       }
       if (levelEl) {
-        levelEl.textContent = getAffectLevel(dim.value);
+        // 等级文案追加精确百分比，让用户明确区分"未加载"与"值很低"
+        levelEl.textContent = `${getAffectLevel(dim.value)} · ${Math.round(dim.value * 100)}%`;
       }
     }
 

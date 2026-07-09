@@ -11,8 +11,8 @@
  * - 懒更新：仅在数据到达时更新 DOM，不主动轮询
  * - 点击精灵状态条进入仪表盘查看完整感知数据（已有行为）
  *
- * 数据来源：与 PerceptionRenderer 共享同一 IPC 事件流，
- * 由 ipcListeners 中的感知事件处理器同时更新 popover 和 dashboard。
+ * 数据来源：与 PerceptionPanelManager 共享同一 IPC 事件流，
+ * 由 ipcListeners 中的感知事件处理器同时更新 popover 和感知面板。
  */
 import type { AffectPayload, RapportPayload, ContextPayload } from '../ipcListeners.js';
 // 感知标签映射（统一真理源，修复文案不一致问题）

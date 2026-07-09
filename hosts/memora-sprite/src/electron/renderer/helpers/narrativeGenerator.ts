@@ -1,8 +1,8 @@
 /**
  * 叙事摘要生成器 — 跨事件累积感知数据，合成一句话叙事
  *
- * 从 PerceptionRenderer 和 PerceptionPanelManager 的重复代码中提取。
- * 两个类各有一份完全相同的 lastNarrative* 状态 + generateNarrative 方法，
+ * 从 PerceptionPanelManager 的重复代码中提取。
+ * 原仪表盘感知区与感知面板各有一份完全相同的 lastNarrative* 状态 + generateNarrative 方法，
  * 违反 DRY 原则，统一提取为此类。
  *
  * 职责：

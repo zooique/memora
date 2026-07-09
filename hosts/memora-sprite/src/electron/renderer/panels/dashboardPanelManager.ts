@@ -250,6 +250,8 @@ export class DashboardPanelManager {
    */
   repaintOnThemeChange(): void {
     this.partnerInsights.repaintOnThemeChange();
+    // 增长趋势 Canvas 也需重绘（主题切换后 CSS 变量值改变）
+    this.repaintGrowthChart();
   }
 
   // ─── 回调注册 ──────────────────────────────────────────
@@ -593,6 +595,8 @@ export class DashboardPanelManager {
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     const w = rect.width;
+    // 面板隐藏时宽度为 0，跳过绘制避免 canvas.style.width 被设为 '0px' 导致永久空白
+    if (w === 0) return;
     // 从 CSS 获取高度（由 .growth-canvas 类控制，避免硬编码）
     const computedHeight = parseInt(getComputedStyle(canvas).height) || 70;
     const h = computedHeight;

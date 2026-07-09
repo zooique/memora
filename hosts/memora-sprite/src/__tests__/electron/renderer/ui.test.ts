@@ -445,7 +445,7 @@ function createMockElectronAPI() {
       perception: null,
       healthStatus: null,
     }),
-    // 感知数据（PerceptionRenderer 调用）
+    // 感知数据（PerceptionPanelManager 调用）
     getPerceptionData: vi.fn().mockResolvedValue({
       affect: { warmth: 0.5, rapportLevel: 'neutral', rapportDescription: '' },
       rapport: { rapportLevel: 'neutral', rapportDescription: '' },

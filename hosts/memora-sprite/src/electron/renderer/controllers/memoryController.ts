@@ -625,6 +625,25 @@ export function createMemoryController(uiManager: UIManager) {
   }
 
   /**
+   * 加载感知快照（切换到感知面板时调用）
+   *
+   * 仅加载感知数据（情感/默契度/上下文/模式/主动提示统计），
+   * 不加载仪表盘统计数据，避免不必要的 IPC 调用。
+   * 解决问题：首次启动时若 getPerceptionSnapshot 返回 null（无记忆），
+   * 感知面板显示占位值；切换到感知面板时需重新加载最新数据。
+   */
+  async function loadPerception(): Promise<void> {
+    try {
+      const snapshot = await window.electronAPI.getPerceptionSnapshot?.();
+      if (snapshot && Object.keys(snapshot).length > 0) {
+        uiManager.renderPerceptionSnapshot(snapshot);
+      }
+    } catch (error) {
+      reportError('loadPerception', error);
+    }
+  }
+
+  /**
    * 防抖版 loadDashboard
    *
    * 在事件密集触发时（memoryNoticed/insightGained），300ms 内的多次调用合并为一次。
@@ -644,13 +663,15 @@ export function createMemoryController(uiManager: UIManager) {
     setupMemoryPanel,
     loadMemoryList,
     loadDashboard,
+    /** 加载感知快照（切换到感知面板时调用） */
+    loadPerception,
     loadHealthDashboard,
     /** 防抖版 loadDashboard（事件密集触发时使用） */
     loadDashboardDebounced,
     /** 仪表盘计数 +1 并触发脉冲动画（委托 DashboardPanelManager） */
     pulseCounter: (id: string) => uiManager.pulseCounter(id),
     /**
-     * 更新情感基调展示（委托 DashboardPanelManager）
+     * 更新情感基调展示（委托 UIManager → PerceptionPanelManager）
      *
      * 由 affectUpdated 事件驱动，Controller 仅做转发。
      */
@@ -658,7 +679,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updateAffectDisplay(affect);
     },
     /**
-     * Phase 3：更新默契度展示（委托 DashboardPanelManager）
+     * Phase 3：更新默契度展示（委托 UIManager → PerceptionPanelManager）
      *
      * 由 rapportUpdated 事件驱动，Controller 仅做转发。
      */
@@ -666,7 +687,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updateRapportDisplay(rapport);
     },
     /**
-     * Phase 4：更新对话上下文展示（委托 DashboardPanelManager）
+     * Phase 4：更新对话上下文展示（委托 UIManager → PerceptionPanelManager）
      *
      * 由 contextUpdated 事件驱动，Controller 仅做转发。
      */
@@ -674,7 +695,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updateContextDisplay(context);
     },
     /**
-     * 更新模式洞察面板（委托 DashboardPanelManager）
+     * 更新模式洞察面板（委托 UIManager → PerceptionPanelManager）
      *
      * 由 patternsUpdated 事件驱动，Controller 仅做转发。
      */
@@ -682,7 +703,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updatePatternsDisplay(payload);
     },
     /**
-     * Phase 3.2：更新在场状态展示（委托 DashboardPanelManager）
+     * Phase 3.2：更新在场状态展示（委托 UIManager → PerceptionPanelManager）
      *
      * 由 presenceChanged 事件驱动，Controller 仅做转发。
      */
@@ -690,7 +711,7 @@ export function createMemoryController(uiManager: UIManager) {
       uiManager.updatePresenceDisplay(payload);
     },
     /**
-     * 更新叙事摘要（委托 DashboardPanelManager）
+     * 更新叙事摘要（委托 UIManager → PerceptionPanelManager）
      *
      * 由渲染器在每次感知数据更新后调用，不需要额外参数。
      */

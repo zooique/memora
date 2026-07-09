@@ -190,7 +190,7 @@ export class PerceptionCoordinator {
     // Agent 未就绪时返回 null（UI 显示占位文案）
     if (!agent?.memory) return null;
 
-    // 获取所有记忆用于推导（上限 1000 条，与 refreshBeforeChat 一致）
+    // 获取所有记忆用于推导（上限 DEFAULT_LIST_LIMIT，与 refreshBeforeChat 一致）
     const memories = agent.memory.list(DEFAULT_LIST_LIMIT) ?? [];
     if (memories.length === 0) return null;
 

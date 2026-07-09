@@ -3,7 +3,7 @@
  *
  * 职责：
  * - 集中管理所有感知数据的中文标签映射（默契度/情感/节奏/连贯性/深度）
- * - 消除 PerceptionRenderer / PerceptionPanelManager / SpriteStatusPopover / NarrativeGenerator
+ * - 消除 PerceptionPanelManager / SpriteStatusPopover / NarrativeGenerator
  *   中的重复实现，确保全应用标签文案一致
  * - 对齐 sprite 层真理源（rapportController.ts / contextAwareness.ts / affectController.ts）
  *

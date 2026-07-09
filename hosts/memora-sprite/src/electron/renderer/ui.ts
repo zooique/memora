@@ -194,7 +194,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private dashboardPanel: DashboardPanelManager;
   /** 感知面板管理器（独立感知面板，完整版感知数据展示 + 叙事摘要） */
   private perceptionPanel: PerceptionPanelManager;
-  /** 精灵状态浮层（hover 弹出轻量感知摘要，与 PerceptionRenderer 共享数据源） */
+  /** 精灵状态浮层（hover 弹出轻量感知摘要，与 PerceptionPanelManager 共享数据源） */
   private spriteStatusPopover: SpriteStatusPopover;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
   private personaPanel: PersonaPanelManager;
