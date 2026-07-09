@@ -14,7 +14,6 @@
  * - renderHealthDashboard：评分/徽章/三维度/清理按钮可见性
  * - pulseCounter：计数 +1 + pulse 动画（fake timers）
  * - 错误状态 + 重试回调：showInsightsError / showHealthError / showMemoryListError
- * - 感知系统：updateAffectDisplay / updateRapportDisplay / updateContextDisplay / updatePatternsDisplay
  * - renderPartnerInsights：profile 卡片 / 知识缺口 / 空状态
  * - cleanup：脉冲定时器 + 事件监听器清理
  *
@@ -39,7 +38,6 @@ import type {
   ReviewDataPayload,
 } from '../../../electron/preload.js';
 import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';
-import type { AffectPayload } from '../../../electron/renderer/ipcListeners.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -578,145 +576,9 @@ describe('错误状态与重试回调', () => {
   });
 });
 
-// ─── 感知系统 · updateAffectDisplay ──────────────────────
-
-describe('updateAffectDisplay · 情感基调', () => {
-  it('应更新四维进度条宽度和等级文本', () => {
-    const { manager } = createManager();
-    const affect: AffectPayload = { warmth: 0.8, directness: 0.5, initiative: 0.2, playfulness: 0.9 };
-    manager.updateAffectDisplay(affect);
-    expect(document.getElementById('dashboard-warmth-fill')!.style.width).toBe('80%');
-    expect(document.getElementById('dashboard-warmth-level')!.textContent).toBe('高');
-    expect(document.getElementById('dashboard-directness-level')!.textContent).toBe('中');
-    expect(document.getElementById('dashboard-initiative-level')!.textContent).toBe('低');
-    expect(document.getElementById('dashboard-playfulness-level')!.textContent).toBe('高');
-  });
-
-  it('应更新精灵状态条文字（含主导维度）', () => {
-    const { manager } = createManager();
-    manager.updateAffectDisplay({ warmth: 0.9, directness: 0.1, initiative: 0.1, playfulness: 0.1 });
-    expect(document.getElementById('sprite-status-text-bar')!.textContent).toContain('温暖');
-  });
-
-  it('应更新精灵状态脉冲点颜色', () => {
-    const { manager } = createManager();
-    manager.updateAffectDisplay({ warmth: 0.9, directness: 0.1, initiative: 0.1, playfulness: 0.1 });
-    expect(document.getElementById('sprite-status-dot-bar')!.style.background).not.toBe('');
-  });
-});
-
-// ─── 感知系统 · updateRapportDisplay ─────────────────────
-
-describe('updateRapportDisplay · 默契度', () => {
-  it('应更新等级徽章和 data-level 属性', () => {
-    const { manager } = createManager();
-    manager.updateRapportDisplay({
-      trust: 0.5, familiarity: 0.5, level: 'familiar', description: '熟悉度描述',
-    });
-    const badge = document.getElementById('dashboard-rapport-badge')!;
-    expect(badge.textContent).toBe('熟悉');
-    expect(badge.getAttribute('data-level')).toBe('familiar');
-  });
-
-  it('应更新信任度和熟悉度进度条宽度', () => {
-    const { manager } = createManager();
-    manager.updateRapportDisplay({
-      trust: 0.7, familiarity: 0.4, level: 'familiar', description: '',
-    });
-    expect(document.getElementById('dashboard-trust-fill')!.style.width).toBe('70%');
-    expect(document.getElementById('dashboard-familiarity-fill')!.style.width).toBe('40%');
-  });
-
-  it('应更新描述文本', () => {
-    const { manager } = createManager();
-    manager.updateRapportDisplay({
-      trust: 0.5, familiarity: 0.5, level: 'close', description: '亲密关系描述',
-    });
-    expect(document.getElementById('dashboard-rapport-desc')!.textContent).toBe('亲密关系描述');
-  });
-});
-
-// ─── 感知系统 · updateContextDisplay ─────────────────────
-
-describe('updateContextDisplay · 对话上下文', () => {
-  it('应更新节奏/连贯性/深度三项指标', () => {
-    const { manager } = createManager();
-    manager.updateContextDisplay({
-      rhythm: 'rapid', coherence: 'focused', depth: 'deep', dominantSource: 'test', description: '',
-    });
-    expect(document.getElementById('dashboard-pace-value')!.textContent).toBe('快节奏');
-    expect(document.getElementById('dashboard-topic-value')!.textContent).toBe('专注');
-    expect(document.getElementById('dashboard-depth-value')!.textContent).toBe('深度讨论');
-  });
-
-  it('idle 节奏应显示"空闲"', () => {
-    const { manager } = createManager();
-    manager.updateContextDisplay({
-      rhythm: 'idle', coherence: 'none', depth: 'none', dominantSource: null, description: '',
-    });
-    expect(document.getElementById('dashboard-pace-value')!.textContent).toBe('空闲');
-  });
-});
-
-// ─── 感知系统 · updatePatternsDisplay ────────────────────
-
-describe('updatePatternsDisplay · 模式洞察', () => {
-  it('应渲染模式列表项（类型标签 + 摘要）', () => {
-    const { manager } = createManager();
-    manager.updatePatternsDisplay({
-      patterns: [
-        { type: 'repeat', summary: '重复主题 A', confidence: 0.9 },
-        { type: 'gap', summary: '知识缺口 B', confidence: 0.8 },
-        { type: 'drift', summary: '兴趣漂移 C', confidence: 0.7 },
-      ],
-    });
-    const items = document.querySelectorAll('#dashboard-patterns-list .perception-pattern-item');
-    expect(items.length).toBe(3);
-    expect(items[0]!.querySelector('.perception-pattern-type')!.textContent).toBe('重复');
-    expect(items[1]!.querySelector('.perception-pattern-type')!.textContent).toBe('缺口');
-    expect(items[2]!.querySelector('.perception-pattern-type')!.textContent).toBe('漂移');
-  });
-
-  it('空模式应清空列表', () => {
-    const { manager } = createManager();
-    // 先填充再清空
-    manager.updatePatternsDisplay({ patterns: [{ type: 'repeat', summary: 'x', confidence: 1 }] });
-    expect(document.querySelectorAll('.perception-pattern-item').length).toBe(1);
-    manager.updatePatternsDisplay({ patterns: [] });
-    expect(document.querySelectorAll('.perception-pattern-item').length).toBe(0);
-  });
-
-  it('未知类型应降级显示原始 type', () => {
-    const { manager } = createManager();
-    manager.updatePatternsDisplay({
-      patterns: [{ type: 'custom-type', summary: '自定义', confidence: 0.5 }],
-    });
-    expect(document.querySelector('.perception-pattern-type')!.textContent).toBe('custom-type');
-  });
-});
-
-// ─── 感知系统 · updatePresenceDisplay ────────────────────
-
-describe('updatePresenceDisplay · 在场状态', () => {
-  it('state=present 应将叙事摘要更新为非离开状态', () => {
-    const { manager } = createManager();
-    // 先设置 away 状态
-    manager.updatePresenceDisplay({ state: 'away', timestamp: '', awayDurationMs: 60000, reason: 'idle' });
-    // 切换到 present
-    manager.updatePresenceDisplay({ state: 'present', timestamp: '', reason: 'activity' });
-    const narrative = document.getElementById('perception-narrative-text')!.textContent!;
-    expect(narrative).not.toContain('用户已离开');
-  });
-
-  // TODO: updateNarrative() 目前仅更新 #sprite-status-text-bar，未更新 #perception-narrative-text。
-  // 叙事文本合成功能尚未完成，待实现后取消 skip。
-  it.skip('state=away 应在叙事摘要中体现离开时长', () => {
-    const { manager } = createManager();
-    manager.updatePresenceDisplay({ state: 'away', timestamp: '', awayDurationMs: 120000, reason: 'idle' });
-    const narrative = document.getElementById('perception-narrative-text')!.textContent!;
-    expect(narrative).toContain('用户已离开');
-  });
-});
+// ─── 感知系统测试已移除 ──────────────────────────────────
+// 感知数据渲染（情感/默契/上下文/模式/在场）已迁移到独立的 PerceptionPanelManager，
+// 相关测试在 perceptionPanelManager.test.ts 中覆盖。
 
 // ─── renderPartnerInsights ───────────────────────────────
 
@@ -779,21 +641,6 @@ describe('renderPartnerInsights · 伙伴洞察面板', () => {
     const card = document.querySelector('.partner-profile-card') as HTMLElement;
     card.click();
     expect(cb).toHaveBeenCalledWith('profile:partner');
-
-    // 验证 2：perception 模式洞察关联按钮点击也触发同一回调
-    cb.mockClear();
-    manager.updatePatternsDisplay({
-      patterns: [{
-        type: 'recurring_topic',
-        summary: '重复讨论',
-        confidence: 0.9,
-        relatedMemoryIds: ['pattern:related'],
-      }],
-    });
-    const relatedBtn = document.querySelector('.perception-pattern-related') as HTMLElement;
-    expect(relatedBtn).not.toBeNull();
-    relatedBtn.click();
-    expect(cb).toHaveBeenCalledWith('pattern:related');
   });
 
   it('应渲染知识缺口（占比 < 5% 的 source 类型）', () => {

@@ -78,11 +78,6 @@ export function createSettingsController(uiManager: UIManager) {
       }
     });
 
-    uiManager.onConfigCancel(() => {
-      // 取消时重新加载配置
-      void loadConfig();
-    });
-
     // ADR-015 归档模式即时切换：radio change 时立即持久化 + 应用到 Agent
     // 与主题一样即时生效，不走保存按钮（避免用户忘记保存导致归档模式与预期不一致）
     uiManager.onArchiveModeChange(async (mode) => {

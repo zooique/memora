@@ -166,18 +166,7 @@ describe('settingsController', () => {
     expect(showToast.mock.calls[0]).toEqual(['精灵配置已保存', 'success']);
   });
 
-  // ─── onConfigCancel ────────────────────────────────────
-
-  it('取消应重新加载精灵配置（loadConfig）', async () => {
-    const getConfig = (globalThis as { electronAPI: { getConfig: vi.Mock } }).electronAPI.getConfig;
-    getConfig.mockClear();
-
-    callbacks.onConfigCancel!();
-    // onConfigCancel 内部 void loadConfig()，异步需等待微任务
-    await new Promise((resolve) => setTimeout(resolve, 10));
-
-    expect(getConfig).toHaveBeenCalled();
-  });
+  // ─── onConfigCancel 已移除（自动保存改造后无需取消按钮） ──
 
   // ─── loadConfig ────────────────────────────────────────
 

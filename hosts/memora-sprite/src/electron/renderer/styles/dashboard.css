@@ -217,125 +217,15 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   min-width: 2px;
 }
 
-/* ─── 感知分区：分组卡片式布局 ──────────────────────── */
-/* 将感知内容分为"状态"和"指标"两组，用卡片视觉区分 */
-.perception-group {
-  background: var(--surface0);
-  border-radius: var(--radius-sm);
-  padding: 12px;
-  margin-bottom: 8px;
-}
+/* ─── 感知分区样式已移除 ──────────────────────────────── */
+/* 感知相关样式（perception-group / dashboard-presence / affect-grid /
+   context-inline / dashboard-patterns / dashboard-proactive 等）
+   已随仪表盘感知分区 HTML 一起移除，感知面板使用独立的 perception-* 样式。 */
 
-.perception-group:last-child {
-  margin-bottom: 0;
-}
+/* presence-dot / presence-text / context-label / context-value 通用样式
+   保留在 chat.css 中，感知面板通过 .perception-presence 等专属类引用。 */
 
-/* ─── 在场状态 ──────────────────────────────────────── */
-.dashboard-presence {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  padding: 6px 10px;
-  background: var(--surface0);
-  border-radius: var(--radius-sm);
-  margin-bottom: 4px;
-}
-
-.presence-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.presence-dot.present {
-  background: var(--green);
-  box-shadow: 0 0 6px var(--green);
-}
-
-.presence-dot.away {
-  background: var(--muted);
-}
-
-.presence-text {
-  font-size: var(--font-sm);
-  color: var(--text);
-}
-
-/* ─── 情感基调网格 ──────────────────────────────── */
-.dashboard-section .affect-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-1) var(--space-3);
-  margin-bottom: 4px;
-}
-
-/* ─── 对话上下文行内 ────────────────────────────────── */
-.dashboard-section .context-inline {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  padding: 6px 10px;
-  background: var(--surface0);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-  margin-bottom: 0;
-}
-
-.context-item {
-  display: flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.context-label {
-  font-size: var(--font-2xs);
-  color: var(--muted);
-}
-
-.context-value {
-  font-weight: var(--weight-medium);
-  color: var(--text);
-}
-
-.context-sep {
-  color: var(--surface2);
-  font-size: var(--font-xs);
-}
-
-/* ─── 模式洞察列表 ────────────────────────────────── */
-.dashboard-patterns {
-  margin-bottom: 8px;
-}
-
-/* ─── 主动提示网格 ────────────────────────────────── */
-.dashboard-proactive {
-  margin-top: 2px;
-}
-
-/* 主动提示空状态：全0时的友好提示（铃铛图标 + 文案） */
-.dashboard-proactive-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-1-5);
-  font-size: var(--font-2xs);
-  color: var(--muted);
-  text-align: center;
-  padding: var(--space-2);
-  background: var(--surface0);
-  border-radius: var(--radius-sm);
-}
-
-/* 空状态铃铛图标尺寸 */
-.dashboard-proactive-empty .icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  opacity: 0.6;
-}
-
-/* ─── dash-item 网格（运行指标 / 主动提示） ──────────── */
+/* ─── dash-item 网格（运行指标） ──────────────────────── */
 .dash-item-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
@@ -607,4 +497,306 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 .growth-empty.hidden {
   display: none;
+}
+
+/* ════════════════════════════════════════════════════════════════
+ * 独立感知面板样式（#panel-perception）
+ *
+ * 感知面板从仪表盘子分区升级为独立面板，承载全部感知数据渲染：
+ * 叙事摘要 + 在场状态 + 情感基调 + 默契度 + 对话上下文 + 主动提示 + 模式洞察
+ *
+ * 设计原则：
+ * - 复用仪表盘视觉令牌（--surface0 / --radius-sm / --space-* 等）
+ * - 信息层级：面板体 → 分区(section) → 子组件 三级结构
+ * - 紧凑布局，每个分区以 perception-section 分隔
+ * ════════════════════════════════════════════════════════════════ */
+
+/* ─── 面板体容器 ──────────────────────────────────────── */
+.perception-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ─── 叙事摘要区 ──────────────────────────────────────── */
+.perception-narrative-section {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+}
+
+.perception-narrative {
+  font-size: var(--font-sm);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* ─── 分区通用 ────────────────────────────────────────── */
+/* chat.css 中已有 .perception-section / .perception-section-title 基础样式，
+   此处补充感知面板专属覆盖（如有差异） */
+
+/* ─── 在场状态 ────────────────────────────────────────── */
+.perception-presence {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+}
+
+/* ─── 情感基调 ────────────────────────────────────────── */
+.perception-affect-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+
+.affect-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.affect-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.affect-item .affect-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+.affect-item .affect-level {
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.affect-item .affect-track {
+  height: 4px;
+  background: var(--surface0);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.affect-item .affect-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease, background 0.3s ease;
+  background: var(--accent);
+}
+
+/* ─── 默契度 ──────────────────────────────────────────── */
+.perception-rapport {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.perception-rapport-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rapport-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+  background: var(--surface0);
+  color: var(--accent);
+}
+
+.rapport-badge[data-level="stranger"] { color: var(--muted); }
+.rapport-badge[data-level="acquaintance"] { color: var(--blue); }
+.rapport-badge[data-level="familiar"] { color: var(--accent); }
+.rapport-badge[data-level="close"] { color: var(--green); }
+
+.rapport-desc {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+.perception-rapport-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.rapport-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.rapport-bar .bar-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  min-width: 32px;
+}
+
+.rapport-bar .progress-track {
+  flex: 1;
+  height: 4px;
+  background: var(--surface0);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rapport-bar .progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/* ─── 对话上下文 ──────────────────────────────────────── */
+.perception-context-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1-5);
+}
+
+.context-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-1-5);
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+}
+
+.context-card .context-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+.context-card .context-value {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+/* ─── 主动提示统计 ────────────────────────────────────── */
+.perception-proactive {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+.perception-proactive .proactive-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-1-5);
+}
+
+.proactive-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: var(--space-1-5);
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+}
+
+.proactive-item .proactive-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+.proactive-item .proactive-value {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.proactive-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  padding: var(--space-2);
+  color: var(--muted);
+  font-size: var(--font-xs);
+  justify-content: center;
+}
+
+/* ─── 模式洞察 ────────────────────────────────────────── */
+.perception-patterns-section.hidden {
+  display: none;
+}
+
+.perception-patterns-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1-5);
+}
+
+/* 模式洞察条目 */
+.perception-pattern-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-1-5) var(--space-2);
+  background: var(--surface0);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--mauve);
+}
+
+.perception-pattern-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+}
+
+.perception-pattern-type {
+  font-size: var(--font-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--mauve);
+  flex-shrink: 0;
+}
+
+.perception-pattern-confidence {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.perception-pattern-text {
+  font-size: var(--font-xs);
+  color: var(--text);
+  flex: 1;
+  line-height: 1.4;
+}
+
+.perception-pattern-suggestion {
+  font-size: var(--font-2xs);
+  color: var(--subtext0);
+  padding-left: var(--space-1-5);
+}
+
+.perception-pattern-related {
+  align-self: flex-start;
+  font-size: var(--font-2xs);
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--surface1);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.perception-pattern-related:hover {
+  background: var(--surface0);
 }

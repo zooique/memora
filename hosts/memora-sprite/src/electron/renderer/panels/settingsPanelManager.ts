@@ -144,7 +144,6 @@ export class SettingsPanelManager {
 
   // ─── 回调 ────────────────────────────────────────────────
   private configSaveCallback: ((config: SpriteConfigForm) => void) | null = null;
-  private configCancelCallback: (() => void) | null = null;
   /** 角色匹配模式变更回调 */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
   /** ADR-015 归档模式变更回调（radio change 时即时触发，与主题一样即时生效） */
@@ -1208,9 +1207,6 @@ export class SettingsPanelManager {
 
   onConfigSave(cb: (config: SpriteConfigForm) => void): void {
     this.configSaveCallback = cb;
-  }
-  onConfigCancel(cb: () => void): void {
-    this.configCancelCallback = cb;
   }
   /** 注册角色匹配模式变更回调 */
   onPersonaModeChange(cb: (mode: string) => void): void {

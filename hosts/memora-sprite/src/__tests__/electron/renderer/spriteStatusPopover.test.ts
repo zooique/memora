@@ -132,8 +132,8 @@ describe('SpriteStatusPopover', () => {
       };
       popover.updateContext(payload);
 
-      // 修复后：节奏快 · 连贯
-      expect(contextEl?.textContent).toBe('节奏快 · 连贯');
+      // 修复后：快节奏 · 专注（perceptionLabels 统一文案）
+      expect(contextEl?.textContent).toBe('快节奏 · 专注');
     });
   });
 
@@ -163,9 +163,9 @@ describe('SpriteStatusPopover', () => {
 
       const popoverEl = document.getElementById('sprite-status-popover');
       expect(popoverEl?.classList.contains('hidden')).toBe(false);
-      expect(document.getElementById('popover-rapport')?.textContent).toBe('挚友 · 信任 90% · 熟悉 85%');
+      expect(document.getElementById('popover-rapport')?.textContent).toBe('亲密 · 信任 90% · 熟悉 85%');
       expect(document.getElementById('popover-affect')?.textContent).toBe('温暖 · 直接');
-      expect(document.getElementById('popover-context')?.textContent).toBe('节奏适中 · 正常');
+      expect(document.getElementById('popover-context')?.textContent).toBe('正常 · 中等');
     });
   });
 
@@ -193,7 +193,8 @@ describe('SpriteStatusPopover', () => {
         dominantSource: null,
         description: '',
       });
-      expect(document.getElementById('popover-context')?.textContent).toBe('节奏unknown · unknown');
+      // describeRhythm/describeCoherence 对未识别值直接返回原始字符串（无前缀）
+      expect(document.getElementById('popover-context')?.textContent).toBe('unknown · unknown');
     });
   });
 

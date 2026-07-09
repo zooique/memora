@@ -114,11 +114,20 @@ export class PerceptionPanelManager {
   /**
    * 清理资源（满足 PanelManager 生命周期契约）
    *
-   * 感知面板无定时器/事件监听器等外部资源，方法体为空。
-   * 保留方法以符合 ADR-SP-015 生命周期契约。
+   * 清理记忆跳转回调引用，避免内存泄漏。
    */
   cleanup(): void {
-    // 当前无外部资源需清理
+    this.onMemoryClickCallback = null;
+  }
+
+  // ─── 记忆跳转回调（从 PerceptionRenderer 迁移） ─────────
+
+  /** 记忆跳转回调：点击模式洞察的"关联记忆"按钮时触发 */
+  private onMemoryClickCallback: ((memoryId: string) => void) | null = null;
+
+  /** 注册记忆跳转回调（由 UIManager 委托注入） */
+  onMemoryClick(cb: (memoryId: string) => void): void {
+    this.onMemoryClickCallback = cb;
   }
 
   // ─── 感知数据渲染入口 ──────────────────────────────────
@@ -177,10 +186,12 @@ export class PerceptionPanelManager {
   }
 
   /**
-   * 更新情感基调展示（四维进度条 + 等级）
+   * 更新情感基调展示（四维进度条 + 等级 + 精灵状态条）
    *
    * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
    * 渲染到感知面板 (#perception-{dim}-fill / #perception-{dim}-level)。
+   * 同时更新精灵状态条 (#sprite-status-text-bar / #sprite-status-dot-bar)，
+   * 让用户在对话面板也能一眼看到当前主导情感维度。
    * 同时保存状态供叙事摘要合成。
    *
    * @param affect 四维情感基调数值
@@ -189,12 +200,12 @@ export class PerceptionPanelManager {
     // 保存状态供叙事摘要合成（委托到 NarrativeGenerator）
     this.narrativeGenerator.updateAffect(affect);
 
-    // 定义四维映射：id 前缀 → 数值
-    const dimensions: Array<{ id: string; value: number }> = [
-      { id: 'warmth', value: affect.warmth },
-      { id: 'directness', value: affect.directness },
-      { id: 'initiative', value: affect.initiative },
-      { id: 'playfulness', value: affect.playfulness },
+    // 定义四维映射：id 前缀 → 数值 + 中文标签
+    const dimensions: Array<{ id: string; value: number; label: string }> = [
+      { id: 'warmth', value: affect.warmth, label: '温暖' },
+      { id: 'directness', value: affect.directness, label: '直接' },
+      { id: 'initiative', value: affect.initiative, label: '主动' },
+      { id: 'playfulness', value: affect.playfulness, label: '活泼' },
     ];
 
     // ─── 感知面板情感进度条 ──────────────────────────
@@ -208,6 +219,20 @@ export class PerceptionPanelManager {
       if (levelEl) {
         levelEl.textContent = getAffectLevel(dim.value);
       }
+    }
+
+    // ─── 精灵状态条文字（根据主导情感维度生成简短状态描述） ────
+    const statusTextBar = document.getElementById('sprite-status-text-bar');
+    if (statusTextBar) {
+      const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
+      statusTextBar.textContent = `基调：${dominant.label}（${getAffectLevel(dominant.value)}）`;
+    }
+
+    // ─── 精灵状态脉冲点（颜色随主导情感维度变化） ────
+    const statusDotBar = document.getElementById('sprite-status-dot-bar');
+    if (statusDotBar) {
+      const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
+      statusDotBar.style.background = getAffectColor(dominant.value);
     }
 
     // 感知数据变化后更新叙事摘要
@@ -399,6 +424,21 @@ export class PerceptionPanelManager {
         item.appendChild(suggestion);
       }
 
+      // 关联记忆跳转按钮（仅当 PatternDetector 检测到 relatedMemoryIds 时渲染）
+      const relatedIds = (pattern as { relatedMemoryIds?: string[] }).relatedMemoryIds;
+      if (relatedIds && relatedIds.length > 0) {
+        const firstId: string = relatedIds[0]!;
+        const relatedBtn = document.createElement('button');
+        relatedBtn.type = 'button';
+        relatedBtn.className = 'perception-pattern-related';
+        relatedBtn.textContent = `关联 ${relatedIds.length} 条记忆`;
+        relatedBtn.title = '点击查看最相关的一条记忆';
+        relatedBtn.addEventListener('click', () => {
+          this.onMemoryClickCallback?.(firstId);
+        });
+        item.appendChild(relatedBtn);
+      }
+
       patternsList.appendChild(item);
     }
 
@@ -518,8 +558,11 @@ export class PerceptionPanelManager {
   /**
    * 更新叙事摘要 DOM
    *
-   * 每次感知数据更新时调用，更新感知面板 #perception-narrative-text。
-   * P2-B02a：从仅更新精灵状态条扩展为同时更新感知面板叙事区。
+   * 每次感知数据更新时调用，同时更新两个目标：
+   * 1. 感知面板叙事区 #perception-narrative-text（独立面板的核心展示元素）
+   * 2. 精灵状态条 #sprite-status-text-bar（对话面板的实时状态指示）
+   *
+   * 精灵状态条仅在非 idle 状态时更新（idle 时保持 affectDisplay 设置的基调文字）。
    * 叙事合成委托到 NarrativeGenerator。
    */
   updateNarrative(): void {
@@ -529,6 +572,14 @@ export class PerceptionPanelManager {
     const narrativeEl = document.getElementById('perception-narrative-text');
     if (narrativeEl) {
       narrativeEl.textContent = narrative;
+    }
+
+    // ─── 精灵状态条文字（非 idle 状态时用叙事摘要覆盖基调文字） ────
+    if (!this.narrativeGenerator.isIdle()) {
+      const statusTextBar = document.getElementById('sprite-status-text-bar');
+      if (statusTextBar) {
+        statusTextBar.textContent = narrative;
+      }
     }
   }
 

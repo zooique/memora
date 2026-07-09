@@ -21,16 +21,11 @@ import type { EventTracker } from '../helpers/eventTracker.js';
 import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
 import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
 import { InsightsRenderer } from './insightsRenderer.js';
-import { PerceptionRenderer } from './perceptionRenderer.js';
 // 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
 import { getSourceColorClass } from './memoryPanelManager.js';
 import type { ToastType } from '../types.js';
 import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
-// 感知数据 Payload 类型从 ipcListeners（IPC 契约真理源）导入
-import type { AffectPayload, RapportPayload, ContextPayload, PatternsPayload, PresencePayload } from '../ipcListeners.js';
-// 缺口 G+H：主动提示统计类型从 sprite controllers（真理源）导入（preload 仅内部使用，不 re-export）
-import type { ProactiveStats } from '../../../sprite/controllers/index.js';
 // 仪表盘脉冲动画间隔常量从 constants.ts 真理源导入
 import { DASHBOARD_PULSE_MS } from '../../../sprite/constants.js';
 
@@ -175,7 +170,6 @@ export function formatTokenCount(tokens: number): string {
  * - PartnerInsightsRenderer：伙伴洞察子区域（profile 卡片 / 知识缺口 / 增长趋势图）
  * - HealthDashboardRenderer：记忆健康度子区域（评分 / 徽章 / 三维度 / 清理按钮）
  * - InsightsRenderer：记忆洞察子区域（统计卡片 / source 分布 / 关系摘要）
- * - PerceptionRenderer：感知系统子区域（情感 / 默契度 / 上下文 / 模式 / 在场状态 / 叙事合成）
  *
  * 自管理：脉冲动画定时器（pulseTimers）+ EventTracker（事件监听器跟踪）+ 重试回调。
  * 生命周期：UIManager 在挂载时创建实例，在卸载时调用 cleanup() 释放资源。
@@ -195,9 +189,6 @@ export class DashboardPanelManager {
 
   /** 洞察渲染器（组合模式：委托 insights 子区域渲染） */
   private insights = new InsightsRenderer();
-
-  /** 感知渲染器（组合模式：委托 perception 子区域渲染 + 叙事合成） */
-  private perception = new PerceptionRenderer();
 
   // ─── 缓存 DOM 元素（渲染方法中重复查询，构造时获取一次） ─
   /** 技能 - 列表容器 */
@@ -249,7 +240,6 @@ export class DashboardPanelManager {
     this.partnerInsights.cleanup();
     this.healthDashboard.cleanup();
     this.insights.cleanup();
-    this.perception.cleanup();
   }
 
   /**
@@ -936,57 +926,9 @@ export class DashboardPanelManager {
     return labels[source] ?? source;
   }
 
-  // ─── 感知系统渲染（委托到 PerceptionRenderer） ─────────
-
-  /** 更新情感基调展示（委托到 PerceptionRenderer） */
-  updateAffectDisplay(affect: AffectPayload): void {
-    this.perception.updateAffectDisplay(affect);
-  }
-
-  /** 更新默契度展示（委托到 PerceptionRenderer） */
-  updateRapportDisplay(rapport: RapportPayload): void {
-    this.perception.updateRapportDisplay(rapport);
-  }
-
-  /** 更新对话上下文展示（委托到 PerceptionRenderer） */
-  updateContextDisplay(context: ContextPayload): void {
-    this.perception.updateContextDisplay(context);
-  }
-
-  /** 更新模式洞察面板（委托到 PerceptionRenderer） */
-  updatePatternsDisplay(payload: PatternsPayload): void {
-    this.perception.updatePatternsDisplay(payload);
-  }
-
-  /**
-   * 从感知快照一次性渲染所有感知数据（委托到 PerceptionRenderer）
-   *
-   * 仪表盘首次加载时调用，确保感知区显示真实数据而非占位值。
-   */
-  renderPerceptionSnapshot(snapshot: {
-    affect?: { warmth: number; playfulness: number; directness: number; initiative: number };
-    rapport?: { trust: number; familiarity: number; level: string; description: string };
-    context?: { rhythm: string; coherence: string; depth: string; dominantSource: string | null; description: string };
-    patterns?: Array<{ type: string; summary: string; confidence: number; suggestion?: string }>;
-    proactiveStats?: ProactiveStats;
-  }): void {
-    this.perception.renderPerceptionSnapshot(snapshot);
-  }
-
-  /** 更新主动提示统计展示（委托到 PerceptionRenderer，缺口 G+H） */
-  updateProactiveStatsDisplay(stats: ProactiveStats | null): void {
-    this.perception.updateProactiveStatsDisplay(stats);
-  }
-
-  /** 更新在场状态展示（委托到 PerceptionRenderer） */
-  updatePresenceDisplay(payload: PresencePayload): void {
-    this.perception.updatePresenceDisplay(payload);
-  }
-
-  /** 更新叙事摘要 DOM（委托到 PerceptionRenderer） */
-  updateNarrative(): void {
-    this.perception.updateNarrative();
-  }
+  // ─── 感知系统渲染已移除 ──────────────────────────────────
+  // 感知数据渲染（情感/默契/上下文/模式/在场/叙事/主动提示）已迁移到
+  // 独立的 PerceptionPanelManager，仪表盘不再承载感知分区。
 
 // ─── 伙伴洞察面板（委托到 PartnerInsightsRenderer） ─────────
 
@@ -995,8 +937,6 @@ export class DashboardPanelManager {
    */
   onMemoryClick(cb: (memoryId: string) => void): void {
     this.partnerInsights.onMemoryClick(cb);
-    // 缺口 K：感知面板模式洞察也复用同一跳转回调
-    this.perception.onMemoryClick(cb);
   }
 
   /**

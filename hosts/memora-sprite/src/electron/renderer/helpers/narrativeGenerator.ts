@@ -19,7 +19,7 @@ import type {
   ContextPayload,
   PatternsPayload,
   PresencePayload,
-} from './ipcListeners.js';
+} from '../ipcListeners.js';
 // 感知标签映射（统一真理源，消除 2 个私有方法的重复实现）
 import { getRapportLevelLabel, describeRhythm } from './perceptionLabels.js';
 
@@ -86,7 +86,7 @@ export class NarrativeGenerator {
    * @param payload 模式洞察 payload
    */
   updatePatterns(payload: PatternsPayload): void {
-    this.lastNarrativePatterns = payload.patterns.map((p) => ({
+    this.lastNarrativePatterns = payload.patterns.map((p: { type: string; summary: string }) => ({
       type: p.type,
       summary: p.summary,
     }));

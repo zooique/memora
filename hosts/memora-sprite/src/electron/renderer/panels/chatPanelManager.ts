@@ -1070,7 +1070,7 @@ export class ChatPanelManager {
    * @param messageId 消息 ID（当前未使用，未来持久化时使用）
    * @param messageEl 被右键点击的消息 DOM 元素
    */
-  private _handleForget(messageId: string, messageEl: HTMLElement): void {
+  private _handleForget(_messageId: string, messageEl: HTMLElement): void {
     const isUser = messageEl.classList.contains('user');
     const isAssistant = messageEl.classList.contains('assistant');
 

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * IPC 输入验证工具测试
  *
  * 覆盖范围：
@@ -72,8 +72,9 @@ describe('isValidSessionName', () => {
     expect(isValidSessionName('file.txt')).toBe(false);
   });
 
-  it('含中文应拒绝（非 \\w 字符）', () => {
-    expect(isValidSessionName('会话')).toBe(false);
+  it('含中文应通过（Unicode 字母白名单）', () => {
+    expect(isValidSessionName('会话')).toBe(true);
+    expect(isValidSessionName('我的会话-1')).toBe(true);
   });
 
   it('超过 200 字符应拒绝', () => {
@@ -99,6 +100,14 @@ describe('isValidConfigName', () => {
   it('合法配置名应通过', () => {
     expect(isValidConfigName('code-review')).toBe(true);
     expect(isValidConfigName('persona_default')).toBe(true);
+  });
+
+  it('含中文名称应通过（AutoConfigRefiner 产出的中文建议名）', () => {
+    expect(isValidConfigName('程序员助手')).toBe(true);
+    expect(isValidConfigName('偏好-TypeScript风格')).toBe(true);
+    expect(isValidConfigName('TypeScript偏好')).toBe(true);
+    // 含点号仍应拒绝（防路径遍历）
+    expect(isValidConfigName('偏好 TypeScript.md')).toBe(false);
   });
 
   it('含路径分隔符应拒绝（防规则文件路径遍历）', () => {
