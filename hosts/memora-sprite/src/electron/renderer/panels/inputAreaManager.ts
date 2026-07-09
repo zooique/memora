@@ -186,6 +186,8 @@ export class InputAreaManager {
    * - Escape：清空输入（有内容时）或失焦（无内容时），交互参考终端/聊天应用惯例
    */
   private handleKeydown(e: Event): void {
+    // EventListener 接口签名为 Event，keydown 监听器实际接收 KeyboardEvent
+    // instanceof 守卫防止非 KeyboardEvent 类型（理论不会发生，但符合类型安全）
     if (!(e instanceof KeyboardEvent)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       // IME 合成期（中文输入法选词时按 Enter 确认候选词）不触发发送
@@ -377,7 +379,14 @@ export class InputAreaManager {
         this.providerSelector?.classList.remove('configured');
         // 空状态提示项使用 <button> 元素：原生支持 Enter/Space 触发 click，键盘可访问
         // 点击后跳转到设置面板，让用户快速到达 LLM 配置入口（符合"主动可见"原则）
-        this.providerDropdown.innerHTML = '<button type="button" class="dropdown-item dropdown-item-hint" data-action="goto-settings">请在设置中添加 API</button>';
+        // createElement 避免 innerHTML 拼接（与下方有数据态渲染模式一致）
+        clearElement(this.providerDropdown);
+        const hintBtn = document.createElement('button');
+        hintBtn.type = 'button';
+        hintBtn.className = 'dropdown-item dropdown-item-hint';
+        hintBtn.dataset.action = 'goto-settings';
+        hintBtn.textContent = '请在设置中添加 API';
+        this.providerDropdown.appendChild(hintBtn);
         return;
       }
 
@@ -402,8 +411,10 @@ export class InputAreaManager {
       }
 
       // 下拉项点击事件已通过 initProviderSelector 中的事件委托处理，此处无需重复绑定
-    } catch {
+    } catch (error) {
+      // 加载失败时显示降级文案，UI 已有可见反馈（"加载失败"），此处仅记录日志便于排查
       this.providerNameEl.textContent = '加载失败';
+      console.error('[InputAreaManager] 加载 Provider 选择器失败:', error);
     }
   }
 
@@ -469,8 +480,10 @@ export class InputAreaManager {
           `输入 ${formatTokens(totalInputTokens)} / 输出 ${formatTokens(totalOutputTokens)} / 上下文窗口 ${windowK}`
         );
       }
-    } catch {
+    } catch (error) {
+      // Token 用量刷新失败不影响对话功能，UI 显示 '--' 降级，仅记录日志
       this.tokenUsageText.textContent = '--';
+      console.error('[InputAreaManager] 刷新 Token 用量失败:', error);
     }
   }
 }
