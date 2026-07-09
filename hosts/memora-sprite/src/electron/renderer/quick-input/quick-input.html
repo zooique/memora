@@ -184,16 +184,84 @@
       white-space: nowrap;
       flex-shrink: 0;
     }
+
+    /* ===== Phase 2：补全候选列表 ===== */
+    /*
+     * 候选列表容器：默认 hidden，有候选时显示
+     * 定位为绝对定位，浮在输入框下方，不影响输入框布局
+     */
+    .completion-list {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--window-bg);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 var(--radius-md) var(--radius-md);
+      box-shadow: var(--shadow-window);
+      max-height: 240px;
+      overflow-y: auto;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      z-index: 10;
+    }
+
+    .completion-list.hidden {
+      display: none;
+    }
+
+    /* 候选项 */
+    .completion-item {
+      display: flex;
+      align-items: baseline;
+      gap: var(--space-2);
+      padding: var(--space-2) var(--space-3);
+      cursor: pointer;
+      transition: background var(--transition-fast);
+      border-bottom: 1px solid var(--surface0);
+    }
+
+    .completion-item:last-child {
+      border-bottom: none;
+    }
+
+    /* 选中态（键盘 ↓↑ 或鼠标 hover） */
+    .completion-item.selected {
+      background: var(--accent-10);
+    }
+
+    /* 来源标签（记忆/对话） */
+    .completion-label {
+      font-size: var(--font-xs);
+      color: var(--accent);
+      background: var(--accent-10);
+      padding: 1px 6px;
+      border-radius: var(--radius-sm);
+      flex-shrink: 0;
+      font-weight: var(--weight-medium);
+    }
+
+    /* 候选文本（单行省略） */
+    .completion-text {
+      flex: 1;
+      font-size: var(--font-sm);
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 </head>
 <body>
-  <!-- 快速输入浮窗容器：输入框 + 确认按钮 + 快捷键提示 -->
+  <!-- 快速输入浮窗容器：输入框 + 确认按钮 + 快捷键提示 + 补全候选列表 -->
   <div class="quick-input-container">
     <input
       type="text"
       id="quick-input-field"
       class="quick-input-field"
-      placeholder="输入文本，Enter 复制到剪贴板..."
+      placeholder="输入文本，Enter 复制到剪贴板，↓↑ 选择补全..."
       autocomplete="off"
       spellcheck="false"
       autofocus
@@ -202,6 +270,8 @@
       复制
     </button>
     <span class="quick-input-hint">Esc 关闭</span>
+    <!-- Phase 2：补全候选列表（输入 ≥2 字符后显示，Tab 回填） -->
+    <ul id="completion-list" class="completion-list hidden" role="listbox" aria-label="补全候选"></ul>
   </div>
 
   <!-- 渲染逻辑脚本（ESM 模块，与 float.js 加载方式一致） -->

@@ -156,9 +156,10 @@ export const IPC_CHANNELS = {
   CLIPBOARD_ANALYZE: 'clipboard-analyze',
   // Phase 4.3：技能安装（渲染进程 → 主进程）
   SKILL_INSTALL: 'skill-install',
-  // 快速输入补全（Phase 1 骨架：确认 + 关闭）
+  // 快速输入补全（Phase 1 骨架：确认 + 关闭 + Phase 2 调整高度）
   QUICK_INPUT_CONFIRM: 'quick-input-confirm',
   QUICK_INPUT_CLOSE: 'quick-input-close',
+  QUICK_INPUT_RESIZE: 'quick-input-resize',
   // FOUNDATION-SEAL Phase 4：渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
 } as const;
@@ -708,6 +709,12 @@ export interface ElectronAPI {
   confirmQuickInput: (text: string) => Promise<{ success: boolean }>;
   /** 关闭快速输入浮窗（Esc / 取消按钮触发，不写入剪贴板） */
   closeQuickInput: () => Promise<void>;
+  /**
+   * 调整浮窗高度（候选列表显示/隐藏时触发）
+   *
+   * @param height 目标高度（px），主进程调用 win.setSize(width, height)
+   */
+  resizeQuickInput: (height: number) => Promise<void>;
 
   // ─── M2：审计日志 ─────────────────────────────────────
   /** 列出最近 N 条审计日志 */
@@ -975,9 +982,10 @@ const electronAPI: ElectronAPI = {
 
   // Phase 4.3：技能文件安装
   installSkill: (fileName, content) => ipcRenderer.invoke(IPC_CHANNELS.SKILL_INSTALL, fileName, content),
-  // 快速输入补全：确认（写剪贴板+关闭）和关闭（仅关闭）
+  // 快速输入补全：确认（写剪贴板+关闭）、关闭（仅关闭）、调整高度
   confirmQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text),
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
+  resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
 
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),

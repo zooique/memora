@@ -204,6 +204,22 @@ export class QuickInputWindow {
       this.callbacks.onClose?.();
       return undefined;
     });
+
+    // 调整浮窗高度：候选列表显示/隐藏时由渲染进程触发
+    ipcMain.handle(IPC_CHANNELS.QUICK_INPUT_RESIZE, async (_event, height: number) => {
+      try {
+        if (!this.win || this.win.isDestroyed()) return;
+        // 参数校验：高度必须是合理范围内的正整数
+        if (typeof height !== 'number' || height < QUICK_INPUT_HEIGHT || height > 400) {
+          return;
+        }
+        const { width } = this.win.getBounds();
+        this.win.setSize(width, Math.round(height), true);
+      } catch (error) {
+        logger.error({ error }, '调整浮窗高度失败');
+      }
+      return undefined;
+    });
   }
 
   /**
@@ -245,6 +261,7 @@ export class QuickInputWindow {
     if (this.ipcRegistered) {
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_CONFIRM);
       ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_CLOSE);
+      ipcMain.removeHandler(IPC_CHANNELS.QUICK_INPUT_RESIZE);
       this.ipcRegistered = false;
     }
     if (this.win && !this.win.isDestroyed()) {

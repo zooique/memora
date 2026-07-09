@@ -206,6 +206,8 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_CONFIRM: 'quick-input-confirm',
   /** 渲染进程 → 主进程：关闭浮窗（Esc / 取消按钮触发，不写入剪贴板） */
   QUICK_INPUT_CLOSE: 'quick-input-close',
+  /** 渲染进程 → 主进程：调整浮窗高度（候选列表显示/隐藏时触发） */
+  QUICK_INPUT_RESIZE: 'quick-input-resize',
 
   // ─── 可观测性（FOUNDATION-SEAL Phase 4） ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
