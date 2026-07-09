@@ -138,6 +138,8 @@ export class MemoryPanelManager {
   private pendingCleanupIds: string[] = [];
   /** 视图切换令牌，防止快速切换时 setTimeout 回调竞态导致空白 */
   private viewSwitchToken = 0;
+  /** 图谱右键菜单的 document click 关闭处理器（hideGraphContextMenu 时移除，避免泄漏） */
+  private graphContextMenuCloseHandler: ((e: MouseEvent) => void) | null = null;
 
   constructor(
     private host: MemoryPanelHost,
@@ -431,24 +433,32 @@ export class MemoryPanelManager {
 
     // 无记忆数据时显示空状态
     if (!this.allMemories || this.allMemories.length === 0) {
-      while (container.firstChild) {
-        container.removeChild(container.firstChild);
-      }
+      clearElement(container);
       const empty = document.createElement('div');
       empty.className = 'timeline-empty';
-      empty.innerHTML = `
-        <span class="empty-icon"><svg class="icon"><use href="#icon-hourglass"/></svg></span>
-        <span class="empty-title">暂无时间线数据</span>
-        <span class="empty-subtitle">开始对话后，记忆将按时间自动组织</span>
-      `;
+
+      // 空状态三段结构：图标 + 标题 + 副标题（createElement 避免 innerHTML 拼接）
+      const iconSpan = document.createElement('span');
+      iconSpan.className = 'empty-icon';
+      iconSpan.innerHTML = '<svg class="icon"><use href="#icon-hourglass"/></svg>';
+      empty.appendChild(iconSpan);
+
+      const titleSpan = document.createElement('span');
+      titleSpan.className = 'empty-title';
+      titleSpan.textContent = '暂无时间线数据';
+      empty.appendChild(titleSpan);
+
+      const subtitleSpan = document.createElement('span');
+      subtitleSpan.className = 'empty-subtitle';
+      subtitleSpan.textContent = '开始对话后，记忆将按时间自动组织';
+      empty.appendChild(subtitleSpan);
+
       container.appendChild(empty);
       return;
     }
 
-    // 清空容器
-    while (container.firstChild) {
-      container.removeChild(container.firstChild);
-    }
+    // 清空容器（复用 clearElement 统一 DOM 操作模式）
+    clearElement(container);
 
     // 按天分组记忆（以 createdAt 日期为键）
     const groups = new Map<string, MemoryListItem[]>();
@@ -485,9 +495,24 @@ export class MemoryPanelManager {
       const group = document.createElement('div');
       group.className = 'timeline-group';
 
+      // 日期头：圆点 + 日期文字 + 条目计数（createElement 替代 innerHTML 拼接）
       const header = document.createElement('div');
       header.className = 'timeline-date-header';
-      header.innerHTML = `<span class="timeline-date-dot"></span><span class="timeline-date-text">${dateLabel}</span><span class="timeline-date-count">${items.length} 条</span>`;
+
+      const dotSpan = document.createElement('span');
+      dotSpan.className = 'timeline-date-dot';
+      header.appendChild(dotSpan);
+
+      const textSpan = document.createElement('span');
+      textSpan.className = 'timeline-date-text';
+      textSpan.textContent = dateLabel;
+      header.appendChild(textSpan);
+
+      const countSpan = document.createElement('span');
+      countSpan.className = 'timeline-date-count';
+      countSpan.textContent = `${items.length} 条`;
+      header.appendChild(countSpan);
+
       group.appendChild(header);
 
       // 该日期下的记忆列表
@@ -1514,47 +1539,58 @@ export class MemoryPanelManager {
    * @param y 菜单显示位置（屏幕 Y）
    */
   private showGraphContextMenu(nodeId: string, x: number, y: number): void {
-    // 隐藏已有的菜单
+    // 隐藏已有的菜单（同时清理上一次的监听器）
     this.hideGraphContextMenu();
 
     const menu = document.getElementById('graph-context-menu');
     if (!menu) return;
-// 绑定菜单项点击事件
-    const focusItem = menu.querySelector('[data-action="focus-subgraph"]');
-    const detailItem = menu.querySelector('[data-action="view-detail"]');
-    const connectItem = menu.querySelector('[data-action="connect-from"]');
-    const copyItem = menu.querySelector('[data-action="copy-id"]');
 
+    // 绑定菜单项点击事件（用 onclick 覆盖赋值，确保每次打开是全新的单一监听器，无累积）
     const handler = (action: string) => {
       this.hideGraphContextMenu();
       this.graphContextMenuCallback?.(action, nodeId);
     };
 
-    if (focusItem) focusItem.addEventListener('click', () => handler('focus-subgraph'), { once: true });
-    if (detailItem) detailItem.addEventListener('click', () => handler('view-detail'), { once: true });
-    if (connectItem) connectItem.addEventListener('click', () => handler('connect-from'), { once: true });
-    if (copyItem) copyItem.addEventListener('click', () => handler('copy-id'), { once: true });
+    const focusItem = menu.querySelector('[data-action="focus-subgraph"]') as HTMLElement | null;
+    const detailItem = menu.querySelector('[data-action="view-detail"]') as HTMLElement | null;
+    const connectItem = menu.querySelector('[data-action="connect-from"]') as HTMLElement | null;
+    const copyItem = menu.querySelector('[data-action="copy-id"]') as HTMLElement | null;
+
+    if (focusItem) focusItem.onclick = () => handler('focus-subgraph');
+    if (detailItem) detailItem.onclick = () => handler('view-detail');
+    if (connectItem) connectItem.onclick = () => handler('connect-from');
+    if (copyItem) copyItem.onclick = () => handler('copy-id');
 
     // 定位菜单（避免超出视口）
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
     menu.classList.remove('hidden');
 
-    // 点击菜单外部关闭
-    const closeHandler = (e: MouseEvent) => {
+    // 点击菜单外部关闭——closeHandler 存储为实例字段，hideGraphContextMenu 时移除
+    // 避免：用户打开菜单后不点菜单项而点外部，原 once 监听器残留累积
+    this.graphContextMenuCloseHandler = (e: MouseEvent) => {
       if (!menu.contains(e.target as Node)) {
         this.hideGraphContextMenu();
-        document.removeEventListener('click', closeHandler);
       }
     };
-    setTimeout(() => document.addEventListener('click', closeHandler), 0);
+    // setTimeout 延迟注册，避免当前右键 click 事件立即触发 closeHandler
+    setTimeout(() => {
+      if (this.graphContextMenuCloseHandler) {
+        document.addEventListener('click', this.graphContextMenuCloseHandler);
+      }
+    }, 0);
   }
 
-  /** 隐藏图谱上下文菜单 */
+  /** 隐藏图谱上下文菜单，并清理 document 上的 closeHandler 监听器 */
   private hideGraphContextMenu(): void {
     const menu = document.getElementById('graph-context-menu');
     if (menu) {
       menu.classList.add('hidden');
+    }
+    // 移除 closeHandler，防止内存泄漏（用户切换面板/关闭菜单时都需要清理）
+    if (this.graphContextMenuCloseHandler) {
+      document.removeEventListener('click', this.graphContextMenuCloseHandler);
+      this.graphContextMenuCloseHandler = null;
     }
   }
 
