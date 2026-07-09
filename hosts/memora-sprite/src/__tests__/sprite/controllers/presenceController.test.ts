@@ -242,21 +242,57 @@ describe('PresenceController', () => {
       }));
     });
 
-    it('窗口失焦时状态变为 away', () => {
-      const controller = new PresenceController(
-        mockPowerMonitor,
-        mockApp,
-        { emit: emitHandler },
-      );
-      controller.start();
+    it('窗口失焦后 debounce 过期才变为 away（避免切窗误触发）', () => {
+      vi.useFakeTimers();
+      try {
+        const controller = new PresenceController(
+          mockPowerMonitor,
+          mockApp,
+          { emit: emitHandler },
+        );
+        controller.start();
 
-      mockApp.emit('browser-window-blur');
+        mockApp.emit('browser-window-blur');
 
-      expect(controller.getState()).toBe('away');
-      expect(emitHandler).toHaveBeenCalledWith('presenceChanged', expect.objectContaining({
-        state: 'away',
-        reason: 'window-blur',
-      }));
+        // debounce 期内仍为 present
+        expect(controller.getState()).toBe('present');
+
+        // 推进时间超过 debounce 时长（120s）
+        vi.advanceTimersByTime(120_000);
+
+        expect(controller.getState()).toBe('away');
+        expect(emitHandler).toHaveBeenCalledWith('presenceChanged', expect.objectContaining({
+          state: 'away',
+          reason: 'window-blur',
+        }));
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('窗口失焦 debounce 期内聚焦则取消离开判定', () => {
+      vi.useFakeTimers();
+      try {
+        const controller = new PresenceController(
+          mockPowerMonitor,
+          mockApp,
+          { emit: emitHandler },
+        );
+        controller.start();
+
+        mockApp.emit('browser-window-blur');
+        // debounce 期内，state 仍为 present
+        expect(controller.getState()).toBe('present');
+
+        // 聚焦取消离开判定
+        mockApp.emit('browser-window-focus');
+
+        // 推进时间超过 debounce 时长，不应变为 away
+        vi.advanceTimersByTime(120_000);
+        expect(controller.getState()).toBe('present');
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('已处于 away 状态时重复离开事件不触发（幂等保护）', () => {

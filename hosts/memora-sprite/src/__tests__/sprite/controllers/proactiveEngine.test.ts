@@ -282,6 +282,7 @@ describe('ProactiveEngine', () => {
         triggers: ['memory'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -294,6 +295,7 @@ describe('ProactiveEngine', () => {
         triggers: ['memory', 'memory'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -305,6 +307,7 @@ describe('ProactiveEngine', () => {
         triggers: ['insight'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -317,6 +320,7 @@ describe('ProactiveEngine', () => {
         triggers: ['insight', 'insight'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -328,6 +332,7 @@ describe('ProactiveEngine', () => {
         triggers: ['persona'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -339,6 +344,7 @@ describe('ProactiveEngine', () => {
         triggers: ['file'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -351,6 +357,7 @@ describe('ProactiveEngine', () => {
         triggers: ['file', 'file'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -362,6 +369,7 @@ describe('ProactiveEngine', () => {
         triggers: ['milestone'],
         silent: false,
         isMilestone: true,
+        lightweight: false,
       });
     });
 
@@ -374,6 +382,7 @@ describe('ProactiveEngine', () => {
         triggers: ['memory', 'insight'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -385,6 +394,7 @@ describe('ProactiveEngine', () => {
         triggers: ['memory'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 
@@ -396,6 +406,7 @@ describe('ProactiveEngine', () => {
         triggers: ['unknownType'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
   });
@@ -576,6 +587,7 @@ describe('ProactiveEngine', () => {
         triggers: ['memory'],
         silent: false,
         isMilestone: false,
+        lightweight: false,
       });
     });
 

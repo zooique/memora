@@ -86,7 +86,14 @@ export interface SpriteEventMap {
   /** 记忆冲突被检测到（contradicts 关系写入时通知宿主 UI） */
   conflictDetected: { newMemoryId: string; newInsight: string; targetId: string; targetContent: string };
   /** 精灵主动提示（累积事件后生成） */
-  proactivePrompt: { prompt: string; triggers: string[]; silent: boolean; isMilestone?: boolean };
+  proactivePrompt: {
+    prompt: string;
+    triggers: string[];
+    silent: boolean;
+    isMilestone?: boolean;
+    /** 轻量提示标志：true 时宿主跳过系统通知（方向 A 召回场景） */
+    lightweight?: boolean;
+  };
   // L5：迭代 9 补齐的 4 种未订阅 Agent 事件
   /** 用户切换项目（专注模式） */
   projectSwitched: { from: string | null; to: string; projectName: string };
@@ -372,6 +379,11 @@ export class Sprite {
 
   /**
    * 创建并注入在场状态控制器（Phase 3.2 便捷方法）
+   *
+   * 注入三个回调：
+   *   - proactiveEngine：用户回来时检查累积事件
+   *   - emit：转发 presenceChanged 为精灵事件
+   *   - onWelcomeBack：长时间离开后回来时召回记忆（方向 A 遗忘召回）
    */
   bindPresence(powerMonitor: IPowerMonitor, app: IApp): void {
     const controller = new PresenceController(powerMonitor, app, {
@@ -379,8 +391,79 @@ export class Sprite {
       emit: (event, payload) => {
         this.emitSprite(event, payload);
       },
+      onWelcomeBack: (awayDurationMs) => {
+        this.welcomeBackRecall(awayDurationMs);
+      },
     });
     this.setPresenceController(controller);
+  }
+
+  /**
+   * 欢迎回来记忆召回（方向 A：遗忘召回）
+   *
+   * 长时间离开（>= 1 小时）后回来时，取离开期间产生的新记忆，
+   * 构造摘要后通过 proactiveEngine.addNotice('recalled', summary) 注入主动提示队列。
+   * 由 PresenceController.handlePresent 在 checkPending 之前触发，
+   * 这样 checkPending 能一并消费召回事件。
+   *
+   * 记忆选取策略：取 50 条 → 按 createdAt 过滤出离开期间的记忆 → 取前 5 条。
+   * 与 perceptionCoordinator.getCrossSessionContext 的选取范式相似（都先取 50 再按时间过滤），
+   * 但时间窗口语义不同——此处是"离开期间"，getCrossSessionContext 是"gapMs + 2h"。
+   * 不强行提取公共方法，因两处时间窗口语义不可统一。
+   *
+   * 零 LLM 调用，纯模板拼接。
+   *
+   * @param awayDurationMs 离开时长（毫秒），必定 >= WELCOME_BACK_THRESHOLD_MS
+   */
+  private welcomeBackRecall(awayDurationMs: number): void {
+    try {
+      // 复用 agent.memory（MemoryInspector），获取完整 Memory 对象
+      const inspector = this.agent.memory;
+      if (!inspector) return;
+
+      // 取 50 条活跃记忆（按 score 降序），再按 createdAt 过滤出离开期间产生的新记忆
+      // 离开期间的判定：createdAt >= (now - awayDurationMs)，即离开开始之后创建的记忆
+      const now = Date.now();
+      const awaySinceMs = now - awayDurationMs;
+      const allMemories = inspector.list(50);
+      const recentMemories = allMemories.filter((m) => {
+        const createdMs = new Date(m.createdAt).getTime();
+        return createdMs >= awaySinceMs;
+      }).slice(0, 5);
+
+      // 离开期间无新记忆则不提示（避免提示无关的旧记忆）
+      if (recentMemories.length === 0) {
+        logger.debug({ awayDurationMs }, '离开期间无新记忆，跳过召回');
+        return;
+      }
+
+      // 构造时长描述（分钟/小时/天）
+      const minutes = Math.round(awayDurationMs / 60_000);
+      const durationText = minutes < 60
+        ? `${minutes} 分钟`
+        : minutes < 1440
+          ? `${Math.round(minutes / 60)} 小时`
+          : `${Math.round(minutes / 1440)} 天`;
+
+      // 构造摘要：时长 + 数量 + 前 3 个 name（提升信息量）
+      const names = recentMemories
+        .map((m) => m.name)
+        .filter((n) => n.length > 0)
+        .slice(0, 3);
+      const nameList = names.length > 0 ? `（${names.join('、')}）` : '';
+      const summary = `你离开了 ${durationText}，期间新增了 ${recentMemories.length} 条记忆${nameList}`;
+
+      // 注入主动提示队列，type='recalled' 由 buildPrompt 专属分支处理
+      this.proactiveEngine.addNotice('recalled', summary);
+
+      logger.info(
+        { awayDurationMs, memoryCount: recentMemories.length, names },
+        '欢迎回来记忆召回已注入',
+      );
+    } catch (err) {
+      // 召回失败不影响后续 checkPending（错误隔离，与 PresenceController 的 try/catch 双重保护）
+      logger.warn({ err, awayDurationMs }, '欢迎回来记忆召回失败');
+    }
   }
 
   /** 获取当前状态 */

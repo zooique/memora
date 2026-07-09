@@ -122,12 +122,13 @@ describe('spriteConfig', () => {
       expect(DEFAULT_SPRITE_CONFIG.shortcuts.enabled).toBe(true);
     });
 
-    it('DEFAULT_SPRITE_CONFIG.shortcuts.accelerators 包含 3 个默认快捷键', () => {
+    it('DEFAULT_SPRITE_CONFIG.shortcuts.accelerators 包含 4 个默认快捷键', () => {
       const accelerators = DEFAULT_SPRITE_CONFIG.shortcuts.accelerators; // 默认加速器映射
-      expect(Object.keys(accelerators)).toHaveLength(3);
+      expect(Object.keys(accelerators)).toHaveLength(4);
       expect(accelerators['toggle-window']).toBe('Ctrl+Shift+Space');
       expect(accelerators['quick-record']).toBe('Ctrl+Shift+M');
       expect(accelerators['recall-memory']).toBe('Ctrl+Shift+R');
+      expect(accelerators['quick-input']).toBe('Ctrl+Shift+I');
     });
 
     it('CONFIG_FIELD_SCHEMA 包含所有 23 个字段的类型映射', () => {

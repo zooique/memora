@@ -56,7 +56,14 @@ export interface ProactiveStats {
 }
 
 /** 精灵事件发射器 */
-export type SpriteEmitter = (event: 'proactivePrompt', payload: { prompt: string; triggers: string[]; silent: boolean; isMilestone?: boolean }) => void;
+export type SpriteEmitter = (event: 'proactivePrompt', payload: {
+  prompt: string;
+  triggers: string[];
+  silent: boolean;
+  isMilestone?: boolean;
+  /** 轻量提示标志：true 时宿主跳过系统通知，仅托盘脉冲 + 窗口内提示（方向 A 召回场景） */
+  lightweight?: boolean;
+}) => void;
 
 /** 里程碑事件回调（Phase 2.3：供 Sprite 发射专门的 milestoneAchieved 事件） */
 export type MilestoneCallback = (milestone: MilestoneTrigger) => void;
@@ -346,9 +353,11 @@ export class ProactiveEngine {
     const prompt = this.buildPrompt(triggers, summaries);
     // Phase 2.3：检测本次提示是否包含里程碑事件
     const hasMilestone = notices.some(n => n.isMilestone);
+    // 方向 A：召回类提示标记为 lightweight，宿主据此跳过系统通知
+    const lightweight = triggers.includes('recalled');
 
     // silent 字段恒为 false（tryEmit 已在 silentMode 时 return），移除死字段
-    this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false, isMilestone: hasMilestone });
+    this.emitSprite?.('proactivePrompt', { prompt, triggers, silent: false, isMilestone: hasMilestone, lightweight });
     // Phase 2.1：记录一次主动提示（供 AffectController 计算接受率）
     this.suggestCount++;
 
@@ -420,6 +429,17 @@ export class ProactiveEngine {
       }
       if (suggestionSummary) {
         return `${suggestionSummary}（同时${parts.join('，')}）`;
+      }
+    }
+    // 方向 A：欢迎回来记忆召回——完整句子优先返回
+    // summary 由 sprite.welcomeBackRecall 构造，已包含时长 + 数量 + 名称
+    if (typeCounts.has('recalled')) {
+      const recalledSummary = this.findSummaryByType(triggers, summaries, 'recalled');
+      if (recalledSummary) {
+        if (parts.length === 0) {
+          return `${recalledSummary}——要看看吗？${this.buildSuffix()}`;
+        }
+        return `${recalledSummary}（同时${parts.join('，')}）${this.buildSuffix()}`;
       }
     }
     // Phase 2+：模式检测结果优先——比事件统计更有价值

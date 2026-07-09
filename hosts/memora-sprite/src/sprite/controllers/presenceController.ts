@@ -1,17 +1,19 @@
 /**
  * 在场状态控制器 — 用户离开/回来检测
  *
- * 职责（Phase 3.2 第一批）：
+ * 职责：
  *   1. 监听系统锁屏/挂起/解锁/恢复事件（powerMonitor）
  *   2. 监听窗口焦点变化（browser-window-blur/focus）
  *   3. 转发为统一的 presenceChanged 精灵事件
  *   4. 用户回来时触发 ProactiveEngine 检查累积事件
+ *   5. 长时间离开（>= 1 小时）后回来时触发记忆召回（onWelcomeBack 回调）
  *
  * 设计原则：
  *   - 依赖注入 powerMonitor/app 接口，便于单元测试 mock
  *   - 不监听键盘/鼠标输入内容（ADR-006 安全模型核心卖点）
  *   - 幂等保护：重复 lock-screen 不重复触发状态变化
  *   - 记录离开时长，为 Phase 2 AffectController 预留数据
+ *   - 召回与检查分离：onWelcomeBack 在 checkPending 之前调用，错误隔离
  *
  * 集成点：
  *   - sprite.ts：start() 中调用 presenceController.start()
@@ -60,6 +62,26 @@ export interface IApp {
   removeListener(event: 'browser-window-blur' | 'browser-window-focus', listener: () => void): void;
 }
 
+/**
+ * 欢迎回来触发阈值（毫秒）
+ *
+ * 离开时长超过此值时，回来后触发记忆召回。
+ * 复用 getCrossSessionContext 的 1 小时间隔约定（perceptionCoordinator.ts），
+ * 避免引入新阈值造成行为不一致。
+ */
+const WELCOME_BACK_THRESHOLD_MS = 60 * 60 * 1000; // 1 小时
+
+/**
+ * 窗口失焦离开 debounce 时长（毫秒）
+ *
+ * browser-window-blur 触发后延迟此时长才真正判定为"离开"。
+ * 期间若窗口重新获得焦点（browser-window-focus），则取消判定。
+ * 避免 Alt+Tab 切窗查看内容几秒钟就误触发完整的 away → present 循环。
+ *
+ * 仅适用于窗口失焦；系统级事件（lock-screen/suspend）立即判定，不走 debounce。
+ */
+const AWAY_DEBOUNCE_MS = 120_000; // 2 分钟
+
 /** 用户在场状态 */
 export type PresenceState = 'present' | 'away';
 
@@ -87,6 +109,18 @@ export interface PresenceControllerOptions {
   proactiveEngine?: Pick<ProactiveEngine, 'checkPending'>;
   /** 事件发射器（由 Sprite 注入，转发为精灵事件） */
   emit?: (event: 'presenceChanged', payload: PresenceChangeEvent) => void;
+  /**
+   * 用户长时间离开后回来回调（用于触发记忆召回）
+   *
+   * 仅当 awayDurationMs >= WELCOME_BACK_THRESHOLD_MS（1 小时）时触发。
+   * 在 proactiveEngine.checkPending() 之前调用，让召回结果先注入 pendingNotices，
+   * 这样 checkPending 能一并消费召回事件。
+   *
+   * 回调内的错误不影响后续 checkPending（错误隔离）。
+   *
+   * @param awayDurationMs 离开时长（毫秒），必定 >= WELCOME_BACK_THRESHOLD_MS
+   */
+  onWelcomeBack?: (awayDurationMs: number) => void;
 }
 
 /**
@@ -108,6 +142,8 @@ export class PresenceController {
   private readonly options: PresenceControllerOptions;
   /** 是否已启动（避免重复注册事件） */
   private started = false;
+  /** 窗口失焦离开 debounce 定时器（null 表示无待判定的失焦） */
+  private blurDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   // ── 保存监听器引用，stop() 时可取消注册 ──
   /** lock-screen 监听器引用 */
@@ -158,11 +194,16 @@ export class PresenceController {
     this.powerMonitor.on('resume', this.resumeHandler);
 
     // ── app 事件：窗口焦点变化 ──
-    // 窗口失焦 → away（用户切换到其他应用）
-    this.blurHandler = () => this.handleAway('window-blur');
+    // 窗口失焦 → 延迟判定离开（debounce，避免 Alt+Tab 切窗几秒就误触发）
+    this.blurHandler = () => this.scheduleAwayDebounce();
     this.app.on('browser-window-blur', this.blurHandler);
-    // 窗口聚焦 → present（用户回到精灵窗口）
-    this.focusHandler = () => this.handlePresent('window-focus');
+    // 窗口聚焦 → 取消待判定的失焦 + 回来判定
+    // 若 debounce 未过期，cancel 后 state 仍为 present，handlePresent 幂等 return
+    // 若 debounce 已过期，state 已是 away，handlePresent 正常触发
+    this.focusHandler = () => {
+      this.cancelAwayDebounce();
+      this.handlePresent('window-focus');
+    };
     this.app.on('browser-window-focus', this.focusHandler);
 
     logger.info('在场状态控制器已启动');
@@ -206,7 +247,42 @@ export class PresenceController {
       this.focusHandler = null;
     }
 
+    // 清理待判定的失焦 debounce 定时器，防止 stop 后仍触发 handleAway
+    this.cancelAwayDebounce();
+
     logger.info('在场状态控制器已停止');
+  }
+
+  /**
+   * 调度窗口失焦离开判定（debounce）
+   *
+   * browser-window-blur 后不立即判定离开，而是延迟 AWAY_DEBOUNCE_MS。
+   * 期间若窗口重新聚焦（focusHandler 调 cancelAwayDebounce）则取消判定。
+   * 幂等保护：已有待判定定时器时不重复调度。
+   */
+  private scheduleAwayDebounce(): void {
+    // 已有待判定定时器，不重复调度
+    if (this.blurDebounceTimer) return;
+    // 已离开，无需 debounce（幂等保护）
+    if (this.state === 'away') return;
+
+    this.blurDebounceTimer = setTimeout(() => {
+      this.blurDebounceTimer = null;
+      this.handleAway('window-blur');
+    }, AWAY_DEBOUNCE_MS);
+  }
+
+  /**
+   * 取消窗口失焦离开 debounce
+   *
+   * 由 focusHandler 和 handleAway 调用，清理待判定的失焦定时器。
+   * 无待判定定时器时无副作用。
+   */
+  private cancelAwayDebounce(): void {
+    if (this.blurDebounceTimer) {
+      clearTimeout(this.blurDebounceTimer);
+      this.blurDebounceTimer = null;
+    }
   }
 
   /**
@@ -237,6 +313,9 @@ export class PresenceController {
   private handleAway(reason: string): void {
     // 幂等保护：已离开则不重复触发
     if (this.state === 'away') return;
+
+    // 系统级事件触发离开时，取消可能存在的窗口失焦 debounce（避免冗余触发）
+    this.cancelAwayDebounce();
 
     this.state = 'away';
     this.awaySince = Date.now();
@@ -280,8 +359,20 @@ export class PresenceController {
     this.options.emit?.('presenceChanged', payload);
     logger.info({ reason, awayDurationMs, timestamp: payload.timestamp }, '用户回来');
 
+    // 长时间离开后回来：触发记忆召回（在 checkPending 之前，让召回结果先入队）
+    // 仅当离开时长 >= WELCOME_BACK_THRESHOLD_MS 时触发，避免短时间切窗误触发
+    if (awayDurationMs >= WELCOME_BACK_THRESHOLD_MS) {
+      try {
+        this.options.onWelcomeBack?.(awayDurationMs);
+      } catch (err) {
+        // 回调失败不影响后续 checkPending（错误隔离）
+        logger.warn({ err, awayDurationMs }, 'onWelcomeBack 回调失败');
+      }
+    }
+
     // 用户回来时触发 ProactiveEngine 检查累积事件
     // 例如用户离开期间积累了多条 memory/insight 事件，回来时统一提示
+    // onWelcomeBack 注入的 recalled 事件也会在此被消费
     this.options.proactiveEngine?.checkPending();
   }
 }

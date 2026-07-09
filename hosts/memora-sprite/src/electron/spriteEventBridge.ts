@@ -152,7 +152,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   let proactiveTrayResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示（保留显式处理，含复杂副作用）
-  registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, triggers, silent, isMilestone }) => {
+  registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, triggers, silent, isMilestone, lightweight }) => {
     // 整个 handler 用 try/catch 分段保护，防止单个副作用抛错中断后续逻辑
     try {
       // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
@@ -167,10 +167,11 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
         deps.trayManager?.setState('idle');
       }, PROACTIVE_TRAY_RESET_MS);
 
-      // 非静默模式：系统通知（检查系统是否支持，避免不支持时崩溃）
+      // 非静默模式 + 非轻量提示：系统通知（轻量提示跳过，避免召回场景打扰用户）
       // 注意：silent 恒为 false（ProactiveEngine.tryEmit 在 silentMode 时 return），
       // 此处的 !silent 检查是防御性代码，未来若恢复 silent 路径仍有保护意义
-      if (!silent && Notification.isSupported()) {
+      // lightweight=true 时（方向 A 召回）仅托盘脉冲 + 窗口内提示，不弹系统通知
+      if (!silent && !lightweight && Notification.isSupported()) {
         // Phase 2.3：里程碑使用特殊通知标题
         const notification = new Notification({
           title: isMilestone ? '🎉 里程碑达成' : 'Memora 精灵',
@@ -185,7 +186,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
       // 非静默模式 + 完整窗口可见：窗口内提示
       if (!silent) {
         // Phase 2.3：传递 isMilestone 标志到渲染层
-        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone }, silent);
+        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone, lightweight }, silent);
 
         // 浮动窗口主动提示未读徽章
         // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
