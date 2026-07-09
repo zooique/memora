@@ -650,8 +650,19 @@ async function initializeApp(): Promise<void> {
 
     // 快速输入浮窗：注入 clipboardHandler 用于确认时抑制三重保护
     // 在 clipboardHandler 创建后实例化，确保 onConfirm 回调能调用 suppressNextChange()
+    // onAfterConfirm 用于记忆沉淀：确认成功后异步写入 source:'quick-input' 记忆
     appState.quickInputWindow = new QuickInputWindow({
       onConfirm: createDefaultConfirmCallback(appState.clipboardHandler),
+      onAfterConfirm: (text) => {
+        try {
+          // name 用内容前 30 字符（与剪贴板记忆范式一致），upsertMemory 按 (source, name) 去重
+          const name = text.slice(0, 30).replace(/\s+/g, ' ').trim() || '快速输入';
+          appState.sprite?.upsertMemory('quick-input', name, text);
+        } catch (error) {
+          // 记忆写入失败仅记日志，不影响用户已拿到的剪贴板内容
+          logger.warn({ error }, '快速输入记忆写入失败');
+        }
+      },
     });
 
     // Phase 4.3：注册技能文件安装 IPC handler
