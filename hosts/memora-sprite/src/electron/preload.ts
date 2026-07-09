@@ -58,6 +58,8 @@ export const IPC_CHANNELS = {
   SESSION_DELETE: 'session-delete',
   /** 重命名会话 */
   SESSION_RENAME: 'session-rename',
+  /** 搜索对话内容（跨所有会话，返回匹配的消息片段） */
+  SESSION_SEARCH: 'session-search',
   /** 会话分叉（内核 forkSession 已实现，发射 sessionForked 事件） */
   SESSION_FORK: 'session-fork',
   MEMORIES_LIST: 'memories-list',
@@ -68,6 +70,10 @@ export const IPC_CHANNELS = {
   MEMORIES_RESTORE: 'memories-restore',
   /** 物理删除记忆（回收站彻底删除） */
   MEMORIES_PURGE: 'memories-purge',
+  /** 批量恢复回收站所有记忆 */
+  MEMORIES_RESTORE_ALL: 'memories-restore-all',
+  /** 批量清空回收站所有记忆 */
+  MEMORIES_PURGE_ALL: 'memories-purge-all',
   /** 列出回收站记忆 */
   MEMORIES_LIST_DELETED: 'memories-list-deleted',
   /** 手动归档会话内容（一键归档） */
@@ -334,6 +340,15 @@ export interface ElectronAPI {
   deleteSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   /** 重命名会话 */
   renameSession: (sessionId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
+  /**
+   * 搜索对话内容（跨所有会话）
+   * @param query.keyword 搜索关键词
+   * @param query.limit 返回上限（默认 50，最大 100）
+   * @returns results 匹配的消息列表
+   */
+  searchSessionMessages: (query: { keyword: string; limit?: number }) => Promise<{
+    results: Array<{ date: string; session: string; role: string; content: string; timestamp: string }>;
+  }>;
   /**
    * 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
    *
@@ -842,6 +857,8 @@ const electronAPI: ElectronAPI = {
   switchSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SWITCH, query),
   deleteSession: (sessionId) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_DELETE, sessionId),
   renameSession: (sessionId, newName) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_RENAME, sessionId, newName),
+  // 搜索对话内容（跨所有会话，返回匹配的消息列表）
+  searchSessionMessages: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_SEARCH, query),
   // 会话分叉：调用内核 Agent.forkSession()，返回新会话名和消息数
   forkSession: (targetSession?: string) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_FORK, targetSession),
 

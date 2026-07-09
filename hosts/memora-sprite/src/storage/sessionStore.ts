@@ -238,6 +238,26 @@ export class SqliteSessionStore implements ISessionStore {
   }
 
   /**
+   * 搜索对话内容（跨所有会话）
+   *
+   * 使用 LIKE '%keyword%' 模糊匹配，返回匹配的消息片段。
+   * 结果按时间倒序（最新在前），限制最多 limit 条。
+   *
+   * @param keyword 搜索关键词（已转义 % 和 _）
+   * @param limit 返回上限，默认 50
+   * @returns 匹配的消息列表（含日期、会话名、角色、内容片段、时间戳）
+   */
+  searchMessages(keyword: string, limit: number = 50): SessionSearchRow[] {
+    // 转义 SQL LIKE 通配符，防止关键词中的 % _ 被解释为模式
+    const escaped = keyword.replace(/[%_]/g, (m) => '\\' + m);
+    const pattern = `%${escaped}%`;
+    const rows = this.db.prepare(
+      `SELECT date, session, role, content, timestamp FROM sessions WHERE content LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT ?`
+    ).all(pattern, limit) as SessionSearchRow[];
+    return rows;
+  }
+
+  /**
    * 解析会话 ID 为日期和会话名
    *
    * 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段，date 占 3 段）。
@@ -264,6 +284,15 @@ export class SqliteSessionStore implements ISessionStore {
 
 /** 数据库行类型 */
 interface SessionRow {
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
+/** 搜索结果行类型 */
+export interface SessionSearchRow {
+  date: string;
+  session: string;
   role: string;
   content: string;
   timestamp: string;

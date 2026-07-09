@@ -26,6 +26,8 @@ export const IPC_CHANNELS = {
   SESSION_DELETE: 'session-delete',
   /** 重命名会话 */
   SESSION_RENAME: 'session-rename',
+  /** 搜索对话内容（跨所有会话，返回匹配的消息片段） */
+  SESSION_SEARCH: 'session-search',
   /**
    * 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
    *

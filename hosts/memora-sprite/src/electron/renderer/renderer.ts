@@ -671,12 +671,6 @@ function setupBusinessLogic(
     await window.electronAPI.abortChat();
   });
 
-  // 会话分叉回调：用户点击输入工具栏分叉按钮时触发
-  // 调用 sessionController.forkSession，成功后由 sessionForked 事件驱动 UI 切换
-  State.uiManager.onForkSession(async () => {
-    await sessionController.forkSession();
-  });
-
   // 日期导航跳转回调：日历选择器选中日期后跳转
   State.uiManager.onDateNavJump(async (date: string) => {
     try {
@@ -714,6 +708,30 @@ function setupBusinessLogic(
     } catch (error) {
       reportError('dateNavDelete', error);
       State.uiManager.showToast('删除对话记录失败，请重试', 'error');
+    }
+  });
+
+  // 回到今天回调：切换到今天的会话并加载消息
+  State.uiManager.onBackToToday(async () => {
+    try {
+      const today = getLocalDate();
+      await sessionController.switchSession(`${today}-main`);
+      await sessionController.loadSessionHistory();
+    } catch (error) {
+      reportError('backToToday', error);
+      State.uiManager.showToast('回到今天失败，请重试', 'error');
+    }
+  });
+
+  // 搜索结果点击回调：跳转到对应日期的会话并加载消息
+  // 搜索结果携带 date 和 session，拼成 sessionId 后复用 switchSession 跳转
+  State.uiManager.onSearchResultClick(async (date: string, session: string) => {
+    try {
+      await sessionController.switchSession(`${date}-${session}`);
+      await sessionController.loadSessionHistory();
+    } catch (error) {
+      reportError('searchResultClick', error);
+      State.uiManager.showToast('跳转到搜索结果失败，请重试', 'error');
     }
   });
 }

@@ -588,6 +588,76 @@
 .date-navigator {
   position: relative;
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 回到今天按钮：查看历史日期时出现，胶囊样式带强调色 */
+.back-to-today-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface0);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px 2px 6px;
+  font-size: var(--font-xs);
+  color: var(--accent);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  height: 24px;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.back-to-today-btn:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.back-to-today-btn .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/**
+ * 对话内容搜索按钮：纯图标胶囊样式
+ * 位于 date-navigator 左侧，与日期导航共同构成"历史回顾"工具组
+ * 视觉与 date-nav-btn 一致（同高度、同圆角、同 hover 反馈）
+ */
+.search-messages-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: 0 6px;
+  height: 24px;
+  width: 28px;
+  color: var(--subtext);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  font-family: inherit;
+}
+
+.search-messages-btn:hover {
+  background: var(--surface1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.search-messages-btn:active {
+  background: var(--accent-10);
+}
+
+.search-messages-btn .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 /* 日期选择按钮：图标 + 文字 + 下拉箭头，胶囊样式 */

@@ -776,6 +776,193 @@ button:active,
   color: var(--muted);
 }
 
+/* ─── 对话内容搜索弹窗（Search Messages Modal） ─────────────────── */
+/* Ctrl+Shift+F 触发，复用命令面板的居中浮层模式，但结构独立 */
+/* 搜索结果按日期分组，每条结果显示角色徽章 + 内容片段（关键词高亮）+ 时间戳 */
+/* 点击结果项跳转到对应日期的会话（与命令面板互斥，不会同时打开） */
+
+.search-messages-modal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-command-palette);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 15vh;
+  background: var(--palette-backdrop);
+  backdrop-filter: blur(4px);
+  animation: palette-fade-in var(--transition-fast) ease;
+}
+
+.search-messages-modal.hidden {
+  display: none;
+}
+
+.search-messages-dialog {
+  width: 640px;
+  max-width: 90vw;
+  max-height: 65vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-window);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: palette-slide-in var(--transition-fast) ease;
+}
+
+.search-messages-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-compact);
+  padding: var(--pad-card);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.search-messages-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.search-messages-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: var(--font-base);
+  font-family: var(--font-sprite);
+  color: var(--text);
+  -webkit-appearance: none;
+}
+
+.search-messages-input::placeholder {
+  color: var(--muted);
+}
+
+.search-messages-hint {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  background: var(--bg-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.search-messages-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1-5) 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.search-messages-results::-webkit-scrollbar {
+  width: 6px;
+}
+
+.search-messages-results::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-xs);
+}
+
+/* 日期分组标题：粘性定位，滚动时固定顶部 */
+.search-messages-group {
+  padding: var(--space-1-5) var(--space-4) 2px;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: var(--z-base);
+}
+
+/* 单条搜索结果：角色徽章 + 内容片段 + 时间戳 */
+.search-messages-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  transition: background var(--transition-fast) ease;
+  border-left: 3px solid transparent;
+}
+
+.search-messages-item:hover {
+  background: var(--bg-hover);
+  border-left-color: var(--accent);
+}
+
+.search-messages-item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+/* 角色徽章：用户/助手 双色区分 */
+.search-messages-role {
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  font-weight: var(--weight-semibold);
+  font-size: var(--font-2xs);
+}
+
+.search-messages-role.user {
+  background: var(--accent-20);
+  color: var(--accent);
+}
+
+.search-messages-role.assistant {
+  background: var(--green-20);
+  color: var(--green);
+}
+
+.search-messages-time {
+  color: var(--muted);
+  font-family: var(--font-mono);
+}
+
+/* 内容片段：关键词高亮 */
+.search-messages-content {
+  font-size: var(--font-sm);
+  color: var(--text);
+  line-height: 1.4;
+  /* 限制最多 3 行，超出省略号 */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.search-messages-content mark {
+  background: var(--accent-20);
+  color: var(--accent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* 空状态：初始/无结果 */
+.search-messages-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
+/* 加载中状态 */
+.search-messages-loading {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
 /* 输入框 click 按下时无需缩放（避免文本抖动） */
 input:active,
 textarea:active,

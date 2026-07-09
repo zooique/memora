@@ -270,12 +270,21 @@
             </div>
           </div>
           <!-- 角色选择器已迁移到输入区发送按钮旁（input-persona-container） -->
-          <!-- 日期导航：有记录日期下拉列表，快速跳转（无记录日期不显示，避免困惑） -->
+          <!-- 对话内容搜索：跨所有会话按关键词定位历史消息 -->
+          <button id="btn-search-messages" class="search-messages-btn" title="搜索对话内容（Ctrl+Shift+F）" aria-label="搜索对话内容">
+            <svg class="icon"><use href="#icon-search"/></svg>
+          </button>
+          <!-- 日期导航：有记录日期下拉列表 + 快速回到今天 -->
           <div id="date-navigator" class="date-navigator">
             <button id="date-nav-btn" class="date-nav-btn" aria-haspopup="listbox" aria-expanded="false" title="跳转到有记录的日期">
               <svg class="icon"><use href="#icon-calendar"/></svg>
               <span id="date-nav-label">今天</span>
               <svg class="icon date-nav-chevron"><use href="#icon-chevron"/></svg>
+            </button>
+            <!-- 回到今天按钮：仅当查看非今天的日期时显示 -->
+            <button id="btn-back-to-today" class="back-to-today-btn hidden" title="回到今天的对话">
+              <svg class="icon"><use href="#icon-calendar"/></svg>
+              <span>今天</span>
             </button>
             <div id="date-nav-dropdown" class="date-nav-dropdown hidden" role="listbox" aria-label="有记录的日期">
               <div id="date-nav-list" class="date-nav-list"></div>
@@ -340,12 +349,9 @@
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
             <div class="input-actions-left">
-              <!-- 平铺工具按钮：添加记忆 + 分叉会话，直接可见方便点击 -->
+              <!-- 平铺工具按钮：添加记忆 -->
               <button class="input-action" id="btn-input-add-memory" title="添加记忆">
                 <svg class="icon"><use href="#icon-plus"/></svg>
-              </button>
-              <button class="input-action" id="btn-fork-session" title="新建会话">
-                <svg class="icon"><use href="#icon-branch"/></svg>
               </button>
             </div>
             <div class="input-send-area">
@@ -1612,6 +1618,26 @@
           <kbd class="command-palette-hint">Esc 关闭</kbd>
         </div>
         <div id="command-palette-results" class="command-palette-results"></div>
+      </div>
+    </div>
+
+    <!-- 对话内容搜索弹窗（Ctrl+Shift+F 触发，跨会话关键词检索） -->
+    <!-- 复用命令面板的居中浮层模式，但结构独立：搜索结果按日期分组，点击跳转到对应会话 -->
+    <div id="search-messages-modal" class="search-messages-modal hidden" role="dialog" aria-modal="true" aria-label="搜索对话内容">
+      <div class="search-messages-dialog">
+        <div class="search-messages-input-wrapper">
+          <svg class="icon search-messages-icon"><use href="#icon-search"/></svg>
+          <input
+            type="text"
+            id="search-messages-input"
+            class="search-messages-input"
+            placeholder="搜索对话内容..."
+            autocomplete="off"
+            aria-label="搜索关键词"
+          />
+          <kbd class="search-messages-hint">Esc 关闭</kbd>
+        </div>
+        <div id="search-messages-results" class="search-messages-results" role="listbox" aria-label="搜索结果"></div>
       </div>
     </div>
   </body>

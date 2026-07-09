@@ -217,6 +217,35 @@ export function registerSessionHandlers(ctx: IpcContext): void {
     }
   });
 
+  // 搜索对话内容（跨所有会话）
+  ipcMain.handle(IPC_CHANNELS.SESSION_SEARCH, async (_event, query: { keyword: string; limit?: number }) => {
+    try {
+      // 参数校验：query 必须是对象，keyword 必须是非空字符串
+      if (!query || typeof query !== 'object') {
+        return { results: [] };
+      }
+      if (typeof query.keyword !== 'string' || query.keyword.trim().length === 0) {
+        return { results: [] };
+      }
+      // 关键词长度限制（防止超长字符串拖慢 LIKE 查询）
+      const keyword = query.keyword.trim().slice(0, 200);
+      const limit = typeof query.limit === 'number' ? Math.min(query.limit, 100) : 50;
+      const rows = ctx.sessionStore.searchMessages(keyword, limit);
+      return {
+        results: rows.map((r) => ({
+          date: r.date,
+          session: r.session,
+          role: r.role,
+          content: r.content,
+          timestamp: r.timestamp,
+        })),
+      };
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '搜索对话内容失败' });
+      return { results: [] };
+    }
+  });
+
   // 会话分叉（从当前会话分叉出独立分支，保留全部历史消息）
   // 内核 Agent.forkSession() 已实现，发射 sessionForked 事件供 UI 响应
   ipcMain.handle(IPC_CHANNELS.SESSION_FORK, async (_event, targetSession?: string) => {

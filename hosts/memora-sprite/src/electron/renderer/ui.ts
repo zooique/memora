@@ -62,6 +62,8 @@ import { PanelErrorBannerManager } from './panels/panelErrorBannerManager.js';
 import { ClipboardManager } from './panels/clipboardManager.js';
 // 日期导航拆分为独立 Manager
 import { DateNavManager } from './panels/dateNavManager.js';
+// 对话内容搜索拆分为独立 Manager（跨会话关键词检索）
+import { SearchMessagesManager } from './panels/searchMessagesManager.js';
 // 技能拖入安装拆分为独立 Manager
 import { SkillDropManager } from './panels/skillDropManager.js';
 // 输入区域管理器拆分（输入框事件 + 发送按钮状态 + ResizeObserver）
@@ -227,6 +229,13 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   private dateNavManager: DateNavManager;
   /**
+   * 对话内容搜索管理器
+   *
+   * 统一管理"跨会话关键词检索"功能的 UI 联动。UIManager 仅保留薄委托。
+   * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
+   */
+  private searchMessagesManager: SearchMessagesManager;
+  /**
    * 技能拖入安装面板管理器
    *
    * 统一管理"技能文件拖入安装"功能的 UI 联动。UIManager 仅保留薄委托。
@@ -348,6 +357,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.clipboardManager = new ClipboardManager(this.toastManager, this.modalManager);
     // 日期导航管理器（自包含，无依赖，直接创建）
     this.dateNavManager = new DateNavManager();
+    // 对话内容搜索管理器（自包含，无依赖，直接创建）
+    this.searchMessagesManager = new SearchMessagesManager();
     // 技能拖入安装管理器（依赖注入 toastManager，与 UIManager 共享同一引用）
     this.skillDropManager = new SkillDropManager(this.toastManager);
     // 输入区域管理器（依赖注入 inputEl/btnSend + 独立 EventTracker + host 接口）
@@ -374,6 +385,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.initSpriteStatusBarClick();
     // 日期导航事件初始化（委托到 DateNavManager）
     this.dateNavManager.init();
+    // 对话内容搜索事件初始化（委托到 SearchMessagesManager）
+    this.searchMessagesManager.init();
     // 模态框监听器委托给 ModalManager（独立管理事件清理）
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
@@ -394,17 +407,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 导航事件、窗口控制按钮、全局键盘快捷键 → 委托到 PanelRouter.init()
     this.panelRouter.init();
 
-    // 输入区平铺工具按钮：添加记忆 + 分叉会话（直接可见，方便点击）
+    // 输入区平铺工具按钮：添加记忆
     const btnInputAddMemory = getOptionalElement('btn-input-add-memory', 'button');
     if (btnInputAddMemory) {
       this.events.addEventListener(btnInputAddMemory, 'click', () => {
         this.showModal('memory-add-modal');
-      });
-    }
-    const btnForkSession = getOptionalElement('btn-fork-session', 'button');
-    if (btnForkSession) {
-      this.events.addEventListener(btnForkSession, 'click', () => {
-        this.forkSessionCallback?.();
       });
     }
 
@@ -447,6 +454,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.clipboardManager.cleanup();
     // 清理日期导航管理器的事件监听器和回调
     this.dateNavManager.cleanup();
+    // 清理对话内容搜索管理器的事件监听器、防抖定时器和回调
+    this.searchMessagesManager.cleanup();
     // 清理技能拖入安装管理器的回调引用
     this.skillDropManager.cleanup();
     // 清理面板路由器的事件监听器
@@ -860,8 +869,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private stopMessageCallback: (() => void) | null = null;
   /** 面板切换回调（panel 为切换到的目标面板名） */
   private panelSwitchCallback: ((panel: string) => void) | null = null;
-  /** 会话分叉回调（用户点击分叉按钮时触发，由 renderer.ts 注册调用 sessionController.forkSession） */
-  private forkSessionCallback: (() => void) | null = null;
 
   /** 设置发送消息回调 */
   onSendMessage(callback: () => void): void {
@@ -878,19 +885,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.panelSwitchCallback = callback;
   }
 
-  /** 设置会话分叉回调（用户点击输入工具栏分叉按钮时触发） */
-  onForkSession(callback: () => void): void {
-    this.forkSessionCallback = callback;
-  }
-
   /** 获取面板切换回调（PanelRouterHost 接口） */
   getPanelSwitchCallback(): ((panel: string) => void) | null {
     return this.panelSwitchCallback;
-  }
-
-  /** 获取会话分叉回调（PanelRouterHost 接口） */
-  getForkSessionCallback(): (() => void) | null {
-    return this.forkSessionCallback;
   }
 
   // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitSendMessage() 调用）
@@ -1412,6 +1409,25 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   /** 注册日期删除回调（删除指定日期的对话记录） */
   onDateNavDelete(cb: (date: string) => void): void {
     this.dateNavManager.onDateNavDelete(cb);
+  }
+
+  /** 注册回到今天回调（切换到今天的会话） */
+  onBackToToday(cb: () => void): void {
+    this.dateNavManager.onBackToToday(cb);
+  }
+
+  // ─── 对话内容搜索（委托到 SearchMessagesManager） ───
+
+  /**
+   * 注册搜索结果点击回调
+   *
+   * 用户点击搜索结果项时触发，由 renderer.ts 注册跳转逻辑
+   * （切换到对应日期的会话并加载历史）。
+   *
+   * @param cb 回调函数（接收 date 和 session 参数）
+   */
+  onSearchResultClick(cb: (date: string, session: string) => void): void {
+    this.searchMessagesManager.onResultClick(cb);
   }
 
   /** 加载 Embedding 配置到表单（委托到 SettingsPanelManager） */

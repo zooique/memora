@@ -58,8 +58,6 @@ export interface PanelRouterHost {
   // 回调访问
   /** 获取面板切换回调 */
   getPanelSwitchCallback(): ((panel: string) => void) | null;
-  /** 获取会话分叉回调 */
-  getForkSessionCallback(): (() => void) | null;
 
   // 窗口控制
   /** 更新最大化按钮图标 */

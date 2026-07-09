@@ -36,6 +36,8 @@ export class DateNavManager {
   private currentDate = '';
   /** 日期删除回调（由 renderer.ts 注册，调用 sessionController.deleteSession） */
   private deleteCallback: ((date: string) => void) | null = null;
+  /** 回到今天回调（由 renderer.ts 注册，调用 sessionController 切换到今天的会话） */
+  private backToTodayCallback: (() => void) | null = null;
 
   /**
    * 初始化事件监听器
@@ -151,6 +153,14 @@ export class DateNavManager {
         }
       }
     });
+
+    // 回到今天按钮
+    const backToTodayBtn = document.getElementById('btn-back-to-today');
+    if (backToTodayBtn) {
+      this.events.addEventListener(backToTodayBtn, 'click', () => {
+        this.backToTodayCallback?.();
+      });
+    }
   }
 
   /**
@@ -328,11 +338,14 @@ export class DateNavManager {
   /**
    * 设置当前显示的日期
    *
+   * 同时控制"回到今天"按钮的显示：仅当当前日期不是今天时显示。
+   *
    * @param date 日期字符串（YYYY-MM-DD 格式），为空则清空
    */
   setCurrentDate(date: string): void {
     this.currentDate = date;
     this.updateButtonLabel();
+    this.updateBackToTodayVisibility();
   }
 
   /**
@@ -353,11 +366,37 @@ export class DateNavManager {
     this.deleteCallback = cb;
   }
 
+  /**
+   * 注册回到今天回调
+   *
+   * @param cb 回调（无参数，由 renderer.ts 注册调用 sessionController 切换到今天）
+   */
+  onBackToToday(cb: () => void): void {
+    this.backToTodayCallback = cb;
+  }
+
+  /**
+   * 更新"回到今天"按钮的可见性
+   *
+   * 仅当当前查看的日期不是今天时显示按钮。
+   */
+  private updateBackToTodayVisibility(): void {
+    const btn = document.getElementById('btn-back-to-today');
+    if (!btn) return;
+    const today = formatDateKey(new Date());
+    if (this.currentDate && this.currentDate !== today) {
+      btn.classList.remove('hidden');
+    } else {
+      btn.classList.add('hidden');
+    }
+  }
+
   /** 清理事件监听器 */
   cleanup(): void {
     this.events.cleanup();
     this.jumpCallback = null;
     this.deleteCallback = null;
+    this.backToTodayCallback = null;
     this.availableDates.clear();
     this.currentDate = '';
   }
