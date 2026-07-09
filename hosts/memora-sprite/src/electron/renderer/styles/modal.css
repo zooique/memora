@@ -79,6 +79,7 @@
 
 .prompt-input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-20);
 }
 
 /* 输入弹窗错误提示：红色文字，默认隐藏 */
@@ -404,8 +405,8 @@ kbd {
 }
 
 .modal-close {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   background: transparent;
   border: none;
   color: var(--text-3);
@@ -425,6 +426,10 @@ kbd {
 .modal-close:hover {
   background: var(--window-bg-2);
   color: var(--text);
+}
+
+.modal-close:active {
+  transform: scale(0.97);
 }
 
 /* 弹窗按钮键盘聚焦可见样式（统一 modal 内所有可交互元素） */
@@ -513,6 +518,15 @@ kbd {
   background: var(--accent-hover);
 }
 
+.btn-primary:active {
+  transform: scale(0.97);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-secondary {
   padding: var(--btn-padding-md);
   background: var(--window-bg);
@@ -523,6 +537,15 @@ kbd {
 .btn-secondary:hover {
   background: var(--window-bg-2);
   color: var(--text);
+}
+
+.btn-secondary:active {
+  transform: scale(0.97);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-sm {
@@ -538,6 +561,15 @@ kbd {
 
 .btn-danger:hover {
   opacity: 0.9;
+}
+
+.btn-danger:active {
+  transform: scale(0.97);
+}
+
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ─── 快捷键帮助表格 ──────────────────────────────────── */

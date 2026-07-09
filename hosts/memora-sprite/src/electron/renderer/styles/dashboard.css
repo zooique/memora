@@ -589,7 +589,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .affect-item .affect-fill {
   height: 100%;
   border-radius: 2px;
-  transition: width 0.3s ease, background 0.3s ease;
+  transition: width var(--transition-slow) ease, background var(--transition-slow) ease;
   background: var(--accent);
 }
 
@@ -656,7 +656,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   height: 100%;
   border-radius: 2px;
   background: var(--accent);
-  transition: width 0.3s ease;
+  transition: width var(--transition-slow) ease;
 }
 
 /* ─── 对话上下文 ──────────────────────────────────────── */
@@ -781,7 +781,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 
 .perception-pattern-suggestion {
   font-size: var(--font-2xs);
-  color: var(--subtext0);
+  color: var(--subtext);
   padding-left: var(--space-1-5);
 }
 
@@ -790,11 +790,11 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
   font-size: var(--font-2xs);
   color: var(--accent);
   background: transparent;
-  border: 1px solid var(--surface1);
+  border: 1px solid var(--surface2);
   border-radius: var(--radius-xs);
   padding: 2px 6px;
   cursor: pointer;
-  transition: background 0.2s ease;
+  transition: background var(--transition-base) ease;
 }
 
 .perception-pattern-related:hover {

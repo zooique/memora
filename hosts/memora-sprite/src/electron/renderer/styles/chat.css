@@ -222,7 +222,7 @@
 
 /* 折叠箭头：默认朝右（折叠状态），expanded 时朝下（展开状态） */
 .narrative-toggle {
-  transition: transform 0.2s ease;
+  transition: transform var(--transition-base) ease;
   transform: rotate(-90deg);
 }
 
@@ -247,7 +247,7 @@
   height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
-  transition: background 0.3s ease, box-shadow 0.3s ease;
+  transition: background var(--transition-slow) ease, box-shadow var(--transition-slow) ease;
 }
 
 /* 用户在场：绿色脉冲点 */
@@ -266,7 +266,7 @@
 
 .presence-text {
   color: var(--subtext);
-  transition: color 0.3s ease;
+  transition: color var(--transition-slow) ease;
   font-weight: var(--weight-medium);
 }
 
@@ -321,7 +321,7 @@
 }
 
 .rapport-fill {
-  transition: width 0.5s ease;
+  transition: width var(--transition-xl) ease;
 }
 
 /* 对话上下文单行内联（三指标用分隔符连接） */
@@ -457,7 +457,7 @@
   color: var(--accent);
   font-size: var(--font-2xs);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 .perception-pattern-related:hover {
   background: var(--accent-10);
@@ -648,7 +648,7 @@
   background: var(--window-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-float);
   z-index: 100;
   padding: 4px;
 }
@@ -1267,12 +1267,6 @@
   animation: slideInLeft var(--transition-base) ease-out;
 }
 
-/* 用户消息从右滑入动画 */
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(20px); }
-  to   { opacity: 1; transform: translateX(0); }
-}
-
 /* 精灵消息从左滑入动画 */
 @keyframes slideInLeft {
   from { opacity: 0; transform: translateX(-20px); }
@@ -1373,7 +1367,7 @@
 }
 
 .message.user:hover .message-bubble {
-  box-shadow: 0 2px 8px rgba(0, 102, 255, 0.15);
+  box-shadow: var(--shadow-accent);
 }
 
 .message.assistant .message-bubble {
@@ -1483,7 +1477,7 @@
   color: var(--text-3);
   cursor: pointer;
   opacity: 0.7;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
 .message-archive-btn .icon {
@@ -1745,7 +1739,7 @@
   height: 100%;
   background: var(--accent);
   border-radius: 2px;
-  transition: width 0.3s ease, background 0.3s ease;
+  transition: width var(--transition-slow) ease, background var(--transition-slow) ease;
 }
 /* 用量分级颜色：正常(0-70%)/警告(70-90%)/危险(90-100%) */
 .token-usage-fill.level-warning {
@@ -2020,6 +2014,10 @@
 
 #btn-send:hover {
   background: var(--accent-hover);
+}
+
+#btn-send:active:not(:disabled):not(.empty) {
+  transform: scale(0.94);
 }
 
 #btn-send:disabled,
@@ -2816,7 +2814,7 @@
   color: var(--text-secondary);
   font-size: var(--font-md-2);
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: background var(--transition-base) ease, border-color var(--transition-base) ease, color var(--transition-base) ease;
   text-align: center;
 }
 
@@ -2861,12 +2859,16 @@
   color: var(--text);
   font-size: var(--font-sm);
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background var(--transition-fast) ease;
   text-align: left;
 }
 
 .context-menu-item:hover {
   background: var(--surface2);
+}
+
+.context-menu-item:active:not([aria-disabled="true"]) {
+  background: var(--surface1);
 }
 
 .context-menu-item .icon {

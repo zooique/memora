@@ -83,6 +83,8 @@
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
+  /* 大型浮层阴影（context-menu / 右键菜单等，比 float 更强层次感） */
+  --shadow-lg:        0 8px 24px rgba(0, 0, 0, 0.1);
   /* 小型元素阴影令牌（nav-btn active / suggestion-card 等），深色主题下加重以保证可见性 */
   --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.04);
   /* emoji 文字阴影令牌（brand-grad 背景上 emoji 可读性），深色主题下加重 */
@@ -92,6 +94,7 @@
   --transition-fast: 0.12s;  /* 微交互（hover/active/按钮） */
   --transition-base: 0.2s;   /* 标准过渡（动画/滑入/淡入） */
   --transition-slow: 0.3s;   /* 大型过渡（面板展开/脉冲） */
+  --transition-xl:   0.5s;   /* 超长过渡（进度条填充/宽度变化） */
 
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.25);
@@ -103,6 +106,8 @@
 
   /* 主题色透明度（用于标签背景、badge 等；浅色主题下降低透明度避免过艳） */
   --accent-20: rgba(0, 102, 255, 0.1);
+  /* 强调色 hover 背景（比 --accent-20 略深，用于 recall-header 等 hover 状态） */
+  --accent-soft-hover: rgba(0, 102, 255, 0.12);
   --green-20:  rgba(52, 199, 89, 0.1);
   --pink-20:   rgba(245, 194, 231, 0.2);
   --yellow-20: rgba(255, 159, 10, 0.1);
@@ -227,6 +232,7 @@
   /* 语义色 5% 透明度（与 --accent-10 命名一致，用于 hover 背景） */
   --green-10: rgba(52, 199, 89, 0.05);
   --red-10:   rgba(255, 59, 48, 0.05);
+  --yellow-10: rgba(255, 159, 10, 0.05);  /* 警告态 hover 背景（对齐 --green-10/--red-10 透明度） */
 
   /* 错误态背景别名（= --red-10，语义化命名供 onboarding-error 等使用） */
   --error-10: var(--red-10);
@@ -316,6 +322,8 @@
   --shadow-accent:    0 2px 8px rgba(137, 180, 250, 0.3);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(137, 180, 250, 0.3);
+  /* 大型浮层阴影（深色主题加重以保证层次感可见性） */
+  --shadow-lg:        0 8px 24px rgba(0, 0, 0, 0.5);
   /* 小型元素阴影令牌（深色主题加重以保证可见性） */
   --shadow-sm:        0 1px 3px rgba(0, 0, 0, 0.3);
   /* emoji 文字阴影令牌（深色主题加重以保证可读性） */
@@ -325,6 +333,7 @@
   --transition-fast: 0.12s;
   --transition-base: 0.2s;
   --transition-slow: 0.3s;
+  --transition-xl:   0.5s;
 
   /* 字体遮罩 */
   --modal-backdrop: rgba(0, 0, 0, 0.6);
@@ -336,6 +345,8 @@
 
   /* 主题色透明度 */
   --accent-20: rgba(137, 180, 250, 0.2);
+  /* 强调色 hover 背景（深色主题比 --accent-20 略深） */
+  --accent-soft-hover: rgba(137, 180, 250, 0.25);
   --green-20:  rgba(166, 227, 161, 0.2);
   --pink-20:   rgba(245, 194, 231, 0.2);
   --yellow-20: rgba(249, 226, 175, 0.2);
@@ -420,6 +431,7 @@
   /* 语义色 5% 透明度：深色主题下提高到 8% 保证可见性（与 --accent-10 深色一致） */
   --green-10: rgba(166, 227, 161, 0.08);
   --red-10:   rgba(243, 139, 168, 0.08);
+  --yellow-10: rgba(249, 226, 175, 0.08);  /* 警告态 hover 背景（深色主题提高到 8% 保证可见性） */
 
   /* 以下变量深色主题无需覆盖，复用浅色定义：
      --gap-compact / --error-10（别名）/ --input-bg（复用 --window-bg，深色已覆盖）
@@ -599,7 +611,7 @@ button:active,
   /* 半透明遮罩层 */
   background: var(--palette-backdrop);
   backdrop-filter: blur(4px);
-  animation: palette-fade-in 0.15s ease;
+  animation: palette-fade-in var(--transition-fast) ease;
 }
 
 .command-palette.hidden {
@@ -622,7 +634,7 @@ button:active,
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  animation: palette-slide-in 0.15s ease;
+  animation: palette-slide-in var(--transition-fast) ease;
 }
 
 @keyframes palette-slide-in {
@@ -708,7 +720,7 @@ button:active,
   justify-content: space-between;
   padding: var(--space-2) var(--space-4);
   cursor: pointer;
-  transition: background 0.1s ease;
+  transition: background var(--transition-fast) ease;
   border-left: 3px solid transparent;
 }
 
@@ -780,7 +792,7 @@ select:active {
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), transform 0.08s ease;
+  transition: background var(--transition-fast), color var(--transition-fast), transform var(--transition-fast) ease;
   flex-shrink: 0;
 }
 

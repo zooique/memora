@@ -125,9 +125,17 @@
   background: var(--surface1);
 }
 
+#titlebar-controls button:active {
+  background: var(--surface2);
+}
+
 #titlebar-controls #btn-close:hover {
   background: var(--red);
   color: var(--text-on-red);
+}
+
+#titlebar-controls #btn-close:active {
+  background: var(--red-20);
 }
 
 /* ─── 侧边栏（与顶部栏同色，无边界；默认 64px 图标模式） ─── */
@@ -535,7 +543,7 @@
   height: 100%;
   border-radius: var(--radius-xs);
   /* 色调渐变：低→蓝色 中→绿色 高→橙色（由 JS 动态设置 background） */
-  transition: width 0.5s ease, background 0.5s ease;
+  transition: width var(--transition-xl) ease, background var(--transition-xl) ease;
 }
 
 .affect-level {
@@ -556,7 +564,7 @@
   color: var(--white);
   background: var(--muted);
   margin-bottom: 6px;
-  transition: background 0.5s ease;
+  transition: background var(--transition-xl) ease;
 }
 
 /* 默契度等级徽章颜色（使用语义色变量，适配双主题） */
@@ -570,7 +578,7 @@
   color: var(--muted);
   font-size: var(--font-2xs);
   line-height: 1.4;
-  transition: color 0.3s ease;
+  transition: color var(--transition-slow) ease;
 }
 
 /* ─── Phase 4：对话上下文展示（紧凑内联，类名已移至 chat.css） ──── */
@@ -584,7 +592,7 @@
   font-size: var(--font-sm);
   font-weight: var(--weight-semibold);
   color: var(--text);
-  transition: color 0.3s ease;
+  transition: color var(--transition-slow) ease;
 }
 
 /* ─── 模式洞察列表 ───────────────────────────── */
@@ -797,7 +805,7 @@
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--transition-base) ease;
 }
 
 .panel.active {

@@ -256,6 +256,7 @@
 
 .input-with-action input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-20);
 }
 
 /* 显示/隐藏切换按钮：绝对定位在输入框右侧 */
@@ -276,6 +277,15 @@
 
 .toggle-visibility:hover {
   background: var(--window-bg-2);
+}
+
+.toggle-visibility:active {
+  transform: translateY(-50%) scale(0.92);
+}
+
+.toggle-visibility:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* API Key 可见时图标高亮（替代内联 style="color:var(--accent)"，CSP style-src 'self' 兼容） */
@@ -765,7 +775,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface1);
-  transition: border-color 0.15s;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 /* 当前激活的 Provider 高亮 */
@@ -822,11 +832,20 @@
   background: var(--surface2);
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--transition-fast);
 }
 
 .provider-btn:hover {
   background: var(--hover);
+}
+
+.provider-btn:active {
+  transform: scale(0.97);
+}
+
+.provider-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* 删除按钮特殊样式 */

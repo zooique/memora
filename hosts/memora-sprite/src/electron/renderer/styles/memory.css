@@ -65,6 +65,15 @@
   background: var(--accent-hover);
 }
 
+#btn-add-memory:active {
+  transform: scale(0.97);
+}
+
+#btn-add-memory:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 #memory-list {
   flex: 1;
   overflow-y: auto;
@@ -680,6 +689,10 @@
   background: var(--surface0);
 }
 
+.view-switch-btn:active {
+  background: var(--surface1);
+}
+
 /* 视图切换按钮键盘聚焦可见样式 */
 .view-switch-btn:focus-visible {
   outline: 2px solid var(--accent);
@@ -863,7 +876,7 @@
   z-index: 20;
   border: 1px solid var(--graph-overlay-border);
   box-shadow: var(--graph-overlay-shadow);
-  transition: opacity 0.15s ease;
+  transition: opacity var(--transition-fast) ease;
 }
 
 .graph-tooltip.hidden {
@@ -1697,11 +1710,16 @@
 .memory-item .meta .source-tag {
   transition: transform var(--transition-fast), filter var(--transition-fast);
   cursor: pointer;
+  transform-origin: center;
 }
 
 .memory-item .meta .source-tag:hover {
   transform: scale(1.05);
   filter: brightness(1.1);
+}
+
+.memory-item .meta .source-tag:active {
+  transform: scale(0.95);
 }
 
 /* prefers-reduced-motion：禁用新增动画 */
@@ -1754,7 +1772,7 @@
   width: 100%;
   height: 100%;
   border-radius: var(--radius-xs);
-  transition: width 0.5s ease;
+  transition: width var(--transition-xl) ease;
   background: var(--accent);
 }
 
@@ -1841,6 +1859,10 @@
   cursor: not-allowed;
 }
 
+.health-action-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 /* B3: .confirm-dialog 外壳样式已迁移至通用 .modal 类（modal.css） */
 /* 保留 .confirm-dialog-content/title/actions 子元素样式（confirm 弹窗特有布局） */
 
@@ -1851,7 +1873,7 @@
   padding: 20px;
   min-width: 320px;
   max-width: 420px;
-  animation: modalScaleIn 0.15s ease;
+  animation: modalScaleIn var(--transition-fast) ease;
 }
 
 .confirm-dialog-title {
