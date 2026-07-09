@@ -120,13 +120,16 @@ describe('load · 成功与失败', () => {
     expect(document.querySelector('.work-projection-empty-hint')!.textContent).toContain('精灵');
   });
 
-  it('失败时应显示错误提示', async () => {
+  it('失败时应显示错误提示（体系 B：.error-state 四件套）', async () => {
     window.electronAPI.listWorkProjections = vi.fn().mockRejectedValue(new Error('网络错误'));
     const manager = createManager();
     await manager.load();
-    const errorEl = document.querySelector('.work-projection-error');
+    // P2-2：错误态对齐体系 B（.error-state + .error-icon + .error-message + .error-retry-btn）
+    const errorEl = document.querySelector('.error-state');
     expect(errorEl).not.toBeNull();
-    expect(errorEl!.textContent).toContain('加载失败');
+    expect(errorEl!.querySelector('.error-message')?.textContent).toContain('加载作品投影失败');
+    // 重试按钮存在
+    expect(errorEl!.querySelector('.error-retry-btn')).not.toBeNull();
   });
 
   it('listEl 缺失时 load 不应抛错', async () => {

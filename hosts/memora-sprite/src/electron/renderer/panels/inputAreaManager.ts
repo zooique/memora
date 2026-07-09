@@ -34,6 +34,8 @@ export interface InputAreaHost {
   emitSendMessage(): void;
   /** 触发停止流式输出（由输入框 Enter 触发） */
   emitStopMessage(): void;
+  /** 跳转到设置面板（Provider 未配置时由选择器空状态提示项触发） */
+  switchToSettings(): void;
 }
 
 /** 输入内容最大长度（超出部分截断，防止超长输入撑爆 LLM 上下文） */
@@ -282,6 +284,7 @@ export class InputAreaManager {
     // 避免每次 loadProviderSelector 重建 DOM 时重复绑定事件监听器
     this.events.addEventListener(this.providerDropdown, 'click', async (e) => {
       const target = e.target as HTMLElement;
+      // Provider 项：切换激活
       const item = target.closest<HTMLElement>('.dropdown-item[data-provider-key]');
       if (item) {
         const key = item.dataset.providerKey;
@@ -290,6 +293,13 @@ export class InputAreaManager {
           this.providerDropdown!.classList.add('hidden');
           await this.loadProviderSelector();
         }
+        return;
+      }
+      // 空状态提示项：跳转到设置面板（data-action="goto-settings"）
+      const hint = target.closest<HTMLElement>('[data-action="goto-settings"]');
+      if (hint) {
+        this.providerDropdown!.classList.add('hidden');
+        this.host.switchToSettings();
       }
     });
 
@@ -360,7 +370,9 @@ export class InputAreaManager {
       if (providers.length === 0) {
         this.providerNameEl.textContent = '未配置';
         this.providerSelector?.classList.remove('configured');
-        this.providerDropdown.innerHTML = '<div class="dropdown-item dropdown-item-hint">请在设置中添加 API</div>';
+        // 空状态提示项使用 <button> 元素：原生支持 Enter/Space 触发 click，键盘可访问
+        // 点击后跳转到设置面板，让用户快速到达 LLM 配置入口（符合"主动可见"原则）
+        this.providerDropdown.innerHTML = '<button type="button" class="dropdown-item dropdown-item-hint" data-action="goto-settings">请在设置中添加 API</button>';
         return;
       }
 

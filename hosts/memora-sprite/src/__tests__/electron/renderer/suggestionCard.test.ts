@@ -64,12 +64,6 @@ function createManager(opts?: { init?: boolean; dom?: 'full' | 'empty' | 'proact
   return { manager, container };
 }
 
-/** 派发 animationend 事件（JSDOM 不触发真实动画） */
-function dispatchAnimationEnd(card: HTMLElement): void {
-  const event = new Event('animationend', { bubbles: true });
-  card.dispatchEvent(event);
-}
-
 // ─── 全局设置 ─────────────────────────────────────────────
 
 beforeEach(() => {
@@ -239,16 +233,6 @@ describe('createCardElement · 置信度与内容', () => {
 });
 
 describe('createCardElement · 按钮', () => {
-  it('应创建关闭按钮（SVG 图标）', () => {
-    const { manager } = createManager({ dom: 'empty' });
-    manager.showSuggestion(createSuggestion());
-    const closeBtn = document.querySelector('.suggestion-card-close') as HTMLButtonElement;
-    expect(closeBtn).not.toBeNull();
-    // 关闭按钮已从 emoji ✕ 改为 SVG 图标
-    expect(closeBtn.innerHTML).toContain('icon-close');
-    expect(closeBtn.title).toBe('关闭');
-  });
-
   it('应创建接受和拒绝按钮', () => {
     const { manager } = createManager({ dom: 'empty' });
     manager.showSuggestion(createSuggestion());
@@ -259,24 +243,18 @@ describe('createCardElement · 按钮', () => {
     expect(rejectBtn).not.toBeNull();
     expect(rejectBtn.textContent).toBe('拒绝');
   });
+
+  it('不应创建关闭按钮（建议必须经接受/拒绝明确处置）', () => {
+    const { manager } = createManager({ dom: 'empty' });
+    manager.showSuggestion(createSuggestion());
+    // X 关闭按钮已移除：避免用户随手关闭导致建议悬而未决
+    expect(document.querySelector('.suggestion-card-close')).toBeNull();
+  });
 });
 
 // ─── 接受流程 ────────────────────────────────────────────
 
 describe('接受流程', () => {
-  it('click 关闭按钮应移除卡片（淡出动画）', () => {
-    const { manager } = createManager({ dom: 'empty' });
-    manager.showSuggestion(createSuggestion());
-    const card = document.querySelector('.suggestion-card') as HTMLElement;
-    const closeBtn = document.querySelector('.suggestion-card-close') as HTMLButtonElement;
-    closeBtn.click();
-    // 应添加淡出类
-    expect(card.classList.contains('suggestion-card-leave')).toBe(true);
-    // 触发 animationend 完成移除
-    dispatchAnimationEnd(card);
-    expect(document.querySelectorAll('.suggestion-card').length).toBe(0);
-  });
-
   it('click 接受按钮成功应移除卡片', async () => {
     const { manager } = createManager({ dom: 'empty' });
     const suggestion = createSuggestion();
@@ -327,6 +305,24 @@ describe('接受流程', () => {
     await Promise.resolve();
     expect(acceptBtn.disabled).toBe(false);
     expect(acceptBtn.textContent).toBe('接受');
+  });
+
+  it('接受失败应通过注入的 showToast 给用户可见反馈', async () => {
+    // 注入 showToast spy，验证操作失败时弹 toast 提示
+    const showToast = vi.fn();
+    document.body.innerHTML = '';
+    const manager = new SuggestionCardManager();
+    manager.init(showToast);
+    manager.showSuggestion(createSuggestion());
+    window.electronAPI.acceptSuggestion = vi.fn().mockResolvedValue({
+      success: false,
+      error: '配置写入失败',
+    });
+    const acceptBtn = document.querySelector('.suggestion-card-btn.accept') as HTMLButtonElement;
+    acceptBtn.click();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(showToast).toHaveBeenCalledWith('接受建议失败，请稍后重试', 'error');
   });
 });
 

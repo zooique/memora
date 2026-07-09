@@ -20,6 +20,12 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement, formatClock, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+import type { ConfirmDialogOptions } from '../types.js';
+
+/**
+ * 确认对话框函数类型（由 UIManager 注入，用于清空审计日志前的二次确认）
+ */
+type ConfirmDialogFn = (options: ConfirmDialogOptions) => Promise<boolean>;
 
 /**
  * 审计日志面板管理器
@@ -40,6 +46,8 @@ export class AuditPanelManager {
   private clearBtn: HTMLButtonElement | null = null;
   /** 是否已初始化（避免重复绑定事件） */
   private initialized = false;
+  /** 确认对话框函数（由 UIManager 注入，用于清空操作的二次确认） */
+  private confirmDialog: ConfirmDialogFn | null = null;
 
   /** 审计加载条目数上限（与原 ipcListeners 实现一致） */
   private static readonly LOAD_LIMIT = 50;
@@ -49,10 +57,13 @@ export class AuditPanelManager {
    *
    * 获取 DOM 元素引用并绑定刷新/清空按钮事件。
    * 在 UIManager 构造时调用。
+   *
+   * @param confirmDialog 确认对话框函数（可选，注入后清空操作前弹二次确认）
    */
-  init(): void {
+  init(confirmDialog?: ConfirmDialogFn): void {
     if (this.initialized) return;
     this.initialized = true;
+    this.confirmDialog = confirmDialog ?? null;
 
     // 获取 DOM 元素引用（均为可选，缺失时静默降级）
     this.listEl = document.getElementById('audit-list');
@@ -72,30 +83,28 @@ export class AuditPanelManager {
       });
     }
 
-    // 绑定清空按钮事件（带 loading 反馈，避免清空操作期间用户重复点击）
+    // 绑定清空按钮事件（带 loading 反馈 + 二次确认，避免误触批量清空审计记录）
     if (this.clearBtn) {
       this.events.addEventListener(this.clearBtn, 'click', async () => {
+        // 二次确认：清空审计日志属不可逆操作，需用户明确确认
+        if (this.confirmDialog) {
+          const confirmed = await this.confirmDialog({
+            title: '清空审计日志',
+            message: '将清空全部审计记录，此操作不可撤销。确认清空？',
+            confirmText: '清空',
+            cancelText: '取消',
+            danger: true,
+          });
+          if (!confirmed) return;
+        }
         setButtonLoadingEl(this.clearBtn!, true, '清空中...');
         try {
           await window.electronAPI.clearAuditLog();
           await this.load();
         } catch (error) {
           reportError('clearAuditLog', error);
-          // 清空失败时通过 .error-state 显示错误（与 renderError 一致）
-          if (this.listEl) {
-            clearElement(this.listEl);
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'error-state';
-            const icon = document.createElement('div');
-            icon.className = 'error-icon';
-            icon.textContent = '⚠';
-            const msg = document.createElement('div');
-            msg.className = 'error-message';
-            msg.textContent = '清空审计日志失败';
-            errorDiv.appendChild(icon);
-            errorDiv.appendChild(msg);
-            this.listEl.appendChild(errorDiv);
-          }
+          // 复用 renderError 统一错误态结构（图标 + 文字 + 重试按钮）
+          this.renderError('清空审计日志失败');
         } finally {
           setButtonLoadingEl(this.clearBtn!, false);
         }
@@ -186,12 +195,14 @@ export class AuditPanelManager {
   /**
    * 渲染错误状态
    *
+   * 统一用 .error-state 结构（图标 + 文字 + 重试按钮），对齐 profilePanelManager。
+   * 重试按钮触发重新加载（load 失败和 clearAuditLog 失败后的恢复操作均为重新加载列表）。
+   *
    * @param message 错误消息
    */
   private renderError(message: string): void {
     if (!this.listEl) return;
     clearElement(this.listEl);
-    // 统一用 .error-state 结构（图标 + 文字），替代 .profile-empty
     const errorDiv = document.createElement('div');
     errorDiv.className = 'error-state';
     const icon = document.createElement('div');
@@ -200,8 +211,14 @@ export class AuditPanelManager {
     const msg = document.createElement('div');
     msg.className = 'error-message';
     msg.textContent = message;
+    // 重试按钮：内嵌在错误态内，便于用户发现恢复入口
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'btn-secondary error-retry-btn';
+    retryBtn.textContent = '重试';
+    this.events.addEventListener(retryBtn, 'click', () => this.load());
     errorDiv.appendChild(icon);
     errorDiv.appendChild(msg);
+    errorDiv.appendChild(retryBtn);
     this.listEl.appendChild(errorDiv);
   }
 

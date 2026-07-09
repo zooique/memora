@@ -38,7 +38,7 @@ import {
 // 归档按钮逻辑（manual 模式专用）提取到独立 Manager
 import { ArchiveButtonManager } from './archiveButtonManager.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
-import type { Message, ToastType } from '../types.js';
+import type { ConfirmDialogOptions, Message, ToastType } from '../types.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -109,6 +109,13 @@ export interface ChatPanelHost {
    * @param userMessage 对应用户消息内容（从 DOM 中提取，用于重新发送）
    */
   regenerateLastMessage(userMessage: string): void;
+  /**
+   * 显示确认对话框（用于"忘记"等需二次确认的操作）
+   *
+   * @param options 确认弹窗选项（标题/消息/按钮文案/danger 标记）
+   * @returns 用户是否点击确认
+   */
+  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
 }
 
 // ─── 聊天面板管理器类 ─────────────────────────────────────
@@ -264,6 +271,14 @@ export class ChatPanelManager {
           },
           () => this.host.showToast('复制失败，请手动选择代码复制', 'error'),
         );
+        return;
+      }
+      // 截断提示关闭按钮：data-action="dismiss-truncation"
+      // 用户已知晓截断后可主动关闭，关闭后本轮不再恢复（避免反复打扰）
+      const dismissTruncation = target.closest<HTMLElement>('[data-action="dismiss-truncation"]');
+      if (dismissTruncation) {
+        const notice = dismissTruncation.closest<HTMLElement>('.truncation-notice');
+        notice?.remove();
         return;
       }
       // 召回记忆折叠按钮：data-action="toggle-recall"
@@ -441,7 +456,8 @@ export class ChatPanelManager {
         if (messageId) {
           const messageEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
           if (messageEl) {
-            this._handleForget(messageId, messageEl);
+            // fire-and-forget：_handleForget 内部弹确认弹窗，无需等待
+            void this._handleForget(messageId, messageEl);
           }
         }
         break;
@@ -1064,13 +1080,26 @@ export class ChatPanelManager {
    * 注意：这是 UI 层的软删除，刷新或重启后消息会重新出现，
    * 符合"忘记"的语义——暂时从视野中移除，而非永久删除。
    *
+   * 操作前弹二次确认弹窗，避免误触；toast 文案明确告知"刷新后可恢复"，
+   * 消除用户对数据丢失的焦虑。
+   *
    * 如果右键的是精灵消息：删除精灵消息 + 上一条用户消息
    * 如果右键的是用户消息：删除用户消息 + 下一条精灵消息
    *
    * @param messageId 消息 ID（当前未使用，未来持久化时使用）
    * @param messageEl 被右键点击的消息 DOM 元素
    */
-  private _handleForget(_messageId: string, messageEl: HTMLElement): void {
+  private async _handleForget(_messageId: string, messageEl: HTMLElement): Promise<void> {
+    // 二次确认：避免误触移除消息对（虽是软删除，但会同时移除用户输入+精灵回复）
+    const confirmed = await this.host.showConfirmDialog({
+      title: '忘记此条对话',
+      message: '将这条对话（你的消息和精灵的回复）从当前视野中移除，刷新后可恢复。',
+      confirmText: '忘记',
+      cancelText: '取消',
+      danger: true,
+    });
+    if (!confirmed) return;
+
     const isUser = messageEl.classList.contains('user');
     const isAssistant = messageEl.classList.contains('assistant');
 
@@ -1090,7 +1119,7 @@ export class ChatPanelManager {
       messageEl.remove();
     }
 
-    this.host.showToast('已从对话中移除', 'success', TOAST_SHORT_MS);
+    this.host.showToast('已从本次对话移除，刷新后可恢复', 'success', TOAST_SHORT_MS);
   }
 
   /**

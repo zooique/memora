@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 主动提示横幅测试
  *
  * @vitest-environment jsdom
@@ -18,13 +18,12 @@ import { ProactiveBanner } from '../../../electron/renderer/components/proactive
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
-/** 创建完整的 banner DOM 结构（含 4 个操作按钮 + 关闭按钮） */
+/** 创建完整的 banner DOM 结构（含 3 个操作按钮 + 关闭按钮） */
 function setupBannerDom(): void {
   document.body.innerHTML = `
     <div id="proactive-banner" class="hidden">
       <span id="proactive-banner-text"></span>
       <button class="banner-btn" data-action="view">查看</button>
-      <button class="banner-btn" data-action="later">稍后</button>
       <button class="banner-btn" data-action="silent">静默 1 小时</button>
       <button class="banner-btn" data-action="disable">不再提醒</button>
       <button class="banner-close">✕</button>
@@ -161,17 +160,6 @@ describe('ProactiveBanner', () => {
       expect(document.getElementById('proactive-banner')!.classList.contains('hidden')).toBe(true);
     });
 
-    it('点击 later 按钮应触发 onLater 回调 + 隐藏 banner', () => {
-      setupBannerDom();
-      const { handlers } = createManager();
-      document.getElementById('proactive-banner')!.classList.remove('hidden');
-
-      clickActionBtn('later');
-
-      expect(handlers.onLater).toHaveBeenCalledTimes(1);
-      expect(document.getElementById('proactive-banner')!.classList.contains('hidden')).toBe(true);
-    });
-
     it('点击 silent 按钮应触发 onSilent 回调 + 隐藏 banner', () => {
       setupBannerDom();
       const { handlers } = createManager();
@@ -209,7 +197,7 @@ describe('ProactiveBanner', () => {
       expect(document.getElementById('proactive-banner')!.classList.contains('hidden')).toBe(true);
     });
 
-    it('点击关闭按钮应隐藏 banner（不触发任何回调）', () => {
+    it('点击关闭按钮应触发 onLater 回调（承担"稍后"语义）+ 隐藏 banner', () => {
       setupBannerDom();
       const { handlers } = createManager();
       document.getElementById('proactive-banner')!.classList.remove('hidden');
@@ -217,9 +205,10 @@ describe('ProactiveBanner', () => {
       clickCloseBtn();
 
       expect(document.getElementById('proactive-banner')!.classList.contains('hidden')).toBe(true);
-      // 四个回调都不应被触发
+      // 关闭按钮承担原"稍后"语义：触发 onLater（记录拒绝，自适应冷却）
+      expect(handlers.onLater).toHaveBeenCalledTimes(1);
+      // 其他回调不应被触发
       expect(handlers.onView).not.toHaveBeenCalled();
-      expect(handlers.onLater).not.toHaveBeenCalled();
       expect(handlers.onSilent).not.toHaveBeenCalled();
       expect(handlers.onDisable).not.toHaveBeenCalled();
     });
@@ -270,7 +259,6 @@ describe('ProactiveBanner', () => {
 
       // 清理后点击按钮不应触发回调
       clickActionBtn('view');
-      clickActionBtn('later');
       clickActionBtn('silent');
       clickActionBtn('disable');
       clickCloseBtn();

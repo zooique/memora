@@ -360,8 +360,17 @@ async function bootstrapRenderer(): Promise<void> {
       // 设置本地定时器：1 小时后自动关闭静默模式（复用 wrappedSchedule 统一逻辑）
       wrappedSchedule(SILENT_RECOVERY_MS);
     },
-    // 不再提醒：进入静默模式并提示用户去设置调整阈值
-    onDisable: () => {
+    // 不再提醒：进入静默模式并提示用户去设置调整阈值（二次确认，避免误触永久静默）
+    onDisable: async () => {
+      // 二次确认：此操作 24 小时内不再提醒，需手动去设置恢复，属较重操作
+      const confirmed = await State.uiManager.showConfirmDialog({
+        title: '关闭主动提示',
+        message: '关闭后精灵 24 小时内不再主动提示。如需恢复，请到设置面板调整主动提示阈值。确认关闭？',
+        confirmText: '关闭提示',
+        cancelText: '取消',
+        danger: true,
+      });
+      if (!confirmed) return;
       // 用户点击"不再提醒"→ 记录拒绝事件
       window.electronAPI.proactiveReject();
       void window.electronAPI.updateConfig('silentMode', true);
@@ -620,6 +629,12 @@ function setupBusinessLogic(
     // 流式防护：流式输出中点击示例问题等同于重复发送，应阻止
     if (State.uiManager.isStreaming()) {
       State.uiManager.showToast('精灵正在回复中，请等待回复完成或点击停止', 'warning');
+      return;
+    }
+    // Agent 就绪守卫：与 emitSendMessage 一致，避免示例问题绕过校验导致消息残留 + 错误
+    if (!State.uiManager.isAgentReady()) {
+      State.uiManager.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
+      void State.uiManager.switchPanel('settings');
       return;
     }
     // 存储最后用户输入，用于流式错误重试

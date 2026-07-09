@@ -115,9 +115,9 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '记忆',
       action: () => {
         void uiManager.switchPanel('memories');
-        // 展开健康度面板
-        const healthBar = document.getElementById('memory-health-bar');
-        if (healthBar) healthBar.classList.toggle('hidden');
+        // 点击更多菜单中的"健康度诊断"项（与用户手动点击路径一致）
+        const healthItem = document.querySelector('.more-menu-item[data-action="health"]') as HTMLElement | null;
+        healthItem?.click();
       },
     },
     {

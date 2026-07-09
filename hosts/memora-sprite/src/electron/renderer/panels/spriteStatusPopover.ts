@@ -50,10 +50,14 @@ export class SpriteStatusPopover {
     this.popoverEl = document.getElementById('sprite-status-popover')!;
     this.statusBarEl = document.getElementById('sprite-status-bar')!;
 
-    // 绑定 hover 事件到状态条
+    // 绑定 hover 事件到状态条（鼠标用户）
     if (this.statusBarEl) {
       this.statusBarEl.addEventListener('mouseenter', this.handleStatusBarEnter);
       this.statusBarEl.addEventListener('mouseleave', this.handleStatusBarLeave);
+      // 绑定 focus/blur 事件到状态条（键盘用户，tabindex="0" 使状态条可聚焦）
+      // 键盘焦点是明确意图，无需 hover 的防闪烁延迟，立即显示/隐藏
+      this.statusBarEl.addEventListener('focus', this.handleStatusBarFocus);
+      this.statusBarEl.addEventListener('blur', this.handleStatusBarBlur);
     }
 
     // 绑定 hover 事件到 popover 自身（允许用户从状态条移入 popover）
@@ -70,6 +74,8 @@ export class SpriteStatusPopover {
     if (this.statusBarEl) {
       this.statusBarEl.removeEventListener('mouseenter', this.handleStatusBarEnter);
       this.statusBarEl.removeEventListener('mouseleave', this.handleStatusBarLeave);
+      this.statusBarEl.removeEventListener('focus', this.handleStatusBarFocus);
+      this.statusBarEl.removeEventListener('blur', this.handleStatusBarBlur);
     }
     if (this.popoverEl) {
       this.popoverEl.removeEventListener('mouseenter', this.handlePopoverEnter);
@@ -133,6 +139,34 @@ export class SpriteStatusPopover {
 
   /** popover 自身 hover 离开：隐藏 */
   private handlePopoverLeave = (): void => {
+    this.hide();
+  };
+
+  // ─── focus/blur 事件处理（键盘用户，立即响应无延迟） ───
+
+  /** 状态条获得焦点（键盘 Tab）：立即显示 popover，取消 pending 的 hover 定时器 */
+  private handleStatusBarFocus = (): void => {
+    if (this.hoverTimer !== null) {
+      window.clearTimeout(this.hoverTimer);
+      this.hoverTimer = null;
+    }
+    if (this.leaveTimer !== null) {
+      window.clearTimeout(this.leaveTimer);
+      this.leaveTimer = null;
+    }
+    this.show();
+  };
+
+  /** 状态条失去焦点：立即隐藏 popover，取消 pending 的 hover 定时器 */
+  private handleStatusBarBlur = (): void => {
+    if (this.hoverTimer !== null) {
+      window.clearTimeout(this.hoverTimer);
+      this.hoverTimer = null;
+    }
+    if (this.leaveTimer !== null) {
+      window.clearTimeout(this.leaveTimer);
+      this.leaveTimer = null;
+    }
     this.hide();
   };
 

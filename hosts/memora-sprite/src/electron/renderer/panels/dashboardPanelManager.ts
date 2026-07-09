@@ -191,12 +191,6 @@ export class DashboardPanelManager {
   private insights = new InsightsRenderer();
 
   // ─── 缓存 DOM 元素（渲染方法中重复查询，构造时获取一次） ─
-  /** 技能 - 列表容器 */
-  private skillsListEl: HTMLElement | null;
-  /** 技能 - 区域容器 */
-  private skillsSectionEl: HTMLElement | null;
-  /** 技能 - 空状态元素 */
-  private skillsEmptyEl: HTMLElement | null;
   /** 增长趋势 - 区域容器（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） */
   private growthSectionEl: HTMLElement | null;
   /** 增长趋势 - 趋势描述行（direction 箭头 + description 文案） */
@@ -217,9 +211,6 @@ export class DashboardPanelManager {
     private events: EventTracker,
   ) {
     // 缓存渲染方法中重复查询的 DOM 元素（仪表盘 HTML 模板在页面加载时已存在）
-    this.skillsListEl = document.getElementById('skills-list');
-    this.skillsSectionEl = document.getElementById('skills-section');
-    this.skillsEmptyEl = document.getElementById('skills-empty');
     // 增长趋势区块 DOM 元素缓存（Phase 6.2：新增）
     this.growthSectionEl = document.getElementById('dashboard-growth');
     this.growthDescEl = document.getElementById('dashboard-growth-desc');
@@ -706,80 +697,6 @@ export class DashboardPanelManager {
 
   /** 缓存最近一次渲染的 daily 数据（主题切换时重绘用） */
   private lastGrowthDaily: Array<{ date: string; newMemories: number; newInsights: number }> | null = null;
-
-  /**
-   * 渲染已加载技能列表（安全降级）
-   *
-   * 消费内核 agent.skills.list，在仪表盘展示当前加载的技能。
-   * 每个技能项展示名称、关键词标签和来源层级（project/agent）。
-   * 无技能时隐藏列表区域，显示空状态占位。
-   * 原 DOM 位置可能已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
-   *
-   * @param skills 技能列表（由 DASHBOARD_GET 返回）
-   */
-  renderSkills(
-    skills: Array<{
-      name: string;
-      keywords: string[];
-      description: string;
-      layer: string;
-    }>,
-  ): void {
-    // 技能计数已迁入设置面板的"技能"tab，仪表盘不再重复展示
-
-    const listEl = this.skillsListEl;
-    const sectionEl = this.skillsSectionEl;
-    const emptyEl = this.skillsEmptyEl;
-    if (!listEl || !sectionEl) return;
-
-    if (!skills || skills.length === 0) {
-      sectionEl.classList.add('hidden');
-      // 显示空状态占位
-      if (emptyEl) emptyEl.classList.remove('hidden');
-      return;
-    }
-
-    clearElement(listEl);
-
-    // 使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
-    const fragment = document.createDocumentFragment();
-
-    for (const skill of skills) {
-      const li = document.createElement('li');
-      li.className = 'skill-item';
-      li.title = skill.description || skill.name;
-
-      // 技能名称
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'skill-name';
-      nameSpan.textContent = skill.name;
-
-      // 来源层级标签（project/agent）
-      const layerSpan = document.createElement('span');
-      layerSpan.className = `skill-layer skill-layer-${skill.layer}`;
-      layerSpan.textContent = skill.layer === 'agent' ? '全局' : '项目';
-
-      // 关键词标签
-      if (skill.keywords.length > 0) {
-        const kwSpan = document.createElement('span');
-        kwSpan.className = 'skill-keywords';
-        kwSpan.textContent = skill.keywords.slice(0, 5).join(' · ');
-        li.appendChild(nameSpan);
-        li.appendChild(layerSpan);
-        li.appendChild(kwSpan);
-      } else {
-        li.appendChild(nameSpan);
-        li.appendChild(layerSpan);
-      }
-
-      fragment.appendChild(li);
-    }
-
-    listEl.appendChild(fragment);
-    sectionEl.classList.remove('hidden');
-    // 隐藏空状态占位（有技能时）
-    if (emptyEl) emptyEl.classList.add('hidden');
-  }
 
   // ─── 记忆洞察面板渲染（委托到 InsightsRenderer） ────────
 

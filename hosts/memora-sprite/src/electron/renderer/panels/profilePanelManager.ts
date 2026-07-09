@@ -18,6 +18,12 @@ import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+import type { ConfirmDialogOptions } from '../types.js';
+
+/**
+ * 确认对话框函数类型（由 UIManager 注入，用于删除已确认画像前的二次确认）
+ */
+type ConfirmDialogFn = (options: ConfirmDialogOptions) => Promise<boolean>;
 
 /**
  * 用户画像面板管理器
@@ -40,6 +46,8 @@ export class ProfilePanelManager {
   private refreshBtn: HTMLButtonElement | null = null;
   /** 是否已初始化（避免重复绑定事件） */
   private initialized = false;
+  /** 确认对话框函数（由 UIManager 注入，用于删除已确认画像的二次确认） */
+  private confirmDialog: ConfirmDialogFn | null = null;
 
   /**
    * 类别标签中文映射
@@ -59,10 +67,13 @@ export class ProfilePanelManager {
    *
    * 获取 DOM 元素引用并绑定刷新按钮事件。
    * 在 UIManager 构造时调用。
+   *
+   * @param confirmDialog 确认对话框函数（可选，注入后删除已确认画像前弹二次确认）
    */
-  init(): void {
+  init(confirmDialog?: ConfirmDialogFn): void {
     if (this.initialized) return;
     this.initialized = true;
+    this.confirmDialog = confirmDialog ?? null;
 
     // 获取 DOM 元素引用（均为可选，缺失时静默降级）
     this.pendingListEl = document.getElementById('profile-pending-list');
@@ -263,11 +274,22 @@ export class ProfilePanelManager {
       });
       actions.appendChild(rejectBtn);
     } else {
-      // 已确认条目：删除（调用 reject 接口移除）
+      // 已确认条目：删除（调用 reject 接口移除，二次确认避免误删已持久化画像）
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'profile-btn reject';
       deleteBtn.textContent = '删除';
       this.events.addEventListener(deleteBtn, 'click', async () => {
+        // 二次确认：已确认画像已持久化到 SQLite，删除属不可逆操作
+        if (this.confirmDialog) {
+          const confirmed = await this.confirmDialog({
+            title: '删除用户画像',
+            message: '将删除这条用户画像，精灵后续对话将不再参考。确认删除？',
+            confirmText: '删除',
+            cancelText: '取消',
+            danger: true,
+          });
+          if (!confirmed) return;
+        }
         // 复用 setButtonLoadingEl
         setButtonLoadingEl(deleteBtn, true, '删除中...');
         try {

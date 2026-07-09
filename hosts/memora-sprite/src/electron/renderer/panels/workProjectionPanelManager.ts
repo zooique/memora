@@ -120,11 +120,25 @@ export class WorkProjectionPanelManager {
       this.render(entries);
     } catch (err) {
       reportError('WorkProjectionPanel', `加载作品投影失败: ${toError(err).message}`);
+      // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），对齐 profilePanelManager / auditPanelManager
       if (this.listEl) {
         clearElement(this.listEl);
         const errorEl = document.createElement('div');
-        errorEl.className = 'work-projection-empty work-projection-error';
-        errorEl.textContent = '加载失败，请点击刷新重试';
+        errorEl.className = 'error-state';
+        const icon = document.createElement('div');
+        icon.className = 'error-icon';
+        icon.textContent = '⚠';
+        const msg = document.createElement('div');
+        msg.className = 'error-message';
+        msg.textContent = '加载作品投影失败';
+        // 重试按钮：内嵌在错误态内，便于用户发现恢复入口
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'btn-secondary error-retry-btn';
+        retryBtn.textContent = '重试';
+        this.events.addEventListener(retryBtn, 'click', () => this.load());
+        errorEl.appendChild(icon);
+        errorEl.appendChild(msg);
+        errorEl.appendChild(retryBtn);
         this.listEl.appendChild(errorEl);
       }
     }

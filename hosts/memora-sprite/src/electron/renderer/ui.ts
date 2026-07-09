@@ -292,13 +292,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
 
     // 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
-  this.suggestionCard.init();
-  // 初始化用户画像面板（绑定刷新按钮事件）
-  this.profilePanel.init();
+  // 注入 showToast 用于操作失败时给用户可见反馈
+  this.suggestionCard.init((msg, type) => this.showToast(msg, type));
+  // 初始化用户画像面板（绑定刷新按钮事件，注入确认对话框用于删除已确认画像的二次确认）
+  this.profilePanel.init((opts) => this.showConfirmDialog(opts));
   // 初始化作品投影面板（绑定刷新按钮事件）
   this.workProjectionPanel.init();
-    // M2 初始化审计日志面板（绑定刷新/清空按钮事件）
-    this.auditPanel.init();
+    // M2 初始化审计日志面板（绑定刷新/清空按钮事件，注入确认对话框用于清空二次确认）
+    this.auditPanel.init((opts) => this.showConfirmDialog(opts));
 
     // ─── 面板管理器初始化 ───
 
@@ -573,6 +574,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   regenerateLastMessage(userMessage: string): void {
     if (!this.state.isAgentReady) {
       this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
+      void this.switchPanel('settings');
       return;
     }
     if (this.state.isStreaming) {
@@ -835,7 +837,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       case 'audit':
         void this.auditPanel.load();
         break;
-      // skill tab 的数据由 loadDashboard → renderSkills 驱动，无需单独加载
+      // skill tab 的数据由 loadDashboard → renderSkills 驱动（委托到 settingsPanel），无需单独加载
       default:
         break;
     }
@@ -893,9 +895,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitSendMessage() 调用）
   emitSendMessage(): void {
-    // Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败）
+    // Agent 未就绪时禁止发送（LLM 未配置会导致 IPC 失败），并主动跳转到设置面板
     if (!this.state.isAgentReady) {
       this.showToast('Agent 未就绪，请先在设置面板配置 LLM', 'warning');
+      void this.switchPanel('settings');
       return;
     }
     // 空内容不发送
@@ -906,6 +909,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   // InputAreaHost 接口要求 public（inputAreaManager 通过 host.emitStopMessage() 调用）
   emitStopMessage(): void {
     this.stopMessageCallback?.();
+  }
+
+  /**
+   * 跳转到设置面板（InputAreaHost 接口）
+   *
+   * 由 Provider 选择器空状态提示项点击触发，
+   * 帮助用户快速到达 LLM 配置入口，符合"主动可见"原则。
+   */
+  switchToSettings(): void {
+    void this.switchPanel('settings');
   }
 
   /**
@@ -972,6 +985,16 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   setAgentReady(ready: boolean): void {
     this.state.isAgentReady = ready;
+  }
+
+  /**
+   * 查询 Agent 是否就绪
+   *
+   * 供外部回调（如 onSuggestionClick）做发送前守卫，
+   * 与 isStreaming() 同模式，避免外部直接访问 state。
+   */
+  isAgentReady(): boolean {
+    return this.state.isAgentReady;
   }
 
   /** 获取当前面板 */
@@ -1160,9 +1183,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   renderReviewData(review: ReviewDataPayload): void {
     this.dashboardPanel.renderReviewData(review);
   }
-  /** 渲染已加载技能列表（委托到 DashboardPanelManager） */
+  /** 渲染已加载技能列表（委托到 SettingsPanelManager，技能 DOM 在设置面板 skill tab） */
   renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
-    this.dashboardPanel.renderSkills(skills);
+    this.settingsPanelManager.renderSkills(skills);
   }
   /** 显示洞察面板加载态（委托到 DashboardPanelManager） */
   showInsightsLoading(): void { this.dashboardPanel.showInsightsLoading(); }

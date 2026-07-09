@@ -58,13 +58,14 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
   const recallContainer = document.createElement('div');
   recallContainer.className = 'memory-recall-container';
 
-  // 头部标签：默认显示"记忆"，点击展开/折叠
+  // 头部标签：默认显示"参考记忆"，点击展开/折叠查看具体条目
+  // 文案优化：从"记忆"改为"参考记忆"，明确表示这是精灵参考的记忆（非用户记忆）
   const header = document.createElement('button');
   header.className = 'memory-recall-header';
   header.type = 'button';
   header.dataset.action = 'toggle-recall';
   header.setAttribute('aria-expanded', 'false');
-  header.setAttribute('aria-label', `查看${memories.length}条召回记忆`);
+  header.setAttribute('aria-label', `查看 ${memories.length} 条参考记忆`);
 
   const headerIcon = document.createElement('span');
   headerIcon.className = 'memory-recall-icon';
@@ -73,7 +74,7 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
 
   const headerText = document.createElement('span');
   headerText.className = 'memory-recall-header-text';
-  headerText.textContent = '记忆';
+  headerText.textContent = '参考记忆';
   header.appendChild(headerText);
 
   const countBadge = document.createElement('span');
@@ -166,11 +167,15 @@ export function showThinkingPhase(bubble: Element, phase: string): void {
 }
 
 /**
- * 在消息气泡顶部显示上下文截断提示条
+ * 在消息气泡顶部显示上下文截断提示条（可关闭）
  *
- * 当对话中发生上下文截断时，在消息气泡顶部插入持久提示条，
- * 告知用户部分历史消息已被省略。遵循"主动可见"原则，非 hover 显示。
- * 若已存在 .truncation-notice 元素则复用并更新文案。
+ * 当对话中发生上下文截断时，在消息气泡顶部插入提示条，
+ * 告知用户部分历史消息已被省略。遵循"主动可见"原则，默认完整显示。
+ * 用户已知晓后可点击关闭按钮（data-action="dismiss-truncation"）移除提示，
+ * 关闭后本轮不再恢复（避免反复打扰）。
+ *
+ * 结构：图标 + 文本 + 关闭按钮，三者独立 span/button 便于复用时单独更新。
+ * 若已存在 .truncation-notice 元素则复用并更新文案（关闭按钮不重建）。
  *
  * @param bubble 消息气泡元素（.message-bubble）
  * @param count 本次对话中发生的截断次数
@@ -182,13 +187,33 @@ export function showTruncationNotice(bubble: Element, count: number): void {
     notice = document.createElement('div');
     notice.className = 'truncation-notice';
     bubble.insertBefore(notice, bubble.firstChild);
+
+    // 图标 span（setIcon 作用于此，避免清空整个 notice）
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'truncation-icon';
+    setIcon(iconSpan, 'icon-warning');
+    notice.appendChild(iconSpan);
+
+    // 文本 span（textContent 单独更新，便于复用时改文案）
+    const textSpan = document.createElement('span');
+    textSpan.className = 'truncation-text';
+    notice.appendChild(textSpan);
+
+    // 关闭按钮（data-action 委托，点击移除整个 notice）
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'truncation-close';
+    closeBtn.dataset.action = 'dismiss-truncation';
+    closeBtn.setAttribute('aria-label', '关闭截断提示');
+    setIcon(closeBtn, 'icon-close');
+    notice.appendChild(closeBtn);
   }
 
-  // 更新提示文案（count > 1 时显示次数）
-  // SVG 图标 + 文本（替代原 emoji ⚠️，跨平台渲染一致）
-  const text = count > 1
-    ? ` 上下文已截断 ${count} 次，部分历史已省略`
-    : ' 上下文已截断，部分历史已省略';
-  setIcon(notice, 'icon-warning');
-  notice.appendChild(document.createTextNode(text));
+  // 更新提示文案（count > 1 时显示次数）。仅更新 text span，不触碰图标和关闭按钮
+  const textEl = notice.querySelector('.truncation-text');
+  if (textEl) {
+    textEl.textContent = count > 1
+      ? `上下文已截断 ${count} 次，部分历史已省略`
+      : '上下文已截断，部分历史已省略';
+  }
 }

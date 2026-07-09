@@ -30,6 +30,7 @@ function createMockHost(): InputAreaHost {
     isStreaming: vi.fn().mockReturnValue(false),
     emitSendMessage: vi.fn(),
     emitStopMessage: vi.fn(),
+    switchToSettings: vi.fn(),
   };
 }
 

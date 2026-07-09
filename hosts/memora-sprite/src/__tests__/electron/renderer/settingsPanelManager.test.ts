@@ -10,6 +10,7 @@
  * - updateAgentStatusIndicator：三态 + null 降级
  * - loadConfigToForm：加载精灵配置 + 项目模式 + 专注项目联动
  * - collectConfigFromForm：收集精灵配置 + 项目模式 + 主题
+ * - renderSkills：空列表隐藏 / 非空渲染 / 关键词标签 / 层级标签（从 dashboardPanelManager 迁入）
  * - 回调注册：onConfigSave / onConfigCancel / onPersonaModeChange
  * - cleanup：事件监听器解绑
  *
@@ -95,6 +96,17 @@ const SETTINGS_HTML = `
 
     <!-- 状态显示 -->
     <div id="agent-status-indicator"><span class="agent-status-text">检测中...</span></div>
+    <!-- 保存状态指示器（P3-1：初始 idle 隐藏） -->
+    <div id="save-status-indicator" class="save-status-indicator idle">
+      <span class="save-status-icon"></span>
+      <span class="save-status-text"></span>
+    </div>
+
+    <!-- 技能管理 tab DOM（P3-2：renderSkills 从 dashboardPanelManager 迁入） -->
+    <div id="skills-section" class="skill-section hidden">
+      <ul id="skills-list" class="skills-list"></ul>
+    </div>
+    <div id="skills-empty" class="profile-empty">暂无已安装技能</div>
 
     <!-- tab 切换 -->
     <div class="settings-tab active" data-settings-tab="llm">LLM</div>
@@ -581,5 +593,63 @@ describe('cleanup', () => {
     radio.checked = true;
     radio.dispatchEvent(new Event('change'));
     expect(host.setTheme).not.toHaveBeenCalled();
+  });
+});
+
+// ─── renderSkills（从 dashboardPanelManager 迁入） ──────
+
+describe('renderSkills', () => {
+  it('空技能列表应隐藏 section 并显示空状态', () => {
+    const { manager } = createManager();
+    manager.renderSkills([]);
+    expect(document.getElementById('skills-section')!.classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('skills-empty')!.classList.contains('hidden')).toBe(false);
+  });
+
+  it('应渲染技能列表项（名称 + 层级 + 关键词）', () => {
+    const { manager } = createManager();
+    manager.renderSkills([
+      { name: 'code-review', keywords: ['review', 'lint'], description: '代码审查', layer: 'agent' },
+    ]);
+    const item = document.querySelector('#skills-list .skill-item') as HTMLElement;
+    expect(item).not.toBeNull();
+    expect(item.querySelector('.skill-name')!.textContent).toBe('code-review');
+    expect(item.querySelector('.skill-layer')!.textContent).toBe('全局');
+    expect(item.querySelector('.skill-keywords')!.textContent).toContain('review');
+    // 有技能时 section 显示、空状态隐藏
+    expect(document.getElementById('skills-section')!.classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('skills-empty')!.classList.contains('hidden')).toBe(true);
+  });
+
+  it('项目层级应显示"项目"标签', () => {
+    const { manager } = createManager();
+    manager.renderSkills([
+      { name: 's', keywords: [], description: '', layer: 'project' },
+    ]);
+    expect(document.querySelector('.skill-layer')!.textContent).toBe('项目');
+  });
+
+  it('无关键词时不应渲染关键词标签', () => {
+    const { manager } = createManager();
+    manager.renderSkills([{ name: 's', keywords: [], description: '', layer: 'agent' }]);
+    expect(document.querySelector('.skill-keywords')).toBeNull();
+  });
+
+  it('关键词超过 5 个应只展示前 5 个', () => {
+    const { manager } = createManager();
+    manager.renderSkills([
+      { name: 's', keywords: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], description: '', layer: 'agent' },
+    ]);
+    const kw = document.querySelector('.skill-keywords')!.textContent!;
+    expect(kw.split(' · ').length).toBe(5);
+  });
+
+  it('应使用 title 属性携带技能描述（悬停提示）', () => {
+    const { manager } = createManager();
+    manager.renderSkills([
+      { name: 's', keywords: [], description: '详细描述', layer: 'agent' },
+    ]);
+    const item = document.querySelector('.skill-item') as HTMLElement;
+    expect(item.title).toBe('详细描述');
   });
 });

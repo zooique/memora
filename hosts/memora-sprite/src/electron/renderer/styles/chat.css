@@ -1032,32 +1032,6 @@
   margin-left: auto;
 }
 
-.suggestion-card-close {
-  background: transparent;
-  border: none;
-  color: var(--text-3);
-  cursor: pointer;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-/* 关闭按钮内的 SVG 尺寸 */
-.suggestion-card-close .icon {
-  width: 12px;
-  height: 12px;
-}
-
-.suggestion-card-close:hover {
-  background: var(--surface2);
-  color: var(--text);
-}
-
 /* 建议名称 */
 .suggestion-card-name {
   font-size: var(--font-sm);
@@ -2196,35 +2170,66 @@
   50%      { opacity: 1; }
 }
 
-/* ─── 上下文截断提示条（小标签模式） ─────────────────────────────── */
-/* 对话中发生上下文截断时，在消息气泡顶部显示小标签提示         */
-/* 告知用户部分历史消息已被省略，但视觉上尽量低调               */
-/* 默认显示小标签，hover 时展开完整提示文本                    */
+/* ─── 上下文截断提示条（可关闭模式） ─────────────────────────────── */
+/* 对话中发生上下文截断时，在消息气泡顶部显示提示条             */
+/* 告知用户部分历史消息已被省略，遵循"主动可见"原则默认完整显示 */
+/* 用户已知晓后可点击关闭按钮移除，避免持久打扰                 */
 
 .truncation-notice {
   margin-bottom: 4px;
   padding: 2px 6px;
   font-size: var(--font-2xs);
   color: var(--text-3);
-  background: transparent;
+  background: var(--yellow-10);
   border-radius: var(--radius-xs);
-  border: 1px dashed var(--surface2);
-  /* 默认只显示图标，文本截断 */
+  border: 1px dashed var(--yellow);
+  /* 完整显示文案 + 关闭按钮，不再 hover 才展开 */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+/* 截断图标：继承父颜色 */
+.truncation-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--yellow);
+}
+
+/* 截断文本：自适应宽度 */
+.truncation-text {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 60px;
-  cursor: default;
-  transition: max-width var(--transition-fast), padding var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.truncation-notice:hover {
-  /* hover 时展开完整宽度 */
-  max-width: 100%;
-  padding: 3px 8px;
-  background: var(--yellow-10);
-  border-color: var(--yellow);
+/* 关闭按钮：无边框透明背景，仅 hover 时高亮 */
+.truncation-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.truncation-close:hover {
+  background: var(--yellow-20);
   color: var(--yellow);
+}
+
+.truncation-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ─── 工具调用卡片 ───────────────────────────────── */

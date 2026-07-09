@@ -301,7 +301,6 @@
           <div class="banner-text" id="proactive-banner-text"></div>
           <div class="banner-actions">
             <button class="banner-btn" data-action="view">查看</button>
-            <button class="banner-btn" data-action="later">稍后</button>
             <button class="banner-btn" data-action="silent">静默 1 小时</button>
             <!-- 关闭主动提示选项，直接进入静默模式并提示去设置调整阈值 -->
             <button class="banner-btn" data-action="disable">不再提醒</button>
@@ -1031,8 +1030,8 @@
             <span class="agent-status-dot"></span>
             <span class="agent-status-text">检测中…</span>
           </div>
-          <!-- 保存状态指示器 -->
-          <div id="save-status-indicator" class="save-status-indicator" aria-label="保存状态">
+          <!-- 保存状态指示器（初始 idle 隐藏，updateSaveStatus 切换状态类控制可见性） -->
+          <div id="save-status-indicator" class="save-status-indicator idle" aria-label="保存状态">
             <span class="save-status-icon"></span>
             <span class="save-status-text"></span>
           </div>
@@ -1574,7 +1573,7 @@
       <svg class="icon"><use href="#icon-refresh"/></svg>
       <span>重新生成</span>
     </button>
-    <button class="context-menu-item" data-action="forget" role="menuitem" aria-label="忘记此条消息" aria-disabled="false">
+    <button class="context-menu-item" data-action="forget" role="menuitem" aria-label="忘记此条消息" aria-disabled="false" title="从当前视野移除（刷新后可恢复）">
       <svg class="icon"><use href="#icon-trash"/></svg>
       <span>忘记</span>
     </button>

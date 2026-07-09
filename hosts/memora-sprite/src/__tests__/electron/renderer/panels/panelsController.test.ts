@@ -99,12 +99,14 @@ function createMockInputHost(streaming = false): InputAreaHost & {
     isStreaming: ReturnType<typeof vi.fn>;
     emitSendMessage: ReturnType<typeof vi.fn>;
     emitStopMessage: ReturnType<typeof vi.fn>;
+    switchToSettings: ReturnType<typeof vi.fn>;
   };
 } {
   const mocks = {
     isStreaming: vi.fn(() => streaming),
     emitSendMessage: vi.fn(),
     emitStopMessage: vi.fn(),
+    switchToSettings: vi.fn(),
   };
   return {
     ...mocks,

@@ -367,6 +367,60 @@
   margin-left: auto; /* 推到右侧 */
 }
 
+/* ─── 保存状态指示器（emoji 字符已替换为 SVG sprite 图标） ─── */
+/* idle 状态隐藏整个指示器，避免占用布局空间 */
+.save-status-indicator.idle {
+  display: none;
+}
+
+/* 非 idle 状态：内联布局，图标 + 文字紧凑排列 */
+.save-status-indicator:not(.idle) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  margin-right: var(--gap-compact);
+}
+
+/* 图标容器：继承父颜色，SVG .icon 通过 currentColor 自动适配 */
+.save-status-icon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0; /* 消除 inline 元素的基线间隙 */
+}
+
+/* 保存中状态：使用 --text-3 中性色，沙漏图标旋转表示进行中 */
+.save-status-indicator.saving {
+  color: var(--text-3);
+}
+
+.save-status-indicator.saving .save-status-icon svg {
+  animation: saveStatusSpin 1.2s linear infinite;
+}
+
+@keyframes saveStatusSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 已保存状态：绿色成功反馈 */
+.save-status-indicator.saved {
+  color: var(--green);
+}
+
+/* 保存失败状态：红色错误反馈 */
+.save-status-indicator.error {
+  color: var(--red);
+}
+
+/* 尊重用户的减少动画偏好：关闭沙漏旋转 */
+@media (prefers-reduced-motion: reduce) {
+  .save-status-indicator.saving .save-status-icon svg {
+    animation: none;
+  }
+}
+
 /* ─── 行内提示变体（与 checkbox 同行显示，替代内联 style="display:inline;margin-left:4px"） ─── */
 .settings-hint-inline {
   display: inline;

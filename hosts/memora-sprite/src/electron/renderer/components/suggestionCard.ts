@@ -20,6 +20,12 @@ import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement } from '../helpers/domHelpers.js';
 import { setIcon } from '../helpers/icon.js';
+import type { ToastType } from '../types.js';
+
+/**
+ * 显示 toast 的函数类型（由 UIManager 注入，用于操作失败时给用户可见反馈）
+ */
+type ShowToastFn = (message: string, type: ToastType) => void;
 
 /**
  * 建议卡片管理器
@@ -34,14 +40,19 @@ export class SuggestionCardManager {
   private container: HTMLElement | null = null;
   /** 当前显示的卡片数量（用于限制同时显示的卡片数） */
   private readonly maxVisible = 3;
+  /** 显示 toast 函数（由 UIManager 注入，操作失败时给用户可见反馈） */
+  private showToast: ShowToastFn | null = null;
 
   /**
    * 初始化建议卡片管理器
    *
    * 创建卡片容器 DOM 元素（如果 HTML 中未预定义），
    * 插入到 #proactive-banner 之后、#messages 之前。
+   *
+   * @param showToast 显示 toast 函数（可选，注入后操作失败时弹 toast 提示用户）
    */
-  init(): void {
+  init(showToast?: ShowToastFn): void {
+    this.showToast = showToast ?? null;
     // 尝试获取 HTML 中预定义的容器，否则动态创建
     let container = document.getElementById('suggestion-container');
     if (!container) {
@@ -99,7 +110,6 @@ export class SuggestionCardManager {
    *       <span class="suggestion-card-icon">💡</span>
    *       <span class="suggestion-card-type">规则建议</span>
    *       <span class="suggestion-card-confidence">置信度 85%</span>
-   *       <button class="suggestion-card-close">✕</button>
    *     </div>
    *     <div class="suggestion-card-name">TypeScript 偏好</div>
    *     <div class="suggestion-card-content">用户偏好函数式风格...</div>
@@ -108,6 +118,9 @@ export class SuggestionCardManager {
    *       <button class="suggestion-card-btn reject">拒绝</button>
    *     </div>
    *   </div>
+   *
+   * 不设 X 关闭按钮：建议卡片必须经"接受"或"拒绝"明确处置，
+   * 避免用户随手关闭导致建议悬而未决（与 ProactiveBanner 移除"稍后"按钮同理）。
    */
   private createCardElement(suggestion: ConfigSuggestionPayload): HTMLElement {
     const card = document.createElement('div');
@@ -123,7 +136,7 @@ export class SuggestionCardManager {
 
     // U3 用 createElement 替代 innerHTML 模板，与项目规范一致且天然防 XSS
 
-    // 头部：图标 + 类型标签 + 置信度 + 关闭按钮
+    // 头部：图标 + 类型标签 + 置信度
     const header = document.createElement('div');
     header.className = 'suggestion-card-header';
 
@@ -142,13 +155,6 @@ export class SuggestionCardManager {
     confidenceSpan.className = 'suggestion-card-confidence';
     confidenceSpan.textContent = `置信度 ${Math.round(suggestion.confidence * 100)}%`;
     header.appendChild(confidenceSpan);
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'suggestion-card-close';
-    closeBtn.title = '关闭';
-    // 使用 SVG 图标替代 Unicode 符号
-    setIcon(closeBtn, 'icon-close');
-    header.appendChild(closeBtn);
 
     card.appendChild(header);
 
@@ -181,10 +187,6 @@ export class SuggestionCardManager {
     card.appendChild(actionsDiv);
 
     // 注册事件监听器（纳入 EventTracker 统一清理，U3 直接使用已创建的元素引用）
-    this.events.addEventListener(closeBtn, 'click', () => {
-      this.removeCard(card);
-    });
-
     this.events.addEventListener(acceptBtn, 'click', async () => {
       acceptBtn.disabled = true;
       rejectBtn.disabled = true;
@@ -199,12 +201,15 @@ export class SuggestionCardManager {
           rejectBtn.disabled = false;
           acceptBtn.textContent = '接受';
           reportError('SuggestionCard', `接受建议失败: ${result.error}`);
+          // 操作失败时给用户可见反馈（reportError 仅写控制台日志，用户无感知）
+          this.showToast?.('接受建议失败，请稍后重试', 'error');
         }
       } catch (err) {
         acceptBtn.disabled = false;
         rejectBtn.disabled = false;
         acceptBtn.textContent = '接受';
         reportError('SuggestionCard', `接受建议异常: ${toError(err).message}`);
+        this.showToast?.('接受建议失败，请稍后重试', 'error');
       }
     });
 
@@ -218,6 +223,7 @@ export class SuggestionCardManager {
         rejectBtn.disabled = false;
         acceptBtn.disabled = false;
         reportError('SuggestionCard', `拒绝建议异常: ${toError(err).message}`);
+        this.showToast?.('拒绝建议失败，请稍后重试', 'error');
       }
     });
 

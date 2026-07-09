@@ -13,7 +13,7 @@
  * - 跨模块关注点（setTheme / updatePersonaModeBadge / showConfirmDialog）通过 host 回调注入
  */
 
-import { getOptionalElement } from '../helpers/domHelpers.js';
+import { clearElement, getOptionalElement } from '../helpers/domHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
@@ -129,6 +129,12 @@ export class SettingsPanelManager {
   private agentStatusEl: HTMLElement | null;
   /** 保存状态指示器元素（显示"保存中..."、"已保存"等状态） */
   private saveStatusEl: HTMLElement | null;
+  /** 技能 - 列表容器（设置面板 skill tab，由 renderSkills 填充） */
+  private skillsListEl: HTMLElement | null;
+  /** 技能 - 区域容器（无技能时隐藏，有技能时显示） */
+  private skillsSectionEl: HTMLElement | null;
+  /** 技能 - 空状态占位元素（无技能时显示"拖入 .md 文件安装"提示） */
+  private skillsEmptyEl: HTMLElement | null;
 
   // ─── 状态 ────────────────────────────────────────────────
   /** 设置表单是否有未保存修改（dirty 标志） */
@@ -191,6 +197,10 @@ export class SettingsPanelManager {
     this.agentStatusEl = document.getElementById('agent-status-indicator');
     /** 保存状态指示器元素 */
     this.saveStatusEl = document.getElementById('save-status-indicator');
+    // 技能管理 tab 的 DOM 元素（renderSkills 填充，从 dashboardPanelManager 迁入）
+    this.skillsListEl = document.getElementById('skills-list');
+    this.skillsSectionEl = document.getElementById('skills-section');
+    this.skillsEmptyEl = document.getElementById('skills-empty');
 
     // 多 Provider 管理元素
     this.providerListEl = document.getElementById('provider-list');
@@ -1294,6 +1304,9 @@ export class SettingsPanelManager {
   /**
    * 更新保存状态指示器显示
    *
+   * 使用 SVG sprite 图标（icon-hourglass/icon-check/icon-close）替代 emoji 字符，
+   * 与全应用图标体系统一。图标引用为项目内部硬编码字符串，无 XSS 风险。
+   *
    * @param status 保存状态：idle（空闲）、saving（保存中）、saved（已保存）、error（出错）
    */
   private updateSaveStatus(status: 'idle' | 'saving' | 'saved' | 'error'): void {
@@ -1309,12 +1322,14 @@ export class SettingsPanelManager {
     switch (status) {
       case 'saving':
         this.saveStatusEl.classList.add('saving');
-        iconEl.textContent = '⏳';
+        // 沙漏图标，CSS .save-status-indicator.saving 下带旋转动画
+        iconEl.innerHTML = '<svg class="icon"><use href="#icon-hourglass"/></svg>';
         textEl.textContent = '保存中…';
         break;
       case 'saved':
         this.saveStatusEl.classList.add('saved');
-        iconEl.textContent = '✓';
+        // 勾选图标（绿色，CSS .save-status-indicator.saved 控制颜色）
+        iconEl.innerHTML = '<svg class="icon"><use href="#icon-check"/></svg>';
         textEl.textContent = '已保存';
         // 3秒后恢复为空闲状态
         this.timers.setTimeout(() => {
@@ -1323,7 +1338,8 @@ export class SettingsPanelManager {
         break;
       case 'error':
         this.saveStatusEl.classList.add('error');
-        iconEl.textContent = '✗';
+        // 关闭 X 图标（红色，CSS .save-status-indicator.error 控制颜色）
+        iconEl.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
         textEl.textContent = '保存失败';
         // 3秒后恢复为空闲状态
         this.timers.setTimeout(() => {
@@ -1332,8 +1348,81 @@ export class SettingsPanelManager {
         break;
       default:
         this.saveStatusEl.classList.add('idle');
-        iconEl.textContent = '';
+        // 空闲状态清空图标和文字（指示器整体隐藏由 CSS .idle 控制）
+        iconEl.innerHTML = '';
         textEl.textContent = '';
     }
+  }
+
+  /**
+   * 渲染已加载技能列表（设置面板 skill tab）
+   *
+   * 消费内核 agent.skills.list，在设置面板的"技能"tab 展示当前加载的技能。
+   * 每个技能项展示名称、关键词标签和来源层级（project/agent）。
+   * 无技能时隐藏列表区域，显示空状态占位。
+   *
+   * 从 dashboardPanelManager 迁入：技能列表 DOM 本就在设置面板 skill tab 内，
+   * 渲染逻辑应归属于 SettingsPanelManager，职责对齐。
+   *
+   * @param skills 技能列表（由 DASHBOARD_GET 返回，含 name/keywords/description/layer）
+   */
+  renderSkills(
+    skills: Array<{
+      name: string;
+      keywords: string[];
+      description: string;
+      layer: string;
+    }>,
+  ): void {
+    const listEl = this.skillsListEl;
+    const sectionEl = this.skillsSectionEl;
+    const emptyEl = this.skillsEmptyEl;
+    if (!listEl || !sectionEl) return;
+
+    // 无技能：隐藏列表，显示空状态占位
+    if (!skills || skills.length === 0) {
+      sectionEl.classList.add('hidden');
+      if (emptyEl) emptyEl.classList.remove('hidden');
+      return;
+    }
+
+    clearElement(listEl);
+
+    // 使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
+    const fragment = document.createDocumentFragment();
+
+    for (const skill of skills) {
+      const li = document.createElement('li');
+      li.className = 'skill-item';
+      li.title = skill.description || skill.name;
+
+      // 技能名称
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'skill-name';
+      nameSpan.textContent = skill.name;
+
+      // 来源层级标签（project/agent）
+      const layerSpan = document.createElement('span');
+      layerSpan.className = `skill-layer skill-layer-${skill.layer}`;
+      layerSpan.textContent = skill.layer === 'agent' ? '全局' : '项目';
+
+      // 名称和层级标签始终展示
+      li.appendChild(nameSpan);
+      li.appendChild(layerSpan);
+      // 关键词标签（最多展示 5 个，避免过长）
+      if (skill.keywords.length > 0) {
+        const kwSpan = document.createElement('span');
+        kwSpan.className = 'skill-keywords';
+        kwSpan.textContent = skill.keywords.slice(0, 5).join(' · ');
+        li.appendChild(kwSpan);
+      }
+
+      fragment.appendChild(li);
+    }
+
+    listEl.appendChild(fragment);
+    sectionEl.classList.remove('hidden');
+    // 有技能时隐藏空状态占位
+    if (emptyEl) emptyEl.classList.add('hidden');
   }
 }

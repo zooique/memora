@@ -112,11 +112,14 @@ export class ProactiveBanner {
       });
     });
 
-    // UI-UX-02 关闭按钮：直接隐藏 banner，不触发任何回调
+    // 关闭按钮：承担原"稍后"语义——隐藏 banner 并记录拒绝事件，
+    // 触发自适应冷却（精灵下次更晚再提示），符合用户"关闭=先别烦我"的心智。
+    // 若仅隐藏不记录拒绝，精灵会按原节奏再次弹出，体验割裂。
     const closeBtn = banner.querySelector<HTMLElement>('.banner-close');
     if (closeBtn) {
       this.events.addEventListener(closeBtn, 'click', () => {
         this.hideProactiveBanner();
+        handlers.onLater();
       });
     }
   }

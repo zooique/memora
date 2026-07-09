@@ -7,7 +7,6 @@
  * - formatTokenCount：纯函数（< 1000 直显 / >= 1000 k 格式）
  * - renderDashboardStats：累积事件/阈值高亮/推荐记忆/计数更新
  * - renderAgentMetrics：LLM 调用/Token/召回率/工具失败率（含 0/0 兜底）
- * - renderSkills：空列表隐藏 / 非空渲染 / 关键词标签
  * - renderMilestones：量级/多样性/洞察/画像里程碑
  * - renderReviewData：今日概况/趋势方向/柱状图/最近洞察
  * - renderInsights：统计卡片/source 分布/关系摘要
@@ -57,12 +56,6 @@ const DASHBOARD_HTML = `
   <span id="dashboard-decay-count"></span>
   <span id="dashboard-decay-total"></span>
   <span id="dashboard-decay-runs"></span>
-
-  <!-- 技能列表 -->
-  <section id="skills-section" class="hidden">
-    <ul id="skills-list"></ul>
-  </section>
-  <div id="skills-empty" class="hidden"></div>
 
   <!-- 里程碑 -->
   <div id="milestones-display" class="hidden">
@@ -276,62 +269,6 @@ describe('renderAgentMetrics', () => {
       tools: { callCount: 10, failureCount: 3 },
     }));
     expect(document.getElementById('dashboard-tool-failures')!.textContent).toBe('30%');
-  });
-});
-
-// ─── renderSkills ────────────────────────────────────────
-
-describe('renderSkills', () => {
-  it('空技能列表应隐藏 section 并显示空状态', () => {
-    const { manager } = createManager();
-    manager.renderSkills([]);
-    expect(document.getElementById('skills-section')!.classList.contains('hidden')).toBe(true);
-    expect(document.getElementById('skills-empty')!.classList.contains('hidden')).toBe(false);
-  });
-
-  it('技能计数已迁入设置面板，仪表盘不再重复展示', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 's1', keywords: [], description: '', layer: 'project' },
-      { name: 's2', keywords: [], description: '', layer: 'agent' },
-    ]);
-    // dashboard-total-skills 元素已从仪表盘 HTML 中移除，不应存在
-    expect(document.getElementById('dashboard-total-skills')).toBeNull();
-  });
-
-  it('应渲染技能列表项（名称 + 层级 + 关键词）', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 'code-review', keywords: ['review', 'lint'], description: '代码审查', layer: 'agent' },
-    ]);
-    const item = document.querySelector('#skills-list .skill-item') as HTMLElement;
-    expect(item).not.toBeNull();
-    expect(item.querySelector('.skill-name')!.textContent).toBe('code-review');
-    expect(item.querySelector('.skill-layer')!.textContent).toBe('全局');
-    expect(item.querySelector('.skill-keywords')!.textContent).toContain('review');
-  });
-
-  it('项目层级应显示"项目"标签', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 's', keywords: [], description: '', layer: 'project' },
-    ]);
-    expect(document.querySelector('.skill-layer')!.textContent).toBe('项目');
-  });
-
-  it('无关键词时不应渲染关键词标签', () => {
-    const { manager } = createManager();
-    manager.renderSkills([{ name: 's', keywords: [], description: '', layer: 'agent' }]);
-    expect(document.querySelector('.skill-keywords')).toBeNull();
-  });
-
-  it('关键词超过 5 个应只展示前 5 个', () => {
-    const { manager } = createManager();
-    manager.renderSkills([
-      { name: 's', keywords: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], description: '', layer: 'agent' },
-    ]);
-    const kw = document.querySelector('.skill-keywords')!.textContent!;
-    expect(kw.split(' · ').length).toBe(5);
   });
 });
 

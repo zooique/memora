@@ -267,38 +267,58 @@ describe('showTruncationNotice', () => {
     expect(notice).not.toBeNull();
   });
 
+  it('首次调用应创建图标 + 文本 + 关闭按钮三段结构', () => {
+    const bubble = createBubble();
+    showTruncationNotice(bubble, 1);
+    const notice = bubble.querySelector('.truncation-notice')!;
+    // 图标 span（含 SVG use 引用）
+    const icon = notice.querySelector('.truncation-icon');
+    expect(icon).not.toBeNull();
+    expect(icon!.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
+    // 文本 span
+    const text = notice.querySelector('.truncation-text');
+    expect(text).not.toBeNull();
+    expect(text!.textContent).toBe('上下文已截断，部分历史已省略');
+    // 关闭按钮
+    const closeBtn = notice.querySelector('.truncation-close') as HTMLButtonElement;
+    expect(closeBtn).not.toBeNull();
+    expect(closeBtn.dataset.action).toBe('dismiss-truncation');
+    expect(closeBtn.getAttribute('aria-label')).toBe('关闭截断提示');
+  });
+
   it('count=1 时不显示次数', () => {
     const bubble = createBubble();
     showTruncationNotice(bubble, 1);
     const notice = bubble.querySelector('.truncation-notice');
-    // SVG 图标 + 文本分离：textContent 不含图标
-    expect(notice!.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
-    expect(notice!.textContent).toBe(' 上下文已截断，部分历史已省略');
+    expect(notice!.querySelector('.truncation-text')!.textContent).toBe('上下文已截断，部分历史已省略');
   });
 
   it('count>1 时应显示具体次数', () => {
     const bubble = createBubble();
     showTruncationNotice(bubble, 3);
     const notice = bubble.querySelector('.truncation-notice');
-    expect(notice!.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
-    expect(notice!.textContent).toBe(' 上下文已截断 3 次，部分历史已省略');
+    expect(notice!.querySelector('.truncation-text')!.textContent).toBe('上下文已截断 3 次，部分历史已省略');
   });
 
   it('count=2 时应显示次数', () => {
     const bubble = createBubble();
     showTruncationNotice(bubble, 2);
     const notice = bubble.querySelector('.truncation-notice');
-    expect(notice!.textContent).toContain('2 次');
+    expect(notice!.querySelector('.truncation-text')!.textContent).toContain('2 次');
   });
 
-  it('复用已存在的 .truncation-notice 元素', () => {
+  it('复用已存在的 .truncation-notice 元素（仅更新文本，不重建关闭按钮）', () => {
     const bubble = createBubble();
     showTruncationNotice(bubble, 1);
     const first = bubble.querySelector('.truncation-notice');
+    const firstCloseBtn = first!.querySelector('.truncation-close');
     showTruncationNotice(bubble, 5);
     const second = bubble.querySelector('.truncation-notice');
     expect(second).toBe(first);
-    expect(second!.textContent).toContain('5 次');
+    // 文本已更新
+    expect(second!.querySelector('.truncation-text')!.textContent).toContain('5 次');
+    // 关闭按钮未被重建（引用相同）
+    expect(second!.querySelector('.truncation-close')).toBe(firstCloseBtn);
   });
 
   it('应插入到 bubble 顶部（第一个子元素）', () => {

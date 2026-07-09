@@ -72,6 +72,8 @@ function createMockHost(overrides?: Partial<ChatPanelHost>): ChatPanelHost {
     onStreamStuck: vi.fn(),
     // 缺口 J：manual 模式归档按钮渲染依赖 host.getArchiveMode()（默认 full 不渲染）
     getArchiveMode: vi.fn(() => 'full' as const),
+    // 忘记操作二次确认（默认直接确认）
+    showConfirmDialog: vi.fn(async () => true),
     ...overrides,
   };
 }
@@ -556,9 +558,12 @@ describe('showTruncationNotice', () => {
     const el = streamingMessages.get('s1') as HTMLElement;
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
     const notice = bubble.querySelector('.truncation-notice');
-    // SVG 图标 + 文本分离：textContent 不含图标，仅含文本部分
-    expect(notice?.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
-    expect(notice?.textContent).toBe(' 上下文已截断，部分历史已省略');
+    // 图标 span 含 SVG use 引用
+    expect(notice?.querySelector('.truncation-icon use')?.getAttribute('href')).toBe('#icon-warning');
+    // 文本 span 承载文案（P3-3 重构：独立 span，无前导空格）
+    expect(notice?.querySelector('.truncation-text')?.textContent).toBe('上下文已截断，部分历史已省略');
+    // 关闭按钮存在（P3-3：可关闭）
+    expect(notice?.querySelector('.truncation-close')).not.toBeNull();
     // 应插入到 bubble 顶部（firstChild）
     expect(bubble.firstChild).toBe(notice);
   });
@@ -572,8 +577,8 @@ describe('showTruncationNotice', () => {
     const bubble = el.querySelector('.message-bubble') as HTMLElement;
     const notices = bubble.querySelectorAll('.truncation-notice');
     expect(notices.length).toBe(1);
-    expect(notices[0]?.querySelector('use')?.getAttribute('href')).toBe('#icon-warning');
-    expect(notices[0]?.textContent).toBe(' 上下文已截断 3 次，部分历史已省略');
+    expect(notices[0]?.querySelector('.truncation-icon use')?.getAttribute('href')).toBe('#icon-warning');
+    expect(notices[0]?.querySelector('.truncation-text')?.textContent).toBe('上下文已截断 3 次，部分历史已省略');
   });
 });
 
@@ -1010,6 +1015,23 @@ describe('事件委托 · click 分发', () => {
     expect(card.classList.contains('collapsed')).toBe(false);
     header.click();
     expect(card.classList.contains('collapsed')).toBe(true);
+  });
+
+  it('data-action=dismiss-truncation 应移除 .truncation-notice 元素', () => {
+    const { messagesEl } = createManager();
+    // 模拟消息气泡内的截断提示条结构
+    const bubble = document.createElement('div');
+    bubble.className = 'message-bubble';
+    const notice = document.createElement('div');
+    notice.className = 'truncation-notice';
+    const closeBtn = document.createElement('button');
+    closeBtn.dataset.action = 'dismiss-truncation';
+    notice.appendChild(closeBtn);
+    bubble.appendChild(notice);
+    messagesEl.appendChild(bubble);
+    // 点击关闭按钮应移除整个 notice
+    closeBtn.click();
+    expect(messagesEl.querySelector('.truncation-notice')).toBeNull();
   });
 
   it('data-action=load-more 应禁用按钮 + 文本"加载中..." + 触发回调', () => {
