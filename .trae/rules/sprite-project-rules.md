@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v0.7
+version: v0.8
 date: 2026-07-10
 ---
 
@@ -196,6 +196,38 @@ hosts/memora-sprite/
 | `ui.ts` | UIManager 门面（组合持有所有子模块 + 薄委托方法） | 内联复杂 DOM 渲染逻辑（应拆分到 panels/） |
 
 **执行方式**：controllers/ 需要访问 DOM 时，通过 UIManager 提供的门面方法（如 `getMemorySearchParams()` / `triggerMemorySearchInput()` / `setMemoryListState()`），由 UIManager 内部委托到对应 PanelManager。
+
+#### 4.1.1 Panel Manager IPC 调用边界（F-P0 评估沉淀）
+
+> **背景**：F-P0 审计发现 `panels/` 中 34 处 `window.electronAPI.*` 直调，经评估 23 处合理、11 处需处理。此条款明确判断标准，避免"所有 IPC 必须经 Controller"的过度约束。
+
+**核心判断标准**：IPC 调用的归属取决于"是否涉及跨模块业务编排"，而非"是否调用 IPC"。`controllers/` 自身也直接调 IPC（如 `settingsController` 调 `updateConfigBatch`），分层边界是"业务编排职责"而非"IPC 调用权限"。
+
+| 类别 | 特征 | 归属 | 示例 |
+|------|------|------|------|
+| 合理 UI 联动 | 纯 UI 操作或单一功能专项触发，无跨模块编排 | `panels/` 直调 | 窗口控制（minimize/maximize/close）、命令面板快捷 toggle、拖放安装、剪贴板分析、会话消息搜索 |
+| UI 耦合型业务逻辑 | 高度耦合表单校验/按钮状态/toast 反馈，分离会导致 Controller 反向访问 PanelManager 内部状态 | `panels/` 直调 + `host` 回调注入跨模块关注点 | LLM Provider CRUD（save/test/delete/setActive，表单校验 + 按钮禁用 + toast 反馈耦合） |
+| 跨模块业务编排 | 涉及多面板协调或复杂状态决策 | `controllers/` 委托 | 批量配置保存（`updateConfigBatch`）、归档模式即时切换、会话加载/分页/分叉、角色切换持久化 |
+
+**关键约束**：
+
+- `panels/` 中的 IPC 调用必须通过 `host` 回调注入 `showToast` / `showConfirmDialog` 等跨模块关注点，不直接访问 UIManager 内部
+- `controllers/` 中的 IPC 调用后，通过 UIManager 门面方法通知 PanelManager 刷新 DOM
+- 加载操作（如 `listLlmProviders` / `listWorkProjections` / `listAuditLog`）允许在 `panels/` 中直调，因为 PanelManager 是渲染数据源的消费者
+
+**F-P0 评估结论**（2026-07-10）：
+
+| 违规项 | 位置 | 处理方式 |
+|--------|------|----------|
+| Provider CRUD 7 处 | `settingsPanelManager.ts` L768-1105 | 归类为"UI 耦合型业务逻辑"，允许直调（已通过 `host` 回调注入 toast/confirm） |
+| 画像 confirm/reject 3 处 | `profilePanelManager.ts` L253/272/301 | 技术债：应委托 `settingsController`（加载已委托，写操作未委托，模式不一致） |
+| 审计日志清空 1 处 | `auditPanelManager.ts` L102 | 技术债：应委托 `settingsController`（同上模式不一致） |
+| 窗口控制 4 处 | `panelRouter.ts` L110/329/334/339 | 归类为"合理 UI 联动"，允许直调 |
+| 命令面板 6 处 | `commandPaletteManager.ts` L289-455 | 归类为"合理 UI 联动"（快捷启动器定位） |
+| 输入区 Provider 选择 5 处 | `inputAreaManager.ts` L350-486 | 归类为"合理 UI 联动"（独立 UI 表面的快捷操作） |
+| 其他 7 处 | skillDrop/clipboard/searchMessages 等 | 归类为"合理 UI 联动"（单一功能专项触发） |
+
+> 技术债（画像 3 处 + 审计 1 处）触发时机：profile/audit 模块下次有功能需求时顺带偿还。
 
 ### 4.2 注释规范（文件头与类级注释关系）
 
