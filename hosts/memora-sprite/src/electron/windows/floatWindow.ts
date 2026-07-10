@@ -110,9 +110,7 @@ export class FloatWindow {
     // 渲染进程请求移动窗口（拖动时持续调用）
     // 移除 isDragging 守卫：渲染进程完全控制拖动逻辑，避免 IPC 异步时序问题
     ipcMain.on(IPC_CHANNELS.MOVE_FLOAT_WINDOW, (_event, dx: number, dy: number) => {
-      const pos = this.win.getPosition();
-      const currentX = pos[0] ?? 0;
-      const currentY = pos[1] ?? 0;
+      const [currentX, currentY] = this.win.getPosition() as [number, number];
       const newX = currentX + dx;
       const newY = currentY + dy;
       this.win.setPosition(newX, newY);
@@ -120,9 +118,7 @@ export class FloatWindow {
 
     // 渲染进程通知拖动结束，保存最终位置
     ipcMain.on(IPC_CHANNELS.SAVE_FLOAT_POSITION, () => {
-      const pos = this.win.getPosition();
-      const x = pos[0] ?? 0;
-      const y = pos[1] ?? 0;
+      const [x, y] = this.win.getPosition() as [number, number];
       this.windowStateManager.saveFloatPosition(x, y);
     });
 

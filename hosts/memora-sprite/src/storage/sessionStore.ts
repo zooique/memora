@@ -233,8 +233,10 @@ export class SqliteSessionStore implements ISessionStore {
     ).get(parsed.date, parsed.session) as { content: string } | undefined;
 
     if (!row) return '';
-    // 截断到 50 字符，避免预览过长
-    return row.content.length > 50 ? row.content.slice(0, 50) + '...' : row.content;
+    // 截断到 MAX_PREVIEW_LENGTH 字符，避免预览过长
+    return row.content.length > MAX_PREVIEW_LENGTH
+      ? row.content.slice(0, MAX_PREVIEW_LENGTH) + '...'
+      : row.content;
   }
 
   /**
@@ -297,3 +299,6 @@ export interface SessionSearchRow {
   content: string;
   timestamp: string;
 }
+
+/** 会话预览截断长度上限（字符数），超出部分追加 "..." */
+const MAX_PREVIEW_LENGTH = 50;

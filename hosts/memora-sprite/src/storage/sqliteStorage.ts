@@ -264,12 +264,9 @@ export class SqliteStorage implements IMemoryStorage {
    * @returns 匹配的活跃记忆列表
    */
   search(query: string, limit = 10): Memory[] {
-    // 空查询：按 score 降序返回活跃记忆
+    // 空查询或无有效 token：按 score 降序返回活跃记忆
     if (!query.trim()) {
-      const rows = this.db.prepare(
-        'SELECT * FROM memories WHERE deleted_at IS NULL ORDER BY score DESC LIMIT ?'
-      ).all(limit) as MemoryRow[];
-      return rows.map(r => this.rowToMemory(r));
+      return this.getAllActiveOrderedByScore(limit);
     }
 
     // 规范分词（与 InMemoryStorage 行为一致）
@@ -277,10 +274,7 @@ export class SqliteStorage implements IMemoryStorage {
 
     // 若分词后无有效 token，降级为按 score 返回
     if (tokens.length === 0) {
-      const rows = this.db.prepare(
-        'SELECT * FROM memories WHERE deleted_at IS NULL ORDER BY score DESC LIMIT ?'
-      ).all(limit) as MemoryRow[];
-      return rows.map(r => this.rowToMemory(r));
+      return this.getAllActiveOrderedByScore(limit);
     }
 
     // LIKE 关键词匹配：任一 token 命中即可（附加 deleted_at IS NULL 过滤）
@@ -389,6 +383,19 @@ export class SqliteStorage implements IMemoryStorage {
   }
 
   // ─── 内部工具 ──────────────────────────────────────────
+
+  /**
+   * 按 score 降序获取活跃记忆列表（公共查询，消除 search() 中的重复分支）
+   *
+   * @param limit 返回数量上限
+   * @returns 活跃记忆列表
+   */
+  private getAllActiveOrderedByScore(limit: number): Memory[] {
+    const rows = this.db.prepare(
+      'SELECT * FROM memories WHERE deleted_at IS NULL ORDER BY score DESC LIMIT ?'
+    ).all(limit) as MemoryRow[];
+    return rows.map(r => this.rowToMemory(r));
+  }
 
   private rowToMemory(row: MemoryRow): Memory {
     return {

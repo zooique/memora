@@ -60,7 +60,7 @@ export class SkillDropManager {
    * @param files 拖入的文件列表
    */
   async handleSkillDrop(files: File[]): Promise<void> {
-    if (!files || files.length === 0) return;
+    if (files.length === 0) return;
 
     // 过滤非 .md 文件（拖入多文件时可能混入其他类型）
     const mdFiles = files.filter((f) => f.name.toLowerCase().endsWith('.md'));

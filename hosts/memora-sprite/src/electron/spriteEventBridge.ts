@@ -152,53 +152,46 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   let proactiveTrayResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   // 主动提示：托盘脉冲 + 系统通知 + 窗口内提示（保留显式处理，含复杂副作用）
+  // 异常由 emitSprite() 的 per-handler try/catch 统一捕获，此处不重复保护
   registerSpriteEvent(deps, 'proactivePrompt', ({ prompt, triggers, silent, isMilestone, lightweight }) => {
-    // 整个 handler 用 try/catch 分段保护，防止单个副作用抛错中断后续逻辑
-    try {
-      // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
-      deps.trayManager?.setState('active');
+    // 始终执行：托盘切换为 active 状态（蓝色 + 脉冲）
+    deps.trayManager?.setState('active');
 
-      // 启动托盘状态自动复位定时器（兜底）
-      if (proactiveTrayResetTimer !== null) {
-        clearTimeout(proactiveTrayResetTimer);
+    // 启动托盘状态自动复位定时器（兜底）
+    if (proactiveTrayResetTimer !== null) {
+      clearTimeout(proactiveTrayResetTimer);
+    }
+    proactiveTrayResetTimer = setTimeout(() => {
+      proactiveTrayResetTimer = null;
+      deps.trayManager?.setState('idle');
+    }, PROACTIVE_TRAY_RESET_MS);
+
+    // 非静默模式 + 非轻量提示：系统通知（轻量提示跳过，避免召回场景打扰用户）
+    // 注意：silent 恒为 false（ProactiveEngine.tryEmit 在 silentMode 时 return），
+    // lightweight=true 时（方向 A 召回）仅托盘脉冲 + 窗口内提示，不弹系统通知
+    if (!silent && !lightweight && Notification.isSupported()) {
+      // Phase 2.3：里程碑使用特殊通知标题
+      const notification = new Notification({
+        title: isMilestone ? '🎉 里程碑达成' : 'Memora 精灵',
+        body: prompt,
+      });
+      notification.on('click', () => {
+        deps.windowStateManager?.transition('full');
+      });
+      notification.show();
+    }
+
+    // 非静默模式 + 完整窗口可见：窗口内提示
+    if (!silent) {
+      // Phase 2.3：传递 isMilestone 标志到渲染层
+      sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone, lightweight }, silent);
+
+      // 浮动窗口主动提示未读徽章
+      // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
+      const fullWindow = deps.windowManager?.getFullWindow();
+      if (fullWindow && !fullWindow.isDestroyed() && !fullWindow.isVisible()) {
+        deps.incrementUnreadCount();
       }
-      proactiveTrayResetTimer = setTimeout(() => {
-        proactiveTrayResetTimer = null;
-        deps.trayManager?.setState('idle');
-      }, PROACTIVE_TRAY_RESET_MS);
-
-      // 非静默模式 + 非轻量提示：系统通知（轻量提示跳过，避免召回场景打扰用户）
-      // 注意：silent 恒为 false（ProactiveEngine.tryEmit 在 silentMode 时 return），
-      // 此处的 !silent 检查是防御性代码，未来若恢复 silent 路径仍有保护意义
-      // lightweight=true 时（方向 A 召回）仅托盘脉冲 + 窗口内提示，不弹系统通知
-      if (!silent && !lightweight && Notification.isSupported()) {
-        // Phase 2.3：里程碑使用特殊通知标题
-        const notification = new Notification({
-          title: isMilestone ? '🎉 里程碑达成' : 'Memora 精灵',
-          body: prompt,
-        });
-        notification.on('click', () => {
-          deps.windowStateManager?.transition('full');
-        });
-        notification.show();
-      }
-
-      // 非静默模式 + 完整窗口可见：窗口内提示
-      if (!silent) {
-        // Phase 2.3：传递 isMilestone 标志到渲染层
-        sendSpriteEventIfVisible(deps, 'proactivePrompt', { prompt, triggers, silent, isMilestone, lightweight }, silent);
-
-        // 浮动窗口主动提示未读徽章
-        // 完整窗口不可见时，用户无法看到 banner，需在浮动窗口徽章上累积未读计数
-        // 补充 isDestroyed() 检查，防止窗口销毁后调用 isVisible() 抛错
-        const fullWindow = deps.windowManager?.getFullWindow();
-        if (fullWindow && !fullWindow.isDestroyed() && !fullWindow.isVisible()) {
-          deps.incrementUnreadCount();
-        }
-      }
-    } catch (error) {
-      // 某个副作用抛错时记录日志，但不影响精灵事件总线中其他 handler 的执行
-      logger.warn({ error: toError(error) }, '[proactivePrompt handler] 副作用执行异常');
     }
   });
 
@@ -302,60 +295,64 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
  * @param deps 依赖
  */
 function pushInitialPerceptionData(deps: SpriteEventBridgeDeps): void {
+  let snapshot: ReturnType<SpriteEventBridgeDeps['sprite']['getPerceptionSnapshot']>;
+  let presenceSnapshot: ReturnType<SpriteEventBridgeDeps['sprite']['getPresenceSnapshot']>;
   try {
-    const snapshot = deps.sprite.getPerceptionSnapshot();
-    const presenceSnapshot = deps.sprite.getPresenceSnapshot?.();
-
-    // 强制推送（不检查窗口可见性）：初始化阶段窗口可能还不可见，
-    // 但数据需要预送到渲染层缓存，窗口显示时直接展示
-    const fullWindow = deps.windowManager.getFullWindow();
-    if (fullWindow && !fullWindow.isDestroyed()) {
-      if (snapshot) {
-        // 推送初始情感基调
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-          type: 'affectUpdated',
-          payload: {
-            warmth: snapshot.affect.warmth,
-            playfulness: snapshot.affect.playfulness,
-            directness: snapshot.affect.directness,
-            initiative: snapshot.affect.initiative,
-          },
-        });
-
-        // 推送初始默契度
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-          type: 'rapportUpdated',
-          payload: {
-            trust: snapshot.rapport.trust,
-            familiarity: snapshot.rapport.familiarity,
-            level: snapshot.rapport.level,
-            description: snapshot.rapport.description,
-          },
-        });
-
-        // 推送初始对话上下文
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-          type: 'contextUpdated',
-          payload: {
-            rhythm: snapshot.context.rhythm,
-            coherence: snapshot.context.coherence,
-            depth: snapshot.context.depth,
-            dominantSource: snapshot.context.dominantSource,
-            description: snapshot.context.description,
-          },
-        });
-      }
-
-      // 推送初始在场状态（时序修复：presenceController.start() 后可能不发射初始事件）
-      if (presenceSnapshot) {
-        fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
-          type: 'presenceChanged',
-          payload: presenceSnapshot,
-        });
-      }
-    }
+    snapshot = deps.sprite.getPerceptionSnapshot();
+    presenceSnapshot = deps.sprite.getPresenceSnapshot();
   } catch (error) {
-    logger.warn({ error: toError(error) }, '[pushInitialPerceptionData] 推送初始感知数据失败');
+    // 初始化阶段感知数据获取失败不阻塞应用启动，但需 error 级别暴露问题
+    logger.error({ error: toError(error) }, '[pushInitialPerceptionData] 感知数据获取失败');
+    return;
+  }
+
+  // 强制推送（不检查窗口可见性）：初始化阶段窗口可能还不可见，
+  // 但数据需要预送到渲染层缓存，窗口显示时直接展示
+  const fullWindow = deps.windowManager.getFullWindow();
+  if (fullWindow && !fullWindow.isDestroyed()) {
+    if (snapshot) {
+      // 推送初始情感基调
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+        type: 'affectUpdated',
+        payload: {
+          warmth: snapshot.affect.warmth,
+          playfulness: snapshot.affect.playfulness,
+          directness: snapshot.affect.directness,
+          initiative: snapshot.affect.initiative,
+        },
+      });
+
+      // 推送初始默契度
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+        type: 'rapportUpdated',
+        payload: {
+          trust: snapshot.rapport.trust,
+          familiarity: snapshot.rapport.familiarity,
+          level: snapshot.rapport.level,
+          description: snapshot.rapport.description,
+        },
+      });
+
+      // 推送初始对话上下文
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+        type: 'contextUpdated',
+        payload: {
+          rhythm: snapshot.context.rhythm,
+          coherence: snapshot.context.coherence,
+          depth: snapshot.context.depth,
+          dominantSource: snapshot.context.dominantSource,
+          description: snapshot.context.description,
+        },
+      });
+    }
+
+    // 推送初始在场状态（时序修复：presenceController.start() 后可能不发射初始事件）
+    if (presenceSnapshot) {
+      fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_EVENT, {
+        type: 'presenceChanged',
+        payload: presenceSnapshot,
+      });
+    }
   }
 }
 

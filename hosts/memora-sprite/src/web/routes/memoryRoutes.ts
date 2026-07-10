@@ -205,8 +205,8 @@ export async function handleMemoryRoute(
         && subPath !== '/trash' && subPath !== '/graph' && subPath !== '/search'
         && subPath !== '/health' && subPath !== '/review'
         && !subPath.startsWith('/relation')) {
-      const id = subPath.slice(1); // 去除前导 /
-      if (!id || id.length > 500) {
+      const id = subPath.slice(1); // 去除前导 /（subPath.length > 1 已保证 id 非空）
+      if (id.length > 500) {
         sendJson(res, 200, { memory: null });
         return;
       }
@@ -218,8 +218,8 @@ export async function handleMemoryRoute(
     // DELETE /api/memories/:id — 删除记忆（软删除，进入回收站）
     // 注意：必须排除 /trash/ 前缀，否则会拦截回收站彻底删除路由
     if (method === 'DELETE' && subPath.startsWith('/') && subPath.length > 1 && !subPath.startsWith('/trash/')) {
-      const id = subPath.slice(1); // 去除前导 /
-      if (!id || id.length > 500) {
+      const id = subPath.slice(1); // 去除前导 /（subPath.length > 1 已保证 id 非空）
+      if (id.length > 500) {
         sendJson(res, 200, { deleted: false });
         return;
       }

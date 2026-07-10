@@ -188,10 +188,10 @@ export class PerceptionCoordinator {
   } | null {
     const agent = this.opts.agent;
     // Agent 未就绪时返回 null（UI 显示占位文案）
-    if (!agent?.memory) return null;
+    if (!agent.memory) return null;
 
     // 获取所有记忆用于推导（上限 DEFAULT_LIST_LIMIT，与 refreshBeforeChat 一致）
-    const memories = agent.memory.list(DEFAULT_LIST_LIMIT) ?? [];
+    const memories = agent.memory.list(DEFAULT_LIST_LIMIT);
     if (memories.length === 0) return null;
 
     // 1. 情感基调推导（复用 AffectController 配置，不修改 PerceptionCoordinator 状态）
@@ -211,7 +211,7 @@ export class PerceptionCoordinator {
     this.opts.rapportController.updateOptions({
       acceptanceRate: this.opts.proactiveEngine.acceptanceRate,
       interactionDays,
-      totalMessages: agent.getMetrics?.().llm.callCount ?? 0,
+      totalMessages: agent.getMetrics().llm.callCount,
       sourceDiversity: new Set(memories.map((m) => m.source)).size,
     });
     const rapport = this.opts.rapportController.deriveRapport(memories);
@@ -281,7 +281,7 @@ export class PerceptionCoordinator {
     this.opts.rapportController.updateOptions({
       acceptanceRate: this.opts.proactiveEngine.acceptanceRate,
       interactionDays,
-      totalMessages: this.opts.agent.getMetrics?.().llm.callCount ?? 0,
+      totalMessages: this.opts.agent.getMetrics().llm.callCount,
       sourceDiversity: new Set(memories.map((m) => m.source)).size,
     });
 
@@ -371,7 +371,7 @@ export class PerceptionCoordinator {
     }
 
     // 将模式洞察返回（不再直接注入，由调用方统一注入）
-    return this.opts.patternDetector.buildPatternPrompt(patterns) ?? '';
+    return this.opts.patternDetector.buildPatternPrompt(patterns);
   }
 
   /**
@@ -444,7 +444,7 @@ export class PerceptionCoordinator {
         : mem.source === 'insight' ? '洞察'
         : '记忆';
       // 取 content 前 80 字作为摘要
-      const preview = (mem.content ?? '').substring(0, 80);
+      const preview = mem.content.substring(0, 80);
       lines.push(`- [${label}] ${mem.name}: ${preview}`);
     }
 

@@ -30,7 +30,8 @@ export function injectThemeScript(webContents: WebContents): void {
               document.documentElement.setAttribute('data-theme', 'dark');
             }
           } catch (e) {
-            // localStorage 不可用时降级为默认浅色主题
+            // localStorage 不可用（隐私模式/cookie 禁用）时降级为默认浅色主题
+            console.warn('主题读取失败，降级为默认浅色主题', e);
           }
         })();
       `)

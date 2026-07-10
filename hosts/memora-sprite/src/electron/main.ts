@@ -707,8 +707,8 @@ registerMinimalIpcHandlers(appState, {
   setAppRuntime,
   setupAgentReady,
   classifyInitError,
-  getCurrentAgent: () => appState.agent ?? null,
-  getCurrentSprite: () => appState.sprite ?? null,
+  getCurrentAgent: () => appState.agent,
+  getCurrentSprite: () => appState.sprite,
 });
 
 // ─── 应用生命周期 ─────────────────────────────────────────

@@ -181,36 +181,32 @@ export function formatTimeAgo(dateStr: string): string {
  * @returns 当天返回 "HH:MM"，昨天返回 "昨天 HH:MM"，更早返回 "MM-DD HH:MM"
  */
 export function formatTimestamp(isoString: string): string {
-  try {
-    const date = new Date(isoString);
-    // Invalid Date 防御：try/catch 无法捕获（new Date 非法字符串不抛异常，返回 Invalid Date）。
-    // 显式检测 date.getTime() 为 NaN 时降级返回原始字符串，确保降级分支可达。
-    if (Number.isNaN(date.getTime())) return isoString;
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
+  const date = new Date(isoString);
+  // Invalid Date 防御：new Date 非法字符串不抛异常，返回 Invalid Date。
+  // 显式检测 date.getTime() 为 NaN 时降级返回原始字符串，确保降级分支可达。
+  if (Number.isNaN(date.getTime())) return isoString;
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
 
-    const hh = String(date.getHours()).padStart(2, '0');
-    const mm = String(date.getMinutes()).padStart(2, '0');
-    const time = `${hh}:${mm}`;
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  const time = `${hh}:${mm}`;
 
-    if (isToday) {
-      return time;
-    }
-
-    // 昨天判断：将当前日期回退一天，比较日期字符串
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    const isYesterday = date.toDateString() === yesterday.toDateString();
-    if (isYesterday) {
-      return `昨天 ${time}`;
-    }
-
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${month}-${day} ${time}`;
-  } catch {
-    return isoString;
+  if (isToday) {
+    return time;
   }
+
+  // 昨天判断：将当前日期回退一天，比较日期字符串
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
+  if (isYesterday) {
+    return `昨天 ${time}`;
+  }
+
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${month}-${day} ${time}`;
 }
 
 /**
@@ -222,16 +218,12 @@ export function formatTimestamp(isoString: string): string {
  * @returns "HH:MM" 格式的时间文本
  */
 export function formatClock(isoString: string): string {
-  try {
-    const date = new Date(isoString);
-    // Invalid Date 防御：同 formatTimestamp，显式检测确保降级分支可达。
-    if (Number.isNaN(date.getTime())) return isoString;
-    const hh = String(date.getHours()).padStart(2, '0');
-    const mm = String(date.getMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-  } catch {
-    return isoString;
-  }
+  const date = new Date(isoString);
+  // Invalid Date 防御：同 formatTimestamp，显式检测确保降级分支可达。
+  if (Number.isNaN(date.getTime())) return isoString;
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
 }
 
 /**

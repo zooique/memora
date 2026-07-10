@@ -197,35 +197,28 @@ export class SpriteConfigStore {
   /**
    * 保存 Provider 映射表（多 Provider 管理专用）
    *
-   * 合并写入：读取现有配置，更新 llm.providers 和 llm.active，
+   * 合并写入：基于调用方传入的现有配置，更新 llm.providers 和 llm.active，
    * 同时同步更新扁平字段（provider/model/baseUrl/apiKey/temperature）用于向后兼容。
    *
    * @param providers Provider 映射表（key → ProviderConfig）
    * @param active 当前激活的 Provider 别名
-   * @param existing 现有的完整配置（避免重复读取，由调用方传入）
+   * @param existing 现有的完整配置（由调用方传入，避免重复读取）
    */
   async saveProviders(
     providers: Record<string, { provider: string; model: string; baseUrl?: string; apiKey?: string; temperature?: number }>,
     active: string,
-    existing?: Config,
+    existing: Config,
   ): Promise<void> {
     const dir = resolve(this.configPath, '..');
     await mkdir(dir, { recursive: true });
-
-    const base = existing ?? await this.load().catch(() => ({
-      llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
-      memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
-      security: { permission: 'owner' as const, confirmWrites: false },
-      allowedPaths: [],
-    }));
 
     // 获取当前激活的 Provider 配置，同步更新扁平字段用于向后兼容
     const activeProvider = providers[active];
 
     const config: Config = {
-      ...base,
+      ...existing,
       llm: {
-        ...base.llm,
+        ...existing.llm,
         providers,
         active,
         // 同步更新扁平字段，确保新旧格式一致
@@ -234,7 +227,7 @@ export class SpriteConfigStore {
           model: activeProvider.model,
           baseUrl: activeProvider.baseUrl ?? '',
           apiKey: activeProvider.apiKey ?? '',
-          temperature: activeProvider.temperature ?? base.llm.temperature ?? 0.7,
+          temperature: activeProvider.temperature ?? existing.llm.temperature ?? 0.7,
         } : {}),
       },
     };

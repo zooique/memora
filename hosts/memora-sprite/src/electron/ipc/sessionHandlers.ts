@@ -11,7 +11,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { toError } from 'memora';
+import { toError, logger } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { getLocalDate } from '../../sprite/constants.js';
@@ -122,7 +122,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
           // 异步归档，不阻塞切换（归档写入 memory storage，与 sessionStore 独立）
           ctx.agent.archiveSessionContent(currentInfo.date, currentInfo.session).catch((err) => {
             // 归档失败仅记录日志，不影响会话切换
-            console.warn('[sessionHandlers] 会话内容归档失败:', err);
+            logger.warn({ err: toError(err).message }, '[sessionHandlers] 会话内容归档失败');
           });
         }
       }

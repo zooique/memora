@@ -61,6 +61,8 @@ const mockAgent = {
   injectAffect: vi.fn(),
   // ADR-015 归档模式：Sprite 构造时调用 agent.setArchiveMode，mock 需提供方法
   setArchiveMode: vi.fn(),
+  // Phase 2.1：perceptionCoordinator 调用 getMetrics().llm.callCount 统计消息数
+  getMetrics: vi.fn(() => ({ llm: { callCount: 0 } })),
   // B4：applyProjectMode 调用 agent.switchProject 切换专注项目（异步）
   switchProject: vi.fn().mockResolvedValue(undefined),
   memory: {

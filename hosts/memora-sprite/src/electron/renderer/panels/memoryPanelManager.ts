@@ -330,7 +330,7 @@ export class MemoryPanelManager {
    * 避免大量记忆一次性渲染导致 DOM 性能下降。
    */
   private renderMemoryPage(): void {
-    if (!this.memoryListEl || !this.allMemories) return;
+    if (!this.memoryListEl) return;
 
     // 计算当前页的起止索引
     const start = 0;
@@ -435,7 +435,7 @@ export class MemoryPanelManager {
     if (!container) return;
 
     // 无记忆数据时显示空状态
-    if (!this.allMemories || this.allMemories.length === 0) {
+    if (this.allMemories.length === 0) {
       clearElement(container);
       const empty = document.createElement('div');
       empty.className = 'timeline-empty';

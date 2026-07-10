@@ -13,7 +13,6 @@
 
 import type { SpriteConfig } from '../spriteConfig.js';
 import type { DashboardData, PersonaInfo } from '../controllers/index.js';
-import { DEFAULT_SPRITE_CONFIG } from '../spriteConfig.js';
 import { MS_PER_MINUTE } from '../constants.js';
 
 // PersonaEntry 改为导入 PersonaInfo（sprite 层真理源），消除重复定义
@@ -24,19 +23,18 @@ import { MS_PER_MINUTE } from '../constants.js';
  * @param config 精灵配置对象
  * @returns 格式化后的配置文本
  */
-export function formatConfig(config: SpriteConfig): string {
+export function formatConfig(config: Required<SpriteConfig>): string {
   const lines: string[] = ['── 精灵配置 ──'];
-  // 兜底默认值引用 DEFAULT_SPRITE_CONFIG，避免与实际默认值不一致
-  lines.push(`  触发器间隔：${(config.triggerIntervalMs ?? DEFAULT_SPRITE_CONFIG.triggerIntervalMs) / MS_PER_MINUTE} 分钟`);
+  lines.push(`  触发器间隔：${config.triggerIntervalMs / MS_PER_MINUTE} 分钟`);
   lines.push(`  默认角色：${config.defaultPersona || '(未设置)'}`);
   lines.push(`  静默模式：${config.silentMode ? '开启' : '关闭'}`);
-  lines.push(`  主动提示阈值：${config.proactiveThreshold ?? DEFAULT_SPRITE_CONFIG.proactiveThreshold} 个事件`);
-  lines.push(`  主动提示冷却：${(config.proactiveCooldownMs ?? DEFAULT_SPRITE_CONFIG.proactiveCooldownMs) / MS_PER_MINUTE} 分钟`);
+  lines.push(`  主动提示阈值：${config.proactiveThreshold} 个事件`);
+  lines.push(`  主动提示冷却：${config.proactiveCooldownMs / MS_PER_MINUTE} 分钟`);
   lines.push(`  文件监听：${config.fileWatcherEnabled ? '开启' : '关闭'}`);
   if (config.fileWatcherEnabled) {
-    lines.push(`  监听路径：${(config.fileWatcherPaths ?? []).join(', ')}`);
-    lines.push(`  忽略模式：${(config.fileWatcherIgnore ?? []).join(', ')}`);
-    lines.push(`  防抖时间：${config.fileWatcherDebounceMs ?? DEFAULT_SPRITE_CONFIG.fileWatcherDebounceMs} 毫秒`);
+    lines.push(`  监听路径：${config.fileWatcherPaths.join(', ')}`);
+    lines.push(`  忽略模式：${config.fileWatcherIgnore.join(', ')}`);
+    lines.push(`  防抖时间：${config.fileWatcherDebounceMs} 毫秒`);
   }
   const modeLabel = config.projectMode === 'focus' ? '专注模式' : '智能模式';
   lines.push(`  项目模式：${modeLabel}`);

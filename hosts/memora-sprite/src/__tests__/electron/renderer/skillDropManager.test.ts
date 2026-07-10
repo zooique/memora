@@ -97,12 +97,6 @@ describe('handleSkillDrop · 边界情况', () => {
     await manager.handleSkillDrop([]);
     expect(window.electronAPI.installSkill).not.toHaveBeenCalled();
   });
-
-  it('null/undefined 应直接返回', async () => {
-    const { manager } = createManager();
-    await manager.handleSkillDrop(null as unknown as File[]);
-    expect(window.electronAPI.installSkill).not.toHaveBeenCalled();
-  });
 });
 
 // ─── handleSkillDrop · 文件类型过滤 ──────────────────────

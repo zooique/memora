@@ -98,8 +98,9 @@ export class NarrativeGenerator {
     if (payload.state === 'present') {
       this.lastNarrativePresence = { state: 'present', awaySince: null };
     } else {
-      // awayDurationMs 是离开持续时间（毫秒），计算离开起始时间戳
-      const awaySince = payload.awayDurationMs !== null && payload.awayDurationMs !== undefined
+      // awayDurationMs 类型为 number | undefined（PresencePayload.awayDurationMs?），
+      // 仅需判 undefined，!== null 属冗余判空
+      const awaySince = payload.awayDurationMs !== undefined
         ? Date.now() - payload.awayDurationMs
         : Date.now();
       this.lastNarrativePresence = { state: 'away', awaySince };

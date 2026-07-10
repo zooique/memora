@@ -174,6 +174,64 @@ function getMemorySearcher(): MemorySearcher | null {
 
 // ─── 创建角色和技能工具 ─────────────────────────────────────────
 
+/**
+ * 创建角色/技能的公共处理器工厂
+ *
+ * createPersonaHandler 和 createSkillHandler 的公共逻辑提取：
+ * 参数提取 → 校验 → 内容拼接 → confirmConfigSuggestion → reloadConfig。
+ * 仅 type 和消息文本不同，由参数区分。
+ *
+ * @param type 类型标识（'persona' | 'skill'）
+ * @param label 中文标签（用于消息文本）
+ */
+function createConfigHandler(
+  type: 'persona' | 'skill',
+  label: string,
+): ToolHandler {
+  return async (args: Record<string, unknown>, _ctx: ToolContext) => {
+    const agent = getAgentRef();
+    if (!agent) {
+      return '错误：Agent 引用未初始化';
+    }
+
+    const name = String(args.name ?? '').trim();
+    const description = String(args.description ?? '').trim();
+    const content = String(args.content ?? '').trim();
+    const keywords = String(args.keywords ?? '').trim();
+
+    if (!name) {
+      return `错误：${label}名称不能为空`;
+    }
+    if (!content) {
+      return `错误：${label}内容不能为空`;
+    }
+
+    try {
+      let configContent = content;
+      if (description) {
+        configContent = `描述：${description}\n\n${content}`;
+      }
+      if (keywords) {
+        configContent = `关键词：${keywords}\n\n${configContent}`;
+      }
+
+      await agent.config.confirmConfigSuggestion({
+        type,
+        name,
+        content: configContent,
+        confidence: 0.95,
+      });
+
+      await agent.reloadConfig(type);
+
+      return `${label} "${name}" 创建成功！已持久化到配置文件，重启后依然生效。\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
+    } catch (err) {
+      logger.warn({ err: toError(err).message, name }, `创建${label}失败`);
+      return `错误：创建${label}失败：${err instanceof Error ? err.message : String(err)}`;
+    }
+  };
+}
+
 /** create_persona 工具定义 */
 export const CREATE_PERSONA_TOOL: ToolDefinition = {
   name: 'create_persona',
@@ -202,49 +260,8 @@ export const CREATE_PERSONA_TOOL: ToolDefinition = {
   },
 };
 
-/** create_persona 工具处理器 */
-export const createPersonaHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
-  const agent = getAgentRef();
-  if (!agent) {
-    return '错误：Agent 引用未初始化';
-  }
-
-  const name = String(args.name ?? '').trim();
-  const description = String(args.description ?? '').trim();
-  const content = String(args.content ?? '').trim();
-  const keywords = String(args.keywords ?? '').trim();
-
-  if (!name) {
-    return '错误：角色名称不能为空';
-  }
-  if (!content) {
-    return '错误：角色内容不能为空';
-  }
-
-  try {
-    let personaContent = content;
-    if (description) {
-      personaContent = `描述：${description}\n\n${content}`;
-    }
-    if (keywords) {
-      personaContent = `关键词：${keywords}\n\n${personaContent}`;
-    }
-
-    await agent.config.confirmConfigSuggestion({
-      type: 'persona',
-      name,
-      content: personaContent,
-      confidence: 0.95,
-    });
-
-    await agent.reloadConfig('persona');
-
-    return `角色 "${name}" 创建成功！已持久化到配置文件，重启后依然生效。\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
-  } catch (err) {
-    logger.warn({ err: toError(err).message, name }, '创建角色失败');
-    return `错误：创建角色失败：${err instanceof Error ? err.message : String(err)}`;
-  }
-};
+/** create_persona 工具处理器（由公共工厂 createConfigHandler 生成） */
+export const createPersonaHandler: ToolHandler = createConfigHandler('persona', '角色');
 
 /** create_skill 工具定义 */
 export const CREATE_SKILL_TOOL: ToolDefinition = {
@@ -274,46 +291,5 @@ export const CREATE_SKILL_TOOL: ToolDefinition = {
   },
 };
 
-/** create_skill 工具处理器 */
-export const createSkillHandler: ToolHandler = async (args: Record<string, unknown>, _ctx: ToolContext) => {
-  const agent = getAgentRef();
-  if (!agent) {
-    return '错误：Agent 引用未初始化';
-  }
-
-  const name = String(args.name ?? '').trim();
-  const description = String(args.description ?? '').trim();
-  const content = String(args.content ?? '').trim();
-  const keywords = String(args.keywords ?? '').trim();
-
-  if (!name) {
-    return '错误：技能名称不能为空';
-  }
-  if (!content) {
-    return '错误：技能内容不能为空';
-  }
-
-  try {
-    let skillContent = content;
-    if (description) {
-      skillContent = `描述：${description}\n\n${content}`;
-    }
-    if (keywords) {
-      skillContent = `关键词：${keywords}\n\n${skillContent}`;
-    }
-
-    await agent.config.confirmConfigSuggestion({
-      type: 'skill',
-      name,
-      content: skillContent,
-      confidence: 0.95,
-    });
-
-    await agent.reloadConfig('skill');
-
-    return `技能 "${name}" 创建成功！已持久化到配置文件，重启后依然生效。\n\n描述：${description || '无'}\n关键词：${keywords || '无'}`;
-  } catch (err) {
-    logger.warn({ err: toError(err).message, name }, '创建技能失败');
-    return `错误：创建技能失败：${err instanceof Error ? err.message : String(err)}`;
-  }
-};
+/** create_skill 工具处理器（由公共工厂 createConfigHandler 生成） */
+export const createSkillHandler: ToolHandler = createConfigHandler('skill', '技能');

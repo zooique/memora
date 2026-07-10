@@ -37,16 +37,30 @@ const MAX_ID_LENGTH = 500;
 const MAX_SEARCH_QUERY_LENGTH = 1000;
 
 /**
+ * 验证名称类字符串（会话名/配置名）的公共校验逻辑
+ *
+ * 白名单：字母、数字、连字符、下划线、中文及常见 Unicode 字母。
+ * 拒绝路径分隔符（/ \）、点号（..）、空格等危险字符。
+ *
+ * @param name 待验证的名称
+ * @param maxLength 最大长度（默认 200）
+ * @returns 验证通过返回 true，否则 false
+ */
+function isValidName(name: string, maxLength: number = 200): boolean {
+  if (!name || typeof name !== 'string' || name.length === 0 || name.length > maxLength) {
+    return false;
+  }
+  return NAME_PATTERN.test(name);
+}
+
+/**
  * 验证会话名 — 拒绝路径分隔符和特殊字符
  *
  * @param name 待验证的会话名
  * @returns 验证通过返回 true，否则 false
  */
 export function isValidSessionName(name: string): boolean {
-  if (!name || typeof name !== 'string' || name.length === 0 || name.length > 200) {
-    return false;
-  }
-  return NAME_PATTERN.test(name);
+  return isValidName(name);
 }
 
 /**
@@ -59,10 +73,7 @@ export function isValidSessionName(name: string): boolean {
  * @returns 验证通过返回 true，否则 false
  */
 export function isValidConfigName(name: string): boolean {
-  if (!name || typeof name !== 'string' || name.length === 0 || name.length > 200) {
-    return false;
-  }
-  return NAME_PATTERN.test(name);
+  return isValidName(name);
 }
 
 /**

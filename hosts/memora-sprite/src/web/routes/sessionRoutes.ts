@@ -47,9 +47,10 @@ export async function handleSessionRoute(
       const result = sessions.map((sessionId) => {
         // sessionId 格式：YYYY-MM-DD-sessionName
         const match = sessionId.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
-        if (!match || !match[1] || !match[2]) return null;
-        const date = match[1];
-        const session = match[2];
+        // 正则匹配成功时两个捕获组一定非空（\d{4}-\d{2}-\d{2} 和 .+ 都要求至少 1 字符）
+        if (!match) return null;
+        const date = match[1]!;
+        const session = match[2]!;
         const messageCount = ctx.sessionStore.countMessages(date, session);
         // 获取最后一条消息作为预览
         const messages = ctx.sessionStore.loadMessagesPaginated(date, session, 1, messageCount > 0 ? messageCount - 1 : 0);
@@ -99,13 +100,14 @@ export async function handleSessionRoute(
       }
 
       const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
-      if (!match || !match[1] || !match[2]) {
+      // 正则匹配成功时两个捕获组一定非空（\d{4}-\d{2}-\d{2} 和 .+ 都要求至少 1 字符）
+      if (!match) {
         sendJson(res, 200, { messages: [], loadedSessionId: '', total: 0, hasMore: false });
         return;
       }
 
-      const targetDate = match[1];
-      const targetSession = match[2];
+      const targetDate = match[1]!;
+      const targetSession = match[2]!;
       const total = ctx.sessionStore.countMessages(targetDate, targetSession);
       const messages = ctx.sessionStore.loadMessagesPaginated(targetDate, targetSession, limit, offset);
       sendJson(res, 200, {

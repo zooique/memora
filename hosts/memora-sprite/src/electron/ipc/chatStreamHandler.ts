@@ -44,17 +44,15 @@ const STREAM_NO_PROGRESS_TIMEOUT_MS = 60_000;
  * - 本函数用于业务拒绝/超时等可预期场景（logger.warn 级别，不推送 APP_ERROR 弹窗）
  * - errorHandler.handle 用于未捕获错误（logger.error 级别，推送 APP_ERROR 弹窗）
  *
- * @param fullWindow 目标窗口（调用前已检查未销毁，函数内部二次防御）
+ * @param fullWindow 目标窗口（调用方已确保未销毁，函数内不再重复检查）
  * @param text 用户可见的错误提示文本（推送 SPRITE_ERROR）
  * @param context 错误上下文标识（用于日志检索，如 'Agent 未就绪'）
  */
 function emitStreamError(fullWindow: BrowserWindow, text: string, context: string): void {
   // 记录主进程日志（业务拒绝/超时场景用 warn 级别）
   logger.warn({ context, text }, '对话流式错误提示');
-  // 推送到渲染进程显示错误提示
-  if (!fullWindow.isDestroyed()) {
-    fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, { text });
-  }
+  // 推送到渲染进程显示错误提示（调用方均已检查 isDestroyed，同步路径无需二次防御）
+  fullWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR, { text });
 }
 
 /**

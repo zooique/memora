@@ -212,7 +212,7 @@ export class TrayManager {
     let step = 0;
     // 使用 safeSetInterval 替代原生 setInterval，便于统一追踪定时器生命周期
     this.pulseTimer = safeSetInterval(() => {
-      this.tray.setToolTip(frames[step % frames.length] ?? 'Memora');
+      this.tray.setToolTip(frames[step % frames.length]!);
       step++;
     }, TRAY_PULSE_INTERVAL_MS);
   }

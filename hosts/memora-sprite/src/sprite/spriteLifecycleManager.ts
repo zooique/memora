@@ -340,35 +340,19 @@ export class SpriteLifecycleManager {
     this.agent.on('sessionForked', onSessionForked);
   }
 
-  /** 取消订阅 Agent 事件 */
+  /** 取消订阅 Agent 事件（handler 成组注册/清空，统一遍历注销） */
   private unsubscribeAgentEvents(): void {
-    if (this.agentHandlers.memoryAdded) {
-      this.agent.off('memoryAdded', this.agentHandlers.memoryAdded);
-    }
-    if (this.agentHandlers.personaSwitched) {
-      this.agent.off('personaSwitched', this.agentHandlers.personaSwitched);
-    }
-    if (this.agentHandlers.insightExtracted) {
-      this.agent.off('insightExtracted', this.agentHandlers.insightExtracted);
-    }
-    if (this.agentHandlers.conflictDetected) {
-      this.agent.off('conflictDetected', this.agentHandlers.conflictDetected);
-    }
-    if (this.agentHandlers.projectSwitched) {
-      this.agent.off('projectSwitched', this.agentHandlers.projectSwitched);
-    }
-    if (this.agentHandlers.skillMatched) {
-      this.agent.off('skillMatched', this.agentHandlers.skillMatched);
-    }
-    if (this.agentHandlers.memoryRecalled) {
-      this.agent.off('memoryRecalled', this.agentHandlers.memoryRecalled);
-    }
-    if (this.agentHandlers.decayCompleted) {
-      this.agent.off('decayCompleted', this.agentHandlers.decayCompleted);
-    }
-    if (this.agentHandlers.sessionForked) {
-      this.agent.off('sessionForked', this.agentHandlers.sessionForked);
-    }
+    const h = this.agentHandlers;
+    // agent.off 内部用 Set.delete，对 undefined handler 是 no-op，但 TS 类型要求非空
+    if (h.memoryAdded) this.agent.off('memoryAdded', h.memoryAdded);
+    if (h.personaSwitched) this.agent.off('personaSwitched', h.personaSwitched);
+    if (h.insightExtracted) this.agent.off('insightExtracted', h.insightExtracted);
+    if (h.conflictDetected) this.agent.off('conflictDetected', h.conflictDetected);
+    if (h.projectSwitched) this.agent.off('projectSwitched', h.projectSwitched);
+    if (h.skillMatched) this.agent.off('skillMatched', h.skillMatched);
+    if (h.memoryRecalled) this.agent.off('memoryRecalled', h.memoryRecalled);
+    if (h.decayCompleted) this.agent.off('decayCompleted', h.decayCompleted);
+    if (h.sessionForked) this.agent.off('sessionForked', h.sessionForked);
     this.agentHandlers = {};
   }
 
@@ -377,28 +361,25 @@ export class SpriteLifecycleManager {
   /**
    * 基于健康度数据生成智能建议
    * 纯代码计算，不依赖 LLM。检测重复记忆、过期记忆、用户画像缺失。
+   *
+   * 异常由调用方 handleTrigger() 的外层 try/catch 统一处理，此处不重复捕获。
    */
   private generateSmartSuggestions(): void {
-    try {
-      const health = this.memoryController.getHealthDashboard();
+    const health = this.memoryController.getHealthDashboard();
 
-      const dupCount = health.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
-      if (dupCount > 0) {
-        this.proactiveEngine.addNotice('suggestion', `发现 ${dupCount} 条重复记忆，建议清理以保持记忆库整洁`);
-      }
+    const dupCount = health.duplicates.reduce((sum, g) => sum + g.memories.length, 0);
+    if (dupCount > 0) {
+      this.proactiveEngine.addNotice('suggestion', `发现 ${dupCount} 条重复记忆，建议清理以保持记忆库整洁`);
+    }
 
-      if (health.staleMemories.length > 5) {
-        this.proactiveEngine.addNotice('suggestion', `有 ${health.staleMemories.length} 条记忆可能已过时，需要回顾一下吗？`);
-      }
+    if (health.staleMemories.length > 5) {
+      this.proactiveEngine.addNotice('suggestion', `有 ${health.staleMemories.length} 条记忆可能已过时，需要回顾一下吗？`);
+    }
 
-      const dashboard = this.memoryController.dashboard();
-      const profileCount = dashboard.bySource['profile'] ?? 0;
-      if (profileCount === 0 && health.totalMemories > 10) {
-        this.proactiveEngine.addNotice('suggestion', '还没有用户画像，告诉我更多关于你的信息吧，这样我能更好地帮助你');
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ err: msg }, '智能建议生成失败');
+    const dashboard = this.memoryController.dashboard();
+    const profileCount = dashboard.bySource['profile'] ?? 0;
+    if (profileCount === 0 && health.totalMemories > 10) {
+      this.proactiveEngine.addNotice('suggestion', '还没有用户画像，告诉我更多关于你的信息吧，这样我能更好地帮助你');
     }
   }
 
@@ -420,8 +401,7 @@ export class SpriteLifecycleManager {
       this.generateSmartSuggestions();
     } catch (err) {
       span?.recordException(err instanceof Error ? err : new Error(String(err)));
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error({ err: msg, source: payload.source }, '触发器处理异常');
+      logger.error({ err: toError(err).message, source: payload.source }, '触发器处理异常');
     } finally {
       span?.end();
     }

@@ -195,7 +195,7 @@ export class SpriteConfigManager {
    * 仅保留最近 7 天，更早日数在加载时剔除
    */
   private loadDailyMessageCount(): void {
-    const stored = this.config.dailyMessageCount ?? {};
+    const stored = this.config.dailyMessageCount;
     const cutoff = Date.now() - DAILY_MESSAGE_COUNT_WINDOW_DAYS * MS_PER_DAY;
     for (const [date, count] of Object.entries(stored)) {
       const ts = new Date(date).getTime();

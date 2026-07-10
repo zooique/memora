@@ -437,8 +437,9 @@ export class CommandPaletteManager {
           },
         });
       }
-    } catch {
-      // 角色列表获取失败时静默降级，不影响静态命令
+    } catch (error) {
+      // 角色列表获取失败时静默降级，不影响静态命令（仅记录日志便于排查）
+      console.error('[CommandPalette] 加载角色列表失败，仅显示静态命令', error);
     }
 
     // 如果面板打开中，刷新搜索结果

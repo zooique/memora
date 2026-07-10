@@ -202,7 +202,7 @@ export class ContextAwareness {
   private deriveDepth(memories: Memory[]): DepthLevel {
     if (memories.length === 0) return 'none';
 
-    const avgLength = memories.reduce((sum, m) => sum + (m.content?.length ?? 0), 0) / memories.length;
+    const avgLength = memories.reduce((sum, m) => sum + m.content.length, 0) / memories.length;
 
     if (avgLength >= DEEP_LENGTH_THRESHOLD) return 'deep';
     if (avgLength >= SHALLOW_LENGTH_THRESHOLD) return 'moderate';

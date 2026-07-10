@@ -360,7 +360,8 @@ export function registerMinimalIpcHandlers(
 
         // 5. 运行时切换 Provider（不重新初始化 Agent）
         // 内核 Agent 已支持 setProvider() 运行时切换，只需替换 API 出口
-        const currentAgent = callbacks.getCurrentAgent?.();
+        // getCurrentAgent 是 MinimalIpcCallbacks 的必选方法，无需可选链
+        const currentAgent = callbacks.getCurrentAgent();
         if (currentAgent) {
           currentAgent.setProvider(newProvider);
 

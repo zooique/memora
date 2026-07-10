@@ -1472,7 +1472,7 @@ export class SettingsPanelManager {
     if (!listEl || !sectionEl) return;
 
     // 无技能：隐藏列表，显示空状态占位
-    if (!skills || skills.length === 0) {
+    if (skills.length === 0) {
       sectionEl.classList.add('hidden');
       if (emptyEl) emptyEl.classList.remove('hidden');
       return;

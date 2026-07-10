@@ -256,16 +256,15 @@ export async function handleSystemRoute(
 
           // 4. 运行时切换 Provider（不重新初始化 Agent）
           // 内核 Agent 已支持 setProvider() 运行时切换，只需替换 API 出口
-          if (ctx.agent) {
-            ctx.agent.setProvider(newProvider);
+          // ctx.agent 类型为 Agent（必填字段），无需判空；未就绪时 setProvider 抛异常由 catch 返回错误
+          ctx.agent.setProvider(newProvider);
 
-            // 同步切换后台 Provider（如果配置了）
-            if (config.llm.background) {
-              const bgProvider = createProviderFromConfig('background', config.llm.background);
-              ctx.agent.setBackgroundProvider(bgProvider);
-            } else {
-              ctx.agent.setBackgroundProvider(null);
-            }
+          // 同步切换后台 Provider（如果配置了）
+          if (config.llm.background) {
+            const bgProvider = createProviderFromConfig('background', config.llm.background);
+            ctx.agent.setBackgroundProvider(bgProvider);
+          } else {
+            ctx.agent.setBackgroundProvider(null);
           }
 
           sendJson(res, 200, { success: true, error: null, message: 'Provider 已切换，立即生效' });

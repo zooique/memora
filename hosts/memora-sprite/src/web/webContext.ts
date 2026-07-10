@@ -45,7 +45,7 @@ export async function buildPreloadScript(): Promise<string> {
 
   // 检查源码文件是否存在
   if (!existsSync(PRELOAD_SOURCE_PATH)) {
-    console.warn('[Web] preloadWeb.ts 不存在，electronAPI 将不可用');
+    logger.warn('[Web] preloadWeb.ts 不存在，electronAPI 将不可用');
     cachedPreloadScript = '';
     return cachedPreloadScript;
   }

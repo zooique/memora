@@ -30,7 +30,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setupSpriteEventListeners, unsubscribeSpriteEvents, type SpriteEventBridgeDeps } from '../../electron/spriteEventBridge.js';
 import type { SpriteEventMap } from '../../sprite/sprite.js';
 import { MAIN_TO_RENDERER_CHANNELS } from '../../electron/ipc/channels.js';
-import { setLogger } from 'memora';
+import { setLogger, logger, toError } from 'memora';
 import type { ILogger } from 'memora';
 
 // ─── Mock Notification（使用 vi.hoisted 确保变量在 vi.mock 工厂中可用）──────────────────────
@@ -107,10 +107,18 @@ function createMockSprite() {
     emit: (event: string, payload: unknown) => {
       const set = handlers.get(event);
       if (!set) return;
+      // 模拟 Sprite.emitSprite 的 per-handler try/catch 保护 + logger.warn
       for (const h of set) {
-        h(payload);
+        try {
+          h(payload);
+        } catch (error) {
+          logger.warn({ event, err: toError(error).message }, '宿主事件处理器异常');
+        }
       }
     },
+    // pushInitialPerceptionData 需要调用这两个方法
+    getPerceptionSnapshot: vi.fn(() => null),
+    getPresenceSnapshot: vi.fn(() => null),
   };
 
   return { sprite, handlers };

@@ -341,8 +341,9 @@ export function createMemoryController(uiManager: UIManager) {
               direction: 'incoming',
             });
             uiManager.showMemoryLineage(path);
-          } catch {
+          } catch (error) {
             // 脉络加载失败不影响详情查看，resetLineage 已在 showMemoryDetail 中调用
+            reportError('onMemoryClick-lineage', error);
           }
         }
       } catch (error) {
@@ -621,11 +622,11 @@ export function createMemoryController(uiManager: UIManager) {
       // 注意：getPerceptionSnapshot / getReviewData 可能不存在（如 Web 调试模式），需用 Promise.resolve + catch 确保安全
       const perceptionPromise = Promise.resolve()
         .then(() => window.electronAPI.getPerceptionSnapshot?.())
-        .catch(() => null);
+        .catch((err: unknown) => { reportError('getPerceptionSnapshot', err); return null; });
       // Phase 6.2：对话回顾数据（reviewManager.buildReviewData 的 IPC 透传），失败时不阻塞仪表盘其他区域
       const reviewPromise = Promise.resolve()
         .then(() => window.electronAPI.getReviewData?.())
-        .catch(() => null);
+        .catch((err: unknown) => { reportError('getReviewData', err); return null; });
 
       const [data, perceptionSnapshot, reviewData] = await Promise.all([
         window.electronAPI.getDashboard(),

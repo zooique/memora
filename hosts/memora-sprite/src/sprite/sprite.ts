@@ -670,7 +670,6 @@ export class Sprite {
   }
 
   sourceHealth() {
-    if (!this.agent) return null;
     return this.agent.memory?.sourceHealth() ?? null;
   }
 
@@ -727,8 +726,6 @@ export class Sprite {
    * 返回 null 表示 Agent 未就绪，UI 应跳过摘要展示。
    */
   getStartupSummary(): StartupSummary | null {
-    if (!this.agent) return null;
-
     const dashboard = this.memoryController.dashboard();
     const metrics = this.agent.getMetrics();
     const snapshot = this.perceptionCoordinator.getSnapshot();
@@ -744,9 +741,9 @@ export class Sprite {
         : null,
       perception: snapshot
         ? {
-            warmth: snapshot.affect?.warmth ?? 0.5,
-            rapportLevel: snapshot.rapport?.level ?? 'stranger',
-            rapportDescription: snapshot.rapport?.description ?? '',
+            warmth: snapshot.affect.warmth,
+            rapportLevel: snapshot.rapport.level,
+            rapportDescription: snapshot.rapport.description,
           }
         : null,
       healthStatus: sourceHealth?.overallStatus ?? null,

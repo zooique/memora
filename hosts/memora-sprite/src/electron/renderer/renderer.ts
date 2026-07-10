@@ -156,8 +156,9 @@ async function bootstrapRenderer(): Promise<void> {
       if (State.uiManager.shouldShowOnboarding(hasProviders)) {
         State.uiManager.showOnboardingDialog();
       }
-    } catch {
+    } catch (error) {
       // 查询失败时仍显示引导（不阻塞用户）
+      reportError('checkAndShowOnboarding', error);
       if (State.uiManager.shouldShowOnboarding(false)) {
         State.uiManager.showOnboardingDialog();
       }
@@ -176,8 +177,9 @@ async function bootstrapRenderer(): Promise<void> {
       if (summary) {
         State.uiManager.showStartupSummary(summary);
       }
-    } catch {
+    } catch (error) {
       // 摘要加载失败静默降级，不影响主流程
+      reportError('loadStartupSummary', error);
     }
   }
 
@@ -560,26 +562,26 @@ window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
   State.memoryController?.cleanup();
   State.memoryController = null;
   // 清理 IPC 监听器（防止内存泄漏与重复触发）
-  window.electronAPI?.removeStreamListeners();
-  window.electronAPI?.removeSpriteOutputListener();
-  window.electronAPI?.removeSpriteEventListener();
-  window.electronAPI?.removeSpriteErrorListener();
-  window.electronAPI?.removeAppErrorListener();
-  window.electronAPI?.removeAgentReadyListener();
-  window.electronAPI?.removeFloatUnreadListener();
-  window.electronAPI?.removeWindowStateChangedListener();
+  window.electronAPI.removeStreamListeners();
+  window.electronAPI.removeSpriteOutputListener();
+  window.electronAPI.removeSpriteEventListener();
+  window.electronAPI.removeSpriteErrorListener();
+  window.electronAPI.removeAppErrorListener();
+  window.electronAPI.removeAgentReadyListener();
+  window.electronAPI.removeFloatUnreadListener();
+  window.electronAPI.removeWindowStateChangedListener();
   // 清理配置建议推送监听器
-  window.electronAPI?.removeSuggestionPushListener();
+  window.electronAPI.removeSuggestionPushListener();
   // 剪枝：补充清理写入确认监听器（原遗漏，防止内存泄漏）
-  window.electronAPI?.removeWriteConfirmationListener();
+  window.electronAPI.removeWriteConfirmationListener();
   // Phase 3.1：清理剪贴板三重保护监听器
-  window.electronAPI?.removeClipboardChangedListener();
-  window.electronAPI?.removeClipboardSensitiveIgnoredListener();
-  window.electronAPI?.removeClipboardAnalysisReadyListener();
-  window.electronAPI?.removeClipboardAnalysisRejectedListener();
+  window.electronAPI.removeClipboardChangedListener();
+  window.electronAPI.removeClipboardSensitiveIgnoredListener();
+  window.electronAPI.removeClipboardAnalysisReadyListener();
+  window.electronAPI.removeClipboardAnalysisRejectedListener();
   // Phase 3.3 第二批：清理全局快捷键触发监听器
-  window.electronAPI?.removeQuickRecordTriggerListener();
-  window.electronAPI?.removeRecallMemoryTriggerListener();
+  window.electronAPI.removeQuickRecordTriggerListener();
+  window.electronAPI.removeRecallMemoryTriggerListener();
 });
 
 // ─── 业务逻辑设置（发送/停止/会话管理） ─────────────────────
@@ -808,7 +810,7 @@ function setupSkillDropzone(_uiManager: UIManager): void {
 
   // change：文件选择后触发
   const handleFileChange = (): void => {
-    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+    if (fileInput.files && fileInput.files.length > 0) {
       const fileArray = Array.from(fileInput.files);
       void State.uiManager.handleSkillDrop(fileArray);
       // 清空 input.value 允许重复选择同一文件（否则 change 事件不触发）
@@ -826,7 +828,5 @@ function setupSkillDropzone(_uiManager: UIManager): void {
   dropzone.addEventListener('drop', handleDrop);
   dropzone.addEventListener('click', handleClick);
   dropzone.addEventListener('keydown', handleKeydown);
-  if (fileInput) {
-    fileInput.addEventListener('change', handleFileChange);
-  }
+  fileInput.addEventListener('change', handleFileChange);
 }

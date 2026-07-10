@@ -513,7 +513,7 @@ export class ProactiveEngine {
         '——需要我施展整理魔法吗？✨',
         '——让我来帮你理理？我可是专业的（大概）',
       ];
-      return options[Math.floor(Math.random() * options.length)] ?? options[0] ?? '';
+      return options[Math.floor(Math.random() * options.length)]!;
     }
 
     // 温暖度高：亲切关心
@@ -523,7 +523,7 @@ export class ProactiveEngine {
         '——想让我帮你理一理这些吗？',
         '——我来帮你梳理一下吧~',
       ];
-      return options[Math.floor(Math.random() * options.length)] ?? options[0] ?? '';
+      return options[Math.floor(Math.random() * options.length)]!;
     }
 
     // 直接度高：简洁干练

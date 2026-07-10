@@ -16,7 +16,7 @@ import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { mkdir, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider } from 'memora';
+import { Agent, createLlmProvider, createProviderFromConfig, loadConfig, JsonVectorStore, EmbeddingProvider, logger, toError } from 'memora';
 import type { UIMessages, Config, ITracer, AgentSearchHit, IVectorStore } from 'memora';
 import { SqliteStorage } from './storage/sqliteStorage.js';
 import { SqliteSessionStore } from './storage/sessionStore.js';
@@ -630,12 +630,12 @@ function createSpriteAndClose(
     try {
       await agent.close();
     } catch (err) {
-      console.warn('[close] agent.close() 失败:', err);
+      logger.warn({ err: toError(err).message }, '[close] agent.close() 失败');
     }
     try {
       if (vectorStore) await vectorStore.save();
     } catch (err) {
-      console.warn('[close] vectorStore.save() 失败:', err);
+      logger.warn({ err: toError(err).message }, '[close] vectorStore.save() 失败');
     }
     storage.close();
   };
@@ -688,7 +688,7 @@ export async function reinitAgent(
       await prevClose();
     } catch (err) {
       // 旧实例清理失败不阻塞重新初始化，但需记录日志辅助排查资源泄漏
-      console.warn('[reinitAgent] 旧实例清理失败:', err);
+      logger.warn({ err: toError(err).message }, '[reinitAgent] 旧实例清理失败');
     }
   }
 
