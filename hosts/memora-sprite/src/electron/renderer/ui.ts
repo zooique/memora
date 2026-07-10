@@ -81,6 +81,8 @@ import type {
   MemoryDetail,
   // Phase 5.1：演化脉络渲染所需的路径类型（与内核/sprite 层结构对齐）
   RelationPath,
+  // Phase 5.2：邻居渲染所需的邻居类型（直接关联记忆视图）
+  RelationNeighbor,
   SpriteConfigForm,
   ToastType,
   ToastOptions,
@@ -1054,6 +1056,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   showMemoryDetail(memory: MemoryDetail): void { this.memoryPanel.showMemoryDetail(memory); }
   /** Phase 5.1：渲染演化脉络（异步加载完成后注入，可空降） */
   showMemoryLineage(path: RelationPath[]): void { this.memoryPanel.showMemoryLineage(path); }
+  /** Phase 5.2：渲染直接关联邻居（异步加载完成后注入，可空降） */
+  showMemoryNeighbors(neighbors: RelationNeighbor[]): void { this.memoryPanel.showMemoryNeighbors(neighbors); }
   /** 清空添加记忆表单（委托到 MemoryPanelManager） */
   clearAddMemoryForm(): void { this.memoryPanel.clearAddMemoryForm(); }
   /** 获取添加记忆表单数据（空字段返回 null，委托到 MemoryPanelManager） */

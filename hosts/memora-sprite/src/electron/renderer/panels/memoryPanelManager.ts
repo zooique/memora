@@ -18,7 +18,7 @@ import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, forma
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
-import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath } from '../types.js';
+import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath, RelationNeighbor } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 // AUTO-HEALTH-05：事件监听器注册逻辑提取到独立 helper（降低本文件体量）
@@ -628,6 +628,8 @@ export class MemoryPanelManager {
     // Phase 5.1：重置演化脉络区域（避免显示上一次详情的残留数据）
     // 实际脉络数据由 controller 异步加载完成后调用 showMemoryLineage 注入
     this.resetLineage();
+    // Phase 5.2：重置直接邻居区域（同脉络模式，异步加载完成后注入）
+    this.resetNeighbors();
 
     const nameEl = getOptionalElement('memory-detail-name', 'h3');
     const sourceEl = getOptionalElement('memory-detail-source', 'code');
@@ -810,6 +812,101 @@ export class MemoryPanelManager {
     }
 
     lineageEl.classList.remove('hidden');
+  }
+
+  // ─── Phase 5.2：直接邻居视图 ───────────────────────────
+
+  /**
+   * 重置直接邻居区域
+   *
+   * 在 showMemoryDetail 开头调用，清空上一次的邻居数据并隐藏区域。
+   * 实际邻居数据由 controller 异步加载完成后调用 showMemoryNeighbors 注入。
+   */
+  resetNeighbors(): void {
+    const neighborsEl = document.getElementById('memory-detail-neighbors');
+    const neighborsListEl = document.getElementById('memory-neighbors-list');
+    if (neighborsEl) neighborsEl.classList.add('hidden');
+    if (neighborsListEl) clearElement(neighborsListEl);
+  }
+
+  /**
+   * 渲染直接关联邻居（异步加载完成后注入）
+   *
+   * 将 RelationNeighbor[]（both 方向，1 跳）渲染为扁平列表，
+   * 展示当前记忆的所有直接关联记忆（演化脉络是 incoming 多跳追溯，邻居是 both 方向 1 跳全景）。
+   *
+   * 设计：
+   * - 与 showMemoryLineage 同构，复用 lineage-item 样式体系
+   * - direction 标签区分"来源"/"去向"（incoming = 邻居指向当前记忆，outgoing = 当前记忆指向邻居）
+   * - 点击节点复用 memoryClickCallback 跳转（与脉络/关联列表行为一致）
+   * - 空数组静默隐藏区域
+   *
+   * @param neighbors 内核返回的邻居节点数组
+   */
+  showMemoryNeighbors(neighbors: RelationNeighbor[]): void {
+    const neighborsEl = document.getElementById('memory-detail-neighbors');
+    const neighborsListEl = document.getElementById('memory-neighbors-list');
+    if (!neighborsEl || !neighborsListEl) return;
+
+    // 空数据：静默隐藏（不显示错误提示）
+    if (!neighbors || neighbors.length === 0) {
+      this.resetNeighbors();
+      return;
+    }
+
+    clearElement(neighborsListEl);
+    for (const node of neighbors) {
+      const item = document.createElement('div');
+      // 复用 lineage-item 样式（扁平列表，无缩进，--lineage-depth=0）
+      item.className = 'lineage-item';
+      item.style.setProperty('--lineage-depth', '0');
+      item.dataset.memoryId = node.memoryId;
+      item.setAttribute('tabindex', '0');
+      item.setAttribute('role', 'button');
+
+      // 方向标签：incoming = 邻居指向当前记忆（来源），outgoing = 当前记忆指向邻居（去向）
+      const dirTag = document.createElement('span');
+      dirTag.className = `neighbor-direction-tag neighbor-dir-${node.direction}`;
+      dirTag.textContent = node.direction === 'incoming' ? '来源' : '去向';
+
+      // source 标签：颜色区分（复用列表项 source 配色）
+      const sourceTag = document.createElement('span');
+      sourceTag.className = `lineage-source-tag source-${getSourceColorClass(node.memorySource)}`;
+      sourceTag.textContent = node.memorySource;
+
+      // 关系类型标签
+      const relTag = document.createElement('span');
+      relTag.className = `lineage-relation-tag relation-type-${node.relationType}`;
+      relTag.textContent = node.relationType;
+
+      // 记忆名称
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'lineage-name';
+      nameSpan.textContent = node.memoryName;
+
+      item.appendChild(dirTag);
+      item.appendChild(sourceTag);
+      item.appendChild(relTag);
+      item.appendChild(nameSpan);
+
+      // 点击节点 → 触发 memoryClickCallback 跳转查看该记忆详情
+      const openNode = () => {
+        if (this.memoryClickCallback) {
+          this.memoryClickCallback(node.memoryId);
+        }
+      };
+      item.addEventListener('click', openNode);
+      item.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openNode();
+        }
+      });
+
+      neighborsListEl.appendChild(item);
+    }
+
+    neighborsEl.classList.remove('hidden');
   }
 
   // ─── 辅助方法 ───────────────────────────────────────────

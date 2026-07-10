@@ -345,6 +345,18 @@ export function createMemoryController(uiManager: UIManager) {
             // 脉络加载失败不影响详情查看，resetLineage 已在 showMemoryDetail 中调用
             reportError('onMemoryClick-lineage', error);
           }
+          // Phase 5.2：异步加载直接邻居（both 方向 1 跳全景，失败静默降级）
+          // 与脉络互补：脉络看"从哪来"的多跳链，邻居看"直接关联谁"的全景
+          try {
+            const neighbors = await window.electronAPI.getRelationNeighbors({
+              memoryId: id,
+              limit: 10,
+            });
+            uiManager.showMemoryNeighbors(neighbors);
+          } catch (error) {
+            // 邻居加载失败不影响详情查看，resetNeighbors 已在 showMemoryDetail 中调用
+            reportError('onMemoryClick-neighbors', error);
+          }
         }
       } catch (error) {
         reportError('onMemoryClick', error);

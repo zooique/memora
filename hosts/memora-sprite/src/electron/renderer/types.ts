@@ -19,12 +19,14 @@ import type {
   SpriteConfigForm,
   // Phase 5.1：脉络渲染需要 RelationPath 类型（与内核/sprite 层结构对齐）
   RelationPath,
+  // Phase 5.2：邻居渲染需要 RelationNeighbor 类型（直接关联记忆视图）
+  RelationNeighbor,
 } from '../preload.js';
 // PersonaInfo 从 sprite 层导入（真理源），消除 renderer 层 PersonaItem 重复定义
 import type { PersonaInfo } from '../../sprite/controllers/index.js';
 
 // 重新导出 preload.ts 的类型，保持 ui.ts 公共 API 不变（其他模块从 ui.ts 导入这些类型）
-export type { MemoryListItem, MemorySearchHit, MemoryDetail, MemoryRelationItem, SpriteConfigForm, ElectronAPI, RelationPath };
+export type { MemoryListItem, MemorySearchHit, MemoryDetail, MemoryRelationItem, SpriteConfigForm, ElectronAPI, RelationPath, RelationNeighbor };
 
 /** UI 消息（对齐渲染进程消息渲染需求） */
 export interface Message {

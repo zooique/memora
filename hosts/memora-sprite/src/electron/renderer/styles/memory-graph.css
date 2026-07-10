@@ -768,6 +768,30 @@
   white-space: nowrap;
 }
 
+/* ─── Phase 5.2：直接邻居方向标签 ─────────────────────────── */
+
+/* 方向标签：区分"来源"（邻居指向当前记忆）/"去向"（当前记忆指向邻居） */
+.neighbor-direction-tag {
+  font-size: var(--font-2xs);
+  padding: 1px var(--space-1-5);
+  border-radius: var(--radius-sm);
+  font-weight: var(--weight-medium);
+  min-width: 32px;
+  text-align: center;
+}
+
+/* 来源方向：accent 系（与 follows 关系配色一致，表示"从哪来"） */
+.neighbor-dir-incoming {
+  color: var(--accent);
+  background: var(--accent-20);
+}
+
+/* 去向方向：mauve 系（与 caused 关系配色一致，表示"到哪去"） */
+.neighbor-dir-outgoing {
+  color: var(--mauve);
+  background: var(--mauve-20);
+}
+
 /* ─── Phase 4：空状态插画 + 微交互 ─────────────────────────── */
 
 /* 记忆空状态：居中布局 + 图标 + 标题 + 副标题 + CTA */
