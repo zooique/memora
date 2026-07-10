@@ -673,6 +673,14 @@ function setupBusinessLogic(
     await window.electronAPI.abortChat();
   });
 
+  // 会话分叉按钮：从当前对话分叉出独立分支（基于当前上下文新建会话）
+  const forkBtn = document.getElementById('btn-fork-session');
+  if (forkBtn) {
+    forkBtn.addEventListener('click', () => {
+      void sessionController.forkSession();
+    });
+  }
+
   // 日期导航跳转回调：日历选择器选中日期后跳转
   State.uiManager.onDateNavJump(async (date: string) => {
     try {

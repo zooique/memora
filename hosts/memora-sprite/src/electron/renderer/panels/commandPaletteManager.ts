@@ -211,7 +211,10 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '设置',
       action: () => {
         void uiManager.switchPanel('settings');
-        switchSettingsTab('work');
+        // 作品投影嵌在 profile tab 内（非独立 work tab），切换后自动滚动到作品投影区
+        switchSettingsTab('profile');
+        const workSection = document.getElementById('work-projection-list');
+        workSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       },
     },
     {
@@ -245,6 +248,17 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '动作',
       shortcut: 'Ctrl+/',
       action: () => { uiManager.showModal('shortcuts-modal'); },
+    },
+    {
+      id: 'action-fork-session',
+      label: '分叉当前会话',
+      keywords: '分叉 fork 新建 会话 对话 分支',
+      section: '动作',
+      action: () => {
+        // 点击工具栏分叉按钮（与用户手动点击路径一致，复用 sessionController.forkSession）
+        const forkBtn = document.getElementById('btn-fork-session') as HTMLElement | null;
+        forkBtn?.click();
+      },
     },
     {
       id: 'action-onboarding',

@@ -65,6 +65,44 @@
   flex-shrink: 0;
 }
 
+/*
+ * 会话分叉按钮
+ *
+ * 位于搜索按钮右侧，视觉与 .search-messages-btn 一致（同尺寸、同 hover 反馈）
+ * 让用户能从工具栏直接发起分叉，无需记忆命令面板
+ */
+.fork-session-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1-5);
+  height: 24px;
+  width: 28px;
+  color: var(--subtext);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  font-family: inherit;
+}
+
+.fork-session-btn:hover {
+  background: var(--surface1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.fork-session-btn:active {
+  background: var(--accent-10);
+}
+
+.fork-session-btn .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
 /* 日期选择按钮：图标 + 文字 + 下拉箭头，胶囊样式 */
 .date-nav-btn {
   display: flex;
