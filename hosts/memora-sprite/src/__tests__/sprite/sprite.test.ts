@@ -1287,4 +1287,29 @@ describe('Sprite 在场状态 + 项目模式（B4：setPresenceController / bind
     sprite.updateConfigBatch({ projectMode: 'smart' });
     expect(mockAgent.switchProject).not.toHaveBeenCalled();
   });
+
+  it('switchProject 抛异常时 catch-only-warn 不中断配置更新（§7 P4 降级）', async () => {
+    // 禁用 fileWatcher 避免 rebuildFileWatcher 副作用
+    mockPersistedConfig = { ...DEFAULT_SPRITE_CONFIG, fileWatcherEnabled: false };
+    sprite.stop();
+    sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
+    sprite.start();
+
+    // 模拟 switchProject 抛异常
+    vi.mocked(mockAgent.switchProject).mockRejectedValueOnce(new Error('项目路径无效'));
+
+    // 配置更新不应因 switchProject 失败而抛出（catch-only-warn）
+    expect(() => {
+      sprite.updateConfigBatch({ projectMode: 'focus', focusProjectPath: '/invalid/path' });
+    }).not.toThrow();
+
+    // switchProject 确实被调用了
+    await vi.waitFor(() => {
+      expect(mockAgent.switchProject).toHaveBeenCalledWith('/invalid/path');
+    });
+
+    // 配置已持久化（尽管运行时切换失败）
+    expect(sprite.getConfig().projectMode).toBe('focus');
+    expect(sprite.getConfig().focusProjectPath).toBe('/invalid/path');
+  });
 });

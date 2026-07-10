@@ -97,9 +97,9 @@ export class SpriteConfigManager {
       );
     }
 
-    // 项目模式/路径变更 → 切换 Agent 上下文
+    // 项目模式/路径变更 → 切换 Agent 上下文（fire-and-forget，§7 P4 catch-only-warn）
     if (key === 'projectMode' || key === 'focusProjectPath') {
-      this.sideEffects.onProjectModeChanged();
+      void this.sideEffects.onProjectModeChanged();
     }
 
     // 归档模式变更 → 应用到 Agent

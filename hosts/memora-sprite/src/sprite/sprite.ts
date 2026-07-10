@@ -516,7 +516,10 @@ export class Sprite {
 
   /**
    * 应用项目模式
+   *
    * 专注模式切换时调用 agent.switchProject 切换 Agent 上下文。
+   * 降级策略（§7 P4）：切换失败时 catch-only-warn，不中断配置更新流程——
+   * 配置已持久化，运行时切换失败仅 warn，下次启动时会重新应用配置。
    */
   private async applyProjectMode(): Promise<void> {
     const config = this.getConfig();
@@ -534,9 +537,10 @@ export class Sprite {
         this.lifecycleManager.rebuildFileWatcher();
       }
     } catch (err: unknown) {
-      logger.warn({ focusPath, err: toError(err).message }, '专注项目切换失败');
+      // §7 P4 降级：项目切换失败不中断配置更新流程（catch-only-warn）
+      // 配置已由 ConfigManager 持久化，运行时切换失败仅记录，下次启动重新应用
+      logger.warn({ focusPath, err: toError(err).message }, '专注项目切换失败，保持当前项目');
       span?.recordException(err instanceof Error ? err : new Error(String(err)));
-      throw err;
     } finally {
       span?.end();
     }
