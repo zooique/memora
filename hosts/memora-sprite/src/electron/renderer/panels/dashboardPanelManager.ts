@@ -16,7 +16,7 @@
  * - 跨模块关注点（showToast）通过 host 回调注入
  */
 
-import { clearElement } from '../helpers/domHelpers.js';
+import { clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
 import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
@@ -317,14 +317,19 @@ export class DashboardPanelManager {
 
     const dashboardRecallRate = document.getElementById('dashboard-recall-rate');
     if (dashboardRecallRate) {
-      dashboardRecallRate.textContent = `${Math.round(metrics.recall.hitRate * 100)}%`;
+      // 补全绝对值明细：60% → 60% (6/10)，让用户感知命中规模（避免 1/2 和 50/100 显示相同）
+      const rate = `${Math.round(metrics.recall.hitRate * 100)}%`;
+      dashboardRecallRate.textContent = metrics.recall.totalCount > 0
+        ? `${rate} (${metrics.recall.hitCount}/${metrics.recall.totalCount})`
+        : rate;
     }
 
     const dashboardToolFailures = document.getElementById('dashboard-tool-failures');
     if (dashboardToolFailures) {
+      // 补全绝对值明细：10% → 10% (1/10)，让用户感知失败规模
       if (metrics.tools.callCount > 0) {
         const failRate = metrics.tools.failureCount / metrics.tools.callCount;
-        dashboardToolFailures.textContent = `${Math.round(failRate * 100)}%`;
+        dashboardToolFailures.textContent = `${Math.round(failRate * 100)}% (${metrics.tools.failureCount}/${metrics.tools.callCount})`;
       } else {
         dashboardToolFailures.textContent = '—';
       }
@@ -354,6 +359,12 @@ export class DashboardPanelManager {
     const dashboardDecayRuns = document.getElementById('dashboard-decay-runs');
     if (dashboardDecayRuns) {
       dashboardDecayRuns.textContent = metrics.decay ? String(metrics.decay.runCount) : '—';
+    }
+
+    // 衰减最近运行时间（消费 lastRunAt，用相对时间格式化：3 小时前 / 2 天前）
+    const dashboardDecayLastRun = document.getElementById('dashboard-decay-last-run');
+    if (dashboardDecayLastRun) {
+      dashboardDecayLastRun.textContent = metrics.decay?.lastRunAt ? formatTimeAgo(metrics.decay.lastRunAt) : '—';
     }
   }
 

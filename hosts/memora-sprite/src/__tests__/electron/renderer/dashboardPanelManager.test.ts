@@ -56,6 +56,7 @@ const DASHBOARD_HTML = `
   <span id="dashboard-decay-count"></span>
   <span id="dashboard-decay-total"></span>
   <span id="dashboard-decay-runs"></span>
+  <span id="dashboard-decay-last-run"></span>
 
   <!-- 里程碑 -->
   <div id="milestones-display" class="hidden">
@@ -247,12 +248,20 @@ describe('renderAgentMetrics', () => {
     expect(document.getElementById('dashboard-tokens')!.textContent).toBe('1.2k');
   });
 
-  it('应渲染召回命中率（百分比，四舍五入）', () => {
+  it('应渲染召回命中率（百分比 + 绝对值明细）', () => {
     const { manager } = createManager();
     manager.renderAgentMetrics(createMetrics({
       recall: { totalCount: 20, hitCount: 15, hitRate: 0.75 },
     }));
-    expect(document.getElementById('dashboard-recall-rate')!.textContent).toBe('75%');
+    expect(document.getElementById('dashboard-recall-rate')!.textContent).toBe('75% (15/20)');
+  });
+
+  it('召回总数为 0 时仅显示百分比（无绝对值明细）', () => {
+    const { manager } = createManager();
+    manager.renderAgentMetrics(createMetrics({
+      recall: { totalCount: 0, hitCount: 0, hitRate: 0 },
+    }));
+    expect(document.getElementById('dashboard-recall-rate')!.textContent).toBe('0%');
   });
 
   it('工具失败率 0/0 应显示 — （避免 NaN）', () => {
@@ -263,12 +272,30 @@ describe('renderAgentMetrics', () => {
     expect(document.getElementById('dashboard-tool-failures')!.textContent).toBe('—');
   });
 
-  it('工具失败率应显示百分比', () => {
+  it('工具失败率应显示百分比 + 绝对值明细', () => {
     const { manager } = createManager();
     manager.renderAgentMetrics(createMetrics({
       tools: { callCount: 10, failureCount: 3 },
     }));
-    expect(document.getElementById('dashboard-tool-failures')!.textContent).toBe('30%');
+    expect(document.getElementById('dashboard-tool-failures')!.textContent).toBe('30% (3/10)');
+  });
+
+  it('衰减最近运行时间应显示相对时间', () => {
+    const { manager } = createManager();
+    // 使用近期时间（1 小时前），formatTimeAgo 应输出"1 小时前"
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    manager.renderAgentMetrics(createMetrics({
+      decay: { runCount: 5, totalDecayedCount: 10, lastRunAt: oneHourAgo },
+    }));
+    expect(document.getElementById('dashboard-decay-last-run')!.textContent).toBe('1 小时前');
+  });
+
+  it('衰减从未运行时最近运行时间应显示 —', () => {
+    const { manager } = createManager();
+    manager.renderAgentMetrics(createMetrics({
+      decay: { runCount: 0, totalDecayedCount: 0, lastRunAt: null },
+    }));
+    expect(document.getElementById('dashboard-decay-last-run')!.textContent).toBe('—');
   });
 });
 
