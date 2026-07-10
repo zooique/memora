@@ -11,6 +11,7 @@
     "build": "tsc",
     "generate-icons": "node scripts/generate-icons.mjs",
     "build:electron": "npm run check-ipc && npm run generate-icons && node --input-type=module -e \"import{rmSync}from'node:fs';rmSync('dist-electron',{recursive:true,force:true})\" && tsc -p tsconfig.electron.json && tsc -p tsconfig.preload.json && node scripts/build-preload.mjs && node scripts/copy-renderer.mjs",
+    "sync-memora": "node scripts/sync-memora.mjs",
     "build:web": "tsc -p tsconfig.web.json",
     "start:electron": "chcp 65001 >nul && set NODE_ENV=production&& npm run build:electron && set NODE_ENV=production&& electron ./dist-electron/electron/main.js",
     "dev:electron": "chcp 65001 >nul && set NODE_ENV=development&& npm run build:electron && node scripts/dev-watch.mjs",
@@ -41,7 +42,7 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",
-    "memora": "npm:@zooique/memora@^1.0.1"
+    "memora": "file:../.."
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -134,6 +135,7 @@
     "better-sqlite3@12.11.1": true,
     "electron@40.10.5": true,
     "esbuild@0.28.1": true,
-    "sharp@0.35.3": true
+    "sharp@0.35.3": true,
+    "memora@1.0.1": false
   }
 }

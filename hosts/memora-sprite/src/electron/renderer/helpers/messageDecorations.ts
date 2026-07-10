@@ -153,8 +153,8 @@ export function renderMemoryRecall(bubble: Element, memories: MemoryRecallItem[]
  * @param phase 思考阶段（recalling/processing/archiving）
  */
 export function showThinkingPhase(bubble: Element, phase: string): void {
-  // 查找或创建思考阶段指示器
-  let indicator = bubble.querySelector('.thinking-phase');
+  // 查找或创建思考阶段指示器（显式声明类型，避免 querySelector 返回 Element 导致类型不匹配）
+  let indicator: HTMLDivElement | null = bubble.querySelector('.thinking-phase');
   if (!(indicator instanceof HTMLDivElement)) {
     indicator = document.createElement('div');
     indicator.className = 'thinking-phase';

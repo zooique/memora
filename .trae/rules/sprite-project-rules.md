@@ -1,7 +1,7 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v0.8
+version: v0.9
 date: 2026-07-10
 ---
 
@@ -34,57 +34,48 @@ date: 2026-07-10
 
 > 决策在外层（ADR 集中原则），实现文档跟宿主项目走（monorepo 最佳实践）。任务 ID 命名空间不同（内核用 V-xxx/P-xxx，宿主用 SEC-P2-xx/UX-xx/QC-xx），不合并。
 
-## 2. 内核更新工作流（npm alias 模式）
+## 2. 内核更新工作流（file: 协议本地链接）
 
-> 内核已发布至 npm（`@zooique/memora`），精灵通过 npm alias 引用：`"memora": "npm:@zooique/memora@^0.2.0"`。  
-> 源码中 import 保持 `from 'memora'`，包管理层自动完成 `@zooique/memora` → `memora` 的映射。
+> 精灵通过 `file:../..` 协议直接引用本地仓库根的 memora 内核（npm 包形式，非 workspace）。  
+> 源码中 import 保持 `from 'memora'`，npm install 时自动建立 `node_modules/memora` → 仓库根的 Junction（Windows）或 symlink（Unix）。
 
-### 2.1 本地开发工作流（推荐日常迭代使用）
+### 2.1 日常开发工作流（推荐）
 
-当内核和精灵需要联调时，使用 `npm link` 建立本地软链接，内核编译后精灵立即生效，无需发布 npm：
+不修改内核时无需任何额外操作，sprite 的 `node_modules/memora` 通过 Junction 直接指向仓库根，dist 保持上一次编译的状态。
 
-```bash
-# 在 memora 根目录（首次）
-npm run build          # 编译内核 src/ → dist/
-npm link               # 全局注册 @zooique/memora 软链接
-
-# 在 hosts/memora-sprite/ 目录（首次）
-npm link memora        # 建立 node_modules/@zooique/memora → 本地内核目录的 Junction
-
-# 后续迭代：每次改内核代码后
-npm run build          # 在 memora 根目录编译，精灵立即生效
-# 或开启 watch 模式：npx tsc -w
-```
-
-> **注意**：`npm link` 仅影响本地开发环境，不修改 package.json 或 package-lock.json。  
-> 提交代码前需确保精灵的 package.json 中 `memora` 依赖仍指向 `npm:@zooique/memora@^0.2.0`（而非 `file:` 协议）。  
-> 发布正式版本前，在精灵目录执行 `npm unlink memora && npm install` 切回 npm 正式包。
-
-### 2.2 正式发布工作流（用于发布 npm 版本）
-
-当内核改动需要发布到 npm 供其他宿主或 CI 使用时：
-
-**Step 1 — 内核发布**
-
-```bash
-# 在 memora 根目录
-npm test              # 测试全绿（用例数持续增长）
-npm run typecheck     # 零错误
-npm run build         # 生成 dist/
-npm version patch     # 或 minor / major
-npm publish --access public
-```
-
-**Step 2 — 精灵更新**
+**修改了内核源码后**，执行一次同步：
 
 ```bash
 # 在 hosts/memora-sprite/ 目录
-npm update memora     # 解析 alias 到最新匹配的版本
-npm run typecheck     # 验证类型兼容
-npm run build         # 验证构建通过
+npm run sync-memora   # 编译内核 src/ → dist/ + 同步到 node_modules
 ```
 
-> **注意**：`npm update memora` 更新的是 alias 指向的实际包（`@zooique/memora`），而非 alias 本身。alias 声明 `"memora": "npm:@zooique/memora@^0.2.0"` 中的版本约束（`^0.2.0`）决定可更新的范围。
+`sync-memora` 脚本（`scripts/sync-memora.mjs`）自动检测安装模式：
+- **Junction 模式**（npm on Windows 默认）：`node_modules/memora` 是符号链接指向仓库根，编译后 dist 自动生效，无需复制
+- **复制模式**（其他平台或 `--force` 安装）：`node_modules/memora` 是独立目录，需将 dist 从仓库根复制到 `node_modules/memora/dist`
+
+> **效率原则**：不修改内核时零开销；修改内核后只需一次 `npm run sync-memora`（编译 + 同步，几秒）。
+
+### 2.2 打包工作流
+
+打包脚本（`scripts/package.mjs`）在执行 electron-builder 前自动调用 `sync-memora`，确保打包用的是最新内核：
+
+```bash
+# 在 hosts/memora-sprite/ 目录
+npm run package:win   # 自动：sync-memora → build:electron → clean-release → electron-builder → verify
+```
+
+> **注意**：`file:` 依赖被 electron-builder 打入 asar 时，会解引用 Junction/symlink，复制实际文件到 `node_modules/memora/dist/`。`verify-package.mjs` 检查 `node_modules/memora/dist/index.js` 仍然有效。
+
+### 2.3 恢复 npm 发布模式（未来如需）
+
+若未来需要恢复 npm 发布模式：
+
+```bash
+# 1. 修改 package.json：将 "memora": "file:../.." 改回 "memora": "npm:@zooique/memora@^1.0.1"
+# 2. 删除 node_modules/memora（Junction）+ package-lock.json
+# 3. npm install 恢复 npm alias 模式
+```
 
 ## 3. 技术栈清单
 

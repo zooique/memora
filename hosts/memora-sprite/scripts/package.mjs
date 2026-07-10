@@ -2,11 +2,12 @@
  * electron-builder 打包包装脚本
  *
  * 功能：
- *   1. 解析命令行参数，转发给 electron-builder
- *   2. 配置国内镜像源（npmmirror）+ 显式缓存路径，解决 ETIMEDOUT
- *   3. Windows EPERM 错误自动重试（杀软扫描锁文件是间歇性的）
- *   4. 每次重试前清理 win-unpacked.tmp 残留，避免脏状态
- *   5. 打包成功后自动执行产物完整性验证
+ *   1. 同步内核 memora（编译 + 复制 dist 到 node_modules，确保打包用最新内核）
+ *   2. 解析命令行参数，转发给 electron-builder
+ *   3. 配置国内镜像源（npmmirror）+ 显式缓存路径，解决 ETIMEDOUT
+ *   4. Windows EPERM 错误自动重试（杀软扫描锁文件是间歇性的）
+ *   5. 每次重试前清理 win-unpacked.tmp 残留，避免脏状态
+ *   6. 打包成功后自动执行产物完整性验证
  *
  * 用法：
  *   node scripts/package.mjs --win --x64
@@ -146,9 +147,32 @@ function verifyPackage(platform) {
 }
 
 /**
+ * 同步内核 memora — 编译内核 + 复制 dist 到 node_modules
+ *
+ * 打包前必须执行，确保打包用的是最新内核代码。
+ * 对应 npm run sync-memora（scripts/sync-memora.mjs）。
+ */
+function syncMemora() {
+  console.log('[package] === 同步内核 memora ===');
+  try {
+    execSync('node scripts/sync-memora.mjs', {
+      cwd: projectRoot,
+      stdio: 'inherit',
+    });
+    console.log('[package] 内核同步完成 ✓\n');
+  } catch {
+    console.error('[package] 内核同步失败，无法继续打包');
+    process.exit(1);
+  }
+}
+
+/**
  * 主函数
  */
 async function main() {
+  // Step 0: 同步内核 memora（编译 + 复制 dist，确保打包用最新内核）
+  syncMemora();
+
   // 解析命令行参数（去掉 node 和 script 路径）
   const args = process.argv.slice(2);
 

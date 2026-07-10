@@ -70,7 +70,7 @@ memora/                          # Git 仓库根目录
 | 独立 package | 两个 package 各自 `npm install`、`npm test`、`npm run build`，互不依赖对方的 devDependencies |
 | 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，不允许子目录存在独立 `.gitignore` |
 | 内核零依赖 | memora 内核不依赖任何 native 模块（better-sqlite3、electron 等），所有 native 能力由精灵宿主注入 |
-| 精灵依赖内核 | 精灵通过 `"memora": "npm:@zooique/memora@^0.2.1"` 引用内核（npm 包形式，非 workspace） |
+| 精灵依赖内核 | 精灵通过 `"memora": "file:../.."` 引用内核（本地 file: 协议，指向仓库根；Junction 模式无需发布 npm） |
 | 规则分层 | 仓库级规则在 `.trae/rules/`，精灵专属规则在 `hosts/memora-sprite/.trae/rules/`，后者仅约束精灵宿主 |
 | 任务独立 | 内核 `tasks/` 和精灵 `hosts/memora-sprite/tasks/` 各自独立追踪 |
 

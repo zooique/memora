@@ -159,20 +159,22 @@ export class QuickInputCompletion {
    * - ArrowUp：选中上一项（循环到底部）
    * - Tab：确认当前选中项，回填到输入框
    */
-  private handleKeyDown = (e: KeyboardEvent): void => {
+  private handleKeyDown = (e: Event): void => {
     if (this.candidates.length === 0) return;
+    // addEventListener 回调参数类型为 Event，此处断言为 KeyboardEvent 以访问 key 属性
+    const ke = e as KeyboardEvent;
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
+    if (ke.key === 'ArrowDown') {
+      ke.preventDefault();
       this.selectedIndex = (this.selectedIndex + 1) % this.candidates.length;
       this.updateSelection();
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
+    } else if (ke.key === 'ArrowUp') {
+      ke.preventDefault();
       this.selectedIndex = (this.selectedIndex - 1 + this.candidates.length) % this.candidates.length;
       this.updateSelection();
-    } else if (e.key === 'Tab') {
+    } else if (ke.key === 'Tab') {
       if (this.selectedIndex >= 0 && this.selectedIndex < this.candidates.length) {
-        e.preventDefault();
+        ke.preventDefault();
         // selectedIndex 已在条件中校验合法范围，索引访问安全，用 ! 断言正视契约
         const selected = this.candidates[this.selectedIndex]!;
         this.onSelectCallback?.(selected.text);
