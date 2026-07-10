@@ -674,7 +674,7 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-1-5);
-  padding: 14px var(--space-2-5);
+  padding: var(--space-3) var(--space-2-5);
   border: 1.5px dashed var(--surface2);
   border-radius: var(--radius-md);
   background: var(--window-bg-2);
@@ -1082,7 +1082,7 @@ body.web-mode #input-area {
 
 body.web-mode #input {
   font-size: var(--font-base);
-  padding: var(--space-2-5) 14px;
+  padding: var(--space-2-5) var(--space-3);
   border-radius: var(--radius-lg);
 }
 
@@ -1145,7 +1145,7 @@ body.web-mode .empty-suggestions {
 }
 
 body.web-mode .suggestion-btn {
-  padding: var(--space-2-5) 18px;
+  padding: var(--space-2-5) var(--space-4);
   border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   transition: background var(--transition-fast) ease, box-shadow var(--transition-fast) ease;

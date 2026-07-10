@@ -234,7 +234,7 @@
   flex-wrap: wrap;
   gap: var(--space-1-5);
   justify-content: center;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-3);
 }
 
 .onboarding-api-form {
@@ -316,7 +316,7 @@
   flex-direction: column;
   gap: var(--space-1-5);
   margin-bottom: 20px;
-  padding: var(--space-2-5) 14px;
+  padding: var(--space-2-5) var(--space-3);
   background: var(--window-bg-2);
   border-radius: var(--radius-md);
 }
@@ -394,7 +394,7 @@ kbd {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--surface2);
 }
 
@@ -442,7 +442,7 @@ kbd {
 }
 
 .modal-body {
-  padding: var(--space-4) 18px;
+  padding: var(--space-4) var(--space-4);
   overflow-y: auto;
   flex: 1;
   font-size: var(--font-sm);
@@ -488,7 +488,7 @@ kbd {
   display: flex;
   justify-content: flex-end;
   gap: var(--gap-compact);
-  padding: var(--space-3) 18px;
+  padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--surface2);
 }
 
@@ -508,7 +508,7 @@ kbd {
 }
 
 .btn-primary {
-  padding: var(--space-1-5) 18px;
+  padding: var(--space-1-5) var(--space-4);
   background: var(--accent);
   color: var(--accent-fg);
   font-weight: var(--weight-semibold);
