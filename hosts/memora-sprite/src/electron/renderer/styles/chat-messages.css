@@ -1446,6 +1446,14 @@
   opacity: 0.7;
 }
 
+/* 功能提示中的 kbd 按键样式（覆盖全局 kbd 的 --window-bg 背景，增强空状态对比度） */
+.chat-empty-state .empty-feature-hint kbd {
+  background: var(--surface1);
+  border-color: var(--border);
+  padding: 0 4px;
+  font-size: 10px;
+}
+
 /* ─── 思考阶段指示器 ─────────────────────────────── */
 /* 精灵在等待首个 text chunk 时显示"⚙️ 正在回忆/处理/归档..."    */
 /* 让用户知道精灵正在工作，避免误以为卡死                        */
