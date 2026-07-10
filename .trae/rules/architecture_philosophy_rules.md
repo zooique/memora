@@ -3,8 +3,8 @@ alwaysApply: false
 description:
   架构哲学原则（9
   条：万物皆记忆、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式）
-version: v0.7
-date: 2026-06-25
+version: v0.8
+date: 2026-07-10
 ---
 
 # 架构哲学原则
@@ -81,10 +81,19 @@ date: 2026-06-25
 
 **原则**：代码负责确定性工作（记忆查询、Token 预算、文件读写），模型负责不确定性工作（意图理解、内容生成、决策）。
 
+**信号采集 vs 语义判断的边界**：
+
+- ✅ 代码做"信号采集"——关键词匹配、频次统计、阈值比较等确定性计算，结果作为信号注入 LLM prompt
+  - 例：`AffectController.deriveAffectFromMessages()` 用关键词匹配采集温暖度/直接度信号（修正值 [-0.3, +0.3]），零 LLM 成本，信号经指数平滑后注入 `buildAffectPrompt`，最终情绪理解由 LLM 完成
+- ❌ 代码做"语义判断"——理解用户情绪背后的意图、生成情绪化的回应等不确定性工作
+  - 例：不应在代码中硬编码"用户说'谢谢'时回复'不客气'"——这应由 LLM 根据上下文生成
+
+**判断标准**：如果逻辑可以用"if 关键词命中 then 数值 += delta"表达，是信号采集（代码职责）；如果需要理解上下文语义才能决策，是语义判断（LLM 职责）。
+
 **反模式**：
 
 - ❌ 让 LLM 决定"要不要检索更多记忆"（应该由 token 预算监控代码触发）
-- ❌ 让代码做"判断用户情绪"（应该让 LLM 处理）
+- ❌ 让代码做"语义判断"——理解情绪意图、生成情绪化回应（应该让 LLM 处理）
 - ❌ 让 LLM 直接写数据库（应该 LLM 调工具，代码执行工具）
 
 ## 5. 领域无关
@@ -140,13 +149,20 @@ domain），其余在 Agent Loop 中按需检索。
 
 ## 8. 自然遗忘优于完美记忆
 
-**原则**：接受“部分遗忘”是工程现实。剪枝、归档、权重衰减是核心机制，不是补丁。
+**原则**：接受"部分遗忘"是工程现实。剪枝、归档、权重衰减是核心机制，不是补丁。
 
 **在代码中的体现**：
 
-- `decayScores()` 每小时自动衰减 insight/profile/work-projection 的 score
-- 衰减公式：`score × (1 - decayRate)`，超过 `maxAgeDays` 的记忆 score 降至 0
-- `init()` 时首次衰减 + 每小时定时衰减（`setInterval`）
+- `decayScores()` 衰减 insight/profile/work-projection 的 score（由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）
+- 衰减公式（减法式，`SqliteStorage` 与 `InMemoryStorage` 对齐）：
+  - 触发条件：`daysSinceAccess > 7` 时才衰减
+  - 衰减量：`0.02 * floor(daysSinceAccess / 7)`（每 7 天衰减 0.02）
+  - 下限：`MAX(0.1, ...)`——score 降至 0.1 后不再继续衰减，保留最低权重
+  - 跳过软删除：`deleted_at IS NULL` 过滤
+- `init()` 时首次衰减 + 定时衰减（由内核 `MemoryDecayScheduler` 调度）
+- 物理清理：`purgeExpiredMemories(before)` 清理过期软删除记忆；回收站定时器默认保留 30 天
+
+**设计取舍**：减法式衰减 + 下限 0.1 保证记忆不会完全消失（可被召回但权重极低），与"永不删除"不同——物理清理由回收站机制负责，权重衰减仅影响召回优先级。
 
 **禁止**：
 
