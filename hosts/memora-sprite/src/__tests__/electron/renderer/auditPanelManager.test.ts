@@ -113,12 +113,15 @@ describe('init · 幂等与 DOM 获取', () => {
     expect(window.electronAPI.listAuditLog).not.toHaveBeenCalled();
   });
 
-  it('clearBtn 应绑定清空事件', async () => {
-    createManager();
+  it('clearBtn 应绑定清空事件（通过回调注入）', async () => {
+    const manager = createManager();
+    // 注入回调：F-P0 技术债偿还后，clearAuditLog 不再直调 IPC，而是通过回调
+    const mockClear = vi.fn().mockResolvedValue(undefined);
+    manager.setClearAuditLogCallback(mockClear);
     document.getElementById('btn-audit-clear')!.click();
     await Promise.resolve();
     await Promise.resolve();
-    expect(window.electronAPI.clearAuditLog).toHaveBeenCalled();
+    expect(mockClear).toHaveBeenCalled();
   });
 });
 
@@ -267,10 +270,12 @@ describe('render · 元信息拼接', () => {
 // ─── clear 流程 ──────────────────────────────────────────
 
 describe('clear 流程', () => {
-  it('click clearBtn 成功应调用 clearAuditLog 并 reload', async () => {
+  it('click clearBtn 成功应调用回调并 reload', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry()]);
-    window.electronAPI.clearAuditLog = vi.fn().mockResolvedValue(undefined);
     const manager = createManager();
+    // 注入回调：F-P0 技术债偿还后，clearAuditLog 不再直调 IPC
+    const mockClear = vi.fn().mockResolvedValue(undefined);
+    manager.setClearAuditLogCallback(mockClear);
     await manager.load();
     expect(window.electronAPI.listAuditLog).toHaveBeenCalledTimes(1);
 
@@ -278,14 +283,15 @@ describe('clear 流程', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(window.electronAPI.clearAuditLog).toHaveBeenCalled();
+    expect(mockClear).toHaveBeenCalled();
     // reload 应再次调用 listAuditLog
     expect(window.electronAPI.listAuditLog).toHaveBeenCalledTimes(2);
   });
 
   it('click clearBtn 失败应显示错误条', async () => {
-    window.electronAPI.clearAuditLog = vi.fn().mockRejectedValue(new Error('清除失败'));
-    createManager();
+    const manager = createManager();
+    // 注入会失败的回调
+    manager.setClearAuditLogCallback(vi.fn().mockRejectedValue(new Error('清除失败')));
     document.getElementById('btn-audit-clear')!.click();
     await Promise.resolve();
     await Promise.resolve();
@@ -307,12 +313,15 @@ describe('cleanup', () => {
     expect(window.electronAPI.listAuditLog).not.toHaveBeenCalled();
   });
 
-  it('cleanup 后 clearBtn click 不应触发 clearAuditLog', async () => {
+  it('cleanup 后 clearBtn click 不应触发回调', async () => {
     const manager = createManager();
+    // 注入回调：验证 cleanup 后回调解绑
+    const mockClear = vi.fn().mockResolvedValue(undefined);
+    manager.setClearAuditLogCallback(mockClear);
     manager.cleanup();
     document.getElementById('btn-audit-clear')!.click();
     await Promise.resolve();
     await Promise.resolve();
-    expect(window.electronAPI.clearAuditLog).not.toHaveBeenCalled();
+    expect(mockClear).not.toHaveBeenCalled();
   });
 });

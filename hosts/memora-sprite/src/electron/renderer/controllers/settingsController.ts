@@ -91,6 +91,38 @@ export function createSettingsController(uiManager: UIManager) {
         void loadConfig();
       }
     });
+
+    // F-P0 技术债偿还：将 PanelManager 的写操作从直调 IPC 改为回调注入
+    // 消除与加载操作（通过 controller → uiManager 委托）的模式不一致
+    uiManager.setClearAuditLogCallback(async () => {
+      try {
+        await window.electronAPI.clearAuditLog();
+        // 清空完成后重新加载审计列表，确保 UI 立即反映最新状态
+        await uiManager.loadAuditLog();
+      } catch (error) {
+        handleIpcError('clearAuditLog', error, '清空审计日志失败');
+      }
+    });
+
+    uiManager.setConfirmProfileCallback(async (id: string) => {
+      try {
+        await window.electronAPI.confirmUserProfile(id);
+        // 确认后重新加载画像列表，确保 UI 反映最新状态
+        await uiManager.loadUserProfile();
+      } catch (error) {
+        handleIpcError('confirmUserProfile', error, '确认用户画像失败');
+      }
+    });
+
+    uiManager.setRejectProfileCallback(async (id: string) => {
+      try {
+        await window.electronAPI.rejectUserProfile(id);
+        // 拒绝后重新加载画像列表，确保 UI 反映最新状态
+        await uiManager.loadUserProfile();
+      } catch (error) {
+        handleIpcError('rejectUserProfile', error, '拒绝用户画像失败');
+      }
+    });
   }
 
   /** 加载精灵配置到表单 */

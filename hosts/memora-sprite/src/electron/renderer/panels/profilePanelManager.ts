@@ -48,6 +48,10 @@ export class ProfilePanelManager {
   private initialized = false;
   /** 确认对话框函数（由 UIManager 注入，用于删除已确认画像的二次确认） */
   private confirmDialog: ConfirmDialogFn | null = null;
+  /** 确认画像回调（由 settingsController 注入，委托 IPC 调用，消除 PanelManager 直调 IPC） */
+  private onConfirmProfile: ((id: string) => Promise<void>) | null = null;
+  /** 拒绝/删除画像回调（由 settingsController 注入，委托 IPC 调用） */
+  private onRejectProfile: ((id: string) => Promise<void>) | null = null;
 
   /**
    * 类别标签中文映射
@@ -250,7 +254,7 @@ export class ProfilePanelManager {
         const rejectBtn = actions.querySelector<HTMLButtonElement>('.reject');
         if (rejectBtn) rejectBtn.disabled = true;
         try {
-          await window.electronAPI.confirmUserProfile(entry.id);
+          await this.onConfirmProfile!(entry.id);
           // 确认成功后移除卡片（已确认列表会在下次 load 时更新）
           card.remove();
         } catch (err) {
@@ -269,7 +273,7 @@ export class ProfilePanelManager {
         setButtonLoadingEl(rejectBtn, true, '处理中...');
         confirmBtn.disabled = true;
         try {
-          await window.electronAPI.rejectUserProfile(entry.id);
+          await this.onRejectProfile!(entry.id);
           card.remove();
         } catch (err) {
           reportError('ProfilePanel', `拒绝画像失败: ${toError(err).message}`);
@@ -298,7 +302,7 @@ export class ProfilePanelManager {
         // 复用 setButtonLoadingEl
         setButtonLoadingEl(deleteBtn, true, '删除中...');
         try {
-          await window.electronAPI.rejectUserProfile(entry.id);
+          await this.onRejectProfile!(entry.id);
           card.remove();
         } catch (err) {
           reportError('ProfilePanel', `删除画像失败: ${toError(err).message}`);
@@ -310,6 +314,27 @@ export class ProfilePanelManager {
 
     card.appendChild(actions);
     return card;
+  }
+
+  /**
+   * 设置确认画像回调（由 settingsController 注入）
+   *
+   * 消除 PanelManager 直调 IPC 的模式不一致问题。
+   * 加载操作（listUserProfile）已通过 settingsController 委托，确认操作也应一致。
+   *
+   * @param cb 确认回调（接收画像 id，async 成功后 PanelManager 自动移除卡片）
+   */
+  setConfirmProfileCallback(cb: (id: string) => Promise<void>): void {
+    this.onConfirmProfile = cb;
+  }
+
+  /**
+   * 设置拒绝/删除画像回调（由 settingsController 注入）
+   *
+   * @param cb 拒绝回调（接收画像 id，async 成功后 PanelManager 自动移除卡片）
+   */
+  setRejectProfileCallback(cb: (id: string) => Promise<void>): void {
+    this.onRejectProfile = cb;
   }
 
   /** 清理所有事件监听器（UIManager.cleanup 时调用） */

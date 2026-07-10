@@ -335,12 +335,15 @@ describe('确认流程 · 待确认条目', () => {
     const entries = [createEntry({ id: 'profile:confirm-test', confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
     const manager = createManager();
+    // 注入回调：F-P0 技术债偿还后，confirmUserProfile 不再直调 IPC
+    const mockConfirm = vi.fn().mockResolvedValue(undefined);
+    manager.setConfirmProfileCallback(mockConfirm);
     await manager.load();
     const acceptBtn = document.querySelector('#profile-pending-list .profile-btn.accept') as HTMLButtonElement;
     acceptBtn.click();
     await Promise.resolve();
     await Promise.resolve();
-    expect(window.electronAPI.confirmUserProfile).toHaveBeenCalledWith('profile:confirm-test');
+    expect(mockConfirm).toHaveBeenCalledWith('profile:confirm-test');
     // 卡片应被移除
     expect(document.querySelectorAll('#profile-pending-list .profile-card').length).toBe(0);
   });
@@ -349,12 +352,13 @@ describe('确认流程 · 待确认条目', () => {
   it('click 确认按钮时应显示 loading 状态（disabled + "处理中..."）', async () => {
     const entries = [createEntry({ confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
+    const manager = createManager();
     // 用未 resolve 的 promise 锁定 loading 中状态
     let resolveConfirm: () => void;
-    window.electronAPI.confirmUserProfile = vi.fn().mockReturnValue(
+    const mockConfirm = vi.fn().mockReturnValue(
       new Promise<void>((resolve) => { resolveConfirm = resolve; }),
     );
-    const manager = createManager();
+    manager.setConfirmProfileCallback(mockConfirm);
     await manager.load();
     const acceptBtn = document.querySelector('#profile-pending-list .profile-btn.accept') as HTMLButtonElement;
     acceptBtn.click();
@@ -373,8 +377,9 @@ describe('确认流程 · 待确认条目', () => {
   it('click 确认按钮失败应恢复按钮状态', async () => {
     const entries = [createEntry({ confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
-    window.electronAPI.confirmUserProfile = vi.fn().mockRejectedValue(new Error('IPC 失败'));
     const manager = createManager();
+    // 注入会失败的回调
+    manager.setConfirmProfileCallback(vi.fn().mockRejectedValue(new Error('IPC 失败')));
     await manager.load();
     const acceptBtn = document.querySelector('#profile-pending-list .profile-btn.accept') as HTMLButtonElement;
     const rejectBtn = document.querySelector('#profile-pending-list .profile-btn.reject') as HTMLButtonElement;
@@ -396,20 +401,24 @@ describe('拒绝流程 · 待确认条目', () => {
     const entries = [createEntry({ id: 'profile:reject-test', confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
     const manager = createManager();
+    // 注入回调：F-P0 技术债偿还后，rejectUserProfile 不再直调 IPC
+    const mockReject = vi.fn().mockResolvedValue(undefined);
+    manager.setRejectProfileCallback(mockReject);
     await manager.load();
     const rejectBtn = document.querySelector('#profile-pending-list .profile-btn.reject') as HTMLButtonElement;
     rejectBtn.click();
     await Promise.resolve();
     await Promise.resolve();
-    expect(window.electronAPI.rejectUserProfile).toHaveBeenCalledWith('profile:reject-test');
+    expect(mockReject).toHaveBeenCalledWith('profile:reject-test');
     expect(document.querySelectorAll('#profile-pending-list .profile-card').length).toBe(0);
   });
 
   it('click 拒绝按钮失败应恢复按钮状态', async () => {
     const entries = [createEntry({ confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
-    window.electronAPI.rejectUserProfile = vi.fn().mockRejectedValue(new Error('IPC 失败'));
     const manager = createManager();
+    // 注入会失败的回调
+    manager.setRejectProfileCallback(vi.fn().mockRejectedValue(new Error('IPC 失败')));
     await manager.load();
     const rejectBtn = document.querySelector('#profile-pending-list .profile-btn.reject') as HTMLButtonElement;
     const acceptBtn = document.querySelector('#profile-pending-list .profile-btn.accept') as HTMLButtonElement;
@@ -429,20 +438,24 @@ describe('删除流程 · 已确认条目', () => {
     const entries = [createEntry({ id: 'profile:delete-test', confirmed: true })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
     const manager = createManager();
+    // 注入回调：删除复用 rejectUserProfile 回调
+    const mockReject = vi.fn().mockResolvedValue(undefined);
+    manager.setRejectProfileCallback(mockReject);
     await manager.load();
     const deleteBtn = document.querySelector('#profile-confirmed-list .profile-btn.reject') as HTMLButtonElement;
     deleteBtn.click();
     await Promise.resolve();
     await Promise.resolve();
-    expect(window.electronAPI.rejectUserProfile).toHaveBeenCalledWith('profile:delete-test');
+    expect(mockReject).toHaveBeenCalledWith('profile:delete-test');
     expect(document.querySelectorAll('#profile-confirmed-list .profile-card').length).toBe(0);
   });
 
   it('click 删除按钮失败应恢复按钮状态', async () => {
     const entries = [createEntry({ confirmed: true })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
-    window.electronAPI.rejectUserProfile = vi.fn().mockRejectedValue(new Error('IPC 失败'));
     const manager = createManager();
+    // 注入会失败的回调
+    manager.setRejectProfileCallback(vi.fn().mockRejectedValue(new Error('IPC 失败')));
     await manager.load();
     const deleteBtn = document.querySelector('#profile-confirmed-list .profile-btn.reject') as HTMLButtonElement;
     deleteBtn.click();
@@ -464,16 +477,19 @@ describe('cleanup', () => {
     expect(window.electronAPI.listUserProfile).not.toHaveBeenCalled();
   });
 
-  it('cleanup 后条目按钮 click 不应触发 IPC', async () => {
+  it('cleanup 后条目按钮 click 不应触发回调', async () => {
     const entries = [createEntry({ confirmed: false })];
     window.electronAPI.listUserProfile = vi.fn().mockResolvedValue({ entries });
     const manager = createManager();
+    // 注入回调：验证 cleanup 后回调解绑
+    const mockConfirm = vi.fn().mockResolvedValue(undefined);
+    manager.setConfirmProfileCallback(mockConfirm);
     await manager.load();
     // cleanup 前获取按钮引用
     const acceptBtn = document.querySelector('#profile-pending-list .profile-btn.accept') as HTMLButtonElement;
     manager.cleanup();
     acceptBtn.click();
     await Promise.resolve();
-    expect(window.electronAPI.confirmUserProfile).not.toHaveBeenCalled();
+    expect(mockConfirm).not.toHaveBeenCalled();
   });
 });

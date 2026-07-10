@@ -70,6 +70,11 @@ function createMockUiManager(callbacks: RegisteredCallbacks = {}): UIManager {
     setAgentReady: vi.fn(),
     updateAgentStatusIndicator: vi.fn(),
     loadUserProfile: vi.fn().mockResolvedValue(undefined),
+    loadAuditLog: vi.fn().mockResolvedValue(undefined),
+    // F-P0 技术债偿还：回调注入方法（setupSettingsPanel 中调用）
+    setClearAuditLogCallback: vi.fn(),
+    setConfirmProfileCallback: vi.fn(),
+    setRejectProfileCallback: vi.fn(),
   } as unknown as UIManager;
 }
 

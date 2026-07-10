@@ -828,6 +828,37 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   /**
+   * 设置审计日志清空回调（代理到 AuditPanelManager）
+   *
+   * 由 settingsController.ts 在 setupSettingsPanel() 时注册，
+   * 将 IPC 调用 `window.electronAPI.clearAuditLog()` 注入为回调，
+   * 消除 PanelManager 直调 IPC 的模式不一致。
+   */
+  setClearAuditLogCallback(cb: () => Promise<void>): void {
+    this.auditPanel.setClearAuditLogCallback(cb);
+  }
+
+  /**
+   * 设置确认用户画像回调（代理到 ProfilePanelManager）
+   *
+   * 由 settingsController.ts 在 setupSettingsPanel() 时注册，
+   * 将 IPC 调用 `window.electronAPI.confirmUserProfile(id)` 注入为回调。
+   */
+  setConfirmProfileCallback(cb: (id: string) => Promise<void>): void {
+    this.profilePanel.setConfirmProfileCallback(cb);
+  }
+
+  /**
+   * 设置拒绝用户画像回调（代理到 ProfilePanelManager）
+   *
+   * 由 settingsController.ts 在 setupSettingsPanel() 时注册，
+   * 将 IPC 调用 `window.electronAPI.rejectUserProfile(id)` 注入为回调。
+   */
+  setRejectProfileCallback(cb: (id: string) => Promise<void>): void {
+    this.profilePanel.setRejectProfileCallback(cb);
+  }
+
+  /**
    * M2 设置面板内 tab 切换回调（实现 SettingsPanelHost.onSettingsTabSwitch）
    *
    * 由 SettingsPanelManager 在 tab 切换时调用，
