@@ -9,7 +9,7 @@
  */
 
 // 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
-import { safeSetInterval, clearSafeInterval, logger } from 'memora';
+import { safeSetInterval, clearSafeInterval, logger, toError } from 'memora';
 import { MemoraError, ErrorCode } from './errors.js';
 import { MS_PER_HOUR } from './constants.js';
 
@@ -143,12 +143,22 @@ export class TriggerBus {
     }
   }
 
-  /** 启动所有触发器 */
+  /**
+   * 启动所有触发器
+   *
+   * §9.3.3 降级保护：单个触发器 start 失败时 warn 并继续启动后续触发器，
+   * 不中断精灵运行（如 FileWatcherTrigger 因路径权限失败不应阻止 TimerTrigger 启动）。
+   */
   start(): void {
     for (const [name, trigger] of this.triggers) {
       const cb: TriggerCallback = (payload) => this.emit(payload);
       this.triggerCallbacks.set(name, cb);
-      trigger.start(cb);
+      try {
+        trigger.start(cb);
+      } catch (err) {
+        // 单个触发器启动失败不中断其他触发器（§9.3.3 降级保护）
+        logger.warn({ trigger: name, err: toError(err).message }, '触发器启动失败，跳过该触发器');
+      }
     }
   }
 
