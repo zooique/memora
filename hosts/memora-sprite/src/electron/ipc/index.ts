@@ -26,6 +26,8 @@ import { registerWorkProjectionHandlers } from './workProjectionHandlers.js';
  */
 const HANDLE_CHANNELS = [
   IPC_CHANNELS.CHAT_ABORT,
+  // 强制释放对话锁（reinitAgent 时需清理，避免重复注册抛错）
+  IPC_CHANNELS.CHAT_FORCE_RELEASE_LOCK,
   IPC_CHANNELS.SESSION_LOAD,
   IPC_CHANNELS.SESSION_LIST,
   // 会话搜索（reinitAgent 时需清理，避免重复注册抛错）

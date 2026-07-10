@@ -207,6 +207,45 @@ describe('chatHandlers', () => {
     });
   });
 
+  // ─── CHAT_FORCE_RELEASE_LOCK handler ───────────────────
+
+  describe('CHAT_FORCE_RELEASE_LOCK', () => {
+    it('有进行中对话时应调用 forceReleaseChatLock + 清理 AbortController + 返回 released: true', async () => {
+      const abortController = new AbortController();
+      const ctx = createMockCtx({
+        getAbortController: vi.fn(() => abortController),
+      });
+      registerChatHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.CHAT_FORCE_RELEASE_LOCK)!;
+      const result = await callback();
+
+      // 应返回 released: true（之前有锁）
+      expect(result).toEqual({ released: true });
+      // 应调用内核 forceReleaseChatLock
+      expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalledTimes(1);
+      // 应清理宿主侧 AbortController 引用
+      expect(ctx.setAbortController).toHaveBeenCalledWith(null);
+    });
+
+    it('无进行中对话时应返回 released: false（幂等 no-op）', async () => {
+      const ctx = createMockCtx({
+        getAbortController: vi.fn(() => null),
+      });
+      registerChatHandlers(ctx);
+
+      const callback = handleCallbacks.get(IPC_CHANNELS.CHAT_FORCE_RELEASE_LOCK)!;
+      const result = await callback();
+
+      // 应返回 released: false（本来就没锁）
+      expect(result).toEqual({ released: false });
+      // 内核 forceReleaseChatLock 仍被调用（幂等 no-op，由内核 _chatBusy 判断）
+      expect(ctx.agent.forceReleaseChatLock).toHaveBeenCalledTimes(1);
+      // 仍应清理 AbortController（防御性，确保状态一致）
+      expect(ctx.setAbortController).toHaveBeenCalledWith(null);
+    });
+  });
+
   // ─── handleUserInput 前置检查分支 ──────────────────────
 
   describe('handleUserInput 前置检查', () => {

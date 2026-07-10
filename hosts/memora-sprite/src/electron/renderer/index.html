@@ -1069,6 +1069,8 @@
             <span class="save-status-text"></span>
           </div>
           <div class="settings-actions-buttons">
+          <!-- 强制释放对话锁（应急恢复，当对话卡死但未触发超时时使用） -->
+          <button id="btn-force-release-lock" class="btn-danger" title="当对话卡死且停止按钮无效时使用">强制释放锁</button>
           <!-- 恢复默认按钮，重置所有配置（危险操作，使用 btn-danger 警示） -->
           <button id="btn-settings-reset" class="btn-danger">恢复默认</button>
           <!-- 首次配置时提供"稍后配置"退出路径，避免用户被困在设置面板 -->

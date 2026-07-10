@@ -16,6 +16,15 @@ export const IPC_CHANNELS = {
   USER_INPUT: 'user-input',
   /** 中断当前对话 */
   CHAT_ABORT: 'chat-abort',
+  /**
+   * 强制释放对话锁（应急恢复）
+   *
+   * 当 LLM Provider 网络挂起但未触发 60s 无进展超时时，用户可手动释放锁。
+   * 内核 Agent.forceReleaseChatLock() 通过 token 机制保证并发安全，
+   * 递增 _chatLockToken 让原 chat() 的 finally 块跳过清理，避免误清新调用者的资源。
+   * 幂等：_chatBusy 已为 false 时 no-op。
+   */
+  CHAT_FORCE_RELEASE_LOCK: 'chat-force-release-lock',
   /** 加载历史会话消息 */
   SESSION_LOAD: 'session-load',
   /** 列出所有会话 */

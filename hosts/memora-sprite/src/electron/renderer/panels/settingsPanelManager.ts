@@ -289,6 +289,8 @@ export class SettingsPanelManager {
     this.initSettingsTabListeners();
 
     const btnReset = getOptionalElement('btn-settings-reset', 'button');
+    /** 强制释放对话锁按钮（应急恢复，与"恢复默认"同属危险操作区） */
+    const btnForceRelease = getOptionalElement('btn-force-release-lock', 'button');
 
     // "稍后配置"按钮：首次配置时提供退出路径
     const btnSkip = getOptionalElement('btn-settings-skip', 'button');
@@ -364,6 +366,34 @@ export class SettingsPanelManager {
           });
           this.settingsFormDirty = true;
           this.host.showToast('已恢复默认设置，将自动保存', 'info');
+        })();
+      });
+    }
+
+    // 强制释放对话锁按钮：应急恢复（LLM 挂起但未触发 60s 超时时手动解锁）
+    if (btnForceRelease) {
+      this.events.addEventListener(btnForceRelease, 'click', () => {
+        void (async () => {
+          // 二次确认：强制释放可能导致原 generator 在后台继续运行，
+          // 虽内核 token 机制保证新调用安全，但仍属非常规操作
+          const confirmed = await this.host.showConfirmDialog({
+            title: '强制释放对话锁',
+            message: '当对话卡死且停止按钮无效时使用。强制释放后可立即发起新对话，但原对话的后续输出将被丢弃。继续吗？',
+            confirmText: '强制释放',
+            danger: true,
+          });
+          if (!confirmed) return;
+          try {
+            const { released } = await window.electronAPI.forceReleaseChatLock();
+            if (released) {
+              this.host.showToast('对话锁已强制释放，可立即发起新对话', 'success');
+            } else {
+              this.host.showToast('当前无对话锁占用，无需释放', 'info');
+            }
+          } catch (error) {
+            reportError('forceReleaseChatLock', error);
+            this.host.showToast('强制释放失败，请稍后重试或重启应用', 'error');
+          }
         })();
       });
     }

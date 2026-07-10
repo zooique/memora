@@ -51,6 +51,8 @@ import type { AffectState, RapportState, ContextState, DetectedPattern, Proactiv
 export const IPC_CHANNELS = {
   USER_INPUT: 'user-input',
   CHAT_ABORT: 'chat-abort',
+  /** 强制释放对话锁（应急恢复，与 ipc/channels.ts 保持同步） */
+  CHAT_FORCE_RELEASE_LOCK: 'chat-force-release-lock',
   SESSION_LOAD: 'session-load',
   SESSION_LIST: 'session-list',
   SESSION_SWITCH: 'session-switch',
@@ -335,6 +337,14 @@ export interface ElectronAPI {
   // 对话
   sendUserInput: (text: string) => void;
   abortChat: () => Promise<void>;
+  /**
+   * 强制释放对话锁（应急恢复）
+   *
+   * 当 LLM Provider 挂起但未触发 60s 超时时，用户可手动释放锁立即发起新对话。
+   * 与 abortChat 的区别：abort 只中断流，forceRelease 直接清理内核锁。
+   * @returns released 是否真的释放了锁（false 表示本来就没锁）
+   */
+  forceReleaseChatLock: () => Promise<{ released: boolean }>;
   loadSession: (query: { date?: string; session?: string; limit?: number; offset?: number }) => Promise<{ messages: ChatMessage[]; loadedSessionId: string; total: number; hasMore: boolean }>;
   /** 列出所有会话 */
   listSessions: () => Promise<{ sessions: Array<{ id: string; date: string; name: string; preview?: string; messageCount?: number }> }>;
@@ -750,6 +760,7 @@ const electronAPI: ElectronAPI = {
   // 对话
   sendUserInput: (text) => ipcRenderer.send(IPC_CHANNELS.USER_INPUT, text),
   abortChat: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_ABORT),
+  forceReleaseChatLock: () => ipcRenderer.invoke(IPC_CHANNELS.CHAT_FORCE_RELEASE_LOCK),
   loadSession: (query) => ipcRenderer.invoke(IPC_CHANNELS.SESSION_LOAD, query),
 
   // 流式监听

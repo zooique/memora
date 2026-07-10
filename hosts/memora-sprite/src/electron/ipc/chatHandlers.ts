@@ -52,4 +52,29 @@ export function registerChatHandlers(ctx: IpcContext): void {
     }
     return { aborted: true };
   });
+
+  /**
+   * 强制释放对话锁（应急恢复入口）
+   *
+   * 使用场景：LLM Provider 网络挂起但未触发 60s 无进展超时，用户已确认对话卡死。
+   * 与 CHAT_ABORT 的区别：abort 只中断流（依赖 generator 响应 signal），
+   * 而强制释放直接清理内核锁 + AbortController，让用户能立即发起新对话。
+   *
+   * 安全机制（内核 agent.ts:558 forceReleaseChatLock）：
+   *   - 递增 _chatLockToken 让原 chat() 的 finally 块跳过清理（避免误清新调用者资源）
+   *   - abort chatAbortController（响应 signal 的 await 点会 throw 退出）
+   *   - 幂等：_chatBusy 已 false 时 no-op
+   *
+   * @returns released 表示是否真的释放了锁（true=之前有锁，false=本来就没锁）
+   */
+  ipcMain.handle(IPC_CHANNELS.CHAT_FORCE_RELEASE_LOCK, async () => {
+    // 通过 AbortController 是否存在判断当前是否有进行中的对话
+    // （agent._chatBusy 是私有字段，宿主无法直接读取）
+    const hadActiveChat = ctx.getAbortController() !== null;
+    // 调用内核强制释放（幂等，无锁时 no-op）
+    ctx.agent.forceReleaseChatLock();
+    // 清理宿主侧的 AbortController 引用（与 chatStreamHandler finally 块职责对齐）
+    ctx.setAbortController(null);
+    return { released: hadActiveChat };
+  });
 }
