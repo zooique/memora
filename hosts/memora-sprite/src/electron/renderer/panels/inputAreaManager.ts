@@ -24,6 +24,8 @@
 import type { EventTracker } from '../helpers/eventTracker.js';
 // clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
 import { clearElement } from '../helpers/domHelpers.js';
+// reportError 统一错误日志（双通道：console + 主进程 logger），替代散落的 console.error
+import { reportError } from '../helpers/errorHelpers.js';
 // 复用 quick-input 补全管理器（已泛化支持 textarea）
 import { QuickInputCompletion } from '../quick-input/quickInputCompletion.js';
 
@@ -463,7 +465,7 @@ export class InputAreaManager {
     } catch (error) {
       // 加载失败时显示降级文案，UI 已有可见反馈（"加载失败"），此处仅记录日志便于排查
       this.providerNameEl.textContent = '加载失败';
-      console.error('[InputAreaManager] 加载 Provider 选择器失败:', error);
+      reportError('InputAreaManager.loadProviderSelector', error);
     }
   }
 
@@ -532,7 +534,7 @@ export class InputAreaManager {
     } catch (error) {
       // Token 用量刷新失败不影响对话功能，UI 显示 '--' 降级，仅记录日志
       this.tokenUsageText.textContent = '--';
-      console.error('[InputAreaManager] 刷新 Token 用量失败:', error);
+      reportError('InputAreaManager.refreshTokenUsage', error);
     }
   }
 }

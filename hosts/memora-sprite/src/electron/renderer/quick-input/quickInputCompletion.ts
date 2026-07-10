@@ -47,6 +47,40 @@ export interface CompletionItem {
   score: number;
 }
 
+/**
+ * 补全模块统一日志函数
+ *
+ * 双通道记录（与 errorHelpers.ts 的 reportError 同模式）：
+ * 1. console 输出：开发时即时可见
+ * 2. window.electronAPI.rendererLog：上报主进程 logger（生产环境可观测性）
+ *
+ * IPC 不可用时（如 preload 加载失败）仅降级到 console，不抛错。
+ *
+ * @param level 日志级别（warn/error）
+ * @param context 错误上下文标识
+ * @param message 日志消息
+ * @param err 可选的错误对象
+ */
+function logCompletion(
+  level: 'warn' | 'error',
+  context: string,
+  message: string,
+  err?: unknown,
+): void {
+  const prefix = `[QuickInputCompletion:${context}]`;
+  if (level === 'warn') {
+    console.warn(prefix, message, err);
+  } else {
+    console.error(prefix, message, err);
+  }
+  // 上报主进程 logger（try-catch 防止 IPC 不可用时崩溃）
+  try {
+    window.electronAPI?.rendererLog(level, `QuickInputCompletion:${context}`, message);
+  } catch {
+    // IPC 不可用时静默降级（console 已记录）
+  }
+}
+
 /** 防抖延迟（ms）—— 输入停止后等待多久触发补全 */
 const DEBOUNCE_MS = 300;
 /** 最小触发字符数 —— 少于此值不触发补全（避免空查询） */
@@ -192,11 +226,12 @@ export class QuickInputCompletion {
       // 并行调用两个搜索 IPC，单个失败时降级为空候选（补全是辅助功能，不阻断主流程）
       const [memoriesResult, messagesResult] = await Promise.all([
         this.api.searchMemories(query).catch((err) => {
-          console.warn('[QuickInputCompletion] searchMemories 失败，降级为空候选', err);
+          // 补全为辅助功能，IPC 失败时降级为空候选，日志上报主进程便于排查
+          logCompletion('warn', 'searchMemories', 'searchMemories 失败，降级为空候选', err);
           return { hits: [] };
         }),
         this.api.searchSessionMessages({ keyword: query, limit: 20 }).catch((err) => {
-          console.warn('[QuickInputCompletion] searchSessionMessages 失败，降级为空候选', err);
+          logCompletion('warn', 'searchSessionMessages', 'searchSessionMessages 失败，降级为空候选', err);
           return { results: [] };
         }),
       ]);
@@ -207,7 +242,7 @@ export class QuickInputCompletion {
       const candidates = this.mergeCandidates(memoriesResult.hits, messagesResult.results);
       this.renderCandidates(candidates);
     } catch (error) {
-      console.error('[QuickInputCompletion] 获取补全候选失败:', error);
+      logCompletion('error', 'fetchCandidates', '获取补全候选失败', error);
       this.clearCandidates();
     }
   }
