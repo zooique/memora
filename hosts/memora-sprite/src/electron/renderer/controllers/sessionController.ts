@@ -191,12 +191,8 @@ export function createSessionController(uiManager: UIManager) {
       }
 
       // 取最近的更早日期（earlierDates 升序，最后一项是最接近 earliestDate 的）
-      // noUncheckedIndexedAccess 模式下数组索引返回 T | undefined，需 ?? 兜底
-      const targetDate = earlierDates[earlierDates.length - 1] ?? '';
-      if (!targetDate) {
-        uiManager.hideLoadMore();
-        return;
-      }
+      // L187 已保证 earlierDates 非空，索引 length-1 一定有值，用 ! 断言正视契约
+      const targetDate = earlierDates[earlierDates.length - 1]!;
 
       // 找到该日期的代表会话（SESSION_LIST 已按日期聚合，每日期一条代表）
       const targetSession = sessions.find((s) => s.date === targetDate);

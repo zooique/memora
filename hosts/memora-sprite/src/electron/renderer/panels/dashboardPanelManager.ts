@@ -215,7 +215,8 @@ export class DashboardPanelManager {
     this.growthSectionEl = document.getElementById('dashboard-growth');
     this.growthDescEl = document.getElementById('dashboard-growth-desc');
     this.growthCardsEl = document.getElementById('dashboard-growth-cards');
-    this.growthCanvasEl = document.getElementById('dashboard-growth-canvas') as HTMLCanvasElement | null;
+    const canvasEl = document.getElementById('dashboard-growth-canvas');
+    this.growthCanvasEl = canvasEl instanceof HTMLCanvasElement ? canvasEl : null;
     this.growthEmptyEl = document.getElementById('dashboard-growth-empty');
   }
 
@@ -764,8 +765,8 @@ export class DashboardPanelManager {
       errorEl.classList.remove('hidden');
     }
     // 重试按钮：用 onclick 覆盖式绑定（每次调用覆盖前一次，无累积）
-    const retryBtn = document.getElementById('dashboard-error-retry') as HTMLButtonElement | null;
-    if (retryBtn) {
+    const retryBtn = document.getElementById('dashboard-error-retry');
+    if (retryBtn instanceof HTMLButtonElement) {
       retryBtn.onclick = () => {
         this.reloadMemoryListCallback?.();
       };

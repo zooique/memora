@@ -108,8 +108,12 @@ export class SkillDropManager {
    * 用户选择文件后由 change 事件处理（在 renderer.ts 中注册）。
    */
   handleSkillFileSelect(): void {
-    const fileInput = document.getElementById('skill-file-input') as HTMLInputElement | null;
-    fileInput?.click();
+    const fileInput = document.getElementById('skill-file-input');
+    if (fileInput instanceof HTMLInputElement) {
+      fileInput.click();
+    } else {
+      console.error('[SkillDrop] skill-file-input 元素缺失，文件选择不可用');
+    }
   }
 
   /**

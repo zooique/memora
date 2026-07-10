@@ -266,9 +266,12 @@ export class PartnerInsightsRenderer {
    * 颜色通过 CSS 变量动态读取，支持亮色/暗色主题切换。
    */
   private renderGrowthChart(memories: Array<{ createdAt?: string }>): void {
-    const canvas = document.getElementById('partner-growth-chart') as HTMLCanvasElement | null;
+    const canvas = document.getElementById('partner-growth-chart');
     const totalEl = document.getElementById('partner-growth-total');
-    if (!canvas) return;
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      console.error('[PartnerInsights] partner-growth-chart 元素缺失，图表渲染跳过');
+      return;
+    }
 
     // 更新总数
     if (totalEl) {

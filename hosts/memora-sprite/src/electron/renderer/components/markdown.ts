@@ -347,8 +347,8 @@ function parseUnorderedList(lines: string[], startIdx: number): { node: HTMLElem
     // 调整嵌套栈
     if (level > currentLevel) {
       // 进入更深层级：在当前最后一个 <li> 下创建新的 <ul>
-      const parentLi = stack[stack.length - 1]!.lastElementChild as HTMLLIElement | null;
-      if (parentLi) {
+      const parentLi = stack[stack.length - 1]!.lastElementChild;
+      if (parentLi instanceof HTMLLIElement) {
         const nestedUl = document.createElement('ul');
         nestedUl.className = 'md-ul md-ul-nested';
         parentLi.appendChild(nestedUl);
@@ -399,8 +399,8 @@ function parseOrderedList(lines: string[], startIdx: number): { node: HTMLElemen
     if (currentLevel === -1) currentLevel = level;
 
     if (level > currentLevel) {
-      const parentLi = stack[stack.length - 1]!.lastElementChild as HTMLLIElement | null;
-      if (parentLi) {
+      const parentLi = stack[stack.length - 1]!.lastElementChild;
+      if (parentLi instanceof HTMLLIElement) {
         const nestedOl = document.createElement('ol');
         nestedOl.className = 'md-ol md-ol-nested';
         parentLi.appendChild(nestedOl);

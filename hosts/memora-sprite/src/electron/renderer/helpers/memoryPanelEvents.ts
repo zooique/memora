@@ -319,16 +319,16 @@ function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
   }
 
   // 排序方式变更（合并原两处重复注册为单次）
-  const sortEl = document.getElementById('memory-sort-order') as HTMLSelectElement | null;
-  if (sortEl) {
+  const sortEl = document.getElementById('memory-sort-order');
+  if (sortEl instanceof HTMLSelectElement) {
     ctx.events.addEventListener(sortEl, 'change', () => {
       ctx.getSortChangeCallback()?.();
     });
   }
 
   // 时间范围变更（合并原两处重复注册为单次）
-  const timeRangeEl = document.getElementById('memory-time-range') as HTMLSelectElement | null;
-  if (timeRangeEl) {
+  const timeRangeEl = document.getElementById('memory-time-range');
+  if (timeRangeEl instanceof HTMLSelectElement) {
     ctx.events.addEventListener(timeRangeEl, 'change', () => {
       ctx.getTimeRangeChangeCallback()?.();
     });

@@ -79,13 +79,14 @@ export class SearchMessagesManager {
   init(): void {
     // 绑定 DOM 元素
     this.modalEl = document.getElementById('search-messages-modal');
-    this.inputEl = document.getElementById('search-messages-input') as HTMLInputElement | null;
+    const inputEl = document.getElementById('search-messages-input');
     this.resultsEl = document.getElementById('search-messages-results');
 
-    if (!this.modalEl || !this.inputEl || !this.resultsEl) {
+    if (!(this.modalEl instanceof HTMLElement) || !(inputEl instanceof HTMLInputElement) || !(this.resultsEl instanceof HTMLElement)) {
       console.warn('[SearchMessages] 搜索弹窗 DOM 元素缺失，功能降级');
       return;
     }
+    this.inputEl = inputEl;
 
     // 搜索按钮点击 → 打开弹窗
     const searchBtn = document.getElementById('btn-search-messages');

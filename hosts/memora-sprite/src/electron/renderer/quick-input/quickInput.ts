@@ -44,21 +44,31 @@ export type QuickInputElectronAPI = Pick<
  * 在 DOMContentLoaded 后调用（script type=module 默认 defer，DOM 已就绪）。
  */
 function initQuickInput(): void {
-  const inputField = document.getElementById('quick-input-field') as HTMLInputElement | null;
-  const confirmBtn = document.getElementById('quick-input-confirm') as HTMLButtonElement | null;
-  const completionList = document.getElementById('completion-list') as HTMLElement | null;
-
-  if (!inputField || !confirmBtn) {
-    console.error('[QuickInput] DOM 元素缺失，无法初始化');
+  // 入口契约校验：instanceof 确保运行时类型安全，不通过则报错退出（正视 bug，不掩盖）
+  const inputEl = document.getElementById('quick-input-field');
+  if (!(inputEl instanceof HTMLInputElement)) {
+    console.error('[QuickInput] quick-input-field 元素缺失或类型错误');
     return;
   }
+  const confirmEl = document.getElementById('quick-input-confirm');
+  if (!(confirmEl instanceof HTMLButtonElement)) {
+    console.error('[QuickInput] quick-input-confirm 元素缺失或类型错误');
+    return;
+  }
+  // 候选列表容器可选（缺失时跳过补全能力，不阻断主流程）
+  const completionList = document.getElementById('completion-list');
 
-  // 获取 electronAPI（preload 注入），类型安全访问
-  const api = (window as unknown as { electronAPI: QuickInputElectronAPI }).electronAPI;
-  if (!api) {
+  const electronApi = (window as unknown as { electronAPI?: QuickInputElectronAPI }).electronAPI;
+  if (!electronApi) {
     console.error('[QuickInput] electronAPI 未注入（preload 加载失败）');
     return;
   }
+
+  // 显式类型标注的 const，确保 async 闭包内类型不回退
+  // （TS 限制：async function 闭包不保留 instanceof / null 窄化，需通过显式标注固化类型）
+  const inputField: HTMLInputElement = inputEl;
+  const confirmBtn: HTMLButtonElement = confirmEl;
+  const api: QuickInputElectronAPI = electronApi;
 
   /** 是否正在提交（防止重复确认） */
   let isSubmitting = false;
@@ -72,6 +82,7 @@ function initQuickInput(): void {
    * 失败时恢复 UI 状态，让用户可以重试。
    */
   async function handleConfirm(): Promise<void> {
+    // inputField/confirmBtn 已在入口 instanceof 校验，const 闭包内保留窄化，无需重复检查
     if (isSubmitting) return;
     const text = inputField.value;
     // 空内容不处理（包括纯空白）
@@ -135,8 +146,8 @@ function initQuickInput(): void {
     void handleConfirm();
   });
 
-  // Phase 2：初始化补全管理器（候选列表容器存在时）
-  if (completionList) {
+  // Phase 2：初始化补全管理器（候选列表容器存在时才启用补全）
+  if (completionList instanceof HTMLElement) {
     completion = new QuickInputCompletion(inputField, completionList, api);
     // Tab 选择候选项时，回填到输入框并聚焦
     completion.onSelect((text) => {

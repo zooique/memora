@@ -384,9 +384,9 @@ async function bootstrapRenderer(): Promise<void> {
   // 召回记忆点击：跳转到记忆面板并显示详情（使用完整记忆ID精准跳转）
   State.uiManager.onMemoryRecallClick(async (memoryId) => {
     await State.uiManager.switchPanel('memories');
-    // 预填搜索框为记忆名称（从id: "source:name" 格式中提取name部分），让弹窗背后列表同步
-    const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-    if (searchInput) {
+    // 预填搜索框为记忆名称，让弹窗背后列表同步（静态元素，instanceof 校验）
+    const searchInput = document.getElementById('memory-search');
+    if (searchInput instanceof HTMLInputElement) {
       // memoryId 格式为 "source:name"，冒号后的部分是记忆名称
       const namePart = memoryId.includes(':') ? memoryId.slice(memoryId.indexOf(':') + 1) : memoryId;
       searchInput.value = namePart;
@@ -753,9 +753,12 @@ function setupBusinessLogic(
  */
 function setupSkillDropzone(_uiManager: UIManager): void {
   const dropzone = document.getElementById('skill-dropzone');
-  const fileInput = document.getElementById('skill-file-input') as HTMLInputElement | null;
-  if (!dropzone) {
-    // dropzone 不存在时静默降级（HTML 可能被裁剪）
+  // dropzone 不存在时静默降级（HTML 可能被裁剪）
+  if (!dropzone) return;
+
+  const fileInput = document.getElementById('skill-file-input');
+  if (!(fileInput instanceof HTMLInputElement)) {
+    console.error('[Renderer] skill-file-input 元素缺失，技能导入功能不可用');
     return;
   }
 

@@ -103,9 +103,13 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       section: '记忆',
       action: () => {
         void uiManager.switchPanel('memories');
-        // 聚焦记忆搜索框
-        const input = document.getElementById('memory-search') as HTMLInputElement | null;
-        input?.focus();
+        // 聚焦记忆搜索框（静态元素，缺失即 bug，instanceof 校验 + 日志）
+        const input = document.getElementById('memory-search');
+        if (input instanceof HTMLInputElement) {
+          input.focus();
+        } else {
+          console.error('[CommandPalette] memory-search 元素缺失，无法聚焦');
+        }
       },
     },
     {
@@ -140,7 +144,11 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       action: () => {
         void uiManager.switchPanel('memories');
         const graphBtn = document.getElementById('btn-graph-view');
-        graphBtn?.click();
+        if (graphBtn instanceof HTMLButtonElement) {
+          graphBtn.click();
+        } else {
+          console.error('[CommandPalette] btn-graph-view 元素缺失');
+        }
       },
     },
     {
@@ -251,21 +259,25 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       keywords: '静默 安静 silent 免打扰 精灵 主动提示',
       section: '动作',
       action: () => {
-        // 读取设置面板中静默模式 checkbox 的当前状态
-        const checkbox = document.getElementById('cfg-silent') as HTMLInputElement | null;
-        const isCurrentlySilent = checkbox?.checked ?? false;
+        // 读取设置面板中静默模式 checkbox 的当前状态（静态元素，instanceof 校验）
+        const checkbox = document.getElementById('cfg-silent');
+        if (!(checkbox instanceof HTMLInputElement)) {
+          console.error('[CommandPalette] cfg-silent 元素缺失，静默模式切换失败');
+          return;
+        }
+        const isCurrentlySilent = checkbox.checked;
         if (isCurrentlySilent) {
           // 退出静默模式
           void window.electronAPI.updateConfig('silentMode', false);
           void window.electronAPI.updateConfig('silentModeExpiresAt', null);
-          if (checkbox) checkbox.checked = false;
+          checkbox.checked = false;
           uiManager.showToast('已退出静默模式，精灵恢复主动提示', 'info', TOAST_SHORT_MS);
         } else {
           // 进入静默模式（1 小时后自动恢复）
           void window.electronAPI.updateConfig('silentMode', true);
           const expiresAt = new Date(Date.now() + MS_PER_HOUR).toISOString();
           void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
-          if (checkbox) checkbox.checked = true;
+          checkbox.checked = true;
           uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示', 'info', TOAST_SHORT_MS);
         }
       },
@@ -358,13 +370,14 @@ export class CommandPaletteManager {
   /** 初始化命令面板（DOM 绑定 + 事件监听） */
   init(): void {
     this.paletteEl = document.getElementById('command-palette');
-    this.inputEl = document.getElementById('command-palette-input') as HTMLInputElement | null;
+    const inputEl = document.getElementById('command-palette-input');
     this.resultsEl = document.getElementById('command-palette-results');
 
-    if (!this.paletteEl || !this.inputEl || !this.resultsEl) {
+    if (!(this.paletteEl instanceof HTMLElement) || !(inputEl instanceof HTMLInputElement) || !(this.resultsEl instanceof HTMLElement)) {
       console.warn('[CommandPalette] 命令面板 DOM 元素缺失，功能降级');
       return;
     }
+    this.inputEl = inputEl;
 
     // 点击遮罩层关闭
     this.events.addEventListener(this.paletteEl, 'click', (e) => {

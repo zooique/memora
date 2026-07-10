@@ -874,8 +874,11 @@ export class MemoryPanelManager {
    * 底层使用 upsert 语义（MEMORIES_ADD 通道），无需新增 IPC 通道。
    */
   private saveEdit(): void {
-    const textarea = document.getElementById('memory-detail-content') as HTMLTextAreaElement | null;
-    if (!textarea) return;
+    const textarea = document.getElementById('memory-detail-content');
+    if (!(textarea instanceof HTMLTextAreaElement)) {
+      console.error('[MemoryPanel] memory-detail-content 元素缺失，保存失败');
+      return;
+    }
 
     const newContent = textarea.value.trim();
     if (!newContent) return;
@@ -1350,8 +1353,11 @@ export class MemoryPanelManager {
   private initGraphRenderer(): void {
     if (this.graphRenderer) return;
 
-    const canvas = document.getElementById('memory-graph-canvas') as HTMLCanvasElement | null;
-    if (!canvas) return;
+    const canvas = document.getElementById('memory-graph-canvas');
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      console.error('[MemoryPanel] memory-graph-canvas 元素缺失，图谱渲染跳过');
+      return;
+    }
 
     this.graphRenderer = new RelationGraphRenderer(canvas);
     // 节点点击回调：通过 memoryClickCallback 显示详情
@@ -1559,15 +1565,16 @@ export class MemoryPanelManager {
       this.graphContextMenuCallback?.(action, nodeId);
     };
 
-    const focusItem = menu.querySelector('[data-action="focus-subgraph"]') as HTMLElement | null;
-    const detailItem = menu.querySelector('[data-action="view-detail"]') as HTMLElement | null;
-    const connectItem = menu.querySelector('[data-action="connect-from"]') as HTMLElement | null;
-    const copyItem = menu.querySelector('[data-action="copy-id"]') as HTMLElement | null;
+    // 菜单项是静态模板元素，缺失即 bug，用 ! 断言正视契约
+    const focusItem = menu.querySelector('[data-action="focus-subgraph"]')! as HTMLElement;
+    const detailItem = menu.querySelector('[data-action="view-detail"]')! as HTMLElement;
+    const connectItem = menu.querySelector('[data-action="connect-from"]')! as HTMLElement;
+    const copyItem = menu.querySelector('[data-action="copy-id"]')! as HTMLElement;
 
-    if (focusItem) focusItem.onclick = () => handler('focus-subgraph');
-    if (detailItem) detailItem.onclick = () => handler('view-detail');
-    if (connectItem) connectItem.onclick = () => handler('connect-from');
-    if (copyItem) copyItem.onclick = () => handler('copy-id');
+    focusItem.onclick = () => handler('focus-subgraph');
+    detailItem.onclick = () => handler('view-detail');
+    connectItem.onclick = () => handler('connect-from');
+    copyItem.onclick = () => handler('copy-id');
 
     // 定位菜单（避免超出视口）
     menu.style.left = `${x}px`;
@@ -1617,60 +1624,48 @@ export class MemoryPanelManager {
     if (!dialog) return;
 
     // 重置 UI 状态（防御性，处理 Escape 走 modal.ts hideModal 路径留下的残留）
-    const deleteBtnReset = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
-    const titleElReset = dialog.querySelector('.relation-edit-title') as HTMLElement | null;
-    if (deleteBtnReset) deleteBtnReset.classList.remove('hidden');
-    if (titleElReset) titleElReset.textContent = '编辑关系';
+    const deleteBtnReset = dialog.querySelector('#relation-edit-delete')!;
+    const titleElReset = dialog.querySelector('.relation-edit-title')!;
+    deleteBtnReset.classList.remove('hidden');
+    titleElReset.textContent = '编辑关系';
 
-    // 填充当前值
-    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement | null;
-    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement | null;
-    const weightValue = dialog.querySelector('#relation-edit-weight-value') as HTMLElement | null;
+    // 填充当前值（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
+    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement;
+    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement;
+    const weightValue = dialog.querySelector('#relation-edit-weight-value')!;
 
-    if (typeSelect) typeSelect.value = type;
-    if (weightInput) {
-      weightInput.value = String(weight);
-      if (weightValue) weightValue.textContent = String(Math.round(weight * 100));
-    }
+    typeSelect.value = type;
+    weightInput.value = String(weight);
+    weightValue.textContent = String(Math.round(weight * 100));
 
     // 绑定保存
-    const saveBtn = dialog.querySelector('#relation-edit-save') as HTMLElement | null;
-    if (saveBtn) {
-      saveBtn.onclick = () => {
-        const newType = typeSelect?.value || type;
-        const newWeight = weightInput ? parseFloat(weightInput.value) : weight;
-        this.relationEditCallback?.(sourceId, targetId, newType, newWeight);
-        this.hideRelationEditDialog();
-      };
-    }
+    const saveBtn = dialog.querySelector('#relation-edit-save')! as HTMLElement;
+    saveBtn.onclick = () => {
+      const newType = typeSelect.value || type;
+      const newWeight = parseFloat(weightInput.value);
+      this.relationEditCallback?.(sourceId, targetId, newType, newWeight);
+      this.hideRelationEditDialog();
+    };
 
     // 绑定删除
-    const deleteBtn = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
-    if (deleteBtn) {
-      deleteBtn.onclick = () => {
-        this.relationDeleteCallback?.(sourceId, targetId, type);
-        this.hideRelationEditDialog();
-      };
-    }
+    const deleteBtn = dialog.querySelector('#relation-edit-delete')! as HTMLElement;
+    deleteBtn.onclick = () => {
+      this.relationDeleteCallback?.(sourceId, targetId, type);
+      this.hideRelationEditDialog();
+    };
 
     // 绑定取消
-    const cancelBtn = dialog.querySelector('#relation-edit-cancel') as HTMLElement | null;
-    if (cancelBtn) {
-      cancelBtn.onclick = () => this.hideRelationEditDialog();
-    }
+    const cancelBtn = dialog.querySelector('#relation-edit-cancel')! as HTMLElement;
+    cancelBtn.onclick = () => this.hideRelationEditDialog();
 
     // 背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
-    const overlay = dialog.querySelector('.relation-edit-dialog-overlay') as HTMLElement | null;
-    if (overlay) {
-      overlay.onclick = () => this.hideRelationEditDialog();
-    }
+    const overlay = dialog.querySelector('.relation-edit-dialog-overlay')! as HTMLElement;
+    overlay.onclick = () => this.hideRelationEditDialog();
 
     // 权重滑块联动
-    if (weightInput && weightValue) {
-      weightInput.oninput = () => {
-        weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
-      };
-    }
+    weightInput.oninput = () => {
+      weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
+    };
 
     dialog.classList.remove('hidden');
   }
@@ -1685,51 +1680,41 @@ export class MemoryPanelManager {
     const dialog = document.getElementById('relation-edit-dialog');
     if (!dialog) return;
 
-    // 重置为默认值
-    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement | null;
-    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement | null;
-    const weightValue = dialog.querySelector('#relation-edit-weight-value') as HTMLElement | null;
-    const deleteBtn = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
-    const titleEl = dialog.querySelector('.relation-edit-title') as HTMLElement | null;
+    // 重置为默认值（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
+    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement;
+    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement;
+    const weightValue = dialog.querySelector('#relation-edit-weight-value')!;
+    const deleteBtn = dialog.querySelector('#relation-edit-delete')!;
+    const titleEl = dialog.querySelector('.relation-edit-title')!;
 
     // 创建模式下隐藏删除按钮，标题改为"创建关系"
-    if (deleteBtn) deleteBtn.classList.add('hidden');
-    if (titleEl) titleEl.textContent = '创建关系';
-    if (typeSelect) typeSelect.value = 'related';
-    if (weightInput) {
-      weightInput.value = '0.5';
-      if (weightValue) weightValue.textContent = '50';
-    }
+    deleteBtn.classList.add('hidden');
+    titleEl.textContent = '创建关系';
+    typeSelect.value = 'related';
+    weightInput.value = '0.5';
+    weightValue.textContent = '50';
 
     // 绑定保存
-    const saveBtn = dialog.querySelector('#relation-edit-save') as HTMLElement | null;
-    if (saveBtn) {
-      saveBtn.onclick = () => {
-        const newType = typeSelect?.value || 'related';
-        const newWeight = weightInput ? parseFloat(weightInput.value) : 0.5;
-        this.relationCreateCallback?.(sourceId, targetId, newType, newWeight);
-        this.hideRelationEditDialog();
-      };
-    }
+    const saveBtn = dialog.querySelector('#relation-edit-save')! as HTMLElement;
+    saveBtn.onclick = () => {
+      const newType = typeSelect.value || 'related';
+      const newWeight = parseFloat(weightInput.value);
+      this.relationCreateCallback?.(sourceId, targetId, newType, newWeight);
+      this.hideRelationEditDialog();
+    };
 
     // 绑定取消
-    const cancelBtn = dialog.querySelector('#relation-edit-cancel') as HTMLElement | null;
-    if (cancelBtn) {
-      cancelBtn.onclick = () => this.hideRelationEditDialog();
-    }
+    const cancelBtn = dialog.querySelector('#relation-edit-cancel')! as HTMLElement;
+    cancelBtn.onclick = () => this.hideRelationEditDialog();
 
     // 背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
-    const overlay = dialog.querySelector('.relation-edit-dialog-overlay') as HTMLElement | null;
-    if (overlay) {
-      overlay.onclick = () => this.hideRelationEditDialog();
-    }
+    const overlay = dialog.querySelector('.relation-edit-dialog-overlay')! as HTMLElement;
+    overlay.onclick = () => this.hideRelationEditDialog();
 
     // 权重滑块联动
-    if (weightInput && weightValue) {
-      weightInput.oninput = () => {
-        weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
-      };
-    }
+    weightInput.oninput = () => {
+      weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
+    };
 
     dialog.classList.remove('hidden');
   }
@@ -1740,11 +1725,11 @@ export class MemoryPanelManager {
     if (!dialog) return;
     dialog.classList.add('hidden');
 
-    // 恢复默认 UI（删除按钮、标题）
-    const deleteBtn = dialog.querySelector('#relation-edit-delete') as HTMLElement | null;
-    const titleEl = dialog.querySelector('.relation-edit-title') as HTMLElement | null;
-    if (deleteBtn) deleteBtn.classList.remove('hidden');
-    if (titleEl) titleEl.textContent = '编辑关系';
+    // 恢复默认 UI（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
+    const deleteBtn = dialog.querySelector('#relation-edit-delete')!;
+    const titleEl = dialog.querySelector('.relation-edit-title')!;
+    deleteBtn.classList.remove('hidden');
+    titleEl.textContent = '编辑关系';
   }
 
   /**

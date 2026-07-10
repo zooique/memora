@@ -191,10 +191,12 @@ export class PanelRouter {
     if (panel === 'chat') {
       this.host.getInputEl().focus();
     }
-    // 切换到记忆面板时聚焦搜索框
+    // 切换到记忆面板时聚焦搜索框（静态元素，instanceof 校验）
     if (panel === 'memories') {
-      const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-      searchInput?.focus();
+      const searchInput = document.getElementById('memory-search');
+      if (searchInput instanceof HTMLInputElement) {
+        searchInput.focus();
+      }
     }
 
     // 面板切换回调：通知外部控制器刷新数据
@@ -307,9 +309,9 @@ export class PanelRouter {
    */
   async handleRecallMemoryTrigger(): Promise<void> {
     await this.switchPanel('memories');
-    // 选中已有文本，方便用户直接输入新搜索词替换
-    const searchInput = document.getElementById('memory-search') as HTMLInputElement | null;
-    if (searchInput) {
+    // 选中已有文本，方便用户直接输入新搜索词替换（静态元素，instanceof 校验）
+    const searchInput = document.getElementById('memory-search');
+    if (searchInput instanceof HTMLInputElement) {
       searchInput.select();
     }
   }

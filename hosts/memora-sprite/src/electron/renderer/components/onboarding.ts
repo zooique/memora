@@ -250,8 +250,9 @@ export class OnboardingManager {
   private async persistStep(step: number): Promise<void> {
     try {
       await window.electronAPI.updateConfig('onboardingStep', step);
-    } catch {
-      // 静默忽略持久化失败（不影响用户体验）
+    } catch (error) {
+      // 持久化失败不阻塞用户操作，但记录日志让问题可见（不静默吞异常）
+      console.warn('[Onboarding] 持久化引导步骤失败', error);
     }
   }
 
@@ -261,32 +262,32 @@ export class OnboardingManager {
    * 绑定 API Key 保存按钮事件
    */
   private bindApiKeySave(modal: HTMLElement): void {
-    const saveBtn = modal.querySelector('#btn-onboarding-save-key') as HTMLButtonElement | null;
-    if (!saveBtn) return;
+    const saveBtn = modal.querySelector('#btn-onboarding-save-key');
+    if (!(saveBtn instanceof HTMLButtonElement)) {
+      console.error('[Onboarding] btn-onboarding-save-key 元素缺失');
+      return;
+    }
 
     saveBtn.addEventListener('click', async () => {
-      const providerSelect = modal.querySelector('#onboarding-provider-type') as HTMLSelectElement | null;
-      const apiKeyInput = modal.querySelector('#onboarding-api-key') as HTMLInputElement | null;
-      const errorEl = modal.querySelector('#onboarding-api-error') as HTMLElement | null;
-
-      if (!providerSelect || !apiKeyInput) return;
+      // 引导弹窗模板静态元素，modal 已确认存在，用 ! 断言正视契约
+      const providerSelect = modal.querySelector('#onboarding-provider-type')! as HTMLSelectElement;
+      const apiKeyInput = modal.querySelector('#onboarding-api-key')! as HTMLInputElement;
+      const errorEl = modal.querySelector('#onboarding-api-error')! as HTMLElement;
 
       const providerType = providerSelect.value;
       const apiKey = apiKeyInput.value.trim();
 
       // 校验
       if (!apiKey) {
-        if (errorEl) {
-          errorEl.textContent = '请输入 API Key';
-          errorEl.classList.remove('hidden');
-        }
+        errorEl.textContent = '请输入 API Key';
+        errorEl.classList.remove('hidden');
         return;
       }
 
       // 禁用按钮，显示加载状态
       saveBtn.disabled = true;
       saveBtn.textContent = '保存中...';
-      if (errorEl) errorEl.classList.add('hidden');
+      errorEl.classList.add('hidden');
 
       try {
         // 自动填充默认值和模型
@@ -312,22 +313,18 @@ export class OnboardingManager {
         this.showStep(modal, 3);
         this.persistStep(3);
       } catch (err) {
-        if (errorEl) {
-          errorEl.textContent = `保存失败：${err instanceof Error ? err.message : '未知错误'}`;
-          errorEl.classList.remove('hidden');
-        }
+        errorEl.textContent = `保存失败：${err instanceof Error ? err.message : '未知错误'}`;
+        errorEl.classList.remove('hidden');
         saveBtn.disabled = false;
         saveBtn.textContent = '保存并继续';
       }
     });
 
-    // Enter 键提交
-    const apiKeyInput = modal.querySelector('#onboarding-api-key') as HTMLInputElement | null;
-    if (apiKeyInput) {
-      apiKeyInput.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (e.key === 'Enter') saveBtn.click();
-      });
-    }
+    // Enter 键提交（复用上面已校验的 apiKeyInput，这里用 ! 断言）
+    const apiKeyInputEnter = modal.querySelector('#onboarding-api-key')! as HTMLInputElement;
+    apiKeyInputEnter.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') saveBtn.click();
+    });
   }
 
   // ─── Provider 选择 ─────────────────────────────────
@@ -338,8 +335,11 @@ export class OnboardingManager {
    * 切换 Provider 时更新注册链接和输入框提示。
    */
   private bindProviderSelect(modal: HTMLElement): void {
-    const select = modal.querySelector('#onboarding-provider-type') as HTMLSelectElement | null;
-    if (!select) return;
+    const select = modal.querySelector('#onboarding-provider-type');
+    if (!(select instanceof HTMLSelectElement)) {
+      console.error('[Onboarding] onboarding-provider-type 元素缺失');
+      return;
+    }
 
     select.addEventListener('change', () => {
       this.updateSignupLink(modal);
@@ -350,9 +350,9 @@ export class OnboardingManager {
    * 更新注册链接的 href 和文本
    */
   private updateSignupLink(modal: HTMLElement): void {
-    const select = modal.querySelector('#onboarding-provider-type') as HTMLSelectElement | null;
-    const link = modal.querySelector('#onboarding-signup-link') as HTMLAnchorElement | null;
-    if (!select || !link) return;
+    // 引导弹窗模板静态元素，modal 已确认存在，用 ! 断言正视契约
+    const select = modal.querySelector('#onboarding-provider-type')! as HTMLSelectElement;
+    const link = modal.querySelector('#onboarding-signup-link')! as HTMLAnchorElement;
 
     const providerType = select.value;
     const url = PROVIDER_SIGNUP_URLS[providerType];
@@ -372,8 +372,11 @@ export class OnboardingManager {
    * 绑定完成按钮事件
    */
   private bindDone(modal: HTMLElement): void {
-    const doneBtn = modal.querySelector('#btn-onboarding-done') as HTMLButtonElement | null;
-    if (!doneBtn) return;
+    const doneBtn = modal.querySelector('#btn-onboarding-done');
+    if (!(doneBtn instanceof HTMLButtonElement)) {
+      console.error('[Onboarding] btn-onboarding-done 元素缺失');
+      return;
+    }
 
     doneBtn.addEventListener('click', () => {
       this.closeModal(modal);

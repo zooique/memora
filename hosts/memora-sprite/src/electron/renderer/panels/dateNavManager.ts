@@ -47,10 +47,13 @@ export class DateNavManager {
    * 在 UIManager 构造完成后调用。
    */
   init(): void {
-    const btn = document.getElementById('date-nav-btn') as HTMLButtonElement | null;
+    const btn = document.getElementById('date-nav-btn');
     const dropdown = document.getElementById('date-nav-dropdown');
     const listEl = document.getElementById('date-nav-list');
-    if (!btn || !dropdown || !listEl) return;
+    if (!(btn instanceof HTMLButtonElement) || !(dropdown instanceof HTMLElement) || !(listEl instanceof HTMLElement)) {
+      console.error('[DateNav] DOM 元素缺失，日期导航不可用');
+      return;
+    }
 
     // 点击按钮切换下拉
     this.events.addEventListener(btn, 'click', (e) => {

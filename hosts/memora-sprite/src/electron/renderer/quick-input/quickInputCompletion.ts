@@ -160,7 +160,8 @@ export class QuickInputCompletion {
     } else if (e.key === 'Tab') {
       if (this.selectedIndex >= 0 && this.selectedIndex < this.candidates.length) {
         e.preventDefault();
-        const selected = this.candidates[this.selectedIndex];
+        // selectedIndex 已在条件中校验合法范围，索引访问安全，用 ! 断言正视契约
+        const selected = this.candidates[this.selectedIndex]!;
         this.onSelectCallback?.(selected.text);
         this.clearCandidates();
       }
@@ -177,10 +178,16 @@ export class QuickInputCompletion {
     const requestId = ++this.lastRequestId;
 
     try {
-      // 并行调用两个搜索 IPC，超时保护 2 秒
+      // 并行调用两个搜索 IPC，单个失败时降级为空候选（补全是辅助功能，不阻断主流程）
       const [memoriesResult, messagesResult] = await Promise.all([
-        this.api.searchMemories(query).catch(() => ({ hits: [] })),
-        this.api.searchSessionMessages({ keyword: query, limit: 20 }).catch(() => ({ results: [] })),
+        this.api.searchMemories(query).catch((err) => {
+          console.warn('[QuickInputCompletion] searchMemories 失败，降级为空候选', err);
+          return { hits: [] };
+        }),
+        this.api.searchSessionMessages({ keyword: query, limit: 20 }).catch((err) => {
+          console.warn('[QuickInputCompletion] searchSessionMessages 失败，降级为空候选', err);
+          return { results: [] };
+        }),
       ]);
 
       // 请求已过期（用户已输入新内容），丢弃旧响应
@@ -271,9 +278,8 @@ export class QuickInputCompletion {
       return;
     }
 
-    // 构建候选项 DOM
-    for (let i = 0; i < candidates.length; i++) {
-      const item = candidates[i];
+    // 构建候选项 DOM（用 entries() 避免索引访问返回 T | undefined）
+    for (const [i, item] of candidates.entries()) {
       const li = document.createElement('li');
       li.className = 'completion-item';
       li.dataset.index = String(i);

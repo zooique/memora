@@ -171,6 +171,7 @@ chore: 升级 dependencies
 |------|------|
 | [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) | 架构哲学（专注模式、记忆衰减机制等 9 大原则） |
 | [backend_layers_rules.md](./backend_layers_rules.md) | 后端分层规范（src/ 各模块职责边界 + 核心库 vs 宿主项目边界） |
+| [coding-convention-rules.md](./coding-convention-rules.md) | 通用编码约束规则（契约校验、异常处理、日志、DAO 分层、稳定性等 9 大约束） |
 | [cross-document-reference.md](./cross-document-reference.md) | 跨文档交叉引用规范（"文档.§章节号"格式） |
 | [new-module-guide.md](./new-module-guide.md) | 新增模块标准流程（防止随意加模块破坏架构） |
 
