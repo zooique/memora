@@ -48,7 +48,7 @@ export class AuditPanelManager {
   private initialized = false;
   /** 确认对话框函数（由 UIManager 注入，用于清空操作的二次确认） */
   private confirmDialog: ConfirmDialogFn | null = null;
-  /** 清空审计日志回调（由 settingsController 注入，委托 IPC 调用，消除 PanelManager 直调 IPC） */
+  /** 清空审计日志回调（由 settingsController 注入） */
   private clearAuditLogCallback: (() => Promise<void>) | null = null;
 
   /** 审计加载条目数上限（与原 ipcListeners 实现一致） */
@@ -116,9 +116,6 @@ export class AuditPanelManager {
 
   /**
    * 设置清空审计日志回调（由 settingsController 注入）
-   *
-   * 消除 PanelManager 直调 IPC 的模式不一致问题。
-   * 加载操作（listAuditLog）已通过 settingsController 委托，清空操作也应一致。
    *
    * @param cb 清空回调（async，成功 resolve 后 PanelManager 自动刷新列表）
    */

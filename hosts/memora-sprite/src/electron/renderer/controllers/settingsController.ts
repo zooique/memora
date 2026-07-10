@@ -92,13 +92,10 @@ export function createSettingsController(uiManager: UIManager) {
       }
     });
 
-    // F-P0 技术债偿还：将 PanelManager 的写操作从直调 IPC 改为回调注入
-    // 消除与加载操作（通过 controller → uiManager 委托）的模式不一致
+    // 写操作通过回调注入：回调仅负责 IPC 调用 + 错误处理；列表刷新由 PanelManager 自行 load()
     uiManager.setClearAuditLogCallback(async () => {
       try {
         await window.electronAPI.clearAuditLog();
-        // 清空完成后重新加载审计列表，确保 UI 立即反映最新状态
-        await uiManager.loadAuditLog();
       } catch (error) {
         handleIpcError('clearAuditLog', error, '清空审计日志失败');
       }

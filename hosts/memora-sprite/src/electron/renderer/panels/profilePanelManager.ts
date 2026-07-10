@@ -48,9 +48,9 @@ export class ProfilePanelManager {
   private initialized = false;
   /** 确认对话框函数（由 UIManager 注入，用于删除已确认画像的二次确认） */
   private confirmDialog: ConfirmDialogFn | null = null;
-  /** 确认画像回调（由 settingsController 注入，委托 IPC 调用，消除 PanelManager 直调 IPC） */
+  /** 确认画像回调（由 settingsController 注入） */
   private onConfirmProfile: ((id: string) => Promise<void>) | null = null;
-  /** 拒绝/删除画像回调（由 settingsController 注入，委托 IPC 调用） */
+  /** 拒绝/删除画像回调（由 settingsController 注入） */
   private onRejectProfile: ((id: string) => Promise<void>) | null = null;
 
   /**
@@ -318,9 +318,6 @@ export class ProfilePanelManager {
 
   /**
    * 设置确认画像回调（由 settingsController 注入）
-   *
-   * 消除 PanelManager 直调 IPC 的模式不一致问题。
-   * 加载操作（listUserProfile）已通过 settingsController 委托，确认操作也应一致。
    *
    * @param cb 确认回调（接收画像 id，async 成功后 PanelManager 自动移除卡片）
    */
