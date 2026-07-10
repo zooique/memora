@@ -729,8 +729,9 @@ function setupBusinessLogic(
   // 搜索结果携带 date 和 session，拼成 sessionId 后复用 switchSession 跳转
   State.uiManager.onSearchResultClick(async (date: string, session: string) => {
     try {
+      // 先切换到对话面板（用户可能在记忆/设置面板触发搜索）
+      await State.uiManager.switchPanel('chat');
       await sessionController.switchSession(`${date}-${session}`);
-      await sessionController.loadSessionHistory();
     } catch (error) {
       reportError('searchResultClick', error);
       State.uiManager.showToast('跳转到搜索结果失败，请重试', 'error');

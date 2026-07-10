@@ -42,6 +42,14 @@
   position: relative; /* 为精灵感知浮层提供定位参考 */
 }
 
+/* 工具栏右侧操作组：日期导航 + 搜索按钮，统一靠右对齐 */
+.chat-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin-left: auto; /* 推到工具栏右侧，与 space-between 协作 */
+}
+
 .chat-toolbar-title {
   /* 缩小标题字号，与副标题差距更协调 */
   font-size: var(--font-base);

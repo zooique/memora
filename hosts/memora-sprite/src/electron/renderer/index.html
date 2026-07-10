@@ -21,6 +21,9 @@
   <link rel="stylesheet" href="styles/base.css" />
   <link rel="stylesheet" href="styles/layout.css" />
   <link rel="stylesheet" href="styles/chat.css" />
+  <link rel="stylesheet" href="styles/chat-toolbar.css" />
+  <link rel="stylesheet" href="styles/chat-datenav.css" />
+  <link rel="stylesheet" href="styles/chat-perception.css" />
   <link rel="stylesheet" href="styles/memory.css" />
   <link rel="stylesheet" href="styles/settings.css" />
   <link rel="stylesheet" href="styles/modal.css" />
@@ -272,25 +275,28 @@
             </div>
           </div>
           <!-- 角色选择器已迁移到输入区发送按钮旁（input-persona-container） -->
-          <!-- 对话内容搜索：跨所有会话按关键词定位历史消息 -->
-          <button id="btn-search-messages" class="search-messages-btn" title="搜索对话内容（Ctrl+Shift+F）" aria-label="搜索对话内容">
-            <svg class="icon"><use href="#icon-search"/></svg>
-          </button>
-          <!-- 日期导航：有记录日期下拉列表 + 快速回到今天 -->
-          <div id="date-navigator" class="date-navigator">
-            <button id="date-nav-btn" class="date-nav-btn" aria-haspopup="listbox" aria-expanded="false" title="跳转到有记录的日期">
-              <svg class="icon"><use href="#icon-calendar"/></svg>
-              <span id="date-nav-label">今天</span>
-              <svg class="icon date-nav-chevron"><use href="#icon-chevron"/></svg>
-            </button>
-            <!-- 回到今天按钮：仅当查看非今天的日期时显示 -->
-            <button id="btn-back-to-today" class="back-to-today-btn hidden" title="回到今天的对话">
-              <svg class="icon"><use href="#icon-calendar"/></svg>
-              <span>今天</span>
-            </button>
-            <div id="date-nav-dropdown" class="date-nav-dropdown hidden" role="listbox" aria-label="有记录的日期">
-              <div id="date-nav-list" class="date-nav-list"></div>
+          <!-- 右侧工具组：日期导航 + 对话搜索 + token 用量，统一靠右对齐 -->
+          <div class="chat-toolbar-actions">
+            <!-- 日期导航：有记录日期下拉列表 + 快速回到今天 -->
+            <div id="date-navigator" class="date-navigator">
+              <button id="date-nav-btn" class="date-nav-btn" aria-haspopup="listbox" aria-expanded="false" title="跳转到有记录的日期">
+                <svg class="icon"><use href="#icon-calendar"/></svg>
+                <span id="date-nav-label">今天</span>
+                <svg class="icon date-nav-chevron"><use href="#icon-chevron"/></svg>
+              </button>
+              <!-- 回到今天按钮：仅当查看非今天的日期时显示 -->
+              <button id="btn-back-to-today" class="back-to-today-btn hidden" title="回到今天的对话">
+                <svg class="icon"><use href="#icon-calendar"/></svg>
+                <span>今天</span>
+              </button>
+              <div id="date-nav-dropdown" class="date-nav-dropdown hidden" role="listbox" aria-label="有记录的日期">
+                <div id="date-nav-list" class="date-nav-list"></div>
+              </div>
             </div>
+            <!-- 对话内容搜索：跨所有会话按关键词定位历史消息 -->
+            <button id="btn-search-messages" class="search-messages-btn" title="搜索对话内容（Ctrl+Shift+F）" aria-label="搜索对话内容">
+              <svg class="icon"><use href="#icon-search"/></svg>
+            </button>
           </div>
           <!-- 上下文用量指示器：显示当前对话 token 用量占上下文窗口的比例 -->
           <div id="token-usage" class="token-usage" data-tooltip="">
