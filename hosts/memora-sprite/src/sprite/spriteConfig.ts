@@ -203,7 +203,7 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   // 引用 shared/shortcutDefaults.ts 的 DEFAULT_SHORTCUTS（单一真理源）
   shortcuts: DEFAULT_SHORTCUTS,
   archiveMode: 'full',
-  // 缺口 3.4：默认空对象，由 Sprite.incrementDailyMessageCount 累加填充
+  // 默认空对象，由 Sprite.incrementDailyMessageCount 累加填充
   dailyMessageCount: {},
   // 回收站默认保留 30 天，超过后定时器自动彻底清理
   recycleBinRetentionDays: 30,
@@ -327,14 +327,14 @@ export function loadSpriteConfig(): Required<SpriteConfig> {
  *
  * 写入 ~/.memora-sprite/sprite.json，合并写入：保留文件中已有但当前接口未定义的字段（向前兼容）。
  *
- * R6 优化：当传入的配置包含所有 DEFAULT_SPRITE_CONFIG 的键时，
+ * 当传入的配置包含所有 DEFAULT_SPRITE_CONFIG 的键时，
  * 认为是"完整配置"（来自 Sprite.updateConfig），跳过读文件直接写入。
  * 仅传入部分字段时（如 CLI 直接调用），仍读文件合并。
  */
 export function saveSpriteConfig(config: SpriteConfig): void {
   const filePath = SPRITE_CONFIG_PATH;
 
-  // R6 判断是否为完整配置（包含所有默认键），避免每次读文件
+  // 判断是否为完整配置（包含所有默认键），避免每次读文件
   const isFullConfig = Object.keys(DEFAULT_SPRITE_CONFIG).every(
     (key) => key in config,
   );
@@ -379,13 +379,81 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * 校验对象类型字段（floatIconPosition / windowBounds / shortcuts / dailyMessageCount）
+ *
+ * windowBounds / silentModeExpiresAt 允许设为 null（清除值）。
+ *
+ * @param target 配置对象（动态 key 赋值）
+ * @param key 配置字段名
+ * @param value 新值
+ * @returns 是否校验通过
+ */
+function validateObjectField(target: Record<string, unknown>, key: SpriteConfigKey, value: unknown): boolean {
+  // windowBounds / silentModeExpiresAt 允许设为 null（清除值）
+  if (value === null && (key === 'windowBounds' || key === 'silentModeExpiresAt')) {
+    target[key] = null;
+    return true;
+  }
+  if (typeof value !== 'object' || value === null) return false;
+
+  // floatIconPosition：校验 x/y 为 number
+  if (key === 'floatIconPosition') {
+    const pos = value as { x: unknown; y: unknown };
+    if ('x' in value && 'y' in value && typeof pos.x === 'number' && typeof pos.y === 'number') {
+      target[key] = { x: pos.x, y: pos.y };
+      return true;
+    }
+    return false;
+  }
+
+  // windowBounds：校验 x/y/width/height 为 number
+  if (key === 'windowBounds') {
+    const b = value as { x: unknown; y: unknown; width: unknown; height: unknown };
+    if ('x' in value && 'y' in value && 'width' in value && 'height' in value
+      && typeof b.x === 'number' && typeof b.y === 'number'
+      && typeof b.width === 'number' && typeof b.height === 'number') {
+      target[key] = { x: b.x, y: b.y, width: b.width, height: b.height };
+      return true;
+    }
+    return false;
+  }
+
+  // shortcuts：校验 enabled 为 boolean，accelerators 为 Record<string, string>
+  if (key === 'shortcuts') {
+    const s = value as { enabled?: unknown; accelerators?: unknown };
+    if ('enabled' in value && 'accelerators' in value
+      && typeof s.enabled === 'boolean'
+      && typeof s.accelerators === 'object' && s.accelerators !== null
+      && !Array.isArray(s.accelerators)) {
+      // 校验 accelerators 的所有值为字符串
+      const accMap = s.accelerators as Record<string, unknown>;
+      if (Object.values(accMap).every((v) => typeof v === 'string')) {
+        target[key] = { enabled: s.enabled, accelerators: { ...accMap as Record<string, string> } };
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // dailyMessageCount：校验为 Record<string, number>（日期 → 计数）
+  if (key === 'dailyMessageCount') {
+    if (Array.isArray(value)) return false;
+    const dmc = value as Record<string, unknown>;
+    if (Object.values(dmc).every((v) => typeof v === 'number' && Number.isFinite(v))) {
+      target[key] = { ...dmc as Record<string, number> };
+      return true;
+    }
+    return false;
+  }
+
+  return false;
+}
+
+/**
  * 应用配置字段更新（纯函数，原地修改 config）
  *
  * 根据 CONFIG_FIELD_SCHEMA 校验 value 类型，符合则写入 config[key]，
- * 不符合则忽略（保持原值）。
- *
- * 从 Sprite.setConfigField 提取的纯函数，配置逻辑集中于 spriteConfig.ts。
- * windowBounds 可设为 null（清除窗口边界）。
+ * 不符合则忽略（保持原值）。windowBounds 可设为 null（清除窗口边界）。
  *
  * @param config - 配置对象（原地修改）
  * @param key - 配置字段名
@@ -402,27 +470,9 @@ export function applyConfigField(
   // 运行时类型校验由 schema 映射表保证，编译时无法推断动态 key 的具体类型
   const target = config as Record<string, unknown>;
 
-  // 数值类型
-  if (schema === 'number') {
-    if (typeof value === 'number') {
-      target[key] = value;
-      return true;
-    }
-    return false;
-  }
-
-  // 布尔类型
-  if (schema === 'boolean') {
-    if (typeof value === 'boolean') {
-      target[key] = value;
-      return true;
-    }
-    return false;
-  }
-
-  // 字符串类型
-  if (schema === 'string') {
-    if (typeof value === 'string') {
+  // 简单类型校验（number / boolean / string）
+  if (schema === 'number' || schema === 'boolean' || schema === 'string') {
+    if (typeof value === schema) {
       target[key] = value;
       return true;
     }
@@ -431,76 +481,24 @@ export function applyConfigField(
 
   // 字符串数组类型
   if (schema === 'string[]') {
-    if (Array.isArray(value) && value.every((v) => typeof v === 'string')) {
-      // fileWatcherIgnore 额外校验每个 glob 模式合法性
-      if (key === 'fileWatcherIgnore') {
-        const strArr = value as string[];
-        if (strArr.length > 0 && !strArr.every((p) => validateGlob(p))) {
-          return false;
-        }
-      }
-      target[key] = value;
-      return true;
+    // 提前 return 校验类型合法性，避免深层嵌套
+    if (!Array.isArray(value) || !value.every((v) => typeof v === 'string')) {
+      return false;
     }
-    return false;
+    // fileWatcherIgnore 额外校验每个 glob 模式合法性
+    if (key === 'fileWatcherIgnore') {
+      const patterns = value as string[];
+      if (patterns.length > 0 && !patterns.every((p) => validateGlob(p))) {
+        return false;
+      }
+    }
+    target[key] = value;
+    return true;
   }
 
   // 对象类型（需额外校验子字段）
   if (schema === 'object') {
-    // windowBounds 允许设为 null（清除窗口边界）
-    if (value === null && (key === 'windowBounds' || key === 'silentModeExpiresAt')) {
-      target[key] = null;
-      return true;
-    }
-    if (typeof value === 'object' && value !== null) {
-      // floatIconPosition：校验 x/y 为 number
-      if (key === 'floatIconPosition') {
-        const pos = value as { x: unknown; y: unknown };
-        if ('x' in value && 'y' in value && typeof pos.x === 'number' && typeof pos.y === 'number') {
-          target[key] = { x: pos.x, y: pos.y };
-          return true;
-        }
-      }
-      // windowBounds：校验 x/y/width/height 为 number
-      if (key === 'windowBounds') {
-        const b = value as { x: unknown; y: unknown; width: unknown; height: unknown };
-        if ('x' in value && 'y' in value && 'width' in value && 'height' in value
-          && typeof b.x === 'number' && typeof b.y === 'number'
-          && typeof b.width === 'number' && typeof b.height === 'number') {
-          target[key] = { x: b.x, y: b.y, width: b.width, height: b.height };
-          return true;
-        }
-      }
-      // shortcuts：校验 enabled 为 boolean，accelerators 为 Record<string, string>
-      if (key === 'shortcuts') {
-        const s = value as { enabled?: unknown; accelerators?: unknown };
-        if ('enabled' in value && 'accelerators' in value
-          && typeof s.enabled === 'boolean'
-          && typeof s.accelerators === 'object' && s.accelerators !== null
-          && !Array.isArray(s.accelerators)) {
-          // 校验 accelerators 的所有值为字符串
-          const accMap = s.accelerators as Record<string, unknown>;
-          const allStrings = Object.values(accMap).every((v) => typeof v === 'string');
-          if (allStrings) {
-            target[key] = { enabled: s.enabled, accelerators: { ...accMap as Record<string, string> } };
-            return true;
-          }
-        }
-      }
-      // dailyMessageCount：校验为 Record<string, number>（日期 → 计数）
-      if (key === 'dailyMessageCount') {
-        const dmc = value as Record<string, unknown>;
-        // 非数组且所有 value 为 number 时通过
-        if (!Array.isArray(value)) {
-          const allNumbers = Object.values(dmc).every((v) => typeof v === 'number' && Number.isFinite(v));
-          if (allNumbers) {
-            target[key] = { ...dmc as Record<string, number> };
-            return true;
-          }
-        }
-      }
-    }
-    return false;
+    return validateObjectField(target, key, value);
   }
 
   // 枚举类型（格式：'enum:val1|val2|val3'）

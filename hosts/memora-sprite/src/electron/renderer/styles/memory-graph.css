@@ -137,7 +137,7 @@
 }
 
 .graph-tooltip.hidden {
-  /* B3: 移除冗余 opacity:0 —— display:none 已让元素完全不渲染，opacity 过渡无法生效 */
+  /* 移除冗余 opacity:0 —— display:none 已让元素完全不渲染，opacity 过渡无法生效 */
   display: none;
 }
 
@@ -1120,7 +1120,7 @@
   transform: scale(0.97);
 }
 
-/* B3: .confirm-dialog 外壳样式已迁移至通用 .modal 类（modal.css） */
+/* .confirm-dialog 外壳样式已移至通用 .modal 类（modal.css） */
 /* 保留 .confirm-dialog-content/title/actions 子元素样式（confirm 弹窗特有布局） */
 
 .confirm-dialog-content {

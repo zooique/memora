@@ -1630,8 +1630,8 @@ export class MemoryPanelManager {
     titleElReset.textContent = '编辑关系';
 
     // 填充当前值（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
-    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement;
-    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement;
+    const typeSelect = dialog.querySelector('#relation-edit-type')! as HTMLSelectElement;
+    const weightInput = dialog.querySelector('#relation-edit-weight')! as HTMLInputElement;
     const weightValue = dialog.querySelector('#relation-edit-weight-value')!;
 
     typeSelect.value = type;
@@ -1681,8 +1681,8 @@ export class MemoryPanelManager {
     if (!dialog) return;
 
     // 重置为默认值（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
-    const typeSelect = dialog.querySelector('#relation-edit-type') as HTMLSelectElement;
-    const weightInput = dialog.querySelector('#relation-edit-weight') as HTMLInputElement;
+    const typeSelect = dialog.querySelector('#relation-edit-type')! as HTMLSelectElement;
+    const weightInput = dialog.querySelector('#relation-edit-weight')! as HTMLInputElement;
     const weightValue = dialog.querySelector('#relation-edit-weight-value')!;
     const deleteBtn = dialog.querySelector('#relation-edit-delete')!;
     const titleEl = dialog.querySelector('.relation-edit-title')!;
@@ -1745,8 +1745,8 @@ export class MemoryPanelManager {
     if (!this.memoryListEl) return;
 
     // 通过 data-id 属性查找目标记忆卡片
-    const target = this.memoryListEl.querySelector(`[data-id="${id}"]`) as HTMLElement | null;
-    if (!target) return;
+    const target = this.memoryListEl.querySelector(`[data-id="${id}"]`);
+    if (!(target instanceof HTMLElement)) return;
 
     // 平滑滚动到目标元素，居中显示
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });

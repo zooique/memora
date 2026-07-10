@@ -56,7 +56,7 @@ const DRAG_HINT_SEEN_KEY = 'memora-drag-hint-seen';
  * 类型守卫：判断 payload 是否包含有效的 imageUrl 字段
  *
  * 用于安全访问 formUpdate 事件的 payload.imageUrl，
- * 替代原方案对 unknown payload 的直接属性访问。
+ * 代替方案对 unknown payload 的直接属性访问。
  */
 function hasImageUrl(payload: unknown): payload is { imageUrl: string } {
   return (
@@ -68,7 +68,7 @@ function hasImageUrl(payload: unknown): payload is { imageUrl: string } {
 }
 
 /**
- * 类型守卫：判断 payload 是否为 presenceChanged 事件载荷（缺口 1.2）
+ * 类型守卫：判断 payload 是否为 presenceChanged 事件载荷
  *
  * presenceChanged 事件由 spriteEventBridge.broadcastPresence 推送，
  * payload 结构为 { state: 'present' | 'away', awayDurationMs?: number }。
@@ -101,7 +101,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   const statusDot = document.getElementById('status-dot');
   const badge = document.getElementById('badge');
   const dragHint = document.getElementById('drag-hint');
-  // 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示）
+  // 离开时长小标签（用户离开超过 5 分钟时显示）
   const awayLabel = document.getElementById('away-label');
 
   // 防护：关键元素缺失时静默退出（测试/非标准环境）
@@ -114,7 +114,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
   // 事件监听器跟踪器（统一事件管理范式，替代手写 addEventListener/removeEventListener）
   const events = new EventTracker();
 
-  // ─── 缺口 1.2：在场状态视觉反馈 ─────────────────────
+  // ─── 在场状态视觉反馈 ─────────────────────
   // 用户离开时球体变暗 + 灰度滤镜，statusDot 切换为月亮黄色
   // 离开超过 5 分钟时显示"离开 N 分钟"小标签，每分钟刷新
   let awayLabelTimer: ReturnType<typeof setInterval> | null = null;
@@ -390,7 +390,7 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
       }
     }
 
-    // 缺口 1.2：在场状态变化 → 球体变暗 + 离开时长小标签
+    // 在场状态变化 → 球体变暗 + 离开时长小标签
     if (event.type === 'presenceChanged' && isPresencePayload(event.payload)) {
       applyPresenceState(event.payload.state, event.payload.awayDurationMs);
     }
@@ -422,16 +422,15 @@ export function initFloatWindow(electronAPI: FloatElectronAPI): () => void {
     // 清理最后一条消息监听器
     electronAPI.removeLastMessageListener();
     if (dragHintTimer) timers.clearSafeTimeout(dragHintTimer);
-    // 缺口 1.2：清理离开时长小标签定时器
+    // 清理离开时长小标签定时器
     stopAwayLabelTimer();
     timers.cleanup();
   };
 }
 
 // 在 Electron 渲染进程中自动初始化
-// 直接使用 window.electronAPI（types.ts 已声明全局类型），
-// 替代原方案的双重类型断言 (window as unknown as Record<string, unknown>).electronAPI。
-// electronAPI 由 preload.ts 通过 contextBridge 注入到 window 对象。
+// 直接使用 window.electronAPI（types.ts 已声明全局类型）
+// electronAPI 由 preload.ts 通过 contextBridge 注入到 window 对象
 if (window.electronAPI) {
   initFloatWindow(window.electronAPI);
 }

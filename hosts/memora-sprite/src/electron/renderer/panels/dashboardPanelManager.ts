@@ -358,7 +358,7 @@ export class DashboardPanelManager {
   }
 
   /**
-   * 渲染记忆源健康诊断（缺口 E：消费内核 sourceHealth()）
+   * 渲染记忆源健康诊断（消费内核 sourceHealth()）
    *
    * 在仪表盘展示每个 source 的质量维度：计数 / 平均分 / 距上次访问天数 / 健康状态徽章。
    * 采用主行+次行双层布局：主行展示 source 名称和状态徽章，次行展示详细指标。

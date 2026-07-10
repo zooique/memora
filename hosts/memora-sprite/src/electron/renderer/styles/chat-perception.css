@@ -160,7 +160,7 @@
   border-left: 2px solid var(--surface2);
 }
 
-/* 缺口 K：相关记忆跳转按钮（manual 模式下点击跳转记忆详情） */
+/* 相关记忆跳转按钮（manual 模式下点击跳转记忆详情） */
 .perception-pattern-related {
   display: inline-flex;
   align-items: center;
@@ -179,7 +179,7 @@
   color: var(--accent-hover);
 }
 
-/* ─── 主动提示统计（缺口 G+H） ─────────────────────────── */
+/* ─── 主动提示统计 ─────────────────────────── */
 
 /* 主动提示统计网格：复用运行指标的 dash-item 布局 */
 .perception-proactive-grid {
@@ -211,7 +211,7 @@
   font-weight: var(--weight-semibold);
 }
 
-/* ─── 记忆源健康诊断（缺口 E） ─────────────────────────── */
+/* ─── 记忆源健康诊断 ─────────────────────────── */
 
 /* 总体健康状态徽章（嵌在折叠标题右侧） */
 .source-health-overall-badge {

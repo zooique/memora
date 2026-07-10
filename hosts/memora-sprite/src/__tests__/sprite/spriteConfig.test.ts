@@ -1,5 +1,5 @@
 /**
- * spriteConfig 单元测试（QC-TEST-SPRITE-CONFIG）
+ * spriteConfig 单元测试
  *
  * 覆盖范围：
  * - 常量与类型定义：DEFAULT_SPRITE_CONFIG 默认值 + CONFIG_FIELD_SCHEMA 字段映射
@@ -237,7 +237,7 @@ describe('spriteConfig', () => {
         expect(config.fileWatcherPaths).toEqual(['.']);
       });
 
-      // SEC-P2-02：fileWatcherIgnore glob 合法性校验
+      // fileWatcherIgnore glob 合法性校验
       it('fileWatcherIgnore 设为有效 glob 模式 → 返回 true', () => {
         const config = makeConfig();
         const result = applyConfigField(config, 'fileWatcherIgnore', ['**/node_modules/**', '*.log']);

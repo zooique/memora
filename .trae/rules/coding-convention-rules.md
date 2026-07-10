@@ -59,8 +59,11 @@ date: 2026-07-09
 | DO | 常量、枚举、错误码统一存放公共文件 |
 | DON'T | 无差别全量防御——契约约定合法入参后，内部不再冗余校验 |
 | DON'T | 魔法数字、魔法字符串散落业务代码 |
+| DON'T | 用 `export { x } from '...'` 透传导出后，在当前模块内部使用 `x`——透传导出不创建模块作用域绑定，会触发 `ReferenceError` |
 
 **Memora 适配**：禁止 `@ts-ignore` 或 `as any`（详见 [project-rules.md §9.1](./project-rules.md)）；常量用全大写下划线（如 `BLOCKED_PATTERNS`、`CHAT_LOCK_TIMEOUT_MS`）。
+
+**ES Module re-export 陷阱**：`export { x } from '...'` 是透传导出（re-export），不在当前模块作用域创建 `x` 绑定。若模块内部函数（如 `reportError()`）也使用 `x`，运行时会抛 `ReferenceError: x is not defined`。正确做法：先 `import { x } from '...'` 再 `export { x }`，既在模块作用域创建绑定又保持导出。
 
 ## 4. 日志与可观测
 

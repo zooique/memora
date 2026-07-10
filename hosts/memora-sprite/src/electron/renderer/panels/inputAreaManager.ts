@@ -253,7 +253,7 @@ export class InputAreaManager {
    * 初始化输入区 ResizeObserver
    *
    * 监听 #input-area 高度变化，动态更新 :root 的 --input-area-height CSS 变量。
-   * 替代原静态 140px，避免 textarea 多行撑高时遮挡最后一条消息。
+   * 代替静态 140px，避免 textarea 多行撑高时遮挡最后一条消息。
    *
    * 设计要点：
    * - 使用 ResizeObserver 而非 input 事件，覆盖所有高度变化来源（窗口缩放、内容变化、主题切换）

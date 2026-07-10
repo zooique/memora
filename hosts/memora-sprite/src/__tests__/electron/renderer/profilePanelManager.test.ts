@@ -135,11 +135,11 @@ describe('load · 成功与失败', () => {
     window.electronAPI.listUserProfile = vi.fn().mockRejectedValue(new Error('网络错误'));
     const manager = createManager();
     await manager.load();
-    // P2-07/P2-06：错误态统一用 .error-state（含图标 + 文字 + 重试按钮）
+    // 错误态统一用 .error-state（含图标 + 文字 + 重试按钮）
     const errorEl = document.querySelector('#profile-pending-list .error-state');
     expect(errorEl).not.toBeNull();
     expect(errorEl!.textContent).toContain('加载用户画像失败');
-    // P2-06：验证重试按钮存在
+    // 验证重试按钮存在
     const retryBtn = errorEl!.querySelector('.error-retry-btn');
     expect(retryBtn).not.toBeNull();
   });

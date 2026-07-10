@@ -11,7 +11,7 @@ import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import type { WindowStateManager } from '../windows/windowState.js';
 import type { WindowManager } from '../windows/windowManager.js';
 import type { TrayManager } from '../trayIcon.js';
-// Phase 3.3：注入快捷键管理器，供 configHandlers 触发热更新副作用
+// 注入快捷键管理器，供 configHandlers 触发热更新副作用
 import type { ShortcutManager } from '../shortcuts.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 
@@ -87,5 +87,34 @@ export async function safeHandle<T>(
   } catch (error) {
     errorHandler.handle(error, { code, context });
     return fallback;
+  }
+}
+
+/**
+ * IPC handler 错误透传包装（查询类专用）
+ *
+ * 与 safeHandle 平行，但 catch 后不返回降级值，而是记录日志后 re-throw。
+ * 适用于查询类 handler：异常让渲染层 catch 捕获并显示错误态（toast/showPanelError），
+ * 避免返回空集合让用户误以为"无数据"而非"加载失败"。
+ *
+ * 与 safeHandle 的区别：
+ * - safeHandle：catch → 记录日志 → 返回 fallback（操作类，降级为失败状态）
+ * - throwingHandle：catch → 记录日志 → re-throw（查询类，让渲染层处理错误态）
+ *
+ * @param context 错误上下文描述（人类可读，用于日志）
+ * @param fn 业务逻辑，返回查询结果（同步或异步均可）
+ * @param code 错误代码，默认 UNKNOWN
+ * @returns fn 的返回值，或失败时 re-throw 异常
+ */
+export async function throwingHandle<T>(
+  context: string,
+  fn: () => T | Promise<T>,
+  code: ErrorCode = ErrorCode.UNKNOWN,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    errorHandler.handle(error, { code, context });
+    throw error;
   }
 }

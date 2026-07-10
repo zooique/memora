@@ -10,7 +10,6 @@
 
 // 引入安全定时器包装：统一追踪定时器生命周期，避免遗忘清理导致内存泄漏
 import { safeSetInterval, clearSafeInterval, logger } from 'memora';
-// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from './errors.js';
 import { MS_PER_HOUR } from './constants.js';
 

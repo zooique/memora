@@ -1,5 +1,5 @@
 /**
- * 工具调用卡片渲染器模块测试（QC-TEST-EXTRACTED）
+ * 工具调用卡片渲染器模块测试
  *
  * 覆盖范围：
  * - showToolStart：创建工具调用开始卡片 DOM

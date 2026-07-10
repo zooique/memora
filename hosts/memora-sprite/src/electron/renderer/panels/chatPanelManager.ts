@@ -53,16 +53,13 @@ export interface ChatPanelHost {
   /** 更新发送/停止按钮状态 */
   updateSendButton(): void;
   /**
-   * FOUNDATION-SEAL Phase 2：设置流式输出状态
-   *
-   * 替代原"友元类反模式"——ChatPanelManager 通过共享 state 引用直接修改 isStreaming。
-   * 现改为通过 host 方法封装，UIManager 作为 state 的唯一持有者。
+   * 设置流式输出状态（UIManager 作为 state 的唯一持有者，通过 host 方法封装）
    *
    * @param streaming 是否正在流式输出
    */
   setStreaming(streaming: boolean): void;
   /**
-   * FOUNDATION-SEAL Phase 2：查询流式输出状态
+   * 查询流式输出状态
    *
    * @returns 当前是否正在流式输出
    */
@@ -72,13 +69,13 @@ export interface ChatPanelHost {
   /** 显示空状态引导（无消息时） */
   showEmptyState(): void;
   /**
-   * 缺口 J：查询当前归档模式（manual 模式下显示"归档"按钮）
+   * 查询当前归档模式（manual 模式下显示"归档"按钮）
    *
    * @returns 当前 archiveMode（full / insights-only / manual）
    */
   getArchiveMode(): 'full' | 'insights-only' | 'manual';
   /**
-   * 缺口 J：手动归档对话（profile facts + insight 一次性触发）
+   * 手动归档对话（profile facts + insight 一次性触发）
    *
    * @param input 用户输入
    * @param assistantContent 助手回复
@@ -337,9 +334,11 @@ export class ChatPanelManager {
         void (async () => {
           try {
             await this.errorRetryCallback?.();
-          } catch {
+          } catch (err) {
             // 错误处理由 errorRetryCallback 内部负责（如 toast 提示），
             // 此处仅需恢复按钮状态，吞掉 rejection 避免 unhandled rejection
+            // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
+            console.warn('[ChatPanel] errorRetryCallback 失败', err);
           } finally {
             retryBtn.removeAttribute('disabled');
             retryBtn.textContent = '重试';
@@ -355,7 +354,7 @@ export class ChatPanelManager {
         banner?.remove();
         return;
       }
-      // 缺口 J：归档按钮 data-action="archive"（manual 模式下触发手动归档）
+      // 归档按钮 data-action="archive"（manual 模式下触发手动归档）
     // 委托到 ArchiveButtonManager.handleClick
     const archiveBtn = target.closest<HTMLElement>('[data-action="archive"]');
     if (archiveBtn) {
@@ -962,7 +961,7 @@ export class ChatPanelManager {
    * 为已完成的助手消息添加复制按钮
    *
    * 性能优化（CHAT-A04）：
-   * 原实现使用 cloneNode(true) 深克隆整个气泡 + textContent 全树遍历提取文本，
+   * 使用 cloneNode(true) 深克隆整个气泡 + textContent 全树遍历提取文本，
    * 长消息（DOM 节点上千）各为 O(n)。
    * 改为优先复用 _latestStreamText（流式期间缓存的累积文本），避免 DOM 反向提取。
    *
@@ -1072,22 +1071,26 @@ export class ChatPanelManager {
    */
   private _findPreviousUserMessage(assistantMessageEl: HTMLElement): HTMLElement | null {
     // 跳到所属 group（或自身就是顶层消息时直接遍历）
+    // closest() 属动态 DOM 遍历，返回值用 instanceof HTMLElement 前置判断（元素确实可能不存在）
     let searchFrom: HTMLElement = assistantMessageEl;
-    const ownGroup = assistantMessageEl.closest('.message-group') as HTMLElement | null;
-    if (ownGroup) searchFrom = ownGroup;
+    const ownGroup = assistantMessageEl.closest('.message-group');
+    if (ownGroup instanceof HTMLElement) searchFrom = ownGroup;
 
-    let prev = searchFrom.previousElementSibling as HTMLElement | null;
+    // previousElementSibling 返回 Element | null，遍历用 instanceof HTMLElement 收窄
+    let prev: Element | null = searchFrom.previousElementSibling;
     while (prev) {
       // 在 prev 中查找 user 消息（group 内可能有多条，取最后一条）
       const userMsgs = prev.querySelectorAll('.message.user');
       if (userMsgs.length > 0) {
-        return userMsgs[userMsgs.length - 1] as HTMLElement;
+        // 数组元素为 Element，返回前用 instanceof HTMLElement 收窄
+        const lastUserMsg = userMsgs[userMsgs.length - 1];
+        if (lastUserMsg instanceof HTMLElement) return lastUserMsg;
       }
       // 兜底：prev 本身就是 .message.user（非 group 场景）
-      if (prev.classList.contains('message') && prev.classList.contains('user')) {
+      if (prev instanceof HTMLElement && prev.classList.contains('message') && prev.classList.contains('user')) {
         return prev;
       }
-      prev = prev.previousElementSibling as HTMLElement | null;
+      prev = prev.previousElementSibling;
     }
     return null;
   }
@@ -1102,19 +1105,23 @@ export class ChatPanelManager {
    */
   private _findNextAssistantMessage(userMessageEl: HTMLElement): HTMLElement | null {
     let searchFrom: HTMLElement = userMessageEl;
-    const ownGroup = userMessageEl.closest('.message-group') as HTMLElement | null;
-    if (ownGroup) searchFrom = ownGroup;
+    // closest() 属动态 DOM 遍历，返回值用 instanceof HTMLElement 前置判断
+    const ownGroup = userMessageEl.closest('.message-group');
+    if (ownGroup instanceof HTMLElement) searchFrom = ownGroup;
 
-    let next = searchFrom.nextElementSibling as HTMLElement | null;
+    // nextElementSibling 返回 Element | null，遍历用 instanceof HTMLElement 收窄
+    let next: Element | null = searchFrom.nextElementSibling;
     while (next) {
       const assistantMsgs = next.querySelectorAll('.message.assistant');
       if (assistantMsgs.length > 0) {
-        return assistantMsgs[0] as HTMLElement;
+        // 数组元素为 Element，返回前用 instanceof HTMLElement 收窄
+        const firstAssistantMsg = assistantMsgs[0];
+        if (firstAssistantMsg instanceof HTMLElement) return firstAssistantMsg;
       }
-      if (next.classList.contains('message') && next.classList.contains('assistant')) {
+      if (next instanceof HTMLElement && next.classList.contains('message') && next.classList.contains('assistant')) {
         return next;
       }
-      next = next.nextElementSibling as HTMLElement | null;
+      next = next.nextElementSibling;
     }
     return null;
   }
@@ -1205,8 +1212,8 @@ export class ChatPanelManager {
 
     // Phase 3：更新思考阶段指示器，显示具体召回数量
     if (memories.length > 0) {
-      const indicator = bubble.querySelector('.thinking-phase') as HTMLDivElement | null;
-      if (indicator) {
+      const indicator = bubble.querySelector('.thinking-phase');
+      if (indicator instanceof HTMLDivElement) {
         setIconWithLabel(indicator, 'icon-gear', `正在回忆 ${memories.length} 条相关记忆...`);
       }
     }
@@ -1528,7 +1535,7 @@ export class ChatPanelManager {
    *
    * 完整清理流式状态（从 streamingMessages 删除、重置 isStreaming、
    * 更新发送按钮、清除安全定时器），与 finishStreamingMessage / injectErrorToStreamingMessages
-   * 保持一致。原实现只移除了 streaming 类但未清理 Map 和状态，导致 isStreaming 泄漏、
+   * 保持一致。只移除了 streaming 类但未清理 Map 和状态，导致 isStreaming 泄漏、
    * 用户无法发送新消息、后续 SPRITE_STREAM_END 到达时 finishStreamingMessage 重复处理。
    *
    * 中断标记视觉上弱化（灰色 + 虚线边框），与错误指示器（红色）区分：
@@ -1677,10 +1684,7 @@ export class ChatPanelManager {
    */
   private _resetStreamSafetyTimer(): void {
     this._clearStreamSafetyTimer();
-    // 30s 是"无新 chunk 兜底"：通知主进程疑似卡死，主进程决定是否真中断
-    // 修复 P1-B：原实现 onStreamStuck 后立即本地清场（streamingMessages.clear + isStreaming=false），
-    // 导致主进程后续 chunk 与 END 因 Map 已空而静默早退（if (!el) return）——视觉冻结无日志
-    // 现改为：30s 仅通知主进程，本地不清理状态，等待主进程的 END/ABORTED 驱动清理
+    // 30s 仅通知主进程疑似卡死，本地不清理状态，等待主进程的 END/ABORTED 驱动清理
     this._streamSafetyTimer = setTimeout(() => {
       if (this.host.isStreaming()) {
         this.host.onStreamStuck();
@@ -1722,7 +1726,7 @@ export class ChatPanelManager {
       clearTimeout(this._streamSafetyTimer);
       this._streamSafetyTimer = null;
     }
-    // 清理二级兜底定时器（修复 P1-B 引入的 fallback timer）
+    // 清理二级兜底定时器
     if (this._streamSafetyFallbackTimer !== null) {
       clearTimeout(this._streamSafetyFallbackTimer);
       this._streamSafetyFallbackTimer = null;
@@ -1869,7 +1873,7 @@ export class ChatPanelManager {
         // 1.5 秒后移除按钮
         setTimeout(() => btn.remove(), 1500);
       } catch (err) {
-        console.error('会话归档失败:', err);
+        reportError('ChatPanel', err);
         btn.disabled = false;
         btn.textContent = '归档失败，重试';
       }

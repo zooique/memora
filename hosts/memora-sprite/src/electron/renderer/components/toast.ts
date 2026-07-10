@@ -19,7 +19,7 @@ import { setIcon } from '../helpers/icon.js';
 
 /**
  * Toast 类型与图标映射
- * 使用 SVG sprite 引用，跨平台渲染一致（替代原 Unicode 符号 ✓✗⚠ℹ）
+ * 使用 SVG sprite 引用，跨平台渲染一致（代替 Unicode 符号 ✓✗⚠ℹ）
  */
 const TOAST_ICONS: Record<ToastType, string> = {
   success: '<svg class="icon"><use href="#icon-check"/></svg>',

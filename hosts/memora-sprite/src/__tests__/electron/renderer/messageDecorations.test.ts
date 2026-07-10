@@ -1,5 +1,5 @@
 /**
- * 消息装饰器模块测试（QC-TEST-EXTRACTED）
+ * 消息装饰器模块测试
  *
  * 覆盖范围：
  * - createRecallContainer：创建召回记忆容器 DOM

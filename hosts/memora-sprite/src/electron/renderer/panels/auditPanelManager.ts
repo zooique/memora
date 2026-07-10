@@ -121,13 +121,17 @@ export class AuditPanelManager {
   async load(): Promise<void> {
     if (!this.listEl || !this.countEl) return;
 
+    // try 仅包裹 IPC 调用（IO），render（DOM 渲染）移出 try，
+    // 避免 render 抛出的 DOM 错误被误当成 IO 错误处理
+    let entries: Awaited<ReturnType<typeof window.electronAPI.listAuditLog>>;
     try {
-      const entries = await window.electronAPI.listAuditLog(AuditPanelManager.LOAD_LIMIT);
-      this.render(entries);
+      entries = await window.electronAPI.listAuditLog(AuditPanelManager.LOAD_LIMIT);
     } catch (err) {
       reportError('AuditPanel', `加载审计日志失败: ${toError(err).message}`);
       this.renderError(`加载失败: ${toError(err).message}`);
+      return; // IO 失败后不执行 render
     }
+    this.render(entries);
   }
 
   /**

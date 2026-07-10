@@ -35,7 +35,7 @@ export interface ProactiveConfig {
 }
 
 /**
- * 主动提示统计快照（缺口 G+H：供 UI 感知面板展示）
+ * 主动提示统计快照（供 UI 感知面板展示）
  *
  * 透传 ProactiveEngine 内部的历史反馈和当前生效冷却参数，
  * 让用户看到"我与精灵的互动累计"以及"为什么连续拒绝后精灵变安静"。
@@ -168,7 +168,7 @@ export class ProactiveEngine {
   }
 
   /**
-   * 聚合主动提示统计指标（缺口 G+H：供 UI 感知面板展示）
+   * 聚合主动提示统计指标（供 UI 感知面板展示）
    *
    * 将分散的内部统计字段打包为统一快照，供 getPerceptionSnapshot() 透传到渲染层。
    * 包含两类信息：
@@ -389,17 +389,14 @@ export class ProactiveEngine {
     }
   }
 
-  /** 根据累积事件生成上下文感知提示文本（Phase 2：个性化语气） */
-  private buildPrompt(triggers: string[], summaries: string[]): string {
+  /**
+   * 按事件类型构建描述片段
+   *
+   * @param typeCounts 事件类型 → 出现次数的映射
+   * @returns 描述片段列表（如"积累了 3 条新记忆"）
+   */
+  private buildEventParts(typeCounts: Map<string, number>): string[] {
     const parts: string[] = [];
-
-    // 按事件类型分组统计
-    const typeCounts = new Map<string, number>();
-    for (const t of triggers) {
-      typeCounts.set(t, (typeCounts.get(t) ?? 0) + 1);
-    }
-
-    // 构建提示
     if (typeCounts.has('memory')) {
       const count = typeCounts.get('memory')!;
       parts.push(count > 1 ? `积累了 ${count} 条新记忆` : '有新的记忆');
@@ -419,45 +416,74 @@ export class ProactiveEngine {
       const count = typeCounts.get('milestone')!;
       parts.push(count > 1 ? `达成了 ${count} 个里程碑` : '达成了新的里程碑');
     }
-    // Phase 3：智能建议（健康度/回顾/画像）
-    // 建议类文本已是完整句子，直接作为提示主体，不与其他事件拼接
+    return parts;
+  }
+
+  /**
+   * 尝试用特殊类型（suggestion/recalled/pattern）构建完整提示
+   *
+   * 这些类型的摘要已是完整句子，优先于事件统计返回。
+   *
+   * @returns 命中时返回完整提示文本，未命中时返回 null
+   */
+  private trySpecialPrompt(
+    typeCounts: Map<string, number>,
+    triggers: string[],
+    summaries: string[],
+    parts: string[],
+  ): string | null {
+    // 智能建议（健康度/回顾/画像）——建议类文本已是完整句子，直接作为提示主体
     if (typeCounts.has('suggestion')) {
-      // 按 trigger 索引取对应类型的摘要，而非全局 find（避免取到其他类型的摘要）
-      const suggestionSummary = this.findSummaryByType(triggers, summaries, 'suggestion');
-      if (suggestionSummary && parts.length === 0) {
-        return `${suggestionSummary}——需要我帮你处理吗？`;
+      const summary = this.findSummaryByType(triggers, summaries, 'suggestion');
+      if (summary && parts.length === 0) {
+        return `${summary}——需要我帮你处理吗？`;
       }
-      if (suggestionSummary) {
-        return `${suggestionSummary}（同时${parts.join('，')}）`;
+      if (summary) {
+        return `${summary}（同时${parts.join('，')}）`;
       }
     }
-    // 方向 A：欢迎回来记忆召回——完整句子优先返回
-    // summary 由 sprite.welcomeBackRecall 构造，已包含时长 + 数量 + 名称
+    // 欢迎回来记忆召回——summary 已包含时长 + 数量 + 名称
     if (typeCounts.has('recalled')) {
-      const recalledSummary = this.findSummaryByType(triggers, summaries, 'recalled');
-      if (recalledSummary) {
+      const summary = this.findSummaryByType(triggers, summaries, 'recalled');
+      if (summary) {
         if (parts.length === 0) {
-          return `${recalledSummary}——要看看吗？${this.buildSuffix()}`;
+          return `${summary}——要看看吗？${this.buildSuffix()}`;
         }
-        return `${recalledSummary}（同时${parts.join('，')}）${this.buildSuffix()}`;
+        return `${summary}（同时${parts.join('，')}）${this.buildSuffix()}`;
       }
     }
-    // Phase 2+：模式检测结果优先——比事件统计更有价值
+    // 模式检测结果——比事件统计更有价值，优先返回
     if (typeCounts.has('pattern')) {
-      // 按 trigger 索引取 pattern 类型的摘要，避免取到其他类型的摘要
-      const patternSummary = this.findSummaryByType(triggers, summaries, 'pattern');
-      if (patternSummary) {
-        // 模式提示本身就是完整句子，优先返回
+      const summary = this.findSummaryByType(triggers, summaries, 'pattern');
+      if (summary) {
         if (parts.length === 0) {
-          return patternSummary;
+          return summary;
         }
-        return `${patternSummary}（同时${parts.join('，')}）`;
+        return `${summary}（同时${parts.join('，')}）`;
       }
     }
+    return null;
+  }
 
-    // 摘要中最有信息量的一条
-    const bestSummary = summaries.find(s => s.length > 0);
+  /** 根据累积事件生成上下文感知提示文本 */
+  private buildPrompt(triggers: string[], summaries: string[]): string {
+    // 按事件类型分组统计
+    const typeCounts = new Map<string, number>();
+    for (const t of triggers) {
+      typeCounts.set(t, (typeCounts.get(t) ?? 0) + 1);
+    }
 
+    // 构建事件描述片段
+    const parts = this.buildEventParts(typeCounts);
+
+    // 优先用特殊类型（suggestion/recalled/pattern）构建完整提示
+    const specialPrompt = this.trySpecialPrompt(typeCounts, triggers, summaries, parts);
+    if (specialPrompt !== null) {
+      return specialPrompt;
+    }
+
+    // 默认：组装事件描述 + 最佳摘要 + 语气后缀
+    const bestSummary = summaries.find((s) => s.length > 0);
     if (parts.length === 0) {
       return '有些事情发生了变化，你可能想看看。';
     }
@@ -466,10 +492,8 @@ export class ProactiveEngine {
     if (bestSummary) {
       prompt += `（${bestSummary}）`;
     }
-
-    // Phase 2：基于情感基调选择结尾语气
+    // 基于情感基调选择结尾语气
     prompt += this.buildSuffix();
-
     return prompt;
   }
 

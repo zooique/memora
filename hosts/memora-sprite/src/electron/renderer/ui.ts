@@ -72,8 +72,6 @@ import type { InputAreaHost } from './panels/inputAreaManager.js';
 // 面板路由器拆分（面板切换 + 导航 + 键盘快捷键 + 窗口控制）
 import { PanelRouter } from './panels/panelRouter.js';
 import type { PanelRouterHost } from './panels/panelRouter.js';
-// 精灵公共常量（Toast 时长已迁移至各 Manager；UIManager 不再直接使用时长常量）
-// TOAST_*_MS 已迁移到 ClipboardManager / SkillDropManager
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
   Message,
@@ -184,7 +182,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private auditPanel = new AuditPanelManager();
   /** 设置面板管理器（独立管理设置面板 DOM 和事件） */
   private settingsPanelManager: SettingsPanelManager;
-  /** 缺口 J：缓存当前 SpriteConfig（供 getArchiveMode 查询，避免异步 IPC 调用） */
+  /** 缓存当前 SpriteConfig（供 getArchiveMode 查询，避免异步 IPC 调用） */
   private currentConfig: SpriteConfigForm | null = null;
 
   // ─── 面板管理器（聊天/记忆/角色/会话） ──
@@ -526,7 +524,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   showEmptyState(): void { this.chatPanel.showEmptyState(); }
   /** 隐藏空状态引导（委托到 ChatPanelManager） */
   hideEmptyState(): void { this.chatPanel.hideEmptyState(); }
-  /** 缺口 J：查询当前归档模式（从缓存的 SpriteConfig 读取） */
+  /** 查询当前归档模式（从缓存的 SpriteConfig 读取） */
   getArchiveMode(): 'full' | 'insights-only' | 'manual' {
     return this.currentConfig?.archiveMode ?? 'full';
   }
@@ -541,7 +539,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   getCurrentSessionId(): string {
     return this._getCurrentSessionId?.() ?? new Date().toISOString().slice(0, 10) + '-main';
   }
-  /** 缺口 J：手动归档对话（调用 preload 暴露的 archiveProfileFacts + archiveInsight IPC） */
+  /** 手动归档对话（调用 preload 暴露的 archiveProfileFacts + archiveInsight IPC） */
   async archiveConversation(input: string, assistantContent: string): Promise<number> {
     // 同时触发 profile facts + insight 归档，返回总条目数
     const [profileResult, insightResult] = await Promise.all([
@@ -570,7 +568,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   onStreamStuck(): void {
     // 通知主进程中断当前对话（清理 AbortController + 发送 SPRITE_STREAM_END）
-    void window.electronAPI.abortChat();
+    // fire-and-forget：主进程清理是 best-effort，渲染进程已自行重置 isStreaming
+    // Web 模式下 abortChat 走 HTTP，网络错误可能 reject，追加 catch 防止 unhandled rejection
+    void window.electronAPI.abortChat().catch(() => {
+      // 中断失败非关键：渲染进程已自行重置 isStreaming，主进程清理失败不影响用户体验
+    });
   }
 
   /**
@@ -703,8 +705,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   }
 
   // ─── 事件处理器 ─
-
-  // handleNavClick / handleGlobalKeydown / handleMinimize / handleMaximize / handleClose 已迁移至 PanelRouter
 
   /**
    * 更新最大化按钮图标
@@ -1439,7 +1439,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   /** 加载配置到表单（委托到 SettingsPanelManager） */
   loadConfigToForm(config: SpriteConfigForm): void {
-    // 缺口 J：缓存当前配置，供 getArchiveMode 同步查询
+    // 缓存当前配置，供 getArchiveMode 同步查询
     this.currentConfig = config;
     this.settingsPanelManager.loadConfigToForm(config);
   }

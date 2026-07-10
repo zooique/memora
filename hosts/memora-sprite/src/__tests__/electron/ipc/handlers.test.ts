@@ -8,7 +8,7 @@
  *
  * Mock 策略：
  * - electron.ipcMain：使用 vi.fn() 捕获 handle/on/removeHandler/removeAllListeners 调用
- * - memora.toError：保留原实现（仅做错误对象标准化）
+ * - memora.toError：保留默认实现（仅做错误对象标准化）
  * - IpcContext：构造最小化 mock 对象，仅满足 handleUserInput 前置检查
  */
 
@@ -88,7 +88,7 @@ function createMockIpcContext(options: {
     agent: {
       getMetrics: () => ({ context: { truncationCount: 0 } }),
     },
-    // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+    // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
     sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() },
     sessionStore: {},
     windowStateManager: {},
@@ -324,7 +324,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
         agent: {
           getMetrics: () => ({ context: { truncationCount: 0 } }),
         },
-        // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+        // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
     sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() },
         sessionStore: {},
         windowStateManager: {},

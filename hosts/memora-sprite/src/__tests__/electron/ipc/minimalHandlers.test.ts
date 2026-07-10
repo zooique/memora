@@ -1,5 +1,5 @@
 /**
- * 最小化 IPC 处理器测试（FOUNDATION-SEAL Phase 5 迭代 A）
+ * 最小化 IPC 处理器测试
  *
  * 覆盖范围：Agent 未就绪时的 11 个最小化 IPC handler
  * - CONFIG_GET：成功返回配置 + 加载失败降级默认配置

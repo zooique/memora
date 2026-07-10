@@ -13,8 +13,7 @@ import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { SerializedAppError } from './ipc/channels.js';
 
 // ─── 错误类型定义 ─────────────────────────────────────────
-// P0-A：ErrorCode + MemoraError 已提取到 sprite/errors.ts（纯逻辑层，零 electron 依赖），
-// sprite/storage 层可直接导入使用。本模块 re-export 保持公共 API 不变。
+// ErrorCode + MemoraError 定义在 sprite/errors.ts（纯逻辑层，零 electron 依赖），本模块 re-export 保持公共 API 不变
 import { ErrorCode, MemoraError } from '../sprite/errors.js';
 export { ErrorCode, MemoraError };
 
@@ -119,7 +118,7 @@ export class ErrorHandler {
       message: userMessage,
       timestamp: error.timestamp.toISOString(),
     };
-    // QC-16 修复 TOCTOU 竞态：isDestroyed 检查与 send 之间窗口可能被销毁，用 try-catch 兜底
+    // TOCTOU 竞态兜底：isDestroyed 检查与 send 之间窗口可能被销毁，用 try-catch 保护
     try {
       this.mainWindow.webContents.send(MAIN_TO_RENDERER_CHANNELS.APP_ERROR, serializedError);
     } catch {
@@ -140,7 +139,6 @@ export class ErrorHandler {
       [ErrorCode.FILE_READ_FAILED]: '文件读取失败，请检查文件权限',
       [ErrorCode.NETWORK_ERROR]: '网络连接失败，请检查网络设置',
       [ErrorCode.API_ERROR]: 'API调用失败，请稍后重试',
-      // P0-B 新增：存储与校验错误的友好消息
       [ErrorCode.STORAGE_ERROR]: '存储操作失败，请检查数据目录权限',
       [ErrorCode.VALIDATION_ERROR]: '数据校验失败，请检查输入内容',
     };

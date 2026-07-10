@@ -3,7 +3,7 @@
  *
  * 覆盖范围：
  * - toError：未知错误转 Error 的纯函数（Error 实例 / 字符串 / 含 message 对象 / 其他类型）
- * - reportError：统一日志格式（[context] 前缀）+ 主进程日志上报（FOUNDATION-SEAL Phase 4）
+ * - reportError：统一日志格式（[context] 前缀）+ 主进程日志上报
  * - createIpcErrorHandler：IPC 错误处理闭包（日志 + 可选 toast）
  *
  * 测试环境说明：
@@ -119,7 +119,7 @@ describe('reportError', () => {
   });
 });
 
-// ─── reportError - 渲染进程日志上报（FOUNDATION-SEAL Phase 4） ─────
+// ─── reportError - 渲染进程日志上报 ─────
 //
 // reportError 的双通道记录：
 // 1. console.error：保留渲染进程控制台输出
@@ -128,7 +128,7 @@ describe('reportError', () => {
 // 降级路径：IPC 不可用时（window 缺失 / electronAPI 缺失 / rendererLog 抛错）
 // 仅 console.error，不向上抛出。
 
-describe('reportError - 渲染进程日志上报（FOUNDATION-SEAL Phase 4）', () => {
+describe('reportError - 渲染进程日志上报', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});

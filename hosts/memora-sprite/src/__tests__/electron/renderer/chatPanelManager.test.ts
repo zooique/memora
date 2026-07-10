@@ -55,7 +55,7 @@ vi.mock('../../../electron/renderer/components/markdown.js', () => ({
 
 /** 创建 Mock ChatPanelHost（所有方法用 vi.fn 创建，可通过 overrides 替换） */
 function createMockHost(overrides?: Partial<ChatPanelHost>): ChatPanelHost {
-  // FOUNDATION-SEAL Phase 2：setStreaming/isStreaming 维护内部状态，
+  // setStreaming/isStreaming 维护内部状态，
   // 使 ChatPanelManager 的 isStreaming() 读取能正确反映 setStreaming 调用
   let streamingState = false;
   return {
@@ -70,7 +70,7 @@ function createMockHost(overrides?: Partial<ChatPanelHost>): ChatPanelHost {
     hideEmptyState: vi.fn(),
     updateUnreadCount: vi.fn(),
     onStreamStuck: vi.fn(),
-    // 缺口 J：manual 模式归档按钮渲染依赖 host.getArchiveMode()（默认 full 不渲染）
+    // manual 模式归档按钮渲染依赖 host.getArchiveMode()（默认 full 不渲染）
     getArchiveMode: vi.fn(() => 'full' as const),
     // 忘记操作二次确认（默认直接确认）
     showConfirmDialog: vi.fn(async () => true),
@@ -174,7 +174,7 @@ afterEach(() => {
 describe('构造与 cleanup', () => {
   it('构造函数应初始化字段并共享 streamingMessages 引用', () => {
     const { manager, host, streamingMessages } = createManager();
-    // FOUNDATION-SEAL Phase 2：通过 startStreaming 验证 host.setStreaming 调用 + streamingMessages 引用共享
+    // 通过 startStreaming 验证 host.setStreaming 调用 + streamingMessages 引用共享
     manager.startStreaming('m1');
     expect(host.setStreaming).toHaveBeenCalledWith(true);
     expect(streamingMessages.has('m1')).toBe(true);

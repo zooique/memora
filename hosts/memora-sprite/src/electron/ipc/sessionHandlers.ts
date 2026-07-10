@@ -27,7 +27,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   /** 加载历史会话消息 */
   ipcMain.handle(IPC_CHANNELS.SESSION_LOAD, async (_event, query: { date?: string; session?: string; limit?: number; offset?: number }) => {
     try {
-      // FOUNDATION-SEAL Phase 3 轮3：query 对象类型校验，防止 null/undefined 或非对象传入
+      // query 对象类型校验，防止 null/undefined 或非对象传入
       if (!query || typeof query !== 'object') {
         return { messages: [], loadedSessionId: '', total: 0, hasMore: false };
       }
@@ -84,7 +84,7 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   /** 切换到已有会话（更新 Agent 内部状态，避免消息持久化到错误会话） */
   ipcMain.handle(IPC_CHANNELS.SESSION_SWITCH, async (_event, query: { date: string; session: string }) => {
     try {
-      // FOUNDATION-SEAL Phase 3 轮3：query 对象类型校验，防止 null/undefined 或非对象传入
+      // query 对象类型校验，防止 null/undefined 或非对象传入
       if (!query || typeof query !== 'object') {
         return { success: false, messages: [], error: '无效的请求参数' };
       }
@@ -159,24 +159,16 @@ export function registerSessionHandlers(ctx: IpcContext): void {
         return { success: false, error: '无效的会话 ID' };
       }
 
-      // 按天聚合后删除某天时，删除当天所有子会话（含 main 和遗留的 session-xxx）
-      const datePrefix = sessionId.slice(0, 10); // YYYY-MM-DD
-      const allSessions = ctx.sessionStore.listSessions();
-      let deletedCount = 0;
-      for (const s of allSessions) {
-        if (s.slice(0, 10) === datePrefix) {
-          if (ctx.sessionStore.deleteSession(s)) {
-            deletedCount++;
-          }
-        }
-      }
+      // 按日期前缀批量删除（聚合逻辑下沉到 sessionStore.deleteSessionsByDatePrefix）
+      const datePrefix = sessionId.slice(0, 10);
+      const deletedCount = ctx.sessionStore.deleteSessionsByDatePrefix(datePrefix);
 
       if (deletedCount === 0) {
         return { success: false, error: '未找到该日期的会话记录' };
       }
 
-      // UT-FQ-02 删除后 Agent 状态同步：如果 Agent 的当前日期正是被删的日期，
-      // 重置到当天主会话，避免 Agent 内部 currentDate / loop.messages[] 指向已删除数据
+      // Agent 状态同步：如果 Agent 的当前日期正是被删的日期，
+      // 重置到当天主会话，避免 Agent 内部指向已删除数据
       const history = ctx.agent?.agentHistory;
       if (history) {
         const today = getLocalDate();
@@ -280,42 +272,12 @@ export function registerSessionHandlers(ctx: IpcContext): void {
   });
 
   // 列出所有会话（按日期聚合，每日期最多一条）
+  // 聚合 + 解析 + preview 逻辑下沉到 sessionStore.listSessionsGroupedByDate
   ipcMain.handle(IPC_CHANNELS.SESSION_LIST, async () => {
     try {
-      const sessions = ctx.sessionStore.listSessions(); // 返回 ['YYYY-MM-DD-name', ...]
-
-      // 按日期聚合：同一天取最近创建的会话（列表中最后的那个）作为代表
-      const dateMap = new Map<string, string>(); // date → sessionId
-      for (const s of sessions) {
-        const date = s.slice(0, 10); // YYYY-MM-DD
-        // 后出现的覆盖先出现的（listSessions 按 ID ASC，所以最后的是最新的）
-        dateMap.set(date, s);
-      }
-
-      // BUG-FIX 始终包含当天 main 会话（即使 0 条消息）
-      // 跨日启动时当天无消息，原逻辑不返回当天会话，导致 sessions.length <= 1 时按钮被禁用，
-      // 用户无法切换查看昨天的对话。补当天占位后，至少有"昨天+今天"两个选项，按钮可用。
       const today = getLocalDate();
-      if (!dateMap.has(today)) {
-        dateMap.set(today, `${today}-main`);
-      }
-
-      // 解析每个日期的一条代表会话
-      const parsed = Array.from(dateMap.entries())
-        .sort((a, b) => a[0].localeCompare(b[0])) // 日期升序
-        .map(([_date, s]) => {
-          const parts = s.split('-');
-          if (parts.length >= 3) {
-            const date = parts[0] + '-' + parts[1] + '-' + parts[2];
-            const name = parts.slice(3).join('-') || 'main';
-            const preview = ctx.sessionStore.getFirstUserMessage(s);
-            const messageCount = ctx.sessionStore.countMessages(date, name);
-            return { id: s, date, name, preview, messageCount };
-          }
-          return { id: s, date: s, name: s, preview: '', messageCount: 0 };
-        });
-
-      return { sessions: parsed };
+      const sessions = ctx.sessionStore.listSessionsGroupedByDate(today);
+      return { sessions };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '列出会话失败' });
       return { sessions: [] };

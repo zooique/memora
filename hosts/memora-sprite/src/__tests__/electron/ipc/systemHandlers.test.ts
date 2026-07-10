@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 系统级 IPC 处理器测试
  *
  * 覆盖范围：
@@ -139,7 +139,7 @@ describe('registerSystemHandlers', () => {
     expect(result).toEqual({ projects: ['project-a', 'project-b'] });
   });
 
-  it('PROJECTS_LIST 抛错应降级返回空列表', async () => {
+  it('PROJECTS_LIST 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const listProjects = vi.fn(() => {
       throw new Error('加载失败');
     });
@@ -147,9 +147,7 @@ describe('registerSystemHandlers', () => {
     registerSystemHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.PROJECTS_LIST)!;
-    const result = await callback();
-
-    expect(result).toEqual({ projects: [] });
+    await expect(callback()).rejects.toThrow('加载失败');
   });
 
   // ─── DASHBOARD_GET ─────────────────────────────────────
@@ -202,7 +200,7 @@ describe('registerSystemHandlers', () => {
     expect(result.total).toBe(10);
   });
 
-  it('dashboard 主调用抛错应走外层 catch 返回全降级数据', () => {
+  it('dashboard 主调用抛错应向上抛出（让渲染层感知加载失败）', () => {
     const dashboard = vi.fn(() => {
       throw new Error('仪表盘失败');
     });
@@ -210,19 +208,8 @@ describe('registerSystemHandlers', () => {
     registerSystemHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.DASHBOARD_GET)!;
-    const result = callback();
-
-    expect(result).toEqual({
-      total: 0,
-      bySource: {},
-      suggestions: [],
-      pendingNotices: 0,
-      proactiveThreshold: 3,
-      registeredTriggers: [],
-      sourceHealth: null,
-      metrics: null,
-      skills: [],
-    });
+    // 主查询失败时显性抛出，让渲染层 loadDashboard 的 catch 触发 showToast
+    expect(() => callback()).toThrow('仪表盘失败');
   });
 
   it('agent.skills 有数据应映射为 IPC 传输形态', () => {

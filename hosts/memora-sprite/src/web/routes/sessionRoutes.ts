@@ -131,7 +131,7 @@ export async function handleSessionRoute(
         return;
       }
       if (!isValidSessionName(body.session)) {
-        sendJson(res, 200, { success: false, messages: [], error: '无效的会话名' });
+        sendError(res, 400, '无效的会话名');
         return;
       }
       // 切换会话前检查是否有进行中对话

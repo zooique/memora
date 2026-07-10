@@ -104,7 +104,7 @@ describe('showToast · FIFO 限制', () => {
 // ─── showToast · 4 类型图标 ─────────────────────────────
 
 describe('showToast · 类型图标', () => {
-  // SVG sprite 替代原 Unicode 符号（✓✗⚠ℹ），通过 use href 断言图标引用
+  // SVG sprite 代替 Unicode 符号（✓✗⚠ℹ），通过 use href 断言图标引用
   it('success 应显示 check 图标', () => {
     const manager = createManager();
     manager.showToast('成功', 'success');

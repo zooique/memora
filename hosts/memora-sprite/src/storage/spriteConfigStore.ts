@@ -28,7 +28,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { loadConfig, logger, toError } from 'memora';
 import type { Config } from 'memora';
-// P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME } from '../sprite/constants.js';
 
 /** 默认 LLM 配置文件路径（~/.memora-sprite/config.json） */

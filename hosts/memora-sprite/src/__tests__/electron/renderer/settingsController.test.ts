@@ -1,5 +1,5 @@
 /**
- * settingsController 单元测试（QC-TEST-SETTINGS）
+ * settingsController 单元测试
  *
  * 覆盖范围：
  * - onConfigSave：批量更新成功/事务失败/IPC 异常/字段透传（事务性保护）
@@ -128,7 +128,7 @@ describe('settingsController', () => {
 
     const api = (globalThis as { window: { electronAPI: { updateConfigBatch: { mock: { calls: unknown[][] } } } } }).window.electronAPI.updateConfigBatch;
     expect(api.mock.calls).toHaveLength(1);
-    // SEC-P2-02：fileWatcherIgnore 纳入批量更新后，字段数从 10 增至 11
+    // fileWatcherIgnore 纳入批量更新后，字段数从 10 增至 11
     const updates = api.mock.calls[0]![0] as Record<string, unknown>;
     expect(Object.keys(updates)).toHaveLength(11);
     expect(updates.silentMode).toBe(false);

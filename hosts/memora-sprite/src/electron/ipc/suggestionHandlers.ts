@@ -14,7 +14,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from './channels.js';
-import { safeHandle } from './types.js';
+import { safeHandle, throwingHandle } from './types.js';
 import { isValidConfigName, isValidContent, isValidId } from './inputValidation.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import type { IpcContext } from './types.js';
@@ -88,9 +88,8 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
    * 待确认条目：仅存内存缓存，进程重启后丢失
    */
   ipcMain.handle(IPC_CHANNELS.USER_PROFILE_LIST, async () => {
-    return safeHandle(
-      'USER_PROFILE_LIST',
-      { entries: [] as Array<{ id: string; category: string; value: string; source: string; weight: number; confirmed: boolean; updatedAt: string }> },
+    return throwingHandle(
+      '列出用户画像失败',
       () => {
         const profile = ctx.agent.userProfile;
         if (!profile) {
@@ -123,7 +122,7 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
       'USER_PROFILE_CONFIRM',
       { success: false, error: '未知错误' },
       async () => {
-        // FOUNDATION-SEAL Phase 3 轮2：校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
+        // 校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
         if (!isValidId(id)) {
           return { success: false, error: '非法画像条目 ID' };
         }
@@ -147,7 +146,7 @@ export function registerSuggestionHandlers(ctx: IpcContext): void {
       'USER_PROFILE_REJECT',
       { success: false, error: '未知错误' },
       async () => {
-        // FOUNDATION-SEAL Phase 3 轮2：校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
+        // 校验画像条目 ID 类型和长度，防止非字符串或超长值传入内核
         if (!isValidId(id)) {
           return { success: false, error: '非法画像条目 ID' };
         }

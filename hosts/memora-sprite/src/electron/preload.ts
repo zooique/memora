@@ -96,9 +96,9 @@ export const IPC_CHANNELS = {
   MEMORIES_REMOVE_RELATION: 'memories-remove-relation',
   /** 更新记忆关系（关系图交互） */
   MEMORIES_UPDATE_RELATION: 'memories-update-relation',
-  /** 手动归档 profile facts（缺口 J：manual 模式下供 UI 调用） */
+  /** 手动归档 profile facts（manual 模式下供 UI 调用） */
   MEMORIES_ARCHIVE_PROFILE: 'memories-archive-profile',
-  /** 手动归档 insight（缺口 J：manual 模式下供 UI 调用） */
+  /** 手动归档 insight（manual 模式下供 UI 调用） */
   MEMORIES_ARCHIVE_INSIGHT: 'memories-archive-insight',
   CONFIG_GET: 'config-get',
   CONFIG_UPDATE: 'config-update',
@@ -160,7 +160,7 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_CONFIRM: 'quick-input-confirm',
   QUICK_INPUT_CLOSE: 'quick-input-close',
   QUICK_INPUT_RESIZE: 'quick-input-resize',
-  // FOUNDATION-SEAL Phase 4：渲染进程日志上报（渲染进程 → 主进程）
+  // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
 } as const;
 
@@ -327,7 +327,7 @@ export interface SpriteConfigForm extends SpriteConfigFormBase {
   silentModeExpiresAt?: string | null;
   /** 界面主题（窄化版：'auto' 不暴露到表单，由 onThemeChange 即时处理） */
   theme: 'light' | 'dark';
-  /** 缺口 II：文件监听忽略模式（glob 列表，可选，与 SpriteConfig 一致） */
+  /** 文件监听忽略模式（glob 列表，可选，与 SpriteConfig 一致） */
   fileWatcherIgnore?: string[];
 }
 
@@ -485,9 +485,9 @@ export interface ElectronAPI {
   getRelationPath: (data: { memoryId: string; maxDepth?: number; direction?: 'incoming' | 'outgoing' | 'both' }) => Promise<RelationPath[]>;
   /** 获取记忆关系邻居（Phase 5.2：邻居查询，展示直接关联记忆） */
   getRelationNeighbors: (data: { memoryId: string; limit?: number }) => Promise<RelationNeighbor[]>;
-  /** 手动归档 profile facts（缺口 J：manual 模式下供 UI 调用，返回归档条目数） */
+  /** 手动归档 profile facts（manual 模式下供 UI 调用，返回归档条目数） */
   archiveProfileFacts: (input: string) => Promise<{ count: number }>;
-  /** 手动归档 insight（缺口 J：manual 模式下供 UI 调用，返回归档记忆数） */
+  /** 手动归档 insight（manual 模式下供 UI 调用，返回归档记忆数） */
   archiveInsight: (input: string, assistantContent: string) => Promise<{ count: number }>;
   /** 批量归档当前会话（一键归档） */
   archiveSession: (date: string, session: string) => Promise<{ archivedCount: number }>;
@@ -584,7 +584,7 @@ export interface ElectronAPI {
     rapport?: RapportState;
     context?: ContextState;
     patterns?: DetectedPattern[];
-    /** 缺口 G+H：主动提示统计（接受率 + 生效冷却） */
+    /** 主动提示统计（接受率 + 生效冷却） */
     proactiveStats?: ProactiveStats;
   } | null>;
 
@@ -735,7 +735,7 @@ export interface ElectronAPI {
   /** 查看单个作品投影详情（API 已就绪，UI 暂用内联展开替代，供未来宿主集成使用） */
   showWorkProjection: (filePath: string) => Promise<WorkProjectionPayload | null>;
 
-  // ─── FOUNDATION-SEAL Phase 4：渲染进程日志上报 ────────
+  // ─── 渲染进程日志上报 ────────
   /**
    * 上报日志到主进程 logger（渲染进程无 pino，通过 IPC 转发）
    *
@@ -995,7 +995,7 @@ const electronAPI: ElectronAPI = {
   listWorkProjections: () => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_LIST),
   showWorkProjection: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_SHOW, filePath),
 
-  // FOUNDATION-SEAL Phase 4：渲染进程日志上报（fire-and-forget，日志无需等待）
+  // 渲染进程日志上报（fire-and-forget，日志无需等待）
   rendererLog: (level, context, message) => ipcRenderer.send(IPC_CHANNELS.RENDERER_LOG, { level, context, message }),
 };
 

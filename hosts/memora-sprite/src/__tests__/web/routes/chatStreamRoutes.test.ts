@@ -251,7 +251,7 @@ function createMockCtx(overrides?: {
 
   return {
     agent,
-    // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+    // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
     sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() } as unknown as HostContext['sprite'],
     sessionStore: {} as HostContext['sessionStore'],
     getAbortController: overrides?.getAbortController ?? vi.fn(() => null),

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * safeHandle IPC 错误兜底包装测试
  *
  * 覆盖范围：
@@ -35,7 +35,7 @@ vi.mock('../../../electron/errorHandler.js', () => ({
 }));
 
 // 导入被测函数（在 mock 之后）
-import { safeHandle } from '../../../electron/ipc/types.js';
+import { safeHandle, throwingHandle } from '../../../electron/ipc/types.js';
 import { ErrorCode } from '../../../electron/errorHandler.js';
 
 describe('safeHandle', () => {
@@ -128,6 +128,98 @@ describe('safeHandle', () => {
       throw '字符串错误';
     });
     expect(result).toBe('降级值');
+    expect(mockHandle).toHaveBeenCalledWith('字符串错误', expect.any(Object));
+  });
+});
+
+// ─── throwingHandle 测试（查询类错误透传包装） ──────────
+
+describe('throwingHandle', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ─── 成功路径（与 safeHandle 一致） ─────────────────────
+
+  it('同步 fn 成功应返回 fn 结果', async () => {
+    const result = await throwingHandle('测试上下文', () => '成功结果');
+    expect(result).toBe('成功结果');
+  });
+
+  it('异步 fn 成功应返回 Promise 结果', async () => {
+    const result = await throwingHandle('测试上下文', async () => '异步成功结果');
+    expect(result).toBe('异步成功结果');
+  });
+
+  // ─── 失败路径（与 safeHandle 的关键区别：re-throw 而非降级） ───
+
+  it('同步 fn 抛错应 re-throw（不返回降级值）', async () => {
+    await expect(
+      throwingHandle('同步操作', () => {
+        throw new Error('同步错误');
+      }),
+    ).rejects.toThrow('同步错误');
+  });
+
+  it('异步 fn reject 应 re-throw（不返回降级值）', async () => {
+    await expect(
+      throwingHandle('异步操作', async () => {
+        throw new Error('异步错误');
+      }),
+    ).rejects.toThrow('异步错误');
+  });
+
+  it('fn 抛错应调用 errorHandler.handle 传递错误和上下文', async () => {
+    const error = new Error('测试错误');
+    await expect(
+      throwingHandle('查询处理', () => {
+        throw error;
+      }),
+    ).rejects.toThrow();
+
+    expect(mockHandle).toHaveBeenCalledWith(error, {
+      code: ErrorCode.UNKNOWN,
+      context: '查询处理',
+    });
+  });
+
+  it('显式指定 code 应传递给 errorHandler.handle', async () => {
+    const error = new Error('网络错误');
+    await expect(
+      throwingHandle(
+        'API 请求',
+        () => {
+          throw error;
+        },
+        ErrorCode.NETWORK_ERROR,
+      ),
+    ).rejects.toThrow();
+
+    expect(mockHandle).toHaveBeenCalledWith(error, {
+      code: ErrorCode.NETWORK_ERROR,
+      context: 'API 请求',
+    });
+  });
+
+  it('默认 code 应为 UNKNOWN', async () => {
+    await expect(
+      throwingHandle('测试', () => {
+        throw new Error('err');
+      }),
+    ).rejects.toThrow();
+
+    expect(mockHandle).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ code: ErrorCode.UNKNOWN }),
+    );
+  });
+
+  it('非 Error 对象抛错也应 re-throw（字符串）', async () => {
+    await expect(
+      throwingHandle('测试', () => {
+        throw '字符串错误';
+      }),
+    ).rejects.toBe('字符串错误');
     expect(mockHandle).toHaveBeenCalledWith('字符串错误', expect.any(Object));
   });
 });

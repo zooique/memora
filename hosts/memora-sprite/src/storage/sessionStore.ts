@@ -182,7 +182,7 @@ export class SqliteSessionStore implements ISessionStore {
    * 使用 SQLite 事务保证原子性：先清除目标会话，再用 INSERT INTO ... SELECT
    * 数据库层直接拷贝源会话消息。幂等操作：目标会话已存在时覆盖而非追加。
    *
-   * 原实现 loadMessages 全量加载到内存再逐条 insert，
+   * loadMessages 全量加载到内存再逐条 insert，
    * 大型会话（数千条消息）会导致内存峰值和性能下降。
    * 改用 INSERT INTO ... SELECT 在数据库层直接拷贝，零内存占用。
    *
@@ -260,6 +260,70 @@ export class SqliteSessionStore implements ISessionStore {
   }
 
   /**
+   * 按日期前缀批量删除会话
+   *
+   * 删除指定日期的所有子会话（含 main 和遗留的 session-xxx）。
+   * 提取自 sessionHandlers 的 for 循环聚合逻辑。
+   *
+   * @param datePrefix 日期前缀（YYYY-MM-DD）
+   * @returns 删除的会话数量
+   */
+  deleteSessionsByDatePrefix(datePrefix: string): number {
+    const allSessions = this.listSessions();
+    let deletedCount = 0;
+    for (const s of allSessions) {
+      if (s.slice(0, 10) === datePrefix) {
+        if (this.deleteSession(s)) deletedCount++;
+      }
+    }
+    return deletedCount;
+  }
+
+  /**
+   * 列出按日期聚合的会话列表
+   *
+   * 聚合规则：同一天取字符串排序最后的会话作为代表（listSessions 按
+   * sessionId 字符串排序，非创建顺序——后出现的覆盖先出现的）。
+   * 始终包含当天 main 会话（即使 0 条消息），确保跨日启动时至少有
+   * "昨天+今天"两个选项可切换。
+   *
+   * 返回数据含预览和消息数，供 UI 直接渲染。
+   * 提取自 sessionHandlers 的 Map 聚合 + 解析 + preview 逻辑。
+   *
+   * @param today 当前日期（YYYY-MM-DD），由调用方传入避免存储层依赖时间工具
+   * @returns 聚合后的会话列表
+   */
+  listSessionsGroupedByDate(today: string): SessionListItem[] {
+    const sessions = this.listSessions();
+    // 按日期聚合：同一天取字符串排序最后的会话（后出现覆盖先出现）
+    const dateMap = new Map<string, string>();
+    for (const s of sessions) {
+      const date = s.slice(0, 10);
+      dateMap.set(date, s);
+    }
+    // 始终包含当天 main 会话（即使 0 条消息）
+    if (!dateMap.has(today)) {
+      dateMap.set(today, `${today}-main`);
+    }
+    // 解析每个日期的代表会话
+    return Array.from(dateMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([_date, s]) => {
+        const parsed = this.parseSessionId(s);
+        if (parsed) {
+          return {
+            id: s,
+            date: parsed.date,
+            name: parsed.session,
+            preview: this.getFirstUserMessage(s),
+            messageCount: this.countMessages(parsed.date, parsed.session),
+          };
+        }
+        return { id: s, date: s, name: s, preview: '', messageCount: 0 };
+      });
+  }
+
+  /**
    * 解析会话 ID 为日期和会话名
    *
    * 会话 ID 格式：YYYY-MM-DD-sessionName（至少 4 段，date 占 3 段）。
@@ -298,6 +362,20 @@ export interface SessionSearchRow {
   role: string;
   content: string;
   timestamp: string;
+}
+
+/** 会话列表项（按日期聚合后，供 UI 渲染） */
+export interface SessionListItem {
+  /** 会话 ID（格式：YYYY-MM-DD-sessionName） */
+  id: string;
+  /** 日期（YYYY-MM-DD） */
+  date: string;
+  /** 会话名 */
+  name: string;
+  /** 首条用户消息预览（截断到 50 字符） */
+  preview: string;
+  /** 消息总数 */
+  messageCount: number;
 }
 
 /** 会话预览截断长度上限（字符数），超出部分追加 "..." */

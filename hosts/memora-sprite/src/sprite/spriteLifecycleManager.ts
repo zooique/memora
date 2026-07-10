@@ -218,7 +218,6 @@ export class SpriteLifecycleManager {
 
   /** 执行一次过期记忆清理 */
   private purgeExpiredMemories(): void {
-    // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator（写操作代理）
     const mutator = this.agent.memoryMutator;
     if (!mutator) return;
 
@@ -246,8 +245,18 @@ export class SpriteLifecycleManager {
 
   // ─── Agent 事件订阅 ────────────────────────────────────
 
-  /** 订阅 Agent 事件，转发为精灵事件 */
+  /** 订阅 Agent 事件，转发为精灵事件（按类别分组订阅） */
   private subscribeAgentEvents(): void {
+    this.subscribeMemoryAgentEvents();
+    this.subscribeSessionAgentEvents();
+  }
+
+  /**
+   * 订阅记忆类 Agent 事件
+   *
+   * 包含：memoryAdded / insightExtracted / conflictDetected / memoryRecalled / decayCompleted
+   */
+  private subscribeMemoryAgentEvents(): void {
     // memoryAdded → memoryNoticed
     const onMemoryAdded = (e: AgentEventMap['memoryAdded']) => {
       this.emit('memoryNoticed', { source: e.source, name: e.name });
@@ -256,16 +265,6 @@ export class SpriteLifecycleManager {
     };
     this.agentHandlers.memoryAdded = onMemoryAdded;
     this.agent.on('memoryAdded', onMemoryAdded);
-
-    // personaSwitched → personaChanged
-    const onPersonaSwitched = (e: AgentEventMap['personaSwitched']) => {
-      this.emit('personaChanged', { from: e.from, to: e.to });
-      this.proactiveEngine.addNotice('persona', `${e.from ?? '(无)'} → ${e.to}`);
-      this.perceptionCoordinator.refreshBeforeChat();
-      logger.info({ from: e.from, to: e.to }, '角色切换');
-    };
-    this.agentHandlers.personaSwitched = onPersonaSwitched;
-    this.agent.on('personaSwitched', onPersonaSwitched);
 
     // insightExtracted → insightGained
     const onInsightExtracted = (e: AgentEventMap['insightExtracted']) => {
@@ -292,6 +291,38 @@ export class SpriteLifecycleManager {
     this.agentHandlers.conflictDetected = onConflictDetected;
     this.agent.on('conflictDetected', onConflictDetected);
 
+    // 记忆召回 → memoryRecalled
+    const onMemoryRecalled = (e: AgentEventMap['memoryRecalled']) => {
+      this.emit('memoryRecalled', { count: e.count, query: e.query });
+    };
+    this.agentHandlers.memoryRecalled = onMemoryRecalled;
+    this.agent.on('memoryRecalled', onMemoryRecalled);
+
+    // 衰减完成 → decayCompleted
+    const onDecayCompleted = (e: AgentEventMap['decayCompleted']) => {
+      this.emit('decayCompleted', { decayedCount: e.decayedCount });
+      logger.info({ decayedCount: e.decayedCount }, '记忆衰减完成');
+    };
+    this.agentHandlers.decayCompleted = onDecayCompleted;
+    this.agent.on('decayCompleted', onDecayCompleted);
+  }
+
+  /**
+   * 订阅会话/项目/技能类 Agent 事件
+   *
+   * 包含：personaSwitched / projectSwitched / sessionForked / skillMatched
+   */
+  private subscribeSessionAgentEvents(): void {
+    // personaSwitched → personaChanged
+    const onPersonaSwitched = (e: AgentEventMap['personaSwitched']) => {
+      this.emit('personaChanged', { from: e.from, to: e.to });
+      this.proactiveEngine.addNotice('persona', `${e.from ?? '(无)'} → ${e.to}`);
+      this.perceptionCoordinator.refreshBeforeChat();
+      logger.info({ from: e.from, to: e.to }, '角色切换');
+    };
+    this.agentHandlers.personaSwitched = onPersonaSwitched;
+    this.agent.on('personaSwitched', onPersonaSwitched);
+
     // 项目切换 → projectSwitched
     const onProjectSwitched = (e: AgentEventMap['projectSwitched']) => {
       this.emit('projectSwitched', {
@@ -311,21 +342,6 @@ export class SpriteLifecycleManager {
     };
     this.agentHandlers.skillMatched = onSkillMatched;
     this.agent.on('skillMatched', onSkillMatched);
-
-    // 记忆召回 → memoryRecalled
-    const onMemoryRecalled = (e: AgentEventMap['memoryRecalled']) => {
-      this.emit('memoryRecalled', { count: e.count, query: e.query });
-    };
-    this.agentHandlers.memoryRecalled = onMemoryRecalled;
-    this.agent.on('memoryRecalled', onMemoryRecalled);
-
-    // 衰减完成 → decayCompleted
-    const onDecayCompleted = (e: AgentEventMap['decayCompleted']) => {
-      this.emit('decayCompleted', { decayedCount: e.decayedCount });
-      logger.info({ decayedCount: e.decayedCount }, '记忆衰减完成');
-    };
-    this.agentHandlers.decayCompleted = onDecayCompleted;
-    this.agent.on('decayCompleted', onDecayCompleted);
 
     // 会话分叉 → sessionForked
     const onSessionForked = (e: AgentEventMap['sessionForked']) => {

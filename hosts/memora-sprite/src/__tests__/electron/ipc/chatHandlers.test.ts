@@ -1,5 +1,5 @@
 /**
- * chatHandlers IPC 处理器测试（QC-TEST-CHAT）
+ * chatHandlers IPC 处理器测试
  *
  * 覆盖范围：
  * - CHAT_ABORT：有/无 AbortController 时的中断行为
@@ -147,7 +147,7 @@ function createMockCtx(overrides?: {
   const hasTray = overrides && 'trayManager' in overrides;
   return {
     agent: hasAgent ? (overrides!.agent as IpcContext['agent']) : createMockAgent(),
-    // 缺口 A/I：chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
+    // chatStreamHandler 调用 sprite.incrementDailyMessageCount() + prepareForChat()，mock 需提供方法
     sprite: { incrementDailyMessageCount: vi.fn(), prepareForChat: vi.fn() } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
     windowStateManager: {} as IpcContext['windowStateManager'],
@@ -409,7 +409,7 @@ describe('chatHandlers', () => {
     });
   });
 
-  // ─── FOUNDATION-SEAL Phase 1：emitStreamError 日志记录 ──
+  // ─── emitStreamError 日志记录 ──
 
   describe('emitStreamError 日志记录', () => {
     /**

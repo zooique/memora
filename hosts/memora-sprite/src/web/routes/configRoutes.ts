@@ -84,7 +84,7 @@ export async function handleConfigRoute(
         return;
       }
       if (!isSpriteConfigKey(body.key)) {
-        sendJson(res, 200, { updated: false, error: `未知的配置键: ${body.key}` });
+        sendError(res, 400, `未知的配置键: ${body.key}`);
         return;
       }
       // Web 模式无托盘/快捷键副作用，直接更新配置

@@ -82,7 +82,7 @@ export interface PatternsPayload {
     confidence: number;
     suggestion?: string;
     /**
-     * 缺口 K：相关记忆 ID 列表
+     * 相关记忆 ID 列表
      *
      * PatternDetector 在 detectRecurringTopics/detectKnowledgeGaps/detectInterestDrift
      * 中已填充该字段，但原 PatternsPayload 类型遗漏导致 renderer 无法消费。

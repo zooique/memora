@@ -10,7 +10,6 @@
  * - 在初始化阶段即发现 HTML 与 TS 不同步问题，避免运行时静默失败
  * - 核心元素与可选元素分离，单个面板缺失不阻塞整个 UI
  */
-// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
 // formatTimeAgo 时间常量替换（统一引用 constants.ts 真理源）
 import { MS_PER_MINUTE, MS_PER_HOUR, MS_PER_DAY } from '../../../sprite/constants.js';

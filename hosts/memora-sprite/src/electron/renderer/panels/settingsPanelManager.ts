@@ -14,6 +14,7 @@
  */
 
 import { clearElement, getOptionalElement } from '../helpers/domHelpers.js';
+import { reportError } from '../helpers/errorHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
@@ -78,7 +79,7 @@ export class SettingsPanelManager {
   private cfgWatcherEnabled: HTMLInputElement | null;
   private cfgWatcherPaths: HTMLInputElement | null;
   private cfgWatcherDebounce: HTMLInputElement | null;
-  /** 缺口 II：文件监听忽略模式（glob 列表，逗号分隔输入） */
+  /** 文件监听忽略模式（glob 列表，逗号分隔输入） */
   private cfgWatcherIgnore: HTMLInputElement | null;
   private cfgDefaultPersona: HTMLInputElement | null;
   /** 项目模式：专注项目选择下拉框 */
@@ -176,7 +177,6 @@ export class SettingsPanelManager {
     this.cfgWatcherEnabled = getOptionalElement('cfg-watcher-enabled', 'input');
     this.cfgWatcherPaths = getOptionalElement('cfg-watcher-paths', 'input');
     this.cfgWatcherDebounce = getOptionalElement('cfg-watcher-debounce', 'input');
-    // 缺口 II：文件监听忽略模式输入框
     this.cfgWatcherIgnore = getOptionalElement('cfg-watcher-ignore', 'input');
     this.cfgDefaultPersona = getOptionalElement('cfg-default-persona', 'input');
     this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
@@ -773,7 +773,7 @@ export class SettingsPanelManager {
     } catch (error) {
       // 加载失败时清空列表并提示用户（避免用户误以为"没有 Provider"）
       clearElement(this.providerListEl);
-      console.error('[SettingsPanelManager] 加载 Provider 列表失败:', error);
+      reportError('SettingsPanelManager', error);
       this.host.showToast('加载 Provider 列表失败，请稍后重试', 'error');
     }
   }
@@ -1053,7 +1053,7 @@ export class SettingsPanelManager {
         this.host.showToast(result.error ?? '连接失败', 'error');
       }
     } catch (err) {
-      console.error('LLM 连接测试异常:', err);
+      reportError('SettingsPanelManager', err);
       this.host.showToast('测试异常，请检查网络', 'error');
     } finally {
       btn.disabled = false;
@@ -1076,7 +1076,7 @@ export class SettingsPanelManager {
       }
     } catch (error) {
       // 获取激活状态失败时不阻塞删除，但记录日志便于排查（主进程仍有兜底校验）
-      console.error('[SettingsPanelManager] 删除前获取 Provider 列表失败:', error);
+      reportError('SettingsPanelManager', error);
     }
 
     // 使用项目统一的 showConfirmDialog（支持主题/焦点/键盘），替代原生 confirm()
@@ -1147,13 +1147,13 @@ export class SettingsPanelManager {
       });
     }
 
-    // Provider 卡片列表事件委托（一次性绑定，替代原 bindProviderCardActions 的每次渲染重绑）
+    // Provider 卡片列表事件委托（一次性绑定，避免每次渲染重绑）
     // 通过 closest 定位点击的按钮，根据 data-action 分发到对应处理方法
     if (this.providerListEl) {
       this.events.addEventListener(this.providerListEl, 'click', async (e: Event) => {
         const target = e.target as HTMLElement;
-        const btn = target.closest('button[data-action]') as HTMLButtonElement | null;
-        if (!btn) return;
+        const btn = target.closest('button[data-action]');
+        if (!(btn instanceof HTMLButtonElement)) return;
 
         const action = btn.dataset.action;
         const key = btn.dataset.key;
@@ -1181,7 +1181,6 @@ export class SettingsPanelManager {
       if (this.cfgWatcherEnabled) this.cfgWatcherEnabled.checked = config.fileWatcherEnabled;
       if (this.cfgWatcherPaths) this.cfgWatcherPaths.value = config.fileWatcherPaths.join(', ');
       if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
-      // 缺口 II：加载文件监听忽略模式（glob 列表 → 逗号分隔字符串）
       if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
       if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
 
@@ -1285,7 +1284,7 @@ export class SettingsPanelManager {
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0) ?? [],
-      // 缺口 II：收集文件监听忽略模式（逗号分隔字符串 → glob 列表，与 fileWatcherPaths 对称处理）
+      // 收集文件监听忽略模式（逗号分隔字符串 → glob 列表，与 fileWatcherPaths 对称处理）
       fileWatcherIgnore: this.cfgWatcherIgnore?.value
         .split(',')
         .map((s) => s.trim())
@@ -1350,7 +1349,7 @@ export class SettingsPanelManager {
       this.settingsFormDirty = false;
       this.updateSaveStatus('saved');
     } catch (error) {
-      console.error('[SettingsPanelManager] 自动保存配置失败:', error);
+      reportError('SettingsPanelManager', error);
       this.host.showToast('保存失败，请重试', 'error');
       this.updateSaveStatus('error');
     } finally {

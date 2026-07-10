@@ -252,7 +252,7 @@ export class FloatWindow {
   }
 
   /**
-   * 缺口 1.2：广播在场状态变化到浮动窗口
+   * 广播在场状态变化到浮动窗口
    *
    * 完整窗口通过 SPRITE_EVENT 通道接收 presenceChanged 事件并更新感知面板；
    * 浮动窗口此前无视觉反馈（80x80 迷你球体在用户离开时无变化）。

@@ -643,7 +643,7 @@
   background: transparent;
 }
 
-/* ─── 归档按钮（缺口 J：manual 模式专用，复用复制按钮视觉） ─── */
+/* ─── 归档按钮（manual 模式专用，复用复制按钮视觉） ─── */
 .message-archive-btn {
   display: inline-flex;
   align-items: center;

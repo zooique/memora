@@ -13,10 +13,12 @@
  */
 
 import type { UIManager } from '../ui.js';
-// Toast 时长常量（第一轮 P1-B 遗漏 import 修复）
+// Toast 时长常量 + 时间单位
 import { TOAST_SHORT_MS, MS_PER_HOUR } from '../../../sprite/constants.js';
 // 事件监听器纳入 EventTracker 统一管理，cleanup 时统一移除，避免内存泄漏
 import { EventTracker } from '../helpers/eventTracker.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 // 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
 import { clearElement } from '../helpers/domHelpers.js';
 
@@ -120,8 +122,9 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       action: () => {
         void uiManager.switchPanel('memories');
         // 点击更多菜单中的"健康度诊断"项（与用户手动点击路径一致）
-        const healthItem = document.querySelector('.more-menu-item[data-action="health"]') as HTMLElement | null;
-        healthItem?.click();
+        const healthItem = document.querySelector('.more-menu-item[data-action="health"]');
+        if (!(healthItem instanceof HTMLElement)) return;
+        healthItem.click();
       },
     },
     {
@@ -132,8 +135,9 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       action: () => {
         void uiManager.switchPanel('memories');
         // 点击更多菜单中的"统计洞察"项（与用户手动点击路径一致）
-        const insightsItem = document.querySelector('.more-menu-item[data-action="insights"]') as HTMLElement | null;
-        insightsItem?.click();
+        const insightsItem = document.querySelector('.more-menu-item[data-action="insights"]');
+        if (!(insightsItem instanceof HTMLElement)) return;
+        insightsItem.click();
       },
     },
     {
@@ -282,15 +286,15 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         const isCurrentlySilent = checkbox.checked;
         if (isCurrentlySilent) {
           // 退出静默模式
-          void window.electronAPI.updateConfig('silentMode', false);
-          void window.electronAPI.updateConfig('silentModeExpiresAt', null);
+          void window.electronAPI.updateConfig('silentMode', false).catch((e: unknown) => reportError('CommandPalette-exitSilent', e));
+          void window.electronAPI.updateConfig('silentModeExpiresAt', null).catch((e: unknown) => reportError('CommandPalette-exitSilent', e));
           checkbox.checked = false;
           uiManager.showToast('已退出静默模式，精灵恢复主动提示', 'info', TOAST_SHORT_MS);
         } else {
           // 进入静默模式（1 小时后自动恢复）
-          void window.electronAPI.updateConfig('silentMode', true);
+          void window.electronAPI.updateConfig('silentMode', true).catch((e: unknown) => reportError('CommandPalette-enterSilent', e));
           const expiresAt = new Date(Date.now() + MS_PER_HOUR).toISOString();
-          void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
+          void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt).catch((e: unknown) => reportError('CommandPalette-enterSilent', e));
           checkbox.checked = true;
           uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示', 'info', TOAST_SHORT_MS);
         }
@@ -301,8 +305,9 @@ function createStaticCommands(uiManager: UIManager): Command[] {
 
 /** 切换设置面板的 tab */
 function switchSettingsTab(tabName: string): void {
-  const tab = document.querySelector(`.settings-tab[data-settings-tab="${tabName}"]`) as HTMLButtonElement | null;
-  tab?.click();
+  const tab = document.querySelector(`.settings-tab[data-settings-tab="${tabName}"]`);
+  if (!(tab instanceof HTMLButtonElement)) return;
+  tab.click();
 }
 
 // ─── 搜索引擎 ────────────────────────────────────────────────
@@ -388,7 +393,7 @@ export class CommandPaletteManager {
     this.resultsEl = document.getElementById('command-palette-results');
 
     if (!(this.paletteEl instanceof HTMLElement) || !(inputEl instanceof HTMLInputElement) || !(this.resultsEl instanceof HTMLElement)) {
-      console.warn('[CommandPalette] 命令面板 DOM 元素缺失，功能降级');
+      reportError('CommandPalette', '命令面板 DOM 元素缺失，功能降级', 'warn');
       return;
     }
     this.inputEl = inputEl;
@@ -445,15 +450,20 @@ export class CommandPaletteManager {
           label: `切换角色：${persona.name}`,
           keywords: `角色 persona ${persona.name} ${persona.description} 切换`,
           section: '角色',
-          action: () => {
-            void window.electronAPI.switchPersona(persona.name);
-            this.uiManager.showToast(`已切换到角色：${persona.name}`, 'info', TOAST_SHORT_MS);
+          action: async () => {
+            // 检查返回值，避免切换失败时谎报成功
+            const result = await window.electronAPI.switchPersona(persona.name);
+            if (result.switched) {
+              this.uiManager.showToast(`已切换到角色：${persona.name}`, 'info', TOAST_SHORT_MS);
+            } else {
+              this.uiManager.showToast('切换角色失败', 'error', TOAST_SHORT_MS);
+            }
           },
         });
       }
     } catch (error) {
       // 角色列表获取失败时静默降级，不影响静态命令（仅记录日志便于排查）
-      console.error('[CommandPalette] 加载角色列表失败，仅显示静态命令', error);
+      reportError('CommandPalette', error);
     }
 
     // 如果面板打开中，刷新搜索结果

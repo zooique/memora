@@ -73,7 +73,7 @@ const ACCEPTANCE_MID_THRESHOLD = 0.7;
  */
 export class PerceptionPanelManager {
   // ─── 叙事摘要生成器（统一管理 5 类感知数据累积 + 叙事合成） ──
-  /** 叙事摘要生成器实例，替代原 5 个 lastNarrative* 字段 + generateNarrative 方法 */
+  /** 叙事摘要生成器实例，代替 5 个 lastNarrative* 字段 + generateNarrative 方法 */
   private narrativeGenerator = new NarrativeGenerator();
 
   // ─── 宿主引用 ──────────────────────────────────────────

@@ -1,5 +1,5 @@
 /**
- * 记忆面板管理器实例方法测试（QC-TEST-MEMORY-PANEL）
+ * 记忆面板管理器实例方法测试
  *
  * 覆盖范围：
  * - renderMemoryList：列表渲染 + 空状态 + 分页

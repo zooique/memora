@@ -221,7 +221,7 @@ describe('registerConfigHandlers', () => {
     expect(result).toEqual({ config });
   });
 
-  it('CONFIG_GET 抛错应降级返回 DEFAULT_SPRITE_CONFIG', async () => {
+  it('CONFIG_GET 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const ctx = createMockCtx({
       sprite: {
         getConfig: vi.fn(() => {
@@ -232,10 +232,7 @@ describe('registerConfigHandlers', () => {
     registerConfigHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.CONFIG_GET)!;
-    const result = await callback();
-
-    expect(result.config).toBeDefined();
-    expect(result.config.silentMode).toBe(false);
+    await expect(callback()).rejects.toThrow('配置加载失败');
   });
 
   // ─── CONFIG_UPDATE ─────────────────────────────────────
@@ -498,7 +495,7 @@ describe('registerConfigHandlers', () => {
     expect(result).toEqual({ personas: ['default', 'coder', 'writer'] });
   });
 
-  it('PERSONA_LIST 抛错应降级返回空列表', async () => {
+  it('PERSONA_LIST 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const ctx = createMockCtx({
       sprite: {
         listPersonas: vi.fn(() => {
@@ -509,9 +506,7 @@ describe('registerConfigHandlers', () => {
     registerConfigHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_LIST)!;
-    const result = await callback();
-
-    expect(result).toEqual({ personas: [] });
+    await expect(callback()).rejects.toThrow('加载失败');
   });
 
   // ─── PERSONA_SWITCH ────────────────────────────────────
@@ -542,7 +537,7 @@ describe('registerConfigHandlers', () => {
     expect(result).toEqual({ switched: false, name: null });
   });
 
-  // FOUNDATION-SEAL Phase 3 轮2：角色名称校验失败路径
+  // 角色名称校验失败路径
   it('PERSONA_SWITCH 含路径分隔符应拒绝（不调用 switchPersona）', async () => {
     const switchPersona = vi.fn(() => 'coder');
     const ctx = createMockCtx({ sprite: { switchPersona } });
@@ -607,7 +602,7 @@ describe('registerConfigHandlers', () => {
     expect(result).toEqual({ mode: 'manual' });
   });
 
-  it('PERSONA_MODE_GET 抛错应降级返回 auto', async () => {
+  it('PERSONA_MODE_GET 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const ctx = createMockCtx({
       sprite: {
         personaMode: 'auto',
@@ -625,8 +620,6 @@ describe('registerConfigHandlers', () => {
       },
     });
     const callback = handleCallbacks.get(IPC_CHANNELS.PERSONA_MODE_GET)!;
-    const result = await callback();
-
-    expect(result).toEqual({ mode: 'auto' });
+    await expect(callback()).rejects.toThrow('读取失败');
   });
 });

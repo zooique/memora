@@ -125,7 +125,7 @@ describe('buildReviewData · 今日回顾', () => {
   });
 
   it('dailyMessageCount 注入时 today.messageCount 应取当日值', () => {
-    // 缺口 3.4：dailyMessageCount 由 Sprite 累加并持久化，未注入时为 0
+    // dailyMessageCount 由 Sprite 累加并持久化，未注入时为 0
     const result = buildReviewData(makeDashboard(), [], {
       '2026-07-03': 42,
     });

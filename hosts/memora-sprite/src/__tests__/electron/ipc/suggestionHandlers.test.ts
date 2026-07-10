@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 配置建议与用户画像 IPC 处理器测试
  *
  * 覆盖范围：
@@ -245,7 +245,7 @@ describe('registerSuggestionHandlers', () => {
     expect(result).toEqual({ success: false, error: '用户画像管理器未就绪' });
   });
 
-  // FOUNDATION-SEAL Phase 3 轮2：画像 ID 校验失败路径
+  // 画像 ID 校验失败路径
   it('CONFIRM 空字符串 ID 应拒绝（不调用 profile.confirm）', async () => {
     const confirm = vi.fn(async () => {});
     const ctx = createMockCtx({
@@ -305,7 +305,7 @@ describe('registerSuggestionHandlers', () => {
     expect(result).toEqual({ success: false, error: '用户画像管理器未就绪' });
   });
 
-  // FOUNDATION-SEAL Phase 3 轮2：画像 ID 校验失败路径
+  // 画像 ID 校验失败路径
   it('REJECT 空字符串 ID 应拒绝（不调用 profile.reject）', async () => {
     const reject = vi.fn(async () => {});
     const ctx = createMockCtx({

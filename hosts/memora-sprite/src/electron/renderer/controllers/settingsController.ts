@@ -51,7 +51,6 @@ export function createSettingsController(uiManager: UIManager) {
     uiManager.onConfigSave(async (config: SpriteConfigForm) => {
       try {
         // 单次 IPC 批量更新（事务性：原子性 + 单次持久化 + 副作用去重）
-        // 替代原 10 次串行 updateConfig 调用，避免半更新状态和 N 次 writeFileSync
         const result = await window.electronAPI.updateConfigBatch({
           silentMode: config.silentMode,
           proactiveThreshold: config.proactiveThreshold,
@@ -117,7 +116,7 @@ export function createSettingsController(uiManager: UIManager) {
         fileWatcherEnabled: Boolean(safeCfg.fileWatcherEnabled),
         fileWatcherPaths: Array.isArray(safeCfg.fileWatcherPaths) ? safeCfg.fileWatcherPaths : ['.'],
         fileWatcherDebounceMs: Number(safeCfg.fileWatcherDebounceMs) || 1000,
-        /** 缺口 II：文件监听忽略模式（glob 列表，可选） */
+        /** 文件监听忽略模式（glob 列表，可选） */
         fileWatcherIgnore: Array.isArray(safeCfg.fileWatcherIgnore) ? safeCfg.fileWatcherIgnore : ['**/node_modules/**', '**/.git/**'],
         defaultPersona: String(safeCfg.defaultPersona ?? ''),
         // 项目模式字段
@@ -250,7 +249,7 @@ export function createSettingsController(uiManager: UIManager) {
     loadWorkProjections,
     loadAuditLog,
     updateAgentStatus,
-    /** 暴露静默恢复回调注册方法，替代原模块级导出函数 */
+    /** 暴露静默恢复回调注册方法，代替模块级导出函数 */
     setSilentRecoveryCallback,
   };
 }

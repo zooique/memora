@@ -20,6 +20,8 @@
 
 import type { ToastType } from '../types.js';
 import { setIcon } from '../helpers/icon.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -170,7 +172,7 @@ export class ArchiveButtonManager {
         archiveBtn.classList.remove('archiving');
       }
     } catch (err) {
-      console.error('对话归档失败:', err);
+      reportError('ArchiveButton', err);
       this.host.showToast('归档失败，请重试', 'error');
       archiveBtn.removeAttribute('disabled');
       archiveBtn.classList.remove('archiving');

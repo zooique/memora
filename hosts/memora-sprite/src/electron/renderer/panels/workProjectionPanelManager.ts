@@ -115,9 +115,11 @@ export class WorkProjectionPanelManager {
    * 渲染为卡片列表。失败时显示错误提示。
    */
   async load(): Promise<void> {
+    // try 仅包裹 IPC 调用（IO），render（DOM 渲染）移出 try，
+    // 避免 render 抛出的 DOM 错误被误当成 IO 错误处理
+    let entries: WorkProjectionPayload[];
     try {
-      const entries = await window.electronAPI.listWorkProjections();
-      this.render(entries);
+      entries = await window.electronAPI.listWorkProjections();
     } catch (err) {
       reportError('WorkProjectionPanel', `加载作品投影失败: ${toError(err).message}`);
       // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），对齐 profilePanelManager / auditPanelManager
@@ -141,7 +143,9 @@ export class WorkProjectionPanelManager {
         errorEl.appendChild(retryBtn);
         this.listEl.appendChild(errorEl);
       }
+      return; // IO 失败后不执行 render
     }
+    this.render(entries);
   }
 
   /**

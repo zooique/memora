@@ -11,7 +11,6 @@ import type { IMemoryStorage } from 'memora';
 import type { Memory } from 'memora';
 import { segmentText, validateSource, logger } from 'memora';
 import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
-// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from '../sprite/errors.js';
 
 /** 建表 SQL（含 deleted_at 列支持软删除） */

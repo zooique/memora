@@ -144,6 +144,18 @@ export class SpriteConfigManager {
     saveSpriteConfig(this.config);
 
     // 副作用统一触发（去重，每类副作用只触发一次）
+    this.triggerBatchSideEffects(keys, updates);
+
+    return { updated: true };
+  }
+
+  /**
+   * 批量更新后统一触发副作用（同类副作用只触发一次）
+   *
+   * @param keys 本次更新的配置键列表
+   * @param updates 原始更新对象（用于读取新值）
+   */
+  private triggerBatchSideEffects(keys: SpriteConfigKey[], updates: Partial<SpriteConfig>): void {
     const keySet = new Set<string>(keys);
 
     if (keySet.has('triggerIntervalMs') && typeof updates.triggerIntervalMs === 'number') {
@@ -174,8 +186,6 @@ export class SpriteConfigManager {
     if (keySet.has('projectMode') || keySet.has('focusProjectPath')) {
       void this.sideEffects.onProjectModeChanged();
     }
-
-    return { updated: true };
   }
 
   /** 类型安全地设置配置字段 */

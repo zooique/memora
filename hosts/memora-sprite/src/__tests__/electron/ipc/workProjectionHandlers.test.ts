@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 作品投影 IPC 处理器测试
  *
  * 覆盖范围：
@@ -108,7 +108,7 @@ describe('registerWorkProjectionHandlers', () => {
     expect(result).toEqual([]);
   });
 
-  it('loadAll 抛错应降级返回空数组', async () => {
+  it('loadAll 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const works = {
       loadAll: vi.fn(async () => {
         throw new Error('加载失败');
@@ -118,9 +118,7 @@ describe('registerWorkProjectionHandlers', () => {
     registerWorkProjectionHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_LIST)!;
-    const result = await callback();
-
-    expect(result).toEqual([]);
+    await expect(callback()).rejects.toThrow('加载失败');
   });
 
   // ─── WORK_PROJECTION_SHOW ──────────────────────────────
@@ -171,7 +169,7 @@ describe('registerWorkProjectionHandlers', () => {
     expect(result).toBeNull();
   });
 
-  it('getProjection 抛错应降级返回 null', async () => {
+  it('getProjection 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const works = {
       getProjection: vi.fn(async () => {
         throw new Error('查询失败');
@@ -181,14 +179,12 @@ describe('registerWorkProjectionHandlers', () => {
     registerWorkProjectionHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_SHOW)!;
-    const result = await callback({}, '/path/file.ts');
-
-    expect(result).toBeNull();
+    await expect(callback({}, '/path/file.ts')).rejects.toThrow('查询失败');
   });
 
-  // ─── FOUNDATION-SEAL Phase 3 轮3：filePath 校验失败路径 ──
+  // ─── filePath 校验失败路径 ──
 
-  it('空字符串 filePath 应降级返回 null（不调用 works.getProjection）', async () => {
+  it('空字符串 filePath 应抛出校验异常（不调用 works.getProjection）', async () => {
     const works = {
       getProjection: vi.fn(async () => createMockEntry('1', '/path/file.ts')),
     };
@@ -196,13 +192,12 @@ describe('registerWorkProjectionHandlers', () => {
     registerWorkProjectionHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_SHOW)!;
-    const result = await callback({}, '');
+    await expect(callback({}, '')).rejects.toThrow('非法文件路径');
 
-    expect(result).toBeNull();
     expect(works.getProjection).not.toHaveBeenCalled();
   });
 
-  it('非字符串 filePath 应降级返回 null', async () => {
+  it('非字符串 filePath 应抛出校验异常', async () => {
     const works = {
       getProjection: vi.fn(async () => createMockEntry('1', '/path/file.ts')),
     };
@@ -210,13 +205,12 @@ describe('registerWorkProjectionHandlers', () => {
     registerWorkProjectionHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_SHOW)!;
-    const result = await callback({}, null as unknown as string);
+    await expect(callback({}, null as unknown as string)).rejects.toThrow('非法文件路径');
 
-    expect(result).toBeNull();
     expect(works.getProjection).not.toHaveBeenCalled();
   });
 
-  it('超长 filePath（1001 字符）应降级返回 null', async () => {
+  it('超长 filePath（1001 字符）应抛出校验异常', async () => {
     const works = {
       getProjection: vi.fn(async () => createMockEntry('1', '/path/file.ts')),
     };
@@ -224,9 +218,8 @@ describe('registerWorkProjectionHandlers', () => {
     registerWorkProjectionHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.WORK_PROJECTION_SHOW)!;
-    const result = await callback({}, 'a'.repeat(1001));
+    await expect(callback({}, 'a'.repeat(1001))).rejects.toThrow('非法文件路径');
 
-    expect(result).toBeNull();
     expect(works.getProjection).not.toHaveBeenCalled();
   });
 });

@@ -113,7 +113,6 @@ async function bootstrapRenderer(): Promise<void> {
   const wrappedSchedule = (ms: number) => { originalSchedule(ms); syncTimerRef(); };
 
   // 注册静默恢复回调：启动时若静默模式未过期，重建本地定时器
-  // 改用控制器方法替代原模块级导出函数
   settingsController.setSilentRecoveryCallback(wrappedSchedule);
 
   // setupSettingsPanel 已提前到第 82 行与其他面板 setup 同一位置
@@ -353,10 +352,10 @@ async function bootstrapRenderer(): Promise<void> {
       // 用户点击"静默"→ 记录拒绝事件
       window.electronAPI.proactiveReject();
       // 通知主进程进入静默模式
-      void window.electronAPI.updateConfig('silentMode', true);
+      void window.electronAPI.updateConfig('silentMode', true).catch((e: unknown) => reportError('onSilent-updateConfig', e));
       // 持久化恢复时间，页面刷新后也能正确恢复
       const expiresAt = new Date(Date.now() + SILENT_RECOVERY_MS).toISOString();
-      void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
+      void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt).catch((e: unknown) => reportError('onSilent-updateConfigExpiresAt', e));
       // 操作反馈走 toast（静默模式是用户主动触发的状态变更）
       State.uiManager.showToast('已进入静默模式，精灵 1 小时内不会主动提示（到期自动恢复）', 'info');
       // 设置本地定时器：1 小时后自动关闭静默模式（复用 wrappedSchedule 统一逻辑）
@@ -375,10 +374,10 @@ async function bootstrapRenderer(): Promise<void> {
       if (!confirmed) return;
       // 用户点击"不再提醒"→ 记录拒绝事件
       window.electronAPI.proactiveReject();
-      void window.electronAPI.updateConfig('silentMode', true);
+      void window.electronAPI.updateConfig('silentMode', true).catch((e: unknown) => reportError('onDisable-updateConfig', e));
       // 设置一个较长的恢复时间（24 小时），等效于"不再提醒"
       const expiresAt = new Date(Date.now() + MS_PER_DAY).toISOString();
-      void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt);
+      void window.electronAPI.updateConfig('silentModeExpiresAt', expiresAt).catch((e: unknown) => reportError('onDisable-updateConfigExpiresAt', e));
       State.uiManager.showToast('已关闭主动提示（24 小时内不再提醒）。如需恢复，请到设置面板调整主动提示阈值', 'info');
     },
   });

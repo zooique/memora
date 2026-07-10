@@ -23,7 +23,6 @@ import { logger, safeSetTimeout, clearSafeTimeout } from 'memora';
 import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { AuditManager } from '../sprite/audit/auditManager.js';
-// P2 剪枝：写入确认超时常量从 constants.ts 真理源导入，消除散落定义
 import { CONFIRMATION_TIMEOUT_MS } from '../sprite/constants.js';
 
 /**

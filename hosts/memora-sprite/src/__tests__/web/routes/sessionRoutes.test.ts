@@ -673,9 +673,8 @@ describe('handleSessionRoute', () => {
 
       await handleSessionRoute(req, res, ctx);
 
-      expect(res.statusCode).toBe(200); // 注意：源码用 sendJson(200, {success:false}) 而非 400
+      expect(res.statusCode).toBe(400);
       const body = JSON.parse(res.body);
-      expect(body.success).toBe(false);
       expect(body.error).toContain('无效的会话名');
     }
   });
@@ -694,8 +693,8 @@ describe('handleSessionRoute', () => {
 
     await handleSessionRoute(req, res, ctx);
 
+    expect(res.statusCode).toBe(400);
     const body = JSON.parse(res.body);
-    expect(body.success).toBe(false);
     expect(body.error).toContain('无效的会话名');
   });
 

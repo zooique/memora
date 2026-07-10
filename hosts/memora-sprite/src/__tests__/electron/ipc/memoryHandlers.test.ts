@@ -109,7 +109,7 @@ describe('registerMemoryHandlers', () => {
     expect(listMemories).toHaveBeenCalledWith(undefined);
   });
 
-  it('MEMORIES_LIST 抛错应降级返回空列表', async () => {
+  it('MEMORIES_LIST 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const listMemories = vi.fn(() => {
       throw new Error('数据库错误');
     });
@@ -117,9 +117,7 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_LIST)!;
-    const result = await callback({}, {});
-
-    expect(result).toEqual({ memories: [] });
+    await expect(callback({}, {})).rejects.toThrow('数据库错误');
   });
 
   // ─── MEMORIES_SEARCH ───────────────────────────────────
@@ -137,7 +135,7 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ hits });
   });
 
-  it('MEMORIES_SEARCH 抛错应降级返回空结果', async () => {
+  it('MEMORIES_SEARCH 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const searchMemories = vi.fn(async () => {
       throw new Error('搜索失败');
     });
@@ -145,34 +143,30 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SEARCH)!;
-    const result = await callback({}, '关键词');
-
-    expect(result).toEqual({ hits: [] });
+    await expect(callback({}, '关键词')).rejects.toThrow('搜索失败');
   });
 
-  // FOUNDATION-SEAL Phase 3：搜索关键词校验失败路径
-  it('MEMORIES_SEARCH 非字符串关键词应拒绝（返回空结果，不调用内核）', async () => {
+  // 搜索关键词校验失败路径
+  it('MEMORIES_SEARCH 非字符串关键词应抛出校验异常（不调用内核）', async () => {
     const searchMemories = vi.fn(async () => []);
     const ctx = createMockCtx({ searchMemories });
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SEARCH)!;
-    const result = await callback({}, 123 as unknown as string);
+    await expect(callback({}, 123 as unknown as string)).rejects.toThrow('非法搜索关键词');
 
     expect(searchMemories).not.toHaveBeenCalled();
-    expect(result).toEqual({ hits: [] });
   });
 
-  it('MEMORIES_SEARCH 超长关键词应拒绝（返回空结果，不调用内核）', async () => {
+  it('MEMORIES_SEARCH 超长关键词应抛出校验异常（不调用内核）', async () => {
     const searchMemories = vi.fn(async () => []);
     const ctx = createMockCtx({ searchMemories });
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SEARCH)!;
-    const result = await callback({}, 'a'.repeat(1001));
+    await expect(callback({}, 'a'.repeat(1001))).rejects.toThrow('非法搜索关键词');
 
     expect(searchMemories).not.toHaveBeenCalled();
-    expect(result).toEqual({ hits: [] });
   });
 
   // ─── MEMORIES_SHOW ─────────────────────────────────────
@@ -190,7 +184,7 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ memory });
   });
 
-  it('MEMORIES_SHOW 抛错应降级返回 null', async () => {
+  it('MEMORIES_SHOW 抛错应向上抛出（让渲染层感知加载失败）', async () => {
     const showMemory = vi.fn(() => {
       throw new Error('未找到');
     });
@@ -198,46 +192,41 @@ describe('registerMemoryHandlers', () => {
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SHOW)!;
-    const result = await callback({}, '1');
-
-    expect(result).toEqual({ memory: null });
+    await expect(callback({}, '1')).rejects.toThrow('未找到');
   });
 
-  // FOUNDATION-SEAL Phase 3：记忆 ID 校验失败路径
-  it('MEMORIES_SHOW 空字符串 ID 应拒绝（返回 null，不调用内核）', async () => {
+  // 记忆 ID 校验失败路径
+  it('MEMORIES_SHOW 空字符串 ID 应抛出校验异常（不调用内核）', async () => {
     const showMemory = vi.fn(() => null);
     const ctx = createMockCtx({ showMemory });
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SHOW)!;
-    const result = await callback({}, '');
+    await expect(callback({}, '')).rejects.toThrow('非法记忆 ID');
 
     expect(showMemory).not.toHaveBeenCalled();
-    expect(result).toEqual({ memory: null });
   });
 
-  it('MEMORIES_SHOW 非字符串 ID 应拒绝（返回 null，不调用内核）', async () => {
+  it('MEMORIES_SHOW 非字符串 ID 应抛出校验异常（不调用内核）', async () => {
     const showMemory = vi.fn(() => null);
     const ctx = createMockCtx({ showMemory });
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SHOW)!;
-    const result = await callback({}, null as unknown as string);
+    await expect(callback({}, null as unknown as string)).rejects.toThrow('非法记忆 ID');
 
     expect(showMemory).not.toHaveBeenCalled();
-    expect(result).toEqual({ memory: null });
   });
 
-  it('MEMORIES_SHOW 超长 ID 应拒绝（返回 null，不调用内核）', async () => {
+  it('MEMORIES_SHOW 超长 ID 应抛出校验异常（不调用内核）', async () => {
     const showMemory = vi.fn(() => null);
     const ctx = createMockCtx({ showMemory });
     registerMemoryHandlers(ctx);
 
     const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_SHOW)!;
-    const result = await callback({}, 'a'.repeat(501));
+    await expect(callback({}, 'a'.repeat(501))).rejects.toThrow('非法记忆 ID');
 
     expect(showMemory).not.toHaveBeenCalled();
-    expect(result).toEqual({ memory: null });
   });
 
   // ─── MEMORIES_DELETE ───────────────────────────────────
@@ -267,7 +256,7 @@ describe('registerMemoryHandlers', () => {
     expect(result).toEqual({ deleted: false });
   });
 
-  // FOUNDATION-SEAL Phase 3：记忆 ID 校验失败路径
+  // 记忆 ID 校验失败路径
   it('MEMORIES_DELETE 空字符串 ID 应拒绝（返回 deleted: false，不调用内核）', async () => {
     const deleteMemory = vi.fn(() => false);
     const ctx = createMockCtx({ deleteMemory });

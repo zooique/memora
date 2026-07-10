@@ -38,7 +38,7 @@ import type { AuditManager } from '../../sprite/audit/auditManager.js';
 
 // ─── Mock memora 模块 ────────────────────────────────────
 // 仅覆盖 safeSetTimeout/clearSafeTimeout（透传到原生 setTimeout/clearTimeout），
-// 保留 logger/setLogger 原实现，使 setLogger(mockLogger) 能注入到 agentListeners.ts
+// 保留 logger/setLogger 默认实现，使 setLogger(mockLogger) 能注入到 agentListeners.ts
 vi.mock('memora', async (importOriginal) => {
   // importOriginal 返回完整模块，spread 后覆盖定时器相关函数
   const actual = await importOriginal();

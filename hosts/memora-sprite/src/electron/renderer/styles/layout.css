@@ -3,7 +3,7 @@
  *
  * v9 布局策略（UI 布局重思方案）：
  * - 大底板：64px 图标侧边栏 + 顶部栏融为一体（同色，无边界）
- * - v3：侧边栏固定 64px 图标模式（不再展开）
+ * - 侧边栏固定 64px 图标模式（不再展开）
  * - 核心窗口：白色悬浮卡片（margin + border-radius + box-shadow）
  * - 顶部栏：纯窗口拖拽区 + 命令面板入口 + 窗口控制按钮
  * - CSS Grid 布局：grid-template-areas 定义三区域
@@ -12,7 +12,7 @@
  */
 
 /* ─── 大底板容器（grid 布局，左侧 + 顶部连成一片） ───────── */
-/* v3：侧边栏固定 64px，不再展开 */
+/* 侧边栏固定 64px，不再展开 */
 #app {
   height: 100vh;
   display: grid;
@@ -23,7 +23,7 @@
     "sidebar titlebar"
     "sidebar window";
   background: var(--bg);
-  /* v3：不再有 grid-template-columns 变化，保留 transition 以备后用 */
+  /* 不再有 grid-template-columns 变化，保留 transition 以备后用 */
   transition: grid-template-columns var(--transition-base) ease;
 }
 
@@ -274,7 +274,7 @@
   color: var(--subtext);
 }
 
-/* ─── v3：工具栏内角色选择器容器 ────────────────────────── */
+/* ─── 工具栏内角色选择器容器 ────────────────────────── */
 .toolbar-persona-container {
   position: relative;
   flex-shrink: 0;
@@ -432,7 +432,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative; /* B4：为 ::after tooltip 提供定位锚点 */
+  position: relative; /* 为 ::after tooltip 提供定位锚点 */
   padding: var(--space-2-5);
   border: none;
   border-radius: var(--radius-md);
@@ -464,7 +464,7 @@
   flex-shrink: 0;
 }
 
-/* B4：侧边栏 tooltip 改 CSS ::after（对齐 demo v3，替代原生 title 属性） */
+/* 侧边栏 tooltip 改 CSS ::after（对齐 demo，代替 title 属性） */
 /* 使用 data-tooltip 属性存储提示文本，hover 时通过 ::after 伪元素渲染 */
 .nav-btn::after {
   content: attr(data-tooltip);
@@ -905,7 +905,7 @@
 
 /* 中屏（≤799px）：消息气泡放宽 */
 @media (max-width: 799px) {
-  /* v3：侧边栏始终 64px，无需 override */
+  /* 侧边栏始终 64px，无需 override */
   #app {
     grid-template-columns: 64px 1fr;
   }

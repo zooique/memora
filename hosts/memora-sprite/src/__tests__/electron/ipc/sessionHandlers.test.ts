@@ -1,5 +1,5 @@
 /**
- * sessionHandlers IPC 处理器测试（QC-TEST-SESSION）
+ * sessionHandlers IPC 处理器测试
  *
  * 覆盖范围：
  * - SESSION_LOAD：明确参数加载 + 无参数智能回退（当天 main → 最近会话 → 空会话）+ 分页 + 失败降级
@@ -12,7 +12,7 @@
  * Mock 策略：
  * - electron.ipcMain：vi.mock + handleCallbacks Map（对齐 configHandlers.test.ts 模式）
  * - errorHandler：mock handle 方法
- * - sessionStore：mock 全部 7 个方法
+ * - sessionStore：mock 全部 9 个方法（含 deleteSessionsByDatePrefix / listSessionsGroupedByDate 两个聚合方法）
  * - agent：mock agentHistory/sessionManager/agentLoop 子集
  * - getLocalDate：mock 为固定日期，确保跨日逻辑测试稳定
  */
@@ -63,7 +63,7 @@ function makeMsg(role: 'user' | 'assistant', content: string, timestamp?: string
   return { role, content, timestamp: timestamp ?? new Date().toISOString() };
 }
 
-/** 创建 mock sessionStore（全部 7 个方法） */
+/** 创建 mock sessionStore（全部 9 个方法） */
 function createMockSessionStore(overrides?: {
   listSessions?: string[];
   countMessages?: number;
@@ -72,6 +72,10 @@ function createMockSessionStore(overrides?: {
   deleteSession?: boolean;
   renameSession?: boolean;
   getFirstUserMessage?: string;
+  /** 批量删除返回的删除数量 */
+  deleteSessionsByDatePrefix?: number;
+  /** 按日期聚合的会话列表 */
+  listSessionsGroupedByDate?: Array<{ id: string; date: string; name: string; preview: string; messageCount: number }>;
 }) {
   return {
     listSessions: vi.fn(() => overrides?.listSessions ?? []),
@@ -79,8 +83,10 @@ function createMockSessionStore(overrides?: {
     loadMessages: vi.fn(() => overrides?.loadMessages ?? []),
     loadMessagesPaginated: vi.fn(() => overrides?.loadMessagesPaginated ?? []),
     deleteSession: vi.fn(() => overrides?.deleteSession ?? true),
+    deleteSessionsByDatePrefix: vi.fn(() => overrides?.deleteSessionsByDatePrefix ?? 0),
     renameSession: vi.fn(() => overrides?.renameSession ?? true),
     getFirstUserMessage: vi.fn(() => overrides?.getFirstUserMessage ?? ''),
+    listSessionsGroupedByDate: vi.fn(() => overrides?.listSessionsGroupedByDate ?? []),
   };
 }
 
@@ -268,7 +274,7 @@ describe('sessionHandlers', () => {
       expect(result).toEqual({ messages: [], loadedSessionId: '', total: 0, hasMore: false });
     });
 
-    // ─── FOUNDATION-SEAL Phase 3 轮3：query 对象校验失败路径 ──
+    // ─── query 对象校验失败路径 ──
 
     it('query=null 应降级返回空数组（不调用内核）', async () => {
       const sessionStore = createMockSessionStore();
@@ -416,7 +422,7 @@ describe('sessionHandlers', () => {
       expect(result.error).toBe('恢复失败');
     });
 
-    // ─── FOUNDATION-SEAL Phase 3 轮3：query 对象 + date 校验失败路径 ──
+    // ─── query 对象 + date 校验失败路径 ──
 
     it('query=null 应拒绝（不调用 Agent）', async () => {
       const ctx = createMockCtx();
@@ -478,9 +484,9 @@ describe('sessionHandlers', () => {
     });
 
     it('应按日期前缀批量删除当天所有子会话', async () => {
+      // 聚合删除已下沉到 sessionStore.deleteSessionsByDatePrefix，返回删除数量
       const sessionStore = createMockSessionStore({
-        listSessions: ['2026-06-25-main', '2026-06-25-coding', '2026-06-26-main'],
-        deleteSession: true,
+        deleteSessionsByDatePrefix: 2,
       });
       const ctx = createMockCtx({ sessionStore });
       registerSessionHandlers(ctx);
@@ -488,18 +494,14 @@ describe('sessionHandlers', () => {
       const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_DELETE)!;
       const result = await callback({}, '2026-06-25-main');
 
-      // 应删除 2026-06-25 的两个会话（main + coding）
+      // 应调用下沉方法，传入日期前缀（sessionId 前 10 字符）
       expect(result.success).toBe(true);
-      expect(sessionStore.deleteSession).toHaveBeenCalledTimes(2);
-      expect(sessionStore.deleteSession).toHaveBeenCalledWith('2026-06-25-main');
-      expect(sessionStore.deleteSession).toHaveBeenCalledWith('2026-06-25-coding');
-      expect(sessionStore.deleteSession).not.toHaveBeenCalledWith('2026-06-26-main');
+      expect(sessionStore.deleteSessionsByDatePrefix).toHaveBeenCalledWith('2026-06-25');
     });
 
     it('未找到匹配会话时应返回错误', async () => {
       const sessionStore = createMockSessionStore({
-        listSessions: ['2026-06-26-main'], // 只有当天
-        deleteSession: true,
+        deleteSessionsByDatePrefix: 0, // 返回 0 表示未找到匹配
       });
       const ctx = createMockCtx({ sessionStore });
       registerSessionHandlers(ctx);
@@ -515,8 +517,7 @@ describe('sessionHandlers', () => {
       const loadSessionMessages = vi.fn().mockResolvedValue(undefined);
       const restoreHistory = vi.fn();
       const sessionStore = createMockSessionStore({
-        listSessions: ['2026-06-25-main'],
-        deleteSession: true,
+        deleteSessionsByDatePrefix: 1, // 删除成功
       });
       const ctx = createMockCtx({
         sessionStore,
@@ -695,11 +696,15 @@ describe('sessionHandlers', () => {
   // ─── SESSION_LIST ──────────────────────────────────────
 
   describe('SESSION_LIST', () => {
-    it('应按日期聚合并始终包含当天占位会话', async () => {
+    it('应直接透传 sessionStore 返回的聚合列表', async () => {
+      // 聚合 + 解析 + preview 逻辑已下沉到 sessionStore.listSessionsGroupedByDate
+      const grouped = [
+        { id: '2026-06-24-main', date: '2026-06-24', name: 'main', preview: '预览1', messageCount: 3 },
+        { id: '2026-06-25-coding', date: '2026-06-25', name: 'coding', preview: '预览2', messageCount: 5 },
+        { id: '2026-06-26-main', date: '2026-06-26', name: 'main', preview: '', messageCount: 0 },
+      ];
       const sessionStore = createMockSessionStore({
-        listSessions: ['2026-06-24-main', '2026-06-25-main', '2026-06-25-coding'],
-        countMessages: 3,
-        getFirstUserMessage: '预览内容',
+        listSessionsGroupedByDate: grouped,
       });
       const ctx = createMockCtx({ sessionStore });
       registerSessionHandlers(ctx);
@@ -707,18 +712,15 @@ describe('sessionHandlers', () => {
       const callback = handleCallbacks.get(IPC_CHANNELS.SESSION_LIST)!;
       const result = await callback({});
 
-      // 06-24 一条 + 06-25 取最后一条（coding）+ 06-26 当天占位 = 3 条
+      // handler 应将 today 透传给 sessionStore 并直接返回结果
+      expect(sessionStore.listSessionsGroupedByDate).toHaveBeenCalledWith('2026-06-26');
+      expect(result.sessions).toEqual(grouped);
       expect(result.sessions).toHaveLength(3);
-      const dates = result.sessions.map((s: { date: string }) => s.date);
-      expect(dates).toEqual(['2026-06-24', '2026-06-25', '2026-06-26']);
-      // 当天占位会话 id 应为 2026-06-26-main
-      const todaySession = result.sessions.find((s: { date: string }) => s.date === '2026-06-26');
-      expect(todaySession.id).toBe('2026-06-26-main');
     });
 
     it('列出失败应降级返回空数组', async () => {
       const sessionStore = createMockSessionStore();
-      sessionStore.listSessions.mockImplementation(() => {
+      sessionStore.listSessionsGroupedByDate.mockImplementation(() => {
         throw new Error('列表查询失败');
       });
       const ctx = createMockCtx({ sessionStore });

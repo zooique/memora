@@ -18,7 +18,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ─── Mock memora 模块 ─────────────────────────────────────
 // errorHandler.ts 顶部 import { toError, logger } from 'memora'
-// toError 保留原实现（仅做错误对象标准化），logger 用 vi.fn() 捕获
+// toError 保留默认实现（仅做错误对象标准化），logger 用 vi.fn() 捕获
 
 vi.mock('memora', () => ({
   toError: (err: unknown): Error => {
@@ -113,7 +113,7 @@ describe('ErrorCode 枚举', () => {
     expect(ErrorCode.FILE_READ_FAILED).toBe('FILE_READ_FAILED');
     expect(ErrorCode.NETWORK_ERROR).toBe('NETWORK_ERROR');
     expect(ErrorCode.API_ERROR).toBe('API_ERROR');
-    // P0-B 新增：存储与校验错误码
+    // 存储与校验错误码
     expect(ErrorCode.STORAGE_ERROR).toBe('STORAGE_ERROR');
     expect(ErrorCode.VALIDATION_ERROR).toBe('VALIDATION_ERROR');
   });

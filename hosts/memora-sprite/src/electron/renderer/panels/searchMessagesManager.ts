@@ -20,6 +20,8 @@
  * - 两者互斥，不会同时打开（z-index 相同，但打开一个时另一个已关闭）
  */
 import { EventTracker } from '../helpers/eventTracker.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 import { clearElement, escapeHtml, formatClock, formatDateKey } from '../helpers/domHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
 
@@ -83,7 +85,7 @@ export class SearchMessagesManager {
     this.resultsEl = document.getElementById('search-messages-results');
 
     if (!(this.modalEl instanceof HTMLElement) || !(inputEl instanceof HTMLInputElement) || !(this.resultsEl instanceof HTMLElement)) {
-      console.warn('[SearchMessages] 搜索弹窗 DOM 元素缺失，功能降级');
+      reportError('SearchMessages', '搜索弹窗 DOM 元素缺失，功能降级', 'warn');
       return;
     }
     this.inputEl = inputEl;
@@ -260,7 +262,7 @@ export class SearchMessagesManager {
       if (!this.isOpen) return;
       this.renderResults(results, keyword);
     } catch (error) {
-      console.error('[SearchMessages] 搜索失败:', error);
+      reportError('SearchMessages', error);
       if (this.isOpen) {
         this.renderEmpty('搜索失败，请重试');
       }

@@ -22,7 +22,6 @@ import { MAIN_TO_RENDERER_CHANNELS } from './ipc/channels.js';
 import type { WindowManager } from './windows/windowManager.js';
 import type { WindowStateManager } from './windows/windowState.js';
 import type { TrayManager } from './trayIcon.js';
-// P2 剪枝：主动提示托盘重置超时常量从 constants.ts 真理源导入，消除散落定义
 import { PROACTIVE_TRAY_RESET_MS } from '../sprite/constants.js';
 
 /**
@@ -53,7 +52,7 @@ const spriteEventUnsubscribers: Array<() => void> = [];
  *
  * 泛型 K 约束 eventName 为 SpriteEventMap 合法键，
  * toPayload 的参数类型自动推导为 SpriteEventMap[K]，无需类型断言。
- * 替代原 SIMPLE_EVENT_FORWARDERS 映射表 + never 类型 + as 断言的反模式。
+ * 代替 SIMPLE_EVENT_FORWARDERS 映射表 + never 类型 + as 断言的反模式。
  *
  * @param deps 依赖
  * @param eventName 事件名
@@ -195,7 +194,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     }
   });
 
-  // 7 个简单转发事件：逐个类型安全注册（替代原映射表 + for 循环）
+  // 7 个简单转发事件：逐个类型安全注册
   // 记忆新增 → 仪表盘计数 +1
   forwardSimpleEvent(deps, 'memoryNoticed', () => ({}));
   // 洞察提取 → 仪表盘计数 +1
@@ -261,8 +260,7 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
   // 回收站自动清理完成 → 渲染层 toast 通知
   forwardSimpleEvent(deps, 'trashPurged', (e) => ({ purgedCount: e.purgedCount }));
 
-  // 缺口 1.2：在场状态变化 → 完整窗口感知面板 + 浮动窗口视觉反馈
-  // 此前 presenceChanged 事件未在桥接层转发，渲染层 handler 从未触发（流断点修复）
+  // 在场状态变化 → 完整窗口感知面板 + 浮动窗口视觉反馈
   // 浮动窗口需要独立推送：80x80 球体在用户离开时无视觉变化，体验割裂
   registerSpriteEvent(deps, 'presenceChanged', (e) => {
     // 1. 推送到完整窗口（perceptionRenderer 更新在场状态指示器）

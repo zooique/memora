@@ -30,7 +30,7 @@ import type { WindowManager } from '../windows/windowManager.js';
 import type { SqliteSessionStore } from '../../storage/sessionStore.js';
 import { spriteConfigStore, resolveProviderConfig } from '../../storage/spriteConfigStore.js';
 import { saveLlmConfig, reinitAgent, PROVIDER_PRESETS, getLlmProviders, saveLlmProvider, deleteLlmProvider, setActiveLlmProvider } from '../../index.js';
-import { isValidContent } from './inputValidation.js';
+import { isValidContent, isNonEmptyString } from './inputValidation.js';
 
 /**
  * 脱敏 API Key 供渲染进程显示
@@ -296,7 +296,7 @@ export function registerMinimalIpcHandlers(
       key: string,
       config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number },
     ) => {
-      if (!key || typeof key !== 'string' || !config?.apiKey) {
+      if (!isNonEmptyString(key) || !config?.apiKey) {
         return { success: false, error: '参数无效' };
       }
       try {
@@ -312,7 +312,7 @@ export function registerMinimalIpcHandlers(
   ipcMain.handle(
     IPC_CHANNELS.LLM_PROVIDER_DELETE,
     async (_event, key: string) => {
-      if (!key || typeof key !== 'string') {
+      if (!isNonEmptyString(key)) {
         return { success: false, error: '参数无效' };
       }
       try {
@@ -328,7 +328,7 @@ export function registerMinimalIpcHandlers(
   ipcMain.handle(
     IPC_CHANNELS.LLM_PROVIDER_SET_ACTIVE,
     async (_event, key: string) => {
-      if (!key || typeof key !== 'string') {
+      if (!isNonEmptyString(key)) {
         return { success: false, error: '参数无效' };
       }
       try {
@@ -428,7 +428,7 @@ export function registerMinimalIpcHandlers(
     state.windowManager?.updateBackgroundColor(bgColor);
   });
 
-  // FOUNDATION-SEAL Phase 4：渲染进程日志上报（转发到主进程 logger）
+  // 渲染进程日志上报（转发到主进程 logger）
   // 渲染进程无 pino，通过 IPC 将错误/警告转发到主进程统一日志
   ipcMain.on(IPC_CHANNELS.RENDERER_LOG, (_event, payload: { level: 'warn' | 'error'; context: string; message: string }) => {
     const { level, context, message } = payload;

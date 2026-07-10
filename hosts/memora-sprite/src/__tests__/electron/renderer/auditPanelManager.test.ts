@@ -154,7 +154,7 @@ describe('load · 成功与失败', () => {
     window.electronAPI.listAuditLog = vi.fn().mockRejectedValue(new Error('网络错误'));
     const manager = createManager();
     await manager.load();
-    // P2-07：错误态统一用 .error-state（替代 .profile-empty）
+    // 错误态统一用 .error-state（替代 .profile-empty）
     const errorEl = document.querySelector('#audit-list .error-state');
     expect(errorEl).not.toBeNull();
     expect(errorEl!.textContent).toContain('加载失败');
@@ -184,7 +184,7 @@ describe('render · 计数更新', () => {
 });
 
 describe('render · 事件类型符号映射', () => {
-  // SVG sprite 替代原 Unicode 符号（✓✗⚑◯↩），通过 use href 断言图标引用
+  // SVG sprite 代替 Unicode 符号（✓✗⚑◯↩），通过 use href 断言图标引用
   it('path-allow 应映射为 check 图标', async () => {
     window.electronAPI.listAuditLog = vi.fn().mockResolvedValue([createEntry({ type: 'path-allow' })]);
     const manager = createManager();
@@ -290,7 +290,7 @@ describe('clear 流程', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // P2-07：清空失败错误态统一用 .error-state（含图标 + 文字，用 toContain 匹配）
+    // 清空失败错误态统一用 .error-state（含图标 + 文字，用 toContain 匹配）
     const errorEl = document.querySelector('#audit-list .error-state');
     expect(errorEl).not.toBeNull();
     expect(errorEl!.textContent).toContain('清空审计日志失败');

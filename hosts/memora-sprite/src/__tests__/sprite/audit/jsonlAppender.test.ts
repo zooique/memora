@@ -1,5 +1,5 @@
 /**
- * JsonlAppender 单元测试（QC-TEST-AUDIT）
+ * JsonlAppender 单元测试
  *
  * 覆盖范围：
  * - append：追加写入 + 串行化写入队列 + writeCount 累计
@@ -7,7 +7,7 @@
  * - clear：清空文件
  * - truncateIfNeeded：超出 maxEntries 时截断保留最近条目
  * - truncateCheckInterval：计数器间隔检查（非每次写入都截断）
- * - 串行化写入顺序：快速连续 append 后验证文件内容顺序（QC-FLAKY-JSONL）
+ * - 串行化写入顺序：快速连续 append 后验证文件内容顺序
  * - 错误降级：文件不存在返回空数组 + 单行 JSON 解析失败跳过
  * - 构造函数：自动创建目录
  *

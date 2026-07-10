@@ -166,64 +166,95 @@ export class Sprite {
   private configManager: SpriteConfigManager;
   private lifecycleManager: SpriteLifecycleManager;
 
-  // ─── 控制器 ──────────────────────────────────────────────
-  private memoryController: MemoryController;
-  private personaController: PersonaController;
-  private proactiveEngine: ProactiveEngine;
+  // ─── 控制器（在 initControllers / initPerceptionStack 中初始化，使用 !: 断言） ───
+  private memoryController!: MemoryController;
+  private personaController!: PersonaController;
+  private proactiveEngine!: ProactiveEngine;
   /** Phase 3.2：在场状态控制器（可选，需宿主注入 powerMonitor/app） */
   private presenceController: PresenceController | null = null;
   /** Phase 2.1：情感基调控制器 */
-  private affectController: AffectController;
+  private affectController!: AffectController;
   /** Phase 3：默契度控制器 */
-  private rapportController: RapportController;
+  private rapportController!: RapportController;
   /** Phase 4：对话上下文感知器 */
-  private contextAwareness: ContextAwareness;
+  private contextAwareness!: ContextAwareness;
   /** Phase 2+：记忆模式检测器 */
-  private patternDetector: PatternDetector;
+  private patternDetector!: PatternDetector;
   /** 可观测性 tracer */
   private readonly tracer: ITracer | null;
 
   // ─── 感知数据缓存 ───
   /** 感知推导协调器 */
-  private perceptionCoordinator: PerceptionCoordinator;
+  private perceptionCoordinator!: PerceptionCoordinator;
 
   constructor(options: SpriteOptions) {
+    // ─── 基础属性 ───
     this.agent = options.agent;
     this.projectPath = options.projectPath ?? options.dataDir;
     this.allowedPaths = options.allowedPaths ?? [];
     this.tracer = options.tracer ?? null;
+
+    // ─── 初始化触发器总线 + 控制器 ───
     const config = loadSpriteConfig();
     this.triggerBus = new TriggerBus();
     this.triggerBus.register(new TimerTrigger(config.triggerIntervalMs));
+    this.initControllers(config, options.vectorStore);
 
-    // 初始化控制器
-    this.memoryController = new MemoryController(this.agent, options.vectorStore);
+    // ─── 初始化感知栈（情感/默契/上下文/模式） ───
+    this.initPerceptionStack();
+
+    // ─── 创建 ConfigManager（配置持久化 + 副作用） ───
+    this.configManager = new SpriteConfigManager(config, this.buildConfigSideEffects());
+
+    // ─── 创建 LifecycleManager（生命周期编排） ───
+    this.lifecycleManager = this.createLifecycleManager(config, options);
+
+    // ─── 启动后注册 ───
+    if (config.fileWatcherEnabled) {
+      this.lifecycleManager.registerFileWatcher();
+    }
+    // ADR-015: 启动时从 spriteConfig 读取 archiveMode 并应用到 Agent
+    this.agent.setArchiveMode(config.archiveMode);
+  }
+
+  /**
+   * 初始化核心控制器（记忆/角色/主动提示引擎）
+   *
+   * @param config - 精灵配置（loadSpriteConfig 返回的完整配置）
+   * @param vectorStore - 向量存储（可选，用于语义搜索召回）
+   */
+  private initControllers(config: Required<SpriteConfig>, vectorStore?: IVectorStore): void {
+    this.memoryController = new MemoryController(this.agent, vectorStore);
     this.personaController = new PersonaController(this.agent);
     this.proactiveEngine = new ProactiveEngine({
       threshold: config.proactiveThreshold,
       cooldownMs: config.proactiveCooldownMs,
       silentMode: config.silentMode,
     });
-
-    // 缺口 3.4：注入每日消息计数 provider
+    // 注入每日消息计数 provider（延迟访问 configManager，运行时才解析）
     this.memoryController.setMessageCountProvider(() => this.configManager.getDailyMessageCounts());
+  }
 
+  /**
+   * 初始化感知栈（情感基调/默契度/上下文/模式检测 + 协调器）
+   *
+   * 创建感知控制器集群，并通过 PerceptionCoordinator 统一编排事件发射。
+   */
+  private initPerceptionStack(): void {
     this.affectController = new AffectController({
       acceptanceRate: 0.5,
       currentPersona: null,
     });
-
     this.rapportController = new RapportController({
       acceptanceRate: 0.5,
       interactionDays: 0,
       totalMessages: 0,
       sourceDiversity: 0,
     });
-
     this.contextAwareness = new ContextAwareness();
     this.patternDetector = new PatternDetector();
 
-    // 初始化感知推导协调器
+    // 初始化感知推导协调器（统一编排感知事件发射）
     this.perceptionCoordinator = new PerceptionCoordinator({
       agent: this.agent,
       affectController: this.affectController,
@@ -243,9 +274,18 @@ export class Sprite {
     this.proactiveEngine.setEmitter((event, payload) => {
       this.emitSprite(event as keyof SpriteEventMap, payload as SpriteEventMap[keyof SpriteEventMap]);
     });
+  }
 
-    // ─── 创建 ConfigManager（配置持久化） ───
-    const configSideEffects: ConfigSideEffects = {
+  /**
+   * 构建配置变更副作用回调表
+   *
+   * ConfigManager 在配置变更时触发这些回调，将变更应用到运行时组件。
+   * 回调在运行时执行，此时 lifecycleManager 等组件已初始化完成。
+   *
+   * @returns 配置副作用映射表
+   */
+  private buildConfigSideEffects(): ConfigSideEffects {
+    return {
       onTriggerIntervalChanged: (ms) => {
         this.triggerBus.unregister('timer');
         this.triggerBus.register(new TimerTrigger(ms));
@@ -263,15 +303,21 @@ export class Sprite {
         return this.applyProjectMode();
       },
       onArchiveModeChanged: (mode) => {
-        // ADR-015: 归档模式变更时应用到 Agent
-        // setArchiveMode 内部有 _chatBusy 守卫
+        // ADR-015: 归档模式变更时应用到 Agent（setArchiveMode 内部有 _chatBusy 守卫）
         this.agent.setArchiveMode(mode as 'full' | 'insights-only' | 'manual');
       },
     };
-    this.configManager = new SpriteConfigManager(config, configSideEffects);
+  }
 
-    // ─── 创建 LifecycleManager（生命周期编排） ───
-    this.lifecycleManager = new SpriteLifecycleManager({
+  /**
+   * 创建生命周期管理器
+   *
+   * @param config - 精灵配置（loadSpriteConfig 返回的完整配置）
+   * @param options - 构造选项（提供 dataDir / allowedPaths 等）
+   * @returns 生命周期管理器实例
+   */
+  private createLifecycleManager(config: Required<SpriteConfig>, options: SpriteOptions): SpriteLifecycleManager {
+    return new SpriteLifecycleManager({
       agent: this.agent,
       triggerBus: this.triggerBus,
       config: config,
@@ -288,14 +334,6 @@ export class Sprite {
         this.emitSprite(event as keyof SpriteEventMap, payload as SpriteEventMap[keyof SpriteEventMap]);
       },
     });
-
-    // 注册文件监听触发器（默认启用）
-    if (config.fileWatcherEnabled) {
-      this.lifecycleManager.registerFileWatcher();
-    }
-
-    // ADR-015: 启动时从 spriteConfig 读取 archiveMode 并应用到 Agent
-    this.agent.setArchiveMode(config.archiveMode);
   }
 
   // ─── 精灵事件系统（宿主 UI 可订阅） ──────────────────────
@@ -576,6 +614,16 @@ export class Sprite {
 
   deleteMemory(id: string): boolean {
     return this.memoryController.delete(id);
+  }
+
+  /**
+   * 批量删除记忆（委托 memoryController.deleteBatch）
+   *
+   * @param ids 记忆 ID 列表
+   * @returns { deleted, total } 成功删除数量和传入总数
+   */
+  deleteMemoriesBatch(ids: string[]): { deleted: number; total: number } {
+    return this.memoryController.deleteBatch(ids);
   }
 
   restoreMemory(id: string): boolean {

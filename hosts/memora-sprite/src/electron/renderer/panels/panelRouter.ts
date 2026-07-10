@@ -17,6 +17,7 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { getOptionalElement } from '../helpers/domHelpers.js';
+import { reportError } from '../helpers/errorHelpers.js';
 import type { UIState, ConfirmDialogOptions } from '../types.js';
 
 // ─── PanelRouter 宿主接口 ─────────────────────────────
@@ -133,74 +134,79 @@ export class PanelRouter {
    * 替换核心区域内容。切换到 chat 自动聚焦输入框，切换到 memories 聚焦搜索框。
    */
   async switchPanel(panel: string): Promise<void> {
-    const state = this.host.getState();
+    try {
+      const state = this.host.getState();
 
-    // 当前在设置面板且有未保存修改时，确认后再切换
-    if (state.currentPanel === 'settings' && this.host.isSettingsDirty()) {
-      const confirmed = await this.host.showConfirmDialog({
-        title: '离开设置',
-        message: '有未保存的修改，离开后将丢失。确定要离开吗？',
-        confirmText: '离开',
-        danger: true,
+      // 当前在设置面板且有未保存修改时，确认后再切换
+      if (state.currentPanel === 'settings' && this.host.isSettingsDirty()) {
+        const confirmed = await this.host.showConfirmDialog({
+          title: '离开设置',
+          message: '有未保存的修改，离开后将丢失。确定要离开吗？',
+          confirmText: '离开',
+          danger: true,
+        });
+        if (!confirmed) return;
+        // 用户选择离开，重置 dirty 状态避免后续切换重复提示
+        this.host.resetSettingsFormDirty();
+      }
+
+      // 移除所有面板活动状态
+      document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
+      document.querySelectorAll('.nav-btn').forEach((b) => {
+        b.classList.remove('active');
+        // 清除其他导航的 aria-current，避免屏幕阅读器误读多个"当前页"
+        b.removeAttribute('aria-current');
       });
-      if (!confirmed) return;
-      // 用户选择离开，重置 dirty 状态避免后续切换重复提示
-      this.host.resetSettingsFormDirty();
-    }
 
-    // 移除所有面板活动状态
-    document.querySelectorAll('.panel').forEach((p) => p.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach((b) => {
-      b.classList.remove('active');
-      // 清除其他导航的 aria-current，避免屏幕阅读器误读多个"当前页"
-      b.removeAttribute('aria-current');
-    });
+      // 激活目标面板
+      const panelEl = document.getElementById(`panel-${panel}`);
+      const navBtn = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
 
-    // 激活目标面板
-    const panelEl = document.getElementById(`panel-${panel}`);
-    const navBtn = document.querySelector(`.nav-btn[data-panel="${panel}"]`);
+      panelEl?.classList.add('active');
+      panelEl?.setAttribute('aria-hidden', 'false');
+      navBtn?.classList.add('active');
+      // 标记当前所在面板，辅助屏幕阅读器识别"当前页"位置
+      navBtn?.setAttribute('aria-current', 'page');
 
-    panelEl?.classList.add('active');
-    panelEl?.setAttribute('aria-hidden', 'false');
-    navBtn?.classList.add('active');
-    // 标记当前所在面板，辅助屏幕阅读器识别"当前页"位置
-    navBtn?.setAttribute('aria-current', 'page');
-
-    // 将之前激活的面板设为 aria-hidden=true
-    if (state.currentPanel && state.currentPanel !== panel) {
-      const prevPanel = document.getElementById(`panel-${state.currentPanel}`);
-      prevPanel?.setAttribute('aria-hidden', 'true');
-      // 离开记忆面板时，关闭所有分析面板
-      if (state.currentPanel === 'memories') {
-        this.host.dismissMemoryAnalysisPanels();
+      // 将之前激活的面板设为 aria-hidden=true
+      if (state.currentPanel && state.currentPanel !== panel) {
+        const prevPanel = document.getElementById(`panel-${state.currentPanel}`);
+        prevPanel?.setAttribute('aria-hidden', 'true');
+        // 离开记忆面板时，关闭所有分析面板
+        if (state.currentPanel === 'memories') {
+          this.host.dismissMemoryAnalysisPanels();
+        }
       }
-    }
 
-    this.host.setCurrentPanel(panel);
+      this.host.setCurrentPanel(panel);
 
-    // 切换面板后重置滚动位置到顶部
-    requestAnimationFrame(() => {
-      document.documentElement.scrollTop = 0;
-      document.body.scrollTop = 0;
-      const mainContent = document.getElementById('main-content');
-      if (mainContent) mainContent.scrollTop = 0;
-      panelEl?.scrollTo?.(0, 0);
-    });
+      // 切换面板后重置滚动位置到顶部
+      requestAnimationFrame(() => {
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+        const mainContent = document.getElementById('main-content');
+        if (mainContent) mainContent.scrollTop = 0;
+        panelEl?.scrollTo?.(0, 0);
+      });
 
-    // 切换到对话面板时自动聚焦输入框
-    if (panel === 'chat') {
-      this.host.getInputEl().focus();
-    }
-    // 切换到记忆面板时聚焦搜索框（静态元素，instanceof 校验）
-    if (panel === 'memories') {
-      const searchInput = document.getElementById('memory-search');
-      if (searchInput instanceof HTMLInputElement) {
-        searchInput.focus();
+      // 切换到对话面板时自动聚焦输入框
+      if (panel === 'chat') {
+        this.host.getInputEl().focus();
       }
-    }
+      // 切换到记忆面板时聚焦搜索框（静态元素，instanceof 校验）
+      if (panel === 'memories') {
+        const searchInput = document.getElementById('memory-search');
+        if (searchInput instanceof HTMLInputElement) {
+          searchInput.focus();
+        }
+      }
 
-    // 面板切换回调：通知外部控制器刷新数据
-    this.host.getPanelSwitchCallback()?.(panel);
+      // 面板切换回调：通知外部控制器刷新数据
+      this.host.getPanelSwitchCallback()?.(panel);
+    } catch (error) {
+      // 面板切换失败不应崩溃 UI，仅记录日志供排查（DOM 异常 / showConfirmDialog 抛错等）
+      reportError('PanelRouter.switchPanel', error);
+    }
   }
 
   // ─── 导航事件处理 ──────────────────────────────────

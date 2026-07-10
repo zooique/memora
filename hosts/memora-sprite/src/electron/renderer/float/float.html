@@ -9,7 +9,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:;" />
   <title>Memora 精灵</title>
   <!--
-    主题初始化已从内联脚本迁移至主进程 executeJavaScript 注入：
+    主题初始化已从内联脚本移至主进程 executeJavaScript 注入：
     详见 floatWindow.ts 中的 did-start-loading 事件处理。
     设计令牌集中在 styles/tokens.css（单一真理源），本窗口不再内联任何变量，
     避免与主窗口令牌漂移。
@@ -35,7 +35,7 @@
     <div id="badge" aria-label="未读消息计数">0</div>
     <!-- 拖动引导提示（首次使用时显示） -->
     <div id="drag-hint" role="status">💡 拖动移动 · 单击展开</div>
-    <!-- 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示） -->
+    <!-- 离开时长小标签（用户离开超过 5 分钟时显示） -->
     <div id="away-label" role="status"></div>
     <!-- P4-1：消息预览卡片（悬停球体时显示最后一条助手消息） -->
     <div id="message-preview" role="tooltip" aria-label="最后一条助手消息预览">

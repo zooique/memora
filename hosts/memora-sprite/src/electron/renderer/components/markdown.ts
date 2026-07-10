@@ -506,7 +506,7 @@ function appendInlineContent(target: HTMLElement, text: string): void {
 /**
  * 行内格式正则常量（CHAT-A03 性能优化）
  *
- * 原实现在 appendFormattedText 函数内每次调用都创建 4 个新 RegExp 对象，
+ * 在 appendFormattedText 函数内每次调用都创建 4 个新 RegExp 对象，
  * 递归调用时指数级创建，GC 压力巨大。
  * 改为模块级常量，collectMatches 内部通过 lastIndex=0 重置，避免重复创建。
  */

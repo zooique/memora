@@ -86,7 +86,7 @@ describe('formatTimeAgo', () => {
     expect(['5 天前', '6 天前', '7 天前']).toContain(result);
   });
 
-  // ─── QC-FIX-DOMHELPERS：Invalid Date 降级（原 TEST-DEFECT-01） ──
+  // ─── Invalid Date 降级 ──
 
   it('无效日期字符串应降级返回原始字符串（Invalid Date 检测）', () => {
     // 修复后：new Date('not-a-date') 返回 Invalid Date，

@@ -10,7 +10,6 @@ import type { Agent, SuggestHit, IVectorStore, Memory } from 'memora';
 import type { MemoryRelation, RelationPath, RelationNeighbor } from 'memora';
 import { logger } from 'memora';
 import { DEFAULT_LIST_LIMIT } from '../constants.js';
-// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from '../errors.js';
 import { buildHealthDashboard } from './memoryHealth.js';
 import type { HealthDashboard } from './memoryHealth.js';
@@ -141,7 +140,7 @@ export class MemoryController {
   private agent: Agent;
   private vectorStore: IVectorStore | null;
   /**
-   * 每日消息计数提供者（缺口 3.4 修复）
+   * 每日消息计数提供者
    *
    * 由 Sprite 在实例化后通过 setMessageCountProvider 注入，避免 MemoryController
    * 反向依赖 Sprite（保持依赖方向：sprite → memoryController → reviewManager）。
@@ -155,7 +154,7 @@ export class MemoryController {
   }
 
   /**
-   * 注入每日消息计数提供者（缺口 3.4）
+   * 注入每日消息计数提供者
    *
    * 由 Sprite 在构造后立即调用，将自身 dailyMessageCount Map 转换为 Record 暴露给本控制器。
    * 设计为 setter 而非构造参数，避免 MemoryController 构造签名变更影响测试。
@@ -252,7 +251,7 @@ export class MemoryController {
    * @returns 是否成功软删除（不存在或已软删除时返回 false）
    */
   delete(id: string): boolean {
-    // P1-2 拆分：读检查走 MemoryInspector，写操作走 MemoryMutator
+    // 读检查走 MemoryInspector，写操作走 MemoryMutator
     const inspector = this.agent.memory;
     const mutator = this.agent.memoryMutator;
     if (!inspector || !mutator) return false;
@@ -265,6 +264,26 @@ export class MemoryController {
   }
 
   /**
+   * 批量删除记忆（逐条软删除）
+   *
+   * 逐条调用 delete 进行软删除，跳过不存在或已删除的记忆。
+   * IPC handler 传入的 ids 可能含非法值，在此做类型守卫过滤。
+   *
+   * @param ids 记忆 ID 列表
+   * @returns { deleted, total } 成功删除数量和传入总数
+   */
+  deleteBatch(ids: string[]): { deleted: number; total: number } {
+    let deleted = 0;
+    for (const id of ids) {
+      // 跳过非字符串和空字符串（IPC 传入的 ids 可能含非法值）
+      if (typeof id === 'string' && id.length > 0 && this.delete(id)) {
+        deleted++;
+      }
+    }
+    return { deleted, total: ids.length };
+  }
+
+  /**
    * 恢复软删除的记忆
    *
    * 将记忆从回收站恢复为活跃态。向量索引无需操作（软删除时未删除）。
@@ -273,7 +292,7 @@ export class MemoryController {
    * @returns 是否成功恢复（不存在或未软删除时返回 false）
    */
   restore(id: string): boolean {
-    // P1-2 拆分：读检查走 MemoryInspector，写操作走 MemoryMutator
+    // 读检查走 MemoryInspector，写操作走 MemoryMutator
     const inspector = this.agent.memory;
     const mutator = this.agent.memoryMutator;
     if (!inspector || !mutator) return false;
@@ -298,7 +317,7 @@ export class MemoryController {
    * @returns 是否成功删除（记忆不在回收站时返回 false）
    */
   purge(id: string): boolean {
-    // P1-2 拆分：读检查走 MemoryInspector，写操作走 MemoryMutator
+    // 读检查走 MemoryInspector，写操作走 MemoryMutator
     const inspector = this.agent.memory;
     const mutator = this.agent.memoryMutator;
     if (!inspector || !mutator) return false;
@@ -407,7 +426,7 @@ export class MemoryController {
    * @returns 记忆唯一标识（${source}:${name} 格式）
    */
   upsert(source: string, name: string, content: string, score = 0.5): string {
-    // P1-2 拆分：写操作走 MemoryMutator（inspector 只读）
+    // 写操作走 MemoryMutator（inspector 只读）
     const mutator = this.agent.memoryMutator;
     if (!mutator) throw new MemoraError(ErrorCode.STORAGE_ERROR, '存储不可用');
     const now = new Date().toISOString();
@@ -579,7 +598,6 @@ export class MemoryController {
    * @param weight 关系权重 0-1
    */
   addRelation(sourceId: string, targetId: string, type: string, weight: number): void {
-    // P1-2 拆分：写操作已迁移至 agent.memoryMutator
     const mutator = this.agent.memoryMutator;
     if (!mutator) return;
     mutator.addRelation({
@@ -602,7 +620,6 @@ export class MemoryController {
    * @param type 关系类型
    */
   removeRelation(sourceId: string, targetId: string, type: string): void {
-    // P1-2 拆分：写操作已迁移至 agent.memoryMutator
     const mutator = this.agent.memoryMutator;
     if (!mutator) return;
     mutator.removeRelation(sourceId, targetId, type);
@@ -676,7 +693,7 @@ export class MemoryController {
    * @returns 健康度仪表盘完整数据
    */
   getHealthDashboard(): HealthDashboard {
-    const allMemories = this.list(undefined, 1000); // 获取全量记忆（上限 1000 条）
+    const allMemories = this.list(undefined, DEFAULT_LIST_LIMIT);
     return buildHealthDashboard(allMemories);
   }
 
@@ -692,7 +709,7 @@ export class MemoryController {
   getReviewData(): ReviewData {
     const dashboard = this.dashboard();
     const allMemories = this.list(undefined, DEFAULT_LIST_LIMIT);
-    // 缺口 3.4：注入每日消息计数，补齐 today.messageCount / daily[].messageCount
+    // 注入每日消息计数，补齐 today.messageCount / daily[].messageCount
     return buildReviewData(dashboard, allMemories, this.messageCountProvider());
   }
 }

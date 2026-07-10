@@ -129,7 +129,7 @@ const DASHBOARD_HTML = `
     <span id="partner-growth-total"></span>
   </div>
 
-  <!-- P1-04：dashboard 错误横幅（PanelErrorBannerManager 体系） -->
+  <!-- dashboard 错误横幅（PanelErrorBannerManager 体系） -->
   <div id="dashboard-error" class="panel-error hidden">
     <span id="dashboard-error-msg"></span>
     <button id="dashboard-error-retry" class="panel-error-btn">重试</button>
@@ -487,7 +487,7 @@ describe('错误状态与重试回调', () => {
   });
 
   it('showMemoryListError 应显示 dashboard 错误横幅并支持重试', () => {
-    // P1-04：showMemoryListError 改用 PanelErrorBannerManager，重试按钮在 #dashboard-error 横幅中
+    // showMemoryListError 改用 PanelErrorBannerManager，重试按钮在 #dashboard-error 横幅中
     const { manager } = createManager();
     const cb = vi.fn();
     manager.onReloadMemoryList(cb);
@@ -564,8 +564,8 @@ describe('renderPartnerInsights · 伙伴洞察面板', () => {
     expect(cb).toHaveBeenCalledWith('profile:click-test');
   });
 
-  it('onMemoryClick 应同时委托 partnerInsights 和 perception（缺口 K 双注册）', () => {
-    // 缺口 K：DashboardPanelManager.onMemoryClick 需同时注册到两个子渲染器，
+  it('onMemoryClick 应同时委托 partnerInsights 和 perception（双注册）', () => {
+    // DashboardPanelManager.onMemoryClick 需同时注册到两个子渲染器，
     // 使伙伴洞察卡片和模式洞察关联按钮共享同一跳转回调
     const { manager } = createManager();
     const cb = vi.fn();

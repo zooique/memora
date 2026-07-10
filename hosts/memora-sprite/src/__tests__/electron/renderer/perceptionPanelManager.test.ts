@@ -322,10 +322,10 @@ describe('updatePatternsDisplay() · 模式洞察', () => {
     expect(items[0]!.querySelector('.perception-pattern-type')!.textContent).toBe('漂移');
   });
 
-  // ─── 缺口 K：relatedMemoryIds 关联记忆跳转按钮 ───────────────
+  // ─── relatedMemoryIds 关联记忆跳转按钮 ───────────────
 
   it('含 relatedMemoryIds 的 pattern 应渲染"关联 N 条记忆"按钮', () => {
-    // 缺口 K：PatternDetector 已填充 relatedMemoryIds，渲染层需消费
+    // PatternDetector 已填充 relatedMemoryIds，渲染层需消费
     const renderer = createRenderer();
     renderer.updatePatternsDisplay(createPatterns([
       { type: 'recurring_topic', summary: '重复讨论', confidence: 0.9, relatedMemoryIds: ['m1', 'm2', 'm3'] },
@@ -354,7 +354,7 @@ describe('updatePatternsDisplay() · 模式洞察', () => {
   });
 
   it('click 关联按钮应触发 onMemoryClick 回调（传入第一条记忆 ID）', () => {
-    // 缺口 K：点击按钮跳转第一条相关记忆详情，复用 onMemoryClick 回调
+    // 点击按钮跳转第一条相关记忆详情，复用 onMemoryClick 回调
     const renderer = createRenderer();
     const cb = vi.fn();
     renderer.onMemoryClick(cb);
@@ -568,8 +568,8 @@ describe('cleanup() · 资源清理', () => {
     expect(() => renderer.updateAffectDisplay(createAffect({ warmth: 0.5 })).not.toThrow());
   });
 
-  it('cleanup 应清理 onMemoryClickCallback（缺口 K：与 PartnerInsightsRenderer 一致）', () => {
-    // 缺口 K：cleanup 后点击关联按钮不应触发回调（回调引用已被置 null）
+  it('cleanup 应清理 onMemoryClickCallback（与 PartnerInsightsRenderer 一致）', () => {
+    // cleanup 后点击关联按钮不应触发回调（回调引用已被置 null）
     const renderer = createRenderer();
     const cb = vi.fn();
     renderer.onMemoryClick(cb);

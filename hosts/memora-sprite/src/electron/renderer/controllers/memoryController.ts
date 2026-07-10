@@ -617,54 +617,61 @@ export function createMemoryController(uiManager: UIManager) {
    * 所有渲染委托 DashboardPanelManager，Controller 仅做 IPC 编排和聚合。
    */
   async function loadDashboard(): Promise<void> {
-    try {
-      // 并发加载仪表盘数据、感知快照、对话回顾数据，减少总等待时间
-      // 注意：getPerceptionSnapshot / getReviewData 可能不存在（如 Web 调试模式），需用 Promise.resolve + catch 确保安全
-      const perceptionPromise = Promise.resolve()
-        .then(() => window.electronAPI.getPerceptionSnapshot?.())
-        .catch((err: unknown) => { reportError('getPerceptionSnapshot', err); return null; });
-      // Phase 6.2：对话回顾数据（reviewManager.buildReviewData 的 IPC 透传），失败时不阻塞仪表盘其他区域
-      const reviewPromise = Promise.resolve()
-        .then(() => window.electronAPI.getReviewData?.())
-        .catch((err: unknown) => { reportError('getReviewData', err); return null; });
+    // 并发加载仪表盘数据、感知快照、对话回顾数据，减少总等待时间
+    // 注意：getPerceptionSnapshot / getReviewData 可能不存在（如 Web 调试模式），需用 Promise.resolve + catch 确保安全
+    // 这两个 Promise 自带错误兜底（.catch 返回 null），不会导致 Promise.all 整体 reject，放在 try 外不影响行为
+    const perceptionPromise = Promise.resolve()
+      .then(() => window.electronAPI.getPerceptionSnapshot?.())
+      .catch((err: unknown) => { reportError('getPerceptionSnapshot', err); return null; });
+    // Phase 6.2：对话回顾数据（reviewManager.buildReviewData 的 IPC 透传），失败时不阻塞仪表盘其他区域
+    const reviewPromise = Promise.resolve()
+      .then(() => window.electronAPI.getReviewData?.())
+      .catch((err: unknown) => { reportError('getReviewData', err); return null; });
 
-      const [data, perceptionSnapshot, reviewData] = await Promise.all([
+    // try 仅包裹 Promise.all（IO），6 个 uiManager.render 调用（非 IO）移出 try，
+    // 避免 render 抛出的 DOM 错误被误当成 IO 错误处理
+    let data: Awaited<ReturnType<typeof window.electronAPI.getDashboard>>;
+    let perceptionSnapshot: Awaited<typeof perceptionPromise>;
+    let reviewData: Awaited<typeof reviewPromise>;
+    try {
+      [data, perceptionSnapshot, reviewData] = await Promise.all([
         window.electronAPI.getDashboard(),
         perceptionPromise,
         reviewPromise,
       ]);
-
-      // 将今日新增记忆数注入仪表盘数据（用于概览区微型指标）
-      if (reviewData && reviewData.today) {
-        (data as typeof data & { todayNewMemories?: number }).todayNewMemories = reviewData.today.newMemories;
-      }
-
-      // 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
-      uiManager.renderDashboardStats(data);
-
-      // Agent 运行时指标渲染（消费内核 agent.getMetrics()）
-      uiManager.renderAgentMetrics(data.metrics);
-
-      // 缺口 E：记忆源健康诊断渲染（消费内核 sourceHealth()，展示每个 source 的质量维度）
-      uiManager.renderSourceHealth(data.sourceHealth);
-
-      // 已加载技能列表渲染（消费内核 agent.skills.list）
-      uiManager.renderSkills(data.skills);
-
-      // Phase 6.2：增长趋势区块渲染（消费 reviewManager.buildReviewData 已计算的趋势数据）
-      if (reviewData) {
-        uiManager.renderReviewData(reviewData);
-      }
-
-      // 感知快照渲染（情感/默契度/上下文/模式/主动提示统计）
-      // 确保仪表盘首次加载时就能显示真实数据，而非占位值
-      if (perceptionSnapshot && Object.keys(perceptionSnapshot).length > 0) {
-        uiManager.renderPerceptionSnapshot(perceptionSnapshot);
-      }
     } catch (error) {
       reportError('loadDashboard', error);
       // 仪表盘涉及多子区域（统计/指标/技能/回顾/感知），整体失败时用 toast 兜底提示
       uiManager.showToast('仪表盘加载失败，请稍后重试', 'error');
+      return; // IO 失败后不执行渲染
+    }
+
+    // 将今日新增记忆数注入仪表盘数据（用于概览区微型指标）
+    if (reviewData && reviewData.today) {
+      (data as typeof data & { todayNewMemories?: number }).todayNewMemories = reviewData.today.newMemories;
+    }
+
+    // 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
+    uiManager.renderDashboardStats(data);
+
+    // Agent 运行时指标渲染（消费内核 agent.getMetrics()）
+    uiManager.renderAgentMetrics(data.metrics);
+
+    // 记忆源健康诊断渲染（消费内核 sourceHealth()，展示每个 source 的质量维度）
+    uiManager.renderSourceHealth(data.sourceHealth);
+
+    // 已加载技能列表渲染（消费内核 agent.skills.list）
+    uiManager.renderSkills(data.skills);
+
+    // Phase 6.2：增长趋势区块渲染（消费 reviewManager.buildReviewData 已计算的趋势数据）
+    if (reviewData) {
+      uiManager.renderReviewData(reviewData);
+    }
+
+    // 感知快照渲染（情感/默契度/上下文/模式/主动提示统计）
+    // 确保仪表盘首次加载时就能显示真实数据，而非占位值
+    if (perceptionSnapshot && Object.keys(perceptionSnapshot).length > 0) {
+      uiManager.renderPerceptionSnapshot(perceptionSnapshot);
     }
   }
 

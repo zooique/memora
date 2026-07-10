@@ -6,7 +6,7 @@
  *   - isPathAllowed 依赖 node:path，在本模块本地实现（shared/ 保持无 Node 依赖约束）
  *
  * 设计原因：
- *   原实现全部位于 shared/ 层，但 isPathAllowed 使用了 node:path，
+ *   全部位于 shared/ 层，但 isPathAllowed 使用了 node:path，
  *   违反了"shared/ 无 Node 运行时依赖"的架构约束（directory-structure.md §2.1）。
  *   迁移后：shared/ 保留纯函数（Web/IPC 共用），isPathAllowed 仅在主进程使用。
  *
@@ -24,6 +24,9 @@ export {
   isValidPersonaName,
   isValidFilePath,
   isValidRelationType,
+  isNonEmptyString,
+  isValidRelationParams,
+  isValidShortcutConfig,
 } from '../../shared/inputValidation.js';
 
 /**

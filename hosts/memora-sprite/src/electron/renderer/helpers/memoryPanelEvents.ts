@@ -389,8 +389,9 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
   // 更多菜单项事件委托（insights/health/recycle-bin）
   if (moreMenu) {
     ctx.events.addEventListener(moreMenu, 'click', async (e) => {
-      const item = ((e as Event).target as HTMLElement).closest('.more-menu-item') as HTMLElement | null;
-      if (!item) return;
+      const target = (e as Event).target as HTMLElement;
+      const item = target.closest('.more-menu-item');
+      if (!(item instanceof HTMLElement)) return;
       const action = item.getAttribute('data-action');
       toggleMoreMenu(false);
 
@@ -583,8 +584,10 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
       ctx.setPendingCleanupIds([]);
       try {
         await ctx.getCleanupConfirmCallback()?.(ids);
-      } catch {
+      } catch (err) {
         // cleanupConfirmCallback 由 Controller 实现，Controller 内部会报告错误和显示 toast
+        // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
+        console.warn('[MemoryPanel] cleanupConfirmCallback 失败', err);
       }
     });
   }
@@ -596,7 +599,7 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
  * 回收站列表事件委托：恢复 / 彻底删除
  *
  * 通过 data-action="restore-memory" / "purge-memory" + data-memory-id 分发，
- * 与列表点击委托模式一致（QC-22）。回调由 Controller 实现，包含确认对话框 + IPC 调用。
+ * 与列表点击委托模式一致。回调由 Controller 实现，包含确认对话框 + IPC 调用。
  */
 function initRecycleBinActions(ctx: MemoryPanelEventContext): void {
   const recycleBinList = document.getElementById('recycle-bin-list');

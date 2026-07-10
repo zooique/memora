@@ -101,8 +101,9 @@ export async function handleSystemRoute(
             : null,
           presets: PROVIDER_PRESETS,
         });
-      } catch {
+      } catch (error) {
         // 配置读取失败时返回未配置状态，由前端引导用户进入设置页
+        logger.warn({ err: toError(error).message }, 'LLM 配置读取失败，返回未配置态');
         sendJson(res, 200, {
           configured: false,
           config: null,
@@ -190,7 +191,9 @@ export async function handleSystemRoute(
       try {
         const data = await getLlmProviders();
         sendJson(res, 200, data);
-      } catch {
+      } catch (error) {
+        // 查询失败时记录日志，便于排查；前端引导用户进入设置页配置 Provider
+        logger.warn({ err: toError(error).message }, '列出 LLM providers 失败，返回空列表');
         sendJson(res, 200, { active: '', providers: [] });
       }
       return;
@@ -242,7 +245,7 @@ export async function handleSystemRoute(
           const providerConfig = resolveProviderConfig(config, key);
 
           if (!providerConfig) {
-            sendJson(res, 200, { success: false, error: `Provider "${key}" 不存在` });
+            sendError(res, 404, `Provider "${key}" 不存在`);
             return;
           }
 

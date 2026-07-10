@@ -29,9 +29,7 @@ import { NodeSqliteDatabase } from './storage/nodeSqliteDatabase.js';
 import { SpriteConfigStore, DEFAULT_CONFIG_PATH, resolveProviderConfig } from './storage/spriteConfigStore.js';
 import { Sprite } from './sprite/sprite.js';
 import { SpriteTracer } from './sprite/spriteTracer.js';
-// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from './sprite/errors.js';
-// P0-A：导入 SPRITE_HOME_DIR_NAME（路径真理源），消除硬编码重复
 import { SPRITE_HOME_DIR_NAME } from './sprite/constants.js';
 // 宿主自定义工具（web_search + memory_search + create_persona + create_skill）
 import {

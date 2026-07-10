@@ -23,7 +23,6 @@
 import type { UIManager } from '../ui.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { getLocalDate } from '../../../sprite/constants.js';
-// P0-B：结构化错误抛出（替代裸 throw new Error，让 ErrorHandler 正确分类）
 import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
 
 /**
@@ -382,6 +381,7 @@ export function createSessionController(uiManager: UIManager) {
       return result;
     } catch (error) {
       reportError('loadDateList', error);
+      uiManager.showToast('日期列表加载失败', 'error');
       return [];
     }
   }

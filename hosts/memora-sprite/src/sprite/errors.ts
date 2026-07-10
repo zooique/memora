@@ -37,7 +37,6 @@ export enum ErrorCode {
   NETWORK_ERROR = 'NETWORK_ERROR',
   API_ERROR = 'API_ERROR',
 
-  // P0-B 新增：存储与校验错误（sprite/storage 层 throw 使用）
   /** 存储层错误（存储不可用、写入失败等） */
   STORAGE_ERROR = 'STORAGE_ERROR',
   /** 数据校验错误（source 校验失败、参数非法、重复注册等） */

@@ -5,8 +5,8 @@
  * - isValidSessionName：会话名校验（白名单 + 长度）
  * - isValidConfigName：配置名校验（防路径遍历写入）
  * - isValidContent：内容长度校验（防内存耗尽）
- * - isValidId：记忆 ID 校验（类型 + 长度，FOUNDATION-SEAL Phase 3）
- * - isValidSearchQuery：搜索关键词校验（类型 + 长度，FOUNDATION-SEAL Phase 3）
+ * - isValidId：记忆 ID 校验（类型 + 长度）
+ * - isValidSearchQuery：搜索关键词校验（类型 + 长度）
  * - isPathAllowed：文件路径白名单校验（防路径遍历攻击）
  *
  * 这些函数是 IPC 安全边界，防止路径遍历、注入等安全风险。
@@ -170,7 +170,7 @@ describe('isValidContent', () => {
   });
 });
 
-// ─── isValidId（FOUNDATION-SEAL Phase 3） ────────────────
+// ─── isValidId ────────────────
 
 describe('isValidId', () => {
   // ─── 合法输入 ──────────────────────────────────────────
@@ -214,7 +214,7 @@ describe('isValidId', () => {
   });
 });
 
-// ─── isValidSearchQuery（FOUNDATION-SEAL Phase 3） ───────
+// ─── isValidSearchQuery ───────
 
 describe('isValidSearchQuery', () => {
   // ─── 合法输入 ──────────────────────────────────────────
@@ -254,7 +254,7 @@ describe('isValidSearchQuery', () => {
   });
 });
 
-// ─── isValidPersonaName（FOUNDATION-SEAL Phase 3 轮2） ───
+// ─── isValidPersonaName ───
 
 describe('isValidPersonaName', () => {
   // ─── 合法输入 ──────────────────────────────────────────
@@ -322,7 +322,7 @@ describe('isValidPersonaName', () => {
   });
 });
 
-// ─── isValidFilePath（FOUNDATION-SEAL Phase 3 轮3） ─────
+// ─── isValidFilePath ─────
 
 describe('isValidFilePath', () => {
   // ─── 合法输入 ──────────────────────────────────────────

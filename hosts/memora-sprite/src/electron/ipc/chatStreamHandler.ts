@@ -82,7 +82,7 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     return;
   }
 
-  // UT-FQ-01 跨日/跨会话自动重置：确保新消息始终归当天主会话
+  // 跨日/跨会话自动重置：确保新消息始终归当天主会话
   const history = ctx.agent.agentHistory;
   if (history) {
     const todayDate = getLocalDate();
@@ -112,11 +112,11 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
     ctx.incrementUnreadCount();
   }
 
-  // 缺口 3.4：累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
+  // 累加当日用户消息计数（供 ReviewData.today.messageCount 消费）
   // 放在竞态/就绪检查通过后、流式开始前，确保只对真正发送的消息计数
   ctx.sprite.incrementDailyMessageCount();
 
-  // 缺口 I：对话前感知刷新——累积用户消息 + 注入情感/默契度/上下文/模式/里程碑/跨会话上下文
+  // 对话前感知刷新——累积用户消息 + 注入情感/默契度/上下文/模式/里程碑/跨会话上下文
   // 确保 LLM 在流式对话中也能拿到最新的感知数据（与 CLI 路径的 wakeup() 共享同一份刷新逻辑）
   ctx.sprite.prepareForChat(text);
 

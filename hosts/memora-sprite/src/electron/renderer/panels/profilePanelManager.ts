@@ -98,9 +98,12 @@ export class ProfilePanelManager {
    * 失败时显示错误提示（不阻塞面板其他功能）。
    */
   async load(): Promise<void> {
+    // try 仅包裹 IPC 调用（IO），render（DOM 渲染）移出 try，
+    // 避免 render 抛出的 DOM 错误被误当成 IO 错误处理
+    let entries: UserProfileEntryPayload[];
     try {
-      const { entries } = await window.electronAPI.listUserProfile();
-      this.render(entries);
+      const result = await window.electronAPI.listUserProfile();
+      entries = result.entries;
     } catch (err) {
       reportError('ProfilePanel', `加载用户画像失败: ${toError(err).message}`);
       // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），替代 .profile-empty.profile-error
@@ -124,7 +127,9 @@ export class ProfilePanelManager {
         errorEl.appendChild(retryBtn);
         this.pendingListEl.appendChild(errorEl);
       }
+      return; // IO 失败后不执行 render
     }
+    this.render(entries);
   }
 
   /**

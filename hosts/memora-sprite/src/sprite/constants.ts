@@ -59,7 +59,7 @@ export const TOAST_NORMAL_MS = 3_000;
 /** Toast 较长显示时长（如错误提示、汇总信息等需要用户阅读的内容） */
 export const TOAST_LONG_MS = 4_000;
 
-// ─── UI 反馈超时常量（毫秒，P2 剪枝：从 agentListeners/spriteEventBridge 散落定义提取） ─
+// ─── UI 反馈超时常量（毫秒） ─
 
 /** 写入确认超时（agentListeners），超时后自动拒绝写入操作 */
 export const CONFIRMATION_TIMEOUT_MS = 30_000;

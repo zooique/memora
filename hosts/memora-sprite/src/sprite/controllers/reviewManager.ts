@@ -124,13 +124,129 @@ function groupByDate(memories: MemoryListItem[]): Map<string, number> {
 // ─── 公开 API ────────────────────────────────────────────
 
 /**
+ * 构建今日回顾数据
+ *
+ * @param allMemories 全量记忆列表
+ * @param dailyMessageCount 每日消息计数（可选，key=YYYY-MM-DD）
+ * @param todayStr 今日日期字符串（YYYY-MM-DD）
+ * @returns 今日回顾数据
+ */
+function buildTodayReview(
+  allMemories: MemoryListItem[],
+  dailyMessageCount: Record<string, number> | undefined,
+  todayStr: string,
+): DailyReview {
+  // 今天新增的记忆和洞察
+  const todayMemories = allMemories.filter((m) => getDatePart(m.createdAt) === todayStr);
+  const todayInsights = todayMemories.filter((m) => m.source === 'insight');
+
+  return {
+    date: todayStr,
+    messageCount: dailyMessageCount?.[todayStr] ?? 0,
+    newMemories: todayMemories.length,
+    newInsights: todayInsights.length,
+  };
+}
+
+/**
+ * 构建记忆增长趋势（最近 7 天）
+ *
+ * @param allMemories 全量记忆列表
+ * @param dailyMessageCount 每日消息计数（可选，key=YYYY-MM-DD）
+ * @param now 当前时间
+ * @returns 增长趋势数据
+ */
+function buildGrowthTrend(
+  allMemories: MemoryListItem[],
+  dailyMessageCount: Record<string, number> | undefined,
+  now: Date,
+): GrowthTrend {
+  const last7DaysCount = allMemories.filter((m) => isWithinDays(m.createdAt, 7)).length;
+  const last30DaysCount = allMemories.filter((m) => isWithinDays(m.createdAt, 30)).length;
+
+  // 每日新增记忆（最近 7 天）
+  const dailyMap = groupByDate(allMemories.filter((m) => isWithinDays(m.createdAt, 7)));
+  const daily: DailyReview[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const dayInsights = allMemories.filter(
+      (m) => getDatePart(m.createdAt) === dateStr && m.source === 'insight',
+    ).length;
+    daily.push({
+      date: dateStr,
+      messageCount: dailyMessageCount?.[dateStr] ?? 0,
+      newMemories: dailyMap.get(dateStr) || 0,
+      newInsights: dayInsights,
+    });
+  }
+
+  // 趋势方向判断（对比前 3 天与后 3 天）
+  const firstHalf = daily.slice(0, 3).reduce((s, d) => s + d.newMemories, 0);
+  const secondHalf = daily.slice(4, 7).reduce((s, d) => s + d.newMemories, 0);
+  let direction: 'growing' | 'stable' | 'declining' = 'stable';
+  let description = '记忆增长保持稳定';
+  if (secondHalf > firstHalf * 1.5) {
+    direction = 'growing';
+    description = '记忆增长正在加速';
+  } else if (firstHalf > secondHalf * 1.5) {
+    direction = 'declining';
+    description = '记忆增长有所放缓';
+  }
+
+  return {
+    last7Days: last7DaysCount,
+    last30Days: last30DaysCount,
+    daily,
+    direction,
+    description,
+  };
+}
+
+/**
+ * 构建洞察摘要
+ *
+ * 筛选洞察记忆，按创建时间降序取最近 5 条，统计来源分布。
+ *
+ * @param allMemories 全量记忆列表
+ * @returns 洞察摘要数据
+ */
+function buildInsightSummary(allMemories: MemoryListItem[]): InsightSummary {
+  const insightMemories = allMemories.filter((m) => m.source === 'insight');
+  // 按创建时间降序排列，取最近 5 条
+  const sortedInsights = [...insightMemories].sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return tb - ta;
+  });
+  const recent = sortedInsights.slice(0, 5).map((m) => ({
+    name: m.name,
+    contentPreview: m.contentPreview,
+    createdAt: m.createdAt || '',
+  }));
+
+  // 洞察来源分布（当前统一为 insight，后续可扩展细分来源）
+  const bySource: Record<string, number> = {};
+  if (insightMemories.length > 0) {
+    bySource['insight'] = insightMemories.length;
+  }
+
+  return {
+    total: insightMemories.length,
+    recent,
+    bySource,
+  };
+}
+
+/**
  * 构建回顾面板数据
  *
  * 聚合最近对话的摘要、洞察和增长趋势。纯代码计算，不依赖 LLM。
  *
  * @param dashboard 仪表盘数据
  * @param allMemories 全量记忆列表
- * @param dailyMessageCount 每日用户消息计数（缺口 3.4 修复：可选注入，key=YYYY-MM-DD）
+ * @param dailyMessageCount 每日用户消息计数（可选注入，key=YYYY-MM-DD）
  *   - 由 Sprite.incrementDailyMessageCount 累加并持久化到 spriteConfig.dailyMessageCount
  *   - 未注入时 messageCount 字段保持 0（向后兼容）
  * @returns 回顾面板完整数据
@@ -143,96 +259,10 @@ export function buildReviewData(
   const now = new Date();
   const todayStr = now.toISOString().slice(0, 10);
 
-  // ─── 今日回顾 ──────────────────────────────────────────
-  // 计算今天新增的记忆数
-  const todayMemories = allMemories.filter((m) => getDatePart(m.createdAt) === todayStr);
-
-  // 今天新增 insight 数
-  const todayInsights = todayMemories.filter((m) => m.source === 'insight');
-
-  const today: DailyReview = {
-    date: todayStr,
-    // 缺口 3.4：从注入的 dailyMessageCount 读取当日消息数；未注入时为 0
-    messageCount: dailyMessageCount?.[todayStr] ?? 0,
-    newMemories: todayMemories.length,
-    newInsights: todayInsights.length,
-  };
-
-  // ─── 记忆增长趋势 ──────────────────────────────────────
-  const last7DaysCount = allMemories.filter((m) => isWithinDays(m.createdAt, 7)).length;
-  const last30DaysCount = allMemories.filter((m) => isWithinDays(m.createdAt, 30)).length;
-
-  // 每日新增记忆（最近 7 天）
-  const dailyMap = groupByDate(allMemories.filter((m) => isWithinDays(m.createdAt, 7)));
-  const daily: DailyReview[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
-    // 当天 insight 数
-    const dayInsights = allMemories.filter(
-      (m) => getDatePart(m.createdAt) === dateStr && m.source === 'insight',
-    ).length;
-    daily.push({
-      date: dateStr,
-      // 缺口 3.4：从注入的 dailyMessageCount 读取当日消息数
-      messageCount: dailyMessageCount?.[dateStr] ?? 0,
-      newMemories: dailyMap.get(dateStr) || 0,
-      newInsights: dayInsights,
-    });
-  }
-
-  // 趋势方向判断
-  const firstHalf = daily.slice(0, 3).reduce((s, d) => s + d.newMemories, 0);
-  const secondHalf = daily.slice(4, 7).reduce((s, d) => s + d.newMemories, 0);
-  let direction: 'growing' | 'stable' | 'declining' = 'stable';
-  let trendDesc = '记忆增长保持稳定';
-  if (secondHalf > firstHalf * 1.5) {
-    direction = 'growing';
-    trendDesc = '记忆增长正在加速';
-  } else if (firstHalf > secondHalf * 1.5) {
-    direction = 'declining';
-    trendDesc = '记忆增长有所放缓';
-  }
-
-  const trend: GrowthTrend = {
-    last7Days: last7DaysCount,
-    last30Days: last30DaysCount,
-    daily,
-    direction,
-    description: trendDesc,
-  };
-
-  // ─── 洞察摘要 ──────────────────────────────────────────
-  const insightMemories = allMemories.filter((m) => m.source === 'insight');
-  // 按创建时间降序排列
-  const sortedInsights = [...insightMemories].sort((a, b) => {
-    const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-    const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-    return tb - ta;
-  });
-  const recentInsights = sortedInsights.slice(0, 5).map((m) => ({
-    name: m.name,
-    contentPreview: m.contentPreview,
-    createdAt: m.createdAt || '',
-  }));
-
-  // 洞察来源分布（当前统一为 insight，后续可扩展细分来源）
-  const bySource: Record<string, number> = {};
-  if (insightMemories.length > 0) {
-    bySource['insight'] = insightMemories.length;
-  }
-
-  const insights: InsightSummary = {
-    total: insightMemories.length,
-    recent: recentInsights,
-    bySource,
-  };
-
   return {
-    today,
-    trend,
-    insights,
+    today: buildTodayReview(allMemories, dailyMessageCount, todayStr),
+    trend: buildGrowthTrend(allMemories, dailyMessageCount, now),
+    insights: buildInsightSummary(allMemories),
     totalMemories: dashboard.total,
     generatedAt: now.toISOString(),
   };

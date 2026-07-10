@@ -91,7 +91,7 @@ export async function handleMemoryRoute(
       const memoryId = queryParams.get('memoryId') ?? '';
       // 参数校验：memoryId 非空且长度 ≤ 500（与 IPC handler isValidId 一致）
       if (!memoryId || memoryId.length > 500) {
-        sendJson(res, 200, []);
+        sendError(res, 400, 'memoryId 必填且长度不超过 500');
         return;
       }
       const maxDepth = Math.min(parseInt(queryParams.get('maxDepth') ?? '5', 10) || 5, 10);
@@ -109,7 +109,7 @@ export async function handleMemoryRoute(
     if (method === 'GET' && subPath === '/relation-neighbors') {
       const memoryId = queryParams.get('memoryId') ?? '';
       if (!memoryId || memoryId.length > 500) {
-        sendJson(res, 200, []);
+        sendError(res, 400, 'memoryId 必填且长度不超过 500');
         return;
       }
       const limit = Math.min(parseInt(queryParams.get('limit') ?? '10', 10) || 10, 50);
@@ -256,7 +256,6 @@ export async function handleMemoryRoute(
       const body = await parseJsonBody<{ retentionDays?: number }>(req);
       const retentionDays = body?.retentionDays ?? 30;
       const before = new Date(Date.now() - retentionDays * MS_PER_DAY);
-      // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator
       const purgedCount = ctx.agent.memoryMutator?.purgeExpired(before) ?? 0;
       sendJson(res, 200, { purgedCount });
       return;

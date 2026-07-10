@@ -77,9 +77,9 @@ export const IPC_CHANNELS = {
   MEMORIES_RELATION_PATH: 'memories-relation-path',
   /** 获取记忆关系邻居（Phase 5.2：邻居查询） */
   MEMORIES_RELATION_NEIGHBORS: 'memories-relation-neighbors',
-  /** 手动归档 profile facts（缺口 J：archiveMode='manual' 模式下供 UI 调用） */
+  /** 手动归档 profile facts（archiveMode='manual' 模式下供 UI 调用） */
   MEMORIES_ARCHIVE_PROFILE: 'memories-archive-profile',
-  /** 手动归档 insight（缺口 J：archiveMode='manual' 模式下供 UI 调用） */
+  /** 手动归档 insight（archiveMode='manual' 模式下供 UI 调用） */
   MEMORIES_ARCHIVE_INSIGHT: 'memories-archive-insight',
 
   // ─── 配置相关 ─────────────────────────────────────────
@@ -209,7 +209,7 @@ export const IPC_CHANNELS = {
   /** 渲染进程 → 主进程：调整浮窗高度（候选列表显示/隐藏时触发） */
   QUICK_INPUT_RESIZE: 'quick-input-resize',
 
-  // ─── 可观测性（FOUNDATION-SEAL Phase 4） ───────────────
+  // ─── 可观测性 ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
   RENDERER_LOG: 'renderer-log',
 } as const;

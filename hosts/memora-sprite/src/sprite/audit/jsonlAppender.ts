@@ -7,7 +7,7 @@
  * 设计：
  *   - JSONL 格式：每行一条 JSON，便于 append + grep
  *   - 串行化写入队列（writeChain）：所有文件写入操作排队执行，避免并发
- *     read-modify-write 竞态导致日志行丢失（QC-FLAKY-JSONL 修复）
+ *     read-modify-write 竞态导致日志行丢失
  *   - 计数器间隔截断：每 truncateCheckInterval 次写入检查一次文件大小，
  *     避免每次写入都读全文件（O(n) 写放大）
  *   - 超出 maxEntries 时保留最近条目，从头截断
@@ -45,7 +45,7 @@ export class JsonlAppender {
   /** 累计写入计数（用于间隔截断检查） */
   private writeCount = 0;
   /**
-   * 写入队列链（QC-FLAKY-JSONL 修复）
+   * 写入队列链
    *
    * 串行化所有文件写入操作（append + truncateIfNeeded），避免并发
    * read-modify-write 竞态导致日志行丢失。
@@ -99,27 +99,29 @@ export class JsonlAppender {
    * @returns 解析后的记录数组，文件不存在时返回空数组
    */
   async readRecent<T extends object = Record<string, unknown>>(limit = 50): Promise<T[]> {
+    // try 仅包裹 readFile（IO），解析逻辑移出 try，避免解析错误被混入 IO 错误处理
+    let content: string;
     try {
-      const content = await readFile(this.filePath, 'utf8');
-      const lines = content.trim().split('\n').filter(Boolean);
-      const recent = lines.slice(-limit);
-      return recent
-        .map((line) => {
-          try {
-            return JSON.parse(line) as T;
-          } catch {
-            // 单行 JSON 解析失败时跳过该行，debug 级别避免日志噪音
-            logger.debug({ line: line.slice(0, 100) }, '审计日志行解析失败，跳过该行');
-            return null;
-          }
-        })
-        .filter((e): e is T => e !== null)
-        .reverse(); // 最新在前
+      content = await readFile(this.filePath, 'utf8');
     } catch (err) {
       // 文件读取失败时返回空数组，记录警告便于排查
       logger.warn({ err: toError(err).message, filePath: this.filePath }, '读取审计日志失败');
       return [];
     }
+    const lines = content.trim().split('\n').filter(Boolean);
+    const recent = lines.slice(-limit);
+    return recent
+      .map((line) => {
+        try {
+          return JSON.parse(line) as T;
+        } catch {
+          // 单行 JSON 解析失败时跳过该行，debug 级别避免日志噪音
+          logger.debug({ line: line.slice(0, 100) }, '审计日志行解析失败，跳过该行');
+          return null;
+        }
+      })
+      .filter((e): e is T => e !== null)
+      .reverse(); // 最新在前
   }
 
   /**

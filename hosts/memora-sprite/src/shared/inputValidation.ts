@@ -18,6 +18,9 @@
  * 不在本模块中实现（保持 shared/ 无 Node 依赖的架构约束）。
  */
 
+// ShortcutConfig 类型用于 isValidShortcutConfig 的类型守卫返回值
+import type { ShortcutConfig } from './shortcutDefaults.js';
+
 /**
  * 会话名/配置名白名单：允许字母、数字、连字符、下划线、中文及常见 Unicode 字母
  *
@@ -91,7 +94,7 @@ export function isValidContent(content: string, maxLength: number = MAX_CONTENT_
 }
 
 /**
- * FOUNDATION-SEAL Phase 3：验证记忆 ID — 非空字符串 + 长度上限
+ * 验证记忆 ID — 非空字符串 + 长度上限
  *
  * 记忆 ID 格式为 source:xxx（如 "memory:用户偏好"），source 是开放字符串（ADR-004），
  * 不限制字符集，仅校验类型和长度，防止恶意客户端传入非字符串或超长值。
@@ -107,7 +110,7 @@ export function isValidId(id: string): boolean {
 }
 
 /**
- * FOUNDATION-SEAL Phase 3：验证搜索关键词 — 字符串 + 长度上限
+ * 验证搜索关键词 — 字符串 + 长度上限
  *
  * 搜索关键词允许空字符串（空字符串触发全量召回场景），仅校验类型和长度，
  * 防止恶意客户端传入非字符串或超长值导致向量检索性能问题。
@@ -129,7 +132,7 @@ const MAX_PERSONA_NAME_LENGTH = 100;
 const MAX_FILE_PATH_LENGTH = 1000;
 
 /**
- * FOUNDATION-SEAL Phase 3 轮2：验证角色名称 — 白名单字符 + 长度上限
+ * 验证角色名称 — 白名单字符 + 长度上限
  *
  * persona name 作为文件名（configDir/personas/{name}.json），必须严格校验：
  * - 仅允许字母、数字、连字符、下划线、点（常见角色命名规范）
@@ -151,7 +154,7 @@ export function isValidPersonaName(name: string): boolean {
 }
 
 /**
- * FOUNDATION-SEAL Phase 3 轮3：验证文件路径 — 字符串 + 长度上限
+ * 验证文件路径 — 字符串 + 长度上限
  *
  * 文件路径可能含中文、空格、路径分隔符等，不限制字符集，
  * 仅校验类型和长度，防止非字符串或超长值传入内核。
@@ -185,4 +188,55 @@ export function isValidRelationType(type: string): boolean {
     return false;
   }
   return RELATION_TYPE_WHITELIST.has(type);
+}
+
+/**
+ * 验证非空字符串（通用工具，消除 `!value || typeof value !== 'string'` 重复）
+ *
+ * @param value 待验证的值（unknown 类型，支持运行时类型收窄）
+ * @returns 验证通过返回 true，否则 false
+ */
+export function isNonEmptyString(value: unknown): boolean {
+  return typeof value === 'string' && value.length > 0;
+}
+
+/** 记忆关系参数结构（sourceId + targetId + type 三元组） */
+interface RelationParams {
+  sourceId: string;
+  targetId: string;
+  type: string;
+}
+
+/**
+ * 验证记忆关系参数三元组（sourceId + targetId + type 组合校验）
+ *
+ * 消除 addRelation / removeRelation / updateRelation 三处重复的 `!isValidId || !isValidId || !isValidRelationType` 校验链。
+ *
+ * @param data 关系参数对象
+ * @returns 三项全部校验通过返回 true，否则 false
+ */
+export function isValidRelationParams(data: RelationParams | undefined | null): boolean {
+  if (!data) return false;
+  return isValidId(data.sourceId) && isValidId(data.targetId) && isValidRelationType(data.type);
+}
+
+/**
+ * 验证快捷键配置结构（运行时类型守卫）
+ *
+ * 校验 enabled 为 boolean、accelerators 为 action→string 的非数组对象。
+ * 从 configHandlers.ts 局部定义迁移至 shared/，统一作为输入校验真理源。
+ *
+ * @param value 待验证的配置值
+ * @returns 校验通过返回 true（类型收窄为 ShortcutConfig），否则 false
+ */
+export function isValidShortcutConfig(value: unknown): value is ShortcutConfig {
+  if (typeof value !== 'object' || value === null) return false;
+  const s = value as { enabled?: unknown; accelerators?: unknown };
+  return (
+    typeof s.enabled === 'boolean' &&
+    typeof s.accelerators === 'object' &&
+    s.accelerators !== null &&
+    !Array.isArray(s.accelerators) &&
+    Object.values(s.accelerators as Record<string, unknown>).every((v) => typeof v === 'string')
+  );
 }

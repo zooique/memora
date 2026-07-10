@@ -23,6 +23,8 @@
 import type { ElectronAPI } from '../../preload.js';
 // 导入 types.js 确保 window.electronAPI 全局声明加载（独立入口需显式导入）
 import '../types.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 // Phase 2：补全管理器
 import { QuickInputCompletion } from './quickInputCompletion.js';
 
@@ -125,7 +127,7 @@ function initQuickInput(): void {
     try {
       await api.closeQuickInput();
     } catch (error) {
-      console.error('[QuickInput] 关闭失败:', error);
+      reportError('QuickInput', error);
     }
   }
 
@@ -162,10 +164,10 @@ function initQuickInput(): void {
       if (visible) {
         const itemCount = completionList.querySelectorAll('.completion-item').length;
         const targetHeight = 80 + Math.min(itemCount, 5) * 40;
-        void api.resizeQuickInput(targetHeight);
+        void api.resizeQuickInput(targetHeight).catch((e: unknown) => reportError('QuickInput-resize', e));
       } else {
         // 隐藏时恢复基础高度
-        void api.resizeQuickInput(80);
+        void api.resizeQuickInput(80).catch((e: unknown) => reportError('QuickInput-resize', e));
       }
     });
     completion.init();

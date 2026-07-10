@@ -287,7 +287,7 @@ export class TrayManager {
    * 销毁托盘
    *
    * 添加 isDestroyed 幂等守卫。
-   * 原实现无守卫，重复调用（如退出竞态：before-quit + window-all-closed）会抛异常。
+   * 无守卫，重复调用（如退出竞态：before-quit + window-all-closed）会抛异常。
    */
   destroy(): void {
     this.stopPulse();

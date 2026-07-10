@@ -76,7 +76,7 @@
       opacity: 0.8;
     }
 
-    /* 缺口 1.2：用户离开态——球体变暗 + 灰度滤镜，表达"精灵等待中" */
+    /* 用户离开态——球体变暗 + 灰度滤镜，表达"精灵等待中" */
     /* 视觉与 dragging 区分：dragging 是用户主动操作（保留鲜明），away 是被动等待（柔化） */
     #sphere.away {
       opacity: 0.5;
@@ -146,7 +146,7 @@
       background: var(--yellow);
     }
 
-    /* 缺口 1.2：away 状态——用户离开时状态点变黄（与 sleeping 视觉一致但语义独立） */
+    /* away 状态——用户离开时状态点变黄（与 sleeping 视觉一致但语义独立） */
     /* sleeping 是精灵主动休眠（夜间），away 是用户被动离开（白天） */
     #status-dot.away {
       background: var(--yellow);
@@ -238,7 +238,7 @@
       border-bottom: 4px solid var(--hint-bg);
     }
 
-    /* 缺口 1.2：离开时长小标签（用户离开超过 5 分钟时显示） */
+    /* 离开时长小标签（用户离开超过 5 分钟时显示） */
     /* 复用 #drag-hint 的视觉风格（hint-bg 半透明黑底 + hint-text 浅色文字） */
     /* 位置在球体上方（与 drag-hint 底部位置区分，避免同时显示时重叠） */
     #away-label {

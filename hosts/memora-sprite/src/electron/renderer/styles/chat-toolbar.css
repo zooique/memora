@@ -67,7 +67,7 @@
   text-overflow: ellipsis;
 }
 
-/* ─── v3：精灵状态条（对话工具栏内，替代原 chat-narrative） ── */
+/* ─── 精灵状态条（对话工具栏内，代替 chat-narrative） ── */
 /* 设计：紧凑胶囊形，font-xs，accent-soft 背景，点击展开感知面板 */
 .sprite-status-bar {
   display: inline-flex;

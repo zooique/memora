@@ -1,5 +1,5 @@
 /**
- * MemoryController 单元测试（QC-TEST-MEM）
+ * MemoryController 单元测试
  *
  * 覆盖范围：
  * - 构造函数：依赖注入 + agent.memory 为 null 时降级
@@ -38,13 +38,13 @@ import { setLogger } from 'memora';
 /** MemoryInspector 类型（从 Agent['memory'] 推导，避免直接导入未导出的类） */
 type Inspector = NonNullable<Agent['memory']>;
 
-/** MemoryMutator 类型（从 Agent['memoryMutator'] 推导，P1-2 拆分后写操作代理） */
+/** MemoryMutator 类型（从 Agent['memoryMutator'] 推导，写操作代理） */
 type Mutator = NonNullable<Agent['memoryMutator']>;
 
 // ─── Mock 工厂 ──────────────────────────────────────────
 
 /**
- * 创建 Mock MemoryInspector（只读查询，P1-2 拆分后写操作已移至 MemoryMutator）
+ * 创建 Mock MemoryInspector（只读查询，写操作已移至 MemoryMutator）
  *
  * 含 MemoryController 用到的全部读方法：
  * list / getById / getBySource / stats / suggest / searchHybrid / search / getAllRelations
@@ -74,7 +74,7 @@ function createMockInspector(): Inspector {
 }
 
 /**
- * 创建 Mock MemoryMutator（P1-2 拆分：写操作代理）
+ * 创建 Mock MemoryMutator（写操作代理）
  *
  * 含 MemoryController 用到的全部写方法：
  * upsert / delete / restore / purge / purgeExpired / addRelation / removeRelation
@@ -95,7 +95,7 @@ function createMockMutator(): Mutator {
 /**
  * 创建 Mock Agent（memory + memoryMutator，MemoryController 依赖）
  *
- * P1-2 拆分后 MemoryController 同时依赖只读 inspector 和写入 mutator，
+ * MemoryController 同时依赖只读 inspector 和写入 mutator，
  * 两者均通过 Partial<Agent> 中间类型实现单层 as 断言
  */
 function createMockAgent(inspector: Inspector | null, mutator: Mutator | null): Agent {

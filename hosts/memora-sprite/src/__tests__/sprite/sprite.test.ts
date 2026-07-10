@@ -74,7 +74,7 @@ const mockAgent = {
     // B1：dashboard() 调用 getAllRelations 统计冲突关系数
     getAllRelations: vi.fn().mockReturnValue([]),
   },
-  // P1-2 拆分：写操作已迁移至 agent.memoryMutator
+  // 写操作已移至 agent.memoryMutator
   memoryMutator: {
     // 回收站自动清理定时器调用 purgeExpired
     purgeExpired: vi.fn().mockReturnValue(0),
@@ -123,7 +123,7 @@ describe('Sprite', () => {
   it('start 时调用 purgeExpiredMemories 清理过期记忆（启动即清理）', () => {
     const tmpDir = createTmpDir();
     // 清理前置测试累积的调用计数（mockAgent 为模块级共享）
-    // P1-2 拆分：purgeExpired 已迁移至 agent.memoryMutator
+    // purgeExpired 已移至 agent.memoryMutator
     vi.mocked(mockAgent.memoryMutator.purgeExpired).mockClear();
     const sprite = new Sprite({ agent: mockAgent, dataDir: tmpDir });
     sprite.start();
@@ -163,9 +163,9 @@ describe('Sprite', () => {
   });
 });
 
-// ─── 缺口 I：prepareForChat 公共方法（从 wakeup 抽取） ──────
+// ─── prepareForChat 公共方法（从 wakeup 抽取） ──────
 
-describe('Sprite prepareForChat（缺口 I：对话前感知刷新）', () => {
+describe('Sprite prepareForChat（对话前感知刷新）', () => {
   let sprite: Sprite;
   let tmpDir: string;
 
@@ -184,7 +184,7 @@ describe('Sprite prepareForChat（缺口 I：对话前感知刷新）', () => {
   });
 
   it('prepareForChat(input) 应触发情感基调推导并注入 system prompt', () => {
-    // 缺口 I：prepareForChat 是从 wakeup 抽取的公共方法，
+    // prepareForChat 是从 wakeup 抽取的公共方法，
     // 负责对话前感知刷新（推导 affect + rapport + context + 注入 prompt）
     sprite.prepareForChat('你好');
     // injectAffect 应被调用（推导后注入 system prompt）
@@ -217,9 +217,9 @@ describe('Sprite prepareForChat（缺口 I：对话前感知刷新）', () => {
   });
 });
 
-// ─── 缺口 A：dailyMessageCount 每日消息计数 ────────────────
+// ─── dailyMessageCount 每日消息计数 ────────────────
 
-describe('Sprite dailyMessageCount（缺口 A：每日消息计数）', () => {
+describe('Sprite dailyMessageCount（每日消息计数）', () => {
   let sprite: Sprite;
   let tmpDir: string;
 

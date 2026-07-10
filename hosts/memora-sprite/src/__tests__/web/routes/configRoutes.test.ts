@@ -244,9 +244,8 @@ describe('handleConfigRoute', () => {
     await handleConfigRoute(req, res, ctx);
 
     expect(updateConfig).not.toHaveBeenCalled();
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(400);
     const parsed = JSON.parse(res.body);
-    expect(parsed.updated).toBe(false);
     expect(parsed.error).toContain('unknownKey');
   });
 

@@ -2,47 +2,23 @@
  * 渲染进程错误处理辅助模块
  *
  * 职责：
- * - 提供统一的未知错误转 Error 工具函数（toError）
+ * - re-export shared/toError（跨进程共享的 unknown → Error 转换工具）
  * - 提供统一的日志记录函数（reportError），替代分散的 console.warn/error
  * - 提供统一的 IPC 错误处理工厂函数（createIpcErrorHandler，记录日志 + 可选 toast 反馈）
  *
  * 设计原则：
- * - toError 为纯函数，无副作用，可独立测试
+ * - toError 从 shared/ 层导入，消除渲染进程本地重复实现
  * - reportError 统一日志格式为 `[context]` 前缀，便于检索和过滤
  * - reportError 支持 warn/error 两级（默认 error），向后兼容现有 88 处调用
  * - createIpcErrorHandler 通过闭包绑定 uiManager，避免每个调用点重复传参
- * - 行为与内核 utils/toError 对齐，但渲染进程独立实现（不引入内核依赖）
  */
 
 import type { UIManager } from '../ui.js';
-
-/**
- * 将未知错误转为 Error
- *
- * 渲染进程本地实现，行为与内核 toError 对齐。
- * 处理 Error 实例、字符串、含 message 属性的对象、其他类型。
- *
- * @see memora/src/utils/toError.ts — 内核对应实现，逻辑变更时需同步更新
- * @param err 捕获的未知错误
- * @returns 转换后的 Error 实例
- */
-export function toError(err: unknown): Error {
-  if (err instanceof Error) return err;
-  if (typeof err === 'string') return new Error(err);
-  if (typeof err === 'object' && err !== null && typeof (err as { message?: unknown }).message === 'string') {
-    return new Error((err as { message: string }).message);
-  }
-  // 普通对象（无 message 属性）：JSON 序列化保留调试信息，try-catch 防止循环引用抛错
-  if (typeof err === 'object' && err !== null) {
-    try {
-      return new Error(JSON.stringify(err));
-    } catch {
-      // 循环引用等无法序列化的情况，降级到 String()
-      return new Error(String(err));
-    }
-  }
-  return new Error(String(err ?? '未知错误'));
-}
+// toError 真理源在 shared/ 层（纯函数，无 Node 依赖），渲染进程和 Web 模式共用
+// 注意：必须 import 后再 export，不能直接 `export { toError } from '...'`——
+// 透传导出不会在当前模块作用域创建 toError 绑定，reportError/createIpcErrorHandler 内部使用会 ReferenceError
+import { toError } from '../../../shared/toError.js';
+export { toError };
 
 /** 日志级别类型（与 window.electronAPI.rendererLog 的 level 参数对齐） */
 export type LogLevel = 'error' | 'warn';
@@ -79,7 +55,7 @@ export function reportError(context: string, error: unknown, level: LogLevel = '
  * 提取自 8+ 处 catch 块的重复模式（reportError + toError + showToast）。
  * 统一错误处理风格，避免每个回调都写 2-3 行错误处理代码。
  *
- * QC-06 收束：内部使用 reportError 替代原始 console.error，
+ * 内部使用 reportError 代替 console.error，
  * 确保 IPC 错误日志格式与其他日志一致。
  *
  * @param uiManager UI 管理器实例（用于显示 toast）

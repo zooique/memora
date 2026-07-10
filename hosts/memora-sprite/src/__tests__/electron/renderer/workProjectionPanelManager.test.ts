@@ -124,7 +124,7 @@ describe('load · 成功与失败', () => {
     window.electronAPI.listWorkProjections = vi.fn().mockRejectedValue(new Error('网络错误'));
     const manager = createManager();
     await manager.load();
-    // P2-2：错误态对齐体系 B（.error-state + .error-icon + .error-message + .error-retry-btn）
+    // 错误态对齐体系 B（.error-state + .error-icon + .error-message + .error-retry-btn）
     const errorEl = document.querySelector('.error-state');
     expect(errorEl).not.toBeNull();
     expect(errorEl!.querySelector('.error-message')?.textContent).toContain('加载作品投影失败');

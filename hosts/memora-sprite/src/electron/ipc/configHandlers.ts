@@ -8,7 +8,7 @@
  * CONFIG_UPDATE 含副作用：静默模式切换时同步托盘状态 + 重建菜单。
  *
  * 静默模式恢复定时器从渲染层移至主进程。
- * 原实现依赖渲染层 setTimeout，托盘模式下（完整窗口未加载）定时器丢失，
+ * 依赖渲染层 setTimeout，托盘模式下（完整窗口未加载）定时器丢失，
  * 导致精灵永久静默。现在主进程在 silentModeExpiresAt 变更时管理定时器，
  * 确保无论渲染层是否运行都能自动恢复。
  */
@@ -17,9 +17,9 @@ import { ipcMain } from 'electron';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
 import { DEFAULT_SPRITE_CONFIG } from '../../sprite/spriteConfig.js';
-import type { SpriteConfig, SpriteConfigKey, ShortcutConfig } from '../../sprite/spriteConfig.js';
-import { safeHandle } from './types.js';
-import { isValidPersonaName } from './inputValidation.js';
+import type { SpriteConfig, SpriteConfigKey } from '../../sprite/spriteConfig.js';
+import { safeHandle, throwingHandle } from './types.js';
+import { isValidPersonaName, isValidShortcutConfig } from './inputValidation.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -80,8 +80,7 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 获取精灵配置 */
   ipcMain.handle(IPC_CHANNELS.CONFIG_GET, async () =>
-    // 使用 DEFAULT_SPRITE_CONFIG 作为 fallback，避免空对象类型断言。
-    safeHandle('获取配置失败', { config: DEFAULT_SPRITE_CONFIG }, () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
+    throwingHandle('获取配置失败', () => ({ config: ctx.sprite.getConfig() }), ErrorCode.CONFIG_LOAD_FAILED),
   );
 
   /**
@@ -89,25 +88,6 @@ export function registerConfigHandlers(ctx: IpcContext): void {
    */
   function isSpriteConfigKey(key: string): key is SpriteConfigKey {
     return key in DEFAULT_SPRITE_CONFIG;
-  }
-
-  /**
-   * 校验 shortcuts 配置结构（运行时类型守卫）
-   *
-   * sprite.updateConfig 内部用 applyConfigField 校验 shortcuts，但校验失败时不抛错
-   * 仅忽略更新。此处副作用触发前需二次校验，避免 ShortcutManager 配置与 Sprite
-   * 配置不一致（updateConfig 静默忽略非法值时，副作用不应执行）。
-   */
-  function isValidShortcutConfig(value: unknown): value is ShortcutConfig {
-    if (typeof value !== 'object' || value === null) return false;
-    const s = value as { enabled?: unknown; accelerators?: unknown };
-    return (
-      typeof s.enabled === 'boolean' &&
-      typeof s.accelerators === 'object' &&
-      s.accelerators !== null &&
-      !Array.isArray(s.accelerators) &&
-      Object.values(s.accelerators as Record<string, unknown>).every((v) => typeof v === 'string')
-    );
   }
 
   /** 更新配置项 */
@@ -143,7 +123,6 @@ export function registerConfigHandlers(ctx: IpcContext): void {
       return { updated: true };
     } catch (error) {
       // 错误返回包含 error 字段，与非法配置键路径返回结构一致
-      // 原实现仅返回 { updated: false }，调用方无法区分"配置键非法"与"更新失败"
       const message = error instanceof Error ? error.message : '更新配置失败';
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: message });
       return { updated: false, error: message };
@@ -206,13 +185,13 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 列出所有角色 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_LIST, async () =>
-    safeHandle('列出角色失败', { personas: [] }, () => ({ personas: ctx.sprite.listPersonas() })),
+    throwingHandle('列出角色失败', () => ({ personas: ctx.sprite.listPersonas() })),
   );
 
   /** 切换角色 */
   ipcMain.handle(IPC_CHANNELS.PERSONA_SWITCH, async (_event, name: string) =>
     safeHandle('切换角色失败', { switched: false, name: null }, () => {
-      // FOUNDATION-SEAL Phase 3 轮2：校验角色名称白名单字符 + 长度，防路径遍历
+      // 校验角色名称白名单字符 + 长度，防路径遍历
       if (!isValidPersonaName(name)) {
         return { switched: false, name: null };
       }
@@ -235,6 +214,6 @@ export function registerConfigHandlers(ctx: IpcContext): void {
 
   /** 查询当前角色匹配模式（对齐 CLI /mode 查询能力） */
   ipcMain.handle(IPC_CHANNELS.PERSONA_MODE_GET, async () =>
-    safeHandle('查询角色模式失败', { mode: 'auto' }, () => ({ mode: ctx.sprite.personaMode })),
+    throwingHandle('查询角色模式失败', () => ({ mode: ctx.sprite.personaMode })),
   );
 }

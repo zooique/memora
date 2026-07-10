@@ -12,7 +12,7 @@ import { ipcMain } from 'electron';
 import { logger, toError } from 'memora';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 import { IPC_CHANNELS } from './channels.js';
-import { safeHandle } from './types.js';
+import { throwingHandle } from './types.js';
 import type { IpcContext } from './types.js';
 
 /**
@@ -53,7 +53,7 @@ export function registerSystemHandlers(ctx: IpcContext): void {
 
   /** 列出已注册项目（供 UI 专注模式选择器使用） */
   ipcMain.handle(IPC_CHANNELS.PROJECTS_LIST, async () =>
-    safeHandle('获取项目列表失败', { projects: [] }, () => ({ projects: ctx.sprite.listProjects() })),
+    throwingHandle('获取项目列表失败', () => ({ projects: ctx.sprite.listProjects() })),
   );
 
   // ─── 仪表盘（UI 完整仪表盘） ──────────────────────
@@ -110,17 +110,9 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       };
     } catch (error) {
       errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '获取仪表盘数据失败' });
-      return {
-        total: 0,
-        bySource: {},
-        suggestions: [],
-        pendingNotices: 0,
-        proactiveThreshold: 3,
-        registeredTriggers: [],
-        sourceHealth: null,
-        metrics: null,
-        skills: [],
-      };
+      // 主查询失败时显性抛出，让渲染层 loadDashboard 的 catch 触发 showToast
+      // 避免返回空仪表盘让用户误以为"无数据"而非"加载失败"（§2：不吞异常返回空对象）
+      throw error;
     }
   });
 

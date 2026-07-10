@@ -59,7 +59,7 @@ const HANDLE_CHANNELS = [
   // Phase 5.1/5.2：路径追溯 + 邻居查询（reinitAgent 时需清理，避免重复注册抛错）
   IPC_CHANNELS.MEMORIES_RELATION_PATH,
   IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS,
-  // 缺口 J：manual 模式手动归档（reinitAgent 时需清理，避免重复注册抛错）
+  // manual 模式手动归档（reinitAgent 时需清理，避免重复注册抛错）
   IPC_CHANNELS.MEMORIES_ARCHIVE_PROFILE,
   IPC_CHANNELS.MEMORIES_ARCHIVE_INSIGHT,
   // 会话归档（reinitAgent 时需清理，避免重复注册抛错）

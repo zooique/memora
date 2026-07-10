@@ -211,4 +211,83 @@ describe('SqliteSessionStore', () => {
       expect(messages2[0]!.content).toBe('今天');
     });
   });
+
+  describe('deleteSessionsByDatePrefix', () => {
+    it('应删除指定日期的所有子会话', () => {
+      // 准备：2026-06-25 有两个子会话，2026-06-26 有一个
+      store.appendMessage('2026-06-25', 'main', makeMessage({ content: 'A' }));
+      store.appendMessage('2026-06-25', 'coding', makeMessage({ content: 'B' }));
+      store.appendMessage('2026-06-26', 'main', makeMessage({ content: 'C' }));
+
+      const deletedCount = store.deleteSessionsByDatePrefix('2026-06-25');
+
+      // 应删除 2 个会话
+      expect(deletedCount).toBe(2);
+      // 2026-06-25 的两个会话均已清空
+      expect(store.loadMessages('2026-06-25', 'main')).toHaveLength(0);
+      expect(store.loadMessages('2026-06-25', 'coding')).toHaveLength(0);
+      // 2026-06-26 的会话不受影响
+      expect(store.loadMessages('2026-06-26', 'main')).toHaveLength(1);
+    });
+
+    it('未找到匹配日期时返回 0', () => {
+      store.appendMessage('2026-06-26', 'main', makeMessage());
+
+      const deletedCount = store.deleteSessionsByDatePrefix('2026-06-25');
+      expect(deletedCount).toBe(0);
+    });
+  });
+
+  describe('listSessionsGroupedByDate', () => {
+    it('应按日期聚合，同一天取字符串排序最后的会话作为代表', () => {
+      // 准备：2026-06-25 有 main 和 coding 两个会话
+      // listSessions 的 SQL 为 ORDER BY sessionId（字符串排序），
+      // 同一天内 'main' > 'coding'，所以 main 排在最后，作为代表
+      store.appendMessage('2026-06-24', 'main', makeMessage({ role: 'user', content: '24号的消息' }));
+      store.appendMessage('2026-06-25', 'main', makeMessage({ role: 'user', content: '25号 main' }));
+      store.appendMessage('2026-06-25', 'coding', makeMessage({ role: 'user', content: '25号 coding' }));
+
+      // today=2026-06-26（当天无消息）
+      const result = store.listSessionsGroupedByDate('2026-06-26');
+
+      // 3 个日期 = 3 条记录
+      expect(result).toHaveLength(3);
+      // 日期升序
+      const dates = result.map((s) => s.date);
+      expect(dates).toEqual(['2026-06-24', '2026-06-25', '2026-06-26']);
+      // 2026-06-25 取字符串排序最后的 main（listSessions 按 sessionId 字符串排序，非创建顺序）
+      const day25 = result.find((s) => s.date === '2026-06-25');
+      expect(day25?.name).toBe('main');
+      expect(day25?.id).toBe('2026-06-25-main');
+    });
+
+    it('应始终包含当天 main 会话（即使无消息）', () => {
+      // 准备：只有 2026-06-24 的会话，当天 2026-06-26 无消息
+      store.appendMessage('2026-06-24', 'main', makeMessage());
+
+      const result = store.listSessionsGroupedByDate('2026-06-26');
+
+      // 应包含 2026-06-24 和当天占位 2026-06-26
+      expect(result).toHaveLength(2);
+      const today = result.find((s) => s.date === '2026-06-26');
+      expect(today?.id).toBe('2026-06-26-main');
+      expect(today?.name).toBe('main');
+      expect(today?.messageCount).toBe(0);
+      expect(today?.preview).toBe('');
+    });
+
+    it('返回数据应含 preview 和 messageCount', () => {
+      store.appendMessage('2026-06-25', 'main', makeMessage({ role: 'user', content: '首条用户消息' }));
+      store.appendMessage('2026-06-25', 'main', makeMessage({ role: 'assistant', content: '助手回复' }));
+      store.appendMessage('2026-06-25', 'main', makeMessage({ role: 'user', content: '第二条用户消息' }));
+
+      const result = store.listSessionsGroupedByDate('2026-06-26');
+      const day25 = result.find((s) => s.date === '2026-06-25');
+
+      // preview 应为首条用户消息
+      expect(day25?.preview).toBe('首条用户消息');
+      // messageCount 应为 3
+      expect(day25?.messageCount).toBe(3);
+    });
+  });
 });
