@@ -1571,17 +1571,33 @@
       <div class="modal-body">
         <table class="shortcuts-table">
           <tbody>
-            <!-- 快捷键，按使用场景分组 -->
+            <!-- 面板切换组 -->
+            <tr><td colspan="2" class="shortcuts-group">面板切换</td></tr>
             <tr><td><kbd>Ctrl+1</kbd></td><td>切换到对话面板</td></tr>
             <tr><td><kbd>Ctrl+2</kbd></td><td>切换到记忆面板</td></tr>
             <tr><td><kbd>Ctrl+3</kbd></td><td>切换到设置面板</td></tr>
-            <tr><td><kbd>Ctrl+.</kbd></td><td>停止生成</td></tr>
+            <tr><td><kbd>Ctrl+4</kbd></td><td>切换到仪表盘面板</td></tr>
+            <tr><td><kbd>Ctrl+5</kbd></td><td>切换到感知面板</td></tr>
+            <!-- 命令与搜索组 -->
+            <tr><td colspan="2" class="shortcuts-group">命令与搜索</td></tr>
+            <tr><td><kbd>Ctrl+K</kbd></td><td>打开命令面板</td></tr>
+            <tr><td><kbd>Ctrl+Shift+F</kbd></td><td>搜索对话内容</td></tr>
             <tr><td><kbd>Ctrl+/</kbd></td><td>显示快捷键帮助</td></tr>
-            <tr><td><kbd>Enter</kbd></td><td>发送消息（对话输入框）</td></tr>
-            <tr><td><kbd>Shift+Enter</kbd></td><td>换行（对话输入框）</td></tr>
+            <!-- 全局快捷键组（可在任意应用中触发，受设置面板开关控制） -->
+            <tr><td colspan="2" class="shortcuts-group">全局快捷键 <span class="shortcuts-hint">（任意应用中可用）</span></td></tr>
+            <tr><td><kbd>Ctrl+Shift+Space</kbd></td><td>显示/隐藏主窗口</td></tr>
+            <tr><td><kbd>Ctrl+Shift+M</kbd></td><td>快速记录</td></tr>
+            <tr><td><kbd>Ctrl+Shift+R</kbd></td><td>召回记忆</td></tr>
+            <tr><td><kbd>Ctrl+Shift+I</kbd></td><td>快速输入浮窗（带补全）</td></tr>
+            <!-- 对话输入组 -->
+            <tr><td colspan="2" class="shortcuts-group">对话输入</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>发送消息</td></tr>
+            <tr><td><kbd>Shift+Enter</kbd></td><td>换行</td></tr>
+            <tr><td><kbd>Ctrl+.</kbd></td><td>停止生成</td></tr>
+            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>导航输入补全候选</td></tr>
+            <tr><td><kbd>Tab</kbd></td><td>确认补全候选</td></tr>
             <tr><td><kbd>Ctrl+Enter</kbd></td><td>提交（添加记忆弹窗）</td></tr>
-            <tr><td><kbd>Esc</kbd></td><td>关闭弹窗/下拉菜单</td></tr>
-            <tr><td><kbd>↑</kbd> / <kbd>↓</kbd></td><td>导航角色下拉菜单</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>关闭弹窗/清空输入</td></tr>
           </tbody>
         </table>
       </div>

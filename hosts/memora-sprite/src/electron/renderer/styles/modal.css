@@ -593,6 +593,32 @@ kbd {
   border-bottom: none;
 }
 
+/* 分组标题行（colspan=2，跨两列） */
+.shortcuts-table .shortcuts-group {
+  padding-top: var(--space-3);
+  padding-bottom: var(--space-1);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--subtext);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: none;
+  background: var(--surface0);
+}
+
+/* 分组标题行首项不需要额外上间距 */
+.shortcuts-table tr:first-child .shortcuts-group {
+  padding-top: var(--space-1-5);
+}
+
+/* 分组标题中的提示文字（如"任意应用中可用"） */
+.shortcuts-table .shortcuts-hint {
+  font-weight: var(--weight-normal);
+  text-transform: none;
+  color: var(--text-3);
+  letter-spacing: normal;
+}
+
 /* ─── 写入确认 diff 预览 ──────────────────────────────── */
 .write-confirm-info {
   font-size: var(--font-sm);
