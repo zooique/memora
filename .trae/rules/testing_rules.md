@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 测试规范（三层金字塔 + Mock LLM 策略）
-version: v0.4
-date: 2026-07-04
+version: v0.5
+date: 2026-07-10
 ---
 
 # 测试规范
@@ -35,12 +35,14 @@ date: 2026-07-04
 
 ## 3. 覆盖率目标
 
+> 阈值与 `vitest.config.ts` 的 `coverage.thresholds` 对齐，文档是配置的描述而非独立目标。
+
 | 指标 | 目标  | 备注                                                  |
 | ---- | ----- | ----------------------------------------------------- |
-| 行   | ≥ 75% | CLI 入口已移出至宿主项目，不计入内核覆盖率  |
-| 函数 | ≥ 85% | 核心逻辑函数覆盖率要求更高                            |
-| 分支 | ≥ 70% | loop.ts/factory.ts 的条件分支较难在单元测试中完全覆盖 |
-| 语句 | ≥ 75% | 与行覆盖率保持一致                                    |
+| 行   | ≥ 80% | CLI 入口已移出至宿主项目，不计入内核覆盖率  |
+| 函数 | ≥ 88% | 核心逻辑函数覆盖率要求更高（1.0 发布阈值）            |
+| 分支 | ≥ 75% | loop.ts/factory.ts 的条件分支较难在单元测试中完全覆盖 |
+| 语句 | ≥ 80% | 与行覆盖率保持一致                                    |
 
 **不计入覆盖率**：
 
@@ -48,11 +50,11 @@ date: 2026-07-04
 - `src/**/*.d.ts`（类型声明）
 - `src/**/*.test.ts`（测试自身）
 
-## 4. 当前测试文件清单（57 文件，用例数持续增长）
+## 4. 当前测试文件清单（62 文件，用例数持续增长）
 
 > 测试文件镜像 `src/` 目录结构（`__tests__/` 镜像原则）。清单按模块分组，与源文件 1:1 对齐。
 
-**agent/**（24 文件，含 managers/ 全覆盖 + 4 个跨模块集成测试）：
+**agent/**（26 文件，含 managers/ 全覆盖 + 4 个跨模块集成测试）：
 - [x] Agent 门面类（agent.test.ts）
 - [x] Agent Loop 主循环（loop.test.ts）
 - [x] 上下文管理器（contextManager.test.ts）
@@ -72,13 +74,15 @@ date: 2026-07-04
 - [x] 洞察提取（insightExtractor.test.ts）
 - [x] 自动配置精炼（autoConfigRefiner.test.ts）
 - [x] 记忆顾问（memoryAdvisor.test.ts）
+- [x] 关系构建器（relationBuilder.test.ts）— IMemoryRelationStore 构建逻辑
+- [x] 记忆变更器（memoryMutator.test.ts）— 记忆 CRUD 变更逻辑
 - [x] 护栏（guardrail.test.ts）
 - [x] 指标（metrics.test.ts）
 - [x] 降级（degradation.test.ts）
 - [x] 可观测性 Tracer（tracer.test.ts）
 - [x] 会话存储契约（sessionStoreContract.test.ts）— 跨模块集成
 
-**memory/**（11 文件）：
+**memory/**（12 文件）：
 - [x] 记忆加载器（loader.test.ts）
 - [x] 项目管理器（projectManager.test.ts）
 - [x] 记忆召回（recall.test.ts）
@@ -89,6 +93,8 @@ date: 2026-07-04
 - [x] 向量存储（vectorStore.test.ts）
 - [x] 记忆关系存储（relationStore.test.ts）— IMemoryRelationStore 接口 + InMemoryRelationStore 实现
 - [x] 内存存储（inMemoryStorage.test.ts）
+- [x] 锁管理器（lockManager.test.ts）— 并发写入保护
+- [x] 项目注册表（projectRegistry.test.ts）— 项目路径注册与查询
 - [x] 冲突检测（relationStore.test.ts 扩展 + insightExtractor 集成）
 
 **llm/**（5 文件）：
