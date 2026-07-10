@@ -1,0 +1,709 @@
+/**
+ * 快速输入补全管理器测试
+ *
+ * @vitest-environment jsdom
+ *
+ * 覆盖范围：
+ * - init/cleanup：事件绑定与解绑生命周期
+ * - handleInput：防抖触发 / 最小字符阈值 / 短输入清空
+ * - fetchCandidates：并行 IPC / 乱序取消 / 单源降级
+ * - mergeCandidates：记忆候选 / 对话候选（assistant 过滤）/ 去重 / 排序 / Top-5 截断
+ * - handleKeyDown：↓↑ 循环导航 / Tab 确认回填
+ * - renderCandidates：DOM 结构 / 点击选择 / hover 同步 / 回调通知
+ * - clearCandidates：DOM 清空 / hidden 类 / 回调通知
+ *
+ * Mock 策略：
+ * - mock errorHelpers.reportError（避免 console 噪音）
+ * - mock window.electronAPI.searchMemories/searchSessionMessages（控制返回值）
+ * - JSDOM 提供真实 DOM API（createElement/click/dispatchEvent）
+ * - vi.useFakeTimers 控制防抖定时器
+ */
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { QuickInputCompletion } from '../../../electron/renderer/quick-input/quickInputCompletion.js';
+import type { CompletionElectronAPI } from '../../../electron/renderer/quick-input/quickInputCompletion.js';
+
+// ─── Mock errorHelpers（reportError 依赖 UI，需 mock） ───
+vi.mock('../../../electron/renderer/helpers/errorHelpers.js', () => ({
+  reportError: vi.fn(),
+  createIpcErrorHandler: vi.fn(() => vi.fn()),
+  toError: vi.fn((err: unknown) => ({
+    message: err instanceof Error ? err.message : String(err),
+    name: err instanceof Error ? err.name : 'Error',
+  })),
+}));
+
+// ─── 测试辅助 ─────────────────────────────────────────────
+
+/** 创建 mock ElectronAPI（searchMemories + searchSessionMessages） */
+function createMockApi(): CompletionElectronAPI {
+  return {
+    searchMemories: vi.fn().mockResolvedValue({ hits: [] }),
+    searchSessionMessages: vi.fn().mockResolvedValue({ results: [] }),
+  };
+}
+
+/** 创建补全管理器实例（已 init，含 input + ul DOM） */
+function createCompletion(opts?: {
+  input?: HTMLInputElement | HTMLTextAreaElement;
+  list?: HTMLElement;
+  api?: CompletionElectronAPI;
+}): { completion: QuickInputCompletion; input: HTMLInputElement; list: HTMLElement; api: CompletionElectronAPI } {
+  const input = opts?.input ?? document.createElement('input');
+  const list = opts?.list ?? document.createElement('ul');
+  const api = opts?.api ?? createMockApi();
+  document.body.appendChild(input);
+  document.body.appendChild(list);
+  const completion = new QuickInputCompletion(input, list, api);
+  completion.init();
+  return { completion, input, list, api };
+}
+
+/** 模拟记忆搜索结果 */
+function createMemoryHit(overrides?: Partial<{ contentPreview: string; score: number; source: string }>) {
+  return {
+    contentPreview: '用户偏好函数式编程风格',
+    score: 0.85,
+    source: 'insight',
+    ...overrides,
+  };
+}
+
+/** 模拟对话搜索结果 */
+function createMessageResult(overrides?: Partial<{ content: string; role: string }>) {
+  return {
+    content: '帮我看看这个 TypeScript 类型问题',
+    role: 'user',
+    ...overrides,
+  };
+}
+
+// ─── 全局设置 ─────────────────────────────────────────────
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  document.body.innerHTML = '';
+});
+
+// ─── init / cleanup ─────────────────────────────────────
+
+describe('init · 生命周期', async () => {
+  it('init 后输入应触发防抖定时器', async () => {
+    const { input, api } = createCompletion();
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+
+    // 防抖定时器应存在（未触发 IPC）
+    expect(api.searchMemories).not.toHaveBeenCalled();
+    // 快进防抖
+    await vi.advanceTimersByTimeAsync(300);
+    expect(api.searchMemories).toHaveBeenCalledWith('测试');
+  });
+
+  it('cleanup 后输入不应触发补全', async () => {
+    const { completion, input, api } = createCompletion();
+    completion.cleanup();
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(api.searchMemories).not.toHaveBeenCalled();
+  });
+
+  it('cleanup 应清空防抖定时器', async () => {
+    const { completion, input, api } = createCompletion();
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    // 防抖中 cleanup
+    completion.cleanup();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(api.searchMemories).not.toHaveBeenCalled();
+  });
+
+  it('cleanup 后 keydown 不应触发导航', async () => {
+    const { completion, input, api } = createCompletion();
+    // 先填充候选列表（需要真实数据）
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit()],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [],
+    });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // cleanup 后按 Tab 不应触发 onSelect
+    const onSelect = vi.fn();
+    completion.onSelect(onSelect);
+    completion.cleanup();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+// ─── handleInput · 防抖与阈值 ───────────────────────────
+
+describe('handleInput · 防抖与字符阈值', async () => {
+  it('输入 < 2 字符不应触发补全', async () => {
+    const { input, api } = createCompletion();
+    input.value = 'a';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(api.searchMemories).not.toHaveBeenCalled();
+  });
+
+  it('输入 ≥ 2 字符应在防抖后触发补全', async () => {
+    const { input, api } = createCompletion();
+    input.value = 'ab';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(api.searchMemories).toHaveBeenCalledWith('ab');
+  });
+
+  it('连续输入应重置防抖定时器（只触发一次 IPC）', async () => {
+    const { input, api } = createCompletion();
+    input.value = 'a';
+    input.dispatchEvent(new Event('input'));
+    vi.advanceTimersByTime(200);
+    input.value = 'ab';
+    input.dispatchEvent(new Event('input'));
+    vi.advanceTimersByTime(200);
+    input.value = 'abc';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    // 只触发一次，用最新值
+    expect(api.searchMemories).toHaveBeenCalledTimes(1);
+    expect(api.searchMemories).toHaveBeenCalledWith('abc');
+  });
+
+  it('输入后清空应在防抖前取消补全', async () => {
+    const { input, api } = createCompletion();
+    input.value = 'abc';
+    input.dispatchEvent(new Event('input'));
+    // 防抖中清空
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(api.searchMemories).not.toHaveBeenCalled();
+  });
+
+  it('输入应 trim 后传递给 IPC', async () => {
+    const { input, api } = createCompletion();
+    input.value = '  测试  ';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(api.searchMemories).toHaveBeenCalledWith('测试');
+  });
+
+  it('短输入切换到长输入应清空候选列表', async () => {
+    const { input, list, api } = createCompletion();
+    // 先填充候选
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit()],
+    });
+    input.value = 'abc';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+    expect(list.classList.contains('hidden')).toBe(false);
+
+    // 输入短字符应清空
+    input.value = 'a';
+    input.dispatchEvent(new Event('input'));
+    expect(list.classList.contains('hidden')).toBe(true);
+    expect(list.children.length).toBe(0);
+  });
+});
+
+// ─── mergeCandidates · 合并去重排序 ─────────────────────
+
+describe('mergeCandidates · 合并去重排序', async () => {
+  it('记忆结果应标记"记忆"并使用原 score', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '偏好函数式', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [],
+    });
+    input.value = '偏好';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const label = document.querySelector('.completion-label');
+    expect(label?.textContent).toBe('记忆');
+  });
+
+  it('对话结果应标记"对话"并过滤 assistant 回复', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        createMessageResult({ content: '用户消息', role: 'user' }),
+        createMessageResult({ content: 'AI 回复', role: 'assistant' }),
+      ],
+    });
+    input.value = '消息';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const items = document.querySelectorAll('.completion-item');
+    expect(items.length).toBe(1);
+    expect(items[0]!.querySelector('.completion-label')?.textContent).toBe('对话');
+    expect(items[0]!.querySelector('.completion-text')?.textContent).toBe('用户消息');
+  });
+
+  it('对话 score 应按顺序递减（0.9 → 0.85 → ...）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [
+        createMessageResult({ content: '第一条消息', role: 'user' }),
+        createMessageResult({ content: '第二条消息', role: 'user' }),
+        createMessageResult({ content: '第三条消息', role: 'user' }),
+      ],
+    });
+    input.value = '条消息';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 按 DOM 顺序验证排序（score 降序 = 输入顺序）
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts).toEqual(['第一条消息', '第二条消息', '第三条消息']);
+  });
+
+  it('相同前缀文本应去重，保留 score 较高者', async () => {
+    const { input, api } = createCompletion();
+    // 构造前 40 字符完全相同的长文本（去重 key = text.slice(0,40).toLowerCase()）
+    const sharedPrefix = '关于项目会议记录的详细分析和总结报告'.repeat(3); // 18×3=54 字符 > 40
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: sharedPrefix + '记忆扩展', score: 0.95 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [createMessageResult({ content: sharedPrefix + '对话扩展', role: 'user' })],
+    });
+    input.value = '关于项目';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 前 40 字符相同 → 去重，只保留 score=0.95 的记忆（对话 score=0.9）
+    const items = document.querySelectorAll('.completion-item');
+    expect(items.length).toBe(1);
+    expect(items[0]!.querySelector('.completion-label')?.textContent).toBe('记忆');
+  });
+
+  it('候选应按 score 降序排序', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '低分记忆', score: 0.5 }),
+        createMemoryHit({ contentPreview: '高分记忆', score: 0.95 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const texts = Array.from(document.querySelectorAll('.completion-text')).map((el) => el.textContent);
+    expect(texts[0]).toBe('高分记忆');
+    expect(texts[1]).toBe('低分记忆');
+  });
+
+  it('候选应截断为 Top-5', async () => {
+    const { input, api } = createCompletion();
+    // 6 条不同前缀的记忆（避免去重）
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: Array.from({ length: 6 }, (_, i) =>
+        createMemoryHit({ contentPreview: `记忆${i}号唯一前缀`, score: 0.8 - i * 0.05 }),
+      ),
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '记忆';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const items = document.querySelectorAll('.completion-item');
+    expect(items.length).toBe(5);
+  });
+
+  it('超长文本应截断并加省略号', async () => {
+    const { input, api } = createCompletion();
+    const longText = '这是一段非常非常长的文本'.repeat(20);
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: longText, score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '长文';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const text = document.querySelector('.completion-text')?.textContent;
+    expect(text!.length).toBeLessThanOrEqual(80);
+    expect(text!.endsWith('…')).toBe(true);
+  });
+
+  it('空 contentPreview/content 应跳过', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '', score: 0.9 }),
+        createMemoryHit({ contentPreview: '   ', score: 0.8 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [createMessageResult({ content: '', role: 'user' })],
+    });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(document.querySelectorAll('.completion-item').length).toBe(0);
+  });
+});
+
+// ─── fetchCandidates · 并行 IPC 与降级 ──────────────────
+
+describe('fetchCandidates · 并行 IPC 与降级', async () => {
+  it('应并行调用 searchMemories 和 searchSessionMessages', async () => {
+    const { input, api } = createCompletion();
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(api.searchMemories).toHaveBeenCalledWith('测试');
+    expect(api.searchSessionMessages).toHaveBeenCalledWith({ keyword: '测试', limit: 20 });
+  });
+
+  it('searchMemories 失败应降级为空候选（不抛错）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({
+      results: [createMessageResult({ content: '对话结果', role: 'user' })],
+    });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 仍有对话候选
+    expect(document.querySelectorAll('.completion-item').length).toBe(1);
+  });
+
+  it('searchSessionMessages 失败应降级为空候选（不抛错）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit()],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 仍有记忆候选
+    expect(document.querySelectorAll('.completion-item').length).toBe(1);
+  });
+
+  it('两个 IPC 都失败应显示空候选列表', async () => {
+    const { input, api, list } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('IPC 失败'));
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(list.classList.contains('hidden')).toBe(true);
+    expect(list.children.length).toBe(0);
+  });
+
+  it('乱序响应应丢弃旧请求结果', async () => {
+    const { input, api } = createCompletion();
+    // 第一次请求慢，第二次请求快
+    let resolveFirst: (value: unknown) => void;
+    (api.searchMemories as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce({ hits: [createMemoryHit({ contentPreview: '第二次结果' })] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+
+    // 第一次输入
+    input.value = '第一';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 第二次输入（重置防抖）
+    input.value = '第二';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 第二次请求先返回
+    await vi.runAllTimersAsync();
+
+    // 第一次请求后返回（应被丢弃）
+    resolveFirst!({ hits: [createMemoryHit({ contentPreview: '第一次结果' })] });
+    await Promise.resolve();
+
+    // DOM 应显示第二次的结果，不是第一次的
+    const text = document.querySelector('.completion-text')?.textContent;
+    expect(text).toBe('第二次结果');
+  });
+
+  it('空结果应隐藏候选列表', async () => {
+    const { input, api, list } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(list.classList.contains('hidden')).toBe(true);
+  });
+});
+
+// ─── 键盘导航 ────────────────────────────────────────────
+
+describe('handleKeyDown · 键盘导航', async () => {
+  it('ArrowDown 应选中下一项（循环到顶部）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '第一项', score: 0.9 }),
+        createMemoryHit({ contentPreview: '第二项', score: 0.8 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 初始无选中
+    expect(document.querySelector('.completion-item.selected')).toBeNull();
+
+    // 按 ↓ 选中第一项
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    expect(document.querySelectorAll('.completion-item.selected').length).toBe(1);
+    expect(document.querySelectorAll('.completion-item')[0]!.classList.contains('selected')).toBe(true);
+
+    // 再按 ↓ 选中第二项
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    expect(document.querySelectorAll('.completion-item')[1]!.classList.contains('selected')).toBe(true);
+
+    // 再按 ↓ 循环回第一项
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    expect(document.querySelectorAll('.completion-item')[0]!.classList.contains('selected')).toBe(true);
+  });
+
+  it('ArrowUp 应选中上一项（循环到底部）', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '第一项', score: 0.9 }),
+        createMemoryHit({ contentPreview: '第二项', score: 0.8 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 初始按 ↑ 应循环到最后一项
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+    expect(document.querySelectorAll('.completion-item')[1]!.classList.contains('selected')).toBe(true);
+
+    // 再按 ↑ 选中第一项
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+    expect(document.querySelectorAll('.completion-item')[0]!.classList.contains('selected')).toBe(true);
+  });
+
+  it('Tab 应确认选中项并触发 onSelect 回调', async () => {
+    const { completion, input, api } = createCompletion();
+    const onSelect = vi.fn();
+    completion.onSelect(onSelect);
+
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '选中文本', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 选中第一项
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    // Tab 确认
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+
+    expect(onSelect).toHaveBeenCalledWith('选中文本');
+  });
+
+  it('Tab 确认后应清空候选列表', async () => {
+    const { completion, input, api, list } = createCompletion();
+    completion.onSelect(vi.fn());
+
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '文本', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+
+    expect(list.classList.contains('hidden')).toBe(true);
+    expect(list.children.length).toBe(0);
+  });
+
+  it('无候选时按键不应有效果', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 无候选时按 ↓ 不应报错
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    expect(document.querySelector('.completion-item.selected')).toBeNull();
+  });
+});
+
+// ─── 渲染与交互 ──────────────────────────────────────────
+
+describe('renderCandidates · 渲染与交互', async () => {
+  it('候选项应包含来源标签和文本', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '测试内容', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const item = document.querySelector('.completion-item');
+    expect(item).not.toBeNull();
+    expect(item!.querySelector('.completion-label')?.textContent).toBe('记忆');
+    expect(item!.querySelector('.completion-text')?.textContent).toBe('测试内容');
+  });
+
+  it('候选项应设置 data-index 属性', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: 'A', score: 0.9 }),
+        createMemoryHit({ contentPreview: 'B', score: 0.8 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const items = document.querySelectorAll('.completion-item');
+    expect(items[0]!.getAttribute('data-index')).toBe('0');
+    expect(items[1]!.getAttribute('data-index')).toBe('1');
+  });
+
+  it('点击候选项应触发 onSelect 并清空列表', async () => {
+    const { completion, input, api, list } = createCompletion();
+    const onSelect = vi.fn();
+    completion.onSelect(onSelect);
+
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: '点击文本', score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const item = document.querySelector('.completion-item') as HTMLElement;
+    item.click();
+
+    expect(onSelect).toHaveBeenCalledWith('点击文本');
+    expect(list.classList.contains('hidden')).toBe(true);
+  });
+
+  it('hover 候选项应同步 selectedIndex', async () => {
+    const { input, api } = createCompletion();
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '第一项', score: 0.9 }),
+        createMemoryHit({ contentPreview: '第二项', score: 0.8 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // hover 第二项
+    const items = document.querySelectorAll('.completion-item');
+    items[1]!.dispatchEvent(new Event('mouseenter'));
+
+    expect(items[1]!.classList.contains('selected')).toBe(true);
+    expect(items[0]!.classList.contains('selected')).toBe(false);
+  });
+
+  it('候选列表显示/隐藏应触发 onListChange 回调', async () => {
+    const { completion, input, api } = createCompletion();
+    const onListChange = vi.fn();
+    completion.onListChange(onListChange);
+
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit()],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 候选显示 → onListChange(true)
+    expect(onListChange).toHaveBeenCalledWith(true);
+
+    // 清空 → onListChange(false)
+    input.value = 'a';
+    input.dispatchEvent(new Event('input'));
+    expect(onListChange).toHaveBeenCalledWith(false);
+  });
+
+  it('textContent 应防 XSS（不渲染 HTML 标签）', async () => {
+    const { input, api } = createCompletion();
+    const malicious = '<img src=x onerror=alert(1)>';
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit({ contentPreview: malicious, score: 0.9 })],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    const textEl = document.querySelector('.completion-text') as HTMLElement;
+    expect(textEl.querySelector('img')).toBeNull();
+    expect(textEl.textContent).toBe(malicious);
+  });
+});
+
+// ─── textarea 支持 ───────────────────────────────────────
+
+describe('textarea 支持', async () => {
+  it('应支持 HTMLTextAreaElement 作为补全目标', async () => {
+    const textarea = document.createElement('textarea');
+    const { completion, api } = createCompletion({ input: textarea });
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [createMemoryHit()],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    textarea.value = '测试';
+    textarea.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    expect(api.searchMemories).toHaveBeenCalledWith('测试');
+    expect(document.querySelectorAll('.completion-item').length).toBe(1);
+
+    completion.cleanup();
+  });
+});

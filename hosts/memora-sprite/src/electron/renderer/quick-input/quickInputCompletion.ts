@@ -170,7 +170,10 @@ export class QuickInputCompletion {
       this.updateSelection();
     } else if (ke.key === 'ArrowUp') {
       ke.preventDefault();
-      this.selectedIndex = (this.selectedIndex - 1 + this.candidates.length) % this.candidates.length;
+      // selectedIndex 为 -1（无选中）时，ArrowUp 应跳到最后一项（循环导航）
+      this.selectedIndex = this.selectedIndex < 0
+        ? this.candidates.length - 1
+        : (this.selectedIndex - 1 + this.candidates.length) % this.candidates.length;
       this.updateSelection();
     } else if (ke.key === 'Tab') {
       if (this.selectedIndex >= 0 && this.selectedIndex < this.candidates.length) {
