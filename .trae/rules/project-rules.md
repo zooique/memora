@@ -192,7 +192,7 @@ chore: 升级 dependencies
 
 ### 8.5 决策记录类（decisions/ 目录，按需读取）
 
-> 详见 [decisions/README.md](./decisions/README.md)。共 23 个 ADR：内核 ADR-001~004 + ADR-006~015（13 个）+ 精灵 ADR-SP-001~008 + ADR-SP-015（10 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
+> 详见 [decisions/README.md](./decisions/README.md)。共 24 个 ADR：内核 ADR-001~004 + ADR-006~016（15 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015（9 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
 
 ## 9. AI 行为 DO/DON'T 速查表
 
