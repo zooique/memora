@@ -954,8 +954,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    * - 流式态：显示 #btn-stop 浮动按钮，#btn-send 隐藏（避免误触发送）
    * - 空闲态：隐藏 #btn-stop，#btn-send 恢复发送姿态（空内容时弱化禁用）
    *
-   * 取代旧版的"合并按钮"模式（流式态时改变 #btn-send 图标为停止方块），
-   * 拆分语义更清晰，且与 demo v3 视觉设计一致。
+   * 拆分为独立按钮，语义更清晰，且与 demo v3 视觉设计一致。
    */
   updateSendButton(): void {
     if (this.state.isStreaming) {

@@ -546,7 +546,7 @@
   background: var(--window-bg-2);
   color: var(--text);
   border-bottom-left-radius: 4px;  /* 尖角与用户消息统一为 4px，视觉平衡 */
-  /* 精灵消息使用系统字体栈（--font-sprite 已改为系统字体），保持与输入框一致的阅读体验 */
+  /* 精灵消息使用系统字体栈（--font-sprite），保持与输入框一致的阅读体验 */
   font-family: var(--font-sprite);
   transition: box-shadow var(--transition-fast);
 }
@@ -1445,7 +1445,7 @@
   background: var(--surface1);
   border-color: var(--border);
   padding: 0 4px;
-  font-size: 10px;
+  font-size: var(--font-2xs);
 }
 
 /* ─── 思考阶段指示器 ─────────────────────────────── */
@@ -1711,7 +1711,7 @@
 }
 
 .load-more-btn {
-  padding: 5px var(--space-4);
+  padding: var(--space-1-5) var(--space-4);
   background: var(--surface1);
   color: var(--text-2);
   border: 1px solid var(--surface2);

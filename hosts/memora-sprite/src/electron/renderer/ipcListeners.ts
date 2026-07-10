@@ -276,7 +276,7 @@ function handleProactivePrompt(
   if (uiManager.getCurrentPanel() !== 'chat') {
     void uiManager.switchPanel('chat');
   }
-  // B1：里程碑事件改为对话区内联 banner（对齐 demo v3），非里程碑保持顶部 #proactive-banner
+  // 里程碑事件使用对话区内联 banner（对齐 demo v3），非里程碑保持顶部 #proactive-banner
   if (msg.payload.isMilestone) {
     uiManager.appendMilestoneBanner(msg.payload.prompt);
   } else {

@@ -72,7 +72,7 @@
 .sprite-status-bar {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1-5);
   padding: 2px var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--accent-soft);

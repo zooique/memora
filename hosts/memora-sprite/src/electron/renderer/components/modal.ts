@@ -28,7 +28,7 @@ export class ModalManager {
    *
    * 嵌套弹窗场景：原 previousFocusEl 是单例字段，内层弹窗的
    * pushFocus 会覆盖外层保存的焦点，导致关闭外层时恢复到内层已隐藏的元素。
-   * 改为栈结构后，每个弹窗关闭时只 pop 自己对应的焦点，栈自然平衡。
+   * 采用栈结构，每个弹窗关闭时只 pop 自己对应的焦点，栈自然平衡。
    *
    * 元素类型为 (HTMLElement | null)：document.activeElement 在无焦点时为 null，
    * 栈中保留 null 条目以保证 pop 时栈深度正确（即使焦点无法恢复也不破坏栈平衡）。

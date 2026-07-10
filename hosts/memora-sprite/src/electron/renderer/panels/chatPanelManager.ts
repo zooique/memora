@@ -704,7 +704,7 @@ export class ChatPanelManager {
    * 性能优化（CHAT-A04）：
    * 使用 cloneNode(true) 深克隆整个气泡 + textContent 全树遍历提取文本，
    * 长消息（DOM 节点上千）各为 O(n)。
-   * 改为优先复用 _latestStreamText（流式期间缓存的累积文本），避免 DOM 反向提取。
+   * 优先复用 _latestStreamText（流式期间缓存的累积文本），避免 DOM 反向提取。
    *
    * @param el 消息 DOM 元素（.message 容器）
    */

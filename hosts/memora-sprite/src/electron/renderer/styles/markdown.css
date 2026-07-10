@@ -263,9 +263,8 @@
   background: var(--accent-10);
 }
 
-/* ─── 增强 3：引用块左侧渐变色条 ───────────────────────────── */
-/* 原始引用块左侧是纯色 accent 实线，略显生硬                    */
-/* 增强：改为渐变色条（accent → transparent），更柔和精致         */
+/* ─── 引用块左侧渐变色条 ─────────────────────────────────── */
+/* 渐变色条（accent → transparent），更柔和精致 */
 
 .message-bubble .md-blockquote {
   border-left: 3px solid;

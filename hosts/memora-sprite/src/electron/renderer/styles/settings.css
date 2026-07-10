@@ -172,7 +172,7 @@
   flex: 1;
 }
 
-/* 兼容旧版垂直堆叠 label（未包裹在 settings-row 中的） */
+/* 垂直堆叠 label（未包裹在 settings-row 中的） */
 /* 使用直接子选择器 > label，避免匹配 .settings-row 内的 label */
 .settings-group > label {
   display: block;

@@ -59,7 +59,7 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
   recallContainer.className = 'memory-recall-container';
 
   // 头部标签：默认显示"参考记忆"，点击展开/折叠查看具体条目
-  // 文案优化：从"记忆"改为"参考记忆"，明确表示这是精灵参考的记忆（非用户记忆）
+  // 明确标注"参考记忆"——精灵参考的记忆（非用户记忆）
   const header = document.createElement('button');
   header.className = 'memory-recall-header';
   header.type = 'button';

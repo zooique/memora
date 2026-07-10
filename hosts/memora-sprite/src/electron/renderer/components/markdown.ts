@@ -508,7 +508,7 @@ function appendInlineContent(target: HTMLElement, text: string): void {
  *
  * 在 appendFormattedText 函数内每次调用都创建 4 个新 RegExp 对象，
  * 递归调用时指数级创建，GC 压力巨大。
- * 改为模块级常量，collectMatches 内部通过 lastIndex=0 重置，避免重复创建。
+ * 模块级常量，collectMatches 内部通过 lastIndex=0 重置，避免重复创建。
  */
 const LINK_REGEX = /\[([^\]]+)\]\(([^)]+)\)/g;
 const BOLD_REGEX = /\*\*([^*]+)\*\*/g;
