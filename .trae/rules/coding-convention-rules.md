@@ -27,6 +27,11 @@ date: 2026-07-09
 
 **Memora 适配**：`src/utils/` 下集中存放纯函数工具；记忆模型的 `source` 字段属核心标识，禁止兜底覆盖（详见 [ADR-004 · 记忆统一模型](./decisions/ADR-004-memory-unification.md)）。
 
+**DOM 元素校验决策标准**：
+- `instanceof` + `console.error`：用于 `document.getElementById()` 获取的静态 HTML 元素（缺失即 bug，需记录日志便于调试）
+- `!` 断言：用于已确认存在的容器内的子元素（如弹窗模板内部元素，`dialog` 已确认存在则子元素必定存在）
+- `instanceof` 前置判断：用于 `closest()` / `previousElementSibling` 等动态 DOM 遍历（元素确实可能不存在，合理边界）
+
 ## 2. 异常处理
 
 > **核心原则**：区分业务异常与系统异常，不吞异常。
