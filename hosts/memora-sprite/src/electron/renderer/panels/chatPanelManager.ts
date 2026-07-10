@@ -25,7 +25,7 @@ import { setIcon, setIconWithLabel } from '../helpers/icon.js';
 import { renderMarkdown } from '../components/markdown.js';
 import { reportError } from '../helpers/errorHelpers.js';
 // 共享常量：时间换算与 Toast 时长，避免硬编码（对齐 sprite/constants.ts）
-import { MS_PER_MINUTE, TOAST_SHORT_MS } from '../../../sprite/constants.js';
+import { MS_PER_MINUTE } from '../../../sprite/constants.js';
 // 工具调用卡片 DOM 逻辑提取到独立 helper
 import { showToolStart as renderToolStart, updateToolResult as updateToolCardResult } from '../helpers/toolCallCard.js';
 // 消息装饰器（召回记忆 + 思考阶段 + 截断提示）提取到独立 helper
@@ -39,11 +39,9 @@ import {
 import { ArchiveButtonManager } from './archiveButtonManager.js';
 // 启动摘要横幅逻辑提取到独立组件（纯展示函数，无状态依赖）
 import { showStartupSummary as renderStartupSummary } from '../components/startupSummaryBanner.js';
-// 消息操作逻辑（重新生成/忘记/跨组遍历）提取到 helpers
-import {
-  handleRegenerate as doRegenerate,
-  handleForget as doForget,
-} from '../helpers/messageOperations.js';
+// 事件委托逻辑（click/contextmenu/keydown）提取到 helpers
+// 消息操作（regenerate/forget）由 chatPanelEvents 内部调用 messageOperations，本模块不再直接引用
+import { initChatPanelEvents } from '../helpers/chatPanelEvents.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { ConfirmDialogOptions, Message, ToastType } from '../types.js';
 
@@ -232,281 +230,17 @@ export class ChatPanelManager {
     // 归档按钮管理器（注入 host 能力，复用 ChatPanelHost 中已定义的归档契约）
     this.archiveButtonManager = new ArchiveButtonManager(this.host);
 
-    // 事件委托：在 messagesEl 上注册统一的 click 监听器，
-    // 通过 data-action 属性分发，替代动态元素各自的 addEventListener，
-    // 统一纳入 EventTracker 管理，消除监听器泄漏风险
-    this.events.addEventListener(this.messagesEl, 'click', (e: Event) => {
-      const target = e.target as HTMLElement;
-      // 复制按钮：data-action="copy" data-content="..."
-      const copyBtn = target.closest<HTMLElement>('[data-action="copy"]');
-      if (copyBtn) {
-        const content = copyBtn.dataset.content ?? '';
-        navigator.clipboard.writeText(content).then(
-          () => {
-            this.host.showToast('已复制到剪贴板', 'success', 1500);
-            // 短暂内联反馈：切换为勾选图标，1s 后恢复复制图标
-            setIcon(copyBtn, 'icon-check');
-            copyBtn.classList.add('copied');
-            window.setTimeout(() => {
-              setIcon(copyBtn, 'icon-copy');
-              copyBtn.classList.remove('copied');
-            }, 1000);
-          },
-          () => this.host.showToast('复制失败，请手动选择文本复制', 'error'),
-        );
-        return;
-      }
-      // 代码块独立复制按钮：data-action="copy-code" data-content="..."
-      // 与消息级复制按钮（data-action="copy"）区分，复用同一剪贴板逻辑
-      const copyCodeBtn = target.closest<HTMLElement>('[data-action="copy-code"]');
-      if (copyCodeBtn) {
-        const content = copyCodeBtn.dataset.content ?? '';
-        navigator.clipboard.writeText(content).then(
-          () => {
-            this.host.showToast('已复制代码', 'success', TOAST_SHORT_MS);
-            // 短暂反馈：按钮文本切换为"已复制"，1.2s 后恢复
-            const originalText = copyCodeBtn.textContent;
-            copyCodeBtn.textContent = '已复制';
-            copyCodeBtn.classList.add('copied');
-            window.setTimeout(() => {
-              copyCodeBtn.textContent = originalText;
-              copyCodeBtn.classList.remove('copied');
-            }, 1200);
-          },
-          () => this.host.showToast('复制失败，请手动选择代码复制', 'error'),
-        );
-        return;
-      }
-      // 截断提示关闭按钮：data-action="dismiss-truncation"
-      // 用户已知晓截断后可主动关闭，关闭后本轮不再恢复（避免反复打扰）
-      const dismissTruncation = target.closest<HTMLElement>('[data-action="dismiss-truncation"]');
-      if (dismissTruncation) {
-        const notice = dismissTruncation.closest<HTMLElement>('.truncation-notice');
-        notice?.remove();
-        return;
-      }
-      // 召回记忆折叠按钮：data-action="toggle-recall"
-      const toggleRecall = target.closest<HTMLElement>('[data-action="toggle-recall"]');
-      if (toggleRecall) {
-        const container = toggleRecall.closest<HTMLElement>('.memory-recall-container');
-        if (container) {
-          container.classList.toggle('expanded');
-          const isExpanded = container.classList.contains('expanded');
-          toggleRecall.setAttribute('aria-expanded', isExpanded.toString());
-        }
-        return;
-      }
-      // 召回记忆项：data-action="recall" data-memory-id="..."
-      const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
-      if (recallItem) {
-        const memoryId = recallItem.dataset.memoryId ?? '';
-        if (memoryId) {
-          this.memoryRecallClickCallback?.(memoryId);
-        }
-        return;
-      }
-      // 工具调用折叠头：data-action="toggle-collapse"
-      const collapseHeader = target.closest<HTMLElement>('[data-action="toggle-collapse"]');
-      if (collapseHeader) {
-        const card = collapseHeader.closest<HTMLElement>('.tool-call-card');
-        card?.classList.toggle('collapsed');
-        return;
-      }
-      // 加载更多按钮：data-action="load-more"
-      const loadMoreBtn = target.closest<HTMLElement>('[data-action="load-more"]');
-      if (loadMoreBtn && this.loadMoreCallback) {
-        loadMoreBtn.setAttribute('disabled', '');
-        loadMoreBtn.textContent = '加载中...';
-        this.loadMoreCallback();
-        return;
-      }
-      // 加载更早日期按钮：data-action="load-earlier-day"
-      const loadEarlierBtn = target.closest<HTMLElement>('[data-action="load-earlier-day"]');
-      if (loadEarlierBtn && this.loadEarlierDayCallback) {
-        loadEarlierBtn.setAttribute('disabled', '');
-        loadEarlierBtn.textContent = '加载中...';
-        this.loadEarlierDayCallback();
-        return;
-      }
-      // 错误重试按钮：data-action="retry"
-      // 流式出错时在气泡内显示的重试按钮，触发 host 注入的 errorRetryCallback
-      const retryBtn = target.closest<HTMLElement>('[data-action="retry"]');
-      if (retryBtn) {
-        // 禁用按钮防止重复点击
-        retryBtn.setAttribute('disabled', '');
-        retryBtn.textContent = '重试中...';
-        // 回调执行后恢复按钮状态
-        // errorRetryCallback 可能在 isStreaming() 检查时提前返回（toast 提示），
-        // 此时按钮必须恢复，否则用户无法再次点击重试
-        void (async () => {
-          try {
-            await this.errorRetryCallback?.();
-          } catch (err) {
-            // 错误处理由 errorRetryCallback 内部负责（如 toast 提示），
-            // 此处仅需恢复按钮状态，吞掉 rejection 避免 unhandled rejection
-            // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
-            reportError('ChatPanel errorRetryCallback', err);
-          } finally {
-            retryBtn.removeAttribute('disabled');
-            retryBtn.textContent = '重试';
-          }
-        })();
-        return;
-      }
-      // B1：里程碑 banner 关闭按钮：data-action="close-milestone"
-      // 点击后移除整个 .milestone-banner 元素（内联渲染，无需调用 ProactiveBanner.hideProactiveBanner）
-      const milestoneCloseBtn = target.closest<HTMLElement>('[data-action="close-milestone"]');
-      if (milestoneCloseBtn) {
-        const banner = milestoneCloseBtn.closest<HTMLElement>('.milestone-banner');
-        banner?.remove();
-        return;
-      }
-      // 归档按钮 data-action="archive"（manual 模式下触发手动归档）
-    // 委托到 ArchiveButtonManager.handleClick
-    const archiveBtn = target.closest<HTMLElement>('[data-action="archive"]');
-    if (archiveBtn) {
-      void this.archiveButtonManager.handleClick(archiveBtn);
-      return;
-    }
-  });
-
-  // 右键菜单：消息气泡上右键触发上下文菜单
-  this.events.addEventListener(this.messagesEl, 'contextmenu', (e: Event) => {
-    const me = e as MouseEvent;
-    const target = e.target as HTMLElement;
-    const messageEl = target.closest<HTMLElement>('.message');
-    if (!messageEl || messageEl.classList.contains('system')) {
-      return;
-    }
-
-    e.preventDefault();
-
-    const menu = document.getElementById('message-context-menu');
-    if (!menu) return;
-
-    const messageRole = messageEl.classList.contains('user') ? 'user' : 'assistant';
-    const bubble = messageEl.querySelector('.message-bubble');
-    const content = bubble?.textContent ?? '';
-    const messageId = messageEl.dataset.messageId ?? '';
-
-    menu.dataset.role = messageRole;
-    menu.dataset.content = content;
-    menu.dataset.messageId = messageId;
-
-    const regenerateBtn = menu.querySelector<HTMLElement>('[data-action="regenerate"]');
-    const forgetBtn = menu.querySelector<HTMLElement>('[data-action="forget"]');
-
-    if (regenerateBtn) {
-      regenerateBtn.setAttribute('aria-disabled', messageRole === 'user' ? 'true' : 'false');
-    }
-    if (forgetBtn) {
-      forgetBtn.setAttribute('aria-disabled', messageId ? 'false' : 'true');
-    }
-
-    const rect = menu.getBoundingClientRect();
-    let x = me.clientX;
-    let y = me.clientY;
-
-    if (x + rect.width > window.innerWidth) {
-      x = window.innerWidth - rect.width - 8;
-    }
-    if (y + rect.height > window.innerHeight) {
-      y = window.innerHeight - rect.height - 8;
-    }
-
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
-    menu.classList.remove('hidden');
-  });
-
-  // 点击外部关闭右键菜单
-  this.events.addEventListener(document, 'click', () => {
-    const menu = document.getElementById('message-context-menu');
-    if (menu && !menu.classList.contains('hidden')) {
-      menu.classList.add('hidden');
-    }
-  });
-
-  // 右键菜单项点击处理
-  this.events.addEventListener(document, 'click', (e: Event) => {
-    const target = e.target as HTMLElement;
-    const menuItem = target.closest<HTMLElement>('.context-menu-item');
-    if (!menuItem) return;
-
-    const menu = document.getElementById('message-context-menu');
-    if (!menu) return;
-
-    const action = menuItem.dataset.action;
-    const content = menu.dataset.content ?? '';
-    const role = menu.dataset.role ?? '';
-    const messageId = menu.dataset.messageId ?? '';
-
-    menu.classList.add('hidden');
-
-    switch (action) {
-      case 'copy':
-        navigator.clipboard.writeText(content).then(
-          () => this.host.showToast('已复制到剪贴板', 'success', TOAST_SHORT_MS),
-          () => this.host.showToast('复制失败', 'error'),
-        );
-        break;
-      case 'regenerate':
-        if (role === 'assistant') {
-          const messageEl = messageId ? this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`) : null;
-          if (messageEl) {
-            doRegenerate({ host: this.host }, messageEl);
-          }
-        }
-        break;
-      case 'forget':
-        if (messageId) {
-          const messageEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
-          if (messageEl) {
-            // fire-and-forget：handleForget 内部弹确认弹窗，无需等待
-            void doForget({ host: this.host }, messageId, messageEl);
-          }
-        }
-        break;
-    }
-  });
-
-    // 键盘可访问性：在 messagesEl 上注册 keydown 委托，
-    // 处理 Enter/Space 键触发 data-action="recall" 和 data-action="toggle-collapse" 元素
-    this.events.addEventListener(this.messagesEl, 'keydown', (e: Event) => {
-      const ke = e as KeyboardEvent;
-      // 仅处理 Enter 和 Space 键
-      if (ke.key !== 'Enter' && ke.key !== ' ') return;
-      const target = ke.target as HTMLElement;
-      // 召回记忆项
-      const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
-      if (recallItem) {
-        ke.preventDefault(); // 防止 Space 滚动页面
-        const memoryId = recallItem.dataset.memoryId ?? '';
-        if (memoryId) {
-          this.memoryRecallClickCallback?.(memoryId);
-        }
-        return;
-      }
-      // 召回记忆折叠按钮
-      const toggleRecall = target.closest<HTMLElement>('[data-action="toggle-recall"]');
-      if (toggleRecall) {
-        ke.preventDefault(); // 防止 Space 滚动页面
-        const container = toggleRecall.closest<HTMLElement>('.memory-recall-container');
-        if (container) {
-          container.classList.toggle('expanded');
-          const isExpanded = container.classList.contains('expanded');
-          toggleRecall.setAttribute('aria-expanded', isExpanded.toString());
-        }
-        return;
-      }
-      // 工具调用折叠头
-      const collapseHeader = target.closest<HTMLElement>('[data-action="toggle-collapse"]');
-      if (collapseHeader) {
-        ke.preventDefault(); // 防止 Space 滚动页面
-        const card = collapseHeader.closest<HTMLElement>('.tool-call-card');
-        card?.classList.toggle('collapsed');
-        return;
-      }
+    // 事件委托初始化（click/contextmenu/keydown）提取到 helpers/chatPanelEvents.ts
+    // 回调通过 getter 函数注入，确保运行时读取最新值（onXxx 注册晚于 constructor）
+    initChatPanelEvents({
+      messagesEl: this.messagesEl,
+      events: this.events,
+      host: this.host,
+      archiveButtonManager: this.archiveButtonManager,
+      getMemoryRecallClickCallback: () => this.memoryRecallClickCallback,
+      getLoadMoreCallback: () => this.loadMoreCallback,
+      getLoadEarlierDayCallback: () => this.loadEarlierDayCallback,
+      getErrorRetryCallback: () => this.errorRetryCallback,
     });
   }
 
