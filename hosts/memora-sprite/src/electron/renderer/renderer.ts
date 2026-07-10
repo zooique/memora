@@ -18,7 +18,7 @@ import { createSessionController } from './controllers/sessionController.js';
 import { createMemoryController } from './controllers/memoryController.js';
 import { createPersonaController } from './controllers/personaController.js';
 import { createSettingsController } from './controllers/settingsController.js';
-import { initIpcListeners } from './ipcListeners.js';
+import { initIpcListeners, consumeConflictTargetId } from './ipcListeners.js';
 import { reportError } from './helpers/errorHelpers.js';
 import { getLocalDate, MS_PER_HOUR, MS_PER_DAY, TOAST_LONG_MS } from '../../sprite/constants.js';
 import {
@@ -325,8 +325,15 @@ async function bootstrapRenderer(): Promise<void> {
       window.electronAPI.proactiveAccept();
 
       // 根据 triggers 类型跳转到相应面板展示详情
-      // 优先级：洞察 > 记忆 > 仪表盘 > 对话
-      if (triggers.includes('insight')) {
+      // 优先级：冲突 > 洞察 > 记忆 > 仪表盘 > 对话
+      if (triggers.includes('conflict')) {
+        // 冲突检测 → 切换到记忆面板并打开冲突记忆详情
+        const conflictTargetId = consumeConflictTargetId();
+        if (conflictTargetId) {
+          void State.uiManager.switchPanel('memory');
+          void State.memoryController?.openMemoryDetail(conflictTargetId);
+        }
+      } else if (triggers.includes('insight')) {
         // 有新洞察 → 跳转到记忆面板查看洞察
         void State.uiManager.switchPanel('memory');
       } else if (triggers.includes('memory')) {

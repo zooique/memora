@@ -294,7 +294,7 @@ function handleProactivePrompt(
  * 冲突通知是事实性通知（非主动行为），不受静默模式控制。
  *
  * 展示策略：复用 ProactiveBanner 组件，通知文本包含新洞察和矛盾目标的摘要。
- * 用户点击"查看"可切换到记忆面板查看关系图详情。
+ * 用户点击"查看"可切换到记忆面板查看冲突记忆详情（通过 lastConflictTargetId 暂存跳转目标）。
  */
 function handleConflictDetected(
   uiManager: UIManager,
@@ -305,13 +305,24 @@ function handleConflictDetected(
     return;
   }
 
+  // 暂存冲突 targetId，供 banner onView 回调读取并跳转
+  lastConflictTargetId = msg.payload.targetId;
+
   // 截断过长内容，避免 banner 文本溢出
   const MAX_BANNER_TEXT = 60;
   const truncate = (s: string) => (s.length > MAX_BANNER_TEXT ? s.slice(0, MAX_BANNER_TEXT) + '…' : s);
 
   // 构造通知文本：突出"矛盾"语义，引导用户查看关系图
   const text = `检测到记忆冲突：「${truncate(msg.payload.newInsight)}」与已有记忆矛盾`;
-  uiManager.showProactiveBanner(text, false);
+  // 传入 'conflict' trigger，使 banner onView 能识别冲突场景并跳转
+  uiManager.showProactiveBanner(text, false, ['conflict']);
+}
+
+/** 获取并清除最近一次冲突的 targetId（供 banner onView 回调消费后清空） */
+export function consumeConflictTargetId(): string | null {
+  const id = lastConflictTargetId;
+  lastConflictTargetId = null;
+  return id;
 }
 
 /**
@@ -326,6 +337,9 @@ function handleConflictDetected(
 /** decayCompleted 上次显示时间戳（24h 节流） */
 let lastDecayNoticeTime = 0;
 const DECAY_NOTICE_COOLDOWN_MS = MS_PER_DAY;
+
+/** 最近一次冲突检测的 targetId（供 banner onView 跳转使用，与 lastDecayNoticeTime 同模式） */
+let lastConflictTargetId: string | null = null;
 
 /**
  * 处理项目切换事件

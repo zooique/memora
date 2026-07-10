@@ -89,6 +89,23 @@ export function createMemoryController(uiManager: UIManager) {
   let currentHealthData: HealthDashboardPayload | null = null;
 
   /**
+   * 轻量打开记忆详情（IPC + 渲染，不含脉络/邻居加载）
+   *
+   * 用于冲突 banner 跳转等"仅需查看详情"场景，与 onMemoryClick 的完整加载（含脉络+邻居）区分。
+   * 与 onPartnerMemoryClick 同构，提取为独立函数供多处复用。
+   */
+  async function openMemoryDetail(memoryId: string): Promise<void> {
+    try {
+      const { memory } = await window.electronAPI.showMemory(memoryId);
+      if (memory) {
+        uiManager.showMemoryDetail(memory);
+      }
+    } catch (error) {
+      reportError('openMemoryDetail', error);
+    }
+  }
+
+  /**
    * 设置记忆面板回调
    *
    * 包含搜索（带竞态保护）、筛选、点击查看详情、删除、添加。
@@ -105,14 +122,7 @@ export function createMemoryController(uiManager: UIManager) {
 
     // ─── 伙伴洞察卡片点击回调：点击 profile 卡片展示记忆详情 ──
     uiManager.onPartnerMemoryClick(async (memoryId: string) => {
-      try {
-        const { memory } = await window.electronAPI.showMemory(memoryId);
-        if (memory) {
-          uiManager.showMemoryDetail(memory);
-        }
-      } catch (error) {
-        reportError('partnerMemoryClick', error);
-      }
+      await openMemoryDetail(memoryId);
     });
 
     // ─── 更多菜单项回调：切换洞察/健康度面板时加载数据 ────
@@ -727,6 +737,8 @@ export function createMemoryController(uiManager: UIManager) {
   return {
     setupMemoryPanel,
     loadMemoryList,
+    /** 轻量打开记忆详情（冲突 banner 跳转等场景使用） */
+    openMemoryDetail,
     loadDashboard,
     /** 加载感知快照（切换到感知面板时调用） */
     loadPerception,
