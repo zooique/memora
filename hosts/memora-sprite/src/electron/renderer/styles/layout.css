@@ -967,7 +967,7 @@
 
 .recent-insight-preview {
   font-size: var(--font-xs);
-  color: var(--text-secondary);
+  color: var(--text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

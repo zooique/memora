@@ -811,7 +811,7 @@
   background: transparent;
   border-radius: var(--radius-sm);
   font-size: var(--font-2xs);
-  color: var(--text-secondary);
+  color: var(--text-2);
   cursor: pointer;
   transition: background var(--transition-fast);
 }
@@ -2131,7 +2131,7 @@
   background: var(--surface1);
   border: 1px dashed var(--border);
   border-radius: var(--radius-md);
-  color: var(--text-secondary);
+  color: var(--text-2);
   font-size: var(--font-md-2);
   cursor: pointer;
   transition: background var(--transition-base) ease, border-color var(--transition-base) ease, color var(--transition-base) ease;

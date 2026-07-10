@@ -675,7 +675,7 @@
 }
 
 .work-projection-card:hover {
-  border-color: var(--blue);
+  border-color: var(--accent);
 }
 
 /* 卡片头部：图标 + 文件名 + 更新时间 */
@@ -767,8 +767,8 @@
 }
 
 .work-projection-expand-btn:hover {
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ─── 审计日志条目（独立于画像卡片，采用日志条目式紧凑布局） ─── */

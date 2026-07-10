@@ -31,7 +31,6 @@
 
   /* 强调色 */
   --accent:        #0066ff;  /* 主强调色（v8 --accent） */
-  --blue:          #0066ff;  /* 语义化别名，= --accent */
   /* 统一 --accent-soft 为 rgba 策略 */
   --accent-soft:   rgba(0, 102, 255, 0.06);  /* 强调色浅底（v8 --accent-soft）；降至 0.06 提升 --accent 文字对比度至 ~4.5:1 */
   --accent-hover:  #0052cc;  /* 强调色 hover（v8 --accent-hover） */
@@ -194,7 +193,6 @@
 
   /* 语义化文字颜色别名（供 layout.css 等引用，与 --text/--text-2 对齐） */
   --text-primary:   var(--text);      /* 主文字色别名 */
-  --text-secondary: var(--text-2);    /* 次级文字色别名 */
 
   /* 命令面板等浮层使用的变量（补全缺失定义，避免回退到浏览器默认值） */
   --surface:        var(--window-bg); /* 浮层表面背景 = 核心窗口背景 */
@@ -246,9 +244,6 @@
   /* 错误态背景别名（= --red-10，语义化命名供 onboarding-error 等使用） */
   --error-10: var(--red-10);
 
-  /* 输入框背景（onboarding 表单等，复用窗口背景保持一致性） */
-  --input-bg: var(--window-bg);
-
   /* 启动横幅 padding：上下 8px / 左右 16px（复用 --space-* 令牌保持单一真理源） */
   --padding-sm:   var(--space-2);
   --padding-base: var(--space-4);
@@ -281,7 +276,6 @@
 
   /* 强调色 */
   --accent:        #89b4fa;
-  --blue:          #89b4fa;  /* 语义化别名，深色主题下 = #89b4fa */
   --accent-soft:   rgba(137, 180, 250, 0.15);
   --accent-hover:  #74a8fc;
 
@@ -394,7 +388,6 @@
 
   /* 语义化文字颜色别名 */
   --text-primary:   var(--text);
-  --text-secondary: var(--text-2);
 
   /* 命令面板等浮层使用的变量（深色主题同步定义） */
   --surface:        var(--window-bg);

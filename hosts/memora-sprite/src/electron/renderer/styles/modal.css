@@ -260,7 +260,7 @@
   padding: var(--input-padding);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: var(--input-bg);
+  background: var(--window-bg);
   color: var(--text);
   font-size: var(--font-sm);
   box-sizing: border-box;

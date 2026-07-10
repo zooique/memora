@@ -139,7 +139,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 .overview-rapport-badge[data-level="acquaintance"] {
   background: var(--accent-20);
-  color: var(--blue);
+  color: var(--accent);
 }
 .overview-rapport-badge[data-level="stranger"] {
   background: var(--surface2);
@@ -367,10 +367,10 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 .source-persona    { color: var(--teal); }
 .source-session    { color: var(--peach); }
 /* 以下 source 为仪表盘特有，无 memory.css 对应，保留原有映射 */
-.source-chat       { color: var(--blue); }
+.source-chat       { color: var(--accent); }
 .source-file       { color: var(--peach); }
 .source-work       { color: var(--mauve); }
-.source-memory     { color: var(--blue); }
+.source-memory     { color: var(--accent); }
 .source-summary    { color: var(--green); }
 .source-note       { color: var(--yellow); }
 
@@ -630,7 +630,7 @@ details.dashboard-section > .dashboard-section-title::-webkit-details-marker {
 }
 
 .rapport-badge[data-level="stranger"] { color: var(--muted); }
-.rapport-badge[data-level="acquaintance"] { color: var(--blue); }
+.rapport-badge[data-level="acquaintance"] { color: var(--accent); }
 .rapport-badge[data-level="familiar"] { color: var(--accent); }
 .rapport-badge[data-level="close"] { color: var(--green); }
 
