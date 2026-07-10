@@ -111,7 +111,7 @@ function initQuickInput(): void {
         inputField.select();
       }
     } catch (error) {
-      console.error('[QuickInput] 确认失败:', error);
+      reportError('QuickInput 确认', error);
       // 异常时恢复 UI 状态
       isSubmitting = false;
       confirmBtn.disabled = false;

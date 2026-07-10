@@ -11,8 +11,9 @@
  * 设计原则：
  * - 独立于 UIManager，无 this 依赖，纯 DOM + localStorage + IPC 操作
  * - 已配置 Provider 的用户跳过引导（检查 provider 列表）
- * - 支持跳过 API Key 步骤（降级路径）
+ * - 支持跳过 API Key 步骤（降级路径)
  */
+import { reportError } from '../helpers/errorHelpers.js';
 
 // ─── Provider 注册链接映射 ──────────────────────────────
 
@@ -252,7 +253,7 @@ export class OnboardingManager {
       await window.electronAPI.updateConfig('onboardingStep', step);
     } catch (error) {
       // 持久化失败不阻塞用户操作，但记录日志让问题可见（不静默吞异常）
-      console.warn('[Onboarding] 持久化引导步骤失败', error);
+      reportError('Onboarding 持久化引导步骤', error);
     }
   }
 
@@ -264,7 +265,7 @@ export class OnboardingManager {
   private bindApiKeySave(modal: HTMLElement): void {
     const saveBtn = modal.querySelector('#btn-onboarding-save-key');
     if (!(saveBtn instanceof HTMLButtonElement)) {
-      console.error('[Onboarding] btn-onboarding-save-key 元素缺失');
+      reportError('Onboarding btn-onboarding-save-key 元素缺失', new Error('HTMLButtonElement 校验失败'));
       return;
     }
 
@@ -337,7 +338,7 @@ export class OnboardingManager {
   private bindProviderSelect(modal: HTMLElement): void {
     const select = modal.querySelector('#onboarding-provider-type');
     if (!(select instanceof HTMLSelectElement)) {
-      console.error('[Onboarding] onboarding-provider-type 元素缺失');
+      reportError('Onboarding onboarding-provider-type 元素缺失', new Error('HTMLSelectElement 校验失败'));
       return;
     }
 
@@ -374,7 +375,7 @@ export class OnboardingManager {
   private bindDone(modal: HTMLElement): void {
     const doneBtn = modal.querySelector('#btn-onboarding-done');
     if (!(doneBtn instanceof HTMLButtonElement)) {
-      console.error('[Onboarding] btn-onboarding-done 元素缺失');
+      reportError('Onboarding btn-onboarding-done 元素缺失', new Error('HTMLButtonElement 校验失败'));
       return;
     }
 

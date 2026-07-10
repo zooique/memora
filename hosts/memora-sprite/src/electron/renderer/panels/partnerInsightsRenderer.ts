@@ -15,6 +15,8 @@
 
 import { setIcon } from '../helpers/icon.js';
 import { clearElement } from '../helpers/domHelpers.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
 
@@ -269,7 +271,7 @@ export class PartnerInsightsRenderer {
     const canvas = document.getElementById('partner-growth-chart');
     const totalEl = document.getElementById('partner-growth-total');
     if (!(canvas instanceof HTMLCanvasElement)) {
-      console.error('[PartnerInsights] partner-growth-chart 元素缺失，图表渲染跳过');
+      reportError('PartnerInsights partner-growth-chart 元素缺失', new Error('图表渲染跳过：HTMLCanvasElement 校验失败'));
       return;
     }
 

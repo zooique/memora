@@ -24,6 +24,7 @@
  */
 
 import { getOptionalElement } from './domHelpers.js';
+import { reportError } from './errorHelpers.js';
 import type { EventTracker } from './eventTracker.js';
 import type { ConfirmDialogOptions } from '../types.js';
 // 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
@@ -587,7 +588,7 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
       } catch (err) {
         // cleanupConfirmCallback 由 Controller 实现，Controller 内部会报告错误和显示 toast
         // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
-        console.warn('[MemoryPanel] cleanupConfirmCallback 失败', err);
+        reportError('MemoryPanel cleanupConfirmCallback', err);
       }
     });
   }

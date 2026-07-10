@@ -110,7 +110,7 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         if (input instanceof HTMLInputElement) {
           input.focus();
         } else {
-          console.error('[CommandPalette] memory-search 元素缺失，无法聚焦');
+          reportError('CommandPalette memory-search 元素缺失', new Error('无法聚焦：HTMLInputElement 校验失败'));
         }
       },
     },
@@ -151,7 +151,7 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         if (graphBtn instanceof HTMLButtonElement) {
           graphBtn.click();
         } else {
-          console.error('[CommandPalette] btn-graph-view 元素缺失');
+          reportError('CommandPalette btn-graph-view 元素缺失', new Error('HTMLButtonElement 校验失败'));
         }
       },
     },
@@ -280,7 +280,7 @@ function createStaticCommands(uiManager: UIManager): Command[] {
         // 读取设置面板中静默模式 checkbox 的当前状态（静态元素，instanceof 校验）
         const checkbox = document.getElementById('cfg-silent');
         if (!(checkbox instanceof HTMLInputElement)) {
-          console.error('[CommandPalette] cfg-silent 元素缺失，静默模式切换失败');
+          reportError('CommandPalette cfg-silent 元素缺失', new Error('静默模式切换失败：HTMLInputElement 校验失败'));
           return;
         }
         const isCurrentlySilent = checkbox.checked;

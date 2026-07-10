@@ -259,8 +259,9 @@ export class SettingsPanelManager {
     const missing = fields.filter(([, el]) => el === null).map(([name, , id]) => `${name} (#${id})`);
     if (missing.length > 0) {
       // 一次性报告所有缺失字段，便于开发者一次性定位
-      console.error(
-        `[SettingsPanelManager] ${missing.length} 个设置面板字段未找到，相关配置将静默失效：\n  - ${missing.join('\n  - ')}\n请检查 index.html 中对应的 ID 是否拼写正确或被移除。`,
+      reportError(
+        'SettingsPanelManager 字段校验',
+        new Error(`${missing.length} 个设置面板字段未找到，相关配置将静默失效：\n  - ${missing.join('\n  - ')}\n请检查 index.html 中对应的 ID 是否拼写正确或被移除。`),
       );
     }
   }
@@ -999,7 +1000,7 @@ export class SettingsPanelManager {
         }
       } catch (error) {
         // 获取列表失败不阻塞保存，由主进程处理重复，但记录日志便于排查
-        console.error('[SettingsPanelManager] 保存前检查重复别名失败:', error);
+        reportError('SettingsPanelManager 保存前检查重复别名', error);
       }
     }
 

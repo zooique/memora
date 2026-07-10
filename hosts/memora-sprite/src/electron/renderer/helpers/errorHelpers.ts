@@ -13,12 +13,22 @@
  * - createIpcErrorHandler 通过闭包绑定 uiManager，避免每个调用点重复传参
  */
 
-import type { UIManager } from '../ui.js';
 // toError 真理源在 shared/ 层（纯函数，无 Node 依赖），渲染进程和 Web 模式共用
 // 注意：必须 import 后再 export，不能直接 `export { toError } from '...'`——
 // 透传导出不会在当前模块作用域创建 toError 绑定，reportError/createIpcErrorHandler 内部使用会 ReferenceError
 import { toError } from '../../../shared/toError.js';
 export { toError };
+
+/**
+ * createIpcErrorHandler 所需的 UI 能力（仅 showToast）
+ *
+ * 使用局部接口替代 `import type { UIManager }`，消除 errorHelpers → ui 的依赖，
+ * 避免新增导入 errorHelpers 的模块与 ui.ts 形成循环依赖导致 ESM 初始化顺序问题。
+ */
+interface IpcErrorUi {
+  /** 显示 toast 通知（错误反馈） */
+  showToast(message: string, type?: string, duration?: number): void;
+}
 
 /** 日志级别类型（与 window.electronAPI.rendererLog 的 level 参数对齐） */
 export type LogLevel = 'error' | 'warn';
@@ -62,7 +72,7 @@ export function reportError(context: string, error: unknown, level: LogLevel = '
  * @returns 绑定了 uiManager 的错误处理函数
  */
 export function createIpcErrorHandler(
-  uiManager: UIManager,
+  uiManager: IpcErrorUi,
 ): (context: string, error: unknown, toastPrefix?: string) => void {
   /**
    * 统一处理 IPC 错误：记录日志 + 可选 toast 反馈

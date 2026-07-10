@@ -19,6 +19,8 @@
  */
 import { EventTracker } from '../helpers/eventTracker.js';
 import { formatDateKey } from '../helpers/domHelpers.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
 
 /**
@@ -51,7 +53,7 @@ export class DateNavManager {
     const dropdown = document.getElementById('date-nav-dropdown');
     const listEl = document.getElementById('date-nav-list');
     if (!(btn instanceof HTMLButtonElement) || !(dropdown instanceof HTMLElement) || !(listEl instanceof HTMLElement)) {
-      console.error('[DateNav] DOM 元素缺失，日期导航不可用');
+      reportError('DateNav DOM 元素缺失', new Error('日期导航不可用：btn/dropdown/list 校验失败'));
       return;
     }
 

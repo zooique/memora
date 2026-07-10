@@ -19,6 +19,8 @@
 import type { ToastManager } from '../components/toast.js';
 // 精灵公共常量（Toast 时长，跨进程共享 DRY）
 import { TOAST_SHORT_MS, TOAST_NORMAL_MS, TOAST_LONG_MS } from '../../../sprite/constants.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 
 /**
  * 技能拖入安装面板管理器类
@@ -112,7 +114,7 @@ export class SkillDropManager {
     if (fileInput instanceof HTMLInputElement) {
       fileInput.click();
     } else {
-      console.error('[SkillDrop] skill-file-input 元素缺失，文件选择不可用');
+      reportError('SkillDrop skill-file-input 元素缺失', new Error('文件选择不可用：HTMLInputElement 校验失败'));
     }
   }
 

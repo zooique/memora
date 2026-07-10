@@ -768,7 +768,7 @@ function setupSkillDropzone(_uiManager: UIManager): void {
 
   const fileInput = document.getElementById('skill-file-input');
   if (!(fileInput instanceof HTMLInputElement)) {
-    console.error('[Renderer] skill-file-input 元素缺失，技能导入功能不可用');
+    reportError('Renderer skill-file-input 元素缺失', new Error('技能导入功能不可用：HTMLInputElement 校验失败'));
     return;
   }
 

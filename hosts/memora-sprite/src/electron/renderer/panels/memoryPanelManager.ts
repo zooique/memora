@@ -15,6 +15,8 @@
  */
 
 import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, formatDateKey, escapeHtml } from '../helpers/domHelpers.js';
+// 渲染进程统一日志入口（替代散落的 console.error/warn）
+import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
@@ -876,7 +878,7 @@ export class MemoryPanelManager {
   private saveEdit(): void {
     const textarea = document.getElementById('memory-detail-content');
     if (!(textarea instanceof HTMLTextAreaElement)) {
-      console.error('[MemoryPanel] memory-detail-content 元素缺失，保存失败');
+      reportError('MemoryPanel saveEdit memory-detail-content 元素缺失', new Error('HTMLTextAreaElement 校验失败'));
       return;
     }
 
@@ -1355,7 +1357,7 @@ export class MemoryPanelManager {
 
     const canvas = document.getElementById('memory-graph-canvas');
     if (!(canvas instanceof HTMLCanvasElement)) {
-      console.error('[MemoryPanel] memory-graph-canvas 元素缺失，图谱渲染跳过');
+      reportError('MemoryPanel 图谱渲染 memory-graph-canvas 元素缺失', new Error('HTMLCanvasElement 校验失败'));
       return;
     }
 

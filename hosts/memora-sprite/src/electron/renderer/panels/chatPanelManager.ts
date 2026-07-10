@@ -338,7 +338,7 @@ export class ChatPanelManager {
             // 错误处理由 errorRetryCallback 内部负责（如 toast 提示），
             // 此处仅需恢复按钮状态，吞掉 rejection 避免 unhandled rejection
             // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
-            console.warn('[ChatPanel] errorRetryCallback 失败', err);
+            reportError('ChatPanel errorRetryCallback', err);
           } finally {
             retryBtn.removeAttribute('disabled');
             retryBtn.textContent = '重试';
