@@ -906,7 +906,7 @@ export class SettingsPanelManager {
       // 非激活 Provider 显示"设为当前"按钮
       if (!isActive) {
         const activateBtn = document.createElement('button');
-        activateBtn.className = 'provider-btn';
+        activateBtn.className = 'btn-secondary provider-btn';
         activateBtn.dataset.action = 'activate';
         activateBtn.dataset.key = p.key;
         activateBtn.textContent = '设为当前';
@@ -915,7 +915,7 @@ export class SettingsPanelManager {
 
       // 编辑按钮（所有 Provider 都有）
       const editBtn = document.createElement('button');
-      editBtn.className = 'provider-btn';
+      editBtn.className = 'btn-secondary provider-btn';
       editBtn.dataset.action = 'edit';
       editBtn.dataset.key = p.key;
       editBtn.textContent = '编辑';
@@ -924,7 +924,7 @@ export class SettingsPanelManager {
       // 删除按钮（非激活 Provider 才显示，激活 Provider 不允许删除）
       if (!isActive) {
         const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'provider-btn provider-btn-delete';
+        deleteBtn.className = 'btn-secondary provider-btn provider-btn-delete';
         deleteBtn.dataset.action = 'delete';
         deleteBtn.dataset.key = p.key;
         deleteBtn.textContent = '删除';

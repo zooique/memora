@@ -7,16 +7,13 @@
 }
 
 #proactive-banner .banner-btn {
+  /* 复用 .btn-secondary 基类（含圆角/字体/光标/过渡），此处仅保留差异化样式 */
   background: var(--window-bg);
   border: 1px solid var(--surface2);
-  border-radius: var(--radius-sm);
   padding: var(--btn-padding-sm);
   color: var(--text-2);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
-  font-family: inherit;
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 #proactive-banner .banner-btn:hover {
@@ -264,17 +261,14 @@
 }
 
 .suggestion-card-btn {
+  /* 复用 .btn-primary/.btn-secondary 基类，此处仅保留差异化样式 */
   padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   font-weight: var(--weight-medium);
-  font-family: inherit;
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   border: 1px solid transparent;
 }
 
-/* 接受按钮：主强调色 */
+/* 接受按钮：复用 .btn-primary 主强调色，保留语义钩子 */
 .suggestion-card-btn.accept {
   background: var(--accent);
   color: var(--accent-fg);
@@ -286,7 +280,7 @@
   border-color: var(--accent-hover);
 }
 
-/* 拒绝按钮：次级样式 */
+/* 拒绝按钮：复用 .btn-secondary 次级样式，保留语义钩子 */
 .suggestion-card-btn.reject {
   background: transparent;
   color: var(--text-2);

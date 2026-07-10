@@ -175,12 +175,12 @@ export class SuggestionCardManager {
     actionsDiv.className = 'suggestion-card-actions';
 
     const acceptBtn = document.createElement('button');
-    acceptBtn.className = 'suggestion-card-btn accept';
+    acceptBtn.className = 'btn-primary suggestion-card-btn accept';
     acceptBtn.textContent = '接受';
     actionsDiv.appendChild(acceptBtn);
 
     const rejectBtn = document.createElement('button');
-    rejectBtn.className = 'suggestion-card-btn reject';
+    rejectBtn.className = 'btn-secondary suggestion-card-btn reject';
     rejectBtn.textContent = '拒绝';
     actionsDiv.appendChild(rejectBtn);
 

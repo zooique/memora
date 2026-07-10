@@ -246,7 +246,7 @@ export class ProfilePanelManager {
     if (isPending) {
       // 待确认条目：确认 + 拒绝
       const confirmBtn = document.createElement('button');
-      confirmBtn.className = 'profile-btn accept';
+      confirmBtn.className = 'btn-primary profile-btn accept';
       confirmBtn.textContent = '确认';
       this.events.addEventListener(confirmBtn, 'click', async () => {
         // 复用 setButtonLoadingEl，与全项目 loading 模式一致
@@ -266,7 +266,7 @@ export class ProfilePanelManager {
       actions.appendChild(confirmBtn);
 
       const rejectBtn = document.createElement('button');
-      rejectBtn.className = 'profile-btn reject';
+      rejectBtn.className = 'btn-secondary profile-btn reject';
       rejectBtn.textContent = '拒绝';
       this.events.addEventListener(rejectBtn, 'click', async () => {
         // 复用 setButtonLoadingEl
@@ -285,7 +285,7 @@ export class ProfilePanelManager {
     } else {
       // 已确认条目：删除（调用 reject 接口移除，二次确认避免误删已持久化画像）
       const deleteBtn = document.createElement('button');
-      deleteBtn.className = 'profile-btn reject';
+      deleteBtn.className = 'btn-secondary profile-btn reject';
       deleteBtn.textContent = '删除';
       this.events.addEventListener(deleteBtn, 'click', async () => {
         // 二次确认：已确认画像已持久化到 SQLite，删除属不可逆操作

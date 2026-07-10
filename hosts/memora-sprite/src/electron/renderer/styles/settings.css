@@ -537,17 +537,14 @@
 }
 
 .profile-btn {
+  /* 复用 .btn-primary/.btn-secondary 基类，此处仅保留差异化样式 */
   padding: var(--btn-padding-sm);
-  border-radius: var(--radius-sm);
   font-size: var(--font-xs);
   font-weight: var(--weight-medium);
-  font-family: inherit;
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
   border: 1px solid transparent;
 }
 
-/* 确认按钮：主强调色 */
+/* 确认按钮：复用 .btn-primary 主强调色，保留语义钩子 */
 .profile-btn.accept {
   background: var(--accent);
   color: var(--accent-fg);
@@ -559,7 +556,7 @@
   border-color: var(--accent-hover);
 }
 
-/* 拒绝/删除按钮：次级样式 */
+/* 拒绝/删除按钮：复用 .btn-secondary 次级样式，保留语义钩子 */
 .profile-btn.reject {
   background: transparent;
   color: var(--text-2);
@@ -879,27 +876,16 @@
 }
 
 .provider-btn {
+  /* 复用 .btn-secondary 基类（含圆角/字体/光标/过渡/禁用态），此处仅保留差异化样式 */
   font-size: var(--font-xs);
   padding: var(--space-1) var(--space-2-5);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: var(--surface2);
   color: var(--text);
-  cursor: pointer;
-  transition: background var(--transition-fast);
 }
 
 .provider-btn:hover {
   background: var(--hover);
-}
-
-.provider-btn:active {
-  transform: scale(0.97);
-}
-
-.provider-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 /* 删除按钮特殊样式 */

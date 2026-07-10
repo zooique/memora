@@ -233,57 +233,11 @@
 
 /* ─── 关系编辑弹窗 ──────────────────────────────────────── */
 
-.relation-edit-dialog {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: var(--z-dialog-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.relation-edit-dialog.hidden {
-  display: none;
-}
-
-.relation-edit-dialog-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: var(--modal-backdrop);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-
-.relation-edit-dialog-content {
-  position: relative;
-  width: 360px;
-  max-width: 90vw;
-  background: var(--window-bg);
-  border: 1px solid var(--surface2);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-window);
-  overflow: hidden;
-}
-
-.relation-edit-header {
-  padding: var(--space-4) var(--space-5) var(--space-3);
-  border-bottom: 1px solid var(--surface2);
-}
-
-.relation-edit-title {
-  font-size: var(--font-md);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
-}
+/* 关系编辑弹窗：复用标准 .modal + .modal-content + .modal-header/.modal-body/.modal-footer 结构，
+   此处仅保留关系编辑专属的差异化样式（body flex 布局、label、select、滑块、footer 双区） */
 
 .relation-edit-body {
-  padding: var(--space-4) var(--space-5);
+  /* 弹窗 body 默认无 flex，关系编辑需要表单元素垂直排列 */
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -323,7 +277,7 @@
   -webkit-appearance: none;
   height: 4px;
   background: var(--surface2);
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   /* 聚焦反馈由全局 :focus-visible 兜底提供 */
   cursor: pointer;
 }
@@ -347,10 +301,7 @@
 }
 
 .relation-edit-footer {
-  padding: var(--space-3) var(--space-5);
-  border-top: 1px solid var(--surface2);
-  display: flex;
-  align-items: center;
+  /* 标准Footer 右对齐按钮，关系编辑需要左侧删除按钮 + 右侧取消/保存双区 */
   justify-content: space-between;
 }
 
@@ -360,45 +311,18 @@
   margin-left: auto;
 }
 
-.relation-edit-btn {
-  padding: var(--space-1-5) var(--space-4);
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-  transition: background var(--transition-fast), opacity var(--transition-fast);
-}
-
-.relation-edit-btn-primary {
-  background: var(--accent);
-  color: var(--accent-fg);
-}
-
-.relation-edit-btn-primary:hover {
-  opacity: 0.9;
-}
-
-.relation-edit-btn-secondary {
-  background: var(--surface0);
-  color: var(--text);
-}
-
-.relation-edit-btn-secondary:hover {
-  background: var(--surface1);
-}
-
-.relation-edit-btn-danger {
+/* 删除按钮：次级危险变体（透明背景 + 红字 + 红边框，比 .btn-danger 实心样式更轻量） */
+#relation-edit-delete {
   background: transparent;
   color: var(--red);
   border: 1px solid var(--red);
 }
 
-.relation-edit-btn-danger:hover {
+#relation-edit-delete:hover {
   background: var(--red-20);
 }
 
-.relation-edit-btn-danger.hidden {
+#relation-edit-delete.hidden {
   display: none;
 }
 

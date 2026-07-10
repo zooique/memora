@@ -1724,7 +1724,7 @@ export class MemoryPanelManager {
 
     // 重置 UI 状态（防御性，处理 Escape 走 modal.ts hideModal 路径留下的残留）
     const deleteBtnReset = dialog.querySelector('#relation-edit-delete')!;
-    const titleElReset = dialog.querySelector('.relation-edit-title')!;
+    const titleElReset = dialog.querySelector('.modal-header h3')!;
     deleteBtnReset.classList.remove('hidden');
     titleElReset.textContent = '编辑关系';
 
@@ -1757,9 +1757,10 @@ export class MemoryPanelManager {
     const cancelBtn = dialog.querySelector('#relation-edit-cancel')! as HTMLElement;
     cancelBtn.onclick = () => this.hideRelationEditDialog();
 
-    // 背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
-    const overlay = dialog.querySelector('.relation-edit-dialog-overlay')! as HTMLElement;
-    overlay.onclick = () => this.hideRelationEditDialog();
+    // 背景遮罩点击关闭（点击 .modal 自身背景区域关闭，与 .modal 类的 Escape 监听配套）
+    dialog.addEventListener('click', (e: MouseEvent) => {
+      if (e.target === dialog) this.hideRelationEditDialog();
+    });
 
     // 权重滑块联动
     weightInput.oninput = () => {
@@ -1784,7 +1785,7 @@ export class MemoryPanelManager {
     const weightInput = dialog.querySelector('#relation-edit-weight')! as HTMLInputElement;
     const weightValue = dialog.querySelector('#relation-edit-weight-value')!;
     const deleteBtn = dialog.querySelector('#relation-edit-delete')!;
-    const titleEl = dialog.querySelector('.relation-edit-title')!;
+    const titleEl = dialog.querySelector('.modal-header h3')!;
 
     // 创建模式下隐藏删除按钮，标题改为"创建关系"
     deleteBtn.classList.add('hidden');
@@ -1806,9 +1807,10 @@ export class MemoryPanelManager {
     const cancelBtn = dialog.querySelector('#relation-edit-cancel')! as HTMLElement;
     cancelBtn.onclick = () => this.hideRelationEditDialog();
 
-    // 背景遮罩点击关闭（与 .modal 类的 Escape 监听配套）
-    const overlay = dialog.querySelector('.relation-edit-dialog-overlay')! as HTMLElement;
-    overlay.onclick = () => this.hideRelationEditDialog();
+    // 背景遮罩点击关闭（点击 .modal 自身背景区域关闭，与 .modal 类的 Escape 监听配套）
+    dialog.addEventListener('click', (e: MouseEvent) => {
+      if (e.target === dialog) this.hideRelationEditDialog();
+    });
 
     // 权重滑块联动
     weightInput.oninput = () => {
@@ -1826,7 +1828,7 @@ export class MemoryPanelManager {
 
     // 恢复默认 UI（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
     const deleteBtn = dialog.querySelector('#relation-edit-delete')!;
-    const titleEl = dialog.querySelector('.relation-edit-title')!;
+    const titleEl = dialog.querySelector('.modal-header h3')!;
     deleteBtn.classList.remove('hidden');
     titleEl.textContent = '编辑关系';
   }
