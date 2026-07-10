@@ -348,12 +348,19 @@
               <button class="suggestion-btn" data-suggestion="切换到代码助手角色"><svg class="icon"><use href="#icon-persona"/></svg> 切换角色</button>
               <button class="suggestion-btn" data-suggestion="帮我整理一下最近的洞察"><svg class="icon"><use href="#icon-fairy"/></svg> 整理洞察</button>
             </div>
+            <!-- 功能提示：输入补全（让用户知道输入时会自动从记忆/对话中补全） -->
+            <div class="empty-feature-hint">
+              <svg class="icon"><use href="#icon-search"/></svg>
+              <span>输入时自动补全：从记忆和历史对话中匹配，↓↑ 选择，Tab 确认</span>
+            </div>
           </div>
           <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示，置于 messages 内部以便正确定位） -->
           <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
         <div id="input-area">
-          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1" aria-label="输入消息"></textarea>
+          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行。输入触发补全，Tab 确认" rows="1" aria-label="输入消息"></textarea>
+          <!-- 输入补全候选列表（输入 ≥2 字符后自动显示，↓↑ 导航 + Tab 确认，IDE 风格浮层） -->
+          <ul id="chat-completion-list" class="chat-completion-list hidden" role="listbox" aria-label="输入补全候选"></ul>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
           <div class="input-toolbar">
             <div class="input-actions-left">

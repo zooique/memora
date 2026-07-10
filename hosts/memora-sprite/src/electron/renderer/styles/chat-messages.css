@@ -832,6 +832,8 @@
 /* ─── 输入区（嵌入占位 + 视觉浮动效果） ──────────────────────── */
 /* flex 流占位，通过 margin/border-radius/box-shadow 模拟视觉上的浮动卡片效果 */
 #input-area {
+  /* position: relative 作为补全候选列表（.chat-completion-list）绝对定位的参照系 */
+  position: relative;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -868,6 +870,87 @@
 
 #input::placeholder {
   color: var(--text-3);
+}
+
+/* ─── 输入补全候选列表（IDE 风格浮层，定位在输入框上方） ──────── */
+/* 复用 quick-input 的 .completion-item 等类名，通过 .chat-completion-list 父容器作用域隔离 */
+.chat-completion-list {
+  position: absolute;
+  /* 定位在输入框上方（#input-area 顶部之上），避免遮挡输入框 */
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  background: var(--window-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-window);
+  max-height: 240px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  /* z-index 高于输入区，确保浮层不被遮挡 */
+  z-index: 20;
+  /* 出现动画：从下方淡入，与聊天消息动画风格一致 */
+  animation: chat-completion-in var(--transition-fast) ease-out;
+}
+
+/* 隐藏态 */
+.chat-completion-list.hidden {
+  display: none;
+}
+
+/* 候选项（复用 .completion-item 类名，通过父容器作用域覆盖样式） */
+.chat-completion-list .completion-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  border-bottom: 1px solid var(--surface0);
+}
+
+.chat-completion-list .completion-item:last-child {
+  border-bottom: none;
+}
+
+/* 选中态（键盘 ↓↑ 或鼠标 hover） */
+.chat-completion-list .completion-item.selected {
+  background: var(--accent-10);
+}
+
+/* 来源标签（记忆/对话） */
+.chat-completion-list .completion-label {
+  font-size: var(--font-xs);
+  color: var(--accent);
+  background: var(--accent-10);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  font-weight: var(--weight-medium);
+}
+
+/* 候选文本（单行省略） */
+.chat-completion-list .completion-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+/* 补全列表出现动画 */
+@keyframes chat-completion-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） */
@@ -1341,6 +1424,26 @@
 
 .chat-empty-state .suggestion-btn:active {
   transform: translateY(0);
+}
+
+/* 功能提示行：补全等功能的简短说明（让用户知道输入时会有补全） */
+.chat-empty-state .empty-feature-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1-5);
+  margin-top: var(--space-2);
+  font-size: var(--font-xs);
+  color: var(--text-3);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* 功能提示图标尺寸 */
+.chat-empty-state .empty-feature-hint .icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  color: var(--accent);
+  opacity: 0.7;
 }
 
 /* ─── 思考阶段指示器 ─────────────────────────────── */

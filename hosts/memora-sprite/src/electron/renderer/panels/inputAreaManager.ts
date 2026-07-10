@@ -9,6 +9,7 @@
  * - 发送按钮点击处理（触发发送回调）
  * - 输入区 ResizeObserver（动态更新 --input-area-height CSS 变量）
  * - 输入清理 + 长度限制
+ * - 输入补全集成（复用 QuickInputCompletion，输入时显示记忆/对话候选）
  *
  * 设计原则：
  * - 依赖注入：通过 InputAreaHost 接口注入 UIManager 的状态查询和回调，
@@ -17,11 +18,14 @@
  * - 不持有流式状态，通过 host.isStreaming() 查询
  * - Agent 就绪/空内容守卫保留在 UIManager.emitSendMessage 内部，
  *   InputAreaManager 仅负责 UI 联动，不重复守卫逻辑
+ * - 补全管理器复用 quick-input 模块的 QuickInputCompletion，零重复造轮子
  */
 
 import type { EventTracker } from '../helpers/eventTracker.js';
 // clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
 import { clearElement } from '../helpers/domHelpers.js';
+// 复用 quick-input 补全管理器（已泛化支持 textarea）
+import { QuickInputCompletion } from '../quick-input/quickInputCompletion.js';
 
 /**
  * 输入区域宿主接口
@@ -67,6 +71,9 @@ export class InputAreaManager {
   /** 上下文窗口大小（token 数，不同模型不同，默认 32K） */
   private static readonly DEFAULT_CONTEXT_TOKENS = 32768;
 
+  /** 输入补全管理器（复用 quick-input 模块，null 表示候选列表容器缺失时降级跳过） */
+  private completion: QuickInputCompletion | null = null;
+
   /**
    * 构造函数：注入 DOM 元素 + 事件跟踪器 + 宿主接口
    *
@@ -92,7 +99,7 @@ export class InputAreaManager {
   }
 
   /**
-   * 初始化：绑定事件 + 启动 ResizeObserver
+   * 初始化：绑定事件 + 启动 ResizeObserver + 初始化输入补全
    *
    * 在 UIManager 构造函数末尾调用（initEventListeners 之后）。
    */
@@ -112,10 +119,13 @@ export class InputAreaManager {
 
     // 初始化 Provider 选择器
     this.initProviderSelector();
+
+    // 初始化输入补全（候选列表容器存在时才启用，让用户输入时即可发现此功能）
+    this.initCompletion();
   }
 
   /**
-   * 清理：断开 ResizeObserver + 清理事件监听器
+   * 清理：断开 ResizeObserver + 清理事件监听器 + 清理补全管理器
    *
    * 由 UIManager.cleanup() 调用。
    */
@@ -123,6 +133,11 @@ export class InputAreaManager {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+    // 清理补全管理器（移除事件监听器 + 清空候选列表）
+    if (this.completion) {
+      this.completion.cleanup();
+      this.completion = null;
     }
     this.events.cleanup();
   }
@@ -260,6 +275,40 @@ export class InputAreaManager {
       }
     });
     this.resizeObserver.observe(inputArea);
+  }
+
+  // ─── 输入补全 ──────────────────────────────────────────
+
+  /**
+   * 初始化输入补全
+   *
+   * 复用 quick-input 模块的 QuickInputCompletion 类，让主对话输入框也具备补全能力。
+   * 用户输入 ≥2 字符后自动触发，从记忆 + 历史对话中搜索候选，↓↑ 导航 + Tab 确认。
+   *
+   * 设计要点：
+   * - 候选列表容器（#chat-completion-list）缺失时静默降级，不阻断初始化
+   * - 补全管理器独立绑定 input/keydown 事件，与 InputAreaManager 的事件互不干扰
+   *   （补全仅拦截 ↓↑ Tab，Enter/Esc 由 InputAreaManager 处理）
+   * - onSelect 回调：回填文本到输入框并触发 input 事件（更新高度 + 按钮状态）
+   * - 不注册 onListChange（主窗口不需要调整窗口高度，候选列表通过 CSS 绝对定位浮层）
+   */
+  private initCompletion(): void {
+    // 候选列表容器可选（缺失时跳过补全能力，不阻断主流程）
+    const completionList = document.getElementById('chat-completion-list');
+    if (!(completionList instanceof HTMLElement)) return;
+
+    // window.electronAPI 由 preload.ts 通过 contextBridge 注入，已有全局类型声明
+    // 传入完整的 ElectronAPI，QuickInputCompletion 仅使用 searchMemories/searchSessionMessages 子集
+    this.completion = new QuickInputCompletion(this.inputEl, completionList, window.electronAPI);
+    // Tab 选择候选项时，回填到输入框并触发 input 事件（调整高度 + 更新按钮状态）
+    this.completion.onSelect((text) => {
+      this.inputEl.value = text;
+      // 触发 input 事件，让 handleInputChange 感知内容变化
+      this.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      // 将光标移到末尾
+      this.inputEl.setSelectionRange(this.inputEl.value.length, this.inputEl.value.length);
+    });
+    this.completion.init();
   }
 
   // ─── Provider 选择器 ────────────────────────────────────

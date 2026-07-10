@@ -13,6 +13,7 @@
  *   - 复用现有 searchMemories / searchSessionMessages 两个 IPC
  *   - 防抖 300ms + 最小 2 字符触发，避免高频 IPC
  *   - 候选列表为空时自动隐藏，不干扰输入
+ *   - 同时服务于 quick-input 浮窗（input）和主对话输入框（textarea）
  *
  * 数据来源对比：
  *   - searchMemories：结构化记忆（洞察/偏好/规则），双通道混合搜索，含 source
@@ -27,6 +28,14 @@ import type { ElectronAPI } from '../../preload.js';
  * 仅依赖两个搜索 IPC，与 Phase 1 的 confirmQuickInput/closeQuickInput 解耦。
  */
 export type CompletionElectronAPI = Pick<ElectronAPI, 'searchMemories' | 'searchSessionMessages'>;
+
+/**
+ * 补全目标元素类型
+ *
+ * 同时支持 quick-input 浮窗的 HTMLInputElement 和主对话输入框的 HTMLTextAreaElement。
+ * 两者都有 value 属性和 input/keydown 事件，补全逻辑无差异。
+ */
+export type CompletionTarget = HTMLInputElement | HTMLTextAreaElement;
 
 /** 补全候选项统一结构（合并记忆搜索 + 对话搜索结果） */
 export interface CompletionItem {
@@ -55,10 +64,12 @@ const PREVIEW_MAX_LENGTH = 80;
  *   2. 用户输入时自动触发补全
  *   3. 用户 Tab 选择候选项时触发 onSelect 回调
  *   4. 窗口关闭时调用 cleanup() 清理监听器
+ *
+ * 支持的输入元素：HTMLInputElement（浮窗）| HTMLTextAreaElement（主输入框）
  */
 export class QuickInputCompletion {
-  /** 输入框元素 */
-  private inputField: HTMLInputElement;
+  /** 输入框元素（input 或 textarea） */
+  private inputField: CompletionTarget;
   /** 候选列表容器元素 */
   private listEl: HTMLElement;
   /** ElectronAPI 子集（搜索能力） */
@@ -78,11 +89,11 @@ export class QuickInputCompletion {
   private lastRequestId = 0;
 
   /**
-   * @param inputField 输入框元素
+   * @param inputField 输入框元素（input 或 textarea）
    * @param listEl 候选列表容器元素（ul 或 div）
    * @param api ElectronAPI 子集
    */
-  constructor(inputField: HTMLInputElement, listEl: HTMLElement, api: CompletionElectronAPI) {
+  constructor(inputField: CompletionTarget, listEl: HTMLElement, api: CompletionElectronAPI) {
     this.inputField = inputField;
     this.listEl = listEl;
     this.api = api;
