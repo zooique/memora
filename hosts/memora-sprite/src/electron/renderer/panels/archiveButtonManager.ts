@@ -169,7 +169,8 @@ export class ArchiveButtonManager {
         archiveBtn.removeAttribute('disabled');
         archiveBtn.classList.remove('archiving');
       }
-    } catch {
+    } catch (err) {
+      console.error('对话归档失败:', err);
       this.host.showToast('归档失败，请重试', 'error');
       archiveBtn.removeAttribute('disabled');
       archiveBtn.classList.remove('archiving');

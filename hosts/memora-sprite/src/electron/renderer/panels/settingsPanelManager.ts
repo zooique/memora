@@ -1052,7 +1052,8 @@ export class SettingsPanelManager {
       } else {
         this.host.showToast(result.error ?? '连接失败', 'error');
       }
-    } catch {
+    } catch (err) {
+      console.error('LLM 连接测试异常:', err);
       this.host.showToast('测试异常，请检查网络', 'error');
     } finally {
       btn.disabled = false;

@@ -282,7 +282,8 @@ export function registerMinimalIpcHandlers(
   ipcMain.handle(IPC_CHANNELS.LLM_PROVIDER_LIST, async () => {
     try {
       return await getLlmProviders();
-    } catch {
+    } catch (err) {
+      logger.warn({ err: toError(err).message }, '读取 LLM 提供商配置失败');
       return { active: '', providers: [] };
     }
   });

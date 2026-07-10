@@ -548,11 +548,11 @@ async function setupAgentPostInit(
   // 恢复上次会话（连续演化任务的核心体验）
   // 添加 sessionManager null 检查
   if (!agent.sessionManager) {
-    console.warn('SessionManager 未初始化，跳过会话恢复');
+    logger.warn('SessionManager 未初始化，跳过会话恢复');
   } else {
     const restored = await agent.sessionManager.restoreMostRecentSession('main');
     if (restored > 0) {
-      console.log(`已恢复上次会话（${restored} 条消息）\n`);
+      logger.info(`已恢复上次会话（${restored} 条消息）`);
     }
   }
 
@@ -566,8 +566,8 @@ async function setupAgentPostInit(
           const content = await readFile(fullPath, 'utf-8');
           await agent.works.ensureProjection(fullPath, content, filename);
         }
-      } catch {
-        console.warn(`作品投影生成失败: ${filename}`);
+      } catch (err) {
+        logger.warn({ err: toError(err).message, filename }, '作品投影生成失败');
       }
     }
   }
@@ -727,8 +727,12 @@ export async function startSprite(opts?: {
     if (!config.llm.apiKey) {
       throw new MemoraError(ErrorCode.CONFIG_LOAD_FAILED, 'API Key 未配置');
     }
-  } catch {
-    throw new MemoraError(ErrorCode.CONFIG_LOAD_FAILED, '配置不完整，请在设置面板中配置 LLM 提供商和 API Key');
+  } catch (err) {
+    throw new MemoraError(
+      ErrorCode.CONFIG_LOAD_FAILED,
+      `配置不完整，请在设置面板中配置 LLM 提供商和 API Key（${toError(err).message}）`,
+      { cause: err },
+    );
   }
 
   // 2. 用配置初始化 Agent + Sprite

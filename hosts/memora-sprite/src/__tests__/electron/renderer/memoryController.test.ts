@@ -72,6 +72,7 @@ function createMockUiManager(): UIManager & { triggerMemoryRecall: ReturnType<ty
     onMoreMenuAction: vi.fn(),
     // 回收站操作回调 + 渲染方法 + 弹窗显示 + 确认对话框
     onRecycleBinAction: vi.fn(),
+    onRecycleBinBatchAction: vi.fn(),
     renderRecycleBinList: vi.fn(),
     showModal: vi.fn(),
     showConfirmDialog: vi.fn().mockResolvedValue(true),

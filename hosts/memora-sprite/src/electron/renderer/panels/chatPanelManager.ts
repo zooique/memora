@@ -1868,7 +1868,8 @@ export class ChatPanelManager {
         this.host.showToast(`已归档 ${count} 条记忆`, 'success');
         // 1.5 秒后移除按钮
         setTimeout(() => btn.remove(), 1500);
-      } catch {
+      } catch (err) {
+        console.error('会话归档失败:', err);
         btn.disabled = false;
         btn.textContent = '归档失败，重试';
       }
