@@ -91,7 +91,9 @@ export { JsonVectorStore } from '@/memory/vectorStore.js';
 export type { IVectorStore, EmbeddingService } from '@/memory/vectorStore.js';
 // Embedding Provider：OpenAI 兼容 /embeddings 端点实现（满足 EmbeddingService 接口）
 export { EmbeddingProvider } from '@/llm/embedding.js';
-export type { EmbeddingConfig, EmbeddingResult, EmbeddingOptions } from '@/llm/embedding.js';
+export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
+// EmbeddingOptions 归属 memory/（消费者层），符合依赖倒置原则
+export type { EmbeddingOptions } from '@/memory/vectorStore.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 // 消息历史内部类型：MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）

@@ -15,6 +15,8 @@
  */
 import { logger } from '@/logging/logger.js';
 import { networkError, configError, llmError, toError } from '@/utils/errors.js';
+// EmbeddingOptions 定义在 memory/vectorStore.ts（消费者层），符合依赖倒置原则
+import type { EmbeddingOptions } from '@/memory/vectorStore.js';
 
 /**
  * Embedding 配置（与 OpenAICompatibleConfig 共用 baseUrl/apiKey）
@@ -33,19 +35,6 @@ export interface EmbeddingResult {
   text: string;
   /** 向量（浮点数组，维度由模型决定） */
   vector: number[];
-}
-
-/**
- * Embedding 调用选项（P1-8 韧性补齐）
- *
- * 与 ChatOptions.signal/timeoutMs 同构，支持外部取消 + 超时中断。
- * 宿主在用户取消对话时传入 AbortSignal，或设置 timeoutMs 覆盖默认超时。
- */
-export interface EmbeddingOptions {
-  /** 外部取消信号（用户主动取消时传入） */
-  signal?: AbortSignal;
-  /** 超时毫秒数（超时自动 abort；默认 60s，可通过此字段覆盖） */
-  timeoutMs?: number;
 }
 
 /**
