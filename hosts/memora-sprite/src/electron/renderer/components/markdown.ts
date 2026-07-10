@@ -613,13 +613,16 @@ function appendFormattedText(target: HTMLElement, text: string): void {
   }
 }
 
-/** 收集正则匹配项的辅助函数（CHAT-A03 优化：重置 lastIndex 替代 new RegExp） */
+/** 收集正则匹配项的辅助函数（重置 lastIndex 复用模块级常量，非全局正则按需补 g） */
 export function collectMatches(
   regex: RegExp,
   text: string,
   callback: (m: RegExpExecArray) => void,
 ): void {
-  // 重置 lastIndex 而非创建新 RegExp，避免 GC 压力
+  // 非全局正则需补 g flag：exec 不推进 lastIndex 会无限返回首个匹配，导致死循环
+  if (!regex.global) {
+    regex = new RegExp(regex.source, regex.flags + 'g');
+  }
   regex.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {

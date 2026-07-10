@@ -480,17 +480,17 @@ beforeEach(() => {
   dom.window.HTMLElement.prototype.scrollIntoView = vi.fn();
   // 注入 mock electronAPI
   (dom.window as unknown as Record<string, unknown>).electronAPI = createMockElectronAPI();
-  // 设置全局 document 和 window
-  global.document = dom.window.document;
-  global.window = dom.window as unknown as Window & typeof globalThis;
-  global.HTMLElement = dom.window.HTMLElement;
-  global.HTMLInputElement = dom.window.HTMLInputElement;
-  global.HTMLButtonElement = dom.window.HTMLButtonElement;
-  global.HTMLTextAreaElement = dom.window.HTMLTextAreaElement;
-  global.HTMLSelectElement = dom.window.HTMLSelectElement;
-  global.HTMLSpanElement = dom.window.HTMLSpanElement;
-  global.HTMLPreElement = dom.window.HTMLPreElement;
-  global.HTMLDivElement = dom.window.HTMLDivElement;
+  // 设置全局 document 和 window（使用 vi.stubGlobal 确保 afterEach 可自动恢复，防止 worker 复用时全局引用泄漏导致 OOM）
+  vi.stubGlobal('document', dom.window.document);
+  vi.stubGlobal('window', dom.window);
+  vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
+  vi.stubGlobal('HTMLInputElement', dom.window.HTMLInputElement);
+  vi.stubGlobal('HTMLButtonElement', dom.window.HTMLButtonElement);
+  vi.stubGlobal('HTMLTextAreaElement', dom.window.HTMLTextAreaElement);
+  vi.stubGlobal('HTMLSelectElement', dom.window.HTMLSelectElement);
+  vi.stubGlobal('HTMLSpanElement', dom.window.HTMLSpanElement);
+  vi.stubGlobal('HTMLPreElement', dom.window.HTMLPreElement);
+  vi.stubGlobal('HTMLDivElement', dom.window.HTMLDivElement);
   // 注入 navigator.clipboard
   Object.defineProperty(dom.window.navigator, 'clipboard', {
     value: {
@@ -509,6 +509,8 @@ afterEach(() => {
     uiManager.cleanup();
   }
   dom.window.close();
+  // 恢复 stub 的全局引用，释放 JSDOM 实例供 GC 回收（防止 worker 复用时内存累积导致 OOM）
+  vi.unstubAllGlobals();
 });
 
 // ─── 消息渲染 ─────────────────────────────────────────────

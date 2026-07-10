@@ -68,10 +68,11 @@ let spriteEventCallback: ((event: { type: string; payload: { prompt?: string; im
 
 beforeEach(() => {
   dom = new JSDOM(FLOAT_HTML, { url: 'http://localhost' });
-  global.document = dom.window.document;
-  global.window = dom.window as unknown as Window & typeof globalThis;
-  global.HTMLElement = dom.window.HTMLElement;
-  global.HTMLImageElement = dom.window.HTMLImageElement;
+  // 使用 vi.stubGlobal 确保 afterEach 可自动恢复，防止 worker 复用时全局引用泄漏导致 OOM
+  vi.stubGlobal('document', dom.window.document);
+  vi.stubGlobal('window', dom.window);
+  vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
+  vi.stubGlobal('HTMLImageElement', dom.window.HTMLImageElement);
 
   // ─── JSDOM PointerEvent & setPointerCapture polyfill ───
   // JSDOM 默认不实现 PointerEvent 和 Element.prototype.setPointerCapture，
@@ -163,6 +164,8 @@ beforeEach(() => {
 
 afterEach(() => {
   dom.window.close();
+  // 恢复 stub 的全局引用，释放 JSDOM 实例供 GC 回收（防止 worker 复用时内存累积导致 OOM）
+  vi.unstubAllGlobals();
 });
 
 /** 测试辅助：在 sphere 元素上派发 PointerEvent */
