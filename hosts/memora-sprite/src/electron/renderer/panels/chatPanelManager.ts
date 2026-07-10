@@ -39,6 +39,11 @@ import {
 import { ArchiveButtonManager } from './archiveButtonManager.js';
 // 启动摘要横幅逻辑提取到独立组件（纯展示函数，无状态依赖）
 import { showStartupSummary as renderStartupSummary } from '../components/startupSummaryBanner.js';
+// 消息操作逻辑（重新生成/忘记/跨组遍历）提取到 helpers
+import {
+  handleRegenerate as doRegenerate,
+  handleForget as doForget,
+} from '../helpers/messageOperations.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { ConfirmDialogOptions, Message, ToastType } from '../types.js';
 
@@ -449,7 +454,7 @@ export class ChatPanelManager {
         if (role === 'assistant') {
           const messageEl = messageId ? this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`) : null;
           if (messageEl) {
-            this._handleRegenerate(messageEl);
+            doRegenerate({ host: this.host }, messageEl);
           }
         }
         break;
@@ -457,8 +462,8 @@ export class ChatPanelManager {
         if (messageId) {
           const messageEl = this.messagesEl.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
           if (messageEl) {
-            // fire-and-forget：_handleForget 内部弹确认弹窗，无需等待
-            void this._handleForget(messageId, messageEl);
+            // fire-and-forget：handleForget 内部弹确认弹窗，无需等待
+            void doForget({ host: this.host }, messageId, messageEl);
           }
         }
         break;
@@ -1027,167 +1032,6 @@ export class ChatPanelManager {
     } else {
       contentWrapper.appendChild(copyBtn);
     }
-  }
-
-  /**
-   * 处理重新生成操作（右键菜单"重新生成"触发）
-   *
-   * 找到当前精灵消息对应的上一条用户消息，删除精灵消息，
-   * 然后用用户消息内容重新发送。支持任意位置的重新生成，
-   * 而非只能重新生成最后一条。
-   *
-   * @param messageEl 被右键点击的精灵消息 DOM 元素
-   */
-  private _handleRegenerate(messageEl: HTMLElement): void {
-    if (this.host.isStreaming()) {
-      this.host.showToast('精灵正在回复中，请等待完成或点击停止', 'warning');
-      return;
-    }
-
-    const userMessageEl = this._findPreviousUserMessage(messageEl);
-    if (!userMessageEl) {
-      this.host.showToast('找不到对应的用户消息', 'error');
-      return;
-    }
-
-    const userBubble = userMessageEl.querySelector('.message-bubble');
-    const userContent = userBubble?.textContent ?? '';
-    if (!userContent.trim()) {
-      this.host.showToast('用户消息内容为空', 'error');
-      return;
-    }
-
-    messageEl.remove();
-    this.host.regenerateLastMessage(userContent);
-  }
-
-  /**
-   * 查找指定精灵消息的上一条用户消息（跨 message-group 遍历）
-   *
-   * Phase 1 消息分组后，user 和 assistant 分属不同 .message-group 容器，
-   * previousElementSibling 仅在同一 group 内遍历无法跨 group。
-   * 修复：先跳到父 group，再跨 group 向前遍历，在每个 group 内取最后一条 user。
-   *
-   * @param assistantMessageEl 精灵消息元素
-   * @returns 上一条用户消息元素，找不到返回 null
-   */
-  private _findPreviousUserMessage(assistantMessageEl: HTMLElement): HTMLElement | null {
-    // 跳到所属 group（或自身就是顶层消息时直接遍历）
-    // closest() 属动态 DOM 遍历，返回值用 instanceof HTMLElement 前置判断（元素确实可能不存在）
-    let searchFrom: HTMLElement = assistantMessageEl;
-    const ownGroup = assistantMessageEl.closest('.message-group');
-    if (ownGroup instanceof HTMLElement) searchFrom = ownGroup;
-
-    // previousElementSibling 返回 Element | null，遍历用 instanceof HTMLElement 收窄
-    let prev: Element | null = searchFrom.previousElementSibling;
-    while (prev) {
-      // 在 prev 中查找 user 消息（group 内可能有多条，取最后一条）
-      const userMsgs = prev.querySelectorAll('.message.user');
-      if (userMsgs.length > 0) {
-        // 数组元素为 Element，返回前用 instanceof HTMLElement 收窄
-        const lastUserMsg = userMsgs[userMsgs.length - 1];
-        if (lastUserMsg instanceof HTMLElement) return lastUserMsg;
-      }
-      // 兜底：prev 本身就是 .message.user（非 group 场景）
-      if (prev instanceof HTMLElement && prev.classList.contains('message') && prev.classList.contains('user')) {
-        return prev;
-      }
-      prev = prev.previousElementSibling;
-    }
-    return null;
-  }
-
-  /**
-   * 查找指定用户消息的下一条精灵消息（跨 message-group 遍历）
-   *
-   * 与 _findPreviousUserMessage 对称，用于"忘记"操作删除 user 时找对应 assistant。
-   *
-   * @param userMessageEl 用户消息元素
-   * @returns 下一条精灵消息元素，找不到返回 null
-   */
-  private _findNextAssistantMessage(userMessageEl: HTMLElement): HTMLElement | null {
-    let searchFrom: HTMLElement = userMessageEl;
-    // closest() 属动态 DOM 遍历，返回值用 instanceof HTMLElement 前置判断
-    const ownGroup = userMessageEl.closest('.message-group');
-    if (ownGroup instanceof HTMLElement) searchFrom = ownGroup;
-
-    // nextElementSibling 返回 Element | null，遍历用 instanceof HTMLElement 收窄
-    let next: Element | null = searchFrom.nextElementSibling;
-    while (next) {
-      const assistantMsgs = next.querySelectorAll('.message.assistant');
-      if (assistantMsgs.length > 0) {
-        // 数组元素为 Element，返回前用 instanceof HTMLElement 收窄
-        const firstAssistantMsg = assistantMsgs[0];
-        if (firstAssistantMsg instanceof HTMLElement) return firstAssistantMsg;
-      }
-      if (next instanceof HTMLElement && next.classList.contains('message') && next.classList.contains('assistant')) {
-        return next;
-      }
-      next = next.nextElementSibling;
-    }
-    return null;
-  }
-
-  /**
-   * 删除消息元素并清理空的 message-group 容器
-   *
-   * 消息删除后 group 可能变空，需移除空容器避免 DOM 残留影响后续遍历。
-   */
-  private _removeMessageAndCleanupGroup(messageEl: HTMLElement): void {
-    const group = messageEl.closest('.message-group');
-    messageEl.remove();
-    if (group && group.children.length === 0) {
-      group.remove();
-    }
-  }
-
-  /**
-   * 处理忘记操作（右键菜单"忘记"触发）
-   *
-   * 从 UI 中移除消息对（用户消息 + 对应的精灵回复）。
-   * 注意：这是 UI 层的软删除，刷新或重启后消息会重新出现，
-   * 符合"忘记"的语义——暂时从视野中移除，而非永久删除。
-   *
-   * 操作前弹二次确认弹窗，避免误触；toast 文案明确告知"刷新后可恢复"，
-   * 消除用户对数据丢失的焦虑。
-   *
-   * 如果右键的是精灵消息：删除精灵消息 + 上一条用户消息
-   * 如果右键的是用户消息：删除用户消息 + 下一条精灵消息
-   *
-   * @param messageId 消息 ID（当前未使用，未来持久化时使用）
-   * @param messageEl 被右键点击的消息 DOM 元素
-   */
-  private async _handleForget(_messageId: string, messageEl: HTMLElement): Promise<void> {
-    // 二次确认：避免误触移除消息对（虽是软删除，但会同时移除用户输入+精灵回复）
-    const confirmed = await this.host.showConfirmDialog({
-      title: '忘记此条对话',
-      message: '将这条对话（你的消息和精灵的回复）从当前视野中移除，刷新后可恢复。',
-      confirmText: '忘记',
-      cancelText: '取消',
-      danger: true,
-    });
-    if (!confirmed) return;
-
-    const isUser = messageEl.classList.contains('user');
-    const isAssistant = messageEl.classList.contains('assistant');
-
-    if (isUser) {
-      // 用户消息：删除当前用户消息 + 下一条精灵消息（跨 group 查找）
-      const nextAssistant = this._findNextAssistantMessage(messageEl);
-      if (nextAssistant) {
-        this._removeMessageAndCleanupGroup(nextAssistant);
-      }
-      this._removeMessageAndCleanupGroup(messageEl);
-    } else if (isAssistant) {
-      // 精灵消息：删除上一条用户消息 + 当前精灵消息（跨 group 查找）
-      const prevUser = this._findPreviousUserMessage(messageEl);
-      if (prevUser) {
-        this._removeMessageAndCleanupGroup(prevUser);
-      }
-      this._removeMessageAndCleanupGroup(messageEl);
-    }
-
-    this.host.showToast('已从本次对话移除，刷新后可恢复', 'success', TOAST_SHORT_MS);
   }
 
   /**
