@@ -3,12 +3,13 @@
  *
  * 职责：
  * - 提供统一的未知错误转 Error 工具函数（toError）
- * - 提供统一的错误日志记录函数（reportError），替代分散的 console.error
+ * - 提供统一的日志记录函数（reportError），替代分散的 console.warn/error
  * - 提供统一的 IPC 错误处理工厂函数（createIpcErrorHandler，记录日志 + 可选 toast 反馈）
  *
  * 设计原则：
  * - toError 为纯函数，无副作用，可独立测试
  * - reportError 统一日志格式为 `[context]` 前缀，便于检索和过滤
+ * - reportError 支持 warn/error 两级（默认 error），向后兼容现有 88 处调用
  * - createIpcErrorHandler 通过闭包绑定 uiManager，避免每个调用点重复传参
  * - 行为与内核 utils/toError 对齐，但渲染进程独立实现（不引入内核依赖）
  */
@@ -43,27 +44,32 @@ export function toError(err: unknown): Error {
   return new Error(String(err ?? '未知错误'));
 }
 
+/** 日志级别类型（与 window.electronAPI.rendererLog 的 level 参数对齐） */
+export type LogLevel = 'error' | 'warn';
+
 /**
- * 统一错误日志记录
+ * 统一日志记录
  *
  * 双通道记录：
- * 1. console.error：保留渲染进程控制台输出（开发时即时可见）
+ * 1. console：保留渲染进程控制台输出（开发时即时可见），level 决定 warn/error 方法
  * 2. window.electronAPI.rendererLog：上报主进程 logger（生产环境可观测性）
  *
- * IPC 不可用时（如 preload 加载失败）仅降级到 console.error，不抛错。
+ * IPC 不可用时（如 preload 加载失败）仅降级到 console，不抛错。
  *
  * @param context 错误上下文标识（如 'loadPersonaList'），自动添加方括号
  * @param error 错误对象或描述信息
+ * @param level 日志级别（默认 'error'，向后兼容现有调用；'warn' 用于可降级的非致命错误）
  */
-export function reportError(context: string, error: unknown): void {
+export function reportError(context: string, error: unknown, level: LogLevel = 'error'): void {
   const message = toError(error).message;
   // 控制台输出（开发时即时可见，保留 [context] 前缀格式）
-  console.error(`[${context}]`, error);
+  const logFn = level === 'warn' ? console.warn : console.error;
+  logFn(`[${context}]`, error);
   // 上报主进程 logger（生产环境可观测性，try-catch 防止 IPC 不可用时崩溃）
   try {
-    window.electronAPI?.rendererLog('error', context, message);
+    window.electronAPI?.rendererLog(level, context, message);
   } catch {
-    // IPC 不可用时静默降级（console.error 已记录，无需额外处理）
+    // IPC 不可用时静默降级（console 已记录，无需额外处理）
   }
 }
 
