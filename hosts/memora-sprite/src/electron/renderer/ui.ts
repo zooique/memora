@@ -617,13 +617,36 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.memoryPanel.dismissAnalysisPanels();
   }
 
-  /** 添加精灵状态条点击：切换到仪表盘面板（感知面板已升级为独立 .panel） */
+  /** 添加精灵状态条点击：切换到感知面板（状态条数据来自感知系统，跳转应去感知面板） */
   initSpriteStatusBarClick(): void {
     const spriteStatusBar = document.getElementById('sprite-status-bar');
     if (spriteStatusBar) {
       this.events.addEventListener(spriteStatusBar, 'click', () => {
-        this.panelRouter.switchPanel('dashboard');
+        this.panelRouter.switchPanel('perception');
       });
+    }
+  }
+
+  /**
+   * 更新精灵状态条文字与脉冲点颜色（PerceptionPanelHost 接口实现）
+   *
+   * 精灵状态条 (#sprite-status-text-bar / #sprite-status-dot-bar) 位于对话面板顶栏，
+   * 是跨面板共享元素：数据来自感知系统，DOM 在对话面板。
+   * 由 PerceptionPanelManager 通过 Host 接口调用，避免感知面板直接写对话面板 DOM。
+   *
+   * @param text 状态条文字（如"基调：温暖（较高）"或叙事摘要）
+   * @param dotColor 脉冲点颜色（仅 affectDisplay 更新时传入，叙事覆盖时 undefined）
+   */
+  updateSpriteStatus(text: string, dotColor?: string): void {
+    const statusTextBar = document.getElementById('sprite-status-text-bar');
+    if (statusTextBar) {
+      statusTextBar.textContent = text;
+    }
+    if (dotColor !== undefined) {
+      const statusDotBar = document.getElementById('sprite-status-dot-bar');
+      if (statusDotBar) {
+        statusDotBar.style.background = dotColor;
+      }
     }
   }
 
@@ -1216,30 +1239,30 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
     this.settingsPanelManager.renderSkills(skills);
   }
-  /** 显示洞察面板加载态（委托到 DashboardPanelManager） */
-  showInsightsLoading(): void { this.dashboardPanel.showInsightsLoading(); }
-  /** 渲染记忆洞察数据（委托到 DashboardPanelManager） */
+  /** 显示洞察面板加载态（委托到 MemoryPanelManager → InsightsRenderer） */
+  showInsightsLoading(): void { this.memoryPanel.showInsightsLoading(); }
+  /** 渲染记忆洞察数据（委托到 MemoryPanelManager → InsightsRenderer） */
   renderInsights(
     dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
     graph: RelationGraphData,
-  ): void { this.dashboardPanel.renderInsights(dashboard, graph); }
-  /** 渲染伙伴洞察面板（委托到 DashboardPanelManager） */
+  ): void { this.memoryPanel.renderInsights(dashboard, graph); }
+  /** 渲染伙伴洞察面板（委托到 MemoryPanelManager → PartnerInsightsRenderer） */
   renderPartnerInsights(memories: Array<{
     id: string; name: string; source: string; contentPreview: string; createdAt?: string;
-  }>): void { this.dashboardPanel.renderPartnerInsights(memories); }
-  /** 注册伙伴洞察 + 感知面板记忆点击回调（委托到 DashboardPanelManager + PerceptionPanelManager） */
+  }>): void { this.memoryPanel.renderPartnerInsights(memories); }
+  /** 注册伙伴洞察 + 感知面板记忆点击回调（委托到 MemoryPanelManager + PerceptionPanelManager） */
   onPartnerMemoryClick(cb: (memoryId: string) => void): void {
-    this.dashboardPanel.onMemoryClick(cb);
+    this.memoryPanel.onPartnerMemoryClick(cb);
     this.perceptionPanel.onMemoryClick(cb);
   }
-  /** 显示洞察面板加载失败状态（委托到 DashboardPanelManager） */
-  showInsightsError(): void { this.dashboardPanel.showInsightsError(); }
-  /** 显示健康度面板加载态（委托到 DashboardPanelManager） */
-  showHealthLoading(): void { this.dashboardPanel.showHealthLoading(); }
-  /** 渲染记忆健康度仪表盘（委托到 DashboardPanelManager） */
-  renderHealthDashboard(data: HealthDashboardPayload): void { this.dashboardPanel.renderHealthDashboard(data); }
-  /** 显示健康度面板加载失败状态（委托到 DashboardPanelManager） */
-  showHealthError(): void { this.dashboardPanel.showHealthError(); }
+  /** 显示洞察面板加载失败状态（委托到 MemoryPanelManager → InsightsRenderer） */
+  showInsightsError(): void { this.memoryPanel.showInsightsError(); }
+  /** 显示健康度面板加载态（委托到 MemoryPanelManager → HealthDashboardRenderer） */
+  showHealthLoading(): void { this.memoryPanel.showHealthLoading(); }
+  /** 渲染记忆健康度仪表盘（委托到 MemoryPanelManager → HealthDashboardRenderer） */
+  renderHealthDashboard(data: HealthDashboardPayload): void { this.memoryPanel.renderHealthDashboard(data); }
+  /** 显示健康度面板加载失败状态（委托到 MemoryPanelManager → HealthDashboardRenderer） */
+  showHealthError(): void { this.memoryPanel.showHealthError(); }
   /** 显示记忆列表加载失败状态（委托到 DashboardPanelManager） */
   showMemoryListError(listEl: HTMLElement): void { this.dashboardPanel.showMemoryListError(listEl); }
   /** 仪表盘计数 +1 并触发脉冲动画（委托到 DashboardPanelManager） */
@@ -1296,20 +1319,25 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   updateNarrative(): void {
     this.perceptionPanel.updateNarrative();
   }
-  /** 注册重试加载洞察数据回调（委托到 DashboardPanelManager） */
-  onReloadInsights(cb: () => void): void { this.dashboardPanel.onReloadInsights(cb); }
-  /** 注册重试加载健康度数据回调（委托到 DashboardPanelManager） */
-  onReloadHealth(cb: () => void): void { this.dashboardPanel.onReloadHealth(cb); }
+  /** 注册重试加载洞察数据回调（委托到 MemoryPanelManager → InsightsRenderer） */
+  onReloadInsights(cb: () => void): void { this.memoryPanel.onReloadInsights(cb); }
+  /** 注册重试加载健康度数据回调（委托到 MemoryPanelManager → HealthDashboardRenderer） */
+  onReloadHealth(cb: () => void): void { this.memoryPanel.onReloadHealth(cb); }
   /** 注册重试加载记忆列表回调（委托到 DashboardPanelManager） */
   onReloadMemoryList(cb: () => void): void { this.dashboardPanel.onReloadMemoryList(cb); }
 
   /**
-   * 主题切换时重绘 Canvas 图表（委托到 DashboardPanelManager）
+   * 主题切换时重绘所有 Canvas 图表（委托到 DashboardPanelManager + MemoryPanelManager）
    *
-   * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘。
+   * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘：
+   * - DashboardPanelManager：增长趋势图（dashboard-growth-canvas）
+   * - MemoryPanelManager → PartnerInsightsRenderer：伙伴洞察趋势图
    * RelationGraph 有持续动画循环，主题切换会自动生效，无需处理。
    */
-  repaintCanvasOnThemeChange(): void { this.dashboardPanel.repaintOnThemeChange(); }
+  repaintCanvasOnThemeChange(): void {
+    this.dashboardPanel.repaintOnThemeChange();
+    this.memoryPanel.repaintOnThemeChange();
+  }
 
   // ─── 角色选择器 ─ 委托到 PersonaPanelManager ───────────────
 

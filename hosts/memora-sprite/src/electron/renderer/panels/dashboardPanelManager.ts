@@ -1,31 +1,25 @@
 /**
- * 仪表盘面板管理器 — 感知系统 + 仪表盘渲染独立子模块
+ * 仪表盘面板管理器 — 仪表盘渲染独立子模块
  *
  * 职责：
  * - 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
  * - 渲染 Agent 运行时指标、技能列表、里程碑成就、对话回顾
- * - 渲染记忆洞察面板（统计卡片 + source 分布条形图 + 关系摘要）
- * - 渲染记忆健康度仪表盘（评分/徽章/三维度进度条/详情计数/清理按钮可见性）
- * - 渲染感知系统（情感基调/默契度/对话上下文/模式洞察/叙事摘要）
+ * - 渲染最近洞察列表（ReviewData.insights.recent，名称/时间/内容预览）
+ * - 渲染记忆源健康诊断（按 source 分组的健康状态列表）
  * - 自管理脉冲动画定时器与事件监听器
  *
  * 设计原则：
  * - 遵循 MemoryPanelManager 的组合模式，UIManager 持有实例并委托
  * - Controller 仅做 IPC 编排，拉取数据后调用 Manager 渲染方法
- * - 渲染所需纯函数（getAffectLevel/getAffectColor/getRapportLevelLabel 等）封装为本模块私有
  * - 跨模块关注点（showToast）通过 host 回调注入
  */
 
 import { clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
-import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
-import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
-import { InsightsRenderer } from './insightsRenderer.js';
 // 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
 import { getSourceColorClass } from './memoryPanelManager.js';
 import type { ToastType } from '../types.js';
-import type { HealthDashboardPayload, ReviewDataPayload } from '../../preload.js';
-import type { RelationGraphData } from '../components/relationGraph.js';
+import type { ReviewDataPayload } from '../../preload.js';
 // 仪表盘脉冲动画间隔常量从 constants.ts 真理源导入
 import { DASHBOARD_PULSE_MS } from '../../../sprite/constants.js';
 
@@ -164,31 +158,24 @@ export function formatTokenCount(tokens: number): string {
 // ─── 仪表盘面板管理器类 ───────────────────────────────────
 
 /**
- * 仪表盘面板管理器（Facade）
+ * 仪表盘面板管理器
  *
- * 组合 4 个独立子渲染器，通过委托模式分发渲染请求：
- * - PartnerInsightsRenderer：伙伴洞察子区域（profile 卡片 / 知识缺口 / 增长趋势图）
- * - HealthDashboardRenderer：记忆健康度子区域（评分 / 徽章 / 三维度 / 清理按钮）
- * - InsightsRenderer：记忆洞察子区域（统计卡片 / source 分布 / 关系摘要）
+ * 职责：
+ * - 渲染仪表盘统计数据（累积事件/触发器/推荐记忆/记忆计数/洞察计数/建议计数）
+ * - 渲染 Agent 运行时指标、技能列表、里程碑成就、对话回顾
+ * - 渲染最近洞察列表（ReviewData.insights.recent，名称/时间/内容预览）
+ * - 渲染记忆源健康（按 source 分组的健康诊断列表）
+ * - 自管理脉冲动画定时器与事件监听器
  *
- * 自管理：脉冲动画定时器（pulseTimers）+ EventTracker（事件监听器跟踪）+ 重试回调。
- * 生命周期：UIManager 在挂载时创建实例，在卸载时调用 cleanup() 释放资源。
- *
- * 设计依据：ADR-SP-015 PanelManager 组合模式（4 种依赖注入模式 + 委托规范 + 生命周期契约）
+ * 设计原则：
+ * - 遵循 MemoryPanelManager 的组合模式，UIManager 持有实例并委托
+ * - Controller 仅做 IPC 编排，拉取数据后调用 Manager 渲染方法
+ * - 跨模块关注点（showToast）通过 host 回调注入
  */
 export class DashboardPanelManager {
   // ─── 内部状态 ────────────────────────────────────────────
   /** 脉冲动画定时器句柄列表（cleanup 时统一清理，避免回调在 DOM 销毁后触发） */
   private pulseTimers: number[] = [];
-
-  /** 伙伴洞察渲染器（组合模式：委托 partner-insights 子区域渲染） */
-  private partnerInsights = new PartnerInsightsRenderer();
-
-  /** 健康度仪表盘渲染器（组合模式：委托 health 子区域渲染） */
-  private healthDashboard = new HealthDashboardRenderer();
-
-  /** 洞察渲染器（组合模式：委托 insights 子区域渲染） */
-  private insights = new InsightsRenderer();
 
   // ─── 缓存 DOM 元素（渲染方法中重复查询，构造时获取一次） ─
   /** 增长趋势 - 区域容器（Phase 6.2：暴露 reviewManager 7/30 天趋势数据） */
@@ -229,34 +216,19 @@ export class DashboardPanelManager {
     }
     this.pulseTimers = [];
     this.events.cleanup();
-    this.partnerInsights.cleanup();
-    this.healthDashboard.cleanup();
-    this.insights.cleanup();
   }
 
   /**
    * 主题切换时重绘 Canvas 图表
    *
    * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘。
-   * 委托到 PartnerInsightsRenderer 使用缓存的记忆数据重新渲染增长趋势图。
+   * 增长趋势 Canvas 需重绘（主题切换后 CSS 变量值改变）。
    */
   repaintOnThemeChange(): void {
-    this.partnerInsights.repaintOnThemeChange();
-    // 增长趋势 Canvas 也需重绘（主题切换后 CSS 变量值改变）
     this.repaintGrowthChart();
   }
 
   // ─── 回调注册 ──────────────────────────────────────────
-
-  /** 注册重试加载洞察数据回调（委托到 InsightsRenderer） */
-  onReloadInsights(cb: () => void): void {
-    this.insights.onReloadInsights(cb);
-  }
-
-  /** 注册重试加载健康度数据回调（委托到 HealthDashboardRenderer） */
-  onReloadHealth(cb: () => void): void {
-    this.healthDashboard.onReloadHealth(cb);
-  }
 
   /** 注册重试加载记忆列表回调（用户点击重试按钮时触发） */
   onReloadMemoryList(cb: () => void): void {
@@ -527,6 +499,60 @@ export class DashboardPanelManager {
 
     // 显示整个区块
     this.growthSectionEl.classList.remove('hidden');
+
+    // ─── 4. 最近洞察列表（ReviewData.insights.recent） ──
+    this.renderRecentInsights(review);
+  }
+
+  /**
+   * 渲染最近洞察列表（ReviewData.insights.recent）
+   *
+   * 显示 agent 最近发现的 5 条洞察，包含名称、时间戳和内容预览。
+   * 数据由 reviewManager.buildReviewData() 预计算，零额外 IPC 调用。
+   * 无洞察时隐藏整个区块。
+   *
+   * @param review 对话回顾数据（含 insights.recent 数组）
+   */
+  private renderRecentInsights(review: ReviewDataPayload): void {
+    const sectionEl = document.getElementById('dashboard-recent-insights');
+    const listEl = document.getElementById('recent-insights-list');
+    if (!sectionEl || !listEl) return;
+
+    const { recent } = review.insights;
+    if (recent.length === 0) {
+      sectionEl.style.display = 'none';
+      return;
+    }
+
+    clearElement(listEl);
+
+    for (const insight of recent) {
+      const item = document.createElement('div');
+      item.className = 'recent-insight-item';
+
+      // 洞察名称
+      const nameEl = document.createElement('div');
+      nameEl.className = 'recent-insight-name';
+      nameEl.textContent = insight.name;
+
+      // 时间戳
+      const timeEl = document.createElement('div');
+      timeEl.className = 'recent-insight-time';
+      timeEl.textContent = formatTimeAgo(insight.createdAt);
+
+      // 内容预览
+      const previewEl = document.createElement('div');
+      previewEl.className = 'recent-insight-preview';
+      previewEl.textContent = insight.contentPreview;
+      previewEl.title = insight.contentPreview; // 完整内容在 hover 时显示
+
+      item.appendChild(nameEl);
+      item.appendChild(timeEl);
+      item.appendChild(previewEl);
+      listEl.appendChild(item);
+    }
+
+    sectionEl.style.display = 'block';
   }
 
   /**
@@ -709,52 +735,6 @@ export class DashboardPanelManager {
   /** 缓存最近一次渲染的 daily 数据（主题切换时重绘用） */
   private lastGrowthDaily: Array<{ date: string; newMemories: number; newInsights: number }> | null = null;
 
-  // ─── 记忆洞察面板渲染（委托到 InsightsRenderer） ────────
-
-  /** 显示洞察面板加载态（委托到 InsightsRenderer） */
-  showInsightsLoading(): void {
-    this.insights.showLoading();
-  }
-
-  /**
-   * 渲染记忆洞察数据（委托到 InsightsRenderer）
-   *
-   * @param dashboard 仪表盘数据子集（total/bySource/conflictCount）
-   * @param graph 关系图谱数据
-   */
-  renderInsights(
-    dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
-    graph: RelationGraphData,
-  ): void {
-    this.insights.render(dashboard, graph);
-  }
-
-  /** 显示洞察面板加载失败状态（委托到 InsightsRenderer，带重试按钮） */
-  showInsightsError(): void {
-    this.insights.showError();
-  }
-
-  // ─── 健康度仪表盘渲染（委托到 HealthDashboardRenderer） ──
-
-  /** 显示健康度面板加载态（委托到 HealthDashboardRenderer） */
-  showHealthLoading(): void {
-    this.healthDashboard.showLoading();
-  }
-
-  /**
-   * 渲染记忆健康度仪表盘数据（委托到 HealthDashboardRenderer）
-   *
-   * @param data 健康度数据
-   */
-  renderHealthDashboard(data: HealthDashboardPayload): void {
-    this.healthDashboard.render(data);
-  }
-
-  /** 显示健康度面板加载失败状态（委托到 HealthDashboardRenderer） */
-  showHealthError(): void {
-    this.healthDashboard.showError();
-  }
-
   // ─── 记忆列表加载失败渲染 ──────────────────────────────
 
   /**
@@ -880,28 +860,4 @@ export class DashboardPanelManager {
   // ─── 感知系统渲染已移除 ──────────────────────────────────
   // 感知数据渲染（情感/默契/上下文/模式/在场/叙事/主动提示）已迁移到
   // 独立的 PerceptionPanelManager，仪表盘不再承载感知分区。
-
-// ─── 伙伴洞察面板（委托到 PartnerInsightsRenderer） ─────────
-
-  /**
-   * 注册伙伴洞察面板记忆点击回调（委托到 PartnerInsightsRenderer）
-   */
-  onMemoryClick(cb: (memoryId: string) => void): void {
-    this.partnerInsights.onMemoryClick(cb);
-  }
-
-  /**
-   * 渲染伙伴洞察面板（委托到 PartnerInsightsRenderer）
-   *
-   * @param memories 全量记忆列表（用于统计和趋势图）
-   */
-  renderPartnerInsights(memories: Array<{
-    id: string;
-    name: string;
-    source: string;
-    contentPreview: string;
-    createdAt?: string;
-  }>): void {
-    this.partnerInsights.render(memories);
-  }
 }

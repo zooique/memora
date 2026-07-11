@@ -574,8 +574,8 @@ export class ChatPanelManager {
     this._resetStreamSafetyTimer();
 
     // 定位到气泡元素（assistant 消息结构：message > message-bubble）
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 移除思考阶段指示器（text chunk 到达意味着思考阶段结束）
     const thinkingIndicator = bubble.querySelector('.thinking-phase');
@@ -788,8 +788,8 @@ export class ChatPanelManager {
     if (!el) return;
     this._resetStreamSafetyTimer();
 
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 委托到 messageDecorations helper 渲染召回记忆容器
     renderMemoryRecall(bubble, memories);
@@ -819,8 +819,8 @@ export class ChatPanelManager {
     if (!el) return;
     this._resetStreamSafetyTimer();
 
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 委托到 messageDecorations helper 渲染思考阶段指示器
     renderThinkingPhase(bubble, phase);
@@ -842,8 +842,8 @@ export class ChatPanelManager {
     if (!el) return;
     this._resetStreamSafetyTimer();
 
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 委托到 messageDecorations helper 渲染截断提示条
     renderTruncationNotice(bubble, count);
@@ -867,8 +867,8 @@ export class ChatPanelManager {
     if (!el) return;
     this._resetStreamSafetyTimer();
 
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 委托到 toolCallCard helper 渲染卡片 DOM
     renderToolStart(bubble, toolCallId, name, args);
@@ -890,8 +890,8 @@ export class ChatPanelManager {
     if (!el) return;
     this._resetStreamSafetyTimer();
 
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 委托到 toolCallCard helper 更新卡片状态
     updateToolCardResult(bubble, toolCallId, name, ok, summary);
@@ -1136,8 +1136,8 @@ export class ChatPanelManager {
       this._pendingRaF = false;
     }
 
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 移除光标和思考指示器（流式已结束）
     const cursor = bubble.querySelector('.cursor');
@@ -1227,8 +1227,8 @@ export class ChatPanelManager {
    * @param errorText 错误提示文本
    */
   private injectErrorToMessage(el: HTMLElement, errorText: string): void {
-    const bubble = el.querySelector('.message-bubble');
-    if (!bubble) return;
+    // bubble 由 createStreamingMessage() 保证存在（非 system 消息始终有 .message-bubble 子元素）
+    const bubble = el.querySelector('.message-bubble')!;
 
     // 移除光标和思考指示器（流式已结束）
     const cursor = bubble.querySelector('.cursor');
@@ -1353,7 +1353,6 @@ export class ChatPanelManager {
    * 在对话区顶部展示启动摘要横幅
    *
    * 委托到 components/startupSummaryBanner.ts 的纯函数实现。
-   * 提取自原内联实现，零行为变更（纯结构重构）。
    *
    * @param summary 启动摘要数据（来自 Sprite.getStartupSummary()）
    */

@@ -965,6 +965,18 @@
 
 
 
+.recent-insight-name {
+  font-size: var(--font-sm);
+  color: var(--text-1);
+  font-weight: 500;
+}
+
+.recent-insight-time {
+  font-size: var(--font-2xs);
+  color: var(--text-3);
+  margin-top: 1px;
+}
+
 .recent-insight-preview {
   font-size: var(--font-xs);
   color: var(--text-2);

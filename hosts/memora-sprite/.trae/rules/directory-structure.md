@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）。目录形态已对齐最终目标。
-> **版本**：v1.5（2026-07-09）
+> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）。目录形态已对齐最终目标。
+> **版本**：v1.6（2026-07-11）
 
 ---
 
@@ -67,6 +67,8 @@ src/
 │       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作）
 │       │   ├── errorHelpers.ts # 错误处理辅助（IPC 错误处理器工厂）
 │       │   ├── eventTracker.ts # 事件追踪（埋点/用户行为记录）
+│       │   ├── memoryDetailPanel.ts # 记忆详情子系统辅助（F-LINE-2 从 memoryPanelManager 提取：详情/脉络/邻居/按钮）
+│       │   ├── memoryGraphPanel.ts  # 图谱视图子系统辅助（F-LINE-2 从 memoryPanelManager 提取：初始化/空状态/缓存/上下文菜单/关系弹窗）
 │       │   ├── memoryPanelEvents.ts # 记忆面板事件监听辅助（AUTO-HEALTH-05 从 memoryPanelManager 提取）
 │       │   ├── messageDecorations.ts # 消息装饰辅助函数（系统消息/错误消息样式）
 │       │   ├── toolCallCard.ts # 工具调用卡片辅助（工具执行状态展示）
@@ -92,11 +94,11 @@ src/
 │       │   ├── workProjectionPanelManager.ts # 作品投影面板
 │       │   ├── commandPaletteManager.ts  # 命令面板
 │       │   ├── auditPanelManager.ts      # 审计面板
-│       │   ├── dashboardPanelManager.ts  # 仪表盘面板（Facade，持有 4 个子渲染器）
-│       │   ├── partnerInsightsRenderer.ts # 伙伴洞察子渲染器（ADR-SP-015 模式 D）
-│       │   ├── perceptionRenderer.ts     # 感知系统子渲染器（情感/默契/上下文/模式/在场状态/叙事）
-│       │   ├── insightsRenderer.ts       # 洞察统计子渲染器（ADR-SP-015 模式 C）
-│       │   ├── healthDashboardRenderer.ts # 健康度仪表盘子渲染器（ADR-SP-015 模式 C）
+│       │   ├── dashboardPanelManager.ts  # 仪表盘面板（概览+运行指标+记忆源健康+增长趋势）
+│       │   ├── perceptionPanelManager.ts # 感知面板（情感/默契/上下文/模式/在场/叙事，通过 Host 接口写精灵状态条）
+│       │   ├── partnerInsightsRenderer.ts # 伙伴洞察子渲染器（ADR-SP-015 模式 D，由 memoryPanelManager 持有）
+│       │   ├── insightsRenderer.ts       # 洞察统计子渲染器（ADR-SP-015 模式 C，由 memoryPanelManager 持有）
+│       │   ├── healthDashboardRenderer.ts # 健康度仪表盘子渲染器（ADR-SP-015 模式 C，由 memoryPanelManager 持有）
 │       │   ├── panelErrorBannerManager.ts # 面板错误横幅（C-5-1 拆分，自包含 EventTracker）
 │       │   ├── clipboardManager.ts       # 剪贴板保护（C-5-2 拆分，依赖注入 ToastManager + ModalManager）
 │       │   ├── dateNavManager.ts         # 日期导航（C-5-3 拆分，自包含 EventTracker）
@@ -123,7 +125,7 @@ src/
 │           ├── layout.css      # 顶栏 + 64px 侧栏 + 核心窗口 Grid 布局
 │           ├── chat.css        # 聚合器（@import 4 个子模块，P2 拆分）
 │           ├── chat-toolbar.css      # 对话工具栏 / 状态条 / 在场脉冲浮层
-│           ├── chat-perception.css   # 感知面板：情感/默契度/上下文/模式/指标/里程碑
+│           ├── chat-perception.css   # 对话内嵌感知紧凑布局（rapport-row/affect-grid 等紧凑组件）
 │           ├── chat-datenav.css      # 回到今天 / 日期选择 / 下拉 / 空状态
 │           ├── chat-messages.css     # 消息气泡 / 输入框 / 打字指示 / 工具调用卡片
 │           ├── memory.css      # 聚合器（@import 4 个子模块，P2 拆分）
@@ -135,7 +137,8 @@ src/
 │           ├── modal.css       # 模态弹窗样式
 │           ├── settings.css    # 设置面板样式
 │           ├── toast.css       # Toast 通知样式
-│           └── dashboard.css   # 仪表盘面板样式
+│           ├── dashboard.css   # 仪表盘面板样式（概览+运行指标+记忆源健康+增长趋势，感知样式已迁至 perception.css）
+│           └── perception.css   # 独立感知面板样式（从 dashboard.css 迁出，覆盖 chat-perception.css 基础样式）
 │
 ├── sprite/                     # 精灵核心层（纯逻辑，零 Electron 依赖）
 │   ├── sprite.ts               # 精灵核心类（启动/关闭/事件/主动行为）
@@ -303,6 +306,7 @@ src/
 - [x] D-14: controllers/ 文件名对齐——memoryPanelController.ts → memoryController.ts、personaPanelController.ts → personaController.ts（C-3 重命名）；panels/ 补齐 4 个新 Manager——panelErrorBannerManager.ts/clipboardManager.ts/dateNavManager.ts/skillDropManager.ts（C-5-1~4 拆分，2026-07-01 阶段 C 架构演进）
 - [x] CSS-R1: P0 令牌统一——抽出 tokens.css 作为单一真理源，float.html/quick-input.html 移除内联 `<style>` 变量块，CSP 收紧为 `style-src 'self'`（2026-07-09）
 - [x] CSS-R2: P2 大文件拆分——chat.css(2960行)→4 子模块，memory.css(2197行)→4 子模块，原文件降级为 @import 聚合器（2026-07-09）
+- [x] F-LINE-2: memoryPanelManager 拆分——helpers/memoryGraphPanel.ts（图谱视图子系统，~318 行）+ helpers/memoryDetailPanel.ts（记忆详情子系统，~368 行）提取，主文件 1968→1334 行（2026-07-11）
 
 ### 延后（非目录结构）
 

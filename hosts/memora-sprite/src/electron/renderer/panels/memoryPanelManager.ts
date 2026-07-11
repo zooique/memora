@@ -21,9 +21,33 @@ import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath, RelationNeighbor } from '../types.js';
 import { RelationGraphRenderer } from '../components/relationGraph.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
+// 健康度仪表盘数据载荷（renderHealthDashboard 委托方法签名需要）
+import type { HealthDashboardPayload } from '../../preload.js';
+// 记忆面板所属子渲染器（DOM 在 panel-memories 内，归 MemoryPanelManager 管理）
+import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
+import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
+import { InsightsRenderer } from './insightsRenderer.js';
 // AUTO-HEALTH-05：事件监听器注册逻辑提取到独立 helper（降低本文件体量）
 import { initMemoryPanelListeners as initMemoryPanelListenersImpl } from '../helpers/memoryPanelEvents.js';
 import type { MemoryPanelEventContext } from '../helpers/memoryPanelEvents.js';
+// F-LINE-2：图谱视图子系统（初始化/空状态/缓存状态/上下文菜单/关系弹窗）提取到独立 helper
+import {
+  initGraphRenderer as initGraphRendererHelper,
+  updateGraphEmptyState as updateGraphEmptyStateHelper,
+  applyCachedGraphState as applyCachedGraphStateHelper,
+  clearGraphHighlights as clearGraphHighlightsHelper,
+} from '../helpers/memoryGraphPanel.js';
+import type { MemoryGraphPanelContext } from '../helpers/memoryGraphPanel.js';
+// F-LINE-2：记忆详情子系统（详情/脉络/邻居/按钮）提取到独立 helper
+import {
+  showMemoryDetail as showMemoryDetailHelper,
+  resetLineage as resetLineageHelper,
+  showMemoryLineage as showMemoryLineageHelper,
+  resetNeighbors as resetNeighborsHelper,
+  showMemoryNeighbors as showMemoryNeighborsHelper,
+  updateDetailButtons as updateDetailButtonsHelper,
+} from '../helpers/memoryDetailPanel.js';
+import type { MemoryDetailPanelContext } from '../helpers/memoryDetailPanel.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -96,6 +120,14 @@ export class MemoryPanelManager {
   private cachedHighlightedNodeIds: string[] | null = null;
   /** 缓存的选中节点 ID（渲染器初始化前设置的状态需要在初始化后恢复） */
   private cachedSelectedNodeId: string | null = null;
+
+  // ─── 子渲染器（DOM 在 panel-memories 内，归本面板管理） ──
+  /** 伙伴洞察渲染器（profile 卡片 / 知识缺口 / 增长趋势图） */
+  private partnerInsights = new PartnerInsightsRenderer();
+  /** 健康度仪表盘渲染器（评分 / 徽章 / 三维度 / 清理按钮） */
+  private healthDashboard = new HealthDashboardRenderer();
+  /** 洞察渲染器（统计卡片 / source 分布 / 关系摘要） */
+  private insights = new InsightsRenderer();
 
   // ─── 回调 ────────────────────────────────────────────────
   private memorySearchCallback: ((query: string) => void) | null = null;
@@ -172,6 +204,10 @@ export class MemoryPanelManager {
       this.graphRenderer.destroy();
       this.graphRenderer = null;
     }
+    // 清理子渲染器
+    this.partnerInsights.cleanup();
+    this.healthDashboard.cleanup();
+    this.insights.cleanup();
     this.events.cleanup();
   }
 
@@ -616,297 +652,43 @@ export class MemoryPanelManager {
     return date.toLocaleDateString('zh-CN', options);
   }
 
-  // ─── 记忆详情 ───────────────────────────────────────────
+  // ─── 记忆详情（委托到 memoryDetailPanel helper） ─────────
 
-  /** 显示记忆详情 */
+  /** 显示记忆详情（委托到 memoryDetailPanel helper） */
   showMemoryDetail(memory: MemoryDetail): void {
-    if (!this.memoryDetailModal) return;
-
-    // 打开详情时退出编辑模式，恢复只读状态
-    this.isEditing = false;
-
-    // Phase 5.1：重置演化脉络区域（避免显示上一次详情的残留数据）
-    // 实际脉络数据由 controller 异步加载完成后调用 showMemoryLineage 注入
-    this.resetLineage();
-    // Phase 5.2：重置直接邻居区域（同脉络模式，异步加载完成后注入）
-    this.resetNeighbors();
-
-    const nameEl = getOptionalElement('memory-detail-name', 'h3');
-    const sourceEl = getOptionalElement('memory-detail-source', 'code');
-    const scoreEl = getOptionalElement('memory-detail-score', 'span');
-    const createdEl = getOptionalElement('memory-detail-created', 'span');
-    const accessedEl = getOptionalElement('memory-detail-accessed', 'span');
-    const contentEl = getOptionalElement('memory-detail-content', 'pre');
-    const relationsEl = document.getElementById('memory-detail-relations');
-    const relationsListEl = document.getElementById('memory-relations-list');
-
-    if (nameEl) nameEl.textContent = memory.name;
-    if (sourceEl) {
-      sourceEl.textContent = memory.source;
-      // source 标签颜色区分（与列表保持一致）
-      sourceEl.className = `source-${getSourceColorClass(memory.source)}`;
-    }
-    if (scoreEl) scoreEl.textContent = memory.score.toFixed(2);
-    // R5 详情面板日期用 formatTimeAgo 统一格式化（ISO → 相对时间）
-    if (createdEl) createdEl.textContent = formatTimeAgo(memory.createdAt);
-    if (accessedEl) accessedEl.textContent = formatTimeAgo(memory.accessedAt);
-    if (contentEl) contentEl.textContent = memory.content;
-
-    // 保存原始内容到 dataset，供编辑取消时恢复
-    if (contentEl) contentEl.dataset.originalContent = memory.content;
-
-    // 渲染关联记忆列表
-    if (relationsEl && relationsListEl) {
-      if (memory.relations.length > 0) {
-        relationsEl.classList.remove('hidden');
-        // 使用 clearElement 替代 innerHTML=''，遵循统一 DOM 操作模式
-        clearElement(relationsListEl);
-        for (const rel of memory.relations) {
-          const item = document.createElement('div');
-          item.className = `relation-item relation-type-${rel.type}`;
-          item.dataset.memoryId = rel.targetId;
-          item.setAttribute('tabindex', '0');
-          item.setAttribute('role', 'button');
-
-          const typeTag = document.createElement('span');
-          typeTag.className = `relation-type-tag relation-type-${rel.type}`;
-          typeTag.textContent = rel.type;
-
-          const nameSpan = document.createElement('span');
-          nameSpan.className = 'relation-target-name';
-          nameSpan.textContent = rel.targetName;
-
-          const weightSpan = document.createElement('span');
-          weightSpan.className = 'relation-weight';
-          weightSpan.textContent = `w:${rel.weight.toFixed(2)}`;
-
-          item.appendChild(typeTag);
-          item.appendChild(nameSpan);
-          item.appendChild(weightSpan);
-
-          // 点击关联记忆 → 触发 memoryClickCallback 查看该记忆详情
-          const openRelation = () => {
-            if (this.memoryClickCallback) {
-              this.memoryClickCallback(rel.targetId);
-            }
-          };
-          item.addEventListener('click', openRelation);
-          item.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              openRelation();
-            }
-          });
-
-          relationsListEl.appendChild(item);
-        }
-      } else {
-        relationsEl.classList.add('hidden');
-      }
-    }
-
-    // 记录当前查看的记忆 ID（供删除/编辑按钮使用）
-    this.memoryDetailModal.dataset.memoryId = memory.id;
-    // 保存 source 和 name 到 dataset，供编辑保存时使用
-    this.memoryDetailModal.dataset.memorySource = memory.source;
-    this.memoryDetailModal.dataset.memoryName = memory.name;
-
-    // 切换按钮可见性：只读模式显示编辑/删除，隐藏保存/取消
-    this.updateDetailButtons();
-    this.host.showModal('memory-detail-modal');
+    showMemoryDetailHelper(this.buildDetailPanelContext(), memory);
   }
 
-  // ─── 演化脉络（Phase 5.1：路径追溯） ────────────────────
+  // ─── 演化脉络（Phase 5.1：路径追溯，委托到 memoryDetailPanel helper） ────
 
-  /**
-   * 重置演化脉络区域
-   *
-   * 在 showMemoryDetail 开头调用，清空上一次的脉络数据并隐藏区域。
-   * 实际脉络数据由 controller 异步加载完成后调用 showMemoryLineage 注入。
-   */
+  /** 重置演化脉络区域（委托到 memoryDetailPanel helper） */
   resetLineage(): void {
-    const lineageEl = document.getElementById('memory-detail-lineage');
-    const lineageListEl = document.getElementById('memory-lineage-list');
-    if (lineageEl) lineageEl.classList.add('hidden');
-    if (lineageListEl) clearElement(lineageListEl);
+    resetLineageHelper();
   }
 
   /**
-   * 渲染演化脉络（异步加载完成后注入）
-   *
-   * 将 RelationPath[]（BFS 扁平数组 + depth 字段）渲染为按 depth 分组的缩进列表，
-   * 展示当前记忆的来源演化链（incoming 方向，多跳追溯）。
-   *
-   * 设计：
-   * - path[0] 是当前记忆（depth=0），高亮标记
-   * - 后续节点按 depth 递增缩进，呈现"从哪来"的纵向演化链
-   * - 点击节点复用 memoryClickCallback 跳转（与关联列表行为一致）
-   * - 空数组静默隐藏区域（不显示错误提示）
+   * 渲染演化脉络（异步加载完成后注入，委托到 memoryDetailPanel helper）
    *
    * @param path 内核 BFS 返回的路径节点数组
    */
   showMemoryLineage(path: RelationPath[]): void {
-    const lineageEl = document.getElementById('memory-detail-lineage');
-    const lineageListEl = document.getElementById('memory-lineage-list');
-    if (!lineageEl || !lineageListEl) return;
-
-    // 空数据或仅起点节点（无上游来源）：静默隐藏
-    if (!path || path.length <= 1) {
-      this.resetLineage();
-      return;
-    }
-
-    clearElement(lineageListEl);
-    for (const node of path) {
-      const item = document.createElement('div');
-      // depth 驱动缩进：通过 CSS 变量 --lineage-depth 传递层级，CSS 中 calc 计算实际 padding-left
-      // （遵循"UI 组件通过 CSS 变量驱动"规则，避免 inline style 硬编码）
-      item.className = 'lineage-item';
-      item.style.setProperty('--lineage-depth', String(node.depth));
-      item.dataset.memoryId = node.memoryId;
-      item.setAttribute('tabindex', '0');
-      item.setAttribute('role', 'button');
-
-      // depth 标签：起点显示"当前"，其他显示层级数字
-      const depthTag = document.createElement('span');
-      depthTag.className = 'lineage-depth-tag';
-      depthTag.textContent = node.depth === 0 ? '当前' : `L${node.depth}`;
-
-      // source 标签：颜色区分（复用列表项 source 配色）
-      const sourceTag = document.createElement('span');
-      sourceTag.className = `lineage-source-tag source-${getSourceColorClass(node.memorySource)}`;
-      sourceTag.textContent = node.memorySource;
-
-      // 关系类型标签（起点节点 relationType 为 null，不显示）
-      if (node.relationType) {
-        const relTag = document.createElement('span');
-        relTag.className = `lineage-relation-tag relation-type-${node.relationType}`;
-        relTag.textContent = node.relationType;
-        item.appendChild(relTag);
-      }
-
-      // 记忆名称
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'lineage-name';
-      nameSpan.textContent = node.memoryName;
-
-      item.appendChild(depthTag);
-      item.appendChild(sourceTag);
-      item.appendChild(nameSpan);
-
-      // 点击节点 → 触发 memoryClickCallback 跳转查看该记忆详情
-      const openNode = () => {
-        if (this.memoryClickCallback) {
-          this.memoryClickCallback(node.memoryId);
-        }
-      };
-      item.addEventListener('click', openNode);
-      item.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          openNode();
-        }
-      });
-
-      lineageListEl.appendChild(item);
-    }
-
-    lineageEl.classList.remove('hidden');
+    showMemoryLineageHelper(this.buildDetailPanelContext(), path);
   }
 
-  // ─── Phase 5.2：直接邻居视图 ───────────────────────────
+  // ─── Phase 5.2：直接邻居视图（委托到 memoryDetailPanel helper） ────
 
-  /**
-   * 重置直接邻居区域
-   *
-   * 在 showMemoryDetail 开头调用，清空上一次的邻居数据并隐藏区域。
-   * 实际邻居数据由 controller 异步加载完成后调用 showMemoryNeighbors 注入。
-   */
+  /** 重置直接邻居区域（委托到 memoryDetailPanel helper） */
   resetNeighbors(): void {
-    const neighborsEl = document.getElementById('memory-detail-neighbors');
-    const neighborsListEl = document.getElementById('memory-neighbors-list');
-    if (neighborsEl) neighborsEl.classList.add('hidden');
-    if (neighborsListEl) clearElement(neighborsListEl);
+    resetNeighborsHelper();
   }
 
   /**
-   * 渲染直接关联邻居（异步加载完成后注入）
-   *
-   * 将 RelationNeighbor[]（both 方向，1 跳）渲染为扁平列表，
-   * 展示当前记忆的所有直接关联记忆（演化脉络是 incoming 多跳追溯，邻居是 both 方向 1 跳全景）。
-   *
-   * 设计：
-   * - 与 showMemoryLineage 同构，复用 lineage-item 样式体系
-   * - direction 标签区分"来源"/"去向"（incoming = 邻居指向当前记忆，outgoing = 当前记忆指向邻居）
-   * - 点击节点复用 memoryClickCallback 跳转（与脉络/关联列表行为一致）
-   * - 空数组静默隐藏区域
+   * 渲染直接关联邻居（异步加载完成后注入，委托到 memoryDetailPanel helper）
    *
    * @param neighbors 内核返回的邻居节点数组
    */
   showMemoryNeighbors(neighbors: RelationNeighbor[]): void {
-    const neighborsEl = document.getElementById('memory-detail-neighbors');
-    const neighborsListEl = document.getElementById('memory-neighbors-list');
-    if (!neighborsEl || !neighborsListEl) return;
-
-    // 空数据：静默隐藏（不显示错误提示）
-    if (!neighbors || neighbors.length === 0) {
-      this.resetNeighbors();
-      return;
-    }
-
-    clearElement(neighborsListEl);
-    for (const node of neighbors) {
-      const item = document.createElement('div');
-      // 复用 lineage-item 样式（扁平列表，无缩进，--lineage-depth=0）
-      item.className = 'lineage-item';
-      item.style.setProperty('--lineage-depth', '0');
-      item.dataset.memoryId = node.memoryId;
-      item.setAttribute('tabindex', '0');
-      item.setAttribute('role', 'button');
-
-      // 方向标签：incoming = 邻居指向当前记忆（来源），outgoing = 当前记忆指向邻居（去向）
-      const dirTag = document.createElement('span');
-      dirTag.className = `neighbor-direction-tag neighbor-dir-${node.direction}`;
-      dirTag.textContent = node.direction === 'incoming' ? '来源' : '去向';
-
-      // source 标签：颜色区分（复用列表项 source 配色）
-      const sourceTag = document.createElement('span');
-      sourceTag.className = `lineage-source-tag source-${getSourceColorClass(node.memorySource)}`;
-      sourceTag.textContent = node.memorySource;
-
-      // 关系类型标签
-      const relTag = document.createElement('span');
-      relTag.className = `lineage-relation-tag relation-type-${node.relationType}`;
-      relTag.textContent = node.relationType;
-
-      // 记忆名称
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'lineage-name';
-      nameSpan.textContent = node.memoryName;
-
-      item.appendChild(dirTag);
-      item.appendChild(sourceTag);
-      item.appendChild(relTag);
-      item.appendChild(nameSpan);
-
-      // 点击节点 → 触发 memoryClickCallback 跳转查看该记忆详情
-      const openNode = () => {
-        if (this.memoryClickCallback) {
-          this.memoryClickCallback(node.memoryId);
-        }
-      };
-      item.addEventListener('click', openNode);
-      item.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          openNode();
-        }
-      });
-
-      neighborsListEl.appendChild(item);
-    }
-
-    neighborsEl.classList.remove('hidden');
+    showMemoryNeighborsHelper(this.buildDetailPanelContext(), neighbors);
   }
 
   // ─── 辅助方法 ───────────────────────────────────────────
@@ -989,23 +771,13 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 切换详情弹窗底部按钮可见性
+   * 切换详情弹窗底部按钮可见性（委托到 memoryDetailPanel helper）
    *
    * 只读模式：显示编辑 + 删除 + 讨论 + 关闭
    * 编辑模式：显示保存 + 取消 + 关闭
    */
   private updateDetailButtons(): void {
-    const btnEdit = getOptionalElement('btn-memory-edit', 'button');
-    const btnDelete = getOptionalElement('btn-memory-delete', 'button');
-    const btnDiscuss = getOptionalElement('btn-memory-discuss', 'button');
-    const btnEditSave = getOptionalElement('btn-memory-edit-save', 'button');
-    const btnEditCancel = getOptionalElement('btn-memory-edit-cancel', 'button');
-
-    if (btnEdit) btnEdit.classList.toggle('hidden', this.isEditing);
-    if (btnDelete) btnDelete.classList.toggle('hidden', this.isEditing);
-    if (btnDiscuss) btnDiscuss.classList.toggle('hidden', this.isEditing);
-    if (btnEditSave) btnEditSave.classList.toggle('hidden', !this.isEditing);
-    if (btnEditCancel) btnEditCancel.classList.toggle('hidden', !this.isEditing);
+    updateDetailButtonsHelper(this.isEditing);
   }
 
   // ─── 添加记忆表单 ───────────────────────────────────────
@@ -1369,33 +1141,17 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 更新图谱空状态提示的可见性
-   *
-   * 规则：
-   * - 无缓存数据 或 节点数为 0 → 显示空状态
-   * - 有数据（nodes > 0）→ 隐藏空状态
+   * 更新图谱空状态提示的可见性（委托到 memoryGraphPanel helper）
    */
   private updateGraphEmptyState(): void {
-    const emptyEl = document.getElementById('memory-graph-empty');
-    if (!emptyEl) return;
-    const hasData = this.graphDataCache !== null && this.graphDataCache.nodes.length > 0;
-    emptyEl.classList.toggle('hidden', hasData);
+    updateGraphEmptyStateHelper(this.buildGraphPanelContext());
   }
 
   /**
-   * 将缓存的高亮/选中状态应用到渲染器
-   *
-   * 解决问题：用户在列表视图搜索/点击后切换到图谱，
-   * 状态需要在渲染器初始化和数据加载后恢复。
+   * 将缓存的高亮/选中状态应用到渲染器（委托到 memoryGraphPanel helper）
    */
   private applyCachedGraphState(): void {
-    if (!this.graphRenderer) return;
-    if (this.cachedHighlightedNodeIds !== null) {
-      this.graphRenderer.setHighlightedNodes(this.cachedHighlightedNodeIds);
-    }
-    if (this.cachedSelectedNodeId !== null) {
-      this.graphRenderer.setSelectedNode(this.cachedSelectedNodeId);
-    }
+    applyCachedGraphStateHelper(this.buildGraphPanelContext());
   }
 
   /**
@@ -1436,48 +1192,19 @@ export class MemoryPanelManager {
     this.graphRenderer?.setSelectedNode(nodeId);
   }
 
-  /** 清除图谱所有高亮和选中状态 */
+  /** 清除图谱所有高亮和选中状态（委托到 memoryGraphPanel helper，含缓存清理） */
   clearGraphHighlights(): void {
-    this.cachedHighlightedNodeIds = null;
-    this.cachedSelectedNodeId = null;
-    this.graphRenderer?.clearHighlights();
+    clearGraphHighlightsHelper(this.buildGraphPanelContext());
   }
 
   /**
-   * 延迟初始化图谱渲染器
+   * 延迟初始化图谱渲染器（委托到 memoryGraphPanel helper）
    *
    * 首次切换到图谱视图时，Canvas 元素可能尚未渲染，
    * 使用 requestAnimationFrame 延迟一帧确保 DOM 就绪。
    */
   private initGraphRenderer(): void {
-    if (this.graphRenderer) return;
-
-    const canvas = document.getElementById('memory-graph-canvas');
-    if (!(canvas instanceof HTMLCanvasElement)) {
-      reportError('MemoryPanel 图谱渲染 memory-graph-canvas 元素缺失', new Error('HTMLCanvasElement 校验失败'));
-      return;
-    }
-
-    this.graphRenderer = new RelationGraphRenderer(canvas);
-    // 节点点击回调：通过 memoryClickCallback 显示详情
-    this.graphRenderer.setOnNodeClick((nodeId: string) => {
-      this.memoryClickCallback?.(nodeId);
-    });
-
-    // 节点右键菜单回调：显示上下文菜单
-    this.graphRenderer.setOnNodeContextMenu((nodeId: string, x: number, y: number) => {
-      this.showGraphContextMenu(nodeId, x, y);
-    });
-
-    // 边点击回调：打开关系编辑弹窗
-    this.graphRenderer.setOnEdgeClick((sourceId: string, targetId: string, type: string, weight: number) => {
-      this.showRelationEditDialog(sourceId, targetId, type, weight);
-    });
-
-    // 手动连线创建回调：打开关系创建弹窗
-    this.graphRenderer.setOnConnectionCreate((sourceId: string, targetId: string) => {
-      this.showRelationCreateDialog(sourceId, targetId);
-    });
+    initGraphRendererHelper(this.buildGraphPanelContext());
   }
 
   // ─── 回调注册 ───────────────────────────────────────────
@@ -1640,199 +1367,6 @@ export class MemoryPanelManager {
     }
   }
 
-  // ─── 图谱上下文菜单 ─────────────────────────────────────────
-
-  /**
-   * 显示节点右键上下文菜单
-   *
-   * 菜单选项：聚焦子图 / 查看详情 / 创建连线 / 复制 ID
-   *
-   * @param nodeId 被右键的节点 ID
-   * @param x 菜单显示位置（屏幕 X）
-   * @param y 菜单显示位置（屏幕 Y）
-   */
-  private showGraphContextMenu(nodeId: string, x: number, y: number): void {
-    // 隐藏已有的菜单（同时清理上一次的监听器）
-    this.hideGraphContextMenu();
-
-    const menu = document.getElementById('graph-context-menu');
-    if (!menu) return;
-
-    // 绑定菜单项点击事件（用 onclick 覆盖赋值，确保每次打开是全新的单一监听器，无累积）
-    const handler = (action: string) => {
-      this.hideGraphContextMenu();
-      this.graphContextMenuCallback?.(action, nodeId);
-    };
-
-    // 菜单项是静态模板元素，缺失即 bug，用 ! 断言正视契约
-    const focusItem = menu.querySelector('[data-action="focus-subgraph"]')! as HTMLElement;
-    const detailItem = menu.querySelector('[data-action="view-detail"]')! as HTMLElement;
-    const connectItem = menu.querySelector('[data-action="connect-from"]')! as HTMLElement;
-    const copyItem = menu.querySelector('[data-action="copy-id"]')! as HTMLElement;
-
-    focusItem.onclick = () => handler('focus-subgraph');
-    detailItem.onclick = () => handler('view-detail');
-    connectItem.onclick = () => handler('connect-from');
-    copyItem.onclick = () => handler('copy-id');
-
-    // 定位菜单（避免超出视口）
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
-    menu.classList.remove('hidden');
-
-    // 点击菜单外部关闭——closeHandler 存储为实例字段，hideGraphContextMenu 时移除
-    // 避免：用户打开菜单后不点菜单项而点外部，原 once 监听器残留累积
-    this.graphContextMenuCloseHandler = (e: MouseEvent) => {
-      if (!menu.contains(e.target as Node)) {
-        this.hideGraphContextMenu();
-      }
-    };
-    // setTimeout 延迟注册，避免当前右键 click 事件立即触发 closeHandler
-    setTimeout(() => {
-      if (this.graphContextMenuCloseHandler) {
-        document.addEventListener('click', this.graphContextMenuCloseHandler);
-      }
-    }, 0);
-  }
-
-  /** 隐藏图谱上下文菜单，并清理 document 上的 closeHandler 监听器 */
-  private hideGraphContextMenu(): void {
-    const menu = document.getElementById('graph-context-menu');
-    if (menu) {
-      menu.classList.add('hidden');
-    }
-    // 移除 closeHandler，防止内存泄漏（用户切换面板/关闭菜单时都需要清理）
-    if (this.graphContextMenuCloseHandler) {
-      document.removeEventListener('click', this.graphContextMenuCloseHandler);
-      this.graphContextMenuCloseHandler = null;
-    }
-  }
-
-  // ─── 关系编辑弹窗 ──────────────────────────────────────────
-
-  /**
-   * 显示关系编辑弹窗（点击已有边 → 编辑/删除）
-   *
-   * @param sourceId 关系起点
-   * @param targetId 关系终点
-   * @param type 当前关系类型
-   * @param weight 当前权重
-   */
-  private showRelationEditDialog(sourceId: string, targetId: string, type: string, weight: number): void {
-    const dialog = document.getElementById('relation-edit-dialog');
-    if (!dialog) return;
-
-    // 重置 UI 状态（防御性，处理 Escape 走 modal.ts hideModal 路径留下的残留）
-    const deleteBtnReset = dialog.querySelector('#relation-edit-delete')!;
-    const titleElReset = dialog.querySelector('.modal-header h3')!;
-    deleteBtnReset.classList.remove('hidden');
-    titleElReset.textContent = '编辑关系';
-
-    // 填充当前值（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
-    const typeSelect = dialog.querySelector('#relation-edit-type')! as HTMLSelectElement;
-    const weightInput = dialog.querySelector('#relation-edit-weight')! as HTMLInputElement;
-    const weightValue = dialog.querySelector('#relation-edit-weight-value')!;
-
-    typeSelect.value = type;
-    weightInput.value = String(weight);
-    weightValue.textContent = String(Math.round(weight * 100));
-
-    // 绑定保存
-    const saveBtn = dialog.querySelector('#relation-edit-save')! as HTMLElement;
-    saveBtn.onclick = () => {
-      const newType = typeSelect.value || type;
-      const newWeight = parseFloat(weightInput.value);
-      this.relationEditCallback?.(sourceId, targetId, newType, newWeight);
-      this.hideRelationEditDialog();
-    };
-
-    // 绑定删除
-    const deleteBtn = dialog.querySelector('#relation-edit-delete')! as HTMLElement;
-    deleteBtn.onclick = () => {
-      this.relationDeleteCallback?.(sourceId, targetId, type);
-      this.hideRelationEditDialog();
-    };
-
-    // 绑定取消
-    const cancelBtn = dialog.querySelector('#relation-edit-cancel')! as HTMLElement;
-    cancelBtn.onclick = () => this.hideRelationEditDialog();
-
-    // 背景遮罩点击关闭（点击 .modal 自身背景区域关闭，与 .modal 类的 Escape 监听配套）
-    dialog.addEventListener('click', (e: MouseEvent) => {
-      if (e.target === dialog) this.hideRelationEditDialog();
-    });
-
-    // 权重滑块联动
-    weightInput.oninput = () => {
-      weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
-    };
-
-    dialog.classList.remove('hidden');
-  }
-
-  /**
-   * 显示关系创建弹窗（Ctrl+拖拽连线 → 创建新关系）
-   *
-   * @param sourceId 连线起点节点 ID
-   * @param targetId 连线终点节点 ID
-   */
-  private showRelationCreateDialog(sourceId: string, targetId: string): void {
-    const dialog = document.getElementById('relation-edit-dialog');
-    if (!dialog) return;
-
-    // 重置为默认值（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
-    const typeSelect = dialog.querySelector('#relation-edit-type')! as HTMLSelectElement;
-    const weightInput = dialog.querySelector('#relation-edit-weight')! as HTMLInputElement;
-    const weightValue = dialog.querySelector('#relation-edit-weight-value')!;
-    const deleteBtn = dialog.querySelector('#relation-edit-delete')!;
-    const titleEl = dialog.querySelector('.modal-header h3')!;
-
-    // 创建模式下隐藏删除按钮，标题改为"创建关系"
-    deleteBtn.classList.add('hidden');
-    titleEl.textContent = '创建关系';
-    typeSelect.value = 'related';
-    weightInput.value = '0.5';
-    weightValue.textContent = '50';
-
-    // 绑定保存
-    const saveBtn = dialog.querySelector('#relation-edit-save')! as HTMLElement;
-    saveBtn.onclick = () => {
-      const newType = typeSelect.value || 'related';
-      const newWeight = parseFloat(weightInput.value);
-      this.relationCreateCallback?.(sourceId, targetId, newType, newWeight);
-      this.hideRelationEditDialog();
-    };
-
-    // 绑定取消
-    const cancelBtn = dialog.querySelector('#relation-edit-cancel')! as HTMLElement;
-    cancelBtn.onclick = () => this.hideRelationEditDialog();
-
-    // 背景遮罩点击关闭（点击 .modal 自身背景区域关闭，与 .modal 类的 Escape 监听配套）
-    dialog.addEventListener('click', (e: MouseEvent) => {
-      if (e.target === dialog) this.hideRelationEditDialog();
-    });
-
-    // 权重滑块联动
-    weightInput.oninput = () => {
-      weightValue.textContent = String(Math.round(parseFloat(weightInput.value) * 100));
-    };
-
-    dialog.classList.remove('hidden');
-  }
-
-  /** 隐藏关系编辑弹窗，恢复默认状态 */
-  private hideRelationEditDialog(): void {
-    const dialog = document.getElementById('relation-edit-dialog');
-    if (!dialog) return;
-    dialog.classList.add('hidden');
-
-    // 恢复默认 UI（弹窗模板静态元素，dialog 已确认存在，用 ! 断言正视契约）
-    const deleteBtn = dialog.querySelector('#relation-edit-delete')!;
-    const titleEl = dialog.querySelector('.modal-header h3')!;
-    deleteBtn.classList.remove('hidden');
-    titleEl.textContent = '编辑关系';
-  }
-
   /**
    * 滚动到指定记忆项并高亮（恢复后跳转定位）
    *
@@ -1859,5 +1393,139 @@ export class MemoryPanelManager {
     target.addEventListener('animationend', () => {
       target.classList.remove('highlight-pulse');
     }, { once: true });
+  }
+
+  // ─── 子渲染器委托方法（InsightsRenderer / HealthDashboardRenderer / PartnerInsightsRenderer） ──
+
+  /** 主题切换时重绘子渲染器 Canvas 图表 */
+  repaintOnThemeChange(): void {
+    this.partnerInsights.repaintOnThemeChange();
+  }
+
+  // ─── InsightsRenderer 委托 ──
+
+  /** 显示洞察面板加载态（委托到 InsightsRenderer） */
+  showInsightsLoading(): void {
+    this.insights.showLoading();
+  }
+
+  /**
+   * 渲染记忆洞察数据（委托到 InsightsRenderer）
+   *
+   * @param dashboard 仪表盘数据子集（total/bySource/conflictCount）
+   * @param graph 关系图谱数据
+   */
+  renderInsights(
+    dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
+    graph: RelationGraphData,
+  ): void {
+    this.insights.render(dashboard, graph);
+  }
+
+  /** 显示洞察面板加载失败状态（委托到 InsightsRenderer，带重试按钮） */
+  showInsightsError(): void {
+    this.insights.showError();
+  }
+
+  /** 注册重试加载洞察数据回调（委托到 InsightsRenderer） */
+  onReloadInsights(cb: () => void): void {
+    this.insights.onReloadInsights(cb);
+  }
+
+  // ─── HealthDashboardRenderer 委托 ──
+
+  /** 显示健康度面板加载态（委托到 HealthDashboardRenderer） */
+  showHealthLoading(): void {
+    this.healthDashboard.showLoading();
+  }
+
+  /**
+   * 渲染记忆健康度仪表盘数据（委托到 HealthDashboardRenderer）
+   *
+   * @param data 健康度数据
+   */
+  renderHealthDashboard(data: HealthDashboardPayload): void {
+    this.healthDashboard.render(data);
+  }
+
+  /** 显示健康度面板加载失败状态（委托到 HealthDashboardRenderer） */
+  showHealthError(): void {
+    this.healthDashboard.showError();
+  }
+
+  /** 注册重试加载健康度数据回调（委托到 HealthDashboardRenderer） */
+  onReloadHealth(cb: () => void): void {
+    this.healthDashboard.onReloadHealth(cb);
+  }
+
+  // ─── PartnerInsightsRenderer 委托 ──
+
+  /**
+   * 渲染伙伴洞察面板（委托到 PartnerInsightsRenderer）
+   *
+   * @param memories 全量记忆列表（用于统计和趋势图）
+   */
+  renderPartnerInsights(memories: Array<{
+    id: string;
+    name: string;
+    source: string;
+    contentPreview: string;
+    createdAt?: string;
+  }>): void {
+    this.partnerInsights.render(memories);
+  }
+
+  /**
+   * 注册伙伴洞察面板记忆点击回调（委托到 PartnerInsightsRenderer）
+   */
+  onPartnerMemoryClick(cb: (memoryId: string) => void): void {
+    this.partnerInsights.onMemoryClick(cb);
+  }
+
+  // ─── 图谱视图子系统上下文构建（F-LINE-2 拆分） ─────────────
+
+  /**
+   * 构建图谱视图子系统的依赖注入容器
+   *
+   * 将 MemoryPanelManager 的图谱状态字段和回调通过 getter/setter 暴露给
+   * memoryGraphPanel helper，保持状态所有权在 MemoryPanelManager，
+   * 同时让 helper 能以纯函数方式访问状态和注册回调。
+   */
+  private buildGraphPanelContext(): MemoryGraphPanelContext {
+    return {
+      host: this.host,
+      getGraphRenderer: () => this.graphRenderer,
+      setGraphRenderer: (renderer) => { this.graphRenderer = renderer; },
+      getGraphDataCache: () => this.graphDataCache,
+      setGraphDataCache: (data) => { this.graphDataCache = data; },
+      getCachedHighlightedNodeIds: () => this.cachedHighlightedNodeIds,
+      setCachedHighlightedNodeIds: (ids) => { this.cachedHighlightedNodeIds = ids; },
+      getCachedSelectedNodeId: () => this.cachedSelectedNodeId,
+      setSelectedNodeId: (id) => { this.cachedSelectedNodeId = id; },
+      getGraphContextMenuCloseHandler: () => this.graphContextMenuCloseHandler,
+      setGraphContextMenuCloseHandler: (handler) => { this.graphContextMenuCloseHandler = handler; },
+      getMemoryClickCallback: () => this.memoryClickCallback,
+      getGraphContextMenuCallback: () => this.graphContextMenuCallback,
+      getRelationEditCallback: () => this.relationEditCallback,
+      getRelationDeleteCallback: () => this.relationDeleteCallback,
+      getRelationCreateCallback: () => this.relationCreateCallback,
+    };
+  }
+
+  /**
+   * 构建记忆详情子系统的依赖注入容器
+   *
+   * 将 MemoryPanelManager 的详情状态字段和回调通过 getter/setter 暴露给
+   * memoryDetailPanel helper，保持状态所有权在 MemoryPanelManager。
+   */
+  private buildDetailPanelContext(): MemoryDetailPanelContext {
+    return {
+      host: this.host,
+      events: this.events,
+      getIsEditing: () => this.isEditing,
+      setIsEditing: (editing) => { this.isEditing = editing; },
+      getMemoryDetailModal: () => this.memoryDetailModal,
+      getMemoryClickCallback: () => this.memoryClickCallback,
+    };
   }
 }

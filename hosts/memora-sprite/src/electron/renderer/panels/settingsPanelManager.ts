@@ -1072,8 +1072,9 @@ export class SettingsPanelManager {
       }
     }
 
-    // 必填字段校验后 alias 已确保非空，此处类型收窄
-    const result = await window.electronAPI.saveLlmProvider(alias as string, { provider, model, baseUrl, apiKey, temperature });
+    // 必填字段校验已保证 alias/provider/model/apiKey 非空，但 TypeScript 无法通过间接 flag 收窄类型
+    // 此处使用 ! 断言是因为校验块已 contractually 保证非空（失败则 return）
+    const result = await window.electronAPI.saveLlmProvider(alias!, { provider: provider!, model: model!, baseUrl, apiKey: apiKey!, temperature });
     if (result.success) {
       this.host.showToast('Provider 保存成功');
       this.hideProviderForm();

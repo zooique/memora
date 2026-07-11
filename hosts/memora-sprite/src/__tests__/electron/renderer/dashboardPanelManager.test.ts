@@ -9,12 +9,14 @@
  * - renderAgentMetrics：LLM 调用/Token/召回率/工具失败率（含 0/0 兜底）
  * - renderMilestones：量级/多样性/洞察/画像里程碑
  * - renderReviewData：今日概况/趋势方向/柱状图/最近洞察
- * - renderInsights：统计卡片/source 分布/关系摘要
- * - renderHealthDashboard：评分/徽章/三维度/清理按钮可见性
  * - pulseCounter：计数 +1 + pulse 动画（fake timers）
- * - 错误状态 + 重试回调：showInsightsError / showHealthError / showMemoryListError
- * - renderPartnerInsights：profile 卡片 / 知识缺口 / 空状态
- * - cleanup：脉冲定时器 + 事件监听器清理
+ * - 错误状态 + 重试回调：showMemoryListError
+ * - cleanup：脉冲定时器清理
+ *
+ * 已移除（子渲染器归位到 MemoryPanelManager）：
+ * - renderInsights / renderHealthDashboard / renderPartnerInsights
+ * - showInsightsError / showHealthError / onReloadInsights / onReloadHealth
+ * 子渲染器行为测试在各自独立测试文件中覆盖。
  *
  * Mock 策略：
  * - 使用真实 EventTracker（构造函数注入，验证事件注册与清理）
@@ -32,11 +34,7 @@ import type {
 } from '../../../electron/renderer/panels/dashboardPanelManager.js';
 import type { EventTracker } from '../../../electron/renderer/helpers/eventTracker.js';
 import { EventTracker as EventTrackerImpl } from '../../../electron/renderer/helpers/eventTracker.js';
-import type {
-  HealthDashboardPayload,
-  ReviewDataPayload,
-} from '../../../electron/preload.js';
-import type { RelationGraphData } from '../../../electron/renderer/components/relationGraph.js';
+import type { ReviewDataPayload } from '../../../electron/preload.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
@@ -61,73 +59,6 @@ const DASHBOARD_HTML = `
   <!-- 里程碑 -->
   <div id="milestones-display" class="hidden">
     <div id="milestones-list"></div>
-  </div>
-
-  <!-- 洞察面板 -->
-  <span id="insights-total"></span>
-  <span id="insights-relations"></span>
-  <span id="insights-conflicts"></span>
-  <span id="insights-sources"></span>
-  <div id="insights-distribution"></div>
-  <div id="insights-relations-summary"></div>
-
-  <!-- 健康度仪表盘 -->
-  <span id="health-mini-score" class="hidden"></span>
-  <span id="health-score"></span>
-  <span id="health-badge"></span>
-  <div id="health-uniqueness" class="health-metric-fill"></div>
-  <span id="health-uniqueness-val"></span>
-  <div id="health-freshness" class="health-metric-fill"></div>
-  <span id="health-freshness-val"></span>
-  <div id="health-completeness" class="health-metric-fill"></div>
-  <span id="health-completeness-val"></span>
-  <span id="health-duplicates"></span>
-  <span id="health-stale"></span>
-  <span id="health-low-quality"></span>
-  <span id="health-description"></span>
-  <button id="health-cleanup-duplicates" style="display:none"></button>
-  <button id="health-cleanup-stale" style="display:none"></button>
-  <button id="health-cleanup-all" style="display:none"></button>
-  <div id="health-actions" style="display:none"></div>
-  <div id="memory-health-bar">
-    <div class="health-metrics"></div>
-  </div>
-
-  <!-- 感知面板 · 情感 -->
-  <div id="dashboard-warmth-fill" style="width:0%"></div>
-  <span id="dashboard-warmth-level"></span>
-  <div id="dashboard-directness-fill" style="width:0%"></div>
-  <span id="dashboard-directness-level"></span>
-  <div id="dashboard-initiative-fill" style="width:0%"></div>
-  <span id="dashboard-initiative-level"></span>
-  <div id="dashboard-playfulness-fill" style="width:0%"></div>
-  <span id="dashboard-playfulness-level"></span>
-  <span id="sprite-status-text-bar"></span>
-  <span id="sprite-status-dot-bar"></span>
-
-  <!-- 感知面板 · 默契度 -->
-  <span id="dashboard-rapport-badge"></span>
-  <div id="dashboard-trust-fill" style="width:0%"></div>
-  <div id="dashboard-familiarity-fill" style="width:0%"></div>
-  <span id="dashboard-rapport-desc"></span>
-
-  <!-- 感知面板 · 上下文 -->
-  <span id="dashboard-pace-value"></span>
-  <span id="dashboard-topic-value"></span>
-  <span id="dashboard-depth-value"></span>
-
-  <!-- 感知面板 · 模式洞察 -->
-  <div id="dashboard-patterns-list"></div>
-
-  <!-- 叙事摘要 -->
-  <span id="perception-narrative-text"></span>
-
-  <!-- 伙伴洞察面板 -->
-  <div id="partner-insights" class="hidden">
-    <div class="partner-profile-cards"></div>
-    <div class="partner-knowledge-gaps"></div>
-    <canvas id="partner-growth-chart"></canvas>
-    <span id="partner-growth-total"></span>
   </div>
 
   <!-- dashboard 错误横幅（PanelErrorBannerManager 体系） -->
@@ -299,161 +230,9 @@ describe('renderAgentMetrics', () => {
   });
 });
 
-// ─── renderInsights ──────────────────────────────────────
-
-describe('renderInsights', () => {
-  /** 创建测试用 RelationGraphData */
-  function createGraph(overrides?: Partial<RelationGraphData>): RelationGraphData {
-    return {
-      nodes: [
-        { id: 'n1', name: '节点 1', source: 'test', score: 0.9, contentPreview: '预览 1' },
-        { id: 'n2', name: '节点 2', source: 'test', score: 0.8, contentPreview: '预览 2' },
-      ],
-      edges: [
-        { sourceId: 'n1', targetId: 'n2', type: 'related', weight: 0.7, createdAt: '2026-07-01T00:00:00.000Z' },
-      ],
-      ...overrides,
-    };
-  }
-
-  it('应更新统计卡片（总数/关系数/来源数）', () => {
-    const { manager } = createManager();
-    manager.renderInsights(
-      { total: 100, bySource: { a: 50, b: 30, c: 20 } },
-      createGraph({ edges: [{ sourceId: 'n1', targetId: 'n2', type: 'related', weight: 0.5, createdAt: '' }] }),
-    );
-    expect(document.getElementById('insights-total')!.textContent).toBe('100');
-    expect(document.getElementById('insights-relations')!.textContent).toBe('1');
-    expect(document.getElementById('insights-sources')!.textContent).toBe('3');
-  });
-
-  it('有 contradicts 类型边应高亮冲突数', () => {
-    const { manager } = createManager();
-    manager.renderInsights(
-      { total: 10, bySource: { a: 10 } },
-      createGraph({ edges: [{ sourceId: 'n1', targetId: 'n2', type: 'contradicts', weight: 0.5, createdAt: '' }] }),
-    );
-    const el = document.getElementById('insights-conflicts')!;
-    expect(el.textContent).toBe('1');
-    expect(el.classList.contains('has-conflicts')).toBe(true);
-  });
-
-  it('应渲染 source 分布条形图', () => {
-    const { manager } = createManager();
-    manager.renderInsights(
-      { total: 100, bySource: { test: 60, insight: 40 } },
-      createGraph({ edges: [] }),
-    );
-    const bars = document.querySelectorAll('#insights-distribution .insights-distribution-bar');
-    expect(bars.length).toBe(2);
-  });
-
-  it('无关系边应显示"暂无关系数据"', () => {
-    const { manager } = createManager();
-    manager.renderInsights(
-      { total: 10, bySource: { a: 10 } },
-      createGraph({ edges: [] }),
-    );
-    expect(document.getElementById('insights-relations-summary')!.textContent).toBe('暂无关系数据');
-  });
-
-  it('有关系边应渲染最近关系项', () => {
-    const { manager } = createManager();
-    manager.renderInsights(
-      { total: 10, bySource: { a: 10 } },
-      createGraph({
-        edges: [
-          { sourceId: 'n1', targetId: 'n2', type: 'related', weight: 0.5, createdAt: '2026-07-01T00:00:00.000Z' },
-        ],
-      }),
-    );
-    const items = document.querySelectorAll('#insights-relations-summary .insights-relation-item');
-    expect(items.length).toBe(1);
-    expect(items[0]!.querySelector('.relation-type-tag')!.textContent).toBe('related');
-    expect(items[0]!.querySelector('.relation-desc')!.textContent).toContain('节点 1');
-  });
-});
-
-// ─── renderHealthDashboard ───────────────────────────────
-
-describe('renderHealthDashboard', () => {
-  /** 创建测试用 HealthDashboardPayload */
-  function createHealth(overrides?: Partial<HealthDashboardPayload>): HealthDashboardPayload {
-    return {
-      scores: { overall: 85, uniqueness: 90, freshness: 80, completeness: 85 },
-      duplicates: [],
-      staleMemories: [],
-      lowQualityCount: 0,
-      totalMemories: 100,
-      healthLabel: 'good',
-      healthDescription: '记忆健康状况良好',
-      ...overrides,
-    };
-  }
-
-  // P0-2：迷你健康分徽章测试已移除（health-mini-score DOM 已删除，感知信息统一入口为仪表盘）
-
-  it('应更新健康度评分和徽章', () => {
-    const { manager } = createManager();
-    manager.renderHealthDashboard(createHealth({ scores: { overall: 92, uniqueness: 95, freshness: 90, completeness: 90 }, healthLabel: 'excellent' }));
-    expect(document.getElementById('health-score')!.textContent).toBe('92');
-    expect(document.getElementById('health-badge')!.textContent).toBe('优秀');
-    expect(document.getElementById('health-badge')!.classList.contains('excellent')).toBe(true);
-  });
-
-  it('应更新三维度进度条宽度和数值', () => {
-    const { manager } = createManager();
-    manager.renderHealthDashboard(createHealth({ scores: { overall: 80, uniqueness: 90, freshness: 70, completeness: 85 } }));
-    expect(document.getElementById('health-uniqueness')!.style.width).toBe('90%');
-    expect(document.getElementById('health-uniqueness-val')!.textContent).toBe('90');
-    expect(document.getElementById('health-freshness')!.style.width).toBe('70%');
-    expect(document.getElementById('health-freshness-val')!.textContent).toBe('70');
-    expect(document.getElementById('health-completeness')!.style.width).toBe('85%');
-    expect(document.getElementById('health-completeness-val')!.textContent).toBe('85');
-  });
-
-  it('有重复记忆应显示重复数和 warning 类', () => {
-    const { manager } = createManager();
-    manager.renderHealthDashboard(createHealth({
-      duplicates: [
-        { type: 'name', memories: [{ id: '1', name: 'a', source: 't', score: 0.5, contentPreview: 'p' }, { id: '2', name: 'a', source: 't', score: 0.5, contentPreview: 'p' }] },
-      ],
-    }));
-    const el = document.getElementById('health-duplicates')!;
-    expect(el.textContent).toContain('2');
-    expect(el.classList.contains('warning')).toBe(true);
-  });
-
-  it('有过期记忆应显示过期数和 warning 类', () => {
-    const { manager } = createManager();
-    manager.renderHealthDashboard(createHealth({
-      staleMemories: [{ memory: { id: '1', name: 'a', source: 't', score: 0.5, contentPreview: 'p' }, reason: 'old_age', daysSinceAccess: 100 }],
-    }));
-    const el = document.getElementById('health-stale')!;
-    expect(el.textContent).toContain('1');
-    expect(el.classList.contains('warning')).toBe(true);
-  });
-
-  it('无可清理项时清理按钮应全部隐藏', () => {
-    const { manager } = createManager();
-    manager.renderHealthDashboard(createHealth({ duplicates: [], staleMemories: [], lowQualityCount: 0 }));
-    expect(document.getElementById('health-cleanup-duplicates')!.style.display).toBe('none');
-    expect(document.getElementById('health-cleanup-stale')!.style.display).toBe('none');
-    expect(document.getElementById('health-cleanup-all')!.style.display).toBe('none');
-    expect(document.getElementById('health-actions')!.style.display).toBe('none');
-  });
-
-  it('有可清理项时清理按钮应显示', () => {
-    const { manager } = createManager();
-    manager.renderHealthDashboard(createHealth({
-      duplicates: [{ type: 'name', memories: [{ id: '1', name: 'a', source: 't', score: 0.5, contentPreview: 'p' }] }],
-      staleMemories: [],
-    }));
-    expect(document.getElementById('health-cleanup-duplicates')!.style.display).not.toBe('none');
-    expect(document.getElementById('health-cleanup-all')!.style.display).not.toBe('none');
-    expect(document.getElementById('health-actions')!.style.display).not.toBe('none');
-  });
-});
+// ─── renderInsights / renderHealthDashboard 测试已移除 ──────
+// InsightsRenderer / HealthDashboardRenderer 已归位到 MemoryPanelManager，
+// 子渲染器行为测试在 insightsRenderer.test.ts / healthDashboardRenderer.test.ts 中覆盖。
 
 // ─── pulseCounter ────────────────────────────────────────
 
@@ -491,28 +270,6 @@ describe('pulseCounter', () => {
 // ─── 错误状态 + 重试回调 ─────────────────────────────────
 
 describe('错误状态与重试回调', () => {
-  it('showInsightsError 应渲染重试按钮，click 触发 onReloadInsights 回调', () => {
-    const { manager } = createManager();
-    const cb = vi.fn();
-    manager.onReloadInsights(cb);
-    manager.showInsightsError();
-    const retryBtn = document.querySelector('#insights-distribution .inline-retry-btn') as HTMLButtonElement;
-    expect(retryBtn).not.toBeNull();
-    retryBtn.click();
-    expect(cb).toHaveBeenCalled();
-  });
-
-  it('showHealthError 应渲染重试按钮，click 触发 onReloadHealth 回调', () => {
-    const { manager } = createManager();
-    const cb = vi.fn();
-    manager.onReloadHealth(cb);
-    manager.showHealthError();
-    const retryBtn = document.querySelector('#memory-health-bar .inline-retry-btn') as HTMLButtonElement;
-    expect(retryBtn).not.toBeNull();
-    retryBtn.click();
-    expect(cb).toHaveBeenCalled();
-  });
-
   it('showMemoryListError 应显示 dashboard 错误横幅并支持重试', () => {
     // showMemoryListError 改用 PanelErrorBannerManager，重试按钮在 #dashboard-error 横幅中
     const { manager } = createManager();
@@ -531,106 +288,15 @@ describe('错误状态与重试回调', () => {
     retryBtn.click();
     expect(cb).toHaveBeenCalled();
   });
-
-  it('未注册回调时 click 重试按钮不应抛错', () => {
-    const { manager } = createManager();
-    manager.showInsightsError();
-    const retryBtn = document.querySelector('#insights-distribution .inline-retry-btn') as HTMLButtonElement;
-    expect(() => retryBtn.click()).not.toThrow();
-  });
 });
 
 // ─── 感知系统测试已移除 ──────────────────────────────────
 // 感知数据渲染（情感/默契/上下文/模式/在场）已迁移到独立的 PerceptionPanelManager，
 // 相关测试在 perceptionPanelManager.test.ts 中覆盖。
 
-// ─── renderPartnerInsights ───────────────────────────────
-
-describe('renderPartnerInsights · 伙伴洞察面板', () => {
-  it('空记忆列表应隐藏面板', () => {
-    const { manager } = createManager();
-    manager.renderPartnerInsights([]);
-    expect(document.getElementById('partner-insights')!.classList.contains('hidden')).toBe(true);
-  });
-
-  it('有记忆应显示面板', () => {
-    const { manager } = createManager();
-    manager.renderPartnerInsights([
-      { id: 'm1', name: '记忆 1', source: 'test', contentPreview: '预览' },
-    ]);
-    expect(document.getElementById('partner-insights')!.classList.contains('hidden')).toBe(false);
-  });
-
-  it('应渲染 profile 记忆卡片（最多 6 张）', () => {
-    const { manager } = createManager();
-    const profileMems = Array.from({ length: 8 }, (_, i) => ({
-      id: `profile:${i}`, name: `卡片 ${i}`, source: 'profile', contentPreview: `预览 ${i}`,
-    }));
-    manager.renderPartnerInsights(profileMems);
-    const cards = document.querySelectorAll('.partner-profile-card');
-    expect(cards.length).toBe(6);
-  });
-
-  it('无 profile 记忆应显示引导提示', () => {
-    const { manager } = createManager();
-    manager.renderPartnerInsights([
-      { id: 'm1', name: '非 profile', source: 'test', contentPreview: 'p' },
-    ]);
-    expect(document.querySelector('.partner-empty-hint')!.textContent).toContain('精灵还不了解你');
-  });
-
-  it('click profile 卡片应触发 onMemoryClick 回调', () => {
-    const { manager } = createManager();
-    const cb = vi.fn();
-    manager.onMemoryClick(cb);
-    manager.renderPartnerInsights([
-      { id: 'profile:click-test', name: '卡片', source: 'profile', contentPreview: 'p' },
-    ]);
-    const card = document.querySelector('.partner-profile-card') as HTMLElement;
-    card.click();
-    expect(cb).toHaveBeenCalledWith('profile:click-test');
-  });
-
-  it('onMemoryClick 应同时委托 partnerInsights 和 perception（双注册）', () => {
-    // DashboardPanelManager.onMemoryClick 需同时注册到两个子渲染器，
-    // 使伙伴洞察卡片和模式洞察关联按钮共享同一跳转回调
-    const { manager } = createManager();
-    const cb = vi.fn();
-    manager.onMemoryClick(cb);
-
-    // 验证 1：partnerInsights 卡片点击触发回调
-    manager.renderPartnerInsights([
-      { id: 'profile:partner', name: '伙伴', source: 'profile', contentPreview: 'p' },
-    ]);
-    const card = document.querySelector('.partner-profile-card') as HTMLElement;
-    card.click();
-    expect(cb).toHaveBeenCalledWith('profile:partner');
-  });
-
-  it('应渲染知识缺口（占比 < 5% 的 source 类型）', () => {
-    const { manager } = createManager();
-    // 100 条记忆全是 test，profile 占比 0% < 5%，应提示
-    const memories = Array.from({ length: 100 }, (_, i) => ({
-      id: `m${i}`, name: `m${i}`, source: 'test', contentPreview: 'p',
-    }));
-    manager.renderPartnerInsights(memories);
-    const gaps = document.querySelectorAll('.partner-gap-item');
-    expect(gaps.length).toBeGreaterThan(0);
-  });
-
-  it('所有 source 类型都充足应显示"全面"提示', () => {
-    const { manager } = createManager();
-    // 构造每种 source 都 >= 5% 的数据
-    const sources = ['profile', 'insight', 'skill', 'rule', 'guardrail', 'persona', 'session', 'test'];
-    const memories = sources.flatMap((source) =>
-      Array.from({ length: 10 }, (_, i) => ({
-        id: `${source}:${i}`, name: source, source, contentPreview: 'p',
-      })),
-    );
-    manager.renderPartnerInsights(memories);
-    expect(document.querySelector('.partner-empty-hint')!.textContent).toContain('全面');
-  });
-});
+// ─── renderPartnerInsights 测试已移除 ─────────────────────
+// PartnerInsightsRenderer 已归位到 MemoryPanelManager，
+// 子渲染器行为测试在 partnerInsightsRenderer.test.ts 中覆盖。
 
 // ─── renderReviewData · 增长趋势（Phase 6.2） ─────────────
 
@@ -819,14 +485,4 @@ describe('cleanup', () => {
     expect(() => vi.advanceTimersByTime(5000)).not.toThrow();
   });
 
-  it('cleanup 后重试按钮 click 不应触发回调', () => {
-    const { manager } = createManager();
-    const cb = vi.fn();
-    manager.onReloadInsights(cb);
-    manager.showInsightsError();
-    const retryBtn = document.querySelector('#insights-distribution .inline-retry-btn') as HTMLButtonElement;
-    manager.cleanup();
-    retryBtn.click();
-    expect(cb).not.toHaveBeenCalled();
-  });
 });

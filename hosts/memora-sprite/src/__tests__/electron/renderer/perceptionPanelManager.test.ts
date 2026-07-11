@@ -123,9 +123,19 @@ function createPresence(overrides?: Partial<PresencePayload>): PresencePayload {
 /** 创建感知面板管理器实例（已设置 DOM） */
 function createRenderer(html?: string): PerceptionPanelManager {
   document.body.innerHTML = html ?? PERCEPTION_HTML;
-  // PerceptionPanelManager 构造函数需要 PerceptionPanelHost 参数（showToast 等跨模块关注点）
-  // 测试中注入 mock host，感知面板当前为纯展示型，未实际调用 host 方法
-  return new PerceptionPanelManager({ showToast: vi.fn() });
+  // PerceptionPanelManager 构造函数需要 PerceptionPanelHost 参数（showToast + updateSpriteStatus）
+  // 测试中 updateSpriteStatus mock 写入 DOM，保持精灵状态条断言兼容
+  return new PerceptionPanelManager({
+    showToast: vi.fn(),
+    updateSpriteStatus: (text: string, dotColor?: string) => {
+      const textBar = document.getElementById('sprite-status-text-bar');
+      if (textBar) textBar.textContent = text;
+      if (dotColor !== undefined) {
+        const dotBar = document.getElementById('sprite-status-dot-bar');
+        if (dotBar) dotBar.style.background = dotColor;
+      }
+    },
+  });
 }
 
 // ─── 全局设置 ─────────────────────────────────────────────

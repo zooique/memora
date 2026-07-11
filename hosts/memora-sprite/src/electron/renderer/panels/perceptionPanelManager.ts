@@ -53,6 +53,8 @@ import {
 export interface PerceptionPanelHost {
   /** 显示 toast 通知 */
   showToast(message: string, type?: ToastType, duration?: number): void;
+  /** 更新精灵状态条文字与脉冲点颜色（跨面板 DOM 写入，由 UIManager 统一管理） */
+  updateSpriteStatus(text: string, dotColor?: string): void;
 }
 
 // ─── 常量 ────────────────────────────────────────────────
@@ -78,7 +80,7 @@ export class PerceptionPanelManager {
 
   // ─── 宿主引用 ──────────────────────────────────────────
 
-  /** 宿主能力（跨模块关注点注入，当前感知面板为纯展示型暂未使用，保留供未来扩展） */
+  /** 宿主能力（跨模块关注点注入：showToast + updateSpriteStatus 精灵状态条写入） */
   private _host: PerceptionPanelHost;
 
   // ─── 构造 ──────────────────────────────────────────────
@@ -105,8 +107,6 @@ export class PerceptionPanelManager {
   init(_events: EventTracker): void {
     // 当前感知面板为纯展示型，无事件需绑定
     // 未来添加交互（如模式洞察的"查看关联记忆"按钮）时在此注册
-    // 保留 _host 引用供未来扩展交互功能使用（消除 TS6133 未使用警告）
-    void this._host;
   }
 
   // ─── 资源清理 ──────────────────────────────────────────
@@ -192,7 +192,7 @@ export class PerceptionPanelManager {
    *
    * 将 0-1 数值映射为进度条宽度百分比 + 颜色 + 中文等级。
    * 渲染到感知面板 (#perception-{dim}-fill / #perception-{dim}-level)。
-   * 同时更新精灵状态条 (#sprite-status-text-bar / #sprite-status-dot-bar)，
+   * 同时通过 Host 接口更新精灵状态条（文字 + 脉冲点颜色），
    * 让用户在对话面板也能一眼看到当前主导情感维度。
    * 同时保存状态供叙事摘要合成。
    *
@@ -230,19 +230,12 @@ export class PerceptionPanelManager {
       }
     }
 
-    // ─── 精灵状态条文字（根据主导情感维度生成简短状态描述） ────
-    const statusTextBar = document.getElementById('sprite-status-text-bar');
-    if (statusTextBar) {
-      const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
-      statusTextBar.textContent = `基调：${dominant.label}（${getAffectLevel(dominant.value)}）`;
-    }
-
-    // ─── 精灵状态脉冲点（颜色随主导情感维度变化） ────
-    const statusDotBar = document.getElementById('sprite-status-dot-bar');
-    if (statusDotBar) {
-      const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
-      statusDotBar.style.background = getAffectColor(dominant.value);
-    }
+    // ─── 精灵状态条（文字 + 脉冲点，通过 Host 接口委托到 UIManager 统一写入） ────
+    const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
+    this._host.updateSpriteStatus(
+      `基调：${dominant.label}（${getAffectLevel(dominant.value)}）`,
+      getAffectColor(dominant.value),
+    );
 
     // 感知数据变化后更新叙事摘要
     this.updateNarrative();
@@ -569,7 +562,7 @@ export class PerceptionPanelManager {
    *
    * 每次感知数据更新时调用，同时更新两个目标：
    * 1. 感知面板叙事区 #perception-narrative-text（独立面板的核心展示元素）
-   * 2. 精灵状态条 #sprite-status-text-bar（对话面板的实时状态指示）
+   * 2. 精灵状态条文字（通过 Host 接口委托到 UIManager，对话面板的实时状态指示）
    *
    * 精灵状态条仅在非 idle 状态时更新（idle 时保持 affectDisplay 设置的基调文字）。
    * 叙事合成委托到 NarrativeGenerator。
@@ -583,12 +576,9 @@ export class PerceptionPanelManager {
       narrativeEl.textContent = narrative;
     }
 
-    // ─── 精灵状态条文字（非 idle 状态时用叙事摘要覆盖基调文字） ────
+    // ─── 精灵状态条文字（非 idle 状态时用叙事摘要覆盖基调文字，仅文字无颜色） ────
     if (!this.narrativeGenerator.isIdle()) {
-      const statusTextBar = document.getElementById('sprite-status-text-bar');
-      if (statusTextBar) {
-        statusTextBar.textContent = narrative;
-      }
+      this._host.updateSpriteStatus(narrative);
     }
   }
 

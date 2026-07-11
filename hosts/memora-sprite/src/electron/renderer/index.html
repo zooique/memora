@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="styles/toast.css" />
   <link rel="stylesheet" href="styles/markdown.css" />
   <link rel="stylesheet" href="styles/dashboard.css" />
+  <link rel="stylesheet" href="styles/perception.css" />
 </head>
 <body>
   <!-- SVG 图标精灵：替换页面内 emoji，统一视觉风格 -->
@@ -1230,17 +1231,6 @@
                 <span class="overview-label">衰减</span>
                 <span class="overview-value" id="dashboard-decay-runs">—</span>
               </div>
-              <!-- 默契度（占两格：徽章 + 双进度条） -->
-              <div class="overview-item overview-rapport">
-                <div class="overview-rapport-header">
-                  <span class="overview-label">默契度</span>
-                  <span class="overview-rapport-badge" id="dashboard-rapport-badge" data-level="stranger">初识</span>
-                </div>
-                <div class="overview-rapport-bars">
-                  <div class="overview-rapport-bar"><span class="bar-label">信任</span><div class="progress-track"><div class="progress-fill" id="dashboard-trust-fill"></div></div></div>
-                  <div class="overview-rapport-bar"><span class="bar-label">熟悉</span><div class="progress-track"><div class="progress-fill" id="dashboard-familiarity-fill"></div></div></div>
-                </div>
-              </div>
             </div>
           </section>
 
@@ -1255,6 +1245,14 @@
             <canvas id="dashboard-growth-canvas" class="growth-canvas hidden" role="img" aria-label="仪表盘成长曲线图"></canvas>
             <!-- 空状态（daily 全 0 时显示） -->
             <div class="growth-empty hidden" id="dashboard-growth-empty"></div>
+          </section>
+
+          <!-- 分区一之二：最近洞察（ReviewData.insights.recent） -->
+          <section class="dashboard-section" id="dashboard-recent-insights" style="display: none;">
+            <div class="dashboard-section-title">最近洞察</div>
+            <div class="recent-insights-list" id="recent-insights-list">
+              <div class="placeholder-text">暂无洞察</div>
+            </div>
           </section>
 
           <!-- 分区二：运行指标（感知面板独立后仪表盘空间充裕，默认展开） -->
