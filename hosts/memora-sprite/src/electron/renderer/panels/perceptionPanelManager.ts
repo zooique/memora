@@ -261,17 +261,21 @@ export class PerceptionPanelManager {
     }
 
     // ─── 感知面板信任度进度条 ──────────────────────────
+    const trustPercent = Math.round(rapport.trust * 100);
     const trustFill = document.getElementById('perception-trust-fill');
     if (trustFill) {
-      trustFill.style.width = `${Math.round(rapport.trust * 100)}%`;
+      trustFill.style.width = `${Math.max(6, trustPercent)}%`;
       trustFill.style.background = getAffectColor(rapport.trust);
+      trustFill.title = `信任度 ${trustPercent}%`;
     }
 
     // ─── 感知面板熟悉度进度条 ──────────────────────────
+    const familiarityPercent = Math.round(rapport.familiarity * 100);
     const familiarityFill = document.getElementById('perception-familiarity-fill');
     if (familiarityFill) {
-      familiarityFill.style.width = `${Math.round(rapport.familiarity * 100)}%`;
+      familiarityFill.style.width = `${Math.max(6, familiarityPercent)}%`;
       familiarityFill.style.background = getAffectColor(rapport.familiarity);
+      familiarityFill.title = `熟悉度 ${familiarityPercent}%`;
     }
 
     // ─── 感知面板描述文本 ──────────────────────────────

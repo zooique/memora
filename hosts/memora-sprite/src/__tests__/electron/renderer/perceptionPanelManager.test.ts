@@ -447,11 +447,8 @@ describe('updatePresenceDisplay() · 在场状态', () => {
 });
 
 // ─── updateNarrative() · 叙事合成 ─────────────────────────
-// TODO: updateNarrative() 目前仅更新 #sprite-status-text-bar，未更新 #perception-narrative-text。
-// 叙事文本合成（generateNarrative → #perception-narrative-text）功能尚未完成。
-// 待功能实现后取消 skip。
 
-describe.skip('updateNarrative() · 叙事合成', () => {
+describe('updateNarrative() · 叙事合成', () => {
   it('无任何感知数据时应显示默认叙事"精灵正在感知中..."', () => {
     const renderer = createRenderer();
     renderer.updateNarrative();
