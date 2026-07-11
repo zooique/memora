@@ -513,14 +513,10 @@ describe('injectWebElectronAPI', () => {
     /** mock window 对象 */
     const mockWindow: { electronAPI?: unknown } = {};
     vi.stubGlobal('window', mockWindow);
-    /** 静默 console.log 避免测试输出污染 */
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     injectWebElectronAPI();
 
     expect(mockWindow.electronAPI).toBe(webElectronAPI);
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
   });
 
   it('window 不存在时应不抛错（Node 环境）', () => {

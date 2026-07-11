@@ -54,6 +54,59 @@
 }
 
 /* ─── 情感基调 ────────────────────────────────────────── */
+
+/* 情感雷达图（SVG）：四维情感可视化 */
+.affect-radar {
+  display: block;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto var(--space-2);
+}
+
+/* 雷达图背景外框（100% 参考线） */
+.radar-frame {
+  fill: var(--surface0);
+  stroke: var(--overlay);
+  stroke-width: 1;
+}
+
+/* 雷达图内框（50% 参考线） */
+.radar-frame-inner {
+  fill: none;
+  stroke: var(--overlay);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 2;
+}
+
+/* 雷达图十字辅助轴 */
+.radar-axis {
+  stroke: var(--overlay);
+  stroke-width: 0.5;
+  stroke-dasharray: 2 2;
+}
+
+/* 雷达图数据多边形（动态更新） */
+.radar-data {
+  fill: var(--accent);
+  fill-opacity: 0.15;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  transition: all var(--transition-slow) ease;
+}
+
+/* 雷达图顶点圆点 */
+.radar-dot {
+  fill: var(--accent);
+  transition: all var(--transition-slow) ease;
+}
+
+/* 雷达图标签文字 */
+.radar-label {
+  font-size: 8px;
+  fill: var(--muted);
+  user-select: none;
+}
+
 .perception-affect-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

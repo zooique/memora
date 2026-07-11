@@ -125,6 +125,16 @@
       display: none;
     }
 
+    /* 候选列表显示时的淡入动画，掩盖窗口高度跳变视觉冲击 */
+    .completion-list:not(.hidden) {
+      animation: completionFadeIn var(--transition-fast) ease;
+    }
+
+    @keyframes completionFadeIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
     /* 候选项 */
     .completion-item {
       display: flex;

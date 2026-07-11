@@ -42,6 +42,12 @@ const PERCEPTION_HTML = `
   <span id="perception-playfulness-level"></span>
   <span id="sprite-status-text-bar"></span>
   <span id="sprite-status-dot-bar"></span>
+  <!-- 情感雷达图 SVG -->
+  <polygon id="perception-affect-radar" points="60,60 60,60 60,60 60,60"></polygon>
+  <circle id="radar-dot-warmth" cx="60" cy="60" r="3"></circle>
+  <circle id="radar-dot-directness" cx="60" cy="60" r="3"></circle>
+  <circle id="radar-dot-initiative" cx="60" cy="60" r="3"></circle>
+  <circle id="radar-dot-playfulness" cx="60" cy="60" r="3"></circle>
 
   <!-- 默契度 -->
   <span id="perception-rapport-badge"></span>

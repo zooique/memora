@@ -928,7 +928,6 @@ export function injectWebElectronAPI(): void {
         initWebModeUi();
       }
     }
-    console.log('[Web] electronAPI 已注入（Web 模式）');
   }
 }
 

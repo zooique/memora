@@ -230,6 +230,30 @@ export class PerceptionPanelManager {
       }
     }
 
+    // ─── 情感雷达图（SVG 四维可视化） ──────────────────────
+    // 中心 (60,60)，最大半径 40，四方向：上(温暖)/右(直接)/下(主动)/左(活泼)
+    const RADAR_CENTER = 60;
+    const RADAR_RADIUS = 40;
+    const radarPoints: Array<[number, number]> = [
+      [RADAR_CENTER, RADAR_CENTER - affect.warmth * RADAR_RADIUS],
+      [RADAR_CENTER + affect.directness * RADAR_RADIUS, RADAR_CENTER],
+      [RADAR_CENTER, RADAR_CENTER + affect.initiative * RADAR_RADIUS],
+      [RADAR_CENTER - affect.playfulness * RADAR_RADIUS, RADAR_CENTER],
+    ];
+    const radarPolygon = document.getElementById('perception-affect-radar');
+    if (radarPolygon) {
+      radarPolygon.setAttribute('points', radarPoints.map(p => p.join(',')).join(' '));
+    }
+    // 更新四个顶点圆点位置
+    const dotIds = ['warmth', 'directness', 'initiative', 'playfulness'] as const;
+    for (let i = 0; i < dotIds.length; i++) {
+      const dot = document.getElementById(`radar-dot-${dotIds[i]}`);
+      if (dot) {
+        dot.setAttribute('cx', String(radarPoints[i][0]));
+        dot.setAttribute('cy', String(radarPoints[i][1]));
+      }
+    }
+
     // ─── 精灵状态条（文字 + 脉冲点，通过 Host 接口委托到 UIManager 统一写入） ────
     const dominant = dimensions.reduce((a, b) => (a.value > b.value ? a : b));
     this._host.updateSpriteStatus(

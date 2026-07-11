@@ -1104,6 +1104,27 @@
           <!-- 情感基调 -->
           <section class="perception-section">
             <h4 class="perception-section-title">情感基调</h4>
+            <svg viewBox="0 0 120 120" class="affect-radar" aria-label="情感雷达图" role="img">
+              <!-- 背景外框（100% 参考线） -->
+              <polygon points="60,20 100,60 60,100 20,60" class="radar-frame" />
+              <!-- 50% 参考线 -->
+              <polygon points="60,40 80,60 60,80 40,60" class="radar-frame-inner" />
+              <!-- 十字辅助轴 -->
+              <line x1="60" y1="20" x2="60" y2="100" class="radar-axis" />
+              <line x1="20" y1="60" x2="100" y2="60" class="radar-axis" />
+              <!-- 数据多边形（动态更新 points） -->
+              <polygon id="perception-affect-radar" points="60,60 60,60 60,60 60,60" class="radar-data" />
+              <!-- 四维顶点圆点（动态更新位置） -->
+              <circle id="radar-dot-warmth" cx="60" cy="60" r="3" class="radar-dot" />
+              <circle id="radar-dot-directness" cx="60" cy="60" r="3" class="radar-dot" />
+              <circle id="radar-dot-initiative" cx="60" cy="60" r="3" class="radar-dot" />
+              <circle id="radar-dot-playfulness" cx="60" cy="60" r="3" class="radar-dot" />
+              <!-- 四维标签 -->
+              <text x="60" y="14" class="radar-label" text-anchor="middle">温暖</text>
+              <text x="112" y="63" class="radar-label" text-anchor="middle">直接</text>
+              <text x="60" y="118" class="radar-label" text-anchor="middle">主动</text>
+              <text x="8" y="63" class="radar-label" text-anchor="middle">活泼</text>
+            </svg>
             <div class="perception-affect-grid">
               <div class="affect-item" title="精灵回复的亲和力程度">
                 <div class="affect-item-header">
