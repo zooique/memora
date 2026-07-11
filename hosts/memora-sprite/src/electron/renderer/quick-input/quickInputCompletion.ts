@@ -49,7 +49,7 @@ export interface CompletionItem {
   score: number;
 }
 
-/** 防抖延迟（ms）—— 输入停止后等待多久触发补全 */
+/** 防抖延迟（ms） —— 输入停止后等待多久触发补全 */
 const DEBOUNCE_MS = 300;
 /** 最小触发字符数 —— 少于此值不触发补全（避免空查询） */
 const MIN_QUERY_LENGTH = 2;
@@ -57,6 +57,8 @@ const MIN_QUERY_LENGTH = 2;
 const MAX_CANDIDATES = 5;
 /** 候选项预览文本最大长度（防止过长候选项撑爆浮窗） */
 const PREVIEW_MAX_LENGTH = 80;
+/** 候选项 DOM ID 前缀（用于 aria-activedescendant 引用） */
+const COMPLETION_ITEM_ID_PREFIX = 'completion-item-';
 
 /**
  * 快速输入补全管理器
@@ -286,6 +288,12 @@ export class QuickInputCompletion {
    *
    * 每个候选项包含：来源标签 + 文本预览。
    * 选中态通过 CSS 类 `selected` 控制。
+   *
+   * 候选项补 WAI-ARIA combobox with listbox 模式属性：
+   * - role="option"：声明为可选候选项
+   * - id="completion-item-{i}"：供 textarea 的 aria-activedescendant 引用
+   * - aria-selected：同步选中态
+   * 同时更新 textarea 的 aria-expanded=true 表示候选列表已展开。
    */
   private renderCandidates(candidates: CompletionItem[]): void {
     this.candidates = candidates;
@@ -303,6 +311,11 @@ export class QuickInputCompletion {
       const li = document.createElement('li');
       li.className = 'completion-item';
       li.dataset.index = String(i);
+      // 候选项语义 + id（供 aria-activedescendant 引用）
+      li.setAttribute('role', 'option');
+      li.id = `${COMPLETION_ITEM_ID_PREFIX}${i}`;
+      li.setAttribute('aria-selected', 'false');
+      li.tabIndex = -1;
 
       // 来源标签
       const label = document.createElement('span');
@@ -336,6 +349,8 @@ export class QuickInputCompletion {
 
     // 显示列表
     this.listEl.classList.remove('hidden');
+    // 候选列表展开后通知屏幕阅读器
+    this.inputField.setAttribute('aria-expanded', 'true');
     this.onListChangeCallback?.(true);
   }
 
@@ -343,24 +358,41 @@ export class QuickInputCompletion {
    * 更新选中态样式
    *
    * 清除所有候选项的 selected 类，给当前选中项添加。
+   *
+   * 同步 aria-selected 属性 + textarea 的 aria-activedescendant，
+   * 使屏幕阅读器跟随键盘焦点播报当前候选项。
    */
   private updateSelection(): void {
     const items = this.listEl.querySelectorAll('.completion-item');
     items.forEach((el, idx) => {
-      el.classList.toggle('selected', idx === this.selectedIndex);
+      const selected = idx === this.selectedIndex;
+      el.classList.toggle('selected', selected);
+      el.setAttribute('aria-selected', selected.toString());
     });
+    // 同步 aria-activedescendant 指向当前选中项（无选中时清空）
+    if (this.selectedIndex >= 0) {
+      this.inputField.setAttribute('aria-activedescendant', `${COMPLETION_ITEM_ID_PREFIX}${this.selectedIndex}`);
+    } else {
+      this.inputField.setAttribute('aria-activedescendant', '');
+    }
   }
 
   /**
    * 清空候选列表
    *
    * 清空 DOM、重置状态、隐藏列表容器、通知窗口收起高度。
+   *
+   * 候选列表收起后同步 textarea 的 aria-expanded=false，
+   * 并清空 aria-activedescendant 避免悬空引用。
    */
   private clearCandidates(): void {
     this.candidates = [];
     this.selectedIndex = -1;
     this.listEl.innerHTML = '';
     this.listEl.classList.add('hidden');
+    // 候选列表收起
+    this.inputField.setAttribute('aria-expanded', 'false');
+    this.inputField.setAttribute('aria-activedescendant', '');
     this.onListChangeCallback?.(false);
   }
 

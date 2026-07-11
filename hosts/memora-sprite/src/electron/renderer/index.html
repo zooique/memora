@@ -254,11 +254,11 @@
         <div id="chat-toolbar">
           <div class="chat-toolbar-info">
             <!-- 精灵状态条（点击展开感知面板，hover 时弹出感知摘要浮层） -->
-            <div id="sprite-status-bar" class="sprite-status-bar" role="button" tabindex="0" title="点击查看精灵感知状态" aria-label="精灵状态：就绪">
+            <button type="button" id="sprite-status-bar" class="sprite-status-bar" title="点击查看精灵感知状态" aria-label="精灵状态：就绪">
               <svg class="sprite-status-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><use href="#icon-fairy"/></svg>
               <span id="sprite-status-text-bar">就绪</span>
               <span class="sprite-status-dot" id="sprite-status-dot-bar"></span>
-            </div>
+            </button>
             <!-- 精灵感知浮层：hover 时弹出，展示情感/默契度/上下文摘要 -->
             <div id="sprite-status-popover" class="sprite-status-popover hidden" role="tooltip" aria-hidden="true">
               <div class="popover-section">
@@ -343,6 +343,8 @@
         </div>
 
         <div id="messages">
+          <!-- 流式完成通知区（视觉隐藏，aria-live=polite 让屏幕阅读器在空闲时播报） -->
+          <div id="stream-live-region" class="sr-only" aria-live="polite" aria-atomic="true"></div>
           <!-- 对话区空状态引导：无消息时显示欢迎语 + 示例问题，有消息后自动隐藏 -->
           <div id="chat-empty-state" class="chat-empty-state">
             <div class="empty-avatar"><svg class="icon"><use href="#icon-fairy"/></svg></div>
@@ -369,7 +371,7 @@
           <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部" aria-label="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
         <div id="input-area">
-          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行。输入触发补全，Tab 确认" rows="1" aria-label="输入消息"></textarea>
+          <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行。输入触发补全，Tab 确认" rows="1" aria-label="输入消息" role="combobox" aria-expanded="false" aria-controls="chat-completion-list" aria-activedescendant="" aria-autocomplete="list"></textarea>
           <!-- 输入补全候选列表（输入 ≥2 字符后自动显示，↓↑ 导航 + Tab 确认，IDE 风格浮层） -->
           <ul id="chat-completion-list" class="chat-completion-list hidden" role="listbox" aria-label="输入补全候选"></ul>
           <!-- 输入工具栏（对齐 demo：左侧工具按钮 + 右侧停止/发送） -->
@@ -383,21 +385,21 @@
             <div class="input-send-area">
               <!-- Provider 选择器（输入框左侧，切换 LLM API） -->
               <div id="input-provider-container" class="input-provider-container">
-                <div id="provider-selector" role="button" tabindex="0" aria-label="切换 LLM Provider" aria-haspopup="listbox" aria-expanded="false">
+                <button type="button" id="provider-selector" aria-label="切换 LLM Provider" aria-haspopup="listbox" aria-expanded="false">
                   <span id="provider-icon"><svg class="icon"><use href="#icon-link"/></svg></span>
                   <span id="provider-name">未配置</span>
                   <span id="provider-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
-                </div>
+                </button>
                 <div id="provider-dropdown" class="dropdown hidden"></div>
               </div>
               <!-- 紧凑版角色选择器（输入区发送按钮旁，输入时可快速切换角色） -->
               <div id="input-persona-container" class="input-persona-container">
-                <div id="persona-selector" role="button" tabindex="0" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
+                <button type="button" id="persona-selector" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
                   <span id="persona-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
                   <span id="persona-name">精灵</span>
                   <span id="persona-mode-badge" class="mode-badge auto" title="角色匹配模式：自动">自动</span>
                   <span id="persona-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
-                </div>
+                </button>
                 <div id="persona-dropdown" class="dropdown hidden"></div>
               </div>
               <!-- B2：停止生成浮动按钮（独立于发送按钮，流式态时可见，对齐 demo v3 .btn-stop-float）
@@ -595,7 +597,7 @@
             <div class="graph-empty-title">暂无记忆关系数据</div>
             <div class="graph-empty-subtitle">多聊几句后，精灵会自动提炼记忆并构建关联网络</div>
           </div>
-          <canvas id="memory-graph-canvas" role="img" aria-label="记忆关系图谱"></canvas>
+          <canvas id="memory-graph-canvas" role="img" aria-label="记忆关系图谱（使用方向键浏览节点，Enter 查看详情）" tabindex="0"></canvas>
           <!-- 图谱图例：节点颜色（source类型）+ 边颜色（关系类型） -->
           <div id="graph-legend" class="graph-legend">
             <div class="legend-section">
@@ -622,33 +624,33 @@
               </div>
             </div>
           </div>
-          <!-- 节点hover tooltip：显示记忆名称和预览 -->
-          <div id="graph-tooltip" class="graph-tooltip hidden">
+          <!-- 节点hover tooltip：显示记忆名称和预览（键盘焦点移动时同步显示） -->
+          <div id="graph-tooltip" class="graph-tooltip hidden" role="tooltip">
             <div class="graph-tooltip-name"></div>
             <div class="graph-tooltip-source"></div>
             <div class="graph-tooltip-preview"></div>
           </div>
 
-          <!-- 节点右键菜单 -->
-          <div id="graph-context-menu" class="graph-context-menu hidden">
-            <div class="graph-context-menu-item" data-action="focus-subgraph">
-              <span class="graph-context-menu-icon">◎</span>
+          <!-- 节点右键菜单（WAI-ARIA menu 模式：role="menu" + button[role="menuitem"]） -->
+          <div id="graph-context-menu" class="graph-context-menu hidden" role="menu" aria-label="节点操作菜单">
+            <button type="button" class="graph-context-menu-item" data-action="focus-subgraph" role="menuitem" tabindex="-1">
+              <span class="graph-context-menu-icon" aria-hidden="true">◎</span>
               <span>聚焦子图</span>
-            </div>
-            <div class="graph-context-menu-item" data-action="view-detail">
-              <span class="graph-context-menu-icon">☰</span>
+            </button>
+            <button type="button" class="graph-context-menu-item" data-action="view-detail" role="menuitem" tabindex="-1">
+              <span class="graph-context-menu-icon" aria-hidden="true">☰</span>
               <span>查看详情</span>
-            </div>
-            <div class="graph-context-menu-item" data-action="connect-from">
-              <span class="graph-context-menu-icon">↗</span>
+            </button>
+            <button type="button" class="graph-context-menu-item" data-action="connect-from" role="menuitem" tabindex="-1">
+              <span class="graph-context-menu-icon" aria-hidden="true">↗</span>
               <span>从此节点连线</span>
               <span class="graph-context-menu-shortcut">Ctrl+拖拽</span>
-            </div>
-            <div class="graph-context-menu-divider"></div>
-            <div class="graph-context-menu-item" data-action="copy-id">
-              <span class="graph-context-menu-icon">📋</span>
+            </button>
+            <div class="graph-context-menu-divider" role="separator"></div>
+            <button type="button" class="graph-context-menu-item" data-action="copy-id" role="menuitem" tabindex="-1">
+              <span class="graph-context-menu-icon" aria-hidden="true">📋</span>
               <span>复制 ID</span>
-            </div>
+            </button>
           </div>
 
           <!-- 关系编辑弹窗（复用标准 .modal + .modal-content 结构，差异化样式通过关系编辑专属类补充） -->

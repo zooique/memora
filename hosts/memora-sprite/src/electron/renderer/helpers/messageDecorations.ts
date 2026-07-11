@@ -88,10 +88,13 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
   list.className = 'memory-recall-list';
 
   for (const recall of memories) {
-    const recallItem = document.createElement('div');
+    // 使用原生 button 替代 div[tabindex=0]，Enter/Space 由原生 click 自动触发
+    const recallItem = document.createElement('button');
+    recallItem.type = 'button';
     recallItem.className = 'memory-recall';
     const iconSpan = document.createElement('span');
     iconSpan.className = 'memory-recall-item-icon';
+    iconSpan.setAttribute('aria-hidden', 'true');
     setIcon(iconSpan, 'icon-lightbulb');
     recallItem.appendChild(iconSpan);
     const recallText = document.createElement('span');
@@ -100,7 +103,6 @@ export function createRecallContainer(memories: MemoryRecallItem[]): HTMLDivElem
     recallItem.dataset.action = 'recall';
     recallItem.dataset.memoryId = recall.id;
     recallItem.dataset.name = recall.name;
-    recallItem.setAttribute('tabindex', '0');
     list.appendChild(recallItem);
   }
 

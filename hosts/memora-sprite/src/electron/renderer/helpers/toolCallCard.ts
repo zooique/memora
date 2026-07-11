@@ -42,16 +42,20 @@ export function showToolStart(
   toolCard.setAttribute('data-tool-name', name);
 
   // 工具图标 + 折叠箭头 + 名称 + 状态（含 spinner）
-  const header = document.createElement('div');
+  // 使用原生 button 替代 div[tabindex=0]，Enter/Space 由原生 click 自动触发
+  const header = document.createElement('button');
+  header.type = 'button';
   header.className = 'tool-call-header';
   // 折叠/展开箭头（SVG chevron，用 CSS transform 控制旋转方向）
   const chevron = document.createElement('span');
   chevron.className = 'tool-call-chevron';
+  chevron.setAttribute('aria-hidden', 'true');
   setIcon(chevron, 'icon-chevron');
   header.appendChild(chevron);
   // 工具图标：使用 SVG 替代 emoji
   const icon = document.createElement('span');
   icon.className = 'tool-call-icon';
+  icon.setAttribute('aria-hidden', 'true');
   setIcon(icon, 'icon-tools');
   header.appendChild(icon);
   const nameSpan = document.createElement('span');
@@ -61,17 +65,15 @@ export function showToolStart(
   // 执行中 spinner：旋转动画替代静态"执行中..."文本，增强视觉反馈
   const spinner = document.createElement('span');
   spinner.className = 'tool-call-spinner';
+  spinner.setAttribute('aria-hidden', 'true');
   header.appendChild(spinner);
   const status = document.createElement('span');
   status.className = 'tool-call-status';
   status.textContent = '执行中...';
   header.appendChild(status);
 
-  // 点击表头折叠/展开参数和结果
-  // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
+  // 点击表头折叠/展开参数和结果（data-action 由 click 委托统一处理）
   header.dataset.action = 'toggle-collapse';
-  // P3 键盘可访问性：tabindex 使工具调用折叠头可通过键盘聚焦并 Enter/Space 触发
-  header.setAttribute('tabindex', '0');
 
   toolCard.appendChild(header);
 

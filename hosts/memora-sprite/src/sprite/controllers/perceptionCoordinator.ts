@@ -102,8 +102,8 @@ export class PerceptionCoordinator {
    * 对话前刷新全量感知，确保 LLM 拿到最新状态
    *
    * 每次 wakeup() 对话前由 Sprite.prepareForChat() 调用，重新推导并一次性
-   * 注入所有感知提示到 Agent.injectAffect()。之前因各方法独立调用 injectAffect
-   * 导致相互覆盖（仅最后生效），现已改为累积所有 prompt 统一注入。
+   * 注入所有感知提示到 Agent.injectAffect()。各感知方法独立调用 injectAffect 会
+   * 相互覆盖（仅最后生效），因此累积所有 prompt 统一注入。
    *
    * 注入内容：
    *   1. 情感基调（AffectController）

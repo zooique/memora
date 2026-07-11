@@ -79,19 +79,16 @@ export class PersonaPanelManager {
       this.togglePersonaDropdown();
     });
 
-    // UI-AR-01 键盘支持：Enter/Space 展开下拉，Escape 关闭
+    // 键盘支持：Escape 关闭（Enter/Space 由原生 button click 自动触发）
     this.events.addEventListener(selectorEl, 'keydown', (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === 'Enter' || ke.key === ' ') {
-        ke.preventDefault();
-        this.togglePersonaDropdown();
-      } else if (ke.key === 'Escape') {
+      if (ke.key === 'Escape') {
         this.closePersonaDropdown();
         selectorEl.focus();
       }
     });
 
-    // UI-AR-01 键盘导航：在下拉菜单内用方向键移动焦点
+    // 键盘导航：在下拉菜单内用方向键移动焦点
     this.events.addEventListener(dropdownEl, 'keydown', (e) => {
       const ke = e as KeyboardEvent;
       const items = dropdownEl.querySelectorAll<HTMLElement>('.dropdown-item');
@@ -177,7 +174,7 @@ export class PersonaPanelManager {
     this.personaSelectorEl.setAttribute('aria-expanded', 'false');
   }
 
-  /** UI-AR-01 切换角色下拉菜单的显示/隐藏 */
+  /** 切换角色下拉菜单的显示/隐藏 */
   private togglePersonaDropdown(): void {
     if (!this.personaDropdownEl || !this.personaSelectorEl) return;
     const isHidden = this.personaDropdownEl.classList.contains('hidden');
@@ -219,7 +216,7 @@ export class PersonaPanelManager {
       item.appendChild(nameEl);
       item.appendChild(descEl);
       item.title = p.description || this.formatDisplayName(p.name);
-      // UI-AR-01 可聚焦但不参与 Tab 顺序（键盘导航用方向键）
+      // 可聚焦但不参与 Tab 顺序（键盘导航用方向键）
       item.setAttribute('tabindex', '-1');
       item.setAttribute('role', 'option');
       item.setAttribute('aria-selected', p.active ? 'true' : 'false');

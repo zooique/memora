@@ -479,6 +479,9 @@ export class ChatPanelManager {
       return el;
     }
 
+    // 非系统消息可聚焦（tabindex=0），支持 Shift+F10/Menu 键触发右键菜单
+    el.tabIndex = 0;
+
     // 用户/精灵消息：头像 + 气泡结构（分组模式下省略头像）
     if (!grouped) {
       const avatar = document.createElement('div');
@@ -697,6 +700,12 @@ export class ChatPanelManager {
       // 清除超时兜底定时器（正常结束）
       this._clearStreamSafetyTimer();
       this.host.updateSendButton();
+
+      // 流式完成时通知屏幕阅读器（不对逐字追加设 aria-live，避免频繁播报）
+      const liveRegion = document.getElementById('stream-live-region');
+      if (liveRegion) {
+        liveRegion.textContent = '新消息已就绪';
+      }
     }
   }
 

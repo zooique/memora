@@ -236,6 +236,10 @@ export class RelationGraphRenderer {
   /** 当前选中的节点 ID（列表/详情联动，显示外发光环） */
   private selectedNodeId: string | null = null;
 
+  // ─── 键盘焦点状态 ─────────────────────────────────
+  /** 键盘焦点节点索引（-1 = 无焦点）；与 hover/selected 独立 */
+  private focusedNodeIndex = -1;
+
   // ─── 视口平移/缩放（用于选中节点居中动画 + 用户交互） ────────
   /** 视口 X 偏移（相机位置） */
   private cameraX = 0;
@@ -392,6 +396,7 @@ export class RelationGraphRenderer {
     // 重置高亮/选中/相机/缩放状态（新数据不保留旧视图状态）
     this.highlightedNodeIds = null;
     this.selectedNodeId = null;
+    this.focusedNodeIndex = -1;
     this.cameraX = 0;
     this.cameraY = 0;
     this.targetCameraX = 0;
@@ -762,6 +767,19 @@ export class RelationGraphRenderer {
         ctx.stroke();
       }
 
+      // 键盘焦点环（虚线圆环，与 hover/selected 视觉区分）
+      const isFocused = this.focusedNodeIndex >= 0 && this.nodes[this.focusedNodeIndex] === node;
+      if (isFocused) {
+        const focusR = renderR + 5;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, focusR, 0, Math.PI * 2);
+        ctx.strokeStyle = this.resolveCssVar('--accent');
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       // 节点名称（截断，hover 时字号略大；非高亮节点文字也淡化）
       if (nodeHighlighted) {
         const maxNameLen = Math.max(3, Math.floor(renderR / 2));
@@ -975,6 +993,7 @@ export class RelationGraphRenderer {
     this.canvas.addEventListener('contextmenu', this.onContextMenu);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('dblclick', this.onDblClick);
+    this.canvas.addEventListener('keydown', this.onKeyDown);
   }
 
   private unbindEvents(): void {
@@ -986,11 +1005,16 @@ export class RelationGraphRenderer {
     this.canvas.removeEventListener('contextmenu', this.onContextMenu);
     this.canvas.removeEventListener('wheel', this.onWheel);
     this.canvas.removeEventListener('dblclick', this.onDblClick);
+    this.canvas.removeEventListener('keydown', this.onKeyDown);
   }
 
   private onMouseDown = (e: MouseEvent): void => {
     // 重置拖拽标志，后续 onMouseMove 中发生拖拽时设为 true
     this.didDrag = false;
+    // 鼠标交互开始时清除键盘焦点（避免双重指示器）
+    if (this.focusedNodeIndex !== -1) {
+      this.focusedNodeIndex = -1;
+    }
 
     const rect = this.canvas.getBoundingClientRect();
     const screenX = e.clientX - rect.left;
@@ -1190,6 +1214,103 @@ export class RelationGraphRenderer {
   private onDblClick = (_e: MouseEvent): void => {
     this.resetView();
   };
+
+  // ─── 键盘导航 ─────────────────────────
+
+  /**
+   * 键盘事件处理：Canvas 节点导航
+   *
+   * - ArrowRight / ArrowDown：焦点移到下一个节点（循环）
+   * - ArrowLeft / ArrowUp：焦点移到上一个节点（循环）
+   * - Enter / Space：触发当前焦点节点的点击回调
+   * - Escape：清除键盘焦点 + 隐藏 tooltip
+   *
+   * 首次按方向键时若无焦点，则聚焦第一个节点。
+   * 焦点变化时同步显示 tooltip 并恢复布局动画以绘制焦点环。
+   */
+  private onKeyDown = (e: KeyboardEvent): void => {
+    // 无节点时所有键都不处理
+    if (this.nodes.length === 0) return;
+
+    switch (e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        e.preventDefault();
+        this.moveFocus(1);
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        e.preventDefault();
+        this.moveFocus(-1);
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        this.activateFocusedNode();
+        break;
+      case 'Escape':
+        e.preventDefault();
+        this.clearFocus();
+        break;
+    }
+  };
+
+  /**
+   * 移动键盘焦点到相邻节点
+   *
+   * @param direction 1 = 下一个，-1 = 上一个
+   */
+  private moveFocus(direction: 1 | -1): void {
+    // 首次聚焦：从第一个节点开始
+    if (this.focusedNodeIndex === -1) {
+      this.focusedNodeIndex = direction === 1 ? 0 : this.nodes.length - 1;
+    } else {
+      // 循环移动（+ nodes.length 防止负数取模）
+      this.focusedNodeIndex =
+        (this.focusedNodeIndex + direction + this.nodes.length) % this.nodes.length;
+    }
+
+    const node = this.nodes[this.focusedNodeIndex];
+    if (!node) return;
+
+    // 恢复动画以绘制焦点环
+    this.layoutStable = false;
+    this.stableFrameCount = 0;
+
+    // 键盘焦点变化时显示 tooltip
+    this.showTooltip(node);
+
+    // 将焦点节点定位到 tooltip（用节点屏幕坐标近似鼠标位置）
+    const rect = this.canvas.getBoundingClientRect();
+    const screenX = node.x * this.zoom + this.cameraX + rect.left;
+    const screenY = node.y * this.zoom + this.cameraY + rect.top;
+    this.updateTooltipPosition(screenX, screenY);
+  }
+
+  /**
+   * 激活当前键盘焦点节点（Enter / Space → 触发 onNodeClick）
+   */
+  private activateFocusedNode(): void {
+    if (this.focusedNodeIndex === -1) return;
+    const node = this.nodes[this.focusedNodeIndex];
+    if (node && this.onNodeClick) {
+      this.onNodeClick(node.id);
+    }
+  }
+
+  /**
+   * 清除键盘焦点状态
+   *
+   * 重置 focusedNodeIndex 并隐藏 tooltip，
+   * 恢复动画以擦除焦点环。
+   */
+  private clearFocus(): void {
+    if (this.focusedNodeIndex === -1) return;
+    this.focusedNodeIndex = -1;
+    this.hideTooltip();
+    this.layoutStable = false;
+    this.stableFrameCount = 0;
+  }
 
   // ─── Tooltip 辅助方法 ──────────────────────────────────────
 

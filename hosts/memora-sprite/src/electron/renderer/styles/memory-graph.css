@@ -36,6 +36,13 @@
   width: 100%;
   height: 100%;
   display: block;
+  /* tabindex=0 后为 canvas 添加键盘聚焦轮廓，提示键盘用户当前焦点位置 */
+  outline: none;
+}
+
+#memory-graph-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* ─── 图例（Phase 4：视觉统一） ───────────────────────────────── */
@@ -190,12 +197,18 @@
 }
 
 .graph-context-menu-item {
+  /* button 元素需重置原生默认样式 */
   display: flex;
   align-items: center;
   gap: var(--gap-compact);
+  width: 100%;
   padding: var(--input-padding-md);
   font-size: var(--font-sm);
+  font-family: inherit;
   color: var(--text);
+  background: none;
+  border: none;
+  text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast);
   user-select: none;

@@ -420,6 +420,13 @@
   animation: chat-fade-in var(--transition-base) ease-out;
 }
 
+/* 消息元素键盘聚焦轮廓（tabindex=0 后提示焦点位置） */
+.message:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 /* 统一消息淡入动画（system消息使用） */
 @keyframes chat-fade-in {
   from { opacity: 0; transform: translateY(4px); }
@@ -794,8 +801,11 @@
   gap: var(--space-1);
   padding: 2px var(--space-2);
   background: transparent;
+  border: none;
   border-radius: var(--radius-sm);
+  font-family: inherit;
   font-size: var(--font-2xs);
+  text-align: left;
   color: var(--text-2);
   cursor: pointer;
   transition: background var(--transition-fast);
@@ -1076,7 +1086,9 @@
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   cursor: pointer;
+  font-family: inherit;
   font-size: var(--font-xs);
+  text-align: left;
   color: var(--text-2);
   max-width: 120px;
   transition: background var(--transition-fast), border-color var(--transition-fast);
@@ -1160,7 +1172,9 @@
   background: var(--window-bg-2);
   border: 1px solid var(--surface2);
   cursor: pointer;
+  font-family: inherit;
   font-size: var(--font-xs);
+  text-align: left;
   color: var(--text-2);
   max-width: 130px;
   transition: background var(--transition-fast), border-color var(--transition-fast);
@@ -1583,6 +1597,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-1-5);
+  width: 100%;
+  /* button 元素重置原生默认样式 */
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  color: inherit;
   /* 可点击折叠/展开 */
   cursor: pointer;
   user-select: none;

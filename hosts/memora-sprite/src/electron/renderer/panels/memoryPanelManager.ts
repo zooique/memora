@@ -19,8 +19,7 @@ import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, forma
 import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 import type { MemoryListItem, MemoryDetail, ConfirmDialogOptions, ToastType, RelationPath, RelationNeighbor } from '../types.js';
-import { RelationGraphRenderer } from '../components/relationGraph.js';
-import type { RelationGraphData } from '../components/relationGraph.js';
+import type { RelationGraphRenderer, RelationGraphData } from '../components/relationGraph.js';
 // 健康度仪表盘数据载荷（renderHealthDashboard 委托方法签名需要）
 import type { HealthDashboardPayload } from '../../preload.js';
 // 记忆面板所属子渲染器（DOM 在 panel-memories 内，归 MemoryPanelManager 管理）
@@ -176,6 +175,8 @@ export class MemoryPanelManager {
   private viewSwitchToken = 0;
   /** 图谱右键菜单的 document click 关闭处理器（hideGraphContextMenu 时移除，避免泄漏） */
   private graphContextMenuCloseHandler: ((e: MouseEvent) => void) | null = null;
+  /** 图谱右键菜单的键盘导航处理器（Arrow/Escape，hideGraphContextMenu 时移除） */
+  private graphContextMenuKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(
     private host: MemoryPanelHost,
@@ -1504,6 +1505,8 @@ export class MemoryPanelManager {
       setSelectedNodeId: (id) => { this.cachedSelectedNodeId = id; },
       getGraphContextMenuCloseHandler: () => this.graphContextMenuCloseHandler,
       setGraphContextMenuCloseHandler: (handler) => { this.graphContextMenuCloseHandler = handler; },
+      getGraphContextMenuKeyHandler: () => this.graphContextMenuKeyHandler,
+      setGraphContextMenuKeyHandler: (handler) => { this.graphContextMenuKeyHandler = handler; },
       getMemoryClickCallback: () => this.memoryClickCallback,
       getGraphContextMenuCallback: () => this.graphContextMenuCallback,
       getRelationEditCallback: () => this.relationEditCallback,

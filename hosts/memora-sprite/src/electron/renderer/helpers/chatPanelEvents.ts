@@ -62,13 +62,63 @@ export interface ChatPanelEventContext {
 }
 
 /**
+ * 显示消息右键菜单（鼠标右键 + 键盘 Shift+F10 共用）
+ *
+ * 提取为独立函数，供 contextmenu 事件和 keydown（Shift+F10/Menu 键）复用。
+ * 根据消息角色设置菜单项可用性，并定位到指定坐标（超出视口时自动调整）。
+ *
+ * @param messageEl 被操作的消息元素（.message.user 或 .message.assistant）
+ * @param x 菜单显示位置（屏幕 X）
+ * @param y 菜单显示位置（屏幕 Y）
+ */
+function showMessageContextMenu(messageEl: HTMLElement, x: number, y: number): void {
+  const menu = document.getElementById('message-context-menu');
+  if (!menu) return;
+
+  const messageRole = messageEl.classList.contains('user') ? 'user' : 'assistant';
+  const bubble = messageEl.querySelector('.message-bubble');
+  const content = bubble?.textContent ?? '';
+  const messageId = messageEl.dataset.messageId ?? '';
+
+  menu.dataset.role = messageRole;
+  menu.dataset.content = content;
+  menu.dataset.messageId = messageId;
+
+  const regenerateBtn = menu.querySelector<HTMLElement>('[data-action="regenerate"]');
+  const forgetBtn = menu.querySelector<HTMLElement>('[data-action="forget"]');
+
+  if (regenerateBtn) {
+    regenerateBtn.setAttribute('aria-disabled', messageRole === 'user' ? 'true' : 'false');
+  }
+  if (forgetBtn) {
+    forgetBtn.setAttribute('aria-disabled', messageId ? 'false' : 'true');
+  }
+
+  const rect = menu.getBoundingClientRect();
+  let menuX = x;
+  let menuY = y;
+
+  if (menuX + rect.width > window.innerWidth) {
+    menuX = window.innerWidth - rect.width - 8;
+  }
+  if (menuY + rect.height > window.innerHeight) {
+    menuY = window.innerHeight - rect.height - 8;
+  }
+
+  menu.style.left = `${menuX}px`;
+  menu.style.top = `${menuY}px`;
+  menu.classList.remove('hidden');
+}
+
+/**
  * 初始化聊天面板事件监听器
  *
  * 注册 4 类事件委托：
  * 1. messagesEl click：13 个 data-action 分发
  * 2. messagesEl contextmenu：右键菜单定位 + 状态设置
  * 3. document click：关闭右键菜单 + 菜单项分发（copy/regenerate/forget）
- * 4. messagesEl keydown：键盘可访问性（Enter/Space 触发 recall/toggle-collapse）
+ * 4. messagesEl keydown：键盘可访问性（Enter/Space 触发 recall/toggle-collapse，
+ *    Shift+F10/Menu 键触发右键菜单）
  *
  * @param ctx 事件初始化上下文
  */
@@ -223,43 +273,7 @@ export function initChatPanelEvents(ctx: ChatPanelEventContext): void {
     }
 
     e.preventDefault();
-
-    const menu = document.getElementById('message-context-menu');
-    if (!menu) return;
-
-    const messageRole = messageEl.classList.contains('user') ? 'user' : 'assistant';
-    const bubble = messageEl.querySelector('.message-bubble');
-    const content = bubble?.textContent ?? '';
-    const messageId = messageEl.dataset.messageId ?? '';
-
-    menu.dataset.role = messageRole;
-    menu.dataset.content = content;
-    menu.dataset.messageId = messageId;
-
-    const regenerateBtn = menu.querySelector<HTMLElement>('[data-action="regenerate"]');
-    const forgetBtn = menu.querySelector<HTMLElement>('[data-action="forget"]');
-
-    if (regenerateBtn) {
-      regenerateBtn.setAttribute('aria-disabled', messageRole === 'user' ? 'true' : 'false');
-    }
-    if (forgetBtn) {
-      forgetBtn.setAttribute('aria-disabled', messageId ? 'false' : 'true');
-    }
-
-    const rect = menu.getBoundingClientRect();
-    let x = me.clientX;
-    let y = me.clientY;
-
-    if (x + rect.width > window.innerWidth) {
-      x = window.innerWidth - rect.width - 8;
-    }
-    if (y + rect.height > window.innerHeight) {
-      y = window.innerHeight - rect.height - 8;
-    }
-
-    menu.style.left = `${x}px`;
-    menu.style.top = `${y}px`;
-    menu.classList.remove('hidden');
+    showMessageContextMenu(messageEl, me.clientX, me.clientY);
   });
 
   // ─── 3. document click：关闭右键菜单 + 菜单项分发 ─────────
@@ -315,41 +329,24 @@ export function initChatPanelEvents(ctx: ChatPanelEventContext): void {
     }
   });
 
-  // ─── 4. keydown 委托：键盘可访问性（Enter/Space 触发 recall/toggle-collapse） ───
+  // ─── 4. keydown 委托：键盘可访问性（Shift+F10 触发右键菜单） ───
   events.addEventListener(messagesEl, 'keydown', (e: Event) => {
     const ke = e as KeyboardEvent;
-    // 仅处理 Enter 和 Space 键
-    if (ke.key !== 'Enter' && ke.key !== ' ') return;
     const target = ke.target as HTMLElement;
-    // 召回记忆项
-    const recallItem = target.closest<HTMLElement>('[data-action="recall"]');
-    if (recallItem) {
-      ke.preventDefault(); // 防止 Space 滚动页面
-      const memoryId = recallItem.dataset.memoryId ?? '';
-      if (memoryId) {
-        ctx.getMemoryRecallClickCallback()?.(memoryId);
+
+    // Shift+F10 或 ContextMenu 键触发右键菜单（键盘用户等价操作）
+    if ((ke.shiftKey && ke.key === 'F10') || ke.key === 'ContextMenu') {
+      const messageEl = target.closest<HTMLElement>('.message');
+      if (messageEl && !messageEl.classList.contains('system')) {
+        ke.preventDefault();
+        // 键盘触发时无鼠标坐标，用消息元素的几何中心定位菜单
+        const rect = messageEl.getBoundingClientRect();
+        showMessageContextMenu(messageEl, rect.left, rect.bottom);
       }
       return;
     }
-    // 召回记忆折叠按钮
-    const toggleRecall = target.closest<HTMLElement>('[data-action="toggle-recall"]');
-    if (toggleRecall) {
-      ke.preventDefault(); // 防止 Space 滚动页面
-      const container = toggleRecall.closest<HTMLElement>('.memory-recall-container');
-      if (container) {
-        container.classList.toggle('expanded');
-        const isExpanded = container.classList.contains('expanded');
-        toggleRecall.setAttribute('aria-expanded', isExpanded.toString());
-      }
-      return;
-    }
-    // 工具调用折叠头
-    const collapseHeader = target.closest<HTMLElement>('[data-action="toggle-collapse"]');
-    if (collapseHeader) {
-      ke.preventDefault(); // 防止 Space 滚动页面
-      const card = collapseHeader.closest<HTMLElement>('.tool-call-card');
-      card?.classList.toggle('collapsed');
-      return;
-    }
+
+    // recall / toggle-recall / toggle-collapse 均已使用原生 <button>，
+    // Enter/Space 由原生 click 自动触发，无需手动处理（click 委托统一分发）
   });
 }

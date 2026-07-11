@@ -205,6 +205,10 @@
   border-radius: var(--radius-md);
   background: var(--window-bg);
   border: 1px solid var(--surface2);
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+  color: inherit;
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 

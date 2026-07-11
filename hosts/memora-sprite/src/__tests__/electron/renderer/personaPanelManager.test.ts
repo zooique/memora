@@ -1,11 +1,11 @@
-﻿/**
+/**
  * 角色选择器面板管理器测试
  *
  * @vitest-environment jsdom
  *
  * 覆盖范围：
  * - 构造与 cleanup：事件监听器生命周期委托 EventTracker
- * - initPersonaSelectorListeners：click 切换、键盘导航（Enter/Space/Escape/ArrowDown/ArrowUp）、
+ * - initPersonaSelectorListeners：click 切换、键盘导航（Escape/ArrowDown/ArrowUp；Enter/Space 由原生 button click 接管）、
  *   document click 关闭、事件委托（data-action="switch-persona"）
  * - renderPersonaDropdown：清空容器、active 标记、tabindex/role/aria-selected/data-* 属性、计数更新
  * - updateActivePersona：正常更新 + null 元素防护
@@ -32,9 +32,9 @@ function setupDom(): {
   badge: HTMLElement;
   countEl: HTMLElement;
 } {
-  // selector 需 tabindex 才能在 JSDOM 中 .focus() 生效（document.activeElement 才会指向它）
+  // selector 使用原生 button，Enter/Space 由原生 click 触发
   document.body.innerHTML = `
-    <div id="persona-selector" tabindex="0">当前角色</div>
+    <button id="persona-selector">当前角色</button>
     <div id="persona-dropdown" class="hidden"></div>
     <div id="persona-name">默认</div>
     <div id="persona-mode-badge"></div>
@@ -174,17 +174,20 @@ describe('initPersonaSelectorListeners · click 切换', () => {
 });
 
 describe('initPersonaSelectorListeners · selector 键盘支持', () => {
-  it('Enter 应切换 dropdown', () => {
+  // selector 为原生 <button>，Enter/Space 由原生 click 自动触发，
+  // keydown 处理器仅保留 Escape 关闭逻辑。
+  it('Enter 不应由 keydown 处理（原生 button click 接管）', () => {
     const { selector, dropdown } = createManager();
     dispatchKeydown(selector, 'Enter');
-    expect(dropdown.classList.contains('hidden')).toBe(false);
+    // keydown 不再切换 dropdown（由原生 click 触发，click 行为在上方 click 测试中覆盖）
+    expect(dropdown.classList.contains('hidden')).toBe(true);
   });
 
-  it('Space 应 preventDefault + 切换 dropdown', () => {
+  it('Space 不应由 keydown 处理（原生 button click 接管）', () => {
     const { selector, dropdown } = createManager();
     const event = dispatchKeydown(selector, ' ');
-    expect(event.defaultPrevented).toBe(true);
-    expect(dropdown.classList.contains('hidden')).toBe(false);
+    expect(event.defaultPrevented).toBe(false);
+    expect(dropdown.classList.contains('hidden')).toBe(true);
   });
 
   it('Escape 应隐藏 dropdown + focus selector', () => {

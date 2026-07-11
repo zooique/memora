@@ -343,7 +343,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
     // 角色选择器面板管理器
     this.personaPanel = new PersonaPanelManager(
-      getOptionalElement('persona-selector', 'div'),
+      getOptionalElement('persona-selector', 'button'),
       getOptionalElement('persona-dropdown', 'div'),
       getOptionalElement('persona-name', 'span'),
       new EventTracker(),

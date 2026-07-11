@@ -66,6 +66,10 @@ export interface MemoryGraphPanelContext {
   getGraphContextMenuCloseHandler(): ((e: MouseEvent) => void) | null;
   /** 设置右键菜单关闭处理器 */
   setGraphContextMenuCloseHandler(handler: ((e: MouseEvent) => void) | null): void;
+  /** 获取右键菜单键盘导航处理器（Arrow/Escape 键盘导航） */
+  getGraphContextMenuKeyHandler(): ((e: KeyboardEvent) => void) | null;
+  /** 设置右键菜单键盘导航处理器 */
+  setGraphContextMenuKeyHandler(handler: ((e: KeyboardEvent) => void) | null): void;
 
   // ─── 回调读取器（onXxx 注册晚于 init，用 getter 读取最新值） ───
   /** 获取节点点击回调（点击图谱节点 → 显示记忆详情） */
@@ -187,6 +191,9 @@ export function clearGraphHighlights(ctx: MemoryGraphPanelContext): void {
  *
  * 菜单选项：聚焦子图 / 查看详情 / 创建连线 / 复制 ID
  *
+ * 菜单使用 WAI-ARIA menu 模式（role="menu" + button[role="menuitem"]），
+ * 打开时自动聚焦第一个菜单项，支持 Arrow Up/Down 键盘导航 + Escape 关闭。
+ *
  * @param ctx 图谱视图上下文
  * @param nodeId 被右键的节点 ID
  * @param x 菜单显示位置（屏幕 X）
@@ -221,6 +228,33 @@ export function showGraphContextMenu(ctx: MemoryGraphPanelContext, nodeId: strin
   menu.style.top = `${y}px`;
   menu.classList.remove('hidden');
 
+  // 打开菜单后聚焦第一个 menuitem，使键盘用户可立即操作
+  focusItem.focus();
+
+  // 键盘导航处理器（Arrow Up/Down 移动焦点 + Escape 关闭）
+  const menuItems = [focusItem, detailItem, connectItem, copyItem];
+  const keyHandler = (e: KeyboardEvent) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      const currentIdx = menuItems.indexOf(document.activeElement as HTMLElement);
+      const nextIdx = (currentIdx + 1) % menuItems.length;
+      menuItems[nextIdx]?.focus();
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+      e.preventDefault();
+      const currentIdx = menuItems.indexOf(document.activeElement as HTMLElement);
+      const prevIdx = (currentIdx - 1 + menuItems.length) % menuItems.length;
+      menuItems[prevIdx]?.focus();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      hideGraphContextMenu(ctx);
+      // 关闭后焦点回到 Canvas，键盘用户可继续浏览图谱
+      const canvas = document.getElementById('memory-graph-canvas');
+      if (canvas instanceof HTMLCanvasElement) canvas.focus();
+    }
+  };
+  ctx.setGraphContextMenuKeyHandler(keyHandler);
+  menu.addEventListener('keydown', keyHandler);
+
   // 点击菜单外部关闭——closeHandler 存储为 context 字段，hideGraphContextMenu 时移除
   // 避免：用户打开菜单后不点菜单项而点外部，原 once 监听器残留累积
   const closeHandler = (e: MouseEvent) => {
@@ -240,7 +274,7 @@ export function showGraphContextMenu(ctx: MemoryGraphPanelContext, nodeId: strin
 }
 
 /**
- * 隐藏图谱上下文菜单，并清理 document 上的 closeHandler 监听器
+ * 隐藏图谱上下文菜单，并清理 document + menu 上的监听器
  *
  * @param ctx 图谱视图上下文
  */
@@ -248,6 +282,12 @@ export function hideGraphContextMenu(ctx: MemoryGraphPanelContext): void {
   const menu = document.getElementById('graph-context-menu');
   if (menu) {
     menu.classList.add('hidden');
+    // 移除键盘导航监听器
+    const keyHandler = ctx.getGraphContextMenuKeyHandler();
+    if (keyHandler) {
+      menu.removeEventListener('keydown', keyHandler);
+      ctx.setGraphContextMenuKeyHandler(null);
+    }
   }
   // 移除 closeHandler，防止内存泄漏（用户切换面板/关闭菜单时都需要清理）
   const closeHandler = ctx.getGraphContextMenuCloseHandler();

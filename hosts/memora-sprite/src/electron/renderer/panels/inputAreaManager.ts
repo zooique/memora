@@ -361,13 +361,10 @@ export class InputAreaManager {
       }
     });
 
-    // 键盘支持：Enter/Space 展开下拉，Escape 关闭
+    // 键盘支持：Escape 关闭下拉（Enter/Space 由原生 button click 自动触发，无需手动处理）
     this.events.addEventListener(this.providerSelector, 'keydown', (e) => {
       const ke = e as KeyboardEvent;
-      if (ke.key === 'Enter' || ke.key === ' ') {
-        ke.preventDefault();
-        this.providerDropdown!.classList.toggle('hidden');
-      } else if (ke.key === 'Escape') {
+      if (ke.key === 'Escape') {
         this.providerDropdown?.classList.add('hidden');
         this.providerSelector!.focus();
       }
