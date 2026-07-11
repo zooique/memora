@@ -4,11 +4,11 @@
  * 从 Agent 拆分出来，负责只读记忆查询操作。
  *
  * 设计原则：
- *   - 纯只读——不动任何组件状态（写操作已迁移至 MemoryMutator，详见 P1-2 拆分）
+ *   - 纯只读——不动任何组件状态（写操作已迁移至 MemoryMutator）
  *   - 同步返回——避免数据不一致（不调 LLM、不调 SQLite 写入）
  *   - 轻量——每层只返回前 N 条 + 总数
  *
- * 与 MemoryMutator 的分工（P1-2 拆分，1.0 接口稳定化）：
+ * 与 MemoryMutator 的分工（1.0 接口稳定化）：
  *   - MemoryInspector（本类）：snapshot / search / searchHybrid / stats /
  *     getRelations / getAllRelations / getRelationPath / getRelationNeighbors /
  *     getById / getBySource / list / listDeleted / getDeletedById /
@@ -180,7 +180,7 @@ export class MemoryInspector {
   }
 
   // ─── 只读查询（IMemoryStorage 透传） ───────────────────
-  // 写操作（upsert/delete/restore/purge/purgeExpired）已迁移至 MemoryMutator（P1-2 拆分）。
+  // 写操作（upsert/delete/restore/purge/purgeExpired）已迁移至 MemoryMutator。
   // 本节仅保留查询方法：getById / getBySource / list / listDeleted / getDeletedById。
 
   /**
@@ -454,7 +454,7 @@ export class MemoryInspector {
     return this.relationStore.getAllRelations();
   }
 
-  // 关系写操作（addRelation / removeRelation）已迁移至 MemoryMutator（P1-2 拆分）。
+  // 关系写操作（addRelation / removeRelation）已迁移至 MemoryMutator。
   // 本类仅保留关系查询：getRelations / getAllRelations / getRelationPath / getRelationNeighbors。
 
   /**

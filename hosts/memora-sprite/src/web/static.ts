@@ -37,7 +37,7 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /**
- * 通用安全响应头常量（SEC-WEB-04）
+ * 通用安全响应头常量
  *
  * 与 routes/types.ts 中的 SECURITY_HEADERS 内容保持一致；
  * 此处单独定义是为了让 web 入口层（static.ts / server.ts）不反向依赖 routes 子层，
@@ -61,7 +61,7 @@ export async function serveStaticFile(
 ): Promise<void> {
   // 文件不存在检查
   if (!existsSync(filePath)) {
-    // SEC-WEB-04：注入安全响应头
+    // 注入安全响应头
     res.writeHead(404, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
     res.end('404 Not Found');
     return;
@@ -73,7 +73,7 @@ export async function serveStaticFile(
     const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
     const contentType = MIME_TYPES[ext] ?? 'application/octet-stream';
     // 开发模式：禁用浏览器缓存，确保每次修改代码后刷新即可看到最新版本
-    // SEC-WEB-04：注入安全响应头
+    // 注入安全响应头
     res.writeHead(200, {
       ...SECURITY_HEADERS,
       'Content-Type': contentType,
@@ -81,10 +81,10 @@ export async function serveStaticFile(
     });
     res.end(content);
   } catch (error) {
-    // SEC-WEB-01：仅返回通用 500 文案，避免将内部异常细节（如文件系统路径/权限错误）
+    // 仅返回通用 500 文案，避免将内部异常细节（如文件系统路径/权限错误）
     // 回传给客户端造成信息泄露；原始错误仅记录到服务端日志便于排查
     logger.error({ err: error instanceof Error ? error.message : String(error) }, '[Web Static] 静态文件读取失败');
-    // SEC-WEB-04：注入安全响应头
+    // 注入安全响应头
     res.writeHead(500, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
     res.end('500 Internal Server Error');
   }

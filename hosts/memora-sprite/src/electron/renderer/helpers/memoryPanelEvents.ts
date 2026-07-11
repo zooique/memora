@@ -8,7 +8,7 @@
  *   分析面板关闭、视图切换（列表/图谱/时间线）、智能清理对话框。
  *
  * 提取原因：
- *   memoryPanelManager.ts 超标（AUTO-HEALTH-05），initMemoryPanelListeners 单方法 375 行
+ *   memoryPanelManager.ts 超标，initMemoryPanelListeners 单方法 375 行
  *   是全场最大单方法。事件监听器注册是相对独立的子功能，提取为接受 context 的纯函数
  *   模块，既降低体量又便于独立测试。
  *

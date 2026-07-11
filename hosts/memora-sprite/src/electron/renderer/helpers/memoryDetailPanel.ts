@@ -8,7 +8,7 @@
  *   - 直接邻居视图渲染（Phase 5.2：both 方向 1 跳全景）
  *
  * 提取原因：
- *   memoryPanelManager.ts 超标（F-LINE-2，1968 行，超 1800 触发线）。
+ *   memoryPanelManager.ts 超标（1968 行，超 1800 触发线）。
  *   记忆详情相关方法（showMemoryDetail + showMemoryLineage + showMemoryNeighbors）
  *   形成完整子系统，相对独立，适合提取为接受 context 的纯函数模块。
  *
@@ -19,7 +19,7 @@
  *   - type-only 导入 MemoryPanelHost 避免运行时循环依赖
  *
  * 先例：
- *   参照 memoryPanelEvents.ts 的提取模式（AUTO-HEALTH-05），本次为 F-LINE-2 拆分
+ *   参照 memoryPanelEvents.ts 的提取模式，本次为记忆详情拆分
  */
 
 import { getOptionalElement, clearElement, formatTimeAgo } from './domHelpers.js';

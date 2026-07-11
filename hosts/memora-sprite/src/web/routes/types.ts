@@ -15,7 +15,7 @@ import { logger } from 'memora';
 import { MemoraError, ErrorCode } from '../../sprite/errors.js';
 import type { HostContext } from '../../shared/hostContext.js';
 
-// ─── 安全响应头（SEC-WEB-04）──────────────────────────────
+// ─── 安全响应头 ──────────────────────────────
 
 /**
  * 通用安全响应头常量
@@ -100,7 +100,7 @@ export async function parseJsonBody<T = unknown>(req: IncomingMessage): Promise<
  */
 export function sendJson(res: ServerResponse, status: number, data: unknown): void {
   const body = JSON.stringify(data);
-  // SEC-WEB-04：统一注入安全响应头，覆盖所有 routes 层 JSON 响应
+  // 统一注入安全响应头，覆盖所有 routes 层 JSON 响应
   res.writeHead(status, {
     ...SECURITY_HEADERS,
     'Content-Type': 'application/json; charset=utf-8',

@@ -74,7 +74,7 @@ export function registerMemoryHandlers(ctx: IpcContext): void {
       if (!isValidId(id)) {
         return { restored: false };
       }
-      // P3-2：返回 id 供渲染层定位恢复的记忆
+      // 返回 id 供渲染层定位恢复的记忆
       return { restored: ctx.sprite.restoreMemory(id), id };
     }),
   );

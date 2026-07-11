@@ -1,7 +1,7 @@
 /**
  * 单元测试：MemoryInspector 记忆查看器（只读查询）
  *
- * P1-2 拆分后 MemoryInspector 仅负责只读查询，写操作已迁移至 MemoryMutator
+ * MemoryInspector 仅负责只读查询，写操作已迁移至 MemoryMutator
  * （见 memoryMutator.test.ts）。本测试覆盖 MemoryInspector 全部公开方法：
  *   - constructor + setVectorStore：依赖注入
  *   - 只读查询：getById / getDeletedById / listDeleted / getBySource / list
@@ -141,7 +141,7 @@ describe('MemoryInspector', () => {
 
   // ════════════════════════════════════════════════════════
   // 2. 只读查询（6 测试）
-  // 写操作已迁移至 MemoryMutator（P1-2 拆分），本组通过 storage 直接写入测试数据
+  // 写操作已迁移至 MemoryMutator，本组通过 storage 直接写入测试数据
   // ════════════════════════════════════════════════════════
 
   describe('只读查询', () => {

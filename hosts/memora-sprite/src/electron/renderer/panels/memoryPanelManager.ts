@@ -26,10 +26,10 @@ import type { HealthDashboardPayload } from '../../preload.js';
 import { PartnerInsightsRenderer } from './partnerInsightsRenderer.js';
 import { HealthDashboardRenderer } from './healthDashboardRenderer.js';
 import { InsightsRenderer } from './insightsRenderer.js';
-// AUTO-HEALTH-05：事件监听器注册逻辑提取到独立 helper（降低本文件体量）
+// 事件监听器注册逻辑提取到独立 helper（降低本文件体量）
 import { initMemoryPanelListeners as initMemoryPanelListenersImpl } from '../helpers/memoryPanelEvents.js';
 import type { MemoryPanelEventContext } from '../helpers/memoryPanelEvents.js';
-// F-LINE-2：图谱视图子系统（初始化/空状态/缓存状态/上下文菜单/关系弹窗）提取到独立 helper
+// 图谱视图子系统（初始化/空状态/缓存状态/上下文菜单/关系弹窗）提取到独立 helper
 import {
   initGraphRenderer as initGraphRendererHelper,
   updateGraphEmptyState as updateGraphEmptyStateHelper,
@@ -37,7 +37,7 @@ import {
   clearGraphHighlights as clearGraphHighlightsHelper,
 } from '../helpers/memoryGraphPanel.js';
 import type { MemoryGraphPanelContext } from '../helpers/memoryGraphPanel.js';
-// F-LINE-2：记忆详情子系统（详情/脉络/邻居/按钮）提取到独立 helper
+// 记忆详情子系统（详情/脉络/邻居/按钮）提取到独立 helper
 import {
   showMemoryDetail as showMemoryDetailHelper,
   resetLineage as resetLineageHelper,
@@ -216,7 +216,7 @@ export class MemoryPanelManager {
 
   /** 初始化记忆面板事件监听 */
   initMemoryPanelListeners(): void {
-    // AUTO-HEALTH-05：事件监听器注册逻辑提取到 helpers/memoryPanelEvents.ts
+    // 事件监听器注册逻辑提取到 helpers/memoryPanelEvents.ts
     // 此处构建上下文并委托，降低本文件体量（原 375 行单方法 → ~50 行薄委托层）
     const ctx: MemoryPanelEventContext = {
       // ─── DOM 元素（构造函数注入的可选元素） ───
@@ -1483,7 +1483,7 @@ export class MemoryPanelManager {
     this.partnerInsights.onMemoryClick(cb);
   }
 
-  // ─── 图谱视图子系统上下文构建（F-LINE-2 拆分） ─────────────
+  // ─── 图谱视图子系统上下文构建 ─────────────
 
   /**
    * 构建图谱视图子系统的依赖注入容器

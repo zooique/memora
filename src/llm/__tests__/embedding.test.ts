@@ -260,9 +260,9 @@ describe('EmbeddingProvider · batchEmbed 边界', () => {
   });
 });
 
-// ─── 韧性选项（P1-8：signal + timeoutMs） ─────────────────
+// ─── 韧性选项（signal + timeoutMs） ─────────────────
 
-describe('EmbeddingProvider · 韧性选项（P1-8）', () => {
+describe('EmbeddingProvider · 韧性选项', () => {
   let provider: EmbeddingProvider;
 
   beforeEach(() => {

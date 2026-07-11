@@ -190,7 +190,7 @@ async function handleRequest(
 
   // Web 版 preload 脚本端点（转译后的浏览器 JS）
   if (url === '/web/preload-web.mjs') {
-    // SEC-WEB-04：注入安全响应头
+    // 注入安全响应头
     res.writeHead(200, {
       ...SECURITY_HEADERS,
       'Content-Type': 'application/javascript; charset=utf-8',
@@ -237,7 +237,7 @@ async function handleRequest(
       const html = await readFile(normalizedFull, 'utf-8');
       const adaptedHtml = adaptHtmlForWeb(html);
       // 开发模式：禁用 HTML 缓存，确保每次刷新加载最新版本
-      // SEC-WEB-04：注入安全响应头
+      // 注入安全响应头
       res.writeHead(200, {
         ...SECURITY_HEADERS,
         'Content-Type': 'text/html; charset=utf-8',
@@ -245,7 +245,7 @@ async function handleRequest(
       });
       res.end(adaptedHtml);
     } catch {
-      // SEC-WEB-04：注入安全响应头
+      // 注入安全响应头
       res.writeHead(404, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain' });
       res.end('404 Not Found');
     }
@@ -360,7 +360,7 @@ async function startWebServer(): Promise<void> {
     } catch (error) {
       logger.error(`[Web] 请求处理异常: ${toError(error).message}`);
       if (!res.headersSent) {
-        // SEC-WEB-04：注入安全响应头
+        // 注入安全响应头
         res.writeHead(500, { ...SECURITY_HEADERS, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Internal Server Error' }));
       }

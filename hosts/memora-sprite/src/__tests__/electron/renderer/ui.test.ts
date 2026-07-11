@@ -299,7 +299,7 @@ const TEST_HTML = `<!DOCTYPE html>
       </div>
     </div>
   </div>
-  <!-- KBD-CONVERGE-P1：shortcuts-modal 用于测试 Ctrl+/ 快捷键和内容同步 -->
+  <!-- shortcuts-modal 用于测试 Ctrl+/ 快捷键和内容同步 -->
   <div id="shortcuts-modal" class="modal hidden">
     <div class="modal-content modal-content-sm">
       <div class="modal-header">
@@ -1442,13 +1442,13 @@ describe('prefillChatInput', () => {
   });
 });
 
-// ─── KBD-CONVERGE-P1：Ctrl+/ 快捷键与 shortcuts-modal ─────
+// ─── Ctrl+/ 快捷键与 shortcuts-modal ─────
 
-describe('KBD-CONVERGE-P1：Ctrl+/ 快捷键', () => {
+describe('Ctrl+/ 快捷键', () => {
   /**
    * 辅助函数：在 document 上派发 Ctrl+/ 键盘事件
-   * KBD-CONVERGE-P1 将 shortcuts-modal 路径从 classList.toggle 改为 showModal/hideModal，
-   * 这些测试验证统一的弹窗路径和焦点管理（UI-AR-02）。
+   * shortcuts-modal 路径统一为 showModal/hideModal，
+   * 这些测试验证统一的弹窗路径和焦点管理。
    */
   function dispatchCtrlSlash() {
     document.dispatchEvent(
@@ -1510,7 +1510,7 @@ describe('KBD-CONVERGE-P1：Ctrl+/ 快捷键', () => {
     expect(modal.classList.contains('hidden')).toBe(false);
   });
 
-  it('打开 shortcuts-modal 时焦点移到弹窗内首个可交互元素（UI-AR-02）', () => {
+  it('打开 shortcuts-modal 时焦点移到弹窗内首个可交互元素', () => {
     // 使用 #input（始终可聚焦）替代 #btn-send（空输入时 disabled 不可聚焦）
     const triggerEl = document.getElementById('input') as HTMLTextAreaElement;
     triggerEl.focus();
@@ -1522,7 +1522,7 @@ describe('KBD-CONVERGE-P1：Ctrl+/ 快捷键', () => {
     expect(document.activeElement).toBe(closeBtn);
   });
 
-  it('关闭 shortcuts-modal 时焦点恢复到触发元素（UI-AR-02）', () => {
+  it('关闭 shortcuts-modal 时焦点恢复到触发元素', () => {
     // 使用 #input（始终可聚焦）替代 #btn-send（空输入时 disabled 不可聚焦）
     const triggerEl = document.getElementById('input') as HTMLTextAreaElement;
     triggerEl.focus();
@@ -1535,11 +1535,11 @@ describe('KBD-CONVERGE-P1：Ctrl+/ 快捷键', () => {
   });
 });
 
-describe('KBD-CONVERGE-P1：shortcuts-modal 内容同步', () => {
+describe('shortcuts-modal 内容同步', () => {
   /**
    * 验证 shortcuts-modal 表格内容与实际实现的快捷键保持同步。
-   * KBD-CONVERGE-P1 新增了 Shift+Enter、Ctrl+Enter、方向键条目，
-   * 防止文档与实现脱节（这是长线任务的收敛目标）。
+   * 包含 Shift+Enter、Ctrl+Enter、方向键条目，
+   * 防止文档与实现脱节。
    */
   function getShortcutsText(): string {
     const table = document.querySelector('#shortcuts-modal .shortcuts-table');
@@ -1561,15 +1561,15 @@ describe('KBD-CONVERGE-P1：shortcuts-modal 内容同步', () => {
     expect(getShortcutsText()).toContain('Ctrl+/');
   });
 
-  it('包含 Shift+Enter 换行条目（KBD-CONVERGE-P1 新增）', () => {
+  it('包含 Shift+Enter 换行条目', () => {
     expect(getShortcutsText()).toContain('Shift+Enter');
   });
 
-  it('包含 Ctrl+Enter 提交条目（KBD-CONVERGE-P1 新增，用于添加记忆弹窗）', () => {
+  it('包含 Ctrl+Enter 提交条目（用于添加记忆弹窗）', () => {
     expect(getShortcutsText()).toContain('Ctrl+Enter');
   });
 
-  it('包含 ↑/↓ 方向键导航角色下拉条目（KBD-CONVERGE-P1 新增）', () => {
+  it('包含 ↑/↓ 方向键导航角色下拉条目', () => {
     const text = getShortcutsText();
     expect(text).toContain('↑');
     expect(text).toContain('↓');

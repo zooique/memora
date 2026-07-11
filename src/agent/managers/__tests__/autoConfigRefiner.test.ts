@@ -428,7 +428,7 @@ describe('analyzeWithLlm 路径', () => {
     expect(names).toEqual(['建议1', '建议2', '建议3']);
   });
 
-  it('onConfigSuggestion 回调失败不中断后续（FD-25）', async () => {
+  it('onConfigSuggestion 回调失败不中断后续', async () => {
     const callback = vi.fn()
       .mockImplementationOnce(() => { throw new Error('回调失败'); })
       .mockImplementationOnce(() => { /* 正常 */ });

@@ -73,7 +73,7 @@ export class BuiltinToolHandlers {
 
   /**
    * 路径白名单校验（捕获后包装为 toolError）
-   * @param source S-02: 调用链来源标记
+   * @param source 调用链来源标记
    */
   guardPathOrThrow(
     absolutePath: string,

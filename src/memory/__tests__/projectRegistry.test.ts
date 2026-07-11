@@ -1,7 +1,7 @@
 /**
  * ProjectRegistry 单元测试
  *
- * 覆盖 P1-4 从 ProjectManager 拆分出的项目注册表模块：
+ * 覆盖从 ProjectManager 拆分出的项目注册表模块：
  *   - register / unregister / list getter 基本契约
  *   - Windows 路径大小写不敏感去重
  *   - 跨实例持久化（构造函数加载已有注册表文件）

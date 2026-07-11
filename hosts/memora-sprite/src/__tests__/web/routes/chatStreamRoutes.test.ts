@@ -747,7 +747,7 @@ describe('handleChatStreamRoute', () => {
       // 非用户中断应发送 error 事件
       const errorEvent = events.find((e) => e.event === 'error');
       expect(errorEvent).toBeDefined();
-      // SEC-WEB-02：非网络错误返回通用友好消息，不回传原始 error.message
+      // 非网络错误返回通用友好消息，不回传原始 error.message
       expect((errorEvent!.data as { message: string }).message).toBe('对话出错，请重试');
       // 非用户中断不应发送 aborted 事件
       const abortedEvent = events.find((e) => e.event === 'aborted');
@@ -812,7 +812,7 @@ describe('handleChatStreamRoute', () => {
       await handleChatStreamRoute(req, res, ctx);
 
       expect(res.statusCode).toBe(404);
-      // SEC-WEB-05：404 不回显 path，返回固定文案
+      // 404 不回显 path，返回固定文案
       expect(JSON.parse(res.body).error).toBe('404 Not Found');
     });
 
@@ -824,7 +824,7 @@ describe('handleChatStreamRoute', () => {
       await handleChatStreamRoute(req, res, ctx);
 
       expect(res.statusCode).toBe(404);
-      // SEC-WEB-05：404 不回显 path，返回固定文案
+      // 404 不回显 path，返回固定文案
       expect(JSON.parse(res.body).error).toBe('404 Not Found');
     });
   });

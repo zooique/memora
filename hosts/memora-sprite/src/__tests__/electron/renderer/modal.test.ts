@@ -5,7 +5,7 @@
  *
  * 覆盖范围：
  * - initModalListeners：关闭按钮 data-modal 分发、背景点击关闭、Escape 键关闭最上层
- * - showModal/hideModal：焦点保存与恢复（UI-AR-02 无障碍）
+ * - showModal/hideModal：焦点保存与恢复（无障碍）
  * - showConfirmDialog：默认值/自定义文案/danger 样式/messageNodes 防 XSS/
  *   并发保护（旧弹窗被取消）/Escape 取消/Enter 确认/元素缺失回退/cleanup 中断 Promise
  * - showInputDialog：必填校验/maxLength/Enter 确认/Escape 取消/默认值/并发保护

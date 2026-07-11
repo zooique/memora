@@ -27,7 +27,7 @@ import { configError } from '@/utils/errors.js';
 import { cosineSimilarity } from '@/utils/math.js';
 
 /**
- * Embedding 调用选项（P1-8 韧性补齐）
+ * Embedding 调用选项（韧性补齐）
  *
  * 与 ChatOptions.signal/timeoutMs 同构，支持外部取消 + 超时中断。
  * 宿主在用户取消对话时传入 AbortSignal，或设置 timeoutMs 覆盖默认超时。
@@ -49,7 +49,7 @@ export interface EmbeddingOptions {
  * batchEmbed 返回向量数组，顺序与输入一致。
  * EmbeddingProvider（llm/embedding.ts）满足此接口（结构子类型）。
  *
- * P1-8 韧性补齐：embed/batchEmbed 接受 EmbeddingOptions（signal + timeoutMs），
+ * 韧性补齐：embed/batchEmbed 接受 EmbeddingOptions（signal + timeoutMs），
  * 宿主在用户取消对话时可透传 AbortSignal 中断 embedding 请求。
  */
 export interface EmbeddingService {

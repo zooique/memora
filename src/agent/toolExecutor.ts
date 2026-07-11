@@ -43,7 +43,7 @@ export interface WriteExtensions {
 /**
  * 自定义工具的执行上下文
  *
- * S-01: 提供安全校验方法，让自定义工具可以（且应该）通过安全层校验路径。
+ * 提供安全校验方法，让自定义工具可以（且应该）通过安全层校验路径。
  * 内置工具（read_file/write_file/list_dir）已内置路径校验，
  * 自定义工具如需访问文件系统，应调用 ctx.guardPath() 确保路径在白名单内。
  */
@@ -64,7 +64,7 @@ export interface ToolContext {
  * 需提供此签名的 handler 函数。
  * handler 接收解析后的参数对象和工具上下文，返回字符串结果。
  *
- * S-01: 自定义工具如需访问文件系统，应调用 ctx.guardPath(path) 校验路径。
+ * 自定义工具如需访问文件系统，应调用 ctx.guardPath(path) 校验路径。
  */
 export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => Promise<string>;
 

@@ -10,7 +10,7 @@
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from '@/agent/agent.js';
-// RecalledMemorySummary：recall chunk 载荷类型，宿主渲染召回记忆列表时需要（P1-1 补齐）
+// RecalledMemorySummary：recall chunk 载荷类型，宿主渲染召回记忆列表时需要
 export type { AgentChunk, ThinkingPhase, UIMessages, ArchiveMode, RecalledMemorySummary } from '@/agent/types.js';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 export type {
@@ -23,7 +23,7 @@ export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '
 export type { PersonaMode, Persona } from '@/persona/types.js';
 // 类型从专职模块导出
 export type { MemoryKeywords } from '@/agent/managers/insightExtractor.js';
-// P1-3 拆分：RelationBuilder 从 InsightExtractor 提取，封装 ADR-014 关系构建逻辑
+// RelationBuilder 从 InsightExtractor 提取，封装 ADR-014 关系构建逻辑
 export { RelationBuilder } from '@/agent/managers/relationBuilder.js';
 export type { ConflictInfo } from '@/agent/managers/relationBuilder.js';
 export type {
@@ -39,7 +39,7 @@ export type {
   SourceHealthEntry,
   SourceHealthReport,
 } from '@/agent/managers/memoryInspector.js';
-// 记忆写入器（P1-2 拆分，与 MemoryInspector 严格分工：写操作代理）
+// 记忆写入器（与 MemoryInspector 严格分工：写操作代理）
 export type { MemoryMutator } from '@/agent/managers/memoryMutator.js';
 export type { ConfigSuggestion, ConfigSuggestionHandler } from '@/agent/managers/configManager.js';
 export type { AutoConfigRefinerOptions } from '@/agent/managers/autoConfigRefiner.js';
@@ -78,7 +78,7 @@ export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 // 记忆关系存储侧车：宿主项目可实现 IMemoryRelationStore 接口注入 Agent
 export type { IMemoryRelationStore } from '@/memory/relationStore.js';
 export { InMemoryRelationStore } from '@/memory/inMemoryRelationStore.js';
-// 项目注册表 + 锁文件管理（P1-4 拆分，从 ProjectManager 提取）
+// 项目注册表 + 锁文件管理（从 ProjectManager 提取）
 // 宿主可直接使用 ProjectRegistry/LockManager 管理多项目，或通过 ProjectManager 间接委托
 export { ProjectRegistry } from '@/memory/projectRegistry.js';
 export type { ProjectEntry } from '@/memory/projectRegistry.js';

@@ -1,5 +1,5 @@
 /**
- * QC-R1-02 CLI_CONFIG_KEYS 同步校验脚本
+ * CLI_CONFIG_KEYS 同步校验脚本
  *
  * 校验 src/index.ts 中的 CLI_CONFIG_KEYS 是否为 SpriteConfigKey 的合法子集。
  * 如果 SpriteConfig 新增字段但 CLI_CONFIG_KEYS 未同步（或多出已删除的字段），此脚本会报错。

@@ -171,7 +171,7 @@ describe('assembleComponents', () => {
 
       // 13 个字段全部存在（history/loop/toolExec/personaManager/userProfile/
       // workProjection/skillManager/insightExtractor/configManager/memoryInspector/memoryMutator/
-      // autoConfigRefiner/sessionArchiver）— P1-2 拆分新增 memoryMutator
+      // autoConfigRefiner/sessionArchiver）— 新增 memoryMutator
       const expectedKeys = [
         'history',
         'loop',

@@ -12,9 +12,9 @@
  *   - keydown 委托（键盘可访问性：Enter/Space 触发 recall/toggle-collapse）
  *
  * 提取原因：
- *   chatPanelManager.ts 超阈值 1500 行（F-LINE-1），constructor 293 行（17%）
+ *   chatPanelManager.ts 超阈值 1500 行，constructor 293 行（17%）
  *   内联 4 个事件委托逻辑，属典型的胖构造函数反模式。
- *   复用 HC-24 的 memoryPanelEvents.ts 同构提取模式。
+ *   复用 memoryPanelEvents.ts 的同构提取模式。
  *
  * 设计：
  *   - 纯函数模块，不持有状态，所有依赖通过 ChatPanelEventContext 注入

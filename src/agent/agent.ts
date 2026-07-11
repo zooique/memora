@@ -209,7 +209,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private insightExtractor: InsightExtractor | null = null;
   private configManager: ConfigManager | null = null;
   private memoryInspector: MemoryInspector | null = null;
-  /** 记忆写入器（P1-2 拆分，与 MemoryInspector 严格分工：写操作代理；ES 私有字段避免与 getter 重名递归） */
+  /** 记忆写入器（与 MemoryInspector 严格分工：写操作代理；ES 私有字段避免与 getter 重名递归） */
   #memoryMutator: MemoryMutator | null = null;
   private workProjection: WorkProjectionManager | null = null;
   /** AutoConfigRefiner（模式 3：Agent 智能总结） */
@@ -1406,7 +1406,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 记忆写入器（可能为 null）—— upsert / delete / restore / purge / purgeExpired /
    * addRelation / removeRelation
    *
-   * P1-2 拆分：从 MemoryInspector 拆出写操作代理，与 MemoryInspector 严格分工。
+   * 从 MemoryInspector 拆出写操作代理，与 MemoryInspector 严格分工。
    * 返回 null 时表示 Agent 未初始化或存储层未就绪。
    * 宿主项目常用模式：`const m = agent.memoryMutator; if (!m) return; m.upsert(...)`
    */

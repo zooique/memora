@@ -1,7 +1,7 @@
 /**
  * 关系构建器 — ADR-014 记忆关系构建的专职 Manager
  *
- * 从 InsightExtractor 拆分出来（P1-3），负责：
+ * 从 InsightExtractor 拆分出来，负责：
  *   - 召回关系判断候选记忆（top-5 关键词搜索）
  *   - 构建关系判断 prompt 片段（候选列表 + 关系类型说明）
  *   - 解析 LLM 输出的 relations 字段并写入 IMemoryRelationStore
@@ -12,11 +12,11 @@
  *   - 静默降级——relationStore 未注入时所有方法返回空/no-op（ADR-014 降级优先）
  *   - 薄层代理——关系写入直接透传到 IMemoryRelationStore，仅增加 weight 推断 + targetId 校验
  *
- * 与 InsightExtractor 的分工（P1-3 拆分，1.0 接口稳定化）：
+ * 与 InsightExtractor 的分工（1.0 接口稳定化）：
  *   - InsightExtractor：insight 提取 + 去重 + 写入 + 输入分类
  *   - RelationBuilder：候选召回 + prompt 构建 + 关系写入 + 冲突检测
  *
- * 详见 ADR-014（记忆关系侧车模型）+ 迭代文档 P1-3
+ * 详见 ADR-014（记忆关系侧车模型）
  */
 import type { Memory } from '@/memory/types.js';
 import { RELATION_WEIGHTS } from '@/memory/types.js';
@@ -58,7 +58,7 @@ export interface ConflictInfo {
 /**
  * 关系构建器
  *
- * 封装 ADR-014 记忆关系构建的全部逻辑，从 InsightExtractor 拆分（P1-3）。
+ * 封装 ADR-014 记忆关系构建的全部逻辑，从 InsightExtractor 拆分。
  * relationStore 未注入时所有方法静默降级（返回空/no-op）。
  */
 export class RelationBuilder {

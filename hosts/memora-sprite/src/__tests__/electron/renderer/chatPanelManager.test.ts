@@ -560,9 +560,9 @@ describe('showTruncationNotice', () => {
     const notice = bubble.querySelector('.truncation-notice');
     // 图标 span 含 SVG use 引用
     expect(notice?.querySelector('.truncation-icon use')?.getAttribute('href')).toBe('#icon-warning');
-    // 文本 span 承载文案（P3-3 重构：独立 span，无前导空格）
+    // 文本 span 承载文案（独立 span，无前导空格）
     expect(notice?.querySelector('.truncation-text')?.textContent).toBe('上下文已截断，部分历史已省略');
-    // 关闭按钮存在（P3-3：可关闭）
+    // 关闭按钮存在
     expect(notice?.querySelector('.truncation-close')).not.toBeNull();
     // 应插入到 bubble 顶部（firstChild）
     expect(bubble.firstChild).toBe(notice);

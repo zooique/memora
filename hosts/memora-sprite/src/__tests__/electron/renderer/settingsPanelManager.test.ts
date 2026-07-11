@@ -96,13 +96,13 @@ const SETTINGS_HTML = `
 
     <!-- 状态显示 -->
     <div id="agent-status-indicator"><span class="agent-status-text">检测中...</span></div>
-    <!-- 保存状态指示器（P3-1：初始 idle 隐藏） -->
+    <!-- 保存状态指示器（初始 idle 隐藏） -->
     <div id="save-status-indicator" class="save-status-indicator idle">
       <span class="save-status-icon"></span>
       <span class="save-status-text"></span>
     </div>
 
-    <!-- 技能管理 tab DOM（P3-2：renderSkills 从 dashboardPanelManager 迁入） -->
+    <!-- 技能管理 tab DOM（renderSkills 从 dashboardPanelManager 迁入） -->
     <div id="skills-section" class="skill-section hidden">
       <ul id="skills-list" class="skills-list"></ul>
     </div>

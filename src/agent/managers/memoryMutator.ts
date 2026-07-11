@@ -9,12 +9,12 @@
  *     不增加业务逻辑，仅提供"宿主通过 agent.memoryMutator 访问写操作"的分层入口
  *   - 静默降级——relationStore 未注入时关系写方法静默 no-op（ADR-014 降级优先）
  *
- * 与 MemoryInspector 的分工（P1-2 拆分，1.0 接口稳定化）：
+ * 与 MemoryInspector 的分工（1.0 接口稳定化）：
  *   - agent.memory（MemoryInspector）：snapshot / search / stats / 关系查询 / getById / list 等
  *   - agent.memoryMutator（MemoryMutator）：upsert / delete / restore / purge / purgeExpired /
  *     addRelation / removeRelation
  *
- * 详见 ADR-010（Agent 门面）+ 迭代文档 P1-2
+ * 详见 ADR-010（Agent 门面）
  */
 import type { Memory, MemoryRelation } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';

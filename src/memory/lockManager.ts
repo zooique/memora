@@ -1,7 +1,7 @@
 /**
  * 锁文件管理器 — 项目级并发保护
  *
- * 从 ProjectManager 拆分出来（P1-4），专职管理 .memora/.lock 文件：
+ * 从 ProjectManager 拆分出来，专职管理 .memora/.lock 文件：
  *   - 获取锁（写入 PID + 时间戳 + 主机名）
  *   - 释放锁（删除锁文件）
  *   - 残留锁检测（进程存活判断 + 自动清理）
@@ -17,11 +17,11 @@
  *   - 关闭/切换项目时删除 .lock 文件
  *   - 检测到残留锁时：判断进程是否存活 → 存活则警告 / 已死则清理
  *
- * 与 ProjectManager 的分工（P1-4 拆分，1.0 接口稳定化）：
+ * 与 ProjectManager 的分工（1.0 接口稳定化）：
  *   - LockManager：锁文件获取/释放 + 残留锁检测/清理
  *   - ProjectManager：项目生命周期编排（注册 + 资源加载 + 上下文构建）
  *
- * 详见 ADR-008 · 目录结构按"职责分层" + 迭代文档 P1-4
+ * 详见 ADR-008 · 目录结构按"职责分层"
  */
 import { join } from 'node:path';
 import { hostname } from 'node:os';

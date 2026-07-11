@@ -1,13 +1,13 @@
 /**
  * 项目管理器 — 多项目生命周期编排（瘦身后）
  *
- * 核心职责（P1-4 拆分后聚焦编排）：
+ * 核心职责（聚焦编排）：
  *   - 项目初始化编排（关闭旧项目 → 加锁 → 加载资源 → 构建上下文）
  *   - Agent 级资源管理（memora.db 全局共享，不随项目切换重建）
  *   - 两层记忆加载：项目级（projectPath/.memora/）→ Agent 级（configDir）
  *   - 项目切换（只更新 projectPath + security + 重新加载项目 rules/skills）
  *
- * 已拆分至专职模块（P1-4，1.0 接口稳定化）：
+ * 已拆分至专职模块（1.0 接口稳定化）：
  *   - ProjectRegistry（src/memory/projectRegistry.ts）：注册表读写 + 条目管理
  *   - LockManager（src/memory/lockManager.ts）：锁文件获取/释放 + 残留锁检测
  *
@@ -16,7 +16,7 @@
  *   - 项目切换不重建数据库，只更新安全守卫 + 重新扫描项目规则
  *   - 项目级 .memora/ 仅存放 rules/ 和 skills/（无 memora.db）
  *
- * 详见 ADR-008 · 目录结构按"职责分层" + 迭代文档 P1-4
+ * 详见 ADR-008 · 目录结构按"职责分层"
  */
 import { resolve, join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
@@ -32,7 +32,7 @@ import { SOURCE_LABELS, type Memory } from '@/memory/types.js';
 import { ProjectRegistry, type ProjectEntry } from '@/memory/projectRegistry.js';
 import { LockManager } from '@/memory/lockManager.js';
 
-// P1-4 拆分后 ProjectEntry 已迁移至 projectRegistry.ts，此处重导出保持公共 API 向后兼容
+// ProjectEntry 已迁移至 projectRegistry.ts，此处重导出保持公共 API 向后兼容
 export type { ProjectEntry } from '@/memory/projectRegistry.js';
 
 // ─── 类型 ────────────────────────────────────────────────
@@ -97,7 +97,7 @@ export interface ProjectManagerOptions {
  * 2. /project <name> 切换到新项目（解锁旧项目 + 加锁新项目）
  * 3. 退出时清理锁文件
  *
- * P1-4 拆分后：注册表/锁文件实现委托给 ProjectRegistry / LockManager，
+ * 注册表/锁文件实现委托给 ProjectRegistry / LockManager，
  * 本类聚焦生命周期编排。
  */
 export class ProjectManager {
@@ -116,9 +116,9 @@ export class ProjectManager {
     configDir?: string,
     agentDataDir?: string,
   ) => SecurityGuard;
-  /** 项目注册表（P1-4 拆分，专职管理 projects.json） */
+  /** 项目注册表（专职管理 projects.json） */
   private readonly registry: ProjectRegistry;
-  /** 锁文件管理器（P1-4 拆分，专职管理 .memora/.lock） */
+  /** 锁文件管理器（专职管理 .memora/.lock） */
   private readonly lockManager: LockManager;
 
   constructor(options: ProjectManagerOptions) {
@@ -131,7 +131,7 @@ export class ProjectManager {
     this.externalStorage = storage ?? null;
     // 保存 SecurityGuard 工厂函数
     this.createSecurityGuard = createSecurityGuard;
-    // P1-4 拆分：委托注册表/锁文件管理给专职模块
+    // 委托注册表/锁文件管理给专职模块
     this.registry = new ProjectRegistry(join(registryHome, 'projects.json'));
     this.lockManager = new LockManager();
   }
@@ -188,7 +188,7 @@ export class ProjectManager {
       await this.closeProject();
     }
 
-    // 2) 解析 memoraDir + 获取项目级锁（P1-4 拆分后委托给 LockManager）
+    // 2) 解析 memoraDir + 获取项目级锁（委托给 LockManager）
     const memoraDir = this.resolveMemoraDir(projectPath);
     await this.lockManager.acquire(memoraDir);
     this.currentProjectPath = projectPath;
@@ -299,7 +299,7 @@ export class ProjectManager {
       ? this.createSecurityGuard(projectPath, memoraDir, configDir, this.agentDataDir)
       : null;
 
-    // 注册到项目表（P1-4 拆分后委托给 ProjectRegistry）
+    // 注册到项目表（委托给 ProjectRegistry）
     const name = projectName || ProjectRegistry.inferProjectName(projectPath);
     this.registry.register(projectPath, name);
 
@@ -358,7 +358,7 @@ export class ProjectManager {
   /**
    * 列出已注册的项目（IX-02：统一为 getter 风格，与 persona/skill 一致）
    *
-   * P1-4 拆分后委托给 ProjectRegistry。
+   * 委托给 ProjectRegistry。
    */
   get list(): ProjectEntry[] {
     return this.registry.list;
@@ -377,7 +377,7 @@ export class ProjectManager {
   /**
    * 注册项目到注册表
    *
-   * P1-4 拆分后委托给 ProjectRegistry。
+   * 委托给 ProjectRegistry。
    *
    * @param projectPath 项目根目录
    * @param name 项目名称
@@ -389,7 +389,7 @@ export class ProjectManager {
   /**
    * 从注册表移除项目
    *
-   * P1-4 拆分后委托给 ProjectRegistry。
+   * 委托给 ProjectRegistry。
    *
    * @param projectPath 项目根目录
    */

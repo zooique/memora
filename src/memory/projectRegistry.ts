@@ -1,7 +1,7 @@
 /**
  * 项目注册表 — 多项目注册信息持久化
  *
- * 从 ProjectManager 拆分出来（P1-4），专职管理 projects.json 注册表：
+ * 从 ProjectManager 拆分出来，专职管理 projects.json 注册表：
  *   - 读写项目注册表（~/.memora/projects.json 或宿主指定 registryDir）
  *   - 注册/注销项目条目（Windows 大小写不敏感去重）
  *   - 从路径推断项目名称
@@ -12,11 +12,11 @@
  *   - 同步 I/O（list getter 契约要求同步返回；注册表操作低频，影响可控）
  *   - 损坏降级：解析失败返回空列表 + 警告日志，不抛异常
  *
- * 与 ProjectManager 的分工（P1-4 拆分，1.0 接口稳定化）：
+ * 与 ProjectManager 的分工（1.0 接口稳定化）：
  *   - ProjectRegistry：注册表读写 + 条目管理 + 名称推断
  *   - ProjectManager：项目生命周期编排（加锁 + 资源加载 + 上下文构建）
  *
- * 详见 ADR-008 · 目录结构按"职责分层" + 迭代文档 P1-4
+ * 详见 ADR-008 · 目录结构按"职责分层"
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { logger } from '@/logging/logger.js';

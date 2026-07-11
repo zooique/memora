@@ -6,7 +6,7 @@
  *   - 异步 insight 提取（LLM 判断 + 去重 + 写入 SQLite）
  *   - 宿主记忆关键词管理
  *
- * 关系构建逻辑（ADR-014）已拆分至 RelationBuilder（P1-3），本类通过 relationBuilder 委托调用。
+ * 关系构建逻辑（ADR-014）已拆分至 RelationBuilder，本类通过 relationBuilder 委托调用。
  *
  * 设计原则：
  *   - 独立于 Agent 生命周期，仅依赖 Provider/Storage/Loop
@@ -79,7 +79,7 @@ export class InsightExtractor {
   public writeExtensions: WriteExtensions | null = null;
 
   /**
-   * 关系构建器（P1-3 拆分，ADR-014 关系构建委托给 RelationBuilder）
+   * 关系构建器（ADR-014 关系构建委托给 RelationBuilder）
    * 未注入时跳过所有关系构建（保持向后兼容）
    */
   private readonly relationBuilder: RelationBuilder | null;
@@ -87,7 +87,7 @@ export class InsightExtractor {
   /**
    * @param provider - LLM Provider（用于 insight 提取）
    * @param index - 记忆存储（用于去重搜索 + 写入）
-   * @param relationBuilder - 关系构建器（可选，P1-3 拆分后替代直接 relationStore 注入）
+   * @param relationBuilder - 关系构建器（可选，替代直接 relationStore 注入）
    *   未注入时跳过关系构建（保持向后兼容，ADR-014 侧车模型）
    */
   constructor(
@@ -113,7 +113,7 @@ export class InsightExtractor {
   }
 
   /**
-   * 绑定冲突检测回调（P1-3 拆分后委托给 RelationBuilder）
+   * 绑定冲突检测回调（委托给 RelationBuilder）
    *
    * 由 Agent.init() 在创建 InsightExtractor 后调用（与 bindGetRecentHistory 同模式），
    * 解决 Agent 实例晚于 InsightExtractor 创建的时序循环依赖。
@@ -217,7 +217,7 @@ export class InsightExtractor {
           }).join('\n')
         : '';
 
-      // ADR-014 关系判断：召回候选记忆（P1-3 拆分后委托给 RelationBuilder）
+      // ADR-014 关系判断：召回候选记忆（委托给 RelationBuilder）
       // relationBuilder 未注入时返回空数组 + 空 prompt（静默降级）
       const relationCandidates = this.relationBuilder?.recallRelationCandidates(safeUserInput) ?? [];
       const candidatesSection = this.relationBuilder?.buildCandidatesPrompt(relationCandidates) ?? '';
@@ -309,7 +309,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
         this.index.upsert(existingMemory);
         logger.debug({ id: existingMemory.id }, 'extractInsight: 更新已有记忆');
         // ADR-014：即使命中去重，也尝试构建关系（新 insight 与已有记忆可能存在关系）
-        // P1-3 拆分后委托给 RelationBuilder
+        // 委托给 RelationBuilder
         if (this.relationBuilder && Array.isArray(parsed?.relations)) {
           this.relationBuilder.buildRelations(existingMemory.id, insight, parsed.relations, relationCandidates);
         }
@@ -337,7 +337,7 @@ ${contextSection}${candidatesSection}${relationsPrompt}
 
       // ADR-014 关系构建：写入 insight 后，构建与已有记忆的关系
       // 降级策略：relationBuilder 未注入/relations 为空/构建失败 → 跳过，不阻塞主流程
-      // P1-3 拆分后委托给 RelationBuilder
+      // 委托给 RelationBuilder
       if (this.relationBuilder && Array.isArray(parsed?.relations)) {
         try {
           this.relationBuilder.buildRelations(memory.id, memory.content, parsed.relations, relationCandidates);

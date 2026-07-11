@@ -71,7 +71,7 @@ export async function handleSessionRoute(
     if (method === 'GET' && path === '/api/sessions/messages') {
       const date = queryParams.get('date') ?? undefined;
       const session = queryParams.get('session') ?? undefined;
-      // SEC-WEB-03：分页参数严格校验，拒绝 NaN/负数/超大值，非法值回退默认值
+      // 分页参数严格校验，拒绝 NaN/负数/超大值，非法值回退默认值
       // - limit ∈ [1, 500]，默认 50（防止一次拉取过多消息耗尽内存）
       // - offset >= 0，默认 0（防止负数绕过分页起始位）
       // 用 parseInt 截断浮点/非数字前缀，Number.isFinite 拦截 NaN/Infinity
@@ -197,7 +197,7 @@ export async function handleSessionRoute(
     }
 
     // PUT /api/sessions/:id/rename — 重命名会话
-    // SEC-WEB-06：用 endsWith 精确匹配路径后缀，避免 includes 误匹配
+    // 用 endsWith 精确匹配路径后缀，避免 includes 误匹配
     // （如 /api/sessions/rename-xxx 或 /rename/extra 都不会被命中，仅 /api/sessions/:id/rename 命中）
     if (method === 'PUT' && path.endsWith('/rename')) {
       const sessionId = decodeURIComponent(path.replace('/api/sessions/', '').replace('/rename', ''));
@@ -220,7 +220,7 @@ export async function handleSessionRoute(
       return;
     }
 
-    // SEC-WEB-05：不回显 path 防止用户输入注入到响应体或泄露路由细节，实际路径仅记录到服务端日志
+    // 不回显 path 防止用户输入注入到响应体或泄露路由细节，实际路径仅记录到服务端日志
     logger.info({ method, path }, '[Web Session] 未匹配的会话路由');
     sendError(res, 404, '404 Not Found');
   });

@@ -110,7 +110,7 @@ export interface SpriteConfig {
    */
   recycleBinRetentionDays?: number;
   /**
-   * 引导流程步骤（P2-1：引导流程重构）
+   * 引导流程步骤（引导流程重构）
    *
    * 记录用户完成的引导步骤，用于跨会话恢复进度。
    * - 0：未开始或已完成（默认）

@@ -1,7 +1,7 @@
 /**
  * 单元测试：MemoryMutator 记忆写入器
  *
- * P1-2 拆分：从 MemoryInspector 拆出写操作代理，专职负责
+ * 从 MemoryInspector 拆出写操作代理，专职负责
  * IMemoryStorage + IMemoryRelationStore 的写操作。
  *
  * 覆盖 MemoryMutator 全部 7 个公开方法：

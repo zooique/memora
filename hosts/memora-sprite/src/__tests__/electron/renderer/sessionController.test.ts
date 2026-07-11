@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { JSDOM } from 'jsdom';
 import { createSessionController } from '../../../electron/renderer/controllers/sessionController.js';
 import { UIManager } from '../../../electron/renderer/ui.js';
-// 与源码同源 getLocalDate()，避免 UTC 跨天不一致（同 HC-05/P3-04 修复模式）
+// 与源码同源 getLocalDate()，避免 UTC 跨天不一致
 import { getLocalDate } from '../../../sprite/constants.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────

@@ -4,7 +4,7 @@
  * 覆盖范围：
  * - GET /api/sessions：列出所有会话（按日期聚合 + 预览 + 消息数 + 非法格式过滤）
  * - GET /api/sessions/messages：分页加载消息
- *   - SEC-WEB-03：limit ∈ [1, 500]、offset >= 0，非法值回退默认值
+ *   - limit ∈ [1, 500]、offset >= 0，非法值回退默认值
  *   - 无参数时回退到 ${today}-main
  *   - 非法 target 格式应返回空数组
  *   - hasMore 计算逻辑
@@ -15,7 +15,7 @@
  *   - restoredCount = 0 时调用 agentLoop.restoreHistory([])
  * - DELETE /api/sessions/:id：删除会话（按日期前缀批量删除 + 非法 ID 拒绝）
  * - PUT /api/sessions/:id/rename：重命名会话
- *   - SEC-WEB-06：endsWith('/rename') 精确匹配，防 includes 误匹配
+ *   - endsWith('/rename') 精确匹配，防 includes 误匹配
  *   - 非法 newName / sessionId 拒绝
  * - 安全分支：路径遍历字符逐一拒绝、limit/offset 边界值、null/undefined 入参
  * - 降级路径：Agent 未就绪 → 503；sessionStore 抛错 → 500；未匹配路由 → 404
@@ -922,7 +922,7 @@ describe('handleSessionRoute', () => {
     expect(body.error).toContain('不存在或重命名失败');
   });
 
-  it('PUT /api/sessions/rename-xxx 不应匹配 rename 路由（SEC-WEB-06 endsWith 精确匹配）', async () => {
+  it('PUT /api/sessions/rename-xxx 不应匹配 rename 路由（endsWith 精确匹配）', async () => {
     const sessionStore = createMockSessionStore();
     const ctx = createMockCtx({ sessionStore });
     // path = '/api/sessions/rename-xxx'，endsWith('/rename') = false
@@ -939,7 +939,7 @@ describe('handleSessionRoute', () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it('PUT /api/sessions/:id/rename 正常路径应精确匹配（SEC-WEB-06 正向验证）', async () => {
+  it('PUT /api/sessions/:id/rename 正常路径应精确匹配（正向验证）', async () => {
     const sessionStore = createMockSessionStore({ renameSession: true });
     const ctx = createMockCtx({ sessionStore });
     // path = '/api/sessions/2026-06-26-main/rename'，endsWith('/rename') = true

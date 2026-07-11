@@ -82,7 +82,7 @@ function writeSSE(res: ServerResponse, eventName: string, data: unknown): void {
 }
 
 /**
- * 判断错误是否为网络/连接类错误（SEC-WEB-02 辅助）
+ * 判断错误是否为网络/连接类错误
  *
  * 用于区分 LLM 调用中的网络故障（返回友好提示）与其他异常，避免把
  * 上游错误细节（如 fetch failed 原文、主机名、API 端点）回传客户端。
@@ -159,7 +159,7 @@ export async function handleChatStreamRoute(
       return;
     }
 
-    // SEC-WEB-05：不回显 path 防止用户输入注入到响应体或泄露路由细节，实际路径仅记录到服务端日志
+    // 不回显 path 防止用户输入注入到响应体或泄露路由细节，实际路径仅记录到服务端日志
     logger.info({ method, path }, '[Web SSE] 未匹配的对话路由');
     sendError(res, 404, '404 Not Found');
   });
@@ -251,7 +251,7 @@ async function handleChatStart(
   // ========== 流式分支（默认）：SSE 推送 ==========
   if (useStream) {
     // 初始化 SSE 响应头（text/event-stream，禁用缓冲）
-    // SEC-WEB-04：SSE 响应同样注入安全响应头（sendJson 路径已由 types.ts 统一注入）
+    // SSE 响应同样注入安全响应头（sendJson 路径已由 types.ts 统一注入）
     res.writeHead(200, {
       ...SECURITY_HEADERS,
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -381,7 +381,7 @@ async function handleChatStart(
           writeSSE(res, SSE_EVENTS.ABORTED, { messageId, reason: '用户手动停止' });
           abortedNotified = true;
         } else {
-          // SEC-WEB-02：对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
+          // 对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
           // - 网络类错误（DNS 失败/连接拒绝/超时等）→ 提示检查网络或 LLM 配置
           // - 其他错误（如内核异常）→ 通用"对话出错，请重试"
           const friendlyMessage = isNetworkError(error)
@@ -508,7 +508,7 @@ async function handleChatStart(
         aborted: { reason: '用户手动停止' },
       });
     } else {
-      // SEC-WEB-02：对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
+      // 对错误分类，不回传 LLM/网络错误的原始细节，避免信息泄露
       const friendlyMessage = isNetworkError(error)
         ? '对话服务暂不可用，请检查网络或 LLM 配置'
         : '对话出错，请重试';

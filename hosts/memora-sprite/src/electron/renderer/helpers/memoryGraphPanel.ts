@@ -11,7 +11,7 @@
  *   - 关系编辑弹窗（编辑/创建/删除关系）
  *
  * 提取原因：
- *   memoryPanelManager.ts 超标（F-LINE-2，1968 行，超 1800 触发线）。
+ *   memoryPanelManager.ts 超标（1968 行，超 1800 触发线）。
  *   图谱视图相关方法（initGraphRenderer + 空状态 + 缓存状态 + 上下文菜单 + 关系弹窗）
  *   形成完整子系统，相对独立，适合提取为接受 context 的纯函数模块。
  *
@@ -24,7 +24,7 @@
  *   - type-only 导入 MemoryPanelHost 避免运行时循环依赖
  *
  * 先例：
- *   参照 memoryPanelEvents.ts 的提取模式（AUTO-HEALTH-05），本次为 F-LINE-2 拆分
+ *   参照 memoryPanelEvents.ts 的提取模式，本次为图谱视图拆分
  */
 
 import { reportError } from './errorHelpers.js';
