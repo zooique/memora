@@ -21,7 +21,7 @@
 import * as path from 'node:path';
 import { BrowserWindow, ipcMain, clipboard, screen } from 'electron';
 import { injectThemeScript } from './themeInjector.js';
-import { IPC_CHANNELS } from '../ipc/channels.js';
+import { IPC_CHANNELS, MAIN_TO_RENDERER_CHANNELS } from '../ipc/channels.js';
 import { ELECTRON_DIR } from '../esmShim.js';
 import { logger } from 'memora';
 
@@ -164,6 +164,8 @@ export class QuickInputWindow {
     this.cancelBlurClose();
     win.show();
     win.focus();
+    // 通知渲染进程清空输入框（替代 focus 事件，避免 Alt+Tab 切回误清空）
+    win.webContents.send(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);
   }
 
   /**

@@ -33,10 +33,13 @@ import { QuickInputCompletion } from './quickInputCompletion.js';
  *
  * Phase 1：confirmQuickInput / closeQuickInput（确认 + 关闭）
  * Phase 2：searchMemories / searchSessionMessages（补全候选搜索）+ resizeQuickInput（调整高度）
+ *          onQuickInputShow / removeQuickInputShowListener（主进程 show() 时清空输入框，替代 focus 事件）
  */
 export type QuickInputElectronAPI = Pick<
   ElectronAPI,
-  'confirmQuickInput' | 'closeQuickInput' | 'searchMemories' | 'searchSessionMessages' | 'resizeQuickInput'
+  | 'confirmQuickInput' | 'closeQuickInput'
+  | 'searchMemories' | 'searchSessionMessages' | 'resizeQuickInput'
+  | 'onQuickInputShow' | 'removeQuickInputShowListener'
 >;
 
 /**
@@ -174,9 +177,9 @@ function initQuickInput(): void {
     completion.init();
   }
 
-  // 窗口重新获得焦点时清空输入框并聚焦（每次呼出都是干净状态）
-  // 主进程 show() 后窗口会获得焦点，触发此事件
-  window.addEventListener('focus', () => {
+  // 浮窗被主进程 show() 调用时清空输入框并聚焦（每次呼出都是干净状态）
+  // 替代 focus 事件：避免 Alt+Tab 切回浮窗时误清空已输入内容
+  api.onQuickInputShow(() => {
     inputField.value = '';
     isSubmitting = false;
     confirmBtn.disabled = false;

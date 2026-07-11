@@ -317,6 +317,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   QUICK_RECORD_TRIGGER: 'quick-record-trigger',
   /** recall-memory 触发：通知渲染进程切换到记忆面板 */
   RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
+  /** 快速输入浮窗被 show() 调用（通知渲染进程清空输入框，替代 focus 事件） */
+  QUICK_INPUT_SHOW: 'quick-input-show',
 } as const;
 
 // ─── IPC 数据传输类型 ────────────────────────────────────

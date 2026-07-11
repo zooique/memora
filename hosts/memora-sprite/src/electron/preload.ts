@@ -198,6 +198,8 @@ export const MAIN_TO_RENDERER_CHANNELS = {
   // Phase 3.3 第二批：全局快捷键触发
   QUICK_RECORD_TRIGGER: 'quick-record-trigger',
   RECALL_MEMORY_TRIGGER: 'recall-memory-trigger',
+  /** 快速输入浮窗被 show() 调用（通知渲染进程清空输入框，替代 focus 事件） */
+  QUICK_INPUT_SHOW: 'quick-input-show',
 } as const;
 
 // 重新导出契约类型，供 ui.ts / renderer.ts 通过 preload 统一引用
@@ -725,6 +727,14 @@ export interface ElectronAPI {
    * @param height 目标高度（px），主进程调用 win.setSize(width, height)
    */
   resizeQuickInput: (height: number) => Promise<void>;
+  /**
+   * 监听浮窗 show 事件（主进程 show() 调用后触发，用于清空输入框）
+   *
+   * 替代 window focus 事件，避免 Alt+Tab 切回时误清空输入内容。
+   */
+  onQuickInputShow: (cb: () => void) => void;
+  /** 移除浮窗 show 事件监听器 */
+  removeQuickInputShowListener: () => void;
 
   // ─── M2：审计日志 ─────────────────────────────────────
   /** 列出最近 N 条审计日志 */
@@ -997,6 +1007,10 @@ const electronAPI: ElectronAPI = {
   confirmQuickInput: (text) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CONFIRM, text),
   closeQuickInput: () => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_CLOSE),
   resizeQuickInput: (height) => ipcRenderer.invoke(IPC_CHANNELS.QUICK_INPUT_RESIZE, height),
+  onQuickInputShow: (cb) => ipcRenderer.on(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW, (_: IpcRendererEvent) => cb()),
+  removeQuickInputShowListener: () => {
+    ipcRenderer.removeAllListeners(MAIN_TO_RENDERER_CHANNELS.QUICK_INPUT_SHOW);
+  },
 
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),

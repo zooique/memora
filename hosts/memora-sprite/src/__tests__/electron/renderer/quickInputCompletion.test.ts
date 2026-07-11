@@ -556,6 +556,28 @@ describe('handleKeyDown · 键盘导航', async () => {
     expect(list.children.length).toBe(0);
   });
 
+  it('Tab 无选中项时应自动补全第一项', async () => {
+    const { completion, input, api } = createCompletion();
+    const onSelect = vi.fn();
+    completion.onSelect(onSelect);
+
+    (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({
+      hits: [
+        createMemoryHit({ contentPreview: '第一项候选', score: 0.9 }),
+        createMemoryHit({ contentPreview: '第二项候选', score: 0.8 }),
+      ],
+    });
+    (api.searchSessionMessages as ReturnType<typeof vi.fn>).mockResolvedValue({ results: [] });
+    input.value = '测试';
+    input.dispatchEvent(new Event('input'));
+    await vi.advanceTimersByTimeAsync(300);
+
+    // 不按 ↓ 直接 Tab，应自动补全第一项
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
+
+    expect(onSelect).toHaveBeenCalledWith('第一项候选');
+  });
+
   it('无候选时按键不应有效果', async () => {
     const { input, api } = createCompletion();
     (api.searchMemories as ReturnType<typeof vi.fn>).mockResolvedValue({ hits: [] });

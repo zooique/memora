@@ -159,7 +159,7 @@ export class QuickInputCompletion {
    *
    * - ArrowDown：选中下一项（循环到顶部）
    * - ArrowUp：选中上一项（循环到底部）
-   * - Tab：确认当前选中项，回填到输入框
+   * - Tab：确认选中项并回填；无选中项时默认补全第一项
    */
   private handleKeyDown = (e: Event): void => {
     if (this.candidates.length === 0) return;
@@ -178,13 +178,12 @@ export class QuickInputCompletion {
         : (this.selectedIndex - 1 + this.candidates.length) % this.candidates.length;
       this.updateSelection();
     } else if (ke.key === 'Tab') {
-      if (this.selectedIndex >= 0 && this.selectedIndex < this.candidates.length) {
-        ke.preventDefault();
-        // selectedIndex 已在条件中校验合法范围，索引访问安全，用 ! 断言正视契约
-        const selected = this.candidates[this.selectedIndex]!;
-        this.onSelectCallback?.(selected.text);
-        this.clearCandidates();
-      }
+      ke.preventDefault();
+      // 无选中项时默认补全第一项（用户输入后直接 Tab 确认）
+      const idx = this.selectedIndex >= 0 ? this.selectedIndex : 0;
+      const selected = this.candidates[idx]!;
+      this.onSelectCallback?.(selected.text);
+      this.clearCandidates();
     }
   };
 
