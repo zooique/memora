@@ -4,6 +4,13 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2026-07-11
+
+### Changed
+
+- `EmbeddingOptions` 接口归属位置从 `llm/embedding.ts` 调整到 `memory/vectorStore.ts`（符合依赖倒置原则：消费者定义接口，提供者通过 `import type` 引入）
+- 顶层导出不变（`index.ts` 已同步更新导出路径），外部消费者无需修改导入语句
+
 ## [1.0.1] - 2026-07-08
 
 ### Fixed（P2 遗留项修复）
