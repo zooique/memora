@@ -53,7 +53,7 @@ export class AuditPanelManager {
   /** 清空审计日志回调（由 settingsController 注入） */
   private clearAuditLogCallback: (() => Promise<void>) | null = null;
 
-  /** 审计加载条目数上限（与原 ipcListeners 实现一致） */
+  /** 审计加载条目数上限 */
   private static readonly LOAD_LIMIT = 50;
 
   /**

@@ -112,14 +112,10 @@ export class ThemeManager {
       localStorage.setItem('memora-theme', effectiveTheme);
     } catch {
       // localStorage 不可用时静默降级（如隐私模式）
-      console.debug('localStorage 不可用，主题未持久化');
     }
     this.syncThemeRadios(mode);
     // 用户主动切换主题，source='user'，renderer.ts 会持久化到 sprite.json
     this.themeChangeCallback?.(effectiveTheme, 'user');
-
-    // 移除此处的直接 IPC 调用，统一由 renderer.ts 的 onThemeChange 回调负责
-    // 主题持久化（sprite.json）和主进程通知统一由 renderer.ts onThemeChange 回调处理
 
     // 管理 'auto' 模式的系统主题变化监听器
     this.updateMediaQueryListener(mode);
@@ -172,7 +168,6 @@ export class ThemeManager {
           localStorage.setItem('memora-theme', effectiveTheme);
         } catch {
           // localStorage 不可用时静默降级
-          console.debug('localStorage 不可用，主题未持久化');
         }
         // 系统主题变化，source='system'，renderer.ts 仅同步浮动窗口，不覆盖 sprite.json 中的 'auto'
         this.themeChangeCallback?.(effectiveTheme, 'system');
