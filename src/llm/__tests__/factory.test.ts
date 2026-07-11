@@ -1,9 +1,9 @@
 /**
  * LLM Provider 工厂测试
- * 覆盖 Mock Provider / 预设表 / 错误场景
+ * 覆盖 Mock Provider / 预设表 / 错误场景 / 多 Provider 映射表（providers + active）
  */
 import { describe, it, expect } from 'vitest';
-import { createLlmProvider } from '@/llm/factory.js';
+import { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
 import type { Config } from '@/config/loader.js';
 
 function makeConfig(overrides: Partial<Config['llm']> = {}): Config {
@@ -15,6 +15,28 @@ function makeConfig(overrides: Partial<Config['llm']> = {}): Config {
       model: 'deepseek-chat',
       temperature: 0.7,
       ...overrides,
+    },
+    memory: { dataDir: '~/.memora', maxContextTokens: 80000 },
+    security: { permission: 'owner', confirmWrites: false },
+    allowedPaths: [],
+  };
+}
+
+/**
+ * 辅助：构造多 Provider 格式配置（providers + active）
+ */
+function makeMultiProviderConfig(
+  providers: Record<string, { provider: string; model: string; apiKey?: string; baseUrl?: string }>,
+  active?: string,
+): Config {
+  return {
+    llm: {
+      provider: 'deepseek',
+      apiKey: 'sk-test-key',
+      model: 'deepseek-chat',
+      temperature: 0.7,
+      providers,
+      active,
     },
     memory: { dataDir: '~/.memora', maxContextTokens: 80000 },
     security: { permission: 'owner', confirmWrites: false },
@@ -93,5 +115,116 @@ describe('createLlmProvider · 错误场景', () => {
   it('缺少 apiKey 应该抛出 configError', () => {
     const config = makeConfig({ provider: 'deepseek', apiKey: '' });
     expect(() => createLlmProvider(config)).toThrow('API Key 未配置');
+  });
+});
+
+describe('createLlmProvider · 多 Provider 映射表（providers + active）', () => {
+  it('配置 providers + active 时应创建指定 active 的 Provider', () => {
+    const config = makeMultiProviderConfig(
+      {
+        deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-ds' },
+        openai: { provider: 'openai', model: 'gpt-4', apiKey: 'sk-oai' },
+      },
+      'openai',
+    );
+    const provider = createLlmProvider(config);
+    expect(provider.name).toBe('openai');
+  });
+
+  it('active 缺失时应默认使用 providers 的第一个 key', () => {
+    const config = makeMultiProviderConfig({
+      deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-ds' },
+      openai: { provider: 'openai', model: 'gpt-4', apiKey: 'sk-oai' },
+    });
+    const provider = createLlmProvider(config);
+    // Object.keys 顺序第一个是 'deepseek'
+    expect(provider.name).toBe('deepseek');
+  });
+
+  it('active 不在 providers 中时应抛出 configError', () => {
+    const config = makeMultiProviderConfig(
+      {
+        deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-ds' },
+      },
+      'nonexistent',
+    );
+    expect(() => createLlmProvider(config)).toThrow('无效的 active Provider');
+  });
+
+  it('providers 为空对象时应回退到旧扁平字段（向后兼容）', () => {
+    const config = makeMultiProviderConfig({}, 'deepseek');
+    // 空 providers → 回退到旧格式 llm.provider = 'deepseek'
+    const provider = createLlmProvider(config);
+    expect(provider.name).toBe('deepseek');
+  });
+
+  it('多 Provider 中 mock provider 应正确创建', () => {
+    const config = makeMultiProviderConfig(
+      {
+        mock1: { provider: 'mock', model: 'mock-model' },
+        real: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-real' },
+      },
+      'mock1',
+    );
+    const provider = createLlmProvider(config);
+    expect(provider.name).toBe('mock');
+  });
+
+  it('多 Provider 中 apiKey 缺失应抛出 configError（含别名提示）', () => {
+    const config = makeMultiProviderConfig(
+      {
+        nokey: { provider: 'deepseek', model: 'deepseek-chat' },
+      },
+      'nokey',
+    );
+    expect(() => createLlmProvider(config)).toThrow('API Key 未配置');
+  });
+});
+
+describe('createProviderFromConfig · 单 Provider 独立创建', () => {
+  it('应正确创建预设 Provider 实例', () => {
+    const provider = createProviderFromConfig('my-alias', {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      apiKey: 'sk-test',
+    });
+    expect(provider.name).toBe('my-alias');
+  });
+
+  it('应支持自定义 baseUrl 覆盖预设', () => {
+    const provider = createProviderFromConfig('custom', {
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      baseUrl: 'https://custom.api/v1',
+      apiKey: 'sk-test',
+    });
+    expect(provider.name).toBe('custom');
+  });
+
+  it('mock provider 应返回 MockProvider', () => {
+    const provider = createProviderFromConfig('test-mock', {
+      provider: 'mock',
+      model: 'any',
+    });
+    expect(provider.name).toBe('mock');
+  });
+
+  it('未知 provider 缺失 baseUrl 应抛出 configError', () => {
+    expect(() =>
+      createProviderFromConfig('bad', {
+        provider: 'unknown',
+        model: 'some-model',
+        apiKey: 'sk-test',
+      }),
+    ).toThrow('未知的 LLM provider');
+  });
+
+  it('缺失 apiKey 应抛出 configError', () => {
+    expect(() =>
+      createProviderFromConfig('nokey-alias', {
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+      }),
+    ).toThrow('API Key 未配置');
   });
 });

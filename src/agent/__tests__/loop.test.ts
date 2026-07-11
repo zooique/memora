@@ -201,7 +201,7 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
     expect(messages[3]!.content).toBe('工具执行结果');
   });
 
-  it('多个工具调用应该逐一执行', async () => {
+  it('多个工具调用应该全部执行', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('done');
 
     const loop = new AgentLoop({
@@ -228,9 +228,160 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
       void chunk;
     }
 
+    // 并发执行下，两个工具都应被调用，参数正确
     expect(toolExecutor).toHaveBeenCalledTimes(2);
     expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
     expect(toolExecutor).toHaveBeenCalledWith('list_dir', '{}');
+  });
+
+  it('独立工具调用应该并发执行而非串行', async () => {
+    // 用延迟 mock 验证并发：两个工具各延迟 60ms
+    // 串行总耗时 ≥120ms，并发总耗时 ≈60ms
+    const toolExecutor = vi.fn().mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+      return 'done';
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'tool_a', arguments: '{}' } },
+              { id: 'c2', type: 'function', function: { name: 'tool_b', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const start = Date.now();
+    for await (const chunk of loop.processUserInput('并发')) {
+      void chunk;
+    }
+    const elapsed = Date.now() - start;
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 并发判定：总耗时接近单个工具耗时（60ms），远小于串行（120ms）
+    // 缓冲 <110ms 判定为并发（避免 CI 环境抖动）
+    expect(elapsed).toBeLessThan(110);
+  });
+
+  it('tool_start 应批量 yield（全部在 tool_result 之前）', async () => {
+    // tool_b 快速完成，tool_a 慢速完成，验证 tool_start 仍批量在前
+    const toolExecutor = vi.fn().mockImplementation(async (name: string) => {
+      if (name === 'tool_a') await new Promise((r) => setTimeout(r, 40));
+      return 'done';
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'tool_a', arguments: '{}' } },
+              { id: 'c2', type: 'function', function: { name: 'tool_b', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('批量')) {
+      chunks.push(chunk);
+    }
+
+    // 找到第一个 tool_result 的位置
+    const firstResultIdx = chunks.findIndex((c) => c.type === 'tool_result');
+    expect(firstResultIdx).toBeGreaterThanOrEqual(0);
+    // 所有 tool_start 都应在第一个 tool_result 之前（批量 yield）
+    const toolStarts = chunks.filter((c) => c.type === 'tool_start');
+    expect(toolStarts).toHaveLength(2);
+    for (const ts of toolStarts) {
+      const idx = chunks.indexOf(ts);
+      expect(idx).toBeLessThan(firstResultIdx);
+    }
+  });
+
+  it('tool_result 应按原始 toolCalls 顺序 yield（不按完成顺序）', async () => {
+    // tool_b 先完成（无延迟），tool_a 后完成（有延迟）
+    // 验证 tool_result 顺序仍保持原始 toolCalls 顺序 c1 → c2
+    const toolExecutor = vi.fn().mockImplementation(async (name: string) => {
+      if (name === 'tool_a') await new Promise((r) => setTimeout(r, 40));
+      return `result_${name}`;
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'tool_a', arguments: '{}' } },
+              { id: 'c2', type: 'function', function: { name: 'tool_b', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('顺序')) {
+      chunks.push(chunk);
+    }
+
+    const toolResults = chunks.filter((c) => c.type === 'tool_result');
+    expect(toolResults).toHaveLength(2);
+    // 按原始顺序：c1(tool_a) 在前，c2(tool_b) 在后
+    // 尽管 tool_b 先完成，tool_result 顺序仍保持 c1 → c2
+    expect(toolResults[0]!.toolCallId).toBe('c1');
+    expect(toolResults[1]!.toolCallId).toBe('c2');
+  });
+
+  it('messages 应按原始顺序 push（保证 Reflection slice 正确）', async () => {
+    // tool_b 先完成，验证 messages 中 tool 消息顺序仍按原始 toolCalls 顺序
+    // 这保证 Reflection 的 slice(-toolCalls.length) 能取到本轮完整结果
+    const toolExecutor = vi.fn().mockImplementation(async (name: string) => {
+      if (name === 'tool_a') await new Promise((r) => setTimeout(r, 40));
+      return `result_${name}`;
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'tool_a', arguments: '{}' } },
+              { id: 'c2', type: 'function', function: { name: 'tool_b', arguments: '{}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('消息顺序')) {
+      void chunk;
+    }
+
+    const messages = loop.getMessages();
+    // 找到 tool 消息（role === 'tool'）
+    const toolMessages = messages.filter((m) => m.role === 'tool');
+    expect(toolMessages).toHaveLength(2);
+    // 按原始顺序：c1 在前，c2 在后（保证 Reflection slice(-toolCalls.length) 正确）
+    expect(toolMessages[0]!.toolCallId).toBe('c1');
+    expect(toolMessages[1]!.toolCallId).toBe('c2');
   });
 });
 

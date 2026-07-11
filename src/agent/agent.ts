@@ -57,6 +57,7 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
+import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
 
@@ -297,7 +298,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async init(projectPathOverride?: string): Promise<ProjectContext> {
     if (this._initialized) {
-      // 修复 #3：close() 失败不应阻塞 init() 重建
+      // close() 失败不应阻塞 init() 重建
       // 原 close() 异常（如 awaitPendingArchives 超时）会传播到 init() 调用方，
       // 导致 Agent 处于不可用状态。此处捕获后继续重建。
       try {
@@ -408,7 +409,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 合并外部 signal：外部 abort 时也触发内部
     const onExternalAbort = () => internalAbort.abort();
     signal?.addEventListener('abort', onExternalAbort, { once: true });
-    // 修复 #4：addEventListener 对已 aborted 的 signal 不触发回调
+    // addEventListener 对已 aborted 的 signal 不触发回调
     // 需手动检查并触发 internalAbort，否则外部已取消的请求仍会进入主流程
     if (signal?.aborted) {
       internalAbort.abort();
@@ -584,15 +585,31 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @returns 召回的记忆列表
    */
   private async recallAndInject(input: string): Promise<Memory[]> {
-    const recalledMemories = await recall(
-      this.requireNonNull(this.pctx, 'projectContext').index,
-      input,
-      {
-        limit: 5,
-        vectorStore: this.#config.vectorStore,
-        excludeSources: this.#config.recallExcludeSources,
-      },
-    );
+    // 实际 recall() 函数耗时 span（区别于 loop.ts 的 RECALL 注入 span）
+    const tracer = this.#config.tracer ?? NOOP_TRACER;
+    const recallSpan = tracer.startSpan(TRACE_SPANS.RECALL_ACTUAL, {
+      queryLength: input.length,
+      hasVectorStore: !!this.#config.vectorStore,
+    });
+
+    let recalledMemories: Memory[] = [];
+    try {
+      recalledMemories = await recall(
+        this.requireNonNull(this.pctx, 'projectContext').index,
+        input,
+        {
+          limit: 5,
+          vectorStore: this.#config.vectorStore,
+          excludeSources: this.#config.recallExcludeSources,
+        },
+      );
+    } catch (err) {
+      recallSpan.recordException(err instanceof Error ? err : new Error(String(err)));
+      throw err;
+    } finally {
+      recallSpan.setAttribute('resultCount', recalledMemories.length);
+      recallSpan.end();
+    }
     if (recalledMemories.length > 0) {
       this.emit('memoryRecalled', { count: recalledMemories.length, query: input });
     }
@@ -645,10 +662,29 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *   （会话归档实现后，`insights-only` 将跳过对话原始内容自动归档）
    */
   private async postProcess(input: string, assistantContent: string): Promise<void> {
+    // postProcess 全流程 span（角色匹配 + 技能匹配 + 归档 + AutoConfigRefiner）
+    const tracer = this.#config.tracer ?? NOOP_TRACER;
+    const span = tracer.startSpan(TRACE_SPANS.POST_PROCESS, {
+      archiveMode: this.#config.archiveMode,
+    });
+
+    try {
+      await this.postProcessInner(input, assistantContent);
+    } finally {
+      span.end();
+    }
+  }
+
+  /**
+   * postProcess 内部实现（为 span 埋点提供 try/finally 包裹边界）
+   *
+   * 原 postProcess 逻辑完整保留于此，由外层 postProcess 负责 span 生命周期管理。
+   */
+  private async postProcessInner(input: string, assistantContent: string): Promise<void> {
     // 角色自动匹配（best-effort：失败不阻塞对话结束，非归档行为不受 archiveMode 影响）
     if (this.personaManager) {
       try {
-        const matchedPersona = this.personaManager.autoMatch(input);
+        const matchedPersona = await this.personaManager.autoMatch(input);
         if (matchedPersona) {
           const prevName = this.personaManager.activeName;
           this.personaManager.switchPersona(matchedPersona);

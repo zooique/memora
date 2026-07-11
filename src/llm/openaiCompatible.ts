@@ -162,6 +162,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
         ]);
       }
 
+      // fetch 成功且响应正常：清除请求级总超时
+      // SSE 阶段由 chunk 级超时（FIRST_CHUNK_TIMEOUT_MS / INTER_CHUNK_TIMEOUT_MS）独立保护
+      // 若保留总超时，长文生成（>timeoutMs）会被错误中断
+      clearTimeout(timeoutId);
+
       try {
         // 将 abortController.signal 传入 SSE 解析器，使超时/取消能中断流读取
         yield* this.parseSseStream(response.body, abortController.signal);

@@ -171,7 +171,7 @@ describe('SecurityGuard · 路径白名单', () => {
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
   });
 
-  // P2-2 修复：.envrc 不在 .env.* 后缀模式覆盖范围内，需独立拦截
+  // .envrc 不在 .env.* 后缀模式覆盖范围内，需独立拦截
   it('应该拒绝 .envrc 文件（direnv 配置）', () => {
     const filePath = join(projectPath, '.envrc');
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
@@ -248,6 +248,46 @@ describe('SecurityGuard · 路径白名单', () => {
     const filePath = join(symlinkPath, 'secret.txt');
     // 符号链接被 resolveRealpath 解析为 evilDir/secret.txt，不在白名单内
     expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界/);
+  });
+
+  // ─── NFKC 规范化防御（全角字符绕过防护）─────────
+  // 攻击场景：攻击者使用全角字符（U+FF0E 等）绕过黑名单正则匹配，
+  // NFKC 规范化将全角字符归一化为半角，确保黑名单/白名单匹配基于规范化后的路径。
+
+  it('应该将全角 ．．/ 规范化为 ../ 并拦截路径遍历', () => {
+    // 全角句号 U+FF0E，NFKC 后变为半角 . ，组合成 ../ 触发越界
+    const fullWidthDots = '\uFF0E\uFF0E';
+    const filePath = `${projectPath}${fullWidthDots}${fullWidthDots}/secret.txt`;
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/越界|黑名单/);
+  });
+
+  it('应该将全角 ．ｅｎｖ 规范化为 .env 并命中黑名单', () => {
+    // 全角 ．ｅｎｖ NFKC 后变为 .env，命中环境变量文件黑名单
+    const fullWidthEnv = '\uFF0E\uFF45\uFF4E\uFF56';
+    const filePath = join(projectPath, fullWidthEnv);
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该将全角 ．ｓｓｈ 目录规范化为 .ssh 并命中黑名单', () => {
+    // 全角 ．ｓｓｈ NFKC 后变为 .ssh
+    const fullWidthSsh = '\uFF0E\uFF53\uFF53\uFF48';
+    const filePath = join(projectPath, fullWidthSsh, 'id_rsa');
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('应该将全角 ．ｎｐｍｒｃ 规范化为 .npmrc 并命中黑名单', () => {
+    // 全角 ．ｎｐｍｒｃ NFKC 后变为 .npmrc
+    const fullWidthNpmrc = '\uFF0E\uFF4E\uFF50\uFF4D\uFF52\uFF43';
+    const filePath = join(projectPath, fullWidthNpmrc);
+    expect(() => guard.assertPathAllowed(filePath)).toThrow(/黑名单/);
+  });
+
+  it('全角字符路径经 NFKC 规范化后仍在白名单内应放行', () => {
+    // 验证 NFKC 不会误伤合法的全角文件名（非黑名单/白名单内）
+    // 全角 ｄｏｃｓ NFKC 后变为 docs，在项目目录内应放行
+    const fullWidthDocs = '\uFF44\uFF4F\uFF43\uFF53';
+    const filePath = join(projectPath, fullWidthDocs);
+    expect(() => guard.assertPathAllowed(filePath)).not.toThrow();
   });
 });
 

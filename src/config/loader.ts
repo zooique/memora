@@ -184,7 +184,11 @@ function mergeWithDefaults(userConfig: unknown): Config {
  * 配置文件可写 "apiKey": "${MEMORA_LLM_API_KEY}"
  * 实际读取时展开为环境变量值
  *
- * 同时展开 providers 映射表中每个 Provider 的 apiKey/baseUrl
+ * 展开范围覆盖所有可能包含敏感信息的通道：
+ *   - llm（前台主通道）：apiKey / baseUrl
+ *   - llm.providers（多 Provider 映射表）：每个 Provider 的 apiKey / baseUrl
+ *   - llm.background（后台通道）：apiKey / baseUrl
+ *   - embedding（向量嵌入通道）：apiKey / baseUrl
  */
 function expandEnvVars(config: Config): Config {
   const expand = (val: string | undefined): string | undefined => {
@@ -203,6 +207,24 @@ function expandEnvVars(config: Config): Config {
       )
     : undefined;
 
+  // 展开 background 后台通道的环境变量（与前台 llm 通道同模式）
+  const expandedBackground = config.llm.background
+    ? {
+        ...config.llm.background,
+        apiKey: expand(config.llm.background.apiKey),
+        baseUrl: expand(config.llm.background.baseUrl),
+      }
+    : undefined;
+
+  // 展开 embedding 向量嵌入通道的环境变量
+  const expandedEmbedding = config.embedding
+    ? {
+        ...config.embedding,
+        apiKey: expand(config.embedding.apiKey),
+        baseUrl: expand(config.embedding.baseUrl),
+      }
+    : undefined;
+
   return {
     ...config,
     llm: {
@@ -210,6 +232,8 @@ function expandEnvVars(config: Config): Config {
       apiKey: expand(config.llm.apiKey),
       baseUrl: expand(config.llm.baseUrl),
       providers: expandedProviders,
+      background: expandedBackground,
     },
+    embedding: expandedEmbedding,
   };
 }

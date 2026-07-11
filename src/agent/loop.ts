@@ -223,7 +223,14 @@ export class AgentLoop {
 
       // 输入护栏检查：在用户输入注入上下文之前，检查是否命中护栏规则
       // 护栏自身异常时降级为"放行 + 记日志"，不阻断用户对话
+      // R-103 可观测性：guardrail 输入检查 span
+      const inputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_INPUT, {
+        ruleCount: this.guardrailRules.length,
+      });
       const inputGuardResult = runGuardrails(this.guardrailRules, userInput, this.ui);
+      inputGuardSpan.setAttribute('blocked', inputGuardResult.blocked);
+      inputGuardSpan.setAttribute('warned', !!inputGuardResult.warning);
+      inputGuardSpan.end();
       if (inputGuardResult.blocked) {
         // P3: try/finally 确保 done 一定送达，即使 text yield 异常
         // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
@@ -346,7 +353,14 @@ export class AgentLoop {
         }
 
         // 输出护栏检查：在响应返回给用户之前，检查是否命中护栏规则
+        // R-103 可观测性：guardrail 输出检查 span
+        const outputGuardSpan = this.tracer.startSpan(TRACE_SPANS.GUARDRAIL_OUTPUT, {
+          ruleCount: this.guardrailRules.length,
+        });
         const outputGuardResult = runGuardrails(this.guardrailRules, llmResult.fullContent, this.ui);
+        outputGuardSpan.setAttribute('blocked', outputGuardResult.blocked);
+        outputGuardSpan.setAttribute('warned', !!outputGuardResult.warning);
+        outputGuardSpan.end();
         if (outputGuardResult.blocked) {
           // P3: try/finally 确保 done 一定送达，即使 text yield 异常
           // guardrailBlocked: true 让 eval 框架和宿主 UI 通过结构化字段判断护栏触发
@@ -553,48 +567,37 @@ export class AgentLoop {
       toolCalls,
     });
 
-    // 执行工具
+    // 执行工具（E-803 并行优化：独立 tool_call 并发执行，事件按原始顺序 yield）
+    // 设计：方案 B（保持顺序的并发）
+    //   - 并发发起所有工具执行（Promise.all，真并发，总耗时 ≈ 最慢的工具）
+    //   - 批量 yield tool_start（UI 按 toolCallId 创建所有工具卡片）
+    //   - 按原始顺序 push messages + yield tool_result（保证 Reflection slice(-N) 正确）
+    //   - messages 顺序确定 → Reflection 的 slice(-toolCalls.length) 仍取到本轮完整结果
+    //   - 宿主 UI 按 toolCallId 配对 tool_start/tool_result，不依赖严格交替顺序
+
+    // 执行前检查取消（批量，避免 abort 后还发起工具）
+    if (signal?.aborted) {
+      return { aborted: true };
+    }
+
+    // 1. 批量 yield tool_start + 并发发起所有工具执行
+    const toolPromises: Promise<string>[] = [];
     for (const tc of toolCalls) {
-      // 工具执行前检查取消
-      if (signal?.aborted) {
-        return { aborted: true };
-      }
       // 工具调用统计：每次工具执行 +1
       this.metricToolCallCount++;
-
       yield { type: 'tool_start', toolCallId: tc.id, name: tc.function.name, args: tc.function.arguments };
+      // 并发发起工具执行（不 await，收集 Promise 由 Promise.all 统一等待）
+      toolPromises.push(this.executeOneTool(tc, signal));
+    }
 
-      // 工具执行 Span
-      const toolSpan = this.tracer.startSpan(TRACE_SPANS.TOOL_EXEC, {
-        toolName: tc.function.name,
-      });
+    // 2. 等待全部工具完成（真并发，总耗时 ≈ 最慢的工具而非所有工具之和）
+    const results = await Promise.all(toolPromises);
 
-      // 工具执行可能因文件不存在、路径越界等原因失败
-      // 捕获异常并转为结构化错误结果字符串，回传给 LLM 让其自行调整策略
-      // 避免错误直接传播到 agent.chat() 导致整个对话中断
-      // 错误结果包含 [ERR:TOOL:code] 前缀，供 Reflection 逻辑解析
-      let result: string;
-      try {
-        // 工具执行包裹 signal 中断，避免 abort 无法中断卡住的 generator
-        // 原 await toolExecutor 不响应 signal，工具卡住时 generator 挂起、_chatBusy 泄漏
-        result = await this.raceToolWithSignal(tc.function.name, tc.function.arguments, signal);
-      } catch (err) {
-        const e = toError(err);
-        toolSpan.recordException(e);
-        if (err instanceof MemoraError) {
-          const code = err.errorCode ?? 'UNKNOWN';
-          result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
-          logger.warn(
-            { tool: tc.function.name, errorCode: code, title: err.title },
-            '工具执行失败，错误已回传给 LLM',
-          );
-        } else {
-          result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${e.message}`;
-          logger.error({ tool: tc.function.name, err }, '工具执行异常');
-        }
-      }
-      toolSpan.end();
-
+    // 3. 按原始顺序 push messages + yield tool_result
+    //    顺序确定保证：Reflection 的 slice(-toolCalls.length) 能取到本轮完整结果
+    for (let i = 0; i < toolCalls.length; i++) {
+      const tc = toolCalls[i]!;
+      const result = results[i]!;
       this.messages.push({
         role: 'tool',
         content: result,
@@ -673,6 +676,63 @@ export class AgentLoop {
       this.opts.toolExecutor(name, args),
       abortPromise,
     ]);
+  }
+
+  /**
+   * 执行单个工具（E-803 抽取：为并行化提供独立执行单元）
+   *
+   * 职责：
+   *   - startSpan / endSpan（工具执行 Span，并发时 span 时间重叠，可观测性改进）
+   *   - raceToolWithSignal 竞争包裹（兼容 signal 中断，每个工具独立 race）
+   *   - 异常捕获并转为结构化错误字符串（[ERR:TOOL:code] 前缀，供 Reflection 解析）
+   *
+   * 不含职责（由 executeToolCalls 主循环控制，保证顺序确定）：
+   *   - yield tool_start / tool_result（事件顺序由主循环批量 yield 保证）
+   *   - messages.push（消息顺序由主循环按原始顺序 push，确保 Reflection slice 正确）
+   *   - metricToolCallCount / metricToolFailureCount（统计由主循环控制）
+   *
+   * 并发安全：本方法无共享状态，多个 executeOneTool 可同时执行。
+   * toolExecutor 内部无状态（纯分发 + 参数校验），天然支持并发调用。
+   *
+   * @param tc 单个工具调用描述（id + function.name + function.arguments）
+   * @param signal 可选的 AbortSignal
+   * @returns 工具结果字符串（成功）或 [ERR:TOOL:code] 错误字符串（失败）
+   */
+  private async executeOneTool(
+    tc: { id: string; type: 'function'; function: { name: string; arguments: string } },
+    signal: AbortSignal | undefined,
+  ): Promise<string> {
+    // 工具执行 Span（并发时多个 span 时间重叠，tracer 可观测并发度）
+    const toolSpan = this.tracer.startSpan(TRACE_SPANS.TOOL_EXEC, {
+      toolName: tc.function.name,
+    });
+
+    try {
+      // 工具执行包裹 signal 中断，避免 abort 无法中断卡住的 generator
+      // raceToolWithSignal 天然兼容并发：每个调用独立 race，{ once: true } 监听器无副作用
+      return await this.raceToolWithSignal(tc.function.name, tc.function.arguments, signal);
+    } catch (err) {
+      // 工具执行可能因文件不存在、路径越界等原因失败
+      // 捕获异常并转为结构化错误结果字符串，回传给 LLM 让其自行调整策略
+      // 避免错误直接传播到 agent.chat() 导致整个对话中断
+      const e = toError(err);
+      toolSpan.recordException(e);
+      if (err instanceof MemoraError) {
+        const code = err.errorCode ?? 'UNKNOWN';
+        const result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
+        logger.warn(
+          { tool: tc.function.name, errorCode: code, title: err.title },
+          '工具执行失败，错误已回传给 LLM',
+        );
+        return result;
+      } else {
+        const result = `[ERR:TOOL:UNKNOWN] 错误：工具执行异常 — ${e.message}`;
+        logger.error({ tool: tc.function.name, err }, '工具执行异常');
+        return result;
+      }
+    } finally {
+      toolSpan.end();
+    }
   }
 
   /**

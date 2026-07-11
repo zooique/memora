@@ -14,9 +14,11 @@
  * 注意：PersonaManager v1.1 扫描 <configDir>/personas/*.md，
  * 测试中目录名必须为 personas。
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PersonaManager } from '@/persona/personaManager.js';
 import type { Persona } from '@/persona/types.js';
+import type { LlmProvider } from '@/llm/provider.js';
+import type { LlmChunk } from '@/llm/types.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -28,6 +30,32 @@ const createPersonaFile = (dir: string, filename: string, content: string): void
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, filename), content, 'utf-8');
 };
+
+/**
+ * 构造 mock LlmProvider（chat 返回指定内容的 AsyncIterable）
+ * @param responseContent - LLM 返回的完整文本
+ * @param shouldThrow - chat 方法是否抛出异常（测试降级）
+ * @returns mock LlmProvider 实例
+ */
+function createMockProvider(
+  responseContent: string = 'none',
+  shouldThrow = false,
+): LlmProvider {
+  const chatMock = vi.fn().mockImplementation(() => {
+    if (shouldThrow) {
+      return (async function* () {
+        throw new Error('LLM 调用失败');
+      })();
+    }
+    return (async function* () {
+      yield { content: responseContent } as LlmChunk;
+    })();
+  });
+  return {
+    name: 'mock-provider',
+    chat: chatMock,
+  } as unknown as LlmProvider;
+}
 
 describe('PersonaManager (v1.1)', () => {
   let testDir: string;
@@ -361,7 +389,7 @@ keywords: 编程, 代码, TypeScript
       await personaManager.load('默认助手');
 
       // 用户输入包含编程关键词
-      const matched = personaManager.autoMatch('帮我写一段 TypeScript 代码');
+      const matched = await personaManager.autoMatch('帮我写一段 TypeScript 代码');
 
       expect(matched).toBe('程序员助手');
     });
@@ -381,7 +409,7 @@ keywords: 通用
       await personaManager.load('默认助手');
 
       // 关键词命中率太低
-      const matched = personaManager.autoMatch('今天天气怎么样');
+      const matched = await personaManager.autoMatch('今天天气怎么样');
 
       expect(matched).toBeNull();
     });
@@ -401,7 +429,8 @@ keywords: 编程, 代码
       await personaManager.load('程序员助手');
       personaManager.setMode('manual');
 
-      const matched = personaManager.autoMatch('帮我写代码');
+      // manual 模式下 autoMatch 直接返回 null（Promise）→ 需 await
+      const matched = await personaManager.autoMatch('帮我写代码');
 
       expect(matched).toBeNull();
     });
@@ -420,7 +449,7 @@ keywords: 编程, 代码
       const personaManager = new PersonaManager(testDir);
       await personaManager.load('程序员助手');
 
-      const matched = personaManager.autoMatch('帮我写代码');
+      const matched = await personaManager.autoMatch('帮我写代码');
 
       expect(matched).toBeNull();
     });
@@ -440,11 +469,238 @@ keywords: 编程, 代码, 架构, 设计
       await personaManager.load('默认助手');
 
       // 4 个关键词中只命中 1 个 → score = 0.25 < 0.5
-      const matched = personaManager.autoMatch('帮我写代码');
+      const matched = await personaManager.autoMatch('帮我写代码');
 
       // 注意：默认助手在空目录下降级创建，keywords 为空，不会匹配
       // coder 需要匹配到默认助手之外的 persona，但这里只加载了默认角色（降级）
       // 所以 coder 的 autoMatch 需要 list 中有角色
+      expect(matched).toBeNull();
+    });
+  });
+
+  // ════════════════════════════════════════════════════════
+  // autoMatch · LLM 辅助判断
+  // ════════════════════════════════════════════════════════
+  describe('autoMatch · LLM 辅助判断', () => {
+    it('关键词高置信度时不调用 LLM（直接返回）', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+通用助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, TypeScript
+---
+专业编程助手。`,
+      );
+
+      const provider = createMockProvider('程序员助手');
+      const personaManager = new PersonaManager(testDir, undefined, provider);
+      await personaManager.load('默认助手');
+
+      // 关键词命中 ≥ 0.5（TypeScript 命中），高置信度直接返回，不调用 LLM
+      const matched = await personaManager.autoMatch('帮我写一段 TypeScript 代码');
+
+      expect(matched).toBe('程序员助手');
+      // LLM 不应被调用（高置信度短路）
+      expect(provider.chat).not.toHaveBeenCalled();
+    });
+
+    it('关键词低置信度时调用 LLM 辅助判断并返回匹配角色', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+通用助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, 架构, 设计
+---
+专业编程助手。`,
+      );
+
+      const provider = createMockProvider('程序员助手');
+      const personaManager = new PersonaManager(testDir, undefined, provider);
+      await personaManager.load('默认助手');
+
+      // "帮我写代码" 只命中 1/4 关键词 → score=0.25 < 0.5，触发 LLM 辅助
+      const matched = await personaManager.autoMatch('帮我写代码');
+
+      expect(matched).toBe('程序员助手');
+      // LLM 应被调用
+      expect(provider.chat).toHaveBeenCalledTimes(1);
+    });
+
+    it('LLM 返回 "none" 时返回 null', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+通用助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, 架构, 设计
+---
+专业编程助手。`,
+      );
+
+      const provider = createMockProvider('none');
+      const personaManager = new PersonaManager(testDir, undefined, provider);
+      await personaManager.load('默认助手');
+
+      // 低置信度触发 LLM，但 LLM 返回 none
+      const matched = await personaManager.autoMatch('帮我写代码');
+
+      expect(matched).toBeNull();
+      expect(provider.chat).toHaveBeenCalledTimes(1);
+    });
+
+    it('LLM 返回无效角色名时返回 null（防止幻觉）', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+通用助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, 架构, 设计
+---
+专业编程助手。`,
+      );
+
+      // LLM 返回不存在的角色名
+      const provider = createMockProvider('不存在的角色');
+      const personaManager = new PersonaManager(testDir, undefined, provider);
+      await personaManager.load('默认助手');
+
+      const matched = await personaManager.autoMatch('帮我写代码');
+
+      expect(matched).toBeNull();
+      expect(provider.chat).toHaveBeenCalledTimes(1);
+    });
+
+    it('LLM 调用失败时降级返回 null', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+通用助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, 架构, 设计
+---
+专业编程助手。`,
+      );
+
+      // LLM 抛异常
+      const provider = createMockProvider('', true);
+      const personaManager = new PersonaManager(testDir, undefined, provider);
+      await personaManager.load('默认助手');
+
+      const matched = await personaManager.autoMatch('帮我写代码');
+
+      // LLM 失败降级为 null（不回退低置信度关键词匹配）
+      expect(matched).toBeNull();
+      expect(provider.chat).toHaveBeenCalledTimes(1);
+    });
+
+    it('未注入 backgroundProvider 时退化为纯关键词匹配（向后兼容）', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+通用助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, TypeScript
+---
+专业编程助手。`,
+      );
+
+      // 不注入 backgroundProvider
+      const personaManager = new PersonaManager(testDir);
+      await personaManager.load('默认助手');
+
+      // 高置信度关键词匹配仍有效
+      const matched = await personaManager.autoMatch('帮我写 TypeScript 代码');
+      expect(matched).toBe('程序员助手');
+
+      // 低置信度时无 LLM 辅助，直接返回 null
+      const noMatch = await personaManager.autoMatch('帮我写代码');
+      expect(noMatch).toBeNull();
+    });
+
+    it('LLM 不应匹配当前激活角色（排除当前角色）', async () => {
+      createPersonaFile(
+        personasDir,
+        'default.md',
+        `---
+name: 默认助手
+keywords: 通用
+---
+通用助手。`,
+      );
+      createPersonaFile(
+        personasDir,
+        'coder.md',
+        `---
+name: 程序员助手
+keywords: 编程, 代码, 架构, 设计
+---
+专业编程助手。`,
+      );
+
+      // LLM 返回当前角色名（应被排除）
+      const provider = createMockProvider('程序员助手');
+      const personaManager = new PersonaManager(testDir, undefined, provider);
+      await personaManager.load('程序员助手');
+
+      // 当前已是程序员助手，LLM 返回程序员助手应被排除
+      const matched = await personaManager.autoMatch('帮我写代码');
+
       expect(matched).toBeNull();
     });
   });

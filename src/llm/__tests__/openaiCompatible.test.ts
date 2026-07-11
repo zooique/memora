@@ -533,3 +533,76 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
     expect(toolCallChunk!.toolCalls![0]!.function.name).toBe('read_file');
   });
 });
+
+// ─── 超时机制（fetch 阶段与 SSE 阶段超时职责分离）──
+
+describe('OpenAICompatibleProvider · 超时机制', () => {
+  it('长流式响应（SSE 持续时间 > timeoutMs）不应被总超时中断', async () => {
+    // 场景：长文生成，SSE 流持续超过请求级总超时，但 chunk 间间隔远小于 chunk 级超时
+    // 预期：fetch 成功后清除总超时，SSE 阶段由 chunk 级超时独立保护
+    server.use(
+      http.post('*/chat/completions', () => {
+        const stream = new ReadableStream({
+          async start(controller) {
+            const encoder = new TextEncoder();
+            // 3 个 chunk，每个间隔 30ms，总时长 ~90ms > timeoutMs(50ms)
+            for (let i = 0; i < 3; i++) {
+              const payload = {
+                id: 'mock-1',
+                object: 'chat.completion.chunk',
+                created: Date.now(),
+                model: 'mock-model',
+                choices: [{
+                  index: 0,
+                  delta: { content: `chunk${i}` },
+                  finish_reason: i === 2 ? 'stop' : null,
+                }],
+              };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+              // chunk 间 30ms << INTER_CHUNK_TIMEOUT_MS(60s)，不触发 chunk 级超时
+              await new Promise((r) => setTimeout(r, 30));
+            }
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+            controller.close();
+          },
+        });
+        return new HttpResponse(stream, {
+          headers: { 'Content-Type': 'text/event-stream' },
+        });
+      }),
+    );
+
+    const provider = makeProvider();
+    const chunks: string[] = [];
+    // timeoutMs=50ms < SSE 总时长 90ms，但 fetch 成功后总超时被清除
+    for await (const chunk of provider.chat(
+      [{ role: 'user', content: 'long-gen' }],
+      { timeoutMs: 50 },
+    )) {
+      if (chunk.content) chunks.push(chunk.content);
+    }
+    // 应收到全部 3 个 chunk，未被总超时中断
+    expect(chunks.join('')).toBe('chunk0chunk1chunk2');
+  });
+
+  it('fetch 阶段超时应抛出请求超时错误', async () => {
+    // 场景：服务端响应延迟超过 timeoutMs，fetch 阶段被总超时中断
+    server.use(
+      http.post('*/chat/completions', async () => {
+        // delay 200ms > timeoutMs(50ms)，模拟慢响应
+        await new Promise((r) => setTimeout(r, 200));
+        return createSseResponse('ok');
+      }),
+    );
+
+    const provider = makeProvider();
+    await expect(async () => {
+      for await (const chunk of provider.chat(
+        [{ role: 'user', content: 'hi' }],
+        { timeoutMs: 50 },
+      )) {
+        void chunk;
+      }
+    }).rejects.toThrow('LLM 请求超时');
+  });
+});

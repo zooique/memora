@@ -329,8 +329,9 @@ describe('InsightExtractor · 输入截断', () => {
     captureExtractor.bindGetRecentHistory(() => []);
     await captureExtractor.extract(longInput, '短回复');
 
-    // prompt 中应包含截断后的输入（500 字符 + "…"）
-    const userInputSection = capturedPrompt.split('用户：')[1]?.split('\n')[0] ?? '';
+    // 用 '=== 对话内容' 标记定位实际对话内容（few-shot 示例也含 '用户：' 前缀）
+    const dialogSection = capturedPrompt.split('=== 对话内容')[1] ?? '';
+    const userInputSection = dialogSection.split('用户：')[1]?.split('\n')[0] ?? '';
     expect(userInputSection.length).toBeLessThanOrEqual(502); // 500 + '…'
     expect(userInputSection).toContain('…');
   });
@@ -352,7 +353,9 @@ describe('InsightExtractor · 输入截断', () => {
     captureExtractor.bindGetRecentHistory(() => []);
     await captureExtractor.extract('短输入', longAssistant);
 
-    const assistantSection = capturedPrompt.split('助手：')[1]?.split('\n')[0] ?? '';
+    // 用 '=== 对话内容' 标记定位实际对话内容（few-shot 示例也含 '助手：' 前缀）
+    const dialogSection = capturedPrompt.split('=== 对话内容')[1] ?? '';
+    const assistantSection = dialogSection.split('助手：')[1]?.split('\n')[0] ?? '';
     expect(assistantSection.length).toBeLessThanOrEqual(2002); // 2000 + '…'
     expect(assistantSection).toContain('…');
   });
@@ -745,5 +748,187 @@ describe('InsightExtractor · ADR-014 关系构建', () => {
 
     // 恢复原始方法
     relationStore.addRelation = originalAddRelation;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：quality 分级 score 映射
+// ═══════════════════════════════════════════════════════════════
+
+describe('InsightExtractor · quality 分级 score 映射', () => {
+  let extractor: InsightExtractor;
+  let storage: InMemoryStorage;
+  let provider: MockProvider;
+
+  beforeEach(() => {
+    storage = new InMemoryStorage();
+    provider = new MockProvider();
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
+  });
+
+  it('quality=high 时 score 应为 0.8（优先召回）', async () => {
+    provider.setResponse('{"insight": "用户明确要求记住此决策", "tags": ["决策"], "quality": "high"}');
+
+    await extractor.extract('请记住这个重要决策', '好的，已记录');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.score).toBe(0.8);
+  });
+
+  it('quality=low 时 score 应为 0.2（快速衰减）', async () => {
+    provider.setResponse('{"insight": "用户提到了一些背景信息", "tags": ["背景"], "quality": "low"}');
+
+    await extractor.extract('顺便说一下这个背景', '好的');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.score).toBe(0.2);
+  });
+
+  it('quality 缺失时应默认为 medium，score=0.5', async () => {
+    // 不提供 quality 字段
+    provider.setResponse('{"insight": "用户的常规偏好", "tags": ["偏好"]}');
+
+    await extractor.extract('我的常规偏好', '好的');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.score).toBe(0.5);
+  });
+
+  it('quality 为未知值时应默认为 medium，score=0.5', async () => {
+    provider.setResponse('{"insight": "测试未知 quality", "tags": ["测试"], "quality": "unknown"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.score).toBe(0.5);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：语义化 name 生成
+// ═══════════════════════════════════════════════════════════════
+
+describe('InsightExtractor · 语义化 name 生成', () => {
+  let extractor: InsightExtractor;
+  let storage: InMemoryStorage;
+  let provider: MockProvider;
+
+  beforeEach(() => {
+    storage = new InMemoryStorage();
+    provider = new MockProvider();
+    extractor = new InsightExtractor(provider, storage);
+    extractor.bindGetRecentHistory(() => []);
+  });
+
+  it('有 tags 时 name 应以第一个 tag 开头（语义化前缀）', async () => {
+    provider.setResponse('{"insight": "用户偏好深色主题", "tags": ["偏好", "主题"], "quality": "medium"}');
+
+    await extractor.extract('我喜欢深色主题', '好的');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    // name 格式：{tag前8字符}-{uuid前6位}
+    expect(insights[0]!.name).toMatch(/^偏好-[0-9a-f]{6}$/);
+  });
+
+  it('tags 为空数组时应回退到 insight-{uuid前8位} 格式', async () => {
+    provider.setResponse('{"insight": "测试洞察", "tags": [], "quality": "medium"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.name).toMatch(/^insight-[0-9a-f]{8}$/);
+  });
+
+  it('tags 缺失时应回退到 insight-{uuid前8位} 格式', async () => {
+    // 不提供 tags 字段
+    provider.setResponse('{"insight": "测试无 tags", "quality": "medium"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.name).toMatch(/^insight-[0-9a-f]{8}$/);
+  });
+
+  it('tags 为非数组时应回退到 insight-{uuid前8位} 格式', async () => {
+    // tags 为字符串（LLM 异常输出）
+    provider.setResponse('{"insight": "测试异常 tags", "tags": "不是数组", "quality": "medium"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.name).toMatch(/^insight-[0-9a-f]{8}$/);
+  });
+
+  it('tag 含特殊字符时应清洗，仅保留中文/字母/数字/连字符', async () => {
+    // tag 含空格和特殊字符
+    provider.setResponse('{"insight": "测试清洗", "tags": ["技 术@栈!"], "quality": "medium"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    // 清洗后："技术栈"（移除空格和特殊字符）
+    expect(insights[0]!.name).toMatch(/^技术栈-[0-9a-f]{6}$/);
+  });
+
+  it('tag 全为特殊字符清洗后为空时应回退到 insight-{uuid前8位}', async () => {
+    // tag 全是特殊字符
+    provider.setResponse('{"insight": "测试全特殊字符", "tags": ["@#$%"], "quality": "medium"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.name).toMatch(/^insight-[0-9a-f]{8}$/);
+  });
+
+  it('tag 超过 8 字符时应截断到 8 字符', async () => {
+    // tag 超长（14 个中文字符）
+    provider.setResponse('{"insight": "测试超长 tag", "tags": ["这是一个非常长的标签超过八字符"], "quality": "medium"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    // 截断到前 8 字符："这是一个非常长的"（8 个中文字符 = 8 个 UTF-16 码元）
+    expect(insights[0]!.name).toMatch(/^这是一个非常长的-[0-9a-f]{6}$/);
+  });
+
+  it('tag 第一个元素为非字符串时应回退到 insight-{uuid前8位}', async () => {
+    // tags 第一个元素是数字（LLM 异常输出）
+    provider.setResponse('{"insight": "测试非字符串 tag", "tags": [123, "有效"], "quality": "medium"}');
+
+    await extractor.extract('测试输入', '测试回复');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(1);
+    expect(insights[0]!.name).toMatch(/^insight-[0-9a-f]{8}$/);
+  });
+
+  it('语义化 name 应保证唯一性（不同 insight 不同 name）', async () => {
+    // 第一次提取
+    provider.setResponse('{"insight": "用户偏好深色主题", "tags": ["偏好"], "quality": "medium"}');
+    await extractor.extract('我喜欢深色主题', '好的');
+
+    // 第二次提取（不同内容，相同 tag）
+    provider.setResponse('{"insight": "用户偏好夜间模式", "tags": ["偏好"], "quality": "medium"}');
+    await extractor.extract('我用夜间模式', '好的');
+
+    const insights = storage.getBySource(SOURCE_LABELS.INSIGHT);
+    expect(insights).toHaveLength(2);
+    // 两个 name 应不同（UUID 前缀保证唯一性）
+    expect(insights[0]!.name).not.toBe(insights[1]!.name);
+    // 但 tag 前缀相同
+    expect(insights[0]!.name.startsWith('偏好-')).toBe(true);
+    expect(insights[1]!.name.startsWith('偏好-')).toBe(true);
   });
 });

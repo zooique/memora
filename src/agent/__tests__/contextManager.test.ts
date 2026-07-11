@@ -363,6 +363,104 @@ describe('ContextManager.truncateMessages()', () => {
       const hasLongAssistant = result.some((m) => m.role === 'assistant' && m.content === 'A'.repeat(30));
       expect(hasLongAssistant).toBe(false);
     });
+
+    it('extractKeyMessages 恢复原始顺序：贪心选取后按原始时间线顺序返回', () => {
+      // 构造：system + tool(cut, 权重2, 原始第1) + user(cut, 权重3, 原始第2) + 大filler(cut, assistant, 放不下) + 短 tail
+      // 贪心选取顺序：user(权重3) → tool(权重2)，大filler(权重1, 20token) 放不下触发 break
+      // 返回时应恢复为原始时间线顺序：tool → user（非贪心顺序 user → tool）
+      // maxContextTokens=6 → availableTokens=floor(6*0.9)-1=4, tail=1 token, keyMessages 预算=3
+      // tool + user 各 1 token = 2 token ≤ 预算 3，均被选中；大 filler 20 token 触发 break
+      const managerTiny = createContextManager(6);
+      const messages = [
+        createMessage('S', { role: 'system' }),                    // 1 token
+        createMessage('t', { role: 'tool' }),                      // 1 token（cut，权重 2，原始第 1）
+        createMessage('U', { role: 'user' }),                      // 1 token（cut，权重 3，原始第 2）
+        createMessage('F'.repeat(60), { role: 'assistant' }),      // 20 token（cut，权重 1，大 filler，放不下 break）
+        createMessage('T', { role: 'user' }),                      // 1 token（tail）
+      ];
+      const result = managerTiny.truncateMessages(messages);
+      expect(managerTiny.truncationCount).toBe(1);
+
+      // 提取关键消息区域（placeholder 之前、system 之后）
+      // 结构：[system, keyMessages..., placeholder, tail]
+      const placeholderIdx = result.findIndex(
+        (m) => m.role === 'system' && m.content.includes('截断'),
+      );
+      expect(placeholderIdx).toBeGreaterThan(0);
+
+      // keyMessages 在 system 之后、placeholder 之前
+      const keyMessages = result.slice(1, placeholderIdx);
+      // 应包含 tool 和 user（预算 3 token，2 条 × 1 token = 2 token ≤ 3）
+      expect(keyMessages.length).toBe(2);
+      // 顺序应恢复为原始时间线：tool → user（非贪心顺序 user → tool）
+      expect(keyMessages[0]!.role).toBe('tool');
+      expect(keyMessages[1]!.role).toBe('user');
+    });
+
+    it('同权重消息按内容长度降序选取：长消息优先于短消息', () => {
+      // 构造：system + 短 user + 长 user + 大 filler + 短 tail
+      // maxContextTokens=6 → availableTokens=4, tail=1, keyMessages 预算=3
+      // 同权重 user(3) 按内容长度降序：长 user(3 token) 排在短 user(1 token) 前
+      // 长 user 3 token = 预算 3，刚好放下；短 user 1 token，3+1=4 > 3，放不下
+      const managerTiny = createContextManager(6);
+      const messages = [
+        createMessage('S', { role: 'system' }),                       // 1 token
+        createMessage('ab', { role: 'user' }),                         // 1 token（短 user，cut，权重 3）
+        createMessage('abcdefghi', { role: 'user' }),                  // 3 token（长 user，cut，权重 3）
+        createMessage('F'.repeat(60), { role: 'assistant' }),          // 20 token（大 filler，cut，权重 1）
+        createMessage('T', { role: 'user' }),                           // 1 token（tail）
+      ];
+      const result = managerTiny.truncateMessages(messages);
+      expect(managerTiny.truncationCount).toBe(1);
+
+      const placeholderIdx = result.findIndex(
+        (m) => m.role === 'system' && m.content.includes('截断'),
+      );
+      expect(placeholderIdx).toBeGreaterThan(0);
+      const keyMessages = result.slice(1, placeholderIdx);
+
+      // 同权重时长消息优先选取，预算仅够放长 user（3 token = 预算 3）
+      expect(keyMessages.length).toBe(1);
+      expect(keyMessages[0]!.content).toBe('abcdefghi');
+    });
+  });
+
+  describe('截断后消息结构顺序', () => {
+    it('结构应为 system → summary → keyMessages → placeholder → tail', () => {
+      // 构造多层截断场景：system + U1(cut) + A1(cut) + big_filler(cut, 放不进 tail) + TU(tail) + TA(tail)
+      // maxContextTokens=10 → availableTokens=floor(10*0.9)-1=8
+      // tail: TA(2) + TU(2) = 4 token, cutIndex=4（big 放不进 tail）
+      // cutMessages = [U1, A1, big], keyMessages 预算 = 8-4 = 4
+      // U1(权重3, 2 token) 选中, A1(权重1, 2 token) 选中, big(权重1, 20 token) 跳过
+      const managerSmall = createContextManager(10);
+      const messages = [
+        createMessage('SYS', { role: 'system' }),                      // 1 token
+        createMessage('U1-c', { role: 'user' }),                       // 2 token（cut，权重 3，关键消息）
+        createMessage('A1-c', { role: 'assistant' }),                  // 2 token（cut，权重 1，关键消息）
+        createMessage('F'.repeat(60), { role: 'assistant' }),          // 20 token（大 filler，cut，放不进 tail/关键消息）
+        createMessage('TU', { role: 'user' }),                         // 2 token（tail）
+        createMessage('TA', { role: 'assistant' }),                    // 2 token（tail）
+      ];
+      const summary = '上下文摘要内容';
+      const result = managerSmall.truncateMessages(messages, summary);
+
+      // 结构验证：[0]=system, [1]=summary, [2..n]=keyMessages, placeholder, tail
+      expect(result[0]).toBe(messages[0]);                             // system
+      expect(result[1]).toEqual({ role: 'system', content: summary }); // summary
+
+      // 找到 placeholder 位置
+      const placeholderIdx = result.findIndex(
+        (m) => m.role === 'system' && m.content.includes('截断'),
+      );
+      expect(placeholderIdx).toBeGreaterThan(1); // 在 summary 之后
+
+      // placeholder 之后应为 tail 消息
+      const tailPart = result.slice(placeholderIdx + 1);
+      expect(tailPart.length).toBeGreaterThan(0);
+      // tail 最后两条应是原数组的最后两条
+      expect(tailPart[tailPart.length - 1]).toBe(messages[messages.length - 1]);
+      expect(tailPart[tailPart.length - 2]).toBe(messages[messages.length - 2]);
+    });
   });
 
   describe('截断边界', () => {

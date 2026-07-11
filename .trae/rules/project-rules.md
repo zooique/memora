@@ -79,7 +79,7 @@ memora/                          # Git 仓库根目录
 ```
 src/
 ├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（9 个专职 Manager）+ 用户事实提取（纯函数）+ 对话快照 + 作品投影 + 关联推荐
+├── agent/          # Agent 门面 + AgentLoop + 工具执行 + managers/ 子目录（12 个专职 Manager：Archive/AutoConfig/Config/Insight/MemoryAdvisor/MemoryDecay/MemoryInspector/MemoryMutator/RelationBuilder/Session/SessionArchiver/WorkProjection）+ 用户事实提取（纯函数）+ 对话快照 + 作品投影 + 关联推荐
 ├── memory/         # 记忆引擎（IMemoryStorage 接口 + InMemoryStorage 实现 + 召回 + IMemoryRelationStore 侧车接口）
 ├── persona/        # 角色管理（角色配置，记忆管道最高优先级）
 ├── skill/          # 技能管理（configDir/skills/ 扫描，记忆管道最高优先级）

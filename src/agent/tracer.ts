@@ -105,6 +105,37 @@ export const TRACE_SPANS = {
    * 监控此 span 可观察截断频率、摘要生成耗时与失败率。
    */
   CONTEXT_SUMMARY: 'context.summary',
+  /**
+   * 对话后归档处理
+   *
+   * 触发条件：每轮 chat() 完成后调用 postProcess，含角色匹配、技能匹配、
+   * profile 归档、insight 提取、AutoConfigRefiner 五个子步骤。
+   * 监控此 span 可观察归档耗时、失败率、各子步骤执行情况。
+   */
+  POST_PROCESS: 'archive.postProcess',
+  /**
+   * 实际记忆召回函数
+   *
+   * 触发条件：每轮 processUserInput 调用 recall() 执行双通道召回
+   * （语义搜索 + 关键词搜索 + hybridMerge 融合排序）。
+   * 现有 RECALL span 仅 wrapping 注入动作并立即 end，不覆盖实际召回耗时。
+   * 此 span 在 recall() 函数内部埋点，可观察真实召回耗时与双通道命中分布。
+   */
+  RECALL_ACTUAL: 'recall.actual',
+  /**
+   * 输入护栏检查
+   *
+   * 触发条件：用户输入注入上下文前调用 runGuardrails 检查。
+   * 监控此 span 可观察护栏触发频率、阻断率、耗时。
+   */
+  GUARDRAIL_INPUT: 'guardrail.input',
+  /**
+   * 输出护栏检查
+   *
+   * 触发条件：LLM 响应返回给用户前调用 runGuardrails 检查。
+   * 监控此 span 可观察输出护栏触发频率、阻断率、耗时。
+   */
+  GUARDRAIL_OUTPUT: 'guardrail.output',
 } as const;
 
 // ─── 运行时指标快照类型（可观测性增强）────────

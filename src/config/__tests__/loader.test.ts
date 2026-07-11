@@ -290,6 +290,49 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
 
       expect(config.llm.background!.temperature).toBe(0.5);
     });
+
+    // background 通道环境变量展开
+    it('background.apiKey 为 ${ENV} 格式时应展开', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          background: {
+            provider: 'doubao',
+            model: 'doubao-pro',
+            apiKey: '${MEMORA_BG_API_KEY}',
+          },
+        },
+      });
+      process.env.MEMORA_BG_API_KEY = 'env-bg-key';
+      try {
+        const config = await loadConfig(configPath);
+        expect(config.llm.background!.apiKey).toBe('env-bg-key');
+      } finally {
+        delete process.env.MEMORA_BG_API_KEY;
+      }
+    });
+
+    it('background.baseUrl 为 ${ENV} 格式时应展开', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          provider: 'deepseek',
+          model: 'deepseek-chat',
+          background: {
+            provider: 'custom',
+            model: 'bg-model',
+            baseUrl: '${MEMORA_BG_BASE_URL}',
+          },
+        },
+      });
+      process.env.MEMORA_BG_BASE_URL = 'https://bg.api.custom.com/v1';
+      try {
+        const config = await loadConfig(configPath);
+        expect(config.llm.background!.baseUrl).toBe('https://bg.api.custom.com/v1');
+      } finally {
+        delete process.env.MEMORA_BG_BASE_URL;
+      }
+    });
   });
 
   describe('embedding 配置', () => {
@@ -310,6 +353,36 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
       const config = await loadConfig(configPath);
 
       expect(config.embedding).toBeUndefined();
+    });
+
+    // embedding 通道环境变量展开（与 background 同类）
+    it('embedding.apiKey 为 ${ENV} 格式时应展开', async () => {
+      const configPath = writeConfigFile({
+        embedding: { model: 'text-embedding-3-small', apiKey: '${MEMORA_EMB_API_KEY}' },
+      });
+      process.env.MEMORA_EMB_API_KEY = 'env-emb-key';
+      try {
+        const config = await loadConfig(configPath);
+        expect(config.embedding!.apiKey).toBe('env-emb-key');
+      } finally {
+        delete process.env.MEMORA_EMB_API_KEY;
+      }
+    });
+
+    it('embedding.baseUrl 为 ${ENV} 格式时应展开', async () => {
+      const configPath = writeConfigFile({
+        embedding: {
+          model: 'text-embedding-3-small',
+          baseUrl: '${MEMORA_EMB_BASE_URL}',
+        },
+      });
+      process.env.MEMORA_EMB_BASE_URL = 'https://emb.api.custom.com/v1';
+      try {
+        const config = await loadConfig(configPath);
+        expect(config.embedding!.baseUrl).toBe('https://emb.api.custom.com/v1');
+      } finally {
+        delete process.env.MEMORA_EMB_BASE_URL;
+      }
     });
   });
 
