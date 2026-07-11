@@ -490,6 +490,8 @@ export class InputAreaManager {
       if (!metrics?.llm) {
         this.tokenUsageText.textContent = '--';
         this.tokenUsageFill.style.width = '0%';
+        // 无数据时使用紧凑态（隐藏进度条，仅显示 '--'）
+        this.tokenUsageEl?.classList.add('token-usage-compact');
         return;
       }
 
@@ -524,6 +526,17 @@ export class InputAreaManager {
         this.tokenUsageFill.classList.add('level-warning');
       }
 
+      // 上下文相关显现：低使用时（<60%）隐藏进度条仅显示紧凑文字，高使用时（≥60%）展开进度条
+      // 原理：日常对话 token 用量低，进度条信息价值有限且占用视觉空间；
+      //       接近阈值时进度条提供关键预警价值，应展开。阈值 60% 早于警告级（70%），给用户缓冲。
+      if (this.tokenUsageEl) {
+        if (ratio < 0.6) {
+          this.tokenUsageEl.classList.add('token-usage-compact');
+        } else {
+          this.tokenUsageEl.classList.remove('token-usage-compact');
+        }
+      }
+
       // hover 时展示输入/输出 token 分解（CSS ::after tooltip，与侧边栏风格统一）
       if (this.tokenUsageEl) {
         this.tokenUsageEl.setAttribute(
@@ -534,6 +547,8 @@ export class InputAreaManager {
     } catch (error) {
       // Token 用量刷新失败不影响对话功能，UI 显示 '--' 降级，仅记录日志
       this.tokenUsageText.textContent = '--';
+      // 失败时使用紧凑态（隐藏进度条，仅显示 '--'）
+      this.tokenUsageEl?.classList.add('token-usage-compact');
       reportError('InputAreaManager.refreshTokenUsage', error);
     }
   }

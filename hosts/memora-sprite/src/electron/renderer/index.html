@@ -303,7 +303,8 @@
             </button>
           </div>
           <!-- 上下文用量指示器：显示当前对话 token 用量占上下文窗口的比例 -->
-          <div id="token-usage" class="token-usage" data-tooltip="">
+          <!-- 默认紧凑态（隐藏进度条），refreshTokenUsage 根据 ratio 动态切换 -->
+          <div id="token-usage" class="token-usage token-usage-compact" data-tooltip="">
             <svg class="token-usage-icon"><use href="#icon-memo"/></svg>
             <span id="token-usage-text">--</span>
             <div class="token-usage-bar"><div id="token-usage-fill" class="token-usage-fill"></div></div>
@@ -364,7 +365,7 @@
             </div>
           </div>
           <!-- 回到底部浮动按钮（用户向上滚动浏览历史时显示，置于 messages 内部以便正确定位） -->
-          <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
+          <button id="scroll-to-bottom-btn" class="scroll-to-bottom-btn hidden" title="回到底部" aria-label="回到底部"><svg class="icon"><use href="#icon-arrow-down"/></svg></button>
         </div>
         <div id="input-area">
           <textarea id="input" name="message" placeholder="输入消息，Enter 发送，Shift+Enter 换行。输入触发补全，Tab 确认" rows="1" aria-label="输入消息"></textarea>
@@ -374,7 +375,7 @@
           <div class="input-toolbar">
             <div class="input-actions-left">
               <!-- 平铺工具按钮：添加记忆 -->
-              <button class="input-action" id="btn-input-add-memory" title="添加记忆">
+              <button class="input-action" id="btn-input-add-memory" title="添加记忆" aria-label="添加记忆">
                 <svg class="icon"><use href="#icon-plus"/></svg>
               </button>
             </div>
@@ -405,7 +406,7 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
                 <span>停止</span>
               </button>
-              <button id="btn-send" title="发送（Enter）"><svg class="icon"><use href="#icon-send"/></svg></button>
+              <button id="btn-send" title="发送（Enter）" aria-label="发送"><svg class="icon"><use href="#icon-send"/></svg></button>
             </div>
           </div>
         </div>
@@ -459,7 +460,7 @@
         <div id="advanced-search-bar" class="advanced-search-bar hidden">
           <div class="advanced-search-row">
             <label class="advanced-search-label">来源</label>
-            <select id="memory-filter-source" title="按来源筛选">
+            <select id="memory-filter-source" title="按来源筛选" aria-label="按来源筛选">
               <option value="">全部来源</option>
               <option value="profile">profile</option>
               <option value="insight">insight</option>
@@ -470,13 +471,13 @@
               <option value="session">session</option>
             </select>
             <label class="advanced-search-label">排序</label>
-            <select id="memory-sort-order" title="排序方式">
+            <select id="memory-sort-order" title="排序方式" aria-label="排序方式">
               <option value="relevance">相关度</option>
               <option value="score">评分</option>
               <option value="time">时间</option>
             </select>
             <label class="advanced-search-label">时间</label>
-            <select id="memory-time-range" title="时间范围">
+            <select id="memory-time-range" title="时间范围" aria-label="时间范围">
               <option value="">全部时间</option>
               <option value="7d">最近 7 天</option>
               <option value="30d">最近 30 天</option>
@@ -529,7 +530,7 @@
               <span class="partner-growth-title">记忆累积趋势</span>
               <span id="partner-growth-total" class="partner-growth-total">0 条</span>
             </div>
-            <canvas id="partner-growth-chart" class="partner-growth-chart" width="320" height="120"></canvas>
+            <canvas id="partner-growth-chart" class="partner-growth-chart" width="320" height="120" role="img" aria-label="伙伴成长曲线图"></canvas>
           </div>
         </div>
         <!-- 记忆健康度仪表盘（Phase 1：健康度诊断，默认折叠） -->
@@ -593,7 +594,7 @@
             <div class="graph-empty-title">暂无记忆关系数据</div>
             <div class="graph-empty-subtitle">多聊几句后，精灵会自动提炼记忆并构建关联网络</div>
           </div>
-          <canvas id="memory-graph-canvas"></canvas>
+          <canvas id="memory-graph-canvas" role="img" aria-label="记忆关系图谱"></canvas>
           <!-- 图谱图例：节点颜色（source类型）+ 边颜色（关系类型） -->
           <div id="graph-legend" class="graph-legend">
             <div class="legend-section">
@@ -650,7 +651,7 @@
           </div>
 
           <!-- 关系编辑弹窗（复用标准 .modal + .modal-content 结构，差异化样式通过关系编辑专属类补充） -->
-          <div id="relation-edit-dialog" class="modal hidden">
+          <div id="relation-edit-dialog" class="modal hidden" role="dialog">
             <div class="modal-content modal-content-sm">
               <div class="modal-header">
                 <h3>编辑关系</h3>
@@ -697,7 +698,7 @@
           <!-- 面板主体：左侧垂直 tab 导航 + 右侧内容区 -->
           <div class="settings-panel-body">
         <!-- UI-UX-01 设置面板分组导航：垂直 tab 切换替代长滚动 -->
-        <div class="settings-tabs">
+        <div class="settings-tabs" role="tablist" aria-label="设置分类">
           <button class="settings-tab active" data-settings-tab="llm"><svg class="icon"><use href="#icon-brain"/></svg>大模型</button>
           <button class="settings-tab" data-settings-tab="sprite"><svg class="icon"><use href="#icon-fairy"/></svg>精灵</button>
           <button class="settings-tab" data-settings-tab="project"><svg class="icon"><use href="#icon-folder"/></svg>项目</button>
@@ -854,17 +855,17 @@
             </div>
             <div class="settings-row">
               <label for="cfg-shortcut-toggle-window">显示/隐藏窗口</label>
-              <input type="text" id="cfg-shortcut-toggle-window" class="shortcut-input" readonly placeholder="点击捕获组合键" />
+              <input type="text" id="cfg-shortcut-toggle-window" class="shortcut-input" readonly placeholder="点击捕获组合键" aria-label="显示或隐藏窗口的快捷键，点击后按下组合键捕获" aria-describedby="cfg-shortcut-hint" />
             </div>
             <div class="settings-row">
               <label for="cfg-shortcut-quick-record">快速记录</label>
-              <input type="text" id="cfg-shortcut-quick-record" class="shortcut-input" readonly placeholder="点击捕获组合键" />
+              <input type="text" id="cfg-shortcut-quick-record" class="shortcut-input" readonly placeholder="点击捕获组合键" aria-label="快速记录的快捷键，点击后按下组合键捕获" aria-describedby="cfg-shortcut-hint" />
             </div>
             <div class="settings-row">
               <label for="cfg-shortcut-recall-memory">召回记忆</label>
-              <input type="text" id="cfg-shortcut-recall-memory" class="shortcut-input" readonly placeholder="点击捕获组合键" />
+              <input type="text" id="cfg-shortcut-recall-memory" class="shortcut-input" readonly placeholder="点击捕获组合键" aria-label="召回记忆的快捷键，点击后按下组合键捕获" aria-describedby="cfg-shortcut-hint" />
             </div>
-            <span class="settings-hint">点击输入框后按下组合键捕获，Esc 取消，Backspace 清除。至少包含一个修饰键（Ctrl/Cmd/Alt/Shift）。</span>
+            <span id="cfg-shortcut-hint" class="settings-hint">点击输入框后按下组合键捕获，Esc 取消，Backspace 清除。至少包含一个修饰键（Ctrl/Cmd/Alt/Shift）。</span>
           </div>
         </div>
 
@@ -919,7 +920,7 @@
             <div class="settings-group-header">
               <h3>作品投影</h3>
               <span class="settings-group-count">(<span id="work-projection-count">0</span>)</span>
-              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新"><svg class="icon"><use href="#icon-refresh"/></svg></button>
+              <button id="btn-work-projection-refresh" class="btn-icon" title="刷新" aria-label="刷新作品投影"><svg class="icon"><use href="#icon-refresh"/></svg></button>
             </div>
             <p class="settings-hint">
               精灵读取你的代码文件后，自动生成作品投影摘要。
@@ -1199,7 +1200,7 @@
       <div id="panel-dashboard" class="panel" aria-hidden="true" aria-label="仪表盘">
         <div class="panel-header">
           <span class="panel-title">仪表盘</span>
-          <button id="btn-refresh-dashboard" class="icon-btn" title="刷新数据">
+          <button id="btn-refresh-dashboard" class="icon-btn" title="刷新数据" aria-label="刷新仪表盘数据">
             <svg class="icon"><use href="#icon-refresh"/></svg>
           </button>
         </div>
@@ -1251,7 +1252,7 @@
             <!-- 3 张对比卡片：今日 / 7 天 / 30 天 -->
             <div class="growth-cards" id="dashboard-growth-cards"></div>
             <!-- 7 天每日柱状图（Canvas 2D，主题色适配） -->
-            <canvas id="dashboard-growth-canvas" class="growth-canvas hidden"></canvas>
+            <canvas id="dashboard-growth-canvas" class="growth-canvas hidden" role="img" aria-label="仪表盘成长曲线图"></canvas>
             <!-- 空状态（daily 全 0 时显示） -->
             <div class="growth-empty hidden" id="dashboard-growth-empty"></div>
           </section>
@@ -1283,7 +1284,7 @@
   </div>
 
   <!-- 记忆详情弹窗 -->
-  <div id="memory-detail-modal" class="modal hidden">
+  <div id="memory-detail-modal" class="modal hidden" role="dialog">
     <div class="modal-content">
       <div class="modal-header">
         <h3 id="memory-detail-name"></h3>
@@ -1328,7 +1329,7 @@
   </div>
 
   <!-- Provider 配置弹窗 -->
-  <div id="provider-modal" class="modal hidden">
+  <div id="provider-modal" class="modal hidden" role="dialog">
     <div class="modal-content">
       <div class="modal-header">
         <h3 id="provider-modal-title">添加 API</h3>
@@ -1336,28 +1337,33 @@
       </div>
       <div class="modal-body">
         <label for="cfg-provider-alias">别名（唯一标识）</label>
-        <input type="text" id="cfg-provider-alias" placeholder="deepseek-v3" autocomplete="off" />
+        <input type="text" id="cfg-provider-alias" placeholder="deepseek-v3" autocomplete="off" required aria-describedby="cfg-provider-alias-error" />
+        <p id="cfg-provider-alias-error" class="prompt-error hidden" role="alert"></p>
 
         <label for="cfg-provider-display">显示名称</label>
         <input type="text" id="cfg-provider-display" placeholder="DeepSeek V3" autocomplete="off" />
 
         <label for="cfg-provider-provider">提供商（provider）</label>
-        <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" />
+        <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" required aria-describedby="cfg-provider-provider-error" />
+        <p id="cfg-provider-provider-error" class="prompt-error hidden" role="alert"></p>
 
         <label for="cfg-provider-model">模型（model）</label>
-        <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" />
+        <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" required aria-describedby="cfg-provider-model-error" />
+        <p id="cfg-provider-model-error" class="prompt-error hidden" role="alert"></p>
 
         <label for="cfg-provider-base-url">API 地址（baseUrl）</label>
         <input type="text" id="cfg-provider-base-url" placeholder="https://api.deepseek.com" autocomplete="off" />
 
         <label for="cfg-provider-api-key">API Key</label>
         <div class="input-with-action">
-          <input type="password" id="cfg-provider-api-key" placeholder="sk-****" />
+          <input type="password" id="cfg-provider-api-key" placeholder="sk-****" required aria-describedby="cfg-provider-api-key-error" />
           <button type="button" id="btn-toggle-provider-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Provider API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
         </div>
+        <p id="cfg-provider-api-key-error" class="prompt-error hidden" role="alert"></p>
 
         <label for="cfg-provider-temperature">Temperature <span class="settings-hint">(0–2，默认 0.7)</span></label>
-        <input type="number" id="cfg-provider-temperature" placeholder="0.7" min="0" max="2" step="0.1" autocomplete="off" />
+        <input type="number" id="cfg-provider-temperature" placeholder="0.7" min="0" max="2" step="0.1" autocomplete="off" aria-describedby="cfg-provider-temperature-error" />
+        <p id="cfg-provider-temperature-error" class="prompt-error hidden" role="alert"></p>
       </div>
       <div class="modal-footer">
         <button id="btn-provider-test" class="btn-secondary" type="button">测试连接</button>
@@ -1368,7 +1374,7 @@
   </div>
 
   <!-- 回收站弹窗：列出软删除记忆，支持恢复/彻底删除 -->
-  <div id="recycle-bin-modal" class="modal hidden">
+  <div id="recycle-bin-modal" class="modal hidden" role="dialog">
     <div class="modal-content">
       <div class="modal-header">
         <h3>回收站</h3>
@@ -1391,7 +1397,7 @@
   </div>
 
   <!-- 添加记忆弹窗 -->
-  <div id="memory-add-modal" class="modal hidden">
+  <div id="memory-add-modal" class="modal hidden" role="dialog">
     <div class="modal-content">
       <div class="modal-header">
         <h3>添加记忆</h3>
@@ -1400,7 +1406,7 @@
       <div class="modal-body">
         <label for="memory-add-source">来源（source）</label>
         <!-- source 下拉：提供常用预设，支持自定义输入（datalist 兼顾灵活性与一致性） -->
-        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" aria-label="记忆来源" />
+        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" aria-label="记忆来源" required aria-describedby="memory-add-source-error" />
         <datalist id="source-presets">
           <option value="profile">用户画像</option>
           <option value="insight">洞察记忆</option>
@@ -1410,10 +1416,13 @@
           <option value="persona">角色记忆</option>
           <option value="session">会话记忆</option>
         </datalist>
+        <p id="memory-add-source-error" class="prompt-error hidden" role="alert"></p>
         <label for="memory-add-name">名称（name）</label>
-        <input type="text" id="memory-add-name" placeholder="记忆名称" autocomplete="off" aria-label="记忆名称" />
+        <input type="text" id="memory-add-name" placeholder="记忆名称" autocomplete="off" aria-label="记忆名称" required aria-describedby="memory-add-name-error" />
+        <p id="memory-add-name-error" class="prompt-error hidden" role="alert"></p>
         <label for="memory-add-content">内容（content）</label>
-        <textarea id="memory-add-content" rows="6" placeholder="记忆内容…" aria-label="记忆内容"></textarea>
+        <textarea id="memory-add-content" rows="6" placeholder="记忆内容…" aria-label="记忆内容" required aria-describedby="memory-add-content-error"></textarea>
+        <p id="memory-add-content-error" class="prompt-error hidden" role="alert"></p>
       </div>
       <div class="modal-footer">
         <button class="btn-secondary" data-modal="memory-add-modal">取消</button>
@@ -1424,7 +1433,7 @@
 
   <!-- 通用确认弹窗：替代 window.confirm，提供一致的视觉体验 -->
   <!-- 由 ui.ts showConfirmDialog() 控制，支持危险操作（删除）红色确认按钮 -->
-  <div id="confirm-modal" class="modal hidden">
+  <div id="confirm-modal" class="modal hidden" role="dialog">
     <div class="modal-content modal-content-sm">
       <div class="modal-header">
         <h3 id="confirm-title">确认</h3>
@@ -1442,7 +1451,7 @@
 
   <!-- 通用输入弹窗：替代 window.prompt，提供一致的视觉体验 -->
   <!-- 由 ui.ts showInputDialog() 控制，用于会话重命名等需要文本输入的场景 -->
-  <div id="prompt-modal" class="modal hidden">
+  <div id="prompt-modal" class="modal hidden" role="dialog">
     <div class="modal-content modal-content-sm">
       <div class="modal-header">
         <h3 id="prompt-title">输入</h3>
@@ -1450,9 +1459,9 @@
       </div>
       <div class="modal-body">
         <p id="prompt-message" class="confirm-message"></p>
-        <!-- 补齐 aria-labelledby 关联提示文本 + placeholder 兜底（无 label for 关联） -->
-        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" aria-labelledby="prompt-message" placeholder="请输入..." />
-        <p id="prompt-error" class="prompt-error hidden"></p>
+        <!-- 补齐 aria-labelledby 关联提示文本 + aria-describedby 关联错误文本 + placeholder 兜底（无 label for 关联） -->
+        <input id="prompt-input" type="text" class="prompt-input" maxlength="100" aria-labelledby="prompt-message" aria-describedby="prompt-input-error" placeholder="请输入..." />
+        <p id="prompt-input-error" class="prompt-error hidden" role="alert"></p>
       </div>
       <div class="modal-footer">
         <button id="btn-prompt-cancel" class="btn-secondary">取消</button>
@@ -1464,7 +1473,7 @@
   <!-- 多步骤引导向导（欢迎 → API Key → 开始） -->
   <!-- 使用 localStorage 标记是否已引导过，已配置 Provider 的用户跳过 -->
   <!-- 步骤进度持久化到 sprite.json 的 onboardingStep 字段 -->
-  <div id="onboarding-modal" class="modal hidden">
+  <div id="onboarding-modal" class="modal hidden" role="dialog">
     <div class="modal-content onboarding-wizard">
       <!-- 步骤指示器 -->
       <div class="onboarding-steps">
@@ -1538,10 +1547,10 @@
           </div>
           <div class="settings-row">
             <label for="onboarding-api-key">API Key</label>
-            <input type="password" id="onboarding-api-key" placeholder="粘贴你的 API Key" autocomplete="off" />
+            <input type="password" id="onboarding-api-key" placeholder="粘贴你的 API Key" autocomplete="off" aria-describedby="onboarding-api-key-error" />
             <a class="onboarding-signup-link" id="onboarding-signup-link" href="#" target="_blank">获取 API Key →</a>
           </div>
-          <div id="onboarding-api-error" class="onboarding-error hidden"></div>
+          <div id="onboarding-api-key-error" class="onboarding-error hidden" role="alert"></div>
         </div>
 
         <div class="modal-footer">
@@ -1574,7 +1583,7 @@
   </div>
 
   <!-- 快捷键帮助弹窗（Ctrl+/ 触发） -->
-  <div id="shortcuts-modal" class="modal hidden">
+  <div id="shortcuts-modal" class="modal hidden" role="dialog">
     <div class="modal-content modal-content-sm">
       <div class="modal-header">
         <h3>键盘快捷键</h3>
@@ -1641,7 +1650,7 @@
 
   <script type="module" src="renderer.js"></script>
 <!-- 清理确认对话框（Phase 3：智能清理，默认隐藏） -->
-<div id="cleanup-confirm-dialog" class="modal hidden">
+<div id="cleanup-confirm-dialog" class="modal hidden" role="dialog">
       <div class="confirm-dialog-content">
         <h3 class="confirm-dialog-title">确认清理记忆</h3>
         <p id="cleanup-confirm-msg"></p>
@@ -1653,7 +1662,7 @@
     </div>
 
     <!-- 快捷命令面板（Ctrl+K 触发，类似 VS Code Command Palette） -->
-    <div id="command-palette" class="command-palette hidden">
+    <div id="command-palette" class="command-palette hidden" role="dialog" aria-modal="true" aria-label="命令面板">
       <div class="command-palette-dialog">
         <div class="command-palette-input-wrapper">
           <svg class="icon command-palette-search-icon"><use href="#icon-search"/></svg>

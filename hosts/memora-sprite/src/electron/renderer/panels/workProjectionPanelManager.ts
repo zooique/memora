@@ -24,6 +24,8 @@ import {
   getOptionalElement,
   setButtonLoadingEl,
 } from '../helpers/domHelpers.js';
+// renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
+import { renderErrorState } from '../helpers/errorState.js';
 
 /**
  * 作品投影面板管理器
@@ -122,26 +124,9 @@ export class WorkProjectionPanelManager {
       entries = await window.electronAPI.listWorkProjections();
     } catch (err) {
       reportError('WorkProjectionPanel', `加载作品投影失败: ${toError(err).message}`);
-      // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），对齐 profilePanelManager / auditPanelManager
+      // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），renderErrorState 公共函数
       if (this.listEl) {
-        clearElement(this.listEl);
-        const errorEl = document.createElement('div');
-        errorEl.className = 'error-state';
-        const icon = document.createElement('div');
-        icon.className = 'error-icon';
-        icon.textContent = '⚠';
-        const msg = document.createElement('div');
-        msg.className = 'error-message';
-        msg.textContent = '加载作品投影失败';
-        // 重试按钮：内嵌在错误态内，便于用户发现恢复入口
-        const retryBtn = document.createElement('button');
-        retryBtn.className = 'btn-secondary error-retry-btn';
-        retryBtn.textContent = '重试';
-        this.events.addEventListener(retryBtn, 'click', () => this.load());
-        errorEl.appendChild(icon);
-        errorEl.appendChild(msg);
-        errorEl.appendChild(retryBtn);
-        this.listEl.appendChild(errorEl);
+        renderErrorState(this.listEl, '加载作品投影失败', () => this.load(), this.events);
       }
       return; // IO 失败后不执行 render
     }

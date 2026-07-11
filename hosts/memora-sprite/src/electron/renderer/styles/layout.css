@@ -1,7 +1,7 @@
 /**
  * Memora 精灵 — 布局样式
  *
- * v9 布局策略（UI 布局重思方案）：
+ * 布局策略（大底板 + 悬浮卡片）：
  * - 大底板：64px 图标侧边栏 + 顶部栏融为一体（同色，无边界）
  * - 侧边栏固定 64px 图标模式（不再展开）
  * - 核心窗口：白色悬浮卡片（margin + border-radius + box-shadow）
@@ -37,12 +37,12 @@
   justify-content: flex-end;
   padding: 0;
   background: var(--bg);
-  border-bottom: none;  /* v8：顶部栏与侧边栏同色，无边界 */
+  border-bottom: none;  /* 顶部栏与侧边栏同色，无边界 */
   flex-shrink: 0;
   -webkit-app-region: drag;  /* 整体设为可拖动区域 */
 }
 
-/* v8：顶部栏拖拽占位区（继承父级 drag，无需重复声明） */
+/* 顶部栏拖拽占位区（继承父级 drag，无需重复声明） */
 /* ADR-NAV-001：导航标签已有独立间距 */
 /* flex 子元素，高度由父级 align-items: center 控制 */
 #titlebar-drag {
@@ -195,7 +195,7 @@
   flex-shrink: 0;
 }
 
-/* ─── 角色选择器（v8 卡片式） ─────────────────────────────── */
+/* ─── 角色选择器（卡片式） ─────────────────────────────── */
 #persona-selector {
   display: flex;
   align-items: center;
@@ -262,7 +262,7 @@
   font-weight: var(--weight-medium);
 }
 
-/* 自动模式：蓝色调（v8 accent-soft） */
+/* 自动模式：蓝色调（accent-soft） */
 .mode-badge.auto {
   background: var(--accent-soft);
   color: var(--accent);
@@ -330,7 +330,7 @@
   border-radius: var(--radius-xs);
 }
 
-/* ─── 仪表盘（v8 网格布局） ──────────────────────────────── */
+/* ─── 仪表盘（网格布局） ──────────────────────────────── */
 .dash-item {
   background: var(--window-bg);
   border: 1px solid var(--surface2);
@@ -347,13 +347,13 @@
   background: var(--window-bg-2);
 }
 
-/* v8：累积事件接近阈值时高亮（accent-soft 背景） */
+/* 累积事件接近阈值时高亮（accent-soft 背景） */
 .dash-item.near-threshold {
   border-color: var(--yellow);
   background: var(--yellow-20);
 }
 
-/* v8：累积事件达到阈值时高亮（accent-soft 背景 + accent 文字） */
+/* 累积事件达到阈值时高亮（accent-soft 背景 + accent 文字） */
 .dash-item.at-threshold {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -781,7 +781,7 @@
   flex-shrink: 0;
 }
 
-/* ─── 核心悬浮窗口（v8：margin + radius + shadow 形成悬浮效果） ─ */
+/* ─── 核心悬浮窗口（margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
   grid-area: window;
   /* 修正 margin 不对称问题，四周留边距形成完整悬浮感 */
@@ -795,7 +795,7 @@
   position: relative;
 }
 
-/* ─── 面板（v8：核心窗口内的面板容器，淡入淡出过渡） ────── */
+/* ─── 面板（核心窗口内的面板容器，淡入淡出过渡） ────── */
 /* 所有面板绝对定位堆叠，仅 .active 面板可见且可交互 */
 .panel {
   position: absolute;

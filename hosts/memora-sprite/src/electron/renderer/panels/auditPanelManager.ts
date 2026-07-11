@@ -20,6 +20,8 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement, formatClock, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+// renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
+import { renderErrorState } from '../helpers/errorState.js';
 import type { ConfirmDialogOptions } from '../types.js';
 
 /**
@@ -210,31 +212,14 @@ export class AuditPanelManager {
   /**
    * 渲染错误状态
    *
-   * 统一用 .error-state 结构（图标 + 文字 + 重试按钮），对齐 profilePanelManager。
+   * 统一用 .error-state 结构（图标 + 文字 + 重试按钮），renderErrorState 公共函数。
    * 重试按钮触发重新加载（load 失败和 clearAuditLog 失败后的恢复操作均为重新加载列表）。
    *
    * @param message 错误消息
    */
   private renderError(message: string): void {
     if (!this.listEl) return;
-    clearElement(this.listEl);
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-state';
-    const icon = document.createElement('div');
-    icon.className = 'error-icon';
-    icon.textContent = '⚠';
-    const msg = document.createElement('div');
-    msg.className = 'error-message';
-    msg.textContent = message;
-    // 重试按钮：内嵌在错误态内，便于用户发现恢复入口
-    const retryBtn = document.createElement('button');
-    retryBtn.className = 'btn-secondary error-retry-btn';
-    retryBtn.textContent = '重试';
-    this.events.addEventListener(retryBtn, 'click', () => this.load());
-    errorDiv.appendChild(icon);
-    errorDiv.appendChild(msg);
-    errorDiv.appendChild(retryBtn);
-    this.listEl.appendChild(errorDiv);
+    renderErrorState(this.listEl, message, () => this.load(), this.events);
   }
 
   /**

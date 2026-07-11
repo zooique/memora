@@ -254,7 +254,7 @@
 }
 
 /**
- * 主动提示 banner：v8 浅色背景 + 底部分隔线
+ * 主动提示 banner：浅色背景 + 底部分隔线
  * 由 ui.ts showProactiveBanner() 控制 .hidden 类切换
  *
  * UI-UX-02 相对定位流式布局，消息区自动下推，避免遮挡

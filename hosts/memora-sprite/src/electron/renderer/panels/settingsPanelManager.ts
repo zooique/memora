@@ -18,6 +18,7 @@ import { reportError } from '../helpers/errorHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
+import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
 import { MS_PER_MINUTE, MS_PER_HOUR } from '../../../sprite/constants.js';
 import type {
@@ -63,6 +64,20 @@ export interface SettingsPanelHost {
 }
 
 // ─── 设置面板管理器类 ─────────────────────────────────────
+
+/**
+ * Provider 表单所有可校验字段的 id 数组
+ *
+ * 用于 clearFieldErrors 批量清空错误状态，避免在多处重复字面量数组。
+ * 字段 id 与 HTML 中 input 元素 id 一一对应，错误容器遵循 {id}-error 命名约定。
+ */
+const PROVIDER_FORM_FIELD_IDS = [
+  'cfg-provider-alias',
+  'cfg-provider-provider',
+  'cfg-provider-model',
+  'cfg-provider-api-key',
+  'cfg-provider-temperature',
+] as const;
 
 export class SettingsPanelManager {
   // ─── 设置面板 DOM 元素 - Embedding 配置 ─────────────────
@@ -219,7 +234,7 @@ export class SettingsPanelManager {
     this.btnProviderCancel = getOptionalElement('btn-provider-cancel', 'button');
     this.btnProviderTest = getOptionalElement('btn-provider-test', 'button');
 
-    // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 console.error 报告
+    // 构造完成后统一校验所有字段，HTML ID 拼错时一次性 reportError 报告
     // 避免静默降级导致用户配置静默失效（保存时表单值为 undefined，主进程收到空配置）
     this.validateSettingsElements();
   }
@@ -227,7 +242,7 @@ export class SettingsPanelManager {
   /**
    * 校验设置面板所有可选元素是否成功获取
    *
-   * 收集所有 null 字段，统一 console.error 报告（包含字段名和期望 ID），
+   * 收集所有 null 字段，统一 reportError 报告（包含字段名和期望 ID），
    * 让开发者快速定位 HTML 与 TS 不同步问题。
    *
    * 不抛异常（设置面板是非核心功能，缺失时降级而非阻断整个 UI），
@@ -944,6 +959,9 @@ export class SettingsPanelManager {
   private showProviderForm(key: string = ''): void {
     if (!this.providerModalEl) return;
 
+    // 清空之前的错误状态（避免上次校验失败残留）
+    clearFieldErrors([...PROVIDER_FORM_FIELD_IDS]);
+
     if (key) {
       // 编辑模式：从缓存中查找 Provider 数据（含 temperature 和脱敏 apiKey）
       const cached = this.cachedProviders.find((p) => p.key === key);
@@ -988,7 +1006,8 @@ export class SettingsPanelManager {
   /**
    * 保存 Provider（新增/更新）
    *
-   * 校验：必填字段 + 别名格式（仅允许字母数字.-_） + 重复 key 检测
+   * 校验：必填字段 + 别名格式（仅允许字母数字.-_） + Temperature 范围 + 重复 key 检测
+   * 反馈：字段级 aria-invalid + aria-describedby 错误文本，失败时聚焦首个错误字段
    */
   private async saveProvider(): Promise<void> {
     const alias = this.providerAliasInput?.value.trim();
@@ -1000,22 +1019,40 @@ export class SettingsPanelManager {
     const tempRaw = this.providerTemperatureInput?.value.trim();
     const temperature = tempRaw ? parseFloat(tempRaw) : undefined;
 
-    // 必填字段校验
-    if (!alias || !provider || !model || !apiKey) {
-      this.host.showToast('请填写所有必填字段（别名、提供商、模型、API Key）', 'error');
+    // 清空之前的错误状态（开始新一轮校验）
+    clearFieldErrors([...PROVIDER_FORM_FIELD_IDS]);
+
+    // 必填字段校验：逐字段标记 aria-invalid，聚焦首个错误字段
+    let firstErrorField: HTMLElement | null = null;
+    if (!alias) {
+      firstErrorField = showFieldError('cfg-provider-alias', '请填写别名');
+    }
+    if (!provider) {
+      firstErrorField ??= showFieldError('cfg-provider-provider', '请填写提供商');
+    }
+    if (!model) {
+      firstErrorField ??= showFieldError('cfg-provider-model', '请填写模型');
+    }
+    if (!apiKey) {
+      firstErrorField ??= showFieldError('cfg-provider-api-key', '请填写 API Key');
+    }
+    if (firstErrorField) {
+      firstErrorField.focus();
       return;
     }
 
     // 别名格式校验：仅允许 ASCII 字母数字 . - _，长度 ≤ 50
     // Provider 别名作为持久化 key（文件名/IPC 标识），限制 ASCII 避免 path traversal
-    if (!/^[a-zA-Z0-9._-]{1,50}$/.test(alias)) {
-      this.host.showToast('别名仅支持英文、数字、点、短横线、下划线，最长50字符', 'error');
+    if (!/^[a-zA-Z0-9._-]{1,50}$/.test(alias as string)) {
+      const field = showFieldError('cfg-provider-alias', '仅支持英文、数字、点、短横线、下划线，最长 50 字符');
+      field.focus();
       return;
     }
 
     // Temperature 范围校验：0-2（与 HTML input min/max 一致，防止绕过 HTML 校验）
     if (temperature !== undefined && (Number.isNaN(temperature) || temperature < 0 || temperature > 2)) {
-      this.host.showToast('Temperature 必须在 0-2 之间', 'error');
+      const field = showFieldError('cfg-provider-temperature', 'Temperature 必须在 0-2 之间');
+      field.focus();
       return;
     }
 
@@ -1025,7 +1062,8 @@ export class SettingsPanelManager {
       try {
         const data = await window.electronAPI.listLlmProviders();
         if (data.providers.some((p) => p.key === alias)) {
-          this.host.showToast(`别名 "${alias}" 已存在，请更换`, 'error');
+          const field = showFieldError('cfg-provider-alias', `别名 "${alias}" 已存在，请更换`);
+          field.focus();
           return;
         }
       } catch (error) {

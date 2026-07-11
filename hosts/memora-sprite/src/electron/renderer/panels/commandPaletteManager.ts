@@ -480,6 +480,8 @@ export class CommandPaletteManager {
     this.commands = createStaticCommands(this.uiManager);
 
     this.paletteEl.classList.remove('hidden');
+    // aria-modal 动态设置：通知屏幕阅读器进入对话框模式
+    this.paletteEl.setAttribute('aria-modal', 'true');
     this.isOpen = true;
     this.selectedIndex = 0;
 
@@ -500,6 +502,8 @@ export class CommandPaletteManager {
     if (!this.paletteEl) return;
 
     this.paletteEl.classList.add('hidden');
+    // 移除 aria-modal，避免屏幕阅读器误判隐藏的对话框仍为活跃状态
+    this.paletteEl.removeAttribute('aria-modal');
     this.isOpen = false;
     this.selectedIndex = 0;
 

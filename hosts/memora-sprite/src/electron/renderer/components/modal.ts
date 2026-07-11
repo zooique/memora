@@ -15,6 +15,7 @@
 
 import { EventTracker } from '../helpers/eventTracker.js';
 import { getOptionalElement } from '../helpers/domHelpers.js';
+import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
 import type { ConfirmDialogOptions } from '../types.js';
 
 /**
@@ -171,6 +172,9 @@ export class ModalManager {
     this.pushFocus();
 
     modal.classList.remove('hidden');
+    // aria-modal="true" 动态设置：通知屏幕阅读器进入对话框模式（限制虚拟光标到对话框内）
+    // 与 HTML 中静态的 role="dialog" 配合，确保所有模态框（含未来新增）都正确声明语义
+    modal.setAttribute('aria-modal', 'true');
 
     // 启用焦点陷阱：Tab/Shift+Tab 限制在模态内循环
     this.enableFocusTrap(modal);
@@ -190,6 +194,8 @@ export class ModalManager {
     if (!modal) return;
 
     modal.classList.add('hidden');
+    // 移除 aria-modal，避免屏幕阅读器误判隐藏的对话框仍为活跃状态
+    modal.removeAttribute('aria-modal');
 
     // 禁用此模态的焦点陷阱
     this.disableTopFocusTrap();
@@ -276,7 +282,6 @@ export class ModalManager {
         // 禁用焦点陷阱
         this.disableTopFocusTrap();
         // 恢复焦点到触发弹窗的元素（从栈顶弹出）
-        // 原 cleanup 未恢复焦点，关闭确认弹窗后焦点丢失到 body
         this.popFocus();
       };
       const onOk = (e: Event) => { e.stopPropagation(); cleanup(); resolve(true); };
@@ -460,10 +465,11 @@ export class ModalManager {
       const titleEl = document.getElementById('prompt-title');
       const messageEl = document.getElementById('prompt-message');
       const inputEl = getOptionalElement('prompt-input', 'input');
-      const errorEl = document.getElementById('prompt-error');
+      // 错误容器存在性检查（实际读写由 formValidation.ts 公共函数完成）
+      const errorElExists = document.getElementById('prompt-input-error') !== null;
       const btnOk = document.getElementById('btn-prompt-ok');
       const btnCancel = document.getElementById('btn-prompt-cancel');
-      if (!modal || !titleEl || !messageEl || !inputEl || !errorEl || !btnOk || !btnCancel) {
+      if (!modal || !titleEl || !messageEl || !inputEl || !errorElExists || !btnOk || !btnCancel) {
         // 元素缺失时回退为 window.prompt（防御性编程）
         const fallback = window.prompt(options.message, options.defaultValue ?? '');
         resolve(fallback?.trim() || null);
@@ -476,7 +482,8 @@ export class ModalManager {
       inputEl.value = options.defaultValue ?? '';
       inputEl.placeholder = options.placeholder ?? '';
       inputEl.maxLength = options.maxLength ?? 100;
-      errorEl.classList.add('hidden');
+      // 清空上次的错误状态（aria-invalid + 错误文本）
+      clearFieldErrors(['prompt-input']);
       const isRequired = options.required ?? true;
 
       // 并发保护：若已有活跃弹窗，先取消旧的
@@ -512,17 +519,14 @@ export class ModalManager {
         // 禁用焦点陷阱
         this.disableTopFocusTrap();
         // 恢复焦点到触发弹窗的元素（从栈顶弹出）
-        // 原 cleanup 未恢复焦点，关闭输入弹窗后焦点丢失到 body
         this.popFocus();
       };
 
       const onOk = () => {
         const value = inputEl.value.trim();
-        // 必填校验：空值提示错误，不关闭弹窗
+        // 必填校验：空值通过公共 showFieldError 标记 aria-invalid + 显示错误文本
         if (isRequired && !value) {
-          errorEl.textContent = '输入不能为空';
-          errorEl.classList.remove('hidden');
-          inputEl.focus();
+          showFieldError('prompt-input', '输入不能为空').focus();
           return;
         }
         cleanup();

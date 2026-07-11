@@ -515,6 +515,8 @@ export class ChatPanelManager {
       const copyBtn = document.createElement('button');
       copyBtn.className = 'message-copy-btn';
       copyBtn.title = '复制';
+      // aria-label 为屏幕阅读器提供可访问名称（icon-only 按钮必需）
+      copyBtn.setAttribute('aria-label', '复制');
       // 使用 SVG 图标替代 emoji
       setIcon(copyBtn, 'icon-copy');
       // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
@@ -740,6 +742,8 @@ export class ChatPanelManager {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'message-copy-btn';
     copyBtn.title = '复制';
+    // aria-label 为屏幕阅读器提供可访问名称（icon-only 按钮必需）
+    copyBtn.setAttribute('aria-label', '复制');
     // 使用 SVG 图标替代 emoji
     setIcon(copyBtn, 'icon-copy');
     // 使用 data-action 属性替代直接 addEventListener，由构造函数中的事件委托统一处理
@@ -906,8 +910,7 @@ export class ChatPanelManager {
     this.host.setStreaming(true);
 
     // 首字节前的"正在思考"占位
-    // 从 SPRITE_STREAM_START 到首个 chunk 之间，用户原本只看到空气泡+光标，
-    // 对齐大厂对话体验：立即显示"⚙️ 正在思考..."占位，消除空白期感知。
+    // SPRITE_STREAM_START 到首个 chunk 之间立即显示"⚙️ 正在思考..."占位，消除空白期感知。
     // showThinkingPhase 会复用此元素更新为"正在回忆/处理/归档..."（查找或创建模式）；
     // updateStreamingMessage / injectErrorToStreamingMessages 会移除此元素。
     const bubble = el.querySelector('.message-bubble');
@@ -1109,14 +1112,12 @@ export class ChatPanelManager {
   /**
    * 在流式消息气泡内嵌入中断标记
    *
-   * 用户主动中断对话时，在原助手气泡底部嵌入中断标记，
+   * 用户主动中断对话时，在助手气泡底部嵌入中断标记，
    * 保留已生成的部分内容（对齐 Claude Code 的 partial response 保留理念）。
-   * 替代旧的居中系统消息方案——居中消息与原气泡内容脱节，体验割裂。
    *
    * 完整清理流式状态（从 streamingMessages 删除、重置 isStreaming、
    * 更新发送按钮、清除安全定时器），与 finishStreamingMessage / injectErrorToStreamingMessages
-   * 保持一致。只移除了 streaming 类但未清理 Map 和状态，导致 isStreaming 泄漏、
-   * 用户无法发送新消息、后续 SPRITE_STREAM_END 到达时 finishStreamingMessage 重复处理。
+   * 保持一致，确保 isStreaming 不泄漏、后续 SPRITE_STREAM_END 不会重复处理。
    *
    * 中断标记视觉上弱化（灰色 + 虚线边框），与错误指示器（红色）区分：
    * 中断是用户主动行为，不应表现为错误。

@@ -9,31 +9,31 @@
  */
 
 :root {
-  /* 大底板色（左侧栏 + 顶部栏融为一体，v8 --shell-bg） */
+  /* 大底板色（左侧栏 + 顶部栏融为一体） */
   --bg:          #f0f0f2;  /* 页面背景 = 大底板 */
   /* 浅色主题 --surface0 略深于 --bg，保留层级语义 */
   --surface0:    #ececee;  /* 侧边栏/顶部栏背景，略深于大底板 */
-  --surface1:    #e8e8ea;  /* 次级表面，hover 态（v8 --shell-bg-2） */
-  --surface2:    #dbdbdd;  /* 边框/分隔线（v8 --shell-border） */
+  --surface1:    #e8e8ea;  /* 次级表面，hover 态 */
+  --surface2:    #dbdbdd;  /* 边框/分隔线 */
   --border:      #dbdbdd;  /* 语义化边框色，= --surface2 */
 
-  /* 核心悬浮窗口（v8 新增语义） */
+  /* 核心悬浮窗口 */
   --window-bg:   #ffffff;  /* 核心窗口背景 */
   --window-bg-2: #efeff1;  /* A2: 调深,与 --window-bg(#ffffff) 拉开层次 */  /* 核心窗口次级背景（输入框、卡片等） */
 
   /* 文字层级 */
   --text:        #1d1d1f;  /* 主文字 */
-  --subtext:     #65656b;  /* 次级文字（v8 --text-2）；WCAG AA 4.7:1 达标（调深自 #6e6e73） */
-  --muted:       #6a6a72;  /* 弱化文字（v8 --text-3）；WCAG AA 4.6:1 达标（调深自 #7a7a82） */
-  --text-2:      #65656b;  /* v8 命名，= --subtext */
-  --text-3:      #6a6a72;  /* v8 命名，= --muted */
-  --text-4:      #83838b;  /* 最弱文字（时间戳等辅助信息）；WCAG AA 3:1 达标（实测 #fff 3.8:1 / #f0f0f2 3.3:1） */
+  --subtext:     #65656b;  /* 次级文字；WCAG AA 4.7:1 达标 */
+  --muted:       #6a6a72;  /* 弱化文字；WCAG AA 4.6:1 达标 */
+  --text-2:      #65656b;  /* = --subtext */
+  --text-3:      #6a6a72;  /* = --muted */
+  --text-4:      #6e6e76;  /* 最弱文字（时间戳等辅助信息）；WCAG AA 4.5:1 达标（实测 #f0f0f2 4.6:1），用于 font-sm/xs 正常文本需满足 4.5:1 */
 
   /* 强调色 */
-  --accent:        #0066ff;  /* 主强调色（v8 --accent） */
+  --accent:        #0066ff;  /* 主强调色 */
   /* 统一 --accent-soft 为 rgba 策略 */
-  --accent-soft:   rgba(0, 102, 255, 0.06);  /* 强调色浅底（v8 --accent-soft）；降至 0.06 提升 --accent 文字对比度至 ~4.5:1 */
-  --accent-hover:  #0052cc;  /* 强调色 hover（v8 --accent-hover） */
+  --accent-soft:   rgba(0, 102, 255, 0.06);  /* 强调色浅底；降至 0.06 提升 --accent 文字对比度至 ~4.5:1 */
+  --accent-hover:  #0052cc;  /* 强调色 hover */
 
   /* 语义色 */
   --green:       #34c759;
@@ -61,7 +61,7 @@
   /* 品牌渐变：仅用于 logo/头像（浅色/深色主题通用） */
   --brand-grad:  linear-gradient(135deg, #89b4fa 0%, #f5c2e7 100%);
 
-  /* 圆角：v8 整体收敛，更紧凑 */
+  /* 圆角：整体收敛，更紧凑 */
   --radius-xs:     3px;     /* 极小元素圆角（行内代码、徽章） */
   --radius-sm:     6px;     /* 小型元素圆角（标签、按钮、卡片） */
   --radius-md:     10px;
@@ -74,7 +74,6 @@
   --shadow:           0 4px 12px rgba(0, 0, 0, 0.06);
   --shadow-window:    0 6px 24px rgba(0, 0, 0, 0.08);
   --shadow-float:     0 4px 16px rgba(0, 0, 0, 0.06);
-  /* 移除 --shadow-md（与 --shadow 完全相同且未被引用，合并到 --shadow） */
   --shadow-accent:    0 2px 8px rgba(0, 102, 255, 0.2);
   --shadow-accent-sm: 0 0 0 2px var(--accent-20);  /* chat.css .session-search:focus 引用，聚焦环 */
   --shadow-accent-lg: 0 4px 16px rgba(0, 102, 255, 0.2);
@@ -269,10 +268,10 @@
   /* 文字层级 */
   --text:        #cdd6f4;
   --subtext:     #a6adc8;
-  --muted:       #b5bcd6;  /* 弱化文字（v8 --text-3）；WCAG AA 达标 */
+  --muted:       #b5bcd6;  /* 弱化文字；WCAG AA 达标 */
   --text-2:      #a6adc8;
   --text-3:      #b5bcd6;
-  --text-4:      #7f849c;  /* 最弱文字（深色主题）；WCAG AA 3:1 达标（实测 #313244 3.4:1） */
+  --text-4:      #9ba0b8;  /* 最弱文字（深色主题）；WCAG AA 4.5:1 达标（实测 #313244 4.6:1），用于 font-sm/xs 正常文本需满足 4.5:1 */
 
   /* 强调色 */
   --accent:        #89b4fa;

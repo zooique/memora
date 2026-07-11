@@ -47,14 +47,15 @@ export type QuickInputElectronAPI = Pick<
  */
 function initQuickInput(): void {
   // 入口契约校验：instanceof 确保运行时类型安全，不通过则报错退出（正视 bug，不掩盖）
+  // reportError 双通道日志（console + 主进程 logger），让生产环境也可观测
   const inputEl = document.getElementById('quick-input-field');
   if (!(inputEl instanceof HTMLInputElement)) {
-    console.error('[QuickInput] quick-input-field 元素缺失或类型错误');
+    reportError('QuickInput init', new Error('quick-input-field 元素缺失或类型错误'));
     return;
   }
   const confirmEl = document.getElementById('quick-input-confirm');
   if (!(confirmEl instanceof HTMLButtonElement)) {
-    console.error('[QuickInput] quick-input-confirm 元素缺失或类型错误');
+    reportError('QuickInput init', new Error('quick-input-confirm 元素缺失或类型错误'));
     return;
   }
   // 候选列表容器可选（缺失时跳过补全能力，不阻断主流程）
@@ -62,7 +63,7 @@ function initQuickInput(): void {
 
   const electronApi = (window as unknown as { electronAPI?: QuickInputElectronAPI }).electronAPI;
   if (!electronApi) {
-    console.error('[QuickInput] electronAPI 未注入（preload 加载失败）');
+    reportError('QuickInput init', new Error('electronAPI 未注入（preload 加载失败）'));
     return;
   }
 

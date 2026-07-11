@@ -98,6 +98,8 @@ export class ArchiveButtonManager {
     const archiveBtn = document.createElement('button');
     archiveBtn.className = 'message-archive-btn';
     archiveBtn.title = '归档到记忆（manual 模式）';
+    // aria-label 为屏幕阅读器提供可访问名称（icon-only 按钮必需，文案简洁不含模式说明）
+    archiveBtn.setAttribute('aria-label', '归档到记忆');
     setIcon(archiveBtn, 'icon-bookmark');
     // 事件委托模式：通过 data-action 统一分发到 handleClick
     archiveBtn.dataset.action = 'archive';

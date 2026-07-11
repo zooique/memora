@@ -46,7 +46,7 @@ const MODAL_HTML = `
       <h3 id="prompt-title">标题</h3>
       <div id="prompt-message">提示</div>
       <input id="prompt-input" type="text" />
-      <div id="prompt-error" class="hidden"></div>
+      <div id="prompt-input-error" class="hidden"></div>
       <button class="modal-close">x</button>
       <button id="btn-prompt-cancel">取消</button>
       <button id="btn-prompt-ok">确定</button>
@@ -406,7 +406,7 @@ describe('showInputDialog · 基础渲染', () => {
     // 默认 maxLength=100
     expect((document.getElementById('prompt-input') as HTMLInputElement).maxLength).toBe(100);
     // error 应隐藏
-    expect(document.getElementById('prompt-error')!.classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('prompt-input-error')!.classList.contains('hidden')).toBe(true);
     // 弹窗可见
     expect(document.getElementById('prompt-modal')!.classList.contains('hidden')).toBe(false);
     click(document.getElementById('btn-prompt-cancel')!);
@@ -457,7 +457,7 @@ describe('showInputDialog · 必填校验', () => {
     // 弹窗应仍可见
     expect(document.getElementById('prompt-modal')!.classList.contains('hidden')).toBe(false);
     // error 应显示
-    const errorEl = document.getElementById('prompt-error')!;
+    const errorEl = document.getElementById('prompt-input-error')!;
     expect(errorEl.classList.contains('hidden')).toBe(false);
     expect(errorEl.textContent).toBe('输入不能为空');
     // Promise 不应 resolve（用未 resolve 断言：等待微任务后仍 pending）

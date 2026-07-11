@@ -37,8 +37,6 @@ const TOAST_DEFAULT_DURATION = TOAST_LONG_MS;
 /** Toast 最大同时显示数量（FIFO，超出时移除最早的） */
 const TOAST_MAX_VISIBLE = 5;
 
-// 剪枝：ToastOptions 已提取到 types.ts，此处复用统一类型定义
-
 /**
  * Toast 通知管理器
  *
@@ -124,6 +122,8 @@ export class ToastManager {
     // 使用 SVG 图标替代 Unicode 符号
     setIcon(closeBtn, 'icon-close');
     closeBtn.title = '关闭';
+    // aria-label 为屏幕阅读器提供可访问名称（title 是弱回退，部分阅读器默认不朗读）
+    closeBtn.setAttribute('aria-label', '关闭');
     closeBtn.addEventListener('click', () => this.removeToast(toast));
     toast.appendChild(closeBtn);
 

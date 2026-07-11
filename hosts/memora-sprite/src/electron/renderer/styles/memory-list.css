@@ -8,7 +8,7 @@
 
 /* ─── 记忆面板（可见性由 .panel / .panel.active 统一控制） ─── */
 
-/* v8：面板头部 44px（与chat-toolbar一致），border-bottom分隔线 */
+/* 面板头部 44px（与chat-toolbar一致），border-bottom分隔线 */
 .panel-header {
   height: 44px;
   padding: 0 var(--space-6);
@@ -29,7 +29,7 @@
   white-space: nowrap;
 }
 
-/* v8：搜索框胶囊形 */
+/* 搜索框胶囊形 */
 .panel-header input {
   flex: 1;
   padding: var(--space-1-5) var(--space-3);
@@ -88,7 +88,7 @@
 }
 
 /**
- * 记忆列表项：v8 卡片式
+ * 记忆列表项：卡片式
  * 结构：header（title + source 标签）+ content 预览 + meta（score）
  */
 .memory-item {
@@ -144,7 +144,7 @@
 }
 
 /**
- * source 标签：v8 小圆角徽章
+ * source 标签：小圆角徽章
  * 不同 source 用不同颜色区分（profile 绿/insight 蓝/guardrail 粉等）
  */
 .memory-item .meta {
@@ -234,7 +234,7 @@
   -webkit-box-orient: vertical;
 }
 
-/* ─── 记忆面板筛选下拉（v8） ───────────────────────────────── */
+/* ─── 记忆面板筛选下拉 ───────────────────────────────────── */
 /* 复用 settings.css 的通用 select 样式，此处仅声明布局差异 */
 #memory-filter-source {
   padding: var(--input-padding-md);
@@ -252,7 +252,7 @@
   border-color: var(--accent);
 }
 
-/* ─── 记忆详情（v8） ───────────────────────────────────────── */
+/* ─── 记忆详情 ───────────────────────────────────────────── */
 .memory-meta {
   display: flex;
   flex-wrap: wrap;

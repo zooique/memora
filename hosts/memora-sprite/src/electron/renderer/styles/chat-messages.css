@@ -408,7 +408,7 @@
 
 /**
  * 消息容器：flex 布局以容纳头像 + 内容
- * v8：max-width 80%，gap 10px
+ * max-width 80%，gap 10px
  */
 .message {
   display: flex;
@@ -458,7 +458,7 @@
 }
 
 /**
- * 消息头像：v8 28px 圆形
+ * 消息头像：28px 圆形
  * 用户头像使用 window-bg-2 背景 + 边框，精灵头像使用渐变背景
  */
 .message-avatar {
@@ -516,7 +516,7 @@
 }
 
 /**
- * 消息气泡：v8 圆角 lg，用户蓝色，精灵浅灰
+ * 消息气泡：圆角 lg，用户蓝色，精灵浅灰
  */
 .message-bubble {
   padding: var(--space-2-5) var(--space-3);
@@ -595,11 +595,13 @@
 }
 
 /**
- * 消息复制按钮：与时间戳同行显示
- * 仅精灵消息（非流式）显示，点击复制原始内容到剪贴板
- * 遵循"主动可见"原则，不依赖 hover 才显示
+ * 消息操作按钮（复制 + 归档）公共基础样式
+ *
+ * 复制按钮和归档按钮共享相同的布局和过渡样式，仅 opacity 和 hover 配色不同。
+ * 合并基础属性消除重复（DRY），差异通过各自的选择器覆盖。
  */
-.message-copy-btn {
+.message-copy-btn,
+.message-archive-btn {
   /* 行内元素：由 .message-meta flex 容器排列 */
   display: inline-flex;
   align-items: center;
@@ -610,24 +612,43 @@
   background: transparent;
   color: var(--text-3);
   cursor: pointer;
-  opacity: 0.65;
   transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
 }
 
-/* 复制按钮内的 SVG 图标尺寸 */
-.message-copy-btn .icon {
+/* 消息操作按钮内的 SVG 图标尺寸 */
+.message-copy-btn .icon,
+.message-archive-btn .icon {
   width: 13px;
   height: 13px;
 }
 
 /* hover 消息行时增强可见性 */
-.message-content:hover .message-copy-btn {
+.message-content:hover .message-copy-btn,
+.message-content:hover .message-archive-btn {
   opacity: 0.85;
 }
 
+/* 复制按钮：默认透明度 0.65（略低于归档按钮，复制是更常规的操作） */
+.message-copy-btn {
+  opacity: 0.65;
+}
+
+/* 归档按钮：默认透明度 0.7（manual 模式专用，略高以提示存在） */
+.message-archive-btn {
+  opacity: 0.7;
+}
+
+/* 复制按钮 hover：蓝色强调 */
 .message-copy-btn:hover {
   color: var(--accent);
   background: var(--accent-soft);
+  opacity: 1;
+}
+
+/* 归档按钮 hover：黄色强调 */
+.message-archive-btn:hover {
+  color: var(--yellow);
+  background: var(--yellow-20);
   opacity: 1;
 }
 
@@ -637,39 +658,9 @@
   background: transparent;
 }
 
-/* ─── 归档按钮（manual 模式专用，复用复制按钮视觉） ─── */
-.message-archive-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-  opacity: 0.7;
-  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-}
-
-.message-archive-btn .icon {
-  width: 13px;
-  height: 13px;
-}
-
-.message-content:hover .message-archive-btn {
-  opacity: 0.85;
-}
-
-.message-archive-btn:hover {
-  color: var(--yellow);
-  background: var(--yellow-20);
-  opacity: 1;
-}
-
-/* 归档中状态：禁用 + 降饱和 */
+/* 归档中状态：禁用 + 降饱和（opacity 0.55 保持可辨识，避免对比度过低） */
 .message-archive-btn.archiving {
-  opacity: 0.4;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
@@ -1028,6 +1019,12 @@
   opacity: 1;
 }
 
+/* 紧凑态：低使用时（<60%）隐藏进度条，仅显示图标 + 文字，减少视觉占用 */
+/* 高使用时（≥60%）移除此 class，进度条恢复显示，提供预警价值 */
+.token-usage-compact .token-usage-bar {
+  display: none;
+}
+
 /* 工具按钮：圆形，对齐 demo .input-action */
 .input-action {
   width: 32px;
@@ -1324,7 +1321,7 @@
   flex-shrink: 0;
 }
 
-/* ─── 对话区空状态引导（v8） ───────────────────────────────── */
+/* ─── 对话区空状态引导 ───────────────────────────────── */
 /* 无消息时显示欢迎语 + 示例问题，引导新用户快速开始对话        */
 /* 有消息后通过 .hidden 类隐藏                                  */
 
@@ -1345,7 +1342,7 @@
 
 /* 空状态额外样式：更大 padding 和居中布局 */
 
-/* 精灵头像：v8 56px 渐变圆形（brand-grad） */
+/* 精灵头像：56px 渐变圆形（brand-grad） */
 .chat-empty-state .empty-avatar {
   width: 56px;
   height: 56px;

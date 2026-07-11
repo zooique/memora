@@ -17,20 +17,29 @@
  *   - 回调通过 getter 函数读取（运行时获取最新值，因为 onXxx 注册晚于 init 调用）
  *   - 状态（searchTimer 防抖定时器、pendingCleanupIds）通过 getter/setter 访问
  *   - 所有事件监听器纳入 EventTracker 统一管理，避免内存泄漏
- *
- * 提取时同步合并 #memory-sort-order 与 #memory-time-range 的重复注册
- * （原方法在"高级搜索栏"和"排序方式变更"两处各注册一次 change 监听器，
- *   导致回调被触发两次，属方法内重复，合并为单次注册）。
  */
 
 import { getOptionalElement } from './domHelpers.js';
 import { reportError } from './errorHelpers.js';
+import { showFieldError, clearFieldErrors } from './formValidation.js';
 import type { EventTracker } from './eventTracker.js';
 import type { ConfirmDialogOptions } from '../types.js';
 // 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
+
+/**
+ * 添加记忆表单所有可校验字段的 id 数组
+ *
+ * 用于 clearFieldErrors 批量清空错误状态，避免在多处重复字面量数组。
+ * 字段 id 与 HTML 中 input/textarea 元素 id 一一对应。
+ */
+const MEMORY_ADD_FIELD_IDS = [
+  'memory-add-source',
+  'memory-add-name',
+  'memory-add-content',
+] as const;
 
 /**
  * 记忆面板事件初始化所需的上下文
@@ -204,6 +213,8 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
   const btnAdd = getOptionalElement('btn-add-memory', 'button');
   if (btnAdd) {
     ctx.events.addEventListener(btnAdd, 'click', () => {
+      // 打开弹窗前清空上次的错误状态（aria-invalid 残留 + 错误文本）
+      clearFieldErrors([...MEMORY_ADD_FIELD_IDS]);
       ctx.host.showModal('memory-add-modal');
     });
   }
@@ -214,10 +225,11 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
     ctx.events.addEventListener(btnAddConfirm, 'click', () => {
       const data = ctx.getAddMemoryFormData();
       if (data) {
+        clearFieldErrors([...MEMORY_ADD_FIELD_IDS]);
         ctx.getMemoryAddCallback()?.(data);
       } else {
-        // 表单校验失败时给出反馈（之前静默跳过，用户以为按钮失灵）
-        ctx.host.showToast('请填写完整：来源、名称和内容', 'warning');
+        // 字段级校验反馈：标记缺失字段并聚焦首个错误字段
+        validateMemoryAddForm();
       }
     });
   }
@@ -231,13 +243,40 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
         e.preventDefault();
         const data = ctx.getAddMemoryFormData();
         if (data) {
+          clearFieldErrors([...MEMORY_ADD_FIELD_IDS]);
           ctx.getMemoryAddCallback()?.(data);
         } else {
-          // Ctrl+Enter 提交校验失败时同样给出反馈
-          ctx.host.showToast('请填写完整：来源、名称和内容', 'warning');
+          // Ctrl+Enter 提交校验失败时同样给出字段级反馈
+          validateMemoryAddForm();
         }
       }
     }) as EventListener);
+  }
+}
+
+/**
+ * 校验添加记忆表单，显示字段级错误反馈
+ *
+ * 逐字段检查 source/name/content 是否为空，为空时通过公共 showFieldError
+ * 设置 aria-invalid=true 并填充错误文本，最后聚焦首个错误字段。
+ */
+function validateMemoryAddForm(): void {
+  const fields: Array<{ id: string; label: string }> = [
+    { id: 'memory-add-source', label: '来源' },
+    { id: 'memory-add-name', label: '名称' },
+    { id: 'memory-add-content', label: '内容' },
+  ];
+  let firstErrorField: HTMLElement | null = null;
+  for (const { id, label } of fields) {
+    const input = document.getElementById(id);
+    if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+      if (!input.value.trim()) {
+        firstErrorField ??= showFieldError(id, `请填写${label}`);
+      }
+    }
+  }
+  if (firstErrorField) {
+    firstErrorField.focus();
   }
 }
 
@@ -319,7 +358,7 @@ function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // 排序方式变更（合并原两处重复注册为单次）
+  // 排序方式变更
   const sortEl = document.getElementById('memory-sort-order');
   if (sortEl instanceof HTMLSelectElement) {
     ctx.events.addEventListener(sortEl, 'change', () => {
@@ -327,7 +366,7 @@ function initAdvancedFilterBar(ctx: MemoryPanelEventContext): void {
     });
   }
 
-  // 时间范围变更（合并原两处重复注册为单次）
+  // 时间范围变更
   const timeRangeEl = document.getElementById('memory-time-range');
   if (timeRangeEl instanceof HTMLSelectElement) {
     ctx.events.addEventListener(timeRangeEl, 'change', () => {

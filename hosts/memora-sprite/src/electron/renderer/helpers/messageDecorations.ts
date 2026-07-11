@@ -35,7 +35,6 @@ export interface MemoryRecallItem {
  * 思考阶段中文映射（Phase 3：增强文案，更具体）
  *
  * 将内核 yield 的 thinking phase 标识符映射为用户可读的中文文案。
- * 从 chatPanelManager.THINKING_PHASE_LABELS 迁移。
  */
 const THINKING_PHASE_LABELS: Record<string, string> = {
   recalling: '正在回忆相关记忆...',
@@ -158,6 +157,10 @@ export function showThinkingPhase(bubble: Element, phase: string): void {
   if (!(indicator instanceof HTMLDivElement)) {
     indicator = document.createElement('div');
     indicator.className = 'thinking-phase';
+    // aria-live="polite" + role="status"：屏幕阅读器播报状态变化（正在回忆/处理/归档）
+    // 让视障用户在等待 AI 响应时收到反馈，避免以为应用无响应
+    indicator.setAttribute('role', 'status');
+    indicator.setAttribute('aria-live', 'polite');
     bubble.appendChild(indicator);
   }
 

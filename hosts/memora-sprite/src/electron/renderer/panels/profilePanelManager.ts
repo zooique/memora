@@ -18,6 +18,8 @@ import type { UserProfileEntryPayload } from '../../preload.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { reportError, toError } from '../helpers/errorHelpers.js';
 import { clearElement, formatTimeAgo, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
+// renderErrorState 统一面板错误态渲染（图标 + 文字 + 重试按钮），3 处面板共用
+import { renderErrorState } from '../helpers/errorState.js';
 import type { ConfirmDialogOptions } from '../types.js';
 
 /**
@@ -110,26 +112,9 @@ export class ProfilePanelManager {
       entries = result.entries;
     } catch (err) {
       reportError('ProfilePanel', `加载用户画像失败: ${toError(err).message}`);
-      // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），替代 .profile-empty.profile-error
+      // 统一用 .error-state 结构（图标 + 文字 + 重试按钮），renderErrorState 公共函数
       if (this.pendingListEl) {
-        clearElement(this.pendingListEl);
-        const errorEl = document.createElement('div');
-        errorEl.className = 'error-state';
-        const icon = document.createElement('div');
-        icon.className = 'error-icon';
-        icon.textContent = '⚠';
-        const msg = document.createElement('div');
-        msg.className = 'error-message';
-        msg.textContent = '加载用户画像失败';
-        const retryBtn = document.createElement('button');
-        retryBtn.className = 'btn-secondary error-retry-btn';
-        retryBtn.textContent = '重试';
-        // 重试按钮触发重新加载（与 refreshBtn 同语义，但内嵌在错误态内便于发现）
-        this.events.addEventListener(retryBtn, 'click', () => this.load());
-        errorEl.appendChild(icon);
-        errorEl.appendChild(msg);
-        errorEl.appendChild(retryBtn);
-        this.pendingListEl.appendChild(errorEl);
+        renderErrorState(this.pendingListEl, '加载用户画像失败', () => this.load(), this.events);
       }
       return; // IO 失败后不执行 render
     }

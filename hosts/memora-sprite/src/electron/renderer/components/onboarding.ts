@@ -14,6 +14,7 @@
  * - 支持跳过 API Key 步骤（降级路径)
  */
 import { reportError } from '../helpers/errorHelpers.js';
+import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
 
 // ─── Provider 注册链接映射 ──────────────────────────────
 
@@ -273,22 +274,22 @@ export class OnboardingManager {
       // 引导弹窗模板静态元素，modal 已确认存在，用 ! 断言正视契约
       const providerSelect = modal.querySelector('#onboarding-provider-type')! as HTMLSelectElement;
       const apiKeyInput = modal.querySelector('#onboarding-api-key')! as HTMLInputElement;
-      const errorEl = modal.querySelector('#onboarding-api-error')! as HTMLElement;
 
       const providerType = providerSelect.value;
       const apiKey = apiKeyInput.value.trim();
 
-      // 校验
+      // 清空上次的错误状态（aria-invalid + 错误文本）
+      clearFieldErrors(['onboarding-api-key']);
+
+      // 校验：空值通过公共 showFieldError 标记 aria-invalid + 显示错误文本
       if (!apiKey) {
-        errorEl.textContent = '请输入 API Key';
-        errorEl.classList.remove('hidden');
+        showFieldError('onboarding-api-key', '请输入 API Key');
         return;
       }
 
       // 禁用按钮，显示加载状态
       saveBtn.disabled = true;
       saveBtn.textContent = '保存中...';
-      errorEl.classList.add('hidden');
 
       try {
         // 自动填充默认值和模型
@@ -314,8 +315,8 @@ export class OnboardingManager {
         this.showStep(modal, 3);
         this.persistStep(3);
       } catch (err) {
-        errorEl.textContent = `保存失败：${err instanceof Error ? err.message : '未知错误'}`;
-        errorEl.classList.remove('hidden');
+        // 保存失败通过公共 showFieldError 显示错误（含 aria-invalid 语义）
+        showFieldError('onboarding-api-key', `保存失败：${err instanceof Error ? err.message : '未知错误'}`);
         saveBtn.disabled = false;
         saveBtn.textContent = '保存并继续';
       }
