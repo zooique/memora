@@ -58,6 +58,8 @@ import type { MemoryViewSwitcherContext } from '../helpers/memoryViewSwitcher.js
 // 时间线视图子系统（按天分组渲染 + 日期标签格式化）提取到独立 helper
 import { renderTimeline as renderTimelineHelper } from '../helpers/memoryTimelineView.js';
 import type { MemoryTimelineContext } from '../helpers/memoryTimelineView.js';
+// source 颜色映射纯函数（从本文件提取到 helpers/sourceColor.ts，消除 helpers→panels 循环依赖）
+import { getSourceColorClass } from '../helpers/sourceColor.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -71,28 +73,6 @@ export interface MemoryPanelHost {
   showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean>;
   /** 显示 toast 通知（添加记忆表单校验失败时反馈） */
   showToast(message: string, type?: ToastType, duration?: number): void;
-}
-
-/**
- * 将 source 字符串映射到颜色类名
- *
- * 颜色映射规则（对齐记忆系统 source 分类）：
- * - profile → green（用户画像，绿色代表身份）
- * - insight → blue（洞察，蓝色代表智慧）
- * - guardrail → pink（护栏，粉色代表警示）
- * - skill → yellow（技能，黄色代表能力）
- * - rule → purple（规则，紫色代表约束）
- * - persona → cyan（角色，青色代表个性）
- * - session → orange（会话，橙色代表活跃）
- * - 其他 → default（灰色）
- *
- * @param source 记忆来源字符串（开放字符串，如 'profile'、'insight'、'rule'）
- * @returns 对应的 CSS 颜色类名（如 'profile' / 'default'）
- */
-export function getSourceColorClass(source: string): string {
-  const normalized = source.toLowerCase().trim();
-  const knownSources = ['profile', 'insight', 'guardrail', 'skill', 'rule', 'persona', 'session'];
-  return knownSources.includes(normalized) ? normalized : 'default';
 }
 
 // ─── 记忆面板管理器类 ─────────────────────────────────────

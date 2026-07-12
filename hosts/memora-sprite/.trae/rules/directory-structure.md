@@ -89,7 +89,6 @@ src/
 │       │   ├── memoryPanelManager.ts     # 记忆面板
 │       │   ├── settingsPanelManager.ts   # 设置面板
 │       │   ├── profilePanelManager.ts    # 用户画像面板
-│       │   ├── sessionPanelManager.ts    # 会话面板
 │       │   ├── personaPanelManager.ts    # 角色面板
 │       │   ├── workProjectionPanelManager.ts # 作品投影面板
 │       │   ├── commandPaletteManager.ts  # 命令面板

@@ -55,4 +55,13 @@ export class BadgeManager {
   setCount(count: number): void {
     this.updateBadge(Math.max(0, count));
   }
+
+  /**
+   * 清理资源（ADR-SP-015 §2 生命周期契约）
+   *
+   * BadgeManager 不绑定事件监听器，无资源需释放，空实现满足契约。
+   */
+  cleanup(): void {
+    // 无事件监听器，空实现（ADR-SP-015 §2 要求 PanelManager 必须提供 cleanup）
+  }
 }

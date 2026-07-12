@@ -17,7 +17,7 @@
 import { clearElement, formatTimeAgo } from '../helpers/domHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
 // 复用 source → CSS 颜色类映射（与 InsightsRenderer 的 source 分布条形图共享配色）
-import { getSourceColorClass } from './memoryPanelManager.js';
+import { getSourceColorClass } from '../helpers/sourceColor.js';
 import type { ToastType } from '../types.js';
 import type { ReviewDataPayload } from '../../preload.js';
 // 仪表盘脉冲动画间隔常量从 constants.ts 真理源导入

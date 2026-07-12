@@ -23,8 +23,8 @@
  */
 
 import { clearElement, formatDateKey } from './domHelpers.js';
-// getSourceColorClass 是从 memoryPanelManager 导出的纯函数（模块级，非实例方法）
-import { getSourceColorClass } from '../panels/memoryPanelManager.js';
+// getSourceColorClass 是从 helpers/sourceColor 导出的纯函数（模块级，非实例方法）
+import { getSourceColorClass } from './sourceColor.js';
 import type { MemoryListItem } from '../types.js';
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────

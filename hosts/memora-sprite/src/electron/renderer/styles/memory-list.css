@@ -165,7 +165,7 @@
 
 /**
  * source 标签颜色区分：不同 source 类型用不同颜色
- * 对齐 ui.ts getSourceColorClass() 的颜色映射
+ * 对齐 helpers/sourceColor.ts getSourceColorClass() 的颜色映射
  * 颜色语义：profile(绿)/insight(蓝)/guardrail(粉)/skill(黄)/rule(紫)/persona(青)/session(橙)
  */
 .source-tag.source-profile   { background: var(--tag-profile-bg); color: var(--tag-profile-fg); }

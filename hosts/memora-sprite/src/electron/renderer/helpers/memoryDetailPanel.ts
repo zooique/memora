@@ -23,7 +23,7 @@
  */
 
 import { getOptionalElement, clearElement, formatTimeAgo } from './domHelpers.js';
-import { getSourceColorClass } from '../panels/memoryPanelManager.js';
+import { getSourceColorClass } from './sourceColor.js';
 // 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
 import type { MemoryPanelHost } from '../panels/memoryPanelManager.js';
 import type { EventTracker } from './eventTracker.js';

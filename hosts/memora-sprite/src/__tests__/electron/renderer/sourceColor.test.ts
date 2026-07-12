@@ -1,19 +1,16 @@
 /**
- * 记忆面板管理器纯函数测试
+ * 记忆来源颜色映射纯函数测试
  *
  * 覆盖范围：
  * - getSourceColorClass：source 字符串到 CSS 颜色类名的映射
  *
- * 仅测试从 MemoryPanelManager 类私有方法提取到模块顶层的纯函数。
- * MemoryPanelManager 类重度依赖 DOM + EventTracker + host 回调，
- * 整体测试需完整 mock，留待后续按需补充。
- *
- * 对齐 dashboardPanelManager.formatTokenCount 提取模式。
+ * 从 memoryPanelManager.test.ts 迁入（函数已从 memoryPanelManager 提取到
+ * helpers/sourceColor.ts，消除 helpers→panels 循环依赖，测试同步迁移）。
  *
  * 纯逻辑测试，无 JSDOM 依赖。
  */
 import { describe, it, expect } from 'vitest';
-import { getSourceColorClass } from '../../../electron/renderer/panels/memoryPanelManager.js';
+import { getSourceColorClass } from '../../../electron/renderer/helpers/sourceColor.js';
 
 describe('getSourceColorClass', () => {
   // ─── 已知 source 映射 ──────────────────────────────────

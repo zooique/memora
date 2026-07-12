@@ -14,7 +14,7 @@
 
 import { clearElement, showPanelLoading } from '../helpers/domHelpers.js';
 import { EventTracker } from '../helpers/eventTracker.js';
-import { getSourceColorClass } from './memoryPanelManager.js';
+import { getSourceColorClass } from '../helpers/sourceColor.js';
 import type { RelationGraphData } from '../components/relationGraph.js';
 
 // ─── 类型定义 ────────────────────────────────────────────
