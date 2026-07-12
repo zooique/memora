@@ -10,7 +10,7 @@ date: 2026-07-05
 > **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
 > **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
 > [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：`.trae/rules/decisions/` 下 24 个 ADR（内核 15 + 精灵 9）
+> **决策追溯**：`.trae/rules/decisions/` 下 25 个 ADR（内核 16 + 精灵 9）
 
 ## 1. 不可违反的硬约束
 
