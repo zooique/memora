@@ -75,6 +75,15 @@ export interface EvalExpectation {
   recallSources?: Record<string, number>;
 
   /**
+   * 期望的召回记忆数量范围
+   *
+   * 验证召回管线是否返回了预期数量的记忆。
+   * 例如：{ min: 1 } 表示应至少召回 1 条记忆；
+   *       { max: 0 } 表示不应召回任何记忆（空召回降级场景）。
+   */
+  recallCount?: { min?: number; max?: number };
+
+  /**
    * 工具调用次数范围
    */
   toolCallCount?: { min?: number; max?: number };
@@ -90,6 +99,17 @@ export interface EvalExpectation {
    * AgentChunk.guardrailBlocked 收集，而非中文文案匹配。
    */
   guardrailBlocked?: boolean;
+
+  /**
+   * 期望对话是否正常完成
+   *
+   * true 表示期望对话正常完成（收到 done chunk）；
+   * false 表示期望对话未正常完成（如被中断、出错）；
+   * undefined 表示不检查（默认）。
+   *
+   * 与 collected.done 比对。
+   */
+  done?: boolean;
 }
 
 /**
@@ -201,12 +221,29 @@ export function evaluateResult(
     }
   }
 
+  // 检查召回数量
+  if (expect.recallCount) {
+    if (expect.recallCount.min !== undefined && collected.recallCount < expect.recallCount.min) {
+      failures.push(`召回数量 ${collected.recallCount} < 期望最小值 ${expect.recallCount.min}`);
+    }
+    if (expect.recallCount.max !== undefined && collected.recallCount > expect.recallCount.max) {
+      failures.push(`召回数量 ${collected.recallCount} > 期望最大值 ${expect.recallCount.max}`);
+    }
+  }
+
   // 检查护栏阻断
   if (expect.guardrailBlocked !== undefined) {
     if (expect.guardrailBlocked !== collected.guardrailBlocked) {
       failures.push(
         `期望护栏阻断=${expect.guardrailBlocked}，实际=${collected.guardrailBlocked}`,
       );
+    }
+  }
+
+  // 检查完成状态
+  if (expect.done !== undefined) {
+    if (expect.done !== collected.done) {
+      failures.push(`期望完成状态=${expect.done}，实际=${collected.done}`);
     }
   }
 
