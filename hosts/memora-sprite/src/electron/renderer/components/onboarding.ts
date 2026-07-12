@@ -71,6 +71,8 @@ export class OnboardingManager {
   private closed = false;
   /** 用户是否已跳过 API Key 配置 */
   private skippedApiKey = false;
+  /** 当前关闭处理的 cleanup 函数（ESC/遮罩/完成三路径关闭后统一清理监听器，UX-0712-8） */
+  private currentCleanup: (() => void) | null = null;
 
   /**
    * 检查是否需要显示引导
@@ -135,12 +137,17 @@ export class OnboardingManager {
 
   /**
    * 关闭弹窗
+   *
+   * 三条关闭路径（ESC/遮罩/完成按钮）统一在此清理监听器，避免 ESC 重复触发（UX-0712-8）。
    */
   private closeModal(modal: HTMLElement): void {
     if (this.closed) return;
     this.closed = true;
     this.markSeen();
     modal.classList.add('hidden');
+    // 统一清理 keydown + click 监听器，防止 listener 累积泄漏
+    this.currentCleanup?.();
+    this.currentCleanup = null;
   }
 
   /**
@@ -159,17 +166,11 @@ export class OnboardingManager {
     };
     modal.addEventListener('click', onBackdrop);
 
-    // 清理：关闭时移除事件监听
-    const cleanup = () => {
+    // 清理：closeModal 统一调用，确保 ESC/遮罩/完成三路径都触发清理（UX-0712-8）
+    this.currentCleanup = () => {
       document.removeEventListener('keydown', onKey);
       modal.removeEventListener('click', onBackdrop);
     };
-    // 利用 MutationObserver 或直接在 closeModal 后清理
-    // 使用 once 的 animationend 或直接在关闭时清理
-    const doneBtn = modal.querySelector('#btn-onboarding-done');
-    if (doneBtn) {
-      doneBtn.addEventListener('click', cleanup, { once: true });
-    }
   }
 
   // ─── 步骤导航 ──────────────────────────────────────

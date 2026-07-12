@@ -125,23 +125,53 @@ export interface ProviderManagementContext {
 // ─── Provider 列表加载 ────────────────────────────────────
 
 /**
+ * 加载请求版本号（竞态守卫）
+ *
+ * 每次 loadProviderList 递增，await 返回后比对。
+ * 若期间发起了新的加载请求，旧请求的结果将被丢弃，避免旧渲染覆盖新状态。
+ */
+let loadToken = 0;
+
+/**
  * 加载 Provider 列表并渲染
  *
  * 从主进程获取所有 Provider 配置，渲染为卡片列表。
  * 设置面板初次显示时调用。
+ *
+ * 竞态守卫：通过版本号丢弃过期的加载结果（UX-0712-5）。
  */
 export async function loadProviderList(ctx: ProviderManagementContext): Promise<void> {
   if (!ctx.providerListEl) return;
+  const token = ++loadToken;
+
+  // 加载态：await 前显示占位符，避免首次打开时空白（UX-0712-9）
+  ctx.providerListEl.innerHTML = '<p class="settings-hint">加载中...</p>';
+
   try {
     const data = await window.electronAPI.listLlmProviders();
+    // 竞态守卫：丢弃过期请求的渲染结果
+    if (token !== loadToken) return;
     ctx.setCachedProviders(data.providers); // 缓存供编辑时使用
     renderProviderList(ctx, data.active, data.providers);
     renderBackgroundProviderSelect(ctx, data.providers);
     // 通知宿主 Provider 列表已变更，让 InputAreaManager 刷新输入框选择器
     ctx.host.onProviderChanged?.();
   } catch (error) {
-    // 加载失败时清空列表并提示用户（避免用户误以为"没有 Provider"）
+    // 竞态守卫：过期请求的错误也不渲染
+    if (token !== loadToken) return;
+    // 加载失败时渲染内联错误占位符 + 重试按钮（UX-0712-9）
     clearElement(ctx.providerListEl);
+    const errorHint = document.createElement('div');
+    errorHint.className = 'settings-hint provider-load-error';
+    errorHint.innerHTML = '<p>加载 Provider 列表失败</p>';
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'btn-secondary';
+    retryBtn.textContent = '重试';
+    retryBtn.addEventListener('click', () => {
+      void loadProviderList(ctx);
+    });
+    errorHint.appendChild(retryBtn);
+    ctx.providerListEl.appendChild(errorHint);
     reportError('SettingsPanelManager', error);
     ctx.host.showToast('加载 Provider 列表失败，请稍后重试', 'error');
   }

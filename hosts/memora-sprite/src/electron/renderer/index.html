@@ -385,7 +385,7 @@
             <div class="input-send-area">
               <!-- Provider 选择器（输入框左侧，切换 LLM API） -->
               <div id="input-provider-container" class="input-provider-container">
-                <button type="button" id="provider-selector" aria-label="切换 LLM Provider" aria-haspopup="listbox" aria-expanded="false">
+                <button type="button" id="provider-selector" title="切换 LLM Provider" aria-label="切换 LLM Provider" aria-haspopup="listbox" aria-expanded="false">
                   <span id="provider-icon"><svg class="icon"><use href="#icon-link"/></svg></span>
                   <span id="provider-name">未配置</span>
                   <span id="provider-arrow"><svg class="icon"><use href="#icon-chevron"/></svg></span>
@@ -394,7 +394,7 @@
               </div>
               <!-- 紧凑版角色选择器（输入区发送按钮旁，输入时可快速切换角色） -->
               <div id="input-persona-container" class="input-persona-container">
-                <button type="button" id="persona-selector" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
+                <button type="button" id="persona-selector" title="选择角色" aria-label="选择角色" aria-haspopup="listbox" aria-expanded="false">
                   <span id="persona-icon"><svg class="icon"><use href="#icon-fairy"/></svg></span>
                   <span id="persona-name">精灵</span>
                   <span id="persona-mode-badge" class="mode-badge auto" title="角色匹配模式：自动">自动</span>
@@ -405,7 +405,7 @@
               <!-- B2：停止生成浮动按钮（独立于发送按钮，流式态时可见，对齐 demo v3 .btn-stop-float）
                    注意：不使用 .hidden 初始类（display:none !important 会覆盖 .visible 的 display:flex），
                    依赖 CSS 默认 display:none + .visible 类切换显示 -->
-              <button id="btn-stop" class="btn-stop-float" title="停止生成" aria-label="停止生成">
+              <button id="btn-stop" class="btn-stop-float" title="停止生成（流式时 Enter）" aria-label="停止生成">
                 <svg class="icon" viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
                 <span>停止</span>
               </button>

@@ -800,7 +800,7 @@ describe('loadProviderList', () => {
     expect(host.showToast).not.toHaveBeenCalled();
   });
 
-  it('加载失败应清空列表并显示错误 toast', async () => {
+  it('加载失败应渲染错误占位符 + 重试按钮并显示错误 toast', async () => {
     const dom = setupDOM();
     mockElectronAPI({
       listLlmProviders: vi.fn(async () => { throw new Error('加载失败'); }),
@@ -808,7 +808,13 @@ describe('loadProviderList', () => {
     const { ctx, host } = createCtx(dom);
     await loadProviderList(ctx);
     expect(host.showToast).toHaveBeenCalledWith('加载 Provider 列表失败，请稍后重试', 'error');
-    expect(dom.providerListEl.children.length).toBe(0);
+    // UX-0712-9：catch 分支渲染错误占位符 + 重试按钮，而非清空列表
+    const errorHint = dom.providerListEl.querySelector('.provider-load-error');
+    expect(errorHint).toBeTruthy();
+    expect(errorHint?.querySelector('p')?.textContent).toBe('加载 Provider 列表失败');
+    const retryBtn = errorHint?.querySelector('button');
+    expect(retryBtn).toBeTruthy();
+    expect(retryBtn?.textContent).toBe('重试');
   });
 
   it('providerListEl 为 null 应静默返回', async () => {
