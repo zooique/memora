@@ -173,4 +173,15 @@ export function registerSystemHandlers(ctx: IpcContext): void {
       return null;
     }
   });
+
+  /** 清除使用统计数据（AUDIT-5-4） */
+  ipcMain.handle(IPC_CHANNELS.USAGE_STATS_CLEAR, async () => {
+    const collector = ctx.usageStatsCollector;
+    if (!collector) return;
+    try {
+      await collector.clear();
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '清除使用统计失败' });
+    }
+  });
 }

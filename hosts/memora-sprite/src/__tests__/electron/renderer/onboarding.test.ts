@@ -22,10 +22,12 @@ import { OnboardingManager } from '../../../electron/renderer/components/onboard
 
 beforeEach(() => {
   localStorage.clear();
-  // 模拟 window.electronAPI（persistStep + saveLlmProvider 需要）
-  (window as Window & { electronAPI?: { updateConfig: typeof vi.fn; saveLlmProvider: typeof vi.fn } }).electronAPI = {
+  // 模拟 window.electronAPI（persistStep + saveLlmProvider + updateConfigBatch 需要）
+  (window as Window & { electronAPI?: { updateConfig: typeof vi.fn; saveLlmProvider: typeof vi.fn; updateConfigBatch: typeof vi.fn } }).electronAPI = {
     updateConfig: vi.fn().mockResolvedValue(undefined),
     saveLlmProvider: vi.fn().mockResolvedValue({ success: true }),
+    // AUDIT-5-4：bindDone 完成时持久化使用统计选择（fire-and-forget）
+    updateConfigBatch: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -34,7 +36,8 @@ beforeEach(() => {
 /** 多步骤引导弹窗完整 DOM：
  *  步骤 1：欢迎 → 下一步/跳过
  *  步骤 2：API Key 配置 → 保存/上一步/跳过
- *  步骤 3：完成 → 开始使用按钮
+ *  步骤 3：隐私统计选择 → 下一步/上一步
+ *  步骤 4：完成 → 开始使用按钮
  */
 const ONBOARDING_HTML = `
   <div id="onboarding-modal" class="modal hidden">
@@ -45,12 +48,14 @@ const ONBOARDING_HTML = `
       <span class="onboarding-step-dot" data-step="2"></span>
       <span class="onboarding-step-line"></span>
       <span class="onboarding-step-dot" data-step="3"></span>
+      <span class="onboarding-step-line"></span>
+      <span class="onboarding-step-dot" data-step="4"></span>
     </div>
     <!-- 步骤 1：欢迎 -->
     <div class="onboarding-step-content active" data-step="1">
       <h2>欢迎使用 Memora</h2>
       <button class="onboarding-next" data-next="2">下一步</button>
-      <button class="onboarding-skip" data-skip="3">跳过</button>
+      <button class="onboarding-skip" data-skip="4">跳过</button>
     </div>
     <!-- 步骤 2：API Key -->
     <div class="onboarding-step-content" data-step="2">
@@ -63,10 +68,19 @@ const ONBOARDING_HTML = `
       <a id="onboarding-signup-link" href="#">获取 API Key →</a>
       <button id="btn-onboarding-save-key">保存并继续</button>
       <button class="onboarding-prev" data-prev="1">上一步</button>
-      <button class="onboarding-skip" data-skip="3">跳过</button>
+      <button class="onboarding-skip" data-skip="4">跳过</button>
     </div>
-    <!-- 步骤 3：完成 -->
+    <!-- 步骤 3：隐私统计选择（AUDIT-5-4） -->
     <div class="onboarding-step-content" data-step="3">
+      <label>
+        <input type="checkbox" id="onboarding-usage-stats" />
+        允许采集匿名使用统计
+      </label>
+      <button class="onboarding-next" data-next="4">下一步</button>
+      <button class="onboarding-prev" data-prev="2">上一步</button>
+    </div>
+    <!-- 步骤 4：完成 -->
+    <div class="onboarding-step-content" data-step="4">
       <p id="onboarding-done-message"></p>
       <button id="btn-onboarding-done">开始使用</button>
     </div>

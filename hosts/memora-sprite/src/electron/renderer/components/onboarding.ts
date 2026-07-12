@@ -3,9 +3,10 @@
  *
  * 职责：
  * - 检测是否需要显示引导（未配置 Provider 的新用户）
- * - 管理三步引导向导：欢迎 → API Key 配置 → 开始使用
+ * - 管理四步引导向导：欢迎 → API Key 配置 → 隐私统计选择 → 开始使用
  * - 为每个预设 Provider 提供注册链接
  * - 保存 API Key 配置（通过 updateConfig IPC）
+ * - 持久化使用统计选择（通过 config-update-batch IPC）
  *
  * 设计原则：
  * - 独立于 UIManager，无 this 依赖，纯 DOM + localStorage + IPC 操作
@@ -60,11 +61,11 @@ const ONBOARDING_SEEN_KEY = 'memora-onboarding-seen';
 /**
  * 多步骤引导管理器
  *
- * 独立管理三步引导向导的显示、步骤切换、API Key 保存和进度持久化。
+ * 独立管理四步引导向导的显示、步骤切换、API Key 保存和进度持久化。
  * UIManager 通过组合持有。
  */
 export class OnboardingManager {
-  /** 当前步骤（1-3） */
+  /** 当前步骤（1-4） */
   private currentStep = 1;
   /** 是否已关闭（防止重复关闭） */
   private closed = false;
@@ -107,6 +108,8 @@ export class OnboardingManager {
     this.bindStepNavigation(modal);
     // 绑定 API Key 保存
     this.bindApiKeySave(modal);
+    // 绑定隐私统计选择（AUDIT-5-4）
+    this.bindPrivacyChoice(modal);
     // 绑定完成按钮
     this.bindDone(modal);
     // 绑定 Provider 选择变化（更新注册链接）
@@ -194,8 +197,8 @@ export class OnboardingManager {
     // 跳过按钮
     modal.querySelectorAll('.onboarding-skip').forEach((btn) => {
       btn.addEventListener('click', () => {
-        const skipTo = parseInt(btn.getAttribute('data-skip') || '3', 10);
-        if (skipTo === 3 && this.currentStep === 2) {
+        const skipTo = parseInt(btn.getAttribute('data-skip') || '4', 10);
+        if (skipTo === 4 && this.currentStep === 2) {
           this.skippedApiKey = true;
         }
         this.showStep(modal, skipTo);
@@ -227,8 +230,8 @@ export class OnboardingManager {
       el.classList.toggle('done', index + 1 < step);
     });
 
-    // 步骤 3：更新完成消息
-    if (step === 3) {
+    // 步骤 4：更新完成消息
+    if (step === 4) {
       const msgEl = modal.querySelector('#onboarding-done-message');
       if (msgEl) {
         msgEl.textContent = this.skippedApiKey
@@ -347,10 +350,41 @@ export class OnboardingManager {
     }
   }
 
+  // ─── 隐私统计选择（AUDIT-5-4） ──────────────────────
+
+  /**
+   * 绑定隐私统计选择（步骤 3）
+   *
+   * 用户在步骤 3 选择是否开启使用统计。
+   * 选择结果通过 getUsageStatsChoice() 在完成时读取并持久化。
+   */
+  private bindPrivacyChoice(modal: HTMLElement): void {
+    const checkbox = modal.querySelector('#onboarding-usage-stats');
+    if (!(checkbox instanceof HTMLInputElement)) {
+      reportError('Onboarding onboarding-usage-stats 元素缺失', new Error('HTMLInputElement 校验失败'));
+      return;
+    }
+    // change 事件即时反馈（具体值在完成时读取）
+    checkbox.addEventListener('change', () => {
+      // 静默更新，具体值在 bindDone 完成时读取
+    });
+  }
+
+  /** 获取隐私统计选择结果（完成时调用） */
+  getUsageStatsChoice(): boolean {
+    const checkbox = document.querySelector('#onboarding-usage-stats');
+    if (checkbox instanceof HTMLInputElement) {
+      return checkbox.checked;
+    }
+    return false;
+  }
+
   // ─── 完成 ──────────────────────────────────────────
 
   /**
    * 绑定完成按钮事件
+   *
+   * 完成时读取隐私统计选择并通过 config-update-batch IPC 持久化（AUDIT-5-4）。
    */
   private bindDone(modal: HTMLElement): void {
     const doneBtn = modal.querySelector('#btn-onboarding-done');
@@ -360,6 +394,11 @@ export class OnboardingManager {
     }
 
     doneBtn.addEventListener('click', () => {
+      // AUDIT-5-4：持久化使用统计选择（fire-and-forget，不阻塞关闭）
+      const usageStatsEnabled = this.getUsageStatsChoice();
+      window.electronAPI.updateConfigBatch({ usageStatsEnabled }).catch(() => {
+        // 持久化失败不阻塞引导完成，用户可在设置面板中再次切换
+      });
       this.closeModal(modal);
     });
   }

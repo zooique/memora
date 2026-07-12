@@ -335,6 +335,9 @@ function setupAgentReady(
   appState.usageStatsCollector = new UsageStatsCollector(dataDir);
   appState.usageStatsCollector.load().catch(() => {});
   appState.usageStatsCollector.startAutoFlush();
+  // AUDIT-5-4 隐私合规：根据配置开启采集（默认关闭）
+  const usageStatsConfig = loadSpriteConfig();
+  appState.usageStatsCollector.setEnabled(usageStatsConfig.usageStatsEnabled ?? false);
 
   // 1. 注册完整 IPC 处理器
   ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);

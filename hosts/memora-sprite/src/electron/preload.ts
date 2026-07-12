@@ -166,6 +166,8 @@ export const IPC_CHANNELS = {
   RENDERER_LOG: 'renderer-log',
   // 使用统计导出（渲染进程 → 主进程）
   USAGE_STATS_EXPORT: 'usage-stats-export',
+  // 清除使用统计数据（渲染进程 → 主进程）
+  USAGE_STATS_CLEAR: 'usage-stats-clear',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {
@@ -326,6 +328,8 @@ type SpriteConfigFormBase = Required<Pick<SpriteConfig,
   | 'projectMode' | 'focusProjectPath' | 'shortcuts'
   // ADR-015 归档模式三态全部暴露到表单（切换即时生效，不走保存按钮）
   | 'archiveMode'
+  // AUDIT-5-4 使用统计开关（隐私合规，默认关闭）
+  | 'usageStatsEnabled'
 >>;
 
 export interface SpriteConfigForm extends SpriteConfigFormBase {
@@ -760,6 +764,8 @@ export interface ElectronAPI {
   // ─── 使用统计（AUDIT-5-3，默认关闭，需显式开启） ────────
   /** 导出使用统计 JSON 文件，返回文件路径。采集器未就绪时返回 null */
   usageStatsExport: () => Promise<string | null>;
+  /** 清除使用统计数据（AUDIT-5-4） */
+  usageStatsClear: () => Promise<void>;
 
   // ─── 渲染进程日志上报 ────────
   /**
@@ -1031,6 +1037,8 @@ const electronAPI: ElectronAPI = {
 
   // 使用统计导出（返回 JSON 文件路径，供用户手动导出）
   usageStatsExport: () => ipcRenderer.invoke(IPC_CHANNELS.USAGE_STATS_EXPORT),
+  // 使用统计清除（清空所有计数器并重置 since 时间）
+  usageStatsClear: () => ipcRenderer.invoke(IPC_CHANNELS.USAGE_STATS_CLEAR),
 };
 
 // 条件保护——测试环境（vitest）无 contextBridge，直接调用会抛错阻断测试

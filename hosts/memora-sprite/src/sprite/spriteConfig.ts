@@ -109,6 +109,16 @@ export interface SpriteConfig {
    * 持久化到 sprite.json，用户可在设置面板调整。
    */
   recycleBinRetentionDays?: number;
+  /**
+   * 使用统计采集是否开启（AUDIT-5-4 隐私合规）
+   *
+   * - false（默认）：不采集任何数据
+   * - true：采集匿名使用计数（功能使用次数/对话轮次/错误次数）
+   *
+   * 不采集对话内容、记忆内容、项目路径或文件内容。
+   * 数据仅存储在本地，不会上传到任何服务器。
+   */
+  usageStatsEnabled?: boolean;
 }
 
 /**
@@ -164,6 +174,8 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   dailyMessageCount: 'object',
   // 回收站保留天数（number，0 禁用自动清理）
   recycleBinRetentionDays: 'number',
+  // 使用统计开关（AUDIT-5-4 隐私合规，默认关闭）
+  usageStatsEnabled: 'boolean',
 };
 
 /** 内置默认值 */
@@ -193,6 +205,8 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   dailyMessageCount: {},
   // 回收站默认保留 30 天，超过后定时器自动彻底清理
   recycleBinRetentionDays: 30,
+  // 使用统计默认关闭（AUDIT-5-4 隐私合规，需用户显式开启）
+  usageStatsEnabled: false,
 };
 
 /** 配置文件名 */

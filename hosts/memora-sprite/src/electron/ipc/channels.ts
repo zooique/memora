@@ -225,6 +225,8 @@ export const IPC_CHANNELS = {
   // ─── 使用统计（AUDIT-5-3） ───────────────
   /** 渲染进程 → 主进程：导出使用统计 JSON 文件，返回文件路径 */
   USAGE_STATS_EXPORT: 'usage-stats-export',
+  /** 清除使用统计数据（AUDIT-5-4） */
+  USAGE_STATS_CLEAR: 'usage-stats-clear',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */

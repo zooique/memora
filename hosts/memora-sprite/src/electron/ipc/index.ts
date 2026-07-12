@@ -90,6 +90,8 @@ const HANDLE_CHANNELS = [
   IPC_CHANNELS.WORK_PROJECTION_SHOW,
   // 使用统计导出（AUDIT-5-3，reinitAgent 时需清理）
   IPC_CHANNELS.USAGE_STATS_EXPORT,
+  // 使用统计清除（AUDIT-5-4，reinitAgent 时需清理）
+  IPC_CHANNELS.USAGE_STATS_CLEAR,
 ] as const;
 
 /**

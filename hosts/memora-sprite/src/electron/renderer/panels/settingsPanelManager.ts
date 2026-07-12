@@ -99,6 +99,8 @@ export class SettingsPanelManager {
   private cfgDefaultPersona: HTMLInputElement | null;
   /** 项目模式：专注项目选择下拉框 */
   private cfgFocusProject: HTMLSelectElement | null;
+  /** 使用统计开关（AUDIT-5-4 隐私合规） */
+  private cfgUsageStats: HTMLInputElement | null;
 
   // ─── 设置面板 DOM 元素 - 快捷键配置（Phase 3.3） ─────────
   /** 快捷键总开关 */
@@ -195,6 +197,7 @@ export class SettingsPanelManager {
     this.cfgWatcherIgnore = getOptionalElement('cfg-watcher-ignore', 'input');
     this.cfgDefaultPersona = getOptionalElement('cfg-default-persona', 'input');
     this.cfgFocusProject = getOptionalElement('cfg-focus-project', 'select');
+    this.cfgUsageStats = getOptionalElement('cfg-usage-stats', 'input');
 
     // 设置面板 - 快捷键配置（Phase 3.3）
     this.cfgShortcutsEnabled = getOptionalElement('cfg-shortcuts-enabled', 'input');
@@ -265,6 +268,7 @@ export class SettingsPanelManager {
       ['cfgWatcherIgnore', this.cfgWatcherIgnore, 'cfg-watcher-ignore'],
       ['cfgDefaultPersona', this.cfgDefaultPersona, 'cfg-default-persona'],
       ['cfgFocusProject', this.cfgFocusProject, 'cfg-focus-project'],
+      ['cfgUsageStats', this.cfgUsageStats, 'cfg-usage-stats'],
       ['cfgShortcutsEnabled', this.cfgShortcutsEnabled, 'cfg-shortcuts-enabled'],
       ['cfgShortcutToggleWindow', this.cfgShortcutToggleWindow, 'cfg-shortcut-toggle-window'],
       ['cfgShortcutQuickRecord', this.cfgShortcutQuickRecord, 'cfg-shortcut-quick-record'],
@@ -369,6 +373,8 @@ export class SettingsPanelManager {
             focusProjectPath: '',
             // ADR-015 归档模式默认 full
             archiveMode: 'full',
+            // AUDIT-5-4 使用统计默认关闭（隐私合规，需用户显式开启）
+            usageStatsEnabled: false,
             // Phase 3.3 快捷键默认值（与 DEFAULT_SPRITE_CONFIG.shortcuts 一致）
             shortcuts: {
               enabled: true,
@@ -463,6 +469,9 @@ export class SettingsPanelManager {
     // 多 Provider 管理：事件监听器 + 初始加载列表
     this.initProviderListeners();
     this.loadProviderList();
+
+    // AUDIT-5-4 隐私与数据：导出/清除使用统计按钮
+    this.bindUsageStatsButtons();
   }
 
   // ─── 私有辅助方法 ───────────────────────────────────────
@@ -1253,6 +1262,60 @@ export class SettingsPanelManager {
     }
   }
 
+  /**
+   * 绑定「隐私与数据」分区的按钮事件（AUDIT-5-4）
+   *
+   * - 导出统计：调用主进程导出 JSON 文件，成功后 toast 提示文件路径
+   * - 清除数据：二次确认后调用主进程清空计数器，避免误操作
+   *
+   * 个人项目场景，按钮均直接复用主进程既有 IPC 通道，无需新增。
+   */
+  private bindUsageStatsButtons(): void {
+    const btnExport = getOptionalElement('btn-usage-stats-export', 'button');
+    const btnClear = getOptionalElement('btn-usage-stats-clear', 'button');
+
+    if (btnExport) {
+      this.events.addEventListener(btnExport, 'click', async () => {
+        const originalText = btnExport.textContent;
+        btnExport.disabled = true;
+        btnExport.textContent = '导出中…';
+        try {
+          const filePath = await window.electronAPI.usageStatsExport();
+          if (filePath) {
+            this.host.showToast(`已导出到 ${filePath}`, 'success');
+          } else {
+            this.host.showToast('采集器未就绪或无数据可导出', 'info');
+          }
+        } catch (error) {
+          reportError('导出使用统计', error);
+          this.host.showToast('导出失败，请稍后重试', 'error');
+        } finally {
+          btnExport.disabled = false;
+          btnExport.textContent = originalText;
+        }
+      });
+    }
+
+    if (btnClear) {
+      this.events.addEventListener(btnClear, 'click', async () => {
+        const confirmed = await this.host.showConfirmDialog({
+          title: '清除使用统计',
+          message: '将清空所有计数器并重置统计起始时间，此操作不可撤销，确定继续吗？',
+          confirmText: '清除',
+          danger: true,
+        });
+        if (!confirmed) return;
+        try {
+          await window.electronAPI.usageStatsClear();
+          this.host.showToast('已清除使用统计数据', 'success');
+        } catch (error) {
+          reportError('清除使用统计', error);
+          this.host.showToast('清除失败，请稍后重试', 'error');
+        }
+      });
+    }
+  }
+
   /** 加载配置到表单 */
   loadConfigToForm(config: SpriteConfigForm): void {
     this.isLoadingConfig = true;
@@ -1266,6 +1329,8 @@ export class SettingsPanelManager {
       if (this.cfgWatcherDebounce) this.cfgWatcherDebounce.value = String(config.fileWatcherDebounceMs);
       if (this.cfgWatcherIgnore) this.cfgWatcherIgnore.value = (config.fileWatcherIgnore ?? []).join(', ');
       if (this.cfgDefaultPersona) this.cfgDefaultPersona.value = config.defaultPersona;
+      // AUDIT-5-4 使用统计开关（隐私合规，默认关闭）
+      if (this.cfgUsageStats) this.cfgUsageStats.checked = config.usageStatsEnabled;
 
       // 角色匹配模式（单选按钮）
       const modeRadio = Array.from(this.personaModeRadios).find(
@@ -1376,6 +1441,8 @@ export class SettingsPanelManager {
       defaultPersona: this.cfgDefaultPersona?.value.trim() ?? '',
       projectMode,
       focusProjectPath: projectMode === 'focus' ? (this.cfgFocusProject?.value ?? '') : '',
+      // AUDIT-5-4 使用统计开关（隐私合规，默认关闭）
+      usageStatsEnabled: this.cfgUsageStats?.checked ?? false,
       // Phase 3.3 快捷键配置（总开关 + 三个动作的 accelerator）
       shortcuts: {
         enabled: this.cfgShortcutsEnabled?.checked ?? true,

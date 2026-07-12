@@ -867,6 +867,21 @@
             </div>
             <span id="cfg-shortcut-hint" class="settings-hint">点击输入框后按下组合键捕获，Esc 取消，Backspace 清除。至少包含一个修饰键（Ctrl/Cmd/Alt/Shift）。</span>
           </div>
+          <!-- 隐私与数据分区（AUDIT-5-4） -->
+          <div class="settings-group">
+            <h3>隐私与数据</h3>
+            <div class="settings-row">
+              <label for="cfg-usage-stats">
+                <strong>使用统计</strong>
+                <span class="setting-desc">采集匿名计数（功能使用次数/对话轮次/错误次数），不采集内容数据</span>
+              </label>
+              <input type="checkbox" id="cfg-usage-stats" />
+            </div>
+            <div class="settings-row">
+              <button class="btn-secondary" id="btn-usage-stats-export" type="button">导出统计</button>
+              <button class="btn-text" id="btn-usage-stats-clear" type="button">清除数据</button>
+            </div>
+          </div>
         </div>
 
         <!-- 项目模式配置 -->
@@ -1499,6 +1514,8 @@
         <div class="onboarding-step-dot" data-step="2"></div>
         <div class="onboarding-step-line"></div>
         <div class="onboarding-step-dot" data-step="3"></div>
+        <div class="onboarding-step-line"></div>
+        <div class="onboarding-step-dot" data-step="4"></div>
       </div>
 
       <!-- 步骤 1：欢迎 -->
@@ -1533,7 +1550,7 @@
         </div>
         <div class="modal-footer">
           <button class="btn-primary onboarding-next" data-next="2">下一步：配置 API</button>
-          <button class="btn-text onboarding-skip" data-skip="3">跳过，直接开始</button>
+          <button class="btn-text onboarding-skip" data-skip="4">跳过，直接开始</button>
         </div>
       </div>
 
@@ -1573,12 +1590,31 @@
         <div class="modal-footer">
           <button class="btn-secondary onboarding-prev" data-prev="1">上一步</button>
           <button class="btn-primary onboarding-next" data-next="3" id="btn-onboarding-save-key">保存并继续</button>
-          <button class="btn-text onboarding-skip" data-skip="3">跳过，稍后配置</button>
+          <button class="btn-text onboarding-skip" data-skip="4">跳过，稍后配置</button>
         </div>
       </div>
 
-      <!-- 步骤 3：完成 -->
+      <!-- 步骤 3：隐私统计选择（AUDIT-5-4） -->
       <div class="onboarding-step-content" data-step="3">
+        <div class="onboarding-privacy-icon">
+          <svg class="icon" width="64" height="64"><use href="#icon-lock"/></svg>
+        </div>
+        <h3>使用统计</h3>
+        <p class="onboarding-intro">Memora 尊重你的隐私。使用统计仅采集匿名计数（功能使用次数、对话轮次、错误次数），不采集对话内容、记忆内容、项目路径或文件内容。数据仅存储在本地，不会上传到任何服务器。</p>
+        <div class="onboarding-privacy-choice">
+          <label class="settings-row">
+            <input type="checkbox" id="onboarding-usage-stats" />
+            <span>开启匿名使用统计（可随时在设置中关闭）</span>
+          </label>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary onboarding-prev" data-prev="2">上一步</button>
+          <button class="btn-primary onboarding-next" data-next="4">下一步</button>
+        </div>
+      </div>
+
+      <!-- 步骤 4：完成 -->
+      <div class="onboarding-step-content" data-step="4">
         <div class="onboarding-done-icon">
           <svg class="icon" width="64" height="64"><use href="#icon-check"/></svg>
         </div>
