@@ -757,6 +757,10 @@ export interface ElectronAPI {
   /** 查看单个作品投影详情（API 已就绪，UI 暂用内联展开替代，供未来宿主集成使用） */
   showWorkProjection: (filePath: string) => Promise<WorkProjectionPayload | null>;
 
+  // ─── 使用统计（AUDIT-5-3，默认关闭，需显式开启） ────────
+  /** 导出使用统计 JSON 文件，返回文件路径。采集器未就绪时返回 null */
+  usageStatsExport: () => Promise<string | null>;
+
   // ─── 渲染进程日志上报 ────────
   /**
    * 上报日志到主进程 logger（渲染进程无 pino，通过 IPC 转发）

@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RelationGraphRenderer } from '../../../../electron/renderer/components/relationGraph.js';
 import type { GraphNode, GraphEdge, RelationGraphData } from '../../../../electron/renderer/components/relationGraph.js';
+import { hexToRgba, getContrastColor } from '../../../../electron/renderer/helpers/relationGraphColor.js';
 
 // ─── 全局 Mock ResizeObserver（jsdom 未实现） ────────────
 // relationGraph.ts 构造函数内调用 new ResizeObserver()，需在模块加载前 mock
@@ -207,24 +208,24 @@ describe('RelationGraphRenderer R1 纯函数算法', () => {
 
   describe('hexToRgba 颜色转换', () => {
     it('标准 6 位 hex 应正确转换', () => {
-      const result = (renderer as unknown as { hexToRgba: (hex: string, alpha: number) => string }).hexToRgba('#ff5733', 0.5);
+      const result = hexToRgba('#ff5733', 0.5);
       // r=255, g=87, b=51
       expect(result).toBe('rgba(255, 87, 51, 0.5)');
     });
 
     it('不带 # 的 hex 应同样支持', () => {
-      const result = (renderer as unknown as { hexToRgba: (hex: string, alpha: number) => string }).hexToRgba('00ff00', 1);
+      const result = hexToRgba('00ff00', 1);
       expect(result).toBe('rgba(0, 255, 0, 1)');
     });
 
     it('非 6 位 hex 应降级为黑色 rgba', () => {
-      const result = (renderer as unknown as { hexToRgba: (hex: string, alpha: number) => string }).hexToRgba('#fff', 0.5);
+      const result = hexToRgba('#fff', 0.5);
       // 源码格式：rgba(0,0,0,0.5)（无空格）
       expect(result).toBe('rgba(0,0,0,0.5)');
     });
 
     it('alpha=0 时应返回完全透明', () => {
-      const result = (renderer as unknown as { hexToRgba: (hex: string, alpha: number) => string }).hexToRgba('#000000', 0);
+      const result = hexToRgba('#000000', 0);
       expect(result).toBe('rgba(0, 0, 0, 0)');
     });
   });
@@ -232,13 +233,13 @@ describe('RelationGraphRenderer R1 纯函数算法', () => {
   describe('getContrastColor 对比色计算（YIQ 亮度公式）', () => {
     it('暗色背景（黑色 #000000）应返回白色文字', () => {
       // jsdom 中 getComputedStyle 默认返回空，resolveCssVar 会用 fallback '--white' → '#ffffff'
-      const result = (renderer as unknown as { getContrastColor: (hex: string) => string }).getContrastColor('#000000');
+      const result = getContrastColor('#000000');
       // YIQ = 0 < 128 → 返回 --white fallback '#ffffff'
       expect(result).toBe('#ffffff');
     });
 
     it('亮色背景（白色 #ffffff）应返回深色文字', () => {
-      const result = (renderer as unknown as { getContrastColor: (hex: string) => string }).getContrastColor('#ffffff');
+      const result = getContrastColor('#ffffff');
       // YIQ = 255 >= 128 → 返回 --text fallback '#1d1d1f'
       expect(result).toBe('#1d1d1f');
     });
@@ -246,13 +247,13 @@ describe('RelationGraphRenderer R1 纯函数算法', () => {
     it('中等亮度（YIQ=128 边界）应返回深色文字', () => {
       // YIQ = (r*299 + g*587 + b*114) / 1000
       // 找一个 YIQ 正好 128 的颜色：r=128, g=128, b=128 → YIQ=128
-      const result = (renderer as unknown as { getContrastColor: (hex: string) => string }).getContrastColor('#808080');
+      const result = getContrastColor('#808080');
       // YIQ = 128 >= 128 → 返回 --text
       expect(result).toBe('#1d1d1f');
     });
 
     it('非 6 位 hex 应降级为 #ffffff', () => {
-      const result = (renderer as unknown as { getContrastColor: (hex: string) => string }).getContrastColor('#fff');
+      const result = getContrastColor('#fff');
       expect(result).toBe('#ffffff');
     });
   });

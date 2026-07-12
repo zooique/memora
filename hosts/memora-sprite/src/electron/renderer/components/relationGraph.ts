@@ -19,6 +19,19 @@
  */
 
 import { MemoraError, ErrorCode } from '../../../sprite/errors.js';
+import {
+  runInitialLayout,
+  updateLayout,
+  type LayoutContext,
+} from '../helpers/relationGraphLayout.js';
+import {
+  CONNECTION_LINE_VAR,
+  resolveCssVar,
+  getNodeColor,
+  getEdgeColor,
+  hexToRgba,
+  getContrastColor,
+} from '../helpers/relationGraphColor.js';
 
 // ─── 类型定义 ────────────────────────────────────────────────
 
@@ -74,20 +87,10 @@ export type ConnectionCreateCallback = (sourceId: string, targetId: string) => v
 
 // ─── 常量 ────────────────────────────────────────────────────
 
-/** Canvas 内边距 */
-const PADDING = 40;
 /** 节点最小半径 */
 const MIN_NODE_RADIUS = 6;
 /** 节点最大半径 */
 const MAX_NODE_RADIUS = 18;
-/** 力导向迭代次数（初始布局阶段） */
-const LAYOUT_ITERATIONS = 80;
-/** 速度阻尼系数 */
-const DAMPING = 0.85;
-/** 斥力常数 */
-const REPULSION = 800;
-/** 引力常数 */
-const ATTRACTION = 0.02;
 /** 边线最小宽度 */
 const MIN_EDGE_WIDTH = 0.5;
 /** 边线最大宽度 */
@@ -112,58 +115,6 @@ const CONFLICT_PULSE_PERIOD = 1200;
 const CONFLICT_PULSE_MIN_ALPHA = 0.3;
 /** 冲突脉冲最大 alpha */
 const CONFLICT_PULSE_MAX_ALPHA = 0.9;
-
-// ─── 颜色映射（source → CSS 变量名，运行时从主题解析实际色值） ──
-
-/** source 类型 → 对应的 CSS 变量名（在 base.css 中定义，支持双主题） */
-const SOURCE_COLOR_VARS: Record<string, string> = {
-  profile: '--green',
-  insight: '--accent',
-  guardrail: '--pink',
-  skill: '--yellow',
-  rule: '--mauve',
-  persona: '--teal',
-  session: '--peach',
-};
-
-/** 边类型 → 对应的 CSS 变量名 */
-const EDGE_COLOR_VARS: Record<string, string> = {
-  contradicts: '--red',
-  supports: '--green',
-  follows: '--accent',
-  refines: '--yellow',
-  caused: '--mauve',
-  related: '--muted',
-};
-
-/** 连线模式预览线使用的 CSS 变量名 */
-const CONNECTION_LINE_VAR = '--yellow';
-
-/**
- * Canvas CSS 变量 fallback 常量表
- *
- * Canvas 2D 不支持 CSS var() 语法，需通过 getComputedStyle 运行时解析。
- * 当变量解析失败时使用此处的 fallback 值兜底。
- *
- * 深色主题 fallback 通过运行时检测 data-theme 属性动态选择，
- * 确保 fallback 值与当前主题视觉一致。
- */
-
-/** 检测当前是否为深色主题 */
-function isDarkTheme(): boolean {
-  return document.documentElement.getAttribute('data-theme') === 'dark';
-}
-
-/** 深浅色双 fallback 常量表（与 base.css 变量值保持同步） */
-const CSS_VAR_FALLBACKS = {
-  '--accent': () => '#0066ff',
-  '--muted': () => '#7a7a82',
-  '--text': () => (isDarkTheme() ? '#cdd6f4' : '#1d1d1f'),
-  '--white': () => '#ffffff',
-  '--yellow': () => (isDarkTheme() ? '#f9e2af' : '#ff9f0a'),
-  '--text-3': () => (isDarkTheme() ? '#a1a1a6' : '#7a7a82'),
-  '--surface0': () => (isDarkTheme() ? '#1e1e2e' : '#ececee'),
-} as const;
 
 // ─── 力导向图谱渲染器 ────────────────────────────────────────
 
@@ -416,7 +367,7 @@ export class RelationGraphRenderer {
     }
 
     // 运行初始布局（同步迭代，快速收敛）
-    this.runInitialLayout();
+    runInitialLayout(this.buildLayoutContext());
 
     // 启动动画循环
     this.startAnimation();
@@ -435,144 +386,21 @@ export class RelationGraphRenderer {
 
   // ─── 布局算法 ──────────────────────────────────────────────
 
-  /** 运行初始布局迭代（同步，快速收敛到稳定状态） */
-  private runInitialLayout(): void {
-    const centerX = this.width / 2;
-    const centerY = this.height / 2;
-
-    for (let iter = 0; iter < LAYOUT_ITERATIONS; iter++) {
-      // 温度随迭代递减
-      const temperature = Math.max(0.1, 1 - iter / LAYOUT_ITERATIONS);
-
-      // 计算斥力（所有节点对）
-      for (let i = 0; i < this.nodes.length; i++) {
-        for (let j = i + 1; j < this.nodes.length; j++) {
-          const a = this.nodes[i]!;
-          const b = this.nodes[j]!;
-          const dx = b.x - a.x;
-          const dy = b.y - a.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const force = REPULSION / (dist * dist);
-          const fx = (dx / dist) * force * temperature;
-          const fy = (dy / dist) * force * temperature;
-          a.vx -= fx;
-          a.vy -= fy;
-          b.vx += fx;
-          b.vy += fy;
-        }
-      }
-
-      // 计算引力（有边相连的节点对）
-      for (const edge of this.edges) {
-        const source = this.nodeMap.get(edge.sourceId);
-        const target = this.nodeMap.get(edge.targetId);
-        if (!source || !target) continue;
-
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = dist * ATTRACTION * edge.weight * temperature;
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        source.vx += fx;
-        source.vy += fy;
-        target.vx -= fx;
-        target.vy -= fy;
-      }
-
-      // 向中心引力（防止节点飞散）
-      for (const node of this.nodes) {
-        const dx = centerX - node.x;
-        const dy = centerY - node.y;
-        node.vx += dx * 0.001 * temperature;
-        node.vy += dy * 0.001 * temperature;
-      }
-
-      // 应用速度 + 阻尼
-      for (const node of this.nodes) {
-        node.x += node.vx;
-        node.y += node.vy;
-        node.vx *= DAMPING;
-        node.vy *= DAMPING;
-
-        // 边界约束
-        const r = this.nodeRadius(node);
-        node.x = Math.max(PADDING + r, Math.min(this.width - PADDING - r, node.x));
-        node.y = Math.max(PADDING + r, Math.min(this.height - PADDING - r, node.y));
-      }
-    }
-  }
-
-  /** 单帧力导向更新 */
-  private updateLayout(): void {
-    let totalEnergy = 0;
-
-    // 斥力
-    for (let i = 0; i < this.nodes.length; i++) {
-      for (let j = i + 1; j < this.nodes.length; j++) {
-        const a = this.nodes[i]!;
-        const b = this.nodes[j]!;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        const force = REPULSION / (dist * dist);
-        const fx = (dx / dist) * force;
-        const fy = (dy / dist) * force;
-        a.vx -= fx;
-        a.vy -= fy;
-        b.vx += fx;
-        b.vy += fy;
-      }
-    }
-
-    // 引力
-    for (const edge of this.edges) {
-      const source = this.nodeMap.get(edge.sourceId);
-      const target = this.nodeMap.get(edge.targetId);
-      if (!source || !target) continue;
-
-      const dx = target.x - source.x;
-      const dy = target.y - source.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-      const force = dist * ATTRACTION * edge.weight;
-      const fx = (dx / dist) * force;
-      const fy = (dy / dist) * force;
-      source.vx += fx;
-      source.vy += fy;
-      target.vx -= fx;
-      target.vy -= fy;
-    }
-
-    // 中心引力
-    const centerX = this.width / 2;
-    const centerY = this.height / 2;
-    for (const node of this.nodes) {
-      node.vx += (centerX - node.x) * 0.0005;
-      node.vy += (centerY - node.y) * 0.0005;
-    }
-
-    // 应用速度 + 阻尼 + 边界
-    for (const node of this.nodes) {
-      node.x += node.vx;
-      node.y += node.vy;
-      node.vx *= DAMPING;
-      node.vy *= DAMPING;
-      totalEnergy += Math.abs(node.vx) + Math.abs(node.vy);
-
-      const r = this.nodeRadius(node);
-      node.x = Math.max(PADDING + r, Math.min(this.width - PADDING - r, node.x));
-      node.y = Math.max(PADDING + r, Math.min(this.height - PADDING - r, node.y));
-    }
-
-    // 稳定检测：连续 30 帧低能量则停止动画
-    if (totalEnergy < 0.5) {
-      this.stableFrameCount++;
-      if (this.stableFrameCount > 30) {
-        this.layoutStable = true;
-      }
-    } else {
-      this.stableFrameCount = 0;
-    }
+  /** 构建布局上下文（桥接 renderer 实例字段到 LayoutContext 接口） */
+  private buildLayoutContext(): LayoutContext {
+    const self = this;
+    return {
+      nodes: this.nodes,
+      edges: this.edges,
+      nodeMap: this.nodeMap,
+      width: this.width,
+      height: this.height,
+      get stableFrameCount() { return self.stableFrameCount; },
+      set stableFrameCount(v: number) { self.stableFrameCount = v; },
+      get layoutStable() { return self.layoutStable; },
+      set layoutStable(v: boolean) { self.layoutStable = v; },
+      nodeRadius: (node: GraphNode) => self.nodeRadius(node),
+    };
   }
 
   // ─── 渲染 ──────────────────────────────────────────────────
@@ -604,7 +432,7 @@ export class RelationGraphRenderer {
         }
 
         if (!this.layoutStable) {
-          this.updateLayout();
+          updateLayout(this.buildLayoutContext());
         }
         this.render();
       }
@@ -624,7 +452,7 @@ export class RelationGraphRenderer {
   /** 渲染空状态 */
   private renderEmpty(): void {
     // 复用 resolveCssVar 解析主题色（含 CSS_VAR_FALLBACKS 深浅色双 fallback，避免硬编码）
-    const textColor = this.resolveCssVar('--text-3');
+    const textColor = resolveCssVar('--text-3');
     this.ctx.clearRect(0, 0, this.width, this.height);
     this.ctx.fillStyle = textColor;
     this.ctx.font = '14px -apple-system, BlinkMacSystemFont, sans-serif';
@@ -671,7 +499,7 @@ export class RelationGraphRenderer {
       ctx.beginPath();
       ctx.moveTo(source.x, source.y);
       ctx.lineTo(target.x, target.y);
-      ctx.strokeStyle = this.getEdgeColor(edge.type);
+      ctx.strokeStyle = getEdgeColor(edge.type);
       ctx.lineWidth = MIN_EDGE_WIDTH + (MAX_EDGE_WIDTH - MIN_EDGE_WIDTH) * edge.weight;
 
       // 冲突边脉冲动画（正弦波 alpha 振荡）
@@ -700,7 +528,7 @@ export class RelationGraphRenderer {
       ctx.setLineDash(CONNECTION_LINE_DASH);
       ctx.moveTo(this.connectionSourceNode.x, this.connectionSourceNode.y);
       ctx.lineTo(this.connectionMouseX, this.connectionMouseY);
-      ctx.strokeStyle = this.resolveCssVar(CONNECTION_LINE_VAR);
+      ctx.strokeStyle = resolveCssVar(CONNECTION_LINE_VAR);
       ctx.lineWidth = 2;
       ctx.globalAlpha = 0.8;
       ctx.stroke();
@@ -719,10 +547,10 @@ export class RelationGraphRenderer {
       // 选中节点外发光环（强调色脉冲效果，在最底层）
       if (isSelected) {
         const selectedGlowR = r * 2.2;
-        const accentColor = this.resolveCssVar('--accent');
+        const accentColor = resolveCssVar('--accent');
         const gradient = ctx.createRadialGradient(node.x, node.y, r * 1.2, node.x, node.y, selectedGlowR);
-        gradient.addColorStop(0, this.hexToRgba(accentColor, 0.4));
-        gradient.addColorStop(1, this.hexToRgba(accentColor, 0));
+        gradient.addColorStop(0, hexToRgba(accentColor, 0.4));
+        gradient.addColorStop(1, hexToRgba(accentColor, 0));
         ctx.beginPath();
         ctx.arc(node.x, node.y, selectedGlowR, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
@@ -732,10 +560,10 @@ export class RelationGraphRenderer {
       // hover 光晕效果
       if (isHovered && nodeHighlighted) {
         const glowR = r * 1.8;
-        const nodeColor = this.getNodeColor(node);
+        const nodeColor = getNodeColor(node.source);
         const gradient = ctx.createRadialGradient(node.x, node.y, r, node.x, node.y, glowR);
         gradient.addColorStop(0, nodeColor);
-        gradient.addColorStop(1, this.hexToRgba(nodeColor, 0));
+        gradient.addColorStop(1, hexToRgba(nodeColor, 0));
         ctx.beginPath();
         ctx.arc(node.x, node.y, glowR, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
@@ -748,7 +576,7 @@ export class RelationGraphRenderer {
       const renderR = isHovered ? r * 1.15 : r;
       ctx.beginPath();
       ctx.arc(node.x, node.y, renderR, 0, Math.PI * 2);
-      ctx.fillStyle = this.getNodeColor(node);
+      ctx.fillStyle = getNodeColor(node.source);
       // 搜索淡化：非高亮节点降低不透明度
       ctx.globalAlpha = nodeHighlighted ? 1 : 0.15;
       ctx.fill();
@@ -756,13 +584,13 @@ export class RelationGraphRenderer {
 
       // 选中节点强调色描边（优先级最高）
       if (isSelected) {
-        ctx.strokeStyle = this.resolveCssVar('--accent');
+        ctx.strokeStyle = resolveCssVar('--accent');
         ctx.lineWidth = 3;
         ctx.stroke();
       } else if (isHovered || isDragged) {
         // hover / drag 描边（强调色半透明）
-        const accentColor = this.resolveCssVar('--accent');
-        ctx.strokeStyle = isDragged ? accentColor : this.hexToRgba(accentColor, 0.6);
+        const accentColor = resolveCssVar('--accent');
+        ctx.strokeStyle = isDragged ? accentColor : hexToRgba(accentColor, 0.6);
         ctx.lineWidth = isDragged ? 2.5 : 2;
         ctx.stroke();
       }
@@ -773,7 +601,7 @@ export class RelationGraphRenderer {
         const focusR = renderR + 5;
         ctx.beginPath();
         ctx.arc(node.x, node.y, focusR, 0, Math.PI * 2);
-        ctx.strokeStyle = this.resolveCssVar('--accent');
+        ctx.strokeStyle = resolveCssVar('--accent');
         ctx.lineWidth = 2;
         ctx.setLineDash([4, 3]);
         ctx.stroke();
@@ -786,7 +614,7 @@ export class RelationGraphRenderer {
         const displayName =
           node.name.length > maxNameLen ? node.name.slice(0, maxNameLen) + '…' : node.name;
 
-        ctx.fillStyle = this.getContrastColor(this.getNodeColor(node));
+        ctx.fillStyle = getContrastColor(getNodeColor(node.source));
         ctx.font = `${Math.max(10, renderR * 0.7)}px -apple-system, BlinkMacSystemFont, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -802,65 +630,6 @@ export class RelationGraphRenderer {
   /** 根据 score 计算节点半径 */
   private nodeRadius(node: GraphNode): number {
     return MIN_NODE_RADIUS + (MAX_NODE_RADIUS - MIN_NODE_RADIUS) * Math.min(1, node.score);
-  }
-
-  /**
-   * 从 CSS 变量解析当前主题色值
-   * Canvas 2D 无法直接使用 CSS var()，需在绘制时动态读取。
-   * fallback 值从 CSS_VAR_FALLBACKS 常量表获取，支持深浅色双主题。
-   */
-  private resolveCssVar(varName: string, fallback?: string): string {
-    const resolved = getComputedStyle(document.documentElement)
-      .getPropertyValue(varName).trim();
-    if (resolved) return resolved;
-    // 优先使用显式传入的 fallback，其次查常量表
-    return fallback ?? CSS_VAR_FALLBACKS[varName as keyof typeof CSS_VAR_FALLBACKS]?.() ?? '#7a7a82';
-  }
-
-  /** 根据 source 获取节点颜色（从 CSS 变量解析，支持双主题自动切换） */
-  private getNodeColor(node: GraphNode): string {
-    const varName = SOURCE_COLOR_VARS[node.source];
-    if (varName) {
-      return this.resolveCssVar(varName);
-    }
-    return this.resolveCssVar('--muted');
-  }
-
-  /** 根据边类型获取边颜色（从 CSS 变量解析，支持双主题自动切换） */
-  private getEdgeColor(edgeType: string): string {
-    const varName = EDGE_COLOR_VARS[edgeType];
-    if (varName) {
-      return this.resolveCssVar(varName);
-    }
-    return this.resolveCssVar('--muted');
-  }
-
-  /** 将十六进制颜色转换为 rgba 字符串（用于光晕/渐变等需要透明度的场景） */
-  private hexToRgba(hex: string, alpha: number): string {
-    const h = hex.replace('#', '');
-    if (h.length !== 6) return `rgba(0,0,0,${alpha})`;
-    const r = parseInt(h.substring(0, 2), 16);
-    const g = parseInt(h.substring(2, 4), 16);
-    const b = parseInt(h.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  }
-
-  /**
-   * 根据背景色计算高对比度文字颜色（黑/白）
-   * 使用 YIQ 颜色空间判断亮度，同时考虑当前主题背景
-   */
-  private getContrastColor(hexColor: string): string {
-    const hex = hexColor.replace('#', '');
-    if (hex.length !== 6) return '#ffffff';
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-    // YIQ 亮度公式
-    const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-    // 亮色背景用深色文字，暗色背景用浅色文字（文字颜色跟随主题 --text）
-    return yiq >= 128
-      ? this.resolveCssVar('--text')
-      : this.resolveCssVar('--white');
   }
 
   /**
