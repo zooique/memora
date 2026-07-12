@@ -54,6 +54,7 @@ import {
 import { loadSpriteConfig, saveSpriteConfig } from '../sprite/spriteConfig.js';
 import type { Sprite } from '../sprite/sprite.js';
 import { AuditManager } from '../sprite/audit/auditManager.js';
+import { UsageStatsCollector } from '../sprite/usage/usageStatsCollector.js';
 import type { SqliteSessionStore } from '../storage/sessionStore.js';
 import { ShortcutManager, SHORTCUT_ACTIONS, DEFAULT_SHORTCUT_CONFIG } from './shortcuts.js';
 // Phase 3.1：剪贴板三重保护处理器
@@ -118,6 +119,8 @@ const appState = {
   pendingWriteConfirmations: new Map<string, (confirmed: boolean) => void>(),
   /** M2 审计日志：宿主单例（在 setupAgentReady 中创建） */
   auditManager: null as AuditManager | null,
+  /** AUDIT-5-1 使用统计采集器：默认关闭，需显式开启（在 setupAgentReady 中创建） */
+  usageStatsCollector: null as UsageStatsCollector | null,
   /** Phase 3.3 全局快捷键管理器（在 initializeApp 阶段 1 创建） */
   shortcutManager: null as ShortcutManager | null,
   /** Phase 3.1 剪贴板处理器（在 setupAgentReady 后创建，注入 emit 回调转发到渲染进程） */
@@ -285,6 +288,7 @@ function createIpcContext(
     getUnreadCount: () => appState.unreadCount,
     incrementUnreadCount,
     resetUnreadCount,
+    usageStatsCollector: appState.usageStatsCollector,
   };
 }
 
@@ -327,6 +331,11 @@ function setupAgentReady(
   activeSessionStore: SqliteSessionStore,
   dataDir: string,
 ): void {
+  // 0. 创建使用统计采集器（需在 IpcContext 创建前就绪，供 systemHandlers 访问）
+  appState.usageStatsCollector = new UsageStatsCollector(dataDir);
+  appState.usageStatsCollector.load().catch(() => {});
+  appState.usageStatsCollector.startAutoFlush();
+
   // 1. 注册完整 IPC 处理器
   ipcMain.removeHandler(IPC_CHANNELS.CONFIG_GET);
   const ipcContext = createIpcContext(activeAgent, activeSprite, activeSessionStore);
@@ -757,6 +766,10 @@ app.on('before-quit', async (e) => {
     // 销毁快速输入浮窗，清理 IPC handler 和定时器
     appState.quickInputWindow?.destroy();
     appState.quickInputWindow = null;
+    // AUDIT-5-2：使用统计退出时写入 + 停止定时器
+    appState.usageStatsCollector?.stopAutoFlush();
+    await appState.usageStatsCollector?.flush();
+    appState.usageStatsCollector = null;
     if (appState.closeSprite) {
       await appState.closeSprite();
     }

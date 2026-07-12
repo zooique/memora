@@ -136,3 +136,4 @@ export type { ToolErrorCodeValue } from '@/utils/errors.js';
 // ─── 评估框架导出（Mock Eval：Agent 行为回归测试，不调用真实 LLM） ───
 export type { EvalScenario, EvalExpectation, EvalResult } from '@/eval/evalTypes.js';
 export { collectAgentChunks, evaluateResult } from '@/eval/evalTypes.js';
+export { MINIMAL_EVAL_SCENARIOS } from '@/eval/scenarios.js';

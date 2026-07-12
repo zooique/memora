@@ -73,6 +73,39 @@ v0.7 进一步：**SqliteStorage 自身也从 memora 内核移出**，确保 mem
 - **向后兼容**：Agent 构造函数的 `storage` 参数可选，不传则使用 InMemoryStorage（非持久化兜底）
 - **CLI 由宿主提供**：memora 定位纯库，CLI 交互由宿主项目实现
 
+## 补充：同步优先决策（2026-07-12，排雷 AUDIT-4-1）
+
+> **来源**：排雷报告方向四 · 存储层异步化预研
+
+### 决策
+
+IMemoryStorage 接口**保持同步语义**，不新增 IAsyncMemoryStorage 兄弟接口。memora 是 Node.js 专用内核，不支持浏览器环境直接运行（浏览器场景需通过宿主层 Web 调试通道访问）。
+
+### 理由
+
+1. **与 better-sqlite3 API 对齐**：同步性是 better-sqlite3 的核心优势——无 callback hell、事务原子性保证、无 async 边界开销
+2. **调用方兼容**：`await` 同步值立即返回，调用方已有的 `await storage.xxx()` 调用无需修改
+3. **混合接口设计已满足需求**：VectorStore.search 返回 `Promise<Memory[]>`（向量搜索涉及网络调用必须异步），IMemoryStorage 关键词搜索同步即可，两者并行无冲突
+4. **影响面可控**：15 个方法签名保持同步，Agent 和所有 Manager 无需异步化改造
+
+### 异步化触发条件
+
+仅在以下条件**同时满足**时启动 IAsyncMemoryStorage 预研：
+
+- 出现真实的浏览器直接运行 memora 内核需求（非通过宿主 Web 调试通道）
+- 出现 IndexedDB / LevelDB 等非 SQLite 异步存储后端需求
+- 上述需求达到 3 次以上重复（自然生长原则）
+
+当前阶段（v1.0.2 收敛期）不满足任何条件，本决策锁定。
+
+### 浏览器场景的现有方案
+
+浏览器访问 memora 能力通过宿主层 Web 调试通道（`hosts/memora-sprite/src/web/`）：
+
+- HTTP 路由消费同一 HostContext，与 IPC handler 平行
+- 存储层仍走宿主的 SqliteStorage（同步），Web 层负责 HTTP↔同步桥接
+- 内核不感知浏览器存在
+
 ## IMemoryStorage 接口方法
 
 > 完整定义见 `src/memory/storageInterface.ts`。所有方法均为同步（与 better-sqlite3 API 对齐）。

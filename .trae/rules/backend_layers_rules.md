@@ -88,6 +88,18 @@ logging/    →  （被所有层调）
 utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 ```
 
+## 存储层同步性约束（ADR-002 补充）
+
+> **来源**：排雷 AUDIT-4-2 · 详见 [ADR-002 §同步优先决策](./decisions/ADR-002-storage-layer.md)
+
+| 项 | 约束 |
+|----|------|
+| IMemoryStorage 接口 | 所有方法同步（与 better-sqlite3 API 对齐） |
+| 适用环境 | Node.js 专用内核，不支持浏览器直接运行 |
+| 浏览器访问方案 | 通过宿主层 Web 调试通道（`hosts/memora-sprite/src/web/`），HTTP 路由消费 HostContext |
+| 异步存储后端 | 不支持。未来如需 IndexedDB 等异步后端，需先启动 IAsyncMemoryStorage 预研（触发条件见 ADR-002） |
+| VectorStore 例外 | 语义搜索 `search()` 返回 `Promise<Memory[]>`（网络调用必须异步），与 IMemoryStorage 同步接口并行无冲突 |
+
 **记忆关系侧车的依赖约束**（ADR-014）：
 - `IMemoryRelationStore` 是独立接口，不依赖 `IMemoryStorage`
 - `InMemoryRelationStore`（测试用）仅依赖 `MemoryRelation` 类型

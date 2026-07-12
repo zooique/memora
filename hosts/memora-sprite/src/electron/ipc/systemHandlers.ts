@@ -160,4 +160,17 @@ export function registerSystemHandlers(ctx: IpcContext): void {
     const floatWindow = ctx.windowManager.getFloatWindow();
     floatWindow?.broadcastTheme(theme);
   });
+
+  // ─── 使用统计（AUDIT-5-3） ──────────────────────────────
+
+  /** 导出使用统计 JSON 文件，返回文件路径。采集器未就绪时返回 null */
+  ipcMain.handle(IPC_CHANNELS.USAGE_STATS_EXPORT, async () => {
+    if (!ctx.usageStatsCollector) return null;
+    try {
+      return await ctx.usageStatsCollector.export();
+    } catch (error) {
+      errorHandler.handle(error, { code: ErrorCode.UNKNOWN, context: '导出使用统计失败' });
+      return null;
+    }
+  });
 }

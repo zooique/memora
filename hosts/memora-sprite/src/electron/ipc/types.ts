@@ -13,6 +13,7 @@ import type { WindowManager } from '../windows/windowManager.js';
 import type { TrayManager } from '../trayIcon.js';
 // 注入快捷键管理器，供 configHandlers 触发热更新副作用
 import type { ShortcutManager } from '../shortcuts.js';
+import type { UsageStatsCollector } from '../../sprite/usage/usageStatsCollector.js';
 import { errorHandler, ErrorCode } from '../errorHandler.js';
 
 /**
@@ -56,6 +57,8 @@ export interface IpcContext {
   incrementUnreadCount: () => void;
   /** 清零未读计数并推送到浮动窗口 + 完整窗口 */
   resetUnreadCount: () => void;
+  /** 使用统计采集器（AUDIT-5-1，默认关闭，需显式开启） */
+  usageStatsCollector: UsageStatsCollector | null;
 }
 
 /**

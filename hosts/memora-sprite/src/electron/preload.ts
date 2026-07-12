@@ -164,6 +164,8 @@ export const IPC_CHANNELS = {
   QUICK_INPUT_RESIZE: 'quick-input-resize',
   // 渲染进程日志上报（渲染进程 → 主进程）
   RENDERER_LOG: 'renderer-log',
+  // 使用统计导出（渲染进程 → 主进程）
+  USAGE_STATS_EXPORT: 'usage-stats-export',
 } as const;
 
 export const MAIN_TO_RENDERER_CHANNELS = {
@@ -1022,6 +1024,9 @@ const electronAPI: ElectronAPI = {
 
   // 渲染进程日志上报（fire-and-forget，日志无需等待）
   rendererLog: (level, context, message) => ipcRenderer.send(IPC_CHANNELS.RENDERER_LOG, { level, context, message }),
+
+  // 使用统计导出（返回 JSON 文件路径，供用户手动导出）
+  usageStatsExport: () => ipcRenderer.invoke(IPC_CHANNELS.USAGE_STATS_EXPORT),
 };
 
 // 条件保护——测试环境（vitest）无 contextBridge，直接调用会抛错阻断测试

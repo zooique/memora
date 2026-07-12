@@ -104,6 +104,7 @@ function createMockIpcContext(options: {
     getUnreadCount: () => 0,
     incrementUnreadCount: vi.fn(),
     resetUnreadCount: vi.fn(),
+    usageStatsCollector: null,
   };
 
   return { ctx, sentMessages, setAbortControllerCalls };
@@ -338,6 +339,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
         getUnreadCount: () => 0,
         incrementUnreadCount: vi.fn(),
         resetUnreadCount: vi.fn(),
+        usageStatsCollector: null,
       };
 
       registerIpcHandlers(ctx as never);

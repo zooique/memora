@@ -284,6 +284,79 @@ src/
 5. **间距/圆角令牌化**：组件 CSS 间距/圆角走 `--space-*` / `--radius-*` 令牌，禁止裸写 px（布局 width/height 等除外）。
 6. **贡献约定**：新增子模块在聚合器 `@import` 列表按层叠顺序追加；新组件样式放进对应功能 CSS。
 
+### 2.5 IPC 通道治理现状（2026-07-12，排雷 AUDIT-6-2）
+
+> **来源**：排雷报告方向六 · IPC 通道治理
+
+#### 通道规模
+
+| 方向 | 通道数 | 定义文件 |
+|------|--------|----------|
+| 渲染→主进程（`IPC_CHANNELS`） | 78 | `src/electron/ipc/channels.ts` |
+| 主→渲染进程（`MAIN_TO_RENDERER_CHANNELS`） | 27 | 同上 |
+| **合计** | **105** | 单一真理源 |
+
+#### 功能域分组（7 个领域 handler + 1 个降级 + 1 个流式核心）
+
+| Handler 文件 | 功能域 | 通道数 |
+|--------------|--------|--------|
+| `chatHandlers.ts` | 对话域（USER_INPUT / CHAT_ABORT / 锁管理） | 3 |
+| `sessionHandlers.ts` | 会话管理（SESSION_*） | 8 |
+| `memoryHandlers.ts` | 记忆 CRUD（MEMORIES_* / ARCHIVE_*） | 22 |
+| `configHandlers.ts` | 配置 + 角色（CONFIG_* / PERSONA_*） | 7 |
+| `systemHandlers.ts` | 主动提示 + 项目 + 仪表盘 + 主题 | 12 |
+| `suggestionHandlers.ts` | 配置建议 + 用户画像 | 5 |
+| `workProjectionHandlers.ts` | 作品投影 | 2 |
+| `minimalHandlers.ts` | Agent 未就绪降级 | — |
+| `chatStreamHandler.ts` | 流式输出核心（被 chatHandlers 调用） | — |
+
+聚合入口：`src/electron/ipc/index.ts`（`registerIpcHandlers` 调用 7 个领域 register 函数）。
+
+#### 命名规范
+
+| 项 | 规范 |
+|----|------|
+| 字符串值 | kebab-case（如 `'memories-list'`） |
+| 常量键名 | 全大写下划线（如 `MEMORIES_LIST`） |
+| 方向区分 | 两个独立 `as const` 对象（`IPC_CHANNELS` vs `MAIN_TO_RENDERER_CHANNELS`） |
+| 主→渲染前缀 | 精灵相关通道统一加 `SPRITE_` 前缀（STREAM / EVENT / OUTPUT / ERROR） |
+| 版本号 | 无（当前无通道需 v2 重构，不引入版本管理） |
+
+#### STREAM_* 系列（8 个，均在 `MAIN_TO_RENDERER_CHANNELS`）
+
+`SPRITE_STREAM_START` / `SPRITE_STREAM_CHUNK` / `SPRITE_STREAM_END` / `SPRITE_STREAM_RECALL` / `SPRITE_STREAM_TOOL_START` / `SPRITE_STREAM_TOOL_RESULT` / `SPRITE_STREAM_THINKING` / `SPRITE_STREAM_ABORTED`
+
+#### 校验机制
+
+`scripts/check-ipc-channels.ts` 在构建时校验 `channels.ts` 与 `preload.ts` 的通道常量双向一致性，lint 时运行。
+
+#### 治理决策（排雷 AUDIT-6-1/6-5/6-6）
+
+- **通道合并**：不合并 STREAM_* 为统一通道。成本（preload API 重写 + 渲染层监听重写 + 测试更新 + 高频通道处理开销）远超收益
+- **版本管理**：不引入 v2 前缀。当前无通道需 v2 重构，三处同步（channels + preload + handler）增加复杂度
+- **未来触发时机**：通道数超 150 或出现跨领域 handler 时启动合并评估
+
+#### 通道归属检查流程（AUDIT-6-3）
+
+新增 IPC 通道时，必须按以下流程检查归属：
+
+1. **确定功能域**：新通道属于哪个功能域（对话/会话/记忆/配置/系统/建议/作品投影）？
+2. **handler 文件归属**：新通道的 handler 必须放在对应功能域的 handler 文件中（见上方"功能域分组"表）
+3. **通道清理注册**：`ipcMain.handle` 通道必须在 `ipc/index.ts` 的 `HANDLE_CHANNELS` 数组中添加；`ipcMain.on` 通道必须在 `ON_CHANNELS` 数组中添加（reinitAgent 重复注册时清理）
+4. **preload 同步**：在 `preload.ts` 的内联通道常量中同步新增（sandbox 兼容性要求）
+5. **API 暴露**：在 `preload.ts` 的 `electronAPI` 对象中新增对应的 API 方法
+6. **通道校验**：运行 `npx tsx scripts/check-ipc-channels.ts` 验证 channels.ts 与 preload.ts 的双向一致性
+7. **测试更新**：在 `src/__tests__/electron/ipc/handlers.test.ts` 的 mock IpcContext 中新增通道相关字段（如 IpcContext 接口有变化）
+
+**PR review checklist**：
+
+- [ ] 新通道已归入正确功能域的 handler 文件
+- [ ] `HANDLE_CHANNELS` 或 `ON_CHANNELS` 已添加新通道
+- [ ] `preload.ts` 内联通道常量已同步
+- [ ] `electronAPI` 已暴露对应 API 方法
+- [ ] `check-ipc-channels.ts` 校验通过
+- [ ] mock IpcContext 已更新（如 IpcContext 接口有变化）
+
 ---
 
 ## 3. 迁移步骤（从当前状态 → 最终形态）

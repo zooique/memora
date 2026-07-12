@@ -221,6 +221,10 @@ export const IPC_CHANNELS = {
   // ─── 可观测性 ───────────────
   /** 渲染进程 → 主进程：上报日志（错误/警告等，转发到主进程 logger） */
   RENDERER_LOG: 'renderer-log',
+
+  // ─── 使用统计（AUDIT-5-3） ───────────────
+  /** 渲染进程 → 主进程：导出使用统计 JSON 文件，返回文件路径 */
+  USAGE_STATS_EXPORT: 'usage-stats-export',
 } as const;
 
 /** 主进程 → 渲染进程的推送通道 */
