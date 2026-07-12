@@ -1,4 +1,4 @@
-﻿/**
+/**
  * tools.ts 单元测试
  *
  * 覆盖范围：
@@ -33,8 +33,13 @@ import {
   webSearchHandler,
   memorySearchHandler,
   setMemorySearcher,
+  setAgentRef,
+  createPersonaHandler,
+  createSkillHandler,
   WEB_SEARCH_TOOL,
   MEMORY_SEARCH_TOOL,
+  CREATE_PERSONA_TOOL,
+  CREATE_SKILL_TOOL,
 } from '../../sprite/tools.js';
 
 // ─── Mock 工厂 ──────────────────────────────────────────
@@ -72,6 +77,22 @@ function createMockSearcher(
   results: Array<{ name: string; contentPreview: string; score: number }> = []
 ): (query: string, limit: number) => Promise<Array<{ name: string; contentPreview: string; score: number }>> {
   return vi.fn().mockResolvedValue(results);
+}
+
+/**
+ * 创建 Mock AgentRef
+ *
+ * AgentRef 类型未从 tools.ts 导出，利用 TypeScript 结构化类型，
+ * 构造形状兼容的对象即可通过 setAgentRef 的类型检查。
+ * 返回类型由推断保留 Mock 方法（mockResolvedValue / mockRejectedValue 等）。
+ */
+function createMockAgent() {
+  return {
+    config: {
+      confirmConfigSuggestion: vi.fn().mockResolvedValue(undefined),
+    },
+    reloadConfig: vi.fn().mockResolvedValue({ skill: 0, persona: 0 }),
+  };
 }
 
 // ─── 测试用例 ────────────────────────────────────────────
@@ -389,6 +410,321 @@ describe('tools', () => {
       // MEMORY_SEARCH_TOOL
       expect(MEMORY_SEARCH_TOOL.description.length).toBeGreaterThan(0);
       expect(MEMORY_SEARCH_TOOL.parameters.type).toBe('object');
+    });
+  });
+
+  // ─── 6. webSearch win32 平台补充 ─────────────────────
+
+  describe('webSearch win32 平台', () => {
+    it('win32 平台应构造 cmd /c start "" url 命令', async () => {
+      const originalPlatform = process.platform;
+      vi.mocked(execFile).mockImplementation(
+        (_cmd: string, _args: string[], callback: (err: Error | null) => void) => {
+          callback(null);
+        }
+      );
+      try {
+        Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
+        await webSearch('hello');
+        expect(execFile).toHaveBeenCalledWith(
+          'cmd',
+          ['/c', 'start', '', 'https://www.google.com/search?q=hello'],
+          expect.any(Function),
+        );
+      } finally {
+        Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      }
+    });
+  });
+
+  // ─── 7. memorySearchHandler 非 Error 降级 ─────────────
+
+  describe('memorySearchHandler 非 Error 降级', () => {
+    it('searcher reject 非 Error 值（字符串）时应返回 String(err) 形式错误消息', async () => {
+      const mockSearch = createMockSearcher();
+      // reject 一个非 Error 值，触发 err instanceof Error === false 分支
+      mockSearch.mockRejectedValue('搜索服务不可用');
+      setMemorySearcher(mockSearch);
+
+      const result = await memorySearchHandler({ query: 'test' }, mockCtx);
+
+      // err instanceof Error === false → String(err) 分支
+      expect(result).toBe('错误：记忆搜索失败：搜索服务不可用');
+      // logger.warn 仍应记录降级日志
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: '搜索服务不可用', query: 'test' }),
+        '记忆搜索失败',
+      );
+    });
+  });
+
+  // ─── 8. createPersonaHandler ─────────────────────────
+
+  describe('createPersonaHandler', () => {
+    let mockAgent: ReturnType<typeof createMockAgent>;
+
+    beforeEach(() => {
+      mockAgent = createMockAgent();
+      setAgentRef(mockAgent);
+    });
+
+    it('Agent 未注入时应返回"错误：Agent 引用未初始化"', async () => {
+      // 通过 resetModules 获取模块初始状态（agentRef === null）
+      vi.resetModules();
+      vi.doMock('node:child_process', () => ({ execFile: vi.fn() }));
+
+      const freshMod = await import('../../sprite/tools.js');
+      const result = await freshMod.createPersonaHandler(
+        { name: '测试角色', content: '内容' },
+        mockCtx,
+      );
+
+      expect(result).toBe('错误：Agent 引用未初始化');
+    });
+
+    it('name 为空时应返回"错误：角色名称不能为空"', async () => {
+      const result = await createPersonaHandler({ name: '', content: '内容' }, mockCtx);
+      expect(result).toBe('错误：角色名称不能为空');
+      expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('content 为空时应返回"错误：角色内容不能为空"', async () => {
+      const result = await createPersonaHandler({ name: '角色', content: '' }, mockCtx);
+      expect(result).toBe('错误：角色内容不能为空');
+      expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('仅 name+content 时应成功创建，configContent 等于原始 content', async () => {
+      const result = await createPersonaHandler(
+        { name: '写作助手', content: '你是一个写作助手' },
+        mockCtx,
+      );
+
+      expect(result).toContain('创建成功');
+      expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith({
+        type: 'persona',
+        name: '写作助手',
+        content: '你是一个写作助手',
+        confidence: 0.95,
+      });
+    });
+
+    it('带 description 时 configContent 应以"描述："前缀拼接', async () => {
+      await createPersonaHandler(
+        { name: '角色A', description: '这是一个描述', content: '正文内容' },
+        mockCtx,
+      );
+
+      expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: '描述：这是一个描述\n\n正文内容',
+        }),
+      );
+    });
+
+    it('带 keywords 时 configContent 应以"关键词："前缀拼接', async () => {
+      await createPersonaHandler(
+        { name: '角色A', keywords: '写作,编辑', content: '正文内容' },
+        mockCtx,
+      );
+
+      expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: '关键词：写作,编辑\n\n正文内容',
+        }),
+      );
+    });
+
+    it('同时带 description 和 keywords 时应双层前缀拼接（关键词在最前）', async () => {
+      await createPersonaHandler(
+        { name: '角色A', description: '描述内容', keywords: '关键词1,关键词2', content: '正文' },
+        mockCtx,
+      );
+
+      expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: '关键词：关键词1,关键词2\n\n描述：描述内容\n\n正文',
+        }),
+      );
+    });
+
+    it('成功时应调用 reloadConfig("persona") 并返回含名称/描述/关键词的成功消息', async () => {
+      const result = await createPersonaHandler(
+        { name: '写作助手', description: '描述', content: '内容', keywords: '写作' },
+        mockCtx,
+      );
+
+      expect(mockAgent.reloadConfig).toHaveBeenCalledWith('persona');
+      expect(result).toContain('角色 "写作助手" 创建成功');
+      expect(result).toContain('描述：描述');
+      expect(result).toContain('关键词：写作');
+    });
+
+    it('confirmConfigSuggestion 抛 Error 时应返回"错误：创建角色失败：..."并记录 logger.warn', async () => {
+      mockAgent.config.confirmConfigSuggestion.mockRejectedValue(new Error('配置文件不可写'));
+
+      const result = await createPersonaHandler(
+        { name: '角色A', content: '内容' },
+        mockCtx,
+      );
+
+      expect(result).toBe('错误：创建角色失败：配置文件不可写');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: '配置文件不可写', name: '角色A' }),
+        '创建角色失败',
+      );
+    });
+
+    it('reloadConfig reject 非 Error 值时应返回 String(err) 形式错误消息', async () => {
+      mockAgent.reloadConfig.mockRejectedValue('重载失败');
+
+      const result = await createPersonaHandler(
+        { name: '角色B', content: '内容' },
+        mockCtx,
+      );
+
+      // err instanceof Error === false → String(err) 分支
+      expect(result).toBe('错误：创建角色失败：重载失败');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: '重载失败', name: '角色B' }),
+        '创建角色失败',
+      );
+    });
+  });
+
+  // ─── 9. createSkillHandler ──────────────────────────
+
+  describe('createSkillHandler', () => {
+    let mockAgent: ReturnType<typeof createMockAgent>;
+
+    beforeEach(() => {
+      mockAgent = createMockAgent();
+      setAgentRef(mockAgent);
+    });
+
+    it('name 为空时应返回"错误：技能名称不能为空"', async () => {
+      const result = await createSkillHandler({ name: '', content: '内容' }, mockCtx);
+      expect(result).toBe('错误：技能名称不能为空');
+      expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('成功时应调用 confirmConfigSuggestion(type="skill") + reloadConfig("skill")', async () => {
+      const result = await createSkillHandler(
+        { name: '去AI味', content: '执行去AI味处理' },
+        mockCtx,
+      );
+
+      expect(result).toContain('创建成功');
+      expect(mockAgent.config.confirmConfigSuggestion).toHaveBeenCalledWith({
+        type: 'skill',
+        name: '去AI味',
+        content: '执行去AI味处理',
+        confidence: 0.95,
+      });
+      expect(mockAgent.reloadConfig).toHaveBeenCalledWith('skill');
+    });
+
+    it('成功消息应包含"技能"标签和名称', async () => {
+      const result = await createSkillHandler(
+        { name: '审视角', description: '审视视角', content: '内容', keywords: '审视' },
+        mockCtx,
+      );
+
+      expect(result).toContain('技能 "审视角" 创建成功');
+      expect(result).toContain('描述：审视视角');
+      expect(result).toContain('关键词：审视');
+    });
+
+    it('confirmConfigSuggestion 抛异常时应返回"错误：创建技能失败：..."', async () => {
+      mockAgent.config.confirmConfigSuggestion.mockRejectedValue(new Error('磁盘已满'));
+
+      const result = await createSkillHandler(
+        { name: '技能A', content: '内容' },
+        mockCtx,
+      );
+
+      expect(result).toBe('错误：创建技能失败：磁盘已满');
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ err: '磁盘已满', name: '技能A' }),
+        '创建技能失败',
+      );
+    });
+  });
+
+  // ─── 10. 角色/技能工具定义常量 ─────────────────────────
+
+  describe('角色/技能工具定义常量', () => {
+    it('CREATE_PERSONA_TOOL：name="create_persona"，required 含 name+content', () => {
+      expect(CREATE_PERSONA_TOOL.name).toBe('create_persona');
+      expect(CREATE_PERSONA_TOOL.description).toBeTruthy();
+      expect(CREATE_PERSONA_TOOL.parameters.type).toBe('object');
+      expect(CREATE_PERSONA_TOOL.parameters.required).toContain('name');
+      expect(CREATE_PERSONA_TOOL.parameters.required).toContain('content');
+    });
+
+    it('CREATE_PERSONA_TOOL：parameters 含 name/description/content/keywords 四个属性', () => {
+      const props = CREATE_PERSONA_TOOL.parameters.properties;
+      expect(props).toHaveProperty('name');
+      expect(props).toHaveProperty('description');
+      expect(props).toHaveProperty('content');
+      expect(props).toHaveProperty('keywords');
+      expect(props.name!.type).toBe('string');
+      expect(props.content!.type).toBe('string');
+    });
+
+    it('CREATE_SKILL_TOOL：name="create_skill"，required 含 name+content', () => {
+      expect(CREATE_SKILL_TOOL.name).toBe('create_skill');
+      expect(CREATE_SKILL_TOOL.description).toBeTruthy();
+      expect(CREATE_SKILL_TOOL.parameters.type).toBe('object');
+      expect(CREATE_SKILL_TOOL.parameters.required).toContain('name');
+      expect(CREATE_SKILL_TOOL.parameters.required).toContain('content');
+    });
+
+    it('CREATE_SKILL_TOOL：parameters 含 name/description/content/keywords 四个属性', () => {
+      const props = CREATE_SKILL_TOOL.parameters.properties;
+      expect(props).toHaveProperty('name');
+      expect(props).toHaveProperty('description');
+      expect(props).toHaveProperty('content');
+      expect(props).toHaveProperty('keywords');
+      expect(props.name!.type).toBe('string');
+      expect(props.content!.type).toBe('string');
+    });
+  });
+
+  // ─── 11. 参数 undefined 降级（?? '' 分支覆盖） ─────────
+
+  describe('参数 undefined 降级', () => {
+    it('memorySearchHandler: args.query 未传 key 时应走 ?? "" 分支返回空值错误', async () => {
+      const mockSearch = createMockSearcher();
+      setMemorySearcher(mockSearch);
+
+      // 不传 query key → args.query 为 undefined → ?? '' 触发右操作数
+      const result = await memorySearchHandler({}, mockCtx);
+
+      expect(result).toBe('错误：query 参数不能为空');
+      expect(mockSearch).not.toHaveBeenCalled();
+    });
+
+    it('createPersonaHandler: args.name 未传 key 时应走 ?? "" 分支返回名称错误', async () => {
+      const mockAgent = createMockAgent();
+      setAgentRef(mockAgent);
+
+      // 不传 name key → args.name 为 undefined → ?? '' 触发右操作数
+      const result = await createPersonaHandler({ content: '内容' }, mockCtx);
+
+      expect(result).toBe('错误：角色名称不能为空');
+      expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
+    });
+
+    it('createPersonaHandler: args.content 未传 key 时应走 ?? "" 分支返回内容错误', async () => {
+      const mockAgent = createMockAgent();
+      setAgentRef(mockAgent);
+
+      // 不传 content key → args.content 为 undefined → ?? '' 触发右操作数
+      const result = await createPersonaHandler({ name: '角色' }, mockCtx);
+
+      expect(result).toBe('错误：角色内容不能为空');
+      expect(mockAgent.config.confirmConfigSuggestion).not.toHaveBeenCalled();
     });
   });
 });
