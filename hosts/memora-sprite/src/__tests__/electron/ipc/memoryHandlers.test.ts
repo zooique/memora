@@ -40,7 +40,7 @@ import type { IpcContext } from '../../../electron/ipc/types.js';
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 
-/** 创建 mock IpcContext（仅包含 memoryHandlers 需要的 sprite 方法） */
+/** 创建 mock IpcContext（仅包含 memoryHandlers 需要的 sprite/agent 方法） */
 function createMockCtx(overrides?: {
   listMemories?: ReturnType<typeof vi.fn>;
   searchMemories?: ReturnType<typeof vi.fn>;
@@ -49,18 +49,59 @@ function createMockCtx(overrides?: {
   upsertMemory?: ReturnType<typeof vi.fn>;
   archiveProfileFacts?: ReturnType<typeof vi.fn>;
   archiveInsight?: ReturnType<typeof vi.fn>;
+  restoreMemory?: ReturnType<typeof vi.fn>;
+  purgeMemory?: ReturnType<typeof vi.fn>;
+  restoreAllMemories?: ReturnType<typeof vi.fn>;
+  purgeAllMemories?: ReturnType<typeof vi.fn>;
+  listDeletedMemories?: ReturnType<typeof vi.fn>;
+  getRelationGraph?: ReturnType<typeof vi.fn>;
+  getHealthDashboard?: ReturnType<typeof vi.fn>;
+  getReviewData?: ReturnType<typeof vi.fn>;
+  deleteMemoriesBatch?: ReturnType<typeof vi.fn>;
+  addRelation?: ReturnType<typeof vi.fn>;
+  removeRelation?: ReturnType<typeof vi.fn>;
+  updateRelation?: ReturnType<typeof vi.fn>;
+  getRelationPath?: ReturnType<typeof vi.fn>;
+  getRelationNeighbors?: ReturnType<typeof vi.fn>;
+  archiveSessionContent?: ReturnType<typeof vi.fn>;
 }): IpcContext {
   return {
-    agent: {} as IpcContext['agent'],
+    agent: {
+      archiveSessionContent:
+        overrides?.archiveSessionContent ?? vi.fn(async () => ({ memories: [] })),
+    } as IpcContext['agent'],
     sprite: {
       listMemories: overrides?.listMemories ?? vi.fn(() => []),
       searchMemories: overrides?.searchMemories ?? vi.fn(async () => []),
       showMemory: overrides?.showMemory ?? vi.fn(() => null),
       deleteMemory: overrides?.deleteMemory ?? vi.fn(() => false),
       upsertMemory: overrides?.upsertMemory ?? vi.fn(() => 'new-id'),
-      // 新增的归档委托方法
+      // 归档委托方法
       archiveProfileFacts: overrides?.archiveProfileFacts ?? vi.fn(async () => []),
       archiveInsight: overrides?.archiveInsight ?? vi.fn(async () => []),
+      // 回收站操作
+      restoreMemory: overrides?.restoreMemory ?? vi.fn(() => false),
+      purgeMemory: overrides?.purgeMemory ?? vi.fn(() => false),
+      restoreAllMemories:
+        overrides?.restoreAllMemories ?? vi.fn(() => ({ restored: 0, failed: 0 })),
+      purgeAllMemories:
+        overrides?.purgeAllMemories ?? vi.fn(() => ({ purged: 0, failed: 0 })),
+      listDeletedMemories: overrides?.listDeletedMemories ?? vi.fn(() => []),
+      // 关系图谱与诊断
+      getRelationGraph:
+        overrides?.getRelationGraph ?? vi.fn(() => ({ nodes: [], edges: [] })),
+      getHealthDashboard: overrides?.getHealthDashboard ?? vi.fn(() => ({})),
+      getReviewData: overrides?.getReviewData ?? vi.fn(() => ({})),
+      deleteMemoriesBatch:
+        overrides?.deleteMemoriesBatch ?? vi.fn(async () => ({ deleted: 0, total: 0 })),
+      // 关系 CRUD
+      addRelation: overrides?.addRelation ?? vi.fn(),
+      removeRelation: overrides?.removeRelation ?? vi.fn(),
+      updateRelation: overrides?.updateRelation ?? vi.fn(),
+      getRelationPath:
+        overrides?.getRelationPath ?? vi.fn(() => ({ nodes: [], edges: [] })),
+      getRelationNeighbors:
+        overrides?.getRelationNeighbors ?? vi.fn(() => ({ neighbors: [] })),
     } as unknown as IpcContext['sprite'],
     sessionStore: {} as IpcContext['sessionStore'],
     windowStateManager: {} as IpcContext['windowStateManager'],
@@ -499,5 +540,597 @@ describe('registerMemoryHandlers', () => {
     const result = await callback({}, { input: '提问', assistantContent: '回复' });
 
     expect(result).toEqual({ count: 0 });
+  });
+
+  // ─── MEMORIES_LIST（补充：source 校验） ─────────────
+
+  it('MEMORIES_LIST 非法 source（空字符串）应抛出校验异常（不调用内核）', async () => {
+    const listMemories = vi.fn(() => []);
+    const ctx = createMockCtx({ listMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_LIST)!;
+    await expect(callback({}, { source: '' })).rejects.toThrow('非法 source 参数');
+
+    expect(listMemories).not.toHaveBeenCalled();
+  });
+
+  it('MEMORIES_LIST 非法 source（超长）应抛出校验异常', async () => {
+    const listMemories = vi.fn(() => []);
+    const ctx = createMockCtx({ listMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_LIST)!;
+    await expect(callback({}, { source: 'a'.repeat(501) })).rejects.toThrow('非法 source 参数');
+
+    expect(listMemories).not.toHaveBeenCalled();
+  });
+
+  // ─── MEMORIES_RESTORE（恢复软删除） ────────────────
+
+  it('MEMORIES_RESTORE 应返回恢复结果（含 id 供渲染层定位）', async () => {
+    const restoreMemory = vi.fn(() => true);
+    const ctx = createMockCtx({ restoreMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RESTORE)!;
+    const result = await callback({}, 'mem-1');
+
+    expect(restoreMemory).toHaveBeenCalledWith('mem-1');
+    expect(result).toEqual({ restored: true, id: 'mem-1' });
+  });
+
+  it('MEMORIES_RESTORE 非法 ID 应拒绝（返回 restored: false，不调用内核）', async () => {
+    const restoreMemory = vi.fn(() => false);
+    const ctx = createMockCtx({ restoreMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RESTORE)!;
+    const result = await callback({}, '');
+
+    expect(restoreMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ restored: false });
+  });
+
+  it('MEMORIES_RESTORE 抛错应降级返回 restored: false', async () => {
+    const restoreMemory = vi.fn(() => {
+      throw new Error('恢复失败');
+    });
+    const ctx = createMockCtx({ restoreMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RESTORE)!;
+    const result = await callback({}, 'mem-1');
+
+    expect(result).toEqual({ restored: false });
+  });
+
+  // ─── MEMORIES_PURGE（物理删除） ─────────────────────
+
+  it('MEMORIES_PURGE 应返回物理删除结果', async () => {
+    const purgeMemory = vi.fn(() => true);
+    const ctx = createMockCtx({ purgeMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_PURGE)!;
+    const result = await callback({}, 'mem-1');
+
+    expect(purgeMemory).toHaveBeenCalledWith('mem-1');
+    expect(result).toEqual({ purged: true });
+  });
+
+  it('MEMORIES_PURGE 非法 ID 应拒绝（返回 purged: false，不调用内核）', async () => {
+    const purgeMemory = vi.fn(() => false);
+    const ctx = createMockCtx({ purgeMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_PURGE)!;
+    const result = await callback({}, '');
+
+    expect(purgeMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ purged: false });
+  });
+
+  it('MEMORIES_PURGE 抛错应降级返回 purged: false', async () => {
+    const purgeMemory = vi.fn(() => {
+      throw new Error('物理删除失败');
+    });
+    const ctx = createMockCtx({ purgeMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_PURGE)!;
+    const result = await callback({}, 'mem-1');
+
+    expect(result).toEqual({ purged: false });
+  });
+
+  // ─── MEMORIES_RESTORE_ALL（批量恢复） ──────────────
+
+  it('MEMORIES_RESTORE_ALL 应返回批量恢复结果', async () => {
+    const restoreAllMemories = vi.fn(() => ({ restored: 5, failed: 1 }));
+    const ctx = createMockCtx({ restoreAllMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RESTORE_ALL)!;
+    const result = await callback({});
+
+    expect(restoreAllMemories).toHaveBeenCalled();
+    expect(result).toEqual({ restored: 5, failed: 1 });
+  });
+
+  it('MEMORIES_RESTORE_ALL 抛错应降级返回 { restored: 0, failed: 0 }', async () => {
+    const restoreAllMemories = vi.fn(() => {
+      throw new Error('批量恢复失败');
+    });
+    const ctx = createMockCtx({ restoreAllMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RESTORE_ALL)!;
+    const result = await callback({});
+
+    expect(result).toEqual({ restored: 0, failed: 0 });
+  });
+
+  // ─── MEMORIES_PURGE_ALL（批量清空） ────────────────
+
+  it('MEMORIES_PURGE_ALL 应返回批量清空结果', async () => {
+    const purgeAllMemories = vi.fn(() => ({ purged: 3, failed: 0 }));
+    const ctx = createMockCtx({ purgeAllMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_PURGE_ALL)!;
+    const result = await callback({});
+
+    expect(purgeAllMemories).toHaveBeenCalled();
+    expect(result).toEqual({ purged: 3, failed: 0 });
+  });
+
+  it('MEMORIES_PURGE_ALL 抛错应降级返回 { purged: 0, failed: 0 }', async () => {
+    const purgeAllMemories = vi.fn(() => {
+      throw new Error('批量清空失败');
+    });
+    const ctx = createMockCtx({ purgeAllMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_PURGE_ALL)!;
+    const result = await callback({});
+
+    expect(result).toEqual({ purged: 0, failed: 0 });
+  });
+
+  // ─── MEMORIES_LIST_DELETED（回收站列表） ───────────
+
+  it('MEMORIES_LIST_DELETED 应返回回收站记忆列表', async () => {
+    const memories = [{ id: '1', name: '已删除记忆' }];
+    const listDeletedMemories = vi.fn(() => memories);
+    const ctx = createMockCtx({ listDeletedMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_LIST_DELETED)!;
+    const result = await callback({});
+
+    expect(listDeletedMemories).toHaveBeenCalled();
+    expect(result).toEqual({ memories });
+  });
+
+  it('MEMORIES_LIST_DELETED 抛错应向上抛出（让渲染层感知加载失败）', async () => {
+    const listDeletedMemories = vi.fn(() => {
+      throw new Error('加载回收站失败');
+    });
+    const ctx = createMockCtx({ listDeletedMemories });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_LIST_DELETED)!;
+    await expect(callback({})).rejects.toThrow('加载回收站失败');
+  });
+
+  // ─── MEMORIES_ADD（补充：source/name 校验） ─────────
+
+  it('MEMORIES_ADD 非法 source（空字符串）应拒绝（返回空 ID，不调用内核）', async () => {
+    const upsertMemory = vi.fn();
+    const ctx = createMockCtx({ upsertMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD)!;
+    const result = await callback({}, {
+      source: '',
+      name: '新记忆',
+      content: '合法内容',
+    });
+
+    expect(upsertMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: '' });
+  });
+
+  it('MEMORIES_ADD 非法 name（空字符串）应拒绝（返回空 ID，不调用内核）', async () => {
+    const upsertMemory = vi.fn();
+    const ctx = createMockCtx({ upsertMemory });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD)!;
+    const result = await callback({}, {
+      source: 'insight',
+      name: '',
+      content: '合法内容',
+    });
+
+    expect(upsertMemory).not.toHaveBeenCalled();
+    expect(result).toEqual({ id: '' });
+  });
+
+  // ─── MEMORIES_RELATION_GRAPH（关系图谱） ───────────
+
+  it('MEMORIES_RELATION_GRAPH 应返回关系图谱', async () => {
+    const graph = {
+      nodes: [{ id: 'm1' }],
+      edges: [{ source: 'm1', target: 'm2', type: 'supports' }],
+    };
+    const getRelationGraph = vi.fn(() => graph);
+    const ctx = createMockCtx({ getRelationGraph });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_GRAPH)!;
+    const result = await callback({});
+
+    expect(getRelationGraph).toHaveBeenCalled();
+    expect(result).toBe(graph);
+  });
+
+  it('MEMORIES_RELATION_GRAPH 抛错应向上抛出', async () => {
+    const getRelationGraph = vi.fn(() => {
+      throw new Error('图谱加载失败');
+    });
+    const ctx = createMockCtx({ getRelationGraph });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_GRAPH)!;
+    await expect(callback({})).rejects.toThrow('图谱加载失败');
+  });
+
+  // ─── ARCHIVE_SESSION（批量归档会话） ───────────────
+
+  it('ARCHIVE_SESSION 合法参数应返回归档条目数', async () => {
+    const archiveSessionContent = vi.fn(async () => ({
+      memories: [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }],
+    }));
+    const ctx = createMockCtx({ archiveSessionContent });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.ARCHIVE_SESSION)!;
+    const result = await callback({}, { date: '2026-07-12', session: '会话1' });
+
+    expect(archiveSessionContent).toHaveBeenCalledWith('2026-07-12', '会话1');
+    expect(result).toEqual({ archivedCount: 3 });
+  });
+
+  it('ARCHIVE_SESSION 非字符串 date 应拒绝（返回 archivedCount: 0，不调用内核）', async () => {
+    const archiveSessionContent = vi.fn(async () => ({ memories: [] }));
+    const ctx = createMockCtx({ archiveSessionContent });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.ARCHIVE_SESSION)!;
+    const result = await callback({}, { date: 12345, session: '会话1' });
+
+    expect(archiveSessionContent).not.toHaveBeenCalled();
+    expect(result).toEqual({ archivedCount: 0 });
+  });
+
+  it('ARCHIVE_SESSION 非字符串 session 应拒绝（返回 archivedCount: 0）', async () => {
+    const archiveSessionContent = vi.fn(async () => ({ memories: [] }));
+    const ctx = createMockCtx({ archiveSessionContent });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.ARCHIVE_SESSION)!;
+    const result = await callback({}, { date: '2026-07-12', session: null });
+
+    expect(archiveSessionContent).not.toHaveBeenCalled();
+    expect(result).toEqual({ archivedCount: 0 });
+  });
+
+  it('ARCHIVE_SESSION 抛错应降级返回 archivedCount: 0', async () => {
+    const archiveSessionContent = vi.fn(async () => {
+      throw new Error('归档失败');
+    });
+    const ctx = createMockCtx({ archiveSessionContent });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.ARCHIVE_SESSION)!;
+    const result = await callback({}, { date: '2026-07-12', session: '会话1' });
+
+    expect(result).toEqual({ archivedCount: 0 });
+  });
+
+  // ─── MEMORIES_HEALTH_DASHBOARD（健康度仪表盘） ─────
+
+  it('MEMORIES_HEALTH_DASHBOARD 应返回仪表盘数据', async () => {
+    const dashboard = { total: 100, healthy: 80 };
+    const getHealthDashboard = vi.fn(() => dashboard);
+    const ctx = createMockCtx({ getHealthDashboard });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD)!;
+    const result = await callback({});
+
+    expect(getHealthDashboard).toHaveBeenCalled();
+    expect(result).toBe(dashboard);
+  });
+
+  it('MEMORIES_HEALTH_DASHBOARD 抛错应向上抛出', async () => {
+    const getHealthDashboard = vi.fn(() => {
+      throw new Error('仪表盘加载失败');
+    });
+    const ctx = createMockCtx({ getHealthDashboard });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_HEALTH_DASHBOARD)!;
+    await expect(callback({})).rejects.toThrow('仪表盘加载失败');
+  });
+
+  // ─── MEMORIES_REVIEW_DATA（对话回顾） ──────────────
+
+  it('MEMORIES_REVIEW_DATA 应返回回顾数据', async () => {
+    const reviewData = { sessions: 10, insights: 5 };
+    const getReviewData = vi.fn(() => reviewData);
+    const ctx = createMockCtx({ getReviewData });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_REVIEW_DATA)!;
+    const result = await callback({});
+
+    expect(getReviewData).toHaveBeenCalled();
+    expect(result).toBe(reviewData);
+  });
+
+  it('MEMORIES_REVIEW_DATA 抛错应向上抛出', async () => {
+    const getReviewData = vi.fn(() => {
+      throw new Error('回顾数据加载失败');
+    });
+    const ctx = createMockCtx({ getReviewData });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_REVIEW_DATA)!;
+    await expect(callback({})).rejects.toThrow('回顾数据加载失败');
+  });
+
+  // ─── MEMORIES_DELETE_BATCH（批量删除） ─────────────
+
+  it('MEMORIES_DELETE_BATCH 应返回批量删除结果', async () => {
+    const deleteMemoriesBatch = vi.fn(async () => ({ deleted: 3, total: 5 }));
+    const ctx = createMockCtx({ deleteMemoriesBatch });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE_BATCH)!;
+    const result = await callback({}, ['id-1', 'id-2', 'id-3']);
+
+    expect(deleteMemoriesBatch).toHaveBeenCalledWith(['id-1', 'id-2', 'id-3']);
+    expect(result).toEqual({ deleted: 3, total: 5 });
+  });
+
+  it('MEMORIES_DELETE_BATCH 抛错应降级返回 { deleted: 0, total: N }', async () => {
+    const deleteMemoriesBatch = vi.fn(async () => {
+      throw new Error('批量删除失败');
+    });
+    const ctx = createMockCtx({ deleteMemoriesBatch });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_DELETE_BATCH)!;
+    const result = await callback({}, ['id-1', 'id-2']);
+
+    expect(result).toEqual({ deleted: 0, total: 2 });
+  });
+
+  // ─── MEMORIES_ADD_RELATION（添加关系） ─────────────
+
+  it('MEMORIES_ADD_RELATION 合法参数应返回 success: true', async () => {
+    const addRelation = vi.fn();
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
+    const result = await callback({}, {
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'supports',
+      weight: 0.8,
+    });
+
+    expect(addRelation).toHaveBeenCalledWith('mem-1', 'mem-2', 'supports', 0.8);
+    expect(result).toEqual({ success: true });
+  });
+
+  it('MEMORIES_ADD_RELATION 非法 type（不在白名单）应拒绝（返回 success: false）', async () => {
+    const addRelation = vi.fn();
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
+    const result = await callback({}, {
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'invalid-type',
+      weight: 0.5,
+    });
+
+    expect(addRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_ADD_RELATION 非法 sourceId（空字符串）应拒绝（返回 success: false）', async () => {
+    const addRelation = vi.fn();
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
+    const result = await callback({}, {
+      sourceId: '',
+      targetId: 'mem-2',
+      type: 'supports',
+      weight: 0.5,
+    });
+
+    expect(addRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  it('MEMORIES_ADD_RELATION 抛错应降级返回 success: false', async () => {
+    const addRelation = vi.fn(() => {
+      throw new Error('关系写入失败');
+    });
+    const ctx = createMockCtx({ addRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_ADD_RELATION)!;
+    const result = await callback({}, {
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'supports',
+      weight: 0.8,
+    });
+
+    expect(result).toEqual({ success: false });
+  });
+
+  // ─── MEMORIES_REMOVE_RELATION（删除关系） ──────────
+
+  it('MEMORIES_REMOVE_RELATION 合法参数应返回 success: true', async () => {
+    const removeRelation = vi.fn();
+    const ctx = createMockCtx({ removeRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_REMOVE_RELATION)!;
+    const result = await callback({}, {
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'contradicts',
+    });
+
+    expect(removeRelation).toHaveBeenCalledWith('mem-1', 'mem-2', 'contradicts');
+    expect(result).toEqual({ success: true });
+  });
+
+  it('MEMORIES_REMOVE_RELATION 非法 targetId（空字符串）应拒绝（返回 success: false）', async () => {
+    const removeRelation = vi.fn();
+    const ctx = createMockCtx({ removeRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_REMOVE_RELATION)!;
+    const result = await callback({}, {
+      sourceId: 'mem-1',
+      targetId: '',
+      type: 'supports',
+    });
+
+    expect(removeRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  // ─── MEMORIES_UPDATE_RELATION（更新关系） ──────────
+
+  it('MEMORIES_UPDATE_RELATION 合法参数应返回 success: true', async () => {
+    const updateRelation = vi.fn();
+    const ctx = createMockCtx({ updateRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_UPDATE_RELATION)!;
+    const result = await callback({}, {
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'refines',
+      weight: 0.9,
+    });
+
+    expect(updateRelation).toHaveBeenCalledWith('mem-1', 'mem-2', 'refines', 0.9);
+    expect(result).toEqual({ success: true });
+  });
+
+  it('MEMORIES_UPDATE_RELATION 非法 type 应拒绝（返回 success: false）', async () => {
+    const updateRelation = vi.fn();
+    const ctx = createMockCtx({ updateRelation });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_UPDATE_RELATION)!;
+    const result = await callback({}, {
+      sourceId: 'mem-1',
+      targetId: 'mem-2',
+      type: 'not-a-valid-type',
+      weight: 0.5,
+    });
+
+    expect(updateRelation).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: false });
+  });
+
+  // ─── MEMORIES_RELATION_PATH（关系路径） ────────────
+
+  it('MEMORIES_RELATION_PATH 合法参数应返回路径（默认 maxDepth=5, direction=incoming）', async () => {
+    const path = { nodes: [{ id: 'm1' }], edges: [] };
+    const getRelationPath = vi.fn(() => path);
+    const ctx = createMockCtx({ getRelationPath });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_PATH)!;
+    const result = await callback({}, { memoryId: 'mem-1' });
+
+    expect(getRelationPath).toHaveBeenCalledWith('mem-1', 5, 'incoming');
+    expect(result).toBe(path);
+  });
+
+  it('MEMORIES_RELATION_PATH 自定义 maxDepth 和 direction 应透传', async () => {
+    const getRelationPath = vi.fn(() => ({ nodes: [], edges: [] }));
+    const ctx = createMockCtx({ getRelationPath });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_PATH)!;
+    await callback({}, { memoryId: 'mem-1', maxDepth: 10, direction: 'outgoing' });
+
+    expect(getRelationPath).toHaveBeenCalledWith('mem-1', 10, 'outgoing');
+  });
+
+  it('MEMORIES_RELATION_PATH 非法 memoryId 应抛出校验异常（不调用内核）', async () => {
+    const getRelationPath = vi.fn();
+    const ctx = createMockCtx({ getRelationPath });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_PATH)!;
+    await expect(callback({}, { memoryId: '' })).rejects.toThrow('非法记忆 ID');
+
+    expect(getRelationPath).not.toHaveBeenCalled();
+  });
+
+  // ─── MEMORIES_RELATION_NEIGHBORS（关系邻居） ────────
+
+  it('MEMORIES_RELATION_NEIGHBORS 合法参数应返回邻居（默认 limit=10）', async () => {
+    const neighbors = { neighbors: [{ id: 'm2' }, { id: 'm3' }] };
+    const getRelationNeighbors = vi.fn(() => neighbors);
+    const ctx = createMockCtx({ getRelationNeighbors });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS)!;
+    const result = await callback({}, { memoryId: 'mem-1' });
+
+    expect(getRelationNeighbors).toHaveBeenCalledWith('mem-1', 10);
+    expect(result).toBe(neighbors);
+  });
+
+  it('MEMORIES_RELATION_NEIGHBORS 自定义 limit 应透传', async () => {
+    const getRelationNeighbors = vi.fn(() => ({ neighbors: [] }));
+    const ctx = createMockCtx({ getRelationNeighbors });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS)!;
+    await callback({}, { memoryId: 'mem-1', limit: 20 });
+
+    expect(getRelationNeighbors).toHaveBeenCalledWith('mem-1', 20);
+  });
+
+  it('MEMORIES_RELATION_NEIGHBORS 非法 memoryId 应抛出校验异常（不调用内核）', async () => {
+    const getRelationNeighbors = vi.fn();
+    const ctx = createMockCtx({ getRelationNeighbors });
+    registerMemoryHandlers(ctx);
+
+    const callback = handleCallbacks.get(IPC_CHANNELS.MEMORIES_RELATION_NEIGHBORS)!;
+    await expect(callback({}, { memoryId: '' })).rejects.toThrow('非法记忆 ID');
+
+    expect(getRelationNeighbors).not.toHaveBeenCalled();
   });
 });
