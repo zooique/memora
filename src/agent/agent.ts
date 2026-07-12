@@ -41,7 +41,6 @@ import type { ConfigManager } from '@/agent/managers/configManager.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { MemoryMutator } from '@/agent/managers/memoryMutator.js';
-import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { configError } from '@/utils/errors.js';
 import { clearSafeInterval } from '@/utils/safeTimer.js';
@@ -670,46 +669,31 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       logger.debug({ mode: 'manual' }, '归档模式为 manual，跳过自动归档');
     }
 
-    // 用户画像实时归档（语义解析在 agent/ 层，存储在 memory/ 层）
+    // 用户画像实时归档（委托 ArchiveCoordinator，与手动归档路径统一，消除 DRY 违反）
     // ADR-015: full / insights-only 模式下 profile facts 自动归档
-    if (!skipAutoArchive && this.#userProfile) {
+    if (!skipAutoArchive) {
       try {
-        const turnIndex = `turn-${Date.now()}`;
-        const facts = extractUserFacts(input, turnIndex);
-        // 注册到 pendingArchives，确保 close() 时等待后台归档完成，避免写入已关闭的存储
-        const archiveFactsPromise = this.#userProfile.archiveFacts(facts).then((entries) => {
-          // 发射 memoryAdded 事件：仅对已确认且写入存储的条目（confirmed=true）
-          for (const entry of entries) {
-            if (entry.confirmed) {
-              this.emit('memoryAdded', { id: entry.id, source: 'profile', name: entry.value });
-            }
-          }
-        }).catch((err) => {
-          logger.warn({ err }, '用户画像实时归档失败');
-        });
+        // fire-and-forget 包装：registerPendingArchive 确保 close() 时等待后台归档完成
+        const archiveFactsPromise = this.archiveCoordinator!.archiveProfileFacts(input).then(
+          () => {},
+          (err) => { logger.warn({ err }, '用户画像实时归档失败'); },
+        );
         this.requireNonNull(this.history, 'history').registerPendingArchive(archiveFactsPromise);
       } catch (err) {
         logger.warn({ err }, '用户画像归档初始化失败');
       }
     }
 
-    // 输入分类 → Insight 提取（委托给 InsightExtractor）
+    // 输入分类 → Insight 提取（委托 ArchiveCoordinator，与手动归档路径统一）
     // ADR-015: full / insights-only 模式下 insight 自动归档
-    if (!skipAutoArchive && this.insightExtractor) {
+    if (!skipAutoArchive) {
       try {
-        const shouldExtract = this.insightExtractor.classify(input);
-        if (shouldExtract === 'extract') {
-          const p = this.insightExtractor.extract(input, assistantContent).then((memories) => {
-            // 发射 memoryAdded + insightExtracted 事件：每条写入/更新的 insight 均通知宿主
-            for (const memory of memories) {
-              this.emit('memoryAdded', { id: memory.id, source: memory.source, name: memory.name });
-              this.emit('insightExtracted', { source: memory.source, insight: memory.content });
-            }
-          }).catch((err) => {
-            logger.warn({ err }, 'Insight 提取失败');
-          });
-          this.requireNonNull(this.history, 'history').registerPendingArchive(p);
-        }
+        // fire-and-forget 包装：classify 判断由 ArchiveCoordinator 内部完成
+        const archiveInsightPromise = this.archiveCoordinator!.archiveInsight(input, assistantContent).then(
+          () => {},
+          (err) => { logger.warn({ err }, 'Insight 提取失败'); },
+        );
+        this.requireNonNull(this.history, 'history').registerPendingArchive(archiveInsightPromise);
       } catch (err) {
         logger.warn({ err }, 'Insight 提取初始化失败');
       }
