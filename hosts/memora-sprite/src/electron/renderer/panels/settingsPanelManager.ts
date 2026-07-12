@@ -18,14 +18,31 @@ import { reportError } from '../helpers/errorHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
 import { SafeTimerTracker } from '../helpers/safeTimer.js';
-import { showFieldError, clearFieldErrors } from '../helpers/formValidation.js';
 /** 从精灵零依赖常量模块导入，避免把 spriteConfig.ts 中的 Node.js 内置模块带入渲染进程 */
 import { MS_PER_MINUTE, MS_PER_HOUR } from '../../../sprite/constants.js';
 import type {
   SpriteConfigForm,
   ConfirmDialogOptions,
   ToastType,
+  LlmProviderConfig,
 } from '../types.js';
+// 多 Provider 管理子系统（CRUD + 渲染 + 事件委托）提取到独立 helper
+import {
+  loadProviderList as loadProviderListHelper,
+  renderBackgroundProviderSelect as renderBackgroundProviderSelectHelper,
+  renderProviderList as renderProviderListHelper,
+  showProviderForm as showProviderFormHelper,
+  hideProviderForm as hideProviderFormHelper,
+  saveProvider as saveProviderHelper,
+  testProviderConnection as testProviderConnectionHelper,
+  deleteProvider as deleteProviderHelper,
+  setActiveProvider as setActiveProviderHelper,
+  initProviderListeners as initProviderListenersHelper,
+} from '../helpers/providerManagement.js';
+import type { ProviderManagementContext } from '../helpers/providerManagement.js';
+// 快捷键捕获子系统（捕获式输入 + 冲突检测）提取到独立 helper
+import { initShortcutCapture as initShortcutCaptureHelper } from '../helpers/shortcutCapture.js';
+import type { ShortcutCaptureContext, ShortcutInputBinding } from '../helpers/shortcutCapture.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -64,20 +81,6 @@ export interface SettingsPanelHost {
 }
 
 // ─── 设置面板管理器类 ─────────────────────────────────────
-
-/**
- * Provider 表单所有可校验字段的 id 数组
- *
- * 用于 clearFieldErrors 批量清空错误状态，避免在多处重复字面量数组。
- * 字段 id 与 HTML 中 input 元素 id 一一对应，错误容器遵循 {id}-error 命名约定。
- */
-const PROVIDER_FORM_FIELD_IDS = [
-  'cfg-provider-alias',
-  'cfg-provider-provider',
-  'cfg-provider-model',
-  'cfg-provider-api-key',
-  'cfg-provider-temperature',
-] as const;
 
 export class SettingsPanelManager {
   // ─── 设置面板 DOM 元素 - Embedding 配置 ─────────────────
@@ -127,7 +130,7 @@ export class SettingsPanelManager {
   // 后台归档 Provider 选择框
   private backgroundProviderSelect: HTMLSelectElement | null;
   // 缓存 Provider 列表数据（编辑时用于填充表单字段，避免 DOM 解析丢失 temperature/apiKey）
-  private cachedProviders: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> = [];
+  private cachedProviders: LlmProviderConfig[] = [];
   private btnProviderSave: HTMLButtonElement | null;
   private btnProviderCancel: HTMLButtonElement | null;
   private btnProviderTest: HTMLButtonElement | null;
@@ -525,183 +528,51 @@ export class SettingsPanelManager {
     });
   }
 
-  // ─── Phase 3.3 快捷键捕获式输入 ─────────────────────────
+  // ─── Phase 3.3 快捷键捕获式输入（委托到 shortcutCapture helper） ───
 
   /**
-   * 初始化快捷键捕获式输入
+   * 初始化快捷键捕获式输入（委托到 helper）
    *
-   * 为三个快捷键输入框注册 focus/blur/keydown 监听器：
-   * - focus：进入捕获状态，显示"按下组合键..."提示
-   * - keydown：解析组合键为 Electron accelerator 格式，Esc 取消，Backspace 清除
-   * - blur：退出捕获状态，恢复默认提示
-   *
-   * 冲突检测：捕获成功后检查与其他动作的快捷键是否重复，重复时提示警告并不填入。
+   * 捕获逻辑、accelerator 解析、冲突检测已提取到 shortcutCapture.ts，
+   * 此处仅构建 context 并委托。helper 通过 ctx.events 注册监听器，
+   * cleanup 由主类统一管理。
    */
   private initShortcutCapture(): void {
-    const inputs: Array<{ input: HTMLInputElement | null; action: string }> = [
+    initShortcutCaptureHelper(this.buildShortcutCaptureContext());
+  }
+
+  /**
+   * 构建快捷键捕获子系统的依赖注入容器
+   *
+   * 将 SettingsPanelManager 的快捷键输入框 DOM 元素、事件跟踪器和宿主回调
+   * 通过 context 暴露给 shortcutCapture helper，保持状态所有权在
+   * SettingsPanelManager，同时让 helper 能以纯函数方式访问状态和注册回调。
+   */
+  private buildShortcutCaptureContext(): ShortcutCaptureContext {
+    // 过滤掉 null 元素（HTML ID 拼写错误时降级，validateSettingsElements 已报告）
+    const inputs: ShortcutInputBinding[] = [
       { input: this.cfgShortcutToggleWindow, action: 'toggle-window' },
       { input: this.cfgShortcutQuickRecord, action: 'quick-record' },
       { input: this.cfgShortcutRecallMemory, action: 'recall-memory' },
-    ];
+    ].filter((b): b is ShortcutInputBinding => b.input !== null);
 
-    for (const { input } of inputs) {
-      if (!input) continue;
-
-      /** 捕获状态标志（focus 时置 true，blur/cancel/capture 时置 false） */
-      let capturing = false;
-      /** 进入捕获前的原值（Esc 取消时恢复） */
-      let originalValue = '';
-
-      this.events.addEventListener(input, 'focus', () => {
-        capturing = true;
-        originalValue = input.value;
-        input.classList.add('capturing');
-        input.placeholder = '按下组合键…（Esc 取消，Backspace 清除）';
-      });
-
-      this.events.addEventListener(input, 'blur', () => {
-        if (capturing) {
-          capturing = false;
-          input.classList.remove('capturing');
-          input.placeholder = '点击捕获组合键';
-        }
-      });
-
-      this.events.addEventListener(input, 'keydown', (e: Event) => {
-        // EventListener 签名要求 (e: Event)，keydown 事件实际为 KeyboardEvent，窄化转换
-        const ke = e as KeyboardEvent;
-        if (!capturing) return;
-        // 阻止默认行为（如 Tab 切换焦点、空格滚动页面）
-        ke.preventDefault();
-        ke.stopPropagation();
-
-        const result = this.keyEventToAccelerator(ke);
-        // null 表示不支持的键，继续等待用户按下有效组合键
-        if (result === null) return;
-
-        // Esc 取消：恢复原值并退出捕获
-        if (result === '__cancel__') {
-          input.value = originalValue;
-          input.blur();
-          return;
-        }
-
-        // Backspace（无修饰键）清除快捷键
-        if (result === '__clear__') {
-          input.value = '';
-          input.blur();
-          this.settingsFormDirty = true;
-          this.debouncedAutoSave?.();
-          return;
-        }
-
-        // 冲突检测：检查与其他动作的快捷键是否重复
-        if (this.isShortcutConflict(result, input)) {
-          this.host.showToast(`快捷键 ${result} 与其他动作冲突，请使用其他组合`, 'warning');
-          return; // 不填入，继续等待
-        }
-
-        // 捕获成功：填入并退出捕获状态
-        input.value = result;
-        input.blur();
+    return {
+      inputs,
+      events: this.events,
+      // 捕获/清除成功：标记表单为 dirty 并触发防抖自动保存
+      onCapture: () => {
         this.settingsFormDirty = true;
         this.debouncedAutoSave?.();
-      });
-    }
-  }
-
-  /**
-   * 将 KeyboardEvent 解析为 Electron accelerator 格式字符串
-   *
-   * Electron accelerator 格式：修饰键 + 主键，如 "Ctrl+Shift+Space"。
-   * 修饰键顺序：Ctrl → Cmd → Alt → Shift（与 Electron 文档一致）。
-   *
-   * 特殊返回值：
-   * - '__cancel__'：Esc 键，表示取消捕获
-   * - '__clear__'：Backspace（无修饰键），表示清除快捷键
-   * - null：不支持的键（如单独的修饰键、无法识别的键），继续等待
-   *
-   * @param e 键盘事件
-   * @returns accelerator 字符串、特殊标记或 null
-   */
-  private keyEventToAccelerator(e: KeyboardEvent): string | '__cancel__' | '__clear__' | null {
-    // Esc 取消捕获
-    if (e.key === 'Escape') return '__cancel__';
-
-    // Backspace（无修饰键）清除快捷键
-    if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
-      return '__clear__';
-    }
-
-    // 收集修饰键（顺序：Ctrl → Cmd → Alt → Shift）
-    /** 修饰键列表（按 Electron accelerator 规范顺序） */
-    const parts: string[] = [];
-    if (e.ctrlKey) parts.push('Ctrl');
-    if (e.metaKey) parts.push('Cmd');
-    if (e.altKey) parts.push('Alt');
-    if (e.shiftKey) parts.push('Shift');
-
-    // 单独的修饰键不构成有效快捷键，继续等待
-    if (parts.length === 0) return null;
-
-    // 主键映射表（e.key → Electron accelerator 键名）
-    const keyMap: Record<string, string> = {
-      ' ': 'Space',
-      ArrowUp: 'Up',
-      ArrowDown: 'Down',
-      ArrowLeft: 'Left',
-      ArrowRight: 'Right',
-      Enter: 'Return',
-      Tab: 'Tab',
-      Home: 'Home',
-      End: 'End',
-      PageUp: 'PageUp',
-      PageDown: 'PageDown',
-      Insert: 'Insert',
-      Delete: 'Delete',
+      },
+      onClear: () => {
+        this.settingsFormDirty = true;
+        this.debouncedAutoSave?.();
+      },
+      // 冲突：显示警告 toast，helper 不会将值填入输入框
+      onConflict: (_action, accelerator) => {
+        this.host.showToast(`快捷键 ${accelerator} 与其他动作冲突，请使用其他组合`, 'warning');
+      },
     };
-
-    /** 主键名（Electron accelerator 格式） */
-    let key = keyMap[e.key];
-    if (!key) {
-      // 字母键转大写（accelerator 规范：A-Z）
-      if (/^[a-z]$/i.test(e.key)) {
-        key = e.key.toUpperCase();
-      } else if (/^F\d{1,2}$/i.test(e.key)) {
-        // 功能键 F1-F24 转大写
-        key = e.key.toUpperCase();
-      } else if (/^\d$/.test(e.key)) {
-        // 数字键 0-9
-        key = e.key;
-      } else {
-        // 不支持的键，继续等待
-        return null;
-      }
-    }
-
-    parts.push(key);
-    return parts.join('+');
-  }
-
-  /**
-   * 检查快捷键是否与其他动作冲突
-   *
-   * 遍历三个快捷键输入框（排除当前输入框），检查是否有相同的 accelerator。
-   * 空字符串不视为冲突（允许未设置的快捷键）。
-   *
-   * @param accelerator 待检查的 accelerator 字符串
-   * @param excludeInput 当前输入框（排除自身）
-   * @returns true 表示与其他动作冲突
-   */
-  private isShortcutConflict(accelerator: string, excludeInput: HTMLInputElement): boolean {
-    const inputs = [
-      this.cfgShortcutToggleWindow,
-      this.cfgShortcutQuickRecord,
-      this.cfgShortcutRecallMemory,
-    ];
-    return inputs.some(
-      (inp) => inp !== null && inp !== excludeInput && inp.value === accelerator,
-    );
   }
 
   /**
@@ -808,7 +679,7 @@ export class SettingsPanelManager {
     }
   }
 
-  // ─── 多 Provider 管理 ────────────────────────────────────
+  // ─── 多 Provider 管理（委托到 providerManagement helper） ───
 
   /**
    * 加载 Provider 列表并渲染
@@ -817,393 +688,82 @@ export class SettingsPanelManager {
    * 设置面板初次显示时调用。
    */
   async loadProviderList(): Promise<void> {
-    if (!this.providerListEl) return;
-    try {
-      const data = await window.electronAPI.listLlmProviders();
-      this.cachedProviders = data.providers; // 缓存供编辑时使用
-      this.renderProviderList(data.active, data.providers);
-      this.renderBackgroundProviderSelect(data.providers);
-      // 通知宿主 Provider 列表已变更，让 InputAreaManager 刷新输入框选择器
-      this.host.onProviderChanged?.();
-    } catch (error) {
-      // 加载失败时清空列表并提示用户（避免用户误以为"没有 Provider"）
-      clearElement(this.providerListEl);
-      reportError('SettingsPanelManager', error);
-      this.host.showToast('加载 Provider 列表失败，请稍后重试', 'error');
-    }
+    return loadProviderListHelper(this.buildProviderContext());
   }
 
   /**
-   * 渲染后台归档 Provider 选择框
+   * 渲染后台归档 Provider 选择框（委托到 helper）
    *
    * 使用 createElement + textContent 构建 option，避免 innerHTML 拼接用户输入
    * （provider name/model 来自用户表单输入，存在 XSS 风险）。
    */
-  private renderBackgroundProviderSelect(providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>): void {
-    if (!this.backgroundProviderSelect) return;
-
-    // 保存当前选中值，重建后恢复（避免列表刷新丢失用户选择）
-    const currentValue = this.backgroundProviderSelect.value;
-
-    clearElement(this.backgroundProviderSelect);
-
-    // 默认选项：与实时对话相同
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.textContent = '与实时对话相同';
-    this.backgroundProviderSelect.appendChild(defaultOption);
-
-    // Provider 选项（textContent 自动转义，无 XSS 风险）
-    for (const p of providers) {
-      const opt = document.createElement('option');
-      opt.value = p.key;
-      opt.textContent = `${p.name} (${p.provider} · ${p.model})`;
-      this.backgroundProviderSelect.appendChild(opt);
-    }
-
-    // 恢复用户之前的选择（若新列表中仍存在该 key）
-    if (providers.some((p) => p.key === currentValue)) {
-      this.backgroundProviderSelect.value = currentValue;
-    }
+  private renderBackgroundProviderSelect(providers: LlmProviderConfig[]): void {
+    renderBackgroundProviderSelectHelper(this.buildProviderContext(), providers);
   }
 
   /**
-   * 渲染 Provider 卡片列表
+   * 渲染 Provider 卡片列表（委托到 helper）
    *
    * 使用 createElement + textContent 构建卡片，避免 innerHTML 拼接用户输入
    * （provider name/provider/model/key 来自用户表单输入，存在 XSS 风险）。
    * 事件委托在 initProviderListeners 中一次性绑定，此方法仅负责渲染 DOM。
    */
-  private renderProviderList(active: string, providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }>): void {
-    if (!this.providerListEl) return;
-
-    // 清空旧列表
-    clearElement(this.providerListEl);
-
-    // 空状态提示
-    if (providers.length === 0) {
-      const hint = document.createElement('p');
-      hint.className = 'settings-hint';
-      hint.textContent = '暂未配置任何 API，点击下方按钮添加。';
-      this.providerListEl.appendChild(hint);
-      return;
-    }
-
-    // 使用 DocumentFragment 批量插入，避免循环中逐个 appendChild 触发重排
-    const fragment = document.createDocumentFragment();
-
-    for (const p of providers) {
-      const isActive = p.key === active;
-
-      const card = document.createElement('div');
-      card.className = `provider-card${isActive ? ' active' : ''}`;
-      card.dataset.providerKey = p.key;
-
-      // ─── Provider 信息区（名称 + 详情） ──────────────
-      const info = document.createElement('div');
-      info.className = 'provider-info';
-
-      const nameSpan = document.createElement('span');
-      nameSpan.className = 'provider-name';
-      nameSpan.textContent = p.name;
-      info.appendChild(nameSpan);
-
-      const detailSpan = document.createElement('span');
-      detailSpan.className = 'provider-detail';
-      detailSpan.textContent = `${p.provider} · ${p.model}`;
-      info.appendChild(detailSpan);
-
-      card.appendChild(info);
-
-      // ─── 激活徽章（仅当前 Provider 显示） ────────────
-      if (isActive) {
-        const badge = document.createElement('span');
-        badge.className = 'provider-active-badge';
-        badge.textContent = '当前';
-        card.appendChild(badge);
-      }
-
-      // ─── 操作按钮区 ──────────────────────────────────
-      const actions = document.createElement('div');
-      actions.className = 'provider-actions';
-
-      // 非激活 Provider 显示"设为当前"按钮
-      if (!isActive) {
-        const activateBtn = document.createElement('button');
-        activateBtn.className = 'btn-secondary provider-btn';
-        activateBtn.dataset.action = 'activate';
-        activateBtn.dataset.key = p.key;
-        activateBtn.textContent = '设为当前';
-        actions.appendChild(activateBtn);
-      }
-
-      // 编辑按钮（所有 Provider 都有）
-      const editBtn = document.createElement('button');
-      editBtn.className = 'btn-secondary provider-btn';
-      editBtn.dataset.action = 'edit';
-      editBtn.dataset.key = p.key;
-      editBtn.textContent = '编辑';
-      actions.appendChild(editBtn);
-
-      // 删除按钮（非激活 Provider 才显示，激活 Provider 不允许删除）
-      if (!isActive) {
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'btn-secondary provider-btn provider-btn-delete';
-        deleteBtn.dataset.action = 'delete';
-        deleteBtn.dataset.key = p.key;
-        deleteBtn.textContent = '删除';
-        actions.appendChild(deleteBtn);
-      }
-
-      card.appendChild(actions);
-      fragment.appendChild(card);
-    }
-
-    this.providerListEl.appendChild(fragment);
+  private renderProviderList(active: string, providers: LlmProviderConfig[]): void {
+    renderProviderListHelper(this.buildProviderContext(), active, providers);
   }
 
   /**
-   * 显示 Provider 编辑弹窗
+   * 显示 Provider 编辑弹窗（委托到 helper）
    */
   private showProviderForm(key: string = ''): void {
-    if (!this.providerModalEl) return;
-
-    // 清空之前的错误状态（避免上次校验失败残留）
-    clearFieldErrors([...PROVIDER_FORM_FIELD_IDS]);
-
-    if (key) {
-      // 编辑模式：从缓存中查找 Provider 数据（含 temperature 和脱敏 apiKey）
-      const cached = this.cachedProviders.find((p) => p.key === key);
-      if (this.providerModalTitleEl) this.providerModalTitleEl.textContent = '编辑 API';
-
-      if (this.providerAliasInput) {
-        this.providerAliasInput.value = key;
-        this.providerAliasInput.disabled = true;
-      }
-      if (this.providerDisplayInput) this.providerDisplayInput.value = cached?.name ?? key;
-      if (this.providerProviderInput) this.providerProviderInput.value = cached?.provider ?? '';
-      if (this.providerModelInput) this.providerModelInput.value = cached?.model ?? '';
-      if (this.providerBaseUrlInput) this.providerBaseUrlInput.value = cached?.baseUrl ?? '';
-      // 编辑时显示脱敏后的 API Key（前4后4），而非清空
-      if (this.providerApiKeyInput) this.providerApiKeyInput.value = cached?.apiKey ?? '';
-      if (this.providerTemperatureInput) this.providerTemperatureInput.value = String(cached?.temperature ?? 0.7);
-    } else {
-      // 新增模式：清空所有字段
-      if (this.providerModalTitleEl) this.providerModalTitleEl.textContent = '添加 API';
-      if (this.providerAliasInput) { this.providerAliasInput.value = ''; this.providerAliasInput.disabled = false; }
-      if (this.providerDisplayInput) this.providerDisplayInput.value = '';
-      if (this.providerProviderInput) this.providerProviderInput.value = '';
-      if (this.providerModelInput) this.providerModelInput.value = '';
-      if (this.providerBaseUrlInput) this.providerBaseUrlInput.value = '';
-      if (this.providerApiKeyInput) this.providerApiKeyInput.value = '';
-      if (this.providerTemperatureInput) this.providerTemperatureInput.value = '';
-    }
-
-    this.providerModalEl.classList.remove('hidden');
-    this.providerModalEl.dataset.editKey = key;
+    showProviderFormHelper(this.buildProviderContext(), key);
   }
 
   /**
-   * 隐藏 Provider 编辑弹窗
+   * 隐藏 Provider 编辑弹窗（委托到 helper）
    */
   private hideProviderForm(): void {
-    if (!this.providerModalEl) return;
-    this.providerModalEl.classList.add('hidden');
-    this.providerModalEl.dataset.editKey = '';
+    hideProviderFormHelper(this.buildProviderContext());
   }
 
   /**
-   * 保存 Provider（新增/更新）
+   * 保存 Provider（新增/更新）（委托到 helper）
    *
    * 校验：必填字段 + 别名格式（仅允许字母数字.-_） + Temperature 范围 + 重复 key 检测
    * 反馈：字段级 aria-invalid + aria-describedby 错误文本，失败时聚焦首个错误字段
    */
   private async saveProvider(): Promise<void> {
-    const alias = this.providerAliasInput?.value.trim();
-    const provider = this.providerProviderInput?.value.trim();
-    const model = this.providerModelInput?.value.trim();
-    const baseUrl = this.providerBaseUrlInput?.value.trim() || '';
-    const apiKey = this.providerApiKeyInput?.value.trim();
-    // 读取 temperature：空值表示使用默认值，不传 temperature 字段
-    const tempRaw = this.providerTemperatureInput?.value.trim();
-    const temperature = tempRaw ? parseFloat(tempRaw) : undefined;
-
-    // 清空之前的错误状态（开始新一轮校验）
-    clearFieldErrors([...PROVIDER_FORM_FIELD_IDS]);
-
-    // 必填字段校验：逐字段标记 aria-invalid，聚焦首个错误字段
-    let firstErrorField: HTMLElement | null = null;
-    if (!alias) {
-      firstErrorField = showFieldError('cfg-provider-alias', '请填写别名');
-    }
-    if (!provider) {
-      firstErrorField ??= showFieldError('cfg-provider-provider', '请填写提供商');
-    }
-    if (!model) {
-      firstErrorField ??= showFieldError('cfg-provider-model', '请填写模型');
-    }
-    if (!apiKey) {
-      firstErrorField ??= showFieldError('cfg-provider-api-key', '请填写 API Key');
-    }
-    if (firstErrorField) {
-      firstErrorField.focus();
-      return;
-    }
-
-    // 别名格式校验：仅允许 ASCII 字母数字 . - _，长度 ≤ 50
-    // Provider 别名作为持久化 key（文件名/IPC 标识），限制 ASCII 避免 path traversal
-    if (!/^[a-zA-Z0-9._-]{1,50}$/.test(alias as string)) {
-      const field = showFieldError('cfg-provider-alias', '仅支持英文、数字、点、短横线、下划线，最长 50 字符');
-      field.focus();
-      return;
-    }
-
-    // Temperature 范围校验：0-2（与 HTML input min/max 一致，防止绕过 HTML 校验）
-    if (temperature !== undefined && (Number.isNaN(temperature) || temperature < 0 || temperature > 2)) {
-      const field = showFieldError('cfg-provider-temperature', 'Temperature 必须在 0-2 之间');
-      field.focus();
-      return;
-    }
-
-    // 重复 key 检测：新增时检查别名是否已存在
-    const isEditing = (this.providerModalEl?.dataset.editKey ?? '') !== '';
-    if (!isEditing) {
-      try {
-        const data = await window.electronAPI.listLlmProviders();
-        if (data.providers.some((p) => p.key === alias)) {
-          const field = showFieldError('cfg-provider-alias', `别名 "${alias}" 已存在，请更换`);
-          field.focus();
-          return;
-        }
-      } catch (error) {
-        // 获取列表失败不阻塞保存，由主进程处理重复，但记录日志便于排查
-        reportError('SettingsPanelManager 保存前检查重复别名', error);
-      }
-    }
-
-    // 必填字段校验已保证 alias/provider/model/apiKey 非空，但 TypeScript 无法通过间接 flag 收窄类型
-    // 此处使用 ! 断言是因为校验块已 contractually 保证非空（失败则 return）
-    const saveBtn = this.btnProviderSave;
-    const originalText = saveBtn?.textContent ?? '保存';
-    if (saveBtn) {
-      saveBtn.disabled = true;
-      saveBtn.textContent = '保存中...';
-    }
-    try {
-      const result = await window.electronAPI.saveLlmProvider(alias!, { provider: provider!, model: model!, baseUrl, apiKey: apiKey!, temperature });
-      if (result.success) {
-        this.host.showToast('Provider 保存成功');
-        this.hideProviderForm();
-        await this.loadProviderList();
-      } else {
-        this.host.showToast(result.error ?? '保存失败', 'error');
-      }
-    } finally {
-      if (saveBtn) {
-        saveBtn.disabled = false;
-        saveBtn.textContent = originalText;
-      }
-    }
+    return saveProviderHelper(this.buildProviderContext());
   }
 
   /**
-   * 测试 Provider 连接——从表单读取配置，调用 testLlmConfig 验证
+   * 测试 Provider 连接——从表单读取配置，调用 testLlmConfig 验证（委托到 helper）
    *
    * 复用已有 LLM_CONFIG_TEST 通道，无需新增 IPC。
    * 测试时禁用按钮防止重复点击，完成后恢复。
    */
   private async testProviderConnection(): Promise<void> {
-    const provider = this.providerProviderInput?.value.trim();
-    const model = this.providerModelInput?.value.trim();
-    const baseUrl = this.providerBaseUrlInput?.value.trim() || '';
-    const apiKey = this.providerApiKeyInput?.value.trim();
-
-    if (!provider || !model || !apiKey) {
-      this.host.showToast('请填写提供商、模型和 API Key', 'error');
-      return;
-    }
-
-    const btn = this.btnProviderTest;
-    if (!btn) return;
-
-    // 禁用按钮防止重复点击
-    btn.disabled = true;
-    const originalText = btn.textContent;
-    btn.textContent = '测试中...';
-
-    try {
-      const result = await window.electronAPI.testLlmConfig({
-        provider,
-        model,
-        baseUrl: baseUrl || '',
-        apiKey,
-      });
-
-      if (result.success) {
-        this.host.showToast('连接成功', 'success');
-      } else {
-        this.host.showToast(result.error ?? '连接失败', 'error');
-      }
-    } catch (err) {
-      reportError('SettingsPanelManager', err);
-      this.host.showToast('测试异常，请检查网络', 'error');
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalText;
-    }
+    return testProviderConnectionHelper(this.buildProviderContext());
   }
 
   /**
-   * 删除 Provider
+   * 删除 Provider（委托到 helper）
    *
    * 前端保护：已隐藏激活 Provider 的删除按钮，此方法作为运行时兜底。
    */
   private async deleteProvider(key: string): Promise<void> {
-    // 运行时兜底：禁止删除当前激活的 Provider
-    try {
-      const data = await window.electronAPI.listLlmProviders();
-      if (data.active === key) {
-        this.host.showToast('不能删除当前激活的 Provider，请先切换到其他 Provider', 'error');
-        return;
-      }
-    } catch (error) {
-      // 获取激活状态失败时不阻塞删除，但记录日志便于排查（主进程仍有兜底校验）
-      reportError('SettingsPanelManager', error);
-    }
-
-    // 使用项目统一的 showConfirmDialog（支持主题/焦点/键盘），替代原生 confirm()
-    const confirmed = await this.host.showConfirmDialog({
-      title: '删除 Provider',
-      message: `确定删除 Provider "${key}"？`,
-      confirmText: '删除',
-      danger: true,
-    });
-    if (!confirmed) return;
-
-    const result = await window.electronAPI.deleteLlmProvider(key);
-    if (result.success) {
-      this.host.showToast('Provider 已删除');
-      await this.loadProviderList();
-    } else {
-      this.host.showToast(result.error ?? '删除失败', 'error');
-    }
+    return deleteProviderHelper(this.buildProviderContext(), key);
   }
 
   /**
-   * 切换激活 Provider
+   * 切换激活 Provider（委托到 helper）
    */
   private async setActiveProvider(key: string): Promise<void> {
-    const result = await window.electronAPI.setActiveLlmProvider(key);
-    if (result.success) {
-      this.host.showToast(result.warning ?? '已切换 Provider', result.warning ? 'warning' : 'success');
-      await this.loadProviderList();
-    } else {
-      this.host.showToast(result.error ?? '切换失败', 'error');
-    }
+    return setActiveProviderHelper(this.buildProviderContext(), key);
   }
 
   /**
-   * 初始化 Provider 管理事件监听器
+   * 初始化 Provider 管理事件监听器（委托到 helper）
    *
    * 包含：
    * - 添加/保存/取消/测试按钮的 click 监听
@@ -1213,53 +773,38 @@ export class SettingsPanelManager {
    * 导致监听器累积泄漏。通过 EventTracker 统一管理，cleanup 时自动清理。
    */
   private initProviderListeners(): void {
-    // 所有 Provider 管理按钮均为可选元素，若缺失则静默降级
-    if (!this.btnAddProvider && !this.btnProviderSave && !this.btnProviderCancel && !this.btnProviderTest) {
-      return;
-    }
-    if (this.btnAddProvider) {
-      this.events.addEventListener(this.btnAddProvider, 'click', () => {
-        this.showProviderForm('');
-      });
-    }
-    if (this.btnProviderSave) {
-      this.events.addEventListener(this.btnProviderSave, 'click', async () => {
-        await this.saveProvider();
-      });
-    }
-    if (this.btnProviderCancel) {
-      this.events.addEventListener(this.btnProviderCancel, 'click', () => {
-        this.hideProviderForm();
-      });
-    }
-    // Provider 连接测试：从表单读取当前配置，调用 testLlmConfig 验证
-    if (this.btnProviderTest) {
-      this.events.addEventListener(this.btnProviderTest, 'click', async () => {
-        await this.testProviderConnection();
-      });
-    }
+    initProviderListenersHelper(this.buildProviderContext());
+  }
 
-    // Provider 卡片列表事件委托（一次性绑定，避免每次渲染重绑）
-    // 通过 closest 定位点击的按钮，根据 data-action 分发到对应处理方法
-    if (this.providerListEl) {
-      this.events.addEventListener(this.providerListEl, 'click', async (e: Event) => {
-        const target = e.target as HTMLElement;
-        const btn = target.closest('button[data-action]');
-        if (!(btn instanceof HTMLButtonElement)) return;
-
-        const action = btn.dataset.action;
-        const key = btn.dataset.key;
-        if (!key) return;
-
-        if (action === 'activate') {
-          await this.setActiveProvider(key);
-        } else if (action === 'edit') {
-          this.showProviderForm(key);
-        } else if (action === 'delete') {
-          await this.deleteProvider(key);
-        }
-      });
-    }
+  /**
+   * 构建多 Provider 管理子系统的依赖注入容器
+   *
+   * 将 SettingsPanelManager 的 Provider 相关 DOM 元素、cachedProviders 状态
+   * 和宿主回调通过 context 暴露给 providerManagement helper，保持状态所有权
+   * 在 SettingsPanelManager，同时让 helper 能以纯函数方式访问状态和注册回调。
+   */
+  private buildProviderContext(): ProviderManagementContext {
+    return {
+      host: this.host,
+      events: this.events,
+      providerListEl: this.providerListEl,
+      providerModalEl: this.providerModalEl,
+      providerModalTitleEl: this.providerModalTitleEl,
+      providerAliasInput: this.providerAliasInput,
+      providerDisplayInput: this.providerDisplayInput,
+      providerProviderInput: this.providerProviderInput,
+      providerModelInput: this.providerModelInput,
+      providerBaseUrlInput: this.providerBaseUrlInput,
+      providerApiKeyInput: this.providerApiKeyInput,
+      providerTemperatureInput: this.providerTemperatureInput,
+      btnAddProvider: this.btnAddProvider,
+      backgroundProviderSelect: this.backgroundProviderSelect,
+      btnProviderSave: this.btnProviderSave,
+      btnProviderCancel: this.btnProviderCancel,
+      btnProviderTest: this.btnProviderTest,
+      getCachedProviders: () => this.cachedProviders,
+      setCachedProviders: (providers) => { this.cachedProviders = providers; },
+    };
   }
 
   /**

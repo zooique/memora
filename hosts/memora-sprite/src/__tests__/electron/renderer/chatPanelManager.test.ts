@@ -23,7 +23,7 @@
  * - 空状态：initEmptyStateListeners、showEmptyState/hideEmptyState、元素缺失降级
  * - 事件委托 click 分发：copy/copy-code/recall/toggle-collapse/load-more/load-earlier-day/retry
  * - 回调注册：onSuggestionClick/setMemoryRecallClickCallback/onErrorRetry
- * - 超时兜底定时器：30s onStreamStuck、90s 二级兜底、_resetStreamSafetyTimer 不累积
+ * - 超时兜底定时器：30s onStreamStuck、90s 二级兜底、safetyTimer.reset 不累积
  *
  * Mock 策略：
  * - Mock renderMarkdown 返回固定 DOM（.mock-markdown span，避免测试 Markdown 解析）
@@ -194,7 +194,7 @@ describe('构造与 cleanup', () => {
   it('cleanup 应取消挂起 rAF + 清除安全定时器', () => {
     const { manager, host } = createManager();
     manager.startStreaming('m1');
-    manager.updateStreamingMessage('m1', 'text'); // 触发 rAF，_rafHandle 非空
+    manager.updateStreamingMessage('m1', 'text'); // 触发 rAF，streamRenderCtx.rafHandle 非空
     manager.cleanup();
     // rAF 应被取消
     expect(canceledHandles.length).toBeGreaterThan(0);
@@ -369,11 +369,11 @@ describe('updateStreamingMessage · rAF 节流', () => {
     manager.startStreaming('s1');
     manager.updateStreamingMessage('s1', 'chunk1');
     expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1);
-    // 第二次调用不应重复触发 rAF（_pendingRaF 仍为 true）
+    // 第二次调用不应重复触发 rAF（streamRenderCtx.pendingRaf 仍为 true）
     manager.updateStreamingMessage('s1', 'chunk2');
     expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1);
-    // _latestStreamText 应更新为最新文本
-    expect(manager['_latestStreamText']).toBe('chunk2');
+    // _latestStreamText 应更新为最新文本（已迁移到 streamRenderCtx.latestStreamText）
+    expect(manager['streamRenderCtx'].latestStreamText).toBe('chunk2');
   });
 
   it('rAF 回调应清空 bubble + 纯文本显示 + 保留 cursor/recall/tool-call + scrollToBottom', () => {
@@ -448,7 +448,7 @@ describe('finishStreamingMessage', () => {
     expect(msg.classList.contains('streaming')).toBe(false);
     expect(msg.querySelector('.cursor')).toBeNull();
     expect(msg.querySelector('.thinking-phase')).toBeNull();
-    // 复制按钮应被添加（_addCopyButtonToMessage）
+    // 复制按钮应被添加（addCopyButtonToMessage）
     expect(msg.querySelector('[data-action="copy"]')).toBeTruthy();
   });
 
@@ -824,7 +824,7 @@ describe('markStreamingAborted', () => {
     // SVG 图标 + 文本分离：textContent 不含图标
     expect(aborted?.querySelector('use')?.getAttribute('href')).toBe('#icon-stop');
     expect(aborted?.textContent).toBe(' 已中断：用户手动停止（已保留上方生成内容）');
-    // 复制按钮应被添加（_addCopyButtonToMessage）
+    // 复制按钮应被添加（addCopyButtonToMessage）
     expect(msg.querySelector('[data-action="copy"]')).toBeTruthy();
   });
 
@@ -1178,7 +1178,7 @@ describe('超时兜底定时器', () => {
     expect(host.updateSendButton).toHaveBeenCalled();
   });
 
-  it('_resetStreamSafetyTimer 应清除旧定时器再设新（多次调用不累积）', () => {
+  it('safetyTimer.reset 应清除旧定时器再设新（多次调用不累积）', () => {
     const { manager, host } = createManager();
     manager.startStreaming('s1');
     // 多次重置定时器（通过 updateStreamingMessage）

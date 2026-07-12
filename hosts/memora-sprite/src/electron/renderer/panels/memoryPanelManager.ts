@@ -14,7 +14,7 @@
  * - 跨模块关注点（showModal / showConfirmDialog）通过 host 回调注入
  */
 
-import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, formatDateKey, escapeHtml } from '../helpers/domHelpers.js';
+import { getOptionalElement, clearElement, formatTimeAgo, formatTimestamp, escapeHtml } from '../helpers/domHelpers.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 import type { EventTracker } from '../helpers/eventTracker.js';
@@ -47,6 +47,17 @@ import {
   updateDetailButtons as updateDetailButtonsHelper,
 } from '../helpers/memoryDetailPanel.js';
 import type { MemoryDetailPanelContext } from '../helpers/memoryDetailPanel.js';
+// 视图切换 / 分析面板管理子系统（视图显隐 + 互斥切换 + viewSwitchToken 竞态保护）提取到独立 helper
+import {
+  toggleAnalysisPanel as toggleAnalysisPanelHelper,
+  hideAnalysisPanel as hideAnalysisPanelHelper,
+  dismissAnalysisPanels as dismissAnalysisPanelsHelper,
+  switchView as switchViewHelper,
+} from '../helpers/memoryViewSwitcher.js';
+import type { MemoryViewSwitcherContext } from '../helpers/memoryViewSwitcher.js';
+// 时间线视图子系统（按天分组渲染 + 日期标签格式化）提取到独立 helper
+import { renderTimeline as renderTimelineHelper } from '../helpers/memoryTimelineView.js';
+import type { MemoryTimelineContext } from '../helpers/memoryTimelineView.js';
 
 // ─── Host 接口（跨模块关注点注入） ────────────────────────
 
@@ -463,194 +474,14 @@ export class MemoryPanelManager {
   }
 
   /**
-   * A2：渲染时间线视图（按天分组记忆）
+   * 渲染时间线视图（按天分组记忆，委托到 memoryTimelineView helper）
    *
-   * 将缓存的记忆列表按 createdAt 分组为日期节点，
-   * 以垂直时间线形式展示，每条记忆显示为时间线上的一个节点。
-   * 支持搜索高亮和 source 颜色区分。
+   * 由 switchView 切换到 timeline 视图时调用。
+   * 实现细节（空状态 / 日期分组 / 降序排序 / 项 DOM 构建 / 日期标签格式化）
+   * 提取到 helpers/memoryTimelineView.ts，通过 buildTimelineContext 注入依赖。
    */
   private renderTimeline(): void {
-    const container = document.getElementById('memory-timeline-container');
-    if (!container) return;
-
-    // 无记忆数据时显示空状态
-    if (this.allMemories.length === 0) {
-      clearElement(container);
-      const empty = document.createElement('div');
-      empty.className = 'timeline-empty';
-
-      // 空状态三段结构：图标 + 标题 + 副标题（createElement 避免 innerHTML 拼接）
-      const iconSpan = document.createElement('span');
-      iconSpan.className = 'empty-icon';
-      iconSpan.innerHTML = '<svg class="icon"><use href="#icon-hourglass"/></svg>';
-      empty.appendChild(iconSpan);
-
-      const titleSpan = document.createElement('span');
-      titleSpan.className = 'empty-title';
-      titleSpan.textContent = '暂无时间线数据';
-      empty.appendChild(titleSpan);
-
-      const subtitleSpan = document.createElement('span');
-      subtitleSpan.className = 'empty-subtitle';
-      subtitleSpan.textContent = '开始对话后，记忆将按时间自动组织';
-      empty.appendChild(subtitleSpan);
-
-      container.appendChild(empty);
-      return;
-    }
-
-    // 清空容器（复用 clearElement 统一 DOM 操作模式）
-    clearElement(container);
-
-    // 按天分组记忆（以 createdAt 日期为键）
-    const groups = new Map<string, MemoryListItem[]>();
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    for (const mem of this.allMemories) {
-      const date = mem.createdAt ? new Date(mem.createdAt) : new Date();
-      const dateKey = formatDateKey(date);
-      const existing = groups.get(dateKey);
-      if (existing) {
-        existing.push(mem);
-      } else {
-        groups.set(dateKey, [mem]);
-      }
-    }
-
-    // 按日期降序排序（今天 → 昨天 → 更早）
-    const sortedDates = Array.from(groups.keys()).sort((a, b) => b.localeCompare(a));
-
-    // 渲染时间线容器
-    const timeline = document.createElement('div');
-    timeline.className = 'timeline';
-
-    for (const dateKey of sortedDates) {
-      const items = groups.get(dateKey)!;
-      const dateObj = new Date(dateKey);
-
-      // 日期标签
-      const dateLabel = this.formatDateLabel(dateObj, today, yesterday);
-
-      // 日期组
-      const group = document.createElement('div');
-      group.className = 'timeline-group';
-
-      // 日期头：圆点 + 日期文字 + 条目计数（createElement 替代 innerHTML 拼接）
-      const header = document.createElement('div');
-      header.className = 'timeline-date-header';
-
-      const dotSpan = document.createElement('span');
-      dotSpan.className = 'timeline-date-dot';
-      header.appendChild(dotSpan);
-
-      const textSpan = document.createElement('span');
-      textSpan.className = 'timeline-date-text';
-      textSpan.textContent = dateLabel;
-      header.appendChild(textSpan);
-
-      const countSpan = document.createElement('span');
-      countSpan.className = 'timeline-date-count';
-      countSpan.textContent = `${items.length} 条`;
-      header.appendChild(countSpan);
-
-      group.appendChild(header);
-
-      // 该日期下的记忆列表
-      const itemList = document.createElement('div');
-      itemList.className = 'timeline-items';
-
-      for (const mem of items) {
-        const item = this.createTimelineItem(mem);
-        itemList.appendChild(item);
-      }
-
-      group.appendChild(itemList);
-      timeline.appendChild(group);
-    }
-
-    container.appendChild(timeline);
-  }
-
-  /**
-   * 创建单个时间线记忆项 DOM 元素（renderTimeline 的辅助方法）
-   *
-   * 提取自 renderTimeline 的 38 行内联 DOM 创建逻辑，
-   * 包含时间点圆点、名称、source 标签、时间和预览。
-   *
-   * @param mem 记忆列表项数据
-   * @returns 完整的时间线项 DOM 元素
-   */
-  private createTimelineItem(mem: MemoryListItem): HTMLElement {
-    const item = document.createElement('div');
-    item.className = 'timeline-item';
-    item.dataset.id = mem.id;
-    item.setAttribute('data-action', 'view-memory');
-    item.setAttribute('data-memory-id', mem.id);
-    // 键盘可访问性（与 memory-item 一致，支持 Tab 聚焦 + 回车查看）
-    item.setAttribute('tabindex', '0');
-    item.setAttribute('role', 'button');
-    item.setAttribute('aria-label', `查看记忆：${mem.name}`);
-
-    // 时间点
-    const timeDot = document.createElement('div');
-    timeDot.className = 'timeline-item-dot';
-    item.appendChild(timeDot);
-
-    // 记忆内容
-    const content = document.createElement('div');
-    content.className = 'timeline-item-content';
-
-    const nameEl = document.createElement('div');
-    nameEl.className = 'timeline-item-name';
-    nameEl.innerHTML = this.highlightText(mem.name, this.currentSearchQuery);
-    content.appendChild(nameEl);
-
-    const metaEl = document.createElement('div');
-    metaEl.className = 'timeline-item-meta';
-    const sourceTag = document.createElement('span');
-    sourceTag.className = `source-tag source-${getSourceColorClass(mem.source)}`;
-    sourceTag.textContent = mem.source;
-    metaEl.appendChild(sourceTag);
-
-    if (mem.createdAt) {
-      const timeEl = document.createElement('span');
-      timeEl.className = 'timeline-item-time';
-      timeEl.textContent = new Date(mem.createdAt).toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      metaEl.appendChild(timeEl);
-    }
-    content.appendChild(metaEl);
-
-    const previewEl = document.createElement('div');
-    previewEl.className = 'timeline-item-preview';
-    previewEl.innerHTML = this.highlightText(mem.contentPreview, this.currentSearchQuery);
-    content.appendChild(previewEl);
-
-    item.appendChild(content);
-    return item;
-  }
-
-  /**
-   * 格式化日期标签（今天/昨天/具体日期）
-   */
-  private formatDateLabel(date: Date, today: Date, yesterday: Date): string {
-    const dateKey = formatDateKey(date);
-    const todayKey = formatDateKey(today);
-    const yesterdayKey = formatDateKey(yesterday);
-
-    if (dateKey === todayKey) return '今天';
-    if (dateKey === yesterdayKey) return '昨天';
-
-    const options: Intl.DateTimeFormatOptions = {
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long',
-    };
-    return date.toLocaleDateString('zh-CN', options);
+    renderTimelineHelper(this.buildTimelineContext());
   }
 
   // ─── 记忆详情（委托到 memoryDetailPanel helper） ─────────
@@ -840,70 +671,7 @@ export class MemoryPanelManager {
   }
 
   /**
-   * 隐藏所有视图容器（list/timeline/graph）
-   *
-   * 当激活 insights 或 health 显示类型时调用，
-   * 确保显示类型互斥切换，避免平铺污染。
-   */
-  private hideAllDisplayViews(): void {
-    const listEl = this.memoryListEl;
-    const graphEl = document.getElementById('memory-graph-container');
-    const timelineEl = document.getElementById('memory-timeline-container');
-    if (listEl) listEl.classList.add('hidden');
-    if (graphEl) graphEl.classList.add('hidden');
-    if (timelineEl) timelineEl.classList.add('hidden');
-  }
-
-  /**
-   * 轻量隐藏分析面板（不恢复视图）
-   *
-   * 供 switchView() 调用——切换视图时只需要关闭分析面板UI，
-   * 不需要恢复 previousViewMode（因为 switchView 本身会切换到新视图）。
-   * X按钮和菜单项toggle请使用 hideAnalysisPanel()（会恢复之前的视图）。
-   */
-  private hideInsightsAndHealth(): void {
-    const insightsBar = document.getElementById('memory-insights-bar');
-    const healthBar = document.getElementById('memory-health-bar');
-    const partnerInsights = document.getElementById('partner-insights');
-    if (insightsBar) insightsBar.classList.add('hidden');
-    if (healthBar) healthBar.classList.add('hidden');
-    if (partnerInsights) partnerInsights.classList.add('hidden');
-    this.activeAnalysisPanel = null;
-    this.updateAnalysisMenuItemsActive();
-  }
-
-  /**
-   * 显示指定视图容器
-   *
-   * @param mode 要显示的视图模式
-   */
-  private showDisplayView(mode: 'list' | 'timeline' | 'graph'): void {
-    const listEl = this.memoryListEl;
-    const graphEl = document.getElementById('memory-graph-container');
-    const timelineEl = document.getElementById('memory-timeline-container');
-    if (listEl) listEl.classList.toggle('hidden', mode !== 'list');
-    if (graphEl) graphEl.classList.toggle('hidden', mode !== 'graph');
-    if (timelineEl) timelineEl.classList.toggle('hidden', mode !== 'timeline');
-  }
-
-  /**
-   * 更新分析面板菜单项的激活状态
-   *
-   * 打开分析面板时高亮对应菜单项，关闭时取消高亮。
-   */
-  private updateAnalysisMenuItemsActive(): void {
-    const moreMenu = document.getElementById('memory-more-menu');
-    if (!moreMenu) return;
-    const items = moreMenu.querySelectorAll('.more-menu-item');
-    items.forEach((item) => {
-      const action = item.getAttribute('data-action');
-      const isActive = action === this.activeAnalysisPanel;
-      item.classList.toggle('active', isActive);
-    });
-  }
-
-  /**
-   * 切换分析面板（统计洞察 / 健康度诊断）
+   * 切换分析面板（统计洞察 / 健康度诊断，委托到 memoryViewSwitcher helper）
    *
    * - 如果点击的是当前已激活的面板，则关闭它并恢复之前的视图
    * - 如果点击的是不同面板，则切换到新面板（互斥）
@@ -912,213 +680,58 @@ export class MemoryPanelManager {
    * @param panel 目标面板：'insights' 或 'health'
    */
   toggleAnalysisPanel(panel: 'insights' | 'health'): void {
-    const insightsBar = document.getElementById('memory-insights-bar');
-    const healthBar = document.getElementById('memory-health-bar');
-    const partnerInsights = document.getElementById('partner-insights');
-    const targetBar = panel === 'insights' ? insightsBar : healthBar;
-    const otherBar = panel === 'insights' ? healthBar : insightsBar;
-
-    if (!targetBar) return;
-
-    const isAlreadyActive = this.activeAnalysisPanel === panel;
-
-    if (isAlreadyActive) {
-      // 再次点击当前面板 → 关闭
-      this.hideAnalysisPanel();
-      return;
-    }
-
-    // 打开新面板：记录当前视图（如果之前没有激活的面板）
-    if (this.activeAnalysisPanel === null) {
-      this.previousViewMode = this.viewMode;
-    }
-
-    // 隐藏主视图和另一个面板
-    this.hideAllDisplayViews();
-    if (otherBar) otherBar.classList.add('hidden');
-    // 打开health时隐藏partner-insights（它是insights的子内容）
-    if (panel === 'health' && partnerInsights) {
-      partnerInsights.classList.add('hidden');
-    }
-
-    // 显示目标面板
-    targetBar.classList.remove('hidden');
-    this.activeAnalysisPanel = panel;
-
-    // 更新菜单项高亮
-    this.updateAnalysisMenuItemsActive();
-
-    // 触发数据加载回调
-    this.moreMenuActionCallback?.(panel);
+    toggleAnalysisPanelHelper(this.buildViewSwitcherContext(), panel);
   }
 
   /**
-   * 隐藏分析面板并恢复主视图
+   * 隐藏分析面板并恢复主视图（委托到 memoryViewSwitcher helper）
    *
    * 点击关闭按钮、再次点击菜单项、或切换视图时调用。
    * 恢复打开分析面板前的视图模式。
    */
   hideAnalysisPanel(): void {
-    const insightsBar = document.getElementById('memory-insights-bar');
-    const healthBar = document.getElementById('memory-health-bar');
-    const partnerInsights = document.getElementById('partner-insights');
-    if (insightsBar) insightsBar.classList.add('hidden');
-    if (healthBar) healthBar.classList.add('hidden');
-    if (partnerInsights) partnerInsights.classList.add('hidden');
-
-    // 恢复之前的主视图
-    if (this.activeAnalysisPanel !== null) {
-      this.showDisplayView(this.previousViewMode);
-      this.viewMode = this.previousViewMode;
-      this.activeAnalysisPanel = null;
-
-      // 同步视图切换按钮状态
-      const listBtn = document.getElementById('btn-list-view');
-      const timelineBtn = document.getElementById('btn-timeline-view');
-      const graphBtn = document.getElementById('btn-graph-view');
-      if (listBtn) {
-        listBtn.classList.toggle('active', this.viewMode === 'list');
-        listBtn.setAttribute('aria-selected', String(this.viewMode === 'list'));
-      }
-      if (timelineBtn) {
-        timelineBtn.classList.toggle('active', this.viewMode === 'timeline');
-        timelineBtn.setAttribute('aria-selected', String(this.viewMode === 'timeline'));
-      }
-      if (graphBtn) {
-        graphBtn.classList.toggle('active', this.viewMode === 'graph');
-        graphBtn.setAttribute('aria-selected', String(this.viewMode === 'graph'));
-      }
-    }
-
-    // 更新菜单项高亮
-    this.updateAnalysisMenuItemsActive();
+    hideAnalysisPanelHelper(this.buildViewSwitcherContext());
   }
 
   /**
-   * 切换面板时关闭分析面板（公开方法，供 UI 层在离开记忆面板时调用）
+   * 切换面板时关闭分析面板（委托到 memoryViewSwitcher helper）
    *
    * 只隐藏 DOM 元素和重置状态，不恢复视图——因为面板本身将被隐藏，
    * 下次进入记忆面板时默认显示列表视图。
    */
   dismissAnalysisPanels(): void {
-    const insightsBar = document.getElementById('memory-insights-bar');
-    const healthBar = document.getElementById('memory-health-bar');
-    const partnerInsights = document.getElementById('partner-insights');
-    if (insightsBar) insightsBar.classList.add('hidden');
-    if (healthBar) healthBar.classList.add('hidden');
-    if (partnerInsights) partnerInsights.classList.add('hidden');
-    // 重置内部状态：下次打开时重新记录 previousViewMode
-    this.activeAnalysisPanel = null;
-    this.viewMode = 'list';
-    this.updateAnalysisMenuItemsActive();
-    // 同步视图按钮状态到列表
-    const listBtn = document.getElementById('btn-list-view');
-    const timelineBtn = document.getElementById('btn-timeline-view');
-    const graphBtn = document.getElementById('btn-graph-view');
-    if (listBtn) { listBtn.classList.add('active'); listBtn.setAttribute('aria-selected', 'true'); }
-    if (timelineBtn) { timelineBtn.classList.remove('active'); timelineBtn.setAttribute('aria-selected', 'false'); }
-    if (graphBtn) { graphBtn.classList.remove('active'); graphBtn.setAttribute('aria-selected', 'false'); }
+    dismissAnalysisPanelsHelper(this.buildViewSwitcherContext());
   }
 
   /**
-   * 更新更多菜单中视图切换项的 active 状态
-   *
-   * 切换视图时，标记当前视图对应的菜单项为 active，
-   * 让用户通过菜单直观感知当前所处视图模式。
-   *
-   * @param mode 当前视图模式
-   */
-  private updateViewMenuItemsActive(mode: 'list' | 'timeline' | 'graph'): void {
-    const moreMenu = document.getElementById('memory-more-menu');
-    if (!moreMenu) return;
-    const items = moreMenu.querySelectorAll('.more-menu-item');
-    items.forEach((item) => {
-      const action = item.getAttribute('data-action');
-      // 仅视图切换项参与 active 标记（advanced-search/insights/health 不参与）
-      const isActive = action === `view-${mode}`;
-      item.classList.toggle('active', isActive);
-    });
-  }
-
-  /**
-   * 切换记忆视图模式（列表 ↔ 时间线 ↔ 图谱）
+   * 切换记忆视图模式（列表 ↔ 时间线 ↔ 图谱，委托到 memoryViewSwitcher helper）
    *
    * 图谱视图使用 Canvas 2D 力导向图渲染记忆关系网络。
    * 时间线视图按天分组记忆列表。
    * 首次切换时延迟初始化渲染器（确保 Canvas DOM 已就绪）。
    * 关系数据为空时隐藏图谱标签，保持列表视图。
    *
+   * viewSwitchToken 竞态保护已迁移到 helper，快速切换时仅最后一次生效。
+   *
    * @param mode 目标视图模式
    */
   switchView(mode: 'list' | 'timeline' | 'graph'): void {
-    this.viewMode = mode;
-    // 递增视图切换令牌，过期 setTimeout 回调会被忽略
-    const token = ++this.viewSwitchToken;
+    switchViewHelper(this.buildViewSwitcherContext(), mode);
+  }
 
-    // 切换视图时隐藏 insights/health，避免显示类型平铺污染
-    this.hideInsightsAndHealth();
-    // 同步更多菜单中视图切换项的 active 状态
-    this.updateViewMenuItemsActive(mode);
-
-    // B2: 切换列表、时间线和图谱容器的可见性，统一用 .hidden 类
-    const listEl = this.memoryListEl;
-    const graphEl = document.getElementById('memory-graph-container');
-    const timelineEl = document.getElementById('memory-timeline-container');
-
-    // 视图切换过渡动画：先退出旧视图，再进入新视图
-    const allViews = [listEl, graphEl, timelineEl].filter(Boolean) as HTMLElement[];
-
-    // 当前可见的视图 → 添加退出动画
-    const currentView = allViews.find(v => !v.classList.contains('hidden'));
-    if (currentView) {
-      currentView.classList.add('memory-view-exit');
+  /**
+   * 激活图谱视图（由 viewSwitcher 通过 onGraphViewActivated 回调调用）
+   *
+   * 视图切换 helper 完成容器显隐后委托本方法执行图谱专属初始化：
+   * 更新空状态 → 延迟初始化渲染器 → 加载缓存数据并恢复高亮/选中状态。
+   */
+  private activateGraphView(): void {
+    this.updateGraphEmptyState();
+    this.initGraphRenderer();
+    if (this.graphDataCache) {
+      this.graphRenderer?.loadData(this.graphDataCache);
+      this.applyCachedGraphState();
     }
-
-    // 延迟切换视图（等待退出动画完成）
-    const TRANSITION_DURATION = 150; // 与 CSS --transition-base (0.15s) 一致
-    setTimeout(() => {
-      // 令牌检查——若期间有新 switchView 调用，本回调作废
-      if (token !== this.viewSwitchToken) return;
-      // 移除所有视图的退出态
-      allViews.forEach(v => v.classList.remove('memory-view-exit'));
-
-      if (mode === 'list') {
-        if (listEl) {
-          listEl.classList.remove('hidden');
-          listEl.classList.add('memory-view-enter');
-        }
-        if (graphEl) graphEl.classList.add('hidden');
-        if (timelineEl) timelineEl.classList.add('hidden');
-      } else if (mode === 'timeline') {
-        if (listEl) listEl.classList.add('hidden');
-        if (graphEl) graphEl.classList.add('hidden');
-        if (timelineEl) {
-          timelineEl.classList.remove('hidden');
-          timelineEl.classList.add('memory-view-enter');
-          this.renderTimeline();
-        }
-      } else {
-        if (listEl) listEl.classList.add('hidden');
-        if (timelineEl) timelineEl.classList.add('hidden');
-        if (graphEl) {
-          graphEl.classList.remove('hidden');
-          graphEl.classList.add('memory-view-enter');
-          this.updateGraphEmptyState();
-          this.initGraphRenderer();
-          if (this.graphDataCache) {
-            this.graphRenderer?.loadData(this.graphDataCache);
-            this.applyCachedGraphState();
-          }
-        }
-      }
-
-      // 动画完成后移除进入类
-      setTimeout(() => {
-        // 内层回调同样检查令牌
-        if (token !== this.viewSwitchToken) return;
-        allViews.forEach(v => v.classList.remove('memory-view-enter'));
-      }, TRANSITION_DURATION);
-    }, TRANSITION_DURATION);
   }
 
   /**
@@ -1481,6 +1094,49 @@ export class MemoryPanelManager {
    */
   onPartnerMemoryClick(cb: (memoryId: string) => void): void {
     this.partnerInsights.onMemoryClick(cb);
+  }
+
+  // ─── 视图切换 / 时间线子系统上下文构建 ─────────────
+
+  /**
+   * 构建视图切换子系统的依赖注入容器
+   *
+   * 将 MemoryPanelManager 的视图状态字段（viewMode / previousViewMode /
+   * activeAnalysisPanel / viewSwitchToken）通过 getter/setter 暴露给
+   * memoryViewSwitcher helper，保持状态所有权在 MemoryPanelManager。
+   *
+   * 视图内容渲染（timeline / graph）通过回调委托回 manager，
+   * 避免 helper 引入对时间线 / 图谱子系统的依赖。
+   */
+  private buildViewSwitcherContext(): MemoryViewSwitcherContext {
+    return {
+      memoryListEl: this.memoryListEl,
+      getViewMode: () => this.viewMode,
+      setViewMode: (mode) => { this.viewMode = mode; },
+      getPreviousViewMode: () => this.previousViewMode,
+      setPreviousViewMode: (mode) => { this.previousViewMode = mode; },
+      getActiveAnalysisPanel: () => this.activeAnalysisPanel,
+      setActiveAnalysisPanel: (panel) => { this.activeAnalysisPanel = panel; },
+      getViewSwitchToken: () => this.viewSwitchToken,
+      incrementViewSwitchToken: () => ++this.viewSwitchToken,
+      onTimelineViewActivated: () => { this.renderTimeline(); },
+      onGraphViewActivated: () => { this.activateGraphView(); },
+      getMoreMenuActionCallback: () => this.moreMenuActionCallback,
+    };
+  }
+
+  /**
+   * 构建时间线视图子系统的依赖注入容器
+   *
+   * 将记忆列表缓存和搜索关键词通过 context 暴露给 memoryTimelineView helper，
+   * 文本高亮通过回调复用 manager 的 highlightText 实现（避免逻辑重复）。
+   */
+  private buildTimelineContext(): MemoryTimelineContext {
+    return {
+      allMemories: this.allMemories,
+      currentSearchQuery: this.currentSearchQuery,
+      highlightText: (text, query) => this.highlightText(text, query),
+    };
   }
 
   // ─── 图谱视图子系统上下文构建 ─────────────
