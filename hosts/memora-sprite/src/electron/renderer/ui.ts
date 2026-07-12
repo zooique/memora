@@ -13,12 +13,17 @@
  * - 提供清晰的 API 供其他模块调用
  * - 子模块公共 API 通过 UIManager 代理，保持向后兼容
  * - 聊天/记忆/角色/会话面板委托至独立 PanelManager，UIManager 仅做 facade
+ * - 薄委托方法群通过 mixin 模式注入（ADR-SP-015 §4），物理隔离到 helpers/uiDelegations/
  */
 
 // 子模块导入（组合模式：UIManager 持有独立子模块实例）
 import { getRequiredElement, getOptionalElement } from './helpers/domHelpers.js';
 import { setIcon } from './helpers/icon.js';
 import { EventTracker } from './helpers/eventTracker.js';
+// UI 初始化失败错误卡片（独立于 UIManager，避免半初始化状态二次错误）
+import { renderInitFailureToBody } from './helpers/initFailureCard.js';
+// 滚动控制拆分为独立 Controller（消息列表滚动 + rAF 节流）
+import { ScrollController } from './helpers/scrollController.js';
 import { ToastManager } from './components/toast.js';
 import { ModalManager } from './components/modal.js';
 import { OnboardingManager } from './components/onboarding.js';
@@ -39,19 +44,12 @@ import type { DashboardPanelHost } from './panels/dashboardPanelManager.js';
 import { PerceptionPanelManager } from './panels/perceptionPanelManager.js';
 import type { PerceptionPanelHost } from './panels/perceptionPanelManager.js';
 import { SpriteStatusPopover } from './panels/spriteStatusPopover.js';
-import type {
-  DashboardViewModel,
-  AgentMetrics,
-  SourceHealth,
-} from './panels/dashboardPanelManager.js';
 import type { ProactiveStats } from '../../sprite/controllers/index.js';
 // Payload 类型直接从 ipcListeners（IPC 契约真理源）导入
 import type {
   AffectPayload,
   RapportPayload,
   ContextPayload,
-  PatternsPayload,
-  PresencePayload,
 } from './ipcListeners.js';
 import { PersonaPanelManager } from './panels/personaPanelManager.js';
 // CommandPaletteManager 纳入 UIManager 组合体系，统一生命周期管理
@@ -72,30 +70,29 @@ import type { InputAreaHost } from './panels/inputAreaManager.js';
 // 面板路由器拆分（面板切换 + 导航 + 键盘快捷键 + 窗口控制）
 import { PanelRouter } from './panels/panelRouter.js';
 import type { PanelRouterHost } from './panels/panelRouter.js';
+// 未读徽章拆分为独立 Manager（纯 DOM 渲染，不持有业务状态）
+import { BadgeManager } from './panels/badgeManager.js';
 // 类型导入（仅用于类型注解，不引入运行时依赖）
 import type {
-  Message,
   UIState,
-  PersonaItem,
-  MemoryListItem,
-  MemoryDetail,
-  // Phase 5.1：演化脉络渲染所需的路径类型（与内核/sprite 层结构对齐）
-  RelationPath,
-  // Phase 5.2：邻居渲染所需的邻居类型（直接关联记忆视图）
-  RelationNeighbor,
   SpriteConfigForm,
-  ToastType,
-  ToastOptions,
-  ConfirmDialogOptions,
 } from './types.js';
-// 配置建议 payload 类型（从 preload 导入，供 showSuggestion 代理方法使用）
-import type { ConfigSuggestionPayload } from '../preload.js';
 // M1：写入确认 payload 类型（从 preload 导入，供 showWriteConfirmation 方法使用）
 import type { WriteConfirmationPayload } from '../preload.js';
-// 健康度仪表盘 payload 类型（从 preload 导入，供 renderHealthDashboard 代理方法使用）
-import type { HealthDashboardPayload, ReviewDataPayload } from '../preload.js';
-// 图谱数据类型（供 MemoryPanelManager 委托方法使用）
-import type { RelationGraphData } from './components/relationGraph.js';
+// Mixin 工具函数 + 6 个委托群（ADR-SP-015 §4 纯透传委托，物理隔离到 helpers/uiDelegations/）
+import { applyMixins } from './helpers/applyMixins.js';
+import { chatDelegations } from './helpers/uiDelegations/chatDelegations.js';
+import type { ChatDelegations } from './helpers/uiDelegations/chatDelegations.js';
+import { memoryDelegations } from './helpers/uiDelegations/memoryDelegations.js';
+import type { MemoryDelegations } from './helpers/uiDelegations/memoryDelegations.js';
+import { dashboardDelegations } from './helpers/uiDelegations/dashboardDelegations.js';
+import type { DashboardDelegations } from './helpers/uiDelegations/dashboardDelegations.js';
+import { personaThemeDelegations } from './helpers/uiDelegations/personaThemeDelegations.js';
+import type { PersonaThemeDelegations } from './helpers/uiDelegations/personaThemeDelegations.js';
+import { settingsModalDelegations } from './helpers/uiDelegations/settingsModalDelegations.js';
+import type { SettingsModalDelegations } from './helpers/uiDelegations/settingsModalDelegations.js';
+import { miscDelegations } from './helpers/uiDelegations/miscDelegations.js';
+import type { MiscDelegations } from './helpers/uiDelegations/miscDelegations.js';
 
 // 重新导出，保持 ui.ts 的公共 API 不变（其他模块从 ui.ts 导入这些类型）
 export type {
@@ -110,140 +107,99 @@ export type {
 } from './types.js';
 
 // ─── 工具函数（formatTimeAgo、setButtonLoading）见 domHelpers.ts ───
-
-/**
- * 渲染 UIManager 初始化失败错误提示到 document.body
- *
- * 在 UIManager 构造函数预检核心元素失败时调用，独立于 UIManager 自身，
- * 避免半初始化状态下访问 null 引发的二次错误。
- *
- * 显示内容：醒目红色错误卡片 + 错误信息 + 排查建议（HTML 与 TS 不同步、构建未刷新等）。
- * 错误仍然会 rethrow，让上层（renderer.ts DOMContentLoaded）的 catch 也能感知。
- *
- * @param err 构造函数抛出的错误（通常是 MemoraError INITIALIZATION_FAILED）
- */
-function renderInitFailureToBody(err: unknown): void {
-  // 提取错误信息（MemoraError 有 message 字段，普通 Error 同样）
-  const errorMessage = err instanceof Error ? err.message : String(err);
-  // 构建错误提示卡片（inline style 避免依赖 CSS 文件加载状态）
-  const errorCard = document.createElement('div');
-  errorCard.style.cssText = [
-    'position:fixed', 'top:50%', 'left:50%', 'transform:translate(-50%,-50%)',
-    'max-width:560px', 'width:90%', 'padding:24px 28px',
-    'background:#fef2f2', 'border:1px solid #dc2626', 'border-radius:8px',
-    'color:#7f1d1d', 'font-family:system-ui,sans-serif', 'font-size:14px',
-    'line-height:1.6', 'box-shadow:0 8px 32px rgba(220,38,38,0.2)',
-    'z-index:9999',
-  ].join(';');
-  // 标题
-  const title = document.createElement('h2');
-  title.textContent = 'UI 初始化失败';
-  title.style.cssText = 'margin:0 0 12px 0;font-size:18px;color:#991b1b;';
-  errorCard.appendChild(title);
-  // 错误信息
-  const msg = document.createElement('p');
-  msg.textContent = errorMessage;
-  msg.style.cssText = 'margin:0 0 16px 0;font-family:ui-monospace,monospace;background:#fee2e2;padding:8px 12px;border-radius:4px;word-break:break-all;';
-  errorCard.appendChild(msg);
-  // 排查建议
-  const hints = document.createElement('p');
-  hints.innerHTML = '<strong>可能原因：</strong><br>• HTML 元素 ID 缺失或拼写错误（开发阶段引入）<br>• 构建产物未刷新（请尝试重启开发服务器或重新构建）<br>• index.html 与 ui.ts 不同步（最近修改未生效）';
-  hints.style.cssText = 'margin:0;font-size:13px;color:#7f1d1d;';
-  errorCard.appendChild(hints);
-  // 挂载到 body（清空已有错误卡片，避免重复）
-  document.querySelectorAll('#ui-init-failure-card').forEach((el) => el.remove());
-  errorCard.id = 'ui-init-failure-card';
-  document.body.appendChild(errorCard);
-}
+// renderInitFailureToBody 已提取到 helpers/initFailureCard.ts
 
 // ─── UI 管理器类 ─────────────────────────────────────────
 
 export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanelHost, PanelRouterHost {
-  // ─── 静态常量 ───────────────────────────────────────────
-  /** 判断"底部附近"的阈值（像素） */
-  private static readonly SCROLL_BOTTOM_THRESHOLD = 100;
-
   // ─── 组合子模块（独立管理器，UIManager 代理公共 API） ──
+  // 字段为 public：mixin 委托方法（helpers/uiDelegations/）需通过 this.xxx 访问
   /** Toast 通知管理器（独立管理定时器和清理） */
-  private toastManager = new ToastManager();
+  toastManager = new ToastManager();
   /** 模态框管理器（独立管理焦点恢复和并发保护） */
-  private modalManager = new ModalManager();
+  modalManager = new ModalManager();
   /** 三态首次引导管理器（独立管理 localStorage 标记） */
-  private onboardingManager = new OnboardingManager();
+  onboardingManager = new OnboardingManager();
   /** 主题管理器（独立管理主题切换和持久化） */
-  private themeManager = new ThemeManager();
+  themeManager = new ThemeManager();
   /** 主动提示横幅管理器（独立管理横幅按钮事件） */
-  private proactiveBanner = new ProactiveBanner();
+  proactiveBanner = new ProactiveBanner();
   /** 配置建议卡片管理器（独立管理卡片显示/接受/拒绝，与 ProactiveBanner 同模式） */
-  private suggestionCard = new SuggestionCardManager();
+  suggestionCard = new SuggestionCardManager();
   /** 用户画像面板管理器（独立管理画像 tab 的加载/确认/拒绝） */
-  private profilePanel = new ProfilePanelManager();
+  profilePanel = new ProfilePanelManager();
   /** 作品投影面板管理器（独立管理作品 tab 的加载/渲染/展开） */
-  private workProjectionPanel = new WorkProjectionPanelManager();
+  workProjectionPanel = new WorkProjectionPanelManager();
   /** M2 审计日志面板管理器（独立管理审计 tab 的加载/渲染/清空） */
-  private auditPanel = new AuditPanelManager();
+  auditPanel = new AuditPanelManager();
   /** 设置面板管理器（独立管理设置面板 DOM 和事件） */
-  private settingsPanelManager: SettingsPanelManager;
+  settingsPanelManager: SettingsPanelManager;
   /** 缓存当前 SpriteConfig（供 getArchiveMode 查询，避免异步 IPC 调用） */
   private currentConfig: SpriteConfigForm | null = null;
 
   // ─── 面板管理器（聊天/记忆/角色/会话） ──
   /** 聊天面板管理器（消息渲染、流式输出、思考指示器、工具调用卡片） */
-  private chatPanel: ChatPanelManager;
+  chatPanel: ChatPanelManager;
   /** 记忆面板管理器（列表渲染、搜索过滤、详情弹窗） */
-  private memoryPanel: MemoryPanelManager;
+  memoryPanel: MemoryPanelManager;
   /** 仪表盘面板管理器（感知系统 + 仪表盘渲染） */
-  private dashboardPanel: DashboardPanelManager;
+  dashboardPanel: DashboardPanelManager;
   /** 感知面板管理器（独立感知面板，完整版感知数据展示 + 叙事摘要） */
-  private perceptionPanel: PerceptionPanelManager;
+  perceptionPanel: PerceptionPanelManager;
   /** 精灵状态浮层（hover 弹出轻量感知摘要，与 PerceptionPanelManager 共享数据源） */
-  private spriteStatusPopover: SpriteStatusPopover;
+  spriteStatusPopover: SpriteStatusPopover;
   /** 角色选择器面板管理器（下拉菜单、角色切换） */
-  private personaPanel: PersonaPanelManager;
+  personaPanel: PersonaPanelManager;
   /**
    * 快捷命令面板管理器（Ctrl+K）
    *
    * 纳入 UIManager 组合体系，与其他子管理器同模式：
    * 构造函数创建、cleanup() 统一清理全局 keydown 监听器（避免页面重载后累积）。
    */
-  private commandPaletteManager: CommandPaletteManager;
+  commandPaletteManager: CommandPaletteManager;
   /**
    * 面板错误横幅管理器
    *
    * 统一管理 settings / memory / chat 三个面板的错误横幅。
    * UIManager 仅保留薄委托。
    */
-  private panelErrorBannerManager: PanelErrorBannerManager;
+  panelErrorBannerManager: PanelErrorBannerManager;
   /**
    * 剪贴板三重保护面板管理器
    *
    * 统一管理"剪贴板三重保护"的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager / ModalManager 实例，与 UIManager 共享同一引用。
    */
-  private clipboardManager: ClipboardManager;
+  clipboardManager: ClipboardManager;
   /**
    * 日期导航面板管理器
    *
    * 统一管理"日期导航"功能的 UI 联动。UIManager 仅保留薄委托。
    * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
    */
-  private dateNavManager: DateNavManager;
+  dateNavManager: DateNavManager;
   /**
    * 对话内容搜索管理器
    *
    * 统一管理"跨会话关键词检索"功能的 UI 联动。UIManager 仅保留薄委托。
    * 自包含 EventTracker，init() 绑定事件，cleanup() 统一清理。
    */
-  private searchMessagesManager: SearchMessagesManager;
+  searchMessagesManager: SearchMessagesManager;
   /**
    * 技能拖入安装面板管理器
    *
    * 统一管理"技能文件拖入安装"功能的 UI 联动。UIManager 仅保留薄委托。
    * 依赖注入 ToastManager 实例，与 UIManager 共享同一引用。
    */
-  private skillDropManager: SkillDropManager;
+  skillDropManager: SkillDropManager;
   /** 面板路由器（面板切换 + 导航 + 键盘快捷键 + 窗口控制） */
-  private panelRouter: PanelRouter;
+  panelRouter: PanelRouter;
+  /** 未读徽章管理器（纯 DOM 渲染，不持有业务状态） */
+  badgeManager: BadgeManager;
+  /** 滚动控制器（消息列表滚动 + rAF 节流） */
+  scrollController: ScrollController;
+  /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver） */
+  inputAreaManager: InputAreaManager;
 
   // ─── 核心交互元素（必需，缺失时抛出） ──────────────────
   private messagesEl: HTMLElement;
@@ -257,8 +213,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   private badge: HTMLElement | null;
   /** 最大化按钮（标题栏右侧，用于图标切换 □ ↔ ❐） */
   private btnMaximize: HTMLButtonElement | null;
-  /** 输入区域管理器（输入框事件 + 发送按钮状态 + ResizeObserver） */
-  private inputAreaManager: InputAreaManager;
 
   private state: UIState = {
     currentPanel: 'chat',
@@ -275,8 +229,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
 
   // ─── UI 状态字段 ────────────────────────────────────────
   // panelErrorRetryCallbacks 已移至 PanelErrorBannerManager
-  /** 用户是否在底部附近（用于智能滚动：用户向上滚动时不强制滚到底部） */
-  private isNearBottom = true;
+  // isNearBottom 已移至 ScrollController
 
   constructor() {
     // 核心元素预检——缺失时先渲染错误提示到 document.body，再 rethrow。
@@ -297,6 +250,11 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // ─── 可选元素：缺失时 warn 并降级，不阻塞其他功能 ──────
     this.badge = document.getElementById('badge');
     this.btnMaximize = getOptionalElement('btn-maximize', 'button');
+
+    // 未读徽章管理器（纯 DOM 渲染，badge 可为 null）
+    this.badgeManager = new BadgeManager(this.badge);
+    // 滚动控制器（独立管理消息列表滚动 + rAF 节流）
+    this.scrollController = new ScrollController(this.messagesEl);
 
     this.settingsPanelManager = new SettingsPanelManager(this as SettingsPanelHost);
 
@@ -391,7 +349,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.modalManager.initModalListeners();
     this.chatPanel.initEmptyStateListeners();
     this.chatPanel.initScrollToBottomButton();
-    this.initScrollListener();
+    this.scrollController.initListener();
     // 输入区域事件 + ResizeObserver 初始化（委托到 InputAreaManager）
     this.inputAreaManager.init();
   }
@@ -460,72 +418,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.skillDropManager.cleanup();
     // 清理面板路由器的事件监听器
     this.panelRouter.cleanup();
+    // 清理滚动控制器的 rAF 请求 + scroll 事件监听器
+    this.scrollController.dispose();
     // 清理 ThemeManager 的系统主题变化监听器
     this.themeManager.cleanup();
   }
 
-  /**
-   * 打开命令面板（Ctrl+K 的程序化入口）
-   *
-   * 供 renderer.ts 在需要时调用（如未来扩展的其他入口按钮），
-   * 当前 cmdk 按钮已内置在 initEventListeners 中。
-   */
-  openCommandPalette(): void {
-    this.commandPaletteManager.open();
-  }
+  // ─── 聊天面板（含业务逻辑的方法，纯透传委托见 chatDelegations） ──
 
-  // ─── 聊天面板 ─ 委托到 ChatPanelManager ─────────────────
-
-  /** 添加消息到界面（委托到 ChatPanelManager） */
-  appendMessage(message: Message): HTMLElement { return this.chatPanel.appendMessage(message); }
-
-  /**
-   * B1：对话区内联里程碑 banner
-   *
-   * 委托到 ChatPanelManager.appendMilestoneBanner。
-   * 里程碑事件不再走顶部 #proactive-banner，而是作为对话流中的独立元素内联渲染。
-   *
-   * @param text 里程碑文本（如"达成里程碑：首次完成 UI 布局重构方案"）
-   */
-  appendMilestoneBanner(text: string): void { this.chatPanel.appendMilestoneBanner(text); }
-  /** 更新流式消息内容（委托到 ChatPanelManager） */
-  updateStreamingMessage(messageId: string, text: string): void { this.chatPanel.updateStreamingMessage(messageId, text); }
-  /** 完成流式消息（委托到 ChatPanelManager） */
-  finishStreamingMessage(messageId: string): void { this.chatPanel.finishStreamingMessage(messageId); }
-  /** 刷新 Token 用量指示器（委托到 InputAreaManager） */
-  refreshTokenUsage(): void { void this.inputAreaManager.refreshTokenUsage(); }
-  /** 设置流式消息的召回记忆摘要（委托到 ChatPanelManager） */
-  setMemoryRecall(messageId: string, memories: Array<{ id: string; name: string; score: number; source: string }>): void { this.chatPanel.setMemoryRecall(messageId, memories); }
-  /** 显示思考阶段指示器（委托到 ChatPanelManager） */
-  showThinkingPhase(messageId: string, phase: string): void { this.chatPanel.showThinkingPhase(messageId, phase); }
-  /** 显示上下文截断提示条 */
-  showTruncationNotice(messageId: string, count: number): void { this.chatPanel.showTruncationNotice(messageId, count); }
-  /** 显示工具调用开始卡片（委托到 ChatPanelManager） */
-  showToolStart(messageId: string, toolCallId: string, name: string, args?: string): void { this.chatPanel.showToolStart(messageId, toolCallId, name, args); }
-  /** 更新工具调用结果（委托到 ChatPanelManager） */
-  updateToolResult(messageId: string, toolCallId: string, name: string, ok: boolean, summary?: string): void { this.chatPanel.updateToolResult(messageId, toolCallId, name, ok, summary); }
-  /** 开始流式输出（委托到 ChatPanelManager） */
-  startStreaming(messageId: string): void { this.chatPanel.startStreaming(messageId); }
-  /** 停止所有流式输出（委托到 ChatPanelManager） */
-  stopAllStreaming(): void { this.chatPanel.stopAllStreaming(); }
-  /** 清空对话区消息（委托到 ChatPanelManager） */
-  clearMessages(): void { this.chatPanel.clearMessages(); }
-  /** 批量插入消息（委托到 ChatPanelManager） */
-  appendMessages(messages: Message[], prepend?: boolean): void { this.chatPanel.appendMessages(messages, prepend); }
-  /** 显示"加载更多"按钮（委托到 ChatPanelManager） */
-  showLoadMore(remaining: number, onClick: () => void): void { this.chatPanel.showLoadMore(remaining, onClick); }
-  /** 隐藏"加载更多"按钮（委托到 ChatPanelManager） */
-  hideLoadMore(): void { this.chatPanel.hideLoadMore(); }
-  /** 显示"加载更早的对话"按钮（委托到 ChatPanelManager） */
-  showLoadEarlierDay(onClick: () => void): void { this.chatPanel.showLoadEarlierDay(onClick); }
-  /** 向流式消息气泡注入错误提示（委托到 ChatPanelManager） */
-  injectErrorToStreamingMessages(errorText: string): void { this.chatPanel.injectErrorToStreamingMessages(errorText); }
-  /** 在流式消息气泡内嵌入中断标记（委托到 ChatPanelManager） */
-  markStreamingAborted(messageId: string, reason: string): void { this.chatPanel.markStreamingAborted(messageId, reason); }
-  /** 显示空状态引导（委托到 ChatPanelManager） */
-  showEmptyState(): void { this.chatPanel.showEmptyState(); }
-  /** 隐藏空状态引导（委托到 ChatPanelManager） */
-  hideEmptyState(): void { this.chatPanel.hideEmptyState(); }
   /** 查询当前归档模式（从缓存的 SpriteConfig 读取） */
   getArchiveMode(): 'full' | 'insights-only' | 'manual' {
     return this.currentConfig?.archiveMode ?? 'full';
@@ -550,10 +450,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     ]);
     return profileResult.count + insightResult.count;
   }
-  /** 注册示例问题点击回调（委托到 ChatPanelManager） */
-  onSuggestionClick(cb: (text: string) => void): void { this.chatPanel.onSuggestionClick(cb); }
-  /** 注册错误重试回调（委托到 ChatPanelManager） */
-  onErrorRetry(cb: () => void): void { this.chatPanel.onErrorRetry(cb); }
 
   /** 未读计数 +1（ChatPanelHost 回调：完整窗口隐藏时新精灵消息到达） */
   updateUnreadCount(): void {
@@ -612,11 +508,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     await this.panelRouter.switchPanel(panel);
   }
 
-  /** 关闭记忆面板的分析面板（PanelRouterHost 接口） */
-  dismissMemoryAnalysisPanels(): void {
-    this.memoryPanel.dismissAnalysisPanels();
-  }
-
   /** 添加精灵状态条点击：切换到感知面板（状态条数据来自感知系统，跳转应去感知面板） */
   initSpriteStatusBarClick(): void {
     const spriteStatusBar = document.getElementById('sprite-status-bar');
@@ -665,25 +556,17 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     return text;
   }
 
-  // ─── 未读计数 ─────────────────────────────────────────
+  // ─── 未读计数（委托到 BadgeManager） ──────────────────
 
   /** 更新未读徽章显示（ChatPanelHost 回调） */
   updateBadge(): void {
-    // 若当前布局未提供 badge 元素则静默跳过，避免初始化崩溃
-    if (!this.badge) return;
-
-    if (this.state.unreadCount > 0) {
-      this.badge.textContent = this.state.unreadCount > 99 ? '99+' : String(this.state.unreadCount);
-      this.badge.classList.add('visible');
-    } else {
-      this.badge.classList.remove('visible');
-    }
+    this.badgeManager.updateBadge(this.state.unreadCount);
   }
 
   /** 清除未读计数 */
   clearUnreadCount(): void {
     this.state.unreadCount = 0;
-    this.updateBadge();
+    this.badgeManager.clear();
   }
 
   /**
@@ -694,225 +577,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   setUnreadCount(count: number): void {
     this.state.unreadCount = Math.max(0, count);
-    this.updateBadge();
-  }
-
-  // ─── 滚动控制 ─────────────────────────────────────────
-
-  /** 智能滚动到底部（仅当用户在底部附近时才滚动，避免打断历史查看） */
-  scrollToBottom(): void {
-    if (!this.isNearBottom) return;
-    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-  }
-
-  /** 强制滚动到底部（用户主动操作时调用，如点击发送按钮、切换会话后） */
-  forceScrollToBottom(): void {
-    this.isNearBottom = true;
-    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-  }
-
-  /**
-   * 监听消息区滚动，更新 isNearBottom 状态
-   *
-   * CHAT-A05 优化：rAF 节流避免高频 scroll 事件触发强制 reflow
-   */
-  private initScrollListener(): void {
-    let scrollRafPending = false;
-    this.events.addEventListener(this.messagesEl, 'scroll', () => {
-      if (scrollRafPending) return;
-      scrollRafPending = true;
-      requestAnimationFrame(() => {
-        scrollRafPending = false;
-        const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
-        this.isNearBottom = scrollHeight - scrollTop - clientHeight < UIManager.SCROLL_BOTTOM_THRESHOLD;
-      });
-    }, { passive: true });
-  }
-
-  // ─── 事件处理器 ─
-
-  /**
-   * 更新最大化按钮图标
-   *
-   * 根据窗口当前是否最大化切换 SVG 图标：
-   * - 最大化时显示还原图标（icon-restore）
-   * - 普通状态时显示最大化图标（icon-maximize）
-   *
-   * 仅当 btnMaximize 元素存在时执行（部分布局可能不提供标题栏）
-   */
-  updateMaximizeButton(maximized: boolean): void {
-    if (!this.btnMaximize) return;
-    const iconId = maximized ? 'icon-restore' : 'icon-maximize';
-    setIcon(this.btnMaximize, iconId);
-    this.btnMaximize.title = maximized ? '还原' : '最大化';
-  }
-
-  // ─── 主动提示 banner（代理到 ProactiveBanner） ──────────
-
-  /**
-   * 显示主动提示 banner（代理到 ProactiveBanner）
-   *
-   * 对齐设计契约 §6.6：
-   * 顶部滑入蓝粉渐变 banner，提供"查看/稍后/静默 1 小时"三个操作。
-   * 里程碑事件使用金色渐变庆祝样式。
-   * 由 ipcListeners.ts 在收到 proactivePrompt 事件时调用。
-   *
-   * @param text 提示文本
-   * @param isMilestone 是否为里程碑事件
-   * @param triggers 触发类型列表（memory/insight/persona/file/milestone/suggestion/pattern）
-   */
-  showProactiveBanner(text: string, isMilestone = false, triggers: string[] = []): void {
-    this.proactiveBanner.showProactiveBanner(text, isMilestone, triggers);
-  }
-
-  /**
-   * 隐藏主动提示 banner（代理到 ProactiveBanner）
-   *
-   * 用户点击任意操作按钮后调用，或切换面板时调用。
-   */
-  hideProactiveBanner(): void {
-    this.proactiveBanner.hideProactiveBanner();
-  }
-
-  /**
-   * 初始化主动提示 banner 按钮事件（代理到 ProactiveBanner）
-   *
-   * 三个按钮的语义：
-   * - 查看：切换到对话面板（banner 已在对话面板内，仅隐藏 banner）
-   * - 稍后：隐藏 banner，等待下次触发
-   * - 静默 1 小时：通知主进程进入静默模式
-   *
-   * 由 renderer.ts 调用以注册回调。
-   */
-  initProactiveBannerButtons(handlers: {
-    onView: (triggers: string[]) => void;
-    onLater: () => void;
-    onSilent: () => void;
-    onDisable?: () => void;
-  }): void {
-    this.proactiveBanner.initProactiveBannerButtons(handlers);
-  }
-
-  // ─── 配置建议卡片（代理到 SuggestionCardManager） ────
-
-  /**
-   * 显示配置建议卡片（代理到 SuggestionCardManager）
-   *
-   * 由 ipcListeners.ts 在收到 SUGGESTION_PUSH 事件时调用。
-   * 卡片插入位置：#proactive-banner 之后、#messages 之前（顶部提示区）。
-   * 同时最多显示 3 条建议（FIFO：超出时移除最早的）。
-   *
-   * @param suggestion 来自 AutoConfigRefiner 的配置建议
-   */
-  showSuggestion(suggestion: ConfigSuggestionPayload): void {
-    this.suggestionCard.showSuggestion(suggestion);
-  }
-
-  // ─── 用户画像面板（代理到 ProfilePanelManager） ──────
-
-  /**
-   * 加载用户画像数据（代理到 ProfilePanelManager）
-   *
-   * 由 settingsController.ts 在以下场景调用：
-   * - 设置面板初始化时预加载
-   * - 切换到"画像"tab 时刷新
-   * - 用户点击"刷新"按钮时（由 ProfilePanelManager 内部处理）
-   *
-   * 加载完成后渲染到 #profile-pending-list 和 #profile-confirmed-list。
-   */
-  async loadUserProfile(): Promise<void> {
-    await this.profilePanel.load();
-  }
-
-  /**
-   * 加载作品投影数据（代理到 WorkProjectionPanelManager）
-   *
-   * 由 settingsController.ts 在以下场景调用：
-   * - 应用启动时预加载
-   * - 切换到"作品"tab 时刷新
-   * - 用户点击"刷新"按钮时（由 WorkProjectionPanelManager 内部处理）
-   *
-   * 加载完成后渲染到 #work-projection-list。
-   */
-  async loadWorkProjections(): Promise<void> {
-    await this.workProjectionPanel.load();
-  }
-
-  /**
-   * M2 加载审计日志数据（代理到 AuditPanelManager）
-   *
-   * 由 settingsController.ts 在以下场景调用：
-   * - 应用启动时预加载
-   * - 切换到"审计"tab 时刷新
-   * - 用户点击"刷新"按钮时（由 AuditPanelManager 内部处理）
-   *
-   * 加载完成后渲染到 #audit-list。
-   */
-  async loadAuditLog(): Promise<void> {
-    await this.auditPanel.load();
-  }
-
-  /**
-   * 设置审计日志清空回调（代理到 AuditPanelManager）
-   *
-   * 由 settingsController.ts 在 setupSettingsPanel() 时注册。
-   */
-  setClearAuditLogCallback(cb: () => Promise<void>): void {
-    this.auditPanel.setClearAuditLogCallback(cb);
-  }
-
-  /**
-   * 设置确认用户画像回调（代理到 ProfilePanelManager）
-   *
-   * 由 settingsController.ts 在 setupSettingsPanel() 时注册。
-   */
-  setConfirmProfileCallback(cb: (id: string) => Promise<void>): void {
-    this.profilePanel.setConfirmProfileCallback(cb);
-  }
-
-  /**
-   * 设置拒绝用户画像回调（代理到 ProfilePanelManager）
-   *
-   * 由 settingsController.ts 在 setupSettingsPanel() 时注册。
-   */
-  setRejectProfileCallback(cb: (id: string) => Promise<void>): void {
-    this.profilePanel.setRejectProfileCallback(cb);
-  }
-
-  /**
-   * M2 设置面板内 tab 切换回调（实现 SettingsPanelHost.onSettingsTabSwitch）
-   *
-   * 由 SettingsPanelManager 在 tab 切换时调用，
-   * 根据目标 tab 刷新对应 PanelManager 的数据：
-   * - profile → 刷新用户画像 + 作品投影（作品 tab 已合并）
-   * - audit → 刷新审计日志
-   * - skill → 刷新技能列表（通过 loadDashboard 间接刷新）
-   */
-  onSettingsTabSwitch(tab: string): void {
-    switch (tab) {
-      case 'profile':
-        // 作品 tab 已合并到画像与作品 tab，切换时同时刷新画像和作品数据
-        void this.profilePanel.load();
-        void this.workProjectionPanel.load();
-        break;
-      case 'audit':
-        void this.auditPanel.load();
-        break;
-      // skill tab 的数据由 loadDashboard → renderSkills 驱动（委托到 settingsPanel），无需单独加载
-      default:
-        break;
-    }
-  }
-
-  /**
-   * Provider 列表变更回调（实现 SettingsPanelHost.onProviderChanged）
-   *
-   * 由 SettingsPanelManager 在 Provider 新增/编辑/删除/切换后调用，
-   * 通知 InputAreaManager 刷新输入框的 Provider 选择器，
-   * 确保输入框显示的当前 Provider 与设置面板一致。
-   */
-  onProviderChanged(): void {
-    void this.inputAreaManager.loadProviderSelector();
+    this.badgeManager.setCount(this.state.unreadCount);
   }
 
   // ─── 事件发射 ─────────────────────────────────────────
@@ -1070,24 +735,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     return this.btnMaximize;
   }
 
-  // ─── 记忆面板 ─ 委托到 MemoryPanelManager ─────────────────
+  // ─── 记忆面板（含业务逻辑的方法，纯透传委托见 memoryDelegations） ──
 
-  /** 渲染记忆列表（委托到 MemoryPanelManager） */
-  renderMemoryList(memories: MemoryListItem[], searchQuery?: string): void { this.memoryPanel.renderMemoryList(memories, searchQuery); }
-  /** 显示记忆详情（委托到 MemoryPanelManager） */
-  showMemoryDetail(memory: MemoryDetail): void { this.memoryPanel.showMemoryDetail(memory); }
-  /** Phase 5.1：渲染演化脉络（异步加载完成后注入，可空降） */
-  showMemoryLineage(path: RelationPath[]): void { this.memoryPanel.showMemoryLineage(path); }
-  /** Phase 5.2：渲染直接关联邻居（异步加载完成后注入，可空降） */
-  showMemoryNeighbors(neighbors: RelationNeighbor[]): void { this.memoryPanel.showMemoryNeighbors(neighbors); }
-  /** 清空添加记忆表单（委托到 MemoryPanelManager） */
-  clearAddMemoryForm(): void { this.memoryPanel.clearAddMemoryForm(); }
-  /** 获取添加记忆表单数据（空字段返回 null，委托到 MemoryPanelManager） */
-  getAddMemoryFormData(): { source: string; name: string; content: string } | null {
-    return this.memoryPanel.getAddMemoryFormData();
-  }
-  /** 获取当前查看的记忆 ID（委托到 MemoryPanelManager） */
-  getCurrentMemoryId(): string | null { return this.memoryPanel.getCurrentMemoryId(); }
   /**
    * 获取当前记忆搜索参数
    *
@@ -1159,133 +808,34 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
       this.dashboardPanel.showMemoryListError(listEl);
     }
   }
-  /** 注册记忆搜索回调（委托到 MemoryPanelManager） */
-  onMemorySearch(cb: (query: string) => void): void { this.memoryPanel.onMemorySearch(cb); }
-  /** 注册记忆 source 筛选回调（委托到 MemoryPanelManager） */
-  onMemoryFilter(cb: (source: string) => void): void { this.memoryPanel.onMemoryFilter(cb); }
-  /** 注册记忆点击回调（委托到 MemoryPanelManager） */
-  onMemoryClick(cb: (id: string) => void): void { this.memoryPanel.onMemoryClick(cb); }
-  /** 注册记忆删除回调（委托到 MemoryPanelManager） */
-  onMemoryDelete(cb: () => void): void { this.memoryPanel.onMemoryDelete(cb); }
-  /** 注册记忆添加回调（委托到 MemoryPanelManager） */
-  onMemoryAdd(cb: (data: { source: string; name: string; content: string }) => void): void { this.memoryPanel.onMemoryAdd(cb); }
-  /** 注册记忆编辑回调（委托到 MemoryPanelManager） */
-  onMemoryEdit(cb: (id: string, content: string) => void): void { this.memoryPanel.onMemoryEdit(cb); }
-  /** 注册记忆讨论回调（委托到 MemoryPanelManager） */
-  onMemoryDiscuss(cb: (memoryName: string) => void): void { this.memoryPanel.onMemoryDiscuss(cb); }
-  /** 加载图谱数据到渲染器（委托到 MemoryPanelManager） */
-  loadGraphData(data: RelationGraphData): void { this.memoryPanel.loadGraphData(data); }
-  /** 切换记忆视图模式（委托到 MemoryPanelManager） */
-  switchMemoryView(mode: 'list' | 'timeline' | 'graph'): void { this.memoryPanel.switchView(mode); }
-  /** 检查是否有图谱数据（委托到 MemoryPanelManager） */
-  hasGraphData(): boolean { return this.memoryPanel.hasGraphData(); }
-  /** 设置图谱高亮节点（搜索联动，委托到 MemoryPanelManager） */
-  highlightGraphNodes(nodeIds: string[] | null): void { this.memoryPanel.highlightGraphNodes(nodeIds); }
-  /** 设置图谱选中节点（列表/详情联动，委托到 MemoryPanelManager） */
-  selectGraphNode(nodeId: string | null): void { this.memoryPanel.selectGraphNode(nodeId); }
-  /** 清除图谱所有高亮和选中（委托到 MemoryPanelManager） */
-  clearGraphHighlights(): void { this.memoryPanel.clearGraphHighlights(); }
-  /** 注册更多菜单项点击回调（委托到 MemoryPanelManager） */
-  onMoreMenuAction(cb: (action: string) => void): void { this.memoryPanel.onMoreMenuAction(cb); }
-  /** 注册回收站操作回调（恢复/彻底删除，委托到 MemoryPanelManager） */
-  onRecycleBinAction(cb: (action: 'restore' | 'purge', id: string) => void): void { this.memoryPanel.onRecycleBinAction(cb); }
-  /** 注册回收站批量操作回调（全部恢复/全部清空，委托到 MemoryPanelManager） */
-  onRecycleBinBatchAction(cb: (action: 'restore-all' | 'purge-all') => void): void { this.memoryPanel.onRecycleBinBatchAction(cb); }
-  /** 渲染回收站列表（委托到 MemoryPanelManager） */
-  renderRecycleBinList(memories: Array<{ id: string; name: string; source: string; contentPreview: string; deletedAt: string }>): void { this.memoryPanel.renderRecycleBinList(memories); }
-  /** 注册排序变更回调（委托到 MemoryPanelManager） */
-  onSortChange(cb: () => void): void { this.memoryPanel.onSortChange(cb); }
-  /** 注册时间范围变更回调（委托到 MemoryPanelManager） */
-  onTimeRangeChange(cb: () => void): void { this.memoryPanel.onTimeRangeChange(cb); }
-  /** 注册清理请求回调（委托到 MemoryPanelManager） */
-  onCleanupRequest(cb: (type: 'duplicates' | 'stale' | 'all') => string[]): void { this.memoryPanel.onCleanupRequest(cb); }
-  /** 注册清理确认回调（委托到 MemoryPanelManager） */
-  onCleanupConfirm(cb: (ids: string[]) => Promise<void>): void { this.memoryPanel.onCleanupConfirm(cb); }
-  /** 注册视图切换回调（委托到 MemoryPanelManager） */
-  onViewSwitch(cb: (mode: 'list' | 'timeline' | 'graph') => void): void { this.memoryPanel.onViewSwitch(cb); }
-  /** 注册图谱右键菜单操作回调（委托到 MemoryPanelManager） */
-  onGraphContextMenuAction(cb: (action: string, nodeId: string) => void): void { this.memoryPanel.onGraphContextMenuAction(cb); }
-  /** 注册关系编辑回调（委托到 MemoryPanelManager） */
-  onRelationEdit(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void { this.memoryPanel.onRelationEdit(cb); }
-  /** 注册关系删除回调（委托到 MemoryPanelManager） */
-  onRelationDelete(cb: (sourceId: string, targetId: string, type: string) => void): void { this.memoryPanel.onRelationDelete(cb); }
-  /** 注册关系创建回调（委托到 MemoryPanelManager） */
-  onRelationCreate(cb: (sourceId: string, targetId: string, type: string, weight: number) => void): void { this.memoryPanel.onRelationCreate(cb); }
 
-  // ─── 仪表盘面板 ─ 委托到 DashboardPanelManager ───────────
+  // ─── 仪表盘/感知面板（含业务逻辑的方法，纯透传委托见 dashboardDelegations） ──
 
-  /** 渲染仪表盘统计数据（委托到 DashboardPanelManager） */
-  renderDashboardStats(data: DashboardViewModel): void {
-    this.dashboardPanel.renderDashboardStats(data);
-  }
-  /** 渲染 Agent 运行时指标（委托到 DashboardPanelManager） */
-  renderAgentMetrics(metrics: AgentMetrics | null): void {
-    this.dashboardPanel.renderAgentMetrics(metrics);
-  }
-  /** 渲染记忆源健康诊断（委托到 DashboardPanelManager，消费内核 sourceHealth()） */
-  renderSourceHealth(sourceHealth: SourceHealth | null): void {
-    this.dashboardPanel.renderSourceHealth(sourceHealth);
-  }
   /**
-   * 渲染增长趋势区块（委托到 DashboardPanelManager，Phase 6.2）
+   * 设置面板内 tab 切换回调（实现 SettingsPanelHost.onSettingsTabSwitch）
    *
-   * 消费 reviewManager.buildReviewData 已计算的趋势数据（today/7天/30天/daily/direction），
-   * 在仪表盘"概览"和"感知"之间展示增长趋势区块。
+   * 由 SettingsPanelManager 在 tab 切换时调用，
+   * 根据目标 tab 刷新对应 PanelManager 的数据：
+   * - profile → 刷新用户画像 + 作品投影（作品 tab 已合并）
+   * - audit → 刷新审计日志
+   * - skill → 刷新技能列表（通过 loadDashboard 间接刷新）
    */
-  renderReviewData(review: ReviewDataPayload): void {
-    this.dashboardPanel.renderReviewData(review);
+  onSettingsTabSwitch(tab: string): void {
+    switch (tab) {
+      case 'profile':
+        // 作品 tab 已合并到画像与作品 tab，切换时同时刷新画像和作品数据
+        void this.profilePanel.load();
+        void this.workProjectionPanel.load();
+        break;
+      case 'audit':
+        void this.auditPanel.load();
+        break;
+      // skill tab 的数据由 loadDashboard → renderSkills 驱动（委托到 settingsPanel），无需单独加载
+      default:
+        break;
+    }
   }
-  /** 渲染已加载技能列表（委托到 SettingsPanelManager，技能 DOM 在设置面板 skill tab） */
-  renderSkills(skills: Array<{ name: string; keywords: string[]; description: string; layer: string }>): void {
-    this.settingsPanelManager.renderSkills(skills);
-  }
-  /** 显示洞察面板加载态（委托到 MemoryPanelManager → InsightsRenderer） */
-  showInsightsLoading(): void { this.memoryPanel.showInsightsLoading(); }
-  /** 渲染记忆洞察数据（委托到 MemoryPanelManager → InsightsRenderer） */
-  renderInsights(
-    dashboard: { total: number; bySource: Record<string, number>; conflictCount?: number },
-    graph: RelationGraphData,
-  ): void { this.memoryPanel.renderInsights(dashboard, graph); }
-  /** 渲染伙伴洞察面板（委托到 MemoryPanelManager → PartnerInsightsRenderer） */
-  renderPartnerInsights(memories: Array<{
-    id: string; name: string; source: string; contentPreview: string; createdAt?: string;
-  }>): void { this.memoryPanel.renderPartnerInsights(memories); }
-  /** 注册伙伴洞察 + 感知面板记忆点击回调（委托到 MemoryPanelManager + PerceptionPanelManager） */
-  onPartnerMemoryClick(cb: (memoryId: string) => void): void {
-    this.memoryPanel.onPartnerMemoryClick(cb);
-    this.perceptionPanel.onMemoryClick(cb);
-  }
-  /** 显示洞察面板加载失败状态（委托到 MemoryPanelManager → InsightsRenderer） */
-  showInsightsError(): void { this.memoryPanel.showInsightsError(); }
-  /** 显示健康度面板加载态（委托到 MemoryPanelManager → HealthDashboardRenderer） */
-  showHealthLoading(): void { this.memoryPanel.showHealthLoading(); }
-  /** 渲染记忆健康度仪表盘（委托到 MemoryPanelManager → HealthDashboardRenderer） */
-  renderHealthDashboard(data: HealthDashboardPayload): void { this.memoryPanel.renderHealthDashboard(data); }
-  /** 显示健康度面板加载失败状态（委托到 MemoryPanelManager → HealthDashboardRenderer） */
-  showHealthError(): void { this.memoryPanel.showHealthError(); }
-  /** 显示记忆列表加载失败状态（委托到 DashboardPanelManager） */
-  showMemoryListError(listEl: HTMLElement): void { this.dashboardPanel.showMemoryListError(listEl); }
-  /** 仪表盘计数 +1 并触发脉冲动画（委托到 DashboardPanelManager） */
-  pulseCounter(id: string): void { this.dashboardPanel.pulseCounter(id); }
-  /** 更新情感基调展示（委托到 PerceptionPanelManager + SpriteStatusPopover） */
-  updateAffectDisplay(affect: AffectPayload): void {
-    this.perceptionPanel.updateAffectDisplay(affect);
-    this.spriteStatusPopover.updateAffect(affect);
-  }
-  /** 更新默契度展示（委托到 PerceptionPanelManager + SpriteStatusPopover） */
-  updateRapportDisplay(rapport: RapportPayload): void {
-    this.perceptionPanel.updateRapportDisplay(rapport);
-    this.spriteStatusPopover.updateRapport(rapport);
-  }
-  /** 更新对话上下文展示（委托到 PerceptionPanelManager + SpriteStatusPopover） */
-  updateContextDisplay(context: ContextPayload): void {
-    this.perceptionPanel.updateContextDisplay(context);
-    this.spriteStatusPopover.updateContext(context);
-  }
-  /** 更新模式洞察面板（委托到 PerceptionPanelManager） */
-  updatePatternsDisplay(payload: PatternsPayload): void {
-    this.perceptionPanel.updatePatternsDisplay(payload);
-  }
+
   /**
    * 从感知快照一次性渲染所有感知数据（委托到 PerceptionPanelManager）
    *
@@ -1311,265 +861,14 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     const typedStats = stats as Parameters<typeof this.perceptionPanel.updateProactiveStatsDisplay>[0];
     this.perceptionPanel.updateProactiveStatsDisplay(typedStats);
   }
-  /** 更新在场状态展示（委托到 PerceptionPanelManager） */
-  updatePresenceDisplay(payload: PresencePayload): void {
-    this.perceptionPanel.updatePresenceDisplay(payload);
-  }
-  /** 更新叙事摘要 DOM（委托到 PerceptionPanelManager） */
-  updateNarrative(): void {
-    this.perceptionPanel.updateNarrative();
-  }
-  /** 注册重试加载洞察数据回调（委托到 MemoryPanelManager → InsightsRenderer） */
-  onReloadInsights(cb: () => void): void { this.memoryPanel.onReloadInsights(cb); }
-  /** 注册重试加载健康度数据回调（委托到 MemoryPanelManager → HealthDashboardRenderer） */
-  onReloadHealth(cb: () => void): void { this.memoryPanel.onReloadHealth(cb); }
-  /** 注册重试加载记忆列表回调（委托到 DashboardPanelManager） */
-  onReloadMemoryList(cb: () => void): void { this.dashboardPanel.onReloadMemoryList(cb); }
 
-  /**
-   * 主题切换时重绘所有 Canvas 图表（委托到 DashboardPanelManager + MemoryPanelManager）
-   *
-   * Canvas 2D 不会自动响应 CSS 变量变化，主题切换后需主动重绘：
-   * - DashboardPanelManager：增长趋势图（dashboard-growth-canvas）
-   * - MemoryPanelManager → PartnerInsightsRenderer：伙伴洞察趋势图
-   * RelationGraph 有持续动画循环，主题切换会自动生效，无需处理。
-   */
-  repaintCanvasOnThemeChange(): void {
-    this.dashboardPanel.repaintOnThemeChange();
-    this.memoryPanel.repaintOnThemeChange();
-  }
-
-  // ─── 角色选择器 ─ 委托到 PersonaPanelManager ───────────────
-
-  /** 渲染角色下拉菜单（委托到 PersonaPanelManager） */
-  renderPersonaDropdown(personas: PersonaItem[]): void { this.personaPanel.renderPersonaDropdown(personas); }
-  /** 更新当前角色显示（委托到 PersonaPanelManager） */
-  updateActivePersona(name: string): void { this.personaPanel.updateActivePersona(name); }
-  /** 更新角色匹配模式标签（委托到 PersonaPanelManager） */
-  updatePersonaModeBadge(mode: string): void { this.personaPanel.updatePersonaModeBadge(mode); }
-  /** 注册角色切换回调（委托到 PersonaPanelManager） */
-  onPersonaSwitch(cb: (name: string) => void): void { this.personaPanel.onPersonaSwitch(cb); }
-  /** 注册召回记忆点击回调（委托到 PersonaPanelManager + ChatPanelManager，传完整记忆ID） */
-  onMemoryRecallClick(cb: (memoryId: string) => void): void {
-    this.personaPanel.onMemoryRecallClick(cb);
-    this.chatPanel.setMemoryRecallClickCallback(cb);
-  }
-  /** 触发召回记忆点击（委托到 PersonaPanelManager，供仪表盘推荐记忆点击复用） */
-  triggerMemoryRecall(memoryId: string): void { this.personaPanel.triggerMemoryRecallClick(memoryId); }
-
-  /** 注册角色匹配模式变更回调（委托到 SettingsPanelManager） */
-  onPersonaModeChange(cb: (mode: string) => void): void {
-    this.settingsPanelManager.onPersonaModeChange(cb);
-  }
-  /**
-   * ADR-015 注册归档模式变更回调（委托到 SettingsPanelManager）
-   *
-   * radio change 时即时触发，由 settingsController 调用 updateConfig 持久化 + 应用到 Agent。
-   * 与主题一样即时生效，不走保存按钮。
-   *
-   * @param cb 归档模式变更回调函数
-   */
-  onArchiveModeChange(cb: (mode: 'full' | 'insights-only' | 'manual') => void): void {
-    this.settingsPanelManager.onArchiveModeChange(cb);
-  }
-
-  /**
-   * ADR-SP-008 注册主题变更回调（代理到 ThemeManager）
-   *
-   * 当用户在设置面板切换主题时触发，renderer.ts 可借此执行额外同步逻辑。
-   * 主题本身的持久化（localStorage）已在 setTheme 内完成，回调仅用于通知。
-   *
-   * source 参数区分"用户主动切换"与"系统主题变化"，
-   * renderer.ts 据此决定是否持久化到 sprite.json。
-   *
-   * @param cb 主题变更回调函数
-   */
-  onThemeChange(cb: (theme: 'light' | 'dark', source: 'user' | 'system') => void): void {
-    this.themeManager.onThemeChange(cb);
-  }
-
-  /**
-   * 获取当前主题模式（代理到 ThemeManager）
-   *
-   * @returns 当前主题模式（'light' | 'dark' | 'auto'）
-   */
-  getThemeMode(): 'light' | 'dark' | 'auto' {
-    return this.themeManager.getThemeMode();
-  }
-
-  /**
-   * ADR-SP-008 设置主题（代理到 ThemeManager）
-   *
-   * 1. 设置 <html> 元素的 data-theme 属性（触发 CSS 变量切换）
-   * 2. 持久化到 localStorage（key: 'memora-theme'）
-   * 3. 同步设置面板单选按钮状态
-   * 4. 触发 themeChangeCallback 通知 renderer.ts
-   *
-   * @param theme 目标主题
-   */
-  setTheme(theme: 'light' | 'dark' | 'auto'): void {
-    this.themeManager.setTheme(theme);
-  }
-
-  /**
-   * ADR-SP-008 同步设置面板主题单选按钮状态（代理到 ThemeManager）
-   *
-   * 在外部修改主题后（如初始化加载），调用此方法确保单选按钮选中状态与实际主题一致。
-   * 支持三态主题模式：light / dark / auto
-   *
-   * @param theme 当前主题模式
-   */
-  syncThemeRadios(theme: 'light' | 'dark' | 'auto'): void {
-    this.themeManager.syncThemeRadios(theme);
-  }
-
-  // ─── 设置面板（委托到 SettingsPanelManager） ──
-
-  // ─── 统一面板错误横幅（委托到 PanelErrorBannerManager） ───
-
-  /** 显示面板错误横幅（委托到 PanelErrorBannerManager） */
-  showPanelError(panelId: string, message: string, retryCallback?: () => void): void {
-    this.panelErrorBannerManager.showPanelError(panelId, message, retryCallback);
-  }
-
-  /** 隐藏面板错误横幅（委托到 PanelErrorBannerManager） */
-  hidePanelError(panelId: string): void {
-    this.panelErrorBannerManager.hidePanelError(panelId);
-  }
-
-  /** 显示设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
-  showSettingsError(message: string, retryCallback?: () => void): void {
-    this.panelErrorBannerManager.showPanelError('settings', message, retryCallback);
-  }
-
-  /** 隐藏设置面板加载失败错误横幅（委托到 PanelErrorBannerManager） */
-  hideSettingsError(): void {
-    this.panelErrorBannerManager.hidePanelError('settings');
-  }
-
-  // ─── 日期导航（委托到 DateNavManager） ───
-
-  /** 注册日期跳转回调（日历选择器 change 事件 → sessionController.jumpToDate） */
-  onDateNavJump(cb: (date: string) => void): void {
-    this.dateNavManager.onDateNavJump(cb);
-  }
-
-  /** 更新有对话记录的日期集合（用于验证选择的日期是否有效） */
-  updateDateNavAvailableDates(dates: string[], counts?: Map<string, number>): void {
-    this.dateNavManager.updateAvailableDates(dates, counts);
-  }
-
-  /** 设置日期选择器显示的当前日期 */
-  setDateNavCurrentDate(date: string): void {
-    this.dateNavManager.setCurrentDate(date);
-  }
-
-  /** 注册日期删除回调（删除指定日期的对话记录） */
-  onDateNavDelete(cb: (date: string) => void): void {
-    this.dateNavManager.onDateNavDelete(cb);
-  }
-
-  /** 注册回到今天回调（切换到今天的会话） */
-  onBackToToday(cb: () => void): void {
-    this.dateNavManager.onBackToToday(cb);
-  }
-
-  // ─── 对话内容搜索（委托到 SearchMessagesManager） ───
-
-  /**
-   * 注册搜索结果点击回调
-   *
-   * 用户点击搜索结果项时触发，由 renderer.ts 注册跳转逻辑
-   * （切换到对应日期的会话并加载历史）。
-   *
-   * @param cb 回调函数（接收 date 和 session 参数）
-   */
-  onSearchResultClick(cb: (date: string, session: string) => void): void {
-    this.searchMessagesManager.onResultClick(cb);
-  }
-
-  /** 加载 Embedding 配置到表单（委托到 SettingsPanelManager） */
-  loadEmbeddingConfig(data: {
-    embedding: { model: string; baseUrl: string; apiKey: string } | null;
-  }): void {
-    this.settingsPanelManager.loadEmbeddingConfig(data);
-  }
+  // ─── 设置面板（含业务逻辑的方法，纯透传委托见 settingsModalDelegations） ──
 
   /** 加载配置到表单（委托到 SettingsPanelManager） */
   loadConfigToForm(config: SpriteConfigForm): void {
     // 缓存当前配置，供 getArchiveMode 同步查询
     this.currentConfig = config;
     this.settingsPanelManager.loadConfigToForm(config);
-  }
-
-  /** 加载项目列表到专注项目下拉框（委托到 SettingsPanelManager） */
-  loadProjectsToForm(projects: Array<{ name: string; path: string }>, selectedPath: string): void {
-    this.settingsPanelManager.loadProjectsToForm(projects, selectedPath);
-  }
-
-  /** 设置角色匹配模式（委托到 SettingsPanelManager） */
-  setPersonaMode(mode: string): void {
-    this.settingsPanelManager.setPersonaMode(mode);
-  }
-
-  /** 收集表单中的配置（委托到 SettingsPanelManager） */
-  collectConfigFromForm(): SpriteConfigForm {
-    return this.settingsPanelManager.collectConfigFromForm();
-  }
-
-  /** 设置面板保存回调（委托到 SettingsPanelManager） */
-  onConfigSave(cb: (config: SpriteConfigForm) => void): void {
-    this.settingsPanelManager.onConfigSave(cb);
-  }
-
-  /** 重置设置表单 dirty 标志（委托到 SettingsPanelManager） */
-  resetSettingsFormDirty(): void {
-    this.settingsPanelManager.resetFormDirty();
-  }
-
-  /** 检查设置面板是否有未保存修改（供 beforeunload 保护使用） */
-  isSettingsDirty(): boolean {
-    return this.settingsPanelManager.isDirty();
-  }
-
-  /**
-   * 更新 Agent 连接状态指示器（委托到 SettingsPanelManager）
-   *
-   * @param status Agent 连接状态（ready/error/unknown）
-   * @param message 可选的状态描述文本
-   */
-  updateAgentStatusIndicator(status: 'ready' | 'error' | 'unknown', message?: string): void {
-    this.settingsPanelManager.updateAgentStatusIndicator(status, message);
-  }
-
-  // ─── 弹窗管理（代理到 ModalManager） ──────────────────
-
-  /** 显示弹窗（代理到 ModalManager） */
-  showModal(modalId: string): void {
-    this.modalManager.showModal(modalId);
-  }
-
-  /** 隐藏弹窗（代理到 ModalManager） */
-  hideModal(modalId: string): void {
-    this.modalManager.hideModal(modalId);
-  }
-
-  /**
-   * 显示通用确认弹窗（代理到 ModalManager，替代 window.confirm）
-   *
-   * 返回 Promise，异步等待用户选择：
-   * - true：用户点击确认按钮
-   * - false：用户点击取消按钮、关闭按钮或背景
-   *
-   * @param options.title 弹窗标题（默认"确认"）
-   * @param options.message 确认消息文本
-   * @param options.confirmText 确认按钮文本（默认"确定"）
-   * @param options.messageNodes 确认消息 DOM 节点数组（优先于 message，用于富文本展示）
-   * @param options.cancelText 取消按钮文本（默认"取消"）
-   * @param options.danger 是否危险操作（true 时确认按钮为红色，如删除）
-   */
-  showConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
-    return this.modalManager.showConfirmDialog(options);
   }
 
   /**
@@ -1587,165 +886,19 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     // 将用户决策传回主进程
     await window.electronAPI.responseWriteConfirmation(info.requestId, confirmed);
   }
-
-  // ─── 剪贴板三重保护 UI 联动（委托到 ClipboardManager） ───
-
-  /** 显示剪贴板变化 Toast（委托到 ClipboardManager） */
-  showClipboardChangedToast(): void {
-    this.clipboardManager.showClipboardChangedToast();
-  }
-
-  /** 显示剪贴板内容确认对话框（委托到 ClipboardManager） */
-  async showClipboardConfirmDialog(content: string): Promise<void> {
-    await this.clipboardManager.showClipboardConfirmDialog(content);
-  }
-
-  // ─── Phase 3.3 第二批：全局快捷键触发处理 ──────────────
-
-  /**
-   * 处理 quick-record 快捷键触发（委托到 PanelRouter）
-   */
-  async handleQuickRecordTrigger(): Promise<void> {
-    await this.panelRouter.handleQuickRecordTrigger();
-  }
-
-  /**
-   * 处理 recall-memory 快捷键触发（委托到 PanelRouter）
-   */
-  async handleRecallMemoryTrigger(): Promise<void> {
-    await this.panelRouter.handleRecallMemoryTrigger();
-  }
-
-  /**
-   * 预填对话输入框
-   *
-   * 供记忆详情弹窗的「在对话中讨论」功能使用：
-   * 将指定文本预填到对话输入框，用户可直接编辑或按 Enter 发送。
-   * 仅在切换到对话面板后调用，输入框已由 switchPanel('chat') 自动聚焦。
-   *
-   * @param text 预填的文本内容
-   */
-  prefillChatInput(text: string): void {
-    // 委托到 InputAreaManager（设置值 + 触发 input 事件调整高度）
-    this.inputAreaManager.setValue(text);
-  }
-
-  // ─── 技能文件拖入安装（委托到 SkillDropManager） ───
-
-  /** 注册技能安装成功回调（委托到 SkillDropManager） */
-  onSkillInstalled(callback: () => void): void {
-    this.skillDropManager.onSkillInstalled(callback);
-  }
-
-  /** 处理拖入的技能文件（委托到 SkillDropManager） */
-  async handleSkillDrop(files: File[]): Promise<void> {
-    await this.skillDropManager.handleSkillDrop(files);
-  }
-
-  /** 触发文件选择对话框（委托到 SkillDropManager） */
-  handleSkillFileSelect(): void {
-    this.skillDropManager.handleSkillFileSelect();
-  }
-
-  /**
-   * 显示通用输入弹窗（替代 window.prompt）
-   *
-   * 代理到 ModalManager.showInputDialog，提供一致的视觉体验。
-   *
-   * @returns 用户输入的内容（已 trim），取消时返回 null
-   */
-  showInputDialog(options: {
-    title?: string;
-    message: string;
-    defaultValue?: string;
-    placeholder?: string;
-    maxLength?: number;
-    required?: boolean;
-  }): Promise<string | null> {
-    return this.modalManager.showInputDialog(options);
-  }
-
-  // ─── 三态首次引导（代理到 OnboardingManager） ──────────
-
-  /**
-   * 检查是否需要显示多步骤引导（代理到 OnboardingManager）
-   *
-   * 检查逻辑：
-   * 1. localStorage 标记已见过 → 跳过
-   * 2. 已有 Provider 配置 → 跳过（已配置用户）
-   *
-   * @param hasProviders 是否已有 Provider 配置
-   */
-  shouldShowOnboarding(hasProviders: boolean): boolean {
-    return this.onboardingManager.shouldShowOnboarding(hasProviders);
-  }
-
-  // ─── 启动摘要（迭代一：Welcome Back Digest） ──────────
-
-  /**
-   * 展示启动摘要卡片（委托到 ChatPanelManager）
-   *
-   * Agent 就绪后调用，在对话区顶部展示聚合数据卡片。
-   * 卡片可关闭，本次会话仅展示一次。
-   */
-  showStartupSummary(summary: {
-    totalMemories: number;
-    totalInsights: number;
-    skillCount: number;
-    decay: { runCount: number; totalDecayedCount: number } | null;
-    perception: { warmth: number; rapportLevel: string; rapportDescription: string } | null;
-    healthStatus: 'healthy' | 'warning' | 'critical' | null;
-  }): void {
-    this.chatPanel.showStartupSummary(summary);
-  }
-
-  // ─── 记忆导航（恢复后跳转定位） ──────────
-
-  /**
-   * 滚动到指定记忆项并高亮（委托到 MemoryPanelManager）
-   *
-   * 从回收站恢复记忆后调用，定位到目标记忆卡片。
-   */
-  scrollToMemory(id: string): void { this.memoryPanel.scrollToMemory(id); }
-
-  // ─── 一键归档（迭代一：批量归档当前会话） ──────────
-
-  /**
-   * 显示一键归档按钮（委托到 ChatPanelManager）
-   *
-   * 在消息区顶部插入归档按钮，仅在 manual 或 insights-only 模式下显示。
-   * 点击后调用 agent.archiveSessionContent 批量归档当前会话的全部记忆。
-   */
-  showArchiveButton(): void {
-    this.chatPanel.showArchiveButton();
-  }
-
-  /**
-   * 显示三态首次引导弹窗（代理到 OnboardingManager）
-   *
-   * 介绍三态窗口模型（完整/浮动/托盘）+ 快捷键。
-   * 用户点击"开始使用"或关闭弹窗后标记为已见过。
-   */
-  showOnboardingDialog(): void {
-    this.onboardingManager.showOnboardingDialog();
-  }
-
-  // ─── Toast 通知（代理到 ToastManager） ──────────
-
-  /**
-   * 显示 Toast 通知（代理到 ToastManager）
-   *
-   * 设计原则：
-   * - 独立于对话历史（#messages），避免污染上下文
-   * - 操作反馈（保存成功/失败/警告）走 toast，对话内容走 #messages
-   * - error 类型不自动消失，需用户手动关闭，确保错误被看到
-   * - 同时最多显示 5 条，超出时移除最早的，避免堆积
-   *
-   * @param message 通知文本
-   * @param type 通知类型（默认 info）
-   * @param duration 自动消失时长（毫秒），0 表示不自动消失；默认按类型决定
-   */
-  showToast(message: string, type: ToastType = 'info', duration?: number, options?: ToastOptions): void {
-    this.toastManager.showToast(message, type, duration, options);
-  }
 }
+
+// ─── Mixin 类型合并 + 运行时注入 ─────────────────────────
+// interface 声明合并：UIManager 获得 6 个委托群的方法签名类型
+// applyMixins：将 6 个委托群的实现方法复制到 UIManager.prototype
+// 注意：interface 必须与 class 同为 exported，否则触发 TS2395
+export interface UIManager extends ChatDelegations, MemoryDelegations, DashboardDelegations, PersonaThemeDelegations, SettingsModalDelegations, MiscDelegations {}
+
+applyMixins(UIManager, [
+  chatDelegations,
+  memoryDelegations,
+  dashboardDelegations,
+  personaThemeDelegations,
+  settingsModalDelegations,
+  miscDelegations,
+]);

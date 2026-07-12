@@ -153,6 +153,8 @@ export function createSettingsController(uiManager: UIManager) {
         focusProjectPath: String(safeCfg.focusProjectPath ?? ''),
         // Phase 3.3 快捷键配置：safeCfg.shortcuts 已由主进程保证完整（SpriteConfigForm 必填）
         shortcuts: safeCfg.shortcuts ?? DEFAULT_SHORTCUTS,
+        // AUDIT-5-4 隐私合规：使用统计开关（默认 false）
+        usageStatsEnabled: Boolean(safeCfg.usageStatsEnabled),
       };
 
       uiManager.loadConfigToForm(formConfig);

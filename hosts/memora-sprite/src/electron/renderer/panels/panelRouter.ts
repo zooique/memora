@@ -18,6 +18,7 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 import { getOptionalElement } from '../helpers/domHelpers.js';
 import { reportError } from '../helpers/errorHelpers.js';
+import { setIcon } from '../helpers/icon.js';
 import type { UIState, ConfirmDialogOptions } from '../types.js';
 
 // ─── PanelRouter 宿主接口 ─────────────────────────────
@@ -59,10 +60,6 @@ export interface PanelRouterHost {
   // 回调访问
   /** 获取面板切换回调 */
   getPanelSwitchCallback(): ((panel: string) => void) | null;
-
-  // 窗口控制
-  /** 更新最大化按钮图标 */
-  updateMaximizeButton(maximized: boolean): void;
 
   // 命令面板
   /** 打开命令面板 */
@@ -108,7 +105,7 @@ export class PanelRouter {
 
     // 窗口状态变更监听（最大化按钮图标切换）
     window.electronAPI.onWindowStateChanged((msg: { maximized: boolean }) => {
-      this.host.updateMaximizeButton(msg.maximized);
+      this.updateMaximizeButton(msg.maximized);
     });
 
     // 全局键盘快捷键
@@ -337,5 +334,24 @@ export class PanelRouter {
   /** 关闭窗口（隐藏到浮动窗口） */
   private handleClose(): void {
     window.electronAPI.windowClose();
+  }
+
+  // ─── 最大化按钮图标 ────────────────────────────────
+
+  /**
+   * 更新最大化按钮图标
+   *
+   * 根据窗口当前是否最大化切换 SVG 图标：
+   * - 最大化时显示还原图标（icon-restore）
+   * - 普通状态时显示最大化图标（icon-maximize）
+   *
+   * 仅当 btnMaximize 元素存在时执行（部分布局可能不提供标题栏）
+   */
+  updateMaximizeButton(isMaximized: boolean): void {
+    const btnMaximize = this.host.getBtnMaximize();
+    if (!btnMaximize) return;
+    const iconId = isMaximized ? 'icon-restore' : 'icon-maximize';
+    setIcon(btnMaximize, iconId);
+    btnMaximize.title = isMaximized ? '还原' : '最大化';
   }
 }
