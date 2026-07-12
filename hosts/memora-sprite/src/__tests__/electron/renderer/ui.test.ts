@@ -97,8 +97,6 @@ const TEST_HTML = `<!DOCTYPE html>
             </div>
           </div>
         </div>
-        <!-- 保留 recommendation-list 供测试使用（安全降级路径） -->
-        <ul id="recommendation-list" class="suggestion-list"></ul>
         <div id="proactive-banner" class="hidden">
           <span class="banner-icon">🧚</span>
           <span class="banner-text" id="proactive-banner-text"></span>
@@ -1002,43 +1000,6 @@ describe('triggerMemoryRecall', () => {
     uiManager.triggerMemoryRecall('带空格 的记忆名');
 
     expect(cb).toHaveBeenCalledWith('带空格 的记忆名');
-  });
-});
-
-// ─── 推荐记忆点击事件委托（EventTracker 路径） ─
-// TODO: UIManager 中尚未实现 [data-action="view-recommendation"] 事件委托。
-// 推荐记忆项由 dashboardPanelManager 创建，但点击事件委托应由 UIManager 统一处理。
-// 待功能实现后取消 skip。
-
-describe.skip('推荐记忆点击事件委托', () => {
-  /**
-   * 验证仪表盘推荐记忆列表的点击事件委托。
-   * 事件通过 UIManager.initEventListeners → EventTracker 注册（与 dateNavList 同模式），
-   * 点击 [data-action="view-recommendation"] 元素触发 triggerMemoryRecall。
-   */
-  it('点击推荐记忆项应触发 onMemoryRecallClick 回调，携带记忆ID', () => {
-    const cb = vi.fn();
-    uiManager.onMemoryRecallClick(cb);
-
-    // 模拟 loadDashboard 渲染的推荐记忆项结构
-    const recList = document.getElementById('recommendation-list')!;
-    recList.innerHTML = '<li data-action="view-recommendation" data-memory-id="insight:推荐记忆A" data-memory-name="推荐记忆A">推荐记忆A</li>';
-
-    const firstItem = recList.querySelector('li') as HTMLElement;
-    firstItem.dispatchEvent(new Event('click', { bubbles: true }));
-
-    expect(cb).toHaveBeenCalledWith('insight:推荐记忆A');
-  });
-
-  it('点击推荐列表容器本身（非 li 子元素）不应触发回调', () => {
-    const cb = vi.fn();
-    uiManager.onMemoryRecallClick(cb);
-
-    const recList = document.getElementById('recommendation-list')!;
-    recList.innerHTML = '';
-    recList.dispatchEvent(new Event('click', { bubbles: true }));
-
-    expect(cb).not.toHaveBeenCalled();
   });
 });
 

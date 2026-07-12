@@ -748,43 +748,6 @@
   color: var(--muted);
 }
 
-/* 推荐列表：TS 实际使用 #recommendation-list */
-#recommendation-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-#recommendation-list li {
-  display: flex;
-  align-items: center;
-  gap: var(--gap-compact);
-  padding: var(--input-padding);
-  font-size: var(--font-sm);
-  color: var(--subtext);
-  cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
-  line-height: 1.4;
-  border-radius: var(--radius-md);
-  word-break: break-word;
-}
-
-#recommendation-list li:hover {
-  background: var(--surface1);
-  color: var(--text);
-}
-
-/* 推荐记忆的相关度分数（右侧对齐，强调色） */
-.suggestion-score {
-  color: var(--accent);
-  font-size: var(--font-xs);
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
 /* ─── 核心悬浮窗口（margin + radius + shadow 形成悬浮效果） ─ */
 #main-content {
   grid-area: window;

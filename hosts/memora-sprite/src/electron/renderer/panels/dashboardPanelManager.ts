@@ -242,7 +242,6 @@ export class DashboardPanelManager {
    *
    * 由 Controller 在 loadDashboard 中调用，传入 IPC 返回的仪表盘数据。
    * 原 DOM 位置已移除，所有元素查询均安全降级（null 检查），方法不会崩溃。
-   * 推荐记忆列表通过 data-action="view-recommendation" 标记，事件委托由 UIManager 统一处理。
    *
    * @param data 仪表盘数据
    */
