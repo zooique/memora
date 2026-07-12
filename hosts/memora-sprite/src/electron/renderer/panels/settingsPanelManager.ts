@@ -1074,13 +1074,26 @@ export class SettingsPanelManager {
 
     // 必填字段校验已保证 alias/provider/model/apiKey 非空，但 TypeScript 无法通过间接 flag 收窄类型
     // 此处使用 ! 断言是因为校验块已 contractually 保证非空（失败则 return）
-    const result = await window.electronAPI.saveLlmProvider(alias!, { provider: provider!, model: model!, baseUrl, apiKey: apiKey!, temperature });
-    if (result.success) {
-      this.host.showToast('Provider 保存成功');
-      this.hideProviderForm();
-      await this.loadProviderList();
-    } else {
-      this.host.showToast(result.error ?? '保存失败', 'error');
+    const saveBtn = this.btnProviderSave;
+    const originalText = saveBtn?.textContent ?? '保存';
+    if (saveBtn) {
+      saveBtn.disabled = true;
+      saveBtn.textContent = '保存中...';
+    }
+    try {
+      const result = await window.electronAPI.saveLlmProvider(alias!, { provider: provider!, model: model!, baseUrl, apiKey: apiKey!, temperature });
+      if (result.success) {
+        this.host.showToast('Provider 保存成功');
+        this.hideProviderForm();
+        await this.loadProviderList();
+      } else {
+        this.host.showToast(result.error ?? '保存失败', 'error');
+      }
+    } finally {
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = originalText;
+      }
     }
   }
 
@@ -1173,7 +1186,7 @@ export class SettingsPanelManager {
   private async setActiveProvider(key: string): Promise<void> {
     const result = await window.electronAPI.setActiveLlmProvider(key);
     if (result.success) {
-      this.host.showToast('已切换 Provider');
+      this.host.showToast(result.warning ?? '已切换 Provider', result.warning ? 'warning' : 'success');
       await this.loadProviderList();
     } else {
       this.host.showToast(result.error ?? '切换失败', 'error');

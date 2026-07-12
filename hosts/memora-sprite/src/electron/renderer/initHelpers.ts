@@ -89,6 +89,6 @@ export function showAgentInitError(
 export function showWelcomeMessage(uiManager: UIManager): void {
   uiManager.appendMessage({
     role: 'system',
-    content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请填写 LLM 配置后点击「测试连接」验证配置有效，配置完成会自动保存，即可开始对话。\n\n💡 暂时不想配置？点击设置面板底部的「稍后配置」可以先浏览界面，稍后随时通过侧边栏回到设置。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
+    content: '🎉 欢迎使用 Memora Sprite！\n\n首次使用需要配置 LLM 提供商和 API Key。\n已为您打开设置面板，请点击「添加 Provider」按钮填写提供商、模型和 API Key，可先点「测试连接」验证，再点「保存」完成配置，即可开始对话。\n\n💡 暂时不想配置？点击设置面板底部的「稍后配置」可以先浏览界面，稍后随时通过侧边栏回到设置。\n\n推荐使用 DeepSeek（性价比高）或 OpenAI GPT-4o-mini。',
   });
 }

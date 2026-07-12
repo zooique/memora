@@ -281,10 +281,10 @@ describe('chatHandlers', () => {
 
       await handleUserInput('测试', ctx);
 
-      // 应发送 SPRITE_ERROR，包含 Agent 未就绪提示
+      // 应发送 SPRITE_ERROR，包含 Agent 正在初始化中提示
       const errorSend = wc.sends.find((s) => s.channel === MAIN_TO_RENDERER_CHANNELS.SPRITE_ERROR);
       expect(errorSend).toBeDefined();
-      expect((errorSend!.data as { text: string }).text).toContain('Agent 未就绪');
+      expect((errorSend!.data as { text: string }).text).toContain('Agent 正在初始化中');
     });
 
     it('已有进行中对话时应发送 SPRITE_ERROR（竞态保护）', async () => {

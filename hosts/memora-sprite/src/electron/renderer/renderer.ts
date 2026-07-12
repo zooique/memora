@@ -485,9 +485,14 @@ async function bootstrapRenderer(): Promise<void> {
       // 区分错误来源：配置缺失 vs 初始化失败
       const isConfigMissing = error.includes('配置不完整') || error.includes('API Key');
       if (isConfigMissing) {
-        // 首次启动引导：显示欢迎消息 + 跳转设置面板
-        showWelcomeMessage(State.uiManager);
-        void State.uiManager.switchPanel('settings');
+        // 首次启动：onboarding 接管引导（含 API Key 配置、Provider 注册链接、默认模型自动填充）
+        if (State.uiManager.shouldShowOnboarding(false)) {
+          State.uiManager.showOnboardingDialog();
+        } else {
+          // 老用户配置缺失（如 config.json 被删除）：回退到欢迎消息 + 设置面板
+          showWelcomeMessage(State.uiManager);
+          void State.uiManager.switchPanel('settings');
+        }
         await settingsController.loadConfig();
       } else {
         // 初始化失败：显示错误 + 重试按钮 + 跳转设置面板（复用 showAgentInitError 统一处理）

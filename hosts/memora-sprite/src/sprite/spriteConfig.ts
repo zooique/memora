@@ -109,18 +109,6 @@ export interface SpriteConfig {
    * 持久化到 sprite.json，用户可在设置面板调整。
    */
   recycleBinRetentionDays?: number;
-  /**
-   * 引导流程步骤（引导流程重构）
-   *
-   * 记录用户完成的引导步骤，用于跨会话恢复进度。
-   * - 0：未开始或已完成（默认）
-   * - 1：已完成欢迎步骤
-   * - 2：已完成 API Key 配置步骤
-   * - 3：已完成全部引导（等同于 0，不再显示）
-   *
-   * 持久化到 sprite.json，避免重复打扰已配置用户。
-   */
-  onboardingStep?: number;
 }
 
 /**
@@ -176,8 +164,6 @@ export const CONFIG_FIELD_SCHEMA: Record<SpriteConfigKey, string> = {
   dailyMessageCount: 'object',
   // 回收站保留天数（number，0 禁用自动清理）
   recycleBinRetentionDays: 'number',
-  // 引导流程步骤（number，0 未开始或已完成）
-  onboardingStep: 'number',
 };
 
 /** 内置默认值 */
@@ -207,8 +193,6 @@ export const DEFAULT_SPRITE_CONFIG: Required<SpriteConfig> = {
   dailyMessageCount: {},
   // 回收站默认保留 30 天，超过后定时器自动彻底清理
   recycleBinRetentionDays: 30,
-  // 引导流程步骤，0 表示未开始或已完成
-  onboardingStep: 0,
 };
 
 /** 配置文件名 */

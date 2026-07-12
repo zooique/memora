@@ -197,7 +197,9 @@ export async function saveLlmProvider(
   configPath?: string,
 ): Promise<void> {
   const store = new SpriteConfigStore(configPath ?? DEFAULT_CONFIG_PATH);
-  const config = await store.load();
+  // 用 loadOrDefault 而非 load：首次添加 Provider 时 config.json 可能尚不存在，
+  // load() 会抛 ENOENT 导致添加失败；loadOrDefault 在文件缺失时返回默认配置
+  const config = await store.loadOrDefault();
 
   const providers = { ...(config.llm.providers ?? {}) };
   providers[key] = {

@@ -219,7 +219,7 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
       const errorMessages = sentMessages.filter((m) => m.channel === 'sprite-error');
       expect(errorMessages).toHaveLength(1);
       expect(errorMessages[0]?.data).toMatchObject({
-        text: expect.stringContaining('Agent 未就绪'),
+        text: expect.stringContaining('Agent 正在初始化中'),
       });
 
       // 验证：没有发送 SPRITE_STREAM_START（对话未启动）
@@ -306,11 +306,11 @@ describe('ipcHandlers — IPC handler 注册/清理回归测试', () => {
 
       await new Promise((resolve) => setTimeout(resolve, 10));
 
-      // 验证：发送的是 "Agent 未就绪" 错误（isAgentReady 检查在前）
+      // 验证：发送的是 "Agent 正在初始化中" 错误（isAgentReady 检查在前）
       const errorMessages = sentMessages.filter((m) => m.channel === 'sprite-error');
       expect(errorMessages).toHaveLength(1);
       expect(errorMessages[0]?.data).toMatchObject({
-        text: expect.stringContaining('Agent 未就绪'),
+        text: expect.stringContaining('Agent 正在初始化中'),
       });
     });
   });

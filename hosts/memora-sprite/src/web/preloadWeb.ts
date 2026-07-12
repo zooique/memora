@@ -78,7 +78,7 @@ export interface WebElectronAPI {
   listLlmProviders: () => Promise<{ active: string; providers: Array<{ key: string; name: string; provider: string; model: string; baseUrl: string; apiKey: string; temperature: number }> }>;
   saveLlmProvider: (key: string, config: { provider: string; model: string; baseUrl: string; apiKey: string; temperature?: number }) => Promise<{ success: boolean; error: string | null }>;
   deleteLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
-  setActiveLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
+  setActiveLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null; warning?: string }>;
 
   // 记忆
   listMemories: (query?: { source?: string }) => Promise<{ memories: unknown[] }>;

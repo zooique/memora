@@ -248,9 +248,10 @@ export class PerceptionPanelManager {
     const dotIds = ['warmth', 'directness', 'initiative', 'playfulness'] as const;
     for (let i = 0; i < dotIds.length; i++) {
       const dot = document.getElementById(`radar-dot-${dotIds[i]}`);
-      if (dot) {
-        dot.setAttribute('cx', String(radarPoints[i][0]));
-        dot.setAttribute('cy', String(radarPoints[i][1]));
+      const point = radarPoints[i];
+      if (dot && point) {
+        dot.setAttribute('cx', String(point[0]));
+        dot.setAttribute('cy', String(point[1]));
       }
     }
 

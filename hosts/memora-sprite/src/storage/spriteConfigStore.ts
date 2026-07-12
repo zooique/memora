@@ -107,6 +107,29 @@ export class SpriteConfigStore {
   }
 
   /**
+   * 加载 LLM 配置，文件缺失时返回 sprite 专属默认配置
+   *
+   * 与 load() 的区别：load() 在文件缺失时抛错；loadOrDefault() 返回默认值。
+   * 供"读取现有配置以合并写入"的场景使用（如 saveLlmProvider），
+   * 避免首次添加 Provider 时因 config.json 不存在而失败。
+   *
+   * @returns Config 对象（文件存在时为实际配置，不存在时为默认配置）
+   */
+  async loadOrDefault(): Promise<Config> {
+    try {
+      return await this.load();
+    } catch (err) {
+      logger.warn({ err: toError(err).message, configPath: this.configPath }, '读取现有配置失败，使用默认配置');
+      return {
+        llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
+        memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
+        security: { permission: 'owner', confirmWrites: false },
+        allowedPaths: [],
+      };
+    }
+  }
+
+  /**
    * 检查 LLM 配置是否完整
    *
    * 判断标准：存在 apiKey 且 provider 不是 mock。
@@ -144,19 +167,7 @@ export class SpriteConfigStore {
     await mkdir(dir, { recursive: true });
 
     // 读取现有配置（保留其他字段），不存在则用默认值
-    let existing: Config;
-    try {
-      existing = await this.load();
-    } catch (err) {
-      // 读取失败时使用默认配置作为 fallback，记录警告便于排查
-      logger.warn({ err: toError(err).message, configPath: this.configPath }, '读取现有配置失败，使用默认配置');
-      existing = {
-        llm: { provider: 'mock', model: 'mock-model', temperature: 0.7 },
-        memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },
-        security: { permission: 'owner', confirmWrites: false },
-        allowedPaths: [],
-      };
-    }
+    const existing = await this.loadOrDefault();
 
     // 合并新配置：保留 providers/active 字段（多 Provider 管理用），避免互相覆盖
     const config: Config = {

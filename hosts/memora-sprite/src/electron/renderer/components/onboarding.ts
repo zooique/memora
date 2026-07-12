@@ -6,7 +6,6 @@
  * - 管理三步引导向导：欢迎 → API Key 配置 → 开始使用
  * - 为每个预设 Provider 提供注册链接
  * - 保存 API Key 配置（通过 updateConfig IPC）
- * - 引导进度持久化到 sprite.json 的 onboardingStep 字段
  *
  * 设计原则：
  * - 独立于 UIManager，无 this 依赖，纯 DOM + localStorage + IPC 操作
@@ -129,8 +128,6 @@ export class OnboardingManager {
    */
   private markSeen(): void {
     localStorage.setItem(ONBOARDING_SEEN_KEY, '1');
-    // 持久化到 sprite.json（Fire-and-forget，不阻塞关闭）
-    this.persistStep(3);
   }
 
   /**
@@ -183,7 +180,6 @@ export class OnboardingManager {
       btn.addEventListener('click', () => {
         const next = parseInt(btn.getAttribute('data-next') || '2', 10);
         this.showStep(modal, next);
-        this.persistStep(next);
       });
     });
 
@@ -192,7 +188,6 @@ export class OnboardingManager {
       btn.addEventListener('click', () => {
         const prev = parseInt(btn.getAttribute('data-prev') || '1', 10);
         this.showStep(modal, prev);
-        this.persistStep(prev);
       });
     });
 
@@ -204,7 +199,6 @@ export class OnboardingManager {
           this.skippedApiKey = true;
         }
         this.showStep(modal, skipTo);
-        this.persistStep(skipTo);
       });
     });
   }
@@ -241,20 +235,6 @@ export class OnboardingManager {
           ? '你可以稍后在设置面板中配置 AI 服务。现在开始对话吧。'
           : 'AI 服务已配置，开始你的第一段对话吧。';
       }
-    }
-  }
-
-  /**
-   * 持久化引导步骤到 sprite.json
-   *
-   * Fire-and-forget 模式，失败不阻塞用户操作。
-   */
-  private async persistStep(step: number): Promise<void> {
-    try {
-      await window.electronAPI.updateConfig('onboardingStep', step);
-    } catch (error) {
-      // 持久化失败不阻塞用户操作，但记录日志让问题可见（不静默吞异常）
-      reportError('Onboarding 持久化引导步骤', error);
     }
   }
 
@@ -313,7 +293,6 @@ export class OnboardingManager {
         this.skippedApiKey = false;
         // 前进到步骤 3
         this.showStep(modal, 3);
-        this.persistStep(3);
       } catch (err) {
         // 保存失败通过公共 showFieldError 显示错误（含 aria-invalid 语义）
         showFieldError('onboarding-api-key', `保存失败：${err instanceof Error ? err.message : '未知错误'}`);

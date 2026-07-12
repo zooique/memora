@@ -70,9 +70,9 @@ export async function handleUserInput(text: string, ctx: IpcContext): Promise<vo
   const fullWindow = ctx.windowManager.getFullWindow();
   if (!fullWindow || fullWindow.isDestroyed()) return;
 
-  // Agent 未就绪时拒绝（reinitAgent 失败后旧 Agent 已关闭，新对话会抛错）
+  // Agent 未就绪时拒绝：可能是首次配置后正在初始化，或配置缺失
   if (!ctx.isAgentReady()) {
-    emitStreamError(fullWindow, 'Agent 未就绪，请在设置面板中重新配置 LLM 后重试', 'Agent 未就绪');
+    emitStreamError(fullWindow, 'Agent 正在初始化中，请稍候后重试；若长时间无响应请在设置面板检查 LLM 配置', 'Agent 未就绪');
     return;
   }
 

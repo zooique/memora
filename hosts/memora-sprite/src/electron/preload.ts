@@ -445,7 +445,7 @@ export interface ElectronAPI {
   /** 删除 Provider */
   deleteLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
   /** 切换激活 Provider */
-  setActiveLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null }>;
+  setActiveLlmProvider: (key: string) => Promise<{ success: boolean; error: string | null; warning?: string }>;
 
   // Agent 就绪通知（主进程 → 渲染进程）
   onAgentReady: (cb: () => void) => void;
