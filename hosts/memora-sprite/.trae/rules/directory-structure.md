@@ -1,8 +1,8 @@
 # Memora Sprite · 最终目录形态
 
 > **设计原则**：按职责分组，而非按类型分组；每个目录有明确边界；禁止单文件目录；禁止命名冲突。
-> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）。目录形态已对齐最终目标。
-> **版本**：v1.6（2026-07-11）
+> **当前状态**：D-01~D-14 全部完成 + S-02 shared 模块已落地（DWM-01 双模式 Web 调试，含 hostContext/inputValidation/shortcutDefaults 三个文件）+ F-LINE-2 memoryPanelManager 拆分（memoryGraphPanel/memoryDetailPanel 两个 helper 提取）+ 迭代 5-7 ui.ts mixin 拆分（applyMixins + uiDelegations/ 6 委托群，1751→904 行）+ 3 Panel 过厚拆分（settings/memory/chat helper 提取）+ relationGraph 拆分（layout/color）+ sourceColor 提取（消除 helpers→panels 循环依赖）。目录形态已对齐最终目标。
+> **版本**：v1.7（2026-07-12）
 
 ---
 
@@ -66,13 +66,44 @@ src/
 │       ├── helpers/            # 渲染进程工具函数
 │       │   ├── domHelpers.ts   # DOM 操作辅助（安全查询/批量操作）
 │       │   ├── errorHelpers.ts # 错误处理辅助（IPC 错误处理器工厂）
+│       │   ├── errorState.ts   # 错误状态辅助（全局错误状态管理）
 │       │   ├── eventTracker.ts # 事件追踪（埋点/用户行为记录）
+│       │   ├── formValidation.ts # 表单校验辅助（输入校验规则）
+│       │   ├── icon.ts         # 图标辅助（SVG 图标加载/渲染）
+│       │   ├── initFailureCard.ts # 初始化失败卡片辅助（启动失败时渲染降级卡片）
+│       │   ├── messageDecorations.ts # 消息装饰辅助函数（系统消息/错误消息样式）
+│       │   ├── messageOperations.ts # 消息操作辅助（消息 CRUD 纯函数）
+│       │   ├── narrativeGenerator.ts # 叙事生成器辅助（感知叙事文本生成）
+│       │   ├── perceptionLabels.ts # 感知标签辅助（情感/默契/上下文标签文本）
+│       │   ├── scrollController.ts # 滚动控制器辅助（消息列表自动滚动/锚定）
+│       │   ├── toolCallCard.ts # 工具调用卡片辅助（工具执行状态展示）
+│       │   ├── safeTimer.ts    # 安全定时器辅助（自动清理/防泄漏）
+│       │   │
+│       │   ├── chatPanelEvents.ts # 对话面板事件监听辅助（从 chatPanelManager 提取）
+│       │   ├── streamSafetyTimer.ts # 流式安全兜底定时器（30s/90s 二级兜底，从 chatPanelManager 提取）
+│       │   ├── streamingRenderer.ts # 流式 RAF 渲染核心（context 注入纯函数，从 chatPanelManager 提取）
+│       │   │
 │       │   ├── memoryDetailPanel.ts # 记忆详情子系统辅助（F-LINE-2 从 memoryPanelManager 提取：详情/脉络/邻居/按钮）
 │       │   ├── memoryGraphPanel.ts  # 图谱视图子系统辅助（F-LINE-2 从 memoryPanelManager 提取：初始化/空状态/缓存/上下文菜单/关系弹窗）
 │       │   ├── memoryPanelEvents.ts # 记忆面板事件监听辅助（AUTO-HEALTH-05 从 memoryPanelManager 提取）
-│       │   ├── messageDecorations.ts # 消息装饰辅助函数（系统消息/错误消息样式）
-│       │   ├── toolCallCard.ts # 工具调用卡片辅助（工具执行状态展示）
-│       │   └── safeTimer.ts    # 安全定时器辅助（自动清理/防泄漏）
+│       │   ├── memoryTimelineView.ts # 时间线视图辅助（按天分组渲染 + 日期标签格式化，从 memoryPanelManager 提取）
+│       │   ├── memoryViewSwitcher.ts # 视图切换辅助（视图显隐 + 互斥切换 + viewSwitchToken 竞态保护，从 memoryPanelManager 提取）
+│       │   ├── sourceColor.ts  # 记忆来源颜色映射纯函数（getSourceColorClass，从 memoryPanelManager 提取，消除 helpers→panels 循环依赖）
+│       │   │
+│       │   ├── providerManagement.ts # Provider 管理辅助（10 纯函数 + ProviderManagementContext，从 settingsPanelManager 提取）
+│       │   ├── shortcutCapture.ts # 快捷键捕获辅助（2 纯函数 + ShortcutCaptureContext，从 settingsPanelManager 提取）
+│       │   │
+│       │   ├── relationGraphLayout.ts # 关系图谱布局算法（力导向布局，从 relationGraph.ts 提取）
+│       │   ├── relationGraphColor.ts  # 关系图谱颜色映射（节点/边配色，从 relationGraph.ts 提取）
+│       │   │
+│       │   ├── applyMixins.ts  # Mixin 注入工具（applyMixins 函数，将 uiDelegations/ 委托群方法分发到 UIManager）
+│       │   └── uiDelegations/  # UIManager 委托群（mixin 模式，按业务域聚合的方法集合）
+│       │       ├── chatDelegations.ts        # 对话面板委托方法（消息发送/流式/中断）
+│       │       ├── dashboardDelegations.ts   # 仪表盘委托方法（概览/运行指标/记忆源健康）
+│       │       ├── memoryDelegations.ts      # 记忆面板委托方法（列表/详情/视图切换/关系图谱）
+│       │       ├── miscDelegations.ts        # 杂项委托方法（窗口控制/面板路由/全局快捷键）
+│       │       ├── personaThemeDelegations.ts # 角色主题委托方法（角色切换/主题应用）
+│       │       └── settingsModalDelegations.ts # 设置模态框委托方法（Provider/快捷键/隐私设置）
 │       │
 │       ├── components/         # 可复用 UI 组件
 │       │   ├── themeManager.ts      # 主题管理器（auto/light/dark 切换）
@@ -103,7 +134,10 @@ src/
 │       │   ├── dateNavManager.ts         # 日期导航（C-5-3 拆分，自包含 EventTracker）
 │       │   ├── skillDropManager.ts       # 技能拖入安装（C-5-4 拆分，依赖注入 ToastManager）
 │       │   ├── archiveButtonManager.ts   # 归档按钮管理（manual 模式消息归档按钮，从 chatPanelManager 拆分）
+│       │   ├── badgeManager.ts           # 未读徽章管理器（未读计数 + 徽章 DOM 更新，ADR-SP-015 §2 cleanup 契约）
 │       │   ├── inputAreaManager.ts       # 输入区域管理（键盘事件/自适应高度/发送按钮，从 UIManager 拆分）
+│       │   ├── searchMessagesManager.ts  # 消息搜索管理器（对话内搜索 + 防抖 + 高亮）
+│       │   ├── spriteStatusPopover.ts    # 精灵状态浮层（在线状态/记忆量/主动行为提示）
 │       │   └── panelRouter.ts            # 面板路由器（面板切换/导航/全局快捷键/窗口控制）
 │       │
 │       ├── float/              # 浮动窗口
@@ -214,7 +248,7 @@ src/
     │   ├── renderer/           # 渲染进程测试（镜像 src/electron/renderer/，D-12 镜像修复）
     │   │   ├── ui.test.ts      # 主 UI 管理器测试
     │   │   ├── chatPanelManager.test.ts
-    │   │   └── ...（26 个 renderer 测试）
+    │   │   └── ...（55 个 renderer 测试，含 sourceColor.test.ts / memoryPanelManagerInstance.test.ts / memoryPanelManagerViews.test.ts）
     │   ├── agentListeners.test.ts
     │   └── ...（5 个 electron 根级测试）
     ├── sprite/                 # 精灵层测试（镜像 src/sprite/）
@@ -379,6 +413,11 @@ src/
 - [x] CSS-R1: P0 令牌统一——抽出 tokens.css 作为单一真理源，float.html/quick-input.html 移除内联 `<style>` 变量块，CSP 收紧为 `style-src 'self'`（2026-07-09）
 - [x] CSS-R2: P2 大文件拆分——chat.css(2960行)→4 子模块，memory.css(2197行)→4 子模块，原文件降级为 @import 聚合器（2026-07-09）
 - [x] F-LINE-2: memoryPanelManager 拆分——helpers/memoryGraphPanel.ts（图谱视图子系统，~318 行）+ helpers/memoryDetailPanel.ts（记忆详情子系统，~368 行）提取，主文件 1968→1334 行（2026-07-11）
+- [x] ITER-2: relationGraph 拆分——helpers/relationGraphLayout.ts（力导向布局算法）+ helpers/relationGraphColor.ts（节点/边配色映射）提取，主文件 -231 行（2026-07-12 迭代 2）
+- [x] ITER-5: ui.ts mixin 拆分——helpers/applyMixins.ts（mixin 注入工具）+ helpers/uiDelegations/ 6 委托群（chat/dashboard/memory/misc/personaTheme/settingsModal）提取，ui.ts 1751→904 行（2026-07-12 迭代 5）
+- [x] ITER-6: 3 Panel 过厚拆分——settingsPanelManager 提取 helpers/providerManagement.ts + helpers/shortcutCapture.ts（-455 行）；memoryPanelManager 提取 helpers/memoryViewSwitcher.ts + helpers/memoryTimelineView.ts（-496 行）；chatPanelManager 提取 helpers/streamingRenderer.ts + helpers/streamSafetyTimer.ts（-404 行）（2026-07-12 迭代 6）
+- [x] ITER-7: sprite/ 测试补全——新增 spriteLifecycleManager/spriteConfigManager/spriteTracer/constants/errors 5 个测试文件 +136 测试（2026-07-12 迭代 7，非目录结构变更）
+- [x] HEALTH-0712-6: sourceColor 提取——helpers/sourceColor.ts（getSourceColorClass 纯函数 + KNOWN_SOURCES 常量）从 memoryPanelManager 提取，消除 helpers→panels 循环依赖，5 个调用点导入路径更新，测试迁移到 sourceColor.test.ts（2026-07-12 斩木除根）
 
 ### 延后（非目录结构）
 

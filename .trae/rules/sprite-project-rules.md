@@ -9,7 +9,7 @@ date: 2026-07-10
 
 > **设计哲学**：上下文感知，非内容感知 **核心矛盾**：被动响应 ←→ 主动进化
 > **定位**：memora 内核的第一个真实宿主——能自我进化的桌面精灵
-> **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~008 + ADR-SP-015
+> **决策追溯**：`.trae/rules/decisions/` 下 ADR-SP-001~008 + ADR-SP-015~016
 
 ## 1. 与 memora 内核的关系
 
@@ -19,7 +19,7 @@ date: 2026-07-10
 | native 模块 | 零（ADR-002） | better-sqlite3（ADR-SP-002） |
 | 接口实现 | 定义接口 | 实现接口（IMemoryStorage / ISessionStore） |
 | 规则关系 | 内核规则精灵必须遵守 | 精灵规则仅约束精灵代码 |
-| ADR 前缀 | ADR-001~015 | ADR-SP-001~008 + ADR-SP-015 |
+| ADR 前缀 | ADR-001~015 | ADR-SP-001~008 + ADR-SP-015~016 |
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
@@ -27,7 +27,7 @@ date: 2026-07-10
 
 | 位置 | 用途 |
 |------|------|
-| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 25 个 ADR（内核 16 + 精灵 9） |
+| `memora/.trae/rules/` | **规则中枢**：9 个规则文件 + 26 个 ADR（内核 16 + 精灵 10） |
 | `hosts/memora-sprite/.trae/rules/` | **宿主实现文档**：仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（描述 src/ 目录树） |
 | `memora/tasks/` | **内核任务**：内核健康度快照 + 待完成/已完成 |
 | `hosts/memora-sprite/tasks/` | **宿主任务**：宿主健康度快照 + 待完成/已完成 + 方案文档 |
