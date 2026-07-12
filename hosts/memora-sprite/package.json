@@ -19,6 +19,7 @@
     "start": "tsx src/cli.ts",
     "start:web": "set NODE_ENV=production&& npm run build:web && node dist-web/web/server.js",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "lint": "npm run check-configs && eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",

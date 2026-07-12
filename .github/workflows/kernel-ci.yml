@@ -56,6 +56,10 @@ jobs:
       - name: 单元测试
         run: npm test
 
+      - name: 依赖安全审计
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
       - name: 生产构建验证
         run: npm run build
 

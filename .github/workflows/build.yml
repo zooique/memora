@@ -72,6 +72,10 @@ jobs:
       - name: 单元测试
         run: npx vitest run
 
+      - name: 依赖安全审计
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
       - name: 打包 Windows
         run: npm run package:win
         env:
@@ -132,6 +136,10 @@ jobs:
       - name: 单元测试
         run: npx vitest run
 
+      - name: 依赖安全审计
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
       - name: 打包 macOS
         run: npm run package:mac
         env:
@@ -191,6 +199,10 @@ jobs:
 
       - name: 单元测试
         run: npx vitest run
+
+      - name: 依赖安全审计
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
       - name: 打包 Linux
         run: npm run package:linux
