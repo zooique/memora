@@ -44,8 +44,9 @@ import type { MemoryMutator } from '@/agent/managers/memoryMutator.js';
 import { extractUserFacts } from '@/agent/userFactExtractor.js';
 import { assembleComponents } from '@/agent/assembler.js';
 import { configError } from '@/utils/errors.js';
-import { safeSetTimeout, clearSafeTimeout, clearSafeInterval } from '@/utils/safeTimer.js';
+import { clearSafeInterval } from '@/utils/safeTimer.js';
 import { SessionManager, type AgentForkResult } from '@/agent/managers/sessionManager.js';
+import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
 import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
@@ -226,29 +227,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 项目上下文（AgentContext 与 ProjectContext 等价，直接使用后者避免重复字段）
   private pctx: ProjectContext | null = null;
 
-  /** chat() 并发锁 */
-  private _chatBusy = false;
   /**
-   * chat() 锁持有者 token（race condition 防护）
+   * chat() 并发锁管理器（init 时创建，close 时销毁）
    *
-   * 设计目的：
-   *   原锁是简单布尔值 `_chatBusy`，无 owner 校验。超时回调与 finally 块无差别清理，
-   *   导致 race condition：T=0 A 获取锁 → T=180s 超时释放 → T=181s B 获取锁
-   *   → T=182s A 的 finally 误清 B 的锁/计时器/controller。
-   *
-   * 防护方案：
-   *   - 获取锁时 token 递增：`const myToken = ++this._chatLockToken`
-   *   - 超时回调校验 `this._chatLockToken === myToken` 后才释放
-   *   - finally 块校验 `this._chatLockToken === myToken` 后才清理
-   *   - 不匹配时跳过清理，避免误清新调用者的资源
-   *
-   * 选择 number 而非 Symbol：递增计数器可序列化、零依赖、足够唯一（同一 Agent 实例内）
+   * 职责：chat() 并发锁 + token 校验（race condition 防护）+ 超时保护 + 外部 signal 合并。
+   * 详见 ChatLockManager 类注释。
    */
-  private _chatLockToken: number = 0;
-  /** 聊天锁超时计时器（防止 LLM 卡死时锁永久持有） */
-  private chatLockTimer: ReturnType<typeof setTimeout> | null = null;
-  /** chat() 内部 AbortController（超时时中断 generator，防止并发） */
-  private chatAbortController: AbortController | null = null;
+  private chatLockManager: ChatLockManager | null = null;
   /** 记忆衰减定时器（已迁移至 MemoryDecayScheduler，此字段保留用于 close 时引用判断） */
   private decayTimer: ReturnType<typeof setInterval> | null = null;
   /** 最近一次 chat() 调用的时间戳 */
@@ -356,6 +341,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       );
     }
 
+    // chat() 并发锁管理器（生命周期与 Agent 实例一致）
+    this.chatLockManager = new ChatLockManager();
+
     this._initialized = true;
 
     // 归档操作委托给 ArchiveCoordinator
@@ -393,45 +381,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       );
     }
 
-    if (this._chatBusy) {
+    if (this.chatLockManager?.isBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再发起新对话', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽（收到 done 事件）',
         '宿主程序应确保同一时间只有一个 chat() 调用',
       ]);
     }
-    this._chatBusy = true;
-    // 分配本调用的 token，超时回调和 finally 块据此判断是否仍是当前持有者
-    // 避免 race condition：超时释放后新调用获取锁，旧 finally 误清新调用者的资源
-    const myToken = ++this._chatLockToken;
-    // 内部 AbortController，超时时中断 generator 而非仅释放锁
-    const internalAbort = new AbortController();
-    this.chatAbortController = internalAbort;
+    // 获取锁 + 分配 token + 创建内部 AbortController + 启动超时定时器
+    // token 用于 finally 校验，避免 race condition：超时释放后新调用获取锁，旧 finally 误清新调用者的资源
+    const chatLock = this.requireNonNull(this.chatLockManager, 'chatLockManager');
+    const { token: myToken, internalAbort } = chatLock.acquire(
+      AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS,
+    );
     // 合并外部 signal：外部 abort 时也触发内部
-    const onExternalAbort = () => internalAbort.abort();
-    signal?.addEventListener('abort', onExternalAbort, { once: true });
-    // addEventListener 对已 aborted 的 signal 不触发回调
-    // 需手动检查并触发 internalAbort，否则外部已取消的请求仍会进入主流程
-    if (signal?.aborted) {
-      internalAbort.abort();
-    }
+    const cleanupExternalSignal = chatLock.attachExternalSignal(signal, internalAbort);
     const combinedSignal = internalAbort.signal;
-
-    // 超时保护：LLM 卡死时中断 generator + 释放锁，防止并发
-    // 超时回调校验 token 后才清理，避免误清新调用者的资源
-    this.chatLockTimer = safeSetTimeout(() => {
-      // 令牌不匹配：锁已被新调用者获取（或本调用已正常退出），跳过清理
-      if (this._chatLockToken !== myToken) {
-        return;
-      }
-      logger.warn(
-        { timeoutMs: AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS },
-        'chat() 锁超时，中断 generator 并释放锁',
-      );
-      internalAbort.abort();
-      this._chatBusy = false;
-      this.chatLockTimer = null;
-      this.chatAbortController = null;
-    }, AGENT_CONSTANTS.CHAT_LOCK_TIMEOUT_MS);
     try {
       this._lastInteractionAt = new Date();
 
@@ -517,17 +481,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       yield { type: 'thinking', phase: 'archiving' };
       await this.postProcess(input, assistantContent);
     } finally {
-      // 仅当本调用仍是当前锁持有者时才清理资源
+      // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
       // 若 token 已变（超时释放后被新调用者获取），跳过清理避免误清新调用者的状态
-      if (this._chatLockToken === myToken) {
-        this._chatBusy = false;
-        this.chatAbortController = null;
-        if (this.chatLockTimer) {
-          clearSafeTimeout(this.chatLockTimer);
-          this.chatLockTimer = null;
-        }
-      }
-      signal?.removeEventListener('abort', onExternalAbort);
+      this.chatLockManager?.release(myToken);
+      cleanupExternalSignal();
     }
   }
 
@@ -542,7 +499,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 本方法让宿主在确认 generator 挂起后强制释放锁，让用户能立即发起新对话。
    *
-   * 安全机制：
+   * 安全机制（委托至 ChatLockManager.forceRelease）：
    *   - 递增 _chatLockToken，让原 chat() 的 finally 块检测到 token 不匹配后
    *     跳过资源清理（避免误清新调用者的 _chatBusy/chatAbortController）
    *   - abort chatAbortController，让响应 signal 的 await 点（如 fetch）退出
@@ -557,21 +514,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *   - 调用后不应再消费原 chat() generator 的后续 chunk（token 已变，chunk 无意义）
    */
   forceReleaseChatLock(): void {
-    if (!this._chatBusy) return;
-    // 递增 token 让原 chat() 的 finally 块跳过清理（避免误清新调用者的资源）
-    this._chatLockToken++;
-    // abort 当前 generator（响应 signal 的 await 点会 throw AbortError 退出）
-    if (this.chatAbortController) {
-      this.chatAbortController.abort();
-      this.chatAbortController = null;
-    }
-    // 清理锁超时定时器（避免后续触发重复清理）
-    if (this.chatLockTimer) {
-      clearSafeTimeout(this.chatLockTimer);
-      this.chatLockTimer = null;
-    }
-    this._chatBusy = false;
-    logger.warn('对话锁被强制释放（宿主无进展超时兜底）');
+    this.chatLockManager?.forceRelease();
   }
 
   /**
@@ -820,7 +763,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('switchProject', ['projectManager', 'provider']);
 
     // 对话进行中切换项目会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
-    if (this._chatBusy) {
+    if (this.chatLockManager?.isBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换项目', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
       ]);
@@ -934,7 +877,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       () => this.requireNonNull(this.history, 'history'),
       () => this.requireNonNull(this.loop, 'loop'),
       this.#config.sessionStore,
-      () => this._chatBusy,
+      () => this.chatLockManager?.isBusy ?? false,
       forwardEvent,
     );
   }
@@ -944,7 +887,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   setProvider(provider: LlmProvider): void {
     // 对话进行中切换 Provider 会导致同一 processUserInput 循环内前后两次 LLM 调用命中不同 Provider
     // （模型上下文窗口假设不一致 → 可能导致上下文截断逻辑误判或 tool_call 格式不兼容）
-    if (this._chatBusy) {
+    if (this.chatLockManager?.isBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换 Provider', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
       ]);
@@ -958,7 +901,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   setBackgroundProvider(provider: LlmProvider | null): void {
     // 与 setProvider 一致，对话进行中禁止切换后台 Provider
-    if (this._chatBusy) {
+    if (this.chatLockManager?.isBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换后台 Provider', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
       ]);
@@ -981,7 +924,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @param mode 目标模式
    */
   setArchiveMode(mode: ArchiveMode): void {
-    if (this._chatBusy) {
+    if (this.chatLockManager?.isBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再切换归档模式', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
       ]);
@@ -1071,7 +1014,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async reloadConfig(source?: string): Promise<{ skill: number; persona: number }> {
     this.assertInitialized('reloadConfig');
-    if (this._chatBusy) {
+    if (this.chatLockManager?.isBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再重载配置', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
       ]);
@@ -1125,7 +1068,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   async rebuildComponents(): Promise<void> {
     // 对话进行中重建组件会导致 loop/history 引用被替换，工作记忆与持久化状态不一致
-    if (this._chatBusy) {
+    if (this.chatLockManager?.isBusy) {
       throw configError('对话繁忙', '上一轮对话尚未完成，请等待其结束后再重建组件', [
         '等待上一轮 chat() 的 AsyncGenerator 耗尽',
       ]);
@@ -1189,9 +1132,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 关闭 Agent，释放 SQLite 连接等资源
    */
   async close(): Promise<void> {
-    // 递增 token，使任何进行中的 chat() generator 的 finally 块
-    // 检测到 token 变化后跳过资源清理（close 已接管清理职责）
-    this._chatLockToken++;
+    // 清理 chat 锁管理器（递增 token 使进行中的 chat() generator 的 finally 块
+    // 检测到 token 变化后跳过资源清理，close 已接管清理职责）
+    this.chatLockManager?.dispose();
+    this.chatLockManager = null;
     // 清理 MemoryDecayScheduler（含定时器和 storage 引用）
     if (this.memoryDecayScheduler) {
       this.memoryDecayScheduler.stop();
@@ -1203,14 +1147,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this.decayTimer) {
       clearSafeInterval(this.decayTimer);
       this.decayTimer = null;
-    }
-    if (this.chatLockTimer) {
-      clearSafeTimeout(this.chatLockTimer);
-      this.chatLockTimer = null;
-    }
-    if (this.chatAbortController) {
-      this.chatAbortController.abort();
-      this.chatAbortController = null;
     }
     // 清理 PersonaManager 的角色切换防抖锁计时器，防止关闭后回调触发
     if (this.personaManager) {
@@ -1227,7 +1163,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
     this._initialized = false;
     this.#backgroundProvider = null;
-    this._chatBusy = false;
     this.history = null;
     this.loop = null;
     this._sessionManager = null;
@@ -1287,7 +1222,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   get isBusy(): boolean {
-    return this._chatBusy;
+    return this.chatLockManager?.isBusy ?? false;
   }
 
   get lastInteractionAt(): Date | null {

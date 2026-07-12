@@ -896,11 +896,11 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
     await agent.chatSync('你好');
 
     // 模拟 chat 忙碌（直接设置内部状态以测试并发锁行为）
-    Reflect.set(agent, '_chatBusy', true);
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
 
     expect(() => agent!.forkSession()).toThrow(/对话繁忙/);
 
-    Reflect.set(agent, '_chatBusy', false);
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
   });
 });
 
@@ -1214,11 +1214,11 @@ describe('Agent · archiveMode（ADR-015）· 三种归档模式', () => {
     await agent.init();
 
     // 模拟对话进行中
-    (agent as unknown as { _chatBusy: boolean })._chatBusy = true;
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
     expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
 
     // 恢复空闲状态
-    (agent as unknown as { _chatBusy: boolean })._chatBusy = false;
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
   });
 
   // ─── manual 模式跳过自动归档 ────────────────────────────
@@ -1485,9 +1485,9 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
 
     // 模拟对话繁忙
-    agent['_chatBusy'] = true;
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = true;
     await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
-    agent['_chatBusy'] = false;
+    (agent as unknown as { chatLockManager: { _chatBusy: boolean } }).chatLockManager._chatBusy = false;
   });
 });
 

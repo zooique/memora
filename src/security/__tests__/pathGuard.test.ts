@@ -230,7 +230,7 @@ describe('SecurityGuard · 路径白名单', () => {
 
   // ─── 符号链接逃逸防护（P0 安全漏洞）────────────
 
-  it('应该拒绝通过项目内符号链接逃逸到项目外目录', () => {
+  it.skipIf(process.platform === 'win32')('应该拒绝通过项目内符号链接逃逸到项目外目录', () => {
     // 攻击场景：项目内存在指向项目外的符号链接，read_file 通过该链接读取敏感文件
     const evilDir = mkdtempSync(join(tmpdir(), 'memora-evil-'));
     // 在 evilDir 中放置一个文件（确保 realpath 有解析目标）
