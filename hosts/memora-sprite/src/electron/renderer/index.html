@@ -1099,6 +1099,11 @@
         <div class="panel-header">
           <span class="panel-title">感知</span>
         </div>
+        <!-- 感知面板错误横幅（与 settings/memory/chat/dashboard 统一错误反馈体系） -->
+        <div id="perception-error" class="panel-error hidden">
+          <span id="perception-error-msg"></span>
+          <button id="perception-error-retry" class="panel-error-btn">重试</button>
+        </div>
         <div class="perception-panel-body">
           <!-- 叙事摘要区（一句话总结当前感知状态） -->
           <section class="perception-narrative-section">
@@ -1370,18 +1375,18 @@
       </div>
       <div class="modal-body">
         <label for="cfg-provider-alias">别名（唯一标识）</label>
-        <input type="text" id="cfg-provider-alias" placeholder="deepseek-v3" autocomplete="off" required aria-describedby="cfg-provider-alias-error" />
+        <input type="text" id="cfg-provider-alias" placeholder="deepseek-v3" autocomplete="off" aria-required="true" aria-describedby="cfg-provider-alias-error" />
         <p id="cfg-provider-alias-error" class="prompt-error hidden" role="alert"></p>
 
         <label for="cfg-provider-display">显示名称</label>
         <input type="text" id="cfg-provider-display" placeholder="DeepSeek V3" autocomplete="off" />
 
         <label for="cfg-provider-provider">提供商（provider）</label>
-        <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" required aria-describedby="cfg-provider-provider-error" />
+        <input type="text" id="cfg-provider-provider" placeholder="deepseek / openai / 自定义" autocomplete="off" aria-required="true" aria-describedby="cfg-provider-provider-error" />
         <p id="cfg-provider-provider-error" class="prompt-error hidden" role="alert"></p>
 
         <label for="cfg-provider-model">模型（model）</label>
-        <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" required aria-describedby="cfg-provider-model-error" />
+        <input type="text" id="cfg-provider-model" placeholder="deepseek-chat" autocomplete="off" aria-required="true" aria-describedby="cfg-provider-model-error" />
         <p id="cfg-provider-model-error" class="prompt-error hidden" role="alert"></p>
 
         <label for="cfg-provider-base-url">API 地址（baseUrl）</label>
@@ -1389,7 +1394,7 @@
 
         <label for="cfg-provider-api-key">API Key</label>
         <div class="input-with-action">
-          <input type="password" id="cfg-provider-api-key" placeholder="sk-****" required aria-describedby="cfg-provider-api-key-error" />
+          <input type="password" id="cfg-provider-api-key" placeholder="sk-****" aria-required="true" aria-describedby="cfg-provider-api-key-error" />
           <button type="button" id="btn-toggle-provider-key" class="toggle-visibility" title="显示/隐藏 API Key" aria-label="显示或隐藏 Provider API Key"><svg class="icon"><use href="#icon-eye"/></svg></button>
         </div>
         <p id="cfg-provider-api-key-error" class="prompt-error hidden" role="alert"></p>
@@ -1439,7 +1444,7 @@
       <div class="modal-body">
         <label for="memory-add-source">来源（source）</label>
         <!-- source 下拉：提供常用预设，支持自定义输入（datalist 兼顾灵活性与一致性） -->
-        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" aria-label="记忆来源" required aria-describedby="memory-add-source-error" />
+        <input type="text" id="memory-add-source" list="source-presets" placeholder="profile / insight / guardrail …" autocomplete="off" aria-label="记忆来源" aria-required="true" aria-describedby="memory-add-source-error" />
         <datalist id="source-presets">
           <option value="profile">用户画像</option>
           <option value="insight">洞察记忆</option>
@@ -1451,10 +1456,10 @@
         </datalist>
         <p id="memory-add-source-error" class="prompt-error hidden" role="alert"></p>
         <label for="memory-add-name">名称（name）</label>
-        <input type="text" id="memory-add-name" placeholder="记忆名称" autocomplete="off" aria-label="记忆名称" required aria-describedby="memory-add-name-error" />
+        <input type="text" id="memory-add-name" placeholder="记忆名称" autocomplete="off" aria-label="记忆名称" aria-required="true" aria-describedby="memory-add-name-error" />
         <p id="memory-add-name-error" class="prompt-error hidden" role="alert"></p>
         <label for="memory-add-content">内容（content）</label>
-        <textarea id="memory-add-content" rows="6" placeholder="记忆内容…" aria-label="记忆内容" required aria-describedby="memory-add-content-error"></textarea>
+        <textarea id="memory-add-content" rows="6" placeholder="记忆内容…" aria-label="记忆内容" aria-required="true" aria-describedby="memory-add-content-error"></textarea>
         <p id="memory-add-content-error" class="prompt-error hidden" role="alert"></p>
       </div>
       <div class="modal-footer">

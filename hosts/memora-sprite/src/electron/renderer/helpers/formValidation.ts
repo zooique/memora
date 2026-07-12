@@ -5,6 +5,7 @@
  * - 提供统一的字段级校验错误显示与清空函数
  * - 基于 aria-invalid + aria-describedby 无障碍语义
  * - 消除 Provider 表单 / memory-add 表单 / prompt 弹窗三处重复实现
+ * - attachRequiredBlurValidation 提供 blur 即时必填校验（ADR-017 枝叶层 2 次提取）
  *
  * 设计原则：
  * - 纯 DOM 操作，不依赖任何状态管理
@@ -56,5 +57,33 @@ export function clearFieldErrors(inputIds: string[]): void {
       errorEl.textContent = '';
       errorEl.classList.add('hidden');
     }
+  }
+}
+
+/**
+ * 为多个必填字段附加 blur 即时校验
+ *
+ * blur 时若字段为空则显示"请填写{label}"错误，有值则清空错误状态。
+ * 仅做必填校验，格式校验（正则/范围/唯一性）仍由提交时触发，避免过度设计。
+ *
+ * 遵循 ADR-017 枝叶层 2 次提取原则：Provider 表单和 memory-add 表单都需要必填 blur 校验。
+ *
+ * @param fields 字段 id 与中文标签的映射数组
+ * @param events EventTracker 用于管理监听器生命周期，cleanup 时自动清理
+ */
+export function attachRequiredBlurValidation(
+  fields: ReadonlyArray<{ id: string; label: string }>,
+  events: { addEventListener: (el: EventTarget, event: string, handler: EventListener) => void },
+): void {
+  for (const { id, label } of fields) {
+    const input = document.getElementById(id);
+    if (!(input instanceof HTMLInputElement) && !(input instanceof HTMLTextAreaElement)) continue;
+    events.addEventListener(input, 'blur', () => {
+      if (!input.value.trim()) {
+        showFieldError(id, `请填写${label}`);
+      } else {
+        clearFieldErrors([id]);
+      }
+    });
   }
 }

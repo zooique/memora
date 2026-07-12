@@ -31,7 +31,7 @@
 
 import { clearElement } from './domHelpers.js';
 import { reportError } from './errorHelpers.js';
-import { showFieldError, clearFieldErrors } from './formValidation.js';
+import { showFieldError, clearFieldErrors, attachRequiredBlurValidation } from './formValidation.js';
 import type { EventTracker } from './eventTracker.js';
 import type { LlmProviderConfig } from '../types.js';
 // 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
@@ -52,6 +52,19 @@ const PROVIDER_FORM_FIELD_IDS = [
   'cfg-provider-api-key',
   'cfg-provider-temperature',
 ] as const;
+
+/**
+ * Provider 表单必填字段 id 与中文标签映射
+ *
+ * 用于 attachRequiredBlurValidation 附加 blur 即时必填校验。
+ * temperature 非必填（有默认值 0.7），不纳入 blur 校验。
+ */
+const PROVIDER_REQUIRED_FIELDS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'cfg-provider-alias', label: '别名' },
+  { id: 'cfg-provider-provider', label: '提供商' },
+  { id: 'cfg-provider-model', label: '模型' },
+  { id: 'cfg-provider-api-key', label: 'API Key' },
+];
 
 // ─── 上下文接口（依赖注入容器） ────────────────────────────
 
@@ -576,4 +589,7 @@ export function initProviderListeners(ctx: ProviderManagementContext): void {
       }
     });
   }
+
+  // 必填字段 blur 即时校验（UX-0712-6）
+  attachRequiredBlurValidation(PROVIDER_REQUIRED_FIELDS, ctx.events);
 }

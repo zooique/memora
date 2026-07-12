@@ -13,7 +13,7 @@
  * - 跨模块关注点（setTheme / updatePersonaModeBadge / showConfirmDialog）通过 host 回调注入
  */
 
-import { clearElement, getOptionalElement } from '../helpers/domHelpers.js';
+import { clearElement, getOptionalElement, setButtonLoadingEl } from '../helpers/domHelpers.js';
 import { reportError } from '../helpers/errorHelpers.js';
 import { setIcon } from '../helpers/icon.js';
 import { EventTracker } from '../helpers/eventTracker.js';
@@ -742,9 +742,7 @@ export class SettingsPanelManager {
 
     if (btnExport) {
       this.events.addEventListener(btnExport, 'click', async () => {
-        const originalText = btnExport.textContent;
-        btnExport.disabled = true;
-        btnExport.textContent = '导出中…';
+        setButtonLoadingEl(btnExport, true, '导出中…');
         try {
           const filePath = await window.electronAPI.usageStatsExport();
           if (filePath) {
@@ -756,27 +754,30 @@ export class SettingsPanelManager {
           reportError('导出使用统计', error);
           this.host.showToast('导出失败，请稍后重试', 'error');
         } finally {
-          btnExport.disabled = false;
-          btnExport.textContent = originalText;
+          setButtonLoadingEl(btnExport, false);
         }
       });
     }
 
     if (btnClear) {
       this.events.addEventListener(btnClear, 'click', async () => {
-        const confirmed = await this.host.showConfirmDialog({
-          title: '清除使用统计',
-          message: '将清空所有计数器并重置统计起始时间，此操作不可撤销，确定继续吗？',
-          confirmText: '清除',
-          danger: true,
-        });
-        if (!confirmed) return;
+        // 等待用户确认+执行清除期间禁用按钮，避免重复触发确认弹窗
+        setButtonLoadingEl(btnClear, true, '清除中…');
         try {
+          const confirmed = await this.host.showConfirmDialog({
+            title: '清除使用统计',
+            message: '将清空所有计数器并重置统计起始时间，此操作不可撤销，确定继续吗？',
+            confirmText: '清除',
+            danger: true,
+          });
+          if (!confirmed) return;
           await window.electronAPI.usageStatsClear();
           this.host.showToast('已清除使用统计数据', 'success');
         } catch (error) {
           reportError('清除使用统计', error);
           this.host.showToast('清除失败，请稍后重试', 'error');
+        } finally {
+          setButtonLoadingEl(btnClear, false);
         }
       });
     }

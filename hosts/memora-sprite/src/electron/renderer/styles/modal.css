@@ -32,13 +32,14 @@
 }
 
 /* 弹窗内容区：白色背景 + 大圆角 + 深阴影 */
+/* 宽度遵循 ux-review-guide §2.3：表单弹窗 ≥500px，避免字段拥挤 */
 .modal-content {
   background: var(--window-bg);
   border: none;
   border-radius: var(--radius-lg);
   /* 主题感知阴影变量，深色主题下阴影颜色自动适配 */
   box-shadow: var(--shadow-window);
-  width: 480px;
+  width: 500px;
   max-width: 90%;
   max-height: 80vh;
   display: flex;
@@ -46,8 +47,9 @@
 }
 
 /* 小尺寸弹窗：用于确认对话框等简单交互，避免占用过多屏幕空间 */
+/* 宽度遵循 ux-review-guide §2.3：确认弹窗 ≥400px，保证消息可读 */
 .modal-content-sm {
-  width: 360px;
+  width: 400px;
 }
 
 /* 确认弹窗消息文本：保留换行，行高舒适 */

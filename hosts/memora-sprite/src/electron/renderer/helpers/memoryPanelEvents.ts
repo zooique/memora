@@ -19,9 +19,9 @@
  *   - 所有事件监听器纳入 EventTracker 统一管理，避免内存泄漏
  */
 
-import { getOptionalElement } from './domHelpers.js';
+import { getOptionalElement, setButtonLoadingEl } from './domHelpers.js';
 import { reportError } from './errorHelpers.js';
-import { showFieldError, clearFieldErrors } from './formValidation.js';
+import { showFieldError, clearFieldErrors, attachRequiredBlurValidation } from './formValidation.js';
 import type { EventTracker } from './eventTracker.js';
 import type { ConfirmDialogOptions } from '../types.js';
 // 类型仅导入：运行时不会产生循环依赖（type-only 在编译期擦除）
@@ -40,6 +40,18 @@ const MEMORY_ADD_FIELD_IDS = [
   'memory-add-name',
   'memory-add-content',
 ] as const;
+
+/**
+ * memory-add 表单必填字段 id 与中文标签映射
+ *
+ * 用于 validateMemoryAddForm 提交校验和 attachRequiredBlurValidation blur 即时校验，
+ * 避免两处重复定义（ADR-017 枝叶层 2 次提取原则）。
+ */
+const MEMORY_ADD_REQUIRED_FIELDS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: 'memory-add-source', label: '来源' },
+  { id: 'memory-add-name', label: '名称' },
+  { id: 'memory-add-content', label: '内容' },
+];
 
 /**
  * 记忆面板事件初始化所需的上下文
@@ -252,6 +264,9 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
       }
     }) as EventListener);
   }
+
+  // 必填字段 blur 即时校验（UX-0712-6）
+  attachRequiredBlurValidation(MEMORY_ADD_REQUIRED_FIELDS, ctx.events);
 }
 
 /**
@@ -261,13 +276,8 @@ function initAddMemoryForm(ctx: MemoryPanelEventContext): void {
  * 设置 aria-invalid=true 并填充错误文本，最后聚焦首个错误字段。
  */
 function validateMemoryAddForm(): void {
-  const fields: Array<{ id: string; label: string }> = [
-    { id: 'memory-add-source', label: '来源' },
-    { id: 'memory-add-name', label: '名称' },
-    { id: 'memory-add-content', label: '内容' },
-  ];
   let firstErrorField: HTMLElement | null = null;
-  for (const { id, label } of fields) {
+  for (const { id, label } of MEMORY_ADD_REQUIRED_FIELDS) {
     const input = document.getElementById(id);
     if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
       if (!input.value.trim()) {
@@ -618,16 +628,24 @@ function initCleanupDialog(ctx: MemoryPanelEventContext): void {
 
   if (cleanupConfirmBtn && cleanupDialog) {
     ctx.events.addEventListener(cleanupConfirmBtn, 'click', async () => {
-      cleanupDialog.classList.add('hidden');
-      if (ctx.getPendingCleanupIds().length === 0) return;
-      const ids = [...ctx.getPendingCleanupIds()];
-      ctx.setPendingCleanupIds([]);
+      // 异步执行清理期间禁用按钮，防止重复提交
+      if (!(cleanupConfirmBtn instanceof HTMLButtonElement)) return;
+      if (cleanupConfirmBtn.disabled) return;
+      setButtonLoadingEl(cleanupConfirmBtn, true, '清理中…');
       try {
-        await ctx.getCleanupConfirmCallback()?.(ids);
-      } catch (err) {
-        // cleanupConfirmCallback 由 Controller 实现，Controller 内部会报告错误和显示 toast
-        // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
-        reportError('MemoryPanel cleanupConfirmCallback', err);
+        cleanupDialog.classList.add('hidden');
+        if (ctx.getPendingCleanupIds().length === 0) return;
+        const ids = [...ctx.getPendingCleanupIds()];
+        ctx.setPendingCleanupIds([]);
+        try {
+          await ctx.getCleanupConfirmCallback()?.(ids);
+        } catch (err) {
+          // cleanupConfirmCallback 由 Controller 实现，Controller 内部会报告错误和显示 toast
+          // 补充 warn 日志兜底，防止回调未处理时异常被完全吞没
+          reportError('MemoryPanel cleanupConfirmCallback', err);
+        }
+      } finally {
+        setButtonLoadingEl(cleanupConfirmBtn, false);
       }
     });
   }
