@@ -29,14 +29,6 @@ import type {
 // 多 Provider 管理子系统（CRUD + 渲染 + 事件委托）提取到独立 helper
 import {
   loadProviderList as loadProviderListHelper,
-  renderBackgroundProviderSelect as renderBackgroundProviderSelectHelper,
-  renderProviderList as renderProviderListHelper,
-  showProviderForm as showProviderFormHelper,
-  hideProviderForm as hideProviderFormHelper,
-  saveProvider as saveProviderHelper,
-  testProviderConnection as testProviderConnectionHelper,
-  deleteProvider as deleteProviderHelper,
-  setActiveProvider as setActiveProviderHelper,
   initProviderListeners as initProviderListenersHelper,
 } from '../helpers/providerManagement.js';
 import type { ProviderManagementContext } from '../helpers/providerManagement.js';
@@ -689,77 +681,6 @@ export class SettingsPanelManager {
    */
   async loadProviderList(): Promise<void> {
     return loadProviderListHelper(this.buildProviderContext());
-  }
-
-  /**
-   * 渲染后台归档 Provider 选择框（委托到 helper）
-   *
-   * 使用 createElement + textContent 构建 option，避免 innerHTML 拼接用户输入
-   * （provider name/model 来自用户表单输入，存在 XSS 风险）。
-   */
-  private renderBackgroundProviderSelect(providers: LlmProviderConfig[]): void {
-    renderBackgroundProviderSelectHelper(this.buildProviderContext(), providers);
-  }
-
-  /**
-   * 渲染 Provider 卡片列表（委托到 helper）
-   *
-   * 使用 createElement + textContent 构建卡片，避免 innerHTML 拼接用户输入
-   * （provider name/provider/model/key 来自用户表单输入，存在 XSS 风险）。
-   * 事件委托在 initProviderListeners 中一次性绑定，此方法仅负责渲染 DOM。
-   */
-  private renderProviderList(active: string, providers: LlmProviderConfig[]): void {
-    renderProviderListHelper(this.buildProviderContext(), active, providers);
-  }
-
-  /**
-   * 显示 Provider 编辑弹窗（委托到 helper）
-   */
-  private showProviderForm(key: string = ''): void {
-    showProviderFormHelper(this.buildProviderContext(), key);
-  }
-
-  /**
-   * 隐藏 Provider 编辑弹窗（委托到 helper）
-   */
-  private hideProviderForm(): void {
-    hideProviderFormHelper(this.buildProviderContext());
-  }
-
-  /**
-   * 保存 Provider（新增/更新）（委托到 helper）
-   *
-   * 校验：必填字段 + 别名格式（仅允许字母数字.-_） + Temperature 范围 + 重复 key 检测
-   * 反馈：字段级 aria-invalid + aria-describedby 错误文本，失败时聚焦首个错误字段
-   */
-  private async saveProvider(): Promise<void> {
-    return saveProviderHelper(this.buildProviderContext());
-  }
-
-  /**
-   * 测试 Provider 连接——从表单读取配置，调用 testLlmConfig 验证（委托到 helper）
-   *
-   * 复用已有 LLM_CONFIG_TEST 通道，无需新增 IPC。
-   * 测试时禁用按钮防止重复点击，完成后恢复。
-   */
-  private async testProviderConnection(): Promise<void> {
-    return testProviderConnectionHelper(this.buildProviderContext());
-  }
-
-  /**
-   * 删除 Provider（委托到 helper）
-   *
-   * 前端保护：已隐藏激活 Provider 的删除按钮，此方法作为运行时兜底。
-   */
-  private async deleteProvider(key: string): Promise<void> {
-    return deleteProviderHelper(this.buildProviderContext(), key);
-  }
-
-  /**
-   * 切换激活 Provider（委托到 helper）
-   */
-  private async setActiveProvider(key: string): Promise<void> {
-    return setActiveProviderHelper(this.buildProviderContext(), key);
   }
 
   /**

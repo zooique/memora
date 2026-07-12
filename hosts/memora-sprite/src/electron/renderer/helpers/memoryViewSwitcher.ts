@@ -166,10 +166,9 @@ export function updateAnalysisMenuItemsActive(ctx: MemoryViewSwitcherContext): v
  * 切换视图时，标记当前视图对应的菜单项为 active，
  * 让用户通过菜单直观感知当前所处视图模式。
  *
- * @param ctx 视图切换上下文
  * @param mode 当前视图模式
  */
-export function updateViewMenuItemsActive(ctx: MemoryViewSwitcherContext, mode: MemoryViewMode): void {
+export function updateViewMenuItemsActive(mode: MemoryViewMode): void {
   const moreMenu = document.getElementById('memory-more-menu');
   if (!moreMenu) return;
   const items = moreMenu.querySelectorAll('.more-menu-item');
@@ -342,7 +341,7 @@ export function switchView(ctx: MemoryViewSwitcherContext, mode: MemoryViewMode)
   // 切换视图时隐藏 insights/health，避免显示类型平铺污染
   hideInsightsAndHealth(ctx);
   // 同步更多菜单中视图切换项的 active 状态
-  updateViewMenuItemsActive(ctx, mode);
+  updateViewMenuItemsActive(mode);
 
   // B2: 切换列表、时间线和图谱容器的可见性，统一用 .hidden 类
   const listEl = ctx.memoryListEl;

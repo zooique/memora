@@ -16,8 +16,6 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { logger, toError } from 'memora';
 import type { HostContext } from '../../shared/hostContext.js';
 import { parseJsonBody, sendJson, sendError, safeRoute } from './types.js';
@@ -319,12 +317,9 @@ export async function handleSystemRoute(
         return;
       }
       // 与 Electron IPC 的 SKILL_INSTALL 一致，使用默认 configDir
-      const DEFAULT_CONFIG_DIR = join(homedir(), '.memora-sprite', 'config');
-      // 动态导入确保 configDir 路径一致性
-      const { defaultConfigDir } = await import('../../index.js');
-      // 城堡层默认 configDir 由 index.ts 统一管理
-      const configDir = defaultConfigDir ?? DEFAULT_CONFIG_DIR;
-      const result = await ctx.installSkill(body.content, body.fileName, configDir);
+      // 城堡层默认 configDir 由 index.ts 统一管理，动态导入确保路径一致性
+      const { DEFAULT_CONFIG_DIR } = await import('../../index.js');
+      const result = await ctx.installSkill(body.content, body.fileName, DEFAULT_CONFIG_DIR);
       sendJson(res, 200, result);
       return;
     }

@@ -459,7 +459,7 @@ async function handleChatStart(
           toolCallId: chunk.toolCallId,
           name: chunk.name,
           ok: chunk.ok,
-          summary: chunk.summary,
+          summary: chunk.summary ?? '',
         });
       } else if (chunk.type === 'thinking') {
         thinkingEvents.push({ phase: chunk.phase });
