@@ -379,7 +379,33 @@ export function registerMinimalIpcHandlers(
         return { success: false, error: '参数无效' };
       }
       try {
+        // 删除前记录当前 active，用于判断删除后是否需要运行时切换
+        const configBefore: Config = await spriteConfigStore.load();
+        const wasActive = configBefore.llm.active === key;
+
         await deleteLlmProvider(key);
+
+        // 删除的是当前 active Provider 时，运行时切换到新 active（deleteLlmProvider 已自动选首个剩余）
+        if (wasActive && state.agentReady) {
+          const configAfter: Config = await spriteConfigStore.load();
+          const newActive = configAfter.llm.active ?? '';
+          if (newActive) {
+            const providerConfig = resolveProviderConfig(configAfter, newActive);
+            if (providerConfig) {
+              const newProvider = createProviderFromConfig(newActive, {
+                provider: providerConfig.provider,
+                model: providerConfig.model,
+                baseUrl: providerConfig.baseUrl || undefined,
+                apiKey: providerConfig.apiKey || '',
+              });
+              const currentAgent = callbacks.getCurrentAgent();
+              if (currentAgent) {
+                currentAgent.setProvider(newProvider);
+              }
+            }
+          }
+        }
+
         return { success: true, error: null };
       } catch (err) {
         return { success: false, error: toError(err).message };

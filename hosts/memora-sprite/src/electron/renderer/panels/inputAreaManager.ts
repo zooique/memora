@@ -347,9 +347,13 @@ export class InputAreaManager {
       if (item) {
         const key = item.dataset.providerKey;
         if (key) {
-          await window.electronAPI.setActiveLlmProvider(key);
+          const result = await window.electronAPI.setActiveLlmProvider(key);
           this.providerDropdown!.classList.add('hidden');
           await this.loadProviderSelector();
+          // Agent 未就绪时 warning 提示已保存但需初始化，引导用户去设置页
+          if (result.warning) {
+            this.host.switchToSettings();
+          }
         }
         return;
       }
@@ -394,9 +398,12 @@ export class InputAreaManager {
           const key = items[currentIdx]?.dataset.providerKey;
           if (key) {
             void (async () => {
-              await window.electronAPI.setActiveLlmProvider(key);
+              const result = await window.electronAPI.setActiveLlmProvider(key);
               this.providerDropdown!.classList.add('hidden');
               await this.loadProviderSelector();
+              if (result.warning) {
+                this.host.switchToSettings();
+              }
             })();
           }
         }
