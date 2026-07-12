@@ -338,13 +338,13 @@ export class ClipboardManager { ... }
 
 ## 8. 阶段四：能力扩展（迭代 7-9 沉淀）
 
-> **自然生长原则**：只接入"内核已就绪但宿主未消费"的能力，不闭门造接口。
+> **自然生长原则**（[ADR-017](./decisions/ADR-017-natural-growth-redefinition.md) 分层适用）：架构层（根须）先行——新能力接入前先评估架构归属；枝叶层（helper/组件）遵循 2 次提取原则。本节"只接入内核已就绪的能力"是架构层原则的体现——不闭门造接口。
 > **触发条件**：审核报告（`docs/memora-sprite-交叉对齐审核报告.md`）识别出"机制已建、宿主未用"。
 
 ### 7.1 工具注册（`agent.tools.registerTool`）
 
 **沉淀时机**：迭代 9 出现 1 次工具注册（web_search + memory_search）。  
-**抽取阈值**：第 3 次出现时提取通用 helper（当前不抽取，避免过度抽象）。
+**抽取阈值**：第 2 次出现时提取通用 helper（枝叶层 2 次提取原则，详见 [ADR-017](./decisions/ADR-017-natural-growth-redefinition.md)）。
 
 **当前实现**（[hosts/memora-sprite/src/sprite/tools.ts](../../hosts/memora-sprite/src/sprite/tools.ts)）：
 

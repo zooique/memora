@@ -94,7 +94,7 @@ IMemoryStorage 接口**保持同步语义**，不新增 IAsyncMemoryStorage 兄�
 
 - 出现真实的浏览器直接运行 memora 内核需求（非通过宿主 Web 调试通道）
 - 出现 IndexedDB / LevelDB 等非 SQLite 异步存储后端需求
-- 上述需求达到 3 次以上重复（自然生长原则）
+- 上述需求达到 2 次以上重复（枝叶层 2 次提取原则，详见 [ADR-017](./ADR-017-natural-growth-redefinition.md)）
 
 当前阶段（v1.0.2 收敛期）不满足任何条件，本决策锁定。
 

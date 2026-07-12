@@ -117,72 +117,34 @@ chore: 升级 dependencies
 
 格式：`<type>(<scope>): <subject>`
 
-## 6. 阶段一交付物
-
-- ✅ 项目骨架可编译、可运行
-- ✅ 基元驱动记忆模型（source 开放字符串，7 核心字段）
-- ✅ IMemoryStorage 接口 + InMemoryStorage 实现（测试用）
-- ✅ 路径白名单 6 个测试用例通过
-- ✅ LLM Provider Mock 集成测试通过
-- ✅ Agent 设定减法（3 模块：设定 + 角色 + 技能）
-- ✅ 单 Agent 模型（memora.db Agent 级共享）
-- ✅ 三层架构（Agent 级配置 → 用户记忆 → 项目级配置）
-- ✅ 角色自动匹配 + 手动切换
-- ✅ 项目 rules/skills 接口（config.addRule + tools.registerTool）
-- ✅ 三种接入模式（程序员预设 + 用户自定义 --user + Agent 智能总结接口）
-- ✅ 多 Provider 管理（providers 映射表 + 运行时切换）
-- ✅ 零 native 依赖内核（better-sqlite3 + CLI 移出至宿主项目）
-- ✅ 测试全量通过（InMemoryStorage，零 IO，持续增长）
-- ✅ 事件系统（TypedEventEmitter，Agent 暴露 on/off，9 事件类型：memoryAdded / personaSwitched / decayCompleted / memoryRecalled / sessionForked / insightExtracted / conflictDetected / projectSwitched / skillMatched）
-- ✅ 语义搜索召回（VectorStore + EmbeddingService 接口注入，recall 双通道）
-- ✅ 记忆生命周期（decayScores，init 首次 + 每小时定时衰减）
-- ✅ LLM 调用韧性（AgentLoop 指数退避重试，流式输出前可重试）
-- ✅ chat() 并发锁超时保护（3 分钟自动释放，CHAT_LOCK_TIMEOUT_MS = 180_000）
-- ✅ 可观测性（ITracer/ISpan 接口 + NoopTracer 默认实现 + 4 个关键 Span 埋点）
-- ✅ 结构化输出（ChatOptions.response_format + LlmProvider.supportsStructuredOutput 能力声明）
-- ✅ 内容护栏（source:guardrail 记忆 + 输入/输出护栏 + 降级优先）
-- ✅ 工具错误反思（ToolErrorCode 10 种错误码 + isRetryableErrorCode + Reflection 循环）
-- ✅ 评估框架（EvalScenario 类型 + collectAgentChunks/evaluateResult 工具函数）
-- ✅ 精灵主动行为（事件累积 + 上下文感知提示生成 + 冷却保护 + 静默模式）
-- ✅ 精灵配置持久化（SpriteConfig + sprite.json + 启动时加载 + 偏好变更自动保存）
-
-## 7. 阶段二规划（v0.3 → v1.0）
-
-| Phase | 目标 | 关键交付物 | 状态 |
-|-------|------|-----------|------|
-| Phase 1 | 记忆从"列表"进化为"网络" | MemoryRelation 侧车 + IMemoryRelationStore + 冲突检测 + 可观测性 + 拓扑可视化 | ✅ 核心完成（拓扑可视化已由精灵宿主实现：RelationGraphRenderer + 图谱上下文菜单 + 关系编辑弹窗） |
-| Phase 2 | 从"工具"到"伙伴" | AffectController + 默契度 + 里程碑（纯宿主层，零内核修改） | ✅ 核心完成（AffectController + RapportController + ContextAwareness + PatternDetector 全链路实现） |
-| Phase 3 | 桌面壁垒 | 剪贴板三重保护 + presenceController + 全局快捷键 | ✅ 核心完成（全局快捷键含 quick-record/recall-memory + 在场状态检测 + 剪贴板三重保护；Phase 3.2 第二批 idle detection 延后） |
-| Phase 4 | 生态准备 | 接入文档 + Web 调试通道 + 技能拖入安装 | ✅ 核心完成（接入文档 v3.3 + Web 调试通道 7 路由 + 技能拖入安装） |
-
-## 8. 规则文件索引
+## 6. 规则文件索引
 
 > 本节列出 `.trae/rules/` 下所有规则文件，方便按需加载。`alwaysApply: true` 的文件随会话自动加载，其余文件需 AI 主动读取。
 
-### 8.1 总则类（alwaysApply: true，自动加载）
+### 6.1 总则类（alwaysApply: true，自动加载）
 
 | 文件 | 用途 |
 |------|------|
 | [project-rules.md](./project-rules.md) | 本文件——Memora 项目总则、技术栈、目录结构 |
 
-### 8.2 架构与分层类（按需读取）
+### 6.2 架构与分层类（按需读取）
 
 | 文件 | 用途 |
 |------|------|
-| [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) | 架构哲学（专注模式、记忆衰减机制等 9 大原则） |
+| [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) | 架构哲学（专注模式、记忆衰减机制等 10 大原则） |
 | [backend_layers_rules.md](./backend_layers_rules.md) | 后端分层规范（src/ 各模块职责边界 + 核心库 vs 宿主项目边界） |
 | [coding-convention-rules.md](./coding-convention-rules.md) | 通用编码约束规则（契约校验、异常处理、日志、DAO 分层、稳定性等 9 大约束） |
 | [cross-document-reference.md](./cross-document-reference.md) | 跨文档交叉引用规范（"文档.§章节号"格式） |
 | [new-module-guide.md](./new-module-guide.md) | 新增模块标准流程（防止随意加模块破坏架构） |
 
-### 8.3 安全与测试类（按需读取）
+### 6.3 安全与测试类（按需读取）
 
 | 文件 | 用途 |
 |------|------|
 | [security_rules.md](./security_rules.md) | 安全规范（最小权限、显式允许、审计可追溯） |
 | [testing_rules.md](./testing_rules.md) | 测试规范（三层金字塔 + Mock LLM 策略） |
 
-### 8.4 精灵宿主类（按需读取，仅约束 memora-sprite）
+### 6.4 精灵宿主类（按需读取，仅约束 memora-sprite）
 
 | 文件 | 用途 |
 |------|------|
@@ -190,16 +152,16 @@ chore: 升级 dependencies
 
 > **宿主实现文档**位于 `hosts/memora-sprite/.trae/rules/`（仅 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)，描述 src/ 目录树），跟宿主项目走。宿主任务追踪在 `hosts/memora-sprite/tasks/`，与内核 `tasks/` 独立。详见 [sprite-project-rules.md §1.1](./sprite-project-rules.md)。
 
-### 8.5 决策记录类（decisions/ 目录，按需读取）
+### 6.5 决策记录类（decisions/ 目录，按需读取）
 
-> 详见 [decisions/README.md](./decisions/README.md)。共 24 个 ADR：内核 ADR-001~004 + ADR-006~016（15 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015（9 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
+> 详见 [decisions/README.md](./decisions/README.md)。共 25 个 ADR：内核 ADR-001~004 + ADR-006~017（16 个，跳过 005）+ 精灵 ADR-SP-001~008 + ADR-SP-015（9 个）。技术栈变更必须先更新对应 ADR（§1 硬约束第 1 条）。
 
-## 9. AI 行为 DO/DON'T 速查表
+## 7. AI 行为 DO/DON'T 速查表
 
 > 本节集中列出 AI 在编写/修改 memora 内核代码时的实施级 DO/DON'T 规则。
 > §1 硬约束是原则级，本节是实施级补充。sprite 专属规则见 [sprite-project-rules.md](./sprite-project-rules.md)。
 
-### 9.1 代码质量
+### 7.1 代码质量
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -209,7 +171,7 @@ chore: 升级 dependencies
 | DO | 核心模块保持 1:1 测试覆盖率（`__tests__/` 镜像 `src/`） |
 | DO | 提交前通过 pre-commit lint + typecheck + commitlint |
 
-### 9.2 内核独立性（补充 §1.6）
+### 7.2 内核独立性（补充 §1.6）
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -218,7 +180,7 @@ chore: 升级 dependencies
 | DON'T | 工具函数绑定特定环境依赖（如 pino） |
 | DO | memora `dependencies` 仅允许纯 JS 工具库（当前仅 zod） |
 
-### 9.3 记忆与存储（补充 §1.3/§1.4）
+### 7.3 记忆与存储（补充 §1.3/§1.4）
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -229,7 +191,7 @@ chore: 升级 dependencies
 | DO | 工作内容通过宿主工具访问，内核仅保留投影 |
 | DO | 切换项目用 `close()`，完全终止用 `shutdown()` |
 
-### 9.4 Agent 门面约束
+### 7.4 Agent 门面约束
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -240,7 +202,7 @@ chore: 升级 dependencies
 | DO | LlmProvider 通过构造函数注入（`provider` 必填，`backgroundProvider` 可选） |
 | DO | 工具注册通过 `registerTool()` 机制 |
 
-### 9.5 功能开发流程
+### 7.5 功能开发流程
 
 | 类型 | 规则 |
 | ---- | ---- |
