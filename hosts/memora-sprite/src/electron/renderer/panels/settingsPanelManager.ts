@@ -56,12 +56,11 @@ export interface SettingsPanelHost {
    */
   switchPanel(panel: 'chat' | 'memories' | 'settings'): void;
   /**
-   * 显示模态弹窗（UX-0713-F6：Provider 编辑弹窗需要焦点陷阱 + 焦点恢复）
-   * 委托 ModalManager.showModal，启用焦点陷阱 + 保存焦点 + 聚焦首元素
+   * 显示模态弹窗（委托 ModalManager.showModal，启用焦点陷阱 + 保存焦点 + 聚焦首元素）
    */
   showModal(modalId: string): void;
   /**
-   * 隐藏模态弹窗（UX-0713-F6：配合 showModal 使用，恢复焦点）
+   * 隐藏模态弹窗（配合 showModal 使用，恢复焦点）
    */
   hideModal(modalId: string): void;
   /**
@@ -171,7 +170,7 @@ export class SettingsPanelManager {
   private isLoadingConfig = false;
 
   // ─── 回调 ────────────────────────────────────────────────
-  // UX-0713-F2：回调返回 Promise<boolean>，true=保存成功，false=保存失败（IPC 错误或事务回滚）
+  // 回调返回 Promise<boolean>，true=保存成功，false=保存失败（IPC 错误或事务回滚）
   private configSaveCallback: ((config: SpriteConfigForm) => Promise<boolean>) | null = null;
   /** 角色匹配模式变更回调 */
   private personaModeChangeCallback: ((mode: string) => void) | null = null;
@@ -972,14 +971,12 @@ export class SettingsPanelManager {
       }
 
       this.updateSaveStatus('saving');
-      // UX-0713-F2：await 回调获取保存结果，IPC 失败时显示 error 状态 + 重试按钮
-      // 回调内部已处理 toast 反馈（成功/失败均显示 toast），此处仅根据返回值更新状态指示器
+      // await 回调获取保存结果，回调内部已处理 toast 反馈，此处仅根据返回值更新状态指示器
       const success = (await this.configSaveCallback?.(spriteConfig)) ?? true;
       if (success) {
         this.settingsFormDirty = false;
         this.updateSaveStatus('saved');
       } else {
-        // 保存失败（IPC 错误或事务回滚），回调内部已显示 toast，此处仅更新状态显示重试按钮
         this.updateSaveStatus('error');
       }
     } catch (error) {
@@ -1060,7 +1057,7 @@ export class SettingsPanelManager {
         // 勾选图标（绿色，CSS .save-status-indicator.saved 控制颜色）
         iconEl.innerHTML = '<svg class="icon"><use href="#icon-check"/></svg>';
         textEl.textContent = '已保存';
-        // 8秒后恢复为空闲状态（UX-0713-3：8 秒让用户有充足时间感知反馈）
+        // 8 秒后恢复为空闲状态（让用户有充足时间感知反馈）
         this.timers.setTimeout(() => {
           this.updateSaveStatus('idle');
         }, 8000);
@@ -1070,7 +1067,7 @@ export class SettingsPanelManager {
         // 关闭 X 图标（红色，CSS .save-status-indicator.error 控制颜色）
         iconEl.innerHTML = '<svg class="icon"><use href="#icon-close"/></svg>';
         textEl.textContent = '保存失败';
-        // UX-0713-L7：追加重试按钮，让用户可主动恢复，而非只能等 3 秒后自动恢复
+        // 追加重试按钮，让用户可主动恢复
         const retryBtn = document.createElement('button');
         retryBtn.className = 'save-status-retry-btn';
         retryBtn.textContent = '重试';
@@ -1080,8 +1077,7 @@ export class SettingsPanelManager {
           void this.autoSaveConfig();
         });
         this.saveStatusEl.appendChild(retryBtn);
-        // UX-0713-F7：错误状态不自动消失，需要用户采取行动（点击重试或修改表单触发新一轮保存）
-        // 原来的 3s 自动恢复会让用户来不及点重试就丢失入口
+        // 错误状态不自动消失，需要用户采取行动（点击重试或修改表单触发新一轮保存）
         break;
       default:
         this.saveStatusEl.classList.add('idle');

@@ -238,7 +238,7 @@ export class PanelRouter {
 
     // Esc：关闭下拉菜单；设置/记忆/仪表盘/感知面板激活时切回对话
     if (e.key === 'Escape') {
-      // UX-0713-F8：弹窗或浮层打开时，Escape 交给对应管理器处理，不触发面板切换
+      // 弹窗或浮层打开时，Escape 交给对应管理器处理，不触发面板切换
       // 命令面板和搜索弹窗不是 .modal 类，需单独检测
       const openModals = document.querySelectorAll('.modal:not(.hidden)');
       if (openModals.length > 0) {

@@ -20,7 +20,7 @@ import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
 // 统一 DOM 操作模式，使用 clearElement 替代 innerHTML=''
-import { clearElement } from '../helpers/domHelpers.js';
+import { clearElement, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
 
 /** 命令项定义 */
 export interface Command {
@@ -81,8 +81,7 @@ function createStaticCommands(uiManager: UIManager): Command[] {
       keywords: '感知 精灵状态 情感 默契度 上下文 模式 dashboard',
       section: '导航',
       action: () => {
-        // UX-0713-L10：直接调用 switchPanel，与 nav-chat/memories/settings 一致，
-        // 避免依赖 sprite-status-bar DOM 元素存在（原模拟点击路径脆弱）
+        // 直接调用 switchPanel，避免依赖 sprite-status-bar DOM 元素存在
         void uiManager.switchPanel('perception');
       },
     },
@@ -372,22 +371,9 @@ export class CommandPaletteManager {
   private inputEl: HTMLInputElement | null = null;
   /** 搜索结果容器 */
   private resultsEl: HTMLElement | null = null;
-  /**
-   * 打开面板前的焦点元素（UX-0713-F15）
-   *
-   * close() 时恢复焦点到触发按钮，让键盘用户能继续从原位置 Tab 导航。
-   * 与 ModalManager 的 previousFocusStack 同理，但命令面板独立于 ModalManager，
-   * 需自行管理单层焦点保存（命令面板不嵌套，无需栈结构）。
-   */
+  /** 打开面板前的焦点元素，close() 时恢复，让键盘用户能继续从原位置 Tab 导航 */
   private previousFocus: HTMLElement | null = null;
-  /**
-   * 事件监听器跟踪器
-   *
-   * 原先 init() 中用裸 addEventListener 注册了 4 个监听器（遮罩点击、输入、
-   * 键盘导航、全局 Ctrl+K），均未纳入统一管理。beforeunload 触发 UIManager.cleanup()
-   * 时不会清理这些监听器，页面重新加载后会累积，导致同一事件触发多次。
-   * 改用 EventTracker 后，cleanup() 时统一移除所有监听器。
-   */
+  /** 事件监听器跟踪器（cleanup 时统一移除，避免 beforeunload 后监听器累积） */
   private events = new EventTracker();
 
   constructor(uiManager: UIManager) {
@@ -484,7 +470,7 @@ export class CommandPaletteManager {
   open(): void {
     if (!this.paletteEl || !this.inputEl) return;
 
-    // UX-0713-F15：保存打开前的焦点元素，close() 时恢复，让键盘用户能继续从原位置导航
+    // 保存打开前的焦点元素，close() 时恢复
     this.previousFocus = document.activeElement as HTMLElement | null;
 
     // 先同步加载静态命令，确保面板立即显示
@@ -518,10 +504,8 @@ export class CommandPaletteManager {
     this.isOpen = false;
     this.selectedIndex = 0;
 
-    // UX-0713-F10：有条件恢复背景滚动——仅当没有其他浮层打开时才恢复
-    // 避免命令面板与搜索弹窗同时打开时，关闭一个会错误恢复另一个的 overflow:hidden
-    const otherOverlays = document.querySelectorAll('.modal:not(.hidden), .search-messages-modal:not(.hidden)');
-    if (otherOverlays.length === 0) {
+    // 有条件恢复背景滚动——仅当没有其他浮层打开时才恢复（自身已隐藏，无需排除）
+    if (!hasOtherOpenOverlays()) {
       document.body.style.overflow = '';
     }
 
@@ -530,7 +514,7 @@ export class CommandPaletteManager {
       this.inputEl.value = '';
     }
 
-    // UX-0713-F15：恢复焦点到打开前的触发元素，让键盘用户能继续从原位置 Tab 导航
+    // 恢复焦点到打开前的触发元素
     if (this.previousFocus && typeof this.previousFocus.focus === 'function') {
       this.previousFocus.focus();
       this.previousFocus = null;
@@ -627,7 +611,7 @@ export class CommandPaletteManager {
         break;
       case 'Escape':
         e.preventDefault();
-        // UX-0713-F9：阻止冒泡到 document 层的 ModalManager，避免同时关闭背后 modal
+        // 阻止冒泡到 document 层的 ModalManager，避免同时关闭背后 modal
         e.stopPropagation();
         this.close();
         break;

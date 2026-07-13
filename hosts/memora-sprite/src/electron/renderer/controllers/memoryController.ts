@@ -299,7 +299,7 @@ export function createMemoryController(uiManager: UIManager) {
       }
       // 递增序列号，捕获当前请求的序号
       const seq = ++searchSeq;
-      // UX-0713-F4：搜索期间显示 loading 态，让用户知道正在搜索（而非列表保持旧数据无反馈）
+      // 搜索期间显示 loading 态，让用户知道正在搜索
       uiManager.setMemoryListState('loading');
       try {
         const { hits } = await window.electronAPI.searchMemories(query);
@@ -328,7 +328,7 @@ export function createMemoryController(uiManager: UIManager) {
         if (seq !== searchSeq) return;
         reportError('onMemorySearch', error);
         uiManager.showToast('搜索记忆失败，请重试', 'error');
-        // UX-0713-F4：loading 态已清空列表，失败时重新加载恢复数据
+        // 搜索前已清空列表，失败时需重新加载恢复数据
         await loadMemoryList();
       }
     });

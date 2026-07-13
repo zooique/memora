@@ -22,7 +22,7 @@
 import { EventTracker } from '../helpers/eventTracker.js';
 // 渲染进程统一日志入口（替代散落的 console.error/warn）
 import { reportError } from '../helpers/errorHelpers.js';
-import { clearElement, escapeHtml, formatClock, formatDateKey } from '../helpers/domHelpers.js';
+import { clearElement, escapeHtml, formatClock, formatDateKey, hasOtherOpenOverlays } from '../helpers/domHelpers.js';
 import { MS_PER_DAY } from '../../../sprite/constants.js';
 
 /** 输入防抖时长（毫秒）—— 避免每键入一个字符就触发一次 IPC 搜索 */
@@ -70,12 +70,7 @@ export class SearchMessagesManager {
   private isSearching = false;
   /** 结果点击回调（由 renderer.ts 注册，跳转到对应日期的会话） */
   private resultClickCallback: ((date: string, session: string) => void) | null = null;
-  /**
-   * 打开弹窗前的焦点元素（UX-0713-F15）
-   *
-   * close() 时恢复焦点到触发按钮，与 CommandPaletteManager 同理。
-   * 搜索弹窗独立于 ModalManager，需自行管理单层焦点保存。
-   */
+  /** 打开弹窗前的焦点元素，close() 时恢复 */
   private previousFocus: HTMLElement | null = null;
 
   /**
@@ -128,7 +123,7 @@ export class SearchMessagesManager {
       const ke = e as KeyboardEvent;
       if (ke.key === 'Escape') {
         ke.preventDefault();
-        // UX-0713-F9：阻止冒泡到 document 层的 ModalManager，避免同时关闭背后 modal
+        // 阻止冒泡到 document 层的 ModalManager，避免同时关闭背后 modal
         ke.stopPropagation();
         this.close();
       }
@@ -164,7 +159,7 @@ export class SearchMessagesManager {
   open(): void {
     if (!this.modalEl || !this.inputEl || !this.resultsEl) return;
 
-    // UX-0713-F15：保存打开前的焦点元素，close() 时恢复
+    // 保存打开前的焦点元素，close() 时恢复
     this.previousFocus = document.activeElement as HTMLElement | null;
 
     this.modalEl.classList.remove('hidden');
@@ -203,13 +198,12 @@ export class SearchMessagesManager {
       this.inputEl.value = '';
     }
 
-    // UX-0713-F10：有条件恢复背景滚动——仅当没有其他浮层打开时才恢复
-    const otherOverlays = document.querySelectorAll('.modal:not(.hidden), .command-palette:not(.hidden)');
-    if (otherOverlays.length === 0) {
+    // 有条件恢复背景滚动——仅当没有其他浮层打开时才恢复（自身已隐藏，无需排除）
+    if (!hasOtherOpenOverlays()) {
       document.body.style.overflow = '';
     }
 
-    // UX-0713-F15：恢复焦点到打开前的触发元素
+    // 恢复焦点到打开前的触发元素
     if (this.previousFocus && typeof this.previousFocus.focus === 'function') {
       this.previousFocus.focus();
       this.previousFocus = null;

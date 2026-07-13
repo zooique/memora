@@ -162,11 +162,10 @@ export function initMemoryPanelListeners(ctx: MemoryPanelEventContext): void {
  * 通过 data-action="view-memory" + data-memory-id 分发，
  * 替代动态列表项各自的 addEventListener，统一纳入 EventTracker 管理。
  *
- * UX-0713-F1：时间线视图项渲染在独立的 memory-timeline-container 中（与 memoryListEl 是同级 DOM 子树），
- * 需在两个容器上分别注册事件委托，否则切换到时间线视图后点击/键盘 Enter 均无法查看详情。
+ * 时间线视图项渲染在独立的 memory-timeline-container 中（与 memoryListEl 是同级 DOM 子树），
+ * 需在两个容器上分别注册事件委托。
  */
 function initListClickDelegation(ctx: MemoryPanelEventContext): void {
-  // UX-0713-F1：列表容器和时间线容器都需要注册事件委托
   // 时间线项同样标记 data-action="view-memory" + data-memory-id + tabindex="0" + role="button"
   const delegateTargets: HTMLElement[] = [];
   if (ctx.memoryListEl) delegateTargets.push(ctx.memoryListEl);
@@ -465,8 +464,6 @@ function initMoreMenu(ctx: MemoryPanelEventContext): void {
     });
   }
 }
-
-// ─── 7.5 回收站按钮已迁入更多菜单（UX-0713-9），事件委托见 initMoreMenu ───
 
 // ─── 8. 分析面板关闭按钮 ─────────────────────────────
 

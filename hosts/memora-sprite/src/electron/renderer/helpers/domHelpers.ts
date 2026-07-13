@@ -285,3 +285,16 @@ export function setButtonLoadingEl(el: HTMLButtonElement, loading: boolean, load
     delete el.dataset.originalText;
   }
 }
+
+/**
+ * 检查是否还有浮层处于打开状态
+ *
+ * 用于命令面板/搜索弹窗/模态弹窗关闭时有条件恢复 body overflow：
+ * 仅当没有其他浮层打开时才恢复 overflow，避免关闭一个浮层时错误恢复另一个的 overflow:hidden。
+ * 调用时机应在浮层自身已隐藏之后，因此无需排除自身。
+ *
+ * @returns 是否还有浮层打开
+ */
+export function hasOtherOpenOverlays(): boolean {
+  return document.querySelectorAll('.modal:not(.hidden), .command-palette:not(.hidden), .search-messages-modal:not(.hidden)').length > 0;
+}

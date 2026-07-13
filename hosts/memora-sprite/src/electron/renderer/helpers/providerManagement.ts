@@ -354,8 +354,7 @@ export function showProviderForm(ctx: ProviderManagementContext, key: string = '
     if (ctx.providerTemperatureInput) ctx.providerTemperatureInput.value = '';
   }
 
-  // UX-0713-F6：通过宿主 showModal 委托 ModalManager，启用焦点陷阱 + 焦点保存 + 聚焦首元素
-  // 替代直接操作 classList，确保 Provider 弹窗与其他模态弹窗（memory-add 等）行为一致
+  // 委托宿主 showModal 启用焦点陷阱 + 焦点保存 + 聚焦首元素
   ctx.host.showModal('provider-modal');
   if (ctx.providerModalEl) {
     ctx.providerModalEl.dataset.editKey = key;
@@ -384,7 +383,6 @@ let isSavingProvider = false;
  * 反馈：字段级 aria-invalid + aria-describedby 错误文本，失败时聚焦首个错误字段
  */
 export async function saveProvider(ctx: ProviderManagementContext): Promise<void> {
-  // UX-0713-F5：重入保护——防止重复检测期间双击触发并发保存
   if (isSavingProvider) return;
   isSavingProvider = true;
   try {
@@ -474,7 +472,6 @@ export async function saveProvider(ctx: ProviderManagementContext): Promise<void
     }
   }
   } finally {
-    // UX-0713-F5：无论成功/失败/校验不通过，都清除重入保护标志
     isSavingProvider = false;
   }
 }

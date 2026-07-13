@@ -72,10 +72,9 @@ export function createSettingsController(uiManager: UIManager) {
           // 事务回滚：主进程未应用任何更新，提示具体错误
           uiManager.showToast(`保存失败：${result.error ?? '未知错误'}`, 'error');
           return false;
-        } else {
-          uiManager.showToast('精灵配置已保存', 'success');
-          return true;
         }
+        uiManager.showToast('精灵配置已保存', 'success');
+        return true;
       } catch (error) {
         handleIpcError('onConfigSave', error, '保存精灵配置失败');
         return false;

@@ -251,8 +251,7 @@ export class DashboardPanelManager {
     if (dashboardMemoryCount) dashboardMemoryCount.textContent = String(data.total);
 
     // ─── 更新今日新增记忆微型指标 ──
-    // UX-0713-F3：用 != null 松散比较同时捕获 null 和 undefined，
-    // 避免 getReviewData 失败返回 null 时字段未注入保持 undefined 导致显示 "+undefined"
+    // != null 同时捕获 null 和 undefined，避免显示 "+undefined"
     const dashboardTodayCount = document.getElementById('dashboard-today-memories');
     if (dashboardTodayCount) {
       dashboardTodayCount.textContent = data.todayNewMemories != null ? `+${data.todayNewMemories}` : '—';
