@@ -57,3 +57,5 @@ date: 2026-07-10
 - ❌ 用 sleep 等待异步（用 `vi.waitFor` 替代）
 - ❌ 在测试中调真实文件系统的项目目录（用 `mkdtempSync`）
 - ❌ 单元测试依赖网络
+- ❌ 仅断言 mock 自身被调用（如 `expect(mockFn).toHaveBeenCalled()`），不验证被测对象的实际行为变化——此类测试无回归保护价值，应删除或补充行为断言
+- ❌ 闪烁测试（intermittent failures）：因 timing/并发/环境差异偶发失败的测试必须立即修复或删除，不允许用 `test.retry` 掩盖。闪烁测试比缺失测试更危险——它侵蚀整个测试套件的信任基础

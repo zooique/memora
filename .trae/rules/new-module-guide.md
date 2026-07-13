@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 新增模块的标准流程（防止随意加模块破坏架构）
-version: v0.1
-date: 2026-06-02
+version: v0.2
+date: 2026-07-13
 ---
 
 # 新增模块指南
@@ -31,6 +31,7 @@ date: 2026-06-02
 - [ ] 它与哪些现有模块交互？
 - [ ] 它是否需要新的外部依赖？
 - [ ] 它是否需要新的 ADR？
+- [ ] 是否已回答 [ADR-017](./decisions/ADR-017-natural-growth-redefinition.md) 架构层 4 问（详见 [backend_layers_rules.md §判断标准](./backend_layers_rules.md)）？
 
 如果以上任何一项不明确——**暂停，回去问用户**。
 

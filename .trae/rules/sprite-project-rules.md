@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: "memora-sprite 宿主项目总则、技术栈清单、目录结构、与内核的关系"
-version: v0.9
-date: 2026-07-10
+version: v1.0
+date: 2026-07-13
 ---
 
 # memora-sprite · 宿主项目总则
@@ -19,7 +19,7 @@ date: 2026-07-10
 | native 模块 | 零（ADR-002） | better-sqlite3（ADR-SP-002） |
 | 接口实现 | 定义接口 | 实现接口（IMemoryStorage / ISessionStore） |
 | 规则关系 | 内核规则精灵必须遵守 | 精灵规则仅约束精灵代码 |
-| ADR 前缀 | ADR-001~015 | ADR-SP-001~008 + ADR-SP-015~016 |
+| ADR 前缀 | ADR-001~017（跳过 005） | ADR-SP-001~008 + ADR-SP-015~016 |
 
 **内核 ADR 精灵必须遵守，精灵 ADR 内核不需要知道。**
 
@@ -90,90 +90,7 @@ npm run package:win   # 自动：sync-memora → build:electron → clean-releas
 
 ## 4. 目录结构
 
-> 详见 [ADR-SP-007](./decisions/ADR-SP-007-directory-structure.md) 和 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)
-
-```
-hosts/memora-sprite/
-├── package.json              ← 独立依赖（memora + better-sqlite3 + electron）
-├── tsconfig.json / tsconfig.electron.json
-├── vitest.config.ts
-└── src/
-    ├── index.ts              ← 纯库导出入口（类型 + 接口 + startSprite）
-    ├── cli.ts                ← CLI 入口（setupWizard + 命令路由 + REPL）
-    │
-    ├── electron/             ← Electron 主进程 + 渲染进程
-    │   ├── main.ts           ← 主进程入口（窗口生命周期 + 应用启动）
-    │   ├── preload.ts        ← 预加载脚本（contextBridge 暴露 API）
-    │   ├── esmShim.ts        ← ESM 兼容 shim
-    │   ├── errorHandler.ts   ← 全局错误处理
-    │   ├── interaction.ts    ← Electron 交互实现（IInteraction 接口）
-    │   ├── agentListeners.ts ← Agent 事件监听器
-    │   ├── spriteEventBridge.ts ← 精灵事件桥接
-    │   ├── trayIcon.ts       ← 系统托盘管理
-    │   ├── clipboardHandler.ts ← 剪贴板三重保护处理器（Phase 3.1）
-    │   ├── shortcuts.ts      ← 全局快捷键管理器（Phase 3.3）
-    │   ├── types.ts          ← Electron 主进程类型 barrel（S-03 阶段 2）
-    │   │
-    │   ├── ipc/              ← IPC 通信层
-    │   │   ├── index.ts / channels.ts / handlers.ts / minimalHandlers.ts
-    │   │   ├── types.ts / inputValidation.ts
-    │   │   └── chatHandlers.ts / configHandlers.ts / memoryHandlers.ts / ...
-    │   │
-    │   ├── windows/          ← 窗口管理
-    │   │   ├── floatWindow.ts / windowManager.ts / windowState.ts
-    │   │
-    │   └── renderer/         ← 渲染进程（UI 层，不直接导入 electron）
-    │       ├── index.html / renderer.ts / ui.ts / types.ts
-    │       ├── ipcListeners.ts / initHelpers.ts
-    │       ├── controllers/   ← 面板控制器（业务逻辑，不直接操作 DOM）
-    │       │   ├── settingsController.ts / sessionController.ts
-    │       │   ├── memoryController.ts / personaController.ts
-    │       ├── helpers/       ← 渲染进程工具函数
-    │       │   ├── domHelpers.ts / errorHelpers.ts / eventTracker.ts
-    │       ├── components/    ← 可复用 UI 组件
-    │       │   ├── themeManager.ts / modal.ts / toast.ts / ...
-    │       ├── panels/        ← 面板管理器（DOM 绑定 + 渲染逻辑）
-    │       │   ├── chatPanelManager.ts / memoryPanelManager.ts / ...
-    │       ├── float/         ← 浮动窗口
-    │       │   ├── float.ts / float.html
-    │       └── styles/        ← CSS 样式表
-    │           ├── base.css / chat.css / layout.css / ...
-    │
-    ├── sprite/               ← 精灵核心层（纯逻辑，零 Electron 依赖）
-    │   ├── sprite.ts / spriteConfig.ts / spriteTracer.ts
-    │   ├── triggers.ts / tools.ts / constants.ts
-    │   ├── fileWatcherTrigger.ts / interaction.ts
-    │   ├── skillInstaller.ts ← 技能安装器（拖入安装，Phase 4.3）
-    │   ├── cli/              ← CLI 专属模块
-    │   │   ├── formatter.ts / interaction.ts
-    │   ├── audit/            ← 审计日志
-    │   │   ├── auditManager.ts / jsonlAppender.ts
-    │   └── controllers/      ← 精灵控制器（Agent 能力扩展）
-    │       ├── index.ts / memoryController.ts
-    │       ├── personaController.ts / proactiveEngine.ts
-    │       └── presenceController.ts ← 在场状态控制器（Phase 3）
-    │
-    ├── storage/              ← 持久化层
-    │   ├── sessionStore.ts / sqliteStorage.ts
-    │   ├── spriteConfigStore.ts / sqliteDatabaseTypes.ts
-    │
-    ├── web/                  ← Web 调试通道（Phase 4 交付）
-    │   ├── server.ts         ← 原生 HTTP 服务端（零 Express 依赖）
-    │   ├── static.ts         ← 静态文件服务
-    │   ├── preloadWeb.ts     ← Web 端预加载（API 暴露）
-    │   ├── webContext.ts     ← Web 端上下文管理
-    │   └── routes/           ← REST API 路由
-    │       ├── index.ts / types.ts
-    │       ├── chatStreamRoutes.ts / configRoutes.ts
-    │       ├── memoryRoutes.ts / sessionRoutes.ts
-    │       └── systemRoutes.ts
-    │
-    └── __tests__/            ← 测试文件（按模块分组）
-        ├── electron/         ← ipcHandlers.test.ts / ui.test.ts
-        ├── sprite/           ← sprite.test.ts / spriteIntegration.test.ts
-        ├── storage/          ← sessionStore.test.ts / sqliteStorage.test.ts + helpers/
-        └── renderer/         ← float.test.ts / sessionController.test.ts
-```
+> 详见 [ADR-SP-007](./decisions/ADR-SP-007-directory-structure.md) 和 [directory-structure.md](../../hosts/memora-sprite/.trae/rules/directory-structure.md)（真理源，随迭代同步）
 
 ### 4.1 渲染进程分层约束（C-8 确立）
 
@@ -210,12 +127,12 @@ hosts/memora-sprite/
 
 | 违规项 | 位置 | 处理方式 |
 |--------|------|----------|
-| Provider CRUD 7 处 | `settingsPanelManager.ts` L768-1105 | 归类为"UI 耦合型业务逻辑"，允许直调（已通过 `host` 回调注入 toast/confirm） |
-| 画像 confirm/reject 3 处 | `profilePanelManager.ts` L253/272/301 | 技术债：应委托 `settingsController`（加载已委托，写操作未委托，模式不一致） |
-| 审计日志清空 1 处 | `auditPanelManager.ts` L102 | 技术债：应委托 `settingsController`（同上模式不一致） |
-| 窗口控制 4 处 | `panelRouter.ts` L110/329/334/339 | 归类为"合理 UI 联动"，允许直调 |
-| 命令面板 6 处 | `commandPaletteManager.ts` L289-455 | 归类为"合理 UI 联动"（快捷启动器定位） |
-| 输入区 Provider 选择 5 处 | `inputAreaManager.ts` L350-486 | 归类为"合理 UI 联动"（独立 UI 表面的快捷操作） |
+| Provider CRUD 7 处 | `settingsPanelManager.ts` | 归类为"UI 耦合型业务逻辑"，允许直调（已通过 `host` 回调注入 toast/confirm） |
+| 画像 confirm/reject 3 处 | `profilePanelManager.ts` | 技术债：应委托 `settingsController`（加载已委托，写操作未委托，模式不一致） |
+| 审计日志清空 1 处 | `auditPanelManager.ts` | 技术债：应委托 `settingsController`（同上模式不一致） |
+| 窗口控制 4 处 | `panelRouter.ts` | 归类为"合理 UI 联动"，允许直调 |
+| 命令面板 6 处 | `commandPaletteManager.ts` | 归类为"合理 UI 联动"（快捷启动器定位） |
+| 输入区 Provider 选择 5 处 | `inputAreaManager.ts` | 归类为"合理 UI 联动"（独立 UI 表面的快捷操作） |
 | 其他 7 处 | skillDrop/clipboard/searchMessages 等 | 归类为"合理 UI 联动"（单一功能专项触发） |
 
 > 技术债（画像 3 处 + 审计 1 处）触发时机：profile/audit 模块下次有功能需求时顺带偿还。
@@ -286,16 +203,9 @@ export class ClipboardManager { ... }
 - **字段级**：每个 `private` 字段必须有单行 `/** ... */` 说明用途
 - **方法级**：公共方法必须含 `@param` / `@returns`，私有方法可简化但需说明意图
 
-## 5. 命名规范（与内核一致）
+## 5. 命名规范
 
-| 类型 | 规则 |
-|------|------|
-| 文件夹 | 连字符 |
-| TS 文件 | 小驼峰 |
-| 类 | 大驼峰 |
-| 变量/函数 | 小驼峰 |
-| 常量 | 全大写下划线 |
-| 类型/接口 | 大驼峰 |
+命名规范与内核一致（详见 [project-rules.md §4](./project-rules.md)）。
 
 ### 4.3 Web 调试通道（Phase 4 交付）
 
@@ -305,7 +215,7 @@ export class ClipboardManager { ... }
 | 维度 | 说明 |
 |------|------|
 | 入口 | `npm run start:web` / `npm run dev:web`（tsx watch） |
-| 服务端 | 372 行 `server.ts`，原生 `http.createServer`，三阶段优雅关闭 |
+| 服务端 | `server.ts`，原生 `http.createServer`，三阶段优雅关闭 |
 | 路由 | 7 个 REST 路由文件（chat/config/memory/session/system + types + index） |
 | 安全 | 路径穿越防护 + CSP/X-Content-Type-Options 等 Headers + 127.0.0.1 隔离 |
 | 测试 | 6 个路由测试文件（chatStream/config/memory/session/system + types），全量通过 |

@@ -25,7 +25,7 @@
 import { basename } from 'node:path';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
-import type { AgentChunk, UIMessages, ArchiveMode } from '@/agent/types.js';
+import type { AgentChunk, ArchiveMode, AgentOptions, AgentContext, AgentConfig } from '@/agent/types.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
@@ -51,12 +51,8 @@ import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
 import { TypedEventEmitter, type AgentEventMap } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
-import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { IMemoryRelationStore } from '@/memory/relationStore.js';
-import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { IVectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
-import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
+import type { AgentMetrics } from '@/agent/tracer.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 
 // ─── 模块级常量 ─────────────────────────────────────────
@@ -68,91 +64,6 @@ const AGENT_EVENT_NAMES: ReadonlySet<string> = new Set([
   'memoryRecalled', 'sessionForked', 'insightExtracted',
   'conflictDetected', 'projectSwitched', 'skillMatched',
 ]);
-
-// ─── 类型定义 ───────────────────────────────────────────
-
-/** Agent 构造选项 */
-export interface AgentOptions {
-  /** 项目路径（必须） */
-  projectPath: string;
-  /** 前台 LLM Provider（必须，宿主负责创建） */
-  provider: LlmProvider;
-  /** 后台 LLM Provider（可选，用于投影等后台操作，不配时复用前台） */
-  backgroundProvider?: LlmProvider;
-  /** 配置目录（personas/rules/skills） */
-  configDir?: string;
-  /** 记忆数据目录（默认 ~/.memora） */
-  dataDir?: string;
-  /** 项目注册表目录（默认与 dataDir 相同）。设为用户级路径可避免每项目重复存储 */
-  registryDir?: string;
-  /** 最大上下文 token 数（默认 120000） */
-  maxContextTokens?: number;
-  /** 默认角色名 */
-  persona?: string;
-  /** 安全权限 */
-  permission?: 'owner' | 'guest';
-  /** 允许的路径白名单 */
-  allowedPaths?: string[];
-  /** 写入确认 */
-  confirmWrites?: boolean;
-  /** 向量存储（可选，提供时启用语义搜索召回；宿主可注入任意 IVectorStore 实现） */
-  vectorStore?: IVectorStore;
-  /** 召回时排除的 source 标签（默认 ['persona', 'rule', 'skill']，这些已由 bootstrap 注入） */
-  recallExcludeSources?: string[];
-  /** 外部注入的存储实例（可选，不传则内部创建 InMemoryStorage） */
-  storage?: IMemoryStorage;
-  /** 外部注入的记忆关系存储（可选，ADR-014 侧车模型，不传则跳过关系构建） */
-  relationStore?: IMemoryRelationStore;
-  /** 外部注入的会话存储（可选，不传则仅在内存中保存） */
-  sessionStore?: ISessionStore;
-  /** 可观测性 Tracer（可选，不传则使用 NoopTracer 静默丢弃所有 span） */
-  tracer?: ITracer;
-  /** 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） */
-  messages?: UIMessages;
-  /** 上下文超限时是否自动生成摘要（默认 true，开启后首次截断时增加 ~1-2s 延迟） */
-  enableContextSummary?: boolean;
-  /**
-   * 归档模式（ADR-015，默认 'full'）
-   *
-   * - 'full'：profile facts + insight 自动归档（对话原始内容待会话归档实现后自动）
-   * - 'insights-only'：profile facts + insight 自动归档，对话原始内容需手动
-   * - 'manual'：所有归档都需手动触发
-   */
-  archiveMode?: ArchiveMode;
-}
-
-/** Agent 初始化后暴露的运行时上下文 */
-export type AgentContext = ProjectContext;
-
-/** Agent 项目条目（来自 ProjectManager 注册表） */
-export interface AgentProjectEntry {
-  name: string;
-  path: string;
-  lastOpened: string;
-}
-
-/** Agent 内部配置（构造参数分组） */
-interface AgentConfig {
-  dataDir: string;
-  registryDir: string | undefined;
-  maxContextTokens: number;
-  personaName: string | undefined;
-  permission: 'owner' | 'guest';
-  allowedPaths: string[];
-  confirmWrites: boolean;
-  vectorStore: IVectorStore | undefined;
-  recallExcludeSources: string[];
-  storage: IMemoryStorage | undefined;
-  relationStore: IMemoryRelationStore | undefined;
-  sessionStore: ISessionStore | undefined;
-  projectPath: string;
-  configDir: string | undefined;
-  tracer: ITracer | undefined;
-  messages: UIMessages | undefined;
-  enableContextSummary: boolean;
-  /** 归档模式（ADR-015，默认 'full'） */
-  archiveMode: ArchiveMode;
-}
 
 // ─── Agent 门面类 ───────────────────────────────────────
 

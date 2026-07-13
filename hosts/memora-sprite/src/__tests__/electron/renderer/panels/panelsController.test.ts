@@ -1,28 +1,17 @@
 /**
  * 面板控制器组合测试（P1）
  *
- * 注意：perceptionPanelManager.ts 模块尚未实现（当前为 perceptionRenderer.ts）。
- * PerceptionPanelManager 测试部分已 skip，InputAreaManager 测试仍有效。
- * 取消 skip 时需同步创建 src/electron/renderer/panels/perceptionPanelManager.ts。
- *
  * 覆盖目标：
- *   - PerceptionPanelManager（218 行/0 测试）：toggle/close + 6 个 init 子绑定 + cleanup
- *   - InputAreaManager（214 行/0 测试）：键盘事件 + 自适应高度 + ResizeObserver + getValue/setValue/clearInput
+ *   - InputAreaManager：键盘事件 + 自适应高度 + ResizeObserver + getValue/setValue/clearInput
  *
  * Mock 策略：
  * - jsdom 环境 + setupDOM() 设置完整 DOM
  * - DI 注入 mock Host 接口
- * - mock window.electronAPI.getPerceptionSnapshot（异步拉取感知快照）
  * - mock ResizeObserver（jsdom 未实现）
  *
  * @vitest-environment jsdom
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-// 注意：PerceptionPanelManager 模块尚未实现（当前为 perceptionRenderer.ts）。
-// 本文件 PerceptionPanelManager 测试已 skip，待模块实现后启用。
-// 取消 skip 时需恢复 PerceptionPanelManager 导入。
-// import { PerceptionPanelManager } from '../../../../electron/renderer/panels/perceptionPanelManager.js';
-// import type { PerceptionPanelHost } from '../../../../electron/renderer/panels/perceptionPanelManager.js';
 import { InputAreaManager } from '../../../../electron/renderer/panels/inputAreaManager.js';
 import type { InputAreaHost } from '../../../../electron/renderer/panels/inputAreaManager.js';
 import { EventTracker } from '../../../../electron/renderer/helpers/eventTracker.js';
@@ -35,36 +24,7 @@ class MockResizeObserver {
 }
 globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
 
-// ─── Mock window.electronAPI（PerceptionPanelManager.toggle 拉取快照） ──
-const mockGetPerceptionSnapshot = vi.fn();
-vi.stubGlobal('electronAPI', {
-  getPerceptionSnapshot: mockGetPerceptionSnapshot,
-});
-
 // ─── 测试辅助 ─────────────────────────────────────────────
-
-/** 设置 PerceptionPanelManager 所需的完整 DOM */
-function setupPerceptionDOM(): void {
-  document.body.innerHTML = `
-    <div id="sprite-status-bar" tabindex="0">状态条</div>
-    <div id="perception-panel" class="hidden">
-      <button class="perception-panel-close">关闭</button>
-      <button id="perception-metrics-toggle">运行指标</button>
-      <div id="perception-metrics-grid" class="hidden"></div>
-      <div id="perception-metrics-arrow"></div>
-      <button id="perception-review-toggle">对话回顾</button>
-      <div id="perception-review" class="hidden"></div>
-      <div id="perception-review-arrow"></div>
-      <button id="source-health-toggle">记忆源健康</button>
-      <div id="source-health-list" class="hidden"></div>
-      <div id="source-health-arrow"></div>
-    </div>
-    <div id="recommendation-list">
-      <div data-action="view-recommendation" data-memory-id="mem-1">推荐1</div>
-      <div data-action="view-recommendation" data-memory-id="mem-2">推荐2</div>
-    </div>
-  `;
-}
 
 /** 设置 InputAreaManager 所需的完整 DOM */
 function setupInputAreaDOM(): void {
@@ -74,23 +34,6 @@ function setupInputAreaDOM(): void {
       <button id="btn-send" disabled>发送</button>
     </div>
   `;
-}
-
-/** 创建 mock PerceptionPanelHost（暂 skip，待模块实现后恢复） */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function createMockPerceptionHost(): any {
-  const mocks = {
-    triggerMemoryRecall: vi.fn(),
-    updateAffectDisplay: vi.fn(),
-    updateRapportDisplay: vi.fn(),
-    updateContextDisplay: vi.fn(),
-    updatePatternsDisplay: vi.fn(),
-    updateProactiveStatsDisplay: vi.fn(),
-  };
-  return {
-    ...mocks,
-    mocks,
-  };
 }
 
 /** 创建 mock InputAreaHost */
@@ -113,295 +56,6 @@ function createMockInputHost(streaming = false): InputAreaHost & {
     mocks,
   };
 }
-
-// ─── PerceptionPanelManager 测试 ─────────────────────
-
-describe.skip('PerceptionPanelManager', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let controller: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let host: any;
-
-  beforeEach(() => {
-    vi.useFakeTimers();
-    setupPerceptionDOM();
-    host = createMockPerceptionHost();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    controller = null as any; // 待模块实现后恢复: new PerceptionPanelManager(host)
-    mockGetPerceptionSnapshot.mockReset();
-  });
-
-  afterEach(() => {
-    controller.cleanup();
-    vi.useRealTimers();
-  });
-
-  describe('toggle 面板展开/收起', () => {
-    it('初始 hidden 状态下 toggle 应展开面板（移除 hidden + 添加 visible）', async () => {
-      controller.init();
-      const panel = document.getElementById('perception-panel')!;
-      expect(panel.classList.contains('hidden')).toBe(true);
-
-      // 展开面板（需推进 fake timers 让 setTimeout 执行）
-      mockGetPerceptionSnapshot.mockResolvedValue(null);
-      controller.toggle();
-      await vi.runAllTimersAsync();
-
-      expect(panel.classList.contains('visible')).toBe(true);
-      expect(panel.classList.contains('hidden')).toBe(false);
-    });
-
-    it('展开时应拉取感知快照并更新四块感知展示', async () => {
-      controller.init();
-      const snapshot = {
-        affect: { mood: 'happy', energy: 0.8 },
-        rapport: { level: 'familiar' },
-        context: { topic: '编程' },
-        patterns: [{ type: 'work-session' }],
-        proactiveStats: { acceptanceRate: 0.75 },
-      };
-      mockGetPerceptionSnapshot.mockResolvedValue(snapshot);
-
-      controller.toggle();
-      await vi.runAllTimersAsync();
-
-      expect(mockGetPerceptionSnapshot).toHaveBeenCalledTimes(1);
-      expect(host.mocks.updateAffectDisplay).toHaveBeenCalledWith(snapshot.affect);
-      expect(host.mocks.updateRapportDisplay).toHaveBeenCalledWith(snapshot.rapport);
-      expect(host.mocks.updateContextDisplay).toHaveBeenCalledWith(snapshot.context);
-      expect(host.mocks.updatePatternsDisplay).toHaveBeenCalledWith({ patterns: snapshot.patterns });
-      expect(host.mocks.updateProactiveStatsDisplay).toHaveBeenCalledWith(snapshot.proactiveStats);
-    });
-
-    it('快照为 null 时应静默返回（不更新任何展示）', async () => {
-      controller.init();
-      mockGetPerceptionSnapshot.mockResolvedValue(null);
-
-      controller.toggle();
-      await vi.runAllTimersAsync();
-
-      expect(mockGetPerceptionSnapshot).toHaveBeenCalledTimes(1);
-      expect(host.mocks.updateAffectDisplay).not.toHaveBeenCalled();
-    });
-
-    it('拉取快照异常时应静默失败（不抛错、不阻塞面板展开）', async () => {
-      controller.init();
-      mockGetPerceptionSnapshot.mockRejectedValue(new Error('网络错误'));
-
-      // 不应抛错
-      expect(() => controller.toggle()).not.toThrow();
-      await vi.runAllTimersAsync();
-
-      // 面板应已展开（拉取异常不阻塞）
-      const panel = document.getElementById('perception-panel')!;
-      expect(panel.classList.contains('visible')).toBe(true);
-    });
-
-    it('visible 状态下 toggle 应收起面板（150ms 动画后添加 hidden）', async () => {
-      controller.init();
-      const panel = document.getElementById('perception-panel')!;
-      // 模拟已展开状态
-      panel.classList.remove('hidden');
-      panel.classList.add('visible');
-
-      // 收起面板
-      controller.toggle();
-      // 动画期间应有 hiding 类
-      expect(panel.classList.contains('hiding')).toBe(true);
-      expect(panel.classList.contains('visible')).toBe(false);
-
-      // 推进 150ms 后应添加 hidden
-      await vi.advanceTimersByTimeAsync(150);
-      expect(panel.classList.contains('hidden')).toBe(true);
-      expect(panel.classList.contains('hiding')).toBe(false);
-    });
-
-    it('panel 元素不存在时应静默返回', () => {
-      document.body.innerHTML = ''; // 清空 DOM
-      expect(() => controller.toggle()).not.toThrow();
-    });
-  });
-
-  describe('close 关闭面板', () => {
-    it('visible 状态下 close 应播放收起动画并添加 hidden', async () => {
-      controller.init();
-      const panel = document.getElementById('perception-panel')!;
-      panel.classList.remove('hidden');
-      panel.classList.add('visible');
-
-      controller.close();
-      expect(panel.classList.contains('hiding')).toBe(true);
-      expect(panel.classList.contains('visible')).toBe(false);
-
-      await vi.advanceTimersByTimeAsync(150);
-      expect(panel.classList.contains('hidden')).toBe(true);
-    });
-
-    it('panel 不存在时应静默返回', () => {
-      document.body.innerHTML = '';
-      expect(() => controller.close()).not.toThrow();
-    });
-  });
-
-  describe('bindRecommendationClick 推荐记忆点击', () => {
-    it('点击推荐项应调用 triggerMemoryRecall 跳转', () => {
-      controller.init();
-      const item = document.querySelector('[data-action="view-recommendation"]') as HTMLElement;
-
-      item.click();
-
-      expect(host.mocks.triggerMemoryRecall).toHaveBeenCalledWith('mem-1');
-    });
-
-    it('点击非推荐项区域不应触发 triggerMemoryRecall', () => {
-      controller.init();
-      const list = document.getElementById('recommendation-list')!;
-
-      list.click(); // 点击容器本身
-
-      expect(host.mocks.triggerMemoryRecall).not.toHaveBeenCalled();
-    });
-
-    it('memoryId 为空时不应触发 triggerMemoryRecall', () => {
-      controller.init();
-      const item = document.querySelector('[data-action="view-recommendation"]') as HTMLElement;
-      item.removeAttribute('data-memory-id');
-
-      item.click();
-
-      expect(host.mocks.triggerMemoryRecall).not.toHaveBeenCalled();
-    });
-
-    it('recommendation-list 不存在时应静默返回（init 不抛错）', () => {
-      document.body.innerHTML = '';
-      expect(() => controller.init()).not.toThrow();
-    });
-  });
-
-  describe('bindStatusBarToggle 状态条触发', () => {
-    it('点击状态条应触发 toggle', async () => {
-      controller.init();
-      mockGetPerceptionSnapshot.mockResolvedValue(null);
-      const statusBar = document.getElementById('sprite-status-bar')!;
-
-      statusBar.click();
-      await vi.runAllTimersAsync();
-
-      const panel = document.getElementById('perception-panel')!;
-      expect(panel.classList.contains('visible')).toBe(true);
-    });
-
-    it('Enter 键应触发 toggle（可访问性）', async () => {
-      controller.init();
-      mockGetPerceptionSnapshot.mockResolvedValue(null);
-      const statusBar = document.getElementById('sprite-status-bar')!;
-
-      statusBar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-      await vi.runAllTimersAsync();
-
-      const panel = document.getElementById('perception-panel')!;
-      expect(panel.classList.contains('visible')).toBe(true);
-    });
-
-    it('Space 键应触发 toggle（可访问性）', async () => {
-      controller.init();
-      mockGetPerceptionSnapshot.mockResolvedValue(null);
-      const statusBar = document.getElementById('sprite-status-bar')!;
-
-      statusBar.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
-      await vi.runAllTimersAsync();
-
-      const panel = document.getElementById('perception-panel')!;
-      expect(panel.classList.contains('visible')).toBe(true);
-    });
-
-    it('其他键不应触发 toggle', () => {
-      controller.init();
-      const statusBar = document.getElementById('sprite-status-bar')!;
-
-      statusBar.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }));
-
-      const panel = document.getElementById('perception-panel')!;
-      expect(panel.classList.contains('visible')).toBe(false);
-    });
-  });
-
-  describe('bindCloseButton 关闭按钮', () => {
-    it('点击关闭按钮应触发 close', async () => {
-      controller.init();
-      const closeBtn = document.querySelector('.perception-panel-close') as HTMLElement;
-      const panel = document.getElementById('perception-panel')!;
-      panel.classList.remove('hidden');
-      panel.classList.add('visible');
-
-      closeBtn.click();
-
-      expect(panel.classList.contains('hiding')).toBe(true);
-      await vi.advanceTimersByTimeAsync(150);
-      expect(panel.classList.contains('hidden')).toBe(true);
-    });
-  });
-
-  describe('三块折叠区域', () => {
-    it('点击运行指标 toggle 应切换 grid/arrow 状态', () => {
-      controller.init();
-      const toggle = document.getElementById('perception-metrics-toggle')!;
-      const grid = document.getElementById('perception-metrics-grid')!;
-      const arrow = document.getElementById('perception-metrics-arrow')!;
-
-      expect(grid.classList.contains('hidden')).toBe(true);
-      expect(arrow.classList.contains('expanded')).toBe(false);
-
-      toggle.click();
-
-      expect(grid.classList.contains('hidden')).toBe(false);
-      expect(arrow.classList.contains('expanded')).toBe(true);
-
-      toggle.click();
-
-      expect(grid.classList.contains('hidden')).toBe(true);
-      expect(arrow.classList.contains('expanded')).toBe(false);
-    });
-
-    it('点击对话回顾 toggle 应切换 review/arrow 状态', () => {
-      controller.init();
-      const toggle = document.getElementById('perception-review-toggle')!;
-      const review = document.getElementById('perception-review')!;
-      const arrow = document.getElementById('perception-review-arrow')!;
-
-      toggle.click();
-
-      expect(review.classList.contains('hidden')).toBe(false);
-      expect(arrow.classList.contains('expanded')).toBe(true);
-    });
-
-    it('点击记忆源健康 toggle 应切换 list/arrow 状态', () => {
-      controller.init();
-      const toggle = document.getElementById('source-health-toggle')!;
-      const list = document.getElementById('source-health-list')!;
-      const arrow = document.getElementById('source-health-arrow')!;
-
-      toggle.click();
-
-      expect(list.classList.contains('hidden')).toBe(false);
-      expect(arrow.classList.contains('expanded')).toBe(true);
-    });
-  });
-
-  describe('cleanup 事件清理', () => {
-    it('cleanup 后点击状态条不应再触发 toggle', () => {
-      controller.init();
-      controller.cleanup();
-
-      const statusBar = document.getElementById('sprite-status-bar')!;
-      statusBar.click();
-
-      // toggle 不应被触发（panel 仍为 hidden）
-      const panel = document.getElementById('perception-panel')!;
-      expect(panel.classList.contains('visible')).toBe(false);
-    });
-  });
-});
 
 // ─── InputAreaManager 测试 ──────────────────────────────
 

@@ -154,15 +154,11 @@ domain），其余在 Agent Loop 中按需检索。
 **在代码中的体现**：
 
 - `decayScores()` 衰减 insight/profile/work-projection 的 score（由内核 Agent 定时调度，sprite 通过 `decayCompleted` 事件确认）
-- 衰减公式（减法式，`SqliteStorage` 与 `InMemoryStorage` 对齐）：
-  - 触发条件：`daysSinceAccess > 7` 时才衰减
-  - 衰减量：`0.02 * floor(daysSinceAccess / 7)`（每 7 天衰减 0.02）
-  - 下限：`MAX(0.1, ...)`——score 降至 0.1 后不再继续衰减，保留最低权重
-  - 跳过软删除：`deleted_at IS NULL` 过滤
+- 减法式衰减 + 下限保留：score 降至下限后不再继续衰减，保留最低权重（公式细节详见 `MemoryDecayScheduler` 实现与 [ADR-015](./decisions/ADR-015-archive-mode.md)）
 - `init()` 时首次衰减 + 定时衰减（由内核 `MemoryDecayScheduler` 调度）
 - 物理清理：`purgeExpiredMemories(before)` 清理过期软删除记忆；回收站定时器默认保留 30 天
 
-**设计取舍**：减法式衰减 + 下限 0.1 保证记忆不会完全消失（可被召回但权重极低），与"永不删除"不同——物理清理由回收站机制负责，权重衰减仅影响召回优先级。
+**设计取舍**：减法式衰减 + 下限保留保证记忆不会完全消失（可被召回但权重极低），与"永不删除"不同——物理清理由回收站机制负责，权重衰减仅影响召回优先级。
 
 **禁止**：
 

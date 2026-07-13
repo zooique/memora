@@ -1,8 +1,8 @@
 ---
 alwaysApply: false
 description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node 本地项目）
-version: v0.1
-date: 2026-07-09
+version: v0.2
+date: 2026-07-13
 ---
 
 # 通用编码约束规则
@@ -45,7 +45,7 @@ date: 2026-07-09
 | DON'T | 直接吞异常返回空对象/空数组——问题必须显性抛出 |
 | DON'T | 嵌套多层 `try/catch`——单一异常来源只配一层捕获 |
 
-**Memora 适配**：内核通过 `MemoraError` 统一错误体系（详见 [project-rules.md §9.1](./project-rules.md)）；AgentLoop 的 LLM 调用韧性（指数退避重试）是此规则的典型应用。
+**Memora 适配**：内核通过 `MemoraError` 统一错误体系（详见 [project-rules.md §7.1](./project-rules.md)）；AgentLoop 的 LLM 调用韧性（指数退避重试）是此规则的典型应用。
 
 ## 3. 代码简洁与复用
 
@@ -61,7 +61,7 @@ date: 2026-07-09
 | DON'T | 魔法数字、魔法字符串散落业务代码 |
 | DON'T | 用 `export { x } from '...'` 透传导出后，在当前模块内部使用 `x`——透传导出不创建模块作用域绑定，会触发 `ReferenceError` |
 
-**Memora 适配**：禁止 `@ts-ignore` 或 `as any`（详见 [project-rules.md §9.1](./project-rules.md)）；常量用全大写下划线（如 `BLOCKED_PATTERNS`、`CHAT_LOCK_TIMEOUT_MS`）。
+**Memora 适配**：禁止 `@ts-ignore` 或 `as any`（详见 [project-rules.md §7.1](./project-rules.md)）；常量用全大写下划线（如 `BLOCKED_PATTERNS`、`CHAT_LOCK_TIMEOUT_MS`）。
 
 **ES Module re-export 陷阱**：`export { x } from '...'` 是透传导出（re-export），不在当前模块作用域创建 `x` 绑定。若模块内部函数（如 `reportError()`）也使用 `x`，运行时会抛 `ReferenceError: x is not defined`。正确做法：先 `import { x } from '...'` 再 `export { x }`，既在模块作用域创建绑定又保持导出。
 
@@ -93,10 +93,10 @@ date: 2026-07-09
 | DO | 大批量数据采用分页/流式读取 |
 | DO | 数据库模型单独定义 TypeScript 类型，隔离存储结构与业务返回结构 |
 | DON'T | 业务层裸写 SQL 或直接操作数据库实例 |
-| DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要，详见 [project-rules.md §9.3](./project-rules.md)） |
+| DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要，详见 [project-rules.md §7.3](./project-rules.md)） |
 | DON'T | 一次性全量加载大数据集 |
 
-**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建（详见 [project-rules.md §1.4](./project-rules.md)）；配置文件是真理源，SQLite 是运行时索引（详见 [project-rules.md §1.5](./project-rules.md)）。
+**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建（详见 [project-rules.md §1.4](./project-rules.md)）；配置文件是真理源，SQLite 是运行时索引（详见 [project-rules.md §1.5](./project-rules.md)）；禁止在 SQLite 中存储原始工作内容（详见 [project-rules.md §7.3](./project-rules.md)）。
 
 ## 6. 函数与变量规范
 
@@ -108,7 +108,7 @@ date: 2026-07-09
 | DO | 单函数代码行数控制在 60 行以内，超长直接拆分 |
 | DO | 变量语义化命名，布尔值统一使用 `is`/`has`/`should` 前缀 |
 | DO | 优先使用解构、可选链（`?.`）简化判空 |
-| DON'T | 简写、无意义命名（如 `a`、`b`、`tmp`、`data2`） |
+| DON'T | 简写、无意义命名（如 `a`、`b`、`tmp`、`data2`、`data`、`info`）——`data`/`info` 携带零语义信息，无法区分用途，应替换为领域名词（如 `memories`、`snapshot`、`config`） |
 | DON'T | 提前声明大量无用兜底变量——临时中间变量按需定义 |
 | DON'T | 堆砌多层 `if` 判断替代可选链 |
 
