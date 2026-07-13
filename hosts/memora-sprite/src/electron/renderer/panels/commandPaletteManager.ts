@@ -507,8 +507,12 @@ export class CommandPaletteManager {
     this.isOpen = false;
     this.selectedIndex = 0;
 
-    // 恢复背景滚动
-    document.body.style.overflow = '';
+    // UX-0713-F10：有条件恢复背景滚动——仅当没有其他浮层打开时才恢复
+    // 避免命令面板与搜索弹窗同时打开时，关闭一个会错误恢复另一个的 overflow:hidden
+    const otherOverlays = document.querySelectorAll('.modal:not(.hidden), .search-messages-modal:not(.hidden)');
+    if (otherOverlays.length === 0) {
+      document.body.style.overflow = '';
+    }
 
     // 清空输入
     if (this.inputEl) {
@@ -606,6 +610,8 @@ export class CommandPaletteManager {
         break;
       case 'Escape':
         e.preventDefault();
+        // UX-0713-F9：阻止冒泡到 document 层的 ModalManager，避免同时关闭背后 modal
+        e.stopPropagation();
         this.close();
         break;
     }

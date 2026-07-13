@@ -238,9 +238,16 @@ export class PanelRouter {
 
     // Esc：关闭下拉菜单；设置/记忆/仪表盘/感知面板激活时切回对话
     if (e.key === 'Escape') {
-      // 弹窗打开时，Escape 交给 ModalManager 处理（关闭最上层弹窗），不触发面板切换
+      // UX-0713-F8：弹窗或浮层打开时，Escape 交给对应管理器处理，不触发面板切换
+      // 命令面板和搜索弹窗不是 .modal 类，需单独检测
       const openModals = document.querySelectorAll('.modal:not(.hidden)');
       if (openModals.length > 0) {
+        return;
+      }
+      // 命令面板 / 搜索弹窗打开时，不触发面板切换（由各自管理器处理 Escape）
+      const commandPalette = document.querySelector('.command-palette:not(.hidden)');
+      const searchModal = document.querySelector('.search-messages-modal:not(.hidden)');
+      if (commandPalette || searchModal) {
         return;
       }
       // 设置或记忆或仪表盘或感知面板激活时，Escape 切回对话面板

@@ -62,6 +62,16 @@ function createMockHost(): ReturnType<typeof vi.fn> & Record<string, ReturnType<
     showConfirmDialog: vi.fn(async () => true),
     showToast: vi.fn(),
     switchPanel: vi.fn(),
+    // UX-0713-F6：模拟 ModalManager 的 showModal/hideModal 行为（操作 classList hidden），
+    // 让 providerManagement 单元测试聚焦于"是否调用 host 委托"而非 ModalManager 内部逻辑
+    showModal: vi.fn((modalId: string) => {
+      const modal = document.getElementById(modalId);
+      if (modal) modal.classList.remove('hidden');
+    }),
+    hideModal: vi.fn((modalId: string) => {
+      const modal = document.getElementById(modalId);
+      if (modal) modal.classList.add('hidden');
+    }),
   } as unknown as ReturnType<typeof vi.fn> & Record<string, ReturnType<typeof vi.fn>>;
 }
 

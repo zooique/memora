@@ -56,6 +56,15 @@ export interface SettingsPanelHost {
    */
   switchPanel(panel: 'chat' | 'memories' | 'settings'): void;
   /**
+   * 显示模态弹窗（UX-0713-F6：Provider 编辑弹窗需要焦点陷阱 + 焦点恢复）
+   * 委托 ModalManager.showModal，启用焦点陷阱 + 保存焦点 + 聚焦首元素
+   */
+  showModal(modalId: string): void;
+  /**
+   * 隐藏模态弹窗（UX-0713-F6：配合 showModal 使用，恢复焦点）
+   */
+  hideModal(modalId: string): void;
+  /**
    * 设置面板内 tab 切换回调（刷新对应 tab 的数据）
    *
    * 当用户切换到 profile / work / audit / skill tab 时触发，
@@ -1071,10 +1080,8 @@ export class SettingsPanelManager {
           void this.autoSaveConfig();
         });
         this.saveStatusEl.appendChild(retryBtn);
-        // 3秒后恢复为空闲状态（同时清理重试按钮）
-        this.timers.setTimeout(() => {
-          this.updateSaveStatus('idle');
-        }, 3000);
+        // UX-0713-F7：错误状态不自动消失，需要用户采取行动（点击重试或修改表单触发新一轮保存）
+        // 原来的 3s 自动恢复会让用户来不及点重试就丢失入口
         break;
       default:
         this.saveStatusEl.classList.add('idle');

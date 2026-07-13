@@ -354,20 +354,28 @@ export function showProviderForm(ctx: ProviderManagementContext, key: string = '
     if (ctx.providerTemperatureInput) ctx.providerTemperatureInput.value = '';
   }
 
-  ctx.providerModalEl.classList.remove('hidden');
-  ctx.providerModalEl.dataset.editKey = key;
+  // UX-0713-F6：通过宿主 showModal 委托 ModalManager，启用焦点陷阱 + 焦点保存 + 聚焦首元素
+  // 替代直接操作 classList，确保 Provider 弹窗与其他模态弹窗（memory-add 等）行为一致
+  ctx.host.showModal('provider-modal');
+  if (ctx.providerModalEl) {
+    ctx.providerModalEl.dataset.editKey = key;
+  }
 }
 
 /**
  * 隐藏 Provider 编辑弹窗
  */
 export function hideProviderForm(ctx: ProviderManagementContext): void {
+  // UX-0713-F6：通过宿主 hideModal 委托 ModalManager，恢复焦点到触发元素
   if (!ctx.providerModalEl) return;
-  ctx.providerModalEl.classList.add('hidden');
+  ctx.host.hideModal('provider-modal');
   ctx.providerModalEl.dataset.editKey = '';
 }
 
 // ─── Provider CRUD ────────────────────────────────────────
+
+// UX-0713-F5：Provider 保存重入保护标志——防止重复检测期间双击触发并发保存
+let isSavingProvider = false;
 
 /**
  * 保存 Provider（新增/更新）
@@ -376,6 +384,10 @@ export function hideProviderForm(ctx: ProviderManagementContext): void {
  * 反馈：字段级 aria-invalid + aria-describedby 错误文本，失败时聚焦首个错误字段
  */
 export async function saveProvider(ctx: ProviderManagementContext): Promise<void> {
+  // UX-0713-F5：重入保护——防止重复检测期间双击触发并发保存
+  if (isSavingProvider) return;
+  isSavingProvider = true;
+  try {
   const alias = ctx.providerAliasInput?.value.trim();
   const provider = ctx.providerProviderInput?.value.trim();
   const model = ctx.providerModelInput?.value.trim();
@@ -460,6 +472,10 @@ export async function saveProvider(ctx: ProviderManagementContext): Promise<void
       saveBtn.disabled = false;
       saveBtn.textContent = originalText;
     }
+  }
+  } finally {
+    // UX-0713-F5：无论成功/失败/校验不通过，都清除重入保护标志
+    isSavingProvider = false;
   }
 }
 

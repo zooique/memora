@@ -121,6 +121,8 @@ export class SearchMessagesManager {
       const ke = e as KeyboardEvent;
       if (ke.key === 'Escape') {
         ke.preventDefault();
+        // UX-0713-F9：阻止冒泡到 document 层的 ModalManager，避免同时关闭背后 modal
+        ke.stopPropagation();
         this.close();
       }
     });
@@ -191,8 +193,11 @@ export class SearchMessagesManager {
       this.inputEl.value = '';
     }
 
-    // 恢复背景滚动
-    document.body.style.overflow = '';
+    // UX-0713-F10：有条件恢复背景滚动——仅当没有其他浮层打开时才恢复
+    const otherOverlays = document.querySelectorAll('.modal:not(.hidden), .command-palette:not(.hidden)');
+    if (otherOverlays.length === 0) {
+      document.body.style.overflow = '';
+    }
   }
 
   /**
