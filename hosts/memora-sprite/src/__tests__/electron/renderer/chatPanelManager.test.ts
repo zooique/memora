@@ -1257,3 +1257,374 @@ describe('appendMilestoneBanner · 对话区内联里程碑 banner', () => {
   });
 });
 
+// ─── 22. initScrollToBottomButton · 回到底部浮动按钮 ─────
+
+describe('initScrollToBottomButton · 回到底部浮动按钮', () => {
+  // 无按钮元素时应静默返回，不注册任何事件
+  it('无 #scroll-to-bottom-btn 时应静默返回（不注册事件）', () => {
+    const { manager, messagesEl } = createManager();
+    expect(() => manager.initScrollToBottomButton()).not.toThrow();
+    // 无按钮时 scroll 事件不应有副作用
+    messagesEl.dispatchEvent(new Event('scroll'));
+  });
+
+  // 滚动超过一屏时显示回到底部按钮（移除 hidden 类）
+  it('滚动超过一屏时应移除按钮 hidden 类（显示回到底部按钮）', () => {
+    const { manager, messagesEl } = createManager();
+    // 添加回到底部按钮
+    const btn = document.createElement('div');
+    btn.id = 'scroll-to-bottom-btn';
+    btn.className = 'hidden';
+    document.body.appendChild(btn);
+    // 模拟滚动尺寸：距底部超过一屏（distanceFromBottom > clientHeight）
+    // scrollHeight=1000, scrollTop=0, clientHeight=400 → distance=600 > 400 → 显示
+    Object.defineProperty(messagesEl, 'scrollHeight', { configurable: true, get: () => 1000 });
+    Object.defineProperty(messagesEl, 'scrollTop', { configurable: true, get: () => 0 });
+    Object.defineProperty(messagesEl, 'clientHeight', { configurable: true, get: () => 400 });
+    manager.initScrollToBottomButton();
+    // 触发 scroll 事件
+    messagesEl.dispatchEvent(new Event('scroll'));
+    // 执行 rAF 回调
+    flushRaF();
+    // 按钮应显示（hidden 类被移除）
+    expect(btn.classList.contains('hidden')).toBe(false);
+  });
+
+  // 滚动在底部附近时隐藏回到底部按钮（添加 hidden 类）
+  it('滚动在底部附近时应添加按钮 hidden 类（隐藏回到底部按钮）', () => {
+    const { manager, messagesEl } = createManager();
+    const btn = document.createElement('div');
+    btn.id = 'scroll-to-bottom-btn';
+    document.body.appendChild(btn);
+    // 模拟滚动尺寸：距底部不超过一屏
+    // scrollHeight=1000, scrollTop=700, clientHeight=400 → distance=300 < 400 → 隐藏
+    Object.defineProperty(messagesEl, 'scrollHeight', { configurable: true, get: () => 1000 });
+    Object.defineProperty(messagesEl, 'scrollTop', { configurable: true, get: () => 700 });
+    Object.defineProperty(messagesEl, 'clientHeight', { configurable: true, get: () => 400 });
+    manager.initScrollToBottomButton();
+    messagesEl.dispatchEvent(new Event('scroll'));
+    flushRaF();
+    // 按钮应隐藏（hidden 类被添加）
+    expect(btn.classList.contains('hidden')).toBe(true);
+  });
+
+  // rAF 节流：pending 期间重复 scroll 不应触发新 rAF
+  it('rAF 节流：pending 期间重复 scroll 不应触发新 rAF', () => {
+    const { manager, messagesEl } = createManager();
+    const btn = document.createElement('div');
+    btn.id = 'scroll-to-bottom-btn';
+    document.body.appendChild(btn);
+    Object.defineProperty(messagesEl, 'scrollHeight', { configurable: true, get: () => 1000 });
+    Object.defineProperty(messagesEl, 'scrollTop', { configurable: true, get: () => 0 });
+    Object.defineProperty(messagesEl, 'clientHeight', { configurable: true, get: () => 400 });
+    manager.initScrollToBottomButton();
+    // 第一次 scroll 触发 rAF
+    messagesEl.dispatchEvent(new Event('scroll'));
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1);
+    // 第二次 scroll 不应触发新 rAF（pending 中）
+    messagesEl.dispatchEvent(new Event('scroll'));
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(1);
+    // flush 后 pending 解除
+    flushRaF();
+    // 再次 scroll 应触发新 rAF
+    messagesEl.dispatchEvent(new Event('scroll'));
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(2);
+  });
+
+  // 点击按钮应平滑滚动到消息区底部
+  it('点击按钮应平滑滚动到消息区底部', () => {
+    const { manager, messagesEl } = createManager();
+    const btn = document.createElement('div');
+    btn.id = 'scroll-to-bottom-btn';
+    document.body.appendChild(btn);
+    // 定义 scrollHeight 供 click 回调读取
+    Object.defineProperty(messagesEl, 'scrollHeight', { configurable: true, get: () => 2000 });
+    // JSDOM 中 scrollTo 可能未定义，需显式注入 mock
+    const scrollToSpy = vi.fn();
+    messagesEl.scrollTo = scrollToSpy;
+    manager.initScrollToBottomButton();
+    btn.click();
+    expect(scrollToSpy).toHaveBeenCalledWith({ top: 2000, behavior: 'smooth' });
+  });
+});
+
+// ─── 23. appendMessage · 日期分隔符 ─────────────────────
+
+describe('appendMessage · 日期分隔符', () => {
+  // 跨日期消息应插入日期分隔符（含中文格式化文本 "YYYY年M月D日 周X"）
+  it('跨日期消息应插入 .date-separator 元素（含中文格式化文本）', () => {
+    const { manager, messagesEl } = createManager();
+    // 第一条消息：2026-07-12
+    manager.appendMessage({
+      role: 'user',
+      content: 'day1',
+      messageId: 'u1',
+      timestamp: '2026-07-12T10:00:00.000Z',
+    });
+    // 第二条消息：2026-07-13（跨日期）
+    manager.appendMessage({
+      role: 'user',
+      content: 'day2',
+      messageId: 'u2',
+      timestamp: '2026-07-13T10:00:00.000Z',
+    });
+    // 应插入日期分隔符
+    const separator = messagesEl.querySelector('.date-separator');
+    expect(separator).toBeTruthy();
+    // 格式应为 "YYYY年M月D日 周X"
+    expect(separator?.textContent).toContain('2026年7月13日');
+    expect(separator?.textContent).toMatch(/周[一二三四五六日]/);
+  });
+
+  // 同日期消息不应插入日期分隔符
+  it('同日期间消息不应插入日期分隔符', () => {
+    const { manager, messagesEl } = createManager();
+    manager.appendMessage({
+      role: 'user',
+      content: 'msg1',
+      messageId: 'u1',
+      timestamp: '2026-07-13T10:00:00.000Z',
+    });
+    manager.appendMessage({
+      role: 'user',
+      content: 'msg2',
+      messageId: 'u2',
+      timestamp: '2026-07-13T11:00:00.000Z',
+    });
+    expect(messagesEl.querySelector('.date-separator')).toBeNull();
+  });
+});
+
+// ─── 24. appendMessage · 消息分组 ───────────────────────
+
+describe('appendMessage · 消息分组（连续同角色追加到已有 message-group）', () => {
+  // 连续同角色消息（2分钟内）应分组到同一 message-group
+  it('连续同角色消息（2分钟内）应分组到同一 .message-group', () => {
+    const { manager, messagesEl } = createManager();
+    // 第一条 assistant 消息（创建 message-group）
+    manager.appendMessage({
+      role: 'assistant',
+      content: 'first',
+      messageId: 'a1',
+      timestamp: '2026-07-13T10:00:00.000Z',
+    });
+    // 第二条 assistant 消息（1分钟后，应分组到第一条的 message-group）
+    manager.appendMessage({
+      role: 'assistant',
+      content: 'second',
+      messageId: 'a2',
+      timestamp: '2026-07-13T10:01:00.000Z',
+    });
+    // 应只有 1 个 message-group
+    const groups = messagesEl.querySelectorAll('.message-group');
+    expect(groups.length).toBe(1);
+    // message-group 内应包含 2 条 assistant 消息
+    const messagesInGroup = groups[0].querySelectorAll('.message.assistant');
+    expect(messagesInGroup.length).toBe(2);
+    // 第二条消息应有 grouped 类（隐藏头像）
+    expect(messagesInGroup[1].classList.contains('grouped')).toBe(true);
+  });
+
+  // 超过2分钟间隔的连续同角色消息不应分组
+  it('超过2分钟间隔的连续同角色消息不应分组', () => {
+    const { manager, messagesEl } = createManager();
+    manager.appendMessage({
+      role: 'assistant',
+      content: 'first',
+      messageId: 'a1',
+      timestamp: '2026-07-13T10:00:00.000Z',
+    });
+    // 3分钟后（超过2分钟窗口），不应分组
+    manager.appendMessage({
+      role: 'assistant',
+      content: 'second',
+      messageId: 'a2',
+      timestamp: '2026-07-13T10:03:00.000Z',
+    });
+    // 应有 2 个 message-group（未分组）
+    const groups = messagesEl.querySelectorAll('.message-group');
+    expect(groups.length).toBe(2);
+    // 第二条消息不应有 grouped 类
+    const allMessages = messagesEl.querySelectorAll('.message.assistant');
+    expect(allMessages[1].classList.contains('grouped')).toBe(false);
+  });
+});
+
+// ─── 25. appendMessages · prepend 无 load-more 容器 ─────
+
+describe('appendMessages · prepend 无 load-more 容器', () => {
+  // prepend=true 且无 #load-more-container 时应 insertBefore firstChild
+  it('prepend=true 且无 #load-more-container 时应 insertBefore firstChild', () => {
+    const { manager, messagesEl } = createManager();
+    // 先追加一条消息（作为已存在的 firstChild）
+    manager.appendMessages([userMsg('existing', 'u0')]);
+    const existingMsg = messagesEl.querySelector('.message');
+    expect(existingMsg).toBeTruthy();
+    // prepend 新消息（无 load-more-container）
+    manager.appendMessages([userMsg('new', 'u1')], true);
+    // 新消息应插入到顶部（在 existing 之前）
+    const allMessages = messagesEl.querySelectorAll('.message');
+    expect(allMessages.length).toBe(2);
+    // 第一个 message 的 bubble 应是 new（insertBefore firstChild，排除时间戳干扰）
+    expect(allMessages[0].querySelector('.message-bubble')?.textContent).toBe('new');
+  });
+});
+
+// ─── 26. showStartupSummary · 启动摘要横幅 ──────────────
+
+describe('showStartupSummary · 启动摘要横幅', () => {
+  // 辅助：在 DOM 中添加 startup-banner 结构（不破坏已有 #chat-messages 引用）
+  function addStartupBannerDom(): void {
+    const banner = document.createElement('div');
+    banner.id = 'startup-banner';
+    banner.className = 'hidden';
+    const grid = document.createElement('div');
+    grid.id = 'startup-banner-grid';
+    banner.appendChild(grid);
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'startup-banner-close';
+    banner.appendChild(closeBtn);
+    document.body.appendChild(banner);
+  }
+
+  // 应渲染摘要数据并移除 banner 的 hidden 类
+  it('应渲染摘要数据并移除 banner 的 hidden 类', () => {
+    const { manager } = createManager();
+    addStartupBannerDom();
+    manager.showStartupSummary({
+      totalMemories: 42,
+      totalInsights: 10,
+      skillCount: 3,
+      decay: { runCount: 5, totalDecayedCount: 8 },
+      perception: { warmth: 0.75, rapportLevel: 'high', rapportDescription: '默契' },
+      healthStatus: 'healthy',
+    });
+    const banner = document.getElementById('startup-banner');
+    // 应移除 hidden 类（显示横幅）
+    expect(banner?.classList.contains('hidden')).toBe(false);
+    // 网格中应包含摘要数据项
+    const grid = document.getElementById('startup-banner-grid');
+    expect(grid?.children.length).toBeGreaterThan(0);
+    expect(grid?.textContent).toContain('42');
+    expect(grid?.textContent).toContain('10');
+    expect(grid?.textContent).toContain('75%');
+  });
+
+  // 空数据（totalMemories=0 且 totalInsights=0）时应静默返回
+  it('totalMemories=0 且 totalInsights=0 时应静默返回（不显示横幅）', () => {
+    const { manager } = createManager();
+    addStartupBannerDom();
+    manager.showStartupSummary({
+      totalMemories: 0,
+      totalInsights: 0,
+      skillCount: 0,
+      decay: null,
+      perception: null,
+      healthStatus: null,
+    });
+    const banner = document.getElementById('startup-banner');
+    // 应保持 hidden 状态
+    expect(banner?.classList.contains('hidden')).toBe(true);
+  });
+});
+
+// ─── 27. showArchiveButton · 一键归档按钮 ───────────────
+
+describe('showArchiveButton · 一键归档按钮', () => {
+  // full 模式应静默返回，不渲染按钮
+  it('full 模式应静默返回（不渲染按钮）', () => {
+    // 默认 host.getArchiveMode() 返回 'full'
+    const { manager, messagesEl } = createManager();
+    manager.showArchiveButton();
+    expect(messagesEl.querySelector('.archive-session-btn')).toBeNull();
+  });
+
+  // manual 模式应在消息区顶部渲染归档按钮
+  it('manual 模式应在消息区顶部渲染归档按钮', () => {
+    const host = createMockHost({
+      getArchiveMode: vi.fn(() => 'manual'),
+      getCurrentSessionId: vi.fn(() => '2026-07-13-testSession'),
+    });
+    const { manager, messagesEl } = createManager({ host });
+    manager.showArchiveButton();
+    const btn = messagesEl.querySelector('.archive-session-btn') as HTMLElement;
+    expect(btn).toBeTruthy();
+    expect(btn.textContent).toBe('归档当前对话');
+    expect(btn.title).toBe('一键归档当前会话的全部记忆');
+    // 应插入到消息区顶部
+    expect(messagesEl.firstChild).toBe(btn);
+  });
+
+  // 点击按钮应调用 archiveSession（解析 date/session）+ 成功后 showToast + 1.5s 移除
+  it('点击按钮应调用 archiveSession + 成功后 showToast + 1.5s 移除按钮', async () => {
+    const host = createMockHost({
+      getArchiveMode: vi.fn(() => 'manual'),
+      getCurrentSessionId: vi.fn(() => '2026-07-13-testSession'),
+      archiveSession: vi.fn(async () => 5),
+    });
+    const { manager, messagesEl } = createManager({ host });
+    manager.showArchiveButton();
+    const btn = messagesEl.querySelector('.archive-session-btn') as HTMLElement;
+    btn.click();
+    // 点击后应禁用 + 文案切换为"归档中..."
+    expect(btn.hasAttribute('disabled')).toBe(true);
+    expect(btn.textContent).toBe('归档中...');
+    // 等待 archiveSession Promise resolve（需多次微任务刷新）
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // 应调用 archiveSession，参数为解析后的 date 和 session
+    expect(host.archiveSession).toHaveBeenCalledWith('2026-07-13', 'testSession');
+    // 成功后文案更新 + showToast
+    expect(btn.textContent).toBe('已归档 5 条记忆');
+    expect(host.showToast).toHaveBeenCalledWith('已归档 5 条记忆', 'success');
+    // 1.5s 后按钮应被移除
+    vi.advanceTimersByTime(1500);
+    expect(messagesEl.querySelector('.archive-session-btn')).toBeNull();
+  });
+
+  // 归档失败时应显示"归档失败，重试"并恢复按钮可点击
+  it('归档失败时应显示"归档失败，重试"并恢复按钮可点击', async () => {
+    const host = createMockHost({
+      getArchiveMode: vi.fn(() => 'insights-only'),
+      getCurrentSessionId: vi.fn(() => '2026-07-13-mySession'),
+      archiveSession: vi.fn(async () => { throw new Error('归档失败'); }),
+    });
+    const { manager, messagesEl } = createManager({ host });
+    manager.showArchiveButton();
+    const btn = messagesEl.querySelector('.archive-session-btn') as HTMLElement;
+    btn.click();
+    // 等待 archiveSession Promise reject（需多次微任务刷新）
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    // 失败后文案恢复 + 按钮可点击
+    expect(btn.hasAttribute('disabled')).toBe(false);
+    expect(btn.textContent).toBe('归档失败，重试');
+  });
+
+  // 已存在归档按钮时应先移除旧按钮（避免重复）
+  it('已存在归档按钮时应先移除旧按钮（避免重复）', () => {
+    const host = createMockHost({
+      getArchiveMode: vi.fn(() => 'manual'),
+      getCurrentSessionId: vi.fn(() => '2026-07-13-testSession'),
+    });
+    const { manager, messagesEl } = createManager({ host });
+    manager.showArchiveButton();
+    expect(messagesEl.querySelectorAll('.archive-session-btn').length).toBe(1);
+    // 再次调用应移除旧按钮（不重复）
+    manager.showArchiveButton();
+    expect(messagesEl.querySelectorAll('.archive-session-btn').length).toBe(1);
+  });
+});
+
+// ─── 28. showTruncationNotice · 边界条件 ────────────────
+
+describe('showTruncationNotice · 边界条件', () => {
+  // messageId 不存在时应静默返回（不抛错）
+  it('messageId 不存在时应静默返回（不抛错）', () => {
+    const { manager } = createManager();
+    expect(() => manager.showTruncationNotice('nonexistent', 1)).not.toThrow();
+  });
+});
+
